@@ -1,0 +1,31 @@
+{
+  "name": "kun-oauth-admin",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@10.12.1",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "pnpm -F \"./apps/**\" --parallel --stream run dev",
+    "build": "pnpm -F \"./apps/**\" --parallel run build",
+    "format": "pnpm -F \"./apps/**\" --parallel run format",
+    "lint": "pnpm -F \"./apps/web\" run lint",
+    "lint:fix": "pnpm -F \"./apps/web\" run lint:fix",
+    "typecheck": "pnpm -F \"./apps/web\" run typecheck",
+    "sitemap": "esno apps/web/scripts/generateSitemap.ts",
+    "old:migrate": "esno scripts/migrate/index.ts",
+    "prod:deploy": "./scripts/deploy.sh",
+    "pm2:start": "./scripts/start.sh",
+    "pm2:stop": "./scripts/stop.sh",
+    "pm2:restart": "pm2 restart kun-blog-web kun-blog-api",
+    "pm2:logs": "pm2 logs"
+  },
+  "devDependencies": {
+    "@types/node": "^25.0.3",
+    "esno": "^4.8.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  }
+}
