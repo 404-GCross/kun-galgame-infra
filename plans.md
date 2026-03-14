@@ -27,10 +27,10 @@
 
 ### 1.3 未来规划
 
-- 移动端 App（iOS / Android）
-- 桌面端（Tauri）
-- 更多共用账户系统的网站
-- 用 Go Fiber 重构现有网站后端
+- **Go Fiber 重构**：用 Go Fiber 重构 kungal-nuxt 和 moyu-nextjs 的后端（已确定）
+- **移动端 App**：iOS / Android，使用 Flutter 开发
+- **桌面端**：Windows / macOS / Linux，使用 Flutter 开发
+- **更多网站**：其他共用账户系统的新网站
 
 ---
 
@@ -41,15 +41,35 @@
 | 组件 | 选型 | 理由 |
 |------|------|------|
 | 语言 | Go | 统一技术栈，为未来重构做准备 |
-| Web 框架 | Fiber | 高性能，API 风格类似 Express |
+| Web 框架 | Fiber v3 | 高性能，API 风格类似 Express |
+| ORM | GORM | 开发效率高，团队熟悉 |
 | 数据库 | PostgreSQL | 与现有系统一致 |
-| 缓存 | Redis | Session、rate limit、任务队列 |
+| 缓存 | Redis + Fiber Storage | Session、rate limit、任务队列 |
 | 任务队列 | asynq | 轻量级，与 Redis 集成好 |
-| 数据库迁移 | golang-migrate | 纯 SQL 文件，简单直接 |
 | 配置管理 | godotenv | 读取现有 .env 文件格式 |
-| 密码哈希 | argon2 | 比 bcrypt 更安全 |
+| 密码哈希 | argon2 (matthewhartstonge) | 比 bcrypt 更安全 |
+| JWT | golang-jwt/jwt/v5 | 标准 JWT 库 |
+| 参数验证 | go-playground/validator | 结构体验证，与 Fiber 配合好 |
+| Markdown | goldmark | 内容解析 |
 
-### 2.2 前端
+### 2.2 核心依赖
+
+```go
+require (
+    github.com/go-playground/validator/v10 v10.30.1
+    github.com/gofiber/fiber/v3 v3.1.0
+    github.com/gofiber/storage/redis/v3 v3.4.3
+    github.com/golang-jwt/jwt/v5 v5.3.1
+    github.com/joho/godotenv v1.5.1
+    github.com/matthewhartstonge/argon2 v1.4.6
+    github.com/yuin/goldmark v1.7.16
+    gorm.io/datatypes v1.2.7
+    gorm.io/driver/postgres v1.6.0
+    gorm.io/gorm v1.31.1
+)
+```
+
+### 2.3 前端（管理后台）
 
 | 组件 | 选型 | 理由 |
 |------|------|------|
@@ -58,7 +78,15 @@
 | 状态管理 | Pinia | Nuxt 官方推荐 |
 | HTTP 客户端 | $fetch (Nuxt 内置) | 统一封装 |
 
-### 2.3 架构模式
+### 2.4 未来客户端
+
+| 平台 | 技术栈 |
+|------|--------|
+| iOS | Flutter |
+| Android | Flutter |
+| Desktop | Flutter |
+
+### 2.5 架构模式
 
 **Modular Monolith**：单一进程，模块通过 interface 隔离，未来可拆分为微服务。
 
@@ -119,7 +147,8 @@ apps/api/
 │   ├── config/             # 配置加载
 │   ├── logger/             # 日志
 │   └── utils/              # 工具函数
-└── migrations/             # SQL 迁移文件
+├── migrations/             # 手动 SQL 迁移（生产环境破坏性变更）
+└── scripts/                # 迁移脚本（用户数据迁移等）
 ```
 
 ### 3.3 每个业务模块的内部结构
@@ -156,149 +185,172 @@ internal/platform/auth/
 
 **关键决策**：三个库保持独立，两个网站的 user_id 外键改为存储 Account Service 的 `user_uuid`（String），通过应用层保证一致性，不再是数据库外键约束。
 
-### 4.2 Account Service 核心表
+### 4.2 Account Service 核心 Model（GORM）
 
 #### User（核心身份表）
 
-```sql
-CREATE TABLE users (
-    id            SERIAL PRIMARY KEY,
-    uuid          UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
-    name          VARCHAR(17) NOT NULL UNIQUE,
-    email         VARCHAR(255) NOT NULL UNIQUE,
-    password      VARCHAR(255),
-    password_type VARCHAR(10) NOT NULL DEFAULT 'argon2', -- 'argon2' | 'bcrypt'
-    avatar        VARCHAR(255) DEFAULT '',
-    bio           VARCHAR(107) DEFAULT '',
-    moemoepoint   INT DEFAULT 0,
-    status        INT DEFAULT 0,  -- 0: normal, 1: banned
-    ip            VARCHAR(45) DEFAULT '',
-    created_at    TIMESTAMP DEFAULT NOW(),
-    updated_at    TIMESTAMP DEFAULT NOW()
-);
+```go
+type User struct {
+    ID           uint           `gorm:"primaryKey"`
+    UUID         string         `gorm:"type:uuid;uniqueIndex;default:gen_random_uuid()"`
+    Name         string         `gorm:"size:17;uniqueIndex;not null"`
+    Email        string         `gorm:"size:255;uniqueIndex;not null"`
+    Password     string         `gorm:"size:255"`
+    PasswordType string         `gorm:"size:10;not null;default:'argon2'"` // 'argon2' | 'bcrypt'
+    Avatar       string         `gorm:"size:255;default:''"`
+    Bio          string         `gorm:"size:107;default:''"`
+    Moemoepoint  int            `gorm:"default:0"`
+    Status       int            `gorm:"default:0"` // 0: normal, 1: banned
+    IP           string         `gorm:"size:45;default:''"`
+    CreatedAt    time.Time
+    UpdatedAt    time.Time
+
+    // Relations
+    SiteData      []UserSiteData `gorm:"foreignKey:UserID"`
+    Sessions      []Session      `gorm:"foreignKey:UserID"`
+    OAuthAccounts []OAuthAccount `gorm:"foreignKey:UserID"`
+    Followers     []UserFollow   `gorm:"foreignKey:FollowingID"`
+    Following     []UserFollow   `gorm:"foreignKey:FollowerID"`
+}
 ```
 
-**password_type 字段说明**：
+**PasswordType 字段说明**：
 - `argon2`：新用户、moyu 迁移用户
 - `bcrypt`：kungal 迁移用户（半年过渡期内有效）
 
 #### Site（站点表）
 
-```sql
-CREATE TABLE sites (
-    id          SERIAL PRIMARY KEY,
-    name        VARCHAR(50) NOT NULL,
-    domain      VARCHAR(255) NOT NULL UNIQUE,
-    description TEXT DEFAULT '',
-    created_at  TIMESTAMP DEFAULT NOW()
-);
+```go
+type Site struct {
+    ID          uint   `gorm:"primaryKey"`
+    Name        string `gorm:"size:50;not null"`
+    Domain      string `gorm:"size:255;uniqueIndex;not null"`
+    Description string `gorm:"type:text;default:''"`
+    CreatedAt   time.Time
 
--- 初始数据
-INSERT INTO sites (name, domain) VALUES
-    ('kungal', 'www.kungal.com'),
-    ('moyu', 'www.moyu.moe');
+    // Relations
+    UserSiteData []UserSiteData `gorm:"foreignKey:SiteID"`
+    OAuthClients []OAuthClient  `gorm:"foreignKey:SiteID"`
+}
+
+// 初始数据：kungal (www.kungal.com), moyu (www.moyu.moe)
 ```
 
 #### UserSiteData（用户站点数据）
 
-```sql
-CREATE TABLE user_site_data (
-    id                SERIAL PRIMARY KEY,
-    user_id           INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    site_id           INT NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
-    role              INT DEFAULT 1,
-    status            INT DEFAULT 0,
-    daily_check_in    INT DEFAULT 0,
-    daily_image_count INT DEFAULT 0,
-    extra             JSONB DEFAULT '{}',  -- 站点特有字段
-    created_at        TIMESTAMP DEFAULT NOW(),
-    updated_at        TIMESTAMP DEFAULT NOW(),
-    UNIQUE(user_id, site_id)
-);
-```
+```go
+type UserSiteData struct {
+    ID              uint            `gorm:"primaryKey"`
+    UserID          uint            `gorm:"not null;index"`
+    SiteID          uint            `gorm:"not null;index"`
+    Role            int             `gorm:"default:1"`
+    Status          int             `gorm:"default:0"`
+    DailyCheckIn    int             `gorm:"default:0"`
+    DailyImageCount int             `gorm:"default:0"`
+    Extra           datatypes.JSON  `gorm:"type:jsonb;default:'{}'"` // 站点特有字段
+    CreatedAt       time.Time
+    UpdatedAt       time.Time
 
-**extra 字段用途**：
-- kungal: `{ "daily_toolset_upload_count": 0 }`
-- moyu: `{ "daily_upload_size": 0, "last_login_time": "" }`
+    // Relations
+    User User `gorm:"foreignKey:UserID;constraint:OnDelete:CASCADE"`
+    Site Site `gorm:"foreignKey:SiteID;constraint:OnDelete:CASCADE"`
+}
+
+// Extra 字段用途：
+// kungal: { "daily_toolset_upload_count": 0 }
+// moyu: { "daily_upload_size": 0, "last_login_time": "" }
+```
 
 #### Session（登录会话）
 
-```sql
-CREATE TABLE sessions (
-    id            SERIAL PRIMARY KEY,
-    user_id       INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    session_token VARCHAR(255) NOT NULL UNIQUE,
-    refresh_token VARCHAR(255) NOT NULL UNIQUE,
-    user_agent    TEXT DEFAULT '',
-    ip_address    VARCHAR(45) DEFAULT '',
-    expires_at    TIMESTAMP NOT NULL,
-    created_at    TIMESTAMP DEFAULT NOW()
-);
+```go
+type Session struct {
+    ID           uint      `gorm:"primaryKey"`
+    UserID       uint      `gorm:"not null;index"`
+    SessionToken string    `gorm:"size:255;uniqueIndex;not null"`
+    RefreshToken string    `gorm:"size:255;uniqueIndex;not null"`
+    UserAgent    string    `gorm:"type:text;default:''"`
+    IPAddress    string    `gorm:"size:45;default:''"`
+    ExpiresAt    time.Time `gorm:"not null"`
+    CreatedAt    time.Time
+
+    // Relations
+    User User `gorm:"foreignKey:UserID;constraint:OnDelete:CASCADE"`
+}
 ```
 
 #### OAuthClient（OAuth 客户端）
 
-```sql
-CREATE TABLE oauth_clients (
-    id            VARCHAR(50) PRIMARY KEY,
-    site_id       INT REFERENCES sites(id),
-    name          VARCHAR(100) NOT NULL,
-    secret        VARCHAR(255) NOT NULL,
-    redirect_uris JSONB NOT NULL,  -- ["https://www.kungal.com/callback"]
-    grants        JSONB NOT NULL,  -- ["authorization_code", "refresh_token"]
-    created_at    TIMESTAMP DEFAULT NOW()
-);
+```go
+type OAuthClient struct {
+    ID           string         `gorm:"size:50;primaryKey"`
+    SiteID       *uint          `gorm:"index"`
+    Name         string         `gorm:"size:100;not null"`
+    Secret       string         `gorm:"size:255;not null"`
+    RedirectURIs datatypes.JSON `gorm:"type:jsonb;not null"` // ["https://www.kungal.com/callback"]
+    Grants       datatypes.JSON `gorm:"type:jsonb;not null"` // ["authorization_code", "refresh_token"]
+    CreatedAt    time.Time
+
+    // Relations
+    Site *Site `gorm:"foreignKey:SiteID"`
+}
 ```
 
 #### OAuthAccount（第三方登录）
 
-```sql
-CREATE TABLE oauth_accounts (
-    id                  SERIAL PRIMARY KEY,
-    user_id             INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    provider            VARCHAR(50) NOT NULL,  -- 'google', 'github', 'discord'
-    provider_account_id VARCHAR(255) NOT NULL,
-    access_token        TEXT,
-    refresh_token       TEXT,
-    expires_at          INT,
-    created_at          TIMESTAMP DEFAULT NOW(),
-    UNIQUE(provider, provider_account_id)
-);
+```go
+type OAuthAccount struct {
+    ID                uint    `gorm:"primaryKey"`
+    UserID            uint    `gorm:"not null;index"`
+    Provider          string  `gorm:"size:50;not null"`  // 'google', 'github', 'discord'
+    ProviderAccountID string  `gorm:"size:255;not null"`
+    AccessToken       *string `gorm:"type:text"`
+    RefreshToken      *string `gorm:"type:text"`
+    ExpiresAt         *int
+    CreatedAt         time.Time
+
+    // Relations
+    User User `gorm:"foreignKey:UserID;constraint:OnDelete:CASCADE"`
+}
+
+// 复合唯一索引：(provider, provider_account_id)
 ```
 
 #### UserFollow（社交关系，仅 moyu 数据）
 
-```sql
-CREATE TABLE user_follows (
-    id           SERIAL PRIMARY KEY,
-    follower_id  INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    following_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    created_at   TIMESTAMP DEFAULT NOW(),
-    UNIQUE(follower_id, following_id)
-);
+```go
+type UserFollow struct {
+    ID          uint `gorm:"primaryKey"`
+    FollowerID  uint `gorm:"not null;index"`
+    FollowingID uint `gorm:"not null;index"`
+    CreatedAt   time.Time
+
+    // Relations
+    Follower  User `gorm:"foreignKey:FollowerID;constraint:OnDelete:CASCADE"`
+    Following User `gorm:"foreignKey:FollowingID;constraint:OnDelete:CASCADE"`
+}
+
+// 复合唯一索引：(follower_id, following_id)
 ```
 
 #### Role 和 Permission（RBAC）
 
-```sql
-CREATE TABLE roles (
-    id          SERIAL PRIMARY KEY,
-    name        VARCHAR(50) NOT NULL UNIQUE,
-    description TEXT DEFAULT ''
-);
+```go
+type Role struct {
+    ID          uint   `gorm:"primaryKey"`
+    Name        string `gorm:"size:50;uniqueIndex;not null"`
+    Description string `gorm:"type:text;default:''"`
 
-CREATE TABLE permissions (
-    id          SERIAL PRIMARY KEY,
-    name        VARCHAR(100) NOT NULL UNIQUE,
-    description TEXT DEFAULT ''
-);
+    Permissions []Permission `gorm:"many2many:role_permissions;"`
+}
 
-CREATE TABLE role_permissions (
-    id            SERIAL PRIMARY KEY,
-    role_id       INT NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
-    permission_id INT NOT NULL REFERENCES permissions(id) ON DELETE CASCADE,
-    UNIQUE(role_id, permission_id)
-);
+type Permission struct {
+    ID          uint   `gorm:"primaryKey"`
+    Name        string `gorm:"size:100;uniqueIndex;not null"`
+    Description string `gorm:"type:text;default:''"`
+
+    Roles []Role `gorm:"many2many:role_permissions;"`
+}
 ```
 
 ### 4.3 错误码规范
@@ -625,10 +677,13 @@ JWT_EXPIRES=90d
 
 ### 12.1 Go 代码规范
 
-- 使用 `database/sql` + `pgx` 驱动，不使用 ORM
+- 使用 GORM 作为 ORM，配合 `gorm.io/datatypes` 处理 JSON 字段
+- 数据库迁移使用 GORM AutoMigrate（开发）+ 手动 SQL（生产破坏性变更）
 - 依赖注入使用手动构造，不引入 wire/fx
+- 请求参数验证使用 `go-playground/validator`，定义在 DTO struct tag 中
 - 每个 service 目录下需要 `_test.go` 骨架文件
 - 错误处理使用 `pkg/errors` 统一封装
+- 密码哈希使用 `matthewhartstonge/argon2`
 
 ### 12.2 前端代码规范
 
@@ -678,12 +733,18 @@ CREATE TABLE migration_moyu_user_mapping (
 
 | 决策点 | 选择 | 理由 |
 |--------|------|------|
+| Web 框架 | Fiber v3 | 高性能，API 风格类似 Express |
+| ORM | GORM | 团队熟悉，开发效率高 |
 | OAuth 实现 | 自己实现 JWT + PKCE | 规模不需要 Hydra |
-| 数据库迁移工具 | golang-migrate | 纯 SQL，简单直接 |
+| 数据库迁移 | GORM AutoMigrate | 开发便捷，生产环境手动处理破坏性变更 |
 | 依赖注入 | 手动构造 | 单人项目，不需要框架 |
 | 配置管理 | godotenv | 与现有 .env 格式一致 |
+| 参数验证 | go-playground/validator | 结构体 tag 验证，简洁 |
 | 任务队列 | asynq | 轻量，与 Redis 集成好 |
+| 密码哈希 | argon2 (matthewhartstonge) | 比 bcrypt 更安全 |
+| JWT | golang-jwt/jwt/v5 | 标准库 |
 | 密码处理 | 保留 moyu 的 argon2 | 更安全 |
 | 用户名冲突 | 保留 kungal | 以 kungal 为主 |
 | 数据库拓扑 | 三库独立 | 微服务架构 |
 | 外键处理 | 存 uuid，应用层保证 | 跨库无法用外键约束 |
+| 未来客户端 | Flutter | iOS/Android/Desktop 统一技术栈 |

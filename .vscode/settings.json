@@ -2,11 +2,17 @@
   "cSpell.words": [
     "asynq",
     "autospace",
+    "datatypes",
     "esno",
     "godotenv",
     "goenv",
+    "gofiber",
+    "goldmark",
+    "GORM",
+    "joho",
     "kungal",
     "kungalgame",
+    "matthewhartstonge",
     "moemoepoint",
     "moyu",
     "Nuxt",
@@ -19,6 +25,7 @@
     "userinfo",
     "VARCHAR",
     "vercel",
-    "vinxi"
+    "vinxi",
+    "yuin"
   ]
 }
