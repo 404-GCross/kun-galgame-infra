@@ -9,6 +9,7 @@
     "gofiber",
     "goldmark",
     "GORM",
+    "gormlogger",
     "joho",
     "kungal",
     "kungalgame",

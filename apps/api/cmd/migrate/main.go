@@ -87,6 +87,7 @@ func getAllModels() []any {
 		&authModel.OAuthAccount{},
 		&authModel.UserFollow{},
 		&authModel.UserSiteData{},
+		&authModel.UserMigration{},
 
 		// Site models
 		&siteModel.Site{},
@@ -135,54 +136,23 @@ func dropAllTables(db *gorm.DB) error {
 
 // seedInitialData creates initial required data
 func seedInitialData(db *gorm.DB) error {
-	// Create default site if not exists
-	var site siteModel.Site
-
-	// OAuth Admin site
-	if err := db.First(&site, "domain = ?", "oauth.kungal.com").Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			defaultSite := &siteModel.Site{
-				Name:        "KUN OAuth Admin",
-				Domain:      "oauth.kungal.com",
-				Description: "Central OAuth administration system",
-			}
-			if err := db.Create(defaultSite).Error; err != nil {
-				slog.Error("failed to create default site", "error", err)
-				return err
-			}
-			slog.Info("Created default site", "domain", defaultSite.Domain)
-		}
+	// Create sites if not exists
+	sites := []siteModel.Site{
+		{Name: "KUN OAuth Admin", Domain: "oauth.kungal.com", Description: "Central OAuth administration system"},
+		{Name: "KUN Galgame", Domain: "www.kungal.com", Description: "KUN Galgame community"},
+		{Name: "MoYu Patch", Domain: "www.moyu.moe", Description: "MoYu game patches"},
 	}
 
-	// KUN Galgame site
-	if err := db.First(&site, "domain = ?", "www.kungal.com").Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			kungalSite := &siteModel.Site{
-				Name:        "KUN Galgame",
-				Domain:      "www.kungal.com",
-				Description: "KUN Galgame community",
+	for _, s := range sites {
+		var existing siteModel.Site
+		if err := db.Where("domain = ?", s.Domain).First(&existing).Error; err != nil {
+			if err == gorm.ErrRecordNotFound {
+				if err := db.Create(&s).Error; err != nil {
+					slog.Error("failed to create site", "domain", s.Domain, "error", err)
+					return err
+				}
+				slog.Info("Created site", "domain", s.Domain)
 			}
-			if err := db.Create(kungalSite).Error; err != nil {
-				slog.Error("failed to create kungal site", "error", err)
-				return err
-			}
-			slog.Info("Created kungal site", "domain", kungalSite.Domain)
-		}
-	}
-
-	// MoYu Patch site
-	if err := db.First(&site, "domain = ?", "www.moyu.moe").Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			moyuSite := &siteModel.Site{
-				Name:        "MoYu Patch",
-				Domain:      "www.moyu.moe",
-				Description: "MoYu game patches",
-			}
-			if err := db.Create(moyuSite).Error; err != nil {
-				slog.Error("failed to create moyu site", "error", err)
-				return err
-			}
-			slog.Info("Created moyu site", "domain", moyuSite.Domain)
 		}
 	}
 
