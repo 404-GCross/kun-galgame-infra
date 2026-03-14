@@ -652,7 +652,7 @@ Account Service 使用的环境变量（`apps/api/.env`）：
 KUN_FIBER_SERVER_PORT=9277
 KUN_FRONTEND_CORS_ORIGIN=http://127.0.0.1:9420
 KUN_ENV="development"
-KUN_SITE_URL=http://localhost:9277
+KUN_SITE_URL=http://127.0.0.1:9277
 
 # PostgreSQL
 KUN_PG_HOST=localhost

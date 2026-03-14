@@ -39,7 +39,8 @@ export default defineNuxtConfig({
   runtimeConfig: {
     public: {
       apiBase:
-        process.env.NUXT_PUBLIC_API_BASE || 'http://localhost:9277/api/v1'
+        process.env.KUN_VISUAL_NOVEL_NUXT_PUBLIC_API_BASE ||
+        'http://127.0.0.1:9277/api/v1'
     }
   }
 })

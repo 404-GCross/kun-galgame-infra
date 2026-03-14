@@ -19,9 +19,9 @@ const isLoading = ref(true)
 const activeTab = ref('pending')
 
 const tabs = [
-  { id: 'pending', label: 'Pending', icon: 'lucide:clock' },
-  { id: 'approved', label: 'Approved', icon: 'lucide:check' },
-  { id: 'rejected', label: 'Rejected', icon: 'lucide:x' },
+  { id: 'pending', label: '待审核', icon: 'lucide:clock' },
+  { id: 'approved', label: '已通过', icon: 'lucide:check' },
+  { id: 'rejected', label: '已拒绝', icon: 'lucide:x' },
 ]
 
 const fetchJobs = async () => {
@@ -64,10 +64,10 @@ onMounted(() => {
   <div class="space-y-6">
     <div>
       <h1 class="text-2xl font-bold text-gray-800 dark:text-white">
-        Content Moderation
+        内容审核
       </h1>
       <p class="mt-1 text-gray-600 dark:text-gray-400">
-        Review and moderate user-generated content
+        审核和管理用户生成的内容
       </p>
     </div>
 
@@ -98,7 +98,7 @@ onMounted(() => {
       <div v-else-if="jobs.length === 0" class="py-12 text-center">
         <Icon name="lucide:shield-check" class="mx-auto mb-4 size-12 text-gray-300" />
         <p class="text-gray-500 dark:text-gray-400">
-          No {{ activeTab }} moderation jobs
+          暂无{{ activeTab === 'pending' ? '待审核' : activeTab === 'approved' ? '已通过' : '已拒绝' }}的审核任务
         </p>
       </div>
 
@@ -135,7 +135,7 @@ onMounted(() => {
               :to="`/moderation/${job.id}`"
               class="rounded-lg bg-indigo-50 px-3 py-1.5 text-sm font-medium text-indigo-600 hover:bg-indigo-100 dark:bg-indigo-900 dark:text-indigo-400 dark:hover:bg-indigo-800"
             >
-              Review
+              审核
             </NuxtLink>
           </div>
         </div>

@@ -20,10 +20,10 @@ const handleSubmit = async () => {
     if (response.code === 0) {
       router.push('/')
     } else {
-      error.value = response.message || 'Login failed'
+      error.value = response.message || '登录失败'
     }
   } catch (e: unknown) {
-    error.value = e instanceof Error ? e.message : 'Login failed'
+    error.value = e instanceof Error ? e.message : '登录失败'
   } finally {
     isLoading.value = false
   }
@@ -40,10 +40,10 @@ onMounted(async () => {
   <KunCard class="p-8">
     <div class="mb-8 text-center">
       <h1 class="text-2xl font-bold text-gray-800 dark:text-white">
-        Welcome Back
+        欢迎回来
       </h1>
       <p class="mt-2 text-gray-600 dark:text-gray-400">
-        Sign in to KUN OAuth Admin
+        登录 KUN OAuth 管理后台
       </p>
     </div>
 
@@ -51,18 +51,18 @@ onMounted(async () => {
       <div class="space-y-4">
         <KunInput
           v-model="email"
-          label="Email"
+          label="邮箱"
           type="email"
-          placeholder="Enter your email"
+          placeholder="请输入邮箱"
           required
           autofocus
         />
 
         <KunInput
           v-model="password"
-          label="Password"
+          label="密码"
           type="password"
-          placeholder="Enter your password"
+          placeholder="请输入密码"
           required
         />
 
@@ -81,7 +81,7 @@ onMounted(async () => {
             name="lucide:loader-2"
             class="mr-2 size-4 animate-spin"
           />
-          {{ isLoading ? 'Signing in...' : 'Sign In' }}
+          {{ isLoading ? '登录中...' : '登录' }}
         </KunButton>
       </div>
     </form>
@@ -91,13 +91,13 @@ onMounted(async () => {
         to="/auth/forgot-password"
         class="text-indigo-600 hover:underline"
       >
-        Forgot your password?
+        忘记密码？
       </NuxtLink>
 
       <p class="text-gray-600 dark:text-gray-400">
-        Don't have an account?
+        还没有账号？
         <NuxtLink to="/auth/register" class="text-indigo-600 hover:underline">
-          Sign up
+          立即注册
         </NuxtLink>
       </p>
     </div>

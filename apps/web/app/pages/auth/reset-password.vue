@@ -18,17 +18,17 @@ const handleSubmit = async () => {
   error.value = ''
 
   if (!token.value) {
-    error.value = 'Invalid reset link'
+    error.value = '无效的重置链接'
     return
   }
 
   if (password.value !== confirmPassword.value) {
-    error.value = 'Passwords do not match'
+    error.value = '两次输入的密码不一致'
     return
   }
 
   if (password.value.length < 6) {
-    error.value = 'Password must be at least 6 characters'
+    error.value = '密码长度至少为 6 位'
     return
   }
 
@@ -42,10 +42,10 @@ const handleSubmit = async () => {
         router.push('/auth/login')
       }, 3000)
     } else {
-      error.value = response.message || 'Failed to reset password'
+      error.value = response.message || '重置失败'
     }
   } catch (e: unknown) {
-    error.value = e instanceof Error ? e.message : 'Failed to reset password'
+    error.value = e instanceof Error ? e.message : '重置失败'
   } finally {
     isLoading.value = false
   }
@@ -53,7 +53,7 @@ const handleSubmit = async () => {
 
 onMounted(() => {
   if (!token.value) {
-    error.value = 'Invalid reset link. Please request a new one.'
+    error.value = '无效的重置链接，请重新申请。'
   }
 })
 </script>
@@ -62,11 +62,9 @@ onMounted(() => {
   <KunCard class="p-8">
     <div class="mb-8 text-center">
       <h1 class="text-2xl font-bold text-gray-800 dark:text-white">
-        Set New Password
+        设置新密码
       </h1>
-      <p class="mt-2 text-gray-600 dark:text-gray-400">
-        Enter your new password
-      </p>
+      <p class="mt-2 text-gray-600 dark:text-gray-400">请输入您的新密码</p>
     </div>
 
     <div v-if="success" class="text-center">
@@ -76,13 +74,13 @@ onMounted(() => {
         <Icon name="lucide:check" class="size-8 text-green-600" />
       </div>
       <h2 class="mb-2 text-lg font-semibold text-gray-800 dark:text-white">
-        Password Reset Successful
+        密码重置成功
       </h2>
       <p class="mb-6 text-gray-600 dark:text-gray-400">
-        Your password has been reset. Redirecting to login...
+        您的密码已重置，正在跳转到登录页面...
       </p>
       <NuxtLink to="/auth/login" class="text-indigo-600 hover:underline">
-        Go to login now
+        立即登录
       </NuxtLink>
     </div>
 
@@ -90,18 +88,18 @@ onMounted(() => {
       <div class="space-y-4">
         <KunInput
           v-model="password"
-          label="New Password"
+          label="新密码"
           type="password"
-          placeholder="Enter new password"
+          placeholder="请输入新密码"
           required
           autofocus
         />
 
         <KunInput
           v-model="confirmPassword"
-          label="Confirm Password"
+          label="确认密码"
           type="password"
-          placeholder="Confirm new password"
+          placeholder="请再次输入新密码"
           required
         />
 
@@ -120,7 +118,7 @@ onMounted(() => {
             name="lucide:loader-2"
             class="mr-2 size-4 animate-spin"
           />
-          {{ isLoading ? 'Resetting...' : 'Reset Password' }}
+          {{ isLoading ? '重置中...' : '重置密码' }}
         </KunButton>
       </div>
     </form>
@@ -130,7 +128,7 @@ onMounted(() => {
         to="/auth/forgot-password"
         class="text-indigo-600 hover:underline"
       >
-        Request new reset link
+        重新申请重置链接
       </NuxtLink>
     </div>
   </KunCard>

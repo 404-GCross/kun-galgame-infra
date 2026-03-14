@@ -17,12 +17,12 @@ const handleSubmit = async () => {
   error.value = ''
 
   if (password.value !== confirmPassword.value) {
-    error.value = 'Passwords do not match'
+    error.value = '两次输入的密码不一致'
     return
   }
 
   if (password.value.length < 6) {
-    error.value = 'Password must be at least 6 characters'
+    error.value = '密码长度至少为 6 位'
     return
   }
 
@@ -37,10 +37,10 @@ const handleSubmit = async () => {
     if (response.code === 0) {
       router.push('/auth/login?registered=true')
     } else {
-      error.value = response.message || 'Registration failed'
+      error.value = response.message || '注册失败'
     }
   } catch (e: unknown) {
-    error.value = e instanceof Error ? e.message : 'Registration failed'
+    error.value = e instanceof Error ? e.message : '注册失败'
   } finally {
     isLoading.value = false
   }
@@ -51,10 +51,10 @@ const handleSubmit = async () => {
   <KunCard class="p-8">
     <div class="mb-8 text-center">
       <h1 class="text-2xl font-bold text-gray-800 dark:text-white">
-        Create Account
+        创建账号
       </h1>
       <p class="mt-2 text-gray-600 dark:text-gray-400">
-        Join KUN Visual Novel community
+        加入 KUN Visual Novel 社区
       </p>
     </div>
 
@@ -62,34 +62,34 @@ const handleSubmit = async () => {
       <div class="space-y-4">
         <KunInput
           v-model="name"
-          label="Username"
+          label="用户名"
           type="text"
-          placeholder="Choose a username"
+          placeholder="请输入用户名"
           required
           autofocus
         />
 
         <KunInput
           v-model="email"
-          label="Email"
+          label="邮箱"
           type="email"
-          placeholder="Enter your email"
+          placeholder="请输入邮箱"
           required
         />
 
         <KunInput
           v-model="password"
-          label="Password"
+          label="密码"
           type="password"
-          placeholder="Create a password"
+          placeholder="请输入密码"
           required
         />
 
         <KunInput
           v-model="confirmPassword"
-          label="Confirm Password"
+          label="确认密码"
           type="password"
-          placeholder="Confirm your password"
+          placeholder="请再次输入密码"
           required
         />
 
@@ -108,16 +108,16 @@ const handleSubmit = async () => {
             name="lucide:loader-2"
             class="mr-2 size-4 animate-spin"
           />
-          {{ isLoading ? 'Creating account...' : 'Create Account' }}
+          {{ isLoading ? '注册中...' : '注册' }}
         </KunButton>
       </div>
     </form>
 
     <div class="mt-6 text-center text-sm">
       <p class="text-gray-600 dark:text-gray-400">
-        Already have an account?
+        已有账号？
         <NuxtLink to="/auth/login" class="text-indigo-600 hover:underline">
-          Sign in
+          立即登录
         </NuxtLink>
       </p>
     </div>

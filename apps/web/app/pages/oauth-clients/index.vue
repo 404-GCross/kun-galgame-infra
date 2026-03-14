@@ -49,15 +49,15 @@ onMounted(() => {
     <div class="flex items-center justify-between">
       <div>
         <h1 class="text-2xl font-bold text-gray-800 dark:text-white">
-          OAuth Clients
+          OAuth 客户端
         </h1>
         <p class="mt-1 text-gray-600 dark:text-gray-400">
-          Manage OAuth 2.0 client applications
+          管理 OAuth 2.0 客户端应用
         </p>
       </div>
       <KunButton color="primary" @click="showCreateModal = true">
         <Icon name="lucide:plus" class="mr-2 size-4" />
-        Create Client
+        创建客户端
       </KunButton>
     </div>
 
@@ -75,10 +75,10 @@ onMounted(() => {
     >
       <Icon name="lucide:key" class="mx-auto mb-4 size-12 text-gray-300" />
       <p class="text-gray-500 dark:text-gray-400">
-        No OAuth clients configured
+        暂无 OAuth 客户端配置
       </p>
       <p class="mt-1 text-sm text-gray-400">
-        Create a client to enable OAuth authentication
+        创建客户端以启用 OAuth 认证
       </p>
     </div>
 
@@ -110,7 +110,7 @@ onMounted(() => {
                   'mt-1 inline-flex rounded-full px-2 py-0.5 text-xs font-medium'
                 ]"
               >
-                {{ client.is_active ? 'Active' : 'Inactive' }}
+                {{ client.is_active ? '已启用' : '已禁用' }}
               </span>
             </div>
           </div>
@@ -126,7 +126,7 @@ onMounted(() => {
             class="flex items-center justify-between rounded-lg bg-gray-50 p-3 dark:bg-gray-900"
           >
             <div>
-              <p class="text-xs text-gray-500">Client ID</p>
+              <p class="text-xs text-gray-500">客户端 ID</p>
               <p class="font-mono text-sm text-gray-800 dark:text-gray-200">
                 {{ client.client_id }}
               </p>
@@ -140,14 +140,14 @@ onMounted(() => {
           </div>
 
           <div>
-            <p class="text-xs text-gray-500">Redirect URI</p>
+            <p class="text-xs text-gray-500">回调地址</p>
             <p class="text-sm text-gray-800 dark:text-gray-200">
               {{ client.redirect_uri }}
             </p>
           </div>
 
           <div>
-            <p class="text-xs text-gray-500">Scopes</p>
+            <p class="text-xs text-gray-500">权限范围</p>
             <div class="mt-1 flex flex-wrap gap-1">
               <span
                 v-for="scope in client.scopes"

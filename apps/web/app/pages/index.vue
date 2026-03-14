@@ -1,26 +1,39 @@
 <script setup lang="ts">
 definePageMeta({
-  middleware: ['auth', 'admin'],
+  middleware: ['auth', 'admin']
 })
 
 const auth = useAuth()
 
 const stats = ref([
-  { label: 'Total Users', value: '0', icon: 'lucide:users', color: 'bg-blue-500' },
-  { label: 'Active Sessions', value: '0', icon: 'lucide:activity', color: 'bg-green-500' },
-  { label: 'Sites', value: '3', icon: 'lucide:globe', color: 'bg-purple-500' },
-  { label: 'OAuth Clients', value: '0', icon: 'lucide:key', color: 'bg-orange-500' },
+  {
+    label: '用户总数',
+    value: '0',
+    icon: 'lucide:users',
+    color: 'bg-blue-500'
+  },
+  {
+    label: '活跃会话',
+    value: '0',
+    icon: 'lucide:activity',
+    color: 'bg-green-500'
+  },
+  { label: '站点数量', value: '3', icon: 'lucide:globe', color: 'bg-purple-500' },
+  {
+    label: 'OAuth 客户端',
+    value: '0',
+    icon: 'lucide:key',
+    color: 'bg-orange-500'
+  }
 ])
 </script>
 
 <template>
   <div class="space-y-6">
     <div>
-      <h1 class="text-2xl font-bold text-gray-800 dark:text-white">
-        Dashboard
-      </h1>
+      <h1 class="text-2xl font-bold text-gray-800 dark:text-white">仪表盘</h1>
       <p class="mt-1 text-gray-600 dark:text-gray-400">
-        Welcome back, {{ auth.user.value?.name }}
+        欢迎回来，{{ auth.user.value?.name }}
       </p>
     </div>
 
@@ -32,7 +45,12 @@ const stats = ref([
         class="rounded-xl bg-white p-6 shadow-sm dark:bg-gray-800"
       >
         <div class="flex items-center gap-4">
-          <div :class="[stat.color, 'flex size-12 items-center justify-center rounded-lg']">
+          <div
+            :class="[
+              stat.color,
+              'flex size-12 items-center justify-center rounded-lg'
+            ]"
+          >
             <Icon :name="stat.icon" class="size-6 text-white" />
           </div>
           <div>
@@ -50,7 +68,7 @@ const stats = ref([
     <!-- Quick Actions -->
     <div class="rounded-xl bg-white p-6 shadow-sm dark:bg-gray-800">
       <h2 class="mb-4 text-lg font-semibold text-gray-800 dark:text-white">
-        Quick Actions
+        快捷操作
       </h2>
       <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <NuxtLink
@@ -58,7 +76,7 @@ const stats = ref([
           class="flex items-center gap-3 rounded-lg border border-gray-200 p-4 transition-colors hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-700"
         >
           <Icon name="lucide:user-plus" class="size-5 text-blue-500" />
-          <span class="text-gray-700 dark:text-gray-300">Manage Users</span>
+          <span class="text-gray-700 dark:text-gray-300">用户管理</span>
         </NuxtLink>
 
         <NuxtLink
@@ -66,7 +84,7 @@ const stats = ref([
           class="flex items-center gap-3 rounded-lg border border-gray-200 p-4 transition-colors hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-700"
         >
           <Icon name="lucide:settings" class="size-5 text-purple-500" />
-          <span class="text-gray-700 dark:text-gray-300">Site Settings</span>
+          <span class="text-gray-700 dark:text-gray-300">站点设置</span>
         </NuxtLink>
 
         <NuxtLink
@@ -74,7 +92,7 @@ const stats = ref([
           class="flex items-center gap-3 rounded-lg border border-gray-200 p-4 transition-colors hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-700"
         >
           <Icon name="lucide:key" class="size-5 text-orange-500" />
-          <span class="text-gray-700 dark:text-gray-300">OAuth Clients</span>
+          <span class="text-gray-700 dark:text-gray-300">OAuth 客户端</span>
         </NuxtLink>
 
         <NuxtLink
@@ -82,7 +100,7 @@ const stats = ref([
           class="flex items-center gap-3 rounded-lg border border-gray-200 p-4 transition-colors hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-700"
         >
           <Icon name="lucide:shield" class="size-5 text-green-500" />
-          <span class="text-gray-700 dark:text-gray-300">Moderation</span>
+          <span class="text-gray-700 dark:text-gray-300">内容审核</span>
         </NuxtLink>
       </div>
     </div>
@@ -90,11 +108,11 @@ const stats = ref([
     <!-- Recent Activity -->
     <div class="rounded-xl bg-white p-6 shadow-sm dark:bg-gray-800">
       <h2 class="mb-4 text-lg font-semibold text-gray-800 dark:text-white">
-        Recent Activity
+        最近活动
       </h2>
-      <div class="text-center py-8 text-gray-500 dark:text-gray-400">
-        <Icon name="lucide:inbox" class="mx-auto size-12 mb-2 opacity-50" />
-        <p>No recent activity</p>
+      <div class="py-8 text-center text-gray-500 dark:text-gray-400">
+        <Icon name="lucide:inbox" class="mx-auto mb-2 size-12 opacity-50" />
+        <p>暂无活动记录</p>
       </div>
     </div>
   </div>

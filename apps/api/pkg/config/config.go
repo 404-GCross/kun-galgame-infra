@@ -76,7 +76,7 @@ func Load() (*Config, error) {
 		Host:       getEnv("KUN_FIBER_SERVER_HOST", "0.0.0.0"),
 		Port:       serverPort,
 		Env:        getEnv("KUN_ENV", "development"),
-		SiteURL:    getEnv("KUN_SITE_URL", "http://localhost:9277"),
+		SiteURL:    getEnv("KUN_SITE_URL", "http://127.0.0.1:9277"),
 		CORSOrigin: getEnv("KUN_FRONTEND_CORS_ORIGIN", "http://127.0.0.1:9420"),
 	}
 

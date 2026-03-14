@@ -4,12 +4,12 @@ const router = useRouter()
 const isSidebarCollapsed = ref(false)
 
 const menuItems = [
-  { icon: 'lucide:layout-dashboard', label: 'Dashboard', to: '/' },
-  { icon: 'lucide:users', label: 'Users', to: '/users' },
-  { icon: 'lucide:globe', label: 'Sites', to: '/sites' },
-  { icon: 'lucide:key', label: 'OAuth Clients', to: '/oauth-clients' },
-  { icon: 'lucide:gamepad-2', label: 'Games', to: '/games' },
-  { icon: 'lucide:shield', label: 'Moderation', to: '/moderation' },
+  { icon: 'lucide:layout-dashboard', label: '仪表盘', to: '/' },
+  { icon: 'lucide:users', label: '用户管理', to: '/users' },
+  { icon: 'lucide:globe', label: '站点管理', to: '/sites' },
+  { icon: 'lucide:key', label: 'OAuth 客户端', to: '/oauth-clients' },
+  { icon: 'lucide:gamepad-2', label: '游戏管理', to: '/games' },
+  { icon: 'lucide:shield', label: '内容审核', to: '/moderation' }
 ]
 
 const handleLogout = async () => {
@@ -36,8 +36,13 @@ onMounted(async () => {
       ]"
     >
       <!-- Logo -->
-      <div class="flex h-16 items-center justify-center border-b dark:border-gray-700">
-        <h1 v-if="!isSidebarCollapsed" class="text-xl font-bold text-indigo-600">
+      <div
+        class="flex h-16 items-center justify-center border-b dark:border-gray-700"
+      >
+        <h1
+          v-if="!isSidebarCollapsed"
+          class="text-xl font-bold text-indigo-600"
+        >
           KUN OAuth
         </h1>
         <Icon v-else name="lucide:key-round" class="size-8 text-indigo-600" />
@@ -62,17 +67,29 @@ onMounted(async () => {
         class="flex h-12 items-center justify-center border-t text-gray-500 transition-colors hover:text-indigo-600 dark:border-gray-700"
         @click="isSidebarCollapsed = !isSidebarCollapsed"
       >
-        <Icon :name="isSidebarCollapsed ? 'lucide:chevron-right' : 'lucide:chevron-left'" class="size-5" />
+        <Icon
+          :name="
+            isSidebarCollapsed ? 'lucide:chevron-right' : 'lucide:chevron-left'
+          "
+          class="size-5"
+        />
       </button>
     </aside>
 
     <!-- Main Content -->
-    <div :class="['flex flex-1 flex-col transition-all duration-300', isSidebarCollapsed ? 'ml-16' : 'ml-64']">
+    <div
+      :class="[
+        'flex flex-1 flex-col transition-all duration-300',
+        isSidebarCollapsed ? 'ml-16' : 'ml-64'
+      ]"
+    >
       <!-- Top Bar -->
-      <header class="sticky top-0 z-40 flex h-16 items-center justify-between border-b bg-white px-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+      <header
+        class="sticky top-0 z-40 flex h-16 items-center justify-between border-b bg-white px-6 shadow-sm dark:border-gray-700 dark:bg-gray-800"
+      >
         <div class="flex items-center gap-4">
           <h2 class="text-lg font-semibold text-gray-800 dark:text-white">
-            Admin Panel
+            管理后台
           </h2>
         </div>
 
@@ -89,7 +106,7 @@ onMounted(async () => {
             />
             <button
               class="rounded-lg p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-red-600 dark:hover:bg-gray-700"
-              title="Logout"
+              title="退出登录"
               @click="handleLogout"
             >
               <Icon name="lucide:log-out" class="size-5" />

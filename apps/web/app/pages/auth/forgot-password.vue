@@ -19,10 +19,10 @@ const handleSubmit = async () => {
     if (response.code === 0) {
       success.value = true
     } else {
-      error.value = response.message || 'Failed to send reset email'
+      error.value = response.message || '发送失败'
     }
   } catch (e: unknown) {
-    error.value = e instanceof Error ? e.message : 'Failed to send reset email'
+    error.value = e instanceof Error ? e.message : '发送失败'
   } finally {
     isLoading.value = false
   }
@@ -33,10 +33,10 @@ const handleSubmit = async () => {
   <KunCard class="p-8">
     <div class="mb-8 text-center">
       <h1 class="text-2xl font-bold text-gray-800 dark:text-white">
-        Reset Password
+        重置密码
       </h1>
       <p class="mt-2 text-gray-600 dark:text-gray-400">
-        Enter your email to receive a reset link
+        输入您的邮箱以接收重置链接
       </p>
     </div>
 
@@ -47,13 +47,13 @@ const handleSubmit = async () => {
         <Icon name="lucide:check" class="size-8 text-green-600" />
       </div>
       <h2 class="mb-2 text-lg font-semibold text-gray-800 dark:text-white">
-        Check Your Email
+        请检查您的邮箱
       </h2>
       <p class="mb-6 text-gray-600 dark:text-gray-400">
-        If an account exists with this email, we've sent a password reset link.
+        如果该邮箱已注册，我们已发送密码重置链接。
       </p>
       <NuxtLink to="/auth/login" class="text-indigo-600 hover:underline">
-        Back to login
+        返回登录
       </NuxtLink>
     </div>
 
@@ -61,9 +61,9 @@ const handleSubmit = async () => {
       <div class="space-y-4">
         <KunInput
           v-model="email"
-          label="Email"
+          label="邮箱"
           type="email"
-          placeholder="Enter your email"
+          placeholder="请输入邮箱"
           required
           autofocus
         />
@@ -83,14 +83,14 @@ const handleSubmit = async () => {
             name="lucide:loader-2"
             class="mr-2 size-4 animate-spin"
           />
-          {{ isLoading ? 'Sending...' : 'Send Reset Link' }}
+          {{ isLoading ? '发送中...' : '发送重置链接' }}
         </KunButton>
       </div>
     </form>
 
     <div v-if="!success" class="mt-6 text-center text-sm">
       <NuxtLink to="/auth/login" class="text-indigo-600 hover:underline">
-        Back to login
+        返回登录
       </NuxtLink>
     </div>
   </KunCard>

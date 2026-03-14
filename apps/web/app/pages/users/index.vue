@@ -39,11 +39,11 @@ const fetchUsers = async () => {
 const getStatusBadge = (status: number) => {
   switch (status) {
     case 0:
-      return { label: 'Active', class: 'bg-green-100 text-green-800' }
+      return { label: '正常', class: 'bg-green-100 text-green-800' }
     case 1:
-      return { label: 'Banned', class: 'bg-red-100 text-red-800' }
+      return { label: '已封禁', class: 'bg-red-100 text-red-800' }
     default:
-      return { label: 'Unknown', class: 'bg-gray-100 text-gray-800' }
+      return { label: '未知', class: 'bg-gray-100 text-gray-800' }
   }
 }
 
@@ -57,10 +57,10 @@ onMounted(() => {
     <div class="flex items-center justify-between">
       <div>
         <h1 class="text-2xl font-bold text-gray-800 dark:text-white">
-          Users
+          用户管理
         </h1>
         <p class="mt-1 text-gray-600 dark:text-gray-400">
-          Manage user accounts across all sites
+          管理所有站点的用户账号
         </p>
       </div>
     </div>
@@ -76,7 +76,7 @@ onMounted(() => {
           <input
             v-model="searchQuery"
             type="text"
-            placeholder="Search users..."
+            placeholder="搜索用户..."
             class="w-full rounded-lg border border-gray-200 py-2 pl-10 pr-4 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-gray-700 dark:bg-gray-900"
           />
         </div>
@@ -91,9 +91,9 @@ onMounted(() => {
 
       <div v-else-if="filteredUsers.length === 0" class="py-12 text-center">
         <Icon name="lucide:users" class="mx-auto mb-4 size-12 text-gray-300" />
-        <p class="text-gray-500 dark:text-gray-400">No users found</p>
+        <p class="text-gray-500 dark:text-gray-400">暂无用户</p>
         <p class="mt-1 text-sm text-gray-400">
-          Users will appear here after migration
+          用户数据将在迁移后显示在这里
         </p>
       </div>
 
@@ -101,22 +101,22 @@ onMounted(() => {
         <thead class="border-b bg-gray-50 dark:border-gray-700 dark:bg-gray-900">
           <tr>
             <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-              User
+              用户
             </th>
             <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-              Email
+              邮箱
             </th>
             <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-              Moemoepoint
+              萌萌点
             </th>
             <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-              Status
+              状态
             </th>
             <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-              Joined
+              注册时间
             </th>
             <th class="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">
-              Actions
+              操作
             </th>
           </tr>
         </thead>

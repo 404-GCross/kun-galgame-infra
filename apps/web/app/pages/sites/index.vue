@@ -40,14 +40,14 @@ onMounted(() => {
   <div class="space-y-6">
     <div class="flex items-center justify-between">
       <div>
-        <h1 class="text-2xl font-bold text-gray-800 dark:text-white">Sites</h1>
+        <h1 class="text-2xl font-bold text-gray-800 dark:text-white">站点管理</h1>
         <p class="mt-1 text-gray-600 dark:text-gray-400">
-          Manage connected sites and OAuth configurations
+          管理连接的站点和 OAuth 配置
         </p>
       </div>
       <KunButton color="primary">
         <Icon name="lucide:plus" class="mr-2 size-4" />
-        Add Site
+        添加站点
       </KunButton>
     </div>
 
@@ -64,7 +64,7 @@ onMounted(() => {
       class="rounded-xl bg-white py-12 text-center shadow-sm dark:bg-gray-800"
     >
       <Icon name="lucide:globe" class="mx-auto mb-4 size-12 text-gray-300" />
-      <p class="text-gray-500 dark:text-gray-400">No sites configured</p>
+      <p class="text-gray-500 dark:text-gray-400">暂无站点配置</p>
     </div>
 
     <div v-else class="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
@@ -103,13 +103,13 @@ onMounted(() => {
           class="mt-4 flex items-center justify-between border-t pt-4 dark:border-gray-700"
         >
           <span class="text-xs text-gray-500">
-            Created {{ new Date(site.created_at).toLocaleDateString() }}
+            创建于 {{ new Date(site.created_at).toLocaleDateString() }}
           </span>
           <NuxtLink
             :to="`/sites/${site.id}`"
             class="text-sm font-medium text-indigo-600 hover:underline"
           >
-            Configure
+            配置
           </NuxtLink>
         </div>
       </div>

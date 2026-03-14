@@ -51,10 +51,10 @@ onMounted(() => {
     <div class="flex items-center justify-between">
       <div>
         <h1 class="text-2xl font-bold text-gray-800 dark:text-white">
-          Games
+          游戏管理
         </h1>
         <p class="mt-1 text-gray-600 dark:text-gray-400">
-          Manage visual novel game entries
+          管理视觉小说游戏条目
         </p>
       </div>
     </div>
@@ -69,7 +69,7 @@ onMounted(() => {
         <input
           v-model="searchQuery"
           type="text"
-          placeholder="Search games..."
+          placeholder="搜索游戏..."
           class="w-full rounded-lg border border-gray-200 py-2 pl-10 pr-4 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-gray-700 dark:bg-gray-900"
         />
       </div>
@@ -82,7 +82,7 @@ onMounted(() => {
 
     <div v-else-if="filteredGames.length === 0" class="rounded-xl bg-white py-12 text-center shadow-sm dark:bg-gray-800">
       <Icon name="lucide:gamepad-2" class="mx-auto mb-4 size-12 text-gray-300" />
-      <p class="text-gray-500 dark:text-gray-400">No games found</p>
+      <p class="text-gray-500 dark:text-gray-400">暂无游戏</p>
     </div>
 
     <div v-else class="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
@@ -118,7 +118,7 @@ onMounted(() => {
               :to="`/games/${game.id}`"
               class="text-sm font-medium text-indigo-600 opacity-0 transition-opacity group-hover:opacity-100"
             >
-              View
+              查看
             </NuxtLink>
           </div>
         </div>
