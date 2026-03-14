@@ -20,4 +20,10 @@ export default defineNuxtConfig({
     // @ts-expect-error
     plugins: [tailwindcss()],
   },
+
+  runtimeConfig: {
+    public: {
+      apiBase: process.env.NUXT_PUBLIC_API_BASE || 'http://localhost:9277/api/v1',
+    },
+  },
 })
