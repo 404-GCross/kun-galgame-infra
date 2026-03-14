@@ -4,6 +4,7 @@ import (
 	"strconv"
 
 	"api/internal/platform/game/service"
+	"api/pkg/errors"
 	"api/pkg/response"
 	"api/pkg/utils"
 
@@ -29,7 +30,7 @@ func (h *GameHandler) List(c fiber.Ctx) error {
 
 	result, err := h.gameService.List(c.Context(), p)
 	if err != nil {
-		return response.InternalError(c, "failed to list games")
+		return response.InternalError(c, errors.ErrOperationFailed)
 	}
 
 	return response.Success(c, result)
@@ -40,12 +41,12 @@ func (h *GameHandler) Get(c fiber.Ctx) error {
 	idStr := c.Params("id")
 	id, err := strconv.ParseUint(idStr, 10, 32)
 	if err != nil {
-		return response.BadRequest(c, -1, "invalid id")
+		return response.BadRequest(c, errors.ErrInvalidID)
 	}
 
 	game, err := h.gameService.GetByID(c.Context(), uint(id))
 	if err != nil {
-		return response.NotFound(c, -1, "game not found")
+		return response.NotFound(c, errors.ErrGameNotFound)
 	}
 
 	return response.Success(c, game)

@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	authService "api/internal/platform/auth/service"
+	"api/pkg/errors"
 
 	"github.com/gofiber/fiber/v3"
 )
@@ -15,8 +16,8 @@ func Auth(authSvc *authService.AuthService) fiber.Handler {
 		authHeader := c.Get("Authorization")
 		if authHeader == "" {
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-				"code":    401,
-				"message": "missing authorization header",
+				"code":    errors.ErrAuthUnauthorized,
+				"message": errors.GetMessage(errors.ErrAuthUnauthorized),
 			})
 		}
 
@@ -24,8 +25,8 @@ func Auth(authSvc *authService.AuthService) fiber.Handler {
 		parts := strings.SplitN(authHeader, " ", 2)
 		if len(parts) != 2 || parts[0] != "Bearer" {
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-				"code":    401,
-				"message": "invalid authorization header format",
+				"code":    errors.ErrAuthInvalidToken,
+				"message": errors.GetMessage(errors.ErrAuthInvalidToken),
 			})
 		}
 
@@ -35,8 +36,8 @@ func Auth(authSvc *authService.AuthService) fiber.Handler {
 		claims, err := authSvc.ValidateAccessToken(token)
 		if err != nil {
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-				"code":    401,
-				"message": "invalid or expired token",
+				"code":    errors.ErrAuthTokenExpired,
+				"message": errors.GetMessage(errors.ErrAuthTokenExpired),
 			})
 		}
 

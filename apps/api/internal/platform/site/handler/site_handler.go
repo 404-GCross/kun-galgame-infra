@@ -4,6 +4,7 @@ import (
 	"strconv"
 
 	"api/internal/platform/site/service"
+	"api/pkg/errors"
 	"api/pkg/response"
 
 	"github.com/gofiber/fiber/v3"
@@ -23,7 +24,7 @@ func NewSiteHandler(siteService *service.SiteService) *SiteHandler {
 func (h *SiteHandler) List(c fiber.Ctx) error {
 	sites, err := h.siteService.List(c.Context())
 	if err != nil {
-		return response.InternalError(c, "failed to list sites")
+		return response.InternalError(c, errors.ErrOperationFailed)
 	}
 	return response.Success(c, sites)
 }
@@ -33,12 +34,12 @@ func (h *SiteHandler) Get(c fiber.Ctx) error {
 	idStr := c.Params("id")
 	id, err := strconv.ParseUint(idStr, 10, 32)
 	if err != nil {
-		return response.BadRequest(c, -1, "invalid id")
+		return response.BadRequest(c, errors.ErrInvalidID)
 	}
 
 	site, err := h.siteService.GetByID(c.Context(), uint(id))
 	if err != nil {
-		return response.NotFound(c, -1, "site not found")
+		return response.NotFound(c, errors.ErrSiteNotFound)
 	}
 
 	return response.Success(c, site)
@@ -61,11 +62,11 @@ func (h *SiteHandler) Delete(c fiber.Ctx) error {
 	idStr := c.Params("id")
 	id, err := strconv.ParseUint(idStr, 10, 32)
 	if err != nil {
-		return response.BadRequest(c, -1, "invalid id")
+		return response.BadRequest(c, errors.ErrInvalidID)
 	}
 
 	if err := h.siteService.Delete(c.Context(), uint(id)); err != nil {
-		return response.InternalError(c, "failed to delete site")
+		return response.InternalError(c, errors.ErrOperationFailed)
 	}
 
 	return response.Success(c, nil)
@@ -75,7 +76,7 @@ func (h *SiteHandler) Delete(c fiber.Ctx) error {
 func (h *SiteHandler) ListClients(c fiber.Ctx) error {
 	clients, err := h.siteService.ListOAuthClients(c.Context())
 	if err != nil {
-		return response.InternalError(c, "failed to list oauth clients")
+		return response.InternalError(c, errors.ErrOperationFailed)
 	}
 	return response.Success(c, clients)
 }

@@ -5,6 +5,7 @@ import (
 
 	"api/internal/platform/moderation/model"
 	"api/internal/platform/moderation/service"
+	"api/pkg/errors"
 	"api/pkg/response"
 	"api/pkg/utils"
 
@@ -30,7 +31,7 @@ func (h *ModerationHandler) ListJobs(c fiber.Ctx) error {
 
 	result, err := h.moderationService.ListJobs(c.Context(), p)
 	if err != nil {
-		return response.InternalError(c, "failed to list jobs")
+		return response.InternalError(c, errors.ErrOperationFailed)
 	}
 
 	return response.Success(c, result)
@@ -41,12 +42,12 @@ func (h *ModerationHandler) GetJob(c fiber.Ctx) error {
 	idStr := c.Params("id")
 	id, err := strconv.ParseUint(idStr, 10, 32)
 	if err != nil {
-		return response.BadRequest(c, -1, "invalid id")
+		return response.BadRequest(c, errors.ErrInvalidID)
 	}
 
 	job, err := h.moderationService.GetJob(c.Context(), uint(id))
 	if err != nil {
-		return response.NotFound(c, -1, "job not found")
+		return response.NotFound(c, errors.ErrModerationNotFound)
 	}
 
 	return response.Success(c, job)
@@ -57,20 +58,20 @@ func (h *ModerationHandler) ManualReview(c fiber.Ctx) error {
 	idStr := c.Params("id")
 	id, err := strconv.ParseUint(idStr, 10, 32)
 	if err != nil {
-		return response.BadRequest(c, -1, "invalid id")
+		return response.BadRequest(c, errors.ErrInvalidID)
 	}
 
 	var req struct {
 		Decision string `json:"decision" validate:"required,oneof=approved rejected"`
 	}
 	if err := c.Bind().JSON(&req); err != nil {
-		return response.BadRequest(c, -1, "invalid request body")
+		return response.BadRequest(c, errors.ErrBadRequest)
 	}
 
 	reviewerUUID := c.Locals("user_uuid").(string)
 
 	if err := h.moderationService.ManualReview(c.Context(), uint(id), model.Decision(req.Decision), reviewerUUID); err != nil {
-		return response.InternalError(c, "failed to review job")
+		return response.InternalError(c, errors.ErrOperationFailed)
 	}
 
 	return response.Success(c, nil)

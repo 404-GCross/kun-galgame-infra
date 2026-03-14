@@ -1,6 +1,7 @@
 package errors
 
 // 错误码按模块分段
+// 1-999: 通用错误
 // 10000-19999: Auth
 // 15000-15999: OAuth
 // 20000-29999: Game
@@ -11,6 +12,18 @@ package errors
 // 70000-79999: Site
 
 const (
+	// 通用错误 (1-999)
+	ErrBadRequest       = 1  // 请求格式错误
+	ErrInvalidID        = 2  // 无效的 ID
+	ErrInternalServer   = 3  // 服务器内部错误
+	ErrNotFound         = 4  // 资源不存在
+	ErrForbidden        = 5  // 访问被拒绝
+	ErrTooManyRequests  = 6  // 请求过于频繁
+	ErrValidationFailed = 7  // 参数验证失败
+	ErrMissingParam     = 8  // 缺少必要参数
+	ErrInvalidParam     = 9  // 参数格式错误
+	ErrOperationFailed  = 10 // 操作失败
+
 	// Auth (10000-19999)
 	ErrAuthUnauthorized     = 10001
 	ErrAuthInvalidToken     = 10002
@@ -66,49 +79,62 @@ const (
 
 // 错误码到消息的映射
 var codeMessages = map[int]string{
-	ErrAuthUnauthorized:     "unauthorized",
-	ErrAuthInvalidToken:     "invalid token",
-	ErrAuthTokenExpired:     "token expired",
-	ErrAuthInvalidPassword:  "invalid password",
-	ErrAuthUserNotFound:     "user not found",
-	ErrAuthEmailExists:      "email already exists",
-	ErrAuthNameExists:       "username already exists",
-	ErrAuthPasswordRequired: "password reset required",
-	ErrAuthInvalidEmail:     "invalid email format",
-	ErrAuthCodeInvalid:      "invalid verification code",
-	ErrAuthCodeExpired:      "verification code expired",
+	// 通用错误
+	ErrBadRequest:       "请求格式错误",
+	ErrInvalidID:        "无效的 ID",
+	ErrInternalServer:   "服务器内部错误",
+	ErrNotFound:         "资源不存在",
+	ErrForbidden:        "访问被拒绝",
+	ErrTooManyRequests:  "请求过于频繁",
+	ErrValidationFailed: "参数验证失败",
+	ErrMissingParam:     "缺少必要参数",
+	ErrInvalidParam:     "参数格式错误",
+	ErrOperationFailed:  "操作失败",
 
-	ErrOAuthInvalidClient:       "invalid client",
-	ErrOAuthInvalidRedirectURI:  "invalid redirect uri",
-	ErrOAuthInvalidCode:         "invalid authorization code",
-	ErrOAuthInvalidCodeVerifier: "invalid code verifier",
-	ErrOAuthInvalidGrant:        "invalid grant type",
-	ErrOAuthInvalidScope:        "invalid scope",
-	ErrOAuthAccessDenied:        "access denied",
+	// Auth
+	ErrAuthUnauthorized:     "未授权，请先登录",
+	ErrAuthInvalidToken:     "无效的令牌",
+	ErrAuthTokenExpired:     "令牌已过期，请重新登录",
+	ErrAuthInvalidPassword:  "邮箱或密码错误",
+	ErrAuthUserNotFound:     "用户不存在",
+	ErrAuthEmailExists:      "该邮箱已被注册",
+	ErrAuthNameExists:       "该用户名已被使用",
+	ErrAuthPasswordRequired: "需要重置密码",
+	ErrAuthInvalidEmail:     "邮箱格式不正确",
+	ErrAuthCodeInvalid:      "验证码无效",
+	ErrAuthCodeExpired:      "验证码已过期",
 
-	ErrGameNotFound:         "game not found",
-	ErrGameAlreadyExists:    "game already exists",
-	ErrGameRevisionConflict: "game revision conflict",
-	ErrGameTagNotFound:      "game tag not found",
+	ErrOAuthInvalidClient:       "无效的客户端",
+	ErrOAuthInvalidRedirectURI:  "无效的回调地址",
+	ErrOAuthInvalidCode:         "无效的授权码",
+	ErrOAuthInvalidCodeVerifier: "无效的代码验证器",
+	ErrOAuthInvalidGrant:        "无效的授权类型",
+	ErrOAuthInvalidScope:        "无效的权限范围",
+	ErrOAuthAccessDenied:        "访问被拒绝",
 
-	ErrContentNotFound:  "content not found",
-	ErrContentForbidden: "content access forbidden",
+	ErrGameNotFound:         "游戏不存在",
+	ErrGameAlreadyExists:    "游戏已存在",
+	ErrGameRevisionConflict: "游戏版本冲突",
+	ErrGameTagNotFound:      "游戏标签不存在",
 
-	ErrCommentNotFound:  "comment not found",
-	ErrCommentForbidden: "comment access forbidden",
+	ErrContentNotFound:  "内容不存在",
+	ErrContentForbidden: "无权访问该内容",
 
-	ErrArtifactNotFound:   "artifact not found",
-	ErrArtifactInvalid:    "invalid artifact",
-	ErrArtifactVirusFound: "virus detected in artifact",
-	ErrArtifactTooBig:     "artifact too large",
-	ErrArtifactProcessing: "artifact is being processed",
+	ErrCommentNotFound:  "评论不存在",
+	ErrCommentForbidden: "无权操作该评论",
 
-	ErrModerationPending:  "content pending moderation",
-	ErrModerationRejected: "content rejected by moderation",
-	ErrModerationNotFound: "moderation job not found",
+	ErrArtifactNotFound:   "资源不存在",
+	ErrArtifactInvalid:    "无效的资源",
+	ErrArtifactVirusFound: "检测到病毒文件",
+	ErrArtifactTooBig:     "文件过大",
+	ErrArtifactProcessing: "资源正在处理中",
 
-	ErrSiteNotFound:      "site not found",
-	ErrSiteAlreadyExists: "site already exists",
+	ErrModerationPending:  "内容待审核",
+	ErrModerationRejected: "内容审核未通过",
+	ErrModerationNotFound: "审核任务不存在",
+
+	ErrSiteNotFound:      "站点不存在",
+	ErrSiteAlreadyExists: "站点已存在",
 }
 
 // GetMessage returns the message for an error code
@@ -116,5 +142,5 @@ func GetMessage(code int) string {
 	if msg, ok := codeMessages[code]; ok {
 		return msg
 	}
-	return "unknown error"
+	return "未知错误"
 }

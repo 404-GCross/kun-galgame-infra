@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"api/internal/infrastructure/cache"
+	"api/pkg/errors"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/limiter"
@@ -19,8 +20,8 @@ func RateLimit(redisCache *cache.RedisCache) fiber.Handler {
 		},
 		LimitReached: func(c fiber.Ctx) error {
 			return c.Status(fiber.StatusTooManyRequests).JSON(fiber.Map{
-				"code":    429,
-				"message": "too many requests",
+				"code":    errors.ErrTooManyRequests,
+				"message": errors.GetMessage(errors.ErrTooManyRequests),
 			})
 		},
 	}
@@ -43,8 +44,8 @@ func StrictRateLimit(redisCache *cache.RedisCache) fiber.Handler {
 		},
 		LimitReached: func(c fiber.Ctx) error {
 			return c.Status(fiber.StatusTooManyRequests).JSON(fiber.Map{
-				"code":    429,
-				"message": "too many requests, please try again later",
+				"code":    errors.ErrTooManyRequests,
+				"message": errors.GetMessage(errors.ErrTooManyRequests),
 			})
 		},
 	}

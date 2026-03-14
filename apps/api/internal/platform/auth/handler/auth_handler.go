@@ -24,19 +24,19 @@ func NewAuthHandler(authService *service.AuthService) *AuthHandler {
 func (h *AuthHandler) Register(c fiber.Ctx) error {
 	var req dto.RegisterRequest
 	if err := c.Bind().JSON(&req); err != nil {
-		return response.BadRequest(c, -1, "invalid request body")
+		return response.BadRequest(c, errors.ErrBadRequest)
 	}
 
 	if err := utils.Validate(&req); err != nil {
-		return response.BadRequest(c, -1, err.Error())
+		return response.BadRequestMsg(c, errors.ErrValidationFailed, err.Error())
 	}
 
 	user, err := h.authService.Register(c.Context(), &req)
 	if err != nil {
 		if appErr, ok := err.(*errors.AppError); ok {
-			return response.BadRequest(c, appErr.Code, appErr.Message)
+			return response.BadRequest(c, appErr.Code)
 		}
-		return response.InternalError(c, "failed to register")
+		return response.InternalError(c, errors.ErrOperationFailed)
 	}
 
 	return response.Success(c, dto.UserResponse{
@@ -55,11 +55,11 @@ func (h *AuthHandler) Register(c fiber.Ctx) error {
 func (h *AuthHandler) Login(c fiber.Ctx) error {
 	var req dto.LoginRequest
 	if err := c.Bind().JSON(&req); err != nil {
-		return response.BadRequest(c, -1, "invalid request body")
+		return response.BadRequest(c, errors.ErrBadRequest)
 	}
 
 	if err := utils.Validate(&req); err != nil {
-		return response.BadRequest(c, -1, err.Error())
+		return response.BadRequestMsg(c, errors.ErrValidationFailed, err.Error())
 	}
 
 	// Set user agent and IP
@@ -69,9 +69,9 @@ func (h *AuthHandler) Login(c fiber.Ctx) error {
 	tokens, user, err := h.authService.Login(c.Context(), &req)
 	if err != nil {
 		if appErr, ok := err.(*errors.AppError); ok {
-			return response.Unauthorized(c, appErr.Code, appErr.Message)
+			return response.Unauthorized(c, appErr.Code)
 		}
-		return response.InternalError(c, "failed to login")
+		return response.InternalError(c, errors.ErrOperationFailed)
 	}
 
 	return response.Success(c, dto.LoginResponse{
@@ -110,15 +110,15 @@ func (h *AuthHandler) Logout(c fiber.Ctx) error {
 func (h *AuthHandler) Refresh(c fiber.Ctx) error {
 	var req dto.RefreshRequest
 	if err := c.Bind().JSON(&req); err != nil {
-		return response.BadRequest(c, -1, "invalid request body")
+		return response.BadRequest(c, errors.ErrBadRequest)
 	}
 
 	tokens, err := h.authService.RefreshToken(c.Context(), req.RefreshToken)
 	if err != nil {
 		if appErr, ok := err.(*errors.AppError); ok {
-			return response.Unauthorized(c, appErr.Code, appErr.Message)
+			return response.Unauthorized(c, appErr.Code)
 		}
-		return response.InternalError(c, "failed to refresh token")
+		return response.InternalError(c, errors.ErrOperationFailed)
 	}
 
 	return response.Success(c, tokens)
@@ -130,7 +130,7 @@ func (h *AuthHandler) Me(c fiber.Ctx) error {
 
 	user, err := h.authService.GetCurrentUser(c.Context(), userUUID)
 	if err != nil {
-		return response.NotFound(c, errors.ErrAuthUserNotFound, "user not found")
+		return response.NotFound(c, errors.ErrAuthUserNotFound)
 	}
 
 	return response.Success(c, dto.UserResponse{
@@ -149,74 +149,74 @@ func (h *AuthHandler) Me(c fiber.Ctx) error {
 func (h *AuthHandler) ChangePassword(c fiber.Ctx) error {
 	var req dto.ChangePasswordRequest
 	if err := c.Bind().JSON(&req); err != nil {
-		return response.BadRequest(c, -1, "invalid request body")
+		return response.BadRequest(c, errors.ErrBadRequest)
 	}
 
 	if err := utils.Validate(&req); err != nil {
-		return response.BadRequest(c, -1, err.Error())
+		return response.BadRequestMsg(c, errors.ErrValidationFailed, err.Error())
 	}
 
 	userUUID := c.Locals("user_uuid").(string)
 
 	if err := h.authService.ChangePassword(c.Context(), userUUID, req.OldPassword, req.NewPassword); err != nil {
 		if appErr, ok := err.(*errors.AppError); ok {
-			return response.BadRequest(c, appErr.Code, appErr.Message)
+			return response.BadRequest(c, appErr.Code)
 		}
-		return response.InternalError(c, "failed to change password")
+		return response.InternalError(c, errors.ErrOperationFailed)
 	}
 
-	return response.SuccessWithMessage(c, "password changed successfully", nil)
+	return response.SuccessWithMessage(c, "密码修改成功", nil)
 }
 
 // ForgotPassword handles forgot password request
 func (h *AuthHandler) ForgotPassword(c fiber.Ctx) error {
 	var req dto.ForgotPasswordRequest
 	if err := c.Bind().JSON(&req); err != nil {
-		return response.BadRequest(c, -1, "invalid request body")
+		return response.BadRequest(c, errors.ErrBadRequest)
 	}
 
 	if err := utils.Validate(&req); err != nil {
-		return response.BadRequest(c, -1, err.Error())
+		return response.BadRequestMsg(c, errors.ErrValidationFailed, err.Error())
 	}
 
 	// Call service - ignore errors for security (don't reveal if email exists)
 	_ = h.authService.ForgotPassword(c.Context(), req.Email)
 
 	// For security, always return success even if email doesn't exist
-	return response.SuccessWithMessage(c, "if the email exists, a password reset link has been sent", nil)
+	return response.SuccessWithMessage(c, "如果该邮箱已注册，我们已发送密码重置链接", nil)
 }
 
 // ResetPassword handles password reset
 func (h *AuthHandler) ResetPassword(c fiber.Ctx) error {
 	var req dto.ResetPasswordRequest
 	if err := c.Bind().JSON(&req); err != nil {
-		return response.BadRequest(c, -1, "invalid request body")
+		return response.BadRequest(c, errors.ErrBadRequest)
 	}
 
 	if err := utils.Validate(&req); err != nil {
-		return response.BadRequest(c, -1, err.Error())
+		return response.BadRequestMsg(c, errors.ErrValidationFailed, err.Error())
 	}
 
 	if err := h.authService.ResetPassword(c.Context(), req.Token, req.Password); err != nil {
 		if appErr, ok := err.(*errors.AppError); ok {
-			return response.BadRequest(c, appErr.Code, appErr.Message)
+			return response.BadRequest(c, appErr.Code)
 		}
-		return response.BadRequest(c, -1, "invalid or expired reset token")
+		return response.BadRequest(c, errors.ErrAuthCodeInvalid)
 	}
 
-	return response.SuccessWithMessage(c, "password reset successfully", nil)
+	return response.SuccessWithMessage(c, "密码重置成功", nil)
 }
 
 // GetProfile gets a user profile by UUID
 func (h *AuthHandler) GetProfile(c fiber.Ctx) error {
 	uuid := c.Params("uuid")
 	if uuid == "" {
-		return response.BadRequest(c, -1, "uuid is required")
+		return response.BadRequest(c, errors.ErrMissingParam)
 	}
 
 	user, err := h.authService.GetCurrentUser(c.Context(), uuid)
 	if err != nil {
-		return response.NotFound(c, errors.ErrAuthUserNotFound, "user not found")
+		return response.NotFound(c, errors.ErrAuthUserNotFound)
 	}
 
 	return response.Success(c, dto.UserResponse{

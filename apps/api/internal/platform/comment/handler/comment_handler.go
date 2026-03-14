@@ -4,6 +4,7 @@ import (
 	"strconv"
 
 	"api/internal/platform/comment/service"
+	"api/pkg/errors"
 	"api/pkg/response"
 
 	"github.com/gofiber/fiber/v3"
@@ -42,11 +43,11 @@ func (h *CommentHandler) Delete(c fiber.Ctx) error {
 	idStr := c.Params("id")
 	id, err := strconv.ParseUint(idStr, 10, 32)
 	if err != nil {
-		return response.BadRequest(c, -1, "invalid id")
+		return response.BadRequest(c, errors.ErrInvalidID)
 	}
 
 	if err := h.commentService.Delete(c.Context(), uint(id)); err != nil {
-		return response.InternalError(c, "failed to delete comment")
+		return response.InternalError(c, errors.ErrOperationFailed)
 	}
 
 	return response.Success(c, nil)

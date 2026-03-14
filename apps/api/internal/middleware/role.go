@@ -1,6 +1,10 @@
 package middleware
 
 import (
+	"slices"
+
+	"api/pkg/errors"
+
 	"github.com/gofiber/fiber/v3"
 )
 
@@ -10,23 +14,21 @@ func RequireRole(roles ...string) fiber.Handler {
 		userRoles, ok := c.Locals("user_roles").([]string)
 		if !ok {
 			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
-				"code":    403,
-				"message": "access denied",
+				"code":    errors.ErrForbidden,
+				"message": errors.GetMessage(errors.ErrForbidden),
 			})
 		}
 
 		// Check if user has any of the required roles
 		for _, required := range roles {
-			for _, userRole := range userRoles {
-				if userRole == required {
-					return c.Next()
-				}
+			if slices.Contains(userRoles, required) {
+				return c.Next()
 			}
 		}
 
 		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
-			"code":    403,
-			"message": "insufficient permissions",
+			"code":    errors.ErrForbidden,
+			"message": errors.GetMessage(errors.ErrForbidden),
 		})
 	}
 }
@@ -37,8 +39,8 @@ func RequireOwnerOrRole(ownerUUIDKey string, roles ...string) fiber.Handler {
 		userUUID, ok := c.Locals("user_uuid").(string)
 		if !ok {
 			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
-				"code":    403,
-				"message": "access denied",
+				"code":    errors.ErrForbidden,
+				"message": errors.GetMessage(errors.ErrForbidden),
 			})
 		}
 
@@ -52,17 +54,15 @@ func RequireOwnerOrRole(ownerUUIDKey string, roles ...string) fiber.Handler {
 		userRoles, ok := c.Locals("user_roles").([]string)
 		if ok {
 			for _, required := range roles {
-				for _, userRole := range userRoles {
-					if userRole == required {
-						return c.Next()
-					}
+				if slices.Contains(userRoles, required) {
+					return c.Next()
 				}
 			}
 		}
 
 		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
-			"code":    403,
-			"message": "insufficient permissions",
+			"code":    errors.ErrForbidden,
+			"message": errors.GetMessage(errors.ErrForbidden),
 		})
 	}
 }

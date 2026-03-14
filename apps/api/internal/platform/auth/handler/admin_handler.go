@@ -24,12 +24,12 @@ func NewAdminHandler(adminService *service.AdminService) *AdminHandler {
 func (h *AdminHandler) ListUsers(c fiber.Ctx) error {
 	var req dto.UserListRequest
 	if err := c.Bind().Query(&req); err != nil {
-		return response.BadRequest(c, -1, "invalid request parameters")
+		return response.BadRequest(c, errors.ErrBadRequest)
 	}
 
 	result, err := h.adminService.ListUsers(c.Context(), &req)
 	if err != nil {
-		return response.InternalError(c, "failed to list users")
+		return response.InternalError(c, errors.ErrOperationFailed)
 	}
 
 	return response.Success(c, result)
@@ -39,15 +39,15 @@ func (h *AdminHandler) ListUsers(c fiber.Ctx) error {
 func (h *AdminHandler) GetUser(c fiber.Ctx) error {
 	uuid := c.Params("uuid")
 	if uuid == "" {
-		return response.BadRequest(c, -1, "uuid is required")
+		return response.BadRequest(c, errors.ErrMissingParam)
 	}
 
 	user, err := h.adminService.GetUser(c.Context(), uuid)
 	if err != nil {
 		if appErr, ok := err.(*errors.AppError); ok {
-			return response.NotFound(c, appErr.Code, appErr.Message)
+			return response.NotFound(c, appErr.Code)
 		}
-		return response.InternalError(c, "failed to get user")
+		return response.InternalError(c, errors.ErrOperationFailed)
 	}
 
 	return response.Success(c, user)
@@ -57,24 +57,24 @@ func (h *AdminHandler) GetUser(c fiber.Ctx) error {
 func (h *AdminHandler) UpdateUser(c fiber.Ctx) error {
 	uuid := c.Params("uuid")
 	if uuid == "" {
-		return response.BadRequest(c, -1, "uuid is required")
+		return response.BadRequest(c, errors.ErrMissingParam)
 	}
 
 	var req dto.UpdateUserRequest
 	if err := c.Bind().JSON(&req); err != nil {
-		return response.BadRequest(c, -1, "invalid request body")
+		return response.BadRequest(c, errors.ErrBadRequest)
 	}
 
 	if err := utils.Validate(&req); err != nil {
-		return response.BadRequest(c, -1, err.Error())
+		return response.BadRequestMsg(c, errors.ErrValidationFailed, err.Error())
 	}
 
 	user, err := h.adminService.UpdateUser(c.Context(), uuid, &req)
 	if err != nil {
 		if appErr, ok := err.(*errors.AppError); ok {
-			return response.BadRequest(c, appErr.Code, appErr.Message)
+			return response.BadRequest(c, appErr.Code)
 		}
-		return response.InternalError(c, "failed to update user")
+		return response.InternalError(c, errors.ErrOperationFailed)
 	}
 
 	return response.Success(c, dto.UserResponse{
@@ -93,49 +93,49 @@ func (h *AdminHandler) UpdateUser(c fiber.Ctx) error {
 func (h *AdminHandler) BanUser(c fiber.Ctx) error {
 	uuid := c.Params("uuid")
 	if uuid == "" {
-		return response.BadRequest(c, -1, "uuid is required")
+		return response.BadRequest(c, errors.ErrMissingParam)
 	}
 
 	if err := h.adminService.BanUser(c.Context(), uuid); err != nil {
 		if appErr, ok := err.(*errors.AppError); ok {
-			return response.NotFound(c, appErr.Code, appErr.Message)
+			return response.NotFound(c, appErr.Code)
 		}
-		return response.InternalError(c, "failed to ban user")
+		return response.InternalError(c, errors.ErrOperationFailed)
 	}
 
-	return response.SuccessWithMessage(c, "user banned successfully", nil)
+	return response.SuccessWithMessage(c, "用户已封禁", nil)
 }
 
 // UnbanUser unbans a user
 func (h *AdminHandler) UnbanUser(c fiber.Ctx) error {
 	uuid := c.Params("uuid")
 	if uuid == "" {
-		return response.BadRequest(c, -1, "uuid is required")
+		return response.BadRequest(c, errors.ErrMissingParam)
 	}
 
 	if err := h.adminService.UnbanUser(c.Context(), uuid); err != nil {
 		if appErr, ok := err.(*errors.AppError); ok {
-			return response.NotFound(c, appErr.Code, appErr.Message)
+			return response.NotFound(c, appErr.Code)
 		}
-		return response.InternalError(c, "failed to unban user")
+		return response.InternalError(c, errors.ErrOperationFailed)
 	}
 
-	return response.SuccessWithMessage(c, "user unbanned successfully", nil)
+	return response.SuccessWithMessage(c, "用户已解封", nil)
 }
 
 // DeleteUserSessions deletes all sessions for a user (force logout)
 func (h *AdminHandler) DeleteUserSessions(c fiber.Ctx) error {
 	uuid := c.Params("uuid")
 	if uuid == "" {
-		return response.BadRequest(c, -1, "uuid is required")
+		return response.BadRequest(c, errors.ErrMissingParam)
 	}
 
 	if err := h.adminService.DeleteUserSessions(c.Context(), uuid); err != nil {
 		if appErr, ok := err.(*errors.AppError); ok {
-			return response.NotFound(c, appErr.Code, appErr.Message)
+			return response.NotFound(c, appErr.Code)
 		}
-		return response.InternalError(c, "failed to delete sessions")
+		return response.InternalError(c, errors.ErrOperationFailed)
 	}
 
-	return response.SuccessWithMessage(c, "user sessions deleted successfully", nil)
+	return response.SuccessWithMessage(c, "用户会话已清除", nil)
 }

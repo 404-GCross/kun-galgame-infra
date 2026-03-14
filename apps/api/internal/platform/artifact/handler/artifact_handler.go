@@ -4,6 +4,7 @@ import (
 	"strconv"
 
 	"api/internal/platform/artifact/service"
+	"api/pkg/errors"
 	"api/pkg/response"
 	"api/pkg/utils"
 
@@ -29,7 +30,7 @@ func (h *ArtifactHandler) List(c fiber.Ctx) error {
 
 	result, err := h.artifactService.List(c.Context(), p)
 	if err != nil {
-		return response.InternalError(c, "failed to list artifacts")
+		return response.InternalError(c, errors.ErrOperationFailed)
 	}
 
 	return response.Success(c, result)
@@ -40,12 +41,12 @@ func (h *ArtifactHandler) Get(c fiber.Ctx) error {
 	idStr := c.Params("id")
 	id, err := strconv.ParseUint(idStr, 10, 32)
 	if err != nil {
-		return response.BadRequest(c, -1, "invalid id")
+		return response.BadRequest(c, errors.ErrInvalidID)
 	}
 
 	artifact, err := h.artifactService.GetByID(c.Context(), uint(id))
 	if err != nil {
-		return response.NotFound(c, -1, "artifact not found")
+		return response.NotFound(c, errors.ErrArtifactNotFound)
 	}
 
 	return response.Success(c, artifact)
@@ -62,11 +63,11 @@ func (h *ArtifactHandler) Delete(c fiber.Ctx) error {
 	idStr := c.Params("id")
 	id, err := strconv.ParseUint(idStr, 10, 32)
 	if err != nil {
-		return response.BadRequest(c, -1, "invalid id")
+		return response.BadRequest(c, errors.ErrInvalidID)
 	}
 
 	if err := h.artifactService.Delete(c.Context(), uint(id)); err != nil {
-		return response.InternalError(c, "failed to delete artifact")
+		return response.InternalError(c, errors.ErrOperationFailed)
 	}
 
 	return response.Success(c, nil)
@@ -77,12 +78,12 @@ func (h *ArtifactHandler) Download(c fiber.Ctx) error {
 	idStr := c.Params("id")
 	id, err := strconv.ParseUint(idStr, 10, 32)
 	if err != nil {
-		return response.BadRequest(c, -1, "invalid id")
+		return response.BadRequest(c, errors.ErrInvalidID)
 	}
 
 	artifact, err := h.artifactService.GetByID(c.Context(), uint(id))
 	if err != nil {
-		return response.NotFound(c, -1, "artifact not found")
+		return response.NotFound(c, errors.ErrArtifactNotFound)
 	}
 
 	// TODO: generate presigned download URL from FileKey

@@ -4,6 +4,7 @@ import (
 	"strconv"
 
 	"api/internal/platform/content/service"
+	"api/pkg/errors"
 	"api/pkg/response"
 	"api/pkg/utils"
 
@@ -32,7 +33,7 @@ func (h *ContentHandler) List(c fiber.Ctx) error {
 
 	result, err := h.contentService.List(c.Context(), uint(siteID), p)
 	if err != nil {
-		return response.InternalError(c, "failed to list content")
+		return response.InternalError(c, errors.ErrOperationFailed)
 	}
 
 	return response.Success(c, result)
@@ -43,12 +44,12 @@ func (h *ContentHandler) Get(c fiber.Ctx) error {
 	idStr := c.Params("id")
 	id, err := strconv.ParseUint(idStr, 10, 32)
 	if err != nil {
-		return response.BadRequest(c, -1, "invalid id")
+		return response.BadRequest(c, errors.ErrInvalidID)
 	}
 
 	content, err := h.contentService.GetByID(c.Context(), uint(id))
 	if err != nil {
-		return response.NotFound(c, -1, "content not found")
+		return response.NotFound(c, errors.ErrContentNotFound)
 	}
 
 	return response.Success(c, content)
