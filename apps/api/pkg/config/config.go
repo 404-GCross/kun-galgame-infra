@@ -73,7 +73,7 @@ func Load() (*Config, error) {
 	// Server config
 	serverPort, _ := strconv.Atoi(getEnv("KUN_FIBER_SERVER_PORT", "9277"))
 	cfg.Server = ServerConfig{
-		Host:       getEnv("KUN_FIBER_SERVER_HOST", "0.0.0.0"),
+		Host:       getEnv("KUN_FIBER_SERVER_HOST", "127.0.0.1"),
 		Port:       serverPort,
 		Env:        getEnv("KUN_ENV", "development"),
 		SiteURL:    getEnv("KUN_SITE_URL", "http://127.0.0.1:9277"),

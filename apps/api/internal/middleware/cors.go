@@ -6,11 +6,10 @@ import (
 )
 
 // CORS middleware handles Cross-Origin Resource Sharing
-func CORS() fiber.Handler {
+func CORS(frontendOrigin string) fiber.Handler {
 	return cors.New(cors.Config{
 		AllowOrigins: []string{
-			"http://localhost:3000",
-			"http://localhost:3001",
+			frontendOrigin,
 			"https://kungal.com",
 			"https://moyu.moe",
 		},

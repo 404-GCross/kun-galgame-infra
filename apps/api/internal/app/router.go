@@ -75,7 +75,7 @@ func (a *App) setupRoutes() {
 	// Global middleware
 	a.fiber.Use(middleware.RequestID())
 	a.fiber.Use(middleware.Logger())
-	a.fiber.Use(middleware.CORS())
+	a.fiber.Use(middleware.CORS(a.config.Server.CORSOrigin))
 	a.fiber.Use(middleware.RateLimit(a.cache))
 
 	// API routes
