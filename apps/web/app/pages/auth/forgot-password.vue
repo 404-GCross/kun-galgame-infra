@@ -1,6 +1,6 @@
 <script setup lang="ts">
 definePageMeta({
-  layout: 'auth',
+  layout: 'auth'
 })
 
 const auth = useAuth()
@@ -30,7 +30,7 @@ const handleSubmit = async () => {
 </script>
 
 <template>
-  <KunCardCard class="p-8">
+  <KunCard class="p-8">
     <div class="mb-8 text-center">
       <h1 class="text-2xl font-bold text-gray-800 dark:text-white">
         Reset Password
@@ -41,7 +41,9 @@ const handleSubmit = async () => {
     </div>
 
     <div v-if="success" class="text-center">
-      <div class="mb-4 inline-flex size-16 items-center justify-center rounded-full bg-green-100">
+      <div
+        class="mb-4 inline-flex size-16 items-center justify-center rounded-full bg-green-100"
+      >
         <Icon name="lucide:check" class="size-8 text-green-600" />
       </div>
       <h2 class="mb-2 text-lg font-semibold text-gray-800 dark:text-white">
@@ -50,10 +52,7 @@ const handleSubmit = async () => {
       <p class="mb-6 text-gray-600 dark:text-gray-400">
         If an account exists with this email, we've sent a password reset link.
       </p>
-      <NuxtLink
-        to="/auth/login"
-        class="text-indigo-600 hover:underline"
-      >
+      <NuxtLink to="/auth/login" class="text-indigo-600 hover:underline">
         Back to login
       </NuxtLink>
     </div>
@@ -73,15 +72,19 @@ const handleSubmit = async () => {
           {{ error }}
         </div>
 
-        <KunButtonButton
+        <KunButton
           type="submit"
           color="primary"
           class="w-full"
           :disabled="isLoading"
         >
-          <Icon v-if="isLoading" name="lucide:loader-2" class="mr-2 size-4 animate-spin" />
+          <Icon
+            v-if="isLoading"
+            name="lucide:loader-2"
+            class="mr-2 size-4 animate-spin"
+          />
           {{ isLoading ? 'Sending...' : 'Send Reset Link' }}
-        </KunButtonButton>
+        </KunButton>
       </div>
     </form>
 
@@ -90,5 +93,5 @@ const handleSubmit = async () => {
         Back to login
       </NuxtLink>
     </div>
-  </KunCardCard>
+  </KunCard>
 </template>

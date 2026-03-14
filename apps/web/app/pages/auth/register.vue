@@ -1,6 +1,6 @@
 <script setup lang="ts">
 definePageMeta({
-  layout: 'auth',
+  layout: 'auth'
 })
 
 const auth = useAuth()
@@ -29,7 +29,11 @@ const handleSubmit = async () => {
   isLoading.value = true
 
   try {
-    const response = await auth.register(name.value, email.value, password.value)
+    const response = await auth.register(
+      name.value,
+      email.value,
+      password.value
+    )
     if (response.code === 0) {
       router.push('/auth/login?registered=true')
     } else {
@@ -44,7 +48,7 @@ const handleSubmit = async () => {
 </script>
 
 <template>
-  <KunCardCard class="p-8">
+  <KunCard class="p-8">
     <div class="mb-8 text-center">
       <h1 class="text-2xl font-bold text-gray-800 dark:text-white">
         Create Account
@@ -93,15 +97,19 @@ const handleSubmit = async () => {
           {{ error }}
         </div>
 
-        <KunButtonButton
+        <KunButton
           type="submit"
           color="primary"
           class="w-full"
           :disabled="isLoading"
         >
-          <Icon v-if="isLoading" name="lucide:loader-2" class="mr-2 size-4 animate-spin" />
+          <Icon
+            v-if="isLoading"
+            name="lucide:loader-2"
+            class="mr-2 size-4 animate-spin"
+          />
           {{ isLoading ? 'Creating account...' : 'Create Account' }}
-        </KunButtonButton>
+        </KunButton>
       </div>
     </form>
 
@@ -113,5 +121,5 @@ const handleSubmit = async () => {
         </NuxtLink>
       </p>
     </div>
-  </KunCardCard>
+  </KunCard>
 </template>

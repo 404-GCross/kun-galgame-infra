@@ -1,6 +1,6 @@
 <script setup lang="ts">
 definePageMeta({
-  layout: 'auth',
+  layout: 'auth'
 })
 
 const auth = useAuth()
@@ -59,7 +59,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <KunCardCard class="p-8">
+  <KunCard class="p-8">
     <div class="mb-8 text-center">
       <h1 class="text-2xl font-bold text-gray-800 dark:text-white">
         Set New Password
@@ -70,7 +70,9 @@ onMounted(() => {
     </div>
 
     <div v-if="success" class="text-center">
-      <div class="mb-4 inline-flex size-16 items-center justify-center rounded-full bg-green-100">
+      <div
+        class="mb-4 inline-flex size-16 items-center justify-center rounded-full bg-green-100"
+      >
         <Icon name="lucide:check" class="size-8 text-green-600" />
       </div>
       <h2 class="mb-2 text-lg font-semibold text-gray-800 dark:text-white">
@@ -79,10 +81,7 @@ onMounted(() => {
       <p class="mb-6 text-gray-600 dark:text-gray-400">
         Your password has been reset. Redirecting to login...
       </p>
-      <NuxtLink
-        to="/auth/login"
-        class="text-indigo-600 hover:underline"
-      >
+      <NuxtLink to="/auth/login" class="text-indigo-600 hover:underline">
         Go to login now
       </NuxtLink>
     </div>
@@ -110,22 +109,29 @@ onMounted(() => {
           {{ error }}
         </div>
 
-        <KunButtonButton
+        <KunButton
           type="submit"
           color="primary"
           class="w-full"
           :disabled="isLoading || !token"
         >
-          <Icon v-if="isLoading" name="lucide:loader-2" class="mr-2 size-4 animate-spin" />
+          <Icon
+            v-if="isLoading"
+            name="lucide:loader-2"
+            class="mr-2 size-4 animate-spin"
+          />
           {{ isLoading ? 'Resetting...' : 'Reset Password' }}
-        </KunButtonButton>
+        </KunButton>
       </div>
     </form>
 
     <div v-if="!success" class="mt-6 text-center text-sm">
-      <NuxtLink to="/auth/forgot-password" class="text-indigo-600 hover:underline">
+      <NuxtLink
+        to="/auth/forgot-password"
+        class="text-indigo-600 hover:underline"
+      >
         Request new reset link
       </NuxtLink>
     </div>
-  </KunCardCard>
+  </KunCard>
 </template>

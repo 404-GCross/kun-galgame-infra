@@ -93,7 +93,7 @@ onBeforeUnmount(() => {
   </Transition>
 </template>
 
-<style lang="scss" scoped>
+<style scoped>
 :deep(.icon) {
   color: inherit;
 }

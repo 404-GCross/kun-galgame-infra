@@ -1,6 +1,6 @@
 <script setup lang="ts">
 definePageMeta({
-  middleware: ['auth', 'admin'],
+  middleware: ['auth', 'admin']
 })
 
 interface OAuthClient {
@@ -55,20 +55,28 @@ onMounted(() => {
           Manage OAuth 2.0 client applications
         </p>
       </div>
-      <KunButtonButton color="primary" @click="showCreateModal = true">
+      <KunButton color="primary" @click="showCreateModal = true">
         <Icon name="lucide:plus" class="mr-2 size-4" />
         Create Client
-      </KunButtonButton>
+      </KunButton>
     </div>
 
     <!-- Clients List -->
     <div v-if="isLoading" class="flex items-center justify-center py-12">
-      <Icon name="lucide:loader-2" class="size-8 animate-spin text-indigo-500" />
+      <Icon
+        name="lucide:loader-2"
+        class="size-8 animate-spin text-indigo-500"
+      />
     </div>
 
-    <div v-else-if="clients.length === 0" class="rounded-xl bg-white py-12 text-center shadow-sm dark:bg-gray-800">
+    <div
+      v-else-if="clients.length === 0"
+      class="rounded-xl bg-white py-12 text-center shadow-sm dark:bg-gray-800"
+    >
       <Icon name="lucide:key" class="mx-auto mb-4 size-12 text-gray-300" />
-      <p class="text-gray-500 dark:text-gray-400">No OAuth clients configured</p>
+      <p class="text-gray-500 dark:text-gray-400">
+        No OAuth clients configured
+      </p>
       <p class="mt-1 text-sm text-gray-400">
         Create a client to enable OAuth authentication
       </p>
@@ -82,8 +90,13 @@ onMounted(() => {
       >
         <div class="flex items-start justify-between">
           <div class="flex items-center gap-4">
-            <div class="flex size-12 items-center justify-center rounded-lg bg-orange-100 dark:bg-orange-900">
-              <Icon name="lucide:key" class="size-6 text-orange-600 dark:text-orange-400" />
+            <div
+              class="flex size-12 items-center justify-center rounded-lg bg-orange-100 dark:bg-orange-900"
+            >
+              <Icon
+                name="lucide:key"
+                class="size-6 text-orange-600 dark:text-orange-400"
+              />
             </div>
             <div>
               <h3 class="text-lg font-semibold text-gray-800 dark:text-white">
@@ -101,13 +114,17 @@ onMounted(() => {
               </span>
             </div>
           </div>
-          <button class="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-700">
+          <button
+            class="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-700"
+          >
             <Icon name="lucide:more-vertical" class="size-5" />
           </button>
         </div>
 
         <div class="mt-4 space-y-3">
-          <div class="flex items-center justify-between rounded-lg bg-gray-50 p-3 dark:bg-gray-900">
+          <div
+            class="flex items-center justify-between rounded-lg bg-gray-50 p-3 dark:bg-gray-900"
+          >
             <div>
               <p class="text-xs text-gray-500">Client ID</p>
               <p class="font-mono text-sm text-gray-800 dark:text-gray-200">

@@ -33,16 +33,16 @@ const sanitizeConfig = {
   </div>
 </template>
 
-<style scoped lang="scss">
+<style scoped>
 .kun-prose {
-  :deep(.kun-spoiler) {
+  & :deep(.kun-spoiler) {
     position: relative;
     display: inline-block;
     border-radius: 0.5rem;
     overflow: hidden;
     vertical-align: middle;
 
-    .spoiler-frost {
+    & .spoiler-frost {
       position: absolute;
       inset: 0;
       pointer-events: none;
@@ -57,7 +57,7 @@ const sanitizeConfig = {
       filter: blur(0);
     }
 
-    .spoiler-canvas {
+    & .spoiler-canvas {
       position: absolute;
       inset: 0;
       z-index: 1;
@@ -72,7 +72,7 @@ const sanitizeConfig = {
     }
   }
 
-  :deep(.kun-spoiler.kun-spoiler-hidden) {
+  & :deep(.kun-spoiler.kun-spoiler-hidden) {
     cursor: pointer;
 
     & > *:not(.spoiler-canvas) {
@@ -81,7 +81,7 @@ const sanitizeConfig = {
     }
   }
 
-  :deep(div.kun-spoiler) {
+  & :deep(div.kun-spoiler) {
     display: block;
     width: fit-content;
   }

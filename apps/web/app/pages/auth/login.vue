@@ -1,6 +1,6 @@
 <script setup lang="ts">
 definePageMeta({
-  layout: 'auth',
+  layout: 'auth'
 })
 
 const auth = useAuth()
@@ -37,7 +37,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <KunCardCard class="p-8">
+  <KunCard class="p-8">
     <div class="mb-8 text-center">
       <h1 class="text-2xl font-bold text-gray-800 dark:text-white">
         Welcome Back
@@ -70,15 +70,19 @@ onMounted(async () => {
           {{ error }}
         </div>
 
-        <KunButtonButton
+        <KunButton
           type="submit"
           color="primary"
           class="w-full"
           :disabled="isLoading"
         >
-          <Icon v-if="isLoading" name="lucide:loader-2" class="mr-2 size-4 animate-spin" />
+          <Icon
+            v-if="isLoading"
+            name="lucide:loader-2"
+            class="mr-2 size-4 animate-spin"
+          />
           {{ isLoading ? 'Signing in...' : 'Sign In' }}
-        </KunButtonButton>
+        </KunButton>
       </div>
     </form>
 
@@ -97,5 +101,5 @@ onMounted(async () => {
         </NuxtLink>
       </p>
     </div>
-  </KunCardCard>
+  </KunCard>
 </template>

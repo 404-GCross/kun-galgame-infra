@@ -1,6 +1,6 @@
 <script setup lang="ts">
 definePageMeta({
-  middleware: ['auth', 'admin'],
+  middleware: ['auth', 'admin']
 })
 
 interface Site {
@@ -40,25 +40,29 @@ onMounted(() => {
   <div class="space-y-6">
     <div class="flex items-center justify-between">
       <div>
-        <h1 class="text-2xl font-bold text-gray-800 dark:text-white">
-          Sites
-        </h1>
+        <h1 class="text-2xl font-bold text-gray-800 dark:text-white">Sites</h1>
         <p class="mt-1 text-gray-600 dark:text-gray-400">
           Manage connected sites and OAuth configurations
         </p>
       </div>
-      <KunButtonButton color="primary">
+      <KunButton color="primary">
         <Icon name="lucide:plus" class="mr-2 size-4" />
         Add Site
-      </KunButtonButton>
+      </KunButton>
     </div>
 
     <!-- Sites Grid -->
     <div v-if="isLoading" class="flex items-center justify-center py-12">
-      <Icon name="lucide:loader-2" class="size-8 animate-spin text-indigo-500" />
+      <Icon
+        name="lucide:loader-2"
+        class="size-8 animate-spin text-indigo-500"
+      />
     </div>
 
-    <div v-else-if="sites.length === 0" class="rounded-xl bg-white py-12 text-center shadow-sm dark:bg-gray-800">
+    <div
+      v-else-if="sites.length === 0"
+      class="rounded-xl bg-white py-12 text-center shadow-sm dark:bg-gray-800"
+    >
       <Icon name="lucide:globe" class="mx-auto mb-4 size-12 text-gray-300" />
       <p class="text-gray-500 dark:text-gray-400">No sites configured</p>
     </div>
@@ -70,10 +74,17 @@ onMounted(() => {
         class="rounded-xl bg-white p-6 shadow-sm transition-shadow hover:shadow-md dark:bg-gray-800"
       >
         <div class="mb-4 flex items-start justify-between">
-          <div class="flex size-12 items-center justify-center rounded-lg bg-indigo-100 dark:bg-indigo-900">
-            <Icon name="lucide:globe" class="size-6 text-indigo-600 dark:text-indigo-400" />
+          <div
+            class="flex size-12 items-center justify-center rounded-lg bg-indigo-100 dark:bg-indigo-900"
+          >
+            <Icon
+              name="lucide:globe"
+              class="size-6 text-indigo-600 dark:text-indigo-400"
+            />
           </div>
-          <button class="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-700">
+          <button
+            class="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-700"
+          >
             <Icon name="lucide:more-vertical" class="size-5" />
           </button>
         </div>
@@ -88,7 +99,9 @@ onMounted(() => {
           {{ site.description }}
         </p>
 
-        <div class="mt-4 flex items-center justify-between border-t pt-4 dark:border-gray-700">
+        <div
+          class="mt-4 flex items-center justify-between border-t pt-4 dark:border-gray-700"
+        >
           <span class="text-xs text-gray-500">
             Created {{ new Date(site.created_at).toLocaleDateString() }}
           </span>
