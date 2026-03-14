@@ -13,8 +13,12 @@
     "@nuxt/eslint": "1.15.2",
     "@nuxt/icon": "2.2.1",
     "@nuxt/image": "2.0.0",
+    "@tailwindcss/vite": "^4.2.1",
     "nuxt": "^4.3.1",
     "vue": "^3.5.29",
     "vue-router": "^4.6.4"
+  },
+  "devDependencies": {
+    "vite": "^8.0.0"
   }
 }
