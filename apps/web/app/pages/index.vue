@@ -1,4 +1,8 @@
 <script setup lang="ts">
+definePageMeta({
+  middleware: ['auth', 'admin'],
+})
+
 const auth = useAuth()
 
 const stats = ref([

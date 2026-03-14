@@ -1,4 +1,8 @@
 <script setup lang="ts">
+definePageMeta({
+  middleware: ['auth', 'admin'],
+})
+
 import type { User } from '~/composables/useAuth'
 
 const api = useApi()

@@ -1,4 +1,8 @@
 <script setup lang="ts">
+definePageMeta({
+  middleware: ['auth', 'admin'],
+})
+
 interface Game {
   id: number
   uuid: string

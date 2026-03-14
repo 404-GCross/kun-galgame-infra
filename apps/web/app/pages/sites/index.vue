@@ -1,4 +1,8 @@
 <script setup lang="ts">
+definePageMeta({
+  middleware: ['auth', 'admin'],
+})
+
 interface Site {
   id: number
   uuid: string
