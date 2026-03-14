@@ -1,16 +1,12 @@
-export const useKunCopy = () => {
-  const message = useMessage()
+export const useKunCopy = (originText: string) => {
+  const text = decodeIfEncoded(originText)
 
-  const copyToClipboard = async (text: string) => {
-    try {
-      await navigator.clipboard.writeText(text)
-      message.success('Copied to clipboard')
-      return true
-    } catch {
-      message.error('Failed to copy')
-      return false
-    }
-  }
-
-  return { copyToClipboard }
+  navigator.clipboard
+    .writeText(text)
+    .then(() => {
+      useMessage(`${text} 复制成功`, 'success')
+    })
+    .catch(() => {
+      useMessage(`${text} 复制失败! 请更换更现代的浏览器!`, 'error')
+    })
 }

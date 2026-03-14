@@ -1,48 +1,82 @@
-export type MessageType = 'success' | 'error' | 'warning' | 'info'
+import { render } from 'vue'
+import MessageContainer from '~/components/kun/alert/MessageContainer.vue'
 
-export interface Message {
+export type KunMessageType = 'warn' | 'success' | 'error' | 'info'
+export type KunMessagePosition =
+  | 'top-center'
+  | 'top-left'
+  | 'top-right'
+  | 'bottom-center'
+  | 'bottom-left'
+  | 'bottom-right'
+
+export interface KunMessageOptions {
   id: string
-  type: MessageType
-  content: string
-  duration?: number
+  message: string
+  type: KunMessageType
+  duration: number
+  richText: boolean
+  position: KunMessagePosition
+  count: number
 }
 
-const messages = ref<Message[]>([])
+const messages: Ref<KunMessageOptions[]> = ref([])
+let seed = 0
+let containerRef: HTMLElement | null = null
 
-export const useMessage = () => {
-  const addMessage = (type: MessageType, content: string, duration = 3000) => {
-    const id = Math.random().toString(36).substring(2, 9)
-    const message: Message = { id, type, content, duration }
+export const useMessageState = () => ({
+  messages: computed(() => messages.value),
+  removeMessage: (id: string) => {
+    messages.value = messages.value.filter((msg) => msg.id !== id)
+  },
+})
 
-    messages.value.push(message)
+const initializeContainer = () => {
+  if (containerRef) return
 
-    if (duration > 0) {
-      setTimeout(() => {
-        removeMessage(id)
-      }, duration)
+  containerRef = document.createElement('div')
+  containerRef.id = 'kun-message-container-root'
+  document.body.appendChild(containerRef)
+
+  const vNode = h(MessageContainer)
+  render(vNode, containerRef)
+}
+
+export const useMessage = (
+  messageData: string,
+  type: KunMessageType,
+  duration = 3000,
+  richText = false,
+  position = 'top-center' as KunMessagePosition,
+) => {
+  initializeContainer()
+
+  const existingMessage = messages.value.find(
+    (m) =>
+      m.message === messageData && m.position === position && m.type === type,
+  )
+
+  if (existingMessage) {
+    existingMessage.count++
+    existingMessage.duration = duration
+  } else {
+    seed++
+    const id = `message_${seed}`
+
+    const newMessage: KunMessageOptions = {
+      id,
+      message: messageData,
+      type,
+      duration,
+      richText,
+      position,
+      count: 1,
     }
 
-    return id
-  }
-
-  const removeMessage = (id: string) => {
-    const index = messages.value.findIndex(m => m.id === id)
-    if (index > -1) {
-      messages.value.splice(index, 1)
+    if (position.startsWith('top')) {
+      messages.value.push(newMessage)
+    } else {
+      messages.value.unshift(newMessage)
     }
-  }
-
-  const success = (content: string, duration?: number) => addMessage('success', content, duration)
-  const error = (content: string, duration?: number) => addMessage('error', content, duration)
-  const warning = (content: string, duration?: number) => addMessage('warning', content, duration)
-  const info = (content: string, duration?: number) => addMessage('info', content, duration)
-
-  return {
-    messages,
-    success,
-    error,
-    warning,
-    info,
-    remove: removeMessage,
   }
 }
