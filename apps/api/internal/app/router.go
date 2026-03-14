@@ -1,6 +1,7 @@
 package app
 
 import (
+	"api/internal/infrastructure/mail"
 	"api/internal/middleware"
 
 	artifactHandler "api/internal/platform/artifact/handler"
@@ -42,6 +43,7 @@ func (a *App) setupRoutes() {
 	// Initialize repositories
 	userRepo := authRepo.NewUserRepository(db)
 	sessionRepo := authRepo.NewSessionRepository(db)
+	passwordResetRepo := authRepo.NewPasswordResetRepository(db)
 	siteRepository := siteRepo.NewSiteRepository(db)
 	gameRepository := gameRepo.NewGameRepository(db)
 	contentRepository := contentRepo.NewContentRepository(db)
@@ -49,8 +51,11 @@ func (a *App) setupRoutes() {
 	artifactRepository := artifactRepo.NewArtifactRepository(db)
 	moderationRepository := moderationRepo.NewModerationRepository(db)
 
+	// Initialize mail service
+	mailer := mail.NewMailer(a.config.Mail)
+
 	// Initialize services
-	authSvc := authService.NewAuthService(userRepo, sessionRepo, a.config.JWT)
+	authSvc := authService.NewAuthServiceFull(userRepo, sessionRepo, passwordResetRepo, mailer, a.config)
 	siteSvc := siteService.NewSiteService(siteRepository)
 	gameSvc := gameService.NewGameService(gameRepository)
 	contentSvc := contentService.NewContentService(contentRepository)

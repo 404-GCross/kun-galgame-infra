@@ -2,8 +2,12 @@ package service
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"fmt"
 	"time"
 
+	"api/internal/infrastructure/mail"
 	"api/internal/platform/auth/dto"
 	"api/internal/platform/auth/model"
 	"api/internal/platform/auth/repository"
@@ -14,9 +18,11 @@ import (
 
 // AuthService handles authentication logic
 type AuthService struct {
-	userRepo    *repository.UserRepository
-	sessionRepo *repository.SessionRepository
-	cfg         *config.Config
+	userRepo          *repository.UserRepository
+	sessionRepo       *repository.SessionRepository
+	passwordResetRepo *repository.PasswordResetRepository
+	mailer            *mail.Mailer
+	cfg               *config.Config
 }
 
 // NewAuthService creates a new AuthService
@@ -32,16 +38,20 @@ func NewAuthService(
 	}
 }
 
-// NewAuthServiceWithConfig creates a new AuthService with full config
-func NewAuthServiceWithConfig(
+// NewAuthServiceFull creates a new AuthService with all dependencies
+func NewAuthServiceFull(
 	userRepo *repository.UserRepository,
 	sessionRepo *repository.SessionRepository,
+	passwordResetRepo *repository.PasswordResetRepository,
+	mailer *mail.Mailer,
 	cfg *config.Config,
 ) *AuthService {
 	return &AuthService{
-		userRepo:    userRepo,
-		sessionRepo: sessionRepo,
-		cfg:         cfg,
+		userRepo:          userRepo,
+		sessionRepo:       sessionRepo,
+		passwordResetRepo: passwordResetRepo,
+		mailer:            mailer,
+		cfg:               cfg,
 	}
 }
 
@@ -184,6 +194,87 @@ func (s *AuthService) GetCurrentUser(ctx context.Context, userUUID string) (*mod
 	return s.userRepo.FindByUUID(ctx, userUUID)
 }
 
+// ForgotPassword initiates password reset flow
+func (s *AuthService) ForgotPassword(ctx context.Context, email string) error {
+	// Find user by email
+	user, err := s.userRepo.FindByEmail(ctx, email)
+	if err != nil {
+		// Don't reveal if email exists for security
+		return nil
+	}
+
+	if s.passwordResetRepo == nil || s.mailer == nil {
+		return fmt.Errorf("password reset not configured")
+	}
+
+	// Delete any existing reset tokens for this user
+	_ = s.passwordResetRepo.DeleteByUserID(ctx, user.ID)
+
+	// Generate reset token
+	token, err := generateSecureToken(32)
+	if err != nil {
+		return err
+	}
+
+	// Create password reset record
+	reset := &model.PasswordReset{
+		UserID:    user.ID,
+		Token:     token,
+		ExpiresAt: time.Now().Add(1 * time.Hour), // 1 hour expiry
+	}
+
+	if err := s.passwordResetRepo.Create(ctx, reset); err != nil {
+		return err
+	}
+
+	// Send reset email
+	resetLink := fmt.Sprintf("%s/auth/reset-password?token=%s", s.cfg.Server.SiteURL, token)
+	if err := s.mailer.SendPasswordResetEmail(user.Email, user.Name, resetLink); err != nil {
+		return fmt.Errorf("failed to send email: %w", err)
+	}
+
+	return nil
+}
+
+// ResetPassword resets password using token
+func (s *AuthService) ResetPassword(ctx context.Context, token, newPassword string) error {
+	if s.passwordResetRepo == nil {
+		return fmt.Errorf("password reset not configured")
+	}
+
+	// Find valid reset token
+	reset, err := s.passwordResetRepo.FindValidByToken(ctx, token)
+	if err != nil {
+		return errors.NewWithCode(errors.ErrAuthInvalidToken)
+	}
+
+	// Hash new password
+	hashedPassword, err := utils.HashPassword(newPassword)
+	if err != nil {
+		return err
+	}
+
+	// Update user password
+	user, err := s.userRepo.FindByID(ctx, reset.UserID)
+	if err != nil {
+		return errors.NewWithCode(errors.ErrAuthUserNotFound)
+	}
+
+	if err := s.userRepo.UpdatePassword(ctx, user.UUID, hashedPassword); err != nil {
+		return err
+	}
+
+	// Mark token as used
+	if err := s.passwordResetRepo.MarkAsUsed(ctx, reset.ID); err != nil {
+		return err
+	}
+
+	// Delete all sessions for this user (force re-login)
+	_ = s.sessionRepo.DeleteByUserID(ctx, user.ID)
+
+	return nil
+}
+
 // ChangePassword changes a user's password
 func (s *AuthService) ChangePassword(ctx context.Context, userUUID string, oldPassword, newPassword string) error {
 	user, err := s.userRepo.FindByUUID(ctx, userUUID)
@@ -247,4 +338,13 @@ func (s *AuthService) generateTokens(user *model.User) (*dto.TokenPair, error) {
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
 	}, nil
+}
+
+// generateSecureToken generates a cryptographically secure random token
+func generateSecureToken(length int) (string, error) {
+	bytes := make([]byte, length)
+	if _, err := rand.Read(bytes); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(bytes), nil
 }

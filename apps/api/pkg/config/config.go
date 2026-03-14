@@ -14,6 +14,16 @@ type Config struct {
 	Database DatabaseConfig
 	Redis    RedisConfig
 	JWT      JWTConfig
+	Mail     MailConfig
+}
+
+// MailConfig holds email-related configuration
+type MailConfig struct {
+	From     string
+	Host     string
+	Port     int
+	Account  string
+	Password string
 }
 
 // ServerConfig holds server-related configuration
@@ -99,6 +109,16 @@ func Load() (*Config, error) {
 		Secret:     getEnv("JWT_SECRET", ""),
 		CookieName: getEnv("JWT_COOKIE_NAME", "kun_token"),
 		Expires:    getEnv("JWT_EXPIRES", "90d"),
+	}
+
+	// Mail config
+	mailPort, _ := strconv.Atoi(getEnv("KUN_VISUAL_NOVEL_EMAIL_PORT", "587"))
+	cfg.Mail = MailConfig{
+		From:     getEnv("KUN_VISUAL_NOVEL_EMAIL_FROM", "KUN OAuth"),
+		Host:     getEnv("KUN_VISUAL_NOVEL_EMAIL_HOST", ""),
+		Port:     mailPort,
+		Account:  getEnv("KUN_VISUAL_NOVEL_EMAIL_ACCOUNT", ""),
+		Password: getEnv("KUN_VISUAL_NOVEL_EMAIL_PASSWORD", ""),
 	}
 
 	// Validate required fields

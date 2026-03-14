@@ -179,7 +179,9 @@ func (h *AuthHandler) ForgotPassword(c fiber.Ctx) error {
 		return response.BadRequest(c, -1, err.Error())
 	}
 
-	// TODO: implement password reset email sending
+	// Call service - ignore errors for security (don't reveal if email exists)
+	_ = h.authService.ForgotPassword(c.Context(), req.Email)
+
 	// For security, always return success even if email doesn't exist
 	return response.SuccessWithMessage(c, "if the email exists, a password reset link has been sent", nil)
 }
@@ -195,7 +197,13 @@ func (h *AuthHandler) ResetPassword(c fiber.Ctx) error {
 		return response.BadRequest(c, -1, err.Error())
 	}
 
-	// TODO: implement password reset with token validation
+	if err := h.authService.ResetPassword(c.Context(), req.Token, req.Password); err != nil {
+		if appErr, ok := err.(*errors.AppError); ok {
+			return response.BadRequest(c, appErr.Code, appErr.Message)
+		}
+		return response.BadRequest(c, -1, "invalid or expired reset token")
+	}
+
 	return response.SuccessWithMessage(c, "password reset successfully", nil)
 }
 

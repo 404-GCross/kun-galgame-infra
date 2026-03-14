@@ -88,6 +88,7 @@ func getAllModels() []any {
 		&authModel.UserFollow{},
 		&authModel.UserSiteData{},
 		&authModel.UserMigration{},
+		&authModel.PasswordReset{},
 
 		// Site models
 		&siteModel.Site{},
