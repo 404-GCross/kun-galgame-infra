@@ -191,19 +191,18 @@ internal/platform/auth/
 
 ```go
 type User struct {
-    ID           uint           `gorm:"primaryKey"`
-    UUID         string         `gorm:"type:uuid;uniqueIndex;default:gen_random_uuid()"`
-    Name         string         `gorm:"size:17;uniqueIndex;not null"`
-    Email        string         `gorm:"size:255;uniqueIndex;not null"`
-    Password     string         `gorm:"size:255"`
-    PasswordType string         `gorm:"size:10;not null;default:'argon2'"` // 'argon2' | 'bcrypt'
-    Avatar       string         `gorm:"size:255;default:''"`
-    Bio          string         `gorm:"size:107;default:''"`
-    Moemoepoint  int            `gorm:"default:0"`
-    Status       int            `gorm:"default:0"` // 0: normal, 1: banned
-    IP           string         `gorm:"size:45;default:''"`
-    CreatedAt    time.Time
-    UpdatedAt    time.Time
+    ID          uint           `gorm:"primaryKey"`
+    UUID        string         `gorm:"type:uuid;uniqueIndex;default:gen_random_uuid()"`
+    Name        string         `gorm:"size:17;uniqueIndex;not null"`
+    Email       string         `gorm:"size:255;uniqueIndex;not null"`
+    Password    *string        `gorm:"size:255"` // 可为 NULL，迁移用户初始为空
+    Avatar      string         `gorm:"size:255;default:''"`
+    Bio         string         `gorm:"size:107;default:''"`
+    Moemoepoint int            `gorm:"default:0"`
+    Status      int            `gorm:"default:0"` // 0: normal, 1: banned
+    IP          string         `gorm:"size:45;default:''"`
+    CreatedAt   time.Time
+    UpdatedAt   time.Time
 
     // Relations
     SiteData      []UserSiteData `gorm:"foreignKey:UserID"`
@@ -214,9 +213,9 @@ type User struct {
 }
 ```
 
-**PasswordType 字段说明**：
-- `argon2`：新用户、moyu 迁移用户
-- `bcrypt`：kungal 迁移用户（半年过渡期内有效）
+**Password 字段说明**：
+- 新注册用户：argon2 标准格式（matthewhartstonge/argon2）
+- 迁移用户：初始为 NULL，首次登录需要通过邮箱重置密码
 
 #### Site（站点表）
 
@@ -395,7 +394,7 @@ type Permission struct {
 
 第二步：导入 kungal-nuxt 用户
 ├── 遍历 kungalgame.user 表
-├── 创建 users 记录（password_type='bcrypt'）
+├── 创建 users 记录（password = NULL）
 ├── 创建 user_site_data 记录（site=kungal）
 └── 记录映射：kungal_old_id → new_uuid
 
@@ -404,7 +403,6 @@ type Permission struct {
 ├── 按 email 查找是否已存在
 │
 ├── 如果存在（同邮箱冲突）：
-│   ├── 更新 password 和 password_type='argon2'
 │   ├── users.moemoepoint += moyu.moemoepoint
 │   ├── 如果 avatar/bio 为空，使用 moyu 的
 │   ├── created_at 取较早的
@@ -412,7 +410,7 @@ type Permission struct {
 │   └── 记录映射：moyu_old_id → existing_uuid
 │
 └── 如果不存在：
-    ├── 创建 users 记录（password_type='argon2'）
+    ├── 创建 users 记录（password = NULL）
     ├── 创建 user_site_data 记录（site=moyu）
     └── 记录映射：moyu_old_id → new_uuid
 
@@ -433,28 +431,36 @@ type Permission struct {
     └── （可选）删除原 user 表
 ```
 
-### 5.3 密码过渡方案
+### 5.3 密码重置方案
+
+由于 kungal-nuxt（bcrypt）和 moyu-nextjs（自定义 argon2）的密码格式都与新系统不兼容，
+**所有迁移用户的 password 字段初始为 NULL，必须通过邮箱重置密码**。
 
 ```
-登录流程：
+迁移用户首次登录流程：
 
-用户输入 email + password
+用户输入 email
         │
         ▼
-查询 users 表获取 password_type
+检查 password 是否为 NULL
         │
-        ├── password_type = 'argon2'
-        │   └── 直接用 argon2 验证
+        ├── password = NULL（迁移用户）
+        │   ├── 提示「账户已迁移，请重置密码」
+        │   ├── 发送重置密码邮件
+        │   ├── 用户点击链接设置新密码
+        │   └── 新密码使用 argon2 标准格式存储
         │
-        └── password_type = 'bcrypt'
-            ├── 用 bcrypt 验证
-            ├── 验证成功后提示更改密码
-            └── 更改后：更新 password（argon2），password_type='argon2'
+        └── password != NULL（已重置或新用户）
+            └── 正常验证 argon2 密码
 
-半年后：
-├── password_type='bcrypt' 的账户禁止登录
-└── 用户必须走「忘记密码」流程重置
+密码格式（统一）：
+$argon2id$v=19$m=65536,t=3,p=4$salt$hash
 ```
+
+**优势**：
+- 代码简单：只需支持一种密码格式（argon2 标准）
+- 安全性统一：所有用户使用相同的安全参数
+- 无兼容性负担：不需要维护多种验证逻辑
 
 ### 5.4 迁移后网站改造
 
@@ -741,9 +747,9 @@ CREATE TABLE migration_moyu_user_mapping (
 | 配置管理 | godotenv | 与现有 .env 格式一致 |
 | 参数验证 | go-playground/validator | 结构体 tag 验证，简洁 |
 | 任务队列 | asynq | 轻量，与 Redis 集成好 |
-| 密码哈希 | argon2 (matthewhartstonge) | 比 bcrypt 更安全 |
+| 密码哈希 | argon2 (matthewhartstonge) | 比 bcrypt 更安全，使用 PHC 标准格式 |
 | JWT | golang-jwt/jwt/v5 | 标准库 |
-| 密码处理 | 保留 moyu 的 argon2 | 更安全 |
+| 密码迁移 | 所有用户重置密码 | 简化实现，两个网站的旧格式都不兼容 |
 | 用户名冲突 | 保留 kungal | 以 kungal 为主 |
 | 数据库拓扑 | 三库独立 | 微服务架构 |
 | 外键处理 | 存 uuid，应用层保证 | 跨库无法用外键约束 |
