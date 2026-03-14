@@ -24,11 +24,11 @@ const messages: Ref<KunMessageOptions[]> = ref([])
 let seed = 0
 let containerRef: HTMLElement | null = null
 
-export const useMessageState = () => ({
+export const useKunMessageState = () => ({
   messages: computed(() => messages.value),
   removeMessage: (id: string) => {
     messages.value = messages.value.filter((msg) => msg.id !== id)
-  },
+  }
 })
 
 const initializeContainer = () => {
@@ -42,18 +42,18 @@ const initializeContainer = () => {
   render(vNode, containerRef)
 }
 
-export const useMessage = (
+export const useKunMessage = (
   messageData: string,
   type: KunMessageType,
   duration = 3000,
   richText = false,
-  position = 'top-center' as KunMessagePosition,
+  position = 'top-center' as KunMessagePosition
 ) => {
   initializeContainer()
 
   const existingMessage = messages.value.find(
     (m) =>
-      m.message === messageData && m.position === position && m.type === type,
+      m.message === messageData && m.position === position && m.type === type
   )
 
   if (existingMessage) {
@@ -70,7 +70,7 @@ export const useMessage = (
       duration,
       richText,
       position,
-      count: 1,
+      count: 1
     }
 
     if (position.startsWith('top')) {

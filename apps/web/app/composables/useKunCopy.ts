@@ -4,9 +4,9 @@ export const useKunCopy = (originText: string) => {
   navigator.clipboard
     .writeText(text)
     .then(() => {
-      useMessage(`${text} 复制成功`, 'success')
+      useKunMessage(`${text} 复制成功`, 'success')
     })
     .catch(() => {
-      useMessage(`${text} 复制失败! 请更换更现代的浏览器!`, 'error')
+      useKunMessage(`${text} 复制失败! 请更换更现代的浏览器!`, 'error')
     })
 }

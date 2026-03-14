@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import {
-  useMessageState,
+  useKunMessageState,
   type KunMessagePosition,
   type KunMessageOptions
-} from '~/composables/useMessage'
+} from '~/composables/useKunMessage'
 import MessageItem from './MessageItem.vue'
 
-const { messages, removeMessage } = useMessageState()
+const { messages, removeMessage } = useKunMessageState()
 
 const positionedMessages = computed(() => {
   const groups: Record<KunMessagePosition, KunMessageOptions[]> = {

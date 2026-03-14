@@ -4,7 +4,7 @@ import LucideAlertTriangle from '~/components/kun/icon/LucideAlertTriangle.vue'
 import LucideCheckCircle2 from '~/components/kun/icon/LucideCheckCircle2.vue'
 import LucideInfo from '~/components/kun/icon/LucideInfo.vue'
 import LucideXCircle from '~/components/kun/icon/LucideXCircle.vue'
-import type { KunMessageType } from '~/composables/useMessage'
+import type { KunMessageType } from '~/composables/useKunMessage'
 
 const props = defineProps<{
   id: string
