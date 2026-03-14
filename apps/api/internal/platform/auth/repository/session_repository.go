@@ -70,3 +70,12 @@ func (r *SessionRepository) DeleteByUserID(ctx context.Context, userID uint) err
 func (r *SessionRepository) DeleteExpired(ctx context.Context) error {
 	return r.db.WithContext(ctx).Where("expires_at < ?", time.Now()).Delete(&model.Session{}).Error
 }
+
+// CountByUserID counts sessions for a user
+func (r *SessionRepository) CountByUserID(ctx context.Context, userID uint) (int64, error) {
+	var count int64
+	if err := r.db.WithContext(ctx).Model(&model.Session{}).Where("user_id = ?", userID).Count(&count).Error; err != nil {
+		return 0, err
+	}
+	return count, nil
+}

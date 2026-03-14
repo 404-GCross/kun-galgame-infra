@@ -2,6 +2,7 @@ package errors
 
 // 错误码按模块分段
 // 10000-19999: Auth
+// 15000-15999: OAuth
 // 20000-29999: Game
 // 30000-39999: Content
 // 40000-49999: Comment
@@ -22,6 +23,15 @@ const (
 	ErrAuthInvalidEmail     = 10009
 	ErrAuthCodeInvalid      = 10010
 	ErrAuthCodeExpired      = 10011
+
+	// OAuth (15000-15999)
+	ErrOAuthInvalidClient       = 15001
+	ErrOAuthInvalidRedirectURI  = 15002
+	ErrOAuthInvalidCode         = 15003
+	ErrOAuthInvalidCodeVerifier = 15004
+	ErrOAuthInvalidGrant        = 15005
+	ErrOAuthInvalidScope        = 15006
+	ErrOAuthAccessDenied        = 15007
 
 	// Game (20000-29999)
 	ErrGameNotFound         = 20001
@@ -67,6 +77,14 @@ var codeMessages = map[int]string{
 	ErrAuthInvalidEmail:     "invalid email format",
 	ErrAuthCodeInvalid:      "invalid verification code",
 	ErrAuthCodeExpired:      "verification code expired",
+
+	ErrOAuthInvalidClient:       "invalid client",
+	ErrOAuthInvalidRedirectURI:  "invalid redirect uri",
+	ErrOAuthInvalidCode:         "invalid authorization code",
+	ErrOAuthInvalidCodeVerifier: "invalid code verifier",
+	ErrOAuthInvalidGrant:        "invalid grant type",
+	ErrOAuthInvalidScope:        "invalid scope",
+	ErrOAuthAccessDenied:        "access denied",
 
 	ErrGameNotFound:         "game not found",
 	ErrGameAlreadyExists:    "game already exists",

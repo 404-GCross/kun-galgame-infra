@@ -1,6 +1,7 @@
 package model
 
 import (
+	"encoding/json"
 	"time"
 
 	"gorm.io/datatypes"
@@ -23,4 +24,23 @@ type OAuthClient struct {
 // TableName returns the table name for OAuthClient
 func (OAuthClient) TableName() string {
 	return "oauth_clients"
+}
+
+// IsActive checks if the OAuth client is active
+func (c *OAuthClient) IsActive() bool {
+	return true // All clients are active by default
+}
+
+// HasRedirectURI checks if the given redirect URI is allowed
+func (c *OAuthClient) HasRedirectURI(uri string) bool {
+	var uris []string
+	if err := json.Unmarshal(c.RedirectURIs, &uris); err != nil {
+		return false
+	}
+	for _, allowed := range uris {
+		if allowed == uri {
+			return true
+		}
+	}
+	return false
 }

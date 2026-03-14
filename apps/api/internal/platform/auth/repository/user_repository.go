@@ -107,3 +107,75 @@ func (r *UserRepository) ExistsByName(ctx context.Context, name string) (bool, e
 	}
 	return count > 0, nil
 }
+
+// ExistsByEmailExcluding checks if email exists excluding a specific user
+func (r *UserRepository) ExistsByEmailExcluding(ctx context.Context, email, excludeUUID string) (bool, error) {
+	var count int64
+	if err := r.db.WithContext(ctx).Model(&model.User{}).
+		Where("email = ? AND uuid != ?", email, excludeUUID).
+		Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+// ExistsByNameExcluding checks if name exists excluding a specific user
+func (r *UserRepository) ExistsByNameExcluding(ctx context.Context, name, excludeUUID string) (bool, error) {
+	var count int64
+	if err := r.db.WithContext(ctx).Model(&model.User{}).
+		Where("name = ? AND uuid != ?", name, excludeUUID).
+		Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+// FindAllPaginated finds users with pagination, search, and sorting
+func (r *UserRepository) FindAllPaginated(
+	ctx context.Context,
+	page, limit int,
+	search string,
+	status *int,
+	sortBy string,
+	sortDesc bool,
+) ([]model.User, int64, error) {
+	var users []model.User
+	var total int64
+
+	query := r.db.WithContext(ctx).Model(&model.User{})
+
+	// Apply search filter
+	if search != "" {
+		query = query.Where("name ILIKE ? OR email ILIKE ?", "%"+search+"%", "%"+search+"%")
+	}
+
+	// Apply status filter
+	if status != nil {
+		query = query.Where("status = ?", *status)
+	}
+
+	// Count total
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	// Apply sorting
+	if sortBy == "" {
+		sortBy = "created_at"
+	}
+	order := sortBy
+	if sortDesc {
+		order += " DESC"
+	} else {
+		order += " ASC"
+	}
+	query = query.Order(order)
+
+	// Apply pagination
+	offset := (page - 1) * limit
+	if err := query.Offset(offset).Limit(limit).Find(&users).Error; err != nil {
+		return nil, 0, err
+	}
+
+	return users, total, nil
+}
