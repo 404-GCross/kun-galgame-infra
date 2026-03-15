@@ -37,6 +37,7 @@
     "PKCE",
     "Pressable",
     "SSLMODE",
+    "STARTTLS",
     "Tauri",
     "testdata",
     "tmpl",

@@ -8,8 +8,8 @@ import (
 type Session struct {
 	ID           uint      `gorm:"primaryKey" json:"id"`
 	UserID       uint      `gorm:"not null;index" json:"user_id"`
-	SessionToken string    `gorm:"size:255;uniqueIndex;not null" json:"-"`
-	RefreshToken string    `gorm:"size:255;uniqueIndex;not null" json:"-"`
+	SessionToken string    `gorm:"type:text;uniqueIndex;not null" json:"-"`
+	RefreshToken string    `gorm:"type:text;uniqueIndex;not null" json:"-"`
 	UserAgent    string    `gorm:"type:text;default:''" json:"user_agent"`
 	IPAddress    string    `gorm:"size:45;default:''" json:"ip_address"`
 	ExpiresAt    time.Time `gorm:"not null" json:"expires_at"`

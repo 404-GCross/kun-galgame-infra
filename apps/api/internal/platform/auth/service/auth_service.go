@@ -227,8 +227,8 @@ func (s *AuthService) ForgotPassword(ctx context.Context, email string) error {
 		return err
 	}
 
-	// Send reset email
-	resetLink := fmt.Sprintf("%s/auth/reset-password?token=%s", s.cfg.Server.SiteURL, token)
+	// Send reset email (link to frontend)
+	resetLink := fmt.Sprintf("%s/auth/reset-password?token=%s", s.cfg.Server.FrontendURL, token)
 	if err := s.mailer.SendPasswordResetEmail(user.Email, user.Name, resetLink); err != nil {
 		return fmt.Errorf("failed to send email: %w", err)
 	}

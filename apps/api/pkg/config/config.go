@@ -28,11 +28,12 @@ type MailConfig struct {
 
 // ServerConfig holds server-related configuration
 type ServerConfig struct {
-	Host       string
-	Port       int
-	Env        string
-	SiteURL    string
-	CORSOrigin string
+	Host        string
+	Port        int
+	Env         string
+	SiteURL     string
+	FrontendURL string
+	CORSOrigin  string
 }
 
 // DatabaseConfig holds database-related configuration
@@ -73,11 +74,12 @@ func Load() (*Config, error) {
 	// Server config
 	serverPort, _ := strconv.Atoi(getEnv("KUN_FIBER_SERVER_PORT", "9277"))
 	cfg.Server = ServerConfig{
-		Host:       getEnv("KUN_FIBER_SERVER_HOST", "127.0.0.1"),
-		Port:       serverPort,
-		Env:        getEnv("KUN_ENV", "development"),
-		SiteURL:    getEnv("KUN_SITE_URL", "http://127.0.0.1:9277"),
-		CORSOrigin: getEnv("KUN_FRONTEND_CORS_ORIGIN", "http://127.0.0.1:9420"),
+		Host:        getEnv("KUN_FIBER_SERVER_HOST", "127.0.0.1"),
+		Port:        serverPort,
+		Env:         getEnv("KUN_ENV", "development"),
+		SiteURL:     getEnv("KUN_SITE_URL", "http://127.0.0.1:9277"),
+		FrontendURL: getEnv("KUN_FRONTEND_URL", "http://127.0.0.1:9420"),
+		CORSOrigin:  getEnv("KUN_FRONTEND_CORS_ORIGIN", "http://127.0.0.1:9420"),
 	}
 
 	// Database config
