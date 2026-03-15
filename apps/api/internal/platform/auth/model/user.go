@@ -3,6 +3,8 @@ package model
 import (
 	"time"
 
+	siteModel "api/internal/platform/site/model"
+
 	"gorm.io/gorm"
 )
 
@@ -23,11 +25,21 @@ type User struct {
 	DeletedAt   gorm.DeletedAt `gorm:"index" json:"-"`
 
 	// Relations
-	SiteData      []UserSiteData `gorm:"foreignKey:UserID" json:"site_data,omitempty"`
-	Sessions      []Session      `gorm:"foreignKey:UserID" json:"-"`
-	OAuthAccounts []OAuthAccount `gorm:"foreignKey:UserID" json:"oauth_accounts,omitempty"`
-	Followers     []UserFollow   `gorm:"foreignKey:FollowingID" json:"-"`
-	Following     []UserFollow   `gorm:"foreignKey:FollowerID" json:"-"`
+	SiteData      []UserSiteData   `gorm:"foreignKey:UserID" json:"site_data,omitempty"`
+	Sessions      []Session        `gorm:"foreignKey:UserID" json:"-"`
+	OAuthAccounts []OAuthAccount   `gorm:"foreignKey:UserID" json:"oauth_accounts,omitempty"`
+	Followers     []UserFollow     `gorm:"foreignKey:FollowingID" json:"-"`
+	Following     []UserFollow     `gorm:"foreignKey:FollowerID" json:"-"`
+	Roles         []siteModel.Role `gorm:"many2many:user_roles;" json:"roles,omitempty"`
+}
+
+// RoleNames returns the user's role names as a string slice
+func (u *User) RoleNames() []string {
+	names := make([]string, len(u.Roles))
+	for i, r := range u.Roles {
+		names[i] = r.Name
+	}
+	return names
 }
 
 // TableName returns the table name for User

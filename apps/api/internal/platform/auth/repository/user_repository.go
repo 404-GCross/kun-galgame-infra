@@ -36,6 +36,24 @@ func (r *UserRepository) FindByUUID(ctx context.Context, uuid string) (*model.Us
 	return &user, nil
 }
 
+// FindByUUIDWithRoles finds a user by UUID and preloads their roles
+func (r *UserRepository) FindByUUIDWithRoles(ctx context.Context, uuid string) (*model.User, error) {
+	var user model.User
+	if err := r.db.WithContext(ctx).Preload("Roles").Where("uuid = ?", uuid).First(&user).Error; err != nil {
+		return nil, err
+	}
+	return &user, nil
+}
+
+// FindByIDWithRoles finds a user by ID and preloads their roles
+func (r *UserRepository) FindByIDWithRoles(ctx context.Context, id uint) (*model.User, error) {
+	var user model.User
+	if err := r.db.WithContext(ctx).Preload("Roles").First(&user, id).Error; err != nil {
+		return nil, err
+	}
+	return &user, nil
+}
+
 // FindByEmail finds a user by email
 func (r *UserRepository) FindByEmail(ctx context.Context, email string) (*model.User, error) {
 	var user model.User

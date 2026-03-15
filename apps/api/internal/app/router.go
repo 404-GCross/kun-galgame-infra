@@ -54,8 +54,14 @@ func (a *App) setupRoutes() {
 	// Initialize mail service
 	mailer := mail.NewMailer(a.config.Mail)
 
+	// Initialize additional repositories for OAuth
+	authCodeRepo := authRepo.NewAuthorizationCodeRepository(db)
+	oauthClientRepo := siteRepo.NewOAuthClientRepository(db)
+
 	// Initialize services
 	authSvc := authService.NewAuthServiceFull(userRepo, sessionRepo, passwordResetRepo, mailer, a.config)
+	oauthSvc := authService.NewOAuthService(userRepo, authCodeRepo, sessionRepo, oauthClientRepo, a.config)
+	adminSvc := authService.NewAdminService(userRepo, sessionRepo)
 	siteSvc := siteService.NewSiteService(siteRepository)
 	gameSvc := gameService.NewGameService(gameRepository)
 	contentSvc := contentService.NewContentService(contentRepository)
@@ -65,6 +71,8 @@ func (a *App) setupRoutes() {
 
 	// Initialize handlers
 	authH := authHandler.NewAuthHandler(authSvc)
+	oauthH := authHandler.NewOAuthHandler(oauthSvc)
+	adminH := authHandler.NewAdminHandler(adminSvc)
 	siteH := siteHandler.NewSiteHandler(siteSvc)
 	gameH := gameHandler.NewGameHandler(gameSvc)
 	contentH := contentHandler.NewContentHandler(contentSvc)
@@ -101,9 +109,26 @@ func (a *App) setupRoutes() {
 	authProtected.Get("/me", authH.Me)
 	authProtected.Put("/password", authH.ChangePassword)
 
+	// OAuth 2.0 routes
+	oauth := v1.Group("/oauth")
+	oauth.Post("/token", oauthH.Token)     // Public: exchange code or refresh token
+	oauth.Post("/revoke", oauthH.Revoke)   // Public: revoke a token
+	oauthProtected := oauth.Group("", middleware.Auth(authSvc))
+	oauthProtected.Get("/authorize", oauthH.Authorize) // Requires login
+	oauthProtected.Get("/userinfo", oauthH.UserInfo)   // Requires login
+
 	// User routes
 	users := v1.Group("/users", middleware.Auth(authSvc))
 	users.Get("/:uuid", authH.GetProfile)
+
+	// Admin routes (admin only)
+	admin := v1.Group("/admin", middleware.Auth(authSvc), middleware.RequireRole("admin"))
+	admin.Get("/users", adminH.ListUsers)
+	admin.Get("/users/:uuid", adminH.GetUser)
+	admin.Patch("/users/:uuid", adminH.UpdateUser)
+	admin.Post("/users/:uuid/ban", adminH.BanUser)
+	admin.Post("/users/:uuid/unban", adminH.UnbanUser)
+	admin.Delete("/users/:uuid/sessions", adminH.DeleteUserSessions)
 
 	// Site routes (admin only)
 	sites := v1.Group("/sites", middleware.Auth(authSvc), middleware.RequireRole("admin"))

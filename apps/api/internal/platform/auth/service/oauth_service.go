@@ -128,8 +128,8 @@ func (s *OAuthService) ExchangeCode(ctx context.Context, req *dto.TokenRequest) 
 		return nil, err
 	}
 
-	// Get user
-	user, err := s.userRepo.FindByID(ctx, authCode.UserID)
+	// Get user with roles
+	user, err := s.userRepo.FindByIDWithRoles(ctx, authCode.UserID)
 	if err != nil {
 		return nil, errors.NewWithCode(errors.ErrAuthUserNotFound)
 	}
@@ -141,6 +141,7 @@ func (s *OAuthService) ExchangeCode(ctx context.Context, req *dto.TokenRequest) 
 			UserUUID: user.UUID,
 			Email:    user.Email,
 			Name:     user.Name,
+			Roles:    user.RoleNames(),
 		},
 		15*time.Minute,
 	)
@@ -200,6 +201,76 @@ func (s *OAuthService) RevokeToken(ctx context.Context, refreshToken string) err
 		return nil // Token not found, consider it revoked
 	}
 	return s.sessionRepo.Delete(ctx, session.ID)
+}
+
+// GetUserIDByUUID resolves a user UUID to a user ID
+func (s *OAuthService) GetUserIDByUUID(ctx context.Context, uuid string) (uint, error) {
+	user, err := s.userRepo.FindByUUID(ctx, uuid)
+	if err != nil {
+		return 0, err
+	}
+	return user.ID, nil
+}
+
+// RefreshWithClient refreshes tokens using a refresh token within the OAuth flow
+func (s *OAuthService) RefreshWithClient(ctx context.Context, refreshToken, clientID string) (*dto.TokenResponse, error) {
+	// Find session by refresh token
+	session, err := s.sessionRepo.FindByRefreshToken(ctx, refreshToken)
+	if err != nil {
+		return nil, errors.NewWithCode(errors.ErrAuthInvalidToken)
+	}
+
+	// Check if session is expired
+	if session.IsExpired() {
+		_ = s.sessionRepo.Delete(ctx, session.ID)
+		return nil, errors.NewWithCode(errors.ErrAuthTokenExpired)
+	}
+
+	// Get user with roles
+	user, err := s.userRepo.FindByIDWithRoles(ctx, session.UserID)
+	if err != nil {
+		return nil, errors.NewWithCode(errors.ErrAuthUserNotFound)
+	}
+
+	// Generate new tokens
+	accessToken, err := utils.GenerateAccessToken(
+		s.cfg.JWT.Secret,
+		utils.TokenClaims{
+			UserUUID: user.UUID,
+			Email:    user.Email,
+			Name:     user.Name,
+			Roles:    user.RoleNames(),
+		},
+		15*time.Minute,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	newRefreshToken, err := utils.GenerateRefreshToken(
+		s.cfg.JWT.Secret,
+		user.UUID,
+		7*24*time.Hour,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	// Update session with new tokens (rotation)
+	session.SessionToken = accessToken
+	session.RefreshToken = newRefreshToken
+	session.ExpiresAt = time.Now().Add(7 * 24 * time.Hour)
+
+	if err := s.sessionRepo.Update(ctx, session); err != nil {
+		return nil, err
+	}
+
+	return &dto.TokenResponse{
+		AccessToken:  accessToken,
+		TokenType:    "Bearer",
+		ExpiresIn:    900,
+		RefreshToken: newRefreshToken,
+	}, nil
 }
 
 // verifyCodeVerifier verifies the PKCE code verifier

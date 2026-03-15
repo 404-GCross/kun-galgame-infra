@@ -119,6 +119,12 @@ func (s *AuthService) Login(ctx context.Context, req *dto.LoginRequest) (*dto.To
 		return nil, nil, errors.NewWithCode(errors.ErrAuthInvalidPassword)
 	}
 
+	// Load roles for JWT claims and response
+	userWithRoles, err := s.userRepo.FindByIDWithRoles(ctx, user.ID)
+	if err == nil {
+		user.Roles = userWithRoles.Roles
+	}
+
 	// Generate tokens
 	tokens, err := s.generateTokens(user)
 	if err != nil {
@@ -192,6 +198,11 @@ func (s *AuthService) RefreshToken(ctx context.Context, refreshToken string) (*d
 // GetCurrentUser gets the current user from token
 func (s *AuthService) GetCurrentUser(ctx context.Context, userUUID string) (*model.User, error) {
 	return s.userRepo.FindByUUID(ctx, userUUID)
+}
+
+// GetCurrentUserWithRoles gets the current user with roles preloaded
+func (s *AuthService) GetCurrentUserWithRoles(ctx context.Context, userUUID string) (*model.User, error) {
+	return s.userRepo.FindByUUIDWithRoles(ctx, userUUID)
 }
 
 // ForgotPassword initiates password reset flow
@@ -310,6 +321,14 @@ func (s *AuthService) ValidateAccessToken(tokenString string) (*utils.TokenClaim
 
 // generateTokens generates access and refresh tokens
 func (s *AuthService) generateTokens(user *model.User) (*dto.TokenPair, error) {
+	// Load roles if not already preloaded
+	if user.Roles == nil {
+		userWithRoles, err := s.userRepo.FindByIDWithRoles(context.Background(), user.ID)
+		if err == nil {
+			user.Roles = userWithRoles.Roles
+		}
+	}
+
 	// Access token (15 minutes)
 	accessToken, err := utils.GenerateAccessToken(
 		s.cfg.JWT.Secret,
@@ -317,6 +336,7 @@ func (s *AuthService) generateTokens(user *model.User) (*dto.TokenPair, error) {
 			UserUUID: user.UUID,
 			Email:    user.Email,
 			Name:     user.Name,
+			Roles:    user.RoleNames(),
 		},
 		15*time.Minute,
 	)

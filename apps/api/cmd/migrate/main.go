@@ -129,9 +129,15 @@ func dropAllTables(db *gorm.DB) error {
 			slog.Debug("drop table skipped", "error", err)
 		}
 	}
-	// Also drop the join table
+	// Also drop the join tables
 	if err := db.Migrator().DropTable("game_tags"); err != nil {
 		slog.Debug("drop game_tags skipped", "error", err)
+	}
+	if err := db.Migrator().DropTable("user_roles"); err != nil {
+		slog.Debug("drop user_roles skipped", "error", err)
+	}
+	if err := db.Migrator().DropTable("role_permissions"); err != nil {
+		slog.Debug("drop role_permissions skipped", "error", err)
 	}
 	return nil
 }

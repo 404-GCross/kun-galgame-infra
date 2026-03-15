@@ -52,6 +52,7 @@ func (s *AdminService) ListUsers(ctx context.Context, req *dto.UserListRequest) 
 			Bio:         user.Bio,
 			Moemoepoint: user.Moemoepoint,
 			Status:      user.Status,
+			Roles:       user.RoleNames(),
 			CreatedAt:   user.CreatedAt.Format("2006-01-02T15:04:05Z"),
 		}
 	}
@@ -72,7 +73,7 @@ func (s *AdminService) ListUsers(ctx context.Context, req *dto.UserListRequest) 
 
 // GetUser returns a user by UUID
 func (s *AdminService) GetUser(ctx context.Context, uuid string) (*dto.UserDetailResponse, error) {
-	user, err := s.userRepo.FindByUUID(ctx, uuid)
+	user, err := s.userRepo.FindByUUIDWithRoles(ctx, uuid)
 	if err != nil {
 		return nil, errors.NewWithCode(errors.ErrAuthUserNotFound)
 	}
@@ -89,6 +90,7 @@ func (s *AdminService) GetUser(ctx context.Context, uuid string) (*dto.UserDetai
 			Bio:         user.Bio,
 			Moemoepoint: user.Moemoepoint,
 			Status:      user.Status,
+			Roles:       user.RoleNames(),
 			CreatedAt:   user.CreatedAt.Format("2006-01-02T15:04:05Z"),
 		},
 		IP:           user.IP,

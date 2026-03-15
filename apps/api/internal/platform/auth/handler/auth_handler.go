@@ -47,6 +47,7 @@ func (h *AuthHandler) Register(c fiber.Ctx) error {
 		Bio:         user.Bio,
 		Moemoepoint: user.Moemoepoint,
 		Status:      user.Status,
+		Roles:       []string{}, // New user has no roles yet
 		CreatedAt:   user.CreatedAt.Format("2006-01-02T15:04:05Z"),
 	})
 }
@@ -83,6 +84,7 @@ func (h *AuthHandler) Login(c fiber.Ctx) error {
 			Bio:         user.Bio,
 			Moemoepoint: user.Moemoepoint,
 			Status:      user.Status,
+			Roles:       user.RoleNames(),
 			CreatedAt:   user.CreatedAt.Format("2006-01-02T15:04:05Z"),
 		},
 		Tokens: *tokens,
@@ -128,7 +130,7 @@ func (h *AuthHandler) Refresh(c fiber.Ctx) error {
 func (h *AuthHandler) Me(c fiber.Ctx) error {
 	userUUID := c.Locals("user_uuid").(string)
 
-	user, err := h.authService.GetCurrentUser(c.Context(), userUUID)
+	user, err := h.authService.GetCurrentUserWithRoles(c.Context(), userUUID)
 	if err != nil {
 		return response.NotFound(c, errors.ErrAuthUserNotFound)
 	}
@@ -141,6 +143,7 @@ func (h *AuthHandler) Me(c fiber.Ctx) error {
 		Bio:         user.Bio,
 		Moemoepoint: user.Moemoepoint,
 		Status:      user.Status,
+		Roles:       user.RoleNames(),
 		CreatedAt:   user.CreatedAt.Format("2006-01-02T15:04:05Z"),
 	})
 }
@@ -227,6 +230,7 @@ func (h *AuthHandler) GetProfile(c fiber.Ctx) error {
 		Bio:         user.Bio,
 		Moemoepoint: user.Moemoepoint,
 		Status:      user.Status,
+		Roles:       user.RoleNames(),
 		CreatedAt:   user.CreatedAt.Format("2006-01-02T15:04:05Z"),
 	})
 }

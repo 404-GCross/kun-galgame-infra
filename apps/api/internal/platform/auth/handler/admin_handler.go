@@ -85,6 +85,7 @@ func (h *AdminHandler) UpdateUser(c fiber.Ctx) error {
 		Bio:         user.Bio,
 		Moemoepoint: user.Moemoepoint,
 		Status:      user.Status,
+		Roles:       user.RoleNames(),
 		CreatedAt:   user.CreatedAt.Format("2006-01-02T15:04:05Z"),
 	})
 }

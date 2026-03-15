@@ -51,14 +51,15 @@ type TokenPair struct {
 
 // UserResponse represents a user in API responses
 type UserResponse struct {
-	UUID        string `json:"uuid"`
-	Name        string `json:"name"`
-	Email       string `json:"email"`
-	Avatar      string `json:"avatar"`
-	Bio         string `json:"bio"`
-	Moemoepoint int    `json:"moemoepoint"`
-	Status      int    `json:"status"`
-	CreatedAt   string `json:"created_at"`
+	UUID        string   `json:"uuid"`
+	Name        string   `json:"name"`
+	Email       string   `json:"email"`
+	Avatar      string   `json:"avatar"`
+	Bio         string   `json:"bio"`
+	Moemoepoint int      `json:"moemoepoint"`
+	Status      int      `json:"status"`
+	Roles       []string `json:"roles"`
+	CreatedAt   string   `json:"created_at"`
 }
 
 // LoginResponse represents a login response
