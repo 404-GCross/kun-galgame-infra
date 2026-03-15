@@ -42,9 +42,9 @@ export const useAuth = () => {
     user.value = null
   }
 
-  const login = async (email: string, password: string) => {
+  const login = async (account: string, password: string) => {
     const response = await api.post<LoginResponse>('/auth/login', {
-      email,
+      account,
       password,
     })
     if (response.code === 0) {

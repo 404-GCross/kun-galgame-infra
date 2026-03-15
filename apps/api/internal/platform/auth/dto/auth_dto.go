@@ -8,8 +8,9 @@ type RegisterRequest struct {
 }
 
 // LoginRequest represents a login request
+// Account accepts either an email or a username
 type LoginRequest struct {
-	Email     string `json:"email" validate:"required,email"`
+	Account   string `json:"account" validate:"required"`
 	Password  string `json:"password" validate:"required"`
 	UserAgent string `json:"-"`
 	IPAddress string `json:"-"`

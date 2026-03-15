@@ -6,7 +6,7 @@ definePageMeta({
 const auth = useAuth()
 const router = useRouter()
 
-const email = ref('')
+const account = ref('')
 const password = ref('')
 const error = ref('')
 const isLoading = ref(false)
@@ -16,7 +16,7 @@ const handleSubmit = async () => {
   isLoading.value = true
 
   try {
-    const response = await auth.login(email.value, password.value)
+    const response = await auth.login(account.value, password.value)
     if (response.code === 0) {
       router.push('/')
     } else {
@@ -50,10 +50,10 @@ onMounted(async () => {
     <form @submit.prevent="handleSubmit">
       <div class="space-y-4">
         <KunInput
-          v-model="email"
-          label="邮箱"
-          type="email"
-          placeholder="请输入邮箱"
+          v-model="account"
+          label="账号"
+          type="text"
+          placeholder="请输入邮箱或用户名"
           required
           autofocus
         />

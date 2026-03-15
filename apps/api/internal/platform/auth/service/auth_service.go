@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"strings"
 	"time"
 
 	"api/internal/infrastructure/mail"
@@ -97,8 +98,16 @@ func (s *AuthService) Register(ctx context.Context, req *dto.RegisterRequest) (*
 
 // Login authenticates a user
 func (s *AuthService) Login(ctx context.Context, req *dto.LoginRequest) (*dto.TokenPair, *model.User, error) {
-	// Find user by email
-	user, err := s.userRepo.FindByEmail(ctx, req.Email)
+	// Find user by email or username
+	var (
+		user *model.User
+		err  error
+	)
+	if strings.Contains(req.Account, "@") {
+		user, err = s.userRepo.FindByEmail(ctx, req.Account)
+	} else {
+		user, err = s.userRepo.FindByName(ctx, req.Account)
+	}
 	if err != nil {
 		return nil, nil, errors.NewWithCode(errors.ErrAuthUserNotFound)
 	}
