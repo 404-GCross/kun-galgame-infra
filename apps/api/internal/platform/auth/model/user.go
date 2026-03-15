@@ -14,7 +14,9 @@ type User struct {
 	UUID        string         `gorm:"type:uuid;uniqueIndex;default:gen_random_uuid()" json:"uuid"`
 	Name        string         `gorm:"size:17;uniqueIndex;not null" json:"name"`
 	Email       string         `gorm:"size:255;uniqueIndex;not null" json:"email"`
-	Password    *string        `gorm:"size:255" json:"-"`
+	Password       *string `gorm:"size:255" json:"-"`
+	KungalPassword *string `gorm:"size:255" json:"-"` // Legacy bcrypt hash, removed after migration period
+	MoyuPassword   *string `gorm:"size:255" json:"-"` // Legacy argon2id "salt_hex:hash_hex", removed after migration period
 	Avatar      string         `gorm:"size:255;default:''" json:"avatar"`
 	Bio         string         `gorm:"size:107;default:''" json:"bio"`
 	Moemoepoint int            `gorm:"default:0" json:"moemoepoint"`
@@ -50,6 +52,12 @@ func (User) TableName() string {
 // IsPasswordSet checks if the user has a password set
 func (u *User) IsPasswordSet() bool {
 	return u.Password != nil && *u.Password != ""
+}
+
+// HasLegacyPassword checks if the user has any legacy password that can be verified
+func (u *User) HasLegacyPassword() bool {
+	return (u.KungalPassword != nil && *u.KungalPassword != "") ||
+		(u.MoyuPassword != nil && *u.MoyuPassword != "")
 }
 
 // IsBanned checks if the user is banned

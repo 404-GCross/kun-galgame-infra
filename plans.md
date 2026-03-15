@@ -455,36 +455,51 @@ type Permission struct {
     └── （可选）删除原 user 表
 ```
 
-### 5.3 密码重置方案
+### 5.3 密码无感迁移方案
 
-由于 kungal-nuxt（bcrypt）和 moyu-nextjs（自定义 argon2）的密码格式都与新系统不兼容，
-**所有迁移用户的 password 字段初始为 NULL，必须通过邮箱重置密码**。
+Users 表包含三个密码列：
+
+| 列 | 格式 | 来源 | 生命周期 |
+|---|---|---|---|
+| `password` | argon2 PHC 标准格式 | 新系统 | 永久 |
+| `kungal_password` | bcrypt `$2b$07$...` | kungal-nuxt | 迁移后 6 个月删除 |
+| `moyu_password` | 自定义 `salt_hex:hash_hex` | moyu-nextjs（argon2id, t=2, m=8192, p=3, keyLen=32） | 迁移后 6 个月删除 |
 
 ```
-迁移用户首次登录流程：
+用户登录流程：
 
-用户输入 email
+输入 email + password
         │
         ▼
-检查 password 是否为 NULL
+查找用户
         │
-        ├── password = NULL（迁移用户）
-        │   ├── 提示「账户已迁移，请重置密码」
-        │   ├── 发送重置密码邮件
-        │   ├── 用户点击链接设置新密码
-        │   └── 新密码使用 argon2 标准格式存储
+        ├── password != NULL（新密码已设置）
+        │   └── 验证 argon2 PHC 格式 → 成功/失败
         │
-        └── password != NULL（已重置或新用户）
-            └── 正常验证 argon2 密码
-
-密码格式（统一）：
-$argon2id$v=19$m=65536,t=3,p=4$salt$hash
+        ├── password == NULL, 有旧密码
+        │   ├── 尝试 kungal_password（bcrypt.Compare）
+        │   │   └── 匹配 → hash 新密码存入 password，清除两个旧列 → 登录成功
+        │   │
+        │   ├── 尝试 moyu_password（argon2id, 解析 salt_hex:hash_hex）
+        │   │   └── 匹配 → hash 新密码存入 password，清除两个旧列 → 登录成功
+        │   │
+        │   └── 都不匹配 → 密码错误
+        │
+        └── password == NULL, 无旧密码
+            └── 提示需要重置密码
 ```
 
-**优势**：
-- 代码简单：只需支持一种密码格式（argon2 标准）
-- 安全性统一：所有用户使用相同的安全参数
-- 无兼容性负担：不需要维护多种验证逻辑
+**无需额外服务**：bcrypt 和 argon2id 验证均由 Go 标准库（`golang.org/x/crypto/bcrypt` 和 `golang.org/x/crypto/argon2`）原生支持。
+
+**6 个月后清理**：
+1. 仍然 `password = NULL` 的用户需走忘记密码流程
+2. 删除 `kungal_password` 和 `moyu_password` 列
+3. 删除旧密码验证代码（`VerifyBcryptPassword`、`VerifyMoyuPassword`）
+
+**新注册用户密码格式**（统一）：
+```
+$argon2id$v=19$m=65536,t=3,p=4$salt$hash
+```
 
 ### 5.4 迁移后网站改造
 
@@ -806,7 +821,7 @@ type UserMigration struct {
 | 任务队列 | asynq | 轻量，与 Redis 集成好 |
 | 密码哈希 | argon2 (matthewhartstonge) | 比 bcrypt 更安全，使用 PHC 标准格式 |
 | JWT | golang-jwt/jwt/v5 | 标准库 |
-| 密码迁移 | 所有用户重置密码 | 简化实现，两个网站的旧格式都不兼容 |
+| 密码迁移 | 无感迁移（三列策略） | 旧密码原样复制，首次登录自动转为新格式，6 个月后清理 |
 | 用户名冲突 | 保留 kungal | 以 kungal 为主 |
 | 数据库拓扑 | 三库独立 | 微服务架构 |
 | 外键处理 | 存 uuid，应用层保证 | 跨库无法用外键约束 |

@@ -87,6 +87,15 @@ func (r *UserRepository) UpdatePassword(ctx context.Context, uuid string, passwo
 	return r.db.WithContext(ctx).Model(&model.User{}).Where("uuid = ?", uuid).Update("password", password).Error
 }
 
+// MigrateLegacyPassword sets the new password and clears legacy password fields
+func (r *UserRepository) MigrateLegacyPassword(ctx context.Context, userID uint, newPasswordHash string) error {
+	return r.db.WithContext(ctx).Model(&model.User{}).Where("id = ?", userID).Updates(map[string]any{
+		"password":        newPasswordHash,
+		"kungal_password": nil,
+		"moyu_password":   nil,
+	}).Error
+}
+
 // Delete soft deletes a user
 func (r *UserRepository) Delete(ctx context.Context, id uint) error {
 	return r.db.WithContext(ctx).Delete(&model.User{}, id).Error

@@ -108,15 +108,46 @@ func (s *AuthService) Login(ctx context.Context, req *dto.LoginRequest) (*dto.To
 		return nil, nil, errors.NewWithCode(errors.ErrAuthUnauthorized)
 	}
 
-	// Check if password is set (migration users need to reset password)
-	if !user.IsPasswordSet() {
-		return nil, nil, errors.NewWithCode(errors.ErrAuthPasswordRequired)
-	}
+	// Verify password (new system or legacy migration)
+	if user.IsPasswordSet() {
+		// New system password exists — verify directly
+		ok, err := utils.VerifyPassword(req.Password, *user.Password)
+		if err != nil || !ok {
+			return nil, nil, errors.NewWithCode(errors.ErrAuthInvalidPassword)
+		}
+	} else if user.HasLegacyPassword() {
+		// Try legacy passwords and migrate on success
+		migrated := false
 
-	// Verify password
-	ok, err := utils.VerifyPassword(req.Password, *user.Password)
-	if err != nil || !ok {
-		return nil, nil, errors.NewWithCode(errors.ErrAuthInvalidPassword)
+		// Try kungal bcrypt
+		if user.KungalPassword != nil && *user.KungalPassword != "" {
+			if utils.VerifyBcryptPassword(req.Password, *user.KungalPassword) {
+				migrated = true
+			}
+		}
+
+		// Try moyu custom argon2id
+		if !migrated && user.MoyuPassword != nil && *user.MoyuPassword != "" {
+			if utils.VerifyMoyuPassword(req.Password, *user.MoyuPassword) {
+				migrated = true
+			}
+		}
+
+		if !migrated {
+			return nil, nil, errors.NewWithCode(errors.ErrAuthInvalidPassword)
+		}
+
+		// Legacy password matched — hash with new system and save
+		newHash, err := utils.HashPassword(req.Password)
+		if err != nil {
+			return nil, nil, err
+		}
+		if err := s.userRepo.MigrateLegacyPassword(ctx, user.ID, newHash); err != nil {
+			return nil, nil, err
+		}
+	} else {
+		// No password at all — need to reset
+		return nil, nil, errors.NewWithCode(errors.ErrAuthPasswordRequired)
 	}
 
 	// Load roles for JWT claims and response

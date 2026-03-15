@@ -324,17 +324,28 @@ func runMigration(ctx context.Context, targetDB, kungalDB, moyuDB *gorm.DB, dryR
 
 		name := deduplicateName(m.Name, processedNames)
 
+		// Copy legacy passwords for transparent migration
+		var kungalPwd, moyuPwd *string
+		if ku := m.Kungal; ku != nil && ku.Password != "" {
+			kungalPwd = &ku.Password
+		}
+		if mu := m.Moyu; mu != nil && mu.Password != "" {
+			moyuPwd = &mu.Password
+		}
+
 		newUser := &authModel.User{
-			Name:        name,
-			Email:       m.Email,
-			Password:    nil,
-			Avatar:      m.Avatar,
-			Bio:         m.Bio,
-			Moemoepoint: m.Moemoepoint,
-			Status:      m.Status,
-			IP:          m.IP,
-			CreatedAt:   m.CreatedAt,
-			UpdatedAt:   m.UpdatedAt,
+			Name:           name,
+			Email:          m.Email,
+			Password:       nil, // Will be set on first successful legacy login
+			KungalPassword: kungalPwd,
+			MoyuPassword:   moyuPwd,
+			Avatar:         m.Avatar,
+			Bio:            m.Bio,
+			Moemoepoint:    m.Moemoepoint,
+			Status:         m.Status,
+			IP:             m.IP,
+			CreatedAt:      m.CreatedAt,
+			UpdatedAt:      m.UpdatedAt,
 		}
 
 		if !dryRun {
