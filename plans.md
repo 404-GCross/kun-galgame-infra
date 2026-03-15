@@ -421,7 +421,31 @@ type Permission struct {
 ├── 使用映射表转换 follower_id 和 following_id
 └── 插入 user_follows 表
 
-第五步：更新两个网站的外键
+第五步：映射站点角色 → 全局角色（user_roles）
+├── 遍历所有 user_site_data 记录
+├── 按以下规则确定每个用户的最高全局角色：
+│
+│   kungal-nuxt 角色定义：1=用户, 2=管理员, 3=超级管理员
+│   moyu-nextjs 角色定义：1=用户, 2=创作者, 3=管理员, 4=超级管理员
+│
+│   映射规则：
+│   ├── kungal role=3 (超管) → admin
+│   ├── kungal role=2 (管理) → moderator
+│   ├── moyu role=4 (超管)   → admin
+│   ├── moyu role=3 (管理)   → moderator
+│   ├── moyu role=2 (创作者) → 不映射（业务角色，保留在 user_site_data.role）
+│   └── role=1 (普通用户)    → 不映射
+│
+├── 同一用户在两个站点都有管理角色时，取较高的
+│   例：kungal 超管 + moyu 管理 → admin（取最高）
+│
+└── 写入 user_roles 关联表（ON CONFLICT DO NOTHING 防重复）
+
+注：此映射仅在迁移时一次性执行。
+    后续新用户的全局角色通过管理后台手动分配。
+    user_site_data.role 保持原值不变，各站点仍通过它控制站内业务权限。
+
+第六步：更新两个网站的外键
 ├── kungalgame 所有包含 user_id 的表
 │   ├── 新增 account_user_uuid 列
 │   ├── 使用映射表填充 uuid

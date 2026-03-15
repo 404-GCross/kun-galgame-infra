@@ -89,6 +89,7 @@ type MigrationResult struct {
 	SiteDataCreated   int
 	FollowsMigrated   int
 	FollowsSkipped    int
+	RolesAssigned     int
 	Errors            int
 	SkippedDuplicates int
 }
@@ -486,12 +487,118 @@ func runMigration(ctx context.Context, targetDB, kungalDB, moyuDB *gorm.DB, dryR
 		result.FollowsMigrated = len(moyuFollows) // Estimate in dry-run
 	}
 
+	// ── Step 5: Map site-level roles → global roles (user_roles) ─────────
+	//
+	// Mapping rules:
+	//   kungal: role=3 (超管) → admin,  role=2 (管理) → moderator
+	//   moyu:   role=4 (超管) → admin,  role=3 (管理) → moderator
+	//
+	// For users present on both sites, take the highest privilege.
+	// moyu role=2 (创作者) is a business role, not mapped.
+
+	// Lookup global role IDs from roles table
+	roleIDs, err := findRoleIDs(ctx, targetDB)
+	if err != nil {
+		return nil, fmt.Errorf("failed to lookup role IDs: %w", err)
+	}
+	slog.Info("Role IDs resolved", "admin", roleIDs["admin"], "moderator", roleIDs["moderator"])
+
+	// Collect all user_site_data to determine global roles
+	var allSiteData []authModel.UserSiteData
+	if err := targetDB.WithContext(ctx).Find(&allSiteData).Error; err != nil {
+		return nil, fmt.Errorf("failed to fetch user site data: %w", err)
+	}
+
+	// For each user, compute the highest global role level
+	// 0 = none, 1 = moderator, 2 = admin
+	userMaxLevel := make(map[uint]int)
+	for _, sd := range allSiteData {
+		level := 0
+		if sd.SiteID == kungalSiteID {
+			// kungal: 1=user, 2=admin, 3=superadmin
+			switch sd.Role {
+			case 3:
+				level = 2 // superadmin → admin
+			case 2:
+				level = 1 // admin → moderator
+			}
+		} else if sd.SiteID == moyuSiteID {
+			// moyu: 1=user, 2=publisher, 3=admin, 4=superadmin
+			switch sd.Role {
+			case 4:
+				level = 2 // superadmin → admin
+			case 3:
+				level = 1 // admin → moderator
+			}
+			// role=2 (publisher) is business-only, not mapped
+		}
+		if level > userMaxLevel[sd.UserID] {
+			userMaxLevel[sd.UserID] = level
+		}
+	}
+
+	if !dryRun {
+		for userID, level := range userMaxLevel {
+			if level == 0 {
+				continue
+			}
+			var roleName string
+			if level >= 2 {
+				roleName = "admin"
+			} else {
+				roleName = "moderator"
+			}
+			roleID, ok := roleIDs[roleName]
+			if !ok {
+				continue
+			}
+
+			// Insert into user_roles join table (skip duplicates)
+			err := targetDB.WithContext(ctx).Exec(
+				"INSERT INTO user_roles (user_id, role_id) VALUES (?, ?) ON CONFLICT DO NOTHING",
+				userID, roleID,
+			).Error
+			if err != nil {
+				slog.Error("failed to assign role", "user_id", userID, "role", roleName, "error", err)
+				result.Errors++
+				continue
+			}
+			result.RolesAssigned++
+		}
+	} else {
+		for _, level := range userMaxLevel {
+			if level > 0 {
+				result.RolesAssigned++
+			}
+		}
+	}
+
+	slog.Info("Role assignment complete", "assigned", result.RolesAssigned)
+
 	return result, nil
 }
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+func findRoleIDs(ctx context.Context, db *gorm.DB) (map[string]uint, error) {
+	var roles []siteModel.Role
+	if err := db.WithContext(ctx).Where("name IN ?", []string{"admin", "moderator"}).Find(&roles).Error; err != nil {
+		return nil, err
+	}
+	result := make(map[string]uint, len(roles))
+	for _, r := range roles {
+		result[r.Name] = r.ID
+	}
+	if _, ok := result["admin"]; !ok {
+		return nil, fmt.Errorf("'admin' role not found in roles table — run 'make migrate' first")
+	}
+	if _, ok := result["moderator"]; !ok {
+		return nil, fmt.Errorf("'moderator' role not found in roles table — run 'make migrate' first")
+	}
+	return result, nil
+}
 
 func findSiteID(ctx context.Context, db *gorm.DB, domain string) (uint, error) {
 	var site siteModel.Site
@@ -531,6 +638,7 @@ func printResults(r *MigrationResult, dryRun bool) {
 	fmt.Printf("Site data created:     %d\n", r.SiteDataCreated)
 	fmt.Printf("Follows migrated:      %d\n", r.FollowsMigrated)
 	fmt.Printf("Follows skipped:       %d\n", r.FollowsSkipped)
+	fmt.Printf("Roles assigned:        %d\n", r.RolesAssigned)
 	fmt.Printf("Skipped (existing):    %d\n", r.SkippedDuplicates)
 	fmt.Printf("Errors:                %d\n", r.Errors)
 	fmt.Println(strings.Repeat("=", 50))
