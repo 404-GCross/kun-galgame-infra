@@ -392,29 +392,27 @@ type Permission struct {
 第一步：准备工作
 ├── 备份三个数据库
 ├── 在 Account Service 创建 sites 表数据
-└── 生成 OAuth client（kungal_web, moyu_web）
+├── 生成 OAuth client（kungal_web, moyu_web）
+└── 重置 users_id_seq 序列（ALTER SEQUENCE users_id_seq RESTART WITH 1）
 
-第二步：导入 kungal-nuxt 用户
-├── 遍历 kungalgame.user 表
-├── 创建 users 记录（password = NULL）
-├── 创建 user_site_data 记录（site=kungal）
-└── 记录映射：kungal_old_id → new_uuid
+第二步：合并两站用户（内存中）
+├── 遍历 kungalgame.user 表，按 email 建立索引
+├── 遍历 kungalgame_patch.user 表，按 email 合并
+│   ├── 同邮箱冲突：kungal 优先（name/email/avatar/bio），moyu 补充
+│   │   ├── moemoepoint 两边加和
+│   │   ├── avatar/bio 若 kungal 为空则用 moyu
+│   │   └── created_at 取较早的时间戳
+│   └── 无冲突：作为 moyu-only 用户
+└── 输出统一的合并用户列表
 
-第三步：合并 moyu-nextjs 用户
-├── 遍历 kungalgame_patch.user 表
-├── 按 email 查找是否已存在
-│
-├── 如果存在（同邮箱冲突）：
-│   ├── users.moemoepoint += moyu.moemoepoint
-│   ├── 如果 avatar/bio 为空，使用 moyu 的
-│   ├── created_at 取较早的
-│   ├── 创建 user_site_data 记录（site=moyu）
-│   └── 记录映射：moyu_old_id → existing_uuid
-│
-└── 如果不存在：
-    ├── 创建 users 记录（password = NULL）
-    ├── 创建 user_site_data 记录（site=moyu）
-    └── 记录映射：moyu_old_id → new_uuid
+第三步：按 created_at 排序后插入
+├── 对合并用户列表按 created_at 升序排序
+├── 按顺序逐个插入（最早注册 → ID=1，依此类推）
+├── 每个用户在事务内同时创建：
+│   ├── users 记录（password = NULL）
+│   ├── user_site_data 记录（kungal 和/或 moyu）
+│   └── user_migrations 映射记录
+└── 结果：用户 ID 严格按注册时间从早到晚递增
 
 第四步：迁移社交关系
 ├── 遍历 kungalgame_patch.user_follow_relation
@@ -813,6 +811,7 @@ type UserMigration struct {
 | 数据库拓扑 | 三库独立 | 微服务架构 |
 | 外键处理 | 存 uuid，应用层保证 | 跨库无法用外键约束 |
 | 未来客户端 | Flutter | iOS/Android/Desktop 统一技术栈 |
+| 用户 ID 排序 | 按 created_at 升序分配 | 合并两站后排序插入，最早注册→ID=1，方便排序和分页 |
 | 职能分离 | 移除 game/content/comment | 站点业务数据由各网站管理，本系统只管身份+共享服务 |
 | 全局角色 | user_roles 多对多 | 与 user_site_data.role（站点级 int）分离，JWT 只含全局角色 |
 | Refresh Token | httpOnly Cookie | 后端 Set-Cookie，前端不可读，防 XSS |

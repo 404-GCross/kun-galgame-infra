@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -25,28 +26,26 @@ import (
 // Source database models
 // ---------------------------------------------------------------------------
 
-// KungalUser represents a user from kungal-nuxt (kungalgame database)
 type KungalUser struct {
-	ID                     uint      `gorm:"column:id"`
-	Name                   string    `gorm:"column:name"`
-	Email                  string    `gorm:"column:email"`
-	Password               string    `gorm:"column:password"`
-	Avatar                 string    `gorm:"column:avatar"`
-	Bio                    string    `gorm:"column:bio"`
-	Role                   int       `gorm:"column:role"`
-	Status                 int       `gorm:"column:status"`
-	Moemoepoint            int       `gorm:"column:moemoepoint"`
-	IP                     string    `gorm:"column:ip"`
-	DailyCheckIn           int       `gorm:"column:daily_check_in"`
-	DailyImageCount        int       `gorm:"column:daily_image_count"`
-	DailyToolsetUploadCount int      `gorm:"column:daily_toolset_upload_count"`
-	CreatedAt              time.Time `gorm:"column:created"`
-	UpdatedAt              time.Time `gorm:"column:updated"`
+	ID                      uint      `gorm:"column:id"`
+	Name                    string    `gorm:"column:name"`
+	Email                   string    `gorm:"column:email"`
+	Password                string    `gorm:"column:password"`
+	Avatar                  string    `gorm:"column:avatar"`
+	Bio                     string    `gorm:"column:bio"`
+	Role                    int       `gorm:"column:role"`
+	Status                  int       `gorm:"column:status"`
+	Moemoepoint             int       `gorm:"column:moemoepoint"`
+	IP                      string    `gorm:"column:ip"`
+	DailyCheckIn            int       `gorm:"column:daily_check_in"`
+	DailyImageCount         int       `gorm:"column:daily_image_count"`
+	DailyToolsetUploadCount int       `gorm:"column:daily_toolset_upload_count"`
+	CreatedAt               time.Time `gorm:"column:created"`
+	UpdatedAt               time.Time `gorm:"column:updated"`
 }
 
 func (KungalUser) TableName() string { return "user" }
 
-// MoyuUser represents a user from moyu-nextjs (kungalgame_patch database)
 type MoyuUser struct {
 	ID              uint      `gorm:"column:id"`
 	Name            string    `gorm:"column:name"`
@@ -68,7 +67,6 @@ type MoyuUser struct {
 
 func (MoyuUser) TableName() string { return "user" }
 
-// MoyuFollowRelation represents a follow relationship from moyu-nextjs
 type MoyuFollowRelation struct {
 	ID          uint `gorm:"column:id"`
 	FollowerID  uint `gorm:"column:follower_id"`
@@ -76,6 +74,28 @@ type MoyuFollowRelation struct {
 }
 
 func (MoyuFollowRelation) TableName() string { return "user_follow_relation" }
+
+// ---------------------------------------------------------------------------
+// Merged user: unified representation before insertion
+// ---------------------------------------------------------------------------
+
+type mergedUser struct {
+	// Core fields (written to users table)
+	Name        string
+	Email       string
+	Avatar      string
+	Bio         string
+	Moemoepoint int
+	Status      int
+	IP          string
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+
+	// Kungal source (nil if user is moyu-only)
+	Kungal *KungalUser
+	// Moyu source (nil if user is kungal-only)
+	Moyu *MoyuUser
+}
 
 // ---------------------------------------------------------------------------
 // Migration result
@@ -177,14 +197,13 @@ func runMigration(ctx context.Context, targetDB, kungalDB, moyuDB *gorm.DB, dryR
 		return nil, fmt.Errorf("user_migrations table not found — run 'make migrate' first")
 	}
 
-	// Lookup site IDs (seeded by migrate command)
 	kungalSiteID, err := findSiteID(ctx, targetDB, "www.kungal.com")
 	if err != nil {
-		return nil, fmt.Errorf("kungal site not found in sites table — run 'make migrate' first: %w", err)
+		return nil, fmt.Errorf("kungal site not found — run 'make migrate' first: %w", err)
 	}
 	moyuSiteID, err := findSiteID(ctx, targetDB, "www.moyu.moe")
 	if err != nil {
-		return nil, fmt.Errorf("moyu site not found in sites table — run 'make migrate' first: %w", err)
+		return nil, fmt.Errorf("moyu site not found — run 'make migrate' first: %w", err)
 	}
 	slog.Info("Site IDs resolved", "kungal", kungalSiteID, "moyu", moyuSiteID)
 
@@ -203,47 +222,16 @@ func runMigration(ctx context.Context, targetDB, kungalDB, moyuDB *gorm.DB, dryR
 	result.MoyuUsersTotal = len(moyuUsers)
 	slog.Info("Fetched moyu users", "count", len(moyuUsers))
 
-	// Build email → moyu user lookup
-	moyuByEmail := make(map[string]*MoyuUser, len(moyuUsers))
-	for i := range moyuUsers {
-		email := strings.ToLower(strings.TrimSpace(moyuUsers[i].Email))
-		moyuByEmail[email] = &moyuUsers[i]
-	}
+	// ── Step 2: Merge into unified list by email ─────────────────────────
+	// Build email → merged user map. Kungal takes priority for name/email/avatar/bio.
+	mergedByEmail := make(map[string]*mergedUser, len(kungalUsers))
 
-	// Build dedup sets (include already-existing target users)
-	processedEmails := make(map[string]bool)
-	processedNames := make(map[string]bool)
-
-	var existingUsers []authModel.User
-	if err := targetDB.WithContext(ctx).Select("email", "name").Find(&existingUsers).Error; err != nil {
-		return nil, fmt.Errorf("failed to fetch existing users: %w", err)
-	}
-	for _, u := range existingUsers {
-		processedEmails[strings.ToLower(u.Email)] = true
-		processedNames[u.Name] = true
-	}
-	slog.Info("Found existing users in target", "count", len(existingUsers))
-
-	// We need a map from (sourceDB, sourceUserID) → new user ID for follows
-	type sourceKey struct {
-		db string
-		id uint
-	}
-	sourceToNewID := make(map[sourceKey]uint)
-
-	// ── Step 2: Import kungal users (priority) ───────────────────────────
-	for _, ku := range kungalUsers {
+	for i := range kungalUsers {
+		ku := &kungalUsers[i]
 		email := strings.ToLower(strings.TrimSpace(ku.Email))
-
-		if processedEmails[email] {
-			result.SkippedDuplicates++
-			continue
-		}
-
-		newUser := &authModel.User{
+		mergedByEmail[email] = &mergedUser{
 			Name:        strings.TrimSpace(ku.Name),
 			Email:       email,
-			Password:    nil, // All migrated users must reset password
 			Avatar:      ku.Avatar,
 			Bio:         ku.Bio,
 			Moemoepoint: ku.Moemoepoint,
@@ -251,62 +239,103 @@ func runMigration(ctx context.Context, targetDB, kungalDB, moyuDB *gorm.DB, dryR
 			IP:          ku.IP,
 			CreatedAt:   ku.CreatedAt,
 			UpdatedAt:   ku.UpdatedAt,
+			Kungal:      ku,
 		}
+	}
 
-		// Kungal site data
-		kungalExtra, _ := json.Marshal(map[string]any{
-			"daily_toolset_upload_count": ku.DailyToolsetUploadCount,
-		})
-		kungalSiteData := &authModel.UserSiteData{
-			SiteID:          kungalSiteID,
-			Role:            ku.Role,
-			Status:          ku.Status,
-			DailyCheckIn:    ku.DailyCheckIn,
-			DailyImageCount: ku.DailyImageCount,
-			Extra:           kungalExtra,
-			CreatedAt:       ku.CreatedAt,
-			UpdatedAt:       ku.UpdatedAt,
-		}
+	for i := range moyuUsers {
+		mu := &moyuUsers[i]
+		email := strings.ToLower(strings.TrimSpace(mu.Email))
 
-		// Check for moyu merge
-		var moyuSiteData *authModel.UserSiteData
-		var mergedFrom *string
-		if mu, exists := moyuByEmail[email]; exists {
-			newUser.Moemoepoint += mu.Moemoepoint
-
-			if newUser.Bio == "" && mu.Bio != "" {
-				newUser.Bio = mu.Bio
+		if existing, ok := mergedByEmail[email]; ok {
+			// Merge: kungal takes priority, moyu supplements
+			existing.Moemoepoint += mu.Moemoepoint
+			if existing.Bio == "" && mu.Bio != "" {
+				existing.Bio = mu.Bio
 			}
-			if newUser.Avatar == "" && mu.Avatar != "" {
-				newUser.Avatar = mu.Avatar
+			if existing.Avatar == "" && mu.Avatar != "" {
+				existing.Avatar = mu.Avatar
 			}
-			// Use earlier created_at
-			if mu.CreatedAt.Before(newUser.CreatedAt) {
-				newUser.CreatedAt = mu.CreatedAt
+			if mu.CreatedAt.Before(existing.CreatedAt) {
+				existing.CreatedAt = mu.CreatedAt
 			}
-
-			moyuExtra, _ := json.Marshal(map[string]any{
-				"daily_upload_size": mu.DailyUploadSize,
-				"last_login_time":  mu.LastLoginTime,
-			})
-			moyuSiteData = &authModel.UserSiteData{
-				SiteID:          moyuSiteID,
-				Role:            mu.Role,
-				Status:          mu.Status,
-				DailyCheckIn:    mu.DailyCheckIn,
-				DailyImageCount: mu.DailyImageCount,
-				Extra:           moyuExtra,
-				CreatedAt:       mu.CreatedAt,
-				UpdatedAt:       mu.UpdatedAt,
-			}
-
-			mergedFromStr := "moyu"
-			mergedFrom = &mergedFromStr
+			existing.Moyu = mu
 			result.UsersMerged++
+		} else {
+			// Moyu-only user
+			mergedByEmail[email] = &mergedUser{
+				Name:        strings.TrimSpace(mu.Name),
+				Email:       email,
+				Avatar:      mu.Avatar,
+				Bio:         mu.Bio,
+				Moemoepoint: mu.Moemoepoint,
+				Status:      mu.Status,
+				IP:          mu.IP,
+				CreatedAt:   mu.CreatedAt,
+				UpdatedAt:   mu.UpdatedAt,
+				Moyu:        mu,
+			}
+		}
+	}
+
+	// ── Step 3: Sort by created_at (earliest first → smallest ID) ────────
+	allMerged := make([]*mergedUser, 0, len(mergedByEmail))
+	for _, m := range mergedByEmail {
+		allMerged = append(allMerged, m)
+	}
+	sort.Slice(allMerged, func(i, j int) bool {
+		return allMerged[i].CreatedAt.Before(allMerged[j].CreatedAt)
+	})
+	slog.Info("Merged and sorted users", "total", len(allMerged), "merged_count", result.UsersMerged)
+
+	// Filter out already-existing target users
+	existingEmails := make(map[string]bool)
+	var existingUsers []authModel.User
+	if err := targetDB.WithContext(ctx).Select("email").Find(&existingUsers).Error; err != nil {
+		return nil, fmt.Errorf("failed to fetch existing users: %w", err)
+	}
+	for _, u := range existingUsers {
+		existingEmails[strings.ToLower(u.Email)] = true
+	}
+	slog.Info("Found existing users in target", "count", len(existingUsers))
+
+	// ── Step 4: Insert in chronological order ────────────────────────────
+	type sourceKey struct {
+		db string
+		id uint
+	}
+	sourceToNewID := make(map[sourceKey]uint)
+	processedNames := make(map[string]bool)
+
+	// Also track names from existing users
+	var existingNames []authModel.User
+	if err := targetDB.WithContext(ctx).Select("name").Find(&existingNames).Error; err != nil {
+		return nil, fmt.Errorf("failed to fetch existing user names: %w", err)
+	}
+	for _, u := range existingNames {
+		processedNames[u.Name] = true
+	}
+
+	for _, m := range allMerged {
+		if existingEmails[m.Email] {
+			result.SkippedDuplicates++
+			continue
 		}
 
-		// Deduplicate name
-		newUser.Name = deduplicateName(newUser.Name, processedNames)
+		name := deduplicateName(m.Name, processedNames)
+
+		newUser := &authModel.User{
+			Name:        name,
+			Email:       m.Email,
+			Password:    nil,
+			Avatar:      m.Avatar,
+			Bio:         m.Bio,
+			Moemoepoint: m.Moemoepoint,
+			Status:      m.Status,
+			IP:          m.IP,
+			CreatedAt:   m.CreatedAt,
+			UpdatedAt:   m.UpdatedAt,
+		}
 
 		if !dryRun {
 			err := targetDB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -315,35 +344,65 @@ func runMigration(ctx context.Context, targetDB, kungalDB, moyuDB *gorm.DB, dryR
 				}
 
 				// Kungal site data
-				kungalSiteData.UserID = newUser.ID
-				if err := tx.Create(kungalSiteData).Error; err != nil {
-					return fmt.Errorf("create kungal site data: %w", err)
-				}
-				result.SiteDataCreated++
+				if ku := m.Kungal; ku != nil {
+					extra, _ := json.Marshal(map[string]any{
+						"daily_toolset_upload_count": ku.DailyToolsetUploadCount,
+					})
+					if err := tx.Create(&authModel.UserSiteData{
+						UserID:          newUser.ID,
+						SiteID:          kungalSiteID,
+						Role:            ku.Role,
+						Status:          ku.Status,
+						DailyCheckIn:    ku.DailyCheckIn,
+						DailyImageCount: ku.DailyImageCount,
+						Extra:           extra,
+						CreatedAt:       ku.CreatedAt,
+						UpdatedAt:       ku.UpdatedAt,
+					}).Error; err != nil {
+						return fmt.Errorf("create kungal site data: %w", err)
+					}
+					result.SiteDataCreated++
 
-				// Moyu site data (if merged)
-				if moyuSiteData != nil {
-					moyuSiteData.UserID = newUser.ID
-					if err := tx.Create(moyuSiteData).Error; err != nil {
+					// Migration record
+					mergedFrom := (*string)(nil)
+					if m.Moyu != nil {
+						s := "moyu"
+						mergedFrom = &s
+					}
+					if err := tx.Create(&authModel.UserMigration{
+						UserID:       newUser.ID,
+						UserUUID:     newUser.UUID,
+						SourceDB:     "kungal",
+						SourceUserID: ku.ID,
+						SourceEmail:  ku.Email,
+						MergedFrom:   mergedFrom,
+					}).Error; err != nil {
+						return fmt.Errorf("create kungal migration record: %w", err)
+					}
+					sourceToNewID[sourceKey{"kungal", ku.ID}] = newUser.ID
+				}
+
+				// Moyu site data
+				if mu := m.Moyu; mu != nil {
+					extra, _ := json.Marshal(map[string]any{
+						"daily_upload_size": mu.DailyUploadSize,
+						"last_login_time":   mu.LastLoginTime,
+					})
+					if err := tx.Create(&authModel.UserSiteData{
+						UserID:          newUser.ID,
+						SiteID:          moyuSiteID,
+						Role:            mu.Role,
+						Status:          mu.Status,
+						DailyCheckIn:    mu.DailyCheckIn,
+						DailyImageCount: mu.DailyImageCount,
+						Extra:           extra,
+						CreatedAt:       mu.CreatedAt,
+						UpdatedAt:       mu.UpdatedAt,
+					}).Error; err != nil {
 						return fmt.Errorf("create moyu site data: %w", err)
 					}
 					result.SiteDataCreated++
-				}
 
-				// Migration record: kungal
-				if err := tx.Create(&authModel.UserMigration{
-					UserID:       newUser.ID,
-					UserUUID:     newUser.UUID,
-					SourceDB:     "kungal",
-					SourceUserID: ku.ID,
-					SourceEmail:  ku.Email,
-					MergedFrom:   mergedFrom,
-				}).Error; err != nil {
-					return fmt.Errorf("create kungal migration record: %w", err)
-				}
-
-				// Migration record: moyu (if merged)
-				if mu, exists := moyuByEmail[email]; exists {
 					if err := tx.Create(&authModel.UserMigration{
 						UserID:       newUser.ID,
 						UserUUID:     newUser.UUID,
@@ -359,93 +418,17 @@ func runMigration(ctx context.Context, targetDB, kungalDB, moyuDB *gorm.DB, dryR
 				return nil
 			})
 			if err != nil {
-				slog.Error("failed to migrate kungal user", "email", email, "error", err)
+				slog.Error("failed to migrate user", "email", m.Email, "error", err)
 				result.Errors++
 				continue
 			}
-			sourceToNewID[sourceKey{"kungal", ku.ID}] = newUser.ID
 		}
 
-		processedEmails[email] = true
-		processedNames[newUser.Name] = true
+		processedNames[name] = true
 		result.NewUsersCreated++
 	}
 
-	// ── Step 3: Import moyu-only users ───────────────────────────────────
-	for _, mu := range moyuUsers {
-		email := strings.ToLower(strings.TrimSpace(mu.Email))
-		if processedEmails[email] {
-			continue
-		}
-
-		newUser := &authModel.User{
-			Name:        strings.TrimSpace(mu.Name),
-			Email:       email,
-			Password:    nil,
-			Avatar:      mu.Avatar,
-			Bio:         mu.Bio,
-			Moemoepoint: mu.Moemoepoint,
-			Status:      mu.Status,
-			IP:          mu.IP,
-			CreatedAt:   mu.CreatedAt,
-			UpdatedAt:   mu.UpdatedAt,
-		}
-
-		moyuExtra, _ := json.Marshal(map[string]any{
-			"daily_upload_size": mu.DailyUploadSize,
-			"last_login_time":  mu.LastLoginTime,
-		})
-		moyuSiteData := &authModel.UserSiteData{
-			SiteID:          moyuSiteID,
-			Role:            mu.Role,
-			Status:          mu.Status,
-			DailyCheckIn:    mu.DailyCheckIn,
-			DailyImageCount: mu.DailyImageCount,
-			Extra:           moyuExtra,
-			CreatedAt:       mu.CreatedAt,
-			UpdatedAt:       mu.UpdatedAt,
-		}
-
-		newUser.Name = deduplicateName(newUser.Name, processedNames)
-
-		if !dryRun {
-			err := targetDB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-				if err := tx.Create(newUser).Error; err != nil {
-					return fmt.Errorf("create user: %w", err)
-				}
-
-				moyuSiteData.UserID = newUser.ID
-				if err := tx.Create(moyuSiteData).Error; err != nil {
-					return fmt.Errorf("create moyu site data: %w", err)
-				}
-				result.SiteDataCreated++
-
-				if err := tx.Create(&authModel.UserMigration{
-					UserID:       newUser.ID,
-					UserUUID:     newUser.UUID,
-					SourceDB:     "moyu",
-					SourceUserID: mu.ID,
-					SourceEmail:  mu.Email,
-				}).Error; err != nil {
-					return fmt.Errorf("create migration record: %w", err)
-				}
-
-				return nil
-			})
-			if err != nil {
-				slog.Error("failed to migrate moyu user", "email", email, "error", err)
-				result.Errors++
-				continue
-			}
-			sourceToNewID[sourceKey{"moyu", mu.ID}] = newUser.ID
-		}
-
-		processedEmails[email] = true
-		processedNames[newUser.Name] = true
-		result.NewUsersCreated++
-	}
-
-	// ── Step 4: Migrate social relations (moyu only) ─────────────────────
+	// ── Step 5: Migrate social relations (moyu only) ─────────────────────
 	var moyuFollows []MoyuFollowRelation
 	if err := moyuDB.WithContext(ctx).Find(&moyuFollows).Error; err != nil {
 		return nil, fmt.Errorf("failed to fetch moyu follow relations: %w", err)
@@ -456,27 +439,18 @@ func runMigration(ctx context.Context, targetDB, kungalDB, moyuDB *gorm.DB, dryR
 		for _, f := range moyuFollows {
 			followerID, ok1 := sourceToNewID[sourceKey{"moyu", f.FollowerID}]
 			followingID, ok2 := sourceToNewID[sourceKey{"moyu", f.FollowingID}]
-			if !ok1 || !ok2 {
+			if !ok1 || !ok2 || followerID == followingID {
 				result.FollowsSkipped++
 				continue
 			}
-			// Skip self-follows
-			if followerID == followingID {
-				result.FollowsSkipped++
-				continue
-			}
-
-			follow := &authModel.UserFollow{
+			if err := targetDB.WithContext(ctx).Create(&authModel.UserFollow{
 				FollowerID:  followerID,
 				FollowingID: followingID,
-			}
-			if err := targetDB.WithContext(ctx).Create(follow).Error; err != nil {
-				// Unique constraint violation is expected for duplicates
+			}).Error; err != nil {
 				if strings.Contains(err.Error(), "duplicate") || strings.Contains(err.Error(), "UNIQUE") {
 					result.FollowsSkipped++
 				} else {
-					slog.Error("failed to migrate follow relation",
-						"moyu_follower", f.FollowerID, "moyu_following", f.FollowingID, "error", err)
+					slog.Error("failed to migrate follow", "error", err)
 					result.Errors++
 				}
 				continue
@@ -484,53 +458,39 @@ func runMigration(ctx context.Context, targetDB, kungalDB, moyuDB *gorm.DB, dryR
 			result.FollowsMigrated++
 		}
 	} else {
-		result.FollowsMigrated = len(moyuFollows) // Estimate in dry-run
+		result.FollowsMigrated = len(moyuFollows)
 	}
 
-	// ── Step 5: Map site-level roles → global roles (user_roles) ─────────
-	//
-	// Mapping rules:
-	//   kungal: role=3 (超管) → admin,  role=2 (管理) → moderator
-	//   moyu:   role=4 (超管) → admin,  role=3 (管理) → moderator
-	//
-	// For users present on both sites, take the highest privilege.
-	// moyu role=2 (创作者) is a business role, not mapped.
-
-	// Lookup global role IDs from roles table
+	// ── Step 6: Map site-level roles → global roles (user_roles) ─────────
 	roleIDs, err := findRoleIDs(ctx, targetDB)
 	if err != nil {
 		return nil, fmt.Errorf("failed to lookup role IDs: %w", err)
 	}
 	slog.Info("Role IDs resolved", "admin", roleIDs["admin"], "moderator", roleIDs["moderator"])
 
-	// Collect all user_site_data to determine global roles
 	var allSiteData []authModel.UserSiteData
 	if err := targetDB.WithContext(ctx).Find(&allSiteData).Error; err != nil {
 		return nil, fmt.Errorf("failed to fetch user site data: %w", err)
 	}
 
-	// For each user, compute the highest global role level
-	// 0 = none, 1 = moderator, 2 = admin
+	// 0=none, 1=moderator, 2=admin
 	userMaxLevel := make(map[uint]int)
 	for _, sd := range allSiteData {
 		level := 0
 		if sd.SiteID == kungalSiteID {
-			// kungal: 1=user, 2=admin, 3=superadmin
 			switch sd.Role {
 			case 3:
-				level = 2 // superadmin → admin
+				level = 2
 			case 2:
-				level = 1 // admin → moderator
+				level = 1
 			}
 		} else if sd.SiteID == moyuSiteID {
-			// moyu: 1=user, 2=publisher, 3=admin, 4=superadmin
 			switch sd.Role {
 			case 4:
-				level = 2 // superadmin → admin
+				level = 2
 			case 3:
-				level = 1 // admin → moderator
+				level = 1
 			}
-			// role=2 (publisher) is business-only, not mapped
 		}
 		if level > userMaxLevel[sd.UserID] {
 			userMaxLevel[sd.UserID] = level
@@ -542,23 +502,15 @@ func runMigration(ctx context.Context, targetDB, kungalDB, moyuDB *gorm.DB, dryR
 			if level == 0 {
 				continue
 			}
-			var roleName string
+			roleName := "moderator"
 			if level >= 2 {
 				roleName = "admin"
-			} else {
-				roleName = "moderator"
 			}
-			roleID, ok := roleIDs[roleName]
-			if !ok {
-				continue
-			}
-
-			// Insert into user_roles join table (skip duplicates)
-			err := targetDB.WithContext(ctx).Exec(
+			roleID := roleIDs[roleName]
+			if err := targetDB.WithContext(ctx).Exec(
 				"INSERT INTO user_roles (user_id, role_id) VALUES (?, ?) ON CONFLICT DO NOTHING",
 				userID, roleID,
-			).Error
-			if err != nil {
+			).Error; err != nil {
 				slog.Error("failed to assign role", "user_id", userID, "role", roleName, "error", err)
 				result.Errors++
 				continue
@@ -574,7 +526,6 @@ func runMigration(ctx context.Context, targetDB, kungalDB, moyuDB *gorm.DB, dryR
 	}
 
 	slog.Info("Role assignment complete", "assigned", result.RolesAssigned)
-
 	return result, nil
 }
 
@@ -592,10 +543,10 @@ func findRoleIDs(ctx context.Context, db *gorm.DB) (map[string]uint, error) {
 		result[r.Name] = r.ID
 	}
 	if _, ok := result["admin"]; !ok {
-		return nil, fmt.Errorf("'admin' role not found in roles table — run 'make migrate' first")
+		return nil, fmt.Errorf("'admin' role not found — run 'make migrate' first")
 	}
 	if _, ok := result["moderator"]; !ok {
-		return nil, fmt.Errorf("'moderator' role not found in roles table — run 'make migrate' first")
+		return nil, fmt.Errorf("'moderator' role not found — run 'make migrate' first")
 	}
 	return result, nil
 }
@@ -647,5 +598,7 @@ func printResults(r *MigrationResult, dryRun bool) {
 		fmt.Println()
 		fmt.Println("NOTE: All migrated users have NULL passwords.")
 		fmt.Println("They must reset their password via email before logging in.")
+		fmt.Println()
+		fmt.Println("NOTE: User IDs are assigned in chronological order (earliest registration → smallest ID).")
 	}
 }
