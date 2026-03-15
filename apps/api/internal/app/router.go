@@ -12,18 +12,6 @@ import (
 	authRepo "api/internal/platform/auth/repository"
 	authService "api/internal/platform/auth/service"
 
-	commentHandler "api/internal/platform/comment/handler"
-	commentRepo "api/internal/platform/comment/repository"
-	commentService "api/internal/platform/comment/service"
-
-	contentHandler "api/internal/platform/content/handler"
-	contentRepo "api/internal/platform/content/repository"
-	contentService "api/internal/platform/content/service"
-
-	gameHandler "api/internal/platform/game/handler"
-	gameRepo "api/internal/platform/game/repository"
-	gameService "api/internal/platform/game/service"
-
 	moderationHandler "api/internal/platform/moderation/handler"
 	moderationRepo "api/internal/platform/moderation/repository"
 	moderationService "api/internal/platform/moderation/service"
@@ -45,9 +33,6 @@ func (a *App) setupRoutes() {
 	sessionRepo := authRepo.NewSessionRepository(db)
 	passwordResetRepo := authRepo.NewPasswordResetRepository(db)
 	siteRepository := siteRepo.NewSiteRepository(db)
-	gameRepository := gameRepo.NewGameRepository(db)
-	contentRepository := contentRepo.NewContentRepository(db)
-	commentRepository := commentRepo.NewCommentRepository(db)
 	artifactRepository := artifactRepo.NewArtifactRepository(db)
 	moderationRepository := moderationRepo.NewModerationRepository(db)
 
@@ -63,9 +48,6 @@ func (a *App) setupRoutes() {
 	oauthSvc := authService.NewOAuthService(userRepo, authCodeRepo, sessionRepo, oauthClientRepo, a.config)
 	adminSvc := authService.NewAdminService(userRepo, sessionRepo)
 	siteSvc := siteService.NewSiteService(siteRepository)
-	gameSvc := gameService.NewGameService(gameRepository)
-	contentSvc := contentService.NewContentService(contentRepository)
-	commentSvc := commentService.NewCommentService(commentRepository)
 	artifactSvc := artifactService.NewArtifactService(artifactRepository)
 	moderationSvc := moderationService.NewModerationService(moderationRepository, nil)
 
@@ -74,9 +56,6 @@ func (a *App) setupRoutes() {
 	oauthH := authHandler.NewOAuthHandler(oauthSvc)
 	adminH := authHandler.NewAdminHandler(adminSvc)
 	siteH := siteHandler.NewSiteHandler(siteSvc)
-	gameH := gameHandler.NewGameHandler(gameSvc)
-	contentH := contentHandler.NewContentHandler(contentSvc)
-	commentH := commentHandler.NewCommentHandler(commentSvc)
 	artifactH := artifactHandler.NewArtifactHandler(artifactSvc)
 	moderationH := moderationHandler.NewModerationHandler(moderationSvc)
 
@@ -142,35 +121,6 @@ func (a *App) setupRoutes() {
 	oauthClients := v1.Group("/oauth/clients", middleware.Auth(authSvc))
 	oauthClients.Get("/", siteH.ListClients)
 	oauthClients.Post("/", siteH.CreateClient)
-
-	// Game routes
-	games := v1.Group("/games")
-	games.Get("/", gameH.List)
-	games.Get("/:id", gameH.Get)
-	games.Get("/:id/revisions", gameH.ListRevisions)
-
-	gamesProtected := games.Group("", middleware.Auth(authSvc))
-	gamesProtected.Post("/", gameH.Create)
-	gamesProtected.Put("/:id", gameH.Update)
-
-	// Content routes
-	contents := v1.Group("/contents")
-	contents.Get("/", contentH.List)
-	contents.Get("/:id", contentH.Get)
-
-	contentsProtected := contents.Group("", middleware.Auth(authSvc))
-	contentsProtected.Post("/", contentH.Create)
-	contentsProtected.Put("/:id", contentH.Update)
-	contentsProtected.Delete("/:id", contentH.Delete)
-
-	// Comment routes
-	comments := v1.Group("/comments")
-	comments.Get("/", commentH.List)
-
-	commentsProtected := comments.Group("", middleware.Auth(authSvc))
-	commentsProtected.Post("/", commentH.Create)
-	commentsProtected.Put("/:id", commentH.Update)
-	commentsProtected.Delete("/:id", commentH.Delete)
 
 	// Artifact routes
 	artifacts := v1.Group("/artifacts", middleware.Auth(authSvc))

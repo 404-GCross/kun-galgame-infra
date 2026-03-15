@@ -12,7 +12,6 @@ type Artifact struct {
 	ID          uint           `gorm:"primaryKey" json:"id"`
 	UUID        string         `gorm:"type:uuid;uniqueIndex;default:gen_random_uuid()" json:"uuid"`
 	UserUUID    string         `gorm:"size:36;not null;index" json:"user_uuid"`
-	GameUUID    *string        `gorm:"size:36;index" json:"game_uuid,omitempty"`
 	Name        string         `gorm:"size:255;not null" json:"name"`
 	Description string         `gorm:"type:text;default:''" json:"description"`
 	FileKey     string         `gorm:"size:500;not null" json:"file_key"`

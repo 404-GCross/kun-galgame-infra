@@ -1,6 +1,7 @@
 {
   "cSpell.words": [
     "asynq",
+    "autoincrement",
     "autospace",
     "bbcode",
     "cdprsuvo",
@@ -43,6 +44,7 @@
     "tmpl",
     "TOCTOU",
     "umami",
+    "Unban",
     "unhead",
     "upgo",
     "userinfo",

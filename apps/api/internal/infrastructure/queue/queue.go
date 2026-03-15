@@ -10,7 +10,6 @@ const (
 	TypeModerationText  = "moderation:text"
 	TypeModerationImage = "moderation:image"
 	TypeArtifactProcess = "artifact:process"
-	TypeGameImport      = "game:import"
 	TypeEmailSend       = "email:send"
 )
 

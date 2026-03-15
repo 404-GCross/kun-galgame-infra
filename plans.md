@@ -22,8 +22,11 @@
 1. **统一身份认证**：两个网站 + 未来的 App / 桌面端共用一套账户
 2. **OAuth2 支持**：JWT + refresh token rotation + PKCE
 3. **多站点管理**：每个用户在不同站点可以有不同的角色和数据
-4. **内容审核**：统一的 AI 审核服务（文本、图片）
-5. **文件分发**：游戏/补丁上传、校验、查毒、分发管理
+4. **内容审核（共享服务）**：统一的 AI 审核服务（文本、图片），各站点调用
+5. **文件分发（共享服务）**：上传、校验、查毒、分发管理，各站点调用
+
+> **职能分离原则**：本系统只管理身份、站点、角色及跨站共享服务（审核/文件）。
+> 站点业务数据（话题、评论、游戏条目、补丁等）由各网站自行管理，通过 JWT 验证管理员身份。
 
 ### 1.3 未来规划
 
@@ -128,13 +131,10 @@ apps/api/
 │   │   ├── app.go          # 应用初始化、依赖注入
 │   │   └── router.go       # 路由注册
 │   ├── platform/           # 业务模块
-│   │   ├── auth/           # 认证模块
-│   │   ├── site/           # 站点管理
-│   │   ├── game/           # 游戏元数据
-│   │   ├── content/        # 内容管理
-│   │   ├── comment/        # 评论管理
-│   │   ├── artifact/       # 文件分发
-│   │   └── moderation/     # 内容审核
+│   │   ├── auth/           # 认证模块（用户、会话、OAuth）
+│   │   ├── site/           # 站点管理（站点、OAuth Client、角色）
+│   │   ├── artifact/       # 文件分发（共享服务）
+│   │   └── moderation/     # 内容审核（共享服务）
 │   ├── infrastructure/     # 基础设施
 │   │   ├── database/       # PostgreSQL 连接
 │   │   ├── cache/          # Redis 连接
@@ -210,6 +210,7 @@ type User struct {
     OAuthAccounts []OAuthAccount `gorm:"foreignKey:UserID"`
     Followers     []UserFollow   `gorm:"foreignKey:FollowingID"`
     Following     []UserFollow   `gorm:"foreignKey:FollowerID"`
+    Roles         []Role         `gorm:"many2many:user_roles;"`  // 全局角色
 }
 ```
 
@@ -359,12 +360,13 @@ type Permission struct {
 | 模块 | 范围 | 示例 |
 |------|------|------|
 | Auth | 10000-19999 | 10001: Unauthorized, 10002: InvalidToken |
-| Game | 20000-29999 | 20001: GameNotFound |
-| Content | 30000-39999 | 30001: ContentNotFound |
-| Comment | 40000-49999 | 40001: CommentNotFound |
+| OAuth | 15000-15999 | 15001: InvalidClient, 15003: InvalidCode |
 | Artifact | 50000-59999 | 50001: ArtifactNotFound |
 | Moderation | 60000-69999 | 60001: ModerationPending |
 | Site | 70000-79999 | 70001: SiteNotFound |
+
+> Game (20000-29999)、Content (30000-39999)、Comment (40000-49999) 错误码段已移除，
+> 保留范围供各站点自行在其后端使用。
 
 ---
 
@@ -489,12 +491,14 @@ $argon2id$v=19$m=65536,t=3,p=4$salt$hash
   "sub": "user_uuid",
   "email": "user@example.com",
   "name": "username",
-  "site": "kungal",
-  "role": 1,
+  "roles": ["admin"],
   "iat": 1234567890,
   "exp": 1234568790
 }
 ```
+
+> `roles` 为全局角色数组（`admin`/`moderator`/`user`），来自 `user_roles` 多对多关联表。
+> 各站点的业务角色（如 moyu 的 publisher）存在 `user_site_data.role` 中，不进入 JWT。
 
 ### 6.3 Refresh Token Rotation
 
@@ -556,13 +560,42 @@ kungal.com 后端用 code 换取 tokens
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | GET | /api/v1/admin/users | 用户列表 |
-| GET | /api/v1/admin/users/:id | 用户详情 |
-| PATCH | /api/v1/admin/users/:id | 更新用户 |
-| POST | /api/v1/admin/users/:id/ban | 封禁用户 |
-| GET | /api/v1/admin/sites | 站点列表 |
-| POST | /api/v1/admin/sites | 创建站点 |
-| GET | /api/v1/admin/moderation/jobs | 审核队列 |
-| POST | /api/v1/admin/moderation/jobs/:id/review | 人工审核 |
+| GET | /api/v1/admin/users/:uuid | 用户详情 |
+| PATCH | /api/v1/admin/users/:uuid | 更新用户 |
+| POST | /api/v1/admin/users/:uuid/ban | 封禁用户 |
+| POST | /api/v1/admin/users/:uuid/unban | 解封用户 |
+| DELETE | /api/v1/admin/users/:uuid/sessions | 强制登出 |
+
+### 7.4 Site API（admin only）
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | /api/v1/sites | 站点列表 |
+| POST | /api/v1/sites | 创建站点 |
+| GET | /api/v1/sites/:id | 站点详情 |
+| PUT | /api/v1/sites/:id | 更新站点 |
+| DELETE | /api/v1/sites/:id | 删除站点 |
+| GET | /api/v1/oauth/clients | OAuth 客户端列表 |
+| POST | /api/v1/oauth/clients | 创建 OAuth 客户端 |
+
+### 7.5 Artifact API
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | /api/v1/artifacts | 列表 |
+| GET | /api/v1/artifacts/:id | 详情 |
+| POST | /api/v1/artifacts | 上传 |
+| DELETE | /api/v1/artifacts/:id | 删除 |
+| GET | /api/v1/artifacts/:id/download | 下载 |
+
+### 7.6 Moderation API（admin/moderator only）
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | /api/v1/moderation/jobs | 审核队列 |
+| GET | /api/v1/moderation/jobs/:id | 审核详情 |
+| POST | /api/v1/moderation/jobs/:id/review | 人工审核 |
+| GET | /api/v1/moderation/policies | 审核策略 |
 
 ---
 
@@ -620,26 +653,27 @@ kungal.com 后端用 code 换取 tokens
 
 ### 10.1 开发顺序（按业务优先级）
 
-1. **pkg/ 层**：errors、response、config、logger、utils
-2. **infrastructure/**：database、cache、queue
-3. **Auth 模块**：完整实现登录、注册、token 刷新
-4. **Site 模块**：站点管理
-5. **迁移脚本**：用户数据迁移、ID 映射
-6. **Content + Comment 模块**：内容管理
-7. **Moderation 模块**：内容审核
-8. **Game 模块**：游戏元数据
-9. **Artifact 模块**：文件上传分发
+1. ✅ **pkg/ 层**：errors、response、config、logger、utils
+2. ✅ **infrastructure/**：database、cache（queue/storage 待实现）
+3. ✅ **Auth 模块**：登录、注册、token 刷新、OAuth 2.0、RBAC
+4. ✅ **Site 模块**：站点管理（handler stub 待补全）
+5. ✅ **迁移脚本**：用户数据迁移、user_site_data、follows、ID 映射
+6. **Moderation 模块**：内容审核（共享服务，provider 待实现）
+7. **Artifact 模块**：文件上传分发（共享服务，pipeline/storage 待实现）
+8. **管理后台前端**：补全前端页面功能
+
+> Game/Content/Comment 模块已移除 — 站点业务数据由各网站自行管理。
 
 ### 10.2 里程碑
 
-| 阶段 | 目标 | 验收标准 |
-|------|------|----------|
-| M1 | 基础架构 + Auth | 能完成登录注册，token 刷新 |
-| M2 | 用户迁移 | 两个网站用户成功合并，能登录 |
-| M3 | 网站接入 | 两个网站切换到 Account Service |
-| M4 | 管理后台 | 用户管理、站点管理功能完成 |
-| M5 | 审核系统 | AI 审核 + 人工审核队列 |
-| M6 | 文件系统 | 上传、校验、分发完整流程 |
+| 阶段 | 目标 | 验收标准 | 状态 |
+|------|------|----------|------|
+| M1 | 基础架构 + Auth | 能完成登录注册，token 刷新 | ✅ 完成 |
+| M2 | 用户迁移 | 两个网站用户成功合并（含 user_site_data + follows） | ✅ 完成 |
+| M3 | 网站接入 | 两个网站切换到 Account Service | 进行中 |
+| M4 | 管理后台 | 用户管理、站点管理、OAuth 客户端管理 | 进行中 |
+| M5 | 审核系统（共享服务） | AI 审核 + 人工审核队列 | 待开始 |
+| M6 | 文件系统（共享服务） | 上传、校验、分发完整流程 | 待开始 |
 
 ---
 
@@ -719,21 +753,22 @@ chore: 构建/工具
 
 ## 附录 B：ID 映射表结构
 
-迁移时生成的映射表：
+迁移时生成的统一映射表 `user_migrations`：
 
-```sql
--- kungal 用户 ID 映射
-CREATE TABLE migration_kungal_user_mapping (
-    old_id INT PRIMARY KEY,
-    new_uuid UUID NOT NULL
-);
-
--- moyu 用户 ID 映射
-CREATE TABLE migration_moyu_user_mapping (
-    old_id INT PRIMARY KEY,
-    new_uuid UUID NOT NULL
-);
+```go
+type UserMigration struct {
+    ID           uint      `gorm:"primaryKey"`
+    UserID       uint      `gorm:"not null;index"`
+    UserUUID     string    `gorm:"type:uuid;not null;index"`
+    SourceDB     string    `gorm:"size:50;not null;index"` // "kungal" or "moyu"
+    SourceUserID uint      `gorm:"not null"`
+    SourceEmail  string    `gorm:"size:255;not null"`
+    MergedFrom   *string   `gorm:"size:50"` // 合并时的次要来源
+    CreatedAt    time.Time
+}
 ```
+
+> 同一个 UserID 可能有两条记录（kungal + moyu），通过 SourceDB 区分。
 
 ## 附录 C：关键决策记录
 
@@ -754,3 +789,7 @@ CREATE TABLE migration_moyu_user_mapping (
 | 数据库拓扑 | 三库独立 | 微服务架构 |
 | 外键处理 | 存 uuid，应用层保证 | 跨库无法用外键约束 |
 | 未来客户端 | Flutter | iOS/Android/Desktop 统一技术栈 |
+| 职能分离 | 移除 game/content/comment | 站点业务数据由各网站管理，本系统只管身份+共享服务 |
+| 全局角色 | user_roles 多对多 | 与 user_site_data.role（站点级 int）分离，JWT 只含全局角色 |
+| Refresh Token | httpOnly Cookie | 后端 Set-Cookie，前端不可读，防 XSS |
+| 角色映射（迁移） | 超管→admin, 管理→moderator | 站点管理员自动获得全局审核权限，创作者不映射 |

@@ -46,20 +46,6 @@ const (
 	ErrOAuthInvalidScope        = 15006
 	ErrOAuthAccessDenied        = 15007
 
-	// Game (20000-29999)
-	ErrGameNotFound         = 20001
-	ErrGameAlreadyExists    = 20002
-	ErrGameRevisionConflict = 20003
-	ErrGameTagNotFound      = 20004
-
-	// Content (30000-39999)
-	ErrContentNotFound  = 30001
-	ErrContentForbidden = 30002
-
-	// Comment (40000-49999)
-	ErrCommentNotFound  = 40001
-	ErrCommentForbidden = 40002
-
 	// Artifact (50000-59999)
 	ErrArtifactNotFound   = 50001
 	ErrArtifactInvalid    = 50002
@@ -111,17 +97,6 @@ var codeMessages = map[int]string{
 	ErrOAuthInvalidGrant:        "无效的授权类型",
 	ErrOAuthInvalidScope:        "无效的权限范围",
 	ErrOAuthAccessDenied:        "访问被拒绝",
-
-	ErrGameNotFound:         "游戏不存在",
-	ErrGameAlreadyExists:    "游戏已存在",
-	ErrGameRevisionConflict: "游戏版本冲突",
-	ErrGameTagNotFound:      "游戏标签不存在",
-
-	ErrContentNotFound:  "内容不存在",
-	ErrContentForbidden: "无权访问该内容",
-
-	ErrCommentNotFound:  "评论不存在",
-	ErrCommentForbidden: "无权操作该评论",
 
 	ErrArtifactNotFound:   "资源不存在",
 	ErrArtifactInvalid:    "无效的资源",

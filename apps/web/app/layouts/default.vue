@@ -8,7 +8,6 @@ const menuItems = [
   { icon: 'lucide:users', label: '用户管理', to: '/users' },
   { icon: 'lucide:globe', label: '站点管理', to: '/sites' },
   { icon: 'lucide:key', label: 'OAuth 客户端', to: '/oauth-clients' },
-  { icon: 'lucide:gamepad-2', label: '游戏管理', to: '/games' },
   { icon: 'lucide:shield', label: '内容审核', to: '/moderation' }
 ]
 

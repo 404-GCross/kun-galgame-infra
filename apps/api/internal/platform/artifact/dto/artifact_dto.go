@@ -6,7 +6,6 @@ type InitUploadRequest struct {
 	Description string `json:"description"`
 	FileSize    int64  `json:"file_size" validate:"required,gt=0"`
 	MimeType    string `json:"mime_type" validate:"required"`
-	GameUUID    string `json:"game_uuid"`
 }
 
 // InitUploadResponse represents an upload initialization response
@@ -26,7 +25,6 @@ type CompleteUploadRequest struct {
 type ArtifactResponse struct {
 	UUID        string            `json:"uuid"`
 	UserUUID    string            `json:"user_uuid"`
-	GameUUID    *string           `json:"game_uuid,omitempty"`
 	Name        string            `json:"name"`
 	Description string            `json:"description"`
 	FileSize    int64             `json:"file_size"`

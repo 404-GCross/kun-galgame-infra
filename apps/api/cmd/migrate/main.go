@@ -12,9 +12,6 @@ import (
 	// Import all models
 	artifactModel "api/internal/platform/artifact/model"
 	authModel "api/internal/platform/auth/model"
-	commentModel "api/internal/platform/comment/model"
-	contentModel "api/internal/platform/content/model"
-	gameModel "api/internal/platform/game/model"
 	moderationModel "api/internal/platform/moderation/model"
 	siteModel "api/internal/platform/site/model"
 
@@ -97,18 +94,6 @@ func getAllModels() []any {
 		&siteModel.Role{},
 		&siteModel.Permission{},
 
-		// Game models
-		&gameModel.Game{},
-		&gameModel.Tag{},
-		// Note: game_tags join table is created automatically by GORM via many2many relation
-		&gameModel.Revision{},
-
-		// Content models
-		&contentModel.Content{},
-
-		// Comment models
-		&commentModel.Comment{},
-
 		// Artifact models
 		&artifactModel.Artifact{},
 		&artifactModel.Manifest{},
@@ -130,9 +115,6 @@ func dropAllTables(db *gorm.DB) error {
 		}
 	}
 	// Also drop the join tables
-	if err := db.Migrator().DropTable("game_tags"); err != nil {
-		slog.Debug("drop game_tags skipped", "error", err)
-	}
 	if err := db.Migrator().DropTable("user_roles"); err != nil {
 		slog.Debug("drop user_roles skipped", "error", err)
 	}
