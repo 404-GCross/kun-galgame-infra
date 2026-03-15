@@ -1,15 +1,9 @@
 <script setup lang="ts">
+import { SIDEBAR_MENU } from '~/constants/admin'
+
 const auth = useAuth()
 const router = useRouter()
 const isSidebarCollapsed = ref(false)
-
-const menuItems = [
-  { icon: 'lucide:layout-dashboard', label: '仪表盘', to: '/' },
-  { icon: 'lucide:users', label: '用户管理', to: '/users' },
-  { icon: 'lucide:globe', label: '站点管理', to: '/sites' },
-  { icon: 'lucide:key', label: 'OAuth 客户端', to: '/oauth-clients' },
-  { icon: 'lucide:shield', label: '内容审核', to: '/moderation' }
-]
 
 const handleLogout = async () => {
   await auth.logout()
@@ -50,7 +44,7 @@ onMounted(async () => {
       <!-- Navigation -->
       <nav class="flex-1 space-y-1 p-4">
         <NuxtLink
-          v-for="item in menuItems"
+          v-for="item in SIDEBAR_MENU"
           :key="item.to"
           :to="item.to"
           class="flex items-center gap-3 rounded-lg px-3 py-2 text-gray-700 transition-colors hover:bg-indigo-50 hover:text-indigo-600 dark:text-gray-200 dark:hover:bg-gray-700"
