@@ -25,33 +25,29 @@ export const useApi = () => {
   }
 
   const handleUnauthorized = async () => {
-    const refreshToken = useCookie('refresh_token')
     const accessToken = useCookie('access_token')
 
-    if (refreshToken.value) {
-      // Try to refresh the token
-      try {
-        const response = await $fetch<
-          ApiResponse<{ access_token: string; refresh_token: string }>
-        >(`${baseUrl}/auth/refresh`, {
+    // Try to refresh using httpOnly cookie (sent automatically by browser)
+    try {
+      const response = await $fetch<ApiResponse<{ access_token: string }>>(
+        `${baseUrl}/auth/refresh`,
+        {
           method: 'POST',
-          body: JSON.stringify({ refresh_token: refreshToken.value }),
-          headers: { 'Content-Type': 'application/json' }
-        })
-
-        if (response.code === 0) {
-          accessToken.value = response.data.access_token
-          refreshToken.value = response.data.refresh_token
-          return true
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
         }
-      } catch {
-        // Refresh failed
+      )
+
+      if (response.code === 0) {
+        accessToken.value = response.data.access_token
+        return true
       }
+    } catch {
+      // Refresh failed
     }
 
-    // Clear tokens and redirect to login
+    // Clear access token and redirect to login
     accessToken.value = null
-    refreshToken.value = null
     navigateTo('/auth/login')
     return false
   }
@@ -70,8 +66,9 @@ export const useApi = () => {
         headers: {
           'Content-Type': 'application/json',
           ...getAuthHeaders(),
-          ...headers
-        }
+          ...headers,
+        },
+        credentials: 'include',
       })
 
       return response
@@ -91,7 +88,7 @@ export const useApi = () => {
       return {
         code: fetchError.data?.code ?? fetchError.statusCode ?? -1,
         message: fetchError.data?.message ?? 'Request failed',
-        data: null as T
+        data: null as T,
       }
     }
   }
@@ -104,6 +101,6 @@ export const useApi = () => {
       request<T>(endpoint, { method: 'PUT', body }),
     delete: <T>(endpoint: string) => request<T>(endpoint, { method: 'DELETE' }),
     patch: <T>(endpoint: string, body?: Record<string, unknown>) =>
-      request<T>(endpoint, { method: 'PATCH', body })
+      request<T>(endpoint, { method: 'PATCH', body }),
   }
 }

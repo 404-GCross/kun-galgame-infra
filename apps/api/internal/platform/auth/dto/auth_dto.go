@@ -63,7 +63,14 @@ type UserResponse struct {
 }
 
 // LoginResponse represents a login response
+// Note: refresh_token is set as httpOnly cookie, not in response body
 type LoginResponse struct {
-	User   UserResponse `json:"user"`
-	Tokens TokenPair    `json:"tokens"`
+	User        UserResponse `json:"user"`
+	AccessToken string       `json:"access_token"`
+}
+
+// RefreshResponse represents a token refresh response
+// Note: refresh_token is set as httpOnly cookie, not in response body
+type RefreshResponse struct {
+	AccessToken string `json:"access_token"`
 }

@@ -6,42 +6,40 @@ export interface User {
   bio: string
   moemoepoint: number
   status: number
+  roles: string[]
   created_at: string
-}
-
-export interface TokenPair {
-  access_token: string
-  refresh_token: string
 }
 
 export interface LoginResponse {
   user: User
-  tokens: TokenPair
+  access_token: string
+}
+
+export interface RefreshResponse {
+  access_token: string
 }
 
 export const useAuth = () => {
   const api = useApi()
   const user = useState<User | null>('user', () => null)
   const isLoggedIn = computed(() => !!user.value)
+  const isAdmin = computed(() => user.value?.roles?.includes('admin') ?? false)
 
   const accessToken = useCookie('access_token', {
     maxAge: 60 * 15, // 15 minutes
     sameSite: 'lax',
   })
 
-  const refreshToken = useCookie('refresh_token', {
-    maxAge: 60 * 60 * 24 * 7, // 7 days
-    sameSite: 'lax',
-  })
+  // Note: refresh_token is managed by the backend as an httpOnly cookie.
+  // We cannot read it from JS, which is the point — it's secure from XSS.
 
-  const setTokens = (tokens: TokenPair) => {
-    accessToken.value = tokens.access_token
-    refreshToken.value = tokens.refresh_token
+  const setAccessToken = (token: string) => {
+    accessToken.value = token
   }
 
-  const clearTokens = () => {
+  const clearAuth = () => {
     accessToken.value = null
-    refreshToken.value = null
+    user.value = null
   }
 
   const login = async (email: string, password: string) => {
@@ -50,7 +48,7 @@ export const useAuth = () => {
       password,
     })
     if (response.code === 0) {
-      setTokens(response.data.tokens)
+      setAccessToken(response.data.access_token)
       user.value = response.data.user
     }
     return response
@@ -69,32 +67,31 @@ export const useAuth = () => {
     try {
       await api.post('/auth/logout')
     } finally {
-      clearTokens()
-      user.value = null
+      clearAuth()
       navigateTo('/auth/login')
     }
   }
 
   const refreshAccessToken = async () => {
-    if (!refreshToken.value) return false
-
     try {
-      const response = await api.post<TokenPair>('/auth/refresh', {
-        refresh_token: refreshToken.value,
-      })
+      // Backend reads refresh_token from httpOnly cookie automatically
+      const response = await api.post<RefreshResponse>('/auth/refresh')
       if (response.code === 0) {
-        setTokens(response.data)
+        setAccessToken(response.data.access_token)
         return true
       }
     } catch {
-      clearTokens()
-      user.value = null
+      clearAuth()
     }
     return false
   }
 
   const fetchUser = async () => {
-    if (!accessToken.value) return null
+    if (!accessToken.value) {
+      // No access token — try refreshing (httpOnly cookie may still be valid)
+      const refreshed = await refreshAccessToken()
+      if (!refreshed) return null
+    }
 
     try {
       const response = await api.get<User>('/auth/me')
@@ -130,6 +127,7 @@ export const useAuth = () => {
   return {
     user,
     isLoggedIn,
+    isAdmin,
     login,
     register,
     logout,

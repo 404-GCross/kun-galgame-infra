@@ -6,9 +6,13 @@ export default defineNuxtRouteMiddleware(async () => {
     await auth.fetchUser()
   }
 
-  // Check if user exists and has admin privileges
-  // Status 0 = active, we could add role checking here
+  // User must exist
   if (!auth.user.value) {
     return navigateTo('/auth/login')
+  }
+
+  // User must have admin role
+  if (!auth.isAdmin.value) {
+    return navigateTo('/')
   }
 })

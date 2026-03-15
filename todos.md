@@ -55,13 +55,9 @@
   - 文件：`pkg/utils/jwt.go`、`internal/platform/auth/service/auth_service.go`
   - 修复：在生成 token 时查询用户角色并写入 claims
 
-- [ ] **前端 admin 中间件不检查角色** — `admin.ts` 只检查用户是否存在，不检查是否是管理员。任何登录用户都能访问管理后台所有页面。
-  - 文件：`apps/web/app/middleware/admin.ts`
-  - 修复：检查 user 对象的角色字段
+- [x] **前端 admin 中间件不检查角色** — ~~已修复：`admin.ts` 现在检查 `isAdmin`~~
 
-- [ ] **前端 User 接口缺少 `role` 字段** — 即使后端修好了角色，前端也无法判断用户角色。
-  - 文件：`apps/web/app/composables/useAuth.ts`
-  - 修复：在 User interface 中增加 roles 字段
+- [x] **前端 User 接口缺少 `role` 字段** — ~~已修复：User interface 增加了 `roles: string[]`~~
 
 ### P1 — 高危（HIGH）
 
@@ -69,9 +65,7 @@
   - 文件：`internal/platform/auth/service/auth_service.go`
   - 修复：在 Redis 中维护 token 黑名单，auth 中间件检查黑名单
 
-- [ ] **前端 Cookie 无 `httpOnly` 标志** — access token 存在普通 cookie 中，XSS 攻击可直接读取。
-  - 文件：`apps/web/app/composables/useAuth.ts`
-  - 修复：改为由后端 Set-Cookie 设置 httpOnly cookie，或调整 cookie 策略
+- [x] **前端 Cookie 无 `httpOnly` 标志** — ~~已修复：refresh_token 改为后端 Set-Cookie httpOnly cookie，access_token 保留短期 cookie（15 分钟）~~
 
 - [ ] **Session 表存储了完整 JWT** — `SessionToken` 字段存的是 JWT 本身，而非独立的 session ID。JWT 泄露 = session 标识泄露。
   - 文件：`internal/platform/auth/service/auth_service.go` line 131
@@ -179,7 +173,7 @@
 ## 七、建议修复顺序
 
 1. ✅ ~~注册 OAuth 路由 + 修复角色写入 JWT（P0）~~ — 已完成
-2. 修复前端 admin 权限校验 + httpOnly cookie（P0）
+2. ✅ ~~修复前端 admin 权限校验 + httpOnly cookie（P0）~~ — 已完成
 3. 补全 Site/OAuthClient 的 Create handler（OAuth 流程前置）
 4. 实现 token 黑名单（用 Redis）
 5. 补全用户列表接口 + 前端用户管理页

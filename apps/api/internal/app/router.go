@@ -70,7 +70,7 @@ func (a *App) setupRoutes() {
 	moderationSvc := moderationService.NewModerationService(moderationRepository, nil)
 
 	// Initialize handlers
-	authH := authHandler.NewAuthHandler(authSvc)
+	authH := authHandler.NewAuthHandler(authSvc, a.config)
 	oauthH := authHandler.NewOAuthHandler(oauthSvc)
 	adminH := authHandler.NewAdminHandler(adminSvc)
 	siteH := siteHandler.NewSiteHandler(siteSvc)

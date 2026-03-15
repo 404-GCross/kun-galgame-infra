@@ -1,8 +1,11 @@
 package handler
 
 import (
+	"time"
+
 	"api/internal/platform/auth/dto"
 	"api/internal/platform/auth/service"
+	"api/pkg/config"
 	"api/pkg/errors"
 	"api/pkg/response"
 	"api/pkg/utils"
@@ -10,14 +13,45 @@ import (
 	"github.com/gofiber/fiber/v3"
 )
 
+const refreshTokenCookieName = "refresh_token"
+
 // AuthHandler handles authentication requests
 type AuthHandler struct {
 	authService *service.AuthService
+	cfg         *config.Config
 }
 
 // NewAuthHandler creates a new AuthHandler
-func NewAuthHandler(authService *service.AuthService) *AuthHandler {
-	return &AuthHandler{authService: authService}
+func NewAuthHandler(authService *service.AuthService, cfg *config.Config) *AuthHandler {
+	return &AuthHandler{authService: authService, cfg: cfg}
+}
+
+// setRefreshTokenCookie sets the refresh token as an httpOnly cookie
+func (h *AuthHandler) setRefreshTokenCookie(c fiber.Ctx, token string) {
+	secure := h.cfg.Server.Env == "production"
+	c.Cookie(&fiber.Cookie{
+		Name:     refreshTokenCookieName,
+		Value:    token,
+		Path:     "/api/v1/auth",
+		HTTPOnly: true,
+		Secure:   secure,
+		SameSite: fiber.CookieSameSiteLaxMode,
+		MaxAge:   int((7 * 24 * time.Hour).Seconds()), // 7 days
+	})
+}
+
+// clearRefreshTokenCookie clears the refresh token cookie
+func (h *AuthHandler) clearRefreshTokenCookie(c fiber.Ctx) {
+	secure := h.cfg.Server.Env == "production"
+	c.Cookie(&fiber.Cookie{
+		Name:     refreshTokenCookieName,
+		Value:    "",
+		Path:     "/api/v1/auth",
+		HTTPOnly: true,
+		Secure:   secure,
+		SameSite: fiber.CookieSameSiteLaxMode,
+		MaxAge:   -1,
+	})
 }
 
 // Register handles user registration
@@ -75,6 +109,9 @@ func (h *AuthHandler) Login(c fiber.Ctx) error {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
 
+	// Set refresh token as httpOnly cookie
+	h.setRefreshTokenCookie(c, tokens.RefreshToken)
+
 	return response.Success(c, dto.LoginResponse{
 		User: dto.UserResponse{
 			UUID:        user.UUID,
@@ -87,7 +124,7 @@ func (h *AuthHandler) Login(c fiber.Ctx) error {
 			Roles:       user.RoleNames(),
 			CreatedAt:   user.CreatedAt.Format("2006-01-02T15:04:05Z"),
 		},
-		Tokens: *tokens,
+		AccessToken: tokens.AccessToken,
 	})
 }
 
@@ -95,35 +132,51 @@ func (h *AuthHandler) Login(c fiber.Ctx) error {
 func (h *AuthHandler) Logout(c fiber.Ctx) error {
 	// Get token from header
 	token := c.Get("Authorization")
-	if token == "" {
-		return response.Success(c, nil)
+	if token != "" {
+		// Remove "Bearer " prefix if present
+		if len(token) > 7 && token[:7] == "Bearer " {
+			token = token[7:]
+		}
+		_ = h.authService.Logout(c.Context(), token)
 	}
 
-	// Remove "Bearer " prefix if present
-	if len(token) > 7 && token[:7] == "Bearer " {
-		token = token[7:]
-	}
+	// Clear refresh token cookie
+	h.clearRefreshTokenCookie(c)
 
-	_ = h.authService.Logout(c.Context(), token)
 	return response.Success(c, nil)
 }
 
 // Refresh handles token refresh
 func (h *AuthHandler) Refresh(c fiber.Ctx) error {
-	var req dto.RefreshRequest
-	if err := c.Bind().JSON(&req); err != nil {
-		return response.BadRequest(c, errors.ErrBadRequest)
+	// Read refresh token from httpOnly cookie first, then fallback to body
+	rt := c.Cookies(refreshTokenCookieName)
+	if rt == "" {
+		var req dto.RefreshRequest
+		if err := c.Bind().JSON(&req); err == nil && req.RefreshToken != "" {
+			rt = req.RefreshToken
+		}
+	}
+	if rt == "" {
+		return response.Unauthorized(c, errors.ErrAuthInvalidToken)
 	}
 
-	tokens, err := h.authService.RefreshToken(c.Context(), req.RefreshToken)
+	tokens, err := h.authService.RefreshToken(c.Context(), rt)
 	if err != nil {
+		// Clear invalid cookie
+		h.clearRefreshTokenCookie(c)
 		if appErr, ok := err.(*errors.AppError); ok {
 			return response.Unauthorized(c, appErr.Code)
 		}
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
 
-	return response.Success(c, tokens)
+	// Set new refresh token as httpOnly cookie
+	h.setRefreshTokenCookie(c, tokens.RefreshToken)
+
+	// Only return access token in body
+	return response.Success(c, dto.RefreshResponse{
+		AccessToken: tokens.AccessToken,
+	})
 }
 
 // Me returns the current user
