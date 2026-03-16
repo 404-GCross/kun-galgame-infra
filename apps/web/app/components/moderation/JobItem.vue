@@ -7,16 +7,16 @@ const statusBadge = computed(() => MODERATION_STATUS_MAP[props.job.status] ?? { 
 </script>
 
 <template>
-  <div class="flex items-center justify-between p-4 hover:bg-gray-50 dark:hover:bg-gray-700">
+  <div class="flex items-center justify-between p-4 hover:bg-default-100">
     <div class="flex items-center gap-4">
-      <div class="flex size-10 items-center justify-center rounded-lg bg-gray-100 dark:bg-gray-900">
-        <Icon name="lucide:file-text" class="size-5 text-gray-500" />
+      <div class="flex size-10 items-center justify-center rounded-lg bg-default-100">
+        <Icon name="lucide:file-text" class="size-5 text-default-400" />
       </div>
       <div>
-        <p class="font-medium text-gray-800 dark:text-white">
+        <p class="font-medium text-foreground">
           {{ job.content_type }} #{{ job.content_id }}
         </p>
-        <p class="text-sm text-gray-500">
+        <p class="text-sm text-default-400">
           {{ new Date(job.created_at).toLocaleString() }}
         </p>
       </div>
@@ -28,7 +28,7 @@ const statusBadge = computed(() => MODERATION_STATUS_MAP[props.job.status] ?? { 
       </KunBadge>
       <NuxtLink
         :to="`/moderation/${job.id}`"
-        class="rounded-lg bg-indigo-50 px-3 py-1.5 text-sm font-medium text-indigo-600 hover:bg-indigo-100 dark:bg-indigo-900 dark:text-indigo-400 dark:hover:bg-indigo-800"
+        class="rounded-lg bg-primary-50 px-3 py-1.5 text-sm font-medium text-primary hover:bg-primary-100"
       >
         审核
       </NuxtLink>

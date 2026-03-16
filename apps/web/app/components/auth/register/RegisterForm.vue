@@ -40,8 +40,8 @@ const handleSubmit = async () => {
 <template>
   <KunCard class="p-8">
     <div class="mb-8 text-center">
-      <h1 class="text-2xl font-bold text-gray-800 dark:text-white">创建账号</h1>
-      <p class="mt-2 text-gray-600 dark:text-gray-400">加入 KUN Visual Novel 社区</p>
+      <h1 class="text-2xl font-bold text-foreground">创建账号</h1>
+      <p class="mt-2 text-default-500">加入 KUN Visual Novel 社区</p>
     </div>
 
     <form @submit.prevent="handleSubmit">
@@ -51,7 +51,7 @@ const handleSubmit = async () => {
         <KunInput v-model="password" label="密码" type="password" placeholder="请输入密码" required />
         <KunInput v-model="confirmPassword" label="确认密码" type="password" placeholder="请再次输入密码" required />
 
-        <div v-if="error" class="rounded-lg bg-red-50 p-3 text-sm text-red-600">{{ error }}</div>
+        <div v-if="error" class="rounded-lg bg-danger-50 p-3 text-sm text-danger">{{ error }}</div>
 
         <KunButton type="submit" color="primary" class="w-full" :disabled="isLoading">
           <Icon v-if="isLoading" name="lucide:loader-2" class="mr-2 size-4 animate-spin" />
@@ -61,9 +61,9 @@ const handleSubmit = async () => {
     </form>
 
     <div class="mt-6 text-center text-sm">
-      <p class="text-gray-600 dark:text-gray-400">
+      <p class="text-default-500">
         已有账号？
-        <NuxtLink to="/auth/login" class="text-indigo-600 hover:underline">立即登录</NuxtLink>
+        <NuxtLink to="/auth/login" class="text-primary hover:underline">立即登录</NuxtLink>
       </p>
     </div>
   </KunCard>

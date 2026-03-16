@@ -8,8 +8,8 @@ const stats = ref(DASHBOARD_STATS)
 <template>
   <div class="space-y-6">
     <div>
-      <h1 class="text-2xl font-bold text-gray-800 dark:text-white">仪表盘</h1>
-      <p class="mt-1 text-gray-600 dark:text-gray-400">
+      <h1 class="text-2xl font-bold text-foreground">仪表盘</h1>
+      <p class="mt-1 text-default-500">
         欢迎回来，{{ auth.user.value?.name }}
       </p>
     </div>
@@ -24,11 +24,11 @@ const stats = ref(DASHBOARD_STATS)
 
     <DashboardQuickActions />
 
-    <div class="rounded-xl bg-white p-6 shadow-sm dark:bg-gray-800">
-      <h2 class="mb-4 text-lg font-semibold text-gray-800 dark:text-white">
+    <div class="rounded-xl bg-content1 p-6 shadow-sm">
+      <h2 class="mb-4 text-lg font-semibold text-foreground">
         最近活动
       </h2>
-      <div class="py-8 text-center text-gray-500 dark:text-gray-400">
+      <div class="py-8 text-center text-default-400">
         <Icon name="lucide:inbox" class="mx-auto mb-2 size-12 opacity-50" />
         <p>暂无活动记录</p>
       </div>

@@ -35,8 +35,8 @@ onMounted(async () => {
 <template>
   <KunCard class="p-8">
     <div class="mb-8 text-center">
-      <h1 class="text-2xl font-bold text-gray-800 dark:text-white">欢迎回来</h1>
-      <p class="mt-2 text-gray-600 dark:text-gray-400">登录 KUN OAuth 管理后台</p>
+      <h1 class="text-2xl font-bold text-foreground">欢迎回来</h1>
+      <p class="mt-2 text-default-500">登录 KUN OAuth 管理后台</p>
     </div>
 
     <form @submit.prevent="handleSubmit">
@@ -58,7 +58,7 @@ onMounted(async () => {
           required
         />
 
-        <div v-if="error" class="rounded-lg bg-red-50 p-3 text-sm text-red-600">
+        <div v-if="error" class="rounded-lg bg-danger-50 p-3 text-sm text-danger">
           {{ error }}
         </div>
 
@@ -70,12 +70,12 @@ onMounted(async () => {
     </form>
 
     <div class="mt-6 space-y-4 text-center text-sm">
-      <NuxtLink to="/auth/forgot-password" class="text-indigo-600 hover:underline">
+      <NuxtLink to="/auth/forgot-password" class="text-primary hover:underline">
         忘记密码？
       </NuxtLink>
-      <p class="text-gray-600 dark:text-gray-400">
+      <p class="text-default-500">
         还没有账号？
-        <NuxtLink to="/auth/register" class="text-indigo-600 hover:underline">立即注册</NuxtLink>
+        <NuxtLink to="/auth/register" class="text-primary hover:underline">立即注册</NuxtLink>
       </p>
     </div>
   </KunCard>
