@@ -4,10 +4,13 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"math/big"
 	"strings"
 	"time"
 
+	"api/internal/infrastructure/cache"
 	"api/internal/infrastructure/mail"
 	"api/internal/platform/auth/dto"
 	"api/internal/platform/auth/model"
@@ -17,12 +20,19 @@ import (
 	"api/pkg/utils"
 )
 
+// emailChangeData stores the verification code and new email in Redis
+type emailChangeData struct {
+	Code     string `json:"code"`
+	NewEmail string `json:"new_email"`
+}
+
 // AuthService handles authentication logic
 type AuthService struct {
 	userRepo          *repository.UserRepository
 	sessionRepo       *repository.SessionRepository
 	passwordResetRepo *repository.PasswordResetRepository
 	mailer            *mail.Mailer
+	cache             *cache.RedisCache
 	cfg               *config.Config
 }
 
@@ -45,6 +55,7 @@ func NewAuthServiceFull(
 	sessionRepo *repository.SessionRepository,
 	passwordResetRepo *repository.PasswordResetRepository,
 	mailer *mail.Mailer,
+	cache *cache.RedisCache,
 	cfg *config.Config,
 ) *AuthService {
 	return &AuthService{
@@ -52,6 +63,7 @@ func NewAuthServiceFull(
 		sessionRepo:       sessionRepo,
 		passwordResetRepo: passwordResetRepo,
 		mailer:            mailer,
+		cache:             cache,
 		cfg:               cfg,
 	}
 }
@@ -398,6 +410,114 @@ func (s *AuthService) generateTokens(user *model.User) (*dto.TokenPair, error) {
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
 	}, nil
+}
+
+// SendEmailChangeCode sends a verification code to the user's current email for email change
+func (s *AuthService) SendEmailChangeCode(ctx context.Context, userUUID, newEmail string) error {
+	user, err := s.userRepo.FindByUUID(ctx, userUUID)
+	if err != nil {
+		return errors.NewWithCode(errors.ErrAuthUserNotFound)
+	}
+
+	// Check if new email is the same as current
+	if strings.EqualFold(user.Email, newEmail) {
+		return errors.NewWithCode(errors.ErrAuthEmailSameAsCurrent)
+	}
+
+	// Check if new email is already taken
+	exists, err := s.userRepo.ExistsByEmailExcluding(ctx, newEmail, userUUID)
+	if err != nil {
+		return err
+	}
+	if exists {
+		return errors.NewWithCode(errors.ErrAuthEmailExists)
+	}
+
+	// Rate limit: check if a code was already sent recently
+	redisKey := fmt.Sprintf("email_change:%s", userUUID)
+	if s.cache != nil {
+		existing, _ := s.cache.Get(redisKey)
+		if existing != nil {
+			return errors.NewWithCode(errors.ErrAuthEmailChangeTooFrequent)
+		}
+	}
+
+	// Generate 6-digit code
+	code, err := generateNumericCode(6)
+	if err != nil {
+		return err
+	}
+
+	// Store in Redis
+	if s.cache != nil {
+		data, _ := json.Marshal(emailChangeData{Code: code, NewEmail: newEmail})
+		if err := s.cache.Set(redisKey, data, 10*time.Minute); err != nil {
+			return err
+		}
+	}
+
+	// Send verification code to the OLD email
+	if s.mailer != nil {
+		if err := s.mailer.SendEmailChangeCodeEmail(user.Email, user.Name, code); err != nil {
+			return fmt.Errorf("failed to send email: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// ChangeEmail verifies the code and updates the user's email
+func (s *AuthService) ChangeEmail(ctx context.Context, userUUID, code, newEmail string) error {
+	redisKey := fmt.Sprintf("email_change:%s", userUUID)
+
+	// Read from Redis
+	if s.cache == nil {
+		return fmt.Errorf("cache not configured")
+	}
+
+	raw, err := s.cache.Get(redisKey)
+	if err != nil || raw == nil {
+		return errors.NewWithCode(errors.ErrAuthCodeExpired)
+	}
+
+	var data emailChangeData
+	if err := json.Unmarshal(raw, &data); err != nil {
+		return errors.NewWithCode(errors.ErrAuthCodeInvalid)
+	}
+
+	// Verify code and new email match
+	if data.Code != code || !strings.EqualFold(data.NewEmail, newEmail) {
+		return errors.NewWithCode(errors.ErrAuthCodeInvalid)
+	}
+
+	// Re-check email uniqueness (race condition guard)
+	exists, err := s.userRepo.ExistsByEmailExcluding(ctx, newEmail, userUUID)
+	if err != nil {
+		return err
+	}
+	if exists {
+		return errors.NewWithCode(errors.ErrAuthEmailExists)
+	}
+
+	// Update email
+	if err := s.userRepo.UpdateEmail(ctx, userUUID, newEmail); err != nil {
+		return err
+	}
+
+	// Delete Redis key
+	_ = s.cache.Delete(redisKey)
+
+	return nil
+}
+
+// generateNumericCode generates a cryptographically secure N-digit numeric code
+func generateNumericCode(length int) (string, error) {
+	max := new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(length)), nil)
+	n, err := rand.Int(rand.Reader, max)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%0*d", length, n), nil
 }
 
 // generateSecureToken generates a cryptographically secure random token

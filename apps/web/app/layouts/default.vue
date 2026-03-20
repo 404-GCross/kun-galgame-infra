@@ -6,6 +6,10 @@ const router = useRouter()
 const colorMode = useColorMode()
 const isSidebarCollapsed = ref(false)
 
+const visibleMenu = computed(() =>
+  SIDEBAR_MENU.filter((item) => !item.adminOnly || auth.isAdmin.value)
+)
+
 const colorModeIcon = computed(() => {
   if (colorMode.preference === 'system') return 'lucide:monitor'
   return colorMode.value === 'dark' ? 'lucide:moon' : 'lucide:sun'
@@ -57,7 +61,7 @@ onMounted(async () => {
       <!-- Navigation -->
       <nav class="flex-1 space-y-1 p-4">
         <NuxtLink
-          v-for="item in SIDEBAR_MENU"
+          v-for="item in visibleMenu"
           :key="item.to"
           :to="item.to"
           class="text-default-600 hover:bg-primary-50 hover:text-primary flex items-center gap-3 rounded-lg px-3 py-2 transition-colors"

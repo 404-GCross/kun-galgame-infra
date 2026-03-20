@@ -34,8 +34,10 @@ const (
 	ErrAuthNameExists       = 10007
 	ErrAuthPasswordRequired = 10008
 	ErrAuthInvalidEmail     = 10009
-	ErrAuthCodeInvalid      = 10010
-	ErrAuthCodeExpired      = 10011
+	ErrAuthCodeInvalid              = 10010
+	ErrAuthCodeExpired              = 10011
+	ErrAuthEmailChangeTooFrequent   = 10012
+	ErrAuthEmailSameAsCurrent       = 10013
 
 	// OAuth (15000-15999)
 	ErrOAuthInvalidClient       = 15001
@@ -87,8 +89,10 @@ var codeMessages = map[int]string{
 	ErrAuthNameExists:       "该用户名已被使用",
 	ErrAuthPasswordRequired: "需要重置密码",
 	ErrAuthInvalidEmail:     "邮箱格式不正确",
-	ErrAuthCodeInvalid:      "验证码无效",
-	ErrAuthCodeExpired:      "验证码已过期",
+	ErrAuthCodeInvalid:            "验证码无效",
+	ErrAuthCodeExpired:            "验证码已过期",
+	ErrAuthEmailChangeTooFrequent: "邮箱验证码发送过于频繁，请稍后再试",
+	ErrAuthEmailSameAsCurrent:     "新邮箱与当前邮箱相同",
 
 	ErrOAuthInvalidClient:       "无效的客户端",
 	ErrOAuthInvalidRedirectURI:  "无效的回调地址",

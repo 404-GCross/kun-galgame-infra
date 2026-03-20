@@ -44,6 +44,17 @@ type ResetPasswordConfirmRequest struct {
 	Password string `json:"password" validate:"required,min=6,max=100"`
 }
 
+// SendEmailChangeCodeRequest represents a request to send email change verification code
+type SendEmailChangeCodeRequest struct {
+	NewEmail string `json:"new_email" validate:"required,email"`
+}
+
+// ChangeEmailRequest represents a request to change email with verification code
+type ChangeEmailRequest struct {
+	Code     string `json:"code" validate:"required,len=6"`
+	NewEmail string `json:"new_email" validate:"required,email"`
+}
+
 // TokenPair represents an access/refresh token pair
 type TokenPair struct {
 	AccessToken  string `json:"access_token"`

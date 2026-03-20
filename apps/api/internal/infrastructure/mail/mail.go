@@ -177,6 +177,42 @@ func (m *Mailer) SendVerificationEmail(to, name, verifyLink string) error {
 	return m.SendEmail(to, subject, htmlBody)
 }
 
+// SendEmailChangeCodeEmail sends an email change verification code to the user's current email
+func (m *Mailer) SendEmailChangeCodeEmail(to, name, code string) error {
+	subject := "邮箱变更验证码 - KUN Visual Novel"
+
+	htmlBody := fmt.Sprintf(`
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>邮箱变更验证码</title>
+</head>
+<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+    <div style="background: linear-gradient(135deg, #667eea 0%%, #764ba2 100%%); padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
+        <h1 style="color: white; margin: 0;">KUN Visual Novel</h1>
+    </div>
+    <div style="background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px;">
+        <h2 style="color: #333;">邮箱变更验证</h2>
+        <p>你好 <strong>%s</strong>，</p>
+        <p>你正在修改账号的邮箱地址，请使用以下验证码完成操作：</p>
+        <div style="text-align: center; margin: 30px 0;">
+            <span style="background: #f0f0f0; color: #333; padding: 15px 30px; font-size: 32px; font-weight: bold; letter-spacing: 8px; border-radius: 5px; display: inline-block; font-family: monospace;">%s</span>
+        </div>
+        <p style="color: #666; font-size: 14px;">验证码有效期为 10 分钟。</p>
+        <p style="color: #666; font-size: 14px;">如果你没有发起此操作，请忽略此邮件，你的账号信息不会发生变化。</p>
+        <hr style="border: none; border-top: 1px solid #ddd; margin: 20px 0;">
+        <p style="color: #999; font-size: 12px; text-align: center;">
+            &copy; KUN Visual Novel. All rights reserved.
+        </p>
+    </div>
+</body>
+</html>
+`, name, code)
+
+	return m.SendEmail(to, subject, htmlBody)
+}
+
 // SendWithTemplate sends an email using a custom template
 func (m *Mailer) SendWithTemplate(to, subject, tmplStr string, data any) error {
 	tmpl, err := template.New("email").Parse(tmplStr)

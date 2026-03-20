@@ -96,6 +96,11 @@ func (r *UserRepository) MigrateLegacyPassword(ctx context.Context, userID uint,
 	}).Error
 }
 
+// UpdateEmail updates a user's email
+func (r *UserRepository) UpdateEmail(ctx context.Context, uuid string, email string) error {
+	return r.db.WithContext(ctx).Model(&model.User{}).Where("uuid = ?", uuid).Update("email", email).Error
+}
+
 // Delete soft deletes a user
 func (r *UserRepository) Delete(ctx context.Context, id uint) error {
 	return r.db.WithContext(ctx).Delete(&model.User{}, id).Error

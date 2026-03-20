@@ -101,6 +101,14 @@ export const useAuth = () => {
     })
   }
 
+  const sendEmailChangeCode = async (newEmail: string) => {
+    return api.post('/auth/email/send-code', { new_email: newEmail })
+  }
+
+  const changeEmail = async (code: string, newEmail: string) => {
+    return api.put('/auth/email', { code, new_email: newEmail })
+  }
+
   return {
     user: computed(() => userStore.user),
     isLoggedIn: computed(() => userStore.isLoggedIn),
@@ -113,5 +121,7 @@ export const useAuth = () => {
     forgotPassword,
     resetPassword,
     changePassword,
+    sendEmailChangeCode,
+    changeEmail,
   }
 }

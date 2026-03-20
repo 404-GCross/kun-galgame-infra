@@ -5,9 +5,13 @@ export default defineNuxtRouteMiddleware(async (to) => {
   const publicRoutes = ['/auth/login', '/auth/register', '/auth/forgot-password', '/auth/reset-password']
 
   if (publicRoutes.includes(to.path)) {
-    // If already logged in, redirect to dashboard
+    // If already logged in, redirect based on role
     if (accessToken.value) {
-      return navigateTo('/')
+      const auth = useAuth()
+      if (!auth.user.value) {
+        await auth.fetchUser()
+      }
+      return navigateTo(auth.isAdmin.value ? '/' : '/profile')
     }
     return
   }

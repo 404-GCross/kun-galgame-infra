@@ -14,7 +14,7 @@ const handleSubmit = async () => {
   try {
     const response = await auth.login(account.value, password.value)
     if (response.code === 0) {
-      router.push('/')
+      router.push(auth.isAdmin.value ? '/' : '/profile')
     } else {
       error.value = response.message || '登录失败'
     }
@@ -27,7 +27,7 @@ const handleSubmit = async () => {
 
 onMounted(async () => {
   if (auth.isLoggedIn.value) {
-    router.push('/')
+    router.push(auth.isAdmin.value ? '/' : '/profile')
   }
 })
 </script>

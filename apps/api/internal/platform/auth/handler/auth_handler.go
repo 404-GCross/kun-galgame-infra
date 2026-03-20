@@ -287,3 +287,49 @@ func (h *AuthHandler) GetProfile(c fiber.Ctx) error {
 		CreatedAt:   user.CreatedAt.Format("2006-01-02T15:04:05Z"),
 	})
 }
+
+// SendEmailChangeCode sends a verification code to the user's current email
+func (h *AuthHandler) SendEmailChangeCode(c fiber.Ctx) error {
+	var req dto.SendEmailChangeCodeRequest
+	if err := c.Bind().JSON(&req); err != nil {
+		return response.BadRequest(c, errors.ErrBadRequest)
+	}
+
+	if err := utils.Validate(&req); err != nil {
+		return response.BadRequestMsg(c, errors.ErrValidationFailed, err.Error())
+	}
+
+	userUUID := c.Locals("user_uuid").(string)
+
+	if err := h.authService.SendEmailChangeCode(c.Context(), userUUID, req.NewEmail); err != nil {
+		if appErr, ok := err.(*errors.AppError); ok {
+			return response.BadRequest(c, appErr.Code)
+		}
+		return response.InternalError(c, errors.ErrOperationFailed)
+	}
+
+	return response.SuccessWithMessage(c, "验证码已发送到当前邮箱", nil)
+}
+
+// ChangeEmail changes the user's email after verifying the code
+func (h *AuthHandler) ChangeEmail(c fiber.Ctx) error {
+	var req dto.ChangeEmailRequest
+	if err := c.Bind().JSON(&req); err != nil {
+		return response.BadRequest(c, errors.ErrBadRequest)
+	}
+
+	if err := utils.Validate(&req); err != nil {
+		return response.BadRequestMsg(c, errors.ErrValidationFailed, err.Error())
+	}
+
+	userUUID := c.Locals("user_uuid").(string)
+
+	if err := h.authService.ChangeEmail(c.Context(), userUUID, req.Code, req.NewEmail); err != nil {
+		if appErr, ok := err.(*errors.AppError); ok {
+			return response.BadRequest(c, appErr.Code)
+		}
+		return response.InternalError(c, errors.ErrOperationFailed)
+	}
+
+	return response.SuccessWithMessage(c, "邮箱修改成功", nil)
+}

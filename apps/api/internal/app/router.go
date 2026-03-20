@@ -44,7 +44,7 @@ func (a *App) setupRoutes() {
 	oauthClientRepo := siteRepo.NewOAuthClientRepository(db)
 
 	// Initialize services
-	authSvc := authService.NewAuthServiceFull(userRepo, sessionRepo, passwordResetRepo, mailer, a.config)
+	authSvc := authService.NewAuthServiceFull(userRepo, sessionRepo, passwordResetRepo, mailer, a.cache, a.config)
 	oauthSvc := authService.NewOAuthService(userRepo, authCodeRepo, sessionRepo, oauthClientRepo, a.config)
 	adminSvc := authService.NewAdminService(userRepo, sessionRepo)
 	siteSvc := siteService.NewSiteService(siteRepository)
@@ -87,6 +87,8 @@ func (a *App) setupRoutes() {
 	authProtected.Post("/logout", authH.Logout)
 	authProtected.Get("/me", authH.Me)
 	authProtected.Put("/password", authH.ChangePassword)
+	authProtected.Post("/email/send-code", authH.SendEmailChangeCode)
+	authProtected.Put("/email", authH.ChangeEmail)
 
 	// OAuth 2.0 routes
 	oauth := v1.Group("/oauth")

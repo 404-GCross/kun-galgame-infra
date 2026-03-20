@@ -11,11 +11,8 @@ export default defineNuxtRouteMiddleware(async () => {
     return navigateTo('/auth/login')
   }
 
-  // User must have admin role — kick non-admins back to login
+  // Non-admin users go to their profile page
   if (!auth.isAdmin.value) {
-    const userStore = useUserStore()
-    userStore.clearUser()
-    useCookie('access_token').value = null
-    return navigateTo('/auth/login')
+    return navigateTo('/profile')
   }
 })
