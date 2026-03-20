@@ -25,8 +25,29 @@ export default defineNuxtConfig({
   // Frontend
   css: ['~/styles/index.css'],
 
+  pinia: {
+    storesDirs: ['./store/**']
+  },
+
+  piniaPluginPersistedstate: {
+    cookieOptions: {
+      maxAge: 60 * 60 * 24 * 7,
+      sameSite: 'strict'
+    }
+  },
+
+  colorMode: {
+    preference: 'system',
+    fallback: 'light',
+    globalName: '__KUNGALGAME_COLOR_MODE__',
+    componentName: 'ColorScheme',
+    classPrefix: 'kun-',
+    classSuffix: '-mode',
+    storageKey: 'kungalgame-color-mode'
+  },
+
   vite: {
-    // @ts-expect-error
+    // @ts-expect-error ts-expect-error
     plugins: [tailwindcss()]
   },
 

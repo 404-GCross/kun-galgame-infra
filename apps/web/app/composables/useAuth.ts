@@ -1,8 +1,6 @@
 export const useAuth = () => {
   const api = useApi()
-  const user = useState<User | null>('user', () => null)
-  const isLoggedIn = computed(() => !!user.value)
-  const isAdmin = computed(() => user.value?.roles?.includes('admin') ?? false)
+  const userStore = useUserStore()
 
   const accessToken = useCookie('access_token', {
     maxAge: 60 * 15, // 15 minutes
@@ -18,7 +16,7 @@ export const useAuth = () => {
 
   const clearAuth = () => {
     accessToken.value = null
-    user.value = null
+    userStore.clearUser()
   }
 
   const login = async (account: string, password: string) => {
@@ -28,7 +26,7 @@ export const useAuth = () => {
     })
     if (response.code === 0) {
       setAccessToken(response.data.access_token)
-      user.value = response.data.user
+      userStore.setUser(response.data.user)
     }
     return response
   }
@@ -75,7 +73,7 @@ export const useAuth = () => {
     try {
       const response = await api.get<User>('/auth/me')
       if (response.code === 0) {
-        user.value = response.data
+        userStore.setUser(response.data)
         return response.data
       }
     } catch {
@@ -104,9 +102,9 @@ export const useAuth = () => {
   }
 
   return {
-    user,
-    isLoggedIn,
-    isAdmin,
+    user: computed(() => userStore.user),
+    isLoggedIn: computed(() => userStore.isLoggedIn),
+    isAdmin: computed(() => userStore.isAdmin),
     login,
     register,
     logout,
