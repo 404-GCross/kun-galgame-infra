@@ -53,37 +53,31 @@ const userAvatarSrc = computed(() => {
 </script>
 
 <template>
-  <KunFloatingUserCard
-    :position="props.floatingPosition"
-    :disabled="props.disableFloating"
-    :user-id="user.id"
+  <div
+    :class="
+      cn(
+        'flex shrink-0 cursor-pointer justify-center',
+        'rounded-full transition duration-150 ease-in-out hover:scale-110',
+        sizeClasses,
+        className
+      )
+    "
+    @click="handleClickAvatar($event)"
   >
-    <template #trigger>
-      <div
-        :class="
-          cn(
-            'flex shrink-0 cursor-pointer justify-center',
-            'rounded-full transition duration-150 ease-in-out hover:scale-110',
-            sizeClasses,
-            className
-          )
-        "
-        @click="handleClickAvatar($event)"
-      >
-        <!-- <KunImage
+    <!-- <KunImage
           :class="cn('inline-block rounded-full', sizeClasses)"
           v-if="user.avatar"
           :src="userAvatarSrc"
           :alt="user.name"
         /> -->
-        <KunImage
-          :class="
-            cn('inline-block rounded-full', sizeClasses, props.imageClassName)
-          "
-          :src="userAvatarSrc"
-          :alt="user.name"
-        />
-        <!-- <span
+    <KunImage
+      :class="
+        cn('inline-block rounded-full', sizeClasses, props.imageClassName)
+      "
+      :src="userAvatarSrc"
+      :alt="user.name"
+    />
+    <!-- <span
           :style="{ height: size, width: size }"
           :class="
             cn(
@@ -95,7 +89,5 @@ const userAvatarSrc = computed(() => {
         >
           {{ user.name.slice(0, 1).toUpperCase() }}
         </span> -->
-      </div>
-    </template>
-  </KunFloatingUserCard>
+  </div>
 </template>
