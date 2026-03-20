@@ -3,7 +3,23 @@ import { SIDEBAR_MENU } from '~/constants/admin'
 
 const auth = useAuth()
 const router = useRouter()
+const colorMode = useColorMode()
 const isSidebarCollapsed = ref(false)
+
+const colorModeIcon = computed(() => {
+  if (colorMode.preference === 'system') return 'lucide:monitor'
+  return colorMode.value === 'dark' ? 'lucide:moon' : 'lucide:sun'
+})
+
+const colorModeOptions = [
+  { value: 'light', label: '浅色', icon: 'lucide:sun' },
+  { value: 'dark', label: '深色', icon: 'lucide:moon' },
+  { value: 'system', label: '跟随系统', icon: 'lucide:monitor' },
+] as const
+
+const setColorMode = (mode: string) => {
+  colorMode.preference = mode
+}
 
 const handleLogout = async () => {
   await auth.logout()
@@ -20,7 +36,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="bg-background flex min-h-screen">
+  <div class="flex min-h-screen bg-white dark:bg-black">
     <!-- Sidebar -->
     <aside
       :class="[
@@ -82,13 +98,46 @@ onMounted(async () => {
         </div>
 
         <div class="flex items-center gap-4">
+          <!-- Color Mode Toggle -->
+          <KunPopover position="bottom-end">
+            <template #trigger>
+              <button
+                class="text-default-400 hover:bg-default-100 hover:text-foreground rounded-lg p-2 transition-colors"
+                title="切换主题"
+              >
+                <Icon :name="colorModeIcon" class="size-5" />
+              </button>
+            </template>
+
+            <div class="w-36 py-1">
+              <button
+                v-for="option in colorModeOptions"
+                :key="option.value"
+                class="flex w-full items-center gap-3 px-3 py-2 text-sm transition-colors"
+                :class="
+                  colorMode.preference === option.value
+                    ? 'bg-primary-50 text-primary'
+                    : 'text-default-500 hover:bg-default-100 hover:text-foreground'
+                "
+                @click="setColorMode(option.value)"
+              >
+                <Icon :name="option.icon" class="size-4" />
+                <span>{{ option.label }}</span>
+              </button>
+            </div>
+          </KunPopover>
+
           <!-- User Menu -->
           <div v-if="auth.user.value" class="flex items-center gap-3">
             <span class="text-default-500 text-sm">
               {{ auth.user.value.name }}
             </span>
             <KunAvatar
-              :user="{ id: 0, name: auth.user.value.name, avatar: auth.user.value.avatar }"
+              :user="{
+                id: 0,
+                name: auth.user.value.name,
+                avatar: auth.user.value.avatar
+              }"
               size="sm"
               :is-navigation="false"
             />
