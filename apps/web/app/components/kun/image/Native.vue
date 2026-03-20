@@ -8,8 +8,6 @@ interface KunImageProps {
   className?: string
 }
 
-const { showKUNGalgameBackground } = storeToRefs(usePersistSettingsStore())
-
 withDefaults(defineProps<KunImageProps>(), {
   alt: 'image',
   className: undefined,
@@ -21,7 +19,7 @@ withDefaults(defineProps<KunImageProps>(), {
 
 <template>
   <img
-    :class="cn('', showKUNGalgameBackground && 'opacity-80', className)"
+    :class="cn('', className)"
     :src="src"
     :alt="alt"
     :aria-label="ariaLabel"

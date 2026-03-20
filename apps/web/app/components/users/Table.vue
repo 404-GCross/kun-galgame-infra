@@ -49,7 +49,11 @@ defineProps<{ users: User[] }>()
         <tr v-for="user in users" :key="user.uuid" class="hover:bg-default-100">
           <td class="px-6 py-4 whitespace-nowrap">
             <div class="flex items-center gap-3">
-              <KunAvatar :src="user.avatar" :alt="user.name" size="sm" />
+              <KunAvatar
+                :user="{ id: 0, name: user.name, avatar: user.avatar }"
+                size="sm"
+                :is-navigation="false"
+              />
               <span class="text-foreground font-medium">{{ user.name }}</span>
             </div>
           </td>

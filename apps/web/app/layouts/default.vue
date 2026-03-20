@@ -88,9 +88,9 @@ onMounted(async () => {
               {{ auth.user.value.name }}
             </span>
             <KunAvatar
-              :src="auth.user.value.avatar"
-              :alt="auth.user.value.name"
+              :user="{ id: 0, name: auth.user.value.name, avatar: auth.user.value.avatar }"
               size="sm"
+              :is-navigation="false"
             />
             <button
               class="text-default-400 hover:bg-default-100 hover:text-danger rounded-lg p-2 transition-colors"

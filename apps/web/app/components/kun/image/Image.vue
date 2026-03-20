@@ -21,9 +21,6 @@ interface KunImageProps {
         fetchPriority: 'auto' | 'high' | 'low'
       }
 }
-
-const { showKUNGalgameBackground } = storeToRefs(usePersistSettingsStore())
-
 withDefaults(defineProps<KunImageProps>(), {
   alt: 'image',
   loading: undefined,
@@ -40,7 +37,7 @@ withDefaults(defineProps<KunImageProps>(), {
 
 <template>
   <NuxtImg
-    :class="cn('', showKUNGalgameBackground && 'opacity-80', className)"
+    :class="cn('', className)"
     :src="src"
     :alt="alt"
     :loading="loading"
