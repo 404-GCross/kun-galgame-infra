@@ -2,6 +2,9 @@ package service
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
 
 	"api/internal/platform/site/model"
 	"api/internal/platform/site/repository"
@@ -9,12 +12,16 @@ import (
 
 // SiteService handles site business logic
 type SiteService struct {
-	siteRepo *repository.SiteRepository
+	siteRepo        *repository.SiteRepository
+	oauthClientRepo *repository.OAuthClientRepository
 }
 
 // NewSiteService creates a new SiteService
-func NewSiteService(siteRepo *repository.SiteRepository) *SiteService {
-	return &SiteService{siteRepo: siteRepo}
+func NewSiteService(siteRepo *repository.SiteRepository, oauthClientRepo *repository.OAuthClientRepository) *SiteService {
+	return &SiteService{
+		siteRepo:        siteRepo,
+		oauthClientRepo: oauthClientRepo,
+	}
 }
 
 // GetByID gets a site by ID
@@ -47,7 +54,65 @@ func (s *SiteService) List(ctx context.Context) ([]model.Site, error) {
 	return s.siteRepo.List(ctx)
 }
 
+// DomainExists checks if a domain already exists
+func (s *SiteService) DomainExists(ctx context.Context, domain string) bool {
+	site, err := s.siteRepo.FindByDomain(ctx, domain)
+	return err == nil && site != nil
+}
+
 // ListOAuthClients lists all OAuth clients
 func (s *SiteService) ListOAuthClients(ctx context.Context) ([]model.OAuthClient, error) {
-	return s.siteRepo.ListOAuthClients(ctx)
+	return s.oauthClientRepo.FindAll(ctx)
+}
+
+// GetOAuthClientsBySiteID gets OAuth clients for a specific site
+func (s *SiteService) GetOAuthClientsBySiteID(ctx context.Context, siteID uint) ([]model.OAuthClient, error) {
+	return s.oauthClientRepo.FindBySiteID(ctx, siteID)
+}
+
+// CreateOAuthClient creates a new OAuth client with generated ID and secret
+func (s *SiteService) CreateOAuthClient(ctx context.Context, siteID uint, name string, redirectURIs, grants []string) (*model.OAuthClient, string, error) {
+	// Generate client ID (16 bytes = 32 hex chars)
+	clientID, err := generateRandomHex(16)
+	if err != nil {
+		return nil, "", err
+	}
+
+	// Generate client secret (32 bytes = 64 hex chars)
+	secret, err := generateRandomHex(32)
+	if err != nil {
+		return nil, "", err
+	}
+
+	urisJSON, _ := json.Marshal(redirectURIs)
+	grantsJSON, _ := json.Marshal(grants)
+
+	client := &model.OAuthClient{
+		ID:           clientID,
+		SiteID:       &siteID,
+		Name:         name,
+		Secret:       secret,
+		RedirectURIs: urisJSON,
+		Grants:       grantsJSON,
+	}
+
+	if err := s.oauthClientRepo.Create(ctx, client); err != nil {
+		return nil, "", err
+	}
+
+	return client, secret, nil
+}
+
+// DeleteOAuthClient deletes an OAuth client
+func (s *SiteService) DeleteOAuthClient(ctx context.Context, clientID string) error {
+	return s.oauthClientRepo.Delete(ctx, clientID)
+}
+
+// generateRandomHex generates a random hex string of the given byte length
+func generateRandomHex(length int) (string, error) {
+	bytes := make([]byte, length)
+	if _, err := rand.Read(bytes); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(bytes), nil
 }

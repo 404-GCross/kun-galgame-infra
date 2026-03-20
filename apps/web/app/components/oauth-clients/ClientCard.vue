@@ -1,5 +1,15 @@
 <script setup lang="ts">
-defineProps<{ client: OAuthClient }>()
+const props = defineProps<{
+  client: OAuthClient
+  sites: Site[]
+}>()
+const emit = defineEmits<{ delete: [] }>()
+
+const siteName = computed(() => {
+  if (!props.client.site_id) return '未关联'
+  const site = props.sites.find((s) => s.id === props.client.site_id)
+  return site?.name ?? '未知站点'
+})
 </script>
 
 <template>
@@ -11,35 +21,51 @@ defineProps<{ client: OAuthClient }>()
         </div>
         <div>
           <h3 class="text-lg font-semibold text-foreground">{{ client.name }}</h3>
-          <KunBadge :color="client.is_active ? 'success' : 'default'" variant="flat" size="sm">
-            {{ client.is_active ? '已启用' : '已禁用' }}
-          </KunBadge>
+          <p class="text-sm text-default-400">{{ siteName }}</p>
         </div>
       </div>
-      <button class="rounded p-1 text-default-300 hover:bg-default-100 hover:text-default-500">
-        <Icon name="lucide:more-vertical" class="size-5" />
+      <button
+        class="rounded p-1 text-default-300 hover:bg-danger-50 hover:text-danger"
+        title="删除客户端"
+        @click="emit('delete')"
+      >
+        <Icon name="lucide:trash-2" class="size-5" />
       </button>
     </div>
 
     <div class="mt-4 space-y-3">
       <div class="flex items-center justify-between rounded-lg bg-default-50 p-3">
-        <div>
-          <p class="text-xs text-default-400">客户端 ID</p>
-          <p class="font-mono text-sm text-foreground">{{ client.client_id }}</p>
+        <div class="min-w-0 flex-1">
+          <p class="text-xs text-default-400">Client ID</p>
+          <p class="truncate font-mono text-sm text-foreground">{{ client.id }}</p>
         </div>
-        <KunCopy :text="client.client_id" />
+        <KunCopy :text="client.id" />
       </div>
 
       <div>
         <p class="text-xs text-default-400">回调地址</p>
-        <p class="text-sm text-foreground">{{ client.redirect_uri }}</p>
+        <div class="mt-1 space-y-1">
+          <p
+            v-for="uri in client.redirect_uris"
+            :key="uri"
+            class="truncate text-sm text-foreground"
+          >
+            {{ uri }}
+          </p>
+        </div>
       </div>
 
-      <div>
-        <p class="text-xs text-default-400">权限范围</p>
+      <div v-if="client.grants?.length">
+        <p class="text-xs text-default-400">授权类型</p>
         <div class="mt-1 flex flex-wrap gap-1">
-          <KunBadge v-for="scope in client.scopes" :key="scope" color="primary" variant="flat" size="sm">
-            {{ scope }}
+          <KunBadge
+            v-for="grant in client.grants"
+            :key="grant"
+            color="primary"
+            variant="flat"
+            size="sm"
+          >
+            {{ grant }}
           </KunBadge>
         </div>
       </div>

@@ -21,3 +21,27 @@ type SiteResponse struct {
 	Description string `json:"description"`
 	CreatedAt   string `json:"created_at"`
 }
+
+// CreateOAuthClientRequest represents an OAuth client creation request
+type CreateOAuthClientRequest struct {
+	SiteID       uint     `json:"site_id" validate:"required"`
+	Name         string   `json:"name" validate:"required,max=100"`
+	RedirectURIs []string `json:"redirect_uris" validate:"required,min=1"`
+	Grants       []string `json:"grants"`
+}
+
+// OAuthClientResponse represents an OAuth client in API responses
+type OAuthClientResponse struct {
+	ID           string   `json:"id"`
+	SiteID       *uint    `json:"site_id,omitempty"`
+	Name         string   `json:"name"`
+	RedirectURIs []string `json:"redirect_uris"`
+	Grants       []string `json:"grants"`
+	CreatedAt    string   `json:"created_at"`
+}
+
+// OAuthClientCreatedResponse includes the secret (only shown once on creation)
+type OAuthClientCreatedResponse struct {
+	OAuthClientResponse
+	Secret string `json:"secret"`
+}

@@ -1,10 +1,12 @@
 export interface OAuthClient {
-  id: number
-  site_id: number
-  client_id: string
+  id: string
+  site_id?: number
   name: string
-  redirect_uri: string
-  scopes: string[]
-  is_active: boolean
+  redirect_uris: string[]
+  grants: string[]
   created_at: string
+}
+
+export interface OAuthClientCreated extends OAuthClient {
+  secret: string
 }

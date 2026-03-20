@@ -47,7 +47,7 @@ func (a *App) setupRoutes() {
 	authSvc := authService.NewAuthServiceFull(userRepo, sessionRepo, passwordResetRepo, mailer, a.cache, a.config)
 	oauthSvc := authService.NewOAuthService(userRepo, authCodeRepo, sessionRepo, oauthClientRepo, a.config)
 	adminSvc := authService.NewAdminService(userRepo, sessionRepo)
-	siteSvc := siteService.NewSiteService(siteRepository)
+	siteSvc := siteService.NewSiteService(siteRepository, oauthClientRepo)
 	artifactSvc := artifactService.NewArtifactService(artifactRepository)
 	moderationSvc := moderationService.NewModerationService(moderationRepository, nil)
 
@@ -118,11 +118,13 @@ func (a *App) setupRoutes() {
 	sites.Get("/:id", siteH.Get)
 	sites.Put("/:id", siteH.Update)
 	sites.Delete("/:id", siteH.Delete)
+	sites.Get("/:id/clients", siteH.GetSiteClients)
 
-	// OAuth client routes
-	oauthClients := v1.Group("/oauth/clients", middleware.Auth(authSvc))
+	// OAuth client routes (admin only)
+	oauthClients := v1.Group("/oauth/clients", middleware.Auth(authSvc), middleware.RequireRole("admin"))
 	oauthClients.Get("/", siteH.ListClients)
 	oauthClients.Post("/", siteH.CreateClient)
+	oauthClients.Delete("/:id", siteH.DeleteClient)
 
 	// Artifact routes
 	artifacts := v1.Group("/artifacts", middleware.Auth(authSvc))

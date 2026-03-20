@@ -2,7 +2,10 @@
 const api = useApi()
 
 const clients = ref<OAuthClient[]>([])
+const sites = ref<Site[]>([])
 const isLoading = ref(true)
+const showCreateModal = ref(false)
+const createdClient = ref<OAuthClientCreated | null>(null)
 
 const fetchClients = async () => {
   isLoading.value = true
@@ -11,14 +14,34 @@ const fetchClients = async () => {
     if (response.code === 0) {
       clients.value = response.data
     }
-  } catch (error) {
-    console.error('Failed to fetch OAuth clients:', error)
   } finally {
     isLoading.value = false
   }
 }
 
-onMounted(() => fetchClients())
+const fetchSites = async () => {
+  const response = await api.get<Site[]>('/sites')
+  if (response.code === 0) {
+    sites.value = response.data
+  }
+}
+
+const handleCreated = (client: OAuthClientCreated) => {
+  showCreateModal.value = false
+  createdClient.value = client
+  fetchClients()
+}
+
+const handleDelete = async (clientId: string) => {
+  const response = await api.delete(`/oauth/clients/${clientId}`)
+  if (response.code === 0) {
+    fetchClients()
+  }
+}
+
+onMounted(async () => {
+  await Promise.all([fetchClients(), fetchSites()])
+})
 </script>
 
 <template>
@@ -28,7 +51,7 @@ onMounted(() => fetchClients())
         <h1 class="text-2xl font-bold text-foreground">OAuth 客户端</h1>
         <p class="mt-1 text-default-500">管理 OAuth 2.0 客户端应用</p>
       </div>
-      <KunButton color="primary">
+      <KunButton color="primary" @click="showCreateModal = true">
         <Icon name="lucide:plus" class="mr-2 size-4" />
         创建客户端
       </KunButton>
@@ -45,7 +68,25 @@ onMounted(() => fetchClients())
     </div>
 
     <div v-else class="space-y-4">
-      <OauthClientsClientCard v-for="client in clients" :key="client.id" :client="client" />
+      <OauthClientsClientCard
+        v-for="client in clients"
+        :key="client.id"
+        :client="client"
+        :sites="sites"
+        @delete="handleDelete(client.id)"
+      />
     </div>
+
+    <OauthClientsCreateModal
+      v-model="showCreateModal"
+      :sites="sites"
+      @created="handleCreated"
+    />
+
+    <OauthClientsSecretModal
+      v-if="createdClient"
+      :client="createdClient"
+      @close="createdClient = null"
+    />
   </div>
 </template>

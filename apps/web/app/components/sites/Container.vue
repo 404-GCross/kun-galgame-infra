@@ -3,6 +3,8 @@ const api = useApi()
 
 const sites = ref<Site[]>([])
 const isLoading = ref(true)
+const showCreateModal = ref(false)
+const editingSite = ref<Site | null>(null)
 
 const fetchSites = async () => {
   isLoading.value = true
@@ -11,10 +13,25 @@ const fetchSites = async () => {
     if (response.code === 0) {
       sites.value = response.data
     }
-  } catch (error) {
-    console.error('Failed to fetch sites:', error)
   } finally {
     isLoading.value = false
+  }
+}
+
+const handleCreated = () => {
+  showCreateModal.value = false
+  fetchSites()
+}
+
+const handleUpdated = () => {
+  editingSite.value = null
+  fetchSites()
+}
+
+const handleDelete = async (id: number) => {
+  const response = await api.delete(`/sites/${id}`)
+  if (response.code === 0) {
+    fetchSites()
   }
 }
 
@@ -28,7 +45,7 @@ onMounted(() => fetchSites())
         <h1 class="text-2xl font-bold text-foreground">站点管理</h1>
         <p class="mt-1 text-default-500">管理连接的站点和 OAuth 配置</p>
       </div>
-      <KunButton color="primary">
+      <KunButton color="primary" @click="showCreateModal = true">
         <Icon name="lucide:plus" class="mr-2 size-4" />
         添加站点
       </KunButton>
@@ -44,7 +61,25 @@ onMounted(() => fetchSites())
     </div>
 
     <div v-else class="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-      <SitesCard v-for="site in sites" :key="site.id" :site="site" />
+      <SitesCard
+        v-for="site in sites"
+        :key="site.id"
+        :site="site"
+        @edit="editingSite = site"
+        @delete="handleDelete(site.id)"
+      />
     </div>
+
+    <SitesCreateModal
+      v-model="showCreateModal"
+      @created="handleCreated"
+    />
+
+    <SitesEditModal
+      v-if="editingSite"
+      :site="editingSite"
+      @close="editingSite = null"
+      @updated="handleUpdated"
+    />
   </div>
 </template>
