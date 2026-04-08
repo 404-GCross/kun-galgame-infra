@@ -1,0 +1,131 @@
+model user {
+    id                         Int    @id @default(autoincrement())
+    name                       String @unique
+    email                      String @unique
+    password                   String
+    ip                         String @default("")
+    avatar                     String @default("")
+    role                       Int    @default(1)
+    // 0 - normal, 1 - banned
+    status                     Int    @default(0)
+    moemoepoint                Int    @default(7)
+    bio                        String @default("") @db.VarChar(107)
+    daily_check_in             Int    @default(0)
+    daily_image_count          Int    @default(0)
+    daily_toolset_upload_count Int    @default(0)
+
+    // OAuth
+    oauth_account oauth_account[]
+
+    // SU only
+    todo        todo[]
+    update_log  update_log[]
+    website     galgame_website[]
+    unmoe       unmoe[]
+    doc_article doc_article[]
+
+    system_message  system_message[] @relation("system_message_sender")
+    send_message    message[]        @relation("user_send_message")
+    receive_message message[]        @relation("user_receive_message")
+
+    friend            user_friend[] @relation("user_friend")
+    friend_of         user_friend[] @relation("friend_to_user")
+    follower_relation user_follow[] @relation("follower_to_user")
+    followed_relation user_follow[] @relation("user_followed")
+
+    topic          topic[]          @relation("user_topic")
+    topic_like     topic_like[]
+    topic_dislike  topic_dislike[]
+    topic_upvote   topic_upvote[]
+    topic_favorite topic_favorite[]
+
+    created_topic_poll topic_poll[]
+    topic_poll_vote    topic_poll_vote[]
+
+    galgame                       galgame[]                @relation("user_galgame")
+    galgame_like                  galgame_like[]
+    galgame_favorite              galgame_favorite[]
+    galgame_contributor           galgame_contributor[]
+    galgame_comment               galgame_comment[]        @relation("user_galgame_comment")
+    galgame_comment_target        galgame_comment[]        @relation("galgame_comment_target_user")
+    galgame_pr                    galgame_pr[]
+    galgame_history               galgame_history[]
+    galgame_link                  galgame_link[]
+    galgame_rating                galgame_rating[]
+    galgame_rating_like           galgame_rating_like[]
+    galgame_rating_comment        galgame_rating_comment[] @relation("user_galgame_rating_comment")
+    galgame_rating_comment_target galgame_rating_comment[] @relation("galgame_rating_comment_target_user")
+
+    galgame_resource      galgame_resource[]      @relation("user_galgame_resource")
+    galgame_resource_like galgame_resource_like[]
+    galgame_comment_like  galgame_comment_like[]
+
+    reply_created topic_reply[]         @relation("user_created_topic_reply")
+    reply_like    topic_reply_like[]
+    reply_dislike topic_reply_dislike[]
+
+    comment_created topic_comment[]      @relation("user_created_topic_comment")
+    comment_target  topic_comment[]      @relation("topic_comment_target_user")
+    comment_like    topic_comment_like[]
+
+    chat_message_send     chat_message[]          @relation("user_send_chat_message")
+    chat_message_receive  chat_message[]          @relation("user_receive_chat_receive_message")
+    chat_room_participant chat_room_participant[]
+    chat_room_admin       chat_room_admin[]
+    chat_message_read_by  chat_message_read_by[]
+    chat_message_reaction chat_message_reaction[]
+
+    galgame_website_comment      galgame_website_comment[]      @relation("user_galgame_website_comment")
+    galgame_website_like         galgame_website_like[]         @relation("user_galgame_website_like")
+    galgame_website_favorite     galgame_website_favorite[]     @relation("user_galgame_website_favorite")
+    galgame_toolset              galgame_toolset[]              @relation("user_galgame_toolset")
+    galgame_toolset_resource     galgame_toolset_resource[]     @relation("user_galgame_toolset_resource")
+    galgame_toolset_comment      galgame_toolset_comment[]      @relation("user_galgame_toolset_comment")
+    galgame_toolset_practicality galgame_toolset_practicality[] @relation("user_galgame_toolset_practicality")
+    galgame_toolset_contributor  galgame_toolset_contributor[]
+
+    created DateTime @default(now())
+    updated DateTime @updatedAt
+}
+
+model user_friend {
+    id        Int @id @default(autoincrement())
+    user_id   Int
+    friend_id Int
+
+    user   user @relation("user_friend", fields: [user_id], references: [id], onDelete: Cascade)
+    friend user @relation("friend_to_user", fields: [friend_id], references: [id], onDelete: Cascade)
+
+    created DateTime @default(now())
+    updated DateTime @updatedAt
+
+    @@unique([user_id, friend_id])
+}
+
+model user_follow {
+    id          Int @id @default(autoincrement())
+    follower_id Int
+    followed_id Int
+
+    follower user @relation("follower_to_user", fields: [follower_id], references: [id], onDelete: Cascade)
+    followed user @relation("user_followed", fields: [followed_id], references: [id], onDelete: Cascade)
+
+    created DateTime @default(now())
+    updated DateTime @updatedAt
+
+    @@unique([follower_id, followed_id])
+}
+
+model oauth_account {
+    id       Int    @id @default(autoincrement())
+    user_id  Int
+    provider String @default("kun-oauth") @db.VarChar(50)
+    sub      String @unique @db.VarChar(255)
+
+    user user @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+    created DateTime @default(now())
+    updated DateTime @updatedAt
+
+    @@index([user_id])
+}
