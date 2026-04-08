@@ -19,7 +19,7 @@
     "prod:deploy": "./scripts/deploy.sh",
     "pm2:start": "./scripts/start.sh",
     "pm2:stop": "./scripts/stop.sh",
-    "pm2:restart": "pm2 restart kun-blog-web kun-blog-api",
+    "pm2:restart": "pm2 restart kun-oauth-admin",
     "pm2:logs": "pm2 logs"
   },
   "devDependencies": {

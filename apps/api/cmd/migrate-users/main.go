@@ -229,6 +229,16 @@ func runMigration(ctx context.Context, targetDB, kungalDB, moyuDB *gorm.DB, dryR
 	for i := range kungalUsers {
 		ku := &kungalUsers[i]
 		email := strings.ToLower(strings.TrimSpace(ku.Email))
+		if existing, ok := mergedByEmail[email]; ok {
+			// Keep the earlier registration, skip duplicates within kungal
+			slog.Warn("Duplicate email within kungal, keeping earlier",
+				"email", email,
+				"kept_id", existing.Kungal.ID,
+				"skipped_id", ku.ID,
+			)
+			result.SkippedDuplicates++
+			continue
+		}
 		mergedByEmail[email] = &mergedUser{
 			Name:        strings.TrimSpace(ku.Name),
 			Email:       email,
@@ -248,7 +258,17 @@ func runMigration(ctx context.Context, targetDB, kungalDB, moyuDB *gorm.DB, dryR
 		email := strings.ToLower(strings.TrimSpace(mu.Email))
 
 		if existing, ok := mergedByEmail[email]; ok {
-			// Merge: kungal takes priority, moyu supplements
+			if existing.Moyu != nil {
+				// Duplicate email within moyu, skip later one
+				slog.Warn("Duplicate email within moyu, keeping earlier",
+					"email", email,
+					"kept_id", existing.Moyu.ID,
+					"skipped_id", mu.ID,
+				)
+				result.SkippedDuplicates++
+				continue
+			}
+			// Cross-db merge: kungal takes priority, moyu supplements
 			existing.Moemoepoint += mu.Moemoepoint
 			if existing.Bio == "" && mu.Bio != "" {
 				existing.Bio = mu.Bio
@@ -316,9 +336,17 @@ func runMigration(ctx context.Context, targetDB, kungalDB, moyuDB *gorm.DB, dryR
 		processedNames[u.Name] = true
 	}
 
+	// Find the starting ID: max existing ID + 1, or 1 if empty
+	var maxExistingID uint
+	targetDB.WithContext(ctx).Model(&authModel.User{}).Select("COALESCE(MAX(id), 0)").Scan(&maxExistingID)
+	nextID := maxExistingID + 1
+
+	totalToProcess := len(allMerged)
+	processed := 0
 	for _, m := range allMerged {
 		if existingEmails[m.Email] {
 			result.SkippedDuplicates++
+			processed++
 			continue
 		}
 
@@ -333,7 +361,9 @@ func runMigration(ctx context.Context, targetDB, kungalDB, moyuDB *gorm.DB, dryR
 			moyuPwd = &mu.Password
 		}
 
+		// Assign sequential ID in chronological order
 		newUser := &authModel.User{
+			ID:             nextID,
 			Name:           name,
 			Email:          m.Email,
 			Password:       nil, // Will be set on first successful legacy login
@@ -346,6 +376,15 @@ func runMigration(ctx context.Context, targetDB, kungalDB, moyuDB *gorm.DB, dryR
 			IP:             m.IP,
 			CreatedAt:      m.CreatedAt,
 			UpdatedAt:      m.UpdatedAt,
+		}
+		nextID++
+
+		// Count site data for dry-run reporting
+		if m.Kungal != nil {
+			result.SiteDataCreated++
+		}
+		if m.Moyu != nil {
+			result.SiteDataCreated++
 		}
 
 		if !dryRun {
@@ -372,7 +411,6 @@ func runMigration(ctx context.Context, targetDB, kungalDB, moyuDB *gorm.DB, dryR
 					}).Error; err != nil {
 						return fmt.Errorf("create kungal site data: %w", err)
 					}
-					result.SiteDataCreated++
 
 					// Migration record
 					mergedFrom := (*string)(nil)
@@ -412,7 +450,6 @@ func runMigration(ctx context.Context, targetDB, kungalDB, moyuDB *gorm.DB, dryR
 					}).Error; err != nil {
 						return fmt.Errorf("create moyu site data: %w", err)
 					}
-					result.SiteDataCreated++
 
 					if err := tx.Create(&authModel.UserMigration{
 						UserID:       newUser.ID,
@@ -431,12 +468,32 @@ func runMigration(ctx context.Context, targetDB, kungalDB, moyuDB *gorm.DB, dryR
 			if err != nil {
 				slog.Error("failed to migrate user", "email", m.Email, "error", err)
 				result.Errors++
+				result.SiteDataCreated-- // Rollback count on error
+				if m.Kungal != nil {
+					result.SiteDataCreated--
+				}
 				continue
 			}
 		}
 
 		processedNames[name] = true
 		result.NewUsersCreated++
+		processed++
+		if processed%1000 == 0 {
+			slog.Info("Migration progress", "processed", processed, "total", totalToProcess, "created", result.NewUsersCreated, "errors", result.Errors)
+		}
+	}
+	slog.Info("User insertion complete", "created", result.NewUsersCreated, "skipped", result.SkippedDuplicates, "errors", result.Errors)
+
+	// Reset PostgreSQL auto-increment sequence to max ID
+	if !dryRun && result.NewUsersCreated > 0 {
+		if err := targetDB.WithContext(ctx).Exec(
+			"SELECT setval(pg_get_serial_sequence('users', 'id'), (SELECT COALESCE(MAX(id), 1) FROM users))",
+		).Error; err != nil {
+			slog.Error("failed to reset users ID sequence", "error", err)
+		} else {
+			slog.Info("Reset users ID sequence", "next_id", nextID)
+		}
 	}
 
 	// ── Step 5: Migrate social relations (moyu only) ─────────────────────
@@ -576,9 +633,6 @@ func deduplicateName(name string, used map[string]bool) string {
 	for used[name] {
 		name = fmt.Sprintf("%s_%d", original, suffix)
 		suffix++
-	}
-	if name != original {
-		slog.Warn("Renamed duplicate name", "original", original, "new", name)
 	}
 	return name
 }
