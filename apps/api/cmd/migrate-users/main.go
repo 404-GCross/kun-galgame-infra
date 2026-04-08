@@ -671,7 +671,7 @@ func deduplicateName(name string, used map[string]bool) string {
 func buildMapping(sourceToNewID map[sourceKey]uint, db string) map[uint]uint {
 	m := make(map[uint]uint)
 	for k, newID := range sourceToNewID {
-		if k.db == db && k.id != newID {
+		if k.db == db {
 			m[k.id] = newID
 		}
 	}
@@ -689,19 +689,35 @@ func remapUserIDsGeneric(ctx context.Context, db *gorm.DB, mapping map[uint]uint
 			tableSet[fmt.Sprintf(`"%s"`, tc.table)] = true
 		}
 
-		// Disable FK triggers on all affected tables
+		// Check which tables actually exist in this database
+		var existingTables []string
+		tx.Raw("SELECT tablename FROM pg_tables WHERE schemaname = 'public'").Scan(&existingTables)
+		existsMap := make(map[string]bool, len(existingTables))
+		for _, t := range existingTables {
+			existsMap[t] = true
+		}
+
+		// Filter to only existing tables
+		activeTables := make([]string, 0, len(tableSet))
 		for t := range tableSet {
+			// Strip quotes for lookup
+			name := strings.Trim(t, `"`)
+			if existsMap[name] {
+				activeTables = append(activeTables, t)
+			}
+		}
+
+		// Disable FK triggers on all affected tables
+		for _, t := range activeTables {
 			if err := tx.Exec(fmt.Sprintf("ALTER TABLE %s DISABLE TRIGGER ALL", t)).Error; err != nil {
-				slog.Warn("failed to disable triggers", "table", t, "error", err)
+				return fmt.Errorf("disable triggers on %s: %w", t, err)
 			}
 		}
 
 		// Re-enable triggers when done (even on error)
 		defer func() {
-			for t := range tableSet {
-				if err := tx.Exec(fmt.Sprintf("ALTER TABLE %s ENABLE TRIGGER ALL", t)).Error; err != nil {
-					slog.Warn("failed to re-enable triggers", "table", t, "error", err)
-				}
+			for _, t := range activeTables {
+				_ = tx.Exec(fmt.Sprintf("ALTER TABLE %s ENABLE TRIGGER ALL", t)).Error
 			}
 		}()
 
@@ -735,23 +751,51 @@ func remapUserIDsGeneric(ctx context.Context, db *gorm.DB, mapping map[uint]uint
 			return err
 		}
 
-		// Update all FK columns in business tables
+		// Two-pass remap to avoid unique constraint collisions:
+		// Pass 1: shift all affected IDs to a temporary high range (+ offset)
+		// Pass 2: set them to the final new IDs
+		const offset = 100_000_000
+
+		// Pass 1: old_id → old_id + offset (avoids collision with any real ID)
 		for _, tc := range fkColumns {
+			if !existsMap[tc.table] {
+				continue
+			}
 			sql := fmt.Sprintf(
-				`UPDATE "%s" SET "%s" = _id_map.new_id FROM _id_map WHERE "%s"."%s" = _id_map.old_id`,
-				tc.table, tc.column, tc.table, tc.column,
+				`UPDATE "%s" SET "%s" = "%s"."%s" + %d FROM _id_map WHERE "%s"."%s" = _id_map.old_id`,
+				tc.table, tc.column, tc.table, tc.column, offset, tc.table, tc.column,
 			)
 			if err := tx.Exec(sql).Error; err != nil {
-				slog.Error("failed to remap FK", "table", tc.table, "column", tc.column, "error", err)
-				return fmt.Errorf("remap %s.%s: %w", tc.table, tc.column, err)
+				slog.Error("failed to remap FK (pass 1)", "table", tc.table, "column", tc.column, "error", err)
+				return fmt.Errorf("remap pass1 %s.%s: %w", tc.table, tc.column, err)
 			}
 		}
-
-		// Update user.id itself
+		// Also shift user.id
 		if err := tx.Exec(
-			`UPDATE "user" SET id = _id_map.new_id FROM _id_map WHERE "user".id = _id_map.old_id`,
+			fmt.Sprintf(`UPDATE "user" SET id = id + %d FROM _id_map WHERE "user".id = _id_map.old_id`, offset),
 		).Error; err != nil {
-			return fmt.Errorf("remap user.id: %w", err)
+			return fmt.Errorf("remap pass1 user.id: %w", err)
+		}
+
+		// Pass 2: (old_id + offset) → new_id
+		for _, tc := range fkColumns {
+			if !existsMap[tc.table] {
+				continue
+			}
+			sql := fmt.Sprintf(
+				`UPDATE "%s" SET "%s" = _id_map.new_id FROM _id_map WHERE "%s"."%s" = _id_map.old_id + %d`,
+				tc.table, tc.column, tc.table, tc.column, offset,
+			)
+			if err := tx.Exec(sql).Error; err != nil {
+				slog.Error("failed to remap FK (pass 2)", "table", tc.table, "column", tc.column, "error", err)
+				return fmt.Errorf("remap pass2 %s.%s: %w", tc.table, tc.column, err)
+			}
+		}
+		// Final: set user.id to new value
+		if err := tx.Exec(
+			fmt.Sprintf(`UPDATE "user" SET id = _id_map.new_id FROM _id_map WHERE "user".id = _id_map.old_id + %d`, offset),
+		).Error; err != nil {
+			return fmt.Errorf("remap pass2 user.id: %w", err)
 		}
 
 		// Reset the user ID sequence
