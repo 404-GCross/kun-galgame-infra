@@ -75,6 +75,12 @@ type MoyuFollowRelation struct {
 
 func (MoyuFollowRelation) TableName() string { return "user_follow_relation" }
 
+// sourceKey identifies a user in a source database
+type sourceKey struct {
+	db string
+	id uint
+}
+
 // ---------------------------------------------------------------------------
 // Merged user: unified representation before insertion
 // ---------------------------------------------------------------------------
@@ -320,10 +326,6 @@ func runMigration(ctx context.Context, targetDB, kungalDB, moyuDB *gorm.DB, dryR
 	slog.Info("Found existing users in target", "count", len(existingUsers))
 
 	// ── Step 4: Insert in chronological order ────────────────────────────
-	type sourceKey struct {
-		db string
-		id uint
-	}
 	sourceToNewID := make(map[sourceKey]uint)
 	processedNames := make(map[string]bool)
 
@@ -594,6 +596,34 @@ func runMigration(ctx context.Context, targetDB, kungalDB, moyuDB *gorm.DB, dryR
 	}
 
 	slog.Info("Role assignment complete", "assigned", result.RolesAssigned)
+
+	// ── Step 7: Remap user IDs in source databases ───────────────────────
+	// This updates user.id and all foreign keys in business tables so that
+	// both source databases use the same IDs as the OAuth target database.
+	if !dryRun && result.NewUsersCreated > 0 {
+		slog.Info("Remapping user IDs in source databases...")
+
+		kungalMapping := buildMapping(sourceToNewID, "kungal")
+		if len(kungalMapping) > 0 {
+			if err := remapKungalUserIDs(ctx, kungalDB, kungalMapping); err != nil {
+				slog.Error("failed to remap kungal user IDs", "error", err)
+				result.Errors++
+			} else {
+				slog.Info("Kungal user IDs remapped", "count", len(kungalMapping))
+			}
+		}
+
+		moyuMapping := buildMapping(sourceToNewID, "moyu")
+		if len(moyuMapping) > 0 {
+			if err := remapMoyuUserIDs(ctx, moyuDB, moyuMapping); err != nil {
+				slog.Error("failed to remap moyu user IDs", "error", err)
+				result.Errors++
+			} else {
+				slog.Info("Moyu user IDs remapped", "count", len(moyuMapping))
+			}
+		}
+	}
+
 	return result, nil
 }
 
@@ -635,6 +665,206 @@ func deduplicateName(name string, used map[string]bool) string {
 		suffix++
 	}
 	return name
+}
+
+// buildMapping extracts old_id → new_id pairs for a specific source database
+func buildMapping(sourceToNewID map[sourceKey]uint, db string) map[uint]uint {
+	m := make(map[uint]uint)
+	for k, newID := range sourceToNewID {
+		if k.db == db && k.id != newID {
+			m[k.id] = newID
+		}
+	}
+	return m
+}
+
+// remapUserIDsGeneric applies old→new user ID mapping to a list of (table, column) pairs.
+// It creates a temp mapping table, then uses UPDATE ... FROM to batch-remap all FKs,
+// and finally updates user.id itself.
+func remapUserIDsGeneric(ctx context.Context, db *gorm.DB, mapping map[uint]uint, fkColumns []tableColumn) error {
+	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Collect all affected tables (unique) to disable/re-enable triggers
+		tableSet := map[string]bool{`"user"`: true}
+		for _, tc := range fkColumns {
+			tableSet[fmt.Sprintf(`"%s"`, tc.table)] = true
+		}
+
+		// Disable FK triggers on all affected tables
+		for t := range tableSet {
+			if err := tx.Exec(fmt.Sprintf("ALTER TABLE %s DISABLE TRIGGER ALL", t)).Error; err != nil {
+				slog.Warn("failed to disable triggers", "table", t, "error", err)
+			}
+		}
+
+		// Re-enable triggers when done (even on error)
+		defer func() {
+			for t := range tableSet {
+				if err := tx.Exec(fmt.Sprintf("ALTER TABLE %s ENABLE TRIGGER ALL", t)).Error; err != nil {
+					slog.Warn("failed to re-enable triggers", "table", t, "error", err)
+				}
+			}
+		}()
+
+		// Create temp mapping table
+		if err := tx.Exec("CREATE TEMP TABLE _id_map (old_id INT PRIMARY KEY, new_id INT NOT NULL) ON COMMIT DROP").Error; err != nil {
+			return fmt.Errorf("create temp table: %w", err)
+		}
+
+		// Batch insert mapping rows (1000 at a time to avoid query size limits)
+		batch := make([]string, 0, 1000)
+		flush := func() error {
+			if len(batch) == 0 {
+				return nil
+			}
+			sql := "INSERT INTO _id_map (old_id, new_id) VALUES " + strings.Join(batch, ",")
+			if err := tx.Exec(sql).Error; err != nil {
+				return fmt.Errorf("insert mapping batch: %w", err)
+			}
+			batch = batch[:0]
+			return nil
+		}
+		for oldID, newID := range mapping {
+			batch = append(batch, fmt.Sprintf("(%d,%d)", oldID, newID))
+			if len(batch) >= 1000 {
+				if err := flush(); err != nil {
+					return err
+				}
+			}
+		}
+		if err := flush(); err != nil {
+			return err
+		}
+
+		// Update all FK columns in business tables
+		for _, tc := range fkColumns {
+			sql := fmt.Sprintf(
+				`UPDATE "%s" SET "%s" = _id_map.new_id FROM _id_map WHERE "%s"."%s" = _id_map.old_id`,
+				tc.table, tc.column, tc.table, tc.column,
+			)
+			if err := tx.Exec(sql).Error; err != nil {
+				slog.Error("failed to remap FK", "table", tc.table, "column", tc.column, "error", err)
+				return fmt.Errorf("remap %s.%s: %w", tc.table, tc.column, err)
+			}
+		}
+
+		// Update user.id itself
+		if err := tx.Exec(
+			`UPDATE "user" SET id = _id_map.new_id FROM _id_map WHERE "user".id = _id_map.old_id`,
+		).Error; err != nil {
+			return fmt.Errorf("remap user.id: %w", err)
+		}
+
+		// Reset the user ID sequence
+		if err := tx.Exec(
+			`SELECT setval(pg_get_serial_sequence('"user"', 'id'), (SELECT COALESCE(MAX(id), 1) FROM "user"))`,
+		).Error; err != nil {
+			slog.Warn("failed to reset user ID sequence", "error", err)
+		}
+
+		return nil
+	})
+}
+
+type tableColumn struct {
+	table  string
+	column string
+}
+
+func remapKungalUserIDs(ctx context.Context, db *gorm.DB, mapping map[uint]uint) error {
+	fks := []tableColumn{
+		// Chat
+		{"chat_room_participant", "user_id"},
+		{"chat_room_admin", "user_id"},
+		{"chat_message", "sender_id"},
+		{"chat_message", "receiver_id"},
+		{"chat_message_read_by", "user_id"},
+		{"chat_message_reaction", "user_id"},
+		// Doc
+		{"doc_article", "author_id"},
+		// Galgame
+		{"galgame", "user_id"},
+		{"galgame_rating", "user_id"},
+		{"galgame_rating_like", "user_id"},
+		{"galgame_rating_comment", "user_id"},
+		{"galgame_rating_comment", "target_user_id"},
+		{"galgame_comment", "user_id"},
+		{"galgame_comment", "target_user_id"},
+		{"galgame_comment_like", "user_id"},
+		{"galgame_history", "user_id"},
+		{"galgame_link", "user_id"},
+		{"galgame_pr", "user_id"},
+		{"galgame_resource", "user_id"},
+		{"galgame_resource_like", "user_id"},
+		{"galgame_toolset", "user_id"},
+		{"galgame_toolset_contributor", "user_id"},
+		{"galgame_toolset_practicality", "user_id"},
+		{"galgame_toolset_resource", "user_id"},
+		{"galgame_toolset_comment", "user_id"},
+		{"galgame_website", "user_id"},
+		{"galgame_website_comment", "user_id"},
+		{"galgame_website_like", "user_id"},
+		{"galgame_website_favorite", "user_id"},
+		// Message
+		{"message", "sender_id"},
+		{"message", "receiver_id"},
+		{"system_message", "user_id"},
+		// Topic
+		{"topic", "user_id"},
+		{"topic_comment", "user_id"},
+		{"topic_comment", "target_user_id"},
+		{"topic_comment_like", "user_id"},
+		{"topic_poll", "user_id"},
+		{"topic_poll_vote", "user_id"},
+		{"topic_reply", "user_id"},
+		{"topic_reply_like", "user_id"},
+		{"topic_reply_dislike", "user_id"},
+		{"topic_upvote", "user_id"},
+		{"topic_like", "user_id"},
+		{"topic_dislike", "user_id"},
+		{"topic_favorite", "user_id"},
+		// Admin
+		{"todo", "user_id"},
+		{"update_log", "user_id"},
+		{"unmoe", "user_id"},
+		// Social
+		{"user_friend", "user_id"},
+		{"user_friend", "friend_id"},
+		{"user_follow", "follower_id"},
+		{"user_follow", "followed_id"},
+		// OAuth
+		{"oauth_account", "user_id"},
+	}
+	return remapUserIDsGeneric(ctx, db, mapping, fks)
+}
+
+func remapMoyuUserIDs(ctx context.Context, db *gorm.DB, mapping map[uint]uint) error {
+	fks := []tableColumn{
+		// Chat
+		{"chat_member", "user_id"},
+		{"chat_message", "sender_id"},
+		{"chat_message", "deleted_by_id"},
+		{"chat_message_seen", "user_id"},
+		{"chat_message_reaction", "user_id"},
+		// Patch
+		{"patch", "user_id"},
+		{"patch_resource", "user_id"},
+		{"patch_comment", "user_id"},
+		// Admin
+		{"admin_log", "user_id"},
+		// Social
+		{"user_follow_relation", "follower_id"},
+		{"user_follow_relation", "following_id"},
+		{"user_message", "sender_id"},
+		{"user_message", "recipient_id"},
+		// Relations
+		{"user_patch_favorite_relation", "user_id"},
+		{"user_patch_contribute_relation", "user_id"},
+		{"user_patch_comment_like_relation", "user_id"},
+		{"user_patch_resource_like_relation", "user_id"},
+		// OAuth (if table exists)
+		{"oauth_account", "user_id"},
+	}
+	return remapUserIDsGeneric(ctx, db, mapping, fks)
 }
 
 func printResults(r *MigrationResult, dryRun bool) {
