@@ -3,7 +3,7 @@ const props = defineProps<{
   client: OAuthClient
   sites: Site[]
 }>()
-const emit = defineEmits<{ delete: [] }>()
+const emit = defineEmits<{ edit: []; delete: [] }>()
 
 const siteName = computed(() => {
   if (!props.client.site_id) return '未关联'
@@ -24,13 +24,22 @@ const siteName = computed(() => {
           <p class="text-sm text-default-400">{{ siteName }}</p>
         </div>
       </div>
-      <button
-        class="rounded p-1 text-default-300 hover:bg-danger-50 hover:text-danger"
-        title="删除客户端"
-        @click="emit('delete')"
-      >
-        <Icon name="lucide:trash-2" class="size-5" />
-      </button>
+      <div class="flex gap-1">
+        <button
+          class="rounded p-1 text-default-300 hover:bg-default-100 hover:text-default-500"
+          title="编辑客户端"
+          @click="emit('edit')"
+        >
+          <Icon name="lucide:pencil" class="size-5" />
+        </button>
+        <button
+          class="rounded p-1 text-default-300 hover:bg-danger-50 hover:text-danger"
+          title="删除客户端"
+          @click="emit('delete')"
+        >
+          <Icon name="lucide:trash-2" class="size-5" />
+        </button>
+      </div>
     </div>
 
     <div class="mt-4 space-y-3">

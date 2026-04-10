@@ -67,7 +67,7 @@ func setupRoutes(a *app.App, cfg *config.Config) {
 
 	// Handlers
 	authH := authHandler.NewAuthHandler(authSvc, cfg)
-	oauthH := authHandler.NewOAuthHandler(oauthSvc)
+	oauthH := authHandler.NewOAuthHandler(oauthSvc, cfg)
 	adminH := authHandler.NewAdminHandler(adminSvc)
 	siteH := siteHandler.NewSiteHandler(siteSvc)
 
@@ -106,8 +106,8 @@ func setupRoutes(a *app.App, cfg *config.Config) {
 	oauth := v1.Group("/oauth")
 	oauth.Post("/token", oauthH.Token)
 	oauth.Post("/revoke", oauthH.Revoke)
+	oauth.Get("/authorize", middleware.OptionalAuth(authSvc), oauthH.Authorize) // Redirects to login if not authenticated
 	oauthProtected := oauth.Group("", middleware.Auth(authSvc))
-	oauthProtected.Get("/authorize", oauthH.Authorize)
 	oauthProtected.Get("/userinfo", oauthH.UserInfo)
 
 	// User routes
@@ -136,5 +136,6 @@ func setupRoutes(a *app.App, cfg *config.Config) {
 	oauthClients := v1.Group("/oauth/clients", middleware.Auth(authSvc), middleware.RequireRole("admin"))
 	oauthClients.Get("/", siteH.ListClients)
 	oauthClients.Post("/", siteH.CreateClient)
+	oauthClients.Put("/:id", siteH.UpdateClient)
 	oauthClients.Delete("/:id", siteH.DeleteClient)
 }

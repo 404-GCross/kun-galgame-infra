@@ -37,6 +37,7 @@ tmp
 
 # build
 apps/api/build
+apps/api/tmp
 apps/api/kun-api
 apps/api/kun-blog-solid-fiber
 

@@ -6,6 +6,7 @@ const sites = ref<Site[]>([])
 const isLoading = ref(true)
 const showCreateModal = ref(false)
 const createdClient = ref<OAuthClientCreated | null>(null)
+const editingClient = ref<OAuthClient | null>(null)
 
 const fetchClients = async () => {
   isLoading.value = true
@@ -29,6 +30,11 @@ const fetchSites = async () => {
 const handleCreated = (client: OAuthClientCreated) => {
   showCreateModal.value = false
   createdClient.value = client
+  fetchClients()
+}
+
+const handleUpdated = () => {
+  editingClient.value = null
   fetchClients()
 }
 
@@ -73,6 +79,7 @@ onMounted(async () => {
         :key="client.id"
         :client="client"
         :sites="sites"
+        @edit="editingClient = client"
         @delete="handleDelete(client.id)"
       />
     </div>
@@ -81,6 +88,13 @@ onMounted(async () => {
       v-model="showCreateModal"
       :sites="sites"
       @created="handleCreated"
+    />
+
+    <OauthClientsEditModal
+      v-if="editingClient"
+      :client="editingClient"
+      @close="editingClient = null"
+      @updated="handleUpdated"
     />
 
     <OauthClientsSecretModal

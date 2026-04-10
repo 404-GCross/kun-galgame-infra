@@ -1,11 +1,24 @@
 <script setup lang="ts">
 const auth = useAuth()
 const router = useRouter()
+const route = useRoute()
 
 const account = ref('')
 const password = ref('')
 const error = ref('')
 const isLoading = ref(false)
+
+// If redirected from OAuth authorize, go back after login
+const redirectUrl = computed(() => route.query.redirect as string | undefined)
+
+const navigateAfterLogin = () => {
+  if (redirectUrl.value) {
+    // OAuth flow: redirect back to the authorize URL (external)
+    window.location.href = redirectUrl.value
+  } else {
+    router.push(auth.isAdmin.value ? '/' : '/profile')
+  }
+}
 
 const handleSubmit = async () => {
   error.value = ''
@@ -14,7 +27,7 @@ const handleSubmit = async () => {
   try {
     const response = await auth.login(account.value, password.value)
     if (response.code === 0) {
-      router.push(auth.isAdmin.value ? '/' : '/profile')
+      navigateAfterLogin()
     } else {
       error.value = response.message || '登录失败'
     }
@@ -27,7 +40,7 @@ const handleSubmit = async () => {
 
 onMounted(async () => {
   if (auth.isLoggedIn.value) {
-    router.push(auth.isAdmin.value ? '/' : '/profile')
+    navigateAfterLogin()
   }
 })
 </script>

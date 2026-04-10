@@ -1,8 +1,11 @@
 package handler
 
 import (
+	"net/url"
+
 	"api/internal/platform/auth/dto"
 	"api/internal/platform/auth/service"
+	"api/pkg/config"
 	"api/pkg/errors"
 	"api/pkg/response"
 	"api/pkg/utils"
@@ -13,16 +16,17 @@ import (
 // OAuthHandler handles OAuth 2.0 requests
 type OAuthHandler struct {
 	oauthService *service.OAuthService
+	cfg          *config.Config
 }
 
 // NewOAuthHandler creates a new OAuthHandler
-func NewOAuthHandler(oauthService *service.OAuthService) *OAuthHandler {
-	return &OAuthHandler{oauthService: oauthService}
+func NewOAuthHandler(oauthService *service.OAuthService, cfg *config.Config) *OAuthHandler {
+	return &OAuthHandler{oauthService: oauthService, cfg: cfg}
 }
 
 // Authorize handles the OAuth authorization request.
-// The user must be authenticated. Validates the client and redirect URI,
-// then creates an authorization code and redirects back to the client.
+// If the user is not logged in, redirects to the OAuth login page with a
+// return URL so the user can authenticate first, then come back to authorize.
 func (h *OAuthHandler) Authorize(c fiber.Ctx) error {
 	var req dto.AuthorizeRequest
 	if err := c.Bind().Query(&req); err != nil {
@@ -42,8 +46,17 @@ func (h *OAuthHandler) Authorize(c fiber.Ctx) error {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
 
-	// Get authenticated user UUID and resolve user ID
-	userUUID := c.Locals("user_uuid").(string)
+	// Check if user is authenticated (set by OptionalAuth middleware)
+	userUUIDRaw := c.Locals("user_uuid")
+	if userUUIDRaw == nil || userUUIDRaw.(string) == "" {
+		// Not logged in — redirect to OAuth login page with return URL
+		frontendURL := h.cfg.Server.FrontendURL
+		returnURL := url.QueryEscape(string(c.Request().URI().FullURI()))
+		loginURL := frontendURL + "/auth/login?redirect=" + returnURL
+		return c.Redirect().To(loginURL)
+	}
+
+	userUUID := userUUIDRaw.(string)
 	userID, err := h.oauthService.GetUserIDByUUID(c.Context(), userUUID)
 	if err != nil {
 		return response.Unauthorized(c, errors.ErrAuthUserNotFound)

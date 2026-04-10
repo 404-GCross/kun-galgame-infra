@@ -30,6 +30,13 @@ type CreateOAuthClientRequest struct {
 	Grants       []string `json:"grants"`
 }
 
+// UpdateOAuthClientRequest represents an OAuth client update request
+type UpdateOAuthClientRequest struct {
+	Name         *string  `json:"name" validate:"omitempty,max=100"`
+	RedirectURIs []string `json:"redirect_uris" validate:"omitempty,min=1"`
+	Grants       []string `json:"grants"`
+}
+
 // OAuthClientResponse represents an OAuth client in API responses
 type OAuthClientResponse struct {
 	ID           string   `json:"id"`

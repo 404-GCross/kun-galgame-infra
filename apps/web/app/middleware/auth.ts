@@ -5,8 +5,8 @@ export default defineNuxtRouteMiddleware(async (to) => {
   const publicRoutes = ['/auth/login', '/auth/register', '/auth/forgot-password', '/auth/reset-password']
 
   if (publicRoutes.includes(to.path)) {
-    // If already logged in, redirect based on role
-    if (accessToken.value) {
+    // If already logged in and no redirect param, go to dashboard/profile
+    if (accessToken.value && !to.query.redirect) {
       const auth = useAuth()
       if (!auth.user.value) {
         await auth.fetchUser()

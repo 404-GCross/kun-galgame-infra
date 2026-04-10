@@ -1,25 +1,31 @@
 .PHONY: build run migrate migrate-drop migrate-users test clean
 
 # Build variables
-BINARY_NAME=kun-oauth-admin
 BUILD_DIR=./build
 
 # Go variables
 GO=go
 GOFLAGS=-v
 
-# Build the server
+# Build all services
 build:
-	$(GO) build $(GOFLAGS) -o $(BUILD_DIR)/server ./cmd/server
+	$(GO) build $(GOFLAGS) -o $(BUILD_DIR)/oauth ./cmd/oauth
+	$(GO) build $(GOFLAGS) -o $(BUILD_DIR)/artifact ./cmd/artifact
+	$(GO) build $(GOFLAGS) -o $(BUILD_DIR)/moderation ./cmd/moderation
 	$(GO) build $(GOFLAGS) -o $(BUILD_DIR)/worker ./cmd/worker
 	$(GO) build $(GOFLAGS) -o $(BUILD_DIR)/migrate ./cmd/migrate
 	$(GO) build $(GOFLAGS) -o $(BUILD_DIR)/migrate-users ./cmd/migrate-users
 
-# Run the server
-run:
-	$(GO) run ./cmd/server
+# Run individual services
+run-oauth:
+	$(GO) run ./cmd/oauth
 
-# Run the worker
+run-artifact:
+	$(GO) run ./cmd/artifact
+
+run-moderation:
+	$(GO) run ./cmd/moderation
+
 run-worker:
 	$(GO) run ./cmd/worker
 
@@ -52,6 +58,7 @@ test-coverage:
 # Clean build artifacts
 clean:
 	rm -rf $(BUILD_DIR)
+	rm -rf tmp
 	rm -f coverage.out coverage.html
 
 # Format code
@@ -66,31 +73,26 @@ lint:
 tidy:
 	$(GO) mod tidy
 
-# Generate (if using go generate)
-generate:
-	$(GO) generate ./...
-
-# Development: run with hot reload (requires air)
+# Development: run OAuth service with hot reload (requires air)
 dev:
 	air
 
 # Help
 help:
 	@echo "Available targets:"
-	@echo "  build            - Build all binaries"
-	@echo "  run              - Run the server"
-	@echo "  run-worker       - Run the worker"
-	@echo "  migrate          - Run database migrations"
-	@echo "  migrate-drop     - Drop all tables and run migrations (DANGEROUS)"
-	@echo "  migrate-users    - Migrate users from kungal/moyu databases"
-	@echo "  migrate-users-dry- Dry run user migration"
-	@echo "  test             - Run tests"
-	@echo "  test-coverage    - Run tests with coverage report"
-	@echo "  clean            - Clean build artifacts"
-	@echo "  fmt              - Format code"
-	@echo "  lint             - Run linter"
-	@echo "  tidy             - Tidy dependencies"
-	@echo "  dev              - Run with hot reload (requires air)"
-	@echo ""
-	@echo "User migration example:"
-	@echo "  make migrate-users KUNGAL_DSN=\"host=localhost port=5432 user=postgres password=xxx dbname=kungalgame sslmode=disable\" MOYU_DSN=\"host=localhost port=5432 user=postgres password=xxx dbname=kungalgame_patch sslmode=disable\""
+	@echo "  build              - Build all service binaries"
+	@echo "  run-oauth          - Run the OAuth service"
+	@echo "  run-artifact       - Run the Artifact service"
+	@echo "  run-moderation     - Run the Moderation service"
+	@echo "  run-worker         - Run the worker"
+	@echo "  migrate            - Run database migrations"
+	@echo "  migrate-drop       - Drop all tables and run migrations (DANGEROUS)"
+	@echo "  migrate-users      - Migrate users from kungal/moyu databases"
+	@echo "  migrate-users-dry  - Dry run user migration"
+	@echo "  test               - Run tests"
+	@echo "  test-coverage      - Run tests with coverage report"
+	@echo "  clean              - Clean build artifacts"
+	@echo "  fmt                - Format code"
+	@echo "  lint               - Run linter"
+	@echo "  tidy               - Tidy dependencies"
+	@echo "  dev                - Run OAuth service with hot reload (requires air)"

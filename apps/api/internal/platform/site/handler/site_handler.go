@@ -228,6 +228,30 @@ func (h *SiteHandler) CreateClient(c fiber.Ctx) error {
 	})
 }
 
+// UpdateClient updates an OAuth client
+func (h *SiteHandler) UpdateClient(c fiber.Ctx) error {
+	clientID := c.Params("id")
+	if clientID == "" {
+		return response.BadRequest(c, errors.ErrMissingParam)
+	}
+
+	var req dto.UpdateOAuthClientRequest
+	if err := c.Bind().JSON(&req); err != nil {
+		return response.BadRequest(c, errors.ErrBadRequest)
+	}
+
+	if err := utils.Validate(&req); err != nil {
+		return response.BadRequestMsg(c, errors.ErrValidationFailed, err.Error())
+	}
+
+	client, err := h.siteService.UpdateOAuthClient(c.Context(), clientID, req.Name, req.RedirectURIs, req.Grants)
+	if err != nil {
+		return response.InternalError(c, errors.ErrOperationFailed)
+	}
+
+	return response.Success(c, toOAuthClientResponse(client))
+}
+
 // DeleteClient deletes an OAuth client
 func (h *SiteHandler) DeleteClient(c fiber.Ctx) error {
 	clientID := c.Params("id")

@@ -103,6 +103,31 @@ func (s *SiteService) CreateOAuthClient(ctx context.Context, siteID uint, name s
 	return client, secret, nil
 }
 
+// UpdateOAuthClient updates an OAuth client's name, redirect URIs, and/or grants
+func (s *SiteService) UpdateOAuthClient(ctx context.Context, clientID string, name *string, redirectURIs, grants []string) (*model.OAuthClient, error) {
+	client, err := s.oauthClientRepo.FindByClientID(ctx, clientID)
+	if err != nil {
+		return nil, err
+	}
+
+	if name != nil {
+		client.Name = *name
+	}
+	if redirectURIs != nil {
+		urisJSON, _ := json.Marshal(redirectURIs)
+		client.RedirectURIs = urisJSON
+	}
+	if grants != nil {
+		grantsJSON, _ := json.Marshal(grants)
+		client.Grants = grantsJSON
+	}
+
+	if err := s.oauthClientRepo.Update(ctx, client); err != nil {
+		return nil, err
+	}
+	return client, nil
+}
+
 // DeleteOAuthClient deletes an OAuth client
 func (s *SiteService) DeleteOAuthClient(ctx context.Context, clientID string) error {
 	return s.oauthClientRepo.Delete(ctx, clientID)
