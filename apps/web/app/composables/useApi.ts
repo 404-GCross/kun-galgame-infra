@@ -18,15 +18,14 @@ interface ApiError {
 export const useApi = () => {
   const config = useRuntimeConfig()
   const baseUrl = config.public.apiBase || 'http://127.0.0.1:9277/api/v1'
+  const accessToken = useCookie('access_token')
 
   const getAuthHeaders = (): Record<string, string> => {
-    const token = useCookie('access_token').value
+    const token = accessToken.value
     return token ? { Authorization: `Bearer ${token}` } : {}
   }
 
   const handleUnauthorized = async () => {
-    const accessToken = useCookie('access_token')
-
     // Try to refresh using httpOnly cookie (sent automatically by browser)
     try {
       const response = await $fetch<ApiResponse<{ access_token: string }>>(
@@ -34,7 +33,7 @@ export const useApi = () => {
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
+          credentials: 'include'
         }
       )
 
@@ -46,7 +45,7 @@ export const useApi = () => {
       // Refresh failed
     }
 
-    // Clear access token and redirect to login
+    // Clear and redirect
     accessToken.value = null
     navigateTo('/auth/login')
     return false
@@ -66,9 +65,9 @@ export const useApi = () => {
         headers: {
           'Content-Type': 'application/json',
           ...getAuthHeaders(),
-          ...headers,
+          ...headers
         },
-        credentials: 'include',
+        credentials: 'include'
       })
 
       return response
@@ -88,7 +87,7 @@ export const useApi = () => {
       return {
         code: fetchError.data?.code ?? fetchError.statusCode ?? -1,
         message: fetchError.data?.message ?? 'Request failed',
-        data: null as T,
+        data: null as T
       }
     }
   }
@@ -101,6 +100,6 @@ export const useApi = () => {
       request<T>(endpoint, { method: 'PUT', body }),
     delete: <T>(endpoint: string) => request<T>(endpoint, { method: 'DELETE' }),
     patch: <T>(endpoint: string, body?: Record<string, unknown>) =>
-      request<T>(endpoint, { method: 'PATCH', body }),
+      request<T>(endpoint, { method: 'PATCH', body })
   }
 }
