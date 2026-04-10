@@ -1,14 +1,15 @@
 package dto
 
-// AuthorizeRequest represents an OAuth authorization request
+// AuthorizeRequest represents an OAuth authorization request.
+// Supports both query parameters (GET /authorize) and JSON body (POST /authorize/consent).
 type AuthorizeRequest struct {
-	ClientID            string `query:"client_id" validate:"required"`
-	RedirectURI         string `query:"redirect_uri" validate:"required,url"`
-	ResponseType        string `query:"response_type" validate:"required,oneof=code"`
-	Scope               string `query:"scope"`
-	State               string `query:"state" validate:"required"`
-	CodeChallenge       string `query:"code_challenge"`        // PKCE
-	CodeChallengeMethod string `query:"code_challenge_method"` // PKCE: "S256" or "plain"
+	ClientID            string `query:"client_id" json:"client_id" validate:"required"`
+	RedirectURI         string `query:"redirect_uri" json:"redirect_uri" validate:"required,url"`
+	ResponseType        string `query:"response_type" json:"response_type" validate:"required,oneof=code"`
+	Scope               string `query:"scope" json:"scope"`
+	State               string `query:"state" json:"state" validate:"required"`
+	CodeChallenge       string `query:"code_challenge" json:"code_challenge"`               // PKCE
+	CodeChallengeMethod string `query:"code_challenge_method" json:"code_challenge_method"` // PKCE: "S256" or "plain"
 }
 
 // TokenRequest represents an OAuth token request

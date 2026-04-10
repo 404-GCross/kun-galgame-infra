@@ -49,22 +49,31 @@ func Auth(authSvc *authService.AuthService) fiber.Handler {
 	}
 }
 
-// OptionalAuth middleware validates JWT tokens but allows unauthenticated requests
+// OptionalAuth middleware validates JWT tokens but allows unauthenticated requests.
+// It checks the Authorization header first, then falls back to the access_token cookie.
+// The cookie fallback is needed for browser redirects (e.g., OAuth /authorize)
+// where the browser navigates directly and cannot set custom headers.
 func OptionalAuth(authSvc *authService.AuthService) fiber.Handler {
 	return func(c fiber.Ctx) error {
-		// Get authorization header
+		var token string
+
+		// Try Authorization header first
 		authHeader := c.Get("Authorization")
-		if authHeader == "" {
-			return c.Next()
+		if authHeader != "" {
+			parts := strings.SplitN(authHeader, " ", 2)
+			if len(parts) == 2 && parts[0] == "Bearer" {
+				token = parts[1]
+			}
 		}
 
-		// Check Bearer prefix
-		parts := strings.SplitN(authHeader, " ", 2)
-		if len(parts) != 2 || parts[0] != "Bearer" {
-			return c.Next()
+		// Fallback: read access_token from cookie (for browser redirects)
+		if token == "" {
+			token = c.Cookies("access_token")
 		}
 
-		token := parts[1]
+		if token == "" {
+			return c.Next()
+		}
 
 		// Validate token
 		claims, err := authSvc.ValidateAccessToken(token)

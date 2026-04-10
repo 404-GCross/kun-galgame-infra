@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
 	"time"
@@ -98,6 +99,18 @@ func (s *OAuthService) CreateAuthorizationCode(
 	return code, nil
 }
 
+// verifyClientSecret validates the client secret using constant-time comparison
+func (s *OAuthService) verifyClientSecret(ctx context.Context, clientID, clientSecret string) error {
+	client, err := s.clientRepo.FindByClientID(ctx, clientID)
+	if err != nil {
+		return errors.NewWithCode(errors.ErrOAuthInvalidClient)
+	}
+	if subtle.ConstantTimeCompare([]byte(client.Secret), []byte(clientSecret)) != 1 {
+		return errors.NewWithCode(errors.ErrOAuthInvalidClientSecret)
+	}
+	return nil
+}
+
 // ExchangeCode exchanges an authorization code for tokens
 func (s *OAuthService) ExchangeCode(ctx context.Context, req *dto.TokenRequest) (*dto.TokenResponse, error) {
 	// Find authorization code
@@ -116,11 +129,27 @@ func (s *OAuthService) ExchangeCode(ctx context.Context, req *dto.TokenRequest) 
 		return nil, errors.NewWithCode(errors.ErrOAuthInvalidRedirectURI)
 	}
 
-	// Validate PKCE if code challenge was provided
-	if authCode.CodeChallenge != "" {
+	// Validate client_secret if provided
+	hasSecret := req.ClientSecret != ""
+	if hasSecret {
+		if err := s.verifyClientSecret(ctx, req.ClientID, req.ClientSecret); err != nil {
+			return nil, err
+		}
+	}
+
+	// Validate PKCE if code challenge was provided during authorization
+	hasPKCE := authCode.CodeChallenge != ""
+	if hasPKCE {
 		if !s.verifyCodeVerifier(req.CodeVerifier, authCode.CodeChallenge, authCode.CodeChallengeMethod) {
 			return nil, errors.NewWithCode(errors.ErrOAuthInvalidCodeVerifier)
 		}
+	}
+
+	// At least one client authentication method is required:
+	// - Confidential clients must provide client_secret
+	// - Public clients must use PKCE
+	if !hasSecret && !hasPKCE {
+		return nil, errors.NewWithCode(errors.ErrOAuthPKCERequired)
 	}
 
 	// Mark code as used
@@ -212,8 +241,17 @@ func (s *OAuthService) GetUserIDByUUID(ctx context.Context, uuid string) (uint, 
 	return user.ID, nil
 }
 
-// RefreshWithClient refreshes tokens using a refresh token within the OAuth flow
-func (s *OAuthService) RefreshWithClient(ctx context.Context, refreshToken, clientID string) (*dto.TokenResponse, error) {
+// RefreshWithClient refreshes tokens using a refresh token within the OAuth flow.
+// Requires client_secret for authentication.
+func (s *OAuthService) RefreshWithClient(ctx context.Context, refreshToken, clientID, clientSecret string) (*dto.TokenResponse, error) {
+	// Validate client_secret (required for refresh_token grant)
+	if clientSecret == "" {
+		return nil, errors.NewWithCode(errors.ErrOAuthInvalidClientSecret)
+	}
+	if err := s.verifyClientSecret(ctx, clientID, clientSecret); err != nil {
+		return nil, err
+	}
+
 	// Find session by refresh token
 	session, err := s.sessionRepo.FindByRefreshToken(ctx, refreshToken)
 	if err != nil {

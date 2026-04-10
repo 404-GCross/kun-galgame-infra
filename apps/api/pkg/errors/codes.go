@@ -47,6 +47,9 @@ const (
 	ErrOAuthInvalidGrant        = 15005
 	ErrOAuthInvalidScope        = 15006
 	ErrOAuthAccessDenied        = 15007
+	ErrOAuthInvalidClientSecret = 15008
+	ErrOAuthPKCERequired        = 15009
+	ErrOAuthConsentRequired     = 15010
 
 	// Artifact (50000-59999)
 	ErrArtifactNotFound   = 50001
@@ -101,6 +104,9 @@ var codeMessages = map[int]string{
 	ErrOAuthInvalidGrant:        "无效的授权类型",
 	ErrOAuthInvalidScope:        "无效的权限范围",
 	ErrOAuthAccessDenied:        "访问被拒绝",
+	ErrOAuthInvalidClientSecret: "客户端密钥无效",
+	ErrOAuthPKCERequired:        "公开客户端必须使用 PKCE",
+	ErrOAuthConsentRequired:     "需要用户授权同意",
 
 	ErrArtifactNotFound:   "资源不存在",
 	ErrArtifactInvalid:    "无效的资源",

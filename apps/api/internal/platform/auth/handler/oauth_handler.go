@@ -13,6 +13,21 @@ import (
 	"github.com/gofiber/fiber/v3"
 )
 
+// buildRedirectURL safely constructs a redirect URL with query parameters
+func buildRedirectURL(baseURI, code, state string) (string, error) {
+	u, err := url.Parse(baseURI)
+	if err != nil {
+		return "", err
+	}
+	q := u.Query()
+	q.Set("code", code)
+	if state != "" {
+		q.Set("state", state)
+	}
+	u.RawQuery = q.Encode()
+	return u.String(), nil
+}
+
 // OAuthHandler handles OAuth 2.0 requests
 type OAuthHandler struct {
 	oauthService *service.OAuthService
@@ -25,8 +40,8 @@ func NewOAuthHandler(oauthService *service.OAuthService, cfg *config.Config) *OA
 }
 
 // Authorize handles the OAuth authorization request.
-// If the user is not logged in, redirects to the OAuth login page with a
-// return URL so the user can authenticate first, then come back to authorize.
+// If the user is not logged in, redirects to the login page.
+// If logged in, redirects to the frontend consent page so the user can approve.
 func (h *OAuthHandler) Authorize(c fiber.Ctx) error {
 	var req dto.AuthorizeRequest
 	if err := c.Bind().Query(&req); err != nil {
@@ -46,17 +61,45 @@ func (h *OAuthHandler) Authorize(c fiber.Ctx) error {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
 
+	frontendURL := h.cfg.Server.FrontendURL
+	fullURI := string(c.Request().URI().FullURI())
+	returnURL := url.QueryEscape(fullURI)
+
 	// Check if user is authenticated (set by OptionalAuth middleware)
 	userUUIDRaw := c.Locals("user_uuid")
 	if userUUIDRaw == nil || userUUIDRaw.(string) == "" {
-		// Not logged in — redirect to OAuth login page with return URL
-		frontendURL := h.cfg.Server.FrontendURL
-		returnURL := url.QueryEscape(string(c.Request().URI().FullURI()))
+		// Not logged in — redirect to login page with return URL
 		loginURL := frontendURL + "/auth/login?redirect=" + returnURL
 		return c.Redirect().To(loginURL)
 	}
 
-	userUUID := userUUIDRaw.(string)
+	// Logged in — redirect to consent page so user can approve
+	consentURL := frontendURL + "/oauth/consent?redirect=" + returnURL
+	return c.Redirect().To(consentURL)
+}
+
+// Consent handles the user's authorization consent (POST).
+// Called after the user approves on the frontend consent page.
+func (h *OAuthHandler) Consent(c fiber.Ctx) error {
+	var req dto.AuthorizeRequest
+	if err := c.Bind().JSON(&req); err != nil {
+		return response.BadRequest(c, errors.ErrBadRequest)
+	}
+
+	if err := utils.Validate(&req); err != nil {
+		return response.BadRequestMsg(c, errors.ErrValidationFailed, err.Error())
+	}
+
+	// Validate client and redirect URI
+	_, err := h.oauthService.ValidateClient(c.Context(), req.ClientID, req.RedirectURI)
+	if err != nil {
+		if appErr, ok := err.(*errors.AppError); ok {
+			return response.BadRequest(c, appErr.Code)
+		}
+		return response.InternalError(c, errors.ErrOperationFailed)
+	}
+
+	userUUID := c.Locals("user_uuid").(string)
 	userID, err := h.oauthService.GetUserIDByUUID(c.Context(), userUUID)
 	if err != nil {
 		return response.Unauthorized(c, errors.ErrAuthUserNotFound)
@@ -81,13 +124,15 @@ func (h *OAuthHandler) Authorize(c fiber.Ctx) error {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
 
-	// Build redirect URL with code and state
-	redirectURL := req.RedirectURI + "?code=" + code
-	if req.State != "" {
-		redirectURL += "&state=" + req.State
+	// Build redirect URL safely with url.URL
+	redirectURL, err := buildRedirectURL(req.RedirectURI, code, req.State)
+	if err != nil {
+		return response.InternalError(c, errors.ErrOperationFailed)
 	}
 
-	return c.Redirect().To(redirectURL)
+	return response.Success(c, fiber.Map{
+		"redirect_url": redirectURL,
+	})
 }
 
 // Token handles the OAuth token exchange request.
@@ -117,7 +162,7 @@ func (h *OAuthHandler) Token(c fiber.Ctx) error {
 		if req.RefreshToken == "" {
 			return response.BadRequest(c, errors.ErrBadRequest)
 		}
-		tokenResp, err := h.oauthService.RefreshWithClient(c.Context(), req.RefreshToken, req.ClientID)
+		tokenResp, err := h.oauthService.RefreshWithClient(c.Context(), req.RefreshToken, req.ClientID, req.ClientSecret)
 		if err != nil {
 			if appErr, ok := err.(*errors.AppError); ok {
 				return response.Unauthorized(c, appErr.Code)

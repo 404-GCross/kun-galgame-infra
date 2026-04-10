@@ -86,13 +86,16 @@ func setupRoutes(a *app.App, cfg *config.Config) {
 		return c.JSON(fiber.Map{"status": "ok"})
 	})
 
+	// Strict rate limiter for sensitive endpoints
+	strict := middleware.StrictRateLimit(a.Cache)
+
 	// Auth routes (public)
 	auth := v1.Group("/auth")
-	auth.Post("/register", authH.Register)
-	auth.Post("/login", authH.Login)
+	auth.Post("/register", strict, authH.Register)
+	auth.Post("/login", strict, authH.Login)
 	auth.Post("/refresh", authH.Refresh)
-	auth.Post("/password/forgot", authH.ForgotPassword)
-	auth.Post("/password/reset", authH.ResetPassword)
+	auth.Post("/password/forgot", strict, authH.ForgotPassword)
+	auth.Post("/password/reset", strict, authH.ResetPassword)
 
 	// Auth routes (protected)
 	authProtected := auth.Group("", middleware.Auth(authSvc))
@@ -104,10 +107,11 @@ func setupRoutes(a *app.App, cfg *config.Config) {
 
 	// OAuth 2.0 routes
 	oauth := v1.Group("/oauth")
-	oauth.Post("/token", oauthH.Token)
+	oauth.Post("/token", strict, oauthH.Token)
 	oauth.Post("/revoke", oauthH.Revoke)
-	oauth.Get("/authorize", middleware.OptionalAuth(authSvc), oauthH.Authorize) // Redirects to login if not authenticated
+	oauth.Get("/authorize", middleware.OptionalAuth(authSvc), oauthH.Authorize)
 	oauthProtected := oauth.Group("", middleware.Auth(authSvc))
+	oauthProtected.Post("/authorize/consent", oauthH.Consent)
 	oauthProtected.Get("/userinfo", oauthH.UserInfo)
 
 	// User routes
