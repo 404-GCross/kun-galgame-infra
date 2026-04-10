@@ -1,20 +1,18 @@
-package app
+package main
 
 import (
+	"log/slog"
+	"os"
+
+	"api/internal/app"
 	"api/internal/infrastructure/mail"
 	"api/internal/middleware"
-
-	artifactHandler "api/internal/platform/artifact/handler"
-	artifactRepo "api/internal/platform/artifact/repository"
-	artifactService "api/internal/platform/artifact/service"
+	"api/pkg/config"
+	"api/pkg/logger"
 
 	authHandler "api/internal/platform/auth/handler"
 	authRepo "api/internal/platform/auth/repository"
 	authService "api/internal/platform/auth/service"
-
-	moderationHandler "api/internal/platform/moderation/handler"
-	moderationRepo "api/internal/platform/moderation/repository"
-	moderationService "api/internal/platform/moderation/service"
 
 	siteHandler "api/internal/platform/site/handler"
 	siteRepo "api/internal/platform/site/repository"
@@ -23,50 +21,64 @@ import (
 	"github.com/gofiber/fiber/v3"
 )
 
-// setupRoutes configures all application routes
-func (a *App) setupRoutes() {
-	// Get database connection
-	db := a.db.DB()
+func main() {
+	cfg, err := config.Load()
+	if err != nil {
+		slog.Error("failed to load config", "error", err)
+		os.Exit(1)
+	}
 
-	// Initialize repositories
+	logger.Init(cfg.Server.Env)
+
+	application, err := app.New(cfg, app.Options{
+		Name:      "kun-oauth",
+		NeedCache: true,
+	})
+	if err != nil {
+		slog.Error("failed to create application", "error", err)
+		os.Exit(1)
+	}
+
+	setupRoutes(application, cfg)
+
+	if err := application.Run(cfg.Server.Host, cfg.Server.Port); err != nil {
+		slog.Error("application error", "error", err)
+		os.Exit(1)
+	}
+}
+
+func setupRoutes(a *app.App, cfg *config.Config) {
+	db := a.DB.DB()
+
+	// Repositories
 	userRepo := authRepo.NewUserRepository(db)
 	sessionRepo := authRepo.NewSessionRepository(db)
 	passwordResetRepo := authRepo.NewPasswordResetRepository(db)
-	siteRepository := siteRepo.NewSiteRepository(db)
-	artifactRepository := artifactRepo.NewArtifactRepository(db)
-	moderationRepository := moderationRepo.NewModerationRepository(db)
-
-	// Initialize mail service
-	mailer := mail.NewMailer(a.config.Mail)
-
-	// Initialize additional repositories for OAuth
 	authCodeRepo := authRepo.NewAuthorizationCodeRepository(db)
 	oauthClientRepo := siteRepo.NewOAuthClientRepository(db)
+	siteRepository := siteRepo.NewSiteRepository(db)
 
-	// Initialize services
-	authSvc := authService.NewAuthServiceFull(userRepo, sessionRepo, passwordResetRepo, mailer, a.cache, a.config)
-	oauthSvc := authService.NewOAuthService(userRepo, authCodeRepo, sessionRepo, oauthClientRepo, a.config)
+	// Services
+	mailer := mail.NewMailer(cfg.Mail)
+	authSvc := authService.NewAuthServiceFull(userRepo, sessionRepo, passwordResetRepo, mailer, a.Cache, cfg)
+	oauthSvc := authService.NewOAuthService(userRepo, authCodeRepo, sessionRepo, oauthClientRepo, cfg)
 	adminSvc := authService.NewAdminService(userRepo, sessionRepo)
 	siteSvc := siteService.NewSiteService(siteRepository, oauthClientRepo)
-	artifactSvc := artifactService.NewArtifactService(artifactRepository)
-	moderationSvc := moderationService.NewModerationService(moderationRepository, nil)
 
-	// Initialize handlers
-	authH := authHandler.NewAuthHandler(authSvc, a.config)
+	// Handlers
+	authH := authHandler.NewAuthHandler(authSvc, cfg)
 	oauthH := authHandler.NewOAuthHandler(oauthSvc)
 	adminH := authHandler.NewAdminHandler(adminSvc)
 	siteH := siteHandler.NewSiteHandler(siteSvc)
-	artifactH := artifactHandler.NewArtifactHandler(artifactSvc)
-	moderationH := moderationHandler.NewModerationHandler(moderationSvc)
 
 	// Global middleware
-	a.fiber.Use(middleware.RequestID())
-	a.fiber.Use(middleware.Logger())
-	a.fiber.Use(middleware.CORS(a.config.Server.CORSOrigin))
-	a.fiber.Use(middleware.RateLimit(a.cache))
+	a.Fiber.Use(middleware.RequestID())
+	a.Fiber.Use(middleware.Logger())
+	a.Fiber.Use(middleware.CORS(cfg.Server.CORSOrigin))
+	a.Fiber.Use(middleware.RateLimit(a.Cache))
 
 	// API routes
-	api := a.fiber.Group("/api")
+	api := a.Fiber.Group("/api")
 	v1 := api.Group("/v1")
 
 	// Health check
@@ -92,11 +104,11 @@ func (a *App) setupRoutes() {
 
 	// OAuth 2.0 routes
 	oauth := v1.Group("/oauth")
-	oauth.Post("/token", oauthH.Token)     // Public: exchange code or refresh token
-	oauth.Post("/revoke", oauthH.Revoke)   // Public: revoke a token
+	oauth.Post("/token", oauthH.Token)
+	oauth.Post("/revoke", oauthH.Revoke)
 	oauthProtected := oauth.Group("", middleware.Auth(authSvc))
-	oauthProtected.Get("/authorize", oauthH.Authorize) // Requires login
-	oauthProtected.Get("/userinfo", oauthH.UserInfo)   // Requires login
+	oauthProtected.Get("/authorize", oauthH.Authorize)
+	oauthProtected.Get("/userinfo", oauthH.UserInfo)
 
 	// User routes
 	users := v1.Group("/users", middleware.Auth(authSvc))
@@ -125,19 +137,4 @@ func (a *App) setupRoutes() {
 	oauthClients.Get("/", siteH.ListClients)
 	oauthClients.Post("/", siteH.CreateClient)
 	oauthClients.Delete("/:id", siteH.DeleteClient)
-
-	// Artifact routes
-	artifacts := v1.Group("/artifacts", middleware.Auth(authSvc))
-	artifacts.Get("/", artifactH.List)
-	artifacts.Get("/:id", artifactH.Get)
-	artifacts.Post("/", artifactH.Create)
-	artifacts.Delete("/:id", artifactH.Delete)
-	artifacts.Get("/:id/download", artifactH.Download)
-
-	// Moderation routes (admin/moderator only)
-	moderation := v1.Group("/moderation", middleware.Auth(authSvc), middleware.RequireRole("admin", "moderator"))
-	moderation.Get("/jobs", moderationH.ListJobs)
-	moderation.Get("/jobs/:id", moderationH.GetJob)
-	moderation.Post("/jobs/:id/review", moderationH.ManualReview)
-	moderation.Get("/policies", moderationH.ListPolicies)
 }
