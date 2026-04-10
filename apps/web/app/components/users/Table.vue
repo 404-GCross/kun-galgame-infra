@@ -1,80 +1,116 @@
 <script setup lang="ts">
 defineProps<{ users: User[] }>()
+const emit = defineEmits<{
+  ban: [uuid: string]
+  unban: [uuid: string]
+  deleteSessions: [uuid: string]
+}>()
 </script>
 
 <template>
-  <div class="bg-content1 rounded-xl shadow-sm">
+  <div class="rounded-xl bg-content1 shadow-sm">
     <div v-if="users.length === 0" class="py-12 text-center">
-      <Icon name="lucide:users" class="text-default-200 mx-auto mb-4 size-12" />
-      <p class="text-default-400">暂无用户</p>
-      <p class="text-default-300 mt-1 text-sm">用户数据将在迁移后显示在这里</p>
+      <Icon name="lucide:users" class="mx-auto mb-4 size-12 text-default-200" />
+      <p class="text-default-400">暂无匹配用户</p>
     </div>
 
     <table v-else class="w-full">
-      <thead class="border-default-200 bg-default-50 border-b">
+      <thead class="border-b border-default-200 bg-default-50">
         <tr>
-          <th
-            class="text-default-400 px-6 py-3 text-left text-xs font-medium tracking-wider uppercase"
-          >
+          <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-default-400">
             用户
           </th>
-          <th
-            class="text-default-400 px-6 py-3 text-left text-xs font-medium tracking-wider uppercase"
-          >
+          <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-default-400">
             邮箱
           </th>
-          <th
-            class="text-default-400 px-6 py-3 text-left text-xs font-medium tracking-wider uppercase"
-          >
+          <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-default-400">
+            角色
+          </th>
+          <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-default-400">
             萌萌点
           </th>
-          <th
-            class="text-default-400 px-6 py-3 text-left text-xs font-medium tracking-wider uppercase"
-          >
+          <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-default-400">
             状态
           </th>
-          <th
-            class="text-default-400 px-6 py-3 text-left text-xs font-medium tracking-wider uppercase"
-          >
+          <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-default-400">
             注册时间
           </th>
-          <th
-            class="text-default-400 px-6 py-3 text-right text-xs font-medium tracking-wider uppercase"
-          >
+          <th class="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-default-400">
             操作
           </th>
         </tr>
       </thead>
-      <tbody class="divide-default-200 divide-y">
+      <tbody class="divide-y divide-default-200">
         <tr v-for="user in users" :key="user.uuid" class="hover:bg-default-100">
-          <td class="px-6 py-4 whitespace-nowrap">
+          <td class="whitespace-nowrap px-6 py-4">
             <div class="flex items-center gap-3">
               <KunAvatar
                 :user="{ id: 0, name: user.name, avatar: user.avatar }"
                 size="sm"
                 :is-navigation="false"
               />
-              <span class="text-foreground font-medium">{{ user.name }}</span>
+              <span class="font-medium text-foreground">{{ user.name }}</span>
             </div>
           </td>
-          <td class="text-default-400 px-6 py-4 whitespace-nowrap">
+          <td class="whitespace-nowrap px-6 py-4 text-default-400">
             {{ user.email }}
           </td>
-          <td class="text-default-400 px-6 py-4 whitespace-nowrap">
+          <td class="whitespace-nowrap px-6 py-4">
+            <div class="flex gap-1">
+              <KunBadge
+                v-for="role in (user.roles || [])"
+                :key="role"
+                :color="role === 'admin' ? 'primary' : role === 'moderator' ? 'warning' : 'default'"
+                variant="flat"
+                size="sm"
+              >
+                {{ role }}
+              </KunBadge>
+              <span v-if="!user.roles?.length" class="text-default-300 text-sm">user</span>
+            </div>
+          </td>
+          <td class="whitespace-nowrap px-6 py-4 text-default-400">
             {{ user.moemoepoint }}
           </td>
-          <td class="px-6 py-4 whitespace-nowrap">
+          <td class="whitespace-nowrap px-6 py-4">
             <UsersStatusBadge :status="user.status" />
           </td>
-          <td class="text-default-400 px-6 py-4 whitespace-nowrap">
+          <td class="whitespace-nowrap px-6 py-4 text-default-400">
             {{ new Date(user.created_at).toLocaleDateString() }}
           </td>
-          <td class="px-6 py-4 text-right whitespace-nowrap">
-            <button
-              class="text-default-300 hover:bg-default-100 hover:text-default-500 rounded p-1"
-            >
-              <Icon name="lucide:more-horizontal" class="size-5" />
-            </button>
+          <td class="whitespace-nowrap px-6 py-4 text-right">
+            <KunPopover position="bottom-end">
+              <template #trigger>
+                <button class="rounded p-1 text-default-300 hover:bg-default-100 hover:text-default-500">
+                  <Icon name="lucide:more-horizontal" class="size-5" />
+                </button>
+              </template>
+              <div class="w-40 py-1">
+                <button
+                  v-if="user.status === 0"
+                  class="flex w-full items-center gap-2 px-3 py-2 text-sm text-danger hover:bg-danger-50"
+                  @click="emit('ban', user.uuid)"
+                >
+                  <Icon name="lucide:ban" class="size-4" />
+                  封禁用户
+                </button>
+                <button
+                  v-else
+                  class="flex w-full items-center gap-2 px-3 py-2 text-sm text-success hover:bg-success-50"
+                  @click="emit('unban', user.uuid)"
+                >
+                  <Icon name="lucide:check-circle" class="size-4" />
+                  解除封禁
+                </button>
+                <button
+                  class="flex w-full items-center gap-2 px-3 py-2 text-sm text-default-500 hover:bg-default-100 hover:text-foreground"
+                  @click="emit('deleteSessions', user.uuid)"
+                >
+                  <Icon name="lucide:log-out" class="size-4" />
+                  清除会话
+                </button>
+              </div>
+            </KunPopover>
           </td>
         </tr>
       </tbody>
