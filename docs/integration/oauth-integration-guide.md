@@ -170,14 +170,18 @@ export default defineEventHandler(async (event) => {
 
   // response 结构：
   // {
-  //   "access_token": "eyJhbGc...",
-  //   "token_type": "Bearer",
-  //   "expires_in": 900,
-  //   "refresh_token": "eyJhbGc...",
-  //   "scope": "openid profile"
+  //   "code": 0,
+  //   "message": "成功",
+  //   "data": {
+  //     "access_token": "eyJhbGc...",
+  //     "token_type": "Bearer",
+  //     "expires_in": 900,
+  //     "refresh_token": "eyJhbGc...",
+  //     "scope": "openid profile"
+  //   }
   // }
 
-  return response
+  return response.data
 })
 ```
 
@@ -192,11 +196,15 @@ const userInfo = await $fetch('https://oauth.kungal.com/api/v1/oauth/userinfo', 
 
 // 返回：
 // {
-//   "sub": "550e8400-e29b-41d4-a716-446655440000",  // 用户 UUID（唯一标识）
-//   "name": "KUN",
-//   "email": "kun@kungal.com",
-//   "picture": "https://...",
-//   "updated_at": 1234567890
+//   "code": 0,
+//   "message": "成功",
+//   "data": {
+//     "sub": "550e8400-e29b-41d4-a716-446655440000",  // 用户 UUID（唯一标识）
+//     "name": "KUN",
+//     "email": "kun@kungal.com",
+//     "picture": "https://...",
+//     "updated_at": 1234567890
+//   }
 // }
 ```
 
@@ -242,8 +250,8 @@ const response = await $fetch('https://oauth.kungal.com/api/v1/oauth/token', {
   },
 })
 
-// 返回新的 access_token 和 refresh_token（令牌轮换）
-// 必须用新的 refresh_token 替换旧的
+// 返回 { code: 0, data: { access_token, refresh_token, ... } }
+// 必须用新的 refresh_token 替换旧的（令牌轮换）
 ```
 
 **注意**：每次刷新都会返回新的 refresh_token，旧的会立即失效（token rotation）。
@@ -429,9 +437,10 @@ export default defineEventHandler(async (event) => {
   })
 
   // 2. 获取用户信息
-  const userInfo = await $fetch(`${config.oauthServerUrl}/oauth/userinfo`, {
-    headers: { Authorization: `Bearer ${tokenResponse.access_token}` },
+  const userInfoResp = await $fetch(`${config.oauthServerUrl}/oauth/userinfo`, {
+    headers: { Authorization: `Bearer ${tokenResponse.data.access_token}` },
   })
+  const userInfo = userInfoResp.data
 
   // 3. 在本站创建/查找用户（根据你的数据库逻辑）
   // ...

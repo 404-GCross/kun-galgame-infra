@@ -109,7 +109,7 @@ func setupRoutes(a *app.App, cfg *config.Config) {
 	oauth := v1.Group("/oauth")
 	oauth.Post("/token", strict, oauthH.Token)
 	oauth.Post("/revoke", oauthH.Revoke)
-	oauth.Get("/authorize", middleware.OptionalAuth(authSvc), oauthH.Authorize)
+	oauth.Get("/authorize", oauthH.Authorize)
 	oauthProtected := oauth.Group("", middleware.Auth(authSvc))
 	oauthProtected.Post("/authorize/consent", oauthH.Consent)
 	oauthProtected.Get("/userinfo", oauthH.UserInfo)

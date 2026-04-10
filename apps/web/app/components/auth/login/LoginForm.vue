@@ -13,8 +13,12 @@ const redirectUrl = computed(() => route.query.redirect as string | undefined)
 
 const navigateAfterLogin = () => {
   if (redirectUrl.value) {
-    // OAuth flow: redirect back to the authorize URL (external)
-    window.location.href = redirectUrl.value
+    // Check if redirect is a relative path (same-domain) or absolute URL
+    if (redirectUrl.value.startsWith('/')) {
+      router.push(redirectUrl.value)
+    } else {
+      window.location.href = redirectUrl.value
+    }
   } else {
     router.push(auth.isAdmin.value ? '/' : '/profile')
   }

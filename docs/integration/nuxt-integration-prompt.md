@@ -106,17 +106,21 @@ runtimeConfig: {
 }
 ```
 
-3. 用返回的 `access_token` 调用 `/oauth/userinfo` 获取用户信息：
+3. 用返回的 `data.access_token` 调用 `/oauth/userinfo` 获取用户信息：
 
 ```json
 // GET /oauth/userinfo, Authorization: Bearer <access_token>
 // 响应:
 {
-  "sub": "用户UUID（唯一标识）",
-  "name": "用户名",
-  "email": "邮箱",
-  "picture": "头像URL",
-  "updated_at": 1234567890
+  "code": 0,
+  "message": "成功",
+  "data": {
+    "sub": "用户UUID（唯一标识）",
+    "name": "用户名",
+    "email": "邮箱",
+    "picture": "头像URL",
+    "updated_at": 1234567890
+  }
 }
 ```
 
@@ -150,7 +154,7 @@ POST /oauth/revoke
 
 ## API 响应格式
 
-所有 OAuth Server 的 API 响应（除 /oauth/token 外）使用统一格式：
+所有 OAuth Server 的 API 响应使用统一格式：
 
 ```json
 {
@@ -160,7 +164,7 @@ POST /oauth/revoke
 }
 ```
 
-`/oauth/token` 端点直接返回标准 OAuth token 响应（不包裹在 data 中）。
+包括 `/oauth/token` 和 `/oauth/userinfo`，实际数据都在 `data` 字段中。
 
 ## 错误处理
 

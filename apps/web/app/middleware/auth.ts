@@ -2,7 +2,7 @@ export default defineNuxtRouteMiddleware(async (to) => {
   const accessToken = useCookie('access_token')
 
   // Public routes that don't require authentication
-  const publicRoutes = ['/auth/login', '/auth/register', '/auth/forgot-password', '/auth/reset-password']
+  const publicRoutes = ['/auth/login', '/auth/register', '/auth/forgot-password', '/auth/reset-password', '/oauth/authorize']
 
   if (publicRoutes.includes(to.path)) {
     // If already logged in and no redirect param, go to dashboard/profile

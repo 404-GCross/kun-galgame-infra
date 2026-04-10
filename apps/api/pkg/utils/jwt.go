@@ -1,6 +1,8 @@
 package utils
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"time"
 
@@ -20,7 +22,13 @@ type TokenClaims struct {
 
 // GenerateAccessToken generates a new access token
 func GenerateAccessToken(secret string, claims TokenClaims, expiry time.Duration) (string, error) {
+	jtiBytes := make([]byte, 16)
+	if _, err := rand.Read(jtiBytes); err != nil {
+		return "", err
+	}
+
 	claims.RegisteredClaims = jwt.RegisteredClaims{
+		ID:        hex.EncodeToString(jtiBytes),
 		ExpiresAt: jwt.NewNumericDate(time.Now().Add(expiry)),
 		IssuedAt:  jwt.NewNumericDate(time.Now()),
 		NotBefore: jwt.NewNumericDate(time.Now()),
@@ -30,9 +38,17 @@ func GenerateAccessToken(secret string, claims TokenClaims, expiry time.Duration
 	return token.SignedString([]byte(secret))
 }
 
-// GenerateRefreshToken generates a new refresh token
+// GenerateRefreshToken generates a new refresh token.
+// Each token includes a unique jti (JWT ID) to prevent collisions
+// when multiple tokens are issued for the same user within the same second.
 func GenerateRefreshToken(secret string, userUUID string, expiry time.Duration) (string, error) {
+	jtiBytes := make([]byte, 16)
+	if _, err := rand.Read(jtiBytes); err != nil {
+		return "", err
+	}
+
 	claims := jwt.RegisteredClaims{
+		ID:        hex.EncodeToString(jtiBytes),
 		Subject:   userUUID,
 		ExpiresAt: jwt.NewNumericDate(time.Now().Add(expiry)),
 		IssuedAt:  jwt.NewNumericDate(time.Now()),

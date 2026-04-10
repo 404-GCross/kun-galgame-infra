@@ -40,8 +40,9 @@ func NewOAuthHandler(oauthService *service.OAuthService, cfg *config.Config) *OA
 }
 
 // Authorize handles the OAuth authorization request.
-// If the user is not logged in, redirects to the login page.
-// If logged in, redirects to the frontend consent page so the user can approve.
+// Validates the client, then always redirects to the frontend /oauth/authorize page.
+// The frontend handles login detection and consent UI, then calls POST /oauth/authorize/consent.
+// This avoids infinite redirect loops caused by the API not having access to the frontend's auth state.
 func (h *OAuthHandler) Authorize(c fiber.Ctx) error {
 	var req dto.AuthorizeRequest
 	if err := c.Bind().Query(&req); err != nil {
@@ -52,7 +53,7 @@ func (h *OAuthHandler) Authorize(c fiber.Ctx) error {
 		return response.BadRequestMsg(c, errors.ErrValidationFailed, err.Error())
 	}
 
-	// Validate client and redirect URI
+	// Validate client and redirect URI before redirecting
 	_, err := h.oauthService.ValidateClient(c.Context(), req.ClientID, req.RedirectURI)
 	if err != nil {
 		if appErr, ok := err.(*errors.AppError); ok {
@@ -61,20 +62,21 @@ func (h *OAuthHandler) Authorize(c fiber.Ctx) error {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
 
-	frontendURL := h.cfg.Server.FrontendURL
-	fullURI := string(c.Request().URI().FullURI())
-	returnURL := url.QueryEscape(fullURI)
-
-	// Check if user is authenticated (set by OptionalAuth middleware)
-	userUUIDRaw := c.Locals("user_uuid")
-	if userUUIDRaw == nil || userUUIDRaw.(string) == "" {
-		// Not logged in — redirect to login page with return URL
-		loginURL := frontendURL + "/auth/login?redirect=" + returnURL
-		return c.Redirect().To(loginURL)
+	// Pass all OAuth params to the frontend, which handles login + consent
+	q := url.Values{}
+	q.Set("client_id", req.ClientID)
+	q.Set("redirect_uri", req.RedirectURI)
+	q.Set("response_type", req.ResponseType)
+	q.Set("scope", req.Scope)
+	q.Set("state", req.State)
+	if req.CodeChallenge != "" {
+		q.Set("code_challenge", req.CodeChallenge)
+	}
+	if req.CodeChallengeMethod != "" {
+		q.Set("code_challenge_method", req.CodeChallengeMethod)
 	}
 
-	// Logged in — redirect to consent page so user can approve
-	consentURL := frontendURL + "/oauth/consent?redirect=" + returnURL
+	consentURL := h.cfg.Server.FrontendURL + "/oauth/authorize?" + q.Encode()
 	return c.Redirect().To(consentURL)
 }
 
@@ -156,7 +158,7 @@ func (h *OAuthHandler) Token(c fiber.Ctx) error {
 			}
 			return response.InternalError(c, errors.ErrOperationFailed)
 		}
-		return c.JSON(tokenResp)
+		return response.Success(c, tokenResp)
 
 	case "refresh_token":
 		if req.RefreshToken == "" {
@@ -169,7 +171,7 @@ func (h *OAuthHandler) Token(c fiber.Ctx) error {
 			}
 			return response.InternalError(c, errors.ErrOperationFailed)
 		}
-		return c.JSON(tokenResp)
+		return response.Success(c, tokenResp)
 
 	default:
 		return response.BadRequest(c, errors.ErrOAuthInvalidGrant)
@@ -188,7 +190,7 @@ func (h *OAuthHandler) UserInfo(c fiber.Ctx) error {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
 
-	return c.JSON(info)
+	return response.Success(c, info)
 }
 
 // Revoke revokes a refresh token.
