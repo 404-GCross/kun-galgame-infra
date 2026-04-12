@@ -64,12 +64,23 @@ func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB) {
 	// Repositories
 	galgameRepository := galgameRepo.NewGalgameRepository(wiki)
 	userReadRepo := galgameRepo.NewUserReadonlyRepository(oauthDB)
+	tagRepo := galgameRepo.NewTagRepository(wiki)
+	officialRepo := galgameRepo.NewOfficialRepository(wiki)
+	engineRepo := galgameRepo.NewEngineRepository(wiki)
+	seriesRepo := galgameRepo.NewSeriesRepository(wiki)
 
 	// Services
 	galgameSvc := galgameService.NewGalgameService(galgameRepository, userReadRepo)
 
 	// Handlers
 	galgameH := galgameHandler.NewGalgameHandler(galgameSvc)
+	tagH := galgameHandler.NewTagHandler(tagRepo)
+	officialH := galgameHandler.NewOfficialHandler(officialRepo)
+	engineH := galgameHandler.NewEngineHandler(engineRepo)
+	seriesH := galgameHandler.NewSeriesHandler(seriesRepo)
+
+	// JWT auth middleware
+	jwtAuth := middleware.JWTAuth(cfg.JWT.Secret)
 
 	// Global middleware
 	a.Fiber.Use(middleware.RequestID())
@@ -83,16 +94,46 @@ func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB) {
 		return c.JSON(fiber.Map{"status": "ok"})
 	})
 
-	// Public galgame routes
+	// ── Galgame CRUD ──
 	galgame := api.Group("/galgame")
 	galgame.Get("/", galgameH.List)
-	galgame.Get("/check", galgameH.CheckVNDB) // Must be before /:gid
+	galgame.Get("/check", galgameH.CheckVNDB)
 	galgame.Get("/:gid", galgameH.Get)
-
-	// Protected galgame routes
-	galgameAuth := galgame.Group("", middleware.JWTAuth(cfg.JWT.Secret))
+	galgameAuth := galgame.Group("", jwtAuth)
 	galgameAuth.Post("/", galgameH.Create)
 	galgameAuth.Put("/:gid", galgameH.Update)
+
+	// ── Tag ──
+	tag := api.Group("/tag")
+	tag.Get("/", tagH.List)
+	tag.Get("/search", tagH.Search)
+	tag.Get("/multi", tagH.Multi)
+	tag.Get("/:name", tagH.GetByName)
+	tag.Put("/", jwtAuth, tagH.Update)
+
+	// ── Official ──
+	official := api.Group("/official")
+	official.Get("/", officialH.List)
+	official.Get("/search", officialH.Search)
+	official.Get("/:name", officialH.GetByName)
+	official.Put("/", jwtAuth, officialH.Update)
+
+	// ── Engine ──
+	engine := api.Group("/engine")
+	engine.Get("/", engineH.List)
+	engine.Get("/:name", engineH.GetByName)
+	engine.Put("/", jwtAuth, engineH.Update)
+
+	// ── Series ──
+	series := api.Group("/series")
+	series.Get("/", seriesH.List)
+	series.Get("/search", seriesH.Search)
+	series.Get("/:id", seriesH.Get)
+	seriesAuth := series.Group("", jwtAuth)
+	seriesAuth.Post("/", seriesH.Create)
+	seriesAuth.Post("/modal", seriesH.Modal)
+	seriesAuth.Put("/:id", seriesH.Update)
+	seriesAuth.Delete("/:id", seriesH.Delete)
 }
 
 func getPort(envKey string, defaultPort int) int {
