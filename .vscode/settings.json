@@ -37,6 +37,7 @@
     "moyu",
     "Nuxt",
     "nuxtjs",
+    "omitempty",
     "persistedstate",
     "PKCE",
     "Pressable",
@@ -61,6 +62,7 @@
     "vercel",
     "vinxi",
     "VNDB",
+    "VNDBID",
     "vnode",
     "vueuse",
     "yuin"
