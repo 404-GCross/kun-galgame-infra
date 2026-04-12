@@ -10,11 +10,12 @@ import (
 
 // Config holds all configuration for the application
 type Config struct {
-	Server   ServerConfig
-	Database DatabaseConfig
-	Redis    RedisConfig
-	JWT      JWTConfig
-	Mail     MailConfig
+	Server          ServerConfig
+	Database        DatabaseConfig
+	GalgameDatabase DatabaseConfig
+	Redis           RedisConfig
+	JWT             JWTConfig
+	Mail            MailConfig
 }
 
 // MailConfig holds email-related configuration
@@ -91,6 +92,17 @@ func Load() (*Config, error) {
 		DBName:   getEnv("KUN_PG_DATABASE", "kun_oauth_admin"),
 		SSLMode:  getEnv("KUN_PG_SSLMODE", "disable"),
 		Timezone: getEnv("KUN_PG_TIMEZONE", "Asia/Shanghai"),
+	}
+
+	// Galgame wiki database config (defaults to same server, different db name)
+	cfg.GalgameDatabase = DatabaseConfig{
+		Host:     getEnv("KUN_GALGAME_PG_HOST", cfg.Database.Host),
+		Port:     getEnv("KUN_GALGAME_PG_PORT", cfg.Database.Port),
+		User:     getEnv("KUN_GALGAME_PG_USER", cfg.Database.User),
+		Password: getEnv("KUN_GALGAME_PG_PASSWORD", cfg.Database.Password),
+		DBName:   getEnv("KUN_GALGAME_PG_DATABASE", "kun_galgame_wiki"),
+		SSLMode:  getEnv("KUN_GALGAME_PG_SSLMODE", cfg.Database.SSLMode),
+		Timezone: getEnv("KUN_GALGAME_PG_TIMEZONE", cfg.Database.Timezone),
 	}
 
 	// Redis config

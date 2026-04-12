@@ -12,6 +12,7 @@ import (
 // TokenClaims represents the claims in a JWT token
 type TokenClaims struct {
 	UserUUID string   `json:"sub"`
+	UID      uint     `json:"uid"`
 	Email    string   `json:"email"`
 	Name     string   `json:"name"`
 	Scope    string   `json:"scope,omitempty"`

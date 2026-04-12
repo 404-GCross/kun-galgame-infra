@@ -51,6 +51,13 @@ const (
 	ErrOAuthPKCERequired        = 15009
 	ErrOAuthConsentRequired     = 15010
 
+	// Galgame (20000-29999)
+	ErrGalgameNotFound      = 20001
+	ErrGalgameAlreadyExists = 20002
+	ErrGalgameInvalidVNDB   = 20003
+	ErrGalgameVNDBExists    = 20004
+	ErrGalgameForbidden     = 20005
+
 	// Artifact (50000-59999)
 	ErrArtifactNotFound   = 50001
 	ErrArtifactInvalid    = 50002
@@ -107,6 +114,12 @@ var codeMessages = map[int]string{
 	ErrOAuthInvalidClientSecret: "客户端密钥无效",
 	ErrOAuthPKCERequired:        "公开客户端必须使用 PKCE",
 	ErrOAuthConsentRequired:     "需要用户授权同意",
+
+	ErrGalgameNotFound:      "Galgame 不存在",
+	ErrGalgameAlreadyExists: "Galgame 已存在",
+	ErrGalgameInvalidVNDB:   "无效的 VNDB ID",
+	ErrGalgameVNDBExists:    "该 VNDB ID 的 Galgame 已存在",
+	ErrGalgameForbidden:     "无权操作此 Galgame",
 
 	ErrArtifactNotFound:   "资源不存在",
 	ErrArtifactInvalid:    "无效的资源",
