@@ -77,6 +77,8 @@ func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB) {
 	// Handlers
 	galgameH := galgameHandler.NewGalgameHandler(galgameSvc)
 	revisionH := galgameHandler.NewRevisionHandler(galgameSvc)
+	linkH := galgameHandler.NewLinkHandler(galgameSvc, galgameRepository)
+	contributorH := galgameHandler.NewContributorHandler(galgameRepository, userReadRepo)
 	tagH := galgameHandler.NewTagHandler(tagRepo)
 	officialH := galgameHandler.NewOfficialHandler(officialRepo)
 	engineH := galgameHandler.NewEngineHandler(engineRepo)
@@ -118,6 +120,20 @@ func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB) {
 	galgameAuth.Post("/:gid/prs", revisionH.SubmitPR)
 	galgameAuth.Put("/:gid/prs/:id/merge", revisionH.MergePR)
 	galgameAuth.Put("/:gid/prs/:id/decline", revisionH.DeclinePR)
+
+	// ── Links ──
+	galgame.Get("/:gid/links", linkH.ListLinks)
+	galgameAuth.Post("/:gid/links", linkH.CreateLink)
+	galgameAuth.Delete("/:gid/links", linkH.DeleteLink)
+
+	// ── Aliases ──
+	galgame.Get("/:gid/aliases", linkH.ListAliases)
+	galgameAuth.Post("/:gid/aliases", linkH.CreateAlias)
+	galgameAuth.Delete("/:gid/aliases", linkH.DeleteAlias)
+
+	// ── Contributors ──
+	galgame.Get("/:gid/contributors", contributorH.List)
+	galgameAuth.Delete("/:gid/contributors/:uid", contributorH.Delete)
 
 	// ── Tag ──
 	tag := api.Group("/tag")

@@ -341,6 +341,35 @@ func buildUpdates(req *dto.UpdateGalgameRequest) map[string]any {
 	return u
 }
 
+// CreateRevisionFromCurrentState takes a snapshot of the current galgame state
+// and creates a new revision. Must be called inside a transaction.
+func (s *GalgameService) CreateRevisionFromCurrentState(tx *gorm.DB, galgameID, userID int, action, note string, isMinor bool) error {
+	fullGalgame, err := loadGalgameWithRelations(tx, galgameID)
+	if err != nil {
+		return err
+	}
+	snapshot := model.TakeSnapshot(fullGalgame)
+	snapshotJSON, err := snapshot.ToJSON()
+	if err != nil {
+		return err
+	}
+
+	nextRev, err := repository.NextRevision(tx, galgameID)
+	if err != nil {
+		return err
+	}
+
+	return tx.Create(&model.GalgameRevision{
+		GalgameID: galgameID,
+		Revision:  nextRev,
+		UserID:    userID,
+		Action:    action,
+		Note:      note,
+		Snapshot:  snapshotJSON,
+		IsMinor:   isMinor,
+	}).Error
+}
+
 func hasRole(roles []string, target string) bool {
 	for _, r := range roles {
 		if r == target {
