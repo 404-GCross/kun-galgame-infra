@@ -179,10 +179,12 @@ func (h *OAuthHandler) Token(c fiber.Ctx) error {
 }
 
 // UserInfo returns user information for the authenticated user.
+// Fields are filtered based on the scope embedded in the access token.
 func (h *OAuthHandler) UserInfo(c fiber.Ctx) error {
 	userUUID := c.Locals("user_uuid").(string)
+	scope, _ := c.Locals("user_scope").(string)
 
-	info, err := h.oauthService.GetUserInfo(c.Context(), userUUID)
+	info, err := h.oauthService.GetUserInfo(c.Context(), userUUID, scope)
 	if err != nil {
 		if appErr, ok := err.(*errors.AppError); ok {
 			return response.NotFound(c, appErr.Code)

@@ -14,6 +14,7 @@ type TokenClaims struct {
 	UserUUID string   `json:"sub"`
 	Email    string   `json:"email"`
 	Name     string   `json:"name"`
+	Scope    string   `json:"scope,omitempty"`
 	SiteID   uint     `json:"site_id,omitempty"`
 	Role     int      `json:"role,omitempty"`
 	Roles    []string `json:"roles,omitempty"`

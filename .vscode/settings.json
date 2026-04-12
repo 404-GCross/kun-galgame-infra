@@ -1,6 +1,7 @@
 {
   "cSpell.words": [
     "asynq",
+    "authrepo",
     "autoincrement",
     "autospace",
     "bbcode",
@@ -40,6 +41,8 @@
     "PKCE",
     "Pressable",
     "schemaname",
+    "sitemodel",
+    "siterepo",
     "SSLMODE",
     "STARTTLS",
     "tablename",

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log/slog"
 	"os"
 
@@ -39,7 +40,10 @@ func main() {
 		os.Exit(1)
 	}
 
-	setupRoutes(application, cfg)
+	cleanupCtx, cancelCleanup := context.WithCancel(context.Background())
+	defer cancelCleanup()
+
+	setupRoutes(application, cfg, cleanupCtx)
 
 	if err := application.Run(cfg.Server.Host, cfg.Server.Port); err != nil {
 		slog.Error("application error", "error", err)
@@ -47,7 +51,7 @@ func main() {
 	}
 }
 
-func setupRoutes(a *app.App, cfg *config.Config) {
+func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 	db := a.DB.DB()
 
 	// Repositories
@@ -57,6 +61,9 @@ func setupRoutes(a *app.App, cfg *config.Config) {
 	authCodeRepo := authRepo.NewAuthorizationCodeRepository(db)
 	oauthClientRepo := siteRepo.NewOAuthClientRepository(db)
 	siteRepository := siteRepo.NewSiteRepository(db)
+
+	// Start background cleanup for expired sessions and authorization codes
+	app.StartCleanup(cleanupCtx, sessionRepo, authCodeRepo)
 
 	// Services
 	mailer := mail.NewMailer(cfg.Mail)

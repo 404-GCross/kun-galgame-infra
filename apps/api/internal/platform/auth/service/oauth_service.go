@@ -7,6 +7,7 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
+	"strings"
 	"time"
 
 	"api/internal/platform/auth/dto"
@@ -163,7 +164,7 @@ func (s *OAuthService) ExchangeCode(ctx context.Context, req *dto.TokenRequest) 
 		return nil, errors.NewWithCode(errors.ErrAuthUserNotFound)
 	}
 
-	// Generate tokens
+	// Generate tokens with scope embedded in access token
 	accessToken, err := utils.GenerateAccessToken(
 		s.cfg.JWT.Secret,
 		utils.TokenClaims{
@@ -171,6 +172,7 @@ func (s *OAuthService) ExchangeCode(ctx context.Context, req *dto.TokenRequest) 
 			Email:    user.Email,
 			Name:     user.Name,
 			Roles:    user.RoleNames(),
+			Scope:    authCode.Scope,
 		},
 		15*time.Minute,
 	)
@@ -208,19 +210,51 @@ func (s *OAuthService) ExchangeCode(ctx context.Context, req *dto.TokenRequest) 
 	}, nil
 }
 
-// GetUserInfo returns user info for the authenticated user
-func (s *OAuthService) GetUserInfo(ctx context.Context, userUUID string) (*dto.UserInfoResponse, error) {
+// GetUserInfo returns user info for the authenticated user, filtered by scope.
+// OIDC standard scopes:
+//   - openid  → sub (always included)
+//   - profile → name, picture
+//   - email   → email
+//
+// If scope is empty (e.g. internal /auth/me), all fields are returned.
+func (s *OAuthService) GetUserInfo(ctx context.Context, userUUID, scope string) (*dto.UserInfoResponse, error) {
 	user, err := s.userRepo.FindByUUID(ctx, userUUID)
 	if err != nil {
 		return nil, errors.NewWithCode(errors.ErrAuthUserNotFound)
 	}
 
-	return &dto.UserInfoResponse{
-		Sub:     user.UUID,
-		Name:    user.Name,
-		Email:   user.Email,
-		Picture: user.Avatar,
-	}, nil
+	info := &dto.UserInfoResponse{
+		Sub: user.UUID,
+	}
+
+	// If no scope specified, return all fields
+	if scope == "" {
+		info.Name = user.Name
+		info.Email = user.Email
+		info.Picture = user.Avatar
+		return info, nil
+	}
+
+	scopes := parseScopes(scope)
+
+	if scopes["profile"] {
+		info.Name = user.Name
+		info.Picture = user.Avatar
+	}
+	if scopes["email"] {
+		info.Email = user.Email
+	}
+
+	return info, nil
+}
+
+// parseScopes splits a space-separated scope string into a set
+func parseScopes(scope string) map[string]bool {
+	result := make(map[string]bool)
+	for _, s := range strings.Fields(scope) {
+		result[s] = true
+	}
+	return result
 }
 
 // RevokeToken revokes a refresh token
