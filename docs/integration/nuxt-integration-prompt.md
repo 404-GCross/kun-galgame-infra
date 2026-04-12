@@ -137,7 +137,8 @@ POST /oauth/token
 {
   "grant_type": "refresh_token",
   "refresh_token": "<之前保存的>",
-  "client_id": "<客户端ID>"
+  "client_id": "<客户端ID>",
+  "client_secret": "<客户端密钥>"
 }
 ```
 

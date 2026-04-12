@@ -247,6 +247,7 @@ const response = await $fetch('https://oauth.kungal.com/api/v1/oauth/token', {
     grant_type: 'refresh_token',
     refresh_token: storedRefreshToken,
     client_id: process.env.OAUTH_CLIENT_ID,
+    client_secret: process.env.OAUTH_CLIENT_SECRET,
   },
 })
 

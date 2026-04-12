@@ -39,7 +39,8 @@
 {
   "grant_type": "refresh_token",
   "refresh_token": "eyJhbGc...",
-  "client_id": "your-client-id"
+  "client_id": "your-client-id",
+  "client_secret": "your-client-secret"
 }
 ```
 
