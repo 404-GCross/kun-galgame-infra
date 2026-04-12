@@ -47,6 +47,7 @@ type UpdateGalgameRequest struct {
 	OriginalLanguage *string `json:"original_language"`
 	AgeLimit         *string `json:"age_limit" validate:"omitempty,oneof=all r18"`
 	SeriesID         *int    `json:"series_id"`
+	IsMinor          *bool   `json:"is_minor"`
 }
 
 // CheckVNDBRequest represents a VNDB existence check

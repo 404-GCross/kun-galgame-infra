@@ -48,7 +48,8 @@ func main() {
 		&model.GalgameEngineRelation{},
 		&model.GalgameLink{},
 		&model.GalgamePR{},
-		&model.GalgameHistory{},
+		&model.GalgameRevision{},
+		&model.GalgameHistory{}, // Legacy, kept for migration
 		&model.GalgameContributor{},
 	); err != nil {
 		slog.Error("migration failed", "error", err)

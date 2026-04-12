@@ -64,16 +64,19 @@ func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB) {
 	// Repositories
 	galgameRepository := galgameRepo.NewGalgameRepository(wiki)
 	userReadRepo := galgameRepo.NewUserReadonlyRepository(oauthDB)
+	revisionRepo := galgameRepo.NewRevisionRepository(wiki)
+	prRepo := galgameRepo.NewPRRepository(wiki)
 	tagRepo := galgameRepo.NewTagRepository(wiki)
 	officialRepo := galgameRepo.NewOfficialRepository(wiki)
 	engineRepo := galgameRepo.NewEngineRepository(wiki)
 	seriesRepo := galgameRepo.NewSeriesRepository(wiki)
 
 	// Services
-	galgameSvc := galgameService.NewGalgameService(galgameRepository, userReadRepo)
+	galgameSvc := galgameService.NewGalgameService(galgameRepository, revisionRepo, prRepo, userReadRepo)
 
 	// Handlers
 	galgameH := galgameHandler.NewGalgameHandler(galgameSvc)
+	revisionH := galgameHandler.NewRevisionHandler(galgameSvc)
 	tagH := galgameHandler.NewTagHandler(tagRepo)
 	officialH := galgameHandler.NewOfficialHandler(officialRepo)
 	engineH := galgameHandler.NewEngineHandler(engineRepo)
@@ -102,6 +105,19 @@ func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB) {
 	galgameAuth := galgame.Group("", jwtAuth)
 	galgameAuth.Post("/", galgameH.Create)
 	galgameAuth.Put("/:gid", galgameH.Update)
+
+	// ── Revisions ──
+	galgame.Get("/:gid/revisions", revisionH.ListRevisions)
+	galgame.Get("/:gid/revisions/:rev", revisionH.GetRevision)
+	galgame.Get("/:gid/revisions/:rev/diff", revisionH.GetRevisionDiff)
+	galgameAuth.Post("/:gid/revert", revisionH.Revert)
+
+	// ── PRs ──
+	galgame.Get("/:gid/prs", revisionH.ListPRs)
+	galgame.Get("/:gid/prs/:id", revisionH.GetPR)
+	galgameAuth.Post("/:gid/prs", revisionH.SubmitPR)
+	galgameAuth.Put("/:gid/prs/:id/merge", revisionH.MergePR)
+	galgameAuth.Put("/:gid/prs/:id/decline", revisionH.DeclinePR)
 
 	// ── Tag ──
 	tag := api.Group("/tag")
