@@ -172,6 +172,7 @@ The entire remap runs in a single transaction per source database. If anything f
 **Tables remapped in Kungal** (51 FK columns across ~30 tables):
 
 ```
+chat_room.last_message_sender_id,
 chat_room_participant.user_id, chat_room_admin.user_id,
 chat_message.sender_id, chat_message.receiver_id,
 chat_message_read_by.user_id, chat_message_reaction.user_id,
@@ -179,7 +180,9 @@ doc_article.author_id,
 galgame.user_id, galgame_rating.user_id, galgame_rating_like.user_id,
 galgame_rating_comment.user_id, galgame_rating_comment.target_user_id,
 galgame_comment.user_id, galgame_comment.target_user_id,
-galgame_comment_like.user_id, galgame_history.user_id,
+galgame_comment_like.user_id, galgame_contributor.user_id,
+galgame_like.user_id, galgame_favorite.user_id,
+galgame_history.user_id,
 galgame_link.user_id, galgame_pr.user_id,
 galgame_resource.user_id, galgame_resource_like.user_id,
 galgame_toolset.user_id, galgame_toolset_contributor.user_id,

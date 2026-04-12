@@ -222,7 +222,7 @@ func main() {
 
 	// Connect to source database
 	srcDB, err := gorm.Open(postgres.Open(*kungalDSN), &gorm.Config{
-		Logger: gormlogger.Default.LogMode(gormlogger.Warn),
+		Logger: gormlogger.Default.LogMode(gormlogger.Silent),
 	})
 	if err != nil {
 		slog.Error("failed to connect to kungal database", "error", err)
@@ -237,14 +237,31 @@ func main() {
 		os.Exit(1)
 	}
 	defer targetDB.Close()
-	tdb := targetDB.DB()
+	tdb := targetDB.DB().Session(&gorm.Session{Logger: gormlogger.Default.LogMode(gormlogger.Silent)})
 	slog.Info("connected to target database", "dbname", cfg.GalgameDatabase.DBName)
+
+	// Connect to OAuth database to get valid user IDs
+	oauthDB, err := database.NewPostgresDB(cfg.Database)
+	if err != nil {
+		slog.Error("failed to connect to oauth database", "error", err)
+		os.Exit(1)
+	}
+	defer oauthDB.Close()
+
+	// Build valid user ID set
+	var userIDs []struct{ ID int }
+	oauthDB.DB().Table("users").Select("id").Find(&userIDs)
+	validUserIDs := make(map[int]bool, len(userIDs))
+	for _, u := range userIDs {
+		validUserIDs[u.ID] = true
+	}
+	slog.Info("loaded valid user IDs from oauth database", "count", len(validUserIDs))
 
 	if *dryRun {
 		slog.Info("DRY RUN MODE — no changes will be made")
 	}
 
-	result, err := runMigration(srcDB, tdb, *dryRun)
+	result, err := runMigration(srcDB, tdb, validUserIDs, *dryRun)
 	if err != nil {
 		slog.Error("migration failed", "error", err)
 		os.Exit(1)
@@ -278,7 +295,7 @@ func main() {
 // batchSize controls the number of rows per INSERT statement
 const batchSize = 500
 
-func runMigration(srcDB, tdb *gorm.DB, dryRun bool) (*MigrationResult, error) {
+func runMigration(srcDB, tdb *gorm.DB, validUserIDs map[int]bool, dryRun bool) (*MigrationResult, error) {
 	result := &MigrationResult{}
 
 	// ── Step 1: Migrate series ──
@@ -382,14 +399,20 @@ func runMigration(srcDB, tdb *gorm.DB, dryRun bool) (*MigrationResult, error) {
 		existingIDs[e.ID] = true
 	}
 
-	// Filter out existing
+	// Filter out existing and those with invalid user_id
 	var newGalgames []SrcGalgame
+	var skippedOrphanUser int
 	for _, g := range srcGalgames {
 		if existingIDs[g.ID] {
 			result.Skipped++
+		} else if !validUserIDs[g.UserID] {
+			skippedOrphanUser++
 		} else {
 			newGalgames = append(newGalgames, g)
 		}
+	}
+	if skippedOrphanUser > 0 {
+		slog.Warn("skipped galgames with invalid user_id", "count", skippedOrphanUser)
 	}
 
 	if !dryRun && len(newGalgames) > 0 {
@@ -408,68 +431,140 @@ func runMigration(srcDB, tdb *gorm.DB, dryRun bool) (*MigrationResult, error) {
 	result.Galgames = len(newGalgames)
 	slog.Info("Galgames migrated", "count", result.Galgames, "skipped", result.Skipped)
 
-	// ── Step 6: Migrate relation tables (batch) ──
+	// ── Step 6: Migrate relation tables (batch, with orphan filtering) ──
 	slog.Info("Step 6: Migrating relations...")
+
+	// Build valid ID sets for FK filtering
+	validGalgameIDs := make(map[int]bool, len(srcGalgames))
+	for _, g := range srcGalgames {
+		validGalgameIDs[g.ID] = true
+	}
+	validTagIDs := make(map[int]bool, len(srcTags))
+	for _, t := range srcTags {
+		validTagIDs[t.ID] = true
+	}
+	validOfficialIDs := make(map[int]bool, len(srcOfficials))
+	for _, o := range srcOfficials {
+		validOfficialIDs[o.ID] = true
+	}
+	validEngineIDs := make(map[int]bool, len(srcEngines))
+	for _, e := range srcEngines {
+		validEngineIDs[e.ID] = true
+	}
 
 	var srcAliases []SrcAlias
 	srcDB.Order("id ASC").Find(&srcAliases)
-	if !dryRun && len(srcAliases) > 0 {
+	var cleanAliases []SrcAlias
+	for _, a := range srcAliases {
+		if validGalgameIDs[a.GalgameID] {
+			cleanAliases = append(cleanAliases, a)
+		}
+	}
+	if !dryRun && len(cleanAliases) > 0 {
 		batchExec(tdb, "galgame_alias", []string{"id", "name", "galgame_id", "created", "updated"},
-			srcAliases, func(a SrcAlias) []any {
+			cleanAliases, func(a SrcAlias) []any {
 				return []any{a.ID, a.Name, a.GalgameID, a.Created, a.Updated}
 			})
 	}
-	result.Aliases = len(srcAliases)
+	result.Aliases = len(cleanAliases)
+	if skipped := len(srcAliases) - len(cleanAliases); skipped > 0 {
+		slog.Warn("skipped orphan aliases", "count", skipped)
+	}
 
 	var srcTagRels []SrcTagRelation
 	srcDB.Find(&srcTagRels)
-	if !dryRun && len(srcTagRels) > 0 {
+	var cleanTagRels []SrcTagRelation
+	for _, r := range srcTagRels {
+		if validGalgameIDs[r.GalgameID] && validTagIDs[r.TagID] {
+			cleanTagRels = append(cleanTagRels, r)
+		}
+	}
+	if !dryRun && len(cleanTagRels) > 0 {
 		batchExec(tdb, "galgame_tag_relation", []string{"galgame_id", "tag_id", "spoiler_level", "created", "updated"},
-			srcTagRels, func(r SrcTagRelation) []any {
+			cleanTagRels, func(r SrcTagRelation) []any {
 				return []any{r.GalgameID, r.TagID, r.SpoilerLevel, r.Created, r.Updated}
 			})
 	}
-	result.TagRelations = len(srcTagRels)
+	result.TagRelations = len(cleanTagRels)
+	if skipped := len(srcTagRels) - len(cleanTagRels); skipped > 0 {
+		slog.Warn("skipped orphan tag relations", "count", skipped)
+	}
 
 	var srcOfficialRels []SrcOfficialRelation
 	srcDB.Find(&srcOfficialRels)
-	if !dryRun && len(srcOfficialRels) > 0 {
+	var cleanOfficialRels []SrcOfficialRelation
+	for _, r := range srcOfficialRels {
+		if validGalgameIDs[r.GalgameID] && validOfficialIDs[r.OfficialID] {
+			cleanOfficialRels = append(cleanOfficialRels, r)
+		}
+	}
+	if !dryRun && len(cleanOfficialRels) > 0 {
 		batchExec(tdb, "galgame_official_relation", []string{"galgame_id", "official_id", "created", "updated"},
-			srcOfficialRels, func(r SrcOfficialRelation) []any {
+			cleanOfficialRels, func(r SrcOfficialRelation) []any {
 				return []any{r.GalgameID, r.OfficialID, r.Created, r.Updated}
 			})
 	}
-	result.OfficialRelations = len(srcOfficialRels)
+	result.OfficialRelations = len(cleanOfficialRels)
+	if skipped := len(srcOfficialRels) - len(cleanOfficialRels); skipped > 0 {
+		slog.Warn("skipped orphan official relations", "count", skipped)
+	}
 
 	var srcEngineRels []SrcEngineRelation
 	srcDB.Find(&srcEngineRels)
-	if !dryRun && len(srcEngineRels) > 0 {
+	var cleanEngineRels []SrcEngineRelation
+	for _, r := range srcEngineRels {
+		if validGalgameIDs[r.GalgameID] && validEngineIDs[r.EngineID] {
+			cleanEngineRels = append(cleanEngineRels, r)
+		}
+	}
+	if !dryRun && len(cleanEngineRels) > 0 {
 		batchExec(tdb, "galgame_engine_relation", []string{"galgame_id", "engine_id", "created", "updated"},
-			srcEngineRels, func(r SrcEngineRelation) []any {
+			cleanEngineRels, func(r SrcEngineRelation) []any {
 				return []any{r.GalgameID, r.EngineID, r.Created, r.Updated}
 			})
 	}
-	result.EngineRelations = len(srcEngineRels)
+	result.EngineRelations = len(cleanEngineRels)
+	if skipped := len(srcEngineRels) - len(cleanEngineRels); skipped > 0 {
+		slog.Warn("skipped orphan engine relations", "count", skipped)
+	}
 
 	var srcLinks []SrcLink
 	srcDB.Order("id ASC").Find(&srcLinks)
-	if !dryRun && len(srcLinks) > 0 {
+	var cleanLinks []SrcLink
+	for _, l := range srcLinks {
+		if validGalgameIDs[l.GalgameID] && validUserIDs[l.UserID] {
+			cleanLinks = append(cleanLinks, l)
+		}
+	}
+	if !dryRun && len(cleanLinks) > 0 {
 		batchExec(tdb, "galgame_link", []string{"id", "name", "link", "galgame_id", "user_id", "created", "updated"},
-			srcLinks, func(l SrcLink) []any {
+			cleanLinks, func(l SrcLink) []any {
 				return []any{l.ID, l.Name, l.Link, l.GalgameID, l.UserID, l.Created, l.Updated}
 			})
 	}
-	result.Links = len(srcLinks)
+	result.Links = len(cleanLinks)
+	if skipped := len(srcLinks) - len(cleanLinks); skipped > 0 {
+		slog.Warn("skipped orphan links", "count", skipped)
+	}
 
 	var srcContributors []SrcContributor
 	srcDB.Order("id ASC").Find(&srcContributors)
-	if !dryRun && len(srcContributors) > 0 {
+	var cleanContributors []SrcContributor
+	for _, c := range srcContributors {
+		if validGalgameIDs[c.GalgameID] && validUserIDs[c.UserID] {
+			cleanContributors = append(cleanContributors, c)
+		}
+	}
+	if !dryRun && len(cleanContributors) > 0 {
 		batchExec(tdb, "galgame_contributor", []string{"id", "galgame_id", "user_id", "created", "updated"},
-			srcContributors, func(c SrcContributor) []any {
+			cleanContributors, func(c SrcContributor) []any {
 				return []any{c.ID, c.GalgameID, c.UserID, c.Created, c.Updated}
 			})
 	}
-	result.Contributors = len(srcContributors)
+	result.Contributors = len(cleanContributors)
+	if skipped := len(srcContributors) - len(cleanContributors); skipped > 0 {
+		slog.Warn("skipped orphan contributors", "count", skipped)
+	}
 
 	slog.Info("Relations migrated",
 		"aliases", result.Aliases, "tag_rels", result.TagRelations,
@@ -652,7 +747,18 @@ func batchExec[T any](db *gorm.DB, table string, columns []string, rows []T, val
 		}
 
 		if err := db.Exec(sql, args...).Error; err != nil {
-			slog.Warn("batch insert failed", "table", table, "offset", i, "error", err)
+			// Batch failed — fallback to row-by-row to skip only the bad rows
+			skipped := 0
+			for _, row := range chunk {
+				singleSQL := buildBatchInsert(table, columns, []T{row}, valueFn)
+				singleArgs := valueFn(row)
+				if singleErr := db.Exec(singleSQL, singleArgs...).Error; singleErr != nil {
+					skipped++
+				}
+			}
+			if skipped > 0 {
+				slog.Warn("batch fallback: skipped rows with FK violations", "table", table, "offset", i, "skipped", skipped)
+			}
 		}
 
 		if end%5000 == 0 || end == len(rows) {

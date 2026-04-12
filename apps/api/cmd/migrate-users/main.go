@@ -817,6 +817,7 @@ type tableColumn struct {
 func remapKungalUserIDs(ctx context.Context, db *gorm.DB, mapping map[uint]uint) error {
 	fks := []tableColumn{
 		// Chat
+		{"chat_room", "last_message_sender_id"},
 		{"chat_room_participant", "user_id"},
 		{"chat_room_admin", "user_id"},
 		{"chat_message", "sender_id"},
@@ -834,6 +835,9 @@ func remapKungalUserIDs(ctx context.Context, db *gorm.DB, mapping map[uint]uint)
 		{"galgame_comment", "user_id"},
 		{"galgame_comment", "target_user_id"},
 		{"galgame_comment_like", "user_id"},
+		{"galgame_contributor", "user_id"},
+		{"galgame_like", "user_id"},
+		{"galgame_favorite", "user_id"},
 		{"galgame_history", "user_id"},
 		{"galgame_link", "user_id"},
 		{"galgame_pr", "user_id"},
