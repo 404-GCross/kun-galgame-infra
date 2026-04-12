@@ -36,7 +36,7 @@ func main() {
 
 	setupRoutes(application, cfg)
 
-	port := getPort("KUN_MODERATION_PORT", 9280)
+	port := getPort("KUN_MODERATION_PORT", 9281)
 	if err := application.Run(cfg.Server.Host, port); err != nil {
 		slog.Error("application error", "error", err)
 		os.Exit(1)

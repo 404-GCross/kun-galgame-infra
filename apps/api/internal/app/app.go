@@ -72,7 +72,7 @@ func (a *App) Run(host string, port int) error {
 	go func() {
 		addr := fmt.Sprintf("%s:%d", host, port)
 		slog.Info("starting server", "addr", addr)
-		if err := a.Fiber.Listen(addr); err != nil {
+		if err := a.Fiber.Listen(addr, fiber.ListenConfig{DisableStartupMessage: true}); err != nil {
 			slog.Error("server error", "error", err)
 		}
 	}()
