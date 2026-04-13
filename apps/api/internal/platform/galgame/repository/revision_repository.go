@@ -77,6 +77,8 @@ func ApplySnapshot(tx *gorm.DB, galgameID, userID int, snapshot *model.Snapshot)
 	// 1. Update galgame scalar fields
 	updates := map[string]any{
 		"vndb_id":           snapshot.VNDBID,
+		"bid":               snapshot.BangumiID,
+		"released":          snapshot.Released,
 		"name_en_us":        snapshot.NameEnUS,
 		"name_ja_jp":        snapshot.NameJaJP,
 		"name_zh_cn":        snapshot.NameZhCN,

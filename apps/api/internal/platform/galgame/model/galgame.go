@@ -6,6 +6,8 @@ import "time"
 type Galgame struct {
 	ID                 int       `gorm:"primaryKey;autoIncrement" json:"id"`
 	VNDBID             string    `gorm:"column:vndb_id;size:10;uniqueIndex;not null" json:"vndb_id"`
+	BangumiID          *int      `gorm:"column:bid;uniqueIndex" json:"bid,omitempty"`
+	Released           string    `gorm:"column:released;size:107;default:'unknown'" json:"released"`
 	NameEnUS           string    `gorm:"column:name_en_us;size:1000;default:''" json:"name_en_us"`
 	NameJaJP           string    `gorm:"column:name_ja_jp;size:1000;default:''" json:"name_ja_jp"`
 	NameZhCN           string    `gorm:"column:name_zh_cn;size:1000;default:''" json:"name_zh_cn"`

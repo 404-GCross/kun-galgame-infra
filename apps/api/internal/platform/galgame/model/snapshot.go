@@ -8,6 +8,8 @@ import (
 // Snapshot represents the complete editable state of a galgame at a point in time
 type Snapshot struct {
 	VNDBID           string         `json:"vndb_id"`
+	BangumiID        *int           `json:"bid,omitempty"`
+	Released         string         `json:"released"`
 	NameEnUS         string         `json:"name_en_us"`
 	NameJaJP         string         `json:"name_ja_jp"`
 	NameZhCN         string         `json:"name_zh_cn"`
@@ -52,6 +54,8 @@ func SnapshotFromJSON(data []byte) (*Snapshot, error) {
 func TakeSnapshot(g *Galgame) *Snapshot {
 	s := &Snapshot{
 		VNDBID:           g.VNDBID,
+		BangumiID:        g.BangumiID,
+		Released:         g.Released,
 		NameEnUS:         g.NameEnUS,
 		NameJaJP:         g.NameJaJP,
 		NameZhCN:         g.NameZhCN,
@@ -103,6 +107,12 @@ func ChangedKeys(old, new *Snapshot) map[string]bool {
 
 	if old.VNDBID != new.VNDBID {
 		keys["vndb_id"] = true
+	}
+	if !intPtrEqual(old.BangumiID, new.BangumiID) {
+		keys["bid"] = true
+	}
+	if old.Released != new.Released {
+		keys["released"] = true
 	}
 	if old.NameEnUS != new.NameEnUS {
 		keys["name_en_us"] = true
@@ -167,6 +177,12 @@ func ChangedKeys(old, new *Snapshot) map[string]bool {
 func ApplyChanges(target *Snapshot, source *Snapshot, changedKeys map[string]bool) {
 	if changedKeys["vndb_id"] {
 		target.VNDBID = source.VNDBID
+	}
+	if changedKeys["bid"] {
+		target.BangumiID = source.BangumiID
+	}
+	if changedKeys["released"] {
+		target.Released = source.Released
 	}
 	if changedKeys["name_en_us"] {
 		target.NameEnUS = source.NameEnUS
