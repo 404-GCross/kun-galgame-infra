@@ -94,7 +94,7 @@ func (SrcTagAlias) TableName() string { return "galgame_tag_alias" }
 type SrcTagRelation struct {
 	GalgameID    int       `gorm:"column:galgame_id"`
 	TagID        int       `gorm:"column:tag_id"`
-	SpoilerLevel int      `gorm:"column:spoiler_level"`
+	SpoilerLevel int       `gorm:"column:spoiler_level"`
 	Created      time.Time `gorm:"column:created"`
 	Updated      time.Time `gorm:"column:updated"`
 }
@@ -180,22 +180,22 @@ func (SrcContributor) TableName() string { return "galgame_contributor" }
 // ---------------------------------------------------------------------------
 
 type MigrationResult struct {
-	Series       int
-	Tags         int
-	TagAliases   int
-	Officials    int
-	OfficialAliases int
-	Engines      int
-	Galgames     int
-	Aliases      int
-	TagRelations int
+	Series            int
+	Tags              int
+	TagAliases        int
+	Officials         int
+	OfficialAliases   int
+	Engines           int
+	Galgames          int
+	Aliases           int
+	TagRelations      int
 	OfficialRelations int
-	EngineRelations int
-	Links        int
-	Contributors int
-	Revisions    int
-	Skipped      int
-	Errors       int
+	EngineRelations   int
+	Links             int
+	Contributors      int
+	Revisions         int
+	Skipped           int
+	Errors            int
 }
 
 func main() {
@@ -293,7 +293,7 @@ func main() {
 }
 
 // batchSize controls the number of rows per INSERT statement
-const batchSize = 500
+const batchSize = 5000
 
 func runMigration(srcDB, tdb *gorm.DB, validUserIDs map[int]bool, dryRun bool) (*MigrationResult, error) {
 	result := &MigrationResult{}
@@ -303,16 +303,10 @@ func runMigration(srcDB, tdb *gorm.DB, validUserIDs map[int]bool, dryRun bool) (
 	var srcSeries []SrcSeries
 	srcDB.Order("id ASC").Find(&srcSeries)
 	if !dryRun && len(srcSeries) > 0 {
-		for i := 0; i < len(srcSeries); i += batchSize {
-			end := i + batchSize
-			if end > len(srcSeries) {
-				end = len(srcSeries)
-			}
-			tdb.Exec(buildBatchInsert("galgame_series", []string{"id", "name", "description", "created", "updated"},
-				srcSeries[i:end], func(s SrcSeries) []any {
-					return []any{s.ID, s.Name, s.Description, s.Created, s.Updated}
-				}))
-		}
+		batchExec(tdb, "galgame_series", []string{"id", "name", "description", "created", "updated"},
+			srcSeries, func(s SrcSeries) []any {
+				return []any{s.ID, s.Name, s.Description, s.Created, s.Updated}
+			})
 	}
 	result.Series = len(srcSeries)
 	slog.Info("Series migrated", "count", result.Series)
@@ -368,20 +362,19 @@ func runMigration(srcDB, tdb *gorm.DB, validUserIDs map[int]bool, dryRun bool) (
 	var srcEngines []SrcEngine
 	srcDB.Order("id ASC").Find(&srcEngines)
 	if !dryRun && len(srcEngines) > 0 {
-		for i := 0; i < len(srcEngines); i += batchSize {
-			end := i + batchSize
-			if end > len(srcEngines) {
-				end = len(srcEngines)
+		skippedEngines := 0
+		for _, e := range srcEngines {
+			alias := e.Alias
+			if alias == "" {
+				alias = "[]"
 			}
-			// Engine alias is JSONB, needs special handling
-			for _, e := range srcEngines[i:end] {
-				alias := e.Alias
-				if alias == "" {
-					alias = "[]"
-				}
-				tdb.Exec("INSERT INTO galgame_engine (id, name, description, alias, created, updated) VALUES (?, ?, ?, ?::jsonb, ?, ?) ON CONFLICT (id) DO NOTHING",
-					e.ID, e.Name, e.Description, alias, e.Created, e.Updated)
+			if err := tdb.Exec("INSERT INTO galgame_engine (id, name, description, alias, created, updated) VALUES (?, ?, ?, ?::jsonb, ?, ?) ON CONFLICT (id) DO NOTHING",
+				e.ID, e.Name, e.Description, alias, e.Created, e.Updated).Error; err != nil {
+				skippedEngines++
 			}
+		}
+		if skippedEngines > 0 {
+			slog.Warn("skipped engines with errors", "count", skippedEngines)
 		}
 	}
 	result.Engines = len(srcEngines)
