@@ -51,8 +51,8 @@ access_token 由 KUN OAuth 系统签发，JWT claims 中包含 `uid`（integer u
 |------|------|------|--------|------|
 | page | int | 否 | 1 | 页码 |
 | limit | int | 否 | 24 | 每页数量 (1-50) |
-| sortField | string | 否 | created | 排序字段: `created`, `updated`, `view` |
-| sortOrder | string | 否 | desc | 排序方向: `asc`, `desc` |
+| sort_field | string | 否 | created | 排序字段: `created`, `updated`, `view`, `resource_update_time` |
+| sort_order | string | 否 | desc | 排序方向: `asc`, `desc` |
 | search | string | 否 | | 搜索关键词（匹配四语言名称） |
 
 **成功响应**：
@@ -566,17 +566,17 @@ PR 详情，包含与 base revision 的差异。
 
 返回最多 50 条结果。
 
-### GET /tag/multi?tagIds=1,2,3
+### GET /tag/multi?tag_ids=1,2,3
 
 多标签筛选，返回同时拥有所有指定标签的 galgame。
 
-**查询参数**：`page`, `limit`, `tagIds`（数组）
+**查询参数**：`page`, `limit`, `tag_ids`（数组）
 
 ### GET /tag/:name
 
 标签详情 + 关联的 galgame 列表。
 
-**查询参数**：`tagId` (必填), `page`, `limit`, `sortField`, `sortOrder`
+**查询参数**：`tag_id` (必填), `page`, `limit`, `sort_field`, `sort_order`
 
 ### PUT /tag
 
@@ -608,7 +608,7 @@ PR 详情，包含与 base revision 的差异。
 
 ### GET /official/:name
 
-详情 + 关联 galgame。**查询参数**：`officialId` (必填), `page`, `limit`, `sortField`, `sortOrder`
+详情 + 关联 galgame。**查询参数**：`official_id` (必填), `page`, `limit`, `sort_field`, `sort_order`
 
 ### PUT /official
 
@@ -636,7 +636,7 @@ PR 详情，包含与 base revision 的差异。
 
 ### GET /engine/:name
 
-详情 + 关联 galgame。**查询参数**：`engineId` (必填), `page`, `limit`
+详情 + 关联 galgame。**查询参数**：`engine_id` (必填), `page`, `limit`
 
 ### PUT /engine
 

@@ -85,7 +85,8 @@ func cleanTables(t *testing.T) {
 	}
 }
 
-// createTestTag creates a tag for testing and returns its ID
+// Test helpers
+
 func createTestTag(t *testing.T, name, category string) int {
 	t.Helper()
 	tag := &model.GalgameTag{Name: name, Category: category}
@@ -93,4 +94,54 @@ func createTestTag(t *testing.T, name, category string) int {
 		t.Fatalf("failed to create test tag: %v", err)
 	}
 	return tag.ID
+}
+
+func createTestOfficial(t *testing.T, name, category string) int {
+	t.Helper()
+	o := &model.GalgameOfficial{Name: name, Category: category}
+	if err := testDB.Create(o).Error; err != nil {
+		t.Fatalf("failed to create test official: %v", err)
+	}
+	return o.ID
+}
+
+func createTestEngine(t *testing.T, name string) int {
+	t.Helper()
+	e := &model.GalgameEngine{Name: name, Alias: []byte("[]")}
+	if err := testDB.Create(e).Error; err != nil {
+		t.Fatalf("failed to create test engine: %v", err)
+	}
+	return e.ID
+}
+
+func createTestSeries(t *testing.T, name string) int {
+	t.Helper()
+	s := &model.GalgameSeries{Name: name}
+	if err := testDB.Create(s).Error; err != nil {
+		t.Fatalf("failed to create test series: %v", err)
+	}
+	return s.ID
+}
+
+var testTagRepo *repository.TagRepository
+var testOfficialRepo *repository.OfficialRepository
+var testEngineRepo *repository.EngineRepository
+var testSeriesRepo *repository.SeriesRepository
+var testGalgameRepo *repository.GalgameRepository
+
+func init() {
+	// These will be set after TestMain runs; accessed via lazy init in tests
+}
+
+func getRepos() {
+	if testDB == nil {
+		return
+	}
+	if testTagRepo == nil {
+		testTagRepo = repository.NewTagRepository(testDB)
+		testOfficialRepo = repository.NewOfficialRepository(testDB)
+		testEngineRepo = repository.NewEngineRepository(testDB)
+		testSeriesRepo = repository.NewSeriesRepository(testDB)
+		testGalgameRepo = repository.NewGalgameRepository(testDB)
+	}
 }

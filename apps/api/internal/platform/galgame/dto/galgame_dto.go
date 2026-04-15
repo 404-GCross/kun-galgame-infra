@@ -4,8 +4,8 @@ package dto
 type ListGalgameRequest struct {
 	Page      int    `query:"page" validate:"min=1"`
 	Limit     int    `query:"limit" validate:"min=1,max=50"`
-	SortField string `query:"sortField" validate:"omitempty,oneof=created updated view"`
-	SortOrder string `query:"sortOrder" validate:"omitempty,oneof=asc desc"`
+	SortField string `query:"sort_field" validate:"omitempty,oneof=created updated view resource_update_time"`
+	SortOrder string `query:"sort_order" validate:"omitempty,oneof=asc desc"`
 	Search    string `query:"search"`
 }
 

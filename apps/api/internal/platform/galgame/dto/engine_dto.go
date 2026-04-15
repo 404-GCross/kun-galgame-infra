@@ -2,7 +2,7 @@ package dto
 
 // GetEngineByNameRequest represents an engine detail query
 type GetEngineByNameRequest struct {
-	EngineID int `query:"engineId" validate:"required"`
+	EngineID int `query:"engine_id" validate:"required"`
 	Page     int `query:"page" validate:"min=1"`
 	Limit    int `query:"limit" validate:"min=1,max=50"`
 }

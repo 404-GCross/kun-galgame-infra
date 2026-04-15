@@ -76,10 +76,17 @@ func (r *GalgameRepository) List(ctx context.Context, page, limit int, sortField
 
 	query.Count(&total)
 
-	if sortField == "" {
+	// Whitelist allowed sort fields (snake_case column names only)
+	allowedSortFields := map[string]bool{
+		"created":              true,
+		"updated":              true,
+		"view":                 true,
+		"resource_update_time": true,
+	}
+	if !allowedSortFields[sortField] {
 		sortField = "created"
 	}
-	if sortOrder == "" {
+	if sortOrder != "asc" && sortOrder != "desc" {
 		sortOrder = "desc"
 	}
 	order := sortField + " " + sortOrder

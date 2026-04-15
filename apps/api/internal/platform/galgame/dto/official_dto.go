@@ -8,14 +8,14 @@ type ListOfficialRequest struct {
 
 // GetOfficialByNameRequest represents an official detail query
 type GetOfficialByNameRequest struct {
-	OfficialID int    `query:"officialId" validate:"required"`
+	OfficialID int    `query:"official_id" validate:"required"`
 	Page       int    `query:"page" validate:"min=1"`
 	Limit      int    `query:"limit" validate:"min=1,max=50"`
 	Type       string `query:"type"`
 	Language   string `query:"language"`
 	Platform   string `query:"platform"`
-	SortField  string `query:"sortField" validate:"omitempty,oneof=created resource_update_time view"`
-	SortOrder  string `query:"sortOrder" validate:"omitempty,oneof=asc desc"`
+	SortField  string `query:"sort_field" validate:"omitempty,oneof=created resource_update_time view"`
+	SortOrder  string `query:"sort_order" validate:"omitempty,oneof=asc desc"`
 }
 
 // SearchOfficialRequest represents an official search query
