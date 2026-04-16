@@ -64,7 +64,7 @@ func (r *GalgameRepository) List(ctx context.Context, page, limit int, sortField
 	var items []model.Galgame
 	var total int64
 
-	query := r.db.WithContext(ctx).Model(&model.Galgame{}).Where("status != 1")
+	query := r.db.WithContext(ctx).Model(&model.Galgame{}).Where("status = 0")
 
 	if search != "" {
 		like := "%" + strings.ToLower(search) + "%"
@@ -107,7 +107,7 @@ func (r *GalgameRepository) FindByIDs(ctx context.Context, ids []int) ([]model.G
 	var galgames []model.Galgame
 	err := r.db.WithContext(ctx).
 		Select("id, vndb_id, name_en_us, name_ja_jp, name_zh_cn, name_zh_tw, banner, content_limit, user_id, resource_update_time, original_language, age_limit").
-		Where("id IN ? AND status != 1", ids).
+		Where("id IN ? AND status = 0", ids).
 		Find(&galgames).Error
 	return galgames, err
 }

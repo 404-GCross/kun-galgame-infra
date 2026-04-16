@@ -57,7 +57,7 @@ func (r *OfficialRepository) FindGalgamesByOfficialID(ctx context.Context, offic
 
 	query := r.db.WithContext(ctx).
 		Model(&model.Galgame{}).
-		Where("id IN (?) AND status != 1", sub)
+		Where("id IN (?) AND status = 0", sub)
 
 	query.Count(&total)
 

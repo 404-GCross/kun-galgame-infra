@@ -34,7 +34,7 @@ func (r *SeriesRepository) List(ctx context.Context, page, limit int) ([]model.G
 	err := r.db.WithContext(ctx).
 		Select("galgame_series.*, COALESCE(sc.cnt, 0) AS cnt").
 		Preload("Galgame", func(db *gorm.DB) *gorm.DB {
-			return db.Where("status != 1").Order("created ASC").Limit(5)
+			return db.Where("status = 0").Order("created ASC").Limit(5)
 		}).
 		Joins("LEFT JOIN (SELECT series_id, COUNT(*) AS cnt FROM galgame WHERE series_id IS NOT NULL GROUP BY series_id) sc ON sc.series_id = galgame_series.id").
 		Order("cnt DESC").
@@ -50,7 +50,7 @@ func (r *SeriesRepository) FindByID(ctx context.Context, id int) (*model.Galgame
 	var series model.GalgameSeries
 	err := r.db.WithContext(ctx).
 		Preload("Galgame", func(db *gorm.DB) *gorm.DB {
-			return db.Where("status != 1").Order("created ASC")
+			return db.Where("status = 0").Order("created ASC")
 		}).
 		First(&series, id).Error
 	return &series, err
@@ -118,7 +118,7 @@ func (r *SeriesRepository) Delete(ctx context.Context, id int) error {
 func (r *SeriesRepository) SearchGalgames(ctx context.Context, keywords []string) ([]model.Galgame, error) {
 	var galgames []model.Galgame
 
-	query := r.db.WithContext(ctx).Model(&model.Galgame{}).Where("status != 1")
+	query := r.db.WithContext(ctx).Model(&model.Galgame{}).Where("status = 0")
 
 	for _, kw := range keywords {
 		like := "%" + strings.ToLower(kw) + "%"

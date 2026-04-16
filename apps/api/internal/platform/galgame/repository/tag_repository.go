@@ -62,7 +62,7 @@ func (r *TagRepository) FindGalgamesByTagID(ctx context.Context, tagID, page, li
 
 	query := r.db.WithContext(ctx).
 		Model(&model.Galgame{}).
-		Where("id IN (?) AND status != 1", sub)
+		Where("id IN (?) AND status = 0", sub)
 
 	query.Count(&total)
 
@@ -118,7 +118,7 @@ func (r *TagRepository) FindGalgamesByMultipleTags(ctx context.Context, tagIDs [
 
 	query := r.db.WithContext(ctx).
 		Model(&model.Galgame{}).
-		Where("id IN (?) AND status != 1", sub)
+		Where("id IN (?) AND status = 0", sub)
 
 	query.Count(&total)
 

@@ -59,7 +59,7 @@ func (s *GalgameService) GetByID(ctx context.Context, id int) (*model.Galgame, m
 		return nil, nil, err
 	}
 
-	if galgame.Status == 1 {
+	if galgame.Status != 0 {
 		return nil, nil, errors.NewWithCode(errors.ErrGalgameNotFound)
 	}
 
