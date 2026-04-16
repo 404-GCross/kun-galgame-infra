@@ -27,8 +27,10 @@ func (r *OfficialRepository) List(ctx context.Context, page, limit int) ([]model
 	r.db.WithContext(ctx).Model(&model.GalgameOfficial{}).Count(&total)
 
 	err := r.db.WithContext(ctx).
+		Select("galgame_official.*, COALESCE(oc.cnt, 0) AS cnt").
 		Preload("Alias").
-		Order("(SELECT COUNT(*) FROM galgame_official_relation WHERE official_id = galgame_official.id) DESC").
+		Joins("LEFT JOIN (SELECT official_id, COUNT(*) AS cnt FROM galgame_official_relation GROUP BY official_id) oc ON oc.official_id = galgame_official.id").
+		Order("cnt DESC").
 		Offset((page - 1) * limit).
 		Limit(limit).
 		Find(&items).Error

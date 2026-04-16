@@ -102,6 +102,16 @@ func (r *GalgameRepository) List(ctx context.Context, page, limit int, sortField
 	return items, total, err
 }
 
+// FindByIDs finds galgames by a list of IDs (lightweight, no relations)
+func (r *GalgameRepository) FindByIDs(ctx context.Context, ids []int) ([]model.Galgame, error) {
+	var galgames []model.Galgame
+	err := r.db.WithContext(ctx).
+		Select("id, vndb_id, name_en_us, name_ja_jp, name_zh_cn, name_zh_tw, banner, content_limit, user_id, resource_update_time, original_language, age_limit").
+		Where("id IN ? AND status != 1", ids).
+		Find(&galgames).Error
+	return galgames, err
+}
+
 // Create creates a galgame record
 func (r *GalgameRepository) Create(ctx context.Context, galgame *model.Galgame) error {
 	return r.db.WithContext(ctx).Create(galgame).Error

@@ -124,6 +124,25 @@ func (h *GalgameHandler) Update(c fiber.Ctx) error {
 	return response.Success(c, galgame)
 }
 
+// BatchGet returns lightweight galgame info for a list of IDs
+func (h *GalgameHandler) BatchGet(c fiber.Ctx) error {
+	var req dto.BatchGetGalgameRequest
+	if err := c.Bind().Query(&req); err != nil {
+		return response.BadRequest(c, errors.ErrBadRequest)
+	}
+
+	if len(req.IDs) == 0 || len(req.IDs) > 100 {
+		return response.BadRequestMsg(c, errors.ErrValidationFailed, "ids must contain 1-100 items")
+	}
+
+	items, err := h.galgameService.BatchGet(c.Context(), req.IDs)
+	if err != nil {
+		return response.InternalError(c, errors.ErrOperationFailed)
+	}
+
+	return response.Success(c, items)
+}
+
 // CheckVNDB checks if a VNDB ID already exists
 func (h *GalgameHandler) CheckVNDB(c fiber.Ctx) error {
 	var req dto.CheckVNDBRequest

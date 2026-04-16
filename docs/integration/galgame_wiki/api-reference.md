@@ -85,6 +85,47 @@ access_token 由 KUN OAuth 系统签发，JWT claims 中包含 `uid`（integer u
 
 ---
 
+### GET /galgame/batch
+
+批量获取 galgame 轻量信息（跨服务展示用，不加载关联数据）。
+
+**查询参数**：
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| ids | int[] | 是 | galgame ID 数组，最多 100 个 |
+
+**请求示例**：`GET /galgame/batch?ids=1,2,3`
+
+**成功响应**：
+
+```json
+{
+  "code": 0,
+  "message": "成功",
+  "data": [
+    {
+      "id": 1,
+      "vndb_id": "v12345",
+      "name_en_us": "Title",
+      "name_ja_jp": "タイトル",
+      "name_zh_cn": "标题",
+      "name_zh_tw": "標題",
+      "banner": "https://image.kungal.com/...",
+      "content_limit": "sfw",
+      "user_id": 1,
+      "resource_update_time": "2026-01-01T00:00:00Z",
+      "original_language": "ja-jp",
+      "age_limit": "all"
+    }
+  ]
+}
+```
+
+不存在或已封禁的 ID 会被过滤，不会报错。返回数组长度可能小于请求的 ID 数量。
+
+---
+
 ### GET /galgame/check
 
 检查 VNDB ID 是否已存在。
@@ -746,7 +787,7 @@ PR 详情，包含与 base revision 的差异。
 
 | 模块 | 方法 | 路径 | 认证 | 数量 |
 |------|------|------|------|------|
-| **Galgame** | GET | `/galgame`, `/galgame/check`, `/galgame/:gid` | 公开 | 3 |
+| **Galgame** | GET | `/galgame`, `/galgame/batch`, `/galgame/check`, `/galgame/:gid` | 公开 | 4 |
 | | POST/PUT | `/galgame`, `/galgame/:gid` | Bearer | 2 |
 | **Revision** | GET | `/galgame/:gid/revisions`, `.../:rev`, `.../:rev/diff` | 公开 | 3 |
 | | POST | `/galgame/:gid/revert` | Bearer | 1 |
@@ -763,4 +804,4 @@ PR 详情，包含与 base revision 的差异。
 | | PUT | `/engine` | admin/mod | 1 |
 | **Series** | GET | `/series`, `/series/search`, `/series/:id` | 公开 | 3 |
 | | POST/PUT/DELETE | `/series`, `/series/modal`, `/series/:id` | Bearer/admin | 4 |
-| | | | **总计** | **46** |
+| | | | **总计** | **47** |

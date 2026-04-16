@@ -10,8 +10,9 @@ type GalgameOfficial struct {
 	Category    string    `gorm:"not null" json:"category"` // company, individual, amateur
 	Lang        string    `gorm:"default:''" json:"lang"`
 	Description string    `gorm:"default:''" json:"description"`
-	Created     time.Time `gorm:"autoCreateTime" json:"created"`
-	Updated     time.Time `gorm:"autoUpdateTime" json:"updated"`
+	Created      time.Time `gorm:"autoCreateTime" json:"created"`
+	Updated      time.Time `gorm:"autoUpdateTime" json:"updated"`
+	GalgameCount int       `gorm:"column:cnt;->" json:"galgame_count"`
 
 	Alias   []GalgameOfficialAlias    `gorm:"foreignKey:GalgameOfficialID" json:"alias,omitempty"`
 	Galgame []GalgameOfficialRelation `gorm:"foreignKey:OfficialID" json:"galgame,omitempty"`

@@ -50,6 +50,27 @@ type UpdateGalgameRequest struct {
 	IsMinor          *bool   `json:"is_minor"`
 }
 
+// BatchGetGalgameRequest represents a batch galgame query
+type BatchGetGalgameRequest struct {
+	IDs []int `query:"ids" validate:"required,min=1,max=100"`
+}
+
+// GalgameBrief is a lightweight galgame info for cross-service display
+type GalgameBrief struct {
+	ID                 int    `json:"id"`
+	VNDBID             string `json:"vndb_id"`
+	NameEnUS           string `json:"name_en_us"`
+	NameJaJP           string `json:"name_ja_jp"`
+	NameZhCN           string `json:"name_zh_cn"`
+	NameZhTW           string `json:"name_zh_tw"`
+	Banner             string `json:"banner"`
+	ContentLimit       string `json:"content_limit"`
+	UserID             int    `json:"user_id"`
+	ResourceUpdateTime string `json:"resource_update_time"`
+	OriginalLanguage   string `json:"original_language"`
+	AgeLimit           string `json:"age_limit"`
+}
+
 // CheckVNDBRequest represents a VNDB existence check
 type CheckVNDBRequest struct {
 	VNDBID string `query:"vndb_id" validate:"required"`

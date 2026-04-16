@@ -746,3 +746,70 @@ func TestRevision_MultipleUpdates_SequentialRevisions(t *testing.T) {
 		assert.Equal(t, i+1, rev.Revision)
 	}
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// BatchGet Tests
+// ═══════════════════════════════════════════════════════════════════
+
+func TestBatchGet_Basic(t *testing.T) {
+	cleanTables(t)
+	ctx := context.Background()
+
+	g1, _ := testSvc.Create(ctx, 1, &dto.CreateGalgameRequest{VNDBID: "v60100", NameZhCN: "游戏A", NameEnUS: "Game A", Banner: "https://img/a.jpg"})
+	g2, _ := testSvc.Create(ctx, 1, &dto.CreateGalgameRequest{VNDBID: "v60101", NameZhCN: "游戏B", NameJaJP: "ゲームB"})
+
+	items, err := testSvc.BatchGet(ctx, []int{g1.ID, g2.ID})
+	require.NoError(t, err)
+	assert.Len(t, items, 2)
+
+	// Verify fields are populated
+	byID := map[int]dto.GalgameBrief{}
+	for _, item := range items {
+		byID[item.ID] = item
+	}
+
+	a := byID[g1.ID]
+	assert.Equal(t, "v60100", a.VNDBID)
+	assert.Equal(t, "游戏A", a.NameZhCN)
+	assert.Equal(t, "Game A", a.NameEnUS)
+	assert.Equal(t, "https://img/a.jpg", a.Banner)
+	assert.NotEmpty(t, a.ResourceUpdateTime)
+
+	b := byID[g2.ID]
+	assert.Equal(t, "v60101", b.VNDBID)
+	assert.Equal(t, "ゲームB", b.NameJaJP)
+}
+
+func TestBatchGet_ExcludesBanned(t *testing.T) {
+	cleanTables(t)
+	ctx := context.Background()
+
+	g1, _ := testSvc.Create(ctx, 1, &dto.CreateGalgameRequest{VNDBID: "v60110"})
+	g2, _ := testSvc.Create(ctx, 1, &dto.CreateGalgameRequest{VNDBID: "v60111"})
+
+	// Ban g2
+	testDB.Model(&model.Galgame{}).Where("id = ?", g2.ID).Update("status", 1)
+
+	items, err := testSvc.BatchGet(ctx, []int{g1.ID, g2.ID})
+	require.NoError(t, err)
+	assert.Len(t, items, 1)
+	assert.Equal(t, g1.ID, items[0].ID)
+}
+
+func TestBatchGet_NonexistentIDs(t *testing.T) {
+	cleanTables(t)
+	ctx := context.Background()
+
+	items, err := testSvc.BatchGet(ctx, []int{999998, 999999})
+	require.NoError(t, err)
+	assert.Empty(t, items)
+}
+
+func TestBatchGet_EmptyIDs(t *testing.T) {
+	cleanTables(t)
+	ctx := context.Background()
+
+	items, err := testSvc.BatchGet(ctx, []int{})
+	require.NoError(t, err)
+	assert.Empty(t, items)
+}

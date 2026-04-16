@@ -276,6 +276,33 @@ func (s *GalgameService) Update(ctx context.Context, uid, galgameID int, roles [
 	return s.galgameRepo.FindByID(ctx, galgameID)
 }
 
+// BatchGet returns lightweight galgame info for a list of IDs
+func (s *GalgameService) BatchGet(ctx context.Context, ids []int) ([]dto.GalgameBrief, error) {
+	galgames, err := s.galgameRepo.FindByIDs(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+
+	items := make([]dto.GalgameBrief, len(galgames))
+	for i, g := range galgames {
+		items[i] = dto.GalgameBrief{
+			ID:                 g.ID,
+			VNDBID:             g.VNDBID,
+			NameEnUS:           g.NameEnUS,
+			NameJaJP:           g.NameJaJP,
+			NameZhCN:           g.NameZhCN,
+			NameZhTW:           g.NameZhTW,
+			Banner:             g.Banner,
+			ContentLimit:       g.ContentLimit,
+			UserID:             g.UserID,
+			ResourceUpdateTime: g.ResourceUpdateTime.Format("2006-01-02T15:04:05Z"),
+			OriginalLanguage:   g.OriginalLanguage,
+			AgeLimit:           g.AgeLimit,
+		}
+	}
+	return items, nil
+}
+
 // CheckVNDB checks if a VNDB ID already exists
 func (s *GalgameService) CheckVNDB(ctx context.Context, vndbID string) (bool, int, error) {
 	return s.galgameRepo.ExistsByVNDBID(ctx, vndbID)

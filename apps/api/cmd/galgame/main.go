@@ -102,6 +102,7 @@ func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB) {
 	// ── Galgame CRUD ──
 	galgame := api.Group("/galgame")
 	galgame.Get("/", galgameH.List)
+	galgame.Get("/batch", galgameH.BatchGet)
 	galgame.Get("/check", galgameH.CheckVNDB)
 	galgame.Get("/:gid", galgameH.Get)
 	galgameAuth := galgame.Group("", jwtAuth)

@@ -23,7 +23,9 @@ func NewEngineRepository(db *gorm.DB) *EngineRepository {
 func (r *EngineRepository) ListAll(ctx context.Context) ([]model.GalgameEngine, error) {
 	var items []model.GalgameEngine
 	err := r.db.WithContext(ctx).
-		Order("(SELECT COUNT(*) FROM galgame_engine_relation WHERE engine_id = galgame_engine.id) DESC").
+		Select("galgame_engine.*, COALESCE(ec.cnt, 0) AS cnt").
+		Joins("LEFT JOIN (SELECT engine_id, COUNT(*) AS cnt FROM galgame_engine_relation GROUP BY engine_id) ec ON ec.engine_id = galgame_engine.id").
+		Order("cnt DESC").
 		Find(&items).Error
 	return items, err
 }

@@ -47,8 +47,9 @@ type GalgameSeries struct {
 	ID          int       `gorm:"primaryKey;autoIncrement" json:"id"`
 	Name        string    `gorm:"size:1000;uniqueIndex;default:''" json:"name"`
 	Description string    `gorm:"size:2000;default:''" json:"description"`
-	Created     time.Time `gorm:"autoCreateTime" json:"created"`
-	Updated     time.Time `gorm:"autoUpdateTime" json:"updated"`
+	Created      time.Time `gorm:"autoCreateTime" json:"created"`
+	Updated      time.Time `gorm:"autoUpdateTime" json:"updated"`
+	GalgameCount int       `gorm:"column:cnt;->" json:"galgame_count"`
 
 	Galgame []Galgame `gorm:"foreignKey:SeriesID" json:"galgame,omitempty"`
 }

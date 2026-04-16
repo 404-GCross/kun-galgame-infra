@@ -12,8 +12,9 @@ type GalgameEngine struct {
 	Name        string         `gorm:"uniqueIndex;not null" json:"name"`
 	Description string         `gorm:"default:''" json:"description"`
 	Alias       datatypes.JSON `gorm:"type:jsonb;default:'[]'" json:"alias"`
-	Created     time.Time      `gorm:"autoCreateTime" json:"created"`
-	Updated     time.Time      `gorm:"autoUpdateTime" json:"updated"`
+	Created      time.Time      `gorm:"autoCreateTime" json:"created"`
+	Updated      time.Time      `gorm:"autoUpdateTime" json:"updated"`
+	GalgameCount int            `gorm:"column:cnt;->" json:"galgame_count"`
 
 	Galgame []GalgameEngineRelation `gorm:"foreignKey:EngineID" json:"galgame,omitempty"`
 }

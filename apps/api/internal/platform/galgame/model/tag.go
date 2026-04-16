@@ -8,8 +8,9 @@ type GalgameTag struct {
 	Name        string    `gorm:"uniqueIndex;not null" json:"name"`
 	Category    string    `gorm:"not null" json:"category"` // content, sexual, technical
 	Description string    `gorm:"default:''" json:"description"`
-	Created     time.Time `gorm:"autoCreateTime" json:"created"`
-	Updated     time.Time `gorm:"autoUpdateTime" json:"updated"`
+	Created      time.Time `gorm:"autoCreateTime" json:"created"`
+	Updated      time.Time `gorm:"autoUpdateTime" json:"updated"`
+	GalgameCount int       `gorm:"column:cnt;->" json:"galgame_count"`
 
 	Alias   []GalgameTagAlias    `gorm:"foreignKey:GalgameTagID" json:"alias,omitempty"`
 	Galgame []GalgameTagRelation `gorm:"foreignKey:TagID" json:"galgame,omitempty"`

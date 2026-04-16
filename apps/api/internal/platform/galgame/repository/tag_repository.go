@@ -32,8 +32,10 @@ func (r *TagRepository) List(ctx context.Context, page, limit int) ([]model.Galg
 	r.db.WithContext(ctx).Model(&model.GalgameTag{}).Count(&total)
 
 	err := r.db.WithContext(ctx).
+		Select("galgame_tag.*, COALESCE(tc.cnt, 0) AS cnt").
 		Preload("Alias").
-		Order("(SELECT COUNT(*) FROM galgame_tag_relation WHERE tag_id = galgame_tag.id) DESC").
+		Joins("LEFT JOIN (SELECT tag_id, COUNT(*) AS cnt FROM galgame_tag_relation GROUP BY tag_id) tc ON tc.tag_id = galgame_tag.id").
+		Order("cnt DESC").
 		Offset((page - 1) * limit).
 		Limit(limit).
 		Find(&items).Error

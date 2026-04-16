@@ -32,10 +32,12 @@ func (r *SeriesRepository) List(ctx context.Context, page, limit int) ([]model.G
 	r.db.WithContext(ctx).Model(&model.GalgameSeries{}).Count(&total)
 
 	err := r.db.WithContext(ctx).
+		Select("galgame_series.*, COALESCE(sc.cnt, 0) AS cnt").
 		Preload("Galgame", func(db *gorm.DB) *gorm.DB {
 			return db.Where("status != 1").Order("created ASC").Limit(5)
 		}).
-		Order("(SELECT COUNT(*) FROM galgame WHERE series_id = galgame_series.id) DESC").
+		Joins("LEFT JOIN (SELECT series_id, COUNT(*) AS cnt FROM galgame WHERE series_id IS NOT NULL GROUP BY series_id) sc ON sc.series_id = galgame_series.id").
+		Order("cnt DESC").
 		Offset((page - 1) * limit).
 		Limit(limit).
 		Find(&items).Error
