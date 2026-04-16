@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -882,7 +883,70 @@ func remapKungalUserIDs(ctx context.Context, db *gorm.DB, mapping map[uint]uint)
 		// OAuth
 		{"oauth_account", "user_id"},
 	}
-	return remapUserIDsGeneric(ctx, db, mapping, fks)
+	if err := remapUserIDsGeneric(ctx, db, mapping, fks); err != nil {
+		return err
+	}
+	return remapChatRoomNames(ctx, db, mapping)
+}
+
+// remapChatRoomNames updates chat_room.name for private rooms.
+// Private room names use format "uid1-uid2" (sorted ascending).
+// After user ID remap, these names must be recalculated.
+func remapChatRoomNames(ctx context.Context, db *gorm.DB, mapping map[uint]uint) error {
+	// Check if chat_room table exists
+	var exists bool
+	db.Raw("SELECT EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename = 'chat_room')").Scan(&exists)
+	if !exists {
+		return nil
+	}
+
+	type roomRow struct {
+		ID   int
+		Name string
+	}
+	var rooms []roomRow
+	if err := db.WithContext(ctx).Raw("SELECT id, name FROM chat_room WHERE type = 'private'").Scan(&rooms).Error; err != nil {
+		return fmt.Errorf("fetch private chat rooms: %w", err)
+	}
+
+	updated := 0
+	for _, room := range rooms {
+		parts := strings.SplitN(room.Name, "-", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		uid1, err1 := strconv.ParseUint(parts[0], 10, 64)
+		uid2, err2 := strconv.ParseUint(parts[1], 10, 64)
+		if err1 != nil || err2 != nil {
+			continue
+		}
+
+		newUID1, ok1 := mapping[uint(uid1)]
+		newUID2, ok2 := mapping[uint(uid2)]
+		if !ok1 || !ok2 {
+			continue
+		}
+
+		// Regenerate sorted name
+		a, b := newUID1, newUID2
+		if a > b {
+			a, b = b, a
+		}
+		newName := fmt.Sprintf("%d-%d", a, b)
+
+		if newName != room.Name {
+			if err := db.WithContext(ctx).Exec(
+				`UPDATE chat_room SET name = ? WHERE id = ?`, newName, room.ID,
+			).Error; err != nil {
+				slog.Error("failed to remap chat_room name", "id", room.ID, "old", room.Name, "new", newName, "error", err)
+				continue
+			}
+			updated++
+		}
+	}
+
+	slog.Info("remapped chat room names", "updated", updated, "total_private", len(rooms))
+	return nil
 }
 
 func remapMoyuUserIDs(ctx context.Context, db *gorm.DB, mapping map[uint]uint) error {
