@@ -10,6 +10,7 @@
     "coverprofile",
     "datatypes",
     "dbname",
+    "dedup",
     "dismissable",
     "dompurify",
     "dxup",

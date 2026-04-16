@@ -99,41 +99,35 @@ func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB) {
 		return c.JSON(fiber.Map{"status": "ok"})
 	})
 
-	// ── Galgame CRUD ──
+	// ── Galgame ──
 	galgame := api.Group("/galgame")
+
+	// Public GET routes (must be registered before auth group)
 	galgame.Get("/", galgameH.List)
 	galgame.Get("/batch", galgameH.BatchGet)
 	galgame.Get("/check", galgameH.CheckVNDB)
 	galgame.Get("/:gid", galgameH.Get)
-	galgameAuth := galgame.Group("", jwtAuth)
-	galgameAuth.Post("/", galgameH.Create)
-	galgameAuth.Put("/:gid", galgameH.Update)
-
-	// ── Revisions ──
 	galgame.Get("/:gid/revisions", revisionH.ListRevisions)
 	galgame.Get("/:gid/revisions/:rev", revisionH.GetRevision)
 	galgame.Get("/:gid/revisions/:rev/diff", revisionH.GetRevisionDiff)
-	galgameAuth.Post("/:gid/revert", revisionH.Revert)
-
-	// ── PRs ──
 	galgame.Get("/:gid/prs", revisionH.ListPRs)
 	galgame.Get("/:gid/prs/:id", revisionH.GetPR)
+	galgame.Get("/:gid/links", linkH.ListLinks)
+	galgame.Get("/:gid/aliases", linkH.ListAliases)
+	galgame.Get("/:gid/contributors", contributorH.List)
+
+	// Authenticated routes
+	galgameAuth := galgame.Group("", jwtAuth)
+	galgameAuth.Post("/", galgameH.Create)
+	galgameAuth.Put("/:gid", galgameH.Update)
+	galgameAuth.Post("/:gid/revert", revisionH.Revert)
 	galgameAuth.Post("/:gid/prs", revisionH.SubmitPR)
 	galgameAuth.Put("/:gid/prs/:id/merge", revisionH.MergePR)
 	galgameAuth.Put("/:gid/prs/:id/decline", revisionH.DeclinePR)
-
-	// ── Links ──
-	galgame.Get("/:gid/links", linkH.ListLinks)
 	galgameAuth.Post("/:gid/links", linkH.CreateLink)
 	galgameAuth.Delete("/:gid/links", linkH.DeleteLink)
-
-	// ── Aliases ──
-	galgame.Get("/:gid/aliases", linkH.ListAliases)
 	galgameAuth.Post("/:gid/aliases", linkH.CreateAlias)
 	galgameAuth.Delete("/:gid/aliases", linkH.DeleteAlias)
-
-	// ── Contributors ──
-	galgame.Get("/:gid/contributors", contributorH.List)
 	galgameAuth.Delete("/:gid/contributors/:uid", contributorH.Delete)
 
 	// ── Tag ──
