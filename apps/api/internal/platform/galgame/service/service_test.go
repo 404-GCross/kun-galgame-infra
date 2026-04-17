@@ -128,6 +128,7 @@ var testOfficialRepo *repository.OfficialRepository
 var testEngineRepo *repository.EngineRepository
 var testSeriesRepo *repository.SeriesRepository
 var testGalgameRepo *repository.GalgameRepository
+var testAdminRepo *repository.AdminRepository
 
 func init() {
 	// These will be set after TestMain runs; accessed via lazy init in tests
@@ -143,5 +144,6 @@ func getRepos() {
 		testEngineRepo = repository.NewEngineRepository(testDB)
 		testSeriesRepo = repository.NewSeriesRepository(testDB)
 		testGalgameRepo = repository.NewGalgameRepository(testDB)
+		testAdminRepo = repository.NewAdminRepository(testDB)
 	}
 }

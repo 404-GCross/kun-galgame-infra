@@ -70,6 +70,7 @@ func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB) {
 	officialRepo := galgameRepo.NewOfficialRepository(wiki)
 	engineRepo := galgameRepo.NewEngineRepository(wiki)
 	seriesRepo := galgameRepo.NewSeriesRepository(wiki)
+	adminRepo := galgameRepo.NewAdminRepository(wiki)
 
 	// Services
 	galgameSvc := galgameService.NewGalgameService(galgameRepository, revisionRepo, prRepo, userReadRepo)
@@ -83,6 +84,7 @@ func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB) {
 	officialH := galgameHandler.NewOfficialHandler(officialRepo)
 	engineH := galgameHandler.NewEngineHandler(engineRepo)
 	seriesH := galgameHandler.NewSeriesHandler(seriesRepo)
+	adminH := galgameHandler.NewAdminHandler(adminRepo)
 
 	// JWT auth middleware
 	jwtAuth := middleware.JWTAuth(cfg.JWT.Secret)
@@ -130,6 +132,10 @@ func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB) {
 	galgameAuth.Post("/:gid/aliases", linkH.CreateAlias)
 	galgameAuth.Delete("/:gid/aliases", linkH.DeleteAlias)
 	galgameAuth.Delete("/:gid/contributors/:uid", contributorH.Delete)
+
+	// ── Admin ──
+	admin := api.Group("/admin")
+	admin.Get("/stats", adminH.Stats)
 
 	// ── Tag ──
 	tag := api.Group("/tag")

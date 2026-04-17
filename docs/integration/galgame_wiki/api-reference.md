@@ -799,6 +799,70 @@ PR 详情，包含与 base revision 的差异。
 
 ---
 
+## 管理统计 (Admin)
+
+### GET /admin/stats
+
+Wiki 管理统计接口，返回各实体的总量和每日新增计数。
+
+**查询参数**：
+
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+|------|------|------|--------|------|
+| days | int | 否 | 30 | 查询最近 N 天 (1-365) |
+
+**成功响应**：
+
+```json
+{
+  "code": 0,
+  "message": "成功",
+  "data": {
+    "totals": {
+      "galgame_tag": 1234,
+      "galgame_official": 567,
+      "galgame_engine": 89,
+      "galgame_series": 234,
+      "galgame_link": 4567,
+      "galgame_pr": 123,
+      "galgame_revision": 890
+    },
+    "daily": [
+      {
+        "date": "2026-04-10",
+        "galgame_tag": 3,
+        "galgame_official": 1,
+        "galgame_engine": 0,
+        "galgame_series": 2,
+        "galgame_link": 15,
+        "galgame_pr": 4,
+        "galgame_revision": 12
+      }
+    ]
+  }
+}
+```
+
+| 字段 | 说明 |
+|------|------|
+| totals | 各表全量 COUNT |
+| daily | 按日期升序排列，每天一行，没有数据的日期不返回 |
+| date | 格式 YYYY-MM-DD，与 `date_trunc('day', created)::date::text` 一致 |
+
+统计的 7 个维度：
+
+| 字段 key | 对应表 |
+|----------|--------|
+| galgame_tag | galgame_tag |
+| galgame_official | galgame_official |
+| galgame_engine | galgame_engine |
+| galgame_series | galgame_series |
+| galgame_link | galgame_link |
+| galgame_pr | galgame_pr |
+| galgame_revision | galgame_revision |
+
+---
+
 ## 错误码
 
 ### Galgame (20xxx)
@@ -848,4 +912,5 @@ PR 详情，包含与 base revision 的差异。
 | | PUT | `/engine` | admin/mod | 1 |
 | **Series** | GET | `/series`, `/series/search`, `/series/:id` | 公开 | 3 |
 | | POST/PUT/DELETE | `/series`, `/series/modal`, `/series/:id` | Bearer/admin | 4 |
-| | | | **总计** | **48** |
+| **Admin** | GET | `/admin/stats` | 公开 | 1 |
+| | | | **总计** | **49** |

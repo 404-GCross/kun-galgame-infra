@@ -904,3 +904,97 @@ func TestUserStats_NoActivity(t *testing.T) {
 	assert.Equal(t, 0, stats.RevisionCount)
 	assert.Equal(t, 0, stats.PRSubmitted)
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// Admin Stats Tests
+// ═══════════════════════════════════════════════════════════════════
+
+func TestAdminStats_Totals(t *testing.T) {
+	cleanTables(t)
+	getRepos()
+	ctx := context.Background()
+
+	// Create entities
+	createTestTag(t, "Tag1", "content")
+	createTestTag(t, "Tag2", "content")
+	createTestOfficial(t, "Dev1", "company")
+	createTestEngine(t, "Engine1")
+	createTestSeries(t, "Series1")
+
+	// Create galgame (auto-creates 1 link + 1 revision + 1 contributor)
+	testSvc.Create(ctx, 1, &dto.CreateGalgameRequest{VNDBID: "v80001"})
+
+	stats, err := testAdminRepo.GetStats(ctx, 30)
+	require.NoError(t, err)
+
+	assert.Equal(t, 2, stats.Totals.GalgameTag)
+	assert.Equal(t, 1, stats.Totals.GalgameOfficial)
+	assert.Equal(t, 1, stats.Totals.GalgameEngine)
+	assert.Equal(t, 1, stats.Totals.GalgameSeries)
+	assert.Equal(t, 1, stats.Totals.GalgameLink)     // auto VNDB link
+	assert.Equal(t, 0, stats.Totals.GalgamePR)
+	assert.Equal(t, 1, stats.Totals.GalgameRevision)  // "created" revision
+}
+
+func TestAdminStats_DailyCountsToday(t *testing.T) {
+	cleanTables(t)
+	getRepos()
+	ctx := context.Background()
+
+	createTestTag(t, "TagA", "content")
+	createTestTag(t, "TagB", "sexual")
+	createTestOfficial(t, "DevA", "company")
+	testSvc.Create(ctx, 1, &dto.CreateGalgameRequest{VNDBID: "v80010"})
+
+	stats, err := testAdminRepo.GetStats(ctx, 1)
+	require.NoError(t, err)
+
+	// All created today → should appear in daily
+	require.GreaterOrEqual(t, len(stats.Daily), 1)
+
+	// Find today's entry
+	today := stats.Daily[len(stats.Daily)-1]
+	assert.Equal(t, 2, today.GalgameTag)
+	assert.Equal(t, 1, today.GalgameOfficial)
+	assert.Equal(t, 1, today.GalgameLink)
+	assert.Equal(t, 1, today.GalgameRevision)
+}
+
+func TestAdminStats_EmptyDatabase(t *testing.T) {
+	cleanTables(t)
+	getRepos()
+	ctx := context.Background()
+
+	stats, err := testAdminRepo.GetStats(ctx, 30)
+	require.NoError(t, err)
+
+	assert.Equal(t, 0, stats.Totals.GalgameTag)
+	assert.Equal(t, 0, stats.Totals.GalgameOfficial)
+	assert.Equal(t, 0, stats.Totals.GalgameEngine)
+	assert.Equal(t, 0, stats.Totals.GalgameSeries)
+	assert.Equal(t, 0, stats.Totals.GalgameLink)
+	assert.Equal(t, 0, stats.Totals.GalgamePR)
+	assert.Equal(t, 0, stats.Totals.GalgameRevision)
+	assert.Empty(t, stats.Daily)
+}
+
+func TestAdminStats_PRIncluded(t *testing.T) {
+	cleanTables(t)
+	getRepos()
+	ctx := context.Background()
+
+	g := createTestGalgame(t, "v80020", "test")
+
+	proposed := &model.Snapshot{VNDBID: "v80020", NameZhCN: "PR edit",
+		Aliases: []string{}, TagIDs: []int{}, OfficialIDs: []int{}, EngineIDs: []int{}, Links: []model.SnapshotLink{}}
+	testSvc.SubmitPR(ctx, 2, g.ID, proposed, "test pr")
+
+	stats, err := testAdminRepo.GetStats(ctx, 30)
+	require.NoError(t, err)
+	assert.Equal(t, 1, stats.Totals.GalgamePR)
+
+	// Daily should have PR count
+	require.GreaterOrEqual(t, len(stats.Daily), 1)
+	today := stats.Daily[len(stats.Daily)-1]
+	assert.Equal(t, 1, today.GalgamePR)
+}
