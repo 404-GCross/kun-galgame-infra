@@ -3,7 +3,9 @@ package repository
 import (
 	"context"
 	"strings"
+	"time"
 
+	"api/internal/platform/galgame/dto"
 	"api/internal/platform/galgame/model"
 
 	"gorm.io/gorm"
@@ -128,4 +130,55 @@ func (r *GalgameRepository) IncrementView(ctx context.Context, id int) error {
 		Model(&model.Galgame{}).
 		Where("id = ?", id).
 		Update("view", gorm.Expr("view + 1")).Error
+}
+
+// GetUserStats returns aggregated galgame statistics for a user
+func (r *GalgameRepository) GetUserStats(ctx context.Context, uid int) (*dto.UserGalgameStats, error) {
+	var stats dto.UserGalgameStats
+	var cnt int64
+
+	now := time.Now()
+	todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+
+	// Galgames created (total)
+	r.db.WithContext(ctx).Model(&model.Galgame{}).
+		Where("user_id = ? AND status = 0", uid).Count(&cnt)
+	stats.GalgameCreated = int(cnt)
+
+	// Galgames created today
+	r.db.WithContext(ctx).Model(&model.Galgame{}).
+		Where("user_id = ? AND status = 0 AND created >= ?", uid, todayStart).Count(&cnt)
+	stats.GalgameCreatedToday = int(cnt)
+
+	// Galgames contributed to (distinct galgame_id)
+	r.db.WithContext(ctx).Model(&model.GalgameContributor{}).
+		Where("user_id = ?", uid).Distinct("galgame_id").Count(&cnt)
+	stats.GalgameContributed = int(cnt)
+
+	// Revision count
+	r.db.WithContext(ctx).Model(&model.GalgameRevision{}).
+		Where("user_id = ?", uid).Count(&cnt)
+	stats.RevisionCount = int(cnt)
+
+	// PR submitted (total)
+	r.db.WithContext(ctx).Model(&model.GalgamePR{}).
+		Where("user_id = ?", uid).Count(&cnt)
+	stats.PRSubmitted = int(cnt)
+
+	// PR merged
+	r.db.WithContext(ctx).Model(&model.GalgamePR{}).
+		Where("user_id = ? AND status = 1", uid).Count(&cnt)
+	stats.PRMerged = int(cnt)
+
+	// PR declined
+	r.db.WithContext(ctx).Model(&model.GalgamePR{}).
+		Where("user_id = ? AND status = 2", uid).Count(&cnt)
+	stats.PRDeclined = int(cnt)
+
+	// PR pending
+	r.db.WithContext(ctx).Model(&model.GalgamePR{}).
+		Where("user_id = ? AND status = 0", uid).Count(&cnt)
+	stats.PRPending = int(cnt)
+
+	return &stats, nil
 }

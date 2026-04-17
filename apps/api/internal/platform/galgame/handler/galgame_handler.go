@@ -143,6 +143,21 @@ func (h *GalgameHandler) BatchGet(c fiber.Ctx) error {
 	return response.Success(c, items)
 }
 
+// UserStats returns aggregated galgame statistics for a user
+func (h *GalgameHandler) UserStats(c fiber.Ctx) error {
+	uid, err := strconv.Atoi(c.Params("uid"))
+	if err != nil || uid <= 0 {
+		return response.BadRequest(c, errors.ErrInvalidID)
+	}
+
+	stats, err := h.galgameService.GetUserStats(c.Context(), uid)
+	if err != nil {
+		return response.InternalError(c, errors.ErrOperationFailed)
+	}
+
+	return response.Success(c, stats)
+}
+
 // CheckVNDB checks if a VNDB ID already exists
 func (h *GalgameHandler) CheckVNDB(c fiber.Ctx) error {
 	var req dto.CheckVNDBRequest

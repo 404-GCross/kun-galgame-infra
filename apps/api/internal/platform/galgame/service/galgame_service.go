@@ -308,6 +308,11 @@ func (s *GalgameService) CheckVNDB(ctx context.Context, vndbID string) (bool, in
 	return s.galgameRepo.ExistsByVNDBID(ctx, vndbID)
 }
 
+// GetUserStats returns aggregated galgame statistics for a user
+func (s *GalgameService) GetUserStats(ctx context.Context, uid int) (*dto.UserGalgameStats, error) {
+	return s.galgameRepo.GetUserStats(ctx, uid)
+}
+
 // loadGalgameWithRelations loads a galgame with all relations using the given tx
 func loadGalgameWithRelations(tx *gorm.DB, id int) (*model.Galgame, error) {
 	var g model.Galgame

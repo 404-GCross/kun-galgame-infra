@@ -813,3 +813,94 @@ func TestBatchGet_EmptyIDs(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, items)
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// User Stats Tests
+// ═══════════════════════════════════════════════════════════════════
+
+func TestUserStats_Basic(t *testing.T) {
+	cleanTables(t)
+	ctx := context.Background()
+
+	// User 1 creates 2 galgames
+	testSvc.Create(ctx, 1, &dto.CreateGalgameRequest{VNDBID: "v70001"})
+	testSvc.Create(ctx, 1, &dto.CreateGalgameRequest{VNDBID: "v70002"})
+
+	stats, err := testSvc.GetUserStats(ctx, 1)
+	require.NoError(t, err)
+	assert.Equal(t, 2, stats.GalgameCreated)
+	assert.Equal(t, 2, stats.GalgameCreatedToday)
+	assert.Equal(t, 2, stats.GalgameContributed)
+	assert.Equal(t, 2, stats.RevisionCount) // one "created" revision per galgame
+	assert.Equal(t, 0, stats.PRSubmitted)
+}
+
+func TestUserStats_ContributedVsCreated(t *testing.T) {
+	cleanTables(t)
+	ctx := context.Background()
+
+	g, _ := testSvc.Create(ctx, 1, &dto.CreateGalgameRequest{VNDBID: "v70010"})
+
+	// User 2 (admin) updates the galgame → becomes contributor
+	name := "edited"
+	testSvc.Update(ctx, 2, g.ID, []string{"admin"}, &dto.UpdateGalgameRequest{NameZhCN: &name})
+
+	stats, err := testSvc.GetUserStats(ctx, 2)
+	require.NoError(t, err)
+	assert.Equal(t, 0, stats.GalgameCreated)     // user 2 didn't create any
+	assert.Equal(t, 1, stats.GalgameContributed)  // but contributed to 1
+	assert.Equal(t, 1, stats.RevisionCount)       // 1 "updated" revision
+}
+
+func TestUserStats_PRCounts(t *testing.T) {
+	cleanTables(t)
+	ctx := context.Background()
+
+	g := createTestGalgame(t, "v70020", "test")
+
+	// User 3 submits 2 PRs
+	proposed1 := &model.Snapshot{VNDBID: "v70020", NameZhCN: "PR1",
+		Aliases: []string{}, TagIDs: []int{}, OfficialIDs: []int{}, EngineIDs: []int{}, Links: []model.SnapshotLink{}}
+	proposed2 := &model.Snapshot{VNDBID: "v70020", NameZhCN: "PR2",
+		Aliases: []string{}, TagIDs: []int{}, OfficialIDs: []int{}, EngineIDs: []int{}, Links: []model.SnapshotLink{}}
+	pr1, _ := testSvc.SubmitPR(ctx, 3, g.ID, proposed1, "pr1")
+	testSvc.SubmitPR(ctx, 3, g.ID, proposed2, "pr2")
+
+	// Merge pr1
+	testSvc.MergePR(ctx, 1, pr1.ID, []string{})
+
+	stats, err := testSvc.GetUserStats(ctx, 3)
+	require.NoError(t, err)
+	assert.Equal(t, 2, stats.PRSubmitted)
+	assert.Equal(t, 1, stats.PRMerged)
+	assert.Equal(t, 0, stats.PRDeclined)
+	assert.Equal(t, 1, stats.PRPending)
+}
+
+func TestUserStats_ExcludesBanned(t *testing.T) {
+	cleanTables(t)
+	ctx := context.Background()
+
+	g1, _ := testSvc.Create(ctx, 1, &dto.CreateGalgameRequest{VNDBID: "v70030"})
+	testSvc.Create(ctx, 1, &dto.CreateGalgameRequest{VNDBID: "v70031"})
+
+	// Ban g1
+	testDB.Model(&model.Galgame{}).Where("id = ?", g1.ID).Update("status", 1)
+
+	stats, err := testSvc.GetUserStats(ctx, 1)
+	require.NoError(t, err)
+	assert.Equal(t, 1, stats.GalgameCreated) // only non-banned
+}
+
+func TestUserStats_NoActivity(t *testing.T) {
+	cleanTables(t)
+	ctx := context.Background()
+
+	stats, err := testSvc.GetUserStats(ctx, 99999)
+	require.NoError(t, err)
+	assert.Equal(t, 0, stats.GalgameCreated)
+	assert.Equal(t, 0, stats.GalgameCreatedToday)
+	assert.Equal(t, 0, stats.GalgameContributed)
+	assert.Equal(t, 0, stats.RevisionCount)
+	assert.Equal(t, 0, stats.PRSubmitted)
+}

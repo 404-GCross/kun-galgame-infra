@@ -126,6 +126,50 @@ access_token 由 KUN OAuth 系统签发，JWT claims 中包含 `uid`（integer u
 
 ---
 
+### GET /galgame/user/:uid/stats
+
+获取用户的 Galgame 统计数据。
+
+**路径参数**：
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| uid | int | 用户 ID |
+
+**成功响应**：
+
+```json
+{
+  "code": 0,
+  "message": "成功",
+  "data": {
+    "galgame_created": 10,
+    "galgame_created_today": 1,
+    "galgame_contributed": 15,
+    "revision_count": 42,
+    "pr_submitted": 5,
+    "pr_merged": 3,
+    "pr_declined": 1,
+    "pr_pending": 1
+  }
+}
+```
+
+| 字段 | 说明 |
+|------|------|
+| galgame_created | 用户创建的 galgame 总数（不含被封禁的） |
+| galgame_created_today | 用户今日创建的 galgame 数量 |
+| galgame_contributed | 用户参与贡献的 galgame 数量（含创建和编辑） |
+| revision_count | 用户产生的版本记录总数 |
+| pr_submitted | 用户提交的 PR 总数 |
+| pr_merged | 已合并的 PR 数量 |
+| pr_declined | 已拒绝的 PR 数量 |
+| pr_pending | 待处理的 PR 数量 |
+
+用户不存在时返回全零数据，不报错。
+
+---
+
 ### GET /galgame/check
 
 检查 VNDB ID 是否已存在。
@@ -787,7 +831,7 @@ PR 详情，包含与 base revision 的差异。
 
 | 模块 | 方法 | 路径 | 认证 | 数量 |
 |------|------|------|------|------|
-| **Galgame** | GET | `/galgame`, `/galgame/batch`, `/galgame/check`, `/galgame/:gid` | 公开 | 4 |
+| **Galgame** | GET | `/galgame`, `/galgame/batch`, `/galgame/check`, `/galgame/user/:uid/stats`, `/galgame/:gid` | 公开 | 5 |
 | | POST/PUT | `/galgame`, `/galgame/:gid` | Bearer | 2 |
 | **Revision** | GET | `/galgame/:gid/revisions`, `.../:rev`, `.../:rev/diff` | 公开 | 3 |
 | | POST | `/galgame/:gid/revert` | Bearer | 1 |
@@ -804,4 +848,4 @@ PR 详情，包含与 base revision 的差异。
 | | PUT | `/engine` | admin/mod | 1 |
 | **Series** | GET | `/series`, `/series/search`, `/series/:id` | 公开 | 3 |
 | | POST/PUT/DELETE | `/series`, `/series/modal`, `/series/:id` | Bearer/admin | 4 |
-| | | | **总计** | **47** |
+| | | | **总计** | **48** |

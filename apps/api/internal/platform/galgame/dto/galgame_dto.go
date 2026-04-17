@@ -76,6 +76,18 @@ type CheckVNDBRequest struct {
 	VNDBID string `query:"vndb_id" validate:"required"`
 }
 
+// UserGalgameStats holds aggregated galgame statistics for a user
+type UserGalgameStats struct {
+	GalgameCreated      int `json:"galgame_created"`
+	GalgameCreatedToday int `json:"galgame_created_today"`
+	GalgameContributed  int `json:"galgame_contributed"`
+	RevisionCount       int `json:"revision_count"`
+	PRSubmitted         int `json:"pr_submitted"`
+	PRMerged            int `json:"pr_merged"`
+	PRDeclined          int `json:"pr_declined"`
+	PRPending           int `json:"pr_pending"`
+}
+
 // UserBrief is a minimal user info for display purposes
 type UserBrief struct {
 	ID     int    `json:"id"`

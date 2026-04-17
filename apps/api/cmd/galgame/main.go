@@ -106,6 +106,7 @@ func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB) {
 	galgame.Get("/", galgameH.List)
 	galgame.Get("/batch", galgameH.BatchGet)
 	galgame.Get("/check", galgameH.CheckVNDB)
+	galgame.Get("/user/:uid/stats", galgameH.UserStats)
 	galgame.Get("/:gid", galgameH.Get)
 	galgame.Get("/:gid/revisions", revisionH.ListRevisions)
 	galgame.Get("/:gid/revisions/:rev", revisionH.GetRevision)
