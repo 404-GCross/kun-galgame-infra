@@ -6,6 +6,7 @@ import "time"
 type GalgameOfficial struct {
 	ID          int       `gorm:"primaryKey;autoIncrement" json:"id"`
 	Name        string    `gorm:"uniqueIndex;not null" json:"name"`
+	Original    string    `gorm:"default:''" json:"original"`
 	Link        string    `gorm:"default:''" json:"link"`
 	Category    string    `gorm:"not null" json:"category"` // company, individual, amateur
 	Lang        string    `gorm:"default:''" json:"lang"`
