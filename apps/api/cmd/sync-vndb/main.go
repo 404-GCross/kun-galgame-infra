@@ -34,7 +34,7 @@ const (
 )
 
 // VNDB fields to request
-const vndbFields = "id, title, titles.lang, titles.title, titles.official, titles.main, " +
+const vndbFields = "id, title, titles.lang, titles.title, titles.official, " +
 	"aliases, olang, released, description, " +
 	"image.url, image.sexual, " +
 	"tags.id, tags.name, tags.category, tags.rating, tags.spoiler, tags.lie, " +
@@ -46,9 +46,10 @@ const vndbFields = "id, title, titles.lang, titles.title, titles.official, title
 // ---------------------------------------------------------------------------
 
 type vndbRequest struct {
-	Filters any    `json:"filters"`
+	Filters any    `json:"filters,omitempty"`
 	Fields  string `json:"fields"`
 	Sort    string `json:"sort"`
+	Reverse bool   `json:"reverse,omitempty"`
 	Results int    `json:"results"`
 }
 
@@ -61,7 +62,7 @@ type vndbVN struct {
 	ID          string          `json:"id"`
 	Title       string          `json:"title"`
 	Titles      []vndbTitle     `json:"titles"`
-	Aliases     *string         `json:"aliases"` // newline-separated or null
+	Aliases     []string        `json:"aliases"`
 	Olang       string          `json:"olang"`
 	Released    *string         `json:"released"`
 	Description *string         `json:"description"`
@@ -75,7 +76,6 @@ type vndbTitle struct {
 	Lang     string `json:"lang"`
 	Title    string `json:"title"`
 	Official bool   `json:"official"`
-	Main     bool   `json:"main"`
 }
 
 type vndbImage struct {
@@ -115,6 +115,64 @@ func newVNDBClient() *vndbClient {
 	}
 }
 
+func (c *vndbClient) fetchMaxVNID() (int, error) {
+	since := time.Since(c.lastRequest)
+	if since < requestDelay {
+		time.Sleep(requestDelay - since)
+	}
+
+	req := vndbRequest{
+		Fields:  "id",
+		Sort:    "id",
+		Reverse: true,
+		Results: 1,
+	}
+
+	body, err := json.Marshal(req)
+	if err != nil {
+		return 0, fmt.Errorf("marshal request: %w", err)
+	}
+
+	httpReq, err := http.NewRequest("POST", vndbAPI+"/vn", bytes.NewReader(body))
+	if err != nil {
+		return 0, fmt.Errorf("create request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	c.lastRequest = time.Now()
+	resp, err := c.http.Do(httpReq)
+	if err != nil {
+		return 0, fmt.Errorf("http request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return 0, fmt.Errorf("read response: %w", err)
+	}
+	if resp.StatusCode != 200 {
+		return 0, fmt.Errorf("VNDB API error %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var result vndbResponse
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return 0, fmt.Errorf("unmarshal response: %w", err)
+	}
+	if len(result.Results) == 0 {
+		return 0, fmt.Errorf("no results")
+	}
+
+	id := result.Results[0].ID
+	if !strings.HasPrefix(id, "v") {
+		return 0, fmt.Errorf("unexpected ID format: %s", id)
+	}
+	n, err := strconv.Atoi(id[1:])
+	if err != nil {
+		return 0, fmt.Errorf("parse ID %s: %w", id, err)
+	}
+	return n, nil
+}
+
 func (c *vndbClient) fetchVNs(afterID string) (*vndbResponse, error) {
 	// Rate limiting
 	since := time.Since(c.lastRequest)
@@ -122,8 +180,12 @@ func (c *vndbClient) fetchVNs(afterID string) (*vndbResponse, error) {
 		time.Sleep(requestDelay - since)
 	}
 
+	var filter any
+	if afterID != "" {
+		filter = []any{"id", ">", afterID}
+	}
 	req := vndbRequest{
-		Filters: []any{"id", ">", afterID},
+		Filters: filter,
 		Fields:  vndbFields,
 		Sort:    "id",
 		Results: batchSize,
@@ -271,18 +333,34 @@ func (s *syncer) loadExistingData() error {
 	return nil
 }
 
-func (s *syncer) getStartID(full bool) string {
+func (s *syncer) getStartID(full bool) (string, error) {
 	if full {
-		return "v0"
+		// Empty string = no id filter on first request; VNDB defaults to sort by id asc.
+		// Subsequent batches use id > lastID for pagination.
+		return "", nil
 	}
 
-	// Get max vndb_id numeric part
+	// Query VNDB for its actual max VN ID — the DB may contain bogus vndb_id values
+	// (e.g. from legacy migrations where users entered arbitrary strings), and VNDB
+	// returns 400 "Invalid value" when filtering with an id beyond its valid range.
+	vndbMax, err := s.client.fetchMaxVNID()
+	if err != nil {
+		return "", fmt.Errorf("fetch VNDB max id: %w", err)
+	}
+	slog.Info("VNDB max VN id", "id", fmt.Sprintf("v%d", vndbMax))
+
+	// Max vndb_id in DB, capped at VNDB's real max so we skip garbage.
 	var maxID int
-	s.db.Raw("SELECT COALESCE(MAX(CAST(SUBSTRING(vndb_id FROM 2) AS INTEGER)), 0) FROM galgame WHERE vndb_id ~ '^v[0-9]+$'").Scan(&maxID)
+	s.db.Raw(`
+		SELECT COALESCE(MAX(CAST(SUBSTRING(vndb_id FROM 2) AS INTEGER)), 0)
+		FROM galgame
+		WHERE vndb_id ~ '^v[0-9]+$'
+		  AND CAST(SUBSTRING(vndb_id FROM 2) AS INTEGER) <= ?
+	`, vndbMax).Scan(&maxID)
 
 	startID := fmt.Sprintf("v%d", maxID)
 	slog.Info("incremental mode", "starting_after", startID)
-	return startID
+	return startID, nil
 }
 
 func (s *syncer) run(full bool) error {
@@ -290,7 +368,10 @@ func (s *syncer) run(full bool) error {
 		return err
 	}
 
-	afterID := s.getStartID(full)
+	afterID, err := s.getStartID(full)
+	if err != nil {
+		return err
+	}
 	batch := 0
 
 	for {
@@ -363,14 +444,12 @@ func (s *syncer) insertVN(vn *vndbVN) error {
 		}
 
 		// Aliases
-		if vn.Aliases != nil && *vn.Aliases != "" {
-			for _, alias := range strings.Split(*vn.Aliases, "\n") {
-				alias = strings.TrimSpace(alias)
-				if alias == "" {
-					continue
-				}
-				tx.Create(&model.GalgameAlias{GalgameID: galgame.ID, Name: alias})
+		for _, alias := range vn.Aliases {
+			alias = strings.TrimSpace(alias)
+			if alias == "" {
+				continue
 			}
+			tx.Create(&model.GalgameAlias{GalgameID: galgame.ID, Name: alias})
 		}
 
 		// Tag relations
@@ -414,7 +493,7 @@ func (s *syncer) buildGalgame(vn *vndbVN) *model.Galgame {
 		AgeLimit:         "r18",
 	}
 
-	// Titles
+	// Titles — VNDB guarantees titles[lang=olang] exists (main title in original script)
 	for _, t := range vn.Titles {
 		switch t.Lang {
 		case "en":
@@ -426,14 +505,6 @@ func (s *syncer) buildGalgame(vn *vndbVN) *model.Galgame {
 		case "zh-Hant":
 			g.NameZhTW = t.Title
 		}
-	}
-
-	// Fallback: use main title for the original language field if empty
-	if g.NameJaJP == "" && vn.Olang == "ja" {
-		g.NameJaJP = vn.Title
-	}
-	if g.NameEnUS == "" && vn.Olang == "en" {
-		g.NameEnUS = vn.Title
 	}
 
 	// Released
@@ -625,16 +696,7 @@ func main() {
 	// Reset sequences
 	fmt.Println("\nResetting sequences...")
 	for _, table := range []string{"galgame", "galgame_alias", "galgame_tag", "galgame_official"} {
-		db.Exec(fmt.Sprintf("SELECT setval(pg_get_serial_sequence('%s', 'id'), COALESCE(MAX(id), 1)) FROM %s", table, table))
+		db.Exec(fmt.Sprintf("SELECT setval(pg_get_serial_sequence('%s', 'id'), COALESCE((SELECT MAX(id) FROM %s), 1))", table, table))
 	}
 	fmt.Println("Done.")
-}
-
-// getMaxVNDBID extracts the numeric part of a vndb_id for display
-func getMaxVNDBID(id string) int {
-	if len(id) < 2 {
-		return 0
-	}
-	n, _ := strconv.Atoi(id[1:])
-	return n
 }

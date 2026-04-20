@@ -31,7 +31,7 @@ VNDB API (POST /vn) → sync-vndb 脚本 → kun_galgame_wiki DB (status=2 草�
 | `titles` (lang=zh-Hans) | `name_zh_cn` | 简体中文标题 |
 | `titles` (lang=zh-Hant) | `name_zh_tw` | 繁体中文标题 |
 | `title` | 备用 | 无对应语言标题时用作 fallback |
-| `aliases` | `galgame_alias` | 换行符分隔 → 多行 |
+| `aliases` | `galgame_alias` | 字符串数组 → 每项一行 |
 | `olang` | `original_language` | ja→ja-jp, en→en-us 等 |
 | `released` | `released` | null/tba → "unknown" |
 | `description` | `intro_en_us` | VNDB 描述（英文） |
