@@ -50,6 +50,7 @@
     "omitempty",
     "persistedstate",
     "pids",
+    "pinia",
     "PKCE",
     "Pressable",
     "Rels",

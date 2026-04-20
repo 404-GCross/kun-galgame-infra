@@ -80,7 +80,7 @@ func Load() (*Config, error) {
 		Env:         getEnv("KUN_ENV", "development"),
 		SiteURL:     getEnv("KUN_SITE_URL", "http://127.0.0.1:9277"),
 		FrontendURL: getEnv("KUN_FRONTEND_URL", "http://127.0.0.1:9420"),
-		CORSOrigin:  getEnv("KUN_FRONTEND_CORS_ORIGIN", "http://127.0.0.1:9420"),
+		CORSOrigin:  getEnv("KUN_FRONTEND_CORS_ORIGIN", "http://127.0.0.1:9420,http://127.0.0.1:9421"),
 	}
 
 	// Database config

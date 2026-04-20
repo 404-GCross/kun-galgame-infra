@@ -1,31 +1,19 @@
+// Session management for the wiki admin.
+// Login itself is handled by useOAuthLogin() (Authorization Code + PKCE);
+// this composable just reads/clears the session and keeps the user store
+// hydrated so the layout / middleware can gate routes.
 export const useAuth = () => {
   const authApi = useAuthApi()
   const userStore = useUserStore()
 
   const accessToken = useCookie('access_token', {
-    maxAge: 60 * 15, // 15 minutes
+    maxAge: 60 * 15,
     sameSite: 'lax'
   })
-
-  const setAccessToken = (token: string) => {
-    accessToken.value = token
-  }
 
   const clearAuth = () => {
     accessToken.value = null
     userStore.clearUser()
-  }
-
-  const login = async (account: string, password: string) => {
-    const response = await authApi.post<LoginResponse>('/auth/login', {
-      account,
-      password
-    })
-    if (response.code === 0) {
-      setAccessToken(response.data.access_token)
-      userStore.setUser(response.data.user)
-    }
-    return response
   }
 
   const logout = async () => {
@@ -41,7 +29,7 @@ export const useAuth = () => {
     try {
       const response = await authApi.post<RefreshResponse>('/auth/refresh')
       if (response.code === 0) {
-        setAccessToken(response.data.access_token)
+        accessToken.value = response.data.access_token
         return true
       }
     } catch {
@@ -68,7 +56,6 @@ export const useAuth = () => {
     user: computed(() => userStore.user),
     isLoggedIn: computed(() => userStore.isLoggedIn),
     isAdmin: computed(() => userStore.isAdmin),
-    login,
     logout,
     fetchUser,
     refreshAccessToken

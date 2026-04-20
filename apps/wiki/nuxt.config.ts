@@ -61,7 +61,17 @@ export default defineNuxtConfig({
         'http://127.0.0.1:9280/api',
       authApiBase:
         process.env.KUN_GALGAME_WIKI_NUXT_PUBLIC_AUTH_API_BASE ||
-        'http://127.0.0.1:9277/api/v1'
+        'http://127.0.0.1:9277/api/v1',
+      oauthAuthorizeBase:
+        process.env.KUN_GALGAME_WIKI_NUXT_PUBLIC_OAUTH_AUTHORIZE_BASE ||
+        'http://127.0.0.1:9277/api/v1',
+      oauthClientID:
+        process.env.KUN_GALGAME_WIKI_NUXT_PUBLIC_OAUTH_CLIENT_ID ||
+        'galgame-wiki-admin',
+      oauthRedirectURI:
+        process.env.KUN_GALGAME_WIKI_NUXT_PUBLIC_OAUTH_REDIRECT_URI ||
+        'http://127.0.0.1:9421/auth/callback',
+      oauthScope: 'profile'
     }
   }
 })
