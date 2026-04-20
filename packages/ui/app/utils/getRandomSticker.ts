@@ -1,4 +1,4 @@
-import { kungal } from '~/config/kungal'
+const KUN_STICKER_DOMAIN = 'https://sticker.kungal.com'
 
 export const getRandomSticker = (id: string) => {
   const key = `random-sticker-${id}`
@@ -6,7 +6,7 @@ export const getRandomSticker = (id: string) => {
   const stickerUrl = useState<string>(key, () => {
     const randomPackIndex = randomNum(1, 5)
     const randomStickerIndex = randomNum(1, 80)
-    return `${kungal.domain.sticker}/stickers/KUNgal${randomPackIndex}/${randomStickerIndex}.webp`
+    return `${KUN_STICKER_DOMAIN}/stickers/KUNgal${randomPackIndex}/${randomStickerIndex}.webp`
   })
 
   return stickerUrl

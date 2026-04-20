@@ -6,9 +6,9 @@ export default defineNuxtConfig({
 
   devtools: { enabled: false },
 
+  extends: ['@kun/ui'],
+
   modules: [
-    '@nuxt/image',
-    '@nuxt/icon',
     '@nuxt/eslint',
     '@nuxtjs/color-mode',
     '@pinia/nuxt',
@@ -21,9 +21,6 @@ export default defineNuxtConfig({
     host: '127.0.0.1',
     port: 9420
   },
-
-  // Frontend
-  css: ['~/styles/index.css'],
 
   pinia: {
     storesDirs: ['./store/**']

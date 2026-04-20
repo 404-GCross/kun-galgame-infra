@@ -1,4 +1,4 @@
-import type { KunUISize } from '~/components/kun/ui/type'
+import type { KunUISize } from '../ui/type'
 
 export interface KunAvatarProps {
   user: KunUser

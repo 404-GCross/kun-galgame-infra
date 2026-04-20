@@ -1,5 +1,5 @@
 import { render, h, ref } from 'vue'
-import Info from '~/components/kun/alert/Info.vue'
+import Info from '../components/kun/alert/Info.vue'
 
 const messageCount = ref(0)
 let containerEl: HTMLElement | null = null

@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import LucideAlertTriangle from '~/components/kun/icon/LucideAlertTriangle.vue'
-import LucideCheckCircle2 from '~/components/kun/icon/LucideCheckCircle2.vue'
-import LucideInfo from '~/components/kun/icon/LucideInfo.vue'
-import LucideXCircle from '~/components/kun/icon/LucideXCircle.vue'
-import type { KunMessageType } from '~/composables/useKunMessage'
+import LucideAlertTriangle from '../icon/LucideAlertTriangle.vue'
+import LucideCheckCircle2 from '../icon/LucideCheckCircle2.vue'
+import LucideInfo from '../icon/LucideInfo.vue'
+import LucideXCircle from '../icon/LucideXCircle.vue'
+import type { KunMessageType } from '../../../composables/useKunMessage'
 
 const props = defineProps<{
   id: string

@@ -4,7 +4,7 @@ import {
   useKunMessageState,
   type KunMessagePosition,
   type KunMessageOptions
-} from '~/composables/useKunMessage'
+} from '../../../composables/useKunMessage'
 import MessageItem from './MessageItem.vue'
 
 const { messages, removeMessage } = useKunMessageState()

@@ -1,5 +1,5 @@
 import { render } from 'vue'
-import MessageContainer from '~/components/kun/alert/MessageContainer.vue'
+import MessageContainer from '../components/kun/alert/MessageContainer.vue'
 
 export type KunMessageType = 'warn' | 'success' | 'error' | 'info'
 export type KunMessagePosition =

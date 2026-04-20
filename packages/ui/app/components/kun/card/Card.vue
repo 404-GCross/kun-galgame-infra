@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useRipple } from '../ripple/useRipple'
-import type { KunUIColor } from '~/components/kun/ui/type'
+import type { KunUIColor } from '../ui/type'
 
 interface Props {
   isHoverable?: boolean
