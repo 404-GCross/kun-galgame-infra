@@ -6,9 +6,9 @@ export default defineNuxtConfig({
 
   devtools: { enabled: false },
 
+  extends: ['@kun/ui'],
+
   modules: [
-    '@nuxt/image',
-    '@nuxt/icon',
     '@nuxt/eslint',
     '@nuxtjs/color-mode',
     '@pinia/nuxt',
@@ -19,11 +19,8 @@ export default defineNuxtConfig({
 
   devServer: {
     host: '127.0.0.1',
-    port: 9420
+    port: 9421
   },
-
-  // Frontend
-  css: ['~/styles/index.css'],
 
   pinia: {
     storesDirs: ['./store/**']
@@ -39,11 +36,11 @@ export default defineNuxtConfig({
   colorMode: {
     preference: 'system',
     fallback: 'light',
-    globalName: '__KUNGALGAME_COLOR_MODE__',
+    globalName: '__KUNGALGAME_WIKI_COLOR_MODE__',
     componentName: 'ColorScheme',
     classPrefix: 'kun-',
     classSuffix: '-mode',
-    storageKey: 'kungalgame-color-mode'
+    storageKey: 'kungalgame-wiki-color-mode'
   },
 
   vite: {
@@ -60,7 +57,10 @@ export default defineNuxtConfig({
   runtimeConfig: {
     public: {
       apiBase:
-        process.env.KUN_VISUAL_NOVEL_NUXT_PUBLIC_API_BASE ||
+        process.env.KUN_GALGAME_WIKI_NUXT_PUBLIC_API_BASE ||
+        'http://127.0.0.1:9280/api',
+      authApiBase:
+        process.env.KUN_GALGAME_WIKI_NUXT_PUBLIC_AUTH_API_BASE ||
         'http://127.0.0.1:9277/api/v1'
     }
   }

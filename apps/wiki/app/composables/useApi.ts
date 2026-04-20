@@ -1,6 +1,7 @@
 interface ApiOptions {
   method?: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH'
   body?: Record<string, unknown>
+  query?: Record<string, string | number | boolean | undefined>
   headers?: Record<string, string>
 }
 
@@ -15,9 +16,12 @@ interface ApiError {
   message: string
 }
 
+// useApi targets the wiki backend (port 9280, prefix /api).
+// For auth operations (login/refresh/etc) use useAuthApi() which targets oauth backend.
 export const useApi = () => {
   const config = useRuntimeConfig()
-  const baseUrl = config.public.apiBase || 'http://127.0.0.1:9277/api/v1'
+  const baseUrl = config.public.apiBase
+  const authApiBase = config.public.authApiBase
   const accessToken = useCookie('access_token')
 
   const getAuthHeaders = (): Record<string, string> => {
@@ -26,10 +30,10 @@ export const useApi = () => {
   }
 
   const handleUnauthorized = async () => {
-    // Try to refresh using httpOnly cookie (sent automatically by browser)
+    // Refresh token lives on oauth backend, not wiki
     try {
       const response = await $fetch<ApiResponse<{ access_token: string }>>(
-        `${baseUrl}/auth/refresh`,
+        `${authApiBase}/auth/refresh`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -45,7 +49,6 @@ export const useApi = () => {
       // Refresh failed
     }
 
-    // Clear and redirect
     accessToken.value = null
     navigateTo('/auth/login')
     return false
@@ -56,11 +59,12 @@ export const useApi = () => {
     options: ApiOptions = {},
     retry = true
   ): Promise<ApiResponse<T>> => {
-    const { method = 'GET', body, headers = {} } = options
+    const { method = 'GET', body, query, headers = {} } = options
 
     try {
       const response = await $fetch<ApiResponse<T>>(`${baseUrl}${endpoint}`, {
         method,
+        query,
         body: body ? JSON.stringify(body) : undefined,
         headers: {
           'Content-Type': 'application/json',
@@ -72,18 +76,15 @@ export const useApi = () => {
 
       return response
     } catch (error: unknown) {
-      // Handle fetch errors
       const fetchError = error as { statusCode?: number; data?: ApiError }
 
       if (fetchError.statusCode === 401 && retry) {
-        // Try to refresh token and retry request
         const refreshed = await handleUnauthorized()
         if (refreshed) {
           return request<T>(endpoint, options, false)
         }
       }
 
-      // Return error response
       return {
         code: fetchError.data?.code ?? fetchError.statusCode ?? -1,
         message: fetchError.data?.message ?? 'Request failed',
@@ -93,7 +94,10 @@ export const useApi = () => {
   }
 
   return {
-    get: <T>(endpoint: string) => request<T>(endpoint, { method: 'GET' }),
+    get: <T>(
+      endpoint: string,
+      query?: Record<string, string | number | boolean | undefined>
+    ) => request<T>(endpoint, { method: 'GET', query }),
     post: <T>(endpoint: string, body?: Record<string, unknown>) =>
       request<T>(endpoint, { method: 'POST', body }),
     put: <T>(endpoint: string, body?: Record<string, unknown>) =>

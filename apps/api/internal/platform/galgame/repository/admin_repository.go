@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"sort"
+	"strings"
 	"time"
 
 	"api/internal/platform/galgame/dto"
@@ -145,4 +146,60 @@ func (r *AdminRepository) GetStats(ctx context.Context, days int) (*dto.AdminSta
 	})
 
 	return &resp, nil
+}
+
+// ListGalgames returns a paginated list of galgames with status filtering.
+// Unlike the public List, this does NOT hardcode status=0 — used by admins to
+// audit drafts (status=2) and banned entries (status=1).
+func (r *AdminRepository) ListGalgames(ctx context.Context, req *dto.AdminListGalgamesRequest) ([]model.Galgame, int64, error) {
+	var items []model.Galgame
+	var total int64
+
+	query := r.db.WithContext(ctx).Model(&model.Galgame{})
+
+	if req.Status != nil {
+		query = query.Where("status = ?", *req.Status)
+	}
+
+	if req.Search != "" {
+		like := "%" + strings.ToLower(req.Search) + "%"
+		query = query.Where(
+			"vndb_id LIKE ? OR LOWER(name_en_us) LIKE ? OR LOWER(name_ja_jp) LIKE ? OR LOWER(name_zh_cn) LIKE ? OR LOWER(name_zh_tw) LIKE ?",
+			req.Search, like, like, like, like,
+		)
+	}
+
+	query.Count(&total)
+
+	err := query.
+		Order("updated DESC").
+		Offset((req.Page - 1) * req.Limit).
+		Limit(req.Limit).
+		Find(&items).Error
+
+	return items, total, err
+}
+
+// GetGalgame returns a galgame by id with full relations, regardless of status.
+func (r *AdminRepository) GetGalgame(ctx context.Context, id int) (*model.Galgame, error) {
+	var g model.Galgame
+	err := r.db.WithContext(ctx).
+		Preload("Alias").
+		Preload("Tag.Tag").
+		Preload("Official.Official").
+		Preload("Engine.Engine").
+		Preload("Series").
+		First(&g, id).Error
+	if err != nil {
+		return nil, err
+	}
+	return &g, nil
+}
+
+// UpdateGalgameStatus sets the status field on a galgame.
+func (r *AdminRepository) UpdateGalgameStatus(ctx context.Context, id, status int) error {
+	return r.db.WithContext(ctx).
+		Model(&model.Galgame{}).
+		Where("id = ?", id).
+		Update("status", status).Error
 }

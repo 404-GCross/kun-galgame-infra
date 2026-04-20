@@ -134,8 +134,11 @@ func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB) {
 	galgameAuth.Delete("/:gid/contributors/:uid", contributorH.Delete)
 
 	// ── Admin ──
-	admin := api.Group("/admin")
+	admin := api.Group("/admin", jwtAuth)
 	admin.Get("/stats", adminH.Stats)
+	admin.Get("/galgame", adminH.ListGalgames)
+	admin.Get("/galgame/:gid", adminH.GetGalgame)
+	admin.Put("/galgame/:gid/status", adminH.UpdateGalgameStatus)
 
 	// ── Tag ──
 	tag := api.Group("/tag")

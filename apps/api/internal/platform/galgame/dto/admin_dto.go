@@ -33,3 +33,17 @@ type AdminStatsResponse struct {
 	Totals AdminStatsTotals  `json:"totals"`
 	Daily  []AdminStatsDaily `json:"daily"`
 }
+
+// AdminListGalgamesRequest represents an admin galgame list query
+// (unlike the public list which hardcodes status=0, admin can filter any status)
+type AdminListGalgamesRequest struct {
+	Page   int    `query:"page" validate:"min=1"`
+	Limit  int    `query:"limit" validate:"min=1,max=100"`
+	Status *int   `query:"status" validate:"omitempty,oneof=0 1 2"`
+	Search string `query:"search"`
+}
+
+// AdminUpdateGalgameStatusRequest represents a status change request
+type AdminUpdateGalgameStatusRequest struct {
+	Status int `json:"status" validate:"oneof=0 1 2"`
+}
