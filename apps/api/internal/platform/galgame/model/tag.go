@@ -10,7 +10,7 @@ type GalgameTag struct {
 	Description string    `gorm:"default:''" json:"description"`
 	Created      time.Time `gorm:"autoCreateTime" json:"created"`
 	Updated      time.Time `gorm:"autoUpdateTime" json:"updated"`
-	GalgameCount int       `gorm:"column:cnt;->" json:"galgame_count"`
+	GalgameCount int       `gorm:"column:cnt;->;-:migration" json:"galgame_count"`
 
 	Alias   []GalgameTagAlias    `gorm:"foreignKey:GalgameTagID" json:"alias,omitempty"`
 	Galgame []GalgameTagRelation `gorm:"foreignKey:TagID" json:"galgame,omitempty"`

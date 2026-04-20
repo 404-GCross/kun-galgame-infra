@@ -49,7 +49,7 @@ type GalgameSeries struct {
 	Description string    `gorm:"size:2000;default:''" json:"description"`
 	Created      time.Time `gorm:"autoCreateTime" json:"created"`
 	Updated      time.Time `gorm:"autoUpdateTime" json:"updated"`
-	GalgameCount int       `gorm:"column:cnt;->" json:"galgame_count"`
+	GalgameCount int       `gorm:"column:cnt;->;-:migration" json:"galgame_count"`
 
 	Galgame []Galgame `gorm:"foreignKey:SeriesID" json:"galgame,omitempty"`
 }
