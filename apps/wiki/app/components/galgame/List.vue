@@ -13,9 +13,11 @@ interface ListResponse {
 
 const api = useApi()
 
-const status = ref<number>(0)
-const search = ref('')
-const page = ref(1)
+// URL-synced state. `status` defaults to 0 (published) so /galgame reads cleanly;
+// any non-default value shows up in the URL for share/reload fidelity.
+const status = useQueryState('status', 0)
+const page = useQueryState('page', 1)
+const search = useQueryState('search', '')
 const limit = ref(20)
 
 const items = ref<Galgame[]>([])
@@ -46,15 +48,16 @@ let searchTimer: ReturnType<typeof setTimeout> | null = null
 watch(search, () => {
   if (searchTimer) clearTimeout(searchTimer)
   searchTimer = setTimeout(() => {
-    page.value = 1
-    loadList()
+    if (page.value !== 1) {
+      page.value = 1 // also triggers reload via the watcher above
+    } else {
+      loadList()
+    }
   }, 300)
 })
 
 const displayName = (g: Galgame) =>
   g.name_zh_cn || g.name_ja_jp || g.name_en_us || g.name_zh_tw || '(无标题)'
-
-const totalPages = computed(() => Math.max(1, Math.ceil(total.value / limit.value)))
 
 const switchTab = (id: number) => {
   status.value = id
@@ -229,26 +232,11 @@ const switchTab = (id: number) => {
       </div>
     </KunCard>
 
-    <div class="flex items-center justify-between">
-      <span class="text-default-500 text-sm">
-        第 {{ page }} / {{ totalPages }} 页
-      </span>
-      <div class="flex gap-2">
-        <KunButton
-          variant="light"
-          :disabled="page <= 1"
-          @click="page = Math.max(1, page - 1)"
-        >
-          上一页
-        </KunButton>
-        <KunButton
-          variant="light"
-          :disabled="page >= totalPages"
-          @click="page = Math.min(totalPages, page + 1)"
-        >
-          下一页
-        </KunButton>
-      </div>
-    </div>
+    <CommonPagination
+      :page="page"
+      :total="total"
+      :limit="limit"
+      @update:page="page = $event"
+    />
   </div>
 </template>
