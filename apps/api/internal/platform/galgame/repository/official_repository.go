@@ -29,7 +29,10 @@ func (r *OfficialRepository) List(ctx context.Context, page, limit int) ([]model
 	err := r.db.WithContext(ctx).
 		Select("galgame_official.*, COALESCE(oc.cnt, 0) AS cnt").
 		Preload("Alias").
-		Joins("LEFT JOIN (SELECT official_id, COUNT(*) AS cnt FROM galgame_official_relation GROUP BY official_id) oc ON oc.official_id = galgame_official.id").
+		// Count only published galgames so the list total matches the detail
+		// page (FindGalgamesByOfficialID filters status=0). Drafts imported by
+		// sync-vndb would otherwise inflate the count dramatically.
+		Joins("LEFT JOIN (SELECT r.official_id, COUNT(*) AS cnt FROM galgame_official_relation r JOIN galgame g ON g.id = r.galgame_id AND g.status = 0 GROUP BY r.official_id) oc ON oc.official_id = galgame_official.id").
 		Order("cnt DESC").
 		Offset((page - 1) * limit).
 		Limit(limit).
@@ -45,8 +48,10 @@ func (r *OfficialRepository) FindByID(ctx context.Context, id int) (*model.Galga
 	return &official, err
 }
 
-// FindGalgamesByOfficialID returns galgames for an official
-func (r *OfficialRepository) FindGalgamesByOfficialID(ctx context.Context, officialID, page, limit int, sortField, sortOrder string) ([]model.Galgame, int64, error) {
+// FindGalgamesByOfficialID returns galgames for an official.
+// If contentLimit is non-empty ("sfw" or "nsfw"), filters galgames accordingly
+// so total / pagination reflects only matching entries.
+func (r *OfficialRepository) FindGalgamesByOfficialID(ctx context.Context, officialID, page, limit int, sortField, sortOrder, contentLimit string) ([]model.Galgame, int64, error) {
 	var galgames []model.Galgame
 	var total int64
 
@@ -58,6 +63,10 @@ func (r *OfficialRepository) FindGalgamesByOfficialID(ctx context.Context, offic
 	query := r.db.WithContext(ctx).
 		Model(&model.Galgame{}).
 		Where("id IN (?) AND status = 0", sub)
+
+	if contentLimit != "" {
+		query = query.Where("content_limit = ?", contentLimit)
+	}
 
 	query.Count(&total)
 

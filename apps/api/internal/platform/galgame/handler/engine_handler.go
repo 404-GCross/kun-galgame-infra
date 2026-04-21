@@ -49,7 +49,7 @@ func (h *EngineHandler) GetByName(c fiber.Ctx) error {
 		return response.NotFound(c, errors.ErrNotFound)
 	}
 
-	galgames, total, err := h.engineRepo.FindGalgamesByEngineID(c.Context(), req.EngineID, req.Page, req.Limit)
+	galgames, total, err := h.engineRepo.FindGalgamesByEngineID(c.Context(), req.EngineID, req.Page, req.Limit, req.ContentLimit)
 	if err != nil {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}

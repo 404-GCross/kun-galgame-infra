@@ -61,7 +61,7 @@ func (h *TagHandler) GetByName(c fiber.Ctx) error {
 		return response.NotFound(c, errors.ErrNotFound)
 	}
 
-	galgames, total, err := h.tagRepo.FindGalgamesByTagID(c.Context(), req.TagID, req.Page, req.Limit, req.SortField, req.SortOrder)
+	galgames, total, err := h.tagRepo.FindGalgamesByTagID(c.Context(), req.TagID, req.Page, req.Limit, req.SortField, req.SortOrder, req.ContentLimit)
 	if err != nil {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
@@ -112,7 +112,7 @@ func (h *TagHandler) Multi(c fiber.Ctx) error {
 		return response.Success(c, fiber.Map{"items": []any{}, "total": 0})
 	}
 
-	galgames, total, err := h.tagRepo.FindGalgamesByMultipleTags(c.Context(), req.TagIDs, req.Page, req.Limit)
+	galgames, total, err := h.tagRepo.FindGalgamesByMultipleTags(c.Context(), req.TagIDs, req.Page, req.Limit, req.ContentLimit)
 	if err != nil {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}

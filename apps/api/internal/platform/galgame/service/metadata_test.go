@@ -120,13 +120,13 @@ func TestTag_MultiTagFilter(t *testing.T) {
 	testSvc.Create(ctx, 1, &dto.CreateGalgameRequest{VNDBID: "v70003", TagIDs: []int{tag2, tag3}})
 
 	// Filter by tag1 AND tag2 → only g1
-	galgames, total, err := testTagRepo.FindGalgamesByMultipleTags(ctx, []int{tag1, tag2}, 1, 10)
+	galgames, total, err := testTagRepo.FindGalgamesByMultipleTags(ctx, []int{tag1, tag2}, 1, 10, "")
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), total)
 	assert.Equal(t, g1.ID, galgames[0].ID)
 
 	// Filter by tag1 only → g1 and g2
-	galgames, total, err = testTagRepo.FindGalgamesByMultipleTags(ctx, []int{tag1}, 1, 10)
+	galgames, total, err = testTagRepo.FindGalgamesByMultipleTags(ctx, []int{tag1}, 1, 10, "")
 	require.NoError(t, err)
 	assert.Equal(t, int64(2), total)
 }
@@ -232,7 +232,7 @@ func TestOfficial_FindGalgames(t *testing.T) {
 	oID := createTestOfficial(t, "TestDev", "company")
 	g, _ := testSvc.Create(ctx, 1, &dto.CreateGalgameRequest{VNDBID: "v80001", OfficialIDs: []int{oID}})
 
-	galgames, total, err := testOfficialRepo.FindGalgamesByOfficialID(ctx, oID, 1, 10, "", "")
+	galgames, total, err := testOfficialRepo.FindGalgamesByOfficialID(ctx, oID, 1, 10, "", "", "")
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), total)
 	assert.Equal(t, g.ID, galgames[0].ID)
@@ -281,7 +281,7 @@ func TestEngine_FindGalgames(t *testing.T) {
 	eID := createTestEngine(t, "TestEngine")
 	g, _ := testSvc.Create(ctx, 1, &dto.CreateGalgameRequest{VNDBID: "v80010", EngineIDs: []int{eID}})
 
-	galgames, total, err := testEngineRepo.FindGalgamesByEngineID(ctx, eID, 1, 10)
+	galgames, total, err := testEngineRepo.FindGalgamesByEngineID(ctx, eID, 1, 10, "")
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), total)
 	assert.Equal(t, g.ID, galgames[0].ID)

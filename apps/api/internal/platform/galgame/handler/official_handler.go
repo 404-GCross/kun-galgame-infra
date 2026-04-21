@@ -61,7 +61,7 @@ func (h *OfficialHandler) GetByName(c fiber.Ctx) error {
 		return response.NotFound(c, errors.ErrNotFound)
 	}
 
-	galgames, total, err := h.officialRepo.FindGalgamesByOfficialID(c.Context(), req.OfficialID, req.Page, req.Limit, req.SortField, req.SortOrder)
+	galgames, total, err := h.officialRepo.FindGalgamesByOfficialID(c.Context(), req.OfficialID, req.Page, req.Limit, req.SortField, req.SortOrder, req.ContentLimit)
 	if err != nil {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}

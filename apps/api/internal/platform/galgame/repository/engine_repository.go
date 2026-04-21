@@ -24,7 +24,9 @@ func (r *EngineRepository) ListAll(ctx context.Context) ([]model.GalgameEngine, 
 	var items []model.GalgameEngine
 	err := r.db.WithContext(ctx).
 		Select("galgame_engine.*, COALESCE(ec.cnt, 0) AS cnt").
-		Joins("LEFT JOIN (SELECT engine_id, COUNT(*) AS cnt FROM galgame_engine_relation GROUP BY engine_id) ec ON ec.engine_id = galgame_engine.id").
+		// Count only published galgames so the list total matches the detail
+		// page (FindGalgamesByEngineID filters status=0).
+		Joins("LEFT JOIN (SELECT r.engine_id, COUNT(*) AS cnt FROM galgame_engine_relation r JOIN galgame g ON g.id = r.galgame_id AND g.status = 0 GROUP BY r.engine_id) ec ON ec.engine_id = galgame_engine.id").
 		Order("cnt DESC").
 		Find(&items).Error
 	return items, err
@@ -37,8 +39,10 @@ func (r *EngineRepository) FindByID(ctx context.Context, id int) (*model.Galgame
 	return &engine, err
 }
 
-// FindGalgamesByEngineID returns galgames for an engine
-func (r *EngineRepository) FindGalgamesByEngineID(ctx context.Context, engineID, page, limit int) ([]model.Galgame, int64, error) {
+// FindGalgamesByEngineID returns galgames for an engine.
+// If contentLimit is non-empty ("sfw" or "nsfw"), filters galgames accordingly
+// so total / pagination reflects only matching entries.
+func (r *EngineRepository) FindGalgamesByEngineID(ctx context.Context, engineID, page, limit int, contentLimit string) ([]model.Galgame, int64, error) {
 	var galgames []model.Galgame
 	var total int64
 
@@ -50,6 +54,10 @@ func (r *EngineRepository) FindGalgamesByEngineID(ctx context.Context, engineID,
 	query := r.db.WithContext(ctx).
 		Model(&model.Galgame{}).
 		Where("id IN (?) AND status = 0", sub)
+
+	if contentLimit != "" {
+		query = query.Where("content_limit = ?", contentLimit)
+	}
 
 	query.Count(&total)
 

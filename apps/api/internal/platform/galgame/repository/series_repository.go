@@ -36,7 +36,9 @@ func (r *SeriesRepository) List(ctx context.Context, page, limit int) ([]model.G
 		Preload("Galgame", func(db *gorm.DB) *gorm.DB {
 			return db.Where("status = 0").Order("created ASC").Limit(5)
 		}).
-		Joins("LEFT JOIN (SELECT series_id, COUNT(*) AS cnt FROM galgame WHERE series_id IS NOT NULL GROUP BY series_id) sc ON sc.series_id = galgame_series.id").
+		// Count only published galgames so the list total matches the detail
+		// page (FindByID preloads status=0 galgames).
+		Joins("LEFT JOIN (SELECT series_id, COUNT(*) AS cnt FROM galgame WHERE series_id IS NOT NULL AND status = 0 GROUP BY series_id) sc ON sc.series_id = galgame_series.id").
 		Order("cnt DESC").
 		Offset((page - 1) * limit).
 		Limit(limit).

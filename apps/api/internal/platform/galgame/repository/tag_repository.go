@@ -34,7 +34,9 @@ func (r *TagRepository) List(ctx context.Context, page, limit int) ([]model.Galg
 	err := r.db.WithContext(ctx).
 		Select("galgame_tag.*, COALESCE(tc.cnt, 0) AS cnt").
 		Preload("Alias").
-		Joins("LEFT JOIN (SELECT tag_id, COUNT(*) AS cnt FROM galgame_tag_relation GROUP BY tag_id) tc ON tc.tag_id = galgame_tag.id").
+		// Count only published galgames so the list total matches the detail
+		// page (FindGalgamesByTagID filters status=0).
+		Joins("LEFT JOIN (SELECT r.tag_id, COUNT(*) AS cnt FROM galgame_tag_relation r JOIN galgame g ON g.id = r.galgame_id AND g.status = 0 GROUP BY r.tag_id) tc ON tc.tag_id = galgame_tag.id").
 		Order("cnt DESC").
 		Offset((page - 1) * limit).
 		Limit(limit).
@@ -50,8 +52,10 @@ func (r *TagRepository) FindByID(ctx context.Context, id int) (*model.GalgameTag
 	return &tag, err
 }
 
-// FindGalgamesByTagID returns galgames associated with a tag
-func (r *TagRepository) FindGalgamesByTagID(ctx context.Context, tagID, page, limit int, sortField, sortOrder string) ([]model.Galgame, int64, error) {
+// FindGalgamesByTagID returns galgames associated with a tag.
+// If contentLimit is non-empty ("sfw" or "nsfw"), filters galgames accordingly
+// so total / pagination reflects only matching entries.
+func (r *TagRepository) FindGalgamesByTagID(ctx context.Context, tagID, page, limit int, sortField, sortOrder, contentLimit string) ([]model.Galgame, int64, error) {
 	var galgames []model.Galgame
 	var total int64
 
@@ -63,6 +67,10 @@ func (r *TagRepository) FindGalgamesByTagID(ctx context.Context, tagID, page, li
 	query := r.db.WithContext(ctx).
 		Model(&model.Galgame{}).
 		Where("id IN (?) AND status = 0", sub)
+
+	if contentLimit != "" {
+		query = query.Where("content_limit = ?", contentLimit)
+	}
 
 	query.Count(&total)
 
@@ -103,8 +111,9 @@ func (r *TagRepository) Search(ctx context.Context, terms []string) ([]model.Gal
 	return tags, err
 }
 
-// FindGalgamesByMultipleTags returns galgames matching ALL given tag IDs
-func (r *TagRepository) FindGalgamesByMultipleTags(ctx context.Context, tagIDs []int, page, limit int) ([]model.Galgame, int64, error) {
+// FindGalgamesByMultipleTags returns galgames matching ALL given tag IDs.
+// If contentLimit is non-empty ("sfw" or "nsfw"), filters accordingly.
+func (r *TagRepository) FindGalgamesByMultipleTags(ctx context.Context, tagIDs []int, page, limit int, contentLimit string) ([]model.Galgame, int64, error) {
 	var galgames []model.Galgame
 	var total int64
 
@@ -119,6 +128,10 @@ func (r *TagRepository) FindGalgamesByMultipleTags(ctx context.Context, tagIDs [
 	query := r.db.WithContext(ctx).
 		Model(&model.Galgame{}).
 		Where("id IN (?) AND status = 0", sub)
+
+	if contentLimit != "" {
+		query = query.Where("content_limit = ?", contentLimit)
+	}
 
 	query.Count(&total)
 
