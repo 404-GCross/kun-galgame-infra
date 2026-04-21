@@ -102,7 +102,8 @@ export const useApi = () => {
       request<T>(endpoint, { method: 'POST', body }),
     put: <T>(endpoint: string, body?: Record<string, unknown>) =>
       request<T>(endpoint, { method: 'PUT', body }),
-    delete: <T>(endpoint: string) => request<T>(endpoint, { method: 'DELETE' }),
+    delete: <T>(endpoint: string, body?: Record<string, unknown>) =>
+      request<T>(endpoint, { method: 'DELETE', body }),
     patch: <T>(endpoint: string, body?: Record<string, unknown>) =>
       request<T>(endpoint, { method: 'PATCH', body })
   }

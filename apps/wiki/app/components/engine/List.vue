@@ -39,16 +39,11 @@ onMounted(load)
       </span>
     </div>
 
-    <div class="relative max-w-md">
-      <Icon
-        name="lucide:search"
-        class="text-default-400 absolute top-1/2 left-3 size-4 -translate-y-1/2"
-      />
-      <input
+    <div class="max-w-md">
+      <KunInput
         v-model="search"
-        type="text"
         placeholder="过滤引擎名..."
-        class="bg-content1 border-default-200 placeholder:text-default-400 focus:border-primary w-full rounded-lg border py-2 pr-3 pl-9 text-sm outline-none"
+        :dark-border="false"
       />
     </div>
 
@@ -79,7 +74,11 @@ onMounted(load)
               :key="e.id"
               class="border-default-200 hover:bg-default-50 border-t transition-colors"
             >
-              <td class="text-foreground px-4 py-2 font-medium">{{ e.name }}</td>
+              <td class="text-foreground px-4 py-2 font-medium">
+                <NuxtLink :to="`/engine/${e.id}`" class="hover:text-primary">
+                  {{ e.name }}
+                </NuxtLink>
+              </td>
               <td class="text-foreground px-4 py-2 text-right tabular-nums">
                 {{ e.galgame_count.toLocaleString() }}
               </td>

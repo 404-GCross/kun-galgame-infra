@@ -15,6 +15,7 @@ const id = computed(() => Number(route.params.id))
 const galgame = ref<Galgame | null>(null)
 const loading = ref(false)
 const updating = ref(false)
+const editOpen = ref(false)
 
 const load = async () => {
   loading.value = true
@@ -183,6 +184,22 @@ const changeStatus = async (newStatus: number) => {
             </div>
 
             <div class="flex flex-wrap gap-2 pt-2">
+              <KunButton variant="light" @click="editOpen = true">
+                <Icon name="lucide:pencil" class="mr-1 size-4" />
+                编辑
+              </KunButton>
+              <NuxtLink :to="`/galgame/${galgame.id}/revisions`">
+                <KunButton variant="light">
+                  <Icon name="lucide:history" class="mr-1 size-4" />
+                  修订历史
+                </KunButton>
+              </NuxtLink>
+              <NuxtLink :to="`/galgame/${galgame.id}/prs`">
+                <KunButton variant="light">
+                  <Icon name="lucide:git-pull-request" class="mr-1 size-4" />
+                  PR
+                </KunButton>
+              </NuxtLink>
               <KunButton
                 v-if="galgame.status !== 0"
                 color="success"
@@ -327,11 +344,32 @@ const changeStatus = async (newStatus: number) => {
 
       <KunCard v-if="galgame.series" class="p-6">
         <h3 class="text-foreground mb-3 text-base font-semibold">所属系列</h3>
-        <p class="text-foreground">{{ galgame.series.name }}</p>
+        <NuxtLink
+          :to="`/series/${galgame.series.id}`"
+          class="text-primary hover:underline"
+        >
+          {{ galgame.series.name }}
+        </NuxtLink>
         <p v-if="galgame.series.description" class="text-default-500 mt-1 text-sm">
           {{ galgame.series.description }}
         </p>
       </KunCard>
+
+      <GalgameAliasesSection :galgame-id="galgame.id" />
+      <GalgameLinksSection :galgame-id="galgame.id" />
+      <GalgameContributorsSection :galgame-id="galgame.id" />
+
+      <GalgameEditModal
+        :open="editOpen"
+        :galgame="galgame"
+        @close="editOpen = false"
+        @saved="
+          () => {
+            editOpen = false
+            load()
+          }
+        "
+      />
     </template>
   </div>
 </template>

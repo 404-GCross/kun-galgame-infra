@@ -63,16 +63,11 @@ const inSearchMode = computed(() => !!search.value.trim())
       <span class="text-default-500 text-sm">共 {{ total }} 个</span>
     </div>
 
-    <div class="relative max-w-md">
-      <Icon
-        name="lucide:search"
-        class="text-default-400 absolute top-1/2 left-3 size-4 -translate-y-1/2"
-      />
-      <input
+    <div class="max-w-md">
+      <KunInput
         v-model="search"
-        type="text"
         placeholder="搜索标签（支持逗号分隔多关键字）..."
-        class="bg-content1 border-default-200 placeholder:text-default-400 focus:border-primary w-full rounded-lg border py-2 pr-3 pl-9 text-sm outline-none"
+        :dark-border="false"
       />
     </div>
 
@@ -105,7 +100,12 @@ const inSearchMode = computed(() => !!search.value.trim())
               class="border-default-200 hover:bg-default-50 border-t transition-colors"
             >
               <td class="text-foreground px-4 py-2 font-medium">
-                {{ t.name }}
+                <NuxtLink
+                  :to="`/tag/${t.id}`"
+                  class="hover:text-primary"
+                >
+                  {{ t.name }}
+                </NuxtLink>
               </td>
               <td class="px-4 py-2">
                 <span

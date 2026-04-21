@@ -111,3 +111,49 @@ export interface Pagination<T> {
   page: number
   limit: number
 }
+
+export interface GalgameLink {
+  id: number
+  name: string
+  link: string
+  galgame_id: number
+  user_id: number
+  created: string
+  updated: string
+}
+
+export interface GalgameRevision {
+  id: number
+  galgame_id: number
+  revision: number
+  snapshot: string | object
+  message: string
+  is_minor: boolean
+  user_id: number
+  created: string
+}
+
+export interface GalgamePR {
+  id: number
+  galgame_id: number
+  user_id: number
+  status: number // 0 pending, 1 merged, 2 declined
+  title: string
+  message: string
+  base_revision: number
+  snapshot: string | object
+  created: string
+  updated: string
+}
+
+export interface ContributorWithUser {
+  id: number
+  galgame_id: number
+  user_id: number
+  created: string
+  user?: {
+    id: number
+    name: string
+    avatar: string
+  }
+}

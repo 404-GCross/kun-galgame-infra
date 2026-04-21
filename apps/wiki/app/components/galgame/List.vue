@@ -69,7 +69,21 @@ const switchTab = (id: number) => {
   <div class="space-y-4">
     <div class="flex items-center justify-between">
       <h1 class="text-foreground text-2xl font-bold">Galgame 管理</h1>
-      <span class="text-default-500 text-sm">共 {{ total }} 条</span>
+      <div class="flex items-center gap-3">
+        <span class="text-default-500 text-sm">共 {{ total }} 条</span>
+        <NuxtLink to="/galgame-filter">
+          <KunButton variant="light">
+            <Icon name="lucide:filter" class="mr-1 size-4" />
+            多标签筛选
+          </KunButton>
+        </NuxtLink>
+        <NuxtLink to="/galgame/create">
+          <KunButton color="primary">
+            <Icon name="lucide:plus" class="mr-1 size-4" />
+            新建
+          </KunButton>
+        </NuxtLink>
+      </div>
     </div>
 
     <div class="flex flex-wrap items-center gap-3">
@@ -90,16 +104,11 @@ const switchTab = (id: number) => {
         </button>
       </div>
 
-      <div class="relative ml-auto w-64">
-        <Icon
-          name="lucide:search"
-          class="text-default-400 absolute top-1/2 left-3 size-4 -translate-y-1/2"
-        />
-        <input
+      <div class="ml-auto w-64">
+        <KunInput
           v-model="search"
-          type="text"
           placeholder="搜索 vndb_id / 标题..."
-          class="bg-content1 border-default-200 placeholder:text-default-400 focus:border-primary w-full rounded-lg border py-2 pr-3 pl-9 text-sm outline-none"
+          :dark-border="false"
         />
       </div>
     </div>

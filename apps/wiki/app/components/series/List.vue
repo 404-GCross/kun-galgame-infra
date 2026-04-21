@@ -2,6 +2,7 @@
 import type { GalgameSeries } from '~/shared/types/galgame'
 
 const api = useApi()
+const router = useRouter()
 
 const page = useQueryState('page', 1)
 const limit = ref(24)
@@ -9,6 +10,7 @@ const limit = ref(24)
 const items = ref<GalgameSeries[]>([])
 const total = ref(0)
 const loading = ref(false)
+const createOpen = ref(false)
 
 const loadList = async () => {
   loading.value = true
@@ -27,13 +29,25 @@ const loadList = async () => {
 }
 
 watch([page, limit], loadList, { immediate: true })
+
+const onCreated = (id?: number) => {
+  createOpen.value = false
+  if (id) router.push(`/series/${id}`)
+  else loadList()
+}
 </script>
 
 <template>
   <div class="space-y-4">
     <div class="flex items-center justify-between">
       <h1 class="text-foreground text-2xl font-bold">系列管理</h1>
-      <span class="text-default-500 text-sm">共 {{ total }} 个</span>
+      <div class="flex items-center gap-3">
+        <span class="text-default-500 text-sm">共 {{ total }} 个</span>
+        <KunButton color="primary" @click="createOpen = true">
+          <Icon name="lucide:plus" class="mr-1 size-4" />
+          新建系列
+        </KunButton>
+      </div>
     </div>
 
     <KunCard class="overflow-hidden">
@@ -64,7 +78,11 @@ watch([page, limit], loadList, { immediate: true })
               :key="s.id"
               class="border-default-200 hover:bg-default-50 border-t transition-colors"
             >
-              <td class="text-foreground px-4 py-2 font-medium">{{ s.name }}</td>
+              <td class="text-foreground px-4 py-2 font-medium">
+                <NuxtLink :to="`/series/${s.id}`" class="hover:text-primary">
+                  {{ s.name }}
+                </NuxtLink>
+              </td>
               <td class="text-default-500 max-w-lg truncate px-4 py-2 text-xs">
                 {{ s.description || '—' }}
               </td>
@@ -85,6 +103,13 @@ watch([page, limit], loadList, { immediate: true })
       :total="total"
       :limit="limit"
       @update:page="page = $event"
+    />
+
+    <SeriesEditModal
+      :open="createOpen"
+      :series="null"
+      @close="createOpen = false"
+      @saved="onCreated"
     />
   </div>
 </template>
