@@ -22,8 +22,12 @@ func galgamesSettings() *meilisearch.Settings {
 			"aliases",
 			"tag_names",
 			"official_names",
-			// intro_* intentionally omitted from defaults; surfaced via
-			// attributesToSearchOn when ?include_intro=true.
+			// intro_* are listed here so they're ALLOWED as search targets,
+			// but at runtime service.go restricts attributesToSearchOn to the
+			// non-intro subset unless include_intro=true is passed. Their
+			// position (last) is a safety net — if we ever forget the filter,
+			// they still rank lowest due to attribute precedence.
+			"intro_zh_cn", "intro_ja_jp", "intro_en_us", "intro_zh_tw",
 		},
 		FilterableAttributes: []string{
 			"status",

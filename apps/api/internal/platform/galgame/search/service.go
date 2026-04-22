@@ -58,18 +58,16 @@ type GalgameSearchResponse struct {
 	ProcessingTimeMS int64                     `json:"processing_time_ms"`
 }
 
-// defaultSearchableGalgame mirrors galgamesSettings().SearchableAttributes.
-// When include_intro=true we tack intro_* onto this list via attributesToSearchOn.
-var defaultSearchableGalgame = []string{
+// nonIntroSearchable mirrors the leading (non-intro) entries of
+// galgamesSettings().SearchableAttributes. By default we restrict the search
+// to these via attributesToSearchOn so intro_* doesn't affect results unless
+// the caller explicitly sets include_intro=true.
+var nonIntroSearchable = []string{
 	"vndb_id",
 	"name_zh_cn", "name_ja_jp", "name_en_us", "name_zh_tw",
 	"aliases",
 	"tag_names",
 	"official_names",
-}
-
-var introSearchable = []string{
-	"intro_zh_cn", "intro_ja_jp", "intro_en_us", "intro_zh_tw",
 }
 
 // SearchGalgames runs a galgame search.
@@ -106,12 +104,11 @@ func (s *Service) SearchGalgames(ctx context.Context, req *GalgameSearchRequest)
 		msReq.HighlightPostTag = "</mark>"
 	}
 
-	// attributesToSearchOn: expand to include intro_* when requested
-	if req.IncludeIntro {
-		searchOn := make([]string, 0, len(defaultSearchableGalgame)+len(introSearchable))
-		searchOn = append(searchOn, defaultSearchableGalgame...)
-		searchOn = append(searchOn, introSearchable...)
-		msReq.AttributesToSearchOn = searchOn
+	// By default exclude intro_* from search. Leaving AttributesToSearchOn nil
+	// when include_intro=true makes MS use the full searchable list (which
+	// includes intro_*). Otherwise restrict to the non-intro subset.
+	if !req.IncludeIntro {
+		msReq.AttributesToSearchOn = nonIntroSearchable
 	}
 
 	resp, err := s.client.Index(IndexGalgames).SearchWithContext(ctx, req.Query, msReq)
