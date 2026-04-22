@@ -6,12 +6,14 @@ import (
 
 	"api/internal/app"
 	"api/internal/infrastructure/database"
+	searchInfra "api/internal/infrastructure/search"
 	"api/internal/middleware"
 	"api/pkg/config"
 	"api/pkg/logger"
 
 	galgameHandler "api/internal/platform/galgame/handler"
 	galgameRepo "api/internal/platform/galgame/repository"
+	galgameSearch "api/internal/platform/galgame/search"
 	galgameService "api/internal/platform/galgame/service"
 
 	"github.com/gofiber/fiber/v3"
@@ -43,7 +45,19 @@ func main() {
 		os.Exit(1)
 	}
 
-	setupRoutes(application, cfg, wikiDB)
+	// Meilisearch client + index settings self-heal
+	searchClient, err := searchInfra.NewClient(cfg.Meilisearch)
+	if err != nil {
+		slog.Error("failed to init meilisearch client", "error", err)
+		os.Exit(1)
+	}
+	if err := galgameSearch.EnsureIndexes(searchClient); err != nil {
+		// Non-fatal: search endpoints will fail but DB-backed routes still work.
+		// Bulk reindex script (cmd/reindex-search) is the recovery path.
+		slog.Warn("EnsureIndexes failed — search endpoints may not work until fixed", "error", err)
+	}
+
+	setupRoutes(application, cfg, wikiDB, searchClient)
 
 	port := getPort("KUN_GALGAME_PORT", 9280)
 	if err := application.Run(cfg.Server.Host, port); err != nil {
@@ -57,7 +71,7 @@ func main() {
 	}
 }
 
-func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB) {
+func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB, searchClient *searchInfra.Client) {
 	oauthDB := a.DB.DB() // kun_oauth_admin — read-only for user info
 	wiki := wikiDB.DB()  // kun_galgame_wiki — read-write
 
@@ -75,16 +89,22 @@ func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB) {
 	// Services
 	galgameSvc := galgameService.NewGalgameService(galgameRepository, revisionRepo, prRepo, userReadRepo)
 
+	// Meilisearch: indexer + write-through hook + search service
+	indexer := galgameSearch.NewIndexer(searchClient)
+	searchHook := galgameSearch.NewHook(wiki, indexer)
+	searchSvc := galgameSearch.NewService(searchClient)
+
 	// Handlers
-	galgameH := galgameHandler.NewGalgameHandler(galgameSvc)
+	galgameH := galgameHandler.NewGalgameHandler(galgameSvc, searchHook)
 	revisionH := galgameHandler.NewRevisionHandler(galgameSvc)
 	linkH := galgameHandler.NewLinkHandler(galgameSvc, galgameRepository)
 	contributorH := galgameHandler.NewContributorHandler(galgameRepository, userReadRepo)
-	tagH := galgameHandler.NewTagHandler(tagRepo)
-	officialH := galgameHandler.NewOfficialHandler(officialRepo)
+	tagH := galgameHandler.NewTagHandler(tagRepo, searchHook)
+	officialH := galgameHandler.NewOfficialHandler(officialRepo, searchHook)
 	engineH := galgameHandler.NewEngineHandler(engineRepo)
 	seriesH := galgameHandler.NewSeriesHandler(seriesRepo)
 	adminH := galgameHandler.NewAdminHandler(adminRepo)
+	searchH := galgameHandler.NewSearchHandler(searchSvc)
 
 	// JWT auth middleware
 	jwtAuth := middleware.JWTAuth(cfg.JWT.Secret)
@@ -106,6 +126,7 @@ func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB) {
 
 	// Public GET routes (must be registered before auth group)
 	galgame.Get("/", galgameH.List)
+	galgame.Get("/search", searchH.Galgame)
 	galgame.Get("/batch", galgameH.BatchGet)
 	galgame.Get("/check", galgameH.CheckVNDB)
 	galgame.Get("/user/:uid/stats", galgameH.UserStats)
@@ -143,7 +164,7 @@ func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB) {
 	// ── Tag ──
 	tag := api.Group("/tag")
 	tag.Get("/", tagH.List)
-	tag.Get("/search", tagH.Search)
+	tag.Get("/search", searchH.Tag) // Meilisearch-backed (replaces DB LIKE search)
 	tag.Get("/multi", tagH.Multi)
 	tag.Get("/:name", tagH.GetByName)
 	tag.Put("/", jwtAuth, tagH.Update)
@@ -151,7 +172,7 @@ func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB) {
 	// ── Official ──
 	official := api.Group("/official")
 	official.Get("/", officialH.List)
-	official.Get("/search", officialH.Search)
+	official.Get("/search", searchH.Official) // Meilisearch-backed
 	official.Get("/:name", officialH.GetByName)
 	official.Put("/", jwtAuth, officialH.Update)
 

@@ -5,6 +5,7 @@ import (
 
 	"api/internal/platform/galgame/dto"
 	"api/internal/platform/galgame/repository"
+	"api/internal/platform/galgame/search"
 	"api/pkg/errors"
 	"api/pkg/response"
 	"api/pkg/utils"
@@ -14,12 +15,13 @@ import (
 
 // TagHandler handles tag HTTP requests
 type TagHandler struct {
-	tagRepo *repository.TagRepository
+	tagRepo    *repository.TagRepository
+	searchHook *search.Hook
 }
 
-// NewTagHandler creates a new TagHandler
-func NewTagHandler(tagRepo *repository.TagRepository) *TagHandler {
-	return &TagHandler{tagRepo: tagRepo}
+// NewTagHandler creates a new TagHandler. Pass nil hook to skip search write-through.
+func NewTagHandler(tagRepo *repository.TagRepository, hook *search.Hook) *TagHandler {
+	return &TagHandler{tagRepo: tagRepo, searchHook: hook}
 }
 
 // List returns a paginated list of tags
@@ -149,6 +151,8 @@ func (h *TagHandler) Update(c fiber.Ctx) error {
 	if err := h.tagRepo.Update(c.Context(), req.TagID, updates, req.Alias); err != nil {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
+
+	h.searchHook.Tag(req.TagID)
 
 	return response.Success(c, nil)
 }

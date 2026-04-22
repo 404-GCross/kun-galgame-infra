@@ -5,6 +5,7 @@ import (
 
 	"api/internal/platform/galgame/dto"
 	"api/internal/platform/galgame/repository"
+	"api/internal/platform/galgame/search"
 	"api/pkg/errors"
 	"api/pkg/response"
 	"api/pkg/utils"
@@ -15,11 +16,12 @@ import (
 // OfficialHandler handles official HTTP requests
 type OfficialHandler struct {
 	officialRepo *repository.OfficialRepository
+	searchHook   *search.Hook
 }
 
-// NewOfficialHandler creates a new OfficialHandler
-func NewOfficialHandler(officialRepo *repository.OfficialRepository) *OfficialHandler {
-	return &OfficialHandler{officialRepo: officialRepo}
+// NewOfficialHandler creates a new OfficialHandler. Pass nil hook to skip search write-through.
+func NewOfficialHandler(officialRepo *repository.OfficialRepository, hook *search.Hook) *OfficialHandler {
+	return &OfficialHandler{officialRepo: officialRepo, searchHook: hook}
 }
 
 // List returns a paginated list of officials
@@ -131,6 +133,8 @@ func (h *OfficialHandler) Update(c fiber.Ctx) error {
 	if err := h.officialRepo.Update(c.Context(), req.OfficialID, updates, req.Alias); err != nil {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
+
+	h.searchHook.Official(req.OfficialID)
 
 	return response.Success(c, nil)
 }

@@ -16,6 +16,14 @@ type Config struct {
 	Redis           RedisConfig
 	JWT             JWTConfig
 	Mail            MailConfig
+	Meilisearch     MeilisearchConfig
+}
+
+// MeilisearchConfig holds Meilisearch-related configuration
+type MeilisearchConfig struct {
+	Host        string // e.g. http://127.0.0.1:7700
+	APIKey      string // empty for dev, filled in prod
+	IndexPrefix string // optional, e.g. "dev_" / "staging_"
 }
 
 // MailConfig holds email-related configuration
@@ -133,6 +141,13 @@ func Load() (*Config, error) {
 		Port:     mailPort,
 		Account:  getEnv("KUN_VISUAL_NOVEL_EMAIL_ACCOUNT", ""),
 		Password: getEnv("KUN_VISUAL_NOVEL_EMAIL_PASSWORD", ""),
+	}
+
+	// Meilisearch config
+	cfg.Meilisearch = MeilisearchConfig{
+		Host:        getEnv("KUN_MEILISEARCH_HOST", "http://127.0.0.1:7700"),
+		APIKey:      getEnv("KUN_MEILISEARCH_API_KEY", ""),
+		IndexPrefix: getEnv("KUN_MEILISEARCH_INDEX_PREFIX", ""),
 	}
 
 	// Validate required fields

@@ -4,6 +4,7 @@ import (
 	"strconv"
 
 	"api/internal/platform/galgame/dto"
+	"api/internal/platform/galgame/search"
 	"api/internal/platform/galgame/service"
 	"api/pkg/errors"
 	"api/pkg/response"
@@ -15,11 +16,13 @@ import (
 // GalgameHandler handles galgame HTTP requests
 type GalgameHandler struct {
 	galgameService *service.GalgameService
+	searchHook     *search.Hook // optional write-through to Meilisearch
 }
 
-// NewGalgameHandler creates a new GalgameHandler
-func NewGalgameHandler(galgameService *service.GalgameService) *GalgameHandler {
-	return &GalgameHandler{galgameService: galgameService}
+// NewGalgameHandler creates a new GalgameHandler.
+// Pass nil for hook to disable write-through (e.g. in tests).
+func NewGalgameHandler(galgameService *service.GalgameService, hook *search.Hook) *GalgameHandler {
+	return &GalgameHandler{galgameService: galgameService, searchHook: hook}
 }
 
 // List returns a paginated list of galgames
@@ -85,6 +88,8 @@ func (h *GalgameHandler) Create(c fiber.Ctx) error {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
 
+	h.searchHook.Galgame(galgame.ID)
+
 	return response.Success(c, galgame)
 }
 
@@ -120,6 +125,8 @@ func (h *GalgameHandler) Update(c fiber.Ctx) error {
 		}
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
+
+	h.searchHook.Galgame(id)
 
 	return response.Success(c, galgame)
 }
