@@ -10,12 +10,11 @@
    kungal:       avatar/user_${uid}/avatar{,-100}.webp          ← 固定文件名、就地覆盖
    galgame wiki: galgame/${gid}/banner/banner{,-mini}.webp      ← 同上
    ```
-2. **压缩/审核/鉴权逻辑各写一份**，三家代码不同、bug 重复修复
+2. **压缩/鉴权逻辑各写一份**，三家代码不同、bug 重复修复
 3. **无去重**，同一张图被不同用户传多次 = 多份存储
-4. **无审核**，违规图进来只能靠人肉发现
-5. **无法横向扩展新站点**，加第 4 个站要再抄一遍
+4. **无法横向扩展新站点**，加第 4 个站要再抄一遍
 
-随着未来还会有更多站点接入、galgame wiki 需要保留高清原图、以及接入 AI 审核的需求，集中式图片服务是必然选择。
+随着未来还会有更多站点接入、galgame wiki 需要保留高清原图、以及可能接入 AI 审核的需求，集中式图片服务是承接这些能力的前提。
 
 ## 目标
 
@@ -23,9 +22,8 @@
 |------|------|
 | **统一接口** | 所有站点通过同一个 HTTP API 上传图片 |
 | **统一处理** | 格式转换（→ WebP）、尺寸压缩、EXIF 剥离、MIME 嗅探集中一处 |
-| **内容去重** | 内容寻址存储，同 hash 只存一份 |
-| **按需派生** | 缩略图/中图/大图通过 imgproxy 实时生成，CDN 缓存结果 |
-| **分层审核** | 同步拦明确违规，异步深度审核 |
+| **内容去重** | 内容寻址存储，同 hash 只存一份（跨站物理层面也去重） |
+| **预生成变体** | 按 preset 在上传时生成必要的缩略图，简单可预测 |
 | **多站扩展** | 新站点接入 = 注册一个 OAuth Client + 加配置，不改代码 |
 | **旧数据平滑迁移** | 旧 URL 不断链，业务代码渐进切换 |
 
@@ -33,7 +31,8 @@
 
 - ❌ 不做通用文件服务（仅图片）
 - ❌ 不做图片编辑器（旋转、滤镜、水印等）
-- ❌ 不提供面向最终用户的公开上传端点
+- ❌ 不做面向最终用户的公开上传端点
+- ❌ 不支持调用方主动删图（见决策 0）
 
 ## 整体架构
 
@@ -41,145 +40,181 @@
 ┌───────────────┐  ┌───────────────┐  ┌────────────────────┐
 │ kungal (web)  │  │ moyu (web)    │  │ galgame wiki (web) │
 └───────┬───────┘  └───────┬───────┘  └──────────┬─────────┘
-        │ JWT              │ JWT                 │ JWT
-        │ (image:upload)   │                     │
+        │ OAuth token      │                     │
         ▼                  ▼                     ▼
 ┌──────────────────────────────────────────────────────────┐
 │                    Image Service (Fiber)                  │
-│   ┌──────────┐  ┌────────────┐  ┌──────────┐  ┌────────┐ │
-│   │ Upload   │→ │ Processor  │→ │ Storage  │  │ Moder  │ │
-│   │ handler  │  │ (libvips/  │  │ (S3 SDK) │  │ -ation │ │
-│   │          │  │  go-webp)  │  │          │  │  hook  │ │
-│   └──────────┘  └────────────┘  └──────────┘  └────┬───┘ │
-│         │                                           │     │
-│         ▼                                           ▼     │
-│   ┌────────────┐                             ┌──────────┐ │
-│   │ images DB  │                             │  Queue   │ │
-│   │ (Postgres) │                             │(goroutine│ │
-│   └────────────┘                             │ or Redis)│ │
-│                                              └────┬─────┘ │
-└──────────────────────────────────────────────────┼────────┘
-                                                    │ async
-                        ┌───────────────────────────▼──────┐
-                        │  AI Moderation Worker            │
-                        │  (调用云厂商 or 本地模型)         │
-                        └──────────────────────────────────┘
+│   ┌──────────┐  ┌────────────┐  ┌──────────┐             │
+│   │ Upload   │→ │ Processor  │→ │ Storage  │             │
+│   │ handler  │  │ (libvips/  │  │ (S3 SDK) │             │
+│   │          │  │  webp@82)  │  │          │             │
+│   └──────────┘  └──────┬─────┘  └──────────┘             │
+│                        │                                  │
+│                        ▼                                  │
+│                 ┌────────────────┐                        │
+│                 │ Variant gen    │  按 preset 生成        │
+│                 │ (avatar-100    │  固定尺寸变体          │
+│                 │  banner-mini)  │                        │
+│                 └────────┬───────┘                        │
+│                          ▼                                │
+│                   ┌────────────┐                          │
+│                   │ images DB  │                          │
+│                   │ (Postgres) │                          │
+│                   └────────────┘                          │
+└──────────────────────────────────────────────────────────┘
 
                      ┌───────────────────────────────┐
                      │   对象存储 (S3 / R2 / OSS)    │
                      │   Bucket: kun-images          │
+                     │   hash → {主图, 变体}         │
                      └──────────────┬────────────────┘
-                                    │ origin
-                                    ▼
-                           ┌─────────────────┐
-                           │   imgproxy      │ ← 按需变体（resize/format）
-                           └────────┬────────┘
                                     │
                                     ▼
                            ┌─────────────────┐
-                           │      CDN        │ ← 边缘缓存变体
+                           │      CDN        │
                            └────────┬────────┘
                                     │
                               终端用户浏览器
 ```
 
+### 上传流程
+
+```
+client POST /image/upload (preset=avatar)
+  ↓
+MIME 嗅探 + 大小检查 + 配额消费
+  ↓
+sha256(content) → 查 images 表
+  ├─ 命中: 检查现有变体是否覆盖 preset 所需，缺啥补啥
+  └─ 未命中: libvips decode → strip EXIF → fit 1920×1080 → webp@82
+             → 按 preset 生成变体（avatar: +100×100；banner: +460×259；topic: 无）
+             → 并发 S3 PUT（主图 + 变体）
+             → INSERT images
+  ↓
+INSERT image_site_usage (hash, site, uploader, ts)  [首次即插入]
+  ↓
+UPDATE images.last_referenced_at = NOW()
+  ↓
+返回 { hash, url, variant_urls, width, height, size_bytes }
+```
+
 ## 核心设计决策
+
+### 决策 0：调用方不主动删图
+
+**选择**：图片的生命周期**完全**由图片服务根据 `last_referenced_at` + TTL 管理。调用方没有 `DELETE /image/:hash` 端点可用。
+
+**触发机制**：
+- 调用方删帖/删用户 → 只改自己库里的 `image_hash` 外键
+- 调用方周期性（每天一次）批量 ping "我还在用这些 hash"
+- 图片服务清理 worker 按 TTL 降级：
+  - `last_referenced_at` > 60d 未更新 → 转冷存储
+  - `last_referenced_at` > 365d 未更新 → 软删
+  - 软删后再 30d → 物理删除
+
+**理由**：
+- **内容寻址 + 跨站共享的本质约束**：kungal 的 A 删帖不意味着这张图可以物理删——moyu 的 B 可能还在用
+- **避免跨服务引用计数的分布式一致性问题**
+- **简化调用方心智模型**：调用方只需维护"我现在还在用哪些 hash"这一项事实，不用实现复杂的"上传 / 删除 / 解引用"全生命周期
+- **对于违规图**：也不走"删除"路径，走**审核拒绝** → `review_status = rejected` → CDN 返回占位图（保留证据）
+
+**副产品**：调用方漏 ping 最坏浪费一点冷存储，不丢数据。
 
 ### 决策 1：鉴权复用 OAuth，不引入新凭证
 
 **选择**：不新增 API Key / 上传 ticket，沿用本仓库已有的 OAuth 基础设施。
 
-- **后端调用**：各站点后端作为 OAuth Client（kungal / moyu 已注册），走 Client Credentials 拿访问令牌，带 `image:upload` scope
-- **前端调用**：用户登录拿到的 JWT（`aud` 字段标明来源站）即可用于前端直传，图片服务校验 scope + aud
+- **后端调用**：各站点作为 OAuth Client（kungal / moyu 已注册），走 Client Credentials 拿访问令牌，带 `image:upload` scope
+- **前端直传（V2 可选）**：用户登录的 JWT（`aud` 字段标明站点）也能用于直传
 
 **理由**：
 - 少一套凭证体系 = 少一套过期/泄露/吊销路径
 - `oauth_client` 表已经是"站点"的天然 registry，加几个字段就能承载图片服务的配额/开关配置
 - 审计日志可以和 OAuth 访问日志合流
 
-**反面观点**：OAuth Client Credentials 的 access_token 有效期通常较短（1h），每次上传要先换 token。对内网后端调用略啰嗦，但可以在调用方做 token 缓存层解决。
-
 ### 决策 2：图片服务 DB 不存业务引用关系
 
 **选择**：`images` 表只存 "hash + storage_key + metadata + 审核状态"，**不存** "哪个站的哪个实体在用这张图"。业务引用（`users.avatar_image_hash`、`galgame.banner_image_hash`）由各调用方自己的库维护。
 
 **理由**：
-- 每新增一类实体（avatar / banner / topic / cover / post_attachment...）都要改图片服务的 schema 或业务约定，违反单一职责
-- 跨服务维护引用计数天然竞态（A 上传 X 的同时 B 独立上传 X → 引用计数临时归零被清理 worker 吃掉）
+- 每新增一类实体（avatar / banner / topic / cover / post_attachment...）都要改图片服务的 schema，违反单一职责
+- 跨服务维护引用计数天然竞态
 - 调用方查"用户 X 的当前头像"应该是本地 JOIN，不是跨服务 RPC
 
-**权衡**：
-- ✅ 图片服务 100% 通用，未来接第 N 个站零适配
-- ✅ 避免跨服务一致性问题
-- ❌ 图片服务无法回答"这张图被哪些地方用了"——要靠各业务库聚合
-- ❌ 孤儿图清理不能靠精确引用计数，改用 **"TTL + last_referenced_at ping"** 软机制（见决策 4）
+**推论（与决策 0 呼应）**：既然图片服务不知道"谁在用这张图"，就不可能自己判断能不能删——所以必须靠调用方周期 ping + TTL 兜底。
 
-### 决策 3：按需派生（imgproxy）而非上传时预生成
+### 决策 3：`UNIQUE(hash)` 单行 + 独立 `image_site_usage` 审计表
 
-**选择**：上传时仅存一份（原图或压缩到 1920×1080 的 WebP，按站点配置），派生尺寸通过 imgproxy 实时生成 + CDN 缓存。
+**选择**：`images` 表以 `UNIQUE(hash)` 为唯一键（单行），审核态、元数据都挂在这一行上。"哪个站传过这个 hash" 的审计信息放在独立的 `image_site_usage(hash, site, first_uploader_sub, first_uploaded_at)` 表里。
+
+**理由**：
+- **物理去重彻底**：跨站相同内容在对象存储只存一份
+- **审核态天然跨站一致**：NSFW 就是 NSFW，不会 kungal 打 rejected 而 moyu 仍 approved 这种分裂
+- **不会出现"两行指向同一 storage_key"的幽灵**：避免 A 站删对象导致 B 站引用断裂
+- **站点差异化展示策略**：由调用方拿到 `review_labels` 后自己决定展示（如 kungal 对某类标签显示警告、moyu 直接放行），不在图片服务侧分裂
+
+### 决策 4：上传时预生成固定变体
+
+**选择**：V1 **不引入 imgproxy**。上传时直接根据 preset 生成已知的几个尺寸，输出多份 webp 到对象存储。
+
+**实际变体清单**（按三站的真实使用模式）：
+
+| entity | preset | 主图 | 额外变体 |
+|--------|--------|------|---------|
+| 用户头像 | `avatar` | 原尺寸 webp（用户上传多大存多大，但 ≤1920×1080） | 100×100 webp |
+| galgame banner | `galgame_banner` | fit 1920×1080 webp | 460×259 webp |
+| topic 图床 | `topic` | fit 1920×1080 webp | 无 |
+
+V1 总共 **5 个固定变体产物**。
 
 **理由**：
 
-| 维度 | 预生成（旧方案） | imgproxy 按需 |
-|------|----------------|---------------|
-| 加新 preset | 全量重跑 | 改 URL 即可 |
-| 冷门变体 | 白算白存 | 不算不存 |
-| 存储成本 | 3–5× | 1× |
-| 首访延迟 | 0 | +50–200ms（之后 CDN 命中） |
-| 复杂度 | 自己写流水线 | 多部署一个容器 |
+| 维度 | imgproxy 按需 | 预生成 |
+|------|--------------|-------|
+| 运维 | 多容器 + HMAC key 管理 + 前后 SDK | 纯 S3 直链 |
+| 存储 | 1× | 4×（几块钱/月） |
+| 新增尺寸 | 改 URL | 改代码 + 重跑一次 |
+| 首访延迟 | +50–200ms | 0 |
+| 预测性 | CDN miss 有冷启动 | 完全静态 |
 
-以当前几千张/天的规模，imgproxy 零压力；未来扩到图片站的高峰也能水平扩。
+对三站的实际场景（固定尺寸、几乎不会改样式），预生成方案压倒性简单。**imgproxy 真正解锁价值的时机**是某天要求"任意尺寸"时，那时再上，不是现在。V2.5 可选项。
 
-**安全**：imgproxy URL 参数必须 HMAC 签名，防止有人让你服务器生成 100 万种尺寸打爆带宽/CPU。
+### 决策 5：软清理（TTL + ping），不用引用计数
 
-### 决策 4：软清理（TTL + ping），不用引用计数
-
-**选择**：`images` 表有一列 `last_referenced_at`，调用方周期性（例如每天）批量 ping 一次"我现在还在引用这些 hash"。图片服务的清理 worker：
-
-- `last_referenced_at > now - 60d` → 保持在热存储
-- `last_referenced_at > now - 180d` → 转冷存储（S3 IA / Glacier）
-- `last_referenced_at > now - 365d` → 软删（打标），再 30 天后物理删除
+**选择**：`images` 表有一列 `last_referenced_at`，调用方周期性（每天一次）批量 ping。清理 worker 按 TTL 降级。
 
 **理由**：
 - 避免跨服务原子引用计数的并发问题
 - 调用方漏 ping 最坏浪费一点冷存储，不丢数据
-- 新接入的站点不用实现"上传 / 引用 / 解引用"完整生命周期，只需在"当前还在用的图"里周期性批量 ping
+- 新接入的站点不用实现"上传 / 引用 / 解引用"完整生命周期
 
-### 决策 5：分层审核（同步 + 异步）
+**实现要点**：
+- 上传本身算一次 ping（自动刷 `last_referenced_at = NOW()`）
+- 调用方每天批量发一次 `POST /image/reference-ping { hashes: [...] }`
+- 每次批量最多 1000 hash
 
-**选择**：
-- **同步层**：上传请求返回前用轻量模型（本地 NSFW small model 或云厂商快速 API <200ms）拦截高置信度违规（裸露/血腥/政治敏感），命中直接 4xx
-- **异步层**：上传成功后入队，深度审核（OCR 识别违规文字、商标、版权等）结果异步回填 `review_status`
-- **展示侧**：调用方拿图前对比 `review_status`，未过审的走占位图
+### 决策 6：路径格式——完全 content-addressed，不加 site 前缀
 
-**理由**：
-- 纯异步体验差：用户发完帖刷新，自己的图显示"审核中"
-- 纯同步拖延迟、成本高：每张图都跑重模型太贵
-
-**注意**：审核失败不删文件，只打标 + 加黑名单 + 返回占位图。保留证据用于申诉/监管。
-
-### 决策 6：路径格式——单一 content-addressed
-
-**选择**：所有图片统一物理存储路径：
+**选择**：物理存储 key 仅由 hash 决定：
 
 ```
-/<site>/<hash[:2]>/<hash[2:4]>/<hash>.<ext>
+<hash[:2]>/<hash[2:4]>/<hash>.webp                  # 主图
+<hash[:2]>/<hash[2:4]>/<hash>_<variant>.webp        # 变体
 ```
 
 **例子**：
 ```
-kungal/ab/cd/abcd1234...ef.webp
-moyu/12/34/1234abcd...ff.webp
-galgame_wiki/56/78/5678...aa.jpg
+ab/cd/abcd1234...ef.webp         # 主图
+ab/cd/abcd1234...ef_100.webp     # avatar 变体
+ab/cd/abcd1234...ef_mini.webp    # banner 变体
 ```
 
-不做 conv.md 里最初讨论的 `/c/` vs `/e/` 分离。因为"实体关联"语义（用户当前头像、galgame 当前 banner）由调用方库里 `users.avatar_image_hash` 字段表达即可，**不需要**在 URL 层反映。
+**去掉 site 前缀的理由**：
+- 跨站彻底物理去重（决策 3）的直接结果
+- site 信息放在 `image_site_usage` 表里即可，URL 层无需冗余
+- 避免"同一 hash 在 kungal 路径下、在 moyu 路径下"的双份存储
 
-调用方渲染头像时：
-```sql
-SELECT i.hash FROM users u JOIN images i ON i.hash = u.avatar_image_hash WHERE u.id = 123
-```
-拿到 hash 后拼成图片服务的 URL 即可。换头像只是改一个外键，图片服务无感。
+**审核延后（V3）**：V1 上线时 `review_status` 列默认 `1 (approved)`，所有图片视为已过审。列保留以便 V3 接入审核时无需 schema migration。
 
 ## 技术栈
 
@@ -190,29 +225,29 @@ SELECT i.hash FROM users u JOIN images i ON i.hash = u.avatar_image_hash WHERE u
 | 备选 | `kolesa-team/go-webp` + `disintegration/imaging` | 也够用，依赖 libwebp |
 | MIME 嗅探 | `gabriel-vasile/mimetype` | 不信任 Content-Type |
 | 对象存储 | `aws-sdk-go-v2` | S3 协议兼容 R2/OSS/COS/MinIO |
-| DB | Postgres（复用现有） | 新增 `images` 表 |
-| 审核 | 云厂商 API（阿里/腾讯内容安全） | 自建 NSFW 模型作为备选 |
-| 变体 | `imgproxy`（独立容器） | URL HMAC 签名 |
-| 队列 | goroutine + Postgres/Redis 持久化 | 量小不用 MQ |
+| DB | Postgres（独立库 `kun_images`） | 新增 `images`、`image_site_usage` 表 |
+| 配额 | Redis day-window | 已有 Redis 基础设施 |
+| 审核（V3） | 云厂商 API | 暂不选型 |
+| 变体（V2.5 可选） | imgproxy | 按需引入 |
 
 ## 风险与缓解
 
 | 风险 | 可能性 | 缓解 |
 |------|--------|------|
 | libvips 内存解压炸弹 | 中 | 限制解码后像素总数（如 50MP），限制原文件大小 |
-| 审核 API 故障 | 中 | 同步审核挂时降级为"标记为待审核"，异步审核挂时重试队列 |
-| imgproxy URL 被刷 | 低 | HMAC 签名 + 有效期 + CDN 层限流 |
-| 对象存储 Region 故障 | 低 | 跨区域复制（M5 之后考虑） |
+| 跨站 hash 碰撞但标签不同 | 低 | 决策 3 明确：审核态 hash 单行，不分裂 |
+| 调用方漏 ping 导致图被清 | 低 | TTL 宽松（60d 冷、365d 软删），且 ping 是批量操作容错空间大 |
+| 对象存储 Region 故障 | 低 | 跨区域复制（V2+ 视需要） |
 | OAuth 令牌换发瓶颈 | 低 | 调用方缓存 access_token；Client Credentials 长 TTL |
 
 ## 与本仓库现有模块的关系
 
 - **复用**：`pkg/config`、`internal/infrastructure/database`、`internal/infrastructure/oauth`、中间件（CORS、JWT、限流）
 - **新增**：`internal/platform/image/`（参照 `internal/platform/galgame/` 的分层）
-- **扩展**：`oauth_client` 表追加 `image_quota_daily`、`image_allow_original`、`image_allowed_presets` 字段（见 [02-storage-and-schema.md](./02-storage-and-schema.md)）
+- **扩展**：`oauth_client` 表追加 `image_enabled` / `image_quota_daily` / `image_allowed_presets` / `image_site_key` 等字段（见 [02-storage-and-schema.md](./02-storage-and-schema.md)）
 - **新 cmd**：
-  - `cmd/image/` — 独立启动的图片服务进程（端口 `:9278`，与 galgame wiki `:9280` 平级）
+  - `cmd/image/` — 独立启动的图片服务进程（端口 `:9278`）
   - `cmd/migrate-images/` — 旧系统迁移脚本
-  - `cmd/image-gc/` — 软清理 worker
+  - `cmd/image-gc/` — TTL 清理 worker
 
 下一篇：[02 — 存储与 Schema 设计](./02-storage-and-schema.md)

@@ -4,262 +4,252 @@
 
 | 里程碑 | 目标 | 预估 | 依赖 |
 |--------|------|------|------|
-| **M1** | 骨架打通：上传→处理→存储→返回 URL | 3–4 天 | 无 |
-| **M2** | 鉴权 + 站点配置 + 配额 | 2–3 天 | M1 |
-| **M3** | imgproxy + CDN + 变体 URL + 压测 | 2–3 天 | M2 |
-| **M4** | 审核（同步 + 异步）+ 管理后台 | 3–4 天 | M3 |
-| **M5** | 迁移脚本 + 旧系统切换 | 按站点推进，2 周观察 | M4 |
+| **V1** | 安全上线：OAuth + 压缩管线 + 固定变体 + 配额 + TTL 引用 | 4–5 天 | 无 |
+| **V2** | 完善：SDK + 多 preset 配置 + stats + 前端直传（按需） | 3–4 天 | V1 |
+| **V2.5** | ⏸ 可选项：imgproxy（仅当出现"任意尺寸"需求时启用） | 不排期 | V2 |
+| **V3** | ⏸ 延后：AI 审核 + Admin UI | 按需 | V2 |
+| **V4** | 迁移：调用方业务代码切换 + 老数据迁移 | 每站 1–2 个月 | V1 |
 
-**整体周期**：约 2.5–3 周工程 + 2 周灰度/迁移观察。
+**平台侧工程周期**：V1 + V2 ≈ **1–2 周**。
+**全量落地**（含三站调用方切换）：**2–4 个月**。
 
 ---
 
-## M1 — MVP 骨架
+## V1 — 安全上线（4–5 天）
 
 ### 目标
 
-端到端能跑通：curl 上传一张 PNG，图片服务转成 WebP、存到 MinIO、返回 URL，浏览器能访问。
+单靠 V1 能上线一个**完整可用**的图片服务：接入 kungal 头像（作为最简闭环）能跑起来、不会翻车。
+
+> ⚠️ V1 的每一项都是下限，少一块会炸：
+> - 缺压缩 + 变体 → 前端拿到 5MB 原图直接渲染废页面
+> - 缺配额 → 第一周被 4K 截图刷爆 R2
+> - 缺 OAuth → 谁都能匿名上传
+> - 缺 TTL 引用 → 未来无法清理孤儿图
+
+### 范围
+
+#### 必做
+
+1. **HTTP 服务骨架**
+   - `cmd/image/main.go` 启动 Fiber，监听 `:9278`
+   - `/healthz` / `/metrics`
+   - CORS 关闭（V1 只接后端调用）
+
+2. **OAuth 鉴权中间件**
+   - 解析 Bearer token
+   - 从 `oauth_client` 取站点配置，校验 `image_enabled` / scope / preset 白名单
+
+3. **数据层**
+   - 独立 DB `kun_images`
+   - `images` 表 migration（UNIQUE(hash)、variants TEXT[]、review_status DEFAULT 1）
+   - `image_site_usage` 表 migration
+   - `oauth_client` 表 ALTER 加图片相关字段 migration
+
+4. **处理管线**
+   - MIME 嗅探（`gabriel-vasile/mimetype`）
+   - libvips（`govips`）：decode → strip EXIF → fit 1920×1080 → webp@82
+   - 按 preset 生成固定变体（avatar: 100×100；galgame_banner: 460×259；topic: 无）
+   - sha256 计算
+   - 对象存储 PUT（`aws-sdk-go-v2`，主图 + 变体并发上传）
+
+5. **去重 + 补变体逻辑**
+   - 查 `images` 是否已有 hash
+   - 命中：只补缺失的变体（对比 `variants` 列与 preset 所需）
+   - 未命中：完整处理流水线
+
+6. **配额**
+   - Redis day-window（`INCRBY` + TTL 26h）
+   - 按 `image_quota_daily` 和 `image_quota_bytes_daily` 双维度
+   - 超限返回 429 含 `reset_at`
+
+7. **端点**
+   - `POST /image/upload`
+   - `GET /image/:hash`
+   - `POST /image/reference-ping`
+
+8. **可观测**
+   - Prometheus 指标（upload count / duration / dedup_hits / quota_remaining）
+   - slog 日志（结构化）
+
+#### 不做
+
+- ❌ 审核（`review_status` 列存在但默认 approved，不走任何审核流程）
+- ❌ imgproxy
+- ❌ SDK（TS/Go）—— 先让调用方自己拼 URL
+- ❌ Admin UI / stats
+- ❌ 前端直传
+- ❌ `keep_original`
 
 ### 交付物
-
-#### 代码
 
 ```
 apps/api/
   cmd/
-    image/                        # 新增：图片服务进程入口
+    image/
       main.go
   configs/
-    image_presets.yaml            # 预设配置
+    image_presets.yaml
   internal/
     infrastructure/
-      storage/                    # 新增：S3 抽象
+      storage/
         client.go
         s3.go
     platform/
-      image/                      # 新增：图片服务业务层
+      image/
         handler/
           upload.go
+          meta.go
+          ping.go
+        middleware/
+          auth.go
+          quota.go
         service/
-          service.go              # 上传主流程
-          processor.go            # 调 libvips 的薄封装
-          dedup.go                # hash 查重
+          service.go
+          processor.go           # libvips pipeline
+          variant.go             # 变体生成
+          dedup.go
+          quota.go               # Redis counter
         model/
-          image.go                # GORM model
+          image.go
+          site_usage.go
         repository/
           image_repo.go
+          site_usage_repo.go
+  migrations/
+    images/
+      001_create_images.sql
+      002_create_image_site_usage.sql
+    oauth/
+      XXX_alter_oauth_client_add_image_fields.sql
   pkg/
     config/
-      image.go                    # 图片服务配置结构
-migrations/
-  image/
-    001_create_images.sql
+      image.go
 ```
-
-#### 功能
-
-- `POST /image/upload` 接 multipart，返回 hash + URL
-- MIME 嗅探（`gabriel-vasile/mimetype`）
-- libvips 解码 → resize → 编码 WebP（用 `govips`）
-- 按 preset 配置处理（写死 3 个：`cover` / `thumbnail` / `avatar`）
-- 对象存储用 MinIO（本地开发）/ S3（生产）
-- hash 去重（同 hash 不重传）
-- `images` 表写入
-- `GET /healthz`
-
-#### 不做
-
-- ❌ 鉴权（先裸接口方便开发，M2 补）
-- ❌ 配额
-- ❌ 审核
-- ❌ imgproxy
-- ❌ 管理端点
 
 ### 验收标准
 
-- [ ] `curl -F file=@test.png -F preset=cover http://localhost:9278/image/upload` 成功返回 hash + URL
-- [ ] 返回的 URL 可以在浏览器直接打开看到图片
-- [ ] 同一张图再传，返回相同 hash，`deduplicated: true`
-- [ ] 10MB 以内的 PNG/JPG/WebP 都能处理
-- [ ] 处理时间 < 500ms（单张 <5MB）
-- [ ] 单元测试覆盖 processor / dedup / repo 核心路径
+- [ ] `curl -F file=@test.png -F preset=avatar http://localhost:9278/image/upload -H "Authorization: Bearer $TOKEN"` 返回 hash + url + variant_urls（含 `100`）
+- [ ] 返回的 url 可以在浏览器直接打开看到图片
+- [ ] 返回的 variant_urls["100"] 是 100×100 的 webp
+- [ ] 同一张图再传 `preset=avatar`，返回 `deduplicated: true`，不重跑 libvips
+- [ ] 同一张图先 `preset=topic` 再 `preset=avatar`，第二次补生成 `100×100` 变体并落盘
+- [ ] 无 token 返回 401；scope 不含 `image:upload` 返回 403；`image_enabled=false` 的 Client 返回 403
+- [ ] 超过日张数或字节数配额返回 429，响应带 `reset_at`
+- [ ] `POST /image/reference-ping` 能正确刷新 `last_referenced_at`
+- [ ] 单元测试覆盖 processor / variant / dedup / quota 核心路径
+- [ ] 集成测试：TestMain 启动 MinIO + Redis + PG 容器，跑完整上传 → 下载验证链路
+- [ ] 处理延迟 P99 < 500ms（单张 <5MB）
 
 ---
 
-## M2 — 鉴权 + 配额
+## V2 — 完善（3–4 天）
 
 ### 目标
 
-图片服务接入 OAuth，只允许注册的 Client 上传；按站点做配额限制。
+把 V1 的"裸能用"补成"好用"：SDK 降低调用方接入成本、多 preset 配置化、基础运营能力。
 
-### 交付物
+### 范围
 
-#### 代码
+1. **Go + TS SDK**
+   - Go：`pkg/imageclient/`
+     - `MainURL(hash string) string`
+     - `VariantURL(hash, variant string) string`
+     - `Upload(ctx, file, preset) (*Result, error)` — 对调用方封装 OAuth token 管理
+   - TS：`packages/image-client/`
+     - `imageMainUrl(hash)` / `imageVariantUrl(hash, variant)`
+     - `uploadImage(file, preset, opts)` — 前端直传场景使用
 
-```
-apps/api/
-  internal/
-    platform/
-      image/
-        handler/
-          upload.go             # 加鉴权中间件
-        middleware/
-          auth.go               # OAuth token 校验 + scope + 站点解析
-          quota.go              # 配额检查
-        service/
-          quota.go              # 配额消费（Redis 计数）
-migrations/
-  oauth/
-    XXX_alter_oauth_client_add_image_fields.sql
-```
+2. **多 preset 配置扩展**
+   - `image_presets.yaml` 支持从 ConfigMap / 启动时加载
+   - 运行时热更新（SIGHUP 重新加载）可选
+   - preset 添加 `description` / `allowed_sites` 辅助字段
 
-#### 功能
+3. **前端直传（按需开启）**
+   - OAuth 用户 JWT（带 `image:upload` scope）可以直接调 `/image/upload`
+   - CORS 白名单从 `oauth_client.redirect_uris` + `image_cors_origins` 合成
+   - 限流更严格（按 IP + JWT sub）
 
-- `oauth_client` 表 ALTER 加 `image_enabled` / `image_quota_daily` / `image_max_file_size` / `image_allow_original` / `image_allowed_presets` / `image_site_key` 字段
-- 上传中间件：
-  1. 解析 Bearer token → 获取 client_id（客户端凭证）或 sub+aud（用户 JWT）
-  2. 从 `oauth_client` 取站点配置，拒绝未启用/未授权 scope
-  3. 拒绝 preset 不在站点允许列表的请求
-  4. 拒绝超过单文件大小的请求
-- Redis 滑动窗口配额：
-  - Key：`image:quota:{site}:{yyyymmdd}`
-  - 每次上传前 INCR 并对比 `image_quota_daily`
-  - 每次上传前累加 `image:quota:bytes:{site}:{yyyymmdd}` 对比 `image_quota_bytes_daily`
-- `POST /image/reference-ping` 端点（简单 UPDATE `last_referenced_at`）
+4. **基础 stats**
+   - `GET /stats?site=kungal&from=2026-04-01&to=2026-04-24`
+   - 返回上传数、唯一数、去重率、总字节数、按 preset 分布
+   - 不做 admin UI，纯 JSON 给运维脚本用
 
-#### 不做
-
-- ❌ 审核（下一阶段）
-- ❌ imgproxy（下一阶段）
+5. **TTL 清理 worker**
+   - `cmd/image-gc/main.go`
+   - 每天跑一次：扫 `last_referenced_at > 60d` 的行，转冷存储
+   - `last_referenced_at > 365d` → 软删
+   - `deleted_at < now - 30d` → 物理删 S3 对象
 
 ### 验收标准
 
-- [ ] 无 token 请求返回 401
-- [ ] token 缺 `image:upload` scope 返回 403
-- [ ] 未启用图片服务的 Client 返回 403
-- [ ] 超配额返回 429，带 `reset_at`
-- [ ] 文件超过站点上限返回 413
-- [ ] preset 不在允许列表返回 400
-- [ ] 集成测试覆盖各拒绝路径
+- [ ] SDK 在三站（kungal / moyu / galgame wiki）的本地项目里能成功 import 使用
+- [ ] `uploadImage` 前端调用能正常工作（带 user JWT）
+- [ ] `GET /stats` 返回数据与 DB 实际聚合一致
+- [ ] `image-gc` worker dry-run 模式输出待清理对象清单
+- [ ] 新增 preset 无需改代码，只改 YAML + `oauth_client.image_allowed_presets`
 
 ---
 
-## M3 — imgproxy + CDN + 压测
+## V2.5 — imgproxy（⏸ 可选，不排期）
 
-### 目标
+### 触发条件
 
-派生尺寸接通 imgproxy，调用方能拿到任意尺寸 URL；通过压测验证单机承载能力。
+**只有**满足以下任一条件才启动：
 
-### 交付物
+- 出现"任意尺寸"需求（如后台 PM 要"banner 列表页加 320×180 缩略图"且未来还会变）
+- 变体数量增长到 10+（维护预生成配置和回填脚本变重）
+- 存储成本成为问题（多份变体累计超预算）
 
-#### 部署
+### 范围
 
-- 独立 imgproxy 容器（Docker Compose / K8s）
-- Nginx/CDN 配置：
-  - `cdn.example.com/img/*` → 对象存储（原图）
-  - `img.cdn.example.com/*` → imgproxy
+- 部署 imgproxy 容器
+- SDK 加 `VariantURLDynamic(hash, opts)` 生成 HMAC 签名 URL
+- 原 `VariantURL(hash, variant)` 继续有效（两套并存）
+- CDN 配置 `img.cdn.*` 子域名路由 imgproxy
 
-#### 代码
+### 注意
 
-```
-apps/api/
-  pkg/
-    imageclient/               # 新增：Go SDK
-      variant.go               # BuildVariant 签名函数
-      url.go
-packages/
-  image-client/                # 新增：TypeScript SDK
-    src/
-      buildVariant.ts
-      index.ts
-    package.json
-```
-
-#### 功能
-
-- Go SDK `imageclient.BuildVariant(hash, site, ext, opts)` 返回签名 URL
-- TS SDK `buildImageVariant(hash, opts)` 同上，用于前端
-- 上传 API 的 `variants` 字段用 SDK 填充常用尺寸
-- imgproxy HMAC key 管理（env + Vault 可选）
-
-#### 压测
-
-- `wrk` / `k6` 压上传端点
-- 目标：单机 100 QPS 持续 5 分钟无报错，P99 < 800ms
-- 记录 CPU/内存曲线，确定 semaphore 合理值
-
-### 验收标准
-
-- [ ] 上传返回的 `variants` URL 可以访问并拿到正确尺寸
-- [ ] 直接访问 imgproxy 但签名错误 → 403
-- [ ] 压测达标，相关指标采到 Prometheus
-- [ ] SDK 在 kungal / moyu / galgame wiki 本地测试项目里能成功 import 使用
+**不要替换现有预生成**。imgproxy 是附加能力，不是替换：
+- 热路径变体（avatar-100 / banner-mini 等）继续走预生成（稳定、快）
+- 低频或动态变体走 imgproxy
 
 ---
 
-## M4 — 审核 + 管理后台
+## V3 — 审核 + Admin（⏸ 延后，按需）
 
-### 目标
+### 触发条件
 
-接入 AI 审核，管理员能看到/处理违规图。
+**只有**满足以下任一条件才启动：
 
-### 交付物
+- 违规内容已经成为实际问题（用户举报 / 监管要求）
+- 运营团队明确要求审核后台
 
-#### 代码
+### 范围
 
-```
-apps/api/
-  internal/
-    platform/
-      image/
-        moderation/
-          sync.go              # 同步审核 Hook
-          async.go             # 异步 worker
-          provider/
-            aliyun.go          # 阿里云内容安全
-            tencent.go         # 腾讯云内容安全
-            noop.go            # 占位实现
-        handler/
-          admin.go             # 管理端点
-        service/
-          admin.go
-  cmd/
-    image-moderation-worker/   # 独立 worker 进程
-      main.go
-apps/web/
-  app/pages/
-    image/
-      list.vue                 # 管理列表
-      detail/[hash].vue        # 详情 + 审核操作
-```
+1. **同步审核 Hook**
+   - 上传流程中在 store 前调用 `moderation.SyncCheck`
+   - 超时（300ms）降级为 "pending"
+   - 命中高置信度违规：返回 422，不写 DB，不存对象
 
-#### 功能
+2. **异步审核 worker**
+   - `cmd/image-moderation-worker/`
+   - 队列用 Postgres `image_moderation_queue` 表，SKIP LOCKED 消费
+   - 调用云厂商审核 API（阿里/腾讯），回填 `review_status` + `review_labels`
 
-- 同步审核：
-  - 上传流程中在 store 前调用 `moderation.SyncCheck(ctx, bytes, meta)`
-  - 超时（如 300ms）降级为 "pending"，不阻塞上传
-  - 命中高置信度违规：返回 422，不写入 DB，不存对象
-- 异步审核：
-  - 上传成功后投递到队列（Postgres `image_moderation_queue` 表，SELECT FOR UPDATE SKIP LOCKED 消费）
-  - Worker 并发调用审核 API，回填 `review_status` + `review_labels`
-  - 拒绝的图更新 CDN/imgproxy 黑名单（通过 cache tag 刷新）
-- 管理后台页面（复用 kun-oauth-admin 已有的 admin 壳）：
-  - 待审列表（review_status = pending）
-  - 已拒列表
-  - 手动放行/拒绝
-  - 按站点/上传者/时间过滤
+3. **Admin UI**
+   - 复用 `apps/web` 现有 admin 壳
+   - 待审列表、已拒列表、手动放行/拒绝
+   - 按站点 / 上传者 / 时间过滤
 
-### 验收标准
-
-- [ ] 已知违规图（人为测试素材）同步拦截
-- [ ] 异步 worker 消费队列，结果正确回填
-- [ ] 管理员可以手动翻转 review 状态，状态变化触发 CDN 缓存刷新
-- [ ] 审核故障时上传降级为 pending，系统不卡
-- [ ] 监控：审核延迟、拒绝率、人工复核积压数
+4. **`/admin/*` 端点**
+   - `GET /admin/image/list`
+   - `PATCH /admin/image/:hash/review`
+   - `GET /admin/stats`
 
 ---
 
-## M5 — 迁移 + 切换
+## V4 — 迁移 + 调用方切换
 
 按 [04-migration-plan.md](./04-migration-plan.md) 推进。
 
@@ -267,21 +257,21 @@ apps/web/
 
 - 编写 `cmd/migrate-images/` 脚本
 - `migration_progress` 表 migration
-- 各站点调用方代码改造（分 PR 推进）：
-  - kungal PR-1：业务库加 `*_image_hash` 字段 + GORM model
-  - kungal PR-2：上传逻辑改调图片服务
-  - kungal PR-3：读取逻辑改用 hash
-  - moyu 同上
-  - galgame wiki 同上
-- CDN rewrite 规则（在外部 Nginx / Cloudflare Workers 配置）
-- 离线迁移执行（分站点、分类型）
+- **topic 图床不迁移**，老桶永久只读保留
+- 各站点调用方代码改造（每站 3–4 个 PR 起步，1–2 个月）
 
 ### 验收标准（每站点独立）
 
-- [ ] 新上传全部走新服务（旧 bucket 上传 QPS 归零）
-- [ ] 旧图批量迁移完成，新路径可访问
-- [ ] 前端读取优先新 URL，回退旧 URL 兜底
-- [ ] 旧 URL 访问日志观察 2 周，降到 < 5% 后可进一步下线兼容层
+- [ ] 新上传（包括 topic）全部走新服务
+- [ ] 旧 avatar / banner 批量迁移完成，新路径可访问，业务库外键更新
+- [ ] 前端读取优先新 URL，回退老 URL 兜底逻辑稳定
+- [ ] 旧 URL 访问量 < 1%（topic 历史 URL 不计入此指标）
+
+### 灰度顺序建议
+
+**galgame wiki（数据最少）→ moyu → kungal**
+
+galgame wiki 数据量最小、用户基数小、可接受短暂小问题，是理想的先行者。
 
 ---
 
@@ -310,25 +300,23 @@ KUN_IMAGE_S3_ACCESS_KEY=...
 KUN_IMAGE_S3_SECRET_KEY=...
 KUN_IMAGE_S3_FORCE_PATH_STYLE=true       # MinIO 必需
 
-# imgproxy
-KUN_IMGPROXY_BASE_URL=https://img.cdn.example.com
-KUN_IMGPROXY_KEY=<hex>
-KUN_IMGPROXY_SALT=<hex>
+# Redis (配额计数，复用现有)
+REDIS_HOST=localhost
+REDIS_PORT=6379
 
-# Moderation
-KUN_MODERATION_PROVIDER=aliyun           # aliyun / tencent / noop
-KUN_MODERATION_ALIYUN_ACCESS_KEY=...
-KUN_MODERATION_ALIYUN_SECRET_KEY=...
-KUN_MODERATION_SYNC_TIMEOUT_MS=300
-KUN_MODERATION_ASYNC_WORKERS=4
+# —— V3 延后配置 ——
+# KUN_MODERATION_PROVIDER=...
+# —— V2.5 可选配置 ——
+# KUN_IMGPROXY_BASE_URL=...
+# KUN_IMGPROXY_KEY=...
+# KUN_IMGPROXY_SALT=...
 ```
 
 ### 本地开发依赖
 
 - Docker Compose 新增 services：
   - `minio`（对象存储）
-  - `imgproxy`
-  - （可选）`redis`（配额计数）
+  - （`redis` 复用现有）
 
 - 系统依赖：
   - libvips：`sudo pacman -S libvips`（Arch）/ `apt install libvips-dev`（Debian）
@@ -337,7 +325,7 @@ KUN_MODERATION_ASYNC_WORKERS=4
 
 - Lint + Vet（已有）
 - 单元测试（`go test ./internal/platform/image/...`）
-- 集成测试：TestMain 启动 MinIO + imgproxy 容器，跑端到端
+- 集成测试：TestMain 启动 MinIO + Redis + PG 容器，跑端到端
 
 ---
 
@@ -345,21 +333,28 @@ KUN_MODERATION_ASYNC_WORKERS=4
 
 | 风险 | 里程碑 | 缓解 |
 |------|--------|------|
-| libvips CGO 构建失败 | M1 | 准备 `kolesa-team/go-webp` 作为纯 CGO 备选；CI 镜像固化依赖 |
-| MinIO / S3 协议兼容性差异 | M1 | 使用 `aws-sdk-go-v2` 泛协议，用 MinIO 开发 + 生产切 R2 测试 |
-| 审核 API 额度或审核误杀 | M4 | 先 noop provider 跑通链路；上线后先走 shadow mode（记录不拦） |
-| 迁移脚本对业务库的写入冲突 | M5 | 业务库加 `*_image_hash` 字段时用 default NULL，不阻塞旧读；迁移脚本 UPDATE 时 WHERE 空值保护 |
-| 图片服务成为单点 | 全程 | 单实例 OK（无状态），流量大了水平扩；DB 用现有 PG HA |
+| libvips CGO 构建失败 | V1 | 准备 `kolesa-team/go-webp` 作为纯 CGO 备选；CI 镜像固化依赖 |
+| MinIO / S3 协议兼容性差异 | V1 | 使用 `aws-sdk-go-v2` 泛协议，MinIO 开发 + R2 预发测试 |
+| 配额 Redis 短暂不可用 | V1 | 降级策略：Redis 失败时限速到站点配置 1% 兜底，而非直接 500 |
+| 调用方切换周期过长阻塞老桶下线 | V4 | 明确老 avatar/banner 桶至少保留 6 个月；topic 老桶永久保留 |
+| preset 配置漂移 | V2 | preset 改动走 PR review，附回填脚本 dry-run 输出 |
 
 ---
 
 ## 上线后 KPI
 
+### V1 上线 1 周
+
 - **可用性**：`/image/upload` 成功率 > 99.9%
-- **性能**：P99 上传处理耗时 < 800ms（含审核 300ms）
-- **去重率**：`deduplicated_count / upload_count` > 10%（跨用户头像重复、meme 图等）
-- **审核准确率**：人工抽检 200 张，误杀 < 2%，漏杀 < 5%
-- **成本**：对象存储月成本 < 旧系统 × 1.2（去重省 + 冷存储省）
+- **性能**：P99 上传处理耗时 < 500ms
+- **去重率**：`dedup_hits / upload_count` > 5%（随接入量上涨）
+- **配额命中**：期待 0 次生产侧 429（如有，说明调用方有异常行为）
+
+### V4 完成后 1 个月
+
+- **旧桶写入**：QPS 归零
+- **覆盖率**：业务库 `*_image_hash` 字段非空覆盖 > 99%
+- **成本**：对象存储月成本 < 旧系统 × 1.2（去重省 + 变体统一省）
 
 ---
 
@@ -369,6 +364,6 @@ KUN_MODERATION_ASYNC_WORKERS=4
 
 - 设计变更 → 先改本目录文档再提 PR 实现
 - 新的非平凡决策 → 追加到 `01-design.md` 的"核心设计决策"或新建 `06-xxx.md`
-- API 变更 → 同步改 `03-api-design.md` 与 `docs/integration/image_service/api-reference.md`（M3 阶段生成 integration 文档）
+- API 变更 → 同步改 `03-api-design.md` 与 `docs/integration/image_service/api-reference.md`（V2 阶段生成 integration 文档）
 
 参考 `docs/galgame_wiki/` 的维护方式。

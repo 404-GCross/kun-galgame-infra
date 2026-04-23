@@ -5,29 +5,41 @@
 ### Bucket & Key
 
 - **Bucket**：`kun-images`（生产）/ `kun-images-dev`（开发）/ `kun-images-test`（测试）
-- **Key 格式**：
+- **Key 格式（无 site 前缀，完全 content-addressed）**：
   ```
-  <site>/<hash[:2]>/<hash[2:4]>/<hash>.<ext>
+  主图:  <hash[:2]>/<hash[2:4]>/<hash>.webp
+  变体:  <hash[:2]>/<hash[2:4]>/<hash>_<variant>.webp
   ```
 - **示例**：
   ```
-  kungal/ab/cd/abcd1234567890abcdef...ef.webp
-  moyu/12/34/1234abcdef1234567890...ff.webp
-  galgame_wiki/56/78/5678abc123...aa.jpg
+  ab/cd/abcd1234567890abcdef...ef.webp         # 主图
+  ab/cd/abcd1234567890abcdef...ef_100.webp     # avatar 变体
+  ab/cd/abcd1234567890abcdef...ef_mini.webp    # banner 变体
   ```
 
 ### 设计说明
 
 | 层 | 作用 |
 |----|------|
-| `<site>` | 便于按调用方统计、清理、迁移；生命周期策略可按站点独立 |
 | `<hash[:2]>/<hash[2:4]>` | 前缀分片。对象存储本身无目录概念，但便于 `aws s3 ls` / `rclone` 扫描 |
-| `<hash>.<ext>` | SHA-256 全 hash + 原始扩展名。扩展名只做信息用，真实类型以元数据 `mime` 为准 |
+| `<hash>.webp` | SHA-256 全 hash 做主图文件名；V1 所有输出固定 `.webp` |
+| `<hash>_<variant>.webp` | 变体用下划线 + 变体名后缀（如 `_100`、`_mini`） |
 
-### 原图 vs 派生图
+### 为什么不在 key 里带 site
 
-- **上传产物**：`<site>/<hash>/<hash>.<ext>`（单份，压缩 or 原图按站点配置）
-- **派生图**：**不存**，imgproxy 按需从上面这份生成 + CDN 缓存
+跨站彻底物理去重是目标（决策 3 + 决策 6）：同一张头像无论是 kungal 还是 moyu 上传，对象存储只存一份。站点级信息放在 `image_site_usage` 表里，不在 URL 层冗余。
+
+### 变体命名约定
+
+变体名由 preset 配置决定，V1 固定三套：
+
+| preset | 变体集 | 说明 |
+|--------|--------|------|
+| `avatar` | `[100]` | 100×100 头像缩略图 |
+| `galgame_banner` | `[mini]` | 460×259 banner 缩略图 |
+| `topic` | `[]` | 无变体，仅主图 |
+
+未来新增 preset 或新变体：加进 preset 配置，跑一次回填脚本补齐已有图的变体（或者按需触发）。
 
 ### 生命周期策略
 
@@ -35,11 +47,11 @@
 
 | 规则 | 触发条件 | 动作 |
 |------|---------|------|
-| Standard → IA | 上次访问 > 60 天 | 转低频存储 |
-| IA → Archive | 上次访问 > 180 天 | 转归档存储（R2 没这层可跳过） |
+| Standard → IA | `last_referenced_at` > 60 天未更新 | 转低频存储 |
+| IA → Archive | `last_referenced_at` > 180 天未更新 | 转归档存储（R2 没这层可跳过） |
 | 软删 → 物理删 | `deleted_at < now - 30d` | 物理删除 |
 
-> 对象存储的 "last access" 通常要开启 Intelligent Tiering 才有；如果没开，可改用 `last_modified`（但不准）或由图片服务的清理 worker 显式转存储层。
+实现方式：**图片服务的清理 worker** 显式调用 S3 `PutObjectLifecycleConfiguration` 或直接 `CopyObject` 到低频存储类，不依赖对象存储自身的 "last access" 特性（因为很多 S3 兼容存储不支持）。
 
 ## PostgreSQL Schema
 
@@ -61,72 +73,93 @@ KUN_IMAGES_PG_DATABASE=kun_images
 
 ### 表结构
 
-#### `images` — 核心表
+#### `images` — 核心表（单行 per hash）
 
 ```sql
 CREATE TABLE images (
     id              BIGSERIAL PRIMARY KEY,
-    hash            CHAR(64) NOT NULL,           -- sha256 hex
-    site            VARCHAR(32) NOT NULL,        -- 首次上传来源站
-    storage_key     VARCHAR(512) NOT NULL,       -- 对象存储 key
-    mime            VARCHAR(32) NOT NULL,        -- image/webp / image/jpeg / ...
-    ext             VARCHAR(8) NOT NULL,         -- webp / jpg / png
+    hash            CHAR(64) NOT NULL UNIQUE,    -- sha256 hex；唯一键
+    storage_key     VARCHAR(512) NOT NULL,       -- 主图对象存储 key
+    mime            VARCHAR(32) NOT NULL,        -- 恒为 image/webp（V1）
+    ext             VARCHAR(8) NOT NULL,         -- 恒为 webp（V1）
 
     width           INTEGER NOT NULL,
     height          INTEGER NOT NULL,
     size_bytes      BIGINT NOT NULL,
 
-    is_original     BOOLEAN NOT NULL DEFAULT FALSE,  -- 是否保留了原图（站点开关）
+    variants        TEXT[] NOT NULL DEFAULT '{}', -- 已生成的变体名，如 {'100','mini'}
+
     origin_mime     VARCHAR(32),                 -- 原始格式（转码前）
     origin_size     BIGINT,                      -- 原始大小（转码前）
 
-    review_status   SMALLINT NOT NULL DEFAULT 0, -- 0 待审 / 1 通过 / 2 拒绝 / 3 人工复核
+    -- 审核（V3 使用，V1 默认 approved）
+    review_status   SMALLINT NOT NULL DEFAULT 1, -- 0 待审 / 1 通过 / 2 拒绝 / 3 人工复核
     review_labels   JSONB,                       -- AI 审核标签明细
     reviewed_at     TIMESTAMPTZ,
 
-    uploader_sub    VARCHAR(64),                 -- 上传者 OAuth sub（user id）
-    uploader_client VARCHAR(64),                 -- 上传者 OAuth client_id
-    uploader_ip     INET,
+    -- 首次上传记录（审计用，不代表"拥有"这张图）
+    first_uploader_sub    VARCHAR(64),
+    first_uploader_client VARCHAR(64),
+    first_uploader_ip     INET,
 
     last_referenced_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),  -- 最后被 ping 时间
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    deleted_at      TIMESTAMPTZ,                 -- 软删时间戳
-
-    CONSTRAINT images_hash_site_uniq UNIQUE (hash, site)
+    deleted_at      TIMESTAMPTZ                  -- 软删时间戳
 );
 
-CREATE INDEX idx_images_hash ON images(hash);
-CREATE INDEX idx_images_site_created ON images(site, created_at DESC);
-CREATE INDEX idx_images_review_status ON images(review_status) WHERE review_status IN (0, 3);
 CREATE INDEX idx_images_last_ref ON images(last_referenced_at) WHERE deleted_at IS NULL;
+CREATE INDEX idx_images_review_status ON images(review_status) WHERE review_status IN (0, 3);
 CREATE INDEX idx_images_deleted ON images(deleted_at) WHERE deleted_at IS NOT NULL;
+CREATE INDEX idx_images_created ON images(created_at DESC);
 ```
 
-**为什么 `UNIQUE (hash, site)` 而不是 `UNIQUE (hash)`**：
-- 同一张图被 kungal 和 moyu 分别上传时，物理上只存一份没问题，但：
-  - 审计视角：各站要独立统计上传量
-  - 审核视角：某站对这张图的审核结果可能不同（如 moyu 宽松 / kungal 严格）
-  - 清理视角：各站独立 ping `last_referenced_at`
-- 存储层可以做软链（两条 `images` 行指向同一个 `storage_key`），见"去重策略"
+**关键点**：
+- `hash` 唯一键（决策 3）—— 跨站去重
+- `variants` 列记录该 hash 已生成哪些变体。再次上传同 hash 时检查此列，缺啥补啥
+- `review_status DEFAULT 1`（approved）—— V1 无审核，全通过；V3 接入时改默认值
+- `first_uploader_*` 只记录首次（审计用途），不代表"拥有权"
 
-**去重策略**：
-- 上传时先查 `SELECT id FROM images WHERE hash = ? LIMIT 1`
-- 命中：复用现有 `storage_key`，**只插新的 `images` 行**（不重新上传对象）
-- 未命中：处理 + 上传 + 插入
+#### `image_site_usage` — 站点使用审计
 
-#### `upload_audit` — 上传审计（可选，小量可合并入日志）
+```sql
+CREATE TABLE image_site_usage (
+    id              BIGSERIAL PRIMARY KEY,
+    hash            CHAR(64) NOT NULL,
+    site            VARCHAR(32) NOT NULL,
+    first_uploader_sub    VARCHAR(64),
+    first_uploader_client VARCHAR(64),
+    first_uploaded_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    upload_count          INTEGER NOT NULL DEFAULT 1,  -- 本站上传次数（含重复）
+    last_uploaded_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT image_site_usage_uniq UNIQUE (hash, site)
+);
+
+CREATE INDEX idx_site_usage_site ON image_site_usage(site, first_uploaded_at DESC);
+CREATE INDEX idx_site_usage_hash ON image_site_usage(hash);
+```
+
+**作用**：
+- 站点视角的统计（kungal 总共上传了多少独立图 / 多少次重复）
+- 审计溯源（某张违规图 kungal、moyu 各自什么时候传过）
+- **不影响**物理存储和审核态（这两件事只由 `images` 主表决定）
+
+**写入时机**：
+- 上传时 `INSERT ... ON CONFLICT (hash, site) DO UPDATE SET upload_count = upload_count + 1, last_uploaded_at = NOW()`
+
+#### `upload_audit` — 完整上传日志（可选）
 
 ```sql
 CREATE TABLE upload_audit (
     id              BIGSERIAL PRIMARY KEY,
     image_id        BIGINT REFERENCES images(id) ON DELETE SET NULL,
-    hash            CHAR(64) NOT NULL,
+    hash            CHAR(64),
     site            VARCHAR(32) NOT NULL,
     uploader_sub    VARCHAR(64),
     uploader_client VARCHAR(64),
     uploader_ip     INET,
     preset          VARCHAR(32),
-    result          VARCHAR(16) NOT NULL,        -- success / rejected_moderation / rejected_quota / error
+    result          VARCHAR(16) NOT NULL,        -- success / rejected_quota / error / dedup_hit
     error_reason    TEXT,
     duration_ms     INTEGER,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -136,118 +169,133 @@ CREATE INDEX idx_audit_site_created ON upload_audit(site, created_at DESC);
 CREATE INDEX idx_audit_uploader ON upload_audit(uploader_sub, created_at DESC);
 ```
 
-#### `reference_pings` — 引用续期（可选）
-
-如果调用方采用"周期性批量 ping"方案（见决策 4），图片服务接收端点 `POST /image/reference-ping`，可以直接 `UPDATE images SET last_referenced_at = NOW() WHERE hash = ANY($1)`，无需额外表。
-
-但如果想追踪"哪个站的哪次 ping 续期了哪些图"，可建：
-
-```sql
-CREATE TABLE reference_pings (
-    id              BIGSERIAL PRIMARY KEY,
-    site            VARCHAR(32) NOT NULL,
-    ping_batch_id   VARCHAR(64),                 -- 调用方自定义批次 ID
-    hashes_count    INTEGER NOT NULL,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-```
-
-M1 阶段可以**先不做这张表**，观察需要再加。
+V1 可选（也可以先用 slog 日志，观察后再决定落表）。
 
 ## 站点配置扩展 OAuth Client
 
-新增字段（在 `kun_oauth_admin.oauth_client` 表上 `ALTER TABLE`）：
+在 `kun_oauth_admin.oauth_client` 表上 `ALTER TABLE` 追加字段：
 
 ```sql
 ALTER TABLE oauth_client
     ADD COLUMN image_enabled BOOLEAN NOT NULL DEFAULT FALSE,
-    ADD COLUMN image_quota_daily INTEGER DEFAULT 10000,         -- 每日上传张数
-    ADD COLUMN image_quota_bytes_daily BIGINT DEFAULT 10737418240,  -- 每日上传字节数（10GB）
-    ADD COLUMN image_max_file_size BIGINT DEFAULT 10485760,     -- 单文件上限（10MB）
-    ADD COLUMN image_allow_original BOOLEAN NOT NULL DEFAULT FALSE,  -- 是否允许保留原图
-    ADD COLUMN image_allowed_presets TEXT[] DEFAULT ARRAY['cover', 'thumbnail'],
-    ADD COLUMN image_site_key VARCHAR(32);                      -- 对象存储 key 前缀（如 'kungal'）
+    ADD COLUMN image_quota_daily INTEGER DEFAULT 10000,              -- 每日上传张数
+    ADD COLUMN image_quota_bytes_daily BIGINT DEFAULT 10737418240,   -- 每日上传字节数（10GB）
+    ADD COLUMN image_max_file_size BIGINT DEFAULT 10485760,          -- 单文件上限（10MB）
+    ADD COLUMN image_allowed_presets TEXT[] DEFAULT ARRAY['avatar', 'topic'],
+    ADD COLUMN image_site_key VARCHAR(32);                           -- 审计用的站点标识（如 'kungal'）
 ```
+
+### 字段语义
+
+| 字段 | 作用 |
+|------|------|
+| `image_enabled` | 站点总开关 |
+| `image_quota_daily` | 日上传张数上限（Redis day-window 计数） |
+| `image_quota_bytes_daily` | 日上传字节数上限（防止大文件刷爆） |
+| `image_max_file_size` | 单文件大小上限 |
+| `image_allowed_presets` | 本站可用的 preset 白名单 |
+| `image_site_key` | 写入 `image_site_usage.site` 的值 |
 
 ### 新站点接入流程
 
-1. 在 `oauth_client` 表 `INSERT` 一行，填 `image_site_key='new_site'`、`image_enabled=true` 等
+1. 在 `oauth_client` 表 `INSERT` / `UPDATE`，填 `image_site_key='new_site'`、`image_enabled=true` 等
 2. 申请 OAuth Client 的 scope 时包含 `image:upload`
 3. 调用方代码里用新 `client_id` / `client_secret` 换 access_token
 4. 直接调图片服务 API —— **零代码改动到图片服务侧**
 
-## Preset 配置（服务端配置文件）
+## Preset 配置
 
-放在 `apps/api/configs/image_presets.yaml`：
+### 作用
+
+**preset 是"入口校验 + 语义标签 + 变体清单"，不是主图处理差异**。
+
+- **入口校验**：限制允许使用该 preset 的站点（配合 `image_allowed_presets`）
+- **语义标签**：写入 `upload_audit` / 统计，便于看"topic 图床传了多少 vs 头像传了多少"
+- **变体清单**：决定除主图外还要生成哪些变体
+
+**主图处理策略单一**：所有 preset 的主图都走同样的 `libvips fit 1920×1080, webp@82, strip EXIF` 管线。avatar 和 topic 压出来的主图大小差异，完全来自输入尺寸本身不同。
+
+### V1 配置（`apps/api/configs/image_presets.yaml`）
 
 ```yaml
+main_pipeline:
+  fit_width: 1920
+  fit_height: 1080
+  format: webp
+  quality: 82
+  strip_exif: true
+
 presets:
-  # 通用
-  cover:
-    max_width: 1920
-    max_height: 1080
-    quality: 82
-    format: webp
-    strip_exif: true
-
-  thumbnail:
-    max_width: 400
-    max_height: 400
-    quality: 80
-    format: webp
-    strip_exif: true
-
   avatar:
-    max_width: 256
-    max_height: 256
-    quality: 85
-    format: webp
-    strip_exif: true
+    variants:
+      - name: "100"
+        width: 100
+        height: 100
+        fit: cover             # 裁剪方形，填满 100×100
+        format: webp
+        quality: 82
+    allowed_mime:
+      - image/jpeg
+      - image/png
+      - image/webp
 
-  # kungal topic 图（保留长尺寸）
-  topic_image:
-    max_width: 1600
-    max_height: 4000         # 长截图友好
-    quality: 82
-    format: webp
-    strip_exif: true
-
-  # galgame 保留原图
   galgame_banner:
-    max_width: 0             # 0 = 不缩放
-    max_height: 0
-    quality: 0               # 0 = 不转码
-    format: original         # 保留原格式
-    strip_exif: true
-    max_file_size: 52428800  # 50MB
+    variants:
+      - name: "mini"
+        width: 460
+        height: 259
+        fit: cover             # 保持比例裁剪到 460×259
+        format: webp
+        quality: 82
+    allowed_mime:
+      - image/jpeg
+      - image/png
+      - image/webp
+
+  topic:
+    variants: []               # 主图够用，无变体
+    allowed_mime:
+      - image/jpeg
+      - image/png
+      - image/webp
+      - image/gif              # topic 支持 gif 首帧
 ```
 
-## imgproxy URL 格式
+### 新增 preset 的流程
 
-派生尺寸走 imgproxy，URL 形如：
-
-```
-https://img.cdn.example.com/<signature>/rs:fit:<w>:<h>/<extension>/plain/s3://kun-images/<key>@<format>
-```
-
-实际例子：
-```
-https://img.cdn/abcd1234/rs:fit:400:400/webp/plain/s3://kun-images/kungal/ab/cd/abcd...ef.webp@webp
-```
-
-- `<signature>` 用 HMAC-SHA256 签名整个路径，防止外部乱拼参数
-- 签名 key 存环境变量 `IMGPROXY_KEY` / `IMGPROXY_SALT`
-- 后端提供工具函数 `BuildVariantURL(hash, site, ext, preset)` 供调用方使用，不暴露裸拼接
+1. 改 `image_presets.yaml` 加新 preset 定义
+2. 在 `oauth_client.image_allowed_presets` 里加上该 preset
+3. （可选）对已有图跑一次变体回填脚本
 
 ## 对外 URL 形态
 
-调用方最终拿到两种 URL：
+调用方拿到的 URL 直接是 CDN 前的对象存储 URL（或 CDN 域名重写）：
 
-| 用途 | URL | 访问路径 |
-|------|-----|---------|
-| **原图/标准图** | `https://cdn.example.com/img/<site>/<hash>.<ext>` | CDN → 回源到对象存储 |
-| **指定变体** | `https://img.cdn.example.com/<signature>/rs:fit:W:H/webp/plain/...` | CDN → imgproxy → 对象存储 |
+| 用途 | URL | 说明 |
+|------|-----|------|
+| **主图** | `https://cdn.example.com/img/ab/cd/<hash>.webp` | CDN → 对象存储 |
+| **变体** | `https://cdn.example.com/img/ab/cd/<hash>_100.webp` | 直接拼变体后缀 |
 
-CDN 层面做 URL 美化（第一种），imgproxy 走独立子域名（第二种）。
+调用方通过 SDK（V2 提供）构造变体 URL：
+
+```go
+imageclient.MainURL(hash)         // → https://cdn.../ab/cd/hash.webp
+imageclient.VariantURL(hash, "100") // → https://cdn.../ab/cd/hash_100.webp
+```
+
+**没有 HMAC 签名**（因为不走 imgproxy），URL 是公开可预测的。如果以后某张图需要私有化，走访问控制（CDN token）即可。
+
+## 配额计数（Redis）
+
+Redis key 设计：
+
+| Key | 类型 | 语义 |
+|-----|------|------|
+| `image:quota:count:{site}:{yyyymmdd}` | counter | 当日上传张数 |
+| `image:quota:bytes:{site}:{yyyymmdd}` | counter | 当日上传字节数 |
+
+TTL：26 小时（跨日安全余量），到期 Redis 自动清理。
+
+上传前原子 `INCRBY` 并比对 `oauth_client.image_quota_*`，超限返回 429。
 
 下一篇：[03 — API 设计](./03-api-design.md)
