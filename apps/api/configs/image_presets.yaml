@@ -1,0 +1,57 @@
+# Image Service preset configuration.
+#
+# main_pipeline is the global compression policy applied to every uploaded
+# image regardless of preset. Each preset additionally declares variants
+# (extra derivative images to generate on top of the main one).
+
+main_pipeline:
+  fit_width: 1920
+  fit_height: 1080
+  format: webp
+  quality: 82
+  strip_exif: true
+
+presets:
+  # User avatars. 256 is the main display size (square, cover). 100 is for
+  # comments / small mentions.
+  avatar:
+    variants:
+      - name: "256"
+        width: 256
+        height: 256
+        fit: cover
+        format: webp
+        quality: 82
+      - name: "100"
+        width: 100
+        height: 100
+        fit: cover
+        format: webp
+        quality: 82
+    allowed_mime:
+      - image/jpeg
+      - image/png
+      - image/webp
+
+  # galgame wiki banner thumbnails (aspect-preserving fill to 460x259).
+  galgame_banner:
+    variants:
+      - name: "mini"
+        width: 460
+        height: 259
+        fit: cover
+        format: webp
+        quality: 82
+    allowed_mime:
+      - image/jpeg
+      - image/png
+      - image/webp
+
+  # Topic / inline post images. Main image only; no extra variants.
+  topic:
+    variants: []
+    allowed_mime:
+      - image/jpeg
+      - image/png
+      - image/webp
+      - image/gif

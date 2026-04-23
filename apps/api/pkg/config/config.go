@@ -13,10 +13,31 @@ type Config struct {
 	Server          ServerConfig
 	Database        DatabaseConfig
 	GalgameDatabase DatabaseConfig
+	ImagesDatabase  DatabaseConfig
 	Redis           RedisConfig
 	JWT             JWTConfig
 	Mail            MailConfig
 	Meilisearch     MeilisearchConfig
+	ImageService    ImageServiceConfig
+	ImageS3         S3Config
+}
+
+// ImageServiceConfig holds image-service-specific configuration
+type ImageServiceConfig struct {
+	Host        string // Bind address
+	Port        int    // Bind port
+	CDNBase     string // Public URL prefix, e.g. https://cdn.example.com/img
+	PresetsPath string // Path to image_presets.yaml
+}
+
+// S3Config holds S3-compatible object storage configuration
+type S3Config struct {
+	Endpoint        string // e.g., http://127.0.0.1:9000
+	Region          string // e.g., us-east-1 or auto for R2
+	AccessKeyID     string
+	SecretAccessKey string
+	Bucket          string
+	UsePathStyle    bool // true for MinIO, false for AWS S3
 }
 
 // MeilisearchConfig holds Meilisearch-related configuration
@@ -148,6 +169,37 @@ func Load() (*Config, error) {
 		Host:        getEnv("KUN_MEILISEARCH_HOST", "http://127.0.0.1:7700"),
 		APIKey:      getEnv("KUN_MEILISEARCH_API_KEY", ""),
 		IndexPrefix: getEnv("KUN_MEILISEARCH_INDEX_PREFIX", ""),
+	}
+
+	// Images database config (defaults to same server, different db name)
+	cfg.ImagesDatabase = DatabaseConfig{
+		Host:     getEnv("KUN_IMAGES_PG_HOST", cfg.Database.Host),
+		Port:     getEnv("KUN_IMAGES_PG_PORT", cfg.Database.Port),
+		User:     getEnv("KUN_IMAGES_PG_USER", cfg.Database.User),
+		Password: getEnv("KUN_IMAGES_PG_PASSWORD", cfg.Database.Password),
+		DBName:   getEnv("KUN_IMAGES_PG_DATABASE", "kun_images"),
+		SSLMode:  getEnv("KUN_IMAGES_PG_SSLMODE", cfg.Database.SSLMode),
+		Timezone: getEnv("KUN_IMAGES_PG_TIMEZONE", cfg.Database.Timezone),
+	}
+
+	// Image Service config
+	imagePort, _ := strconv.Atoi(getEnv("KUN_IMAGE_SERVICE_PORT", "9278"))
+	cfg.ImageService = ImageServiceConfig{
+		Host:        getEnv("KUN_IMAGE_SERVICE_HOST", "127.0.0.1"),
+		Port:        imagePort,
+		CDNBase:     getEnv("KUN_IMAGE_PUBLIC_BASE_URL", "http://127.0.0.1:9000/kun-images-dev"),
+		PresetsPath: getEnv("KUN_IMAGE_PRESETS_PATH", "apps/api/configs/image_presets.yaml"),
+	}
+
+	// S3 (object storage) config
+	s3UsePathStyle, _ := strconv.ParseBool(getEnv("KUN_IMAGE_S3_FORCE_PATH_STYLE", "true"))
+	cfg.ImageS3 = S3Config{
+		Endpoint:        getEnv("KUN_IMAGE_S3_ENDPOINT", "http://127.0.0.1:9000"),
+		Region:          getEnv("KUN_IMAGE_S3_REGION", "us-east-1"),
+		AccessKeyID:     getEnv("KUN_IMAGE_S3_ACCESS_KEY", ""),
+		SecretAccessKey: getEnv("KUN_IMAGE_S3_SECRET_KEY", ""),
+		Bucket:          getEnv("KUN_IMAGE_S3_BUCKET", "kun-images-dev"),
+		UsePathStyle:    s3UsePathStyle,
 	}
 
 	// Validate required fields

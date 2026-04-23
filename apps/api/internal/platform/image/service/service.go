@@ -1,0 +1,312 @@
+// Package service wires up the upload pipeline: auth-validated request →
+// sniff → dedup → process → store → persist → response.
+package service
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"io"
+	"net/url"
+	"slices"
+	"strings"
+
+	"api/internal/platform/image/model"
+	"api/internal/platform/image/preset"
+	"api/internal/platform/image/processor"
+	"api/internal/platform/image/repository"
+	"api/internal/platform/image/storage"
+
+	"github.com/gabriel-vasile/mimetype"
+)
+
+// Errors returned by the service layer. Handlers map these to error codes.
+var (
+	ErrUnsupportedFormat = errors.New("service: unsupported image format")
+	ErrPresetNotFound    = errors.New("service: preset not defined")
+	ErrPresetNotAllowed  = errors.New("service: preset not allowed for site")
+	ErrMIMENotAllowed    = errors.New("service: mime not allowed by preset")
+)
+
+// UploadRequest is the internal representation of an upload. All auth-
+// validated context (site, uploader) is passed in explicitly; the service
+// layer does not reach into Fiber ctx.
+type UploadRequest struct {
+	Body           []byte
+	Preset         string
+	Site           string
+	UploaderSub    string
+	UploaderClient string
+	UploaderIP     string
+}
+
+// UploadResult is what the handler turns into JSON.
+type UploadResult struct {
+	Hash         string            `json:"hash"`
+	URL          string            `json:"url"`
+	VariantURLs  map[string]string `json:"variant_urls"`
+	Width        int               `json:"width"`
+	Height       int               `json:"height"`
+	SizeBytes    int64             `json:"size_bytes"`
+	Deduplicated bool              `json:"deduplicated"`
+}
+
+// Service is the upload orchestrator.
+type Service struct {
+	presets   *preset.Config
+	storage   *storage.Client
+	imgRepo   *repository.ImageRepository
+	usageRepo *repository.SiteUsageRepository
+	cdnBase   string // e.g. https://cdn.example.com/img (no trailing slash)
+}
+
+// New builds a Service with its dependencies.
+func New(
+	presets *preset.Config,
+	storage *storage.Client,
+	imgRepo *repository.ImageRepository,
+	usageRepo *repository.SiteUsageRepository,
+	cdnBase string,
+) *Service {
+	return &Service{
+		presets:   presets,
+		storage:   storage,
+		imgRepo:   imgRepo,
+		usageRepo: usageRepo,
+		cdnBase:   strings.TrimRight(cdnBase, "/"),
+	}
+}
+
+// Presets exposes the loaded preset config (handlers may need it for
+// MIME / allow checks without duplicating lookup logic).
+func (s *Service) Presets() *preset.Config { return s.presets }
+
+// Upload runs the full upload pipeline. It is safe to call concurrently:
+// two racing uploads of the same hash may both run full libvips work but
+// the final DB INSERT deduplicates (one wins, other's work is discarded).
+func (s *Service) Upload(ctx context.Context, req UploadRequest) (*UploadResult, error) {
+	ps, ok := s.presets.Get(req.Preset)
+	if !ok {
+		return nil, ErrPresetNotFound
+	}
+
+	// MIME sniff on the raw bytes. Never trust Content-Type from client.
+	mt := mimetype.Detect(req.Body).String()
+	if !ps.IsMIMEAllowed(mt) {
+		return nil, fmt.Errorf("%w: %s", ErrMIMENotAllowed, mt)
+	}
+
+	// Content-addressed hash (computed once, used everywhere).
+	sum := sha256.Sum256(req.Body)
+	hash := hex.EncodeToString(sum[:])
+
+	// Fast path: hash already known. Just ensure preset's variants exist
+	// and return.
+	existing, err := s.imgRepo.FindByHash(ctx, hash)
+	if err != nil {
+		return nil, fmt.Errorf("lookup hash: %w", err)
+	}
+	if existing != nil {
+		result, err := s.handleExisting(ctx, existing, ps, req)
+		if err != nil {
+			return nil, err
+		}
+		return result, nil
+	}
+
+	// New hash — full pipeline.
+	return s.handleNew(ctx, hash, mt, ps, req)
+}
+
+// handleExisting handles the dedup-hit case. Checks which variants are
+// missing for this preset, generates them, uploads, updates DB.
+func (s *Service) handleExisting(ctx context.Context, img *model.Image, ps preset.Preset, req UploadRequest) (*UploadResult, error) {
+	haveVariants := img.VariantList()
+	var missing []preset.VariantSpec
+	for _, v := range ps.Variants {
+		if !slices.Contains(haveVariants, v.Name) {
+			missing = append(missing, v)
+		}
+	}
+
+	// If no variants missing, still record site-usage + refresh TTL.
+	if len(missing) > 0 {
+		// Need to fetch main image bytes to regenerate derivatives from.
+		rc, err := s.storage.Get(ctx, img.StorageKey)
+		if err != nil {
+			return nil, fmt.Errorf("fetch main for variant backfill: %w", err)
+		}
+		mainBytes, err := io.ReadAll(rc)
+		_ = rc.Close()
+		if err != nil {
+			return nil, fmt.Errorf("read main: %w", err)
+		}
+		srcImg, _, err := processor.DecodeFromBytes(mainBytes)
+		if err != nil {
+			return nil, fmt.Errorf("decode main for backfill: %w", err)
+		}
+		for _, v := range missing {
+			out, err := processor.ProcessVariant(srcImg, v)
+			if err != nil {
+				return nil, fmt.Errorf("variant %s: %w", v.Name, err)
+			}
+			variantKey := variantStorageKey(img.Hash, out.VariantName, out.Ext)
+			if err := s.storage.Put(ctx, variantKey, out.Data, out.MIME); err != nil {
+				return nil, fmt.Errorf("store variant %s: %w", v.Name, err)
+			}
+			haveVariants = append(haveVariants, v.Name)
+		}
+		if err := s.imgRepo.UpdateVariants(ctx, img.Hash, haveVariants); err != nil {
+			return nil, fmt.Errorf("persist variants: %w", err)
+		}
+	}
+
+	// Touch last_referenced_at + record site usage.
+	if _, err := s.imgRepo.TouchReferenced(ctx, []string{img.Hash}); err != nil {
+		return nil, fmt.Errorf("touch: %w", err)
+	}
+	if err := s.usageRepo.RecordUpload(ctx, img.Hash, req.Site, req.UploaderSub, req.UploaderClient); err != nil {
+		return nil, fmt.Errorf("record usage: %w", err)
+	}
+
+	return s.buildResult(img.Hash, img.Ext, img.Width, img.Height, img.SizeBytes, ps, true), nil
+}
+
+// handleNew runs the full pipeline for an unseen hash.
+func (s *Service) handleNew(ctx context.Context, hash, originMIME string, ps preset.Preset, req UploadRequest) (*UploadResult, error) {
+	srcImg, _, err := processor.DecodeFromBytes(req.Body)
+	if err != nil {
+		return nil, fmt.Errorf("decode: %w", err)
+	}
+
+	mainOut, err := processor.ProcessMain(srcImg, s.presets.MainPipeline)
+	if err != nil {
+		return nil, fmt.Errorf("process main: %w", err)
+	}
+
+	mainKey := mainStorageKey(hash, mainOut.Ext)
+	if err := s.storage.Put(ctx, mainKey, mainOut.Data, mainOut.MIME); err != nil {
+		return nil, fmt.Errorf("store main: %w", err)
+	}
+
+	variantNames := make([]string, 0, len(ps.Variants))
+	for _, v := range ps.Variants {
+		out, err := processor.ProcessVariant(srcImg, v)
+		if err != nil {
+			return nil, fmt.Errorf("variant %s: %w", v.Name, err)
+		}
+		key := variantStorageKey(hash, out.VariantName, out.Ext)
+		if err := s.storage.Put(ctx, key, out.Data, out.MIME); err != nil {
+			return nil, fmt.Errorf("store variant %s: %w", v.Name, err)
+		}
+		variantNames = append(variantNames, v.Name)
+	}
+
+	img := &model.Image{
+		Hash:                hash,
+		StorageKey:          mainKey,
+		MIME:                mainOut.MIME,
+		Ext:                 mainOut.Ext,
+		Width:               mainOut.Width,
+		Height:              mainOut.Height,
+		SizeBytes:           int64(len(mainOut.Data)),
+		OriginMIME:          originMIME,
+		OriginSize:          int64(len(req.Body)),
+		ReviewStatus:        model.ReviewApproved,
+		FirstUploaderSub:    req.UploaderSub,
+		FirstUploaderClient: req.UploaderClient,
+		FirstUploaderIP:     req.UploaderIP,
+	}
+	img.SetVariants(variantNames)
+	if err := s.imgRepo.Create(ctx, img); err != nil {
+		return nil, fmt.Errorf("persist image: %w", err)
+	}
+
+	if err := s.usageRepo.RecordUpload(ctx, hash, req.Site, req.UploaderSub, req.UploaderClient); err != nil {
+		return nil, fmt.Errorf("record usage: %w", err)
+	}
+
+	return s.buildResult(hash, mainOut.Ext, mainOut.Width, mainOut.Height, int64(len(mainOut.Data)), ps, false), nil
+}
+
+// buildResult composes the JSON-shaped result including variant URLs.
+func (s *Service) buildResult(hash, ext string, w, h int, size int64, ps preset.Preset, dedup bool) *UploadResult {
+	variants := make(map[string]string, len(ps.Variants))
+	for _, v := range ps.Variants {
+		variants[v.Name] = s.VariantURL(hash, v.Name, "webp")
+	}
+	return &UploadResult{
+		Hash:         hash,
+		URL:          s.MainURL(hash, ext),
+		VariantURLs:  variants,
+		Width:        w,
+		Height:       h,
+		SizeBytes:    size,
+		Deduplicated: dedup,
+	}
+}
+
+// MainURL builds the public URL for a hash's main image.
+func (s *Service) MainURL(hash, ext string) string {
+	return fmt.Sprintf("%s/%s", s.cdnBase, mainStorageKey(hash, ext))
+}
+
+// VariantURL builds the public URL for a given variant.
+func (s *Service) VariantURL(hash, variant, ext string) string {
+	return fmt.Sprintf("%s/%s", s.cdnBase, variantStorageKey(hash, variant, ext))
+}
+
+// mainStorageKey returns the S3 key for a hash's main image.
+// Key format: <hash[:2]>/<hash[2:4]>/<hash>.<ext>
+func mainStorageKey(hash, ext string) string {
+	return fmt.Sprintf("%s/%s/%s.%s", hash[:2], hash[2:4], hash, ext)
+}
+
+// variantStorageKey returns the S3 key for a hash's variant.
+// Key format: <hash[:2]>/<hash[2:4]>/<hash>_<variant>.<ext>
+func variantStorageKey(hash, variant, ext string) string {
+	return fmt.Sprintf("%s/%s/%s_%s.%s", hash[:2], hash[2:4], hash, variant, ext)
+}
+
+// GetByHash fetches the full image record + its sites.
+func (s *Service) GetByHash(ctx context.Context, hash string) (*model.Image, []string, error) {
+	img, err := s.imgRepo.FindByHash(ctx, hash)
+	if err != nil || img == nil {
+		return nil, nil, err
+	}
+	sites, err := s.usageRepo.SitesForHash(ctx, hash)
+	if err != nil {
+		return img, nil, err
+	}
+	return img, sites, nil
+}
+
+// ReferencePing refreshes last_referenced_at for the given hashes filtered
+// to those the caller's site has actually used. Returns (updated, notFound).
+func (s *Service) ReferencePing(ctx context.Context, hashes []string) (int64, []string, error) {
+	if len(hashes) == 0 {
+		return 0, nil, nil
+	}
+	existing, err := s.imgRepo.FindExistingHashes(ctx, hashes)
+	if err != nil {
+		return 0, nil, err
+	}
+	existingSet := make(map[string]struct{}, len(existing))
+	for _, h := range existing {
+		existingSet[h] = struct{}{}
+	}
+	notFound := make([]string, 0)
+	for _, h := range hashes {
+		if _, ok := existingSet[h]; !ok {
+			notFound = append(notFound, h)
+		}
+	}
+	updated, err := s.imgRepo.TouchReferenced(ctx, existing)
+	return updated, notFound, err
+}
+
+// Kept in case we need to escape hash for URL in future;
+// content-addressed hex hashes are always safe but explicit is safer.
+var _ = url.PathEscape

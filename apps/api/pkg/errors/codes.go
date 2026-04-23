@@ -10,6 +10,7 @@ package errors
 // 50000-59999: Artifact
 // 60000-69999: Moderation
 // 70000-79999: Site
+// 80000-80999: Image service
 
 const (
 	// 通用错误 (1-999)
@@ -73,6 +74,22 @@ const (
 	// Site (70000-79999)
 	ErrSiteNotFound      = 70001
 	ErrSiteAlreadyExists = 70002
+
+	// Image service (80000-80999)
+	ErrImageUnauthorized     = 80001
+	ErrImageBadClient        = 80002
+	ErrImageBadSecret        = 80003
+	ErrImageSiteDisabled     = 80004
+	ErrImageSiteUnconfigured = 80005
+	ErrImagePresetDenied     = 80006
+	ErrImageFileTooLarge     = 80007
+	ErrImageQuotaExceeded    = 80008
+	ErrImageMIMEDenied       = 80009
+	ErrImageDecodeFailed     = 80010
+	ErrImagePresetNotFound   = 80011
+	ErrImageStoreFailed      = 80012
+	ErrImageNotFound         = 80013
+	ErrImageBadRequest       = 80014
 )
 
 // 错误码到消息的映射
@@ -133,6 +150,22 @@ var codeMessages = map[int]string{
 
 	ErrSiteNotFound:      "站点不存在",
 	ErrSiteAlreadyExists: "站点已存在",
+
+	// Image service
+	ErrImageUnauthorized:     "未授权访问图片服务",
+	ErrImageBadClient:        "无效的客户端 ID",
+	ErrImageBadSecret:        "客户端密钥错误",
+	ErrImageSiteDisabled:     "该站点未开启图片服务",
+	ErrImageSiteUnconfigured: "该站点缺少图片服务配置",
+	ErrImagePresetDenied:     "该站点不允许使用此 preset",
+	ErrImageFileTooLarge:     "文件大小超过限制",
+	ErrImageQuotaExceeded:    "当日配额已用完",
+	ErrImageMIMEDenied:       "该 preset 不接受此格式",
+	ErrImageDecodeFailed:     "图片解码失败",
+	ErrImagePresetNotFound:   "未知的 preset",
+	ErrImageStoreFailed:      "图片存储失败",
+	ErrImageNotFound:         "图片不存在",
+	ErrImageBadRequest:       "请求格式错误",
 }
 
 // GetMessage returns the message for an error code
