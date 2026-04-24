@@ -91,12 +91,13 @@ func main() {
 	// Repositories.
 	imgRepo := repository.NewImageRepository(imagesDB.DB())
 	usageRepo := repository.NewSiteUsageRepository(imagesDB.DB())
+	statsRepo := repository.NewStatsRepository(imagesDB.DB())
 	clientRepo := siteRepo.NewOAuthClientRepository(application.DB.DB())
 
 	// Service + handler.
 	svc := service.New(presets, s3Client, imgRepo, usageRepo, cfg.ImageService.CDNBase)
 	q := quota.New(application.Cache)
-	h := imgHandler.New(svc, q)
+	h := imgHandler.New(svc, q, statsRepo)
 
 	// Global middleware.
 	application.Fiber.Use(middleware.RequestID())
@@ -110,9 +111,13 @@ func main() {
 		return c.JSON(fiber.Map{"status": "ok"})
 	})
 
-	// Authenticated image API.
-	img := application.Fiber.Group("/image", imgMW.ClientAuth(clientRepo))
+	// CORS: open to registered sites' origins (for frontend direct upload).
+	application.Fiber.Use(middleware.CORS(cfg.Server.CORSOrigin))
+
+	// Authenticated image API (Basic for backend, Bearer JWT for frontend).
+	img := application.Fiber.Group("/image", imgMW.ClientAuth(clientRepo, cfg))
 	img.Post("/upload", h.Upload)
+	img.Get("/stats", h.Stats)
 	img.Get("/:hash", h.Meta)
 	img.Post("/reference-ping", h.Ping)
 

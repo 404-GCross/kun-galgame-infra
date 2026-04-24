@@ -12,6 +12,7 @@ import (
 
 	imgMW "api/internal/platform/image/middleware"
 	"api/internal/platform/image/quota"
+	"api/internal/platform/image/repository"
 	"api/internal/platform/image/service"
 	"api/pkg/errors"
 	"api/pkg/response"
@@ -21,12 +22,13 @@ import (
 
 // Handler bundles the image service handlers.
 type Handler struct {
-	svc   *service.Service
-	quota *quota.Checker
+	svc       *service.Service
+	quota     *quota.Checker
+	statsRepo *repository.StatsRepository
 }
 
-func New(svc *service.Service, q *quota.Checker) *Handler {
-	return &Handler{svc: svc, quota: q}
+func New(svc *service.Service, q *quota.Checker, statsRepo *repository.StatsRepository) *Handler {
+	return &Handler{svc: svc, quota: q, statsRepo: statsRepo}
 }
 
 // ---- POST /image/upload ----
@@ -96,11 +98,18 @@ func (h *Handler) Upload(c fiber.Ctx) error {
 		}
 	}
 
+	// Resolve uploader identity. If the JWT path was used, the sub comes
+	// from the JWT claims; for backend Basic path, callers may pass an
+	// explicit uploader_sub form field for audit purposes.
+	uploaderSub := imgMW.UserSubFromCtx(c)
+	if uploaderSub == "" {
+		uploaderSub = c.FormValue("uploader_sub")
+	}
 	req := service.UploadRequest{
 		Body:           body,
 		Preset:         presetName,
 		Site:           site,
-		UploaderSub:    c.FormValue("uploader_sub"),
+		UploaderSub:    uploaderSub,
 		UploaderClient: client.ID,
 		UploaderIP:     c.IP(),
 	}
@@ -198,6 +207,22 @@ func (h *Handler) Ping(c fiber.Ctx) error {
 		"updated":   updated,
 		"not_found": notFound,
 	})
+}
+
+// ---- GET /stats ----
+
+// Stats returns aggregate counters scoped to the authenticated site.
+func (h *Handler) Stats(c fiber.Ctx) error {
+	site := imgMW.SiteKeyFromCtx(c)
+	if site == "" {
+		return response.Unauthorized(c, errors.ErrImageUnauthorized)
+	}
+	res, err := h.statsRepo.Stats(c.Context(), repository.ScopeFilter{Site: site})
+	if err != nil {
+		slog.Error("stats failed", "site", site, "err", err)
+		return response.InternalError(c, errors.ErrImageStoreFailed)
+	}
+	return response.Success(c, res)
 }
 
 // ---- helpers ----

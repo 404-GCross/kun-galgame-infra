@@ -6,20 +6,26 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/url"
 	"slices"
 	"strings"
+	"time"
 
 	"api/internal/platform/image/model"
+	"api/internal/platform/image/moderation"
 	"api/internal/platform/image/preset"
 	"api/internal/platform/image/processor"
 	"api/internal/platform/image/repository"
 	"api/internal/platform/image/storage"
 
 	"github.com/gabriel-vasile/mimetype"
+	"gorm.io/datatypes"
+	"gorm.io/gorm"
 )
 
 // Errors returned by the service layer. Handlers map these to error codes.
@@ -59,25 +65,58 @@ type Service struct {
 	storage   *storage.Client
 	imgRepo   *repository.ImageRepository
 	usageRepo *repository.SiteUsageRepository
+	db        *gorm.DB // for enqueueing moderation queue entries
+	mod       moderation.Provider
+	syncTO    time.Duration
 	cdnBase   string // e.g. https://cdn.example.com/img (no trailing slash)
 }
 
-// New builds a Service with its dependencies.
+// Options is the extended config for constructing a Service with
+// moderation plumbing. All fields are optional; zero values give V1
+// behavior (no moderation, no queue).
+type Options struct {
+	Moderation   moderation.Provider
+	SyncTimeout  time.Duration // default 300ms
+	DB           *gorm.DB      // images DB, required to enqueue async work
+}
+
+// New builds a Service with its dependencies. Moderation and DB handle
+// are optional (for V1 compatibility).
 func New(
 	presets *preset.Config,
 	storage *storage.Client,
 	imgRepo *repository.ImageRepository,
 	usageRepo *repository.SiteUsageRepository,
 	cdnBase string,
+	opts ...Options,
 ) *Service {
-	return &Service{
+	s := &Service{
 		presets:   presets,
 		storage:   storage,
 		imgRepo:   imgRepo,
 		usageRepo: usageRepo,
 		cdnBase:   strings.TrimRight(cdnBase, "/"),
+		mod:       moderation.NewNoop(),
+		syncTO:    300 * time.Millisecond,
 	}
+	if len(opts) > 0 {
+		o := opts[0]
+		if o.Moderation != nil {
+			s.mod = o.Moderation
+		}
+		if o.SyncTimeout > 0 {
+			s.syncTO = o.SyncTimeout
+		}
+		if o.DB != nil {
+			s.db = o.DB
+		}
+	}
+	return s
 }
+
+// ErrModerationRejected is returned by Upload when the sync moderation
+// step outright rejects the content.
+var ErrModerationRejected = errors.New("service: rejected by moderation")
 
 // Presets exposes the loaded preset config (handlers may need it for
 // MIME / allow checks without duplicating lookup logic).
@@ -103,7 +142,7 @@ func (s *Service) Upload(ctx context.Context, req UploadRequest) (*UploadResult,
 	hash := hex.EncodeToString(sum[:])
 
 	// Fast path: hash already known. Just ensure preset's variants exist
-	// and return.
+	// and return. (No re-moderation — the hash's verdict is final.)
 	existing, err := s.imgRepo.FindByHash(ctx, hash)
 	if err != nil {
 		return nil, fmt.Errorf("lookup hash: %w", err)
@@ -116,8 +155,20 @@ func (s *Service) Upload(ctx context.Context, req UploadRequest) (*UploadResult,
 		return result, nil
 	}
 
-	// New hash — full pipeline.
-	return s.handleNew(ctx, hash, mt, ps, req)
+	// New hash — run sync moderation first. Hard rejections short-circuit
+	// before any expensive processing.
+	syncCtx, cancel := context.WithTimeout(ctx, s.syncTO)
+	defer cancel()
+	syncDecision, syncErr := s.mod.SyncCheck(syncCtx, req.Body, mt)
+	if syncErr != nil {
+		slog.Warn("moderation sync errored; treating as undecided",
+			"provider", s.mod.Name(), "err", syncErr)
+	}
+	if syncDecision != nil && syncDecision.Verdict == moderation.VerdictReject {
+		return nil, fmt.Errorf("%w: %s", ErrModerationRejected, syncDecision.Reason)
+	}
+
+	return s.handleNew(ctx, hash, mt, ps, req, syncDecision)
 }
 
 // handleExisting handles the dedup-hit case. Checks which variants are
@@ -175,7 +226,7 @@ func (s *Service) handleExisting(ctx context.Context, img *model.Image, ps prese
 }
 
 // handleNew runs the full pipeline for an unseen hash.
-func (s *Service) handleNew(ctx context.Context, hash, originMIME string, ps preset.Preset, req UploadRequest) (*UploadResult, error) {
+func (s *Service) handleNew(ctx context.Context, hash, originMIME string, ps preset.Preset, req UploadRequest, syncDec *moderation.Decision) (*UploadResult, error) {
 	srcImg, _, err := processor.DecodeFromBytes(req.Body)
 	if err != nil {
 		return nil, fmt.Errorf("decode: %w", err)
@@ -204,6 +255,33 @@ func (s *Service) handleNew(ctx context.Context, hash, originMIME string, ps pre
 		variantNames = append(variantNames, v.Name)
 	}
 
+	// Seed review_status from sync decision. If undecided (e.g. sync
+	// provider timed out or isn't configured) and we have an async queue,
+	// leave the image in "pending" and enqueue; otherwise approve by
+	// default (V1 behavior preserved).
+	reviewStatus := model.ReviewApproved
+	enqueueAsync := false
+	var reviewLabels datatypes.JSON
+	if syncDec != nil {
+		switch syncDec.Verdict {
+		case moderation.VerdictApprove:
+			reviewStatus = model.ReviewApproved
+		case moderation.VerdictReview:
+			reviewStatus = model.ReviewManual
+		case moderation.VerdictUndecided:
+			if s.db != nil && s.mod.Name() != "noop" {
+				reviewStatus = model.ReviewPending
+				enqueueAsync = true
+			}
+		}
+		if syncDec.Labels != nil {
+			if raw, err := json.Marshal(syncDec.Labels); err == nil {
+				reviewLabels = datatypes.JSON(raw)
+			}
+		}
+	}
+
+	now := time.Now()
 	img := &model.Image{
 		Hash:                hash,
 		StorageKey:          mainKey,
@@ -214,10 +292,14 @@ func (s *Service) handleNew(ctx context.Context, hash, originMIME string, ps pre
 		SizeBytes:           int64(len(mainOut.Data)),
 		OriginMIME:          originMIME,
 		OriginSize:          int64(len(req.Body)),
-		ReviewStatus:        model.ReviewApproved,
+		ReviewStatus:        reviewStatus,
+		ReviewLabels:        reviewLabels,
 		FirstUploaderSub:    req.UploaderSub,
 		FirstUploaderClient: req.UploaderClient,
 		FirstUploaderIP:     req.UploaderIP,
+	}
+	if reviewStatus != model.ReviewPending {
+		img.ReviewedAt = &now
 	}
 	img.SetVariants(variantNames)
 	if err := s.imgRepo.Create(ctx, img); err != nil {
@@ -226,6 +308,15 @@ func (s *Service) handleNew(ctx context.Context, hash, originMIME string, ps pre
 
 	if err := s.usageRepo.RecordUpload(ctx, hash, req.Site, req.UploaderSub, req.UploaderClient); err != nil {
 		return nil, fmt.Errorf("record usage: %w", err)
+	}
+
+	if enqueueAsync {
+		qe := &model.ModerationQueue{Hash: hash, Site: req.Site}
+		if err := s.db.WithContext(ctx).Create(qe).Error; err != nil {
+			// Don't fail the upload; just log — worker can't pick it up
+			// now, but next upload of this hash will still have it pending.
+			slog.Warn("enqueue moderation failed", "hash", hash, "err", err)
+		}
 	}
 
 	return s.buildResult(hash, mainOut.Ext, mainOut.Width, mainOut.Height, int64(len(mainOut.Data)), ps, false), nil

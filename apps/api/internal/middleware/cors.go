@@ -15,7 +15,7 @@ func CORS(frontendOrigin string) fiber.Handler {
 		"https://kungal.com",
 		"https://moyu.moe",
 	}
-	for _, o := range strings.Split(frontendOrigin, ",") {
+	for o := range strings.SplitSeq(frontendOrigin, ",") {
 		if trimmed := strings.TrimSpace(o); trimmed != "" {
 			origins = append(origins, trimmed)
 		}
@@ -37,6 +37,7 @@ func CORS(frontendOrigin string) fiber.Handler {
 			"Accept",
 			"Authorization",
 			"X-Request-ID",
+			"X-Kun-Image-Client-Id",
 		},
 		ExposeHeaders: []string{
 			"X-Request-ID",

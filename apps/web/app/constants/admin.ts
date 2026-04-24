@@ -4,7 +4,24 @@ export const SIDEBAR_MENU = [
   { icon: 'lucide:globe', label: '站点管理', to: '/sites', adminOnly: true },
   { icon: 'lucide:key', label: 'OAuth 客户端', to: '/oauth-clients', adminOnly: true },
   { icon: 'lucide:shield', label: '内容审核', to: '/moderation', adminOnly: true },
+  { icon: 'lucide:image', label: '图片管理', to: '/images', adminOnly: true },
   { icon: 'lucide:user', label: '个人信息', to: '/profile' },
+]
+
+export const IMAGE_REVIEW_STATUS_MAP: Record<string, { label: string; color: 'warning' | 'success' | 'danger' | 'default' }> = {
+  pending: { label: '待审核', color: 'warning' },
+  approved: { label: '已通过', color: 'success' },
+  rejected: { label: '已拒绝', color: 'danger' },
+  manual_review: { label: '人工复核', color: 'default' },
+  unknown: { label: '未知', color: 'default' },
+}
+
+export const IMAGE_STATUS_TABS = [
+  { id: '', label: '全部', icon: 'lucide:list' },
+  { id: 'pending', label: '待审核', icon: 'lucide:clock' },
+  { id: 'manual_review', label: '人工复核', icon: 'lucide:user-check' },
+  { id: 'rejected', label: '已拒绝', icon: 'lucide:x' },
+  { id: 'approved', label: '已通过', icon: 'lucide:check' },
 ]
 
 export const USER_STATUS_MAP: Record<number, { label: string; color: 'success' | 'danger' | 'default' }> = {

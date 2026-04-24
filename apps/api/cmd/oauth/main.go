@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"api/internal/app"
+	"api/internal/infrastructure/database"
 	"api/internal/infrastructure/mail"
 	"api/internal/middleware"
 	"api/pkg/config"
@@ -14,6 +15,11 @@ import (
 	authHandler "api/internal/platform/auth/handler"
 	authRepo "api/internal/platform/auth/repository"
 	authService "api/internal/platform/auth/service"
+
+	imgHandler "api/internal/platform/image/handler"
+	imgRepoPkg "api/internal/platform/image/repository"
+	imgService "api/internal/platform/image/service"
+	imgStorage "api/internal/platform/image/storage"
 
 	siteHandler "api/internal/platform/site/handler"
 	siteRepo "api/internal/platform/site/repository"
@@ -149,4 +155,40 @@ func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 	oauthClients.Post("/", siteH.CreateClient)
 	oauthClients.Put("/:id", siteH.UpdateClient)
 	oauthClients.Delete("/:id", siteH.DeleteClient)
+
+	// Image admin routes — best-effort; if images DB or S3 are unreachable
+	// in dev, skip registration rather than failing the whole oauth service.
+	registerImageAdmin(a, cfg, admin)
+}
+
+// registerImageAdmin wires admin endpoints for the image service. These
+// endpoints run inside the oauth service (not cmd/image) because admin
+// auth lives here. Failures are logged and skipped, not fatal.
+func registerImageAdmin(_ *app.App, cfg *config.Config, admin fiber.Router) {
+	imagesDB, err := database.NewPostgresDB(cfg.ImagesDatabase)
+	if err != nil {
+		slog.Warn("image admin: images db unreachable; admin endpoints disabled", "err", err)
+		return
+	}
+	s3, err := imgStorage.NewClient(cfg.ImageS3)
+	if err != nil {
+		slog.Warn("image admin: s3 unreachable; admin endpoints disabled", "err", err)
+		return
+	}
+
+	imgRepo := imgRepoPkg.NewImageRepository(imagesDB.DB())
+	usageRepo := imgRepoPkg.NewSiteUsageRepository(imagesDB.DB())
+	statsRepo := imgRepoPkg.NewStatsRepository(imagesDB.DB())
+	// Service here is used only for MainURL/VariantURL formatting; no
+	// upload flow runs on the admin service.
+	svc := imgService.New(nil, s3, imgRepo, usageRepo, cfg.ImageService.CDNBase)
+	adminH := imgHandler.NewAdmin(imagesDB.DB(), svc, statsRepo, s3)
+
+	g := admin.Group("/image")
+	g.Get("/list", adminH.List)
+	g.Patch("/:hash/review", adminH.Review)
+	g.Delete("/:hash", adminH.Delete)
+	admin.Get("/image-stats", adminH.Stats)
+
+	slog.Info("image admin endpoints registered under /api/v1/admin/image/*")
 }
