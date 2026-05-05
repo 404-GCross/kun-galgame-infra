@@ -17,7 +17,17 @@ type User struct {
 	Password       *string `gorm:"size:255" json:"-"`
 	KungalPassword *string `gorm:"size:255" json:"-"` // Legacy bcrypt hash, removed after migration period
 	MoyuPassword   *string `gorm:"size:255" json:"-"` // Legacy argon2id "salt_hex:hash_hex", removed after migration period
-	Avatar      string         `gorm:"size:255;default:''" json:"avatar"`
+	// Avatar is the legacy URL string. Kept as permanent fallback for users
+	// whose avatars predate image_service (kungal/moyu legacy WebP, exempt
+	// from migration per docs/image_service/04-migration-plan.md).
+	Avatar string `gorm:"size:255;default:''" json:"avatar"`
+
+	// AvatarImageHash, when set, points to an image_service-managed image.
+	// New uploads / avatar changes write here; the frontend resolveAvatarUrl
+	// prefers this over Avatar. Old users keep this NULL forever, falling
+	// back to Avatar — that's expected, not a bug.
+	AvatarImageHash *string `gorm:"size:64;index" json:"avatar_image_hash,omitempty"`
+
 	Bio         string         `gorm:"size:107;default:''" json:"bio"`
 	Moemoepoint int            `gorm:"default:0" json:"moemoepoint"`
 	Status      int            `gorm:"default:0" json:"status"` // 0: normal, 1: banned

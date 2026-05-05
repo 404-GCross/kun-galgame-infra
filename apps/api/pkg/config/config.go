@@ -20,6 +20,15 @@ type Config struct {
 	Meilisearch     MeilisearchConfig
 	ImageService    ImageServiceConfig
 	ImageS3         S3Config
+	ImageClient     ImageClientConfig
+}
+
+// ImageClientConfig is caller-side configuration for processes (cmd/galgame,
+// cmd/oauth, migration scripts, etc) that talk to image_service.
+type ImageClientConfig struct {
+	BaseURL      string // e.g. http://127.0.0.1:9278 (image_service URL from this caller's perspective)
+	ClientID     string // OAuth client id this caller authenticates as
+	ClientSecret string // OAuth client secret
 }
 
 // ImageServiceConfig holds image-service-specific configuration
@@ -200,6 +209,14 @@ func Load() (*Config, error) {
 		SecretAccessKey: getEnv("KUN_IMAGE_S3_SECRET_KEY", ""),
 		Bucket:          getEnv("KUN_IMAGE_S3_BUCKET", "kun-images-dev"),
 		UsePathStyle:    s3UsePathStyle,
+	}
+
+	// Image client config (caller-side: cmd/galgame, cmd/oauth, migration scripts)
+	defaultBase := fmt.Sprintf("http://%s:%d", cfg.ImageService.Host, cfg.ImageService.Port)
+	cfg.ImageClient = ImageClientConfig{
+		BaseURL:      getEnv("KUN_IMAGE_CLIENT_BASE_URL", defaultBase),
+		ClientID:     getEnv("KUN_IMAGE_CLIENT_ID", ""),
+		ClientSecret: getEnv("KUN_IMAGE_CLIENT_SECRET", ""),
 	}
 
 	// Validate required fields

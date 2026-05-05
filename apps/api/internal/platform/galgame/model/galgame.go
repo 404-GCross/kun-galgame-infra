@@ -12,7 +12,23 @@ type Galgame struct {
 	NameJaJP           string    `gorm:"column:name_ja_jp;size:1000;default:''" json:"name_ja_jp"`
 	NameZhCN           string    `gorm:"column:name_zh_cn;size:1000;default:''" json:"name_zh_cn"`
 	NameZhTW           string    `gorm:"column:name_zh_tw;size:1000;default:''" json:"name_zh_tw"`
-	Banner             string    `gorm:"size:233;default:''" json:"banner"`
+	// Banner is the legacy URL string. Kept as permanent fallback during
+	// migration period and as the original record for old galgames. The
+	// migration cmd `migrate-galgame-banners-to-image-service` reads from
+	// here, uploads to image_service, and fills BannerImageHash.
+	Banner string `gorm:"size:233;default:''" json:"banner"`
+
+	// BannerImageHash, when set, is the image_service hash. New uploads /
+	// banner changes write here. Frontend resolveBannerUrl prefers this
+	// over Banner.
+	BannerImageHash *string `gorm:"size:64;index" json:"banner_image_hash,omitempty"`
+
+	// Migration bookkeeping for the one-shot migration script. After
+	// migration succeeds, status=1; failures bump attempts and after 3
+	// fails set status=2 (permanent failure, skip).
+	BannerMigrationStatus   int16 `gorm:"not null;default:0" json:"-"` // 0/1/2
+	BannerMigrationAttempts int16 `gorm:"not null;default:0" json:"-"`
+
 	IntroEnUS          string    `gorm:"column:intro_en_us;type:text;default:''" json:"intro_en_us"`
 	IntroJaJP          string    `gorm:"column:intro_ja_jp;type:text;default:''" json:"intro_ja_jp"`
 	IntroZhCN          string    `gorm:"column:intro_zh_cn;type:text;default:''" json:"intro_zh_cn"`

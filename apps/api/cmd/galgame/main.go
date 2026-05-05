@@ -15,6 +15,7 @@ import (
 	galgameRepo "api/internal/platform/galgame/repository"
 	galgameSearch "api/internal/platform/galgame/search"
 	galgameService "api/internal/platform/galgame/service"
+	"api/pkg/imageclient"
 
 	"github.com/gofiber/fiber/v3"
 )
@@ -106,6 +107,22 @@ func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB, se
 	adminH := galgameHandler.NewAdminHandler(adminRepo)
 	searchH := galgameHandler.NewSearchHandler(searchSvc)
 
+	// Image client (singleton). Nil if KUN_IMAGE_CLIENT_ID/SECRET unset
+	// — bannerUploadH will then refuse uploads with a clear error.
+	var bannerUploadH *galgameHandler.BannerUploadHandler
+	if cfg.ImageClient.ClientID != "" && cfg.ImageClient.ClientSecret != "" {
+		imgCli := imageclient.New(imageclient.Config{
+			BaseURL:      cfg.ImageClient.BaseURL,
+			CDNBase:      cfg.ImageService.CDNBase,
+			ClientID:     cfg.ImageClient.ClientID,
+			ClientSecret: cfg.ImageClient.ClientSecret,
+		})
+		bannerUploadH = galgameHandler.NewBannerUploadHandler(wikiDB.DB(), imgCli)
+		slog.Info("image client configured", "base_url", cfg.ImageClient.BaseURL)
+	} else {
+		slog.Warn("image client not configured; /galgame/:gid/banner upload disabled")
+	}
+
 	// JWT auth middleware
 	jwtAuth := middleware.JWTAuth(cfg.JWT.Secret)
 
@@ -144,6 +161,9 @@ func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB, se
 	galgameAuth := galgame.Group("", jwtAuth)
 	galgameAuth.Post("/", galgameH.Create)
 	galgameAuth.Put("/:gid", galgameH.Update)
+	if bannerUploadH != nil {
+		galgameAuth.Post("/:gid/banner", bannerUploadH.Upload)
+	}
 	galgameAuth.Post("/:gid/revert", revisionH.Revert)
 	galgameAuth.Post("/:gid/prs", revisionH.SubmitPR)
 	galgameAuth.Put("/:gid/prs/:id/merge", revisionH.MergePR)
