@@ -38,7 +38,7 @@ const fetchList = async () => {
 }
 
 const fetchStats = async () => {
-  const res = await api.get<ImageAdminStats>('/admin/image-stats')
+  const res = await api.get<ImageAdminStats>('/admin/image/stats')
   if (res.code === 0) stats.value = res.data
 }
 

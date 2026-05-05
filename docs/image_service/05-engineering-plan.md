@@ -255,8 +255,9 @@ apps/api/
 
 ### 工程任务
 
-- 编写 `cmd/migrate-images/` 脚本
-- `migration_progress` 表 migration
+> **平台侧不写迁移脚本**。迁移的本质是"翻转业务库外键"，只有调用方知道哪个老 URL 属于哪个 entity；image_service 提供的标准 `Upload` API + sha256 内容寻址 + dedup 已经足够覆盖。
+
+- 各站点在自己的仓库内编写一次性迁移脚本（参考骨架见 [04-migration-plan.md 阶段 2](./04-migration-plan.md)）
 - **topic 图床不迁移**，老桶永久只读保留
 - 各站点调用方代码改造（每站 3–4 个 PR 起步，1–2 个月）
 
@@ -272,6 +273,16 @@ apps/api/
 **galgame wiki（数据最少）→ moyu → kungal**
 
 galgame wiki 数据量最小、用户基数小、可接受短暂小问题，是理想的先行者。
+
+#### ⚠️ Preset 级别的灰度独立性
+
+galgame wiki 跑通 = `preset=galgame_banner` 通路被验证（fit 460×259 + `_mini` 变体生成等）。这**不能推断** `preset=avatar`（256×256 cover + `_100` + `_256` 双变体）也 OK，因为：
+
+- 不同 preset 走的变体生成代码路径不同
+- `cover` vs `inside` fit 模式是不同的 libvips/draw 调用
+- 主图的 fit 1920×1080 行为对 banner 影响不大（banner 本来就小），但 avatar 输入可能很大
+
+**结论**：每个 preset 在第一次接入时都要小灰度（先 100 张试跑、抽样下载验证视觉质量、确认 P99 延迟），不因为别的 preset 跑通就跳过。
 
 ---
 

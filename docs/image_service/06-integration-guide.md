@@ -98,25 +98,80 @@ CREATE INDEX idx_galgame_banner_hash ON galgame(banner_image_hash) WHERE banner_
 
 ## 三、Go SDK 用法
 
-### 安装
+### 状态
 
-```bash
-go get api/pkg/imageclient@latest
+**SDK 在 V2 阶段已发布并合入仓库** (`apps/api/pkg/imageclient/`)。V1 / V2 / V4 全程都可以直接使用，无须自己手写 HTTP 客户端。
+
+### 已发布的 API
+
+```go
+// 工厂
+func New(cfg Config) *Client
+
+// 上传 / 元信息 / 续期
+func (*Client) Upload(ctx context.Context, r io.Reader, filename, presetName string) (*UploadResult, error)
+func (*Client) ReferencePing(ctx context.Context, hashes []string) (*ReferencePingResult, error)
+func (*Client) Health(ctx context.Context) error
+
+// URL 拼接（无网络）
+func (*Client) MainURL(hash string) string
+func (*Client) VariantURL(hash, variant string) string
+
+// 类型
+type Config struct {
+    BaseURL      string         // https://image.api.example.com（无尾斜杠）
+    CDNBase      string         // https://cdn.example.com/img（无尾斜杠）
+    ClientID     string
+    ClientSecret string
+    HTTPClient   *http.Client
+    Timeout      time.Duration  // 默认 30s
+}
+
+type UploadResult struct {
+    Hash         string            `json:"hash"`
+    URL          string            `json:"url"`
+    VariantURLs  map[string]string `json:"variant_urls"`
+    Width        int               `json:"width"`
+    Height       int               `json:"height"`
+    SizeBytes    int64             `json:"size_bytes"`
+    Deduplicated bool              `json:"deduplicated"`
+}
+
+type ReferencePingResult struct {
+    Updated  int64    `json:"updated"`
+    NotFound []string `json:"not_found"`
+}
+
+// Sentinel errors —— 用 errors.Is 判断
+var (
+    ErrQuotaExceeded      = errors.New("imageclient: quota exceeded")
+    ErrModerationRejected = errors.New("imageclient: rejected by moderation")
+    ErrUnauthorized       = errors.New("imageclient: unauthorized")
+)
 ```
 
-（V2 阶段正式提供；V1 期间可以直接 HTTP 调用）
+### 安装
+
+通过 Go module replace 引用（kun-oauth-admin 是单仓库）：
+
+```go
+// go.mod
+require api v0.0.0
+replace api => ../path/to/kun-oauth-admin/apps/api
+```
+
+或直接拷贝 `pkg/imageclient/client.go` 到调用方仓库（单文件 ~280 行，零外部依赖，标准库 + `golang-jwt`）。
 
 ### Singleton 初始化
 
-**关键**：SDK 必须是 singleton，token 内部缓存。不要每次上传都 new 一个 Client。
+**关键**：SDK 应当是 singleton。底层 `*http.Client` 复用 keep-alive 连接池，每次 new 浪费。Basic Auth 路径下没有 token 概念，直接复用即可。
 
 ```go
-// apps/api/internal/infrastructure/image/client.go
+// 调用方 apps/api/internal/infrastructure/image/client.go
 package image
 
 import (
     "sync"
-    "time"
 
     "api/pkg/config"
     "api/pkg/imageclient"
@@ -130,16 +185,17 @@ var (
 func Shared(cfg config.ImageConfig) *imageclient.Client {
     once.Do(func() {
         shared = imageclient.New(imageclient.Config{
-            BaseURL:      cfg.ServiceBaseURL,           // http://127.0.0.1:9278
-            CDNBase:      cfg.CDNBase,                  // https://cdn.example.com/img
+            BaseURL:      cfg.ServiceBaseURL,    // http://127.0.0.1:9278
+            CDNBase:      cfg.CDNBase,           // https://cdn.example.com/img
             ClientID:     cfg.OAuthClientID,
             ClientSecret: cfg.OAuthClientSecret,
-            TokenTTL:     50 * time.Minute,             // token 默认 1h，留 10min 余量
         })
     })
     return shared
 }
 ```
+
+> 注：V1 走 HTTP Basic Auth（无 token 换发流程），所以你可能在网上看到的 OAuth Client Credentials "TokenTTL / token cache" 套路在这里**用不上**。SDK 内部对每个请求直接附 `Authorization: Basic <b64>`。
 
 ### 上传
 
@@ -193,6 +249,45 @@ if err != nil {
     })
 }
 ```
+
+### 迁移窗口配额协议（一次性历史数据导入）
+
+正常运行配额（kungal `image_quota_daily=10000`）远小于一次性历史数据迁移所需。三站头像 / banner 6–10 万级，常规配额下要 7–10 天才能跑完。
+
+**平台承诺：迁移窗口期手动 raise 配额，迁移完成后改回。**
+
+#### 协议步骤
+
+1. **调用方提前 ≥ 24h 通知平台**，附：
+   - 计划开始时间 + 预计窗口长度（如 "5/1 09:00 起 24h 内跑完"）
+   - 预估对象数 + 总字节数（如 "8 万张 avatar，约 6GB"）
+   - 灰度策略（如 "先 1000 张试跑，确认成功率 > 95% 再放量"）
+
+2. **平台执行 SQL**：
+
+   ```sql
+   UPDATE oauth_clients
+   SET image_quota_daily = 500000,                -- 提至 50 万张/天
+       image_quota_bytes_daily = 53687091200      -- 50GB/天
+   WHERE id = '<kungal_client_id>';
+   ```
+
+3. **调用方跑迁移脚本**。SDK 调用与日常一致，无需特殊参数。
+
+4. **跑完后调用方通知平台**，平台将配额改回基线：
+
+   ```sql
+   UPDATE oauth_clients
+   SET image_quota_daily = 10000,
+       image_quota_bytes_daily = 10737418240
+   WHERE id = '<kungal_client_id>';
+   ```
+
+#### 注意
+
+- **不要用大窗口"先 raise 一直不改"**：配额是滥用防线，长期高配额会让单个 bug（如调用方某代码路径死循环 Upload）打爆 R2 账单
+- **窗口内仍有审计**：`POST /image/upload` 全部记录在 `image_site_usage` 和 metrics（`image_upload_total`）里
+- **平台保留中止权**：如发现速率/失败率异常，平台可临时把配额改回基线（`UPDATE` 一条 SQL，立即生效）
 
 ### 配额超限（429）
 

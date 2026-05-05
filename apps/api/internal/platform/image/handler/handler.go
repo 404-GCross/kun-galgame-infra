@@ -9,7 +9,9 @@ import (
 	stderrors "errors"
 	"io"
 	"log/slog"
+	"time"
 
+	"api/internal/platform/image/metrics"
 	imgMW "api/internal/platform/image/middleware"
 	"api/internal/platform/image/quota"
 	"api/internal/platform/image/repository"
@@ -39,8 +41,10 @@ func (h *Handler) Upload(c fiber.Ctx) error {
 	client := imgMW.ClientFromCtx(c)
 	site := imgMW.SiteKeyFromCtx(c)
 	if client == nil || site == "" {
+		metrics.UploadTotal.WithLabelValues("", "", "unauthorized").Inc()
 		return response.Unauthorized(c, errors.ErrImageUnauthorized)
 	}
+	start := time.Now()
 
 	presetName := c.FormValue("preset")
 	if presetName == "" {
@@ -77,6 +81,7 @@ func (h *Handler) Upload(c fiber.Ctx) error {
 		usage, qerr := h.quota.Reserve(c.Context(), site, int64(len(body)), client.ImageQuotaDaily, client.ImageQuotaBytesDaily)
 		if qerr != nil {
 			if stderrors.Is(qerr, quota.ErrCountExceeded) || stderrors.Is(qerr, quota.ErrBytesExceeded) {
+				metrics.UploadTotal.WithLabelValues(site, presetName, "rejected_quota").Inc()
 				details := fiber.Map{
 					"quota_count": usage.LimitCount,
 					"quota_bytes": usage.LimitBytes,
@@ -115,17 +120,35 @@ func (h *Handler) Upload(c fiber.Ctx) error {
 	}
 	result, err := h.svc.Upload(c.Context(), req)
 	if err != nil {
+		var resultLabel string
 		switch {
 		case stderrors.Is(err, service.ErrPresetNotFound):
+			resultLabel = "preset_not_found"
+			metrics.UploadTotal.WithLabelValues(site, presetName, resultLabel).Inc()
 			return response.BadRequest(c, errors.ErrImagePresetNotFound)
 		case stderrors.Is(err, service.ErrMIMENotAllowed):
+			resultLabel = "mime_denied"
+			metrics.UploadTotal.WithLabelValues(site, presetName, resultLabel).Inc()
 			return response.BadRequest(c, errors.ErrImageMIMEDenied)
+		case stderrors.Is(err, service.ErrModerationRejected):
+			resultLabel = "rejected_moderation"
+			metrics.UploadTotal.WithLabelValues(site, presetName, resultLabel).Inc()
+			return response.Error(c, fiber.StatusUnprocessableEntity, errors.ErrModerationRejected, errors.GetMessage(errors.ErrModerationRejected))
 		default:
+			metrics.UploadTotal.WithLabelValues(site, presetName, "error").Inc()
 			slog.Error("image upload failed",
 				"site", site, "client_id", client.ID, "preset", presetName, "err", err)
 			return response.InternalError(c, errors.ErrImageStoreFailed)
 		}
 	}
+
+	resultLabel := "success"
+	if result.Deduplicated {
+		resultLabel = "dedup"
+		metrics.DedupHits.WithLabelValues(site).Inc()
+	}
+	metrics.UploadTotal.WithLabelValues(site, presetName, resultLabel).Inc()
+	metrics.UploadDuration.WithLabelValues(site, presetName).Observe(time.Since(start).Seconds())
 
 	return response.Success(c, result)
 }

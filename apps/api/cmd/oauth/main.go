@@ -186,9 +186,9 @@ func registerImageAdmin(_ *app.App, cfg *config.Config, admin fiber.Router) {
 
 	g := admin.Group("/image")
 	g.Get("/list", adminH.List)
+	g.Get("/stats", adminH.Stats)
 	g.Patch("/:hash/review", adminH.Review)
 	g.Delete("/:hash", adminH.Delete)
-	admin.Get("/image-stats", adminH.Stats)
 
 	slog.Info("image admin endpoints registered under /api/v1/admin/image/*")
 }

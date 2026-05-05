@@ -3,12 +3,21 @@
 //
 // See docs/image_service/ for the design.
 //
-// Endpoints (V1):
+// Usage:
+//
+//   go run ./cmd/image           # 启动服务（要求已经跑过 ./cmd/image-setup）
+//
+// 首次接入或新环境，先跑一次：
+//
+//   go run ./cmd/image-setup --seed-test-client
+//
+// Endpoints (V1+V2):
 //   POST /image/upload           — multipart/form-data: file + preset
 //   GET  /image/:hash            — metadata lookup
+//   GET  /image/stats            — per-site stats
 //   POST /image/reference-ping   — JSON: {hashes: [...]}
 //   GET  /healthz                — no auth
-//   GET  /metrics                — internal only (prometheus, TODO)
+//   GET  /metrics                — no auth, internal-only by deployment
 package main
 
 import (
@@ -19,6 +28,7 @@ import (
 
 	"api/internal/app"
 	"api/internal/infrastructure/database"
+	"api/internal/middleware"
 	imgHandler "api/internal/platform/image/handler"
 	imgMW "api/internal/platform/image/middleware"
 	imgModel "api/internal/platform/image/model"
@@ -28,11 +38,12 @@ import (
 	"api/internal/platform/image/service"
 	"api/internal/platform/image/storage"
 	siteRepo "api/internal/platform/site/repository"
-	"api/internal/middleware"
 	"api/pkg/config"
 	"api/pkg/logger"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/gofiber/fiber/v3/middleware/adaptor"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func main() {
@@ -43,7 +54,6 @@ func main() {
 	}
 	logger.Init(cfg.Server.Env)
 
-	// Build the app with the oauth database (for oauth_clients lookup).
 	application, err := app.New(cfg, app.Options{
 		Name:      "kun-image",
 		NeedCache: true,
@@ -53,68 +63,51 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Connect a second DB (images-specific).
 	imagesDB, err := database.NewPostgresDB(cfg.ImagesDatabase)
 	if err != nil {
-		slog.Error("images db connect", "error", err)
+		slog.Error("images db connect", "error", err,
+			"hint", "若是新环境，请先跑 `go run ./cmd/image-setup`")
 		os.Exit(1)
 	}
-
-	// GORM auto-migrate images-side tables.
-	if err := imagesDB.AutoMigrate(&imgModel.Image{}, &imgModel.ImageSiteUsage{}); err != nil {
+	if err := imagesDB.AutoMigrate(&imgModel.Image{}, &imgModel.ImageSiteUsage{}, &imgModel.ModerationQueue{}); err != nil {
 		slog.Error("images automigrate", "error", err)
 		os.Exit(1)
 	}
 
-	// Auto-migrate the extended OAuthClient columns on the main DB
-	// (callers' client records need the image_* fields).
-	// NOTE: we don't call AutoMigrate on site.OAuthClient here to avoid
-	// touching other tables — the main oauth migrate cmd handles it.
-
-	// S3 client.
 	s3Client, err := storage.NewClient(cfg.ImageS3)
 	if err != nil {
 		slog.Error("s3 init", "error", err)
 		os.Exit(1)
 	}
 	if err := s3Client.EnsureBucket(context.Background()); err != nil {
-		slog.Warn("ensure bucket (dev convenience)", "error", err)
+		slog.Warn("ensure bucket (skip if pre-provisioned)", "error", err)
 	}
 
-	// Presets config.
 	presets, err := preset.Load(cfg.ImageService.PresetsPath)
 	if err != nil {
 		slog.Error("presets load", "error", err, "path", cfg.ImageService.PresetsPath)
 		os.Exit(1)
 	}
 
-	// Repositories.
 	imgRepo := repository.NewImageRepository(imagesDB.DB())
 	usageRepo := repository.NewSiteUsageRepository(imagesDB.DB())
 	statsRepo := repository.NewStatsRepository(imagesDB.DB())
 	clientRepo := siteRepo.NewOAuthClientRepository(application.DB.DB())
 
-	// Service + handler.
 	svc := service.New(presets, s3Client, imgRepo, usageRepo, cfg.ImageService.CDNBase)
 	q := quota.New(application.Cache)
 	h := imgHandler.New(svc, q, statsRepo)
 
-	// Global middleware.
 	application.Fiber.Use(middleware.RequestID())
 	application.Fiber.Use(middleware.Logger())
 
-	// CORS — V1 intentionally off (no frontend direct upload). Leaving a
-	// note here for V2 when we open it up.
-
-	// Health & metrics (no auth).
 	application.Fiber.Get("/healthz", func(c fiber.Ctx) error {
 		return c.JSON(fiber.Map{"status": "ok"})
 	})
+	application.Fiber.Get("/metrics", adaptor.HTTPHandler(promhttp.Handler()))
 
-	// CORS: open to registered sites' origins (for frontend direct upload).
 	application.Fiber.Use(middleware.CORS(cfg.Server.CORSOrigin))
 
-	// Authenticated image API (Basic for backend, Bearer JWT for frontend).
 	img := application.Fiber.Group("/image", imgMW.ClientAuth(clientRepo, cfg))
 	img.Post("/upload", h.Upload)
 	img.Get("/stats", h.Stats)
@@ -128,7 +121,6 @@ func main() {
 		"bucket", s3Client.Bucket(),
 	)
 
-	// Close extra DB on shutdown. app.Run handles the primary DB + cache.
 	defer func() {
 		if err := imagesDB.Close(); err != nil {
 			slog.Error("close images db", "error", err)
