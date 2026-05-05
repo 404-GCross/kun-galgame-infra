@@ -39,7 +39,9 @@ import (
 	"api/internal/platform/image/storage"
 	siteRepo "api/internal/platform/site/repository"
 	"api/pkg/config"
+	"api/pkg/errors"
 	"api/pkg/logger"
+	"api/pkg/response"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/adaptor"
@@ -108,8 +110,20 @@ func main() {
 
 	application.Fiber.Use(middleware.CORS(cfg.Server.CORSOrigin))
 
+	// Upload route is feature-gated. When disabled (the default), return
+	// 503 + clear error code without running auth so it's symmetric for
+	// any caller. Other endpoints stay on the authenticated group.
+	if cfg.ImageService.UploadEnabled {
+		application.Fiber.Post("/image/upload",
+			imgMW.ClientAuth(clientRepo, cfg),
+			h.Upload,
+		)
+	} else {
+		application.Fiber.Post("/image/upload", uploadDisabled)
+		slog.Warn("upload disabled (set KUN_IMAGE_UPLOAD_ENABLED=true to allow); other endpoints still serve")
+	}
+
 	img := application.Fiber.Group("/image", imgMW.ClientAuth(clientRepo, cfg))
-	img.Post("/upload", h.Upload)
 	img.Get("/stats", h.Stats)
 	img.Get("/:hash", h.Meta)
 	img.Post("/reference-ping", h.Ping)
@@ -131,4 +145,15 @@ func main() {
 		slog.Error("run", "error", err)
 		os.Exit(1)
 	}
+}
+
+// uploadDisabled is registered in place of the real upload handler when
+// KUN_IMAGE_UPLOAD_ENABLED is unset/false. Returns 503 + a clear code so
+// callers can branch on it.
+func uploadDisabled(c fiber.Ctx) error {
+	return response.Error(c,
+		fiber.StatusServiceUnavailable,
+		errors.ErrImageUploadDisabled,
+		errors.GetMessage(errors.ErrImageUploadDisabled),
+	)
 }

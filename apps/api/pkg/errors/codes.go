@@ -90,6 +90,7 @@ const (
 	ErrImageStoreFailed      = 80012
 	ErrImageNotFound         = 80013
 	ErrImageBadRequest       = 80014
+	ErrImageUploadDisabled   = 80015
 )
 
 // 错误码到消息的映射
@@ -166,6 +167,7 @@ var codeMessages = map[int]string{
 	ErrImageStoreFailed:      "图片存储失败",
 	ErrImageNotFound:         "图片不存在",
 	ErrImageBadRequest:       "请求格式错误",
+	ErrImageUploadDisabled:   "图片上传功能暂未开放，敬请期待",
 }
 
 // GetMessage returns the message for an error code

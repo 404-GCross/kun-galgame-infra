@@ -37,6 +37,12 @@ type ImageServiceConfig struct {
 	Port        int    // Bind port
 	CDNBase     string // Public URL prefix, e.g. https://cdn.example.com/img
 	PresetsPath string // Path to image_presets.yaml
+
+	// UploadEnabled gates POST /image/upload. Default false — uploads
+	// are disabled until calling-side integration is finalized. The
+	// service still serves GET /image/:hash, POST /image/reference-ping,
+	// and /healthz / /metrics so existing hashes stay resolvable.
+	UploadEnabled bool
 }
 
 // S3Config holds S3-compatible object storage configuration
@@ -193,11 +199,13 @@ func Load() (*Config, error) {
 
 	// Image Service config
 	imagePort, _ := strconv.Atoi(getEnv("KUN_IMAGE_SERVICE_PORT", "9278"))
+	imageUploadEnabled, _ := strconv.ParseBool(getEnv("KUN_IMAGE_UPLOAD_ENABLED", "false"))
 	cfg.ImageService = ImageServiceConfig{
-		Host:        getEnv("KUN_IMAGE_SERVICE_HOST", "127.0.0.1"),
-		Port:        imagePort,
-		CDNBase:     getEnv("KUN_IMAGE_PUBLIC_BASE_URL", "http://127.0.0.1:9000/kun-images-dev"),
-		PresetsPath: getEnv("KUN_IMAGE_PRESETS_PATH", "apps/api/configs/image_presets.yaml"),
+		Host:          getEnv("KUN_IMAGE_SERVICE_HOST", "127.0.0.1"),
+		Port:          imagePort,
+		CDNBase:       getEnv("KUN_IMAGE_PUBLIC_BASE_URL", "http://127.0.0.1:9000/kun-images-dev"),
+		PresetsPath:   getEnv("KUN_IMAGE_PRESETS_PATH", "apps/api/configs/image_presets.yaml"),
+		UploadEnabled: imageUploadEnabled,
 	}
 
 	// S3 (object storage) config
