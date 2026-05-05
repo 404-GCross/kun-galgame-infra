@@ -25,23 +25,49 @@ import (
 	"testing"
 	"time"
 
+	"api/internal/middleware"
+	imgHandler "api/internal/platform/image/handler"
+	imgMW "api/internal/platform/image/middleware"
 	"api/internal/platform/image/model"
 	"api/internal/platform/image/preset"
 	"api/internal/platform/image/repository"
 	"api/internal/platform/image/service"
 	"api/internal/platform/image/storage"
+	siteModel "api/internal/platform/site/model"
+	siteRepo "api/internal/platform/site/repository"
 	"api/pkg/config"
 
+	"github.com/gofiber/fiber/v3"
+	"github.com/gofiber/fiber/v3/middleware/adaptor"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/datatypes"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
+// Test fixtures populated in TestMain.
 var (
 	testSvc      *service.Service
 	testImgRepo  *repository.ImageRepository
 	testS3Client *storage.Client
+
+	// HTTP-test fixtures
+	testApp        *fiber.App
+	testCfg        *config.Config
+	testDB         *gorm.DB
+	testClientRepo *siteRepo.OAuthClientRepository
+)
+
+// Test OAuth client identifiers (seeded in TestMain).
+const (
+	testClientID         = "test-client"
+	testClientSecret     = "test-secret"
+	testClientSiteKey    = "testsite"
+	testDisabledClientID = "disabled-client"
+	testRestrictedClient = "restricted-client" // only `topic` preset allowed
+	testTinyClient       = "tiny-client"       // image_max_file_size=128 bytes
 )
 
 // TestMain bootstraps the dependencies and skips all tests if unavailable.
@@ -88,25 +114,130 @@ func TestMain(m *testing.M) {
 		os.Exit(0)
 	}
 	// Clean slate each run.
-	_ = gdb.Migrator().DropTable(&model.Image{}, &model.ImageSiteUsage{})
-	if err := gdb.AutoMigrate(&model.Image{}, &model.ImageSiteUsage{}); err != nil {
+	_ = gdb.Migrator().DropTable(
+		&model.Image{},
+		&model.ImageSiteUsage{},
+		&model.ModerationQueue{},
+		&siteModel.OAuthClient{},
+	)
+	if err := gdb.AutoMigrate(
+		&model.Image{},
+		&model.ImageSiteUsage{},
+		&model.ModerationQueue{},
+		&siteModel.OAuthClient{},
+	); err != nil {
 		fmt.Fprintf(os.Stderr, "SKIP: automigrate failed: %v\n", err)
 		os.Exit(0)
 	}
 
+	testDB = gdb
 	testImgRepo = repository.NewImageRepository(gdb)
 	usageRepo := repository.NewSiteUsageRepository(gdb)
+	statsRepo := repository.NewStatsRepository(gdb)
+	testClientRepo = siteRepo.NewOAuthClientRepository(gdb)
 
-	testSvc = service.New(
-		presets,
-		s3Client,
-		testImgRepo,
-		usageRepo,
-		"http://127.0.0.1:9000/"+s3Cfg.Bucket,
-	)
+	cdnBase := "http://127.0.0.1:9000/" + s3Cfg.Bucket
+	testSvc = service.New(presets, s3Client, testImgRepo, usageRepo, cdnBase)
+
+	if err := seedHTTPTestClients(gdb); err != nil {
+		fmt.Fprintf(os.Stderr, "SKIP: seed test clients failed: %v\n", err)
+		os.Exit(0)
+	}
+
+	testCfg = &config.Config{
+		JWT: config.JWTConfig{Secret: "test-jwt-secret-not-used-by-basic-auth"},
+	}
+	testApp = buildTestApp(testSvc, statsRepo, testClientRepo, testCfg)
 
 	code := m.Run()
 	os.Exit(code)
+}
+
+// seedHTTPTestClients writes 4 OAuth clients used by the HTTP-level tests.
+// All idempotent (DropTable + AutoMigrate runs immediately before).
+func seedHTTPTestClients(db *gorm.DB) error {
+	emptyJSON := datatypes.JSON(`[]`)
+	allPresets := datatypes.JSON(`["avatar","topic","galgame_banner"]`)
+	onlyTopic := datatypes.JSON(`["topic"]`)
+	allowAvatar := datatypes.JSON(`["avatar"]`)
+
+	rows := []*siteModel.OAuthClient{
+		{
+			ID:                   testClientID,
+			Name:                 "test",
+			Secret:               testClientSecret,
+			RedirectURIs:         emptyJSON,
+			Grants:               emptyJSON,
+			ImageEnabled:         true,
+			ImageSiteKey:         testClientSiteKey,
+			ImageQuotaDaily:      10000,
+			ImageQuotaBytesDaily: 10737418240,
+			ImageMaxFileSize:     10485760,
+			ImageAllowedPresets:  allPresets,
+		},
+		{
+			ID:                   testDisabledClientID,
+			Name:                 "disabled",
+			Secret:               "secret",
+			RedirectURIs:         emptyJSON,
+			Grants:               emptyJSON,
+			ImageEnabled:         false, // ← key: image disabled
+			ImageSiteKey:         "x",
+			ImageMaxFileSize:     10485760,
+		},
+		{
+			ID:                   testRestrictedClient,
+			Name:                 "restricted",
+			Secret:               "secret",
+			RedirectURIs:         emptyJSON,
+			Grants:               emptyJSON,
+			ImageEnabled:         true,
+			ImageSiteKey:         "restrictedsite",
+			ImageQuotaDaily:      100,
+			ImageQuotaBytesDaily: 1073741824,
+			ImageMaxFileSize:     10485760,
+			ImageAllowedPresets:  onlyTopic, // avatar should be denied
+		},
+		{
+			ID:                   testTinyClient,
+			Name:                 "tiny",
+			Secret:               "secret",
+			RedirectURIs:         emptyJSON,
+			Grants:               emptyJSON,
+			ImageEnabled:         true,
+			ImageSiteKey:         "tinysite",
+			ImageQuotaDaily:      100,
+			ImageQuotaBytesDaily: 1073741824,
+			ImageMaxFileSize:     128, // ← key: file size limit only 128 bytes
+			ImageAllowedPresets:  allowAvatar,
+		},
+	}
+	for _, r := range rows {
+		if err := db.Create(r).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// buildTestApp constructs a Fiber app mirroring cmd/image's route setup so
+// the HTTP tests exercise the same chain (middleware → handler).
+func buildTestApp(svc *service.Service, statsRepo *repository.StatsRepository, clientRepo *siteRepo.OAuthClientRepository, cfg *config.Config) *fiber.App {
+	h := imgHandler.New(svc, nil /*quota disabled in tests*/, statsRepo)
+	app := fiber.New()
+	app.Use(middleware.RequestID())
+
+	app.Get("/healthz", func(c fiber.Ctx) error {
+		return c.JSON(fiber.Map{"status": "ok"})
+	})
+	app.Get("/metrics", adaptor.HTTPHandler(promhttp.Handler()))
+
+	img := app.Group("/image", imgMW.ClientAuth(clientRepo, cfg))
+	img.Post("/upload", h.Upload)
+	img.Get("/stats", h.Stats)
+	img.Get("/:hash", h.Meta)
+	img.Post("/reference-ping", h.Ping)
+	return app
 }
 
 // presetsPath resolves the presets yaml relative to this test file so the
