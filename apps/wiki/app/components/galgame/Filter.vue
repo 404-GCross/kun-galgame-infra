@@ -1,10 +1,15 @@
 <script setup lang="ts">
 import { GALGAME_STATUS_MAP, TAG_CATEGORY_MAP } from '~/constants/admin'
 import type { Galgame, GalgameTag } from '~/shared/types/galgame'
+import { resolveBannerUrl } from '~/shared/utils/resolveImage'
 
 const api = useApi()
 const router = useRouter()
 const route = useRoute()
+const cdnBase = useRuntimeConfig().public.imageCdnBase as string
+
+const bannerUrl = (g: Galgame) =>
+  resolveBannerUrl(g, { cdnBase, variant: 'mini' })
 
 // URL-synced tag IDs (comma-separated). Also persist content_limit + page.
 const tagIdsParam = useQueryState('tag_ids', '')
@@ -269,8 +274,8 @@ const displayName = (g: Galgame) =>
           >
             <div class="bg-default-100 aspect-[3/4] overflow-hidden rounded">
               <img
-                v-if="g.banner"
-                :src="g.banner"
+                v-if="bannerUrl(g)"
+                :src="bannerUrl(g)"
                 class="size-full object-cover transition-transform group-hover:scale-105"
                 alt=""
                 loading="lazy"

@@ -57,6 +57,18 @@ const handleDeleteSessions = async (uuid: string) => {
   if (response.code === 0) fetchUsers()
 }
 
+const avatarUploadOpen = ref(false)
+const avatarUploadTarget = ref<{ uuid: string; name: string } | null>(null)
+
+const handleUploadAvatar = (user: { uuid: string; name: string }) => {
+  avatarUploadTarget.value = user
+  avatarUploadOpen.value = true
+}
+
+const onAvatarUploaded = () => {
+  fetchUsers()
+}
+
 watch(currentPage, () => fetchUsers())
 
 onMounted(() => fetchUsers())
@@ -98,7 +110,7 @@ onMounted(() => fetchUsers())
         @ban="handleBan"
         @unban="handleUnban"
         @delete-sessions="handleDeleteSessions"
-
+        @upload-avatar="handleUploadAvatar"
       />
 
       <div v-if="totalPages > 1" class="flex justify-center">
@@ -109,5 +121,11 @@ onMounted(() => fetchUsers())
         />
       </div>
     </template>
+
+    <UsersAvatarUploadModal
+      v-model:open="avatarUploadOpen"
+      :user="avatarUploadTarget"
+      @success="onAvatarUploaded"
+    />
   </div>
 </template>

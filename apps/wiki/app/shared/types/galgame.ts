@@ -7,7 +7,8 @@ export interface Galgame {
   name_ja_jp: string
   name_zh_cn: string
   name_zh_tw: string
-  banner: string
+  banner: string                       // legacy URL, permanent fallback
+  banner_image_hash?: string | null    // image_service hash; new uploads write here
   intro_en_us: string
   intro_ja_jp: string
   intro_zh_cn: string

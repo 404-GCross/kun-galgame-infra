@@ -6,16 +6,23 @@ import {
   OFFICIAL_CATEGORY_MAP
 } from '~/constants/admin'
 import type { Galgame } from '~/shared/types/galgame'
+import { resolveBannerUrl } from '~/shared/utils/resolveImage'
 
 const api = useApi()
 const route = useRoute()
 const router = useRouter()
+const cdnBase = useRuntimeConfig().public.imageCdnBase as string
 
 const id = computed(() => Number(route.params.id))
 const galgame = ref<Galgame | null>(null)
 const loading = ref(false)
 const updating = ref(false)
 const editOpen = ref(false)
+const bannerUploadOpen = ref(false)
+
+const bannerSrc = computed(() =>
+  resolveBannerUrl(galgame.value, { cdnBase })
+)
 
 const load = async () => {
   loading.value = true
@@ -114,17 +121,27 @@ const changeStatus = async (newStatus: number) => {
     <template v-else>
       <KunCard class="p-6">
         <div class="flex gap-6">
-          <img
-            v-if="galgame.banner"
-            :src="galgame.banner"
-            class="bg-default-100 h-48 w-36 flex-shrink-0 rounded object-cover"
-            alt=""
-          />
-          <div
-            v-else
-            class="bg-default-100 flex h-48 w-36 flex-shrink-0 items-center justify-center rounded"
-          >
-            <Icon name="lucide:image" class="text-default-300 size-10" />
+          <div class="flex flex-shrink-0 flex-col gap-2">
+            <img
+              v-if="bannerSrc"
+              :src="bannerSrc"
+              class="bg-default-100 h-48 w-36 rounded object-cover"
+              alt=""
+            />
+            <div
+              v-else
+              class="bg-default-100 flex h-48 w-36 items-center justify-center rounded"
+            >
+              <Icon name="lucide:image" class="text-default-300 size-10" />
+            </div>
+            <KunButton
+              size="sm"
+              variant="flat"
+              @click="bannerUploadOpen = true"
+            >
+              <Icon name="lucide:upload" class="mr-1 size-4" />
+              上传 banner
+            </KunButton>
           </div>
 
           <div class="flex-1 space-y-3">
@@ -369,6 +386,13 @@ const changeStatus = async (newStatus: number) => {
             load()
           }
         "
+      />
+
+      <GalgameBannerUploadModal
+        v-if="galgame"
+        v-model:open="bannerUploadOpen"
+        :galgame-id="galgame.id"
+        @success="load()"
       />
     </template>
   </div>

@@ -5,6 +5,7 @@ import {
   CONTENT_LIMIT_MAP
 } from '~/constants/admin'
 import type { Galgame } from '~/shared/types/galgame'
+import { resolveBannerUrl } from '~/shared/utils/resolveImage'
 
 interface ListResponse {
   items: Galgame[]
@@ -12,6 +13,10 @@ interface ListResponse {
 }
 
 const api = useApi()
+const cdnBase = useRuntimeConfig().public.imageCdnBase as string
+
+const bannerUrl = (g: Galgame) =>
+  resolveBannerUrl(g, { cdnBase, variant: 'mini' })
 
 // URL-synced state. `status` defaults to 0 (published) so /galgame reads cleanly;
 // any non-default value shows up in the URL for share/reload fidelity.
@@ -155,8 +160,8 @@ const switchTab = (id: number) => {
               <td class="px-4 py-2">
                 <NuxtLink :to="`/galgame/${g.id}`">
                   <img
-                    v-if="g.banner"
-                    :src="g.banner"
+                    v-if="bannerUrl(g)"
+                    :src="bannerUrl(g)"
                     class="bg-default-100 size-12 rounded object-cover"
                     alt=""
                     loading="lazy"

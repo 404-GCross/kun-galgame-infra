@@ -1,10 +1,22 @@
 <script setup lang="ts">
-defineProps<{ users: User[] }>()
+import { resolveAvatarUrl } from '~~/shared/utils/resolveImage'
+
+const props = defineProps<{ users: User[] }>()
 const emit = defineEmits<{
   ban: [uuid: string]
   unban: [uuid: string]
   deleteSessions: [uuid: string]
+  uploadAvatar: [user: { uuid: string; name: string }]
 }>()
+
+const cdnBase = useRuntimeConfig().public.imageCdnBase as string
+
+// Display avatars via the hash → legacy fallback chain so newly migrated /
+// uploaded users see the image_service URL while old ones keep working.
+const avatarSrc = (user: User) =>
+  resolveAvatarUrl(user, { cdnBase, variant: '256' }, '')
+
+const _ = props // keep TS happy if `props` is never read elsewhere
 </script>
 
 <template>
@@ -45,7 +57,7 @@ const emit = defineEmits<{
           <td class="whitespace-nowrap px-6 py-4">
             <div class="flex items-center gap-3">
               <KunAvatar
-                :user="{ id: 0, name: user.name, avatar: user.avatar }"
+                :user="{ id: 0, name: user.name, avatar: avatarSrc(user) }"
                 size="sm"
                 :is-navigation="false"
               />
@@ -101,6 +113,13 @@ const emit = defineEmits<{
                 >
                   <Icon name="lucide:check-circle" class="size-4" />
                   解除封禁
+                </button>
+                <button
+                  class="flex w-full items-center gap-2 px-3 py-2 text-sm text-default-500 hover:bg-default-100 hover:text-foreground"
+                  @click="emit('uploadAvatar', { uuid: user.uuid, name: user.name })"
+                >
+                  <Icon name="lucide:image-up" class="size-4" />
+                  上传头像
                 </button>
                 <button
                   class="flex w-full items-center gap-2 px-3 py-2 text-sm text-default-500 hover:bg-default-100 hover:text-foreground"

@@ -71,7 +71,12 @@ export default defineNuxtConfig({
       oauthRedirectURI:
         process.env.KUN_GALGAME_WIKI_NUXT_PUBLIC_OAUTH_REDIRECT_URI ||
         'http://127.0.0.1:9421/auth/callback',
-      oauthScope: 'profile'
+      oauthScope: 'profile',
+      // image_service public CDN base. For dev points to the R2 custom
+      // domain; in production override via env. Must NOT have a trailing slash.
+      imageCdnBase:
+        process.env.KUN_GALGAME_WIKI_NUXT_PUBLIC_IMAGE_CDN_BASE ||
+        'https://image.kungal.nextmoe.dev'
     }
   }
 })

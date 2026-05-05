@@ -58,7 +58,11 @@ export default defineNuxtConfig({
     public: {
       apiBase:
         process.env.KUN_VISUAL_NOVEL_NUXT_PUBLIC_API_BASE ||
-        'http://127.0.0.1:9277/api/v1'
+        'http://127.0.0.1:9277/api/v1',
+      // image_service public CDN base; override via env in prod.
+      imageCdnBase:
+        process.env.KUN_VISUAL_NOVEL_NUXT_PUBLIC_IMAGE_CDN_BASE ||
+        'https://image.kungal.nextmoe.dev'
     }
   }
 })
