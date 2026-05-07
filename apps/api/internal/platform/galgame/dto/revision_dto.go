@@ -22,6 +22,7 @@ type SubmitPRRequest struct {
 	NameZhCN         *string              `json:"name_zh_cn"`
 	NameZhTW         *string              `json:"name_zh_tw"`
 	Banner           *string              `json:"banner"`
+	BannerImageHash  *string              `json:"banner_image_hash" validate:"omitempty,len=64"`
 	IntroEnUS        *string              `json:"intro_en_us"`
 	IntroJaJP        *string              `json:"intro_ja_jp"`
 	IntroZhCN        *string              `json:"intro_zh_cn"`
@@ -58,6 +59,9 @@ func (r *SubmitPRRequest) ApplyToSnapshot(base *model.Snapshot) *model.Snapshot 
 	}
 	if r.Banner != nil {
 		s.Banner = *r.Banner
+	}
+	if r.BannerImageHash != nil {
+		s.BannerImageHash = *r.BannerImageHash
 	}
 	if r.IntroEnUS != nil {
 		s.IntroEnUS = *r.IntroEnUS

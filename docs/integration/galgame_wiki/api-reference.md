@@ -71,6 +71,7 @@ access_token 由 KUN OAuth 系统签发，JWT claims 中包含 `uid`（integer u
         "name_zh_cn": "标题",
         "name_zh_tw": "標題",
         "banner": "https://...",
+        "banner_image_hash": "abcd1234...ef",
         "content_limit": "sfw",
         "view": 100,
         "created": "2026-01-01T00:00:00Z",
@@ -248,7 +249,12 @@ access_token 由 KUN OAuth 系统签发，JWT claims 中包含 `uid`（integer u
 
 创建时自动：创建 revision 1、添加创建者为贡献者、添加 VNDB 链接。
 
-**请求体**：
+**支持两种 Content-Type**：
+- `application/json` — 不上传 banner 文件时使用（请求体见下）
+- `multipart/form-data` — 创建时直接带 banner 文件，详见
+  [Banner 上传](#banner-上传通过-create--update--pr-端点的-multipart-模式)
+
+**请求体**（JSON 模式）：
 
 ```json
 {
@@ -258,6 +264,7 @@ access_token 由 KUN OAuth 系统签发，JWT claims 中包含 `uid`（integer u
   "name_zh_cn": "标题",
   "name_zh_tw": "標題",
   "banner": "https://...",
+  "banner_image_hash": "abcd1234...ef",
   "intro_en_us": "...",
   "intro_ja_jp": "...",
   "intro_zh_cn": "...",
@@ -276,6 +283,8 @@ access_token 由 KUN OAuth 系统签发，JWT claims 中包含 `uid`（integer u
 | 字段 | 必填 | 说明 |
 |------|------|------|
 | vndb_id | 是 | 格式 `v\d+`，必须唯一 |
+| banner | 否 | 老的 URL 字符串字段；image_service 接入前的旧路径，迁移期保留作 fallback |
+| banner_image_hash | 否 | image_service 内容哈希；通常通过 multipart 模式由后端自动写入，也可由调用方手动指定 |
 | aliases | 否 | 逗号分隔的别名字符串 |
 | tag_ids | 否 | 标签 ID 数组 |
 | official_ids | 否 | 开发商 ID 数组 |
@@ -283,25 +292,88 @@ access_token 由 KUN OAuth 系统签发，JWT claims 中包含 `uid`（integer u
 | content_limit | 否 | `sfw` (默认) 或 `nsfw` |
 | age_limit | 否 | `r18` (默认) 或 `all` |
 
+> **banner 字段优先级**：前端读取时优先 `banner_image_hash`（拼 image_service URL），缺失时回退 `banner` 老 URL。两个字段都可写，`banner_image_hash` 推荐用于新上传。
+
 ---
 
 ### PUT /galgame/:gid
 
 更新 Galgame。**需要认证**。仅创建者或 admin 可操作。
 
-每次更新自动创建新 revision。
+每次更新自动创建新 revision。**所有字段（含 `banner_image_hash`）的变化都会进入 revision 快照与 PR diff**。
 
-**请求体**（所有字段可选）：
+**支持两种 Content-Type**：
+- `application/json` — 不修改 banner 或修改时只改 hash 字段
+- `multipart/form-data` — 同时上传新 banner 文件，详见
+  [Banner 上传](#banner-上传通过-create--update--pr-端点的-multipart-模式)
+
+**请求体**（JSON 模式，所有字段可选）：
 
 ```json
 {
   "name_zh_cn": "新标题",
+  "banner_image_hash": "abcd1234...ef",
   "intro_zh_cn": "新简介",
   "is_minor": false
 }
 ```
 
 `is_minor` 为 `true` 时标记为小修改，在版本历史中可被过滤。
+
+---
+
+### Banner 上传：通过 Create / Update / PR 端点的 multipart 模式
+
+**没有独立的"上传 banner"端点**。banner 文件作为可选 `file` 表单字段一并随
+`POST /galgame`、`PUT /galgame/:gid`、`POST /galgame/:gid/prs` 的 multipart 请求提交，
+后端会先把文件转给 image_service 拿到 hash，再把 hash 当作 `banner_image_hash` 字段，
+跟其他字段一起进入同一次 revision / PR diff。
+
+> 设计动机：图片上传与 article 编辑在业务上是同一次动作，应当原子。
+> 不再有"上传成功但忘了点保存留下 orphan 文件"的情况——文件在浏览器内存里
+> 暂存，没点保存就丢弃，从源头避免 orphan。
+
+**两种 Content-Type 等价**，前端按需选用：
+
+#### A. application/json — 不上传文件时使用（与以前完全相同）
+
+```http
+PUT /api/v1/galgame/:gid
+Content-Type: application/json
+
+{ ... fields including optional banner_image_hash ... }
+```
+
+#### B. multipart/form-data — 需要上传 banner 文件时使用
+
+```http
+PUT /api/v1/galgame/:gid
+Content-Type: multipart/form-data; boundary=...
+
+--boundary
+Content-Disposition: form-data; name="data"
+
+{"name_zh_cn": "新标题", ...other fields}
+--boundary
+Content-Disposition: form-data; name="file"; filename="banner.png"
+Content-Type: image/png
+
+<binary>
+--boundary--
+```
+
+| 字段 | 必填 | 说明 |
+|------|------|------|
+| data | 是 | JSON 字符串，等同于 JSON 模式下的 body |
+| file | 否 | 图片文件（image/jpeg / png / webp）；上传后后端把 hash 设为 `banner_image_hash` |
+
+**错误码**（multipart 模式下额外可能出现的）：透传 image_service 的状态码与
+错误码（如 `80008` 配额超限、`80015` 上传暂未开放、`60002` 审核拒绝），调用方
+按需展示给用户。
+
+**该 multipart 模式同样适用于：**
+- `POST /galgame`（创建时直接带 banner 文件，避免"先创建再编辑改 banner"两步）
+- `POST /galgame/:gid/prs`（PR 提案里直接附 banner 文件，reviewer 看 diff 时能看到新图缩略图）
 
 ---
 
@@ -495,7 +567,12 @@ PR 详情，包含与 base revision 的差异。
 
 提交时只需提供要修改的字段，未提供的字段保持当前值。
 
-**请求体**：
+**支持两种 Content-Type**：
+- `application/json` — 普通 PR
+- `multipart/form-data` — PR 提案里直接附 banner 文件，reviewer 看 diff 时可直接看到新图缩略图。详见
+  [Banner 上传](#banner-上传通过-create--update--pr-端点的-multipart-模式)
+
+**请求体**（JSON 模式）：
 
 ```json
 {

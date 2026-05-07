@@ -110,6 +110,7 @@ func (s *GalgameService) Create(ctx context.Context, uid int, req *dto.CreateGal
 			NameZhCN:         req.NameZhCN,
 			NameZhTW:         req.NameZhTW,
 			Banner:           req.Banner,
+			BannerImageHash:  strToPtr(req.BannerImageHash),
 			IntroEnUS:        req.IntroEnUS,
 			IntroJaJP:        req.IntroJaJP,
 			IntroZhCN:        req.IntroZhCN,
@@ -346,6 +347,15 @@ func buildUpdates(req *dto.UpdateGalgameRequest) map[string]any {
 	if req.Banner != nil {
 		u["banner"] = *req.Banner
 	}
+	if req.BannerImageHash != nil {
+		// Empty string explicitly clears the column (back to NULL); a
+		// non-empty hash sets it. Caller can choose either behavior.
+		if *req.BannerImageHash == "" {
+			u["banner_image_hash"] = nil
+		} else {
+			u["banner_image_hash"] = *req.BannerImageHash
+		}
+	}
 	if req.IntroEnUS != nil {
 		u["intro_en_us"] = *req.IntroEnUS
 	}
@@ -400,6 +410,25 @@ func (s *GalgameService) CreateRevisionFromCurrentState(tx *gorm.DB, galgameID, 
 		Snapshot:  snapshotJSON,
 		IsMinor:   isMinor,
 	}).Error
+}
+
+// optStr returns *p if non-nil, else "". Used to flatten optional string
+// pointer fields into the model layer where empty-string-as-null works.
+func optStr(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
+}
+
+// strToPtr converts an empty string to nil; otherwise returns a pointer
+// to the string. Useful for nullable VARCHAR columns where "" means
+// "no value" rather than empty-string-stored.
+func strToPtr(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }
 
 func hasRole(roles []string, target string) bool {

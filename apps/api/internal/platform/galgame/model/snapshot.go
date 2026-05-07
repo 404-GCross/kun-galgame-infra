@@ -15,6 +15,7 @@ type Snapshot struct {
 	NameZhCN         string         `json:"name_zh_cn"`
 	NameZhTW         string         `json:"name_zh_tw"`
 	Banner           string         `json:"banner"`
+	BannerImageHash  string         `json:"banner_image_hash"`
 	IntroEnUS        string         `json:"intro_en_us"`
 	IntroJaJP        string         `json:"intro_ja_jp"`
 	IntroZhCN        string         `json:"intro_zh_cn"`
@@ -61,6 +62,7 @@ func TakeSnapshot(g *Galgame) *Snapshot {
 		NameZhCN:         g.NameZhCN,
 		NameZhTW:         g.NameZhTW,
 		Banner:           g.Banner,
+		BannerImageHash:  derefStr(g.BannerImageHash),
 		IntroEnUS:        g.IntroEnUS,
 		IntroJaJP:        g.IntroJaJP,
 		IntroZhCN:        g.IntroZhCN,
@@ -128,6 +130,9 @@ func ChangedKeys(old, new *Snapshot) map[string]bool {
 	}
 	if old.Banner != new.Banner {
 		keys["banner"] = true
+	}
+	if old.BannerImageHash != new.BannerImageHash {
+		keys["banner_image_hash"] = true
 	}
 	if old.IntroEnUS != new.IntroEnUS {
 		keys["intro_en_us"] = true
@@ -199,6 +204,9 @@ func ApplyChanges(target *Snapshot, source *Snapshot, changedKeys map[string]boo
 	if changedKeys["banner"] {
 		target.Banner = source.Banner
 	}
+	if changedKeys["banner_image_hash"] {
+		target.BannerImageHash = source.BannerImageHash
+	}
 	if changedKeys["intro_en_us"] {
 		target.IntroEnUS = source.IntroEnUS
 	}
@@ -238,6 +246,14 @@ func ApplyChanges(target *Snapshot, source *Snapshot, changedKeys map[string]boo
 	if changedKeys["links"] {
 		target.Links = source.Links
 	}
+}
+
+// derefStr returns *p if p is non-nil, else "".
+func derefStr(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
 }
 
 func intPtrEqual(a, b *int) bool {

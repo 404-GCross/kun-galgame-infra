@@ -7,6 +7,7 @@ import (
 	"api/internal/platform/galgame/model"
 	"api/internal/platform/galgame/service"
 	"api/pkg/errors"
+	"api/pkg/imageclient"
 	"api/pkg/response"
 	"api/pkg/utils"
 
@@ -15,12 +16,15 @@ import (
 
 // RevisionHandler handles revision and PR HTTP requests
 type RevisionHandler struct {
-	svc *service.GalgameService
+	svc       *service.GalgameService
+	imgClient *imageclient.Client // optional; nil disables banner upload via multipart in PR submission
 }
 
-// NewRevisionHandler creates a new RevisionHandler
-func NewRevisionHandler(svc *service.GalgameService) *RevisionHandler {
-	return &RevisionHandler{svc: svc}
+// NewRevisionHandler creates a new RevisionHandler.
+// Pass nil for imgClient to disable banner-file upload in PR submission;
+// consumers must then send banner_image_hash in JSON directly.
+func NewRevisionHandler(svc *service.GalgameService, imgClient *imageclient.Client) *RevisionHandler {
+	return &RevisionHandler{svc: svc, imgClient: imgClient}
 }
 
 // ListRevisions returns revision history
@@ -188,7 +192,12 @@ func (h *RevisionHandler) GetPR(c fiber.Ctx) error {
 	})
 }
 
-// SubmitPR creates a new PR
+// SubmitPR creates a new PR.
+//
+// Accepts both JSON body and multipart/form-data (with optional `file` banner).
+// In multipart mode, the file is uploaded to image_service first; the
+// resulting hash is treated as a normal banner_image_hash field change in
+// the proposed snapshot.
 func (h *RevisionHandler) SubmitPR(c fiber.Ctx) error {
 	uid, _ := c.Locals("user_uid").(uint)
 	if uid == 0 {
@@ -201,8 +210,12 @@ func (h *RevisionHandler) SubmitPR(c fiber.Ctx) error {
 	}
 
 	var req dto.SubmitPRRequest
-	if err := c.Bind().JSON(&req); err != nil {
-		return response.BadRequest(c, errors.ErrBadRequest)
+	bannerHash, err := parseGalgameWriteBody(c, h.imgClient, &req)
+	if err != nil {
+		return mapWriteBodyError(c, err)
+	}
+	if bannerHash != "" {
+		req.BannerImageHash = &bannerHash
 	}
 
 	// Get current snapshot to apply PR changes onto

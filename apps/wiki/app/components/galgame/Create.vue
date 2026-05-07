@@ -1,6 +1,9 @@
 <script setup lang="ts">
 const api = useApi()
 const router = useRouter()
+const cfg = useRuntimeConfig()
+const apiBase = cfg.public.apiBase as string
+const accessToken = useCookie('access_token')
 
 const form = ref({
   vndb_id: '',
@@ -18,6 +21,32 @@ const form = ref({
   age_limit: 'r18',
   aliases: ''
 })
+
+// 待上传的 banner 文件（与 EditModal 一致：浏览器内存暂存，跟着 multipart 一起提交）
+const bannerFile = ref<File | null>(null)
+const bannerObjectUrl = ref('')
+const bannerInputRef = ref<HTMLInputElement | null>(null)
+
+const onPickBanner = (event: Event) => {
+  const f = (event.target as HTMLInputElement).files?.[0] ?? null
+  if (!f) {
+    bannerFile.value = null
+    bannerObjectUrl.value = ''
+    return
+  }
+  if (f.size > 10 * 1024 * 1024) {
+    useKunMessage('文件超过 10MB 上限', 'warn')
+    return
+  }
+  bannerFile.value = f
+  bannerObjectUrl.value = URL.createObjectURL(f)
+}
+
+const clearPickedBanner = () => {
+  bannerFile.value = null
+  bannerObjectUrl.value = ''
+  if (bannerInputRef.value) bannerInputRef.value.value = ''
+}
 
 const vndbCheck = ref<{
   status: 'idle' | 'checking' | 'ok' | 'exists'
@@ -69,7 +98,7 @@ const canSubmit = computed(() => {
 const submit = async () => {
   submitting.value = true
   try {
-    const response = await api.post<{ id: number }>('/galgame', {
+    const payload: Record<string, unknown> = {
       vndb_id: form.value.vndb_id.trim(),
       name_zh_cn: form.value.name_zh_cn,
       name_ja_jp: form.value.name_ja_jp,
@@ -84,16 +113,55 @@ const submit = async () => {
       original_language: form.value.original_language,
       age_limit: form.value.age_limit,
       aliases: form.value.aliases
-    })
-    if (response.code === 0) {
-      useKunMessage('创建成功', 'success')
-      if (response.data?.id) {
-        router.push(`/galgame/${response.data.id}`)
-      } else {
-        router.push('/galgame')
-      }
+    }
+
+    // 选了文件 → multipart；没选 → 老 JSON 路径
+    const headers: Record<string, string> = accessToken.value
+      ? { Authorization: `Bearer ${accessToken.value}` }
+      : {}
+
+    let body: string | FormData
+    if (bannerFile.value) {
+      const fd = new FormData()
+      fd.append('data', JSON.stringify(payload))
+      fd.append('file', bannerFile.value)
+      body = fd
     } else {
-      useKunMessage(response.message || '创建失败', 'error')
+      body = JSON.stringify(payload)
+      headers['Content-Type'] = 'application/json'
+    }
+
+    try {
+      const response = await $fetch<{
+        code: number
+        message: string
+        data?: { id: number }
+      }>(`${apiBase}/galgame`, {
+        method: 'POST',
+        body,
+        headers,
+        credentials: 'include'
+      })
+      if (response.code === 0) {
+        useKunMessage('创建成功', 'success')
+        if (response.data?.id) {
+          router.push(`/galgame/${response.data.id}`)
+        } else {
+          router.push('/galgame')
+        }
+      } else {
+        useKunMessage(response.message || '创建失败', 'error')
+      }
+    } catch (err) {
+      const e = err as {
+        data?: { message?: string }
+        statusMessage?: string
+        message?: string
+      }
+      useKunMessage(
+        e?.data?.message || e?.statusMessage || e?.message || '创建失败',
+        'error'
+      )
     }
   } finally {
     submitting.value = false
@@ -154,7 +222,52 @@ const submit = async () => {
         <KunInput v-model="form.name_zh_tw" label="繁體中文" />
       </div>
 
-      <KunInput v-model="form.banner" label="封面图 URL" placeholder="https://..." />
+      <!-- Banner: 选了文件→随提交 multipart 上传；填 URL→老路径兼容 -->
+      <div class="space-y-2">
+        <div class="text-foreground text-sm font-medium">封面 banner</div>
+        <div class="flex items-start gap-3">
+          <div
+            class="bg-default-100 border-default-200 flex h-32 w-24 shrink-0 items-center justify-center overflow-hidden rounded border"
+          >
+            <img
+              v-if="bannerObjectUrl"
+              :src="bannerObjectUrl"
+              class="size-full object-cover"
+              alt="banner 预览"
+            />
+            <Icon v-else name="lucide:image" class="text-default-300 size-6" />
+          </div>
+          <div class="flex flex-1 flex-col gap-2">
+            <input
+              ref="bannerInputRef"
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              class="text-default-500 file:bg-content2 file:text-foreground hover:file:bg-content3 block w-full text-sm file:mr-3 file:rounded file:border-0 file:px-3 file:py-1.5 file:text-sm file:font-medium"
+              @change="onPickBanner"
+            />
+            <KunButton
+              v-if="bannerFile"
+              size="sm"
+              variant="flat"
+              color="warning"
+              type="button"
+              @click="clearPickedBanner"
+            >
+              <Icon name="lucide:undo-2" class="mr-1 size-4" />
+              不上传这张
+            </KunButton>
+            <p v-if="bannerFile" class="text-default-400 text-xs">
+              已选 {{ bannerFile.name }}（{{ (bannerFile.size / 1024).toFixed(1) }} KB），
+              **点最下方"创建"才会真正上传**。
+            </p>
+          </div>
+        </div>
+        <KunInput
+          v-model="form.banner"
+          label="或填 banner URL（老路径兼容）"
+          placeholder="https://..."
+        />
+      </div>
 
       <div class="grid grid-cols-3 gap-3">
         <KunSelect

@@ -7,6 +7,7 @@ import (
 	"api/internal/platform/galgame/search"
 	"api/internal/platform/galgame/service"
 	"api/pkg/errors"
+	"api/pkg/imageclient"
 	"api/pkg/response"
 	"api/pkg/utils"
 
@@ -16,13 +17,20 @@ import (
 // GalgameHandler handles galgame HTTP requests
 type GalgameHandler struct {
 	galgameService *service.GalgameService
-	searchHook     *search.Hook // optional write-through to Meilisearch
+	searchHook     *search.Hook        // optional write-through to Meilisearch
+	imgClient      *imageclient.Client // optional; nil disables banner upload via multipart
 }
 
 // NewGalgameHandler creates a new GalgameHandler.
 // Pass nil for hook to disable write-through (e.g. in tests).
-func NewGalgameHandler(galgameService *service.GalgameService, hook *search.Hook) *GalgameHandler {
-	return &GalgameHandler{galgameService: galgameService, searchHook: hook}
+// Pass nil for imgClient to disable banner-file upload via multipart;
+// consumers must then send banner_image_hash via JSON directly.
+func NewGalgameHandler(galgameService *service.GalgameService, hook *search.Hook, imgClient *imageclient.Client) *GalgameHandler {
+	return &GalgameHandler{
+		galgameService: galgameService,
+		searchHook:     hook,
+		imgClient:      imgClient,
+	}
 }
 
 // List returns a paginated list of galgames
@@ -64,7 +72,11 @@ func (h *GalgameHandler) Get(c fiber.Ctx) error {
 	})
 }
 
-// Create creates a new galgame
+// Create creates a new galgame.
+//
+// Accepts both JSON body and multipart/form-data (with optional `file` field).
+// In multipart mode, the file is uploaded to image_service first; the
+// resulting hash is recorded as banner_image_hash on the new galgame.
 func (h *GalgameHandler) Create(c fiber.Ctx) error {
 	uid, _ := c.Locals("user_uid").(uint)
 	if uid == 0 {
@@ -72,8 +84,12 @@ func (h *GalgameHandler) Create(c fiber.Ctx) error {
 	}
 
 	var req dto.CreateGalgameRequest
-	if err := c.Bind().JSON(&req); err != nil {
-		return response.BadRequest(c, errors.ErrBadRequest)
+	bannerHash, err := parseGalgameWriteBody(c, h.imgClient, &req)
+	if err != nil {
+		return mapWriteBodyError(c, err)
+	}
+	if bannerHash != "" {
+		req.BannerImageHash = bannerHash
 	}
 
 	if err := utils.Validate(&req); err != nil {
@@ -93,7 +109,12 @@ func (h *GalgameHandler) Create(c fiber.Ctx) error {
 	return response.Success(c, galgame)
 }
 
-// Update updates an existing galgame
+// Update updates an existing galgame.
+//
+// Accepts both JSON body and multipart/form-data (with optional `file`
+// banner). In multipart mode, the file is uploaded to image_service first
+// and the resulting hash is treated as a normal banner_image_hash field
+// change — going through the standard revision/PR pipeline.
 func (h *GalgameHandler) Update(c fiber.Ctx) error {
 	uid, _ := c.Locals("user_uid").(uint)
 	if uid == 0 {
@@ -107,8 +128,12 @@ func (h *GalgameHandler) Update(c fiber.Ctx) error {
 	}
 
 	var req dto.UpdateGalgameRequest
-	if err := c.Bind().JSON(&req); err != nil {
-		return response.BadRequest(c, errors.ErrBadRequest)
+	bannerHash, err := parseGalgameWriteBody(c, h.imgClient, &req)
+	if err != nil {
+		return mapWriteBodyError(c, err)
+	}
+	if bannerHash != "" {
+		req.BannerImageHash = &bannerHash
 	}
 
 	galgame, err := h.galgameService.Update(c.Context(), int(uid), id, roles, &req)

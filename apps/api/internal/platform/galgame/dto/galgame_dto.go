@@ -17,6 +17,7 @@ type CreateGalgameRequest struct {
 	NameZhCN         string `json:"name_zh_cn" validate:"max=1000"`
 	NameZhTW         string `json:"name_zh_tw" validate:"max=1000"`
 	Banner           string `json:"banner"`
+	BannerImageHash  string `json:"banner_image_hash" validate:"omitempty,len=64"`
 	IntroEnUS        string `json:"intro_en_us"`
 	IntroJaJP        string `json:"intro_ja_jp"`
 	IntroZhCN        string `json:"intro_zh_cn"`
@@ -39,6 +40,7 @@ type UpdateGalgameRequest struct {
 	NameZhCN         *string `json:"name_zh_cn" validate:"omitempty,max=1000"`
 	NameZhTW         *string `json:"name_zh_tw" validate:"omitempty,max=1000"`
 	Banner           *string `json:"banner"`
+	BannerImageHash  *string `json:"banner_image_hash" validate:"omitempty,len=64"`
 	IntroEnUS        *string `json:"intro_en_us"`
 	IntroJaJP        *string `json:"intro_ja_jp"`
 	IntroZhCN        *string `json:"intro_zh_cn"`

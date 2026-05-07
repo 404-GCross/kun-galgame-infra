@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { Galgame } from '~/shared/types/galgame'
+import { resolveBannerUrl } from '~/shared/utils/resolveImage'
 
 const props = defineProps<{
   open: boolean
@@ -11,14 +12,17 @@ const emit = defineEmits<{
   saved: []
 }>()
 
-const api = useApi()
+const cfg = useRuntimeConfig()
+const cdnBase = cfg.public.imageCdnBase as string
+const apiBase = cfg.public.apiBase as string
+const accessToken = useCookie('access_token')
 
 interface FormState {
   name_zh_cn: string
   name_ja_jp: string
   name_en_us: string
   name_zh_tw: string
-  banner: string
+  banner: string                  // legacy URL field; rarely changed manually
   intro_zh_cn: string
   intro_ja_jp: string
   intro_en_us: string
@@ -51,6 +55,46 @@ const form = ref<FormState>({
   mode: 'direct',
   pr_title: '',
   pr_message: ''
+})
+
+// 待上传的 banner 文件。null = 用户没改 banner；选择文件后 = 准备随保存
+// 一起 multipart 提交。文件保留在浏览器内存里，未点保存就丢弃 → 不会
+// 在 image_service 留下 orphan。
+const bannerFile = ref<File | null>(null)
+const bannerObjectUrl = ref('')
+const bannerInputRef = ref<HTMLInputElement | null>(null)
+
+const onPickBanner = (event: Event) => {
+  const f = (event.target as HTMLInputElement).files?.[0] ?? null
+  if (!f) {
+    bannerFile.value = null
+    bannerObjectUrl.value = ''
+    return
+  }
+  if (f.size > 10 * 1024 * 1024) {
+    useKunMessage('文件超过 10MB 上限', 'warn')
+    return
+  }
+  bannerFile.value = f
+  bannerObjectUrl.value = URL.createObjectURL(f)
+}
+
+const clearPickedBanner = () => {
+  bannerFile.value = null
+  bannerObjectUrl.value = ''
+  if (bannerInputRef.value) bannerInputRef.value.value = ''
+}
+
+// 预览：选了新文件 → 本地 blob URL；否则 fallback 到当前持久化状态。
+const bannerPreviewUrl = computed(() => {
+  if (bannerObjectUrl.value) return bannerObjectUrl.value
+  return resolveBannerUrl(
+    {
+      banner: form.value.banner,
+      banner_image_hash: props.galgame.banner_image_hash
+    },
+    { cdnBase }
+  )
 })
 
 watch(
@@ -107,33 +151,65 @@ const submit = async () => {
       fieldPayload.series_id = null
     }
 
-    if (form.value.mode === 'pr') {
-      const prPayload: Record<string, unknown> = {
-        ...fieldPayload,
-        title: form.value.pr_title,
-        message: form.value.pr_message
-      }
-      const response = await api.post(
-        `/galgame/${props.galgame.id}/prs`,
-        prPayload
+    const path =
+      form.value.mode === 'pr'
+        ? `/galgame/${props.galgame.id}/prs`
+        : `/galgame/${props.galgame.id}`
+    const method = form.value.mode === 'pr' ? 'POST' : 'PUT'
+    const okMsg = form.value.mode === 'pr' ? 'PR 已提交' : '保存成功'
+    const failMsg = form.value.mode === 'pr' ? 'PR 提交失败' : '保存失败'
+
+    const finalPayload =
+      form.value.mode === 'pr'
+        ? {
+            ...fieldPayload,
+            title: form.value.pr_title,
+            message: form.value.pr_message
+          }
+        : { ...fieldPayload, is_minor: form.value.is_minor }
+
+    // 二选一的请求方式：
+    //   - 没选新 banner 文件 → 走 application/json，跟以前完全一样
+    //   - 选了新 banner 文件 → 走 multipart：data 字段是 JSON，file 字段是文件
+    //     后端会把文件转给 image_service 拿 hash，再把 hash 当作普通字段
+    //     一并写进 revision/PR diff
+    const headers: Record<string, string> = accessToken.value
+      ? { Authorization: `Bearer ${accessToken.value}` }
+      : {}
+
+    let body: string | FormData
+    if (bannerFile.value) {
+      const fd = new FormData()
+      fd.append('data', JSON.stringify(finalPayload))
+      fd.append('file', bannerFile.value)
+      body = fd
+    } else {
+      body = JSON.stringify(finalPayload)
+      headers['Content-Type'] = 'application/json'
+    }
+
+    try {
+      const response = await $fetch<{ code: number; message: string }>(
+        `${apiBase}${path}`,
+        { method, body, headers, credentials: 'include' }
       )
       if (response.code === 0) {
-        useKunMessage('PR 已提交', 'success')
+        useKunMessage(okMsg, 'success')
+        clearPickedBanner()
         emit('saved')
       } else {
-        useKunMessage(response.message || 'PR 提交失败', 'error')
+        useKunMessage(response.message || failMsg, 'error')
       }
-    } else {
-      const response = await api.put(`/galgame/${props.galgame.id}`, {
-        ...fieldPayload,
-        is_minor: form.value.is_minor
-      })
-      if (response.code === 0) {
-        useKunMessage('保存成功', 'success')
-        emit('saved')
-      } else {
-        useKunMessage(response.message || '保存失败', 'error')
+    } catch (err) {
+      const e = err as {
+        data?: { message?: string }
+        statusMessage?: string
+        message?: string
       }
+      useKunMessage(
+        e?.data?.message || e?.statusMessage || e?.message || failMsg,
+        'error'
+      )
     }
   } finally {
     submitting.value = false
@@ -159,7 +235,55 @@ const submit = async () => {
         <KunInput v-model="form.name_zh_tw" label="繁體中文" />
       </div>
 
-      <KunInput v-model="form.banner" label="封面图 URL" placeholder="https://..." />
+      <!-- Banner section: 选了文件→随保存 multipart 提交；没选→不变。 -->
+      <div class="space-y-2">
+        <div class="text-foreground text-sm font-medium">封面 banner</div>
+        <div class="flex items-start gap-3">
+          <div
+            class="bg-default-100 border-default-200 flex h-32 w-24 shrink-0 items-center justify-center overflow-hidden rounded border"
+          >
+            <img
+              v-if="bannerPreviewUrl"
+              :src="bannerPreviewUrl"
+              class="size-full object-cover"
+              alt="banner 预览"
+            />
+            <Icon v-else name="lucide:image" class="text-default-300 size-6" />
+          </div>
+          <div class="flex flex-1 flex-col gap-2">
+            <input
+              ref="bannerInputRef"
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              class="text-default-500 file:bg-content2 file:text-foreground hover:file:bg-content3 block w-full text-sm file:mr-3 file:rounded file:border-0 file:px-3 file:py-1.5 file:text-sm file:font-medium"
+              @change="onPickBanner"
+            />
+            <KunButton
+              v-if="bannerFile"
+              size="sm"
+              variant="flat"
+              color="warning"
+              type="button"
+              @click="clearPickedBanner"
+            >
+              <Icon name="lucide:undo-2" class="mr-1 size-4" />
+              不上传这张
+            </KunButton>
+            <p v-if="bannerFile" class="text-default-400 text-xs">
+              已选文件 {{ bannerFile.name }}（{{ (bannerFile.size / 1024).toFixed(1) }} KB），
+              **点最下方"保存"或"提交 PR"才会真正上传**；不会留下 orphan。
+            </p>
+            <p v-else class="text-default-400 text-xs">
+              选择新文件即可替换 banner，会随其他字段一起进 revision / PR diff。
+            </p>
+          </div>
+        </div>
+        <KunInput
+          v-model="form.banner"
+          label="老 banner URL（fallback / 兼容；建议留空）"
+          placeholder="https://..."
+        />
+      </div>
 
       <div class="grid grid-cols-3 gap-3">
         <KunSelect

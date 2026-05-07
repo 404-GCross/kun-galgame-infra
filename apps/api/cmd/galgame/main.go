@@ -95,9 +95,26 @@ func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB, se
 	searchHook := galgameSearch.NewHook(wiki, indexer)
 	searchSvc := galgameSearch.NewService(searchClient)
 
+	// Image client (singleton, optional). Used by Galgame Create/Update +
+	// PR submit when caller sends multipart with a banner file.
+	// Nil if KUN_IMAGE_CLIENT_ID/SECRET unset → multipart with file 400s
+	// with a clear error; JSON-only callers unaffected.
+	var imgCli *imageclient.Client
+	if cfg.ImageClient.ClientID != "" && cfg.ImageClient.ClientSecret != "" {
+		imgCli = imageclient.New(imageclient.Config{
+			BaseURL:      cfg.ImageClient.BaseURL,
+			CDNBase:      cfg.ImageService.CDNBase,
+			ClientID:     cfg.ImageClient.ClientID,
+			ClientSecret: cfg.ImageClient.ClientSecret,
+		})
+		slog.Info("image client configured", "base_url", cfg.ImageClient.BaseURL)
+	} else {
+		slog.Warn("image client not configured; multipart banner uploads in galgame Create/Update/PR will be rejected")
+	}
+
 	// Handlers
-	galgameH := galgameHandler.NewGalgameHandler(galgameSvc, searchHook)
-	revisionH := galgameHandler.NewRevisionHandler(galgameSvc)
+	galgameH := galgameHandler.NewGalgameHandler(galgameSvc, searchHook, imgCli)
+	revisionH := galgameHandler.NewRevisionHandler(galgameSvc, imgCli)
 	linkH := galgameHandler.NewLinkHandler(galgameSvc, galgameRepository)
 	contributorH := galgameHandler.NewContributorHandler(galgameRepository, userReadRepo)
 	tagH := galgameHandler.NewTagHandler(tagRepo, searchHook)
@@ -106,22 +123,6 @@ func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB, se
 	seriesH := galgameHandler.NewSeriesHandler(seriesRepo)
 	adminH := galgameHandler.NewAdminHandler(adminRepo)
 	searchH := galgameHandler.NewSearchHandler(searchSvc)
-
-	// Image client (singleton). Nil if KUN_IMAGE_CLIENT_ID/SECRET unset
-	// — bannerUploadH will then refuse uploads with a clear error.
-	var bannerUploadH *galgameHandler.BannerUploadHandler
-	if cfg.ImageClient.ClientID != "" && cfg.ImageClient.ClientSecret != "" {
-		imgCli := imageclient.New(imageclient.Config{
-			BaseURL:      cfg.ImageClient.BaseURL,
-			CDNBase:      cfg.ImageService.CDNBase,
-			ClientID:     cfg.ImageClient.ClientID,
-			ClientSecret: cfg.ImageClient.ClientSecret,
-		})
-		bannerUploadH = galgameHandler.NewBannerUploadHandler(wikiDB.DB(), imgCli)
-		slog.Info("image client configured", "base_url", cfg.ImageClient.BaseURL)
-	} else {
-		slog.Warn("image client not configured; /galgame/:gid/banner upload disabled")
-	}
 
 	// JWT auth middleware
 	jwtAuth := middleware.JWTAuth(cfg.JWT.Secret)
@@ -161,9 +162,6 @@ func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB, se
 	galgameAuth := galgame.Group("", jwtAuth)
 	galgameAuth.Post("/", galgameH.Create)
 	galgameAuth.Put("/:gid", galgameH.Update)
-	if bannerUploadH != nil {
-		galgameAuth.Post("/:gid/banner", bannerUploadH.Upload)
-	}
 	galgameAuth.Post("/:gid/revert", revisionH.Revert)
 	galgameAuth.Post("/:gid/prs", revisionH.SubmitPR)
 	galgameAuth.Put("/:gid/prs/:id/merge", revisionH.MergePR)

@@ -18,7 +18,6 @@ const galgame = ref<Galgame | null>(null)
 const loading = ref(false)
 const updating = ref(false)
 const editOpen = ref(false)
-const bannerUploadOpen = ref(false)
 
 const bannerSrc = computed(() =>
   resolveBannerUrl(galgame.value, { cdnBase })
@@ -121,27 +120,17 @@ const changeStatus = async (newStatus: number) => {
     <template v-else>
       <KunCard class="p-6">
         <div class="flex gap-6">
-          <div class="flex flex-shrink-0 flex-col gap-2">
-            <img
-              v-if="bannerSrc"
-              :src="bannerSrc"
-              class="bg-default-100 h-48 w-36 rounded object-cover"
-              alt=""
-            />
-            <div
-              v-else
-              class="bg-default-100 flex h-48 w-36 items-center justify-center rounded"
-            >
-              <Icon name="lucide:image" class="text-default-300 size-10" />
-            </div>
-            <KunButton
-              size="sm"
-              variant="flat"
-              @click="bannerUploadOpen = true"
-            >
-              <Icon name="lucide:upload" class="mr-1 size-4" />
-              上传 banner
-            </KunButton>
+          <img
+            v-if="bannerSrc"
+            :src="bannerSrc"
+            class="bg-default-100 h-48 w-36 flex-shrink-0 rounded object-cover"
+            alt=""
+          />
+          <div
+            v-else
+            class="bg-default-100 flex h-48 w-36 flex-shrink-0 items-center justify-center rounded"
+          >
+            <Icon name="lucide:image" class="text-default-300 size-10" />
           </div>
 
           <div class="flex-1 space-y-3">
@@ -388,12 +377,6 @@ const changeStatus = async (newStatus: number) => {
         "
       />
 
-      <GalgameBannerUploadModal
-        v-if="galgame"
-        v-model:open="bannerUploadOpen"
-        :galgame-id="galgame.id"
-        @success="load()"
-      />
     </template>
   </div>
 </template>

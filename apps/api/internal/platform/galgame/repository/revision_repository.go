@@ -73,6 +73,15 @@ func (r *RevisionRepository) FindLatest(ctx context.Context, galgameID int) (*mo
 
 // ApplySnapshot applies a snapshot to the galgame table and all relation tables.
 // Must be called inside a transaction. Strategy: update scalar fields, clear+rebuild relations.
+// snapshotBannerHashColumn maps Snapshot.BannerImageHash (a plain string)
+// to the *string column representation: empty string becomes NULL.
+func snapshotBannerHashColumn(s *model.Snapshot) any {
+	if s.BannerImageHash == "" {
+		return nil
+	}
+	return s.BannerImageHash
+}
+
 func ApplySnapshot(tx *gorm.DB, galgameID, userID int, snapshot *model.Snapshot) error {
 	// 1. Update galgame scalar fields
 	updates := map[string]any{
@@ -84,6 +93,7 @@ func ApplySnapshot(tx *gorm.DB, galgameID, userID int, snapshot *model.Snapshot)
 		"name_zh_cn":        snapshot.NameZhCN,
 		"name_zh_tw":        snapshot.NameZhTW,
 		"banner":            snapshot.Banner,
+		"banner_image_hash": snapshotBannerHashColumn(snapshot),
 		"intro_en_us":       snapshot.IntroEnUS,
 		"intro_ja_jp":       snapshot.IntroJaJP,
 		"intro_zh_cn":       snapshot.IntroZhCN,
