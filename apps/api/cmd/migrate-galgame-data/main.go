@@ -420,6 +420,16 @@ func runMigration(srcDB, tdb *gorm.DB, validUserIDs map[int]bool, dryRun bool) (
 					g.ContentLimit, g.Status, g.View, g.ResourceUpdateTime,
 					g.OriginalLanguage, g.AgeLimit, g.UserID, g.SeriesID, g.Created, g.Updated}
 			})
+
+		// Migration audit trail. For kungal, source_id == galgame_id (we
+		// preserve IDs during copy), but recording it explicitly keeps the
+		// table symmetric with the moyu side and lets future scripts find
+		// legacy kungal ids without inferring from row state.
+		batchExec(tdb, "galgame_migrations",
+			[]string{"source_db", "source_id", "galgame_id", "created_at"},
+			newGalgames, func(g SrcGalgame) []any {
+				return []any{"kungal", g.ID, g.ID, time.Now()}
+			})
 	}
 	result.Galgames = len(newGalgames)
 	slog.Info("Galgames migrated", "count", result.Galgames, "skipped", result.Skipped)

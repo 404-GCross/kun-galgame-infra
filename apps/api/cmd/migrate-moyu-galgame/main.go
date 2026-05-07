@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -95,6 +96,9 @@ const batchSize = 5000
 func main() {
 	moyuDSN := flag.String("moyu-dsn", "", "Moyu source database DSN (required)")
 	dryRun := flag.Bool("dry-run", false, "Perform a dry run without making changes")
+	resumeRemap := flag.Bool("resume-remap", false,
+		"Skip wiki-side migration; only retry step 13 (moyu patch_id remap) using saved galgame_migrations records. "+
+			"Use this when steps 1-11 already committed but step 13 was rolled back.")
 	flag.Parse()
 
 	cfg, err := config.Load()
@@ -109,6 +113,9 @@ func main() {
 		fmt.Println("Usage:")
 		fmt.Println("  go run ./cmd/migrate-moyu-galgame \\")
 		fmt.Println("    --moyu-dsn=\"host=localhost port=5432 user=postgres password=xxx dbname=kungalgame_patch sslmode=disable\"")
+		fmt.Println()
+		fmt.Println("  # If step 13 (moyu remap) failed previously and you need to retry just that:")
+		fmt.Println("  go run ./cmd/migrate-moyu-galgame --moyu-dsn=\"...\" --resume-remap")
 		os.Exit(1)
 	}
 
@@ -134,13 +141,88 @@ func main() {
 		slog.Info("DRY RUN MODE — no changes will be made")
 	}
 
+	if *resumeRemap {
+		if err := runResumeRemap(srcDB, tdb, *dryRun); err != nil {
+			slog.Error("resume failed", "error", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	if err := run(srcDB, tdb, *dryRun); err != nil {
 		slog.Error("migration failed", "error", err)
 		os.Exit(1)
 	}
 }
 
+// runResumeRemap retries just step 13 using the (source_db='moyu',
+// source_id, galgame_id) tuples that were written during the original
+// run. This handles the case where steps 1-11 committed (wiki has new
+// galgame rows + galgame_migrations entries) but step 13 was rolled back
+// (moyu still has original patch.ids).
+//
+// Refusing to fall back to the full `run()` path is intentional: that
+// path does not handle "wiki already has rows" cleanly and would attempt
+// to re-INSERT noVNDBPatches, leading to duplicates.
+func runResumeRemap(srcDB, tdb *gorm.DB, dryRun bool) error {
+	type row struct {
+		SourceID  int
+		GalgameID int
+	}
+	var rows []row
+	if err := tdb.Table("galgame_migrations").
+		Select("source_id, galgame_id").
+		Where("source_db = ?", "moyu").
+		Find(&rows).Error; err != nil {
+		return fmt.Errorf("load galgame_migrations: %w", err)
+	}
+	if len(rows) == 0 {
+		return fmt.Errorf("no moyu records in galgame_migrations — nothing to resume. " +
+			"If you intended a fresh run, drop --resume-remap")
+	}
+
+	mapping := make(map[int]int, len(rows))
+	for _, r := range rows {
+		mapping[r.SourceID] = r.GalgameID
+	}
+	slog.Info("resume: loaded mapping from galgame_migrations", "entries", len(mapping))
+
+	if dryRun {
+		fmt.Printf("\n[DRY RUN] Would remap %d patches in moyu DB\n", len(mapping))
+		return nil
+	}
+
+	if err := remapMoyuPatchIDs(context.Background(), srcDB, mapping); err != nil {
+		return err
+	}
+
+	var minID, maxID int
+	srcDB.Table("patch").Select("MIN(id)").Scan(&minID)
+	srcDB.Table("patch").Select("MAX(id)").Scan(&maxID)
+	slog.Info("moyu patch_id remap complete (resume)", "new_min_id", minID, "new_max_id", maxID)
+	return nil
+}
+
 func run(srcDB, tdb *gorm.DB, dryRun bool) error {
+	// ── Step 0: Re-run guard ──
+	// galgame_migrations is the canonical record of "what's already been
+	// migrated". Any pre-existing 'moyu' rows mean a previous run wrote
+	// state to wiki. The full path doesn't handle that cleanly (mainly
+	// because no-vndb_id patches have no other dedup key), so refuse and
+	// point the user at --resume-remap.
+	var existingMoyuMigrations int64
+	tdb.Table("galgame_migrations").Where("source_db = ?", "moyu").Count(&existingMoyuMigrations)
+	if existingMoyuMigrations > 0 && !dryRun {
+		return fmt.Errorf(
+			"wiki already has %d 'moyu' records in galgame_migrations — refusing to re-run.\n"+
+				"  - If step 13 (moyu patch_id remap) failed previously and you want to retry it:\n"+
+				"      run with --resume-remap\n"+
+				"  - If you want a clean re-run (e.g. after restoring both DBs from backup):\n"+
+				"      DELETE FROM galgame_migrations WHERE source_db = 'moyu';  (run on wiki DB)",
+			existingMoyuMigrations,
+		)
+	}
+
 	// ── Step 1: Load moyu patches ──
 	slog.Info("Step 1: Loading moyu patches...")
 	var patches []MoyuPatch
@@ -223,6 +305,14 @@ func run(srcDB, tdb *gorm.DB, dryRun bool) error {
 				updatedReleased++
 			}
 		}
+		// Audit trail: this moyu patch corresponds to an existing wiki galgame
+		// (vndb_id-merge case). Recorded so step 13 / --resume-remap knows
+		// where to redirect this patch.id.
+		tdb.Exec(
+			"INSERT INTO galgame_migrations (source_db, source_id, galgame_id, created_at) "+
+				"VALUES (?, ?, ?, NOW()) ON CONFLICT (source_db, source_id) DO NOTHING",
+			"moyu", p.ID, wikiID,
+		)
 	}
 	slog.Info("updated existing galgames", "bid", updatedBid, "released", updatedReleased)
 
@@ -248,6 +338,17 @@ func run(srcDB, tdb *gorm.DB, dryRun bool) error {
 					p.ContentLimit, p.Status, p.View, p.ResourceUpdateTime,
 					"ja-jp", "r18", p.UserID, nil, p.Created, p.Updated,
 				}
+			})
+
+		// Audit trail. Critical for re-run safety: noVNDBPatches have no
+		// other dedup key (no vndb_id, no bid guarantee), so the only way
+		// a re-run can know "this patch already became wiki galgame X" is
+		// through this table. ON CONFLICT DO NOTHING tolerates
+		// idempotent re-execution within a single run.
+		batchExec(tdb, "galgame_migrations",
+			[]string{"source_db", "source_id", "galgame_id", "created_at"},
+			allNew, func(p MoyuPatch) []any {
+				return []any{"moyu", p.ID, patchToGalgameID[p.ID], time.Now()}
 			})
 	}
 	slog.Info("new galgames inserted", "count", len(allNew))
@@ -496,48 +597,14 @@ func run(srcDB, tdb *gorm.DB, dryRun bool) error {
 	}
 
 	// ── Step 12: Remap patch_id in moyu database ──
-	slog.Info("Step 12: Remapping patch_id in moyu database...")
-	remapTables := []string{
-		"patch_alias", "patch_link", "patch_tag_relation",
-		"patch_company_relation", "patch_cover", "patch_screenshot",
-		"patch_resource", "patch_comment",
-		"patch_char_relation", "patch_person_relation", "patch_release",
-		"user_patch_favorite_relation", "user_patch_contribute_relation",
+	// Atomic: single transaction over patch.id + 13 FK columns. If any
+	// step fails, the whole remap rolls back — no half-shifted state to
+	// recover from manually.
+	slog.Info("Step 12: Remapping patch_id in moyu database (transactional)...")
+	if err := remapMoyuPatchIDs(context.Background(), srcDB, patchToGalgameID); err != nil {
+		return fmt.Errorf("remap patch_id: %w", err)
 	}
 
-	// Disable FK checks for the duration of the remap
-	srcDB.Exec("SET session_replication_role = 'replica'")
-
-	// Two-pass offset remap (same approach as user migration)
-	const offset = 10000000
-
-	// Pass 1: shift patch.id first (parent table), then child tables
-	result := srcDB.Exec(fmt.Sprintf("UPDATE patch SET id = id + %d", offset))
-	slog.Info("remap pass 1", "table", "patch", "rows", result.RowsAffected)
-	for _, table := range remapTables {
-		result := srcDB.Exec(fmt.Sprintf("UPDATE %s SET patch_id = patch_id + %d", table, offset))
-		slog.Info("remap pass 1", "table", table, "rows", result.RowsAffected)
-	}
-
-	// Pass 2: create temp mapping table, then batch UPDATE via JOIN
-	srcDB.Exec("CREATE TEMP TABLE _patch_id_map (old_id INT PRIMARY KEY, new_id INT NOT NULL)")
-	for oldPatchID, newGalgameID := range patchToGalgameID {
-		srcDB.Exec("INSERT INTO _patch_id_map (old_id, new_id) VALUES (?, ?)", oldPatchID+offset, newGalgameID)
-	}
-	slog.Info("remap pass 2: mapping table created", "entries", len(patchToGalgameID))
-
-	srcDB.Exec("UPDATE patch SET id = m.new_id FROM _patch_id_map m WHERE patch.id = m.old_id")
-	slog.Info("remap pass 2", "table", "patch")
-	for _, table := range remapTables {
-		srcDB.Exec(fmt.Sprintf("UPDATE %s t SET patch_id = m.new_id FROM _patch_id_map m WHERE t.patch_id = m.old_id", table))
-		slog.Info("remap pass 2", "table", table)
-	}
-	srcDB.Exec("DROP TABLE _patch_id_map")
-
-	// Re-enable FK checks
-	srcDB.Exec("SET session_replication_role = 'DEFAULT'")
-
-	// Verify remap
 	var minID, maxID int
 	srcDB.Table("patch").Select("MIN(id)").Scan(&minID)
 	srcDB.Table("patch").Select("MAX(id)").Scan(&maxID)
@@ -563,6 +630,194 @@ func run(srcDB, tdb *gorm.DB, dryRun bool) error {
 	fmt.Println("==================================================")
 
 	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Patch-id remap (transactional, two-pass offset)
+// ---------------------------------------------------------------------------
+
+// remapMoyuPatchIDs rewrites moyu's `patch.id` and every FK column that
+// references it, mapping old (moyu) ids to new (wiki galgame) ids.
+//
+// Algorithm and shape mirror migrate-users' remapUserIDsGeneric:
+//
+//   1. Single transaction over the whole remap. Any failure → full rollback;
+//      the moyu DB never lands in a half-shifted state.
+//   2. ALTER TABLE … DISABLE TRIGGER ALL on every affected table — needed
+//      because patch.id and child patch_id columns are linked by FK
+//      constraints whose triggers would block intermediate values.
+//      Trigger state is transactional, so a rollback restores it
+//      automatically; the deferred ENABLE handles the commit path.
+//   3. CREATE TEMP TABLE _patch_id_map ON COMMIT DROP — temp table goes
+//      away with the transaction either way.
+//   4. Two-pass offset (+10_000_000) avoids PK collisions when the
+//      old-id and new-id ranges overlap.
+//   5. Reset patch.id sequence so subsequent INSERTs don't collide.
+//
+// All 13 FK columns referencing patch.id (per prisma/moyu schema audit)
+// are listed in fkTables — patch_alias, patch_link, patch_cover,
+// patch_screenshot, patch_resource, patch_comment, patch_release,
+// patch_tag_relation, patch_company_relation, patch_char_relation,
+// patch_person_relation, user_patch_favorite_relation,
+// user_patch_contribute_relation.
+//
+// Tables that are mentioned but don't exist in this DB are skipped
+// silently (e.g. `patch_company_relation` may not have been created in
+// some environments).
+func remapMoyuPatchIDs(ctx context.Context, srcDB *gorm.DB, mapping map[int]int) error {
+	if len(mapping) == 0 {
+		slog.Info("remap: empty mapping, nothing to do")
+		return nil
+	}
+
+	fkTables := []string{
+		"patch_alias",
+		"patch_link",
+		"patch_tag_relation",
+		"patch_company_relation",
+		"patch_cover",
+		"patch_screenshot",
+		"patch_resource",
+		"patch_comment",
+		"patch_char_relation",
+		"patch_person_relation",
+		"patch_release",
+		"user_patch_favorite_relation",
+		"user_patch_contribute_relation",
+	}
+
+	return srcDB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// All affected tables, including parent `patch`.
+		tableSet := map[string]bool{`"patch"`: true}
+		for _, t := range fkTables {
+			tableSet[fmt.Sprintf(`"%s"`, t)] = true
+		}
+
+		// Filter to tables that actually exist in this DB.
+		var existingTables []string
+		tx.Raw("SELECT tablename FROM pg_tables WHERE schemaname = 'public'").Scan(&existingTables)
+		existsMap := make(map[string]bool, len(existingTables))
+		for _, t := range existingTables {
+			existsMap[t] = true
+		}
+		activeTables := make([]string, 0, len(tableSet))
+		for t := range tableSet {
+			name := strings.Trim(t, `"`)
+			if existsMap[name] {
+				activeTables = append(activeTables, t)
+			}
+		}
+
+		// Disable FK triggers on every affected table.
+		for _, t := range activeTables {
+			if err := tx.Exec(fmt.Sprintf("ALTER TABLE %s DISABLE TRIGGER ALL", t)).Error; err != nil {
+				return fmt.Errorf("disable triggers on %s: %w", t, err)
+			}
+		}
+		// On commit, restore. (On rollback, postgres restores automatically
+		// since DISABLE TRIGGER is itself transactional — but the defer is
+		// still correct for the commit path.)
+		defer func() {
+			for _, t := range activeTables {
+				_ = tx.Exec(fmt.Sprintf("ALTER TABLE %s ENABLE TRIGGER ALL", t)).Error
+			}
+		}()
+
+		// Temp mapping table — drops on commit so re-runs don't collide.
+		if err := tx.Exec(
+			"CREATE TEMP TABLE _patch_id_map (old_id INT PRIMARY KEY, new_id INT NOT NULL) ON COMMIT DROP",
+		).Error; err != nil {
+			return fmt.Errorf("create temp table: %w", err)
+		}
+
+		// Bulk insert mapping rows in 1000-row batches.
+		const insertBatch = 1000
+		batch := make([]string, 0, insertBatch)
+		flush := func() error {
+			if len(batch) == 0 {
+				return nil
+			}
+			sql := "INSERT INTO _patch_id_map (old_id, new_id) VALUES " + strings.Join(batch, ",")
+			if err := tx.Exec(sql).Error; err != nil {
+				return fmt.Errorf("insert mapping batch: %w", err)
+			}
+			batch = batch[:0]
+			return nil
+		}
+		for oldID, newID := range mapping {
+			batch = append(batch, fmt.Sprintf("(%d,%d)", oldID, newID))
+			if len(batch) >= insertBatch {
+				if err := flush(); err != nil {
+					return err
+				}
+			}
+		}
+		if err := flush(); err != nil {
+			return err
+		}
+		slog.Info("remap: mapping table populated", "entries", len(mapping))
+
+		const offset = 10_000_000
+
+		// Pass 1: shift every mapped id (and its FKs) into the +offset range.
+		// FK columns are processed first; patch.id is last so child rows
+		// always have the parent visible in some form during the shift.
+		for _, t := range fkTables {
+			if !existsMap[t] {
+				continue
+			}
+			sql := fmt.Sprintf(
+				`UPDATE "%s" SET patch_id = "%s".patch_id + %d FROM _patch_id_map WHERE "%s".patch_id = _patch_id_map.old_id`,
+				t, t, offset, t,
+			)
+			res := tx.Exec(sql)
+			if res.Error != nil {
+				return fmt.Errorf("remap pass1 %s.patch_id: %w", t, res.Error)
+			}
+			slog.Info("remap pass1", "table", t, "rows", res.RowsAffected)
+		}
+		if res := tx.Exec(fmt.Sprintf(
+			`UPDATE "patch" SET id = id + %d FROM _patch_id_map WHERE "patch".id = _patch_id_map.old_id`, offset,
+		)); res.Error != nil {
+			return fmt.Errorf("remap pass1 patch.id: %w", res.Error)
+		} else {
+			slog.Info("remap pass1", "table", "patch", "rows", res.RowsAffected)
+		}
+
+		// Pass 2: replace shifted ids with their final new ids.
+		// Order is reversed (parent first) for the same reason — keep child
+		// rows pointing at a valid parent at every intermediate step.
+		if res := tx.Exec(fmt.Sprintf(
+			`UPDATE "patch" SET id = _patch_id_map.new_id FROM _patch_id_map WHERE "patch".id = _patch_id_map.old_id + %d`, offset,
+		)); res.Error != nil {
+			return fmt.Errorf("remap pass2 patch.id: %w", res.Error)
+		} else {
+			slog.Info("remap pass2", "table", "patch", "rows", res.RowsAffected)
+		}
+		for _, t := range fkTables {
+			if !existsMap[t] {
+				continue
+			}
+			sql := fmt.Sprintf(
+				`UPDATE "%s" SET patch_id = _patch_id_map.new_id FROM _patch_id_map WHERE "%s".patch_id = _patch_id_map.old_id + %d`,
+				t, t, offset,
+			)
+			res := tx.Exec(sql)
+			if res.Error != nil {
+				return fmt.Errorf("remap pass2 %s.patch_id: %w", t, res.Error)
+			}
+			slog.Info("remap pass2", "table", t, "rows", res.RowsAffected)
+		}
+
+		// Resync the patch.id sequence so subsequent INSERTs don't collide.
+		if err := tx.Exec(
+			`SELECT setval(pg_get_serial_sequence('"patch"', 'id'), (SELECT COALESCE(MAX(id), 1) FROM "patch"))`,
+		).Error; err != nil {
+			slog.Warn("failed to reset patch ID sequence", "error", err)
+		}
+
+		return nil
+	})
 }
 
 // ---------------------------------------------------------------------------

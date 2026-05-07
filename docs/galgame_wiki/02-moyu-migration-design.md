@@ -144,3 +144,88 @@ user_patch_contribute_relation.patch_id
 11. 为新 galgame 创建 revision 1
 12. 重置 wiki 序列
 13. remap moyu 库的 patch_id（使用 patch.id → galgame.id 映射）
+```
+
+## 7. 幂等性与失败恢复
+
+### galgame_migrations 表
+
+这张表是迁移的"账本"，与 `auth.user_migrations` 平行。每行记录"wiki 的某个 galgame 来源于哪个站点的哪个原始 ID"：
+
+```sql
+CREATE TABLE galgame_migrations (
+  source_db   VARCHAR(20) NOT NULL,   -- 'kungal' or 'moyu'
+  source_id   INT          NOT NULL,  -- pre-remap id in source DB
+  galgame_id  INT          NOT NULL,  -- wiki.galgame.id
+  created_at  TIMESTAMPTZ  DEFAULT NOW(),
+  PRIMARY KEY (source_db, source_id),
+  INDEX (galgame_id)
+);
+```
+
+**写入时机**：
+
+- `migrate-galgame-data`：每行 kungal galgame 写一条 `(kungal, source_id=galgame_id)`
+- `migrate-moyu-galgame` step 4（vndb_id 合并）：写一条 `(moyu, p.id, 已有 wiki id)`
+- `migrate-moyu-galgame` step 5（新建 galgame）：写一条 `(moyu, p.id, 新分配 id)`
+
+**读取场景**：
+
+1. **重跑前的安全检查**：`migrate-moyu-galgame` 启动时查 `WHERE source_db='moyu'`。任何已有记录都触发拒绝重跑（除非加 `--resume-remap`）。这是"无 vndb_id 重插"的根本防御 —— 不让脚本第二次跑到 step 5。
+2. **失败恢复**：`--resume-remap` 模式从这张表加载映射，跳过 wiki 写入，只跑 step 13。这是"wiki 已 commit、moyu 没 commit"分裂状态的恢复路径。
+3. **未来反查**：avatar / 其他迁移脚本可以查 `WHERE galgame_id=X` 反推此 galgame 的原始 kungal/moyu id（与 user_migrations 用法对称）。
+
+### 失败恢复流程
+
+| 失败位置 | 现象 | 恢复方法 |
+|----------|------|----------|
+| step 5（wiki 插入失败） | wiki 已部分插入 + galgame_migrations 部分写入 | 修 bug → 备份恢复 wiki → 重跑 |
+| step 13（moyu remap 失败） | wiki 已 commit、galgame_migrations 完整、moyu 未改 | 修 bug → `--resume-remap`（不需要恢复任何库） |
+| step 13 执行了一半挂了 | **不会发生** —— step 13 整体在事务里，rollback 自动回退 | — |
+
+**Note**：恢复 wiki 备份后想完全重跑，需要先把 `galgame_migrations` 里 `source_db='moyu'` 的行删掉（脚本错误信息里也提示了 SQL）。
+
+## 8. Step 13 — moyu patch_id remap 实现细节
+
+整个 step 13 在**单个 transaction** 内完成，与 `migrate-users` 的 step 7 风格一致：
+
+```
+BEGIN
+  ALTER TABLE … DISABLE TRIGGER ALL    (patch + 13 个子表)
+  CREATE TEMP TABLE _patch_id_map (...) ON COMMIT DROP
+  INSERT INTO _patch_id_map VALUES …    (批量灌入映射)
+  -- Pass 1: 所有 id 移到 +10_000_000 偏移区，避免 PK 冲突
+  UPDATE patch_alias SET patch_id += 10_000_000 FROM _patch_id_map …
+  …(13 张子表)
+  UPDATE "patch"     SET id        += 10_000_000 FROM _patch_id_map …
+  -- Pass 2: 从偏移区映射到最终 new_id
+  UPDATE "patch"     SET id        = _patch_id_map.new_id FROM _patch_id_map …
+  …(13 张子表)
+  SELECT setval('patch_id_seq', MAX(id))
+  ALTER TABLE … ENABLE TRIGGER ALL
+COMMIT  -- 任一步失败 → ROLLBACK，DISABLE TRIGGER 也随之回滚
+```
+
+### 覆盖的 13 个 FK 列
+
+完整对照 prisma/moyu schema 里所有 `references: [id]` 指向 patch 模型的列：
+
+```
+patch_alias.patch_id, patch_link.patch_id,
+patch_cover.patch_id, patch_screenshot.patch_id,
+patch_resource.patch_id, patch_comment.patch_id,
+patch_release.patch_id,
+patch_tag_relation.patch_id, patch_company_relation.patch_id,
+patch_char_relation.patch_id, patch_person_relation.patch_id,
+user_patch_favorite_relation.patch_id, user_patch_contribute_relation.patch_id
+```
+
+外加 `patch.id` 自身 = 14 列，全部 14 个 UPDATE 在同一事务里。
+
+> `user_patch_comment_like_relation` 和 `user_patch_resource_like_relation` 的 FK 指向 `patch_comment.id` / `patch_resource.id`（不是 `patch.id`），因此不需要 patch_id remap。
+
+### 为什么 +10M offset 够用
+
+moyu 当前的 patch.id 范围远小于 10M（实际 < 30k）；wiki 在 kungal 数据迁完之后的 max id 也远小于 10M。所以"实际 id ∪ (实际 id + 10_000_000)"两个范围互不重叠 —— 两阶段不可能撞 PK。
+
+将来如果 patch 数据量逼近 10M（不可能在可见的未来），需要把 offset 调大到 100M（与 migrate-users 同款）。

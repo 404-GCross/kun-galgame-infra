@@ -51,6 +51,12 @@ func main() {
 		&model.GalgameRevision{},
 		&model.GalgameHistory{}, // Legacy, kept for migration
 		&model.GalgameContributor{},
+
+		// Migration audit trail (mirrors auth/model.UserMigration). Records
+		// (source_db, source_id) → galgame_id mapping for idempotent re-runs
+		// of migrate-moyu-galgame and for future scripts that need to reverse-
+		// look up legacy ids.
+		&model.GalgameMigration{},
 	); err != nil {
 		slog.Error("migration failed", "error", err)
 		os.Exit(1)
