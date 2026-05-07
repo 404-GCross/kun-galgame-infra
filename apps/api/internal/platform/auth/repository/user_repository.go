@@ -2,10 +2,12 @@ package repository
 
 import (
 	"context"
+	"strings"
 
 	"api/internal/platform/auth/model"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // UserRepository handles user data access
@@ -52,6 +54,74 @@ func (r *UserRepository) FindByIDWithRoles(ctx context.Context, id uint) (*model
 		return nil, err
 	}
 	return &user, nil
+}
+
+// SearchByName returns up to `limit` users whose name matches `query`
+// (case-insensitive substring) with roles preloaded.
+//
+// Results are ranked in-database: exact match > prefix match > substring
+// match, then alphabetical within each tier. Pushing the rank into the
+// CASE in ORDER BY (rather than re-ranking in Go after over-fetching)
+// matters here because the candidate set can be huge — for a one-char
+// query like "鲲" against 70k+ users, the exact match would otherwise be
+// buried far past any reasonable over-fetch window.
+//
+// LIKE wildcards (`%`, `_`, `\`) in the query are escaped so user input
+// like "foo_" or "50%" matches literally.
+func (r *UserRepository) SearchByName(ctx context.Context, query string, limit int) ([]model.User, error) {
+	escaped := escapeLikePattern(query)
+	substring := "%" + escaped + "%"
+	prefix := escaped + "%"
+
+	var users []model.User
+	err := r.db.WithContext(ctx).
+		Preload("Roles").
+		Where("name ILIKE ?", substring).
+		Clauses(clause.OrderBy{
+			Expression: clause.Expr{
+				SQL: "CASE " +
+					"WHEN LOWER(name) = LOWER(?) THEN 0 " +
+					"WHEN name ILIKE ? THEN 1 " +
+					"ELSE 2 END, name ASC",
+				Vars: []any{query, prefix},
+			},
+		}).
+		Limit(limit).
+		Find(&users).Error
+	if err != nil {
+		return nil, err
+	}
+	return users, nil
+}
+
+// escapeLikePattern escapes the three characters PostgreSQL's LIKE/ILIKE
+// treat specially: backslash (the default escape char), percent (any-run
+// wildcard), and underscore (single-char wildcard).
+//
+// Backslash MUST be replaced first; otherwise the inserted backslashes
+// from the % and _ rules would themselves get doubled.
+func escapeLikePattern(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, `%`, `\%`)
+	s = strings.ReplaceAll(s, `_`, `\_`)
+	return s
+}
+
+// FindByIDsWithRoles batch-fetches users by IDs, preloading roles. Returned
+// slice is in arbitrary order; missing IDs are simply not in the result.
+// Caller should compute the diff to identify not-found ids.
+func (r *UserRepository) FindByIDsWithRoles(ctx context.Context, ids []uint) ([]model.User, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	var users []model.User
+	if err := r.db.WithContext(ctx).
+		Preload("Roles").
+		Where("id IN ?", ids).
+		Find(&users).Error; err != nil {
+		return nil, err
+	}
+	return users, nil
 }
 
 // FindByEmail finds a user by email

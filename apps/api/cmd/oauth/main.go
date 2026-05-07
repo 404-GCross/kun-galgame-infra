@@ -77,12 +77,14 @@ func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 	authSvc := authService.NewAuthServiceFull(userRepo, sessionRepo, passwordResetRepo, mailer, a.Cache, cfg)
 	oauthSvc := authService.NewOAuthService(userRepo, authCodeRepo, sessionRepo, oauthClientRepo, cfg)
 	adminSvc := authService.NewAdminService(userRepo, sessionRepo)
+	userBatchSvc := authService.NewUserBatchService(userRepo)
 	siteSvc := siteService.NewSiteService(siteRepository, oauthClientRepo)
 
 	// Handlers
 	authH := authHandler.NewAuthHandler(authSvc, cfg)
 	oauthH := authHandler.NewOAuthHandler(oauthSvc, cfg)
 	adminH := authHandler.NewAdminHandler(adminSvc)
+	userBatchH := authHandler.NewUserBatchHandler(userBatchSvc)
 
 	// Avatar upload handler (calls image_service via SDK). Singleton.
 	// Nil if KUN_IMAGE_CLIENT_ID/SECRET unset → endpoint refused with clear error.
@@ -145,6 +147,19 @@ func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 	oauthProtected.Get("/userinfo", oauthH.UserInfo)
 
 	// User routes
+	// Cross-service endpoints (kungal / moyu / galgame_wiki backends).
+	// Auth is OAuth Client Basic Auth — service-to-service, not end-user JWT.
+	// Registered BEFORE the dynamic `/users/:uuid` group so Fiber matches
+	// these literal paths before falling through to the param route.
+	v1.Get("/users/batch",
+		middleware.OAuthClientBasicAuth(oauthClientRepo),
+		userBatchH.Get,
+	)
+	v1.Get("/users/search",
+		middleware.OAuthClientBasicAuth(oauthClientRepo),
+		userBatchH.Search,
+	)
+
 	users := v1.Group("/users", middleware.Auth(authSvc))
 	users.Get("/:uuid", authH.GetProfile)
 
