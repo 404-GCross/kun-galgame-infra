@@ -134,7 +134,7 @@
 
 ### GET /galgame/check
 
-检查 VNDB ID 是否已存在。
+检查 VNDB ID 是否已存在 + 返回对应整数 `galgame_id`。
 
 **查询参数**：
 
@@ -153,6 +153,39 @@
   }
 }
 ```
+
+#### Recipe — 按 VNDB ID 取完整 galgame 信息
+
+本服务**不提供**直接 `GET /galgame/by-vndb/:vndb_id` 端点（设计上 galgame 主键是整数 `id`）。要按 VNDB ID 取完整信息，标准做法是两步：
+
+```bash
+# Step 1: 拿到整数 galgame_id
+GET /galgame/check?vndb_id=v17
+# → { "exists": true, "galgame_id": 8329 }
+
+# Step 2: 取完整信息（含 alias / tag / official / series 等 relations）
+GET /galgame/8329
+# → { "galgame": { ... 全字段 + relations ... }, "users": { ... } }
+```
+
+伪代码：
+
+```go
+// Go
+exists, gid := api.CheckVNDB(ctx, "v17")
+if !exists { return nil }
+galgame := api.GetGalgame(ctx, gid)
+```
+
+```ts
+// TypeScript
+const r1 = await api.get<{exists: boolean; galgame_id: number}>('/galgame/check?vndb_id=v17')
+if (!r1.data.exists) return null
+const r2 = await api.get<{galgame: Galgame}>(`/galgame/${r1.data.galgame_id}`)
+return r2.data.galgame
+```
+
+> 单次请求的"按 vndb_id 搜索"也可以用 `GET /galgame/search?q=v17&limit=1`（vndb_id 在 Meilisearch searchableAttributes 里且禁用 typo），但**这是 search 语义**——依赖 Meilisearch 在线 + 索引同步状态，不如 `/check` 端点强一致。常规跨服务集成走上面的 2 步 recipe。
 
 ---
 
