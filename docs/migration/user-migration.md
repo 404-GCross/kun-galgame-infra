@@ -230,6 +230,33 @@ user_patch_resource_like_relation.user_id,
 oauth_account.user_id
 ```
 
+**Free-text mentions remapped in Moyu** (1 column):
+
+```
+patch_comment.content   — `[@<name>](/user/<id>/<path>)` URLs
+```
+
+The script also rewrites embedded user-id URLs inside free-text columns,
+not just FK integer columns. Moyu's only mention-bearing column is
+`patch_comment.content`, where comments contain markdown links of the
+exact form `[@<name>](/user/<id>/<path>)`.
+
+The id portion (`<id>`) is rewritten through the same mapping; the
+display name (`<name>`) is left as a write-time snapshot — that's normal
+mention behavior and matches every social platform's expectation.
+
+**Two-pass offset is required for content rewrite too.** Inside one
+content row, two mentions might reference users whose ids swap places
+(e.g. user A: 5→2, user B: 2→8 — same row references both 5 and 2). A
+naïve single-pass rewrite would chain-rewrite (5→2, then immediately
+2→8) and corrupt user A's mention. The same +100M offset trick used for
+FKs prevents this.
+
+The whole step 7 — FK remap, `chat_room.name` rewrite (kungal),
+`patch_comment.content` rewrite (moyu), `user.id` update, sequence reset —
+runs in a single transaction per source database. Anything fails →
+everything rolls back.
+
 ---
 
 ## Password Migration Strategy
@@ -330,6 +357,34 @@ Progress is logged every 1000 users during the insertion phase.
 1. **Verify user count:** `SELECT COUNT(*) FROM users;` in OAuth database should match `New users created`
 2. **Verify ID ordering:** `SELECT id, created_at FROM users ORDER BY id LIMIT 10;` — IDs should increase with time
 3. **Verify source DB IDs match:** Pick a user, check their ID is the same in kungal, moyu, and OAuth databases
-4. **Test legacy login:** Try logging in with a migrated user's original password — it should work and transparently migrate the password hash
-5. **Test OAuth flow:** Verify the full OAuth authorization code flow works with a migrated user
-6. **Run the Prisma schema changes** on source databases (add `oauth_account` table, `String[]` → `JsonB` conversions, count field backfills — see `prisma/moyu/MIGRATION_NOTES.md`)
+4. **Verify mention rewrite (moyu):**
+   ```sql
+   -- In moyu DB:
+   SELECT id, content FROM patch_comment
+   WHERE content ~ '/user/[0-9]+/' LIMIT 5;
+   ```
+   The captured ids should match OAuth's `users.id`, not pre-migration moyu ids.
+5. **Test legacy login:** Try logging in with a migrated user's original password — it should work and transparently migrate the password hash
+6. **Test OAuth flow:** Verify the full OAuth authorization code flow works with a migrated user
+7. **Run the Prisma schema changes** on source databases (add `oauth_account` table, `String[]` → `JsonB` conversions, count field backfills — see `prisma/moyu/MIGRATION_NOTES.md`)
+
+## Looking up pre-migration source IDs
+
+Future migration tasks (e.g. avatar migration when image_service goes
+live) often need to know "what was this user's original kungal/moyu id?"
+because legacy CDN paths like `https://image.kungal.com/avatar/user_30/avatar.webp`
+encode the pre-remap id.
+
+**That mapping is preserved in `user_migrations`**, written by step 4
+*before* the remap. One row per (oauth_user, source_db) pair. Query:
+
+```sql
+-- For OAuth user 2, what was their moyu id before migration?
+SELECT source_user_id
+FROM user_migrations
+WHERE user_id = 2 AND source_db = 'moyu';
+-- → 30
+```
+
+No need to add legacy_id columns to source user tables —
+`user_migrations` is the canonical record.

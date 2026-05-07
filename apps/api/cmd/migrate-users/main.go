@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -682,12 +683,21 @@ func buildMapping(sourceToNewID map[sourceKey]uint, db string) map[uint]uint {
 // remapUserIDsGeneric applies old→new user ID mapping to a list of (table, column) pairs.
 // It creates a temp mapping table, then uses UPDATE ... FROM to batch-remap all FKs,
 // and finally updates user.id itself.
-func remapUserIDsGeneric(ctx context.Context, db *gorm.DB, mapping map[uint]uint, fkColumns []tableColumn) error {
+//
+// `mentionFields` describes free-text columns containing embedded user
+// IDs (e.g. moyu.patch_comment.content with `/user/<id>/...` URLs). They
+// go through the same two-pass offset, in the same transaction, after
+// the FK pass — so all of {FKs, user.id, mentions} commit or roll back
+// atomically.
+func remapUserIDsGeneric(ctx context.Context, db *gorm.DB, mapping map[uint]uint, fkColumns []tableColumn, mentionFields []mentionField) error {
 	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// Collect all affected tables (unique) to disable/re-enable triggers
 		tableSet := map[string]bool{`"user"`: true}
 		for _, tc := range fkColumns {
 			tableSet[fmt.Sprintf(`"%s"`, tc.table)] = true
+		}
+		for _, mf := range mentionFields {
+			tableSet[fmt.Sprintf(`"%s"`, mf.table)] = true
 		}
 
 		// Check which tables actually exist in this database
@@ -799,6 +809,30 @@ func remapUserIDsGeneric(ctx context.Context, db *gorm.DB, mapping map[uint]uint
 			return fmt.Errorf("remap pass2 user.id: %w", err)
 		}
 
+		// Mention rewrite — same two-pass offset on free-text columns
+		// containing embedded user IDs (e.g. patch_comment.content).
+		// Runs after FK pass 2 because we want triggers to stay disabled
+		// for these tables. The patch_comment.user_id FK is already at
+		// its new value at this point; only the content text still
+		// references old IDs and gets rewritten now.
+		for pass := 1; pass <= 2; pass++ {
+			for _, mf := range mentionFields {
+				if !existsMap[mf.table] {
+					continue
+				}
+				updated, err := rewriteMentionsPass(ctx, tx, mapping, mf, pass == 1, offset)
+				if err != nil {
+					return fmt.Errorf("mention rewrite pass%d %s.%s: %w", pass, mf.table, mf.column, err)
+				}
+				slog.Info("mention rewrite",
+					"table", mf.table,
+					"column", mf.column,
+					"pass", pass,
+					"rows_updated", updated,
+				)
+			}
+		}
+
 		// Reset the user ID sequence
 		if err := tx.Exec(
 			`SELECT setval(pg_get_serial_sequence('"user"', 'id'), (SELECT COALESCE(MAX(id), 1) FROM "user"))`,
@@ -810,9 +844,119 @@ func remapUserIDsGeneric(ctx context.Context, db *gorm.DB, mapping map[uint]uint
 	})
 }
 
+// rewriteMentionsPass scans `mf.table` for rows whose `mf.column`
+// contains the mention pattern, and either shifts ids by +offset
+// (pass 1) or shifts shifted-ids to their final new ids (pass 2).
+// Returns the number of rows actually updated.
+//
+// Pagination is keyed on `id ASC` cursor. Reads in 1000-row batches and
+// only issues an UPDATE when the row's content actually changed —
+// rows that match the pattern but reference unmapped users are
+// observed but skipped to keep WAL traffic minimal.
+func rewriteMentionsPass(ctx context.Context, tx *gorm.DB, mapping map[uint]uint, mf mentionField, isPass1 bool, offset int) (int, error) {
+	pattern := regexp.MustCompile(regexp.QuoteMeta(mf.urlPrefix) + `(\d+)/`)
+	// Postgres POSIX regex equivalent for the `~` filter — keep in sync
+	// with the Go regex above (same prefix, same trailing slash).
+	sqlMatch := mf.urlPrefix + `[0-9]+/`
+
+	type row struct {
+		ID      uint
+		Content string
+	}
+
+	var lastID uint
+	updated := 0
+	for {
+		var rows []row
+		if err := tx.WithContext(ctx).
+			Table(mf.table).
+			Select(fmt.Sprintf(`id, "%s" AS content`, mf.column)).
+			Where("id > ?", lastID).
+			Where(fmt.Sprintf(`"%s" ~ ?`, mf.column), sqlMatch).
+			Order("id ASC").
+			Limit(1000).
+			Scan(&rows).Error; err != nil {
+			return updated, fmt.Errorf("scan: %w", err)
+		}
+		if len(rows) == 0 {
+			return updated, nil
+		}
+
+		for _, r := range rows {
+			newContent, changed := rewriteMentionsInString(r.Content, mf.urlPrefix, pattern, mapping, isPass1, uint(offset))
+			if changed {
+				if err := tx.Exec(
+					fmt.Sprintf(`UPDATE "%s" SET "%s" = ? WHERE id = ?`, mf.table, mf.column),
+					newContent, r.ID,
+				).Error; err != nil {
+					return updated, fmt.Errorf("update id=%d: %w", r.ID, err)
+				}
+				updated++
+			}
+			lastID = r.ID
+		}
+
+		if len(rows) < 1000 {
+			return updated, nil
+		}
+	}
+}
+
+// rewriteMentionsInString applies one pass of mention rewriting to a
+// single content string. Pure function for testability.
+//
+// Pass 1 (`isPass1`=true):  /<urlPrefix>/<oldID>/    → /<urlPrefix>/<oldID + offset>/
+// Pass 2 (`isPass1`=false): /<urlPrefix>/<X+offset>/ → /<urlPrefix>/<mapping[X]>/
+//
+// IDs not in the mapping are left untouched. Returns the new content and
+// whether any substitution happened.
+func rewriteMentionsInString(content, urlPrefix string, pattern *regexp.Regexp, mapping map[uint]uint, isPass1 bool, offset uint) (string, bool) {
+	changed := false
+	out := pattern.ReplaceAllStringFunc(content, func(match string) string {
+		sub := pattern.FindStringSubmatch(match)
+		id64, _ := strconv.ParseUint(sub[1], 10, 64)
+		id := uint(id64)
+
+		var target uint
+		if isPass1 {
+			if _, ok := mapping[id]; !ok {
+				return match // user not in migration scope
+			}
+			target = id + offset
+		} else {
+			if id < offset {
+				return match // not a shifted id
+			}
+			oldID := id - offset
+			newID, ok := mapping[oldID]
+			if !ok {
+				return match
+			}
+			target = newID
+		}
+		changed = true
+		return fmt.Sprintf("%s%d/", urlPrefix, target)
+	})
+	return out, changed
+}
+
 type tableColumn struct {
 	table  string
 	column string
+}
+
+// mentionField describes a free-text column where user IDs are embedded
+// as URL paths matching `/<urlPrefix>/<digits>/`. Embedded IDs are
+// rewritten through the same user-id mapping as FK columns, using the
+// same two-pass offset to avoid in-row collisions.
+//
+// Example: moyu.patch_comment.content carries `[@鲲](/user/30/resource)`;
+// after migration it becomes `[@鲲](/user/2/resource)`. The display name
+// (`鲲`) is left as a write-time snapshot — that's normal mention behavior.
+type mentionField struct {
+	table     string
+	column    string
+	urlPrefix string // exact prefix preceding the id, e.g. "/user/"
 }
 
 func remapKungalUserIDs(ctx context.Context, db *gorm.DB, mapping map[uint]uint) error {
@@ -883,7 +1027,11 @@ func remapKungalUserIDs(ctx context.Context, db *gorm.DB, mapping map[uint]uint)
 		// OAuth
 		{"oauth_account", "user_id"},
 	}
-	if err := remapUserIDsGeneric(ctx, db, mapping, fks); err != nil {
+	// Kungal has no known free-text fields with embedded user-id URLs.
+	// (Mention syntax `@user` in topic/comment bodies links by name, not
+	// by id.) chat_room.name is handled separately by remapChatRoomNames
+	// because it's a structured uid-uid name, not a URL embed.
+	if err := remapUserIDsGeneric(ctx, db, mapping, fks, nil); err != nil {
 		return err
 	}
 	return remapChatRoomNames(ctx, db, mapping)
@@ -976,7 +1124,13 @@ func remapMoyuUserIDs(ctx context.Context, db *gorm.DB, mapping map[uint]uint) e
 		// OAuth (if table exists)
 		{"oauth_account", "user_id"},
 	}
-	return remapUserIDsGeneric(ctx, db, mapping, fks)
+	// Mentions inside free-text columns. `[@<name>](/user/<id>/<path>)`
+	// is the only embed format on moyu (confirmed). Display names inside
+	// the `[@…]` bracket are write-time snapshots and not rewritten.
+	mentions := []mentionField{
+		{table: "patch_comment", column: "content", urlPrefix: "/user/"},
+	}
+	return remapUserIDsGeneric(ctx, db, mapping, fks, mentions)
 }
 
 func printResults(r *MigrationResult, dryRun bool) {
