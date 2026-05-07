@@ -2,6 +2,7 @@ package search
 
 import (
 	"fmt"
+	"log/slog"
 
 	"api/internal/infrastructure/search"
 
@@ -132,6 +133,31 @@ func EnsureIndexes(client *search.Client) error {
 	}
 
 	return nil
+}
+
+// WarnIfIndexesEmpty queries each index's stats and emits a slog.Warn if it
+// has zero documents. Intended to be called once at startup right after
+// EnsureIndexes — it tells the operator they probably need to run
+// `cmd/reindex-search` (e.g. fresh Meilisearch instance with no `data.ms`).
+//
+// Failures querying stats are not fatal — they just don't emit a warning.
+func WarnIfIndexesEmpty(client *search.Client) {
+	for _, uid := range []string{IndexGalgames, IndexTags, IndexOfficials} {
+		stats, err := client.Index(uid).GetStats()
+		if err != nil {
+			slog.Warn("get index stats failed; cannot check for empty index",
+				"index", client.IndexUID(uid), "err", err)
+			continue
+		}
+		if stats.NumberOfDocuments == 0 {
+			slog.Warn(
+				"⚠️  search index is empty — search endpoints will return 0 hits "+
+					"until you run `go run ./cmd/reindex-search` to backfill from Postgres "+
+					"(this is expected on a fresh Meilisearch instance with no data.ms)",
+				"index", client.IndexUID(uid),
+			)
+		}
+	}
 }
 
 // isAlreadyExists checks whether an error represents a duplicate-index attempt.

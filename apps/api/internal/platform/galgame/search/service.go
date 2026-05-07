@@ -48,6 +48,11 @@ type GalgameSearchRequest struct {
 
 	WantFacets    bool
 	WantHighlight bool
+
+	// Fields restricts the returned attributes (Meilisearch
+	// attributesToRetrieve). Empty = all attributes. Useful for list views
+	// that don't need intro_* etc — cuts response size dramatically.
+	Fields []string
 }
 
 // GalgameSearchResponse mirrors what we return in the API.
@@ -109,6 +114,13 @@ func (s *Service) SearchGalgames(ctx context.Context, req *GalgameSearchRequest)
 	// includes intro_*). Otherwise restrict to the non-intro subset.
 	if !req.IncludeIntro {
 		msReq.AttributesToSearchOn = nonIntroSearchable
+	}
+
+	// Field projection. When the caller specifies, only those attributes
+	// come back in the hits — saves bandwidth on list views that don't
+	// need intro_* (each can be 1-10KB markdown).
+	if len(req.Fields) > 0 {
+		msReq.AttributesToRetrieve = req.Fields
 	}
 
 	resp, err := s.client.Index(IndexGalgames).SearchWithContext(ctx, req.Query, msReq)

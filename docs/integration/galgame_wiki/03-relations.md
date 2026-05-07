@@ -4,7 +4,16 @@
 
 ### GET /galgame/:gid/links
 
-链接列表。
+链接列表。返回**纯数组**（不分页，非 `{items, total}` 形态）：
+
+```json
+{
+  "code": 0,
+  "data": [
+    { "id": 1, "galgame_id": 1, "name": "官网", "link": "https://...", "created": "...", "updated": "..." }
+  ]
+}
+```
 
 ### POST /galgame/:gid/links
 
@@ -33,7 +42,16 @@
 
 ### GET /galgame/:gid/aliases
 
-别名列表。
+别名列表。返回**纯数组**（不分页）：
+
+```json
+{
+  "code": 0,
+  "data": [
+    { "id": 1, "galgame_id": 1, "name": "Fate/EXTRA", "created": "...", "updated": "..." }
+  ]
+}
+```
 
 ### POST /galgame/:gid/aliases
 

@@ -45,6 +45,7 @@ func (h *SearchHandler) Galgame(c fiber.Ctx) error {
 		Limit:             atoiOr(q["limit"], 24),
 		WantFacets:        parseBoolDefault(q["facets"], true),
 		WantHighlight:     parseBoolDefault(q["highlight"], true),
+		Fields:            parseStringList(q["fields"]),
 	}
 
 	resp, err := h.svc.SearchGalgames(c.Context(), req)

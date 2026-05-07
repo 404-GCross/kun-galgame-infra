@@ -43,6 +43,27 @@ Galgame 全文搜索 + 多条件过滤。
 | limit | int | 24 | max 100 |
 | facets | bool | `true` | 是否返回 facet 聚合（`age_limit`, `original_language`）|
 | highlight | bool | `true` | 是否返回高亮片段 |
+| fields | string (csv) | — | 字段投影：只返回指定字段，省带宽。空 = 返回索引内所有字段 |
+
+**`fields` 参数（字段投影）**：
+
+galgame 索引文档约 30 字段，其中 `intro_zh_cn` / `_ja_jp` / `_en_us` / `_zh_tw` 是 markdown，**单条可能 1–10 KB**。一次默认返回 24 条 → 24 × 4 = 96 个 intro 字段，可能 **几百 KB 浪费**。
+
+列表页通常只需要 5–7 个字段，建议显式指定：
+
+```
+GET /galgame/search?q=fate&fields=id,vndb_id,name_zh_cn,name_ja_jp,name_en_us,banner,banner_image_hash,view,released
+```
+
+详情页可以省略 `fields` 拿全字段；或者显式列出需要的：
+
+```
+GET /galgame/search?q=fate&fields=id,name_zh_cn,intro_zh_cn,tag_names,official_names
+```
+
+可投影的字段就是索引文档的 [Galgame schema 全部字段](./01-galgame.md#get-galgamegid)（`id`, `vndb_id`, `name_*`, `banner`, `banner_image_hash`, `intro_*`, `content_limit`, `age_limit`, `original_language`, `view`, `released`, `released_year`, `released_ts`, `tag_ids`, `tag_names`, `official_ids`, `official_names`, `engine_ids`, `engine_names`, `series_id`, `created_ts`, `updated_ts` 等）。
+
+> 注：本字段只控制**返回**的 attributes，不影响搜索 / 过滤范围。比如 `fields=id` 仍然会按全文匹配（不会因为 `name_*` 没在 `fields` 里就跳过 name 匹配）。
 
 **响应示例**：
 

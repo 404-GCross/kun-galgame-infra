@@ -56,6 +56,11 @@ func main() {
 		// Non-fatal: search endpoints will fail but DB-backed routes still work.
 		// Bulk reindex script (cmd/reindex-search) is the recovery path.
 		slog.Warn("EnsureIndexes failed — search endpoints may not work until fixed", "error", err)
+	} else {
+		// Indexes exist & settings are right — but they might be empty
+		// (fresh Meilisearch instance, lost data.ms, etc). Surface a
+		// loud warning so operators know to run cmd/reindex-search.
+		galgameSearch.WarnIfIndexesEmpty(searchClient)
 	}
 
 	setupRoutes(application, cfg, wikiDB, searchClient)

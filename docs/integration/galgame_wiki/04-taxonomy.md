@@ -6,7 +6,10 @@
 
 标签列表（分页，按关联 galgame 数量排序）。
 
-**查询参数**：`page`, `limit`
+| 参数 | 类型 | 默认 | 说明 |
+|------|------|------|------|
+| page | int | 1 | 页码 |
+| limit | int | 50 | 每页数量（max 100） |
 
 ### GET /tag/search
 
@@ -39,11 +42,13 @@
 
 标签详情 + 关联的 galgame 列表。
 
+> ⚠️ **`:name` 路径段仅用于 URL 美观 / 分享**（如 `/tag/校园?tag_id=42`），实际的查询条件是 `tag_id` query 参数。后端不读 `:name`，传任意字符串都会按 `tag_id` 查找。这与 Wikipedia 的 `/wiki/Article_Name?oldid=N` 设计一致。
+
 **查询参数**：
 
 | 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| tag_id | int | 是 | tag 主键 |
+| tag_id | int | 是 | tag 主键，**实际查询字段** |
 | page | int | 否 | 页码 |
 | limit | int | 否 | 每页数量 |
 | sort_field | string | 否 | `created` / `resource_update_time` / `view` |
@@ -89,11 +94,13 @@
 
 详情 + 关联 galgame。
 
+> ⚠️ **`:name` 路径段仅用于 URL 美观**，实际查询字段是 `official_id` query 参数（同 [GET /tag/:name](#get-tagname) 的设计）。
+
 **查询参数**：
 
 | 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| official_id | int | 是 | official 主键 |
+| official_id | int | 是 | official 主键，**实际查询字段** |
 | page | int | 否 | 页码 |
 | limit | int | 否 | 每页数量 |
 | sort_field | string | 否 | `created` / `resource_update_time` / `view` |
@@ -128,11 +135,13 @@
 
 详情 + 关联 galgame。
 
+> ⚠️ **`:name` 路径段仅用于 URL 美观**，实际查询字段是 `engine_id` query 参数（同 [GET /tag/:name](#get-tagname) 的设计）。
+
 **查询参数**：
 
 | 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| engine_id | int | 是 | engine 主键 |
+| engine_id | int | 是 | engine 主键，**实际查询字段** |
 | page | int | 否 | 页码 |
 | limit | int | 否 | 每页数量 |
 | content_limit | string | 否 | `sfw` / `nsfw`，只返回对应分级 galgame，`total` 同步反映过滤后数量 |
