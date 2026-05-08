@@ -213,19 +213,31 @@ func (s *OAuthService) ExchangeCode(ctx context.Context, req *dto.TokenRequest) 
 
 // GetUserInfo returns user info for the authenticated user, filtered by scope.
 // OIDC standard scopes:
-//   - openid  → sub (always included)
+//   - openid  → sub, id, roles (always included — core identity)
 //   - profile → name, picture
 //   - email   → email
 //
 // If scope is empty (e.g. internal /auth/me), all fields are returned.
+//
+// `id` and `roles` are returned regardless of scope: `id` is a second
+// representation of the same identity as `sub`, and `roles` is already
+// embedded in the JWT this caller is using to authenticate. Withholding
+// them on a /userinfo call would be theatre — the caller already has them.
 func (s *OAuthService) GetUserInfo(ctx context.Context, userUUID, scope string) (*dto.UserInfoResponse, error) {
-	user, err := s.userRepo.FindByUUID(ctx, userUUID)
+	user, err := s.userRepo.FindByUUIDWithRoles(ctx, userUUID)
 	if err != nil {
 		return nil, errors.NewWithCode(errors.ErrAuthUserNotFound)
 	}
 
+	roles := make([]string, 0, len(user.Roles))
+	for _, r := range user.Roles {
+		roles = append(roles, r.Name)
+	}
+
 	info := &dto.UserInfoResponse{
-		Sub: user.UUID,
+		ID:    user.ID,
+		Sub:   user.UUID,
+		Roles: roles,
 	}
 
 	// If no scope specified, return all fields

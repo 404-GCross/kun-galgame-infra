@@ -32,13 +32,26 @@ type TokenResponse struct {
 	Scope        string `json:"scope,omitempty"`
 }
 
-// UserInfoResponse represents an OAuth userinfo response
+// UserInfoResponse represents an OAuth userinfo response.
+//
+// `id` is the integer primary key in OAuth's `users` table — the same
+// value downstream services (kungal/moyu/galgame_wiki) use as a foreign
+// key after `migrate-users` aligns IDs across all three DBs. Returned
+// alongside `sub` (the UUID) so consumers can pick whichever they
+// prefer; both identify the same user.
+//
+// `roles` mirrors the JWT `roles` claim — exposed here as a convenience
+// so callers don't have to parse the access token to learn the user's
+// role set. Not gated by scope: it's the same data already in the JWT
+// that authenticated this request.
 type UserInfoResponse struct {
-	Sub         string `json:"sub"`
-	Name        string `json:"name"`
-	Email       string `json:"email"`
-	Picture     string `json:"picture,omitempty"`
-	UpdatedAt   int64  `json:"updated_at,omitempty"`
+	ID        uint     `json:"id"`
+	Sub       string   `json:"sub"`
+	Name      string   `json:"name,omitempty"`
+	Email     string   `json:"email,omitempty"`
+	Picture   string   `json:"picture,omitempty"`
+	Roles     []string `json:"roles"`
+	UpdatedAt int64    `json:"updated_at,omitempty"`
 }
 
 // AuthorizationCode represents an authorization code

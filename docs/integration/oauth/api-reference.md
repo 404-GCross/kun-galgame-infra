@@ -105,10 +105,12 @@
   "code": 0,
   "message": "成功",
   "data": {
+    "id": 12345,
     "sub": "550e8400-e29b-41d4-a716-446655440000",
     "name": "KUN",
     "email": "kun@kungal.com",
     "picture": "https://...",
+    "roles": ["user", "admin"],
     "updated_at": 1234567890
   }
 }
@@ -116,11 +118,19 @@
 
 | 字段 | 说明 |
 |------|------|
-| sub | 用户 UUID，唯一标识符 |
-| name | 用户名 |
-| email | 邮箱 |
-| picture | 头像 URL（可能为空） |
+| id | 用户整数 ID（= OAuth `users.id`，与 kungal/moyu 业务表的 `user_id` 外键对齐） |
+| sub | 用户 UUID（OIDC 标准的 subject），与 `id` 标识同一用户，调用方任选其一 |
+| name | 用户名（仅 `profile` scope 或空 scope 时返回） |
+| email | 邮箱（仅 `email` scope 或空 scope 时返回） |
+| picture | 头像 URL（仅 `profile` scope 或空 scope 时返回，可能为空） |
+| roles | 角色名称数组，与 JWT `roles` claim 一致 |
 | updated_at | 最后更新时间（Unix 时间戳） |
+
+**关于 scope 与字段过滤**：
+
+`id`、`sub`、`roles` 始终返回（不被 scope 过滤）—— 因为这三项已经在 JWT 里，调用方既然能用这个 JWT 调 /userinfo，就已经拿到了这些信息，再隐藏没有意义。`name`、`email`、`picture` 按 OIDC 标准受 `profile` / `email` scope 控制。
+
+> **跨服务接入提示**：kungal/moyu/galgame_wiki 后端处理 OAuth callback 时，应该在登录环节就拿 `id` 入库（作为本地 user 表的主键 / 外键），不要只存 `sub` —— 后续业务表关联、`/users/batch` 批量回拉、SDK 缓存键，全部基于 `id` 整数键。
 
 ---
 
