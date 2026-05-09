@@ -22,6 +22,9 @@ model user {
   following_count Int @default(0)
 
   // OAuth
+  // DEPRECATED — drop this relation and the `oauth_account` model below.
+  // Login should query/insert `user` by `userinfo.id` directly. See
+  // MIGRATION_NOTES.md → "Why no `oauth_account` table".
   oauth_account oauth_account[]
 
   chat_membership       chat_member[]
@@ -49,6 +52,17 @@ model user {
   updated DateTime @updatedAt
 }
 
+// DEPRECATED — this model should be dropped. Local user.id is
+// already aligned with OAuth users.id by migrate-users; the sub→id
+// indirection has no purpose. Login flow should query `user` by
+// `userinfo.id` directly. See MIGRATION_NOTES.md.
+//
+// Drop steps:
+//   1. Remove the `oauth_account oauth_account[]` relation from `user`
+//   2. Remove this model
+//   3. Run `prisma migrate dev` (DROP TABLE)
+//   4. Update OAuth callback handlers — replace FindOAuthAccountBySub /
+//      CreateOAuthAccount with direct user.id lookup/insert
 model oauth_account {
   id       Int    @id @default(autoincrement())
   user_id  Int

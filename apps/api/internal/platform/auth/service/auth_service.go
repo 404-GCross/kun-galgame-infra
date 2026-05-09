@@ -467,6 +467,51 @@ func (s *AuthService) SendEmailChangeCode(ctx context.Context, userUUID, newEmai
 	return nil
 }
 
+// UpdateProfile applies a partial profile update for the authenticated
+// user (name / avatar / avatar_image_hash / bio). Only non-nil fields in
+// `req` are touched.
+//
+// Returns the updated user with roles preloaded, suitable for projecting
+// directly into UserResponse — saves the caller from doing a separate
+// FindByUUIDWithRoles.
+//
+// If `req.Name` is provided and would collide with another user, returns
+// ErrAuthNameExists. There is no email validation here — emails go
+// through the verified-by-code flow in ChangeEmail.
+func (s *AuthService) UpdateProfile(ctx context.Context, userUUID string, req *dto.UpdateProfileRequest) (*model.User, error) {
+	fields := map[string]any{}
+
+	if req.Name != nil {
+		exists, err := s.userRepo.ExistsByNameExcluding(ctx, *req.Name, userUUID)
+		if err != nil {
+			return nil, err
+		}
+		if exists {
+			return nil, errors.NewWithCode(errors.ErrAuthNameExists)
+		}
+		fields["name"] = *req.Name
+	}
+	if req.Avatar != nil {
+		fields["avatar"] = *req.Avatar
+	}
+	if req.AvatarImageHash != nil {
+		// Pointer-typed column. Empty string here clears it (we want NULL
+		// semantically, but GORM Updates with a string sets the column to
+		// '' which is fine — frontend's resolveAvatarUrl falls back to
+		// Avatar when AvatarImageHash is nil OR empty).
+		fields["avatar_image_hash"] = *req.AvatarImageHash
+	}
+	if req.Bio != nil {
+		fields["bio"] = *req.Bio
+	}
+
+	if err := s.userRepo.UpdateProfile(ctx, userUUID, fields); err != nil {
+		return nil, err
+	}
+
+	return s.userRepo.FindByUUIDWithRoles(ctx, userUUID)
+}
+
 // ChangeEmail verifies the code and updates the user's email
 func (s *AuthService) ChangeEmail(ctx context.Context, userUUID, code, newEmail string) error {
 	redisKey := fmt.Sprintf("email_change:%s", userUUID)

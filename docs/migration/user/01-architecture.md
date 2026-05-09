@@ -80,14 +80,14 @@ kungal/moyu/galgame_wiki 的后端**不再 SELECT 自己的 user 表来获取展
 
 需要展示用户时：
 
-| 场景 | OAuth 端点 | Go SDK |
-|------|-----------|--------|
-| 渲染评论列表（拿到一组 user_id，要批量解析为 brief） | `GET /users/batch?ids=1,2,3` | `userclient.Users(ctx, ids)` |
-| @ 提及自动补全 | `GET /users/search?q=kun` | `userclient.Search(ctx, q, limit)` |
-| 用户登录回调 | `GET /oauth/userinfo` | OAuth callback 链路内置 |
-| 单个用户查询 | 同 batch（传单元素 slice） | `userclient.User(ctx, id)` |
+| 场景 | OAuth 端点 |
+|------|-----------|
+| 渲染评论列表（拿到一组 user_id，要批量解析为 brief） | `GET /users/batch?ids=1,2,3` |
+| @ 提及自动补全 | `GET /users/search?q=kun` |
+| 用户登录回调 | `GET /oauth/userinfo` |
+| 单个用户查询 | 同 batch（传单元素 slice 即可） |
 
-SDK 内置 TTL 缓存、负缓存、singleflight 合并、自动分片，N+1 风险被工具消解。详见 [08-downstream-integration.md](./08-downstream-integration.md)。
+OAuth 这边**不发布 SDK 代码** —— API 是契约，每个 consumer 自己实现一个薄客户端。30 行可起步，按工作负载需要加 TTL 缓存 / singleflight / 分片。完整实现指南、可复用 Go 参考代码、各级升级标准见 [08-downstream-integration.md §4](./08-downstream-integration.md#4-客户端实现指南)。
 
 ## 5. 替代方案的对比（为什么不走另一条路）
 

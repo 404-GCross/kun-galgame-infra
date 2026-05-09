@@ -15,6 +15,9 @@ model user {
     daily_toolset_upload_count Int    @default(0)
 
     // OAuth
+    // DEPRECATED — drop this relation and the `oauth_account` model below.
+    // Login should query/insert `user` by `userinfo.id` directly. See
+    // ../../docs/migration/user/08-downstream-integration.md §7.1.
     oauth_account oauth_account[]
 
     // SU only
@@ -116,6 +119,18 @@ model user_follow {
     @@unique([follower_id, followed_id])
 }
 
+// DEPRECATED — this model should be dropped. Local user.id is
+// already aligned with OAuth users.id by migrate-users; the sub→id
+// indirection has no purpose. Login flow should query `user` by
+// `userinfo.id` directly. See
+// ../../docs/migration/user/08-downstream-integration.md §7.1.
+//
+// Drop steps:
+//   1. Remove the `oauth_account oauth_account[]` relation from `user`
+//   2. Remove this model
+//   3. Run `prisma migrate dev` (DROP TABLE)
+//   4. Update OAuth callback handlers — replace FindOAuthAccountBySub /
+//      CreateOAuthAccount with direct user.id lookup/insert
 model oauth_account {
     id       Int    @id @default(autoincrement())
     user_id  Int

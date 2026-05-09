@@ -133,6 +133,7 @@ func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 	authProtected := auth.Group("", middleware.Auth(authSvc))
 	authProtected.Post("/logout", authH.Logout)
 	authProtected.Get("/me", authH.Me)
+	authProtected.Patch("/me", authH.UpdateProfile)
 	authProtected.Put("/password", authH.ChangePassword)
 	authProtected.Post("/email/send-code", authH.SendEmailChangeCode)
 	authProtected.Put("/email", authH.ChangeEmail)

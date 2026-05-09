@@ -55,6 +55,22 @@ type ChangeEmailRequest struct {
 	NewEmail string `json:"new_email" validate:"required,email"`
 }
 
+// UpdateProfileRequest is the body for PATCH /auth/me — partial update of
+// the authenticated user's display fields. All fields are optional; nil
+// pointer means "leave alone", non-nil means "set to this value".
+//
+// `avatar` and `avatar_image_hash` are independent: avatar is the legacy
+// URL fallback, avatar_image_hash points to an image_service-hosted image.
+// The frontend resolveAvatarUrl prefers hash over URL when both are set.
+// Setting one does not auto-clear the other — callers can set both
+// (e.g. on image upload) or just hash (most common path going forward).
+type UpdateProfileRequest struct {
+	Name            *string `json:"name,omitempty"              validate:"omitempty,min=2,max=17"`
+	Avatar          *string `json:"avatar,omitempty"            validate:"omitempty,max=255"`
+	AvatarImageHash *string `json:"avatar_image_hash,omitempty" validate:"omitempty,max=64"`
+	Bio             *string `json:"bio,omitempty"               validate:"omitempty,max=107"`
+}
+
 // TokenPair represents an access/refresh token pair
 type TokenPair struct {
 	AccessToken  string `json:"access_token"`

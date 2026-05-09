@@ -171,6 +171,23 @@ func (r *UserRepository) UpdateEmail(ctx context.Context, uuid string, email str
 	return r.db.WithContext(ctx).Model(&model.User{}).Where("uuid = ?", uuid).Update("email", email).Error
 }
 
+// UpdateProfile sets the provided fields on the user with the given uuid.
+// Only fields present in `fields` are touched; this is a partial update,
+// not a full overwrite.
+//
+// Caller is responsible for uniqueness validation on `name` (the service
+// layer does this via ExistsByNameExcluding before calling) — this
+// repository method is mechanical.
+func (r *UserRepository) UpdateProfile(ctx context.Context, uuid string, fields map[string]any) error {
+	if len(fields) == 0 {
+		return nil
+	}
+	return r.db.WithContext(ctx).
+		Model(&model.User{}).
+		Where("uuid = ?", uuid).
+		Updates(fields).Error
+}
+
 // Delete soft deletes a user
 func (r *UserRepository) Delete(ctx context.Context, id uint) error {
 	return r.db.WithContext(ctx).Delete(&model.User{}, id).Error

@@ -201,6 +201,48 @@ func (h *AuthHandler) Me(c fiber.Ctx) error {
 	})
 }
 
+// UpdateProfile handles partial profile updates for the authenticated
+// user. Body fields are all optional; nil = leave alone, non-nil = set.
+//
+// Returns the updated UserResponse so the client doesn't need a separate
+// /auth/me round-trip after the mutation.
+func (h *AuthHandler) UpdateProfile(c fiber.Ctx) error {
+	var req dto.UpdateProfileRequest
+	if err := c.Bind().JSON(&req); err != nil {
+		return response.BadRequest(c, errors.ErrBadRequest)
+	}
+	if err := utils.Validate(&req); err != nil {
+		return response.BadRequestMsg(c, errors.ErrValidationFailed, err.Error())
+	}
+
+	userUUID := c.Locals("user_uuid").(string)
+
+	user, err := h.authService.UpdateProfile(c.Context(), userUUID, &req)
+	if err != nil {
+		if appErr, ok := err.(*errors.AppError); ok {
+			return response.BadRequest(c, appErr.Code)
+		}
+		return response.InternalError(c, errors.ErrOperationFailed)
+	}
+
+	roles := make([]string, 0, len(user.Roles))
+	for _, r := range user.Roles {
+		roles = append(roles, r.Name)
+	}
+
+	return response.Success(c, dto.UserResponse{
+		UUID:        user.UUID,
+		Name:        user.Name,
+		Email:       user.Email,
+		Avatar:      user.Avatar,
+		Bio:         user.Bio,
+		Moemoepoint: user.Moemoepoint,
+		Status:      user.Status,
+		Roles:       roles,
+		CreatedAt:   user.CreatedAt.Format("2006-01-02T15:04:05Z"),
+	})
+}
+
 // ChangePassword handles password change
 func (h *AuthHandler) ChangePassword(c fiber.Ctx) error {
 	var req dto.ChangePasswordRequest
