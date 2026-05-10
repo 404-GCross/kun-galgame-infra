@@ -71,6 +71,7 @@
     "omitempty",
     "pacman",
     "persistedstate",
+    "pgpass",
     "pids",
     "pinia",
     "PKCE",
