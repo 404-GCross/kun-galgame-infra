@@ -1029,72 +1029,154 @@ func remapKungalUserIDs(ctx context.Context, db *gorm.DB, mapping map[uint]uint)
 	}
 	// Kungal has no known free-text fields with embedded user-id URLs.
 	// (Mention syntax `@user` in topic/comment bodies links by name, not
-	// by id.) chat_room.name is handled separately by remapChatRoomNames
-	// because it's a structured uid-uid name, not a URL embed.
+	// by id.) chat_room.name encodes a "uid1-uid2" pair for private
+	// rooms — that's handled separately because it's structured (not URL)
+	// and needs unique-constraint-aware rewriting.
 	if err := remapUserIDsGeneric(ctx, db, mapping, fks, nil); err != nil {
 		return err
 	}
-	return remapChatRoomNames(ctx, db, mapping)
+	return remapChatRoomPairLink(ctx, db, mapping, chatRoomPairLink{
+		table:     "chat_room",
+		column:    "name",
+		typeValue: "private", // kungal: type is a string column
+	})
 }
 
-// remapChatRoomNames updates chat_room.name for private rooms.
-// Private room names use format "uid1-uid2" (sorted ascending).
-// After user ID remap, these names must be recalculated.
-func remapChatRoomNames(ctx context.Context, db *gorm.DB, mapping map[uint]uint) error {
-	// Check if chat_room table exists
+// chatRoomPairLink describes a column on a chat_room-like table that
+// encodes "<min_uid>-<max_uid>" (sorted ascending) for private rooms.
+//
+// Both legacy schemas use this format but on different fields:
+//   - kungal: chat_room.name with type='private' (string discriminator)
+//   - moyu:   chat_room.link with type='PRIVATE' (enum)
+//
+// After the user-id remap, these encoded uid pairs need to be rewritten.
+type chatRoomPairLink struct {
+	table     string
+	column    string
+	typeValue string // 'private' (kungal lowercase) or 'PRIVATE' (moyu enum)
+}
+
+// remapChatRoomPairLink rewrites the encoded uid pair for private chat
+// rooms. Runs in its own transaction; uses DROP UNIQUE CONSTRAINT +
+// bulk UPDATE + ADD CONSTRAINT to handle the case where two rooms'
+// new links cycle (room A's new link == room B's old link, vice
+// versa) — single-pass UPDATE would deadlock on the unique constraint
+// in that case, but rebuilding the constraint at the end accepts the
+// final state directly.
+//
+// If the data has a true anomaly (post-remap collision), the
+// CREATE UNIQUE constraint will fail and the whole transaction rolls
+// back, leaving the source DB unchanged.
+func remapChatRoomPairLink(ctx context.Context, db *gorm.DB, mapping map[uint]uint, p chatRoomPairLink) error {
+	// Check if table exists
 	var exists bool
-	db.Raw("SELECT EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename = 'chat_room')").Scan(&exists)
+	db.Raw(
+		"SELECT EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename = ?)",
+		p.table,
+	).Scan(&exists)
 	if !exists {
 		return nil
 	}
 
-	type roomRow struct {
-		ID   int
-		Name string
-	}
-	var rooms []roomRow
-	if err := db.WithContext(ctx).Raw("SELECT id, name FROM chat_room WHERE type = 'private'").Scan(&rooms).Error; err != nil {
-		return fmt.Errorf("fetch private chat rooms: %w", err)
-	}
-
-	updated := 0
-	for _, room := range rooms {
-		parts := strings.SplitN(room.Name, "-", 2)
-		if len(parts) != 2 {
-			continue
-		}
-		uid1, err1 := strconv.ParseUint(parts[0], 10, 64)
-		uid2, err2 := strconv.ParseUint(parts[1], 10, 64)
-		if err1 != nil || err2 != nil {
-			continue
+	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// 1. Discover the unique constraint name on the column (Prisma
+		//    convention is `<table>_<column>_key` but we don't trust that;
+		//    introspect via pg_constraint).
+		var constraintName string
+		if err := tx.Raw(`
+			SELECT con.conname
+			FROM pg_constraint con
+			JOIN pg_class cls ON cls.oid = con.conrelid
+			JOIN pg_attribute att ON att.attrelid = cls.oid AND att.attname = ?
+			WHERE cls.relname = ?
+			  AND con.contype = 'u'
+			  AND con.conkey = ARRAY[att.attnum]::int2[]
+			LIMIT 1
+		`, p.column, p.table).Scan(&constraintName).Error; err != nil {
+			return fmt.Errorf("introspect unique constraint: %w", err)
 		}
 
-		newUID1, ok1 := mapping[uint(uid1)]
-		newUID2, ok2 := mapping[uint(uid2)]
-		if !ok1 || !ok2 {
-			continue
+		// 2. Drop the unique constraint (so cyclic in-place rewrites work)
+		if constraintName != "" {
+			if err := tx.Exec(fmt.Sprintf(
+				`ALTER TABLE "%s" DROP CONSTRAINT "%s"`, p.table, constraintName,
+			)).Error; err != nil {
+				return fmt.Errorf("drop unique constraint %q: %w", constraintName, err)
+			}
 		}
 
-		// Regenerate sorted name
-		a, b := newUID1, newUID2
-		if a > b {
-			a, b = b, a
+		// 3. Fetch all private rooms and compute their new pair link
+		type roomRow struct {
+			ID    int
+			Value string
 		}
-		newName := fmt.Sprintf("%d-%d", a, b)
+		var rooms []roomRow
+		if err := tx.Raw(
+			fmt.Sprintf(`SELECT id, "%s" AS value FROM "%s" WHERE type = ?`, p.column, p.table),
+			p.typeValue,
+		).Scan(&rooms).Error; err != nil {
+			return fmt.Errorf("fetch private chat rooms: %w", err)
+		}
 
-		if newName != room.Name {
-			if err := db.WithContext(ctx).Exec(
-				`UPDATE chat_room SET name = ? WHERE id = ?`, newName, room.ID,
-			).Error; err != nil {
-				slog.Error("failed to remap chat_room name", "id", room.ID, "old", room.Name, "new", newName, "error", err)
+		updated, malformed, unmapped := 0, 0, 0
+		for _, room := range rooms {
+			parts := strings.SplitN(room.Value, "-", 2)
+			if len(parts) != 2 {
+				malformed++
 				continue
+			}
+			uid1, err1 := strconv.ParseUint(parts[0], 10, 64)
+			uid2, err2 := strconv.ParseUint(parts[1], 10, 64)
+			if err1 != nil || err2 != nil {
+				malformed++
+				continue
+			}
+
+			newUID1, ok1 := mapping[uint(uid1)]
+			newUID2, ok2 := mapping[uint(uid2)]
+			if !ok1 || !ok2 {
+				unmapped++
+				continue
+			}
+
+			a, b := newUID1, newUID2
+			if a > b {
+				a, b = b, a
+			}
+			newValue := fmt.Sprintf("%d-%d", a, b)
+			if newValue == room.Value {
+				continue
+			}
+
+			if err := tx.Exec(
+				fmt.Sprintf(`UPDATE "%s" SET "%s" = ? WHERE id = ?`, p.table, p.column),
+				newValue, room.ID,
+			).Error; err != nil {
+				return fmt.Errorf("update %s.id=%d: %w", p.table, room.ID, err)
 			}
 			updated++
 		}
-	}
 
-	slog.Info("remapped chat room names", "updated", updated, "total_private", len(rooms))
-	return nil
+		// 4. Recreate the unique constraint. If a true post-remap collision
+		//    exists (e.g. two rooms with same participant pair after the
+		//    bijection — which would require pre-existing data anomaly),
+		//    this fails and the whole tx rolls back.
+		if constraintName != "" {
+			if err := tx.Exec(fmt.Sprintf(
+				`ALTER TABLE "%s" ADD CONSTRAINT "%s" UNIQUE ("%s")`,
+				p.table, constraintName, p.column,
+			)).Error; err != nil {
+				return fmt.Errorf("recreate unique constraint %q: %w", constraintName, err)
+			}
+		}
+
+		slog.Info("remapped chat room pair link",
+			"table", p.table, "column", p.column,
+			"updated", updated, "malformed", malformed, "unmapped", unmapped,
+			"total_private", len(rooms),
+		)
+		return nil
+	})
 }
 
 func remapMoyuUserIDs(ctx context.Context, db *gorm.DB, mapping map[uint]uint) error {
@@ -1130,7 +1212,19 @@ func remapMoyuUserIDs(ctx context.Context, db *gorm.DB, mapping map[uint]uint) e
 	mentions := []mentionField{
 		{table: "patch_comment", column: "content", urlPrefix: "/user/"},
 	}
-	return remapUserIDsGeneric(ctx, db, mapping, fks, mentions)
+	if err := remapUserIDsGeneric(ctx, db, mapping, fks, mentions); err != nil {
+		return err
+	}
+
+	// chat_room.link encodes "uid1-uid2" for type='PRIVATE' rooms (sorted
+	// ascending), exactly the kungal chat_room.name pattern but on a
+	// different field name and a different type-discriminator value.
+	// Old uids are pre-remap moyu user ids, must be rewritten.
+	return remapChatRoomPairLink(ctx, db, mapping, chatRoomPairLink{
+		table:     "chat_room",
+		column:    "link",
+		typeValue: "PRIVATE", // moyu: type is an enum
+	})
 }
 
 func printResults(r *MigrationResult, dryRun bool) {
