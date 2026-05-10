@@ -58,3 +58,6 @@ prompts
 # reference
 refs
 
+# dumps
+scripts/*.dump
+
