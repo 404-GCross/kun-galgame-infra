@@ -190,9 +190,12 @@ func (s *OAuthService) ExchangeCode(ctx context.Context, req *dto.TokenRequest) 
 		return nil, err
 	}
 
-	// Create session
+	// Create session. ClientID binds this refresh_token to the issuing
+	// OAuth client — refresh requests from a different client_id will
+	// be rejected even if they somehow obtained the refresh_token.
 	session := &model.Session{
 		UserID:       user.ID,
+		ClientID:     req.ClientID,
 		SessionToken: accessToken,
 		RefreshToken: refreshToken,
 		ExpiresAt:    time.Now().Add(7 * 24 * time.Hour),
@@ -289,19 +292,46 @@ func (s *OAuthService) GetUserIDByUUID(ctx context.Context, uuid string) (uint, 
 }
 
 // RefreshWithClient refreshes tokens using a refresh token within the OAuth flow.
-// Requires client_secret for authentication.
+//
+// Authentication rules (RFC 6749 §6 + §2.1):
+//   - Confidential clients (default): must present a valid client_secret.
+//   - Public clients (oauth_clients.is_public = true, e.g. SPAs using
+//     PKCE): the refresh_token itself is the proof of authorization; no
+//     client_secret is needed. We still verify the client_id exists.
 func (s *OAuthService) RefreshWithClient(ctx context.Context, refreshToken, clientID, clientSecret string) (*dto.TokenResponse, error) {
-	// Validate client_secret (required for refresh_token grant)
-	if clientSecret == "" {
-		return nil, errors.NewWithCode(errors.ErrOAuthInvalidClientSecret)
+	client, err := s.clientRepo.FindByClientID(ctx, clientID)
+	if err != nil {
+		return nil, errors.NewWithCode(errors.ErrOAuthInvalidClient)
 	}
-	if err := s.verifyClientSecret(ctx, clientID, clientSecret); err != nil {
-		return nil, err
+
+	if client.IsPublic {
+		// Public client — no secret required. Refresh-token possession
+		// is the proof. (Server still validates the refresh_token below.)
+	} else {
+		if clientSecret == "" {
+			return nil, errors.NewWithCode(errors.ErrOAuthInvalidClientSecret)
+		}
+		if err := s.verifyClientSecret(ctx, clientID, clientSecret); err != nil {
+			return nil, err
+		}
 	}
 
 	// Find session by refresh token
 	session, err := s.sessionRepo.FindByRefreshToken(ctx, refreshToken)
 	if err != nil {
+		return nil, errors.NewWithCode(errors.ErrAuthInvalidToken)
+	}
+
+	// Bind check: a refresh_token can only be redeemed by the client it
+	// was originally issued to. This prevents a leaked public-client
+	// refresh_token from being used cross-client.
+	//
+	// Legacy sessions created before this column existed have
+	// ClientID="" — they predate the OAuth flow and are only used by
+	// /auth/refresh (which doesn't go through this path). So an empty
+	// session.ClientID here implies an OAuth-issued session whose
+	// client_id was never recorded, which we treat as a security failure.
+	if session.ClientID != clientID {
 		return nil, errors.NewWithCode(errors.ErrAuthInvalidToken)
 	}
 

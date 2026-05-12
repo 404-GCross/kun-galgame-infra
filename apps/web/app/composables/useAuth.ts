@@ -5,6 +5,7 @@ export const useAuth = () => {
   const accessToken = useCookie('access_token', {
     maxAge: 60 * 15, // 15 minutes
     sameSite: 'lax',
+    secure: !import.meta.dev
   })
 
   // Note: refresh_token is managed by the backend as an httpOnly cookie.

@@ -18,6 +18,16 @@ type OAuthClient struct {
 	Grants       datatypes.JSON `gorm:"type:jsonb;not null" json:"grants"`
 	CreatedAt    time.Time      `json:"created_at"`
 
+	// IsPublic marks this client as a public OAuth client (RFC 6749 §2.1):
+	// a SPA / native app that cannot securely hold a client_secret.
+	// Such clients MUST use PKCE on the authorization-code flow, and the
+	// /oauth/token refresh_token grant accepts them without client_secret
+	// (the refresh_token itself is the proof of authorization).
+	//
+	// Default false — existing confidential clients keep requiring their
+	// secret on every grant. Flip to true for SPA clients like wiki.
+	IsPublic bool `gorm:"not null;default:false" json:"is_public"`
+
 	// --- Image service extension fields ---
 	ImageEnabled          bool           `gorm:"not null;default:false" json:"image_enabled"`
 	ImageSiteKey          string         `gorm:"size:32" json:"image_site_key,omitempty"`

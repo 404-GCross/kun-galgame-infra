@@ -37,9 +37,16 @@ export const useOAuthLogin = () => {
   const authApi = useAuthApi()
   const auth = useAuth()
 
-  const accessToken = useCookie('access_token', {
+  // Wiki-scoped cookie names — see useAuth.ts for the collision rationale.
+  const accessToken = useCookie('wiki_access_token', {
     maxAge: 60 * 15,
-    sameSite: 'lax'
+    sameSite: 'lax',
+    secure: !import.meta.dev
+  })
+  const refreshToken = useCookie('wiki_refresh_token', {
+    maxAge: 60 * 60 * 24 * 7, // 7d, matches server-side JWT exp
+    sameSite: 'lax',
+    secure: !import.meta.dev
   })
 
   const login = async () => {
@@ -104,6 +111,9 @@ export const useOAuthLogin = () => {
     }
 
     accessToken.value = response.data.access_token
+    if (response.data.refresh_token) {
+      refreshToken.value = response.data.refresh_token
+    }
 
     // The OAuth access_token is the same JWT used by the regular login flow
     // (shared JWT secret), so /auth/me works directly and returns the full User

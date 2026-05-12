@@ -22,7 +22,7 @@ export const useApi = () => {
   const config = useRuntimeConfig()
   const baseUrl = config.public.apiBase
   const authApiBase = config.public.authApiBase
-  const accessToken = useCookie('access_token')
+  const accessToken = useCookie('wiki_access_token')
 
   const getAuthHeaders = (): Record<string, string> => {
     const token = accessToken.value

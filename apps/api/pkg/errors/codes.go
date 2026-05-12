@@ -39,6 +39,7 @@ const (
 	ErrAuthCodeExpired              = 10011
 	ErrAuthEmailChangeTooFrequent   = 10012
 	ErrAuthEmailSameAsCurrent       = 10013
+	ErrAuthUserBanned               = 10014
 
 	// OAuth (15000-15999)
 	ErrOAuthInvalidClient       = 15001
@@ -121,6 +122,7 @@ var codeMessages = map[int]string{
 	ErrAuthCodeExpired:            "验证码已过期",
 	ErrAuthEmailChangeTooFrequent: "邮箱验证码发送过于频繁，请稍后再试",
 	ErrAuthEmailSameAsCurrent:     "新邮箱与当前邮箱相同",
+	ErrAuthUserBanned:             "账号已被封禁",
 
 	ErrOAuthInvalidClient:       "无效的客户端",
 	ErrOAuthInvalidRedirectURI:  "无效的回调地址",

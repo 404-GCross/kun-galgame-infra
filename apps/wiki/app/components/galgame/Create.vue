@@ -3,7 +3,7 @@ const api = useApi()
 const router = useRouter()
 const cfg = useRuntimeConfig()
 const apiBase = cfg.public.apiBase as string
-const accessToken = useCookie('access_token')
+const accessToken = useCookie('wiki_access_token')
 
 const form = ref({
   vndb_id: '',

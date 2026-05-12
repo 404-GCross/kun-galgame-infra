@@ -15,7 +15,7 @@ const emit = defineEmits<{
 const cfg = useRuntimeConfig()
 const cdnBase = cfg.public.imageCdnBase as string
 const apiBase = cfg.public.apiBase as string
-const accessToken = useCookie('access_token')
+const accessToken = useCookie('wiki_access_token')
 
 interface FormState {
   name_zh_cn: string

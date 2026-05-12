@@ -21,7 +21,7 @@ interface ApiError {
 export const useAuthApi = () => {
   const config = useRuntimeConfig()
   const baseUrl = config.public.authApiBase
-  const accessToken = useCookie('access_token')
+  const accessToken = useCookie('wiki_access_token')
 
   const getAuthHeaders = (): Record<string, string> => {
     const token = accessToken.value

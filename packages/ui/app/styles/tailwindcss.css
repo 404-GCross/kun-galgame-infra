@@ -1,5 +1,26 @@
 @import 'tailwindcss';
 
+/*
+ * Tailwind v4 content sources.
+ *
+ * This CSS file is shipped by the @kun/ui Nuxt layer and consumed by
+ * downstream apps (web, wiki) via `extends: ['@kun/ui']`. The downstream
+ * Tailwind scanner only auto-detects files inside the consuming app's
+ * own directory — it does NOT walk into this package, so utilities used
+ * exclusively here (e.g. Modal.vue's `bg-default-800/70`,
+ * `bg-content1/85`) get silently dropped from the build.
+ *
+ * The @source directives below explicitly add this package's source
+ * tree to the scan so every utility class referenced in @kun/ui
+ * components ends up in the final CSS.
+ *
+ * Paths are relative to this file:
+ *   packages/ui/app/styles/tailwindcss.css
+ */
+@source "../components/**/*.{vue,ts,js}";
+@source "../composables/**/*.{ts,js}";
+@source "../utils/**/*.{ts,js}";
+
 @custom-variant dark (&:is(.kun-dark-mode *));
 
 :root {

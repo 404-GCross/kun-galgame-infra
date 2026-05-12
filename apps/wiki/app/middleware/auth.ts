@@ -1,5 +1,5 @@
 export default defineNuxtRouteMiddleware(async (to) => {
-  const accessToken = useCookie('access_token')
+  const accessToken = useCookie('wiki_access_token')
 
   const publicRoutes = ['/auth/login', '/auth/callback']
 

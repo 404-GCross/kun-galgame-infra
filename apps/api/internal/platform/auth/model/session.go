@@ -4,10 +4,19 @@ import (
 	"time"
 )
 
-// Session represents a user login session
+// Session represents a user login session.
+//
+// ClientID identifies which OAuth client (or "" for the legacy /auth/login
+// path used by the admin UI) the session belongs to. Binding sessions to
+// clients lets us:
+//   - prevent a leaked public-client refresh_token from being used by
+//     a different client (refresh checks session.ClientID == request client_id)
+//   - selectively revoke sessions per client without nuking unrelated
+//     sessions of the same user
 type Session struct {
 	ID           uint      `gorm:"primaryKey" json:"id"`
 	UserID       uint      `gorm:"not null;index" json:"user_id"`
+	ClientID     string    `gorm:"size:50;index;default:''" json:"client_id"`
 	SessionToken string    `gorm:"type:text;uniqueIndex;not null" json:"-"`
 	RefreshToken string    `gorm:"type:text;uniqueIndex;not null" json:"-"`
 	UserAgent    string    `gorm:"type:text;default:''" json:"user_agent"`

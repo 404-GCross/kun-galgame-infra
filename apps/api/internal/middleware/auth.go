@@ -9,7 +9,14 @@ import (
 	"github.com/gofiber/fiber/v3"
 )
 
-// Auth middleware validates JWT tokens
+// Auth middleware validates JWT tokens.
+//
+// In addition to JWT validity, it re-checks the user's current status on
+// every request. JWTs are valid for 15 min after issuance, so without
+// this DB check a banned user's existing token would keep working until
+// natural expiry. The DB hit is a single index lookup by UUID — cheap
+// in absolute terms but worth caching (Redis / sync.Map TTL) if QPS
+// becomes a concern.
 func Auth(authSvc *authService.AuthService) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		// Get authorization header
@@ -32,12 +39,28 @@ func Auth(authSvc *authService.AuthService) fiber.Handler {
 
 		token := parts[1]
 
-		// Validate token
+		// Validate token (signature, exp, format)
 		claims, err := authSvc.ValidateAccessToken(token)
 		if err != nil {
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
 				"code":    errors.ErrAuthTokenExpired,
 				"message": errors.GetMessage(errors.ErrAuthTokenExpired),
+			})
+		}
+
+		// Live status check — JWT might still be valid but the user
+		// could have been banned in the last 15 min.
+		user, err := authSvc.GetCurrentUser(c.Context(), claims.UserUUID)
+		if err != nil || user == nil {
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+				"code":    errors.ErrAuthUserNotFound,
+				"message": errors.GetMessage(errors.ErrAuthUserNotFound),
+			})
+		}
+		if user.IsBanned() {
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+				"code":    errors.ErrAuthUserBanned,
+				"message": errors.GetMessage(errors.ErrAuthUserBanned),
 			})
 		}
 
