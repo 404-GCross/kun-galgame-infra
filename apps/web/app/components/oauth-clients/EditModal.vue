@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { ALL_GRANTS, KNOWN_SCOPES } from '~/shared/types/oauth-client'
+
 const props = defineProps<{ client: OAuthClient }>()
 const emit = defineEmits<{ close: []; updated: [] }>()
 
@@ -7,6 +9,12 @@ const show = ref(true)
 
 const name = ref(props.client.name)
 const redirectUris = ref([...props.client.redirect_uris])
+const grants = ref<string[]>([...(props.client.grants ?? [])])
+const allowedScopes = ref<string[]>([...(props.client.allowed_scopes ?? [])])
+// is_public is set at create time; toggling it post-hoc is dangerous
+// (changes the auth model). We surface it read-only here — if someone
+// really needs to flip it, they should recreate the client.
+const isPublicReadonly = computed(() => props.client.is_public ?? false)
 const error = ref('')
 const isLoading = ref(false)
 
@@ -24,6 +32,24 @@ const removeUri = (index: number) => {
   }
 }
 
+const toggleGrant = (g: string) => {
+  const i = grants.value.indexOf(g)
+  if (i >= 0) {
+    grants.value.splice(i, 1)
+  } else {
+    grants.value.push(g)
+  }
+}
+
+const toggleScope = (s: string) => {
+  const i = allowedScopes.value.indexOf(s)
+  if (i >= 0) {
+    allowedScopes.value.splice(i, 1)
+  } else {
+    allowedScopes.value.push(s)
+  }
+}
+
 const handleSubmit = async () => {
   error.value = ''
 
@@ -38,11 +64,18 @@ const handleSubmit = async () => {
     return
   }
 
+  if (grants.value.length === 0) {
+    error.value = '请至少选择一种 grant 类型'
+    return
+  }
+
   isLoading.value = true
   try {
     const response = await api.put(`/oauth/clients/${props.client.id}`, {
       name: name.value,
       redirect_uris: uris,
+      grants: grants.value,
+      allowed_scopes: allowedScopes.value,
     })
     if (response.code === 0) {
       emit('updated')
@@ -57,12 +90,16 @@ const handleSubmit = async () => {
 
 <template>
   <KunModal v-model:modal-value="show">
-    <div class="w-[28rem] space-y-4 p-6">
+    <div class="w-[32rem] space-y-4 p-6">
       <h2 class="text-xl font-bold text-foreground">编辑客户端</h2>
 
       <div class="rounded-lg bg-default-50 p-3">
         <p class="text-xs text-default-400">Client ID</p>
         <p class="mt-1 truncate font-mono text-sm text-foreground">{{ client.id }}</p>
+        <p class="mt-2 text-xs text-default-400">
+          类型：{{ isPublicReadonly ? '公共客户端 (SPA / native)' : '机密客户端 (confidential)' }}
+          <span class="text-default-300">— 创建后不可修改</span>
+        </p>
       </div>
 
       <KunInput
@@ -97,6 +134,50 @@ const handleSubmit = async () => {
           <Icon name="lucide:plus" class="size-3" />
           添加回调地址
         </button>
+      </div>
+
+      <div>
+        <label class="mb-1 block text-sm font-medium text-default-500">
+          授权类型 (grants)
+          <span class="text-xs text-default-400">— refresh_token 必须勾选，否则 15 分钟后用户会被强制重新登录</span>
+        </label>
+        <div class="flex flex-wrap gap-2">
+          <label
+            v-for="g in ALL_GRANTS"
+            :key="g"
+            class="flex cursor-pointer items-center gap-1.5 rounded-lg border border-default-200 bg-content1 px-3 py-1.5 text-sm text-foreground hover:border-primary"
+          >
+            <input
+              type="checkbox"
+              :checked="grants.includes(g)"
+              class="size-3.5 accent-primary"
+              @change="toggleGrant(g)"
+            />
+            {{ g }}
+          </label>
+        </div>
+      </div>
+
+      <div>
+        <label class="mb-1 block text-sm font-medium text-default-500">
+          允许的 scope (allowed_scopes)
+          <span class="text-xs text-default-400">— image:upload 这类敏感 scope 必须显式勾选</span>
+        </label>
+        <div class="flex flex-wrap gap-2">
+          <label
+            v-for="s in KNOWN_SCOPES"
+            :key="s"
+            class="flex cursor-pointer items-center gap-1.5 rounded-lg border border-default-200 bg-content1 px-3 py-1.5 text-sm text-foreground hover:border-primary"
+          >
+            <input
+              type="checkbox"
+              :checked="allowedScopes.includes(s)"
+              class="size-3.5 accent-primary"
+              @change="toggleScope(s)"
+            />
+            {{ s }}
+          </label>
+        </div>
       </div>
 
       <div v-if="error" class="rounded-lg bg-danger-50 p-3 text-sm text-danger">

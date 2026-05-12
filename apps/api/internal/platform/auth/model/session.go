@@ -17,6 +17,13 @@ type Session struct {
 	ID           uint      `gorm:"primaryKey" json:"id"`
 	UserID       uint      `gorm:"not null;index" json:"user_id"`
 	ClientID     string    `gorm:"size:50;index;default:''" json:"client_id"`
+	// Scope is the OAuth scope granted at code-exchange time. Persisted
+	// here so refresh can re-issue access_tokens carrying the SAME scope
+	// — without this, a refreshed token would silently lose its scope
+	// claim and /oauth/userinfo would treat it as "all fields" (privacy
+	// regression: `openid`-only token would upgrade to email+profile
+	// access after one refresh).
+	Scope        string    `gorm:"type:text;default:''" json:"scope"`
 	SessionToken string    `gorm:"type:text;uniqueIndex;not null" json:"-"`
 	RefreshToken string    `gorm:"type:text;uniqueIndex;not null" json:"-"`
 	UserAgent    string    `gorm:"type:text;default:''" json:"user_agent"`

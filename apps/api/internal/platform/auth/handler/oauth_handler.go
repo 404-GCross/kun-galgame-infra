@@ -123,6 +123,14 @@ func (h *OAuthHandler) Consent(c fiber.Ctx) error {
 		codeChallengeMethod,
 	)
 	if err != nil {
+		// Domain errors (e.g. ErrOAuthInvalidScope when the requested
+		// scope is not in the client's allow-list) must surface as 4xx
+		// with the actual code — wrapping everything as 500 hid these
+		// from clients and made misconfigured-scope requests look like
+		// a server outage.
+		if appErr, ok := err.(*errors.AppError); ok {
+			return response.BadRequest(c, appErr.Code)
+		}
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
 
@@ -195,10 +203,20 @@ func (h *OAuthHandler) UserInfo(c fiber.Ctx) error {
 	return response.Success(c, info)
 }
 
-// Revoke revokes a refresh token.
+// Revoke revokes an OAuth token (RFC 7009).
+//
+// Accepts either an access_token or a refresh_token in the `token`
+// field. Per RFC 7009 §2.1 servers MUST handle both token types — a
+// client should be able to revoke an access_token even if it lost its
+// refresh_token. We use the optional `token_type_hint` to short-circuit
+// when the caller knows the type, otherwise we try refresh_token first
+// then access_token.
+//
+// Always returns 200 — never disclose whether the token existed.
 func (h *OAuthHandler) Revoke(c fiber.Ctx) error {
 	var req struct {
-		Token string `json:"token" validate:"required"`
+		Token         string `json:"token" validate:"required"`
+		TokenTypeHint string `json:"token_type_hint"`
 	}
 	if err := c.Bind().JSON(&req); err != nil {
 		return response.BadRequest(c, errors.ErrBadRequest)
@@ -208,7 +226,7 @@ func (h *OAuthHandler) Revoke(c fiber.Ctx) error {
 		return response.BadRequest(c, errors.ErrBadRequest)
 	}
 
-	_ = h.oauthService.RevokeToken(c.Context(), req.Token)
+	_ = h.oauthService.RevokeToken(c.Context(), req.Token, req.TokenTypeHint)
 
 	// RFC 7009: always return 200 OK regardless of whether the token was found
 	return response.Success(c, nil)

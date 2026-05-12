@@ -70,8 +70,10 @@ func (s *SiteService) GetOAuthClientsBySiteID(ctx context.Context, siteID uint) 
 	return s.oauthClientRepo.FindBySiteID(ctx, siteID)
 }
 
-// CreateOAuthClient creates a new OAuth client with generated ID and secret
-func (s *SiteService) CreateOAuthClient(ctx context.Context, siteID uint, name string, redirectURIs, grants []string) (*model.OAuthClient, string, error) {
+// CreateOAuthClient creates a new OAuth client with generated ID and secret.
+// `allowedScopes` is the scope allow-list (nil → not stored; empty
+// behaviour falls back to the OIDC core set at request time).
+func (s *SiteService) CreateOAuthClient(ctx context.Context, siteID uint, name string, redirectURIs, grants, allowedScopes []string) (*model.OAuthClient, string, error) {
 	// Generate client ID (16 bytes = 32 hex chars)
 	clientID, err := generateRandomHex(16)
 	if err != nil {
@@ -95,6 +97,10 @@ func (s *SiteService) CreateOAuthClient(ctx context.Context, siteID uint, name s
 		RedirectURIs: urisJSON,
 		Grants:       grantsJSON,
 	}
+	if allowedScopes != nil {
+		scopesJSON, _ := json.Marshal(allowedScopes)
+		client.AllowedScopes = scopesJSON
+	}
 
 	if err := s.oauthClientRepo.Create(ctx, client); err != nil {
 		return nil, "", err
@@ -103,8 +109,11 @@ func (s *SiteService) CreateOAuthClient(ctx context.Context, siteID uint, name s
 	return client, secret, nil
 }
 
-// UpdateOAuthClient updates an OAuth client's name, redirect URIs, and/or grants
-func (s *SiteService) UpdateOAuthClient(ctx context.Context, clientID string, name *string, redirectURIs, grants []string) (*model.OAuthClient, error) {
+// UpdateOAuthClient updates an OAuth client's name, redirect URIs,
+// grants, and/or allowed_scopes. Nil slice = no change, non-nil empty
+// slice = set to empty (and AllowedScopes empty triggers the OIDC core
+// default at runtime).
+func (s *SiteService) UpdateOAuthClient(ctx context.Context, clientID string, name *string, redirectURIs, grants, allowedScopes []string) (*model.OAuthClient, error) {
 	client, err := s.oauthClientRepo.FindByClientID(ctx, clientID)
 	if err != nil {
 		return nil, err
@@ -120,6 +129,10 @@ func (s *SiteService) UpdateOAuthClient(ctx context.Context, clientID string, na
 	if grants != nil {
 		grantsJSON, _ := json.Marshal(grants)
 		client.Grants = grantsJSON
+	}
+	if allowedScopes != nil {
+		scopesJSON, _ := json.Marshal(allowedScopes)
+		client.AllowedScopes = scopesJSON
 	}
 
 	if err := s.oauthClientRepo.Update(ctx, client); err != nil {

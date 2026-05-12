@@ -212,12 +212,17 @@ func (h *SiteHandler) CreateClient(c fiber.Ctx) error {
 		return response.NotFound(c, errors.ErrSiteNotFound)
 	}
 
+	// Default grants include BOTH authorization_code and refresh_token —
+	// real-world clients almost always need both, and shipping
+	// authorization_code only causes silent re-login storms 15 minutes
+	// after every login (the JWT TTL) because the OAuth server's
+	// refresh-grant check rejects them.
 	grants := req.Grants
 	if grants == nil {
-		grants = []string{"authorization_code"}
+		grants = []string{"authorization_code", "refresh_token"}
 	}
 
-	client, secret, err := h.siteService.CreateOAuthClient(c.Context(), req.SiteID, req.Name, req.RedirectURIs, grants)
+	client, secret, err := h.siteService.CreateOAuthClient(c.Context(), req.SiteID, req.Name, req.RedirectURIs, grants, req.AllowedScopes)
 	if err != nil {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
@@ -244,7 +249,7 @@ func (h *SiteHandler) UpdateClient(c fiber.Ctx) error {
 		return response.BadRequestMsg(c, errors.ErrValidationFailed, err.Error())
 	}
 
-	client, err := h.siteService.UpdateOAuthClient(c.Context(), clientID, req.Name, req.RedirectURIs, req.Grants)
+	client, err := h.siteService.UpdateOAuthClient(c.Context(), clientID, req.Name, req.RedirectURIs, req.Grants, req.AllowedScopes)
 	if err != nil {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
@@ -274,12 +279,19 @@ func toOAuthClientResponse(cl *siteModel.OAuthClient) dto.OAuthClientResponse {
 	var grants []string
 	_ = json.Unmarshal(cl.Grants, &grants)
 
+	var allowedScopes []string
+	if len(cl.AllowedScopes) > 0 {
+		_ = json.Unmarshal(cl.AllowedScopes, &allowedScopes)
+	}
+
 	return dto.OAuthClientResponse{
-		ID:           cl.ID,
-		SiteID:       cl.SiteID,
-		Name:         cl.Name,
-		RedirectURIs: redirectURIs,
-		Grants:       grants,
-		CreatedAt:    cl.CreatedAt.Format("2006-01-02T15:04:05Z"),
+		ID:            cl.ID,
+		SiteID:        cl.SiteID,
+		Name:          cl.Name,
+		RedirectURIs:  redirectURIs,
+		Grants:        grants,
+		AllowedScopes: allowedScopes,
+		IsPublic:      cl.IsPublic,
+		CreatedAt:     cl.CreatedAt.Format("2006-01-02T15:04:05Z"),
 	}
 }

@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"api/internal/platform/auth/model"
@@ -46,12 +47,34 @@ func (r *AuthorizationCodeRepository) FindValidByCode(ctx context.Context, code 
 	return &authCode, nil
 }
 
-// MarkAsUsed marks an authorization code as used
+// ErrCodeAlreadyUsed signals a concurrent / replayed code-exchange attempt:
+// the row exists but used_at is already set, so this caller did NOT win
+// the race. The service layer must surface this as ErrOAuthInvalidCode
+// and not proceed to issue tokens.
+var ErrCodeAlreadyUsed = errors.New("authorization code already used")
+
+// MarkAsUsed atomically claims an authorization code by setting used_at
+// only when it is still NULL. Returns ErrCodeAlreadyUsed if another
+// caller (or process) already claimed the same code — this is the
+// race-safety guarantee that ExchangeCode relies on.
+//
+// Why this matters: ExchangeCode is FindValid → validate → MarkAsUsed.
+// Two concurrent token exchanges with the same code can both pass
+// FindValid (both see used_at=NULL) and both pass validation. The atomic
+// `UPDATE ... WHERE used_at IS NULL` plus RowsAffected check is what
+// guarantees only one of them succeeds; the loser gets ErrCodeAlreadyUsed.
 func (r *AuthorizationCodeRepository) MarkAsUsed(ctx context.Context, id uint) error {
 	now := time.Now()
-	return r.db.WithContext(ctx).Model(&model.AuthorizationCode{}).
-		Where("id = ?", id).
-		Update("used_at", now).Error
+	res := r.db.WithContext(ctx).Model(&model.AuthorizationCode{}).
+		Where("id = ? AND used_at IS NULL", id).
+		Update("used_at", now)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return ErrCodeAlreadyUsed
+	}
+	return nil
 }
 
 // DeleteExpired deletes expired authorization codes

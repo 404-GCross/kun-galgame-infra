@@ -164,7 +164,16 @@ func authenticateJWT(c fiber.Ctx, repo *siteRepo.OAuthClientRepository, authHead
 
 	// Guard: the user's JWT must match the client's site. Otherwise a
 	// user with a valid kungal JWT could impersonate as a moyu uploader.
-	if client.SiteID != nil && claims.SiteID != 0 && *client.SiteID != claims.SiteID {
+	//
+	// FAIL-CLOSED: any missing piece is a rejection, not a bypass.
+	//   - client.SiteID == nil  → client is unconfigured / orphan;
+	//                             never let it accept uploads.
+	//   - claims.SiteID == 0    → token predates the site_id claim
+	//                             (legacy / manually-issued); refuse.
+	//   - mismatch              → wrong site.
+	// Earlier versions had `if client.SiteID != nil && claims.SiteID != 0 && mismatch`
+	// — that combined gate silently allowed all three failure modes.
+	if client.SiteID == nil || claims.SiteID == 0 || *client.SiteID != claims.SiteID {
 		return nil, "", errSiteMismatch
 	}
 

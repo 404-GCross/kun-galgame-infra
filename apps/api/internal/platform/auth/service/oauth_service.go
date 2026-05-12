@@ -7,6 +7,7 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
+	stderrors "errors"
 	"strings"
 	"time"
 
@@ -65,7 +66,14 @@ func (s *OAuthService) ValidateClient(ctx context.Context, clientID, redirectURI
 	return client, nil
 }
 
-// CreateAuthorizationCode creates a new authorization code
+// CreateAuthorizationCode creates a new authorization code.
+//
+// Scope enforcement: the requested `scope` string is split on whitespace
+// and every token must appear in the client's AllowedScopes (or be one
+// of the OIDC core scopes when AllowedScopes is unset). Any disallowed
+// token aborts the request with ErrOAuthInvalidScope — preventing a
+// scope-escalation where any registered client could request e.g.
+// `image:upload` without explicit grant.
 func (s *OAuthService) CreateAuthorizationCode(
 	ctx context.Context,
 	userID uint,
@@ -75,6 +83,14 @@ func (s *OAuthService) CreateAuthorizationCode(
 	codeChallenge string,
 	codeChallengeMethod string,
 ) (string, error) {
+	client, err := s.clientRepo.FindByClientID(ctx, clientID)
+	if err != nil {
+		return "", errors.NewWithCode(errors.ErrOAuthInvalidClient)
+	}
+	if _, ok := client.CheckScope(scope); !ok {
+		return "", errors.NewWithCode(errors.ErrOAuthInvalidScope)
+	}
+
 	// Generate secure random code
 	codeBytes := make([]byte, 32)
 	if _, err := rand.Read(codeBytes); err != nil {
@@ -125,36 +141,69 @@ func (s *OAuthService) ExchangeCode(ctx context.Context, req *dto.TokenRequest) 
 		return nil, errors.NewWithCode(errors.ErrOAuthInvalidClient)
 	}
 
+	// Fetch the full client record — we need IsPublic (for confidential
+	// secret enforcement below), SiteID (to bind the JWT to a site so
+	// image_service can do its cross-site quota check), and Grants (to
+	// confirm this client is even allowed to use the authorization_code
+	// grant).
+	client, err := s.clientRepo.FindByClientID(ctx, req.ClientID)
+	if err != nil {
+		return nil, errors.NewWithCode(errors.ErrOAuthInvalidClient)
+	}
+
+	// Grant-type allow-list. A client created with Grants only
+	// ["refresh_token"] (hypothetical) cannot mint tokens via code
+	// exchange — and vice versa for the refresh path.
+	if !client.IsGrantAllowed("authorization_code") {
+		return nil, errors.NewWithCode(errors.ErrOAuthInvalidGrant)
+	}
+
 	// Validate redirect URI
 	if authCode.RedirectURI != req.RedirectURI {
 		return nil, errors.NewWithCode(errors.ErrOAuthInvalidRedirectURI)
 	}
 
-	// Validate client_secret if provided
+	// Authentication rules — strict, type-driven:
+	//
+	//   confidential client (IsPublic=false): MUST present client_secret
+	//     (PKCE may be additionally used, but does NOT replace secret —
+	//     otherwise an attacker who steals the auth code only needs the
+	//     PKCE verifier from the same client to bypass secret entirely).
+	//
+	//   public client (IsPublic=true): MUST use PKCE (no secret to give).
 	hasSecret := req.ClientSecret != ""
-	if hasSecret {
+	hasPKCE := authCode.CodeChallenge != ""
+
+	if client.IsPublic {
+		if !hasPKCE {
+			return nil, errors.NewWithCode(errors.ErrOAuthPKCERequired)
+		}
+	} else {
+		if !hasSecret {
+			return nil, errors.NewWithCode(errors.ErrOAuthInvalidClientSecret)
+		}
 		if err := s.verifyClientSecret(ctx, req.ClientID, req.ClientSecret); err != nil {
 			return nil, err
 		}
 	}
 
-	// Validate PKCE if code challenge was provided during authorization
-	hasPKCE := authCode.CodeChallenge != ""
+	// Always verify PKCE when a challenge was provided (regardless of
+	// client type) — never accept a verifier-less exchange for a code
+	// that was issued with a challenge.
 	if hasPKCE {
 		if !s.verifyCodeVerifier(req.CodeVerifier, authCode.CodeChallenge, authCode.CodeChallengeMethod) {
 			return nil, errors.NewWithCode(errors.ErrOAuthInvalidCodeVerifier)
 		}
 	}
 
-	// At least one client authentication method is required:
-	// - Confidential clients must provide client_secret
-	// - Public clients must use PKCE
-	if !hasSecret && !hasPKCE {
-		return nil, errors.NewWithCode(errors.ErrOAuthPKCERequired)
-	}
-
-	// Mark code as used
+	// Mark code as used — atomic claim. If a concurrent exchange (same
+	// `code`, two requests) reached this point, only the winner gets
+	// RowsAffected=1. The loser receives ErrCodeAlreadyUsed and must NOT
+	// proceed to issue tokens.
 	if err := s.authCodeRepo.MarkAsUsed(ctx, authCode.ID); err != nil {
+		if stderrors.Is(err, authrepo.ErrCodeAlreadyUsed) {
+			return nil, errors.NewWithCode(errors.ErrOAuthInvalidCode)
+		}
 		return nil, err
 	}
 
@@ -164,7 +213,17 @@ func (s *OAuthService) ExchangeCode(ctx context.Context, req *dto.TokenRequest) 
 		return nil, errors.NewWithCode(errors.ErrAuthUserNotFound)
 	}
 
-	// Generate tokens with scope embedded in access token
+	// SiteID binds this JWT to the client's site. image_service's
+	// middleware reads claims.SiteID to enforce that a kungal user's
+	// token cannot drive uploads against moyu's quota (or vice versa).
+	// Without writing SiteID here the check in image/middleware/auth.go
+	// silently degrades to "always allow".
+	var siteID uint
+	if client.SiteID != nil {
+		siteID = *client.SiteID
+	}
+
+	// Generate tokens with scope + site_id embedded in access token
 	accessToken, err := utils.GenerateAccessToken(
 		s.cfg.JWT.Secret,
 		utils.TokenClaims{
@@ -174,6 +233,7 @@ func (s *OAuthService) ExchangeCode(ctx context.Context, req *dto.TokenRequest) 
 			Name:     user.Name,
 			Roles:    user.RoleNames(),
 			Scope:    authCode.Scope,
+			SiteID:   siteID,
 		},
 		15*time.Minute,
 	)
@@ -193,9 +253,13 @@ func (s *OAuthService) ExchangeCode(ctx context.Context, req *dto.TokenRequest) 
 	// Create session. ClientID binds this refresh_token to the issuing
 	// OAuth client — refresh requests from a different client_id will
 	// be rejected even if they somehow obtained the refresh_token.
+	// Scope is persisted so refresh can re-issue with the same scope
+	// (otherwise the refreshed token would lose its scope claim and
+	// /oauth/userinfo would treat it as "all fields").
 	session := &model.Session{
 		UserID:       user.ID,
 		ClientID:     req.ClientID,
+		Scope:        authCode.Scope,
 		SessionToken: accessToken,
 		RefreshToken: refreshToken,
 		ExpiresAt:    time.Now().Add(7 * 24 * time.Hour),
@@ -273,13 +337,44 @@ func parseScopes(scope string) map[string]bool {
 	return result
 }
 
-// RevokeToken revokes a refresh token
-func (s *OAuthService) RevokeToken(ctx context.Context, refreshToken string) error {
-	session, err := s.sessionRepo.FindByRefreshToken(ctx, refreshToken)
-	if err != nil {
-		return nil // Token not found, consider it revoked
+// RevokeToken revokes a session by either its refresh_token or its
+// access_token. RFC 7009 §2.1 requires servers to accept both — clients
+// that lost their refresh_token must still be able to revoke their
+// active access_token.
+//
+// Lookup strategy:
+//   - hint == "refresh_token": try refresh first, then access as fallback
+//   - hint == "access_token":  try access first, then refresh as fallback
+//   - hint == "" (or other):   try refresh, then access
+//
+// "Token not found" is silently treated as success — never leak token
+// existence (the handler returns 200 regardless).
+func (s *OAuthService) RevokeToken(ctx context.Context, token, hint string) error {
+	lookupBySession := func() (uint, bool) {
+		if hint == "access_token" {
+			if sess, err := s.sessionRepo.FindBySessionToken(ctx, token); err == nil {
+				return sess.ID, true
+			}
+			if sess, err := s.sessionRepo.FindByRefreshToken(ctx, token); err == nil {
+				return sess.ID, true
+			}
+			return 0, false
+		}
+		// Default + explicit "refresh_token" hint: refresh first
+		if sess, err := s.sessionRepo.FindByRefreshToken(ctx, token); err == nil {
+			return sess.ID, true
+		}
+		if sess, err := s.sessionRepo.FindBySessionToken(ctx, token); err == nil {
+			return sess.ID, true
+		}
+		return 0, false
 	}
-	return s.sessionRepo.Delete(ctx, session.ID)
+
+	sessionID, found := lookupBySession()
+	if !found {
+		return nil // not our token (or already revoked) — treat as success
+	}
+	return s.sessionRepo.Delete(ctx, sessionID)
 }
 
 // GetUserIDByUUID resolves a user UUID to a user ID
@@ -302,6 +397,13 @@ func (s *OAuthService) RefreshWithClient(ctx context.Context, refreshToken, clie
 	client, err := s.clientRepo.FindByClientID(ctx, clientID)
 	if err != nil {
 		return nil, errors.NewWithCode(errors.ErrOAuthInvalidClient)
+	}
+
+	// Grant-type allow-list check. A client whose Grants column doesn't
+	// include "refresh_token" cannot use this path — even if it somehow
+	// holds a valid refresh_token.
+	if !client.IsGrantAllowed("refresh_token") {
+		return nil, errors.NewWithCode(errors.ErrOAuthInvalidGrant)
 	}
 
 	if client.IsPublic {
@@ -347,7 +449,15 @@ func (s *OAuthService) RefreshWithClient(ctx context.Context, refreshToken, clie
 		return nil, errors.NewWithCode(errors.ErrAuthUserNotFound)
 	}
 
-	// Generate new tokens
+	// Generate new tokens. Crucially the new access_token carries the
+	// session's original scope AND the client's site_id — without these
+	// a refreshed token would lose its scope claim (privacy regression
+	// in /oauth/userinfo) and lose its site binding (image_service
+	// site-mismatch check would silently allow).
+	var siteID uint
+	if client.SiteID != nil {
+		siteID = *client.SiteID
+	}
 	accessToken, err := utils.GenerateAccessToken(
 		s.cfg.JWT.Secret,
 		utils.TokenClaims{
@@ -356,6 +466,8 @@ func (s *OAuthService) RefreshWithClient(ctx context.Context, refreshToken, clie
 			Email:    user.Email,
 			Name:     user.Name,
 			Roles:    user.RoleNames(),
+			Scope:    session.Scope,
+			SiteID:   siteID,
 		},
 		15*time.Minute,
 	)
@@ -389,13 +501,19 @@ func (s *OAuthService) RefreshWithClient(ctx context.Context, refreshToken, clie
 	}, nil
 }
 
-// verifyCodeVerifier verifies the PKCE code verifier
+// verifyCodeVerifier verifies the PKCE code verifier.
+//
+// Only S256 is accepted. An empty `method` is treated as S256 (the OIDC
+// default and what most well-behaved clients send). Any other value —
+// `plain`, unknown algorithms, garbage — fails closed.
+//
+// The DTO validator on AuthorizeRequest already rejects non-S256 values
+// at the entry; this is defense-in-depth for cases where an auth code
+// was created via a different path (e.g. internal API).
 func (s *OAuthService) verifyCodeVerifier(verifier, challenge, method string) bool {
-	if method == "plain" {
-		return verifier == challenge
+	if method != "" && method != "S256" {
+		return false
 	}
-
-	// S256
 	h := sha256.Sum256([]byte(verifier))
 	computed := base64.RawURLEncoding.EncodeToString(h[:])
 	return computed == challenge

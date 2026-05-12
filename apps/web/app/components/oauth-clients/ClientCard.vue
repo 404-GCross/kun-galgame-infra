@@ -78,6 +78,34 @@ const siteName = computed(() => {
           </KunBadge>
         </div>
       </div>
+
+      <div v-if="client.allowed_scopes?.length">
+        <p class="text-xs text-default-400">允许的 scope</p>
+        <div class="mt-1 flex flex-wrap gap-1">
+          <KunBadge
+            v-for="scope in client.allowed_scopes"
+            :key="scope"
+            :color="scope === 'image:upload' ? 'warning' : 'default'"
+            variant="flat"
+            size="sm"
+          >
+            {{ scope }}
+          </KunBadge>
+        </div>
+      </div>
+
+      <div>
+        <p class="text-xs text-default-400">客户端类型</p>
+        <div class="mt-1">
+          <KunBadge
+            :color="client.is_public ? 'info' : 'secondary'"
+            variant="flat"
+            size="sm"
+          >
+            {{ client.is_public ? '公共 (SPA / native)' : '机密 (confidential)' }}
+          </KunBadge>
+        </div>
+      </div>
     </div>
   </div>
 </template>

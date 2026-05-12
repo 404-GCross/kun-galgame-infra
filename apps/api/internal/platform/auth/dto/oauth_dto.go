@@ -8,8 +8,14 @@ type AuthorizeRequest struct {
 	ResponseType        string `query:"response_type" json:"response_type" validate:"required,oneof=code"`
 	Scope               string `query:"scope" json:"scope"`
 	State               string `query:"state" json:"state" validate:"required"`
-	CodeChallenge       string `query:"code_challenge" json:"code_challenge"`               // PKCE
-	CodeChallengeMethod string `query:"code_challenge_method" json:"code_challenge_method"` // PKCE: "S256" or "plain"
+	CodeChallenge string `query:"code_challenge" json:"code_challenge"` // PKCE
+	// PKCE method. We deliberately accept only S256 (RFC 7636 §4.2 says
+	// `plain` is permitted but discouraged; OAuth 2.1 drafts remove it
+	// entirely). Empty string is also accepted at this validator level
+	// because callers may have omitted the challenge altogether — only
+	// when CodeChallenge is non-empty does the server treat "" as S256
+	// (the OIDC default).
+	CodeChallengeMethod string `query:"code_challenge_method" json:"code_challenge_method" validate:"omitempty,oneof=S256"`
 }
 
 // TokenRequest represents an OAuth token request

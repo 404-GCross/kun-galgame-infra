@@ -166,5 +166,27 @@ func seedInitialData(db *gorm.DB) error {
 		}
 	}
 
+	// Backfill: any existing OAuth client whose grants is exactly
+	// ["authorization_code"] gets refresh_token added too. Without this,
+	// every pre-existing client breaks the moment a refresh attempt hits
+	// the grant-allowlist check we just added (15 min after any login).
+	//
+	// Idempotent: the JSONB equality check skips clients that already
+	// have refresh_token or some other grants config. Doesn't touch
+	// clients with explicit single-grant configurations other than the
+	// historical default.
+	res := db.Exec(`
+		UPDATE oauth_clients
+		SET grants = '["authorization_code","refresh_token"]'::jsonb
+		WHERE grants::jsonb = '["authorization_code"]'::jsonb
+	`)
+	if res.Error != nil {
+		// Don't fail migration — log and continue. Existing deployments
+		// can recover via a manual UPDATE if needed.
+		slog.Warn("failed to backfill oauth_clients.grants", "error", res.Error)
+	} else if res.RowsAffected > 0 {
+		slog.Info("Backfilled oauth_clients.grants with refresh_token", "rows", res.RowsAffected)
+	}
+
 	return nil
 }

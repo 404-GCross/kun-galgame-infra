@@ -178,7 +178,10 @@ func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB, se
 	galgameAuth.Delete("/:gid/contributors/:uid", contributorH.Delete)
 
 	// ── Admin ──
-	admin := api.Group("/admin", jwtAuth)
+	// Admin endpoints require both JWT validity AND admin/moderator role —
+	// without the role check anyone with a valid OAuth access_token could
+	// modify galgame status.
+	admin := api.Group("/admin", jwtAuth, middleware.RequireRole("admin", "moderator"))
 	admin.Get("/stats", adminH.Stats)
 	admin.Get("/galgame", adminH.ListGalgames)
 	admin.Get("/galgame/:gid", adminH.GetGalgame)
