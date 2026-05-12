@@ -44,7 +44,11 @@ export const useOAuthLogin = () => {
     secure: !import.meta.dev
   })
   const refreshToken = useCookie('wiki_refresh_token', {
-    maxAge: 60 * 60 * 24 * 7, // 7d, matches server-side JWT exp
+    // Match the OAuth server's per-client refresh_token TTL.
+    // 90d is the server default; admins can shorten per-client.
+    // Cookie expiring before the server-side token would silently log
+    // users out earlier than intended.
+    maxAge: 60 * 60 * 24 * 90,
     sameSite: 'lax',
     secure: !import.meta.dev
   })

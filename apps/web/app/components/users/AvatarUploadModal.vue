@@ -91,39 +91,43 @@ const submit = async () => {
 </script>
 
 <template>
-  <KunModal :model-value="open" @update:model-value="close">
-    <template #header>
-      上传头像 — {{ user?.name }}
-    </template>
+  <KunModal :modal-value="open" @update:modal-value="close">
+    <!--
+      KunModal 只有一个默认 slot — `#header` / `#footer` 不存在。
+      所有内容（标题、表单、按钮）都按从上到下的顺序放进这一个 slot。
+    -->
+    <div class="w-[28rem] space-y-4 p-2">
+      <h2 class="text-foreground text-lg font-semibold">
+        上传头像 — {{ user?.name }}
+      </h2>
 
-    <div class="space-y-3">
-      <p class="text-default-500 text-sm">
-        会推送到 image_service，自动生成 <code>_256</code> / <code>_100</code>
-        变体并写入 <code>avatar_image_hash</code>。原 <code>avatar</code> URL
-        保留作回退（老用户头像不会被覆盖）。
-      </p>
+      <div class="space-y-3">
+        <p class="text-default-500 text-sm">
+          会推送到 image_service，自动生成 <code>_256</code> / <code>_100</code>
+          变体并写入 <code>avatar_image_hash</code>。原 <code>avatar</code> URL
+          保留作回退（老用户头像不会被覆盖）。
+        </p>
 
-      <input
-        type="file"
-        :accept="accept"
-        class="text-default-500 file:bg-content2 file:text-foreground hover:file:bg-content3 block w-full text-sm file:mr-3 file:rounded file:border-0 file:px-3 file:py-1.5 file:text-sm file:font-medium"
-        @change="onPick"
-      />
+        <input
+          type="file"
+          :accept="accept"
+          class="text-default-500 file:bg-content2 file:text-foreground hover:file:bg-content3 block w-full text-sm file:mr-3 file:rounded file:border-0 file:px-3 file:py-1.5 file:text-sm file:font-medium"
+          @change="onPick"
+        />
 
-      <div
-        v-if="previewUrl"
-        class="bg-content2 flex justify-center overflow-hidden rounded p-2"
-      >
-        <img :src="previewUrl" class="max-h-64 object-contain" alt="预览" />
+        <div
+          v-if="previewUrl"
+          class="bg-content2 flex justify-center overflow-hidden rounded p-2"
+        >
+          <img :src="previewUrl" class="max-h-64 object-contain" alt="预览" />
+        </div>
+
+        <div v-if="errorMsg" class="text-danger-600 text-sm">
+          {{ errorMsg }}
+        </div>
       </div>
 
-      <div v-if="errorMsg" class="text-danger-600 text-sm">
-        {{ errorMsg }}
-      </div>
-    </div>
-
-    <template #footer>
-      <div class="flex justify-end gap-2">
+      <div class="flex justify-end gap-2 pt-2">
         <KunButton variant="flat" :disabled="uploading" @click="close">
           取消
         </KunButton>
@@ -140,6 +144,6 @@ const submit = async () => {
           上传
         </KunButton>
       </div>
-    </template>
+    </div>
   </KunModal>
 </template>

@@ -106,6 +106,13 @@ const siteName = computed(() => {
           </KunBadge>
         </div>
       </div>
+
+      <div v-if="client.refresh_token_ttl_seconds">
+        <p class="text-xs text-default-400">refresh_token 有效期</p>
+        <p class="mt-1 text-sm text-foreground">
+          {{ Math.round(client.refresh_token_ttl_seconds / 86400) }} 天
+        </p>
+      </div>
     </div>
   </div>
 </template>

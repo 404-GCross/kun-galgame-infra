@@ -241,10 +241,14 @@ func (s *OAuthService) ExchangeCode(ctx context.Context, req *dto.TokenRequest) 
 		return nil, err
 	}
 
+	// refresh_token lifetime is per-client (defaults to 90 days). Both
+	// the JWT exp claim and the session expires_at use the same TTL so
+	// they expire together.
+	refreshTokenTTL := client.RefreshTokenTTL()
 	refreshToken, err := utils.GenerateRefreshToken(
 		s.cfg.JWT.Secret,
 		user.UUID,
-		7*24*time.Hour,
+		refreshTokenTTL,
 	)
 	if err != nil {
 		return nil, err
@@ -262,7 +266,7 @@ func (s *OAuthService) ExchangeCode(ctx context.Context, req *dto.TokenRequest) 
 		Scope:        authCode.Scope,
 		SessionToken: accessToken,
 		RefreshToken: refreshToken,
-		ExpiresAt:    time.Now().Add(7 * 24 * time.Hour),
+		ExpiresAt:    time.Now().Add(refreshTokenTTL),
 	}
 
 	if err := s.sessionRepo.Create(ctx, session); err != nil {
@@ -475,10 +479,13 @@ func (s *OAuthService) RefreshWithClient(ctx context.Context, refreshToken, clie
 		return nil, err
 	}
 
+	// refresh_token rotation uses the client's current TTL — admins
+	// shortening the TTL effectively rolls out via natural refresh.
+	refreshTokenTTL := client.RefreshTokenTTL()
 	newRefreshToken, err := utils.GenerateRefreshToken(
 		s.cfg.JWT.Secret,
 		user.UUID,
-		7*24*time.Hour,
+		refreshTokenTTL,
 	)
 	if err != nil {
 		return nil, err
@@ -487,7 +494,7 @@ func (s *OAuthService) RefreshWithClient(ctx context.Context, refreshToken, clie
 	// Update session with new tokens (rotation)
 	session.SessionToken = accessToken
 	session.RefreshToken = newRefreshToken
-	session.ExpiresAt = time.Now().Add(7 * 24 * time.Hour)
+	session.ExpiresAt = time.Now().Add(refreshTokenTTL)
 
 	if err := s.sessionRepo.Update(ctx, session); err != nil {
 		return nil, err

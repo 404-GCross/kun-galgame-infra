@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ALL_GRANTS, KNOWN_SCOPES } from '~/shared/types/oauth-client'
+import { ALL_GRANTS, KNOWN_SCOPES, DEFAULT_REFRESH_TOKEN_TTL_SECONDS } from '~~/shared/types/oauth-client'
 
 const show = defineModel<boolean>({ required: true })
 const props = defineProps<{ sites: Site[] }>()
@@ -21,6 +21,9 @@ const allowedScopes = ref<string[]>(['openid', 'profile', 'email'])
 // Public client (SPA / native): no client_secret on refresh, PKCE required
 // on the code flow. Confidential clients are the default (false).
 const isPublic = ref(false)
+// Refresh token lifetime — exposed in the UI as days for usability,
+// converted to seconds at submit time. Default 90d matches the server.
+const refreshTokenTtlDays = ref(DEFAULT_REFRESH_TOKEN_TTL_SECONDS / 86400)
 const error = ref('')
 const isLoading = ref(false)
 
@@ -71,6 +74,11 @@ const handleSubmit = async () => {
     return
   }
 
+  if (refreshTokenTtlDays.value < 1) {
+    error.value = 'refresh_token 有效期至少 1 天'
+    return
+  }
+
   isLoading.value = true
   try {
     const response = await api.post<OAuthClientCreated>('/oauth/clients', {
@@ -80,6 +88,7 @@ const handleSubmit = async () => {
       grants: grants.value,
       allowed_scopes: allowedScopes.value,
       is_public: isPublic.value,
+      refresh_token_ttl_seconds: refreshTokenTtlDays.value * 86400,
     })
     if (response.code === 0) {
       emit('created', response.data)
@@ -90,6 +99,7 @@ const handleSubmit = async () => {
       grants.value = ['authorization_code', 'refresh_token']
       allowedScopes.value = ['openid', 'profile', 'email']
       isPublic.value = false
+      refreshTokenTtlDays.value = DEFAULT_REFRESH_TOKEN_TTL_SECONDS / 86400
     } else {
       error.value = response.message || '创建失败'
     }
@@ -193,6 +203,23 @@ const handleSubmit = async () => {
             {{ s }}
           </label>
         </div>
+      </div>
+
+      <div>
+        <label class="mb-1 block text-sm font-medium text-default-500">
+          refresh_token 有效期（天）
+          <span class="text-xs text-default-400">— 默认 90 天；用户登录后无感续期的最长窗口</span>
+        </label>
+        <input
+          v-model.number="refreshTokenTtlDays"
+          type="number"
+          min="1"
+          max="3650"
+          class="w-full rounded-lg border border-default-200 bg-content1 px-3 py-2 text-sm text-foreground outline-none focus:border-primary"
+        />
+        <p class="mt-1 text-xs text-default-400">
+          常见取值：1（高敏感后台）/ 7 / 30 / <strong>90（默认）</strong> / 365（长寿后台服务）
+        </p>
       </div>
 
       <div>

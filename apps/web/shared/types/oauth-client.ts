@@ -11,8 +11,15 @@ export interface OAuthClient {
   // RFC 6749 §2.1 public client (SPA / native). Public clients use
   // PKCE on the auth-code flow and skip client_secret on refresh.
   is_public?: boolean
+  // Refresh token / session lifetime in seconds. Server default 90d.
+  // Shorter for sensitive clients (e.g. 1d), longer for background services.
+  refresh_token_ttl_seconds?: number
   created_at: string
 }
+
+// Default refresh_token TTL when creating a new client (90 days in seconds).
+// Matches model.OAuthClient's GORM default.
+export const DEFAULT_REFRESH_TOKEN_TTL_SECONDS = 60 * 60 * 24 * 90
 
 export interface OAuthClientCreated extends OAuthClient {
   secret: string

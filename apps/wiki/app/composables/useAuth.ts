@@ -27,7 +27,9 @@ export const useAuth = () => {
     secure: !import.meta.dev
   })
   const refreshToken = useCookie('wiki_refresh_token', {
-    maxAge: 60 * 60 * 24 * 7,
+    // 90d — matches the OAuth server's default refresh_token TTL.
+    // Keep in sync with useOAuthLogin.ts.
+    maxAge: 60 * 60 * 24 * 90,
     sameSite: 'lax',
     secure: !import.meta.dev
   })

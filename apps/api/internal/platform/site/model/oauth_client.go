@@ -29,6 +29,22 @@ type OAuthClient struct {
 	// secret on every grant. Flip to true for SPA clients like wiki.
 	IsPublic bool `gorm:"not null;default:false" json:"is_public"`
 
+	// RefreshTokenTTLSeconds — how long this client's refresh_token (and
+	// its associated session row) remains valid. Used as the refresh_token
+	// JWT `exp` claim AND as session.ExpiresAt at issuance time.
+	//
+	// Default: 7,776,000 seconds = 90 days. Reasonable balance for typical
+	// browser sessions — long enough that users don't get bumped while
+	// active, short enough that abandoned sessions naturally expire.
+	//
+	// Per-client override lets sensitive clients (e.g. admin tooling)
+	// run with a much shorter window (e.g. 1 day), and long-lived
+	// background services run longer (e.g. 1 year).
+	//
+	// 0 or negative is treated as "use the model default" via
+	// RefreshTokenTTL() so old rows without an explicit value still work.
+	RefreshTokenTTLSeconds int `gorm:"not null;default:7776000" json:"refresh_token_ttl_seconds"`
+
 	// AllowedScopes is the explicit allow-list of OAuth scopes this
 	// client may request at /oauth/authorize. Stored as a JSON string
 	// array (e.g. `["openid","profile","email","image:upload"]`).
@@ -156,4 +172,21 @@ func (c *OAuthClient) AllowedGrants() []string {
 // safe default for newly-introduced clients with no UI knowledge.)
 func (c *OAuthClient) IsGrantAllowed(grantType string) bool {
 	return slices.Contains(c.AllowedGrants(), grantType)
+}
+
+// defaultRefreshTokenTTL is the fallback when a client row has 0 or
+// negative RefreshTokenTTLSeconds (e.g. pre-migration rows where the
+// column doesn't exist yet). 90 days — matches the default written to
+// new rows by the DB schema.
+const defaultRefreshTokenTTL = 90 * 24 * time.Hour
+
+// RefreshTokenTTL returns the refresh_token lifetime for this client
+// as a time.Duration. Used at issuance and refresh time to set both
+// the refresh_token JWT exp claim and the corresponding session row's
+// expires_at column.
+func (c *OAuthClient) RefreshTokenTTL() time.Duration {
+	if c.RefreshTokenTTLSeconds <= 0 {
+		return defaultRefreshTokenTTL
+	}
+	return time.Duration(c.RefreshTokenTTLSeconds) * time.Second
 }

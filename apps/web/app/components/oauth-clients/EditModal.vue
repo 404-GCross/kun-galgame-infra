@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ALL_GRANTS, KNOWN_SCOPES } from '~/shared/types/oauth-client'
+import { ALL_GRANTS, KNOWN_SCOPES, DEFAULT_REFRESH_TOKEN_TTL_SECONDS } from '~~/shared/types/oauth-client'
 
 const props = defineProps<{ client: OAuthClient }>()
 const emit = defineEmits<{ close: []; updated: [] }>()
@@ -11,6 +11,11 @@ const name = ref(props.client.name)
 const redirectUris = ref([...props.client.redirect_uris])
 const grants = ref<string[]>([...(props.client.grants ?? [])])
 const allowedScopes = ref<string[]>([...(props.client.allowed_scopes ?? [])])
+const refreshTokenTtlDays = ref(
+  Math.round(
+    (props.client.refresh_token_ttl_seconds ?? DEFAULT_REFRESH_TOKEN_TTL_SECONDS) / 86400
+  )
+)
 // is_public is set at create time; toggling it post-hoc is dangerous
 // (changes the auth model). We surface it read-only here — if someone
 // really needs to flip it, they should recreate the client.
@@ -69,6 +74,11 @@ const handleSubmit = async () => {
     return
   }
 
+  if (refreshTokenTtlDays.value < 1) {
+    error.value = 'refresh_token 有效期至少 1 天'
+    return
+  }
+
   isLoading.value = true
   try {
     const response = await api.put(`/oauth/clients/${props.client.id}`, {
@@ -76,6 +86,7 @@ const handleSubmit = async () => {
       redirect_uris: uris,
       grants: grants.value,
       allowed_scopes: allowedScopes.value,
+      refresh_token_ttl_seconds: refreshTokenTtlDays.value * 86400,
     })
     if (response.code === 0) {
       emit('updated')
@@ -178,6 +189,20 @@ const handleSubmit = async () => {
             {{ s }}
           </label>
         </div>
+      </div>
+
+      <div>
+        <label class="mb-1 block text-sm font-medium text-default-500">
+          refresh_token 有效期（天）
+          <span class="text-xs text-default-400">— 改动仅影响后续新签发的 token；现有 session 仍按旧 TTL</span>
+        </label>
+        <input
+          v-model.number="refreshTokenTtlDays"
+          type="number"
+          min="1"
+          max="3650"
+          class="w-full rounded-lg border border-default-200 bg-content1 px-3 py-2 text-sm text-foreground outline-none focus:border-primary"
+        />
       </div>
 
       <div v-if="error" class="rounded-lg bg-danger-50 p-3 text-sm text-danger">

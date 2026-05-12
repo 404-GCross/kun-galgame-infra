@@ -222,7 +222,16 @@ func (h *SiteHandler) CreateClient(c fiber.Ctx) error {
 		grants = []string{"authorization_code", "refresh_token"}
 	}
 
-	client, secret, err := h.siteService.CreateOAuthClient(c.Context(), req.SiteID, req.Name, req.RedirectURIs, grants, req.AllowedScopes)
+	client, secret, err := h.siteService.CreateOAuthClient(
+		c.Context(),
+		req.SiteID,
+		req.Name,
+		req.RedirectURIs,
+		grants,
+		req.AllowedScopes,
+		req.IsPublic,
+		req.RefreshTokenTTLSeconds,
+	)
 	if err != nil {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
@@ -249,7 +258,15 @@ func (h *SiteHandler) UpdateClient(c fiber.Ctx) error {
 		return response.BadRequestMsg(c, errors.ErrValidationFailed, err.Error())
 	}
 
-	client, err := h.siteService.UpdateOAuthClient(c.Context(), clientID, req.Name, req.RedirectURIs, req.Grants, req.AllowedScopes)
+	client, err := h.siteService.UpdateOAuthClient(
+		c.Context(),
+		clientID,
+		req.Name,
+		req.RedirectURIs,
+		req.Grants,
+		req.AllowedScopes,
+		req.RefreshTokenTTLSeconds,
+	)
 	if err != nil {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
@@ -285,13 +302,14 @@ func toOAuthClientResponse(cl *siteModel.OAuthClient) dto.OAuthClientResponse {
 	}
 
 	return dto.OAuthClientResponse{
-		ID:            cl.ID,
-		SiteID:        cl.SiteID,
-		Name:          cl.Name,
-		RedirectURIs:  redirectURIs,
-		Grants:        grants,
-		AllowedScopes: allowedScopes,
-		IsPublic:      cl.IsPublic,
-		CreatedAt:     cl.CreatedAt.Format("2006-01-02T15:04:05Z"),
+		ID:                     cl.ID,
+		SiteID:                 cl.SiteID,
+		Name:                   cl.Name,
+		RedirectURIs:           redirectURIs,
+		Grants:                 grants,
+		AllowedScopes:          allowedScopes,
+		IsPublic:               cl.IsPublic,
+		RefreshTokenTTLSeconds: cl.RefreshTokenTTLSeconds,
+		CreatedAt:              cl.CreatedAt.Format("2006-01-02T15:04:05Z"),
 	}
 }

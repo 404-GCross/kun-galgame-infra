@@ -71,9 +71,11 @@ func (s *SiteService) GetOAuthClientsBySiteID(ctx context.Context, siteID uint) 
 }
 
 // CreateOAuthClient creates a new OAuth client with generated ID and secret.
-// `allowedScopes` is the scope allow-list (nil → not stored; empty
-// behaviour falls back to the OIDC core set at request time).
-func (s *SiteService) CreateOAuthClient(ctx context.Context, siteID uint, name string, redirectURIs, grants, allowedScopes []string) (*model.OAuthClient, string, error) {
+//
+//   - allowedScopes: scope allow-list (nil → not stored, falls back to OIDC core at runtime).
+//   - isPublic:      public client flag (SPA / PKCE-only, no client_secret on refresh).
+//   - refreshTokenTTLSeconds: per-client refresh_token lifetime in seconds; nil → DB default (90d).
+func (s *SiteService) CreateOAuthClient(ctx context.Context, siteID uint, name string, redirectURIs, grants, allowedScopes []string, isPublic bool, refreshTokenTTLSeconds *int) (*model.OAuthClient, string, error) {
 	// Generate client ID (16 bytes = 32 hex chars)
 	clientID, err := generateRandomHex(16)
 	if err != nil {
@@ -96,10 +98,14 @@ func (s *SiteService) CreateOAuthClient(ctx context.Context, siteID uint, name s
 		Secret:       secret,
 		RedirectURIs: urisJSON,
 		Grants:       grantsJSON,
+		IsPublic:     isPublic,
 	}
 	if allowedScopes != nil {
 		scopesJSON, _ := json.Marshal(allowedScopes)
 		client.AllowedScopes = scopesJSON
+	}
+	if refreshTokenTTLSeconds != nil {
+		client.RefreshTokenTTLSeconds = *refreshTokenTTLSeconds
 	}
 
 	if err := s.oauthClientRepo.Create(ctx, client); err != nil {
@@ -110,10 +116,10 @@ func (s *SiteService) CreateOAuthClient(ctx context.Context, siteID uint, name s
 }
 
 // UpdateOAuthClient updates an OAuth client's name, redirect URIs,
-// grants, and/or allowed_scopes. Nil slice = no change, non-nil empty
-// slice = set to empty (and AllowedScopes empty triggers the OIDC core
-// default at runtime).
-func (s *SiteService) UpdateOAuthClient(ctx context.Context, clientID string, name *string, redirectURIs, grants, allowedScopes []string) (*model.OAuthClient, error) {
+// grants, allowed_scopes, and/or refresh_token_ttl. Nil pointer/slice
+// = no change. is_public is intentionally NOT updatable (changing it
+// retroactively breaks the auth-model invariants for existing tokens).
+func (s *SiteService) UpdateOAuthClient(ctx context.Context, clientID string, name *string, redirectURIs, grants, allowedScopes []string, refreshTokenTTLSeconds *int) (*model.OAuthClient, error) {
 	client, err := s.oauthClientRepo.FindByClientID(ctx, clientID)
 	if err != nil {
 		return nil, err
@@ -133,6 +139,9 @@ func (s *SiteService) UpdateOAuthClient(ctx context.Context, clientID string, na
 	if allowedScopes != nil {
 		scopesJSON, _ := json.Marshal(allowedScopes)
 		client.AllowedScopes = scopesJSON
+	}
+	if refreshTokenTTLSeconds != nil {
+		client.RefreshTokenTTLSeconds = *refreshTokenTTLSeconds
 	}
 
 	if err := s.oauthClientRepo.Update(ctx, client); err != nil {
