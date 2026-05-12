@@ -8,20 +8,39 @@
 
 ### 1.1 注册 OAuth 客户端
 
-在 KUN OAuth 管理后台创建 OAuth 客户端，获得：
+在 KUN OAuth 管理后台创建 OAuth 客户端，必须正确配置以下字段（**任何一项错配都会导致 refresh 后用户被踢回登录页**）：
 
-- `client_id` — 客户端标识符
-- `client_secret` — 客户端密钥（保密，仅用于服务端）
-- 配置的 `redirect_uris` — 允许的回调地址列表
+| 字段 | 说明 | 错配的后果 |
+|------|------|----------|
+| `client_id` | 系统生成的 32 字符 hex 标识符 | — |
+| `client_secret` | 系统生成的 64 字符 hex 密钥；**只在创建时显示一次** | 见 §1.2 决策表 |
+| `redirect_uris` | 允许的回调地址列表，必须**完全匹配**实际回调 URL | `invalid_redirect_uri`（15002）登录失败 |
+| `grants` | 允许的 grant type 列表；**必须同时勾选 `authorization_code` 和 `refresh_token`** | 没勾 refresh_token → 15 分钟后 refresh 失败 → 用户被踢 |
+| `is_public` | 是否公共客户端；SSR 后端 → false，浏览器 SPA → true | 见 §1.2 决策表 |
+| `allowed_scopes` | scope 白名单；空值默认允许 OIDC 三件套（`openid profile email`） | 请求未授权 scope → 15006 |
+| `refresh_token_ttl_seconds` | refresh_token 有效期；默认 90 天 | TTL 过短 → 用户被周期性踢出 |
 
-### 1.2 OAuth Server 地址
+### 1.2 confidential 还是 public？
+
+**这个决策直接影响 token 流程，错了 refresh 直接挂。**
+
+| 你的部署形态 | client 类型 | client_secret 用法 |
+|------|------|------|
+| Nuxt SSR / Go 后端代理 token（kungal、moyu 走这套）| **confidential（`is_public=false`）**| 服务端持有；每次 `/oauth/token` 必须带 |
+| 纯浏览器 SPA / 手机 App（galgame wiki 的 admin UI）| **public（`is_public=true`）**| **没有 secret**；改用 PKCE |
+
+**判别一句话**：浏览器看得到 token 流转 → public；只在服务端流转 → confidential。kungal / moyu 是 SSR 后端代理用户 token，**应该是 confidential**。
+
+### 1.3 OAuth Server 地址
+
+### 1.3 OAuth Server 地址
 
 | 环境 | Base URL |
 |------|----------|
 | 开发 | `http://127.0.0.1:9277/api/v1` |
 | 生产 | `https://oauth.kungal.com/api/v1` |
 
-### 1.3 端点列表
+### 1.4 端点列表
 
 | 端点 | 方法 | 认证 | 用途 |
 |------|------|------|------|
@@ -261,6 +280,50 @@ const response = await $fetch('https://oauth.kungal.com/api/v1/oauth/token', {
 
 **注意**：每次刷新都会返回新的 refresh_token，旧的会立即失效（token rotation）。
 
+### 4.1 refresh 必满足的 5 个条件
+
+OAuth 服务端 2026 升级之后对 refresh 加了多道校验。**任何一条不通过都会拒签**，前端表现是用户登录后过一会儿（access_token 15 分钟过期触发 refresh 时）被踢回登录页。
+
+| 条件 | 不通过返回 | 排查 |
+|------|----------|------|
+| 1. client 的 `grants` 必须包含 `refresh_token` | 400 / 15005 `ErrOAuthInvalidGrant` | 管理后台 client 编辑页，"授权类型"两个都勾上 |
+| 2. confidential client（`is_public=false`）必须传 `client_secret` | 400 / 15008 `ErrOAuthInvalidClientSecret` | 后端代码 body 里 `client_secret` 字段必填 |
+| 3. public client（`is_public=true`）**不能** 传 `client_secret`（不报错但 secret 必须为空） | — | SPA 不要泄漏 secret |
+| 4. 请求里的 `client_id` 必须等于**当初签发 refresh_token 时的同一个 client_id** | 401 / 10002 `ErrAuthInvalidToken` | 检查 `client_id` env 在多环境间没乱用 |
+| 5. refresh_token 没过期（默认 90 天，按 client 配置） | 401 / 10003 `ErrAuthTokenExpired` | 用户重新登录 |
+
+外加一种情况：
+
+- **存量 session（升级前创建的）`client_id` 列为空**，跟条件 4 永远比不上。**这批 session 一次性必须重新登录**，登录后新 session 带正确 client_id，refresh 才正常。可以用一条 SQL 把存量清掉提前触发：
+  ```sql
+  DELETE FROM sessions WHERE client_id = '';
+  ```
+
+### 4.2 调试 refresh 401 的最小 SQL
+
+```sql
+-- 查你的 client 配置（替换 your_client_id）
+SELECT id, name, is_public, grants, allowed_scopes, refresh_token_ttl_seconds
+FROM oauth_clients
+WHERE id = 'your_client_id';
+```
+
+期望值：
+- `is_public`：confidential 后端 `false`、SPA `true`
+- `grants` 包含 `refresh_token`
+- `allowed_scopes` 含 `openid profile email`（按需）
+- `refresh_token_ttl_seconds` ≥ 86400（1 天，太短会被周期性踢）
+
+如果 `grants = '["authorization_code"]'` 是常见的升级遗留 bug，一条 SQL 修：
+
+```sql
+UPDATE oauth_clients
+SET grants = '["authorization_code","refresh_token"]'::jsonb
+WHERE id = 'your_client_id';
+```
+
+或者重跑 OAuth 端的 `go run ./cmd/migrate` —— 它包含自动 backfill。
+
 ---
 
 ## 5. 令牌吊销（登出）
@@ -318,15 +381,20 @@ await $fetch('https://oauth.kungal.com/api/v1/oauth/revoke', {
 
 ### OAuth 相关错误码
 
-| code | 含义 | 处理方式 |
-|------|------|---------|
-| 15001 | 无效的客户端 | 检查 client_id 是否正确 |
-| 15002 | 无效的回调地址 | 检查 redirect_uri 是否已注册 |
-| 15003 | 无效的授权码 | 授权码已过期或已使用，重新走授权流程 |
-| 15004 | 无效的代码验证器 | PKCE code_verifier 不匹配 |
-| 15005 | 无效的授权类型 | grant_type 只支持 authorization_code 和 refresh_token |
-| 10002 | 无效的令牌 | refresh_token 无效 |
-| 10003 | 令牌已过期 | refresh_token 过期，需要用户重新登录 |
+| code | HTTP | 含义 | 触发场景 / 处理方式 |
+|------|------|------|-------------------|
+| 10001 | 401 | 未授权 | 缺 Bearer Token；前端跳登录 |
+| 10002 | 401 | 无效的令牌 | refresh_token 不存在、或与 session.client_id 不匹配（详见 §4.1 条件 4）；前端走完整登录 |
+| 10003 | 401 | 令牌已过期 | refresh_token 已过期；前端走完整登录 |
+| **10014** | **403** | **账号已封禁** | **用户被 admin 封号；前端应跳错误页而非登录页（再登也无用）** |
+| 15001 | 400 | 无效的客户端 | client_id 不存在 |
+| 15002 | 400 | 无效的回调地址 | redirect_uri 未注册 |
+| 15003 | 400 | 无效的授权码 | code 已过期 / 已用 / 并发兑换时输的那次；让用户重新登录 |
+| 15004 | 400 | 无效的代码验证器 | PKCE code_verifier 不匹配 |
+| 15005 | 400 | 无效的授权类型 | client 的 `grants` 不允许这个 grant_type（**最常见：refresh_token 没勾**），见 §4.1 条件 1 |
+| 15006 | 400 | 无效的 scope | 请求的 scope 不在 client 的 `allowed_scopes` 内 |
+| 15008 | 400 | 无效的 client secret | confidential client 漏传或填错 secret，见 §4.1 条件 2 |
+| 15009 | 400 | 需要 PKCE | public client 没传 code_verifier |
 
 ---
 
