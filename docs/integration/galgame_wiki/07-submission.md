@@ -198,18 +198,34 @@ admin status=1 (ban)。
     "items": [
       {
         "id": 10000,
-        "status": 3,
+        "status": 4,
         "name_zh_cn": "标题",
-        "banner_image_hash": "...",
+        "name_ja_jp": "...",
+        "name_en_us": "...",
+        "name_zh_tw": "...",
+        "banner": "",
+        "banner_image_hash": "abcd...",
+        "content_limit": "sfw",
         "vndb_id": "v17",
-        "created": "...",
-        "updated": "..."
+        "created": "2026-05-12T07:00:00Z",
+        "updated": "2026-05-12T08:30:00Z",
+        "decline_reason": "VNDB ID 错误，请核对后重新提交"
+      },
+      {
+        "id": 10001,
+        "status": 3,
+        "name_zh_cn": "另一个",
+        "vndb_id": "",
+        "created": "2026-05-12T09:00:00Z",
+        "updated": "2026-05-12T09:00:00Z"
       }
     ],
-    "total": 1
+    "total": 2
   }
 }
 ```
+
+`decline_reason` 仅 status=4 时出现，从该 galgame 最近一条 admin `declined` 消息的 payload 提取。status=3 / 0 / 其他时该字段省略（JSON `omitempty`）。让"我的提交"页可以一次拉齐"被拒了+原因"，不需要再调 `/messages/mine` 关联。
 
 ---
 

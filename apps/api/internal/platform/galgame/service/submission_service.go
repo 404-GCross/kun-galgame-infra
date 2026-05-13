@@ -379,7 +379,11 @@ func (s *SubmissionService) DeleteDraft(ctx context.Context, uid, gid int) error
 
 // ListMine returns the user's own galgame submissions filtered by statuses.
 // Default statuses (when input empty): [3, 4].
-func (s *SubmissionService) ListMine(ctx context.Context, uid int, req *dto.ListMineRequest) ([]model.Galgame, int64, error) {
+//
+// For status=4 (declined) entries, the most recent decline reason is
+// attached to each item so the UI can render "Your submission was
+// rejected because: ..." without an extra trip to /messages/mine.
+func (s *SubmissionService) ListMine(ctx context.Context, uid int, req *dto.ListMineRequest) ([]dto.MineGalgame, int64, error) {
 	statuses := parseStatusCSV(req.Status, []int{
 		model.GalgameStatusPending,
 		model.GalgameStatusDeclined,
@@ -392,7 +396,68 @@ func (s *SubmissionService) ListMine(ctx context.Context, uid int, req *dto.List
 	if limit < 1 {
 		limit = 20
 	}
-	return s.galgameRepo.ListMine(ctx, uid, statuses, page, limit)
+
+	items, total, err := s.galgameRepo.ListMine(ctx, uid, statuses, page, limit)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// Collect ids of status=4 entries so we only fetch decline reasons for
+	// rows that need them. status=3 rows skip the lookup entirely.
+	declinedIDs := make([]int, 0, len(items))
+	for _, g := range items {
+		if g.Status == model.GalgameStatusDeclined {
+			declinedIDs = append(declinedIDs, g.ID)
+		}
+	}
+
+	reasons := make(map[int]string, len(declinedIDs))
+	if len(declinedIDs) > 0 {
+		latest, err := s.messageRepo.LatestDeclinedByGalgameIDs(ctx, uid, declinedIDs)
+		if err == nil {
+			for gid, msg := range latest {
+				reasons[gid] = extractDeclineReason(msg.Payload)
+			}
+		}
+		// On error, fall through with empty reasons — better to show the
+		// list without reasons than 500 the whole page.
+	}
+
+	out := make([]dto.MineGalgame, len(items))
+	for i, g := range items {
+		out[i] = dto.MineGalgame{
+			ID:              g.ID,
+			VNDBID:          g.VNDBID,
+			NameEnUS:        g.NameEnUS,
+			NameJaJP:        g.NameJaJP,
+			NameZhCN:        g.NameZhCN,
+			NameZhTW:        g.NameZhTW,
+			Banner:          g.Banner,
+			BannerImageHash: g.BannerImageHash,
+			ContentLimit:    g.ContentLimit,
+			Status:          g.Status,
+			Created:         g.Created.Format("2006-01-02T15:04:05Z"),
+			Updated:         g.Updated.Format("2006-01-02T15:04:05Z"),
+			DeclineReason:   reasons[g.ID],
+		}
+	}
+	return out, total, nil
+}
+
+// extractDeclineReason pulls payload.reason out of a 'declined' message's
+// JSONB payload. Returns "" on parse error or missing field — UI handles
+// empty gracefully.
+func extractDeclineReason(payload []byte) string {
+	if len(payload) == 0 {
+		return ""
+	}
+	var p struct {
+		Reason string `json:"reason"`
+	}
+	if err := json.Unmarshal(payload, &p); err != nil {
+		return ""
+	}
+	return p.Reason
 }
 
 // parseStatusCSV parses "0,1,2,3,4" into a deduped int slice. Falls back to

@@ -50,10 +50,19 @@ func TestMain(m *testing.M) {
 		&model.GalgamePR{},
 		&model.GalgameRevision{},
 		&model.GalgameContributor{},
+		&model.GalgameMessage{},
 	); err != nil {
 		fmt.Fprintf(os.Stderr, "SKIP: migration failed: %v\n", err)
 		os.Exit(0)
 	}
+
+	// Replicate the partial unique index that migrate-galgame creates in
+	// production. Without it, multiple status=3 submissions with vndb_id=""
+	// would collide if a plain unique index existed on the column.
+	_ = db.Exec(`DROP INDEX IF EXISTS idx_galgame_vndb_id`).Error
+	_ = db.Exec(`DROP INDEX IF EXISTS uni_galgame_vndb_id`).Error
+	_ = db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS uq_galgame_vndb_id_nonempty
+		ON galgame(vndb_id) WHERE vndb_id <> ''`).Error
 
 	testDB = db
 
@@ -72,6 +81,7 @@ func TestMain(m *testing.M) {
 func cleanTables(t *testing.T) {
 	t.Helper()
 	tables := []string{
+		"galgame_message",
 		"galgame_revision", "galgame_pr", "galgame_contributor",
 		"galgame_link", "galgame_alias",
 		"galgame_tag_relation", "galgame_official_relation", "galgame_engine_relation",
@@ -129,6 +139,9 @@ var testEngineRepo *repository.EngineRepository
 var testSeriesRepo *repository.SeriesRepository
 var testGalgameRepo *repository.GalgameRepository
 var testAdminRepo *repository.AdminRepository
+var testMessageRepo *repository.MessageRepository
+var testSubmissionSvc *SubmissionService
+var testAdminSvc *AdminService
 
 func init() {
 	// These will be set after TestMain runs; accessed via lazy init in tests
@@ -145,5 +158,8 @@ func getRepos() {
 		testSeriesRepo = repository.NewSeriesRepository(testDB)
 		testGalgameRepo = repository.NewGalgameRepository(testDB)
 		testAdminRepo = repository.NewAdminRepository(testDB)
+		testMessageRepo = repository.NewMessageRepository(testDB)
+		testSubmissionSvc = NewSubmissionService(testGalgameRepo, testMessageRepo)
+		testAdminSvc = NewAdminService(testGalgameRepo, testMessageRepo)
 	}
 }

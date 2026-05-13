@@ -35,3 +35,30 @@ type ListMineRequest struct {
 	Page   int    `query:"page" validate:"omitempty,min=1"`
 	Limit  int    `query:"limit" validate:"omitempty,min=1,max=50"`
 }
+
+// MineGalgame is one entry in GET /galgame/mine response. It serializes the
+// galgame model fields flat at top level + a `decline_reason` field populated
+// when the entry is in status=4 (declined). DeclineReason comes from the
+// latest 'declined' message's payload.reason — looked up in the service
+// layer so the handler stays thin.
+//
+// NOTE: we do not embed model.Galgame directly because the resulting JSON
+// would mix the model's `tag`/`alias`/etc relations (always nil here) into
+// the response. Pick the explicit fields the consumer cares about.
+type MineGalgame struct {
+	ID              int     `json:"id"`
+	VNDBID          string  `json:"vndb_id"`
+	NameEnUS        string  `json:"name_en_us"`
+	NameJaJP        string  `json:"name_ja_jp"`
+	NameZhCN        string  `json:"name_zh_cn"`
+	NameZhTW        string  `json:"name_zh_tw"`
+	Banner          string  `json:"banner"`
+	BannerImageHash *string `json:"banner_image_hash,omitempty"`
+	ContentLimit    string  `json:"content_limit"`
+	Status          int     `json:"status"`
+	Created         string  `json:"created"`
+	Updated         string  `json:"updated"`
+	// DeclineReason is the reason given by the admin on the most recent
+	// decline. Populated only for status=4 rows; empty otherwise.
+	DeclineReason string `json:"decline_reason,omitempty"`
+}

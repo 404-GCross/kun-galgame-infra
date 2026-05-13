@@ -60,6 +60,40 @@ func (r *MessageRepository) ListFeed(ctx context.Context, sinceID int64, limit i
 	return items, err
 }
 
+// LatestDeclinedByGalgameIDs returns the most recent 'declined' message per
+// galgame in `ids`, addressed to `uid`. Used by SubmissionService.ListMine
+// to surface the decline reason on the user's own "my submissions" page —
+// the user sees "rejected because: X" without having to dig into messages.
+//
+// Returns map[galgame_id]message. Galgames with no declined message (e.g.
+// status=3 entries) are absent from the map.
+func (r *MessageRepository) LatestDeclinedByGalgameIDs(ctx context.Context, uid int, ids []int) (map[int]model.GalgameMessage, error) {
+	if len(ids) == 0 {
+		return map[int]model.GalgameMessage{}, nil
+	}
+	// PostgreSQL: DISTINCT ON gives one row per galgame_id, ordered by id
+	// DESC inside the partition. Compatible with any pg version.
+	var rows []model.GalgameMessage
+	err := r.db.WithContext(ctx).
+		Raw(`
+			SELECT DISTINCT ON (galgame_id) *
+			FROM galgame_message
+			WHERE galgame_id IN ?
+			  AND type = ?
+			  AND target_user_id = ?
+			ORDER BY galgame_id, id DESC
+		`, ids, model.MessageTypeDeclined, uid).
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[int]model.GalgameMessage, len(rows))
+	for _, m := range rows {
+		out[m.GalgameID] = m
+	}
+	return out, nil
+}
+
 // ListAdminQueue returns messages of given types whose linked galgame is
 // still in status=3. Used by admin web UI to show pending review queue.
 //
