@@ -11,6 +11,7 @@
 
 | # | 文件 | 内容 |
 |---|------|------|
+| 00 | [handbook-for-downstream.md](./00-handbook-for-downstream.md) | **kungal / moyu 接入手册** — 端到端流程 + 决策回顾 + 工作量估算 + checklist |
 | 01 | [galgame.md](./01-galgame.md) | Galgame 核心 CRUD（含 banner 文件上传） |
 | 02 | [revisions-and-prs.md](./02-revisions-and-prs.md) | 版本历史 + PR 编辑请求流程 |
 | 03 | [relations.md](./03-relations.md) | 链接 / 别名 / 贡献者子资源 |
