@@ -129,8 +129,12 @@ func (h *SubmissionHandler) DeleteDraft(c fiber.Ctx) error {
 		return mapSubmissionError(c, err)
 	}
 
+	// IMPORTANT: removal, not upsert. searchHook.Galgame() would reload from
+	// DB and find nothing → leave the Meilisearch document orphaned, where
+	// /galgame/search?include_pending=true would still surface it but
+	// /galgame/batch would return empty (the phantom-entry bug).
 	if h.searchHook != nil {
-		h.searchHook.Galgame(gid)
+		h.searchHook.GalgameDelete(gid)
 	}
 	return response.Success(c, nil)
 }

@@ -64,13 +64,14 @@ func (s *AdminService) UpdateStatus(ctx context.Context, adminUID, gid, newStatu
 		var revAction, msgType string
 		switch newStatus {
 		case model.GalgameStatusPublished:
-			if g.Status == model.GalgameStatusPending {
+			switch g.Status {
+			case model.GalgameStatusPending:
 				revAction = "approved"
 				msgType = model.MessageTypeApproved
-			} else if g.Status == model.GalgameStatusBanned {
+			case model.GalgameStatusBanned:
 				revAction = "unbanned"
-				// no message — unbanned is admin-internal
-			} else {
+				msgType = model.MessageTypeUnbanned
+			default:
 				// Other transitions to 0 (e.g. from 4 declined → 0) are
 				// rare; treat as approved for the submitter's benefit.
 				revAction = "approved"
@@ -118,37 +119,44 @@ func (s *AdminService) UpdateStatus(ctx context.Context, adminUID, gid, newStatu
 			return nil
 		}
 
+		// Every approve / decline / ban / unban message targets the current
+		// owner (galgame.user_id). This serves two purposes:
+		//   1. The owner gets a notification via /messages/mine
+		//   2. /messages/feed (filtered by target_user_id IS NOT NULL) ships
+		//      it to kungal/moyu cron so they can sync wiki_status_snapshot.
+		// Without a target, banned/unbanned would never reach the downstream
+		// cron — making local stats drift permanently out of date.
+		owner := g.UserID
 		msg := &model.GalgameMessage{
-			Type:        msgType,
-			GalgameID:   gid,
-			ActorUserID: &adminUID,
+			Type:         msgType,
+			GalgameID:    gid,
+			ActorUserID:  &adminUID,
+			TargetUserID: &owner,
 		}
-		// Approve / decline are user-facing; ban is admin-only audit.
+		var payload []byte
 		switch msgType {
 		case model.MessageTypeApproved:
-			submitter := g.UserID
-			msg.TargetUserID = &submitter
-			payload, _ := json.Marshal(map[string]any{
+			payload, _ = json.Marshal(map[string]any{
 				"approved_by": adminUID,
 				"note":        reason,
 			})
-			msg.Payload = datatypes.JSON(payload)
 		case model.MessageTypeDeclined:
-			submitter := g.UserID
-			msg.TargetUserID = &submitter
-			payload, _ := json.Marshal(map[string]any{
+			payload, _ = json.Marshal(map[string]any{
 				"declined_by": adminUID,
 				"reason":      reason,
 			})
-			msg.Payload = datatypes.JSON(payload)
 		case model.MessageTypeBanned:
-			// no target — pure admin audit
-			payload, _ := json.Marshal(map[string]any{
+			payload, _ = json.Marshal(map[string]any{
 				"banned_by": adminUID,
 				"reason":    reason,
 			})
-			msg.Payload = datatypes.JSON(payload)
+		case model.MessageTypeUnbanned:
+			payload, _ = json.Marshal(map[string]any{
+				"unbanned_by": adminUID,
+				"note":        reason,
+			})
 		}
+		msg.Payload = datatypes.JSON(payload)
 		return s.messageRepo.Create(ctx, tx, msg)
 	})
 }

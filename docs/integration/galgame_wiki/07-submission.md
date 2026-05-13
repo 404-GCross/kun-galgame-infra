@@ -270,9 +270,9 @@ Body: { "status": 0 | 1 | 4, "reason": "..." }
 
 | 目标 status | 行为 |
 |---|---|
-| 0 | 从 status=3 转为 approved；写 revision(action='approved') + message(type='approved', target=submitter) |
-| 4 | 从 status=3 转为 declined；同上但 type='declined'；reason 进 payload |
-| 1 | 封禁（任意源 status） |
+| 0 | 从 status=3 → approved（写 revision('approved') + message('approved', target=owner））；从 status=1 → unbanned（写 revision('unbanned') + message('unbanned', target=owner)）；其它源 status 当 approved 处理 |
+| 4 | 仅源 status=3 时允许；写 revision('declined') + message('declined', target=owner) |
+| 1 | 封禁（任意源 status）；写 revision('banned') + message('banned', target=owner) |
 
 > `status=2` **不允许**作为目标——admin 不应该把人为内容退回 VNDB 草稿态。
 
@@ -317,16 +317,18 @@ SELECT MAX(wiki_message_last_id) FROM cron_state WHERE name = 'wiki_msg_sync';
 
 ```go
 switch msg.Type {
-case "approved":
+case "approved", "unbanned":
     UPDATE galgame_stats SET wiki_status_snapshot = 0 WHERE galgame_id = msg.GalgameID
 case "declined":
     UPDATE galgame_stats SET wiki_status_snapshot = 4 WHERE galgame_id = msg.GalgameID
 case "banned":
     UPDATE galgame_stats SET wiki_status_snapshot = 1 WHERE galgame_id = msg.GalgameID
 case "claimed", "submitted", "edited_pending":
-    // 不需要改本地 status
+    // 不需要改本地 status —— 这些 type 没有 target_user_id，cron 也不会拿到
 }
 ```
+
+> `claimed` / `submitted` / `edited_pending` 的 `target_user_id` 是 NULL，按定义不会出现在 `/messages/feed` 的结果里。上面写出来只为强调"如果以后改了规则也别 panic"。
 
 记下 `max(id)` 写回 cron_state。
 

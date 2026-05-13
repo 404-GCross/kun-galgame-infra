@@ -196,11 +196,10 @@ func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB, se
 	galgameAuth.Delete("/:gid/contributors/:uid", contributorH.Delete)
 
 	// ── User submission flow ──
-	// Static-path routes (submit / mine / messages/*) must be registered
-	// BEFORE the /:gid param route in galgameAuth above. Fiber matches the
-	// first declared route that fits, so registering them via the group's
-	// own .Post/.Get keeps them static-first as long as we add them here
-	// (which compiles to the same group at server startup).
+	// `submit` and `mine` are static path segments and use POST/GET which
+	// don't collide with PUT/:gid (above) or DELETE/PATCH on /:gid (below),
+	// so registration order doesn't matter here. PATCH and DELETE on /:gid
+	// are unique routes for those verbs in this group.
 	galgameAuth.Post("/submit", submissionH.Submit)
 	galgameAuth.Get("/mine", submissionH.ListMine)
 	galgameAuth.Post("/:gid/claim", submissionH.Claim)

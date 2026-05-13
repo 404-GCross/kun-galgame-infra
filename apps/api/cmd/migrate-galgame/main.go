@@ -76,19 +76,46 @@ func main() {
 	// plain unique would block N entries from sharing the empty value. The
 	// partial index enforces uniqueness only when vndb_id is non-empty.
 	//
-	// We drop the AutoMigrate-created plain unique (if any) and create the
-	// partial unique. Both DDL guards are idempotent via IF EXISTS / IF NOT EXISTS.
-	postSQL := []string{
-		`DROP INDEX IF EXISTS idx_galgame_vndb_id`,           // AutoMigrate index name (uniqueIndex → idx_*)
-		`DROP INDEX IF EXISTS uni_galgame_vndb_id`,           // alt GORM naming
-		`CREATE UNIQUE INDEX IF NOT EXISTS uq_galgame_vndb_id_nonempty
-		    ON galgame(vndb_id) WHERE vndb_id <> ''`,
+	// We must remove the previous plain unique BEFORE inserting any
+	// vndb_id='' rows. Scan pg_indexes for ANY unique constraint touching
+	// only the vndb_id column (whether it was named idx_*, uni_*, or
+	// something user-defined) and drop them — except our partial unique,
+	// which we then create idempotently.
+	const partialUniqueName = "uq_galgame_vndb_id_nonempty"
+	type indexRow struct {
+		IndexName string `gorm:"column:indexname"`
 	}
-	for _, stmt := range postSQL {
+	var stale []indexRow
+	if err := db.DB().Raw(`
+		SELECT i.indexname
+		FROM pg_indexes i
+		JOIN pg_class c ON c.relname = i.indexname
+		JOIN pg_index x ON x.indexrelid = c.oid
+		JOIN pg_attribute a ON a.attrelid = x.indrelid AND a.attnum = ANY(x.indkey)
+		WHERE i.schemaname = 'public'
+		  AND i.tablename = 'galgame'
+		  AND x.indisunique
+		  AND array_length(x.indkey, 1) = 1
+		  AND a.attname = 'vndb_id'
+		  AND i.indexname <> ?
+	`, partialUniqueName).Scan(&stale).Error; err != nil {
+		slog.Error("scan stale vndb_id unique indexes", "error", err)
+		os.Exit(1)
+	}
+	for _, idx := range stale {
+		stmt := `DROP INDEX IF EXISTS "` + idx.IndexName + `"`
+		slog.Info("dropping legacy unique index on vndb_id", "name", idx.IndexName)
 		if err := db.DB().Exec(stmt).Error; err != nil {
-			slog.Error("post-migration SQL failed", "stmt", stmt, "error", err)
+			slog.Error("drop stale unique index failed", "stmt", stmt, "error", err)
 			os.Exit(1)
 		}
+	}
+	if err := db.DB().Exec(`
+		CREATE UNIQUE INDEX IF NOT EXISTS ` + partialUniqueName + `
+		    ON galgame(vndb_id) WHERE vndb_id <> ''
+	`).Error; err != nil {
+		slog.Error("create partial unique on vndb_id failed", "error", err)
+		os.Exit(1)
 	}
 
 	slog.Info("galgame wiki migration completed successfully")

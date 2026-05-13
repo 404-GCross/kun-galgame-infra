@@ -14,12 +14,14 @@ wiki 起一张 `galgame_message` 表，沉淀投稿审核流程产生的所有�
 | `submitted` | 用户调 POST /galgame/submit | submitter | NULL | `{ "vndb_id": "..." }` |
 | `claimed` | 用户调 POST /galgame/:gid/claim | claimer | NULL | `{ "from_status": 2 }` |
 | `edited_pending` | 用户调 PATCH /galgame/:gid | submitter | NULL | `{ "field_count": 3 }` |
-| `approved` | admin 调 PUT /admin/galgame/:gid/status status=0 | admin | submitter | `{ "approved_by": <admin uid>, "note": "" }` |
-| `declined` | admin 调 PUT /admin/galgame/:gid/status status=4 | admin | submitter | `{ "declined_by": <admin uid>, "reason": "..." }` |
-| `banned` | admin 调 PUT /admin/galgame/:gid/status status=1 | admin | NULL | `{ "banned_by": <admin uid>, "reason": "" }` |
+| `approved` | admin 调 PUT /admin/galgame/:gid/status status=0（源 status=3） | admin | 当前 owner | `{ "approved_by": <admin uid>, "note": "" }` |
+| `declined` | admin 调 PUT /admin/galgame/:gid/status status=4 | admin | 当前 owner | `{ "declined_by": <admin uid>, "reason": "..." }` |
+| `banned` | admin 调 PUT /admin/galgame/:gid/status status=1 | admin | 当前 owner | `{ "banned_by": <admin uid>, "reason": "" }` |
+| `unbanned` | admin 调 PUT /admin/galgame/:gid/status status=0（源 status=1） | admin | 当前 owner | `{ "unbanned_by": <admin uid>, "note": "" }` |
 
-> **没 target 的消息只给 admin 队列看**（没人需要被推送）。`submitted` /
-> `claimed` / `edited_pending` 都没 target。`approved` / `declined` 有 target = 提交者。
+> **没 target 的消息只给 admin 队列看**（`submitted` / `claimed` / `edited_pending`，因为没有用户需要被推送）。带 target 的（`approved` / `declined` / `banned` / `unbanned`）既会出现在用户的 `/messages/mine`，也会出现在 cron 的 `/messages/feed` 里。
+>
+> banned / unbanned 之所以也带 target，是因为 kungal/moyu 的 cron 需要这些事件来同步本地 `wiki_status_snapshot` 列。否则封禁过的作品在本地永远是 published 状态，渲染列表时会出现"指向不存在 galgame"的死链。
 
 ### 通用响应字段
 

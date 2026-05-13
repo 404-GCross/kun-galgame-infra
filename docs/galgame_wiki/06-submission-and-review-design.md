@@ -109,7 +109,7 @@ CREATE TABLE galgame_message (
     id              BIGSERIAL PRIMARY KEY,
     type            VARCHAR(20) NOT NULL,
         -- 'submitted' | 'approved' | 'declined' | 'edited_pending'
-        -- 'banned' / 'unbanned' / 'claimed' 也写一条，方便 admin 流水审计
+        -- 'banned' | 'unbanned' | 'claimed'
     galgame_id      INT NOT NULL,
     actor_user_id   INT,            -- 触发动作的用户（submitter / admin / claimer）
     target_user_id  INT,            -- 应该被通知的用户（NULL = 仅 admin 队列可见）
@@ -133,27 +133,21 @@ CREATE INDEX idx_galgame_message_id
     ON galgame_message(id);
 ```
 
-### 4.4 各类型 payload 约定
+### 4.4 各类型 payload 约定 + target 归属
 
-```jsonc
-// submitted
-{ "vndb_id": "v17 or empty" }
+| type | actor | target_user_id | payload |
+|---|---|---|---|
+| `submitted` | submitter | NULL（admin 队列才看） | `{ "vndb_id": "v17 or empty" }` |
+| `claimed` | claimer | NULL | `{ "from_status": 2 }` |
+| `edited_pending` | submitter | NULL | `{ "field_count": 3 }` |
+| `approved` | admin | 当前 owner | `{ "approved_by": <uid>, "note": "" }` |
+| `declined` | admin | 当前 owner | `{ "declined_by": <uid>, "reason": "..." }` |
+| `banned` | admin | 当前 owner | `{ "banned_by": <uid>, "reason": "..." }` |
+| `unbanned` | admin | 当前 owner | `{ "unbanned_by": <uid>, "note": "" }` |
 
-// approved
-{ "approved_by": <admin uid>, "note": "可选审核备注" }
-
-// declined
-{ "declined_by": <admin uid>, "reason": "VNDB ID 错误，请核对" }
-
-// edited_pending
-{ "field_count": 3 }
-
-// claimed
-{ "from_status": 2 }
-
-// banned / unbanned
-{ "reason": "..." }
-```
+**为什么 banned / unbanned 也带 target**：
+1. 用户应该被通知"你的作品被封 / 解封"
+2. `/messages/feed` 按 `target_user_id IS NOT NULL` 过滤，要让 kungal/moyu cron 拿到这些事件去同步本地 `galgame_stats.wiki_status_snapshot`，target 必须非空
 
 不要 schema validate jsonb，先约定俗成。
 

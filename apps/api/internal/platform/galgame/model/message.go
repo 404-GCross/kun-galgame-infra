@@ -14,7 +14,13 @@ const (
 	MessageTypeEditedPending = "edited_pending"
 	MessageTypeApproved      = "approved"
 	MessageTypeDeclined      = "declined"
-	MessageTypeBanned        = "banned"
+	// MessageTypeBanned / MessageTypeUnbanned target the galgame's current
+	// owner (galgame.user_id at the time of the transition) so:
+	//   1. /messages/mine surfaces "your work was banned/unbanned"
+	//   2. /messages/feed (target_user_id IS NOT NULL) includes them so the
+	//      kungal/moyu cron can sync wiki_status_snapshot locally.
+	MessageTypeBanned   = "banned"
+	MessageTypeUnbanned = "unbanned"
 )
 
 // Galgame status constants for the extended state machine.
