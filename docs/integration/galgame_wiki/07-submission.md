@@ -323,12 +323,51 @@ case "declined":
     UPDATE galgame_stats SET wiki_status_snapshot = 4 WHERE galgame_id = msg.GalgameID
 case "banned":
     UPDATE galgame_stats SET wiki_status_snapshot = 1 WHERE galgame_id = msg.GalgameID
-case "claimed", "submitted", "edited_pending":
-    // 不需要改本地 status —— 这些 type 没有 target_user_id，cron 也不会拿到
 }
 ```
 
-> `claimed` / `submitted` / `edited_pending` 的 `target_user_id` 是 NULL，按定义不会出现在 `/messages/feed` 的结果里。上面写出来只为强调"如果以后改了规则也别 panic"。
+#### 为什么 cron 只处理这 4 种 type
+
+`/messages/feed` 按 `target_user_id IS NOT NULL` 过滤，刚好对应这 4 种 admin 触发的事件。**kungal/moyu 自己触发**的操作（submit / claim / patch / delete）不需要 cron 同步——这些请求是 kungal 后端发出去的，wiki 的同步返回里就带了最新 `status`，按返回值更新本地即可：
+
+```go
+// kungal 后端 — 用户提交
+result, _ := wiki.Submit(ctx, token, req)
+db.Exec(`INSERT INTO galgame_stats(galgame_id, wiki_status_snapshot) VALUES (?, ?)`,
+    result.ID, result.Status) // status=3
+
+// kungal 后端 — 用户认领草稿
+result, _ := wiki.Claim(ctx, token, gid)
+db.Exec(`INSERT INTO galgame_stats(galgame_id, wiki_status_snapshot) VALUES (?, ?)
+         ON CONFLICT (galgame_id) DO UPDATE SET wiki_status_snapshot = EXCLUDED.wiki_status_snapshot`,
+    result.ID, result.Status) // status=0
+
+// kungal 后端 — 用户编辑草稿（可能从 4 翻回 3）
+result, _ := wiki.PatchDraft(ctx, token, gid, req)
+db.Exec(`UPDATE galgame_stats SET wiki_status_snapshot = ? WHERE galgame_id = ?`,
+    result.Status, result.ID) // status=3
+
+// kungal 后端 — 用户撤回草稿
+_ = wiki.DeleteDraft(ctx, token, gid)
+db.Exec(`DELETE FROM galgame_stats WHERE galgame_id = ?`, gid)
+```
+
+cron 是"被动事件流"，处理 admin 主动操作；用户操作走"主动 RPC + 同步本地"——两条路职责清晰互不重叠。
+
+#### 处理 `galgame` 字段为 null 的"幽灵消息"
+
+如果某用户撤回了一份已经被 approve 过、又被 ban 过的草稿（或类似不常见路径），消息表里的事件仍会保留（设计选择），但 enrich 时 `galgame` 字段为 null。cron 要 gracefully skip：
+
+```go
+for _, msg := range messages {
+    if msg.Galgame == nil {
+        // galgame 已不存在 — 清掉本地 stats 行（如果还有）
+        db.Exec(`DELETE FROM galgame_stats WHERE galgame_id = ?`, msg.GalgameID)
+        continue
+    }
+    switch msg.Type { ... }
+}
+```
 
 记下 `max(id)` 写回 cron_state。
 

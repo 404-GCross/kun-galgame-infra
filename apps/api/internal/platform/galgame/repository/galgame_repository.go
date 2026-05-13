@@ -105,11 +105,15 @@ func (r *GalgameRepository) List(ctx context.Context, page, limit int, sortField
 	return items, total, err
 }
 
-// FindByIDs finds galgames by a list of IDs (lightweight, no relations)
+// FindByIDs finds galgames by a list of IDs (lightweight, no relations).
+// status is selected so the brief can carry it through to the caller —
+// FindByIDs filters status=0 here so the value is always 0 in this code
+// path, but the column is still in the projection to keep one consistent
+// brief shape across FindByIDs / FindByIDsWithViewer.
 func (r *GalgameRepository) FindByIDs(ctx context.Context, ids []int) ([]model.Galgame, error) {
 	var galgames []model.Galgame
 	err := r.db.WithContext(ctx).
-		Select("id, vndb_id, name_en_us, name_ja_jp, name_zh_cn, name_zh_tw, banner, content_limit, user_id, resource_update_time, original_language, age_limit").
+		Select("id, vndb_id, name_en_us, name_ja_jp, name_zh_cn, name_zh_tw, banner, banner_image_hash, content_limit, status, user_id, resource_update_time, original_language, age_limit").
 		Where("id IN ? AND status = 0", ids).
 		Find(&galgames).Error
 	return galgames, err
@@ -142,7 +146,7 @@ func (r *GalgameRepository) FindByIDsWithViewer(ctx context.Context, ids []int, 
 	}
 	var galgames []model.Galgame
 	err := r.db.WithContext(ctx).
-		Select("id, vndb_id, name_en_us, name_ja_jp, name_zh_cn, name_zh_tw, banner, content_limit, status, user_id, resource_update_time, original_language, age_limit").
+		Select("id, vndb_id, name_en_us, name_ja_jp, name_zh_cn, name_zh_tw, banner, banner_image_hash, content_limit, status, user_id, resource_update_time, original_language, age_limit").
 		Where("id IN ?", ids).
 		Where("status = 0 OR (status IN (3, 4) AND user_id = ?)", viewerUID).
 		Find(&galgames).Error

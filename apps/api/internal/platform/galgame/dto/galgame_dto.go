@@ -57,20 +57,28 @@ type BatchGetGalgameRequest struct {
 	IDs []int `query:"ids" validate:"required,min=1,max=100"`
 }
 
-// GalgameBrief is a lightweight galgame info for cross-service display
+// GalgameBrief is a lightweight galgame info for cross-service display.
+//
+// status is included so callers can distinguish published (0) entries from
+// the viewer's own pending/declined (3/4) returned when the request is
+// authenticated. banner_image_hash is included so the caller can resolve
+// the image_service-hosted variant URL — preferred over the legacy Banner
+// string. Both fields work for any caller regardless of viewer.
 type GalgameBrief struct {
-	ID                 int    `json:"id"`
-	VNDBID             string `json:"vndb_id"`
-	NameEnUS           string `json:"name_en_us"`
-	NameJaJP           string `json:"name_ja_jp"`
-	NameZhCN           string `json:"name_zh_cn"`
-	NameZhTW           string `json:"name_zh_tw"`
-	Banner             string `json:"banner"`
-	ContentLimit       string `json:"content_limit"`
-	UserID             int    `json:"user_id"`
-	ResourceUpdateTime string `json:"resource_update_time"`
-	OriginalLanguage   string `json:"original_language"`
-	AgeLimit           string `json:"age_limit"`
+	ID                 int     `json:"id"`
+	VNDBID             string  `json:"vndb_id"`
+	NameEnUS           string  `json:"name_en_us"`
+	NameJaJP           string  `json:"name_ja_jp"`
+	NameZhCN           string  `json:"name_zh_cn"`
+	NameZhTW           string  `json:"name_zh_tw"`
+	Banner             string  `json:"banner"`
+	BannerImageHash    *string `json:"banner_image_hash,omitempty"`
+	ContentLimit       string  `json:"content_limit"`
+	Status             int     `json:"status"`
+	UserID             int     `json:"user_id"`
+	ResourceUpdateTime string  `json:"resource_update_time"`
+	OriginalLanguage   string  `json:"original_language"`
+	AgeLimit           string  `json:"age_limit"`
 }
 
 // CheckVNDBRequest represents a VNDB existence check

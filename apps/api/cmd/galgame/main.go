@@ -183,7 +183,11 @@ func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB, se
 
 	// Authenticated routes
 	galgameAuth := galgame.Group("", jwtAuth)
-	galgameAuth.Post("/", galgameH.Create)
+	// POST /galgame is the admin direct-publish bypass: it creates a
+	// status=0 entry immediately, skipping the user submission queue. Regular
+	// users must go through POST /galgame/submit (creates status=3, awaits
+	// review). Locked to admin/moderator so non-staff can't bypass review.
+	galgameAuth.Post("/", middleware.RequireRole("admin", "moderator"), galgameH.Create)
 	galgameAuth.Put("/:gid", galgameH.Update)
 	galgameAuth.Post("/:gid/revert", revisionH.Revert)
 	galgameAuth.Post("/:gid/prs", revisionH.SubmitPR)
