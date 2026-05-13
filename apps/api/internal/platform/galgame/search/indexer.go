@@ -43,6 +43,7 @@ func ToGalgameDoc(g *model.Galgame) *GalgameDoc {
 		AgeLimit:         g.AgeLimit,
 		OriginalLanguage: g.OriginalLanguage,
 		Status:           g.Status,
+		UserID:           g.UserID,
 		View:             g.View,
 		Released:         g.Released,
 		UpdatedTS:        g.Updated.Unix(),

@@ -277,9 +277,16 @@ func (s *GalgameService) Update(ctx context.Context, uid, galgameID int, roles [
 	return s.galgameRepo.FindByID(ctx, galgameID)
 }
 
-// BatchGet returns lightweight galgame info for a list of IDs
+// BatchGet returns lightweight galgame info for a list of IDs (status=0 only).
 func (s *GalgameService) BatchGet(ctx context.Context, ids []int) ([]dto.GalgameBrief, error) {
-	galgames, err := s.galgameRepo.FindByIDs(ctx, ids)
+	return s.BatchGetWithViewer(ctx, ids, 0)
+}
+
+// BatchGetWithViewer returns lightweight galgame info for a list of IDs.
+// When viewerUID > 0, additionally includes the viewer's own status=3/4
+// entries (per submission-and-review-design §6).
+func (s *GalgameService) BatchGetWithViewer(ctx context.Context, ids []int, viewerUID int) ([]dto.GalgameBrief, error) {
+	galgames, err := s.galgameRepo.FindByIDsWithViewer(ctx, ids, viewerUID)
 	if err != nil {
 		return nil, err
 	}

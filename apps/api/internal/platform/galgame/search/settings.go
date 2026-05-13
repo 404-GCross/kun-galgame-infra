@@ -32,6 +32,7 @@ func galgamesSettings() *meilisearch.Settings {
 		},
 		FilterableAttributes: []string{
 			"status",
+			"user_id",
 			"content_limit",
 			"age_limit",
 			"original_language",

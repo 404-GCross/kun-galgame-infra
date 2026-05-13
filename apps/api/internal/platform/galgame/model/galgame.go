@@ -5,7 +5,11 @@ import "time"
 // Galgame represents a visual novel entry
 type Galgame struct {
 	ID                 int       `gorm:"primaryKey;autoIncrement" json:"id"`
-	VNDBID             string    `gorm:"column:vndb_id;size:10;uniqueIndex;not null" json:"vndb_id"`
+	// vndb_id is optional — user-submitted originals (no VNDB entry) may
+	// leave this empty. Uniqueness is enforced by a partial unique index
+	// created in migrate-galgame: UNIQUE on vndb_id WHERE vndb_id <> ''.
+	// (GORM AutoMigrate cannot express partial unique, so raw SQL.)
+	VNDBID             string    `gorm:"column:vndb_id;size:10;not null;default:'';index" json:"vndb_id"`
 	BangumiID          *int      `gorm:"column:bid;uniqueIndex" json:"bid,omitempty"`
 	Released           string    `gorm:"column:released;size:107;default:'unknown'" json:"released"`
 	NameEnUS           string    `gorm:"column:name_en_us;size:1000;default:''" json:"name_en_us"`

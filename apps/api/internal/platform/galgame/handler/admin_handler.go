@@ -5,20 +5,27 @@ import (
 
 	"api/internal/platform/galgame/dto"
 	"api/internal/platform/galgame/repository"
+	"api/internal/platform/galgame/search"
+	"api/internal/platform/galgame/service"
 	"api/pkg/errors"
 	"api/pkg/response"
+	"api/pkg/utils"
 
 	"github.com/gofiber/fiber/v3"
 )
 
-// AdminHandler handles admin statistics requests
+// AdminHandler handles admin statistics + status mutation requests.
 type AdminHandler struct {
-	adminRepo *repository.AdminRepository
+	adminRepo  *repository.AdminRepository
+	adminSvc   *service.AdminService
+	searchHook *search.Hook
 }
 
-// NewAdminHandler creates a new AdminHandler
-func NewAdminHandler(adminRepo *repository.AdminRepository) *AdminHandler {
-	return &AdminHandler{adminRepo: adminRepo}
+// NewAdminHandler creates an AdminHandler.
+// adminSvc is required for UpdateGalgameStatus side effects (revision + message);
+// pass nil only in tests that don't exercise status mutation.
+func NewAdminHandler(adminRepo *repository.AdminRepository, adminSvc *service.AdminService, hook *search.Hook) *AdminHandler {
+	return &AdminHandler{adminRepo: adminRepo, adminSvc: adminSvc, searchHook: hook}
 }
 
 // Stats returns wiki management statistics
@@ -84,8 +91,16 @@ func (h *AdminHandler) GetGalgame(c fiber.Ctx) error {
 	return response.Success(c, galgame)
 }
 
-// UpdateGalgameStatus changes the status of a galgame.
+// UpdateGalgameStatus changes a galgame's status and writes the matching
+// revision + (when relevant) a galgame_message row in one transaction.
+//
+// Allowed target statuses: 0 (publish/approve), 1 (ban), 4 (decline).
+// 4 is only valid from source status=3. See admin_dto.go for rationale.
 func (h *AdminHandler) UpdateGalgameStatus(c fiber.Ctx) error {
+	adminUID, _ := c.Locals("user_uid").(uint)
+	if adminUID == 0 {
+		return response.Unauthorized(c, errors.ErrAuthUnauthorized)
+	}
 	id, err := strconv.Atoi(c.Params("gid"))
 	if err != nil {
 		return response.BadRequest(c, errors.ErrInvalidID)
@@ -95,13 +110,28 @@ func (h *AdminHandler) UpdateGalgameStatus(c fiber.Ctx) error {
 	if err := c.Bind().JSON(&req); err != nil {
 		return response.BadRequest(c, errors.ErrBadRequest)
 	}
-	if req.Status != 0 && req.Status != 1 && req.Status != 2 {
-		return response.BadRequest(c, errors.ErrBadRequest)
+	if err := utils.Validate(&req); err != nil {
+		return response.BadRequestMsg(c, errors.ErrValidationFailed, err.Error())
 	}
 
-	if err := h.adminRepo.UpdateGalgameStatus(c.Context(), id, req.Status); err != nil {
+	if h.adminSvc == nil {
+		// Defensive: admin service must be wired up in production.
+		return response.InternalError(c, errors.ErrOperationFailed)
+	}
+	if err := h.adminSvc.UpdateStatus(c.Context(), int(adminUID), id, req.Status, req.Reason); err != nil {
+		if appErr, ok := err.(*errors.AppError); ok {
+			switch appErr.Code {
+			case errors.ErrGalgameNotFound:
+				return response.NotFound(c, appErr.Code)
+			default:
+				return response.BadRequest(c, appErr.Code)
+			}
+		}
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
 
+	if h.searchHook != nil {
+		h.searchHook.Galgame(id)
+	}
 	return response.Success(c, fiber.Map{"id": id, "status": req.Status})
 }

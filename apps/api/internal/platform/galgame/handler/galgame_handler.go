@@ -156,7 +156,12 @@ func (h *GalgameHandler) Update(c fiber.Ctx) error {
 	return response.Success(c, galgame)
 }
 
-// BatchGet returns lightweight galgame info for a list of IDs
+// BatchGet returns lightweight galgame info for a list of IDs.
+//
+// Public by default (status=0 only). When an OptionalJWT middleware has
+// populated user_uid in Locals, the response also includes the caller's
+// own status=3/4 entries — matching the visibility rules in
+// docs/galgame_wiki/06-submission-and-review-design.md §6.
 func (h *GalgameHandler) BatchGet(c fiber.Ctx) error {
 	var req dto.BatchGetGalgameRequest
 	if err := c.Bind().Query(&req); err != nil {
@@ -167,7 +172,8 @@ func (h *GalgameHandler) BatchGet(c fiber.Ctx) error {
 		return response.BadRequestMsg(c, errors.ErrValidationFailed, "ids must contain 1-100 items")
 	}
 
-	items, err := h.galgameService.BatchGet(c.Context(), req.IDs)
+	viewerUID, _ := c.Locals("user_uid").(uint)
+	items, err := h.galgameService.BatchGetWithViewer(c.Context(), req.IDs, int(viewerUID))
 	if err != nil {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}

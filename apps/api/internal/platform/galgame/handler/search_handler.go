@@ -25,8 +25,20 @@ func NewSearchHandler(svc *search.Service) *SearchHandler {
 // Galgame handles GET /galgame/search.
 //
 // See docs/galgame_wiki/05-search-design.md for the full query-param spec.
+//
+// include_pending=true: when paired with a valid Bearer JWT (OptionalJWT
+// middleware populates user_uid in Locals), runs a second search for the
+// caller's own status=3/4 entries and returns them in resp.Pending.
 func (h *SearchHandler) Galgame(c fiber.Ctx) error {
 	q := c.Queries()
+	includePending := parseBool(q["include_pending"])
+
+	// Only honor include_pending when the caller is authenticated.
+	viewerUID, _ := c.Locals("user_uid").(uint)
+	if !includePending || viewerUID == 0 {
+		includePending = false
+	}
+
 	req := &search.GalgameSearchRequest{
 		Query:             q["q"],
 		Statuses:          parseIntList(q["status"]),
@@ -46,6 +58,8 @@ func (h *SearchHandler) Galgame(c fiber.Ctx) error {
 		WantFacets:        parseBoolDefault(q["facets"], true),
 		WantHighlight:     parseBoolDefault(q["highlight"], true),
 		Fields:            parseStringList(q["fields"]),
+		IncludePending:    includePending,
+		ViewerUID:         int(viewerUID),
 	}
 
 	resp, err := h.svc.SearchGalgames(c.Context(), req)

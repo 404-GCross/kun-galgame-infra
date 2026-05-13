@@ -241,6 +241,10 @@ return r2.data.galgame
 
 创建 Galgame。**需要认证**。
 
+> ⚠️ **关于普通用户提交**：这个端点是为 admin/moderator 直接发布的旁路。
+> 普通用户应该走 [POST /galgame/submit](./07-submission.md#post-galgamesubmit)，
+> 它创建 `status=3` 待审稿，无需 VNDB ID，并触发审核消息。
+
 创建时自动：创建 revision 1、添加创建者为贡献者、添加 VNDB 链接。
 
 **支持两种 Content-Type**：

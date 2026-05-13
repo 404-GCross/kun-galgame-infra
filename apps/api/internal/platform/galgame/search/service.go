@@ -53,6 +53,14 @@ type GalgameSearchRequest struct {
 	// attributesToRetrieve). Empty = all attributes. Useful for list views
 	// that don't need intro_* etc — cuts response size dramatically.
 	Fields []string
+
+	// IncludePending, when true and ViewerUID > 0, runs an extra search for
+	// the user's own status ∈ {3,4} entries matching the same query and
+	// returns them in GalgameSearchResponse.Pending.
+	IncludePending bool
+	// ViewerUID is the authenticated user's id. 0 means anonymous —
+	// include_pending is ignored.
+	ViewerUID int
 }
 
 // GalgameSearchResponse mirrors what we return in the API.
@@ -61,6 +69,10 @@ type GalgameSearchResponse struct {
 	Total            int64                     `json:"total"`
 	Facets           map[string]map[string]int `json:"facets,omitempty"`
 	ProcessingTimeMS int64                     `json:"processing_time_ms"`
+	// Pending is populated only when the request had include_pending=true
+	// and a viewer_uid. Returns the user's own status=3/4 entries that
+	// match the same query. Empty otherwise.
+	Pending []map[string]any `json:"pending,omitempty"`
 }
 
 // nonIntroSearchable mirrors the leading (non-intro) entries of
@@ -128,7 +140,38 @@ func (s *Service) SearchGalgames(ctx context.Context, req *GalgameSearchRequest)
 		return nil, err
 	}
 
-	return toGalgameResponse(resp), nil
+	out := toGalgameResponse(resp)
+
+	// Second-pass pending search. Cheap (small result set, narrow filter),
+	// runs only when caller opted in AND authenticated. Failure here is
+	// non-fatal: we still return the main result.
+	if req.IncludePending && req.ViewerUID > 0 {
+		pendingReq := &meilisearch.SearchRequest{
+			Page:        1,
+			HitsPerPage: 20,
+			Filter: fmt.Sprintf(
+				"status IN [%d, %d] AND user_id = %d",
+				3, 4, req.ViewerUID,
+			),
+		}
+		// Keep the same Highlight / Fields config so consumers can render
+		// pending entries with the same shape. Sort by latest first.
+		pendingReq.Sort = []string{"updated_ts:desc"}
+		if len(req.Fields) > 0 {
+			pendingReq.AttributesToRetrieve = req.Fields
+		}
+		if !req.IncludeIntro {
+			pendingReq.AttributesToSearchOn = nonIntroSearchable
+		}
+		if pendingResp, err := s.client.Index(IndexGalgames).SearchWithContext(ctx, req.Query, pendingReq); err == nil {
+			out.Pending = make([]map[string]any, 0, len(pendingResp.Hits))
+			for _, h := range pendingResp.Hits {
+				out.Pending = append(out.Pending, hitToMap(h))
+			}
+		}
+	}
+
+	return out, nil
 }
 
 // ─────────────────────────── Tag search ───────────────────────────

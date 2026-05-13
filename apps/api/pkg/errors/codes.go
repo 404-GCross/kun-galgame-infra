@@ -54,11 +54,15 @@ const (
 	ErrOAuthConsentRequired     = 15010
 
 	// Galgame (20000-29999)
-	ErrGalgameNotFound      = 20001
-	ErrGalgameAlreadyExists = 20002
-	ErrGalgameInvalidVNDB   = 20003
-	ErrGalgameVNDBExists    = 20004
-	ErrGalgameForbidden     = 20005
+	ErrGalgameNotFound           = 20001
+	ErrGalgameAlreadyExists      = 20002
+	ErrGalgameInvalidVNDB        = 20003
+	ErrGalgameVNDBExists         = 20004
+	ErrGalgameForbidden          = 20005
+	ErrGalgameClaimNotDraft      = 20006 // claim 时目标 status ≠ 2
+	ErrGalgameSubmitterOnly      = 20007 // PATCH/DELETE 时不是提交者本人
+	ErrGalgameDraftStatusInvalid = 20008 // 草稿端点：status ∉ {3,4}
+	ErrGalgameQuotaExceeded      = 20009 // 今日投稿配额已用尽
 
 	// Artifact (50000-59999)
 	ErrArtifactNotFound   = 50001
@@ -135,11 +139,15 @@ var codeMessages = map[int]string{
 	ErrOAuthPKCERequired:        "公开客户端必须使用 PKCE",
 	ErrOAuthConsentRequired:     "需要用户授权同意",
 
-	ErrGalgameNotFound:      "Galgame 不存在",
-	ErrGalgameAlreadyExists: "Galgame 已存在",
-	ErrGalgameInvalidVNDB:   "无效的 VNDB ID",
-	ErrGalgameVNDBExists:    "该 VNDB ID 的 Galgame 已存在",
-	ErrGalgameForbidden:     "无权操作此 Galgame",
+	ErrGalgameNotFound:           "Galgame 不存在",
+	ErrGalgameAlreadyExists:      "Galgame 已存在",
+	ErrGalgameInvalidVNDB:        "无效的 VNDB ID",
+	ErrGalgameVNDBExists:         "该 VNDB ID 的 Galgame 已存在",
+	ErrGalgameForbidden:          "无权操作此 Galgame",
+	ErrGalgameClaimNotDraft:      "草稿不可认领",
+	ErrGalgameSubmitterOnly:      "仅提交者可编辑",
+	ErrGalgameDraftStatusInvalid: "草稿仅可在待审/已拒状态编辑",
+	ErrGalgameQuotaExceeded:      "今日投稿配额已用尽",
 
 	ErrArtifactNotFound:   "资源不存在",
 	ErrArtifactInvalid:    "无效的资源",

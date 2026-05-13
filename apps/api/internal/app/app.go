@@ -59,6 +59,11 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		AppName:      name,
 		ServerHeader: name,
 		ErrorHandler: errorHandler,
+		// fasthttp default is 4 KiB, which is too tight once the browser
+		// accumulates dev cookies (refresh_token, Pinia persist, umami,
+		// color-mode, etc). Hitting the limit returns 431 before CORS runs,
+		// surfacing as a misleading "missing Access-Control-Allow-Origin".
+		ReadBufferSize: 32 * 1024,
 	})
 
 	return a, nil

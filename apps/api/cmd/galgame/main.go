@@ -15,6 +15,7 @@ import (
 	galgameRepo "api/internal/platform/galgame/repository"
 	galgameSearch "api/internal/platform/galgame/search"
 	galgameService "api/internal/platform/galgame/service"
+	siteRepo "api/internal/platform/site/repository"
 	"api/pkg/imageclient"
 
 	"github.com/gofiber/fiber/v3"
@@ -91,9 +92,16 @@ func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB, se
 	engineRepo := galgameRepo.NewEngineRepository(wiki)
 	seriesRepo := galgameRepo.NewSeriesRepository(wiki)
 	adminRepo := galgameRepo.NewAdminRepository(wiki)
+	messageRepo := galgameRepo.NewMessageRepository(wiki)
+	// OAuth client repo lives on the OAuth DB (read-only from galgame service);
+	// used to authenticate Basic-Auth cron callers on the message feed.
+	oauthClientRepo := siteRepo.NewOAuthClientRepository(oauthDB)
 
 	// Services
 	galgameSvc := galgameService.NewGalgameService(galgameRepository, revisionRepo, prRepo, userReadRepo)
+	submissionSvc := galgameService.NewSubmissionService(galgameRepository, messageRepo)
+	messageSvc := galgameService.NewMessageService(messageRepo, galgameRepository, userReadRepo)
+	adminSvc := galgameService.NewAdminService(galgameRepository, messageRepo)
 
 	// Meilisearch: indexer + write-through hook + search service
 	indexer := galgameSearch.NewIndexer(searchClient)
@@ -126,11 +134,18 @@ func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB, se
 	officialH := galgameHandler.NewOfficialHandler(officialRepo, searchHook)
 	engineH := galgameHandler.NewEngineHandler(engineRepo)
 	seriesH := galgameHandler.NewSeriesHandler(seriesRepo)
-	adminH := galgameHandler.NewAdminHandler(adminRepo)
+	adminH := galgameHandler.NewAdminHandler(adminRepo, adminSvc, searchHook)
+	submissionH := galgameHandler.NewSubmissionHandler(submissionSvc, searchHook, imgCli)
+	messageH := galgameHandler.NewMessageHandler(messageSvc)
 	searchH := galgameHandler.NewSearchHandler(searchSvc)
 
 	// JWT auth middleware
 	jwtAuth := middleware.JWTAuth(cfg.JWT.Secret)
+	// OptionalJWT — populates user_uid when a valid Bearer token is present,
+	// but never blocks the request. Used on /galgame/batch and /galgame/search
+	// so anonymous callers still get status=0-only results while authenticated
+	// ones additionally see their own pending/declined drafts.
+	optionalJWT := middleware.OptionalJWT(cfg.JWT.Secret)
 
 	// Global middleware
 	a.Fiber.Use(middleware.RequestID())
@@ -149,8 +164,11 @@ func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB, se
 
 	// Public GET routes (must be registered before auth group)
 	galgame.Get("/", galgameH.List)
-	galgame.Get("/search", searchH.Galgame)
-	galgame.Get("/batch", galgameH.BatchGet)
+	// search & batch accept an optional Bearer JWT so authenticated callers
+	// can also see their own pending/declined drafts (include_pending=true
+	// for search; automatic for batch).
+	galgame.Get("/search", optionalJWT, searchH.Galgame)
+	galgame.Get("/batch", optionalJWT, galgameH.BatchGet)
 	galgame.Get("/check", galgameH.CheckVNDB)
 	galgame.Get("/user/:uid/stats", galgameH.UserStats)
 	galgame.Get("/:gid", galgameH.Get)
@@ -177,6 +195,29 @@ func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB, se
 	galgameAuth.Delete("/:gid/aliases", linkH.DeleteAlias)
 	galgameAuth.Delete("/:gid/contributors/:uid", contributorH.Delete)
 
+	// ── User submission flow ──
+	// Static-path routes (submit / mine / messages/*) must be registered
+	// BEFORE the /:gid param route in galgameAuth above. Fiber matches the
+	// first declared route that fits, so registering them via the group's
+	// own .Post/.Get keeps them static-first as long as we add them here
+	// (which compiles to the same group at server startup).
+	galgameAuth.Post("/submit", submissionH.Submit)
+	galgameAuth.Get("/mine", submissionH.ListMine)
+	galgameAuth.Post("/:gid/claim", submissionH.Claim)
+	galgameAuth.Patch("/:gid", submissionH.PatchDraft)
+	galgameAuth.Delete("/:gid", submissionH.DeleteDraft)
+
+	// ── Messages ──
+	// /messages/mine — end-user JWT
+	galgameAuth.Get("/messages/mine", messageH.ListMine)
+	// /messages/feed — service-to-service Basic Auth (kungal/moyu cron).
+	// Registered directly under api, NOT galgameAuth, so it uses Basic Auth
+	// instead of Bearer JWT.
+	galgame.Get("/messages/feed",
+		middleware.OAuthClientBasicAuth(oauthClientRepo),
+		messageH.ListFeed,
+	)
+
 	// ── Admin ──
 	// Admin endpoints require both JWT validity AND admin/moderator role —
 	// without the role check anyone with a valid OAuth access_token could
@@ -184,6 +225,7 @@ func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB, se
 	admin := api.Group("/admin", jwtAuth, middleware.RequireRole("admin", "moderator"))
 	admin.Get("/stats", adminH.Stats)
 	admin.Get("/galgame", adminH.ListGalgames)
+	admin.Get("/galgame/messages", messageH.ListAdminQueue)
 	admin.Get("/galgame/:gid", adminH.GetGalgame)
 	admin.Put("/galgame/:gid/status", adminH.UpdateGalgameStatus)
 

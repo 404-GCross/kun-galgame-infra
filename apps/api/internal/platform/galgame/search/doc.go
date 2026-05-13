@@ -44,6 +44,9 @@ type GalgameDoc struct {
 	AgeLimit         string `json:"age_limit"`
 	OriginalLanguage string `json:"original_language"`
 	Status           int    `json:"status"`
+	// UserID — owner / submitter. Filterable so the search service can
+	// return a user's own pending/declined drafts via include_pending=true.
+	UserID           int    `json:"user_id"`
 	View             int    `json:"view"`
 	Released         string `json:"released"`
 	ReleasedYear     *int   `json:"released_year,omitempty"`

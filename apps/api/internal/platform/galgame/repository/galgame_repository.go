@@ -9,6 +9,7 @@ import (
 	"api/internal/platform/galgame/model"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // GalgameRepository handles galgame data access on kun_galgame_wiki
@@ -112,6 +113,82 @@ func (r *GalgameRepository) FindByIDs(ctx context.Context, ids []int) ([]model.G
 		Where("id IN ? AND status = 0", ids).
 		Find(&galgames).Error
 	return galgames, err
+}
+
+// FindByIDsAny is like FindByIDs but does NOT filter by status. Used by
+// internal services (e.g. MessageService.enrich) that already authorize the
+// audience and need the row regardless of state. Public API must use
+// FindByIDs or FindByIDsWithViewer instead.
+func (r *GalgameRepository) FindByIDsAny(ctx context.Context, ids []int) ([]model.Galgame, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	var galgames []model.Galgame
+	err := r.db.WithContext(ctx).
+		Select("id, vndb_id, name_en_us, name_ja_jp, name_zh_cn, name_zh_tw, banner, banner_image_hash, content_limit, status, user_id, resource_update_time, original_language, age_limit").
+		Where("id IN ?", ids).
+		Find(&galgames).Error
+	return galgames, err
+}
+
+// FindByIDsWithViewer is like FindByIDs but additionally returns entries
+// in status {3, 4} where the viewer is the submitter. Used by
+// GET /galgame/batch when the caller authenticates with a user JWT.
+//
+// viewerUID == 0 falls back to FindByIDs (public visibility).
+func (r *GalgameRepository) FindByIDsWithViewer(ctx context.Context, ids []int, viewerUID int) ([]model.Galgame, error) {
+	if viewerUID <= 0 {
+		return r.FindByIDs(ctx, ids)
+	}
+	var galgames []model.Galgame
+	err := r.db.WithContext(ctx).
+		Select("id, vndb_id, name_en_us, name_ja_jp, name_zh_cn, name_zh_tw, banner, content_limit, status, user_id, resource_update_time, original_language, age_limit").
+		Where("id IN ?", ids).
+		Where("status = 0 OR (status IN (3, 4) AND user_id = ?)", viewerUID).
+		Find(&galgames).Error
+	return galgames, err
+}
+
+// ListMine returns galgames the user has submitted matching one of the
+// given statuses. Used by GET /galgame/mine.
+func (r *GalgameRepository) ListMine(ctx context.Context, uid int, statuses []int, page, limit int) ([]model.Galgame, int64, error) {
+	var items []model.Galgame
+	var total int64
+
+	q := r.db.WithContext(ctx).Model(&model.Galgame{}).
+		Where("user_id = ?", uid).
+		Where("status IN ?", statuses)
+
+	q.Count(&total)
+
+	err := q.Order("updated DESC").
+		Offset((page - 1) * limit).
+		Limit(limit).
+		Find(&items).Error
+	return items, total, err
+}
+
+// CheckSubmitQuota counts submissions made today by this user.
+// Caller compares against the configured per-day limit (default 5).
+func (r *GalgameRepository) CountSubmissionsToday(ctx context.Context, uid int) (int64, error) {
+	now := time.Now()
+	dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	var cnt int64
+	err := r.db.WithContext(ctx).Model(&model.Galgame{}).
+		Where("user_id = ? AND status IN (3, 4) AND created >= ?", uid, dayStart).
+		Count(&cnt).Error
+	return cnt, err
+}
+
+// FindForUpdate selects a galgame with row-level locking. Used in claim/patch
+// to avoid race conditions between concurrent admins/users.
+func (r *GalgameRepository) FindForUpdate(tx *gorm.DB, id int) (*model.Galgame, error) {
+	var g model.Galgame
+	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&g, id).Error
+	if err != nil {
+		return nil, err
+	}
+	return &g, nil
 }
 
 // Create creates a galgame record
