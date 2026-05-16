@@ -110,6 +110,25 @@ export const useAuth = () => {
     return api.put('/auth/email', { code, new_email: newEmail })
   }
 
+  // PATCH /auth/me — partial self-service profile update. Pointer/optional
+  // semantics on the server: only the keys present in `payload` change;
+  // empty string clears the field. On success the response IS the fresh
+  // UserResponse, so we push it straight into the store (no extra /auth/me
+  // round-trip). Email/password are NOT here — they have their own
+  // verified flows (changeEmail / changePassword).
+  const updateProfile = async (payload: {
+    name?: string
+    bio?: string
+    avatar?: string
+    avatar_image_hash?: string
+  }) => {
+    const response = await api.patch<User>('/auth/me', payload)
+    if (response.code === 0 && response.data) {
+      userStore.setUser(response.data)
+    }
+    return response
+  }
+
   return {
     user: computed(() => userStore.user),
     isLoggedIn: computed(() => userStore.isLoggedIn),
@@ -124,5 +143,6 @@ export const useAuth = () => {
     changePassword,
     sendEmailChangeCode,
     changeEmail,
+    updateProfile,
   }
 }

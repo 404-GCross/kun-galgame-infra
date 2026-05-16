@@ -27,6 +27,11 @@ const refreshTokenTtlDays = ref(DEFAULT_REFRESH_TOKEN_TTL_SECONDS / 86400)
 const error = ref('')
 const isLoading = ref(false)
 
+// KunSelect option list for the site picker (value=id, label=name+domain).
+const siteOptions = computed(() =>
+  props.sites.map((s) => ({ value: s.id, label: `${s.name} (${s.domain})` }))
+)
+
 const addUri = () => {
   redirectUris.value.push('')
 }
@@ -114,18 +119,12 @@ const handleSubmit = async () => {
     <div class="w-[32rem] space-y-4 p-6">
       <h2 class="text-xl font-bold text-foreground">创建 OAuth 客户端</h2>
 
-      <div>
-        <label class="mb-1 block text-sm font-medium text-default-500">关联站点</label>
-        <select
-          v-model="siteId"
-          class="w-full rounded-lg border border-default-200 bg-content1 px-3 py-2 text-sm text-foreground outline-none focus:border-primary"
-        >
-          <option value="" disabled>请选择站点</option>
-          <option v-for="site in props.sites" :key="site.id" :value="site.id">
-            {{ site.name }} ({{ site.domain }})
-          </option>
-        </select>
-      </div>
+      <KunSelect
+        v-model="siteId"
+        label="关联站点"
+        placeholder="请选择站点"
+        :options="siteOptions"
+      />
 
       <KunInput
         v-model="name"
@@ -167,19 +166,15 @@ const handleSubmit = async () => {
           <span class="text-xs text-default-400">— refresh_token 必须勾选，否则 15 分钟后用户会被强制重新登录</span>
         </label>
         <div class="flex flex-wrap gap-2">
-          <label
+          <KunCheckBox
             v-for="g in ALL_GRANTS"
             :key="g"
-            class="flex cursor-pointer items-center gap-1.5 rounded-lg border border-default-200 bg-content1 px-3 py-1.5 text-sm text-foreground hover:border-primary"
-          >
-            <input
-              type="checkbox"
-              :checked="grants.includes(g)"
-              class="size-3.5 accent-primary"
-              @change="toggleGrant(g)"
-            />
-            {{ g }}
-          </label>
+            :model-value="grants.includes(g)"
+            :label="g"
+            color="primary"
+            class-name="rounded-lg border border-default-200 bg-content1 px-3 py-1.5 hover:border-primary"
+            @update:model-value="toggleGrant(g)"
+          />
         </div>
       </div>
 
@@ -189,19 +184,15 @@ const handleSubmit = async () => {
           <span class="text-xs text-default-400">— image:upload 这类敏感 scope 必须显式勾选</span>
         </label>
         <div class="flex flex-wrap gap-2">
-          <label
+          <KunCheckBox
             v-for="s in KNOWN_SCOPES"
             :key="s"
-            class="flex cursor-pointer items-center gap-1.5 rounded-lg border border-default-200 bg-content1 px-3 py-1.5 text-sm text-foreground hover:border-primary"
-          >
-            <input
-              type="checkbox"
-              :checked="allowedScopes.includes(s)"
-              class="size-3.5 accent-primary"
-              @change="toggleScope(s)"
-            />
-            {{ s }}
-          </label>
+            :model-value="allowedScopes.includes(s)"
+            :label="s"
+            color="primary"
+            class-name="rounded-lg border border-default-200 bg-content1 px-3 py-1.5 hover:border-primary"
+            @update:model-value="toggleScope(s)"
+          />
         </div>
       </div>
 
@@ -210,28 +201,25 @@ const handleSubmit = async () => {
           refresh_token 有效期（天）
           <span class="text-xs text-default-400">— 默认 90 天；用户登录后无感续期的最长窗口</span>
         </label>
-        <input
-          v-model.number="refreshTokenTtlDays"
+        <KunInput
+          :model-value="refreshTokenTtlDays"
           type="number"
           min="1"
           max="3650"
-          class="w-full rounded-lg border border-default-200 bg-content1 px-3 py-2 text-sm text-foreground outline-none focus:border-primary"
+          @update:model-value="refreshTokenTtlDays = Number($event)"
         />
         <p class="mt-1 text-xs text-default-400">
           常见取值：1（高敏感后台）/ 7 / 30 / <strong>90（默认）</strong> / 365（长寿后台服务）
         </p>
       </div>
 
-      <div>
-        <label class="flex cursor-pointer items-center gap-2 text-sm font-medium text-default-500">
-          <input
-            v-model="isPublic"
-            type="checkbox"
-            class="size-3.5 accent-primary"
-          />
-          公共客户端 (SPA / native)
-          <span class="text-xs text-default-400 font-normal">— PKCE 必须；refresh 不需要 client_secret</span>
-        </label>
+      <div class="flex items-center gap-2 text-sm">
+        <KunCheckBox
+          v-model="isPublic"
+          label="公共客户端 (SPA / native)"
+          color="primary"
+        />
+        <span class="text-xs text-default-400">— PKCE 必须；refresh 不需要 client_secret</span>
       </div>
 
       <div v-if="error" class="rounded-lg bg-danger-50 p-3 text-sm text-danger">

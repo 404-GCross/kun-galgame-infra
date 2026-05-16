@@ -153,19 +153,15 @@ const handleSubmit = async () => {
           <span class="text-xs text-default-400">— refresh_token 必须勾选，否则 15 分钟后用户会被强制重新登录</span>
         </label>
         <div class="flex flex-wrap gap-2">
-          <label
+          <KunCheckBox
             v-for="g in ALL_GRANTS"
             :key="g"
-            class="flex cursor-pointer items-center gap-1.5 rounded-lg border border-default-200 bg-content1 px-3 py-1.5 text-sm text-foreground hover:border-primary"
-          >
-            <input
-              type="checkbox"
-              :checked="grants.includes(g)"
-              class="size-3.5 accent-primary"
-              @change="toggleGrant(g)"
-            />
-            {{ g }}
-          </label>
+            :model-value="grants.includes(g)"
+            :label="g"
+            color="primary"
+            class-name="rounded-lg border border-default-200 bg-content1 px-3 py-1.5 hover:border-primary"
+            @update:model-value="toggleGrant(g)"
+          />
         </div>
       </div>
 
@@ -175,19 +171,15 @@ const handleSubmit = async () => {
           <span class="text-xs text-default-400">— image:upload 这类敏感 scope 必须显式勾选</span>
         </label>
         <div class="flex flex-wrap gap-2">
-          <label
+          <KunCheckBox
             v-for="s in KNOWN_SCOPES"
             :key="s"
-            class="flex cursor-pointer items-center gap-1.5 rounded-lg border border-default-200 bg-content1 px-3 py-1.5 text-sm text-foreground hover:border-primary"
-          >
-            <input
-              type="checkbox"
-              :checked="allowedScopes.includes(s)"
-              class="size-3.5 accent-primary"
-              @change="toggleScope(s)"
-            />
-            {{ s }}
-          </label>
+            :model-value="allowedScopes.includes(s)"
+            :label="s"
+            color="primary"
+            class-name="rounded-lg border border-default-200 bg-content1 px-3 py-1.5 hover:border-primary"
+            @update:model-value="toggleScope(s)"
+          />
         </div>
       </div>
 
@@ -196,12 +188,12 @@ const handleSubmit = async () => {
           refresh_token 有效期（天）
           <span class="text-xs text-default-400">— 改动仅影响后续新签发的 token；现有 session 仍按旧 TTL</span>
         </label>
-        <input
-          v-model.number="refreshTokenTtlDays"
+        <KunInput
+          :model-value="refreshTokenTtlDays"
           type="number"
           min="1"
           max="3650"
-          class="w-full rounded-lg border border-default-200 bg-content1 px-3 py-2 text-sm text-foreground outline-none focus:border-primary"
+          @update:model-value="refreshTokenTtlDays = Number($event)"
         />
       </div>
 

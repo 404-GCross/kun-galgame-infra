@@ -14,6 +14,8 @@ onMounted(async () => {
 
     <ProfileInfo />
 
+    <ProfileEdit />
+
     <div class="grid gap-6 md:grid-cols-2">
       <ProfileEmailChange />
       <ProfilePasswordChange />

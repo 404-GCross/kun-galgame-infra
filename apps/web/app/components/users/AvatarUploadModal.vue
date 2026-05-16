@@ -19,28 +19,19 @@ interface Emits {
 const props = defineProps<Props>()
 const emit = defineEmits<Emits>()
 
-const file = ref<File | null>(null)
+// KunUpload emits an already-cropped, square image/webp Blob (q0.77).
+// We POST that Blob as-is; image_service still re-processes it through
+// the avatar preset server-side (256/100 cover variants).
+const file = ref<Blob | null>(null)
 const uploading = ref(false)
 const errorMsg = ref('')
-const previewUrl = ref('')
+// KunUpload holds its picked image in internal state with no reset API,
+// so we remount it via :key to clear the preview after close/success.
+const uploadKey = ref(0)
 
-const accept = 'image/jpeg,image/png,image/webp'
-const maxBytes = 10 * 1024 * 1024
-
-const onPick = (event: Event) => {
+const onCropped = (blob: Blob) => {
   errorMsg.value = ''
-  const f = (event.target as HTMLInputElement).files?.[0]
-  if (!f) {
-    file.value = null
-    previewUrl.value = ''
-    return
-  }
-  if (f.size > maxBytes) {
-    errorMsg.value = `文件超过 ${(maxBytes / 1024 / 1024).toFixed(0)} MB 限制`
-    return
-  }
-  file.value = f
-  previewUrl.value = URL.createObjectURL(f)
+  file.value = blob
 }
 
 const close = () => {
@@ -48,8 +39,8 @@ const close = () => {
   emit('update:open', false)
   setTimeout(() => {
     file.value = null
-    previewUrl.value = ''
     errorMsg.value = ''
+    uploadKey.value++
   }, 200)
 }
 
@@ -60,7 +51,9 @@ const submit = async () => {
 
   try {
     const fd = new FormData()
-    fd.append('file', file.value)
+    // Blob has no filename; the multipart parser needs one to treat this
+    // part as a file rather than a plain form field.
+    fd.append('file', file.value, 'avatar.webp')
 
     const cfg = useRuntimeConfig()
     const cookie = useCookie('access_token')
@@ -108,19 +101,14 @@ const submit = async () => {
           保留作回退（老用户头像不会被覆盖）。
         </p>
 
-        <input
-          type="file"
-          :accept="accept"
-          class="text-default-500 file:bg-content2 file:text-foreground hover:file:bg-content3 block w-full text-sm file:mr-3 file:rounded file:border-0 file:px-3 file:py-1.5 file:text-sm file:font-medium"
-          @change="onPick"
+        <KunUpload
+          :key="uploadKey"
+          :size="512"
+          :aspect="1"
+          hint="点击或拖拽选择图片，可裁剪为正方形"
+          class-name="mx-auto w-48"
+          @set-image="onCropped"
         />
-
-        <div
-          v-if="previewUrl"
-          class="bg-content2 flex justify-center overflow-hidden rounded p-2"
-        >
-          <img :src="previewUrl" class="max-h-64 object-contain" alt="预览" />
-        </div>
 
         <div v-if="errorMsg" class="text-danger-600 text-sm">
           {{ errorMsg }}
