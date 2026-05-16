@@ -18,6 +18,13 @@ import (
 // required `data` form field.
 var errMultipartMissingData = stderrors.New("multipart request missing 'data' form field")
 
+// errImageClientUnconfigured is returned when a multipart request carries a
+// banner `file` but the image_service client isn't wired up
+// (KUN_IMAGE_CLIENT_ID/SECRET unset). Distinct sentinel so mapWriteBodyError
+// can surface an actionable message instead of a generic "请求格式错误",
+// which misleads callers into thinking their payload is malformed.
+var errImageClientUnconfigured = stderrors.New("image client not configured (KUN_IMAGE_CLIENT_ID/SECRET unset)")
+
 // parseGalgameWriteBody parses Create/Update/SubmitPR request bodies in
 // either of two equivalent formats:
 //
@@ -68,7 +75,7 @@ func parseGalgameWriteBody(c fiber.Ctx, imgClient *imageclient.Client, target an
 	}
 
 	if imgClient == nil {
-		return "", stderrors.New("image client not configured (KUN_IMAGE_CLIENT_ID/SECRET unset)")
+		return "", errImageClientUnconfigured
 	}
 
 	src, err := fh.Open()
@@ -102,6 +109,17 @@ func mapWriteBodyError(c fiber.Ctx, err error) error {
 
 	if stderrors.Is(err, errMultipartMissingData) {
 		return response.BadRequestMsg(c, apperr.ErrMissingParam, err.Error())
+	}
+
+	// Banner upload attempted but image_service isn't configured. This is
+	// an operational/deployment gap, not a client payload problem — say so
+	// explicitly so the user knows to submit without a preview image (or an
+	// operator knows to set KUN_IMAGE_CLIENT_ID/SECRET) instead of chasing
+	// a nonexistent format bug.
+	if stderrors.Is(err, errImageClientUnconfigured) {
+		slog.Error("banner upload requested but image_service unconfigured", "err", err)
+		return response.BadRequestMsg(c, apperr.ErrBadRequest,
+			"图片服务未配置, 暂时无法上传预览图; 请不带预览图重新提交, 或联系管理员部署 image_service")
 	}
 
 	// Anything else (JSON parse failure, file open failure) → 400.

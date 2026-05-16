@@ -16,35 +16,52 @@
 
 ## 错误响应
 
-统一格式：
+> ⚠️ 本节已对齐实现（2026-05 核对）。早期草案写的是嵌套
+> `{"error":{"code":"quota_exceeded"}}`（字符串 code）——**那是过期设计，
+> 从未落地**。实际服务端走全系统统一的扁平信封 `pkg/response`，`code` 是
+> **整数**。`pkg/imageclient` 也按整数 `code` 解析/分类，二者一致。
+
+统一格式（与 OAuth / galgame 等所有本仓服务同一套 `{code,message,data}`）：
 
 ```json
 {
-  "error": {
-    "code": "quota_exceeded",
-    "message": "daily upload quota exceeded: 10000/10000",
-    "details": {
-      "quota": 10000,
-      "used": 10000,
-      "reset_at": "2026-04-24T00:00:00Z"
-    }
+  "code": 80008,
+  "message": "当日配额已用完",
+  "details": {
+    "quota_count": 10000,
+    "quota_bytes": 10737418240,
+    "used_count": 10000,
+    "used_bytes": 10737418240,
+    "reset_at": "2026-04-24T00:00:00Z"
   }
 }
 ```
 
-| HTTP | code | 场景 |
-|------|------|------|
-| 400 | `invalid_file` | MIME 嗅探失败 / 损坏的文件 / 不支持的格式 |
-| 400 | `invalid_preset` | 站点未开通此 preset |
-| 401 | `unauthorized` | 缺失或无效 token |
-| 403 | `scope_missing` | token 缺少必要 scope |
-| 403 | `site_disabled` | 站点未开启图片服务 |
-| 413 | `file_too_large` | 超过站点上限 |
-| 429 | `quota_exceeded` | 超出站点日配额 |
-| 429 | `rate_limited` | 超过瞬时速率限制 |
-| 500 | `internal_error` | 服务异常 |
+- 成功：`{"code":0,"message":"...","data":{...}}`。
+- 普通错误：`{"code":<非0整数>,"message":"..."}`（无 `details`）。
+- 配额超限是唯一带 `details` 的错误（`handler.go` 特例，字段如上）。
+- HTTP 状态码与 `code` 并存，调用方应以**整数 `code`** 为准做分类。
 
-**注意**：V1 没有 `rejected_moderation`（审核延后到 V3）。
+| HTTP | code | 常量 | 场景 |
+|------|------|------|------|
+| 400 | 80014 | `ErrImageBadRequest` | 请求格式错误（缺 file/参数等） |
+| 400 | 80011 | `ErrImagePresetNotFound` | 未知 preset |
+| 400 | 80009 | `ErrImageMIMEDenied` | 该 preset 不接受此格式 |
+| 400 | 80010 | `ErrImageDecodeFailed` | 图片解码失败 |
+| 401 | 80001 | `ErrImageUnauthorized` | 缺失/无效凭证 |
+| 401 | 80002 / 80003 | `ErrImageBadClient` / `ErrImageBadSecret` | client id / secret 错误 |
+| 403 | 80004 / 80005 | `ErrImageSiteDisabled` / `ErrImageSiteUnconfigured` | 站点未开启/缺配置 |
+| 403 | 80006 | `ErrImagePresetDenied` | 站点不允许此 preset |
+| 413 | 80007 | `ErrImageFileTooLarge` | 超过站点上限 |
+| 422 | 60002 | `ErrModerationRejected` | 审核拒绝（仅启用审核时） |
+| 429 | 80008 | `ErrImageQuotaExceeded` | 超出站点日配额（带 `details`） |
+| 500 | 80012 | `ErrImageStoreFailed` | 存储/处理失败 |
+| 503 | 80015 | `ErrImageUploadDisabled` | 上传功能未开放 |
+
+完整码表见 `apps/api/pkg/errors/codes.go`（`ErrImage*` 80001-80015、
+`ErrModeration*` 60001-60003）。
+
+**注意**：是否启用审核由部署开关决定；未启用时不会出现 `60002`。
 
 ---
 

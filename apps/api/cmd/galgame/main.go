@@ -171,6 +171,14 @@ func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB, se
 	galgame.Get("/batch", optionalJWT, galgameH.BatchGet)
 	galgame.Get("/check", galgameH.CheckVNDB)
 	galgame.Get("/user/:uid/stats", galgameH.UserStats)
+	// GET /mine MUST be registered before the /:gid catch-all: both are
+	// GET and Fiber matches by registration order, so a /:gid registered
+	// first binds :gid="mine" and the handler ParseInt-fails with
+	// {"code":2,"无效的 ID"}. It needs auth, so attach jwtAuth inline
+	// (same middleware the galgameAuth group uses) rather than relying on
+	// the later group. submit/claim/patch/delete on /:gid are POST/PATCH/
+	// DELETE so they don't collide and stay in the auth group below.
+	galgame.Get("/mine", jwtAuth, submissionH.ListMine)
 	galgame.Get("/:gid", galgameH.Get)
 	galgame.Get("/:gid/revisions", revisionH.ListRevisions)
 	galgame.Get("/:gid/revisions/:rev", revisionH.GetRevision)
@@ -200,12 +208,11 @@ func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB, se
 	galgameAuth.Delete("/:gid/contributors/:uid", contributorH.Delete)
 
 	// ── User submission flow ──
-	// `submit` and `mine` are static path segments and use POST/GET which
-	// don't collide with PUT/:gid (above) or DELETE/PATCH on /:gid (below),
-	// so registration order doesn't matter here. PATCH and DELETE on /:gid
-	// are unique routes for those verbs in this group.
+	// GET /mine is registered earlier (before the public /:gid catch-all)
+	// — see the comment there. submit/claim are POST and patch/delete are
+	// PATCH/DELETE, none of which collide with GET /:gid, so they stay
+	// here in the auth group.
 	galgameAuth.Post("/submit", submissionH.Submit)
-	galgameAuth.Get("/mine", submissionH.ListMine)
 	galgameAuth.Post("/:gid/claim", submissionH.Claim)
 	galgameAuth.Patch("/:gid", submissionH.PatchDraft)
 	galgameAuth.Delete("/:gid", submissionH.DeleteDraft)
