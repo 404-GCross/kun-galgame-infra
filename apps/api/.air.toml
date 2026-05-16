@@ -8,8 +8,9 @@ testdata_dir = "testdata"
 tmp_dir = "tmp"
 
 [build]
-# Build all services
-cmd = "go build -o ./tmp/oauth ./cmd/oauth && go build -o ./tmp/galgame ./cmd/galgame && go build -o ./tmp/artifact ./cmd/artifact && go build -o ./tmp/moderation ./cmd/moderation"
+# Build all services. cmd/image needs CGO + libwebp (doc 07); the rest
+# are pure Go. CGO_ENABLED=1 is scoped to just that one build command.
+cmd = "go build -o ./tmp/oauth ./cmd/oauth && go build -o ./tmp/galgame ./cmd/galgame && go build -o ./tmp/artifact ./cmd/artifact && go build -o ./tmp/moderation ./cmd/moderation && CGO_ENABLED=1 go build -o ./tmp/image ./cmd/image"
 # Run via dev.sh which manages all processes
 entrypoint = "./dev.sh"
 # Watch these extensions

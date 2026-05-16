@@ -9,6 +9,7 @@ BLUE='\033[0;34m'
 GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
 MAGENTA='\033[0;35m'
+CYAN='\033[0;36m'
 GRAY='\033[0;90m'
 NC='\033[0m'
 
@@ -54,12 +55,14 @@ printf '%boauth%b      :9277\n'    "$BLUE"    "$NC"
 printf '%bgalgame%b    :9280\n'    "$GREEN"   "$NC"
 printf '%bartifact%b   :9279\n'    "$YELLOW"  "$NC"
 printf '%bmoderation%b :9281\n'    "$MAGENTA" "$NC"
+printf '%bimage%b      :9278\n'    "$CYAN"    "$NC"
 printf '\n'
 
 start "$BLUE"    "oauth     " ./tmp/oauth      || { cleanup; exit 1; }
 start "$GREEN"   "galgame   " ./tmp/galgame    || { cleanup; exit 1; }
 start "$YELLOW"  "artifact  " ./tmp/artifact   || { cleanup; exit 1; }
 start "$MAGENTA" "moderation" ./tmp/moderation || { cleanup; exit 1; }
+start "$CYAN"    "image     " ./tmp/image      || { cleanup; exit 1; }
 
 # Fail fast: if any single service exits, tear the rest down so air rebuilds.
 # Restricting to $pids means we don't react to the label subshell finishing
