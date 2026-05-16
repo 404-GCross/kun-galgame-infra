@@ -118,8 +118,15 @@ func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 		return c.JSON(fiber.Map{"status": "ok"})
 	})
 
-	// Strict rate limiter for sensitive endpoints
+	// Strict rate limiter for genuinely anonymous brute-force targets
+	// (login / register / password reset). NOT used on /oauth/token —
+	// see oauthTokenLimiter below.
 	strict := middleware.StrictRateLimit(a.Cache)
+
+	// Per-client limiter for /oauth/token. Keyed by client_id so a
+	// confidential SSR backend (kungal/moyu) proxying its whole userbase
+	// through one IP isn't throttled to the strict 10/min/IP bucket.
+	oauthTokenLimiter := middleware.OAuthTokenRateLimit(a.Cache)
 
 	// Auth routes (public)
 	auth := v1.Group("/auth")
@@ -140,7 +147,7 @@ func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 
 	// OAuth 2.0 routes
 	oauth := v1.Group("/oauth")
-	oauth.Post("/token", strict, oauthH.Token)
+	oauth.Post("/token", oauthTokenLimiter, oauthH.Token)
 	oauth.Post("/revoke", oauthH.Revoke)
 	oauth.Get("/authorize", oauthH.Authorize)
 	oauthProtected := oauth.Group("", middleware.Auth(authSvc))

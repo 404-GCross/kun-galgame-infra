@@ -292,11 +292,35 @@ OAuth 服务端 2026 升级之后对 refresh 加了多道校验。**任何一条
 | 4. 请求里的 `client_id` 必须等于**当初签发 refresh_token 时的同一个 client_id** | 401 / 10002 `ErrAuthInvalidToken` | 检查 `client_id` env 在多环境间没乱用 |
 | 5. refresh_token 没过期（默认 90 天，按 client 配置） | 401 / 10003 `ErrAuthTokenExpired` | 用户重新登录 |
 
-外加一种情况：
+外加两种情况：
 
 - **存量 session（升级前创建的）`client_id` 列为空**，跟条件 4 永远比不上。**这批 session 一次性必须重新登录**，登录后新 session 带正确 client_id，refresh 才正常。可以用一条 SQL 把存量清掉提前触发：
   ```sql
   DELETE FROM sessions WHERE client_id = '';
+  ```
+
+- **限流把整站打爆（2026-05 修复前的典型现象）**。`/oauth/token` 曾经挂了一个
+  `10 次/分钟、按 IP+path` 的限流器，外加一个全局 `100 次/分钟、按纯 IP` 的限流器。
+  confidential SSR 客户端（kungal/moyu）在服务端代理**全站所有用户**的 token
+  交换 + refresh，全部来自**同一个后端 IP** —— 于是 `/oauth/token` 被限死
+  10 次/分钟/整站。活跃用户稍多就 `429`，下游把它当 refresh 失败 → 踢用户重登
+  → 重登又是一次 `/oauth/token` → 雪崩。**症状**：用户登录后约 15 分钟（access_token
+  TTL）被踢，间歇性、与活跃度相关、`sessions` 表同一用户堆大量未过期 session。
+
+  **此问题已在 2026-05 修复**：`/oauth/token` 改为按 `client_id` 限流且额度放宽
+  （6000/min/client，纯防失控客户端死循环，不是反爆破）；全局限流器对带
+  `Authorization` 头的已认证请求放行（per-IP 限流只留给匿名流量）。
+  接入方**无需改代码**；如果你在旧版本上遇到此现象，升级 OAuth 服务端即可。
+  自查 SQL：
+
+  ```sql
+  -- 同一用户是否堆了大量未过期 session（refresh 一直失败的指纹）
+  SELECT user_id, client_id, count(*) AS n,
+         count(*) FILTER (WHERE expires_at > now()) AS still_valid
+  FROM sessions
+  GROUP BY user_id, client_id
+  HAVING count(*) > 3
+  ORDER BY n DESC;
   ```
 
 ### 4.2 调试 refresh 401 的最小 SQL
