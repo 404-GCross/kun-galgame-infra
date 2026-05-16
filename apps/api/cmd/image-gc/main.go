@@ -1,28 +1,28 @@
-// image-gc is the TTL lifecycle worker. Run it as a cron (e.g. daily):
+// image-gc is the TTL lifecycle worker (cold-candidate report →
+// soft-delete >365d unreferenced → hard-delete soft-deleted >30d).
 //
-//   # Daily at 03:30
-//   30 3 * * *  /usr/local/bin/kun-image-gc
+// Thin shell: logic lives in internal/jobs (single source of truth) so
+// the in-process scheduler and this CLI run identical code. Run daily,
+// e.g.:
+//
+//	30 3 * * *  /usr/local/bin/kun-image-gc      # if scheduling externally
 //
 // Flags:
-//   --cold-days=60     soft threshold to report as cold-storage candidates
-//   --soft-days=365    age (since last_referenced_at) to soft-delete at
-//   --hard-days=30     age (since deleted_at) to hard-delete at
-//   --dry-run          log only, do not mutate DB or S3
-//   --max=10000        max rows per phase per run
+//
+//	--cold-days=60     soft threshold to report as cold-storage candidates
+//	--soft-days=365    age (since last_referenced_at) to soft-delete at
+//	--hard-days=30     age (since deleted_at) to hard-delete at
+//	--dry-run          log only, do not mutate DB or S3
+//	--max=10000        max rows per phase per run
 package main
 
 import (
 	"context"
-	"encoding/json"
 	"flag"
 	"log/slog"
 	"os"
-	"time"
 
-	"api/internal/infrastructure/database"
-	"api/internal/platform/image/repository"
-	"api/internal/platform/image/service"
-	"api/internal/platform/image/storage"
+	"api/internal/jobs"
 	"api/pkg/config"
 	"api/pkg/logger"
 )
@@ -42,37 +42,16 @@ func main() {
 	}
 	logger.Init(cfg.Server.Env)
 
-	db, err := database.NewPostgresDB(cfg.ImagesDatabase)
-	if err != nil {
-		slog.Error("db connect", "err", err)
-		os.Exit(1)
-	}
-	defer db.Close()
-
-	s3, err := storage.NewClient(cfg.ImageS3)
-	if err != nil {
-		slog.Error("s3 init", "err", err)
-		os.Exit(1)
-	}
-
-	imgRepo := repository.NewImageRepository(db.DB())
-	gc := service.NewGCService(db.DB(), s3, imgRepo)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
-	defer cancel()
-
-	summary, err := gc.Run(ctx, service.GCConfig{
-		ColdAfter:    time.Duration(*coldDays) * 24 * time.Hour,
-		SoftDelAfter: time.Duration(*softDays) * 24 * time.Hour,
-		HardDelAfter: time.Duration(*hardDays) * 24 * time.Hour,
-		DryRun:       *dryRun,
-		MaxPerRun:    *maxPerRun,
+	summary, err := jobs.RunImageGC(context.Background(), cfg, jobs.ImageGCOpts{
+		ColdDays:  *coldDays,
+		SoftDays:  *softDays,
+		HardDays:  *hardDays,
+		DryRun:    *dryRun,
+		MaxPerRun: *maxPerRun,
 	})
 	if err != nil {
-		slog.Error("gc run", "err", err)
+		slog.Error("image-gc failed", "err", err)
 		os.Exit(1)
 	}
-
-	b, _ := json.MarshalIndent(summary, "", "  ")
-	slog.Info("gc run complete", "summary", string(b))
+	slog.Info("image-gc run complete", "summary", summary)
 }

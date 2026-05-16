@@ -10,6 +10,7 @@ import (
 	"api/pkg/logger"
 
 	// Import all models
+	jobsModel "api/internal/jobs/model"
 	artifactModel "api/internal/platform/artifact/model"
 	authModel "api/internal/platform/auth/model"
 	moderationModel "api/internal/platform/moderation/model"
@@ -101,6 +102,9 @@ func getAllModels() []any {
 		// Moderation models
 		&moderationModel.Job{},
 		&moderationModel.Result{},
+
+		// Job registry observability
+		&jobsModel.JobRun{},
 	}
 }
 

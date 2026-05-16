@@ -4,13 +4,16 @@ import (
 	"context"
 	"log/slog"
 	"os"
+	"strconv"
 
 	"api/internal/app"
 	"api/internal/infrastructure/database"
 	"api/internal/infrastructure/mail"
+	"api/internal/jobs"
 	"api/internal/middleware"
 	"api/pkg/config"
 	"api/pkg/logger"
+	"api/pkg/response"
 
 	authHandler "api/internal/platform/auth/handler"
 	authRepo "api/internal/platform/auth/repository"
@@ -202,6 +205,76 @@ func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 	// Image admin routes — best-effort; if images DB or S3 are unreachable
 	// in dev, skip registration rather than failing the whole oauth service.
 	registerImageAdmin(a, cfg, admin)
+
+	// Job registry: in-process scheduler (default auto-run) + admin
+	// trigger/visibility. Pure docker-compose: scheduler lives in this
+	// long-lived container; cross-replica single-flight via PG advisory
+	// lock in the runner. Design: docs/jobs/01-implementation-plan.md.
+	jobReg := jobs.NewRegistry()
+	jobs.RegisterAll(jobReg)
+	jobRunner := jobs.NewRunner(cfg, db)
+	jobs.StartScheduler(cleanupCtx, jobReg, jobRunner)
+	registerJobsAdmin(admin, jobReg, jobRunner)
+}
+
+// registerJobsAdmin wires the job registry admin endpoints. Mirrors
+// registerImageAdmin: admin auth already applied on the group.
+func registerJobsAdmin(admin fiber.Router, reg *jobs.Registry, runner *jobs.Runner) {
+	g := admin.Group("/jobs")
+
+	// GET /api/v1/admin/jobs — registered jobs + each one's latest run.
+	g.Get("", func(c fiber.Ctx) error {
+		type jobView struct {
+			Name      string `json:"name"`
+			Desc      string `json:"desc"`
+			DailyAt   string `json:"daily_at,omitempty"`
+			Auto      bool   `json:"auto"`
+			LatestRun any    `json:"latest_run"`
+		}
+		out := make([]jobView, 0)
+		for _, j := range reg.List() {
+			latest, err := runner.LatestRun(c.Context(), j.Name)
+			if err != nil {
+				slog.Error("jobs admin: latest run", "job", j.Name, "err", err)
+			}
+			out = append(out, jobView{
+				Name:      j.Name,
+				Desc:      j.Desc,
+				DailyAt:   j.Schedule.DailyAt,
+				Auto:      !j.Schedule.Zero(),
+				LatestRun: latest,
+			})
+		}
+		return response.Success(c, out)
+	})
+
+	// POST /api/v1/admin/jobs/:name/run — manual trigger (background).
+	g.Post("/:name/run", func(c fiber.Ctx) error {
+		name := c.Params("name")
+		job, ok := reg.Get(name)
+		if !ok {
+			return response.Error(c, fiber.StatusNotFound, fiber.StatusNotFound, "unknown job: "+name)
+		}
+		runner.RunAsync(job, jobs.TriggerAdmin)
+		return response.SuccessWithMessage(c, "job triggered (running in background)", fiber.Map{"job": name})
+	})
+
+	// GET /api/v1/admin/jobs/:name/runs?limit=20 — run history.
+	g.Get("/:name/runs", func(c fiber.Ctx) error {
+		name := c.Params("name")
+		if _, ok := reg.Get(name); !ok {
+			return response.Error(c, fiber.StatusNotFound, fiber.StatusNotFound, "unknown job: "+name)
+		}
+		limit, _ := strconv.Atoi(c.Query("limit"))
+		runs, err := runner.ListRuns(c.Context(), name, limit)
+		if err != nil {
+			slog.Error("jobs admin: list runs", "job", name, "err", err)
+			return response.Error(c, fiber.StatusInternalServerError, fiber.StatusInternalServerError, "failed to list runs")
+		}
+		return response.Success(c, runs)
+	})
+
+	slog.Info("jobs admin endpoints registered under /api/v1/admin/jobs/*")
 }
 
 // registerImageAdmin wires admin endpoints for the image service. These
