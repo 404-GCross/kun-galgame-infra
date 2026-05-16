@@ -3,7 +3,6 @@ module api
 go 1.25.3
 
 require (
-	github.com/HugoSmits86/nativewebp v1.2.1
 	github.com/aws/aws-sdk-go-v2 v1.41.6
 	github.com/aws/aws-sdk-go-v2/config v1.32.16
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.15
@@ -16,6 +15,7 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
 	github.com/joho/godotenv v1.5.1
+	github.com/kolesa-team/go-webp v1.0.5
 	github.com/matthewhartstonge/argon2 v1.4.6
 	github.com/meilisearch/meilisearch-go v0.36.2
 	github.com/prometheus/client_golang v1.23.2

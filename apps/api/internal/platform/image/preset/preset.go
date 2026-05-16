@@ -113,7 +113,7 @@ func (c *Config) validate() error {
 				p.Variants[i].Format = "webp"
 			}
 			if v.Quality == 0 {
-				p.Variants[i].Quality = 82
+				p.Variants[i].Quality = 77
 			}
 		}
 	}

@@ -76,7 +76,7 @@ export default defineNuxtConfig({
       // domain; in production override via env. Must NOT have a trailing slash.
       imageCdnBase:
         process.env.KUN_GALGAME_WIKI_NUXT_PUBLIC_IMAGE_CDN_BASE ||
-        'https://image.kungal.nextmoe.dev'
+        'https://image.kungal.iloveren.link'
     }
   }
 })

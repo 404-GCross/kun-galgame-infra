@@ -1,15 +1,17 @@
 // Package processor implements the image decode → resize → encode pipeline.
-// All codec work is pure Go (no CGO / no libwebp system dep) to keep the
-// build and deploy story simple.
 //
 // Decoding covers JPEG, PNG, GIF (first frame), and WebP (via
-// golang.org/x/image/webp, read-only).
+// golang.org/x/image/webp, pure-Go, read-only).
 //
 // Resizing uses golang.org/x/image/draw with CatmullRom for quality.
 //
-// WebP encoding uses github.com/HugoSmits86/nativewebp (pure Go). Quality is
-// approximated — this package is slower and slightly larger than libwebp,
-// but removes the CGO dependency entirely.
+// WebP ENCODING uses github.com/kolesa-team/go-webp (cgo bindings to
+// libwebp). This REQUIRES CGO + a system libwebp (pkg-config `libwebp`).
+// We need true lossy WebP at a controllable quality — the previous pure-Go
+// nativewebp encoder could only emit lossless VP8L (no quality knob), which
+// produced multi-MB outputs and is why uploads were originally disabled.
+// libwebp gives us the design's "compressed WebP @ configurable quality"
+// (see docs/image_service/01-design.md 技术栈备选 `kolesa-team/go-webp`).
 package processor
 
 import (
@@ -25,9 +27,10 @@ import (
 
 	"api/internal/platform/image/preset"
 
-	"github.com/HugoSmits86/nativewebp"
+	"github.com/kolesa-team/go-webp/encoder"
+	"github.com/kolesa-team/go-webp/webp"
 	"golang.org/x/image/draw"
-	_ "golang.org/x/image/webp" // register WebP decoder (read-only)
+	_ "golang.org/x/image/webp" // register WebP decoder (read-only, pure-Go)
 )
 
 // MaxDecodedPixels caps decoded image area to defuse decompression bombs.
@@ -133,11 +136,22 @@ func resizeCover(src image.Image, targetW, targetH int) *image.NRGBA {
 	return dst
 }
 
-// encodeWebP encodes the given image to WebP bytes. Quality is ignored by
-// nativewebp v0.x; kept in signature for future libwebp drop-in.
-func encodeWebP(img image.Image, _ int) ([]byte, error) {
+// encodeWebP encodes the image to lossy WebP at the given quality (1..100).
+// Quality is clamped to that range defensively; preset validation already
+// enforces 1..100 but a zero/garbage value must never reach libwebp.
+func encodeWebP(img image.Image, quality int) ([]byte, error) {
+	if quality < 1 {
+		quality = 77
+	}
+	if quality > 100 {
+		quality = 100
+	}
+	opts, err := encoder.NewLossyEncoderOptions(encoder.PresetDefault, float32(quality))
+	if err != nil {
+		return nil, fmt.Errorf("webp encoder options: %w", err)
+	}
 	var buf bytes.Buffer
-	if err := nativewebp.Encode(&buf, img, nil); err != nil {
+	if err := webp.Encode(&buf, img, opts); err != nil {
 		return nil, fmt.Errorf("encode webp: %w", err)
 	}
 	return buf.Bytes(), nil

@@ -62,7 +62,7 @@ export default defineNuxtConfig({
       // image_service public CDN base; override via env in prod.
       imageCdnBase:
         process.env.KUN_VISUAL_NOVEL_NUXT_PUBLIC_IMAGE_CDN_BASE ||
-        'https://image.kungal.nextmoe.dev'
+        'https://image.kungal.iloveren.link'
     }
   }
 })

@@ -13,7 +13,7 @@
 // factory which does the runtime-config lookup once.
 
 interface ImageURLOptions {
-  /** image_service CDN base, e.g. https://image.kungal.nextmoe.dev */
+  /** image_service CDN base, e.g. https://image.kungal.iloveren.link */
   cdnBase: string
   /** Output extension. Default 'webp' (V1 always emits webp). */
   ext?: string

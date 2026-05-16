@@ -12,6 +12,7 @@
 | 04 | [migration-plan.md](./04-migration-plan.md) | 从三个旧站点迁移到新服务的分阶段计划 |
 | 05 | [engineering-plan.md](./05-engineering-plan.md) | 工程里程碑 V1–V4、交付物、验收标准、本地 dev 环境 |
 | 06 | [integration-guide.md](./06-integration-guide.md) | **调用方视角**：OAuth 注册、业务库 migration、SDK、降级策略、cron |
+| 07 | [reopen-and-cgo-deploy.md](./07-reopen-and-cgo-deploy.md) | **运维 checklist**：重新开放上传、CGO/libwebp 部署、质量验证、回滚 |
 
 ## 一句话总结
 

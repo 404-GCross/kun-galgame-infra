@@ -14,7 +14,7 @@
 // runtime config rather than hardcoding.
 
 interface ImageURLOptions {
-  /** image_service CDN base, e.g. https://image.kungal.nextmoe.dev */
+  /** image_service CDN base, e.g. https://image.kungal.iloveren.link */
   cdnBase: string
   /** ext (default 'webp', V1 always outputs webp) */
   ext?: string
