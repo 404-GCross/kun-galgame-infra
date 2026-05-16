@@ -30,7 +30,15 @@ type GalgameRevision struct {
 	GalgameID  int            `gorm:"not null;uniqueIndex:idx_galgame_revision" json:"galgame_id"`
 	Revision   int            `gorm:"not null;uniqueIndex:idx_galgame_revision" json:"revision"`
 	UserID     int            `gorm:"not null;index" json:"user_id"`
-	Action     string         `gorm:"size:20;not null;check:action IN ('created','updated','merged','reverted','declined')" json:"action"`
+	// Full action set produced by the galgame services. NOTE: GORM's
+	// AutoMigrate only CREATES this CHECK on a fresh table — it never
+	// ALTERs an existing one. When you add an action here you MUST also
+	// bump the explicit DROP/ADD in cmd/migrate-galgame/main.go, or
+	// existing wiki DBs keep the stale constraint and INSERTs 23514.
+	// created/updated/merged/reverted/declined: revision_service,
+	// galgame_service. claimed/edited_pending: submission_service.
+	// approved/banned/unbanned/status_changed: admin_service.
+	Action     string         `gorm:"size:20;not null;check:action IN ('created','updated','merged','reverted','declined','claimed','edited_pending','approved','banned','unbanned','status_changed')" json:"action"`
 	Note       string         `gorm:"type:text;default:''" json:"note"`
 	Snapshot   datatypes.JSON `gorm:"type:jsonb;not null" json:"snapshot"`
 	IsMinor    bool           `gorm:"default:false" json:"is_minor"`

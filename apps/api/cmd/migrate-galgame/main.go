@@ -118,5 +118,37 @@ func main() {
 		os.Exit(1)
 	}
 
+	// (2) galgame_revision.action CHECK. GORM's AutoMigrate creates this
+	// constraint from the model tag only on a fresh table; it NEVER alters
+	// an existing one. The submission/claim/admin-review flows added new
+	// action values (claimed/edited_pending/approved/banned/unbanned/
+	// status_changed) on top of the original created/updated/merged/
+	// reverted/declined set, so existing wiki DBs still carry the stale
+	// 5-value constraint and every POST /galgame/:gid/claim 23514s.
+	//
+	// Drop-then-add by the GORM default name. Idempotent: DROP IF EXISTS
+	// tolerates first run / re-run; the new set is a strict superset of
+	// the old so ADD CONSTRAINT validates all existing rows. Keep this
+	// list in sync with the model tag in galgame/model/pr.go.
+	if err := db.DB().Exec(`
+		ALTER TABLE galgame_revision
+		    DROP CONSTRAINT IF EXISTS chk_galgame_revision_action
+	`).Error; err != nil {
+		slog.Error("drop stale chk_galgame_revision_action failed", "error", err)
+		os.Exit(1)
+	}
+	if err := db.DB().Exec(`
+		ALTER TABLE galgame_revision
+		    ADD CONSTRAINT chk_galgame_revision_action
+		    CHECK (action IN (
+		        'created','updated','merged','reverted','declined',
+		        'claimed','edited_pending','approved','banned',
+		        'unbanned','status_changed'
+		    ))
+	`).Error; err != nil {
+		slog.Error("recreate chk_galgame_revision_action failed", "error", err)
+		os.Exit(1)
+	}
+
 	slog.Info("galgame wiki migration completed successfully")
 }
