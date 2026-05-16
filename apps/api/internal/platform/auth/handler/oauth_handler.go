@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"log/slog"
 	"net/url"
 
 	"api/internal/platform/auth/dto"
@@ -150,10 +151,20 @@ func (h *OAuthHandler) Consent(c fiber.Ctx) error {
 func (h *OAuthHandler) Token(c fiber.Ctx) error {
 	var req dto.TokenRequest
 	if err := c.Bind().JSON(&req); err != nil {
+		// Diagnostic: an OAuth client sending application/x-www-form-urlencoded
+		// (the RFC 6749 standard, what many OAuth libraries default to) would
+		// land here because the handler only binds JSON. Log the content-type
+		// so we can tell a form-encoded client apart from a malformed body.
+		slog.Warn("oauth token bind failed",
+			"content_type", c.Get("Content-Type"),
+			"body_len", len(c.Body()),
+			"err", err,
+		)
 		return response.BadRequest(c, errors.ErrBadRequest)
 	}
 
 	if err := utils.Validate(&req); err != nil {
+		slog.Warn("oauth token validate failed", "grant_type", req.GrantType, "client_id", req.ClientID, "err", err)
 		return response.BadRequestMsg(c, errors.ErrValidationFailed, err.Error())
 	}
 

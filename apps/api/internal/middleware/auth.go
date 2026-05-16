@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"log/slog"
 	"strings"
 
 	authService "api/internal/platform/auth/service"
@@ -42,6 +43,10 @@ func Auth(authSvc *authService.AuthService) fiber.Handler {
 		// Validate token (signature, exp, format)
 		claims, err := authSvc.ValidateAccessToken(token)
 		if err != nil {
+			// Debug, not Warn: a naturally-expired 15-min access_token
+			// hits this on every user every 15 min — normal, the client
+			// then refreshes. Only interesting when chasing a specific bug.
+			slog.Debug("auth reject", "stage", "token_invalid", "path", c.Path(), "err", err)
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
 				"code":    errors.ErrAuthTokenExpired,
 				"message": errors.GetMessage(errors.ErrAuthTokenExpired),
@@ -52,6 +57,8 @@ func Auth(authSvc *authService.AuthService) fiber.Handler {
 		// could have been banned in the last 15 min.
 		user, err := authSvc.GetCurrentUser(c.Context(), claims.UserUUID)
 		if err != nil || user == nil {
+			slog.Warn("auth reject", "stage", "get_current_user",
+				"path", c.Path(), "user_uuid", claims.UserUUID, "err", err)
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
 				"code":    errors.ErrAuthUserNotFound,
 				"message": errors.GetMessage(errors.ErrAuthUserNotFound),

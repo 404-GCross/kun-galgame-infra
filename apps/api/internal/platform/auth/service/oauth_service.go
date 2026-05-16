@@ -8,6 +8,8 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	stderrors "errors"
+	"log/slog"
+	"strconv"
 	"strings"
 	"time"
 
@@ -400,6 +402,7 @@ func (s *OAuthService) GetUserIDByUUID(ctx context.Context, uuid string) (uint, 
 func (s *OAuthService) RefreshWithClient(ctx context.Context, refreshToken, clientID, clientSecret string) (*dto.TokenResponse, error) {
 	client, err := s.clientRepo.FindByClientID(ctx, clientID)
 	if err != nil {
+		slog.Warn("oauth refresh reject", "stage", "client_lookup", "client_id", clientID, "err", err)
 		return nil, errors.NewWithCode(errors.ErrOAuthInvalidClient)
 	}
 
@@ -407,6 +410,7 @@ func (s *OAuthService) RefreshWithClient(ctx context.Context, refreshToken, clie
 	// include "refresh_token" cannot use this path — even if it somehow
 	// holds a valid refresh_token.
 	if !client.IsGrantAllowed("refresh_token") {
+		slog.Warn("oauth refresh reject", "stage", "grant_not_allowed", "client_id", clientID, "grants", client.Grants)
 		return nil, errors.NewWithCode(errors.ErrOAuthInvalidGrant)
 	}
 
@@ -415,16 +419,21 @@ func (s *OAuthService) RefreshWithClient(ctx context.Context, refreshToken, clie
 		// is the proof. (Server still validates the refresh_token below.)
 	} else {
 		if clientSecret == "" {
+			slog.Warn("oauth refresh reject", "stage", "missing_secret", "client_id", clientID)
 			return nil, errors.NewWithCode(errors.ErrOAuthInvalidClientSecret)
 		}
 		if err := s.verifyClientSecret(ctx, clientID, clientSecret); err != nil {
+			slog.Warn("oauth refresh reject", "stage", "bad_secret", "client_id", clientID)
 			return nil, err
 		}
 	}
 
-	// Find session by refresh token
-	session, err := s.sessionRepo.FindByRefreshToken(ctx, refreshToken)
+	// Find session by CURRENT or PREVIOUS refresh token. The grace-window
+	// logic below distinguishes the two.
+	session, err := s.sessionRepo.FindByRefreshTokenOrPrev(ctx, refreshToken)
 	if err != nil {
+		slog.Warn("oauth refresh reject", "stage", "session_not_found",
+			"client_id", clientID, "refresh_token_fp", tokenFingerprint(refreshToken), "err", err)
 		return nil, errors.NewWithCode(errors.ErrAuthInvalidToken)
 	}
 
@@ -438,11 +447,16 @@ func (s *OAuthService) RefreshWithClient(ctx context.Context, refreshToken, clie
 	// session.ClientID here implies an OAuth-issued session whose
 	// client_id was never recorded, which we treat as a security failure.
 	if session.ClientID != clientID {
+		slog.Warn("oauth refresh reject", "stage", "client_id_mismatch",
+			"request_client_id", clientID, "session_client_id", session.ClientID,
+			"session_id", session.ID, "user_id", session.UserID)
 		return nil, errors.NewWithCode(errors.ErrAuthInvalidToken)
 	}
 
 	// Check if session is expired
 	if session.IsExpired() {
+		slog.Warn("oauth refresh reject", "stage", "session_expired",
+			"session_id", session.ID, "user_id", session.UserID, "expires_at", session.ExpiresAt)
 		_ = s.sessionRepo.Delete(ctx, session.ID)
 		return nil, errors.NewWithCode(errors.ErrAuthTokenExpired)
 	}
@@ -453,28 +467,71 @@ func (s *OAuthService) RefreshWithClient(ctx context.Context, refreshToken, clie
 		return nil, errors.NewWithCode(errors.ErrAuthUserNotFound)
 	}
 
-	// Generate new tokens. Crucially the new access_token carries the
-	// session's original scope AND the client's site_id — without these
-	// a refreshed token would lose its scope claim (privacy regression
-	// in /oauth/userinfo) and lose its site binding (image_service
-	// site-mismatch check would silently allow).
 	var siteID uint
 	if client.SiteID != nil {
 		siteID = *client.SiteID
 	}
-	accessToken, err := utils.GenerateAccessToken(
-		s.cfg.JWT.Secret,
-		utils.TokenClaims{
-			UserUUID: user.UUID,
-			UID:      user.ID,
-			Email:    user.Email,
-			Name:     user.Name,
-			Roles:    user.RoleNames(),
-			Scope:    session.Scope,
-			SiteID:   siteID,
-		},
-		15*time.Minute,
-	)
+
+	// freshAccess mints a new 15-min access_token carrying the session's
+	// scope + the client's site_id (without these a refreshed token would
+	// lose its scope claim — privacy regression in /oauth/userinfo — and
+	// its site binding — image_service cross-site check silently allows).
+	freshAccess := func() (string, error) {
+		return utils.GenerateAccessToken(
+			s.cfg.JWT.Secret,
+			utils.TokenClaims{
+				UserUUID: user.UUID,
+				UID:      user.ID,
+				Email:    user.Email,
+				Name:     user.Name,
+				Roles:    user.RoleNames(),
+				Scope:    session.Scope,
+				SiteID:   siteID,
+			},
+			15*time.Minute,
+		)
+	}
+
+	// ── Refresh-token rotation with grace window ──────────────────────
+	//
+	// The presented token matched the session via current OR previous
+	// column. Branch on which:
+	if refreshToken != session.RefreshToken {
+		// Matched PrevRefreshToken.
+		if session.PrevTokenWithinGrace() {
+			// Case B: a concurrent/retry caller racing a rotation that
+			// already happened (the norm for SSR proxies firing several
+			// in-flight requests when the access_token expires). DO NOT
+			// rotate again — hand back a fresh access_token plus the
+			// CURRENT refresh_token so this caller converges on the
+			// winning rotation's token. Idempotent within the window.
+			accessToken, gerr := freshAccess()
+			if gerr != nil {
+				return nil, gerr
+			}
+			slog.Info("oauth refresh grace-replay",
+				"client_id", clientID, "session_id", session.ID, "user_id", session.UserID,
+				"presented_fp", tokenFingerprint(refreshToken))
+			return &dto.TokenResponse{
+				AccessToken:  accessToken,
+				TokenType:    "Bearer",
+				ExpiresIn:    900,
+				RefreshToken: session.RefreshToken,
+			}, nil
+		}
+		// Case C: previous token presented AFTER the grace window — this
+		// is replay of a long-rotated token = probable theft. Revoke the
+		// whole session (defensive; forces a clean re-login).
+		slog.Warn("oauth refresh reuse-detected; revoking session",
+			"client_id", clientID, "session_id", session.ID, "user_id", session.UserID,
+			"presented_fp", tokenFingerprint(refreshToken),
+			"rotated_at", session.RotatedAt)
+		_ = s.sessionRepo.Delete(ctx, session.ID)
+		return nil, errors.NewWithCode(errors.ErrAuthInvalidToken)
+	}
+
+	// Case A: matched the CURRENT refresh_token — normal rotation.
+	accessToken, err := freshAccess()
 	if err != nil {
 		return nil, err
 	}
@@ -491,14 +548,24 @@ func (s *OAuthService) RefreshWithClient(ctx context.Context, refreshToken, clie
 		return nil, err
 	}
 
-	// Update session with new tokens (rotation)
+	now := time.Now()
 	session.SessionToken = accessToken
+	session.PrevRefreshToken = session.RefreshToken // demote, honored for RefreshGraceWindow
+	session.RotatedAt = &now
 	session.RefreshToken = newRefreshToken
-	session.ExpiresAt = time.Now().Add(refreshTokenTTL)
+	session.ExpiresAt = now.Add(refreshTokenTTL)
 
 	if err := s.sessionRepo.Update(ctx, session); err != nil {
+		slog.Error("oauth refresh reject", "stage", "session_update_failed",
+			"session_id", session.ID, "user_id", session.UserID, "err", err)
 		return nil, err
 	}
+
+	slog.Debug("oauth refresh ok",
+		"client_id", clientID, "session_id", session.ID, "user_id", session.UserID,
+		"old_rt_fp", tokenFingerprint(refreshToken),
+		"new_rt_fp", tokenFingerprint(newRefreshToken),
+	)
 
 	return &dto.TokenResponse{
 		AccessToken:  accessToken,
@@ -506,6 +573,21 @@ func (s *OAuthService) RefreshWithClient(ctx context.Context, refreshToken, clie
 		ExpiresIn:    900,
 		RefreshToken: newRefreshToken,
 	}, nil
+}
+
+// tokenFingerprint returns a non-reversible short identifier for a token
+// suitable for logs: the first 8 chars + total length. Never log the raw
+// token — it's a bearer credential.
+func tokenFingerprint(tok string) string {
+	if tok == "" {
+		return "(empty)"
+	}
+	n := len(tok)
+	prefix := tok
+	if n > 8 {
+		prefix = tok[:8]
+	}
+	return prefix + "..len=" + strconv.Itoa(n)
 }
 
 // verifyCodeVerifier verifies the PKCE code verifier.

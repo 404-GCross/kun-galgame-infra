@@ -209,10 +209,12 @@ func (s *AuthService) Logout(ctx context.Context, sessionToken string) error {
 	return s.sessionRepo.Delete(ctx, session.ID)
 }
 
-// RefreshToken refreshes an access token
+// RefreshToken refreshes an access token (the /auth/refresh cookie path
+// used by the OAuth admin UI). Same refresh-token rotation grace-window
+// logic as OAuthService.RefreshWithClient — see model.Session docs.
 func (s *AuthService) RefreshToken(ctx context.Context, refreshToken string) (*dto.TokenPair, error) {
-	// Find session by refresh token
-	session, err := s.sessionRepo.FindByRefreshToken(ctx, refreshToken)
+	// Find session by CURRENT or PREVIOUS refresh token.
+	session, err := s.sessionRepo.FindByRefreshTokenOrPrev(ctx, refreshToken)
 	if err != nil {
 		return nil, errors.NewWithCode(errors.ErrAuthInvalidToken)
 	}
@@ -235,10 +237,28 @@ func (s *AuthService) RefreshToken(ctx context.Context, refreshToken string) (*d
 		return nil, err
 	}
 
-	// Update session with new tokens
+	if refreshToken != session.RefreshToken {
+		// Matched PrevRefreshToken.
+		if session.PrevTokenWithinGrace() {
+			// Case B: concurrent/retry within grace — don't rotate.
+			// Fresh access_token + the CURRENT refresh_token.
+			return &dto.TokenPair{
+				AccessToken:  tokens.AccessToken,
+				RefreshToken: session.RefreshToken,
+			}, nil
+		}
+		// Case C: replay after grace → probable theft → revoke session.
+		_ = s.sessionRepo.Delete(ctx, session.ID)
+		return nil, errors.NewWithCode(errors.ErrAuthInvalidToken)
+	}
+
+	// Case A: matched current — normal rotation.
+	now := time.Now()
 	session.SessionToken = tokens.AccessToken
+	session.PrevRefreshToken = session.RefreshToken
+	session.RotatedAt = &now
 	session.RefreshToken = tokens.RefreshToken
-	session.ExpiresAt = time.Now().Add(7 * 24 * time.Hour)
+	session.ExpiresAt = now.Add(7 * 24 * time.Hour)
 
 	if err := s.sessionRepo.Update(ctx, session); err != nil {
 		return nil, err

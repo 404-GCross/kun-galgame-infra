@@ -28,10 +28,24 @@ func (r *SessionRepository) FindBySessionToken(ctx context.Context, token string
 	return &session, nil
 }
 
-// FindByRefreshToken finds a session by refresh token
+// FindByRefreshToken finds a session by its CURRENT refresh token only.
 func (r *SessionRepository) FindByRefreshToken(ctx context.Context, token string) (*model.Session, error) {
 	var session model.Session
 	if err := r.db.WithContext(ctx).Where("refresh_token = ?", token).First(&session).Error; err != nil {
+		return nil, err
+	}
+	return &session, nil
+}
+
+// FindByRefreshTokenOrPrev finds a session whose CURRENT or PREVIOUS
+// refresh token matches. The caller compares the token against
+// session.RefreshToken to tell a normal rotation from a grace-window
+// replay. Powers refresh-token rotation with a grace window.
+func (r *SessionRepository) FindByRefreshTokenOrPrev(ctx context.Context, token string) (*model.Session, error) {
+	var session model.Session
+	if err := r.db.WithContext(ctx).
+		Where("refresh_token = ? OR prev_refresh_token = ?", token, token).
+		First(&session).Error; err != nil {
 		return nil, err
 	}
 	return &session, nil
