@@ -11,6 +11,12 @@ const limit = ref(50)
 const items = ref<GalgameOfficial[]>([])
 const total = ref(0)
 const loading = ref(false)
+const createOpen = ref(false)
+
+const onCreated = () => {
+  createOpen.value = false
+  loadList()
+}
 
 const loadList = async () => {
   loading.value = true
@@ -59,7 +65,13 @@ const inSearchMode = computed(() => !!search.value.trim())
   <div class="space-y-4">
     <div class="flex items-center justify-between">
       <h1 class="text-foreground text-2xl font-bold">会社管理</h1>
-      <span class="text-default-500 text-sm">共 {{ total }} 家</span>
+      <div class="flex items-center gap-3">
+        <span class="text-default-500 text-sm">共 {{ total }} 家</span>
+        <KunButton color="primary" @click="createOpen = true">
+          <Icon name="lucide:plus" class="mr-1 size-4" />
+          新建会社
+        </KunButton>
+      </div>
     </div>
 
     <div class="max-w-md">
@@ -157,5 +169,12 @@ const inSearchMode = computed(() => !!search.value.trim())
     <p v-else class="text-default-400 text-right text-xs">
       搜索模式不分页（返回前若干匹配项）
     </p>
+
+    <OfficialEditModal
+      :open="createOpen"
+      :official="null"
+      @close="createOpen = false"
+      @saved="onCreated"
+    />
   </div>
 </template>

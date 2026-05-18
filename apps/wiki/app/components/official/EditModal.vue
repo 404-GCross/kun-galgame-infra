@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import type { GalgameOfficial } from '~/shared/types/galgame'
 
+// Used for both create (official=null) and edit (official=given).
 const props = defineProps<{
   open: boolean
-  official: GalgameOfficial
-  aliases: string[]
+  official?: GalgameOfficial | null
+  aliases?: string[]
 }>()
 
 const emit = defineEmits<{
@@ -13,6 +14,8 @@ const emit = defineEmits<{
 }>()
 
 const api = useApi()
+
+const isEdit = computed(() => !!props.official?.id)
 
 const form = ref({
   name: '',
@@ -28,12 +31,12 @@ watch(
   (v) => {
     if (v) {
       form.value = {
-        name: props.official.name,
-        link: props.official.link ?? '',
-        category: props.official.category,
-        lang: props.official.lang ?? '',
-        description: props.official.description ?? '',
-        aliasText: props.aliases.join('\n')
+        name: props.official?.name ?? '',
+        link: props.official?.link ?? '',
+        category: props.official?.category ?? 'company',
+        lang: props.official?.lang ?? '',
+        description: props.official?.description ?? '',
+        aliasText: (props.aliases ?? []).join('\n')
       }
     }
   },
@@ -50,18 +53,27 @@ const submit = async () => {
       .map((s) => s.trim())
       .filter(Boolean)
 
-    const response = await api.put('/official', {
-      official_id: props.official.id,
-      name: form.value.name,
-      link: form.value.link,
-      category: form.value.category,
-      lang: form.value.lang,
-      description: form.value.description,
-      alias: aliasArr
-    })
+    const response = isEdit.value
+      ? await api.put('/official', {
+          official_id: props.official!.id,
+          name: form.value.name,
+          link: form.value.link,
+          category: form.value.category,
+          lang: form.value.lang,
+          description: form.value.description,
+          alias: aliasArr
+        })
+      : await api.post('/official', {
+          name: form.value.name,
+          link: form.value.link,
+          category: form.value.category,
+          lang: form.value.lang,
+          description: form.value.description,
+          alias: aliasArr
+        })
 
     if (response.code === 0) {
-      useKunMessage('保存成功', 'success')
+      useKunMessage(isEdit.value ? '保存成功' : '创建成功', 'success')
       emit('saved')
     } else {
       useKunMessage(response.message || '保存失败', 'error')
@@ -79,7 +91,9 @@ const submit = async () => {
     @update:modal-value="(v: boolean) => !v && emit('close')"
   >
     <div class="space-y-4 p-6">
-      <h2 class="text-foreground text-lg font-semibold">编辑会社</h2>
+      <h2 class="text-foreground text-lg font-semibold">
+        {{ isEdit ? '编辑会社' : '创建会社' }}
+      </h2>
 
       <KunInput v-model="form.name" label="名称" />
       <KunInput v-model="form.link" label="官网链接" placeholder="https://..." />
@@ -108,7 +122,7 @@ const submit = async () => {
             name="lucide:loader-2"
             class="mr-1 size-4 animate-spin"
           />
-          保存
+          {{ isEdit ? '保存' : '创建' }}
         </KunButton>
       </div>
     </div>

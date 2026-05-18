@@ -8,6 +8,12 @@ const api = useApi()
 const search = useQueryState('search', '')
 const items = ref<GalgameEngine[]>([])
 const loading = ref(false)
+const createOpen = ref(false)
+
+const onCreated = () => {
+  createOpen.value = false
+  load()
+}
 
 const load = async () => {
   loading.value = true
@@ -34,9 +40,15 @@ onMounted(load)
   <div class="space-y-4">
     <div class="flex items-center justify-between">
       <h1 class="text-foreground text-2xl font-bold">引擎管理</h1>
-      <span class="text-default-500 text-sm">
-        共 {{ items.length }} 个{{ search ? ` · 匹配 ${filtered.length}` : '' }}
-      </span>
+      <div class="flex items-center gap-3">
+        <span class="text-default-500 text-sm">
+          共 {{ items.length }} 个{{ search ? ` · 匹配 ${filtered.length}` : '' }}
+        </span>
+        <KunButton color="primary" @click="createOpen = true">
+          <Icon name="lucide:plus" class="mr-1 size-4" />
+          新建引擎
+        </KunButton>
+      </div>
     </div>
 
     <div class="max-w-md">
@@ -90,5 +102,12 @@ onMounted(load)
         </table>
       </div>
     </KunCard>
+
+    <EngineEditModal
+      :open="createOpen"
+      :engine="null"
+      @close="createOpen = false"
+      @saved="onCreated"
+    />
   </div>
 </template>

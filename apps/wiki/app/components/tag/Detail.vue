@@ -50,6 +50,28 @@ const onSaved = () => {
   editOpen.value = false
   load()
 }
+
+// Two-step delete matching the API's safe-by-default + ?force=true
+// contract: a plain DELETE is refused while the tag is still referenced;
+// we then surface the count and let the operator confirm a force-purge.
+const handleDelete = async () => {
+  if (!tag.value) return
+  if (!confirm(`确定删除标签「${tag.value.name}」吗？`)) return
+  let r = await api.delete(`/tag/${id.value}`)
+  if (r.code !== 0 && r.message.includes('force=true')) {
+    if (
+      !confirm(`${r.message}\n\n仍要强制清除全部引用并硬删除吗？此操作不可恢复。`)
+    )
+      return
+    r = await api.delete(`/tag/${id.value}?force=true`)
+  }
+  if (r.code === 0) {
+    useKunMessage('删除成功', 'success')
+    router.push('/tag')
+  } else {
+    useKunMessage(r.message || '删除失败', 'error')
+  }
+}
 </script>
 
 <template>
@@ -107,10 +129,16 @@ const onSaved = () => {
               </span>
             </div>
           </div>
-          <KunButton variant="light" @click="editOpen = true">
-            <Icon name="lucide:pencil" class="mr-1 size-4" />
-            编辑
-          </KunButton>
+          <div class="flex shrink-0 gap-2">
+            <KunButton variant="light" @click="editOpen = true">
+              <Icon name="lucide:pencil" class="mr-1 size-4" />
+              编辑
+            </KunButton>
+            <KunButton color="danger" variant="light" @click="handleDelete">
+              <Icon name="lucide:trash-2" class="mr-1 size-4" />
+              删除
+            </KunButton>
+          </div>
         </div>
       </KunCard>
 

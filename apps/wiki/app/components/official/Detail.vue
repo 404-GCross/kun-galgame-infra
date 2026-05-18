@@ -49,6 +49,27 @@ const onSaved = () => {
   editOpen.value = false
   load()
 }
+
+// Two-step delete: safe-by-default, ?force=true purges references. See
+// tag/Detail.vue for rationale.
+const handleDelete = async () => {
+  if (!official.value) return
+  if (!confirm(`确定删除会社「${official.value.name}」吗？`)) return
+  let r = await api.delete(`/official/${id.value}`)
+  if (r.code !== 0 && r.message.includes('force=true')) {
+    if (
+      !confirm(`${r.message}\n\n仍要强制清除全部引用并硬删除吗？此操作不可恢复。`)
+    )
+      return
+    r = await api.delete(`/official/${id.value}?force=true`)
+  }
+  if (r.code === 0) {
+    useKunMessage('删除成功', 'success')
+    router.push('/official')
+  } else {
+    useKunMessage(r.message || '删除失败', 'error')
+  }
+}
 </script>
 
 <template>
@@ -124,10 +145,16 @@ const onSaved = () => {
               </span>
             </div>
           </div>
-          <KunButton variant="light" @click="editOpen = true">
-            <Icon name="lucide:pencil" class="mr-1 size-4" />
-            编辑
-          </KunButton>
+          <div class="flex shrink-0 gap-2">
+            <KunButton variant="light" @click="editOpen = true">
+              <Icon name="lucide:pencil" class="mr-1 size-4" />
+              编辑
+            </KunButton>
+            <KunButton color="danger" variant="light" @click="handleDelete">
+              <Icon name="lucide:trash-2" class="mr-1 size-4" />
+              删除
+            </KunButton>
+          </div>
         </div>
       </KunCard>
 

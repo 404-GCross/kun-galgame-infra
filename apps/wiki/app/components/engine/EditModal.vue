@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import type { GalgameEngine } from '~/shared/types/galgame'
 
+// Used for both create (engine=null) and edit (engine=given).
 const props = defineProps<{
   open: boolean
-  engine: GalgameEngine
-  aliases: string[]
+  engine?: GalgameEngine | null
+  aliases?: string[]
 }>()
 
 const emit = defineEmits<{
@@ -13,6 +14,8 @@ const emit = defineEmits<{
 }>()
 
 const api = useApi()
+
+const isEdit = computed(() => !!props.engine?.id)
 
 const form = ref({
   name: '',
@@ -25,9 +28,9 @@ watch(
   (v) => {
     if (v) {
       form.value = {
-        name: props.engine.name,
-        description: props.engine.description ?? '',
-        aliasText: props.aliases.join('\n')
+        name: props.engine?.name ?? '',
+        description: props.engine?.description ?? '',
+        aliasText: (props.aliases ?? []).join('\n')
       }
     }
   },
@@ -44,15 +47,21 @@ const submit = async () => {
       .map((s) => s.trim())
       .filter(Boolean)
 
-    const response = await api.put('/engine', {
-      engine_id: props.engine.id,
-      name: form.value.name,
-      description: form.value.description,
-      alias: aliasArr
-    })
+    const response = isEdit.value
+      ? await api.put('/engine', {
+          engine_id: props.engine!.id,
+          name: form.value.name,
+          description: form.value.description,
+          alias: aliasArr
+        })
+      : await api.post('/engine', {
+          name: form.value.name,
+          description: form.value.description,
+          alias: aliasArr
+        })
 
     if (response.code === 0) {
-      useKunMessage('保存成功', 'success')
+      useKunMessage(isEdit.value ? '保存成功' : '创建成功', 'success')
       emit('saved')
     } else {
       useKunMessage(response.message || '保存失败', 'error')
@@ -70,7 +79,9 @@ const submit = async () => {
     @update:modal-value="(v: boolean) => !v && emit('close')"
   >
     <div class="space-y-4 p-6">
-      <h2 class="text-foreground text-lg font-semibold">编辑引擎</h2>
+      <h2 class="text-foreground text-lg font-semibold">
+        {{ isEdit ? '编辑引擎' : '创建引擎' }}
+      </h2>
 
       <KunInput v-model="form.name" label="名称" />
       <KunTextarea v-model="form.description" label="描述" :rows="3" />
@@ -84,7 +95,7 @@ const submit = async () => {
             name="lucide:loader-2"
             class="mr-1 size-4 animate-spin"
           />
-          保存
+          {{ isEdit ? '保存' : '创建' }}
         </KunButton>
       </div>
     </div>

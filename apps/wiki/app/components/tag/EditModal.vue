@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import type { GalgameTag } from '~/shared/types/galgame'
 
+// Used for both create (tag=null) and edit (tag=given).
 const props = defineProps<{
   open: boolean
-  tag: GalgameTag
-  aliases: string[]
+  tag?: GalgameTag | null
+  aliases?: string[]
 }>()
 
 const emit = defineEmits<{
@@ -13,6 +14,8 @@ const emit = defineEmits<{
 }>()
 
 const api = useApi()
+
+const isEdit = computed(() => !!props.tag?.id)
 
 const form = ref({
   name: '',
@@ -26,10 +29,10 @@ watch(
   (v) => {
     if (v) {
       form.value = {
-        name: props.tag.name,
-        category: props.tag.category,
-        description: props.tag.description ?? '',
-        aliasText: props.aliases.join('\n')
+        name: props.tag?.name ?? '',
+        category: props.tag?.category ?? 'content',
+        description: props.tag?.description ?? '',
+        aliasText: (props.aliases ?? []).join('\n')
       }
     }
   },
@@ -46,16 +49,23 @@ const submit = async () => {
       .map((s) => s.trim())
       .filter(Boolean)
 
-    const response = await api.put('/tag', {
-      tag_id: props.tag.id,
-      name: form.value.name,
-      category: form.value.category,
-      description: form.value.description,
-      alias: aliasArr
-    })
+    const response = isEdit.value
+      ? await api.put('/tag', {
+          tag_id: props.tag!.id,
+          name: form.value.name,
+          category: form.value.category,
+          description: form.value.description,
+          alias: aliasArr
+        })
+      : await api.post('/tag', {
+          name: form.value.name,
+          category: form.value.category,
+          description: form.value.description,
+          alias: aliasArr
+        })
 
     if (response.code === 0) {
-      useKunMessage('保存成功', 'success')
+      useKunMessage(isEdit.value ? '保存成功' : '创建成功', 'success')
       emit('saved')
     } else {
       useKunMessage(response.message || '保存失败', 'error')
@@ -73,7 +83,9 @@ const submit = async () => {
     @update:modal-value="(v: boolean) => !v && emit('close')"
   >
     <div class="space-y-4 p-6">
-      <h2 class="text-foreground text-lg font-semibold">编辑标签</h2>
+      <h2 class="text-foreground text-lg font-semibold">
+        {{ isEdit ? '编辑标签' : '创建标签' }}
+      </h2>
 
       <KunInput v-model="form.name" label="名称" />
 
@@ -107,7 +119,7 @@ const submit = async () => {
             name="lucide:loader-2"
             class="mr-1 size-4 animate-spin"
           />
-          保存
+          {{ isEdit ? '保存' : '创建' }}
         </KunButton>
       </div>
     </div>
