@@ -8,55 +8,49 @@ const page = useQueryState('page', 1)
 const search = useQueryState('search', '')
 const limit = ref(50)
 
-const items = ref<GalgameOfficial[]>([])
-const total = ref(0)
-const loading = ref(false)
 const createOpen = ref(false)
+
+const debouncedSearch = ref(search.value)
+let searchTimer: ReturnType<typeof setTimeout> | null = null
+watch(search, (q) => {
+  if (searchTimer) clearTimeout(searchTimer)
+  searchTimer = setTimeout(() => {
+    if (page.value !== 1) page.value = 1
+    debouncedSearch.value = q
+  }, 300)
+})
+
+// SSR: server-fetched + payload-hydrated; re-fetches on
+// page/limit/search change.
+const { data, status, refresh } = await useAsyncData(
+  'official-list',
+  async () => {
+    if (debouncedSearch.value.trim()) {
+      const r = await api.get<GalgameOfficial[]>('/official/search', {
+        q: debouncedSearch.value
+      })
+      const arr = r.code === 0 ? (r.data ?? []) : []
+      return { items: arr, total: arr.length }
+    }
+    const r = await api.get<{ items: GalgameOfficial[]; total: number }>(
+      '/official',
+      { page: page.value, limit: limit.value }
+    )
+    return r.code === 0
+      ? r.data
+      : { items: [] as GalgameOfficial[], total: 0 }
+  },
+  { watch: [page, limit, debouncedSearch] }
+)
+
+const items = computed(() => data.value?.items ?? [])
+const total = computed(() => data.value?.total ?? 0)
+const loading = computed(() => status.value === 'pending')
 
 const onCreated = () => {
   createOpen.value = false
-  loadList()
+  refresh()
 }
-
-const loadList = async () => {
-  loading.value = true
-  try {
-    if (search.value.trim()) {
-      const response = await api.get<GalgameOfficial[]>('/official/search', {
-        q: search.value
-      })
-      if (response.code === 0) {
-        items.value = response.data ?? []
-        total.value = items.value.length
-      }
-    } else {
-      const response = await api.get<{
-        items: GalgameOfficial[]
-        total: number
-      }>('/official', { page: page.value, limit: limit.value })
-      if (response.code === 0) {
-        items.value = response.data.items
-        total.value = response.data.total
-      }
-    }
-  } finally {
-    loading.value = false
-  }
-}
-
-watch([page, limit], loadList, { immediate: true })
-
-let searchTimer: ReturnType<typeof setTimeout> | null = null
-watch(search, () => {
-  if (searchTimer) clearTimeout(searchTimer)
-  searchTimer = setTimeout(() => {
-    if (page.value !== 1) {
-      page.value = 1
-    } else {
-      loadList()
-    }
-  }, 300)
-})
 
 const inSearchMode = computed(() => !!search.value.trim())
 </script>

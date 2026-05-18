@@ -20,7 +20,15 @@ const load = async () => {
 }
 
 const remove = async (uid: number, name: string) => {
-  if (!confirm(`确认移除贡献者「${name}」？`)) return
+  if (
+    !(await useKunConfirm({
+      title: '移除贡献者',
+      content: `确认移除贡献者「${name}」？`,
+      confirmText: '移除',
+      danger: true
+    }))
+  )
+    return
   const response = await api.delete(
     `/galgame/${props.galgameId}/contributors/${uid}`
   )

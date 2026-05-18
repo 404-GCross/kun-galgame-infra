@@ -25,40 +25,47 @@ const page = useQueryState('page', 1)
 const search = useQueryState('search', '')
 const limit = ref(20)
 
-const items = ref<Galgame[]>([])
-const total = ref(0)
-const loading = ref(false)
+const debouncedSearch = ref(search.value)
+let searchTimer: ReturnType<typeof setTimeout> | null = null
+watch(search, (q) => {
+  if (searchTimer) clearTimeout(searchTimer)
+  searchTimer = setTimeout(() => {
+    if (page.value !== 1) page.value = 1
+    debouncedSearch.value = q
+  }, 300)
+})
 
-const loadList = async () => {
-  loading.value = true
-  try {
-    const response = await api.get<ListResponse>('/admin/galgame', {
+// SSR: server-fetched (admin endpoint; token cookie is non-httpOnly so
+// useApi attaches it server-side) + payload-hydrated. `status` is the
+// galgame-status query ref, so useAsyncData's own status is aliased.
+const {
+  data,
+  status: fetchStatus,
+  refresh
+} = await useAsyncData(
+  'galgame-list',
+  async () => {
+    const r = await api.get<ListResponse>('/admin/galgame', {
       status: status.value,
       page: page.value,
       limit: limit.value,
-      search: search.value || undefined
+      search: debouncedSearch.value || undefined
     })
-    if (response.code === 0) {
-      items.value = response.data.items
-      total.value = response.data.total
-    }
-  } finally {
-    loading.value = false
-  }
-}
+    // null = fetch failed (e.g. SSR-without-token); a valid empty result
+    // is { items: [], total: 0 } so the two are distinguishable.
+    return r.code === 0 ? r.data : null
+  },
+  { watch: [status, page, limit, debouncedSearch] }
+)
 
-watch([status, page, limit], loadList, { immediate: true })
+const items = computed(() => data.value?.items ?? [])
+const total = computed(() => data.value?.total ?? 0)
+const loading = computed(() => fetchStatus.value === 'pending')
 
-let searchTimer: ReturnType<typeof setTimeout> | null = null
-watch(search, () => {
-  if (searchTimer) clearTimeout(searchTimer)
-  searchTimer = setTimeout(() => {
-    if (page.value !== 1) {
-      page.value = 1 // also triggers reload via the watcher above
-    } else {
-      loadList()
-    }
-  }, 300)
+// Self-heal the SSR-without-token edge: only when the fetch actually
+// failed (data null), not for a legitimately empty result set.
+onMounted(() => {
+  if (!data.value) refresh()
 })
 
 const displayName = (g: Galgame) =>

@@ -16,6 +16,7 @@ onMounted(() => {
   <div>
     <NuxtRouteAnnouncer />
     <KunAlertMessageContainer />
+    <CommonConfirmHost />
     <NuxtLayout>
       <NuxtPage />
     </NuxtLayout>

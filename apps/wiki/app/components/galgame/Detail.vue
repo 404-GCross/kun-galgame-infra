@@ -14,28 +14,32 @@ const router = useRouter()
 const cdnBase = useRuntimeConfig().public.imageCdnBase as string
 
 const id = computed(() => Number(route.params.id))
-const galgame = ref<Galgame | null>(null)
-const loading = ref(false)
 const updating = ref(false)
 const editOpen = ref(false)
+
+// SSR: server-fetched (token cookie is non-httpOnly so useApi can attach
+// it server-side), payload-hydrated → no post-hydration flash for the
+// common authed case. This is an admin-only endpoint; if the SSR fetch
+// is unauthorized it fails soft (useApi SSR-hardening returns the error,
+// no redirect) and the onMounted guard re-fetches client-side where the
+// token-refresh path works.
+const { data: galgame, status, refresh } = await useAsyncData(
+  'galgame-detail',
+  async () => {
+    const r = await api.get<Galgame>(`/admin/galgame/${id.value}`)
+    return r.code === 0 ? r.data : null
+  },
+  { watch: [id] }
+)
+const loading = computed(() => status.value === 'pending')
+
+onMounted(() => {
+  if (!galgame.value) refresh()
+})
 
 const bannerSrc = computed(() =>
   resolveBannerUrl(galgame.value, { cdnBase })
 )
-
-const load = async () => {
-  loading.value = true
-  try {
-    const response = await api.get<Galgame>(`/admin/galgame/${id.value}`)
-    if (response.code === 0) {
-      galgame.value = response.data
-    }
-  } finally {
-    loading.value = false
-  }
-}
-
-watch(id, load, { immediate: true })
 
 const displayName = computed(() => {
   const g = galgame.value
@@ -75,7 +79,15 @@ const changeStatus = async (newStatus: number) => {
     2: '撤回为草稿'
   }
   const action = actionMap[newStatus]
-  if (!confirm(`确认将该 galgame ${action} 吗？`)) return
+  if (
+    !(await useKunConfirm({
+      title: `${action}确认`,
+      content: `确认将该 galgame ${action} 吗？`,
+      confirmText: action,
+      danger: newStatus === 1
+    }))
+  )
+    return
 
   updating.value = true
   try {
@@ -84,7 +96,7 @@ const changeStatus = async (newStatus: number) => {
     })
     if (response.code === 0) {
       useKunMessage(`${action}成功`, 'success')
-      await load()
+      await refresh()
     } else {
       useKunMessage(response.message || `${action}失败`, 'error')
     }
@@ -372,7 +384,7 @@ const changeStatus = async (newStatus: number) => {
         @saved="
           () => {
             editOpen = false
-            load()
+            refresh()
           }
         "
       />

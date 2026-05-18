@@ -6,25 +6,21 @@ const api = useApi()
 // /engine returns a flat array — small dataset, no server-side pagination.
 // Client-side filter via URL-synced `search`.
 const search = useQueryState('search', '')
-const items = ref<GalgameEngine[]>([])
-const loading = ref(false)
 const createOpen = ref(false)
+
+// SSR: the full engine list (small dataset) is server-fetched and
+// payload-hydrated; filtering is client-side over it.
+const { data, status, refresh } = await useAsyncData('engine-list', async () => {
+  const r = await api.get<GalgameEngine[]>('/engine')
+  return r.code === 0 ? (r.data ?? []) : []
+})
+
+const items = computed(() => data.value ?? [])
+const loading = computed(() => status.value === 'pending')
 
 const onCreated = () => {
   createOpen.value = false
-  load()
-}
-
-const load = async () => {
-  loading.value = true
-  try {
-    const response = await api.get<GalgameEngine[]>('/engine')
-    if (response.code === 0) {
-      items.value = response.data ?? []
-    }
-  } finally {
-    loading.value = false
-  }
+  refresh()
 }
 
 const filtered = computed(() => {
@@ -32,8 +28,6 @@ const filtered = computed(() => {
   if (!q) return items.value
   return items.value.filter((e) => e.name.toLowerCase().includes(q))
 })
-
-onMounted(load)
 </script>
 
 <template>

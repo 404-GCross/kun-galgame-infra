@@ -42,7 +42,15 @@ const add = async () => {
 }
 
 const remove = async (id: number, name: string) => {
-  if (!confirm(`确认删除别名「${name}」？`)) return
+  if (
+    !(await useKunConfirm({
+      title: '删除别名',
+      content: `确认删除别名「${name}」？`,
+      confirmText: '删除',
+      danger: true
+    }))
+  )
+    return
   const response = await api.delete(
     `/galgame/${props.galgameId}/aliases`,
     { id }

@@ -30,6 +30,14 @@ export const useApi = () => {
   }
 
   const handleUnauthorized = async () => {
+    // SSR-safety: never refresh-or-redirect during server render. The
+    // route middleware already gates auth before a page renders; an SSR
+    // 401 on an authed endpoint should fail soft (return the error) so
+    // the page can still stream, and the client re-attempts + refreshes
+    // on hydration via the existing path. Redirecting from inside an
+    // SSR data fetch would abort the render unpredictably.
+    if (import.meta.server) return false
+
     // Refresh token lives on oauth backend, not wiki
     try {
       const response = await $fetch<ApiResponse<{ access_token: string }>>(

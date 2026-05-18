@@ -5,24 +5,25 @@ import type { AdminStatsResponse } from '~/shared/types/galgame'
 const api = useApi()
 
 const days = ref(30)
-const stats = ref<AdminStatsResponse | null>(null)
-const loading = ref(false)
 
-const loadStats = async () => {
-  loading.value = true
-  try {
-    const response = await api.get<AdminStatsResponse>('/admin/stats', {
+// SSR: server-fetched + payload-hydrated; re-fetches on days change.
+// Admin endpoint — null on failure so the onMounted guard can self-heal
+// the SSR-without-token edge client-side.
+const { data: stats, status, refresh } = await useAsyncData(
+  'dashboard-stats',
+  async () => {
+    const r = await api.get<AdminStatsResponse>('/admin/stats', {
       days: days.value
     })
-    if (response.code === 0) {
-      stats.value = response.data
-    }
-  } finally {
-    loading.value = false
-  }
-}
+    return r.code === 0 ? r.data : null
+  },
+  { watch: [days] }
+)
+const loading = computed(() => status.value === 'pending')
 
-watch(days, loadStats, { immediate: true })
+onMounted(() => {
+  if (!stats.value) refresh()
+})
 
 const totalsList = computed(() => {
   if (!stats.value) return []

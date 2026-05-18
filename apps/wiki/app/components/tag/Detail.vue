@@ -8,20 +8,17 @@ const router = useRouter()
 
 const id = computed(() => Number(route.params.id))
 
-const tag = ref<GalgameTag | null>(null)
-const aliases = ref<string[]>([])
-const galgames = ref<Galgame[]>([])
-const total = ref(0)
-const loading = ref(false)
 const editOpen = ref(false)
 
 const page = useQueryState('page', 1)
 const limit = ref(24)
 
-const load = async () => {
-  loading.value = true
-  try {
-    const response = await api.get<{
+// SSR: server-fetched, payload-hydrated (no post-hydration flash);
+// re-fetches on id/page change (watch) or after edit (refresh()).
+const { data, status, refresh } = await useAsyncData(
+  'tag-detail',
+  async () => {
+    const r = await api.get<{
       tag: GalgameTag & { alias?: { name: string }[] }
       galgames: Galgame[]
       total: number
@@ -30,25 +27,25 @@ const load = async () => {
       page: page.value,
       limit: limit.value
     })
-    if (response.code === 0) {
-      tag.value = response.data.tag
-      aliases.value = (response.data.tag.alias ?? []).map((a) => a.name)
-      galgames.value = response.data.galgames
-      total.value = response.data.total
-    }
-  } finally {
-    loading.value = false
-  }
-}
+    return r.code === 0 ? r.data : null
+  },
+  { watch: [id, page, limit] }
+)
 
-watch([id, page, limit], load, { immediate: true })
+const tag = computed(() => data.value?.tag ?? null)
+const aliases = computed(() =>
+  (data.value?.tag.alias ?? []).map((a) => a.name)
+)
+const galgames = computed(() => data.value?.galgames ?? [])
+const total = computed(() => data.value?.total ?? 0)
+const loading = computed(() => status.value === 'pending')
 
 const displayName = (g: Galgame) =>
   g.name_zh_cn || g.name_ja_jp || g.name_en_us || g.name_zh_tw || '(无标题)'
 
 const onSaved = () => {
   editOpen.value = false
-  load()
+  refresh()
 }
 
 // Two-step delete matching the API's safe-by-default + ?force=true
@@ -56,11 +53,24 @@ const onSaved = () => {
 // we then surface the count and let the operator confirm a force-purge.
 const handleDelete = async () => {
   if (!tag.value) return
-  if (!confirm(`确定删除标签「${tag.value.name}」吗？`)) return
+  if (
+    !(await useKunConfirm({
+      title: '删除标签',
+      content: `确定删除标签「${tag.value.name}」吗？`,
+      confirmText: '删除',
+      danger: true
+    }))
+  )
+    return
   let r = await api.delete(`/tag/${id.value}`)
   if (r.code !== 0 && r.message.includes('force=true')) {
     if (
-      !confirm(`${r.message}\n\n仍要强制清除全部引用并硬删除吗？此操作不可恢复。`)
+      !(await useKunConfirm({
+        title: '强制删除',
+        content: `${r.message}\n\n仍要强制清除全部引用并硬删除吗？此操作不可恢复。`,
+        confirmText: '强制删除',
+        danger: true
+      }))
     )
       return
     r = await api.delete(`/tag/${id.value}?force=true`)

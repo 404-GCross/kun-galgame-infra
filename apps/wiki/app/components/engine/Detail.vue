@@ -7,21 +7,17 @@ const route = useRoute()
 const router = useRouter()
 
 const id = computed(() => Number(route.params.id))
-const engine = ref<
-  (GalgameEngine & { alias?: string[] | unknown }) | null
->(null)
-const galgames = ref<Galgame[]>([])
-const total = ref(0)
-const loading = ref(false)
 const editOpen = ref(false)
 
 const page = useQueryState('page', 1)
 const limit = ref(24)
 
-const load = async () => {
-  loading.value = true
-  try {
-    const response = await api.get<{
+// SSR: server-fetched, payload-hydrated (no post-hydration flash);
+// re-fetches on id/page change (watch) or after edit (refresh()).
+const { data, status, refresh } = await useAsyncData(
+  'engine-detail',
+  async () => {
+    const r = await api.get<{
       engine: GalgameEngine & { alias?: string[] | unknown }
       galgames: Galgame[]
       total: number
@@ -30,17 +26,15 @@ const load = async () => {
       page: page.value,
       limit: limit.value
     })
-    if (response.code === 0) {
-      engine.value = response.data.engine
-      galgames.value = response.data.galgames
-      total.value = response.data.total
-    }
-  } finally {
-    loading.value = false
-  }
-}
+    return r.code === 0 ? r.data : null
+  },
+  { watch: [id, page, limit] }
+)
 
-watch([id, page, limit], load, { immediate: true })
+const engine = computed(() => data.value?.engine ?? null)
+const galgames = computed(() => data.value?.galgames ?? [])
+const total = computed(() => data.value?.total ?? 0)
+const loading = computed(() => status.value === 'pending')
 
 const aliasList = computed<string[]>(() => {
   const raw = engine.value?.alias
@@ -53,18 +47,31 @@ const displayName = (g: Galgame) =>
 
 const onSaved = () => {
   editOpen.value = false
-  load()
+  refresh()
 }
 
 // Two-step delete: safe-by-default, ?force=true purges references. See
 // tag/Detail.vue for rationale.
 const handleDelete = async () => {
   if (!engine.value) return
-  if (!confirm(`确定删除引擎「${engine.value.name}」吗？`)) return
+  if (
+    !(await useKunConfirm({
+      title: '删除引擎',
+      content: `确定删除引擎「${engine.value.name}」吗？`,
+      confirmText: '删除',
+      danger: true
+    }))
+  )
+    return
   let r = await api.delete(`/engine/${id.value}`)
   if (r.code !== 0 && r.message.includes('force=true')) {
     if (
-      !confirm(`${r.message}\n\n仍要强制清除全部引用并硬删除吗？此操作不可恢复。`)
+      !(await useKunConfirm({
+        title: '强制删除',
+        content: `${r.message}\n\n仍要强制清除全部引用并硬删除吗？此操作不可恢复。`,
+        confirmText: '强制删除',
+        danger: true
+      }))
     )
       return
     r = await api.delete(`/engine/${id.value}?force=true`)

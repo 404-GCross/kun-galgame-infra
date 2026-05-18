@@ -7,33 +7,31 @@ const router = useRouter()
 const page = useQueryState('page', 1)
 const limit = ref(24)
 
-const items = ref<GalgameSeries[]>([])
-const total = ref(0)
-const loading = ref(false)
 const createOpen = ref(false)
 
-const loadList = async () => {
-  loading.value = true
-  try {
-    const response = await api.get<{ items: GalgameSeries[]; total: number }>(
+// SSR: server-fetched + payload-hydrated; re-fetches on page/limit change.
+const { data, status, refresh } = await useAsyncData(
+  'series-list',
+  async () => {
+    const r = await api.get<{ items: GalgameSeries[]; total: number }>(
       '/series',
       { page: page.value, limit: limit.value }
     )
-    if (response.code === 0) {
-      items.value = response.data.items
-      total.value = response.data.total
-    }
-  } finally {
-    loading.value = false
-  }
-}
+    return r.code === 0
+      ? r.data
+      : { items: [] as GalgameSeries[], total: 0 }
+  },
+  { watch: [page, limit] }
+)
 
-watch([page, limit], loadList, { immediate: true })
+const items = computed(() => data.value?.items ?? [])
+const total = computed(() => data.value?.total ?? 0)
+const loading = computed(() => status.value === 'pending')
 
 const onCreated = (id?: number) => {
   createOpen.value = false
   if (id) router.push(`/series/${id}`)
-  else loadList()
+  else refresh()
 }
 </script>
 

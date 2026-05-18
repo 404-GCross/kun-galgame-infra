@@ -6,22 +6,20 @@ const route = useRoute()
 const router = useRouter()
 
 const uid = computed(() => Number(route.params.uid))
-const stats = ref<UserGalgameStats | null>(null)
-const loading = ref(false)
 
-const load = async () => {
-  loading.value = true
-  try {
-    const response = await api.get<UserGalgameStats>(
+// SSR: public endpoint, server-fetched + payload-hydrated; re-fetches on
+// uid change.
+const { data: stats, status } = await useAsyncData(
+  'user-galgame-stats',
+  async () => {
+    const r = await api.get<UserGalgameStats>(
       `/galgame/user/${uid.value}/stats`
     )
-    if (response.code === 0) stats.value = response.data
-  } finally {
-    loading.value = false
-  }
-}
-
-watch(uid, load, { immediate: true })
+    return r.code === 0 ? r.data : null
+  },
+  { watch: [uid] }
+)
+const loading = computed(() => status.value === 'pending')
 
 const cards = computed(() => {
   const s = stats.value

@@ -66,43 +66,36 @@ const removeTag = (id: number) => {
   page.value = 1
 }
 
-// Results
-const items = ref<Galgame[]>([])
-const total = ref(0)
-const loading = ref(false)
-
-const loadResults = async () => {
-  if (selectedIds.value.length === 0) {
-    items.value = []
-    total.value = 0
-    return
-  }
-  loading.value = true
-  try {
+// Results — SSR: server-fetched + payload-hydrated so a shared
+// /galgame-filter?tag_ids=… link renders results in the initial HTML.
+// Public endpoint; re-fetches when the URL filter params change.
+const { data, status } = await useAsyncData(
+  'galgame-filter-results',
+  async () => {
+    if (selectedIds.value.length === 0) {
+      return { items: [] as Galgame[], total: 0 }
+    }
     const query: Record<string, string | number | undefined> = {
       page: page.value,
       limit: limit.value
     }
-    // tag_ids=1&tag_ids=2 — backend accepts repeated query params
     selectedIds.value.forEach((id, i) => {
       query[`tag_ids[${i}]`] = id
     })
     if (contentLimit.value) query.content_limit = contentLimit.value
 
-    const response = await api.get<{ items: Galgame[]; total: number }>(
+    const r = await api.get<{ items: Galgame[]; total: number }>(
       '/tag/multi',
       query
     )
-    if (response.code === 0) {
-      items.value = response.data.items
-      total.value = response.data.total
-    }
-  } finally {
-    loading.value = false
-  }
-}
+    return r.code === 0 ? r.data : { items: [] as Galgame[], total: 0 }
+  },
+  { watch: [tagIdsParam, contentLimit, page] }
+)
 
-watch([tagIdsParam, contentLimit, page], loadResults, { immediate: true })
+const items = computed(() => data.value?.items ?? [])
+const total = computed(() => data.value?.total ?? 0)
+const loading = computed(() => status.value === 'pending')
 
 // On first load with tag_ids in URL but no tag names, hydrate by fetching each tag
 onMounted(async () => {

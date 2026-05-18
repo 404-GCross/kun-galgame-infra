@@ -45,7 +45,14 @@ const STATUS: Record<
 }
 
 const merge = async (pr: GalgamePR) => {
-  if (!confirm(`合并 PR #${pr.id}：${pr.title}？`)) return
+  if (
+    !(await useKunConfirm({
+      title: '合并 PR',
+      content: `合并 PR #${pr.id}：${pr.title}？`,
+      confirmText: '合并'
+    }))
+  )
+    return
   const response = await api.put(
     `/galgame/${galgameId.value}/prs/${pr.id}/merge`
   )
@@ -58,7 +65,15 @@ const merge = async (pr: GalgamePR) => {
 }
 
 const decline = async (pr: GalgamePR) => {
-  if (!confirm(`拒绝 PR #${pr.id}：${pr.title}？`)) return
+  if (
+    !(await useKunConfirm({
+      title: '拒绝 PR',
+      content: `拒绝 PR #${pr.id}：${pr.title}？`,
+      confirmText: '拒绝',
+      danger: true
+    }))
+  )
+    return
   const response = await api.put(
     `/galgame/${galgameId.value}/prs/${pr.id}/decline`
   )

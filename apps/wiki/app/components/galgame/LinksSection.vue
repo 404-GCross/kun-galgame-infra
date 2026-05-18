@@ -42,7 +42,15 @@ const add = async () => {
 }
 
 const remove = async (id: number, name: string) => {
-  if (!confirm(`确认删除链接「${name}」？`)) return
+  if (
+    !(await useKunConfirm({
+      title: '删除链接',
+      content: `确认删除链接「${name}」？`,
+      confirmText: '删除',
+      danger: true
+    }))
+  )
+    return
   const response = await api.delete(`/galgame/${props.galgameId}/links`, { id })
   if (response.code === 0) {
     useKunMessage('删除成功', 'success')

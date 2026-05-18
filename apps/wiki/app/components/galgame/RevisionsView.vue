@@ -41,7 +41,13 @@ const load = async () => {
 watch([galgameId, page, limit, includeMinor], load, { immediate: true })
 
 const revert = async (revision: number) => {
-  if (!confirm(`确认把 galgame 回滚到 rev ${revision}？将创建新的 revision。`))
+  if (
+    !(await useKunConfirm({
+      title: '回滚版本',
+      content: `确认把 galgame 回滚到 rev ${revision}？将创建新的 revision。`,
+      confirmText: '回滚'
+    }))
+  )
     return
   const response = await api.post(`/galgame/${galgameId.value}/revert`, {
     revision

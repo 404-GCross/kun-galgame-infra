@@ -8,41 +8,41 @@ const router = useRouter()
 
 const id = computed(() => Number(route.params.id))
 
-// /series/:id returns the series with preloaded Galgame[] (status=0 only)
-const series = ref<(GalgameSeries & { galgame?: Galgame[] }) | null>(null)
-const loading = ref(false)
 const editOpen = ref(false)
 
-const load = async () => {
-  loading.value = true
-  try {
-    const response = await api.get<GalgameSeries & { galgame?: Galgame[] }>(
+// SSR: fetched on the server, serialized into the payload, reused on
+// hydration (no post-hydration flash). Re-fetches client-side when the
+// route id changes (watch) or after edit (refresh()).
+// /series/:id returns the series with preloaded Galgame[] (status=0 only)
+const { data: series, status, refresh } = await useAsyncData(
+  'series-detail',
+  async () => {
+    const r = await api.get<GalgameSeries & { galgame?: Galgame[] }>(
       `/series/${id.value}`
     )
-    if (response.code === 0) {
-      series.value = response.data
-    }
-  } finally {
-    loading.value = false
-  }
-}
-
-watch(id, load, { immediate: true })
+    return r.code === 0 ? r.data : null
+  },
+  { watch: [id] }
+)
+const loading = computed(() => status.value === 'pending')
 
 const displayName = (g: Galgame) =>
   g.name_zh_cn || g.name_ja_jp || g.name_en_us || g.name_zh_tw || '(无标题)'
 
 const onSaved = () => {
   editOpen.value = false
-  load()
+  refresh()
 }
 
 const handleDelete = async () => {
   if (!series.value) return
   if (
-    !confirm(
-      `确定删除系列「${series.value.name}」吗？galgame 不会被删除，但会脱离此系列。`
-    )
+    !(await useKunConfirm({
+      title: '删除系列',
+      content: `确定删除系列「${series.value.name}」吗？galgame 不会被删除，但会脱离此系列。`,
+      confirmText: '删除',
+      danger: true
+    }))
   )
     return
   const response = await api.delete(`/series/${id.value}`)

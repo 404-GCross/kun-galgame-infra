@@ -7,20 +7,17 @@ const route = useRoute()
 const router = useRouter()
 
 const id = computed(() => Number(route.params.id))
-const official = ref<GalgameOfficial | null>(null)
-const aliases = ref<string[]>([])
-const galgames = ref<Galgame[]>([])
-const total = ref(0)
-const loading = ref(false)
 const editOpen = ref(false)
 
 const page = useQueryState('page', 1)
 const limit = ref(24)
 
-const load = async () => {
-  loading.value = true
-  try {
-    const response = await api.get<{
+// SSR: server-fetched, payload-hydrated (no post-hydration flash);
+// re-fetches on id/page change (watch) or after edit (refresh()).
+const { data, status, refresh } = await useAsyncData(
+  'official-detail',
+  async () => {
+    const r = await api.get<{
       official: GalgameOfficial & { alias?: { name: string }[] }
       galgames: Galgame[]
       total: number
@@ -29,36 +26,49 @@ const load = async () => {
       page: page.value,
       limit: limit.value
     })
-    if (response.code === 0) {
-      official.value = response.data.official
-      aliases.value = (response.data.official.alias ?? []).map((a) => a.name)
-      galgames.value = response.data.galgames
-      total.value = response.data.total
-    }
-  } finally {
-    loading.value = false
-  }
-}
+    return r.code === 0 ? r.data : null
+  },
+  { watch: [id, page, limit] }
+)
 
-watch([id, page, limit], load, { immediate: true })
+const official = computed(() => data.value?.official ?? null)
+const aliases = computed(() =>
+  (data.value?.official.alias ?? []).map((a) => a.name)
+)
+const galgames = computed(() => data.value?.galgames ?? [])
+const total = computed(() => data.value?.total ?? 0)
+const loading = computed(() => status.value === 'pending')
 
 const displayName = (g: Galgame) =>
   g.name_zh_cn || g.name_ja_jp || g.name_en_us || g.name_zh_tw || '(无标题)'
 
 const onSaved = () => {
   editOpen.value = false
-  load()
+  refresh()
 }
 
 // Two-step delete: safe-by-default, ?force=true purges references. See
 // tag/Detail.vue for rationale.
 const handleDelete = async () => {
   if (!official.value) return
-  if (!confirm(`确定删除会社「${official.value.name}」吗？`)) return
+  if (
+    !(await useKunConfirm({
+      title: '删除会社',
+      content: `确定删除会社「${official.value.name}」吗？`,
+      confirmText: '删除',
+      danger: true
+    }))
+  )
+    return
   let r = await api.delete(`/official/${id.value}`)
   if (r.code !== 0 && r.message.includes('force=true')) {
     if (
-      !confirm(`${r.message}\n\n仍要强制清除全部引用并硬删除吗？此操作不可恢复。`)
+      !(await useKunConfirm({
+        title: '强制删除',
+        content: `${r.message}\n\n仍要强制清除全部引用并硬删除吗？此操作不可恢复。`,
+        confirmText: '强制删除',
+        danger: true
+      }))
     )
       return
     r = await api.delete(`/official/${id.value}?force=true`)
