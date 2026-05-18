@@ -240,25 +240,34 @@ func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB, se
 	admin.Put("/galgame/:gid/status", adminH.UpdateGalgameStatus)
 
 	// ── Tag ──
+	// Create: any logged-in user (introduce a tag for original/doujin
+	// works missing from VNDB). Update/Delete: admin/moderator (role
+	// checked inside the handler, same as series).
 	tag := api.Group("/tag")
 	tag.Get("/", tagH.List)
 	tag.Get("/search", searchH.Tag) // Meilisearch-backed (replaces DB LIKE search)
 	tag.Get("/multi", tagH.Multi)
 	tag.Get("/:name", tagH.GetByName)
+	tag.Post("/", jwtAuth, tagH.Create)
 	tag.Put("/", jwtAuth, tagH.Update)
+	tag.Delete("/:id", jwtAuth, tagH.Delete)
 
 	// ── Official ──
 	official := api.Group("/official")
 	official.Get("/", officialH.List)
 	official.Get("/search", searchH.Official) // Meilisearch-backed
 	official.Get("/:name", officialH.GetByName)
+	official.Post("/", jwtAuth, officialH.Create)
 	official.Put("/", jwtAuth, officialH.Update)
+	official.Delete("/:id", jwtAuth, officialH.Delete)
 
 	// ── Engine ──
 	engine := api.Group("/engine")
 	engine.Get("/", engineH.List)
 	engine.Get("/:name", engineH.GetByName)
+	engine.Post("/", jwtAuth, engineH.Create)
 	engine.Put("/", jwtAuth, engineH.Update)
+	engine.Delete("/:id", jwtAuth, engineH.Delete)
 
 	// ── Series ──
 	series := api.Group("/series")

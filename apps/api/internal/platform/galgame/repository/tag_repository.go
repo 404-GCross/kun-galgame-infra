@@ -174,3 +174,50 @@ func (r *TagRepository) Update(ctx context.Context, tagID int, updates map[strin
 		return nil
 	})
 }
+
+// ExistsByName reports whether a tag with this exact name already exists.
+// The unique index on name is the real guard; this gives a clean
+// pre-check so the handler can return a friendly "already exists".
+func (r *TagRepository) ExistsByName(ctx context.Context, name string) (bool, error) {
+	var n int64
+	err := r.db.WithContext(ctx).Model(&model.GalgameTag{}).
+		Where("name = ?", name).Count(&n).Error
+	return n > 0, err
+}
+
+// Create inserts a new tag plus its aliases in one transaction.
+func (r *TagRepository) Create(ctx context.Context, tag *model.GalgameTag, aliases []string) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(tag).Error; err != nil {
+			return err
+		}
+		for _, name := range aliases {
+			name = strings.TrimSpace(name)
+			if name == "" {
+				continue
+			}
+			if err := tx.Create(&model.GalgameTagAlias{
+				GalgameTagID: tag.ID,
+				Name:         name,
+			}).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+// Delete removes a tag with its aliases and galgame relations.
+func (r *TagRepository) Delete(ctx context.Context, id int) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("tag_id = ?", id).
+			Delete(&model.GalgameTagRelation{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("galgame_tag_id = ?", id).
+			Delete(&model.GalgameTagAlias{}).Error; err != nil {
+			return err
+		}
+		return tx.Delete(&model.GalgameTag{}, id).Error
+	})
+}

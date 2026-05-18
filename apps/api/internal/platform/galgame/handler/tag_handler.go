@@ -1,9 +1,11 @@
 package handler
 
 import (
+	"strconv"
 	"strings"
 
 	"api/internal/platform/galgame/dto"
+	"api/internal/platform/galgame/model"
 	"api/internal/platform/galgame/repository"
 	"api/internal/platform/galgame/search"
 	"api/pkg/errors"
@@ -154,6 +156,64 @@ func (h *TagHandler) Update(c fiber.Ctx) error {
 
 	h.searchHook.Tag(req.TagID)
 
+	return response.Success(c, nil)
+}
+
+// Create creates a new tag. Any logged-in user — this is what lets
+// kungal/moyu users introduce a tag missing from the wiki for an
+// original / doujin work with no VNDB entry (mirrors series Create).
+func (h *TagHandler) Create(c fiber.Ctx) error {
+	var req dto.CreateTagRequest
+	if err := c.Bind().JSON(&req); err != nil {
+		return response.BadRequest(c, errors.ErrBadRequest)
+	}
+	if err := utils.Validate(&req); err != nil {
+		return response.BadRequestMsg(c, errors.ErrValidationFailed, err.Error())
+	}
+
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		return response.BadRequest(c, errors.ErrBadRequest)
+	}
+	exists, err := h.tagRepo.ExistsByName(c.Context(), name)
+	if err != nil {
+		return response.InternalError(c, errors.ErrOperationFailed)
+	}
+	if exists {
+		return response.BadRequestMsg(c, errors.ErrValidationFailed, "已存在同名 tag")
+	}
+
+	tag := &model.GalgameTag{
+		Name:        name,
+		Category:    req.Category,
+		Description: req.Description,
+	}
+	if err := h.tagRepo.Create(c.Context(), tag, req.Alias); err != nil {
+		return response.InternalError(c, errors.ErrOperationFailed)
+	}
+
+	h.searchHook.Tag(tag.ID)
+	return response.Success(c, tag)
+}
+
+// Delete removes a tag (requires admin/moderator). Cascades aliases +
+// galgame_tag_relation rows so no dangling references remain.
+func (h *TagHandler) Delete(c fiber.Ctx) error {
+	roles, _ := c.Locals("user_roles").([]string)
+	if !hasRole(roles, "admin", "moderator") {
+		return response.Forbidden(c, errors.ErrForbidden)
+	}
+
+	id, err := strconv.Atoi(c.Params("id"))
+	if err != nil {
+		return response.BadRequest(c, errors.ErrInvalidID)
+	}
+
+	if err := h.tagRepo.Delete(c.Context(), id); err != nil {
+		return response.InternalError(c, errors.ErrOperationFailed)
+	}
+
+	h.searchHook.TagDelete(id)
 	return response.Success(c, nil)
 }
 

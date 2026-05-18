@@ -34,3 +34,16 @@ type UpdateOfficialRequest struct {
 	Description *string  `json:"description"`
 	Alias       []string `json:"alias"`
 }
+
+// CreateOfficialRequest represents an official (developer/producer)
+// creation request. Lets kungal/moyu users introduce a company/circle
+// missing from the wiki for an original/doujin work.
+type CreateOfficialRequest struct {
+	Name        string   `json:"name" validate:"required,max=500"`
+	Category    string   `json:"category" validate:"required,oneof=company individual amateur"`
+	Original    string   `json:"original" validate:"max=500"`
+	Link        string   `json:"link" validate:"max=1000"`
+	Lang        string   `json:"lang" validate:"max=20"`
+	Description string   `json:"description" validate:"max=2000"`
+	Alias       []string `json:"alias"`
+}

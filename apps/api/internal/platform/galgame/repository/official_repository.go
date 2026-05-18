@@ -137,3 +137,48 @@ func (r *OfficialRepository) Update(ctx context.Context, officialID int, updates
 		return nil
 	})
 }
+
+// ExistsByName reports whether an official with this exact name exists.
+func (r *OfficialRepository) ExistsByName(ctx context.Context, name string) (bool, error) {
+	var n int64
+	err := r.db.WithContext(ctx).Model(&model.GalgameOfficial{}).
+		Where("name = ?", name).Count(&n).Error
+	return n > 0, err
+}
+
+// Create inserts a new official plus its aliases in one transaction.
+func (r *OfficialRepository) Create(ctx context.Context, official *model.GalgameOfficial, aliases []string) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(official).Error; err != nil {
+			return err
+		}
+		for _, name := range aliases {
+			name = strings.TrimSpace(name)
+			if name == "" {
+				continue
+			}
+			if err := tx.Create(&model.GalgameOfficialAlias{
+				GalgameOfficialID: official.ID,
+				Name:              name,
+			}).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+// Delete removes an official with its aliases and galgame relations.
+func (r *OfficialRepository) Delete(ctx context.Context, id int) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("official_id = ?", id).
+			Delete(&model.GalgameOfficialRelation{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("galgame_official_id = ?", id).
+			Delete(&model.GalgameOfficialAlias{}).Error; err != nil {
+			return err
+		}
+		return tx.Delete(&model.GalgameOfficial{}, id).Error
+	})
+}

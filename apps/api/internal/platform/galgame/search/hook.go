@@ -93,6 +93,32 @@ func (h *Hook) Tag(id int) {
 	}()
 }
 
+// TagDelete removes a tag from the index by id. Invoke only when the tag
+// row is actually deleted from DB.
+func (h *Hook) TagDelete(id int) {
+	if h == nil {
+		return
+	}
+	go func() {
+		if err := h.indexer.DeleteTag(context.Background(), id); err != nil {
+			slog.Warn("search hook: delete tag", "id", id, "err", err)
+		}
+	}()
+}
+
+// OfficialDelete removes an official from the index by id. Invoke only
+// when the official row is actually deleted from DB.
+func (h *Hook) OfficialDelete(id int) {
+	if h == nil {
+		return
+	}
+	go func() {
+		if err := h.indexer.DeleteOfficial(context.Background(), id); err != nil {
+			slog.Warn("search hook: delete official", "id", id, "err", err)
+		}
+	}()
+}
+
 // Official reindexes an official by id.
 func (h *Hook) Official(id int) {
 	if h == nil {

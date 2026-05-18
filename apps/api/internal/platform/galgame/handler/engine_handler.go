@@ -2,8 +2,11 @@ package handler
 
 import (
 	"encoding/json"
+	"strconv"
+	"strings"
 
 	"api/internal/platform/galgame/dto"
+	"api/internal/platform/galgame/model"
 	"api/internal/platform/galgame/repository"
 	"api/pkg/errors"
 	"api/pkg/response"
@@ -85,6 +88,61 @@ func (h *EngineHandler) Update(c fiber.Ctx) error {
 	}
 
 	if err := h.engineRepo.Update(c.Context(), req.EngineID, updates); err != nil {
+		return response.InternalError(c, errors.ErrOperationFailed)
+	}
+
+	return response.Success(c, nil)
+}
+
+// Create creates a new engine (any logged-in user — lets kungal/moyu
+// users introduce an engine missing from the wiki). Engine is not
+// Meilisearch-indexed, so there is no search hook.
+func (h *EngineHandler) Create(c fiber.Ctx) error {
+	var req dto.CreateEngineRequest
+	if err := c.Bind().JSON(&req); err != nil {
+		return response.BadRequest(c, errors.ErrBadRequest)
+	}
+	if err := utils.Validate(&req); err != nil {
+		return response.BadRequestMsg(c, errors.ErrValidationFailed, err.Error())
+	}
+
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		return response.BadRequest(c, errors.ErrBadRequest)
+	}
+	exists, err := h.engineRepo.ExistsByName(c.Context(), name)
+	if err != nil {
+		return response.InternalError(c, errors.ErrOperationFailed)
+	}
+	if exists {
+		return response.BadRequestMsg(c, errors.ErrValidationFailed, "已存在同名 engine")
+	}
+
+	engine := &model.GalgameEngine{
+		Name:        name,
+		Description: req.Description,
+	}
+	if err := h.engineRepo.Create(c.Context(), engine, req.Alias); err != nil {
+		return response.InternalError(c, errors.ErrOperationFailed)
+	}
+
+	return response.Success(c, engine)
+}
+
+// Delete removes an engine (requires admin/moderator). Cascades
+// galgame_engine_relation rows.
+func (h *EngineHandler) Delete(c fiber.Ctx) error {
+	roles, _ := c.Locals("user_roles").([]string)
+	if !hasRole(roles, "admin", "moderator") {
+		return response.Forbidden(c, errors.ErrForbidden)
+	}
+
+	id, err := strconv.Atoi(c.Params("id"))
+	if err != nil {
+		return response.BadRequest(c, errors.ErrInvalidID)
+	}
+
+	if err := h.engineRepo.Delete(c.Context(), id); err != nil {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
 

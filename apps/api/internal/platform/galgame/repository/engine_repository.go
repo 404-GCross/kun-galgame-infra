@@ -6,6 +6,7 @@ import (
 
 	"api/internal/platform/galgame/model"
 
+	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
 
@@ -73,6 +74,35 @@ func (r *EngineRepository) FindGalgamesByEngineID(ctx context.Context, engineID,
 // Update updates an engine
 func (r *EngineRepository) Update(ctx context.Context, engineID int, updates map[string]any) error {
 	return r.db.WithContext(ctx).Model(&model.GalgameEngine{}).Where("id = ?", engineID).Updates(updates).Error
+}
+
+// ExistsByName reports whether an engine with this exact name exists.
+func (r *EngineRepository) ExistsByName(ctx context.Context, name string) (bool, error) {
+	var n int64
+	err := r.db.WithContext(ctx).Model(&model.GalgameEngine{}).
+		Where("name = ?", name).Count(&n).Error
+	return n > 0, err
+}
+
+// Create inserts a new engine. Aliases live inline as a jsonb array on
+// the row (engine has no separate alias table, unlike tag/official).
+func (r *EngineRepository) Create(ctx context.Context, engine *model.GalgameEngine, aliases []string) error {
+	if aliases == nil {
+		aliases = []string{}
+	}
+	engine.Alias = datatypes.JSON(MarshalAlias(aliases))
+	return r.db.WithContext(ctx).Create(engine).Error
+}
+
+// Delete removes an engine with its galgame relations.
+func (r *EngineRepository) Delete(ctx context.Context, id int) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("engine_id = ?", id).
+			Delete(&model.GalgameEngineRelation{}).Error; err != nil {
+			return err
+		}
+		return tx.Delete(&model.GalgameEngine{}, id).Error
+	})
 }
 
 // MarshalAlias converts a string slice to JSON for the alias field

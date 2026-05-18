@@ -40,3 +40,13 @@ type UpdateTagRequest struct {
 	Description *string  `json:"description"`
 	Alias       []string `json:"alias"`
 }
+
+// CreateTagRequest represents a tag creation request. Lets kungal/moyu
+// users introduce a tag not yet in the wiki (e.g. for an original /
+// doujin work that has no VNDB entry).
+type CreateTagRequest struct {
+	Name        string   `json:"name" validate:"required,max=500"`
+	Category    string   `json:"category" validate:"required,oneof=content sexual technical"`
+	Description string   `json:"description" validate:"max=2000"`
+	Alias       []string `json:"alias"`
+}

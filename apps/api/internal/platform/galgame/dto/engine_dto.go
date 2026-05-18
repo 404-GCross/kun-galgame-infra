@@ -15,3 +15,11 @@ type UpdateEngineRequest struct {
 	Description *string  `json:"description"`
 	Alias       []string `json:"alias"`
 }
+
+// CreateEngineRequest represents an engine creation request. Lets
+// kungal/moyu users introduce an engine missing from the wiki.
+type CreateEngineRequest struct {
+	Name        string   `json:"name" validate:"required,max=500"`
+	Description string   `json:"description" validate:"max=2000"`
+	Alias       []string `json:"alias"`
+}

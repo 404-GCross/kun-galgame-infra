@@ -1,9 +1,11 @@
 package handler
 
 import (
+	"strconv"
 	"strings"
 
 	"api/internal/platform/galgame/dto"
+	"api/internal/platform/galgame/model"
 	"api/internal/platform/galgame/repository"
 	"api/internal/platform/galgame/search"
 	"api/pkg/errors"
@@ -136,5 +138,65 @@ func (h *OfficialHandler) Update(c fiber.Ctx) error {
 
 	h.searchHook.Official(req.OfficialID)
 
+	return response.Success(c, nil)
+}
+
+// Create creates a new official (any logged-in user — lets kungal/moyu
+// users introduce a company/circle missing from the wiki).
+func (h *OfficialHandler) Create(c fiber.Ctx) error {
+	var req dto.CreateOfficialRequest
+	if err := c.Bind().JSON(&req); err != nil {
+		return response.BadRequest(c, errors.ErrBadRequest)
+	}
+	if err := utils.Validate(&req); err != nil {
+		return response.BadRequestMsg(c, errors.ErrValidationFailed, err.Error())
+	}
+
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		return response.BadRequest(c, errors.ErrBadRequest)
+	}
+	exists, err := h.officialRepo.ExistsByName(c.Context(), name)
+	if err != nil {
+		return response.InternalError(c, errors.ErrOperationFailed)
+	}
+	if exists {
+		return response.BadRequestMsg(c, errors.ErrValidationFailed, "已存在同名 official")
+	}
+
+	official := &model.GalgameOfficial{
+		Name:        name,
+		Category:    req.Category,
+		Original:    req.Original,
+		Link:        req.Link,
+		Lang:        req.Lang,
+		Description: req.Description,
+	}
+	if err := h.officialRepo.Create(c.Context(), official, req.Alias); err != nil {
+		return response.InternalError(c, errors.ErrOperationFailed)
+	}
+
+	h.searchHook.Official(official.ID)
+	return response.Success(c, official)
+}
+
+// Delete removes an official (requires admin/moderator). Cascades
+// aliases + galgame_official_relation rows.
+func (h *OfficialHandler) Delete(c fiber.Ctx) error {
+	roles, _ := c.Locals("user_roles").([]string)
+	if !hasRole(roles, "admin", "moderator") {
+		return response.Forbidden(c, errors.ErrForbidden)
+	}
+
+	id, err := strconv.Atoi(c.Params("id"))
+	if err != nil {
+		return response.BadRequest(c, errors.ErrInvalidID)
+	}
+
+	if err := h.officialRepo.Delete(c.Context(), id); err != nil {
+		return response.InternalError(c, errors.ErrOperationFailed)
+	}
+
+	h.searchHook.OfficialDelete(id)
 	return response.Success(c, nil)
 }
