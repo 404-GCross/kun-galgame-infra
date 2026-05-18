@@ -50,16 +50,31 @@ const onReview = async (hash: string, status: string, reason?: string) => {
   }
 }
 
-const onDelete = async (hash: string, force = false) => {
-  if (!confirm(force ? '硬删除：物理删除 S3 对象与数据库行，不可恢复。继续？' : '软删除：30 天后 GC 会物理删除。继续？')) {
-    return
-  }
-  const res = await api.delete(
-    `/admin/image/${hash}${force ? '?force=true' : ''}`
-  )
-  if (res.code === 0) {
-    await fetchList()
-    await fetchStats()
+// Delete confirmation via KunModal (replaces native confirm()).
+const delOpen = ref(false)
+const delHash = ref('')
+const delForce = ref(false)
+const delLoading = ref(false)
+
+const onDelete = (hash: string, force = false) => {
+  delHash.value = hash
+  delForce.value = force
+  delOpen.value = true
+}
+
+const confirmDelete = async () => {
+  delLoading.value = true
+  try {
+    const res = await api.delete(
+      `/admin/image/${delHash.value}${delForce.value ? '?force=true' : ''}`
+    )
+    if (res.code === 0) {
+      await fetchList()
+      await fetchStats()
+    }
+  } finally {
+    delLoading.value = false
+    delOpen.value = false
   }
 }
 
@@ -173,4 +188,48 @@ onMounted(() => {
       </div>
     </template>
   </div>
+
+  <KunModal v-model:modal-value="delOpen">
+    <div class="w-[28rem] space-y-4">
+      <h2 class="text-xl font-bold text-foreground">
+        {{ delForce ? '硬删除图片' : '软删除图片' }}
+      </h2>
+      <p
+        :class="[
+          'rounded-lg p-3 text-sm',
+          delForce
+            ? 'bg-danger-50 text-danger'
+            : 'bg-warning-50 text-warning-700',
+        ]"
+      >
+        {{
+          delForce
+            ? '物理删除 S3 对象与数据库行，不可恢复。确认继续？'
+            : '软删除：30 天后 GC 会物理删除。确认继续？'
+        }}
+      </p>
+      <div class="flex justify-end gap-3">
+        <KunButton
+          color="default"
+          variant="flat"
+          :disabled="delLoading"
+          @click="delOpen = false"
+        >
+          取消
+        </KunButton>
+        <KunButton
+          :color="delForce ? 'danger' : 'warning'"
+          :disabled="delLoading"
+          @click="confirmDelete"
+        >
+          <Icon
+            v-if="delLoading"
+            name="lucide:loader-2"
+            class="mr-2 size-4 animate-spin"
+          />
+          {{ delForce ? '确认硬删除' : '确认软删除' }}
+        </KunButton>
+      </div>
+    </div>
+  </KunModal>
 </template>

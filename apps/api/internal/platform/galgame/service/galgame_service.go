@@ -49,8 +49,24 @@ func (s *GalgameService) List(ctx context.Context, req *dto.ListGalgameRequest) 
 	return s.galgameRepo.List(ctx, req.Page, req.Limit, req.SortField, req.SortOrder, req.Search)
 }
 
-// GetByID returns a galgame with all relations, enriched with user info
+// GetByID returns a published galgame with relations (public visibility:
+// status=0 only). Kept for callers without a viewer context.
 func (s *GalgameService) GetByID(ctx context.Context, id int) (*model.Galgame, map[int]*dto.UserBrief, error) {
+	return s.GetByIDWithViewer(ctx, id, 0)
+}
+
+// GetByIDWithViewer is the viewer-aware detail fetch. Visibility mirrors
+// the repo's FindByIDsWithViewer / search predicate exactly:
+//   - status=0                       → visible to anyone
+//   - status ∈ {3,4}                 → visible only to the submitter
+//   - status=1 (banned) / status=2 (VNDB draft) / other → NotFound
+//
+// status=2 stays hidden here on purpose: VNDB drafts are discovered via
+// search and taken via POST /:gid/claim, never through this endpoint.
+// Without this, an owner opening /edit/.../draft/<gid> for their own
+// pending submission got "galgame 不存在" because the old code hard-cut
+// every status != 0.
+func (s *GalgameService) GetByIDWithViewer(ctx context.Context, id, viewerUID int) (*model.Galgame, map[int]*dto.UserBrief, error) {
 	galgame, err := s.galgameRepo.FindByID(ctx, id)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -59,7 +75,12 @@ func (s *GalgameService) GetByID(ctx context.Context, id int) (*model.Galgame, m
 		return nil, nil, err
 	}
 
-	if galgame.Status != 0 {
+	switch {
+	case galgame.Status == 0:
+		// published — visible to all
+	case (galgame.Status == 3 || galgame.Status == 4) && viewerUID > 0 && galgame.UserID == viewerUID:
+		// submitter viewing their own pending / declined draft
+	default:
 		return nil, nil, errors.NewWithCode(errors.ErrGalgameNotFound)
 	}
 

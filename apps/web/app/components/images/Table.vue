@@ -25,9 +25,20 @@ const shortHash = (h: string) => `${h.slice(0, 8)}…${h.slice(-4)}`
 
 const copy = (s: string) => navigator.clipboard.writeText(s)
 
+// Reject-reason flow via KunModal (replaces native prompt()).
+const rejectOpen = ref(false)
+const rejectHash = ref('')
+const rejectReason = ref('')
+
 const onReject = (hash: string) => {
-  const reason = prompt('拒绝原因（可选）', '')
-  emit('review', hash, 'rejected', reason || '')
+  rejectHash.value = hash
+  rejectReason.value = ''
+  rejectOpen.value = true
+}
+
+const confirmReject = () => {
+  emit('review', rejectHash.value, 'rejected', rejectReason.value || '')
+  rejectOpen.value = false
 }
 </script>
 
@@ -147,4 +158,27 @@ const onReject = (hash: string) => {
       无数据
     </div>
   </div>
+
+  <KunModal v-model:modal-value="rejectOpen">
+    <div class="w-[28rem] space-y-4">
+      <h2 class="text-xl font-bold text-foreground">拒绝图片</h2>
+      <p class="text-sm text-default-500">
+        填写拒绝原因（可选），将记录到审核日志。
+      </p>
+      <KunTextarea
+        v-model="rejectReason"
+        label="拒绝原因"
+        placeholder="可留空"
+        :rows="3"
+      />
+      <div class="flex justify-end gap-3">
+        <KunButton color="default" variant="flat" @click="rejectOpen = false">
+          取消
+        </KunButton>
+        <KunButton color="danger" @click="confirmReject">
+          确认拒绝
+        </KunButton>
+      </div>
+    </div>
+  </KunModal>
 </template>

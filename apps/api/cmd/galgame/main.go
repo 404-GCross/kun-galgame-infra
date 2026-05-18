@@ -179,7 +179,7 @@ func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB, se
 	// the later group. submit/claim/patch/delete on /:gid are POST/PATCH/
 	// DELETE so they don't collide and stay in the auth group below.
 	galgame.Get("/mine", jwtAuth, submissionH.ListMine)
-	galgame.Get("/:gid", galgameH.Get)
+	galgame.Get("/:gid", optionalJWT, galgameH.Get)
 	galgame.Get("/:gid/revisions", revisionH.ListRevisions)
 	galgame.Get("/:gid/revisions/:rev", revisionH.GetRevision)
 	galgame.Get("/:gid/revisions/:rev/diff", revisionH.GetRevisionDiff)
