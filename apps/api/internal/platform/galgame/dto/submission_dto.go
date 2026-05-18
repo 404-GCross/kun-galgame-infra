@@ -21,6 +21,7 @@ type SubmitGalgameRequest struct {
 	ContentLimit     string `json:"content_limit" validate:"omitempty,oneof=sfw nsfw"`
 	OriginalLanguage string `json:"original_language"`
 	AgeLimit         string `json:"age_limit" validate:"omitempty,oneof=all r18"`
+	Released         string `json:"released" validate:"max=107"` // empty → "unknown"
 	SeriesID         *int   `json:"series_id"`
 	Aliases          string `json:"aliases"`
 	TagIDs           []int  `json:"tag_ids"`

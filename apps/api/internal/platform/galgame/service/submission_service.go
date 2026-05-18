@@ -70,98 +70,36 @@ func (s *SubmissionService) Submit(ctx context.Context, uid int, req *dto.Submit
 		}
 	}
 
-	var galgame model.Galgame
-
+	var newID int
 	err = s.galgameRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		galgame = model.Galgame{
-			VNDBID:           req.VNDBID,
-			NameEnUS:         req.NameEnUS,
-			NameJaJP:         req.NameJaJP,
-			NameZhCN:         req.NameZhCN,
-			NameZhTW:         req.NameZhTW,
-			Banner:           req.Banner,
-			BannerImageHash:  strToPtr(req.BannerImageHash),
-			IntroEnUS:        req.IntroEnUS,
-			IntroJaJP:        req.IntroJaJP,
-			IntroZhCN:        req.IntroZhCN,
-			IntroZhTW:        req.IntroZhTW,
-			ContentLimit:     req.ContentLimit,
-			OriginalLanguage: req.OriginalLanguage,
-			AgeLimit:         req.AgeLimit,
-			UserID:           uid,
-			SeriesID:         req.SeriesID,
-			Status:           model.GalgameStatusPending,
+		// Bare insert with system fields only (status=pending). Every
+		// editable field is written by the SINGLE ApplySnapshot path —
+		// identical to admin Create; no manual relation loops.
+		g := model.Galgame{
+			VNDBID: req.VNDBID,
+			UserID: uid,
+			Status: model.GalgameStatusPending,
 		}
-		if galgame.ContentLimit == "" {
-			galgame.ContentLimit = "sfw"
+		if err := tx.Create(&g).Error; err != nil {
+			return err
 		}
-		if galgame.AgeLimit == "" {
-			galgame.AgeLimit = "r18"
+		if err := repository.ApplySnapshot(tx, g.ID, uid, buildSubmitSnapshot(req)); err != nil {
+			return err
 		}
-		if galgame.OriginalLanguage == "" {
-			galgame.OriginalLanguage = "ja-jp"
-		}
-		if err := tx.Create(&galgame).Error; err != nil {
+		if err := tx.Create(&model.GalgameContributor{GalgameID: g.ID, UserID: uid}).Error; err != nil {
 			return err
 		}
 
-		// Aliases
-		if req.Aliases != "" {
-			for _, name := range strings.Split(req.Aliases, ",") {
-				name = strings.TrimSpace(name)
-				if name == "" {
-					continue
-				}
-				if err := tx.Create(&model.GalgameAlias{GalgameID: galgame.ID, Name: name}).Error; err != nil {
-					return err
-				}
-			}
-		}
-
-		// Tag / Official / Engine relations
-		for _, id := range req.TagIDs {
-			if err := tx.Create(&model.GalgameTagRelation{GalgameID: galgame.ID, TagID: id}).Error; err != nil {
-				return err
-			}
-		}
-		for _, id := range req.OfficialIDs {
-			if err := tx.Create(&model.GalgameOfficialRelation{GalgameID: galgame.ID, OfficialID: id}).Error; err != nil {
-				return err
-			}
-		}
-		for _, id := range req.EngineIDs {
-			if err := tx.Create(&model.GalgameEngineRelation{GalgameID: galgame.ID, EngineID: id}).Error; err != nil {
-				return err
-			}
-		}
-
-		// Contributor
-		if err := tx.Create(&model.GalgameContributor{GalgameID: galgame.ID, UserID: uid}).Error; err != nil {
-			return err
-		}
-
-		// VNDB link (only if vndb_id present)
-		if req.VNDBID != "" {
-			if err := tx.Create(&model.GalgameLink{
-				GalgameID: galgame.ID, UserID: uid,
-				Name: "VNDB", Link: "https://vndb.org/" + req.VNDBID,
-			}).Error; err != nil {
-				return err
-			}
-		}
-
-		// Revision 1
-		full, err := loadGalgameWithRelations(tx, galgame.ID)
+		full, err := loadGalgameWithRelations(tx, g.ID)
 		if err != nil {
 			return err
 		}
-		snapshot := model.TakeSnapshot(full)
-		snapJSON, err := snapshot.ToJSON()
+		snapJSON, err := model.TakeSnapshot(full).ToJSON()
 		if err != nil {
 			return err
 		}
 		if err := tx.Create(&model.GalgameRevision{
-			GalgameID: galgame.ID,
+			GalgameID: g.ID,
 			Revision:  1,
 			UserID:    uid,
 			Action:    "created",
@@ -170,12 +108,13 @@ func (s *SubmissionService) Submit(ctx context.Context, uid int, req *dto.Submit
 			return err
 		}
 
+		newID = g.ID
 		// Message: submitted
 		payload, _ := json.Marshal(map[string]any{"vndb_id": req.VNDBID})
 		uidVal := uid
 		return s.messageRepo.Create(ctx, tx, &model.GalgameMessage{
 			Type:         model.MessageTypeSubmitted,
-			GalgameID:    galgame.ID,
+			GalgameID:    g.ID,
 			ActorUserID:  &uidVal,
 			TargetUserID: nil,
 			Payload:      datatypes.JSON(payload),
@@ -185,7 +124,36 @@ func (s *SubmissionService) Submit(ctx context.Context, uid int, req *dto.Submit
 	if err != nil {
 		return nil, err
 	}
-	return &galgame, nil
+	return s.galgameRepo.FindByID(ctx, newID)
+}
+
+// buildSubmitSnapshot is buildCreateSnapshot's twin for user submissions
+// (POST /galgame/submit). Same single-write-path discipline; vndb_id is
+// optional here.
+func buildSubmitSnapshot(req *dto.SubmitGalgameRequest) *model.Snapshot {
+	return &model.Snapshot{
+		VNDBID:           req.VNDBID,
+		Released:         orDefault(req.Released, "unknown"),
+		NameEnUS:         req.NameEnUS,
+		NameJaJP:         req.NameJaJP,
+		NameZhCN:         req.NameZhCN,
+		NameZhTW:         req.NameZhTW,
+		Banner:           req.Banner,
+		BannerImageHash:  req.BannerImageHash,
+		IntroEnUS:        req.IntroEnUS,
+		IntroJaJP:        req.IntroJaJP,
+		IntroZhCN:        req.IntroZhCN,
+		IntroZhTW:        req.IntroZhTW,
+		ContentLimit:     orDefault(req.ContentLimit, "sfw"),
+		OriginalLanguage: orDefault(req.OriginalLanguage, "ja-jp"),
+		AgeLimit:         orDefault(req.AgeLimit, "r18"),
+		SeriesID:         req.SeriesID,
+		Aliases:          splitCSV(req.Aliases),
+		TagIDs:           req.TagIDs,
+		OfficialIDs:      req.OfficialIDs,
+		EngineIDs:        req.EngineIDs,
+		Links:            vndbLink(req.VNDBID),
+	}
 }
 
 // Claim atomically converts a VNDB draft (status=2) into a published galgame

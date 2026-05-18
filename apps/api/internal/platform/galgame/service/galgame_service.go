@@ -121,97 +121,35 @@ func (s *GalgameService) Create(ctx context.Context, uid int, req *dto.CreateGal
 		return nil, errors.NewWithCode(errors.ErrGalgameVNDBExists)
 	}
 
-	var galgame model.Galgame
-
+	var newID int
 	err = s.galgameRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		galgame = model.Galgame{
-			VNDBID:           req.VNDBID,
-			NameEnUS:         req.NameEnUS,
-			NameJaJP:         req.NameJaJP,
-			NameZhCN:         req.NameZhCN,
-			NameZhTW:         req.NameZhTW,
-			Banner:           req.Banner,
-			BannerImageHash:  strToPtr(req.BannerImageHash),
-			IntroEnUS:        req.IntroEnUS,
-			IntroJaJP:        req.IntroJaJP,
-			IntroZhCN:        req.IntroZhCN,
-			IntroZhTW:        req.IntroZhTW,
-			ContentLimit:     req.ContentLimit,
-			OriginalLanguage: req.OriginalLanguage,
-			AgeLimit:         req.AgeLimit,
-			UserID:           uid,
-			SeriesID:         req.SeriesID,
+		// Bare insert: only system fields. Status defaults 0 (published —
+		// admin direct-create); vndb_id is set here so the partial-unique
+		// index applies at insert. Every editable field is then written
+		// by the SINGLE ApplySnapshot path — no manual relation loops, so
+		// create can never drift from update/merge/revert again.
+		g := model.Galgame{VNDBID: req.VNDBID, UserID: uid}
+		if err := tx.Create(&g).Error; err != nil {
+			return err
 		}
-		if galgame.ContentLimit == "" {
-			galgame.ContentLimit = "sfw"
+		if err := repository.ApplySnapshot(tx, g.ID, uid, buildCreateSnapshot(req)); err != nil {
+			return err
 		}
-		if galgame.AgeLimit == "" {
-			galgame.AgeLimit = "r18"
-		}
-		if galgame.OriginalLanguage == "" {
-			galgame.OriginalLanguage = "ja-jp"
-		}
-		if err := tx.Create(&galgame).Error; err != nil {
+		if err := tx.Create(&model.GalgameContributor{GalgameID: g.ID, UserID: uid}).Error; err != nil {
 			return err
 		}
 
-		// Aliases
-		if req.Aliases != "" {
-			for _, name := range strings.Split(req.Aliases, ",") {
-				name = strings.TrimSpace(name)
-				if name == "" {
-					continue
-				}
-				if err := tx.Create(&model.GalgameAlias{GalgameID: galgame.ID, Name: name}).Error; err != nil {
-					return err
-				}
-			}
-		}
-
-		// Tag relations
-		for _, tagID := range req.TagIDs {
-			if err := tx.Create(&model.GalgameTagRelation{GalgameID: galgame.ID, TagID: tagID}).Error; err != nil {
-				return err
-			}
-		}
-
-		// Official relations
-		for _, officialID := range req.OfficialIDs {
-			if err := tx.Create(&model.GalgameOfficialRelation{GalgameID: galgame.ID, OfficialID: officialID}).Error; err != nil {
-				return err
-			}
-		}
-
-		// Engine relations
-		for _, engineID := range req.EngineIDs {
-			if err := tx.Create(&model.GalgameEngineRelation{GalgameID: galgame.ID, EngineID: engineID}).Error; err != nil {
-				return err
-			}
-		}
-
-		// Contributor
-		if err := tx.Create(&model.GalgameContributor{GalgameID: galgame.ID, UserID: uid}).Error; err != nil {
-			return err
-		}
-
-		// VNDB link
-		if err := tx.Create(&model.GalgameLink{GalgameID: galgame.ID, UserID: uid, Name: "VNDB", Link: "https://vndb.org/" + req.VNDBID}).Error; err != nil {
-			return err
-		}
-
-		// Take snapshot and create revision 1
-		fullGalgame, err := loadGalgameWithRelations(tx, galgame.ID)
+		full, err := loadGalgameWithRelations(tx, g.ID)
 		if err != nil {
 			return err
 		}
-		snapshot := model.TakeSnapshot(fullGalgame)
-		snapshotJSON, err := snapshot.ToJSON()
+		snapshotJSON, err := model.TakeSnapshot(full).ToJSON()
 		if err != nil {
 			return err
 		}
-
+		newID = g.ID
 		return tx.Create(&model.GalgameRevision{
-			GalgameID: galgame.ID,
+			GalgameID: g.ID,
 			Revision:  1,
 			UserID:    uid,
 			Action:    "created",
@@ -223,7 +161,63 @@ func (s *GalgameService) Create(ctx context.Context, uid int, req *dto.CreateGal
 		return nil, err
 	}
 
-	return &galgame, nil
+	return s.galgameRepo.FindByID(ctx, newID)
+}
+
+// buildCreateSnapshot assembles the revision-1 snapshot for a brand-new
+// galgame (admin direct-create). Defaults mirror the galgame column
+// defaults; the VNDB link is materialised into Links so ApplySnapshot is
+// the only writer. `bid` is intentionally absent (reserved, see §1.5).
+func buildCreateSnapshot(req *dto.CreateGalgameRequest) *model.Snapshot {
+	s := &model.Snapshot{
+		VNDBID:           req.VNDBID,
+		Released:         orDefault(req.Released, "unknown"),
+		NameEnUS:         req.NameEnUS,
+		NameJaJP:         req.NameJaJP,
+		NameZhCN:         req.NameZhCN,
+		NameZhTW:         req.NameZhTW,
+		Banner:           req.Banner,
+		BannerImageHash:  req.BannerImageHash,
+		IntroEnUS:        req.IntroEnUS,
+		IntroJaJP:        req.IntroJaJP,
+		IntroZhCN:        req.IntroZhCN,
+		IntroZhTW:        req.IntroZhTW,
+		ContentLimit:     orDefault(req.ContentLimit, "sfw"),
+		OriginalLanguage: orDefault(req.OriginalLanguage, "ja-jp"),
+		AgeLimit:         orDefault(req.AgeLimit, "r18"),
+		SeriesID:         req.SeriesID,
+		Aliases:          splitCSV(req.Aliases),
+		TagIDs:           req.TagIDs,
+		OfficialIDs:      req.OfficialIDs,
+		EngineIDs:        req.EngineIDs,
+		Links:            vndbLink(req.VNDBID),
+	}
+	return s
+}
+
+func orDefault(v, def string) string {
+	if v == "" {
+		return def
+	}
+	return v
+}
+
+func splitCSV(csv string) []string {
+	out := make([]string, 0)
+	for _, p := range strings.Split(csv, ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// vndbLink returns the single auto VNDB link for a galgame, or empty.
+func vndbLink(vndbID string) []model.SnapshotLink {
+	if vndbID == "" {
+		return []model.SnapshotLink{}
+	}
+	return []model.SnapshotLink{{Name: "VNDB", Link: "https://vndb.org/" + vndbID}}
 }
 
 // Update directly updates a galgame (creator or admin) and creates a new revision
@@ -374,11 +368,12 @@ func loadGalgameWithRelations(tx *gorm.DB, id int) (*model.Galgame, error) {
 // field unchanged, a set value incl. empty string / empty slice is an
 // authoritative replacement). This is the single place "what does this
 // edit change" is expressed; repository.ApplySnapshot then writes it and
-// the revision records exactly it. Fields NOT modelled on
-// UpdateGalgameRequest (aliases / links — they have their own per-item
-// revision endpoints) are carried over from `cur` untouched, so a
-// galgame edit never disturbs them. See
-// docs/galgame_wiki/01-revision-system-design.md §"统一编辑路径".
+// the revision records exactly it. Every editable model.Snapshot field
+// is reachable here (released / aliases / links / tag_ids / official_ids
+// / engine_ids included); the only reserved exception is `bid`
+// (BangumiID) — sync-managed, intentionally not user-editable, carried
+// over from `cur` untouched so revert keeps any synced value. See the
+// invariant in docs/galgame_wiki/01-revision-system-design.md §1.5.
 func overlayUpdate(cur *model.Snapshot, req *dto.UpdateGalgameRequest) *model.Snapshot {
 	n := *cur // copy; slices are replaced wholesale below, never mutated in place
 	if req.VNDBID != nil {
@@ -424,9 +419,22 @@ func overlayUpdate(cur *model.Snapshot, req *dto.UpdateGalgameRequest) *model.Sn
 	if req.AgeLimit != nil {
 		n.AgeLimit = *req.AgeLimit
 	}
+	if req.Released != nil {
+		n.Released = *req.Released
+	}
 	if req.SeriesID != nil {
 		v := *req.SeriesID
 		n.SeriesID = &v
+	}
+	if req.Aliases != nil {
+		n.Aliases = append([]string(nil), (*req.Aliases)...)
+	}
+	if req.Links != nil {
+		links := make([]model.SnapshotLink, 0, len(*req.Links))
+		for _, l := range *req.Links {
+			links = append(links, model.SnapshotLink{Name: l.Name, Link: l.Link})
+		}
+		n.Links = links
 	}
 	if req.TagIDs != nil {
 		n.TagIDs = append([]int(nil), (*req.TagIDs)...)

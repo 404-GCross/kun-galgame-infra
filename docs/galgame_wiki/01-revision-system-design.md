@@ -13,11 +13,15 @@
 
 > 这几条是本设计的"脊柱"。历史上 `PUT /galgame/:gid`（直接编辑）违反了第 1、2、4 条，
 > 导致 **kungal/moyu 改 tag/official/engine 完全不生效，且写进了被污染的 revision**
-> （快照是从"未被修改的关联"拍的，revert 会恢复错值）。任何新的写入路径都必须遵守：
+> （快照是从"未被修改的关联"拍的，revert 会恢复错值）。同类残留（`released`
+> 不可编辑、aliases/links 旁路、Create/Submit 不走 ApplySnapshot）已一并根治。
+> 任何新的写入路径都必须遵守：
 
 1. **快照 = 全量可编辑状态，关联字段是一等公民。** `tag_ids`/`official_ids`/`engine_ids`/`aliases`/`links` 与标量字段平级，都在 `Snapshot` 里、都进 revision、都参与 diff/revert/PR-rebase。不存在"标量走 revision、关联走别的路"这种二元。
 
-2. **唯一写入路径 = `ApplySnapshot`。** create / update / patch-draft / PR-merge / revert **全部**通过 `repository.ApplySnapshot(tx, gid, uid, snapshot)` 落库（标量 update + 五张关联表"清空重建"）。**禁止**任何路径用 `tx.Updates(scalarMap)` 之类只写一部分字段的旁路——那必然漏掉关联。
+2. **唯一写入路径 = `ApplySnapshot`（现已是事实，非口号）。** create / submit / update / patch-draft / PR-merge / revert **全部**通过 `repository.ApplySnapshot(tx, gid, uid, snapshot)` 落库（标量 update + 五张关联表"清空重建"）。Create/Submit 现在只插入一行裸 galgame（仅 system 字段 status/user_id/vndb_id）拿 ID，其余字段一律由 ApplySnapshot 写入——**全仓只剩这一个关联写入实现**。**禁止**任何路径用 `tx.Updates(scalarMap)` 或手写 `tx.Create(&GalgameTagRelation{})` 循环之类只写一部分字段的旁路。
+
+2b. **可编辑字段集 == 编辑 DTO 字段集。** `model.Snapshot` 里每个可编辑字段都必须能被某条编辑 API 改到。唯一保留例外是 **`bid`（BangumiID）**：sync 托管、Bangumi 同步暂缓，故意不进编辑 DTO，但保留在 Snapshot 里以便 revert 不丢失将来 sync 写入的值。有 `TestEditableSnapshotFieldsAllReachable` 单测做防回归护栏——新增 Snapshot 字段却忘了接 DTO/overlay 会直接红。
 
 3. **直接编辑 = "对自己做一次 snapshot overlay"。** 流程恒为：取当前规范快照 `cur` → 把请求"提供了的"字段覆盖上去得到 `next` → `ChangedKeys(cur,next)` 为空则 no-op（不产 revision）→ `ApplySnapshot(next)` → 重新 `TakeSnapshot` 落 revision。语义上与 PR-merge/revert 完全同构。
 
@@ -119,6 +123,7 @@ CREATE INDEX idx_galgame_pr_galgame ON galgame_pr(galgame_id, status);
   "content_limit": "sfw",
   "original_language": "ja-jp",
   "age_limit": "r18",
+  "released": "2019-08-16",
   "series_id": null,
   "aliases": ["别名1", "别名2"],
   "tag_ids": [1, 2, 3],
@@ -133,8 +138,10 @@ CREATE INDEX idx_galgame_pr_galgame ON galgame_pr(galgame_id, status);
 
 说明：
 - 只包含**可编辑字段**，不包含 `id`、`user_id`、`view`、`created`、`updated`、`status` 等系统字段
+- 实际 `model.Snapshot` 还含 `bid`（BangumiID）：**保留字段**，sync 托管、暂不可编辑（Bangumi 同步暂缓），存在 Snapshot 里只为 revert 不丢失将来 sync 写入的值，不进编辑 DTO。这是"可编辑字段集 == 编辑 DTO 字段集"的**唯一例外**（见 §1.5 #2b）
 - `aliases`、`links` 存值数组（不存 ID，因为回滚时会重建）
 - `tag_ids`、`official_ids`、`engine_ids` 存 ID 数组（这些是已有实体的引用）
+- `released` 是可编辑字段（原创/同人作品发售日期），空 → `"unknown"`
 - 大文本字段（intro_*）完整存储，galgame 元数据通常只有几 KB
 
 ## 5. Diff 计算
@@ -186,14 +193,22 @@ func ComputeDiff(oldSnapshot, newSnapshot map[string]any) map[string]any {
 
 ## 6. 操作流程
 
-### 6.1 创建 Galgame
+### 6.1 创建 Galgame（admin `POST /galgame`） / 用户投稿（`POST /galgame/submit`）
 
 ```
-1. 创建 galgame 主记录 + 关联表（事务内）
-2. 拍快照 → snapshot
-3. 创建 galgame_revision (revision=1, action='created', snapshot)
+事务内：
+1. 插入裸 galgame 行：仅 system 字段（status / user_id / vndb_id）
+2. snap = buildCreateSnapshot(req)（默认值补全；vndb_id 非空时含 VNDB link）
+3. ApplySnapshot(tx, gid, uid, snap)        // 唯一写入路径（§1.5#2）：标量+五关联表
 4. 添加创建者为 contributor
+5. snap1 = TakeSnapshot(写入后状态)          // 重新拍（§1.5#4）
+6. 创建 galgame_revision(revision=1, action='created', snapshot=snap1)
+   （submit 额外：写 message type='submitted'）
 ```
+
+> 与旧实现的区别：不再手写 `tx.Create(&GalgameTagRelation{})` 等关联循环——
+> 那是与 update/merge/revert 并存的第二套关联写入实现（当初 bug 的温床）。现在
+> create/submit 与其它路径共用同一个 `ApplySnapshot`。
 
 ### 6.2 直接编辑（创建者 or admin）
 

@@ -124,3 +124,144 @@ func TestUpdate_OfficialAndEngineRelations(t *testing.T) {
 	assert.Equal(t, []int{o1}, snap.OfficialIDs)
 	assert.Equal(t, []int{e1}, snap.EngineIDs)
 }
+
+// released / aliases / links must be editable via the unified PUT path,
+// atomically (one edit = one revision), with the snapshot == DB.
+func TestUpdate_ReleasedAliasesLinks(t *testing.T) {
+	cleanTables(t)
+	getRepos()
+	ctx := context.Background()
+	gid := makeGalgame(t)
+
+	rel := "2019-08-16"
+	al := []string{"别名A", "别名B"}
+	lk := []dto.GalgameLinkInput{{Name: "官网", Link: "https://x.example"}}
+	before := revCount(t, gid)
+
+	_, err := testSvc.Update(ctx, 1, gid, nil, &dto.UpdateGalgameRequest{
+		Released: &rel,
+		Aliases:  &al,
+		Links:    &lk,
+	})
+	require.NoError(t, err)
+
+	snap := latestRevSnapshot(t, gid)
+	assert.Equal(t, "2019-08-16", snap.Released)
+	assert.ElementsMatch(t, []string{"别名A", "别名B"}, snap.Aliases)
+	require.Len(t, snap.Links, 1)
+	assert.Equal(t, "官网", snap.Links[0].Name)
+	assert.Equal(t, int64(1), revCount(t, gid)-before, "one edit = exactly one revision (atomic)")
+
+	// DB reflects it.
+	var aliasCnt, linkCnt int64
+	testDB.Model(&model.GalgameAlias{}).Where("galgame_id = ?", gid).Count(&aliasCnt)
+	testDB.Model(&model.GalgameLink{}).Where("galgame_id = ?", gid).Count(&linkCnt)
+	assert.Equal(t, int64(2), aliasCnt)
+	assert.Equal(t, int64(1), linkCnt)
+
+	// Omitting them on a later edit must NOT wipe them (presence).
+	nm := "新名"
+	_, err = testSvc.Update(ctx, 1, gid, nil, &dto.UpdateGalgameRequest{NameZhCN: &nm})
+	require.NoError(t, err)
+	s2 := latestRevSnapshot(t, gid)
+	assert.ElementsMatch(t, []string{"别名A", "别名B"}, s2.Aliases, "omitted aliases must persist")
+	require.Len(t, s2.Links, 1)
+	assert.Equal(t, "2019-08-16", s2.Released)
+}
+
+// Anti-regression invariant: EVERY editable model.Snapshot field must be
+// reachable through UpdateGalgameRequest (bid/BangumiID is the only
+// reserved exception). If someone adds a snapshot field but forgets the
+// DTO/overlay wiring (the exact class of bug this whole effort fixed),
+// this fails.
+func TestEditableSnapshotFieldsAllReachable(t *testing.T) {
+	cleanTables(t)
+	getRepos()
+	ctx := context.Background()
+	gid := makeGalgame(t)
+	tg := createTestTag(t, "rt", "content")
+	of := createTestOfficial(t, "ro", "company")
+	en := createTestEngine(t, "re")
+
+	s := func(v string) *string { return &v }
+	want := &model.Snapshot{
+		VNDBID: "v777", Released: "2020-01-01",
+		NameEnUS: "EN", NameJaJP: "JA", NameZhCN: "ZH", NameZhTW: "TW",
+		Banner: "https://b.example/x.webp", BannerImageHash: "",
+		IntroEnUS: "ie", IntroJaJP: "ij", IntroZhCN: "iz", IntroZhTW: "it",
+		ContentLimit: "nsfw", OriginalLanguage: "en-us", AgeLimit: "r18",
+		Aliases: []string{"a1"}, TagIDs: []int{tg}, OfficialIDs: []int{of},
+		EngineIDs: []int{en}, Links: []model.SnapshotLink{{Name: "L", Link: "https://l.example"}},
+	}
+	al := want.Aliases
+	li := []dto.GalgameLinkInput{{Name: "L", Link: "https://l.example"}}
+	ti, oi, ei := want.TagIDs, want.OfficialIDs, want.EngineIDs
+	_, err := testSvc.Update(ctx, 1, gid, nil, &dto.UpdateGalgameRequest{
+		VNDBID: s("v777"), Released: s("2020-01-01"),
+		NameEnUS: s("EN"), NameJaJP: s("JA"), NameZhCN: s("ZH"), NameZhTW: s("TW"),
+		Banner: s("https://b.example/x.webp"),
+		IntroEnUS: s("ie"), IntroJaJP: s("ij"), IntroZhCN: s("iz"), IntroZhTW: s("it"),
+		ContentLimit: s("nsfw"), OriginalLanguage: s("en-us"), AgeLimit: s("r18"),
+		Aliases: &al, Links: &li, TagIDs: &ti, OfficialIDs: &oi, EngineIDs: &ei,
+	})
+	require.NoError(t, err)
+
+	got := latestRevSnapshot(t, gid)
+	assert.Equal(t, want.VNDBID, got.VNDBID)
+	assert.Equal(t, want.Released, got.Released)
+	assert.Equal(t, want.NameEnUS, got.NameEnUS)
+	assert.Equal(t, want.NameJaJP, got.NameJaJP)
+	assert.Equal(t, want.NameZhCN, got.NameZhCN)
+	assert.Equal(t, want.NameZhTW, got.NameZhTW)
+	assert.Equal(t, want.Banner, got.Banner)
+	assert.Equal(t, want.IntroEnUS, got.IntroEnUS)
+	assert.Equal(t, want.IntroJaJP, got.IntroJaJP)
+	assert.Equal(t, want.IntroZhCN, got.IntroZhCN)
+	assert.Equal(t, want.IntroZhTW, got.IntroZhTW)
+	assert.Equal(t, want.ContentLimit, got.ContentLimit)
+	assert.Equal(t, want.OriginalLanguage, got.OriginalLanguage)
+	assert.Equal(t, want.AgeLimit, got.AgeLimit)
+	assert.ElementsMatch(t, want.Aliases, got.Aliases)
+	assert.ElementsMatch(t, want.TagIDs, got.TagIDs)
+	assert.ElementsMatch(t, want.OfficialIDs, got.OfficialIDs)
+	assert.ElementsMatch(t, want.EngineIDs, got.EngineIDs)
+	require.Len(t, got.Links, 1)
+	assert.Equal(t, want.Links[0], got.Links[0])
+}
+
+// Admin Create now also goes through ApplySnapshot — relations, aliases,
+// released default and the auto VNDB link must all materialise, and
+// revision 1's snapshot must equal the resulting DB state.
+func TestCreate_ThroughApplySnapshot(t *testing.T) {
+	cleanTables(t)
+	getRepos()
+	ctx := context.Background()
+	tg := createTestTag(t, "ct", "content")
+
+	g, err := testSvc.Create(ctx, 9, &dto.CreateGalgameRequest{
+		VNDBID:   "v424242",
+		NameZhCN: "造物主题",
+		Aliases:  "x, y",
+		TagIDs:   []int{tg},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, g)
+
+	var rev model.GalgameRevision
+	require.NoError(t, testDB.Where("galgame_id = ? AND revision = 1", g.ID).First(&rev).Error)
+	snap, err := model.SnapshotFromJSON(rev.Snapshot)
+	require.NoError(t, err)
+	assert.Equal(t, "v424242", snap.VNDBID)
+	assert.Equal(t, "unknown", snap.Released, "released default applied via snapshot")
+	assert.ElementsMatch(t, []string{"x", "y"}, snap.Aliases)
+	assert.Equal(t, []int{tg}, snap.TagIDs)
+	require.Len(t, snap.Links, 1)
+	assert.Equal(t, "https://vndb.org/v424242", snap.Links[0].Link)
+
+	// snapshot == DB
+	var tagCnt, linkCnt int64
+	testDB.Model(&model.GalgameTagRelation{}).Where("galgame_id = ?", g.ID).Count(&tagCnt)
+	testDB.Model(&model.GalgameLink{}).Where("galgame_id = ?", g.ID).Count(&linkCnt)
+	assert.Equal(t, int64(1), tagCnt)
+	assert.Equal(t, int64(1), linkCnt)
+}

@@ -25,11 +25,19 @@ type CreateGalgameRequest struct {
 	ContentLimit     string `json:"content_limit" validate:"omitempty,oneof=sfw nsfw"`
 	OriginalLanguage string `json:"original_language"`
 	AgeLimit         string `json:"age_limit" validate:"omitempty,oneof=all r18"`
+	Released         string `json:"released" validate:"max=107"` // empty → "unknown"
 	SeriesID         *int   `json:"series_id"`
 	Aliases          string `json:"aliases"` // Comma-separated alias names
 	TagIDs           []int  `json:"tag_ids"`
 	OfficialIDs      []int  `json:"official_ids"`
 	EngineIDs        []int  `json:"engine_ids"`
+}
+
+// GalgameLinkInput is one external link in a galgame edit body. Kept in
+// the dto layer (not model.SnapshotLink) so dto stays model-free.
+type GalgameLinkInput struct {
+	Name string `json:"name" validate:"required,max=233"`
+	Link string `json:"link" validate:"required,max=1007"`
 }
 
 // UpdateGalgameRequest represents a galgame update request
@@ -48,18 +56,23 @@ type UpdateGalgameRequest struct {
 	ContentLimit     *string `json:"content_limit" validate:"omitempty,oneof=sfw nsfw"`
 	OriginalLanguage *string `json:"original_language"`
 	AgeLimit         *string `json:"age_limit" validate:"omitempty,oneof=all r18"`
+	Released         *string `json:"released" validate:"omitempty,max=107"`
 	SeriesID         *int    `json:"series_id"`
-	// Relational fields use POINTER slices for presence semantics,
-	// mirroring the *string scalars above: nil = field omitted = keep
-	// the galgame's current set; non-nil (including an empty []) =
-	// authoritative full replacement. A partial edit that does not send
-	// these therefore never touches relations (no silent wipe). They are
-	// first-class revision/snapshot fields — see
-	// docs/galgame_wiki/01-revision-system-design.md.
-	TagIDs      *[]int `json:"tag_ids"`
-	OfficialIDs *[]int `json:"official_ids"`
-	EngineIDs   *[]int `json:"engine_ids"`
-	IsMinor     *bool  `json:"is_minor"`
+	// Relational / multi-value fields use POINTER types for presence
+	// semantics, mirroring the *string scalars above: nil = field
+	// omitted = keep the galgame's current set; non-nil (including an
+	// empty []) = authoritative full replacement. A partial edit that
+	// does not send these therefore never touches them (no silent wipe).
+	// EVERY editable field in model.Snapshot is reachable here — see the
+	// invariant in docs/galgame_wiki/01-revision-system-design.md §1.5
+	// (`bid`/BangumiID is the only reserved exception: sync-managed,
+	// intentionally not user-editable; Bangumi sync is deferred).
+	Aliases     *[]string           `json:"aliases"`
+	Links       *[]GalgameLinkInput `json:"links"`
+	TagIDs      *[]int              `json:"tag_ids"`
+	OfficialIDs *[]int              `json:"official_ids"`
+	EngineIDs   *[]int              `json:"engine_ids"`
+	IsMinor     *bool               `json:"is_minor"`
 }
 
 // BatchGetGalgameRequest represents a batch galgame query
