@@ -268,8 +268,6 @@ func (s *SubmissionService) Claim(ctx context.Context, uid, gid int) (*model.Gal
 // If status was 4 (declined), flips back to 3 to re-enter the review queue.
 // Returns 20007/20008 for ownership/status violations.
 func (s *SubmissionService) PatchDraft(ctx context.Context, uid, gid int, req *dto.UpdateGalgameRequest) (*model.Galgame, error) {
-	updates := buildUpdates(req)
-
 	err := s.galgameRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		g, err := s.galgameRepo.FindForUpdate(tx, gid)
 		if err != nil {
@@ -285,28 +283,48 @@ func (s *SubmissionService) PatchDraft(ctx context.Context, uid, gid int, req *d
 			return errors.NewWithCode(errors.ErrGalgameDraftStatusInvalid)
 		}
 
-		// Auto-revive declined drafts to pending so admin sees them in the queue again.
-		if g.Status == model.GalgameStatusDeclined {
-			updates["status"] = model.GalgameStatusPending
-		}
-
-		if len(updates) > 0 {
-			if err := tx.Model(&model.Galgame{}).Where("id = ?", gid).Updates(updates).Error; err != nil {
-				return err
-			}
-		}
-
-		// Revision
-		nextRev, err := repository.NextRevision(tx, gid)
-		if err != nil {
-			return err
-		}
+		// Same snapshot-overlay model as the published-galgame Update:
+		// overlay onto the current canonical snapshot, write via the one
+		// ApplySnapshot path (so tag/official/engine edits persist and
+		// the recorded snapshot == DB == intent).
 		full, err := loadGalgameWithRelations(tx, gid)
 		if err != nil {
 			return err
 		}
-		snapshot := model.TakeSnapshot(full)
-		snapJSON, err := snapshot.ToJSON()
+		cur := model.TakeSnapshot(full)
+		next := overlayUpdate(cur, req)
+		changed := model.ChangedKeys(cur, next)
+
+		// A declined draft re-enters the review queue even if the
+		// content is byte-identical (re-submission intent). A pending
+		// draft with no change is a true no-op (commit empty tx).
+		reviving := g.Status == model.GalgameStatusDeclined
+		if len(changed) == 0 && !reviving {
+			return nil
+		}
+
+		if len(changed) > 0 {
+			if err := repository.ApplySnapshot(tx, gid, uid, next); err != nil {
+				return err
+			}
+		}
+		// status is not a snapshot field; flip declined→pending here.
+		if reviving {
+			if err := tx.Model(&model.Galgame{}).Where("id = ?", gid).
+				Update("status", model.GalgameStatusPending).Error; err != nil {
+				return err
+			}
+		}
+
+		nextRev, err := repository.NextRevision(tx, gid)
+		if err != nil {
+			return err
+		}
+		fullAfter, err := loadGalgameWithRelations(tx, gid)
+		if err != nil {
+			return err
+		}
+		snapJSON, err := model.TakeSnapshot(fullAfter).ToJSON()
 		if err != nil {
 			return err
 		}
@@ -321,7 +339,7 @@ func (s *SubmissionService) PatchDraft(ctx context.Context, uid, gid int, req *d
 		}
 
 		// Message: edited_pending. Admin queue picks it up via JOIN on status=3.
-		payload, _ := json.Marshal(map[string]any{"field_count": len(updates)})
+		payload, _ := json.Marshal(map[string]any{"field_count": len(changed)})
 		uidVal := uid
 		return s.messageRepo.Create(ctx, tx, &model.GalgameMessage{
 			Type:         model.MessageTypeEditedPending,

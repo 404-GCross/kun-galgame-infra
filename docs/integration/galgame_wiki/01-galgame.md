@@ -323,9 +323,20 @@ return r2.data.galgame
   "name_zh_cn": "新标题",
   "banner_image_hash": "abcd1234...ef",
   "intro_zh_cn": "新简介",
+  "tag_ids": [1, 2, 3],
+  "official_ids": [1],
+  "engine_ids": [],
   "is_minor": false
 }
 ```
+
+> ⚠️ **关联字段（`tag_ids` / `official_ids` / `engine_ids`）= presence 语义全量替换，必须看懂**：
+> - **不传该字段** → 该 galgame 的对应关联**保持不变**（只改名字时绝不会清空 tag）。
+> - **传数组（含空 `[]`）** → 该字段是**权威全量集合**：服务端按它"清空旧关联 → 按此重建"。`[]` = 显式清空全部。
+> - 因此下游（kungal/moyu）编辑表单**必须回传该 galgame 当前的全量 tag_ids/official_ids/engine_ids**（在原集合上增/删后整体回传），**不要只回传"新增的"那几个**——那会被当成"把关联替换成只剩这几个"。
+> - 这与标量字段一致：传了就改、不传就不动。每一次关联变化都会进入 revision 快照与 PR diff（集合语义，顺序无关）。
+>
+> `aliases` / `links` 不在此端点，走各自的 `/galgame/:gid/aliases|links` 增删端点（同样每次产生 revision）。
 
 `is_minor` 为 `true` 时标记为小修改，在版本历史中可被过滤。
 

@@ -49,7 +49,17 @@ type UpdateGalgameRequest struct {
 	OriginalLanguage *string `json:"original_language"`
 	AgeLimit         *string `json:"age_limit" validate:"omitempty,oneof=all r18"`
 	SeriesID         *int    `json:"series_id"`
-	IsMinor          *bool   `json:"is_minor"`
+	// Relational fields use POINTER slices for presence semantics,
+	// mirroring the *string scalars above: nil = field omitted = keep
+	// the galgame's current set; non-nil (including an empty []) =
+	// authoritative full replacement. A partial edit that does not send
+	// these therefore never touches relations (no silent wipe). They are
+	// first-class revision/snapshot fields — see
+	// docs/galgame_wiki/01-revision-system-design.md.
+	TagIDs      *[]int `json:"tag_ids"`
+	OfficialIDs *[]int `json:"official_ids"`
+	EngineIDs   *[]int `json:"engine_ids"`
+	IsMinor     *bool  `json:"is_minor"`
 }
 
 // BatchGetGalgameRequest represents a batch galgame query

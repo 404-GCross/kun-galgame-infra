@@ -240,34 +240,45 @@ func (s *GalgameService) Update(ctx context.Context, uid, galgameID int, roles [
 		return nil, errors.NewWithCode(errors.ErrGalgameForbidden)
 	}
 
-	updates := buildUpdates(req)
-	if len(updates) == 0 {
+	// Direct edit = "merge a snapshot against yourself": overlay the
+	// request onto the current canonical snapshot, and if nothing
+	// actually changed (incl. relations), no-op without a revision.
+	full, err := loadGalgameWithRelations(s.galgameRepo.DB().WithContext(ctx), galgameID)
+	if err != nil {
+		return nil, err
+	}
+	cur := model.TakeSnapshot(full)
+	next := overlayUpdate(cur, req)
+	if len(model.ChangedKeys(cur, next)) == 0 {
 		return galgame, nil
 	}
 
 	err = s.galgameRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(&model.Galgame{}).Where("id = ?", galgameID).Updates(updates).Error; err != nil {
+		// Single canonical write path — same one revert / PR-merge use.
+		// Scalar fields updated + every relation table cleared+rebuilt
+		// from `next`, so tag/official/engine edits actually persist.
+		if err := repository.ApplySnapshot(tx, galgameID, uid, next); err != nil {
 			return err
 		}
 
-		// Get next revision number (with implicit row lock via MAX query)
 		nextRev, err := repository.NextRevision(tx, galgameID)
 		if err != nil {
 			return err
 		}
 
-		// Take snapshot of the updated state
-		fullGalgame, err := loadGalgameWithRelations(tx, galgameID)
+		// Snapshot is re-taken from the just-written state so it is
+		// canonical and provably == DB == the edit's intent (the old
+		// code recorded a snapshot taken from un-mutated relations,
+		// corrupting history — that is fixed here).
+		fullAfter, err := loadGalgameWithRelations(tx, galgameID)
 		if err != nil {
 			return err
 		}
-		snapshot := model.TakeSnapshot(fullGalgame)
-		snapshotJSON, err := snapshot.ToJSON()
+		snapshotJSON, err := model.TakeSnapshot(fullAfter).ToJSON()
 		if err != nil {
 			return err
 		}
 
-		// Ensure editor is a contributor
 		var count int64
 		tx.Model(&model.GalgameContributor{}).Where("galgame_id = ? AND user_id = ?", galgameID, uid).Count(&count)
 		if count == 0 {
@@ -357,60 +368,76 @@ func loadGalgameWithRelations(tx *gorm.DB, id int) (*model.Galgame, error) {
 	return &g, err
 }
 
-func buildUpdates(req *dto.UpdateGalgameRequest) map[string]any {
-	u := map[string]any{}
+// overlayUpdate builds the *target snapshot* of a direct edit: it starts
+// from the current canonical snapshot and overlays only the fields the
+// request actually carries (pointer-presence semantics — nil leaves a
+// field unchanged, a set value incl. empty string / empty slice is an
+// authoritative replacement). This is the single place "what does this
+// edit change" is expressed; repository.ApplySnapshot then writes it and
+// the revision records exactly it. Fields NOT modelled on
+// UpdateGalgameRequest (aliases / links — they have their own per-item
+// revision endpoints) are carried over from `cur` untouched, so a
+// galgame edit never disturbs them. See
+// docs/galgame_wiki/01-revision-system-design.md §"统一编辑路径".
+func overlayUpdate(cur *model.Snapshot, req *dto.UpdateGalgameRequest) *model.Snapshot {
+	n := *cur // copy; slices are replaced wholesale below, never mutated in place
 	if req.VNDBID != nil {
-		u["vndb_id"] = *req.VNDBID
+		n.VNDBID = *req.VNDBID
 	}
 	if req.NameEnUS != nil {
-		u["name_en_us"] = *req.NameEnUS
+		n.NameEnUS = *req.NameEnUS
 	}
 	if req.NameJaJP != nil {
-		u["name_ja_jp"] = *req.NameJaJP
+		n.NameJaJP = *req.NameJaJP
 	}
 	if req.NameZhCN != nil {
-		u["name_zh_cn"] = *req.NameZhCN
+		n.NameZhCN = *req.NameZhCN
 	}
 	if req.NameZhTW != nil {
-		u["name_zh_tw"] = *req.NameZhTW
+		n.NameZhTW = *req.NameZhTW
 	}
 	if req.Banner != nil {
-		u["banner"] = *req.Banner
+		n.Banner = *req.Banner
 	}
 	if req.BannerImageHash != nil {
-		// Empty string explicitly clears the column (back to NULL); a
-		// non-empty hash sets it. Caller can choose either behavior.
-		if *req.BannerImageHash == "" {
-			u["banner_image_hash"] = nil
-		} else {
-			u["banner_image_hash"] = *req.BannerImageHash
-		}
+		// "" clears it (ApplySnapshot maps empty → NULL column).
+		n.BannerImageHash = *req.BannerImageHash
 	}
 	if req.IntroEnUS != nil {
-		u["intro_en_us"] = *req.IntroEnUS
+		n.IntroEnUS = *req.IntroEnUS
 	}
 	if req.IntroJaJP != nil {
-		u["intro_ja_jp"] = *req.IntroJaJP
+		n.IntroJaJP = *req.IntroJaJP
 	}
 	if req.IntroZhCN != nil {
-		u["intro_zh_cn"] = *req.IntroZhCN
+		n.IntroZhCN = *req.IntroZhCN
 	}
 	if req.IntroZhTW != nil {
-		u["intro_zh_tw"] = *req.IntroZhTW
+		n.IntroZhTW = *req.IntroZhTW
 	}
 	if req.ContentLimit != nil {
-		u["content_limit"] = *req.ContentLimit
+		n.ContentLimit = *req.ContentLimit
 	}
 	if req.OriginalLanguage != nil {
-		u["original_language"] = *req.OriginalLanguage
+		n.OriginalLanguage = *req.OriginalLanguage
 	}
 	if req.AgeLimit != nil {
-		u["age_limit"] = *req.AgeLimit
+		n.AgeLimit = *req.AgeLimit
 	}
 	if req.SeriesID != nil {
-		u["series_id"] = *req.SeriesID
+		v := *req.SeriesID
+		n.SeriesID = &v
 	}
-	return u
+	if req.TagIDs != nil {
+		n.TagIDs = append([]int(nil), (*req.TagIDs)...)
+	}
+	if req.OfficialIDs != nil {
+		n.OfficialIDs = append([]int(nil), (*req.OfficialIDs)...)
+	}
+	if req.EngineIDs != nil {
+		n.EngineIDs = append([]int(nil), (*req.EngineIDs)...)
+	}
+	return &n
 }
 
 // CreateRevisionFromCurrentState takes a snapshot of the current galgame state

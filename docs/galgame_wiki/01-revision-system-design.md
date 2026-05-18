@@ -9,6 +9,24 @@
 - PR 系统支持字段级自动 rebase，减少不必要的冲突
 - 老数据平滑迁移，不丢失编辑者信息
 
+## 1.5 不变量（必读 — 实现这套系统最容易踩的坑都在这）
+
+> 这几条是本设计的"脊柱"。历史上 `PUT /galgame/:gid`（直接编辑）违反了第 1、2、4 条，
+> 导致 **kungal/moyu 改 tag/official/engine 完全不生效，且写进了被污染的 revision**
+> （快照是从"未被修改的关联"拍的，revert 会恢复错值）。任何新的写入路径都必须遵守：
+
+1. **快照 = 全量可编辑状态，关联字段是一等公民。** `tag_ids`/`official_ids`/`engine_ids`/`aliases`/`links` 与标量字段平级，都在 `Snapshot` 里、都进 revision、都参与 diff/revert/PR-rebase。不存在"标量走 revision、关联走别的路"这种二元。
+
+2. **唯一写入路径 = `ApplySnapshot`。** create / update / patch-draft / PR-merge / revert **全部**通过 `repository.ApplySnapshot(tx, gid, uid, snapshot)` 落库（标量 update + 五张关联表"清空重建"）。**禁止**任何路径用 `tx.Updates(scalarMap)` 之类只写一部分字段的旁路——那必然漏掉关联。
+
+3. **直接编辑 = "对自己做一次 snapshot overlay"。** 流程恒为：取当前规范快照 `cur` → 把请求"提供了的"字段覆盖上去得到 `next` → `ChangedKeys(cur,next)` 为空则 no-op（不产 revision）→ `ApplySnapshot(next)` → 重新 `TakeSnapshot` 落 revision。语义上与 PR-merge/revert 完全同构。
+
+4. **revision 快照必须在写入之后重新 `TakeSnapshot`。** 不要用"编辑前"或"未应用前"的状态当快照。重新拍保证 `revision.snapshot == 数据库实际状态 == 本次编辑意图`，三者恒等。这是 revert/diff 正确的前提。
+
+5. **关联字段的 presence 语义（DTO 必须用指针）。** `UpdateGalgameRequest.{TagIDs,OfficialIDs,EngineIDs}` 用 `*[]int`，与标量的 `*string` 同款：`nil` = 未提交 = 保持原样；非 `nil`（含空 `[]`）= 权威全量替换（空=清空）。**否则只改标题的局部编辑会把所有 tag 清空。** 调用方编辑表单必须回传该 galgame 的"全量"关联集合。
+
+6. **集合语义，顺序无关。** `TakeSnapshot` 对 ID 数组 `sort.Ints`，所以 `[1,2]` 与 `[2,1]` 不算变更，diff 输出 added/removed。比较一律用规范化后的快照。
+
 ## 2. 核心概念
 
 ### Revision（版本）
@@ -179,21 +197,26 @@ func ComputeDiff(oldSnapshot, newSnapshot map[string]any) map[string]any {
 
 ### 6.2 直接编辑（创建者 or admin）
 
+**= "对自己做一次 snapshot overlay"**（见 §1.5）。`PatchDraft`（草稿编辑）除多一步
+status 4→3 复活 + edited_pending 消息外，结构完全一致。
+
 ```
+1. cur = TakeSnapshot(当前 galgame+关联)            // 规范化（排序）
+2. next = overlay(cur, req)                          // 仅覆盖 req "提供了的"字段
+                                                     // 关联字段 presence 语义（§1.5#5）
+3. if ChangedKeys(cur, next) == ∅: return 不产 revision   // 真 no-op
 事务内：
-1. SELECT MAX(revision) + 1 FROM galgame_revision
-   WHERE galgame_id = ? FOR UPDATE  → new_revision
-2. 拍当前快照 → old_snapshot
-3. 应用变更到 galgame 表 + 关联表
-4. 拍新快照 → new_snapshot
-5. 创建 galgame_revision (
-     revision=new_revision,
-     action='updated',
-     snapshot=new_snapshot,
-     is_minor=req.is_minor
-   )
-6. 更新 contributor 列表
+4. ApplySnapshot(tx, gid, uid, next)                 // 唯一写入路径（§1.5#2）
+5. new_revision = MAX(revision)+1                     // 行锁
+6. snap = TakeSnapshot(写入后的状态)                 // 重新拍（§1.5#4）：== DB == 意图
+7. 创建 galgame_revision(revision=new_revision, action='updated',
+     snapshot=snap, is_minor=req.is_minor)
+8. 确保编辑者在 contributor 列表
 ```
+
+> ⚠️ 反面教材（曾经的 bug）：跳过 1–4、直接 `tx.Updates(只含标量的 map)` 再
+> `TakeSnapshot(未应用关联的状态)` —— 关联编辑全部丢失，且 revision 快照被污染。
+> 不要再出现任何"只写部分字段"的旁路。
 
 ### 6.3 提交 PR
 
