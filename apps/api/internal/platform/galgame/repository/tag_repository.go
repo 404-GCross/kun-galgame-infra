@@ -207,6 +207,19 @@ func (r *TagRepository) Create(ctx context.Context, tag *model.GalgameTag, alias
 	})
 }
 
+// CountReferences returns how many galgame relations and how many alias
+// rows point at this tag. Used by the delete gate: a plain delete is
+// refused while relations > 0; a force-purge clears them first.
+func (r *TagRepository) CountReferences(ctx context.Context, id int) (relations, aliases int64, err error) {
+	if err = r.db.WithContext(ctx).Model(&model.GalgameTagRelation{}).
+		Where("tag_id = ?", id).Count(&relations).Error; err != nil {
+		return
+	}
+	err = r.db.WithContext(ctx).Model(&model.GalgameTagAlias{}).
+		Where("galgame_tag_id = ?", id).Count(&aliases).Error
+	return
+}
+
 // Delete removes a tag with its aliases and galgame relations.
 func (r *TagRepository) Delete(ctx context.Context, id int) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {

@@ -94,6 +94,15 @@ func (r *EngineRepository) Create(ctx context.Context, engine *model.GalgameEngi
 	return r.db.WithContext(ctx).Create(engine).Error
 }
 
+// CountReferences returns how many galgame relations point at this
+// engine. Engine has no separate alias table (alias is inline jsonb on
+// the row), so only relations are counted.
+func (r *EngineRepository) CountReferences(ctx context.Context, id int) (relations int64, err error) {
+	err = r.db.WithContext(ctx).Model(&model.GalgameEngineRelation{}).
+		Where("engine_id = ?", id).Count(&relations).Error
+	return
+}
+
 // Delete removes an engine with its galgame relations.
 func (r *EngineRepository) Delete(ctx context.Context, id int) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {

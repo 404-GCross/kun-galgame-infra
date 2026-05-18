@@ -92,7 +92,25 @@
 
 ### DELETE /tag/:id
 
-删除标签。**需要认证（admin/moderator）**。事务内级联删除该 tag 的别名（`galgame_tag_alias`）与全部 `galgame_tag_relation` 关联，并从 Meilisearch 移除，无悬挂引用。
+删除标签。**需要 role > 1（admin/moderator；普通用户 role=1 一律 403）**。
+
+安全默认 + 强制清除两段式（同 `DELETE /admin/image/:hash?force=true` 约定）：
+
+- **默认（不带 `?force=true`）**：若该 tag 仍被任意 galgame 引用 → **拒绝**，返回
+  `code:7`，message 含被引用的 galgame 数。避免一删就静默把它从 N 个作品上摘掉。
+- **`?force=true`**：一键「清除全部引用 → 硬删」。事务内级联删除该 tag 的别名
+  （`galgame_tag_alias`）与全部 `galgame_tag_relation` 关联，再硬删 tag 行，并从
+  Meilisearch 移除，无悬挂引用。
+- 引用数为 0 时，带不带 `force` 都直接删（无引用可清）。
+
+成功响应：
+
+```json
+{ "deleted": true, "forced": true, "purged_relations": 2, "purged_aliases": 0 }
+```
+
+`forced` 表示本次是「带 force 且确实清理了引用」。`purged_relations` / `purged_aliases`
+为本次清掉的行数（审计用）。
 
 ---
 
@@ -168,7 +186,7 @@
 
 ### DELETE /official/:id
 
-删除开发商。**需要认证（admin/moderator）**。级联删除别名（`galgame_official_alias`）+ `galgame_official_relation`，并从 Meilisearch 移除。
+删除开发商。**需要 role > 1（admin/moderator）**。与 [`DELETE /tag/:id`](#delete-tagid) 完全同款两段式：默认被引用则**拒绝**（返回引用数），`?force=true` 才一键清除别名（`galgame_official_alias`）+ `galgame_official_relation` 后硬删并移出 Meilisearch；成功返回 `{deleted,forced,purged_relations,purged_aliases}`。
 
 ---
 
@@ -226,7 +244,7 @@
 
 ### DELETE /engine/:id
 
-删除引擎。**需要认证（admin/moderator）**。级联删除 `galgame_engine_relation`（引擎别名为行内 JSONB，随行删除）。
+删除引擎。**需要 role > 1（admin/moderator）**。同款两段式：默认被引用则**拒绝**（返回引用数），`?force=true` 才一键清除 `galgame_engine_relation` 后硬删（引擎别名为行内 JSONB，随行删除；引擎不进 Meili，无索引移除）；成功返回 `{deleted,forced,purged_relations}`（无 `purged_aliases`，引擎无别名表）。
 
 ---
 

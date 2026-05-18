@@ -641,7 +641,9 @@ const merged = [...localMsgs, ...wikiMsgs].sort(byCreatedAtDesc)
 | **分类轴 — engine** | `GET /engine*`、`POST /engine`、`PUT /engine`、`DELETE /engine/:id` | 同 tag | 后端代理 + UI |
 | **分类轴 — series** | `GET /series*`、`POST /series`、`POST /series/modal`、`PUT /series/:id`、`DELETE /series/:id` | 创建=任意登录用户；删=admin/mod | 后端代理 + 系列管理 UI |
 
-> `POST /tag` `POST /official` `POST /engine` 为本次新增（详见 [04-taxonomy.md](./04-taxonomy.md)）：任意登录用户可为「VNDB 没有的原创/同人作品」新建尚不存在的 tag/会社/引擎；改/删仍限 admin/moderator。下游发布/编辑向导**必须**接入这套「选已有 + 没有就新建」的交互，kungal 与 moyu 各一份。
+> `POST /tag` `POST /official` `POST /engine` 为本次新增（详见 [04-taxonomy.md](./04-taxonomy.md)）：任意登录用户可为「VNDB 没有的原创/同人作品」新建尚不存在的 tag/会社/引擎；改/删仍限 admin/moderator（role > 1，普通用户 role=1 一律 403）。下游发布/编辑向导**必须**接入这套「选已有 + 没有就新建」的交互，kungal 与 moyu 各一份。
+>
+> `DELETE /tag|official|engine/:id` 为**安全两段式**（同 `DELETE /admin/image/:hash?force=true` 约定）：默认若仍被任意 galgame 引用则**拒绝**（返回引用数，避免静默把分类从 N 个作品上摘掉）；`?force=true` 才一键「清除全部引用 → 硬删」，返回 `{deleted,forced,purged_relations[,purged_aliases]}` 审计摘要。下游若做分类管理 UI，删除按钮需走「先尝试普通 DELETE → 命中拒绝则二次确认后带 `?force=true`」两步交互。
 
 ### 15.2 落地要求
 

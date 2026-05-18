@@ -180,8 +180,11 @@ func (h *OfficialHandler) Create(c fiber.Ctx) error {
 	return response.Success(c, official)
 }
 
-// Delete removes an official (requires admin/moderator). Cascades
-// aliases + galgame_official_relation rows.
+// Delete removes an official. Requires role > 1 (admin/moderator).
+// Safe by default: refused while still referenced; `?force=true` is the
+// deliberate one-click purge-all-references-then-hard-delete (same
+// convention as DELETE /admin/image/:hash?force=true). See
+// TagHandler.Delete for the rationale.
 func (h *OfficialHandler) Delete(c fiber.Ctx) error {
 	roles, _ := c.Locals("user_roles").([]string)
 	if !hasRole(roles, "admin", "moderator") {
@@ -193,10 +196,25 @@ func (h *OfficialHandler) Delete(c fiber.Ctx) error {
 		return response.BadRequest(c, errors.ErrInvalidID)
 	}
 
+	rel, alias, err := h.officialRepo.CountReferences(c.Context(), id)
+	if err != nil {
+		return response.InternalError(c, errors.ErrOperationFailed)
+	}
+	force := c.Query("force") == "true"
+	if rel > 0 && !force {
+		return response.BadRequestMsg(c, errors.ErrValidationFailed,
+			"该 official 仍被 "+strconv.FormatInt(rel, 10)+" 个 galgame 引用；如确认要一键清除全部引用并硬删除，请带 ?force=true（仅 role>1）")
+	}
+
 	if err := h.officialRepo.Delete(c.Context(), id); err != nil {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
 
 	h.searchHook.OfficialDelete(id)
-	return response.Success(c, nil)
+	return response.Success(c, fiber.Map{
+		"deleted":          true,
+		"forced":           force && rel > 0,
+		"purged_relations": rel,
+		"purged_aliases":   alias,
+	})
 }

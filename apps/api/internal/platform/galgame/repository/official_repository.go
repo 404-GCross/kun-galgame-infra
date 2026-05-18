@@ -168,6 +168,18 @@ func (r *OfficialRepository) Create(ctx context.Context, official *model.Galgame
 	})
 }
 
+// CountReferences returns how many galgame relations and alias rows
+// point at this official. See TagRepository.CountReferences.
+func (r *OfficialRepository) CountReferences(ctx context.Context, id int) (relations, aliases int64, err error) {
+	if err = r.db.WithContext(ctx).Model(&model.GalgameOfficialRelation{}).
+		Where("official_id = ?", id).Count(&relations).Error; err != nil {
+		return
+	}
+	err = r.db.WithContext(ctx).Model(&model.GalgameOfficialAlias{}).
+		Where("galgame_official_id = ?", id).Count(&aliases).Error
+	return
+}
+
 // Delete removes an official with its aliases and galgame relations.
 func (r *OfficialRepository) Delete(ctx context.Context, id int) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {

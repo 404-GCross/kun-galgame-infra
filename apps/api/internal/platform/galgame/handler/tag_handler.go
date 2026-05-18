@@ -196,8 +196,13 @@ func (h *TagHandler) Create(c fiber.Ctx) error {
 	return response.Success(c, tag)
 }
 
-// Delete removes a tag (requires admin/moderator). Cascades aliases +
-// galgame_tag_relation rows so no dangling references remain.
+// Delete removes a tag. Requires role > 1 (admin/moderator — regular
+// users have only "user"). Safe by default: if the tag is still
+// referenced by any galgame it is REFUSED (avoids silently detaching it
+// from N works). `?force=true` is the deliberate one-click "purge all
+// references then hard delete" — same convention as
+// DELETE /admin/image/:hash?force=true. The purge itself is the existing
+// transactional cascade (relations + aliases + row).
 func (h *TagHandler) Delete(c fiber.Ctx) error {
 	roles, _ := c.Locals("user_roles").([]string)
 	if !hasRole(roles, "admin", "moderator") {
@@ -209,12 +214,27 @@ func (h *TagHandler) Delete(c fiber.Ctx) error {
 		return response.BadRequest(c, errors.ErrInvalidID)
 	}
 
+	rel, alias, err := h.tagRepo.CountReferences(c.Context(), id)
+	if err != nil {
+		return response.InternalError(c, errors.ErrOperationFailed)
+	}
+	force := c.Query("force") == "true"
+	if rel > 0 && !force {
+		return response.BadRequestMsg(c, errors.ErrValidationFailed,
+			"该 tag 仍被 "+strconv.FormatInt(rel, 10)+" 个 galgame 引用；如确认要一键清除全部引用并硬删除，请带 ?force=true（仅 role>1）")
+	}
+
 	if err := h.tagRepo.Delete(c.Context(), id); err != nil {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
 
 	h.searchHook.TagDelete(id)
-	return response.Success(c, nil)
+	return response.Success(c, fiber.Map{
+		"deleted":          true,
+		"forced":           force && rel > 0,
+		"purged_relations": rel,
+		"purged_aliases":   alias,
+	})
 }
 
 // hasRole checks if the user has any of the specified roles
