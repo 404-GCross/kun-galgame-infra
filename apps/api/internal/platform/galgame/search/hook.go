@@ -47,6 +47,7 @@ func (h *Hook) Galgame(id int) {
 			Preload("Tag.Tag").
 			Preload("Official.Official").
 			Preload("Engine.Engine").
+			Preload("Cover").
 			First(&g, id).Error; err != nil {
 			slog.Warn("search hook: load galgame", "id", id, "err", err)
 			return

@@ -40,6 +40,12 @@ type GalgameDoc struct {
 	IntroZhTW string `json:"intro_zh_tw"`
 
 	Banner           string `json:"banner"`
+	// EffectiveBannerHash is the image_hash of the pinned cover
+	// (galgame_cover where sort_order=0) — the same derived field the
+	// REST responses expose. Indexed here so list cards rendered from
+	// search results can pull from image_service without a second
+	// /galgame/:gid round-trip. Empty string when no cover is pinned.
+	EffectiveBannerHash string `json:"effective_banner_hash"`
 	ContentLimit     string `json:"content_limit"`
 	AgeLimit         string `json:"age_limit"`
 	OriginalLanguage string `json:"original_language"`

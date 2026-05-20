@@ -121,6 +121,7 @@ func reindexGalgames(ctx context.Context, db *gorm.DB, idx *galgameSearch.Indexe
 			Preload("Tag.Tag").
 			Preload("Official.Official").
 			Preload("Engine.Engine").
+			Preload("Cover").
 			Where("id > ?", lastID).
 			Order("id ASC").
 			Limit(batch).

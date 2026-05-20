@@ -29,14 +29,16 @@
 - `cmd/migrate-drop-banner-image-hash` — 一次性：banner_image_hash jsonb 字段 flatten 进 covers[] + 删列
 - `cmd/migrate-galgame-banners-to-image-service` — PR5 后改为只写 galgame_cover，分批长期可跑
 
-新增端点：
-- `GET /galgame/{tag,official,engine,series}/:id/revisions` × 4
-- `GET /galgame/{tag,official,engine,series}/:id/revisions/:rev` × 4
-- `POST /galgame/{tag,official,engine,series}/:id/revert {revision: N}` × 4
+新增端点（taxonomy entity 在 `/api` 下，不在 `/api/galgame` 下）：
+- `GET /{tag,official,engine,series}/:id/revisions` × 4（公开）
+- `GET /{tag,official,engine,series}/:id/revisions/:rev` × 4（公开）
+- `POST /{tag,official,engine,series}/:id/revert {revision: N}` × 4（jwtAuth，handler 内再校验 admin/moderator）
 
 测试新增 ~30 个（覆盖：release_date overlay 语义 / cover partial unique / pin-banner 事务 demote / refping 完整收集 / revert dead-image degrade / MergePR scrub / taxonomy 反射式 reachability / taxonomy 并发 / PromoteCoverHash 注入与保留 gallery 等不变量）
 
 5 轮审计共发现 13 个真实漏洞（4 红 / 5 橙 / 4 黄）；12 个已修复，1 个登记为 §9.2 已知技术债（VNDB sync 创建 tag/official 绕过 taxonomy_revision，合理取舍）。
+
+> 📌 **2026-05-20 文档对外发布前补审 (Round 6) 发现 1 个红色漏洞**：PR2 引入的派生字段 `effective_banner_hash` 在 Meilisearch 索引文档（`search.GalgameDoc`）里**未被建模**，且 `search.Hook.Galgame` / `cmd/reindex-search` 都未 `Preload("Cover")`。这会导致**搜索结果返回的卡片没有 banner hash 字段**，前端 `resolveBannerUrl` 走不到 image_service 分支，只能 fallback 到老 `banner` URL —— 在新作（无 `banner` 老 URL，只有 cover）上会显示占位图。**已修复**：`doc.go` 新增字段、`indexer.go::ToGalgameDoc` 加派生逻辑、`hook.go` + `reindex-search/main.go` 加 `Preload("Cover")`。**上线动作**：升级镜像后必须再跑一次 `reindex-search` 让旧文档带上新字段（这是 `99-appendix.md` 已声明的标准流程）。
 
 实施流程详见 `docs/integration/galgame_wiki/00-handbook-for-downstream.md`；上线迁移命令顺序见本文 §10 + 文末 PR5 解耦说明。
 

@@ -24,8 +24,10 @@ func NewIndexer(client *search.Client) *Indexer {
 
 // ToGalgameDoc converts a galgame model (with relations preloaded) into a doc.
 //
-// The model must have Alias, Tag.Tag, Official.Official, Engine.Engine preloaded.
-// Series preload is optional — we only use series_id scalar.
+// The model must have Alias, Tag.Tag, Official.Official, Engine.Engine, Cover
+// preloaded. Series preload is optional — we only use series_id scalar.
+// Cover is required for the effective_banner_hash derivation; missing the
+// preload silently empties that field rather than failing.
 func ToGalgameDoc(g *model.Galgame) *GalgameDoc {
 	doc := &GalgameDoc{
 		ID:               g.ID,
@@ -104,6 +106,15 @@ func ToGalgameDoc(g *model.Galgame) *GalgameDoc {
 	}
 	doc.EngineNames = engineNames
 	doc.EngineIDs = engineIDs
+
+	// Derive effective_banner_hash from preloaded Cover (sort_order=0 row).
+	// Caller must Preload("Cover") — empty when no pinned cover exists.
+	for i := range g.Cover {
+		if g.Cover[i].SortOrder == 0 {
+			doc.EffectiveBannerHash = g.Cover[i].ImageHash
+			break
+		}
+	}
 
 	// Derive year + timestamp from the typed date column. Cheap filter/sort
 	// fields stay nil when ReleaseDate is unknown.
