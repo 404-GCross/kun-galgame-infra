@@ -5,9 +5,9 @@ import (
 	"strings"
 
 	"api/internal/platform/galgame/dto"
-	"api/internal/platform/galgame/model"
 	"api/internal/platform/galgame/repository"
 	"api/internal/platform/galgame/search"
+	"api/internal/platform/galgame/service"
 	"api/pkg/errors"
 	"api/pkg/response"
 	"api/pkg/utils"
@@ -15,15 +15,22 @@ import (
 	"github.com/gofiber/fiber/v3"
 )
 
-// TagHandler handles tag HTTP requests
+// TagHandler handles tag HTTP requests. Read paths (List / Search /
+// GetByName / Multi) talk directly to the repo because they're plain
+// queries with no audit footprint. Mutating paths (Create / Update /
+// Delete) go through TaxonomyService so every change writes a
+// taxonomy_revision row + (for force-delete) per-affected-galgame
+// galgame_revision rows.
 type TagHandler struct {
 	tagRepo    *repository.TagRepository
+	taxSvc     *service.TaxonomyService
 	searchHook *search.Hook
 }
 
-// NewTagHandler creates a new TagHandler. Pass nil hook to skip search write-through.
-func NewTagHandler(tagRepo *repository.TagRepository, hook *search.Hook) *TagHandler {
-	return &TagHandler{tagRepo: tagRepo, searchHook: hook}
+// NewTagHandler creates a new TagHandler. Pass nil hook to skip search
+// write-through. taxSvc is required (mutations go through it).
+func NewTagHandler(tagRepo *repository.TagRepository, taxSvc *service.TaxonomyService, hook *search.Hook) *TagHandler {
+	return &TagHandler{tagRepo: tagRepo, taxSvc: taxSvc, searchHook: hook}
 }
 
 // List returns a paginated list of tags
@@ -124,8 +131,14 @@ func (h *TagHandler) Multi(c fiber.Ctx) error {
 	return response.Success(c, fiber.Map{"items": galgames, "total": total})
 }
 
-// Update updates a tag (requires role > 2)
+// Update updates a tag (requires role > 2). Delegates to TaxonomyService
+// which handles the snapshot-overlay → ApplyTagSnapshot → revision
+// write sequence; this handler only binds, validates, and dispatches.
 func (h *TagHandler) Update(c fiber.Ctx) error {
+	uid, _ := c.Locals("user_uid").(uint)
+	if uid == 0 {
+		return response.Unauthorized(c, errors.ErrAuthUnauthorized)
+	}
 	roles, _ := c.Locals("user_roles").([]string)
 	if !hasRole(roles, "admin", "moderator") {
 		return response.Forbidden(c, errors.ErrForbidden)
@@ -139,30 +152,23 @@ func (h *TagHandler) Update(c fiber.Ctx) error {
 		return response.BadRequestMsg(c, errors.ErrValidationFailed, err.Error())
 	}
 
-	updates := map[string]any{}
-	if req.Name != nil {
-		updates["name"] = *req.Name
+	if err := h.taxSvc.UpdateTag(c.Context(), int(uid), roleLevel(roles), &req); err != nil {
+		return mapAppErrOrInternal(c, err)
 	}
-	if req.Category != nil {
-		updates["category"] = *req.Category
-	}
-	if req.Description != nil {
-		updates["description"] = *req.Description
-	}
-
-	if err := h.tagRepo.Update(c.Context(), req.TagID, updates, req.Alias); err != nil {
-		return response.InternalError(c, errors.ErrOperationFailed)
-	}
-
 	h.searchHook.Tag(req.TagID)
-
 	return response.Success(c, nil)
 }
 
-// Create creates a new tag. Any logged-in user — this is what lets
-// kungal/moyu users introduce a tag missing from the wiki for an
-// original / doujin work with no VNDB entry (mirrors series Create).
+// Create creates a new tag. Any logged-in user — lets kungal/moyu
+// users introduce a tag missing from the wiki for an original / doujin
+// work. Service writes the initial taxonomy_revision (action=created).
 func (h *TagHandler) Create(c fiber.Ctx) error {
+	uid, _ := c.Locals("user_uid").(uint)
+	if uid == 0 {
+		return response.Unauthorized(c, errors.ErrAuthUnauthorized)
+	}
+	roles, _ := c.Locals("user_roles").([]string)
+
 	var req dto.CreateTagRequest
 	if err := c.Bind().JSON(&req); err != nil {
 		return response.BadRequest(c, errors.ErrBadRequest)
@@ -170,40 +176,28 @@ func (h *TagHandler) Create(c fiber.Ctx) error {
 	if err := utils.Validate(&req); err != nil {
 		return response.BadRequestMsg(c, errors.ErrValidationFailed, err.Error())
 	}
-
-	name := strings.TrimSpace(req.Name)
-	if name == "" {
+	req.Name = strings.TrimSpace(req.Name)
+	if req.Name == "" {
 		return response.BadRequest(c, errors.ErrBadRequest)
 	}
-	exists, err := h.tagRepo.ExistsByName(c.Context(), name)
+
+	tag, err := h.taxSvc.CreateTag(c.Context(), int(uid), roleLevel(roles), &req)
 	if err != nil {
-		return response.InternalError(c, errors.ErrOperationFailed)
+		return mapAppErrOrInternal(c, err)
 	}
-	if exists {
-		return response.BadRequestMsg(c, errors.ErrValidationFailed, "已存在同名 tag")
-	}
-
-	tag := &model.GalgameTag{
-		Name:        name,
-		Category:    req.Category,
-		Description: req.Description,
-	}
-	if err := h.tagRepo.Create(c.Context(), tag, req.Alias); err != nil {
-		return response.InternalError(c, errors.ErrOperationFailed)
-	}
-
 	h.searchHook.Tag(tag.ID)
 	return response.Success(c, tag)
 }
 
-// Delete removes a tag. Requires role > 1 (admin/moderator — regular
-// users have only "user"). Safe by default: if the tag is still
-// referenced by any galgame it is REFUSED (avoids silently detaching it
-// from N works). `?force=true` is the deliberate one-click "purge all
-// references then hard delete" — same convention as
-// DELETE /admin/image/:hash?force=true. The purge itself is the existing
-// transactional cascade (relations + aliases + row).
+// Delete removes a tag. Two-step UX preserved: caller without
+// ?force=true sees the ref count and must re-confirm. Service handles
+// the cascade + records taxonomy_revision (action=deleted) +
+// per-galgame galgame_revisions (changed_fields=['tag_ids']).
 func (h *TagHandler) Delete(c fiber.Ctx) error {
+	uid, _ := c.Locals("user_uid").(uint)
+	if uid == 0 {
+		return response.Unauthorized(c, errors.ErrAuthUnauthorized)
+	}
 	roles, _ := c.Locals("user_roles").([]string)
 	if !hasRole(roles, "admin", "moderator") {
 		return response.Forbidden(c, errors.ErrForbidden)
@@ -214,7 +208,7 @@ func (h *TagHandler) Delete(c fiber.Ctx) error {
 		return response.BadRequest(c, errors.ErrInvalidID)
 	}
 
-	rel, alias, err := h.tagRepo.CountReferences(c.Context(), id)
+	rel, _, err := h.tagRepo.CountReferences(c.Context(), id)
 	if err != nil {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
@@ -224,16 +218,18 @@ func (h *TagHandler) Delete(c fiber.Ctx) error {
 			"该 tag 仍被 "+strconv.FormatInt(rel, 10)+" 个 galgame 引用；如确认要一键清除全部引用并硬删除，请带 ?force=true（仅 role>1）")
 	}
 
-	if err := h.tagRepo.Delete(c.Context(), id); err != nil {
-		return response.InternalError(c, errors.ErrOperationFailed)
+	relations, aliases, affected, err := h.taxSvc.DeleteTag(c.Context(), int(uid), roleLevel(roles), id)
+	if err != nil {
+		return mapAppErrOrInternal(c, err)
 	}
 
 	h.searchHook.TagDelete(id)
 	return response.Success(c, fiber.Map{
 		"deleted":          true,
 		"forced":           force && rel > 0,
-		"purged_relations": rel,
-		"purged_aliases":   alias,
+		"purged_relations": relations,
+		"purged_aliases":   aliases,
+		"affected_galgame_ids": affected,
 	})
 }
 

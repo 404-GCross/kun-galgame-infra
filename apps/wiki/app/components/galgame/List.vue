@@ -6,6 +6,7 @@ import {
 } from '~/constants/admin'
 import type { Galgame } from '~/shared/types/galgame'
 import { resolveBannerUrl } from '~/shared/utils/resolveImage'
+import { formatReleaseDate } from '~/shared/utils/format'
 
 interface ListResponse {
   items: Galgame[]
@@ -208,7 +209,7 @@ const switchTab = (id: number) => {
                   {{ g.vndb_id }}
                 </a>
               </td>
-              <td class="text-default-500 px-4 py-2">{{ g.released }}</td>
+              <td class="text-default-500 px-4 py-2">{{ formatReleaseDate(g.release_date, g.release_date_tba) }}</td>
               <td class="px-4 py-2">
                 <span
                   class="rounded-full px-2 py-0.5 text-xs"

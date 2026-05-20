@@ -39,10 +39,20 @@ func (r *GalgameRepository) FindByID(ctx context.Context, id int) (*model.Galgam
 		Preload("Official.Official").
 		Preload("Official.Official.Alias").
 		Preload("Engine.Engine").
+		Preload("Cover", func(db *gorm.DB) *gorm.DB {
+			return db.Order("sort_order ASC, created ASC")
+		}).
+		Preload("Screenshot", func(db *gorm.DB) *gorm.DB {
+			return db.Order("sort_order ASC, created ASC")
+		}).
 		First(&galgame, id).Error
 	if err != nil {
 		return nil, err
 	}
+	// Populate the derived EffectiveBannerHash via the model-layer helper
+	// so List / ListMine / FindByID share one implementation of the
+	// "pinned cover, fallback to banner_image_hash" rule.
+	model.PopulateEffectiveBanner(&galgame)
 	return &galgame, nil
 }
 
@@ -63,9 +73,12 @@ func (r *GalgameRepository) ExistsByVNDBID(ctx context.Context, vndbID string) (
 }
 
 // List returns a paginated list of galgames
-func (r *GalgameRepository) List(ctx context.Context, page, limit int, sortField, sortOrder, search string) ([]model.Galgame, int64, error) {
-	var items []model.Galgame
-	var total int64
+func (r *GalgameRepository) List(ctx context.Context, page, limit int, sortField, sortOrder, search string) (items []model.Galgame, total int64, err error) {
+	defer func() {
+		for i := range items {
+			model.PopulateEffectiveBanner(&items[i])
+		}
+	}()
 
 	query := r.db.WithContext(ctx).Model(&model.Galgame{}).Where("status = 0")
 
@@ -94,12 +107,15 @@ func (r *GalgameRepository) List(ctx context.Context, page, limit int, sortField
 	}
 	order := sortField + " " + sortOrder
 
-	err := query.
+	err = query.
 		Order(order).
 		Offset((page - 1) * limit).
 		Limit(limit).
 		Preload("Tag.Tag").
 		Preload("Official.Official").
+		Preload("Cover", func(db *gorm.DB) *gorm.DB {
+			return db.Order("sort_order ASC, created ASC")
+		}).
 		Find(&items).Error
 
 	return items, total, err
@@ -153,11 +169,43 @@ func (r *GalgameRepository) FindByIDsWithViewer(ctx context.Context, ids []int, 
 	return galgames, err
 }
 
+// PinnedCoverHashes returns the {galgame_id → image_hash} mapping of the
+// pinned cover (sort_order=0) for each id. Galgames with no covers yet
+// are absent from the map. Used by BatchGet to populate
+// GalgameBrief.EffectiveBannerHash without per-row preloading.
+//
+// Safe for empty input — returns an empty map, no query.
+func (r *GalgameRepository) PinnedCoverHashes(ctx context.Context, ids []int) (map[int]string, error) {
+	out := make(map[int]string, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	type row struct {
+		GalgameID int
+		ImageHash string
+	}
+	var rows []row
+	if err := r.db.WithContext(ctx).
+		Model(&model.GalgameCover{}).
+		Select("galgame_id, image_hash").
+		Where("galgame_id IN ? AND sort_order = 0", ids).
+		Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, r := range rows {
+		out[r.GalgameID] = r.ImageHash
+	}
+	return out, nil
+}
+
 // ListMine returns galgames the user has submitted matching one of the
 // given statuses. Used by GET /galgame/mine.
-func (r *GalgameRepository) ListMine(ctx context.Context, uid int, statuses []int, page, limit int) ([]model.Galgame, int64, error) {
-	var items []model.Galgame
-	var total int64
+func (r *GalgameRepository) ListMine(ctx context.Context, uid int, statuses []int, page, limit int) (items []model.Galgame, total int64, err error) {
+	defer func() {
+		for i := range items {
+			model.PopulateEffectiveBanner(&items[i])
+		}
+	}()
 
 	q := r.db.WithContext(ctx).Model(&model.Galgame{}).
 		Where("user_id = ?", uid).
@@ -165,9 +213,12 @@ func (r *GalgameRepository) ListMine(ctx context.Context, uid int, statuses []in
 
 	q.Count(&total)
 
-	err := q.Order("updated DESC").
+	err = q.Order("updated DESC").
 		Offset((page - 1) * limit).
 		Limit(limit).
+		Preload("Cover", func(db *gorm.DB) *gorm.DB {
+			return db.Order("sort_order ASC, created ASC")
+		}).
 		Find(&items).Error
 	return items, total, err
 }

@@ -15,12 +15,26 @@ import (
 
 var vndbIDRegex = regexp.MustCompile(`^v\d+$`)
 
+// ImageProbeFunc tests whether a batch of image_hashes still exist in
+// image_service. Returns the subset that are missing (i.e. TTL-deleted
+// or never uploaded). Used by Revert as a defence-in-depth pre-check
+// against resurrecting a snapshot that points at a now-deleted image.
+//
+// nil ImageProbeFunc on the service means "skip probing" — Revert then
+// applies the snapshot as-is (refping is supposed to keep all revision
+// hashes alive, so the probe is a safety net, not a hard dependency).
+type ImageProbeFunc func(ctx context.Context, hashes []string) (notFound []string, err error)
+
 // GalgameService handles galgame business logic
 type GalgameService struct {
 	galgameRepo  *repository.GalgameRepository
 	revisionRepo *repository.RevisionRepository
 	prRepo       *repository.PRRepository
 	userRepo     *repository.UserReadonlyRepository
+
+	// probeImages is optional; when nil, Revert skips the dead-image
+	// pre-check. Production wires this via WithImageProbe in cmd/galgame.
+	probeImages ImageProbeFunc
 }
 
 // NewGalgameService creates a new GalgameService
@@ -36,6 +50,16 @@ func NewGalgameService(
 		prRepo:       prRepo,
 		userRepo:     userRepo,
 	}
+}
+
+// WithImageProbe wires the image_service existence probe used by Revert
+// to detect snapshots that reference a TTL-deleted hash. Returns the
+// service for fluent chaining: `NewGalgameService(...).WithImageProbe(fn)`.
+// Passing nil is allowed and explicitly disables the probe (= behaviour
+// without this call).
+func (s *GalgameService) WithImageProbe(p ImageProbeFunc) *GalgameService {
+	s.probeImages = p
+	return s
 }
 
 // List returns a paginated list of galgames
@@ -171,7 +195,8 @@ func (s *GalgameService) Create(ctx context.Context, uid int, req *dto.CreateGal
 func buildCreateSnapshot(req *dto.CreateGalgameRequest) *model.Snapshot {
 	s := &model.Snapshot{
 		VNDBID:           req.VNDBID,
-		Released:         orDefault(req.Released, "unknown"),
+		ReleaseDate:      strNonEmpty(req.ReleaseDate),
+		ReleaseDateTBA:   req.ReleaseDateTBA,
 		NameEnUS:         req.NameEnUS,
 		NameJaJP:         req.NameJaJP,
 		NameZhCN:         req.NameZhCN,
@@ -191,8 +216,38 @@ func buildCreateSnapshot(req *dto.CreateGalgameRequest) *model.Snapshot {
 		OfficialIDs:      req.OfficialIDs,
 		EngineIDs:        req.EngineIDs,
 		Links:            vndbLink(req.VNDBID),
+		Covers:           coverInputsToSnapshot(req.Covers),
+		Screenshots:      screenshotInputsToSnapshot(req.Screenshots),
 	}
 	return s
+}
+
+// coverInputsToSnapshot lifts the dto-layer slice into the model
+// SnapshotCover form (drops the GalgameID — that's set by ApplySnapshot).
+// Lives in the service package so dto stays model-free.
+func coverInputsToSnapshot(in []dto.GalgameCoverInput) []model.SnapshotCover {
+	out := make([]model.SnapshotCover, 0, len(in))
+	for _, c := range in {
+		out = append(out, model.SnapshotCover{
+			ImageHash: c.ImageHash, SortOrder: c.SortOrder,
+			Sexual: c.Sexual, Violence: c.Violence,
+			Source: c.Source, SourceKey: c.SourceKey,
+		})
+	}
+	return out
+}
+
+func screenshotInputsToSnapshot(in []dto.GalgameScreenshotInput) []model.SnapshotScreenshot {
+	out := make([]model.SnapshotScreenshot, 0, len(in))
+	for _, sh := range in {
+		out = append(out, model.SnapshotScreenshot{
+			ImageHash: sh.ImageHash, SortOrder: sh.SortOrder,
+			Caption: sh.Caption,
+			Sexual:  sh.Sexual, Violence: sh.Violence,
+			Source: sh.Source, SourceKey: sh.SourceKey,
+		})
+	}
+	return out
 }
 
 func orDefault(v, def string) string {
@@ -200,6 +255,17 @@ func orDefault(v, def string) string {
 		return def
 	}
 	return v
+}
+
+// strNonEmpty returns &s when s is non-empty, else nil. Used to flatten an
+// optional date string (DTO uses "" = unknown) into the snapshot's *string
+// shape (nil = unknown). The two representations stay distinct so DTO
+// "no value" cannot accidentally collide with a real empty input.
+func strNonEmpty(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }
 
 func splitCSV(csv string) []string {
@@ -317,23 +383,45 @@ func (s *GalgameService) BatchGetWithViewer(ctx context.Context, ids []int, view
 		return nil, err
 	}
 
+	// Single batch lookup for the pinned cover of every brief — avoids
+	// O(N) per-row queries while still letting EffectiveBannerHash come
+	// out non-nil on the response.
+	resultIDs := make([]int, 0, len(galgames))
+	for _, g := range galgames {
+		resultIDs = append(resultIDs, g.ID)
+	}
+	pinned, err := s.galgameRepo.PinnedCoverHashes(ctx, resultIDs)
+	if err != nil {
+		// Non-fatal: fall back to BannerImageHash on each row below.
+		pinned = map[int]string{}
+	}
+
 	items := make([]dto.GalgameBrief, len(galgames))
 	for i, g := range galgames {
+		var effective *string
+		if h, ok := pinned[g.ID]; ok {
+			effective = &h
+		} else if g.BannerImageHash != nil && *g.BannerImageHash != "" {
+			// Migration-window fallback: row not yet backfilled to cover table.
+			v := *g.BannerImageHash
+			effective = &v
+		}
 		items[i] = dto.GalgameBrief{
-			ID:                 g.ID,
-			VNDBID:             g.VNDBID,
-			NameEnUS:           g.NameEnUS,
-			NameJaJP:           g.NameJaJP,
-			NameZhCN:           g.NameZhCN,
-			NameZhTW:           g.NameZhTW,
-			Banner:             g.Banner,
-			BannerImageHash:    g.BannerImageHash,
-			ContentLimit:       g.ContentLimit,
-			Status:             g.Status,
-			UserID:             g.UserID,
-			ResourceUpdateTime: g.ResourceUpdateTime.Format("2006-01-02T15:04:05Z"),
-			OriginalLanguage:   g.OriginalLanguage,
-			AgeLimit:           g.AgeLimit,
+			ID:                  g.ID,
+			VNDBID:              g.VNDBID,
+			NameEnUS:            g.NameEnUS,
+			NameJaJP:            g.NameJaJP,
+			NameZhCN:            g.NameZhCN,
+			NameZhTW:            g.NameZhTW,
+			Banner:              g.Banner,
+			BannerImageHash:     g.BannerImageHash,
+			EffectiveBannerHash: effective,
+			ContentLimit:        g.ContentLimit,
+			Status:              g.Status,
+			UserID:              g.UserID,
+			ResourceUpdateTime:  g.ResourceUpdateTime.Format("2006-01-02T15:04:05Z"),
+			OriginalLanguage:    g.OriginalLanguage,
+			AgeLimit:            g.AgeLimit,
 		}
 	}
 	return items, nil
@@ -349,7 +437,10 @@ func (s *GalgameService) GetUserStats(ctx context.Context, uid int) (*dto.UserGa
 	return s.galgameRepo.GetUserStats(ctx, uid)
 }
 
-// loadGalgameWithRelations loads a galgame with all relations using the given tx
+// loadGalgameWithRelations loads a galgame with all relations using the given tx.
+// Cover/Screenshot get an explicit ORDER BY so consumers (and effective
+// banner derivation) see a deterministic sequence — sort_order asc,
+// then created asc as a stable tiebreak for the non-pinned tail.
 func loadGalgameWithRelations(tx *gorm.DB, id int) (*model.Galgame, error) {
 	var g model.Galgame
 	err := tx.
@@ -358,7 +449,16 @@ func loadGalgameWithRelations(tx *gorm.DB, id int) (*model.Galgame, error) {
 		Preload("Official").
 		Preload("Engine").
 		Preload("Link").
+		Preload("Cover", func(db *gorm.DB) *gorm.DB {
+			return db.Order("sort_order ASC, created ASC")
+		}).
+		Preload("Screenshot", func(db *gorm.DB) *gorm.DB {
+			return db.Order("sort_order ASC, created ASC")
+		}).
 		First(&g, id).Error
+	if err == nil {
+		model.PopulateEffectiveBanner(&g)
+	}
 	return &g, err
 }
 
@@ -419,8 +519,18 @@ func overlayUpdate(cur *model.Snapshot, req *dto.UpdateGalgameRequest) *model.Sn
 	if req.AgeLimit != nil {
 		n.AgeLimit = *req.AgeLimit
 	}
-	if req.Released != nil {
-		n.Released = *req.Released
+	if req.ReleaseDate != nil {
+		// presence: nil = keep; non-nil & "" = clear to unknown; non-nil & date = set.
+		// validate.datetime upstream guarantees non-empty values are well-formed.
+		if *req.ReleaseDate == "" {
+			n.ReleaseDate = nil
+		} else {
+			v := *req.ReleaseDate
+			n.ReleaseDate = &v
+		}
+	}
+	if req.ReleaseDateTBA != nil {
+		n.ReleaseDateTBA = *req.ReleaseDateTBA
 	}
 	if req.SeriesID != nil {
 		v := *req.SeriesID
@@ -444,6 +554,12 @@ func overlayUpdate(cur *model.Snapshot, req *dto.UpdateGalgameRequest) *model.Sn
 	}
 	if req.EngineIDs != nil {
 		n.EngineIDs = append([]int(nil), (*req.EngineIDs)...)
+	}
+	if req.Covers != nil {
+		n.Covers = coverInputsToSnapshot(*req.Covers)
+	}
+	if req.Screenshots != nil {
+		n.Screenshots = screenshotInputsToSnapshot(*req.Screenshots)
 	}
 	return &n
 }

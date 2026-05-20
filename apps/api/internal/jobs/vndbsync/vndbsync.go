@@ -518,11 +518,10 @@ func (s *syncer) buildGalgame(vn *vndbVN) *model.Galgame {
 		}
 	}
 
-	// Released
-	if vn.Released != nil && *vn.Released != "" && *vn.Released != "tba" {
-		g.Released = *vn.Released
-	} else {
-		g.Released = "unknown"
+	// Released → typed date + TBA flag, via the shared parser (model.ParseLegacyReleased).
+	// VNDB conventions: nil/""=unknown, "tba"=date pending, "YYYY[-MM[-DD]]"=parsed.
+	if vn.Released != nil {
+		g.ReleaseDate, g.ReleaseDateTBA = model.ParseLegacyReleased(*vn.Released)
 	}
 
 	// Description → intro_en_us
@@ -540,6 +539,7 @@ func (s *syncer) buildGalgame(vn *vndbVN) *model.Galgame {
 
 	return g
 }
+
 
 func (s *syncer) resolveTag(tx *gorm.DB, tag *vndbTag) int {
 	// 1. Check tagMap for Chinese name

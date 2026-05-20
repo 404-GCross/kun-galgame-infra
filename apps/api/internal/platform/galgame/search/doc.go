@@ -48,7 +48,12 @@ type GalgameDoc struct {
 	// return a user's own pending/declined drafts via include_pending=true.
 	UserID           int    `json:"user_id"`
 	View             int    `json:"view"`
-	Released         string `json:"released"`
+	// ReleaseDate is the date column rendered as "YYYY-MM-DD" (empty when
+	// unknown). ReleaseDateTBA marks "announced, exact date pending".
+	// ReleasedYear / ReleasedTS are derived for cheap filter/sort —
+	// they stay nil when ReleaseDate is empty.
+	ReleaseDate      string `json:"release_date"`
+	ReleaseDateTBA   bool   `json:"release_date_tba"`
 	ReleasedYear     *int   `json:"released_year,omitempty"`
 	ReleasedTS       *int64 `json:"released_ts,omitempty"`
 	UpdatedTS        int64  `json:"updated_ts"`

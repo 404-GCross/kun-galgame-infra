@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { TAG_CATEGORY_MAP, GALGAME_STATUS_MAP } from '~/constants/admin'
 import type { Galgame, GalgameTag } from '~/shared/types/galgame'
+import { formatReleaseDate } from '~/shared/utils/format'
 
 const api = useApi()
 const route = useRoute()
@@ -198,7 +199,7 @@ const handleDelete = async () => {
               {{ displayName(g) }}
             </p>
             <p class="text-default-400 mt-0.5 text-[10px]">
-              {{ GALGAME_STATUS_MAP[g.status]?.label ?? '?' }} · {{ g.released }}
+              {{ GALGAME_STATUS_MAP[g.status]?.label ?? '?' }} · {{ formatReleaseDate(g.release_date, g.release_date_tba) }}
             </p>
           </NuxtLink>
         </div>

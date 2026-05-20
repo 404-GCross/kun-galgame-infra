@@ -88,6 +88,14 @@ func (s *GalgameService) Revert(ctx context.Context, uid, galgameID, targetRevis
 		return err
 	}
 
+	// Defence-in-depth probe: refping is supposed to keep every revision-
+	// referenced hash alive in image_service, but if a hash slipped
+	// through (manual purge, image_service GC race, …) the snapshot can
+	// resurrect a galgame pointing at a now-deleted image. Strip those
+	// hashes here and record the loss on the new revision's Note so an
+	// admin can re-upload. When probeImages is unset (= tests), skip.
+	missing, noteSuffix := s.scrubMissingImages(ctx, snapshot)
+
 	return s.galgameRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// Apply the old snapshot
 		if err := repository.ApplySnapshot(tx, galgameID, uid, snapshot); err != nil {
@@ -100,23 +108,103 @@ func (s *GalgameService) Revert(ctx context.Context, uid, galgameID, targetRevis
 			return err
 		}
 
-		// Create revert revision
+		// Create revert revision (re-take is NOT done here because the
+		// snapshot we just applied IS the canonical state — same flow as
+		// the original Revert).
 		snapshotJSON, err := snapshot.ToJSON()
 		if err != nil {
 			return err
 		}
 
 		revertedTo := targetRevision
+		note := fmt.Sprintf("回滚到版本 %d", targetRevision)
+		if noteSuffix != "" {
+			note = note + "；" + noteSuffix
+		}
+		_ = missing // surfaced via Note; future API could echo the list to the response
 		return tx.Create(&model.GalgameRevision{
 			GalgameID:  galgameID,
 			Revision:   nextRev,
 			UserID:     uid,
 			Action:     "reverted",
-			Note:       fmt.Sprintf("回滚到版本 %d", targetRevision),
+			Note:       note,
 			Snapshot:   snapshotJSON,
 			RevertedTo: &revertedTo,
 		}).Error
 	})
+}
+
+// scrubMissingImages mutates `snap` in place, removing any cover /
+// screenshot whose image_hash is missing from image_service AND zeroing
+// snap.BannerImageHash when it points at a missing hash. Returns the
+// list of stripped hashes (for the Note) and a Chinese note suffix
+// describing the degrade. When probeImages is unset OR returns an
+// error, the snapshot is left untouched — the assumption is that a
+// failing probe is worse than a possibly-broken revert (admin can re-
+// upload images afterwards; a hard-failed revert breaks the workflow).
+func (s *GalgameService) scrubMissingImages(ctx context.Context, snap *model.Snapshot) (missing []string, noteSuffix string) {
+	if s.probeImages == nil || snap == nil {
+		return nil, ""
+	}
+	candidates := snapshotHashes(snap)
+	if len(candidates) == 0 {
+		return nil, ""
+	}
+	notFound, err := s.probeImages(ctx, candidates)
+	if err != nil || len(notFound) == 0 {
+		return nil, ""
+	}
+	missingSet := make(map[string]bool, len(notFound))
+	for _, h := range notFound {
+		missingSet[h] = true
+	}
+	if snap.BannerImageHash != "" && missingSet[snap.BannerImageHash] {
+		snap.BannerImageHash = ""
+	}
+	snap.Covers = filterImageRows(snap.Covers, func(c model.SnapshotCover) bool {
+		return !missingSet[c.ImageHash]
+	})
+	snap.Screenshots = filterImageRows(snap.Screenshots, func(sh model.SnapshotScreenshot) bool {
+		return !missingSet[sh.ImageHash]
+	})
+	return notFound, fmt.Sprintf("partial revert：%d 张图片在 image_service 已不存在，已从快照剔除", len(notFound))
+}
+
+// snapshotHashes returns every image_hash referenced by `snap`, deduped.
+// Used as the input batch to the image-service existence probe.
+func snapshotHashes(snap *model.Snapshot) []string {
+	seen := make(map[string]bool)
+	if snap.BannerImageHash != "" {
+		seen[snap.BannerImageHash] = true
+	}
+	for _, c := range snap.Covers {
+		if c.ImageHash != "" {
+			seen[c.ImageHash] = true
+		}
+	}
+	for _, sh := range snap.Screenshots {
+		if sh.ImageHash != "" {
+			seen[sh.ImageHash] = true
+		}
+	}
+	out := make([]string, 0, len(seen))
+	for h := range seen {
+		out = append(out, h)
+	}
+	return out
+}
+
+// filterImageRows is a tiny generic helper: keep rows where `keep` is true,
+// preserving order. Used to strip missing-hash entries from cover/screenshot
+// slices without mutating other fields of the snapshot.
+func filterImageRows[T any](rows []T, keep func(T) bool) []T {
+	out := make([]T, 0, len(rows))
+	for _, r := range rows {
+		if keep(r) {
+			out = append(out, r)
+		}
+	}
+	return out
 }
 
 // SubmitPR creates a new pull request
@@ -223,6 +311,14 @@ func (s *GalgameService) MergePR(ctx context.Context, uid, prID int, roles []str
 			finalSnapshot = &rebased
 		}
 
+		// Same dead-image safeguard as Revert: PRs may have been
+		// submitted long before merge, so their stored snapshot can
+		// reference a hash that image_service has TTL-deleted in the
+		// interim. Strip those hashes before ApplySnapshot so the merge
+		// doesn't resurrect a broken galgame; record the degrade on the
+		// merged revision's Note. Skipped when probeImages is unset.
+		_, mergeNoteSuffix := s.scrubMissingImages(ctx, finalSnapshot)
+
 		// Apply snapshot to galgame tables
 		if err := repository.ApplySnapshot(tx, pr.GalgameID, uid, finalSnapshot); err != nil {
 			return err
@@ -234,12 +330,20 @@ func (s *GalgameService) MergePR(ctx context.Context, uid, prID int, roles []str
 			return err
 		}
 
+		mergedNote := pr.Note
+		if mergeNoteSuffix != "" {
+			if mergedNote != "" {
+				mergedNote = mergedNote + "；" + mergeNoteSuffix
+			} else {
+				mergedNote = mergeNoteSuffix
+			}
+		}
 		rev := &model.GalgameRevision{
 			GalgameID: pr.GalgameID,
 			Revision:  latestRev,
 			UserID:    pr.UserID,
 			Action:    "merged",
-			Note:      pr.Note,
+			Note:      mergedNote,
 			Snapshot:  snapshotJSON,
 		}
 		if err := tx.Create(rev).Error; err != nil {

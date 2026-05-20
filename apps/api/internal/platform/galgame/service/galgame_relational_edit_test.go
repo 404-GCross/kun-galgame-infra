@@ -134,19 +134,23 @@ func TestUpdate_ReleasedAliasesLinks(t *testing.T) {
 	gid := makeGalgame(t)
 
 	rel := "2019-08-16"
+	tba := false
 	al := []string{"别名A", "别名B"}
 	lk := []dto.GalgameLinkInput{{Name: "官网", Link: "https://x.example"}}
 	before := revCount(t, gid)
 
 	_, err := testSvc.Update(ctx, 1, gid, nil, &dto.UpdateGalgameRequest{
-		Released: &rel,
-		Aliases:  &al,
-		Links:    &lk,
+		ReleaseDate:    &rel,
+		ReleaseDateTBA: &tba,
+		Aliases:        &al,
+		Links:          &lk,
 	})
 	require.NoError(t, err)
 
 	snap := latestRevSnapshot(t, gid)
-	assert.Equal(t, "2019-08-16", snap.Released)
+	require.NotNil(t, snap.ReleaseDate)
+	assert.Equal(t, "2019-08-16", *snap.ReleaseDate)
+	assert.False(t, snap.ReleaseDateTBA)
 	assert.ElementsMatch(t, []string{"别名A", "别名B"}, snap.Aliases)
 	require.Len(t, snap.Links, 1)
 	assert.Equal(t, "官网", snap.Links[0].Name)
@@ -166,7 +170,8 @@ func TestUpdate_ReleasedAliasesLinks(t *testing.T) {
 	s2 := latestRevSnapshot(t, gid)
 	assert.ElementsMatch(t, []string{"别名A", "别名B"}, s2.Aliases, "omitted aliases must persist")
 	require.Len(t, s2.Links, 1)
-	assert.Equal(t, "2019-08-16", s2.Released)
+	require.NotNil(t, s2.ReleaseDate)
+	assert.Equal(t, "2019-08-16", *s2.ReleaseDate)
 }
 
 // Anti-regression invariant: EVERY editable model.Snapshot field must be
@@ -184,31 +189,43 @@ func TestEditableSnapshotFieldsAllReachable(t *testing.T) {
 	en := createTestEngine(t, "re")
 
 	s := func(v string) *string { return &v }
+	b := func(v bool) *bool { return &v }
+	releaseDate := "2020-01-01"
+	// 64-char sha-256 placeholders for cover / screenshot hashes.
+	coverHash := "c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1"
+	shotHash := "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a"
 	want := &model.Snapshot{
-		VNDBID: "v777", Released: "2020-01-01",
+		VNDBID: "v777", ReleaseDate: &releaseDate, ReleaseDateTBA: true,
 		NameEnUS: "EN", NameJaJP: "JA", NameZhCN: "ZH", NameZhTW: "TW",
 		Banner: "https://b.example/x.webp", BannerImageHash: "",
 		IntroEnUS: "ie", IntroJaJP: "ij", IntroZhCN: "iz", IntroZhTW: "it",
 		ContentLimit: "nsfw", OriginalLanguage: "en-us", AgeLimit: "r18",
 		Aliases: []string{"a1"}, TagIDs: []int{tg}, OfficialIDs: []int{of},
 		EngineIDs: []int{en}, Links: []model.SnapshotLink{{Name: "L", Link: "https://l.example"}},
+		Covers:      []model.SnapshotCover{{ImageHash: coverHash, SortOrder: 0, Sexual: 1, Violence: 0, Source: "user", SourceKey: ""}},
+		Screenshots: []model.SnapshotScreenshot{{ImageHash: shotHash, SortOrder: 0, Caption: "CG 01", Sexual: 2, Violence: 0}},
 	}
 	al := want.Aliases
 	li := []dto.GalgameLinkInput{{Name: "L", Link: "https://l.example"}}
 	ti, oi, ei := want.TagIDs, want.OfficialIDs, want.EngineIDs
+	cv := []dto.GalgameCoverInput{{ImageHash: coverHash, SortOrder: 0, Sexual: 1, Source: "user"}}
+	sh := []dto.GalgameScreenshotInput{{ImageHash: shotHash, SortOrder: 0, Caption: "CG 01", Sexual: 2}}
 	_, err := testSvc.Update(ctx, 1, gid, nil, &dto.UpdateGalgameRequest{
-		VNDBID: s("v777"), Released: s("2020-01-01"),
+		VNDBID: s("v777"), ReleaseDate: s("2020-01-01"), ReleaseDateTBA: b(true),
 		NameEnUS: s("EN"), NameJaJP: s("JA"), NameZhCN: s("ZH"), NameZhTW: s("TW"),
 		Banner: s("https://b.example/x.webp"),
 		IntroEnUS: s("ie"), IntroJaJP: s("ij"), IntroZhCN: s("iz"), IntroZhTW: s("it"),
 		ContentLimit: s("nsfw"), OriginalLanguage: s("en-us"), AgeLimit: s("r18"),
 		Aliases: &al, Links: &li, TagIDs: &ti, OfficialIDs: &oi, EngineIDs: &ei,
+		Covers: &cv, Screenshots: &sh,
 	})
 	require.NoError(t, err)
 
 	got := latestRevSnapshot(t, gid)
 	assert.Equal(t, want.VNDBID, got.VNDBID)
-	assert.Equal(t, want.Released, got.Released)
+	require.NotNil(t, got.ReleaseDate)
+	assert.Equal(t, *want.ReleaseDate, *got.ReleaseDate)
+	assert.Equal(t, want.ReleaseDateTBA, got.ReleaseDateTBA)
 	assert.Equal(t, want.NameEnUS, got.NameEnUS)
 	assert.Equal(t, want.NameJaJP, got.NameJaJP)
 	assert.Equal(t, want.NameZhCN, got.NameZhCN)
@@ -227,6 +244,10 @@ func TestEditableSnapshotFieldsAllReachable(t *testing.T) {
 	assert.ElementsMatch(t, want.EngineIDs, got.EngineIDs)
 	require.Len(t, got.Links, 1)
 	assert.Equal(t, want.Links[0], got.Links[0])
+	require.Len(t, got.Covers, 1)
+	assert.Equal(t, want.Covers[0], got.Covers[0])
+	require.Len(t, got.Screenshots, 1)
+	assert.Equal(t, want.Screenshots[0], got.Screenshots[0])
 }
 
 // Admin Create now also goes through ApplySnapshot — relations, aliases,
@@ -252,7 +273,8 @@ func TestCreate_ThroughApplySnapshot(t *testing.T) {
 	snap, err := model.SnapshotFromJSON(rev.Snapshot)
 	require.NoError(t, err)
 	assert.Equal(t, "v424242", snap.VNDBID)
-	assert.Equal(t, "unknown", snap.Released, "released default applied via snapshot")
+	assert.Nil(t, snap.ReleaseDate, "no release_date provided → unknown (nil)")
+	assert.False(t, snap.ReleaseDateTBA, "no TBA provided → default false")
 	assert.ElementsMatch(t, []string{"x", "y"}, snap.Aliases)
 	assert.Equal(t, []int{tg}, snap.TagIDs)
 	require.Len(t, snap.Links, 1)

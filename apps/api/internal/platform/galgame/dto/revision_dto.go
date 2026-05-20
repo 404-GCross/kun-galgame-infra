@@ -30,12 +30,18 @@ type SubmitPRRequest struct {
 	ContentLimit     *string              `json:"content_limit"`
 	OriginalLanguage *string              `json:"original_language"`
 	AgeLimit         *string              `json:"age_limit"`
+	// ReleaseDate / ReleaseDateTBA: pointer-presence like other scalars.
+	// nil = field omitted = inherit base; non-nil overwrites in the PR.
+	ReleaseDate      *string              `json:"release_date" validate:"omitempty,datetime=2006-01-02"`
+	ReleaseDateTBA   *bool                `json:"release_date_tba"`
 	SeriesID         *int                 `json:"series_id"`
 	Aliases          []string             `json:"aliases"`
 	TagIDs           []int                `json:"tag_ids"`
-	OfficialIDs      []int                `json:"official_ids"`
+	OfficialIDs     []int                `json:"official_ids"`
 	EngineIDs        []int                `json:"engine_ids"`
 	Links            []model.SnapshotLink `json:"links"`
+	Covers           []model.SnapshotCover      `json:"covers"`
+	Screenshots      []model.SnapshotScreenshot `json:"screenshots"`
 	Note             string               `json:"note"`
 }
 
@@ -84,6 +90,18 @@ func (r *SubmitPRRequest) ApplyToSnapshot(base *model.Snapshot) *model.Snapshot 
 	if r.AgeLimit != nil {
 		s.AgeLimit = *r.AgeLimit
 	}
+	if r.ReleaseDate != nil {
+		// "" clears the date; non-empty must be valid YYYY-MM-DD (validated upstream).
+		if *r.ReleaseDate == "" {
+			s.ReleaseDate = nil
+		} else {
+			v := *r.ReleaseDate
+			s.ReleaseDate = &v
+		}
+	}
+	if r.ReleaseDateTBA != nil {
+		s.ReleaseDateTBA = *r.ReleaseDateTBA
+	}
 	if r.SeriesID != nil {
 		s.SeriesID = r.SeriesID
 	}
@@ -101,6 +119,12 @@ func (r *SubmitPRRequest) ApplyToSnapshot(base *model.Snapshot) *model.Snapshot 
 	}
 	if r.Links != nil {
 		s.Links = r.Links
+	}
+	if r.Covers != nil {
+		s.Covers = r.Covers
+	}
+	if r.Screenshots != nil {
+		s.Screenshots = r.Screenshots
 	}
 	return &s
 }

@@ -47,8 +47,13 @@ func main() {
 		&model.GalgameOfficialRelation{},
 		&model.GalgameEngineRelation{},
 		&model.GalgameLink{},
+		&model.GalgameCover{},
+		&model.GalgameScreenshot{},
 		&model.GalgamePR{},
 		&model.GalgameRevision{},
+		// Polymorphic taxonomy revision (tag/official/engine/series) —
+		// see docs/galgame_wiki/09-final-upgrade-plan.md §6.1.
+		&model.TaxonomyRevision{},
 		&model.GalgameHistory{}, // Legacy, kept for migration
 		&model.GalgameContributor{},
 
@@ -149,6 +154,46 @@ func main() {
 		slog.Error("recreate chk_galgame_revision_action failed", "error", err)
 		os.Exit(1)
 	}
+
+	// (3) galgame_cover partial unique index. Enforces "at most one
+	// pinned cover (sort_order=0) per galgame". Without this, two cover
+	// rows could share sort_order=0 and the effective-banner query
+	// becomes ambiguous (ORDER BY created ASC silently picks the older
+	// one, causing the classic "I pinned a new banner but it didn't
+	// take effect" bug). The application "pin-new-banner" flow must
+	// demote the existing sort_order=0 row in the same transaction.
+	if err := db.DB().Exec(`
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_galgame_cover_pinned
+		    ON galgame_cover(galgame_id) WHERE sort_order = 0
+	`).Error; err != nil {
+		slog.Error("create idx_galgame_cover_pinned failed", "error", err)
+		os.Exit(1)
+	}
+
+	// (4) Backfill galgame_cover from legacy banner_image_hash. Every
+	// galgame that has a banner_image_hash but no cover row gets a
+	// sort_order=0 cover with that hash. Idempotent — re-runs no-op once
+	// the cover row exists (ON CONFLICT DO NOTHING handles the composite
+	// PK collision on second run).
+	//
+	// The hash itself is just copied; image_service has the bytes. No
+	// content-rating / source columns are guessed — they stay default 0
+	// / "" until an editor sets them. This preserves the migration-window
+	// contract that "old banner_image_hash data flows through to the
+	// new cover table without loss".
+	res := db.DB().Exec(`
+		INSERT INTO galgame_cover (galgame_id, image_hash, sort_order, sexual, violence, source, source_key, created)
+		SELECT id, banner_image_hash, 0, 0, 0, '', '', NOW()
+		FROM galgame
+		WHERE banner_image_hash IS NOT NULL AND banner_image_hash <> ''
+		  AND NOT EXISTS (SELECT 1 FROM galgame_cover c WHERE c.galgame_id = galgame.id)
+		ON CONFLICT (galgame_id, image_hash) DO NOTHING
+	`)
+	if res.Error != nil {
+		slog.Error("backfill galgame_cover from banner_image_hash failed", "error", res.Error)
+		os.Exit(1)
+	}
+	slog.Info("backfilled galgame_cover from banner_image_hash", "rows", res.RowsAffected)
 
 	slog.Info("galgame wiki migration completed successfully")
 }

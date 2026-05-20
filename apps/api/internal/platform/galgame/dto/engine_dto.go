@@ -8,12 +8,18 @@ type GetEngineByNameRequest struct {
 	ContentLimit string `query:"content_limit" validate:"omitempty,oneof=sfw nsfw"`
 }
 
-// UpdateEngineRequest represents an engine update request
+// UpdateEngineRequest represents an engine update request. Pointer-
+// presence convention same as UpdateTagRequest (§1.5 #5).
 type UpdateEngineRequest struct {
-	EngineID    int      `json:"engine_id" validate:"required"`
-	Name        *string  `json:"name"`
-	Description *string  `json:"description"`
-	Alias       []string `json:"alias"`
+	EngineID    int       `json:"engine_id" validate:"required"`
+	Name        *string   `json:"name"`
+	Description *string   `json:"description"`
+	Alias       *[]string `json:"alias"`
+}
+
+// RevertEngineRequest represents the body of POST /engine/:id/revert.
+type RevertEngineRequest struct {
+	Revision int `json:"revision" validate:"required,min=1"`
 }
 
 // CreateEngineRequest represents an engine creation request. Lets

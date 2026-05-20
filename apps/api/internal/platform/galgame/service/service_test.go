@@ -47,8 +47,11 @@ func TestMain(m *testing.M) {
 		&model.GalgameOfficialRelation{},
 		&model.GalgameEngineRelation{},
 		&model.GalgameLink{},
+		&model.GalgameCover{},
+		&model.GalgameScreenshot{},
 		&model.GalgamePR{},
 		&model.GalgameRevision{},
+		&model.TaxonomyRevision{},
 		&model.GalgameContributor{},
 		&model.GalgameMessage{},
 	); err != nil {
@@ -56,13 +59,18 @@ func TestMain(m *testing.M) {
 		os.Exit(0)
 	}
 
-	// Replicate the partial unique index that migrate-galgame creates in
-	// production. Without it, multiple status=3 submissions with vndb_id=""
-	// would collide if a plain unique index existed on the column.
+	// Replicate the partial unique indexes that migrate-galgame creates in
+	// production:
+	//   - uq_galgame_vndb_id_nonempty: vndb_id unique only when non-empty
+	//     (multiple status=3 submissions can share vndb_id='').
+	//   - idx_galgame_cover_pinned:    at most one cover per galgame may
+	//     hold sort_order=0 (= the pinned banner).
 	_ = db.Exec(`DROP INDEX IF EXISTS idx_galgame_vndb_id`).Error
 	_ = db.Exec(`DROP INDEX IF EXISTS uni_galgame_vndb_id`).Error
 	_ = db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS uq_galgame_vndb_id_nonempty
 		ON galgame(vndb_id) WHERE vndb_id <> ''`).Error
+	_ = db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_galgame_cover_pinned
+		ON galgame_cover(galgame_id) WHERE sort_order = 0`).Error
 
 	testDB = db
 
@@ -82,8 +90,10 @@ func cleanTables(t *testing.T) {
 	t.Helper()
 	tables := []string{
 		"galgame_message",
+		"taxonomy_revision",
 		"galgame_revision", "galgame_pr", "galgame_contributor",
 		"galgame_link", "galgame_alias",
+		"galgame_cover", "galgame_screenshot",
 		"galgame_tag_relation", "galgame_official_relation", "galgame_engine_relation",
 		"galgame", "galgame_series",
 		"galgame_tag", "galgame_tag_alias",
@@ -140,8 +150,10 @@ var testSeriesRepo *repository.SeriesRepository
 var testGalgameRepo *repository.GalgameRepository
 var testAdminRepo *repository.AdminRepository
 var testMessageRepo *repository.MessageRepository
+var testTaxRevRepo *repository.TaxonomyRevisionRepository
 var testSubmissionSvc *SubmissionService
 var testAdminSvc *AdminService
+var testTaxSvc *TaxonomyService
 
 func init() {
 	// These will be set after TestMain runs; accessed via lazy init in tests
@@ -159,7 +171,9 @@ func getRepos() {
 		testGalgameRepo = repository.NewGalgameRepository(testDB)
 		testAdminRepo = repository.NewAdminRepository(testDB)
 		testMessageRepo = repository.NewMessageRepository(testDB)
+		testTaxRevRepo = repository.NewTaxonomyRevisionRepository(testDB)
 		testSubmissionSvc = NewSubmissionService(testGalgameRepo, testMessageRepo)
 		testAdminSvc = NewAdminService(testGalgameRepo, testMessageRepo)
+		testTaxSvc = NewTaxonomyService(testTagRepo, testOfficialRepo, testEngineRepo, testSeriesRepo, testTaxRevRepo, testGalgameRepo)
 	}
 }

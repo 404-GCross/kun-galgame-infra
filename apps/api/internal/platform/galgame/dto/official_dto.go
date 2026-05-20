@@ -24,15 +24,24 @@ type SearchOfficialRequest struct {
 	Q string `query:"q" validate:"required,max=200"`
 }
 
-// UpdateOfficialRequest represents an official update request
+// UpdateOfficialRequest represents an official update request. Same
+// pointer-presence convention as UpdateTagRequest (§1.5 #5). Original
+// (native-script name) was missing from the prior shape and is added
+// here so PR snapshots / taxonomy revisions stay round-tripable.
 type UpdateOfficialRequest struct {
-	OfficialID  int      `json:"official_id" validate:"required"`
-	Name        *string  `json:"name"`
-	Link        *string  `json:"link"`
-	Category    *string  `json:"category" validate:"omitempty,oneof=company individual amateur"`
-	Lang        *string  `json:"lang"`
-	Description *string  `json:"description"`
-	Alias       []string `json:"alias"`
+	OfficialID  int       `json:"official_id" validate:"required"`
+	Name        *string   `json:"name"`
+	Original    *string   `json:"original"`
+	Link        *string   `json:"link"`
+	Category    *string   `json:"category" validate:"omitempty,oneof=company individual amateur"`
+	Lang        *string   `json:"lang"`
+	Description *string   `json:"description"`
+	Alias       *[]string `json:"alias"`
+}
+
+// RevertOfficialRequest represents the body of POST /official/:id/revert.
+type RevertOfficialRequest struct {
+	Revision int `json:"revision" validate:"required,min=1"`
 }
 
 // CreateOfficialRequest represents an official (developer/producer)

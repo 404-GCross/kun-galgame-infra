@@ -323,22 +323,36 @@ return r2.data.galgame
   "name_zh_cn": "新标题",
   "banner_image_hash": "abcd1234...ef",
   "intro_zh_cn": "新简介",
-  "released": "2019-08-16",
+  "release_date": "2019-08-16",
+  "release_date_tba": false,
   "aliases": ["别名A", "别名B"],
   "links": [{"name": "官网", "link": "https://example.com"}],
   "tag_ids": [1, 2, 3],
   "official_ids": [1],
   "engine_ids": [],
+  "covers": [
+    {"image_hash": "abcd1234...ef", "sort_order": 0, "sexual": 0, "violence": 0, "source": "user", "source_key": ""}
+  ],
+  "screenshots": [
+    {"image_hash": "fedcba98...12", "sort_order": 0, "caption": "CG 01", "sexual": 0, "violence": 0, "source": "", "source_key": ""}
+  ],
   "is_minor": false
 }
 ```
+
+`covers` / `screenshots` 字段说明：
+- 都按 `image_hash` 引用 image_service（先在 image_service 上传得 hash，再在本端点提交）。
+- `covers` 中 `sort_order=0` 的那张是**钉住的封面**（DB 强制每作品至多一张），管理员"换封面" = 同一请求里把旧的 `sort_order` 改成非 0、新的设为 0。
+- `screenshots` 没有"钉住"约束，`sort_order` 只是画廊展示顺序。
+- presence 语义同 `tag_ids`：不传 = 保持原集合不变；传 `[]` = 清空全部；传非空数组 = 权威全量替换（**必须回传该作当前全量**，不要只回传新增/删除的那几条）。
+- 响应里多出一个 `effective_banner_hash` 派生字段，**前端封面展示建议读它**（规则 = covers 里 `sort_order=0` 的那张，无则回退到旧 `banner_image_hash`）。
 
 > ⚠️ **多值字段（`tag_ids` / `official_ids` / `engine_ids` / `aliases` / `links`）= presence 语义全量替换，必须看懂**：
 > - **不传该字段** → 该 galgame 的对应集合**保持不变**（只改名字时绝不会清空 tag/别名）。
 > - **传数组（含空 `[]`）** → 该字段是**权威全量集合**：服务端"清空旧的 → 按此重建"。`[]` = 显式清空全部。
 > - 因此下游（kungal/moyu）编辑表单**必须回传该 galgame 当前的全量集合**（在原集合上增/删后整体回传），**不要只回传"新增的"那几个**——会被当成"替换成只剩这几个"。
 > - 与标量字段一致：传了就改、不传就不动。整个编辑是**一次事务、一条 revision**（原子；集合语义、顺序无关，进 revision 快照与 PR diff）。
-> - `released`（发售日期，原创/同人作品可填；空→`"unknown"`）现也可经此端点编辑。
+> - **`release_date` / `release_date_tba`**（取代旧 `released` 字符串）现可经此端点编辑，各自走 presence 语义：`release_date` 用 `*string`（`null`/省略 = 保持，`""` = 清空为未知，`"YYYY-MM-DD"` = 设置）；`release_date_tba` 用 `*bool`。两者独立——可同时给值表达"预计 X 年某月 + TBA"。详见 §00-handbook BREAKING 段。
 >
 > `aliases` / `links` 现已是本端点的一等字段（推荐整表单一次性提交）。`/galgame/:gid/aliases|links` 的增删端点保留为便捷糖（同样每次产生 revision），但一次性表单保存请走本端点以获得原子单条 revision。`bid`/Bangumi ID 为保留字段，暂不可编辑（sync 托管）。
 

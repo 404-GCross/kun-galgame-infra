@@ -299,8 +299,14 @@ func run(srcDB, tdb *gorm.DB, dryRun bool) error {
 				updatedBid++
 			}
 		}
-		if p.Released != "" && p.Released != "unknown" {
-			result := tdb.Exec("UPDATE galgame SET released = ? WHERE id = ? AND (released = 'unknown' OR released = '')", p.Released, wikiID)
+		// Moyu's `released` is a free-form legacy string; convert via the
+		// shared parser. Only overwrite when the wiki row has no date.
+		if date, tba := model.ParseLegacyReleased(p.Released); date != nil || tba {
+			result := tdb.Exec(
+				"UPDATE galgame SET release_date = ?, release_date_tba = ? "+
+					"WHERE id = ? AND release_date IS NULL AND release_date_tba = false",
+				date, tba, wikiID,
+			)
 			if result.RowsAffected > 0 {
 				updatedReleased++
 			}
@@ -321,7 +327,8 @@ func run(srcDB, tdb *gorm.DB, dryRun bool) error {
 	allNew := append(newPatches, noVNDBPatches...)
 	if len(allNew) > 0 {
 		batchExec(tdb, "galgame",
-			[]string{"id", "vndb_id", "bid", "released", "name_en_us", "name_ja_jp", "name_zh_cn", "name_zh_tw",
+			[]string{"id", "vndb_id", "bid", "release_date", "release_date_tba",
+				"name_en_us", "name_ja_jp", "name_zh_cn", "name_zh_tw",
 				"banner", "intro_en_us", "intro_ja_jp", "intro_zh_cn", "intro_zh_tw",
 				"content_limit", "status", "view", "resource_update_time",
 				"original_language", "age_limit", "user_id", "series_id", "created", "updated"},
@@ -331,8 +338,9 @@ func run(srcDB, tdb *gorm.DB, dryRun bool) error {
 				if p.VNDBID != nil {
 					vndbID = *p.VNDBID
 				}
+				rDate, rTBA := model.ParseLegacyReleased(p.Released)
 				return []any{
-					galgameID, vndbID, p.BID, p.Released,
+					galgameID, vndbID, p.BID, rDate, rTBA,
 					p.NameEnUS, p.NameJaJP, p.NameZhCN, p.NameZhCN, // name_zh_tw = name_zh_cn
 					p.Banner, p.IntroductionEnUS, p.IntroductionJaJP, p.IntroductionZhCN, p.IntroductionZhCN, // intro_zh_tw = intro_zh_cn
 					p.ContentLimit, p.Status, p.View, p.ResourceUpdateTime,
@@ -559,8 +567,14 @@ func run(srcDB, tdb *gorm.DB, dryRun bool) error {
 			vndbID = *p.VNDBID
 		}
 
+		rDate, rTBA := model.ParseLegacyReleased(p.Released)
+		var rDateStr *string
+		if rDate != nil {
+			s := rDate.UTC().Format("2006-01-02")
+			rDateStr = &s
+		}
 		snapshot := model.Snapshot{
-			VNDBID: vndbID, BangumiID: p.BID, Released: p.Released,
+			VNDBID: vndbID, BangumiID: p.BID, ReleaseDate: rDateStr, ReleaseDateTBA: rTBA,
 			NameEnUS: p.NameEnUS, NameJaJP: p.NameJaJP, NameZhCN: p.NameZhCN, NameZhTW: p.NameZhCN,
 			Banner: p.Banner, IntroEnUS: p.IntroductionEnUS, IntroJaJP: p.IntroductionJaJP,
 			IntroZhCN: p.IntroductionZhCN, IntroZhTW: p.IntroductionZhCN,

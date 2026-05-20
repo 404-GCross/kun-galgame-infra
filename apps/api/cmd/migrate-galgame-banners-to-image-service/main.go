@@ -244,13 +244,31 @@ func processOne(
 		return outcome{kind: outcomeFail}
 	}
 
-	if err := db.WithContext(ctx).Model(&model.Galgame{}).
-		Where("id = ?", g.ID).
-		Updates(map[string]any{
-			"banner_image_hash":         result.Hash,
-			"banner_migration_status":   1,
-			"banner_migration_attempts": g.BannerMigrationAttempts + 1,
-		}).Error; err != nil {
+	// Update banner_image_hash AND mirror it into the new galgame_cover
+	// (sort_order=0 = pinned banner) — same transaction so the two views
+	// stay consistent. After PR5 drops the column, only the cover insert
+	// will remain; until then both writes happen atomically.
+	if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&model.Galgame{}).
+			Where("id = ?", g.ID).
+			Updates(map[string]any{
+				"banner_image_hash":         result.Hash,
+				"banner_migration_status":   1,
+				"banner_migration_attempts": g.BannerMigrationAttempts + 1,
+			}).Error; err != nil {
+			return err
+		}
+		// Idempotent upsert into galgame_cover. ON CONFLICT DO NOTHING
+		// handles the rare re-run case where the cover row already exists
+		// (e.g. the row was inserted via /galgame edit UI and then the
+		// banner migration sweeps the same galgame later).
+		return tx.Exec(
+			`INSERT INTO galgame_cover (galgame_id, image_hash, sort_order, sexual, violence, source, source_key, created)
+			 VALUES (?, ?, 0, 0, 0, '', '', NOW())
+			 ON CONFLICT (galgame_id, image_hash) DO NOTHING`,
+			g.ID, result.Hash,
+		).Error
+	}); err != nil {
 		slog.Error("update db", "gid", g.ID, "err", err)
 		return outcome{kind: outcomeFail}
 	}

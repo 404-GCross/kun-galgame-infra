@@ -5,9 +5,9 @@ import (
 	"strings"
 
 	"api/internal/platform/galgame/dto"
-	"api/internal/platform/galgame/model"
 	"api/internal/platform/galgame/repository"
 	"api/internal/platform/galgame/search"
+	"api/internal/platform/galgame/service"
 	"api/pkg/errors"
 	"api/pkg/response"
 	"api/pkg/utils"
@@ -15,15 +15,19 @@ import (
 	"github.com/gofiber/fiber/v3"
 )
 
-// OfficialHandler handles official HTTP requests
+// OfficialHandler — read paths through repo (plain queries, no audit
+// footprint); mutating paths through TaxonomyService so every change
+// writes a taxonomy_revision row + per-affected-galgame galgame_revision
+// rows on force-delete. Same pattern as TagHandler.
 type OfficialHandler struct {
 	officialRepo *repository.OfficialRepository
+	taxSvc       *service.TaxonomyService
 	searchHook   *search.Hook
 }
 
 // NewOfficialHandler creates a new OfficialHandler. Pass nil hook to skip search write-through.
-func NewOfficialHandler(officialRepo *repository.OfficialRepository, hook *search.Hook) *OfficialHandler {
-	return &OfficialHandler{officialRepo: officialRepo, searchHook: hook}
+func NewOfficialHandler(officialRepo *repository.OfficialRepository, taxSvc *service.TaxonomyService, hook *search.Hook) *OfficialHandler {
+	return &OfficialHandler{officialRepo: officialRepo, taxSvc: taxSvc, searchHook: hook}
 }
 
 // List returns a paginated list of officials
@@ -100,8 +104,12 @@ func (h *OfficialHandler) Search(c fiber.Ctx) error {
 	return response.Success(c, officials)
 }
 
-// Update updates an official (requires role > 2)
+// Update — delegates to TaxonomyService (revision-aware).
 func (h *OfficialHandler) Update(c fiber.Ctx) error {
+	uid, _ := c.Locals("user_uid").(uint)
+	if uid == 0 {
+		return response.Unauthorized(c, errors.ErrAuthUnauthorized)
+	}
 	roles, _ := c.Locals("user_roles").([]string)
 	if !hasRole(roles, "admin", "moderator") {
 		return response.Forbidden(c, errors.ErrForbidden)
@@ -115,35 +123,21 @@ func (h *OfficialHandler) Update(c fiber.Ctx) error {
 		return response.BadRequestMsg(c, errors.ErrValidationFailed, err.Error())
 	}
 
-	updates := map[string]any{}
-	if req.Name != nil {
-		updates["name"] = *req.Name
+	if err := h.taxSvc.UpdateOfficial(c.Context(), int(uid), roleLevel(roles), &req); err != nil {
+		return mapAppErrOrInternal(c, err)
 	}
-	if req.Link != nil {
-		updates["link"] = *req.Link
-	}
-	if req.Category != nil {
-		updates["category"] = *req.Category
-	}
-	if req.Lang != nil {
-		updates["lang"] = *req.Lang
-	}
-	if req.Description != nil {
-		updates["description"] = *req.Description
-	}
-
-	if err := h.officialRepo.Update(c.Context(), req.OfficialID, updates, req.Alias); err != nil {
-		return response.InternalError(c, errors.ErrOperationFailed)
-	}
-
 	h.searchHook.Official(req.OfficialID)
-
 	return response.Success(c, nil)
 }
 
-// Create creates a new official (any logged-in user — lets kungal/moyu
-// users introduce a company/circle missing from the wiki).
+// Create — delegates to TaxonomyService.
 func (h *OfficialHandler) Create(c fiber.Ctx) error {
+	uid, _ := c.Locals("user_uid").(uint)
+	if uid == 0 {
+		return response.Unauthorized(c, errors.ErrAuthUnauthorized)
+	}
+	roles, _ := c.Locals("user_roles").([]string)
+
 	var req dto.CreateOfficialRequest
 	if err := c.Bind().JSON(&req); err != nil {
 		return response.BadRequest(c, errors.ErrBadRequest)
@@ -151,41 +145,26 @@ func (h *OfficialHandler) Create(c fiber.Ctx) error {
 	if err := utils.Validate(&req); err != nil {
 		return response.BadRequestMsg(c, errors.ErrValidationFailed, err.Error())
 	}
-
-	name := strings.TrimSpace(req.Name)
-	if name == "" {
+	req.Name = strings.TrimSpace(req.Name)
+	if req.Name == "" {
 		return response.BadRequest(c, errors.ErrBadRequest)
 	}
-	exists, err := h.officialRepo.ExistsByName(c.Context(), name)
+
+	o, err := h.taxSvc.CreateOfficial(c.Context(), int(uid), roleLevel(roles), &req)
 	if err != nil {
-		return response.InternalError(c, errors.ErrOperationFailed)
+		return mapAppErrOrInternal(c, err)
 	}
-	if exists {
-		return response.BadRequestMsg(c, errors.ErrValidationFailed, "已存在同名 official")
-	}
-
-	official := &model.GalgameOfficial{
-		Name:        name,
-		Category:    req.Category,
-		Original:    req.Original,
-		Link:        req.Link,
-		Lang:        req.Lang,
-		Description: req.Description,
-	}
-	if err := h.officialRepo.Create(c.Context(), official, req.Alias); err != nil {
-		return response.InternalError(c, errors.ErrOperationFailed)
-	}
-
-	h.searchHook.Official(official.ID)
-	return response.Success(c, official)
+	h.searchHook.Official(o.ID)
+	return response.Success(c, o)
 }
 
-// Delete removes an official. Requires role > 1 (admin/moderator).
-// Safe by default: refused while still referenced; `?force=true` is the
-// deliberate one-click purge-all-references-then-hard-delete (same
-// convention as DELETE /admin/image/:hash?force=true). See
-// TagHandler.Delete for the rationale.
+// Delete — same UX as TagHandler.Delete (preflight gate + force-purge
+// via service which writes audit + per-galgame revisions).
 func (h *OfficialHandler) Delete(c fiber.Ctx) error {
+	uid, _ := c.Locals("user_uid").(uint)
+	if uid == 0 {
+		return response.Unauthorized(c, errors.ErrAuthUnauthorized)
+	}
 	roles, _ := c.Locals("user_roles").([]string)
 	if !hasRole(roles, "admin", "moderator") {
 		return response.Forbidden(c, errors.ErrForbidden)
@@ -196,7 +175,7 @@ func (h *OfficialHandler) Delete(c fiber.Ctx) error {
 		return response.BadRequest(c, errors.ErrInvalidID)
 	}
 
-	rel, alias, err := h.officialRepo.CountReferences(c.Context(), id)
+	rel, _, err := h.officialRepo.CountReferences(c.Context(), id)
 	if err != nil {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
@@ -206,15 +185,16 @@ func (h *OfficialHandler) Delete(c fiber.Ctx) error {
 			"该 official 仍被 "+strconv.FormatInt(rel, 10)+" 个 galgame 引用；如确认要一键清除全部引用并硬删除，请带 ?force=true（仅 role>1）")
 	}
 
-	if err := h.officialRepo.Delete(c.Context(), id); err != nil {
-		return response.InternalError(c, errors.ErrOperationFailed)
+	relations, aliases, affected, err := h.taxSvc.DeleteOfficial(c.Context(), int(uid), roleLevel(roles), id)
+	if err != nil {
+		return mapAppErrOrInternal(c, err)
 	}
-
 	h.searchHook.OfficialDelete(id)
 	return response.Success(c, fiber.Map{
-		"deleted":          true,
-		"forced":           force && rel > 0,
-		"purged_relations": rel,
-		"purged_aliases":   alias,
+		"deleted":              true,
+		"forced":               force && rel > 0,
+		"purged_relations":     relations,
+		"purged_aliases":       aliases,
+		"affected_galgame_ids": affected,
 	})
 }

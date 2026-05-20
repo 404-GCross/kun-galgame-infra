@@ -20,6 +20,11 @@ func NewEngineRepository(db *gorm.DB) *EngineRepository {
 	return &EngineRepository{db: db}
 }
 
+// DB exposes the underlying *gorm.DB so the taxonomy service can open
+// transactions that span this repo and others (matches the pattern on
+// TagRepository / SeriesRepository).
+func (r *EngineRepository) DB() *gorm.DB { return r.db }
+
 // ListAll returns all engines with galgame counts (no pagination, small dataset)
 func (r *EngineRepository) ListAll(ctx context.Context) ([]model.GalgameEngine, error) {
 	var items []model.GalgameEngine

@@ -1,13 +1,12 @@
 package handler
 
 import (
-	"encoding/json"
 	"strconv"
 	"strings"
 
 	"api/internal/platform/galgame/dto"
-	"api/internal/platform/galgame/model"
 	"api/internal/platform/galgame/repository"
+	"api/internal/platform/galgame/service"
 	"api/pkg/errors"
 	"api/pkg/response"
 	"api/pkg/utils"
@@ -15,14 +14,16 @@ import (
 	"github.com/gofiber/fiber/v3"
 )
 
-// EngineHandler handles engine HTTP requests
+// EngineHandler — read paths through repo, mutations through
+// TaxonomyService so every change writes a taxonomy_revision row.
 type EngineHandler struct {
 	engineRepo *repository.EngineRepository
+	taxSvc     *service.TaxonomyService
 }
 
 // NewEngineHandler creates a new EngineHandler
-func NewEngineHandler(engineRepo *repository.EngineRepository) *EngineHandler {
-	return &EngineHandler{engineRepo: engineRepo}
+func NewEngineHandler(engineRepo *repository.EngineRepository, taxSvc *service.TaxonomyService) *EngineHandler {
+	return &EngineHandler{engineRepo: engineRepo, taxSvc: taxSvc}
 }
 
 // List returns all engines (small dataset, no pagination)
@@ -60,8 +61,12 @@ func (h *EngineHandler) GetByName(c fiber.Ctx) error {
 	return response.Success(c, fiber.Map{"engine": engine, "galgames": galgames, "total": total})
 }
 
-// Update updates an engine (requires role > 2)
+// Update — delegates to TaxonomyService (revision-aware).
 func (h *EngineHandler) Update(c fiber.Ctx) error {
+	uid, _ := c.Locals("user_uid").(uint)
+	if uid == 0 {
+		return response.Unauthorized(c, errors.ErrAuthUnauthorized)
+	}
 	roles, _ := c.Locals("user_roles").([]string)
 	if !hasRole(roles, "admin", "moderator") {
 		return response.Forbidden(c, errors.ErrForbidden)
@@ -75,29 +80,21 @@ func (h *EngineHandler) Update(c fiber.Ctx) error {
 		return response.BadRequestMsg(c, errors.ErrValidationFailed, err.Error())
 	}
 
-	updates := map[string]any{}
-	if req.Name != nil {
-		updates["name"] = *req.Name
+	if err := h.taxSvc.UpdateEngine(c.Context(), int(uid), roleLevel(roles), &req); err != nil {
+		return mapAppErrOrInternal(c, err)
 	}
-	if req.Description != nil {
-		updates["description"] = *req.Description
-	}
-	if req.Alias != nil {
-		aliasJSON, _ := json.Marshal(req.Alias)
-		updates["alias"] = aliasJSON
-	}
-
-	if err := h.engineRepo.Update(c.Context(), req.EngineID, updates); err != nil {
-		return response.InternalError(c, errors.ErrOperationFailed)
-	}
-
 	return response.Success(c, nil)
 }
 
-// Create creates a new engine (any logged-in user — lets kungal/moyu
-// users introduce an engine missing from the wiki). Engine is not
-// Meilisearch-indexed, so there is no search hook.
+// Create — delegates to TaxonomyService. Engine is not Meilisearch-
+// indexed, so no search hook.
 func (h *EngineHandler) Create(c fiber.Ctx) error {
+	uid, _ := c.Locals("user_uid").(uint)
+	if uid == 0 {
+		return response.Unauthorized(c, errors.ErrAuthUnauthorized)
+	}
+	roles, _ := c.Locals("user_roles").([]string)
+
 	var req dto.CreateEngineRequest
 	if err := c.Bind().JSON(&req); err != nil {
 		return response.BadRequest(c, errors.ErrBadRequest)
@@ -105,36 +102,25 @@ func (h *EngineHandler) Create(c fiber.Ctx) error {
 	if err := utils.Validate(&req); err != nil {
 		return response.BadRequestMsg(c, errors.ErrValidationFailed, err.Error())
 	}
-
-	name := strings.TrimSpace(req.Name)
-	if name == "" {
+	req.Name = strings.TrimSpace(req.Name)
+	if req.Name == "" {
 		return response.BadRequest(c, errors.ErrBadRequest)
 	}
-	exists, err := h.engineRepo.ExistsByName(c.Context(), name)
+
+	e, err := h.taxSvc.CreateEngine(c.Context(), int(uid), roleLevel(roles), &req)
 	if err != nil {
-		return response.InternalError(c, errors.ErrOperationFailed)
+		return mapAppErrOrInternal(c, err)
 	}
-	if exists {
-		return response.BadRequestMsg(c, errors.ErrValidationFailed, "已存在同名 engine")
-	}
-
-	engine := &model.GalgameEngine{
-		Name:        name,
-		Description: req.Description,
-	}
-	if err := h.engineRepo.Create(c.Context(), engine, req.Alias); err != nil {
-		return response.InternalError(c, errors.ErrOperationFailed)
-	}
-
-	return response.Success(c, engine)
+	return response.Success(c, e)
 }
 
-// Delete removes an engine. Requires role > 1 (admin/moderator). Safe by
-// default: refused while still referenced; `?force=true` is the
-// deliberate one-click purge-all-references-then-hard-delete (same
-// convention as DELETE /admin/image/:hash?force=true). See
-// TagHandler.Delete for the rationale.
+// Delete — same UX as TagHandler.Delete (preflight gate + force-purge
+// via service which writes audit + per-galgame revisions).
 func (h *EngineHandler) Delete(c fiber.Ctx) error {
+	uid, _ := c.Locals("user_uid").(uint)
+	if uid == 0 {
+		return response.Unauthorized(c, errors.ErrAuthUnauthorized)
+	}
 	roles, _ := c.Locals("user_roles").([]string)
 	if !hasRole(roles, "admin", "moderator") {
 		return response.Forbidden(c, errors.ErrForbidden)
@@ -155,13 +141,14 @@ func (h *EngineHandler) Delete(c fiber.Ctx) error {
 			"该 engine 仍被 "+strconv.FormatInt(rel, 10)+" 个 galgame 引用；如确认要一键清除全部引用并硬删除，请带 ?force=true（仅 role>1）")
 	}
 
-	if err := h.engineRepo.Delete(c.Context(), id); err != nil {
-		return response.InternalError(c, errors.ErrOperationFailed)
+	relations, affected, err := h.taxSvc.DeleteEngine(c.Context(), int(uid), roleLevel(roles), id)
+	if err != nil {
+		return mapAppErrOrInternal(c, err)
 	}
-
 	return response.Success(c, fiber.Map{
-		"deleted":          true,
-		"forced":           force && rel > 0,
-		"purged_relations": rel,
+		"deleted":              true,
+		"forced":               force && rel > 0,
+		"purged_relations":     relations,
+		"affected_galgame_ids": affected,
 	})
 }

@@ -189,10 +189,17 @@ func (r *AdminRepository) GetGalgame(ctx context.Context, id int) (*model.Galgam
 		Preload("Official.Official").
 		Preload("Engine.Engine").
 		Preload("Series").
+		Preload("Cover", func(db *gorm.DB) *gorm.DB {
+			return db.Order("sort_order ASC, created ASC")
+		}).
+		Preload("Screenshot", func(db *gorm.DB) *gorm.DB {
+			return db.Order("sort_order ASC, created ASC")
+		}).
 		First(&g, id).Error
 	if err != nil {
 		return nil, err
 	}
+	model.PopulateEffectiveBanner(&g)
 	return &g, nil
 }
 

@@ -133,7 +133,8 @@ func (s *SubmissionService) Submit(ctx context.Context, uid int, req *dto.Submit
 func buildSubmitSnapshot(req *dto.SubmitGalgameRequest) *model.Snapshot {
 	return &model.Snapshot{
 		VNDBID:           req.VNDBID,
-		Released:         orDefault(req.Released, "unknown"),
+		ReleaseDate:      strNonEmpty(req.ReleaseDate),
+		ReleaseDateTBA:   req.ReleaseDateTBA,
 		NameEnUS:         req.NameEnUS,
 		NameJaJP:         req.NameJaJP,
 		NameZhCN:         req.NameZhCN,
@@ -153,6 +154,8 @@ func buildSubmitSnapshot(req *dto.SubmitGalgameRequest) *model.Snapshot {
 		OfficialIDs:      req.OfficialIDs,
 		EngineIDs:        req.EngineIDs,
 		Links:            vndbLink(req.VNDBID),
+		Covers:           coverInputsToSnapshot(req.Covers),
+		Screenshots:      screenshotInputsToSnapshot(req.Screenshots),
 	}
 }
 
@@ -411,20 +414,25 @@ func (s *SubmissionService) ListMine(ctx context.Context, uid int, req *dto.List
 
 	out := make([]dto.MineGalgame, len(items))
 	for i, g := range items {
+		// g.EffectiveBannerHash already populated by repo (ListMine preloads
+		// Cover + runs model.PopulateEffectiveBanner). Pass through here so
+		// /galgame/mine cards can render the pinned cover instead of an
+		// unmigrated banner_image_hash.
 		out[i] = dto.MineGalgame{
-			ID:              g.ID,
-			VNDBID:          g.VNDBID,
-			NameEnUS:        g.NameEnUS,
-			NameJaJP:        g.NameJaJP,
-			NameZhCN:        g.NameZhCN,
-			NameZhTW:        g.NameZhTW,
-			Banner:          g.Banner,
-			BannerImageHash: g.BannerImageHash,
-			ContentLimit:    g.ContentLimit,
-			Status:          g.Status,
-			Created:         g.Created.Format("2006-01-02T15:04:05Z"),
-			Updated:         g.Updated.Format("2006-01-02T15:04:05Z"),
-			DeclineReason:   reasons[g.ID],
+			ID:                  g.ID,
+			VNDBID:              g.VNDBID,
+			NameEnUS:            g.NameEnUS,
+			NameJaJP:            g.NameJaJP,
+			NameZhCN:            g.NameZhCN,
+			NameZhTW:            g.NameZhTW,
+			Banner:              g.Banner,
+			BannerImageHash:     g.BannerImageHash,
+			EffectiveBannerHash: g.EffectiveBannerHash,
+			ContentLimit:        g.ContentLimit,
+			Status:              g.Status,
+			Created:             g.Created.Format("2006-01-02T15:04:05Z"),
+			Updated:             g.Updated.Format("2006-01-02T15:04:05Z"),
+			DeclineReason:       reasons[g.ID],
 		}
 	}
 	return out, total, nil

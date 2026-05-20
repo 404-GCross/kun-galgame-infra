@@ -2,13 +2,22 @@ export interface Galgame {
   id: number
   vndb_id: string
   bid?: number
-  released: string
+  // Release date is "YYYY-MM-DD" or null (= unknown). release_date_tba
+  // marks "announced, exact date pending" and is independent — a
+  // scheduled game can have both (e.g. date='2026-06-01', tba=true
+  // meaning "approximate target"). Use formatReleaseDate() for display.
+  release_date: string | null
+  release_date_tba: boolean
   name_en_us: string
   name_ja_jp: string
   name_zh_cn: string
   name_zh_tw: string
   banner: string                       // legacy URL, permanent fallback
-  banner_image_hash?: string | null    // image_service hash; new uploads write here
+  banner_image_hash?: string | null    // image_service hash for the legacy single-banner field
+  // effective_banner_hash is the backend-derived "currently shown" banner:
+  // pinned cover (sort_order=0) if any, else banner_image_hash. Prefer
+  // this for display — resolveBannerUrl handles the chain.
+  effective_banner_hash?: string | null
   intro_en_us: string
   intro_ja_jp: string
   intro_zh_cn: string
@@ -26,6 +35,39 @@ export interface Galgame {
   tag?: GalgameTagRelation[]
   official?: GalgameOfficialRelation[]
   series?: GalgameSeries | null
+  cover?: GalgameCover[]
+  screenshot?: GalgameScreenshot[]
+}
+
+// GalgameCover — one entry in a galgame's cover candidate set.
+// `image_hash` refers to image_service (use resolveBannerUrl /
+// imageHashUrl to build URLs). `sort_order=0` is the pinned banner (at
+// most one per galgame, enforced by DB-level partial unique index).
+// `sexual` / `violence` are 0..3 ratings; v1 frontend may read but the
+// gating decision still flows through content_limit + user settings.
+export interface GalgameCover {
+  galgame_id: number
+  image_hash: string
+  sort_order: number
+  sexual: number
+  violence: number
+  source: string
+  source_key: string
+  created: string
+}
+
+// GalgameScreenshot — gallery / CG entry. Same shape as GalgameCover
+// plus `caption`. No "pinned" uniqueness — sort_order is just display order.
+export interface GalgameScreenshot {
+  galgame_id: number
+  image_hash: string
+  sort_order: number
+  caption: string
+  sexual: number
+  violence: number
+  source: string
+  source_key: string
+  created: string
 }
 
 export interface GalgameAlias {

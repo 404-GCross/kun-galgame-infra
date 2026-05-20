@@ -7,6 +7,7 @@ import {
 } from '~/constants/admin'
 import type { Galgame } from '~/shared/types/galgame'
 import { resolveBannerUrl } from '~/shared/utils/resolveImage'
+import { formatReleaseDate } from '~/shared/utils/format'
 
 const api = useApi()
 const route = useRoute()
@@ -187,7 +188,7 @@ const changeStatus = async (newStatus: number) => {
                 {{ CONTENT_LIMIT_MAP[galgame.content_limit]?.label }}
               </span>
               <span class="text-default-500">
-                发售：{{ galgame.released }}
+                发售：{{ formatReleaseDate(galgame.release_date, galgame.release_date_tba) }}
               </span>
               <span class="text-default-500">
                 语言：{{ galgame.original_language }}

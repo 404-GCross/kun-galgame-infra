@@ -7,6 +7,7 @@ import (
 	"api/internal/platform/galgame/dto"
 	"api/internal/platform/galgame/model"
 	"api/internal/platform/galgame/repository"
+	"api/internal/platform/galgame/service"
 	"api/pkg/errors"
 	"api/pkg/response"
 	"api/pkg/utils"
@@ -14,14 +15,18 @@ import (
 	"github.com/gofiber/fiber/v3"
 )
 
-// SeriesHandler handles series HTTP requests
+// SeriesHandler — read paths through repo, mutations through
+// TaxonomyService. Note: series is special — Name/Description go to
+// taxonomy_revision, but the GalgameIDs list (membership) becomes
+// per-affected-galgame galgame_revision rows. Service handles both.
 type SeriesHandler struct {
 	seriesRepo *repository.SeriesRepository
+	taxSvc     *service.TaxonomyService
 }
 
 // NewSeriesHandler creates a new SeriesHandler
-func NewSeriesHandler(seriesRepo *repository.SeriesRepository) *SeriesHandler {
-	return &SeriesHandler{seriesRepo: seriesRepo}
+func NewSeriesHandler(seriesRepo *repository.SeriesRepository, taxSvc *service.TaxonomyService) *SeriesHandler {
+	return &SeriesHandler{seriesRepo: seriesRepo, taxSvc: taxSvc}
 }
 
 // List returns a paginated list of series
@@ -60,8 +65,17 @@ func (h *SeriesHandler) Get(c fiber.Ctx) error {
 	return response.Success(c, series)
 }
 
-// Create creates a new series
+// Create — delegates to TaxonomyService. Series taxonomy_revision
+// records Name+Description; each gid in GalgameIDs additionally gets
+// its own galgame_revision (changed_fields=['series_id']) since
+// membership is owned by the galgame side, not by series.
 func (h *SeriesHandler) Create(c fiber.Ctx) error {
+	uid, _ := c.Locals("user_uid").(uint)
+	if uid == 0 {
+		return response.Unauthorized(c, errors.ErrAuthUnauthorized)
+	}
+	roles, _ := c.Locals("user_roles").([]string)
+
 	var req dto.CreateSeriesRequest
 	if err := c.Bind().JSON(&req); err != nil {
 		return response.BadRequest(c, errors.ErrBadRequest)
@@ -70,20 +84,23 @@ func (h *SeriesHandler) Create(c fiber.Ctx) error {
 		return response.BadRequestMsg(c, errors.ErrValidationFailed, err.Error())
 	}
 
-	series := &model.GalgameSeries{
-		Name:        req.Name,
-		Description: req.Description,
+	sr, err := h.taxSvc.CreateSeries(c.Context(), int(uid), roleLevel(roles), &req, req.GalgameIDs)
+	if err != nil {
+		return mapAppErrOrInternal(c, err)
 	}
-
-	if err := h.seriesRepo.Create(c.Context(), series, req.GalgameIDs); err != nil {
-		return response.InternalError(c, errors.ErrOperationFailed)
-	}
-
-	return response.Success(c, series)
+	return response.Success(c, sr)
 }
 
-// Update updates a series
+// Update — delegates to TaxonomyService. Path id is bound to the DTO
+// (UpdateSeriesRequest.SeriesID) so the service signature matches the
+// other entity flows.
 func (h *SeriesHandler) Update(c fiber.Ctx) error {
+	uid, _ := c.Locals("user_uid").(uint)
+	if uid == 0 {
+		return response.Unauthorized(c, errors.ErrAuthUnauthorized)
+	}
+	roles, _ := c.Locals("user_roles").([]string)
+
 	id, err := strconv.Atoi(c.Params("id"))
 	if err != nil {
 		return response.BadRequest(c, errors.ErrInvalidID)
@@ -93,24 +110,25 @@ func (h *SeriesHandler) Update(c fiber.Ctx) error {
 	if err := c.Bind().JSON(&req); err != nil {
 		return response.BadRequest(c, errors.ErrBadRequest)
 	}
-
-	updates := map[string]any{}
-	if req.Name != nil {
-		updates["name"] = *req.Name
+	if err := utils.Validate(&req); err != nil {
+		return response.BadRequestMsg(c, errors.ErrValidationFailed, err.Error())
 	}
-	if req.Description != nil {
-		updates["description"] = *req.Description
-	}
+	req.SeriesID = id
 
-	if err := h.seriesRepo.Update(c.Context(), id, updates, req.GalgameIDs); err != nil {
-		return response.InternalError(c, errors.ErrOperationFailed)
+	if err := h.taxSvc.UpdateSeries(c.Context(), int(uid), roleLevel(roles), &req); err != nil {
+		return mapAppErrOrInternal(c, err)
 	}
-
 	return response.Success(c, nil)
 }
 
-// Delete deletes a series (requires admin/moderator)
+// Delete deletes a series (requires admin/moderator). Force-purge:
+// unbinds galgame.series_id for every member, writes the deletion
+// revision + one galgame_revision per affected gid.
 func (h *SeriesHandler) Delete(c fiber.Ctx) error {
+	uid, _ := c.Locals("user_uid").(uint)
+	if uid == 0 {
+		return response.Unauthorized(c, errors.ErrAuthUnauthorized)
+	}
 	roles, _ := c.Locals("user_roles").([]string)
 	if !hasRole(roles, "admin", "moderator") {
 		return response.Forbidden(c, errors.ErrForbidden)
@@ -121,11 +139,15 @@ func (h *SeriesHandler) Delete(c fiber.Ctx) error {
 		return response.BadRequest(c, errors.ErrInvalidID)
 	}
 
-	if err := h.seriesRepo.Delete(c.Context(), id); err != nil {
-		return response.InternalError(c, errors.ErrOperationFailed)
+	relations, affected, err := h.taxSvc.DeleteSeries(c.Context(), int(uid), roleLevel(roles), id)
+	if err != nil {
+		return mapAppErrOrInternal(c, err)
 	}
-
-	return response.Success(c, nil)
+	return response.Success(c, fiber.Map{
+		"deleted":              true,
+		"purged_relations":     relations,
+		"affected_galgame_ids": affected,
+	})
 }
 
 // Search searches galgames by keywords for series assignment

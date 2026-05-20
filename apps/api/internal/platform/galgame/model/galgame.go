@@ -11,7 +11,14 @@ type Galgame struct {
 	// (GORM AutoMigrate cannot express partial unique, so raw SQL.)
 	VNDBID             string    `gorm:"column:vndb_id;size:10;not null;default:'';index" json:"vndb_id"`
 	BangumiID          *int      `gorm:"column:bid;uniqueIndex" json:"bid,omitempty"`
-	Released           string    `gorm:"column:released;size:107;default:'unknown'" json:"released"`
+	// ReleaseDate is the (best-known) galgame release date. nil = unknown.
+	// Stored as a SQL `date` column (no time-of-day, no time zone) — the
+	// Go-side *time.Time always has zero hours/min/sec in UTC. ReleaseDateTBA
+	// is independent: a game can be "scheduled, exact date TBA" (date=nil,
+	// tba=true) or "announced for 2026 H2, no precise date" (date=2026-07-01
+	// imprecise sentinel, tba=true is up to the editor).
+	ReleaseDate    *time.Time `gorm:"column:release_date;type:date;index" json:"release_date"`
+	ReleaseDateTBA bool       `gorm:"column:release_date_tba;not null;default:false" json:"release_date_tba"`
 	NameEnUS           string    `gorm:"column:name_en_us;size:1000;default:''" json:"name_en_us"`
 	NameJaJP           string    `gorm:"column:name_ja_jp;size:1000;default:''" json:"name_ja_jp"`
 	NameZhCN           string    `gorm:"column:name_zh_cn;size:1000;default:''" json:"name_zh_cn"`
@@ -58,6 +65,14 @@ type Galgame struct {
 	Official     []GalgameOfficialRelation  `gorm:"foreignKey:GalgameID" json:"official,omitempty"`
 	Engine       []GalgameEngineRelation    `gorm:"foreignKey:GalgameID" json:"engine,omitempty"`
 	Tag          []GalgameTagRelation       `gorm:"foreignKey:GalgameID" json:"tag,omitempty"`
+	Cover        []GalgameCover             `gorm:"foreignKey:GalgameID" json:"cover,omitempty"`
+	Screenshot   []GalgameScreenshot        `gorm:"foreignKey:GalgameID" json:"screenshot,omitempty"`
+
+	// EffectiveBannerHash is a derived, read-only field: the image_hash of
+	// the cover with sort_order=0 (= the "pinned" banner). Populated by
+	// the service layer after preload. Zero-value (nil pointer) when no
+	// cover exists. Not stored — `gorm:"-"` keeps it out of writes.
+	EffectiveBannerHash *string `gorm:"-" json:"effective_banner_hash,omitempty"`
 }
 
 func (Galgame) TableName() string { return "galgame" }

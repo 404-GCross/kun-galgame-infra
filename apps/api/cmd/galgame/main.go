@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log/slog"
 	"os"
 
@@ -93,6 +94,7 @@ func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB, se
 	seriesRepo := galgameRepo.NewSeriesRepository(wiki)
 	adminRepo := galgameRepo.NewAdminRepository(wiki)
 	messageRepo := galgameRepo.NewMessageRepository(wiki)
+	taxRevRepo := galgameRepo.NewTaxonomyRevisionRepository(wiki)
 	// OAuth client repo lives on the OAuth DB (read-only from galgame service);
 	// used to authenticate Basic-Auth cron callers on the message feed.
 	oauthClientRepo := siteRepo.NewOAuthClientRepository(oauthDB)
@@ -102,6 +104,10 @@ func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB, se
 	submissionSvc := galgameService.NewSubmissionService(galgameRepository, messageRepo)
 	messageSvc := galgameService.NewMessageService(messageRepo, galgameRepository, userReadRepo)
 	adminSvc := galgameService.NewAdminService(galgameRepository, messageRepo)
+	// TaxonomyService — orchestrates tag/official/engine/series CRUD via
+	// the polymorphic taxonomy_revision audit. Every mutating handler
+	// path below routes through it.
+	taxSvc := galgameService.NewTaxonomyService(tagRepo, officialRepo, engineRepo, seriesRepo, taxRevRepo, galgameRepository)
 
 	// Meilisearch: indexer + write-through hook + search service
 	indexer := galgameSearch.NewIndexer(searchClient)
@@ -121,8 +127,22 @@ func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB, se
 			ClientSecret: cfg.ImageClient.ClientSecret,
 		})
 		slog.Info("image client configured", "base_url", cfg.ImageClient.BaseURL)
+
+		// Wire the existence probe into the galgame service: Revert uses
+		// it to detect snapshots that point at TTL-deleted image hashes.
+		// Implementation reuses ReferencePing — which both probes
+		// existence (returns NotFound) AND refreshes the TTL for the
+		// hashes that *do* exist, so revert is also a free "ref-touch"
+		// for everything in the reverted snapshot.
+		galgameSvc.WithImageProbe(func(ctx context.Context, hashes []string) ([]string, error) {
+			res, err := imgCli.ReferencePing(ctx, hashes)
+			if err != nil {
+				return nil, err
+			}
+			return res.NotFound, nil
+		})
 	} else {
-		slog.Warn("image client not configured; multipart banner uploads in galgame Create/Update/PR will be rejected")
+		slog.Warn("image client not configured; multipart banner uploads in galgame Create/Update/PR will be rejected; Revert will skip image-existence probe")
 	}
 
 	// Handlers
@@ -130,10 +150,14 @@ func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB, se
 	revisionH := galgameHandler.NewRevisionHandler(galgameSvc, imgCli)
 	linkH := galgameHandler.NewLinkHandler(galgameSvc, galgameRepository)
 	contributorH := galgameHandler.NewContributorHandler(galgameRepository, userReadRepo)
-	tagH := galgameHandler.NewTagHandler(tagRepo, searchHook)
-	officialH := galgameHandler.NewOfficialHandler(officialRepo, searchHook)
-	engineH := galgameHandler.NewEngineHandler(engineRepo)
-	seriesH := galgameHandler.NewSeriesHandler(seriesRepo)
+	tagH := galgameHandler.NewTagHandler(tagRepo, taxSvc, searchHook)
+	officialH := galgameHandler.NewOfficialHandler(officialRepo, taxSvc, searchHook)
+	engineH := galgameHandler.NewEngineHandler(engineRepo, taxSvc)
+	seriesH := galgameHandler.NewSeriesHandler(seriesRepo, taxSvc)
+	// One handler covers ListRevisions / GetRevision / Revert for all
+	// four taxonomy entities — the entity discriminator is baked into
+	// the route wrapper methods (TagListRevisions / OfficialRevert / …).
+	taxRevH := galgameHandler.NewTaxonomyRevisionHandler(taxSvc)
 	adminH := galgameHandler.NewAdminHandler(adminRepo, adminSvc, searchHook)
 	submissionH := galgameHandler.NewSubmissionHandler(submissionSvc, searchHook, imgCli)
 	messageH := galgameHandler.NewMessageHandler(messageSvc)
@@ -251,6 +275,11 @@ func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB, se
 	tag.Post("/", jwtAuth, tagH.Create)
 	tag.Put("/", jwtAuth, tagH.Update)
 	tag.Delete("/:id", jwtAuth, tagH.Delete)
+	// Tag revision/revert (admin/moderator) — same surface for each of
+	// the four taxonomy entities; see TaxonomyRevisionHandler.
+	tag.Get("/:id/revisions", taxRevH.TagListRevisions)
+	tag.Get("/:id/revisions/:rev", taxRevH.TagGetRevision)
+	tag.Post("/:id/revert", jwtAuth, taxRevH.TagRevert)
 
 	// ── Official ──
 	official := api.Group("/official")
@@ -260,6 +289,9 @@ func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB, se
 	official.Post("/", jwtAuth, officialH.Create)
 	official.Put("/", jwtAuth, officialH.Update)
 	official.Delete("/:id", jwtAuth, officialH.Delete)
+	official.Get("/:id/revisions", taxRevH.OfficialListRevisions)
+	official.Get("/:id/revisions/:rev", taxRevH.OfficialGetRevision)
+	official.Post("/:id/revert", jwtAuth, taxRevH.OfficialRevert)
 
 	// ── Engine ──
 	engine := api.Group("/engine")
@@ -268,17 +300,23 @@ func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB, se
 	engine.Post("/", jwtAuth, engineH.Create)
 	engine.Put("/", jwtAuth, engineH.Update)
 	engine.Delete("/:id", jwtAuth, engineH.Delete)
+	engine.Get("/:id/revisions", taxRevH.EngineListRevisions)
+	engine.Get("/:id/revisions/:rev", taxRevH.EngineGetRevision)
+	engine.Post("/:id/revert", jwtAuth, taxRevH.EngineRevert)
 
 	// ── Series ──
 	series := api.Group("/series")
 	series.Get("/", seriesH.List)
 	series.Get("/search", seriesH.Search)
 	series.Get("/:id", seriesH.Get)
+	series.Get("/:id/revisions", taxRevH.SeriesListRevisions)
+	series.Get("/:id/revisions/:rev", taxRevH.SeriesGetRevision)
 	seriesAuth := series.Group("", jwtAuth)
 	seriesAuth.Post("/", seriesH.Create)
 	seriesAuth.Post("/modal", seriesH.Modal)
 	seriesAuth.Put("/:id", seriesH.Update)
 	seriesAuth.Delete("/:id", seriesH.Delete)
+	seriesAuth.Post("/:id/revert", taxRevH.SeriesRevert)
 }
 
 func getPort(envKey string, defaultPort int) int {

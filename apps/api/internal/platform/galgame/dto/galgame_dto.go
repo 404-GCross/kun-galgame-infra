@@ -25,12 +25,20 @@ type CreateGalgameRequest struct {
 	ContentLimit     string `json:"content_limit" validate:"omitempty,oneof=sfw nsfw"`
 	OriginalLanguage string `json:"original_language"`
 	AgeLimit         string `json:"age_limit" validate:"omitempty,oneof=all r18"`
-	Released         string `json:"released" validate:"max=107"` // empty → "unknown"
+	// ReleaseDate is "YYYY-MM-DD" or "" (= unknown). Empty / omitted →
+	// no date is recorded. Independent of ReleaseDateTBA.
+	ReleaseDate      string `json:"release_date" validate:"omitempty,datetime=2006-01-02"`
+	ReleaseDateTBA   bool   `json:"release_date_tba"`
 	SeriesID         *int   `json:"series_id"`
 	Aliases          string `json:"aliases"` // Comma-separated alias names
 	TagIDs           []int  `json:"tag_ids"`
 	OfficialIDs      []int  `json:"official_ids"`
 	EngineIDs        []int  `json:"engine_ids"`
+	// Cover candidate set (sort_order=0 = pinned banner). On Create the
+	// empty default is "no covers yet"; downstream wizards typically
+	// supply [{ImageHash, SortOrder: 0}] for a single initial banner.
+	Covers           []GalgameCoverInput      `json:"covers"`
+	Screenshots      []GalgameScreenshotInput `json:"screenshots"`
 }
 
 // GalgameLinkInput is one external link in a galgame edit body. Kept in
@@ -38,6 +46,33 @@ type CreateGalgameRequest struct {
 type GalgameLinkInput struct {
 	Name string `json:"name" validate:"required,max=233"`
 	Link string `json:"link" validate:"required,max=1007"`
+}
+
+// GalgameCoverInput is one cover candidate in a galgame edit body. The
+// `image_hash` MUST point at an existing image in image_service (the
+// service layer validates this before ApplySnapshot). `sort_order=0`
+// designates the pinned banner — at most one cover per galgame may
+// hold it (DB-enforced by partial unique index). Sexual / Violence
+// are per-image content ratings (0 = unrated; see docs/galgame_wiki/09 §5.6).
+type GalgameCoverInput struct {
+	ImageHash string `json:"image_hash" validate:"required,len=64"`
+	SortOrder int    `json:"sort_order"`
+	Sexual    int16  `json:"sexual" validate:"omitempty,min=0,max=3"`
+	Violence  int16  `json:"violence" validate:"omitempty,min=0,max=3"`
+	Source    string `json:"source" validate:"omitempty,max=16"`
+	SourceKey string `json:"source_key" validate:"omitempty,max=128"`
+}
+
+// GalgameScreenshotInput is one gallery / CG entry. Same shape as
+// GalgameCoverInput plus Caption.
+type GalgameScreenshotInput struct {
+	ImageHash string `json:"image_hash" validate:"required,len=64"`
+	SortOrder int    `json:"sort_order"`
+	Caption   string `json:"caption"`
+	Sexual    int16  `json:"sexual" validate:"omitempty,min=0,max=3"`
+	Violence  int16  `json:"violence" validate:"omitempty,min=0,max=3"`
+	Source    string `json:"source" validate:"omitempty,max=16"`
+	SourceKey string `json:"source_key" validate:"omitempty,max=128"`
 }
 
 // UpdateGalgameRequest represents a galgame update request
@@ -56,7 +91,11 @@ type UpdateGalgameRequest struct {
 	ContentLimit     *string `json:"content_limit" validate:"omitempty,oneof=sfw nsfw"`
 	OriginalLanguage *string `json:"original_language"`
 	AgeLimit         *string `json:"age_limit" validate:"omitempty,oneof=all r18"`
-	Released         *string `json:"released" validate:"omitempty,max=107"`
+	// ReleaseDate / ReleaseDateTBA both use pointer-presence: nil = field
+	// omitted = keep current; non-nil overwrites (incl. &"" = clear date
+	// to unknown). The two are independent and overlay separately.
+	ReleaseDate      *string `json:"release_date" validate:"omitempty,datetime=2006-01-02"`
+	ReleaseDateTBA   *bool   `json:"release_date_tba"`
 	SeriesID         *int    `json:"series_id"`
 	// Relational / multi-value fields use POINTER types for presence
 	// semantics, mirroring the *string scalars above: nil = field
@@ -72,7 +111,13 @@ type UpdateGalgameRequest struct {
 	TagIDs      *[]int              `json:"tag_ids"`
 	OfficialIDs *[]int              `json:"official_ids"`
 	EngineIDs   *[]int              `json:"engine_ids"`
-	IsMinor     *bool               `json:"is_minor"`
+	// Covers / Screenshots use pointer-presence (nil = keep current
+	// cover/screenshot set; non-nil incl. empty `[]` = authoritative full
+	// replacement). Editing only the title MUST omit these or it will
+	// wipe the gallery — same footgun as TagIDs (see §1.5 #5).
+	Covers      *[]GalgameCoverInput      `json:"covers"`
+	Screenshots *[]GalgameScreenshotInput `json:"screenshots"`
+	IsMinor     *bool                     `json:"is_minor"`
 }
 
 // BatchGetGalgameRequest represents a batch galgame query
@@ -96,6 +141,13 @@ type GalgameBrief struct {
 	NameZhTW           string  `json:"name_zh_tw"`
 	Banner             string  `json:"banner"`
 	BannerImageHash    *string `json:"banner_image_hash,omitempty"`
+	// EffectiveBannerHash is the image_hash of the pinned cover
+	// (sort_order=0) — the "currently shown" banner. Derived from
+	// galgame_cover during the BatchGet query; nil when the galgame has
+	// no covers yet. During the migration window this falls back to
+	// BannerImageHash for unmigrated rows. Frontends should prefer
+	// this over BannerImageHash going forward.
+	EffectiveBannerHash *string `json:"effective_banner_hash,omitempty"`
 	ContentLimit       string  `json:"content_limit"`
 	Status             int     `json:"status"`
 	UserID             int     `json:"user_id"`

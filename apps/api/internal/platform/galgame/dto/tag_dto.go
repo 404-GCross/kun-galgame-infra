@@ -32,13 +32,25 @@ type MultiTagRequest struct {
 	ContentLimit string `query:"content_limit" validate:"omitempty,oneof=sfw nsfw"`
 }
 
-// UpdateTagRequest represents a tag update request
+// UpdateTagRequest represents a tag update request.
+//
+// Every field uses pointer-presence: nil = field omitted = keep the
+// current value; non-nil = authoritative replacement. Alias uses
+// *[]string so that omission preserves the current alias set (a bare
+// []string would force every caller to round-trip the full set or risk
+// silently clearing it). Mirrors the §1.5 #5 convention from the
+// galgame side.
 type UpdateTagRequest struct {
-	TagID       int      `json:"tag_id" validate:"required"`
-	Name        *string  `json:"name"`
-	Category    *string  `json:"category" validate:"omitempty,oneof=content sexual technical"`
-	Description *string  `json:"description"`
-	Alias       []string `json:"alias"`
+	TagID       int       `json:"tag_id" validate:"required"`
+	Name        *string   `json:"name"`
+	Category    *string   `json:"category" validate:"omitempty,oneof=content sexual technical"`
+	Description *string   `json:"description"`
+	Alias       *[]string `json:"alias"`
+}
+
+// RevertTagRequest represents the body of POST /tag/:id/revert.
+type RevertTagRequest struct {
+	Revision int `json:"revision" validate:"required,min=1"`
 }
 
 // CreateTagRequest represents a tag creation request. Lets kungal/moyu

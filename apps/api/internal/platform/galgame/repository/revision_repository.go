@@ -87,7 +87,8 @@ func ApplySnapshot(tx *gorm.DB, galgameID, userID int, snapshot *model.Snapshot)
 	updates := map[string]any{
 		"vndb_id":           snapshot.VNDBID,
 		"bid":               snapshot.BangumiID,
-		"released":          snapshot.Released,
+		"release_date":      model.ParseSnapshotReleaseDate(snapshot.ReleaseDate),
+		"release_date_tba":  snapshot.ReleaseDateTBA,
 		"name_en_us":        snapshot.NameEnUS,
 		"name_ja_jp":        snapshot.NameJaJP,
 		"name_zh_cn":        snapshot.NameZhCN,
@@ -157,6 +158,48 @@ func ApplySnapshot(tx *gorm.DB, galgameID, userID int, snapshot *model.Snapshot)
 			UserID:    userID,
 			Name:      link.Name,
 			Link:      link.Link,
+		}).Error; err != nil {
+			return err
+		}
+	}
+
+	// 7. Rebuild cover candidate set. Same clear-and-rebuild discipline as
+	// the other relations — `galgame_cover` is a fully editable Snapshot
+	// field, not a derived index. Partial unique index
+	// `idx_galgame_cover_pinned` (galgame_id) WHERE sort_order=0 is
+	// enforced by Postgres: the snapshot must contain at most one row
+	// with SortOrder=0 per galgame, or this Create fails.
+	if err := tx.Where("galgame_id = ?", galgameID).Delete(&model.GalgameCover{}).Error; err != nil {
+		return err
+	}
+	for _, c := range snapshot.Covers {
+		if err := tx.Create(&model.GalgameCover{
+			GalgameID: galgameID,
+			ImageHash: c.ImageHash,
+			SortOrder: c.SortOrder,
+			Sexual:    c.Sexual,
+			Violence:  c.Violence,
+			Source:    c.Source,
+			SourceKey: c.SourceKey,
+		}).Error; err != nil {
+			return err
+		}
+	}
+
+	// 8. Rebuild gallery / screenshots.
+	if err := tx.Where("galgame_id = ?", galgameID).Delete(&model.GalgameScreenshot{}).Error; err != nil {
+		return err
+	}
+	for _, sh := range snapshot.Screenshots {
+		if err := tx.Create(&model.GalgameScreenshot{
+			GalgameID: galgameID,
+			ImageHash: sh.ImageHash,
+			SortOrder: sh.SortOrder,
+			Caption:   sh.Caption,
+			Sexual:    sh.Sexual,
+			Violence:  sh.Violence,
+			Source:    sh.Source,
+			SourceKey: sh.SourceKey,
 		}).Error; err != nil {
 			return err
 		}

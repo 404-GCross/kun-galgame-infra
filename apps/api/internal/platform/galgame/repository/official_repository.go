@@ -19,6 +19,11 @@ func NewOfficialRepository(db *gorm.DB) *OfficialRepository {
 	return &OfficialRepository{db: db}
 }
 
+// DB exposes the underlying *gorm.DB so the taxonomy service can open
+// transactions that span this repo and others (matches the pattern on
+// TagRepository / SeriesRepository).
+func (r *OfficialRepository) DB() *gorm.DB { return r.db }
+
 // List returns a paginated list of officials with galgame counts
 func (r *OfficialRepository) List(ctx context.Context, page, limit int) ([]model.GalgameOfficial, int64, error) {
 	var items []model.GalgameOfficial
