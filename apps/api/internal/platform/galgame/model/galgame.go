@@ -26,13 +26,13 @@ type Galgame struct {
 	// Banner is the legacy URL string. Kept as permanent fallback during
 	// migration period and as the original record for old galgames. The
 	// migration cmd `migrate-galgame-banners-to-image-service` reads from
-	// here, uploads to image_service, and fills BannerImageHash.
+	// here, uploads to image_service, and inserts a galgame_cover row
+	// with sort_order=0.
+	//
+	// (The dedicated `banner_image_hash` column was retired in PR5 —
+	// galgame_cover is now the single source of truth for image-service
+	// references; see docs/galgame_wiki/99-final-upgrade-plan.md §5.5.)
 	Banner string `gorm:"size:233;default:''" json:"banner"`
-
-	// BannerImageHash, when set, is the image_service hash. New uploads /
-	// banner changes write here. Frontend resolveBannerUrl prefers this
-	// over Banner.
-	BannerImageHash *string `gorm:"size:64;index" json:"banner_image_hash,omitempty"`
 
 	// Migration bookkeeping for the one-shot migration script. After
 	// migration succeeds, status=1; failures bump attempts and after 3

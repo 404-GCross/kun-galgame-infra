@@ -135,13 +135,15 @@ func (s *GalgameService) Revert(ctx context.Context, uid, galgameID, targetRevis
 }
 
 // scrubMissingImages mutates `snap` in place, removing any cover /
-// screenshot whose image_hash is missing from image_service AND zeroing
-// snap.BannerImageHash when it points at a missing hash. Returns the
-// list of stripped hashes (for the Note) and a Chinese note suffix
+// screenshot whose image_hash is missing from image_service. Returns
+// the list of stripped hashes (for the Note) and a Chinese note suffix
 // describing the degrade. When probeImages is unset OR returns an
 // error, the snapshot is left untouched — the assumption is that a
 // failing probe is worse than a possibly-broken revert (admin can re-
 // upload images afterwards; a hard-failed revert breaks the workflow).
+//
+// PR5 retired snap.BannerImageHash, so the only image references left
+// in a snapshot are Covers and Screenshots — handled below.
 func (s *GalgameService) scrubMissingImages(ctx context.Context, snap *model.Snapshot) (missing []string, noteSuffix string) {
 	if s.probeImages == nil || snap == nil {
 		return nil, ""
@@ -158,9 +160,6 @@ func (s *GalgameService) scrubMissingImages(ctx context.Context, snap *model.Sna
 	for _, h := range notFound {
 		missingSet[h] = true
 	}
-	if snap.BannerImageHash != "" && missingSet[snap.BannerImageHash] {
-		snap.BannerImageHash = ""
-	}
 	snap.Covers = filterImageRows(snap.Covers, func(c model.SnapshotCover) bool {
 		return !missingSet[c.ImageHash]
 	})
@@ -172,11 +171,12 @@ func (s *GalgameService) scrubMissingImages(ctx context.Context, snap *model.Sna
 
 // snapshotHashes returns every image_hash referenced by `snap`, deduped.
 // Used as the input batch to the image-service existence probe.
+//
+// Covers + Screenshots are the only image references in a snapshot
+// since PR5 retired BannerImageHash; the canonical banner now lives in
+// covers[sort_order=0] and is included by the Covers loop below.
 func snapshotHashes(snap *model.Snapshot) []string {
 	seen := make(map[string]bool)
-	if snap.BannerImageHash != "" {
-		seen[snap.BannerImageHash] = true
-	}
 	for _, c := range snap.Covers {
 		if c.ImageHash != "" {
 			seen[c.ImageHash] = true

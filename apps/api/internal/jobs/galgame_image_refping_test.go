@@ -82,15 +82,14 @@ func openTestDB(t *testing.T) *gorm.DB {
 	return db
 }
 
-// makeGalgameWithBanner inserts a minimal published galgame with the
-// given banner_image_hash and returns its id.
-func makeGalgameWithBanner(t *testing.T, db *gorm.DB, hash string) int {
+// makeGalgame inserts a minimal published galgame and returns its id.
+// PR5 retired banner_image_hash, so the banner is set via a separate
+// INSERT into galgame_cover (sort_order=0) when the caller needs one.
+func makeGalgame(t *testing.T, db *gorm.DB) int {
 	t.Helper()
-	h := hash
 	g := model.Galgame{
-		VNDBID:          fmt.Sprintf("v%d", os.Getpid()+int(testCounter.Add(1))),
-		UserID:          1,
-		BannerImageHash: &h,
+		VNDBID: fmt.Sprintf("v%d", os.Getpid()+int(testCounter.Add(1))),
+		UserID: 1,
 	}
 	require.NoError(t, db.Create(&g).Error)
 	return g.ID
@@ -114,26 +113,21 @@ const (
 	hPR   = "7777777777777777777777777777777777777777777777777777777777777777"
 )
 
-func TestRefping_IncludesCurrentBannerCoverScreenshotHashes(t *testing.T) {
+func TestRefping_IncludesCurrentCoverAndScreenshotHashes(t *testing.T) {
 	db := openTestDB(t)
 	ctx := context.Background()
 
-	// Source 1: galgame.banner_image_hash on an existing row.
-	gid := makeGalgameWithBanner(t, db, hCur1)
-
-	// Source 2: galgame_cover (pinned + secondary). The partial-unique
-	// index on (galgame_id) WHERE sort_order=0 lets us assert "at most
-	// one pinned per galgame" elsewhere; here we just need rows.
-	//
-	// Production migrate-galgame creates this index — replicate it here
-	// so the test environment matches. Without it, the partial-unique
-	// guarantee disappears AND `db.Create(&Cover{sort_order=0})` after a
-	// prior similarly-shaped row would succeed where it should fail.
+	// Production migrate-galgame creates the pinned-cover partial unique
+	// index; replicate it so the test environment matches.
 	require.NoError(t, db.Exec(`
 		CREATE UNIQUE INDEX IF NOT EXISTS idx_galgame_cover_pinned
 		ON galgame_cover(galgame_id) WHERE sort_order = 0
 	`).Error)
 
+	gid := makeGalgame(t, db)
+
+	// Source 1: galgame_cover (pinned + secondary).
+	//
 	// Raw INSERTs — gorm.Create silently no-ops on composite-PK models
 	// when the in-memory struct's PK fields are also seen as "default
 	// values" by gorm's CreateOnConflict path (intermittent, depends on
@@ -147,7 +141,7 @@ func TestRefping_IncludesCurrentBannerCoverScreenshotHashes(t *testing.T) {
 		gid, hCov2, 1,
 	).Error)
 
-	// Source 3: galgame_screenshot.
+	// Source 2: galgame_screenshot.
 	require.NoError(t, db.Exec(
 		`INSERT INTO galgame_screenshot (galgame_id, image_hash, sort_order, caption, sexual, violence, source, source_key, created) VALUES (?, ?, ?, '', 0, 0, '', '', NOW())`,
 		gid, hShot, 0,
@@ -165,9 +159,10 @@ func TestRefping_IncludesCurrentBannerCoverScreenshotHashes(t *testing.T) {
 	require.NoError(t, err)
 	sort.Strings(got)
 
-	// Expect every current hash. Duplicates de-duped (banner_image_hash
-	// here is hCur1 only, distinct from the cover hashes by design).
-	want := []string{hCov1, hCov2, hCur1, hShot}
+	// Expect every current hash (cover + screenshot only — PR5 retired
+	// banner_image_hash, so only galgame_cover + galgame_screenshot
+	// contribute to the live-data sources here).
+	want := []string{hCov1, hCov2, hShot}
 	sort.Strings(want)
 	assert.Equal(t, want, got)
 }
@@ -175,14 +170,12 @@ func TestRefping_IncludesCurrentBannerCoverScreenshotHashes(t *testing.T) {
 func TestRefping_IncludesRevisionAndPRSnapshotHashes(t *testing.T) {
 	db := openTestDB(t)
 	ctx := context.Background()
-	gid := makeGalgameWithBanner(t, db, hCur1)
+	gid := makeGalgame(t, db)
 
-	// A historical revision whose snapshot references a hash that NO
-	// LONGER appears anywhere else (the cover was removed in a later
-	// edit). Refping MUST still report it so revert never dies.
+	// A historical revision whose snapshot references a hash via covers
+	// — the entire hash universe should pick it up so revert never dies.
 	histSnap := model.Snapshot{
-		VNDBID:          "v_old",
-		BannerImageHash: hRev,
+		VNDBID: "v_old",
 		Covers: []model.SnapshotCover{
 			{ImageHash: hRev, SortOrder: 0},
 		},
@@ -217,5 +210,4 @@ func TestRefping_IncludesRevisionAndPRSnapshotHashes(t *testing.T) {
 	}
 	assert.True(t, set[hRev], "revision-only hash must be in refping set")
 	assert.True(t, set[hPR], "PR-only hash must be in refping set")
-	assert.True(t, set[hCur1], "current banner_image_hash must still be in set")
 }

@@ -37,8 +37,10 @@ var errImageClientUnconfigured = stderrors.New("image client not configured (KUN
 //        file: <binary> (optional) — banner image
 //     If the file part is present, this helper streams it to image_service
 //     via imageclient.Upload(preset=galgame_banner) and returns the resulting
-//     hash. Caller assigns the hash to its DTO's BannerImageHash field so it
-//     gets persisted as part of the same revision/PR transaction.
+//     hash. Caller assigns the hash to its DTO's PromoteCoverHash field;
+//     the service then merges it as sort_order=0 into the eventual
+//     covers[] snapshot (see service.promoteCoverHashInPlace) so it
+//     gets persisted as the pinned banner in the same transaction.
 //
 // Returns:
 //   - bannerHash: the new banner hash from image_service, or "" if no file

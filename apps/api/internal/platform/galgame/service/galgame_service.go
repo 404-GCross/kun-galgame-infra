@@ -202,7 +202,6 @@ func buildCreateSnapshot(req *dto.CreateGalgameRequest) *model.Snapshot {
 		NameZhCN:         req.NameZhCN,
 		NameZhTW:         req.NameZhTW,
 		Banner:           req.Banner,
-		BannerImageHash:  req.BannerImageHash,
 		IntroEnUS:        req.IntroEnUS,
 		IntroJaJP:        req.IntroJaJP,
 		IntroZhCN:        req.IntroZhCN,
@@ -218,6 +217,12 @@ func buildCreateSnapshot(req *dto.CreateGalgameRequest) *model.Snapshot {
 		Links:            vndbLink(req.VNDBID),
 		Covers:           coverInputsToSnapshot(req.Covers),
 		Screenshots:      screenshotInputsToSnapshot(req.Screenshots),
+	}
+	// Multipart-uploaded banner becomes the pinned cover. Merge AFTER
+	// the explicit Covers field so the upload wins the sort_order=0 slot
+	// even when the JSON body specified its own cover set.
+	if req.PromoteCoverHash != "" {
+		s.Covers = promoteCoverHashInPlace(s.Covers, req.PromoteCoverHash)
 	}
 	return s
 }
@@ -266,6 +271,46 @@ func strNonEmpty(s string) *string {
 		return nil
 	}
 	return &s
+}
+
+// promoteCoverHashInPlace mutates covers so that the given hash sits at
+// sort_order=0. If covers already contains a row with that hash, that
+// row is moved to sort_order=0 and any prior sort_order=0 entry is
+// demoted to sort_order=1. If covers does NOT yet contain the hash, a
+// fresh entry is inserted at sort_order=0 (defaults for the metadata
+// columns; admin can edit them after the fact).
+//
+// The pinned-cover partial unique index requires that at most one row
+// in the final state has sort_order=0, hence the demote step. Other
+// rows' SortOrder values are left untouched — caller decides whether to
+// renumber them.
+//
+// Used after a multipart-uploaded banner (handler sets the transient
+// PromoteCoverHash field on the request, service routes it here before
+// ApplySnapshot writes the snapshot).
+func promoteCoverHashInPlace(covers []model.SnapshotCover, hash string) []model.SnapshotCover {
+	if hash == "" {
+		return covers
+	}
+	promoteIdx := -1
+	for i, c := range covers {
+		if c.ImageHash == hash {
+			promoteIdx = i
+			break
+		}
+	}
+	// Demote any existing pinned entry (partial-unique constraint).
+	for i := range covers {
+		if covers[i].SortOrder == 0 && (promoteIdx < 0 || i != promoteIdx) {
+			covers[i].SortOrder = 1
+		}
+	}
+	if promoteIdx >= 0 {
+		covers[promoteIdx].SortOrder = 0
+		return covers
+	}
+	// Hash is new; insert at the front so JSON readers see it first.
+	return append([]model.SnapshotCover{{ImageHash: hash, SortOrder: 0}}, covers...)
 }
 
 func splitCSV(csv string) []string {
@@ -392,7 +437,9 @@ func (s *GalgameService) BatchGetWithViewer(ctx context.Context, ids []int, view
 	}
 	pinned, err := s.galgameRepo.PinnedCoverHashes(ctx, resultIDs)
 	if err != nil {
-		// Non-fatal: fall back to BannerImageHash on each row below.
+		// Non-fatal: covers query failed → effective_banner_hash stays nil
+		// for every row this batch. Frontend renders the legacy Banner
+		// URL fallback in resolveBannerUrl when no hash is available.
 		pinned = map[int]string{}
 	}
 
@@ -401,10 +448,6 @@ func (s *GalgameService) BatchGetWithViewer(ctx context.Context, ids []int, view
 		var effective *string
 		if h, ok := pinned[g.ID]; ok {
 			effective = &h
-		} else if g.BannerImageHash != nil && *g.BannerImageHash != "" {
-			// Migration-window fallback: row not yet backfilled to cover table.
-			v := *g.BannerImageHash
-			effective = &v
 		}
 		items[i] = dto.GalgameBrief{
 			ID:                  g.ID,
@@ -414,7 +457,6 @@ func (s *GalgameService) BatchGetWithViewer(ctx context.Context, ids []int, view
 			NameZhCN:            g.NameZhCN,
 			NameZhTW:            g.NameZhTW,
 			Banner:              g.Banner,
-			BannerImageHash:     g.BannerImageHash,
 			EffectiveBannerHash: effective,
 			ContentLimit:        g.ContentLimit,
 			Status:              g.Status,
@@ -494,10 +536,6 @@ func overlayUpdate(cur *model.Snapshot, req *dto.UpdateGalgameRequest) *model.Sn
 	if req.Banner != nil {
 		n.Banner = *req.Banner
 	}
-	if req.BannerImageHash != nil {
-		// "" clears it (ApplySnapshot maps empty → NULL column).
-		n.BannerImageHash = *req.BannerImageHash
-	}
 	if req.IntroEnUS != nil {
 		n.IntroEnUS = *req.IntroEnUS
 	}
@@ -560,6 +598,17 @@ func overlayUpdate(cur *model.Snapshot, req *dto.UpdateGalgameRequest) *model.Sn
 	}
 	if req.Screenshots != nil {
 		n.Screenshots = screenshotInputsToSnapshot(*req.Screenshots)
+	}
+	// Multipart-uploaded banner promotes itself into the cover set. Run
+	// AFTER the Covers overlay above so an explicit JSON Covers field
+	// can still control non-pinned slots while the uploaded image takes
+	// sort_order=0. When req.Covers is nil, this promotes within the
+	// preserved current covers (n.Covers came from cur via the copy).
+	if req.PromoteCoverHash != "" {
+		// Deep-copy first so we don't mutate the cur snapshot the caller
+		// might still be holding (it's used for ChangedKeys upstream).
+		n.Covers = append([]model.SnapshotCover(nil), n.Covers...)
+		n.Covers = promoteCoverHashInPlace(n.Covers, req.PromoteCoverHash)
 	}
 	return &n
 }

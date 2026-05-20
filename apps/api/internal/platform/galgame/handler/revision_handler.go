@@ -22,7 +22,8 @@ type RevisionHandler struct {
 
 // NewRevisionHandler creates a new RevisionHandler.
 // Pass nil for imgClient to disable banner-file upload in PR submission;
-// consumers must then send banner_image_hash in JSON directly.
+// consumers must then specify the banner via the `covers` array
+// (sort_order=0) in the JSON body directly.
 func NewRevisionHandler(svc *service.GalgameService, imgClient *imageclient.Client) *RevisionHandler {
 	return &RevisionHandler{svc: svc, imgClient: imgClient}
 }
@@ -195,9 +196,10 @@ func (h *RevisionHandler) GetPR(c fiber.Ctx) error {
 // SubmitPR creates a new PR.
 //
 // Accepts both JSON body and multipart/form-data (with optional `file` banner).
-// In multipart mode, the file is uploaded to image_service first; the
-// resulting hash is treated as a normal banner_image_hash field change in
-// the proposed snapshot.
+// In multipart mode, the file is uploaded to image_service first and the
+// resulting hash is promoted to the pinned cover (sort_order=0) in the
+// proposed snapshot via PromoteCoverHash; existing covers are preserved
+// with their sort_order shifted to keep the partial-unique index happy.
 func (h *RevisionHandler) SubmitPR(c fiber.Ctx) error {
 	uid, _ := c.Locals("user_uid").(uint)
 	if uid == 0 {
@@ -215,7 +217,10 @@ func (h *RevisionHandler) SubmitPR(c fiber.Ctx) error {
 		return mapWriteBodyError(c, err)
 	}
 	if bannerHash != "" {
-		req.BannerImageHash = &bannerHash
+		// Multipart-uploaded banner promotes to pinned cover when the PR
+		// is later merged — same merge logic as Create/Update via
+		// promoteCoverHashInPlace inside ApplyToSnapshot.
+		req.PromoteCoverHash = bannerHash
 	}
 
 	// Get current snapshot to apply PR changes onto

@@ -114,13 +114,16 @@ func main() {
 	start := time.Now()
 
 	// Keyset pagination over `id`. Resumable: every successful row gets
-	// banner_image_hash set; failed rows bump status; the WHERE clause
-	// excludes both, so re-running picks up where we left off.
+	// banner_migration_status=1 (success) or =2 (permanent failure after
+	// retries). PR5 retired the banner_image_hash column, so the WHERE
+	// clause now relies solely on banner_migration_status — galgames
+	// whose banner has already been migrated (status=1) or permanently
+	// failed (status=2) are skipped.
 	lastID := 0
 	for {
 		var rows []model.Galgame
 		q := db.DB().WithContext(ctx).
-			Where(`id > ? AND banner != '' AND banner_image_hash IS NULL AND banner_migration_status != 2`, lastID).
+			Where(`id > ? AND banner != '' AND banner_migration_status NOT IN (1, 2)`, lastID).
 			Order("id ASC").
 			Limit(*batch)
 		if *limit > 0 {
@@ -244,24 +247,24 @@ func processOne(
 		return outcome{kind: outcomeFail}
 	}
 
-	// Update banner_image_hash AND mirror it into the new galgame_cover
-	// (sort_order=0 = pinned banner) — same transaction so the two views
-	// stay consistent. After PR5 drops the column, only the cover insert
-	// will remain; until then both writes happen atomically.
+	// Insert the uploaded hash into galgame_cover as the pinned cover
+	// (sort_order=0) + bump banner_migration_status so future runs skip
+	// this row. PR5 retired galgame.banner_image_hash, so galgame_cover
+	// is now the sole image_service reference; the migration writes to
+	// it exclusively. Same transaction so partial failure can't leave
+	// status flipped without the cover row.
 	if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&model.Galgame{}).
 			Where("id = ?", g.ID).
 			Updates(map[string]any{
-				"banner_image_hash":         result.Hash,
 				"banner_migration_status":   1,
 				"banner_migration_attempts": g.BannerMigrationAttempts + 1,
 			}).Error; err != nil {
 			return err
 		}
-		// Idempotent upsert into galgame_cover. ON CONFLICT DO NOTHING
-		// handles the rare re-run case where the cover row already exists
-		// (e.g. the row was inserted via /galgame edit UI and then the
-		// banner migration sweeps the same galgame later).
+		// Idempotent: if the cover row already exists (e.g. inserted by
+		// the wiki edit UI between sweeps), ON CONFLICT DO NOTHING keeps
+		// the row but we still mark status=1 above so we won't retry.
 		return tx.Exec(
 			`INSERT INTO galgame_cover (galgame_id, image_hash, sort_order, sexual, violence, source, source_key, created)
 			 VALUES (?, ?, 0, 0, 0, '', '', NOW())

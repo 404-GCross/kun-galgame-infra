@@ -36,11 +36,6 @@ type UpdateSeriesRequest struct {
 	GalgameIDs  *[]int  `json:"galgame_ids"`
 }
 
-// RevertSeriesRequest represents the body of POST /series/:id/revert.
-type RevertSeriesRequest struct {
-	Revision int `json:"revision" validate:"required,min=1"`
-}
-
 // ModalRequest represents a request to get galgames by IDs
 type ModalRequest struct {
 	IDs []int `json:"ids" validate:"required"`

@@ -124,15 +124,15 @@ func (s *MessageService) enrich(ctx context.Context, items []model.GalgameMessag
 	for i := range galgames {
 		g := galgames[i]
 		galgameBrief[g.ID] = &dto.MessageGalgameBrief{
-			ID:              g.ID,
-			NameEnUS:        g.NameEnUS,
-			NameJaJP:        g.NameJaJP,
-			NameZhCN:        g.NameZhCN,
-			NameZhTW:        g.NameZhTW,
-			Banner:          g.Banner,
-			BannerImageHash: g.BannerImageHash,
-			Status:          g.Status,
-			UserID:          g.UserID,
+			ID:                  g.ID,
+			NameEnUS:            g.NameEnUS,
+			NameJaJP:            g.NameJaJP,
+			NameZhCN:            g.NameZhCN,
+			NameZhTW:            g.NameZhTW,
+			Banner:              g.Banner,
+			EffectiveBannerHash: g.EffectiveBannerHash,
+			Status:              g.Status,
+			UserID:              g.UserID,
 		}
 	}
 

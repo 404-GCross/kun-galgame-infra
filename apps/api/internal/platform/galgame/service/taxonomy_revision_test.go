@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"strconv"
+	"sync"
 	"testing"
 
 	"api/internal/platform/galgame/dto"
@@ -162,25 +164,179 @@ func TestTaxonomyTag_Revert_FromDeleted_ResurrectsButNoRelationRestore(t *testin
 	assert.Equal(t, int64(0), cnt, "tag_ids relations NOT auto-restored")
 }
 
-// Reflection invariant: every editable field on each Snapshot struct
-// has a Take* helper that picks it up AND every field listed by
-// *SnapshotFieldNames() actually exists in the corresponding struct.
-// Mirrors TestEditableSnapshotFieldsAllReachable on the galgame side.
+// TestTaxonomyEditableFieldsAllReachable is the §1.5 #2b protective
+// invariant: every field on each per-entity Snapshot struct MUST be
+// (a) writable through Create/Update DTOs, and
+// (b) round-tripped into the persisted revision snapshot.
+//
+// If somebody adds a Snapshot field but forgets to wire Take/Overlay/
+// DTO/Apply, this test goes red.
+//
+// Implementation: for each entity, write a request that sets every
+// editable scalar to a unique non-default sentinel + every aliases
+// slice to a known non-empty value, then assert the revision snapshot
+// reflects all of them.
 func TestTaxonomyEditableFieldsAllReachable(t *testing.T) {
-	cases := []struct {
-		entity string
-		names  []string
-	}{
-		{model.TaxonomyEntityTag, model.TagSnapshotFieldNames()},
-		{model.TaxonomyEntityOfficial, model.OfficialSnapshotFieldNames()},
-		{model.TaxonomyEntityEngine, model.EngineSnapshotFieldNames()},
-		{model.TaxonomyEntitySeries, model.SeriesSnapshotFieldNames()},
-	}
-	for _, tc := range cases {
-		t.Run(tc.entity, func(t *testing.T) {
-			require.NotEmpty(t, tc.names, "*SnapshotFieldNames() must enumerate fields")
+	cleanTables(t)
+	getRepos()
+	ctx := context.Background()
+
+	t.Run("tag", func(t *testing.T) {
+		tg, err := testTaxSvc.CreateTag(ctx, 1, 3, &dto.CreateTagRequest{
+			Name: "tag-init", Category: "content", Description: "d-init",
 		})
+		require.NoError(t, err)
+		// Edit EVERY editable field with a distinguishable new value.
+		newName, newCat, newDesc := "tag-new", "sexual", "d-new"
+		newAlias := []string{"a-one", "a-two"}
+		require.NoError(t, testTaxSvc.UpdateTag(ctx, 1, 3, &dto.UpdateTagRequest{
+			TagID: tg.ID, Name: &newName, Category: &newCat,
+			Description: &newDesc, Alias: &newAlias,
+		}))
+		revs, _, _ := testTaxSvc.ListRevisions(ctx, model.TaxonomyEntityTag, tg.ID, 1, 20)
+		require.GreaterOrEqual(t, len(revs), 2)
+		snap, err := model.TagSnapshotFromJSON(revs[0].Snapshot)
+		require.NoError(t, err)
+		assert.Equal(t, newName, snap.Name)
+		assert.Equal(t, newCat, snap.Category)
+		assert.Equal(t, newDesc, snap.Description)
+		assert.ElementsMatch(t, newAlias, snap.Aliases)
+		assertChangedFieldsCoversSnapshot(t,
+			revs[0].ChangedFieldsList(), model.TagSnapshotFieldNames())
+	})
+
+	t.Run("official", func(t *testing.T) {
+		o, err := testTaxSvc.CreateOfficial(ctx, 1, 3, &dto.CreateOfficialRequest{
+			Name: "off-init", Category: "company", Original: "o-init",
+			Link: "https://init.example", Lang: "ja", Description: "d-init",
+		})
+		require.NoError(t, err)
+		newName, newOrig, newLink := "off-new", "o-new", "https://new.example"
+		newCat, newLang, newDesc := "individual", "en", "d-new"
+		newAlias := []string{"a-one", "a-two"}
+		require.NoError(t, testTaxSvc.UpdateOfficial(ctx, 1, 3, &dto.UpdateOfficialRequest{
+			OfficialID: o.ID,
+			Name:       &newName, Original: &newOrig, Link: &newLink,
+			Category: &newCat, Lang: &newLang, Description: &newDesc,
+			Alias: &newAlias,
+		}))
+		revs, _, _ := testTaxSvc.ListRevisions(ctx, model.TaxonomyEntityOfficial, o.ID, 1, 20)
+		require.GreaterOrEqual(t, len(revs), 2)
+		snap, err := model.OfficialSnapshotFromJSON(revs[0].Snapshot)
+		require.NoError(t, err)
+		assert.Equal(t, newName, snap.Name)
+		assert.Equal(t, newOrig, snap.Original)
+		assert.Equal(t, newLink, snap.Link)
+		assert.Equal(t, newCat, snap.Category)
+		assert.Equal(t, newLang, snap.Lang)
+		assert.Equal(t, newDesc, snap.Description)
+		assert.ElementsMatch(t, newAlias, snap.Aliases)
+		assertChangedFieldsCoversSnapshot(t,
+			revs[0].ChangedFieldsList(), model.OfficialSnapshotFieldNames())
+	})
+
+	t.Run("engine", func(t *testing.T) {
+		e, err := testTaxSvc.CreateEngine(ctx, 1, 3, &dto.CreateEngineRequest{
+			Name: "eng-init", Description: "d-init",
+		})
+		require.NoError(t, err)
+		newName, newDesc := "eng-new", "d-new"
+		newAlias := []string{"a-one", "a-two"}
+		require.NoError(t, testTaxSvc.UpdateEngine(ctx, 1, 3, &dto.UpdateEngineRequest{
+			EngineID: e.ID, Name: &newName, Description: &newDesc, Alias: &newAlias,
+		}))
+		revs, _, _ := testTaxSvc.ListRevisions(ctx, model.TaxonomyEntityEngine, e.ID, 1, 20)
+		require.GreaterOrEqual(t, len(revs), 2)
+		snap, err := model.EngineSnapshotFromJSON(revs[0].Snapshot)
+		require.NoError(t, err)
+		assert.Equal(t, newName, snap.Name)
+		assert.Equal(t, newDesc, snap.Description)
+		assert.ElementsMatch(t, newAlias, snap.Aliases)
+		assertChangedFieldsCoversSnapshot(t,
+			revs[0].ChangedFieldsList(), model.EngineSnapshotFieldNames())
+	})
+
+	t.Run("series", func(t *testing.T) {
+		// Series has no Alias / no GalgameIDs in snapshot — just Name + Description.
+		sr, err := testTaxSvc.CreateSeries(ctx, 1, 3,
+			&dto.CreateSeriesRequest{Name: "sr-init", Description: "d-init"}, nil)
+		require.NoError(t, err)
+		newName, newDesc := "sr-new", "d-new"
+		require.NoError(t, testTaxSvc.UpdateSeries(ctx, 1, 3, &dto.UpdateSeriesRequest{
+			SeriesID: sr.ID, Name: &newName, Description: &newDesc,
+		}))
+		revs, _, _ := testTaxSvc.ListRevisions(ctx, model.TaxonomyEntitySeries, sr.ID, 1, 20)
+		require.GreaterOrEqual(t, len(revs), 2)
+		snap, err := model.SeriesSnapshotFromJSON(revs[0].Snapshot)
+		require.NoError(t, err)
+		assert.Equal(t, newName, snap.Name)
+		assert.Equal(t, newDesc, snap.Description)
+		assertChangedFieldsCoversSnapshot(t,
+			revs[0].ChangedFieldsList(), model.SeriesSnapshotFieldNames())
+	})
+}
+
+// assertChangedFieldsCoversSnapshot fails the test if the SnapshotFieldNames
+// list is missing entries actually changed by the test edit. Each test
+// above changes every editable field, so the changed_fields slice must
+// include every entry. If somebody adds a field to *Snapshot but not to
+// *SnapshotFieldNames(), this check catches it.
+func assertChangedFieldsCoversSnapshot(t *testing.T, got, fieldNames []string) {
+	t.Helper()
+	got2 := make(map[string]bool, len(got))
+	for _, k := range got {
+		got2[k] = true
 	}
+	for _, f := range fieldNames {
+		assert.True(t, got2[f],
+			"changed_fields missing %q — every field this test changed must show in changed_fields", f)
+	}
+}
+
+// TestTaxonomyConcurrentUpdate_SerializedByMainRowLock validates that
+// two concurrent UpdateTag calls on the SAME tag can't both pick the
+// same NextTaxonomyRevision (= idx_taxonomy_revision collision).
+//
+// The implementation guarantees serialisation via SELECT FOR UPDATE on
+// galgame_tag.id (= the main entity row). Both updates eventually
+// succeed — the second waits for the first to commit, sees the bumped
+// max revision, and writes its row at the next number.
+//
+// Without the lock this test fails intermittently with a
+// "duplicate key value violates idx_taxonomy_revision" error.
+func TestTaxonomyConcurrentUpdate_SerializedByMainRowLock(t *testing.T) {
+	cleanTables(t)
+	getRepos()
+	ctx := context.Background()
+
+	tag, err := testTaxSvc.CreateTag(ctx, 1, 3, &dto.CreateTagRequest{
+		Name: "concurrent", Category: "content",
+	})
+	require.NoError(t, err)
+
+	const N = 8
+	errCh := make(chan error, N)
+	var wg sync.WaitGroup
+	for i := 0; i < N; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			desc := "edit-" + strconv.Itoa(i)
+			errCh <- testTaxSvc.UpdateTag(ctx, 1, 3, &dto.UpdateTagRequest{
+				TagID: tag.ID, Description: &desc,
+			})
+		}(i)
+	}
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		require.NoError(t, err, "concurrent Update must not deadlock or collide on idx_taxonomy_revision")
+	}
+
+	// All N concurrent updates plus the initial 'created' → 1+N rows.
+	_, total, err := testTaxSvc.ListRevisions(ctx, model.TaxonomyEntityTag, tag.ID, 1, 50)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1+N), total, "every concurrent update produced exactly one taxonomy_revision")
 }
 
 func TestTaxonomyOfficial_Create_AddsRevision(t *testing.T) {

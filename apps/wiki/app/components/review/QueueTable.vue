@@ -22,7 +22,7 @@ const bannerUrl = (m: ReviewMessage) => {
   return resolveBannerUrl(
     {
       banner: m.galgame.banner,
-      banner_image_hash: m.galgame.banner_image_hash ?? undefined
+      effective_banner_hash: m.galgame.effective_banner_hash ?? undefined
     },
     { cdnBase, variant: 'mini' }
   )

@@ -24,7 +24,8 @@ type GalgameHandler struct {
 // NewGalgameHandler creates a new GalgameHandler.
 // Pass nil for hook to disable write-through (e.g. in tests).
 // Pass nil for imgClient to disable banner-file upload via multipart;
-// consumers must then send banner_image_hash via JSON directly.
+// consumers must then specify the banner via the `covers` array
+// (sort_order=0) in the JSON body directly.
 func NewGalgameHandler(galgameService *service.GalgameService, hook *search.Hook, imgClient *imageclient.Client) *GalgameHandler {
 	return &GalgameHandler{
 		galgameService: galgameService,
@@ -79,8 +80,9 @@ func (h *GalgameHandler) Get(c fiber.Ctx) error {
 // Create creates a new galgame.
 //
 // Accepts both JSON body and multipart/form-data (with optional `file` field).
-// In multipart mode, the file is uploaded to image_service first; the
-// resulting hash is recorded as banner_image_hash on the new galgame.
+// In multipart mode, the file is uploaded to image_service first and the
+// resulting hash is promoted to the pinned cover (sort_order=0) of the
+// new galgame via PromoteCoverHash — same merge logic as Update/PR.
 func (h *GalgameHandler) Create(c fiber.Ctx) error {
 	uid, _ := c.Locals("user_uid").(uint)
 	if uid == 0 {
@@ -93,7 +95,9 @@ func (h *GalgameHandler) Create(c fiber.Ctx) error {
 		return mapWriteBodyError(c, err)
 	}
 	if bannerHash != "" {
-		req.BannerImageHash = bannerHash
+		// Multipart-uploaded banner becomes the pinned cover (sort_order=0)
+		// via promoteCoverHashInPlace inside buildCreateSnapshot.
+		req.PromoteCoverHash = bannerHash
 	}
 
 	if err := utils.Validate(&req); err != nil {
@@ -116,9 +120,11 @@ func (h *GalgameHandler) Create(c fiber.Ctx) error {
 // Update updates an existing galgame.
 //
 // Accepts both JSON body and multipart/form-data (with optional `file`
-// banner). In multipart mode, the file is uploaded to image_service first
-// and the resulting hash is treated as a normal banner_image_hash field
-// change — going through the standard revision/PR pipeline.
+// banner). In multipart mode, the file is uploaded to image_service
+// first and the resulting hash is promoted to the pinned cover via
+// PromoteCoverHash; existing covers are preserved with sort_order
+// shifted to keep the partial-unique index satisfied. Goes through the
+// standard revision/PR pipeline.
 func (h *GalgameHandler) Update(c fiber.Ctx) error {
 	uid, _ := c.Locals("user_uid").(uint)
 	if uid == 0 {
@@ -137,7 +143,10 @@ func (h *GalgameHandler) Update(c fiber.Ctx) error {
 		return mapWriteBodyError(c, err)
 	}
 	if bannerHash != "" {
-		req.BannerImageHash = &bannerHash
+		// Multipart-uploaded banner promotes to pinned cover. overlayUpdate
+		// runs promoteCoverHashInPlace after applying the Covers field, so
+		// the upload wins the sort_order=0 slot.
+		req.PromoteCoverHash = bannerHash
 	}
 
 	galgame, err := h.galgameService.Update(c.Context(), int(uid), id, roles, &req)

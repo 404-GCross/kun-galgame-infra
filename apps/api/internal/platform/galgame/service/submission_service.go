@@ -131,7 +131,7 @@ func (s *SubmissionService) Submit(ctx context.Context, uid int, req *dto.Submit
 // (POST /galgame/submit). Same single-write-path discipline; vndb_id is
 // optional here.
 func buildSubmitSnapshot(req *dto.SubmitGalgameRequest) *model.Snapshot {
-	return &model.Snapshot{
+	s := &model.Snapshot{
 		VNDBID:           req.VNDBID,
 		ReleaseDate:      strNonEmpty(req.ReleaseDate),
 		ReleaseDateTBA:   req.ReleaseDateTBA,
@@ -140,7 +140,6 @@ func buildSubmitSnapshot(req *dto.SubmitGalgameRequest) *model.Snapshot {
 		NameZhCN:         req.NameZhCN,
 		NameZhTW:         req.NameZhTW,
 		Banner:           req.Banner,
-		BannerImageHash:  req.BannerImageHash,
 		IntroEnUS:        req.IntroEnUS,
 		IntroJaJP:        req.IntroJaJP,
 		IntroZhCN:        req.IntroZhCN,
@@ -157,6 +156,12 @@ func buildSubmitSnapshot(req *dto.SubmitGalgameRequest) *model.Snapshot {
 		Covers:           coverInputsToSnapshot(req.Covers),
 		Screenshots:      screenshotInputsToSnapshot(req.Screenshots),
 	}
+	// Multipart-uploaded banner becomes the pinned cover. Same shape as
+	// buildCreateSnapshot; see promoteCoverHashInPlace for the contract.
+	if req.PromoteCoverHash != "" {
+		s.Covers = promoteCoverHashInPlace(s.Covers, req.PromoteCoverHash)
+	}
+	return s
 }
 
 // Claim atomically converts a VNDB draft (status=2) into a published galgame
@@ -417,7 +422,8 @@ func (s *SubmissionService) ListMine(ctx context.Context, uid int, req *dto.List
 		// g.EffectiveBannerHash already populated by repo (ListMine preloads
 		// Cover + runs model.PopulateEffectiveBanner). Pass through here so
 		// /galgame/mine cards can render the pinned cover instead of an
-		// unmigrated banner_image_hash.
+		// EffectiveBannerHash is the sole image-service banner reference
+		// after PR5 (banner_image_hash column retired).
 		out[i] = dto.MineGalgame{
 			ID:                  g.ID,
 			VNDBID:              g.VNDBID,
@@ -426,7 +432,6 @@ func (s *SubmissionService) ListMine(ctx context.Context, uid int, req *dto.List
 			NameZhCN:            g.NameZhCN,
 			NameZhTW:            g.NameZhTW,
 			Banner:              g.Banner,
-			BannerImageHash:     g.BannerImageHash,
 			EffectiveBannerHash: g.EffectiveBannerHash,
 			ContentLimit:        g.ContentLimit,
 			Status:              g.Status,

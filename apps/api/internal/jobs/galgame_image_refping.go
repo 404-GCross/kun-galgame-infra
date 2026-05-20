@@ -49,14 +49,19 @@ func RunGalgameImageRefping(ctx context.Context, cfg *config.Config, opts Galgam
 	defer db.Close()
 
 	// The hash universe we must keep alive in image_service:
-	//   1. current banner_image_hash on every published row (migration-window column)
-	//   2. current galgame_cover.image_hash (the new authoritative cover set)
-	//   3. current galgame_screenshot.image_hash
-	//   4. EVERY image_hash that has ever appeared in a galgame_revision
+	//   1. current galgame_cover.image_hash (the authoritative cover set)
+	//   2. current galgame_screenshot.image_hash
+	//   3. EVERY image_hash that has ever appeared in a galgame_revision
 	//      snapshot — historical revert / diff must not resurrect a hash that
 	//      image_service has TTL-deleted
-	//   5. EVERY image_hash in a galgame_pr.snapshot — same reasoning for
+	//   4. EVERY image_hash in a galgame_pr.snapshot — same reasoning for
 	//      pending PRs (admin may still merge them and trigger revert paths)
+	//
+	// (The pre-PR5 banner_image_hash source was retired together with the
+	// column; pinned-cover via galgame_cover is now the sole banner ref.
+	// Old snapshot rows that still carry the banner_image_hash jsonb key
+	// were patched by migrate-drop-banner-image-hash to embed the value
+	// into covers[] before the column drop.)
 	//
 	// Implementation lives in collectRefpingHashes so it can be tested
 	// against a real DB without standing up an image_service mock.
@@ -129,15 +134,14 @@ func RunGalgameImageRefping(ctx context.Context, cfg *config.Config, opts Galgam
 }
 
 // collectRefpingHashes returns the deduped union of every image hash that
-// the galgame wiki currently OR historically references. Five sources
+// the galgame wiki currently OR historically references. Four sources
 // (see RunGalgameImageRefping comment for the rationale):
 //
-//   1. galgame.banner_image_hash (migration-window column)
-//   2. galgame_cover.image_hash
-//   3. galgame_screenshot.image_hash
-//   4. galgame_revision.snapshot — jsonb walk of banner_image_hash +
-//      covers[].image_hash + screenshots[].image_hash
-//   5. galgame_pr.snapshot — same as #4
+//   1. galgame_cover.image_hash
+//   2. galgame_screenshot.image_hash
+//   3. galgame_revision.snapshot — jsonb walk of covers[].image_hash +
+//      screenshots[].image_hash
+//   4. galgame_pr.snapshot — same as #3
 //
 // All NULL / empty values are filtered out. Postgres jsonb operators
 // `?` (top-key exists), `->` and `jsonb_array_elements` do the heavy
@@ -145,46 +149,28 @@ func RunGalgameImageRefping(ctx context.Context, cfg *config.Config, opts Galgam
 func collectRefpingHashes(ctx context.Context, db *gorm.DB) ([]string, error) {
 	const q = `
 WITH all_hashes AS (
-    -- (1) current banner_image_hash column
-    SELECT banner_image_hash AS hash FROM galgame
-        WHERE banner_image_hash IS NOT NULL AND banner_image_hash <> ''
+    -- (1) current cover set
+    SELECT image_hash AS hash FROM galgame_cover
     UNION
-    -- (2) current cover set
-    SELECT image_hash FROM galgame_cover
-    UNION
-    -- (3) current screenshot set
+    -- (2) current screenshot set
     SELECT image_hash FROM galgame_screenshot
     UNION
-    -- (4a) historical revision: banner_image_hash field
-    SELECT snapshot->>'banner_image_hash'
-        FROM galgame_revision
-        WHERE snapshot ? 'banner_image_hash'
-          AND snapshot->>'banner_image_hash' IS NOT NULL
-          AND snapshot->>'banner_image_hash' <> ''
-    UNION
-    -- (4b) historical revision: every cover entry
+    -- (3a) historical revision: every cover entry
     SELECT (jsonb_array_elements(snapshot->'covers'))->>'image_hash'
         FROM galgame_revision
         WHERE jsonb_typeof(snapshot->'covers') = 'array'
     UNION
-    -- (4c) historical revision: every screenshot entry
+    -- (3b) historical revision: every screenshot entry
     SELECT (jsonb_array_elements(snapshot->'screenshots'))->>'image_hash'
         FROM galgame_revision
         WHERE jsonb_typeof(snapshot->'screenshots') = 'array'
     UNION
-    -- (5a) PR snapshots: banner_image_hash
-    SELECT snapshot->>'banner_image_hash'
-        FROM galgame_pr
-        WHERE snapshot ? 'banner_image_hash'
-          AND snapshot->>'banner_image_hash' IS NOT NULL
-          AND snapshot->>'banner_image_hash' <> ''
-    UNION
-    -- (5b) PR snapshots: cover entries
+    -- (4a) PR snapshots: cover entries
     SELECT (jsonb_array_elements(snapshot->'covers'))->>'image_hash'
         FROM galgame_pr
         WHERE jsonb_typeof(snapshot->'covers') = 'array'
     UNION
-    -- (5c) PR snapshots: screenshot entries
+    -- (4b) PR snapshots: screenshot entries
     SELECT (jsonb_array_elements(snapshot->'screenshots'))->>'image_hash'
         FROM galgame_pr
         WHERE jsonb_typeof(snapshot->'screenshots') = 'array'

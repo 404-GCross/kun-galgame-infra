@@ -1,8 +1,46 @@
-# Galgame Wiki 升级方案最终版（v1，已拍板）
+# Galgame Wiki 升级方案最终版（v1，✅ 已全部实施）
 
-> 状态：**已逐条拍板，本文档为最终设计依据，自包含**
-> 日期：2026-05-18
-> 实施前阅读次序：先读 `01-revision-system-design.md §1.5 不变量` → 再读本文 §2 设计哲学 → 再读 §7 完整 Revision 逻辑梳理（实施时的审计核心）。
+> 状态：**全部 5 个 PR 已落地 + 5 轮系统审计闭环（2026-05-18 → 2026-05-20）。本文档保留为实施依据，与代码一对一对应。**
+> 阅读次序：先读 `01-revision-system-design.md §1.5 不变量` → 再读本文 §2 设计哲学 → 再读 §7 完整 Revision 逻辑梳理。
+
+## 0. 实施落地摘要
+
+| PR | 范围 | 提交 | 状态 |
+|---|---|---|---|
+| **PR1** | U1：`released` 字符串 → `release_date date?` + `release_date_tba bool`（一刀切迁移） | committed | ✅ |
+| **PR2** | U2.a：`galgame_cover` / `galgame_screenshot` schema + Snapshot 扩展 + `ApplySnapshot` 第 7、8 张关联表 + `effective_banner_hash` 派生 | committed | ✅ |
+| **PR3** | U2.b：`refping` 收集集合扩展到 4 source（含历史 revision/PR snapshot 内 hash）+ revert 死图 graceful degrade + MergePR 同款 scrub | committed | ✅ |
+| **PR4** | U3：`taxonomy_revision` 多态全快照表 + 4 实体 Create/Update/Delete/Revert + 12 条新端点（List/Get/Revert × 4 entity）+ 字段级 RBAC 扩展位 | committed | ✅ |
+| **PR5** | U2.c：`galgame.banner_image_hash` 列彻底退役 + Snapshot 字段移除 + 历史 jsonb flatten 进 covers + multipart UX 改走 `PromoteCoverHash` transient field | committed | ✅ |
+
+新增数据库表 / 列：
+- `galgame.release_date date` + `galgame.release_date_tba bool`
+- `galgame_cover` 表（含 partial unique index `idx_galgame_cover_pinned` 保证 sort_order=0 唯一）
+- `galgame_screenshot` 表
+- `taxonomy_revision` 表（多态：tag/official/engine/series 共表）
+
+退役：
+- `galgame.banner_image_hash` 列（已 drop）
+- `Snapshot.BannerImageHash` Go 字段（已删）
+- 历史 `galgame_revision.snapshot.banner_image_hash` jsonb 字段（已 flatten 进 covers[]）
+
+新增 cmd：
+- `cmd/migrate-galgame-released-to-date` — 一次性：released 字符串 → date 列 + 修补历史 snapshot jsonb
+- `cmd/migrate-drop-banner-image-hash` — 一次性：banner_image_hash jsonb 字段 flatten 进 covers[] + 删列
+- `cmd/migrate-galgame-banners-to-image-service` — PR5 后改为只写 galgame_cover，分批长期可跑
+
+新增端点：
+- `GET /galgame/{tag,official,engine,series}/:id/revisions` × 4
+- `GET /galgame/{tag,official,engine,series}/:id/revisions/:rev` × 4
+- `POST /galgame/{tag,official,engine,series}/:id/revert {revision: N}` × 4
+
+测试新增 ~30 个（覆盖：release_date overlay 语义 / cover partial unique / pin-banner 事务 demote / refping 完整收集 / revert dead-image degrade / MergePR scrub / taxonomy 反射式 reachability / taxonomy 并发 / PromoteCoverHash 注入与保留 gallery 等不变量）
+
+5 轮审计共发现 13 个真实漏洞（4 红 / 5 橙 / 4 黄）；12 个已修复，1 个登记为 §9.2 已知技术债（VNDB sync 创建 tag/official 绕过 taxonomy_revision，合理取舍）。
+
+实施流程详见 `docs/integration/galgame_wiki/00-handbook-for-downstream.md`；上线迁移命令顺序见本文 §10 + 文末 PR5 解耦说明。
+
+---
 
 ---
 
@@ -705,6 +743,7 @@ SELECT DISTINCT hash FROM all_active_hashes WHERE hash IS NOT NULL AND hash <> '
 | **refping 集合长期单调增长** | 每天 ping 的 hash 集合 = 当前 + 所有历史 revision/PR 中曾出现过的 hash。随时间增长无界。本期规模可承受（年级 < 10 万 hash） | 超过 N 万时评估：(a) 历史快照按时间归档（>3 年的 revision snapshot 单独存）；(b) 快照内 hash 去重存储（多 revision 同 hash 只 ping 一次）；(c) 长期未引用 hash 的 hard purge 工具 |
 | **per-image NSFW gating 字段当前不消费** | `galgame_cover/screenshot.Sexual/Violence` schema 已落，但 v1 应用层**不用它做展示门控**。展示仍按 `galgame.content_limit` + 用户年龄设置粗粒度判断 | 产品需要 per-image gating 时：(a) admin 编辑界面加评级 UI 让 admin 手填；(b) 应用层 gate 链改为 `per_image > galgame.content_limit > 用户设置`；(c) `Sexual=0` 仍解释为"未评定" fallback 到粗分级 |
 | **changed_fields 不落 `galgame_revision`** | galgame revision 仍走"读时算 ChangedKeys"，taxonomy 已落库 | 将来给 galgame 加 RBAC 时再加列；语义复用 §6.5 约定 |
+| **VNDB sync 创建的 tag / official 不写 `taxonomy_revision`** | `internal/jobs/vndbsync` 用 `tx.Create(&model.GalgameTag{…})` 直接落库，**绕过 TaxonomyService**。每次同步可能 INSERT 数百个 tag/official；若走 service 会产 N 条 `user_id=0` 的 'created' 行，对历史浏览是纯噪声 | **已知边界 case**：sync 创建的 tag 第一次被人工编辑时会出现 `updated` 行但无前置 `created` 行；admin 想 revert "回到 VNDB 同步初始状态"做不到——只能 revert 到第一次人工编辑后。需要复原 sync 原值时通过重跑 sync 完成（VNDB 是这些值的真实来源）。将来若改进：sync 路径走 service 但用专门 `user_id=0`（system 常量）记录，统一审计模型 |
 
 ### 9.3 显式不做的功能项
 

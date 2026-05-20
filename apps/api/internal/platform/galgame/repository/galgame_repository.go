@@ -51,7 +51,7 @@ func (r *GalgameRepository) FindByID(ctx context.Context, id int) (*model.Galgam
 	}
 	// Populate the derived EffectiveBannerHash via the model-layer helper
 	// so List / ListMine / FindByID share one implementation of the
-	// "pinned cover, fallback to banner_image_hash" rule.
+	// "pinned cover" rule.
 	model.PopulateEffectiveBanner(&galgame)
 	return &galgame, nil
 }
@@ -129,7 +129,7 @@ func (r *GalgameRepository) List(ctx context.Context, page, limit int, sortField
 func (r *GalgameRepository) FindByIDs(ctx context.Context, ids []int) ([]model.Galgame, error) {
 	var galgames []model.Galgame
 	err := r.db.WithContext(ctx).
-		Select("id, vndb_id, name_en_us, name_ja_jp, name_zh_cn, name_zh_tw, banner, banner_image_hash, content_limit, status, user_id, resource_update_time, original_language, age_limit").
+		Select("id, vndb_id, name_en_us, name_ja_jp, name_zh_cn, name_zh_tw, banner, content_limit, status, user_id, resource_update_time, original_language, age_limit").
 		Where("id IN ? AND status = 0", ids).
 		Find(&galgames).Error
 	return galgames, err
@@ -145,7 +145,7 @@ func (r *GalgameRepository) FindByIDsAny(ctx context.Context, ids []int) ([]mode
 	}
 	var galgames []model.Galgame
 	err := r.db.WithContext(ctx).
-		Select("id, vndb_id, name_en_us, name_ja_jp, name_zh_cn, name_zh_tw, banner, banner_image_hash, content_limit, status, user_id, resource_update_time, original_language, age_limit").
+		Select("id, vndb_id, name_en_us, name_ja_jp, name_zh_cn, name_zh_tw, banner, content_limit, status, user_id, resource_update_time, original_language, age_limit").
 		Where("id IN ?", ids).
 		Find(&galgames).Error
 	return galgames, err
@@ -162,7 +162,7 @@ func (r *GalgameRepository) FindByIDsWithViewer(ctx context.Context, ids []int, 
 	}
 	var galgames []model.Galgame
 	err := r.db.WithContext(ctx).
-		Select("id, vndb_id, name_en_us, name_ja_jp, name_zh_cn, name_zh_tw, banner, banner_image_hash, content_limit, status, user_id, resource_update_time, original_language, age_limit").
+		Select("id, vndb_id, name_en_us, name_ja_jp, name_zh_cn, name_zh_tw, banner, content_limit, status, user_id, resource_update_time, original_language, age_limit").
 		Where("id IN ?", ids).
 		Where("status = 0 OR (status IN (3, 4) AND user_id = ?)", viewerUID).
 		Find(&galgames).Error

@@ -12,11 +12,12 @@ export interface Galgame {
   name_ja_jp: string
   name_zh_cn: string
   name_zh_tw: string
-  banner: string                       // legacy URL, permanent fallback
-  banner_image_hash?: string | null    // image_service hash for the legacy single-banner field
+  banner: string                       // legacy URL, permanent fallback when no cover exists
   // effective_banner_hash is the backend-derived "currently shown" banner:
-  // pinned cover (sort_order=0) if any, else banner_image_hash. Prefer
-  // this for display — resolveBannerUrl handles the chain.
+  // the pinned cover's image_hash (sort_order=0) if any, else nil.
+  // PR5 retired the legacy banner_image_hash column; galgame_cover is
+  // now the sole image_service reference. Prefer resolveBannerUrl over
+  // reading this directly.
   effective_banner_hash?: string | null
   intro_en_us: string
   intro_ja_jp: string

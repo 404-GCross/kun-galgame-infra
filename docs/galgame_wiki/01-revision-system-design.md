@@ -123,7 +123,8 @@ CREATE INDEX idx_galgame_pr_galgame ON galgame_pr(galgame_id, status);
   "content_limit": "sfw",
   "original_language": "ja-jp",
   "age_limit": "r18",
-  "released": "2019-08-16",
+  "release_date": "2019-08-16",
+  "release_date_tba": false,
   "series_id": null,
   "aliases": ["别名1", "别名2"],
   "tag_ids": [1, 2, 3],
@@ -132,6 +133,12 @@ CREATE INDEX idx_galgame_pr_galgame ON galgame_pr(galgame_id, status);
   "links": [
     {"name": "VNDB", "link": "https://vndb.org/v12345"},
     {"name": "官网", "link": "https://example.com"}
+  ],
+  "covers": [
+    {"image_hash": "abcd...64hex", "sort_order": 0, "sexual": 0, "violence": 0, "source": "user", "source_key": ""}
+  ],
+  "screenshots": [
+    {"image_hash": "fedc...64hex", "sort_order": 0, "caption": "CG 01", "sexual": 0, "violence": 0, "source": "", "source_key": ""}
   ]
 }
 ```
@@ -141,7 +148,8 @@ CREATE INDEX idx_galgame_pr_galgame ON galgame_pr(galgame_id, status);
 - 实际 `model.Snapshot` 还含 `bid`（BangumiID）：**保留字段**，sync 托管、暂不可编辑（Bangumi 同步暂缓），存在 Snapshot 里只为 revert 不丢失将来 sync 写入的值，不进编辑 DTO。这是"可编辑字段集 == 编辑 DTO 字段集"的**唯一例外**（见 §1.5 #2b）
 - `aliases`、`links` 存值数组（不存 ID，因为回滚时会重建）
 - `tag_ids`、`official_ids`、`engine_ids` 存 ID 数组（这些是已有实体的引用）
-- `released` 是可编辑字段（原创/同人作品发售日期），空 → `"unknown"`
+- **`release_date`** 是 "YYYY-MM-DD" 字符串或 `null`（未知）；**`release_date_tba`** 是 bool（已宣布但日期未定）。两者独立——预计的近日可同时给值。**取代**老 `released` 字符串字段（PR1 一刀切迁移）
+- **`covers[]` / `screenshots[]`**（PR2 加入）按 `image_hash` 引用 `image_service`，行内含 `sort_order`/`sexual`/`violence`/`source`/`source_key`（screenshot 还有 `caption`）；canonical-sort by `image_hash` 保证字节稳定。`covers[sort_order=0]` 是钉住的封面（partial unique index 强制每作品至多一张），即响应里派生字段 `effective_banner_hash` 的来源。**取代**老 `banner_image_hash` 字段（PR5 一刀切退役）
 - 大文本字段（intro_*）完整存储，galgame 元数据通常只有几 KB
 
 ## 5. Diff 计算
@@ -530,3 +538,37 @@ FOR EACH galgame IN (SELECT * FROM galgame):
 7. **实现 Revision 端点**：历史列表、查看版本、diff、回滚
 8. **数据迁移脚本**：为现有 galgame 创建 revision 1
 9. **删除 GalgameHistory**：确认新系统稳定后
+
+---
+
+## 14. Taxonomy 修订系统（PR4 加入）
+
+`galgame_revision` 只覆盖 galgame 实体本身。tag / official / engine / series 的 create / update / delete 现在走**独立但同款脊柱**的 `taxonomy_revision` 表（多态全快照，4 实体共表）。
+
+**契约**：
+- 同款"读 cur snapshot → overlay → ChangedKeys → no-op or `Apply*Snapshot` → 重新 Take → 落 revision"五步骤
+- `entity ∈ {tag,official,engine,series}` discriminator + `(entity, target_id, revision)` 唯一索引 + 4 个 action（created / updated / deleted / reverted）
+- **跨实体编辑联动**：delete 一个 tag/official/engine 会同时给每个 affected galgame 写一条 `galgame_revision`（changed_fields=['tag_ids' | 'official_ids' | 'engine_ids' | 'series_id']），确保 galgame 历史里 tag 的"消失"也有迹可循
+- **Series 特殊**：membership（`galgame.series_id`）改动**不**走 series 的 taxonomy_revision，只写每个受影响 galgame 的 galgame_revision；series 自己的 taxonomy_revision 只记 Name/Description
+- **存盘的 deleted snapshot + `affected_galgame_ids`** 支持"撤销删除"UI：revert 一个 deleted tag 会复活实体行；UI 可读 affected_galgame_ids 让 admin 勾选要恢复哪些 galgame_*_relation 关联（每个恢复走标准 galgame 编辑，再产一条 galgame_revision）
+- **`changed_fields` 语义**（§6.5）：created=全字段名 / updated=只列改动字段 / deleted=空数组 / reverted=列字段
+- **字段级 RBAC 扩展位**：`taxonomy_revision.user_role` + `changed_fields` 已落库未消费；将来加 RBAC 时只加策略表 + service 检查
+
+完整流程详见 `99-final-upgrade-plan.md §6-§7`。新端点：
+- `GET /{tag,official,engine,series}/:id/revisions`
+- `GET /{tag,official,engine,series}/:id/revisions/:rev`
+- `POST /{tag,official,engine,series}/:id/revert {revision: N}` （admin/moderator）
+
+下游契约见 `docs/integration/galgame_wiki/04-taxonomy.md`。
+
+## 15. §1.5 不变量在 Taxonomy 上的等价表述
+
+| galgame 表述 | taxonomy 等价 |
+|---|---|
+| `tag_ids` 等关联进 Snapshot（关联是一等公民） | `aliases` 进 TagSnapshot/OfficialSnapshot；engine 把 jsonb 数组列也表达成 `[]string`；series 无 aliases（不适用） |
+| 单一写路径 `repository.ApplySnapshot` | `repository.Apply{Tag,Official,Engine,Series}Snapshot` 4 个；service 内部用同款"读 cur→overlay→ApplySnapshot→重新 Take" |
+| `TestEditableSnapshotFieldsAllReachable` 反射护栏 | `TestTaxonomyEditableFieldsAllReachable` 参数化覆盖 4 实体；每实体写所有字段为 sentinel，断言 revision snapshot 反射回这些值 + changed_fields 含每个字段名（防加 Snapshot 字段但漏接 DTO/overlay） |
+| presence 语义（`*string`/`*[]int`）| `Alias *[]string`、`GalgameIDs *[]int` 同款 |
+| 集合语义、顺序无关 canonical-sort | `aliases` canonical-sort by string；engine alias 在 jsonb 与单独表中 Snapshot 层统一为已排序 []string |
+| 写后重新 `TakeSnapshot` | 写后重新 `Take*Snapshot`；revision.snapshot == DB == 编辑意图三者恒等 |
+| 并发安全（galgame 默认） | **PR4 新增显式声明**：写 `taxonomy_revision` 前必须 `SELECT 1 FROM <主表> WHERE id=? FOR UPDATE`（galgame_tag/official/engine/series 之一）锁主行；`TestTaxonomyConcurrentUpdate_SerializedByMainRowLock` 是这条不变量的护栏 |

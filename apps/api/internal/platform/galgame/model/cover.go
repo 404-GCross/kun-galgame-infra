@@ -59,19 +59,14 @@ type GalgameScreenshot struct {
 func (GalgameScreenshot) TableName() string { return "galgame_screenshot" }
 
 // PopulateEffectiveBanner fills g.EffectiveBannerHash from the loaded
-// Cover list using the canonical rule:
-//
-//  1. The image_hash of the cover with SortOrder=0 (the "pinned" banner),
-//     if any. Cover MUST be ordered sort_order ASC for this to take the
-//     correct row — repository preloads already do this.
-//  2. Otherwise, fall back to BannerImageHash (the legacy single-banner
-//     column). This fallback exists only for the migration window;
-//     PR5 will drop it together with the column.
-//  3. If neither is set, EffectiveBannerHash stays nil.
+// Cover list. The rule is now simply "the image_hash of the cover row
+// with sort_order=0", since PR5 retired the legacy banner_image_hash
+// fallback (the partial unique index makes the sort_order=0 row unique
+// per galgame, so the result is unambiguous).
 //
 // Idempotent and safe on a partially-loaded galgame (zero covers
-// returns the BannerImageHash fallback; nil g is a no-op via the
-// nil-receiver guard).
+// leaves EffectiveBannerHash nil; nil g is a no-op via the nil-receiver
+// guard).
 func PopulateEffectiveBanner(g *Galgame) {
 	if g == nil {
 		return
@@ -82,9 +77,5 @@ func PopulateEffectiveBanner(g *Galgame) {
 			g.EffectiveBannerHash = &h
 			return
 		}
-	}
-	if g.BannerImageHash != nil && *g.BannerImageHash != "" {
-		v := *g.BannerImageHash
-		g.EffectiveBannerHash = &v
 	}
 }

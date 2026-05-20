@@ -13,7 +13,8 @@ type SubmitGalgameRequest struct {
 	NameZhCN         string `json:"name_zh_cn" validate:"max=1000"`
 	NameZhTW         string `json:"name_zh_tw" validate:"max=1000"`
 	Banner           string `json:"banner"`
-	BannerImageHash  string `json:"banner_image_hash" validate:"omitempty,len=64"`
+	// PromoteCoverHash — see CreateGalgameRequest.PromoteCoverHash.
+	PromoteCoverHash string `json:"-"`
 	IntroEnUS        string `json:"intro_en_us"`
 	IntroJaJP        string `json:"intro_ja_jp"`
 	IntroZhCN        string `json:"intro_zh_cn"`
@@ -58,9 +59,9 @@ type MineGalgame struct {
 	NameZhCN            string  `json:"name_zh_cn"`
 	NameZhTW            string  `json:"name_zh_tw"`
 	Banner              string  `json:"banner"`
-	BannerImageHash     *string `json:"banner_image_hash,omitempty"`
-	// Derived: pinned cover (sort_order=0) hash, fallback to BannerImageHash.
-	// Frontends rendering thumbnails should prefer this; see resolveBannerUrl.
+	// EffectiveBannerHash is the pinned cover (sort_order=0) hash.
+	// Frontends should render thumbnails from this via resolveBannerUrl.
+	// The legacy banner_image_hash column was retired by PR5.
 	EffectiveBannerHash *string `json:"effective_banner_hash,omitempty"`
 	ContentLimit        string  `json:"content_limit"`
 	Status              int     `json:"status"`

@@ -70,9 +70,11 @@ KUN_MEILISEARCH_INDEX_PREFIX=             # 可选：dev_ / staging_ 之类
   "original_language": "ja-jp",
   "status": 0,
   "view": 1234,
-  "released": "2020-05",
-  "released_year": 2020,           // null 如果 released="unknown"
-  "released_ts": 1588291200,       // unix，null 如果未知
+  "release_date": "2020-05-15",    // PR1：YYYY-MM-DD 或 "" 表示未知
+  "release_date_tba": false,       // PR1：官方已宣布但日期未定
+  "released_year": 2020,           // 派生自 release_date；release_date 为空则 null
+  "released_ts": 1588291200,       // 派生自 release_date；缺失则 null
+  "effective_banner_hash": "abcd1234...ef", // PR5：派生自 covers[sort_order=0]，null 表示无 image_service 封面
   "updated_ts": 1700000000,
   "created_ts": 1600000000
 }
@@ -200,7 +202,9 @@ KUN_MEILISEARCH_INDEX_PREFIX=             # 可选：dev_ / staging_ 之类
       "content_limit": "sfw",
       "age_limit": "r18",
       "original_language": "ja-jp",
-      "released": "2020-05",
+      "release_date": "2020-05-15",
+      "release_date_tba": false,
+      "effective_banner_hash": "abcd1234...ef",
       "_formatted": {
         "name_zh_cn": "...<mark>关键字</mark>..."
       }

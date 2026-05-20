@@ -6,15 +6,18 @@ import "time"
 // message. Reflects the galgame's CURRENT state (not at message time).
 // May be nil if the galgame was deleted (withdrawn submission).
 type MessageGalgameBrief struct {
-	ID              int     `json:"id"`
-	NameEnUS        string  `json:"name_en_us"`
-	NameJaJP        string  `json:"name_ja_jp"`
-	NameZhCN        string  `json:"name_zh_cn"`
-	NameZhTW        string  `json:"name_zh_tw"`
-	Banner          string  `json:"banner"`
-	BannerImageHash *string `json:"banner_image_hash,omitempty"`
-	Status          int     `json:"status"`
-	UserID          int     `json:"user_id"`
+	ID                  int     `json:"id"`
+	NameEnUS            string  `json:"name_en_us"`
+	NameJaJP            string  `json:"name_ja_jp"`
+	NameZhCN            string  `json:"name_zh_cn"`
+	NameZhTW            string  `json:"name_zh_tw"`
+	Banner              string  `json:"banner"`
+	// EffectiveBannerHash is the pinned cover (sort_order=0) hash — the
+	// only image-service banner reference now that PR5 retired
+	// banner_image_hash. Frontends render thumbnails via resolveBannerUrl.
+	EffectiveBannerHash *string `json:"effective_banner_hash,omitempty"`
+	Status              int     `json:"status"`
+	UserID              int     `json:"user_id"`
 }
 
 // MessageResponse is the wire format for one galgame_message row.

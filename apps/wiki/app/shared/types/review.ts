@@ -17,7 +17,6 @@ export interface ReviewMessageGalgameBrief {
   name_zh_cn: string
   name_zh_tw: string
   banner: string
-  banner_image_hash?: string | null
   effective_banner_hash?: string | null
   status: number
   user_id: number

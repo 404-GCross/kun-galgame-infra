@@ -39,11 +39,6 @@ type UpdateOfficialRequest struct {
 	Alias       *[]string `json:"alias"`
 }
 
-// RevertOfficialRequest represents the body of POST /official/:id/revert.
-type RevertOfficialRequest struct {
-	Revision int `json:"revision" validate:"required,min=1"`
-}
-
 // CreateOfficialRequest represents an official (developer/producer)
 // creation request. Lets kungal/moyu users introduce a company/circle
 // missing from the wiki for an original/doujin work.

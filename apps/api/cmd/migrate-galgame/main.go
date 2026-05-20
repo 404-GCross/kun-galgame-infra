@@ -170,30 +170,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	// (4) Backfill galgame_cover from legacy banner_image_hash. Every
-	// galgame that has a banner_image_hash but no cover row gets a
-	// sort_order=0 cover with that hash. Idempotent — re-runs no-op once
-	// the cover row exists (ON CONFLICT DO NOTHING handles the composite
-	// PK collision on second run).
-	//
-	// The hash itself is just copied; image_service has the bytes. No
-	// content-rating / source columns are guessed — they stay default 0
-	// / "" until an editor sets them. This preserves the migration-window
-	// contract that "old banner_image_hash data flows through to the
-	// new cover table without loss".
-	res := db.DB().Exec(`
-		INSERT INTO galgame_cover (galgame_id, image_hash, sort_order, sexual, violence, source, source_key, created)
-		SELECT id, banner_image_hash, 0, 0, 0, '', '', NOW()
-		FROM galgame
-		WHERE banner_image_hash IS NOT NULL AND banner_image_hash <> ''
-		  AND NOT EXISTS (SELECT 1 FROM galgame_cover c WHERE c.galgame_id = galgame.id)
-		ON CONFLICT (galgame_id, image_hash) DO NOTHING
-	`)
-	if res.Error != nil {
-		slog.Error("backfill galgame_cover from banner_image_hash failed", "error", res.Error)
-		os.Exit(1)
-	}
-	slog.Info("backfilled galgame_cover from banner_image_hash", "rows", res.RowsAffected)
+	// (Old step 4 — backfill galgame_cover from banner_image_hash —
+	// removed in PR5: the legacy column was retired by migrate-drop-
+	// banner-image-hash. That migration also patched historical
+	// galgame_revision/galgame_pr snapshot jsonb to embed the value
+	// into covers[], so no data is lost.)
 
 	slog.Info("galgame wiki migration completed successfully")
 }

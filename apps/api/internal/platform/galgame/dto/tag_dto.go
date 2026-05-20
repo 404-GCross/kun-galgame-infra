@@ -48,11 +48,6 @@ type UpdateTagRequest struct {
 	Alias       *[]string `json:"alias"`
 }
 
-// RevertTagRequest represents the body of POST /tag/:id/revert.
-type RevertTagRequest struct {
-	Revision int `json:"revision" validate:"required,min=1"`
-}
-
 // CreateTagRequest represents a tag creation request. Lets kungal/moyu
 // users introduce a tag not yet in the wiki (e.g. for an original /
 // doujin work that has no VNDB entry).

@@ -91,7 +91,7 @@ const bannerPreviewUrl = computed(() => {
   return resolveBannerUrl(
     {
       banner: form.value.banner,
-      banner_image_hash: props.galgame.banner_image_hash
+      effective_banner_hash: props.galgame.effective_banner_hash
     },
     { cdnBase }
   )

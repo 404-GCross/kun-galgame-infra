@@ -57,17 +57,34 @@ export const resolveAvatarUrl = (
 }
 
 /**
- * Resolve a galgame's banner URL. Prefers `banner_image_hash` (new),
- * falls back to legacy `banner`. For list views pass `variant: 'mini'`.
+ * Resolve a galgame's banner URL.
+ *
+ * Preference order (matches the wiki backend's effective-banner derivation):
+ *   1. effective_banner_hash — image_hash of the pinned cover
+ *      (galgame_cover.sort_order=0), computed server-side. PR5 retired
+ *      the legacy banner_image_hash column; this is now the SOLE
+ *      image_service banner reference.
+ *   2. banner — original VNDB / user-provided URL (oldest fallback,
+ *      used when the galgame has no covers yet).
+ *
+ * Kept in sync with apps/wiki/app/shared/utils/resolveImage.ts. This
+ * apps/web copy is currently unused (admin web has no galgame UI), but
+ * exported for any future cross-app consumer.
  */
 export const resolveBannerUrl = (
-  galgame: { banner: string; banner_image_hash?: string | null } | null | undefined,
+  galgame:
+    | {
+        banner: string
+        effective_banner_hash?: string | null
+      }
+    | null
+    | undefined,
   opts: ImageURLOptions,
   placeholder = ''
 ): string => {
   if (!galgame) return placeholder
-  if (galgame.banner_image_hash) {
-    return imageHashUrl(galgame.banner_image_hash, opts)
+  if (galgame.effective_banner_hash) {
+    return imageHashUrl(galgame.effective_banner_hash, opts)
   }
   if (galgame.banner) return galgame.banner
   return placeholder

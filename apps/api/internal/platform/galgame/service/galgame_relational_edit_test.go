@@ -197,7 +197,7 @@ func TestEditableSnapshotFieldsAllReachable(t *testing.T) {
 	want := &model.Snapshot{
 		VNDBID: "v777", ReleaseDate: &releaseDate, ReleaseDateTBA: true,
 		NameEnUS: "EN", NameJaJP: "JA", NameZhCN: "ZH", NameZhTW: "TW",
-		Banner: "https://b.example/x.webp", BannerImageHash: "",
+		Banner: "https://b.example/x.webp",
 		IntroEnUS: "ie", IntroJaJP: "ij", IntroZhCN: "iz", IntroZhTW: "it",
 		ContentLimit: "nsfw", OriginalLanguage: "en-us", AgeLimit: "r18",
 		Aliases: []string{"a1"}, TagIDs: []int{tg}, OfficialIDs: []int{of},

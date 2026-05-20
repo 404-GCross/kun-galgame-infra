@@ -82,9 +82,10 @@ func (h *TaxonomyRevisionHandler) revert(c fiber.Ctx, entity string) error {
 	if err != nil {
 		return response.BadRequest(c, apperr.ErrInvalidID)
 	}
-	var req struct {
-		Revision int `json:"revision" validate:"required,min=1"`
-	}
+	// All four entities share the same revert body shape, so reuse the
+	// pre-existing dto.RevertRequest defined in revision_dto.go rather
+	// than declaring four near-identical per-entity DTOs.
+	var req dto.RevertRequest
 	if err := c.Bind().JSON(&req); err != nil {
 		return response.BadRequest(c, apperr.ErrBadRequest)
 	}
@@ -200,5 +201,3 @@ func mapAppErrOrInternal(c fiber.Ctx, err error) error {
 	return response.InternalError(c, apperr.ErrOperationFailed)
 }
 
-// silence unused imports when handlers below are scaffolded later
-var _ = dto.RevertTagRequest{}

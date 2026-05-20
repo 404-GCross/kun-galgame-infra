@@ -33,9 +33,9 @@ VNDB API (POST /vn) → sync-vndb 脚本 → kun_galgame_wiki DB (status=2 草�
 | `title` | 备用 | 无对应语言标题时用作 fallback |
 | `aliases` | `galgame_alias` | 字符串数组 → 每项一行 |
 | `olang` | `original_language` | ja→ja-jp, en→en-us 等 |
-| `released` | `released` | null/tba → "unknown" |
+| `released` | `release_date` / `release_date_tba` | **PR1**：取代旧 `released` 字符串字段。`"tba"` → `release_date=""` + `release_date_tba=true`；`"YYYY-MM-DD"` → `release_date=该日期` + `tba=false`；`"YYYY-MM"` 不完整日期 → `release_date=""` + `tba=true`；缺失 → 两者均零值 |
 | `description` | `intro_en_us` | VNDB 描述（英文） |
-| `image.url` | `banner` | 封面图 URL |
+| `image.url` | `banner` + `galgame_cover` | URL 仍写 `banner` 字段（迁移期 fallback）；hash 化后写入 `galgame_cover`（`sort_order=0`）— 见 [PR2 / PR5 covers 模型](./99-final-upgrade-plan.md) |
 | `image.sexual` | `content_limit` | ≥1 → nsfw, 否则 sfw |
 | `devstatus` | — | =2 时跳过（已取消） |
 | — | `status` | 固定为 2（草稿） |

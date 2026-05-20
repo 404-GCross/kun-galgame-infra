@@ -17,7 +17,12 @@ type CreateGalgameRequest struct {
 	NameZhCN         string `json:"name_zh_cn" validate:"max=1000"`
 	NameZhTW         string `json:"name_zh_tw" validate:"max=1000"`
 	Banner           string `json:"banner"`
-	BannerImageHash  string `json:"banner_image_hash" validate:"omitempty,len=64"`
+	// PromoteCoverHash is the image_service hash uploaded via multipart
+	// `file` field on this Create. Handler sets it after the upload
+	// succeeds; service merges it into Covers as sort_order=0 (pinned
+	// banner). Not part of the JSON body — clients sending JSON should
+	// use Covers directly.
+	PromoteCoverHash string `json:"-"`
 	IntroEnUS        string `json:"intro_en_us"`
 	IntroJaJP        string `json:"intro_ja_jp"`
 	IntroZhCN        string `json:"intro_zh_cn"`
@@ -83,7 +88,12 @@ type UpdateGalgameRequest struct {
 	NameZhCN         *string `json:"name_zh_cn" validate:"omitempty,max=1000"`
 	NameZhTW         *string `json:"name_zh_tw" validate:"omitempty,max=1000"`
 	Banner           *string `json:"banner"`
-	BannerImageHash  *string `json:"banner_image_hash" validate:"omitempty,len=64"`
+	// PromoteCoverHash mirrors CreateGalgameRequest.PromoteCoverHash:
+	// the handler sets it from a multipart-uploaded banner file. Service
+	// merges it as sort_order=0 in the resulting snapshot, demoting any
+	// existing pinned cover to keep the partial-unique index happy.
+	// Not part of the JSON body.
+	PromoteCoverHash string  `json:"-"`
 	IntroEnUS        *string `json:"intro_en_us"`
 	IntroJaJP        *string `json:"intro_ja_jp"`
 	IntroZhCN        *string `json:"intro_zh_cn"`
@@ -129,9 +139,9 @@ type BatchGetGalgameRequest struct {
 //
 // status is included so callers can distinguish published (0) entries from
 // the viewer's own pending/declined (3/4) returned when the request is
-// authenticated. banner_image_hash is included so the caller can resolve
-// the image_service-hosted variant URL — preferred over the legacy Banner
-// string. Both fields work for any caller regardless of viewer.
+// authenticated. effective_banner_hash carries the image_service hash of
+// the pinned cover (sort_order=0), preferred over the legacy Banner URL
+// for thumbnail rendering. Both fields work for any caller regardless of viewer.
 type GalgameBrief struct {
 	ID                 int     `json:"id"`
 	VNDBID             string  `json:"vndb_id"`
@@ -140,13 +150,11 @@ type GalgameBrief struct {
 	NameZhCN           string  `json:"name_zh_cn"`
 	NameZhTW           string  `json:"name_zh_tw"`
 	Banner             string  `json:"banner"`
-	BannerImageHash    *string `json:"banner_image_hash,omitempty"`
 	// EffectiveBannerHash is the image_hash of the pinned cover
 	// (sort_order=0) — the "currently shown" banner. Derived from
 	// galgame_cover during the BatchGet query; nil when the galgame has
-	// no covers yet. During the migration window this falls back to
-	// BannerImageHash for unmigrated rows. Frontends should prefer
-	// this over BannerImageHash going forward.
+	// no covers yet. The legacy banner_image_hash column was retired
+	// by PR5, so this is now the SOLE image-service banner reference.
 	EffectiveBannerHash *string `json:"effective_banner_hash,omitempty"`
 	ContentLimit       string  `json:"content_limit"`
 	Status             int     `json:"status"`

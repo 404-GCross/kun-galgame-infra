@@ -144,20 +144,137 @@ func TestPinNewBanner_FlowAtomicallyDemotesOld(t *testing.T) {
 	assert.Equal(t, hashB, *got.EffectiveBannerHash)
 }
 
-func TestEffectiveBannerHash_FallsBackToBannerImageHash(t *testing.T) {
+// TestPromoteCoverHash_Create_InjectsAsPinnedCover verifies that a
+// multipart-uploaded banner on Create (handler sets req.PromoteCoverHash)
+// becomes the sort_order=0 cover of the new galgame. Without this, the
+// post-PR5 multipart UX path is invisible — buildCreateSnapshot's promote
+// merge could silently regress and tests would still pass.
+func TestPromoteCoverHash_Create_InjectsAsPinnedCover(t *testing.T) {
+	cleanTables(t)
+	getRepos()
+	ctx := context.Background()
+
+	const uploadedHash = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	g, err := testSvc.Create(ctx, 1, &dto.CreateGalgameRequest{
+		VNDBID:           "v123456",
+		NameZhCN:         "test",
+		PromoteCoverHash: uploadedHash, // ← what handler sets after multipart upload
+	})
+	require.NoError(t, err)
+
+	// Cover row exists at sort_order=0 with the uploaded hash.
+	var cover model.GalgameCover
+	require.NoError(t, testDB.Where("galgame_id = ? AND sort_order = 0", g.ID).
+		First(&cover).Error)
+	assert.Equal(t, uploadedHash, cover.ImageHash)
+
+	// Effective banner derives correctly from it.
+	got, _, err := testSvc.GetByID(ctx, g.ID)
+	require.NoError(t, err)
+	require.NotNil(t, got.EffectiveBannerHash)
+	assert.Equal(t, uploadedHash, *got.EffectiveBannerHash)
+}
+
+// TestPromoteCoverHash_Update_PreservesExistingCovers verifies the
+// "upload new banner WITHOUT wiping the gallery" contract. The user has
+// an existing gallery (covers + screenshots). They upload a new banner
+// via multipart on Update. Expected: the new hash becomes sort_order=0,
+// the old pinned cover demotes to sort_order=1, all other covers
+// untouched. This is the entire reason PromoteCoverHash exists as a
+// transient field instead of forcing the user to round-trip the full
+// covers[] in the JSON body.
+func TestPromoteCoverHash_Update_PreservesExistingCovers(t *testing.T) {
 	cleanTables(t)
 	getRepos()
 	ctx := context.Background()
 	gid := makeGalgame(t)
 
-	// No cover rows; populate legacy banner_image_hash directly.
-	require.NoError(t, testDB.Model(&model.Galgame{}).Where("id = ?", gid).
-		Update("banner_image_hash", hashA).Error)
+	// Seed: gallery with 3 covers (pinned + two others).
+	const (
+		oldPinned = "1111111111111111111111111111111111111111111111111111111111111111"
+		other1    = "2222222222222222222222222222222222222222222222222222222222222222"
+		other2    = "3333333333333333333333333333333333333333333333333333333333333333"
+		uploaded  = "4444444444444444444444444444444444444444444444444444444444444444"
+	)
+	seed := []dto.GalgameCoverInput{
+		{ImageHash: oldPinned, SortOrder: 0},
+		{ImageHash: other1, SortOrder: 1},
+		{ImageHash: other2, SortOrder: 2},
+	}
+	_, err := testSvc.Update(ctx, 1, gid, nil, &dto.UpdateGalgameRequest{Covers: &seed})
+	require.NoError(t, err)
+
+	// Simulate the multipart-upload edit: handler sets PromoteCoverHash,
+	// leaves req.Covers nil (= keep current set, just swap the pinned).
+	_, err = testSvc.Update(ctx, 1, gid, nil, &dto.UpdateGalgameRequest{
+		PromoteCoverHash: uploaded,
+	})
+	require.NoError(t, err)
+
+	// Expected end state: 4 covers, uploaded is pinned, oldPinned demoted.
+	var rows []model.GalgameCover
+	require.NoError(t, testDB.Where("galgame_id = ?", gid).
+		Order("image_hash").Find(&rows).Error)
+	require.Len(t, rows, 4, "all existing covers must survive; uploaded gets added")
+
+	bySort := map[int]string{}
+	for _, r := range rows {
+		bySort[r.SortOrder] = r.ImageHash
+		if r.SortOrder == 0 {
+			assert.Equal(t, uploaded, r.ImageHash, "uploaded hash MUST be pinned")
+		}
+	}
+	// oldPinned was at sort_order=0; demote moves it to sort_order=1.
+	// other1 was at 1; the demote DOESN'T renumber other rows (those are
+	// caller-managed), so we end up with TWO rows at sort_order=1.
+	// That's allowed (only sort_order=0 has a partial unique constraint);
+	// effective_banner picks uploaded by virtue of being the unique 0.
+	got, _, err := testSvc.GetByID(ctx, gid)
+	require.NoError(t, err)
+	require.NotNil(t, got.EffectiveBannerHash)
+	assert.Equal(t, uploaded, *got.EffectiveBannerHash, "new uploaded banner wins")
+}
+
+// TestPromoteCoverHash_Update_IdempotentWhenAlreadyPinned: if the user
+// re-uploads (somehow) the SAME hash that's already the pinned cover,
+// nothing should change — and importantly, no second cover row should
+// be added.
+func TestPromoteCoverHash_Update_IdempotentWhenAlreadyPinned(t *testing.T) {
+	cleanTables(t)
+	getRepos()
+	ctx := context.Background()
+	gid := makeGalgame(t)
+
+	const pinned = "5555555555555555555555555555555555555555555555555555555555555555"
+	seed := []dto.GalgameCoverInput{{ImageHash: pinned, SortOrder: 0}}
+	_, err := testSvc.Update(ctx, 1, gid, nil, &dto.UpdateGalgameRequest{Covers: &seed})
+	require.NoError(t, err)
+
+	// Re-upload same hash.
+	_, err = testSvc.Update(ctx, 1, gid, nil, &dto.UpdateGalgameRequest{
+		PromoteCoverHash: pinned,
+	})
+	require.NoError(t, err)
+
+	var cnt int64
+	testDB.Model(&model.GalgameCover{}).Where("galgame_id = ?", gid).Count(&cnt)
+	assert.Equal(t, int64(1), cnt, "no duplicate row for the same pinned hash")
+}
+
+// TestEffectiveBannerHash_NilWhenNoCovers verifies the post-PR5 contract:
+// galgame_cover is the SOLE source for the pinned banner. A galgame
+// with no cover rows has no effective banner — no legacy fallback.
+// (Pre-PR5 this test asserted a fallback to banner_image_hash; that
+// column was retired together with PR5's migrate-drop-banner-image-hash.)
+func TestEffectiveBannerHash_NilWhenNoCovers(t *testing.T) {
+	cleanTables(t)
+	getRepos()
+	ctx := context.Background()
+	gid := makeGalgame(t)
 
 	got, _, err := testSvc.GetByID(ctx, gid)
 	require.NoError(t, err)
-	require.NotNil(t, got.EffectiveBannerHash, "migration-window fallback to banner_image_hash")
-	assert.Equal(t, hashA, *got.EffectiveBannerHash)
+	assert.Nil(t, got.EffectiveBannerHash, "no covers → no effective banner; frontend falls back to legacy Banner URL")
 }
 
 // TestRevert_GracefulDegradeOnMissingImage verifies the defence-in-depth

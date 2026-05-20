@@ -17,11 +17,6 @@ type UpdateEngineRequest struct {
 	Alias       *[]string `json:"alias"`
 }
 
-// RevertEngineRequest represents the body of POST /engine/:id/revert.
-type RevertEngineRequest struct {
-	Revision int `json:"revision" validate:"required,min=1"`
-}
-
 // CreateEngineRequest represents an engine creation request. Lets
 // kungal/moyu users introduce an engine missing from the wiki.
 type CreateEngineRequest struct {

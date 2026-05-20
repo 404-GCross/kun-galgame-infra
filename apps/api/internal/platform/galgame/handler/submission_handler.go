@@ -43,7 +43,8 @@ func (h *SubmissionHandler) Submit(c fiber.Ctx) error {
 		return mapWriteBodyError(c, err)
 	}
 	if bannerHash != "" {
-		req.BannerImageHash = bannerHash
+		// Multipart-uploaded banner becomes the pinned cover (sort_order=0).
+		req.PromoteCoverHash = bannerHash
 	}
 
 	if err := utils.Validate(&req); err != nil {
@@ -100,7 +101,10 @@ func (h *SubmissionHandler) PatchDraft(c fiber.Ctx) error {
 		return mapWriteBodyError(c, err)
 	}
 	if bannerHash != "" {
-		req.BannerImageHash = &bannerHash
+		// Multipart-uploaded banner promotes to pinned cover via the
+		// overlayUpdate path; PatchDraft uses the same overlay as
+		// regular Update so the merge logic is shared.
+		req.PromoteCoverHash = bannerHash
 	}
 
 	g, err := h.submissionSvc.PatchDraft(c.Context(), int(uid), gid, &req)

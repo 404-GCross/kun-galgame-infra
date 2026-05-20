@@ -22,7 +22,9 @@ type SubmitPRRequest struct {
 	NameZhCN         *string              `json:"name_zh_cn"`
 	NameZhTW         *string              `json:"name_zh_tw"`
 	Banner           *string              `json:"banner"`
-	BannerImageHash  *string              `json:"banner_image_hash" validate:"omitempty,len=64"`
+	// PromoteCoverHash — see CreateGalgameRequest.PromoteCoverHash.
+	// PR submit handler sets this from a multipart-uploaded banner file.
+	PromoteCoverHash string               `json:"-"`
 	IntroEnUS        *string              `json:"intro_en_us"`
 	IntroJaJP        *string              `json:"intro_ja_jp"`
 	IntroZhCN        *string              `json:"intro_zh_cn"`
@@ -65,9 +67,6 @@ func (r *SubmitPRRequest) ApplyToSnapshot(base *model.Snapshot) *model.Snapshot 
 	}
 	if r.Banner != nil {
 		s.Banner = *r.Banner
-	}
-	if r.BannerImageHash != nil {
-		s.BannerImageHash = *r.BannerImageHash
 	}
 	if r.IntroEnUS != nil {
 		s.IntroEnUS = *r.IntroEnUS
@@ -126,7 +125,40 @@ func (r *SubmitPRRequest) ApplyToSnapshot(base *model.Snapshot) *model.Snapshot 
 	if r.Screenshots != nil {
 		s.Screenshots = r.Screenshots
 	}
+	// Multipart-uploaded banner from the PR submit handler promotes to
+	// pinned cover (sort_order=0). Inlined so dto stays decoupled from
+	// service helpers; mirrors promoteCoverHashInPlace's contract.
+	if r.PromoteCoverHash != "" {
+		s.Covers = promoteSnapshotCoverHash(s.Covers, r.PromoteCoverHash)
+	}
 	return &s
+}
+
+// promoteSnapshotCoverHash is dto-layer twin of the service's
+// promoteCoverHashInPlace. Kept here so SubmitPRRequest.ApplyToSnapshot
+// (which lives in dto/) doesn't reach into service/. Behaviour is
+// identical: ensure exactly one row has sort_order=0 = hash.
+func promoteSnapshotCoverHash(covers []model.SnapshotCover, hash string) []model.SnapshotCover {
+	if hash == "" {
+		return covers
+	}
+	promoteIdx := -1
+	for i, c := range covers {
+		if c.ImageHash == hash {
+			promoteIdx = i
+			break
+		}
+	}
+	for i := range covers {
+		if covers[i].SortOrder == 0 && (promoteIdx < 0 || i != promoteIdx) {
+			covers[i].SortOrder = 1
+		}
+	}
+	if promoteIdx >= 0 {
+		covers[promoteIdx].SortOrder = 0
+		return covers
+	}
+	return append([]model.SnapshotCover{{ImageHash: hash, SortOrder: 0}}, covers...)
 }
 
 // ListPRRequest represents a PR list query
