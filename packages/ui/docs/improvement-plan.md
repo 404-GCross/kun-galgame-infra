@@ -1965,4 +1965,129 @@ moyu 这次只要 5 个，但 NuxtImg 还有这些常用 prop 未透传，下次
 
 ---
 
+## §18 v0.4.4 / v0.4.5 反思修正 — `runWithContext` 没那么万能，外加"孤儿 store"陷阱（2026-05-21）
+
+moyu 在他们 fork 调试一个"点删除按钮无反应"的 bug 时，发现自己之前为了绕 §14 / §15 那一批 `$nuxt null` 问题、在好几条 click 路径上加的 `nuxtApp.runWithContext(...)` 包装**根本没起作用** —— 真根因是另一个完全独立的"老 store 没迁，promise 永不 resolve"的孤儿 bug。这次复盘让我们也得修正之前在 §14 / §15 给出的工程规则，免得规则被泛化成"任何 await 都包 runWithContext"。
+
+> 本节是**文档修正 + 反思**，不是新代码改动。kun-oauth-admin 本仓没有同款孤儿 store 残留（grep 验证过），但教训对所有 fork 都适用。
+
+### 修正 1 — `runWithContext` 真正必须的两个场景
+
+之前 §14 / §15 末尾给出的"layer util 调 Nuxt composable 必须 `tryUseNuxtApp` 守门"规则**仍然正确**，但常被误读为"凡是 await / 跨 tick 都该 `runWithContext`"。准确的边界是：
+
+```
+✓ 必须用 runWithContext:
+  1. Vue watch / watchEffect 回调内调 Nuxt composable
+     （脱离当前组件 instance 的微任务）
+  2. render(vNode, container) 裸 mount 的 vNode 子树
+     （没有任何 instance binding —— v0.4.4 §15 已修过）
+
+✗ 不需要用 runWithContext:
+  3. @click / @input / @submit 等 Vue 事件处理器
+     （Vue 3 的 withCtx 包装让 getCurrentInstance() 不为 null）
+  4. setup() 同步路径
+  5. onMounted / onUnmounted / 其他生命周期 hook
+     （Vue 在 hook 内已保住 instance）
+  6. 大多数 await kunFetch(...) 之后的代码
+     （Nuxt 3 对常见 await 路径有内部 context patch）
+```
+
+### 修正 2 — `tryUseNuxtApp()` 的查找路径解释为什么 (3-6) 不需要
+
+`tryUseNuxtApp()` 内部查找顺序大致是：
+
+```
+1. nuxtAppCtx.tryUse()                            ← Nuxt 自维护的 AsyncLocalStorage
+2. getCurrentInstance().appContext.app.$nuxt      ← Vue 当前实例的 app context
+```
+
+Vue 3 的事件处理器 / lifecycle hook **执行期都有 `getCurrentInstance()` 不为 null** —— 路径 2 直接命中，根本走不到路径 1 需要 `runWithContext` 强制注入的情况。
+
+### 修正 3 — "孤儿 store"陷阱（新加入排查清单）
+
+下游 app 从老 alert / dialog / message store 迁到 KunUI 的 `useKunAlert` / `useKunMessage` 时，如果**只迁了 UI 组件**（把老的 `<MyAlert>` 删了换 `<KunAlert>`），但**老 store 的 `alert(...)` 方法还在被旧调用点使用**，会触发"孤儿 store"bug：
+
+```ts
+// 老 store（迁移后变孤儿）
+const useOldAlertStore = defineStore('alert', () => {
+  const showAlert = ref(false)   // ← 没人 watch 这个 ref 了
+  const alert = (...) => {
+    showAlert.value = true       // ← 改 ref，但没有组件渲染弹窗
+    return new Promise(...)      // ← 没人调 resolve → 永远 pending
+  }
+  return { alert, /* ... */ }
+})
+
+// 残留调用点（看起来在工作）
+const store = useOldAlertStore()
+const ok = await store.alert(...)   // ← 死锁在这一行
+if (ok) doDelete()                  // ← 永远不到这里
+```
+
+**症状特征**：
+- 点击按钮后**完全静默** —— 没报错、没 network 请求、没 console output
+- 跟 `$nuxt null` 不同，**完全无报错**（promise 死锁不是 error）
+- DevTools Performance 看到点击事件触发但没后续
+
+**修复模板** —— 桥接老 store：
+
+```ts
+const useOldAlertStore = defineStore('alert', () => {
+  // 其他字段保留不动（不破坏依赖它们的其他流程）
+
+  // alert 改成 useKunAlert 的薄包装
+  const alert = (
+    title?: string,
+    message?: string,
+    showCancel?: boolean
+  ): Promise<boolean> =>
+    useKunAlert({
+      title,
+      message,
+      showCancel: showCancel ?? true
+    })
+
+  return { alert, /* ...其他字段... */ }
+})
+```
+
+零修改所有调用点，UI 由 KunAlert 渲染，promise 由 useKunAlertState 正常 resolve。
+
+### 修正后的 $nuxt-null / 按钮静默故障 排查清单
+
+按这个顺序，省时间：
+
+| 步 | 检查 | 命中怎么修 |
+|---|---|---|
+| 1 | 点击**完全静默**？(没报错没请求) | 怀疑**孤儿 store**，grep 老 alert / message store 是否还有人调 |
+| 2 | 报 `$nuxt null` 且**屏幕崩**？ | 怀疑 §15 的 render() 裸 mount 漏 graft appContext |
+| 3 | 报 `$nuxt null` 在 watch / watchEffect 里？ | 用 `nuxtApp.runWithContext(() => …)` 包回调体 |
+| 4 | 报 `$nuxt null` 在 @click handler 里？ | **99% 不需要 runWithContext**，先找别的原因（更可能是 §1 或 §2） |
+
+### KunUI 工程规则更新（v0.4.4 三铁律 → v0.4.5 + 本节后变成五条）
+
+| # | 规则 | 来源 |
+|---|---|---|
+| 1 | layer util 调 Nuxt composable 必须 `tryUseNuxtApp()` 守门 + plain Vue 原语 fallback | §14 |
+| 2 | layer util module-level mutable cache 必须 `import.meta.client ? new Map() : null` | §14 |
+| 3 | 命令式 `render(vnode, container)` 必须 graft `nuxtApp.vueApp._context` | §15 |
+| 4 | Teleport-to-body 的 fixed/absolute 浮层必须用 `z-kun-*` token | §16 |
+| 5 | 下游迁 KunUI 状态 composable（`useKunAlert` 等）时，老 store 接口要**桥接 delegate**而不是删，避免孤儿 hang | §18（本节） |
+
+同时**修正**之前规则 1 / 3 隐含的"runWithContext 是万能护身符"印象 —— 它只在规则 1 / 3 列出的两个场景必须用，撒在 @click handler 上是过度防御（不致命但污染代码）。
+
+### 反思 — 这次"过度防御"被纠错的元教训
+
+moyu 之前一连串撞 $nuxt null 时，我（们）总结的工程规则**没错**，但**容易被泛化滥用**。"任何依赖 Nuxt context 的代码都该用 runWithContext 守门" 听起来合理，实际只在两个特定场景必须，剩下场景撒了：
+
+- ✗ 不会修 bug（路径 2 已经 work，不缺路径 1）
+- ✗ 增加心智负担（每个 await 都问"要不要包"）
+- ✗ 让真正必须用的场景反而**藏在噪声里**
+
+这次 moyu 找到孤儿 store 才意识到：**之前那些 runWithContext 包装其实并没有解决任何 bug，只是恰好与 $nuxt-null 报告同时出现，被我误归因**。这是个经典的"相关 ≠ 因果"工程教训：观察到"加了 X 之后 bug A 消失了"不代表 X 修了 A，可能只是 A 本来就和 X 无关、由别的修复（v0.4.4 真根因 useKunMessage appContext graft）解决了。
+
+下次给规则归因前，**严格分离"哪些 commit 改了哪些行为"**，不要把一连串改动打包归因到某个最显眼的那一条。
+
+---
+
 *文档维护：每次完成批次后更新对应章节的 checkbox。新增组件评审进 §2 表 + §3 新章节。*

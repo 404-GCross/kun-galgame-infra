@@ -1156,3 +1156,178 @@ moyu 这次最值得学的不是技术修复，是**调试方法**：
 把假设当作待验证的命题而不是事实，是 senior 调试的核心姿态。
 
 **风险等级**：极低 —— Image.vue 加可选 prop，nuxt.config 加 provider 注册。无 API 破坏。建议作为独立 PR 合并。
+
+---
+
+## 17. 迁移陷阱 —— 孤儿 store + `runWithContext` 过度防御（2026-05-21）
+
+不是组件改动，是给下游写迁移 / 调试时的两条**必读警告**。moyu 这次踩坑后总结的，避免其他 fork 重蹈。
+
+### 陷阱 1 🔴 —— 老 alert store 改用 KunUI 后变孤儿，按钮"无任何反应"
+
+**症状**：把"删除"、"举报"这类需要确认的按钮点下去，**屏幕零反应**、控制台无报错、network 无请求。
+
+**根因**：下游 app 原本有自己的 alert store，比如：
+
+```ts
+// apps/web/app/store/temp/components/message.ts  ← moyu 旧实现
+export const useComponentMessageStore = defineStore('message', () => {
+  const showAlert = ref(false)
+  const alertTitle = ref('')
+  const alertMessage = ref('')
+  // ... 一堆 ref
+
+  const alert = (title?: string, message?: string, showCancel?: boolean) => {
+    showAlert.value = true
+    alertTitle.value = title ?? ''
+    // ... 等用户点确认 / 取消，返回 Promise<boolean>
+  }
+  return { showAlert, alert, /* ... */ }
+})
+```
+
+老实现里有个 `<OldAlertComponent>` 监听这些 ref 渲染弹窗 + 处理点击 + resolve promise。
+
+**迁到 KunUI 时**，开发者通常这样做：
+
+1. 把 `<OldAlertComponent>` 删了，换成 `<KunAlert>`（KunUI layer 全局挂载）
+2. 改了 ~50% 调用点用 `useKunAlert(...)`
+3. 剩下 ~50% 调用点仍然写 `const message = useComponentMessageStore(); await message.alert(...)`
+
+**结果**：第 3 类调用点变孤儿 —— `showAlert.value = true` 改了 ref，但**没人监听这个 ref**（老组件被删了），promise 永不 resolve，`await` 卡死。代码看起来在跑，UI 完全静默。比报错更难调试。
+
+### 修复 — 桥接而不是"全部 sed"
+
+最稳的修法是**让老 store 的 `alert` 内部 delegate 给 `useKunAlert`**，所有调用点零修改：
+
+```ts
+// apps/web/app/store/temp/components/message.ts
+import { useKunAlert } from '#imports'
+
+export const useComponentMessageStore = defineStore('message', () => {
+  // ... 其他保留字段（isShowCapture / codeSalt 等保留不动，
+  // 避免破坏 capture 等其他流程）
+
+  // alert 改成 useKunAlert 的薄包装，签名照旧
+  const alert = (
+    title?: string,
+    message?: string,
+    showCancel?: boolean
+  ): Promise<boolean> =>
+    useKunAlert({
+      title,
+      message,
+      showCancel: showCancel ?? true
+    })
+
+  return { /* ...其他字段..., alert */ }
+})
+```
+
+收益：
+- 10+ 文件的调用点 `await message.alert(...)` **零修改**
+- UI 由 layer 的 `<KunAlert>` 渲染（全局挂载，肯定可见）
+- promise 由 `useKunAlertState().handleConfirm/handleCancel` 正常 resolve
+- 老 store 的其他字段（如 capture / salt）保留不动，不破坏其他流程
+
+**反例（不推荐）**：开 sed 把所有 `useComponentMessageStore().alert(...)` 全部改成 `useKunAlert(...)`。这样会：
+- 改动面广，回归风险大
+- 容易漏改（动态调用、间接引用）
+- 漏一处就静默 hang，比批量改组件 import 难发现
+
+### 排查清单 — 怀疑撞上"孤儿 store"时怎么验证
+
+```bash
+# 1. 找你们仓里所有自定义 alert 系统
+grep -rn 'defineStore.*alert\|defineStore.*message' apps --include='*.ts'
+
+# 2. 看 alert 函数的实现 —— 是否还在用 ref + watch UI 组件？
+#    那个 UI 组件还存在吗？
+
+# 3. 老 store 的 alert 调用点（迁完后应该 0 或全部是桥接）
+grep -rn 'message\.alert\|.alert(' apps --include='*.vue' | grep -v 'console.alert\|window.alert'
+```
+
+如果第 3 步还有命中，又确认那个 store 的 alert 已经没人监听 → 你正在踩这个坑。
+
+### 陷阱 2 ⚠️ —— `runWithContext` 不是万能药，过度包装是反模式
+
+之前在 v0.4.4 §15（improvement-plan）里我隐含说过"layer util 调 Nuxt composable 必须 `tryUseNuxtApp` 守门 + 准备 fallback"。这条**仍然对**，但很多人由此推论"凡是涉及 await / async / 跨 tick 都应该 `nuxtApp.runWithContext(...)` 包一下" —— **这是过度防御**。
+
+moyu 复盘他们之前的修法：
+
+> 之前我对 click 路径包 `runWithContext` 是过度防御。**可以保留**（几个闭包成本几乎为零），**也可以删**，行为一致。
+
+#### `runWithContext` 真正必须的两个场景
+
+```
+✓ 必须：1. Vue 的 watch / watchEffect 回调里
+              （脱离当前组件 instance 的微任务）
+✓ 必须：2. render(vNode, container) 裸 mount 的 vNode 子树
+              （没有任何 instance binding，例如 useKunMessage 里
+               mount MessageContainer —— 该问题已在 v0.4.4 修过）
+
+✗ 不必要：3. @click / @input 等 Vue 事件处理器
+              （Vue 3 的 withCtx 包装，执行期 getCurrentInstance() 不为 null）
+✗ 不必要：4. setup() 顶层（同步路径）
+✗ 不必要：5. onMounted / onUnmounted 等生命周期 hook（Vue 已经在 hook 里
+              保住 instance）
+✗ 大多不必要：6. await kunFetch(...) 之后继续访问 Nuxt composable
+              （Nuxt 3 对常见 await 路径——await Promise + Vue 调度——
+              有内部 patch 保 context；codebase 里大量 await kunFetch 没包
+              runWithContext 也工作）
+```
+
+#### 为什么 `@click` 不需要 `runWithContext`
+
+`tryUseNuxtApp()` 的查找顺序大致是：
+
+```
+1. nuxtAppCtx.tryUse()      ← Nuxt 自己维护的 AsyncLocalStorage
+2. getCurrentInstance()
+     .appContext.app.$nuxt  ← Vue 当前实例的 app context
+```
+
+Vue 3 的 `@click` 处理器有 `withCtx` 包装，**执行期 `getCurrentInstance()` 不为 null**，所以路径 2 永远命中。`runWithContext` 是为了路径 1 失败时也能强制注入 —— **路径 2 已经够用的话就不需要 1**。
+
+#### 当 `$nuxt null` 仍然发生时怎么诊断（升级版）
+
+之前 §13 / §14 的规则"按时间排序找最早失败" + 这次 moyu 的补充：
+
+1. **先排除"孤儿 store"**：UI 完全静默、按钮无反应 → 不是 Nuxt context 问题，是 promise 永不 resolve；grep 看是否有老 alert / dialog store 没桥接
+2. **再排除"render() 漏 graft appContext"**：见 v0.4.4 §15 / §13 修法
+3. **再排除"watch / watchEffect 微任务里调 Nuxt composable"**：用 `nuxtApp.runWithContext` 包
+4. **最后才考虑 `@click` 路径的 context 注入**：99% 的时候不需要管，Vue 已经处理
+
+按这个顺序排查能省去很多绕弯路 —— 不要一上来就在所有 await 点撒 `runWithContext`，是徒劳且让代码变脏。
+
+### 这次修正的 KunUI 三铁律
+
+§13 / §14 末尾给过 KunUI 三铁律 + §15 加了第四条。结合这次反思，规则 1 的措辞要更准：
+
+| # | 旧措辞 | 修正后 |
+|---|---|---|
+| 1 | "layer util 调 Nuxt composable 必须 `tryUseNuxtApp` 守门 + plain Vue 原语 fallback" | 同左，**适用范围仅限**：watch/watchEffect 微任务、render() 裸 mount。普通 setup / 事件处理 / 生命周期 hook **不需要** |
+
+加上 moyu 这次补的两条：
+
+| # | 规则 |
+|---|---|
+| 5 | 下游迁移 KunUI 状态类 composable（useKunAlert / useKunMessage / useKunDisclosure 等）时，**保留老 store 的接口、内部 delegate**，避免孤儿 store 静默 hang |
+| 6 | `runWithContext` 不是"撒着用更安全"的护身符，只在 watch / 裸 render() 这两个**真有 instance 漂移**的场景用 |
+
+### 验证 — 给 moyu 自己 fork 的 checklist（你已经做过，对其他 fork 也适用）
+
+```bash
+# 1. 老 alert / message / dialog store 都迁了桥接
+grep -rn 'defineStore.*alert\|defineStore.*dialog' apps --include='*.ts'
+
+# 2. 没有遗留的 await yourStore.alert(...) 调用直接拿不到 promise resolution
+grep -rn 'await.*\.alert(\|await.*\.dialog(' apps --include='*.vue' --include='*.ts'
+
+# 3. 没有过度防御的 runWithContext 在 click handler 上
+grep -rn 'nuxtApp\.runWithContext' apps --include='*.vue' | wc -l
+# 不需要为 0 但如果几十个就说明过度撒了，可以走查一遍删 click 路径上的
+```
+
+**风险等级**：本节是**文档警告**，不引入代码改动。其他下游迁移时请把 §17 这一节当 checklist 跑一遍。
