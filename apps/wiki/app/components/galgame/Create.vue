@@ -23,24 +23,16 @@ const form = ref({
 })
 
 // 待上传的 banner 文件（与 EditModal 一致：浏览器内存暂存，跟着 multipart 一起提交）
+// KunFileInput 通过 v-model 直接绑定 File | null，无需手写 useFilePicker + watch。
 const bannerFile = ref<File | null>(null)
 const bannerObjectUrl = ref('')
 
-const { pickFiles: pickBanner, files: pickedBannerFiles } = useFilePicker({
-  accept: 'image/jpeg,image/png,image/webp',
-  maxSize: 10 * 1024 * 1024,
-  onError: (msg) => useKunMessage(msg, 'warn')
-})
-
-watch(pickedBannerFiles, ([f]) => {
-  if (!f) return
-  bannerFile.value = f
-  bannerObjectUrl.value = URL.createObjectURL(f)
+watch(bannerFile, (f) => {
+  bannerObjectUrl.value = f ? URL.createObjectURL(f) : ''
 })
 
 const clearPickedBanner = () => {
   bannerFile.value = null
-  bannerObjectUrl.value = ''
 }
 
 const vndbCheck = ref<{
@@ -236,16 +228,16 @@ const submit = async () => {
             <Icon v-else name="lucide:image" class="text-default-300 size-6" />
           </div>
           <div class="flex flex-1 flex-col gap-2">
-            <KunButton
-              size="sm"
-              variant="flat"
-              color="primary"
-              type="button"
-              @click="pickBanner"
-            >
-              <Icon name="lucide:image-up" class="mr-1 size-4" />
-              {{ bannerFile ? '重新选择 banner' : '选择 banner 图片' }}
-            </KunButton>
+            <KunFileInput
+              v-model="bannerFile"
+              accept="image/jpeg,image/png,image/webp"
+              :max-size="10 * 1024 * 1024"
+              :trigger-text="bannerFile ? '重新选择 banner' : '选择 banner 图片'"
+              trigger-icon="lucide:image-up"
+              trigger-size="sm"
+              :show-file-name="false"
+              @error-pick="(msg) => useKunMessage(msg, 'warn')"
+            />
             <KunButton
               v-if="bannerFile"
               size="sm"
