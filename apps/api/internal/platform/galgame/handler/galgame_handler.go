@@ -59,7 +59,7 @@ func (h *GalgameHandler) Get(c fiber.Ctx) error {
 		return response.BadRequest(c, errors.ErrInvalidID)
 	}
 
-	// Viewer-aware: optionalJWT populates user_uid when a valid Bearer is
+	// Viewer-aware: optionalJWT populates user_id when a valid Bearer is
 	// present. Lets a submitter open their own pending/declined draft
 	// (kungal/moyu /edit/.../draft/<gid>); anonymous sees status=0 only.
 	viewerUserID, _ := c.Locals("user_id").(uint)
@@ -172,7 +172,7 @@ func (h *GalgameHandler) Update(c fiber.Ctx) error {
 // BatchGet returns lightweight galgame info for a list of IDs.
 //
 // Public by default (status=0 only). When an OptionalJWT middleware has
-// populated user_uid in Locals, the response also includes the caller's
+// populated user_id in Locals, the response also includes the caller's
 // own status=3/4 entries — matching the visibility rules in
 // docs/galgame_wiki/06-submission-and-review-design.md §6.
 func (h *GalgameHandler) BatchGet(c fiber.Ctx) error {

@@ -77,13 +77,13 @@
 - [x] OAuth 登录回调 (PKCE)
 - [x] 登出 (Redis + OAuth revoke)
 - [x] GET /api/auth/me
-- [x] GET /api/user/:uid (公开资料)
+- [x] GET /api/user/:id (公开资料)
 - [x] POST /api/user/check-in (每日签到)
 - [x] PUT /api/user/bio, username, email
 - [x] GET /api/user/email, status
 - [x] POST /api/user/avatar (S3 上传骨架, TODO: sharp resize)
-- [x] GET /api/user/:uid/galgames, topics
-- [x] PUT /api/user/:uid/ban, DELETE /api/user/:uid (管理员)
+- [x] GET /api/user/:id/galgames, topics
+- [x] PUT /api/user/:id/ban, DELETE /api/user/:id (管理员)
 
 ### 首页
 - [x] GET /api/home (12 galgames + 10 topics 聚合)

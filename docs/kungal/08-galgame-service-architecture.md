@@ -196,7 +196,7 @@ GET    /api/galgame/:gid/history
 # ── 贡献者 ──
 GET    /api/galgame/:gid/contributor
 POST   /api/galgame/:gid/contributor    # [需认证]
-DELETE /api/galgame/:gid/contributor/:uid # [需认证]
+DELETE /api/galgame/:gid/contributor/:id # [需认证]
 
 # ── 元数据 CRUD ──
 GET/POST/PUT/DELETE  /api/tag

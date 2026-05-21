@@ -165,7 +165,7 @@ func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB, se
 
 	// JWT auth middleware
 	jwtAuth := middleware.JWTAuth(cfg.JWT.Secret)
-	// OptionalJWT — populates user_uid when a valid Bearer token is present,
+	// OptionalJWT — populates user_id when a valid Bearer token is present,
 	// but never blocks the request. Used on /galgame/batch and /galgame/search
 	// so anonymous callers still get status=0-only results while authenticated
 	// ones additionally see their own pending/declined drafts.

@@ -28,15 +28,15 @@ user/password.put.ts               → 修改密码 (已被 OAuth 替代)
 user/bio.put.ts                    → 更新签名
 user/avatar.post.ts                → 上传头像
 user/check-in.post.ts              → 每日签到
-user/[uid]/index.get.ts            → 用户资料
-user/[uid]/topics.get.ts           → 用户话题列表
-user/[uid]/replies.get.ts          → 用户回复列表
-user/[uid]/comments.get.ts         → 用户评论列表
-user/[uid]/galgames.get.ts         → 用户 galgame 列表
-user/[uid]/resources.get.ts        → 用户资源贡献
-user/[uid]/ratings.get.ts          → 用户评分列表
-user/[uid]/ban.put.ts              → 封禁用户
-user/[uid]/permanent.delete.ts     → 删除用户
+user/[id]/index.get.ts            → 用户资料
+user/[id]/topics.get.ts           → 用户话题列表
+user/[id]/replies.get.ts          → 用户回复列表
+user/[id]/comments.get.ts         → 用户评论列表
+user/[id]/galgames.get.ts         → 用户 galgame 列表
+user/[id]/resources.get.ts        → 用户资源贡献
+user/[id]/ratings.get.ts          → 用户评分列表
+user/[id]/ban.put.ts              → 封禁用户
+user/[id]/permanent.delete.ts     → 删除用户
 ```
 
 ### galgame (20 文件)

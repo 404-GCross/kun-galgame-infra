@@ -185,7 +185,7 @@ grep -rn '<KunLink.*tag=' apps --include='*.vue'
 - 上游链：DB `id` → Go DTO `json:"id"`（apps/api/.../oauth_dto.go 注释明确把它列为 FK 不变量）→ nitro response 类型 `id` → KunUser `id`
 - 你看到的 `uid` 出现在：
   - JWT claim 名字（OAuth 内部）
-  - URL 路由参数 `[uid]`（routing 层 label）
+  - URL 路由参数 `[id]`（routing 层 label，v0.3.0 之前曾用 `[uid]`）
   - 这两处是 **auth/transport 层的本地标签**，跟传到数据层的字段名不该耦合
 
 **moyu/kungal 这边怎么改**：

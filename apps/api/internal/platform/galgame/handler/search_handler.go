@@ -27,7 +27,7 @@ func NewSearchHandler(svc *search.Service) *SearchHandler {
 // See docs/galgame_wiki/05-search-design.md for the full query-param spec.
 //
 // include_pending=true: when paired with a valid Bearer JWT (OptionalJWT
-// middleware populates user_uid in Locals), runs a second search for the
+// middleware populates user_id in Locals), runs a second search for the
 // caller's own status=3/4 entries and returns them in resp.Pending.
 func (h *SearchHandler) Galgame(c fiber.Ctx) error {
 	q := c.Queries()

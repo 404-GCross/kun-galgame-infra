@@ -49,7 +49,7 @@ func JWTAuth(jwtSecret string) fiber.Handler {
 
 // OptionalJWT is like JWTAuth but never blocks the request: when the
 // Authorization header is missing or invalid, the request proceeds with
-// no user_uid in Locals. When valid, it populates the same locals as JWTAuth.
+// no user_id in Locals. When valid, it populates the same locals as JWTAuth.
 //
 // Useful for endpoints whose response shape changes for authenticated
 // callers (e.g. /galgame/search ?include_pending=true,
