@@ -126,12 +126,12 @@ const selectOption = (value: T, index: number) => {
       @click="toggle"
       :disabled="disabled"
     >
-      <span class="block truncate">
+      <span class="block min-w-0 flex-1 truncate">
         {{ selectedLabel || placeholder }}
       </span>
       <KunIcon
         name="lucide:chevron-down"
-        class="pointer-events-none"
+        class="pointer-events-none shrink-0"
         :class="
           cn('text-inherit transition-transform', isOpen ? 'rotate-180' : '')
         "
@@ -154,7 +154,7 @@ const selectOption = (value: T, index: number) => {
           :class="cn('bg-content1 border-default-200 z-kun-popover border p-1 shadow-lg', roundedClass)"
         >
           <ul
-            class="scrollbar-hide overflow-auto rounded-md text-sm focus:outline-none"
+            class="scrollbar-hide overflow-x-hidden overflow-y-auto rounded-md text-sm focus:outline-none"
             tabindex="-1"
             role="listbox"
           >
@@ -166,7 +166,13 @@ const selectOption = (value: T, index: number) => {
               role="option"
               :aria-selected="modelValue === option.value"
             >
-              <span class="block truncate">{{ option.label }}</span>
+              <!-- min-w-0 + flex-1 is the canonical fix for "truncate
+                   inside flex doesn't work": in a flex container, items
+                   default to min-width: auto (== min-content), so long
+                   labels refuse to shrink and overflow horizontally
+                   regardless of `truncate`. min-w-0 unsticks that
+                   floor so text-overflow:ellipsis actually kicks in. -->
+              <span class="block min-w-0 flex-1 truncate">{{ option.label }}</span>
               <KunIcon
                 v-if="modelValue === option.value"
                 name="lucide:check"

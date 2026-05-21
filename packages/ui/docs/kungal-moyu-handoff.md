@@ -1331,3 +1331,181 @@ grep -rn 'nuxtApp\.runWithContext' apps --include='*.vue' | wc -l
 ```
 
 **风险等级**：本节是**文档警告**，不引入代码改动。其他下游迁移时请把 §17 这一节当 checklist 跑一遍。
+
+---
+
+## 18. v0.4.7 — z-token 升档 + Select 选项溢出（2026-05-21）
+
+moyu 又报了两个 UI bug，本节修。详细背景见 `improvement-plan.md` §19。
+
+### bug 1 — tooltip/popover 还是被 topbar 盖住
+
+v0.4.5 的 z-kun-popover = 1500 没考虑 legacy app 的 sticky header 用 z-9999 这种 nuclear z-index。**整体升档到 9000-9999 区间**：
+
+```diff
+- --z-kun-modal: 1000;     --z-kun-popover: 1500;
+- --z-kun-alert: 2000;     --z-kun-message: 9000;
++ --z-kun-modal: 9000;     --z-kun-popover: 9300;
++ --z-kun-alert: 9700;     --z-kun-message: 9999;
+```
+
+相对层级不变。只升档不重构。
+
+### bug 2 — Select dropdown 长 label 溢出
+
+`<KunSelect>` 选项 label 超过 trigger 宽度时**横向溢出 dropdown**。根因是 flex + truncate 经典坑：flex item 默认 `min-width: auto` = `min-content`，truncate 不生效。修法是给文本 span 加 `min-w-0`。
+
+### 同步 — 2 个文件
+
+```bash
+KUN_OAUTH=/path/to/kun-oauth-admin
+cp $KUN_OAUTH/packages/ui/app/styles/tailwindcss.css            ./styles/tailwindcss.css
+cp $KUN_OAUTH/packages/ui/app/components/kun/select/Select.vue  ./components/kun/select/Select.vue
+```
+
+或者只改 token（如果你 fork 改过 tailwindcss.css）：把 `--z-kun-*` 五个 token 的值升档即可。
+
+### 消费侧
+
+**零修改**。所有 `<KunSelect>` / `<KunPopover>` / `<KunTooltip>` 调用点无需改动。
+
+### 如果你 app 侧 topbar 还是盖住浮层
+
+罕见情况下 app 侧用了 z-99999 / z-2147483647 之类极端值（来自某些 vendor template）。这时有两种解决：
+
+**A. 推荐 — 把 app 侧 z-index 降下来**
+
+KunUI 升档到 9999 已经是合理上限。app 侧 navbar 不该比浮层更高。grep 找出违例：
+
+```bash
+grep -rn 'z-\[1[0-9]\{4,\}\]\|z-index:[0-9]\{5,\}' apps --include='*.vue' --include='*.css'
+```
+
+把命中的值降到 z-50 / z-100 量级。
+
+**B. 凑合 — 把 KunUI token 推到更高**
+
+如果不想动 app 侧（暂时遗留代码），在你 app 的 css 里覆盖 KunUI token：
+
+```css
+:root {
+  --z-kun-modal: 999000;
+  --z-kun-popover: 999300;
+  --z-kun-alert: 999700;
+  --z-kun-message: 999999;
+}
+```
+
+但这是俗气补丁，建议作为临时方案。
+
+### "flex + truncate 不生效" —— 你 app 业务代码也建议自查一遍
+
+这次发现的修法是 KunSelect 内部的，但同款坑可能藏在你们 app 的业务代码里。grep 自查：
+
+```bash
+grep -rn "flex.*truncate\|truncate.*flex" apps --include='*.vue'
+```
+
+每一处命中都检查：truncate 的 span / div 是不是 flex item？是的话有没有 `min-w-0`？没有的话长内容会撑爆容器。
+
+最佳实践：**任何 flex 里的 truncate span 默认加 `min-w-0 flex-1`**。
+
+### 验证
+
+```bash
+pnpm -F your-app exec nuxt build
+```
+
+视觉手测：
+- 主页 hover topbar 元素 → tooltip / popover **盖住所有页面其他元素**
+- 给 KunSelect 喂一组超长 label 的 options → 选项 **被 ellipsis 截断**，dropdown 宽度等于 trigger
+- 不论在 KunModal 内还是页面 root，KunSelect / KunPopover / KunDatePicker / KunTooltip 都在最上层
+
+**风险等级**：低 —— token 数值升档不改相对层级，Select 选项溢出修复零 API 变化。建议作为独立 PR 合并。
+
+---
+
+## 19. v0.4.8 hotfix 🔴🔴 — z-index utility 真的生效（之前三轮没生效）
+
+**重要**：v0.4.5 / v0.4.6 / v0.4.7 三轮的 z-index "修复"**实际上从未生效**。我把 `--z-kun-*` token 加到 `@theme`，假设 Tailwind v4 会像 `--radius-kun-*` 那样自动生成 utility —— **错了**。Tailwind v4 只对特定命名空间（`--color` / `--radius` / `--spacing` / `--font` 等）自动生成 utility，`--z-*` 不在白名单。所以组件里写的 `class="z-kun-popover"` 是空 class，元素拿默认 `z-auto`。
+
+之前看着"popover 在上方了" 完全是 DOM order 偶然，不是 z-index 生效。
+
+详细诊断 + 真修复见 `improvement-plan.md` §20。
+
+### 同步 — 1 个文件
+
+```bash
+KUN_OAUTH=/path/to/kun-oauth-admin
+cp $KUN_OAUTH/packages/ui/app/styles/tailwindcss.css ./styles/tailwindcss.css
+```
+
+或者只加我新增的 5 个 `@utility` 块（放在 `@theme` 关闭花括号外、`@layer base` 之前）：
+
+```css
+@utility z-kun-sticky {
+  z-index: var(--z-kun-sticky);
+}
+@utility z-kun-modal {
+  z-index: var(--z-kun-modal);
+}
+@utility z-kun-popover {
+  z-index: var(--z-kun-popover);
+}
+@utility z-kun-alert {
+  z-index: var(--z-kun-alert);
+}
+@utility z-kun-message {
+  z-index: var(--z-kun-message);
+}
+```
+
+### 同步后必须 rebuild + grep 验证
+
+```bash
+# 重新 build
+pnpm -F your-app exec nuxt build
+
+# 必须验证 utility 真的进了输出 CSS
+grep -ho '\.z-kun-[a-z]*\s*{[^}]*}' .output/public/_nuxt/*.css | sort -u
+
+# 期望看到 4 个（z-kun-sticky 没用到的话不出现是预期）：
+# .z-kun-alert{z-index:var(--z-kun-alert)}
+# .z-kun-message{z-index:var(--z-kun-message)}
+# .z-kun-modal{z-index:var(--z-kun-modal)}
+# .z-kun-popover{z-index:var(--z-kun-popover)}
+
+# 如果输出空 → @utility 块没写对，再核查
+```
+
+### 视觉手测（同步 + rebuild 后）
+
+| 场景 | 期望 |
+|---|---|
+| Hover topbar 元素 → tooltip 出现 | tooltip **在所有页面元素之上**，包括 sticky topbar 自己 |
+| 点击触发 popover | popover 同上 |
+| Modal 内打开 Select / DatePicker | 浮层在 Modal **之上**（不被 Modal 内容盖住） |
+| useKunMessage 触发 toast | toast 在最高层，永远可见 |
+| 长 label 的 Select option | label 被 ellipsis 截断（v0.4.7 已修，本次会一并奏效） |
+
+### 关于 moyu 报的"Select 还溢出"
+
+很可能是同一个 z-index bug 的视觉副作用：dropdown 没拿到正确 z-index 时，被某个 z-index 更高的元素切掉一部分，看起来像选项"溢出"到了别的地方。**z-index 修好后这个症状大概率自动消失**。如果同步 v0.4.8 + rebuild 后 Select 仍有视觉异常，请截图或具体描述（哪个 Select、什么 viewport 宽度、option 内容），我再深挖。
+
+### 反思 — 给所有下游的诚实警告
+
+我之前三轮 handoff（§15 / §16 / §18）都说"z-index 升档了，浮层会在上面"。**实际效果是 0**。这不是把数值改大没改大的事 —— 是整套 utility 根本没生成。
+
+这个错误暴露了一个我（和 KunUI maintain）必须强化的流程：
+
+> **修改 Tailwind theme / utility / 任何系统级 CSS 之后，必须 grep 编译产物确认 utility 真的生成了。不要止于"源码里写得对"或者"build 通过"。**
+
+具体 grep 命令：
+
+```bash
+grep -ho '\.YOUR-PREFIX-[a-z]*\s*{[^}]*}' .output/public/_nuxt/*.css | sort -u
+```
+
+如果空 → 你的 utility 没被 Tailwind 生成 → 视觉上什么都没发生。这条流程规则比任何具体 bug 修复都更基础，**KunUI 工程规则 §20 把它立成了铁律**。
+
+**风险等级**：低 —— 加 5 个 `@utility` 块，无破坏。**但优先级最高**：不同步这次，前面三轮所有 z-index "fix" 都是空头支票。建议立即合并。

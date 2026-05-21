@@ -2090,4 +2090,291 @@ moyu 之前一连串撞 $nuxt null 时，我（们）总结的工程规则**没�
 
 ---
 
+## §19 v0.4.7 — z-index 升档 + Select dropdown 选项溢出修复（2026-05-21）
+
+moyu 又报了两个 UI bug：
+
+1. **主页 hover topbar 元素 → tooltip / popover 出现在其他元素下方**
+2. **KunSelect 弹出的选项溢出容器**
+
+第 1 个是上一轮 v0.4.5 没考虑到 legacy app 的 sticky header 用 `z-9999` 这种 nuclear z-index，1500 还是不够竞争。第 2 个是 flex + truncate 一个经典坑，CSS 老问题但容易漏。
+
+### 问题 1 — z-token 升档
+
+#### 复盘 v0.4.5 的判断失误
+
+v0.4.5 §16 把 popover token 设成 1500，假设是"app 侧 sticky header 顶多用 z-50 / z-100"。实际产线中：
+
+- 老项目里的 navbar / topbar 不少用 `z-9999` 或 `z-[9999]`（来自不知道哪个旧 boilerplate）
+- 第三方组件库（部分 admin template）默认 header 用 `z-1000` 或更高
+- 我们 v0.4.5 的 popover @ 1500 在这些场景**仍然被压**
+
+#### 修复 —— 整体抬到 9000-9999 区间
+
+`packages/ui/app/styles/tailwindcss.css` 的 token 值升档：
+
+```diff
+- --z-kun-sticky: 30;
+- --z-kun-modal: 1000;
+- --z-kun-popover: 1500;
+- --z-kun-alert: 2000;
+- --z-kun-message: 9000;
+
++ --z-kun-sticky: 30;
++ --z-kun-modal: 9000;     /* was 1000 */
++ --z-kun-popover: 9300;   /* was 1500 */
++ --z-kun-alert: 9700;     /* was 2000 */
++ --z-kun-message: 9999;   /* was 9000 */
+```
+
+相对层级**保持不变**（modal < popover < alert < message），整体抬到 9000+ 区间，确保 KunUI 浮层在 99% 实际场景下能赢过 app 侧的 sticky / fixed 容器。
+
+#### 为什么不直接所有都 z-99999
+
+更高的值看着安全，但有真实成本：
+
+- 跟 vendor 库的 toast / modal 协作变难（很多 vendor 写死 z-9999，你 z-99999 会盖住他们的）
+- 调试时数值太大不直观
+- 浏览器对 z-index 整数大小没有上限，但视觉上"9999 与 99999"用户无法区分
+
+9000-9999 是"足够大到赢过 99% legacy 代码，但不至于把 vendor 库也碾过去"的平衡点。
+
+#### 这个改动的语义边界
+
+> **本节抬升 z-index 不是"用魔法数字硬刚"，是承认 KunUI 浮层在视觉栈中天然属于"最高优先级 UI"。**
+
+弹出层之所以叫弹出层，就是因为**用户主动触发**它们时，期望它们盖住一切。这种语义在 v0.4.5 我用 1000-2000 区间表达得不够强，本轮纠正。
+
+### 问题 2 — Select dropdown 选项溢出
+
+#### 症状
+
+`<KunSelect>` 的选项里如果有比 trigger button 宽的 label（典型的：长 URL / 长中文标题 / 长 SHA hash），下拉里这些 label **横向溢出 dropdown 边界**，可能盖住相邻 UI，也可能产生横向滚动条。
+
+#### 根因 — flex + truncate 的经典坑
+
+Select.vue 的 option `<li>`：
+
+```vue
+<!-- 之前（溢出） -->
+<li class="... flex items-center justify-between ...">
+  <span class="block truncate">{{ option.label }}</span>
+  <KunIcon ... class="ml-2 shrink-0" />
+</li>
+```
+
+`<span>` 是 `<li>` 的 flex item。**CSS 规定 flex item 的 `min-width` 默认为 `auto`，等价于 `min-content`**。对一段不可断行的长文本（特别是 CJK 之外的长 URL / hash），min-content 就是整段文本宽度 —— 等于 span 不会缩。
+
+`truncate` shorthand 包含 `overflow:hidden; text-overflow:ellipsis; white-space:nowrap`。但 truncate 的前提是**容器宽度小于内容宽度时才裁切**。如果容器（span）自身因为 `min-width: auto` 被撑到内容宽度，**truncate 永远不触发**，文本完整渲染并撑爆父级。
+
+#### 修复 — `min-w-0 flex-1` 标准修法
+
+```vue
+<!-- 之后 -->
+<li class="... flex items-center justify-between ...">
+  <span class="block min-w-0 flex-1 truncate">{{ option.label }}</span>
+  <KunIcon ... class="ml-2 shrink-0" />
+</li>
+```
+
+- `min-w-0`：把 span 的 min-width 从 `min-content` 改成 0，**允许 flex 真的把它压缩到任意小**
+- `flex-1`：告诉 flex 布局 span 占用所有剩余空间（基础 width:0, grow:1, shrink:1）
+- `truncate`：此时容器宽度可能小于内容宽度，**ellipsis 真正生效**
+
+trigger button 的 selected label 也有同款问题（长 selectedLabel 会撑爆 button 自身），一并修了。
+
+#### 同时收紧 `<ul>` overflow
+
+```diff
+- class="scrollbar-hide overflow-auto rounded-md text-sm focus:outline-none"
++ class="scrollbar-hide overflow-x-hidden overflow-y-auto rounded-md text-sm focus:outline-none"
+```
+
+`overflow-auto` 是双轴 = 横向也可以滚动 = 如果有什么东西 truncate 没拦住，会出现横向滚动条。改成 `overflow-y-auto overflow-x-hidden` 保证**纵向可滚（多选项时）、横向永远裁切**。这是浮层下拉的标准 hardening。
+
+### 这次"flex + truncate 不生效"的元教训
+
+`truncate` 在非 flex 上下文（普通 block）工作得很自然，导致大家形成"truncate 是一个原子级 utility，写了就能用"的错觉。但 **flex 上下文里 `min-width: auto` 默认值是 flex item 的隐藏地雷**：
+
+- truncate 不生效
+- `width: X` 在 flex item 上也不生效（被 min-content 顶起来）
+- `flex-shrink: 1` 写了也不收缩
+- 直到加 `min-w-0` 才解锁
+
+这是 CSS 历史上一个有争议的默认（CSS WG 在 2017 年讨论过改默认但因为兼容性放弃）。**对所有"在 flex 容器里要做 truncate / 自适应宽度"的 span / div**，先加 `min-w-0` 是安全网。
+
+### 全仓审计 —— 还有哪里可能踩同款坑
+
+```bash
+# 这种组合是潜在 bug 点
+grep -rn "flex.*truncate\|truncate.*flex" packages/ui/app/components --include="*.vue"
+```
+
+跑了一遍。结果只有 Select.vue 这一处有真实问题（其他出现 flex + truncate 组合的，要么 truncate 在正确层级，要么宽度由父级显式约束）。这次修就够了。
+
+下次新增组件如果用到 truncate，**默认加 `min-w-0`**，纳入 KunUI lint 检查清单。
+
+### KunUI 工程规则更新（第 6 条）
+
+| # | 规则 |
+|---|---|
+| 1-5 | 略（见 §14 / §15 / §16 / §18） |
+| 6 | **flex 容器里的 truncate 必须搭配 `min-w-0`**，否则不生效。视为"truncate 在 flex 里"的标配。 |
+
+### 验证
+
+- `pnpm -F web exec nuxt build` ✅
+- `pnpm -F wiki exec nuxt build` ✅
+- 视觉手测：
+  - 长 label option → 显示 ellipsis，不再溢出 dropdown
+  - tooltip / popover 在 hover topbar / sticky header 时，正确显示在最上层
+  - Modal 内打开 Select 仍然正常（popover > modal 关系保持）
+
+---
+
+## §20 v0.4.8 — z-token 终于真的生效（Tailwind v4 不自动从 `--z-*` 生成 utility）🔴🔴
+
+### 诚实开头 —— 之前三轮"修复"都没生效
+
+v0.4.5 / v0.4.6 / v0.4.7 三个版本里我陆续：
+
+- 加 `--z-kun-*` token 到 `@theme` 块
+- 把 9 个组件的硬编码 `z-50` / `z-1007` / `z-[7777]` 改成 `z-kun-popover` / `z-kun-modal` / `z-kun-message`
+- 调整 token 数值（1000-9000 → 9000-9999）
+- 写了三段 handoff 给 moyu / kungal 说"这次浮层 z-index 终于正确了"
+
+**结果**：moyu 报告"popover 看着 OK，但 tooltip / message 还在其他元素下方，Select 选项还溢出"。我以为是 token 数值不够大。
+
+直到这次我 grep 编译产物：
+
+```bash
+grep -ho '\.z-kun-[a-z]*\s*{[^}]*}' .output/public/_nuxt/*.css
+# (空 —— 一个匹配都没有)
+
+grep -ho '\.rounded-kun-[a-z]*\s*{[^}]*}' .output/public/_nuxt/*.css
+# .rounded-kun-md{border-radius:var(--radius-kun-md)}
+# .rounded-kun-lg{border-radius:var(--radius-kun-lg)}
+# ... 5 个全在
+```
+
+**`rounded-kun-*` utility 正常生成；`z-kun-*` utility 一个都没生成。** 三轮所谓的 z-index 修复，**实际上从未被应用**。组件里写的 `class="z-kun-popover"` 等同于 `class="some-undefined-class"` —— 浏览器忽略，元素拿默认 `z-auto`。
+
+### 根因 — Tailwind v4 不是所有 `@theme` 变量都自动生成 utility
+
+Tailwind v4 的 `@theme` 自动生成 utility 类**只覆盖特定命名空间**：
+
+| 自动生成 utility 的 `@theme` 前缀 | 例 |
+|---|---|
+| `--color-*` | `bg-*` / `text-*` / `border-*` |
+| `--radius-*` | `rounded-*` ✅ 我们的 radius token 走这条命中 |
+| `--spacing-*` | `p-*` / `m-*` / `gap-*` / `w-*` |
+| `--font-*` | `font-*` |
+| `--text-*` | `text-*` (size) |
+| `--shadow-*` | `shadow-*` |
+| `--animate-*` | `animate-*` |
+| `--ease-*` / `--blur-*` / `--breakpoint-*` 等 | 各自对应 utility |
+
+**不在自动生成的命名空间**：
+- `--z-*`（无 utility 自动生成）
+- `--cursor-*`
+- `--list-*`
+- 等等
+
+我以为"radius 走通了，z 同理"，没核实。这是把"看起来对"等同于"实际对"的经典工程失误。
+
+### 真正的修复 — Tailwind v4 的 `@utility` directive 显式声明
+
+`packages/ui/app/styles/tailwindcss.css` 加：
+
+```css
+@utility z-kun-sticky {
+  z-index: var(--z-kun-sticky);
+}
+@utility z-kun-modal {
+  z-index: var(--z-kun-modal);
+}
+@utility z-kun-popover {
+  z-index: var(--z-kun-popover);
+}
+@utility z-kun-alert {
+  z-index: var(--z-kun-alert);
+}
+@utility z-kun-message {
+  z-index: var(--z-kun-message);
+}
+```
+
+这是 Tailwind v4 的 `@utility` directive —— 显式注册 utility 类。`var(--z-kun-*)` 让 `@theme` 里的 token 值参与，外层覆盖（`:root { --z-kun-modal: ... }`）依然生效。
+
+`@theme` 里的 `--z-kun-*` 变量声明**保留**（用来定义默认值 + 让消费方覆盖），`@utility` 块**新增**（让 utility 类真正生成）。两者一起才能正常工作。
+
+### 验证 — 这次真的看了输出
+
+```bash
+$ grep -ho '\.z-kun-[a-z]*\s*{[^}]*}' apps/web/.output/public/_nuxt/*.css | sort -u
+.z-kun-alert{z-index:var(--z-kun-alert)}
+.z-kun-message{z-index:var(--z-kun-message)}
+.z-kun-modal{z-index:var(--z-kun-modal)}
+.z-kun-popover{z-index:var(--z-kun-popover)}
+```
+
+`z-kun-sticky` 没出现是因为本仓没组件用它（Tailwind v4 tree-shake 未引用的 utility），这是预期行为。其他四个**首次真实出现在编译产物里**。
+
+### 为什么 v0.4.5/6/7 之间看起来"popover 在上方了"
+
+完全是 DOM order 偶然性 ——
+
+- Popover 被 Teleport 到 body 时挂载在 body 末尾，**渲染顺序晚于大部分页面元素**
+- 在所有元素 z-index 都是 `auto` 的栈中，**后挂载的元素覆盖先挂载的**（CSS 默认行为）
+- 所以 popover 看着像"在上方"，其实是 stacking-context 内的 painting order，根本没走 z-index
+
+但其他组件挂载时机不同：
+
+- `<KunMessage>` 第一次调用时挂载 MessageContainer（中等时机）
+- `<KunTooltip>` 在 hover 触发时挂载，但有 `delayShow` 100ms → 挂载更晚
+- Sticky topbar 是页面初始 render 一部分（早挂载），但 `position: sticky` + 浏览器对 sticky 在某些场景给一个隐式 stacking context
+
+所以会出现"popover 看着 OK / tooltip / message 看着不 OK" 这种**完全无规律**的表现。本质是**所有这些浮层的 z-index 都没生效**，谁先谁后纯靠运气。
+
+Select 的"溢出"看似是布局问题（v0.4.7 加 `min-w-0 flex-1` 处理过），但 moyu 那边复测仍报问题 —— 很可能是**Select dropdown 被 z-index 更高的元素遮住部分**，视觉上像"选项被切了 / 溢出到旁边"。z-index 修好后这个症状大概率自动消失。
+
+### 教训 — 这次最该立成铁律的事
+
+**修改 design token / Tailwind config / CSS 系统级的东西之后，必须 grep 编译产物确认 utility 真的生成了。** 不要止于"源码里写得对"。
+
+具体操作：
+
+```bash
+# 任何 @theme / @utility 改动之后
+pnpm -F your-app exec nuxt build
+grep -ho '\.your-new-utility-[a-z]*\s*{[^}]*}' .output/public/_nuxt/*.css | sort -u
+# 期望：能看到你声明的所有 utility，每个都 deref 到对应 CSS 变量
+```
+
+如果上面 grep 空 → 你的 utility 没被 Tailwind 生成 → class 名是个空字符串 → 视觉上什么都没发生。
+
+> **加进 KunUI 三铁律 → 现在变成四铁律 + 一个流程规则**：
+>
+> | # | 规则 | 来源 |
+> |---|---|---|
+> | 1-6 | 略 | §14 / §15 / §16 / §18 / §19 |
+> | **流程** | **修改 Tailwind theme / utility / 任何系统级 CSS 后，grep 编译产物验证 utility 真实生成** | **§20（本节）** |
+
+这条流程规则比之前那 6 条普通规则更基础 —— 它防的是**整套修复机制被静默架空**。比某一条具体 bug 更危险，因为发现晚（要等用户报告）+ 误导（前面三轮的 "fix" doc 看起来都对）。
+
+### 反思 — 我为什么犯这个错
+
+- **类比泛化**：`rounded-kun-md` 工作，我以为 `z-kun-popover` 同理。没意识到 Tailwind v4 的 `@theme` 自动 utility 是**精挑的白名单**，不是"`--xxx-*` 都行"
+- **没看产出**：三轮修复都只确认"build 通过 + 视觉上某个场景 OK"，没拿编译产物 grep 验证
+- **错误归因**：moyu 报 "tooltip 还在下方" 时，我以为是 token 数值不够，又升一档（v0.4.7）—— 还是没生效，但因为 popover 在 DOM 末尾**碰巧好**，我以为 fix 部分生效了
+
+这次纠错是 moyu 的复测把误归因暴露出来。**不复测 = 工程债。**
+
+### 给 kungal / moyu 的 v0.4.8 patch notes
+
+> ▎ **v0.4.8 patch — z-index utility 终于真的生效** 🔴🔴
+> ▎ v0.4.5/6/7 三轮加的 `--z-kun-*` token 实际上从未生成 `.z-kun-*` utility（Tailwind v4 不自动从 `--z-*` 生成 utility，只覆盖 `--color/--radius/--spacing/--font` 等特定命名空间）。tailwindcss.css 加 5 个 `@utility` 显式声明后修复。**所有下游必须重新同步 tailwindcss.css 并 rebuild**，否则所有"修过"的 z-index 浮层（Modal / Popover / Select / DatePicker / Tooltip / ContextMenu / Alert / Loli / MessageContainer）实际行为还是默认 `z-auto`。
+
+---
+
 *文档维护：每次完成批次后更新对应章节的 checkbox。新增组件评审进 §2 表 + §3 新章节。*
