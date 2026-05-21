@@ -18,7 +18,7 @@ export default defineEventHandler(async (event) => {
   if (!poll) {
     return kunError(event, '未找到该投票')
   }
-  if (poll.user_id !== userInfo.uid && userInfo.role < 2) {
+  if (poll.user_id !== userInfo.id && userInfo.role < 2) {
     return kunError(event, '您无权删除该话题投票')
   }
 

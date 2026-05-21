@@ -8,13 +8,13 @@ export default defineEventHandler(async (event) => {
   }
 
   const userInfo = await getCookieTokenInfo(event)
-  const uid = userInfo?.uid
+  const userId = userInfo?.id
 
   const data = await prisma.galgame_website.findUnique({
     where: { url: input.domain },
     include: {
-      like: { where: { user_id: uid } },
-      favorite: { where: { user_id: uid } },
+      like: { where: { user_id: userId } },
+      favorite: { where: { user_id: userId } },
       comment: {
         include: {
           user: {

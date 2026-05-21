@@ -37,13 +37,13 @@ func NewSubmissionService(g *repository.GalgameRepository, m *repository.Message
 // all statuses. Daily per-user quota is enforced.
 //
 // Side effects (all in one transaction):
-//   - INSERT galgame status=3 user_id=uid
+//   - INSERT galgame status=3 user_id=userID
 //   - INSERT aliases / tag / official / engine relations
-//   - INSERT contributor (uid)
+//   - INSERT contributor (userID)
 //   - INSERT VNDB link if vndb_id non-empty
 //   - INSERT revision 1 (action='created')
-//   - INSERT message (type='submitted', actor=uid, target=NULL)
-func (s *SubmissionService) Submit(ctx context.Context, uid int, req *dto.SubmitGalgameRequest) (*model.Galgame, error) {
+//   - INSERT message (type='submitted', actor=userID, target=NULL)
+func (s *SubmissionService) Submit(ctx context.Context, userID int, req *dto.SubmitGalgameRequest) (*model.Galgame, error) {
 	// VNDB id validation: empty allowed; non-empty must match pattern.
 	if req.VNDBID != "" && !vndbIDRegex.MatchString(req.VNDBID) {
 		return nil, errors.NewWithCode(errors.ErrGalgameInvalidVNDB)
@@ -51,7 +51,7 @@ func (s *SubmissionService) Submit(ctx context.Context, uid int, req *dto.Submit
 
 	// Quota: count today's submissions for this user (status IN 3,4 — declined
 	// rejects still count to avoid quota-evasion by submit→edit cycles).
-	count, err := s.galgameRepo.CountSubmissionsToday(ctx, uid)
+	count, err := s.galgameRepo.CountSubmissionsToday(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -77,16 +77,16 @@ func (s *SubmissionService) Submit(ctx context.Context, uid int, req *dto.Submit
 		// identical to admin Create; no manual relation loops.
 		g := model.Galgame{
 			VNDBID: req.VNDBID,
-			UserID: uid,
+			UserID: userID,
 			Status: model.GalgameStatusPending,
 		}
 		if err := tx.Create(&g).Error; err != nil {
 			return err
 		}
-		if err := repository.ApplySnapshot(tx, g.ID, uid, buildSubmitSnapshot(req)); err != nil {
+		if err := repository.ApplySnapshot(tx, g.ID, userID, buildSubmitSnapshot(req)); err != nil {
 			return err
 		}
-		if err := tx.Create(&model.GalgameContributor{GalgameID: g.ID, UserID: uid}).Error; err != nil {
+		if err := tx.Create(&model.GalgameContributor{GalgameID: g.ID, UserID: userID}).Error; err != nil {
 			return err
 		}
 
@@ -101,7 +101,7 @@ func (s *SubmissionService) Submit(ctx context.Context, uid int, req *dto.Submit
 		if err := tx.Create(&model.GalgameRevision{
 			GalgameID: g.ID,
 			Revision:  1,
-			UserID:    uid,
+			UserID:    userID,
 			Action:    "created",
 			Snapshot:  snapJSON,
 		}).Error; err != nil {
@@ -111,7 +111,7 @@ func (s *SubmissionService) Submit(ctx context.Context, uid int, req *dto.Submit
 		newID = g.ID
 		// Message: submitted
 		payload, _ := json.Marshal(map[string]any{"vndb_id": req.VNDBID})
-		uidVal := uid
+		uidVal := userID
 		return s.messageRepo.Create(ctx, tx, &model.GalgameMessage{
 			Type:         model.MessageTypeSubmitted,
 			GalgameID:    g.ID,
@@ -166,7 +166,7 @@ func buildSubmitSnapshot(req *dto.SubmitGalgameRequest) *model.Snapshot {
 
 // Claim atomically converts a VNDB draft (status=2) into a published galgame
 // (status=0) owned by the claimer. Returns 20006 if target is not in status=2.
-func (s *SubmissionService) Claim(ctx context.Context, uid, gid int) (*model.Galgame, error) {
+func (s *SubmissionService) Claim(ctx context.Context, userID, gid int) (*model.Galgame, error) {
 	err := s.galgameRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		g, err := s.galgameRepo.FindForUpdate(tx, gid)
 		if err != nil {
@@ -183,7 +183,7 @@ func (s *SubmissionService) Claim(ctx context.Context, uid, gid int) (*model.Gal
 		if err := tx.Model(&model.Galgame{}).Where("id = ?", gid).
 			Updates(map[string]any{
 				"status":  model.GalgameStatusPublished,
-				"user_id": uid,
+				"user_id": userID,
 			}).Error; err != nil {
 			return err
 		}
@@ -191,9 +191,9 @@ func (s *SubmissionService) Claim(ctx context.Context, uid, gid int) (*model.Gal
 		// Ensure claimer is a contributor (don't duplicate if already)
 		var cnt int64
 		tx.Model(&model.GalgameContributor{}).
-			Where("galgame_id = ? AND user_id = ?", gid, uid).Count(&cnt)
+			Where("galgame_id = ? AND user_id = ?", gid, userID).Count(&cnt)
 		if cnt == 0 {
-			if err := tx.Create(&model.GalgameContributor{GalgameID: gid, UserID: uid}).Error; err != nil {
+			if err := tx.Create(&model.GalgameContributor{GalgameID: gid, UserID: userID}).Error; err != nil {
 				return err
 			}
 		}
@@ -215,7 +215,7 @@ func (s *SubmissionService) Claim(ctx context.Context, uid, gid int) (*model.Gal
 		if err := tx.Create(&model.GalgameRevision{
 			GalgameID: gid,
 			Revision:  nextRev,
-			UserID:    uid,
+			UserID:    userID,
 			Action:    "claimed",
 			Snapshot:  snapJSON,
 		}).Error; err != nil {
@@ -224,7 +224,7 @@ func (s *SubmissionService) Claim(ctx context.Context, uid, gid int) (*model.Gal
 
 		// Message: claimed
 		payload, _ := json.Marshal(map[string]any{"from_status": int(model.GalgameStatusVNDBDraft)})
-		uidVal := uid
+		uidVal := userID
 		return s.messageRepo.Create(ctx, tx, &model.GalgameMessage{
 			Type:         model.MessageTypeClaimed,
 			GalgameID:    gid,
@@ -243,7 +243,7 @@ func (s *SubmissionService) Claim(ctx context.Context, uid, gid int) (*model.Gal
 // PatchDraft updates a pending or declined galgame on behalf of its submitter.
 // If status was 4 (declined), flips back to 3 to re-enter the review queue.
 // Returns 20007/20008 for ownership/status violations.
-func (s *SubmissionService) PatchDraft(ctx context.Context, uid, gid int, req *dto.UpdateGalgameRequest) (*model.Galgame, error) {
+func (s *SubmissionService) PatchDraft(ctx context.Context, userID, gid int, req *dto.UpdateGalgameRequest) (*model.Galgame, error) {
 	err := s.galgameRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		g, err := s.galgameRepo.FindForUpdate(tx, gid)
 		if err != nil {
@@ -252,7 +252,7 @@ func (s *SubmissionService) PatchDraft(ctx context.Context, uid, gid int, req *d
 			}
 			return err
 		}
-		if g.UserID != uid {
+		if g.UserID != userID {
 			return errors.NewWithCode(errors.ErrGalgameSubmitterOnly)
 		}
 		if g.Status != model.GalgameStatusPending && g.Status != model.GalgameStatusDeclined {
@@ -280,7 +280,7 @@ func (s *SubmissionService) PatchDraft(ctx context.Context, uid, gid int, req *d
 		}
 
 		if len(changed) > 0 {
-			if err := repository.ApplySnapshot(tx, gid, uid, next); err != nil {
+			if err := repository.ApplySnapshot(tx, gid, userID, next); err != nil {
 				return err
 			}
 		}
@@ -307,7 +307,7 @@ func (s *SubmissionService) PatchDraft(ctx context.Context, uid, gid int, req *d
 		if err := tx.Create(&model.GalgameRevision{
 			GalgameID: gid,
 			Revision:  nextRev,
-			UserID:    uid,
+			UserID:    userID,
 			Action:    "edited_pending",
 			Snapshot:  snapJSON,
 		}).Error; err != nil {
@@ -316,7 +316,7 @@ func (s *SubmissionService) PatchDraft(ctx context.Context, uid, gid int, req *d
 
 		// Message: edited_pending. Admin queue picks it up via JOIN on status=3.
 		payload, _ := json.Marshal(map[string]any{"field_count": len(changed)})
-		uidVal := uid
+		uidVal := userID
 		return s.messageRepo.Create(ctx, tx, &model.GalgameMessage{
 			Type:         model.MessageTypeEditedPending,
 			GalgameID:    gid,
@@ -332,11 +332,11 @@ func (s *SubmissionService) PatchDraft(ctx context.Context, uid, gid int, req *d
 	return s.galgameRepo.FindByID(ctx, gid)
 }
 
-// DeleteDraft hard-deletes a pending or declined galgame submitted by uid.
+// DeleteDraft hard-deletes a pending or declined galgame submitted by userID.
 // CASCADE clears revisions, contributors, aliases, relations.
 // Messages keep their galgame_id pointer (no FK), so downstream consumers
 // see them as a "ghost" — that's intentional, no message is rewritten on delete.
-func (s *SubmissionService) DeleteDraft(ctx context.Context, uid, gid int) error {
+func (s *SubmissionService) DeleteDraft(ctx context.Context, userID, gid int) error {
 	return s.galgameRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		g, err := s.galgameRepo.FindForUpdate(tx, gid)
 		if err != nil {
@@ -345,7 +345,7 @@ func (s *SubmissionService) DeleteDraft(ctx context.Context, uid, gid int) error
 			}
 			return err
 		}
-		if g.UserID != uid {
+		if g.UserID != userID {
 			return errors.NewWithCode(errors.ErrGalgameSubmitterOnly)
 		}
 		if g.Status != model.GalgameStatusPending && g.Status != model.GalgameStatusDeclined {
@@ -377,7 +377,7 @@ func (s *SubmissionService) DeleteDraft(ctx context.Context, uid, gid int) error
 // For status=4 (declined) entries, the most recent decline reason is
 // attached to each item so the UI can render "Your submission was
 // rejected because: ..." without an extra trip to /messages/mine.
-func (s *SubmissionService) ListMine(ctx context.Context, uid int, req *dto.ListMineRequest) ([]dto.MineGalgame, int64, error) {
+func (s *SubmissionService) ListMine(ctx context.Context, userID int, req *dto.ListMineRequest) ([]dto.MineGalgame, int64, error) {
 	statuses := parseStatusCSV(req.Status, []int{
 		model.GalgameStatusPending,
 		model.GalgameStatusDeclined,
@@ -391,7 +391,7 @@ func (s *SubmissionService) ListMine(ctx context.Context, uid int, req *dto.List
 		limit = 20
 	}
 
-	items, total, err := s.galgameRepo.ListMine(ctx, uid, statuses, page, limit)
+	items, total, err := s.galgameRepo.ListMine(ctx, userID, statuses, page, limit)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -407,7 +407,7 @@ func (s *SubmissionService) ListMine(ctx context.Context, uid int, req *dto.List
 
 	reasons := make(map[int]string, len(declinedIDs))
 	if len(declinedIDs) > 0 {
-		latest, err := s.messageRepo.LatestDeclinedByGalgameIDs(ctx, uid, declinedIDs)
+		latest, err := s.messageRepo.LatestDeclinedByGalgameIDs(ctx, userID, declinedIDs)
 		if err == nil {
 			for gid, msg := range latest {
 				reasons[gid] = extractDeclineReason(msg.Payload)

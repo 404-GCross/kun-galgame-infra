@@ -17,7 +17,7 @@ export default defineEventHandler(async (event) => {
         include: {
           vote: {
             where: {
-              user_id: userInfo?.uid
+              user_id: userInfo?.id
             }
           }
         }

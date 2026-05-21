@@ -10,14 +10,14 @@ export default defineEventHandler(async (event) => {
   if (!userInfo) {
     return kunError(event, '用户登录失效', 205)
   }
-  const uid = userInfo.uid
+  const userId = userInfo.id
 
   const resource = await prisma.galgame_resource.findUnique({
     where: { id: input.galgameResourceId },
     include: {
       like: {
         where: {
-          user_id: uid
+          user_id: userId
         }
       },
       link: {
@@ -30,7 +30,7 @@ export default defineEventHandler(async (event) => {
   if (!resource) {
     return kunError(event, '未找到该资源')
   }
-  if (resource.user_id === uid) {
+  if (resource.user_id === userId) {
     return kunError(event, '您不能给自己的资源点赞')
   }
 
@@ -41,7 +41,7 @@ export default defineEventHandler(async (event) => {
       await prisma.galgame_resource_like.delete({
         where: {
           galgame_resource_id_user_id: {
-            user_id: uid,
+            user_id: userId,
             galgame_resource_id: input.galgameResourceId
           }
         }
@@ -50,19 +50,19 @@ export default defineEventHandler(async (event) => {
       await prisma.galgame_resource_like.create({
         data: {
           galgame_resource_id: input.galgameResourceId,
-          user_id: uid
+          user_id: userId
         }
       })
     }
 
     await prisma.user.update({
-      where: { id: uid },
+      where: { id: userId },
       data: { moemoepoint: { increment: isLikedResource ? -1 : 1 } }
     })
 
     await createDedupMessage(
       prisma,
-      uid,
+      userId,
       resource.user_id,
       'liked',
       resource.link[0] ? resource.link[0].url.slice(0, 233) : '',

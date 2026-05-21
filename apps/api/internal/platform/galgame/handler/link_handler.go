@@ -43,8 +43,8 @@ func (h *LinkHandler) ListLinks(c fiber.Ctx) error {
 
 // CreateLink adds a new link and creates a revision
 func (h *LinkHandler) CreateLink(c fiber.Ctx) error {
-	uid, _ := c.Locals("user_uid").(uint)
-	if uid == 0 {
+	userID, _ := c.Locals("user_id").(uint)
+	if userID == 0 {
 		return response.Unauthorized(c, errors.ErrAuthUnauthorized)
 	}
 
@@ -66,14 +66,14 @@ func (h *LinkHandler) CreateLink(c fiber.Ctx) error {
 	err = db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(&model.GalgameLink{
 			GalgameID: gid,
-			UserID:    int(uid),
+			UserID:    int(userID),
 			Name:      req.Name,
 			Link:      req.Link,
 		}).Error; err != nil {
 			return err
 		}
 
-		return h.svc.CreateRevisionFromCurrentState(tx, gid, int(uid), "updated", "添加链接: "+req.Name, false)
+		return h.svc.CreateRevisionFromCurrentState(tx, gid, int(userID), "updated", "添加链接: "+req.Name, false)
 	})
 
 	if err != nil {
@@ -85,8 +85,8 @@ func (h *LinkHandler) CreateLink(c fiber.Ctx) error {
 
 // DeleteLink deletes a link and creates a revision
 func (h *LinkHandler) DeleteLink(c fiber.Ctx) error {
-	uid, _ := c.Locals("user_uid").(uint)
-	if uid == 0 {
+	userID, _ := c.Locals("user_id").(uint)
+	if userID == 0 {
 		return response.Unauthorized(c, errors.ErrAuthUnauthorized)
 	}
 
@@ -108,7 +108,7 @@ func (h *LinkHandler) DeleteLink(c fiber.Ctx) error {
 			return gorm.ErrRecordNotFound
 		}
 
-		return h.svc.CreateRevisionFromCurrentState(tx, gid, int(uid), "updated", "删除链接", true)
+		return h.svc.CreateRevisionFromCurrentState(tx, gid, int(userID), "updated", "删除链接", true)
 	})
 
 	if err != nil {
@@ -138,8 +138,8 @@ func (h *LinkHandler) ListAliases(c fiber.Ctx) error {
 
 // CreateAlias adds a new alias and creates a revision
 func (h *LinkHandler) CreateAlias(c fiber.Ctx) error {
-	uid, _ := c.Locals("user_uid").(uint)
-	if uid == 0 {
+	userID, _ := c.Locals("user_id").(uint)
+	if userID == 0 {
 		return response.Unauthorized(c, errors.ErrAuthUnauthorized)
 	}
 
@@ -166,7 +166,7 @@ func (h *LinkHandler) CreateAlias(c fiber.Ctx) error {
 			return err
 		}
 
-		return h.svc.CreateRevisionFromCurrentState(tx, gid, int(uid), "updated", "添加别名: "+req.Name, false)
+		return h.svc.CreateRevisionFromCurrentState(tx, gid, int(userID), "updated", "添加别名: "+req.Name, false)
 	})
 
 	if err != nil {
@@ -178,8 +178,8 @@ func (h *LinkHandler) CreateAlias(c fiber.Ctx) error {
 
 // DeleteAlias deletes an alias and creates a revision
 func (h *LinkHandler) DeleteAlias(c fiber.Ctx) error {
-	uid, _ := c.Locals("user_uid").(uint)
-	if uid == 0 {
+	userID, _ := c.Locals("user_id").(uint)
+	if userID == 0 {
 		return response.Unauthorized(c, errors.ErrAuthUnauthorized)
 	}
 
@@ -201,7 +201,7 @@ func (h *LinkHandler) DeleteAlias(c fiber.Ctx) error {
 			return gorm.ErrRecordNotFound
 		}
 
-		return h.svc.CreateRevisionFromCurrentState(tx, gid, int(uid), "updated", "删除别名", true)
+		return h.svc.CreateRevisionFromCurrentState(tx, gid, int(userID), "updated", "删除别名", true)
 	})
 
 	if err != nil {

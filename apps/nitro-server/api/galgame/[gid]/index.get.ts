@@ -22,7 +22,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const userInfo = await getCookieTokenInfo(event)
-  const userId = userInfo?.uid
+  const userId = userInfo?.id
 
   const [galgame] = await Promise.all([
     prisma.galgame.findUnique({

@@ -67,13 +67,13 @@ func (s *GalgameService) GetRevisionDiff(ctx context.Context, galgameID, revisio
 }
 
 // Revert rolls back a galgame to a specific revision
-func (s *GalgameService) Revert(ctx context.Context, uid, galgameID, targetRevision int, roles []string) error {
+func (s *GalgameService) Revert(ctx context.Context, userID, galgameID, targetRevision int, roles []string) error {
 	// Check permission
 	galgame, err := s.galgameRepo.FindByID(ctx, galgameID)
 	if err != nil {
 		return errors.NewWithCode(errors.ErrGalgameNotFound)
 	}
-	if galgame.UserID != uid && !hasRole(roles, "admin") {
+	if galgame.UserID != userID && !hasRole(roles, "admin") {
 		return errors.NewWithCode(errors.ErrGalgameForbidden)
 	}
 
@@ -98,7 +98,7 @@ func (s *GalgameService) Revert(ctx context.Context, uid, galgameID, targetRevis
 
 	return s.galgameRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// Apply the old snapshot
-		if err := repository.ApplySnapshot(tx, galgameID, uid, snapshot); err != nil {
+		if err := repository.ApplySnapshot(tx, galgameID, userID, snapshot); err != nil {
 			return err
 		}
 
@@ -125,7 +125,7 @@ func (s *GalgameService) Revert(ctx context.Context, uid, galgameID, targetRevis
 		return tx.Create(&model.GalgameRevision{
 			GalgameID:  galgameID,
 			Revision:   nextRev,
-			UserID:     uid,
+			UserID:     userID,
 			Action:     "reverted",
 			Note:       note,
 			Snapshot:   snapshotJSON,
@@ -208,7 +208,7 @@ func filterImageRows[T any](rows []T, keep func(T) bool) []T {
 }
 
 // SubmitPR creates a new pull request
-func (s *GalgameService) SubmitPR(ctx context.Context, uid, galgameID int, proposedSnapshot *model.Snapshot, note string) (*model.GalgamePR, error) {
+func (s *GalgameService) SubmitPR(ctx context.Context, userID, galgameID int, proposedSnapshot *model.Snapshot, note string) (*model.GalgamePR, error) {
 	// Get current latest revision
 	latestRev, err := s.revisionRepo.FindLatest(ctx, galgameID)
 	if err != nil {
@@ -222,7 +222,7 @@ func (s *GalgameService) SubmitPR(ctx context.Context, uid, galgameID int, propo
 
 	pr := &model.GalgamePR{
 		GalgameID:    galgameID,
-		UserID:       uid,
+		UserID:       userID,
 		Note:         note,
 		BaseRevision: latestRev.Revision,
 		Snapshot:     snapshotJSON,
@@ -236,7 +236,7 @@ func (s *GalgameService) SubmitPR(ctx context.Context, uid, galgameID int, propo
 }
 
 // MergePR merges a pull request with automatic field-level rebase
-func (s *GalgameService) MergePR(ctx context.Context, uid, prID int, roles []string) error {
+func (s *GalgameService) MergePR(ctx context.Context, userID, prID int, roles []string) error {
 	pr, err := s.prRepo.FindByID(ctx, prID)
 	if err != nil {
 		return errors.NewWithCode(errors.ErrNotFound)
@@ -247,7 +247,7 @@ func (s *GalgameService) MergePR(ctx context.Context, uid, prID int, roles []str
 	if err != nil {
 		return errors.NewWithCode(errors.ErrGalgameNotFound)
 	}
-	if galgame.UserID != uid && !hasRole(roles, "admin") {
+	if galgame.UserID != userID && !hasRole(roles, "admin") {
 		return errors.NewWithCode(errors.ErrGalgameForbidden)
 	}
 
@@ -320,7 +320,7 @@ func (s *GalgameService) MergePR(ctx context.Context, uid, prID int, roles []str
 		_, mergeNoteSuffix := s.scrubMissingImages(ctx, finalSnapshot)
 
 		// Apply snapshot to galgame tables
-		if err := repository.ApplySnapshot(tx, pr.GalgameID, uid, finalSnapshot); err != nil {
+		if err := repository.ApplySnapshot(tx, pr.GalgameID, userID, finalSnapshot); err != nil {
 			return err
 		}
 
@@ -353,7 +353,7 @@ func (s *GalgameService) MergePR(ctx context.Context, uid, prID int, roles []str
 		// Update PR with completion info
 		now := galgame.Updated // reuse as approx time
 		if err := tx.Model(&model.GalgamePR{}).Where("id = ?", prID).Updates(map[string]any{
-			"completed_by":   uid,
+			"completed_by":   userID,
 			"completed_time": now,
 			"revision_id":    rev.ID,
 		}).Error; err != nil {
@@ -372,7 +372,7 @@ func (s *GalgameService) MergePR(ctx context.Context, uid, prID int, roles []str
 }
 
 // DeclinePR declines a pull request
-func (s *GalgameService) DeclinePR(ctx context.Context, uid, prID int, roles []string) error {
+func (s *GalgameService) DeclinePR(ctx context.Context, userID, prID int, roles []string) error {
 	pr, err := s.prRepo.FindByID(ctx, prID)
 	if err != nil {
 		return errors.NewWithCode(errors.ErrNotFound)
@@ -382,7 +382,7 @@ func (s *GalgameService) DeclinePR(ctx context.Context, uid, prID int, roles []s
 	if err != nil {
 		return errors.NewWithCode(errors.ErrGalgameNotFound)
 	}
-	if galgame.UserID != uid && !hasRole(roles, "admin") {
+	if galgame.UserID != userID && !hasRole(roles, "admin") {
 		return errors.NewWithCode(errors.ErrGalgameForbidden)
 	}
 
@@ -391,7 +391,7 @@ func (s *GalgameService) DeclinePR(ctx context.Context, uid, prID int, roles []s
 		Where("id = ? AND status = 0", prID).
 		Updates(map[string]any{
 			"status":         2,
-			"completed_by":   uid,
+			"completed_by":   userID,
 			"completed_time": gorm.Expr("NOW()"),
 		})
 

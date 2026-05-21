@@ -20,7 +20,7 @@ export default defineEventHandler(async (event) => {
       data: {
         ...rest,
         galgame_id: galgameId,
-        user_id: userInfo.uid,
+        user_id: userInfo.id,
         provider: providers
       }
     })
@@ -38,7 +38,7 @@ export default defineEventHandler(async (event) => {
     }
 
     await prisma.user.update({
-      where: { id: userInfo.uid },
+      where: { id: userInfo.id },
       data: { moemoepoint: { increment: 3 } }
     })
 

@@ -97,7 +97,7 @@ func isValidEntity(e string) bool {
 
 // CreateTag inserts a new galgame_tag + aliases and writes the initial
 // (revision=1, action='created') row. Name uniqueness enforced.
-func (s *TaxonomyService) CreateTag(ctx context.Context, uid, userRole int, req *dto.CreateTagRequest) (*model.GalgameTag, error) {
+func (s *TaxonomyService) CreateTag(ctx context.Context, userID, userRole int, req *dto.CreateTagRequest) (*model.GalgameTag, error) {
 	exists, err := s.tagRepo.ExistsByName(ctx, req.Name)
 	if err != nil {
 		return nil, err
@@ -130,7 +130,7 @@ func (s *TaxonomyService) CreateTag(ctx context.Context, uid, userRole int, req 
 		}
 		return writeTaxonomyRevision(tx,
 			model.TaxonomyEntityTag, tag.ID,
-			model.TaxonomyActionCreated, uid, userRole,
+			model.TaxonomyActionCreated, userID, userRole,
 			snap, model.TagSnapshotFieldNames(),
 			0, nil, "",
 		)
@@ -144,7 +144,7 @@ func (s *TaxonomyService) CreateTag(ctx context.Context, uid, userRole int, req 
 // UpdateTag applies a presence-semantics overlay onto the current tag
 // snapshot. If nothing changed, no-op (no revision written). Concurrent
 // updates are serialised by SELECT FOR UPDATE on galgame_tag.id.
-func (s *TaxonomyService) UpdateTag(ctx context.Context, uid, userRole int, req *dto.UpdateTagRequest) error {
+func (s *TaxonomyService) UpdateTag(ctx context.Context, userID, userRole int, req *dto.UpdateTagRequest) error {
 	return s.tagRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := lockMainRow(tx, "galgame_tag", req.TagID); err != nil {
 			return err
@@ -164,7 +164,7 @@ func (s *TaxonomyService) UpdateTag(ctx context.Context, uid, userRole int, req 
 		}
 		return writeTaxonomyRevision(tx,
 			model.TaxonomyEntityTag, req.TagID,
-			model.TaxonomyActionUpdated, uid, userRole,
+			model.TaxonomyActionUpdated, userID, userRole,
 			next, model.SortedKeys(changed),
 			0, nil, "",
 		)
@@ -175,7 +175,7 @@ func (s *TaxonomyService) UpdateTag(ctx context.Context, uid, userRole int, req 
 // confirmation UI with the ref count. Writes one tag deletion revision
 // AND one galgame_revision per affected galgame so the tag-disappearing
 // is auditable from the galgame's history too.
-func (s *TaxonomyService) DeleteTag(ctx context.Context, uid, userRole int, id int) (relations, aliases int64, affected []int, err error) {
+func (s *TaxonomyService) DeleteTag(ctx context.Context, userID, userRole int, id int) (relations, aliases int64, affected []int, err error) {
 	err = s.tagRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if e := lockMainRow(tx, "galgame_tag", id); e != nil {
 			return e
@@ -216,7 +216,7 @@ func (s *TaxonomyService) DeleteTag(ctx context.Context, uid, userRole int, id i
 		// for future "undo delete" replay).
 		if e := writeTaxonomyRevision(tx,
 			model.TaxonomyEntityTag, id,
-			model.TaxonomyActionDeleted, uid, userRole,
+			model.TaxonomyActionDeleted, userID, userRole,
 			cur, []string{}, // §6.5: deleted → empty changed_fields
 			int(relations), affected, "",
 		); e != nil {
@@ -227,7 +227,7 @@ func (s *TaxonomyService) DeleteTag(ctx context.Context, uid, userRole int, id i
 		// tag_ids set shrink, so each gets a galgame_revision tagged
 		// changed_fields=['tag_ids']. Without these, the galgame's
 		// history shows the tag "disappearing" with no record of why.
-		return writeAffectedGalgameRevisions(tx, affected, uid, "tag_ids")
+		return writeAffectedGalgameRevisions(tx, affected, userID, "tag_ids")
 	})
 	return
 }
@@ -246,7 +246,7 @@ func (s *TaxonomyService) DeleteTag(ctx context.Context, uid, userRole int, id i
 // admin UI can show "these 8 works used to reference this tag — pick
 // which to re-attach" (each re-attach goes through standard galgame
 // edit producing its own galgame_revision; see §7.2.4).
-func (s *TaxonomyService) RevertTag(ctx context.Context, uid, userRole, tagID, targetRevision int) error {
+func (s *TaxonomyService) RevertTag(ctx context.Context, userID, userRole, tagID, targetRevision int) error {
 	return s.tagRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := lockMainRowMayNotExist(tx, "galgame_tag", tagID); err != nil {
 			return err
@@ -290,7 +290,7 @@ func (s *TaxonomyService) RevertTag(ctx context.Context, uid, userRole, tagID, t
 		}
 		return writeTaxonomyRevision(tx,
 			model.TaxonomyEntityTag, tagID,
-			model.TaxonomyActionReverted, uid, userRole,
+			model.TaxonomyActionReverted, userID, userRole,
 			targetSnap, model.TagSnapshotFieldNames(), // full snapshot rewrite
 			0, nil,
 			fmt.Sprintf("回滚到版本 %d", targetRevision),
@@ -300,7 +300,7 @@ func (s *TaxonomyService) RevertTag(ctx context.Context, uid, userRole, tagID, t
 
 // ─────────────────────────── Official ───────────────────────────
 
-func (s *TaxonomyService) CreateOfficial(ctx context.Context, uid, userRole int, req *dto.CreateOfficialRequest) (*model.GalgameOfficial, error) {
+func (s *TaxonomyService) CreateOfficial(ctx context.Context, userID, userRole int, req *dto.CreateOfficialRequest) (*model.GalgameOfficial, error) {
 	exists, err := s.officialRepo.ExistsByName(ctx, req.Name)
 	if err != nil {
 		return nil, err
@@ -336,7 +336,7 @@ func (s *TaxonomyService) CreateOfficial(ctx context.Context, uid, userRole int,
 		}
 		return writeTaxonomyRevision(tx,
 			model.TaxonomyEntityOfficial, o.ID,
-			model.TaxonomyActionCreated, uid, userRole,
+			model.TaxonomyActionCreated, userID, userRole,
 			snap, model.OfficialSnapshotFieldNames(),
 			0, nil, "",
 		)
@@ -347,7 +347,7 @@ func (s *TaxonomyService) CreateOfficial(ctx context.Context, uid, userRole int,
 	return &o, nil
 }
 
-func (s *TaxonomyService) UpdateOfficial(ctx context.Context, uid, userRole int, req *dto.UpdateOfficialRequest) error {
+func (s *TaxonomyService) UpdateOfficial(ctx context.Context, userID, userRole int, req *dto.UpdateOfficialRequest) error {
 	return s.officialRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := lockMainRow(tx, "galgame_official", req.OfficialID); err != nil {
 			return err
@@ -367,14 +367,14 @@ func (s *TaxonomyService) UpdateOfficial(ctx context.Context, uid, userRole int,
 		}
 		return writeTaxonomyRevision(tx,
 			model.TaxonomyEntityOfficial, req.OfficialID,
-			model.TaxonomyActionUpdated, uid, userRole,
+			model.TaxonomyActionUpdated, userID, userRole,
 			next, model.SortedKeys(changed),
 			0, nil, "",
 		)
 	})
 }
 
-func (s *TaxonomyService) DeleteOfficial(ctx context.Context, uid, userRole int, id int) (relations, aliases int64, affected []int, err error) {
+func (s *TaxonomyService) DeleteOfficial(ctx context.Context, userID, userRole int, id int) (relations, aliases int64, affected []int, err error) {
 	err = s.officialRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if e := lockMainRow(tx, "galgame_official", id); e != nil {
 			return e
@@ -411,18 +411,18 @@ func (s *TaxonomyService) DeleteOfficial(ctx context.Context, uid, userRole int,
 
 		if e := writeTaxonomyRevision(tx,
 			model.TaxonomyEntityOfficial, id,
-			model.TaxonomyActionDeleted, uid, userRole,
+			model.TaxonomyActionDeleted, userID, userRole,
 			cur, []string{},
 			int(relations), affected, "",
 		); e != nil {
 			return e
 		}
-		return writeAffectedGalgameRevisions(tx, affected, uid, "official_ids")
+		return writeAffectedGalgameRevisions(tx, affected, userID, "official_ids")
 	})
 	return
 }
 
-func (s *TaxonomyService) RevertOfficial(ctx context.Context, uid, userRole, officialID, targetRevision int) error {
+func (s *TaxonomyService) RevertOfficial(ctx context.Context, userID, userRole, officialID, targetRevision int) error {
 	return s.officialRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := lockMainRowMayNotExist(tx, "galgame_official", officialID); err != nil {
 			return err
@@ -463,7 +463,7 @@ func (s *TaxonomyService) RevertOfficial(ctx context.Context, uid, userRole, off
 		}
 		return writeTaxonomyRevision(tx,
 			model.TaxonomyEntityOfficial, officialID,
-			model.TaxonomyActionReverted, uid, userRole,
+			model.TaxonomyActionReverted, userID, userRole,
 			targetSnap, model.OfficialSnapshotFieldNames(),
 			0, nil,
 			fmt.Sprintf("回滚到版本 %d", targetRevision),
@@ -473,7 +473,7 @@ func (s *TaxonomyService) RevertOfficial(ctx context.Context, uid, userRole, off
 
 // ─────────────────────────── Engine ───────────────────────────
 
-func (s *TaxonomyService) CreateEngine(ctx context.Context, uid, userRole int, req *dto.CreateEngineRequest) (*model.GalgameEngine, error) {
+func (s *TaxonomyService) CreateEngine(ctx context.Context, userID, userRole int, req *dto.CreateEngineRequest) (*model.GalgameEngine, error) {
 	exists, err := s.engineRepo.ExistsByName(ctx, req.Name)
 	if err != nil {
 		return nil, err
@@ -502,7 +502,7 @@ func (s *TaxonomyService) CreateEngine(ctx context.Context, uid, userRole int, r
 		}
 		return writeTaxonomyRevision(tx,
 			model.TaxonomyEntityEngine, e.ID,
-			model.TaxonomyActionCreated, uid, userRole,
+			model.TaxonomyActionCreated, userID, userRole,
 			snap, model.EngineSnapshotFieldNames(),
 			0, nil, "",
 		)
@@ -513,7 +513,7 @@ func (s *TaxonomyService) CreateEngine(ctx context.Context, uid, userRole int, r
 	return &e, nil
 }
 
-func (s *TaxonomyService) UpdateEngine(ctx context.Context, uid, userRole int, req *dto.UpdateEngineRequest) error {
+func (s *TaxonomyService) UpdateEngine(ctx context.Context, userID, userRole int, req *dto.UpdateEngineRequest) error {
 	return s.engineRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := lockMainRow(tx, "galgame_engine", req.EngineID); err != nil {
 			return err
@@ -533,14 +533,14 @@ func (s *TaxonomyService) UpdateEngine(ctx context.Context, uid, userRole int, r
 		}
 		return writeTaxonomyRevision(tx,
 			model.TaxonomyEntityEngine, req.EngineID,
-			model.TaxonomyActionUpdated, uid, userRole,
+			model.TaxonomyActionUpdated, userID, userRole,
 			next, model.SortedKeys(changed),
 			0, nil, "",
 		)
 	})
 }
 
-func (s *TaxonomyService) DeleteEngine(ctx context.Context, uid, userRole int, id int) (relations int64, affected []int, err error) {
+func (s *TaxonomyService) DeleteEngine(ctx context.Context, userID, userRole int, id int) (relations int64, affected []int, err error) {
 	err = s.engineRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if e := lockMainRow(tx, "galgame_engine", id); e != nil {
 			return e
@@ -570,18 +570,18 @@ func (s *TaxonomyService) DeleteEngine(ctx context.Context, uid, userRole int, i
 
 		if e := writeTaxonomyRevision(tx,
 			model.TaxonomyEntityEngine, id,
-			model.TaxonomyActionDeleted, uid, userRole,
+			model.TaxonomyActionDeleted, userID, userRole,
 			cur, []string{},
 			int(relations), affected, "",
 		); e != nil {
 			return e
 		}
-		return writeAffectedGalgameRevisions(tx, affected, uid, "engine_ids")
+		return writeAffectedGalgameRevisions(tx, affected, userID, "engine_ids")
 	})
 	return
 }
 
-func (s *TaxonomyService) RevertEngine(ctx context.Context, uid, userRole, engineID, targetRevision int) error {
+func (s *TaxonomyService) RevertEngine(ctx context.Context, userID, userRole, engineID, targetRevision int) error {
 	return s.engineRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := lockMainRowMayNotExist(tx, "galgame_engine", engineID); err != nil {
 			return err
@@ -619,7 +619,7 @@ func (s *TaxonomyService) RevertEngine(ctx context.Context, uid, userRole, engin
 		}
 		return writeTaxonomyRevision(tx,
 			model.TaxonomyEntityEngine, engineID,
-			model.TaxonomyActionReverted, uid, userRole,
+			model.TaxonomyActionReverted, userID, userRole,
 			targetSnap, model.EngineSnapshotFieldNames(),
 			0, nil,
 			fmt.Sprintf("回滚到版本 %d", targetRevision),
@@ -635,7 +635,7 @@ func (s *TaxonomyService) RevertEngine(ctx context.Context, uid, userRole, engin
 // in galgame_revision. Series_revision only sees its own Name +
 // Description (per §7.5).
 
-func (s *TaxonomyService) CreateSeries(ctx context.Context, uid, userRole int, req *dto.CreateSeriesRequest, galgameIDs []int) (*model.GalgameSeries, error) {
+func (s *TaxonomyService) CreateSeries(ctx context.Context, userID, userRole int, req *dto.CreateSeriesRequest, galgameIDs []int) (*model.GalgameSeries, error) {
 	var sr model.GalgameSeries
 	err := s.seriesRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		sr = model.GalgameSeries{
@@ -657,7 +657,7 @@ func (s *TaxonomyService) CreateSeries(ctx context.Context, uid, userRole int, r
 		}
 		if err := writeTaxonomyRevision(tx,
 			model.TaxonomyEntitySeries, sr.ID,
-			model.TaxonomyActionCreated, uid, userRole,
+			model.TaxonomyActionCreated, userID, userRole,
 			snap, model.SeriesSnapshotFieldNames(),
 			0, nil, "",
 		); err != nil {
@@ -671,7 +671,7 @@ func (s *TaxonomyService) CreateSeries(ctx context.Context, uid, userRole int, r
 				Update("series_id", sr.ID).Error; err != nil {
 				return err
 			}
-			if err := writeAffectedGalgameRevisions(tx, galgameIDs, uid, "series_id"); err != nil {
+			if err := writeAffectedGalgameRevisions(tx, galgameIDs, userID, "series_id"); err != nil {
 				return err
 			}
 		}
@@ -693,7 +693,7 @@ func (s *TaxonomyService) CreateSeries(ctx context.Context, uid, userRole int, r
 //
 // Both can happen in the same request; both can independently be
 // no-ops.
-func (s *TaxonomyService) UpdateSeries(ctx context.Context, uid, userRole int, req *dto.UpdateSeriesRequest) error {
+func (s *TaxonomyService) UpdateSeries(ctx context.Context, userID, userRole int, req *dto.UpdateSeriesRequest) error {
 	return s.seriesRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := lockMainRow(tx, "galgame_series", req.SeriesID); err != nil {
 			return err
@@ -711,7 +711,7 @@ func (s *TaxonomyService) UpdateSeries(ctx context.Context, uid, userRole int, r
 			}
 			if err := writeTaxonomyRevision(tx,
 				model.TaxonomyEntitySeries, req.SeriesID,
-				model.TaxonomyActionUpdated, uid, userRole,
+				model.TaxonomyActionUpdated, userID, userRole,
 				next, model.SortedKeys(changed),
 				0, nil, "",
 			); err != nil {
@@ -719,7 +719,7 @@ func (s *TaxonomyService) UpdateSeries(ctx context.Context, uid, userRole int, r
 			}
 		}
 		if req.GalgameIDs != nil {
-			if err := reconcileSeriesMembership(tx, req.SeriesID, *req.GalgameIDs, uid); err != nil {
+			if err := reconcileSeriesMembership(tx, req.SeriesID, *req.GalgameIDs, userID); err != nil {
 				return err
 			}
 		}
@@ -727,7 +727,7 @@ func (s *TaxonomyService) UpdateSeries(ctx context.Context, uid, userRole int, r
 	})
 }
 
-func (s *TaxonomyService) DeleteSeries(ctx context.Context, uid, userRole int, id int) (relations int64, affected []int, err error) {
+func (s *TaxonomyService) DeleteSeries(ctx context.Context, userID, userRole int, id int) (relations int64, affected []int, err error) {
 	err = s.seriesRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if e := lockMainRow(tx, "galgame_series", id); e != nil {
 			return e
@@ -761,18 +761,18 @@ func (s *TaxonomyService) DeleteSeries(ctx context.Context, uid, userRole int, i
 
 		if e := writeTaxonomyRevision(tx,
 			model.TaxonomyEntitySeries, id,
-			model.TaxonomyActionDeleted, uid, userRole,
+			model.TaxonomyActionDeleted, userID, userRole,
 			cur, []string{},
 			int(relations), affected, "",
 		); e != nil {
 			return e
 		}
-		return writeAffectedGalgameRevisions(tx, affected, uid, "series_id")
+		return writeAffectedGalgameRevisions(tx, affected, userID, "series_id")
 	})
 	return
 }
 
-func (s *TaxonomyService) RevertSeries(ctx context.Context, uid, userRole, seriesID, targetRevision int) error {
+func (s *TaxonomyService) RevertSeries(ctx context.Context, userID, userRole, seriesID, targetRevision int) error {
 	return s.seriesRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := lockMainRowMayNotExist(tx, "galgame_series", seriesID); err != nil {
 			return err
@@ -809,7 +809,7 @@ func (s *TaxonomyService) RevertSeries(ctx context.Context, uid, userRole, serie
 		}
 		return writeTaxonomyRevision(tx,
 			model.TaxonomyEntitySeries, seriesID,
-			model.TaxonomyActionReverted, uid, userRole,
+			model.TaxonomyActionReverted, userID, userRole,
 			targetSnap, model.SeriesSnapshotFieldNames(),
 			0, nil,
 			fmt.Sprintf("回滚到版本 %d", targetRevision),

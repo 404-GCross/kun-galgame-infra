@@ -9,10 +9,16 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-// TokenClaims represents the claims in a JWT token
+// TokenClaims represents the claims in a JWT token.
+//
+// Field naming: `ID` (integer PK in OAuth users table) is the FK
+// invariant shared across kungal/moyu/wiki. The `sub` claim carries
+// the UUID per OAuth/OIDC spec; consumers can pick either. The legacy
+// `uid` claim was renamed to `id` in v0.3.0 — all downstream verifiers
+// must read `id` and stop reading `uid`.
 type TokenClaims struct {
 	UserUUID string   `json:"sub"`
-	UID      uint     `json:"uid"`
+	ID       uint     `json:"id"`
 	Email    string   `json:"email"`
 	Name     string   `json:"name"`
 	Scope    string   `json:"scope,omitempty"`

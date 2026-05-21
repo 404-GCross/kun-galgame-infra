@@ -194,7 +194,7 @@ func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB, se
 	galgame.Get("/search", optionalJWT, searchH.Galgame)
 	galgame.Get("/batch", optionalJWT, galgameH.BatchGet)
 	galgame.Get("/check", galgameH.CheckVNDB)
-	galgame.Get("/user/:uid/stats", galgameH.UserStats)
+	galgame.Get("/user/:id/stats", galgameH.UserStats)
 	// GET /mine MUST be registered before the /:gid catch-all: both are
 	// GET and Fiber matches by registration order, so a /:gid registered
 	// first binds :gid="mine" and the handler ParseInt-fails with
@@ -229,7 +229,7 @@ func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB, se
 	galgameAuth.Delete("/:gid/links", linkH.DeleteLink)
 	galgameAuth.Post("/:gid/aliases", linkH.CreateAlias)
 	galgameAuth.Delete("/:gid/aliases", linkH.DeleteAlias)
-	galgameAuth.Delete("/:gid/contributors/:uid", contributorH.Delete)
+	galgameAuth.Delete("/:gid/contributors/:id", contributorH.Delete)
 
 	// ── User submission flow ──
 	// GET /mine is registered earlier (before the public /:gid catch-all)

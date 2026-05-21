@@ -39,7 +39,7 @@ func JWTAuth(jwtSecret string) fiber.Handler {
 		}
 
 		c.Locals("user_uuid", claims.UserUUID)
-		c.Locals("user_uid", claims.UID)
+		c.Locals("user_id", claims.ID)
 		c.Locals("user_roles", claims.Roles)
 		c.Locals("user_scope", claims.Scope)
 
@@ -70,7 +70,7 @@ func OptionalJWT(jwtSecret string) fiber.Handler {
 			return c.Next()
 		}
 		c.Locals("user_uuid", claims.UserUUID)
-		c.Locals("user_uid", claims.UID)
+		c.Locals("user_id", claims.ID)
 		c.Locals("user_roles", claims.Roles)
 		c.Locals("user_scope", claims.Scope)
 		return c.Next()

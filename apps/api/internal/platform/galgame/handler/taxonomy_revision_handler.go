@@ -70,8 +70,8 @@ func (h *TaxonomyRevisionHandler) getRevision(c fiber.Ctx, entity string) error 
 // row, etc.) lives in TaxonomyService.Revert<Entity>; this handler
 // only binds + dispatches.
 func (h *TaxonomyRevisionHandler) revert(c fiber.Ctx, entity string) error {
-	uid, _ := c.Locals("user_uid").(uint)
-	if uid == 0 {
+	userID, _ := c.Locals("user_id").(uint)
+	if userID == 0 {
 		return response.Unauthorized(c, apperr.ErrAuthUnauthorized)
 	}
 	roles, _ := c.Locals("user_roles").([]string)
@@ -96,13 +96,13 @@ func (h *TaxonomyRevisionHandler) revert(c fiber.Ctx, entity string) error {
 	role := roleLevel(roles)
 	switch entity {
 	case model.TaxonomyEntityTag:
-		err = h.svc.RevertTag(c.Context(), int(uid), role, id, req.Revision)
+		err = h.svc.RevertTag(c.Context(), int(userID), role, id, req.Revision)
 	case model.TaxonomyEntityOfficial:
-		err = h.svc.RevertOfficial(c.Context(), int(uid), role, id, req.Revision)
+		err = h.svc.RevertOfficial(c.Context(), int(userID), role, id, req.Revision)
 	case model.TaxonomyEntityEngine:
-		err = h.svc.RevertEngine(c.Context(), int(uid), role, id, req.Revision)
+		err = h.svc.RevertEngine(c.Context(), int(userID), role, id, req.Revision)
 	case model.TaxonomyEntitySeries:
-		err = h.svc.RevertSeries(c.Context(), int(uid), role, id, req.Revision)
+		err = h.svc.RevertSeries(c.Context(), int(userID), role, id, req.Revision)
 	default:
 		return response.BadRequest(c, apperr.ErrBadRequest)
 	}

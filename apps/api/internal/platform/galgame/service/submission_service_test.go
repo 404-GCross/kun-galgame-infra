@@ -109,16 +109,16 @@ func TestSubmit_QuotaEnforced(t *testing.T) {
 	cleanTables(t)
 	getRepos()
 	ctx := context.Background()
-	uid := 99
+	userID := 99
 
 	for i := 0; i < DailySubmissionQuota; i++ {
-		_, err := testSubmissionSvc.Submit(ctx, uid, &dto.SubmitGalgameRequest{
+		_, err := testSubmissionSvc.Submit(ctx, userID, &dto.SubmitGalgameRequest{
 			NameZhCN: "fill",
 		})
 		require.NoError(t, err, "submission %d should succeed", i+1)
 	}
 
-	_, err := testSubmissionSvc.Submit(ctx, uid, &dto.SubmitGalgameRequest{
+	_, err := testSubmissionSvc.Submit(ctx, userID, &dto.SubmitGalgameRequest{
 		NameZhCN: "overflow",
 	})
 	require.Error(t, err)
@@ -189,11 +189,11 @@ func TestClaim_Concurrent(t *testing.T) {
 	loseCount := 0
 
 	// Two concurrent claimers — exactly one should win.
-	for _, uid := range []int{42, 43} {
+	for _, userID := range []int{42, 43} {
 		wg.Add(1)
-		go func(uid int) {
+		go func(userID int) {
 			defer wg.Done()
-			_, err := testSubmissionSvc.Claim(context.Background(), uid, draft.ID)
+			_, err := testSubmissionSvc.Claim(context.Background(), userID, draft.ID)
 			mu.Lock()
 			defer mu.Unlock()
 			if err == nil {
@@ -203,7 +203,7 @@ func TestClaim_Concurrent(t *testing.T) {
 				loseCount++
 				loseErr = err
 			}
-		}(uid)
+		}(userID)
 	}
 	wg.Wait()
 
@@ -218,7 +218,7 @@ func TestPatchDraft_DeclinedToPending(t *testing.T) {
 	getRepos()
 	ctx := context.Background()
 
-	// Seed a declined draft owned by uid=7
+	// Seed a declined draft owned by userID=7
 	g := &model.Galgame{
 		Status:   model.GalgameStatusDeclined,
 		UserID:   7,
@@ -350,12 +350,12 @@ func TestListMine_AttachesDeclineReason(t *testing.T) {
 
 	// Write the decline message that ListMine should pick up.
 	payload, _ := json.Marshal(map[string]any{"reason": "VNDB ID 错"})
-	adminUID := 1
+	adminUserID := 1
 	target := 5
 	require.NoError(t, testDB.Create(&model.GalgameMessage{
 		Type:         model.MessageTypeDeclined,
 		GalgameID:    declined.ID,
-		ActorUserID:  &adminUID,
+		ActorUserID:  &adminUserID,
 		TargetUserID: &target,
 		Payload:      payload,
 	}).Error)

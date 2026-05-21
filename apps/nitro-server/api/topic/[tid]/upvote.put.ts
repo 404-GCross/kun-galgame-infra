@@ -6,7 +6,7 @@ export default defineEventHandler(async (event) => {
   if (!userInfo) {
     return kunError(event, '用户登录失效', 205)
   }
-  const uid = userInfo.uid
+  const userId = userInfo.id
 
   const input = await kunParsePutBody(event, updateTopicUpvoteSchema)
   if (typeof input === 'string') {
@@ -19,14 +19,14 @@ export default defineEventHandler(async (event) => {
   if (!topic) {
     return kunError(event, '未找到该话题')
   }
-  if (topic.user_id === uid) {
+  if (topic.user_id === userId) {
     return kunError(event, '您不能推自己的话题')
   }
 
   return prisma.$transaction(async (prisma) => {
     await prisma.topic_upvote.create({
       data: {
-        user_id: uid,
+        user_id: userId,
         topic_id: input.topicId
       }
     })
@@ -42,13 +42,13 @@ export default defineEventHandler(async (event) => {
     })
 
     await prisma.user.update({
-      where: { id: uid },
+      where: { id: userId },
       data: { moemoepoint: { increment: -7 } }
     })
 
     await createDedupMessage(
       prisma,
-      uid,
+      userId,
       topic.user_id,
       'upvoted',
       markdownToText(topic.content).slice(0, 233),

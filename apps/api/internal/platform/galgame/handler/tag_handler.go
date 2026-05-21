@@ -135,8 +135,8 @@ func (h *TagHandler) Multi(c fiber.Ctx) error {
 // which handles the snapshot-overlay → ApplyTagSnapshot → revision
 // write sequence; this handler only binds, validates, and dispatches.
 func (h *TagHandler) Update(c fiber.Ctx) error {
-	uid, _ := c.Locals("user_uid").(uint)
-	if uid == 0 {
+	userID, _ := c.Locals("user_id").(uint)
+	if userID == 0 {
 		return response.Unauthorized(c, errors.ErrAuthUnauthorized)
 	}
 	roles, _ := c.Locals("user_roles").([]string)
@@ -152,7 +152,7 @@ func (h *TagHandler) Update(c fiber.Ctx) error {
 		return response.BadRequestMsg(c, errors.ErrValidationFailed, err.Error())
 	}
 
-	if err := h.taxSvc.UpdateTag(c.Context(), int(uid), roleLevel(roles), &req); err != nil {
+	if err := h.taxSvc.UpdateTag(c.Context(), int(userID), roleLevel(roles), &req); err != nil {
 		return mapAppErrOrInternal(c, err)
 	}
 	h.searchHook.Tag(req.TagID)
@@ -163,8 +163,8 @@ func (h *TagHandler) Update(c fiber.Ctx) error {
 // users introduce a tag missing from the wiki for an original / doujin
 // work. Service writes the initial taxonomy_revision (action=created).
 func (h *TagHandler) Create(c fiber.Ctx) error {
-	uid, _ := c.Locals("user_uid").(uint)
-	if uid == 0 {
+	userID, _ := c.Locals("user_id").(uint)
+	if userID == 0 {
 		return response.Unauthorized(c, errors.ErrAuthUnauthorized)
 	}
 	roles, _ := c.Locals("user_roles").([]string)
@@ -181,7 +181,7 @@ func (h *TagHandler) Create(c fiber.Ctx) error {
 		return response.BadRequest(c, errors.ErrBadRequest)
 	}
 
-	tag, err := h.taxSvc.CreateTag(c.Context(), int(uid), roleLevel(roles), &req)
+	tag, err := h.taxSvc.CreateTag(c.Context(), int(userID), roleLevel(roles), &req)
 	if err != nil {
 		return mapAppErrOrInternal(c, err)
 	}
@@ -194,8 +194,8 @@ func (h *TagHandler) Create(c fiber.Ctx) error {
 // the cascade + records taxonomy_revision (action=deleted) +
 // per-galgame galgame_revisions (changed_fields=['tag_ids']).
 func (h *TagHandler) Delete(c fiber.Ctx) error {
-	uid, _ := c.Locals("user_uid").(uint)
-	if uid == 0 {
+	userID, _ := c.Locals("user_id").(uint)
+	if userID == 0 {
 		return response.Unauthorized(c, errors.ErrAuthUnauthorized)
 	}
 	roles, _ := c.Locals("user_roles").([]string)
@@ -218,7 +218,7 @@ func (h *TagHandler) Delete(c fiber.Ctx) error {
 			"该 tag 仍被 "+strconv.FormatInt(rel, 10)+" 个 galgame 引用；如确认要一键清除全部引用并硬删除，请带 ?force=true（仅 role>1）")
 	}
 
-	relations, aliases, affected, err := h.taxSvc.DeleteTag(c.Context(), int(uid), roleLevel(roles), id)
+	relations, aliases, affected, err := h.taxSvc.DeleteTag(c.Context(), int(userID), roleLevel(roles), id)
 	if err != nil {
 		return mapAppErrOrInternal(c, err)
 	}

@@ -11,7 +11,7 @@ export default defineEventHandler(async (event) => {
   if (!userInfo) {
     return kunError(event, '用户登录失效', 205)
   }
-  const uid = userInfo.uid
+  const userId = userInfo.id
 
   const topic = await prisma.topic.findUnique({
     where: { id: input.topicId }
@@ -19,7 +19,7 @@ export default defineEventHandler(async (event) => {
   if (!topic) {
     return kunError(event, '未找到该话题')
   }
-  if (topic.user_id !== uid && userInfo.role < 2) {
+  if (topic.user_id !== userId && userInfo.role < 2) {
     return kunError(event, '您没有权限隐藏该话题')
   }
 

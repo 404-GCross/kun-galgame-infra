@@ -25,7 +25,7 @@ export default defineEventHandler(async (event) => {
   if (!userInfo) {
     return kunError(event, '用户登录失效', 205)
   }
-  if (comment.user_id !== userInfo.uid && userInfo.role < 2) {
+  if (comment.user_id !== userInfo.id && userInfo.role < 2) {
     return kunError(event, '您无权删除这个评论')
   }
 
@@ -34,7 +34,7 @@ export default defineEventHandler(async (event) => {
     userInfo.role < 2 ? moemoepointToDecreaseIfUserDelete : 3
 
   const user = await prisma.user.findUnique({
-    where: { id: userInfo.uid },
+    where: { id: userInfo.id },
     select: { moemoepoint: true }
   })
   if (!user) {

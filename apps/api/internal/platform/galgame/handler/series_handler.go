@@ -70,8 +70,8 @@ func (h *SeriesHandler) Get(c fiber.Ctx) error {
 // its own galgame_revision (changed_fields=['series_id']) since
 // membership is owned by the galgame side, not by series.
 func (h *SeriesHandler) Create(c fiber.Ctx) error {
-	uid, _ := c.Locals("user_uid").(uint)
-	if uid == 0 {
+	userID, _ := c.Locals("user_id").(uint)
+	if userID == 0 {
 		return response.Unauthorized(c, errors.ErrAuthUnauthorized)
 	}
 	roles, _ := c.Locals("user_roles").([]string)
@@ -84,7 +84,7 @@ func (h *SeriesHandler) Create(c fiber.Ctx) error {
 		return response.BadRequestMsg(c, errors.ErrValidationFailed, err.Error())
 	}
 
-	sr, err := h.taxSvc.CreateSeries(c.Context(), int(uid), roleLevel(roles), &req, req.GalgameIDs)
+	sr, err := h.taxSvc.CreateSeries(c.Context(), int(userID), roleLevel(roles), &req, req.GalgameIDs)
 	if err != nil {
 		return mapAppErrOrInternal(c, err)
 	}
@@ -95,8 +95,8 @@ func (h *SeriesHandler) Create(c fiber.Ctx) error {
 // (UpdateSeriesRequest.SeriesID) so the service signature matches the
 // other entity flows.
 func (h *SeriesHandler) Update(c fiber.Ctx) error {
-	uid, _ := c.Locals("user_uid").(uint)
-	if uid == 0 {
+	userID, _ := c.Locals("user_id").(uint)
+	if userID == 0 {
 		return response.Unauthorized(c, errors.ErrAuthUnauthorized)
 	}
 	roles, _ := c.Locals("user_roles").([]string)
@@ -115,7 +115,7 @@ func (h *SeriesHandler) Update(c fiber.Ctx) error {
 	}
 	req.SeriesID = id
 
-	if err := h.taxSvc.UpdateSeries(c.Context(), int(uid), roleLevel(roles), &req); err != nil {
+	if err := h.taxSvc.UpdateSeries(c.Context(), int(userID), roleLevel(roles), &req); err != nil {
 		return mapAppErrOrInternal(c, err)
 	}
 	return response.Success(c, nil)
@@ -125,8 +125,8 @@ func (h *SeriesHandler) Update(c fiber.Ctx) error {
 // unbinds galgame.series_id for every member, writes the deletion
 // revision + one galgame_revision per affected gid.
 func (h *SeriesHandler) Delete(c fiber.Ctx) error {
-	uid, _ := c.Locals("user_uid").(uint)
-	if uid == 0 {
+	userID, _ := c.Locals("user_id").(uint)
+	if userID == 0 {
 		return response.Unauthorized(c, errors.ErrAuthUnauthorized)
 	}
 	roles, _ := c.Locals("user_roles").([]string)
@@ -139,7 +139,7 @@ func (h *SeriesHandler) Delete(c fiber.Ctx) error {
 		return response.BadRequest(c, errors.ErrInvalidID)
 	}
 
-	relations, affected, err := h.taxSvc.DeleteSeries(c.Context(), int(uid), roleLevel(roles), id)
+	relations, affected, err := h.taxSvc.DeleteSeries(c.Context(), int(userID), roleLevel(roles), id)
 	if err != nil {
 		return mapAppErrOrInternal(c, err)
 	}

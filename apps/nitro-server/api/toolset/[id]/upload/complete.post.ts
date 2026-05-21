@@ -88,14 +88,14 @@ export default defineEventHandler(async (event) => {
     return kunError(event, '文件大小校验失败，请重试或联系管理员')
   }
 
-  const result = await canUserUpload(userInfo.uid, actualBytes)
+  const result = await canUserUpload(userInfo.id, actualBytes)
   if (typeof result === 'string') {
     await cleanupFailedUpload()
     return kunError(event, result)
   }
 
   await prisma.user.update({
-    where: { id: userInfo.uid },
+    where: { id: userInfo.id },
     data: { daily_toolset_upload_count: result }
   })
 

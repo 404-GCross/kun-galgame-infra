@@ -21,7 +21,7 @@ export default defineEventHandler(async (event) => {
   if (!userInfo) {
     return kunError(event, '用户登录失效', 205)
   }
-  const user = await prisma.user.findUnique({ where: { id: userInfo.uid } })
+  const user = await prisma.user.findUnique({ where: { id: userInfo.id } })
   if (!user) {
     return kunError(event, '未找到用户')
   }
@@ -46,7 +46,7 @@ export default defineEventHandler(async (event) => {
     })
 
     await prisma.user.update({
-      where: { id: userInfo.uid },
+      where: { id: userInfo.id },
       data: { moemoepoint: { increment: moemoepointDecrement } }
     })
 

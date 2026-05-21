@@ -42,19 +42,19 @@ export default defineEventHandler(async (event) => {
   const res = await resizeUserAvatar(
     'avatar',
     avatarFile[0]!.data,
-    userInfo.uid
+    userInfo.id
   )
   if (res) {
     return kunError(event, res)
   }
 
-  const imageLink = `${env.KUN_VISUAL_NOVEL_IMAGE_BED_URL}/avatar/user_${userInfo.uid}/avatar.webp`
+  const imageLink = `${env.KUN_VISUAL_NOVEL_IMAGE_BED_URL}/avatar/user_${userInfo.id}/avatar.webp`
   await prisma.user.update({
-    where: { id: userInfo.uid },
+    where: { id: userInfo.id },
     data: { avatar: imageLink }
   })
 
-  await purgeCache('userAvatar', userInfo.uid)
+  await purgeCache('userAvatar', userInfo.id)
 
   return imageLink
 })

@@ -37,7 +37,7 @@ export default defineEventHandler(async (event) => {
   if (!oldTopic) {
     return kunError(event, '未找到此话题')
   }
-  if (userInfo.uid !== oldTopic.user_id && userInfo.role < 2) {
+  if (userInfo.id !== oldTopic.user_id && userInfo.role < 2) {
     return kunError(event, '您没有权限更改此话题')
   }
   const oldSections = oldTopic.section.map((s) => s.topic_section.name)

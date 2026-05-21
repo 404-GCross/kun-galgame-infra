@@ -19,7 +19,7 @@ export default defineEventHandler(async (event) => {
   if (!rating) {
     return kunError(event, '评分不存在')
   }
-  if (rating.user_id !== userInfo.uid) {
+  if (rating.user_id !== userInfo.id) {
     return kunError(event, '您无权限修改他人评分')
   }
 
@@ -45,7 +45,7 @@ export default defineEventHandler(async (event) => {
     })
 
     await prisma.user.update({
-      where: { id: userInfo.uid },
+      where: { id: userInfo.id },
       data: { moemoepoint: { increment: pointDiff } }
     })
 

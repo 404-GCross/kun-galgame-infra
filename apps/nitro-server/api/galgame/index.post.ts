@@ -25,7 +25,7 @@ const readGalgameData = async (event: H3Event) => {
   }
 
   const user = await prisma.user.findUnique({
-    where: { id: userInfo.uid },
+    where: { id: userInfo.id },
     include: {
       galgame: {
         where: {
@@ -44,7 +44,7 @@ const readGalgameData = async (event: H3Event) => {
     return kunError(event, '您今日发布的 Galgame 已经达到上限')
   }
 
-  return { result: input, uid: userInfo.uid }
+  return { result: input, uid: userInfo.id }
 }
 
 export default defineEventHandler(async (event) => {

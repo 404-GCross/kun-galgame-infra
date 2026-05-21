@@ -5,10 +5,10 @@ export default defineEventHandler(async (event) => {
   if (!userInfo) {
     return kunError(event, '用户登录失效', 205)
   }
-  const uid = userInfo.uid
+  const userId = userInfo.id
 
   await prisma.message.updateMany({
-    where: { receiver_id: uid },
+    where: { receiver_id: userId },
     data: { status: 'read' }
   })
 

@@ -5,17 +5,17 @@ export default defineEventHandler(async (event) => {
   if (!userInfo) {
     return kunError(event, '用户登录失效', 205)
   }
-  const uid = userInfo.uid
+  const userId = userInfo.id
 
   const user = await prisma.user.findUnique({
-    where: { id: uid }
+    where: { id: userId }
   })
   if (!user) {
     return kunError(event, '未找到该用户')
   }
 
   const message = await prisma.message.count({
-    where: { receiver_id: uid, status: 'unread' }
+    where: { receiver_id: userId, status: 'unread' }
   })
 
   const messageAdmin = await prisma.system_message.count({
@@ -25,18 +25,18 @@ export default defineEventHandler(async (event) => {
   const chatMessage = await prisma.chat_message.count({
     where: {
       sender_id: {
-        not: uid
+        not: userId
       },
       chat_room: {
         participant: {
           some: {
-            user_id: uid
+            user_id: userId
           }
         }
       },
       read_by: {
         none: {
-          user_id: uid
+          user_id: userId
         }
       }
     }

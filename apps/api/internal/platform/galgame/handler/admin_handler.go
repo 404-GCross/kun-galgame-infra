@@ -97,8 +97,8 @@ func (h *AdminHandler) GetGalgame(c fiber.Ctx) error {
 // Allowed target statuses: 0 (publish/approve), 1 (ban), 4 (decline).
 // 4 is only valid from source status=3. See admin_dto.go for rationale.
 func (h *AdminHandler) UpdateGalgameStatus(c fiber.Ctx) error {
-	adminUID, _ := c.Locals("user_uid").(uint)
-	if adminUID == 0 {
+	adminUserID, _ := c.Locals("user_id").(uint)
+	if adminUserID == 0 {
 		return response.Unauthorized(c, errors.ErrAuthUnauthorized)
 	}
 	id, err := strconv.Atoi(c.Params("gid"))
@@ -118,7 +118,7 @@ func (h *AdminHandler) UpdateGalgameStatus(c fiber.Ctx) error {
 		// Defensive: admin service must be wired up in production.
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
-	if err := h.adminSvc.UpdateStatus(c.Context(), int(adminUID), id, req.Status, req.Reason); err != nil {
+	if err := h.adminSvc.UpdateStatus(c.Context(), int(adminUserID), id, req.Status, req.Reason); err != nil {
 		if appErr, ok := err.(*errors.AppError); ok {
 			switch appErr.Code {
 			case errors.ErrGalgameNotFound:

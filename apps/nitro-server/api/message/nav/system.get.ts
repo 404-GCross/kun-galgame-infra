@@ -5,7 +5,7 @@ export default defineEventHandler(async (event) => {
   if (!userInfo) {
     return kunError(event, '用户登录失效', 205)
   }
-  const uid = userInfo.uid
+  const userId = userInfo.id
 
   const [
     latestMessage,
@@ -16,14 +16,14 @@ export default defineEventHandler(async (event) => {
     systemMessageUnreadCount
   ] = await prisma.$transaction([
     prisma.message.findFirst({
-      where: { receiver_id: uid },
+      where: { receiver_id: userId },
       orderBy: { created: 'desc' }
     }),
     prisma.message.count({
-      where: { receiver_id: uid }
+      where: { receiver_id: userId }
     }),
     prisma.message.count({
-      where: { receiver_id: uid, status: 'unread' }
+      where: { receiver_id: userId, status: 'unread' }
     }),
     prisma.system_message.findFirst({
       orderBy: { created: 'desc' }

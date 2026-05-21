@@ -5,7 +5,7 @@ export default defineEventHandler(async (event) => {
   if (!userInfo) {
     return kunError(event, '用户登录失效', 205)
   }
-  const userId = userInfo.uid
+  const userId = userInfo.id
 
   const chatRooms = await prisma.chat_room.findMany({
     where: {

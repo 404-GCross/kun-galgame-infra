@@ -6,7 +6,7 @@ export default defineEventHandler(async (event) => {
   if (!userInfo) {
     return kunError(event, '用户登录失效', 205)
   }
-  const uid = userInfo.uid
+  const userId = userInfo.id
 
   const input = await kunParsePutBody(event, updateTopicFavoriteSchema)
   if (typeof input === 'string') {
@@ -18,7 +18,7 @@ export default defineEventHandler(async (event) => {
     include: {
       favorite: {
         where: {
-          user_id: uid
+          user_id: userId
         }
       }
     }
@@ -34,7 +34,7 @@ export default defineEventHandler(async (event) => {
       await prisma.topic_favorite.delete({
         where: {
           topic_id_user_id: {
-            user_id: uid,
+            user_id: userId,
             topic_id: input.topicId
           }
         }
@@ -42,13 +42,13 @@ export default defineEventHandler(async (event) => {
     } else {
       await prisma.topic_favorite.create({
         data: {
-          user_id: uid,
+          user_id: userId,
           topic_id: input.topicId
         }
       })
     }
 
-    if (topic.user_id !== uid) {
+    if (topic.user_id !== userId) {
       await prisma.user.update({
         where: { id: topic.user_id },
         data: { moemoepoint: { increment: isFavorited ? -1 : 1 } }
@@ -56,7 +56,7 @@ export default defineEventHandler(async (event) => {
 
       await createDedupMessage(
         prisma,
-        uid,
+        userId,
         topic.user_id,
         'favorite',
         markdownToText(topic.content).slice(0, 233),

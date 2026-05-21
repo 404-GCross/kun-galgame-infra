@@ -6,9 +6,9 @@ export default defineEventHandler(async (event) => {
   if (!userInfo) {
     return kunError(event, '用户登录失效', 205)
   }
-  const uid = userInfo.uid
+  const userId = userInfo.id
   const user = await prisma.user.findUnique({
-    where: { id: uid },
+    where: { id: userId },
     select: { name: true }
   })
   if (!user) {
@@ -27,7 +27,7 @@ export default defineEventHandler(async (event) => {
   if (!topic) {
     return kunError(event, '未找到该话题')
   }
-  if (topic.user_id !== uid && userInfo.role < 2) {
+  if (topic.user_id !== userId && userInfo.role < 2) {
     return kunError(event, '您无权将该回复设置为最佳答案')
   }
 
@@ -63,10 +63,10 @@ export default defineEventHandler(async (event) => {
         }
       })
 
-      if (uid !== reply.user_id) {
+      if (userId !== reply.user_id) {
         await createDedupMessage(
           prisma,
-          uid,
+          userId,
           reply.user_id,
           'solution',
           replyContent.slice(0, 233),

@@ -19,7 +19,7 @@ export default defineEventHandler(async (event) => {
     return kunError(event, '评论不存在', 404)
   }
 
-  if (comment.user_id !== userInfo.uid && userInfo.role < 2) {
+  if (comment.user_id !== userInfo.id && userInfo.role < 2) {
     return kunError(event, '您没有权限删除该评论', 403)
   }
 

@@ -12,7 +12,7 @@ export default defineEventHandler(async (event) => {
   if (!userInfo) {
     return kunError(event, '用户登录失效', 205)
   }
-  const uid = userInfo.uid
+  const userId = userInfo.id
 
   const gid = getRouterParam(event, 'gid')
   if (!gid) {
@@ -61,12 +61,12 @@ export default defineEventHandler(async (event) => {
   }
 
   return prisma.$transaction(async (prisma) => {
-    if (uid === originalGalgame.user_id || userInfo.role > 1) {
+    if (userId === originalGalgame.user_id || userInfo.role > 1) {
       if (originalGalgame.vndb_id !== input.vndbId) {
         await resyncVndbData(prisma, {
           galgameId,
           newVndbId: input.vndbId,
-          userId: uid
+          userId: userId
         })
       }
 
@@ -92,14 +92,14 @@ export default defineEventHandler(async (event) => {
 
       await createGalgameHistory(prisma, {
         galgame_id: galgameId,
-        user_id: uid,
+        user_id: userId,
         action: 'updated',
         type: 'galgame',
         content: formatDate(new Date(), { isPrecise: true, isShowYear: true })
       })
 
       await prisma.galgame_contributor.createMany({
-        data: [{ user_id: uid, galgame_id: galgameId }],
+        data: [{ user_id: userId, galgame_id: galgameId }],
         skipDuplicates: true
       })
     } else {
@@ -113,7 +113,7 @@ export default defineEventHandler(async (event) => {
       await prisma.galgame_pr.create({
         data: {
           galgame_id: galgameId,
-          user_id: uid,
+          user_id: userId,
           index,
           old_data: originGalgameObject,
           new_data: input
@@ -122,7 +122,7 @@ export default defineEventHandler(async (event) => {
 
       await createGalgameHistory(prisma, {
         galgame_id: galgameId,
-        user_id: userInfo.uid,
+        user_id: userInfo.id,
         action: 'created',
         type: 'pr',
         content: ''
@@ -130,7 +130,7 @@ export default defineEventHandler(async (event) => {
 
       await createMessage(
         prisma,
-        uid,
+        userId,
         originalGalgame.user_id,
         'requested',
         Object.values(input).join(',').slice(0, 233),

@@ -25,7 +25,7 @@ export default defineEventHandler(async (event) => {
       include: {
         like: {
           where: {
-            user_id: userInfo?.uid
+            user_id: userInfo?.id
           }
         },
         _count: {

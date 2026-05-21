@@ -19,7 +19,7 @@ export default defineEventHandler(async (event) => {
     prisma.galgame_toolset_practicality.findFirst({
       where: {
         toolset_id: input.toolsetId,
-        user_id: userInfo?.uid
+        user_id: userInfo?.id
       },
       select: { rate: true }
     })

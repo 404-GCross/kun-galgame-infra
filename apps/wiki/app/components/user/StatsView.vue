@@ -5,19 +5,19 @@ const api = useApi()
 const route = useRoute()
 const router = useRouter()
 
-const uid = computed(() => Number(route.params.uid))
+const id = computed(() => Number(route.params.id))
 
 // SSR: public endpoint, server-fetched + payload-hydrated; re-fetches on
-// uid change.
+// id change.
 const { data: stats, status } = await useAsyncData(
   'user-galgame-stats',
   async () => {
     const r = await api.get<UserGalgameStats>(
-      `/galgame/user/${uid.value}/stats`
+      `/galgame/user/${id.value}/stats`
     )
     return r.code === 0 ? r.data : null
   },
-  { watch: [uid] }
+  { watch: [id] }
 )
 const loading = computed(() => status.value === 'pending')
 
@@ -76,7 +76,7 @@ const prStats = computed(() => {
         <Icon name="lucide:arrow-left" class="size-5" />
       </button>
       <h1 class="text-foreground text-2xl font-bold">
-        用户贡献统计 · uid={{ uid }}
+        用户贡献统计 · id={{ id }}
       </h1>
     </div>
 

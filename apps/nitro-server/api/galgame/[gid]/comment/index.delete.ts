@@ -27,7 +27,7 @@ export default defineEventHandler(async (event) => {
     return kunError(event, '用户登录失效', 205)
   }
   const user = await prisma.user.findUnique({
-    where: { id: userInfo.uid }
+    where: { id: userInfo.id }
   })
   if (!user) {
     return kunError(event, '未找到用户')

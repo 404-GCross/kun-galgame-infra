@@ -19,7 +19,7 @@ export default defineEventHandler(async (event) => {
   if (!toolsetResource) {
     return kunError(event, '未找到该工具资源')
   }
-  if (userInfo.role < 2 && userInfo.uid !== toolsetResource.user_id) {
+  if (userInfo.role < 2 && userInfo.id !== toolsetResource.user_id) {
     return kunError(event, '您没有权限更改该工具资源')
   }
 
@@ -42,7 +42,7 @@ export default defineEventHandler(async (event) => {
     })
 
     await p.galgame_toolset_contributor.createMany({
-      data: [{ toolset_id: toolsetResource.toolset_id, user_id: userInfo.uid }],
+      data: [{ toolset_id: toolsetResource.toolset_id, user_id: userInfo.id }],
       skipDuplicates: true
     })
   })

@@ -406,7 +406,7 @@ func (s *AuthService) generateTokens(user *model.User) (*dto.TokenPair, error) {
 		s.cfg.JWT.Secret,
 		utils.TokenClaims{
 			UserUUID: user.UUID,
-			UID:      user.ID,
+			ID:       user.ID,
 			Email:    user.Email,
 			Name:     user.Name,
 			Roles:    user.RoleNames(),

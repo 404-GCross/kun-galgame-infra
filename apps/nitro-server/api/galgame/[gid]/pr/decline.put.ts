@@ -12,7 +12,7 @@ export default defineEventHandler(async (event) => {
   if (!userInfo) {
     return kunError(event, '用户登录失效', 205)
   }
-  const uid = userInfo.uid
+  const userId = userInfo.id
 
   return prisma.$transaction(async (prisma) => {
     const galgamePR = await prisma.galgame_pr.update({
@@ -33,10 +33,10 @@ export default defineEventHandler(async (event) => {
       content: `#${galgamePR.index} ${note}`
     })
 
-    if (uid !== galgamePR.user_id) {
+    if (userId !== galgamePR.user_id) {
       await createMessage(
         prisma,
-        uid,
+        userId,
         galgamePR.user_id,
         'declined',
         `#${galgamePR.index} ${note}`,

@@ -198,7 +198,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const userInfo = await getCookieTokenInfo(event)
-  const result = await getTopicReplies(input, userInfo?.uid)
+  const result = await getTopicReplies(input, userInfo?.id)
 
   return result
 })

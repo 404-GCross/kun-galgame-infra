@@ -11,7 +11,7 @@ export default defineEventHandler(async (event) => {
     return kunError(event, '用户登录失效', 205)
   }
 
-  const uid = userInfo.uid
+  const userId = userInfo.id
   const galgameId = input.galgameId
 
   const galgame = await prisma.galgame.findUnique({
@@ -19,7 +19,7 @@ export default defineEventHandler(async (event) => {
     include: {
       favorite: {
         where: {
-          user_id: uid
+          user_id: userId
         }
       }
     }
@@ -35,7 +35,7 @@ export default defineEventHandler(async (event) => {
       await prisma.galgame_favorite.delete({
         where: {
           galgame_id_user_id: {
-            user_id: uid,
+            user_id: userId,
             galgame_id: galgameId
           }
         }
@@ -43,15 +43,15 @@ export default defineEventHandler(async (event) => {
     } else {
       await prisma.galgame_favorite.create({
         data: {
-          user_id: uid,
+          user_id: userId,
           galgame_id: galgameId
         }
       })
     }
 
-    if (uid !== galgame.user_id) {
+    if (userId !== galgame.user_id) {
       await prisma.user.update({
-        where: { id: uid },
+        where: { id: userId },
         data: {
           moemoepoint: {
             increment: isFavoriteGalgame ? -1 : 1
@@ -62,7 +62,7 @@ export default defineEventHandler(async (event) => {
       if (!isFavoriteGalgame) {
         await createDedupMessage(
           prisma,
-          uid,
+          userId,
           galgame.user_id,
           'favorite',
           galgame.name_zh_cn ||

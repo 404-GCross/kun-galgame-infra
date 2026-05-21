@@ -64,8 +64,8 @@ func (h *ContributorHandler) List(c fiber.Ctx) error {
 
 // Delete removes a contributor (requires galgame creator or admin)
 func (h *ContributorHandler) Delete(c fiber.Ctx) error {
-	uid, _ := c.Locals("user_uid").(uint)
-	if uid == 0 {
+	userID, _ := c.Locals("user_id").(uint)
+	if userID == 0 {
 		return response.Unauthorized(c, errors.ErrAuthUnauthorized)
 	}
 	roles, _ := c.Locals("user_roles").([]string)
@@ -75,7 +75,7 @@ func (h *ContributorHandler) Delete(c fiber.Ctx) error {
 		return response.BadRequest(c, errors.ErrInvalidID)
 	}
 
-	targetUID, err := strconv.Atoi(c.Params("uid"))
+	targetUserID, err := strconv.Atoi(c.Params("id"))
 	if err != nil {
 		return response.BadRequest(c, errors.ErrInvalidID)
 	}
@@ -85,12 +85,12 @@ func (h *ContributorHandler) Delete(c fiber.Ctx) error {
 	if err := h.galgameRepo.DB().Select("user_id").First(&galgame, gid).Error; err != nil {
 		return response.NotFound(c, errors.ErrGalgameNotFound)
 	}
-	if galgame.UserID != int(uid) && !hasRole(roles, "admin") {
+	if galgame.UserID != int(userID) && !hasRole(roles, "admin") {
 		return response.Forbidden(c, errors.ErrGalgameForbidden)
 	}
 
 	result := h.galgameRepo.DB().
-		Where("galgame_id = ? AND user_id = ?", gid, targetUID).
+		Where("galgame_id = ? AND user_id = ?", gid, targetUserID).
 		Delete(&model.GalgameContributor{})
 	if result.RowsAffected == 0 {
 		return response.NotFound(c, errors.ErrNotFound)

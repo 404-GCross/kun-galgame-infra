@@ -11,14 +11,14 @@ export default defineEventHandler(async (event) => {
   if (!userInfo) {
     return kunError(event, '用户登录失效', 205)
   }
-  const uid = userInfo.uid
+  const userId = userInfo.id
 
   const comment = await prisma.galgame_comment.findUnique({
     where: { id: input.galgameCommentId },
     include: {
       like: {
         where: {
-          user_id: uid
+          user_id: userId
         }
       }
     }
@@ -26,7 +26,7 @@ export default defineEventHandler(async (event) => {
   if (!comment) {
     return kunError(event, '未找到该评论')
   }
-  if (comment.user_id === uid) {
+  if (comment.user_id === userId) {
     return kunError(event, '您不能给自己点赞')
   }
   if (comment.like.length > 0) {
@@ -36,7 +36,7 @@ export default defineEventHandler(async (event) => {
   return prisma.$transaction(async (prisma) => {
     await prisma.galgame_comment_like.create({
       data: {
-        user_id: uid,
+        user_id: userId,
         galgame_comment_id: input.galgameCommentId
       }
     })
@@ -49,7 +49,7 @@ export default defineEventHandler(async (event) => {
     if (comment.target_user_id) {
       await createMessage(
         prisma,
-        uid,
+        userId,
         comment.user_id,
         'liked',
         comment.content.slice(0, 233),

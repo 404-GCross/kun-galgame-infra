@@ -155,16 +155,16 @@ func (r *GalgameRepository) FindByIDsAny(ctx context.Context, ids []int) ([]mode
 // in status {3, 4} where the viewer is the submitter. Used by
 // GET /galgame/batch when the caller authenticates with a user JWT.
 //
-// viewerUID == 0 falls back to FindByIDs (public visibility).
-func (r *GalgameRepository) FindByIDsWithViewer(ctx context.Context, ids []int, viewerUID int) ([]model.Galgame, error) {
-	if viewerUID <= 0 {
+// viewerUserID == 0 falls back to FindByIDs (public visibility).
+func (r *GalgameRepository) FindByIDsWithViewer(ctx context.Context, ids []int, viewerUserID int) ([]model.Galgame, error) {
+	if viewerUserID <= 0 {
 		return r.FindByIDs(ctx, ids)
 	}
 	var galgames []model.Galgame
 	err := r.db.WithContext(ctx).
 		Select("id, vndb_id, name_en_us, name_ja_jp, name_zh_cn, name_zh_tw, banner, content_limit, status, user_id, resource_update_time, original_language, age_limit").
 		Where("id IN ?", ids).
-		Where("status = 0 OR (status IN (3, 4) AND user_id = ?)", viewerUID).
+		Where("status = 0 OR (status IN (3, 4) AND user_id = ?)", viewerUserID).
 		Find(&galgames).Error
 	return galgames, err
 }
@@ -200,7 +200,7 @@ func (r *GalgameRepository) PinnedCoverHashes(ctx context.Context, ids []int) (m
 
 // ListMine returns galgames the user has submitted matching one of the
 // given statuses. Used by GET /galgame/mine.
-func (r *GalgameRepository) ListMine(ctx context.Context, uid int, statuses []int, page, limit int) (items []model.Galgame, total int64, err error) {
+func (r *GalgameRepository) ListMine(ctx context.Context, userID int, statuses []int, page, limit int) (items []model.Galgame, total int64, err error) {
 	defer func() {
 		for i := range items {
 			model.PopulateEffectiveBanner(&items[i])
@@ -208,7 +208,7 @@ func (r *GalgameRepository) ListMine(ctx context.Context, uid int, statuses []in
 	}()
 
 	q := r.db.WithContext(ctx).Model(&model.Galgame{}).
-		Where("user_id = ?", uid).
+		Where("user_id = ?", userID).
 		Where("status IN ?", statuses)
 
 	q.Count(&total)
@@ -225,12 +225,12 @@ func (r *GalgameRepository) ListMine(ctx context.Context, uid int, statuses []in
 
 // CheckSubmitQuota counts submissions made today by this user.
 // Caller compares against the configured per-day limit (default 5).
-func (r *GalgameRepository) CountSubmissionsToday(ctx context.Context, uid int) (int64, error) {
+func (r *GalgameRepository) CountSubmissionsToday(ctx context.Context, userID int) (int64, error) {
 	now := time.Now()
 	dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 	var cnt int64
 	err := r.db.WithContext(ctx).Model(&model.Galgame{}).
-		Where("user_id = ? AND status IN (3, 4) AND created >= ?", uid, dayStart).
+		Where("user_id = ? AND status IN (3, 4) AND created >= ?", userID, dayStart).
 		Count(&cnt).Error
 	return cnt, err
 }
@@ -265,7 +265,7 @@ func (r *GalgameRepository) IncrementView(ctx context.Context, id int) error {
 }
 
 // GetUserStats returns aggregated galgame statistics for a user
-func (r *GalgameRepository) GetUserStats(ctx context.Context, uid int) (*dto.UserGalgameStats, error) {
+func (r *GalgameRepository) GetUserStats(ctx context.Context, userID int) (*dto.UserGalgameStats, error) {
 	var stats dto.UserGalgameStats
 	var cnt int64
 
@@ -274,42 +274,42 @@ func (r *GalgameRepository) GetUserStats(ctx context.Context, uid int) (*dto.Use
 
 	// Galgames created (total)
 	r.db.WithContext(ctx).Model(&model.Galgame{}).
-		Where("user_id = ? AND status = 0", uid).Count(&cnt)
+		Where("user_id = ? AND status = 0", userID).Count(&cnt)
 	stats.GalgameCreated = int(cnt)
 
 	// Galgames created today
 	r.db.WithContext(ctx).Model(&model.Galgame{}).
-		Where("user_id = ? AND status = 0 AND created >= ?", uid, todayStart).Count(&cnt)
+		Where("user_id = ? AND status = 0 AND created >= ?", userID, todayStart).Count(&cnt)
 	stats.GalgameCreatedToday = int(cnt)
 
 	// Galgames contributed to (distinct galgame_id)
 	r.db.WithContext(ctx).Model(&model.GalgameContributor{}).
-		Where("user_id = ?", uid).Distinct("galgame_id").Count(&cnt)
+		Where("user_id = ?", userID).Distinct("galgame_id").Count(&cnt)
 	stats.GalgameContributed = int(cnt)
 
 	// Revision count
 	r.db.WithContext(ctx).Model(&model.GalgameRevision{}).
-		Where("user_id = ?", uid).Count(&cnt)
+		Where("user_id = ?", userID).Count(&cnt)
 	stats.RevisionCount = int(cnt)
 
 	// PR submitted (total)
 	r.db.WithContext(ctx).Model(&model.GalgamePR{}).
-		Where("user_id = ?", uid).Count(&cnt)
+		Where("user_id = ?", userID).Count(&cnt)
 	stats.PRSubmitted = int(cnt)
 
 	// PR merged
 	r.db.WithContext(ctx).Model(&model.GalgamePR{}).
-		Where("user_id = ? AND status = 1", uid).Count(&cnt)
+		Where("user_id = ? AND status = 1", userID).Count(&cnt)
 	stats.PRMerged = int(cnt)
 
 	// PR declined
 	r.db.WithContext(ctx).Model(&model.GalgamePR{}).
-		Where("user_id = ? AND status = 2", uid).Count(&cnt)
+		Where("user_id = ? AND status = 2", userID).Count(&cnt)
 	stats.PRDeclined = int(cnt)
 
 	// PR pending
 	r.db.WithContext(ctx).Model(&model.GalgamePR{}).
-		Where("user_id = ? AND status = 0", uid).Count(&cnt)
+		Where("user_id = ? AND status = 0", userID).Count(&cnt)
 	stats.PRPending = int(cnt)
 
 	return &stats, nil

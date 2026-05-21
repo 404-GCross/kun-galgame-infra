@@ -55,7 +55,7 @@ export default defineEventHandler(async (event) => {
     return kunError(event, '用户登录失效', 205)
   }
 
-  const result = await getMessages(input, userInfo.uid)
+  const result = await getMessages(input, userInfo.id)
 
   return result
 })

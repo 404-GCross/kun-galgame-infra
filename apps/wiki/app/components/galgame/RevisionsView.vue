@@ -137,7 +137,7 @@ const openDiff = (revision: number) => {
                 </span>
               </td>
               <td class="text-default-500 px-4 py-2 text-xs">
-                uid={{ r.user_id }}
+                id={{ r.user_id }}
               </td>
               <td class="text-default-400 px-4 py-2 text-xs">
                 {{ r.created?.replace('T', ' ').slice(0, 19) }}

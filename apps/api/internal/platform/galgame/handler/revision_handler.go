@@ -104,8 +104,8 @@ func (h *RevisionHandler) GetRevisionDiff(c fiber.Ctx) error {
 
 // Revert rolls back to a specific revision
 func (h *RevisionHandler) Revert(c fiber.Ctx) error {
-	uid, _ := c.Locals("user_uid").(uint)
-	if uid == 0 {
+	userID, _ := c.Locals("user_id").(uint)
+	if userID == 0 {
 		return response.Unauthorized(c, errors.ErrAuthUnauthorized)
 	}
 	roles, _ := c.Locals("user_roles").([]string)
@@ -123,7 +123,7 @@ func (h *RevisionHandler) Revert(c fiber.Ctx) error {
 		return response.BadRequestMsg(c, errors.ErrValidationFailed, err.Error())
 	}
 
-	if err := h.svc.Revert(c.Context(), int(uid), gid, req.Revision, roles); err != nil {
+	if err := h.svc.Revert(c.Context(), int(userID), gid, req.Revision, roles); err != nil {
 		if appErr, ok := err.(*errors.AppError); ok {
 			switch appErr.Code {
 			case errors.ErrGalgameForbidden:
@@ -201,8 +201,8 @@ func (h *RevisionHandler) GetPR(c fiber.Ctx) error {
 // proposed snapshot via PromoteCoverHash; existing covers are preserved
 // with their sort_order shifted to keep the partial-unique index happy.
 func (h *RevisionHandler) SubmitPR(c fiber.Ctx) error {
-	uid, _ := c.Locals("user_uid").(uint)
-	if uid == 0 {
+	userID, _ := c.Locals("user_id").(uint)
+	if userID == 0 {
 		return response.Unauthorized(c, errors.ErrAuthUnauthorized)
 	}
 
@@ -233,7 +233,7 @@ func (h *RevisionHandler) SubmitPR(c fiber.Ctx) error {
 		}
 		baseSnapshot := model.TakeSnapshot(galgame)
 		proposedSnapshot := req.ApplyToSnapshot(baseSnapshot)
-		pr, submitErr := h.svc.SubmitPR(c.Context(), int(uid), gid, proposedSnapshot, req.Note)
+		pr, submitErr := h.svc.SubmitPR(c.Context(), int(userID), gid, proposedSnapshot, req.Note)
 		if submitErr != nil {
 			return response.InternalError(c, errors.ErrOperationFailed)
 		}
@@ -247,7 +247,7 @@ func (h *RevisionHandler) SubmitPR(c fiber.Ctx) error {
 
 	proposedSnapshot := req.ApplyToSnapshot(baseSnapshot)
 
-	pr, err := h.svc.SubmitPR(c.Context(), int(uid), gid, proposedSnapshot, req.Note)
+	pr, err := h.svc.SubmitPR(c.Context(), int(userID), gid, proposedSnapshot, req.Note)
 	if err != nil {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
@@ -257,8 +257,8 @@ func (h *RevisionHandler) SubmitPR(c fiber.Ctx) error {
 
 // MergePR merges a PR
 func (h *RevisionHandler) MergePR(c fiber.Ctx) error {
-	uid, _ := c.Locals("user_uid").(uint)
-	if uid == 0 {
+	userID, _ := c.Locals("user_id").(uint)
+	if userID == 0 {
 		return response.Unauthorized(c, errors.ErrAuthUnauthorized)
 	}
 	roles, _ := c.Locals("user_roles").([]string)
@@ -268,7 +268,7 @@ func (h *RevisionHandler) MergePR(c fiber.Ctx) error {
 		return response.BadRequest(c, errors.ErrInvalidID)
 	}
 
-	if err := h.svc.MergePR(c.Context(), int(uid), id, roles); err != nil {
+	if err := h.svc.MergePR(c.Context(), int(userID), id, roles); err != nil {
 		if appErr, ok := err.(*errors.AppError); ok {
 			return response.BadRequest(c, appErr.Code)
 		}
@@ -281,8 +281,8 @@ func (h *RevisionHandler) MergePR(c fiber.Ctx) error {
 
 // DeclinePR declines a PR
 func (h *RevisionHandler) DeclinePR(c fiber.Ctx) error {
-	uid, _ := c.Locals("user_uid").(uint)
-	if uid == 0 {
+	userID, _ := c.Locals("user_id").(uint)
+	if userID == 0 {
 		return response.Unauthorized(c, errors.ErrAuthUnauthorized)
 	}
 	roles, _ := c.Locals("user_roles").([]string)
@@ -292,7 +292,7 @@ func (h *RevisionHandler) DeclinePR(c fiber.Ctx) error {
 		return response.BadRequest(c, errors.ErrInvalidID)
 	}
 
-	if err := h.svc.DeclinePR(c.Context(), int(uid), id, roles); err != nil {
+	if err := h.svc.DeclinePR(c.Context(), int(userID), id, roles); err != nil {
 		if appErr, ok := err.(*errors.AppError); ok {
 			return response.BadRequest(c, appErr.Code)
 		}

@@ -32,11 +32,11 @@ func (r *MessageRepository) Create(ctx context.Context, tx *gorm.DB, msg *model.
 
 // ListMine returns messages targeted at the given user, id-descending.
 // since_id is exclusive lower bound (id > since_id).
-func (r *MessageRepository) ListMine(ctx context.Context, uid int, sinceID int64, limit int) ([]model.GalgameMessage, int64, error) {
+func (r *MessageRepository) ListMine(ctx context.Context, userID int, sinceID int64, limit int) ([]model.GalgameMessage, int64, error) {
 	var items []model.GalgameMessage
 	var total int64
 
-	q := r.db.WithContext(ctx).Model(&model.GalgameMessage{}).Where("target_user_id = ?", uid)
+	q := r.db.WithContext(ctx).Model(&model.GalgameMessage{}).Where("target_user_id = ?", userID)
 	q.Count(&total)
 
 	if sinceID > 0 {
@@ -61,13 +61,13 @@ func (r *MessageRepository) ListFeed(ctx context.Context, sinceID int64, limit i
 }
 
 // LatestDeclinedByGalgameIDs returns the most recent 'declined' message per
-// galgame in `ids`, addressed to `uid`. Used by SubmissionService.ListMine
+// galgame in `ids`, addressed to `userID`. Used by SubmissionService.ListMine
 // to surface the decline reason on the user's own "my submissions" page —
 // the user sees "rejected because: X" without having to dig into messages.
 //
 // Returns map[galgame_id]message. Galgames with no declined message (e.g.
 // status=3 entries) are absent from the map.
-func (r *MessageRepository) LatestDeclinedByGalgameIDs(ctx context.Context, uid int, ids []int) (map[int]model.GalgameMessage, error) {
+func (r *MessageRepository) LatestDeclinedByGalgameIDs(ctx context.Context, userID int, ids []int) (map[int]model.GalgameMessage, error) {
 	if len(ids) == 0 {
 		return map[int]model.GalgameMessage{}, nil
 	}
@@ -82,7 +82,7 @@ func (r *MessageRepository) LatestDeclinedByGalgameIDs(ctx context.Context, uid 
 			  AND type = ?
 			  AND target_user_id = ?
 			ORDER BY galgame_id, id DESC
-		`, ids, model.MessageTypeDeclined, uid).
+		`, ids, model.MessageTypeDeclined, userID).
 		Scan(&rows).Error
 	if err != nil {
 		return nil, err

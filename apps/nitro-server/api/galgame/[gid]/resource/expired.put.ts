@@ -10,7 +10,7 @@ export default defineEventHandler(async (event) => {
   if (!userInfo) {
     return kunError(event, '用户登录失效', 205)
   }
-  const uid = userInfo.uid
+  const userId = userInfo.id
 
   const resource = await prisma.galgame_resource.findUnique({
     where: { id: input.galgameResourceId },
@@ -36,7 +36,7 @@ export default defineEventHandler(async (event) => {
 
   await createMessage(
     prisma,
-    uid,
+    userId,
     resource.user_id,
     'expired',
     resource.link[0] ? resource.link[0].url.slice(0, 233) : '',

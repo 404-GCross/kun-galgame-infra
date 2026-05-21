@@ -62,8 +62,8 @@ func (h *GalgameHandler) Get(c fiber.Ctx) error {
 	// Viewer-aware: optionalJWT populates user_uid when a valid Bearer is
 	// present. Lets a submitter open their own pending/declined draft
 	// (kungal/moyu /edit/.../draft/<gid>); anonymous sees status=0 only.
-	viewerUID, _ := c.Locals("user_uid").(uint)
-	galgame, users, err := h.galgameService.GetByIDWithViewer(c.Context(), id, int(viewerUID))
+	viewerUserID, _ := c.Locals("user_id").(uint)
+	galgame, users, err := h.galgameService.GetByIDWithViewer(c.Context(), id, int(viewerUserID))
 	if err != nil {
 		if appErr, ok := err.(*errors.AppError); ok {
 			return response.NotFound(c, appErr.Code)
@@ -84,8 +84,8 @@ func (h *GalgameHandler) Get(c fiber.Ctx) error {
 // resulting hash is promoted to the pinned cover (sort_order=0) of the
 // new galgame via PromoteCoverHash — same merge logic as Update/PR.
 func (h *GalgameHandler) Create(c fiber.Ctx) error {
-	uid, _ := c.Locals("user_uid").(uint)
-	if uid == 0 {
+	userID, _ := c.Locals("user_id").(uint)
+	if userID == 0 {
 		return response.Unauthorized(c, errors.ErrAuthUnauthorized)
 	}
 
@@ -104,7 +104,7 @@ func (h *GalgameHandler) Create(c fiber.Ctx) error {
 		return response.BadRequestMsg(c, errors.ErrValidationFailed, err.Error())
 	}
 
-	galgame, err := h.galgameService.Create(c.Context(), int(uid), &req)
+	galgame, err := h.galgameService.Create(c.Context(), int(userID), &req)
 	if err != nil {
 		if appErr, ok := err.(*errors.AppError); ok {
 			return response.BadRequest(c, appErr.Code)
@@ -126,8 +126,8 @@ func (h *GalgameHandler) Create(c fiber.Ctx) error {
 // shifted to keep the partial-unique index satisfied. Goes through the
 // standard revision/PR pipeline.
 func (h *GalgameHandler) Update(c fiber.Ctx) error {
-	uid, _ := c.Locals("user_uid").(uint)
-	if uid == 0 {
+	userID, _ := c.Locals("user_id").(uint)
+	if userID == 0 {
 		return response.Unauthorized(c, errors.ErrAuthUnauthorized)
 	}
 	roles, _ := c.Locals("user_roles").([]string)
@@ -149,7 +149,7 @@ func (h *GalgameHandler) Update(c fiber.Ctx) error {
 		req.PromoteCoverHash = bannerHash
 	}
 
-	galgame, err := h.galgameService.Update(c.Context(), int(uid), id, roles, &req)
+	galgame, err := h.galgameService.Update(c.Context(), int(userID), id, roles, &req)
 	if err != nil {
 		if appErr, ok := err.(*errors.AppError); ok {
 			switch appErr.Code {
@@ -185,8 +185,8 @@ func (h *GalgameHandler) BatchGet(c fiber.Ctx) error {
 		return response.BadRequestMsg(c, errors.ErrValidationFailed, "ids must contain 1-100 items")
 	}
 
-	viewerUID, _ := c.Locals("user_uid").(uint)
-	items, err := h.galgameService.BatchGetWithViewer(c.Context(), req.IDs, int(viewerUID))
+	viewerUserID, _ := c.Locals("user_id").(uint)
+	items, err := h.galgameService.BatchGetWithViewer(c.Context(), req.IDs, int(viewerUserID))
 	if err != nil {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
@@ -196,12 +196,12 @@ func (h *GalgameHandler) BatchGet(c fiber.Ctx) error {
 
 // UserStats returns aggregated galgame statistics for a user
 func (h *GalgameHandler) UserStats(c fiber.Ctx) error {
-	uid, err := strconv.Atoi(c.Params("uid"))
-	if err != nil || uid <= 0 {
+	userID, err := strconv.Atoi(c.Params("id"))
+	if err != nil || userID <= 0 {
 		return response.BadRequest(c, errors.ErrInvalidID)
 	}
 
-	stats, err := h.galgameService.GetUserStats(c.Context(), uid)
+	stats, err := h.galgameService.GetUserStats(c.Context(), userID)
 	if err != nil {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}

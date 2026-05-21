@@ -13,7 +13,7 @@ export default defineEventHandler(async (event) => {
   }
 
   await prisma.user.update({
-    where: { id: userInfo.uid },
+    where: { id: userInfo.id },
     data: { bio: input.bio }
   })
 

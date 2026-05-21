@@ -12,14 +12,14 @@ export default defineEventHandler(async (event) => {
   }
 
   const { topicId, replyId, targetUserId, content } = input
-  const uid = userInfo.uid
+  const userId = userInfo.id
 
   return prisma.$transaction(async (prisma) => {
     const newComment = await prisma.topic_comment.create({
       data: {
         topic_id: topicId,
         topic_reply_id: replyId,
-        user_id: uid,
+        user_id: userId,
         target_user_id: targetUserId,
         content
       },
@@ -41,10 +41,10 @@ export default defineEventHandler(async (event) => {
       }
     })
 
-    if (uid !== targetUserId) {
+    if (userId !== targetUserId) {
       await createMessage(
         prisma,
-        uid,
+        userId,
         targetUserId,
         'commented',
         newComment.content,

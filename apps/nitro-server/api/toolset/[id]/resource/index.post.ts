@@ -32,7 +32,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const user = await prisma.user.findUnique({
-    where: { id: userInfo.uid },
+    where: { id: userInfo.id },
     select: {
       id: true,
       name: true,
@@ -53,7 +53,7 @@ export default defineEventHandler(async (event) => {
         size: salt && fileCache ? fileCache.filesize.toString() : size,
         note,
         toolset_id: toolsetId,
-        user_id: userInfo.uid
+        user_id: userInfo.id
       }
     })
 
@@ -63,12 +63,12 @@ export default defineEventHandler(async (event) => {
     })
 
     await prisma.user.update({
-      where: { id: userInfo.uid },
+      where: { id: userInfo.id },
       data: { moemoepoint: { increment: 3 } }
     })
 
     await p.galgame_toolset_contributor.createMany({
-      data: [{ toolset_id: toolsetId, user_id: userInfo.uid }],
+      data: [{ toolset_id: toolsetId, user_id: userInfo.id }],
       skipDuplicates: true
     })
 

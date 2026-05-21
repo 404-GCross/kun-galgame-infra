@@ -78,7 +78,7 @@ export default defineEventHandler(async (event) => {
     .catch(console.error)
 
   const likedUsers = data.like.map((l) => l.user)
-  const isLiked = !!userInfo && likedUsers.some((u) => u.id === userInfo.uid)
+  const isLiked = !!userInfo && likedUsers.some((u) => u.id === userInfo.id)
 
   const sampleGalgame: GalgameSeriesSample[] =
     data.galgame.series?.galgame.map((g) => ({

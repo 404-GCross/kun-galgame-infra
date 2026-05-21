@@ -6,7 +6,7 @@ export default defineEventHandler(async (event) => {
   if (!userInfo) {
     return kunError(event, '用户登录失效', 205)
   }
-  const uid = userInfo.uid
+  const userId = userInfo.id
 
   const input = await kunParsePutBody(event, updateCommentLikeSchema)
   if (typeof input === 'string') {
@@ -18,7 +18,7 @@ export default defineEventHandler(async (event) => {
     include: {
       like: {
         where: {
-          user_id: uid
+          user_id: userId
         }
       }
     }
@@ -26,7 +26,7 @@ export default defineEventHandler(async (event) => {
   if (!comment) {
     return kunError(event, '未找到该评论')
   }
-  if (comment.user_id === uid) {
+  if (comment.user_id === userId) {
     return kunError(event, '您不能给自己的评论点赞')
   }
 
@@ -37,7 +37,7 @@ export default defineEventHandler(async (event) => {
       await prisma.topic_comment_like.delete({
         where: {
           topic_comment_id_user_id: {
-            user_id: uid,
+            user_id: userId,
             topic_comment_id: input.commentId
           }
         }
@@ -45,7 +45,7 @@ export default defineEventHandler(async (event) => {
     } else {
       await prisma.topic_comment_like.create({
         data: {
-          user_id: uid,
+          user_id: userId,
           topic_comment_id: input.commentId
         }
       })
@@ -58,7 +58,7 @@ export default defineEventHandler(async (event) => {
 
     await createDedupMessage(
       prisma,
-      uid,
+      userId,
       comment.user_id,
       'liked',
       comment.content.slice(0, 233),

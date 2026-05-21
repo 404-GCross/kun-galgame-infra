@@ -50,14 +50,14 @@ export default defineEventHandler(async (event) => {
     return kunError(event, '工具不存在')
   }
 
-  const result = await canUserUpload(userInfo.uid, filesize)
+  const result = await canUserUpload(userInfo.id, filesize)
   if (typeof result === 'string') {
     return kunError(event, result)
   }
 
   const { base, ext } = parseFileName(filename)
   const salt = generateRandomCode(7)
-  const key = `toolset/${toolsetId}/${userInfo.uid}_${base}_${salt}.${ext}`
+  const key = `toolset/${toolsetId}/${userInfo.id}_${base}_${salt}.${ext}`
 
   const bucket = process.env.KUN_VISUAL_NOVEL_S3_STORAGE_BUCKET_NAME!
 

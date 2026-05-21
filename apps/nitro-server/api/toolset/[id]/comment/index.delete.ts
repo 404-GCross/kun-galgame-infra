@@ -21,8 +21,8 @@ export default defineEventHandler(async (event) => {
   }
 
   const canDelete =
-    comment.user_id === userInfo.uid ||
-    comment.toolset.user_id === userInfo.uid ||
+    comment.user_id === userInfo.id ||
+    comment.toolset.user_id === userInfo.id ||
     userInfo.role >= 2
   if (!canDelete) {
     return kunError(event, '您没有权限删除该评论')

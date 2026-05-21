@@ -18,7 +18,7 @@ export default defineEventHandler(async (event) => {
         include: {
           _count: { select: { vote: true } },
           vote: {
-            where: { user_id: userInfo?.uid },
+            where: { user_id: userInfo?.id },
             select: { id: true }
           }
         }

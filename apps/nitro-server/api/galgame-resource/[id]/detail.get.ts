@@ -8,7 +8,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const userInfo = await getCookieTokenInfo(event)
-  const userId = userInfo?.uid
+  const userId = userInfo?.id
 
   const data = await prisma.galgame_resource.findUnique({
     where: { id: input.galgameResourceId },

@@ -51,7 +51,7 @@ export default defineEventHandler(async (event) => {
         is_pin: input.isPin,
         content_markdown: input.contentMarkdown,
         category_id: input.categoryId,
-        author_id: userInfo.uid
+        author_id: userInfo.id
       }
     })
 

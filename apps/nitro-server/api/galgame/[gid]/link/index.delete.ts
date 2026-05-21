@@ -18,7 +18,7 @@ export default defineEventHandler(async (event) => {
   if (!userInfo) {
     return kunError(event, '用户登录失效', 205)
   }
-  if (link.user_id !== userInfo.uid) {
+  if (link.user_id !== userInfo.id) {
     return kunError(event, '您无权删除这个相关链接')
   }
 

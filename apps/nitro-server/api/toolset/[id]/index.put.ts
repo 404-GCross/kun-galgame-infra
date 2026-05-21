@@ -18,7 +18,7 @@ export default defineEventHandler(async (event) => {
   if (!old) {
     return kunError(event, '未找到该工具资源')
   }
-  if (old.user_id !== userInfo.uid && userInfo.role < 2) {
+  if (old.user_id !== userInfo.id && userInfo.role < 2) {
     return kunError(event, '您没有权限更新该工具资源')
   }
 

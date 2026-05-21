@@ -11,18 +11,18 @@ export default defineEventHandler(async (event) => {
   if (!userInfo) {
     return kunError(event, '用户登录失效', 205)
   }
-  const uid = userInfo.uid
+  const userId = userInfo.id
 
   const rating = await prisma.galgame_rating.findUnique({
     where: { id: input.galgameRatingId },
     include: {
-      like: { where: { user_id: uid } }
+      like: { where: { user_id: userId } }
     }
   })
   if (!rating) {
     return kunError(event, '评分不存在')
   }
-  if (rating.user_id === uid) {
+  if (rating.user_id === userId) {
     return kunError(event, '不能给自己的评分点赞')
   }
 
@@ -33,7 +33,7 @@ export default defineEventHandler(async (event) => {
       await prisma.galgame_rating_like.delete({
         where: {
           galgame_rating_id_user_id: {
-            user_id: uid,
+            user_id: userId,
             galgame_rating_id: input.galgameRatingId
           }
         }
@@ -42,7 +42,7 @@ export default defineEventHandler(async (event) => {
       await prisma.galgame_rating_like.create({
         data: {
           galgame_rating_id: input.galgameRatingId,
-          user_id: uid
+          user_id: userId
         }
       })
     }
@@ -54,7 +54,7 @@ export default defineEventHandler(async (event) => {
 
     await createDedupMessage(
       prisma,
-      uid,
+      userId,
       rating.user_id,
       'liked',
       rating.short_summary.slice(0, 233),

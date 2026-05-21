@@ -11,13 +11,13 @@ export default defineEventHandler(async (event) => {
   if (!userInfo) {
     return kunError(event, '用户登录失效', 205)
   }
-  const uid = userInfo.uid
+  const userId = userInfo.id
 
   return prisma.$transaction(async (prisma) => {
     const created = await prisma.galgame_toolset_comment.create({
       data: {
         content: input.content,
-        user_id: uid,
+        user_id: userId,
         toolset_id: input.toolsetId,
         parent_id: input.parentId || null
       },
@@ -32,10 +32,10 @@ export default defineEventHandler(async (event) => {
         select: { user_id: true }
       })
 
-      if (parentComment && parentComment.user_id !== uid) {
+      if (parentComment && parentComment.user_id !== userId) {
         await createMessage(
           prisma,
-          uid,
+          userId,
           parentComment.user_id,
           'commented',
           input.content.slice(0, 233),

@@ -17,7 +17,7 @@ export default defineEventHandler(async (event) => {
 
   await prisma.todo.create({
     data: {
-      user_id: userInfo.uid,
+      user_id: userInfo.id,
       completed_time: input.status === 2 ? new Date() : null,
       ...input
     }

@@ -14,7 +14,7 @@ export const canUserViewPollResults = (
   isUserVoted: boolean
 ): boolean => {
   const isPrivilegedUser =
-    (userInfo?.uid && userInfo.uid === poll.user_id) ||
+    (userInfo?.id && userInfo.id === poll.user_id) ||
     (userInfo?.role && userInfo.role > 1)
   if (isPrivilegedUser) {
     return true

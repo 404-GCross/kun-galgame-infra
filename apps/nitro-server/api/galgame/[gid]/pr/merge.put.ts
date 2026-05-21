@@ -16,7 +16,7 @@ export default defineEventHandler(async (event) => {
   if (!userInfo) {
     return kunError(event, '用户登录失效', 205)
   }
-  const uid = userInfo.uid
+  const userId = userInfo.id
 
   const galgamePR = await prisma.galgame_pr.findUnique({
     where: { id: input.galgamePrId },
@@ -35,7 +35,7 @@ export default defineEventHandler(async (event) => {
   if (galgamePR.status !== 0) {
     return kunError(event, '这个更新请求已经被拒绝或合并')
   }
-  if (uid !== galgamePR.galgame.user_id && userInfo.role < 2) {
+  if (userId !== galgamePR.galgame.user_id && userInfo.role < 2) {
     return kunError(event, '您没有权限合并这个更新请求')
   }
 
@@ -52,7 +52,7 @@ export default defineEventHandler(async (event) => {
       await resyncVndbData(prisma, {
         galgameId,
         newVndbId: prJSONObject.vndbId,
-        userId: uid
+        userId: userId
       })
     }
 
@@ -66,7 +66,7 @@ export default defineEventHandler(async (event) => {
 
     await createGalgameHistory(prisma, {
       galgame_id: galgameId,
-      user_id: uid,
+      user_id: userId,
       action: 'merged',
       type: 'pr',
       content: `#${galgamePR.index}`
@@ -95,12 +95,12 @@ export default defineEventHandler(async (event) => {
     await prisma.galgame_contributor.createMany({
       data: [
         { user_id: galgamePR.user_id, galgame_id: galgameId },
-        { user_id: uid, galgame_id: galgameId }
+        { user_id: userId, galgame_id: galgameId }
       ],
       skipDuplicates: true
     })
 
-    if (uid !== galgamePR.user_id) {
+    if (userId !== galgamePR.user_id) {
       await prisma.user.update({
         where: { id: galgamePR.user_id },
         data: { moemoepoint: { increment: 1 } }
@@ -108,7 +108,7 @@ export default defineEventHandler(async (event) => {
 
       await createMessage(
         prisma,
-        uid,
+        userId,
         galgamePR.user_id,
         'merged',
         `#${galgamePR.index}`,

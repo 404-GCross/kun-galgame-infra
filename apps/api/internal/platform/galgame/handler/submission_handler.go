@@ -32,8 +32,8 @@ func NewSubmissionHandler(svc *service.SubmissionService, hook *search.Hook, img
 // Accepts JSON body or multipart/form-data (with optional `file` banner,
 // same pattern as POST /galgame). Creates a status=3 galgame, returns it.
 func (h *SubmissionHandler) Submit(c fiber.Ctx) error {
-	uid, _ := c.Locals("user_uid").(uint)
-	if uid == 0 {
+	userID, _ := c.Locals("user_id").(uint)
+	if userID == 0 {
 		return response.Unauthorized(c, errors.ErrAuthUnauthorized)
 	}
 
@@ -51,7 +51,7 @@ func (h *SubmissionHandler) Submit(c fiber.Ctx) error {
 		return response.BadRequestMsg(c, errors.ErrValidationFailed, err.Error())
 	}
 
-	g, err := h.submissionSvc.Submit(c.Context(), int(uid), &req)
+	g, err := h.submissionSvc.Submit(c.Context(), int(userID), &req)
 	if err != nil {
 		return mapSubmissionError(c, err)
 	}
@@ -64,8 +64,8 @@ func (h *SubmissionHandler) Submit(c fiber.Ctx) error {
 
 // Claim handles POST /galgame/:gid/claim.
 func (h *SubmissionHandler) Claim(c fiber.Ctx) error {
-	uid, _ := c.Locals("user_uid").(uint)
-	if uid == 0 {
+	userID, _ := c.Locals("user_id").(uint)
+	if userID == 0 {
 		return response.Unauthorized(c, errors.ErrAuthUnauthorized)
 	}
 	gid, err := strconv.Atoi(c.Params("gid"))
@@ -73,7 +73,7 @@ func (h *SubmissionHandler) Claim(c fiber.Ctx) error {
 		return response.BadRequest(c, errors.ErrInvalidID)
 	}
 
-	g, err := h.submissionSvc.Claim(c.Context(), int(uid), gid)
+	g, err := h.submissionSvc.Claim(c.Context(), int(userID), gid)
 	if err != nil {
 		return mapSubmissionError(c, err)
 	}
@@ -86,8 +86,8 @@ func (h *SubmissionHandler) Claim(c fiber.Ctx) error {
 
 // PatchDraft handles PATCH /galgame/:gid (submitter-only, drafts only).
 func (h *SubmissionHandler) PatchDraft(c fiber.Ctx) error {
-	uid, _ := c.Locals("user_uid").(uint)
-	if uid == 0 {
+	userID, _ := c.Locals("user_id").(uint)
+	if userID == 0 {
 		return response.Unauthorized(c, errors.ErrAuthUnauthorized)
 	}
 	gid, err := strconv.Atoi(c.Params("gid"))
@@ -107,7 +107,7 @@ func (h *SubmissionHandler) PatchDraft(c fiber.Ctx) error {
 		req.PromoteCoverHash = bannerHash
 	}
 
-	g, err := h.submissionSvc.PatchDraft(c.Context(), int(uid), gid, &req)
+	g, err := h.submissionSvc.PatchDraft(c.Context(), int(userID), gid, &req)
 	if err != nil {
 		return mapSubmissionError(c, err)
 	}
@@ -120,8 +120,8 @@ func (h *SubmissionHandler) PatchDraft(c fiber.Ctx) error {
 
 // DeleteDraft handles DELETE /galgame/:gid (submitter-only, drafts only).
 func (h *SubmissionHandler) DeleteDraft(c fiber.Ctx) error {
-	uid, _ := c.Locals("user_uid").(uint)
-	if uid == 0 {
+	userID, _ := c.Locals("user_id").(uint)
+	if userID == 0 {
 		return response.Unauthorized(c, errors.ErrAuthUnauthorized)
 	}
 	gid, err := strconv.Atoi(c.Params("gid"))
@@ -129,7 +129,7 @@ func (h *SubmissionHandler) DeleteDraft(c fiber.Ctx) error {
 		return response.BadRequest(c, errors.ErrInvalidID)
 	}
 
-	if err := h.submissionSvc.DeleteDraft(c.Context(), int(uid), gid); err != nil {
+	if err := h.submissionSvc.DeleteDraft(c.Context(), int(userID), gid); err != nil {
 		return mapSubmissionError(c, err)
 	}
 
@@ -145,8 +145,8 @@ func (h *SubmissionHandler) DeleteDraft(c fiber.Ctx) error {
 
 // ListMine handles GET /galgame/mine.
 func (h *SubmissionHandler) ListMine(c fiber.Ctx) error {
-	uid, _ := c.Locals("user_uid").(uint)
-	if uid == 0 {
+	userID, _ := c.Locals("user_id").(uint)
+	if userID == 0 {
 		return response.Unauthorized(c, errors.ErrAuthUnauthorized)
 	}
 
@@ -158,7 +158,7 @@ func (h *SubmissionHandler) ListMine(c fiber.Ctx) error {
 		return response.BadRequestMsg(c, errors.ErrValidationFailed, err.Error())
 	}
 
-	items, total, err := h.submissionSvc.ListMine(c.Context(), int(uid), &req)
+	items, total, err := h.submissionSvc.ListMine(c.Context(), int(userID), &req)
 	if err != nil {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}

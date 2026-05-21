@@ -19,7 +19,7 @@ const load = async () => {
   }
 }
 
-const remove = async (uid: number, name: string) => {
+const remove = async (userId: number, name: string) => {
   if (
     !(await useKunConfirm({
       title: '移除贡献者',
@@ -30,7 +30,7 @@ const remove = async (uid: number, name: string) => {
   )
     return
   const response = await api.delete(
-    `/galgame/${props.galgameId}/contributors/${uid}`
+    `/galgame/${props.galgameId}/contributors/${userId}`
   )
   if (response.code === 0) {
     useKunMessage('移除成功', 'success')
@@ -78,7 +78,7 @@ onMounted(load)
           />
           <div>
             <p class="text-foreground hover:text-primary text-sm font-medium">
-              {{ c.user?.name ?? `uid=${c.user_id}` }}
+              {{ c.user?.name ?? `id=${c.user_id}` }}
             </p>
             <p class="text-default-400 text-xs">
               加入于 {{ c.created?.slice(0, 10) }}

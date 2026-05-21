@@ -6,17 +6,17 @@ export default defineEventHandler(async (event) => {
   if (!userInfo) {
     return kunError(event, '用户登录失效', 205)
   }
-  const uid = userInfo.uid
+  const userId = userInfo.id
 
   const input = kunParseGetQuery(event, getChatMessageHistorySchema)
   if (typeof input === 'string') {
     return kunError(event, input)
   }
   const receiverUid = Number(input.receiverUid)
-  if (receiverUid === userInfo.uid) {
+  if (receiverUid === userInfo.id) {
     return kunError(event, '不能给自己发送消息')
   }
-  const roomId = generateRoomId(receiverUid, uid)
+  const roomId = generateRoomId(receiverUid, userId)
 
   return prisma.$transaction(async (prisma) => {
     const room = await prisma.chat_room.findFirst({
@@ -32,7 +32,7 @@ export default defineEventHandler(async (event) => {
 
       await prisma.chat_room_participant.createMany({
         data: [
-          { chat_room_id: newRoom.id, user_id: uid },
+          { chat_room_id: newRoom.id, user_id: userId },
           { chat_room_id: newRoom.id, user_id: receiverUid }
         ]
       })
@@ -70,7 +70,7 @@ export default defineEventHandler(async (event) => {
 
     const messageReadByArray = data.map((m) => ({
       chat_message_id: m.id,
-      user_id: uid
+      user_id: userId
     }))
     if (messageReadByArray.length > 0) {
       await prisma.chat_message_read_by.createMany({

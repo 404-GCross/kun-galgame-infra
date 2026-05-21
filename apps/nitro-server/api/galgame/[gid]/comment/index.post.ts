@@ -19,11 +19,11 @@ export default defineEventHandler(async (event) => {
         galgame_id: galgameId,
         target_user_id: targetUserId,
         content: content,
-        user_id: userInfo.uid
+        user_id: userInfo.id
       }
     })
 
-    if (userInfo.uid !== targetUserId) {
+    if (userInfo.id !== targetUserId) {
       await prisma.user.update({
         where: { id: targetUserId },
         data: { moemoepoint: { increment: 1 } }
@@ -31,7 +31,7 @@ export default defineEventHandler(async (event) => {
 
       await createMessage(
         prisma,
-        userInfo.uid,
+        userInfo.id,
         targetUserId,
         'commented',
         content.slice(0, 233),

@@ -13,7 +13,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const exist = await prisma.galgame_toolset_practicality.findFirst({
-    where: { toolset_id: input.toolsetId, user_id: userInfo.uid }
+    where: { toolset_id: input.toolsetId, user_id: userInfo.id }
   })
 
   if (exist) {
@@ -25,7 +25,7 @@ export default defineEventHandler(async (event) => {
     await prisma.galgame_toolset_practicality.create({
       data: {
         toolset_id: input.toolsetId,
-        user_id: userInfo.uid,
+        user_id: userInfo.id,
         rate: input.rate
       }
     })

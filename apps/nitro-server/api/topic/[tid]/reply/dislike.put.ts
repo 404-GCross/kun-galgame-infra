@@ -6,7 +6,7 @@ export default defineEventHandler(async (event) => {
   if (!userInfo) {
     return kunError(event, '用户登录失效', 205)
   }
-  const uid = userInfo.uid
+  const userId = userInfo.id
 
   const input = await kunParsePutBody(event, updateReplyDislikeSchema)
   if (typeof input === 'string') {
@@ -18,7 +18,7 @@ export default defineEventHandler(async (event) => {
     include: {
       dislike: {
         where: {
-          user_id: uid
+          user_id: userId
         }
       }
     }
@@ -26,7 +26,7 @@ export default defineEventHandler(async (event) => {
   if (!reply) {
     return kunError(event, '未找到该回复')
   }
-  if (reply.user_id === uid) {
+  if (reply.user_id === userId) {
     return kunError(event, '您不能给自己点踩')
   }
 
@@ -36,7 +36,7 @@ export default defineEventHandler(async (event) => {
     await prisma.topic_reply_dislike.delete({
       where: {
         user_id_topic_reply_id: {
-          user_id: uid,
+          user_id: userId,
           topic_reply_id: input.replyId
         }
       }
@@ -44,7 +44,7 @@ export default defineEventHandler(async (event) => {
   } else {
     await prisma.topic_reply_dislike.create({
       data: {
-        user_id: uid,
+        user_id: userId,
         topic_reply_id: input.replyId
       }
     })

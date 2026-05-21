@@ -14,10 +14,10 @@ export default defineEventHandler(async (event) => {
   if (!userInfo) {
     return kunError(event, '用户登录失效', 205)
   }
-  const uid = userInfo.uid
+  const userId = userInfo.id
 
   const user = await prisma.user.findUnique({
-    where: { id: uid }
+    where: { id: userId }
   })
   if (!user) {
     return kunError(event, '未找到用户')
@@ -30,7 +30,7 @@ export default defineEventHandler(async (event) => {
 
   const hashedPassword = await hash(newPassword, 7)
   await prisma.user.update({
-    where: { id: uid },
+    where: { id: userId },
     data: { password: hashedPassword }
   })
 

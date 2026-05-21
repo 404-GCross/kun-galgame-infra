@@ -33,7 +33,7 @@ func NewAdminService(g *repository.GalgameRepository, m *repository.MessageRepos
 
 // UpdateStatus changes a galgame's status and writes the corresponding
 // revision + message in one transaction.
-func (s *AdminService) UpdateStatus(ctx context.Context, adminUID, gid, newStatus int, reason string) error {
+func (s *AdminService) UpdateStatus(ctx context.Context, adminUserID, gid, newStatus int, reason string) error {
 	return s.galgameRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		g, err := s.galgameRepo.FindForUpdate(tx, gid)
 		if err != nil {
@@ -105,7 +105,7 @@ func (s *AdminService) UpdateStatus(ctx context.Context, adminUID, gid, newStatu
 		if err := tx.Create(&model.GalgameRevision{
 			GalgameID: gid,
 			Revision:  nextRev,
-			UserID:    adminUID,
+			UserID:    adminUserID,
 			Action:    revAction,
 			Note:      reason,
 			Snapshot:  snapJSON,
@@ -130,29 +130,29 @@ func (s *AdminService) UpdateStatus(ctx context.Context, adminUID, gid, newStatu
 		msg := &model.GalgameMessage{
 			Type:         msgType,
 			GalgameID:    gid,
-			ActorUserID:  &adminUID,
+			ActorUserID:  &adminUserID,
 			TargetUserID: &owner,
 		}
 		var payload []byte
 		switch msgType {
 		case model.MessageTypeApproved:
 			payload, _ = json.Marshal(map[string]any{
-				"approved_by": adminUID,
+				"approved_by": adminUserID,
 				"note":        reason,
 			})
 		case model.MessageTypeDeclined:
 			payload, _ = json.Marshal(map[string]any{
-				"declined_by": adminUID,
+				"declined_by": adminUserID,
 				"reason":      reason,
 			})
 		case model.MessageTypeBanned:
 			payload, _ = json.Marshal(map[string]any{
-				"banned_by": adminUID,
+				"banned_by": adminUserID,
 				"reason":    reason,
 			})
 		case model.MessageTypeUnbanned:
 			payload, _ = json.Marshal(map[string]any{
-				"unbanned_by": adminUID,
+				"unbanned_by": adminUserID,
 				"note":        reason,
 			})
 		}

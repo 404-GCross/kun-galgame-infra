@@ -7,7 +7,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const user = await prisma.user.findUnique({
-    where: { id: userInfo.uid }
+    where: { id: userInfo.id }
   })
   if (!user) {
     return kunError(event, '未找到该用户')

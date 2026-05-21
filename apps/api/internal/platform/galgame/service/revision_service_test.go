@@ -102,7 +102,7 @@ func TestMergePR_Direct(t *testing.T) {
 	pr, err := testSvc.SubmitPR(ctx, 2, g.ID, proposed, "test")
 	require.NoError(t, err)
 
-	// Merge by creator (uid=1)
+	// Merge by creator (userID=1)
 	err = testSvc.MergePR(ctx, 1, pr.ID, []string{})
 	require.NoError(t, err)
 

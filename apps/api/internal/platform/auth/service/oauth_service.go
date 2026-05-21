@@ -230,7 +230,7 @@ func (s *OAuthService) ExchangeCode(ctx context.Context, req *dto.TokenRequest) 
 		s.cfg.JWT.Secret,
 		utils.TokenClaims{
 			UserUUID: user.UUID,
-			UID:      user.ID,
+			ID:       user.ID,
 			Email:    user.Email,
 			Name:     user.Name,
 			Roles:    user.RoleNames(),
@@ -481,7 +481,7 @@ func (s *OAuthService) RefreshWithClient(ctx context.Context, refreshToken, clie
 			s.cfg.JWT.Secret,
 			utils.TokenClaims{
 				UserUUID: user.UUID,
-				UID:      user.ID,
+				ID:       user.ID,
 				Email:    user.Email,
 				Name:     user.Name,
 				Roles:    user.RoleNames(),

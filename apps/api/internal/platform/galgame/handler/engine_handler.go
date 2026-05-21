@@ -63,8 +63,8 @@ func (h *EngineHandler) GetByName(c fiber.Ctx) error {
 
 // Update — delegates to TaxonomyService (revision-aware).
 func (h *EngineHandler) Update(c fiber.Ctx) error {
-	uid, _ := c.Locals("user_uid").(uint)
-	if uid == 0 {
+	userID, _ := c.Locals("user_id").(uint)
+	if userID == 0 {
 		return response.Unauthorized(c, errors.ErrAuthUnauthorized)
 	}
 	roles, _ := c.Locals("user_roles").([]string)
@@ -80,7 +80,7 @@ func (h *EngineHandler) Update(c fiber.Ctx) error {
 		return response.BadRequestMsg(c, errors.ErrValidationFailed, err.Error())
 	}
 
-	if err := h.taxSvc.UpdateEngine(c.Context(), int(uid), roleLevel(roles), &req); err != nil {
+	if err := h.taxSvc.UpdateEngine(c.Context(), int(userID), roleLevel(roles), &req); err != nil {
 		return mapAppErrOrInternal(c, err)
 	}
 	return response.Success(c, nil)
@@ -89,8 +89,8 @@ func (h *EngineHandler) Update(c fiber.Ctx) error {
 // Create — delegates to TaxonomyService. Engine is not Meilisearch-
 // indexed, so no search hook.
 func (h *EngineHandler) Create(c fiber.Ctx) error {
-	uid, _ := c.Locals("user_uid").(uint)
-	if uid == 0 {
+	userID, _ := c.Locals("user_id").(uint)
+	if userID == 0 {
 		return response.Unauthorized(c, errors.ErrAuthUnauthorized)
 	}
 	roles, _ := c.Locals("user_roles").([]string)
@@ -107,7 +107,7 @@ func (h *EngineHandler) Create(c fiber.Ctx) error {
 		return response.BadRequest(c, errors.ErrBadRequest)
 	}
 
-	e, err := h.taxSvc.CreateEngine(c.Context(), int(uid), roleLevel(roles), &req)
+	e, err := h.taxSvc.CreateEngine(c.Context(), int(userID), roleLevel(roles), &req)
 	if err != nil {
 		return mapAppErrOrInternal(c, err)
 	}
@@ -117,8 +117,8 @@ func (h *EngineHandler) Create(c fiber.Ctx) error {
 // Delete — same UX as TagHandler.Delete (preflight gate + force-purge
 // via service which writes audit + per-galgame revisions).
 func (h *EngineHandler) Delete(c fiber.Ctx) error {
-	uid, _ := c.Locals("user_uid").(uint)
-	if uid == 0 {
+	userID, _ := c.Locals("user_id").(uint)
+	if userID == 0 {
 		return response.Unauthorized(c, errors.ErrAuthUnauthorized)
 	}
 	roles, _ := c.Locals("user_roles").([]string)
@@ -141,7 +141,7 @@ func (h *EngineHandler) Delete(c fiber.Ctx) error {
 			"该 engine 仍被 "+strconv.FormatInt(rel, 10)+" 个 galgame 引用；如确认要一键清除全部引用并硬删除，请带 ?force=true（仅 role>1）")
 	}
 
-	relations, affected, err := h.taxSvc.DeleteEngine(c.Context(), int(uid), roleLevel(roles), id)
+	relations, affected, err := h.taxSvc.DeleteEngine(c.Context(), int(userID), roleLevel(roles), id)
 	if err != nil {
 		return mapAppErrOrInternal(c, err)
 	}

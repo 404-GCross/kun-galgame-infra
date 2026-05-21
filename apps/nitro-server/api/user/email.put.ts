@@ -22,7 +22,7 @@ export default defineEventHandler(async (event) => {
   await useStorage('redis').removeItem(codeKey)
 
   await prisma.user.update({
-    where: { id: userInfo.uid },
+    where: { id: userInfo.id },
     data: { email }
   })
 

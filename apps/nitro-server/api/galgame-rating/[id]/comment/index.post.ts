@@ -27,7 +27,7 @@ export default defineEventHandler(async (event) => {
         galgame_rating_id: galgameRatingId,
         target_user_id: targetUserId,
         content,
-        user_id: userInfo.uid
+        user_id: userInfo.id
       },
       include: {
         user: {
@@ -47,10 +47,10 @@ export default defineEventHandler(async (event) => {
       }
     })
 
-    if (userInfo.uid !== targetUserId) {
+    if (userInfo.id !== targetUserId) {
       await createMessage(
         prisma,
-        userInfo.uid,
+        userInfo.id,
         targetUserId,
         'commented',
         content.slice(0, 233),

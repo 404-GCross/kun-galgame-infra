@@ -9,7 +9,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const userInfo = await getCookieTokenInfo(event)
-  const uid = userInfo?.uid
+  const userId = userInfo?.id
 
   const [data] = await Promise.all([
     prisma.topic.findUnique({
@@ -26,10 +26,10 @@ export default defineEventHandler(async (event) => {
         user: {
           select: { id: true, name: true, avatar: true, moemoepoint: true }
         },
-        like: { where: { user_id: uid } },
-        dislike: { where: { user_id: uid } },
-        favorite: { where: { user_id: uid } },
-        upvote: { where: { user_id: uid } },
+        like: { where: { user_id: userId } },
+        dislike: { where: { user_id: userId } },
+        favorite: { where: { user_id: userId } },
+        upvote: { where: { user_id: userId } },
         section: {
           select: {
             topic_section: {

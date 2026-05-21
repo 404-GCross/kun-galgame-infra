@@ -38,14 +38,14 @@ export default defineEventHandler(async (event) => {
     return kunError(event, '工具不存在')
   }
 
-  const result = await canUserUpload(userInfo.uid, filesize)
+  const result = await canUserUpload(userInfo.id, filesize)
   if (typeof result === 'string') {
     return kunError(event, result)
   }
 
   const { base, ext } = parseFileName(filename)
   const salt = generateRandomCode(7)
-  const key = `toolset/${toolsetId}/${userInfo.uid}_${base}_${salt}.${ext}`
+  const key = `toolset/${toolsetId}/${userInfo.id}_${base}_${salt}.${ext}`
 
   // Some S3 compatible providers not supported createPresignedPost
   // const post = await createPresignedPost(s3, {

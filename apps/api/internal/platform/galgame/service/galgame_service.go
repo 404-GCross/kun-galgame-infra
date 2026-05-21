@@ -90,7 +90,7 @@ func (s *GalgameService) GetByID(ctx context.Context, id int) (*model.Galgame, m
 // Without this, an owner opening /edit/.../draft/<gid> for their own
 // pending submission got "galgame 不存在" because the old code hard-cut
 // every status != 0.
-func (s *GalgameService) GetByIDWithViewer(ctx context.Context, id, viewerUID int) (*model.Galgame, map[int]*dto.UserBrief, error) {
+func (s *GalgameService) GetByIDWithViewer(ctx context.Context, id, viewerUserID int) (*model.Galgame, map[int]*dto.UserBrief, error) {
 	galgame, err := s.galgameRepo.FindByID(ctx, id)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -102,7 +102,7 @@ func (s *GalgameService) GetByIDWithViewer(ctx context.Context, id, viewerUID in
 	switch {
 	case galgame.Status == 0:
 		// published — visible to all
-	case (galgame.Status == 3 || galgame.Status == 4) && viewerUID > 0 && galgame.UserID == viewerUID:
+	case (galgame.Status == 3 || galgame.Status == 4) && viewerUserID > 0 && galgame.UserID == viewerUserID:
 		// submitter viewing their own pending / declined draft
 	default:
 		return nil, nil, errors.NewWithCode(errors.ErrGalgameNotFound)
@@ -132,7 +132,7 @@ func (s *GalgameService) GetByIDWithViewer(ctx context.Context, id, viewerUID in
 }
 
 // Create creates a new galgame with revision 1
-func (s *GalgameService) Create(ctx context.Context, uid int, req *dto.CreateGalgameRequest) (*model.Galgame, error) {
+func (s *GalgameService) Create(ctx context.Context, userID int, req *dto.CreateGalgameRequest) (*model.Galgame, error) {
 	if !vndbIDRegex.MatchString(req.VNDBID) {
 		return nil, errors.NewWithCode(errors.ErrGalgameInvalidVNDB)
 	}
@@ -152,14 +152,14 @@ func (s *GalgameService) Create(ctx context.Context, uid int, req *dto.CreateGal
 		// index applies at insert. Every editable field is then written
 		// by the SINGLE ApplySnapshot path — no manual relation loops, so
 		// create can never drift from update/merge/revert again.
-		g := model.Galgame{VNDBID: req.VNDBID, UserID: uid}
+		g := model.Galgame{VNDBID: req.VNDBID, UserID: userID}
 		if err := tx.Create(&g).Error; err != nil {
 			return err
 		}
-		if err := repository.ApplySnapshot(tx, g.ID, uid, buildCreateSnapshot(req)); err != nil {
+		if err := repository.ApplySnapshot(tx, g.ID, userID, buildCreateSnapshot(req)); err != nil {
 			return err
 		}
-		if err := tx.Create(&model.GalgameContributor{GalgameID: g.ID, UserID: uid}).Error; err != nil {
+		if err := tx.Create(&model.GalgameContributor{GalgameID: g.ID, UserID: userID}).Error; err != nil {
 			return err
 		}
 
@@ -175,7 +175,7 @@ func (s *GalgameService) Create(ctx context.Context, uid int, req *dto.CreateGal
 		return tx.Create(&model.GalgameRevision{
 			GalgameID: g.ID,
 			Revision:  1,
-			UserID:    uid,
+			UserID:    userID,
 			Action:    "created",
 			Snapshot:  snapshotJSON,
 		}).Error
@@ -332,7 +332,7 @@ func vndbLink(vndbID string) []model.SnapshotLink {
 }
 
 // Update directly updates a galgame (creator or admin) and creates a new revision
-func (s *GalgameService) Update(ctx context.Context, uid, galgameID int, roles []string, req *dto.UpdateGalgameRequest) (*model.Galgame, error) {
+func (s *GalgameService) Update(ctx context.Context, userID, galgameID int, roles []string, req *dto.UpdateGalgameRequest) (*model.Galgame, error) {
 	galgame, err := s.galgameRepo.FindByID(ctx, galgameID)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -341,7 +341,7 @@ func (s *GalgameService) Update(ctx context.Context, uid, galgameID int, roles [
 		return nil, err
 	}
 
-	if galgame.UserID != uid && !hasRole(roles, "admin") {
+	if galgame.UserID != userID && !hasRole(roles, "admin") {
 		return nil, errors.NewWithCode(errors.ErrGalgameForbidden)
 	}
 
@@ -362,7 +362,7 @@ func (s *GalgameService) Update(ctx context.Context, uid, galgameID int, roles [
 		// Single canonical write path — same one revert / PR-merge use.
 		// Scalar fields updated + every relation table cleared+rebuilt
 		// from `next`, so tag/official/engine edits actually persist.
-		if err := repository.ApplySnapshot(tx, galgameID, uid, next); err != nil {
+		if err := repository.ApplySnapshot(tx, galgameID, userID, next); err != nil {
 			return err
 		}
 
@@ -385,9 +385,9 @@ func (s *GalgameService) Update(ctx context.Context, uid, galgameID int, roles [
 		}
 
 		var count int64
-		tx.Model(&model.GalgameContributor{}).Where("galgame_id = ? AND user_id = ?", galgameID, uid).Count(&count)
+		tx.Model(&model.GalgameContributor{}).Where("galgame_id = ? AND user_id = ?", galgameID, userID).Count(&count)
 		if count == 0 {
-			if err := tx.Create(&model.GalgameContributor{GalgameID: galgameID, UserID: uid}).Error; err != nil {
+			if err := tx.Create(&model.GalgameContributor{GalgameID: galgameID, UserID: userID}).Error; err != nil {
 				return err
 			}
 		}
@@ -400,7 +400,7 @@ func (s *GalgameService) Update(ctx context.Context, uid, galgameID int, roles [
 		return tx.Create(&model.GalgameRevision{
 			GalgameID: galgameID,
 			Revision:  nextRev,
-			UserID:    uid,
+			UserID:    userID,
 			Action:    "updated",
 			Snapshot:  snapshotJSON,
 			IsMinor:   isMinor,
@@ -420,10 +420,10 @@ func (s *GalgameService) BatchGet(ctx context.Context, ids []int) ([]dto.Galgame
 }
 
 // BatchGetWithViewer returns lightweight galgame info for a list of IDs.
-// When viewerUID > 0, additionally includes the viewer's own status=3/4
+// When viewerUserID > 0, additionally includes the viewer's own status=3/4
 // entries (per submission-and-review-design §6).
-func (s *GalgameService) BatchGetWithViewer(ctx context.Context, ids []int, viewerUID int) ([]dto.GalgameBrief, error) {
-	galgames, err := s.galgameRepo.FindByIDsWithViewer(ctx, ids, viewerUID)
+func (s *GalgameService) BatchGetWithViewer(ctx context.Context, ids []int, viewerUserID int) ([]dto.GalgameBrief, error) {
+	galgames, err := s.galgameRepo.FindByIDsWithViewer(ctx, ids, viewerUserID)
 	if err != nil {
 		return nil, err
 	}
@@ -475,8 +475,8 @@ func (s *GalgameService) CheckVNDB(ctx context.Context, vndbID string) (bool, in
 }
 
 // GetUserStats returns aggregated galgame statistics for a user
-func (s *GalgameService) GetUserStats(ctx context.Context, uid int) (*dto.UserGalgameStats, error) {
-	return s.galgameRepo.GetUserStats(ctx, uid)
+func (s *GalgameService) GetUserStats(ctx context.Context, userID int) (*dto.UserGalgameStats, error) {
+	return s.galgameRepo.GetUserStats(ctx, userID)
 }
 
 // loadGalgameWithRelations loads a galgame with all relations using the given tx.

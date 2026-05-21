@@ -28,14 +28,14 @@ func NewMessageService(
 }
 
 // ListMine returns messages targeting the given user, newest first.
-func (s *MessageService) ListMine(ctx context.Context, uid int, sinceID int64, limit int) ([]dto.MessageResponse, int64, error) {
+func (s *MessageService) ListMine(ctx context.Context, userID int, sinceID int64, limit int) ([]dto.MessageResponse, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
 	if limit > 100 {
 		limit = 100
 	}
-	items, total, err := s.messageRepo.ListMine(ctx, uid, sinceID, limit)
+	items, total, err := s.messageRepo.ListMine(ctx, userID, sinceID, limit)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -112,7 +112,7 @@ func (s *MessageService) enrich(ctx context.Context, items []model.GalgameMessag
 	for id := range galgameIDSet {
 		galgameIDs = append(galgameIDs, id)
 	}
-	// Lookup w/ admin viewer (uid=0 path) — admin queue cares about status=3,
+	// Lookup w/ admin viewer (userID=0 path) — admin queue cares about status=3,
 	// /mine and /feed return status=0 entries plus the user's own. Since the
 	// message has a target_user_id we trust, we just take the current state
 	// of the galgame regardless of status (admin or owner is the audience).

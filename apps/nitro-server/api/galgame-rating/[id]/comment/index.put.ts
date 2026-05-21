@@ -42,7 +42,7 @@ export default defineEventHandler(async (event) => {
     return kunError(event, '评论不存在', 404)
   }
 
-  const user = await prisma.user.findUnique({ where: { id: userInfo.uid } })
+  const user = await prisma.user.findUnique({ where: { id: userInfo.id } })
   if (!user) {
     return kunError(event, '用户不存在')
   }

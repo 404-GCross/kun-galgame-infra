@@ -20,7 +20,7 @@ export default defineEventHandler(async (event) => {
     return kunError(event, '评论不存在')
   }
 
-  if (comment.user_id !== userInfo.uid) {
+  if (comment.user_id !== userInfo.id) {
     return kunError(event, '您没有权限编辑该评论')
   }
 

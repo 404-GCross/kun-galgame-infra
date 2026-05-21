@@ -11,13 +11,13 @@ export default defineEventHandler(async (event) => {
     return kunError(event, '用户登录失效', 205)
   }
 
-  const uid = userInfo.uid
+  const userId = userInfo.id
   const { galgameId, name, link } = input
 
   return prisma.$transaction(async (prisma) => {
     await prisma.galgame_link.create({
       data: {
-        user_id: uid,
+        user_id: userId,
         galgame_id: galgameId,
         name,
         link
@@ -25,13 +25,13 @@ export default defineEventHandler(async (event) => {
     })
 
     await prisma.galgame_contributor.createMany({
-      data: [{ user_id: uid, galgame_id: galgameId }],
+      data: [{ user_id: userId, galgame_id: galgameId }],
       skipDuplicates: true
     })
 
     await createGalgameHistory(prisma, {
       galgame_id: galgameId,
-      user_id: uid,
+      user_id: userId,
       action: 'created',
       type: 'link',
       content: name

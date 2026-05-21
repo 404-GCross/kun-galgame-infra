@@ -34,8 +34,8 @@ func (h *SearchHandler) Galgame(c fiber.Ctx) error {
 	includePending := parseBool(q["include_pending"])
 
 	// Only honor include_pending when the caller is authenticated.
-	viewerUID, _ := c.Locals("user_uid").(uint)
-	if !includePending || viewerUID == 0 {
+	viewerUserID, _ := c.Locals("user_id").(uint)
+	if !includePending || viewerUserID == 0 {
 		includePending = false
 	}
 
@@ -59,7 +59,7 @@ func (h *SearchHandler) Galgame(c fiber.Ctx) error {
 		WantHighlight:     parseBoolDefault(q["highlight"], true),
 		Fields:            parseStringList(q["fields"]),
 		IncludePending:    includePending,
-		ViewerUID:         int(viewerUID),
+		ViewerUID:         int(viewerUserID),
 	}
 
 	resp, err := h.svc.SearchGalgames(c.Context(), req)

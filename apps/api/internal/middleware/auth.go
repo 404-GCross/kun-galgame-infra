@@ -73,7 +73,7 @@ func Auth(authSvc *authService.AuthService) fiber.Handler {
 
 		// Set user info in context
 		c.Locals("user_uuid", claims.UserUUID)
-		c.Locals("user_uid", claims.UID)
+		c.Locals("user_id", claims.ID)
 		c.Locals("user_roles", claims.Roles)
 		c.Locals("user_scope", claims.Scope)
 

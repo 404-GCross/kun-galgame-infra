@@ -25,8 +25,8 @@ func NewMessageHandler(svc *service.MessageService) *MessageHandler {
 
 // ListMine handles GET /galgame/messages/mine.
 func (h *MessageHandler) ListMine(c fiber.Ctx) error {
-	uid, _ := c.Locals("user_uid").(uint)
-	if uid == 0 {
+	userID, _ := c.Locals("user_id").(uint)
+	if userID == 0 {
 		return response.Unauthorized(c, errors.ErrAuthUnauthorized)
 	}
 
@@ -38,7 +38,7 @@ func (h *MessageHandler) ListMine(c fiber.Ctx) error {
 		return response.BadRequestMsg(c, errors.ErrValidationFailed, err.Error())
 	}
 
-	items, total, err := h.messageSvc.ListMine(c.Context(), int(uid), req.SinceID, req.Limit)
+	items, total, err := h.messageSvc.ListMine(c.Context(), int(userID), req.SinceID, req.Limit)
 	if err != nil {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}

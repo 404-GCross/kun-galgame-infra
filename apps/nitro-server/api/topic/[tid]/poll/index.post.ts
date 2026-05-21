@@ -25,7 +25,7 @@ export default defineEventHandler(async (event) => {
   if (!topic) {
     return kunError(event, '话题不存在')
   }
-  if (topic.user_id !== userInfo.uid && userInfo.role < 2) {
+  if (topic.user_id !== userInfo.id && userInfo.role < 2) {
     return kunError(event, '您没有权限在此话题下创建投票')
   }
   if (topic._count.poll >= 30) {
@@ -38,7 +38,7 @@ export default defineEventHandler(async (event) => {
       data: {
         ...rest,
         deadline: rest.deadline ? new Date(rest.deadline) : null,
-        user_id: userInfo.uid
+        user_id: userInfo.id
       },
       include: {
         user: {

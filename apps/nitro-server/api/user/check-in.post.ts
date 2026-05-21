@@ -7,7 +7,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const user = await prisma.user.findUnique({
-    where: { id: userInfo.uid }
+    where: { id: userInfo.id }
   })
   if (!user) {
     return kunError(event, '未找到用户')
@@ -19,7 +19,7 @@ export default defineEventHandler(async (event) => {
   const randomMoemoepoints = randomNum(0, 7)
 
   await prisma.user.update({
-    where: { id: userInfo.uid },
+    where: { id: userInfo.id },
     data: { moemoepoint: { increment: randomMoemoepoints }, daily_check_in: 1 }
   })
 

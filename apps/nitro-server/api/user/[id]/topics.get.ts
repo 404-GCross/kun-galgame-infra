@@ -13,14 +13,14 @@ export default defineEventHandler(async (event) => {
 
   if (type === 'topic_hide') {
     const userInfo = await getCookieTokenInfo(event)
-    if (userId !== userInfo?.uid) {
+    if (userId !== userInfo?.id) {
       return { topics: [], totalCount: 0 }
     }
 
     const [topics, totalCount]: [UserTopic[], number] =
       await prisma.$transaction([
         prisma.topic.findMany({
-          where: { status: 1, user_id: userInfo.uid },
+          where: { status: 1, user_id: userInfo.id },
           skip: (page - 1) * limit,
           take: limit,
           orderBy: {
@@ -33,7 +33,7 @@ export default defineEventHandler(async (event) => {
           }
         }),
 
-        prisma.topic.count({ where: { status: 1, user_id: userInfo.uid } })
+        prisma.topic.count({ where: { status: 1, user_id: userInfo.id } })
       ])
 
     return {

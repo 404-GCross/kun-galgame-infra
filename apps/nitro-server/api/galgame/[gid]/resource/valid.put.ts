@@ -12,7 +12,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const resource = await prisma.galgame_resource.findUnique({
-    where: { id: input.galgameResourceId, user_id: userInfo.uid }
+    where: { id: input.galgameResourceId, user_id: userInfo.id }
   })
   if (!resource) {
     return kunError(event, '未找到这个 Galgame 资源')

@@ -21,7 +21,7 @@ const updatePoll = async (
   if (!poll) {
     return '投票不存在'
   }
-  if (poll.topic.user_id !== userInfo.uid && userInfo.role <= 2) {
+  if (poll.topic.user_id !== userInfo.id && userInfo.role <= 2) {
     return '您没有权限修改此投票'
   }
 

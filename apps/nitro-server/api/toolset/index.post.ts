@@ -22,12 +22,12 @@ export default defineEventHandler(async (event) => {
         type: input.type,
         version: input.version,
         homepage: input.homepage,
-        user_id: userInfo.uid
+        user_id: userInfo.id
       }
     })
 
     await prisma.user.update({
-      where: { id: userInfo.uid },
+      where: { id: userInfo.id },
       data: { moemoepoint: { increment: 3 } }
     })
 

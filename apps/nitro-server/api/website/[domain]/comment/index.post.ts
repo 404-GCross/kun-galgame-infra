@@ -6,7 +6,7 @@ export default defineEventHandler(async (event) => {
   if (!userInfo) {
     return kunError(event, '用户登录失效', 205)
   }
-  const uid = userInfo.uid
+  const userId = userInfo.id
 
   const input = await kunParsePostBody(event, createCommentSchema)
   if (typeof input === 'string') {
@@ -17,7 +17,7 @@ export default defineEventHandler(async (event) => {
     const newComment = await prisma.galgame_website_comment.create({
       data: {
         content: input.content,
-        user_id: uid,
+        user_id: userId,
         website_id: input.websiteId,
         parent_id: input.parentId
       },
@@ -32,10 +32,10 @@ export default defineEventHandler(async (event) => {
         include: { website: { select: { url: true } } }
       })
 
-      if (parentComment!.user_id !== uid) {
+      if (parentComment!.user_id !== userId) {
         await createMessage(
           prisma,
-          uid,
+          userId,
           parentComment!.user_id,
           'commented',
           input.content.slice(0, 233),

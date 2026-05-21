@@ -106,8 +106,8 @@ func (h *OfficialHandler) Search(c fiber.Ctx) error {
 
 // Update — delegates to TaxonomyService (revision-aware).
 func (h *OfficialHandler) Update(c fiber.Ctx) error {
-	uid, _ := c.Locals("user_uid").(uint)
-	if uid == 0 {
+	userID, _ := c.Locals("user_id").(uint)
+	if userID == 0 {
 		return response.Unauthorized(c, errors.ErrAuthUnauthorized)
 	}
 	roles, _ := c.Locals("user_roles").([]string)
@@ -123,7 +123,7 @@ func (h *OfficialHandler) Update(c fiber.Ctx) error {
 		return response.BadRequestMsg(c, errors.ErrValidationFailed, err.Error())
 	}
 
-	if err := h.taxSvc.UpdateOfficial(c.Context(), int(uid), roleLevel(roles), &req); err != nil {
+	if err := h.taxSvc.UpdateOfficial(c.Context(), int(userID), roleLevel(roles), &req); err != nil {
 		return mapAppErrOrInternal(c, err)
 	}
 	h.searchHook.Official(req.OfficialID)
@@ -132,8 +132,8 @@ func (h *OfficialHandler) Update(c fiber.Ctx) error {
 
 // Create — delegates to TaxonomyService.
 func (h *OfficialHandler) Create(c fiber.Ctx) error {
-	uid, _ := c.Locals("user_uid").(uint)
-	if uid == 0 {
+	userID, _ := c.Locals("user_id").(uint)
+	if userID == 0 {
 		return response.Unauthorized(c, errors.ErrAuthUnauthorized)
 	}
 	roles, _ := c.Locals("user_roles").([]string)
@@ -150,7 +150,7 @@ func (h *OfficialHandler) Create(c fiber.Ctx) error {
 		return response.BadRequest(c, errors.ErrBadRequest)
 	}
 
-	o, err := h.taxSvc.CreateOfficial(c.Context(), int(uid), roleLevel(roles), &req)
+	o, err := h.taxSvc.CreateOfficial(c.Context(), int(userID), roleLevel(roles), &req)
 	if err != nil {
 		return mapAppErrOrInternal(c, err)
 	}
@@ -161,8 +161,8 @@ func (h *OfficialHandler) Create(c fiber.Ctx) error {
 // Delete — same UX as TagHandler.Delete (preflight gate + force-purge
 // via service which writes audit + per-galgame revisions).
 func (h *OfficialHandler) Delete(c fiber.Ctx) error {
-	uid, _ := c.Locals("user_uid").(uint)
-	if uid == 0 {
+	userID, _ := c.Locals("user_id").(uint)
+	if userID == 0 {
 		return response.Unauthorized(c, errors.ErrAuthUnauthorized)
 	}
 	roles, _ := c.Locals("user_roles").([]string)
@@ -185,7 +185,7 @@ func (h *OfficialHandler) Delete(c fiber.Ctx) error {
 			"该 official 仍被 "+strconv.FormatInt(rel, 10)+" 个 galgame 引用；如确认要一键清除全部引用并硬删除，请带 ?force=true（仅 role>1）")
 	}
 
-	relations, aliases, affected, err := h.taxSvc.DeleteOfficial(c.Context(), int(uid), roleLevel(roles), id)
+	relations, aliases, affected, err := h.taxSvc.DeleteOfficial(c.Context(), int(userID), roleLevel(roles), id)
 	if err != nil {
 		return mapAppErrOrInternal(c, err)
 	}

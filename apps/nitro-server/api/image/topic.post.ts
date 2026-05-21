@@ -41,7 +41,7 @@ export default defineEventHandler(async (event) => {
     return kunError(event, '用户登录失效', 205)
   }
   const user = await prisma.user.findUnique({
-    where: { id: userInfo.uid }
+    where: { id: userInfo.id }
   })
   if (!user) {
     return kunError(event, '未找到用户')
@@ -57,16 +57,16 @@ export default defineEventHandler(async (event) => {
 
   const newFileName = `${userInfo.name}-${Date.now()}`
 
-  const res = await compressImage(newFileName, imageFile[0]!.data, userInfo.uid)
+  const res = await compressImage(newFileName, imageFile[0]!.data, userInfo.id)
   if (res) {
     return kunError(event, res)
   }
 
   await prisma.user.update({
-    where: { id: userInfo.uid },
+    where: { id: userInfo.id },
     data: { daily_image_count: { increment: 1 } }
   })
 
-  const imageLink = `${env.KUN_VISUAL_NOVEL_IMAGE_BED_URL}/topic/user_${userInfo.uid}/${newFileName}.webp`
+  const imageLink = `${env.KUN_VISUAL_NOVEL_IMAGE_BED_URL}/topic/user_${userInfo.id}/${newFileName}.webp`
   return imageLink
 })

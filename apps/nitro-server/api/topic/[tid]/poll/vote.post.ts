@@ -38,7 +38,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const userPreviousVotes = await prisma.topic_poll_vote.findMany({
-    where: { poll_id: poll_id, user_id: userInfo.uid }
+    where: { poll_id: poll_id, user_id: userInfo.id }
   })
 
   if (userPreviousVotes.length > 0 && !poll.can_change_vote) {
@@ -49,14 +49,14 @@ export default defineEventHandler(async (event) => {
     await prisma.topic_poll_vote.deleteMany({
       where: {
         poll_id: poll_id,
-        user_id: userInfo.uid
+        user_id: userInfo.id
       }
     })
     await prisma.topic_poll_vote.createMany({
       data: option_id_array.map((option_id) => ({
         poll_id: poll_id,
         option_id,
-        user_id: userInfo.uid
+        user_id: userInfo.id
       }))
     })
   })

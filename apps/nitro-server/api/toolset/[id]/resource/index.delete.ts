@@ -21,7 +21,7 @@ export default defineEventHandler(async (event) => {
   if (!toolsetResource) {
     return kunError(event, '工具资源不存在或已删除')
   }
-  if (toolsetResource.user_id !== userInfo.uid && userInfo.role < 2) {
+  if (toolsetResource.user_id !== userInfo.id && userInfo.role < 2) {
     return kunError(event, '您无权限删除该工具资源')
   }
 

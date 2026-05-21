@@ -15,7 +15,7 @@ export default defineEventHandler(async (event) => {
   const { galgameId, galgameType, ...rest } = input
 
   const existed = await prisma.galgame_rating.findFirst({
-    where: { galgame_id: galgameId, user_id: userInfo.uid }
+    where: { galgame_id: galgameId, user_id: userInfo.id }
   })
   if (existed) {
     return kunError(event, '您已经发布过该 Galgame 的评分了')
@@ -29,7 +29,7 @@ export default defineEventHandler(async (event) => {
     const res = await prisma.galgame_rating.create({
       data: {
         galgame_id: galgameId,
-        user_id: userInfo.uid,
+        user_id: userInfo.id,
         galgame_type: galgameType,
         ...rest
       },
@@ -53,7 +53,7 @@ export default defineEventHandler(async (event) => {
     })
 
     await prisma.user.update({
-      where: { id: userInfo.uid },
+      where: { id: userInfo.id },
       data: { moemoepoint: { increment: moemoepointIncrement } }
     })
 

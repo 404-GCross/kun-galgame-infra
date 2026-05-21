@@ -6,7 +6,7 @@ export default defineEventHandler(async (event) => {
   if (!userInfo) {
     return kunError(event, '用户登录失效', 205)
   }
-  const uid = userInfo.uid
+  const userId = userInfo.id
 
   const input = await kunParsePostBody(event, toggleLikeFavoriteSchema)
   if (typeof input === 'string') {
@@ -18,7 +18,7 @@ export default defineEventHandler(async (event) => {
     include: {
       like: {
         where: {
-          user_id: uid
+          user_id: userId
         }
       }
     }
@@ -33,7 +33,7 @@ export default defineEventHandler(async (event) => {
     await prisma.galgame_website_like.delete({
       where: {
         user_id_website_id: {
-          user_id: uid,
+          user_id: userId,
           website_id: input.websiteId
         }
       }
@@ -41,7 +41,7 @@ export default defineEventHandler(async (event) => {
   } else {
     await prisma.galgame_website_like.create({
       data: {
-        user_id: uid,
+        user_id: userId,
         website_id: input.websiteId
       }
     })

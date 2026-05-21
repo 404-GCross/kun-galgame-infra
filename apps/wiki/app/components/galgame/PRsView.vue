@@ -161,7 +161,7 @@ const viewDiff = (pr: GalgamePR) => {
                   {{ STATUS[pr.status]?.label ?? pr.status }}
                 </span>
               </td>
-              <td class="text-default-500 px-4 py-2 text-xs">uid={{ pr.user_id }}</td>
+              <td class="text-default-500 px-4 py-2 text-xs">id={{ pr.user_id }}</td>
               <td class="text-default-400 px-4 py-2 text-xs">
                 {{ pr.updated?.replace('T', ' ').slice(0, 19) }}
               </td>

@@ -8,7 +8,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const userInfo = await getCookieTokenInfo(event)
-  const uid = userInfo?.uid
+  const userId = userInfo?.id
 
   const reply = await prisma.topic_reply.findUnique({
     where: {
@@ -42,8 +42,8 @@ export default defineEventHandler(async (event) => {
       _count: {
         select: { like: true, dislike: true, comment: true, target_by: true }
       },
-      like: { where: { user_id: uid } },
-      dislike: { where: { user_id: uid } }
+      like: { where: { user_id: userId } },
+      dislike: { where: { user_id: userId } }
     }
   })
   if (!reply) {

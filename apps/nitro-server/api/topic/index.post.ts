@@ -17,7 +17,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const user = await prisma.user.findUnique({
-    where: { id: userInfo.uid },
+    where: { id: userInfo.id },
     include: {
       topic: {
         where: {
@@ -55,7 +55,7 @@ export default defineEventHandler(async (event) => {
     const newTopic = await prisma.topic.create({
       data: {
         ...topicData,
-        user_id: userInfo.uid
+        user_id: userInfo.id
       }
     })
 
@@ -76,7 +76,7 @@ export default defineEventHandler(async (event) => {
     })
 
     await prisma.user.update({
-      where: { id: userInfo.uid },
+      where: { id: userInfo.id },
       data: { moemoepoint: { increment: hasConsumeSection ? -10 : 3 } }
     })
 

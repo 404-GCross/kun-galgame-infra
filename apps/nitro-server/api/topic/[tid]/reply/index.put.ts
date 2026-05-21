@@ -13,7 +13,7 @@ export default defineEventHandler(async (event) => {
 
   const { replyId, targets, content } = input
   const validTargets = targets?.filter((item) => item.content?.trim())
-  const uid = userInfo.uid
+  const userId = userInfo.id
 
   const existingReply = await prisma.topic_reply.findUnique({
     where: { id: replyId },
@@ -22,7 +22,7 @@ export default defineEventHandler(async (event) => {
   if (!existingReply) {
     return kunError(event, '回复不存在')
   }
-  if (existingReply.user_id !== uid) {
+  if (existingReply.user_id !== userId) {
     return kunError(event, '您没有权限修改此回复')
   }
 
@@ -69,8 +69,8 @@ export default defineEventHandler(async (event) => {
             }
           }
         },
-        like: { where: { user_id: uid } },
-        dislike: { where: { user_id: uid } },
+        like: { where: { user_id: userId } },
+        dislike: { where: { user_id: userId } },
         _count: {
           select: {
             like: true,
@@ -84,7 +84,7 @@ export default defineEventHandler(async (event) => {
     const targetUsersMap = new Map<number, { user: KunUser; content: string }>()
     for (const newTarget of result.target) {
       if (
-        newTarget.target_reply.user.id !== userInfo.uid &&
+        newTarget.target_reply.user.id !== userInfo.id &&
         !originalTargetUserIds.has(newTarget.target_reply_id)
       ) {
         targetUsersMap.set(newTarget.target_reply.user.id, {
@@ -102,7 +102,7 @@ export default defineEventHandler(async (event) => {
 
       await createDedupMessage(
         prisma,
-        userInfo.uid,
+        userInfo.id,
         user.id,
         'replied',
         markdownToText(content).slice(0, 233),

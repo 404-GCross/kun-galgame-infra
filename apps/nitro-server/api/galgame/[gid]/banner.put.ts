@@ -13,7 +13,7 @@ export default defineEventHandler(async (event) => {
   if (!userInfo) {
     return kunError(event, '用户登录失效', 205)
   }
-  const uid = userInfo.uid
+  const userId = userInfo.id
 
   const galgame = await prisma.galgame.findUnique({
     where: { id: input.galgameId, status: { not: 1 } }
@@ -21,7 +21,7 @@ export default defineEventHandler(async (event) => {
   if (!galgame) {
     return kunError(event, '未找到这个 Galgame')
   }
-  if (galgame.user_id !== uid && userInfo.role < 2) {
+  if (galgame.user_id !== userId && userInfo.role < 2) {
     return kunError(event, '您没有权限更改这个 Galgame 的预览图')
   }
 
@@ -45,7 +45,7 @@ export default defineEventHandler(async (event) => {
 
     await createGalgameHistory(prisma, {
       galgame_id: galgame.id,
-      user_id: userInfo.uid,
+      user_id: userInfo.id,
       action: 'updated',
       type: 'banner',
       content: ''

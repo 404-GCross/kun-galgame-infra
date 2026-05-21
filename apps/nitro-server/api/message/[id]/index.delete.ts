@@ -6,7 +6,7 @@ export default defineEventHandler(async (event) => {
   if (!userInfo) {
     return kunError(event, '用户登录失效', 205)
   }
-  const uid = userInfo.uid
+  const userId = userInfo.id
 
   const input = kunParseDeleteQuery(event, deleteMessageSchema)
   if (typeof input === 'string') {
@@ -14,7 +14,7 @@ export default defineEventHandler(async (event) => {
   }
 
   await prisma.message.delete({
-    where: { id: input.messageId, receiver_id: uid }
+    where: { id: input.messageId, receiver_id: userId }
   })
 
   return 'MOEMOE delete message successfully!'

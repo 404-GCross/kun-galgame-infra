@@ -37,7 +37,7 @@ export default defineEventHandler(async (event) => {
 
     const newReply = await prisma.topic_reply.create({
       data: {
-        user_id: userInfo.uid,
+        user_id: userInfo.id,
         topic_id: topicId,
         floor: newFloor,
         content,
@@ -73,7 +73,7 @@ export default defineEventHandler(async (event) => {
 
     const targetUsersMap = new Map<number, { user: KunUser; content: string }>()
     newReply.target.map((t) => {
-      if (t.target_reply.user.id !== userInfo.uid) {
+      if (t.target_reply.user.id !== userInfo.id) {
         targetUsersMap.set(t.target_reply.user.id, {
           user: t.target_reply.user,
           content: t.content
@@ -89,7 +89,7 @@ export default defineEventHandler(async (event) => {
 
       await createMessage(
         prisma,
-        userInfo.uid,
+        userInfo.id,
         user.id,
         'replied',
         markdownToText(content).slice(0, 233),
@@ -105,7 +105,7 @@ export default defineEventHandler(async (event) => {
 
       await createMessage(
         prisma,
-        userInfo.uid,
+        userInfo.id,
         topic.user_id,
         'replied',
         markdownToText(content).slice(0, 233),
