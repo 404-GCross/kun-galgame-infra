@@ -40,7 +40,23 @@ packages/ui/app/components/kun/tab/type.d.ts           ← 变体改 5 种
 packages/ui/app/components/kun/tag-input/TagInput.vue  ← 新组件
 packages/ui/app/components/kun/tag-input/type.d.ts     ← 新类型
 packages/ui/app/composables/useBodyScrollLock.ts       ← 新 composable（Modal 依赖）
+packages/ui/app/components/kun/Popover.vue             ← v0.2.0 全文重写（@floating-ui/vue）
+packages/ui/app/components/kun/tooltip/Tooltip.vue     ← v0.2.0 全文重写（+ 箭头 + delay）
+packages/ui/app/components/kun/select/Select.vue       ← v0.2.0 全文重写（+ size middleware）
+packages/ui/app/components/kun/date-picker/Picker.vue  ← v0.2.0 浮层引擎换 @floating-ui/vue
+packages/ui/app/components/kun/Modal.vue               ← v0.2.0 加 focus-trap
 ```
+
+### 1.1.5 v0.2.0 新增 npm 依赖（必装）
+
+在你的项目根（或 `@kun/ui` 副本所在子包）：
+
+```bash
+pnpm add @floating-ui/vue @vueuse/integrations focus-trap
+pnpm add -D vue-tsc eslint-plugin-vuejs-accessibility
+```
+
+不装的话上面 5 个 v0.2.0 文件 import 会全报错。
 
 ### 1.2 重命名 / 改名（先重命名再覆盖内容）
 

@@ -13,7 +13,7 @@
     "format": "pnpm -F \"./apps/**\" --parallel run format",
     "lint": "pnpm -F \"./apps/web\" run lint",
     "lint:fix": "pnpm -F \"./apps/web\" run lint:fix",
-    "typecheck": "pnpm -F \"./apps/web\" run typecheck",
+    "typecheck": "pnpm -F \"./apps/**\" --parallel run typecheck",
     "sitemap": "esno apps/web/scripts/generateSitemap.ts",
     "old:migrate": "esno scripts/migrate/index.ts",
     "prod:deploy": "./scripts/deploy.sh",
@@ -24,8 +24,10 @@
   },
   "devDependencies": {
     "@types/node": "^25.0.3",
+    "eslint-plugin-vuejs-accessibility": "^2.5.0",
     "esno": "^4.8.0",
     "tsx": "^4.21.0",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vue-tsc": "^3.3.1"
   }
 }
