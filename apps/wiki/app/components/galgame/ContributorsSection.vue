@@ -72,7 +72,7 @@ onMounted(load)
         >
           <KunAvatar
             v-if="c.user"
-            :user="{ uid: c.user_id, name: c.user.name, avatar: c.user.avatar }"
+            :user="{ id: c.user_id, name: c.user.name, avatar: c.user.avatar }"
             size="sm"
             :is-navigation="false"
           />

@@ -57,7 +57,7 @@ const _ = props // keep TS happy if `props` is never read elsewhere
           <td class="whitespace-nowrap px-6 py-4">
             <div class="flex items-center gap-3">
               <KunAvatar
-                :user="{ uid: 0, name: user.name, avatar: avatarSrc(user) }"
+                :user="{ id: 0, name: user.name, avatar: avatarSrc(user) }"
                 size="sm"
                 :is-navigation="false"
               />

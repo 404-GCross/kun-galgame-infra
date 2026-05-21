@@ -126,7 +126,7 @@ onMounted(async () => {
             </span>
             <KunAvatar
               :user="{
-                uid: 0,
+                id: 0,
                 name: auth.user.value.name,
                 avatar: auth.user.value.avatar
               }"

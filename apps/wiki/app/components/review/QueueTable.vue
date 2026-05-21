@@ -86,7 +86,7 @@ const relative = (iso: string) => {
             <div class="flex items-center gap-2">
               <KunAvatar
                 v-if="m.actor"
-                :user="{ uid: m.actor.id, name: m.actor.name, avatar: m.actor.avatar }"
+                :user="{ id: m.actor.id, name: m.actor.name, avatar: m.actor.avatar }"
                 size="sm"
                 :is-navigation="false"
               />

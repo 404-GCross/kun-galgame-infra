@@ -89,7 +89,7 @@ const handleSubmit = async () => {
     <form class="space-y-4" @submit.prevent="handleSubmit">
       <div class="flex items-center gap-4">
         <KunAvatar
-          :user="{ uid: 0, name: name || '用户', avatar }"
+          :user="{ id: 0, name: name || '用户', avatar }"
           size="lg"
           :is-navigation="false"
         />
