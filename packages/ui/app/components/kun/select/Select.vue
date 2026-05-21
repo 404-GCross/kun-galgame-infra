@@ -21,7 +21,11 @@ const props = withDefaults(defineProps<KunSelectProps>(), {
   className: ''
 })
 
-const modelValue = defineModel<string | number>()
+// `required: true` makes the model `Ref<string | number>` (without
+// `undefined`), so consumers' @update:model-value callbacks can type
+// the arg as `string | number` without TS rejecting it. Without
+// `required` Vue 3.5 infers `Ref<T | undefined>` by spec.
+const modelValue = defineModel<string | number>({ required: true })
 
 const emit = defineEmits<{
   set: [value: string | number, index: number]

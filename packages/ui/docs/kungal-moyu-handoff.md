@@ -80,6 +80,10 @@ icon/LucideXCircle.vue                      ← 删
 
 | 文件 | 改动要点 |
 |---|---|
+| `Null.vue` | v0.2.1：import 路径 `../utils/` → `../../utils/`（其实 Nuxt 自动 import 兜底了，但 vue-tsc 严格模式 TS2307）|
+| `button/Button.vue` | v0.2.1：删本地 colorVariants 表，改 import `kunVariantClasses`。**这一步顺带修了 `<KunButton color="info">` 不出色的 bug**（v0.1.0 加 info 时漏改 Button）|
+| `select/Select.vue` | v0.2.1：`defineModel<string \| number>({ required: true })` —— 回调签名收紧不含 undefined |
+| `shared/user.d.ts` | v0.2.1（**breaking**）：`KunUser.id` → `KunUser.uid`，跟齐全栈 `/user/[uid]/...` 路由约定 |
 | `Modal.vue` | `modalValue` → `modelValue`；scroll-lock 改 import composable；`v-model` 现在直接生效 |
 | `Card.vue` | `isPressable` → `clickable`/`href` 拆分；移除 `href: '/'` 默认 |
 | `Brand.vue` | 接受 `name` / `iconSrc` / `iconAlt` / `iconClass` / `badge` / `badgeColor` / `to` / `nameClass` props |
@@ -171,7 +175,30 @@ grep -rn '<KunLink.*tag=' apps --include='*.vue'
 
 逐处删 `tag` 属性。功能不变：NuxtLink 对外链自动 fallback 到 `<a>`。
 
-### 2.7 Tab variant 默认值改了
+### 2.7 KunUser `id` → `uid`（v0.2.1 breaking）
+
+```bash
+# 找所有给 KunAvatar / KunUser 传对象字面量的地方
+grep -rn '<KunAvatar\|<KunUser' apps --include='*.vue' -A 4 | grep 'id:'
+
+# 模板里 `:user="{ id: X, ... }"` → `:user="{ uid: X, ... }"`
+# 单行 sed（适用绝大多数）：
+find apps -name '*.vue' | xargs sed -i 's/:user="{ id:/:user="{ uid:/g'
+
+# 多行格式的（`:user="{` 单独一行 + 下一行 `id: X,`）手动改
+```
+
+如果你的 user brief 来源是 Prisma row（自带 `id` 主键），构造时显式 rename：
+
+```ts
+const userBrief: KunUser = {
+  uid: user.id,           // map row.id → kun user.uid
+  name: user.name,
+  avatar: user.avatar
+}
+```
+
+### 2.8 Tab variant 默认值改了
 
 - v0.0.1：variant 默认 `'solid'`，仅 `solid` / `underlined` 两种
 - v0.1.1：variant 默认 `'underlined'`，5 种 `underlined` / `solid` / `bordered` / `light` / `pills`

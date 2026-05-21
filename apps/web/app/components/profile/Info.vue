@@ -16,7 +16,7 @@ const formattedDate = computed(() => {
   <KunCard v-if="user" class="p-6">
     <div class="flex items-start gap-6">
       <KunAvatar
-        :user="{ id: 0, name: user.name, avatar: user.avatar }"
+        :user="{ uid: 0, name: user.name, avatar: user.avatar }"
         size="lg"
         :is-navigation="false"
       />

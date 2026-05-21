@@ -138,7 +138,7 @@ const relative = (iso?: string) => {
         <KunAvatar
           v-if="submissionMsg.actor"
           :user="{
-            id: submissionMsg.actor.id,
+            uid: submissionMsg.actor.id,
             name: submissionMsg.actor.name,
             avatar: submissionMsg.actor.avatar
           }"
