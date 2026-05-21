@@ -3,8 +3,9 @@ export interface KunSelectOption {
   label: string
 }
 
+// modelValue is intentionally not on this interface — Select.vue uses
+// defineModel<string | number>() to expose the v-model binding.
 export interface KunSelectProps {
-  modelValue: string | number
   options: KunSelectOption[]
   label?: string
   placeholder?: string

@@ -8,7 +8,6 @@ export type KunTabItem = {
   href?: string
 }
 
-// 5 variants per docs/improvement-plan.md §4:
 //   underlined — bottom 2px sliding indicator (default)
 //   solid      — selected tab gets a filled chip
 //   bordered   — outer frame + selected tab outline

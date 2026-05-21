@@ -51,7 +51,6 @@ const emit = defineEmits<{
 
 const isVertical = computed(() => props.orientation === 'vertical')
 
-// Per-size padding & gap; truly compact at sm.
 const sizeClasses: Record<KunTabSize, string> = {
   sm: 'text-sm px-2.5 py-1.5',
   md: 'text-sm px-3 py-2',
@@ -64,8 +63,6 @@ const sizeGap: Record<KunTabSize, string> = {
   lg: 'gap-2',
 }
 
-// Active state styling per variant. underlined/solid/light/pills also use
-// a separate sliding indicator <div>; bordered uses a per-tab border.
 const tabRefs = ref<HTMLElement[]>([])
 
 const setTabRef = (el: Element | null | { $el?: Element } | undefined, idx: number) => {
@@ -73,7 +70,11 @@ const setTabRef = (el: Element | null | { $el?: Element } | undefined, idx: numb
     el && typeof el === 'object' && '$el' in el
       ? ((el as { $el?: Element }).$el ?? null)
       : (el as Element | null)
-  if (node instanceof HTMLElement) tabRefs.value[idx] = node
+  if (node instanceof HTMLElement) {
+    tabRefs.value[idx] = node
+  } else if (el != null && import.meta.dev) {
+    console.warn('[KunTab] unexpected ref payload at index', idx, el)
+  }
 }
 
 const currentIndex = computed(() =>
@@ -119,7 +120,6 @@ watch(
   { immediate: true }
 )
 
-// Keyboard navigation — arrows + Home/End cycle through tabs.
 const focusTab = (idx: number) => {
   const el = tabRefs.value[idx]
   if (el) el.focus()
@@ -132,7 +132,17 @@ const moveFocus = (delta: number, e?: KeyboardEvent) => {
     .filter((i) => i >= 0)
   if (!enabled.length) return
   const cur = enabled.indexOf(currentIndex.value)
-  const nextIdx = enabled[(cur + delta + enabled.length) % enabled.length]
+  // When nothing is selected yet (cur < 0), the ARIA pattern says
+  // ArrowRight/Down should land on the first item and ArrowLeft/Up on
+  // the last. Without this guard, `(-1 + 1 + n) % n` happens to give
+  // the right answer for forward but `(-1 - 1 + n) % n` gives n-2,
+  // not n-1.
+  let nextIdx: number | undefined
+  if (cur < 0) {
+    nextIdx = enabled[delta > 0 ? 0 : enabled.length - 1]
+  } else {
+    nextIdx = enabled[(cur + delta + enabled.length) % enabled.length]
+  }
   if (nextIdx === undefined) return
   const item = props.items[nextIdx]
   if (item) {

@@ -120,8 +120,6 @@ onMounted(() => {
             'focus:ring-primary focus:border-transparent focus:ring-2 focus:outline-none',
             disabled ? 'text-default-500 cursor-not-allowed shadow-none' : '',
             darkBorder && 'dark:border-default-200',
-            // readonly ? 'bg-default-100' : '',
-            // error ? 'border-danger-300' : 'border-default-300',
             resize === 'none'
               ? 'resize-none'
               : resize === 'vertical'

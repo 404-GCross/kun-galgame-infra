@@ -3,9 +3,8 @@ import { computed } from 'vue'
 import { kunBgClasses } from './ui/variants'
 import type { KunUIColor } from './ui/type'
 
-// KunBadge is the dot / count overlay sitting on the top-right of an
-// anchor (avatar, icon, button). For inline pills / tags use KunChip.
-// Renamed in v0.1.0 — see packages/ui/docs/improvement-plan.md §3.14.
+// Dot / count overlay sitting on the top-right of an anchor (avatar,
+// icon, button). For inline pills / tags use KunChip.
 //
 // Two modes:
 //   - dot     → small colored dot, no number

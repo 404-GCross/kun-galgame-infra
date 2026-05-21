@@ -1,9 +1,7 @@
 <script setup lang="ts">
-// KunBrand is the home-link header logo + name + optional sub-label
-// (e.g. "论坛" / "Wiki" / "OAuth"). All values must be passed in by the
-// consuming app — v0.0.1 hard-coded `kungal.titleShort` + a "论坛" chip
-// which made the component kungal-only and not safe for the @kun/ui
-// cross-project layer. See packages/ui/docs/improvement-plan.md §3.19.
+// Home-link header: logo + name + optional sub-label (e.g. "论坛" /
+// "Wiki" / "OAuth"). All values come from props so the component is
+// usable across every consuming app without project-specific defaults.
 
 withDefaults(
   defineProps<{

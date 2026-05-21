@@ -2,10 +2,8 @@
 import { kunVariantClasses } from './ui/variants'
 import type { KunUIVariant, KunUIColor, KunUISize } from './ui/type'
 
-// KunChip is the small rounded "tag" piece — labels, status pills,
-// taxonomy markers. Renamed from KunBadge in v0.1.0; the real KunBadge
-// is now a separate component for dot / count overlays. See
-// packages/ui/docs/improvement-plan.md §3.14.
+// Small rounded "tag" piece — labels, status pills, taxonomy markers.
+// For dot / count overlays use KunBadge instead.
 interface Props {
   className?: string
   color?: KunUIColor

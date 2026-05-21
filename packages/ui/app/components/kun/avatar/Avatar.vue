@@ -2,11 +2,6 @@
 import { getRandomSticker } from '../../../utils/getRandomSticker'
 import type { KunAvatarProps } from './type'
 
-// `disableFloating` / `floatingPosition` were declared on the legacy
-// KunAvatarProps interface but never referenced in this template —
-// dead props that we keep accepting for backward compatibility (typed
-// in the interface) but explicitly ignore here. Will be dropped in a
-// future major.
 const props = withDefaults(defineProps<KunAvatarProps>(), {
   size: 'md',
   isNavigation: true,
@@ -44,13 +39,16 @@ const sizeClasses = computed(() => {
 })
 
 const userAvatarSrc = computed(() => {
-  if (props.user.avatar) {
+  const user = props.user
+  if (user?.avatar) {
     return props.size === 'original' || props.size === 'original-sm'
-      ? props.user.avatar
-      : props.user.avatar.replace(/\.webp$/, '-100.webp')
-  } else {
-    return getRandomSticker(props.user.name).value
+      ? user.avatar
+      : user.avatar.replace(/\.webp$/, '-100.webp')
   }
+  // Fallback for null user or missing avatar — deterministic per name
+  // so the same unknown user gets the same sticker. Empty string is a
+  // safe key for `getRandomSticker`.
+  return getRandomSticker(user?.name ?? '').value
 })
 </script>
 
@@ -66,30 +64,12 @@ const userAvatarSrc = computed(() => {
     "
     @click="handleClickAvatar($event)"
   >
-    <!-- <KunImage
-          :class="cn('inline-block rounded-full', sizeClasses)"
-          v-if="user.avatar"
-          :src="userAvatarSrc"
-          :alt="user.name"
-        /> -->
     <KunImage
       :class="
         cn('inline-block rounded-full', sizeClasses, props.imageClassName)
       "
       :src="userAvatarSrc"
-      :alt="user.name"
+      :alt="user?.name ?? '未知用户'"
     />
-    <!-- <span
-          :style="{ height: size, width: size }"
-          :class="
-            cn(
-              'bg-default flex shrink-0 items-center justify-center rounded-full text-white',
-              sizeClasses
-            )
-          "
-          v-if="!user.avatar"
-        >
-          {{ user.name.slice(0, 1).toUpperCase() }}
-        </span> -->
   </div>
 </template>

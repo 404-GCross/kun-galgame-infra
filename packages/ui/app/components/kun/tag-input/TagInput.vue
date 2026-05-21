@@ -58,9 +58,9 @@ const setChipRef = (el: Element | { $el?: Element } | null, idx: number) => {
   if (node instanceof HTMLElement) chipRefs.value[idx] = node
 }
 
-// Two-stage Backspace: first press on empty input only arms the delete,
-// second press actually pops. Prevents the "I held Backspace one tick
-// too long" footgun seen in the legacy ad-hoc Alias.vue implementation.
+// Two-stage Backspace: first press on empty input arms the delete,
+// second separate press pops. Prevents accidental tag loss from
+// over-held Backspace (the e.repeat guard in onKeydown enforces this).
 const canDeleteByBackspace = ref(false)
 
 const kunUniqueId = useKunUniqueId('kun-tag-input')
@@ -120,16 +120,22 @@ const tryAdd = (raw: string): boolean => {
 // Split a chunk (e.g. pasted text or pending input on blur) by
 // configured splitChars, then add each non-empty fragment.
 const splitAndAdd = (chunk: string): number => {
-  if (!props.splitChars.length) {
-    return tryAdd(chunk) ? 1 : 0
-  }
-  // Build a single regex from all delimiters; literal strings are
-  // escaped, regex sources are kept verbatim.
+  // Build the alternation from non-empty delimiters; literal strings
+  // are regex-escaped, RegExp sources are wrapped in a non-capturing
+  // group so they don't smuggle capture-into-split-output behaviour
+  // (String.split with capturing groups interleaves matches as items).
   const escape = (s: string) =>
     s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   const parts: string[] = []
   for (const d of props.splitChars) {
-    parts.push(d instanceof RegExp ? d.source : escape(d))
+    if (d instanceof RegExp) {
+      if (d.source) parts.push(`(?:${d.source})`)
+    } else if (d) {
+      parts.push(escape(d))
+    }
+  }
+  if (!parts.length) {
+    return tryAdd(chunk) ? 1 : 0
   }
   const re = new RegExp(parts.join('|'))
   const fragments = chunk.split(re)
@@ -145,6 +151,10 @@ const removeAt = (index: number) => {
   const removed = tags.value[index]
   if (removed === undefined) return
   tags.value = tags.value.filter((_, i) => i !== index)
+  // Trim chipRefs so stale DOM nodes from now-removed chips don't
+  // linger past the surviving length (Vue's :ref callback only fires
+  // for live items, leaving the array longer than necessary).
+  chipRefs.value.length = tags.value.length
   emit('remove', removed, index)
 }
 
@@ -174,8 +184,10 @@ const onKeydown = (e: KeyboardEvent) => {
     return
   }
 
-  // Backspace on empty input — two-stage delete.
+  // Skip OS key-repeat so holding Backspace doesn't wipe the chip list
+  // (see canDeleteByBackspace ref above for the two-stage rationale).
   if (e.key === 'Backspace' && !inputValue.value && tags.value.length > 0) {
+    if (e.repeat) return
     if (canDeleteByBackspace.value) {
       removeAt(tags.value.length - 1)
       canDeleteByBackspace.value = false
@@ -194,7 +206,6 @@ const onKeydown = (e: KeyboardEvent) => {
     return
   }
 
-  // Any other character resets the backspace arm.
   if (e.key !== 'Backspace') {
     canDeleteByBackspace.value = false
   }
@@ -391,8 +402,9 @@ const isAtMax = computed(() => tags.value.length >= props.maxTags)
           <button
             v-if="!readonly && !disabled"
             type="button"
+            tabindex="-1"
             :aria-label="`移除标签 ${tag}`"
-            class="hover:text-danger focus:text-danger -mr-0.5 ml-1 inline-flex cursor-pointer rounded-full p-0.5 transition-colors focus:outline-none"
+            class="hover:text-danger -mr-0.5 ml-1 inline-flex cursor-pointer rounded-full p-0.5 transition-colors focus:outline-none"
             @click.stop="removeAt(index)"
           >
             <KunIcon name="lucide:x" class="size-3.5" />

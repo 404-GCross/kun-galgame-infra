@@ -80,6 +80,18 @@ const colorClasses: Record<KunUIColor, string> = {
   info: 'bg-info'
 }
 
+// SVG <circle stroke="currentColor"> needs a text-* class, not bg-*.
+// The circle variant uses this map; the bar variant keeps colorClasses.
+const strokeColorClasses: Record<KunUIColor, string> = {
+  default: 'text-default',
+  primary: 'text-primary',
+  secondary: 'text-secondary',
+  success: 'text-success',
+  warning: 'text-warning',
+  danger: 'text-danger',
+  info: 'text-info'
+}
+
 // Static gradient map — required because Tailwind JIT cannot resolve
 // dynamic `from-${color}-400` strings at build time. Adding a color
 // here is the source of truth for the gradient variant.
@@ -131,7 +143,7 @@ const circleOffset = computed(
           cy="50"
         />
         <circle
-          :class="colorClasses[color]"
+          :class="strokeColorClasses[color]"
           stroke="currentColor"
           stroke-width="10"
           fill="transparent"

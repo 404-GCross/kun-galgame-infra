@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useEventListener } from '@vueuse/core'
 import { onMounted, onUnmounted, watch } from 'vue'
+import { useBodyScrollLock } from '../../composables/useBodyScrollLock'
 
 const props = withDefaults(
   defineProps<{
@@ -25,37 +26,17 @@ const emits = defineEmits<{
   close: []
 }>()
 
-// Body scroll-lock ref counter — shared across all Modal instances on
-// the page so a nested-modal scenario still keeps scroll locked until
-// the OUTERMOST modal closes. The legacy implementation wrote to
-// `document.body.style` directly and an inner-modal close would
-// unintentionally unlock scroll for any outer modal still open.
-let scrollLockCount = 0
-const lockScroll = () => {
-  if (scrollLockCount === 0) {
-    document.body.style.overflow = 'hidden'
-    document.body.style.paddingRight = `${window.innerWidth - document.documentElement.clientWidth}px`
-  }
-  scrollLockCount++
-}
-const unlockScroll = () => {
-  if (scrollLockCount === 0) return
-  scrollLockCount--
-  if (scrollLockCount === 0) {
-    document.body.style.overflow = ''
-    document.body.style.paddingRight = ''
-  }
-}
-
-// Track whether *this* instance contributed to the lock — onUnmounted
-// must only release once even if modelValue toggles many times.
+// The singleton lock counter lives in useBodyScrollLock; `locked` here
+// is per-instance and guarantees onUnmounted releases exactly once
+// regardless of how many times modelValue toggled.
+const { lock, unlock } = useBodyScrollLock()
 let locked = false
 const applyLock = (shouldLock: boolean) => {
   if (shouldLock && !locked) {
-    lockScroll()
+    lock()
     locked = true
   } else if (!shouldLock && locked) {
-    unlockScroll()
+    unlock()
     locked = false
   }
 }

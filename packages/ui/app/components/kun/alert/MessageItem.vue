@@ -82,7 +82,7 @@ const typeStyles = computed(() => {
         text: 'text-success-800',
         icon: 'text-success-500',
         progress: 'bg-success-400',
-        iconName: 'lucide:check-circle-2'
+        iconName: 'lucide:circle-check'
       }
     case 'error':
       return {
@@ -90,7 +90,7 @@ const typeStyles = computed(() => {
         text: 'text-danger-800',
         icon: 'text-danger-500',
         progress: 'bg-danger-400',
-        iconName: 'lucide:x-circle'
+        iconName: 'lucide:circle-x'
       }
     case 'warn':
       return {
@@ -98,7 +98,7 @@ const typeStyles = computed(() => {
         text: 'text-warning-800',
         icon: 'text-warning-500',
         progress: 'bg-warning-400',
-        iconName: 'lucide:alert-triangle'
+        iconName: 'lucide:triangle-alert'
       }
     case 'info':
     default:

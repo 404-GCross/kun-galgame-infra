@@ -2,14 +2,11 @@
 import { useRipple } from '../ripple/useRipple'
 import type { KunUIColor } from '../ui/type'
 
-// KunCard supports three modes (in order of priority when multiple given):
-//   1. `href`      → renders as <NuxtLink> (link)
-//   2. `clickable` → renders as <button> (interactive, emits @click)
-//   3. neither     → renders as <div> (static)
-//
-// In v0.0.1 a single `isPressable` flag bundled "interactive + navigate to /",
-// which silently sent every press-without-href to the root. Split in v0.1.0
-// — see packages/ui/docs/improvement-plan.md §3.16.
+// KunCard renders as one of three elements depending on which props
+// are present (priority: href > clickable > div):
+//   1. `href`      → <NuxtLink>
+//   2. `clickable` → <button> (emits @click)
+//   3. neither     → static <div>
 interface Props {
   isHoverable?: boolean
   clickable?: boolean

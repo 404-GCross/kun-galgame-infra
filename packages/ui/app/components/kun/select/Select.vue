@@ -7,7 +7,7 @@ import {
   onClickOutside
 } from '@vueuse/core'
 
-const props = withDefaults(defineProps<Omit<KunSelectProps, 'modelValue'>>(), {
+const props = withDefaults(defineProps<KunSelectProps>(), {
   placeholder: '',
   label: '',
   disabled: false,

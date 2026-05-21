@@ -66,16 +66,30 @@ const handleJumpToPage = () => {
   }
 }
 
-// Skip global arrow-key paging when the user is interacting with an
-// input/textarea/contenteditable — otherwise typing in a search box
-// triggers a page flip. The legacy implementation didn't filter and
-// would steal arrows from any focused field on the page.
+// Skip global arrow-key paging when the user is interacting with a
+// widget that owns arrow keys itself — text inputs / contenteditable,
+// or any focused element with an ARIA role that consumes arrows
+// (tabs, listbox options, menu items, sliders, spin buttons).
+const KEY_OWNING_ROLES = new Set([
+  'tab',
+  'option',
+  'menuitem',
+  'menuitemradio',
+  'menuitemcheckbox',
+  'slider',
+  'spinbutton',
+  'combobox',
+  'tree',
+  'treeitem',
+])
 const isEditableTarget = (e: KeyboardEvent) => {
   const t = e.target as HTMLElement | null
   if (!t) return false
   if (t.isContentEditable) return true
   const tag = t.tagName
-  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT'
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true
+  const role = t.getAttribute('role')
+  return !!role && KEY_OWNING_ROLES.has(role)
 }
 
 onKeyStroke('ArrowLeft', (e) => {
