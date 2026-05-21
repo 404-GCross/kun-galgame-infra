@@ -69,7 +69,7 @@ const _ = props // keep TS happy if `props` is never read elsewhere
           </td>
           <td class="whitespace-nowrap px-6 py-4">
             <div class="flex gap-1">
-              <KunBadge
+              <KunChip
                 v-for="role in (user.roles || [])"
                 :key="role"
                 :color="role === 'admin' ? 'primary' : role === 'moderator' ? 'warning' : 'default'"
@@ -77,7 +77,7 @@ const _ = props // keep TS happy if `props` is never read elsewhere
                 size="sm"
               >
                 {{ role }}
-              </KunBadge>
+              </KunChip>
               <span v-if="!user.roles?.length" class="text-default-300 text-sm">user</span>
             </div>
           </td>

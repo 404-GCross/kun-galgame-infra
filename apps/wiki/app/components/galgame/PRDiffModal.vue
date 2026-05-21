@@ -56,9 +56,9 @@ const format = (v: unknown) => {
 
 <template>
   <KunModal
-    :modal-value="open"
+    :model-value="open"
     inner-class-name="max-w-4xl"
-    @update:modal-value="(v: boolean) => !v && emit('close')"
+    @update:model-value="(v: boolean) => !v && emit('close')"
   >
     <div class="max-h-[80vh] space-y-4 overflow-y-auto p-6">
       <div>

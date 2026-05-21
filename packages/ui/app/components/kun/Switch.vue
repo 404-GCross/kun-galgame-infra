@@ -1,7 +1,6 @@
 <script setup lang="ts">
 withDefaults(
   defineProps<{
-    modelValue: boolean
     label?: string
     disabled?: boolean
     className?: string
@@ -10,11 +9,9 @@ withDefaults(
   { label: '', className: '', disabled: false, labelClassName: '' }
 )
 
-const kunUniqueId = useKunUniqueId('kun-switch')
+const modelValue = defineModel<boolean>({ required: true })
 
-defineEmits<{
-  'update:modelValue': [value: boolean]
-}>()
+const kunUniqueId = useKunUniqueId('kun-switch')
 </script>
 
 <template>
@@ -34,7 +31,7 @@ defineEmits<{
       :checked="modelValue"
       @change="
         (event) =>
-          $emit('update:modelValue', (event.target as HTMLInputElement).checked)
+          (modelValue = (event.target as HTMLInputElement).checked)
       "
       :disabled="disabled"
     />

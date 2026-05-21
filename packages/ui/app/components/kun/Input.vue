@@ -1,9 +1,8 @@
 <script setup lang="ts">
-import type { KunUIColor } from './ui/type'
+import type { KunUIColor, KunUISize } from './ui/type'
 
 const props = withDefaults(
   defineProps<{
-    modelValue?: string | number
     label?: string
     type?: string
     color?: KunUIColor
@@ -11,7 +10,7 @@ const props = withDefaults(
     placeholder?: string
     helperText?: string
     error?: string
-    size?: string
+    size?: KunUISize
     required?: boolean
     disabled?: boolean
     darkBorder?: boolean
@@ -21,7 +20,6 @@ const props = withDefaults(
     type: 'text',
     color: 'default',
     className: '',
-    modelValue: '',
     label: '',
     placeholder: '',
     helperText: '',
@@ -34,8 +32,9 @@ const props = withDefaults(
   }
 )
 
+const modelValue = defineModel<string | number>({ default: '' })
+
 const emits = defineEmits<{
-  'update:modelValue': [value: string | number]
   blur: [event: FocusEvent]
   focus: [event: FocusEvent]
 }>()
@@ -50,7 +49,8 @@ const colorClass: Record<KunUIColor, string> = {
   secondary: 'focus:ring-secondary',
   success: 'focus:ring-success',
   warning: 'focus:ring-warning',
-  danger: 'focus:ring-danger'
+  danger: 'focus:ring-danger',
+  info: 'focus:ring-info'
 }
 
 const sizeClasses = computed(() => {
@@ -72,7 +72,7 @@ const sizeClasses = computed(() => {
 
 const handleInput = (event: Event) => {
   const target = event.target as HTMLInputElement
-  emits('update:modelValue', target.value)
+  modelValue.value = target.value
 }
 
 const handleBlur = (event: FocusEvent) => {
@@ -107,7 +107,7 @@ defineExpose({
       class="text-default-700 mb-1 block text-sm font-medium"
     >
       {{ label }}
-      <span v-if="required" class="text-red-500">*</span>
+      <span v-if="required" class="text-danger">*</span>
     </label>
 
     <div class="relative">
@@ -130,7 +130,7 @@ defineExpose({
             $slots.suffix && 'pr-10',
             disabled && 'bg-default-100 cursor-not-allowed',
             error
-              ? 'border-red-300 focus:border-red-500 focus:ring-red-500'
+              ? 'border-danger-300 focus:border-danger focus:ring-danger'
               : '',
             className
           )
@@ -159,7 +159,7 @@ defineExpose({
       {{ helperText }}
     </p>
 
-    <p v-if="error" class="mt-1 text-sm text-red-600">
+    <p v-if="error" class="text-danger mt-1 text-sm">
       {{ error }}
     </p>
   </div>

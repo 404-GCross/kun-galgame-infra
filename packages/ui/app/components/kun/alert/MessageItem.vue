@@ -1,9 +1,5 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import LucideAlertTriangle from '../icon/LucideAlertTriangle.vue'
-import LucideCheckCircle2 from '../icon/LucideCheckCircle2.vue'
-import LucideInfo from '../icon/LucideInfo.vue'
-import LucideXCircle from '../icon/LucideXCircle.vue'
 import type { KunMessageType } from '../../../composables/useKunMessage'
 
 const props = defineProps<{
@@ -86,7 +82,7 @@ const typeStyles = computed(() => {
         text: 'text-success-800',
         icon: 'text-success-500',
         progress: 'bg-success-400',
-        iconComponent: LucideCheckCircle2
+        iconName: 'lucide:check-circle-2'
       }
     case 'error':
       return {
@@ -94,7 +90,7 @@ const typeStyles = computed(() => {
         text: 'text-danger-800',
         icon: 'text-danger-500',
         progress: 'bg-danger-400',
-        iconComponent: LucideXCircle
+        iconName: 'lucide:x-circle'
       }
     case 'warn':
       return {
@@ -102,7 +98,7 @@ const typeStyles = computed(() => {
         text: 'text-warning-800',
         icon: 'text-warning-500',
         progress: 'bg-warning-400',
-        iconComponent: LucideAlertTriangle
+        iconName: 'lucide:alert-triangle'
       }
     case 'info':
     default:
@@ -111,7 +107,7 @@ const typeStyles = computed(() => {
         text: 'text-primary-800',
         icon: 'text-primary-500',
         progress: 'bg-primary-400',
-        iconComponent: LucideInfo
+        iconName: 'lucide:info'
       }
   }
 })
@@ -129,8 +125,8 @@ const typeStyles = computed(() => {
     @mouseenter="pauseTimer"
     @mouseleave="resumeTimer"
   >
-    <component
-      :is="typeStyles.iconComponent"
+    <KunIcon
+      :name="typeStyles.iconName"
       :class="cn('mt-0.5 mr-3 h-6 w-6 flex-shrink-0', typeStyles.icon)"
     />
 

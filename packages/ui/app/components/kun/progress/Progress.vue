@@ -70,13 +70,27 @@ const roundedClasses = computed(() => {
   }
 })
 
-const colorClasses: Record<string, string> = {
+const colorClasses: Record<KunUIColor, string> = {
   default: 'bg-default',
   primary: 'bg-primary',
   secondary: 'bg-secondary',
   success: 'bg-success',
   warning: 'bg-warning',
-  danger: 'bg-danger'
+  danger: 'bg-danger',
+  info: 'bg-info'
+}
+
+// Static gradient map — required because Tailwind JIT cannot resolve
+// dynamic `from-${color}-400` strings at build time. Adding a color
+// here is the source of truth for the gradient variant.
+const gradientClasses: Record<KunUIColor, string> = {
+  default: 'bg-gradient-to-r from-default-400 to-default-600',
+  primary: 'bg-gradient-to-r from-primary-400 to-primary-600',
+  secondary: 'bg-gradient-to-r from-secondary-400 to-secondary-600',
+  success: 'bg-gradient-to-r from-success-400 to-success-600',
+  warning: 'bg-gradient-to-r from-warning-400 to-warning-600',
+  danger: 'bg-gradient-to-r from-danger-400 to-danger-600',
+  info: 'bg-gradient-to-r from-info-400 to-info-600'
 }
 
 const barClasses = computed(() => {
@@ -85,7 +99,7 @@ const barClasses = computed(() => {
     case 'solid':
       return base
     case 'gradient':
-      return `bg-gradient-to-r from-${props.color}-400 to-${props.color}-600`
+      return gradientClasses[props.color] || gradientClasses.primary
     case 'striped':
       return `${base} bg-[length:1rem_1rem] bg-gradient-to-r from-white/20 to-transparent animate-[progress-stripes_1s_linear_infinite]`
     default:

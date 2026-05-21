@@ -60,9 +60,9 @@ const submit = async () => {
 
 <template>
   <KunModal
-    :modal-value="open"
+    :model-value="open"
     inner-class-name="max-w-md"
-    @update:modal-value="(v: boolean) => !v && emit('close')"
+    @update:model-value="(v: boolean) => !v && emit('close')"
   >
     <div class="space-y-4 p-6">
       <div class="flex items-center gap-2">

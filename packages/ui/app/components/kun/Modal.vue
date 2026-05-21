@@ -4,7 +4,6 @@ import { onMounted, onUnmounted, watch } from 'vue'
 
 const props = withDefaults(
   defineProps<{
-    modalValue: boolean
     className?: string
     innerClassName?: string
     isDismissable?: boolean
@@ -20,53 +19,68 @@ const props = withDefaults(
   }
 )
 
+const modelValue = defineModel<boolean>({ required: true })
+
 const emits = defineEmits<{
-  'update:modalValue': [value: boolean]
   close: []
 }>()
 
+// Body scroll-lock ref counter — shared across all Modal instances on
+// the page so a nested-modal scenario still keeps scroll locked until
+// the OUTERMOST modal closes. The legacy implementation wrote to
+// `document.body.style` directly and an inner-modal close would
+// unintentionally unlock scroll for any outer modal still open.
+let scrollLockCount = 0
 const lockScroll = () => {
-  document.body.style.overflow = 'hidden'
-  document.body.style.paddingRight = `${window.innerWidth - document.documentElement.clientWidth}px`
+  if (scrollLockCount === 0) {
+    document.body.style.overflow = 'hidden'
+    document.body.style.paddingRight = `${window.innerWidth - document.documentElement.clientWidth}px`
+  }
+  scrollLockCount++
+}
+const unlockScroll = () => {
+  if (scrollLockCount === 0) return
+  scrollLockCount--
+  if (scrollLockCount === 0) {
+    document.body.style.overflow = ''
+    document.body.style.paddingRight = ''
+  }
 }
 
-const unlockScroll = () => {
-  document.body.style.overflow = ''
-  document.body.style.paddingRight = ''
+// Track whether *this* instance contributed to the lock — onUnmounted
+// must only release once even if modelValue toggles many times.
+let locked = false
+const applyLock = (shouldLock: boolean) => {
+  if (shouldLock && !locked) {
+    lockScroll()
+    locked = true
+  } else if (!shouldLock && locked) {
+    unlockScroll()
+    locked = false
+  }
 }
 
 const handleCloseKunModal = () => {
   if (props.isDismissable) {
-    emits('update:modalValue', false)
+    modelValue.value = false
     emits('close')
   }
 }
 
 useEventListener('keydown', (e: KeyboardEvent) => {
-  if (e.key === 'Escape') {
+  if (e.key === 'Escape' && modelValue.value) {
     handleCloseKunModal()
   }
 })
 
-watch(
-  () => props.modalValue,
-  (newValue) => {
-    if (newValue) {
-      lockScroll()
-    } else {
-      unlockScroll()
-    }
-  }
-)
+watch(modelValue, (v) => applyLock(v))
 
 onMounted(() => {
-  if (props.modalValue) {
-    lockScroll()
-  }
+  if (modelValue.value) applyLock(true)
 })
 
 onUnmounted(() => {
-  unlockScroll()
+  applyLock(false)
 })
 </script>
 
@@ -74,7 +88,7 @@ onUnmounted(() => {
   <Teleport to="body">
     <Transition name="kun-modal">
       <div
-        v-if="modalValue"
+        v-if="modelValue"
         :class="
           cn(
             'bg-default-800/70 dark:bg-background/70 fixed top-0 left-0 z-1007 flex h-full w-full items-center justify-center p-3 transition-all',
@@ -105,7 +119,7 @@ onUnmounted(() => {
             :is-icon-only="true"
             @click="
               () => {
-                emits('update:modalValue', false)
+                modelValue = false
                 emits('close')
               }
             "

@@ -49,13 +49,13 @@ const colorClasses: Record<KunUIColor, string> = {
   secondary: 'text-secondary',
   success: 'text-success',
   warning: 'text-warning',
-  danger: 'text-danger'
+  danger: 'text-danger',
+  info: 'text-info'
 }
 </script>
 
 <template>
   <NuxtLink
-    :is="tag"
     :to="to"
     :class="
       cn(

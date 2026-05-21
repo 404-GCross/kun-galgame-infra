@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import img from './loli'
+import img from './loliAssets'
 
 const { loli, name } = img
 
@@ -82,7 +82,7 @@ onBeforeUnmount(() => {
         class="hover:bg-default/40 absolute top-1 right-1 inline-flex cursor-pointer overflow-hidden rounded-full border-transparent bg-transparent p-2 text-sm font-medium transition-all hover:opacity-80 active:scale-[0.97] disabled:opacity-50"
         @click="close"
       >
-        <KunIconLucideX class="h-4 w-4" />
+        <KunIcon name="lucide:x" class="h-4 w-4" />
       </button>
 
       <span

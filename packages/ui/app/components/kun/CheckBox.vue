@@ -2,7 +2,6 @@
 import type { KunUIColor } from './ui/type'
 
 interface Props {
-  modelValue?: boolean
   color?: KunUIColor
   type?: 'single' | 'multiple'
   label?: string
@@ -14,7 +13,6 @@ interface Props {
 }
 
 const props = withDefaults(defineProps<Props>(), {
-  modelValue: false,
   color: 'default',
   type: 'multiple',
   label: undefined,
@@ -25,15 +23,16 @@ const props = withDefaults(defineProps<Props>(), {
   className: ''
 })
 
+const modelValue = defineModel<boolean>({ default: false })
+
 const emit = defineEmits<{
-  'update:modelValue': [value: boolean]
   change: [value: boolean]
 }>()
 
 const kunUniqueId = useKunUniqueId('kun-checkbox')
 const updateValue = (event: Event) => {
   const target = event.target as HTMLInputElement
-  emit('update:modelValue', target.checked)
+  modelValue.value = target.checked
   emit('change', target.checked)
 }
 
@@ -49,7 +48,9 @@ const colorClasses: Record<KunUIColor, string> = {
   warning:
     'border-warning-300 checked:bg-warning checked:border-warning hover:border-warning',
   danger:
-    'border-danger-300 checked:bg-danger checked:border-danger hover:border-danger'
+    'border-danger-300 checked:bg-danger checked:border-danger hover:border-danger',
+  info:
+    'border-info-300 checked:bg-info checked:border-info hover:border-info'
 }
 </script>
 

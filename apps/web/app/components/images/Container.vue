@@ -189,7 +189,7 @@ onMounted(() => {
     </template>
   </div>
 
-  <KunModal v-model:modal-value="delOpen">
+  <KunModal v-model="delOpen">
     <div class="w-[28rem] space-y-4">
       <h2 class="text-xl font-bold text-foreground">
         {{ delForce ? '硬删除图片' : '软删除图片' }}

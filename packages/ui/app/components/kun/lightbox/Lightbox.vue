@@ -322,8 +322,8 @@ onMounted(() => {
 
 <template>
   <KunModal
-    :modal-value="isOpen"
-    @update:modal-value="handleKunLightBoxStatus"
+    :model-value="isOpen"
+    @update:model-value="handleKunLightBoxStatus"
     :with-container="false"
   >
     <div

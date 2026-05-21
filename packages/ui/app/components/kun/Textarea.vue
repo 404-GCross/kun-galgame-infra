@@ -2,7 +2,6 @@
 const props = withDefaults(
   defineProps<{
     placeholder?: string
-    modelValue?: string
     label?: string
     name?: string
     hint?: string
@@ -21,9 +20,7 @@ const props = withDefaults(
     darkBorder?: boolean
   }>(),
   {
-    placeholder:
-      '「恋だよ、恋。私に出来なかったことのひとつを、君に代わりにかなえてもらう」',
-    modelValue: '',
+    placeholder: '',
     label: '',
     name: '',
     hint: '',
@@ -43,26 +40,18 @@ const props = withDefaults(
   }
 )
 
+const modelValue = defineModel<string>({ default: '' })
+
 const kunUniqueId = useKunUniqueId('kun-textarea')
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
-const localValue = ref(props.modelValue)
 
 const emits = defineEmits<{
-  'update:modelValue': [value: string | number]
   blur: [event: FocusEvent]
   focus: [event: FocusEvent]
   input: [event: Event]
 }>()
 
-watch(
-  () => props.modelValue,
-  (newValue) => {
-    localValue.value = newValue
-  }
-)
-
-watch(localValue, (newValue) => {
-  emits('update:modelValue', newValue)
+watch(modelValue, () => {
   if (props.autoGrow) {
     nextTick(() => adjustHeight())
   }
@@ -108,14 +97,14 @@ onMounted(() => {
       class="mb-1 block text-sm font-medium"
     >
       {{ label }}
-      <span v-if="required" class="text-danger-500 ml-1">*</span>
+      <span v-if="required" class="text-danger ml-1">*</span>
     </label>
 
     <div class="relative">
       <textarea
         :id="kunUniqueId"
         ref="textareaRef"
-        v-model="localValue"
+        v-model="modelValue"
         :name="name"
         :placeholder="placeholder"
         :disabled="disabled"
@@ -128,7 +117,7 @@ onMounted(() => {
         :class="
           cn(
             'scrollbar-hide border-default/20 w-full rounded-md border p-3 transition duration-150 ease-in-out',
-            'focus:ring-primary-500 focus:border-transparent focus:ring-2 focus:outline-none',
+            'focus:ring-primary focus:border-transparent focus:ring-2 focus:outline-none',
             disabled ? 'text-default-500 cursor-not-allowed shadow-none' : '',
             darkBorder && 'dark:border-default-200',
             // readonly ? 'bg-default-100' : '',
@@ -151,7 +140,7 @@ onMounted(() => {
         v-if="maxlength && showCharCount"
         class="text-default-500 absolute right-2 bottom-2 text-xs"
       >
-        {{ localValue.length }}/{{ maxlength }}
+        {{ modelValue.length }}/{{ maxlength }}
       </div>
     </div>
 

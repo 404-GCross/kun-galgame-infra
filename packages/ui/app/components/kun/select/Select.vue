@@ -7,7 +7,7 @@ import {
   onClickOutside
 } from '@vueuse/core'
 
-const props = withDefaults(defineProps<KunSelectProps>(), {
+const props = withDefaults(defineProps<Omit<KunSelectProps, 'modelValue'>>(), {
   placeholder: '',
   label: '',
   disabled: false,
@@ -17,8 +17,9 @@ const props = withDefaults(defineProps<KunSelectProps>(), {
   className: ''
 })
 
+const modelValue = defineModel<string | number>()
+
 const emit = defineEmits<{
-  'update:modelValue': [value: string | number]
   set: [value: string | number, index: number]
 }>()
 
@@ -37,7 +38,7 @@ onClickOutside(button, () => {
 
 const selectedLabel = computed(() => {
   const selected = props.options.find(
-    (option) => option.value === props.modelValue
+    (option) => option.value === modelValue.value
   )
   return selected?.label
 })
@@ -74,7 +75,7 @@ const toggle = () => {
 }
 
 const selectOption = (value: string | number, index: number) => {
-  emit('update:modelValue', value)
+  modelValue.value = value
   emit('set', value, index)
   isOpen.value = false
 }
@@ -121,7 +122,7 @@ const selectOption = (value: string | number, index: number) => {
       <div
         v-show="isOpen"
         ref="dropdown"
-        class="absolute z-10 w-full rounded-md border bg-white p-1 dark:bg-black"
+        class="bg-content1 absolute z-50 w-full rounded-md border p-1"
         :class="showAbove ? 'bottom-full mb-1' : 'top-full mt-1'"
       >
         <ul
@@ -142,8 +143,8 @@ const selectOption = (value: string | number, index: number) => {
 
             <KunIcon
               v-if="modelValue === option.value"
-              class="flex items-center pr-4"
               name="lucide:check"
+              class="flex items-center pr-4"
             />
           </li>
         </ul>

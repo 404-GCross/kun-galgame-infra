@@ -288,7 +288,7 @@ onBeforeUnmount(() => {
         :id="popoverId"
         role="dialog"
         :aria-hidden="!isOpen"
-        class="absolute z-50 rounded-lg border bg-white shadow-lg dark:bg-black"
+        class="bg-content1 absolute z-50 rounded-lg border border-default-200 shadow-lg"
         :class="
           cn(autoPosition ? '' : positionClassForStaticPosition, innerClass)
         "

@@ -115,9 +115,9 @@ const relative = (iso: string) => {
             </div>
           </td>
           <td class="px-4 py-3">
-            <KunBadge :color="(typeMeta(m.type).color as any)">
+            <KunChip :color="(typeMeta(m.type).color as any)">
               {{ typeMeta(m.type).label }}
-            </KunBadge>
+            </KunChip>
           </td>
           <td class="text-default-500 px-4 py-3">{{ relative(m.created_at) }}</td>
           <td class="px-4 py-3 text-right">

@@ -1,5 +1,5 @@
 import { render, h, ref } from 'vue'
-import Info from '../components/kun/alert/Info.vue'
+import Loli from '../components/kun/alert/Loli.vue'
 
 const messageCount = ref(0)
 let containerEl: HTMLElement | null = null
@@ -27,7 +27,7 @@ export const useKunLoliInfo = (message: string, duration?: number) => {
   // unmount any previous vnode mounted by this util before re-rendering
   render(null, containerEl)
 
-  const messageNode = h(Info, {
+  const messageNode = h(Loli, {
     message,
     duration: durationMs,
   })

@@ -67,7 +67,7 @@ const siteName = computed(() => {
       <div v-if="client.grants?.length">
         <p class="text-xs text-default-400">授权类型</p>
         <div class="mt-1 flex flex-wrap gap-1">
-          <KunBadge
+          <KunChip
             v-for="grant in client.grants"
             :key="grant"
             color="primary"
@@ -75,14 +75,14 @@ const siteName = computed(() => {
             size="sm"
           >
             {{ grant }}
-          </KunBadge>
+          </KunChip>
         </div>
       </div>
 
       <div v-if="client.allowed_scopes?.length">
         <p class="text-xs text-default-400">允许的 scope</p>
         <div class="mt-1 flex flex-wrap gap-1">
-          <KunBadge
+          <KunChip
             v-for="scope in client.allowed_scopes"
             :key="scope"
             :color="scope === 'image:upload' ? 'warning' : 'default'"
@@ -90,20 +90,20 @@ const siteName = computed(() => {
             size="sm"
           >
             {{ scope }}
-          </KunBadge>
+          </KunChip>
         </div>
       </div>
 
       <div>
         <p class="text-xs text-default-400">客户端类型</p>
         <div class="mt-1">
-          <KunBadge
+          <KunChip
             :color="client.is_public ? 'info' : 'secondary'"
             variant="flat"
             size="sm"
           >
             {{ client.is_public ? '公共 (SPA / native)' : '机密 (confidential)' }}
-          </KunBadge>
+          </KunChip>
         </div>
       </div>
 

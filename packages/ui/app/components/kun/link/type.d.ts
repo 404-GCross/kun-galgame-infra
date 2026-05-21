@@ -1,7 +1,9 @@
 import type { KunUIColor, KunUISize } from '../ui/type'
 
 export interface KunLinkProps {
-  tag?: 'a' | 'NuxtLink'
+  // NuxtLink auto-falls-through to `<a>` for external URLs, so a
+  // separate `tag` prop is unnecessary. Removed in v0.1.0; consumers
+  // passing `tag` will see TS error and can drop the prop.
   href?: string
   to?: string | Record<string, string>
   color?: KunUIColor

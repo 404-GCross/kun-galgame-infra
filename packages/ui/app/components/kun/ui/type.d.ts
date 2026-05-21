@@ -14,6 +14,7 @@ export type KunUIColor =
   | 'success'
   | 'warning'
   | 'danger'
+  | 'info'
 
 export type KunUISize = 'xs' | 'sm' | 'md' | 'lg' | 'xl'
 

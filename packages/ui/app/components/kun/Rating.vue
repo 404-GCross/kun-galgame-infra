@@ -1,7 +1,6 @@
 <script setup lang="ts">
 const props = withDefaults(
   defineProps<{
-    modelValue?: number
     max?: number
     readonly?: boolean
     disabled?: boolean
@@ -9,7 +8,6 @@ const props = withDefaults(
     ariaLabel?: string
   }>(),
   {
-    modelValue: 0,
     max: 5,
     readonly: false,
     disabled: false,
@@ -18,8 +16,9 @@ const props = withDefaults(
   }
 )
 
+const modelValue = defineModel<number>({ default: 0 })
+
 const emit = defineEmits<{
-  'update:modelValue': [value: number]
   set: [value: number]
 }>()
 
@@ -38,11 +37,11 @@ const iconSize = computed(() => {
 
 const stars = computed(() => Array.from({ length: props.max }, (_, i) => i + 1))
 
-const current = computed(() => hoverValue.value || props.modelValue || 0)
+const current = computed(() => hoverValue.value || modelValue.value || 0)
 
 const setValue = (val: number) => {
   if (props.readonly || props.disabled) return
-  emit('update:modelValue', val)
+  modelValue.value = val
   emit('set', val)
 }
 

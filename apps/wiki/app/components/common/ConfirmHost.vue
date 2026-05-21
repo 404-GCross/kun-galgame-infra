@@ -7,9 +7,9 @@ const state = useKunConfirmState()
 
 <template>
   <KunModal
-    :modal-value="state.open"
+    :model-value="state.open"
     inner-class-name="max-w-md"
-    @update:modal-value="(v: boolean) => !v && resolveKunConfirm(false)"
+    @update:model-value="(v: boolean) => !v && resolveKunConfirm(false)"
   >
     <div class="space-y-4 p-6">
       <h2 class="text-foreground text-lg font-semibold">{{ state.title }}</h2>

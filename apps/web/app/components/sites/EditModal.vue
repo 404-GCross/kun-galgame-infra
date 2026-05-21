@@ -34,7 +34,7 @@ const handleSubmit = async () => {
 </script>
 
 <template>
-  <KunModal v-model:modal-value="show">
+  <KunModal v-model="show">
     <div class="w-96 space-y-4 p-6">
       <h2 class="text-xl font-bold text-foreground">编辑站点</h2>
 

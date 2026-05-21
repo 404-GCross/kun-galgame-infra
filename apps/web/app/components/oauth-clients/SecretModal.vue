@@ -10,7 +10,7 @@ watch(show, (val) => {
 </script>
 
 <template>
-  <KunModal v-model:modal-value="show" :is-dismissable="false">
+  <KunModal v-model="show" :is-dismissable="false">
     <div class="w-[28rem] space-y-4 p-6">
       <div class="flex items-center gap-3">
         <div class="flex size-10 items-center justify-center rounded-full bg-success-100">

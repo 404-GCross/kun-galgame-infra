@@ -2,38 +2,57 @@
 import { useRipple } from '../ripple/useRipple'
 import type { KunUIColor } from '../ui/type'
 
+// KunCard supports three modes (in order of priority when multiple given):
+//   1. `href`      → renders as <NuxtLink> (link)
+//   2. `clickable` → renders as <button> (interactive, emits @click)
+//   3. neither     → renders as <div> (static)
+//
+// In v0.0.1 a single `isPressable` flag bundled "interactive + navigate to /",
+// which silently sent every press-without-href to the root. Split in v0.1.0
+// — see packages/ui/docs/improvement-plan.md §3.16.
 interface Props {
   isHoverable?: boolean
-  isPressable?: boolean
+  clickable?: boolean
+  href?: string
   isTransparent?: boolean
   bordered?: boolean
   className?: string
   contentClass?: string
-  href?: string
-  rounded?: string
+  rounded?: 'none' | 'sm' | 'md' | 'lg' | 'full'
   color?: KunUIColor | 'background'
   darkBorder?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
-  isPressable: false,
+  clickable: false,
+  href: undefined,
   isHoverable: false,
   isTransparent: false,
   bordered: true,
   className: '',
   contentClass: '',
-  href: '/',
   rounded: 'lg',
   color: 'background',
   darkBorder: false
 })
 
+const emit = defineEmits<{
+  click: [event: MouseEvent]
+}>()
+
 const { ripples, onClick } = useRipple()
 
+const isInteractive = computed(() => !!props.href || props.clickable)
+const renderAs = computed(() => {
+  if (props.href) return defineNuxtLink({})
+  if (props.clickable) return 'button'
+  return 'div'
+})
+
 const handleKunCardClick = (event: MouseEvent) => {
-  if (props.isPressable) {
-    onClick(event)
-  }
+  if (!isInteractive.value) return
+  onClick(event)
+  emit('click', event)
 }
 
 const colorClasses: Record<KunUIColor | 'background', string> = {
@@ -43,7 +62,8 @@ const colorClasses: Record<KunUIColor | 'background', string> = {
   secondary: 'bg-secondary-100/30 border-secondary-300',
   success: 'bg-success-100/30 border-success-300',
   warning: 'bg-warning-100/30 border-warning-300',
-  danger: 'bg-danger-100/30 border-danger-300'
+  danger: 'bg-danger-100/30 border-danger-300',
+  info: 'bg-info-100/30 border-info-300'
 }
 
 const roundedClasses = computed(() => {
@@ -66,7 +86,7 @@ const roundedClasses = computed(() => {
 
 <template>
   <component
-    :is="isPressable ? defineNuxtLink({}) : 'div'"
+    :is="renderAs"
     :class="
       cn(
         'relative flex flex-col gap-3 p-3 backdrop-blur-[var(--kun-background-blur)] transition-all duration-200',
@@ -77,13 +97,14 @@ const roundedClasses = computed(() => {
             'dark:border-default-200 border border-transparent',
             bordered && 'border-default/20'
           ),
-        isPressable && 'cursor-pointer overflow-hidden active:scale-[0.97]',
+        isInteractive && 'cursor-pointer overflow-hidden active:scale-[0.97] text-left',
         isTransparent ? 'backdrop-blur-none' : colorClasses[props.color],
         roundedClasses,
         className
       )
     "
     :to="props.href"
+    :type="props.clickable && !props.href ? 'button' : undefined"
     @click="handleKunCardClick"
   >
     <div v-if="$slots.header" class="border-b">

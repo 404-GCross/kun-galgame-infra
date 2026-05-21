@@ -7,7 +7,7 @@ const badge = computed(() => USER_STATUS_MAP[props.status] ?? { label: '未知',
 </script>
 
 <template>
-  <KunBadge :color="badge.color" variant="flat" size="sm">
+  <KunChip :color="badge.color" variant="flat" size="sm">
     {{ badge.label }}
-  </KunBadge>
+  </KunChip>
 </template>

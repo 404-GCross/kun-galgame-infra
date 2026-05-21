@@ -4,9 +4,9 @@ const { state, handleConfirm, handleCancel } = useKunAlertState()
 
 <template>
   <KunModal
-    :modal-value="state.show"
+    :model-value="state.show"
     class-name="z-2000 fixed"
-    @update:modal-value="(value: boolean) => !value && handleCancel()"
+    @update:model-value="(value: boolean) => !value && handleCancel()"
   >
     <div class="max-w-80">
       <div class="space-y-2">

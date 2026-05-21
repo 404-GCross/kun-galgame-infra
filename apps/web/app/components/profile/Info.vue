@@ -41,13 +41,13 @@ const formattedDate = computed(() => {
         </div>
 
         <div v-if="user.roles?.length" class="flex gap-2">
-          <KunBadge
+          <KunChip
             v-for="role in user.roles"
             :key="role"
             :color="role === 'admin' ? 'primary' : role === 'moderator' ? 'warning' : 'default'"
           >
             {{ role }}
-          </KunBadge>
+          </KunChip>
         </div>
       </div>
     </div>

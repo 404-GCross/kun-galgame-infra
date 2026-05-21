@@ -223,7 +223,7 @@ const isInPreviewRange = (date: Date) => {
       <div
         v-show="isOpen"
         ref="dropdownRef"
-        class="absolute z-50 rounded-md border bg-white p-3 dark:bg-black"
+        class="bg-content1 border-default-200 absolute z-50 rounded-md border p-3"
         :class="showAbove ? 'bottom-full mb-1' : 'top-full mt-1'"
         :style="{ minWidth: `${Math.max(260, Math.round(pickerWidth))}px` }"
         role="dialog"
@@ -253,7 +253,7 @@ const isInPreviewRange = (date: Date) => {
           <div class="font-semibold">
             {{ viewingDate.getFullYear() }}
             /
-            {{ viewingDate.getMonth() }}
+            {{ viewingDate.getMonth() + 1 }}
           </div>
           <div class="flex items-center gap-2">
             <KunButton

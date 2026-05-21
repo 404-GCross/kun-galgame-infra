@@ -2,20 +2,22 @@
 import { getRandomSticker } from '../../../utils/getRandomSticker'
 import type { KunAvatarProps } from './type'
 
+// `disableFloating` / `floatingPosition` were declared on the legacy
+// KunAvatarProps interface but never referenced in this template —
+// dead props that we keep accepting for backward compatibility (typed
+// in the interface) but explicitly ignore here. Will be dropped in a
+// future major.
 const props = withDefaults(defineProps<KunAvatarProps>(), {
   size: 'md',
   isNavigation: true,
   className: '',
-  imageClassName: '',
-  disableFloating: false,
-  floatingPosition: 'top'
+  imageClassName: ''
 })
 
 const handleClickAvatar = async (event: MouseEvent) => {
   event.preventDefault()
-  if (props.isNavigation) {
-    await navigateTo(`/user/${props.user.id}/info`)
-  }
+  if (!props.isNavigation || !props.user?.id) return
+  await navigateTo(`/user/${props.user.id}/info`)
 }
 
 const sizeClasses = computed(() => {

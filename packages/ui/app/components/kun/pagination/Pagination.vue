@@ -66,26 +66,31 @@ const handleJumpToPage = () => {
   }
 }
 
+// Skip global arrow-key paging when the user is interacting with an
+// input/textarea/contenteditable — otherwise typing in a search box
+// triggers a page flip. The legacy implementation didn't filter and
+// would steal arrows from any focused field on the page.
+const isEditableTarget = (e: KeyboardEvent) => {
+  const t = e.target as HTMLElement | null
+  if (!t) return false
+  if (t.isContentEditable) return true
+  const tag = t.tagName
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT'
+}
+
 onKeyStroke('ArrowLeft', (e) => {
+  if (isEditableTarget(e)) return
   if (props.currentPage > 1) {
     handlePageChange(props.currentPage - 1)
   }
 })
 
 onKeyStroke('ArrowRight', (e) => {
+  if (isEditableTarget(e)) return
   if (props.currentPage < props.totalPage) {
     handlePageChange(props.currentPage + 1)
   }
 })
-
-watch(
-  () => props.isLoading,
-  () => {
-    if (!props.isLoading) {
-      window.scrollTo({ top: 0, behavior: 'smooth' })
-    }
-  }
-)
 </script>
 
 <template>
@@ -151,10 +156,9 @@ watch(
         @keyup.enter="handleJumpToPage"
         min="1"
         :max="totalPage"
-        class=""
         :class="
           cn(
-            'focus:ring-primary border-default-300 w-24 rounded-md border px-2 py-1 text-sm focus:ring-1 focus:outline-none',
+            'focus:ring-primary border-default-200 w-24 rounded-md border px-2 py-1 text-sm focus:ring-1 focus:outline-none',
             isLoading && 'cursor-not-allowed opacity-50'
           )
         "
@@ -163,13 +167,6 @@ watch(
         size="sm"
         @click="handleJumpToPage"
         :disabled="isLoading"
-        class=""
-        :class="
-          cn(
-            'bg-primary hover:bg-opacity-90 focus:ring-primary focus:ring-opacity-50 rounded-md px-3 py-1 text-sm text-white focus:ring-2 focus:outline-none',
-            isLoading && 'cursor-not-allowed opacity-50'
-          )
-        "
       >
         跳转
       </KunButton>

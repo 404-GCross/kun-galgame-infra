@@ -16,7 +16,8 @@ const colorClasses: Record<KunUIColor, string> = {
   secondary: 'border-secondary/20',
   success: 'border-success/20',
   warning: 'border-warning/20',
-  danger: 'border-danger/20'
+  danger: 'border-danger/20',
+  info: 'border-info/20'
 }
 </script>
 

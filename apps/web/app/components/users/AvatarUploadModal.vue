@@ -84,7 +84,7 @@ const submit = async () => {
 </script>
 
 <template>
-  <KunModal :modal-value="open" @update:modal-value="close">
+  <KunModal :model-value="open" @update:model-value="close">
     <!--
       KunModal 只有一个默认 slot — `#header` / `#footer` 不存在。
       所有内容（标题、表单、按钮）都按从上到下的顺序放进这一个 slot。

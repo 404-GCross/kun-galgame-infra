@@ -191,17 +191,17 @@ const relative = (iso?: string) => {
                 </div>
               </div>
               <div class="flex flex-col items-end gap-2">
-                <KunBadge
+                <KunChip
                   :color="(GALGAME_STATUS_MAP[galgame.status]?.color as any) ?? 'default'"
                 >
                   {{ GALGAME_STATUS_MAP[galgame.status]?.label ?? galgame.status }}
-                </KunBadge>
-                <KunBadge
+                </KunChip>
+                <KunChip
                   v-if="CONTENT_LIMIT_MAP[galgame.content_limit]"
                   :color="(CONTENT_LIMIT_MAP[galgame.content_limit]!.color as any)"
                 >
                   {{ CONTENT_LIMIT_MAP[galgame.content_limit]!.label }}
-                </KunBadge>
+                </KunChip>
               </div>
             </div>
 
@@ -247,14 +247,14 @@ const relative = (iso?: string) => {
       >
         <h3 class="text-foreground mb-3 font-semibold">别名</h3>
         <div class="flex flex-wrap gap-2">
-          <KunBadge
+          <KunChip
             v-for="a in galgame.alias"
             :key="a.id"
             color="default"
             variant="flat"
           >
             {{ a.name }}
-          </KunBadge>
+          </KunChip>
         </div>
       </div>
 
@@ -270,14 +270,14 @@ const relative = (iso?: string) => {
               {{ TAG_CATEGORY_MAP[cat]?.label ?? cat }}:
             </span>
             <span class="inline-flex flex-wrap gap-1">
-              <KunBadge
+              <KunChip
                 v-for="t in tags"
                 :key="t.id"
                 :color="(TAG_CATEGORY_MAP[cat]?.color as any) ?? 'default'"
                 variant="flat"
               >
                 {{ t.name }}
-              </KunBadge>
+              </KunChip>
             </span>
           </div>
         </div>
@@ -287,14 +287,14 @@ const relative = (iso?: string) => {
       <div v-if="officials.length" class="bg-content1 rounded-lg p-6 shadow-sm">
         <h3 class="text-foreground mb-3 font-semibold">开发商 / 发行商</h3>
         <div class="flex flex-wrap gap-2">
-          <KunBadge
+          <KunChip
             v-for="o in officials"
             :key="o.id"
             :color="(OFFICIAL_CATEGORY_MAP[o.category]?.color as any) ?? 'default'"
             variant="flat"
           >
             {{ o.name }}
-          </KunBadge>
+          </KunChip>
         </div>
       </div>
 

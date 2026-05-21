@@ -23,9 +23,9 @@ const statusBadge = computed(() => MODERATION_STATUS_MAP[props.job.status] ?? { 
     </div>
 
     <div class="flex items-center gap-3">
-      <KunBadge :color="statusBadge.color" variant="flat" size="sm">
+      <KunChip :color="statusBadge.color" variant="flat" size="sm">
         {{ statusBadge.label }}
-      </KunBadge>
+      </KunChip>
       <NuxtLink
         :to="`/moderation/${job.id}`"
         class="rounded-lg bg-primary-50 px-3 py-1.5 text-sm font-medium text-primary hover:bg-primary-100"

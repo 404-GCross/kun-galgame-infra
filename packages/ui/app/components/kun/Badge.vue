@@ -1,125 +1,93 @@
 <script setup lang="ts">
-import type { KunUIVariant, KunUIColor, KunUISize } from './ui/type'
+import { computed } from 'vue'
+import { kunBgClasses } from './ui/variants'
+import type { KunUIColor } from './ui/type'
 
+// KunBadge is the dot / count overlay sitting on the top-right of an
+// anchor (avatar, icon, button). For inline pills / tags use KunChip.
+// Renamed in v0.1.0 — see packages/ui/docs/improvement-plan.md §3.14.
+//
+// Two modes:
+//   - dot     → small colored dot, no number
+//   - count   → number badge; numbers above `max` show as `${max}+`
+//
+// `show` controls visibility (defaults to true; useful to drive from
+// computed state without `v-if`).
 interface Props {
-  className?: string
+  // anchor in slot
+  variant?: 'dot' | 'count'
+  count?: number
+  max?: number
+  showZero?: boolean
+  show?: boolean
+
   color?: KunUIColor
-  size?: KunUISize
-  variant?: KunUIVariant
+  size?: 'sm' | 'md' | 'lg'
+  placement?: 'top-right' | 'top-left' | 'bottom-right' | 'bottom-left'
+  className?: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
-  color: 'default',
-  className: '',
-  size: 'sm',
-  variant: 'flat'
+  variant: 'count',
+  count: 0,
+  max: 99,
+  showZero: false,
+  show: true,
+  color: 'danger',
+  size: 'md',
+  placement: 'top-right',
+  className: ''
 })
 
-const variantClasses = computed(() => {
-  switch (props.variant) {
-    case 'solid':
-      return ' text-white'
-    case 'bordered':
-      return 'border-2 bg-transparent'
-    case 'light':
-      return 'bg-opacity-20 border-transparent'
-    case 'flat':
-      return 'bg-opacity-20 border-transparent shadow-none'
-    case 'faded':
-      return 'bg-opacity-10 border-transparent'
-    case 'shadow':
-      return ' text-white'
-    case 'ghost':
-      return 'bg-transparent border-transparent shadow-none hover:bg-opacity-10'
-    default:
-      return ''
+const visible = computed(() => {
+  if (!props.show) return false
+  if (props.variant === 'count' && props.count <= 0 && !props.showZero) {
+    return false
   }
+  return true
 })
 
-const colorVariants: Record<KunUIVariant, Record<KunUIColor, string>> = {
-  solid: {
-    default: 'bg-default',
-    primary: 'bg-primary',
-    secondary: 'bg-secondary',
-    success: 'bg-success-600 dark:bg-success-300',
-    warning: 'bg-warning dark:bg-warning-300',
-    danger: 'bg-danger-600 dark:bg-danger-300'
-  },
-  bordered: {
-    default: 'bg-transparent border-default',
-    primary: 'bg-transparent border-primary text-primary',
-    secondary: 'bg-transparent border-secondary text-secondary',
-    success: 'bg-transparent border-success text-success',
-    warning: 'bg-transparent border-warning text-warning',
-    danger: 'bg-transparent border-danger text-danger'
-  },
-  light: {
-    default: 'bg-transparent hover:bg-default/20',
-    primary: 'bg-transparent text-primary hover:bg-primary/20',
-    secondary: 'bg-transparent text-secondary hover:bg-secondary/20',
-    success: 'bg-transparent text-success hover:bg-success/20',
-    warning: 'bg-transparent text-warning hover:bg-warning/20',
-    danger: 'bg-transparent text-danger hover:bg-danger/20'
-  },
-  flat: {
-    default: 'bg-default/20 text-default-700',
-    primary: 'bg-primary/20 text-primary-600',
-    secondary: 'bg-secondary/20 text-secondary-600',
-    success: 'bg-success/20 text-success-700 dark:text-success',
-    warning: 'bg-warning/20 text-warning-700 dark:text-warning',
-    danger: 'bg-danger/20 text-danger-600 dark:text-danger-500'
-  },
-  faded: {
-    default: 'border-default bg-default-100',
-    primary: 'border-default bg-primary-100 text-primary',
-    secondary: 'border-default bg-secondary-100 text-secondary',
-    success: 'border-default bg-success-100 text-success',
-    warning: 'border-default bg-warning-100 text-warning',
-    danger: 'border-default bg-danger-100 text-danger'
-  },
-  shadow: {
-    default: ' shadow-default/40 bg-default',
-    primary: ' shadow-primary/40 bg-primary',
-    secondary: ' shadow-secondary/40 bg-secondary',
-    success: ' shadow-success/40 bg-success',
-    warning: ' shadow-warning/40 bg-warning dark:text-black',
-    danger: ' shadow-danger/40 bg-danger'
-  },
-  ghost: {
-    default: 'border-default',
-    primary: 'border-primary text-primary',
-    secondary: 'border-secondary text-secondary',
-    success: 'border-success text-success',
-    warning: 'border-warning text-warning',
-    danger: 'border-danger text-danger'
-  }
-} as const
-
-const colorClasses = computed(() => {
-  return colorVariants[props.variant]?.[props.color] || ''
+const displayText = computed(() => {
+  if (props.variant === 'dot') return ''
+  if (props.count > props.max) return `${props.max}+`
+  return String(props.count)
 })
 
-const sizeClasses: Record<KunUISize, string> = {
-  xs: 'px-2 py-0.5 text-xs',
-  sm: 'px-2 py-1 text-xs',
-  md: 'px-3 py-1.5 text-sm',
-  lg: 'px-4 py-2 text-sm',
-  xl: 'px-6 py-3 text-base'
+const dotSize: Record<string, string> = {
+  sm: 'size-2',
+  md: 'size-2.5',
+  lg: 'size-3',
 }
+
+const countSize: Record<string, string> = {
+  sm: 'min-w-4 h-4 px-1 text-[10px]',
+  md: 'min-w-5 h-5 px-1.5 text-xs',
+  lg: 'min-w-6 h-6 px-2 text-sm',
+}
+
+const placementClasses: Record<string, string> = {
+  'top-right': '-top-1 -right-1',
+  'top-left': '-top-1 -left-1',
+  'bottom-right': '-bottom-1 -right-1',
+  'bottom-left': '-bottom-1 -left-1',
+}
+
+const badgeClasses = computed(() =>
+  cn(
+    'absolute z-10 inline-flex items-center justify-center rounded-full font-medium text-white ring-2 ring-background',
+    kunBgClasses[props.color],
+    props.variant === 'dot' ? dotSize[props.size] : countSize[props.size],
+    placementClasses[props.placement],
+    props.className
+  )
+)
 </script>
 
 <template>
-  <span
-    :class="
-      cn(
-        'inline-flex cursor-default items-center justify-center gap-1 rounded-full font-medium',
-        sizeClasses[size],
-        variantClasses,
-        colorClasses,
-        className
-      )
-    "
-  >
+  <span class="relative inline-flex">
     <slot />
+    <span v-if="visible" :class="badgeClasses" aria-hidden="false">
+      {{ displayText }}
+    </span>
   </span>
 </template>
