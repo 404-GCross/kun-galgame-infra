@@ -29,19 +29,17 @@ const total = computed(() =>
 <template>
   <div class="space-y-4">
     <div class="flex flex-wrap gap-2">
-      <button
+      <KunButton
         v-for="entity in ADMIN_STATS_ENTITIES"
         :key="entity.key"
-        class="rounded-full px-3 py-1 text-xs transition-colors"
-        :class="
-          activeKey === entity.key
-            ? 'bg-primary text-white'
-            : 'bg-content2 text-default-500 hover:bg-default-100'
-        "
+        :variant="activeKey === entity.key ? 'solid' : 'light'"
+        color="primary"
+        size="xs"
+        rounded="full"
         @click="activeKey = entity.key"
       >
         {{ entity.label }}
-      </button>
+      </KunButton>
       <span class="text-default-500 ml-auto text-sm">
         合计 <span class="text-foreground font-semibold">{{ total }}</span>
       </span>

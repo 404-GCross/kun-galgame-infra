@@ -122,12 +122,15 @@ const displayName = (g: Galgame) =>
 <template>
   <div class="space-y-4">
     <div class="flex items-center gap-3">
-      <button
-        class="text-default-500 hover:bg-default-100 rounded-lg p-2 transition-colors"
+      <KunButton
+        variant="light"
+        size="sm"
+        is-icon-only
+        aria-label="返回"
         @click="router.back()"
       >
         <Icon name="lucide:arrow-left" class="size-5" />
-      </button>
+      </KunButton>
       <h1 class="text-foreground text-2xl font-bold">多标签交集筛选</h1>
     </div>
 
@@ -149,13 +152,17 @@ const displayName = (g: Galgame) =>
           >
             ({{ TAG_CATEGORY_MAP[t.category].label }})
           </span>
-          <button
-            class="hover:text-danger ml-1"
-            title="移除"
+          <KunButton
+            variant="light"
+            color="danger"
+            size="xs"
+            is-icon-only
+            aria-label="移除标签"
+            class-name="ml-1"
             @click="removeTag(t.id)"
           >
             <Icon name="lucide:x" class="size-3" />
-          </button>
+          </KunButton>
         </span>
         <span
           v-if="selectedTags.length === 0"

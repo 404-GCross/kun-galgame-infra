@@ -70,13 +70,15 @@ const confirmReject = () => {
             </a>
           </td>
           <td class="px-3 py-2">
-            <button
-              class="font-mono text-xs text-foreground hover:text-primary"
-              :title="item.hash"
+            <KunButton
+              variant="light"
+              size="xs"
+              :aria-label="`复制完整 hash ${item.hash}`"
+              class-name="font-mono"
               @click="copy(item.hash)"
             >
               {{ shortHash(item.hash) }}
-            </button>
+            </KunButton>
             <div class="mt-0.5 text-xs text-default-400">
               {{ item.width }} × {{ item.height }} · {{ _props.bytesHuman(item.size_bytes) }}
             </div>

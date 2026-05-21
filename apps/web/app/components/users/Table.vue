@@ -93,9 +93,14 @@ const _ = props // keep TS happy if `props` is never read elsewhere
           <td class="whitespace-nowrap px-6 py-4 text-right">
             <KunPopover position="bottom-end">
               <template #trigger>
-                <button class="rounded p-1 text-default-300 hover:bg-default-100 hover:text-default-500">
+                <KunButton
+                  variant="light"
+                  size="sm"
+                  is-icon-only
+                  aria-label="更多操作"
+                >
                   <Icon name="lucide:more-horizontal" class="size-5" />
-                </button>
+                </KunButton>
               </template>
               <div class="w-40 py-1">
                 <button

@@ -94,12 +94,15 @@ const viewDiff = (pr: GalgamePR) => {
 <template>
   <div class="space-y-4">
     <div class="flex items-center gap-3">
-      <button
-        class="text-default-500 hover:bg-default-100 rounded-lg p-2 transition-colors"
+      <KunButton
+        variant="light"
+        size="sm"
+        is-icon-only
+        aria-label="返回 galgame 详情页"
         @click="router.push(`/galgame/${galgameId}`)"
       >
         <Icon name="lucide:arrow-left" class="size-5" />
-      </button>
+      </KunButton>
       <h1 class="text-foreground text-2xl font-bold">
         Pull Requests · galgame #{{ galgameId }}
       </h1>
@@ -166,23 +169,32 @@ const viewDiff = (pr: GalgamePR) => {
                 {{ pr.updated?.replace('T', ' ').slice(0, 19) }}
               </td>
               <td class="px-4 py-2 text-right">
-                <div class="flex justify-end gap-2">
-                  <button class="text-primary text-xs hover:underline" @click="viewDiff(pr)">
+                <div class="flex justify-end gap-1">
+                  <KunButton
+                    variant="light"
+                    color="primary"
+                    size="xs"
+                    @click="viewDiff(pr)"
+                  >
                     diff
-                  </button>
+                  </KunButton>
                   <template v-if="pr.status === 0">
-                    <button
-                      class="text-success text-xs hover:underline"
+                    <KunButton
+                      variant="light"
+                      color="success"
+                      size="xs"
                       @click="merge(pr)"
                     >
                       合并
-                    </button>
-                    <button
-                      class="text-danger text-xs hover:underline"
+                    </KunButton>
+                    <KunButton
+                      variant="light"
+                      color="danger"
+                      size="xs"
                       @click="decline(pr)"
                     >
                       拒绝
-                    </button>
+                    </KunButton>
                   </template>
                 </div>
               </td>

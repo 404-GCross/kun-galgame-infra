@@ -24,12 +24,14 @@ const setColorMode = (mode: string) => {
     <div class="absolute top-4 right-4">
       <KunPopover position="bottom-end">
         <template #trigger>
-          <button
-            class="text-default-400 hover:bg-default-100 hover:text-foreground rounded-lg p-2 transition-colors"
-            title="切换主题"
+          <KunButton
+            variant="light"
+            size="sm"
+            is-icon-only
+            aria-label="切换主题"
           >
             <Icon :name="colorModeIcon" class="size-5" />
-          </button>
+          </KunButton>
         </template>
 
         <div class="w-36 py-1">

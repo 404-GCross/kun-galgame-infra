@@ -59,12 +59,15 @@ const handleDelete = async () => {
 <template>
   <div class="space-y-4">
     <div class="flex items-center gap-3">
-      <button
-        class="text-default-500 hover:bg-default-100 rounded-lg p-2 transition-colors"
+      <KunButton
+        variant="light"
+        size="sm"
+        is-icon-only
+        aria-label="返回"
         @click="router.back()"
       >
         <Icon name="lucide:arrow-left" class="size-5" />
-      </button>
+      </KunButton>
       <h1 class="text-foreground text-2xl font-bold">系列详情</h1>
     </div>
 

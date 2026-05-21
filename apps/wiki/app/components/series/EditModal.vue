@@ -133,13 +133,17 @@ const submit = async () => {
             class="bg-primary-50 text-primary flex items-center gap-1 rounded-full px-3 py-1 text-xs"
           >
             <span class="max-w-[16rem] truncate">{{ displayName(g) }}</span>
-            <button
-              class="hover:text-danger ml-1"
-              title="移除"
+            <KunButton
+              variant="light"
+              color="danger"
+              size="xs"
+              is-icon-only
+              aria-label="移除"
+              class-name="ml-1"
               @click="remove(g.id)"
             >
               <Icon name="lucide:x" class="size-3" />
-            </button>
+            </KunButton>
           </span>
           <span
             v-if="pickedGalgames.length === 0"

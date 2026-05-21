@@ -17,9 +17,14 @@ const showMenu = ref(false)
 
       <KunPopover position="bottom-end">
         <template #trigger>
-          <button class="rounded p-1 text-default-300 hover:bg-default-100 hover:text-default-500">
+          <KunButton
+            variant="light"
+            size="sm"
+            is-icon-only
+            aria-label="更多操作"
+          >
             <Icon name="lucide:more-vertical" class="size-5" />
-          </button>
+          </KunButton>
         </template>
         <div class="w-32 py-1">
           <button

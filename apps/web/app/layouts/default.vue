@@ -73,8 +73,12 @@ onMounted(async () => {
       </nav>
 
       <!-- Collapse Button -->
-      <button
-        class="border-default-200 text-default-400 hover:text-primary flex h-12 items-center justify-center border-t transition-colors"
+      <KunButton
+        variant="light"
+        rounded="none"
+        is-icon-only
+        aria-label="折叠侧边栏"
+        class-name="border-default-200 h-12 border-t"
         @click="isSidebarCollapsed = !isSidebarCollapsed"
       >
         <Icon
@@ -83,7 +87,7 @@ onMounted(async () => {
           "
           class="size-5"
         />
-      </button>
+      </KunButton>
     </aside>
 
     <!-- Main Content -->
@@ -105,12 +109,14 @@ onMounted(async () => {
           <!-- Color Mode Toggle -->
           <KunPopover position="bottom-end">
             <template #trigger>
-              <button
-                class="text-default-400 hover:bg-default-100 hover:text-foreground rounded-lg p-2 transition-colors"
-                title="切换主题"
+              <KunButton
+                variant="light"
+                size="sm"
+                is-icon-only
+                aria-label="切换主题"
               >
                 <Icon :name="colorModeIcon" class="size-5" />
-              </button>
+              </KunButton>
             </template>
 
             <div class="w-36 py-1">
@@ -145,13 +151,16 @@ onMounted(async () => {
               size="sm"
               :is-navigation="false"
             />
-            <button
-              class="text-default-400 hover:bg-default-100 hover:text-danger rounded-lg p-2 transition-colors"
-              title="退出登录"
+            <KunButton
+              variant="light"
+              color="danger"
+              size="sm"
+              is-icon-only
+              aria-label="退出登录"
               @click="handleLogout"
             >
               <Icon name="lucide:log-out" class="size-5" />
-            </button>
+            </KunButton>
           </div>
         </div>
       </header>

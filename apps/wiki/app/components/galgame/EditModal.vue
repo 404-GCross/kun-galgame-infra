@@ -62,27 +62,22 @@ const form = ref<FormState>({
 // 在 image_service 留下 orphan。
 const bannerFile = ref<File | null>(null)
 const bannerObjectUrl = ref('')
-const bannerInputRef = ref<HTMLInputElement | null>(null)
 
-const onPickBanner = (event: Event) => {
-  const f = (event.target as HTMLInputElement).files?.[0] ?? null
-  if (!f) {
-    bannerFile.value = null
-    bannerObjectUrl.value = ''
-    return
-  }
-  if (f.size > 10 * 1024 * 1024) {
-    useKunMessage('文件超过 10MB 上限', 'warn')
-    return
-  }
+const { pickFiles: pickBanner, files: pickedBannerFiles } = useFilePicker({
+  accept: 'image/jpeg,image/png,image/webp',
+  maxSize: 10 * 1024 * 1024,
+  onError: (msg) => useKunMessage(msg, 'warn')
+})
+
+watch(pickedBannerFiles, ([f]) => {
+  if (!f) return
   bannerFile.value = f
   bannerObjectUrl.value = URL.createObjectURL(f)
-}
+})
 
 const clearPickedBanner = () => {
   bannerFile.value = null
   bannerObjectUrl.value = ''
-  if (bannerInputRef.value) bannerInputRef.value.value = ''
 }
 
 // 预览：选了新文件 → 本地 blob URL；否则 fallback 到当前持久化状态。
@@ -251,13 +246,16 @@ const submit = async () => {
             <Icon v-else name="lucide:image" class="text-default-300 size-6" />
           </div>
           <div class="flex flex-1 flex-col gap-2">
-            <input
-              ref="bannerInputRef"
-              type="file"
-              accept="image/jpeg,image/png,image/webp"
-              class="text-default-500 file:bg-content2 file:text-foreground hover:file:bg-content3 block w-full text-sm file:mr-3 file:rounded file:border-0 file:px-3 file:py-1.5 file:text-sm file:font-medium"
-              @change="onPickBanner"
-            />
+            <KunButton
+              size="sm"
+              variant="flat"
+              color="primary"
+              type="button"
+              @click="pickBanner"
+            >
+              <Icon name="lucide:image-up" class="mr-1 size-4" />
+              {{ bannerFile ? '重新选择 banner' : '替换 banner' }}
+            </KunButton>
             <KunButton
               v-if="bannerFile"
               size="sm"

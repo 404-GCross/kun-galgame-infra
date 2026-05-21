@@ -32,21 +32,18 @@ onMounted(() => fetchJobs())
       <p class="mt-1 text-default-500">审核和管理用户生成的内容</p>
     </div>
 
-    <div class="flex gap-2 rounded-lg bg-default-100 p-1">
-      <button
+    <div class="flex gap-2">
+      <KunButton
         v-for="tab in MODERATION_TABS"
         :key="tab.id"
-        :class="[
-          'flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors',
-          activeTab === tab.id
-            ? 'bg-content1 text-foreground shadow-sm'
-            : 'text-default-500 hover:text-foreground'
-        ]"
+        :variant="activeTab === tab.id ? 'solid' : 'light'"
+        color="primary"
+        size="sm"
         @click="activeTab = tab.id"
       >
-        <Icon :name="tab.icon" class="size-4" />
+        <Icon :name="tab.icon" class="mr-1 size-4" />
         {{ tab.label }}
-      </button>
+      </KunButton>
     </div>
 
     <div class="rounded-xl bg-content1 shadow-sm">

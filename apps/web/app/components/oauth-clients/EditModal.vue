@@ -129,22 +129,30 @@ const handleSubmit = async () => {
               placeholder="https://example.com/auth/callback"
               class="flex-1"
             />
-            <button
+            <KunButton
               v-if="redirectUris.length > 1"
-              class="shrink-0 rounded-lg p-2 text-default-300 hover:bg-danger-50 hover:text-danger"
+              variant="light"
+              color="danger"
+              size="sm"
+              is-icon-only
+              aria-label="移除回调地址"
+              class-name="shrink-0"
               @click="removeUri(index)"
             >
               <Icon name="lucide:x" class="size-4" />
-            </button>
+            </KunButton>
           </div>
         </div>
-        <button
-          class="mt-2 flex items-center gap-1 text-sm text-primary hover:underline"
+        <KunButton
+          variant="light"
+          color="primary"
+          size="sm"
+          class-name="mt-2"
           @click="addUri"
         >
-          <Icon name="lucide:plus" class="size-3" />
+          <Icon name="lucide:plus" class="mr-1 size-3" />
           添加回调地址
-        </button>
+        </KunButton>
       </div>
 
       <div>

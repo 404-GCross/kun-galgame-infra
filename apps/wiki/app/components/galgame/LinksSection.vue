@@ -114,13 +114,16 @@ onMounted(load)
             {{ l.link }} ↗
           </a>
         </div>
-        <button
-          class="text-default-400 hover:bg-danger-50 hover:text-danger rounded p-1"
-          title="删除"
+        <KunButton
+          variant="light"
+          color="danger"
+          size="sm"
+          is-icon-only
+          aria-label="删除链接"
           @click="remove(l.id, l.name)"
         >
           <Icon name="lucide:trash-2" class="size-4" />
-        </button>
+        </KunButton>
       </li>
     </ul>
   </KunCard>

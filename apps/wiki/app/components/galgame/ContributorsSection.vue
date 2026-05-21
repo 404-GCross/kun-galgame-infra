@@ -85,13 +85,16 @@ onMounted(load)
             </p>
           </div>
         </NuxtLink>
-        <button
-          class="text-default-400 hover:bg-danger-50 hover:text-danger rounded p-1"
-          title="移除贡献者"
+        <KunButton
+          variant="light"
+          color="danger"
+          size="sm"
+          is-icon-only
+          aria-label="移除贡献者"
           @click="remove(c.user_id, c.user?.name ?? String(c.user_id))"
         >
           <Icon name="lucide:user-minus" class="size-4" />
-        </button>
+        </KunButton>
       </li>
     </ul>
   </KunCard>

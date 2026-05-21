@@ -25,20 +25,25 @@ const siteName = computed(() => {
         </div>
       </div>
       <div class="flex gap-1">
-        <button
-          class="rounded p-1 text-default-300 hover:bg-default-100 hover:text-default-500"
-          title="编辑客户端"
+        <KunButton
+          variant="light"
+          size="sm"
+          is-icon-only
+          aria-label="编辑客户端"
           @click="emit('edit')"
         >
           <Icon name="lucide:pencil" class="size-5" />
-        </button>
-        <button
-          class="rounded p-1 text-default-300 hover:bg-danger-50 hover:text-danger"
-          title="删除客户端"
+        </KunButton>
+        <KunButton
+          variant="light"
+          color="danger"
+          size="sm"
+          is-icon-only
+          aria-label="删除客户端"
           @click="emit('delete')"
         >
           <Icon name="lucide:trash-2" class="size-5" />
-        </button>
+        </KunButton>
       </div>
     </div>
 

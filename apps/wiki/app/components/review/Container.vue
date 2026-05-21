@@ -56,21 +56,18 @@ const switchTab = (id: string) => {
     </div>
 
     <div class="flex flex-wrap items-center gap-3">
-      <div class="border-default-200 flex rounded-lg border">
-        <button
+      <div class="flex gap-2">
+        <KunButton
           v-for="tab in REVIEW_QUEUE_TABS"
           :key="tab.id"
-          class="flex items-center gap-2 px-4 py-2 text-sm transition-colors first:rounded-l-lg last:rounded-r-lg"
-          :class="
-            activeTab === tab.id
-              ? 'bg-primary text-white'
-              : 'text-default-500 hover:bg-default-100'
-          "
+          :variant="activeTab === tab.id ? 'solid' : 'light'"
+          color="primary"
+          size="sm"
           @click="switchTab(tab.id)"
         >
-          <Icon :name="tab.icon" class="size-4" />
+          <Icon :name="tab.icon" class="mr-1 size-4" />
           {{ tab.label }}
-        </button>
+        </KunButton>
       </div>
     </div>
 

@@ -45,19 +45,16 @@ const dayOptions = [
     <div class="flex items-center justify-between">
       <h1 class="text-foreground text-2xl font-bold">仪表盘</h1>
       <div class="flex gap-2">
-        <button
+        <KunButton
           v-for="opt in dayOptions"
           :key="opt.value"
-          class="rounded-lg px-3 py-1.5 text-sm transition-colors"
-          :class="
-            days === opt.value
-              ? 'bg-primary text-white'
-              : 'bg-content2 text-default-500 hover:bg-default-100'
-          "
+          :variant="days === opt.value ? 'solid' : 'light'"
+          color="primary"
+          size="sm"
           @click="days = opt.value"
         >
           {{ opt.label }}
-        </button>
+        </KunButton>
       </div>
     </div>
 

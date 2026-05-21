@@ -25,27 +25,22 @@ const form = ref({
 // 待上传的 banner 文件（与 EditModal 一致：浏览器内存暂存，跟着 multipart 一起提交）
 const bannerFile = ref<File | null>(null)
 const bannerObjectUrl = ref('')
-const bannerInputRef = ref<HTMLInputElement | null>(null)
 
-const onPickBanner = (event: Event) => {
-  const f = (event.target as HTMLInputElement).files?.[0] ?? null
-  if (!f) {
-    bannerFile.value = null
-    bannerObjectUrl.value = ''
-    return
-  }
-  if (f.size > 10 * 1024 * 1024) {
-    useKunMessage('文件超过 10MB 上限', 'warn')
-    return
-  }
+const { pickFiles: pickBanner, files: pickedBannerFiles } = useFilePicker({
+  accept: 'image/jpeg,image/png,image/webp',
+  maxSize: 10 * 1024 * 1024,
+  onError: (msg) => useKunMessage(msg, 'warn')
+})
+
+watch(pickedBannerFiles, ([f]) => {
+  if (!f) return
   bannerFile.value = f
   bannerObjectUrl.value = URL.createObjectURL(f)
-}
+})
 
 const clearPickedBanner = () => {
   bannerFile.value = null
   bannerObjectUrl.value = ''
-  if (bannerInputRef.value) bannerInputRef.value.value = ''
 }
 
 const vndbCheck = ref<{
@@ -172,12 +167,15 @@ const submit = async () => {
 <template>
   <div class="max-w-3xl space-y-4">
     <div class="flex items-center gap-3">
-      <button
-        class="text-default-500 hover:bg-default-100 rounded-lg p-2 transition-colors"
+      <KunButton
+        variant="light"
+        size="sm"
+        is-icon-only
+        aria-label="返回"
         @click="router.back()"
       >
         <Icon name="lucide:arrow-left" class="size-5" />
-      </button>
+      </KunButton>
       <h1 class="text-foreground text-2xl font-bold">新建 galgame</h1>
     </div>
 
@@ -238,13 +236,16 @@ const submit = async () => {
             <Icon v-else name="lucide:image" class="text-default-300 size-6" />
           </div>
           <div class="flex flex-1 flex-col gap-2">
-            <input
-              ref="bannerInputRef"
-              type="file"
-              accept="image/jpeg,image/png,image/webp"
-              class="text-default-500 file:bg-content2 file:text-foreground hover:file:bg-content3 block w-full text-sm file:mr-3 file:rounded file:border-0 file:px-3 file:py-1.5 file:text-sm file:font-medium"
-              @change="onPickBanner"
-            />
+            <KunButton
+              size="sm"
+              variant="flat"
+              color="primary"
+              type="button"
+              @click="pickBanner"
+            >
+              <Icon name="lucide:image-up" class="mr-1 size-4" />
+              {{ bannerFile ? '重新选择 banner' : '选择 banner 图片' }}
+            </KunButton>
             <KunButton
               v-if="bannerFile"
               size="sm"

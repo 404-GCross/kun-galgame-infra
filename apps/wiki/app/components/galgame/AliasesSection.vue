@@ -100,13 +100,17 @@ onMounted(load)
         class="bg-default-100 text-default-600 flex items-center gap-1 rounded px-2 py-1 text-xs"
       >
         {{ a.name }}
-        <button
-          class="text-default-400 hover:text-danger ml-1"
-          title="删除"
+        <KunButton
+          variant="light"
+          color="danger"
+          size="xs"
+          is-icon-only
+          aria-label="删除别名"
+          class-name="ml-1"
           @click="remove(a.id, a.name)"
         >
           <Icon name="lucide:x" class="size-3" />
-        </button>
+        </KunButton>
       </span>
     </div>
   </KunCard>

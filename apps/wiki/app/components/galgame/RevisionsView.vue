@@ -69,12 +69,15 @@ const openDiff = (revision: number) => {
 <template>
   <div class="space-y-4">
     <div class="flex items-center gap-3">
-      <button
-        class="text-default-500 hover:bg-default-100 rounded-lg p-2 transition-colors"
+      <KunButton
+        variant="light"
+        size="sm"
+        is-icon-only
+        aria-label="返回 galgame 详情页"
         @click="router.push(`/galgame/${galgameId}`)"
       >
         <Icon name="lucide:arrow-left" class="size-5" />
-      </button>
+      </KunButton>
       <h1 class="text-foreground text-2xl font-bold">
         修订历史 · galgame #{{ galgameId }}
       </h1>
@@ -143,19 +146,23 @@ const openDiff = (revision: number) => {
                 {{ r.created?.replace('T', ' ').slice(0, 19) }}
               </td>
               <td class="px-4 py-2 text-right">
-                <div class="flex justify-end gap-2">
-                  <button
-                    class="text-primary text-xs hover:underline"
+                <div class="flex justify-end gap-1">
+                  <KunButton
+                    variant="light"
+                    color="primary"
+                    size="xs"
                     @click="openDiff(r.revision)"
                   >
                     diff
-                  </button>
-                  <button
-                    class="text-warning text-xs hover:underline"
+                  </KunButton>
+                  <KunButton
+                    variant="light"
+                    color="warning"
+                    size="xs"
                     @click="revert(r.revision)"
                   >
                     回滚到此
-                  </button>
+                  </KunButton>
                 </div>
               </td>
             </tr>
