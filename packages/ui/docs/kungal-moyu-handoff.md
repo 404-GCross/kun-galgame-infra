@@ -1632,3 +1632,157 @@ curl -s http://127.0.0.1:6969/galgame | grep -o 'class="[^"]*animate-pulse[^"]*"
 ### 风险等级
 
 低 —— 单文件改动，新增可选 prop（默认 true），无 API 破坏。已在 moyu fork 同步过 + HMR 验证。
+
+---
+
+## 22. v0.5.1 — KunDrawer：边缘锚定的浮层 ⭐
+
+新组件 `<KunDrawer>`，与 `<KunModal>` 同源但锚定到视口某一边（侧栏 / 设置面板 / 移动端导航 / 筛选 drawer 等场景）。详细设计见 `improvement-plan.md` §23。
+
+### 同步 — 2 个文件
+
+```bash
+KUN_OAUTH=/path/to/kun-oauth-admin
+mkdir -p ./components/kun/drawer
+cp $KUN_OAUTH/packages/ui/app/components/kun/drawer/Drawer.vue ./components/kun/drawer/
+cp $KUN_OAUTH/packages/ui/app/components/kun/drawer/type.d.ts  ./components/kun/drawer/
+```
+
+零配置 / 零依赖联动 —— `useBodyScrollLock` / `useFocusTrap` / `z-kun-modal` 都是 v0.4.x 已经在仓里的基础设施。
+
+### 何时用 Drawer 何时用 Modal
+
+| 用户在做什么 | 选 |
+|---|---|
+| 专注做一件事（确认 / 表单填写 / 警告） | **KunModal** |
+| 浏览补充内容（看列表 / 筛选 / 看长详情 / 调设置） | **KunDrawer** |
+
+简单判定：**Modal 阻塞用户继续做手头任务，Drawer 让用户在做一件事的同时浏览旁边的东西**。
+
+### 用法 cheat sheet
+
+#### 侧栏抽屉（最常见）
+
+```vue
+<KunDrawer v-model="open" placement="right" size="md" title="详细筛选">
+  <FilterForm />
+  <template #footer>
+    <KunButton variant="solid" color="primary" @click="apply">应用</KunButton>
+  </template>
+</KunDrawer>
+```
+
+#### 移动端导航（左侧全屏）
+
+```vue
+<KunDrawer v-model="navOpen" placement="left" size="full" title="导航">
+  <NavMenu />
+</KunDrawer>
+```
+
+#### 自定义 header（带头像 / chip 等富元素）
+
+```vue
+<KunDrawer v-model="open" placement="right">
+  <template #header>
+    <KunAvatar :user="user" size="sm" />
+    <h2 class="text-lg font-semibold">{{ user.name }}</h2>
+    <KunChip color="success">在线</KunChip>
+  </template>
+  ...
+</KunDrawer>
+```
+
+#### 非阻塞模式（不让背景点关，只能 X 关）
+
+```vue
+<KunDrawer v-model="open" :is-dismissable="false">
+  <EditForm />
+</KunDrawer>
+```
+
+适合"正在编辑表单不能误点丢数据"的场景。
+
+### 响应式默认（v0.5.2 起，开箱即用）
+
+> **桌面右侧滑入，手机底部滑入** —— 不需要任何额外配置。组件内部用 `useMediaQuery('(max-width: 47.99rem)')`（Tailwind `md` 断点 = 768px）实时监听，跨越断点时 `effectivePlacement` 自动重算。
+
+```vue
+<!-- 默认：桌面 right，手机 bottom -->
+<KunDrawer v-model="open" title="筛选" />
+
+<!-- 锁死 placement，全部 viewport 都从顶部 -->
+<KunDrawer v-model="open" placement="top" :responsive="false" />
+
+<!-- 桌面左侧，手机依然底部 -->
+<KunDrawer v-model="open" placement="left" />
+```
+
+`responsive: false` 时，`placement` 在所有屏宽都生效；`responsive: true`（默认）时，<768px 强制 'bottom'，>=768px 用 `placement` prop。
+
+#### SSR 安全
+
+`useMediaQuery` 在 server 端 `false`、client 首帧 resolve。**因为 KunDrawer 默认 `v-model: false`（关闭），drawer 子树根本不进 SSR HTML** —— 不存在 hydration mismatch 风险。drawer 真正挂载在用户点开后，那时 isMobile 已经 resolved。
+
+#### 已知边角
+
+跨越 768px **同时** drawer 处于打开状态时（拖窗口宽度 / 平板旋转横竖屏），panel 会"跳"到新位置而不是滑过去（Vue Transition 只在 v-if 切换时触发）。极罕见，暂不修。
+
+### Prop 速查
+
+| prop | 默认 | 含义 |
+|---|---|---|
+| `placement` | `'right'` | 桌面端锚边 `left/right/top/bottom` |
+| `responsive` | `true` | 手机（<md=768px）自动转 `'bottom'`；`false` 锁死 placement |
+| `size` | `'md'` | 横向锚（L/R）控宽，纵向锚（T/B）控高。`sm/md/lg/xl/full` |
+| `title` | `''` | 可选标题，自动渲染进 header（也可用 `#header` slot 完全自定义） |
+| `isDismissable` | `true` | 背景点 + Escape 是否关 |
+| `isShowCloseButton` | `true` | header 右上角 X |
+| `withContainer` | `true` | body 用 `p-6 overflow-y-auto` 包；false 给消费方完全控制 |
+| `rounded` | `'lg'` | 内侧两个角的圆角（贴边的那条边永远直角）。`size=full` 时不上圆角 |
+
+### slot 三段
+
+```
+┌─────────────────────────┐
+│ #header  (可选)         │ ← title prop / #header slot / 关闭按钮
+├─────────────────────────┤
+│ default slot            │ ← 主要内容（withContainer=true 时自带滚动）
+│                         │
+│                         │
+├─────────────────────────┤
+│ #footer  (可选)         │ ← 仅当传了 #footer slot
+└─────────────────────────┘
+```
+
+### a11y / 键盘
+
+| 行为 | 实现 |
+|---|---|
+| `role="dialog"` + `aria-modal="true"` + `aria-labelledby` | 自动加 |
+| Tab / Shift+Tab 不漂出抽屉 | `useFocusTrap` 复用 Modal 那套 |
+| Escape 关闭 | `useEventListener('keydown')` + `isDismissable` |
+| 关闭后焦点回到打开前的元素 | `returnFocusOnDeactivate: true` |
+| body 滚动锁 | `useBodyScrollLock` 跨实例 ref-count，多 drawer 嵌套也正确 |
+
+### 与 Modal 同层 z-index
+
+`z-kun-modal`（v0.4.8 修好的 token）。drawer 不嵌套 modal 是常见假设；如果有"在 drawer 里打开 modal"的需求，modal 自己也是 `z-kun-modal`，由 DOM order 决定先后（后挂载的 modal 在上面，符合直觉）。
+
+### 验证
+
+```bash
+pnpm -F your-app exec nuxt build
+# 应该都通过
+```
+
+视觉手测：
+- 4 个 placement 都能 slide in ✓
+- backdrop 点击 + Escape 关闭 ✓
+- 5 个 size 切换：sm/md/lg/xl 各自宽度 + full 占满 ✓
+- 圆角只在内侧（贴边那条边直角）✓
+- 焦点 Tab 不会跑出抽屉 ✓
+- 关闭后焦点回到触发按钮 ✓
+- body 滚动锁定 + 关闭恢复 ✓
+
+**风险等级**：极低 —— 新组件零依赖、零破坏，纯新增。建议合并。
