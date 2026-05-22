@@ -628,7 +628,7 @@ OAuth 重定向回你的 redirect_uri，带 code
 
 | 这张表能解决的问题 | 在我们架构里的实际情况 |
 |------------------|---------------------|
-| 一个本地用户绑定多个 OAuth provider（Google + GitHub + ...） | 只有一个 KUN OAuth；不会接其他 provider |
+| 一个本地用户绑定多个 OAuth provider（Google + GitHub + ...） | 只有一个 鲲 Galgame OAuth；不会接其他 provider |
 | 本地 `user.id` 与 OAuth 的 ID 独立 | **我们故意做了对齐**（migrate-users step 7） |
 | 解绑某个 provider 不删本地用户 | 唯一 provider，"解绑" = 注销账号 |
 

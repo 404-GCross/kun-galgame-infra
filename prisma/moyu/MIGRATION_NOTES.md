@@ -10,7 +10,7 @@ The KUN ecosystem is migrating its backend to Go (Fiber + GORM). Two issues with
 
 2. **`_count` subqueries** — Prisma's `include: { _count: { select: { like: true } } }` is a Prisma-specific feature with no GORM equivalent. Every list query would need explicit `JOIN + COUNT` subqueries, which is verbose and slow. Denormalized count fields (`like_count`, `favorite_count`, etc.) allow simple `SELECT` queries and are incremented/decremented atomically when the corresponding action occurs.
 
-3. **OAuth integration** — The KUN OAuth system provides centralized authentication. **No intermediate `oauth_account` table is needed** in this architecture (see "Why no `oauth_account` table" below) — the OAuth callback uses `userinfo.id` directly to look up / insert the local user.
+3. **OAuth integration** — The 鲲 Galgame OAuth system provides centralized authentication. **No intermediate `oauth_account` table is needed** in this architecture (see "Why no `oauth_account` table" below) — the OAuth callback uses `userinfo.id` directly to look up / insert the local user.
 
 ## Changes by Category
 
@@ -144,7 +144,7 @@ Standard textbook OAuth integration uses an `oauth_account(provider, sub, user_i
 
 | What `oauth_account` solves in general | Why it doesn't apply here |
 |----------------------------------------|---------------------------|
-| Bind one local user to multiple providers (Google + GitHub + ...) | Only one provider (KUN OAuth); no plans for more |
+| Bind one local user to multiple providers (Google + GitHub + ...) | Only one provider (鲲 Galgame OAuth); no plans for more |
 | Decouple local `user.id` from OAuth's id | We **deliberately aligned them** via `migrate-users` step 7 |
 | Unlink a provider without deleting the local user | Single provider — "unlinking" = account deletion |
 | Survive OAuth-side user disappearance | OAuth is the identity authority; local follows |

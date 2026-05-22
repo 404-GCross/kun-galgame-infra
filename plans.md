@@ -1,4 +1,4 @@
-# KUN OAuth Admin - 项目规划文档
+# 鲲 Galgame OAuth Admin - 项目规划文档
 
 > 本文档记录了项目的所有技术决策、架构设计和迁移策略，供 Claude Code 在上下文耗尽时参考。
 

@@ -53,7 +53,7 @@ onMounted(async () => {
         class="border-default-200 flex h-16 items-center justify-center border-b"
       >
         <h1 v-if="!isSidebarCollapsed" class="text-primary text-xl font-bold">
-          KUN OAuth
+          鲲 Galgame OAuth
         </h1>
         <Icon v-else name="lucide:key-round" class="text-primary size-8" />
       </div>

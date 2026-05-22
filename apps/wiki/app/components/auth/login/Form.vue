@@ -40,11 +40,11 @@ onMounted(() => {
         class="mr-2 size-4 animate-spin"
       />
       <Icon v-else name="lucide:key-round" class="mr-2 size-4" />
-      {{ isLoading ? '跳转中...' : '用 KUN OAuth 登录' }}
+      {{ isLoading ? '跳转中...' : '用 鲲 Galgame OAuth 登录' }}
     </KunButton>
 
     <p class="text-default-400 mt-6 text-center text-xs">
-      点击后会跳转到 KUN OAuth 登录页进行授权
+      点击后会跳转到 鲲 Galgame OAuth 登录页进行授权
     </p>
   </KunCard>
 </template>

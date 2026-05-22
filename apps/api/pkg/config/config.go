@@ -172,7 +172,7 @@ func Load() (*Config, error) {
 	// Mail config
 	mailPort, _ := strconv.Atoi(getEnv("KUN_VISUAL_NOVEL_EMAIL_PORT", "587"))
 	cfg.Mail = MailConfig{
-		From:     getEnv("KUN_VISUAL_NOVEL_EMAIL_FROM", "KUN OAuth"),
+		From:     getEnv("KUN_VISUAL_NOVEL_EMAIL_FROM", "鲲 Galgame OAuth"),
 		Host:     getEnv("KUN_VISUAL_NOVEL_EMAIL_HOST", ""),
 		Port:     mailPort,
 		Account:  getEnv("KUN_VISUAL_NOVEL_EMAIL_ACCOUNT", ""),

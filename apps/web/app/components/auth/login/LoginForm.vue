@@ -53,7 +53,7 @@ onMounted(async () => {
   <KunCard class="p-8">
     <div class="mb-8 text-center">
       <h1 class="text-2xl font-bold text-foreground">欢迎回来</h1>
-      <p class="mt-2 text-default-500">登录 KUN OAuth 管理后台</p>
+      <p class="mt-2 text-default-500">登录 鲲 Galgame OAuth 管理后台</p>
     </div>
 
     <form @submit.prevent="handleSubmit">

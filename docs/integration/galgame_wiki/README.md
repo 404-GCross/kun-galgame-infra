@@ -59,7 +59,7 @@
 Authorization: Bearer <access_token>
 ```
 
-access_token 由 KUN OAuth 系统签发，JWT claims 中包含 `uid`（integer user ID）和 `roles`。
+access_token 由 鲲 Galgame OAuth 系统签发，JWT claims 中包含 `uid`（integer user ID）和 `roles`。
 
 ---
 

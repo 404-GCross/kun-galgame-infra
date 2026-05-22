@@ -1,4 +1,4 @@
-# KUN OAuth API 参考
+# 鲲 Galgame OAuth API 参考
 
 所有 API 基础路径：`/api/v1`
 

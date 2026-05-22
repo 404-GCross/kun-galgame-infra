@@ -132,7 +132,7 @@ func dropAllTables(db *gorm.DB) error {
 func seedInitialData(db *gorm.DB) error {
 	// Create sites if not exists
 	sites := []siteModel.Site{
-		{Name: "KUN OAuth Admin", Domain: "oauth.kungal.com", Description: "Central OAuth administration system"},
+		{Name: "鲲 Galgame OAuth Admin", Domain: "oauth.kungal.com", Description: "Central OAuth administration system"},
 		{Name: "KUN Galgame", Domain: "www.kungal.com", Description: "KUN Galgame community"},
 		{Name: "MoYu Patch", Domain: "www.moyu.moe", Description: "MoYu game patches"},
 	}

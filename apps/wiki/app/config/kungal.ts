@@ -1,12 +1,12 @@
 import type { KunSiteConfig } from './config'
 
-const KUN_SITE_NAME = '鲲 Galgame OAuth 管理系统'
-const KUN_SITE_SHORT = '鲲 Galgame OAuth'
+const KUN_SITE_NAME = '鲲 Galgame Wiki'
+const KUN_SITE_SHORT = '鲲 Galgame Wiki'
 const KUN_SITE_MENTION = '@kungalgame'
 const KUN_SITE_TITLE =
-  '鲲 Galgame OAuth 管理系统 - 为鲲 Galgame 网站集群定制的最佳 OAuth 管理系统'
+  '鲲 Galgame Wiki - 鲲 Galgame 网站集群的资料百科'
 const KUN_SITE_DESCRIPTION =
-  '一个统一鲲 Galgame 网站集群用户和服务的自动化管理系统'
+  '鲲 Galgame Wiki —— 开放、协作、永久免费的 Galgame 资料百科，涵盖 galgame / 厂商 / 角色 / 标签等条目，与鲲 Galgame 网站集群其他服务共享账号体系'
 const KUN_SITE_URL = 'https://oauth.kungal.com'
 const KUN_SITE_URL_BACKUP = 'https://oauth.kungal.org'
 
@@ -31,9 +31,11 @@ const KUN_SITE_VALID_DOMAIN_LIST = ['oauth.kungal.com']
 
 const KUN_SITE_KEYWORDS = [
   'Galgame',
+  '鲲 Galgame Wiki',
   '鲲 Galgame 论坛',
   '鲲 Galgame 补丁',
-  '鲲 Galgame OAuth 管理系统'
+  'Wiki',
+  '百科'
 ]
 
 export const kungal: KunSiteConfig = {

@@ -1,4 +1,4 @@
-# KUN OAuth Admin - TODO 清单
+# 鲲 Galgame OAuth Admin - TODO 清单
 
 > 基于全量代码审计生成，按优先级排列。
 > Game/Content/Comment 模块已移除（站点业务数据由各网站自行管理）。
