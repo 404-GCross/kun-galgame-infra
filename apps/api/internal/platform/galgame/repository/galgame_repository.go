@@ -35,10 +35,30 @@ func (r *GalgameRepository) FindByID(ctx context.Context, id int) (*model.Galgam
 		Preload("Series").
 		Preload("Contributor").
 		Preload("Link").
-		Preload("Tag.Tag").
-		Preload("Official.Official").
+		// Inject the same `galgame_count` (aliased as `cnt`) subquery
+		// that the dedicated GET /official, GET /engine, and GET /tag
+		// list endpoints use, so detail-embedded officials / engines /
+		// tags carry the count without consumers (kungal, moyu) having
+		// to issue N follow-up requests to learn "this 会社 has how
+		// many galgames?". The count filters galgame.status = 0 to
+		// match what the list and per-official detail pages display —
+		// drafts imported by sync-vndb stay excluded.
+		Preload("Tag.Tag", func(db *gorm.DB) *gorm.DB {
+			return db.
+				Select("galgame_tag.*, COALESCE(tc.cnt, 0) AS cnt").
+				Joins("LEFT JOIN (SELECT r.tag_id, COUNT(*) AS cnt FROM galgame_tag_relation r JOIN galgame g ON g.id = r.galgame_id AND g.status = 0 GROUP BY r.tag_id) tc ON tc.tag_id = galgame_tag.id")
+		}).
+		Preload("Official.Official", func(db *gorm.DB) *gorm.DB {
+			return db.
+				Select("galgame_official.*, COALESCE(oc.cnt, 0) AS cnt").
+				Joins("LEFT JOIN (SELECT r.official_id, COUNT(*) AS cnt FROM galgame_official_relation r JOIN galgame g ON g.id = r.galgame_id AND g.status = 0 GROUP BY r.official_id) oc ON oc.official_id = galgame_official.id")
+		}).
 		Preload("Official.Official.Alias").
-		Preload("Engine.Engine").
+		Preload("Engine.Engine", func(db *gorm.DB) *gorm.DB {
+			return db.
+				Select("galgame_engine.*, COALESCE(ec.cnt, 0) AS cnt").
+				Joins("LEFT JOIN (SELECT r.engine_id, COUNT(*) AS cnt FROM galgame_engine_relation r JOIN galgame g ON g.id = r.galgame_id AND g.status = 0 GROUP BY r.engine_id) ec ON ec.engine_id = galgame_engine.id")
+		}).
 		Preload("Cover", func(db *gorm.DB) *gorm.DB {
 			return db.Order("sort_order ASC, created ASC")
 		}).
