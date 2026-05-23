@@ -104,7 +104,12 @@ onMounted(async () => {
                 is-icon-only
                 aria-label="切换主题"
               >
-                <Icon :name="colorModeIcon" class="size-5" />
+                <ClientOnly>
+                  <Icon :name="colorModeIcon" class="size-5" />
+                  <template #fallback>
+                    <Icon name="lucide:monitor" class="size-5" />
+                  </template>
+                </ClientOnly>
               </KunButton>
             </template>
 
