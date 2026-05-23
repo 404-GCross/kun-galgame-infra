@@ -8,6 +8,7 @@ import {
 import type { Galgame } from '~/shared/types/galgame'
 import { resolveBannerUrl } from '~/shared/utils/resolveImage'
 import { formatReleaseDate } from '~/shared/utils/format'
+import type { KunUIColor } from '@kun/ui/components/kun/ui/type'
 
 const api = useApi()
 const route = useRoute()
@@ -74,6 +75,9 @@ const officials = computed(() =>
     .filter((o): o is NonNullable<typeof o> => !!o)
 )
 
+// ────────────────────────────────────────────────
+// Intro language switcher — KunTab pills variant
+// ────────────────────────────────────────────────
 const intros = computed(() => {
   const g = galgame.value
   if (!g) return [] as { lang: string; label: string; text: string }[]
@@ -89,9 +93,12 @@ const intros = computed(() => {
   )
 })
 
-// Default intro language → first non-empty one. State persists across
-// the page lifetime; switching tabs doesn't reset.
+// KunTab requires v-model<string> + items[]. textValue is what's shown
+// to the user; value is the key we toggle on.
 const introLang = ref<string>('')
+const introTabs = computed(() =>
+  intros.value.map((i) => ({ value: i.lang, textValue: i.label }))
+)
 watchEffect(() => {
   if (intros.value.length && !introLang.value) {
     introLang.value = intros.value[0]!.lang
@@ -141,7 +148,7 @@ const changeStatus = async (newStatus: number) => {
 }
 
 // ────────────────────────────────────────────────
-// Tabs
+// Page tabs — KunTab underlined, with count inlined in label
 // ────────────────────────────────────────────────
 type TabId =
   | 'overview'
@@ -151,44 +158,62 @@ type TabId =
   | 'links'
   | 'contributors'
 
-const TABS: { id: TabId; label: string; icon: string; count?: () => number }[] =
-  [
-    { id: 'overview', label: '基本', icon: 'lucide:info' },
-    {
-      id: 'tags',
-      label: '标签',
-      icon: 'lucide:tags',
-      count: () => galgame.value?.tag?.length ?? 0
-    },
-    {
-      id: 'officials',
-      label: '会社',
-      icon: 'lucide:building-2',
-      count: () => officials.value.length
-    },
-    {
-      id: 'aliases',
-      label: '别名',
-      icon: 'lucide:type',
-      count: () => galgame.value?.alias?.length ?? 0
-    },
-    { id: 'links', label: '链接', icon: 'lucide:link' },
-    { id: 'contributors', label: '贡献者', icon: 'lucide:users' }
-  ]
-
 const activeTab = ref<TabId>('overview')
 
-// Status chip styling — declared as a static lookup so Tailwind JIT
-// picks every color combo up (don't construct class strings at runtime).
-const STATUS_CHIP_BG: Record<string, string> = {
-  success: 'bg-success-50 text-success border-success-200',
-  warning: 'bg-warning-50 text-warning border-warning-200',
-  danger: 'bg-danger-50 text-danger border-danger-200'
+const tabItems = computed(() => [
+  {
+    value: 'overview',
+    textValue: '基本',
+    icon: 'lucide:info'
+  },
+  {
+    value: 'tags',
+    textValue: `标签 ${galgame.value?.tag?.length ?? 0}`,
+    icon: 'lucide:tags'
+  },
+  {
+    value: 'officials',
+    textValue: `会社 ${officials.value.length}`,
+    icon: 'lucide:building-2'
+  },
+  {
+    value: 'aliases',
+    textValue: `别名 ${galgame.value?.alias?.length ?? 0}`,
+    icon: 'lucide:type'
+  },
+  { value: 'links', textValue: '链接', icon: 'lucide:link' },
+  { value: 'contributors', textValue: '贡献者', icon: 'lucide:users' }
+])
+
+// ────────────────────────────────────────────────
+// Color helpers — narrow string lookups to KunUIColor so KunChip props
+// type-check. Default to 'default' for unknown keys.
+// ────────────────────────────────────────────────
+const KUNUI_COLOR_VALUES: ReadonlyArray<KunUIColor> = [
+  'default',
+  'primary',
+  'secondary',
+  'success',
+  'warning',
+  'danger',
+  'info'
+]
+const toKunColor = (raw: string | undefined): KunUIColor => {
+  return (KUNUI_COLOR_VALUES as ReadonlyArray<string>).includes(raw ?? '')
+    ? (raw as KunUIColor)
+    : 'default'
 }
-const statusChipClass = computed(() => {
-  const color = GALGAME_STATUS_MAP[galgame.value?.status ?? 0]?.color
-  return STATUS_CHIP_BG[color ?? ''] ?? 'bg-default-100 text-default-500'
-})
+
+const statusColor = computed<KunUIColor>(() =>
+  toKunColor(GALGAME_STATUS_MAP[galgame.value?.status ?? 0]?.color)
+)
+const contentLimitColor = computed<KunUIColor>(() =>
+  toKunColor(CONTENT_LIMIT_MAP[galgame.value?.content_limit ?? '']?.color)
+)
+const tagCategoryColor = (cat: string): KunUIColor =>
+  toKunColor(TAG_CATEGORY_MAP[cat]?.color)
+const officialCategoryColor = (cat: string): KunUIColor =>
+  toKunColor(OFFICIAL_CATEGORY_MAP[cat]?.color)
 </script>
 
 <template>
@@ -213,18 +238,15 @@ const statusChipClass = computed(() => {
           #{{ galgame.id }}
         </span>
       </div>
-      <span
+      <KunChip
         v-if="galgame"
-        :class="
-          cn(
-            'inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium',
-            statusChipClass
-          )
-        "
+        :color="statusColor"
+        variant="flat"
+        size="md"
       >
         <Icon name="lucide:circle-dot" class="size-3" />
         {{ GALGAME_STATUS_MAP[galgame.status]?.label }}
-      </span>
+      </KunChip>
     </div>
 
     <div
@@ -249,16 +271,18 @@ const statusChipClass = computed(() => {
       <!-- ============ Sticky sidebar ============ -->
       <aside class="space-y-3 lg:sticky lg:top-4 lg:self-start">
         <!-- Banner thumbnail (fixed aspect to keep sidebar geometry
-             stable regardless of image size) -->
+             stable regardless of image size). KunImage auto-shows
+             skeleton (v0.5.0) while loading. -->
         <div
           class="bg-default-100 border-default-200 relative overflow-hidden rounded-xl border"
           style="aspect-ratio: 16 / 9"
         >
-          <img
+          <KunImage
             v-if="bannerSrc"
             :src="bannerSrc"
-            class="size-full object-cover"
             :alt="displayName"
+            loading="lazy"
+            class-name="size-full object-cover"
           />
           <div
             v-else
@@ -266,17 +290,15 @@ const statusChipClass = computed(() => {
           >
             <Icon name="lucide:image" class="text-default-300 size-10" />
           </div>
-          <!-- Content-limit chip overlaid on banner -->
-          <span
-            class="absolute top-2 left-2 inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium"
-            :class="
-              CONTENT_LIMIT_MAP[galgame.content_limit]?.color === 'danger'
-                ? 'bg-danger text-white'
-                : 'bg-success text-white'
-            "
+          <!-- Content-limit chip overlaid on banner top-left -->
+          <KunChip
+            :color="contentLimitColor"
+            variant="solid"
+            size="sm"
+            class-name="absolute top-2 left-2 shadow-md"
           >
             {{ CONTENT_LIMIT_MAP[galgame.content_limit]?.label }}
-          </span>
+          </KunChip>
         </div>
 
         <!-- Title block -->
@@ -308,14 +330,16 @@ const statusChipClass = computed(() => {
         >
           <dt>VNDB</dt>
           <dd class="text-right">
-            <a
-              :href="`https://vndb.org/${galgame.vndb_id}`"
+            <KunLink
+              :to="`https://vndb.org/${galgame.vndb_id}`"
               target="_blank"
-              class="text-primary font-mono hover:underline"
+              size="sm"
+              underline="hover"
+              is-show-anchor-icon
+              class-name="font-mono"
             >
               {{ galgame.vndb_id }}
-              <Icon name="lucide:external-link" class="ml-0.5 inline size-3" />
-            </a>
+            </KunLink>
           </dd>
           <dt>语言</dt>
           <dd class="text-foreground text-right">
@@ -332,15 +356,13 @@ const statusChipClass = computed(() => {
           </dd>
           <dt>年龄</dt>
           <dd class="text-right">
-            <span
-              :class="
-                galgame.age_limit === 'r18'
-                  ? 'bg-danger-50 text-danger rounded px-1.5 py-0.5 text-xs font-medium'
-                  : 'bg-success-50 text-success rounded px-1.5 py-0.5 text-xs font-medium'
-              "
+            <KunChip
+              :color="galgame.age_limit === 'r18' ? 'danger' : 'success'"
+              variant="flat"
+              size="sm"
             >
               {{ galgame.age_limit === 'r18' ? 'R18' : '全年龄' }}
-            </span>
+            </KunChip>
           </dd>
         </dl>
 
@@ -356,27 +378,31 @@ const statusChipClass = computed(() => {
             编辑
           </KunButton>
           <div class="grid grid-cols-2 gap-2">
-            <NuxtLink :to="`/galgame/${galgame.id}/revisions`">
-              <KunButton variant="flat" size="sm" full-width>
-                <Icon name="lucide:history" class="mr-1 size-4" />
-                修订
-              </KunButton>
-            </NuxtLink>
-            <NuxtLink :to="`/galgame/${galgame.id}/prs`">
-              <KunButton variant="flat" size="sm" full-width>
-                <Icon
-                  name="lucide:git-pull-request"
-                  class="mr-1 size-4"
-                />
-                PR
-              </KunButton>
-            </NuxtLink>
+            <KunButton
+              variant="flat"
+              size="sm"
+              full-width
+              :href="`/galgame/${galgame.id}/revisions`"
+            >
+              <Icon name="lucide:history" class="mr-1 size-4" />
+              修订
+            </KunButton>
+            <KunButton
+              variant="flat"
+              size="sm"
+              full-width
+              :href="`/galgame/${galgame.id}/prs`"
+            >
+              <Icon name="lucide:git-pull-request" class="mr-1 size-4" />
+              PR
+            </KunButton>
           </div>
         </div>
 
-        <!-- Status change actions — separated by divider to signal they
-             affect publication state -->
-        <div class="border-default-200 space-y-2 border-t pt-3">
+        <!-- Status change actions — separated by KunDivider to signal
+             they affect publication state -->
+        <div class="space-y-2">
+          <KunDivider />
           <p class="text-default-400 text-xs">状态变更</p>
           <div class="flex flex-col gap-2">
             <KunButton
@@ -420,56 +446,19 @@ const statusChipClass = computed(() => {
 
       <!-- ============ Tab content area ============ -->
       <div class="space-y-4">
-        <!-- Tab bar — sticky under the page header so it follows long
-             scrolling content. Each tab shows an optional count chip. -->
-        <nav
-          class="bg-background/85 border-default-200 sticky top-0 z-20 -mx-2 border-b backdrop-blur-md"
-          aria-label="详情分区"
+        <!-- Page tab nav — KunTab underlined, sticky under page header -->
+        <div
+          class="bg-background/85 sticky top-0 z-20 -mx-2 border-default-200 border-b backdrop-blur-md px-2 py-1"
         >
-          <div class="flex items-center gap-1 overflow-x-auto px-2 py-2">
-            <button
-              v-for="tab in TABS"
-              :key="tab.id"
-              type="button"
-              :class="
-                cn(
-                  'group relative flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
-                  'focus:outline-none focus:ring-2 focus:ring-primary/40',
-                  activeTab === tab.id
-                    ? 'text-primary'
-                    : 'text-default-500 hover:text-foreground'
-                )
-              "
-              :aria-current="activeTab === tab.id ? 'page' : undefined"
-              @click="activeTab = tab.id"
-            >
-              <Icon :name="tab.icon" class="size-4 shrink-0" />
-              <span>{{ tab.label }}</span>
-              <span
-                v-if="tab.count"
-                :class="
-                  cn(
-                    'rounded-full px-1.5 py-0.5 text-xs',
-                    activeTab === tab.id
-                      ? 'bg-primary/15 text-primary'
-                      : 'bg-default-100 text-default-500'
-                  )
-                "
-              >
-                {{ tab.count() }}
-              </span>
-              <span
-                aria-hidden="true"
-                :class="
-                  cn(
-                    'bg-primary absolute right-2 bottom-0 left-2 h-0.5 rounded-full transition-opacity',
-                    activeTab === tab.id ? 'opacity-100' : 'opacity-0'
-                  )
-                "
-              />
-            </button>
-          </div>
-        </nav>
+          <KunTab
+            v-model="activeTab"
+            :items="tabItems"
+            variant="underlined"
+            color="primary"
+            size="md"
+            scrollable
+          />
+        </div>
 
         <!-- Tab panel — Transition between content with subtle fade so
              user perceives the tab switch -->
@@ -488,29 +477,18 @@ const statusChipClass = computed(() => {
               :is-transparent="false"
               content-class="space-y-3"
             >
-              <div class="flex items-center justify-between">
+              <div class="flex items-center justify-between gap-3">
                 <h3 class="text-foreground text-base font-semibold">简介</h3>
-                <!-- Language switcher — small pill row so user can see
-                     all 4 languages quickly. Uses the same lookup table
-                     as the body content below. -->
-                <div class="flex gap-1">
-                  <button
-                    v-for="lang in intros"
-                    :key="lang.lang"
-                    type="button"
-                    :class="
-                      cn(
-                        'rounded-full px-2.5 py-1 text-xs font-medium transition-colors',
-                        introLang === lang.lang
-                          ? 'bg-primary text-white'
-                          : 'bg-default-100 text-default-500 hover:bg-default-200'
-                      )
-                    "
-                    @click="introLang = lang.lang"
-                  >
-                    {{ lang.label }}
-                  </button>
-                </div>
+                <!-- Language switcher — KunTab pills variant: compact
+                     row of language pills, exactly what we want. -->
+                <KunTab
+                  v-if="introTabs.length > 1"
+                  v-model="introLang"
+                  :items="introTabs"
+                  variant="pills"
+                  color="primary"
+                  size="sm"
+                />
               </div>
               <p
                 class="text-default-700 text-sm leading-relaxed whitespace-pre-wrap"
@@ -526,13 +504,13 @@ const statusChipClass = computed(() => {
               content-class="space-y-2"
             >
               <h3 class="text-foreground text-base font-semibold">所属系列</h3>
-              <NuxtLink
+              <KunLink
                 :to="`/series/${galgame.series.id}`"
-                class="text-primary inline-flex items-center gap-1 hover:underline"
+                underline="hover"
+                is-show-anchor-icon
               >
                 {{ galgame.series.name }}
-                <Icon name="lucide:external-link" class="size-3.5" />
-              </NuxtLink>
+              </KunLink>
               <p
                 v-if="galgame.series.description"
                 class="text-default-500 text-sm"
@@ -594,27 +572,21 @@ const statusChipClass = computed(() => {
                   </span>
                 </div>
                 <div class="flex flex-wrap gap-1.5">
-                  <span
+                  <KunChip
                     v-for="t in tags"
                     :key="t.id"
-                    class="border-default-200 inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs"
-                    :class="{
-                      'bg-primary-50 text-primary border-primary-200':
-                        TAG_CATEGORY_MAP[cat]?.color === 'primary',
-                      'bg-secondary-50 text-secondary border-secondary-200':
-                        TAG_CATEGORY_MAP[cat]?.color === 'secondary',
-                      'bg-info-50 text-info border-info-200':
-                        TAG_CATEGORY_MAP[cat]?.color === 'info'
-                    }"
+                    :color="tagCategoryColor(String(cat))"
+                    variant="flat"
+                    size="sm"
                   >
                     {{ t.name }}
                     <span
                       v-if="t.spoiler > 0"
-                      class="text-warning-600 font-medium"
+                      class="text-warning-600 ml-1 font-medium"
                     >
                       ⚠ {{ t.spoiler }}
                     </span>
-                  </span>
+                  </KunChip>
                 </div>
               </div>
             </div>
@@ -650,21 +622,15 @@ const statusChipClass = computed(() => {
               </div>
               <div class="flex shrink-0 items-center gap-2 text-xs">
                 <span class="text-default-400">{{ o.lang }}</span>
-                <span
-                  class="rounded-md px-2 py-0.5 font-medium"
-                  :class="{
-                    'bg-primary-50 text-primary':
-                      OFFICIAL_CATEGORY_MAP[o.category]?.color === 'primary',
-                    'bg-info-50 text-info':
-                      OFFICIAL_CATEGORY_MAP[o.category]?.color === 'info',
-                    'bg-default-100 text-default-500':
-                      OFFICIAL_CATEGORY_MAP[o.category]?.color === 'default'
-                  }"
+                <KunChip
+                  :color="officialCategoryColor(o.category)"
+                  variant="flat"
+                  size="sm"
                 >
                   {{
                     OFFICIAL_CATEGORY_MAP[o.category]?.label ?? o.category
                   }}
-                </span>
+                </KunChip>
               </div>
             </div>
           </KunCard>
@@ -675,19 +641,21 @@ const statusChipClass = computed(() => {
               v-if="galgame.alias && galgame.alias.length > 0"
               :is-hoverable="false"
               :is-transparent="false"
-              content-class="space-y-2"
+              content-class="space-y-3"
             >
               <h3 class="text-foreground text-base font-semibold">
                 现有别名
               </h3>
               <div class="flex flex-wrap gap-2">
-                <span
+                <KunChip
                   v-for="a in galgame.alias"
                   :key="a.id"
-                  class="bg-default-100 text-default-700 inline-flex items-center rounded-lg px-3 py-1.5 text-sm"
+                  variant="flat"
+                  color="default"
+                  size="md"
                 >
                   {{ a.name }}
-                </span>
+                </KunChip>
               </div>
             </KunCard>
             <GalgameAliasesSection :galgame-id="galgame.id" />
