@@ -6,10 +6,9 @@ const router = useRouter()
 const colorMode = useColorMode()
 const isSidebarCollapsed = ref(false)
 
-const colorModeIcon = computed(() => {
-  if (colorMode.preference === 'system') return 'lucide:monitor'
-  return colorMode.value === 'dark' ? 'lucide:moon' : 'lucide:sun'
-})
+// Trigger uses a fixed icon (not derived from preference) so SSR/CSR
+// render identical DOM. Current preference is shown inside the popover
+// only, which is closed by default → its body never enters SSR pass.
 
 const colorModeOptions = [
   { value: 'light', label: '浅色', icon: 'lucide:sun' },
@@ -104,12 +103,7 @@ onMounted(async () => {
                 is-icon-only
                 aria-label="切换主题"
               >
-                <ClientOnly>
-                  <Icon :name="colorModeIcon" class="size-5" />
-                  <template #fallback>
-                    <Icon name="lucide:monitor" class="size-5" />
-                  </template>
-                </ClientOnly>
+                <Icon name="lucide:sun-moon" class="size-5" />
               </KunButton>
             </template>
 

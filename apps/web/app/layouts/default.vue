@@ -10,10 +10,13 @@ const visibleMenu = computed(() =>
   SIDEBAR_MENU.filter((item) => !item.adminOnly || auth.isAdmin.value)
 )
 
-const colorModeIcon = computed(() => {
-  if (colorMode.preference === 'system') return 'lucide:monitor'
-  return colorMode.value === 'dark' ? 'lucide:moon' : 'lucide:sun'
-})
+// Trigger uses a fixed icon (not derived from colorMode.preference) so
+// SSR and CSR render the exact same DOM. The current preference is
+// shown inside the popover instead — and the popover is closed by
+// default, so its body never enters the SSR pass. This is the same
+// structural pattern kungal uses (settings live in a closed-by-default
+// panel, never in a permanently-visible trigger). See
+// [@nuxtjs/color-mode hydration considerations].
 
 const colorModeOptions = [
   { value: 'light', label: '浅色', icon: 'lucide:sun' },
@@ -115,12 +118,7 @@ onMounted(async () => {
                 is-icon-only
                 aria-label="切换主题"
               >
-                <ClientOnly>
-                  <Icon :name="colorModeIcon" class="size-5" />
-                  <template #fallback>
-                    <Icon name="lucide:monitor" class="size-5" />
-                  </template>
-                </ClientOnly>
+                <Icon name="lucide:sun-moon" class="size-5" />
               </KunButton>
             </template>
 
