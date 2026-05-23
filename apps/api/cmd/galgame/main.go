@@ -213,7 +213,25 @@ func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB, se
 	galgame.Get("/:gid/aliases", linkH.ListAliases)
 	galgame.Get("/:gid/contributors", contributorH.List)
 
-	// Authenticated routes
+	// ── Cross-service endpoints (OAuth Client Basic Auth) ──
+	//
+	// MUST be registered BEFORE the `galgameAuth := galgame.Group("", jwtAuth)`
+	// line below. Fiber v3's `Group("", middleware)` with an empty prefix is
+	// equivalent to `app.Use("/galgame", middleware)` (see fiber/v3/group.go
+	// Group ctor: it calls `app.register(methodUse, prefix, …)` when the group
+	// has handlers). Use() then matches every `/galgame/*` route registered
+	// AFTER it — including ones registered on the parent `galgame` group
+	// without `galgameAuth`. So any endpoint that needs non-Bearer auth
+	// (Basic / public) MUST land above this fence; otherwise jwtAuth runs
+	// first and rejects Basic with code=10002.
+	//
+	// /messages/feed: kungal/moyu cron pulls wiki messages here via Basic Auth.
+	galgame.Get("/messages/feed",
+		middleware.OAuthClientBasicAuth(oauthClientRepo),
+		messageH.ListFeed,
+	)
+
+	// ─── Bearer JWT fence — every route below this point inherits jwtAuth ───
 	galgameAuth := galgame.Group("", jwtAuth)
 	// POST /galgame is the admin direct-publish bypass: it creates a
 	// status=0 entry immediately, skipping the user submission queue. Regular
@@ -242,15 +260,9 @@ func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB, se
 	galgameAuth.Delete("/:gid", submissionH.DeleteDraft)
 
 	// ── Messages ──
-	// /messages/mine — end-user JWT
+	// /messages/mine — end-user JWT.
+	// /messages/feed is registered ABOVE the jwtAuth fence; see comment there.
 	galgameAuth.Get("/messages/mine", messageH.ListMine)
-	// /messages/feed — service-to-service Basic Auth (kungal/moyu cron).
-	// Registered directly under api, NOT galgameAuth, so it uses Basic Auth
-	// instead of Bearer JWT.
-	galgame.Get("/messages/feed",
-		middleware.OAuthClientBasicAuth(oauthClientRepo),
-		messageH.ListFeed,
-	)
 
 	// ── Admin ──
 	// Admin endpoints require both JWT validity AND admin/moderator role —
