@@ -62,6 +62,19 @@ export const useApi = () => {
     return false
   }
 
+  // Wiki backend returns business-level auth errors as HTTP 200 +
+  // {code: 10001|10003, message, data: null}, NOT as HTTP 401. That
+  // means $fetch resolves normally (no throw) and the only signal we
+  // have is the envelope's `code`. Treat these the same as a thrown
+  // 401: try one refresh + retry, then bubble null with the error
+  // message so callers can fall back gracefully (e.g. List.vue's
+  // `r.code === 0 ? r.data : null` path).
+  //
+  // Codes:
+  //   10001 — "未授权，请先登录" (no / missing token)
+  //   10003 — "令牌已过期，请重新登录" (token expired)
+  const AUTH_ERROR_CODES = new Set([10001, 10003])
+
   const request = async <T>(
     endpoint: string,
     options: ApiOptions = {},
@@ -81,6 +94,14 @@ export const useApi = () => {
         },
         credentials: 'include'
       })
+
+      // Business-level auth error in 200-envelope (see comment above).
+      if (AUTH_ERROR_CODES.has(response.code) && retry) {
+        const refreshed = await handleUnauthorized()
+        if (refreshed) {
+          return request<T>(endpoint, options, false)
+        }
+      }
 
       return response
     } catch (error: unknown) {

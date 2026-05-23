@@ -377,25 +377,34 @@ const officialCategoryColor = (cat: string): KunUIColor =>
             <Icon name="lucide:pencil" class="mr-1 size-4" />
             编辑
           </KunButton>
+          <!-- Wrap KunButton in NuxtLink (block) instead of KunButton's
+               :href prop — the latter uses defineNuxtLink({}) inside
+               a :is binding which doesn't reliably trigger client-side
+               navigation under some Nuxt 4 versions (URL updates, page
+               doesn't render). NuxtLink wrap is the canonical pattern
+               and matches the original Detail.vue. -->
           <div class="grid grid-cols-2 gap-2">
-            <KunButton
-              variant="flat"
-              size="sm"
-              full-width
-              :href="`/galgame/${galgame.id}/revisions`"
+            <NuxtLink
+              :to="`/galgame/${galgame.id}/revisions`"
+              class="block"
             >
-              <Icon name="lucide:history" class="mr-1 size-4" />
-              修订
-            </KunButton>
-            <KunButton
-              variant="flat"
-              size="sm"
-              full-width
-              :href="`/galgame/${galgame.id}/prs`"
+              <KunButton variant="flat" size="sm" full-width>
+                <Icon name="lucide:history" class="mr-1 size-4" />
+                修订
+              </KunButton>
+            </NuxtLink>
+            <NuxtLink
+              :to="`/galgame/${galgame.id}/prs`"
+              class="block"
             >
-              <Icon name="lucide:git-pull-request" class="mr-1 size-4" />
-              PR
-            </KunButton>
+              <KunButton variant="flat" size="sm" full-width>
+                <Icon
+                  name="lucide:git-pull-request"
+                  class="mr-1 size-4"
+                />
+                PR
+              </KunButton>
+            </NuxtLink>
           </div>
         </div>
 
@@ -572,21 +581,28 @@ const officialCategoryColor = (cat: string): KunUIColor =>
                   </span>
                 </div>
                 <div class="flex flex-wrap gap-1.5">
-                  <KunChip
+                  <!-- Each tag chip links to its detail page so admins
+                       can jump straight to /tag/:id from here. -->
+                  <NuxtLink
                     v-for="t in tags"
                     :key="t.id"
-                    :color="tagCategoryColor(String(cat))"
-                    variant="flat"
-                    size="sm"
+                    :to="`/tag/${t.id}`"
                   >
-                    {{ t.name }}
-                    <span
-                      v-if="t.spoiler > 0"
-                      class="text-warning-600 ml-1 font-medium"
+                    <KunChip
+                      :color="tagCategoryColor(String(cat))"
+                      variant="flat"
+                      size="sm"
+                      class-name="cursor-pointer hover:opacity-80 transition-opacity"
                     >
-                      ⚠ {{ t.spoiler }}
-                    </span>
-                  </KunChip>
+                      {{ t.name }}
+                      <span
+                        v-if="t.spoiler > 0"
+                        class="text-warning-600 ml-1 font-medium"
+                      >
+                        ⚠ {{ t.spoiler }}
+                      </span>
+                    </KunChip>
+                  </NuxtLink>
                 </div>
               </div>
             </div>
@@ -606,33 +622,50 @@ const officialCategoryColor = (cat: string): KunUIColor =>
             >
               暂无关联会社
             </div>
-            <div
+            <!-- Each row is a NuxtLink to /official/:id so admins can
+                 jump to the official's detail page (where its other
+                 galgames + edit are exposed). Wrap is `block` so the
+                 inner flex row keeps its geometry. -->
+            <NuxtLink
               v-for="o in officials"
               :key="o.id"
-              class="border-default-200 hover:border-primary-300 group flex items-center justify-between rounded-xl border p-4 transition-colors"
+              :to="`/official/${o.id}`"
+              class="block"
             >
-              <div class="min-w-0 flex-1 space-y-1">
-                <p class="text-foreground font-semibold">{{ o.name }}</p>
-                <p
-                  v-if="o.original && o.original !== o.name"
-                  class="text-default-500 text-sm"
-                >
-                  {{ o.original }}
-                </p>
+              <div
+                class="border-default-200 hover:border-primary-300 hover:bg-primary-50/30 group flex items-center justify-between rounded-xl border p-4 transition-colors"
+              >
+                <div class="min-w-0 flex-1 space-y-1">
+                  <p
+                    class="text-foreground group-hover:text-primary font-semibold transition-colors"
+                  >
+                    {{ o.name }}
+                  </p>
+                  <p
+                    v-if="o.original && o.original !== o.name"
+                    class="text-default-500 text-sm"
+                  >
+                    {{ o.original }}
+                  </p>
+                </div>
+                <div class="flex shrink-0 items-center gap-2 text-xs">
+                  <span class="text-default-400">{{ o.lang }}</span>
+                  <KunChip
+                    :color="officialCategoryColor(o.category)"
+                    variant="flat"
+                    size="sm"
+                  >
+                    {{
+                      OFFICIAL_CATEGORY_MAP[o.category]?.label ?? o.category
+                    }}
+                  </KunChip>
+                  <Icon
+                    name="lucide:chevron-right"
+                    class="text-default-300 group-hover:text-primary size-4 transition-colors"
+                  />
+                </div>
               </div>
-              <div class="flex shrink-0 items-center gap-2 text-xs">
-                <span class="text-default-400">{{ o.lang }}</span>
-                <KunChip
-                  :color="officialCategoryColor(o.category)"
-                  variant="flat"
-                  size="sm"
-                >
-                  {{
-                    OFFICIAL_CATEGORY_MAP[o.category]?.label ?? o.category
-                  }}
-                </KunChip>
-              </div>
-            </div>
+            </NuxtLink>
           </KunCard>
 
           <!-- ============ Tab: 别名 ============ -->
