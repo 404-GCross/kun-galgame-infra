@@ -4,12 +4,101 @@ import (
 	"context"
 	"fmt"
 
+	"api/internal/platform/galgame/dto"
 	"api/internal/platform/galgame/model"
 	"api/internal/platform/galgame/repository"
 	"api/pkg/errors"
 
 	"gorm.io/gorm"
 )
+
+// LookupSnapshotNames resolves the IDs referenced in one or more
+// Snapshots (tag / official / engine / series) to display names.
+//
+// Used by GetRevisionDiff and GetPR responses so the frontend can
+// render "tag added: 校园, 治愈" instead of "tag added: 42, 87" —
+// avoids N+1 follow-up queries from the client. See
+// [dto.SnapshotEntityNames] for the response shape + perf notes.
+//
+// Performance: 4 indexed `WHERE id IN (...)` SELECTs (~1ms each on
+// PK), union of all IDs across both snapshots, batched per entity
+// type. Skips queries when the corresponding ID slice is empty.
+// Missing IDs (entity deleted since the revision was taken) are
+// silently dropped from the map; the caller falls back to rendering
+// "已删除 #ID" client-side.
+func (s *GalgameService) LookupSnapshotNames(
+	ctx context.Context,
+	snapshots ...*model.Snapshot,
+) *dto.SnapshotEntityNames {
+	names := &dto.SnapshotEntityNames{
+		Tags:      map[int]string{},
+		Officials: map[int]string{},
+		Engines:   map[int]string{},
+		Series:    map[int]string{},
+	}
+
+	// Union all IDs across the input snapshots. Sets dedupe before
+	// hitting the DB so the IN clause stays as small as possible.
+	tagIDs := map[int]struct{}{}
+	offIDs := map[int]struct{}{}
+	engIDs := map[int]struct{}{}
+	serIDs := map[int]struct{}{}
+	for _, snap := range snapshots {
+		if snap == nil {
+			continue
+		}
+		for _, id := range snap.TagIDs {
+			tagIDs[id] = struct{}{}
+		}
+		for _, id := range snap.OfficialIDs {
+			offIDs[id] = struct{}{}
+		}
+		for _, id := range snap.EngineIDs {
+			engIDs[id] = struct{}{}
+		}
+		if snap.SeriesID != nil {
+			serIDs[*snap.SeriesID] = struct{}{}
+		}
+	}
+
+	db := s.galgameRepo.DB().WithContext(ctx)
+
+	type idNameRow struct {
+		ID   int
+		Name string
+	}
+
+	fillMap := func(table string, ids map[int]struct{}, target map[int]string) {
+		if len(ids) == 0 {
+			return
+		}
+		flat := make([]int, 0, len(ids))
+		for id := range ids {
+			flat = append(flat, id)
+		}
+		var rows []idNameRow
+		// Soft-deleted rows are excluded by GORM's default scoping if
+		// the model has gorm.DeletedAt — but querying by Table() skips
+		// that. Diff context wants the name even if the entity is
+		// soft-deleted (so the user sees what was there at that
+		// revision), so the raw Table() query is intentional.
+		if err := db.Table(table).
+			Select("id, name").
+			Where("id IN ?", flat).
+			Scan(&rows).Error; err == nil {
+			for _, r := range rows {
+				target[r.ID] = r.Name
+			}
+		}
+	}
+
+	fillMap("galgame_tag", tagIDs, names.Tags)
+	fillMap("galgame_official", offIDs, names.Officials)
+	fillMap("galgame_engine", engIDs, names.Engines)
+	fillMap("galgame_series", serIDs, names.Series)
+
+	return names
+}
 
 // ListRevisions returns revision history for a galgame
 func (s *GalgameService) ListRevisions(ctx context.Context, galgameID, page, limit int, includeMinor bool) ([]model.GalgameRevision, int64, error) {

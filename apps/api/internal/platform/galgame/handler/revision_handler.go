@@ -95,10 +95,17 @@ func (h *RevisionHandler) GetRevisionDiff(c fiber.Ctx) error {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
 
+	// Resolve tag / official / engine / series IDs referenced in either
+	// snapshot to display names so the frontend can render
+	// "tag added: 校园" instead of "tag added: 42". See
+	// service.LookupSnapshotNames for the cost / scope discussion.
+	names := h.svc.LookupSnapshotNames(c.Context(), oldSnapshot, newSnapshot)
+
 	return response.Success(c, fiber.Map{
 		"changed_keys": changedKeys,
 		"old":          oldSnapshot,
 		"new":          newSnapshot,
+		"names":        names,
 	})
 }
 
@@ -179,17 +186,25 @@ func (h *RevisionHandler) GetPR(c fiber.Ctx) error {
 	// Compute diff against base revision
 	baseRev, baseErr := h.svc.GetRevision(c.Context(), pr.GalgameID, pr.BaseRevision)
 	var changedKeys map[string]bool
+	var baseSnapshot, prSnapshot *model.Snapshot
 	if baseErr == nil {
-		baseSnapshot, _ := model.SnapshotFromJSON(baseRev.Snapshot)
-		prSnapshot, _ := model.SnapshotFromJSON(pr.Snapshot)
+		baseSnapshot, _ = model.SnapshotFromJSON(baseRev.Snapshot)
+		prSnapshot, _ = model.SnapshotFromJSON(pr.Snapshot)
 		if baseSnapshot != nil && prSnapshot != nil {
 			changedKeys = model.ChangedKeys(baseSnapshot, prSnapshot)
 		}
 	}
 
+	// Same enrichment as GetRevisionDiff — names for tag / official /
+	// engine / series IDs so the PR diff view can render display names
+	// directly. Safe to call with nil snapshots (helper returns empty
+	// maps).
+	names := h.svc.LookupSnapshotNames(c.Context(), baseSnapshot, prSnapshot)
+
 	return response.Success(c, fiber.Map{
 		"pr":           pr,
 		"changed_keys": changedKeys,
+		"names":        names,
 	})
 }
 

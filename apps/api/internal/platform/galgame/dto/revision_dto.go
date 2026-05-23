@@ -166,3 +166,26 @@ type ListPRRequest struct {
 	Page  int `query:"page" validate:"min=1"`
 	Limit int `query:"limit" validate:"min=1,max=50"`
 }
+
+// SnapshotEntityNames maps the IDs referenced inside one or more
+// Snapshots (tag / official / engine / series) to their human-readable
+// names.
+//
+// Returned alongside `changed_keys` on GET /galgame/:gid/revisions/:rev/diff
+// and GET /galgame/:gid/prs/:id so the frontend can render
+// "tag added: 校园, 治愈" instead of "tag added: 42, 87" without
+// N+1 follow-up requests. Missing IDs (entity deleted since the
+// revision was taken) are omitted; callers should fall back to
+// "已删除 #ID" rendering.
+//
+// Performance: union of all IDs across old + new snapshots, one
+// indexed `WHERE id IN (...)` SELECT per entity type (4 total). On
+// typical galgames (≤30 tags, ≤5 officials, ≤2 engines, ≤1 series)
+// the added DB cost is ~5ms; response size grows ~5KB. Cheap given
+// diff is requested per page-load of revision / PR detail views.
+type SnapshotEntityNames struct {
+	Tags      map[int]string `json:"tags"`
+	Officials map[int]string `json:"officials"`
+	Engines   map[int]string `json:"engines"`
+	Series    map[int]string `json:"series"`
+}
