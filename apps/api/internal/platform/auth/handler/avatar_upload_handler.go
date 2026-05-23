@@ -15,7 +15,11 @@ import (
 // AvatarUploadHandler accepts a multipart avatar file, uploads it to
 // image_service via the SDK, and writes `users.avatar_image_hash`.
 //
-// Endpoint: POST /api/v1/admin/users/:uuid/avatar  (admin auth)
+// Two endpoints share the same backing logic, differing only in how
+// the target user UUID is resolved:
+//
+//   - POST /api/v1/admin/users/:uuid/avatar  (admin auth, uuid from path)
+//   - POST /api/v1/auth/me/avatar            (end-user JWT, uuid from token)
 //
 // Form fields:
 //   - file (required, image/* MIME)
@@ -30,15 +34,33 @@ func NewAvatarUploadHandler(db *gorm.DB, imgClient *imageclient.Client) *AvatarU
 	return &AvatarUploadHandler{db: db, imgClient: imgClient}
 }
 
-// Upload handles the multipart upload + DB write.
+// Upload is the admin variant — uuid comes from the route param.
 func (h *AvatarUploadHandler) Upload(c fiber.Ctx) error {
-	if h.imgClient == nil {
-		return response.InternalErrorMsg(c, "image client not configured (KUN_IMAGE_CLIENT_ID/SECRET unset)")
-	}
-
 	uuid := c.Params("uuid")
 	if uuid == "" {
 		return response.BadRequest(c, errors.ErrInvalidID)
+	}
+	return h.uploadFor(c, uuid)
+}
+
+// UploadMine is the end-user variant — uuid comes from the JWT claims
+// set by middleware.Auth. The user is implicitly authorised to change
+// their own avatar; no admin role required.
+func (h *AvatarUploadHandler) UploadMine(c fiber.Ctx) error {
+	uuid, _ := c.Locals("user_uuid").(string)
+	if uuid == "" {
+		// Middleware.Auth guarantees this is set on the protected route,
+		// but be defensive in case of a wiring regression.
+		return response.Unauthorized(c, errors.ErrAuthUnauthorized)
+	}
+	return h.uploadFor(c, uuid)
+}
+
+// uploadFor performs the multipart receive + image_service upload + DB
+// write for the given user uuid. Common to both Upload and UploadMine.
+func (h *AvatarUploadHandler) uploadFor(c fiber.Ctx, uuid string) error {
+	if h.imgClient == nil {
+		return response.InternalErrorMsg(c, "image client not configured (KUN_IMAGE_CLIENT_ID/SECRET unset)")
 	}
 
 	// Verify user exists.

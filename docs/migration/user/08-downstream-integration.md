@@ -202,7 +202,7 @@ Content-Type: application/json
 
 ## 4. 客户端实现指南
 
-> **OAuth 这边不提供 SDK 代码**。API 文档（`docs/integration/oauth/api-reference.md`）是契约的唯一来源。每个 consumer 服务自己实现一个薄客户端 —— 通常是 30-150 行 Go 代码，按工作负载需要的复杂度选实现层级。
+> **OAuth 这边不提供 SDK 代码**。API 文档（`docs/integration/oauth/` 目录，入口 [README.md](../../integration/oauth/README.md)）是契约的唯一来源。每个 consumer 服务自己实现一个薄客户端 —— 通常是 30-150 行 Go 代码，按工作负载需要的复杂度选实现层级。
 
 ### 4.1 为什么自己写
 
@@ -717,5 +717,8 @@ L2/L3 实现的关键测试：缓存命中、缓存过期、并发合并、不�
 
 ## 9. 参考文档
 
-- [api-reference.md](../../integration/oauth/api-reference.md) —— 完整 OAuth API 参考（含 `/users/batch` `/users/search` `/oauth/userinfo`）
+- [oauth/README.md](../../integration/oauth/README.md) —— OAuth API 文档入口（目录索引）
+- [oauth/03-cross-service.md](../../integration/oauth/03-cross-service.md) —— `/users/batch` + `/users/search` 端点详情
+- [oauth/01-oauth-endpoints.md](../../integration/oauth/01-oauth-endpoints.md) —— `/oauth/userinfo` 等 OAuth 2.0 协议端点
+- [oauth/04-tokens-and-errors.md](../../integration/oauth/04-tokens-and-errors.md) —— JWT claims + 完整错误码速查
 - [oauth-integration-guide.md](../../integration/oauth/oauth-integration-guide.md) —— 完整 OAuth 接入指南（含 PKCE、token 轮换、安全注意事项）

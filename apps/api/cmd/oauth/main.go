@@ -147,6 +147,12 @@ func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 	authProtected.Put("/password", authH.ChangePassword)
 	authProtected.Post("/email/send-code", authH.SendEmailChangeCode)
 	authProtected.Put("/email", authH.ChangeEmail)
+	// End-user avatar upload: multipart `file=`, writes users.avatar_image_hash
+	// and returns the image_service result. Registered only when an image
+	// client is configured (same gate as the admin variant below).
+	if avatarUploadH != nil {
+		authProtected.Post("/me/avatar", avatarUploadH.UploadMine)
+	}
 
 	// OAuth 2.0 routes
 	oauth := v1.Group("/oauth")
