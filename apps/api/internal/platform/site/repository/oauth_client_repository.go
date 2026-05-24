@@ -32,6 +32,17 @@ func (r *OAuthClientRepository) FindByClientID(ctx context.Context, clientID str
 	return &client, nil
 }
 
+// FindByClientIDWithSite is FindByClientID with the parent Site preloaded.
+// Used by GetClientPublicInfo so the public metadata endpoint can return
+// the site_domain in one query instead of two.
+func (r *OAuthClientRepository) FindByClientIDWithSite(ctx context.Context, clientID string) (*model.OAuthClient, error) {
+	var client model.OAuthClient
+	if err := r.db.WithContext(ctx).Preload("Site").Where("id = ?", clientID).First(&client).Error; err != nil {
+		return nil, err
+	}
+	return &client, nil
+}
+
 // FindBySiteID finds all OAuth clients for a site
 func (r *OAuthClientRepository) FindBySiteID(ctx context.Context, siteID uint) ([]model.OAuthClient, error) {
 	var clients []model.OAuthClient

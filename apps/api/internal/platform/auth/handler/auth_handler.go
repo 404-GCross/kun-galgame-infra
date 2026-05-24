@@ -54,7 +54,14 @@ func (h *AuthHandler) clearRefreshTokenCookie(c fiber.Ctx) {
 	})
 }
 
-// Register handles user registration
+// Register handles user registration. Registration is "register + login":
+// the service issues a token pair and creates a session row, the handler
+// drops the refresh_token into an httpOnly cookie and returns the access
+// token + user in the same response shape as Login. Without this, the
+// unified-registration redirect chain documented in
+// docs/integration/oauth/05-registration.md cannot work — `/auth/register`
+// has to leave the user authenticated so the chained `/oauth/authorize`
+// hop can issue a code immediately.
 func (h *AuthHandler) Register(c fiber.Ctx) error {
 	var req dto.RegisterRequest
 	if err := c.Bind().JSON(&req); err != nil {
@@ -65,7 +72,11 @@ func (h *AuthHandler) Register(c fiber.Ctx) error {
 		return response.BadRequestMsg(c, errors.ErrValidationFailed, err.Error())
 	}
 
-	user, err := h.authService.Register(c.Context(), &req)
+	// Capture session context — same pattern as Login.
+	req.UserAgent = string(c.Request().Header.UserAgent())
+	req.IPAddress = c.IP()
+
+	tokens, user, err := h.authService.Register(c.Context(), &req)
 	if err != nil {
 		if appErr, ok := err.(*errors.AppError); ok {
 			return response.BadRequest(c, appErr.Code)
@@ -73,16 +84,21 @@ func (h *AuthHandler) Register(c fiber.Ctx) error {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
 
-	return response.Success(c, dto.UserResponse{
-		UUID:        user.UUID,
-		Name:        user.Name,
-		Email:       user.Email,
-		Avatar:      user.Avatar,
-		Bio:         user.Bio,
-		Moemoepoint: user.Moemoepoint,
-		Status:      user.Status,
-		Roles:       []string{}, // New user has no roles yet
-		CreatedAt:   user.CreatedAt.Format("2006-01-02T15:04:05Z"),
+	h.setRefreshTokenCookie(c, tokens.RefreshToken)
+
+	return response.Success(c, dto.LoginResponse{
+		User: dto.UserResponse{
+			UUID:        user.UUID,
+			Name:        user.Name,
+			Email:       user.Email,
+			Avatar:      user.Avatar,
+			Bio:         user.Bio,
+			Moemoepoint: user.Moemoepoint,
+			Status:      user.Status,
+			Roles:       []string{}, // New user has no roles yet
+			CreatedAt:   user.CreatedAt.Format("2006-01-02T15:04:05Z"),
+		},
+		AccessToken: tokens.AccessToken,
 	})
 }
 

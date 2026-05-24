@@ -49,6 +49,40 @@ func NewOAuthService(
 	}
 }
 
+// ClientPublicInfo is the safe-to-expose subset of an OAuth client used
+// by the public GET /oauth/client-info endpoint. Deliberately omits
+// secret / redirect_uris / scopes / image quotas — anything those could
+// reveal infrastructure layout or allow client-spoofing attempts.
+//
+// Consumed by the OAuth web /oauth/authorize page to decide whether to
+// render the consent UI (AutoConsent=true → silent grant) and what name
+// to show alongside the "你将授权访问 X" copy.
+type ClientPublicInfo struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	AutoConsent bool   `json:"auto_consent"`
+	SiteDomain  string `json:"site_domain"`
+}
+
+// GetClientPublicInfo fetches the public-safe metadata for a client.
+// Returns ErrOAuthInvalidClient when the id doesn't exist; no other
+// error path leaks information about valid-vs-invalid ids.
+func (s *OAuthService) GetClientPublicInfo(ctx context.Context, clientID string) (*ClientPublicInfo, error) {
+	client, err := s.clientRepo.FindByClientIDWithSite(ctx, clientID)
+	if err != nil {
+		return nil, errors.NewWithCode(errors.ErrOAuthInvalidClient)
+	}
+	info := &ClientPublicInfo{
+		ID:          client.ID,
+		Name:        client.Name,
+		AutoConsent: client.AutoConsent,
+	}
+	if client.Site != nil {
+		info.SiteDomain = client.Site.Domain
+	}
+	return info, nil
+}
+
 // ValidateClient validates an OAuth client
 func (s *OAuthService) ValidateClient(ctx context.Context, clientID, redirectURI string) (*sitemodel.OAuthClient, error) {
 	client, err := s.clientRepo.FindByClientID(ctx, clientID)

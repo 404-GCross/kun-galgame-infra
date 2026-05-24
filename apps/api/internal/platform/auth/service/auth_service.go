@@ -68,30 +68,41 @@ func NewAuthServiceFull(
 	}
 }
 
-// Register registers a new user
-func (s *AuthService) Register(ctx context.Context, req *dto.RegisterRequest) (*model.User, error) {
+// Register registers a new user and immediately issues an access/refresh
+// token pair, mirroring Login's signature. Rationale: per the unified
+// registration flow (docs/integration/oauth/05-registration.md), the OAuth
+// web frontend must auto-login the freshly-registered user so it can chain
+// into /oauth/authorize and complete the SSO round-trip back to kungal /
+// moyu / wiki — adding a manual "you registered, now please log in" gate
+// would defeat the whole purpose of the redirect handoff.
+//
+// `req.UserAgent` / `req.IPAddress` are set by the handler (same pattern
+// as Login) so the new Session row records the registration context. A
+// new user has no roles yet — the empty `Roles` slice on the returned user
+// is intentional and the JWT claims reflect that.
+func (s *AuthService) Register(ctx context.Context, req *dto.RegisterRequest) (*dto.TokenPair, *model.User, error) {
 	// Check if email exists
 	exists, err := s.userRepo.ExistsByEmail(ctx, req.Email)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if exists {
-		return nil, errors.NewWithCode(errors.ErrAuthEmailExists)
+		return nil, nil, errors.NewWithCode(errors.ErrAuthEmailExists)
 	}
 
 	// Check if name exists
 	exists, err = s.userRepo.ExistsByName(ctx, req.Name)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if exists {
-		return nil, errors.NewWithCode(errors.ErrAuthNameExists)
+		return nil, nil, errors.NewWithCode(errors.ErrAuthNameExists)
 	}
 
 	// Hash password
 	hashedPassword, err := utils.HashPassword(req.Password)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Create user
@@ -102,10 +113,31 @@ func (s *AuthService) Register(ctx context.Context, req *dto.RegisterRequest) (*
 	}
 
 	if err := s.userRepo.Create(ctx, user); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	return user, nil
+	// Issue tokens + create session — identical to Login's tail. No role
+	// preload needed: a brand-new user has no roles, generateTokens emits
+	// an empty `roles` claim, and the response's `Roles: user.RoleNames()`
+	// resolves to `[]` for free.
+	tokens, err := s.generateTokens(user)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	session := &model.Session{
+		UserID:       user.ID,
+		SessionToken: tokens.AccessToken,
+		RefreshToken: tokens.RefreshToken,
+		UserAgent:    req.UserAgent,
+		IPAddress:    req.IPAddress,
+		ExpiresAt:    time.Now().Add(7 * 24 * time.Hour),
+	}
+	if err := s.sessionRepo.Create(ctx, session); err != nil {
+		return nil, nil, err
+	}
+
+	return tokens, user, nil
 }
 
 // Login authenticates a user

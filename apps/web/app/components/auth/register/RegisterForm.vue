@@ -1,6 +1,7 @@
 <script setup lang="ts">
 const auth = useAuth()
 const router = useRouter()
+const route = useRoute()
 
 const name = ref('')
 const email = ref('')
@@ -8,6 +9,44 @@ const password = ref('')
 const confirmPassword = ref('')
 const error = ref('')
 const isLoading = ref(false)
+
+// `?redirect=` lands here when a downstream site (kungal / moyu / wiki)
+// bounced the user to /auth/register as part of the unified registration
+// flow. After register+auto-login the value is typically an /oauth/authorize
+// URL — going there immediately keeps the OAuth code round-trip seamless
+// (consent UI is silently skipped for first-party clients, code is issued,
+// user lands back on the originating site already authenticated).
+//
+// Same redirect-after-auth contract LoginForm uses; kept identical so a
+// downstream can build one URL helper that targets either /auth/login or
+// /auth/register interchangeably depending on which button the user clicked.
+//
+// Mirrors LoginForm's navigateAfterLogin shape exactly so the two pages
+// behave identically — important for unified PKCE handlers that don't know
+// which endpoint they'll land the user on.
+const redirectUrl = computed(() => route.query.redirect as string | undefined)
+
+const navigateAfterRegister = () => {
+  if (redirectUrl.value) {
+    if (redirectUrl.value.startsWith('/')) {
+      router.push(redirectUrl.value)
+    } else {
+      window.location.href = redirectUrl.value
+    }
+  } else {
+    router.push('/profile')
+  }
+}
+
+// Already-logged-in user landing on /auth/register: don't confuse them
+// with a blank form. If they came in via the unified flow (?redirect=...)
+// just continue the OAuth handoff; otherwise drop them on /profile. This
+// matches LoginForm's onMounted behaviour.
+onMounted(() => {
+  if (auth.isLoggedIn.value) {
+    navigateAfterRegister()
+  }
+})
 
 const handleSubmit = async () => {
   error.value = ''
@@ -25,7 +64,7 @@ const handleSubmit = async () => {
   try {
     const response = await auth.register(name.value, email.value, password.value)
     if (response.code === 0) {
-      router.push('/auth/login?registered=true')
+      navigateAfterRegister()
     } else {
       error.value = response.message || '注册失败'
     }
@@ -63,7 +102,10 @@ const handleSubmit = async () => {
     <div class="mt-6 text-center text-sm">
       <p class="text-default-500">
         已有账号？
-        <NuxtLink to="/auth/login" class="text-primary hover:underline">立即登录</NuxtLink>
+        <NuxtLink
+          :to="redirectUrl ? `/auth/login?redirect=${encodeURIComponent(redirectUrl)}` : '/auth/login'"
+          class="text-primary hover:underline"
+        >立即登录</NuxtLink>
       </p>
     </div>
   </KunCard>

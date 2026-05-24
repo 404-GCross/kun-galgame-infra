@@ -159,6 +159,11 @@ func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 	oauth.Post("/token", oauthTokenLimiter, oauthH.Token)
 	oauth.Post("/revoke", oauthH.Revoke)
 	oauth.Get("/authorize", oauthH.Authorize)
+	// Public metadata: GET /oauth/client-info?client_id=X
+	// Powers the OAuth web /oauth/authorize page's auto-consent decision +
+	// "你将授权访问 X" display. Returns only safe fields (name, auto_consent,
+	// site_domain). See ClientPublicInfo + docs/integration/oauth/05-registration.md.
+	oauth.Get("/client-info", oauthH.GetClientPublic)
 	oauthProtected := oauth.Group("", middleware.Auth(authSvc))
 	oauthProtected.Post("/authorize/consent", oauthH.Consent)
 	oauthProtected.Get("/userinfo", oauthH.UserInfo)

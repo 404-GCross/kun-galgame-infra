@@ -1,10 +1,24 @@
 <script setup lang="ts">
+interface ClientPublicInfo {
+  id: string
+  name: string
+  auto_consent: boolean
+  site_domain: string
+}
+
 const route = useRoute()
 const auth = useAuth()
 const api = useApi()
 
 const isLoading = ref(false)
 const error = ref('')
+// `clientInfo === null` after fetch = lookup failed (probably bad client_id);
+// `=== undefined` = still loading. `auto_consent` drives the silent grant
+// path so we render skeleton state until we know which branch to take —
+// flashing a consent card and then immediately auto-dismissing it is
+// worse UX than waiting one extra request worth of time.
+const clientInfo = ref<ClientPublicInfo | null | undefined>(undefined)
+const autoConsenting = ref(false)
 
 // Parse OAuth params from query
 const clientId = computed(() => route.query.client_id as string)
@@ -39,7 +53,21 @@ const scopeLabels: Record<string, string> = {
   email: '邮箱地址',
 }
 
-// Check login state on mount
+// Check login state on mount + decide auto-consent.
+//
+// Order matters: we must ensure the user is logged in BEFORE we attempt
+// auto-consent — POST /oauth/authorize/consent requires a Bearer token.
+// 1. Validate OAuth params shape (fast fail)
+// 2. Ensure logged-in (try silent refresh; otherwise bounce to /auth/login
+//    with this whole URL as ?redirect=)
+// 3. Fetch client metadata; if auto_consent=true → silently approve
+//    (zero UI render between landing here and bouncing to redirect_uri)
+// 4. Otherwise fall through to the regular consent UI
+//
+// For unified registration: a freshly-registered user already has
+// access_token (Register endpoint issues it). They land here logged-in,
+// metadata fetch returns auto_consent=true for first-party kungal/moyu,
+// and we redirect straight to the client without showing any extra UI.
 onMounted(async () => {
   if (!clientId.value || !redirectUri.value || !state.value) {
     error.value = '缺少必要的 OAuth 参数'
@@ -47,12 +75,32 @@ onMounted(async () => {
   }
 
   if (!auth.isLoggedIn.value) {
-    // Try refresh first
     const refreshed = await auth.refreshAccessToken()
     if (!refreshed) {
-      // Not logged in — redirect to login with return URL
       navigateTo(`/auth/login?redirect=${encodeURIComponent(currentUrl.value)}`)
+      return
     }
+  }
+
+  // Fetch client metadata. Failure here is non-fatal — fall back to the
+  // consent UI with `clientInfo = null` so the user can still authorize
+  // (or refuse) even when the metadata endpoint is unhappy.
+  try {
+    const meta = await api.get<ClientPublicInfo>('/oauth/client-info', {
+      client_id: clientId.value,
+    })
+    if (meta.code === 0) {
+      clientInfo.value = meta.data
+      if (meta.data.auto_consent) {
+        autoConsenting.value = true
+        await handleApprove()
+        return
+      }
+    } else {
+      clientInfo.value = null
+    }
+  } catch {
+    clientInfo.value = null
   }
 })
 
@@ -78,9 +126,14 @@ const handleApprove = async () => {
       window.location.href = response.data.redirect_url
     } else {
       error.value = response.message || '授权失败'
+      // Drop out of auto-consent so the user sees the error + manual
+      // approve/deny buttons instead of being stuck on the "正在跳转回
+      // 应用..." spinner forever. Same goes for the catch branch below.
+      autoConsenting.value = false
     }
   } catch (e: unknown) {
     error.value = e instanceof Error ? e.message : '授权失败'
+    autoConsenting.value = false
   } finally {
     isLoading.value = false
   }
@@ -103,12 +156,24 @@ const handleDeny = () => {
       <p class="text-danger">{{ error }}</p>
     </div>
 
+    <!-- Auto-consent path: first-party client (kungal / moyu / wiki / ...).
+         No consent question rendered — show a brief "redirecting" spinner
+         while we POST /oauth/authorize/consent + bounce to redirect_uri.
+         Typical wall-clock time visible to user: ~150 ms. -->
+    <div v-else-if="autoConsenting || clientInfo === undefined" class="py-8 text-center">
+      <Icon name="lucide:loader-2" class="mx-auto mb-3 size-8 animate-spin text-primary" />
+      <p class="text-sm text-default-500">
+        {{ autoConsenting ? '正在跳转回应用...' : '加载中...' }}
+      </p>
+    </div>
+
     <template v-else>
       <div class="mb-6 text-center">
         <Icon name="lucide:shield-check" class="mx-auto mb-3 size-12 text-primary" />
         <h1 class="text-xl font-bold text-foreground">授权请求</h1>
         <p class="mt-2 text-sm text-default-500">
-          应用正在请求访问你的账户
+          <span v-if="clientInfo">「{{ clientInfo.name }}」</span>
+          正在请求访问你的账户
         </p>
       </div>
 

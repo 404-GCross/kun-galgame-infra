@@ -32,12 +32,21 @@ export const useAuth = () => {
     return response
   }
 
+  // Register also auto-logs-in: backend returns the same { user, access_token }
+  // shape as Login (and sets the refresh_token httpOnly cookie). Without
+  // this, the unified registration flow can't chain into /oauth/authorize
+  // since the authorize page requires an authenticated session.
+  // Contract: docs/integration/oauth/05-registration.md.
   const register = async (name: string, email: string, password: string) => {
-    const response = await api.post<User>('/auth/register', {
+    const response = await api.post<LoginResponse>('/auth/register', {
       name,
       email,
       password,
     })
+    if (response.code === 0) {
+      setAccessToken(response.data.access_token)
+      userStore.setUser(response.data.user)
+    }
     return response
   }
 

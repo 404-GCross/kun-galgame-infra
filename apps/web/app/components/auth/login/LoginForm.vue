@@ -92,7 +92,10 @@ onMounted(async () => {
       </NuxtLink>
       <p class="text-default-500">
         还没有账号？
-        <NuxtLink to="/auth/register" class="text-primary hover:underline">立即注册</NuxtLink>
+        <NuxtLink
+          :to="redirectUrl ? `/auth/register?redirect=${encodeURIComponent(redirectUrl)}` : '/auth/register'"
+          class="text-primary hover:underline"
+        >立即注册</NuxtLink>
       </p>
     </div>
   </KunCard>

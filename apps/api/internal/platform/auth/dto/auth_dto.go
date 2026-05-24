@@ -1,10 +1,15 @@
 package dto
 
-// RegisterRequest represents a registration request
+// RegisterRequest represents a registration request.
+// UserAgent / IPAddress are populated by the handler (json:"-") so the
+// session row created at registration records the same context Login
+// records — same pattern as LoginRequest.
 type RegisterRequest struct {
-	Name     string `json:"name" validate:"required,min=2,max=17"`
-	Email    string `json:"email" validate:"required,email"`
-	Password string `json:"password" validate:"required,min=6,max=100"`
+	Name      string `json:"name" validate:"required,min=2,max=17"`
+	Email     string `json:"email" validate:"required,email"`
+	Password  string `json:"password" validate:"required,min=6,max=100"`
+	UserAgent string `json:"-"`
+	IPAddress string `json:"-"`
 }
 
 // LoginRequest represents a login request

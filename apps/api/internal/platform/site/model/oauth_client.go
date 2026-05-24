@@ -29,6 +29,25 @@ type OAuthClient struct {
 	// secret on every grant. Flip to true for SPA clients like wiki.
 	IsPublic bool `gorm:"not null;default:false" json:"is_public"`
 
+	// AutoConsent marks this client as first-party — the OAuth web frontend
+	// skips the "Authorize this app to access X?" UI and silently posts
+	// /oauth/authorize/consent on the user's behalf. Matches the SSO
+	// expectation for kungal / moyu / wiki etc. that share the same owner
+	// as the OAuth server: nobody benefits from showing a consent screen
+	// for "kungal wants to access your kungal account" — it's friction
+	// without information.
+	//
+	// Returned from GET /oauth/client-info so the frontend can decide
+	// whether to render the consent card on the /oauth/authorize page.
+	// The decision is frontend-only — backend always issues the code
+	// when POST /oauth/authorize/consent is called with a valid session,
+	// regardless of this flag.
+	//
+	// Default false — third-party integrations always see the consent
+	// page. Flip to true only for clients you control end-to-end.
+	// Policy + downstream pattern: docs/integration/oauth/05-registration.md.
+	AutoConsent bool `gorm:"not null;default:false" json:"auto_consent"`
+
 	// RefreshTokenTTLSeconds — how long this client's refresh_token (and
 	// its associated session row) remains valid. Used as the refresh_token
 	// JWT `exp` claim AND as session.ExpiresAt at issuance time.

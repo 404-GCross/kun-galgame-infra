@@ -192,5 +192,41 @@ func seedInitialData(db *gorm.DB) error {
 		slog.Info("Backfilled oauth_clients.grants with refresh_token", "rows", res.RowsAffected)
 	}
 
+	// Backfill: flip auto_consent=true for first-party clients so the
+	// unified-registration redirect chain skips the consent UI on
+	// kungal / moyu / wiki / ai / sticker. The column itself is added
+	// by GORM AutoMigrate from siteModel.OAuthClient.AutoConsent; this
+	// step only seeds the values.
+	//
+	// Targeted by the parent Site.Domain (resolved by JOIN), NOT by
+	// client_id, so freshly-created clients on these domains in any
+	// environment (dev/staging/prod) get the right default without
+	// hardcoding env-specific UUIDs. Idempotent: WHERE auto_consent =
+	// false ensures re-runs after admin manually toggles a row don't
+	// undo their choice.
+	//
+	// First-party = "owned by the OAuth platform itself" = same team
+	// can audit/respond to security incidents. Adding new domains here
+	// means committing to keeping them secure end-to-end. Policy:
+	// docs/integration/oauth/05-registration.md §auto_consent.
+	firstPartyDomains := []string{
+		"www.kungal.com",
+		"www.moyu.moe",
+		"wiki.kungal.com",
+		"ai.kungal.com",
+		"sticker.kungal.com",
+	}
+	res = db.Exec(`
+		UPDATE oauth_clients
+		SET auto_consent = true
+		WHERE auto_consent = false
+		  AND site_id IN (SELECT id FROM sites WHERE domain IN ?)
+	`, firstPartyDomains)
+	if res.Error != nil {
+		slog.Warn("failed to backfill oauth_clients.auto_consent", "error", res.Error)
+	} else if res.RowsAffected > 0 {
+		slog.Info("Backfilled oauth_clients.auto_consent for first-party clients", "rows", res.RowsAffected)
+	}
+
 	return nil
 }

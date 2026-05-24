@@ -214,6 +214,30 @@ func (h *OAuthHandler) UserInfo(c fiber.Ctx) error {
 	return response.Success(c, info)
 }
 
+// GetClientPublic returns public-safe metadata for an OAuth client.
+//
+// Consumed by the OAuth web /oauth/authorize page to decide whether to
+// render the consent UI (auto_consent=true → silent grant for first-party
+// clients) and to show "你将授权访问 X" with the right name + domain.
+// No authentication — anyone holding a valid client_id can query the
+// metadata (which they obviously do, since they're using it to build the
+// authorize URL). Sensitive fields (secret, redirect_uris, scopes, image
+// quotas) are intentionally NOT included; see ClientPublicInfo.
+func (h *OAuthHandler) GetClientPublic(c fiber.Ctx) error {
+	clientID := c.Query("client_id")
+	if clientID == "" {
+		return response.BadRequest(c, errors.ErrInvalidID)
+	}
+	info, err := h.oauthService.GetClientPublicInfo(c.Context(), clientID)
+	if err != nil {
+		if appErr, ok := err.(*errors.AppError); ok {
+			return response.NotFound(c, appErr.Code)
+		}
+		return response.InternalError(c, errors.ErrOperationFailed)
+	}
+	return response.Success(c, info)
+}
+
 // Revoke revokes an OAuth token (RFC 7009).
 //
 // Accepts either an access_token or a refresh_token in the `token`
