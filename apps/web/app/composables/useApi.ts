@@ -45,9 +45,22 @@ export const useApi = () => {
       // Refresh failed
     }
 
-    // Clear and redirect
+    // Clear local token. Then navigate to login, preserving the current
+    // URL as ?redirect= so post-login the user lands back where they
+    // were — critical for OAuth flow URLs like /oauth/authorize?... that
+    // pre-fix were silently dropped on 401, leaving the user stranded
+    // on /profile instead of completing the OAuth round-trip.
+    //
+    // Skip the navigateTo when already on /auth/login (avoids recursive
+    // self-redirects when a user back-buttons into a stale tab) or
+    // running in SSR (we have no window.location to capture).
     accessToken.value = null
-    navigateTo('/auth/login')
+    if (import.meta.client) {
+      const here = window.location.pathname + window.location.search
+      if (!here.startsWith('/auth/login')) {
+        navigateTo(`/auth/login?redirect=${encodeURIComponent(here)}`)
+      }
+    }
     return false
   }
 

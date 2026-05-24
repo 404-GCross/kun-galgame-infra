@@ -75,16 +75,36 @@ export const useAuth = () => {
     }
   }
 
+  // Probe-style call: returns true/false without side effects so callers
+  // (Container.vue's /oauth/authorize check, middleware/auth.ts, etc.)
+  // can branch on session liveness. We deliberately bypass `useApi` here
+  // — its 401 handler auto-navigateTo's /auth/login without a redirect
+  // param, which would clobber the caller's own state-management (e.g.
+  // Container's needsLogin prompt) and lose the OAuth flow URL.
+  //
+  // The `credentials: 'include'` lets the browser send the
+  // refresh_token httpOnly cookie scoped to /api/v1/auth.
   const refreshAccessToken = async () => {
+    const config = useRuntimeConfig()
+    const baseUrl = config.public.apiBase || 'http://127.0.0.1:9277/api/v1'
     try {
-      // Backend reads refresh_token from httpOnly cookie automatically
-      const response = await api.post<RefreshResponse>('/auth/refresh')
-      if (response.code === 0) {
+      const response = await $fetch<{ code: number; data?: { access_token: string } }>(
+        `${baseUrl}/auth/refresh`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include'
+        }
+      )
+      if (response.code === 0 && response.data) {
         setAccessToken(response.data.access_token)
         return true
       }
     } catch {
-      clearAuth()
+      // Refresh failed (no cookie / expired / network) — caller decides
+      // what to do. Don't clearAuth here; absent a stored token there's
+      // nothing to clear, and an active session shouldn't be wiped by a
+      // transient network blip.
     }
     return false
   }

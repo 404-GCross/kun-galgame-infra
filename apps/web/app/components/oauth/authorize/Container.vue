@@ -7,6 +7,7 @@ interface ClientPublicInfo {
 }
 
 const route = useRoute()
+const router = useRouter()
 const auth = useAuth()
 const api = useApi()
 
@@ -19,6 +20,14 @@ const error = ref('')
 // worse UX than waiting one extra request worth of time.
 const clientInfo = ref<ClientPublicInfo | null | undefined>(undefined)
 const autoConsenting = ref(false)
+// `needsLogin` is the "no live session" state — set when refresh-token
+// recovery fails on mount. We DELIBERATELY don't auto-navigateTo to
+// /auth/login here: that pattern (pre-2026-05-24) created a back-button
+// trap, since browser-back from /auth/login lands the user on this page
+// which immediately re-bounces to /auth/login. The user has no way to
+// abort the OAuth flow without closing the tab. Render an explicit
+// "登录后继续 / 取消" card instead so cancel + manual login both work.
+const needsLogin = ref(false)
 
 // Parse OAuth params from query
 const clientId = computed(() => route.query.client_id as string)
@@ -77,32 +86,59 @@ onMounted(async () => {
   if (!auth.isLoggedIn.value) {
     const refreshed = await auth.refreshAccessToken()
     if (!refreshed) {
-      navigateTo(`/auth/login?redirect=${encodeURIComponent(currentUrl.value)}`)
-      return
+      // Show login prompt, NOT auto-navigateTo — see needsLogin comment.
+      // We still fall through to fetch metadata so the prompt card can
+      // name the requesting client ("「moyu」请求访问你的账户" instead
+      // of the anonymous "应用").
+      needsLogin.value = true
     }
   }
 
   // Fetch client metadata. Failure here is non-fatal — fall back to the
-  // consent UI with `clientInfo = null` so the user can still authorize
-  // (or refuse) even when the metadata endpoint is unhappy.
+  // consent UI (or login prompt) with `clientInfo = null` so the user
+  // can still authorize / refuse / log-in even when the metadata
+  // endpoint is unhappy. Unauthenticated calls are allowed (the route
+  // is public-by-design), so this runs in both login-prompt and
+  // post-login paths.
   try {
     const meta = await api.get<ClientPublicInfo>('/oauth/client-info', {
       client_id: clientId.value,
     })
     if (meta.code === 0) {
       clientInfo.value = meta.data
-      if (meta.data.auto_consent) {
-        autoConsenting.value = true
-        await handleApprove()
-        return
-      }
     } else {
       clientInfo.value = null
     }
   } catch {
     clientInfo.value = null
   }
+
+  // Auto-consent only fires when actually logged in. The metadata flag
+  // alone isn't enough — POST /oauth/authorize/consent requires a
+  // Bearer token, and silently 401-ing in the background would leave
+  // the user staring at a spinner.
+  if (
+    !needsLogin.value &&
+    auth.isLoggedIn.value &&
+    clientInfo.value?.auto_consent
+  ) {
+    autoConsenting.value = true
+    await handleApprove()
+  }
 })
+
+// User-initiated login — keeps the OAuth params in the redirect so
+// /auth/login chains back to this page, and from there into auto-
+// consent + bounce back to redirect_uri. Same destination the pre-fix
+// auto-navigateTo used, but now gated on an actual click so the back
+// button can escape.
+const goLogin = () => {
+  router.push(`/auth/login?redirect=${encodeURIComponent(currentUrl.value)}`)
+}
+
+const goRegister = () => {
+  router.push(`/auth/register?redirect=${encodeURIComponent(currentUrl.value)}`)
+}
 
 const handleApprove = async () => {
   isLoading.value = true
@@ -156,13 +192,59 @@ const handleDeny = () => {
       <p class="text-danger">{{ error }}</p>
     </div>
 
+    <!-- Login-required prompt: unauthenticated user landed here via an
+         OAuth authorize redirect. Pre-fix this state auto-navigated to
+         /auth/login, creating a back-button loop (user couldn't escape
+         back to the originating client). Now we render explicit
+         "登录后继续 / 取消" actions so:
+           - browser-back into /oauth/authorize lands here (no auto-bounce)
+           - "取消" mirrors handleDeny → access_denied error to redirect_uri
+           - "登录后继续" goes to /auth/login?redirect=<this URL>, and
+             post-login the user re-enters this page logged-in, auto-
+             consent fires, they bounce to redirect_uri seamlessly. -->
+    <div v-else-if="needsLogin" class="space-y-6">
+      <div class="text-center">
+        <Icon name="lucide:shield-check" class="text-primary mx-auto mb-3 size-12" />
+        <h1 class="text-foreground text-xl font-bold">需要登录后授权</h1>
+        <p class="text-default-500 mt-2 text-sm">
+          <template v-if="clientInfo">
+            「<span class="text-foreground font-medium">{{ clientInfo.name }}</span>」请求访问你的账户
+          </template>
+          <template v-else>
+            一个应用请求访问你的账户
+          </template>
+        </p>
+        <p class="text-default-400 mt-1 text-xs">
+          登录后将自动完成授权，无需额外操作
+        </p>
+      </div>
+
+      <div class="flex gap-3">
+        <KunButton color="default" class="flex-1" @click="handleDeny">
+          取消
+        </KunButton>
+        <KunButton color="primary" class="flex-1" @click="goLogin">
+          登录后继续
+        </KunButton>
+      </div>
+
+      <p class="text-default-500 text-center text-sm">
+        还没有账号？
+        <button
+          type="button"
+          class="text-primary hover:underline"
+          @click="goRegister"
+        >立即注册</button>
+      </p>
+    </div>
+
     <!-- Auto-consent path: first-party client (kungal / moyu / wiki / ...).
          No consent question rendered — show a brief "redirecting" spinner
          while we POST /oauth/authorize/consent + bounce to redirect_uri.
          Typical wall-clock time visible to user: ~150 ms. -->
     <div v-else-if="autoConsenting || clientInfo === undefined" class="py-8 text-center">
-      <Icon name="lucide:loader-2" class="mx-auto mb-3 size-8 animate-spin text-primary" />
-      <p class="text-sm text-default-500">
+      <Icon name="lucide:loader-2" class="text-primary mx-auto mb-3 size-8 animate-spin" />
+      <p class="text-default-500 text-sm">
         {{ autoConsenting ? '正在跳转回应用...' : '加载中...' }}
       </p>
     </div>
