@@ -32,16 +32,32 @@ export const useAuth = () => {
     return response
   }
 
-  // Register also auto-logs-in: backend returns the same { user, access_token }
-  // shape as Login (and sets the refresh_token httpOnly cookie). Without
-  // this, the unified registration flow can't chain into /oauth/authorize
-  // since the authorize page requires an authenticated session.
-  // Contract: docs/integration/oauth/05-registration.md.
-  const register = async (name: string, email: string, password: string) => {
+  // Two-step registration — see docs/integration/oauth/05-registration.md.
+  //
+  // 1) sendRegisterCode: pre-checks name/email uniqueness on the server
+  //    side, generates a 6-digit code, emails it to the prospective
+  //    address. Returns `{ code: 0, message }` on success, business
+  //    errors on conflict / rate-limit.
+  // 2) register: submits name + email + password + the 6-digit code.
+  //    On success the backend issues tokens + sets refresh cookie and
+  //    we drop straight into the logged-in state (auto-login) so the
+  //    unified-registration redirect chain can immediately continue
+  //    into /oauth/authorize.
+  const sendRegisterCode = async (name: string, email: string) => {
+    return api.post('/auth/register/send-code', { name, email })
+  }
+
+  const register = async (
+    name: string,
+    email: string,
+    password: string,
+    code: string
+  ) => {
     const response = await api.post<LoginResponse>('/auth/register', {
       name,
       email,
       password,
+      code,
     })
     if (response.code === 0) {
       setAccessToken(response.data.access_token)
@@ -143,6 +159,7 @@ export const useAuth = () => {
     isLoggedIn: computed(() => userStore.isLoggedIn),
     isAdmin: computed(() => userStore.isAdmin),
     login,
+    sendRegisterCode,
     register,
     logout,
     fetchUser,

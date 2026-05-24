@@ -133,6 +133,10 @@ func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 
 	// Auth routes (public)
 	auth := v1.Group("/auth")
+	// Two-step registration: send code, then submit registration with code.
+	// Both behind `strict` (10/min/IP) — abuse vectors are email spam +
+	// account enumeration via name/email-exists errors.
+	auth.Post("/register/send-code", strict, authH.SendRegisterCode)
 	auth.Post("/register", strict, authH.Register)
 	auth.Post("/login", strict, authH.Login)
 	auth.Post("/refresh", authH.Refresh)

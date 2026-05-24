@@ -177,8 +177,52 @@ func (m *Mailer) SendVerificationEmail(to, name, verifyLink string) error {
 	return m.SendEmail(to, subject, htmlBody)
 }
 
-// SendEmailChangeCodeEmail sends an email change verification code to the user's current email
-func (m *Mailer) SendEmailChangeCodeEmail(to, name, code string) error {
+// SendRegisterCodeEmail sends a 6-digit verification code to a soon-to-be
+// registered email address. Unlike SendEmailChangeCodeEmail (which targets
+// the OLD address to defend against JWT theft), this one targets the NEW
+// address itself — the whole point is to verify ownership of the proposed
+// registration email before any account is created. `name` is the
+// requested-but-not-yet-created username, used as a salutation.
+// `ttlMinutes` is the same TTL the caller wrote into Redis, so the body
+// text matches the actual code lifetime even if config changes.
+func (m *Mailer) SendRegisterCodeEmail(to, name, code string, ttlMinutes int) error {
+	subject := "注册验证码 - KUN Visual Novel"
+
+	htmlBody := fmt.Sprintf(`
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>注册验证码</title>
+</head>
+<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+    <div style="background: linear-gradient(135deg, #667eea 0%%, #764ba2 100%%); padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
+        <h1 style="color: white; margin: 0;">KUN Visual Novel</h1>
+    </div>
+    <div style="background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px;">
+        <h2 style="color: #333;">完成账号注册</h2>
+        <p>你好 <strong>%s</strong>，</p>
+        <p>欢迎注册 KUN Visual Novel！请使用以下验证码完成注册：</p>
+        <div style="text-align: center; margin: 30px 0;">
+            <span style="background: #f0f0f0; color: #333; padding: 15px 30px; font-size: 32px; font-weight: bold; letter-spacing: 8px; border-radius: 5px; display: inline-block; font-family: monospace;">%s</span>
+        </div>
+        <p style="color: #666; font-size: 14px;">验证码有效期为 %d 分钟。</p>
+        <p style="color: #666; font-size: 14px;">如果你没有发起此操作，请忽略此邮件——你的邮箱不会被注册到任何账号。</p>
+        <hr style="border: none; border-top: 1px solid #ddd; margin: 20px 0;">
+        <p style="color: #999; font-size: 12px; text-align: center;">
+            &copy; KUN Visual Novel. All rights reserved.
+        </p>
+    </div>
+</body>
+</html>
+`, name, code, ttlMinutes)
+
+	return m.SendEmail(to, subject, htmlBody)
+}
+
+// SendEmailChangeCodeEmail sends an email change verification code to the user's current email.
+// `ttlMinutes` mirrors what the caller wrote into Redis so body text == reality.
+func (m *Mailer) SendEmailChangeCodeEmail(to, name, code string, ttlMinutes int) error {
 	subject := "邮箱变更验证码 - KUN Visual Novel"
 
 	htmlBody := fmt.Sprintf(`
@@ -199,7 +243,7 @@ func (m *Mailer) SendEmailChangeCodeEmail(to, name, code string) error {
         <div style="text-align: center; margin: 30px 0;">
             <span style="background: #f0f0f0; color: #333; padding: 15px 30px; font-size: 32px; font-weight: bold; letter-spacing: 8px; border-radius: 5px; display: inline-block; font-family: monospace;">%s</span>
         </div>
-        <p style="color: #666; font-size: 14px;">验证码有效期为 10 分钟。</p>
+        <p style="color: #666; font-size: 14px;">验证码有效期为 %d 分钟。</p>
         <p style="color: #666; font-size: 14px;">如果你没有发起此操作，请忽略此邮件，你的账号信息不会发生变化。</p>
         <hr style="border: none; border-top: 1px solid #ddd; margin: 20px 0;">
         <p style="color: #999; font-size: 12px; text-align: center;">
@@ -208,7 +252,7 @@ func (m *Mailer) SendEmailChangeCodeEmail(to, name, code string) error {
     </div>
 </body>
 </html>
-`, name, code)
+`, name, code, ttlMinutes)
 
 	return m.SendEmail(to, subject, htmlBody)
 }

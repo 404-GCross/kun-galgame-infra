@@ -54,6 +54,30 @@ func (h *AuthHandler) clearRefreshTokenCookie(c fiber.Ctx) {
 	})
 }
 
+// SendRegisterCode handles `POST /auth/register/send-code` — the first
+// half of the two-step unified registration flow. The follow-up call is
+// `POST /auth/register` with the 6-digit code in the body. See
+// docs/integration/oauth/05-registration.md.
+func (h *AuthHandler) SendRegisterCode(c fiber.Ctx) error {
+	var req dto.SendRegisterCodeRequest
+	if err := c.Bind().JSON(&req); err != nil {
+		return response.BadRequest(c, errors.ErrBadRequest)
+	}
+
+	if err := utils.Validate(&req); err != nil {
+		return response.BadRequestMsg(c, errors.ErrValidationFailed, err.Error())
+	}
+
+	if err := h.authService.SendRegisterCode(c.Context(), req.Name, req.Email); err != nil {
+		if appErr, ok := err.(*errors.AppError); ok {
+			return response.BadRequest(c, appErr.Code)
+		}
+		return response.InternalError(c, errors.ErrOperationFailed)
+	}
+
+	return response.SuccessWithMessage(c, "验证码已发送到该邮箱", nil)
+}
+
 // Register handles user registration. Registration is "register + login":
 // the service issues a token pair and creates a session row, the handler
 // drops the refresh_token into an httpOnly cookie and returns the access

@@ -253,7 +253,7 @@ const { data } = await r.json()
 { "code": 0, "message": "验证码已发送到当前邮箱", "data": null }
 ```
 
-验证码 6 位数字，有效期 **10 分钟**。
+验证码 6 位数字，**默认有效期 15 分钟**（由 `KUN_AUTH_VERIFICATION_CODE_TTL_MINUTES` 配置；改邮箱 / 注册 / 任何走 Redis 6 位码的流程共用此值）。
 
 **错误响应**：
 
@@ -299,7 +299,7 @@ const { data } = await r.json()
 | 400  | 7    | code 长度不对 / new_email 不是合法邮箱格式 |
 | 400  | 10006 | 新邮箱已被其他账号使用（极少：并发竞争） |
 | 400  | 10010 | 验证码错误 |
-| 400  | 10011 | 验证码已过期（>10 分钟）或从未请求 |
+| 400  | 10011 | 验证码已过期（默认 15 分钟 TTL，由 `KUN_AUTH_VERIFICATION_CODE_TTL_MINUTES` 控制）或从未请求 |
 | 401  | 10001/10002/10003 | 未提供 / 无效 / 过期 token |
 
 > **不一致检测**：如果用户在 send-code 时填的 new_email 是 `A@example.com`，但 PUT /auth/email 提交 `B@example.com`，会按 10010（验证码错误）拒绝——验证码绑定的是 send-code 当时的新邮箱。

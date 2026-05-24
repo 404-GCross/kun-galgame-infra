@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -68,6 +69,82 @@ func NewAuthServiceFull(
 	}
 }
 
+// SendRegisterCode generates a 6-digit verification code, stashes it in
+// Redis under `register_code:{email}`, and emails it to that address. The
+// code is consumed by Register; without it, no account can be created
+// (per the unified-registration design — see
+// docs/integration/oauth/05-registration.md).
+//
+// Pre-flight checks (name + email uniqueness) run BEFORE generating the
+// code, so a user trying to re-register a taken email fails fast without
+// burning an email send. They also defend against the race where two
+// users send a code for the same name/email simultaneously — Register
+// re-checks after consuming the code, but failing here keeps the error
+// path local to the send-code call.
+//
+// Rate limit: per-email Redis key with the same TTL as the code itself
+// (cfg.Auth.VerificationCodeTTL, default 15 min) doubles as a "you sent
+// a code recently" gate — re-entering SendRegisterCode for the same
+// email within the TTL window returns ErrAuthEmailChangeTooFrequent
+// (reused error code: same semantic).
+func (s *AuthService) SendRegisterCode(ctx context.Context, name, email string) error {
+	if s.cache == nil {
+		// No Redis = cannot store verification code = cannot guarantee
+		// the user is who they say they are. Fail closed instead of
+		// silently bypassing verification.
+		return fmt.Errorf("cache not configured")
+	}
+
+	// Fail-fast uniqueness checks — avoid burning an email send + a
+	// Redis slot when the name/email is already taken.
+	nameExists, err := s.userRepo.ExistsByName(ctx, name)
+	if err != nil {
+		return err
+	}
+	if nameExists {
+		return errors.NewWithCode(errors.ErrAuthNameExists)
+	}
+	emailExists, err := s.userRepo.ExistsByEmail(ctx, email)
+	if err != nil {
+		return err
+	}
+	if emailExists {
+		return errors.NewWithCode(errors.ErrAuthEmailExists)
+	}
+
+	// Rate limit: refuse to send a second code while a previous one is
+	// still live. Forces a 10-minute cool-down — long enough to deter
+	// spam, short enough that a user who lost the first email can just
+	// wait it out. Mirrors SendEmailChangeCode.
+	//
+	// Keyed by email (lower-cased for safety) — sender identity is the
+	// email itself, no user UUID exists yet at this stage.
+	emailKey := strings.ToLower(strings.TrimSpace(email))
+	redisKey := fmt.Sprintf("register_code:%s", emailKey)
+	existing, _ := s.cache.Get(redisKey)
+	if existing != nil {
+		return errors.NewWithCode(errors.ErrAuthEmailChangeTooFrequent)
+	}
+
+	code, err := generateNumericCode(6)
+	if err != nil {
+		return err
+	}
+
+	if err := s.cache.Set(redisKey, []byte(code), s.cfg.Auth.VerificationCodeTTL); err != nil {
+		return err
+	}
+
+	if s.mailer != nil {
+		ttlMinutes := int(s.cfg.Auth.VerificationCodeTTL.Minutes())
+		if err := s.mailer.SendRegisterCodeEmail(email, name, code, ttlMinutes); err != nil {
+			return fmt.Errorf("failed to send email: %w", err)
+		}
+	}
+
+	return nil
+}
+
 // Register registers a new user and immediately issues an access/refresh
 // token pair, mirroring Login's signature. Rationale: per the unified
 // registration flow (docs/integration/oauth/05-registration.md), the OAuth
@@ -80,8 +157,36 @@ func NewAuthServiceFull(
 // as Login) so the new Session row records the registration context. A
 // new user has no roles yet — the empty `Roles` slice on the returned user
 // is intentional and the JWT claims reflect that.
+//
+// `req.Code` is consumed against the Redis token planted by
+// SendRegisterCode — proof that the user controls the email address.
+// On success the Redis key is deleted so the same code can't be replayed
+// (the WriteSnapshot reads-and-checks in this same function, not in a
+// separate roundtrip).
 func (s *AuthService) Register(ctx context.Context, req *dto.RegisterRequest) (*dto.TokenPair, *model.User, error) {
-	// Check if email exists
+	if s.cache == nil {
+		return nil, nil, fmt.Errorf("cache not configured")
+	}
+
+	// Verify the registration code BEFORE any uniqueness checks. Even if
+	// the email is already taken, we don't want to leak that fact via
+	// a code-failure error — first prove ownership.
+	emailKey := strings.ToLower(strings.TrimSpace(req.Email))
+	redisKey := fmt.Sprintf("register_code:%s", emailKey)
+	storedCode, err := s.cache.Get(redisKey)
+	if err != nil || storedCode == nil {
+		return nil, nil, errors.NewWithCode(errors.ErrAuthCodeExpired)
+	}
+	// Constant-time compare to defend against timing side channels on
+	// guessing 6-digit codes. Length already validated upstream so a
+	// non-equal-length input fails the compare cleanly.
+	if subtle.ConstantTimeCompare(storedCode, []byte(req.Code)) != 1 {
+		return nil, nil, errors.NewWithCode(errors.ErrAuthCodeInvalid)
+	}
+
+	// Check if email exists (defense in depth — SendRegisterCode also
+	// checked, but a race could let two parallel registrations slip past
+	// that gate).
 	exists, err := s.userRepo.ExistsByEmail(ctx, req.Email)
 	if err != nil {
 		return nil, nil, err
@@ -136,6 +241,14 @@ func (s *AuthService) Register(ctx context.Context, req *dto.RegisterRequest) (*
 	if err := s.sessionRepo.Create(ctx, session); err != nil {
 		return nil, nil, err
 	}
+
+	// Consume the registration code so it can't be replayed (the rate-
+	// limit window would naturally expire it after cfg.Auth.VerificationCodeTTL,
+	// but deleting now also frees the per-email lock immediately — useful
+	// if the user accidentally re-submits and we want a clean error rather
+	// than "too frequent"). Best-effort: deletion failure is non-fatal
+	// since the account already exists at this point.
+	_ = s.cache.Delete(redisKey)
 
 	return tokens, user, nil
 }
@@ -504,14 +617,15 @@ func (s *AuthService) SendEmailChangeCode(ctx context.Context, userUUID, newEmai
 	// Store in Redis
 	if s.cache != nil {
 		data, _ := json.Marshal(emailChangeData{Code: code, NewEmail: newEmail})
-		if err := s.cache.Set(redisKey, data, 10*time.Minute); err != nil {
+		if err := s.cache.Set(redisKey, data, s.cfg.Auth.VerificationCodeTTL); err != nil {
 			return err
 		}
 	}
 
 	// Send verification code to the OLD email
 	if s.mailer != nil {
-		if err := s.mailer.SendEmailChangeCodeEmail(user.Email, user.Name, code); err != nil {
+		ttlMinutes := int(s.cfg.Auth.VerificationCodeTTL.Minutes())
+		if err := s.mailer.SendEmailChangeCodeEmail(user.Email, user.Name, code, ttlMinutes); err != nil {
 			return fmt.Errorf("failed to send email: %w", err)
 		}
 	}

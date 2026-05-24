@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"time"
 
 	"github.com/joho/godotenv"
 )
@@ -16,6 +17,7 @@ type Config struct {
 	ImagesDatabase  DatabaseConfig
 	Redis           RedisConfig
 	JWT             JWTConfig
+	Auth            AuthConfig
 	Mail            MailConfig
 	Meilisearch     MeilisearchConfig
 	ImageService    ImageServiceConfig
@@ -109,6 +111,25 @@ type JWTConfig struct {
 	Expires    string
 }
 
+// AuthConfig holds auth-flow-tunable parameters that aren't tied to a
+// single subsystem (JWT / Mail / Redis).
+type AuthConfig struct {
+	// VerificationCodeTTL is the lifetime of an email-delivered 6-digit
+	// verification code (registration + email-change flows). Same value
+	// doubles as the per-email rate-limit window — you can't request a
+	// second code for the same address until the previous one expires.
+	//
+	// Default 15 minutes. Tradeoff: long enough that users with slow
+	// inboxes / who switch tabs to fetch the code can still complete
+	// the flow; short enough that a code leaked via a shared email
+	// client isn't usable an hour later.
+	//
+	// Configured via `KUN_AUTH_VERIFICATION_CODE_TTL_MINUTES`. Floor of
+	// 1 minute (the code generator + SMTP round-trip alone consume ~2-5
+	// seconds and below 1 minute leaves no margin for a normal user).
+	VerificationCodeTTL time.Duration
+}
+
 // Load loads configuration from environment variables
 func Load() (*Config, error) {
 	// Load .env file if it exists
@@ -167,6 +188,17 @@ func Load() (*Config, error) {
 		Secret:     getEnv("JWT_SECRET", ""),
 		CookieName: getEnv("JWT_COOKIE_NAME", "kun_token"),
 		Expires:    getEnv("JWT_EXPIRES", "90d"),
+	}
+
+	// Auth config — verification-code TTL and other auth-flow knobs.
+	// Floored at 1 minute so a misconfiguration can't ship sub-second
+	// codes that no human can possibly type in time.
+	codeTTLMinutes, _ := strconv.Atoi(getEnv("KUN_AUTH_VERIFICATION_CODE_TTL_MINUTES", "15"))
+	if codeTTLMinutes < 1 {
+		codeTTLMinutes = 1
+	}
+	cfg.Auth = AuthConfig{
+		VerificationCodeTTL: time.Duration(codeTTLMinutes) * time.Minute,
 	}
 
 	// Mail config

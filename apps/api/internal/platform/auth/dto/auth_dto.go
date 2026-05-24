@@ -4,12 +4,27 @@ package dto
 // UserAgent / IPAddress are populated by the handler (json:"-") so the
 // session row created at registration records the same context Login
 // records — same pattern as LoginRequest.
+//
+// `Code` is the 6-digit verification token sent to `Email` via
+// `POST /auth/register/send-code` (10-minute TTL, Redis-backed). It is
+// REQUIRED — registration without prior email proof-of-ownership is no
+// longer supported. See docs/integration/oauth/05-registration.md.
 type RegisterRequest struct {
 	Name      string `json:"name" validate:"required,min=2,max=17"`
 	Email     string `json:"email" validate:"required,email"`
 	Password  string `json:"password" validate:"required,min=6,max=100"`
+	Code      string `json:"code" validate:"required,len=6"`
 	UserAgent string `json:"-"`
 	IPAddress string `json:"-"`
+}
+
+// SendRegisterCodeRequest is the body for `POST /auth/register/send-code`.
+// Pre-checks name + email uniqueness so we fail fast (without sending an
+// email) when the user has typo'd a name already in use or is trying to
+// re-register an already-taken email.
+type SendRegisterCodeRequest struct {
+	Name  string `json:"name" validate:"required,min=2,max=17"`
+	Email string `json:"email" validate:"required,email"`
 }
 
 // LoginRequest represents a login request
