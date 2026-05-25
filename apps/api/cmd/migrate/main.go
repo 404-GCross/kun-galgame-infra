@@ -130,11 +130,29 @@ func dropAllTables(db *gorm.DB) error {
 
 // seedInitialData creates initial required data
 func seedInitialData(db *gorm.DB) error {
-	// Create sites if not exists
+	// Sites — mirrors the production deployment (snapshot 2026-05). Idempotent:
+	// the per-domain WHERE-First check skips rows that already exist, so re-
+	// running migrate after admin manually edits site metadata via UI does
+	// NOT clobber their changes.
+	//
+	// OAuth clients are NOT seeded here — they carry per-environment
+	// secrets that have no business sitting in source. Admin creates each
+	// client manually through the OAuth admin UI after sites are seeded;
+	// the UI's "create client" path generates a fresh secret and shows
+	// it once (consumer-side `.env` then pastes it in).
+	//
+	// To add a new first-party site:
+	//   1. Append to this slice (and update the prod DB by re-running migrate).
+	//   2. Have admin create the OAuth client via UI on the new site.
+	//   3. Optionally add the domain to `firstPartyDomains` below so the
+	//      auto_consent backfill catches it (or admin toggles in the UI).
 	sites := []siteModel.Site{
-		{Name: "鲲 Galgame OAuth Admin", Domain: "oauth.kungal.com", Description: "Central OAuth administration system"},
-		{Name: "KUN Galgame", Domain: "www.kungal.com", Description: "KUN Galgame community"},
-		{Name: "MoYu Patch", Domain: "www.moyu.moe", Description: "MoYu game patches"},
+		{Name: "鲲 Galgame OAuth", Domain: "oauth.kungal.com", Description: "鲲 Galgame OAuth"},
+		{Name: "鲲 Galgame 论坛", Domain: "www.kungal.com", Description: "鲲 Galgame 论坛"},
+		{Name: "鲲 Galgame 补丁", Domain: "www.moyu.moe", Description: "鲲 Galgame 补丁"},
+		{Name: "鲲 Galgame Wiki", Domain: "wiki.kungal.com", Description: "Galgame Wiki"},
+		{Name: "鲲 Galgame AI", Domain: "ai.kungal.com", Description: "鲲 Galgame AI"},
+		{Name: "鲲 Galgame 表情包", Domain: "sticker.kungal.com", Description: "鲲 Galgame 表情包"},
 	}
 
 	for _, s := range sites {
