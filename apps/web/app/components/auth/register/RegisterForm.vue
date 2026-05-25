@@ -71,9 +71,37 @@ onMounted(() => {
 // Backend validates the same constraints + checks uniqueness, but
 // catching trivial issues here saves a round-trip + avoids burning a
 // strict-rate-limited slot on obvious errors.
+//
+// Name rule mirrors backend `utils.IsValidName` (legacy isValidName):
+//   - 1..17 chars, Unicode letter/number + `!~_@#$%^&*()+=-`
+//   - rejects 50+ invisible / zero-width / format-control codepoints
+//     that would let an attacker register a visually-identical name.
+// If this rule drifts from backend, the backend wins — frontend
+// validation is purely UX, never a security boundary.
+const NAME_REGEX = /^[\p{L}\p{N}!~_@#$%^&*()+=\-]{1,17}$/u
+const INVISIBLE_NAME_CODEPOINTS = [
+  0x0009, 0x0020, 0x00a0, 0x00ad, 0x034f, 0x061c,
+  0x115f, 0x1160, 0x17b4, 0x17b5, 0x180e,
+  0x2000, 0x2001, 0x2002, 0x2003, 0x2004, 0x2005,
+  0x2006, 0x2007, 0x2008, 0x2009, 0x200a, 0x200b,
+  0x200c, 0x200d, 0x200e, 0x200f, 0x202f, 0x205f,
+  0x2060, 0x2061, 0x2062, 0x2063, 0x2064, 0x2065,
+  0x206a, 0x206b, 0x206c, 0x206d, 0x206e, 0x206f,
+  0x3000, 0x2800, 0x3164, 0xfeff, 0xffa0,
+  0x1d159, 0x1d173, 0x1d174, 0x1d175, 0x1d176,
+  0x1d177, 0x1d178, 0x1d179, 0x1d17a, 0xe0020
+]
+const isValidName = (name: string): boolean => {
+  for (const cp of INVISIBLE_NAME_CODEPOINTS) {
+    if (name.includes(String.fromCodePoint(cp))) return false
+  }
+  return NAME_REGEX.test(name)
+}
+
 const validateStepOne = (): boolean => {
-  if (!name.value || name.value.length < 2 || name.value.length > 17) {
-    error.value = '用户名长度需在 2 到 17 字符之间'
+  if (!isValidName(name.value)) {
+    error.value =
+      '用户名需为 1 到 17 个字符，仅允许字母 / 数字 / 中文 / `!~_@#$%^&*()+=-`，且不可含空格、零宽字符等不可见符号'
     return false
   }
   if (!email.value || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.value)) {

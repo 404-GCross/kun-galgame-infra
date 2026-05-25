@@ -75,7 +75,7 @@
 
 | 字段 | 类型 | 约束 |
 |---|---|---|
-| name | string | 2..17 字符 |
+| name | string | 1..17 字符；允许 Unicode 字母/数字 + `!~_@#$%^&*()+=-`；**禁止**所有不可见 Unicode 字符（零宽、特殊空格、BOM 等 50+ 种）—— 详见 `utils.IsValidName` |
 | email | string | 合法邮箱格式 |
 
 **行为**：
@@ -122,7 +122,7 @@
 
 | 字段 | 类型 | 约束 |
 |---|---|---|
-| name | string | 2..17 字符；全局唯一 |
+| name | string | 1..17 字符；全局唯一；字符集见 send-code 节（`utils.IsValidName`） |
 | email | string | 合法邮箱格式；全局唯一；**必须与 send-code 时一致**（验证码按 email key 存的） |
 | password | string | 6..100 字符 |
 | code | string | 6 位数字；从 send-code 时寄到 email 的邮件正文中获取 |

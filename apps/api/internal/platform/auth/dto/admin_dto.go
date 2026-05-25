@@ -21,7 +21,11 @@ type UserListResponse struct {
 
 // UpdateUserRequest represents a user update request
 type UpdateUserRequest struct {
-	Name   *string `json:"name" validate:"omitempty,min=2,max=17"`
+	// Admin user-edit must enforce the same name rule as self-edit
+	// (PATCH /auth/me) — otherwise an admin could create an unreachable
+	// account with invisible-codepoint names that no user could log
+	// into. `kun_name` = utils.IsValidName.
+	Name   *string `json:"name" validate:"omitempty,kun_name"`
 	Email  *string `json:"email" validate:"omitempty,email"`
 	Avatar *string `json:"avatar" validate:"omitempty,url"`
 	Bio    *string `json:"bio" validate:"omitempty,max=107"`

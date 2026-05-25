@@ -263,6 +263,16 @@ func (s *AuthService) Login(ctx context.Context, req *dto.LoginRequest) (*dto.To
 	if strings.Contains(req.Account, "@") {
 		user, err = s.userRepo.FindByEmail(ctx, req.Account)
 	} else {
+		// Username login: pre-check format against the same rule as
+		// register / change-name. If the input can't possibly be a valid
+		// registered username, skip the DB lookup and fail with the same
+		// generic error as "user not found" — this avoids leaking "your
+		// name format is invalid" vs "no such user" via timing or
+		// distinct error codes (account-enumeration defense). Legacy
+		// accounts with non-conforming names can still log in via email.
+		if !utils.IsValidName(req.Account) {
+			return nil, nil, errors.NewWithCode(errors.ErrAuthUserNotFound)
+		}
 		user, err = s.userRepo.FindByName(ctx, req.Account)
 	}
 	if err != nil {

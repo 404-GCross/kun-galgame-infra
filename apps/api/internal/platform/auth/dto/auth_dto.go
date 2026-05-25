@@ -10,7 +10,10 @@ package dto
 // REQUIRED — registration without prior email proof-of-ownership is no
 // longer supported. See docs/integration/oauth/05-registration.md.
 type RegisterRequest struct {
-	Name      string `json:"name" validate:"required,min=2,max=17"`
+	// `kun_name` = legacy isValidName rule: 1-17 chars, Unicode letter/
+	// number + !~_@#$%^&*()+= -, rejects 50+ invisible codepoints.
+	// Centralised in utils.IsValidName.
+	Name      string `json:"name" validate:"required,kun_name"`
 	Email     string `json:"email" validate:"required,email"`
 	Password  string `json:"password" validate:"required,min=6,max=100"`
 	Code      string `json:"code" validate:"required,len=6"`
@@ -23,7 +26,7 @@ type RegisterRequest struct {
 // email) when the user has typo'd a name already in use or is trying to
 // re-register an already-taken email.
 type SendRegisterCodeRequest struct {
-	Name  string `json:"name" validate:"required,min=2,max=17"`
+	Name  string `json:"name" validate:"required,kun_name"`
 	Email string `json:"email" validate:"required,email"`
 }
 
@@ -85,7 +88,11 @@ type ChangeEmailRequest struct {
 // Setting one does not auto-clear the other — callers can set both
 // (e.g. on image upload) or just hash (most common path going forward).
 type UpdateProfileRequest struct {
-	Name            *string `json:"name,omitempty"              validate:"omitempty,min=2,max=17"`
+	// Same `kun_name` rule as Register so a user can't sneak an invisible-
+	// codepoint or out-of-charset name in after creating a valid account.
+	// `omitempty` lets the field stay absent (PATCH semantics — only
+	// validate when actually provided).
+	Name            *string `json:"name,omitempty"              validate:"omitempty,kun_name"`
 	Avatar          *string `json:"avatar,omitempty"            validate:"omitempty,max=255"`
 	AvatarImageHash *string `json:"avatar_image_hash,omitempty" validate:"omitempty,max=64"`
 	Bio             *string `json:"bio,omitempty"               validate:"omitempty,max=107"`

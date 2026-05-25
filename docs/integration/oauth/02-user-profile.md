@@ -112,7 +112,7 @@ OAuth 的用户自助 API 在设计上分两层。下游接入时**不要**把�
 
 | 字段 | 类型 | 约束 | 说明 |
 |------|------|------|------|
-| name | string? | 2..17 字符；全局唯一 | 用户名 |
+| name | string? | 1..17 字符；全局唯一；允许 Unicode 字母/数字 + `!~_@#$%^&*()+=-`，禁止零宽 / 不可见空白等 50+ 种字符（同注册规则，详见 [05-registration.md](./05-registration.md#post-authregistersend-code)） | 用户名 |
 | avatar | string? | ≤255 字符 | 头像 URL（legacy；image_service 普及前继续用） |
 | avatar_image_hash | string? | ≤64 字符 | 头像的 image_service 哈希；前端 resolveAvatarUrl 优先用此字段 |
 | bio | string? | ≤107 字符 | 个人简介 |
