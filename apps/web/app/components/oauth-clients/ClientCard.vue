@@ -101,13 +101,24 @@ const siteName = computed(() => {
 
       <div>
         <p class="text-xs text-default-400">客户端类型</p>
-        <div class="mt-1">
+        <div class="mt-1 flex flex-wrap gap-1">
           <KunChip
             :color="client.is_public ? 'info' : 'secondary'"
             variant="flat"
             size="sm"
           >
             {{ client.is_public ? '公共 (SPA / native)' : '机密 (confidential)' }}
+          </KunChip>
+          <!-- auto_consent flag: warning color because skipping the
+               consent screen is security-sensitive. Make it visually
+               obvious which clients have this elevated trust. -->
+          <KunChip
+            v-if="client.auto_consent"
+            color="warning"
+            variant="flat"
+            size="sm"
+          >
+            自动同意
           </KunChip>
         </div>
       </div>

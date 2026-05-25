@@ -74,8 +74,10 @@ func (s *SiteService) GetOAuthClientsBySiteID(ctx context.Context, siteID uint) 
 //
 //   - allowedScopes: scope allow-list (nil → not stored, falls back to OIDC core at runtime).
 //   - isPublic:      public client flag (SPA / PKCE-only, no client_secret on refresh).
+//   - autoConsent:   first-party flag (skips /oauth/authorize consent UI). Defaults
+//                    false — only enable for clients you fully own.
 //   - refreshTokenTTLSeconds: per-client refresh_token lifetime in seconds; nil → DB default (90d).
-func (s *SiteService) CreateOAuthClient(ctx context.Context, siteID uint, name string, redirectURIs, grants, allowedScopes []string, isPublic bool, refreshTokenTTLSeconds *int) (*model.OAuthClient, string, error) {
+func (s *SiteService) CreateOAuthClient(ctx context.Context, siteID uint, name string, redirectURIs, grants, allowedScopes []string, isPublic, autoConsent bool, refreshTokenTTLSeconds *int) (*model.OAuthClient, string, error) {
 	// Generate client ID (16 bytes = 32 hex chars)
 	clientID, err := generateRandomHex(16)
 	if err != nil {
@@ -99,6 +101,7 @@ func (s *SiteService) CreateOAuthClient(ctx context.Context, siteID uint, name s
 		RedirectURIs: urisJSON,
 		Grants:       grantsJSON,
 		IsPublic:     isPublic,
+		AutoConsent:  autoConsent,
 	}
 	if allowedScopes != nil {
 		scopesJSON, _ := json.Marshal(allowedScopes)
@@ -116,10 +119,12 @@ func (s *SiteService) CreateOAuthClient(ctx context.Context, siteID uint, name s
 }
 
 // UpdateOAuthClient updates an OAuth client's name, redirect URIs,
-// grants, allowed_scopes, and/or refresh_token_ttl. Nil pointer/slice
-// = no change. is_public is intentionally NOT updatable (changing it
-// retroactively breaks the auth-model invariants for existing tokens).
-func (s *SiteService) UpdateOAuthClient(ctx context.Context, clientID string, name *string, redirectURIs, grants, allowedScopes []string, refreshTokenTTLSeconds *int) (*model.OAuthClient, error) {
+// grants, allowed_scopes, auto_consent, and/or refresh_token_ttl. Nil
+// pointer/slice = no change. is_public is intentionally NOT updatable
+// (changing it retroactively breaks the auth-model invariants for
+// existing tokens). auto_consent IS updatable — its only effect is on
+// the consent-screen rendering, no token semantics change.
+func (s *SiteService) UpdateOAuthClient(ctx context.Context, clientID string, name *string, redirectURIs, grants, allowedScopes []string, autoConsent *bool, refreshTokenTTLSeconds *int) (*model.OAuthClient, error) {
 	client, err := s.oauthClientRepo.FindByClientID(ctx, clientID)
 	if err != nil {
 		return nil, err
@@ -139,6 +144,9 @@ func (s *SiteService) UpdateOAuthClient(ctx context.Context, clientID string, na
 	if allowedScopes != nil {
 		scopesJSON, _ := json.Marshal(allowedScopes)
 		client.AllowedScopes = scopesJSON
+	}
+	if autoConsent != nil {
+		client.AutoConsent = *autoConsent
 	}
 	if refreshTokenTTLSeconds != nil {
 		client.RefreshTokenTTLSeconds = *refreshTokenTTLSeconds

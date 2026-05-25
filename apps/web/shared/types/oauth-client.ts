@@ -11,6 +11,12 @@ export interface OAuthClient {
   // RFC 6749 §2.1 public client (SPA / native). Public clients use
   // PKCE on the auth-code flow and skip client_secret on refresh.
   is_public?: boolean
+  // First-party client flag. When true the OAuth web's /oauth/authorize
+  // page silently skips the user consent UI for already-logged-in users
+  // (silent SSO). Default false: third-party integrations always see
+  // the manual consent screen. ENABLE ONLY for clients you fully own.
+  // Policy: docs/integration/oauth/05-registration.md#auto_consent-字段语义.
+  auto_consent?: boolean
   // Refresh token / session lifetime in seconds. Server default 90d.
   // Shorter for sensitive clients (e.g. 1d), longer for background services.
   refresh_token_ttl_seconds?: number

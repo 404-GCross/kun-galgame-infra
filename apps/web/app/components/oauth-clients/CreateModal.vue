@@ -21,6 +21,11 @@ const allowedScopes = ref<string[]>(['openid', 'profile', 'email'])
 // Public client (SPA / native): no client_secret on refresh, PKCE required
 // on the code flow. Confidential clients are the default (false).
 const isPublic = ref(false)
+// First-party client — silently skips /oauth/authorize consent UI for
+// already-logged-in users. SECURITY-SENSITIVE: only enable for clients
+// you fully own (third-party apps MUST go through the consent screen).
+// Default false; admin must explicitly opt in.
+const autoConsent = ref(false)
 // Refresh token lifetime — exposed in the UI as days for usability,
 // converted to seconds at submit time. Default 90d matches the server.
 const refreshTokenTtlDays = ref(DEFAULT_REFRESH_TOKEN_TTL_SECONDS / 86400)
@@ -93,6 +98,7 @@ const handleSubmit = async () => {
       grants: grants.value,
       allowed_scopes: allowedScopes.value,
       is_public: isPublic.value,
+      auto_consent: autoConsent.value,
       refresh_token_ttl_seconds: refreshTokenTtlDays.value * 86400,
     })
     if (response.code === 0) {
@@ -104,6 +110,7 @@ const handleSubmit = async () => {
       grants.value = ['authorization_code', 'refresh_token']
       allowedScopes.value = ['openid', 'profile', 'email']
       isPublic.value = false
+      autoConsent.value = false
       refreshTokenTtlDays.value = DEFAULT_REFRESH_TOKEN_TTL_SECONDS / 86400
     } else {
       error.value = response.message || '创建失败'
@@ -228,6 +235,22 @@ const handleSubmit = async () => {
           color="primary"
         />
         <span class="text-xs text-default-400">— PKCE 必须；refresh 不需要 client_secret</span>
+      </div>
+
+      <div class="rounded-lg border border-warning-200 bg-warning-50 p-3">
+        <div class="flex items-center gap-2 text-sm">
+          <KunCheckBox
+            v-model="autoConsent"
+            label="自动同意 (第一方应用专用)"
+            color="warning"
+          />
+        </div>
+        <p class="mt-2 text-xs text-warning-700">
+          ⚠️ 勾选后此应用的用户在 OAuth 授权页将
+          <strong>跳过手动"同意"步骤</strong>，直接静默授权。
+          <strong class="text-danger">仅用于你完全信任的第一方应用</strong>
+          （如鲲 Galgame 论坛 / 补丁 / Wiki）；任何第三方应用必须保持默认关闭。
+        </p>
       </div>
 
       <div v-if="error" class="rounded-lg bg-danger-50 p-3 text-sm text-danger">

@@ -20,6 +20,10 @@ const refreshTokenTtlDays = ref(
 // (changes the auth model). We surface it read-only here — if someone
 // really needs to flip it, they should recreate the client.
 const isPublicReadonly = computed(() => props.client.is_public ?? false)
+// auto_consent IS editable post-hoc — it only affects consent-screen
+// rendering, no token semantics change. Toggling on/off takes effect
+// on the next /oauth/authorize visit for this client.
+const autoConsent = ref(props.client.auto_consent ?? false)
 const error = ref('')
 const isLoading = ref(false)
 
@@ -86,6 +90,7 @@ const handleSubmit = async () => {
       redirect_uris: uris,
       grants: grants.value,
       allowed_scopes: allowedScopes.value,
+      auto_consent: autoConsent.value,
       refresh_token_ttl_seconds: refreshTokenTtlDays.value * 86400,
     })
     if (response.code === 0) {
@@ -203,6 +208,22 @@ const handleSubmit = async () => {
           max="3650"
           @update:model-value="refreshTokenTtlDays = Number($event)"
         />
+      </div>
+
+      <div class="rounded-lg border border-warning-200 bg-warning-50 p-3">
+        <div class="flex items-center gap-2 text-sm">
+          <KunCheckBox
+            v-model="autoConsent"
+            label="自动同意 (第一方应用专用)"
+            color="warning"
+          />
+        </div>
+        <p class="mt-2 text-xs text-warning-700">
+          ⚠️ 勾选后此应用的用户在 OAuth 授权页将
+          <strong>跳过手动"同意"步骤</strong>，直接静默授权。
+          <strong class="text-danger">仅用于你完全信任的第一方应用</strong>。
+          切换会在下次 /oauth/authorize 访问立即生效，不影响已签发的 token。
+        </p>
       </div>
 
       <div v-if="error" class="rounded-lg bg-danger-50 p-3 text-sm text-danger">

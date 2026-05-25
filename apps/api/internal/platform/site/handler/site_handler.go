@@ -230,6 +230,7 @@ func (h *SiteHandler) CreateClient(c fiber.Ctx) error {
 		grants,
 		req.AllowedScopes,
 		req.IsPublic,
+		req.AutoConsent,
 		req.RefreshTokenTTLSeconds,
 	)
 	if err != nil {
@@ -265,6 +266,7 @@ func (h *SiteHandler) UpdateClient(c fiber.Ctx) error {
 		req.RedirectURIs,
 		req.Grants,
 		req.AllowedScopes,
+		req.AutoConsent,
 		req.RefreshTokenTTLSeconds,
 	)
 	if err != nil {
@@ -309,6 +311,7 @@ func toOAuthClientResponse(cl *siteModel.OAuthClient) dto.OAuthClientResponse {
 		Grants:                 grants,
 		AllowedScopes:          allowedScopes,
 		IsPublic:               cl.IsPublic,
+		AutoConsent:            cl.AutoConsent,
 		RefreshTokenTTLSeconds: cl.RefreshTokenTTLSeconds,
 		CreatedAt:              cl.CreatedAt.Format("2006-01-02T15:04:05Z"),
 	}

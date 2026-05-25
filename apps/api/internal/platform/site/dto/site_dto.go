@@ -44,6 +44,13 @@ type CreateOAuthClientRequest struct {
 	Grants                 []string `json:"grants"`
 	AllowedScopes          []string `json:"allowed_scopes"`
 	IsPublic               bool     `json:"is_public"`
+	// AutoConsent marks the client as first-party for the OAuth web
+	// `/oauth/authorize` page — when true, the consent UI is silently
+	// skipped on user-already-logged-in path. Default false: third-
+	// party integrations always see the consent screen.
+	// Toggle this ONLY for clients you control end-to-end. Per-client
+	// semantics: model.OAuthClient.AutoConsent (auth_clients column).
+	AutoConsent            bool     `json:"auto_consent"`
 	RefreshTokenTTLSeconds *int     `json:"refresh_token_ttl_seconds" validate:"omitempty,min=60"`
 }
 
@@ -60,6 +67,10 @@ type UpdateOAuthClientRequest struct {
 	RedirectURIs           []string `json:"redirect_uris" validate:"omitempty,min=1"`
 	Grants                 []string `json:"grants"`
 	AllowedScopes          []string `json:"allowed_scopes"`
+	// Pointer-presence: nil = leave alone; non-nil = set explicitly.
+	// Same flag as CreateOAuthClientRequest.AutoConsent — toggles whether
+	// /oauth/authorize silently consents for this client's users.
+	AutoConsent            *bool    `json:"auto_consent"`
 	RefreshTokenTTLSeconds *int     `json:"refresh_token_ttl_seconds" validate:"omitempty,min=60"`
 }
 
@@ -72,6 +83,7 @@ type OAuthClientResponse struct {
 	Grants                 []string `json:"grants"`
 	AllowedScopes          []string `json:"allowed_scopes"`
 	IsPublic               bool     `json:"is_public"`
+	AutoConsent            bool     `json:"auto_consent"`
 	RefreshTokenTTLSeconds int      `json:"refresh_token_ttl_seconds"`
 	CreatedAt              string   `json:"created_at"`
 }
