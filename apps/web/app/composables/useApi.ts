@@ -1,6 +1,12 @@
 interface ApiOptions {
   method?: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH'
   body?: Record<string, unknown>
+  // URL search params for GET / DELETE. Encoded via `URLSearchParams`
+  // so the call site can pass plain objects (`{ client_id: 'X' }`)
+  // without manual `encodeURIComponent` / `?key=value` string building.
+  // `undefined` values are dropped (matches Nuxt's `$fetch` query
+  // convention so call sites can pass optional params conditionally).
+  query?: Record<string, string | number | boolean | undefined>
   headers?: Record<string, string>
 }
 
@@ -69,10 +75,24 @@ export const useApi = () => {
     options: ApiOptions = {},
     retry = true
   ): Promise<ApiResponse<T>> => {
-    const { method = 'GET', body, headers = {} } = options
+    const { method = 'GET', body, query, headers = {} } = options
+
+    // Build URL with query string. Done here (not via $fetch's `query`
+    // option) because we own the full URL path/origin and want the
+    // single source of truth for serialization. `undefined` values are
+    // skipped so optional params can be passed conditionally.
+    let url = `${baseUrl}${endpoint}`
+    if (query) {
+      const params = new URLSearchParams()
+      for (const [k, v] of Object.entries(query)) {
+        if (v !== undefined) params.set(k, String(v))
+      }
+      const qs = params.toString()
+      if (qs) url += `?${qs}`
+    }
 
     try {
-      const response = await $fetch<ApiResponse<T>>(`${baseUrl}${endpoint}`, {
+      const response = await $fetch<ApiResponse<T>>(url, {
         method,
         body: body ? JSON.stringify(body) : undefined,
         headers: {
@@ -106,12 +126,18 @@ export const useApi = () => {
   }
 
   return {
-    get: <T>(endpoint: string) => request<T>(endpoint, { method: 'GET' }),
+    get: <T>(
+      endpoint: string,
+      query?: Record<string, string | number | boolean | undefined>
+    ) => request<T>(endpoint, { method: 'GET', query }),
     post: <T>(endpoint: string, body?: Record<string, unknown>) =>
       request<T>(endpoint, { method: 'POST', body }),
     put: <T>(endpoint: string, body?: Record<string, unknown>) =>
       request<T>(endpoint, { method: 'PUT', body }),
-    delete: <T>(endpoint: string) => request<T>(endpoint, { method: 'DELETE' }),
+    delete: <T>(
+      endpoint: string,
+      query?: Record<string, string | number | boolean | undefined>
+    ) => request<T>(endpoint, { method: 'DELETE', query }),
     patch: <T>(endpoint: string, body?: Record<string, unknown>) =>
       request<T>(endpoint, { method: 'PATCH', body })
   }
