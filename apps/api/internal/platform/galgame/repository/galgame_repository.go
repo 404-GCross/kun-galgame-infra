@@ -92,8 +92,12 @@ func (r *GalgameRepository) ExistsByVNDBID(ctx context.Context, vndbID string) (
 	return true, galgame.ID, nil
 }
 
-// List returns a paginated list of galgames
-func (r *GalgameRepository) List(ctx context.Context, page, limit int, sortField, sortOrder, search string) (items []model.Galgame, total int64, err error) {
+// List returns a paginated list of galgames.
+//
+// contentLimit follows the canonical content-filter contract (see
+// pkg/utils.ParseContentLimit): "sfw" / "nsfw" → WHERE filter, "" → no
+// filter. Handlers resolve the default for missing query params.
+func (r *GalgameRepository) List(ctx context.Context, page, limit int, sortField, sortOrder, search, contentLimit string) (items []model.Galgame, total int64, err error) {
 	defer func() {
 		for i := range items {
 			model.PopulateEffectiveBanner(&items[i])
@@ -101,6 +105,10 @@ func (r *GalgameRepository) List(ctx context.Context, page, limit int, sortField
 	}()
 
 	query := r.db.WithContext(ctx).Model(&model.Galgame{}).Where("status = 0")
+
+	if contentLimit != "" {
+		query = query.Where("content_limit = ?", contentLimit)
+	}
 
 	if search != "" {
 		like := "%" + strings.ToLower(search) + "%"
@@ -146,12 +154,17 @@ func (r *GalgameRepository) List(ctx context.Context, page, limit int, sortField
 // FindByIDs filters status=0 here so the value is always 0 in this code
 // path, but the column is still in the projection to keep one consistent
 // brief shape across FindByIDs / FindByIDsWithViewer.
-func (r *GalgameRepository) FindByIDs(ctx context.Context, ids []int) ([]model.Galgame, error) {
-	var galgames []model.Galgame
-	err := r.db.WithContext(ctx).
+//
+// contentLimit follows ParseContentLimit semantics ("" = no filter).
+func (r *GalgameRepository) FindByIDs(ctx context.Context, ids []int, contentLimit string) ([]model.Galgame, error) {
+	q := r.db.WithContext(ctx).
 		Select("id, vndb_id, name_en_us, name_ja_jp, name_zh_cn, name_zh_tw, banner, content_limit, status, user_id, resource_update_time, original_language, age_limit").
-		Where("id IN ? AND status = 0", ids).
-		Find(&galgames).Error
+		Where("id IN ? AND status = 0", ids)
+	if contentLimit != "" {
+		q = q.Where("content_limit = ?", contentLimit)
+	}
+	var galgames []model.Galgame
+	err := q.Find(&galgames).Error
 	return galgames, err
 }
 
@@ -176,16 +189,25 @@ func (r *GalgameRepository) FindByIDsAny(ctx context.Context, ids []int) ([]mode
 // GET /galgame/batch when the caller authenticates with a user JWT.
 //
 // viewerUserID == 0 falls back to FindByIDs (public visibility).
-func (r *GalgameRepository) FindByIDsWithViewer(ctx context.Context, ids []int, viewerUserID int) ([]model.Galgame, error) {
+//
+// contentLimit applies the same way as FindByIDs: "" = no filter.
+// The viewer's own pending/declined drafts are NOT exempted from the
+// filter — if you submit an NSFW draft and your client requests
+// content_limit=sfw, you won't see it in batch results either (consistent
+// with how List/search behave for the same caller's data).
+func (r *GalgameRepository) FindByIDsWithViewer(ctx context.Context, ids []int, viewerUserID int, contentLimit string) ([]model.Galgame, error) {
 	if viewerUserID <= 0 {
-		return r.FindByIDs(ctx, ids)
+		return r.FindByIDs(ctx, ids, contentLimit)
 	}
-	var galgames []model.Galgame
-	err := r.db.WithContext(ctx).
+	q := r.db.WithContext(ctx).
 		Select("id, vndb_id, name_en_us, name_ja_jp, name_zh_cn, name_zh_tw, banner, content_limit, status, user_id, resource_update_time, original_language, age_limit").
 		Where("id IN ?", ids).
-		Where("status = 0 OR (status IN (3, 4) AND user_id = ?)", viewerUserID).
-		Find(&galgames).Error
+		Where("status = 0 OR (status IN (3, 4) AND user_id = ?)", viewerUserID)
+	if contentLimit != "" {
+		q = q.Where("content_limit = ?", contentLimit)
+	}
+	var galgames []model.Galgame
+	err := q.Find(&galgames).Error
 	return galgames, err
 }
 

@@ -7,6 +7,7 @@ import (
 	"api/internal/platform/galgame/search"
 	"api/pkg/errors"
 	"api/pkg/response"
+	"api/pkg/utils"
 
 	"github.com/gofiber/fiber/v3"
 )
@@ -29,6 +30,10 @@ func NewSearchHandler(svc *search.Service) *SearchHandler {
 // include_pending=true: when paired with a valid Bearer JWT (OptionalJWT
 // middleware populates user_id in Locals), runs a second search for the
 // caller's own status=3/4 entries and returns them in resp.Pending.
+//
+// content_limit policy: safe-by-default — caller must explicitly opt
+// into NSFW via `content_limit=nsfw` (NSFW only) or `content_limit=all`
+// (both). Omitting the param falls back to "sfw". See handbook §NSFW.
 func (h *SearchHandler) Galgame(c fiber.Ctx) error {
 	q := c.Queries()
 	includePending := parseBool(q["include_pending"])
@@ -42,7 +47,7 @@ func (h *SearchHandler) Galgame(c fiber.Ctx) error {
 	req := &search.GalgameSearchRequest{
 		Query:             q["q"],
 		Statuses:          parseIntList(q["status"]),
-		ContentLimit:      q["content_limit"],
+		ContentLimit:      utils.ParseContentLimit(q["content_limit"], "sfw"),
 		AgeLimit:          q["age_limit"],
 		OriginalLanguages: parseStringList(q["original_language"]),
 		TagIDs:            parseIntList(q["tag_ids"]),

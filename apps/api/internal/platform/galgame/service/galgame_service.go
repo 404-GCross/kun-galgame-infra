@@ -9,6 +9,7 @@ import (
 	"api/internal/platform/galgame/model"
 	"api/internal/platform/galgame/repository"
 	"api/pkg/errors"
+	"api/pkg/utils"
 
 	"gorm.io/gorm"
 )
@@ -62,7 +63,11 @@ func (s *GalgameService) WithImageProbe(p ImageProbeFunc) *GalgameService {
 	return s
 }
 
-// List returns a paginated list of galgames
+// List returns a paginated list of galgames.
+//
+// content_limit policy: browse endpoint → safe-by-default "sfw" when
+// caller omits the parameter. Pass `?content_limit=all` to include NSFW,
+// `?content_limit=nsfw` to fetch NSFW-only.
 func (s *GalgameService) List(ctx context.Context, req *dto.ListGalgameRequest) ([]model.Galgame, int64, error) {
 	if req.Page <= 0 {
 		req.Page = 1
@@ -70,13 +75,19 @@ func (s *GalgameService) List(ctx context.Context, req *dto.ListGalgameRequest) 
 	if req.Limit <= 0 {
 		req.Limit = 24
 	}
-	return s.galgameRepo.List(ctx, req.Page, req.Limit, req.SortField, req.SortOrder, req.Search)
+	contentLimit := utils.ParseContentLimit(req.ContentLimit, "sfw")
+	return s.galgameRepo.List(ctx, req.Page, req.Limit, req.SortField, req.SortOrder, req.Search, contentLimit)
 }
 
 // GetByID returns a published galgame with relations (public visibility:
 // status=0 only). Kept for callers without a viewer context.
+//
+// No content_limit filter — equivalent to passing "" (any) to
+// GetByIDWithViewer. Matches the long-standing semantic where a known
+// gid resolves regardless of NSFW state. Callers that need filtering
+// should use GetByIDWithViewer directly with a non-empty contentLimit.
 func (s *GalgameService) GetByID(ctx context.Context, id int) (*model.Galgame, map[int]*dto.UserBrief, error) {
-	return s.GetByIDWithViewer(ctx, id, 0)
+	return s.GetByIDWithViewer(ctx, id, 0, "")
 }
 
 // GetByIDWithViewer is the viewer-aware detail fetch. Visibility mirrors
@@ -90,7 +101,7 @@ func (s *GalgameService) GetByID(ctx context.Context, id int) (*model.Galgame, m
 // Without this, an owner opening /edit/.../draft/<gid> for their own
 // pending submission got "galgame 不存在" because the old code hard-cut
 // every status != 0.
-func (s *GalgameService) GetByIDWithViewer(ctx context.Context, id, viewerUserID int) (*model.Galgame, map[int]*dto.UserBrief, error) {
+func (s *GalgameService) GetByIDWithViewer(ctx context.Context, id, viewerUserID int, contentLimit string) (*model.Galgame, map[int]*dto.UserBrief, error) {
 	galgame, err := s.galgameRepo.FindByID(ctx, id)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -105,6 +116,18 @@ func (s *GalgameService) GetByIDWithViewer(ctx context.Context, id, viewerUserID
 	case (galgame.Status == 3 || galgame.Status == 4) && viewerUserID > 0 && galgame.UserID == viewerUserID:
 		// submitter viewing their own pending / declined draft
 	default:
+		return nil, nil, errors.NewWithCode(errors.ErrGalgameNotFound)
+	}
+
+	// content_limit filter: when caller passed sfw/nsfw, hide entries
+	// that don't match (404, same shape as status filter above). "" = no
+	// filter, matches the long-standing behavior of direct-id lookup.
+	//
+	// Applied AFTER the status gate so that an authenticated submitter's
+	// own NSFW pending draft is still gated by their own filter request
+	// — consistent with how the search "pending" list inherits the same
+	// content_limit (search/service.go second-pass query).
+	if contentLimit != "" && galgame.ContentLimit != contentLimit {
 		return nil, nil, errors.NewWithCode(errors.ErrGalgameNotFound)
 	}
 
@@ -415,15 +438,25 @@ func (s *GalgameService) Update(ctx context.Context, userID, galgameID int, role
 }
 
 // BatchGet returns lightweight galgame info for a list of IDs (status=0 only).
+//
+// Unfiltered by content_limit — preserves the long-standing batch
+// semantic where callers already know the IDs they want. For SFW
+// filtering pass an explicit value through BatchGetWithViewer.
 func (s *GalgameService) BatchGet(ctx context.Context, ids []int) ([]dto.GalgameBrief, error) {
-	return s.BatchGetWithViewer(ctx, ids, 0)
+	return s.BatchGetWithViewer(ctx, ids, 0, "")
 }
 
 // BatchGetWithViewer returns lightweight galgame info for a list of IDs.
 // When viewerUserID > 0, additionally includes the viewer's own status=3/4
 // entries (per submission-and-review-design §6).
-func (s *GalgameService) BatchGetWithViewer(ctx context.Context, ids []int, viewerUserID int) ([]dto.GalgameBrief, error) {
-	galgames, err := s.galgameRepo.FindByIDsWithViewer(ctx, ids, viewerUserID)
+//
+// contentLimit follows utils.ParseContentLimit semantics — pass "" for no
+// filter (the canonical batch default; caller knows the IDs they want),
+// or "sfw"/"nsfw" to filter. /galgame/batch handler resolves an empty
+// query param to "" (not "sfw"), so silent hiding of explicitly-requested
+// IDs never happens.
+func (s *GalgameService) BatchGetWithViewer(ctx context.Context, ids []int, viewerUserID int, contentLimit string) ([]dto.GalgameBrief, error) {
+	galgames, err := s.galgameRepo.FindByIDsWithViewer(ctx, ids, viewerUserID, contentLimit)
 	if err != nil {
 		return nil, err
 	}

@@ -52,7 +52,14 @@ func (h *GalgameHandler) List(c fiber.Ctx) error {
 	})
 }
 
-// Get returns a galgame by ID with all relations
+// Get returns a galgame by ID with all relations.
+//
+// content_limit policy: NO default filter ("" passed through) — direct
+// URL access by gid is intentional (bookmark, deep link, click-through
+// from a SFW-filtered listing). Callers that want to gate detail-page
+// access uniformly with the listing they came from should pass the same
+// content_limit value explicitly; entries that don't match → 404.
+// Diverges from List/search which default to "sfw" — see handbook §16.
 func (h *GalgameHandler) Get(c fiber.Ctx) error {
 	id, err := strconv.Atoi(c.Params("gid"))
 	if err != nil {
@@ -63,7 +70,8 @@ func (h *GalgameHandler) Get(c fiber.Ctx) error {
 	// present. Lets a submitter open their own pending/declined draft
 	// (kungal/moyu /edit/.../draft/<gid>); anonymous sees status=0 only.
 	viewerUserID, _ := c.Locals("user_id").(uint)
-	galgame, users, err := h.galgameService.GetByIDWithViewer(c.Context(), id, int(viewerUserID))
+	contentLimit := utils.ParseContentLimit(c.Query("content_limit"), "")
+	galgame, users, err := h.galgameService.GetByIDWithViewer(c.Context(), id, int(viewerUserID), contentLimit)
 	if err != nil {
 		if appErr, ok := err.(*errors.AppError); ok {
 			return response.NotFound(c, appErr.Code)
@@ -175,6 +183,13 @@ func (h *GalgameHandler) Update(c fiber.Ctx) error {
 // populated user_id in Locals, the response also includes the caller's
 // own status=3/4 entries — matching the visibility rules in
 // docs/galgame_wiki/06-submission-and-review-design.md §6.
+//
+// content_limit policy: NO default filter ("" passed through) — the
+// caller already knows which IDs they want (favorites, references,
+// patch.galgame_id), and silently hiding entries they explicitly listed
+// would break those consumers. Pass content_limit=sfw to opt INTO
+// filtering, =nsfw to receive NSFW-only, =all is equivalent to omitting.
+// Diverges from List/search which default to "sfw" — see handbook.
 func (h *GalgameHandler) BatchGet(c fiber.Ctx) error {
 	var req dto.BatchGetGalgameRequest
 	if err := c.Bind().Query(&req); err != nil {
@@ -186,7 +201,8 @@ func (h *GalgameHandler) BatchGet(c fiber.Ctx) error {
 	}
 
 	viewerUserID, _ := c.Locals("user_id").(uint)
-	items, err := h.galgameService.BatchGetWithViewer(c.Context(), req.IDs, int(viewerUserID))
+	contentLimit := utils.ParseContentLimit(req.ContentLimit, "")
+	items, err := h.galgameService.BatchGetWithViewer(c.Context(), req.IDs, int(viewerUserID), contentLimit)
 	if err != nil {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}

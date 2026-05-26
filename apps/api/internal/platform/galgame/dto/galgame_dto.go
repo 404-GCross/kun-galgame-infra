@@ -1,12 +1,17 @@
 package dto
 
-// ListGalgameRequest represents a galgame list query
+// ListGalgameRequest represents a galgame list query.
+//
+// ContentLimit accepts "sfw" / "nsfw" / "all" / "" — see
+// docs/integration/galgame_wiki/00-handbook-for-downstream.md §NSFW. The
+// service layer resolves "" to the safe-by-default "sfw".
 type ListGalgameRequest struct {
-	Page      int    `query:"page" validate:"min=1"`
-	Limit     int    `query:"limit" validate:"min=1,max=50"`
-	SortField string `query:"sort_field" validate:"omitempty,oneof=created updated view resource_update_time"`
-	SortOrder string `query:"sort_order" validate:"omitempty,oneof=asc desc"`
-	Search    string `query:"search"`
+	Page         int    `query:"page" validate:"min=1"`
+	Limit        int    `query:"limit" validate:"min=1,max=50"`
+	SortField    string `query:"sort_field" validate:"omitempty,oneof=created updated view resource_update_time"`
+	SortOrder    string `query:"sort_order" validate:"omitempty,oneof=asc desc"`
+	Search       string `query:"search"`
+	ContentLimit string `query:"content_limit" validate:"omitempty,oneof=sfw nsfw all"`
 }
 
 // CreateGalgameRequest represents a galgame creation request
@@ -130,9 +135,16 @@ type UpdateGalgameRequest struct {
 	IsMinor     *bool                     `json:"is_minor"`
 }
 
-// BatchGetGalgameRequest represents a batch galgame query
+// BatchGetGalgameRequest represents a batch galgame query.
+//
+// ContentLimit follows the same wire contract as ListGalgameRequest, but
+// the default-when-empty for /galgame/batch is "" (no filter) — callers
+// already know which specific IDs they want (e.g. favorites list), so
+// safe-by-default would silently hide entries the caller explicitly
+// requested. Pass content_limit=sfw to opt INTO filtering.
 type BatchGetGalgameRequest struct {
-	IDs []int `query:"ids" validate:"required,min=1,max=100"`
+	IDs          []int  `query:"ids" validate:"required,min=1,max=100"`
+	ContentLimit string `query:"content_limit" validate:"omitempty,oneof=sfw nsfw all"`
 }
 
 // GalgameBrief is a lightweight galgame info for cross-service display.

@@ -14,7 +14,7 @@ type GetOfficialByNameRequest struct {
 	Type         string `query:"type"`
 	Language     string `query:"language"`
 	Platform     string `query:"platform"`
-	ContentLimit string `query:"content_limit" validate:"omitempty,oneof=sfw nsfw"`
+	ContentLimit string `query:"content_limit" validate:"omitempty,oneof=sfw nsfw all"`
 	SortField    string `query:"sort_field" validate:"omitempty,oneof=created resource_update_time view"`
 	SortOrder    string `query:"sort_order" validate:"omitempty,oneof=asc desc"`
 }

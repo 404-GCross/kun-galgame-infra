@@ -311,7 +311,7 @@ func TestSeries_CreateAndList(t *testing.T) {
 	assert.Equal(t, series.ID, *g.SeriesID)
 
 	// List
-	items, total, err := testSeriesRepo.List(ctx, 1, 10)
+	items, total, err := testSeriesRepo.List(ctx, 1, 10, "")
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), total)
 	assert.Equal(t, "测试系列", items[0].Name)

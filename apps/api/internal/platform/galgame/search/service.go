@@ -145,14 +145,25 @@ func (s *Service) SearchGalgames(ctx context.Context, req *GalgameSearchRequest)
 	// Second-pass pending search. Cheap (small result set, narrow filter),
 	// runs only when caller opted in AND authenticated. Failure here is
 	// non-fatal: we still return the main result.
+	//
+	// Inherits the same content_limit filter as the main query — without
+	// this, asking ?content_limit=sfw&include_pending=true would return
+	// SFW main results alongside the user's own NSFW pending entries,
+	// which contradicts the caller's stated filter. Pending entries are
+	// the user's own data either way, but the wire contract is "this
+	// response only contains content matching the requested limit".
 	if req.IncludePending && req.ViewerUID > 0 {
+		pendingFilter := fmt.Sprintf(
+			"status IN [%d, %d] AND user_id = %d",
+			3, 4, req.ViewerUID,
+		)
+		if req.ContentLimit != "" {
+			pendingFilter += fmt.Sprintf(" AND content_limit = '%s'", escapeFilter(req.ContentLimit))
+		}
 		pendingReq := &meilisearch.SearchRequest{
 			Page:        1,
 			HitsPerPage: 20,
-			Filter: fmt.Sprintf(
-				"status IN [%d, %d] AND user_id = %d",
-				3, 4, req.ViewerUID,
-			),
+			Filter:      pendingFilter,
 		}
 		// Keep the same Highlight / Fields config so consumers can render
 		// pending entries with the same shape. Sort by latest first.

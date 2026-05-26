@@ -24,21 +24,36 @@ func (r *SeriesRepository) DB() *gorm.DB {
 	return r.db
 }
 
-// List returns a paginated list of series
-func (r *SeriesRepository) List(ctx context.Context, page, limit int) ([]model.GalgameSeries, int64, error) {
+// List returns a paginated list of series.
+//
+// contentLimit filters both the embedded preview galgames AND the cnt
+// total so the count column matches the body — otherwise a user filtering
+// SFW would see "12 games" but receive 5 in the preview because the SQL
+// COUNT ignored the filter. "" = no filter (include both sfw and nsfw).
+func (r *SeriesRepository) List(ctx context.Context, page, limit int, contentLimit string) ([]model.GalgameSeries, int64, error) {
 	var items []model.GalgameSeries
 	var total int64
 
 	r.db.WithContext(ctx).Model(&model.GalgameSeries{}).Count(&total)
 
+	// Inline COUNT subquery: parameterized for content_limit filter so both
+	// totals and preloads stay in sync. Passing "" makes the WHERE always
+	// true (= no filter).
+	countSubquery := `(SELECT series_id, COUNT(*) AS cnt FROM galgame
+		WHERE series_id IS NOT NULL AND status = 0
+		  AND (? = '' OR content_limit = ?)
+		GROUP BY series_id) sc`
+
 	err := r.db.WithContext(ctx).
 		Select("galgame_series.*, COALESCE(sc.cnt, 0) AS cnt").
 		Preload("Galgame", func(db *gorm.DB) *gorm.DB {
-			return db.Where("status = 0").Order("created ASC").Limit(5)
+			q := db.Where("status = 0").Order("created ASC").Limit(5)
+			if contentLimit != "" {
+				q = q.Where("content_limit = ?", contentLimit)
+			}
+			return q
 		}).
-		// Count only published galgames so the list total matches the detail
-		// page (FindByID preloads status=0 galgames).
-		Joins("LEFT JOIN (SELECT series_id, COUNT(*) AS cnt FROM galgame WHERE series_id IS NOT NULL AND status = 0 GROUP BY series_id) sc ON sc.series_id = galgame_series.id").
+		Joins("LEFT JOIN "+countSubquery+" ON sc.series_id = galgame_series.id", contentLimit, contentLimit).
 		Order("cnt DESC").
 		Offset((page - 1) * limit).
 		Limit(limit).
@@ -47,12 +62,19 @@ func (r *SeriesRepository) List(ctx context.Context, page, limit int) ([]model.G
 	return items, total, err
 }
 
-// FindByID finds a series by ID with all galgames
-func (r *SeriesRepository) FindByID(ctx context.Context, id int) (*model.GalgameSeries, error) {
+// FindByID finds a series by ID with all galgames.
+//
+// contentLimit follows the canonical contract: "" = no filter,
+// "sfw"/"nsfw" = WHERE filter on the embedded galgames.
+func (r *SeriesRepository) FindByID(ctx context.Context, id int, contentLimit string) (*model.GalgameSeries, error) {
 	var series model.GalgameSeries
 	err := r.db.WithContext(ctx).
 		Preload("Galgame", func(db *gorm.DB) *gorm.DB {
-			return db.Where("status = 0").Order("created ASC")
+			q := db.Where("status = 0").Order("created ASC")
+			if contentLimit != "" {
+				q = q.Where("content_limit = ?", contentLimit)
+			}
+			return q
 		}).
 		First(&series, id).Error
 	return &series, err

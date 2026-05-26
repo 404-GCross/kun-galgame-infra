@@ -42,7 +42,11 @@ func (h *SeriesHandler) List(c fiber.Ctx) error {
 		req.Limit = 24
 	}
 
-	items, total, err := h.seriesRepo.List(c.Context(), req.Page, req.Limit)
+	// Default safe-by-default (sfw) when caller omits content_limit.
+	// Affects both the preview galgames embedded under each series AND
+	// the cnt total returned per series row (kept in sync).
+	contentLimit := utils.ParseContentLimit(req.ContentLimit, "sfw")
+	items, total, err := h.seriesRepo.List(c.Context(), req.Page, req.Limit, contentLimit)
 	if err != nil {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
@@ -50,14 +54,19 @@ func (h *SeriesHandler) List(c fiber.Ctx) error {
 	return response.Success(c, fiber.Map{"items": items, "total": total})
 }
 
-// Get returns a series by ID with all galgames
+// Get returns a series by ID with all galgames.
+//
+// content_limit filters which associated galgames are embedded in the
+// response. Default safe-by-default ("sfw") — pass `?content_limit=all`
+// to include NSFW. The series row itself is always returned regardless.
 func (h *SeriesHandler) Get(c fiber.Ctx) error {
 	id, err := strconv.Atoi(c.Params("id"))
 	if err != nil {
 		return response.BadRequest(c, errors.ErrInvalidID)
 	}
 
-	series, err := h.seriesRepo.FindByID(c.Context(), id)
+	contentLimit := utils.ParseContentLimit(c.Query("content_limit"), "sfw")
+	series, err := h.seriesRepo.FindByID(c.Context(), id, contentLimit)
 	if err != nil {
 		return response.NotFound(c, errors.ErrNotFound)
 	}

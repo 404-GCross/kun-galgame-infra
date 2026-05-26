@@ -14,7 +14,7 @@ type GetTagByNameRequest struct {
 	Type         string `query:"type"`
 	Language     string `query:"language"`
 	Platform     string `query:"platform"`
-	ContentLimit string `query:"content_limit" validate:"omitempty,oneof=sfw nsfw"`
+	ContentLimit string `query:"content_limit" validate:"omitempty,oneof=sfw nsfw all"`
 	SortField    string `query:"sort_field" validate:"omitempty,oneof=created resource_update_time view"`
 	SortOrder    string `query:"sort_order" validate:"omitempty,oneof=asc desc"`
 }
@@ -29,7 +29,7 @@ type MultiTagRequest struct {
 	Page         int    `query:"page" validate:"min=1"`
 	Limit        int    `query:"limit" validate:"min=1,max=50"`
 	TagIDs       []int  `query:"tag_ids"`
-	ContentLimit string `query:"content_limit" validate:"omitempty,oneof=sfw nsfw"`
+	ContentLimit string `query:"content_limit" validate:"omitempty,oneof=sfw nsfw all"`
 }
 
 // UpdateTagRequest represents a tag update request.

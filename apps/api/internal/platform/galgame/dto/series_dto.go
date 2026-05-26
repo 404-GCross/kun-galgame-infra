@@ -1,9 +1,22 @@
 package dto
 
-// ListSeriesRequest represents a series list query
+// ListSeriesRequest represents a series list query.
+//
+// ContentLimit follows the canonical wire contract (see handbook §NSFW).
+// Default-when-empty is "sfw" — the series list shows preview galgames
+// inline, and we'd rather not leak NSFW thumbnails to anonymous browsing.
 type ListSeriesRequest struct {
-	Page  int `query:"page" validate:"min=1"`
-	Limit int `query:"limit" validate:"min=1,max=50"`
+	Page         int    `query:"page" validate:"min=1"`
+	Limit        int    `query:"limit" validate:"min=1,max=50"`
+	ContentLimit string `query:"content_limit" validate:"omitempty,oneof=sfw nsfw all"`
+}
+
+// GetSeriesRequest represents a series detail query.
+//
+// SeriesID is path-bound (`/series/:id`). ContentLimit filters which
+// associated galgames the detail response embeds. Defaults to "sfw".
+type GetSeriesRequest struct {
+	ContentLimit string `query:"content_limit" validate:"omitempty,oneof=sfw nsfw all"`
 }
 
 // SearchSeriesRequest represents a series search query (searches galgames)
