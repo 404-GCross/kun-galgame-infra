@@ -1,9 +1,0 @@
-model report {
-  id     Int    @id @default(autoincrement())
-  reason String @db.VarChar(1007)
-  type   String @default("")
-  status Int    @default(0)
-
-  created DateTime @default(now())
-  updated DateTime @updatedAt
-}
