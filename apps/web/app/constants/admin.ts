@@ -16,6 +16,16 @@ export const IMAGE_REVIEW_STATUS_MAP: Record<string, { label: string; color: 'wa
   unknown: { label: '未知', color: 'default' },
 }
 
+// Mirrors apps/api/configs/image_presets.yaml — kept client-side so the
+// /images admin table can render variant chips with dimension hints
+// without an extra API roundtrip. If a variant is added to the YAML,
+// mirror it here.
+export const IMAGE_VARIANT_DIMENSIONS: Record<string, { w: number; h: number }> = {
+  mini: { w: 460, h: 259 },
+  '256': { w: 256, h: 256 },
+  '100': { w: 100, h: 100 },
+}
+
 export const IMAGE_STATUS_TABS = [
   { id: '', label: '全部', icon: 'lucide:list' },
   { id: 'pending', label: '待审核', icon: 'lucide:clock' },

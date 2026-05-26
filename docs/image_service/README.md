@@ -13,6 +13,7 @@
 | 05 | [engineering-plan.md](./05-engineering-plan.md) | 工程里程碑 V1–V4、交付物、验收标准、本地 dev 环境 |
 | 06 | [integration-guide.md](./06-integration-guide.md) | **调用方视角**：OAuth 注册、业务库 migration、SDK、降级策略、cron |
 | 07 | [reopen-and-cgo-deploy.md](./07-reopen-and-cgo-deploy.md) | **运维 checklist**：重新开放上传、CGO/libwebp 部署、质量验证、回滚 |
+| 08 | [integration-status.md](./08-integration-status.md) | **接入现状快照**（2026-05-26）：哪些项目接了 / 没接 / 接得不完整，附 file:line |
 
 ## 一句话总结
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { IMAGE_REVIEW_STATUS_MAP } from '~/constants/admin'
+import { IMAGE_REVIEW_STATUS_MAP, IMAGE_VARIANT_DIMENSIONS } from '~/constants/admin'
 
 interface Props {
   items: ImageAdminRow[]
@@ -25,6 +25,14 @@ const shortHash = (h: string) => `${h.slice(0, 8)}…${h.slice(-4)}`
 
 const copy = (s: string) => navigator.clipboard.writeText(s)
 
+// Variant chip label: dims from constants if known, else just the name.
+// Falls back gracefully if a new YAML variant is deployed before this
+// constants file is updated (chip still renders, just without dims).
+const variantDims = (name: string) => {
+  const d = IMAGE_VARIANT_DIMENSIONS[name]
+  return d ? `${d.w}×${d.h}` : ''
+}
+
 // Reject-reason flow via KunModal (replaces native prompt()).
 const rejectOpen = ref(false)
 const rejectHash = ref('')
@@ -48,7 +56,7 @@ const confirmReject = () => {
       <thead class="bg-content2 text-default-500">
         <tr>
           <th class="px-3 py-2 text-left font-medium">预览</th>
-          <th class="px-3 py-2 text-left font-medium">Hash / 尺寸</th>
+          <th class="px-3 py-2 text-left font-medium">Hash / 尺寸 / 变体</th>
           <th class="px-3 py-2 text-left font-medium">审核</th>
           <th class="px-3 py-2 text-left font-medium">上传</th>
           <th class="px-3 py-2 text-right font-medium">操作</th>
@@ -84,6 +92,32 @@ const confirmReject = () => {
             </div>
             <div class="mt-0.5 text-xs text-default-400">
               {{ item.mime }}
+            </div>
+            <div class="mt-1.5 flex flex-wrap items-center gap-1">
+              <KunTooltip :text="item.url" position="top">
+                <a :href="item.url" target="_blank" rel="noopener">
+                  <KunChip color="default" size="xs" variant="flat" class-name="gap-1">
+                    <Icon name="lucide:image" class="size-3" />
+                    原图 {{ item.width }}×{{ item.height }}
+                  </KunChip>
+                </a>
+              </KunTooltip>
+              <KunTooltip
+                v-for="(url, name) in item.variant_urls"
+                :key="name"
+                :text="url"
+                position="top"
+              >
+                <a :href="url" target="_blank" rel="noopener">
+                  <KunChip color="success" size="xs" variant="flat" class-name="gap-1">
+                    <Icon name="lucide:scaling" class="size-3" />
+                    {{ name }}
+                    <span v-if="variantDims(String(name))" class="text-success-700/70">
+                      {{ variantDims(String(name)) }}
+                    </span>
+                  </KunChip>
+                </a>
+              </KunTooltip>
             </div>
           </td>
           <td class="px-3 py-2">
