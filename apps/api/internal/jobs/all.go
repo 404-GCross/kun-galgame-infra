@@ -41,4 +41,13 @@ func RegisterAll(r *Registry) {
 			return RunGalgameImageRefping(ctx, cfg, DefaultGalgameImageRefpingOpts())
 		},
 	})
+
+	r.Register(Job{
+		Name:     "user-avatar-refping",
+		Desc:     "用户头像 reference-ping，防 image_service TTL 回收",
+		Schedule: Schedule{DailyAt: "04:30"},
+		Run: func(ctx context.Context, cfg *config.Config) (Summary, error) {
+			return RunUserAvatarRefping(ctx, cfg, DefaultUserAvatarRefpingOpts())
+		},
+	})
 }
