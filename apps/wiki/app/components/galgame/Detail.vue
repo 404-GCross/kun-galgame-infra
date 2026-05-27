@@ -6,7 +6,7 @@ import {
   OFFICIAL_CATEGORY_MAP
 } from '~/constants/admin'
 import type { Galgame } from '~/shared/types/galgame'
-import { resolveBannerUrl } from '~/shared/utils/resolveImage'
+import { resolveBannerUrl, imageHashUrl } from '~/shared/utils/resolveImage'
 import { formatReleaseDate } from '~/shared/utils/format'
 import type { KunUIColor } from '@kun/ui/components/kun/ui/type'
 
@@ -152,6 +152,7 @@ const changeStatus = async (newStatus: number) => {
 // ────────────────────────────────────────────────
 type TabId =
   | 'overview'
+  | 'gallery'
   | 'tags'
   | 'officials'
   | 'aliases'
@@ -160,11 +161,22 @@ type TabId =
 
 const activeTab = ref<TabId>('overview')
 
+const galleryCount = computed(
+  () =>
+    (galgame.value?.cover?.length ?? 0) +
+    (galgame.value?.screenshot?.length ?? 0)
+)
+
 const tabItems = computed(() => [
   {
     value: 'overview',
     textValue: '基本',
     icon: 'lucide:info'
+  },
+  {
+    value: 'gallery',
+    textValue: `图集 ${galleryCount.value}`,
+    icon: 'lucide:images'
   },
   {
     value: 'tags',
@@ -551,6 +563,109 @@ const officialCategoryColor = (cat: string): KunUIColor =>
               </div>
             </KunCard>
           </div>
+
+          <!-- ============ Tab: 图集 ============ -->
+          <!-- covers (pinned 封面候选) + screenshots (gallery/CG) merged
+               into a single grid + lightbox. Each entry is its own
+               KunLightboxGalleryItem so clicking any thumbnail opens the
+               viewer at that position with ←/→ flipping through ALL
+               entries (covers先, screenshots后, by sort_order).
+               -->
+          <KunCard
+            v-else-if="activeTab === 'gallery'"
+            key="gallery"
+            :is-hoverable="false"
+            :is-transparent="false"
+            content-class="space-y-4"
+          >
+            <div
+              v-if="galleryCount === 0"
+              class="text-default-400 py-10 text-center text-sm"
+            >
+              暂无封面 / 截图
+            </div>
+            <KunLightboxGallery v-else>
+              <div
+                v-if="galgame.cover && galgame.cover.length"
+                class="space-y-2"
+              >
+                <p class="text-default-500 text-sm font-medium">
+                  封面候选 ({{ galgame.cover.length }})
+                </p>
+                <div
+                  class="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4"
+                >
+                  <KunLightboxGalleryItem
+                    v-for="c in [...galgame.cover].sort((a, b) => a.sort_order - b.sort_order)"
+                    :key="`cover-${c.image_hash}`"
+                    :src="imageHashUrl(c.image_hash, { cdnBase })"
+                    :alt="`封面 sort_order=${c.sort_order}`"
+                    as="div"
+                  >
+                    <div
+                      class="bg-default-100 border-default-200 relative overflow-hidden rounded-lg border"
+                      style="aspect-ratio: 16 / 9"
+                    >
+                      <KunImage
+                        :src="imageHashUrl(c.image_hash, { cdnBase, variant: 'mini' })"
+                        :alt="`封面 ${c.sort_order}`"
+                        loading="lazy"
+                        class-name="size-full object-cover"
+                      />
+                      <!-- sort_order=0 = pinned (= effective banner). -->
+                      <KunChip
+                        v-if="c.sort_order === 0"
+                        color="primary"
+                        variant="solid"
+                        size="xs"
+                        class-name="absolute top-1.5 left-1.5 shadow-md"
+                      >
+                        当前 banner
+                      </KunChip>
+                    </div>
+                  </KunLightboxGalleryItem>
+                </div>
+              </div>
+
+              <div
+                v-if="galgame.screenshot && galgame.screenshot.length"
+                class="space-y-2"
+              >
+                <p class="text-default-500 text-sm font-medium">
+                  截图 / CG ({{ galgame.screenshot.length }})
+                </p>
+                <div
+                  class="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4"
+                >
+                  <KunLightboxGalleryItem
+                    v-for="s in [...galgame.screenshot].sort((a, b) => a.sort_order - b.sort_order)"
+                    :key="`shot-${s.image_hash}`"
+                    :src="imageHashUrl(s.image_hash, { cdnBase })"
+                    :alt="s.caption || `截图 ${s.sort_order}`"
+                    as="div"
+                  >
+                    <div
+                      class="bg-default-100 border-default-200 relative overflow-hidden rounded-lg border"
+                      style="aspect-ratio: 16 / 9"
+                    >
+                      <KunImage
+                        :src="imageHashUrl(s.image_hash, { cdnBase, variant: 'mini' })"
+                        :alt="s.caption || `截图 ${s.sort_order}`"
+                        loading="lazy"
+                        class-name="size-full object-cover"
+                      />
+                    </div>
+                    <p
+                      v-if="s.caption"
+                      class="text-default-500 mt-1 text-xs line-clamp-2"
+                    >
+                      {{ s.caption }}
+                    </p>
+                  </KunLightboxGalleryItem>
+                </div>
+              </div>
+            </KunLightboxGallery>
+          </KunCard>
 
           <!-- ============ Tab: 标签 ============ -->
           <KunCard

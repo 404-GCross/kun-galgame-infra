@@ -14,11 +14,12 @@
 | `KunRadioGroup` | [kun-radio-group.md](./kun-radio-group.md) | v0.4.0 新增（classic + card 两 variant，含 ARIA） |
 | `KunFileInput` | [kun-file-input.md](./kun-file-input.md) | v0.4.2 新增，与 useFilePicker + KunUpload 形成三层文件交互 API |
 | `KunDrawer` | [kun-drawer.md](./kun-drawer.md) | v0.5.1 新增；v0.5.2 加 responsive（默认桌面右、手机底） |
+| `KunLightbox` + `KunLightboxGallery` + `KunLightboxGalleryItem` | [kun-lightbox.md](./kun-lightbox.md) | v0.6.0 全面重写：`<dialog>` 底座 + view-transitions + 滑动切图 + 左/右旋按钮 + 工具条按截图重排 + 手势 bug 全清 + dark mode 修复；新增声明式 Gallery/Item 子组件 |
 
 ## 没单独立文件的组件
 
 下面这些组件直接看源码 + JSDoc + props 类型即可（设计上相对直接，没有跨版本演化或复杂取舍）：
 
-- KunButton / KunChip / KunBadge / KunCard / KunInput / KunTextarea / KunCheckBox / KunSwitch / KunSlider / KunAvatar / KunPopover / KunTooltip / KunDatePicker / KunUpload / KunProgress / KunInfo / KunAlert / KunLightbox / KunPagination / KunContextMenu / KunHeader / KunBrand / KunLink / KunDivider / KunIcon / KunCopy
+- KunButton / KunChip / KunBadge / KunCard / KunInput / KunTextarea / KunCheckBox / KunSwitch / KunSlider / KunAvatar / KunPopover / KunTooltip / KunDatePicker / KunUpload / KunProgress / KunInfo / KunAlert / KunPagination / KunContextMenu / KunHeader / KunBrand / KunLink / KunDivider / KunIcon / KunCopy
 
 这些组件在 [changelog/](../changelog/) 各版本文件里有具体改动记录。

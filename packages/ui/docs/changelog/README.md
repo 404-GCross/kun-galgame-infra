@@ -4,6 +4,7 @@
 
 | 版本 | 日期 | 主题 | 严重度 / 性质 |
 |---|---|---|---|
+| [v0.6.0](./v0.6.0.md) | 2026-05-27 | 图片查看器重写 + KunTooltip 精简 + `--kun-background-blur` glass-blur token 修复；新增 `KunLightboxGallery` / `KunLightboxGalleryItem` 声明式包装 | 重大重构 + 2 个新组件 + 修复 |
 | [v0.5.2](./v0.5.2.md) | 2026-05-22 | KunDrawer 响应式默认（桌面右、手机底） | 新增 |
 | [v0.5.1](./v0.5.1.md) | 2026-05-22 | KunDrawer：边缘锚定的浮层 | 新增组件 |
 | [v0.5.0](./v0.5.0.md) | 2026-05-21 | KunImage 加载骨架屏 | 新增功能 |

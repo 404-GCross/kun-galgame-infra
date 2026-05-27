@@ -30,6 +30,7 @@ pnpm -F your-app exec nuxt build   # 通过
 
 | 版本 | 性质 | 同步页 |
 |---|---|---|
+| v0.6.0 | 重大重构 + 2 个新组件 | 同步指令直接看 [changelog/v0.6.0.md §7](../changelog/v0.6.0.md#7-下游-handoff-简表) |
 | v0.5.2 | 新增 prop | [per-version/v0.5.2.md](./per-version/v0.5.2.md) |
 | v0.5.1 | 新增组件 KunDrawer | [per-version/v0.5.1.md](./per-version/v0.5.1.md) |
 | v0.5.0 | 新增功能 KunImage skeleton | [per-version/v0.5.0.md](./per-version/v0.5.0.md) |

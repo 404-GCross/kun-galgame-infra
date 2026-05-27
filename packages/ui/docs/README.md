@@ -8,13 +8,13 @@ KunUI 是 `packages/ui` 下的 Nuxt 4 组件库 layer，被 `apps/web`（鲲 Gal
 |---|---|---|
 | [`architecture/`](./architecture/) | 跨组件设计原则、token 系统、design system 一致性 | 维护者 / 想理解整体设计的下游 |
 | [`components/`](./components/) | 单组件的 spec / API / 设计取舍演变 | 消费组件的应用层开发者 |
-| [`changelog/`](./changelog/) | 每个版本的完整变更记录（v0.1.0 → v0.5.2） | 升级 / 排查回归 |
+| [`changelog/`](./changelog/) | 每个版本的完整变更记录（v0.1.0 → v0.6.0） | 升级 / 排查回归 |
 | [`lessons/`](./lessons/) | 工程教训（Nuxt SSR / Tailwind v4 / flex 默认值 / 调试方法论） | 长期维护规则 |
 | [`handoff/`](./handoff/) | 下游 fork（kungal / moyu / ...）的同步指令、cp 命令、视觉验证 checklist | downstream 维护者 |
 
 ## 当前版本
 
-**v0.5.2**（2026-05-22）—— KunDrawer 响应式默认（桌面右、手机底）
+**v0.6.0**（2026-05-27）—— 图片查看器（KunLightbox + 新增 Gallery/Item 子组件）重写 + KunTooltip 精简 + `--kun-background-blur` glass-blur token 修复
 
 详细看 [`changelog/README.md`](./changelog/README.md) 的版本时间表。
 

@@ -51,6 +51,11 @@ const confirmReject = () => {
 </script>
 
 <template>
+  <!-- Whole table is one lightbox gallery: clicking any row's thumbnail
+       opens the viewer at that row, with ←/→ flipping through the entire
+       current page. The Gallery's display:contents wrapper sits OUTSIDE
+       the table so it doesn't disturb table layout semantics. -->
+  <KunLightboxGallery>
   <div class="overflow-x-auto rounded-xl bg-content1 shadow-sm">
     <table class="w-full text-sm">
       <thead class="bg-content2 text-default-500">
@@ -69,13 +74,18 @@ const confirmReject = () => {
           class="border-t border-default-200 align-top"
         >
           <td class="px-3 py-2">
-            <a :href="item.url" target="_blank" rel="noopener">
+            <!-- Item.src = the original (full-resolution) URL; the
+                 lightbox viewer needs the full image for zoom/pan
+                 quality. The thumbnail inside the slot keeps using
+                 the smallest available variant (100 → mini → main)
+                 for cheap list-page rendering. -->
+            <KunLightboxGalleryItem :src="item.url" :alt="item.hash">
               <img
                 :src="item.variant_urls['100'] || item.variant_urls['mini'] || item.url"
                 :alt="item.hash"
                 class="size-16 rounded-md border border-default-200 object-cover"
               />
-            </a>
+            </KunLightboxGalleryItem>
           </td>
           <td class="px-3 py-2">
             <KunButton
@@ -194,6 +204,7 @@ const confirmReject = () => {
       无数据
     </div>
   </div>
+  </KunLightboxGallery>
 
   <KunModal v-model="rejectOpen">
     <div class="w-[28rem] space-y-4">
