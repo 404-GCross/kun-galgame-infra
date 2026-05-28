@@ -1,28 +1,29 @@
 package model
 
-import "time"
-
 // Galgame represents a visual novel entry
 type Galgame struct {
-	ID                 int       `gorm:"primaryKey;autoIncrement" json:"id"`
+	ID int `gorm:"primaryKey;autoIncrement" json:"id"`
 	// vndb_id is optional — user-submitted originals (no VNDB entry) may
 	// leave this empty. Uniqueness is enforced by a partial unique index
 	// created in migrate-galgame: UNIQUE on vndb_id WHERE vndb_id <> ''.
 	// (GORM AutoMigrate cannot express partial unique, so raw SQL.)
-	VNDBID             string    `gorm:"column:vndb_id;size:10;not null;default:'';index" json:"vndb_id"`
-	BangumiID          *int      `gorm:"column:bid;uniqueIndex" json:"bid,omitempty"`
+	VNDBID    string `gorm:"column:vndb_id;size:10;not null;default:'';index" json:"vndb_id"`
+	BangumiID *int   `gorm:"column:bid;uniqueIndex" json:"bid,omitempty"`
 	// ReleaseDate is the (best-known) galgame release date. nil = unknown.
-	// Stored as a SQL `date` column (no time-of-day, no time zone) — the
-	// Go-side *time.Time always has zero hours/min/sec in UTC. ReleaseDateTBA
-	// is independent: a game can be "scheduled, exact date TBA" (date=nil,
-	// tba=true) or "announced for 2026 H2, no precise date" (date=2026-07-01
-	// imprecise sentinel, tba=true is up to the editor).
-	ReleaseDate    *time.Time `gorm:"column:release_date;type:date;index" json:"release_date"`
-	ReleaseDateTBA bool       `gorm:"column:release_date_tba;not null;default:false" json:"release_date_tba"`
-	NameEnUS           string    `gorm:"column:name_en_us;size:1000;default:''" json:"name_en_us"`
-	NameJaJP           string    `gorm:"column:name_ja_jp;size:1000;default:''" json:"name_ja_jp"`
-	NameZhCN           string    `gorm:"column:name_zh_cn;size:1000;default:''" json:"name_zh_cn"`
-	NameZhTW           string    `gorm:"column:name_zh_tw;size:1000;default:''" json:"name_zh_tw"`
+	// Stored as a SQL `date` column (no time-of-day, no time zone).
+	// ReleaseDateTBA is independent: a game can be "scheduled, exact date
+	// TBA" (date=nil, tba=true) or "announced for 2026 H2, no precise date".
+	//
+	// Type is the custom Date (see date.go), NOT *time.Time — so JSON
+	// serializes as "YYYY-MM-DD" (the documented + validated contract),
+	// not RFC3339 "2019-08-16T00:00:00Z". Date's Scanner/Valuer + the
+	// gorm `type:date` tag keep it a date-only PG column.
+	ReleaseDate    *Date  `gorm:"column:release_date;type:date;index" json:"release_date"`
+	ReleaseDateTBA bool   `gorm:"column:release_date_tba;not null;default:false" json:"release_date_tba"`
+	NameEnUS       string `gorm:"column:name_en_us;size:1000;default:''" json:"name_en_us"`
+	NameJaJP       string `gorm:"column:name_ja_jp;size:1000;default:''" json:"name_ja_jp"`
+	NameZhCN       string `gorm:"column:name_zh_cn;size:1000;default:''" json:"name_zh_cn"`
+	NameZhTW       string `gorm:"column:name_zh_tw;size:1000;default:''" json:"name_zh_tw"`
 	// Banner is the legacy URL string. Kept as permanent fallback during
 	// migration period and as the original record for old galgames. The
 	// migration cmd `migrate-galgame-banners-to-image-service` reads from
@@ -47,26 +48,26 @@ type Galgame struct {
 	ContentLimit       string    `gorm:"column:content_limit;size:10;default:'sfw'" json:"content_limit"`
 	Status             int       `gorm:"default:0" json:"status"`
 	View               int       `gorm:"default:0" json:"view"`
-	ResourceUpdateTime time.Time `gorm:"column:resource_update_time;autoCreateTime" json:"resource_update_time"`
+	ResourceUpdateTime Timestamp `gorm:"column:resource_update_time;autoCreateTime" json:"resource_update_time"`
 	OriginalLanguage   string    `gorm:"column:original_language;default:'ja-jp'" json:"original_language"`
 	AgeLimit           string    `gorm:"column:age_limit;size:10;default:'r18'" json:"age_limit"`
 	UserID             int       `gorm:"column:user_id;not null;index" json:"user_id"`
 	SeriesID           *int      `gorm:"column:series_id;index" json:"series_id"`
-	Created            time.Time `gorm:"autoCreateTime" json:"created"`
-	Updated            time.Time `gorm:"autoUpdateTime" json:"updated"`
+	Created            Timestamp `gorm:"autoCreateTime" json:"created"`
+	Updated            Timestamp `gorm:"autoUpdateTime" json:"updated"`
 
 	// Relations (galgame service owns these)
-	Series       *GalgameSeries             `gorm:"foreignKey:SeriesID" json:"series,omitempty"`
-	Alias        []GalgameAlias             `gorm:"foreignKey:GalgameID" json:"alias,omitempty"`
-	Link         []GalgameLink              `gorm:"foreignKey:GalgameID" json:"link,omitempty"`
-	PR           []GalgamePR                `gorm:"foreignKey:GalgameID" json:"pr,omitempty"`
-	History      []GalgameHistory           `gorm:"foreignKey:GalgameID" json:"history,omitempty"`
-	Contributor  []GalgameContributor       `gorm:"foreignKey:GalgameID" json:"contributor,omitempty"`
-	Official     []GalgameOfficialRelation  `gorm:"foreignKey:GalgameID" json:"official,omitempty"`
-	Engine       []GalgameEngineRelation    `gorm:"foreignKey:GalgameID" json:"engine,omitempty"`
-	Tag          []GalgameTagRelation       `gorm:"foreignKey:GalgameID" json:"tag,omitempty"`
-	Cover        []GalgameCover             `gorm:"foreignKey:GalgameID" json:"cover,omitempty"`
-	Screenshot   []GalgameScreenshot        `gorm:"foreignKey:GalgameID" json:"screenshot,omitempty"`
+	Series      *GalgameSeries            `gorm:"foreignKey:SeriesID" json:"series,omitempty"`
+	Alias       []GalgameAlias            `gorm:"foreignKey:GalgameID" json:"alias,omitempty"`
+	Link        []GalgameLink             `gorm:"foreignKey:GalgameID" json:"link,omitempty"`
+	PR          []GalgamePR               `gorm:"foreignKey:GalgameID" json:"pr,omitempty"`
+	History     []GalgameHistory          `gorm:"foreignKey:GalgameID" json:"history,omitempty"`
+	Contributor []GalgameContributor      `gorm:"foreignKey:GalgameID" json:"contributor,omitempty"`
+	Official    []GalgameOfficialRelation `gorm:"foreignKey:GalgameID" json:"official,omitempty"`
+	Engine      []GalgameEngineRelation   `gorm:"foreignKey:GalgameID" json:"engine,omitempty"`
+	Tag         []GalgameTagRelation      `gorm:"foreignKey:GalgameID" json:"tag,omitempty"`
+	Cover       []GalgameCover            `gorm:"foreignKey:GalgameID" json:"cover,omitempty"`
+	Screenshot  []GalgameScreenshot       `gorm:"foreignKey:GalgameID" json:"screenshot,omitempty"`
 
 	// EffectiveBannerHash is a derived, read-only field: the image_hash of
 	// the cover with sort_order=0 (= the "pinned" banner). Populated by
@@ -79,11 +80,11 @@ func (Galgame) TableName() string { return "galgame" }
 
 // GalgameSeries represents a series of galgames
 type GalgameSeries struct {
-	ID          int       `gorm:"primaryKey;autoIncrement" json:"id"`
-	Name        string    `gorm:"size:1000;uniqueIndex;default:''" json:"name"`
-	Description string    `gorm:"size:2000;default:''" json:"description"`
-	Created      time.Time `gorm:"autoCreateTime" json:"created"`
-	Updated      time.Time `gorm:"autoUpdateTime" json:"updated"`
+	ID           int       `gorm:"primaryKey;autoIncrement" json:"id"`
+	Name         string    `gorm:"size:1000;uniqueIndex;default:''" json:"name"`
+	Description  string    `gorm:"size:2000;default:''" json:"description"`
+	Created      Timestamp `gorm:"autoCreateTime" json:"created"`
+	Updated      Timestamp `gorm:"autoUpdateTime" json:"updated"`
 	GalgameCount int       `gorm:"column:cnt;->;-:migration" json:"galgame_count"`
 
 	Galgame []Galgame `gorm:"foreignKey:SeriesID" json:"galgame,omitempty"`
@@ -96,8 +97,8 @@ type GalgameAlias struct {
 	ID        int       `gorm:"primaryKey;autoIncrement" json:"id"`
 	Name      string    `gorm:"default:''" json:"name"`
 	GalgameID int       `gorm:"column:galgame_id;not null;index" json:"galgame_id"`
-	Created   time.Time `gorm:"autoCreateTime" json:"created"`
-	Updated   time.Time `gorm:"autoUpdateTime" json:"updated"`
+	Created   Timestamp `gorm:"autoCreateTime" json:"created"`
+	Updated   Timestamp `gorm:"autoUpdateTime" json:"updated"`
 }
 
 func (GalgameAlias) TableName() string { return "galgame_alias" }
@@ -107,8 +108,8 @@ type GalgameContributor struct {
 	ID        int       `gorm:"primaryKey;autoIncrement" json:"id"`
 	GalgameID int       `gorm:"column:galgame_id;not null;index" json:"galgame_id"`
 	UserID    int       `gorm:"column:user_id;not null;index" json:"user_id"`
-	Created   time.Time `gorm:"autoCreateTime" json:"created"`
-	Updated   time.Time `gorm:"autoUpdateTime" json:"updated"`
+	Created   Timestamp `gorm:"autoCreateTime" json:"created"`
+	Updated   Timestamp `gorm:"autoUpdateTime" json:"updated"`
 }
 
 func (GalgameContributor) TableName() string { return "galgame_contributor" }

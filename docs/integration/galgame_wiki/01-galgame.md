@@ -58,6 +58,12 @@
 
 批量获取 galgame 轻量信息（跨服务展示用，不加载关联数据）。
 
+> ⚠️ **batch 是轻量 DTO，字段是白名单的**。返回**只有**下方响应示例里那些字段（id / vndb_id / name_* / banner / effective_banner_hash / content_limit / status / user_id / resource_update_time / original_language / age_limit）。
+>
+> **不包含**：`release_date` / `release_date_tba` / `intro_*` / `tag` / `official` / `engine` / `series` / `cover` / `screenshot` / `alias` 等。要这些字段请用 **`GET /galgame/:gid`**（单条详情）、**`GET /galgame`**（列表）或 **`GET /galgame/search`**（搜索）—— 这三个端点都带 `release_date`。
+>
+> 典型踩坑：想按发售日期做本地镜像/筛选的下游，**不能**从 batch 拿 `release_date`（它压根不在 batch 里），必须走 `/galgame/:gid` 或列表/搜索端点。
+
 **查询参数**：
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |

@@ -74,12 +74,12 @@ func TestTakeSnapshot_Empty(t *testing.T) {
 
 func TestSnapshotJSON_Roundtrip(t *testing.T) {
 	original := &Snapshot{
-		VNDBID:      "v999",
-		NameZhCN:    "测试",
+		VNDBID:       "v999",
+		NameZhCN:     "测试",
 		ContentLimit: "nsfw",
-		Aliases:     []string{"a", "b"},
-		TagIDs:      []int{1, 2, 3},
-		Links:       []SnapshotLink{{Name: "VNDB", Link: "https://vndb.org/v999"}},
+		Aliases:      []string{"a", "b"},
+		TagIDs:       []int{1, 2, 3},
+		Links:        []SnapshotLink{{Name: "VNDB", Link: "https://vndb.org/v999"}},
 	}
 
 	data, err := original.ToJSON()
@@ -183,10 +183,10 @@ func TestApplyChanges_Partial(t *testing.T) {
 
 	ApplyChanges(target, source, changedKeys)
 
-	assert.Equal(t, "源名", target.NameZhCN)       // Applied
+	assert.Equal(t, "源名", target.NameZhCN)           // Applied
 	assert.Equal(t, "target", target.NameEnUS)       // NOT applied
 	assert.Equal(t, []int{3, 4}, target.TagIDs)      // Applied
-	assert.Equal(t, []string{"old"}, target.Aliases)  // NOT applied
+	assert.Equal(t, []string{"old"}, target.Aliases) // NOT applied
 }
 
 func TestApplyChanges_AllFields(t *testing.T) {

@@ -1,6 +1,6 @@
 package dto
 
-import "time"
+import "api/internal/platform/galgame/model"
 
 // MessageGalgameBrief is the inline galgame summary attached to every
 // message. Reflects the galgame's CURRENT state (not at message time).
@@ -30,7 +30,7 @@ type MessageResponse struct {
 	Actor         *UserBrief           `json:"actor,omitempty"` // populated for admin queue only
 	TargetUserID  *int                 `json:"target_user_id,omitempty"`
 	Payload       any                  `json:"payload,omitempty"`
-	CreatedAt     time.Time            `json:"created_at"`
+	CreatedAt     model.Timestamp      `json:"created_at"`
 }
 
 // ListMineMessagesRequest is the query of GET /galgame/messages/mine.

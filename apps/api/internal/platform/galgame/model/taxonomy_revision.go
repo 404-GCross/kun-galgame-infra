@@ -2,7 +2,6 @@ package model
 
 import (
 	"encoding/json"
-	"time"
 
 	"gorm.io/datatypes"
 )
@@ -23,9 +22,9 @@ const (
 //   - created  : entity first appeared (initial state in Snapshot)
 //   - updated  : scalar / aliases edit (Snapshot = post-edit state)
 //   - deleted  : entity hard-deleted (Snapshot = LAST state before deletion,
-//                kept so future "undo delete" can replay it)
+//     kept so future "undo delete" can replay it)
 //   - reverted : roll back to a historical snapshot (Snapshot = the state
-//                we just rolled to, also = current DB state post-revert)
+//     we just rolled to, also = current DB state post-revert)
 const (
 	TaxonomyActionCreated  = "created"
 	TaxonomyActionUpdated  = "updated"
@@ -98,7 +97,7 @@ type TaxonomyRevision struct {
 	AffectedGalgameIDs datatypes.JSON `gorm:"column:affected_galgame_ids;type:jsonb;default:'[]'" json:"affected_galgame_ids,omitempty"`
 
 	Note    string    `gorm:"type:text;default:''" json:"note"`
-	Created time.Time `gorm:"autoCreateTime" json:"created"`
+	Created Timestamp `gorm:"autoCreateTime" json:"created"`
 }
 
 func (TaxonomyRevision) TableName() string { return "taxonomy_revision" }

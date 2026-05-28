@@ -847,6 +847,34 @@ galgame 的发售日期字段（`galgame.release_date`，PG `date` 类型）覆�
 
 `release_date` 是 PG `date` 类型，无时区。helper 解析 `YYYY-MM` 时按 UTC 计算边界 ts。日期只到日级精度 — 跨时区显示语义清晰（"2024 年 3 月发售"对全球用户都是同一组游戏，不会因时区切换跑出 1 天差异）。
 
+### 17.7 响应里 release_date 的格式：`YYYY-MM-DD`（不是 RFC3339）
+
+galgame 实体响应里 `release_date` 字段一律是 **`"2019-08-16"`** 这种纯日期串（或 `null` = 未知），**不带** `T00:00:00Z`。GET /galgame/:gid、GET /galgame 列表、GET /galgame/search、revision/PR snapshot 全部一致。
+
+> 历史注记：早期 wiki 把 `release_date`（PG `date` 列）用 Go `*time.Time` 裸序列化，REST 详情/列表端点会吐 RFC3339 `"2019-08-16T00:00:00Z"`，与文档承诺的 `YYYY-MM-DD` 不符，且给 date-only 值塞了幻影 `T00:00:00Z`（消费方做时区转换会 off-by-one-day）。已用自定义 `Date` 类型修复 —— 现在三条序列化路径（REST live / snapshot / search index）统一输出 `YYYY-MM-DD`。
+>
+> **下游 parser 建议**：用 `YYYY-MM-DD` layout 解析即可。想对老数据/缓存鲁棒可同时容错 RFC3339，但 canonical wiki 现在保证纯日期。
+
+### 17.8 batch 端点不含 release_date（重要）
+
+`GET /galgame/batch` 是轻量 DTO，**不返回 `release_date`**（也不返回 intro / tag / cover / screenshot 等）。要 `release_date` 用 `GET /galgame/:gid`、`GET /galgame`、`GET /galgame/search`。字段白名单见 [01-galgame.md GET /galgame/batch](./01-galgame.md#get-galgamebatch)。
+
+想"本地镜像 release_date 再按发售日期排序/筛选"的下游（典型 moyu patch 表）务必从 `/galgame/:gid` 或列表/搜索端点取，**不要**指望 batch。
+
+### 17.9 所有 timestamp 字段：统一 UTC RFC3339（`...Z`）
+
+galgame 实体 + DTO 里的所有**时间戳**字段（`created` / `updated` / `resource_update_time` / `created_at` / `completed_time` 等）一律序列化为 **UTC RFC3339 + 字面 Z**，如 `"2026-05-10T16:24:28Z"`。**不会**出现带本地偏移的形式（`...+08:00` / `...-07:00`）。
+
+> 历史注记：早期这些字段用 Go 裸 `time.Time` 序列化。DB 驱动按**进程本地时区**返回 time.Time（实测 -0700），导致:
+> - raw-model 端点（GET /galgame/:gid 等）吐出带本地 offset 的串（`...-07:00`），形状随部署机器时区漂移
+> - DTO 端点曾用硬编码 `Format("...Z")` 但 time.Time 非 UTC → **标 Z 却是本地钟面，差一个偏移量**
+>
+> 已用自定义 `Timestamp` 类型（`MarshalJSON` 强制 `.UTC()`）统一修复。现在无论服务器跑在什么时区，所有 timestamp 都是真 UTC 的 `...Z`。区分：
+> - **timestamp**（有具体时刻）→ `2026-05-10T16:24:28Z`（UTC RFC3339）
+> - **date-only**（`release_date`，只到天）→ `2019-08-16`（无时间无时区，见 §17.7）
+>
+> **下游 parser 建议**：标准 RFC3339 解析即可（`Z` 后缀,UTC）。不要假设带本地 offset。
+
 ---
 
 ## 联系人

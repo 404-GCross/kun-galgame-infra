@@ -120,7 +120,7 @@ func (h *AuthHandler) Register(c fiber.Ctx) error {
 			Moemoepoint: user.Moemoepoint,
 			Status:      user.Status,
 			Roles:       []string{}, // New user has no roles yet
-			CreatedAt:   user.CreatedAt.Format("2006-01-02T15:04:05Z"),
+			CreatedAt:   user.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
 		},
 		AccessToken: tokens.AccessToken,
 	})
@@ -162,7 +162,7 @@ func (h *AuthHandler) Login(c fiber.Ctx) error {
 			Moemoepoint: user.Moemoepoint,
 			Status:      user.Status,
 			Roles:       user.RoleNames(),
-			CreatedAt:   user.CreatedAt.Format("2006-01-02T15:04:05Z"),
+			CreatedAt:   user.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
 		},
 		AccessToken: tokens.AccessToken,
 	})
@@ -237,7 +237,7 @@ func (h *AuthHandler) Me(c fiber.Ctx) error {
 		Moemoepoint: user.Moemoepoint,
 		Status:      user.Status,
 		Roles:       user.RoleNames(),
-		CreatedAt:   user.CreatedAt.Format("2006-01-02T15:04:05Z"),
+		CreatedAt:   user.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
 	})
 }
 
@@ -279,7 +279,7 @@ func (h *AuthHandler) UpdateProfile(c fiber.Ctx) error {
 		Moemoepoint: user.Moemoepoint,
 		Status:      user.Status,
 		Roles:       roles,
-		CreatedAt:   user.CreatedAt.Format("2006-01-02T15:04:05Z"),
+		CreatedAt:   user.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
 	})
 }
 
@@ -366,7 +366,7 @@ func (h *AuthHandler) GetProfile(c fiber.Ctx) error {
 		Moemoepoint: user.Moemoepoint,
 		Status:      user.Status,
 		Roles:       user.RoleNames(),
-		CreatedAt:   user.CreatedAt.Format("2006-01-02T15:04:05Z"),
+		CreatedAt:   user.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
 	})
 }
 

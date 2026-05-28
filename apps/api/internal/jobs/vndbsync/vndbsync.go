@@ -520,8 +520,12 @@ func (s *syncer) buildGalgame(vn *vndbVN) *model.Galgame {
 
 	// Released → typed date + TBA flag, via the shared parser (model.ParseLegacyReleased).
 	// VNDB conventions: nil/""=unknown, "tba"=date pending, "YYYY[-MM[-DD]]"=parsed.
+	// ParseLegacyReleased returns *time.Time (also used by snapshot builders);
+	// wrap into the model's Date type for the typed column.
 	if vn.Released != nil {
-		g.ReleaseDate, g.ReleaseDateTBA = model.ParseLegacyReleased(*vn.Released)
+		t, tba := model.ParseLegacyReleased(*vn.Released)
+		g.ReleaseDate = model.NewDate(t)
+		g.ReleaseDateTBA = tba
 	}
 
 	// Description → intro_en_us

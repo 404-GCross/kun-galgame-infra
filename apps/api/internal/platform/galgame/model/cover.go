@@ -1,7 +1,5 @@
 package model
 
-import "time"
-
 // GalgameCover is one entry in a galgame's cover candidate set.
 //
 // Image bytes / dimensions / moderation / TTL all live in image_service
@@ -30,7 +28,7 @@ type GalgameCover struct {
 	Violence  int16     `gorm:"column:violence;not null;default:0" json:"violence"`
 	Source    string    `gorm:"column:source;size:16;default:''" json:"source"`
 	SourceKey string    `gorm:"column:source_key;size:128;default:''" json:"source_key"`
-	Created   time.Time `gorm:"column:created;autoCreateTime" json:"created"`
+	Created   Timestamp `gorm:"column:created;autoCreateTime" json:"created"`
 }
 
 func (GalgameCover) TableName() string { return "galgame_cover" }
@@ -53,7 +51,7 @@ type GalgameScreenshot struct {
 	Violence  int16     `gorm:"column:violence;not null;default:0" json:"violence"`
 	Source    string    `gorm:"column:source;size:16;default:''" json:"source"`
 	SourceKey string    `gorm:"column:source_key;size:128;default:''" json:"source_key"`
-	Created   time.Time `gorm:"column:created;autoCreateTime" json:"created"`
+	Created   Timestamp `gorm:"column:created;autoCreateTime" json:"created"`
 }
 
 func (GalgameScreenshot) TableName() string { return "galgame_screenshot" }

@@ -53,7 +53,7 @@ func (s *AdminService) ListUsers(ctx context.Context, req *dto.UserListRequest) 
 			Moemoepoint: user.Moemoepoint,
 			Status:      user.Status,
 			Roles:       user.RoleNames(),
-			CreatedAt:   user.CreatedAt.Format("2006-01-02T15:04:05Z"),
+			CreatedAt:   user.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
 		}
 	}
 
@@ -91,7 +91,7 @@ func (s *AdminService) GetUser(ctx context.Context, uuid string) (*dto.UserDetai
 			Moemoepoint: user.Moemoepoint,
 			Status:      user.Status,
 			Roles:       user.RoleNames(),
-			CreatedAt:   user.CreatedAt.Format("2006-01-02T15:04:05Z"),
+			CreatedAt:   user.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
 		},
 		IP:           user.IP,
 		SessionCount: int(sessionCount),

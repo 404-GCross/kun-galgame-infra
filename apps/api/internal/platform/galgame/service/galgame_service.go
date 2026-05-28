@@ -507,7 +507,7 @@ func (s *GalgameService) BatchGetWithViewer(ctx context.Context, ids []int, view
 			ContentLimit:        g.ContentLimit,
 			Status:              g.Status,
 			UserID:              g.UserID,
-			ResourceUpdateTime:  g.ResourceUpdateTime.Format("2006-01-02T15:04:05Z"),
+			ResourceUpdateTime:  g.ResourceUpdateTime.Time().UTC().Format("2006-01-02T15:04:05Z"),
 			OriginalLanguage:    g.OriginalLanguage,
 			AgeLimit:            g.AgeLimit,
 		}

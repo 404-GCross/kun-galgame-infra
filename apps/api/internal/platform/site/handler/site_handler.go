@@ -39,7 +39,7 @@ func (h *SiteHandler) List(c fiber.Ctx) error {
 			Name:        s.Name,
 			Domain:      s.Domain,
 			Description: s.Description,
-			CreatedAt:   s.CreatedAt.Format("2006-01-02T15:04:05Z"),
+			CreatedAt:   s.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
 		}
 	}
 
@@ -64,7 +64,7 @@ func (h *SiteHandler) Get(c fiber.Ctx) error {
 		Name:        site.Name,
 		Domain:      site.Domain,
 		Description: site.Description,
-		CreatedAt:   site.CreatedAt.Format("2006-01-02T15:04:05Z"),
+		CreatedAt:   site.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
 	})
 }
 
@@ -99,7 +99,7 @@ func (h *SiteHandler) Create(c fiber.Ctx) error {
 		Name:        site.Name,
 		Domain:      site.Domain,
 		Description: site.Description,
-		CreatedAt:   site.CreatedAt.Format("2006-01-02T15:04:05Z"),
+		CreatedAt:   site.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
 	})
 }
 
@@ -141,7 +141,7 @@ func (h *SiteHandler) Update(c fiber.Ctx) error {
 		Name:        site.Name,
 		Domain:      site.Domain,
 		Description: site.Description,
-		CreatedAt:   site.CreatedAt.Format("2006-01-02T15:04:05Z"),
+		CreatedAt:   site.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
 	})
 }
 
@@ -313,6 +313,6 @@ func toOAuthClientResponse(cl *siteModel.OAuthClient) dto.OAuthClientResponse {
 		IsPublic:               cl.IsPublic,
 		AutoConsent:            cl.AutoConsent,
 		RefreshTokenTTLSeconds: cl.RefreshTokenTTLSeconds,
-		CreatedAt:              cl.CreatedAt.Format("2006-01-02T15:04:05Z"),
+		CreatedAt:              cl.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
 	}
 }

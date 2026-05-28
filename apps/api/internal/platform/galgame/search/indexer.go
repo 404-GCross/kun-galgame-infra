@@ -49,8 +49,8 @@ func ToGalgameDoc(g *model.Galgame) *GalgameDoc {
 		View:             g.View,
 		ReleaseDate:      formatGalgameReleaseDate(g.ReleaseDate),
 		ReleaseDateTBA:   g.ReleaseDateTBA,
-		UpdatedTS:        g.Updated.Unix(),
-		CreatedTS:        g.Created.Unix(),
+		UpdatedTS:        g.Updated.Time().Unix(),
+		CreatedTS:        g.Created.Time().Unix(),
 	}
 	if g.BangumiID != nil {
 		doc.BID = g.BangumiID
@@ -119,9 +119,10 @@ func ToGalgameDoc(g *model.Galgame) *GalgameDoc {
 	// Derive year + timestamp from the typed date column. Cheap filter/sort
 	// fields stay nil when ReleaseDate is unknown.
 	if g.ReleaseDate != nil {
-		y := g.ReleaseDate.UTC().Year()
+		t := g.ReleaseDate.Time().UTC()
+		y := t.Year()
 		doc.ReleasedYear = &y
-		ts := g.ReleaseDate.UTC().Unix()
+		ts := t.Unix()
 		doc.ReleasedTS = &ts
 	}
 
@@ -131,11 +132,11 @@ func ToGalgameDoc(g *model.Galgame) *GalgameDoc {
 // formatGalgameReleaseDate renders the model's date column for indexing:
 // nil → "" (empty string, so the doc field is present but blank); valid
 // date → "YYYY-MM-DD" UTC string. Mirrors the JSON shape used elsewhere.
-func formatGalgameReleaseDate(t *time.Time) string {
-	if t == nil {
+func formatGalgameReleaseDate(d *model.Date) string {
+	if d == nil {
 		return ""
 	}
-	return t.UTC().Format("2006-01-02")
+	return d.Time().UTC().Format("2006-01-02")
 }
 
 // UpsertGalgame pushes a single galgame doc.

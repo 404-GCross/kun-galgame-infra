@@ -1,8 +1,6 @@
 package model
 
 import (
-	"time"
-
 	"gorm.io/datatypes"
 )
 
@@ -16,20 +14,20 @@ type GalgamePR struct {
 	BaseRevision  int            `gorm:"column:base_revision;not null" json:"base_revision"`
 	Snapshot      datatypes.JSON `gorm:"type:jsonb;not null" json:"snapshot"`
 	CompletedBy   *int           `gorm:"column:completed_by" json:"completed_by,omitempty"`
-	CompletedTime *time.Time     `gorm:"column:completed_time" json:"completed_time,omitempty"`
+	CompletedTime *Timestamp     `gorm:"column:completed_time" json:"completed_time,omitempty"`
 	RevisionID    *int           `gorm:"column:revision_id" json:"revision_id,omitempty"`
-	Created       time.Time      `gorm:"autoCreateTime" json:"created"`
-	Updated       time.Time      `gorm:"autoUpdateTime" json:"updated"`
+	Created       Timestamp      `gorm:"autoCreateTime" json:"created"`
+	Updated       Timestamp      `gorm:"autoUpdateTime" json:"updated"`
 }
 
 func (GalgamePR) TableName() string { return "galgame_pr" }
 
 // GalgameRevision represents a version snapshot of a galgame
 type GalgameRevision struct {
-	ID         int            `gorm:"primaryKey;autoIncrement" json:"id"`
-	GalgameID  int            `gorm:"not null;uniqueIndex:idx_galgame_revision" json:"galgame_id"`
-	Revision   int            `gorm:"not null;uniqueIndex:idx_galgame_revision" json:"revision"`
-	UserID     int            `gorm:"not null;index" json:"user_id"`
+	ID        int `gorm:"primaryKey;autoIncrement" json:"id"`
+	GalgameID int `gorm:"not null;uniqueIndex:idx_galgame_revision" json:"galgame_id"`
+	Revision  int `gorm:"not null;uniqueIndex:idx_galgame_revision" json:"revision"`
+	UserID    int `gorm:"not null;index" json:"user_id"`
 	// Full action set produced by the galgame services. NOTE: GORM's
 	// AutoMigrate only CREATES this CHECK on a fresh table — it never
 	// ALTERs an existing one. When you add an action here you MUST also
@@ -43,7 +41,7 @@ type GalgameRevision struct {
 	Snapshot   datatypes.JSON `gorm:"type:jsonb;not null" json:"snapshot"`
 	IsMinor    bool           `gorm:"default:false" json:"is_minor"`
 	RevertedTo *int           `gorm:"column:reverted_to" json:"reverted_to,omitempty"`
-	Created    time.Time      `gorm:"autoCreateTime" json:"created"`
+	Created    Timestamp      `gorm:"autoCreateTime" json:"created"`
 }
 
 func (GalgameRevision) TableName() string { return "galgame_revision" }
@@ -56,8 +54,8 @@ type GalgameHistory struct {
 	Content   string    `gorm:"size:1007;default:''" json:"content"`
 	GalgameID int       `gorm:"column:galgame_id;not null;index" json:"galgame_id"`
 	UserID    int       `gorm:"column:user_id;not null;index" json:"user_id"`
-	Created   time.Time `gorm:"autoCreateTime" json:"created"`
-	Updated   time.Time `gorm:"autoUpdateTime" json:"updated"`
+	Created   Timestamp `gorm:"autoCreateTime" json:"created"`
+	Updated   Timestamp `gorm:"autoUpdateTime" json:"updated"`
 }
 
 func (GalgameHistory) TableName() string { return "galgame_history" }

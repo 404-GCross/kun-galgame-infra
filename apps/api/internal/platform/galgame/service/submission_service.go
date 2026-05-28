@@ -435,8 +435,8 @@ func (s *SubmissionService) ListMine(ctx context.Context, userID int, req *dto.L
 			EffectiveBannerHash: g.EffectiveBannerHash,
 			ContentLimit:        g.ContentLimit,
 			Status:              g.Status,
-			Created:             g.Created.Format("2006-01-02T15:04:05Z"),
-			Updated:             g.Updated.Format("2006-01-02T15:04:05Z"),
+			Created:             g.Created.Time().UTC().Format("2006-01-02T15:04:05Z"),
+			Updated:             g.Updated.Time().UTC().Format("2006-01-02T15:04:05Z"),
 			DeclineReason:       reasons[g.ID],
 		}
 	}

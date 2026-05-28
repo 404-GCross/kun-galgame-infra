@@ -8,34 +8,34 @@ import (
 
 // Snapshot represents the complete editable state of a galgame at a point in time
 type Snapshot struct {
-	VNDBID           string         `json:"vndb_id"`
-	BangumiID        *int           `json:"bid,omitempty"`
+	VNDBID    string `json:"vndb_id"`
+	BangumiID *int   `json:"bid,omitempty"`
 	// ReleaseDate is the canonical release date as "YYYY-MM-DD" (string,
 	// not *time.Time, to keep JSON output stable across time zones and to
 	// produce identical byte-for-byte snapshots for ChangedKeys diffing).
 	// nil = unknown. ReleaseDateTBA = "announced but exact date pending".
 	// The two are independent — a scheduled game can have (date=2026-03-01,
 	// tba=true) meaning "approximate target".
-	ReleaseDate      *string        `json:"release_date"`
-	ReleaseDateTBA   bool           `json:"release_date_tba"`
-	NameEnUS         string         `json:"name_en_us"`
-	NameJaJP         string         `json:"name_ja_jp"`
-	NameZhCN         string         `json:"name_zh_cn"`
-	NameZhTW         string         `json:"name_zh_tw"`
-	Banner           string         `json:"banner"`
-	IntroEnUS        string         `json:"intro_en_us"`
-	IntroJaJP        string         `json:"intro_ja_jp"`
-	IntroZhCN        string         `json:"intro_zh_cn"`
-	IntroZhTW        string         `json:"intro_zh_tw"`
-	ContentLimit     string         `json:"content_limit"`
-	OriginalLanguage string         `json:"original_language"`
-	AgeLimit         string         `json:"age_limit"`
-	SeriesID         *int           `json:"series_id"`
-	Aliases          []string       `json:"aliases"`
-	TagIDs           []int          `json:"tag_ids"`
-	OfficialIDs      []int          `json:"official_ids"`
-	EngineIDs        []int          `json:"engine_ids"`
-	Links            []SnapshotLink `json:"links"`
+	ReleaseDate      *string              `json:"release_date"`
+	ReleaseDateTBA   bool                 `json:"release_date_tba"`
+	NameEnUS         string               `json:"name_en_us"`
+	NameJaJP         string               `json:"name_ja_jp"`
+	NameZhCN         string               `json:"name_zh_cn"`
+	NameZhTW         string               `json:"name_zh_tw"`
+	Banner           string               `json:"banner"`
+	IntroEnUS        string               `json:"intro_en_us"`
+	IntroJaJP        string               `json:"intro_ja_jp"`
+	IntroZhCN        string               `json:"intro_zh_cn"`
+	IntroZhTW        string               `json:"intro_zh_tw"`
+	ContentLimit     string               `json:"content_limit"`
+	OriginalLanguage string               `json:"original_language"`
+	AgeLimit         string               `json:"age_limit"`
+	SeriesID         *int                 `json:"series_id"`
+	Aliases          []string             `json:"aliases"`
+	TagIDs           []int                `json:"tag_ids"`
+	OfficialIDs      []int                `json:"official_ids"`
+	EngineIDs        []int                `json:"engine_ids"`
+	Links            []SnapshotLink       `json:"links"`
 	Covers           []SnapshotCover      `json:"covers"`
 	Screenshots      []SnapshotScreenshot `json:"screenshots"`
 }
@@ -327,11 +327,11 @@ func derefStr(p *string) string {
 // snapshot string. nil column → nil snapshot pointer (= unknown). The
 // pointer-string form keeps JSON snapshots byte-stable across time zones
 // (a *time.Time roundtrip can shift by hours and break ChangedKeys).
-func formatReleaseDate(t *time.Time) *string {
-	if t == nil {
+func formatReleaseDate(d *Date) *string {
+	if d == nil {
 		return nil
 	}
-	s := t.UTC().Format("2006-01-02")
+	s := d.Time().UTC().Format("2006-01-02")
 	return &s
 }
 
