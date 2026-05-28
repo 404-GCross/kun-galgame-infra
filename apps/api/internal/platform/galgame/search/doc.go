@@ -56,11 +56,13 @@ type GalgameDoc struct {
 	View             int    `json:"view"`
 	// ReleaseDate is the date column rendered as "YYYY-MM-DD" (empty when
 	// unknown). ReleaseDateTBA marks "announced, exact date pending".
-	// ReleasedYear / ReleasedTS are derived for cheap filter/sort —
-	// they stay nil when ReleaseDate is empty.
+	// ReleasedYear / ReleasedMonth / ReleasedTS are derived for cheap
+	// filter/sort — they stay nil when ReleaseDate is empty. ReleasedMonth
+	// (1-12) backs the discontinuous-month filter (released_months).
 	ReleaseDate      string `json:"release_date"`
 	ReleaseDateTBA   bool   `json:"release_date_tba"`
 	ReleasedYear     *int   `json:"released_year,omitempty"`
+	ReleasedMonth    *int   `json:"released_month,omitempty"`
 	ReleasedTS       *int64 `json:"released_ts,omitempty"`
 	UpdatedTS        int64  `json:"updated_ts"`
 	CreatedTS        int64  `json:"created_ts"`

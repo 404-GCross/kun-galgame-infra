@@ -106,7 +106,13 @@ func (r *GalgameRepository) ExistsByVNDBID(ctx context.Context, vndbID string) (
 // set (SQL `>=` / `<=` on NULL is UNKNOWN → row drops out, matching
 // the user-visible contract: "filter to 2024 = only games we know are
 // in 2024").
-func (r *GalgameRepository) List(ctx context.Context, page, limit int, sortField, sortOrder, search, contentLimit string, releasedFrom, releasedTo time.Time) (items []model.Galgame, total int64, err error) {
+//
+// releasedMonths is an optional set of calendar months (1-12); when
+// non-empty it adds `EXTRACT(MONTH FROM release_date) IN (...)` — an
+// orthogonal AND filter on top of the year range. Non-sargable, but it
+// only rechecks rows the year-range scan already narrowed. NULL
+// release_date drops out here too (EXTRACT(NULL) → NULL → not IN).
+func (r *GalgameRepository) List(ctx context.Context, page, limit int, sortField, sortOrder, search, contentLimit string, releasedFrom, releasedTo time.Time, releasedMonths []int) (items []model.Galgame, total int64, err error) {
 	defer func() {
 		for i := range items {
 			model.PopulateEffectiveBanner(&items[i])
@@ -128,6 +134,9 @@ func (r *GalgameRepository) List(ctx context.Context, page, limit int, sortField
 	}
 	if !releasedTo.IsZero() {
 		query = query.Where("release_date <= ?", releasedTo.Format("2006-01-02"))
+	}
+	if len(releasedMonths) > 0 {
+		query = query.Where("EXTRACT(MONTH FROM release_date)::int IN ?", releasedMonths)
 	}
 
 	if search != "" {

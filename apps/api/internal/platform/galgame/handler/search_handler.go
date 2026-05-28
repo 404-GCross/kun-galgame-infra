@@ -64,6 +64,12 @@ func (h *SearchHandler) Galgame(c fiber.Ctx) error {
 		toTS = toTime.Unix()
 	}
 
+	// Discontinuous month set (1-12), AND-layered on the year range.
+	months, err := utils.ParseMonthSet(q["released_months"])
+	if err != nil {
+		return response.BadRequestMsg(c, errors.ErrValidationFailed, err.Error())
+	}
+
 	req := &search.GalgameSearchRequest{
 		Query:             q["q"],
 		Statuses:          parseIntList(q["status"]),
@@ -76,6 +82,7 @@ func (h *SearchHandler) Galgame(c fiber.Ctx) error {
 		SeriesID:          parseIntPtr(q["series_id"]),
 		ReleasedFromTS:    fromTS,
 		ReleasedToTS:      toTS,
+		ReleasedMonths:    months,
 		IncludeIntro:      parseBool(q["include_intro"]),
 		Sort:              q["sort"],
 		Page:              atoiOr(q["page"], 1),

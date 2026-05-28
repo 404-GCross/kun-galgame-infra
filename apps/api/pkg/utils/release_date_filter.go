@@ -2,6 +2,9 @@ package utils
 
 import (
 	"fmt"
+	"sort"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -76,4 +79,44 @@ func ParseReleaseUpperBound(s string) (time.Time, error) {
 		return lastDay, nil
 	}
 	return time.Time{}, fmt.Errorf("invalid release upper bound %q (want YYYY or YYYY-MM)", s)
+}
+
+// ParseMonthSet parses a comma-separated list of calendar months into a
+// deduplicated, ascending []int. It powers "discontinuous months within a
+// continuous year range" filtering — e.g. released_months=3,7,12 combined
+// with released_from=2020&released_to=2024 means "March / July / December
+// releases across 2020–2024". The month set is an orthogonal AND filter
+// layered on top of the year-range bounds; absent (empty) = no month filter.
+//
+//   - ""            → nil (no filter)
+//   - "3,7,12"      → []int{3, 7, 12}
+//   - "12, 3, 3"    → []int{3, 12}   (sorted + deduped, whitespace tolerated)
+//
+// Out-of-range or non-integer entries return an error so the caller can
+// surface a 400 rather than silently dropping the filter.
+func ParseMonthSet(s string) ([]int, error) {
+	if s == "" {
+		return nil, nil
+	}
+	seen := make(map[int]bool, 12)
+	var months []int
+	for _, part := range strings.Split(s, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		m, err := strconv.Atoi(part)
+		if err != nil {
+			return nil, fmt.Errorf("invalid month %q (want integer 1-12): %w", part, err)
+		}
+		if m < 1 || m > 12 {
+			return nil, fmt.Errorf("invalid month %d (want 1-12)", m)
+		}
+		if !seen[m] {
+			seen[m] = true
+			months = append(months, m)
+		}
+	}
+	sort.Ints(months)
+	return months, nil
 }

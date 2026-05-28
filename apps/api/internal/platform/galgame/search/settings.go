@@ -37,6 +37,10 @@ func galgamesSettings() *meilisearch.Settings {
 			"age_limit",
 			"original_language",
 			"released_year",
+			// released_month (1-12) backs the discontinuous-month filter:
+			// `released_month IN [3, 7, 12]`, layered (AND) on the year
+			// range. Indexer populates it alongside released_year.
+			"released_month",
 			// released_ts (Unix seconds) enables month-precision range
 			// filters via the `released_from` / `released_to` query
 			// params accepting YYYY-MM. Indexer already populates this

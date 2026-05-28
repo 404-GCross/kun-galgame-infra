@@ -46,6 +46,10 @@ type GalgameSearchRequest struct {
 	// 0 = no filter.
 	ReleasedFromTS int64
 	ReleasedToTS   int64
+	// ReleasedMonths is a set of calendar months (1-12), an orthogonal AND
+	// filter on the year range — `released_month IN [...]`. Empty = no
+	// month filter. Handler resolves the CSV via utils.ParseMonthSet.
+	ReleasedMonths []int
 
 	IncludeIntro bool
 
@@ -334,6 +338,10 @@ func buildGalgameFilter(r *GalgameSearchRequest) string {
 	}
 	if r.ReleasedToTS != 0 {
 		clauses = append(clauses, fmt.Sprintf("released_ts <= %d", r.ReleasedToTS))
+	}
+	// Discontinuous months within the year range — `released_month IN [...]`.
+	if len(r.ReleasedMonths) > 0 {
+		clauses = append(clauses, inIntFilter("released_month", r.ReleasedMonths))
 	}
 
 	return strings.Join(clauses, " AND ")

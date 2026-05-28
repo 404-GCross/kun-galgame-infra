@@ -76,3 +76,46 @@ func TestParseReleaseUpperBoundErrors(t *testing.T) {
 		})
 	}
 }
+
+func TestParseMonthSet(t *testing.T) {
+	cases := []struct {
+		in   string
+		want []int
+	}{
+		{"", nil},
+		{"3", []int{3}},
+		{"3,7,12", []int{3, 7, 12}},
+		{"12,3,7", []int{3, 7, 12}},      // sorted
+		{"3,3,7,7", []int{3, 7}},          // deduped
+		{" 3 , 7 ,12 ", []int{3, 7, 12}}, // whitespace tolerated
+		{"1,2,3,4,5,6,7,8,9,10,11,12", []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}},
+		{"3,,7", []int{3, 7}}, // empty token skipped
+	}
+	for _, c := range cases {
+		t.Run(c.in, func(t *testing.T) {
+			got, err := ParseMonthSet(c.in)
+			if err != nil {
+				t.Fatalf("unexpected err: %v", err)
+			}
+			if len(got) != len(c.want) {
+				t.Fatalf("got %v want %v", got, c.want)
+			}
+			for i := range got {
+				if got[i] != c.want[i] {
+					t.Fatalf("got %v want %v", got, c.want)
+				}
+			}
+		})
+	}
+}
+
+func TestParseMonthSetErrors(t *testing.T) {
+	cases := []string{"0", "13", "-1", "abc", "3,abc", "3,15"}
+	for _, c := range cases {
+		t.Run(c, func(t *testing.T) {
+			if _, err := ParseMonthSet(c); err == nil {
+				t.Fatalf("expected error for %q, got nil", c)
+			}
+		})
+	}
+}

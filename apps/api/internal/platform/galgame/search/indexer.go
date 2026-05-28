@@ -122,6 +122,8 @@ func ToGalgameDoc(g *model.Galgame) *GalgameDoc {
 		t := g.ReleaseDate.Time().UTC()
 		y := t.Year()
 		doc.ReleasedYear = &y
+		m := int(t.Month())
+		doc.ReleasedMonth = &m
 		ts := t.Unix()
 		doc.ReleasedTS = &ts
 	}

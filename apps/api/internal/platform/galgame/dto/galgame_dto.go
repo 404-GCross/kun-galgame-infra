@@ -13,15 +13,24 @@ package dto
 // ParseReleaseUpperBound for normalization (leap years + 30/31-day
 // months handled). The SQL filter is `WHERE release_date >= ?` against
 // the indexed `release_date` column (btree), so range queries are O(log N).
+//
+// ReleasedMonths is a comma-separated set of calendar months (1-12), an
+// orthogonal AND filter layered on the year range — e.g.
+// released_from=2020&released_to=2024&released_months=3,7 = "March/July
+// releases across 2020–2024". Empty = no month filter. See
+// utils.ParseMonthSet. The SQL clause is `EXTRACT(MONTH FROM release_date)
+// IN (...)`: non-sargable, but applied as a cheap recheck on rows the
+// year-range btree scan already narrowed.
 type ListGalgameRequest struct {
-	Page         int    `query:"page" validate:"min=1"`
-	Limit        int    `query:"limit" validate:"min=1,max=50"`
-	SortField    string `query:"sort_field" validate:"omitempty,oneof=created updated view resource_update_time release_date"`
-	SortOrder    string `query:"sort_order" validate:"omitempty,oneof=asc desc"`
-	Search       string `query:"search"`
-	ContentLimit string `query:"content_limit" validate:"omitempty,oneof=sfw nsfw all"`
-	ReleasedFrom string `query:"released_from"`
-	ReleasedTo   string `query:"released_to"`
+	Page           int    `query:"page" validate:"min=1"`
+	Limit          int    `query:"limit" validate:"min=1,max=50"`
+	SortField      string `query:"sort_field" validate:"omitempty,oneof=created updated view resource_update_time release_date"`
+	SortOrder      string `query:"sort_order" validate:"omitempty,oneof=asc desc"`
+	Search         string `query:"search"`
+	ContentLimit   string `query:"content_limit" validate:"omitempty,oneof=sfw nsfw all"`
+	ReleasedFrom   string `query:"released_from"`
+	ReleasedTo     string `query:"released_to"`
+	ReleasedMonths string `query:"released_months"`
 }
 
 // CreateGalgameRequest represents a galgame creation request

@@ -88,8 +88,12 @@ func (s *GalgameService) List(ctx context.Context, req *dto.ListGalgameRequest) 
 	if err != nil {
 		return nil, 0, errors.New(errors.ErrValidationFailed, err.Error())
 	}
+	months, err := utils.ParseMonthSet(req.ReleasedMonths)
+	if err != nil {
+		return nil, 0, errors.New(errors.ErrValidationFailed, err.Error())
+	}
 
-	return s.galgameRepo.List(ctx, req.Page, req.Limit, req.SortField, req.SortOrder, req.Search, contentLimit, from, to)
+	return s.galgameRepo.List(ctx, req.Page, req.Limit, req.SortField, req.SortOrder, req.Search, contentLimit, from, to, months)
 }
 
 // GetByID returns a published galgame with relations (public visibility:
