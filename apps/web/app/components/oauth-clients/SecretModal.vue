@@ -11,7 +11,7 @@ watch(show, (val) => {
 
 <template>
   <KunModal v-model="show" :is-dismissable="false">
-    <div class="w-[28rem] space-y-4 p-6">
+    <div class="w-[28rem] max-w-[calc(100vw-1.5rem)] space-y-4 p-6">
       <div class="flex items-center gap-3">
         <div class="flex size-10 items-center justify-center rounded-full bg-success-100">
           <Icon name="lucide:check" class="size-5 text-success" />

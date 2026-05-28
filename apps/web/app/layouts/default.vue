@@ -1,10 +1,18 @@
 <script setup lang="ts">
 import { SIDEBAR_MENU } from '~/constants/admin'
+import { useBodyScrollLock } from '@kun/ui/app/composables/useBodyScrollLock'
 
 const auth = useAuth()
+const route = useRoute()
 const router = useRouter()
 const colorMode = useColorMode()
+
+// Desktop-only collapse (md+). On mobile the sidebar is a full-width
+// slide-in drawer, so collapse width is irrelevant there.
 const isSidebarCollapsed = ref(false)
+// Mobile drawer open state (< md). Desktop ignores it — the sidebar is
+// always visible via md:translate-x-0.
+const isMobileMenuOpen = ref(false)
 
 const visibleMenu = computed(() =>
   SIDEBAR_MENU.filter((item) => !item.adminOnly || auth.isAdmin.value)
@@ -13,11 +21,7 @@ const visibleMenu = computed(() =>
 // Trigger uses a fixed icon (not derived from colorMode.preference) so
 // SSR and CSR render the exact same DOM. The current preference is
 // shown inside the popover instead — and the popover is closed by
-// default, so its body never enters the SSR pass. This is the same
-// structural pattern kungal uses (settings live in a closed-by-default
-// panel, never in a permanently-visible trigger). See
-// [@nuxtjs/color-mode hydration considerations].
-
+// default, so its body never enters the SSR pass.
 const colorModeOptions = [
   { value: 'light', label: '浅色', icon: 'lucide:sun' },
   { value: 'dark', label: '深色', icon: 'lucide:moon' },
@@ -32,6 +36,35 @@ const handleLogout = async () => {
   await auth.logout()
 }
 
+// Close the mobile drawer on navigation — a client-side route change
+// would otherwise leave it open over the destination page.
+watch(
+  () => route.path,
+  () => {
+    isMobileMenuOpen.value = false
+  }
+)
+
+// Lock body scroll while the mobile drawer is open. Shared refcount so it
+// composes with KunModal / KunLightbox locks instead of clobbering them.
+const { lock, unlock } = useBodyScrollLock()
+let locked = false
+watch(isMobileMenuOpen, (open) => {
+  if (open && !locked) {
+    lock()
+    locked = true
+  } else if (!open && locked) {
+    unlock()
+    locked = false
+  }
+})
+onUnmounted(() => {
+  if (locked) {
+    unlock()
+    locked = false
+  }
+})
+
 onMounted(async () => {
   if (!auth.user.value) {
     await auth.fetchUser()
@@ -43,26 +76,61 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="flex min-h-screen bg-white dark:bg-black">
-    <!-- Sidebar -->
+  <div class="bg-background flex min-h-screen">
+    <!-- Mobile backdrop (< md). Tap to close the drawer. -->
+    <Transition
+      enter-active-class="transition-opacity duration-300 ease-out"
+      enter-from-class="opacity-0"
+      leave-active-class="transition-opacity duration-200 ease-in"
+      leave-to-class="opacity-0"
+    >
+      <div
+        v-if="isMobileMenuOpen"
+        class="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm md:hidden"
+        @click="isMobileMenuOpen = false"
+      />
+    </Transition>
+
+    <!-- Sidebar. Desktop: fixed, always visible (md:translate-x-0) with
+         collapse width. Mobile: off-canvas drawer at full width, slides in
+         when isMobileMenuOpen. -->
     <aside
       :class="[
-        'bg-content1 fixed inset-y-0 left-0 z-50 flex flex-col shadow-lg transition-all duration-300',
-        isSidebarCollapsed ? 'w-16' : 'w-64'
+        'bg-content1 fixed inset-y-0 left-0 z-50 flex w-64 flex-col shadow-lg transition-all duration-300',
+        isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full',
+        'md:translate-x-0',
+        isSidebarCollapsed ? 'md:w-16' : 'md:w-64'
       ]"
     >
-      <!-- Logo -->
+      <!-- Logo row + mobile close button -->
       <div
-        class="border-default-200 flex h-16 items-center justify-center border-b"
+        class="border-default-200 flex h-16 items-center justify-between gap-2 border-b px-4"
       >
-        <h1 v-if="!isSidebarCollapsed" class="text-primary text-xl font-bold">
+        <h1
+          class="text-primary truncate text-xl font-bold"
+          :class="isSidebarCollapsed && 'md:hidden'"
+        >
           鲲 Galgame OAuth
         </h1>
-        <Icon v-else name="lucide:key-round" class="text-primary size-8" />
+        <Icon
+          name="lucide:key-round"
+          class="text-primary mx-auto size-8"
+          :class="isSidebarCollapsed ? 'hidden md:block' : 'hidden'"
+        />
+        <KunButton
+          variant="light"
+          size="sm"
+          is-icon-only
+          aria-label="关闭菜单"
+          class-name="md:hidden shrink-0"
+          @click="isMobileMenuOpen = false"
+        >
+          <Icon name="lucide:x" class="size-5" />
+        </KunButton>
       </div>
 
       <!-- Navigation -->
-      <nav class="flex-1 space-y-1 p-4">
+      <nav class="flex-1 space-y-1 overflow-y-auto p-4">
         <NuxtLink
           v-for="item in visibleMenu"
           :key="item.to"
@@ -71,17 +139,17 @@ onMounted(async () => {
           active-class="bg-primary-50 text-primary"
         >
           <Icon :name="item.icon" class="size-5 shrink-0" />
-          <span v-if="!isSidebarCollapsed">{{ item.label }}</span>
+          <span v-if="!isSidebarCollapsed" class="truncate">{{ item.label }}</span>
         </NuxtLink>
       </nav>
 
-      <!-- Collapse Button -->
+      <!-- Collapse button (desktop only) -->
       <KunButton
         variant="light"
         rounded="none"
         is-icon-only
         aria-label="折叠侧边栏"
-        class-name="border-default-200 h-12 border-t"
+        class-name="border-default-200 hidden h-12 border-t md:flex"
         @click="isSidebarCollapsed = !isSidebarCollapsed"
       >
         <Icon
@@ -93,22 +161,34 @@ onMounted(async () => {
       </KunButton>
     </aside>
 
-    <!-- Main Content -->
+    <!-- Main content. min-w-0 lets wide children (tables) scroll inside
+         instead of stretching this flex column past the viewport. -->
     <div
       :class="[
-        'flex flex-1 flex-col transition-all duration-300',
-        isSidebarCollapsed ? 'ml-16' : 'ml-64'
+        'flex min-w-0 flex-1 flex-col transition-all duration-300',
+        isSidebarCollapsed ? 'md:ml-16' : 'md:ml-64'
       ]"
     >
       <!-- Top Bar -->
       <header
-        class="border-default-200 bg-content1 sticky top-0 z-40 flex h-16 items-center justify-between border-b px-6 shadow-sm"
+        class="border-default-200 bg-content1 sticky top-0 z-30 flex h-16 items-center justify-between gap-2 border-b px-4 shadow-sm md:px-6"
       >
-        <div class="flex items-center gap-4">
-          <h2 class="text-foreground text-lg font-semibold">管理后台</h2>
+        <div class="flex min-w-0 items-center gap-2 md:gap-4">
+          <!-- Hamburger (mobile only) -->
+          <KunButton
+            variant="light"
+            size="sm"
+            is-icon-only
+            aria-label="打开菜单"
+            class-name="md:hidden shrink-0"
+            @click="isMobileMenuOpen = true"
+          >
+            <Icon name="lucide:menu" class="size-5" />
+          </KunButton>
+          <h2 class="text-foreground truncate text-lg font-semibold">管理后台</h2>
         </div>
 
-        <div class="flex items-center gap-4">
+        <div class="flex shrink-0 items-center gap-2 md:gap-4">
           <!-- Color Mode Toggle -->
           <KunPopover position="bottom-end">
             <template #trigger>
@@ -141,8 +221,8 @@ onMounted(async () => {
           </KunPopover>
 
           <!-- User Menu -->
-          <div v-if="auth.user.value" class="flex items-center gap-3">
-            <span class="text-default-500 text-sm">
+          <div v-if="auth.user.value" class="flex items-center gap-2 md:gap-3">
+            <span class="text-default-500 hidden text-sm sm:inline">
               {{ auth.user.value.name }}
             </span>
             <KunAvatar
@@ -169,7 +249,7 @@ onMounted(async () => {
       </header>
 
       <!-- Page Content -->
-      <main class="flex-1 p-6">
+      <main class="flex-1 p-4 md:p-6">
         <slot />
       </main>
     </div>

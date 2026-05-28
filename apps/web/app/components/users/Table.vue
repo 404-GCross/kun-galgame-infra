@@ -20,7 +20,7 @@ const _ = props // keep TS happy if `props` is never read elsewhere
 </script>
 
 <template>
-  <div class="rounded-xl bg-content1 shadow-sm">
+  <div class="overflow-x-auto rounded-xl bg-content1 shadow-sm">
     <div v-if="users.length === 0" class="py-12 text-center">
       <Icon name="lucide:users" class="mx-auto mb-4 size-12 text-default-200" />
       <p class="text-default-400">暂无匹配用户</p>

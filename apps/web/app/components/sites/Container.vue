@@ -40,12 +40,12 @@ onMounted(() => fetchSites())
 
 <template>
   <div class="space-y-6">
-    <div class="flex items-center justify-between">
+    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <div>
         <h1 class="text-2xl font-bold text-foreground">站点管理</h1>
         <p class="mt-1 text-default-500">管理连接的站点和 OAuth 配置</p>
       </div>
-      <KunButton color="primary" @click="showCreateModal = true">
+      <KunButton color="primary" class-name="shrink-0 self-start" @click="showCreateModal = true">
         <Icon name="lucide:plus" class="mr-2 size-4" />
         添加站点
       </KunButton>

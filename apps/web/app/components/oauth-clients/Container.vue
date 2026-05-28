@@ -52,12 +52,12 @@ onMounted(async () => {
 
 <template>
   <div class="space-y-6">
-    <div class="flex items-center justify-between">
+    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <div>
         <h1 class="text-2xl font-bold text-foreground">OAuth 客户端</h1>
         <p class="mt-1 text-default-500">管理 OAuth 2.0 客户端应用</p>
       </div>
-      <KunButton color="primary" @click="showCreateModal = true">
+      <KunButton color="primary" class-name="shrink-0 self-start" @click="showCreateModal = true">
         <Icon name="lucide:plus" class="mr-2 size-4" />
         创建客户端
       </KunButton>
