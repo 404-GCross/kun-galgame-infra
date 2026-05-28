@@ -106,17 +106,19 @@ onMounted(async () => {
       <div
         class="border-default-200 flex h-16 items-center justify-between gap-2 border-b px-4"
       >
-        <h1
-          class="text-primary truncate text-xl font-bold"
-          :class="isSidebarCollapsed && 'md:hidden'"
-        >
-          鲲 Galgame OAuth
-        </h1>
-        <Icon
-          name="lucide:key-round"
-          class="text-primary mx-auto size-8"
-          :class="isSidebarCollapsed ? 'hidden md:block' : 'hidden'"
-        />
+        <NuxtLink to="/" class="flex min-w-0 items-center gap-2">
+          <img
+            src="/favicon.webp"
+            alt="鲲 Galgame OAuth"
+            class="size-8 shrink-0 rounded-lg"
+          />
+          <span
+            class="text-primary truncate text-lg font-bold"
+            :class="isSidebarCollapsed && 'md:hidden'"
+          >
+            鲲 Galgame OAuth
+          </span>
+        </NuxtLink>
         <KunButton
           variant="light"
           size="sm"
@@ -194,11 +196,11 @@ onMounted(async () => {
             <template #trigger>
               <KunButton
                 variant="light"
-                size="sm"
+                size="md"
                 is-icon-only
                 aria-label="切换主题"
               >
-                <Icon name="lucide:sun-moon" class="size-5" />
+                <Icon name="lucide:sun-moon" class="size-6" />
               </KunButton>
             </template>
 
@@ -231,18 +233,18 @@ onMounted(async () => {
                 name: auth.user.value.name,
                 avatar: auth.user.value.avatar
               }"
-              size="sm"
+              size="md"
               :is-navigation="false"
             />
             <KunButton
               variant="light"
               color="danger"
-              size="sm"
+              size="md"
               is-icon-only
               aria-label="退出登录"
               @click="handleLogout"
             >
-              <Icon name="lucide:log-out" class="size-5" />
+              <Icon name="lucide:log-out" class="size-6" />
             </KunButton>
           </div>
         </div>

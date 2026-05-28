@@ -55,10 +55,10 @@ onMounted(() => fetchSites())
       <Icon name="lucide:loader-2" class="size-8 animate-spin text-primary" />
     </div>
 
-    <div v-else-if="sites.length === 0" class="rounded-xl bg-content1 py-12 text-center shadow-sm">
+    <KunCard v-else-if="sites.length === 0" :bordered="false" content-class="justify-start gap-0" class-name="rounded-xl bg-content1 py-12 text-center shadow-sm">
       <Icon name="lucide:globe" class="mx-auto mb-4 size-12 text-default-200" />
       <p class="text-default-400">暂无站点配置</p>
-    </div>
+    </KunCard>
 
     <div v-else class="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
       <SitesCard

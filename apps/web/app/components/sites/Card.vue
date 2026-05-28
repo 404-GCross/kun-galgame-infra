@@ -9,7 +9,7 @@ const showMenu = ref(false)
 </script>
 
 <template>
-  <div class="rounded-xl bg-content1 p-6 shadow-sm transition-shadow hover:shadow-md">
+  <KunCard :bordered="false" content-class="justify-start gap-0" class-name="rounded-xl bg-content1 p-6 shadow-sm transition-shadow hover:shadow-md">
     <div class="mb-4 flex items-start justify-between">
       <div class="flex size-12 items-center justify-center rounded-lg bg-primary-100">
         <Icon name="lucide:globe" class="size-6 text-primary" />
@@ -56,5 +56,5 @@ const showMenu = ref(false)
         创建于 {{ new Date(site.created_at).toLocaleDateString() }}
       </span>
     </div>
-  </div>
+  </KunCard>
 </template>

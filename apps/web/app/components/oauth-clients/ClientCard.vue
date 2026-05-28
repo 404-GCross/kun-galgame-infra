@@ -13,7 +13,7 @@ const siteName = computed(() => {
 </script>
 
 <template>
-  <div class="rounded-xl bg-content1 p-6 shadow-sm">
+  <KunCard :bordered="false" content-class="justify-start gap-0" class-name="rounded-xl bg-content1 p-6 shadow-sm">
     <div class="flex items-start justify-between">
       <div class="flex items-center gap-4">
         <div class="flex size-12 items-center justify-center rounded-lg bg-warning-100">
@@ -130,5 +130,5 @@ const siteName = computed(() => {
         </p>
       </div>
     </div>
-  </div>
+  </KunCard>
 </template>

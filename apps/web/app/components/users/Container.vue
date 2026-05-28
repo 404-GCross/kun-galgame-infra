@@ -85,7 +85,7 @@ onMounted(() => fetchUsers())
       </div>
     </div>
 
-    <div class="rounded-xl bg-content1 p-4 shadow-sm">
+    <KunCard :bordered="false" content-class="justify-start gap-0" class-name="rounded-xl bg-content1 p-4 shadow-sm">
       <form class="flex gap-3" @submit.prevent="handleSearch">
         <KunInput
           v-model="searchQuery"
@@ -98,7 +98,7 @@ onMounted(() => fetchUsers())
           搜索
         </KunButton>
       </form>
-    </div>
+    </KunCard>
 
     <div v-if="isLoading" class="flex items-center justify-center py-12">
       <Icon name="lucide:loader-2" class="size-8 animate-spin text-primary" />

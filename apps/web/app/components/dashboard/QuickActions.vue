@@ -3,7 +3,7 @@ import { QUICK_ACTIONS } from '~/constants/dashboard'
 </script>
 
 <template>
-  <div class="rounded-xl bg-content1 p-6 shadow-sm">
+  <KunCard :bordered="false" content-class="justify-start gap-0" class-name="rounded-xl bg-content1 p-6 shadow-sm">
     <h2 class="mb-4 text-lg font-semibold text-foreground">
       快捷操作
     </h2>
@@ -18,5 +18,5 @@ import { QUICK_ACTIONS } from '~/constants/dashboard'
         <span class="text-foreground">{{ action.label }}</span>
       </NuxtLink>
     </div>
-  </div>
+  </KunCard>
 </template>

@@ -57,7 +57,7 @@ const confirmReject = () => {
        the table so it doesn't disturb table layout semantics. -->
   <KunLightboxGallery>
   <div class="overflow-x-auto rounded-xl bg-content1 shadow-sm">
-    <table class="w-full text-sm">
+    <table class="w-full min-w-[56rem] text-sm">
       <thead class="bg-content2 text-default-500">
         <tr>
           <th class="px-3 py-2 text-left font-medium">预览</th>
@@ -154,7 +154,7 @@ const confirmReject = () => {
             <div v-if="item.first_uploader_sub" class="text-default-400">
               sub: {{ item.first_uploader_sub.slice(0, 12) }}…
             </div>
-            <div class="mt-0.5 text-default-400">
+            <div class="mt-0.5 whitespace-nowrap text-default-400">
               {{ new Date(item.created_at).toLocaleString() }}
             </div>
           </td>

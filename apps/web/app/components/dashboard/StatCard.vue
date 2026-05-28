@@ -8,7 +8,7 @@ defineProps<{
 </script>
 
 <template>
-  <div class="rounded-xl bg-content1 p-6 shadow-sm">
+  <KunCard :bordered="false" content-class="justify-start gap-0" class-name="rounded-xl bg-content1 p-6 shadow-sm">
     <div class="flex items-center gap-4">
       <div :class="[color, 'flex size-12 items-center justify-center rounded-lg']">
         <Icon :name="icon" class="size-6 text-white" />
@@ -18,5 +18,5 @@ defineProps<{
         <p class="text-2xl font-bold text-foreground">{{ value }}</p>
       </div>
     </div>
-  </div>
+  </KunCard>
 </template>

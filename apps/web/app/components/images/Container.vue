@@ -110,13 +110,13 @@ onMounted(() => {
 
     <!-- Stats cards -->
     <div v-if="stats" class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-      <div class="rounded-xl bg-content1 p-4 shadow-sm">
+      <KunCard :bordered="false" content-class="justify-start gap-0" class-name="rounded-xl bg-content1 p-4 shadow-sm">
         <div class="text-sm text-default-500">总上传次数</div>
         <div class="mt-1 text-2xl font-bold text-foreground">
           {{ stats.upload_count }}
         </div>
-      </div>
-      <div class="rounded-xl bg-content1 p-4 shadow-sm">
+      </KunCard>
+      <KunCard :bordered="false" content-class="justify-start gap-0" class-name="rounded-xl bg-content1 p-4 shadow-sm">
         <div class="text-sm text-default-500">唯一图片</div>
         <div class="mt-1 text-2xl font-bold text-foreground">
           {{ stats.unique_images }}
@@ -124,19 +124,19 @@ onMounted(() => {
         <div class="text-xs text-default-400">
           去重 {{ stats.deduplicated_count }}
         </div>
-      </div>
-      <div class="rounded-xl bg-content1 p-4 shadow-sm">
+      </KunCard>
+      <KunCard :bordered="false" content-class="justify-start gap-0" class-name="rounded-xl bg-content1 p-4 shadow-sm">
         <div class="text-sm text-default-500">存储用量</div>
         <div class="mt-1 text-2xl font-bold text-foreground">
           {{ bytesHuman(stats.total_bytes) }}
         </div>
-      </div>
-      <div class="rounded-xl bg-content1 p-4 shadow-sm">
+      </KunCard>
+      <KunCard :bordered="false" content-class="justify-start gap-0" class-name="rounded-xl bg-content1 p-4 shadow-sm">
         <div class="text-sm text-default-500">待审 / 已拒</div>
         <div class="mt-1 text-2xl font-bold text-foreground">
           {{ stats.review_pending }} / {{ stats.review_rejected }}
         </div>
-      </div>
+      </KunCard>
     </div>
 
     <!-- Filter bar -->

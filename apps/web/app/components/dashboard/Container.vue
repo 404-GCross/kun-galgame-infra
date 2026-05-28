@@ -66,7 +66,7 @@ const stats = computed(() =>
 
     <DashboardQuickActions />
 
-    <div class="rounded-xl bg-content1 p-6 shadow-sm">
+    <KunCard :bordered="false" content-class="justify-start gap-0" class-name="rounded-xl bg-content1 p-6 shadow-sm">
       <h2 class="mb-4 text-lg font-semibold text-foreground">
         最近活动
       </h2>
@@ -74,6 +74,6 @@ const stats = computed(() =>
         <Icon name="lucide:inbox" class="mx-auto mb-2 size-12 opacity-50" />
         <p>暂无活动记录</p>
       </div>
-    </div>
+    </KunCard>
   </div>
 </template>
