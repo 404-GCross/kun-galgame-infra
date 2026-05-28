@@ -12,10 +12,12 @@
 |------|------|------|--------|------|
 | page | int | 否 | 1 | 页码 |
 | limit | int | 否 | 24 | 每页数量 (1-50) |
-| sort_field | string | 否 | created | 排序字段: `created`, `updated`, `view`, `resource_update_time` |
+| sort_field | string | 否 | created | 排序字段: `created`, `updated`, `view`, `resource_update_time`, `release_date` |
 | sort_order | string | 否 | desc | 排序方向: `asc`, `desc` |
 | search | string | 否 | | 搜索关键词（匹配四语言名称） |
 | content_limit | string | 否 | **sfw** | NSFW 过滤。`sfw` / `nsfw` / `all`。**省略 = sfw**（safe-by-default）。详见 [00-handbook §NSFW](./00-handbook-for-downstream.md#nsfw-content_limit-协议) |
+| released_from | string | 否 | | 发售日期下限（含）。支持 `YYYY`（按年）或 `YYYY-MM`（按月）。详见 [00-handbook §17 日期筛选](./00-handbook-for-downstream.md#17-发售日期-release_date-筛选协议) |
+| released_to | string | 否 | | 发售日期上限（含）。同上格式。 |
 
 **成功响应**：
 

@@ -794,6 +794,61 @@ GET /tag/魔法?content_limit=all                     # 该 tag 下所有 galgam
 
 ---
 
+## 17. 发售日期 (release_date) 筛选协议
+
+galgame 的发售日期字段（`galgame.release_date`，PG `date` 类型）覆盖率 **91%**（截至 2026-05，55 525 / 61 002 条有日期）；其中 status=2 VNDB 草稿 95%，status=0 用户已发布 70%。数据本身**月份精度真实**（只有 2.85% 落在每年 1月1日，不是"年精度伪装成月日"）。前端可以放心做按年份 / 按月份的筛选 chip。
+
+### 17.1 协议
+
+接受 `released_from` + `released_to` 两个查询参数，**字符串**类型，三种格式：
+
+| 输入 | 含义 | 边界（inclusive） |
+|------|------|------|
+| `YYYY`（如 `2024`） | 整年 | from = Jan 1 00:00:00 UTC / to = Dec 31 23:59:59 UTC |
+| `YYYY-MM`（如 `2024-03`） | 整月 | from = 月 1 日 00:00:00 UTC / to = 月末 23:59:59 UTC（自动处理 28/29/30/31 天）|
+| 空 / 省略 | 不过滤该端 | 该端不施加 WHERE |
+
+非法输入（`24` / `2024-3` 缺前导零 / `2024-13` 月份越界 / `garbage`）→ **400 ErrValidationFailed**，不会被静默忽略。
+
+### 17.2 应用端点
+
+| 端点 | 实现 | 索引 |
+|------|------|------|
+| `GET /galgame` | SQL `WHERE release_date >= ? AND release_date <= ?`（PG `date` 列）| `galgame.release_date` btree index（model gorm tag 声明）|
+| `GET /galgame/search` | Meilisearch `released_ts >= X AND released_ts <= Y`（Unix 秒）| `released_ts` filterable + indexer 已写入 |
+
+两套实现都通过 `pkg/utils.ParseReleaseLowerBound` / `ParseReleaseUpperBound` 统一解析。
+
+### 17.3 与 sort 的联动
+
+`GET /galgame` 的 `sort_field` 新增 `release_date` 选项 — 按发售日期升/降序排。常见组合：
+- 浏览「2024 年所有游戏，按发售时间倒序」：
+  ```
+  GET /galgame?released_from=2024&released_to=2024&sort_field=release_date&sort_order=desc
+  ```
+- 浏览「2024 年 3 月发售的」：
+  ```
+  GET /galgame?released_from=2024-03&released_to=2024-03
+  ```
+
+`GET /galgame/search` 的 `sort` 维持 `released_desc` / `released_asc` 选项不变。
+
+### 17.4 NULL 处理
+
+设了任一端边界 → `release_date IS NULL` 的行**自动排除**（PG 的 `>=` / `<=` 对 NULL 求 UNKNOWN，自动 drop）。这符合用户期望：「我筛 2024 年的」就是只看知道发售日期的 2024 年游戏。
+
+排序时（`sort_field=release_date`）PG 默认 NULLS LAST on ASC、NULLS FIRST on DESC — 可接受，NULL 行少（status=0 才 30% 是 NULL，且大多是用户提交时漏填）。
+
+### 17.5 向后兼容
+
+`/galgame/search` 历史上 `released_from/to` 是 int（年）。新协议升级成 string 仍接受 `2024` 这种纯数字字符串（4 字符 = 年）→ **kungal / moyu 这种历史调用方零改动**。下游升级到月份精度只需把 `2024` 改成 `2024-03` 即可。
+
+### 17.6 时区
+
+`release_date` 是 PG `date` 类型，无时区。helper 解析 `YYYY-MM` 时按 UTC 计算边界 ts。日期只到日级精度 — 跨时区显示语义清晰（"2024 年 3 月发售"对全球用户都是同一组游戏，不会因时区切换跑出 1 天差异）。
+
+---
+
 ## 联系人
 
 - wiki API 变更：通知此文档对应 owner

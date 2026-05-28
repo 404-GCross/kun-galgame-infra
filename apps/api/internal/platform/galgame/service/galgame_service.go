@@ -68,6 +68,9 @@ func (s *GalgameService) WithImageProbe(p ImageProbeFunc) *GalgameService {
 // content_limit policy: browse endpoint → safe-by-default "sfw" when
 // caller omits the parameter. Pass `?content_limit=all` to include NSFW,
 // `?content_limit=nsfw` to fetch NSFW-only.
+//
+// released_from / released_to: accept YYYY or YYYY-MM. Empty = no filter.
+// Invalid input returns a 400 (parse error surfaces as ErrValidationFailed).
 func (s *GalgameService) List(ctx context.Context, req *dto.ListGalgameRequest) ([]model.Galgame, int64, error) {
 	if req.Page <= 0 {
 		req.Page = 1
@@ -76,7 +79,17 @@ func (s *GalgameService) List(ctx context.Context, req *dto.ListGalgameRequest) 
 		req.Limit = 24
 	}
 	contentLimit := utils.ParseContentLimit(req.ContentLimit, "sfw")
-	return s.galgameRepo.List(ctx, req.Page, req.Limit, req.SortField, req.SortOrder, req.Search, contentLimit)
+
+	from, err := utils.ParseReleaseLowerBound(req.ReleasedFrom)
+	if err != nil {
+		return nil, 0, errors.New(errors.ErrValidationFailed, err.Error())
+	}
+	to, err := utils.ParseReleaseUpperBound(req.ReleasedTo)
+	if err != nil {
+		return nil, 0, errors.New(errors.ErrValidationFailed, err.Error())
+	}
+
+	return s.galgameRepo.List(ctx, req.Page, req.Limit, req.SortField, req.SortOrder, req.Search, contentLimit, from, to)
 }
 
 // GetByID returns a published galgame with relations (public visibility:

@@ -5,13 +5,23 @@ package dto
 // ContentLimit accepts "sfw" / "nsfw" / "all" / "" — see
 // docs/integration/galgame_wiki/00-handbook-for-downstream.md §NSFW. The
 // service layer resolves "" to the safe-by-default "sfw".
+//
+// ReleasedFrom / ReleasedTo accept "YYYY" or "YYYY-MM" — year-only is
+// backward-compatible with the search endpoint's historical int contract;
+// month-precision lets the frontend support "2024 年 3 月发售" filter
+// chips. Empty = no filter. See utils.ParseReleaseLowerBound /
+// ParseReleaseUpperBound for normalization (leap years + 30/31-day
+// months handled). The SQL filter is `WHERE release_date >= ?` against
+// the indexed `release_date` column (btree), so range queries are O(log N).
 type ListGalgameRequest struct {
 	Page         int    `query:"page" validate:"min=1"`
 	Limit        int    `query:"limit" validate:"min=1,max=50"`
-	SortField    string `query:"sort_field" validate:"omitempty,oneof=created updated view resource_update_time"`
+	SortField    string `query:"sort_field" validate:"omitempty,oneof=created updated view resource_update_time release_date"`
 	SortOrder    string `query:"sort_order" validate:"omitempty,oneof=asc desc"`
 	Search       string `query:"search"`
 	ContentLimit string `query:"content_limit" validate:"omitempty,oneof=sfw nsfw all"`
+	ReleasedFrom string `query:"released_from"`
+	ReleasedTo   string `query:"released_to"`
 }
 
 // CreateGalgameRequest represents a galgame creation request

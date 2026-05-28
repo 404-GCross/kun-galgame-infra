@@ -44,6 +44,26 @@ func (h *SearchHandler) Galgame(c fiber.Ctx) error {
 		includePending = false
 	}
 
+	// Release date bounds: accept YYYY (year-only, legacy contract) or
+	// YYYY-MM (new month precision). utils handles both formats + leap
+	// years + 30/31-day months. Invalid input → 400 to surface the
+	// typo to the caller rather than silently dropping the filter.
+	fromTime, err := utils.ParseReleaseLowerBound(q["released_from"])
+	if err != nil {
+		return response.BadRequestMsg(c, errors.ErrValidationFailed, err.Error())
+	}
+	toTime, err := utils.ParseReleaseUpperBound(q["released_to"])
+	if err != nil {
+		return response.BadRequestMsg(c, errors.ErrValidationFailed, err.Error())
+	}
+	var fromTS, toTS int64
+	if !fromTime.IsZero() {
+		fromTS = fromTime.Unix()
+	}
+	if !toTime.IsZero() {
+		toTS = toTime.Unix()
+	}
+
 	req := &search.GalgameSearchRequest{
 		Query:             q["q"],
 		Statuses:          parseIntList(q["status"]),
@@ -54,8 +74,8 @@ func (h *SearchHandler) Galgame(c fiber.Ctx) error {
 		OfficialIDs:       parseIntList(q["official_ids"]),
 		EngineIDs:         parseIntList(q["engine_ids"]),
 		SeriesID:          parseIntPtr(q["series_id"]),
-		ReleasedFrom:      parseIntPtr(q["released_from"]),
-		ReleasedTo:        parseIntPtr(q["released_to"]),
+		ReleasedFromTS:    fromTS,
+		ReleasedToTS:      toTS,
 		IncludeIntro:      parseBool(q["include_intro"]),
 		Sort:              q["sort"],
 		Page:              atoiOr(q["page"], 1),

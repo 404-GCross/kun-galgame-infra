@@ -43,6 +43,13 @@ func (h *GalgameHandler) List(c fiber.Ctx) error {
 
 	items, total, err := h.galgameService.List(c.Context(), &req)
 	if err != nil {
+		// Service surfaces invalid released_from/to (bad YYYY[-MM]) as a
+		// *AppError(ErrValidationFailed) — map it to 400 with the parse
+		// message so callers see "invalid release month" rather than a
+		// generic 500. Any non-AppError is a real internal failure.
+		if appErr, ok := err.(*errors.AppError); ok {
+			return response.BadRequestMsg(c, appErr.Code, appErr.Message)
+		}
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
 

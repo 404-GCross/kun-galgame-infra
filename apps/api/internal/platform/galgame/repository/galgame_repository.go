@@ -97,7 +97,16 @@ func (r *GalgameRepository) ExistsByVNDBID(ctx context.Context, vndbID string) (
 // contentLimit follows the canonical content-filter contract (see
 // pkg/utils.ParseContentLimit): "sfw" / "nsfw" → WHERE filter, "" → no
 // filter. Handlers resolve the default for missing query params.
-func (r *GalgameRepository) List(ctx context.Context, page, limit int, sortField, sortOrder, search, contentLimit string) (items []model.Galgame, total int64, err error) {
+//
+// releasedFrom / releasedTo are inclusive bounds on galgame.release_date.
+// Zero `time.Time` on either side = no filter on that side. The column
+// has a btree index (declared in the model via gorm tag), so range
+// scans are O(log N) — safe to expose to anonymous traffic.
+// galgames with release_date IS NULL are excluded when either bound is
+// set (SQL `>=` / `<=` on NULL is UNKNOWN → row drops out, matching
+// the user-visible contract: "filter to 2024 = only games we know are
+// in 2024").
+func (r *GalgameRepository) List(ctx context.Context, page, limit int, sortField, sortOrder, search, contentLimit string, releasedFrom, releasedTo time.Time) (items []model.Galgame, total int64, err error) {
 	defer func() {
 		for i := range items {
 			model.PopulateEffectiveBanner(&items[i])
@@ -110,6 +119,17 @@ func (r *GalgameRepository) List(ctx context.Context, page, limit int, sortField
 		query = query.Where("content_limit = ?", contentLimit)
 	}
 
+	// Date filter — compare against the `date`-typed column with a
+	// formatted YYYY-MM-DD string. PG's `date >= 'YYYY-MM-DD'` uses the
+	// btree index; passing time.Time directly would cause an implicit
+	// timestamptz coercion that drops index access.
+	if !releasedFrom.IsZero() {
+		query = query.Where("release_date >= ?", releasedFrom.Format("2006-01-02"))
+	}
+	if !releasedTo.IsZero() {
+		query = query.Where("release_date <= ?", releasedTo.Format("2006-01-02"))
+	}
+
 	if search != "" {
 		like := "%" + strings.ToLower(search) + "%"
 		query = query.Where(
@@ -120,12 +140,15 @@ func (r *GalgameRepository) List(ctx context.Context, page, limit int, sortField
 
 	query.Count(&total)
 
-	// Whitelist allowed sort fields (snake_case column names only)
+	// Whitelist allowed sort fields (snake_case column names only).
+	// SQL-injection-safe: the value is keyed into this map, never
+	// interpolated raw — an unknown field falls back to "created".
 	allowedSortFields := map[string]bool{
 		"created":              true,
 		"updated":              true,
 		"view":                 true,
 		"resource_update_time": true,
+		"release_date":         true,
 	}
 	if !allowedSortFields[sortField] {
 		sortField = "created"
@@ -134,6 +157,14 @@ func (r *GalgameRepository) List(ctx context.Context, page, limit int, sortField
 		sortOrder = "desc"
 	}
 	order := sortField + " " + sortOrder
+	// release_date is the only NULLable sort column. Default PG ordering
+	// puts NULLs FIRST on DESC — which would float every undated game to
+	// the top of a "newest first" list (bad UX). Force NULLS LAST so
+	// dated games always lead, undated tail. Other sort columns are
+	// NOT NULL (have defaults) so this clause never matters for them.
+	if sortField == "release_date" {
+		order += " NULLS LAST"
+	}
 
 	err = query.
 		Order(order).

@@ -37,6 +37,14 @@ func galgamesSettings() *meilisearch.Settings {
 			"age_limit",
 			"original_language",
 			"released_year",
+			// released_ts (Unix seconds) enables month-precision range
+			// filters via the `released_from` / `released_to` query
+			// params accepting YYYY-MM. Indexer already populates this
+			// field; adding it here just registers it for filter use.
+			// Backward-compat: year-only YYYY input still works (handler
+			// converts to ts range covering the full year). released_year
+			// stays filterable for callers that want exact-year match.
+			"released_ts",
 			"tag_ids",
 			"official_ids",
 			"engine_ids",

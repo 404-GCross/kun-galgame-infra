@@ -36,9 +36,16 @@ type GalgameSearchRequest struct {
 	TagIDs            []int    // AND — every galgame must have all
 	OfficialIDs       []int    // AND
 	EngineIDs         []int    // AND
-	SeriesID          *int     // nil = no filter
-	ReleasedFrom      *int     // year inclusive
-	ReleasedTo        *int     // year inclusive
+	SeriesID *int // nil = no filter
+	// ReleasedFromTS / ReleasedToTS are Unix-second boundaries on the
+	// galgame's release date (inclusive on both ends). Handler accepts
+	// either YYYY or YYYY-MM in the query string and converts via
+	// utils.ParseReleaseLowerBound / ParseReleaseUpperBound — so
+	// year-only callers (the historical API) still work, but the new
+	// month-precision callers can pass `released_from=2024-03&released_to=2024-08`.
+	// 0 = no filter.
+	ReleasedFromTS int64
+	ReleasedToTS   int64
 
 	IncludeIntro bool
 
@@ -319,11 +326,14 @@ func buildGalgameFilter(r *GalgameSearchRequest) string {
 	if r.SeriesID != nil {
 		clauses = append(clauses, fmt.Sprintf("series_id = %d", *r.SeriesID))
 	}
-	if r.ReleasedFrom != nil {
-		clauses = append(clauses, fmt.Sprintf("released_year >= %d", *r.ReleasedFrom))
+	// Release date range — Unix-second comparison against the indexed
+	// `released_ts` field. Handler resolved YYYY / YYYY-MM via utils into
+	// these int64 bounds (0 = caller didn't pass that side).
+	if r.ReleasedFromTS != 0 {
+		clauses = append(clauses, fmt.Sprintf("released_ts >= %d", r.ReleasedFromTS))
 	}
-	if r.ReleasedTo != nil {
-		clauses = append(clauses, fmt.Sprintf("released_year <= %d", *r.ReleasedTo))
+	if r.ReleasedToTS != 0 {
+		clauses = append(clauses, fmt.Sprintf("released_ts <= %d", r.ReleasedToTS))
 	}
 
 	return strings.Join(clauses, " AND ")

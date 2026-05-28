@@ -293,16 +293,24 @@ func TestGalgameSearch_ReleasedYearRange(t *testing.T) {
 	y2018, y2020, y2022 := 2018, 2020, 2022
 	d1 := newGalgameDoc(40, "v40", "old", "old")
 	d1.ReleasedYear = &y2018
+	ts2018 := time.Date(2018, 6, 1, 0, 0, 0, 0, time.UTC).Unix()
+	d1.ReleasedTS = &ts2018
 	d2 := newGalgameDoc(41, "v41", "mid", "mid")
 	d2.ReleasedYear = &y2020
+	ts2020 := time.Date(2020, 6, 1, 0, 0, 0, 0, time.UTC).Unix()
+	d2.ReleasedTS = &ts2020
 	d3 := newGalgameDoc(42, "v42", "new", "new")
 	d3.ReleasedYear = &y2022
+	ts2022 := time.Date(2022, 6, 1, 0, 0, 0, 0, time.UTC).Unix()
+	d3.ReleasedTS = &ts2022
 	seedGalgames(t, d1, d2, d3)
 
-	from, to := 2019, 2021
+	// "2019" → Jan 1 2019, "2021" → Dec 31 2021 23:59:59 — only d2 (2020) falls in range.
+	from := time.Date(2019, 1, 1, 0, 0, 0, 0, time.UTC).Unix()
+	to := time.Date(2021, 12, 31, 23, 59, 59, 0, time.UTC).Unix()
 	resp, err := testSvc.SearchGalgames(context.Background(), &GalgameSearchRequest{
-		ReleasedFrom: &from,
-		ReleasedTo:   &to,
+		ReleasedFromTS: from,
+		ReleasedToTS:   to,
 	})
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), resp.Total)
