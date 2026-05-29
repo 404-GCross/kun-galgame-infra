@@ -48,26 +48,44 @@ const total = computed(() =>
     <div v-if="daily.length === 0" class="text-default-400 py-8 text-center">
       暂无数据
     </div>
-    <div v-else class="flex h-48 items-end gap-1">
-      <div
-        v-for="d in daily"
-        :key="d.date"
-        class="group relative flex flex-1 flex-col items-center"
-      >
-        <div
-          class="bg-primary-200 hover:bg-primary w-full rounded-t transition-colors"
-          :style="{
-            height: `${((d[activeKey] as number) / maxValue) * 100}%`,
-            minHeight: '2px'
-          }"
-        />
-        <span class="text-default-400 mt-1 rotate-45 text-[10px] origin-left">
-          {{ formatDate(d.date) }}
-        </span>
-        <div
-          class="bg-foreground text-background pointer-events-none absolute bottom-full mb-1 rounded px-2 py-1 text-xs opacity-0 transition-opacity group-hover:opacity-100 whitespace-nowrap z-10"
-        >
-          {{ d.date }}: {{ d[activeKey] }}
+    <!-- Horizontal scroll on small screens: with ~30-90 days, cramming every
+         bar + rotated date label into a phone width overflowed the page. A
+         min-width inner track keeps bars/labels legible and scrolls inside
+         the card instead. Bars and labels live in two aligned bands so the
+         rotated labels occupy their own fixed-height row (no spill past the
+         chart edge). -->
+    <div v-else class="overflow-x-auto">
+      <div class="min-w-[42rem]">
+        <!-- Bars band -->
+        <div class="flex h-48 gap-1">
+          <div
+            v-for="d in daily"
+            :key="d.date"
+            class="group relative flex-1"
+          >
+            <div
+              class="bg-primary-200 hover:bg-primary absolute bottom-0 w-full rounded-t transition-colors"
+              :style="{
+                height: `${((d[activeKey] as number) / maxValue) * 100}%`,
+                minHeight: '2px'
+              }"
+            />
+            <div
+              class="bg-foreground text-background pointer-events-none absolute bottom-full left-1/2 z-10 mb-1 -translate-x-1/2 rounded px-2 py-1 text-xs whitespace-nowrap opacity-0 transition-opacity group-hover:opacity-100"
+            >
+              {{ d.date }}: {{ d[activeKey] }}
+            </div>
+          </div>
+        </div>
+        <!-- Labels band (rotated dates, contained in a fixed-height row) -->
+        <div class="mt-1 flex h-10 gap-1">
+          <div v-for="d in daily" :key="`label-${d.date}`" class="flex-1">
+            <span
+              class="text-default-400 inline-block origin-top-left rotate-45 text-[10px] whitespace-nowrap"
+            >
+              {{ formatDate(d.date) }}
+            </span>
+          </div>
         </div>
       </div>
     </div>

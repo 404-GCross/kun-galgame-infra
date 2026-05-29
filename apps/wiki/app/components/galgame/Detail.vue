@@ -8,7 +8,7 @@ import {
 import type { Galgame } from '~/shared/types/galgame'
 import { resolveBannerUrl, imageHashUrl } from '~/shared/utils/resolveImage'
 import { formatReleaseDate } from '~/shared/utils/format'
-import type { KunUIColor } from '@kun/ui/components/kun/ui/type'
+import type { KunUIColor } from '@kun/ui/app/components/kun/ui/type'
 
 const api = useApi()
 const route = useRoute()
@@ -81,14 +81,12 @@ const officials = computed(() =>
 const intros = computed(() => {
   const g = galgame.value
   if (!g) return [] as { lang: string; label: string; text: string }[]
-  return (
-    [
-      { lang: 'zh_cn', label: '简体中文', text: g.intro_zh_cn },
-      { lang: 'ja_jp', label: '日本語', text: g.intro_ja_jp },
-      { lang: 'en_us', label: 'English', text: g.intro_en_us },
-      { lang: 'zh_tw', label: '繁體中文', text: g.intro_zh_tw }
-    ] as const
-  ).filter((i): i is { lang: string; label: string; text: string } =>
+  return [
+    { lang: 'zh_cn', label: '简体中文', text: g.intro_zh_cn },
+    { lang: 'ja_jp', label: '日本語', text: g.intro_ja_jp },
+    { lang: 'en_us', label: 'English', text: g.intro_en_us },
+    { lang: 'zh_tw', label: '繁體中文', text: g.intro_zh_tw }
+  ].filter((i): i is { lang: string; label: string; text: string } =>
     Boolean(i.text)
   )
 })
@@ -549,7 +547,7 @@ const officialCategoryColor = (cat: string): KunUIColor =>
                 <p class="text-default-400 text-xs">创建</p>
                 <p class="text-foreground">
                   {{
-                    new Date(galgame.created_at).toLocaleString('zh-CN')
+                    new Date(galgame.created).toLocaleString('zh-CN')
                   }}
                 </p>
               </div>
@@ -557,7 +555,7 @@ const officialCategoryColor = (cat: string): KunUIColor =>
                 <p class="text-default-400 text-xs">更新</p>
                 <p class="text-foreground">
                   {{
-                    new Date(galgame.updated_at).toLocaleString('zh-CN')
+                    new Date(galgame.updated).toLocaleString('zh-CN')
                   }}
                 </p>
               </div>

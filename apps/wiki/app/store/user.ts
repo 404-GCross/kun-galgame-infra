@@ -1,3 +1,5 @@
+import type { User } from '~/shared/types/user'
+
 export const useUserStore = defineStore(
   'user',
   () => {

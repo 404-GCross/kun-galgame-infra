@@ -150,7 +150,7 @@ const displayName = (g: Galgame) =>
             v-if="TAG_CATEGORY_MAP[t.category]"
             class="text-default-400 text-xs"
           >
-            ({{ TAG_CATEGORY_MAP[t.category].label }})
+            ({{ TAG_CATEGORY_MAP[t.category]?.label }})
           </span>
           <KunButton
             variant="light"

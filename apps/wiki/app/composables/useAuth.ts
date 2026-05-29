@@ -11,6 +11,8 @@
 // "regular" (non-OAuth) session that the OAuth admin frontend uses;
 // hitting them from wiki would either fail silently or revoke an
 // unrelated session.
+import type { User } from '~/shared/types/user'
+
 export const useAuth = () => {
   const authApi = useAuthApi()
   const userStore = useUserStore()

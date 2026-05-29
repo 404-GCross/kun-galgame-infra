@@ -8,24 +8,33 @@
 //
 // Kept intentionally narrow — only supports string | number. For booleans or
 // enums, pick a canonical string representation at the call site.
+//
+// The return type WIDENS the literal default to its base type, so a call like
+// `useQueryState('page', 1)` is `Ref<number>` (not `Ref<1>`) and
+// `useQueryState('tab', 'all')` is `Ref<string>` (not `Ref<'all'>`). Without
+// this, the inferred literal type would reject normal reassignment
+// (`page.value = 2`) and cross-value comparison (`tab.value === 'x'`).
+type WidenQueryState<T> = T extends number ? number : string
+
 export const useQueryState = <T extends string | number>(
   key: string,
   defaultValue: T
-): Ref<T> => {
+): Ref<WidenQueryState<T>> => {
   const route = useRoute()
   const router = useRouter()
 
-  const parseFromUrl = (raw: unknown): T => {
-    if (raw === undefined || raw === null || raw === '') return defaultValue
+  const parseFromUrl = (raw: unknown): WidenQueryState<T> => {
+    if (raw === undefined || raw === null || raw === '')
+      return defaultValue as WidenQueryState<T>
     const str = Array.isArray(raw) ? (raw[0] ?? '') : String(raw)
     if (typeof defaultValue === 'number') {
       const n = Number(str)
-      return (Number.isFinite(n) ? (n as T) : defaultValue)
+      return (Number.isFinite(n) ? n : defaultValue) as WidenQueryState<T>
     }
-    return str as T
+    return str as WidenQueryState<T>
   }
 
-  const state = ref(parseFromUrl(route.query[key])) as Ref<T>
+  const state = ref(parseFromUrl(route.query[key])) as Ref<WidenQueryState<T>>
 
   watch(state, (value) => {
     const next = { ...route.query }
