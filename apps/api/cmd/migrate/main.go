@@ -88,6 +88,7 @@ func getAllModels() []any {
 		&authModel.UserMigration{},
 		&authModel.PasswordReset{},
 		&authModel.AuthorizationCode{},
+		&authModel.MoemoepointLog{},
 
 		// Site models
 		&siteModel.Site{},

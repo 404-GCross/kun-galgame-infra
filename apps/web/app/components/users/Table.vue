@@ -8,6 +8,7 @@ const emit = defineEmits<{
   anonymize: [user: { uuid: string; name: string }]
   deleteSessions: [uuid: string]
   uploadAvatar: [user: { uuid: string; name: string }]
+  moemoepoint: [user: { uuid: string; name: string; moemoepoint: number }]
 }>()
 
 const cdnBase = useRuntimeConfig().public.imageCdnBase as string
@@ -134,6 +135,14 @@ const _ = props // keep TS happy if `props` is never read elsewhere
                   注销并匿名化
                 </button>
 
+                <button
+                  v-if="!user.is_anonymized"
+                  class="flex w-full items-center gap-2 px-3 py-2 text-sm text-default-500 hover:bg-default-100 hover:text-foreground"
+                  @click="emit('moemoepoint', { uuid: user.uuid, name: user.name, moemoepoint: user.moemoepoint })"
+                >
+                  <Icon name="lucide:sparkles" class="size-4" />
+                  萌萌点
+                </button>
                 <button
                   v-if="!user.is_anonymized"
                   class="flex w-full items-center gap-2 px-3 py-2 text-sm text-default-500 hover:bg-default-100 hover:text-foreground"

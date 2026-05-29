@@ -79,8 +79,8 @@ CREATE INDEX        idx_mp_log_reason ON moemoepoint_log (reason);  -- 分类查
 
 | 字段 | 必填 | 说明 |
 |------|------|------|
-| delta | 是 | 有符号整数，非 0 |
-| reason | 是 | §2 枚举之一 |
+| delta | 是 | 有符号整数，非 0，且 \|delta\| ≤ 1,000,000（防呆上限）|
+| reason | 是 | §2 枚举之一。**s2s 不可用** `admin_grant` / `admin_deduct` / `migration`（OAuth 保留）|
 | ref | 否 | 触发实体（建议填，用于对账）|
 | actor_user_id | 否 | 默认 0（系统）；管理员操作填管理员 id |
 | idempotency_key | 是 | 全局唯一，**调用方生成稳定键**（见 §4）|
@@ -94,12 +94,14 @@ CREATE INDEX        idx_mp_log_reason ON moemoepoint_log (reason);  -- 分类查
 
 `applied=false` 表示幂等键命中、未重复执行。
 
-**错误**：`16002` delta 为 0；`16003` reason 非法；`16004` 幂等键已存在但请求体不一致；`16001` 扣除会为负（若启用非负约束）；`404/10005` 用户不存在；`401` Basic Auth 失败。
+**错误**（HTTP 400 + 对应 code，除非另注）：`16002` delta 为 0 或超 ±1,000,000；`16003` reason 非法 / 用了保留 reason；`16004` 幂等键已存在但请求体不一致；`404/10005` 用户不存在；`401` Basic Auth 失败。
+
+> 余额**允许为负**（精简取舍：不做非负约束，保证回收/反转永不被挡）。
 
 ### 3.2 读取
 
 - `GET /users/:id/moemoepoint` → `{ "balance": 42 }`。
-- `GET /users/:id/moemoepoint/log?limit=20&before_id=&reason=` → 分页流水（`reason` 可选过滤）。
+- `GET /users/:id/moemoepoint/log?limit=20&before_id=&reason=` → 分页流水（`reason` 可选过滤）。**s2s 返回精简视图**：`{ id, delta, reason, source_app, ref, created_at }`，**不含** `note` / `actor_user_id`（这俩可能含管理处罚备注，下游可能渲染给终端用户，故不下发；管理端 `/admin/.../log` 返回完整视图）。
 - 也可在 `/auth/me` / userinfo 里直接返回 OAuth 的实时余额（替掉现在的冻结快照）。
 
 ## 4. 幂等（唯一需要严谨的点）
@@ -107,7 +109,7 @@ CREATE INDEX        idx_mp_log_reason ON moemoepoint_log (reason);  -- 分类查
 下游发放常由会重试 / 重放的路径触发（典型：moyu cron「Wiki 消息 → +3」），没有幂等就会重复加分。
 
 - 调用方为**每个业务事件**生成**稳定**键，推荐 `<app>:<event>:<事件唯一id>`，如 `moyu:wiki_approved:1207`、`kungal:checkin:1207:2026-05-29`。
-- 服务端：`idempotency_key` 唯一索引。已存在 → 不重复执行，回原结果（`applied:false`）。请求体不一致 → `409/16004`。
+- 服务端：`idempotency_key` 唯一索引。已存在 → 不重复执行，回原结果（`applied:false`）。请求体不一致 → `400/16004`。
 - 写入在单事务内对该用户行加锁（`SELECT … FOR UPDATE`）防并发竞态；唯一索引兜底。
 
 ## 5. 管理端
@@ -137,12 +139,14 @@ OAuth **不发布 SDK**，每个 consumer 自己写薄客户端（同 `/users/ba
 
 ## 8. 错误码（16xxx）
 
-| code | 常量（建议）| 含义 |
+| code | 常量 | 含义 |
 |---|---|---|
-| 16001 | `ErrMoemoepointInsufficient` | 扣除会使余额为负（非负约束开启时）|
-| 16002 | `ErrMoemoepointInvalidDelta` | delta 为 0 |
-| 16003 | `ErrMoemoepointInvalidReason` | reason 不在枚举内 |
+| 16002 | `ErrMoemoepointInvalidDelta` | delta 为 0 或 \|delta\| > 1,000,000 |
+| 16003 | `ErrMoemoepointInvalidReason` | reason 不在枚举内，或 s2s 用了保留 reason（admin_*/migration）|
 | 16004 | `ErrMoemoepointIdemConflict` | idempotency_key 已存在但请求体不一致 |
+
+> 已实现状态：上述 3 个码 + `moemoepoint_log` 表 + s2s/admin 端点 + 管理端 UI **均已落地**（待 oauth 后端重启生效）。下游消费 + 数据合并迁移（§6/§7）仍待各站对接。
+> 并发同键竞态：唯一索引兜底（不会重复加分），极少数并发同键会得到一次性 500，调用方重试即转为 `applied:false`。
 
 ## 9. 刻意没做的（将来需要时再升级）
 

@@ -53,6 +53,11 @@ const (
 	ErrOAuthPKCERequired        = 15009
 	ErrOAuthConsentRequired     = 15010
 
+	// Moemoepoint (16000-16999)
+	ErrMoemoepointInvalidDelta  = 16002
+	ErrMoemoepointInvalidReason = 16003
+	ErrMoemoepointIdemConflict  = 16004
+
 	// Galgame (20000-29999)
 	ErrGalgameNotFound           = 20001
 	ErrGalgameAlreadyExists      = 20002
@@ -138,6 +143,11 @@ var codeMessages = map[int]string{
 	ErrOAuthInvalidClientSecret: "客户端密钥无效",
 	ErrOAuthPKCERequired:        "公开客户端必须使用 PKCE",
 	ErrOAuthConsentRequired:     "需要用户授权同意",
+
+	// Moemoepoint
+	ErrMoemoepointInvalidDelta:  "萌萌点变动值不能为 0",
+	ErrMoemoepointInvalidReason: "未知的萌萌点变动原因",
+	ErrMoemoepointIdemConflict:  "幂等键已存在但请求内容不一致",
 
 	ErrGalgameNotFound:           "Galgame 不存在",
 	ErrGalgameAlreadyExists:      "Galgame 已存在",

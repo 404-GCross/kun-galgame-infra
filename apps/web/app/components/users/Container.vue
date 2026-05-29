@@ -100,6 +100,14 @@ const handleUploadAvatar = (user: { uuid: string; name: string }) => {
 const onAvatarUploaded = () => {
   refresh()
 }
+
+const moemoepointOpen = ref(false)
+const moemoepointTarget = ref<{ uuid: string; name: string; moemoepoint: number } | null>(null)
+
+const handleMoemoepoint = (user: { uuid: string; name: string; moemoepoint: number }) => {
+  moemoepointTarget.value = user
+  moemoepointOpen.value = true
+}
 </script>
 
 <template>
@@ -140,6 +148,7 @@ const onAvatarUploaded = () => {
         @anonymize="requestAnonymize"
         @delete-sessions="handleDeleteSessions"
         @upload-avatar="handleUploadAvatar"
+        @moemoepoint="handleMoemoepoint"
       />
 
       <div v-if="totalPages > 1" class="flex justify-center">
@@ -155,6 +164,12 @@ const onAvatarUploaded = () => {
       v-model:open="avatarUploadOpen"
       :user="avatarUploadTarget"
       @success="onAvatarUploaded"
+    />
+
+    <UsersMoemoepointModal
+      v-model:open="moemoepointOpen"
+      :user="moemoepointTarget"
+      @success="refresh"
     />
 
     <KunModal v-model="banOpen">

@@ -100,12 +100,14 @@ func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 	oauthSvc := authService.NewOAuthService(userRepo, authCodeRepo, sessionRepo, oauthClientRepo, cfg)
 	adminSvc := authService.NewAdminService(userRepo, sessionRepo, imgCli)
 	userBatchSvc := authService.NewUserBatchService(userRepo)
+	moemoepointSvc := authService.NewMoemoepointService(a.DB.DB(), userRepo)
 	siteSvc := siteService.NewSiteService(siteRepository, oauthClientRepo)
 
 	// Handlers
 	authH := authHandler.NewAuthHandler(authSvc, cfg)
 	oauthH := authHandler.NewOAuthHandler(oauthSvc, cfg)
 	adminH := authHandler.NewAdminHandler(adminSvc)
+	moemoepointH := authHandler.NewMoemoepointHandler(moemoepointSvc)
 	userBatchH := authHandler.NewUserBatchHandler(userBatchSvc)
 
 	var avatarUploadH *authHandler.AvatarUploadHandler
@@ -193,6 +195,15 @@ func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 		middleware.OAuthClientBasicAuth(oauthClientRepo),
 		userBatchH.Search,
 	)
+	// Moemoepoint service-to-service (kungal / moyu award/deduct + read).
+	// Basic Auth; numeric user id. 3-segment paths so they don't collide
+	// with the `/users/:uuid` JWT group below.
+	v1.Post("/users/:id/moemoepoint",
+		middleware.OAuthClientBasicAuth(oauthClientRepo), moemoepointH.Adjust)
+	v1.Get("/users/:id/moemoepoint",
+		middleware.OAuthClientBasicAuth(oauthClientRepo), moemoepointH.GetBalance)
+	v1.Get("/users/:id/moemoepoint/log",
+		middleware.OAuthClientBasicAuth(oauthClientRepo), moemoepointH.GetLog)
 
 	users := v1.Group("/users", middleware.Auth(authSvc))
 	users.Get("/:uuid", authH.GetProfile)
@@ -206,6 +217,8 @@ func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 	admin.Post("/users/:uuid/unban", adminH.UnbanUser)
 	admin.Post("/users/:uuid/anonymize", adminH.AnonymizeUser)
 	admin.Delete("/users/:uuid/sessions", adminH.DeleteUserSessions)
+	admin.Post("/users/:uuid/moemoepoint", moemoepointH.AdminAdjust)
+	admin.Get("/users/:uuid/moemoepoint/log", moemoepointH.AdminGetLog)
 	if avatarUploadH != nil {
 		admin.Post("/users/:uuid/avatar", avatarUploadH.Upload)
 	}
