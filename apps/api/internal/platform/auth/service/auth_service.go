@@ -28,6 +28,10 @@ type emailChangeData struct {
 	NewEmail string `json:"new_email"`
 }
 
+// registerGiftPoints is the one-off welcome grant every new account starts
+// with ("鲲给予你的第一份礼物").
+const registerGiftPoints = 7
+
 // AuthService handles authentication logic
 type AuthService struct {
 	userRepo          *repository.UserRepository
@@ -36,6 +40,17 @@ type AuthService struct {
 	mailer            *mail.Mailer
 	cache             *cache.RedisCache
 	cfg               *config.Config
+	// moemoepointSvc grants the registration welcome gift. Optional (nil =
+	// no gift) so the lighter NewAuthService constructor / tests stay valid;
+	// wired in via WithMoemoepoint during app startup.
+	moemoepointSvc *MoemoepointService
+}
+
+// WithMoemoepoint wires the moemoepoint service used to grant the registration
+// welcome gift. Returns the service for fluent chaining; nil disables the gift.
+func (s *AuthService) WithMoemoepoint(mp *MoemoepointService) *AuthService {
+	s.moemoepointSvc = mp
+	return s
 }
 
 // NewAuthService creates a new AuthService
@@ -250,6 +265,27 @@ func (s *AuthService) Register(ctx context.Context, req *dto.RegisterRequest) (*
 	// than "too frequent"). Best-effort: deletion failure is non-fatal
 	// since the account already exists at this point.
 	_ = s.cache.Delete(redisKey)
+
+	// Welcome gift: every new account starts with a few moemoepoint
+	// ("鲲给予你的第一份礼物"). Best-effort + idempotent (stable key) — a rare
+	// failure must not fail an otherwise-successful registration, and the
+	// stable key makes a later re-grant a no-op. Reflect the new balance in
+	// the returned user so the response shows it immediately.
+	if s.moemoepointSvc != nil {
+		res, gErr := s.moemoepointSvc.Adjust(ctx, AdjustParams{
+			UserID:         user.ID,
+			Delta:          registerGiftPoints,
+			Reason:         model.MoemoepointReasonRegisterGift,
+			SourceApp:      "oauth",
+			IdempotencyKey: fmt.Sprintf("oauth:register_gift:%d", user.ID),
+			Note:           "鲲给予你的第一份礼物",
+		})
+		if gErr != nil {
+			slog.Warn("register welcome gift failed (best-effort)", "user_id", user.ID, "err", gErr)
+		} else {
+			user.Moemoepoint = res.Balance
+		}
+	}
 
 	return tokens, user, nil
 }

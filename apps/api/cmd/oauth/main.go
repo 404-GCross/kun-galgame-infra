@@ -101,6 +101,8 @@ func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 	adminSvc := authService.NewAdminService(userRepo, sessionRepo, imgCli)
 	userBatchSvc := authService.NewUserBatchService(userRepo)
 	moemoepointSvc := authService.NewMoemoepointService(a.DB.DB(), userRepo)
+	// Registration grants a welcome gift via the moemoepoint ledger.
+	authSvc.WithMoemoepoint(moemoepointSvc)
 	siteSvc := siteService.NewSiteService(siteRepository, oauthClientRepo)
 
 	// Handlers

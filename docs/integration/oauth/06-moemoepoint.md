@@ -47,6 +47,7 @@ CREATE INDEX        idx_mp_log_reason ON moemoepoint_log (reason);  -- 分类查
 |---|---|---|
 | `admin_grant` / `admin_deduct` | ± | 管理员发放 / 扣除 |
 | `migration` | + | 迁移起始值（§6）|
+| `register_gift` | + | 注册欢迎礼（OAuth 注册成功时一次性发放，note=「鲲给予你的第一份礼物」）；OAuth 内部，s2s 不可用 |
 | `content_approved` | + | 产出被采纳（Wiki 投稿通过、补丁发布…，用 source_app+ref 区分）|
 | `content_removed` | − | 上述产出被删 / 撤回时回收（与发放同 `ref`）|
 | `daily_checkin` | + | 每日签到 |
@@ -80,7 +81,7 @@ CREATE INDEX        idx_mp_log_reason ON moemoepoint_log (reason);  -- 分类查
 | 字段 | 必填 | 说明 |
 |------|------|------|
 | delta | 是 | 有符号整数，非 0，且 \|delta\| ≤ 1,000,000（防呆上限）|
-| reason | 是 | §2 枚举之一。**s2s 不可用** `admin_grant` / `admin_deduct` / `migration`（OAuth 保留）|
+| reason | 是 | §2 枚举之一。**s2s 不可用** `admin_grant` / `admin_deduct` / `migration` / `register_gift`（OAuth 保留）|
 | ref | 否 | 触发实体（建议填，用于对账）|
 | actor_user_id | 否 | 默认 0（系统）；管理员操作填管理员 id |
 | idempotency_key | 是 | 全局唯一，**调用方生成稳定键**（见 §4）|
@@ -122,9 +123,11 @@ CREATE INDEX        idx_mp_log_reason ON moemoepoint_log (reason);  -- 分类查
 ## 6. 迁移（一次性）
 
 1. 下游停止本地 `moemoepoint` 写入（或短期双写过渡）。
-2. 每个用户取各站本地值之和作为统一起始余额。
-3. 写一条 `reason=migration` 日志（`idempotency_key=oauth:migration:v1:<userId>`，可重复跑）+ 设 `users.moemoepoint`。
+2. 每个用户取各站本地值之和作为统一起始余额。**已落地**：`cmd/migrate-users` 在 ID 统一时已把 kungal + moyu 的本地值累加进 `users.moemoepoint`。
+3. 写一条 `reason=migration` 日志（`idempotency_key=oauth:migration:v1:<userId>`，可重复跑）。**已落地**：`go run ./cmd/migrate-moemoepoint`（支持 `-dry-run`）为每个有余额却无流水的用户回填一条 `reason=migration`、`note=「从 鲲 Galgame 论坛 和 鲲 Galgame 补丁 继承」` 的记录；delta = 当前余额 − 已有流水之和（取“未被解释的余额”，使账本严格对账），**不改 `users.moemoepoint`**（已是正确值），幂等可重跑。
 4. 下游删本地写逻辑，改：发放/扣除调 §3.1；显示余额回读 OAuth。
+
+> 注册欢迎礼：新账号在 OAuth 注册成功时自动 +7（`reason=register_gift`，`note=「鲲给予你的第一份礼物」`，`idempotency_key=oauth:register_gift:<userId>`，best-effort 不阻塞注册）。这是 OAuth 内部一次性发放，与上面的 `migration` 互不影响（新用户的余额由 `register_gift` 这条流水解释，不会被 §6 回填）。
 
 ## 7. 下游接入
 

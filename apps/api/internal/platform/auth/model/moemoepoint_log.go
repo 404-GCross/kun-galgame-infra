@@ -13,6 +13,10 @@ const (
 	MoemoepointReasonContentRemoved  = "content_removed"
 	MoemoepointReasonDailyCheckin    = "daily_checkin"
 	MoemoepointReasonLiked           = "liked"
+	// RegisterGift is the one-off welcome grant on account creation
+	// ("鲲给予你的第一份礼物"). OAuth-internal like admin_*/migration — a
+	// downstream s2s client must not self-label it.
+	MoemoepointReasonRegisterGift = "register_gift"
 )
 
 // IsValidMoemoepointReason reports whether r is an accepted reason.
@@ -21,7 +25,7 @@ func IsValidMoemoepointReason(r string) bool {
 	case MoemoepointReasonAdminGrant, MoemoepointReasonAdminDeduct,
 		MoemoepointReasonMigration, MoemoepointReasonContentApproved,
 		MoemoepointReasonContentRemoved, MoemoepointReasonDailyCheckin,
-		MoemoepointReasonLiked:
+		MoemoepointReasonLiked, MoemoepointReasonRegisterGift:
 		return true
 	}
 	return false

@@ -58,7 +58,8 @@ func (h *MoemoepointHandler) Adjust(c fiber.Ctx) error {
 	// can't fake a manual/admin grant). Downstream awards use the
 	// content_/daily_checkin/liked reasons.
 	switch req.Reason {
-	case model.MoemoepointReasonAdminGrant, model.MoemoepointReasonAdminDeduct, model.MoemoepointReasonMigration:
+	case model.MoemoepointReasonAdminGrant, model.MoemoepointReasonAdminDeduct,
+		model.MoemoepointReasonMigration, model.MoemoepointReasonRegisterGift:
 		return response.BadRequest(c, errors.ErrMoemoepointInvalidReason)
 	}
 
