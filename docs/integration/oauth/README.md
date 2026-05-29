@@ -37,7 +37,7 @@
 | 03 | [cross-service.md](./03-cross-service.md) | 服务到服务：`/users/batch`、`/users/search`（OAuth Client Basic Auth） |
 | 04 | [tokens-and-errors.md](./04-tokens-and-errors.md) | JWT Access Token claims + 完整错误码速查（OAuth 15xxx / 认证 10xxx / 通用） |
 | 05 | [registration.md](./05-registration.md) | 🆕 用户注册流程：跳转 OAuth 注册 + 邮箱验证码 + 自动 SSO 回跳；`POST /auth/register/send-code` + `POST /auth/register`、`GET /oauth/client-info`；下游 PKCE 跳转示例 |
-| 06 | [moemoepoint.md](./06-moemoepoint.md) | 🚧 **设计规范**：萌萌点全站统一货币（单一真源在 OAuth）。append-only 流水账本 + 缓存余额 + 幂等发放/扣除 RPC + 迁移与下游接入指南 |
+| 06 | [moemoepoint.md](./06-moemoepoint.md) | 🚧 **设计规范（精简版）**：萌萌点全站统一货币（单一真源在 OAuth）。可变余额列 + append-only 审计日志 + 幂等发放/扣除 RPC + 迁移与下游接入；含"刻意没做的"清单（将来需要再升级）|
 
 ### 完整接入指南
 
