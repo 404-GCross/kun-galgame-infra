@@ -3,17 +3,19 @@
 > 目的：逐服务记录全部 API 端点 + FE↔BE 字段对齐审计状态。
 >
 > 当前进度：**审计完成（2026-05-29）** —— 全部 147 端点（GET 75 / POST 42 / PUT 12 / DELETE 14 / PATCH 4）已逐项扫描。oauth / image / galgame 三服务**全部审计**：发现并修复 **46 项**问题（10 HIGH / 16 MEDIUM / 20 LOW，跨 51 个端点行标 🔧），其余标 ✅（本轮未发现可处理问题）。moderation / artifact **未实现**，按要求跳过（状态保持 ⏳）。详见下方 [审计结果](#审计结果2026-05-29)。
+>
+> 审计后新增（🆕）：`GET /api/v1/auth/me/moemoepoint/log` —— 用户自助查自己的萌萌点流水，供 oauth web `/profile`「萌萌点记录」使用。oauth GET 端点 19 → **20**，总计 147 → **148**。
 
 ## 端点矩阵（按服务 × 方法）
 
 | 服务 | 二进制 | Base URL | GET | POST | PUT | DELETE | PATCH | 小计 |
 |---|---|---|---|---|---|---|---|---|
-| OAuth | `cmd/oauth` | `/api/v1` | [19](./oauth.get.md) | [21](./oauth.post.md) | [4](./oauth.put.md) | [3](./oauth.delete.md) | [2](./oauth.patch.md) | 49 |
+| OAuth | `cmd/oauth` | `/api/v1` | [20](./oauth.get.md) | [21](./oauth.post.md) | [4](./oauth.put.md) | [3](./oauth.delete.md) | [2](./oauth.patch.md) | 50 |
 | Image | `cmd/image`（+管理端在 oauth 进程）| `/`、`/api/v1/admin/image` | [6](./image.get.md) | [2](./image.post.md) | — | [2](./image.delete.md) | [1](./image.patch.md) | 11 |
 | Galgame Wiki | `cmd/galgame` | `/api` | [42](./galgame.get.md) | [17](./galgame.post.md) | [8](./galgame.put.md) | [8](./galgame.delete.md) | [1](./galgame.patch.md) | 76 |
 | Moderation | `cmd/moderation` | `/api/v1` | [4](./moderation.get.md) | [1](./moderation.post.md) | — | — | — | 5 |
 | Artifact | `cmd/artifact` | `/api/v1` | [4](./artifact.get.md) | [1](./artifact.post.md) | — | [1](./artifact.delete.md) | — | 6 |
-| **合计** | | | **75** | **42** | **12** | **14** | **4** | **147** |
+| **合计** | | | **76** | **42** | **12** | **14** | **4** | **148** |
 
 > 注：`/api/v1/admin/image/*`、`/api/v1/admin/jobs/*` 物理上跑在 oauth 进程（admin 鉴权在那边）。image 管理端归到 image.* 审计；jobs 管理端归到 oauth.* 审计。上表 Image 的 DELETE/PATCH 各含 1 个 oauth 进程内的管理端端点。
 
@@ -110,7 +112,7 @@ UpdateProfile avatar hash 已处理 · DELETE 命中缺失返回 200（幂等，
 
 ## 共用图例
 
-**审计状态**：✅ 对齐无问题 · 🔧 已修 · ⏭️ 有意保持 · ⏳ 待审计
+**审计状态**：✅ 对齐无问题 · 🔧 已修 · ⏭️ 有意保持 · ⏳ 待审计 · 🆕 本轮新增端点
 
 **鉴权**：🌐 公开 · 🔐 OptionalJWT · 🔒 登录必需 · 🛡️ admin/moderator · ⚙️ admin · 🔑 OAuth Client Basic Auth（服务到服务）
 

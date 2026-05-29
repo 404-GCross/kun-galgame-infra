@@ -2,6 +2,7 @@
 // Admin moemoepoint panel: shows balance, grants/deducts via the unified
 // ledger endpoint (POST /admin/users/:uuid/moemoepoint), and lists recent
 // audit rows. Every change is idempotent + audited server-side.
+import { moemoepointReasonLabel } from '~/constants/moemoepoint'
 
 interface MoemoepointLogRow {
   id: number
@@ -25,17 +26,6 @@ const emit = defineEmits<{
 }>()
 
 const api = useApi()
-
-const REASON_LABEL: Record<string, string> = {
-  admin_grant: '管理员发放',
-  admin_deduct: '管理员扣除',
-  migration: '迁移',
-  content_approved: '内容采纳',
-  content_removed: '内容下架',
-  daily_checkin: '签到',
-  liked: '被点赞'
-}
-const reasonLabel = (r: string) => REASON_LABEL[r] ?? r
 
 const balance = ref(0)
 const amount = ref('') // bound to KunInput (string); parsed on submit
@@ -186,7 +176,7 @@ const adjust = async (sign: 1 | -1) => {
               >
                 {{ row.delta >= 0 ? '+' : '' }}{{ row.delta }}
               </span>
-              <span class="text-default-500 ml-2">{{ reasonLabel(row.reason) }}</span>
+              <span class="text-default-500 ml-2">{{ moemoepointReasonLabel(row.reason) }}</span>
               <span class="text-default-300 ml-1 text-xs">{{ row.source_app }}</span>
               <p v-if="row.note" class="text-default-400 truncate text-xs">
                 {{ row.note }}

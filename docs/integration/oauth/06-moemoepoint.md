@@ -103,6 +103,7 @@ CREATE INDEX        idx_mp_log_reason ON moemoepoint_log (reason);  -- 分类查
 - `GET /users/:id/moemoepoint` → `{ "balance": 42 }`。
 - `GET /users/:id/moemoepoint/log?limit=20&before_id=&reason=` → 分页流水（`reason` 可选过滤）。**s2s 返回精简视图**：`{ id, delta, reason, source_app, ref, created_at }`，**不含** `note` / `actor_user_id`（这俩可能含管理处罚备注，下游可能渲染给终端用户，故不下发；管理端 `/admin/.../log` 返回完整视图）。
 - 也可在 `/auth/me` / userinfo 里直接返回 OAuth 的实时余额（替掉现在的冻结快照）。
+- **自助流水**：`GET /auth/me/moemoepoint/log?limit=&before_id=&reason=`（**用户 JWT**，`Auth` 鉴权，id 取自 token 非路径参——避免越权读他人）。返回与 s2s 同口径的**精简视图**（无 `note` / `actor_user_id`）。OAuth web 端 `/profile`「萌萌点记录」直接用它；下游站点若不想自己代理 s2s 端点，用户也可直连此端点查自己的流水。
 
 ## 4. 幂等（唯一需要严谨的点）
 

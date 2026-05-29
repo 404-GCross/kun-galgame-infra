@@ -104,6 +104,21 @@ func (h *MoemoepointHandler) GetLog(c fiber.Ctx) error {
 	return h.respondLog(c, userID, false)
 }
 
+// ── self-service (user JWT, /auth/me/moemoepoint/log) ────────────────────
+
+// MyLog handles GET /api/v1/auth/me/moemoepoint/log — the authenticated user
+// reading their OWN ledger. Returns the REDUCED view (no note / actor): a user
+// must not see admin notes (e.g. moderation reasons) attached to their rows —
+// only the admin full-view endpoint exposes those. The user id comes from the
+// JWT, never a path param, so one user can't read another's log.
+func (h *MoemoepointHandler) MyLog(c fiber.Ctx) error {
+	userID, _ := c.Locals("user_id").(uint)
+	if userID == 0 {
+		return response.Unauthorized(c, errors.ErrAuthUnauthorized)
+	}
+	return h.respondLog(c, userID, false)
+}
+
 // ── admin (JWT, /admin/users/:uuid/moemoepoint) ──────────────────────────
 
 type adminAdjustRequest struct {

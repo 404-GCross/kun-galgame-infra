@@ -158,6 +158,9 @@ func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 	authProtected.Post("/logout", authH.Logout)
 	authProtected.Get("/me", authH.Me)
 	authProtected.Patch("/me", authH.UpdateProfile)
+	// Self-service moemoepoint ledger: the user's OWN audit rows (reduced
+	// view — no admin note/actor). Balance itself is already on /auth/me.
+	authProtected.Get("/me/moemoepoint/log", moemoepointH.MyLog)
 	authProtected.Put("/password", authH.ChangePassword)
 	authProtected.Post("/email/send-code", authH.SendEmailChangeCode)
 	authProtected.Put("/email", authH.ChangeEmail)

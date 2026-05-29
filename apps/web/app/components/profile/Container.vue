@@ -20,5 +20,7 @@ onMounted(async () => {
       <ProfileEmailChange />
       <ProfilePasswordChange />
     </div>
+
+    <ProfileMoemoepointLog />
   </div>
 </template>

@@ -27,8 +27,9 @@
 
 ## 统计
 
-- 本服务 GET 端点：**19**
-  - 运维 1 · 认证/身份 1 · OAuth 协议 3 · 用户（s2s + self）5 · 管理-用户 3 · 管理-站点/客户端 4 · 管理-任务 2
+- 本服务 GET 端点：**20**
+  - 运维 1 · 认证/身份 2 · OAuth 协议 3 · 用户（s2s + self）5 · 管理-用户 3 · 管理-站点/客户端 4 · 管理-任务 2
+  - 🆕 `GET /auth/me/moemoepoint/log`：本轮新增的用户自助流水端点（web /profile「萌萌点记录」）。
 - 注：`/admin/image/*` 物理上也跑在本进程，但归到 [image.get.md](./image.get.md) 审计。
 
 ---
@@ -44,6 +45,7 @@
 | 路径 | 鉴权 | Handler | 状态 | 备注 |
 |---|---|---|---|---|
 | `GET /api/v1/auth/me` | 🔒 | `authH.Me` | 🔧 | 当前登录用户 profile；#01 返回 avatar_image_hash |
+| `GET /api/v1/auth/me/moemoepoint/log` | 🔒 | `moemoepointH.MyLog` | 🆕 | 自助：用户查自己的萌萌点流水（**精简视图**，id 取 JWT 非路径参）。web /profile「萌萌点记录」用 |
 
 ## 2. OAuth 2.0 协议
 
