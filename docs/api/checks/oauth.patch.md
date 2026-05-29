@@ -1,0 +1,26 @@
+# OAuth 服务 — PATCH API 清单
+
+> 服务: **oauth**（`apps/api/cmd/oauth`） · Base URL: `/api/v1` · 路由源: `cmd/oauth/main.go`
+>
+> 图例见 [README](./README.md)。配套: [oauth.get.md](./oauth.get.md) · [oauth.post.md](./oauth.post.md) · [oauth.put.md](./oauth.put.md) · [oauth.delete.md](./oauth.delete.md)
+>
+> **inventory 阶段** —— 状态列 ⏳。
+
+## 统计
+
+- 本服务 PATCH 端点：**2**（认证-自助 1 · 管理-用户 1）
+- 注：`/api/v1/admin/image/:hash/review` 物理上也跑在本进程，归到 [image.patch.md](./image.patch.md)。
+
+---
+
+## 1. 认证 — 自助（登录态）
+
+| 路径 | 鉴权 | Handler | 状态 | 备注 |
+|---|---|---|---|---|
+| `PATCH /api/v1/auth/me` | 🔒 | `authH.UpdateProfile` | ⏳ | 改 name / avatar / bio（展示层）|
+
+## 2. 管理 — 用户
+
+| 路径 | 鉴权 | Handler | 状态 | 备注 |
+|---|---|---|---|---|
+| `PATCH /api/v1/admin/users/:uuid` | ⚙️ | `adminH.UpdateUser` | ⏳ | 改 name/email/avatar/bio/status |
