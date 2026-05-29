@@ -1,28 +1,16 @@
 <script setup lang="ts">
 import { MODERATION_TABS } from '~/constants/admin'
 
-const api = useApi()
-
-const jobs = ref<ModerationJob[]>([])
-const isLoading = ref(true)
 const activeTab = ref('pending')
 
-const fetchJobs = async () => {
-  isLoading.value = true
-  try {
-    const response = await api.get<ModerationJob[]>(`/moderation/jobs?status=${activeTab.value}`)
-    if (response.code === 0) {
-      jobs.value = response.data
-    }
-  } catch (error) {
-    console.error('Failed to fetch moderation jobs:', error)
-  } finally {
-    isLoading.value = false
-  }
-}
-
-watch(activeTab, () => fetchJobs())
-onMounted(() => fetchJobs())
+// SSR-rendered (kungal-style). Getter URL → useFetch refetches when the tab
+// changes; the default tab's jobs are in the first-paint HTML.
+const { data: jobsData, status } = await useApiFetch<ModerationJob[]>(
+  () => `/moderation/jobs?status=${activeTab.value}`,
+  { watch: [activeTab] }
+)
+const jobs = computed(() => jobsData.value ?? [])
+const isLoading = computed(() => status.value === 'pending')
 </script>
 
 <template>

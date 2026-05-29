@@ -9,7 +9,7 @@ const showMenu = ref(false)
 </script>
 
 <template>
-  <KunCard :bordered="false" content-class="justify-start gap-0" class-name="rounded-xl bg-content1 p-6 shadow-sm transition-shadow hover:shadow-md">
+  <KunCard is-hoverable content-class="justify-start gap-0" class-name="p-6">
     <div class="mb-4 flex items-start justify-between">
       <div class="flex size-12 items-center justify-center rounded-lg bg-primary-100">
         <Icon name="lucide:globe" class="size-6 text-primary" />

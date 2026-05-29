@@ -30,7 +30,6 @@
 - 使用 `app/styles/tailwindcss.css` 中定义的自定义颜色，不使用 Tailwind 固有颜色（gray、indigo、blue、green、red 等）
 - 自定义颜色自动适配浅色/深色模式，不需要 `dark:` 前缀
 - 颜色映射：
-  - 背景：`bg-background`（页面）、`bg-content1`（卡片/面板）、`bg-content2`（次级区域）
   - 文字：`text-foreground`（主文字）、`text-default-500`（次要）、`text-default-400`（辅助）、`text-default-300`（弱化）
   - 边框：`border-default-200`
   - 语义色：`primary`（蓝，主操作）、`success`（绿）、`danger`（红）、`warning`（黄/橙）、`default`（灰/紫）、`secondary`（粉）、`info`（青）

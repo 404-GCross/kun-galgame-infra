@@ -1,48 +1,35 @@
 <script setup lang="ts">
 import { DASHBOARD_STAT_CARDS } from '~/constants/dashboard'
 
+// Greeting only — user is populated client-side by the layout (auth.user is
+// not SSR'd; see profile/auth note).
 const auth = useAuth()
-const api = useApi()
 
-// Live counts, drawn from the admin/list endpoints the dashboard user
-// already has access to (page is guarded by middleware ['auth','admin']):
+// SSR-rendered (kungal-style): the three counts are fetched on the server so
+// the dashboard cards paint with numbers on first load. Endpoints the admin
+// already has access to (page guarded by middleware ['auth','admin']):
 //   users   → GET /admin/users (paginated; read `total`)
 //   sites   → GET /sites       (full array; length)
 //   clients → GET /oauth/clients (full array; length)
-const counts = reactive<Record<string, number>>({
-  users: 0,
-  sites: 0,
-  clients: 0,
-})
-const loading = ref(true)
+const { data: usersData } = await useApiFetch<{ total: number }>(
+  '/admin/users',
+  { query: { page: 1, limit: 1 } }
+)
+const { data: sitesData } = await useApiFetch<Site[]>('/sites')
+const { data: clientsData } = await useApiFetch<OAuthClient[]>('/oauth/clients')
 
-const loadCounts = async () => {
-  loading.value = true
-  try {
-    const [usersRes, sitesRes, clientsRes] = await Promise.all([
-      api.get<{ total: number }>('/admin/users?page=1&limit=1'),
-      api.get<Site[]>('/sites'),
-      api.get<OAuthClient[]>('/oauth/clients'),
-    ])
-    if (usersRes.code === 0) counts.users = usersRes.data?.total ?? 0
-    if (sitesRes.code === 0) counts.sites = sitesRes.data?.length ?? 0
-    if (clientsRes.code === 0) counts.clients = clientsRes.data?.length ?? 0
-  } finally {
-    loading.value = false
-  }
-}
-
-onMounted(async () => {
-  if (!auth.user.value) await auth.fetchUser()
-  await loadCounts()
-})
+const counts = computed<Record<string, number>>(() => ({
+  users: usersData.value?.total ?? 0,
+  sites: sitesData.value?.length ?? 0,
+  clients: clientsData.value?.length ?? 0,
+}))
 
 const stats = computed(() =>
   DASHBOARD_STAT_CARDS.map((c) => ({
     label: c.label,
     icon: c.icon,
     color: c.color,
-    value: loading.value ? '—' : String(counts[c.key] ?? 0),
+    value: String(counts.value[c.key] ?? 0),
   }))
 )
 </script>
@@ -66,7 +53,7 @@ const stats = computed(() =>
 
     <DashboardQuickActions />
 
-    <KunCard :bordered="false" content-class="justify-start gap-0" class-name="rounded-xl bg-content1 p-6 shadow-sm">
+    <KunCard content-class="justify-start gap-0" class-name="p-6">
       <h2 class="mb-4 text-lg font-semibold text-foreground">
         最近活动
       </h2>

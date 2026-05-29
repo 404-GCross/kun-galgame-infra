@@ -1,41 +1,32 @@
 <script setup lang="ts">
 const api = useApi()
 
-const sites = ref<Site[]>([])
-const isLoading = ref(true)
+// SSR-rendered list (kungal-style): useApiFetch runs on the server so the
+// sites are in the first-paint HTML. refresh() re-fetches client-side after
+// a create / edit / delete.
+const { data: sitesData, status, refresh } = await useApiFetch<Site[]>('/sites')
+const sites = computed(() => sitesData.value ?? [])
+const isLoading = computed(() => status.value === 'pending')
+
 const showCreateModal = ref(false)
 const editingSite = ref<Site | null>(null)
 
-const fetchSites = async () => {
-  isLoading.value = true
-  try {
-    const response = await api.get<Site[]>('/sites')
-    if (response.code === 0) {
-      sites.value = response.data
-    }
-  } finally {
-    isLoading.value = false
-  }
-}
-
 const handleCreated = () => {
   showCreateModal.value = false
-  fetchSites()
+  refresh()
 }
 
 const handleUpdated = () => {
   editingSite.value = null
-  fetchSites()
+  refresh()
 }
 
 const handleDelete = async (id: number) => {
   const response = await api.delete(`/sites/${id}`)
   if (response.code === 0) {
-    fetchSites()
+    refresh()
   }
 }
-
-onMounted(() => fetchSites())
 </script>
 
 <template>
@@ -55,7 +46,7 @@ onMounted(() => fetchSites())
       <Icon name="lucide:loader-2" class="size-8 animate-spin text-primary" />
     </div>
 
-    <KunCard v-else-if="sites.length === 0" :bordered="false" content-class="justify-start gap-0" class-name="rounded-xl bg-content1 py-12 text-center shadow-sm">
+    <KunCard v-else-if="sites.length === 0" content-class="justify-start gap-0" class-name="py-12 text-center">
       <Icon name="lucide:globe" class="mx-auto mb-4 size-12 text-default-200" />
       <p class="text-default-400">暂无站点配置</p>
     </KunCard>

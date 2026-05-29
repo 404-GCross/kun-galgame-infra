@@ -3,50 +3,37 @@ import { IMAGE_STATUS_TABS } from '~/constants/admin'
 
 const api = useApi()
 
-const items = ref<ImageAdminRow[]>([])
-const total = ref(0)
-const isLoading = ref(true)
 const site = ref('')
 const reviewStatus = ref<string>('')
 const currentPage = ref(1)
 const limit = 50
 
-const stats = ref<ImageAdminStats | null>(null)
+// SSR-rendered (kungal-style): list + stats fetched on the server so the
+// table and stat cards paint with data. The reactive query makes useFetch
+// refetch on page/filter change; refreshList/refreshStats run after mutations.
+const { data: listData, status: listStatus, refresh: refreshList } =
+  await useApiFetch<ImageAdminListResponse>('/admin/image/list', {
+    query: computed(() => ({
+      page: currentPage.value,
+      limit,
+      ...(reviewStatus.value ? { review_status: reviewStatus.value } : {}),
+      ...(site.value ? { site: site.value } : {})
+    }))
+  })
+const { data: statsData, refresh: refreshStats } =
+  await useApiFetch<ImageAdminStats>('/admin/image/stats')
 
+const items = computed(() => listData.value?.items ?? [])
+const total = computed(() => listData.value?.total ?? 0)
+const stats = computed(() => statsData.value)
+const isLoading = computed(() => listStatus.value === 'pending')
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / limit)))
-
-const fetchList = async () => {
-  isLoading.value = true
-  try {
-    const params = new URLSearchParams({
-      page: String(currentPage.value),
-      limit: String(limit)
-    })
-    if (reviewStatus.value) params.set('review_status', reviewStatus.value)
-    if (site.value) params.set('site', site.value)
-
-    const res = await api.get<ImageAdminListResponse>(
-      `/admin/image/list?${params}`
-    )
-    if (res.code === 0) {
-      items.value = res.data.items || []
-      total.value = res.data.total
-    }
-  } finally {
-    isLoading.value = false
-  }
-}
-
-const fetchStats = async () => {
-  const res = await api.get<ImageAdminStats>('/admin/image/stats')
-  if (res.code === 0) stats.value = res.data
-}
 
 const onReview = async (hash: string, status: string, reason?: string) => {
   const res = await api.patch(`/admin/image/${hash}/review`, { status, reason })
   if (res.code === 0) {
-    await fetchList()
-    await fetchStats()
+    await refreshList()
+    await refreshStats()
   }
 }
 
@@ -69,8 +56,8 @@ const confirmDelete = async () => {
       `/admin/image/${delHash.value}${delForce.value ? '?force=true' : ''}`
     )
     if (res.code === 0) {
-      await fetchList()
-      await fetchStats()
+      await refreshList()
+      await refreshStats()
     }
   } finally {
     delLoading.value = false
@@ -89,12 +76,6 @@ const bytesHuman = (n: number) => {
   return `${v.toFixed(1)} ${units[i]}`
 }
 
-watch([currentPage, reviewStatus, site], () => fetchList())
-
-onMounted(() => {
-  fetchList()
-  fetchStats()
-})
 </script>
 
 <template>
@@ -110,13 +91,13 @@ onMounted(() => {
 
     <!-- Stats cards -->
     <div v-if="stats" class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-      <KunCard :bordered="false" content-class="justify-start gap-0" class-name="rounded-xl bg-content1 p-4 shadow-sm">
+      <KunCard content-class="justify-start gap-0" class-name="p-4">
         <div class="text-sm text-default-500">总上传次数</div>
         <div class="mt-1 text-2xl font-bold text-foreground">
           {{ stats.upload_count }}
         </div>
       </KunCard>
-      <KunCard :bordered="false" content-class="justify-start gap-0" class-name="rounded-xl bg-content1 p-4 shadow-sm">
+      <KunCard content-class="justify-start gap-0" class-name="p-4">
         <div class="text-sm text-default-500">唯一图片</div>
         <div class="mt-1 text-2xl font-bold text-foreground">
           {{ stats.unique_images }}
@@ -125,13 +106,13 @@ onMounted(() => {
           去重 {{ stats.deduplicated_count }}
         </div>
       </KunCard>
-      <KunCard :bordered="false" content-class="justify-start gap-0" class-name="rounded-xl bg-content1 p-4 shadow-sm">
+      <KunCard content-class="justify-start gap-0" class-name="p-4">
         <div class="text-sm text-default-500">存储用量</div>
         <div class="mt-1 text-2xl font-bold text-foreground">
           {{ bytesHuman(stats.total_bytes) }}
         </div>
       </KunCard>
-      <KunCard :bordered="false" content-class="justify-start gap-0" class-name="rounded-xl bg-content1 p-4 shadow-sm">
+      <KunCard content-class="justify-start gap-0" class-name="p-4">
         <div class="text-sm text-default-500">待审 / 已拒</div>
         <div class="mt-1 text-2xl font-bold text-foreground">
           {{ stats.review_pending }} / {{ stats.review_rejected }}
@@ -161,7 +142,7 @@ onMounted(() => {
           placeholder="按站点过滤 (kungal / moyu / galgame_wiki)"
           class="flex-1"
         />
-        <KunButton :disabled="isLoading" @click="currentPage = 1; fetchList()">
+        <KunButton :disabled="isLoading" @click="currentPage = 1; refreshList()">
           刷新
         </KunButton>
       </div>

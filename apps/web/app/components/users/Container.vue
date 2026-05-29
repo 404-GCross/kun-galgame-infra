@@ -1,60 +1,48 @@
 <script setup lang="ts">
 const api = useApi()
 
-const users = ref<User[]>([])
-const isLoading = ref(true)
-const searchQuery = ref('')
+const searchQuery = ref('') // bound to the input
+const appliedSearch = ref('') // committed on submit (so we don't refetch per keystroke)
 const currentPage = ref(1)
-const totalPages = ref(1)
-const totalUsers = ref(0)
 const limit = 20
 
-const fetchUsers = async () => {
-  isLoading.value = true
-  try {
-    const params = new URLSearchParams({
-      page: String(currentPage.value),
-      limit: String(limit),
-    })
-    if (searchQuery.value) {
-      params.set('search', searchQuery.value)
-    }
-
-    const response = await api.get<{
-      users: User[]
-      total: number
-      page: number
-      total_pages: number
-    }>(`/admin/users?${params}`)
-
-    if (response.code === 0) {
-      users.value = response.data.users || []
-      totalPages.value = response.data.total_pages
-      totalUsers.value = response.data.total
-    }
-  } finally {
-    isLoading.value = false
-  }
-}
+// SSR-rendered (kungal-style). The reactive `query` makes useFetch refetch
+// when the page or the applied search changes; first page is in the SSR HTML.
+const { data, status, refresh } = await useApiFetch<{
+  users: User[]
+  total: number
+  page: number
+  total_pages: number
+}>('/admin/users', {
+  query: computed(() => ({
+    page: currentPage.value,
+    limit,
+    ...(appliedSearch.value ? { search: appliedSearch.value } : {}),
+  })),
+})
+const users = computed(() => data.value?.users ?? [])
+const totalPages = computed(() => data.value?.total_pages ?? 1)
+const totalUsers = computed(() => data.value?.total ?? 0)
+const isLoading = computed(() => status.value === 'pending')
 
 const handleSearch = () => {
   currentPage.value = 1
-  fetchUsers()
+  appliedSearch.value = searchQuery.value
 }
 
 const handleBan = async (uuid: string) => {
   const response = await api.post(`/admin/users/${uuid}/ban`)
-  if (response.code === 0) fetchUsers()
+  if (response.code === 0) refresh()
 }
 
 const handleUnban = async (uuid: string) => {
   const response = await api.post(`/admin/users/${uuid}/unban`)
-  if (response.code === 0) fetchUsers()
+  if (response.code === 0) refresh()
 }
 
 const handleDeleteSessions = async (uuid: string) => {
   const response = await api.delete(`/admin/users/${uuid}/sessions`)
-  if (response.code === 0) fetchUsers()
+  if (response.code === 0) refresh()
 }
 
 const avatarUploadOpen = ref(false)
@@ -66,12 +54,8 @@ const handleUploadAvatar = (user: { uuid: string; name: string }) => {
 }
 
 const onAvatarUploaded = () => {
-  fetchUsers()
+  refresh()
 }
-
-watch(currentPage, () => fetchUsers())
-
-onMounted(() => fetchUsers())
 </script>
 
 <template>
@@ -85,7 +69,7 @@ onMounted(() => fetchUsers())
       </div>
     </div>
 
-    <KunCard :bordered="false" content-class="justify-start gap-0" class-name="rounded-xl bg-content1 p-4 shadow-sm">
+    <KunCard content-class="justify-start gap-0" class-name="p-4">
       <form class="flex gap-3" @submit.prevent="handleSearch">
         <KunInput
           v-model="searchQuery"

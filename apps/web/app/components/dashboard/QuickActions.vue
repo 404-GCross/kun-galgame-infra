@@ -3,7 +3,7 @@ import { QUICK_ACTIONS } from '~/constants/dashboard'
 </script>
 
 <template>
-  <KunCard :bordered="false" content-class="justify-start gap-0" class-name="rounded-xl bg-content1 p-6 shadow-sm">
+  <KunCard content-class="justify-start gap-0" class-name="p-6">
     <h2 class="mb-4 text-lg font-semibold text-foreground">
       快捷操作
     </h2>

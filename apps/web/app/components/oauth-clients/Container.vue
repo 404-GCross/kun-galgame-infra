@@ -1,53 +1,38 @@
 <script setup lang="ts">
 const api = useApi()
 
-const clients = ref<OAuthClient[]>([])
-const sites = ref<Site[]>([])
-const isLoading = ref(true)
+// SSR-rendered (kungal-style). Both lists are fetched on the server so the
+// page paints with data; refreshClients() re-fetches after a mutation. Sites
+// are only needed for the create/edit dropdowns and don't change here, so no
+// refresh wiring for them.
+const { data: clientsData, status, refresh: refreshClients } =
+  await useApiFetch<OAuthClient[]>('/oauth/clients')
+const { data: sitesData } = await useApiFetch<Site[]>('/sites')
+const clients = computed(() => clientsData.value ?? [])
+const sites = computed(() => sitesData.value ?? [])
+const isLoading = computed(() => status.value === 'pending')
+
 const showCreateModal = ref(false)
 const createdClient = ref<OAuthClientCreated | null>(null)
 const editingClient = ref<OAuthClient | null>(null)
 
-const fetchClients = async () => {
-  isLoading.value = true
-  try {
-    const response = await api.get<OAuthClient[]>('/oauth/clients')
-    if (response.code === 0) {
-      clients.value = response.data
-    }
-  } finally {
-    isLoading.value = false
-  }
-}
-
-const fetchSites = async () => {
-  const response = await api.get<Site[]>('/sites')
-  if (response.code === 0) {
-    sites.value = response.data
-  }
-}
-
 const handleCreated = (client: OAuthClientCreated) => {
   showCreateModal.value = false
   createdClient.value = client
-  fetchClients()
+  refreshClients()
 }
 
 const handleUpdated = () => {
   editingClient.value = null
-  fetchClients()
+  refreshClients()
 }
 
 const handleDelete = async (clientId: string) => {
   const response = await api.delete(`/oauth/clients/${clientId}`)
   if (response.code === 0) {
-    fetchClients()
+    refreshClients()
   }
 }
-
-onMounted(async () => {
-  await Promise.all([fetchClients(), fetchSites()])
-})
 </script>
 
 <template>
