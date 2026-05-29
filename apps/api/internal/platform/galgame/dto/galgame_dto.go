@@ -66,8 +66,10 @@ type CreateGalgameRequest struct {
 	// Cover candidate set (sort_order=0 = pinned banner). On Create the
 	// empty default is "no covers yet"; downstream wizards typically
 	// supply [{ImageHash, SortOrder: 0}] for a single initial banner.
-	Covers           []GalgameCoverInput      `json:"covers"`
-	Screenshots      []GalgameScreenshotInput `json:"screenshots"`
+	// `dive` is required for the element-level validations below to run —
+	// without it the validator does not descend into slice-of-struct.
+	Covers           []GalgameCoverInput      `json:"covers" validate:"omitempty,dive"`
+	Screenshots      []GalgameScreenshotInput `json:"screenshots" validate:"omitempty,dive"`
 }
 
 // GalgameLinkInput is one external link in a galgame edit body. Kept in
@@ -84,7 +86,7 @@ type GalgameLinkInput struct {
 // hold it (DB-enforced by partial unique index). Sexual / Violence
 // are per-image content ratings (0 = unrated; see docs/galgame_wiki/09 §5.6).
 type GalgameCoverInput struct {
-	ImageHash string `json:"image_hash" validate:"required,len=64"`
+	ImageHash string `json:"image_hash" validate:"required,len=64,hexadecimal"`
 	SortOrder int    `json:"sort_order"`
 	Sexual    int16  `json:"sexual" validate:"omitempty,min=0,max=3"`
 	Violence  int16  `json:"violence" validate:"omitempty,min=0,max=3"`
@@ -95,7 +97,7 @@ type GalgameCoverInput struct {
 // GalgameScreenshotInput is one gallery / CG entry. Same shape as
 // GalgameCoverInput plus Caption.
 type GalgameScreenshotInput struct {
-	ImageHash string `json:"image_hash" validate:"required,len=64"`
+	ImageHash string `json:"image_hash" validate:"required,len=64,hexadecimal"`
 	SortOrder int    `json:"sort_order"`
 	Caption   string `json:"caption"`
 	Sexual    int16  `json:"sexual" validate:"omitempty,min=0,max=3"`
@@ -141,7 +143,9 @@ type UpdateGalgameRequest struct {
 	// (`bid`/BangumiID is the only reserved exception: sync-managed,
 	// intentionally not user-editable; Bangumi sync is deferred).
 	Aliases     *[]string           `json:"aliases"`
-	Links       *[]GalgameLinkInput `json:"links"`
+	// `dive` descends into the slice elements so GalgameLinkInput's
+	// required/max tags actually run (the pointer + omitempty skips when nil).
+	Links       *[]GalgameLinkInput `json:"links" validate:"omitempty,dive"`
 	TagIDs      *[]int              `json:"tag_ids"`
 	OfficialIDs *[]int              `json:"official_ids"`
 	EngineIDs   *[]int              `json:"engine_ids"`
@@ -149,8 +153,8 @@ type UpdateGalgameRequest struct {
 	// cover/screenshot set; non-nil incl. empty `[]` = authoritative full
 	// replacement). Editing only the title MUST omit these or it will
 	// wipe the gallery — same footgun as TagIDs (see §1.5 #5).
-	Covers      *[]GalgameCoverInput      `json:"covers"`
-	Screenshots *[]GalgameScreenshotInput `json:"screenshots"`
+	Covers      *[]GalgameCoverInput      `json:"covers" validate:"omitempty,dive"`
+	Screenshots *[]GalgameScreenshotInput `json:"screenshots" validate:"omitempty,dive"`
 	IsMinor     *bool                     `json:"is_minor"`
 }
 

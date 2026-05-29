@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"math/big"
 	"strings"
 	"time"
@@ -386,6 +387,15 @@ func (s *AuthService) RefreshToken(ctx context.Context, refreshToken string) (*d
 		return nil, errors.NewWithCode(errors.ErrAuthUserNotFound)
 	}
 
+	// Defense-in-depth: a user banned via the no-session-revocation path
+	// (AdminService.UpdateUser can set Status=1 without deleting sessions)
+	// keeps a live session row; revoke it here so the refresh cookie can't
+	// keep minting fresh access tokens. Mirrors OAuthService.RefreshWithClient.
+	if user.IsBanned() {
+		_ = s.sessionRepo.Delete(ctx, session.ID)
+		return nil, errors.NewWithCode(errors.ErrAuthUserBanned)
+	}
+
 	// Generate new tokens
 	tokens, err := s.generateTokens(user)
 	if err != nil {
@@ -498,17 +508,25 @@ func (s *AuthService) ResetPassword(ctx context.Context, token, newPassword stri
 		return errors.NewWithCode(errors.ErrAuthUserNotFound)
 	}
 
+	// Consume the token FIRST (atomic single-use claim). If a later step
+	// fails, the residual state is token-consumed-but-password-unchanged,
+	// which is fail-safe (user just requests a new link) — never the
+	// dangerous password-changed-but-token-still-valid replay window.
+	if err := s.passwordResetRepo.MarkAsUsed(ctx, reset.ID); err != nil {
+		return err // ErrAuthInvalidToken on already-used / raced replay
+	}
+
 	if err := s.userRepo.UpdatePassword(ctx, user.UUID, hashedPassword); err != nil {
 		return err
 	}
 
-	// Mark token as used
-	if err := s.passwordResetRepo.MarkAsUsed(ctx, reset.ID); err != nil {
-		return err
+	// Force re-login everywhere. Log (don't silently drop) a purge failure:
+	// the reset already succeeded so we don't fail the response, but a failed
+	// purge leaving old sessions alive must be visible.
+	if err := s.sessionRepo.DeleteByUserID(ctx, user.ID); err != nil {
+		slog.Warn("reset-password: session purge failed; old sessions may persist",
+			"user_id", user.ID, "err", err)
 	}
-
-	// Delete all sessions for this user (force re-login)
-	_ = s.sessionRepo.DeleteByUserID(ctx, user.ID)
 
 	return nil
 }

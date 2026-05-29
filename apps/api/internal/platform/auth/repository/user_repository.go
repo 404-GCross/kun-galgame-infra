@@ -10,6 +10,16 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+// userSortColumns is the allowlist of sortable columns for FindAllPaginated.
+// Any value outside this set falls back to created_at, so an unvalidated /
+// attacker-controlled sort_by can never reach ORDER BY.
+var userSortColumns = map[string]string{
+	"created_at":  "created_at",
+	"name":        "name",
+	"email":       "email",
+	"moemoepoint": "moemoepoint",
+}
+
 // UserRepository handles user data access
 type UserRepository struct {
 	db *gorm.DB
@@ -291,17 +301,18 @@ func (r *UserRepository) FindAllPaginated(
 		return nil, 0, err
 	}
 
-	// Apply sorting
-	if sortBy == "" {
-		sortBy = "created_at"
+	// Apply sorting. Whitelist the column and use a structured ORDER BY
+	// clause (GORM identifier-quotes it) so an attacker-controlled sort_by
+	// can never be interpolated raw into the ORDER BY — defense in depth even
+	// if the handler-level validator is ever bypassed.
+	col, ok := userSortColumns[sortBy]
+	if !ok {
+		col = "created_at"
 	}
-	order := sortBy
-	if sortDesc {
-		order += " DESC"
-	} else {
-		order += " ASC"
-	}
-	query = query.Order(order)
+	query = query.Order(clause.OrderByColumn{
+		Column: clause.Column{Name: col},
+		Desc:   sortDesc,
+	})
 
 	// Apply pagination
 	offset := (page - 1) * limit

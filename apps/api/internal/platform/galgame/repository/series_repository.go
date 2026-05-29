@@ -24,6 +24,17 @@ func (r *SeriesRepository) DB() *gorm.DB {
 	return r.db
 }
 
+// ExistsByName reports whether a series with this exact name already exists.
+// Mirrors TagRepository/EngineRepository.ExistsByName so CreateSeries can
+// pre-check and return a friendly "already exists" instead of a 500 from the
+// unique index (which remains the race backstop).
+func (r *SeriesRepository) ExistsByName(ctx context.Context, name string) (bool, error) {
+	var n int64
+	err := r.db.WithContext(ctx).Model(&model.GalgameSeries{}).
+		Where("name = ?", name).Count(&n).Error
+	return n > 0, err
+}
+
 // List returns a paginated list of series.
 //
 // contentLimit filters both the embedded preview galgames AND the cnt

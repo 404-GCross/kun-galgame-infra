@@ -76,11 +76,11 @@ func TestSubmitPR(t *testing.T) {
 		NameZhCN: "PR修改后的名字",
 	}
 
-	pr, err := testSvc.SubmitPR(ctx, 2, g.ID, proposed, "修改名字")
+	pr, err := testSvc.SubmitPR(ctx, 2, g.ID, proposed, "修改名字", "")
 	require.NoError(t, err)
 	assert.Equal(t, 0, pr.Status) // pending
 	assert.Equal(t, 1, pr.BaseRevision)
-	assert.Equal(t, "修改名字", pr.Note)
+	assert.Equal(t, "修改名字", pr.Title)
 }
 
 func TestMergePR_Direct(t *testing.T) {
@@ -99,11 +99,11 @@ func TestMergePR_Direct(t *testing.T) {
 		EngineIDs: []int{},
 		Links:    []model.SnapshotLink{},
 	}
-	pr, err := testSvc.SubmitPR(ctx, 2, g.ID, proposed, "test")
+	pr, err := testSvc.SubmitPR(ctx, 2, g.ID, proposed, "test", "")
 	require.NoError(t, err)
 
 	// Merge by creator (userID=1)
-	err = testSvc.MergePR(ctx, 1, pr.ID, []string{})
+	err = testSvc.MergePR(ctx, 1, pr.GalgameID, pr.ID, []string{})
 	require.NoError(t, err)
 
 	// Verify galgame was updated
@@ -140,7 +140,7 @@ func TestMergePR_AutoRebase(t *testing.T) {
 		EngineIDs: []int{},
 		Links:    []model.SnapshotLink{},
 	}
-	pr, err := testSvc.SubmitPR(ctx, 2, g.ID, proposed, "改名字")
+	pr, err := testSvc.SubmitPR(ctx, 2, g.ID, proposed, "改名字", "")
 	require.NoError(t, err)
 
 	// Meanwhile, someone else updates name_en_us (creates revision 2)
@@ -148,7 +148,7 @@ func TestMergePR_AutoRebase(t *testing.T) {
 	testSvc.Update(ctx, 1, g.ID, []string{"admin"}, &dto.UpdateGalgameRequest{NameEnUS: &newEnName})
 
 	// PR's base_revision=1, latest=2, but fields don't conflict
-	err = testSvc.MergePR(ctx, 1, pr.ID, []string{})
+	err = testSvc.MergePR(ctx, 1, pr.GalgameID, pr.ID, []string{})
 	require.NoError(t, err)
 
 	// Verify both changes are applied
@@ -174,7 +174,7 @@ func TestMergePR_Conflict(t *testing.T) {
 		EngineIDs: []int{},
 		Links:    []model.SnapshotLink{},
 	}
-	pr, err := testSvc.SubmitPR(ctx, 2, g.ID, proposed, "改名字")
+	pr, err := testSvc.SubmitPR(ctx, 2, g.ID, proposed, "改名字", "")
 	require.NoError(t, err)
 
 	// Meanwhile, someone else also changes name_zh_cn
@@ -182,7 +182,7 @@ func TestMergePR_Conflict(t *testing.T) {
 	testSvc.Update(ctx, 1, g.ID, []string{"admin"}, &dto.UpdateGalgameRequest{NameZhCN: &conflictName})
 
 	// Merge should fail: both changed name_zh_cn
-	err = testSvc.MergePR(ctx, 1, pr.ID, []string{})
+	err = testSvc.MergePR(ctx, 1, pr.GalgameID, pr.ID, []string{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "name_zh_cn")
 }
@@ -202,14 +202,14 @@ func TestMergePR_AlreadyProcessed(t *testing.T) {
 		EngineIDs: []int{},
 		Links:    []model.SnapshotLink{},
 	}
-	pr, _ := testSvc.SubmitPR(ctx, 2, g.ID, proposed, "test")
+	pr, _ := testSvc.SubmitPR(ctx, 2, g.ID, proposed, "test", "")
 
 	// Merge once
-	err := testSvc.MergePR(ctx, 1, pr.ID, []string{})
+	err := testSvc.MergePR(ctx, 1, pr.GalgameID, pr.ID, []string{})
 	require.NoError(t, err)
 
 	// Try to merge again
-	err = testSvc.MergePR(ctx, 1, pr.ID, []string{})
+	err = testSvc.MergePR(ctx, 1, pr.GalgameID, pr.ID, []string{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "已被处理")
 }
@@ -221,9 +221,9 @@ func TestDeclinePR(t *testing.T) {
 	g := createTestGalgame(t, "v20006", "test")
 
 	proposed := &model.Snapshot{VNDBID: "v20006", NameZhCN: "changed"}
-	pr, _ := testSvc.SubmitPR(ctx, 2, g.ID, proposed, "test")
+	pr, _ := testSvc.SubmitPR(ctx, 2, g.ID, proposed, "test", "")
 
-	err := testSvc.DeclinePR(ctx, 1, pr.ID, []string{})
+	err := testSvc.DeclinePR(ctx, 1, pr.GalgameID, pr.ID, []string{})
 	require.NoError(t, err)
 
 	var updatedPR model.GalgamePR

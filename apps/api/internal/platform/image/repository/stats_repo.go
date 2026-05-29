@@ -59,6 +59,13 @@ func (r *StatsRepository) Stats(ctx context.Context, f ScopeFilter) (*StatsResul
 		usageQ = usageQ.Where("first_uploaded_at <= ?", f.To)
 	}
 
+	// Exclude soft-deleted hashes so upload_count / unique_images stay
+	// consistent with total_bytes (which already filters deleted_at IS NULL).
+	// image_site_usage rows only disappear on HARD delete, so without this a
+	// soft-deleted hash still inflates these counts.
+	usageQ = usageQ.Where("hash IN (?)",
+		r.db.Model(&model.Image{}).Select("hash").Where("deleted_at IS NULL"))
+
 	// SELECT SUM(upload_count), COUNT(*) [as unique]
 	type usageAgg struct {
 		TotalCount  int64
@@ -108,6 +115,8 @@ func (r *StatsRepository) Stats(ctx context.Context, f ScopeFilter) (*StatsResul
 		}
 		var rows []row
 		if err := r.db.WithContext(ctx).Model(&model.ImageSiteUsage{}).
+			Where("hash IN (?)",
+				r.db.Model(&model.Image{}).Select("hash").Where("deleted_at IS NULL")).
 			Select("site, COALESCE(SUM(upload_count),0) AS count, COUNT(*) AS unique").
 			Group("site").
 			Scan(&rows).Error; err != nil {

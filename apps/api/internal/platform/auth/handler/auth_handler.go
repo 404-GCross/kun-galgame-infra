@@ -112,15 +112,16 @@ func (h *AuthHandler) Register(c fiber.Ctx) error {
 
 	return response.Success(c, dto.LoginResponse{
 		User: dto.UserResponse{
-			UUID:        user.UUID,
-			Name:        user.Name,
-			Email:       user.Email,
-			Avatar:      user.Avatar,
-			Bio:         user.Bio,
-			Moemoepoint: user.Moemoepoint,
-			Status:      user.Status,
-			Roles:       []string{}, // New user has no roles yet
-			CreatedAt:   user.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
+			UUID:            user.UUID,
+			Name:            user.Name,
+			Email:           user.Email,
+			Avatar:          user.Avatar,
+			AvatarImageHash: user.AvatarImageHash,
+			Bio:             user.Bio,
+			Moemoepoint:     user.Moemoepoint,
+			Status:          user.Status,
+			Roles:           []string{}, // New user has no roles yet
+			CreatedAt:       user.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
 		},
 		AccessToken: tokens.AccessToken,
 	})
@@ -154,15 +155,16 @@ func (h *AuthHandler) Login(c fiber.Ctx) error {
 
 	return response.Success(c, dto.LoginResponse{
 		User: dto.UserResponse{
-			UUID:        user.UUID,
-			Name:        user.Name,
-			Email:       user.Email,
-			Avatar:      user.Avatar,
-			Bio:         user.Bio,
-			Moemoepoint: user.Moemoepoint,
-			Status:      user.Status,
-			Roles:       user.RoleNames(),
-			CreatedAt:   user.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
+			UUID:            user.UUID,
+			Name:            user.Name,
+			Email:           user.Email,
+			Avatar:          user.Avatar,
+			AvatarImageHash: user.AvatarImageHash,
+			Bio:             user.Bio,
+			Moemoepoint:     user.Moemoepoint,
+			Status:          user.Status,
+			Roles:           user.RoleNames(),
+			CreatedAt:       user.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
 		},
 		AccessToken: tokens.AccessToken,
 	})
@@ -229,15 +231,16 @@ func (h *AuthHandler) Me(c fiber.Ctx) error {
 	}
 
 	return response.Success(c, dto.UserResponse{
-		UUID:        user.UUID,
-		Name:        user.Name,
-		Email:       user.Email,
-		Avatar:      user.Avatar,
-		Bio:         user.Bio,
-		Moemoepoint: user.Moemoepoint,
-		Status:      user.Status,
-		Roles:       user.RoleNames(),
-		CreatedAt:   user.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
+		UUID:            user.UUID,
+		Name:            user.Name,
+		Email:           user.Email,
+		Avatar:          user.Avatar,
+		AvatarImageHash: user.AvatarImageHash,
+		Bio:             user.Bio,
+		Moemoepoint:     user.Moemoepoint,
+		Status:          user.Status,
+		Roles:           user.RoleNames(),
+		CreatedAt:       user.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
 	})
 }
 
@@ -271,15 +274,16 @@ func (h *AuthHandler) UpdateProfile(c fiber.Ctx) error {
 	}
 
 	return response.Success(c, dto.UserResponse{
-		UUID:        user.UUID,
-		Name:        user.Name,
-		Email:       user.Email,
-		Avatar:      user.Avatar,
-		Bio:         user.Bio,
-		Moemoepoint: user.Moemoepoint,
-		Status:      user.Status,
-		Roles:       roles,
-		CreatedAt:   user.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
+		UUID:            user.UUID,
+		Name:            user.Name,
+		Email:           user.Email,
+		Avatar:          user.Avatar,
+		AvatarImageHash: user.AvatarImageHash,
+		Bio:             user.Bio,
+		Moemoepoint:     user.Moemoepoint,
+		Status:          user.Status,
+		Roles:           roles,
+		CreatedAt:       user.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
 	})
 }
 
@@ -337,36 +341,42 @@ func (h *AuthHandler) ResetPassword(c fiber.Ctx) error {
 
 	if err := h.authService.ResetPassword(c.Context(), req.Token, req.Password); err != nil {
 		if appErr, ok := err.(*errors.AppError); ok {
+			// Genuine invalid/expired/used token → 400 (ErrAuthInvalidToken).
 			return response.BadRequest(c, appErr.Code)
 		}
-		return response.BadRequest(c, errors.ErrAuthCodeInvalid)
+		// Real infra/DB failure (hashing, UpdatePassword, MarkAsUsed) — a 500,
+		// not a misleading "验证码无效" that makes the user retry a valid token.
+		return response.InternalError(c, errors.ErrOperationFailed)
 	}
 
 	return response.SuccessWithMessage(c, "密码重置成功", nil)
 }
 
-// GetProfile gets a user profile by UUID
+// GetProfile gets a PUBLIC user profile by UUID. Any authenticated user can
+// fetch any uuid, so this deliberately omits PII (email) and account state
+// (status) — only public-facing fields are returned. Use /auth/me for the
+// caller's own full profile. Roles are preloaded so they are not silently
+// empty (GetCurrentUserWithRoles, not GetCurrentUser).
 func (h *AuthHandler) GetProfile(c fiber.Ctx) error {
 	uuid := c.Params("uuid")
 	if uuid == "" {
 		return response.BadRequest(c, errors.ErrMissingParam)
 	}
 
-	user, err := h.authService.GetCurrentUser(c.Context(), uuid)
+	user, err := h.authService.GetCurrentUserWithRoles(c.Context(), uuid)
 	if err != nil {
 		return response.NotFound(c, errors.ErrAuthUserNotFound)
 	}
 
 	return response.Success(c, dto.UserResponse{
-		UUID:        user.UUID,
-		Name:        user.Name,
-		Email:       user.Email,
-		Avatar:      user.Avatar,
-		Bio:         user.Bio,
-		Moemoepoint: user.Moemoepoint,
-		Status:      user.Status,
-		Roles:       user.RoleNames(),
-		CreatedAt:   user.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
+		UUID:            user.UUID,
+		Name:            user.Name,
+		Avatar:          user.Avatar,
+		AvatarImageHash: user.AvatarImageHash,
+		Bio:             user.Bio,
+		Moemoepoint:     user.Moemoepoint,
+		Roles:           user.RoleNames(),
+		CreatedAt:       user.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
 	})
 }
 

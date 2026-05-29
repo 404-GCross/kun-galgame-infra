@@ -137,7 +137,11 @@ func TestMain(m *testing.M) {
 	testClientRepo = siteRepo.NewOAuthClientRepository(gdb)
 
 	cdnBase := "http://127.0.0.1:9000/" + s3Cfg.Bucket
-	testSvc = service.New(presets, s3Client, testImgRepo, usageRepo, cdnBase)
+	// Pass the DB (mirrors cmd/image) so SoftDelete + the resurrect-on-
+	// re-upload path are exercised; without it SoftDelete returns the
+	// misconfigured-wiring error.
+	testSvc = service.New(presets, s3Client, testImgRepo, usageRepo, cdnBase,
+		service.Options{DB: gdb})
 
 	if err := seedHTTPTestClients(gdb); err != nil {
 		fmt.Fprintf(os.Stderr, "SKIP: seed test clients failed: %v\n", err)
@@ -237,6 +241,7 @@ func buildTestApp(svc *service.Service, statsRepo *repository.StatsRepository, c
 	img.Get("/stats", h.Stats)
 	img.Get("/:hash", h.Meta)
 	img.Post("/reference-ping", h.Ping)
+	img.Delete("/:hash", h.SoftDelete)
 	return app
 }
 

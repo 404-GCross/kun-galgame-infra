@@ -155,6 +155,21 @@ func (s *Service) Upload(ctx context.Context, req UploadRequest) (*UploadResult,
 		return result, nil
 	}
 
+	// A soft-deleted row still occupies UNIQUE(hash). Revive it instead of
+	// INSERTing a duplicate (which would violate the unique index → 500).
+	// Its S3 objects are guaranteed present while the row exists (GC removes
+	// objects + row together), and the hash's prior moderation verdict is
+	// final, so re-route through the dedup path without re-moderating.
+	if deleted, err := s.imgRepo.FindByHashIncludingDeleted(ctx, hash); err != nil {
+		return nil, fmt.Errorf("lookup hash (incl deleted): %w", err)
+	} else if deleted != nil {
+		if err := s.imgRepo.Resurrect(ctx, hash); err != nil {
+			return nil, fmt.Errorf("resurrect hash: %w", err)
+		}
+		deleted.DeletedAt = nil
+		return s.handleExisting(ctx, deleted, ps, req)
+	}
+
 	// New hash — run sync moderation first. Hard rejections short-circuit
 	// before any expensive processing.
 	syncCtx, cancel := context.WithTimeout(ctx, s.syncTO)
@@ -302,8 +317,24 @@ func (s *Service) handleNew(ctx context.Context, hash, originMIME string, ps pre
 		img.ReviewedAt = &now
 	}
 	img.SetVariants(variantNames)
-	if err := s.imgRepo.Create(ctx, img); err != nil {
+	inserted, err := s.imgRepo.Create(ctx, img)
+	if err != nil {
 		return nil, fmt.Errorf("persist image: %w", err)
+	}
+	if !inserted {
+		// Lost a race with a concurrent first-upload of the same hash (the
+		// OnConflict turned our INSERT into a no-op). Converge on the winning
+		// row via the dedup path so this request still records site usage and
+		// backfills any preset variants it needs — honoring the documented
+		// concurrency guarantee instead of 500ing on the unique index.
+		winner, err := s.imgRepo.FindByHash(ctx, hash)
+		if err != nil {
+			return nil, fmt.Errorf("lookup after conflict: %w", err)
+		}
+		if winner == nil {
+			return nil, fmt.Errorf("persist image: conflict but row not found")
+		}
+		return s.handleExisting(ctx, winner, ps, req)
 	}
 
 	if err := s.usageRepo.RecordUpload(ctx, hash, req.Site, req.UploaderSub, req.UploaderClient); err != nil {
@@ -332,6 +363,11 @@ func (s *Service) handleNew(ctx context.Context, hash, originMIME string, ps pre
 // one client can't retire another's images. For irreversible compliance
 // deletes use the admin force path.
 func (s *Service) SoftDelete(ctx context.Context, hash, site string) (bool, error) {
+	if s.db == nil {
+		// Misconfigured wiring (service built without Options{DB}). Return a
+		// clear error instead of a nil-pointer panic.
+		return false, errors.New("service: SoftDelete requires a DB handle")
+	}
 	var usage int64
 	if err := s.db.WithContext(ctx).
 		Model(&model.ImageSiteUsage{}).

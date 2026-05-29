@@ -77,6 +77,21 @@ func (h *SearchHandler) Galgame(c fiber.Ctx) error {
 	// pending drafts still come back via the independent include_pending
 	// sub-query; callers needing other states pass `status` explicitly.
 	statuses := parseIntList(q["status"])
+	// `status` is an aggregation filter on a PUBLIC endpoint. Only admins /
+	// moderators may query arbitrary states; a non-privileged caller is
+	// clamped to published (0) so banned(1)/others'-pending(3)/declined(4)
+	// can never be read by simply passing ?status=. A logged-in viewer's OWN
+	// pending/declined still arrive via the user-scoped include_pending path.
+	roles, _ := c.Locals("user_roles").([]string)
+	if !hasRole(roles, "admin", "moderator") {
+		filtered := statuses[:0]
+		for _, st := range statuses {
+			if st == 0 { // 0 = published; only state a non-privileged caller may filter on
+				filtered = append(filtered, st)
+			}
+		}
+		statuses = filtered
+	}
 	if len(statuses) == 0 {
 		statuses = []int{0}
 	}

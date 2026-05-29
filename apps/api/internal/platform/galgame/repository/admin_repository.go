@@ -2,7 +2,6 @@ package repository
 
 import (
 	"context"
-	"sort"
 	"strings"
 	"time"
 
@@ -26,28 +25,37 @@ func NewAdminRepository(db *gorm.DB) *AdminRepository {
 func (r *AdminRepository) GetStats(ctx context.Context, days int) (*dto.AdminStatsResponse, error) {
 	var resp dto.AdminStatsResponse
 
-	// Totals
-	var cnt int64
-	r.db.WithContext(ctx).Model(&model.GalgameTag{}).Count(&cnt)
-	resp.Totals.GalgameTag = int(cnt)
-
-	r.db.WithContext(ctx).Model(&model.GalgameOfficial{}).Count(&cnt)
-	resp.Totals.GalgameOfficial = int(cnt)
-
-	r.db.WithContext(ctx).Model(&model.GalgameEngine{}).Count(&cnt)
-	resp.Totals.GalgameEngine = int(cnt)
-
-	r.db.WithContext(ctx).Model(&model.GalgameSeries{}).Count(&cnt)
-	resp.Totals.GalgameSeries = int(cnt)
-
-	r.db.WithContext(ctx).Model(&model.GalgameLink{}).Count(&cnt)
-	resp.Totals.GalgameLink = int(cnt)
-
-	r.db.WithContext(ctx).Model(&model.GalgamePR{}).Count(&cnt)
-	resp.Totals.GalgamePR = int(cnt)
-
-	r.db.WithContext(ctx).Model(&model.GalgameRevision{}).Count(&cnt)
-	resp.Totals.GalgameRevision = int(cnt)
+	// Totals — each Count propagates its error so a DB failure surfaces as a
+	// 500 instead of returning half-true totals with the error swallowed.
+	countAll := func(m any) (int, error) {
+		var cnt int64
+		if err := r.db.WithContext(ctx).Model(m).Count(&cnt).Error; err != nil {
+			return 0, err
+		}
+		return int(cnt), nil
+	}
+	var err error
+	if resp.Totals.GalgameTag, err = countAll(&model.GalgameTag{}); err != nil {
+		return nil, err
+	}
+	if resp.Totals.GalgameOfficial, err = countAll(&model.GalgameOfficial{}); err != nil {
+		return nil, err
+	}
+	if resp.Totals.GalgameEngine, err = countAll(&model.GalgameEngine{}); err != nil {
+		return nil, err
+	}
+	if resp.Totals.GalgameSeries, err = countAll(&model.GalgameSeries{}); err != nil {
+		return nil, err
+	}
+	if resp.Totals.GalgameLink, err = countAll(&model.GalgameLink{}); err != nil {
+		return nil, err
+	}
+	if resp.Totals.GalgamePR, err = countAll(&model.GalgamePR{}); err != nil {
+		return nil, err
+	}
+	if resp.Totals.GalgameRevision, err = countAll(&model.GalgameRevision{}); err != nil {
+		return nil, err
+	}
 
 	// Daily counts
 	now := time.Now()
@@ -103,47 +111,26 @@ func (r *AdminRepository) GetStats(ctx context.Context, days int) (*dto.AdminSta
 		return nil, err
 	}
 
-	// Merge all dates
-	dateSet := make(map[string]bool)
-	for d := range tagDaily {
-		dateSet[d] = true
-	}
-	for d := range officialDaily {
-		dateSet[d] = true
-	}
-	for d := range engineDaily {
-		dateSet[d] = true
-	}
-	for d := range seriesDaily {
-		dateSet[d] = true
-	}
-	for d := range linkDaily {
-		dateSet[d] = true
-	}
-	for d := range prDaily {
-		dateSet[d] = true
-	}
-	for d := range revisionDaily {
-		dateSet[d] = true
-	}
-
-	resp.Daily = make([]dto.AdminStatsDaily, 0, len(dateSet))
-	for d := range dateSet {
+	// Zero-fill the full [since .. today] range so the daily series is
+	// contiguous — days with no activity were previously absent, leaving the
+	// frontend chart with fewer-than-N bars and non-consecutive dates. Keys
+	// are formatted from `since` (same basis as the SQL bucket lower bound),
+	// already ascending so no sort needed.
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	resp.Daily = make([]dto.AdminStatsDaily, 0, days)
+	for d := since; !d.After(today); d = d.AddDate(0, 0, 1) {
+		key := d.Format("2006-01-02")
 		resp.Daily = append(resp.Daily, dto.AdminStatsDaily{
-			Date:            d,
-			GalgameTag:      tagDaily[d],
-			GalgameOfficial: officialDaily[d],
-			GalgameEngine:   engineDaily[d],
-			GalgameSeries:   seriesDaily[d],
-			GalgameLink:     linkDaily[d],
-			GalgamePR:       prDaily[d],
-			GalgameRevision: revisionDaily[d],
+			Date:            key,
+			GalgameTag:      tagDaily[key],
+			GalgameOfficial: officialDaily[key],
+			GalgameEngine:   engineDaily[key],
+			GalgameSeries:   seriesDaily[key],
+			GalgameLink:     linkDaily[key],
+			GalgamePR:       prDaily[key],
+			GalgameRevision: revisionDaily[key],
 		})
 	}
-
-	sort.Slice(resp.Daily, func(i, j int) bool {
-		return resp.Daily[i].Date < resp.Daily[j].Date
-	})
 
 	return &resp, nil
 }
@@ -162,10 +149,13 @@ func (r *AdminRepository) ListGalgames(ctx context.Context, req *dto.AdminListGa
 	}
 
 	if req.Search != "" {
+		// vndb_id was bound to the raw (unwrapped) search term, so LIKE
+		// degraded to exact match and substring/prefix vndb_id search never
+		// hit. Wrap it like the name columns (and LOWER it for case-insensitivity).
 		like := "%" + strings.ToLower(req.Search) + "%"
 		query = query.Where(
-			"vndb_id LIKE ? OR LOWER(name_en_us) LIKE ? OR LOWER(name_ja_jp) LIKE ? OR LOWER(name_zh_cn) LIKE ? OR LOWER(name_zh_tw) LIKE ?",
-			req.Search, like, like, like, like,
+			"LOWER(vndb_id) LIKE ? OR LOWER(name_en_us) LIKE ? OR LOWER(name_ja_jp) LIKE ? OR LOWER(name_zh_cn) LIKE ? OR LOWER(name_zh_tw) LIKE ?",
+			like, like, like, like, like,
 		)
 	}
 

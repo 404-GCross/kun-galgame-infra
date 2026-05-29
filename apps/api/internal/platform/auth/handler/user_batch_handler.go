@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"api/internal/platform/auth/service"
 	"api/pkg/errors"
@@ -59,7 +60,9 @@ func (h *UserBatchHandler) Search(c fiber.Ctx) error {
 	if q == "" {
 		return response.BadRequestMsg(c, errors.ErrInvalidParam, "q is required")
 	}
-	if len(q) > 50 {
+	// Count runes, not bytes: a 17-char (the username max) all-CJK name is
+	// 51 bytes, which len() would wrongly reject.
+	if utf8.RuneCountInString(q) > 50 {
 		return response.BadRequestMsg(c, errors.ErrInvalidParam, "q: max 50 chars")
 	}
 

@@ -55,16 +55,17 @@ func (s *AdminService) ListUsers(ctx context.Context, req *dto.UserListRequest) 
 	userResponses := make([]dto.UserResponse, len(users))
 	for i, user := range users {
 		userResponses[i] = dto.UserResponse{
-			UUID:         user.UUID,
-			Name:         user.Name,
-			Email:        user.Email,
-			Avatar:       user.Avatar,
-			Bio:          user.Bio,
-			Moemoepoint:  user.Moemoepoint,
-			Status:       user.Status,
-			IsAnonymized: user.IsAnonymized(),
-			Roles:        user.RoleNames(),
-			CreatedAt:    user.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
+			UUID:            user.UUID,
+			Name:            user.Name,
+			Email:           user.Email,
+			Avatar:          user.Avatar,
+			AvatarImageHash: user.AvatarImageHash,
+			Bio:             user.Bio,
+			Moemoepoint:     user.Moemoepoint,
+			Status:          user.Status,
+			IsAnonymized:    user.IsAnonymized(),
+			Roles:           user.RoleNames(),
+			CreatedAt:       user.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
 		}
 	}
 
@@ -94,16 +95,17 @@ func (s *AdminService) GetUser(ctx context.Context, uuid string) (*dto.UserDetai
 
 	return &dto.UserDetailResponse{
 		UserResponse: dto.UserResponse{
-			UUID:         user.UUID,
-			Name:         user.Name,
-			Email:        user.Email,
-			Avatar:       user.Avatar,
-			Bio:          user.Bio,
-			Moemoepoint:  user.Moemoepoint,
-			Status:       user.Status,
-			IsAnonymized: user.IsAnonymized(),
-			Roles:        user.RoleNames(),
-			CreatedAt:    user.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
+			UUID:            user.UUID,
+			Name:            user.Name,
+			Email:           user.Email,
+			Avatar:          user.Avatar,
+			AvatarImageHash: user.AvatarImageHash,
+			Bio:             user.Bio,
+			Moemoepoint:     user.Moemoepoint,
+			Status:          user.Status,
+			IsAnonymized:    user.IsAnonymized(),
+			Roles:           user.RoleNames(),
+			CreatedAt:       user.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
 		},
 		IP:           user.IP,
 		SessionCount: int(sessionCount),
@@ -116,6 +118,7 @@ func (s *AdminService) UpdateUser(ctx context.Context, uuid string, req *dto.Upd
 	if err != nil {
 		return nil, errors.NewWithCode(errors.ErrAuthUserNotFound)
 	}
+	wasBanned := user.IsBanned()
 
 	// Update fields
 	if req.Name != nil {
@@ -146,6 +149,15 @@ func (s *AdminService) UpdateUser(ctx context.Context, uuid string, req *dto.Upd
 
 	if err := s.userRepo.Update(ctx, user); err != nil {
 		return nil, err
+	}
+
+	// Newly banned via this path → revoke sessions so behavior matches
+	// BanUser (otherwise a lingering session can keep refreshing tokens; the
+	// AuthService.RefreshToken guard is the second line of defense).
+	if !wasBanned && user.IsBanned() {
+		if err := s.sessionRepo.DeleteByUserID(ctx, user.ID); err != nil {
+			slog.Warn("update-user: revoke sessions on ban failed", "user_id", user.ID, "err", err)
+		}
 	}
 
 	return user, nil

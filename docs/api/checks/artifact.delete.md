@@ -4,7 +4,7 @@
 >
 > 图例见 [README](./README.md)。配套: [artifact.get.md](./artifact.get.md) · [artifact.post.md](./artifact.post.md)
 >
-> **inventory 阶段** —— 状态列 ⏳。本服务无 PUT / PATCH。
+> **未审计** —— 该服务尚未实现（仅占位），本轮按要求跳过，状态保持 ⏳。
 
 ## 统计
 

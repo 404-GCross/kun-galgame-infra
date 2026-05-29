@@ -297,7 +297,7 @@ func filterImageRows[T any](rows []T, keep func(T) bool) []T {
 }
 
 // SubmitPR creates a new pull request
-func (s *GalgameService) SubmitPR(ctx context.Context, userID, galgameID int, proposedSnapshot *model.Snapshot, note string) (*model.GalgamePR, error) {
+func (s *GalgameService) SubmitPR(ctx context.Context, userID, galgameID int, proposedSnapshot *model.Snapshot, title, message string) (*model.GalgamePR, error) {
 	// Get current latest revision
 	latestRev, err := s.revisionRepo.FindLatest(ctx, galgameID)
 	if err != nil {
@@ -312,7 +312,8 @@ func (s *GalgameService) SubmitPR(ctx context.Context, userID, galgameID int, pr
 	pr := &model.GalgamePR{
 		GalgameID:    galgameID,
 		UserID:       userID,
-		Note:         note,
+		Title:        title,
+		Message:      message,
 		BaseRevision: latestRev.Revision,
 		Snapshot:     snapshotJSON,
 	}
@@ -325,9 +326,13 @@ func (s *GalgameService) SubmitPR(ctx context.Context, userID, galgameID int, pr
 }
 
 // MergePR merges a pull request with automatic field-level rebase
-func (s *GalgameService) MergePR(ctx context.Context, userID, prID int, roles []string) error {
+func (s *GalgameService) MergePR(ctx context.Context, userID, galgameID, prID int, roles []string) error {
 	pr, err := s.prRepo.FindByID(ctx, prID)
 	if err != nil {
+		return errors.NewWithCode(errors.ErrNotFound)
+	}
+	// Enforce the route contract: the PR must belong to :gid.
+	if pr.GalgameID != galgameID {
 		return errors.NewWithCode(errors.ErrNotFound)
 	}
 
@@ -419,7 +424,7 @@ func (s *GalgameService) MergePR(ctx context.Context, userID, prID int, roles []
 			return err
 		}
 
-		mergedNote := pr.Note
+		mergedNote := prMergeNote(pr)
 		if mergeNoteSuffix != "" {
 			if mergedNote != "" {
 				mergedNote = mergedNote + "；" + mergeNoteSuffix
@@ -461,9 +466,12 @@ func (s *GalgameService) MergePR(ctx context.Context, userID, prID int, roles []
 }
 
 // DeclinePR declines a pull request
-func (s *GalgameService) DeclinePR(ctx context.Context, userID, prID int, roles []string) error {
+func (s *GalgameService) DeclinePR(ctx context.Context, userID, galgameID, prID int, roles []string) error {
 	pr, err := s.prRepo.FindByID(ctx, prID)
 	if err != nil {
+		return errors.NewWithCode(errors.ErrNotFound)
+	}
+	if pr.GalgameID != galgameID {
 		return errors.NewWithCode(errors.ErrNotFound)
 	}
 
@@ -502,9 +510,50 @@ func (s *GalgameService) ListPRs(ctx context.Context, galgameID, page, limit int
 	return s.prRepo.List(ctx, galgameID, page, limit)
 }
 
-// GetPR returns a PR by ID
-func (s *GalgameService) GetPR(ctx context.Context, prID int) (*model.GalgamePR, error) {
-	return s.prRepo.FindByID(ctx, prID)
+// GetPR returns a PR by ID, scoped to its galgame (route contract: the PR
+// must belong to :gid, else 404).
+func (s *GalgameService) GetPR(ctx context.Context, galgameID, prID int) (*model.GalgamePR, error) {
+	pr, err := s.prRepo.FindByID(ctx, prID)
+	if err != nil {
+		return nil, errors.NewWithCode(errors.ErrNotFound)
+	}
+	if pr.GalgameID != galgameID {
+		return nil, errors.NewWithCode(errors.ErrNotFound)
+	}
+	return pr, nil
+}
+
+// prMergeNote composes the merged-revision note from a PR's title/message.
+func prMergeNote(pr *model.GalgamePR) string {
+	switch {
+	case pr.Title != "" && pr.Message != "":
+		return pr.Title + "\n\n" + pr.Message
+	case pr.Title != "":
+		return pr.Title
+	default:
+		return pr.Message
+	}
+}
+
+// AssertGalgameVisible gates revision/PR read endpoints to the same status
+// visibility as GetByIDWithViewer: published(0) is public; pending(3)/
+// declined(4) are visible only to the submitter; everything else (banned,
+// VNDB-draft, missing) is 404. Prevents leaking full snapshot content of
+// hidden galgames via the revision/PR history.
+func (s *GalgameService) AssertGalgameVisible(ctx context.Context, galgameID, viewerUserID int) error {
+	g, err := s.galgameRepo.FindByID(ctx, galgameID)
+	if err != nil {
+		return errors.NewWithCode(errors.ErrGalgameNotFound)
+	}
+	switch {
+	case g.Status == model.GalgameStatusPublished:
+		return nil
+	case (g.Status == model.GalgameStatusPending || g.Status == model.GalgameStatusDeclined) &&
+		viewerUserID > 0 && g.UserID == viewerUserID:
+		return nil
+	default:
+		return errors.NewWithCode(errors.ErrGalgameNotFound)
+	}
 }
 
 func findRevisionInTx(tx *gorm.DB, galgameID, revision int) (*model.GalgameRevision, error) {

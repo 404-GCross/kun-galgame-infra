@@ -42,6 +42,9 @@ func (h *OfficialHandler) List(c fiber.Ctx) error {
 	if req.Limit <= 0 {
 		req.Limit = 50
 	}
+	if req.Limit > 100 { // honor the DTO max=100 (the validate tag never runs)
+		req.Limit = 100
+	}
 
 	items, total, err := h.officialRepo.List(c.Context(), req.Page, req.Limit)
 	if err != nil {
@@ -62,6 +65,9 @@ func (h *OfficialHandler) GetByName(c fiber.Ctx) error {
 	}
 	if req.Limit <= 0 {
 		req.Limit = 24
+	}
+	if req.Limit > 50 { // honor the DTO max=50 (the validate tag never runs)
+		req.Limit = 50
 	}
 
 	official, err := h.officialRepo.FindByID(c.Context(), req.OfficialID)

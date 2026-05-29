@@ -636,8 +636,19 @@ func (s *TaxonomyService) RevertEngine(ctx context.Context, userID, userRole, en
 // Description (per §7.5).
 
 func (s *TaxonomyService) CreateSeries(ctx context.Context, userID, userRole int, req *dto.CreateSeriesRequest, galgameIDs []int) (*model.GalgameSeries, error) {
+	// Pre-check duplicate name (mirrors CreateTag/CreateOfficial/CreateEngine)
+	// so a same-name create returns a friendly 400 instead of a raw 500 from
+	// the unique-index violation. The unique index stays the race backstop.
+	exists, err := s.seriesRepo.ExistsByName(ctx, req.Name)
+	if err != nil {
+		return nil, err
+	}
+	if exists {
+		return nil, apperr.New(apperr.ErrValidationFailed, "已存在同名系列")
+	}
+
 	var sr model.GalgameSeries
-	err := s.seriesRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err = s.seriesRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		sr = model.GalgameSeries{
 			Name:        req.Name,
 			Description: req.Description,

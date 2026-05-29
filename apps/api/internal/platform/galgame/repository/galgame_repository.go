@@ -346,53 +346,58 @@ func (r *GalgameRepository) IncrementView(ctx context.Context, id int) error {
 		Update("view", gorm.Expr("view + 1")).Error
 }
 
-// GetUserStats returns aggregated galgame statistics for a user
+// GetUserStats returns aggregated galgame statistics for a user.
+//
+// Every Count propagates its error: a swallowed DB failure would leave the
+// counter at a stale value and return HTTP 200 with fabricated zeros, which
+// the frontend renders as authoritative. Any failure now surfaces as a 500.
 func (r *GalgameRepository) GetUserStats(ctx context.Context, userID int) (*dto.UserGalgameStats, error) {
 	var stats dto.UserGalgameStats
-	var cnt int64
 
 	now := time.Now()
 	todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 
-	// Galgames created (total)
-	r.db.WithContext(ctx).Model(&model.Galgame{}).
-		Where("user_id = ? AND status = 0", userID).Count(&cnt)
-	stats.GalgameCreated = int(cnt)
+	count := func(q *gorm.DB) (int, error) {
+		var c int64
+		if err := q.Count(&c).Error; err != nil {
+			return 0, err
+		}
+		return int(c), nil
+	}
 
-	// Galgames created today
-	r.db.WithContext(ctx).Model(&model.Galgame{}).
-		Where("user_id = ? AND status = 0 AND created >= ?", userID, todayStart).Count(&cnt)
-	stats.GalgameCreatedToday = int(cnt)
-
-	// Galgames contributed to (distinct galgame_id)
-	r.db.WithContext(ctx).Model(&model.GalgameContributor{}).
-		Where("user_id = ?", userID).Distinct("galgame_id").Count(&cnt)
-	stats.GalgameContributed = int(cnt)
-
-	// Revision count
-	r.db.WithContext(ctx).Model(&model.GalgameRevision{}).
-		Where("user_id = ?", userID).Count(&cnt)
-	stats.RevisionCount = int(cnt)
-
-	// PR submitted (total)
-	r.db.WithContext(ctx).Model(&model.GalgamePR{}).
-		Where("user_id = ?", userID).Count(&cnt)
-	stats.PRSubmitted = int(cnt)
-
-	// PR merged
-	r.db.WithContext(ctx).Model(&model.GalgamePR{}).
-		Where("user_id = ? AND status = 1", userID).Count(&cnt)
-	stats.PRMerged = int(cnt)
-
-	// PR declined
-	r.db.WithContext(ctx).Model(&model.GalgamePR{}).
-		Where("user_id = ? AND status = 2", userID).Count(&cnt)
-	stats.PRDeclined = int(cnt)
-
-	// PR pending
-	r.db.WithContext(ctx).Model(&model.GalgamePR{}).
-		Where("user_id = ? AND status = 0", userID).Count(&cnt)
-	stats.PRPending = int(cnt)
+	var err error
+	if stats.GalgameCreated, err = count(r.db.WithContext(ctx).Model(&model.Galgame{}).
+		Where("user_id = ? AND status = 0", userID)); err != nil {
+		return nil, err
+	}
+	if stats.GalgameCreatedToday, err = count(r.db.WithContext(ctx).Model(&model.Galgame{}).
+		Where("user_id = ? AND status = 0 AND created >= ?", userID, todayStart)); err != nil {
+		return nil, err
+	}
+	if stats.GalgameContributed, err = count(r.db.WithContext(ctx).Model(&model.GalgameContributor{}).
+		Where("user_id = ?", userID).Distinct("galgame_id")); err != nil {
+		return nil, err
+	}
+	if stats.RevisionCount, err = count(r.db.WithContext(ctx).Model(&model.GalgameRevision{}).
+		Where("user_id = ?", userID)); err != nil {
+		return nil, err
+	}
+	if stats.PRSubmitted, err = count(r.db.WithContext(ctx).Model(&model.GalgamePR{}).
+		Where("user_id = ?", userID)); err != nil {
+		return nil, err
+	}
+	if stats.PRMerged, err = count(r.db.WithContext(ctx).Model(&model.GalgamePR{}).
+		Where("user_id = ? AND status = 1", userID)); err != nil {
+		return nil, err
+	}
+	if stats.PRDeclined, err = count(r.db.WithContext(ctx).Model(&model.GalgamePR{}).
+		Where("user_id = ? AND status = 2", userID)); err != nil {
+		return nil, err
+	}
+	if stats.PRPending, err = count(r.db.WithContext(ctx).Model(&model.GalgamePR{}).
+		Where("user_id = ? AND status = 0", userID)); err != nil {
+		return nil, err
+	}
 
 	return &stats, nil
 }

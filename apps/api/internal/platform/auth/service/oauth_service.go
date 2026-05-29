@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	stderrors "errors"
+	"fmt"
 	"log/slog"
 	"strconv"
 	"strings"
@@ -349,16 +350,17 @@ func (s *OAuthService) GetUserInfo(ctx context.Context, userUUID, scope string) 
 	}
 
 	info := &dto.UserInfoResponse{
-		ID:    user.ID,
-		Sub:   user.UUID,
-		Roles: roles,
+		ID:        user.ID,
+		Sub:       user.UUID,
+		Roles:     roles,
+		UpdatedAt: user.UpdatedAt.Unix(), // documented Unix-timestamp contract
 	}
 
 	// If no scope specified, return all fields
 	if scope == "" {
 		info.Name = user.Name
 		info.Email = user.Email
-		info.Picture = user.Avatar
+		info.Picture = s.resolveAvatar(user)
 		return info, nil
 	}
 
@@ -366,13 +368,26 @@ func (s *OAuthService) GetUserInfo(ctx context.Context, userUUID, scope string) 
 
 	if scopes["profile"] {
 		info.Name = user.Name
-		info.Picture = user.Avatar
+		info.Picture = s.resolveAvatar(user)
 	}
 	if scopes["email"] {
 		info.Email = user.Email
 	}
 
 	return info, nil
+}
+
+// resolveAvatar mirrors the frontend resolveAvatarUrl / imageHashUrl: prefer
+// the image_service hash (build the main webp CDN URL), else the legacy
+// avatar URL. Users who only ever uploaded via image_service have an empty
+// legacy `avatar`, so without this userinfo.picture would be blank for them.
+func (s *OAuthService) resolveAvatar(u *model.User) string {
+	if u.AvatarImageHash != nil && len(*u.AvatarImageHash) >= 4 {
+		h := *u.AvatarImageHash
+		base := strings.TrimRight(s.cfg.ImageService.CDNBase, "/")
+		return fmt.Sprintf("%s/%s/%s/%s.webp", base, h[0:2], h[2:4], h)
+	}
+	return u.Avatar
 }
 
 // parseScopes splits a space-separated scope string into a set

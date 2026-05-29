@@ -10,7 +10,13 @@ type GalgamePR struct {
 	GalgameID     int            `gorm:"column:galgame_id;not null;index" json:"galgame_id"`
 	UserID        int            `gorm:"column:user_id;not null;index" json:"user_id"`
 	Status        int            `gorm:"default:0;check:status IN (0,1,2)" json:"status"` // 0=pending, 1=merged, 2=declined
-	Note          string         `gorm:"type:text;default:''" json:"note"`
+	// Title + Message are the PR's human description (the wiki UI shows two
+	// inputs "PR 标题" + "变更说明" and renders pr.title / pr.message). The
+	// retired single `note` column is left in the DB for historical rows; new
+	// PRs write title/message. (Prod backfill if needed:
+	// UPDATE galgame_pr SET message = note WHERE message = '' AND note <> '';)
+	Title         string         `gorm:"type:text;default:''" json:"title"`
+	Message       string         `gorm:"type:text;default:''" json:"message"`
 	BaseRevision  int            `gorm:"column:base_revision;not null" json:"base_revision"`
 	Snapshot      datatypes.JSON `gorm:"type:jsonb;not null" json:"snapshot"`
 	CompletedBy   *int           `gorm:"column:completed_by" json:"completed_by,omitempty"`

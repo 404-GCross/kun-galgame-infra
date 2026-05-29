@@ -153,6 +153,18 @@ func (h *SiteHandler) Delete(c fiber.Ctx) error {
 		return response.BadRequest(c, errors.ErrInvalidID)
 	}
 
+	// Precheck attached OAuth clients: the FK (sites ← oauth_clients) is
+	// NO ACTION, so deleting a site that still has clients raises an opaque
+	// FK-violation 500. Surface an actionable message instead. We must NOT
+	// cascade — that would silently delete live SSO integrations.
+	clients, err := h.siteService.GetOAuthClientsBySiteID(c.Context(), uint(id))
+	if err != nil {
+		return response.InternalError(c, errors.ErrOperationFailed)
+	}
+	if len(clients) > 0 {
+		return response.BadRequestMsg(c, errors.ErrOperationFailed, "站点下仍有 OAuth 客户端，请先删除")
+	}
+
 	if err := h.siteService.Delete(c.Context(), uint(id)); err != nil {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}

@@ -120,9 +120,22 @@ func (s *MessageService) enrich(ctx context.Context, items []model.GalgameMessag
 	if err != nil {
 		return nil, err
 	}
+	// FindByIDsAny only selects scalar columns (no Cover preload), so
+	// EffectiveBannerHash would always be nil and the queue thumbnail blank
+	// for user-submitted galgames (whose banner lives only in galgame_cover,
+	// not the legacy banner URL). One batch lookup of pinned covers fills it
+	// — mirrors BatchGetWithViewer. Non-fatal on error: fall back to nil.
+	pinned, err := s.galgameRepo.PinnedCoverHashes(ctx, galgameIDs)
+	if err != nil {
+		pinned = map[int]string{}
+	}
 	galgameBrief := make(map[int]*dto.MessageGalgameBrief, len(galgames))
 	for i := range galgames {
 		g := galgames[i]
+		var effective *string
+		if h, ok := pinned[g.ID]; ok {
+			effective = &h
+		}
 		galgameBrief[g.ID] = &dto.MessageGalgameBrief{
 			ID:                  g.ID,
 			NameEnUS:            g.NameEnUS,
@@ -130,7 +143,7 @@ func (s *MessageService) enrich(ctx context.Context, items []model.GalgameMessag
 			NameZhCN:            g.NameZhCN,
 			NameZhTW:            g.NameZhTW,
 			Banner:              g.Banner,
-			EffectiveBannerHash: g.EffectiveBannerHash,
+			EffectiveBannerHash: effective,
 			Status:              g.Status,
 			UserID:              g.UserID,
 		}

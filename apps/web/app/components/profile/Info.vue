@@ -1,6 +1,16 @@
 <script setup lang="ts">
+import { resolveAvatarUrl } from '~~/shared/utils/resolveImage'
+
 const auth = useAuth()
 const user = auth.user
+
+// KunAvatar takes a plain `avatar` URL (it does not resolve hashes itself), so
+// resolve the image_service hash → legacy fallback here, matching the admin
+// users Table. Without this an image_service-uploaded avatar never renders.
+const cdnBase = useRuntimeConfig().public.imageCdnBase as string
+const avatarSrc = computed(() =>
+  resolveAvatarUrl(user.value ?? null, { cdnBase, variant: '256' }, '')
+)
 
 const formattedDate = computed(() => {
   if (!user.value?.created_at) return ''
@@ -16,7 +26,7 @@ const formattedDate = computed(() => {
   <KunCard v-if="user" class="p-6">
     <div class="flex items-start gap-6">
       <KunAvatar
-        :user="{ id: 0, name: user.name, avatar: user.avatar }"
+        :user="{ id: 0, name: user.name, avatar: avatarSrc }"
         size="lg"
         :is-navigation="false"
       />

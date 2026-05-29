@@ -34,6 +34,10 @@ func (h *RevisionHandler) ListRevisions(c fiber.Ctx) error {
 	if err != nil {
 		return response.BadRequest(c, errors.ErrInvalidID)
 	}
+	viewerUserID, _ := c.Locals("user_id").(uint)
+	if err := h.svc.AssertGalgameVisible(c.Context(), gid, int(viewerUserID)); err != nil {
+		return response.NotFound(c, errors.ErrGalgameNotFound)
+	}
 
 	var req dto.ListRevisionRequest
 	if err := c.Bind().Query(&req); err != nil {
@@ -65,6 +69,11 @@ func (h *RevisionHandler) GetRevision(c fiber.Ctx) error {
 		return response.BadRequest(c, errors.ErrInvalidID)
 	}
 
+	viewerUserID, _ := c.Locals("user_id").(uint)
+	if err := h.svc.AssertGalgameVisible(c.Context(), gid, int(viewerUserID)); err != nil {
+		return response.NotFound(c, errors.ErrGalgameNotFound)
+	}
+
 	revision, err := h.svc.GetRevision(c.Context(), gid, rev)
 	if err != nil {
 		if appErr, ok := err.(*errors.AppError); ok {
@@ -85,6 +94,11 @@ func (h *RevisionHandler) GetRevisionDiff(c fiber.Ctx) error {
 	rev, err := strconv.Atoi(c.Params("rev"))
 	if err != nil {
 		return response.BadRequest(c, errors.ErrInvalidID)
+	}
+
+	viewerUserID, _ := c.Locals("user_id").(uint)
+	if err := h.svc.AssertGalgameVisible(c.Context(), gid, int(viewerUserID)); err != nil {
+		return response.NotFound(c, errors.ErrGalgameNotFound)
 	}
 
 	changedKeys, oldSnapshot, newSnapshot, err := h.svc.GetRevisionDiff(c.Context(), gid, rev)
@@ -152,6 +166,11 @@ func (h *RevisionHandler) ListPRs(c fiber.Ctx) error {
 		return response.BadRequest(c, errors.ErrInvalidID)
 	}
 
+	viewerUserID, _ := c.Locals("user_id").(uint)
+	if err := h.svc.AssertGalgameVisible(c.Context(), gid, int(viewerUserID)); err != nil {
+		return response.NotFound(c, errors.ErrGalgameNotFound)
+	}
+
 	var req dto.ListPRRequest
 	if err := c.Bind().Query(&req); err != nil {
 		return response.BadRequest(c, errors.ErrBadRequest)
@@ -173,12 +192,21 @@ func (h *RevisionHandler) ListPRs(c fiber.Ctx) error {
 
 // GetPR returns a PR with its diff against the base revision
 func (h *RevisionHandler) GetPR(c fiber.Ctx) error {
+	gid, err := strconv.Atoi(c.Params("gid"))
+	if err != nil {
+		return response.BadRequest(c, errors.ErrInvalidID)
+	}
 	id, err := strconv.Atoi(c.Params("id"))
 	if err != nil {
 		return response.BadRequest(c, errors.ErrInvalidID)
 	}
+	// Hide PRs of non-visible galgames (banned / others' drafts).
+	viewerUserID, _ := c.Locals("user_id").(uint)
+	if err := h.svc.AssertGalgameVisible(c.Context(), gid, int(viewerUserID)); err != nil {
+		return response.NotFound(c, errors.ErrGalgameNotFound)
+	}
 
-	pr, err := h.svc.GetPR(c.Context(), id)
+	pr, err := h.svc.GetPR(c.Context(), gid, id)
 	if err != nil {
 		return response.NotFound(c, errors.ErrNotFound)
 	}
@@ -248,7 +276,7 @@ func (h *RevisionHandler) SubmitPR(c fiber.Ctx) error {
 		}
 		baseSnapshot := model.TakeSnapshot(galgame)
 		proposedSnapshot := req.ApplyToSnapshot(baseSnapshot)
-		pr, submitErr := h.svc.SubmitPR(c.Context(), int(userID), gid, proposedSnapshot, req.Note)
+		pr, submitErr := h.svc.SubmitPR(c.Context(), int(userID), gid, proposedSnapshot, req.Title, req.Message)
 		if submitErr != nil {
 			return response.InternalError(c, errors.ErrOperationFailed)
 		}
@@ -262,7 +290,7 @@ func (h *RevisionHandler) SubmitPR(c fiber.Ctx) error {
 
 	proposedSnapshot := req.ApplyToSnapshot(baseSnapshot)
 
-	pr, err := h.svc.SubmitPR(c.Context(), int(userID), gid, proposedSnapshot, req.Note)
+	pr, err := h.svc.SubmitPR(c.Context(), int(userID), gid, proposedSnapshot, req.Title, req.Message)
 	if err != nil {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
@@ -278,12 +306,16 @@ func (h *RevisionHandler) MergePR(c fiber.Ctx) error {
 	}
 	roles, _ := c.Locals("user_roles").([]string)
 
+	gid, err := strconv.Atoi(c.Params("gid"))
+	if err != nil {
+		return response.BadRequest(c, errors.ErrInvalidID)
+	}
 	id, err := strconv.Atoi(c.Params("id"))
 	if err != nil {
 		return response.BadRequest(c, errors.ErrInvalidID)
 	}
 
-	if err := h.svc.MergePR(c.Context(), int(userID), id, roles); err != nil {
+	if err := h.svc.MergePR(c.Context(), int(userID), gid, id, roles); err != nil {
 		if appErr, ok := err.(*errors.AppError); ok {
 			return response.BadRequest(c, appErr.Code)
 		}
@@ -302,12 +334,16 @@ func (h *RevisionHandler) DeclinePR(c fiber.Ctx) error {
 	}
 	roles, _ := c.Locals("user_roles").([]string)
 
+	gid, err := strconv.Atoi(c.Params("gid"))
+	if err != nil {
+		return response.BadRequest(c, errors.ErrInvalidID)
+	}
 	id, err := strconv.Atoi(c.Params("id"))
 	if err != nil {
 		return response.BadRequest(c, errors.ErrInvalidID)
 	}
 
-	if err := h.svc.DeclinePR(c.Context(), int(userID), id, roles); err != nil {
+	if err := h.svc.DeclinePR(c.Context(), int(userID), gid, id, roles); err != nil {
 		if appErr, ok := err.(*errors.AppError); ok {
 			return response.BadRequest(c, appErr.Code)
 		}

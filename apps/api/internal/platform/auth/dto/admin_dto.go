@@ -1,9 +1,16 @@
 package dto
 
-// UserListRequest represents a user list request
+// UserListRequest represents a user list request.
+//
+// Page/Limit are `omitempty` so an absent value (binds to 0) passes
+// validation and the service applies its defaults; a present value is still
+// bounds-checked. SortBy is whitelisted both here (oneof) and at the repo
+// layer (allowlist) — the latter is the load-bearing guard against ORDER BY
+// injection since this DTO's tags only run via the handler's explicit
+// utils.Validate, not an app-wide StructValidator.
 type UserListRequest struct {
-	Page     int    `query:"page" validate:"min=1"`
-	Limit    int    `query:"limit" validate:"min=1,max=100"`
+	Page     int    `query:"page" validate:"omitempty,min=1"`
+	Limit    int    `query:"limit" validate:"omitempty,min=1,max=100"`
 	Search   string `query:"search"`
 	Status   *int   `query:"status"`
 	SortBy   string `query:"sort_by" validate:"omitempty,oneof=created_at name email moemoepoint"`

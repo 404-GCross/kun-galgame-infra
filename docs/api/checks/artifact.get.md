@@ -6,7 +6,7 @@
 >
 > 配套: [oauth.get.md](./oauth.get.md) · [image.get.md](./image.get.md) · [galgame.get.md](./galgame.get.md) · [moderation.get.md](./moderation.get.md)
 >
-> **inventory 阶段** —— 状态列暂为 ⏳。
+> **未审计** —— 该服务尚未实现（仅占位），本轮按要求跳过，状态保持 ⏳。
 
 ## 图例 — 审计状态
 

@@ -259,6 +259,25 @@ func (s *SubmissionService) PatchDraft(ctx context.Context, userID, gid int, req
 			return errors.NewWithCode(errors.ErrGalgameDraftStatusInvalid)
 		}
 
+		// Validate a vndb_id change the same way Submit/Create do — PatchDraft
+		// previously skipped both checks, so a malformed id persisted silently
+		// and a duplicate surfaced as a raw 500 instead of 20004. (The partial
+		// unique index backstops the TOCTOU between this check and commit.)
+		if req.VNDBID != nil {
+			if v := *req.VNDBID; v != "" {
+				if !vndbIDRegex.MatchString(v) {
+					return errors.NewWithCode(errors.ErrGalgameInvalidVNDB)
+				}
+				exists, existingID, err := s.galgameRepo.ExistsByVNDBID(ctx, v)
+				if err != nil {
+					return err
+				}
+				if exists && existingID != gid {
+					return errors.NewWithCode(errors.ErrGalgameVNDBExists)
+				}
+			}
+		}
+
 		// Same snapshot-overlay model as the published-galgame Update:
 		// overlay onto the current canonical snapshot, write via the one
 		// ApplySnapshot path (so tag/official/engine edits persist and

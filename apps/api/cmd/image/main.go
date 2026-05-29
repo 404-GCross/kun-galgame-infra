@@ -96,7 +96,11 @@ func main() {
 	statsRepo := repository.NewStatsRepository(imagesDB.DB())
 	clientRepo := siteRepo.NewOAuthClientRepository(application.DB.DB())
 
-	svc := service.New(presets, s3Client, imgRepo, usageRepo, cfg.ImageService.CDNBase)
+	// Pass the images DB so SoftDelete (DELETE /image/:hash, used by the
+	// OAuth avatar-GC-on-anonymize path) and async moderation enqueue have a
+	// live handle. Without it s.db is nil and SoftDelete nil-panics.
+	svc := service.New(presets, s3Client, imgRepo, usageRepo, cfg.ImageService.CDNBase,
+		service.Options{DB: imagesDB.DB()})
 	q := quota.New(application.Cache)
 	h := imgHandler.New(svc, q, statsRepo)
 

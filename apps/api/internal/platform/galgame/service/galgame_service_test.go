@@ -163,6 +163,86 @@ func TestUpdate_AdminCanEdit(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// finding #21: Update must reject a malformed vndb_id instead of silently
+// persisting it (Create/Submit already reject this).
+func TestUpdate_RejectsInvalidVNDB(t *testing.T) {
+	cleanTables(t)
+	ctx := context.Background()
+	g := createTestGalgame(t, "v60001", "原始")
+
+	bad := "garbage12"
+	_, err := testSvc.Update(ctx, 1, g.ID, []string{"admin"}, &dto.UpdateGalgameRequest{VNDBID: &bad})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "20003") // ErrGalgameInvalidVNDB
+}
+
+// finding #21: changing vndb_id to one already used by another galgame must
+// return the actionable 20004 rather than a raw 500 from the unique index.
+func TestUpdate_RejectsDuplicateVNDB(t *testing.T) {
+	cleanTables(t)
+	ctx := context.Background()
+	createTestGalgame(t, "v60002", "甲")
+	g2 := createTestGalgame(t, "v60003", "乙")
+
+	dup := "v60002"
+	_, err := testSvc.Update(ctx, 1, g2.ID, []string{"admin"}, &dto.UpdateGalgameRequest{VNDBID: &dup})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "20004") // ErrGalgameVNDBExists
+}
+
+// finding #21: re-saving a galgame's OWN current vndb_id must not false-
+// positive as a duplicate.
+func TestUpdate_SameVNDBIsAllowed(t *testing.T) {
+	cleanTables(t)
+	ctx := context.Background()
+	g := createTestGalgame(t, "v60004", "原始")
+
+	same, newName := "v60004", "改名"
+	_, err := testSvc.Update(ctx, 1, g.ID, []string{"admin"},
+		&dto.UpdateGalgameRequest{VNDBID: &same, NameZhCN: &newName})
+	require.NoError(t, err)
+}
+
+// finding #38: a non-admin owner must not direct-edit (PUT) a draft (status
+// 3/4) — those go through PatchDraft; admins still can.
+func TestUpdate_RejectsDraftForNonAdmin(t *testing.T) {
+	cleanTables(t)
+	ctx := context.Background()
+	g := createTestGalgame(t, "v60005", "原始")
+	require.NoError(t, testDB.Model(&model.Galgame{}).Where("id = ?", g.ID).
+		Update("status", model.GalgameStatusPending).Error)
+
+	newName := "改名"
+	_, err := testSvc.Update(ctx, 1, g.ID, []string{"user"}, &dto.UpdateGalgameRequest{NameZhCN: &newName})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "20008") // ErrGalgameDraftStatusInvalid
+
+	// Admin keeps direct-edit on a non-published entry.
+	_, err = testSvc.Update(ctx, 999, g.ID, []string{"admin"}, &dto.UpdateGalgameRequest{NameZhCN: &newName})
+	require.NoError(t, err)
+}
+
+// findings #07 + #40: SubmitPR persists title/message (not a dropped note) and
+// GetPR is scoped to its galgame (mismatched gid → 404).
+func TestGetPR_ScopedToGalgame_AndCarriesTitleMessage(t *testing.T) {
+	cleanTables(t)
+	ctx := context.Background()
+	g := createTestGalgame(t, "v60006", "原始")
+	proposed := &model.Snapshot{VNDBID: "v60006", NameZhCN: "PR改名",
+		Aliases: []string{}, TagIDs: []int{}, OfficialIDs: []int{}, EngineIDs: []int{}, Links: []model.SnapshotLink{}}
+	pr, err := testSvc.SubmitPR(ctx, 2, g.ID, proposed, "我的标题", "变更说明")
+	require.NoError(t, err)
+
+	got, err := testSvc.GetPR(ctx, g.ID, pr.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "我的标题", got.Title)
+	assert.Equal(t, "变更说明", got.Message)
+
+	// Mismatched gid must not resolve the PR.
+	_, err = testSvc.GetPR(ctx, g.ID+99999, pr.ID)
+	require.Error(t, err)
+}
+
 func TestCheckVNDB(t *testing.T) {
 	cleanTables(t)
 	ctx := context.Background()

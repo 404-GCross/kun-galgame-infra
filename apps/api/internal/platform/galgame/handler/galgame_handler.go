@@ -163,6 +163,12 @@ func (h *GalgameHandler) Update(c fiber.Ctx) error {
 		// the upload wins the sort_order=0 slot.
 		req.PromoteCoverHash = bannerHash
 	}
+	// Validate AFTER binding (mirrors Create) so the DTO's dive/len/max tags
+	// on links/covers/screenshots actually run — there is no app-wide
+	// StructValidator, so without this an empty/garbage image_hash persists.
+	if err := utils.Validate(&req); err != nil {
+		return response.BadRequestMsg(c, errors.ErrValidationFailed, err.Error())
+	}
 
 	galgame, err := h.galgameService.Update(c.Context(), int(userID), id, roles, &req)
 	if err != nil {

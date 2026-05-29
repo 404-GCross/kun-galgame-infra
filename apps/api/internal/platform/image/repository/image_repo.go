@@ -8,6 +8,7 @@ import (
 	"api/internal/platform/image/model"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 	"gorm.io/gorm/logger"
 )
 
@@ -37,9 +38,48 @@ func (r *ImageRepository) FindByHash(ctx context.Context, hash string) (*model.I
 	return &img, nil
 }
 
-// Create inserts a new Image.
-func (r *ImageRepository) Create(ctx context.Context, img *model.Image) error {
-	return r.db.WithContext(ctx).Create(img).Error
+// Create inserts a new Image, deduplicating on hash. Returns inserted=true
+// when a row was actually written, false when an identical hash already
+// existed (the INSERT became a no-op via ON CONFLICT DO NOTHING). The caller
+// converges the loser of a concurrent first-upload race on the winning row
+// instead of surfacing the unique-index violation as a 500.
+func (r *ImageRepository) Create(ctx context.Context, img *model.Image) (bool, error) {
+	res := r.db.WithContext(ctx).
+		Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "hash"}}, DoNothing: true}).
+		Create(img)
+	if res.Error != nil {
+		return false, res.Error
+	}
+	return res.RowsAffected == 1, nil
+}
+
+// FindByHashIncludingDeleted returns the row even if it is soft-deleted
+// (deleted_at set). Used by Upload to revive a soft-deleted hash rather than
+// INSERTing a duplicate that would collide with the unique index. Returns
+// (nil, nil) when the hash has never existed.
+func (r *ImageRepository) FindByHashIncludingDeleted(ctx context.Context, hash string) (*model.Image, error) {
+	var img model.Image
+	err := r.db.WithContext(ctx).
+		Session(&gorm.Session{Logger: r.db.Logger.LogMode(logger.Silent)}).
+		Where("hash = ?", hash).
+		First(&img).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &img, nil
+}
+
+// Resurrect clears deleted_at and refreshes last_referenced_at for a hash,
+// bringing a soft-deleted image back to life on re-upload.
+func (r *ImageRepository) Resurrect(ctx context.Context, hash string) error {
+	return r.db.WithContext(ctx).
+		Model(&model.Image{}).
+		Where("hash = ?", hash).
+		Updates(map[string]any{"deleted_at": nil, "last_referenced_at": time.Now()}).
+		Error
 }
 
 // UpdateVariants atomically replaces the variants JSONB column for the

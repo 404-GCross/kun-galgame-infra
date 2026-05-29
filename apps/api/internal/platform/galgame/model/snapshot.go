@@ -432,12 +432,22 @@ func strPtrEqual(a, b *string) bool {
 	return *a == *b
 }
 
+// stringSliceEqual / intSliceEqual compare as SETS (order-independent): they
+// sort copies before comparing so an order-only reordering of the same
+// elements is not flagged as a change. TakeSnapshot canonical-sorts these
+// fields, but the PR (ApplyToSnapshot) and direct-edit (overlayUpdate) paths
+// do not — without this, a PR that sends tag_ids in a different order than the
+// base would register a spurious diff and could cause a false 字段冲突 on merge.
 func stringSliceEqual(a, b []string) bool {
 	if len(a) != len(b) {
 		return false
 	}
-	for i := range a {
-		if a[i] != b[i] {
+	as := append([]string(nil), a...)
+	bs := append([]string(nil), b...)
+	sort.Strings(as)
+	sort.Strings(bs)
+	for i := range as {
+		if as[i] != bs[i] {
 			return false
 		}
 	}
@@ -448,8 +458,12 @@ func intSliceEqual(a, b []int) bool {
 	if len(a) != len(b) {
 		return false
 	}
-	for i := range a {
-		if a[i] != b[i] {
+	as := append([]int(nil), a...)
+	bs := append([]int(nil), b...)
+	sort.Ints(as)
+	sort.Ints(bs)
+	for i := range as {
+		if as[i] != bs[i] {
 			return false
 		}
 	}
@@ -468,31 +482,40 @@ func linksEqual(a, b []SnapshotLink) bool {
 	return true
 }
 
-// coversEqual compares two cover slices for ChangedKeys diffing.
-// Both inputs are assumed canonical-sorted by ImageHash (TakeSnapshot
-// guarantees this; overlay paths must sort before comparing). Element
-// equality covers every row-level field — change any of sort_order /
-// sexual / violence / source / source_key and the snapshot key flips.
+// coversEqual compares two cover slices for ChangedKeys diffing, order-
+// independently: it sorts copies by ImageHash first (matching TakeSnapshot's
+// canonical key) so order-only reorderings aren't flagged. Element equality
+// then covers every row-level field — change any of sort_order / sexual /
+// violence / source / source_key and the snapshot key flips.
 func coversEqual(a, b []SnapshotCover) bool {
 	if len(a) != len(b) {
 		return false
 	}
-	for i := range a {
-		if a[i] != b[i] {
+	as := append([]SnapshotCover(nil), a...)
+	bs := append([]SnapshotCover(nil), b...)
+	sort.Slice(as, func(i, j int) bool { return as[i].ImageHash < as[j].ImageHash })
+	sort.Slice(bs, func(i, j int) bool { return bs[i].ImageHash < bs[j].ImageHash })
+	for i := range as {
+		if as[i] != bs[i] {
 			return false
 		}
 	}
 	return true
 }
 
-// screenshotsEqual mirrors coversEqual; Caption is included in the
-// comparison because it is editable galgame metadata (per docs/galgame_wiki/09 §4.4).
+// screenshotsEqual mirrors coversEqual (order-independent by ImageHash);
+// Caption is included in the comparison because it is editable galgame
+// metadata (per docs/galgame_wiki/09 §4.4).
 func screenshotsEqual(a, b []SnapshotScreenshot) bool {
 	if len(a) != len(b) {
 		return false
 	}
-	for i := range a {
-		if a[i] != b[i] {
+	as := append([]SnapshotScreenshot(nil), a...)
+	bs := append([]SnapshotScreenshot(nil), b...)
+	sort.Slice(as, func(i, j int) bool { return as[i].ImageHash < as[j].ImageHash })
+	sort.Slice(bs, func(i, j int) bool { return bs[i].ImageHash < bs[j].ImageHash })
+	for i := range as {
+		if as[i] != bs[i] {
 			return false
 		}
 	}

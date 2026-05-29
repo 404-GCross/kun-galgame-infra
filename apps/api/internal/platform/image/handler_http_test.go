@@ -277,6 +277,77 @@ func TestHTTP_Meta_BadHashFormat_400(t *testing.T) {
 	assert.Equal(t, 400, resp.StatusCode)
 }
 
+// ---- DELETE /image/:hash (SoftDelete + resurrect-on-reupload) ----
+
+// softDelete issues DELETE /image/:hash as the given client.
+func softDelete(t *testing.T, hash, clientID, secret string) (int, envelope) {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodDelete, "/image/"+hash, nil)
+	req.Header.Set("Authorization", basicAuth(clientID, secret))
+	resp, err := testApp.Test(req, fiber.TestConfig{Timeout: 10 * time.Second})
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	return resp.StatusCode, decodeEnvelope(t, resp)
+}
+
+// metaStatus issues GET /image/:hash and returns the HTTP status code.
+func metaStatus(t *testing.T, hash, clientID, secret string) int {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, "/image/"+hash, nil)
+	req.Header.Set("Authorization", basicAuth(clientID, secret))
+	resp, err := testApp.Test(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	return resp.StatusCode
+}
+
+// finding #03: DELETE /image/:hash must not nil-panic (the service is now
+// wired with a DB) and must soft-delete an image the caller's site used.
+// finding #17: re-uploading the same content within the GC window must
+// resurrect the row (dedup) instead of 500ing on the UNIQUE(hash) index.
+func TestHTTP_SoftDelete_ThenResurrectOnReupload(t *testing.T) {
+	body := fixturePNG(137, 211, 211, 17, 88) // unique-ish: hash is local to this test
+
+	// 1) Upload → present and visible.
+	status, result, env := callUpload(t, body, "avatar", testClientID, testClientSecret)
+	require.Equal(t, 200, status, "envelope: %+v", env)
+	require.NotNil(t, result)
+	hash := result.Hash
+	require.Equal(t, 200, metaStatus(t, hash, testClientID, testClientSecret))
+
+	// 2) Soft-delete → 200, then the image is hidden (404 on meta).
+	delStatus, delEnv := softDelete(t, hash, testClientID, testClientSecret)
+	require.Equal(t, 200, delStatus, "soft-delete must not nil-panic; envelope: %+v", delEnv)
+	require.Equal(t, 0, delEnv.Code)
+	assert.Equal(t, 404, metaStatus(t, hash, testClientID, testClientSecret),
+		"soft-deleted image should be hidden")
+
+	// 3) Re-upload identical bytes → must succeed (NOT 500), resurrect the
+	//    row, report dedup, keep the same hash, and be visible again.
+	status2, result2, env2 := callUpload(t, body, "avatar", testClientID, testClientSecret)
+	require.Equal(t, 200, status2, "re-upload of a soft-deleted hash must not 500; envelope: %+v", env2)
+	require.NotNil(t, result2)
+	assert.Equal(t, hash, result2.Hash)
+	assert.True(t, result2.Deduplicated, "resurrected upload should be a dedup hit")
+	assert.Equal(t, 200, metaStatus(t, hash, testClientID, testClientSecret),
+		"resurrected image should be visible again")
+}
+
+// finding #03 (site-scoping): a client whose site never referenced the hash
+// gets 404, never a cross-site soft-delete.
+func TestHTTP_SoftDelete_OtherSite_404(t *testing.T) {
+	body := fixturePNG(141, 99, 3, 240, 120)
+	status, result, env := callUpload(t, body, "avatar", testClientID, testClientSecret)
+	require.Equal(t, 200, status, "envelope: %+v", env)
+	require.NotNil(t, result)
+
+	// testRestrictedClient runs on "restrictedsite" and never uploaded this hash.
+	delStatus, _ := softDelete(t, result.Hash, testRestrictedClient, "secret")
+	assert.Equal(t, 404, delStatus, "a site that never used the hash must not soft-delete it")
+	// The original remains visible to its real owner.
+	assert.Equal(t, 200, metaStatus(t, result.Hash, testClientID, testClientSecret))
+}
+
 // ---- POST /image/reference-ping ----
 
 func TestHTTP_ReferencePing_Updates(t *testing.T) {

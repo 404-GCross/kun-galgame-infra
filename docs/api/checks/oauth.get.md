@@ -6,7 +6,7 @@
 >
 > 配套: [image.get.md](./image.get.md) · [galgame.get.md](./galgame.get.md) · [moderation.get.md](./moderation.get.md) · [artifact.get.md](./artifact.get.md)
 >
-> **本文件目前是 inventory 阶段** —— 仅列出全部 GET 端点供后续逐项审计，状态列暂为 ⏳。
+> **审计完成** —— 🔧 已修 / ✅ 已审计无问题（本轮字段对齐/越权/SQL注入/副作用扫描未发现可处理问题）。详见 [README 审计结果](./README.md#审计结果2026-05-29)。
 
 ## 图例 — 审计状态
 
@@ -37,52 +37,52 @@
 
 | 路径 | 鉴权 | Handler | 状态 | 备注 |
 |---|---|---|---|---|
-| `GET /api/v1/health` | 🌐 | inline | ⏳ | 健康检查 |
+| `GET /api/v1/health` | 🌐 | inline | ✅ | 健康检查 |
 
 ## 1. 认证 / 身份
 
 | 路径 | 鉴权 | Handler | 状态 | 备注 |
 |---|---|---|---|---|
-| `GET /api/v1/auth/me` | 🔒 | `authH.Me` | ⏳ | 当前登录用户 profile |
+| `GET /api/v1/auth/me` | 🔒 | `authH.Me` | 🔧 | 当前登录用户 profile；#01 返回 avatar_image_hash |
 
 ## 2. OAuth 2.0 协议
 
 | 路径 | 鉴权 | Handler | 状态 | 备注 |
 |---|---|---|---|---|
-| `GET /api/v1/oauth/authorize` | 🌐 | `oauthH.Authorize` | ⏳ | 授权入口；内部校验 session |
-| `GET /api/v1/oauth/client-info` | 🌐 | `oauthH.GetClientPublic` | ⏳ | 客户端公开信息（前端决定是否显示同意页）|
-| `GET /api/v1/oauth/userinfo` | 🔒 | `oauthH.UserInfo` | ⏳ | OIDC userinfo；按 scope 投影 |
+| `GET /api/v1/oauth/authorize` | 🌐 | `oauthH.Authorize` | ✅ | 授权入口；内部校验 session |
+| `GET /api/v1/oauth/client-info` | 🌐 | `oauthH.GetClientPublic` | ✅ | 客户端公开信息（前端决定是否显示同意页）|
+| `GET /api/v1/oauth/userinfo` | 🔒 | `oauthH.UserInfo` | 🔧 | OIDC userinfo；按 scope 投影；#13 始终回 updated_at；#14 picture 用 avatar_image_hash 解析 CDN URL |
 
 ## 3. 用户（服务到服务 + 自助）
 
 | 路径 | 鉴权 | Handler | 状态 | 备注 |
 |---|---|---|---|---|
-| `GET /api/v1/users/batch` | 🔑 | `userBatchH.Get` | ⏳ | 按 id 批量拉公开资料；不含 email/moemoepoint |
-| `GET /api/v1/users/search` | 🔑 | `userBatchH.Search` | ⏳ | 用户名子串搜索 |
-| `GET /api/v1/users/:id/moemoepoint` | 🔑 | `moemoepointH.GetBalance` | ⏳ | 余额（统一货币）|
-| `GET /api/v1/users/:id/moemoepoint/log` | 🔑 | `moemoepointH.GetLog` | ⏳ | 流水**精简视图**（无 note/actor）|
-| `GET /api/v1/users/:uuid` | 🔒 | `authH.GetProfile` | ⏳ | 按 uuid 取 profile |
+| `GET /api/v1/users/batch` | 🔑 | `userBatchH.Get` | ✅ | 按 id 批量拉公开资料；不含 email/moemoepoint |
+| `GET /api/v1/users/search` | 🔑 | `userBatchH.Search` | 🔧 | 用户名子串搜索；#30 q 长度按字符(rune)计，满长 CJK 名不再误拒 400 |
+| `GET /api/v1/users/:id/moemoepoint` | 🔑 | `moemoepointH.GetBalance` | ✅ | 余额（统一货币）|
+| `GET /api/v1/users/:id/moemoepoint/log` | 🔑 | `moemoepointH.GetLog` | ✅ | 流水**精简视图**（无 note/actor）|
+| `GET /api/v1/users/:uuid` | 🔒 | `authH.GetProfile` | 🔧 | 按 uuid 取 profile；#12 去除 PII(email/status)；#29 预载 roles；#01 hash |
 
 ## 4. 管理 — 用户
 
 | 路径 | 鉴权 | Handler | 状态 | 备注 |
 |---|---|---|---|---|
-| `GET /api/v1/admin/users` | ⚙️ | `adminH.ListUsers` | ⏳ | 分页 + 搜索 |
-| `GET /api/v1/admin/users/:uuid` | ⚙️ | `adminH.GetUser` | ⏳ | 含 session 数等 |
-| `GET /api/v1/admin/users/:uuid/moemoepoint/log` | ⚙️ | `moemoepointH.AdminGetLog` | ⏳ | 流水**完整视图**（含 note/actor）|
+| `GET /api/v1/admin/users` | ⚙️ | `adminH.ListUsers` | 🔧 | 分页 + 搜索；#02 sort_by ORDER BY 注入(repo 白名单+handler 校验)；#15 avatar_image_hash |
+| `GET /api/v1/admin/users/:uuid` | ⚙️ | `adminH.GetUser` | 🔧 | 含 session 数等；#15 avatar_image_hash |
+| `GET /api/v1/admin/users/:uuid/moemoepoint/log` | ⚙️ | `moemoepointH.AdminGetLog` | ✅ | 流水**完整视图**（含 note/actor）|
 
 ## 5. 管理 — 站点 / OAuth 客户端
 
 | 路径 | 鉴权 | Handler | 状态 | 备注 |
 |---|---|---|---|---|
-| `GET /api/v1/sites` | ⚙️ | `siteH.List` | ⏳ | |
-| `GET /api/v1/sites/:id` | ⚙️ | `siteH.Get` | ⏳ | |
-| `GET /api/v1/sites/:id/clients` | ⚙️ | `siteH.GetSiteClients` | ⏳ | 站点下的 OAuth 客户端 |
-| `GET /api/v1/oauth/clients` | ⚙️ | `siteH.ListClients` | ⏳ | 全部客户端 |
+| `GET /api/v1/sites` | ⚙️ | `siteH.List` | ✅ | |
+| `GET /api/v1/sites/:id` | ⚙️ | `siteH.Get` | ✅ | |
+| `GET /api/v1/sites/:id/clients` | ⚙️ | `siteH.GetSiteClients` | ✅ | 站点下的 OAuth 客户端 |
+| `GET /api/v1/oauth/clients` | ⚙️ | `siteH.ListClients` | ✅ | 全部客户端 |
 
 ## 6. 管理 — 任务（infra，跑在本进程）
 
 | 路径 | 鉴权 | Handler | 状态 | 备注 |
 |---|---|---|---|---|
-| `GET /api/v1/admin/jobs` | ⚙️ | inline（`registerJobsAdmin`）| ⏳ | 注册的 job + 各自最近一次 run（路由实参为空字符串）|
-| `GET /api/v1/admin/jobs/:name/runs` | ⚙️ | inline | ⏳ | 某 job 的运行历史（`?limit`）|
+| `GET /api/v1/admin/jobs` | ⚙️ | inline（`registerJobsAdmin`）| ✅ | 注册的 job + 各自最近一次 run（路由实参为空字符串）|
+| `GET /api/v1/admin/jobs/:name/runs` | ⚙️ | inline | ✅ | 某 job 的运行历史（`?limit`）|

@@ -38,10 +38,15 @@ func (r *EngineRepository) ListAll(ctx context.Context) ([]model.GalgameEngine, 
 	return items, err
 }
 
-// FindByID finds an engine by ID
+// FindByID finds an engine by ID with its published galgame count.
+// The cnt LEFT JOIN mirrors ListAll so the detail-page header count matches
+// the list view (a plain First leaves the read-only cnt column at 0).
 func (r *EngineRepository) FindByID(ctx context.Context, id int) (*model.GalgameEngine, error) {
 	var engine model.GalgameEngine
-	err := r.db.WithContext(ctx).First(&engine, id).Error
+	err := r.db.WithContext(ctx).
+		Select("galgame_engine.*, COALESCE(ec.cnt, 0) AS cnt").
+		Joins("LEFT JOIN (SELECT r.engine_id, COUNT(*) AS cnt FROM galgame_engine_relation r JOIN galgame g ON g.id = r.galgame_id AND g.status = 0 GROUP BY r.engine_id) ec ON ec.engine_id = galgame_engine.id").
+		First(&engine, id).Error
 	return &engine, err
 }
 

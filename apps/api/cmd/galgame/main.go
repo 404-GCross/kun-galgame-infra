@@ -204,11 +204,14 @@ func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB, se
 	// DELETE so they don't collide and stay in the auth group below.
 	galgame.Get("/mine", jwtAuth, submissionH.ListMine)
 	galgame.Get("/:gid", optionalJWT, galgameH.Get)
-	galgame.Get("/:gid/revisions", revisionH.ListRevisions)
-	galgame.Get("/:gid/revisions/:rev", revisionH.GetRevision)
-	galgame.Get("/:gid/revisions/:rev/diff", revisionH.GetRevisionDiff)
-	galgame.Get("/:gid/prs", revisionH.ListPRs)
-	galgame.Get("/:gid/prs/:id", revisionH.GetPR)
+	// optionalJWT so the visibility gate (AssertGalgameVisible) can let an
+	// authenticated submitter see their own pending/declined draft's history,
+	// while anonymous callers only ever see published galgames' revisions/PRs.
+	galgame.Get("/:gid/revisions", optionalJWT, revisionH.ListRevisions)
+	galgame.Get("/:gid/revisions/:rev", optionalJWT, revisionH.GetRevision)
+	galgame.Get("/:gid/revisions/:rev/diff", optionalJWT, revisionH.GetRevisionDiff)
+	galgame.Get("/:gid/prs", optionalJWT, revisionH.ListPRs)
+	galgame.Get("/:gid/prs/:id", optionalJWT, revisionH.GetPR)
 	galgame.Get("/:gid/links", linkH.ListLinks)
 	galgame.Get("/:gid/aliases", linkH.ListAliases)
 	galgame.Get("/:gid/contributors", contributorH.List)

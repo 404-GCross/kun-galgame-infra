@@ -41,7 +41,11 @@ type CreateOAuthClientRequest struct {
 	SiteID                 uint     `json:"site_id" validate:"required"`
 	Name                   string   `json:"name" validate:"required,max=100"`
 	RedirectURIs           []string `json:"redirect_uris" validate:"required,min=1"`
-	Grants                 []string `json:"grants"`
+	// omitempty preserves nil-vs-set: omitting grants falls through to the
+	// handler default; a non-nil value must be a non-empty subset of the
+	// known grants (rejects [] → a permanently-unusable client, and unknown
+	// strings like "password").
+	Grants                 []string `json:"grants" validate:"omitempty,min=1,dive,oneof=authorization_code refresh_token"`
 	AllowedScopes          []string `json:"allowed_scopes"`
 	IsPublic               bool     `json:"is_public"`
 	// AutoConsent marks the client as first-party for the OAuth web
@@ -65,7 +69,9 @@ type CreateOAuthClientRequest struct {
 type UpdateOAuthClientRequest struct {
 	Name                   *string  `json:"name" validate:"omitempty,max=100"`
 	RedirectURIs           []string `json:"redirect_uris" validate:"omitempty,min=1"`
-	Grants                 []string `json:"grants"`
+	// Same membership/non-empty guard as CreateOAuthClientRequest.Grants;
+	// omitting it still means "leave alone".
+	Grants                 []string `json:"grants" validate:"omitempty,min=1,dive,oneof=authorization_code refresh_token"`
 	AllowedScopes          []string `json:"allowed_scopes"`
 	// Pointer-presence: nil = leave alone; non-nil = set explicitly.
 	// Same flag as CreateOAuthClientRequest.AutoConsent — toggles whether

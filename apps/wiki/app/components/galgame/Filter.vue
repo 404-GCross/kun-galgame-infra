@@ -43,8 +43,13 @@ watch(tagQuery, (q) => {
   searchTimer = setTimeout(async () => {
     searchingTags.value = true
     try {
-      const response = await api.get<GalgameTag[]>('/tag/search', { q })
-      if (response.code === 0) tagSuggestions.value = response.data ?? []
+      // /tag/search returns the { items, total } envelope — read items, not
+      // the wrapper object (which would assign a non-array to suggestions).
+      const response = await api.get<{ items: GalgameTag[]; total: number }>(
+        '/tag/search',
+        { q }
+      )
+      if (response.code === 0) tagSuggestions.value = response.data?.items ?? []
     } finally {
       searchingTags.value = false
     }

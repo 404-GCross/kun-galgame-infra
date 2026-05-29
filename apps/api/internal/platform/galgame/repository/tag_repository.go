@@ -45,10 +45,16 @@ func (r *TagRepository) List(ctx context.Context, page, limit int) ([]model.Galg
 	return items, total, err
 }
 
-// FindByID finds a tag by ID with aliases
+// FindByID finds a tag by ID with aliases and the published galgame count.
+// The cnt LEFT JOIN mirrors List so the detail-page header count matches the
+// list view (a plain First leaves the read-only cnt column at 0).
 func (r *TagRepository) FindByID(ctx context.Context, id int) (*model.GalgameTag, error) {
 	var tag model.GalgameTag
-	err := r.db.WithContext(ctx).Preload("Alias").First(&tag, id).Error
+	err := r.db.WithContext(ctx).
+		Select("galgame_tag.*, COALESCE(tc.cnt, 0) AS cnt").
+		Preload("Alias").
+		Joins("LEFT JOIN (SELECT r.tag_id, COUNT(*) AS cnt FROM galgame_tag_relation r JOIN galgame g ON g.id = r.galgame_id AND g.status = 0 GROUP BY r.tag_id) tc ON tc.tag_id = galgame_tag.id").
+		First(&tag, id).Error
 	return &tag, err
 }
 
@@ -74,10 +80,19 @@ func (r *TagRepository) FindGalgamesByTagID(ctx context.Context, tagID, page, li
 
 	query.Count(&total)
 
-	if sortField == "" {
+	// Whitelist the sort field/order BEFORE concatenation — the DTO oneof
+	// never runs (no app-wide StructValidator), so an attacker-controlled
+	// sort_field/sort_order would otherwise be interpolated raw into ORDER BY.
+	// Matches the galgame_repository.List guard + the tag_dto oneof.
+	allowedSortFields := map[string]bool{
+		"created":              true,
+		"resource_update_time": true,
+		"view":                 true,
+	}
+	if !allowedSortFields[sortField] {
 		sortField = "resource_update_time"
 	}
-	if sortOrder == "" {
+	if sortOrder != "asc" && sortOrder != "desc" {
 		sortOrder = "desc"
 	}
 

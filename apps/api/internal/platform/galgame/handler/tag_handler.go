@@ -45,6 +45,9 @@ func (h *TagHandler) List(c fiber.Ctx) error {
 	if req.Limit <= 0 {
 		req.Limit = 50
 	}
+	if req.Limit > 100 { // honor the DTO max=100 (the validate tag never runs)
+		req.Limit = 100
+	}
 
 	items, total, err := h.tagRepo.List(c.Context(), req.Page, req.Limit)
 	if err != nil {
@@ -65,6 +68,9 @@ func (h *TagHandler) GetByName(c fiber.Ctx) error {
 	}
 	if req.Limit <= 0 {
 		req.Limit = 24
+	}
+	if req.Limit > 50 { // honor the DTO max=50 (the validate tag never runs)
+		req.Limit = 50
 	}
 
 	tag, err := h.tagRepo.FindByID(c.Context(), req.TagID)
@@ -121,6 +127,9 @@ func (h *TagHandler) Multi(c fiber.Ctx) error {
 	}
 	if req.Limit <= 0 {
 		req.Limit = 24
+	}
+	if req.Limit > 50 { // honor the DTO max=50 (the validate tag never runs)
+		req.Limit = 50
 	}
 	if len(req.TagIDs) == 0 {
 		return response.Success(c, fiber.Map{"items": []any{}, "total": 0})

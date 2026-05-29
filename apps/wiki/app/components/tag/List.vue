@@ -28,12 +28,15 @@ const { data, status, refresh } = await useAsyncData(
   'tag-list',
   async () => {
     if (debouncedSearch.value.trim()) {
-      // /tag/search returns a flat array, no pagination
-      const r = await api.get<GalgameTag[]>('/tag/search', {
-        q: debouncedSearch.value
-      })
-      const arr = r.code === 0 ? (r.data ?? []) : []
-      return { items: arr, total: arr.length }
+      // /tag/search returns the Meilisearch envelope { items, total, ... },
+      // NOT a flat array — unwrap items/total (the old flat-array handling
+      // left rows empty and total undefined).
+      const r = await api.get<{ items: GalgameTag[]; total: number }>(
+        '/tag/search',
+        { q: debouncedSearch.value }
+      )
+      const d = r.code === 0 && r.data ? r.data : { items: [], total: 0 }
+      return { items: d.items ?? [], total: d.total ?? 0 }
     }
     const r = await api.get<{ items: GalgameTag[]; total: number }>('/tag', {
       page: page.value,

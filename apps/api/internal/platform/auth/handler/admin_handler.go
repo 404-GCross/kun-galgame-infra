@@ -26,6 +26,12 @@ func (h *AdminHandler) ListUsers(c fiber.Ctx) error {
 	if err := c.Bind().Query(&req); err != nil {
 		return response.BadRequest(c, errors.ErrBadRequest)
 	}
+	// Enforce the DTO's sort_by oneof (and page/limit bounds): without this
+	// the validation tags never run (no app-wide StructValidator), letting an
+	// arbitrary sort_by reach the query layer.
+	if err := utils.Validate(&req); err != nil {
+		return response.BadRequestMsg(c, errors.ErrValidationFailed, err.Error())
+	}
 
 	result, err := h.adminService.ListUsers(c.Context(), &req)
 	if err != nil {
@@ -72,22 +78,28 @@ func (h *AdminHandler) UpdateUser(c fiber.Ctx) error {
 	user, err := h.adminService.UpdateUser(c.Context(), uuid, &req)
 	if err != nil {
 		if appErr, ok := err.(*errors.AppError); ok {
+			// Not-found → 404 (matches GetUser/BanUser/…); name/email
+			// conflicts stay 400.
+			if appErr.Code == errors.ErrAuthUserNotFound {
+				return response.NotFound(c, appErr.Code)
+			}
 			return response.BadRequest(c, appErr.Code)
 		}
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
 
 	return response.Success(c, dto.UserResponse{
-		UUID:         user.UUID,
-		Name:         user.Name,
-		Email:        user.Email,
-		Avatar:       user.Avatar,
-		Bio:          user.Bio,
-		Moemoepoint:  user.Moemoepoint,
-		Status:       user.Status,
-		IsAnonymized: user.IsAnonymized(),
-		Roles:        user.RoleNames(),
-		CreatedAt:    user.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
+		UUID:            user.UUID,
+		Name:            user.Name,
+		Email:           user.Email,
+		Avatar:          user.Avatar,
+		AvatarImageHash: user.AvatarImageHash,
+		Bio:             user.Bio,
+		Moemoepoint:     user.Moemoepoint,
+		Status:          user.Status,
+		IsAnonymized:    user.IsAnonymized(),
+		Roles:           user.RoleNames(),
+		CreatedAt:       user.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
 	})
 }
 

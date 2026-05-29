@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"api/internal/platform/auth/model"
+	"api/pkg/errors"
 
 	"gorm.io/gorm"
 )
@@ -46,12 +47,22 @@ func (r *PasswordResetRepository) FindValidByToken(ctx context.Context, token st
 	return &reset, nil
 }
 
-// MarkAsUsed marks a password reset as used
+// MarkAsUsed atomically claims a password reset token as used. The
+// `used_at IS NULL` guard makes it a single-use claim: a second concurrent /
+// replayed reset finds 0 rows affected and gets ErrAuthInvalidToken, so the
+// same link can't be used twice even if the caller consumes it before
+// writing the new password.
 func (r *PasswordResetRepository) MarkAsUsed(ctx context.Context, id uint) error {
-	now := time.Now()
-	return r.db.WithContext(ctx).Model(&model.PasswordReset{}).
-		Where("id = ?", id).
-		Update("used_at", now).Error
+	res := r.db.WithContext(ctx).Model(&model.PasswordReset{}).
+		Where("id = ? AND used_at IS NULL", id).
+		Update("used_at", time.Now())
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return errors.NewWithCode(errors.ErrAuthInvalidToken)
+	}
+	return nil
 }
 
 // DeleteExpired deletes expired password reset tokens

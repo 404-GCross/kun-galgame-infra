@@ -78,6 +78,12 @@ func (s *GalgameService) List(ctx context.Context, req *dto.ListGalgameRequest) 
 	if req.Limit <= 0 {
 		req.Limit = 24
 	}
+	// Honor the DTO's documented max=50 (the validate tag is dead — no
+	// app-wide StructValidator). Without this, ?limit=1000000 runs a single
+	// unbounded heavily-preloaded query on a public, unauthenticated route.
+	if req.Limit > 50 {
+		req.Limit = 50
+	}
 	contentLimit := utils.ParseContentLimit(req.ContentLimit, "sfw")
 
 	from, err := utils.ParseReleaseLowerBound(req.ReleasedFrom)
@@ -163,10 +169,15 @@ func (s *GalgameService) GetByIDWithViewer(ctx context.Context, id, viewerUserID
 		users = make(map[int]*dto.UserBrief)
 	}
 
-	// Increment view asynchronously
-	go func() {
-		_ = s.galgameRepo.IncrementView(context.Background(), id)
-	}()
+	// Increment view asynchronously — only for the public, published view.
+	// A submitter opening their own pending(3)/declined(4) draft must not
+	// inflate the persisted `view` count (it is JSON-exposed and a whitelisted
+	// public sort field that carries over on publish).
+	if galgame.Status == model.GalgameStatusPublished {
+		go func() {
+			_ = s.galgameRepo.IncrementView(context.Background(), id)
+		}()
+	}
 
 	return galgame, users, nil
 }
@@ -383,6 +394,32 @@ func (s *GalgameService) Update(ctx context.Context, userID, galgameID int, role
 
 	if galgame.UserID != userID && !hasRole(roles, "admin") {
 		return nil, errors.NewWithCode(errors.ErrGalgameForbidden)
+	}
+
+	// PUT is "direct edit of a PUBLISHED entry" (docs 06/07). A submitter's
+	// own pending(3)/declined(4) draft must go through PATCH/PatchDraft, which
+	// flips declined→pending and emits the review-queue message. Admins keep
+	// direct-edit on any status (e.g. fixing a VNDB draft).
+	if galgame.Status != model.GalgameStatusPublished && !hasRole(roles, "admin") {
+		return nil, errors.NewWithCode(errors.ErrGalgameDraftStatusInvalid)
+	}
+
+	// Validate a vndb_id change the same way Create/Submit do — overlayUpdate
+	// would otherwise persist a malformed id, and a duplicate would surface as
+	// a raw 500 (unique-index violation) instead of the actionable 20004.
+	if req.VNDBID != nil && *req.VNDBID != galgame.VNDBID {
+		if v := *req.VNDBID; v != "" {
+			if !vndbIDRegex.MatchString(v) {
+				return nil, errors.NewWithCode(errors.ErrGalgameInvalidVNDB)
+			}
+			exists, existingID, err := s.galgameRepo.ExistsByVNDBID(ctx, v)
+			if err != nil {
+				return nil, err
+			}
+			if exists && existingID != galgameID {
+				return nil, errors.NewWithCode(errors.ErrGalgameVNDBExists)
+			}
+		}
 	}
 
 	// Direct edit = "merge a snapshot against yourself": overlay the

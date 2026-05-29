@@ -26,6 +26,27 @@ func NewLinkHandler(svc *service.GalgameService, galgameRepo *repository.Galgame
 	return &LinkHandler{svc: svc, galgameRepo: galgameRepo}
 }
 
+// authorizeGalgameEdit gates link/alias mutations to the galgame's owner or
+// an admin — mirroring GalgameService.Update / contributor-delete. Returns a
+// non-nil response to short-circuit (404 when the galgame doesn't exist,
+// 403 when the caller isn't owner/admin) or nil to proceed. This also closes
+// the "create on a non-existent gid → 500" gap (the FK violation never fires
+// because the missing gid 404s here first).
+func (h *LinkHandler) authorizeGalgameEdit(c fiber.Ctx, gid int, userID uint) error {
+	roles, _ := c.Locals("user_roles").([]string)
+	var g model.Galgame
+	if err := h.galgameRepo.DB().Select("user_id").First(&g, gid).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return response.NotFound(c, errors.ErrGalgameNotFound)
+		}
+		return response.InternalError(c, errors.ErrOperationFailed)
+	}
+	if g.UserID != int(userID) && !hasRole(roles, "admin") {
+		return response.Forbidden(c, errors.ErrGalgameForbidden)
+	}
+	return nil
+}
+
 // ListLinks returns links for a galgame
 func (h *LinkHandler) ListLinks(c fiber.Ctx) error {
 	gid, err := strconv.Atoi(c.Params("gid"))
@@ -51,6 +72,9 @@ func (h *LinkHandler) CreateLink(c fiber.Ctx) error {
 	gid, err := strconv.Atoi(c.Params("gid"))
 	if err != nil {
 		return response.BadRequest(c, errors.ErrInvalidID)
+	}
+	if resp := h.authorizeGalgameEdit(c, gid, userID); resp != nil {
+		return resp
 	}
 
 	var req dto.CreateLinkRequest
@@ -93,6 +117,9 @@ func (h *LinkHandler) DeleteLink(c fiber.Ctx) error {
 	gid, err := strconv.Atoi(c.Params("gid"))
 	if err != nil {
 		return response.BadRequest(c, errors.ErrInvalidID)
+	}
+	if resp := h.authorizeGalgameEdit(c, gid, userID); resp != nil {
+		return resp
 	}
 
 	var req dto.DeleteByIDRequest
@@ -147,6 +174,9 @@ func (h *LinkHandler) CreateAlias(c fiber.Ctx) error {
 	if err != nil {
 		return response.BadRequest(c, errors.ErrInvalidID)
 	}
+	if resp := h.authorizeGalgameEdit(c, gid, userID); resp != nil {
+		return resp
+	}
 
 	var req dto.CreateAliasRequest
 	if err := c.Bind().JSON(&req); err != nil {
@@ -186,6 +216,9 @@ func (h *LinkHandler) DeleteAlias(c fiber.Ctx) error {
 	gid, err := strconv.Atoi(c.Params("gid"))
 	if err != nil {
 		return response.BadRequest(c, errors.ErrInvalidID)
+	}
+	if resp := h.authorizeGalgameEdit(c, gid, userID); resp != nil {
+		return resp
 	}
 
 	var req dto.DeleteByIDRequest

@@ -26,11 +26,14 @@ const { data, status, refresh } = await useAsyncData(
   'official-list',
   async () => {
     if (debouncedSearch.value.trim()) {
-      const r = await api.get<GalgameOfficial[]>('/official/search', {
-        q: debouncedSearch.value
-      })
-      const arr = r.code === 0 ? (r.data ?? []) : []
-      return { items: arr, total: arr.length }
+      // /official/search returns the Meilisearch envelope { items, total, ... },
+      // NOT a flat array — unwrap items/total.
+      const r = await api.get<{ items: GalgameOfficial[]; total: number }>(
+        '/official/search',
+        { q: debouncedSearch.value }
+      )
+      const d = r.code === 0 && r.data ? r.data : { items: [], total: 0 }
+      return { items: d.items ?? [], total: d.total ?? 0 }
     }
     const r = await api.get<{ items: GalgameOfficial[]; total: number }>(
       '/official',

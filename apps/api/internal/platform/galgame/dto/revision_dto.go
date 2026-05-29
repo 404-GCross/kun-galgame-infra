@@ -44,7 +44,11 @@ type SubmitPRRequest struct {
 	Links            []model.SnapshotLink `json:"links"`
 	Covers           []model.SnapshotCover      `json:"covers"`
 	Screenshots      []model.SnapshotScreenshot `json:"screenshots"`
-	Note             string               `json:"note"`
+	// PR description: the wiki UI presents two inputs ("PR 标题" + "变更说明")
+	// and reads pr.title / pr.message. The legacy single `note` field had no
+	// binding target so the user's text was silently dropped.
+	Title            string               `json:"title"`
+	Message          string               `json:"message"`
 }
 
 // ApplyToSnapshot applies PR changes to a base snapshot, returning the proposed snapshot

@@ -49,7 +49,13 @@ func (r *OfficialRepository) List(ctx context.Context, page, limit int) ([]model
 // FindByID finds an official by ID
 func (r *OfficialRepository) FindByID(ctx context.Context, id int) (*model.GalgameOfficial, error) {
 	var official model.GalgameOfficial
-	err := r.db.WithContext(ctx).Preload("Alias").First(&official, id).Error
+	// cnt LEFT JOIN mirrors List so the detail-page published count is correct
+	// (a plain First leaves the read-only cnt column at 0).
+	err := r.db.WithContext(ctx).
+		Select("galgame_official.*, COALESCE(oc.cnt, 0) AS cnt").
+		Preload("Alias").
+		Joins("LEFT JOIN (SELECT r.official_id, COUNT(*) AS cnt FROM galgame_official_relation r JOIN galgame g ON g.id = r.galgame_id AND g.status = 0 GROUP BY r.official_id) oc ON oc.official_id = galgame_official.id").
+		First(&official, id).Error
 	return &official, err
 }
 
@@ -75,10 +81,17 @@ func (r *OfficialRepository) FindGalgamesByOfficialID(ctx context.Context, offic
 
 	query.Count(&total)
 
-	if sortField == "" {
+	// Whitelist sort field/order before concatenation — the DTO oneof never
+	// runs (no app-wide StructValidator), so this is the SQL-injection guard.
+	allowedSortFields := map[string]bool{
+		"created":              true,
+		"resource_update_time": true,
+		"view":                 true,
+	}
+	if !allowedSortFields[sortField] {
 		sortField = "resource_update_time"
 	}
-	if sortOrder == "" {
+	if sortOrder != "asc" && sortOrder != "desc" {
 		sortOrder = "desc"
 	}
 

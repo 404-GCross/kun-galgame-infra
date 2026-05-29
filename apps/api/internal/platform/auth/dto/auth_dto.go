@@ -106,13 +106,17 @@ type TokenPair struct {
 
 // UserResponse represents a user in API responses
 type UserResponse struct {
-	UUID        string   `json:"uuid"`
-	Name        string   `json:"name"`
-	Email       string   `json:"email"`
-	Avatar      string   `json:"avatar"`
-	Bio         string   `json:"bio"`
-	Moemoepoint int      `json:"moemoepoint"`
-	Status      int      `json:"status"`
+	UUID   string `json:"uuid"`
+	Name   string `json:"name"`
+	Email  string `json:"email"`
+	Avatar string `json:"avatar"`
+	// AvatarImageHash points to an image_service-hosted avatar; the frontend
+	// resolveAvatarUrl prefers it over the legacy `avatar` URL. omitempty so
+	// legacy-only users' payloads (nil hash) are unchanged.
+	AvatarImageHash *string `json:"avatar_image_hash,omitempty"`
+	Bio             string  `json:"bio"`
+	Moemoepoint     int     `json:"moemoepoint"`
+	Status          int     `json:"status"`
 	// IsAnonymized = PII was irreversibly scrubbed (terminal). The frontend
 	// shows "已注销" and hides ban/unban/anonymize actions when true.
 	IsAnonymized bool     `json:"is_anonymized"`

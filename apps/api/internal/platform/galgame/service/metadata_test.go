@@ -535,8 +535,8 @@ func TestContributor_AddedOnPRMerge(t *testing.T) {
 
 	proposed := &model.Snapshot{VNDBID: "v60012", NameZhCN: "PR edit",
 		Aliases: []string{}, TagIDs: []int{}, OfficialIDs: []int{}, EngineIDs: []int{}, Links: []model.SnapshotLink{}}
-	pr, _ := testSvc.SubmitPR(ctx, 3, g.ID, proposed, "test")
-	testSvc.MergePR(ctx, 1, pr.ID, []string{})
+	pr, _ := testSvc.SubmitPR(ctx, 3, g.ID, proposed, "test", "")
+	testSvc.MergePR(ctx, 1, pr.GalgameID, pr.ID, []string{})
 
 	// User 3 should be a contributor now
 	var count int64
@@ -863,11 +863,11 @@ func TestUserStats_PRCounts(t *testing.T) {
 		Aliases: []string{}, TagIDs: []int{}, OfficialIDs: []int{}, EngineIDs: []int{}, Links: []model.SnapshotLink{}}
 	proposed2 := &model.Snapshot{VNDBID: "v70020", NameZhCN: "PR2",
 		Aliases: []string{}, TagIDs: []int{}, OfficialIDs: []int{}, EngineIDs: []int{}, Links: []model.SnapshotLink{}}
-	pr1, _ := testSvc.SubmitPR(ctx, 3, g.ID, proposed1, "pr1")
-	testSvc.SubmitPR(ctx, 3, g.ID, proposed2, "pr2")
+	pr1, _ := testSvc.SubmitPR(ctx, 3, g.ID, proposed1, "pr1", "")
+	testSvc.SubmitPR(ctx, 3, g.ID, proposed2, "pr2", "")
 
 	// Merge pr1
-	testSvc.MergePR(ctx, 1, pr1.ID, []string{})
+	testSvc.MergePR(ctx, 1, pr1.GalgameID, pr1.ID, []string{})
 
 	stats, err := testSvc.GetUserStats(ctx, 3)
 	require.NoError(t, err)
@@ -975,7 +975,12 @@ func TestAdminStats_EmptyDatabase(t *testing.T) {
 	assert.Equal(t, 0, stats.Totals.GalgameLink)
 	assert.Equal(t, 0, stats.Totals.GalgamePR)
 	assert.Equal(t, 0, stats.Totals.GalgameRevision)
-	assert.Empty(t, stats.Daily)
+	// Daily is now zero-filled to a contiguous N-day series (was empty before).
+	assert.Len(t, stats.Daily, 30)
+	for _, d := range stats.Daily {
+		assert.Equal(t, 0, d.GalgameTag)
+		assert.Equal(t, 0, d.GalgameRevision)
+	}
 }
 
 func TestAdminStats_PRIncluded(t *testing.T) {
@@ -987,7 +992,7 @@ func TestAdminStats_PRIncluded(t *testing.T) {
 
 	proposed := &model.Snapshot{VNDBID: "v80020", NameZhCN: "PR edit",
 		Aliases: []string{}, TagIDs: []int{}, OfficialIDs: []int{}, EngineIDs: []int{}, Links: []model.SnapshotLink{}}
-	testSvc.SubmitPR(ctx, 2, g.ID, proposed, "test pr")
+	testSvc.SubmitPR(ctx, 2, g.ID, proposed, "test pr", "")
 
 	stats, err := testAdminRepo.GetStats(ctx, 30)
 	require.NoError(t, err)

@@ -14,7 +14,6 @@ import (
 	"api/pkg/response"
 
 	"github.com/gofiber/fiber/v3"
-	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
 
@@ -53,20 +52,28 @@ func (h *AdminHandler) List(c fiber.Ctx) error {
 			q = q.Where("review_status = ?", model.ReviewManual)
 		case "approved":
 			q = q.Where("review_status = ?", model.ReviewApproved)
+		default:
+			// Reject unknown filter values instead of silently returning the
+			// full unfiltered set (which reads as "no matches narrowed").
+			return response.BadRequest(c, errs.ErrImageBadRequest)
 		}
 	}
 	if sub := c.Query("uploader_sub"); sub != "" {
 		q = q.Where("first_uploader_sub = ?", sub)
 	}
 	if from := c.Query("from"); from != "" {
-		if t, err := time.Parse(time.RFC3339, from); err == nil {
-			q = q.Where("created_at >= ?", t)
+		t, err := time.Parse(time.RFC3339, from)
+		if err != nil {
+			return response.BadRequest(c, errs.ErrImageBadRequest)
 		}
+		q = q.Where("created_at >= ?", t)
 	}
 	if to := c.Query("to"); to != "" {
-		if t, err := time.Parse(time.RFC3339, to); err == nil {
-			q = q.Where("created_at <= ?", t)
+		t, err := time.Parse(time.RFC3339, to)
+		if err != nil {
+			return response.BadRequest(c, errs.ErrImageBadRequest)
 		}
+		q = q.Where("created_at <= ?", t)
 	}
 
 	page, _ := strconv.Atoi(c.Query("page", "1"))
@@ -167,9 +174,12 @@ func (h *AdminHandler) Review(c fiber.Ctx) error {
 		"reviewed_at":   now,
 	}
 	if req.Reason != "" {
-		raw, _ := datatypes.JSON(`{"reason":""}`).MarshalJSON()
-		_ = raw
-		updates["review_labels"] = datatypes.JSON([]byte(`{"manual_reason":` + strconvQuote(req.Reason) + `}`))
+		// Merge manual_reason into the existing labels rather than replacing
+		// the whole column — otherwise an admin reason wipes the automated
+		// moderation labels (nsfw/violence scores) the async worker wrote.
+		updates["review_labels"] = gorm.Expr(
+			"jsonb_set(coalesce(review_labels, '{}'::jsonb), '{manual_reason}', to_jsonb(?::text))",
+			req.Reason)
 	}
 
 	res := h.db.WithContext(c.Context()).
@@ -185,10 +195,6 @@ func (h *AdminHandler) Review(c fiber.Ctx) error {
 	}
 	return response.Success(c, fiber.Map{"hash": hash, "status": req.Status})
 }
-
-// strconvQuote is a tiny helper to JSON-safely quote a string. Inline
-// to avoid importing a whole package for one use.
-func strconvQuote(s string) string { return strconv.Quote(s) }
 
 // ---- DELETE /admin/image/:hash ----
 

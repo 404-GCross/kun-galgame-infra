@@ -47,6 +47,9 @@ func (h *EngineHandler) GetByName(c fiber.Ctx) error {
 	if req.Limit <= 0 {
 		req.Limit = 24
 	}
+	if req.Limit > 50 { // honor the DTO max=50 (the validate tag never runs)
+		req.Limit = 50
+	}
 
 	engine, err := h.engineRepo.FindByID(c.Context(), req.EngineID)
 	if err != nil {
