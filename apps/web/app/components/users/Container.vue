@@ -30,14 +30,58 @@ const handleSearch = () => {
   appliedSearch.value = searchQuery.value
 }
 
-const handleBan = async (uuid: string) => {
-  const response = await api.post(`/admin/users/${uuid}/ban`)
-  if (response.code === 0) refresh()
+// Ban is destructive (force-logout + lockout across all OAuth clients), so
+// gate it behind a confirm modal instead of firing on the menu click.
+const banOpen = ref(false)
+const banTarget = ref<{ uuid: string; name: string } | null>(null)
+const banLoading = ref(false)
+
+const requestBan = (uuid: string) => {
+  const u = users.value.find((x) => x.uuid === uuid)
+  banTarget.value = { uuid, name: u?.name ?? uuid }
+  banOpen.value = true
+}
+
+const confirmBan = async () => {
+  if (!banTarget.value) return
+  banLoading.value = true
+  try {
+    const response = await api.post(`/admin/users/${banTarget.value.uuid}/ban`)
+    if (response.code === 0) refresh()
+  } finally {
+    banLoading.value = false
+    banOpen.value = false
+  }
 }
 
 const handleUnban = async (uuid: string) => {
   const response = await api.post(`/admin/users/${uuid}/unban`)
   if (response.code === 0) refresh()
+}
+
+// Anonymize is irreversible (scrubs PII) — gate behind its own confirm with
+// a stronger warning than ban. For severe spam / PII abuse.
+const anonymizeOpen = ref(false)
+const anonymizeTarget = ref<{ uuid: string; name: string } | null>(null)
+const anonymizeLoading = ref(false)
+
+const requestAnonymize = (user: { uuid: string; name: string }) => {
+  anonymizeTarget.value = user
+  anonymizeOpen.value = true
+}
+
+const confirmAnonymize = async () => {
+  if (!anonymizeTarget.value) return
+  anonymizeLoading.value = true
+  try {
+    const response = await api.post(
+      `/admin/users/${anonymizeTarget.value.uuid}/anonymize`
+    )
+    if (response.code === 0) refresh()
+  } finally {
+    anonymizeLoading.value = false
+    anonymizeOpen.value = false
+  }
 }
 
 const handleDeleteSessions = async (uuid: string) => {
@@ -91,8 +135,9 @@ const onAvatarUploaded = () => {
     <template v-else>
       <UsersTable
         :users="users"
-        @ban="handleBan"
+        @ban="requestBan"
         @unban="handleUnban"
+        @anonymize="requestAnonymize"
         @delete-sessions="handleDeleteSessions"
         @upload-avatar="handleUploadAvatar"
       />
@@ -111,5 +156,70 @@ const onAvatarUploaded = () => {
       :user="avatarUploadTarget"
       @success="onAvatarUploaded"
     />
+
+    <KunModal v-model="banOpen">
+      <div class="w-[28rem] max-w-[calc(100vw-1.5rem)] space-y-4 p-6">
+        <h2 class="text-xl font-bold text-foreground">封禁用户</h2>
+        <p class="rounded-lg bg-danger-50 p-3 text-sm text-danger-700">
+          将封禁
+          <span class="font-semibold">{{ banTarget?.name }}</span>
+          ：立即强制下线（清除其所有会话与刷新令牌），之后无法再次登录或刷新令牌。可随时「解除封禁」恢复。确认继续？
+        </p>
+        <div class="flex justify-end gap-3">
+          <KunButton
+            color="default"
+            variant="flat"
+            :disabled="banLoading"
+            @click="banOpen = false"
+          >
+            取消
+          </KunButton>
+          <KunButton color="danger" :disabled="banLoading" @click="confirmBan">
+            <Icon
+              v-if="banLoading"
+              name="lucide:loader-2"
+              class="mr-2 size-4 animate-spin"
+            />
+            确认封禁
+          </KunButton>
+        </div>
+      </div>
+    </KunModal>
+
+    <KunModal v-model="anonymizeOpen">
+      <div class="w-[28rem] max-w-[calc(100vw-1.5rem)] space-y-4 p-6">
+        <h2 class="text-xl font-bold text-foreground">注销并匿名化</h2>
+        <p class="rounded-lg bg-danger-50 p-3 text-sm text-danger-700">
+          将<span class="font-semibold">不可逆</span>地清除
+          <span class="font-semibold">{{ anonymizeTarget?.name }}</span>
+          的个人信息（用户名、邮箱、头像、简介、密码全部抹除），并永久封禁、强制下线。账号本身保留（其 ID 仍被站内内容引用，显示为「已注销用户」），但<span class="font-semibold">无法恢复</span>。
+        </p>
+        <p class="text-default-500 text-xs">
+          提示：此操作只处理身份信息。其在 Wiki 留下的 galgame 内容需在 Wiki 管理端单独软删。
+        </p>
+        <div class="flex justify-end gap-3">
+          <KunButton
+            color="default"
+            variant="flat"
+            :disabled="anonymizeLoading"
+            @click="anonymizeOpen = false"
+          >
+            取消
+          </KunButton>
+          <KunButton
+            color="danger"
+            :disabled="anonymizeLoading"
+            @click="confirmAnonymize"
+          >
+            <Icon
+              v-if="anonymizeLoading"
+              name="lucide:loader-2"
+              class="mr-2 size-4 animate-spin"
+            />
+            确认注销
+          </KunButton>
+        </div>
+      </div>
+    </KunModal>
   </div>
 </template>

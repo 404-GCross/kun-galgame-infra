@@ -70,9 +70,20 @@ func (h *SearchHandler) Galgame(c fiber.Ctx) error {
 		return response.BadRequestMsg(c, errors.ErrValidationFailed, err.Error())
 	}
 
+	// Public search defaults to published-only (status=0). Without this the
+	// empty filter returned ALL states, leaking banned (1) / declined (4) /
+	// others' pending (3) galgame — and making banned-galgame "soft delete"
+	// invisible only on the SQL list, not here. A logged-in viewer's OWN
+	// pending drafts still come back via the independent include_pending
+	// sub-query; callers needing other states pass `status` explicitly.
+	statuses := parseIntList(q["status"])
+	if len(statuses) == 0 {
+		statuses = []int{0}
+	}
+
 	req := &search.GalgameSearchRequest{
 		Query:             q["q"],
-		Statuses:          parseIntList(q["status"]),
+		Statuses:          statuses,
 		ContentLimit:      utils.ParseContentLimit(q["content_limit"], "sfw"),
 		AgeLimit:          q["age_limit"],
 		OriginalLanguages: parseStringList(q["original_language"]),

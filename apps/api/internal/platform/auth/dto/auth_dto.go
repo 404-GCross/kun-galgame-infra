@@ -113,8 +113,11 @@ type UserResponse struct {
 	Bio         string   `json:"bio"`
 	Moemoepoint int      `json:"moemoepoint"`
 	Status      int      `json:"status"`
-	Roles       []string `json:"roles"`
-	CreatedAt   string   `json:"created_at"`
+	// IsAnonymized = PII was irreversibly scrubbed (terminal). The frontend
+	// shows "已注销" and hides ban/unban/anonymize actions when true.
+	IsAnonymized bool     `json:"is_anonymized"`
+	Roles        []string `json:"roles"`
+	CreatedAt    string   `json:"created_at"`
 }
 
 // LoginResponse represents a login response

@@ -274,6 +274,9 @@ func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB, se
 	admin.Get("/galgame/messages", messageH.ListAdminQueue)
 	admin.Get("/galgame/:gid", adminH.GetGalgame)
 	admin.Put("/galgame/:gid/status", adminH.UpdateGalgameStatus)
+	// Bulk soft-delete all of a user's galgame (severe-spam cleanup;
+	// content-side companion to the OAuth anonymize action).
+	admin.Post("/galgame/ban-by-user/:userId", adminH.BanGalgamesByUser)
 
 	// ── Tag ──
 	// Create: any logged-in user (introduce a tag for original/doujin

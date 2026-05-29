@@ -135,3 +135,42 @@ func (h *AdminHandler) UpdateGalgameStatus(c fiber.Ctx) error {
 	}
 	return response.Success(c, fiber.Map{"id": id, "status": req.Status})
 }
+
+// BanGalgamesByUser soft-deletes (status→1) every still-visible galgame
+// created by :userId. Content-side companion to the OAuth anonymize action
+// for severe spam. Reuses UpdateStatus per item (revision + downstream
+// message), then re-syncs each affected galgame in the search index.
+func (h *AdminHandler) BanGalgamesByUser(c fiber.Ctx) error {
+	adminUserID, _ := c.Locals("user_id").(uint)
+	if adminUserID == 0 {
+		return response.Unauthorized(c, errors.ErrAuthUnauthorized)
+	}
+	targetUserID, err := strconv.Atoi(c.Params("userId"))
+	if err != nil {
+		return response.BadRequest(c, errors.ErrInvalidID)
+	}
+	if h.adminSvc == nil {
+		return response.InternalError(c, errors.ErrOperationFailed)
+	}
+
+	// Optional reason — defaulted so the revision/message note is meaningful.
+	var body struct {
+		Reason string `json:"reason"`
+	}
+	_ = c.Bind().JSON(&body)
+	if body.Reason == "" {
+		body.Reason = "批量封禁（垃圾内容清理）"
+	}
+
+	ids, err := h.adminSvc.BanGalgamesByUser(c.Context(), int(adminUserID), targetUserID, body.Reason)
+	if err != nil {
+		return response.InternalError(c, errors.ErrOperationFailed)
+	}
+
+	if h.searchHook != nil {
+		for _, id := range ids {
+			h.searchHook.Galgame(id)
+		}
+	}
+	return response.Success(c, fiber.Map{"banned_count": len(ids), "ids": ids})
+}

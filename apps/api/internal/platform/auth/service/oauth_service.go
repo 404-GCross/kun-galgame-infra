@@ -248,6 +248,13 @@ func (s *OAuthService) ExchangeCode(ctx context.Context, req *dto.TokenRequest) 
 	if err != nil {
 		return nil, errors.NewWithCode(errors.ErrAuthUserNotFound)
 	}
+	// Block banned/anonymized users from redeeming a pre-existing auth code.
+	// The code is independent of sessions, so deleting sessions at ban time
+	// doesn't cover this path — without this check a code issued just before
+	// the ban (≤10 min TTL) could still mint fresh tokens.
+	if user.IsBanned() {
+		return nil, errors.NewWithCode(errors.ErrAuthUserBanned)
+	}
 
 	// SiteID binds this JWT to the client's site. image_service's
 	// middleware reads claims.SiteID to enforce that a kungal user's
@@ -499,6 +506,12 @@ func (s *OAuthService) RefreshWithClient(ctx context.Context, refreshToken, clie
 	user, err := s.userRepo.FindByIDWithRoles(ctx, session.UserID)
 	if err != nil {
 		return nil, errors.NewWithCode(errors.ErrAuthUserNotFound)
+	}
+	// Defense-in-depth: ban deletes sessions (so refresh normally fails at
+	// session lookup above), but re-check here so a lingering/raced session
+	// can't refresh a banned/anonymized user's token.
+	if user.IsBanned() {
+		return nil, errors.NewWithCode(errors.ErrAuthUserBanned)
 	}
 
 	var siteID uint

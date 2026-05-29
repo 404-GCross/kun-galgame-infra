@@ -152,6 +152,19 @@ func (r *UserRepository) Update(ctx context.Context, user *model.User) error {
 	return r.db.WithContext(ctx).Save(user).Error
 }
 
+// CountByAvatarHash counts users (other than excludeID) referencing the given
+// avatar_image_hash. Used before GC-ing an avatar on anonymize so we never
+// delete a hash another user still points at (image_service dedups content
+// and has no refcount of its own).
+func (r *UserRepository) CountByAvatarHash(ctx context.Context, hash string, excludeID uint) (int64, error) {
+	var n int64
+	err := r.db.WithContext(ctx).
+		Model(&model.User{}).
+		Where("avatar_image_hash = ? AND id <> ?", hash, excludeID).
+		Count(&n).Error
+	return n, err
+}
+
 // UpdatePassword updates a user's password
 func (r *UserRepository) UpdatePassword(ctx context.Context, uuid string, password string) error {
 	return r.db.WithContext(ctx).Model(&model.User{}).Where("uuid = ?", uuid).Update("password", password).Error

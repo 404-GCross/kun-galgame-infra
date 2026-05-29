@@ -4,12 +4,13 @@ import type { UserGalgameStats } from '~/shared/types/user-stats'
 const api = useApi()
 const route = useRoute()
 const router = useRouter()
+const { isAdmin } = useAuth()
 
 const id = computed(() => Number(route.params.id))
 
 // SSR: public endpoint, server-fetched + payload-hydrated; re-fetches on
 // id change.
-const { data: stats, status } = await useAsyncData(
+const { data: stats, status, refresh } = await useAsyncData(
   'user-galgame-stats',
   async () => {
     const r = await api.get<UserGalgameStats>(
@@ -20,6 +21,39 @@ const { data: stats, status } = await useAsyncData(
   { watch: [id] }
 )
 const loading = computed(() => status.value === 'pending')
+
+// Danger zone (admin only): bulk soft-delete this user's galgame. The
+// content-side companion to the OAuth anonymize action for severe spam —
+// flips every published/pending galgame to status=banned (hidden from
+// lists + search) while keeping rows + revision history, so a mis-flag is
+// recoverable via the normal status path. Account ban/anonymize is a
+// separate action in the OAuth user-management admin.
+const banning = ref(false)
+const banAllContent = async () => {
+  const ok = await useKunConfirm({
+    title: '封禁该用户的全部 Galgame',
+    content:
+      '将该用户创建的所有「已发布 / 待审」galgame 软删（状态置为封禁，从列表与搜索中隐藏，但保留记录与修订历史，可单独恢复）。用于严重 spam 清理。确认继续？',
+    confirmText: '确认封禁',
+    danger: true
+  })
+  if (!ok) return
+
+  banning.value = true
+  try {
+    const r = await api.post<{ banned_count: number; ids: number[] }>(
+      `/admin/galgame/ban-by-user/${id.value}`
+    )
+    if (r.code === 0) {
+      useKunMessage(`已封禁 ${r.data.banned_count} 个 galgame`, 'success')
+      await refresh()
+    } else {
+      useKunMessage('操作失败，请稍后重试', 'error')
+    }
+  } finally {
+    banning.value = false
+  }
+}
 
 const cards = computed(() => {
   const s = stats.value
@@ -121,6 +155,25 @@ const prStats = computed(() => {
             </p>
           </div>
         </div>
+      </KunCard>
+
+      <!-- Danger zone: bulk content cleanup for severe spam (admin only).
+           Account-level ban/anonymize lives in the OAuth user admin. -->
+      <KunCard v-if="isAdmin" class-name="border-danger-200" class="p-6">
+        <h2 class="text-danger mb-1 text-base font-semibold">危险操作</h2>
+        <p class="text-default-500 mb-3 text-sm">
+          软删该用户创建的全部 galgame（隐藏但保留记录，可恢复）。账号本身的封禁 / 注销匿名化请在 OAuth 用户管理端处理。
+        </p>
+        <KunButton
+          color="danger"
+          variant="flat"
+          :loading="banning"
+          :disabled="banning"
+          @click="banAllContent"
+        >
+          <Icon name="lucide:trash-2" class="mr-1 size-4" />
+          封禁该用户全部内容
+        </KunButton>
       </KunCard>
     </template>
   </div>

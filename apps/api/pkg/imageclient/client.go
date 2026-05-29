@@ -258,6 +258,34 @@ func (c *Client) ReferencePing(ctx context.Context, hashes []string) (*Reference
 	return &env.Data, nil
 }
 
+// Delete soft-deletes an image the calling client's site has used: the
+// service sets deleted_at and its GC worker physically removes the objects
+// after the TTL. Safe under content dedup (soft + site-scoped). A 404 means
+// the hash doesn't exist or this site never referenced it — callers treat
+// that as a no-op. Used to GC a user's avatar on anonymization.
+func (c *Client) Delete(ctx context.Context, hash string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, c.cfg.BaseURL+"/image/"+hash, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", c.basicAuthHeader())
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("delete http: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		raw, _ := io.ReadAll(resp.Body)
+		var e Error
+		_ = json.Unmarshal(raw, &e)
+		e.StatusCode = resp.StatusCode
+		return classifyError(&e)
+	}
+	return nil
+}
+
 // Health pings /healthz to confirm the service is reachable.
 func (c *Client) Health(ctx context.Context) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.cfg.BaseURL+"/healthz", nil)

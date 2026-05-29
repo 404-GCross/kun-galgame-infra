@@ -127,6 +127,9 @@ func main() {
 	img.Get("/stats", h.Stats)
 	img.Get("/:hash", h.Meta)
 	img.Post("/reference-ping", h.Ping)
+	// Soft-delete an image the caller's site used (GC physically removes
+	// after the TTL). Backs the OAuth avatar-GC-on-anonymize path.
+	img.Delete("/:hash", h.SoftDelete)
 
 	addr := fmt.Sprintf("%s:%d", cfg.ImageService.Host, cfg.ImageService.Port)
 	slog.Info("image service starting",

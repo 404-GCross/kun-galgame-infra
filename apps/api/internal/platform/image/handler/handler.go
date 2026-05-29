@@ -155,6 +155,36 @@ func (h *Handler) Upload(c fiber.Ctx) error {
 
 // ---- GET /image/:hash ----
 
+// ---- DELETE /image/:hash ----
+
+// SoftDelete retires an image the caller's site has used (sets deleted_at;
+// the GC worker physically removes it after the TTL). Soft + site-scoped so
+// it's safe under content dedup — one client can't hard-delete a hash shared
+// by another. Used by the OAuth backend to GC a user's avatar on
+// anonymization. For irreversible compliance deletes use the admin force path.
+func (h *Handler) SoftDelete(c fiber.Ctx) error {
+	site := imgMW.SiteKeyFromCtx(c)
+	if site == "" {
+		return response.Unauthorized(c, errors.ErrAuthUnauthorized)
+	}
+	hash := c.Params("hash")
+	if len(hash) != 64 {
+		return response.BadRequest(c, errors.ErrImageBadRequest)
+	}
+
+	ok, err := h.svc.SoftDelete(c.Context(), hash, site)
+	if err != nil {
+		slog.Error("image soft-delete", "hash", hash, "site", site, "err", err)
+		return response.InternalError(c, errors.ErrImageStoreFailed)
+	}
+	if !ok {
+		// Either the hash doesn't exist or this site never used it — same
+		// response either way (don't leak existence across sites).
+		return response.NotFound(c, errors.ErrImageNotFound)
+	}
+	return response.Success(c, fiber.Map{"hash": hash, "soft_deleted": true})
+}
+
 // Meta returns the full metadata for a hash. Exposes `sites` audit info
 // (available to any authenticated caller; consider restricting in V2 if
 // cross-site probing becomes a concern).

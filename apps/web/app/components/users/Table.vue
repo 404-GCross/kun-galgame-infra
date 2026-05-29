@@ -5,6 +5,7 @@ const props = defineProps<{ users: User[] }>()
 const emit = defineEmits<{
   ban: [uuid: string]
   unban: [uuid: string]
+  anonymize: [user: { uuid: string; name: string }]
   deleteSessions: [uuid: string]
   uploadAvatar: [user: { uuid: string; name: string }]
 }>()
@@ -85,7 +86,7 @@ const _ = props // keep TS happy if `props` is never read elsewhere
             {{ user.moemoepoint }}
           </td>
           <td class="whitespace-nowrap px-6 py-4">
-            <UsersStatusBadge :status="user.status" />
+            <UsersStatusBadge :status="user.status" :is-anonymized="user.is_anonymized" />
           </td>
           <td class="whitespace-nowrap px-6 py-4 text-default-400">
             {{ new Date(user.created_at).toLocaleDateString() }}
@@ -102,9 +103,11 @@ const _ = props // keep TS happy if `props` is never read elsewhere
                   <Icon name="lucide:more-horizontal" class="size-5" />
                 </KunButton>
               </template>
-              <div class="w-40 py-1">
+              <div class="w-44 py-1">
+                <!-- Anonymized users have status=1 too, so gate ban/unban on
+                     !is_anonymized; anonymized is a terminal state. -->
                 <button
-                  v-if="user.status === 0"
+                  v-if="user.status === 0 && !user.is_anonymized"
                   class="flex w-full items-center gap-2 px-3 py-2 text-sm text-danger hover:bg-danger-50"
                   @click="emit('ban', user.uuid)"
                 >
@@ -112,14 +115,27 @@ const _ = props // keep TS happy if `props` is never read elsewhere
                   封禁用户
                 </button>
                 <button
-                  v-else
+                  v-else-if="user.status === 1 && !user.is_anonymized"
                   class="flex w-full items-center gap-2 px-3 py-2 text-sm text-success hover:bg-success-50"
                   @click="emit('unban', user.uuid)"
                 >
                   <Icon name="lucide:check-circle" class="size-4" />
                   解除封禁
                 </button>
+
+                <!-- Anonymize: available unless already anonymized (terminal,
+                     irreversible PII scrub). -->
                 <button
+                  v-if="!user.is_anonymized"
+                  class="flex w-full items-center gap-2 px-3 py-2 text-sm text-danger hover:bg-danger-50"
+                  @click="emit('anonymize', { uuid: user.uuid, name: user.name })"
+                >
+                  <Icon name="lucide:user-x" class="size-4" />
+                  注销并匿名化
+                </button>
+
+                <button
+                  v-if="!user.is_anonymized"
                   class="flex w-full items-center gap-2 px-3 py-2 text-sm text-default-500 hover:bg-default-100 hover:text-foreground"
                   @click="emit('uploadAvatar', { uuid: user.uuid, name: user.name })"
                 >
@@ -133,6 +149,13 @@ const _ = props // keep TS happy if `props` is never read elsewhere
                   <Icon name="lucide:log-out" class="size-4" />
                   清除会话
                 </button>
+
+                <p
+                  v-if="user.is_anonymized"
+                  class="text-default-400 px-3 py-2 text-xs"
+                >
+                  已注销 · 不可恢复
+                </p>
               </div>
             </KunPopover>
           </td>

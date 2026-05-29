@@ -77,9 +77,28 @@ func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 
 	// Services
 	mailer := mail.NewMailer(cfg.Mail)
+
+	// Image SDK client (server-to-server). Created up-front so both the
+	// avatar upload handler AND AdminService (avatar GC on anonymize) can
+	// share it. Nil when KUN_IMAGE_CLIENT_ID/SECRET unset → avatar upload
+	// disabled + avatar GC-on-anonymize skipped (anonymize still nulls the
+	// reference, so the binary is reclaimed by image_service's own GC).
+	var imgCli *imageclient.Client
+	if cfg.ImageClient.ClientID != "" && cfg.ImageClient.ClientSecret != "" {
+		imgCli = imageclient.New(imageclient.Config{
+			BaseURL:      cfg.ImageClient.BaseURL,
+			CDNBase:      cfg.ImageService.CDNBase,
+			ClientID:     cfg.ImageClient.ClientID,
+			ClientSecret: cfg.ImageClient.ClientSecret,
+		})
+		slog.Info("image client configured for avatar uploads + GC")
+	} else {
+		slog.Warn("image client not configured; avatar upload + avatar GC disabled")
+	}
+
 	authSvc := authService.NewAuthServiceFull(userRepo, sessionRepo, passwordResetRepo, mailer, a.Cache, cfg)
 	oauthSvc := authService.NewOAuthService(userRepo, authCodeRepo, sessionRepo, oauthClientRepo, cfg)
-	adminSvc := authService.NewAdminService(userRepo, sessionRepo)
+	adminSvc := authService.NewAdminService(userRepo, sessionRepo, imgCli)
 	userBatchSvc := authService.NewUserBatchService(userRepo)
 	siteSvc := siteService.NewSiteService(siteRepository, oauthClientRepo)
 
@@ -89,20 +108,9 @@ func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 	adminH := authHandler.NewAdminHandler(adminSvc)
 	userBatchH := authHandler.NewUserBatchHandler(userBatchSvc)
 
-	// Avatar upload handler (calls image_service via SDK). Singleton.
-	// Nil if KUN_IMAGE_CLIENT_ID/SECRET unset → endpoint refused with clear error.
 	var avatarUploadH *authHandler.AvatarUploadHandler
-	if cfg.ImageClient.ClientID != "" && cfg.ImageClient.ClientSecret != "" {
-		imgCli := imageclient.New(imageclient.Config{
-			BaseURL:      cfg.ImageClient.BaseURL,
-			CDNBase:      cfg.ImageService.CDNBase,
-			ClientID:     cfg.ImageClient.ClientID,
-			ClientSecret: cfg.ImageClient.ClientSecret,
-		})
+	if imgCli != nil {
 		avatarUploadH = authHandler.NewAvatarUploadHandler(a.DB.DB(), imgCli)
-		slog.Info("image client configured for avatar uploads")
-	} else {
-		slog.Warn("image client not configured; /admin/users/:uuid/avatar disabled")
 	}
 	siteH := siteHandler.NewSiteHandler(siteSvc)
 
@@ -196,6 +204,7 @@ func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 	admin.Patch("/users/:uuid", adminH.UpdateUser)
 	admin.Post("/users/:uuid/ban", adminH.BanUser)
 	admin.Post("/users/:uuid/unban", adminH.UnbanUser)
+	admin.Post("/users/:uuid/anonymize", adminH.AnonymizeUser)
 	admin.Delete("/users/:uuid/sessions", adminH.DeleteUserSessions)
 	if avatarUploadH != nil {
 		admin.Post("/users/:uuid/avatar", avatarUploadH.Upload)

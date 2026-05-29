@@ -7,6 +7,7 @@ export interface User {
   bio: string
   moemoepoint: number
   status: number
+  is_anonymized?: boolean // PII irreversibly scrubbed (terminal); shows 已注销
   roles: string[]
   created_at: string
 }

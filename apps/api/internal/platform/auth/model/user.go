@@ -30,7 +30,16 @@ type User struct {
 
 	Bio         string         `gorm:"size:107;default:''" json:"bio"`
 	Moemoepoint int            `gorm:"default:0" json:"moemoepoint"`
-	Status      int            `gorm:"default:0" json:"status"` // 0: normal, 1: banned
+	// Status: 0 normal, 1 banned. NOTE: migrated moyu/kungal accounts may
+	// carry other legacy values (e.g. 2) with source-specific meanings —
+	// IsBanned() deliberately checks `== 1` only, so we never repurpose or
+	// lock out those rows by accident.
+	Status      int            `gorm:"default:0" json:"status"`
+	// AnonymizedAt marks an irreversible PII scrub (severe spam / abuse).
+	// Set together with Status=1; nil for everyone else. Kept as a distinct
+	// column rather than a status value so it can't collide with migrated
+	// legacy statuses. See IsAnonymized().
+	AnonymizedAt *time.Time `gorm:"index" json:"anonymized_at,omitempty"`
 	IP          string         `gorm:"size:45;default:''" json:"-"`
 	CreatedAt   time.Time      `json:"created_at"`
 	UpdatedAt   time.Time      `json:"updated_at"`
@@ -70,7 +79,17 @@ func (u *User) HasLegacyPassword() bool {
 		(u.MoyuPassword != nil && *u.MoyuPassword != "")
 }
 
-// IsBanned checks if the user is banned
+// IsBanned reports whether the user is locked out (blocks login, token
+// refresh, and authenticated requests). Checks `Status == 1` only —
+// anonymized users are set to Status=1 too, so they're covered, while
+// migrated legacy statuses (e.g. 2) are left untouched.
 func (u *User) IsBanned() bool {
 	return u.Status == 1
+}
+
+// IsAnonymized reports whether the user's PII has been scrubbed
+// (irreversible). Distinguishes a recoverable ban from a terminal
+// anonymization for UI + unban-guard purposes.
+func (u *User) IsAnonymized() bool {
+	return u.AnonymizedAt != nil
 }

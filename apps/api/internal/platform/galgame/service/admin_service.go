@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 
 	"api/internal/platform/galgame/model"
 	"api/internal/platform/galgame/repository"
@@ -159,4 +160,42 @@ func (s *AdminService) UpdateStatus(ctx context.Context, adminUserID, gid, newSt
 		msg.Payload = datatypes.JSON(payload)
 		return s.messageRepo.Create(ctx, tx, msg)
 	})
+}
+
+// BanGalgamesByUser soft-deletes (status→1, banned/hidden) every still-
+// visible galgame created by targetUserID. It is the wiki content-side
+// companion to the OAuth anonymize action for severe spam: the account is
+// scrubbed on the identity side, the content is hidden here.
+//
+// It reuses UpdateStatus per item rather than a raw bulk UPDATE so each
+// galgame gets the same revision + 'banned' message as a manual ban — the
+// message propagates to kungal/moyu via /messages/feed, keeping their local
+// wiki_status_snapshot mirrors in sync. Rows + prior revisions are preserved
+// (soft delete), so a mis-flag can be reverted via the normal status path.
+//
+// Returns the ids actually banned (for the caller to re-sync search). Only
+// status 0 (published) + 3 (pending) are targeted; already declined/banned
+// galgame are left as-is.
+func (s *AdminService) BanGalgamesByUser(ctx context.Context, adminUserID, targetUserID int, reason string) ([]int, error) {
+	var ids []int
+	if err := s.galgameRepo.DB().WithContext(ctx).
+		Model(&model.Galgame{}).
+		Where("user_id = ? AND status IN ?", targetUserID, []int{
+			model.GalgameStatusPublished, model.GalgameStatusPending,
+		}).
+		Pluck("id", &ids).Error; err != nil {
+		return nil, err
+	}
+
+	banned := make([]int, 0, len(ids))
+	for _, id := range ids {
+		if err := s.UpdateStatus(ctx, adminUserID, id, model.GalgameStatusBanned, reason); err != nil {
+			// Keep going on per-item failure (e.g. a concurrent status
+			// change) — partial cleanup beats aborting the whole batch.
+			slog.Warn("ban galgames by user: item failed", "gid", id, "target_user", targetUserID, "err", err)
+			continue
+		}
+		banned = append(banned, id)
+	}
+	return banned, nil
 }

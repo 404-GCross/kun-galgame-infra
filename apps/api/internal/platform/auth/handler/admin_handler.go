@@ -78,15 +78,16 @@ func (h *AdminHandler) UpdateUser(c fiber.Ctx) error {
 	}
 
 	return response.Success(c, dto.UserResponse{
-		UUID:        user.UUID,
-		Name:        user.Name,
-		Email:       user.Email,
-		Avatar:      user.Avatar,
-		Bio:         user.Bio,
-		Moemoepoint: user.Moemoepoint,
-		Status:      user.Status,
-		Roles:       user.RoleNames(),
-		CreatedAt:   user.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
+		UUID:         user.UUID,
+		Name:         user.Name,
+		Email:        user.Email,
+		Avatar:       user.Avatar,
+		Bio:          user.Bio,
+		Moemoepoint:  user.Moemoepoint,
+		Status:       user.Status,
+		IsAnonymized: user.IsAnonymized(),
+		Roles:        user.RoleNames(),
+		CreatedAt:    user.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
 	})
 }
 
@@ -122,6 +123,24 @@ func (h *AdminHandler) UnbanUser(c fiber.Ctx) error {
 	}
 
 	return response.SuccessWithMessage(c, "用户已解封", nil)
+}
+
+// AnonymizeUser scrubs a user's PII and locks the account (irreversible).
+// For severe spam / PII abuse. Keeps the row so cross-service FKs survive.
+func (h *AdminHandler) AnonymizeUser(c fiber.Ctx) error {
+	uuid := c.Params("uuid")
+	if uuid == "" {
+		return response.BadRequest(c, errors.ErrMissingParam)
+	}
+
+	if err := h.adminService.AnonymizeUser(c.Context(), uuid); err != nil {
+		if appErr, ok := err.(*errors.AppError); ok {
+			return response.NotFound(c, appErr.Code)
+		}
+		return response.InternalError(c, errors.ErrOperationFailed)
+	}
+
+	return response.SuccessWithMessage(c, "用户已注销并匿名化", nil)
 }
 
 // DeleteUserSessions deletes all sessions for a user (force logout)

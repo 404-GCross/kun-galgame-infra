@@ -322,6 +322,35 @@ func (s *Service) handleNew(ctx context.Context, hash, originMIME string, ps pre
 	return s.buildResult(hash, mainOut.Ext, mainOut.Width, mainOut.Height, int64(len(mainOut.Data)), ps, false), nil
 }
 
+// SoftDelete marks an image deleted (sets deleted_at) when the calling
+// `site` has a usage record for `hash`. The GC worker physically removes the
+// S3 objects + row after the hard-delete TTL. It is deliberately:
+//   - soft (recoverable until GC) — safe under content dedup, where a hash
+//     may be shared and a hard delete would break other referrers;
+//   - site-scoped — a client can only retire images its own site referenced.
+// Returns false (not found) when the caller's site never used the hash, so
+// one client can't retire another's images. For irreversible compliance
+// deletes use the admin force path.
+func (s *Service) SoftDelete(ctx context.Context, hash, site string) (bool, error) {
+	var usage int64
+	if err := s.db.WithContext(ctx).
+		Model(&model.ImageSiteUsage{}).
+		Where("hash = ? AND site = ?", hash, site).
+		Count(&usage).Error; err != nil {
+		return false, err
+	}
+	if usage == 0 {
+		return false, nil
+	}
+	if err := s.db.WithContext(ctx).
+		Model(&model.Image{}).
+		Where("hash = ?", hash).
+		Update("deleted_at", time.Now()).Error; err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 // buildResult composes the JSON-shaped result including variant URLs.
 func (s *Service) buildResult(hash, ext string, w, h int, size int64, ps preset.Preset, dedup bool) *UploadResult {
 	variants := make(map[string]string, len(ps.Variants))

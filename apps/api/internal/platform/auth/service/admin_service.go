@@ -2,27 +2,37 @@ package service
 
 import (
 	"context"
+	"fmt"
+	"log/slog"
+	"time"
 
 	"api/internal/platform/auth/dto"
 	"api/internal/platform/auth/model"
 	"api/internal/platform/auth/repository"
 	"api/pkg/errors"
+	"api/pkg/imageclient"
 )
 
 // AdminService handles admin operations
 type AdminService struct {
 	userRepo    *repository.UserRepository
 	sessionRepo *repository.SessionRepository
+	// imgClient GCs a user's image_service avatar on anonymize. nil when the
+	// image client is unconfigured — anonymize then just nulls the reference
+	// and lets image_service's own GC reclaim the binary.
+	imgClient *imageclient.Client
 }
 
-// NewAdminService creates a new AdminService
+// NewAdminService creates a new AdminService. imgClient may be nil.
 func NewAdminService(
 	userRepo *repository.UserRepository,
 	sessionRepo *repository.SessionRepository,
+	imgClient *imageclient.Client,
 ) *AdminService {
 	return &AdminService{
 		userRepo:    userRepo,
 		sessionRepo: sessionRepo,
+		imgClient:   imgClient,
 	}
 }
 
@@ -45,15 +55,16 @@ func (s *AdminService) ListUsers(ctx context.Context, req *dto.UserListRequest) 
 	userResponses := make([]dto.UserResponse, len(users))
 	for i, user := range users {
 		userResponses[i] = dto.UserResponse{
-			UUID:        user.UUID,
-			Name:        user.Name,
-			Email:       user.Email,
-			Avatar:      user.Avatar,
-			Bio:         user.Bio,
-			Moemoepoint: user.Moemoepoint,
-			Status:      user.Status,
-			Roles:       user.RoleNames(),
-			CreatedAt:   user.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
+			UUID:         user.UUID,
+			Name:         user.Name,
+			Email:        user.Email,
+			Avatar:       user.Avatar,
+			Bio:          user.Bio,
+			Moemoepoint:  user.Moemoepoint,
+			Status:       user.Status,
+			IsAnonymized: user.IsAnonymized(),
+			Roles:        user.RoleNames(),
+			CreatedAt:    user.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
 		}
 	}
 
@@ -83,15 +94,16 @@ func (s *AdminService) GetUser(ctx context.Context, uuid string) (*dto.UserDetai
 
 	return &dto.UserDetailResponse{
 		UserResponse: dto.UserResponse{
-			UUID:        user.UUID,
-			Name:        user.Name,
-			Email:       user.Email,
-			Avatar:      user.Avatar,
-			Bio:         user.Bio,
-			Moemoepoint: user.Moemoepoint,
-			Status:      user.Status,
-			Roles:       user.RoleNames(),
-			CreatedAt:   user.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
+			UUID:         user.UUID,
+			Name:         user.Name,
+			Email:        user.Email,
+			Avatar:       user.Avatar,
+			Bio:          user.Bio,
+			Moemoepoint:  user.Moemoepoint,
+			Status:       user.Status,
+			IsAnonymized: user.IsAnonymized(),
+			Roles:        user.RoleNames(),
+			CreatedAt:    user.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
 		},
 		IP:           user.IP,
 		SessionCount: int(sessionCount),
@@ -162,8 +174,79 @@ func (s *AdminService) UnbanUser(ctx context.Context, uuid string) error {
 		return errors.NewWithCode(errors.ErrAuthUserNotFound)
 	}
 
+	// Anonymization is terminal — its PII scrub can't be undone, so don't
+	// let "unban" silently resurrect a half-wiped account.
+	if user.IsAnonymized() {
+		return errors.NewWithCode(errors.ErrOperationFailed)
+	}
+
 	user.Status = 0 // 0 = normal
 	return s.userRepo.Update(ctx, user)
+}
+
+// AnonymizeUser scrubs a user's PII and locks the account (Status=1 +
+// AnonymizedAt). Irreversible — for severe spam / PII abuse. It deliberately
+// does NOT delete the user row: the id/uuid are referenced as foreign keys
+// across multiple services (galgame.user_id, galgame_message.actor_user_id,
+// image first_uploader_sub, …), so a hard delete would orphan those and
+// break joins / revision history everywhere. Keeping the row with scrubbed
+// fields lets downstream render "已注销用户" instead. Also revokes all
+// sessions (force logout across every OAuth client) and GCs the avatar.
+func (s *AdminService) AnonymizeUser(ctx context.Context, uuid string) error {
+	user, err := s.userRepo.FindByUUID(ctx, uuid)
+	if err != nil {
+		return errors.NewWithCode(errors.ErrAuthUserNotFound)
+	}
+	if user.IsAnonymized() {
+		return nil // already anonymized — idempotent no-op
+	}
+
+	// Capture the avatar hash before scrubbing so we can GC it afterward.
+	var oldAvatarHash string
+	if user.AvatarImageHash != nil {
+		oldAvatarHash = *user.AvatarImageHash
+	}
+
+	// Name + Email are NOT NULL + unique, so replace with deterministic
+	// placeholders derived from the immutable id (guaranteed unique, and
+	// short enough for the name's varchar(17)).
+	user.Name = fmt.Sprintf("已注销#%d", user.ID)
+	user.Email = fmt.Sprintf("deleted-%d@anonymized.invalid", user.ID)
+	user.Password = nil
+	user.KungalPassword = nil
+	user.MoyuPassword = nil
+	user.Avatar = ""
+	user.AvatarImageHash = nil
+	user.Bio = ""
+	user.IP = ""
+	user.Status = 1 // banned — IsBanned() locks them out
+	now := time.Now()
+	user.AnonymizedAt = &now // terminal marker (distinct from a plain ban)
+
+	if err := s.userRepo.Update(ctx, user); err != nil {
+		return err
+	}
+
+	// GC the avatar binary (best-effort — never fails the anonymize). Only
+	// when (a) the image client is configured, and (b) no OTHER user shares
+	// the hash, since image_service dedups content and has no refcount; the
+	// soft-delete is also site-scoped + recoverable-until-GC on that side.
+	if s.imgClient != nil && oldAvatarHash != "" {
+		others, cErr := s.userRepo.CountByAvatarHash(ctx, oldAvatarHash, user.ID)
+		switch {
+		case cErr != nil:
+			slog.Warn("anonymize: avatar ref-count failed; skipping GC", "user_id", user.ID, "err", cErr)
+		case others > 0:
+			slog.Info("anonymize: avatar hash shared, leaving binary", "user_id", user.ID, "shared_by", others)
+		default:
+			if dErr := s.imgClient.Delete(ctx, oldAvatarHash); dErr != nil {
+				slog.Warn("anonymize: avatar GC failed (reference already cleared)", "user_id", user.ID, "err", dErr)
+			}
+		}
+	}
+
+	// Force logout everywhere — kills all refresh tokens across all clients.
+	return s.sessionRepo.DeleteByUserID(ctx, user.ID)
 }
 
 // DeleteUserSessions deletes all sessions for a user
