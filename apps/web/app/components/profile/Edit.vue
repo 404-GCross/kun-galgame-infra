@@ -98,6 +98,7 @@ const handleSubmit = async () => {
             v-model="avatar"
             label="头像链接"
             placeholder="https://example.com/avatar.webp"
+            autocomplete="off"
           />
         </div>
       </div>
@@ -107,6 +108,7 @@ const handleSubmit = async () => {
         label="用户名"
         placeholder="2–17 个字符，全站唯一"
         required
+        autocomplete="username"
       />
 
       <KunTextarea

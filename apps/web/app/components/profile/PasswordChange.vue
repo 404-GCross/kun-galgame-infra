@@ -54,6 +54,7 @@ const handleSubmit = async () => {
         label="当前密码"
         type="password"
         placeholder="请输入当前密码"
+        autocomplete="current-password"
       />
 
       <KunInput
@@ -61,6 +62,7 @@ const handleSubmit = async () => {
         label="新密码"
         type="password"
         placeholder="请输入新密码（至少 6 位）"
+        autocomplete="new-password"
       />
 
       <KunInput
@@ -68,6 +70,7 @@ const handleSubmit = async () => {
         label="确认新密码"
         type="password"
         placeholder="请再次输入新密码"
+        autocomplete="new-password"
       />
 
       <div v-if="error" class="rounded-lg bg-danger-50 p-3 text-sm text-danger">

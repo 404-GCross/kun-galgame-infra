@@ -104,6 +104,7 @@ onUnmounted(() => {
         type="email"
         placeholder="请输入新邮箱地址"
         :disabled="codeSent && countdown > 0"
+        autocomplete="email"
       />
 
       <div v-if="codeSent" class="space-y-4">
@@ -113,6 +114,7 @@ onUnmounted(() => {
           type="text"
           placeholder="请输入 6 位验证码"
           maxlength="6"
+          autocomplete="one-time-code"
         />
       </div>
 
