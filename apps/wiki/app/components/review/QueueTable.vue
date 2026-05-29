@@ -52,7 +52,7 @@ const relative = (iso: string) => {
 </script>
 
 <template>
-  <div class="bg-content1 border-default-200 overflow-hidden rounded-lg border">
+  <KunCard class="overflow-hidden">
     <div
       v-if="loading"
       class="text-default-400 flex items-center justify-center py-12"
@@ -66,7 +66,8 @@ const relative = (iso: string) => {
       <Icon name="lucide:check-check" class="mb-2 size-12 opacity-50" />
       <p>队列已清空</p>
     </div>
-    <table v-else class="w-full text-sm">
+    <div v-else class="overflow-x-auto">
+    <table class="w-full min-w-[40rem] text-sm">
       <thead class="bg-content2 text-default-500">
         <tr>
           <th class="px-4 py-3 text-left font-medium">提交者</th>
@@ -131,5 +132,6 @@ const relative = (iso: string) => {
         </tr>
       </tbody>
     </table>
-  </div>
+    </div>
+  </KunCard>
 </template>

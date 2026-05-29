@@ -10,7 +10,7 @@ import {
   REVIEW_ACTIONS
 } from '~/constants/admin'
 import type { Galgame } from '~/shared/types/galgame'
-import type { ReviewMessage, ReviewQueueResponse } from '~/shared/types/review'
+import type { ReviewQueueResponse } from '~/shared/types/review'
 import { resolveBannerUrl } from '~/shared/utils/resolveImage'
 
 const api = useApi()
@@ -19,10 +19,48 @@ const router = useRouter()
 const cdnBase = useRuntimeConfig().public.imageCdnBase as string
 
 const gid = computed(() => Number(route.params.gid))
-const galgame = ref<Galgame | null>(null)
-const submissionMsg = ref<ReviewMessage | null>(null)
-const loading = ref(false)
 const actionOpen = ref<'approve' | 'decline' | 'ban' | null>(null)
+
+// SSR: server-fetched + payload-hydrated, matching the rest of the wiki
+// (galgame/List et al). One fetch pulls both the galgame detail and its
+// submission message. null = fetch failed (e.g. SSR-without-token) so the
+// onMounted guard can self-heal client-side.
+const {
+  data,
+  status: fetchStatus,
+  refresh
+} = await useAsyncData(
+  'review-detail',
+  async () => {
+    const [gRes, mRes] = await Promise.all([
+      api.get<Galgame>(`/admin/galgame/${gid.value}`),
+      // Submission/edit message for this gid → "提交者 / 时间" header. Admin
+      // queue endpoint filters by type only, so page through (queue is small)
+      // and match our gid client-side.
+      api.get<ReviewQueueResponse>('/admin/galgame/messages', {
+        type: 'submitted,edited_pending',
+        page: 1,
+        limit: 100
+      })
+    ])
+    if (gRes.code !== 0) return null
+    const msg =
+      mRes.code === 0
+        ? mRes.data.items.find((m) => m.galgame_id === gid.value) ?? null
+        : null
+    return { galgame: gRes.data, submissionMsg: msg }
+  },
+  { watch: [gid] }
+)
+
+const galgame = computed(() => data.value?.galgame ?? null)
+const submissionMsg = computed(() => data.value?.submissionMsg ?? null)
+const loading = computed(() => fetchStatus.value === 'pending')
+
+// Self-heal the SSR-without-token edge: only when the fetch actually failed.
+onMounted(() => {
+  if (!data.value) refresh()
+})
 
 const bannerSrc = computed(() => resolveBannerUrl(galgame.value, { cdnBase }))
 
@@ -53,39 +91,6 @@ const officials = computed(() =>
     .map((r) => r.official)
     .filter((o): o is NonNullable<typeof o> => !!o)
 )
-
-// Pull the most recent submission/edit message for this gid so we can
-// render "提交者 / 时间" header. Admin queue endpoint is filtered by
-// status=3, so we only need to look in that range.
-const loadSubmission = async () => {
-  // Server-side filter is by type only; we still need to find the row
-  // matching our galgame. Page through up to 100 (admin queue is small).
-  const resp = await api.get<ReviewQueueResponse>('/admin/galgame/messages', {
-    type: 'submitted,edited_pending',
-    page: 1,
-    limit: 100
-  })
-  if (resp.code === 0) {
-    submissionMsg.value =
-      resp.data.items.find((m) => m.galgame_id === gid.value) ?? null
-  }
-}
-
-const loadGalgame = async () => {
-  loading.value = true
-  try {
-    const response = await api.get<Galgame>(`/admin/galgame/${gid.value}`)
-    if (response.code === 0) {
-      galgame.value = response.data
-    }
-  } finally {
-    loading.value = false
-  }
-}
-
-watch(gid, async () => {
-  await Promise.all([loadGalgame(), loadSubmission()])
-}, { immediate: true })
 
 const onActionConfirmed = async () => {
   actionOpen.value = null
@@ -164,7 +169,7 @@ const relative = (iso?: string) => {
       </div>
 
       <!-- Header card: banner + title + status + actions -->
-      <div class="bg-content1 rounded-lg p-6 shadow-sm">
+      <KunCard class="p-6">
         <div class="flex gap-6">
           <div class="shrink-0">
             <img
@@ -238,13 +243,10 @@ const relative = (iso?: string) => {
             </div>
           </div>
         </div>
-      </div>
+      </KunCard>
 
       <!-- Aliases -->
-      <div
-        v-if="galgame.alias?.length"
-        class="bg-content1 rounded-lg p-6 shadow-sm"
-      >
+      <KunCard v-if="galgame.alias?.length" class="p-6">
         <h3 class="text-foreground mb-3 font-semibold">别名</h3>
         <div class="flex flex-wrap gap-2">
           <KunChip
@@ -256,13 +258,10 @@ const relative = (iso?: string) => {
             {{ a.name }}
           </KunChip>
         </div>
-      </div>
+      </KunCard>
 
       <!-- Tags by category -->
-      <div
-        v-if="Object.keys(tagsByCategory).length"
-        class="bg-content1 rounded-lg p-6 shadow-sm"
-      >
+      <KunCard v-if="Object.keys(tagsByCategory).length" class="p-6">
         <h3 class="text-foreground mb-3 font-semibold">标签</h3>
         <div class="space-y-3">
           <div v-for="(tags, cat) in tagsByCategory" :key="cat">
@@ -281,10 +280,10 @@ const relative = (iso?: string) => {
             </span>
           </div>
         </div>
-      </div>
+      </KunCard>
 
       <!-- Officials -->
-      <div v-if="officials.length" class="bg-content1 rounded-lg p-6 shadow-sm">
+      <KunCard v-if="officials.length" class="p-6">
         <h3 class="text-foreground mb-3 font-semibold">开发商 / 发行商</h3>
         <div class="flex flex-wrap gap-2">
           <KunChip
@@ -296,19 +295,19 @@ const relative = (iso?: string) => {
             {{ o.name }}
           </KunChip>
         </div>
-      </div>
+      </KunCard>
 
       <!-- Intros -->
-      <div
+      <KunCard
         v-for="lang in ['zh_cn', 'ja_jp', 'en_us', 'zh_tw']"
         :key="lang"
-        class="bg-content1 rounded-lg p-6 shadow-sm"
+        class="p-6"
       >
         <h3 class="text-foreground mb-3 font-semibold">简介（{{ lang }}）</h3>
         <pre
           class="text-default-600 whitespace-pre-wrap text-sm"
         >{{ (galgame as any)[`intro_${lang}`] || '(无)' }}</pre>
-      </div>
+      </KunCard>
     </div>
 
     <ReviewActionModal

@@ -55,7 +55,7 @@ const filtered = computed(() => {
 
     <KunCard class="overflow-hidden">
       <div class="overflow-x-auto">
-        <table class="w-full text-sm">
+        <table class="w-full min-w-[40rem] text-sm">
           <thead class="bg-content2 text-default-500 text-left">
             <tr>
               <th class="px-4 py-3 font-medium">名称</th>

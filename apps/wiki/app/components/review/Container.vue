@@ -5,42 +5,46 @@
 // who triggered the event. Approved/declined messages drop off the queue
 // automatically because the JOIN filters galgame.status=3.
 import { REVIEW_QUEUE_TABS } from '~/constants/admin'
-import type { ReviewMessage, ReviewQueueResponse } from '~/shared/types/review'
+import type { ReviewQueueResponse } from '~/shared/types/review'
 
 const api = useApi()
 const activeTab = useQueryState<string>('tab', 'all_pending')
 const page = useQueryState('page', 1)
 const limit = ref(20)
 
-const items = ref<ReviewMessage[]>([])
-const total = ref(0)
-const loading = ref(false)
-
 const currentTab = computed(
   () => REVIEW_QUEUE_TABS.find((t) => t.id === activeTab.value) ?? REVIEW_QUEUE_TABS[0]
 )
 
-const loadQueue = async () => {
-  loading.value = true
-  try {
-    const response = await api.get<ReviewQueueResponse>(
-      '/admin/galgame/messages',
-      {
-        type: currentTab.value.types,
-        page: page.value,
-        limit: limit.value
-      }
-    )
-    if (response.code === 0) {
-      items.value = response.data.items
-      total.value = response.data.total
-    }
-  } finally {
-    loading.value = false
-  }
-}
+// SSR: server-fetched + payload-hydrated, matching the rest of the wiki
+// (galgame/List et al). null = fetch failed (e.g. SSR-without-token); a
+// valid empty result is { items: [], total: 0 } so the two are distinct.
+const {
+  data,
+  status: fetchStatus,
+  refresh
+} = await useAsyncData(
+  'review-queue',
+  async () => {
+    const r = await api.get<ReviewQueueResponse>('/admin/galgame/messages', {
+      type: currentTab.value.types,
+      page: page.value,
+      limit: limit.value
+    })
+    return r.code === 0 ? r.data : null
+  },
+  { watch: [activeTab, page, limit] }
+)
 
-watch([activeTab, page, limit], loadQueue, { immediate: true })
+const items = computed(() => data.value?.items ?? [])
+const total = computed(() => data.value?.total ?? 0)
+const loading = computed(() => fetchStatus.value === 'pending')
+
+// Self-heal the SSR-without-token edge: only when the fetch actually
+// failed (data null), not for a legitimately empty result set.
+onMounted(() => {
+  if (!data.value) refresh()
+})
 
 const switchTab = (id: string) => {
   activeTab.value = id
