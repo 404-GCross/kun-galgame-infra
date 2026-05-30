@@ -185,9 +185,10 @@ func (h *Handler) SoftDelete(c fiber.Ctx) error {
 	return response.Success(c, fiber.Map{"hash": hash, "soft_deleted": true})
 }
 
-// Meta returns the full metadata for a hash. Exposes `sites` audit info
-// (available to any authenticated caller; consider restricting in V2 if
-// cross-site probing becomes a concern).
+// Meta returns the full metadata for a hash. The `sites` usage list is scoped
+// to the CALLER's own site so one image client can't probe which OTHER sites
+// reference a hash (cross-site metadata leak); the admin list endpoint exposes
+// full usage separately.
 func (h *Handler) Meta(c fiber.Ctx) error {
 	hash := c.Params("hash")
 	if len(hash) != 64 {
@@ -202,6 +203,16 @@ func (h *Handler) Meta(c fiber.Ctx) error {
 	if img == nil {
 		return response.NotFound(c, errors.ErrImageNotFound)
 	}
+
+	// Cross-site scope: only reveal whether the caller's OWN site used the hash.
+	callerSite := imgMW.SiteKeyFromCtx(c)
+	scoped := sites[:0]
+	for _, s := range sites {
+		if s == callerSite {
+			scoped = append(scoped, s)
+		}
+	}
+	sites = scoped
 
 	variantURLs := make(map[string]string, len(img.VariantList()))
 	for _, v := range img.VariantList() {
@@ -251,7 +262,7 @@ func (h *Handler) Ping(c fiber.Ctx) error {
 		}
 	}
 
-	updated, notFound, err := h.svc.ReferencePing(c.Context(), cleaned)
+	updated, notFound, err := h.svc.ReferencePing(c.Context(), imgMW.SiteKeyFromCtx(c), cleaned)
 	if err != nil {
 		slog.Error("reference-ping failed", "err", err)
 		return response.InternalError(c, errors.ErrImageStoreFailed)

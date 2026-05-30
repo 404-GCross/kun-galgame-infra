@@ -462,7 +462,10 @@ func (s *GalgameService) Update(ctx context.Context, userID, galgameID int, role
 		}
 
 		var count int64
-		tx.Model(&model.GalgameContributor{}).Where("galgame_id = ? AND user_id = ?", galgameID, userID).Count(&count)
+		if err := tx.Model(&model.GalgameContributor{}).
+			Where("galgame_id = ? AND user_id = ?", galgameID, userID).Count(&count).Error; err != nil {
+			return err
+		}
 		if count == 0 {
 			if err := tx.Create(&model.GalgameContributor{GalgameID: galgameID, UserID: userID}).Error; err != nil {
 				return err

@@ -10,6 +10,27 @@
 
 ---
 
+## 修复状态(2026-05-30)
+
+> `go build ./... && go vet ./... && go test -p 1 ./...` 全绿;新增 `oauth_client_secret_test.go` 验证 H2 双路径。
+
+**已修(代码):**
+- **HIGH**:H1(`F001` admin 对 admin 目标的 ban/anonymize/force-logout 加 `adminProtected` 门 + handler 映射 403)、H2(`F002/F015` client secret 改 `sha256:` 哈希存储 + `VerifySecret` 双路径兼容旧明文 + 两处验证点 + image ClientAuth + create 落哈希 + 新增 `cmd/migrate-hash-client-secrets` 回填工具)。
+- **MEDIUM**:M1(`F007` `/auth/refresh` 拒绝 `ClientID!=""` 的 oauth-flow session)、M2(`F009` ban/anonymize 的会话撤销改 best-effort + log)、M3(`F010`+`GPT-M01` 幂等全字段比对 + `OnConflict DoNothing` 收敛并发,消除一次性 500)、M4(`F011` reference-ping 按调用方 site 过滤,新增 `ExistingHashesForSite`)、M5(`F013` GC 软删 UPDATE 重查 `last_referenced_at` 谓词)、M6(`F014` series Create 加 staff 门)、M7(`F040` `GET /image/:hash` 的 `sites` 仅返回调用方自己的 site)。
+- **LOW**:`F035`(stats 用 PG 会话时区算日界)、`F037`(reset 拒绝 banned)、`F038`(改邮箱验证码改 `subtle.ConstantTimeCompare`)、`F039`(admin 搜索 ILIKE 转义 `%/_`)、`F041`(`DecodeFromBytes` 先 `DecodeConfig` 验尺寸再 decode)、`F042`(GC 阶段失败向 runner 返回 error)、`F043`(MergePR `completed_time=NOW()`)、`F044`/`F082`(contributor Count/Create 错误传播,共 3 处)、`F047`(message 列表 Count 错误传播,2 处)、`F048`(BanGalgamesByUser 返回 failed_ids)、`F051`(`VerifyMoyuPassword` 改 `crypto/subtle`)。
+
+**已缓解 / 记录(不改代码):**
+- `F046`:`GalgameRevision.action` CHECK 约束的 ALTER 已由 `cmd/migrate-galgame`(DROP+ADD CONSTRAINT)处理,模型注释也已警示——**已缓解**,无需改。
+- `F087`:admin web 的 access_token 为非 httpOnly cookie 是 **SPA 读取令牌的设计取舍**(refresh_token 已 httpOnly);改 httpOnly 会改动整套前端鉴权模型,**暂按取舍记录**,缓解靠 CSP / 防 XSS。
+- `F076`:migrate-users 缺 post-remap 三库 id 对账断言——迁移已执行,价值有限;建议作为**独立校验脚本**补,**未改复杂的一次性迁移工具**。
+
+**部署后需跑一次(可先 `-dry-run`):**
+- `go run ./cmd/migrate-hash-client-secrets` —— 把现存明文 client secret 哈希(幂等、非破坏:下游沿用现有明文仍可验证)。
+
+> 下方逐条保留原始核实记录与最小修法;每条的修复状态见上方汇总(按 finding ID 对照)。
+
+---
+
 ## HIGH(2)
 
 ### H1 · 任意 admin 可封禁/匿名化任意账号(含同级/超管),无 actor↔target 角色等级校验

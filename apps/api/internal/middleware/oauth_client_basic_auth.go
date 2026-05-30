@@ -1,7 +1,6 @@
 package middleware
 
 import (
-	"crypto/subtle"
 	"encoding/base64"
 	stderrors "errors"
 	"strings"
@@ -40,7 +39,7 @@ func OAuthClientBasicAuth(repo *siteRepo.OAuthClientRepository) fiber.Handler {
 			return response.Unauthorized(c, errors.ErrOAuthInvalidClient)
 		}
 
-		if subtle.ConstantTimeCompare([]byte(client.Secret), []byte(secret)) != 1 {
+		if !client.VerifySecret(secret) {
 			return response.Unauthorized(c, errors.ErrOAuthInvalidClientSecret)
 		}
 

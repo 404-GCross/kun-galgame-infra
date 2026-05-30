@@ -19,6 +19,23 @@ func NewSiteUsageRepository(db *gorm.DB) *SiteUsageRepository {
 	return &SiteUsageRepository{db: db}
 }
 
+// ExistingHashesForSite returns the subset of `hashes` that `site` has recorded
+// usage for AND that still exist (not soft-deleted). Backs the site-scoped
+// reference-ping: a client may only keep alive images its own site referenced.
+func (r *SiteUsageRepository) ExistingHashesForSite(ctx context.Context, site string, hashes []string) ([]string, error) {
+	if len(hashes) == 0 {
+		return nil, nil
+	}
+	var out []string
+	err := r.db.WithContext(ctx).
+		Model(&model.ImageSiteUsage{}).
+		Where("site = ? AND hash IN ?", site, hashes).
+		Where("hash IN (?)", r.db.Model(&model.Image{}).Select("hash").Where("deleted_at IS NULL")).
+		Distinct().
+		Pluck("hash", &out).Error
+	return out, err
+}
+
 // RecordUpload upserts one row: inserts on first (hash, site) upload,
 // increments upload_count and updates last_uploaded_at on subsequent ones.
 func (r *SiteUsageRepository) RecordUpload(ctx context.Context, hash, site, uploaderSub, uploaderClient string) error {

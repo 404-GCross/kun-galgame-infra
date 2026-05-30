@@ -190,8 +190,10 @@ func (s *SubmissionService) Claim(ctx context.Context, userID, gid int) (*model.
 
 		// Ensure claimer is a contributor (don't duplicate if already)
 		var cnt int64
-		tx.Model(&model.GalgameContributor{}).
-			Where("galgame_id = ? AND user_id = ?", gid, userID).Count(&cnt)
+		if err := tx.Model(&model.GalgameContributor{}).
+			Where("galgame_id = ? AND user_id = ?", gid, userID).Count(&cnt).Error; err != nil {
+			return err
+		}
 		if cnt == 0 {
 			if err := tx.Create(&model.GalgameContributor{GalgameID: gid, UserID: userID}).Error; err != nil {
 				return err

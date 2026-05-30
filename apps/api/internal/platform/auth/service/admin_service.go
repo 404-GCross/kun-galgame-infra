@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"slices"
 	"time"
 
 	"api/internal/platform/auth/dto"
@@ -12,6 +13,16 @@ import (
 	"api/pkg/errors"
 	"api/pkg/imageclient"
 )
+
+// adminProtected reports whether the target is an admin. Destructive admin-API
+// ops (ban / anonymize / force-logout) are refused on admins so a single rogue
+// or compromised admin can't lock out, force-logout, or irreversibly wipe a
+// peer admin or the platform owner (there is no superadmin tier; admin is the
+// top). To act on an admin, first demote them (remove the admin role) or use
+// direct DB access.
+func adminProtected(u *model.User) bool {
+	return slices.Contains(u.RoleNames(), "admin")
+}
 
 // AdminService handles admin operations
 type AdminService struct {
@@ -165,9 +176,12 @@ func (s *AdminService) UpdateUser(ctx context.Context, uuid string, req *dto.Upd
 
 // BanUser bans a user
 func (s *AdminService) BanUser(ctx context.Context, uuid string) error {
-	user, err := s.userRepo.FindByUUID(ctx, uuid)
+	user, err := s.userRepo.FindByUUIDWithRoles(ctx, uuid)
 	if err != nil {
 		return errors.NewWithCode(errors.ErrAuthUserNotFound)
+	}
+	if adminProtected(user) {
+		return errors.NewWithCode(errors.ErrForbidden)
 	}
 
 	user.Status = 1 // 1 = banned
@@ -175,8 +189,15 @@ func (s *AdminService) BanUser(ctx context.Context, uuid string) error {
 		return err
 	}
 
-	// Delete all sessions for this user
-	return s.sessionRepo.DeleteByUserID(ctx, user.ID)
+	// Best-effort session revoke: the ban (status=1) is the security boundary —
+	// the live Auth middleware re-checks IsBanned per request, so a lingering
+	// session can't act. Log a purge failure rather than reporting the whole
+	// (already-succeeded) ban as a failure. Matches UpdateUser's ban path.
+	if err := s.sessionRepo.DeleteByUserID(ctx, user.ID); err != nil {
+		slog.Warn("ban-user: session purge failed; user is banned, sessions linger",
+			"user_id", user.ID, "err", err)
+	}
+	return nil
 }
 
 // UnbanUser unbans a user
@@ -205,9 +226,12 @@ func (s *AdminService) UnbanUser(ctx context.Context, uuid string) error {
 // fields lets downstream render "已注销用户" instead. Also revokes all
 // sessions (force logout across every OAuth client) and GCs the avatar.
 func (s *AdminService) AnonymizeUser(ctx context.Context, uuid string) error {
-	user, err := s.userRepo.FindByUUID(ctx, uuid)
+	user, err := s.userRepo.FindByUUIDWithRoles(ctx, uuid)
 	if err != nil {
 		return errors.NewWithCode(errors.ErrAuthUserNotFound)
+	}
+	if adminProtected(user) {
+		return errors.NewWithCode(errors.ErrForbidden)
 	}
 	if user.IsAnonymized() {
 		return nil // already anonymized — idempotent no-op
@@ -258,14 +282,23 @@ func (s *AdminService) AnonymizeUser(ctx context.Context, uuid string) error {
 	}
 
 	// Force logout everywhere — kills all refresh tokens across all clients.
-	return s.sessionRepo.DeleteByUserID(ctx, user.ID)
+	// Best-effort: the PII scrub + status=1 already committed; a session-purge
+	// failure must not report the (succeeded, irreversible) anonymize as failed.
+	if err := s.sessionRepo.DeleteByUserID(ctx, user.ID); err != nil {
+		slog.Warn("anonymize: session purge failed; user is anonymized, sessions linger",
+			"user_id", user.ID, "err", err)
+	}
+	return nil
 }
 
 // DeleteUserSessions deletes all sessions for a user
 func (s *AdminService) DeleteUserSessions(ctx context.Context, uuid string) error {
-	user, err := s.userRepo.FindByUUID(ctx, uuid)
+	user, err := s.userRepo.FindByUUIDWithRoles(ctx, uuid)
 	if err != nil {
 		return errors.NewWithCode(errors.ErrAuthUserNotFound)
+	}
+	if adminProtected(user) {
+		return errors.NewWithCode(errors.ErrForbidden)
 	}
 
 	return s.sessionRepo.DeleteByUserID(ctx, user.ID)

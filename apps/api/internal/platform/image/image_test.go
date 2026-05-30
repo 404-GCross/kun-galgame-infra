@@ -408,7 +408,7 @@ func TestReferencePing_TouchesLastReferencedAt(t *testing.T) {
 	require.NoError(t, err)
 	time.Sleep(1100 * time.Millisecond)
 
-	updated, notFound, err := testSvc.ReferencePing(ctx, []string{r.Hash, "0000000000000000000000000000000000000000000000000000000000000000"})
+	updated, notFound, err := testSvc.ReferencePing(ctx, "siteH", []string{r.Hash, "0000000000000000000000000000000000000000000000000000000000000000"})
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), updated)
 	assert.Len(t, notFound, 1)

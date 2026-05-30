@@ -84,6 +84,12 @@ func (h *SeriesHandler) Create(c fiber.Ctx) error {
 		return response.Unauthorized(c, errors.ErrAuthUnauthorized)
 	}
 	roles, _ := c.Locals("user_roles").([]string)
+	// Creating a series re-homes arbitrary galgames (writes their series_id +
+	// a galgame_revision), so it must be staff-only — same gate as series
+	// Update/Delete/Revert and the sibling tag/official/engine mutations.
+	if !hasRole(roles, "admin", "moderator") {
+		return response.Forbidden(c, errors.ErrForbidden)
+	}
 
 	var req dto.CreateSeriesRequest
 	if err := c.Bind().JSON(&req); err != nil {

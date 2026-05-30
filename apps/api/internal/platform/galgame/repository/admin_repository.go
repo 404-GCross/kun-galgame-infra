@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"os"
 	"strings"
 	"time"
 
@@ -10,6 +11,25 @@ import (
 
 	"gorm.io/gorm"
 )
+
+// pgSessionLocation returns the timezone Postgres uses for date_trunc('day')
+// bucketing, so the Go-side day boundaries (since/today) align with the SQL
+// buckets instead of using the host's process-local zone. Mirrors the DSN's
+// TimeZone (KUN_GALGAME_PG_TIMEZONE / KUN_PG_TIMEZONE, default Asia/Shanghai);
+// falls back to UTC if the zone can't be loaded.
+func pgSessionLocation() *time.Location {
+	tz := os.Getenv("KUN_GALGAME_PG_TIMEZONE")
+	if tz == "" {
+		tz = os.Getenv("KUN_PG_TIMEZONE")
+	}
+	if tz == "" {
+		tz = "Asia/Shanghai"
+	}
+	if loc, err := time.LoadLocation(tz); err == nil {
+		return loc
+	}
+	return time.UTC
+}
 
 // AdminRepository handles admin statistics queries
 type AdminRepository struct {
@@ -57,9 +77,12 @@ func (r *AdminRepository) GetStats(ctx context.Context, days int) (*dto.AdminSta
 		return nil, err
 	}
 
-	// Daily counts
-	now := time.Now()
-	since := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()).AddDate(0, 0, -days+1)
+	// Daily counts. Compute day boundaries in the PG session timezone so they
+	// line up with date_trunc('day', created) below (host TZ != session TZ
+	// would otherwise shift buckets by a day).
+	loc := pgSessionLocation()
+	now := time.Now().In(loc)
+	since := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc).AddDate(0, 0, -days+1)
 
 	type dateCount struct {
 		Date  string `gorm:"column:date"`
@@ -116,7 +139,7 @@ func (r *AdminRepository) GetStats(ctx context.Context, days int) (*dto.AdminSta
 	// frontend chart with fewer-than-N bars and non-consecutive dates. Keys
 	// are formatted from `since` (same basis as the SQL bucket lower bound),
 	// already ascending so no sort needed.
-	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
 	resp.Daily = make([]dto.AdminStatsDaily, 0, days)
 	for d := since; !d.After(today); d = d.AddDate(0, 0, 1) {
 		key := d.Format("2006-01-02")

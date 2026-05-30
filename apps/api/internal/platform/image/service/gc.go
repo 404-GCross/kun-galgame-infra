@@ -102,6 +102,11 @@ func (g *GCService) Run(ctx context.Context, cfg GCConfig) (*GCRunSummary, error
 		summary.HardDeleted = n
 	}
 
+	// Surface phase failures to the runner instead of always reporting
+	// success — the summary still carries the partial results + Errors count.
+	if summary.Errors > 0 {
+		return summary, fmt.Errorf("gc: %d phase(s) failed (see logs)", summary.Errors)
+	}
 	return summary, nil
 }
 
@@ -129,13 +134,17 @@ func (g *GCService) softDelete(ctx context.Context, threshold time.Time, cfg GCC
 	for _, r := range rows {
 		ids = append(ids, r.ID)
 	}
-	if err := g.db.WithContext(ctx).
+	// Re-apply the candidate predicate in the UPDATE (TOCTOU guard): a hash
+	// reference-pinged between the SELECT above and here has a fresh
+	// last_referenced_at and must NOT be soft-deleted. RowsAffected may be < len(rows).
+	res := g.db.WithContext(ctx).
 		Model(&model.Image{}).
-		Where("id IN ?", ids).
-		Update("deleted_at", now).Error; err != nil {
-		return 0, fmt.Errorf("gc: apply soft-delete: %w", err)
+		Where("id IN ? AND deleted_at IS NULL AND last_referenced_at < ?", ids, threshold).
+		Update("deleted_at", now)
+	if res.Error != nil {
+		return 0, fmt.Errorf("gc: apply soft-delete: %w", res.Error)
 	}
-	return int64(len(rows)), nil
+	return res.RowsAffected, nil
 }
 
 func (g *GCService) hardDelete(ctx context.Context, threshold time.Time, cfg GCConfig) (int64, error) {

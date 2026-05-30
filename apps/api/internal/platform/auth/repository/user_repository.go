@@ -286,9 +286,12 @@ func (r *UserRepository) FindAllPaginated(
 
 	query := r.db.WithContext(ctx).Model(&model.User{})
 
-	// Apply search filter
+	// Apply search filter. Escape LIKE wildcards so a literal "%"/"_" in the
+	// search term matches literally (consistent with SearchByName), not as a
+	// wildcard that would broaden the match.
 	if search != "" {
-		query = query.Where("name ILIKE ? OR email ILIKE ?", "%"+search+"%", "%"+search+"%")
+		like := "%" + escapeLikePattern(search) + "%"
+		query = query.Where("name ILIKE ? OR email ILIKE ?", like, like)
 	}
 
 	// Apply status filter

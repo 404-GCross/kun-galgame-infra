@@ -1,6 +1,9 @@
 package model
 
 import (
+	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/hex"
 	"encoding/json"
 	"slices"
 	"strings"
@@ -8,6 +11,35 @@ import (
 
 	"gorm.io/datatypes"
 )
+
+// secretHashPrefix tags a hashed client secret so VerifySecret can tell a
+// hashed value from a legacy plaintext one (both are 64 hex chars otherwise,
+// so length/charset can't distinguish them).
+const secretHashPrefix = "sha256:"
+
+// HashOAuthClientSecret returns the at-rest form of a client secret:
+// "sha256:<hex(sha256(secret))>". Client secrets are high-entropy server-
+// generated random (32 bytes), so a fast cryptographic hash is sufficient and
+// keeps per-request s2s auth cheap (unlike bcrypt). The plaintext is shown to
+// the admin once at creation and never stored.
+func HashOAuthClientSecret(plaintext string) string {
+	sum := sha256.Sum256([]byte(plaintext))
+	return secretHashPrefix + hex.EncodeToString(sum[:])
+}
+
+// VerifySecret constant-time compares a presented secret against the stored
+// value. Hashed rows ("sha256:…") are compared by hash; legacy plaintext rows
+// (pre-migration) fall back to a direct constant-time compare, so existing
+// clients keep working until cmd/migrate-hash-client-secrets runs.
+func (c *OAuthClient) VerifySecret(presented string) bool {
+	stored := c.Secret
+	if h, ok := strings.CutPrefix(stored, secretHashPrefix); ok {
+		sum := sha256.Sum256([]byte(presented))
+		return subtle.ConstantTimeCompare([]byte(hex.EncodeToString(sum[:])), []byte(h)) == 1
+	}
+	// Legacy plaintext (not yet migrated).
+	return subtle.ConstantTimeCompare([]byte(stored), []byte(presented)) == 1
+}
 
 // OAuthClient represents an OAuth client for a site
 type OAuthClient struct {

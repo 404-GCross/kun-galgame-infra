@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
-	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
 	stderrors "errors"
@@ -159,7 +158,7 @@ func (s *OAuthService) verifyClientSecret(ctx context.Context, clientID, clientS
 	if err != nil {
 		return errors.NewWithCode(errors.ErrOAuthInvalidClient)
 	}
-	if subtle.ConstantTimeCompare([]byte(client.Secret), []byte(clientSecret)) != 1 {
+	if !client.VerifySecret(clientSecret) {
 		return errors.NewWithCode(errors.ErrOAuthInvalidClientSecret)
 	}
 	return nil

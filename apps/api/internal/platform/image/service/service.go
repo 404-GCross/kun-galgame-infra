@@ -441,11 +441,14 @@ func (s *Service) GetByHash(ctx context.Context, hash string) (*model.Image, []s
 
 // ReferencePing refreshes last_referenced_at for the given hashes filtered
 // to those the caller's site has actually used. Returns (updated, notFound).
-func (s *Service) ReferencePing(ctx context.Context, hashes []string) (int64, []string, error) {
+func (s *Service) ReferencePing(ctx context.Context, site string, hashes []string) (int64, []string, error) {
 	if len(hashes) == 0 {
 		return 0, nil, nil
 	}
-	existing, err := s.imgRepo.FindExistingHashes(ctx, hashes)
+	// Site-scoped: only hashes the caller's own site has used (and that still
+	// exist) can be kept alive. A client cannot ref-ping arbitrary global
+	// hashes it never referenced, despite the old global behavior.
+	existing, err := s.usageRepo.ExistingHashesForSite(ctx, site, hashes)
 	if err != nil {
 		return 0, nil, err
 	}

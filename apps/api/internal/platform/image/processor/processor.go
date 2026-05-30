@@ -201,6 +201,17 @@ func ProcessVariant(src image.Image, v preset.VariantSpec) (*Output, error) {
 // DecodeFromBytes is a convenience wrapper so callers don't have to bring
 // bytes.NewReader.
 func DecodeFromBytes(b []byte) (image.Image, string, error) {
+	// Decompression-bomb guard: read only the header (DecodeConfig allocates no
+	// pixel buffer) and reject oversized dimensions BEFORE the full decode
+	// allocates the image. A small crafted file can otherwise expand to a huge
+	// in-memory image before Decode's post-hoc pixel check fires.
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(b))
+	if err != nil {
+		return nil, "", fmt.Errorf("%w: %v", ErrInvalidInput, err)
+	}
+	if int64(cfg.Width)*int64(cfg.Height) > MaxDecodedPixels {
+		return nil, "", ErrTooLarge
+	}
 	return Decode(bytes.NewReader(b))
 }
 

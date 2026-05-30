@@ -37,7 +37,9 @@ func (r *MessageRepository) ListMine(ctx context.Context, userID int, sinceID in
 	var total int64
 
 	q := r.db.WithContext(ctx).Model(&model.GalgameMessage{}).Where("target_user_id = ?", userID)
-	q.Count(&total)
+	if err := q.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
 
 	if sinceID > 0 {
 		q = q.Where("id > ?", sinceID)
@@ -109,7 +111,9 @@ func (r *MessageRepository) ListAdminQueue(ctx context.Context, types []string, 
 		Where("galgame_message.type IN ?", types).
 		Where("g.status = ?", model.GalgameStatusPending)
 
-	q.Count(&total)
+	if err := q.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
 
 	err := q.Order("galgame_message.id DESC").
 		Offset((page - 1) * limit).

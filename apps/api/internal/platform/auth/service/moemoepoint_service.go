@@ -73,8 +73,9 @@ func (s *MoemoepointService) Adjust(ctx context.Context, p AdjustParams) (*Adjus
 		var existing model.MoemoepointLog
 		e := tx.Where("idempotency_key = ?", p.IdempotencyKey).First(&existing).Error
 		if e == nil {
-			// Same key MUST describe the same change, else it's a caller bug.
-			if existing.UserID != p.UserID || existing.Delta != p.Delta || existing.Reason != p.Reason {
+			// Same key MUST describe the same change (every business field),
+			// else the caller reused a key for a different request → 16004.
+			if !sameAdjust(&existing, p) {
 				return errors.NewWithCode(errors.ErrMoemoepointIdemConflict)
 			}
 			var u model.User
@@ -105,8 +106,28 @@ func (s *MoemoepointService) Adjust(ctx context.Context, p AdjustParams) (*Adjus
 			IdempotencyKey: p.IdempotencyKey,
 			Note:           p.Note,
 		}
-		if err := tx.Create(&log).Error; err != nil {
-			return err
+		// OnConflict DoNothing: a concurrent same-key insert (a requester that
+		// passed the First() miss before the winner committed, then blocked on
+		// this row lock until the winner committed) converges on the winner
+		// instead of 500ing on the unique index.
+		res := tx.Clauses(clause.OnConflict{
+			Columns: []clause.Column{{Name: "idempotency_key"}}, DoNothing: true,
+		}).Create(&log)
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			var winner model.MoemoepointLog
+			if err := tx.Where("idempotency_key = ?", p.IdempotencyKey).First(&winner).Error; err != nil {
+				return err
+			}
+			if !sameAdjust(&winner, p) {
+				return errors.NewWithCode(errors.ErrMoemoepointIdemConflict)
+			}
+			// u.Moemoepoint was read under our lock AFTER the winner committed,
+			// so it already reflects the winner's update.
+			result = AdjustResult{Balance: u.Moemoepoint, Applied: false, LogID: winner.ID}
+			return nil
 		}
 		if err := tx.Model(&model.User{}).Where("id = ?", p.UserID).
 			Update("moemoepoint", newBalance).Error; err != nil {
@@ -163,6 +184,20 @@ func (s *MoemoepointService) UserIDByUUID(ctx context.Context, uuid string) (uin
 		return 0, errors.NewWithCode(errors.ErrAuthUserNotFound)
 	}
 	return u.ID, nil
+}
+
+// sameAdjust reports whether an existing log row describes the same change as
+// the request. Compares EVERY business field (not just user/delta/reason) so a
+// reused idempotency_key with a different body is detected as a 16004 conflict,
+// per the §3.1 contract ("幂等键已存在但请求体不一致").
+func sameAdjust(existing *model.MoemoepointLog, p AdjustParams) bool {
+	return existing.UserID == p.UserID &&
+		existing.Delta == p.Delta &&
+		existing.Reason == p.Reason &&
+		existing.Ref == p.Ref &&
+		existing.SourceApp == p.SourceApp &&
+		existing.ActorUserID == p.ActorUserID &&
+		existing.Note == p.Note
 }
 
 func mapUserErr(err error) error {

@@ -51,6 +51,9 @@ func (h *AdminHandler) GetUser(c fiber.Ctx) error {
 	user, err := h.adminService.GetUser(c.Context(), uuid)
 	if err != nil {
 		if appErr, ok := err.(*errors.AppError); ok {
+			if appErr.Code == errors.ErrForbidden {
+				return response.Forbidden(c, appErr.Code)
+			}
 			return response.NotFound(c, appErr.Code)
 		}
 		return response.InternalError(c, errors.ErrOperationFailed)
@@ -112,6 +115,9 @@ func (h *AdminHandler) BanUser(c fiber.Ctx) error {
 
 	if err := h.adminService.BanUser(c.Context(), uuid); err != nil {
 		if appErr, ok := err.(*errors.AppError); ok {
+			if appErr.Code == errors.ErrForbidden {
+				return response.Forbidden(c, appErr.Code)
+			}
 			return response.NotFound(c, appErr.Code)
 		}
 		return response.InternalError(c, errors.ErrOperationFailed)
@@ -129,6 +135,9 @@ func (h *AdminHandler) UnbanUser(c fiber.Ctx) error {
 
 	if err := h.adminService.UnbanUser(c.Context(), uuid); err != nil {
 		if appErr, ok := err.(*errors.AppError); ok {
+			if appErr.Code == errors.ErrForbidden {
+				return response.Forbidden(c, appErr.Code)
+			}
 			return response.NotFound(c, appErr.Code)
 		}
 		return response.InternalError(c, errors.ErrOperationFailed)
@@ -147,6 +156,9 @@ func (h *AdminHandler) AnonymizeUser(c fiber.Ctx) error {
 
 	if err := h.adminService.AnonymizeUser(c.Context(), uuid); err != nil {
 		if appErr, ok := err.(*errors.AppError); ok {
+			if appErr.Code == errors.ErrForbidden {
+				return response.Forbidden(c, appErr.Code)
+			}
 			return response.NotFound(c, appErr.Code)
 		}
 		return response.InternalError(c, errors.ErrOperationFailed)
@@ -164,6 +176,9 @@ func (h *AdminHandler) DeleteUserSessions(c fiber.Ctx) error {
 
 	if err := h.adminService.DeleteUserSessions(c.Context(), uuid); err != nil {
 		if appErr, ok := err.(*errors.AppError); ok {
+			if appErr.Code == errors.ErrForbidden {
+				return response.Forbidden(c, appErr.Code)
+			}
 			return response.NotFound(c, appErr.Code)
 		}
 		return response.InternalError(c, errors.ErrOperationFailed)

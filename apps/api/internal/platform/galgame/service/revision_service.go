@@ -444,21 +444,31 @@ func (s *GalgameService) MergePR(ctx context.Context, userID, galgameID, prID in
 			return err
 		}
 
-		// Update PR with completion info
-		now := galgame.Updated // reuse as approx time
+		// Update PR with completion info. completed_time = the actual merge
+		// time (NOW()), like DeclinePR — not the galgame's stale last-modified
+		// timestamp.
 		if err := tx.Model(&model.GalgamePR{}).Where("id = ?", prID).Updates(map[string]any{
 			"completed_by":   userID,
-			"completed_time": now,
+			"completed_time": gorm.Expr("NOW()"),
 			"revision_id":    rev.ID,
 		}).Error; err != nil {
 			return err
 		}
 
-		// Ensure PR author is a contributor
+		// Ensure PR author is a contributor. Propagate the Count and Create
+		// errors (previously both were swallowed, so a failed insert silently
+		// dropped the contributor row — and the table has no unique index to
+		// fall back on).
 		var count int64
-		tx.Model(&model.GalgameContributor{}).Where("galgame_id = ? AND user_id = ?", pr.GalgameID, pr.UserID).Count(&count)
+		if err := tx.Model(&model.GalgameContributor{}).
+			Where("galgame_id = ? AND user_id = ?", pr.GalgameID, pr.UserID).
+			Count(&count).Error; err != nil {
+			return err
+		}
 		if count == 0 {
-			tx.Create(&model.GalgameContributor{GalgameID: pr.GalgameID, UserID: pr.UserID})
+			if err := tx.Create(&model.GalgameContributor{GalgameID: pr.GalgameID, UserID: pr.UserID}).Error; err != nil {
+				return err
+			}
 		}
 
 		return nil

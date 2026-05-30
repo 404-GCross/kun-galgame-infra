@@ -162,15 +162,18 @@ func (h *AdminHandler) BanGalgamesByUser(c fiber.Ctx) error {
 		body.Reason = "批量封禁（垃圾内容清理）"
 	}
 
-	ids, err := h.adminSvc.BanGalgamesByUser(c.Context(), int(adminUserID), targetUserID, body.Reason)
+	banned, failed, err := h.adminSvc.BanGalgamesByUser(c.Context(), int(adminUserID), targetUserID, body.Reason)
 	if err != nil {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
 
 	if h.searchHook != nil {
-		for _, id := range ids {
+		for _, id := range banned {
 			h.searchHook.Galgame(id)
 		}
 	}
-	return response.Success(c, fiber.Map{"banned_count": len(ids), "ids": ids})
+	return response.Success(c, fiber.Map{
+		"banned_count": len(banned), "ids": banned,
+		"failed_count": len(failed), "failed_ids": failed,
+	})
 }

@@ -176,7 +176,7 @@ func (s *AdminService) UpdateStatus(ctx context.Context, adminUserID, gid, newSt
 // Returns the ids actually banned (for the caller to re-sync search). Only
 // status 0 (published) + 3 (pending) are targeted; already declined/banned
 // galgame are left as-is.
-func (s *AdminService) BanGalgamesByUser(ctx context.Context, adminUserID, targetUserID int, reason string) ([]int, error) {
+func (s *AdminService) BanGalgamesByUser(ctx context.Context, adminUserID, targetUserID int, reason string) (banned []int, failed []int, err error) {
 	var ids []int
 	if err := s.galgameRepo.DB().WithContext(ctx).
 		Model(&model.Galgame{}).
@@ -184,18 +184,20 @@ func (s *AdminService) BanGalgamesByUser(ctx context.Context, adminUserID, targe
 			model.GalgameStatusPublished, model.GalgameStatusPending,
 		}).
 		Pluck("id", &ids).Error; err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	banned := make([]int, 0, len(ids))
+	banned = make([]int, 0, len(ids))
 	for _, id := range ids {
-		if err := s.UpdateStatus(ctx, adminUserID, id, model.GalgameStatusBanned, reason); err != nil {
+		if e := s.UpdateStatus(ctx, adminUserID, id, model.GalgameStatusBanned, reason); e != nil {
 			// Keep going on per-item failure (e.g. a concurrent status
-			// change) — partial cleanup beats aborting the whole batch.
-			slog.Warn("ban galgames by user: item failed", "gid", id, "target_user", targetUserID, "err", err)
+			// change) — partial cleanup beats aborting the whole batch — but
+			// return the failed ids so the caller can surface/retry them.
+			slog.Warn("ban galgames by user: item failed", "gid", id, "target_user", targetUserID, "err", e)
+			failed = append(failed, id)
 			continue
 		}
 		banned = append(banned, id)
 	}
-	return banned, nil
+	return banned, failed, nil
 }

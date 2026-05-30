@@ -411,6 +411,15 @@ func (s *AuthService) RefreshToken(ctx context.Context, refreshToken string) (*d
 		return nil, errors.NewWithCode(errors.ErrAuthInvalidToken)
 	}
 
+	// /auth/refresh is the FIRST-PARTY (admin-web httpOnly-cookie) refresh path
+	// only. An OAuth-client-flow session (ClientID != "") MUST refresh via the
+	// client-bound /oauth/token refresh grant (RefreshWithClient), which
+	// enforces the client secret and preserves scope + site_id; accepting it
+	// here would re-issue tokens dropping that binding and scope.
+	if session.ClientID != "" {
+		return nil, errors.NewWithCode(errors.ErrAuthInvalidToken)
+	}
+
 	// Check if session is expired
 	if session.IsExpired() {
 		_ = s.sessionRepo.Delete(ctx, session.ID)
@@ -542,6 +551,12 @@ func (s *AuthService) ResetPassword(ctx context.Context, token, newPassword stri
 	user, err := s.userRepo.FindByID(ctx, reset.UserID)
 	if err != nil {
 		return errors.NewWithCode(errors.ErrAuthUserNotFound)
+	}
+
+	// Don't reset the password of a banned/anonymized account (terminal state;
+	// consistent with the other auth paths that gate on IsBanned).
+	if user.IsBanned() {
+		return errors.NewWithCode(errors.ErrAuthUserBanned)
 	}
 
 	// Consume the token FIRST (atomic single-use claim). If a later step
@@ -761,8 +776,10 @@ func (s *AuthService) ChangeEmail(ctx context.Context, userUUID, code, newEmail 
 		return errors.NewWithCode(errors.ErrAuthCodeInvalid)
 	}
 
-	// Verify code and new email match
-	if data.Code != code || !strings.EqualFold(data.NewEmail, newEmail) {
+	// Verify code (constant-time, like the register/email-verify path) and
+	// new-email match.
+	if subtle.ConstantTimeCompare([]byte(data.Code), []byte(code)) != 1 ||
+		!strings.EqualFold(data.NewEmail, newEmail) {
 		return errors.NewWithCode(errors.ErrAuthCodeInvalid)
 	}
 

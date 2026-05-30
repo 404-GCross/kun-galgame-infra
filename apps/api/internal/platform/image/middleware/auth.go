@@ -3,7 +3,6 @@
 package middleware
 
 import (
-	"crypto/subtle"
 	"encoding/base64"
 	stderrors "errors"
 	"slices"
@@ -120,7 +119,7 @@ func authenticateBasic(c fiber.Ctx, repo *siteRepo.OAuthClientRepository, authHe
 		return nil, errBadClient
 	}
 
-	if subtle.ConstantTimeCompare([]byte(client.Secret), []byte(secret)) != 1 {
+	if !client.VerifySecret(secret) {
 		return nil, errBadSecret
 	}
 

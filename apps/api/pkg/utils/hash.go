@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"crypto/subtle"
 	"encoding/hex"
 	"strings"
 
@@ -57,15 +58,8 @@ func VerifyMoyuPassword(password, stored string) bool {
 	// Reproduce the same argon2id computation as @noble/hashes
 	computed := stdArgon2.IDKey([]byte(password), salt, 2, 8192, 3, uint32(len(expectedHash)))
 
-	if len(computed) != len(expectedHash) {
-		return false
-	}
-	// Constant-time comparison
-	match := true
-	for i := range computed {
-		if computed[i] != expectedHash[i] {
-			match = false
-		}
-	}
-	return match
+	// Constant-time comparison (crypto/subtle, not a hand-rolled loop the
+	// compiler could short-circuit). ConstantTimeCompare also returns 0 on a
+	// length mismatch, so no separate length check is needed.
+	return subtle.ConstantTimeCompare(computed, expectedHash) == 1
 }
