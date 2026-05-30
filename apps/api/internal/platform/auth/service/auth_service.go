@@ -496,6 +496,14 @@ func (s *AuthService) ForgotPassword(ctx context.Context, email string) error {
 		return nil
 	}
 
+	// Don't issue a reset token / email to a banned or anonymized account:
+	// ResetPassword refuses them at consume time anyway, so the email is dead
+	// weight, and returning silently here makes a banned account behave like an
+	// unknown one (no "this account exists but is banned" oracle).
+	if user.IsBanned() {
+		return nil
+	}
+
 	if s.passwordResetRepo == nil || s.mailer == nil {
 		return fmt.Errorf("password reset not configured")
 	}

@@ -32,8 +32,11 @@ const totalPages = computed(() => Math.max(1, Math.ceil(total.value / limit)))
 const onReview = async (hash: string, status: string, reason?: string) => {
   const res = await api.patch(`/admin/image/${hash}/review`, { status, reason })
   if (res.code === 0) {
+    useKunMessage('审核状态已更新', 'success')
     await refreshList()
     await refreshStats()
+  } else {
+    useKunMessage(res.message || '操作失败', 'error')
   }
 }
 
@@ -56,8 +59,11 @@ const confirmDelete = async () => {
       `/admin/image/${delHash.value}${delForce.value ? '?force=true' : ''}`
     )
     if (res.code === 0) {
+      useKunMessage('图片已删除', 'success')
       await refreshList()
       await refreshStats()
+    } else {
+      useKunMessage(res.message || '删除失败', 'error')
     }
   } finally {
     delLoading.value = false

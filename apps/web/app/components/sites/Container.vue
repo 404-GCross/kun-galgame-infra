@@ -24,7 +24,10 @@ const handleUpdated = () => {
 const handleDelete = async (id: number) => {
   const response = await api.delete(`/sites/${id}`)
   if (response.code === 0) {
+    useKunMessage('站点已删除', 'success')
     refresh()
+  } else {
+    useKunMessage(response.message || '删除失败', 'error')
   }
 }
 </script>

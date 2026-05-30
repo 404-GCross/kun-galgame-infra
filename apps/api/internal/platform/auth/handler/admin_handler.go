@@ -81,8 +81,11 @@ func (h *AdminHandler) UpdateUser(c fiber.Ctx) error {
 	user, err := h.adminService.UpdateUser(c.Context(), uuid, &req)
 	if err != nil {
 		if appErr, ok := err.(*errors.AppError); ok {
-			// Not-found → 404 (matches GetUser/BanUser/…); name/email
-			// conflicts stay 400.
+			// Not-found → 404 (matches GetUser/BanUser/…); banning a peer
+			// admin → 403 (matches BanUser); name/email conflicts stay 400.
+			if appErr.Code == errors.ErrForbidden {
+				return response.Forbidden(c, appErr.Code)
+			}
 			if appErr.Code == errors.ErrAuthUserNotFound {
 				return response.NotFound(c, appErr.Code)
 			}

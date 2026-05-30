@@ -27,6 +27,11 @@
 **部署后需跑一次(可先 `-dry-run`):**
 - `go run ./cmd/migrate-hash-client-secrets` —— 把现存明文 client secret 哈希(幂等、非破坏:下游沿用现有明文仍可验证)。
 
+**二轮核查补修(2026-05-30,据 `kungal-docs/audit/claude.1.md` 指出的残留):**
+- **F001 残留**:`AdminService.UpdateUser` 之前用 `FindByUUID` 且直接写 `req.Status`,admin 可借这个通用编辑接口给同级 admin 设 `Status=1`,**绕过** Ban/Anonymize/DeleteSessions 上的 `adminProtected` 闸(可逆封禁)。已改:载入角色(`FindByUUIDWithRoles`)+ 当 `req.Status==1 && 目标为 admin && 原本未封` 时返回 `ErrForbidden`,handler 映射 403(与 BanUser 一致);非封禁编辑与解封不受影响。
+- **F037 残留**:`ResetPassword` 已挡 banned(安全边界在),但 `ForgotPassword` 仍会给 banned/匿名账号签发重置 token 并发邮件。已改:`ForgotPassword` 对 `IsBanned()` 静默返回(邮件无意义 + 不泄露"该账号存在但被封"的 oracle)。
+- 仍按取舍/缓解保留(均 LOW):**F045**(MergePR/Revert 重放快照 tag/official/engine/series id 未校验存在性,NO_CLAIM——与"已删除 #ID"渲染、无 FK 的现有设计一致,id 来自先前已校验快照)、**F046 残留**(运行期 PR/revision status 无对账)、**F076**、**F087**。
+
 > 下方逐条保留原始核实记录与最小修法;每条的修复状态见上方汇总(按 finding ID 对照)。
 
 ---

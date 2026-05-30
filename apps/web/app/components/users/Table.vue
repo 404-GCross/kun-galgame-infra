@@ -18,6 +18,12 @@ const cdnBase = useRuntimeConfig().public.imageCdnBase as string
 const avatarSrc = (user: User) =>
   resolveAvatarUrl(user, { cdnBase, variant: '256' }, '')
 
+// Destructive ops (ban / anonymize / force-logout) are refused server-side on
+// admins (adminProtected) — there's no superadmin tier, admin is the top. Hide
+// those actions for admin targets so we don't offer buttons that always 403.
+// Unban / moemoepoint / avatar stay available (server allows them on admins).
+const isAdmin = (user: User) => !!user.roles?.includes('admin')
+
 const _ = props // keep TS happy if `props` is never read elsewhere
 </script>
 
@@ -106,9 +112,10 @@ const _ = props // keep TS happy if `props` is never read elsewhere
               </template>
               <div class="w-44 py-1">
                 <!-- Anonymized users have status=1 too, so gate ban/unban on
-                     !is_anonymized; anonymized is a terminal state. -->
+                     !is_anonymized; anonymized is a terminal state. Ban is also
+                     hidden for admins (server refuses it). -->
                 <button
-                  v-if="user.status === 0 && !user.is_anonymized"
+                  v-if="user.status === 0 && !user.is_anonymized && !isAdmin(user)"
                   class="flex w-full items-center gap-2 px-3 py-2 text-sm text-danger hover:bg-danger-50"
                   @click="emit('ban', user.uuid)"
                 >
@@ -125,9 +132,9 @@ const _ = props // keep TS happy if `props` is never read elsewhere
                 </button>
 
                 <!-- Anonymize: available unless already anonymized (terminal,
-                     irreversible PII scrub). -->
+                     irreversible PII scrub) or an admin (server refuses it). -->
                 <button
-                  v-if="!user.is_anonymized"
+                  v-if="!user.is_anonymized && !isAdmin(user)"
                   class="flex w-full items-center gap-2 px-3 py-2 text-sm text-danger hover:bg-danger-50"
                   @click="emit('anonymize', { uuid: user.uuid, name: user.name })"
                 >
@@ -152,6 +159,7 @@ const _ = props // keep TS happy if `props` is never read elsewhere
                   上传头像
                 </button>
                 <button
+                  v-if="!isAdmin(user)"
                   class="flex w-full items-center gap-2 px-3 py-2 text-sm text-default-500 hover:bg-default-100 hover:text-foreground"
                   @click="emit('deleteSessions', user.uuid)"
                 >
@@ -164,6 +172,12 @@ const _ = props // keep TS happy if `props` is never read elsewhere
                   class="text-default-400 px-3 py-2 text-xs"
                 >
                   已注销 · 不可恢复
+                </p>
+                <p
+                  v-else-if="isAdmin(user)"
+                  class="text-default-400 px-3 py-2 text-xs"
+                >
+                  管理员 · 受保护操作已禁用
                 </p>
               </div>
             </KunPopover>

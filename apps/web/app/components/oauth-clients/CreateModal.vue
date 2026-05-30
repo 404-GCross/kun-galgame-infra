@@ -141,7 +141,7 @@ const handleSubmit = async () => {
       />
 
       <div>
-        <label class="mb-1 block text-sm font-medium text-default-500">回调地址</label>
+        <span class="mb-1 block text-sm font-medium text-default-500">回调地址</span>
         <div class="space-y-2">
           <div v-for="(_, index) in redirectUris" :key="index" class="flex gap-2">
             <KunInput
@@ -176,10 +176,10 @@ const handleSubmit = async () => {
       </div>
 
       <div>
-        <label class="mb-1 block text-sm font-medium text-default-500">
+        <span class="mb-1 block text-sm font-medium text-default-500">
           授权类型 (grants)
           <span class="text-xs text-default-400">— refresh_token 必须勾选，否则 15 分钟后用户会被强制重新登录</span>
-        </label>
+        </span>
         <div class="flex flex-wrap gap-2">
           <KunCheckBox
             v-for="g in ALL_GRANTS"
@@ -194,10 +194,10 @@ const handleSubmit = async () => {
       </div>
 
       <div>
-        <label class="mb-1 block text-sm font-medium text-default-500">
+        <span class="mb-1 block text-sm font-medium text-default-500">
           允许的 scope (allowed_scopes)
           <span class="text-xs text-default-400">— image:upload 这类敏感 scope 必须显式勾选</span>
-        </label>
+        </span>
         <div class="flex flex-wrap gap-2">
           <KunCheckBox
             v-for="s in KNOWN_SCOPES"
@@ -212,10 +212,10 @@ const handleSubmit = async () => {
       </div>
 
       <div>
-        <label class="mb-1 block text-sm font-medium text-default-500">
+        <span class="mb-1 block text-sm font-medium text-default-500">
           refresh_token 有效期（天）
           <span class="text-xs text-default-400">— 默认 90 天；用户登录后无感续期的最长窗口</span>
-        </label>
+        </span>
         <KunInput
           :model-value="refreshTokenTtlDays"
           type="number"

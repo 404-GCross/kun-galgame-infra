@@ -125,11 +125,20 @@ func (s *AdminService) GetUser(ctx context.Context, uuid string) (*dto.UserDetai
 
 // UpdateUser updates a user
 func (s *AdminService) UpdateUser(ctx context.Context, uuid string, req *dto.UpdateUserRequest) (*model.User, error) {
-	user, err := s.userRepo.FindByUUID(ctx, uuid)
+	user, err := s.userRepo.FindByUUIDWithRoles(ctx, uuid)
 	if err != nil {
 		return nil, errors.NewWithCode(errors.ErrAuthUserNotFound)
 	}
 	wasBanned := user.IsBanned()
+
+	// Banning an admin through this generic edit path carries the same
+	// destructive force as BanUser, so gate it identically — otherwise
+	// UpdateUser is a bypass of the adminProtected check (a rogue admin could
+	// lock out a peer admin via Status=1). Non-ban edits and unbanning a
+	// (somehow) banned admin stay allowed.
+	if req.Status != nil && *req.Status == 1 && !wasBanned && adminProtected(user) {
+		return nil, errors.NewWithCode(errors.ErrForbidden)
+	}
 
 	// Update fields
 	if req.Name != nil {

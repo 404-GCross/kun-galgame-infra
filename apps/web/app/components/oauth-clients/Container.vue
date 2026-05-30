@@ -30,7 +30,10 @@ const handleUpdated = () => {
 const handleDelete = async (clientId: string) => {
   const response = await api.delete(`/oauth/clients/${clientId}`)
   if (response.code === 0) {
+    useKunMessage('客户端已删除', 'success')
     refreshClients()
+  } else {
+    useKunMessage(response.message || '删除失败', 'error')
   }
 }
 </script>

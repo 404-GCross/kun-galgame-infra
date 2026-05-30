@@ -47,7 +47,14 @@ const confirmBan = async () => {
   banLoading.value = true
   try {
     const response = await api.post(`/admin/users/${banTarget.value.uuid}/ban`)
-    if (response.code === 0) refresh()
+    if (response.code === 0) {
+      useKunMessage('用户已封禁', 'success')
+      refresh()
+    } else {
+      // Surface failures instead of silently closing the modal — notably the
+      // 403 when the target is a fellow admin (server-side adminProtected).
+      useKunMessage(response.message || '封禁失败', 'error')
+    }
   } finally {
     banLoading.value = false
     banOpen.value = false
@@ -56,7 +63,12 @@ const confirmBan = async () => {
 
 const handleUnban = async (uuid: string) => {
   const response = await api.post(`/admin/users/${uuid}/unban`)
-  if (response.code === 0) refresh()
+  if (response.code === 0) {
+    useKunMessage('用户已解封', 'success')
+    refresh()
+  } else {
+    useKunMessage(response.message || '解封失败', 'error')
+  }
 }
 
 // Anonymize is irreversible (scrubs PII) — gate behind its own confirm with
@@ -77,7 +89,12 @@ const confirmAnonymize = async () => {
     const response = await api.post(
       `/admin/users/${anonymizeTarget.value.uuid}/anonymize`
     )
-    if (response.code === 0) refresh()
+    if (response.code === 0) {
+      useKunMessage('用户已注销并匿名化', 'success')
+      refresh()
+    } else {
+      useKunMessage(response.message || '注销失败', 'error')
+    }
   } finally {
     anonymizeLoading.value = false
     anonymizeOpen.value = false
@@ -86,7 +103,12 @@ const confirmAnonymize = async () => {
 
 const handleDeleteSessions = async (uuid: string) => {
   const response = await api.delete(`/admin/users/${uuid}/sessions`)
-  if (response.code === 0) refresh()
+  if (response.code === 0) {
+    useKunMessage('用户会话已清除', 'success')
+    refresh()
+  } else {
+    useKunMessage(response.message || '清除会话失败', 'error')
+  }
 }
 
 const avatarUploadOpen = ref(false)

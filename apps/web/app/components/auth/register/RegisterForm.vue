@@ -78,7 +78,7 @@ onMounted(() => {
 //     that would let an attacker register a visually-identical name.
 // If this rule drifts from backend, the backend wins — frontend
 // validation is purely UX, never a security boundary.
-const NAME_REGEX = /^[\p{L}\p{N}!~_@#$%^&*()+=\-]{1,17}$/u
+const NAME_REGEX = /^[\p{L}\p{N}!~_@#$%^&*()+=-]{1,17}$/u
 const INVISIBLE_NAME_CODEPOINTS = [
   0x0009, 0x0020, 0x00a0, 0x00ad, 0x034f, 0x061c,
   0x115f, 0x1160, 0x17b4, 0x17b5, 0x180e,
