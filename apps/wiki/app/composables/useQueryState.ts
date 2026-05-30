@@ -37,12 +37,13 @@ export const useQueryState = <T extends string | number>(
   const state = ref(parseFromUrl(route.query[key])) as Ref<WidenQueryState<T>>
 
   watch(state, (value) => {
-    const next = { ...route.query }
-    if (value === defaultValue || value === '') {
-      delete next[key]
-    } else {
-      next[key] = String(value)
-    }
+    // Omit the key via rest-destructure rather than `delete next[key]`
+    // (dynamic delete is lint-flagged and deopts the object shape).
+    const { [key]: _omit, ...rest } = route.query
+    const next =
+      value === defaultValue || value === ''
+        ? rest
+        : { ...rest, [key]: String(value) }
     router.replace({ query: next })
   })
 

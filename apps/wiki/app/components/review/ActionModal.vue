@@ -86,10 +86,10 @@ const submit = async () => {
       </p>
 
       <div v-if="action.needs_reason" class="space-y-1">
-        <label class="text-foreground text-sm font-medium">
+        <span class="text-foreground text-sm font-medium">
           理由
           <span class="text-danger">*</span>
-        </label>
+        </span>
         <KunTextarea
           v-model="reason"
           :rows="4"
@@ -98,7 +98,7 @@ const submit = async () => {
       </div>
 
       <div v-if="!action.needs_reason" class="space-y-1">
-        <label class="text-default-500 text-sm">备注（可选）</label>
+        <span class="text-default-500 text-sm">备注（可选）</span>
         <KunTextarea v-model="reason" :rows="2" placeholder="可选审核备注" />
       </div>
 

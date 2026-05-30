@@ -122,9 +122,9 @@ const submit = async () => {
       <KunTextarea v-model="form.description" label="描述" :rows="3" />
 
       <div>
-        <label class="text-default-600 mb-2 block text-sm">
+        <span class="text-default-600 mb-2 block text-sm">
           包含的 galgame ({{ pickedGalgames.length }})
-        </label>
+        </span>
 
         <div class="mb-2 flex flex-wrap gap-2">
           <span
