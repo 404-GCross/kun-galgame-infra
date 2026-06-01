@@ -1,5 +1,5 @@
 // Display labels for the unified moemoepoint ledger `reason` enum
-// (OAuth-owned; see kun-oauth-admin/docs/integration/oauth/06-moemoepoint.md §2).
+// (OAuth-owned; see kun-galgame-infra/docs/integration/oauth/06-moemoepoint.md §2).
 export const MOEMOEPOINT_REASON_LABEL: Record<string, string> = {
   admin_grant: '管理员发放',
   admin_deduct: '管理员扣除',

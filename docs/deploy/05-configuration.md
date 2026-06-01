@@ -13,13 +13,13 @@
 
 > **JWT 密钥必须三仓一致**:hub oauth 用它签发 access_token,kungal/moyu 用同一密钥验签下游令牌。不一致 → 下游一律 401。
 
-## hub · oauth(`kun-oauth-admin/docker/oauth.env`)
+## hub · oauth(`kun-galgame-infra/docker/oauth.env`)
 
 | 变量 | 值 | 说明 |
 |---|---|---|
 | `KUN_FIBER_SERVER_HOST` | `0.0.0.0` | **容器内必须 0.0.0.0**,否则外部连不进 |
 | `KUN_FIBER_SERVER_PORT` | `9277` | |
-| `KUN_PG_HOST` / `_PASSWORD` / `_DATABASE` | `postgres` / `191007` / `kun_oauth_admin` | `config.validate()` 要求密码非空 |
+| `KUN_PG_HOST` / `_PASSWORD` / `_DATABASE` | `postgres` / `191007` / `kun_galgame_infra` | `config.validate()` 要求密码非空 |
 | `REDIS_ENABLED` / `REDIS_HOST` | `true` / `redis` | |
 | `JWT_SECRET` | (共享) | 必填 |
 | `KUN_IMAGE_S3_*` | minio 一套 | oauth 内嵌图床 admin 端点要连 S3 + images 库 |

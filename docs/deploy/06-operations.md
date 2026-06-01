@@ -4,7 +4,7 @@
 
 ```bash
 # 全生态状态
-docker ps --format '{{.Names}}\t{{.Status}}' | grep -E 'kun-oauth-admin-|moyu-|kungal-' | sort
+docker ps --format '{{.Names}}\t{{.Status}}' | grep -E 'kun-galgame-infra-|moyu-|kungal-' | sort
 
 # 端点探活
 for u in 15005/healthz 15006/healthz 15007/healthz \
@@ -34,31 +34,31 @@ docker compose build oauth && docker compose up -d oauth
 当前固定在 `postgres:16-alpine`。要升大版本,二选一:
 ```bash
 # 方案 A:dump → 换 tag → restore(最稳)
-docker exec kun-oauth-admin-postgres-1 pg_dumpall -U postgres > all.sql
-docker compose down postgres && docker volume rm kun-oauth-admin_pg
+docker exec kun-galgame-infra-postgres-1 pg_dumpall -U postgres > all.sql
+docker compose down postgres && docker volume rm kun-galgame-infra_pg
 # 把 compose 改成 postgres:18-alpine 后:
 docker compose up -d postgres   # 等 healthy
-cat all.sql | docker exec -i kun-oauth-admin-postgres-1 psql -U postgres
+cat all.sql | docker exec -i kun-galgame-infra-postgres-1 psql -U postgres
 # 方案 B:pgautoupgrade 镜像原地升级(进阶,先备份)
 ```
 Redis(`redis:8-alpine`)/MinIO(已锁 RELEASE)向前兼容旧数据,直接换 tag 重建即可。
 
 ## 备份 / 恢复
 
-数据全在 hub 的 4 个命名卷:`kun-oauth-admin_{pg,redis,minio,meili}`。
+数据全在 hub 的 4 个命名卷:`kun-galgame-infra_{pg,redis,minio,meili}`。
 
 ```bash
 # Postgres 逻辑备份(所有库)
-docker exec kun-oauth-admin-postgres-1 pg_dumpall -U postgres > all-$(date +%F).sql
+docker exec kun-galgame-infra-postgres-1 pg_dumpall -U postgres > all-$(date +%F).sql
 # 单库
-docker exec kun-oauth-admin-postgres-1 pg_dump -U postgres kungalgame > kungalgame-$(date +%F).sql
+docker exec kun-galgame-infra-postgres-1 pg_dump -U postgres kungalgame > kungalgame-$(date +%F).sql
 
 # 卷级备份(停服更安全)
-docker run --rm -v kun-oauth-admin_pg:/data -v "$PWD:/b" alpine \
+docker run --rm -v kun-galgame-infra_pg:/data -v "$PWD:/b" alpine \
   tar czf /b/pg-vol-$(date +%F).tgz -C /data .
 
 # MinIO 对象:挂卷 tar,或用 mc mirror 到异地
-docker run --rm -v kun-oauth-admin_minio:/data -v "$PWD:/b" alpine \
+docker run --rm -v kun-galgame-infra_minio:/data -v "$PWD:/b" alpine \
   tar czf /b/minio-$(date +%F).tgz -C /data .
 ```
 
@@ -73,8 +73,8 @@ docker run --rm -v kun-oauth-admin_minio:/data -v "$PWD:/b" alpine \
 docker compose run --rm migrate              # hub oauth schema
 docker compose run --rm migrate-galgame      # hub wiki schema
 # 其它工具用 build-arg 出镜像后 run:
-docker build -f docker/go.Dockerfile --build-arg CMD=sync-vndb -t kun-oauth-admin/sync-vndb .
-docker run --rm --network kun-oauth-admin_default --env-file docker/galgame.env kun-oauth-admin/sync-vndb
+docker build -f docker/go.Dockerfile --build-arg CMD=sync-vndb -t kun-galgame-infra/sync-vndb .
+docker run --rm --network kun-galgame-infra_default --env-file docker/galgame.env kun-galgame-infra/sync-vndb
 ```
 跨仓数据迁移的**顺序**见 [03-bootstrap.md](./03-bootstrap.md) B 节——`migrate-users` 是分水岭。
 
@@ -90,7 +90,7 @@ hub `oauth` 进程内置 job 调度器(启动日志可见 `jobs: scheduler start
 ## 资源 / 清理
 
 ```bash
-docker images --format '{{.Repository}}:{{.Tag}}\t{{.Size}}' | grep -E 'kun-oauth-admin/|moyu/|kungal/'
+docker images --format '{{.Repository}}:{{.Tag}}\t{{.Size}}' | grep -E 'kun-galgame-infra/|moyu/|kungal/'
 docker system df            # 看占用
 docker image prune          # 清悬空镜像
 ```

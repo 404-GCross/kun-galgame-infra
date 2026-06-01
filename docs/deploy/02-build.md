@@ -2,7 +2,7 @@
 
 所有镜像的**构建 context 都是各自仓库根**(前端要把 `packages/ui` 这个 Nuxt layer 一起带进去)。
 
-## Hub(kun-oauth-admin)
+## Hub(kun-galgame-infra)
 
 Hub 有 3 个 Dockerfile,因为它的二进制分两类:
 
@@ -17,16 +17,16 @@ Hub 有 3 个 Dockerfile,因为它的二进制分两类:
 一键构建:
 
 ```bash
-cd kun-oauth-admin
+cd kun-galgame-infra
 docker compose build          # oauth image galgame web wiki + migrate jobs
 ```
 
 参数化单独构建(go/cgo 用 `CMD`,nuxt 用 `APP`):
 
 ```bash
-docker build -f docker/go.Dockerfile  --build-arg CMD=galgame -t kun-oauth-admin/galgame .
-docker build -f docker/cgo.Dockerfile --build-arg CMD=oauth   -t kun-oauth-admin/oauth .
-docker build -f docker/nuxt.Dockerfile --build-arg APP=wiki   -t kun-oauth-admin/wiki .
+docker build -f docker/go.Dockerfile  --build-arg CMD=galgame -t kun-galgame-infra/galgame .
+docker build -f docker/cgo.Dockerfile --build-arg CMD=oauth   -t kun-galgame-infra/oauth .
+docker build -f docker/nuxt.Dockerfile --build-arg APP=wiki   -t kun-galgame-infra/wiki .
 ```
 
 ## moyu(kun-galgame-patch-next)

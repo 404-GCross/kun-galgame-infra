@@ -28,7 +28,7 @@
 
 | 数据库 | 用途 | 读写方 |
 |--------|------|--------|
-| `kun_oauth_admin` | OAuth 用户、角色、站点数据 | OAuth 服务读写，galgame service 只读 |
+| `kun_galgame_infra` | OAuth 用户、角色、站点数据 | OAuth 服务读写，galgame service 只读 |
 | `kun_galgame_wiki` | galgame 元数据 (15 张表) | galgame service 读写 |
 | kungal 主库 | 交互表 + topic + message + ... | kungal 后端读写 |
 | moyu 主库 | patch + moyu 特有数据 | moyu 后端读写 |

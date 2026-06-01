@@ -1,4 +1,4 @@
-# Docker deployment — kun-oauth-admin
+# Docker deployment — kun-galgame-infra
 
 This repo is the ecosystem **hub** (identity / image / galgame-wiki). Its
 compose file owns the shared backing services (Postgres / Redis / MinIO /
@@ -39,7 +39,7 @@ root `/healthz`):
 | oauth API | http://localhost:15005/healthz |
 | image API | http://localhost:15006/healthz |
 | galgame API | http://localhost:15007/healthz |
-| web (oauth-admin) | http://localhost:15008 |
+| web (admin) | http://localhost:15008 |
 | wiki (galgame-wiki) | http://localhost:15009 |
 | MinIO console | http://localhost:15003 |
 

@@ -4,7 +4,7 @@
 
 | 仓库 | 代号 | 角色 | apps |
 |---|---|---|---|
-| `kun-oauth-admin` | **hub / 枢纽** | 身份(OAuth)+ 图床 + galgame-wiki 的单一来源;**拥有共享基础设施** | api(多二进制)、web(oauth-admin)、wiki(galgame-wiki) |
+| `kun-galgame-infra` | **hub / 枢纽** | 身份(OAuth)+ 图床 + galgame-wiki 的单一来源;**拥有共享基础设施** | api(多二进制)、web(admin)、wiki(galgame-wiki) |
 | `kun-galgame-nuxt4` | **kungal** | 论坛站(Fiber API + Nuxt SSR) | api、web |
 | `kun-galgame-patch-next` | **moyu** | 补丁站(Fiber API + Nuxt SSR) | api、web |
 
@@ -16,7 +16,7 @@
             ┌─────────────────── 共享基础设施(hub compose 定义一次)───────────────────┐
             │   postgres:16    redis:7    minio(S3)    meilisearch(别名)             │
             └──────────────────────────────────────────────────────────────────────────┘
-                 ▲ 同一 docker 网络:kun-oauth-admin_default(所有容器都在上面)
+                 ▲ 同一 docker 网络:kun-galgame-infra_default(所有容器都在上面)
    ┌─────────────┼───────────────────────────┬───────────────────────────┐
    │ hub         │                 moyu       │                 kungal     │
    │  oauth   ───┤(身份/账本/图床admin/jobs)  api ──(OAuth/图床/wiki)     api ──(OAuth/wiki/图床/搜索)
@@ -42,7 +42,7 @@
 | hub oauth | 9277 | **15005** | `/healthz` |
 | hub image | 9278 | **15006** | `/healthz` |
 | hub galgame | 9280 | **15007** | `/healthz` |
-| hub web(oauth-admin) | 3000 | **15008** | `/`(302→`/auth/login`) |
+| hub web(admin) | 3000 | **15008** | `/`(302→`/auth/login`) |
 | hub wiki(galgame-wiki) | 3000 | **15009** | `/` |
 | hub postgres | 5432 | **15000** | `pg_isready` |
 | hub redis | 6379 | **15001** | `redis-cli ping` |
@@ -59,7 +59,7 @@
 
 | 库名 | 属主 | 由谁建 schema |
 |---|---|---|
-| `kun_oauth_admin` | hub oauth | `migrate`(hub) |
+| `kun_galgame_infra` | hub oauth | `migrate`(hub) |
 | `kun_galgame_wiki` | hub galgame | `migrate-galgame`(hub) |
 | `kun_images` | hub image | image 服务启动时 AutoMigrate |
 | `kungalgame` | kungal | dump 恢复 + kungal `migrate` + 跨仓迁移 |

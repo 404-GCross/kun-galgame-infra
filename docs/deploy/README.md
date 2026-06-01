@@ -19,7 +19,7 @@
 
 ## 30 秒速览
 
-- **三个仓库**:`kun-oauth-admin`(枢纽 / hub)、`kun-galgame-nuxt4`(kungal / 论坛)、`kun-galgame-patch-next`(moyu / 补丁站)。
+- **三个仓库**:`kun-galgame-infra`(枢纽 / hub)、`kun-galgame-nuxt4`(kungal / 论坛)、`kun-galgame-patch-next`(moyu / 补丁站)。
 - **枢纽拥有共享基础设施**:一套 Postgres(5 个库)、Redis、MinIO(S3)、Meilisearch。kungal/moyu 按服务名连过来。
 - **每仓 = 无状态 api + web 容器**;Go 服务多阶段编译,Nuxt 出自包含 `.output`。
 - **全部 host 端口在 `1xxxx` 段**,与本机 `air` 开发服务共存。
@@ -28,7 +28,7 @@
 ## 一条命令看全局
 
 ```bash
-docker ps --format '{{.Names}}\t{{.Status}}' | grep -E 'kun-oauth-admin-|moyu-|kungal-' | sort
+docker ps --format '{{.Names}}\t{{.Status}}' | grep -E 'kun-galgame-infra-|moyu-|kungal-' | sort
 ```
 
 > 文档里所有密钥、密码均为**测试值**(`191007` / `kun-docker-test-*` / `minioadmin`)。生产部署见 [05-configuration.md](./05-configuration.md) 的「密钥」一节,务必全部轮换。

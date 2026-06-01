@@ -47,8 +47,8 @@ server {
     ssl_certificate     /etc/letsencrypt/live/oauth.kungal.com/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/oauth.kungal.com/privkey.pem;
 
-    location /api/v1/ { proxy_pass http://kun-oauth-admin-oauth-1:9277; }
-    location /       { proxy_pass http://kun-oauth-admin-web-1:3000; }
+    location /api/v1/ { proxy_pass http://kun-galgame-infra-oauth-1:9277; }
+    location /       { proxy_pass http://kun-galgame-infra-web-1:3000; }
 }
 ```
 `edge-nginx/conf.d/moyu.conf`:
@@ -71,7 +71,7 @@ server {
 > Docker DNS 是动态的,`proxy_pass` 直接写容器名有时需用变量 + resolver 才能在目标重启后自动重解析:
 > ```nginx
 > resolver 127.0.0.11 valid=30s;
-> set $up http://kun-oauth-admin-web-1:3000; proxy_pass $up;
+> set $up http://kun-galgame-infra-web-1:3000; proxy_pass $up;
 > ```
 
 ## 10.3 部署(Nginx + certbot 自动续期)
@@ -97,7 +97,7 @@ services:
     # 每 12h 尝试续期
     entrypoint: sh -c 'trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot; sleep 12h & wait $${!}; done'
 networks:
-  default: { name: kun-oauth-admin_default, external: true }
+  default: { name: kun-galgame-infra_default, external: true }
 ```
 
 首次签发(webroot 验证,需 80 端口公网可达):

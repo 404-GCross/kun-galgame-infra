@@ -22,7 +22,7 @@
 
 ### A. galgame banner / cover / screenshot 主链路
 
-**oauth-admin (wiki) 是 galgame 图片的核心接入点。** 所有 galgame 图片的最终去向都是 image_service，但具体调用路径分两段：
+**galgame-infra 的 wiki 是 galgame 图片的核心接入点。** 所有 galgame 图片的最终去向都是 image_service，但具体调用路径分两段：
 
 #### A1. wiki 自身的 multipart 接入
 

@@ -85,7 +85,7 @@ func main() {
 }
 
 func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB, searchClient *searchInfra.Client) {
-	oauthDB := a.DB.DB() // kun_oauth_admin — read-only for user info
+	oauthDB := a.DB.DB() // kun_galgame_infra — read-only for user info
 	wiki := wikiDB.DB()  // kun_galgame_wiki — read-write
 
 	// Repositories

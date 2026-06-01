@@ -1,6 +1,6 @@
 #
 # Parametric build for the two Nuxt 4 frontends (Nitro node-server preset):
-#   APP=web   → apps/web  (oauth-admin)
+#   APP=web   → apps/web  (admin)
 #   APP=wiki  → apps/wiki (galgame-wiki)
 #
 # Build context MUST be the repo root: both apps `extends: ['@kun/ui']`, a

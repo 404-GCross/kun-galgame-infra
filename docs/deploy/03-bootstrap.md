@@ -12,31 +12,31 @@
 ### A.1 启动枢纽基础设施 + 建库
 
 ```bash
-cd kun-oauth-admin
+cd kun-galgame-infra
 docker compose build
 docker compose up -d postgres redis minio meili
 ```
 
 Postgres **首次**初始化时,`docker/initdb.d/01-create-databases.sh` 会一次性建好全部 5 个库
-(`kun_oauth_admin` 由 `POSTGRES_DB` 建,脚本再建 `kun_galgame_wiki`、`kun_images`、`kungalgame`、`kungalgame_patch`)。
+(`kun_galgame_infra` 由 `POSTGRES_DB` 建,脚本再建 `kun_galgame_wiki`、`kun_images`、`kungalgame`、`kungalgame_patch`)。
 
 > ⚠️ initdb 脚本**只在数据卷为空时运行一次**。若卷已存在(如本机重启后复用),需手动补建缺的库:
 > ```bash
-> docker exec kun-oauth-admin-postgres-1 psql -U postgres \
+> docker exec kun-galgame-infra-postgres-1 psql -U postgres \
 >   -c "CREATE DATABASE kungalgame" -c "CREATE DATABASE kungalgame_patch"
 > ```
 
 确认:
 ```bash
-docker exec kun-oauth-admin-postgres-1 psql -U postgres -tAc \
+docker exec kun-galgame-infra-postgres-1 psql -U postgres -tAc \
   "SELECT datname FROM pg_database WHERE datname NOT IN ('postgres','template0','template1') ORDER BY 1"
 ```
 
 ### A.2 建 schema(各仓 migrate job)
 
 ```bash
-cd kun-oauth-admin
-docker compose run --rm migrate            # kun_oauth_admin:表 + 站点/角色种子
+cd kun-galgame-infra
+docker compose run --rm migrate            # kun_galgame_infra:表 + 站点/角色种子
 docker compose run --rm migrate-galgame    # kun_galgame_wiki:表 + 约束
 ```
 
@@ -85,7 +85,7 @@ $K build && $K run --rm migrate && $K up -d api web
 
 注册方式二选一:
 1. **管理端 UI**:登录 hub web(`localhost:15008`,需先有 admin 账号)→ OAuth 客户端 → 新建,填 redirect_uri / scope / grants,**记下生成的 secret** 写进对应仓的 `*.env`。
-2. **直接入库**:向 `kun_oauth_admin.oauth_clients` 插入行(secret 要按 `sha256:<hex>` 哈希存,见 hub `cmd/migrate-hash-client-secrets` 与 `OAuthClient.HashOAuthClientSecret`)。
+2. **直接入库**:向 `kun_galgame_infra.oauth_clients` 插入行(secret 要按 `sha256:<hex>` 哈希存,见 hub `cmd/migrate-hash-client-secrets` 与 `OAuthClient.HashOAuthClientSecret`)。
 
 下游 `*.env` 里的 `OAUTH_CLIENT_SECRET` 必须等于注册时的明文 secret。
 
@@ -93,10 +93,10 @@ $K build && $K run --rm migrate && $K up -d api web
 
 Meili 索引由 `galgame` 启动时创建,但**空**。要让 wiki 搜索出结果,需把 Postgres 数据灌进去:
 ```bash
-cd kun-oauth-admin && docker compose run --rm \
+cd kun-galgame-infra && docker compose run --rm \
   -e __dummy=1 --entrypoint /app galgame  # 注:reindex 是独立 cmd,见下
-docker build -f docker/go.Dockerfile --build-arg CMD=reindex-search -t kun-oauth-admin/reindex .
-docker run --rm --network kun-oauth-admin_default --env-file docker/galgame.env kun-oauth-admin/reindex
+docker build -f docker/go.Dockerfile --build-arg CMD=reindex-search -t kun-galgame-infra/reindex .
+docker run --rm --network kun-galgame-infra_default --env-file docker/galgame.env kun-galgame-infra/reindex
 ```
 
 ---

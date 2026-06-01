@@ -82,7 +82,7 @@ OAuth JWT 当前 claims：
 }
 ```
 
-缺少 integer `user_id`。galgame service 每次写操作都要查 `kun_oauth_admin.users` 做 UUID → integer 转换。
+缺少 integer `user_id`。galgame service 每次写操作都要查 `kun_galgame_infra.users` 做 UUID → integer 转换。
 
 ### 方案
 

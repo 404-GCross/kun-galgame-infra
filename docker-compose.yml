@@ -1,4 +1,4 @@
-# kun-oauth-admin — the identity / image / galgame-wiki hub.
+# kun-galgame-infra — the identity / image / galgame-wiki hub.
 #
 # This repo OWNS the shared backing services (Postgres / Redis / MinIO /
 # Meilisearch) for the whole ecosystem; kungal + moyu connect to these.
@@ -12,7 +12,7 @@
 #   docker compose run --rm migrate           # oauth schema + seed
 #   docker compose run --rm migrate-galgame   # galgame wiki schema
 #   docker compose up -d oauth image galgame web wiki
-name: kun-oauth-admin
+name: kun-galgame-infra
 
 x-svc-health: &svc-health
   interval: 10s
@@ -27,13 +27,13 @@ services:
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: "191007"
-      POSTGRES_DB: kun_oauth_admin
+      POSTGRES_DB: kun_galgame_infra
     volumes:
       - pg:/var/lib/postgresql/data
       - ./docker/initdb.d:/docker-entrypoint-initdb.d:ro
     ports: ["15000:5432"]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d kun_oauth_admin"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d kun_galgame_infra"]
       interval: 5s
       timeout: 5s
       retries: 20
@@ -82,7 +82,7 @@ services:
       context: .
       dockerfile: docker/cgo.Dockerfile
       args: { CMD: oauth }
-    image: kun-oauth-admin/oauth
+    image: kun-galgame-infra/oauth
     env_file: [./docker/oauth.env]
     ports: ["15005:9277"]
     depends_on:
@@ -98,7 +98,7 @@ services:
       context: .
       dockerfile: docker/cgo.Dockerfile
       args: { CMD: image }
-    image: kun-oauth-admin/image
+    image: kun-galgame-infra/image
     env_file: [./docker/image.env]
     ports: ["15006:9278"]
     depends_on:
@@ -115,7 +115,7 @@ services:
       context: .
       dockerfile: docker/go.Dockerfile
       args: { CMD: galgame }
-    image: kun-oauth-admin/galgame
+    image: kun-galgame-infra/galgame
     env_file: [./docker/galgame.env]
     ports: ["15007:9280"]
     depends_on:
@@ -137,7 +137,7 @@ services:
         APP: web
         PUBLIC_API_BASE: http://localhost:15005/api/v1
         PUBLIC_IMAGE_CDN_BASE: http://localhost:15002/kun-images
-    image: kun-oauth-admin/web
+    image: kun-galgame-infra/web
     ports: ["15008:3000"]
     depends_on:
       oauth: { condition: service_started }
@@ -158,7 +158,7 @@ services:
         PUBLIC_OAUTH_CLIENT_ID: galgame-wiki-admin
         PUBLIC_OAUTH_REDIRECT_URI: http://localhost:15009/auth/callback
         PUBLIC_IMAGE_CDN_BASE: http://localhost:15002/kun-images
-    image: kun-oauth-admin/wiki
+    image: kun-galgame-infra/wiki
     ports: ["15009:3000"]
     depends_on:
       galgame: { condition: service_started }
@@ -176,7 +176,7 @@ services:
       context: .
       dockerfile: docker/go.Dockerfile
       args: { CMD: migrate }
-    image: kun-oauth-admin/migrate
+    image: kun-galgame-infra/migrate
     env_file: [./docker/oauth.env]
     profiles: ["jobs"]
     depends_on:
@@ -188,7 +188,7 @@ services:
       context: .
       dockerfile: docker/go.Dockerfile
       args: { CMD: migrate-galgame }
-    image: kun-oauth-admin/migrate-galgame
+    image: kun-galgame-infra/migrate-galgame
     env_file: [./docker/galgame.env]
     profiles: ["jobs"]
     depends_on:

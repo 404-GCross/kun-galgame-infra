@@ -100,7 +100,7 @@ require (
 ### 3.1 Monorepo 结构
 
 ```
-kun-oauth-admin/
+kun-galgame-infra/
 ├── apps/
 │   ├── api/          # Go Fiber 后端
 │   └── web/          # Nuxt 4 前端
@@ -179,7 +179,7 @@ internal/platform/auth/
 
 | 数据库 | 用途 | 连接信息 |
 |--------|------|----------|
-| `kun_oauth_admin` | Account Service | localhost:5432 |
+| `kun_galgame_infra` | Account Service | localhost:5432 |
 | `kungalgame` | kungal-nuxt 业务数据 | localhost:5432 |
 | `kungalgame_patch` | moyu-nextjs 业务数据 | localhost:5432 |
 
@@ -730,7 +730,7 @@ KUN_PG_HOST=localhost
 KUN_PG_PORT=5432
 KUN_PG_USER=postgres
 KUN_PG_PASSWORD=******
-KUN_PG_DATABASE=kun_oauth_admin
+KUN_PG_DATABASE=kun_galgame_infra
 KUN_PG_SSLMODE=disable
 KUN_PG_TIMEZONE=Asia/Shanghai
 

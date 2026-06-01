@@ -1,4 +1,4 @@
-// One row of the unified moemoepoint ledger (kun-oauth-admin
+// One row of the unified moemoepoint ledger (kun-galgame-infra
 // docs/integration/oauth/06-moemoepoint.md §1.2). The self-service / s2s
 // "reduced view" omits `note` and `actor_user_id` (admin-only), so those are
 // optional here and the same type also serves the admin full view.

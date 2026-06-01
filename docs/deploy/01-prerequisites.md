@@ -23,7 +23,7 @@
 
 ```
 website/
-├── kun-oauth-admin/        # hub
+├── kun-galgame-infra/        # hub
 ├── kun-galgame-nuxt4/      # kungal
 └── kun-galgame-patch-next/ # moyu
 ```

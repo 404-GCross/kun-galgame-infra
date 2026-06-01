@@ -1,5 +1,5 @@
 // Package jobs is the in-process job registry + scheduler for
-// kun-oauth-admin (design: docs/jobs/01-implementation-plan.md, option B,
+// kun-galgame-infra (design: docs/jobs/01-implementation-plan.md, option B,
 // pure docker-compose). It only handles genuinely periodic / on-demand
 // tasks (sync-vndb, image-gc, galgame-image-refping). One-shot
 // migrations, continuous workers and HTTP services do NOT belong here.

@@ -8,7 +8,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// UserReadonlyRepository provides read-only access to user data in kun_oauth_admin
+// UserReadonlyRepository provides read-only access to user data in kun_galgame_infra
 type UserReadonlyRepository struct {
 	db *gorm.DB
 }

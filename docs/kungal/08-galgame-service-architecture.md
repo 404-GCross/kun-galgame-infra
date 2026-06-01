@@ -13,7 +13,7 @@
 | user_id | 整数，全局一致（三库已同步），无需改 |
 | count 列 | 从 galgame 表移除，各站自维护 |
 | galgame_contributor | 归 galgame service（后续升级） |
-| 数据库 | 独立库 `kun_galgame_wiki`，同时只读连接 `kun_oauth_admin` 查用户信息 |
+| 数据库 | 独立库 `kun_galgame_wiki`，同时只读连接 `kun_galgame_infra` 查用户信息 |
 | S3 | 共享 bucket，galgame service 专属 |
 | moyu | 只读 galgame 元数据 |
 | API 认证 | 读操作公开，写操作需 OAuth Bearer Token |
@@ -26,7 +26,7 @@
 
 ```
 ┌─────────────────────┐
-│   kun_oauth_admin    │ ← OAuth 主库
+│   kun_galgame_infra    │ ← OAuth 主库
 │   (PostgreSQL)       │
 │                      │
 │   users              │ ← galgame service 只读连接
@@ -64,7 +64,7 @@
 ```go
 type App struct {
     WikiDB  *gorm.DB  // kun_galgame_wiki — 读写
-    OAuthDB *gorm.DB  // kun_oauth_admin  — 只读
+    OAuthDB *gorm.DB  // kun_galgame_infra  — 只读
 }
 
 // 查用户信息时用 OAuthDB
@@ -162,7 +162,7 @@ CREATE TABLE galgame_stats (
 
 - **读操作（GET）**：公开，无需认证
 - **写操作（POST/PUT/DELETE）**：需要 OAuth Bearer Token
-- galgame service 验证 JWT → 提取 `sub` (UUID) → 查 `kun_oauth_admin.users` 获取 integer `user_id`
+- galgame service 验证 JWT → 提取 `sub` (UUID) → 查 `kun_galgame_infra.users` 获取 integer `user_id`
 
 ### 端点清单
 

@@ -26,7 +26,7 @@ Docker 默认 bridge 容器的包路径是 `容器 → veth → docker 网桥 �
 - **生产 / 无代理机**:`docker compose up -d`(只用基础文件)。固定网桥名在那里多余,且同主机跑两份栈会撞名。
 - **dae 开发机**:`docker compose -f docker-compose.yml -f docker-compose.dae.yml up -d`。
 
-> 下游 moyu / kungal **无需** dae override:它们以 `external` 方式加入 hub 的 `kun-oauth-admin_default` 网络,不创建网桥;hub 用不用 override 决定了那个网桥叫 `br-<hash>` 还是 `kungal-br0`,网络名不变,下游引用不受影响。
+> 下游 moyu / kungal **无需** dae override:它们以 `external` 方式加入 hub 的 `kun-galgame-infra_default` 网络,不创建网桥;hub 用不用 override 决定了那个网桥叫 `br-<hash>` 还是 `kungal-br0`,网络名不变,下游引用不受影响。
 
 ## 8.3 配置流程(dae 开发机)
 
@@ -40,7 +40,7 @@ Docker 默认 bridge 容器的包路径是 `容器 → veth → docker 网桥 �
 cd kun-galgame-nuxt4 && docker compose -f docker-compose.yml -f docker-compose.hub.yml down
 cd ../kun-galgame-patch-next && docker compose down
 # 2) 停 hub(网络归 hub project)
-cd ../kun-oauth-admin && docker compose down
+cd ../kun-galgame-infra && docker compose down
 # 3) hub 用 dae override 重新起 → 新网桥名
 docker compose -f docker-compose.yml -f docker-compose.dae.yml up -d
 ip -o link show kungal-br0 && echo "✅ kungal-br0 已就位"
@@ -90,15 +90,15 @@ sudo ufw status                            # 若开了 ufw,需放行 FORWARD(见
 docker run --rm golang:1.25-bookworm bash -c \
   'timeout 12 bash -c "echo > /dev/tcp/proxy.golang.org/443" && echo "✅ bridge 经 dae 通了" || echo "❌ 仍不通"'
 # B) 实跑构建,确认默认 proxy(无 goproxy.cn)经 dae 通过
-cd kun-oauth-admin && docker build --no-cache -f docker/go.Dockerfile \
-  --build-arg CMD=galgame -t kun-oauth-admin/galgame:daetest . 2>&1 | grep -iE "go mod download|error|Successfully"
+cd kun-galgame-infra && docker build --no-cache -f docker/go.Dockerfile \
+  --build-arg CMD=galgame -t kun-galgame-infra/galgame:daetest . 2>&1 | grep -iE "go mod download|error|Successfully"
 ```
 
 ## 8.4 注意
 
 - **顺序**:先 Step 1(网桥出现)再 Step 2/3(dae 绑它);反了 dae 可能因接口不存在报错。
 - 网桥名 `kungal-br0` 已固定,`down`/`up`(带 override)后不变,dae 配置无需再改。
-- 新增其他自定义 docker 网络的项目,要么复用 `kun-oauth-admin_default`,要么同样固定网桥名并加进 `lan_interface`。
+- 新增其他自定义 docker 网络的项目,要么复用 `kun-galgame-infra_default`,要么同样固定网桥名并加进 `lan_interface`。
 - 这是**纯开发机便利**;生产机不装 dae、不用 override、走默认 `proxy.golang.org`,本章可整章忽略。
 
 **Sources:** [daeuniverse/dae](https://github.com/daeuniverse/dae) · [dae 文档(WAN/LAN interface)](https://github.com/daeuniverse/dae/blob/main/docs/en/README.md) · [dae#364(ufw 下 LAN 转发不通)](https://github.com/daeuniverse/dae/issues/364)

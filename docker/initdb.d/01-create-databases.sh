@@ -1,6 +1,6 @@
 #!/bin/sh
 # Runs once, on first Postgres init (empty data dir). The entrypoint already
-# created POSTGRES_DB (kun_oauth_admin); create the other two databases the
+# created POSTGRES_DB (kun_galgame_infra); create the other two databases the
 # services connect to. Schema itself is built by the migrate jobs, not here.
 set -e
 

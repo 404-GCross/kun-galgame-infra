@@ -154,7 +154,7 @@ func Load() (*Config, error) {
 		Port:     getEnv("KUN_PG_PORT", "5432"),
 		User:     getEnv("KUN_PG_USER", "postgres"),
 		Password: getEnv("KUN_PG_PASSWORD", ""),
-		DBName:   getEnv("KUN_PG_DATABASE", "kun_oauth_admin"),
+		DBName:   getEnv("KUN_PG_DATABASE", "kun_galgame_infra"),
 		SSLMode:  getEnv("KUN_PG_SSLMODE", "disable"),
 		Timezone: getEnv("KUN_PG_TIMEZONE", "Asia/Shanghai"),
 	}

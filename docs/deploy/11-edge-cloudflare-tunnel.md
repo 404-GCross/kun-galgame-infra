@@ -28,19 +28,19 @@ tunnel: kungal-eco
 credentials-file: /etc/cloudflared/<TUNNEL_ID>.json
 
 ingress:
-  # —— 枢纽 oauth-admin(同域 path 拆 api / web)——
+  # —— 枢纽 web(admin)(同域 path 拆 api / web)——
   - hostname: oauth.kungal.com
     path: ^/api/v1/
-    service: http://kun-oauth-admin-oauth-1:9277
+    service: http://kun-galgame-infra-oauth-1:9277
   - hostname: oauth.kungal.com
-    service: http://kun-oauth-admin-web-1:3000
+    service: http://kun-galgame-infra-web-1:3000
 
   # —— 枢纽 galgame-wiki ——
   - hostname: wiki.kungal.com
     path: ^/api/
-    service: http://kun-oauth-admin-galgame-1:9280
+    service: http://kun-galgame-infra-galgame-1:9280
   - hostname: wiki.kungal.com
-    service: http://kun-oauth-admin-wiki-1:3000
+    service: http://kun-galgame-infra-wiki-1:3000
 
   # —— kungal 论坛(/api + 将来的 /socket.io 自动支持 WS)——
   - hostname: www.kungal.com
@@ -58,7 +58,7 @@ ingress:
 
   # —— 图床(自托管回源 MinIO bucket)——
   - hostname: image.kungal.com
-    service: http://kun-oauth-admin-minio-1:9000
+    service: http://kun-galgame-infra-minio-1:9000
     originRequest:
       httpHostHeader: image.kungal.com   # 按需,路径前缀可在 MinIO 侧用 bucket 策略处理
 
@@ -80,7 +80,7 @@ services:
       - ../cf:/etc/cloudflared:ro     # config.yml + <TUNNEL_ID>.json
     # 注意:无 ports!纯出站
 networks:
-  default: { name: kun-oauth-admin_default, external: true }
+  default: { name: kun-galgame-infra_default, external: true }
 ```
 > 也可用 **token 模式**(仪表盘管理 ingress,容器只需 `TUNNEL_TOKEN` 环境变量、连 config.yml 都省了):`command: tunnel --no-autoupdate run --token ${TUNNEL_TOKEN}`。多服务自建更推荐上面的配置文件模式([对比](https://docker.recipes/devops/cloudflared-tunnel))。
 
@@ -108,7 +108,7 @@ docker compose -f edge-cf/docker-compose.yml logs cloudflared | grep -i "Registe
 
 ## 11.7 注意
 - **完全不开入站端口**,所以可以(也应该)把各仓 compose 的 `1xxxx` host 端口全删/绑回环——外部只经 Cloudflare 进来。
-- 回源用容器名,cloudflared 与目标必须**同在 `kun-oauth-admin_default` 网络**。
+- 回源用容器名,cloudflared 与目标必须**同在 `kun-galgame-infra_default` 网络**。
 - 大文件/上传:Cloudflare 免费版有响应体大小与超时限制(图床大图、补丁包建议走 R2/B2 直链,不经隧道)。
 - 凭据文件 `cf/<TUNNEL_ID>.json` 是**机密**,勿入镜像/git。
 - 这是三种里**唯一不依赖入站可达**的;dae 机器、家宽、CGNAT 都能用。

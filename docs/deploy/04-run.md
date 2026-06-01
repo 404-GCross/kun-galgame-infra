@@ -2,7 +2,7 @@
 
 ## 网络模型
 
-所有容器都跑在**枢纽创建的 docker 网络** `kun-oauth-admin_default` 上,靠服务名互相解析。三种把下游接上来的方式:
+所有容器都跑在**枢纽创建的 docker 网络** `kun-galgame-infra_default` 上,靠服务名互相解析。三种把下游接上来的方式:
 
 | 方式 | 说明 | 适用 |
 |---|---|---|
@@ -14,7 +14,7 @@
 
 ### 1) 枢纽
 ```bash
-cd kun-oauth-admin
+cd kun-galgame-infra
 docker compose up -d            # 9 个服务全起
 docker compose ps              # 应全 healthy
 ```
@@ -23,7 +23,7 @@ docker compose ps              # 应全 healthy
 moyu 的 `docker-compose.yml` 自带:
 ```yaml
 networks:
-  default: { name: kun-oauth-admin_default, external: true }
+  default: { name: kun-galgame-infra_default, external: true }
 ```
 所以直接:
 ```bash
@@ -38,7 +38,7 @@ services:
   api:     { depends_on: !reset [] }     # pg/redis 是 hub 的,清掉本地依赖
   migrate: { depends_on: !reset [] }
 networks:
-  default: { name: kun-oauth-admin_default, external: true }
+  default: { name: kun-galgame-infra_default, external: true }
 ```
 运行:
 ```bash
@@ -61,7 +61,7 @@ docker compose -f docker-compose.yml -f docker-compose.hub.yml up -d api web
 
 ```bash
 # 看全生态(跨三个 compose project)
-docker ps --format '{{.Names}}\t{{.Status}}' | grep -E 'kun-oauth-admin-|moyu-|kungal-' | sort
+docker ps --format '{{.Names}}\t{{.Status}}' | grep -E 'kun-galgame-infra-|moyu-|kungal-' | sort
 
 # 单仓状态 / 日志
 docker compose ps
@@ -81,7 +81,7 @@ docker compose down -v              # 仅在 hub 目录会删 pg/redis/minio/mei
 在 `website/` 放一个 `compose.yaml`:
 ```yaml
 include:
-  - kun-oauth-admin/docker-compose.yml
+  - kun-galgame-infra/docker-compose.yml
   - kun-galgame-patch-next/docker-compose.yml
   - kun-galgame-nuxt4/docker-compose.yml      # 注:伞状下 kungal 不需要 hub override
 # 注意:include 各子 compose 的 `name:` 与 moyu 的 external network 块在伞状下需调整
@@ -93,7 +93,7 @@ include:
 
 | 入口 | URL |
 |---|---|
-| oauth-admin 管理端 | http://localhost:15008 |
+| web 管理端 | http://localhost:15008 |
 | galgame-wiki | http://localhost:15009 |
 | moyu 补丁站 | http://localhost:15011 |
 | kungal 论坛 | http://localhost:15013 |

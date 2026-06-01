@@ -6,7 +6,7 @@
 #
 #   1. Drops + recreates the 3 application databases (empty; the apps'
 #      own schema-migration commands will rebuild structure):
-#        - kun_oauth_admin   (OAuth target / user_migrations)
+#        - kun_galgame_infra   (OAuth target / user_migrations)
 #        - kun_images_dev    (image_service)
 #        - kun_galgame_wiki  (galgame_wiki)
 #
@@ -34,7 +34,7 @@ DB_HOST="localhost"
 DB_PORT="5432"
 
 # 3 application databases — drop + create empty
-APP_DBS=(kun_oauth_admin kun_images_dev kun_galgame_wiki)
+APP_DBS=(kun_galgame_infra kun_images_dev kun_galgame_wiki)
 
 # 2 source databases — drop + create + restore from .dump in same dir
 typeset -A SOURCE_DBS
