@@ -12,6 +12,9 @@
 | 5 | [05-configuration.md](./05-configuration.md) | 配置参考:各服务 env、前端 public 配置烘焙、密钥 |
 | 6 | [06-operations.md](./06-operations.md) | 运维:健康/日志、升级、备份恢复、迁移 job、扩缩容 |
 | 7 | [07-troubleshooting.md](./07-troubleshooting.md) | 故障排查:实跑中踩到的每一个坑 + 解法 |
+| 9 | [09-edge-caddy.md](./09-edge-caddy.md) | **边缘反代 · Caddy**(推荐):自动 HTTPS、域名映射、§9.0 共同前提 |
+| 10 | [10-edge-nginx.md](./10-edge-nginx.md) | 边缘反代 · Nginx:手动 TLS(certbot)、WS 升级头、容器名回源 |
+| 11 | [11-edge-cloudflare-tunnel.md](./11-edge-cloudflare-tunnel.md) | 边缘反代 · Cloudflare Tunnel:纯出站、零入站端口(NAT/dae 后首选) |
 | 附录 | [08-dae-dev-proxy.md](./08-dae-dev-proxy.md) | **仅开发机**:dae 透明代理下让容器走代理(生产纯净,勿叠加) |
 
 ## 30 秒速览
