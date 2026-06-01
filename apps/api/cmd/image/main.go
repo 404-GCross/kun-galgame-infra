@@ -40,6 +40,7 @@ import (
 	siteRepo "api/internal/platform/site/repository"
 	"api/pkg/config"
 	"api/pkg/errors"
+	"api/pkg/health"
 	"api/pkg/logger"
 	"api/pkg/response"
 
@@ -54,6 +55,11 @@ func main() {
 		slog.Error("load config", "error", err)
 		os.Exit(1)
 	}
+
+	// `healthcheck` subcommand for container HEALTHCHECK (distroless/slim has
+	// no curl). No-op for a normal start; exits before any infra is touched.
+	health.MaybeProbe(cfg.ImageService.Port, "/healthz")
+
 	logger.Init(cfg.Server.Env)
 
 	application, err := app.New(cfg, app.Options{

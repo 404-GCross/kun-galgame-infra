@@ -12,6 +12,7 @@ import (
 	"api/internal/jobs"
 	"api/internal/middleware"
 	"api/pkg/config"
+	"api/pkg/health"
 	"api/pkg/logger"
 	"api/pkg/response"
 
@@ -38,6 +39,10 @@ func main() {
 		slog.Error("failed to load config", "error", err)
 		os.Exit(1)
 	}
+
+	// `healthcheck` subcommand for container HEALTHCHECK (distroless has no
+	// shell/curl). No-op for a normal start; exits before any infra is touched.
+	health.MaybeProbe(cfg.Server.Port, "/api/v1/health")
 
 	logger.Init(cfg.Server.Env)
 

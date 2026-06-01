@@ -1,0 +1,202 @@
+# kun-oauth-admin — the identity / image / galgame-wiki hub.
+#
+# This repo OWNS the shared backing services (Postgres / Redis / MinIO /
+# Meilisearch) for the whole ecosystem; kungal + moyu connect to these.
+#
+# Host ports are in the 1xxxx range so the stack coexists with a running `air`
+# dev server. Service-to-service traffic uses container ports via service
+# names (postgres:5432, minio:9000, …) regardless of the host mapping.
+#
+#   docker compose build
+#   docker compose up -d postgres redis minio meili
+#   docker compose run --rm migrate           # oauth schema + seed
+#   docker compose run --rm migrate-galgame   # galgame wiki schema
+#   docker compose up -d oauth image galgame web wiki
+name: kun-oauth-admin
+
+x-svc-health: &svc-health
+  interval: 10s
+  timeout: 5s
+  retries: 5
+  start_period: 15s
+
+services:
+  # ───────────────────────── shared backing services ─────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: "191007"
+      POSTGRES_DB: kun_oauth_admin
+    volumes:
+      - pg:/var/lib/postgresql/data
+      - ./docker/initdb.d:/docker-entrypoint-initdb.d:ro
+    ports: ["15432:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d kun_oauth_admin"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes: ["redis:/data"]
+    ports: ["16379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  minio:
+    image: minio/minio
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes: ["minio:/data"]
+    ports: ["19000:9000", "19001:9001"]
+    restart: unless-stopped
+
+  meili:
+    image: getmeili/meilisearch:v1.20
+    environment:
+      MEILI_MASTER_KEY: kun_docker_test_meili_master_key_change_me
+      MEILI_NO_ANALYTICS: "true"
+    volumes: ["meili:/meili_data"]
+    ports: ["17700:7700"]
+    # kungal connects by the name `meilisearch`; expose that alias too so the
+    # whole ecosystem resolves this one Meili instance under either name.
+    networks:
+      default:
+        aliases: [meilisearch]
+    restart: unless-stopped
+
+  # ───────────────────────────── Go services ─────────────────────────────────
+  # oauth + image are cgo (libwebp) → debian-slim runtime, binary at /app/app.
+  oauth:
+    build:
+      context: .
+      dockerfile: docker/cgo.Dockerfile
+      args: { CMD: oauth }
+    image: kun-oauth-admin/oauth
+    env_file: [./docker/oauth.env]
+    ports: ["19277:9277"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "/app/app", "healthcheck"]
+      <<: *svc-health
+    restart: unless-stopped
+
+  image:
+    build:
+      context: .
+      dockerfile: docker/cgo.Dockerfile
+      args: { CMD: image }
+    image: kun-oauth-admin/image
+    env_file: [./docker/image.env]
+    ports: ["19278:9278"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      minio: { condition: service_started }
+    healthcheck:
+      test: ["CMD", "/app/app", "healthcheck"]
+      <<: *svc-health
+    restart: unless-stopped
+
+  galgame:
+    build:
+      context: .
+      dockerfile: docker/go.Dockerfile
+      args: { CMD: galgame }
+    image: kun-oauth-admin/galgame
+    env_file: [./docker/galgame.env]
+    ports: ["19280:9280"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      meili: { condition: service_started }
+    healthcheck:
+      test: ["CMD", "/app", "healthcheck"]
+      <<: *svc-health
+    restart: unless-stopped
+
+  # ───────────────────────────── Nuxt frontends ──────────────────────────────
+  # Public config is baked at build (browser-facing → host ports). Override at
+  # runtime instead via NUXT_PUBLIC_* env if you prefer build-once images.
+  web:
+    build:
+      context: .
+      dockerfile: docker/nuxt.Dockerfile
+      args:
+        APP: web
+        PUBLIC_API_BASE: http://localhost:19277/api/v1
+        PUBLIC_IMAGE_CDN_BASE: http://localhost:19000/kun-images
+    image: kun-oauth-admin/web
+    ports: ["19420:3000"]
+    depends_on:
+      oauth: { condition: service_started }
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('net').connect(3000,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))"]
+      <<: *svc-health
+    restart: unless-stopped
+
+  wiki:
+    build:
+      context: .
+      dockerfile: docker/nuxt.Dockerfile
+      args:
+        APP: wiki
+        PUBLIC_API_BASE: http://localhost:19280/api
+        PUBLIC_AUTH_API_BASE: http://localhost:19277/api/v1
+        PUBLIC_OAUTH_AUTHORIZE_BASE: http://localhost:19277/api/v1
+        PUBLIC_OAUTH_CLIENT_ID: galgame-wiki-admin
+        PUBLIC_OAUTH_REDIRECT_URI: http://localhost:19421/auth/callback
+        PUBLIC_IMAGE_CDN_BASE: http://localhost:19000/kun-images
+    image: kun-oauth-admin/wiki
+    ports: ["19421:3000"]
+    depends_on:
+      galgame: { condition: service_started }
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('net').connect(3000,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))"]
+      <<: *svc-health
+    restart: unless-stopped
+
+  # ─────────────────────── one-off jobs (profile: jobs) ──────────────────────
+  # Not started by `up`. Run on demand:
+  #   docker compose run --rm migrate
+  #   docker compose run --rm migrate-galgame
+  migrate:
+    build:
+      context: .
+      dockerfile: docker/go.Dockerfile
+      args: { CMD: migrate }
+    image: kun-oauth-admin/migrate
+    env_file: [./docker/oauth.env]
+    profiles: ["jobs"]
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: "no"
+
+  migrate-galgame:
+    build:
+      context: .
+      dockerfile: docker/go.Dockerfile
+      args: { CMD: migrate-galgame }
+    image: kun-oauth-admin/migrate-galgame
+    env_file: [./docker/galgame.env]
+    profiles: ["jobs"]
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: "no"
+
+volumes:
+  pg:
+  redis:
+  minio:
+  meili:

@@ -1,0 +1,78 @@
+# 0 · 架构总览
+
+## 三个仓库
+
+| 仓库 | 代号 | 角色 | apps |
+|---|---|---|---|
+| `kun-oauth-admin` | **hub / 枢纽** | 身份(OAuth)+ 图床 + galgame-wiki 的单一来源;**拥有共享基础设施** | api(多二进制)、web(oauth-admin)、wiki(galgame-wiki) |
+| `kun-galgame-nuxt4` | **kungal** | 论坛站(Fiber API + Nuxt SSR) | api、web |
+| `kun-galgame-patch-next` | **moyu** | 补丁站(Fiber API + Nuxt SSR) | api、web |
+
+三仓位于同一父目录 `website/` 下,平级。
+
+## 服务拓扑
+
+```
+            ┌─────────────────── 共享基础设施(hub compose 定义一次)───────────────────┐
+            │   postgres:16    redis:7    minio(S3)    meilisearch(别名)             │
+            └──────────────────────────────────────────────────────────────────────────┘
+                 ▲ 同一 docker 网络:kun-oauth-admin_default(所有容器都在上面)
+   ┌─────────────┼───────────────────────────┬───────────────────────────┐
+   │ hub         │                 moyu       │                 kungal     │
+   │  oauth   ───┤(身份/账本/图床admin/jobs)  api ──(OAuth/图床/wiki)     api ──(OAuth/wiki/图床/搜索)
+   │  image   ───┤(cgo+libwebp,图床)         web                          web
+   │  galgame ───┤(galgame-wiki API + 搜索)
+   │  web(admin)─┤
+   │  wiki      ─┘
+   └─ 长驻服务都无状态,可随意重建/扩缩 ─┘
+```
+
+下游(moyu/kungal)的 api 在运行时通过**服务名**调用枢纽:
+- `http://oauth:9277/api/v1` —— OAuth 令牌、用户信息、moemoepoint 账本(s2s Basic Auth)
+- `http://galgame:9280/api` —— galgame-wiki 数据
+- `http://image:9278` —— 图床上传 / 引用
+- `postgres:5432` / `redis:6379` / `meilisearch:7700` / `minio:9000`
+
+## 端口表(host : 容器)
+
+> host 端口统一 `1xxxx` 段,避免和本机 `air`(9277/9280/…)冲突。容器间互访用容器端口 + 服务名,与 host 映射无关。
+
+| 服务 | 容器端口 | host 端口 | 健康端点 |
+|---|---|---|---|
+| hub oauth | 9277 | **19277** | `/api/v1/health` |
+| hub image | 9278 | **19278** | `/healthz` |
+| hub galgame | 9280 | **19280** | `/api/health` |
+| hub web(oauth-admin) | 3000 | **19420** | `/`(302→`/auth/login`) |
+| hub wiki(galgame-wiki) | 3000 | **19421** | `/` |
+| hub postgres | 5432 | **15432** | `pg_isready` |
+| hub redis | 6379 | **16379** | `redis-cli ping` |
+| hub minio | 9000 / 9001 | **19000 / 19001** | 控制台 19001 |
+| hub meili | 7700 | **17700** | — |
+| moyu api | 5214 | **15214** | `/api/v1/health` |
+| moyu web | 3000 | **16969** | `/` |
+| kungal api | 2334 | **12334** | `/healthz` |
+| kungal web | 7777 | **17777** | `/` |
+
+## 数据库映射(同一 Postgres 实例,多库)
+
+枢纽的一套 Postgres 承载全生态 5 个库:
+
+| 库名 | 属主 | 由谁建 schema |
+|---|---|---|
+| `kun_oauth_admin` | hub oauth | `migrate`(hub) |
+| `kun_galgame_wiki` | hub galgame | `migrate-galgame`(hub) |
+| `kun_images` | hub image | image 服务启动时 AutoMigrate |
+| `kungalgame` | kungal | dump 恢复 + kungal `migrate` + 跨仓迁移 |
+| `kungalgame_patch` | moyu | dump 恢复 + moyu `migrate` + 跨仓迁移 |
+
+前 3 个库由 hub 的 `docker/initdb.d/01-create-databases.sh` 在 Postgres 首次初始化时一并 `CREATE DATABASE`(已含后两个下游库)。
+
+## 镜像策略(每仓略有不同)
+
+| 镜像 | 基镜 | 体积 | 说明 |
+|---|---|---|---|
+| hub galgame / 迁移工具 / kungal api / moyu api | `distroless/static` | 24–45MB | 纯 Go,`CGO_ENABLED=0` 静态二进制 |
+| **hub oauth / hub image** | `debian:bookworm-slim` | ~180MB | **cgo + libwebp**(`kolesa-team/go-webp`);oauth 因内嵌图床 admin 也被拉入 cgo |
+| 所有 web(hub web/wiki、moyu web、kungal web) | `node:22-slim` | ~390MB | Nitro `node-server` + 自包含 `.output`(含 sharp,linux-x64) |
+
+详见 [02-build.md](./02-build.md)。

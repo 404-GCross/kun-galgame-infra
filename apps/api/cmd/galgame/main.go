@@ -10,6 +10,7 @@ import (
 	searchInfra "api/internal/infrastructure/search"
 	"api/internal/middleware"
 	"api/pkg/config"
+	"api/pkg/health"
 	"api/pkg/logger"
 
 	galgameHandler "api/internal/platform/galgame/handler"
@@ -28,6 +29,10 @@ func main() {
 		slog.Error("failed to load config", "error", err)
 		os.Exit(1)
 	}
+
+	// `healthcheck` subcommand for container HEALTHCHECK (distroless has no
+	// shell/curl). No-op for a normal start; exits before any infra is touched.
+	health.MaybeProbe(getPort("KUN_GALGAME_PORT", 9280), "/api/health")
 
 	logger.Init(cfg.Server.Env)
 

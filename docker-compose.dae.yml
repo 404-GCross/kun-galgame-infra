@@ -1,0 +1,21 @@
+# DEV-ONLY override for a host running a kernel-level transparent proxy (dae).
+#
+# The base docker-compose.yml is kept PURE / portable — it imposes nothing
+# proxy-specific. dae cannot intercept Docker's bridge-forwarded container
+# traffic unless the bridge interface is named in dae's `lan_interface`, and the
+# auto `br-<hash>` name changes on every recreate. This override pins the
+# ecosystem network's bridge to a stable `kungal-br0` so dae can target it.
+#
+# Usage — ONLY on a dae host:
+#   docker compose -f docker-compose.yml -f docker-compose.dae.yml up -d
+#
+# Production / any host without a transparent proxy: use the base file ALONE.
+# DO NOT layer this in — a fixed bridge name is pointless there and collides if
+# you run two copies of the stack on one host.
+#
+# Matching dae host config (lan_interface, reload, verification):
+#   docs/deploy/08-dae-dev-proxy.md
+networks:
+  default:
+    driver_opts:
+      com.docker.network.bridge.name: kungal-br0

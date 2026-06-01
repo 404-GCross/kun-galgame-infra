@@ -1,0 +1,68 @@
+#
+# Parametric build for the two Nuxt 4 frontends (Nitro node-server preset):
+#   APP=web   → apps/web  (oauth-admin)
+#   APP=wiki  → apps/wiki (galgame-wiki)
+#
+# Build context MUST be the repo root: both apps `extends: ['@kun/ui']`, a
+# Nuxt LAYER consumed from source, so packages/ui must be in the context.
+#
+# Public runtime config (apiBase, oauth client, image CDN) is read by
+# nuxt.config.ts from custom KUN_* env names at BUILD time, so it is passed as
+# build args and baked. (Nitro can still override any public key at runtime via
+# the canonical NUXT_PUBLIC_* names — see docker/README.md.)
+ARG NODE_VERSION=22
+
+FROM node:${NODE_VERSION}-bookworm-slim AS base
+RUN corepack enable
+WORKDIR /repo
+
+# ---- deps: copy every workspace manifest, install only the target subgraph ----
+FROM base AS deps
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
+COPY apps/web/package.json   apps/web/package.json
+COPY apps/wiki/package.json  apps/wiki/package.json
+COPY apps/api/package.json   apps/api/package.json
+COPY packages/ui/package.json packages/ui/package.json
+ARG APP=web
+# --ignore-scripts: the apps' `postinstall: nuxt prepare` can't run here (app
+# source isn't copied yet); the later `nuxt build` runs prepare itself.
+RUN pnpm install --frozen-lockfile --ignore-scripts --filter "${APP}..."
+
+# ---- build ----
+FROM deps AS build
+ARG APP=web
+# Frontend public config, baked at build. Empty args fall back to the
+# in-config defaults (`process.env.X || '<default>'`). web reads the
+# KUN_VISUAL_NOVEL_* names, wiki the KUN_GALGAME_WIKI_* names — setting both
+# from the same args is harmless (each app ignores the other's).
+ARG PUBLIC_API_BASE=
+ARG PUBLIC_AUTH_API_BASE=
+ARG PUBLIC_OAUTH_AUTHORIZE_BASE=
+ARG PUBLIC_OAUTH_CLIENT_ID=
+ARG PUBLIC_OAUTH_REDIRECT_URI=
+ARG PUBLIC_IMAGE_CDN_BASE=
+ENV KUN_VISUAL_NOVEL_NUXT_PUBLIC_API_BASE=${PUBLIC_API_BASE} \
+    KUN_VISUAL_NOVEL_NUXT_PUBLIC_IMAGE_CDN_BASE=${PUBLIC_IMAGE_CDN_BASE} \
+    KUN_GALGAME_WIKI_NUXT_PUBLIC_API_BASE=${PUBLIC_API_BASE} \
+    KUN_GALGAME_WIKI_NUXT_PUBLIC_AUTH_API_BASE=${PUBLIC_AUTH_API_BASE} \
+    KUN_GALGAME_WIKI_NUXT_PUBLIC_OAUTH_AUTHORIZE_BASE=${PUBLIC_OAUTH_AUTHORIZE_BASE} \
+    KUN_GALGAME_WIKI_NUXT_PUBLIC_OAUTH_CLIENT_ID=${PUBLIC_OAUTH_CLIENT_ID} \
+    KUN_GALGAME_WIKI_NUXT_PUBLIC_OAUTH_REDIRECT_URI=${PUBLIC_OAUTH_REDIRECT_URI} \
+    KUN_GALGAME_WIKI_NUXT_PUBLIC_IMAGE_CDN_BASE=${PUBLIC_IMAGE_CDN_BASE}
+COPY packages/ui packages/ui
+COPY apps/${APP} apps/${APP}
+# The @kun/ui Nuxt layer needs its own .nuxt generated (its `prepare` script
+# was skipped by --ignore-scripts, and .dockerignore strips the host's copy);
+# the app build reads the layer's generated tsconfig.
+RUN pnpm --filter @kun/ui run prepare
+RUN pnpm --filter "${APP}" run build
+
+# ---- run: just Node + the self-contained .output (no pnpm, no sources) ----
+FROM node:${NODE_VERSION}-bookworm-slim AS run
+ARG APP=web
+ENV NODE_ENV=production HOST=0.0.0.0 NITRO_PORT=3000
+WORKDIR /app
+COPY --from=build /repo/apps/${APP}/.output ./.output
+USER node
+EXPOSE 3000
+CMD ["node", ".output/server/index.mjs"]
