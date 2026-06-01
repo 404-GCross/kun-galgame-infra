@@ -116,7 +116,7 @@ docker compose exec nginx nginx -s reload
 ```bash
 docker compose exec nginx nginx -t           # 配置语法
 curl -I https://oauth.kungal.com             # 200/302 + 证书有效
-curl -s https://www.moyu.moe/api/v1/health
+curl -I https://www.moyu.moe                 # 首页经反代(/healthz 仅容器内部探活)
 ```
 
 ## 10.5 注意

@@ -119,7 +119,7 @@ cd edge && docker compose up -d
 ## 9.5 验证
 ```bash
 curl -I https://oauth.kungal.com            # 200/302 + 有效证书
-curl -s https://www.moyu.moe/api/v1/health  # 经反代打到 moyu api
+curl -I https://www.moyu.moe                # 首页经反代(/healthz 是容器内部探活,不公开路由)
 docker compose -f edge/docker-compose.yml logs caddy | grep -i "certificate obtained"
 ```
 

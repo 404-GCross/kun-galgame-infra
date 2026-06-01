@@ -11,7 +11,7 @@
 ARG GO_VERSION=1.25
 
 # ---- build (needs libwebp headers + pkg-config for the cgo link) ----
-FROM golang:${GO_VERSION}-bookworm AS build
+FROM golang:${GO_VERSION}-trixie AS build
 RUN apt-get update && apt-get install -y --no-install-recommends \
         libwebp-dev pkg-config \
     && rm -rf /var/lib/apt/lists/*
@@ -24,9 +24,9 @@ RUN CGO_ENABLED=1 GOOS=linux go build -trimpath -ldflags="-s -w" \
         -o /out/app ./cmd/${CMD}
 
 # ---- run (debian-slim + just the libwebp runtime libs, nonroot) ----
-FROM debian:bookworm-slim
+FROM debian:trixie-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        libwebp7 ca-certificates tzdata \
+        libwebp7 libsharpyuv0 ca-certificates tzdata \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --uid 10001 --create-home --shell /usr/sbin/nologin appuser
 WORKDIR /app

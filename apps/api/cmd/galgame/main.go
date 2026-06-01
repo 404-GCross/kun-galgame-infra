@@ -32,7 +32,7 @@ func main() {
 
 	// `healthcheck` subcommand for container HEALTHCHECK (distroless has no
 	// shell/curl). No-op for a normal start; exits before any infra is touched.
-	health.MaybeProbe(getPort("KUN_GALGAME_PORT", 9280), "/api/health")
+	health.MaybeProbe(getPort("KUN_GALGAME_PORT", 9280), "/healthz")
 
 	logger.Init(cfg.Server.Env)
 
@@ -179,14 +179,17 @@ func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB, se
 	// Global middleware
 	a.Fiber.Use(middleware.RequestID())
 	a.Fiber.Use(middleware.Logger())
+
+	// Liveness probe — root /healthz, before CORS, used by container HEALTHCHECK.
+	// Unified to /healthz across all services.
+	a.Fiber.Get("/healthz", func(c fiber.Ctx) error {
+		return c.JSON(fiber.Map{"status": "ok"})
+	})
+
 	a.Fiber.Use(middleware.CORS(cfg.Server.CORSOrigin))
 
 	// API routes
 	api := a.Fiber.Group("/api")
-
-	api.Get("/health", func(c fiber.Ctx) error {
-		return c.JSON(fiber.Map{"status": "ok"})
-	})
 
 	// ── Galgame ──
 	galgame := api.Group("/galgame")

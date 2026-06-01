@@ -13,9 +13,10 @@
 - **原因**:本机无 `docker buildx`,`docker compose build` 用 legacy builder,不支持 `--mount=type=cache`。
 - **解法**:三仓 Dockerfile 已移除 cache mount(仅普通层缓存)。装了 buildx 可自行加回。构建时的 `requires buildx plugin` 警告无害。
 
-### B3 · 运行镜像构建报 `Unable to locate package libsharpyuv0`
-- **原因**:Debian **bookworm** 的 libwebp 1.2.x 把 sharpyuv 打包进 `libwebp7`,没有独立 `libsharpyuv0` 包。
-- **解法**:运行阶段只装 `libwebp7`(`cgo.Dockerfile` 已修正)。
+### B3 · cgo runtime 的 libwebp 包名随 Debian 版本变
+- **现象**:运行阶段 `Unable to locate package libsharpyuv0`(bookworm),或缺 `libsharpyuv0` 导致 `libwebp.so` 加载失败(trixie)。
+- **原因**:**libwebp 版本不同,sharpyuv 的打包方式不同**——bookworm(libwebp 1.2)把 sharpyuv 打进 `libwebp7`(无独立包);**trixie(libwebp 1.5)拆出独立 `libsharpyuv0`**。
+- **解法**:跟随基镜的 Debian 版本装对应包。当前 `cgo.Dockerfile` 用 **trixie**,运行阶段装 `libwebp7 libsharpyuv0`(已配)。构建器与运行时的 Debian 版本必须一致(都 trixie),否则 `libwebp-dev`(build)与 `libwebp.so`(run)版本错配。
 
 ### B4 · Nuxt 构建报 `packages/ui/.nuxt/tsconfig.app.json ... no such file`
 - **原因**:`@kun/ui` 是 Nuxt **layer**,需自己的 `.nuxt`;但 `pnpm install --ignore-scripts` 跳过了它的 `prepare`,且 `.dockerignore` 剥掉了主机的 `.nuxt`。

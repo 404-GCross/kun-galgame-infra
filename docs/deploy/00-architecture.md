@@ -35,20 +35,20 @@
 
 ## 端口表(host : 容器)
 
-> host 端口统一 `1xxxx` 段,避免和本机 `air`(9277/9280/…)冲突。容器间互访用容器端口 + 服务名,与 host 映射无关。
+> host 端口统一 `1xxxx` 段,避免和本机 `air`(9277/9280/…)冲突。容器间互访用容器端口 + 服务名,与 host 映射无关。所有 Go HTTP 服务的健康端点已**统一为根路径 `/healthz`**(无鉴权、不过 CORS/限流),容器 HEALTHCHECK 用二进制自带的 `healthcheck` 子命令自探它。
 
 | 服务 | 容器端口 | host 端口 | 健康端点 |
 |---|---|---|---|
-| hub oauth | 9277 | **19277** | `/api/v1/health` |
+| hub oauth | 9277 | **19277** | `/healthz` |
 | hub image | 9278 | **19278** | `/healthz` |
-| hub galgame | 9280 | **19280** | `/api/health` |
+| hub galgame | 9280 | **19280** | `/healthz` |
 | hub web(oauth-admin) | 3000 | **19420** | `/`(302→`/auth/login`) |
 | hub wiki(galgame-wiki) | 3000 | **19421** | `/` |
 | hub postgres | 5432 | **15432** | `pg_isready` |
 | hub redis | 6379 | **16379** | `redis-cli ping` |
 | hub minio | 9000 / 9001 | **19000 / 19001** | 控制台 19001 |
 | hub meili | 7700 | **17700** | — |
-| moyu api | 5214 | **15214** | `/api/v1/health` |
+| moyu api | 5214 | **15214** | `/healthz` |
 | moyu web | 3000 | **16969** | `/` |
 | kungal api | 2334 | **12334** | `/healthz` |
 | kungal web | 7777 | **17777** | `/` |
@@ -71,8 +71,8 @@
 
 | 镜像 | 基镜 | 体积 | 说明 |
 |---|---|---|---|
-| hub galgame / 迁移工具 / kungal api / moyu api | `distroless/static` | 24–45MB | 纯 Go,`CGO_ENABLED=0` 静态二进制 |
-| **hub oauth / hub image** | `debian:bookworm-slim` | ~180MB | **cgo + libwebp**(`kolesa-team/go-webp`);oauth 因内嵌图床 admin 也被拉入 cgo |
-| 所有 web(hub web/wiki、moyu web、kungal web) | `node:22-slim` | ~390MB | Nitro `node-server` + 自包含 `.output`(含 sharp,linux-x64) |
+| hub galgame / 迁移工具 / kungal api / moyu api | `distroless/static-debian13` | 24–45MB | 纯 Go,`CGO_ENABLED=0` 静态二进制 |
+| **hub oauth / hub image** | `debian:trixie-slim` | ~180MB | **cgo + libwebp**(`kolesa-team/go-webp`);oauth 因内嵌图床 admin 也被拉入 cgo |
+| 所有 web(hub web/wiki、moyu web、kungal web) | `node:24-trixie-slim` | ~390MB | Nitro `node-server` + 自包含 `.output`(含 sharp,linux-x64) |
 
 详见 [02-build.md](./02-build.md)。

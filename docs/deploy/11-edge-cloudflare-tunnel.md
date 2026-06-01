@@ -101,7 +101,7 @@ done
 ## 11.6 验证
 ```bash
 curl -I https://oauth.kungal.com             # 200/302,证书是 Cloudflare 签的
-curl -s https://www.moyu.moe/api/v1/health
+curl -I https://www.moyu.moe                # 首页经隧道(/healthz 仅容器内部探活)
 # 隧道健康
 docker compose -f edge-cf/docker-compose.yml logs cloudflared | grep -i "Registered tunnel connection"
 ```

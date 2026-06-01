@@ -51,9 +51,9 @@ docker compose up -d oauth image galgame web wiki
 
 健康自检:
 ```bash
-curl -s localhost:19277/api/v1/health   # {"status":"ok"}
+curl -s localhost:19277/healthz   # {"status":"ok"}
 curl -s localhost:19278/healthz
-curl -s localhost:19280/api/health
+curl -s localhost:19280/healthz
 ```
 
 ### A.4 启动下游(moyu / kungal)

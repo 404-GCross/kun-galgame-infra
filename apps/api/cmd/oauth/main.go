@@ -42,7 +42,7 @@ func main() {
 
 	// `healthcheck` subcommand for container HEALTHCHECK (distroless has no
 	// shell/curl). No-op for a normal start; exits before any infra is touched.
-	health.MaybeProbe(cfg.Server.Port, "/api/v1/health")
+	health.MaybeProbe(cfg.Server.Port, "/healthz")
 
 	logger.Init(cfg.Server.Env)
 
@@ -126,17 +126,20 @@ func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 	// Global middleware
 	a.Fiber.Use(middleware.RequestID())
 	a.Fiber.Use(middleware.Logger())
+
+	// Liveness probe — root /healthz, registered before CORS/rate-limit so the
+	// container HEALTHCHECK (the `healthcheck` subcommand) isn't throttled or
+	// CORS-gated. Unified to /healthz across all services.
+	a.Fiber.Get("/healthz", func(c fiber.Ctx) error {
+		return c.JSON(fiber.Map{"status": "ok"})
+	})
+
 	a.Fiber.Use(middleware.CORS(cfg.Server.CORSOrigin))
 	a.Fiber.Use(middleware.RateLimit(a.Cache))
 
 	// API routes
 	api := a.Fiber.Group("/api")
 	v1 := api.Group("/v1")
-
-	// Health check
-	v1.Get("/health", func(c fiber.Ctx) error {
-		return c.JSON(fiber.Map{"status": "ok"})
-	})
 
 	// Strict rate limiter for genuinely anonymous brute-force targets
 	// (login / register / password reset). NOT used on /oauth/token —

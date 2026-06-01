@@ -7,8 +7,8 @@
 docker ps --format '{{.Names}}\t{{.Status}}' | grep -E 'kun-oauth-admin-|moyu-|kungal-' | sort
 
 # 端点探活
-for u in 19277/api/v1/health 19278/healthz 19280/api/health \
-         15214/api/v1/health 12334/healthz; do
+for u in 19277/healthz 19278/healthz 19280/healthz \
+         15214/healthz 12334/healthz; do
   printf "%-24s " "$u"; curl -s -o /dev/null -w "%{http_code}\n" "http://localhost:$u"
 done
 
@@ -16,7 +16,7 @@ done
 docker compose logs -f --since 10m oauth
 ```
 
-- 三个 Go HTTP 服务的容器 `HEALTHCHECK` 用**二进制自带的 `healthcheck` 子命令**(distroless 无 shell):`/app healthcheck`(hub cgo 镜像是 `/app/app healthcheck`)自探 `/health(z)`。前端用 Node TCP 探活。
+- 三个 Go HTTP 服务的容器 `HEALTHCHECK` 用**二进制自带的 `healthcheck` 子命令**(distroless 无 shell):`/app healthcheck`(hub cgo 镜像是 `/app/app healthcheck`)自探**根路径 `/healthz`**(全服务已统一)。前端用 Node TCP 探活。
 - `docker inspect --format '{{.State.Health.Status}}' <container>` 看健康判定。
 
 ## 升级 / 重新部署
@@ -27,8 +27,21 @@ docker compose logs -f --since 10m oauth
 docker compose build oauth && docker compose up -d oauth
 # 下游同理(kungal 记得带 -f override)
 ```
-- 升级 Go/Nuxt 服务**不需要**动数据库。
-- 升级**有状态**镜像(Postgres/Meili 大版本)要先备份卷,见下;Meili 跨大版本不可直接复用旧卷(见 [07-troubleshooting.md](./07-troubleshooting.md))。
+- 升级 Go/Nuxt 服务**不需要**动数据库。换基础镜像(trixie / node24 等)也只是重建无状态容器,数据卷不受影响。
+- 升级**有状态**镜像(Postgres/Meili 大版本)**不能**直接改 tag 重建——数据卷格式不兼容会导致新版起不来(Meili 会崩溃循环,见 [07-troubleshooting.md](./07-troubleshooting.md) I2)。
+
+### Postgres 16 → 18(需迁移,勿直接换 tag)
+当前固定在 `postgres:16-alpine`。要升大版本,二选一:
+```bash
+# 方案 A:dump → 换 tag → restore(最稳)
+docker exec kun-oauth-admin-postgres-1 pg_dumpall -U postgres > all.sql
+docker compose down postgres && docker volume rm kun-oauth-admin_pg
+# 把 compose 改成 postgres:18-alpine 后:
+docker compose up -d postgres   # 等 healthy
+cat all.sql | docker exec -i kun-oauth-admin-postgres-1 psql -U postgres
+# 方案 B:pgautoupgrade 镜像原地升级(进阶,先备份)
+```
+Redis(`redis:8-alpine`)/MinIO(已锁 RELEASE)向前兼容旧数据,直接换 tag 重建即可。
 
 ## 备份 / 恢复
 
