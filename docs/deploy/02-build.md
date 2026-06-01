@@ -74,11 +74,11 @@ Nuxt 的 `runtimeConfig.public`(apiBase、OAuth client、image CDN)在 `nuxt.con
 ```yaml
 args:
   APP: wiki
-  PUBLIC_API_BASE: http://localhost:19280/api
-  PUBLIC_OAUTH_AUTHORIZE_BASE: http://localhost:19277/api/v1
+  PUBLIC_API_BASE: http://localhost:15007/api
+  PUBLIC_OAUTH_AUTHORIZE_BASE: http://localhost:15005/api/v1
   PUBLIC_OAUTH_CLIENT_ID: galgame-wiki-admin
-  PUBLIC_OAUTH_REDIRECT_URI: http://localhost:19421/auth/callback
-  PUBLIC_IMAGE_CDN_BASE: http://localhost:19000/kun-images
+  PUBLIC_OAUTH_REDIRECT_URI: http://localhost:15009/auth/callback
+  PUBLIC_IMAGE_CDN_BASE: http://localhost:15002/kun-images
 ```
 
 > 想「一次构建、运行时改配置」:不传 `PUBLIC_*`,改在容器运行时设 Nitro 约定名 `NUXT_PUBLIC_*`。但 `oauthClientID`/`oauthRedirectURI` 这类驼峰键到 env 名的映射有歧义,所以本部署默认走 build 期烘焙(各 web 的 host 地址固定,烘焙无碍)。详见 [05-configuration.md](./05-configuration.md)。

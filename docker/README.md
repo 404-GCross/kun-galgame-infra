@@ -9,8 +9,8 @@ Meilisearch); kungal + moyu connect to these.
 | File | Builds | Base image | Why |
 |---|---|---|---|
 | `docker/go.Dockerfile` | galgame + every `migrate-*` / worker (pure Go) | `distroless/static` (~25–45 MB) | `CGO_ENABLED=0` static binary |
-| `docker/cgo.Dockerfile` | **oauth + image** | `debian:bookworm-slim` (~180 MB) | both transitively import `kolesa-team/go-webp` → cgo → **libwebp** at build + runtime |
-| `docker/nuxt.Dockerfile` | web + wiki (Nitro `node-server`) | `node:22-slim` (~390 MB) | self-contained `.output`; sharp comes via the `@kun/ui` layer |
+| `docker/cgo.Dockerfile` | **oauth + image** | `debian:trixie-slim` (~180 MB) | both transitively import `kolesa-team/go-webp` → cgo → **libwebp** at build + runtime |
+| `docker/nuxt.Dockerfile` | web + wiki (Nitro `node-server`) | `node:24-trixie-slim` (~390 MB) | self-contained `.output`; sharp comes via the `@kun/ui` layer |
 
 Both Go Dockerfiles and the Nuxt one are **parametric** (`--build-arg CMD=…` /
 `APP=…`) and require the **repo root** as build context (the frontends consume
@@ -30,17 +30,18 @@ docker compose run --rm migrate-galgame            # galgame wiki schema
 docker compose up -d oauth image galgame web wiki
 ```
 
-Then (browser-facing, host ports are in the **1xxxx** range so the stack
-coexists with a running `air` dev server):
+Then (browser-facing, host ports are the **consecutive 15000–15013** range so
+the stack coexists with a running `air` dev server; all Go services share a
+root `/healthz`):
 
 | Service | URL |
 |---|---|
-| oauth API | http://localhost:19277/api/v1/health |
-| image API | http://localhost:19278/healthz |
-| galgame API | http://localhost:19280/api/health |
-| web (oauth-admin) | http://localhost:19420 |
-| wiki (galgame-wiki) | http://localhost:19421 |
-| MinIO console | http://localhost:19001 |
+| oauth API | http://localhost:15005/healthz |
+| image API | http://localhost:15006/healthz |
+| galgame API | http://localhost:15007/healthz |
+| web (oauth-admin) | http://localhost:15008 |
+| wiki (galgame-wiki) | http://localhost:15009 |
+| MinIO console | http://localhost:15003 |
 
 Service-to-service traffic uses container ports via service names
 (`postgres:5432`, `minio:9000`, `http://oauth:9277`, …) regardless of the host
@@ -64,7 +65,7 @@ mapping.
 Distroless ships no shell/curl, so each Go service binary self-probes via a
 `healthcheck` subcommand (`pkg/health`): the compose healthcheck runs
 `/app healthcheck` (or `/app/app healthcheck` for the cgo images), which GETs
-its own `/health(z)` and exits 0/1. Frontends use a Node TCP liveness probe.
+its own root `/healthz` and exits 0/1. Frontends use a Node TCP liveness probe.
 
 ## Notes / gotchas hit while building
 

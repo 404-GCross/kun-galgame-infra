@@ -39,19 +39,19 @@
 
 | 服务 | 容器端口 | host 端口 | 健康端点 |
 |---|---|---|---|
-| hub oauth | 9277 | **19277** | `/healthz` |
-| hub image | 9278 | **19278** | `/healthz` |
-| hub galgame | 9280 | **19280** | `/healthz` |
-| hub web(oauth-admin) | 3000 | **19420** | `/`(302→`/auth/login`) |
-| hub wiki(galgame-wiki) | 3000 | **19421** | `/` |
-| hub postgres | 5432 | **15432** | `pg_isready` |
-| hub redis | 6379 | **16379** | `redis-cli ping` |
-| hub minio | 9000 / 9001 | **19000 / 19001** | 控制台 19001 |
-| hub meili | 7700 | **17700** | — |
-| moyu api | 5214 | **15214** | `/healthz` |
-| moyu web | 3000 | **16969** | `/` |
-| kungal api | 2334 | **12334** | `/healthz` |
-| kungal web | 7777 | **17777** | `/` |
+| hub oauth | 9277 | **15005** | `/healthz` |
+| hub image | 9278 | **15006** | `/healthz` |
+| hub galgame | 9280 | **15007** | `/healthz` |
+| hub web(oauth-admin) | 3000 | **15008** | `/`(302→`/auth/login`) |
+| hub wiki(galgame-wiki) | 3000 | **15009** | `/` |
+| hub postgres | 5432 | **15000** | `pg_isready` |
+| hub redis | 6379 | **15001** | `redis-cli ping` |
+| hub minio | 9000 / 9001 | **15002 / 15003** | 控制台 15003 |
+| hub meili | 7700 | **15004** | — |
+| moyu api | 5214 | **15010** | `/healthz` |
+| moyu web | 3000 | **15011** | `/` |
+| kungal api | 2334 | **15012** | `/healthz` |
+| kungal web | 7777 | **15013** | `/` |
 
 ## 数据库映射(同一 Postgres 实例,多库)
 

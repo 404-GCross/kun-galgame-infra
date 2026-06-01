@@ -51,9 +51,9 @@ docker compose up -d oauth image galgame web wiki
 
 健康自检:
 ```bash
-curl -s localhost:19277/healthz   # {"status":"ok"}
-curl -s localhost:19278/healthz
-curl -s localhost:19280/healthz
+curl -s localhost:15005/healthz   # {"status":"ok"}
+curl -s localhost:15006/healthz
+curl -s localhost:15007/healthz
 ```
 
 ### A.4 启动下游(moyu / kungal)
@@ -84,7 +84,7 @@ $K build && $K run --rm migrate && $K up -d api web
 > kungal 的 api **强制要求** `OAUTH_CLIENT_ID`/`OAUTH_CLIENT_SECRET` 非空(`requireEnv`),否则启动即退出;但「非空」只让进程起来,真正的令牌交换仍需该 client 存在于枢纽库。
 
 注册方式二选一:
-1. **管理端 UI**:登录 hub web(`localhost:19420`,需先有 admin 账号)→ OAuth 客户端 → 新建,填 redirect_uri / scope / grants,**记下生成的 secret** 写进对应仓的 `*.env`。
+1. **管理端 UI**:登录 hub web(`localhost:15008`,需先有 admin 账号)→ OAuth 客户端 → 新建,填 redirect_uri / scope / grants,**记下生成的 secret** 写进对应仓的 `*.env`。
 2. **直接入库**:向 `kun_oauth_admin.oauth_clients` 插入行(secret 要按 `sha256:<hex>` 哈希存,见 hub `cmd/migrate-hash-client-secrets` 与 `OAuthClient.HashOAuthClientSecret`)。
 
 下游 `*.env` 里的 `OAUTH_CLIENT_SECRET` 必须等于注册时的明文 secret。

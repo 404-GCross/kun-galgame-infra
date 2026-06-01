@@ -23,7 +23,7 @@
 | `REDIS_ENABLED` / `REDIS_HOST` | `true` / `redis` | |
 | `JWT_SECRET` | (共享) | 必填 |
 | `KUN_IMAGE_S3_*` | minio 一套 | oauth 内嵌图床 admin 端点要连 S3 + images 库 |
-| `KUN_IMAGE_PUBLIC_BASE_URL` | `http://localhost:19000/kun-images` | 浏览器取图的公网前缀 |
+| `KUN_IMAGE_PUBLIC_BASE_URL` | `http://localhost:15002/kun-images` | 浏览器取图的公网前缀 |
 
 ## hub · image(`docker/image.env`)
 
@@ -41,7 +41,7 @@
 | `OAUTH_SERVER_URL` | `http://oauth:9277/api/v1` |
 | `OAUTH_CLIENT_ID` / `_SECRET` | `df3ff6008d740bfacbe46aa8cf483cf2` / (注册时的明文) |
 | `KUN_GALGAME_WIKI_BASE_URL` | `http://galgame:9280/api` |
-| `KUN_IMAGE_SERVICE_BASE_URL` / `KUN_IMAGE_CDN_BASE` | `http://image:9278` / `http://localhost:19000/kun-images`(CDN 在 prod 模式**必填**) |
+| `KUN_IMAGE_SERVICE_BASE_URL` / `KUN_IMAGE_CDN_BASE` | `http://image:9278` / `http://localhost:15002/kun-images`(CDN 在 prod 模式**必填**) |
 | `KUN_VISUAL_NOVEL_S3_*` | B2(补丁文件,**非**图床)— 测试机为 `__SET_ME__`,补丁下载需填真值 |
 
 ## kungal · api(`kun-galgame-nuxt4/docker/api.env`)
@@ -56,7 +56,7 @@
 | `MEILISEARCH_KEY` | 空 | **(共享 master key)** ——否则被 meili 403 |
 | `MEILISEARCH_URL` | `http://meilisearch:7700` | 不用改(hub 的 meili 已加 `meilisearch` 网络别名) |
 
-`OAUTH_REDIRECT_URI` 改成 web 的 host 回调:`http://localhost:17777/auth/callback`。
+`OAUTH_REDIRECT_URI` 改成 web 的 host 回调:`http://localhost:15013/auth/callback`。
 
 ## 前端 public 配置(build args)
 

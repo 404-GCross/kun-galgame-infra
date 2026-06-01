@@ -7,8 +7,8 @@
 docker ps --format '{{.Names}}\t{{.Status}}' | grep -E 'kun-oauth-admin-|moyu-|kungal-' | sort
 
 # 端点探活
-for u in 19277/healthz 19278/healthz 19280/healthz \
-         15214/healthz 12334/healthz; do
+for u in 15005/healthz 15006/healthz 15007/healthz \
+         15010/healthz 15012/healthz; do
   printf "%-24s " "$u"; curl -s -o /dev/null -w "%{http_code}\n" "http://localhost:$u"
 done
 

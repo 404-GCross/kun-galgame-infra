@@ -31,7 +31,7 @@ services:
     volumes:
       - pg:/var/lib/postgresql/data
       - ./docker/initdb.d:/docker-entrypoint-initdb.d:ro
-    ports: ["15432:5432"]
+    ports: ["15000:5432"]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d kun_oauth_admin"]
       interval: 5s
@@ -43,7 +43,7 @@ services:
     image: redis:8-alpine
     command: ["redis-server", "--appendonly", "yes"]
     volumes: ["redis:/data"]
-    ports: ["16379:6379"]
+    ports: ["15001:6379"]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -58,7 +58,7 @@ services:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
     volumes: ["minio:/data"]
-    ports: ["19000:9000", "19001:9001"]
+    ports: ["15002:9000", "15003:9001"]
     restart: unless-stopped
 
   meili:
@@ -67,7 +67,7 @@ services:
       MEILI_MASTER_KEY: kun_docker_test_meili_master_key_change_me
       MEILI_NO_ANALYTICS: "true"
     volumes: ["meili:/meili_data"]
-    ports: ["17700:7700"]
+    ports: ["15004:7700"]
     # kungal connects by the name `meilisearch`; expose that alias too so the
     # whole ecosystem resolves this one Meili instance under either name.
     networks:
@@ -84,7 +84,7 @@ services:
       args: { CMD: oauth }
     image: kun-oauth-admin/oauth
     env_file: [./docker/oauth.env]
-    ports: ["19277:9277"]
+    ports: ["15005:9277"]
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
@@ -100,7 +100,7 @@ services:
       args: { CMD: image }
     image: kun-oauth-admin/image
     env_file: [./docker/image.env]
-    ports: ["19278:9278"]
+    ports: ["15006:9278"]
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
@@ -117,7 +117,7 @@ services:
       args: { CMD: galgame }
     image: kun-oauth-admin/galgame
     env_file: [./docker/galgame.env]
-    ports: ["19280:9280"]
+    ports: ["15007:9280"]
     depends_on:
       postgres: { condition: service_healthy }
       meili: { condition: service_started }
@@ -135,10 +135,10 @@ services:
       dockerfile: docker/nuxt.Dockerfile
       args:
         APP: web
-        PUBLIC_API_BASE: http://localhost:19277/api/v1
-        PUBLIC_IMAGE_CDN_BASE: http://localhost:19000/kun-images
+        PUBLIC_API_BASE: http://localhost:15005/api/v1
+        PUBLIC_IMAGE_CDN_BASE: http://localhost:15002/kun-images
     image: kun-oauth-admin/web
-    ports: ["19420:3000"]
+    ports: ["15008:3000"]
     depends_on:
       oauth: { condition: service_started }
     healthcheck:
@@ -152,14 +152,14 @@ services:
       dockerfile: docker/nuxt.Dockerfile
       args:
         APP: wiki
-        PUBLIC_API_BASE: http://localhost:19280/api
-        PUBLIC_AUTH_API_BASE: http://localhost:19277/api/v1
-        PUBLIC_OAUTH_AUTHORIZE_BASE: http://localhost:19277/api/v1
+        PUBLIC_API_BASE: http://localhost:15007/api
+        PUBLIC_AUTH_API_BASE: http://localhost:15005/api/v1
+        PUBLIC_OAUTH_AUTHORIZE_BASE: http://localhost:15005/api/v1
         PUBLIC_OAUTH_CLIENT_ID: galgame-wiki-admin
-        PUBLIC_OAUTH_REDIRECT_URI: http://localhost:19421/auth/callback
-        PUBLIC_IMAGE_CDN_BASE: http://localhost:19000/kun-images
+        PUBLIC_OAUTH_REDIRECT_URI: http://localhost:15009/auth/callback
+        PUBLIC_IMAGE_CDN_BASE: http://localhost:15002/kun-images
     image: kun-oauth-admin/wiki
-    ports: ["19421:3000"]
+    ports: ["15009:3000"]
     depends_on:
       galgame: { condition: service_started }
     healthcheck:

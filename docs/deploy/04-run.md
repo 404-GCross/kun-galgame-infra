@@ -93,8 +93,8 @@ include:
 
 | 入口 | URL |
 |---|---|
-| oauth-admin 管理端 | http://localhost:19420 |
-| galgame-wiki | http://localhost:19421 |
-| moyu 补丁站 | http://localhost:16969 |
-| kungal 论坛 | http://localhost:17777 |
-| MinIO 控制台 | http://localhost:19001(minioadmin/minioadmin) |
+| oauth-admin 管理端 | http://localhost:15008 |
+| galgame-wiki | http://localhost:15009 |
+| moyu 补丁站 | http://localhost:15011 |
+| kungal 论坛 | http://localhost:15013 |
+| MinIO 控制台 | http://localhost:15003(minioadmin/minioadmin) |
