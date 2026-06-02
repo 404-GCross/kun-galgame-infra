@@ -13,6 +13,7 @@
 | 6 | [06-operations.md](./06-operations.md) | 运维:健康/日志、升级、备份恢复、迁移 job、扩缩容 |
 | 7 | [07-troubleshooting.md](./07-troubleshooting.md) | 故障排查:实跑中踩到的每一个坑 + 解法 |
 | 12 | [12-dokploy.md](./12-dokploy.md) | **Dokploy 部署(线上推荐)**:单服务器自托管 PaaS,内置 Traefik 反代 + 自动 SSL + 编排;含真实域名映射与改造清单 |
+| 13 | [13-registry-ci.md](./13-registry-ci.md) | **镜像 Registry + CI 构建**:GHCR + GitHub Actions 在 CI build → 推 GHCR → Dokploy 拉预构建镜像(生产机零构建);镜像清单 / workflow / tag 回滚 / prod compose 用 `image:` |
 | 9 | [09-edge-caddy.md](./09-edge-caddy.md) | 手动边缘反代 · Caddy(**不用 Dokploy 时**):自动 HTTPS、域名映射、§9.0 共同前提 |
 | 10 | [10-edge-nginx.md](./10-edge-nginx.md) | 手动边缘反代 · Nginx:手动 TLS(certbot)、WS 升级头、容器名回源 |
 | 11 | [11-edge-cloudflare-tunnel.md](./11-edge-cloudflare-tunnel.md) | 手动边缘反代 · Cloudflare Tunnel:纯出站、零入站端口(NAT/dae 后首选) |

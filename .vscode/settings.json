@@ -80,6 +80,7 @@
     "INCRBY",
     "initdb",
     "isready",
+    "jobservice",
     "joho",
     "katex",
     "Kawaii",

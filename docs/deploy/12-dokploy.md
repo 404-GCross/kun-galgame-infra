@@ -4,6 +4,8 @@
 
 > 选了 Dokploy 就**不要再叠加** Caddy/nginx/Cloudflare Tunnel —— Traefik 已是它的反代。09-11 仅作"不用 Dokploy 时"的替代方案。
 
+> **镜像从哪来**:生产**强烈建议用 CI 预构建镜像(GHCR)+ Dokploy 拉取,不要在生产机上 build**(本生态镜像重,会拖垮单服务器)—— 见 [13-registry-ci.md](./13-registry-ci.md)。本篇下文的"Git source + 在 Dokploy 上 build"是更简单的起步路径,跑通后建议切到 §13 的预构建流。
+
 ## 12.0 拓扑(单服务器)
 
 ```
@@ -94,7 +96,7 @@ OAuth client 的 `redirect_uris` 存在枢纽 `kun_galgame_infra.oauth_clients` 
 
 1. **装 Dokploy**(目标服务器):`curl -sSL https://dokploy.com/install.sh | sh`([安装文档](https://docs.dokploy.com/docs/core/manual-installation))。
 2. **DNS**:把 12.1 所有域名 A 记录指向服务器公网 IP(`image.kungal.iloveren.link` 走 R2 则指 Cloudflare,不指本机)。
-3. **建 3 个 Compose 应用**(Git source 指各仓库,设分支 + compose 文件路径)。
+3. **建 3 个 Compose 应用**。两种来源:**(推荐·生产)** 指向各仓 `docker-compose.prod.yml`(用 `image:` 引用 GHCR 预构建镜像,见 [13-registry-ci.md](./13-registry-ci.md));**(起步)** 直接 Git source + 在 Dokploy 上 build(简单,但重镜像有拖垮单机风险)。
 4. **填环境变量**(Dokploy 的 Environment / 各服务 env_file 对应内容):按 12.2 C/D/E + 12.3 的 https 域名;**密钥务必全部轮换**(见 [05-configuration.md](./05-configuration.md))。
 5. **部署顺序**:先部署 **hub**(等 `postgres`/`redis`/`minio`/`meili` healthy)→ 在 Dokploy **Terminal/Run** 跑首启迁移(见 12.6)→ 再部署 **kungal**、**moyu**。
 6. **配域名**:每个应用的对外服务在 **Domains** 标签按 12.1 添加(含 `/api*` 与 `/` 两条),Dokploy 自动注入 Traefik labels + 签发证书。
