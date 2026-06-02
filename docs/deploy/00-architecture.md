@@ -4,7 +4,7 @@
 
 | 仓库 | 代号 | 角色 | apps |
 |---|---|---|---|
-| `kun-galgame-infra` | **hub / 枢纽** | 身份(OAuth)+ 图床 + galgame-wiki 的单一来源;**拥有共享基础设施** | api(多二进制)、web(admin)、wiki(galgame-wiki) |
+| `kun-galgame-infra` | **infra / 枢纽** | 身份(OAuth)+ 图床 + galgame-wiki 的单一来源;**拥有共享基础设施** | api(多二进制)、web(admin)、wiki(galgame-wiki) |
 | `kun-galgame-nuxt4` | **kungal** | 论坛站(Fiber API + Nuxt SSR) | api、web |
 | `kun-galgame-patch-next` | **moyu** | 补丁站(Fiber API + Nuxt SSR) | api、web |
 
@@ -13,12 +13,12 @@
 ## 服务拓扑
 
 ```
-            ┌─────────────────── 共享基础设施(hub compose 定义一次)───────────────────┐
+            ┌─────────────────── 共享基础设施(infra compose 定义一次)───────────────────┐
             │   postgres:16    redis:7    minio(S3)    meilisearch(别名)             │
             └──────────────────────────────────────────────────────────────────────────┘
                  ▲ 同一 docker 网络:kun-galgame-infra_default(所有容器都在上面)
    ┌─────────────┼───────────────────────────┬───────────────────────────┐
-   │ hub         │                 moyu       │                 kungal     │
+   │ infra         │                 moyu       │                 kungal     │
    │  oauth   ───┤(身份/账本/图床admin/jobs)  api ──(OAuth/图床/wiki)     api ──(OAuth/wiki/图床/搜索)
    │  image   ───┤(cgo+libwebp,图床)         web                          web
    │  galgame ───┤(galgame-wiki API + 搜索)
@@ -39,15 +39,15 @@
 
 | 服务 | 容器端口 | host 端口 | 健康端点 |
 |---|---|---|---|
-| hub oauth | 9277 | **15005** | `/healthz` |
-| hub image | 9278 | **15006** | `/healthz` |
-| hub galgame | 9280 | **15007** | `/healthz` |
-| hub web(admin) | 3000 | **15008** | `/`(302→`/auth/login`) |
-| hub wiki(galgame-wiki) | 3000 | **15009** | `/` |
-| hub postgres | 5432 | **15000** | `pg_isready` |
-| hub redis | 6379 | **15001** | `redis-cli ping` |
-| hub minio | 9000 / 9001 | **15002 / 15003** | 控制台 15003 |
-| hub meili | 7700 | **15004** | — |
+| infra oauth | 9277 | **15005** | `/healthz` |
+| infra image | 9278 | **15006** | `/healthz` |
+| infra galgame | 9280 | **15007** | `/healthz` |
+| infra web(admin) | 3000 | **15008** | `/`(302→`/auth/login`) |
+| infra wiki(galgame-wiki) | 3000 | **15009** | `/` |
+| infra postgres | 5432 | **15000** | `pg_isready` |
+| infra redis | 6379 | **15001** | `redis-cli ping` |
+| infra minio | 9000 / 9001 | **15002 / 15003** | 控制台 15003 |
+| infra meili | 7700 | **15004** | — |
 | moyu api | 5214 | **15010** | `/healthz` |
 | moyu web | 3000 | **15011** | `/` |
 | kungal api | 2334 | **15012** | `/healthz` |
@@ -59,20 +59,20 @@
 
 | 库名 | 属主 | 由谁建 schema |
 |---|---|---|
-| `kun_galgame_infra` | hub oauth | `migrate`(hub) |
-| `kun_galgame_wiki` | hub galgame | `migrate-galgame`(hub) |
-| `kun_images` | hub image | image 服务启动时 AutoMigrate |
+| `kun_galgame_infra` | infra oauth | `migrate`(infra) |
+| `kun_galgame_wiki` | infra galgame | `migrate-galgame`(infra) |
+| `kun_images` | infra image | image 服务启动时 AutoMigrate |
 | `kungalgame` | kungal | dump 恢复 + kungal `migrate` + 跨仓迁移 |
 | `kungalgame_patch` | moyu | dump 恢复 + moyu `migrate` + 跨仓迁移 |
 
-前 3 个库由 hub 的 `docker/initdb.d/01-create-databases.sh` 在 Postgres 首次初始化时一并 `CREATE DATABASE`(已含后两个下游库)。
+前 3 个库由 infra 的 `docker/initdb.d/01-create-databases.sh` 在 Postgres 首次初始化时一并 `CREATE DATABASE`(已含后两个下游库)。
 
 ## 镜像策略(每仓略有不同)
 
 | 镜像 | 基镜 | 体积 | 说明 |
 |---|---|---|---|
-| hub galgame / 迁移工具 / kungal api / moyu api | `distroless/static-debian13` | 24–45MB | 纯 Go,`CGO_ENABLED=0` 静态二进制 |
-| **hub oauth / hub image** | `debian:trixie-slim` | ~180MB | **cgo + libwebp**(`kolesa-team/go-webp`);oauth 因内嵌图床 admin 也被拉入 cgo |
-| 所有 web(hub web/wiki、moyu web、kungal web) | `node:24-trixie-slim` | ~390MB | Nitro `node-server` + 自包含 `.output`(含 sharp,linux-x64) |
+| infra galgame / 迁移工具 / kungal api / moyu api | `distroless/static-debian13` | 24–45MB | 纯 Go,`CGO_ENABLED=0` 静态二进制 |
+| **infra oauth / infra image** | `debian:trixie-slim` | ~180MB | **cgo + libwebp**(`kolesa-team/go-webp`);oauth 因内嵌图床 admin 也被拉入 cgo |
+| 所有 web(infra web/wiki、moyu web、kungal web) | `node:24-trixie-slim` | ~390MB | Nitro `node-server` + 自包含 `.output`(含 sharp,linux-x64) |
 
 详见 [02-build.md](./02-build.md)。

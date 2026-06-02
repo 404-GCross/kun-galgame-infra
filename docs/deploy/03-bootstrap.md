@@ -65,9 +65,9 @@ curl -s localhost:15007/healthz
 cd kun-galgame-patch-next && docker compose build && \
   docker compose run --rm migrate && docker compose up -d api web
 
-# kungal(必须叠加 hub override)
+# kungal(必须叠加 infra override)
 cd kun-galgame-nuxt4
-K="docker compose -f docker-compose.yml -f docker-compose.hub.yml"
+K="docker compose -f docker-compose.yml -f docker-compose.infra.yml"
 $K build && $K run --rm migrate && $K up -d api web
 ```
 
@@ -77,15 +77,15 @@ $K build && $K run --rm migrate && $K up -d api web
 
 | 客户端 | client_id | 用途 |
 |---|---|---|
-| galgame-wiki-admin | `galgame-wiki-admin` | hub wiki 前端 |
+| galgame-wiki-admin | `galgame-wiki-admin` | infra wiki 前端 |
 | moyu | `df3ff6008d740bfacbe46aa8cf483cf2` | moyu web |
 | kungal-web | `kungal-web` | kungal web |
 
 > kungal 的 api **强制要求** `OAUTH_CLIENT_ID`/`OAUTH_CLIENT_SECRET` 非空(`requireEnv`),否则启动即退出;但「非空」只让进程起来,真正的令牌交换仍需该 client 存在于枢纽库。
 
 注册方式二选一:
-1. **管理端 UI**:登录 hub web(`localhost:15008`,需先有 admin 账号)→ OAuth 客户端 → 新建,填 redirect_uri / scope / grants,**记下生成的 secret** 写进对应仓的 `*.env`。
-2. **直接入库**:向 `kun_galgame_infra.oauth_clients` 插入行(secret 要按 `sha256:<hex>` 哈希存,见 hub `cmd/migrate-hash-client-secrets` 与 `OAuthClient.HashOAuthClientSecret`)。
+1. **管理端 UI**:登录 infra web(`localhost:15008`,需先有 admin 账号)→ OAuth 客户端 → 新建,填 redirect_uri / scope / grants,**记下生成的 secret** 写进对应仓的 `*.env`。
+2. **直接入库**:向 `kun_galgame_infra.oauth_clients` 插入行(secret 要按 `sha256:<hex>` 哈希存,见 infra `cmd/migrate-hash-client-secrets` 与 `OAuthClient.HashOAuthClientSecret`)。
 
 下游 `*.env` 里的 `OAUTH_CLIENT_SECRET` 必须等于注册时的明文 secret。
 
@@ -105,16 +105,16 @@ docker run --rm --network kun-galgame-infra_default --env-file docker/galgame.en
 
 带数据上线是一条**有严格顺序的跨仓流水线**(不是单个 job)。Docker 不简化顺序,但每一步都能容器化成 `compose run` job。总体顺序(详见各仓 `docs/migration/`):
 
-1. **恢复源库 dump**:`kungalgame`、`kungalgame_patch` 从生产 dump 恢复;清空 hub 的 3 个库。
-   (hub `scripts/reset_all.sh` 是本地版的 drop+restore。)
+1. **恢复源库 dump**:`kungalgame`、`kungalgame_patch` 从生产 dump 恢复;清空 infra 的 3 个库。
+   (infra `scripts/reset_all.sh` 是本地版的 drop+restore。)
 2. **kungal 预处理**:`check-dup-email` → kungal `migrate`(001–004、008–009)。
 3. **moyu OAuth 对齐**:moyu `migrate-oauth-prep`。
-4. **hub 身份/内容迁移**(顺序敏感):
+4. **infra 身份/内容迁移**(顺序敏感):
    `migrate` → `migrate-users`(对齐三库 user.id)→ `migrate-galgame` → `migrate-galgame-data` → `migrate-moyu-galgame` → `dedup-galgame-alias`。
 5. **kungal 收尾迁移**(**必须在 `migrate-users` 之后**,否则游标指向旧 id):
    kungal `migrate --only=005/006/007/015/012` + `backfill-provider-names`。
 6. **moyu 收尾迁移**:moyu `migrate`(001 then 全量)+ `remap-patch-ids`。
-7. **VNDB / 发布日期 / 萌萌点回填**:hub `sync-vndb*`、各仓 `backfill-release-date`、hub `migrate-moemoepoint`。
+7. **VNDB / 发布日期 / 萌萌点回填**:infra `sync-vndb*`、各仓 `backfill-release-date`、infra `migrate-moemoepoint`。
 
 > 每步对应一个 `docker compose run --rm <job>`(job 名 = `cmd/` 目录名,用 `--build-arg CMD=` 出镜像)。**严格按上面的序**;`migrate-users` 是分水岭,跨它的步骤不能乱序。原始逐条命令见仓库根 `docs/migration/` 与团队 runbook。
 

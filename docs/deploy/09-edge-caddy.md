@@ -6,7 +6,7 @@ Caddy 是这套自托管栈最优雅的默认选择([Caddy 官方](https://caddy
 
 1. **前端必须用真实域名重新构建**。当前镜像把 public 配置烘焙成了 `http://localhost:1xxxx`(见 [02-build.md](./02-build.md))——浏览器会去连 localhost。上线前用真实 https 域名重建各 web:
    ```bash
-   # 例:hub wiki
+   # 例:infra wiki
    docker build -f docker/nuxt.Dockerfile --build-arg APP=wiki \
      --build-arg PUBLIC_API_BASE=https://wiki.kungal.com/api \
      --build-arg PUBLIC_AUTH_API_BASE=https://oauth.kungal.com/api/v1 \

@@ -28,7 +28,7 @@
 - **现象**:在 kungal 目录直接 `docker compose build/up` 即报错,连构建都进不去。
 - **原因**:kungal 主 compose 在 `depends_on` 引用了 `postgres`/`redis`,但**不定义**它们,也没声明外部网络。
 - **解法**:必须叠加一个提供/外置 pg+redis 的 compose:
-  - 连 hub:`-f docker-compose.yml -f docker-compose.hub.yml`(本仓库已附,`!reset` 清掉 depends_on + 接 `kun-galgame-infra_default`)。
+  - 连 infra:`-f docker-compose.yml -f docker-compose.infra.yml`(本仓库已附,`!reset` 清掉 depends_on + 接 `kun-galgame-infra_default`)。
   - 自测:`-f docker-compose.yml -f docker-compose.standalone.yml`。
 
 ### K2 · kungal api 启动即退出(无明显日志)
@@ -36,8 +36,8 @@
 - **解法**:填非空值(`kungal-web` / 注册时的 secret)。见 [05-configuration.md](./05-configuration.md)。
 
 ### K3 · kungal api 连不上库 / 搜索 403
-- **原因**:kungal 自带 `api.env` 是 standalone 配置——DB 密码 `kungal_dev_pw`(hub 是 `191007`)、`MEILISEARCH_KEY` 空(hub meili 有 master key → 403)。
-- **解法**:接 hub 时把密码改 `191007`、`MEILISEARCH_KEY` 填共享 master key、`JWT_SECRET` 填共享密钥。
+- **原因**:kungal 自带 `api.env` 是 standalone 配置——DB 密码 `kungal_dev_pw`(infra 是 `191007`)、`MEILISEARCH_KEY` 空(infra meili 有 master key → 403)。
+- **解法**:接 infra 时把密码改 `191007`、`MEILISEARCH_KEY` 填共享 master key、`JWT_SECRET` 填共享密钥。
 
 ## 跨仓 / 基础设施
 
@@ -51,8 +51,8 @@
 - **解法**:**开发**直接清卷重来:`docker compose rm -sf meili && docker volume rm kun-galgame-infra_meili && docker compose up -d meili`;**生产**按官方指引 dump→升级→import。
 
 ### I3 · kungal 连 `meilisearch` 解析不到
-- **原因**:kungal 用服务名 `meilisearch`,hub 的服务叫 `meili`。
-- **解法**:hub 的 meili 已加网络别名 `meilisearch`(`networks.default.aliases`),两个名都解析到同一实例。
+- **原因**:kungal 用服务名 `meilisearch`,infra 的服务叫 `meili`。
+- **解法**:infra 的 meili 已加网络别名 `meilisearch`(`networks.default.aliases`),两个名都解析到同一实例。
 
 ### I4 · 下游报「数据库不存在」/ 服务起来但业务接口 500
 - **原因 a**:`kungalgame` / `kungalgame_patch` 没建。initdb 脚本**只在数据卷首次初始化时跑一次**;复用旧卷不会补建。
@@ -62,7 +62,7 @@
 
 ### I5 · OAuth 登录跳转后报错 / 拿不到令牌
 - **原因**:对应 OAuth client 没注册到枢纽(client 不在任何 migrate 种子里)。
-- **解法**:在 hub 管理端注册 client 或入 `oauth_clients` 表,secret 按 `sha256:` 哈希存,并让下游 `OAUTH_CLIENT_SECRET` 等于明文。见 [03-bootstrap.md](./03-bootstrap.md) A.5。
+- **解法**:在 infra 管理端注册 client 或入 `oauth_clients` 表,secret 按 `sha256:` 哈希存,并让下游 `OAUTH_CLIENT_SECRET` 等于明文。见 [03-bootstrap.md](./03-bootstrap.md) A.5。
 
 ### I6 · 容器起来了但外部 curl 不通(连接拒绝)
 - **原因**:服务绑了 `127.0.0.1`。
@@ -83,7 +83,7 @@
 ### I10 · 前端报 CORS:`No 'Access-Control-Allow-Origin' header`(preflight 失败)
 - **现象**:`http://127.0.0.1:15008` 的页面 fetch `http://localhost:15005/api/v1/auth/refresh` 被 CORS 拦,预检无 ACAO。
 - **原因**:**`127.0.0.1` 与 `localhost` 是不同 origin**(尽管同 IP)。API 的 CORS 是精确匹配白名单 + `AllowCredentials:true`,白名单里只有 `localhost:15008`,页面 origin 是 `127.0.0.1:15008` → 不匹配 → 预检被拒。前端 `apiBase` 烘焙成 `localhost`,而你用 `127.0.0.1` 打开页面就会触发。
-- **本地解法(已配)**:让 CORS 白名单**同时含 `localhost` 和 `127.0.0.1`** 两套源。各 API 的 env:hub 用 `KUN_FRONTEND_CORS_ORIGIN`,moyu/kungal 用 `CORS_ALLOW_ORIGINS`,都已填两套。或简单点:**始终用 `localhost` 访问**(与烘焙的 apiBase 一致)。
+- **本地解法(已配)**:让 CORS 白名单**同时含 `localhost` 和 `127.0.0.1`** 两套源。各 API 的 env:infra 用 `KUN_FRONTEND_CORS_ORIGIN`,moyu/kungal 用 `CORS_ALLOW_ORIGINS`,都已填两套。或简单点:**始终用 `localhost` 访问**(与烘焙的 apiBase 一致)。
 - **线上解法**:生产每个站点的 **web 与它的 API 同源**(反代把 `oauth.kungal.com/*`→admin web、`oauth.kungal.com/api/v1/*`→oauth api;`www.moyu.moe/*`→web、`/api/v1/*`→api,见 [09-edge-caddy.md](./09-edge-caddy.md))。**同源请求根本不触发 CORS**,`/auth/refresh` 直接通。仅当前端跨域调别的子域 API 时,才把那个 API 的 CORS 白名单设成真实 https 域名(`https://wiki.kungal.com` 等);同时确保反代转发 `X-Forwarded-Proto`,使 `Secure` cookie 生效。
 
 ## 一条命令快速体检

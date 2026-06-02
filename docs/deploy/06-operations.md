@@ -16,7 +16,7 @@ done
 docker compose logs -f --since 10m oauth
 ```
 
-- 三个 Go HTTP 服务的容器 `HEALTHCHECK` 用**二进制自带的 `healthcheck` 子命令**(distroless 无 shell):`/app healthcheck`(hub cgo 镜像是 `/app/app healthcheck`)自探**根路径 `/healthz`**(全服务已统一)。前端用 Node TCP 探活。
+- 三个 Go HTTP 服务的容器 `HEALTHCHECK` 用**二进制自带的 `healthcheck` 子命令**(distroless 无 shell):`/app healthcheck`(infra cgo 镜像是 `/app/app healthcheck`)自探**根路径 `/healthz`**(全服务已统一)。前端用 Node TCP 探活。
 - `docker inspect --format '{{.State.Health.Status}}' <container>` 看健康判定。
 
 ## 升级 / 重新部署
@@ -45,7 +45,7 @@ Redis(`redis:8-alpine`)/MinIO(已锁 RELEASE)向前兼容旧数据,直接换 tag
 
 ## 备份 / 恢复
 
-数据全在 hub 的 4 个命名卷:`kun-galgame-infra_{pg,redis,minio,meili}`。
+数据全在 infra 的 4 个命名卷:`kun-galgame-infra_{pg,redis,minio,meili}`。
 
 ```bash
 # Postgres 逻辑备份(所有库)
@@ -70,8 +70,8 @@ docker run --rm -v kun-galgame-infra_minio:/data -v "$PWD:/b" alpine \
 
 都是 `profiles: ["jobs"]` 的一次性容器,`up` 不会拉起:
 ```bash
-docker compose run --rm migrate              # hub oauth schema
-docker compose run --rm migrate-galgame      # hub wiki schema
+docker compose run --rm migrate              # infra oauth schema
+docker compose run --rm migrate-galgame      # infra wiki schema
 # 其它工具用 build-arg 出镜像后 run:
 docker build -f docker/go.Dockerfile --build-arg CMD=sync-vndb -t kun-galgame-infra/sync-vndb .
 docker run --rm --network kun-galgame-infra_default --env-file docker/galgame.env kun-galgame-infra/sync-vndb
@@ -80,11 +80,11 @@ docker run --rm --network kun-galgame-infra_default --env-file docker/galgame.en
 
 ## 定时任务
 
-hub `oauth` 进程内置 job 调度器(启动日志可见 `jobs: scheduler started`),自动跑 `image-gc` / `sync-vndb` / `*-refping` 等,**无需** crontab。可在 admin 端 `/api/v1/admin/jobs/*` 手动触发 / 看历史。
+infra `oauth` 进程内置 job 调度器(启动日志可见 `jobs: scheduler started`),自动跑 `image-gc` / `sync-vndb` / `*-refping` 等,**无需** crontab。可在 admin 端 `/api/v1/admin/jobs/*` 手动触发 / 看历史。
 
 ## 扩缩容
 
-- 无状态 api/web 可水平扩:`docker compose up -d --scale galgame=2`(前面要有反代做负载均衡;hub 的 job 调度用 PG advisory lock 做单飞,多副本安全)。
+- 无状态 api/web 可水平扩:`docker compose up -d --scale galgame=2`(前面要有反代做负载均衡;infra 的 job 调度用 PG advisory lock 做单飞,多副本安全)。
 - 有状态(pg/redis/minio/meili)单实例;要高可用需各自的集群方案,超出本机范围。
 
 ## 资源 / 清理
@@ -100,7 +100,7 @@ docker image prune          # 清悬空镜像
 
 各 web/api 前面套 Caddy/Traefik,按域名分流并终止 TLS。示例(Caddy):
 ```
-oauth.kungal.com   → hub web:3000     ;  /api/* → oauth:9277
+oauth.kungal.com   → infra web:3000     ;  /api/* → oauth:9277
 www.kungal.com     → kungal web:7777
 www.moyu.moe       → moyu web:3000    ;  /api/* → moyu api:5214
 image.kungal.com   → minio:9000/kun-images   (或 CDN 回源 MinIO)

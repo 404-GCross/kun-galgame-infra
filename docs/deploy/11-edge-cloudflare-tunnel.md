@@ -1,6 +1,6 @@
 # 11 · 边缘反代:Cloudflare Tunnel
 
-`cloudflared` 与 Cloudflare 边缘建立**纯出站**长连接,把公网流量隧道回本机——**无需开放任何入站端口、无需公网 IP、不用动路由器/防火墙**([cloudflared 镜像](https://hub.docker.com/r/cloudflare/cloudflared)、[2026 实践](https://dev.to/mihailtd/secure-self-hosting-with-cloudflare-tunnels-and-docker-zero-trust-security-5bbn))。TLS 由 Cloudflare 边缘终止,DDoS/缓存/WAF 顺带白嫖。
+`cloudflared` 与 Cloudflare 边缘建立**纯出站**长连接,把公网流量隧道回本机——**无需开放任何入站端口、无需公网 IP、不用动路由器/防火墙**([cloudflared 镜像](https://infra.docker.com/r/cloudflare/cloudflared)、[2026 实践](https://dev.to/mihailtd/secure-self-hosting-with-cloudflare-tunnels-and-docker-zero-trust-security-5bbn))。TLS 由 Cloudflare 边缘终止,DDoS/缓存/WAF 顺带白嫖。
 
 **这是本机最合适的方案**:你这台在 dae 之后、入站不一定可达,而 Tunnel 全程出站,**dae 那套 `lan_interface` 对它也无所谓**(cloudflared 自己出站,被 dae 代理也能连 CF)。
 

@@ -32,13 +32,13 @@ CI 按各仓**现有 Dockerfile**(参数化)构建以下镜像并推到 `ghcr.io
 
 | 镜像 `ghcr.io/kun1007/…` | 仓库 | Dockerfile | 关键 build-arg | 容器端口 |
 |---|---|---|---|---|
-| `hub-oauth` | infra | `docker/cgo.Dockerfile` | `CMD=oauth` | 9277 |
-| `hub-image` | infra | `docker/cgo.Dockerfile` | `CMD=image` | 9278 |
-| `hub-galgame` | infra | `docker/go.Dockerfile` | `CMD=galgame` | 9280 |
-| `hub-web` | infra | `docker/nuxt.Dockerfile` | `APP=web` | 3000 |
-| `hub-wiki` | infra | `docker/nuxt.Dockerfile` | `APP=wiki` | 3000 |
-| `hub-migrate` | infra | `docker/go.Dockerfile` | `CMD=migrate` | —(一次性) |
-| `hub-migrate-galgame` | infra | `docker/go.Dockerfile` | `CMD=migrate-galgame` | —(一次性) |
+| `infra-oauth` | infra | `docker/cgo.Dockerfile` | `CMD=oauth` | 9277 |
+| `infra-image` | infra | `docker/cgo.Dockerfile` | `CMD=image` | 9278 |
+| `infra-galgame` | infra | `docker/go.Dockerfile` | `CMD=galgame` | 9280 |
+| `infra-web` | infra | `docker/nuxt.Dockerfile` | `APP=web` | 3000 |
+| `infra-wiki` | infra | `docker/nuxt.Dockerfile` | `APP=wiki` | 3000 |
+| `infra-migrate` | infra | `docker/go.Dockerfile` | `CMD=migrate` | —(一次性) |
+| `infra-migrate-galgame` | infra | `docker/go.Dockerfile` | `CMD=migrate-galgame` | —(一次性) |
 | `kungal-api` | nuxt4 | `docker/go.Dockerfile` | `CMD=server` | 2334 |
 | `kungal-web` | nuxt4 | `docker/nuxt.Dockerfile` | `APP=web` | 7777 |
 | `kungal-migrate` | nuxt4 | `docker/go.Dockerfile` | `CMD=migrate` | —(一次性) |
@@ -58,7 +58,7 @@ CI 按各仓**现有 Dockerfile**(参数化)构建以下镜像并推到 `ghcr.io
 
 ## 13.4 GitHub Actions workflow
 
-每仓放一个 `.github/workflows/build.yml`。下面是 **hub(最复杂,cgo + 2×Nuxt + Go)** 的完整示例;kungal/moyu **同构**,仅 `matrix` 列表不同。
+每仓放一个 `.github/workflows/build.yml`。下面是 **infra(最复杂,cgo + 2×Nuxt + Go)** 的完整示例;kungal/moyu **同构**,仅 `matrix` 列表不同。
 
 ```yaml
 # kun-galgame-infra/.github/workflows/build.yml
@@ -80,13 +80,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { name: hub-oauth,           file: docker/cgo.Dockerfile,  args: "CMD=oauth" }
-          - { name: hub-image,           file: docker/cgo.Dockerfile,  args: "CMD=image" }
-          - { name: hub-galgame,         file: docker/go.Dockerfile,   args: "CMD=galgame" }
-          - { name: hub-migrate,         file: docker/go.Dockerfile,   args: "CMD=migrate" }
-          - { name: hub-migrate-galgame, file: docker/go.Dockerfile,   args: "CMD=migrate-galgame" }
-          - { name: hub-web,             file: docker/nuxt.Dockerfile, args: "APP=web" }
-          - { name: hub-wiki,            file: docker/nuxt.Dockerfile, args: "APP=wiki" }
+          - { name: infra-oauth,           file: docker/cgo.Dockerfile,  args: "CMD=oauth" }
+          - { name: infra-image,           file: docker/cgo.Dockerfile,  args: "CMD=image" }
+          - { name: infra-galgame,         file: docker/go.Dockerfile,   args: "CMD=galgame" }
+          - { name: infra-migrate,         file: docker/go.Dockerfile,   args: "CMD=migrate" }
+          - { name: infra-migrate-galgame, file: docker/go.Dockerfile,   args: "CMD=migrate-galgame" }
+          - { name: infra-web,             file: docker/nuxt.Dockerfile, args: "APP=web" }
+          - { name: infra-wiki,            file: docker/nuxt.Dockerfile, args: "APP=wiki" }
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
@@ -123,29 +123,29 @@ jobs:
 Nuxt 的 public 配置有两种注入方式,直接影响"镜像是否环境无关":
 
 - **运行时 `NUXT_PUBLIC_*` env(推荐)** —— kungal/moyu 的 web 已用 `docker/web.env` 的 `NUXT_PUBLIC_*`(Nuxt 启动时读)。**CI 构建通用镜像、不烤域名**,真实域名在 **Dokploy 的环境变量**里注入。一个镜像可用于任意环境。
-- **构建期 build-arg `PUBLIC_*`(hub web/wiki 现状)** —— 域名在 **CI build 时**烤进镜像 → 镜像与环境绑定。可行,但要在 workflow 的 `build-args` 里传 12-dokploy 的真实域名。
+- **构建期 build-arg `PUBLIC_*`(infra web/wiki 现状)** —— 域名在 **CI build 时**烤进镜像 → 镜像与环境绑定。可行,但要在 workflow 的 `build-args` 里传 12-dokploy 的真实域名。
 
-**建议**:把 hub web/wiki 也改为读运行时 `NUXT_PUBLIC_*`(其 `nuxt.config` 已声明 `runtimeConfig.public.*`,只需在 Dokploy 设对应 env),实现"**一次构建、各处部署**";过渡期保留 build-arg 也行。
+**建议**:把 infra web/wiki 也改为读运行时 `NUXT_PUBLIC_*`(其 `nuxt.config` 已声明 `runtimeConfig.public.*`,只需在 Dokploy 设对应 env),实现"**一次构建、各处部署**";过渡期保留 build-arg 也行。
 
 > **SSR 双 base 不变**:`NUXT_API_BASE_SSR` / `NUXT_AUTH_API_BASE_SSR` / kungal `NUXT_API_BASE_URL` 仍是**运行时**容器内服务名(见 [12-dokploy §12.5](./12-dokploy.md));registry 化只影响"镜像怎么来",不影响 SSR/浏览器 base 的划分。
 
 ## 13.6 生产 compose 改用 `image:`(不再 `build:`)
 
-新增一份**只引用镜像**的生产 compose(如各仓 `docker-compose.prod.yml` 或 `compose.ghcr.yml`),Dokploy 指向它;CI 负责把这些 tag build+push 出来。示例(hub 片段):
+新增一份**只引用镜像**的生产 compose(如各仓 `docker-compose.prod.yml` 或 `compose.ghcr.yml`),Dokploy 指向它;CI 负责把这些 tag build+push 出来。示例(infra 片段):
 
 ```yaml
 # kun-galgame-infra/docker-compose.prod.yml(节选)
 name: kun-galgame-infra
 services:
   oauth:
-    image: ghcr.io/kun1007/hub-oauth:latest   # ← 不再有 build:
+    image: ghcr.io/kun1007/infra-oauth:latest   # ← 不再有 build:
     env_file: [./docker/oauth.env]
     expose: ["9277"]                           # ← expose 而非 ports(见 12-dokploy §12.2-B)
     depends_on: { postgres: { condition: service_healthy }, redis: { condition: service_healthy } }
     healthcheck: { test: ["CMD", "/app/app", "healthcheck"], <<: *svc-health }
     restart: unless-stopped
   web:
-    image: ghcr.io/kun1007/hub-web:latest
+    image: ghcr.io/kun1007/infra-web:latest
     environment:
       NUXT_API_BASE_SSR: http://oauth:9277/api/v1
       # NUXT_PUBLIC_*: 见 13.5(运行时注入真实域名)
@@ -174,9 +174,9 @@ networks:
 
 ## 13.9 一次性迁移工具镜像(cutover)
 
-跨仓迁移用到的 hub 一次性命令很多(`migrate-users`/`migrate-galgame-data`/`migrate-moyu-galgame`/`sync-vndb*`/`reindex-search` 等)。两种做法:
-- 简单:cutover 时在 Dokploy Terminal 用 `hub-galgame`/`hub-migrate` 等已发布镜像 `docker run --entrypoint <bin>` 跑,或临时 `go run`;
-- 规整:加一个 `hub-tools` 镜像(一个 Dockerfile 编译所有 `cmd/*` 需要的二进制)推 GHCR,cutover 用它跑。
+跨仓迁移用到的 infra 一次性命令很多(`migrate-users`/`migrate-galgame-data`/`migrate-moyu-galgame`/`sync-vndb*`/`reindex-search` 等)。两种做法:
+- 简单:cutover 时在 Dokploy Terminal 用 `infra-galgame`/`infra-migrate` 等已发布镜像 `docker run --entrypoint <bin>` 跑,或临时 `go run`;
+- 规整:加一个 `infra-tools` 镜像(一个 Dockerfile 编译所有 `cmd/*` 需要的二进制)推 GHCR,cutover 用它跑。
 顺序见 [03-bootstrap.md](./03-bootstrap.md) 与 `docs/migration/`;连库用容器服务名 `postgres:5432`。
 
 ## 13.10 升级路径

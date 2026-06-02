@@ -2,9 +2,9 @@
 
 所有镜像的**构建 context 都是各自仓库根**(前端要把 `packages/ui` 这个 Nuxt layer 一起带进去)。
 
-## Hub(kun-galgame-infra)
+## Infra(kun-galgame-infra)
 
-Hub 有 3 个 Dockerfile,因为它的二进制分两类:
+Infra 有 3 个 Dockerfile,因为它的二进制分两类:
 
 | Dockerfile | 构建对象 | CGO | 基镜 |
 |---|---|---|---|
@@ -44,8 +44,8 @@ docker compose build          # api web(+ migrate job)
 
 ```bash
 cd kun-galgame-nuxt4
-# 连已运行的 hub(推荐):
-docker compose -f docker-compose.yml -f docker-compose.hub.yml build
+# 连已运行的 infra(推荐):
+docker compose -f docker-compose.yml -f docker-compose.infra.yml build
 # 或 自带 pg/redis 自测:
 docker compose -f docker-compose.yml -f docker-compose.standalone.yml build
 ```
@@ -56,7 +56,7 @@ docker compose -f docker-compose.yml -f docker-compose.standalone.yml build
 
 | 用途 | 镜像 | 说明 |
 |---|---|---|
-| Go 构建器 | `golang:1.25-trixie`(hub)/ `golang:1.26-trixie`(moyu/kungal) | 跟随各仓 go.mod;Debian 13 |
+| Go 构建器 | `golang:1.25-trixie`(infra)/ `golang:1.26-trixie`(moyu/kungal) | 跟随各仓 go.mod;Debian 13 |
 | 纯 Go runtime | `gcr.io/distroless/static-debian13:nonroot` | Debian 13 基线 |
 | cgo runtime(oauth/image) | `debian:trixie-slim` + `libwebp7 libsharpyuv0` | Debian 13 的 libwebp 1.5 把 sharpyuv 拆成独立包,故需补 `libsharpyuv0`(bookworm 时是打进 libwebp7 的) |
 | 前端 runtime/构建 | `node:24-trixie-slim` | Node 24 = 当前 Active LTS |
@@ -69,7 +69,7 @@ docker compose -f docker-compose.yml -f docker-compose.standalone.yml build
 
 ## 前端 public 配置(构建期烘焙)
 
-Nuxt 的 `runtimeConfig.public`(apiBase、OAuth client、image CDN)在 `nuxt.config.ts` 里读的是**自定义 `KUN_*` env 名**,只在 **build 期**生效。因此各仓 compose 在 `build.args` 里以 `PUBLIC_*` 传入并烘焙进镜像。例如 hub wiki:
+Nuxt 的 `runtimeConfig.public`(apiBase、OAuth client、image CDN)在 `nuxt.config.ts` 里读的是**自定义 `KUN_*` env 名**,只在 **build 期**生效。因此各仓 compose 在 `build.args` 里以 `PUBLIC_*` 传入并烘焙进镜像。例如 infra wiki:
 
 ```yaml
 args:

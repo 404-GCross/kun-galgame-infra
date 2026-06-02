@@ -23,7 +23,7 @@
 
 ```
 website/
-├── kun-galgame-infra/        # hub
+├── kun-galgame-infra/        # infra
 ├── kun-galgame-nuxt4/      # kungal
 └── kun-galgame-patch-next/ # moyu
 ```
@@ -35,14 +35,14 @@ website/
 ├── docker-compose.yml
 ├── .dockerignore
 └── docker/
-    ├── *.Dockerfile        # go / cgo(仅 hub）/ nuxt
+    ├── *.Dockerfile        # go / cgo(仅 infra）/ nuxt
     ├── *.env               # 运行时配置(env_file,含密钥,不入镜像/git)
     ├── *.env.example       # 模板
     └── README.md           # 该仓的 Docker 说明
 ```
 
-- hub 额外有 `docker/initdb.d/`(Postgres 建库脚本)和 `docker/cgo.Dockerfile`。
-- kungal 额外有 `docker-compose.standalone.yml`(自带 pg/redis 自测)和 `docker-compose.hub.yml`(连已运行的 hub,见 [04-run.md](./04-run.md))。
+- infra 额外有 `docker/initdb.d/`(Postgres 建库脚本)和 `docker/cgo.Dockerfile`。
+- kungal 额外有 `docker-compose.standalone.yml`(自带 pg/redis 自测)和 `docker-compose.infra.yml`(连已运行的 infra,见 [04-run.md](./04-run.md))。
 
 ## 密钥占位
 

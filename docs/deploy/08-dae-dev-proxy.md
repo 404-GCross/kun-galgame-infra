@@ -26,32 +26,32 @@ Docker 默认 bridge 容器的包路径是 `容器 → veth → docker 网桥 �
 - **生产 / 无代理机**:`docker compose up -d`(只用基础文件)。固定网桥名在那里多余,且同主机跑两份栈会撞名。
 - **dae 开发机**:`docker compose -f docker-compose.yml -f docker-compose.dae.yml up -d`。
 
-> 下游 moyu / kungal **无需** dae override:它们以 `external` 方式加入 hub 的 `kun-galgame-infra_default` 网络,不创建网桥;hub 用不用 override 决定了那个网桥叫 `br-<hash>` 还是 `kungal-br0`,网络名不变,下游引用不受影响。
+> 下游 moyu / kungal **无需** dae override:它们以 `external` 方式加入 infra 的 `kun-galgame-infra_default` 网络,不创建网桥;infra 用不用 override 决定了那个网桥叫 `br-<hash>` 还是 `kungal-br0`,网络名不变,下游引用不受影响。
 
 ## 8.3 配置流程(dae 开发机)
 
 前置(本机现状已满足,异机需自查):`net.ipv4.ip_forward=1`、`rp_filter` 为 `0` 或 `2`、无防火墙拦 FORWARD。
 
 ### Step 1 · 用 dae override 重建网络,拿到 `kungal-br0`
-网桥固定名要先存在,dae 才能绑它。三个 compose 项目都挂在该网络上,需先停下游再停 hub 才能重建网络(`down` **不带 `-v`**,数据卷保留):
+网桥固定名要先存在,dae 才能绑它。三个 compose 项目都挂在该网络上,需先停下游再停 infra 才能重建网络(`down` **不带 `-v`**,数据卷保留):
 
 ```bash
 # 1) 停下游
-cd kun-galgame-nuxt4 && docker compose -f docker-compose.yml -f docker-compose.hub.yml down
+cd kun-galgame-nuxt4 && docker compose -f docker-compose.yml -f docker-compose.infra.yml down
 cd ../kun-galgame-patch-next && docker compose down
-# 2) 停 hub(网络归 hub project)
+# 2) 停 infra(网络归 infra project)
 cd ../kun-galgame-infra && docker compose down
-# 3) hub 用 dae override 重新起 → 新网桥名
+# 3) infra 用 dae override 重新起 → 新网桥名
 docker compose -f docker-compose.yml -f docker-compose.dae.yml up -d
 ip -o link show kungal-br0 && echo "✅ kungal-br0 已就位"
 # 4) 下游起回来
 cd ../kun-galgame-patch-next && docker compose up -d api web
-cd ../kun-galgame-nuxt4 && docker compose -f docker-compose.yml -f docker-compose.hub.yml up -d api web
+cd ../kun-galgame-nuxt4 && docker compose -f docker-compose.yml -f docker-compose.infra.yml up -d api web
 ```
 
-> 之后日常启停 hub 都要带 `-f docker-compose.yml -f docker-compose.dae.yml`(否则网络会用回自动网桥名)。建议设个别名:
+> 之后日常启停 infra 都要带 `-f docker-compose.yml -f docker-compose.dae.yml`(否则网络会用回自动网桥名)。建议设个别名:
 > ```bash
-> alias hub='docker compose -f docker-compose.yml -f docker-compose.dae.yml'
+> alias infra='docker compose -f docker-compose.yml -f docker-compose.dae.yml'
 > ```
 
 ### Step 2 · 编辑 dae 配置(sudo)

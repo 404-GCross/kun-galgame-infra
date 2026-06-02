@@ -7,13 +7,13 @@
 | 项 | 测试值 | 谁用 |
 |---|---|---|
 | Postgres 密码 | `191007` | 全部(连同一 pg) |
-| JWT 签名密钥 | `kun-docker-test-jwt-secret-change-me-please` | hub oauth 签发、各下游验签 |
-| MinIO 凭据 | `minioadmin` / `minioadmin` | hub image、(下游图床经 image 服务) |
-| Meili master key | `kun_docker_test_meili_master_key_change_me` | hub galgame、kungal |
+| JWT 签名密钥 | `kun-docker-test-jwt-secret-change-me-please` | infra oauth 签发、各下游验签 |
+| MinIO 凭据 | `minioadmin` / `minioadmin` | infra image、(下游图床经 image 服务) |
+| Meili master key | `kun_docker_test_meili_master_key_change_me` | infra galgame、kungal |
 
-> **JWT 密钥必须三仓一致**:hub oauth 用它签发 access_token,kungal/moyu 用同一密钥验签下游令牌。不一致 → 下游一律 401。
+> **JWT 密钥必须三仓一致**:infra oauth 用它签发 access_token,kungal/moyu 用同一密钥验签下游令牌。不一致 → 下游一律 401。
 
-## hub · oauth(`kun-galgame-infra/docker/oauth.env`)
+## infra · oauth(`kun-galgame-infra/docker/oauth.env`)
 
 | 变量 | 值 | 说明 |
 |---|---|---|
@@ -25,11 +25,11 @@
 | `KUN_IMAGE_S3_*` | minio 一套 | oauth 内嵌图床 admin 端点要连 S3 + images 库 |
 | `KUN_IMAGE_PUBLIC_BASE_URL` | `http://localhost:15002/kun-images` | 浏览器取图的公网前缀 |
 
-## hub · image(`docker/image.env`)
+## infra · image(`docker/image.env`)
 
 要点同上,外加:`KUN_IMAGE_SERVICE_HOST=0.0.0.0`、`KUN_IMAGE_UPLOAD_ENABLED=true`、`KUN_IMAGES_PG_DATABASE=kun_images`、`KUN_IMAGE_S3_FORCE_PATH_STYLE=true`(MinIO 必须)。`KUN_IMAGE_PRESETS_PATH` 已在镜像内固定为 `/app/configs/image_presets.yaml`,勿覆盖。
 
-## hub · galgame(`docker/galgame.env`)
+## infra · galgame(`docker/galgame.env`)
 
 `KUN_GALGAME_PORT=9280`、`KUN_GALGAME_PG_DATABASE=kun_galgame_wiki`、`KUN_MEILISEARCH_HOST=http://meili:7700`、`KUN_MEILISEARCH_API_KEY=`(共享 master key)。
 
@@ -46,15 +46,15 @@
 
 ## kungal · api(`kun-galgame-nuxt4/docker/api.env`)
 
-⚠️ kungal 仓库**自带的 api.env 是 standalone 取向**(密码 `kungal_dev_pw`、`meilisearch`、空 OAuth)。接 hub 必须改成:
+⚠️ kungal 仓库**自带的 api.env 是 standalone 取向**(密码 `kungal_dev_pw`、`meilisearch`、空 OAuth)。接 infra 必须改成:
 
-| 变量 | standalone 默认 | **接 hub 改为** |
+| 变量 | standalone 默认 | **接 infra 改为** |
 |---|---|---|
 | `KUN_DATABASE_URL` 密码 | `kungal_dev_pw` | **`191007`** |
 | `OAUTH_CLIENT_ID` / `_SECRET` | 空 | **`kungal-web` / (注册时明文)** ——空则 `requireEnv` 启动失败 |
 | `JWT_SECRET` | 空 | **(共享密钥)** |
 | `MEILISEARCH_KEY` | 空 | **(共享 master key)** ——否则被 meili 403 |
-| `MEILISEARCH_URL` | `http://meilisearch:7700` | 不用改(hub 的 meili 已加 `meilisearch` 网络别名) |
+| `MEILISEARCH_URL` | `http://meilisearch:7700` | 不用改(infra 的 meili 已加 `meilisearch` 网络别名) |
 
 `OAUTH_REDIRECT_URI` 改成 web 的 host 回调:`http://localhost:15013/auth/callback`。
 
