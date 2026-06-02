@@ -1,4 +1,5 @@
 <script setup lang="ts">
+useKunDisableSeo('OAuth 登录回调')
 definePageMeta({
   layout: 'auth',
   middleware: 'auth'

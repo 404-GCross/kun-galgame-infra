@@ -1,4 +1,5 @@
 <script setup lang="ts">
+useKunDisableSeo('Galgame 列表')
 definePageMeta({
   middleware: 'auth'
 })
