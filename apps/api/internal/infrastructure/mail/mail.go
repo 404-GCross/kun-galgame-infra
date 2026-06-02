@@ -2,10 +2,14 @@ package mail
 
 import (
 	"bytes"
+	"crypto/rand"
 	"crypto/tls"
+	"encoding/hex"
 	"fmt"
 	"html/template"
 	"net/smtp"
+	"strings"
+	"time"
 
 	"api/pkg/config"
 )
@@ -18,6 +22,20 @@ type Mailer struct {
 // NewMailer creates a new Mailer
 func NewMailer(cfg config.MailConfig) *Mailer {
 	return &Mailer{cfg: cfg}
+}
+
+// newMessageID builds an RFC 5322 Message-ID (`<random@sender-domain>`). The
+// domain is taken from the From account so DKIM/DMARC alignment isn't broken.
+func newMessageID(account string) string {
+	domain := "localhost"
+	if at := strings.LastIndex(account, "@"); at >= 0 && at+1 < len(account) {
+		domain = account[at+1:]
+	}
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return fmt.Sprintf("<%d@%s>", time.Now().UnixNano(), domain)
+	}
+	return fmt.Sprintf("<%s@%s>", hex.EncodeToString(b[:]), domain)
 }
 
 // SendEmail sends an email
@@ -36,6 +54,11 @@ func (m *Mailer) SendEmail(to, subject, htmlBody string) error {
 	headers["Subject"] = subject
 	headers["MIME-Version"] = "1.0"
 	headers["Content-Type"] = "text/html; charset=UTF-8"
+	// Date + Message-ID are required by RFC 5322. Their absence is a common
+	// reason Gmail / Outlook silently drop or spam-file mail — the previous
+	// version sent neither. Set both so every message is well-formed.
+	headers["Date"] = time.Now().Format(time.RFC1123Z)
+	headers["Message-ID"] = newMessageID(m.cfg.Account)
 
 	// Build message
 	var msg bytes.Buffer
