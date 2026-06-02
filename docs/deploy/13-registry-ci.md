@@ -40,7 +40,7 @@ CI 按各仓**现有 Dockerfile**(参数化)构建以下镜像并推到 `ghcr.io
 | `infra-migrate` | infra | `docker/go.Dockerfile` | `CMD=migrate` | —(一次性) |
 | `infra-migrate-galgame` | infra | `docker/go.Dockerfile` | `CMD=migrate-galgame` | —(一次性) |
 | `kungal-api` | nuxt4 | `docker/go.Dockerfile` | `CMD=server` | 2334 |
-| `kungal-web` | nuxt4 | `docker/nuxt.Dockerfile` | `APP=web` | 7777 |
+| `kungal-web` | nuxt4 | `docker/nuxt.Dockerfile` | —(单一 app,无 `APP`) | 7777 |
 | `kungal-migrate` | nuxt4 | `docker/go.Dockerfile` | `CMD=migrate` | —(一次性) |
 | `moyu-api` | patch-next | `docker/go.Dockerfile` | `CMD=server` | 5214 |
 | `moyu-web` | patch-next | `docker/nuxt.Dockerfile` | `APP=web` | 3000 |
@@ -111,27 +111,33 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - run: curl -fsS -X POST "${{ secrets.DOKPLOY_WEBHOOK_HUB }}"
+      - name: Trigger Dokploy redeploy
+        env:                                               # secret 经 env 传入,run 里用引号包裹(防注入)
+          WEBHOOK: ${{ secrets.DOKPLOY_WEBHOOK_INFRA }}    # 各仓用 _INFRA / _KUNGAL / _MOYU
+        run: |
+          [ -z "$WEBHOOK" ] && { echo "webhook 未设置,镜像已推 GHCR,跳过重部署"; exit 0; }
+          curl -fsS -X POST "$WEBHOOK"
 ```
 
 - **cgo 镜像**(oauth/image)在 `ubuntu-latest` 上正常 build —— cgo 发生在 build 容器内(`docker/cgo.Dockerfile` 的 debian-slim + libwebp),runner 无需特殊配置。
 - **公开仓库 Actions 分钟免费**;`type=gha` 层缓存让二次构建快很多。
 - kungal/moyu 的 workflow:`matrix` 换成 `kungal-api`/`kungal-web`/`kungal-migrate`(及 moyu 同理),`deploy` 步骤用各自的 `DOKPLOY_WEBHOOK_*`。
+- **三仓 workflow 均已创建**:`<repo>/.github/workflows/build.yml`。触发分支:**infra=`main`,kungal/moyu=`master`**。注意 **kungal-web 无 `APP` build-arg**(单一 app);infra-web/wiki 在此烤入真实域名(见 13.5);`deploy` 步骤已做 webhook 未设置时**优雅跳过**。
 
-## 13.5 前端域名配置:运行时优先(build-once)
+## 13.5 前端域名配置:两条路线(实测取舍)
 
 Nuxt 的 public 配置有两种注入方式,直接影响"镜像是否环境无关":
 
-- **运行时 `NUXT_PUBLIC_*` env(推荐)** —— kungal/moyu 的 web 已用 `docker/web.env` 的 `NUXT_PUBLIC_*`(Nuxt 启动时读)。**CI 构建通用镜像、不烤域名**,真实域名在 **Dokploy 的环境变量**里注入。一个镜像可用于任意环境。
-- **构建期 build-arg `PUBLIC_*`(infra web/wiki 现状)** —— 域名在 **CI build 时**烤进镜像 → 镜像与环境绑定。可行,但要在 workflow 的 `build-args` 里传 12-dokploy 的真实域名。
+- **运行时 `NUXT_PUBLIC_*` env(kungal / moyu 采用)** —— 二者的 web 读 `docker/web.env` 的 `NUXT_PUBLIC_*`(Nuxt 启动时读),**CI 构建通用镜像、不烤域名**,真实域名在 **Dokploy 环境变量 / web.env** 注入,一个镜像可用于任意环境(dev stack 即靠它切换域名,已实测)。
+- **构建期 build-arg `PUBLIC_*`(infra web/wiki 采用)** —— 域名在 **CI build 时**烤进镜像;`.github/workflows/build.yml` 里 infra-web / infra-wiki 的 `build-args` 已写入真实 https 域名。
 
-**建议**:把 infra web/wiki 也改为读运行时 `NUXT_PUBLIC_*`(其 `nuxt.config` 已声明 `runtimeConfig.public.*`,只需在 Dokploy 设对应 env),实现"**一次构建、各处部署**";过渡期保留 build-arg 也行。
+**为什么 infra 烤而非运行时**:infra wiki 的 `runtimeConfig.public.oauthClientID` / `oauthRedirectURI` 用了 `ID`/`URI` 大写缩写,**运行时 `NUXT_PUBLIC_*` 反向映射别扭**(`docker/README.md` 有明确警告),所以 infra 按仓库默认在 build 期烤入(`nuxt.config` 读 `KUN_*_NUXT_PUBLIC_*` 自定义名)。换域名需重跑 infra 的 workflow(改 `build-args`,或挪到仓库 Variables);kungal/moyu 无此缩写问题,故走运行时。
 
 > **SSR 双 base 不变**:`NUXT_API_BASE_SSR` / `NUXT_AUTH_API_BASE_SSR` / kungal `NUXT_API_BASE_URL` 仍是**运行时**容器内服务名(见 [12-dokploy §12.5](./12-dokploy.md));registry 化只影响"镜像怎么来",不影响 SSR/浏览器 base 的划分。
 
 ## 13.6 生产 compose 改用 `image:`(不再 `build:`)
 
-新增一份**只引用镜像**的生产 compose(如各仓 `docker-compose.prod.yml` 或 `compose.ghcr.yml`),Dokploy 指向它;CI 负责把这些 tag build+push 出来。示例(infra 片段):
+**已在三仓各加一份**只引用镜像的生产 compose `docker-compose.prod.yml`,Dokploy 指向它;CI 负责把这些 tag build+push 出来。下面是 infra 片段(完整见仓库文件):
 
 ```yaml
 # kun-galgame-infra/docker-compose.prod.yml(节选)
@@ -148,7 +154,7 @@ services:
     image: ghcr.io/kun1007/infra-web:latest
     environment:
       NUXT_API_BASE_SSR: http://oauth:9277/api/v1
-      # NUXT_PUBLIC_*: 见 13.5(运行时注入真实域名)
+      # 浏览器 public 域名已在 CI build 期烤入镜像(见 13.5),运行时只注 SSR base
     expose: ["3000"]
   # galgame / image / wiki 同理 …
   postgres: { image: postgres:16-alpine, ... }   # 基础设施仍用上游镜像

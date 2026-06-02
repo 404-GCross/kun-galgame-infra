@@ -1,0 +1,183 @@
+# kun-galgame-infra — PRODUCTION compose (Dokploy + GHCR prebuilt images).
+#
+# Differs from docker-compose.yml (local/dev) in exactly the ways
+# docs/deploy/12-dokploy.md §12.2 + 13-registry-ci.md §13.6 prescribe:
+#   1. services use `image: ghcr.io/kun1007/infra-*` — NOT `build:`. CI
+#      (.github/workflows/build.yml) builds + pushes; Dokploy only PULLS.
+#   2. `expose:` (container-network only) instead of `ports:` — Traefik routes
+#      internally; the prod box publishes NO 1xxxx host ports.
+#   3. network = `dokploy-network` (external) — shared by the 3 Dokploy apps so
+#      kungal/moyu resolve this stack's service names (oauth/galgame/image/…).
+#
+# SECRETS: this is the prod file — it carries NO test values. Set the backing
+# secrets below in Dokploy's Environment (or a root .env). They MUST match the
+# DB/Redis/MinIO/Meili creds the app env files (docker/*.env) use. Rotate
+# everything (see 05-configuration.md); never bake prod secrets into images.
+#
+#   docker compose -f docker-compose.prod.yml pull
+#   docker compose -f docker-compose.prod.yml up -d postgres redis minio meili
+#   docker compose -f docker-compose.prod.yml run --rm migrate          # oauth schema + seed
+#   docker compose -f docker-compose.prod.yml run --rm migrate-galgame  # galgame wiki schema
+#   docker compose -f docker-compose.prod.yml up -d oauth image galgame web wiki
+name: kun-galgame-infra
+
+x-svc-health: &svc-health
+  interval: 10s
+  timeout: 5s
+  retries: 5
+  start_period: 15s
+
+services:
+  # ───────────────────────── shared backing services ─────────────────────────
+  # Internal-only (no expose/ports): reached by service name on dokploy-network.
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in Dokploy (must match docker/*.env KUN_PG_PASSWORD / DATABASE_URL)}
+      POSTGRES_DB: kun_galgame_infra
+    volumes:
+      - pg:/var/lib/postgresql/data
+      - ./docker/initdb.d:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d kun_galgame_infra"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  redis:
+    image: redis:8-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes: ["redis:/data"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  minio:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER in Dokploy}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in Dokploy}
+    volumes: ["minio:/data"]
+    restart: unless-stopped
+    # Prod usually serves images from Cloudflare R2 (image.env points there); this
+    # MinIO is only needed when self-hosting blobs. Safe to leave running unused.
+
+  meili:
+    image: getmeili/meilisearch:v1.20
+    environment:
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:?set MEILI_MASTER_KEY in Dokploy (must match docker/galgame.env)}
+      MEILI_NO_ANALYTICS: "true"
+      MEILI_ENV: production
+    volumes: ["meili:/meili_data"]
+    # kungal connects by the name `meilisearch`; expose that alias too.
+    networks:
+      default:
+        aliases: [meilisearch]
+    restart: unless-stopped
+
+  # ───────────────────────────── Go services ─────────────────────────────────
+  # oauth + image are cgo (libwebp) → debian-slim runtime, binary at /app/app.
+  oauth:
+    image: ghcr.io/kun1007/infra-oauth:latest
+    env_file: [./docker/oauth.env]
+    expose: ["9277"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "/app/app", "healthcheck"]
+      <<: *svc-health
+    restart: unless-stopped
+
+  image:
+    image: ghcr.io/kun1007/infra-image:latest
+    env_file: [./docker/image.env]
+    expose: ["9278"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      minio: { condition: service_started }
+    healthcheck:
+      test: ["CMD", "/app/app", "healthcheck"]
+      <<: *svc-health
+    restart: unless-stopped
+
+  # galgame is pure-Go (distroless static) → binary at /app.
+  galgame:
+    image: ghcr.io/kun1007/infra-galgame:latest
+    env_file: [./docker/galgame.env]
+    expose: ["9280"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      meili: { condition: service_started }
+    healthcheck:
+      test: ["CMD", "/app", "healthcheck"]
+      <<: *svc-health
+    restart: unless-stopped
+
+  # ───────────────────────────── Nuxt frontends ──────────────────────────────
+  # Public (browser) config is BAKED into the image at CI build time (the repo
+  # default — `oauthClientID`/`oauthRedirectURI` have awkward runtime env-name
+  # mappings, see docker/README.md). The image is built with the real https
+  # domains via build-args in .github/workflows/build.yml. Only the SSR base
+  # (in-container service name) is injected at runtime here.
+  web:
+    image: ghcr.io/kun1007/infra-web:latest
+    environment:
+      NUXT_API_BASE_SSR: http://oauth:9277/api/v1
+    expose: ["3000"]
+    depends_on:
+      oauth: { condition: service_started }
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('net').connect(3000,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))"]
+      <<: *svc-health
+    restart: unless-stopped
+
+  wiki:
+    image: ghcr.io/kun1007/infra-wiki:latest
+    environment:
+      NUXT_API_BASE_SSR: http://galgame:9280/api
+      NUXT_AUTH_API_BASE_SSR: http://oauth:9277/api/v1
+    expose: ["3000"]
+    depends_on:
+      galgame: { condition: service_started }
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('net').connect(3000,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))"]
+      <<: *svc-health
+    restart: unless-stopped
+
+  # ─────────────────────── one-off jobs (profile: jobs) ──────────────────────
+  #   docker compose -f docker-compose.prod.yml run --rm migrate
+  #   docker compose -f docker-compose.prod.yml run --rm migrate-galgame
+  migrate:
+    image: ghcr.io/kun1007/infra-migrate:latest
+    env_file: [./docker/oauth.env]
+    profiles: ["jobs"]
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: "no"
+
+  migrate-galgame:
+    image: ghcr.io/kun1007/infra-migrate-galgame:latest
+    env_file: [./docker/galgame.env]
+    profiles: ["jobs"]
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: "no"
+
+volumes:
+  pg:
+  redis:
+  minio:
+  meili:
+
+networks:
+  default:
+    name: dokploy-network
+    external: true
