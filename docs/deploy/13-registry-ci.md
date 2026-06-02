@@ -157,7 +157,7 @@ services:
       # 浏览器 public 域名已在 CI build 期烤入镜像(见 13.5),运行时只注 SSR base
     expose: ["3000"]
   # galgame / image / wiki 同理 …
-  postgres: { image: postgres:16-alpine, ... }   # 基础设施仍用上游镜像
+  postgres: { image: postgres:18-alpine, ... }   # 基础设施仍用上游镜像
 networks:
   default: { name: dokploy-network, external: true }
 ```

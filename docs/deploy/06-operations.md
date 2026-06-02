@@ -30,18 +30,37 @@ docker compose build oauth && docker compose up -d oauth
 - 升级 Go/Nuxt 服务**不需要**动数据库。换基础镜像(trixie / node24 等)也只是重建无状态容器,数据卷不受影响。
 - 升级**有状态**镜像(Postgres/Meili 大版本)**不能**直接改 tag 重建——数据卷格式不兼容会导致新版起不来(Meili 会崩溃循环,见 [07-troubleshooting.md](./07-troubleshooting.md) I2)。
 
-### Postgres 16 → 18(需迁移,勿直接换 tag)
-当前固定在 `postgres:16-alpine`。要升大版本,二选一:
+### Postgres 大版本升级(需迁移,勿直接换 tag)
+当前在 `postgres:18-alpine`(已于 **2026-06 由 16 升级**)。大版本升级实测步骤(dump/restore,最稳):
 ```bash
-# 方案 A:dump → 换 tag → restore(最稳)
+# 1. 全量备份(角色 globals + 所有库)
 docker exec kun-galgame-infra-postgres-1 pg_dumpall -U postgres > all.sql
-docker compose down postgres && docker volume rm kun-galgame-infra_pg
-# 把 compose 改成 postgres:18-alpine 后:
+# 2. 停栈、删旧卷(备份在手才删)
+docker compose down && docker volume rm kun-galgame-infra_pg
+# 3. ⚠ pg18 把 VOLUME 从 /var/lib/postgresql/data 改到 /var/lib/postgresql(PGDATA=/var/lib/postgresql/18/docker)
+#    —— compose 的卷挂载点要同步改成 /var/lib/postgresql(本仓已改)。
+#    用临时 pg18 容器恢复:不挂 initdb.d、不设 POSTGRES_DB,避免和 dumpall 的 CREATE DATABASE 冲突。
+docker run -d --name pg18r -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=<pw> \
+  -v kun-galgame-infra_pg:/var/lib/postgresql postgres:18-alpine
+cat all.sql | docker exec -i pg18r psql -U postgres     # 等就绪后;唯一无害报错:role "postgres" already exists
+docker stop pg18r && docker rm pg18r                    # 卷已填好(临时容器仅用于恢复)
+# 4. 正常起栈(卷已初始化 → initdb.d / POSTGRES_DB 不再触发),核对计数
 docker compose up -d postgres   # 等 healthy
-cat all.sql | docker exec -i kun-galgame-infra-postgres-1 psql -U postgres
-# 方案 B:pgautoupgrade 镜像原地升级(进阶,先备份)
+# 备选:pgautoupgrade 镜像原地升级(进阶,先备份)
 ```
-Redis(`redis:8-alpine`)/MinIO(已锁 RELEASE)向前兼容旧数据,直接换 tag 重建即可。
+Redis(`redis:8-alpine`)/MinIO(已锁 RELEASE)向前兼容旧数据,直接换 tag 重建即可。Meili 见下条。
+
+### Meilisearch 大版本升级(清卷 + 重建索引)
+Meili 索引是**派生数据**(从 `kun_galgame_wiki` 生成),跨版本不兼容旧卷,最简单:清卷换 tag,再 `reindex-search` 重建。
+```bash
+docker compose rm -sf meili && docker volume rm kun-galgame-infra_meili
+# compose 改成 getmeili/meilisearch:v1.45(本仓已改)后:
+docker compose up -d meili
+# 重建索引(从宿主跑,env 指向 docker 的 pg/meili 宿主端口):
+cd apps/api && KUN_PG_HOST=localhost KUN_PG_PORT=15000 KUN_PG_PASSWORD=<pw> \
+  KUN_MEILISEARCH_HOST=http://localhost:15004 KUN_MEILISEARCH_API_KEY=<key> \
+  go run ./cmd/reindex-search        # 2026-06 v1.20→v1.45 即此法,4-5s 重建 6w+ 文档
+```
 
 ## 备份 / 恢复
 

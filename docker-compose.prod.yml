@@ -31,13 +31,13 @@ services:
   # ───────────────────────── shared backing services ─────────────────────────
   # Internal-only (no expose/ports): reached by service name on dokploy-network.
   postgres:
-    image: postgres:16-alpine
+    image: postgres:18-alpine
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in Dokploy (must match docker/*.env KUN_PG_PASSWORD / DATABASE_URL)}
       POSTGRES_DB: kun_galgame_infra
     volumes:
-      - pg:/var/lib/postgresql/data
+      - pg:/var/lib/postgresql   # pg18: VOLUME moved here (was /data on <=17)
       - ./docker/initdb.d:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d kun_galgame_infra"]
@@ -69,7 +69,7 @@ services:
     # MinIO is only needed when self-hosting blobs. Safe to leave running unused.
 
   meili:
-    image: getmeili/meilisearch:v1.20
+    image: getmeili/meilisearch:v1.45
     environment:
       MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:?set MEILI_MASTER_KEY in Dokploy (must match docker/galgame.env)}
       MEILI_NO_ANALYTICS: "true"

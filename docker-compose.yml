@@ -23,13 +23,13 @@ x-svc-health: &svc-health
 services:
   # ───────────────────────── shared backing services ─────────────────────────
   postgres:
-    image: postgres:16-alpine
+    image: postgres:18-alpine
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: "191007"
       POSTGRES_DB: kun_galgame_infra
     volumes:
-      - pg:/var/lib/postgresql/data
+      - pg:/var/lib/postgresql   # pg18: VOLUME moved here (was /data on <=17)
       - ./docker/initdb.d:/docker-entrypoint-initdb.d:ro
     ports: ["15000:5432"]
     healthcheck:
@@ -62,7 +62,7 @@ services:
     restart: unless-stopped
 
   meili:
-    image: getmeili/meilisearch:v1.20
+    image: getmeili/meilisearch:v1.45
     environment:
       MEILI_MASTER_KEY: kun_docker_test_meili_master_key_change_me
       MEILI_NO_ANALYTICS: "true"

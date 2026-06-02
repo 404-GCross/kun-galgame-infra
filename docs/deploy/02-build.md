@@ -60,10 +60,10 @@ docker compose -f docker-compose.yml -f docker-compose.standalone.yml build
 | 纯 Go runtime | `gcr.io/distroless/static-debian13:nonroot` | Debian 13 基线 |
 | cgo runtime(oauth/image) | `debian:trixie-slim` + `libwebp7 libsharpyuv0` | Debian 13 的 libwebp 1.5 把 sharpyuv 拆成独立包,故需补 `libsharpyuv0`(bookworm 时是打进 libwebp7 的) |
 | 前端 runtime/构建 | `node:24-trixie-slim` | Node 24 = 当前 Active LTS |
-| Postgres | `postgres:16-alpine` | **暂不升级**:有状态,16→18 需 `pg_upgrade`/dump-restore(见 [06-operations.md](./06-operations.md)) |
-| Redis | `redis:8-alpine` | 已升;Redis 8 向前兼容读取旧数据(且本就是缓存/会话) |
-| MinIO | `minio/minio:RELEASE.2025-09-07T16-13-09Z` | 已锁版本(原先是 `latest`) |
-| Meilisearch | `getmeili/meilisearch:v1.20` | 现状 OK;跨大版本升级会因数据卷不兼容崩溃循环(见 [07-troubleshooting.md](./07-troubleshooting.md) I2) |
+| Postgres | `postgres:18-alpine` | **已升级 16→18**(2026-06,dump/restore;⚠ pg18 的 VOLUME 从 `/var/lib/postgresql/data` 改到 `/var/lib/postgresql`,挂载点已同步,见 [06-operations.md](./06-operations.md)) |
+| Redis | `redis:8-alpine` | 已是最新大版本(`8-alpine` 自动取 8.8.x);向前兼容旧数据(本就是缓存/会话) |
+| MinIO | `minio/minio:RELEASE.2025-09-07T16-13-09Z` | 已锁版本(原先是 `latest`)。注:MinIO 官方社区镜像已停更/归档(~2026-04),生产图床走 Cloudflare R2,影响小 |
+| Meilisearch | `getmeili/meilisearch:v1.45` | **已升级 v1.20→v1.45**(2026-06,清卷 + `reindex-search` 重建索引;跨版本不兼容详见 [07-troubleshooting.md](./07-troubleshooting.md) I2) |
 
 > Debian:bookworm(12)→**trixie(13,2025-08 起为 stable)**。bookworm 仍受支持到 2028,但 trixie 是当前稳定版,新部署用它更合适。换基镜后镜像需重建并替换无状态容器(有状态卷不受影响)。
 

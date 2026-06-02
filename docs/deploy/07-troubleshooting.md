@@ -48,7 +48,7 @@
 ### I2 · Meili 起不来,崩溃循环 `incompatible database version` → 连带 `lookup meili: no such host`
 - **现象**:升级 Meili 镜像后它反复重启;依赖它的服务报「解析不到 meili」。
 - **原因**:Meili **不允许跨大版本直接复用旧数据卷**;崩溃循环时容器不在网络上 → DNS 名消失。
-- **解法**:**开发**直接清卷重来:`docker compose rm -sf meili && docker volume rm kun-galgame-infra_meili && docker compose up -d meili`;**生产**按官方指引 dump→升级→import。
+- **解法**:索引是派生数据 → **开发**直接清卷重建:`docker compose rm -sf meili && docker volume rm kun-galgame-infra_meili && docker compose up -d meili`,再 `go run ./cmd/reindex-search` 重建(2026-06 v1.20→v1.45 即此法,见 [06-operations.md](./06-operations.md));**生产**同理(或按官方 dump→升级→import)。
 
 ### I3 · kungal 连 `meilisearch` 解析不到
 - **原因**:kungal 用服务名 `meilisearch`,infra 的服务叫 `meili`。
