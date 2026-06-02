@@ -64,6 +64,8 @@ cd apps/api && KUN_PG_HOST=localhost KUN_PG_PORT=15000 KUN_PG_PASSWORD=<pw> \
 
 ## 备份 / 恢复
 
+> 📦 **完整的备份/还原详解**(手动/自动/异地、各类还原场景、PITR)见 [14-backup-restore.md](./14-backup-restore.md)。下面是速记。
+
 数据全在 infra 的 4 个命名卷:`kun-galgame-infra_{pg,redis,minio,meili}`。
 
 ```bash
