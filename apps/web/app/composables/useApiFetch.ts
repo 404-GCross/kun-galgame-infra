@@ -28,8 +28,13 @@ export const useApiFetch = <T>(
   options: UseFetchOptions<ApiResponse<T>, T | null> = {}
 ) => {
   const config = useRuntimeConfig()
+  // Dual base: SSR (in-container) uses the docker service URL; browser uses
+  // the host-port public URL. apiBaseSsr is empty outside docker → falls back.
   const baseURL =
-    (config.public.apiBase as string) || 'http://127.0.0.1:9277/api/v1'
+    (import.meta.server && config.apiBaseSsr
+      ? (config.apiBaseSsr as string)
+      : (config.public.apiBase as string)) ||
+    'http://127.0.0.1:9277/api/v1'
   const accessToken = useCookie('access_token')
 
   return useFetch(url, {

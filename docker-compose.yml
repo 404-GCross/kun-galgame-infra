@@ -138,6 +138,10 @@ services:
         PUBLIC_API_BASE: http://localhost:15005/api/v1
         PUBLIC_IMAGE_CDN_BASE: http://localhost:15002/kun-images
     image: kun-galgame-infra/web
+    # SSR runs in-container → reach the OAuth API by service name. The browser
+    # keeps using the baked PUBLIC_API_BASE host-port URL.
+    environment:
+      NUXT_API_BASE_SSR: http://oauth:9277/api/v1
     ports: ["15008:3000"]
     depends_on:
       oauth: { condition: service_started }
@@ -159,6 +163,11 @@ services:
         PUBLIC_OAUTH_REDIRECT_URI: http://localhost:15009/auth/callback
         PUBLIC_IMAGE_CDN_BASE: http://localhost:15002/kun-images
     image: kun-galgame-infra/wiki
+    # SSR runs in-container → reach wiki/galgame + oauth by service names. The
+    # browser keeps using the baked PUBLIC_* host-port URLs.
+    environment:
+      NUXT_API_BASE_SSR: http://galgame:9280/api
+      NUXT_AUTH_API_BASE_SSR: http://oauth:9277/api/v1
     ports: ["15009:3000"]
     depends_on:
       galgame: { condition: service_started }

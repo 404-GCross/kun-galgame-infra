@@ -55,6 +55,11 @@ export default defineNuxtConfig({
   },
 
   runtimeConfig: {
+    // SSR runs inside the docker container, where the OAuth API is reachable by
+    // its compose service name (oauth:9277), NOT by the browser's host-port URL.
+    // Set NUXT_API_BASE_SSR=http://oauth:9277/api/v1 in docker; empty in local
+    // dev (the dual-base reader falls back to public.apiBase).
+    apiBaseSsr: process.env.NUXT_API_BASE_SSR || '',
     public: {
       apiBase:
         process.env.KUN_VISUAL_NOVEL_NUXT_PUBLIC_API_BASE ||

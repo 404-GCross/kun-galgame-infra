@@ -55,6 +55,14 @@ export default defineNuxtConfig({
   },
 
   runtimeConfig: {
+    // SSR runs inside the docker container, where the wiki/galgame + OAuth APIs
+    // are reachable by their compose service names (galgame:9280 / oauth:9277),
+    // NOT by the browser's host-port URLs. Set in docker:
+    //   NUXT_API_BASE_SSR=http://galgame:9280/api
+    //   NUXT_AUTH_API_BASE_SSR=http://oauth:9277/api/v1
+    // Empty in local dev → the dual-base readers fall back to the public bases.
+    apiBaseSsr: process.env.NUXT_API_BASE_SSR || '',
+    authApiBaseSsr: process.env.NUXT_AUTH_API_BASE_SSR || '',
     public: {
       apiBase:
         process.env.KUN_GALGAME_WIKI_NUXT_PUBLIC_API_BASE ||

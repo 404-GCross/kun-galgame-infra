@@ -20,7 +20,11 @@ interface ApiError {
 // Data endpoints (galgame / tag / admin / ...) go through useApi() which targets wiki backend.
 export const useAuthApi = () => {
   const config = useRuntimeConfig()
-  const baseUrl = config.public.authApiBase
+  // Dual base: SSR (in-container) reaches oauth by its compose service name;
+  // browser uses the host-port public base. Falls back to public outside docker.
+  const baseUrl = (import.meta.server && config.authApiBaseSsr
+    ? config.authApiBaseSsr
+    : config.public.authApiBase) as string
   const accessToken = useCookie('wiki_access_token')
 
   const getAuthHeaders = (): Record<string, string> => {

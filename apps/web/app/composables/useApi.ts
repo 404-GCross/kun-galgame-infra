@@ -23,7 +23,12 @@ interface ApiError {
 
 export const useApi = () => {
   const config = useRuntimeConfig()
-  const baseUrl = config.public.apiBase || 'http://127.0.0.1:9277/api/v1'
+  // Dual base: SSR (in-container) uses the docker service URL; browser uses
+  // the host-port public URL. apiBaseSsr is empty outside docker → falls back.
+  const baseUrl =
+    (import.meta.server && config.apiBaseSsr
+      ? (config.apiBaseSsr as string)
+      : config.public.apiBase) || 'http://127.0.0.1:9277/api/v1'
   const accessToken = useCookie('access_token')
 
   const getAuthHeaders = (): Record<string, string> => {

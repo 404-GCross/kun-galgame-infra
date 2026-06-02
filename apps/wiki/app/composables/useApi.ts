@@ -20,8 +20,14 @@ interface ApiError {
 // For auth operations (login/refresh/etc) use useAuthApi() which targets oauth backend.
 export const useApi = () => {
   const config = useRuntimeConfig()
-  const baseUrl = config.public.apiBase
-  const authApiBase = config.public.authApiBase
+  // Dual base: SSR (in-container) uses docker service URLs; browser uses the
+  // host-port public URLs. *Ssr is empty outside docker → falls back to public.
+  const baseUrl = (import.meta.server && config.apiBaseSsr
+    ? config.apiBaseSsr
+    : config.public.apiBase) as string
+  const authApiBase = (import.meta.server && config.authApiBaseSsr
+    ? config.authApiBaseSsr
+    : config.public.authApiBase) as string
   const accessToken = useCookie('wiki_access_token')
 
   const getAuthHeaders = (): Record<string, string> => {
