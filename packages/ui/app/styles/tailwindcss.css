@@ -621,6 +621,21 @@
   }
 }
 
+@layer base {
+  /* Root container needs a SOLID background. Otherwise dark mode only swaps the
+     CSS variables and `bg-background` (which is hsla() at --kun-global-opacity =
+     0.7) composites over the unpainted browser-default white → renders as a
+     muddy GRAY instead of black. moyu/kungal paint this in their own app-level
+     index.css; hub web + wiki have no app stylesheet, so paint it here in the
+     shared layer. Solid hsl() (not hsla) since nothing sits behind the root. */
+  html,
+  body {
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+    min-height: 100vh;
+  }
+}
+
 @layer utilities {
   body {
     font-family:
