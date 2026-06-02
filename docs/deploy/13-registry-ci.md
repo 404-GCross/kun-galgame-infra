@@ -88,14 +88,14 @@ jobs:
           - { name: infra-web,             file: docker/nuxt.Dockerfile, args: "APP=web" }
           - { name: infra-wiki,            file: docker/nuxt.Dockerfile, args: "APP=wiki" }
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
+      - uses: actions/checkout@v6
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@v7
         with:
           context: .
           file: ${{ matrix.file }}
