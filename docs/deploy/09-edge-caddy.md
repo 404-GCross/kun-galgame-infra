@@ -13,7 +13,7 @@ Caddy 是这套自托管栈最优雅的默认选择([Caddy 官方](https://caddy
      --build-arg PUBLIC_OAUTH_AUTHORIZE_BASE=https://oauth.kungal.com/api/v1 \
      --build-arg PUBLIC_OAUTH_CLIENT_ID=galgame-wiki-admin \
      --build-arg PUBLIC_OAUTH_REDIRECT_URI=https://wiki.kungal.com/auth/callback \
-     --build-arg PUBLIC_IMAGE_CDN_BASE=https://image.kungal.com \
+     --build-arg PUBLIC_IMAGE_CDN_BASE=https://image.kungal.iloveren.link \
      -t kun-galgame-infra/wiki .
    ```
    moyu/kungal 同理(`PUBLIC_*` / `OAUTH_*` 改真实域名)。**OAuth client 的 redirect_uri 也要在枢纽里改成 https 域名**(见 [03-bootstrap.md](./03-bootstrap.md) A.5)。
@@ -33,7 +33,7 @@ Caddy 是这套自托管栈最优雅的默认选择([Caddy 官方](https://caddy
 | `www.kungal.com` | 其余 | `kungal-web-1:7777` |
 | `www.moyu.moe` | `/api/v1/*` | `moyu-api-1:5214` |
 | `www.moyu.moe` | 其余 | `moyu-web-1:3000` |
-| `image.kungal.com` | `/*` | 对象存储(自托管 → `kun-galgame-infra-minio-1:9000`/bucket;生产建议 R2/B2 + CDN) |
+| `image.kungal.iloveren.link` | `/*` | 对象存储(自托管 → `kun-galgame-infra-minio-1:9000`/bucket;生产建议 R2/B2 + CDN) |
 
 ## 9.2 Caddyfile
 
@@ -78,7 +78,7 @@ www.moyu.moe {
 }
 
 # —— 图床(自托管:回源 MinIO 的 bucket)——
-image.kungal.com {
+image.kungal.iloveren.link {
 	rewrite * /kun-images{uri}
 	reverse_proxy kun-galgame-infra-minio-1:9000
 }
@@ -126,4 +126,4 @@ docker compose -f edge/docker-compose.yml logs caddy | grep -i "certificate obta
 ## 9.6 注意
 - DNS 要先把这些域名 A/AAAA 指到本机公网 IP,Caddy 才能完成 ACME HTTP/TLS 验证(80/443 必须公网可达;若在 NAT/dae 后无法开放入站,改用 [11-cloudflare-tunnel.md](./11-cloudflare-tunnel.md))。
 - 容器名 `kun-galgame-infra-web-1` 等带 `-1` 副本序号;若给服务 `--scale` 或改了项目名会变,届时更新 Caddyfile(或给各 web 加唯一网络别名后用别名)。
-- `image.kungal.com` 生产更推荐直接用 R2/B2 + Cloudflare CDN,不经本机反代回源 MinIO。
+- `image.kungal.iloveren.link` 生产更推荐直接用 R2/B2 + Cloudflare CDN,不经本机反代回源 MinIO。

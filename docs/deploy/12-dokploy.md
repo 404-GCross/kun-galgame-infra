@@ -1,0 +1,117 @@
+# 12 · Dokploy 部署(单服务器 / 自托管 PaaS)
+
+[Dokploy](https://dokploy.com/)([文档](https://docs.dokploy.com/docs/core/docker-compose)、[GitHub](https://github.com/Dokploy/dokploy))是开源自托管 PaaS。它**取代了手动边缘反代([09](./09-edge-caddy.md)/[10](./10-edge-nginx.md)/[11](./11-edge-cloudflare-tunnel.md)三选一)**:内置 **Traefik** 做反代 + **自动 Let's Encrypt SSL**,并额外提供 UI 编排、环境变量管理、实时日志/监控、备份。本套生态(三仓 compose + build + 服务名 s2s)与它的模型高度契合。
+
+> 选了 Dokploy 就**不要再叠加** Caddy/nginx/Cloudflare Tunnel —— Traefik 已是它的反代。09-11 仅作"不用 Dokploy 时"的替代方案。
+
+## 12.0 拓扑(单服务器)
+
+```
+                    Internet ──► :80/:443  ┌─────────── Traefik(Dokploy 内置)───────────┐
+ DNS A 记录 → 服务器公网 IP                  │  按域名 + 路径自动路由(UI 配置,注入 labels) │
+                                            └──────────────────────┬──────────────────────┘
+                                          全部容器接入共享网络  dokploy-network
+   ┌──────────────── hub compose app ─────────────────┐  ┌── kungal app ──┐  ┌── moyu app ──┐
+   │ postgres redis minio meili(基础设施,仅内部)      │  │ api  web       │  │ api  web      │
+   │ oauth  image  galgame  web(admin)  wiki           │  └────────────────┘  └───────────────┘
+   └───────────────────────────────────────────────────┘   下游按服务名连枢纽:postgres / redis /
+                                                            oauth:9277 / galgame:9280 / image:9278
+```
+
+- **3 个独立 Dokploy "Compose" 应用**(各对应一个 Git 仓库,Dokploy 克隆 + `build`):`kun-galgame-infra`(hub)、`kun-galgame-nuxt4`(kungal)、`kun-galgame-patch-next`(moyu)。
+- **共享一个 `dokploy-network`**(external)。跨应用 s2s 只用枢纽的**唯一服务名**(`postgres`/`redis`/`meilisearch`/`oauth`/`galgame`/`image`)——这些名字全局唯一,在共享网络上可解析;各应用自己的 `api`/`web`/`migrate` 只在本应用内解析,不跨应用引用,因此**不存在名称冲突**(这点和手动反代文档里"web/api 别名跨仓冲突"是同一回事,Dokploy 用 Traefik router 区分对外路由,内部 s2s 只引用唯一名)。
+
+> 为什么**不用伞状单 compose**:Dokploy 的 Compose 应用是"一个 Git 仓库 → 克隆并 build"。三仓是三个独立仓库;伞状 compose 要么需要 monorepo,要么走 Raw compose(那样必须预先 build+push 镜像到 registry)。**单服务器 + 三应用 + 共享网络**才是 Dokploy 的原生形态。
+
+## 12.1 域名 → 服务映射
+
+DNS 把下列域名的 A/AAAA 记录指向**服务器公网 IP**;Traefik 自动签发证书。Dokploy 里**按应用**在各服务的 **Domains** 标签页添加(域名 + 路径 + 目标服务 + 容器内部端口);同一域名的 `/api*` 与 `/` 用两条记录(更具体的路径优先)。
+
+| 公网域名 | 路径 | 所在 Dokploy 应用 | 目标服务:内部端口 |
+|---|---|---|---|
+| `oauth.kungal.com` | `/api/v1` | hub | `oauth:9277` |
+| `oauth.kungal.com` | `/`(默认) | hub | `web:3000`(admin 前端) |
+| `wiki.kungal.com` | `/api` | hub | `galgame:9280` |
+| `wiki.kungal.com` | `/`(默认) | hub | `wiki:3000` |
+| `kungal.com` + `www.kungal.com` | `/api` | kungal | `api:2334` |
+| `kungal.com` + `www.kungal.com` | `/`(默认) | kungal | `web:7777` |
+| `moyu.moe` + `www.moyu.moe` | `/api/v1` | moyu | `api:5214` |
+| `moyu.moe` + `www.moyu.moe` | `/`(默认) | moyu | `web:3000` |
+| `image.kungal.iloveren.link` | `/` | —(见下) | Cloudflare **R2 自定义域**直供 / 或回源 `minio:9000` |
+
+- **`kungal.com` / `moyu.moe` 顶级域 + `www` 子域**:两个都加同样的两条路径记录,指向同一对 `api`/`web`。需要 apex↔www 收敛时,可在 Dokploy/Traefik 加一条 301(否则两域并存即可)。
+- **`image.kungal.iloveren.link`**:生产 `.env` 用的是 **Cloudflare R2**(`KUN_IMAGE_S3_ENDPOINT=...r2.cloudflarestorage.com`),所以这个域名是 **R2 的自定义域,由 Cloudflare 直接服务图片 blob,不经服务器/Traefik**。只有在"自托管 MinIO 存图"时才需要在 Dokploy 给它挂域名回源 `minio:9000`(重写到 `/kun-images` bucket)。
+- **`image` 服务(`:9278`)是 s2s 内部服务**(下游 api 上传时调用),**不对外开域名**。
+
+## 12.2 接入改造清单(从当前 host-port 部署 → Dokploy)
+
+当前栈用 `ports: ["1xxxx:..."]` 暴露宿主端口 + 前端把浏览器 URL 烤成 `localhost:1xxxx`。Dokploy/Traefik 走容器内部端口路由,需做以下调整(都是**编排/配置层**,不动业务代码):
+
+**A. compose 网络**
+- 各仓 compose 的网络从 `kun-galgame-infra_default`(external)改为 **`dokploy-network`**(external):
+  ```yaml
+  networks:
+    default:
+      name: dokploy-network
+      external: true
+  ```
+- hub 的基础设施(`postgres`/`redis`/`minio`/`meili`)与对外服务都要在此网络上(默认 `default` 即可)。
+- Dokploy 若开启"isolated network",要确保需要 s2s 的服务显式接入 `dokploy-network`,否则跨应用解析不到枢纽服务。
+
+**B. `ports` → `expose`**
+- 删除/改写所有 `ports: ["1xxxx:yyyy"]`,对外服务改用 `expose: ["yyyy"]`(只在容器网络内开放,Traefik 内部回源)。基础设施(pg/redis/minio/meili)连 `expose` 都不需要,纯内部即可。**生产不再有 1xxxx 宿主端口。**
+
+**C. 前端浏览器侧 URL → 真实域名**(构建期 build args / 运行期 env;SSR 内部 base 维持服务名不变,见 [双 base 说明](#125-双-base-与-ssr))
+- **hub web**(compose build args):`PUBLIC_API_BASE=https://oauth.kungal.com/api/v1`、`PUBLIC_IMAGE_CDN_BASE=https://image.kungal.iloveren.link`
+- **hub wiki**(build args):`PUBLIC_API_BASE=https://wiki.kungal.com/api`、`PUBLIC_AUTH_API_BASE=https://oauth.kungal.com/api/v1`、`PUBLIC_OAUTH_AUTHORIZE_BASE=https://oauth.kungal.com/api/v1`、`PUBLIC_OAUTH_REDIRECT_URI=https://wiki.kungal.com/auth/callback`、`PUBLIC_IMAGE_CDN_BASE=https://image.kungal.iloveren.link`(`PUBLIC_OAUTH_CLIENT_ID` 见 12.3)
+- **kungal web**(`docker/web.env`):`NUXT_PUBLIC_API_BASE_URL=https://www.kungal.com`、`NUXT_PUBLIC_OAUTH_SERVER_URL=https://oauth.kungal.com/api/v1`、`NUXT_PUBLIC_OAUTH_FRONTEND_URL=https://oauth.kungal.com`、`NUXT_PUBLIC_OAUTH_REDIRECT_URI=https://www.kungal.com/auth/callback`、`NUXT_PUBLIC_GALGAME_WIKI_URL=https://wiki.kungal.com/api`、`NUXT_PUBLIC_KUN_GALGAME_URL=https://www.kungal.com`
+- **moyu web**(`docker/web.env`):`NUXT_PUBLIC_API_BASE=https://www.moyu.moe/api/v1`、`NUXT_PUBLIC_OAUTH_SERVER_URL=https://oauth.kungal.com/api/v1`、`NUXT_PUBLIC_OAUTH_WEB_URL=https://oauth.kungal.com`、`NUXT_PUBLIC_OAUTH_REDIRECT_URI=https://www.moyu.moe/auth/callback`
+
+**D. 后端 CORS 允许源 → 真实域名**
+- hub `docker/oauth.env`、`docker/galgame.env`、`docker/image.env` 的 `KUN_FRONTEND_CORS_ORIGIN`:列出 `https://oauth.kungal.com,https://www.kungal.com,https://kungal.com,https://wiki.kungal.com,https://www.moyu.moe,https://moyu.moe`
+- kungal `docker/api.env` `CORS_ALLOW_ORIGINS=https://www.kungal.com,https://kungal.com`
+- moyu `docker/api.env` `CORS_ALLOW_ORIGINS=https://www.moyu.moe,https://moyu.moe`
+
+**E. 后端→后端 / 图床 base(env,用服务名,不变或确认)**
+- 下游 api.env 的 `OAUTH_SERVER_URL=http://oauth:9277/api/v1`、`*GALGAME_WIKI_BASE_URL=http://galgame:9280/api`、`KUN_IMAGE_*CLIENT_BASE_URL=http://image:9278`(s2s 走服务名,**保持容器内部地址**)。
+- 各服务的 `KUN_IMAGE_PUBLIC_BASE_URL=https://image.kungal.iloveren.link`(后端生成给前端的图片 URL,用公网 CDN 域)。
+
+**F. 转发头**:Traefik 默认带 `X-Forwarded-Proto/Host`,SSR 绝对 URL、OAuth 跳转、`Secure` cookie 正确,无需手动配置。
+
+## 12.3 OAuth client(数据库)
+
+OAuth client 的 `redirect_uris` 存在枢纽 `kun_galgame_infra.oauth_clients` 表里(`id` 列即 client_id),上线必须改成 https 域名:
+
+| client(name / id) | redirect_uris 加入 |
+|---|---|
+| 论坛 `4ed9bc99…` | `https://www.kungal.com/auth/callback`、`https://kungal.com/auth/callback` |
+| 补丁 `df3ff60…` | `https://www.moyu.moe/auth/callback`、`https://moyu.moe/auth/callback` |
+| `galgame-wiki-admin`(wiki 前端 PKCE 公共 client) | `https://wiki.kungal.com/auth/callback` |
+
+> wiki 前端 build arg `PUBLIC_OAUTH_CLIENT_ID` 用 `galgame-wiki-admin`(已注册的公共 PKCE client)。image client(`53e9b5ea…`,`image_enabled=true`)给下游 s2s 上传用,无需 redirect。改完 redirect_uris 后,OAuth 的 `KUN_SITE_URL`/`KUN_FRONTEND_URL`(oauth.env)也改成 `https://oauth.kungal.com` / `https://oauth.kungal.com`。
+
+## 12.4 部署步骤(Dokploy)
+
+1. **装 Dokploy**(目标服务器):`curl -sSL https://dokploy.com/install.sh | sh`([安装文档](https://docs.dokploy.com/docs/core/manual-installation))。
+2. **DNS**:把 12.1 所有域名 A 记录指向服务器公网 IP(`image.kungal.iloveren.link` 走 R2 则指 Cloudflare,不指本机)。
+3. **建 3 个 Compose 应用**(Git source 指各仓库,设分支 + compose 文件路径)。
+4. **填环境变量**(Dokploy 的 Environment / 各服务 env_file 对应内容):按 12.2 C/D/E + 12.3 的 https 域名;**密钥务必全部轮换**(见 [05-configuration.md](./05-configuration.md))。
+5. **部署顺序**:先部署 **hub**(等 `postgres`/`redis`/`minio`/`meili` healthy)→ 在 Dokploy **Terminal/Run** 跑首启迁移(见 12.6)→ 再部署 **kungal**、**moyu**。
+6. **配域名**:每个应用的对外服务在 **Domains** 标签按 12.1 添加(含 `/api*` 与 `/` 两条),Dokploy 自动注入 Traefik labels + 签发证书。
+7. **验证**:`curl -I https://oauth.kungal.com`(302→登录,有效证书)、`https://www.moyu.moe`、`https://wiki.kungal.com`。
+
+## 12.5 双 base 与 SSR
+
+前端已实现**双 base**(见 `docs`/各仓 nuxt.config):**SSR 在容器内用服务名**(`http://api:2334`、`http://oauth:9277/api/v1`、`http://galgame:9280/api`),**浏览器用 12.1 的公网域名**。Dokploy 下这套**正好需要**——没有宿主端口,SSR 必须走内部服务名,浏览器走 Traefik 域名。所以 12.2-C 只改"浏览器侧"URL,SSR 的 `NUXT_API_BASE_SSR` / `NUXT_AUTH_API_BASE_SSR` / kungal 的 `NUXT_API_BASE_URL` 维持容器内部地址不变。
+
+## 12.6 数据迁移(首次切换)
+
+跨仓迁移 pipeline(reset → 建库 → migrate-users → galgame-data → …)是一次性切换,在 Dokploy 的 **Terminal** 里对 hub 的 postgres / 各 `migrate` 容器执行,顺序见 [03-bootstrap.md](./03-bootstrap.md) 与 `docs/migration/`。注意 Dokploy 下连库用**容器网络服务名**(`postgres:5432`),不再是宿主 `localhost:1xxxx`。
+
+## 12.7 注意 / 取舍
+
+- **宿主端口随机问题**:Dokploy 下若仍用 `ports` 而不绑定固定值,重部署后宿主端口会变、打断外部连接([官方提示](https://docs.dokploy.com/docs/core/docker-compose));本套已全部走 Traefik 内部路由,**不要再发布 host 端口**。
+- **数据库托管**:`postgres`/`redis` 可继续留在 hub compose,或迁到 **Dokploy 原生数据库**(带备份/UI);`minio`/`meili` 无原生支持,留 compose。
+- **证书**:由 Traefik/Dokploy 管理与持久化,无需手动 certbot。
+- **入站端口**:服务器需公网可达 80/443;若在 NAT/无法开入站,改回 [11-cloudflare-tunnel.md](./11-edge-cloudflare-tunnel.md) 方案(此时不用 Dokploy 的 Traefik 对外)。
+- **dae**:生产服务器保持纯净,**不要叠加 dae**(见 [08-dae-dev-proxy.md](./08-dae-dev-proxy.md))。
