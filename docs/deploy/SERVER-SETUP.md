@@ -165,9 +165,10 @@ sudo ufw allow 443/tcp comment 'https'
 sudo ufw --force enable
 sudo ufw status verbose
 ```
-> 上线后:80/443 给 Dokploy 的 Traefik;Dokploy 面板端口 `3000` 初装时临时放、稳定后
-> 收掉(见 [QUICKSTART §9](./QUICKSTART.md))。要**隐藏源站 IP / 只放行 Cloudflare 段**
-> 见 [QUICKSTART §10](./QUICKSTART.md)。
+> 上线后:80/443 给 Dokploy 的 Traefik。**Dokploy 面板 `3000` 由 Docker 直接发布、ufw
+> 管不住它**(Docker 绕过 ufw 自写 iptables)→ 要用域名 / SSH 隧道 + 云厂商防火墙 /
+> `ufw-docker` 单独收口(见 [QUICKSTART §9](./QUICKSTART.md))。要**隐藏源站 IP / 只放行
+> Cloudflare 段**见 [QUICKSTART §10](./QUICKSTART.md)。
 
 > **入站只需要这几个端口,别的都不用开**:
 > - **`<PORT>` SSH / 80 / 443**(+ 初装临时的 `3000`)。
@@ -217,6 +218,8 @@ echo 'vm.swappiness=10' | sudo tee /etc/sysctl.d/99-swap.conf && sudo sysctl -p 
 
 ```bash
 sudo hostnamectl set-hostname kun-prod
+# ★ 同步写进 /etc/hosts,否则之后每条 sudo 都会报 "unable to resolve host kun-prod"
+grep -q 'kun-prod' /etc/hosts || echo '127.0.1.1 kun-prod' | sudo tee -a /etc/hosts
 sudo tee /etc/sysctl.d/99-hardening.conf >/dev/null <<'EOF'
 net.ipv4.conf.all.accept_redirects = 0
 net.ipv6.conf.all.accept_redirects = 0

@@ -21,12 +21,16 @@
 
 ```bash
 sudo apt update && sudo apt -y install ufw            # 防火墙
-sudo ufw allow OpenSSH && sudo ufw allow 80 && sudo ufw allow 443 && sudo ufw allow 3000 && sudo ufw --force enable
-#   80/443 = Traefik 对外,3000 = Dokploy 面板(初装用,§9 稳定后收掉)
-#   注:§10 隐藏源站后,80/443 改为"只放 Cloudflare 段"(方案 B)或"完全关闭"(方案 A 隧道)
-curl -sSL https://dokploy.com/install.sh | sh         # 一键装 Docker + Dokploy(含 Traefik)
+sudo ufw allow OpenSSH && sudo ufw allow 80 && sudo ufw allow 443 && sudo ufw --force enable
+#   80/443 = Traefik 对外(§10 隐藏源站后改为"只放 Cloudflare 段")
+curl -sSL https://dokploy.com/install.sh | sudo sh        # ★ sudo 加在 sh 上(不是 curl):管道后半段才是 root 跑脚本
 ```
-装完浏览器开 `http://<服务器IP>:3000` 注册管理员。
+> `sudo curl … | sh` 是**错的** —— `sudo` 只管 `curl`,`sh` 仍以普通用户跑 → 脚本报 `This script must be run as root`。更稳:`curl -fsSL …/install.sh -o /tmp/dokploy.sh && sudo sh /tmp/dokploy.sh`(还能先看一眼脚本)。
+
+装完浏览器开 `http://<服务器IP>:3000` 注册管理员(**立刻设强密码**)。
+
+> **装前自查(避坑)**:① 内存 ≥ 2G、磁盘 ≥ 30G(本项目走 GHCR 预构建已大减构建负载);② **80/443/3000 必须空闲**,别先装别的 web 服务;③ 必须 **root 直接装、不要在 LXC 容器内**;④ 脚本用 `curl ifconfig.me` 取公网 IP 来 `docker swarm init` —— 该服务不可达会装失败,确认能出站访问它,或装后手动 `docker swarm init --advertise-addr <你的IP>`;⑤ 磁盘写满会让 Dokploy 内置 DB 进 recovery、面板打不开 → 定期 `docker system prune`。
+> ⚠️ Dokploy 把应用跑成 **Docker Swarm 服务**(不是普通 `docker compose`);且**面板 3000 默认对全网开放、ufw 还管不住它**(Docker 绕过 ufw)→ 安全收口见 [§9](#9-收尾),务必做。
 
 ## 3. 镜像:CI 构建 → GHCR(不在生产机 build)
 
@@ -105,7 +109,13 @@ Dokploy 各应用看 **Logs / 健康状态**。**回滚** = 镜像引用从 `:la
 
 ## 9. 收尾
 
-- **收掉面板端口**:稳定后 `sudo ufw delete allow 3000`,改用 SSH 隧道或给 Dokploy 面板挂独立域名 + 鉴权访问。
+- **收口面板 3000(重要)**:⚠️ Dokploy 用 Docker 发布 3000,**Docker 会绕过 ufw**(自己写 iptables),`ufw deny 3000` 挡不住、面板默认对全网开放。三选一**真正**收口:
+  1. **挂域名 + HTTPS**(推荐,顺带把 `http://IP:3000` 变成 https):Dokploy → **Settings → Server** → 填 **Web Server Domain** = `panel.kungal.com` + 管理员 Email + 开 **HTTPS(Let's Encrypt)** → Save。前提:A 记录 `panel.kungal.com → 服务器IP`,且签发时 80/443 对 LE 可达(走 CF 橙云则签发期临时设 DNS-only,或用 DNS-01)。之后用 `https://panel.kungal.com`(面板自带登录),再用下面任一方式封掉直连 3000;
+  2. **SSH 隧道访问**:`ssh -L 3000:127.0.0.1:3000 kungal-neo` 后开 `http://localhost:3000`,并用**云厂商防火墙**(在 Docker iptables 之前生效)封公网 3000;
+  3. 装 [`ufw-docker`](https://github.com/chaifeng/ufw-docker) 让 ufw 真正管住 Docker 端口,再拒绝 3000。
+  > 你的 Cloudflare 只代理 80/443 的域名,**3000 不在其保护内**,务必单独收口。
+- **用户 / 注册控制**:**首个注册的账号 = Owner(最高管理员)**;此后 Dokploy 是**邀请制** —— `/register` 不再开放自助注册(建好 Owner 后访问注册页会跳登录),新成员由 Owner 在 **Settings → Users** 邀请并分配角色。免费版角色 **Owner / Admin / Member**(Member 可按权限点精细授权;自定义角色是 Enterprise)。所以**无需额外"禁止注册"**——默认就是关的;稳妥起见开隐身窗口访问 `/register` 确认它跳登录,并务必把面板按上一条收口(域名 / SSH 隧道),让登录/注册页根本不对公网暴露。
+- **移除 Dokploy 时**:Docker 是独立系统包(`docker-ce`),**不会变孤儿、也不会被连带卸掉**;但 Dokploy 会留下 Swarm 模式 +`dokploy`/`dokploy-traefik`/`dokploy-postgres`/`dokploy-redis` 服务 +`dokploy-network`+ 卷,按[官方卸载](https://docs.dokploy.com/docs/core/uninstall)清理(`docker service rm …` → `docker system prune --all --volumes` → `docker swarm leave --force`)。注意你的应用是 Swarm 服务,迁出 Dokploy 需改回普通 compose。
 - **图床**:走 Cloudflare R2(`image.env` 配 R2 凭证,Cloudflare 直供,不经服务器);自托管 MinIO 才需在 Dokploy 给 `image.*` 挂域名回源 `minio:9000`。
 - **持续更新**:push 代码 → CI 重 build 推 GHCR → CI 的 `deploy` job(Dokploy webhook,放 GitHub Secret 的 `DOKPLOY_WEBHOOK_*`)触发拉新镜像滚动更新(见 [13-registry-ci.md](./13-registry-ci.md))。
 - **备份**:用 Dokploy 自带备份,或 Terminal 跑 `pg_dumpall`,见 [06-operations.md](./06-operations.md)。

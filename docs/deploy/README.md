@@ -5,6 +5,8 @@
 > 🆕 **拿到一台全新裸机**?先做 [SERVER-SETUP.md](./SERVER-SETUP.md) 服务器开荒(登录 / 系统更新 / 建用户 `kun` / SSH 加固禁 root+密码 / 防火墙 + fail2ban / 克隆仓库),再进 QUICKSTART 部署。
 >
 > ⚡ **服务器已就绪、只想快速上线**?直接看 [QUICKSTART.md](./QUICKSTART.md) —— 到三站上线的精简步骤(**Dokploy**:内置 Traefik 反代 + 自动 HTTPS,无需 Caddy)。下面的分章文档是其展开与原理。
+>
+> ⚠️ **踩坑速查**:开荒/部署中实际翻过的车(SSH 权限 / Docker 绕过 ufw / Dokploy 面板 3000 / CF Tunnel 1033 / pg18 卷路径 / 按库迁移 …)集中在 [NOTES.md](./NOTES.md),遇到问题先翻这里。
 
 | 章节 | 文件 | 内容 |
 |---|---|---|
