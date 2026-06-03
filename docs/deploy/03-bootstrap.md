@@ -65,10 +65,9 @@ curl -s localhost:15007/healthz
 cd kun-galgame-patch-next && docker compose build && \
   docker compose run --rm migrate && docker compose up -d api web
 
-# kungal(必须叠加 infra override)
+# kungal(与 moyu 一致,base 自带 external 网络)
 cd kun-galgame-nuxt4
-K="docker compose -f docker-compose.yml -f docker-compose.infra.yml"
-$K build && $K run --rm migrate && $K up -d api web
+docker compose build && docker compose run --rm migrate && docker compose up -d api web
 ```
 
 ### A.5 OAuth 客户端注册(否则登录走不通)

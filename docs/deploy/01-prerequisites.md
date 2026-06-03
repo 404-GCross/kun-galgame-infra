@@ -42,7 +42,7 @@ website/
 ```
 
 - infra 额外有 `docker/initdb.d/`(Postgres 建库脚本)和 `docker/cgo.Dockerfile`。
-- kungal 额外有 `docker-compose.standalone.yml`(自带 pg/redis 自测)和 `docker-compose.infra.yml`(连已运行的 infra,见 [04-run.md](./04-run.md))。
+- kungal / moyu 的 `docker-compose.yml` **同构**:base 都自带 `external: kun-galgame-infra_default` 网络、不定义 pg/redis(连 infra),靠 `restart` 重连;生产各自用 `docker-compose.prod.yml`(GHCR 镜像)。见 [04-run.md](./04-run.md)。
 
 ## 密钥占位
 

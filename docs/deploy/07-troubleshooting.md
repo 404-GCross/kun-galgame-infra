@@ -24,19 +24,17 @@
 
 ## kungal 专属
 
-### K1 · `service "api" depends on undefined service "redis": invalid compose project`
-- **现象**:在 kungal 目录直接 `docker compose build/up` 即报错,连构建都进不去。
-- **原因**:kungal 主 compose 在 `depends_on` 引用了 `postgres`/`redis`,但**不定义**它们,也没声明外部网络。
-- **解法**:必须叠加一个提供/外置 pg+redis 的 compose:
-  - 连 infra:`-f docker-compose.yml -f docker-compose.infra.yml`(本仓库已附,`!reset` 清掉 depends_on + 接 `kun-galgame-infra_default`)。
-  - 自测:`-f docker-compose.yml -f docker-compose.standalone.yml`。
+### K1 · kungal/moyu `docker compose up` 报 `network kun-galgame-infra_default not found`
+- **现象**:在 kungal 或 moyu 目录 `docker compose up` 报找不到外部网络(`build` 不受影响)。
+- **原因**:两仓 base 都声明了 `networks.default.external: kun-galgame-infra_default`,该网络由 **infra** 创建 —— infra 没先起来,网络就不存在。
+- **解法**:先 `cd kun-galgame-infra && docker compose up -d`(它建网络 + 基础设施),再回下游 `docker compose up -d api web`。(注:kungal 已和 moyu 同构,**不再有** `docker-compose.infra.yml` / `standalone.yml`。)
 
 ### K2 · kungal api 启动即退出(无明显日志)
-- **原因**:`OAUTH_CLIENT_ID` / `OAUTH_CLIENT_SECRET` 是 `requireEnv`,**空则 fail-fast**。kungal 仓自带的 `api.env` 这俩是空的(standalone 取向)。
+- **原因**:`OAUTH_CLIENT_ID` / `OAUTH_CLIENT_SECRET` 是 `requireEnv`,**空则 fail-fast**。kungal 仓自带的 `api.env` 这俩默认是空的。
 - **解法**:填非空值(`kungal-web` / 注册时的 secret)。见 [05-configuration.md](./05-configuration.md)。
 
 ### K3 · kungal api 连不上库 / 搜索 403
-- **原因**:kungal 自带 `api.env` 是 standalone 配置——DB 密码 `kungal_dev_pw`(infra 是 `191007`)、`MEILISEARCH_KEY` 空(infra meili 有 master key → 403)。
+- **原因**:kungal 自带 `api.env` 用的是仓库默认值——DB 密码 `kungal_dev_pw`(infra 是 `191007`)、`MEILISEARCH_KEY` 空(infra meili 有 master key → 403)。
 - **解法**:接 infra 时把密码改 `191007`、`MEILISEARCH_KEY` 填共享 master key、`JWT_SECRET` 填共享密钥。
 
 ## 跨仓 / 基础设施

@@ -44,10 +44,7 @@ docker compose build          # api web(+ migrate job)
 
 ```bash
 cd kun-galgame-nuxt4
-# 连已运行的 infra(推荐):
-docker compose -f docker-compose.yml -f docker-compose.infra.yml build
-# 或 自带 pg/redis 自测:
-docker compose -f docker-compose.yml -f docker-compose.standalone.yml build
+docker compose build           # 与 moyu 一致;build 不依赖网络,infra 未起也能 build
 ```
 
 ## 基础镜像版本(2026-06 审计)
