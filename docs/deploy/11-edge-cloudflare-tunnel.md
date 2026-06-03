@@ -1,5 +1,7 @@
 # 11 · 边缘反代:Cloudflare Tunnel
 
+> ⚠️ **生产高并发不建议**:全部流量经**单个 `cloudflared` 进程**汇聚,它是吞吐 / 连接瓶颈(每隧道默认 100 连接上限;CF 官方建议高流量跑 ≥2 个 4C4G replica),**并发一高易 [Error 1033](https://developers.cloudflare.com/support/troubleshooting/http-status-codes/cloudflare-1xxx-errors/error-1033/)(找不到健康连接器)**。本生态线上改用 **Dokploy + Cloudflare 代理(橙云 / CDN)+ 防火墙锁 CF 段**(见 [QUICKSTART §10 方案 A](./QUICKSTART.md))。**本篇仅适用**:服务器无公网 IP / 在 NAT·CGNAT·dae 之后、80/443 无法对外的场景。
+
 `cloudflared` 与 Cloudflare 边缘建立**纯出站**长连接,把公网流量隧道回本机——**无需开放任何入站端口、无需公网 IP、不用动路由器/防火墙**([cloudflared 镜像](https://infra.docker.com/r/cloudflare/cloudflared)、[2026 实践](https://dev.to/mihailtd/secure-self-hosting-with-cloudflare-tunnels-and-docker-zero-trust-security-5bbn))。TLS 由 Cloudflare 边缘终止,DDoS/缓存/WAF 顺带白嫖。
 
 **这是本机最合适的方案**:你这台在 dae 之后、入站不一定可达,而 Tunnel 全程出站,**dae 那套 `lan_interface` 对它也无所谓**(cloudflared 自己出站,被 dae 代理也能连 CF)。

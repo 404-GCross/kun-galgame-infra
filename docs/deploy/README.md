@@ -2,7 +2,9 @@
 
 三仓一体的容器化部署指南。本目录按章节分文件编写,**建议按顺序阅读**。
 
-> ⚡ **只想快速上线**?直接看 [QUICKSTART.md](./QUICKSTART.md) —— 全新 Debian 服务器到三站上线的精简步骤(**Dokploy**:内置 Traefik 反代 + 自动 HTTPS,无需 Caddy)。下面的分章文档是其展开与原理。
+> 🆕 **拿到一台全新裸机**?先做 [SERVER-SETUP.md](./SERVER-SETUP.md) 服务器开荒(登录 / 系统更新 / 建用户 `kun` / SSH 加固禁 root+密码 / 防火墙 + fail2ban / 克隆仓库),再进 QUICKSTART 部署。
+>
+> ⚡ **服务器已就绪、只想快速上线**?直接看 [QUICKSTART.md](./QUICKSTART.md) —— 到三站上线的精简步骤(**Dokploy**:内置 Traefik 反代 + 自动 HTTPS,无需 Caddy)。下面的分章文档是其展开与原理。
 
 | 章节 | 文件 | 内容 |
 |---|---|---|

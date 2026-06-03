@@ -3,6 +3,8 @@
 > 从一台空 Debian 到 **kungal / moyu / wiki / oauth** 全部上线的步骤,每步带一句说明。
 > 用 **Dokploy**(自托管 PaaS):它**内置 Traefik 反代 + 自动 Let's Encrypt SSL + 编排**,所以**不需要 Caddy/Nginx**,也别再叠加。
 > 深入原理见 [12-dokploy.md](./12-dokploy.md)(部署/路由)+ [13-registry-ci.md](./13-registry-ci.md)(镜像从哪来)。
+>
+> 🆕 **服务器还是全新裸机**?先做 [SERVER-SETUP.md](./SERVER-SETUP.md)(登录 / 系统更新 / 建用户 `kun` / SSH 加固 / 防火墙 / 克隆仓库),再回这里。**本篇假设你已用 `kun` 登录、仓库已 clone 到 `~/app`**。
 
 **线上域名**:`kungal.com`/`www.kungal.com`、`moyu.moe`/`www.moyu.moe`、`wiki.kungal.com`、`oauth.kungal.com`、`image.kungal.iloveren.link`(走 Cloudflare R2,**不经本机**)。
 
@@ -13,7 +15,7 @@
 把下列域名的 **A 记录指向服务器公网 IP**(`image.*` 指向 Cloudflare,不指本机):
 `kungal.com`、`www.kungal.com`、`moyu.moe`、`www.moyu.moe`、`wiki.kungal.com`、`oauth.kungal.com`
 
-> 🔒 **要隐藏源站 IP**(强烈建议)见 [§10](#10-隐藏源站-ip--防泄漏强烈建议):用 Cloudflare Tunnel 则这些记录改 **CNAME 到隧道、不建 A 记录**;用 Cloudflare 代理则给它们开 **Proxy(橙云)**。下面 §1–§9 是"公网直连"基线,§10 在其上加固。
+> 🔒 **要隐藏源站 IP**(强烈建议)见 [§10](#10-隐藏源站-ip--防泄漏强烈建议):**本项目**给这些记录开 **Proxy(橙云 / CDN)** 并把防火墙锁到 Cloudflare 段(方案 A);仅当服务器无公网 IP / 在 NAT 后才考虑 Tunnel(方案 B,高并发易 1033)。下面 §1–§9 是"公网直连"基线,§10 在其上加固。
 
 ## 2. 装 Dokploy(自动装 Docker)
 
@@ -110,26 +112,11 @@ Dokploy 各应用看 **Logs / 健康状态**。**回滚** = 镜像引用从 `:la
 
 ## 10. 隐藏源站 IP / 防泄漏(强烈建议)
 
-§1–§9 默认在公网 80/443 上跑 Traefik + LE,**A 记录直指服务器 → 源站 IP 暴露**(LE 证书也进 CT 日志)。若 IP 泄漏,攻击者可绕过 Cloudflare 直打源站(DDoS/扫描)。二选一加固:
+§1–§9 默认在公网 80/443 上跑 Traefik + LE,**A 记录直指服务器 → 源站 IP 暴露**(LE 证书也进 CT 日志)。若 IP 泄漏,攻击者可绕过 Cloudflare 直打源站(DDoS/扫描)。**本项目采用方案 A**(Dokploy + Cloudflare 代理 / CDN);方案 B(Tunnel)仅作「无公网 IP / NAT 后」的备选。
 
-### 方案 A · Cloudflare Tunnel(最强,推荐)
+### 方案 A · Cloudflare 代理(橙云 / CDN)+ 防火墙锁 CF 段(推荐 · 本项目采用)
 
-源站**只出不进、零入站端口**,IP 永不进 DNS,端口扫描器看不到。Dokploy [官方支持](https://docs.dokploy.com/docs/core/guides/cloudflare-tunnels)。
-```bash
-# 1) Cloudflare Zero Trust → Networks → Tunnels 建隧道,拿 token
-# 2) 服务器跑 cloudflared,加入 Dokploy 网络以解析 Traefik:
-docker run -d --name cloudflared --restart unless-stopped --network dokploy-network \
-  cloudflare/cloudflared:latest tunnel --no-autoupdate run --token <TUNNEL_TOKEN>
-# 3) CF 隧道里把各 hostname 的 Service 指向 http://dokploy-traefik:80(由 Traefik 按域名分流)
-# 4) Dokploy 各应用域名【关掉 Let's Encrypt】,内部走 http(TLS 由 CF 边缘终止)
-# 5) 关掉所有入站(只留 SSH):
-sudo ufw delete allow 80 && sudo ufw delete allow 443 && sudo ufw delete allow 3000
-```
-DNS 此时是 **CNAME 到 `<id>.cfargotunnel.com`,无 A 记录指向源站**。详见 [11-edge-cloudflare-tunnel.md](./11-edge-cloudflare-tunnel.md)。
-
-### 方案 B · Cloudflare 代理(橙云)+ 防火墙锁 CF IP
-
-保留 §1–§9 的公网 80/443,但:① 所有公网记录开 **Proxy(橙云)**;② 防火墙**只放 Cloudflare 段**访问 80/443(即便 IP 泄漏也直连不进):
+保留 §1–§9 的公网 80/443 ——**Dokploy 的 Traefik 在源站直接扛并发,不经隧道单点**。① 所有公网记录开 **Proxy(橙云)**:即获得 CDN/缓存 + DDoS 防护 + 隐藏源站;② 防火墙**只放 Cloudflare 段**访问 80/443(即便 IP 泄漏,非 CF 来源也直连不进):
 ```bash
 for ip in $(curl -s https://www.cloudflare.com/ips-v4) $(curl -s https://www.cloudflare.com/ips-v6); do
   sudo ufw allow from "$ip" to any port 80,443 proto tcp comment 'cloudflare'
@@ -139,10 +126,20 @@ sudo ufw delete allow 80 && sudo ufw delete allow 443     # 删掉对所有人�
 > CF 段会变,用 [ufw-cf](https://github.com/Malith-Rukshan/ufw-cf) 或 [cloudflare-ufw-updater](https://github.com/jakejarvis/cloudflare-ufw-updater) 定时同步。
 > **SSL**:橙云会拦截 LE 的 HTTP 验证 → Traefik 改用 **DNS-01**(填 Cloudflare API token)或挂 **Cloudflare Origin CA 证书**,CF 的 SSL 模式设 **Full (strict)**。
 
-### 防泄漏清单(两方案都要做)
+### 方案 B · Cloudflare Tunnel(备选:无公网 IP / NAT 后;⚠ 高并发慎用)
+
+源站**只出不进、零入站端口**,IP 永不进 DNS。但**全部流量经单个 `cloudflared` 进程汇聚**,它是吞吐 / 连接瓶颈(每隧道默认 100 连接上限;CF 官方建议高流量跑 **≥2 个 4C4G replica**),**并发一高就容易 [Error 1033](https://developers.cloudflare.com/support/troubleshooting/http-status-codes/cloudflare-1xxx-errors/error-1033/)(找不到健康连接器)**。所以**本项目不用它**,仅当「服务器无公网 IP / 在 NAT 后、80/443 无法对外」时才考虑:
+```bash
+docker run -d --name cloudflared --restart unless-stopped --network dokploy-network \
+  cloudflare/cloudflared:latest tunnel --no-autoupdate run --token <TUNNEL_TOKEN>
+# CF 隧道里 hostname → http://dokploy-traefik:80;Dokploy 域名关掉 LE(CF 边缘出证);ufw 关 80/443 只留 SSH
+```
+DNS 此时是 CNAME 到 `<id>.cfargotunnel.com`。详见 [11-edge-cloudflare-tunnel.md](./11-edge-cloudflare-tunnel.md)。
+
+### 防泄漏清单(无论哪种方案)
 
 - **DNS 审计**:所有 `A/AAAA/MX/TXT/SPF/`旧子域都不能含源站 IP;别留 `dev.`/`staging.` 等直指源站的记录(会被 DNS 数据集 / CT 日志搜出)。
-- **邮件**:用外部 SMTP 中继发信(本项目用 mxroute ✓),别在源站跑邮件服务;确认邮件头不含源站 IP(否则给不存在地址发信会退信暴露 IP)。
+- **邮件**:本项目走**外部 SMTP 中继**(mxroute `tuesday.mxrouting.net:587`)**仅出站发信**,源站**不收信、不跑邮件服务**,因此 **ufw 无需为邮件开任何入站端口**(MX 指向 mxroute 而非源站);只要别用源站直发到「不存在地址」触发退信暴露 IP 即可。
 - **历史 IP**:若该 IP 曾公开过(DNS 历史 / SecurityTrails / Shodan),上 CF 后**换一个新服务器 IP**——旧记录是公开档案,改不掉。
-- **证书**:方案 A 与 B(Origin CA)源站不对外暴露公网 LE 证书 → 不进 CT;B(DNS-01)证书只暴露域名(本就公开),IP 仍被防火墙挡住。
+- **证书**:方案 A(Origin CA)/ 方案 B 源站不对外暴露公网 LE 证书 → 不进 CT;方案 A(DNS-01)证书只暴露域名(本就公开),IP 仍被防火墙挡住。
 - **持续监控**:隐藏源站是长期事,定期用 [Cloudflare 官方指南](https://developers.cloudflare.com/fundamentals/security/protect-your-origin-server/) 自查。
