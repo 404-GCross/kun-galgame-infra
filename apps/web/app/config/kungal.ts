@@ -17,8 +17,8 @@ const KUN_SITE_STICKER = 'https://sticker.kungal.com'
 const KUN_SITE_OSS_DOMAIN = 'https://kun-galgame-forum.iloveren.link'
 const KUN_SITE_DEVELOPMENT_DOCUMENTATION = 'https://www.soft.moe/topic/kungal'
 const KUN_SITE_TELEGRAM_GROUP = 'https://t.me/kungalgame'
-const KUN_SITE_GITHUB = 'https://github.com/KUN1007/kun-galgame-nuxt4'
-const KUN_SITE_AUTHOR_GITHUB = 'https://github.com/KUN1007'
+const KUN_SITE_GITHUB = 'https://github.com/KunMoe/kun-galgame-nuxt4'
+const KUN_SITE_AUTHOR_GITHUB = 'https://github.com/KunMoe'
 const KUN_SITE_LIST = [
   { name: '鲲 Galgame 导航', url: KUN_SITE_NAV },
   { name: '鲲 Galgame 补丁', url: KUN_SITE_PATCH },

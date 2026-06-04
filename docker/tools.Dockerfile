@@ -9,7 +9,7 @@
 # This image bundles them all and invokes a job by name:
 #
 #   docker run --rm --network kun-galgame-infra_default \
-#     --env-file docker/galgame.env ghcr.io/kun1007/infra-tools reindex-search
+#     --env-file docker/galgame.env ghcr.io/kunmoe/infra-tools reindex-search
 #
 # Built CGO_ENABLED=1 + libwebp so the cgo cmds (image*, oauth) compile too; the
 # rest are pure Go. Build context MUST be the repo root.

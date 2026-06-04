@@ -2,7 +2,7 @@
 #
 # Differs from docker-compose.yml (local/dev) in exactly the ways
 # docs/deploy/12-dokploy.md §12.2 + 13-registry-ci.md §13.6 prescribe:
-#   1. services use `image: ghcr.io/kun1007/infra-*` — NOT `build:`. CI
+#   1. services use `image: ghcr.io/kunmoe/infra-*` — NOT `build:`. CI
 #      (.github/workflows/build.yml) builds + pushes; Dokploy only PULLS.
 #   2. `expose:` (container-network only) instead of `ports:` — Traefik routes
 #      internally; the prod box publishes NO 1xxxx host ports.
@@ -84,7 +84,7 @@ services:
   # ───────────────────────────── Go services ─────────────────────────────────
   # oauth + image are cgo (libwebp) → debian-slim runtime, binary at /app/app.
   oauth:
-    image: ghcr.io/kun1007/infra-oauth:latest
+    image: ghcr.io/kunmoe/infra-oauth:latest
     env_file: [./docker/oauth.env]
     expose: ["9277"]
     depends_on:
@@ -96,7 +96,7 @@ services:
     restart: unless-stopped
 
   image:
-    image: ghcr.io/kun1007/infra-image:latest
+    image: ghcr.io/kunmoe/infra-image:latest
     env_file: [./docker/image.env]
     expose: ["9278"]
     depends_on:
@@ -110,7 +110,7 @@ services:
 
   # galgame is pure-Go (distroless static) → binary at /app.
   galgame:
-    image: ghcr.io/kun1007/infra-galgame:latest
+    image: ghcr.io/kunmoe/infra-galgame:latest
     env_file: [./docker/galgame.env]
     expose: ["9280"]
     depends_on:
@@ -128,7 +128,7 @@ services:
   # domains via build-args in .github/workflows/build.yml. Only the SSR base
   # (in-container service name) is injected at runtime here.
   web:
-    image: ghcr.io/kun1007/infra-web:latest
+    image: ghcr.io/kunmoe/infra-web:latest
     environment:
       NUXT_API_BASE_SSR: http://oauth:9277/api/v1
     expose: ["3000"]
@@ -140,7 +140,7 @@ services:
     restart: unless-stopped
 
   wiki:
-    image: ghcr.io/kun1007/infra-wiki:latest
+    image: ghcr.io/kunmoe/infra-wiki:latest
     environment:
       NUXT_API_BASE_SSR: http://galgame:9280/api
       NUXT_AUTH_API_BASE_SSR: http://oauth:9277/api/v1
@@ -156,7 +156,7 @@ services:
   #   docker compose -f docker-compose.prod.yml run --rm migrate
   #   docker compose -f docker-compose.prod.yml run --rm migrate-galgame
   migrate:
-    image: ghcr.io/kun1007/infra-migrate:latest
+    image: ghcr.io/kunmoe/infra-migrate:latest
     env_file: [./docker/oauth.env]
     profiles: ["jobs"]
     depends_on:
@@ -164,7 +164,7 @@ services:
     restart: "no"
 
   migrate-galgame:
-    image: ghcr.io/kun1007/infra-migrate-galgame:latest
+    image: ghcr.io/kunmoe/infra-migrate-galgame:latest
     env_file: [./docker/galgame.env]
     profiles: ["jobs"]
     depends_on:

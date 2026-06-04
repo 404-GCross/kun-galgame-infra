@@ -28,9 +28,9 @@ Dokploy 官方明确:在部署服务器上 build "**可能导致服务器超时�
 
 ## 13.2 镜像清单
 
-CI 按各仓**现有 Dockerfile**(参数化)构建以下镜像并推到 `ghcr.io/kun1007/<name>`(GHCR 名必须小写):
+CI 按各仓**现有 Dockerfile**(参数化)构建以下镜像并推到 `ghcr.io/kunmoe/<name>`(GHCR 名必须小写):
 
-| 镜像 `ghcr.io/kun1007/…` | 仓库 | Dockerfile | 关键 build-arg | 容器端口 |
+| 镜像 `ghcr.io/kunmoe/…` | 仓库 | Dockerfile | 关键 build-arg | 容器端口 |
 |---|---|---|---|---|
 | `infra-oauth` | infra | `docker/cgo.Dockerfile` | `CMD=oauth` | 9277 |
 | `infra-image` | infra | `docker/cgo.Dockerfile` | `CMD=image` | 9278 |
@@ -57,7 +57,7 @@ CI 按各仓**现有 Dockerfile**(参数化)构建以下镜像并推到 `ghcr.io
 > 而一镜像只含一个 `CMD` 二进制,**不能** `--entrypoint` 复用。用 `*-tools` 按名跑这些一次性 job:
 > ```bash
 > docker run --rm --network dokploy-network --env-file docker/galgame.env \
->   ghcr.io/kun1007/infra-tools reindex-search
+>   ghcr.io/kunmoe/infra-tools reindex-search
 > ```
 
 ## 13.3 Tag 与回滚约定
@@ -114,8 +114,8 @@ jobs:
           build-args: ${{ matrix.args }}
           push: true
           tags: |
-            ghcr.io/kun1007/${{ matrix.name }}:latest
-            ghcr.io/kun1007/${{ matrix.name }}:${{ github.sha }}
+            ghcr.io/kunmoe/${{ matrix.name }}:latest
+            ghcr.io/kunmoe/${{ matrix.name }}:${{ github.sha }}
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
 
@@ -156,14 +156,14 @@ Nuxt 的 public 配置有两种注入方式,直接影响"镜像是否环境无�
 name: kun-galgame-infra
 services:
   oauth:
-    image: ghcr.io/kun1007/infra-oauth:latest   # ← 不再有 build:
+    image: ghcr.io/kunmoe/infra-oauth:latest   # ← 不再有 build:
     env_file: [./docker/oauth.env]
     expose: ["9277"]                           # ← expose 而非 ports(见 12-dokploy §12.2-B)
     depends_on: { postgres: { condition: service_healthy }, redis: { condition: service_healthy } }
     healthcheck: { test: ["CMD", "/app/app", "healthcheck"], <<: *svc-health }
     restart: unless-stopped
   web:
-    image: ghcr.io/kun1007/infra-web:latest
+    image: ghcr.io/kunmoe/infra-web:latest
     environment:
       NUXT_API_BASE_SSR: http://oauth:9277/api/v1
       # 浏览器 public 域名已在 CI build 期烤入镜像(见 13.5),运行时只注 SSR base
@@ -179,7 +179,7 @@ networks:
 ## 13.7 Dokploy 侧配置
 
 1. **加 Registry**(Settings → Registry):公开镜像可不加;私有则填 Name / Username=GitHub ID / Password=`read:packages` 的 **PAT** / URL=`https://ghcr.io`。
-2. **应用指向 prod compose**(或用 Docker provider 填 `ghcr.io/kun1007/<svc>:latest`)。
+2. **应用指向 prod compose**(或用 Docker provider 填 `ghcr.io/kunmoe/<svc>:latest`)。
 3. **触发部署**:
    - **Webhook**:复制应用 Deployments 页的 Webhook URL → 放进 CI 的 `secrets.DOKPLOY_WEBHOOK_*`,`deploy` job `curl` 它。
    - 或 **API**:`POST /api/application.deploy`(带 API key)。

@@ -18,8 +18,8 @@
 | 仓库 | 代号 | 角色 |
 |---|---|---|
 | **kun-galgame-infra**(本仓) | infra / 枢纽 | 身份 + 图床 + wiki + 共享基础设施 |
-| [kun-galgame-nuxt4](https://github.com/KUN1007/kun-galgame-nuxt4) | kungal | 论坛主站 |
-| [kun-galgame-patch-next](https://github.com/KUN1007/kun-galgame-patch-next) | moyu | 补丁站 |
+| [kun-galgame-nuxt4](https://github.com/KunMoe/kun-galgame-nuxt4) | kungal | 论坛主站 |
+| [kun-galgame-patch-next](https://github.com/KunMoe/kun-galgame-patch-next) | moyu | 补丁站 |
 
 下游(kungal / moyu)在运行时通过容器**服务名**调用枢纽:`oauth:9277`、`galgame:9280`、`image:9278`,并共用枢纽的 Postgres / Redis / MinIO / Meili。
 
