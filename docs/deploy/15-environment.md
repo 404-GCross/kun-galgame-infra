@@ -14,8 +14,8 @@
 
 | 问题 | 答案速记 |
 |---|---|
-| **配置分几层?** | ① 构建参数(烤进镜像)② 后端运行时 `env_file`(`docker/*.env`)③ compose 编排插值 `${VAR}`(仅 infra 生产)④ 前端 public(infra 烤镜像 / 下游运行期)⑤ 平台 secret(GitHub Actions) |
-| **在哪里设?** | 本地:`docker/*.env` + compose build args。生产:Dokploy 的 **Environment** + 各机 `docker/*.env`;CI:**GitHub repo Secrets**;DNS/图床:**Cloudflare 控制台** |
+| **配置分几层?** | ① 构建参数(烤进镜像)② 后端运行时(**dev**:`env_file docker/*.env`;**prod**:compose 内联 `environment:`)③ compose 编排插值 `${VAR}`(**三仓 prod 都用**)④ 前端 public(infra 烤镜像 / 下游运行期)⑤ 平台 secret(GitHub Actions) |
+| **在哪里设?** | 本地:`docker/*.env` + compose build args。**生产:各应用 Dokploy 的 Environment 面板(只填密钥),无需任何 env 文件**;CI:**GitHub repo Secrets**;DNS/图床:**Cloudflare 控制台** |
 | **公开还是密钥?** | `NUXT_PUBLIC_*` / `PUBLIC_*` = 浏览器可见,**不能放密钥**;`KUN_PG_PASSWORD` / `JWT_SECRET` / `OAUTH_CLIENT_SECRET` / S3 keys = 密钥 |
 | **谁必须和谁一致?** | 见 [§15.3 一致性铁律](#153-跨服务一致性铁律最容易踩) —— 配错这几对,服务能起但功能 401/403/连不上 |
 
@@ -27,19 +27,18 @@
 
 | 层 | 载体 | 何时生效 | 进镜像? | 生产在哪设 |
 |---|---|---|---|---|
-| **A. 构建参数** | compose `build.args` / Dockerfile `ARG` | `docker build` 时 | ✅ 烤进镜像 | CI:`.github/workflows/build.yml` 的 `build-args`;或 Dokploy「从 Git 构建」时的 build args |
-| **B. 后端运行时** | `env_file: docker/*.env` | 容器启动 | ❌ 被 `.dockerignore` 挡掉 | 放到**部署机**的 `docker/*.env`,或用 Dokploy 把内容写进去(见 [§15.8](#158-生产--dokploy-注入方法)) |
-| **C. 编排插值** | compose 里 `${VAR:?...}`(**仅 infra 生产 compose**) | `docker compose up` 时 | ❌ | **Dokploy 的 Environment**(或部署目录的根 `.env`) |
-| **D. 前端 public** | infra:**A 层烤镜像**;kungal/moyu:**B 层运行期** | 见 [§15.5](#155-前端-public-配置infra-烤镜像-vs-下游运行期) | infra ✅ / 下游 ❌ | infra 改 CI build-args 重构;下游改 `docker/web.env` |
+| **A. 构建参数** | compose `build.args` / Dockerfile `ARG` | `docker build` 时 | ✅ 烤进镜像 | CI:`.github/workflows/build.yml` 的 `build-args` |
+| **B. 后端运行时** | **dev**:`env_file: docker/*.env`;**prod**:compose 里 `environment:` 直接写 | 容器启动 | ❌ | dev:部署机 `docker/*.env`。**prod:三仓 prod compose 已内联 `environment:`,无需任何 env 文件** |
+| **C. 编排插值** | compose 里 `${VAR:?}` / `${VAR:-default}`(**三仓 prod compose 都用**) | `docker compose up` 时 | ❌ | **Dokploy 各应用的 Environment 面板**(只填密钥) |
+| **D. 前端 public** | infra:**A 层烤镜像**;kungal/moyu:**prod compose `environment:` 写死 https 域名** | 见 [§15.5](#155-前端-public-配置infra-烤镜像-vs-下游运行期) | infra ✅ / 下游 ❌ | infra 改 CI build-args 重构;kungal/moyu 改 prod compose 的 `NUXT_PUBLIC_*` |
 | **E. 平台 secret** | `${{ secrets.* }}` | CI 运行时 | ❌ | **GitHub → 仓库 Settings → Secrets** |
 
 **两条最关键的事实**:
 
-1. **`docker/*.env` 不进镜像**。`.dockerignore` 里有 `docker/*.env` / `**/.env*`,镜像里没有它们;
-   `env_file:` 是 compose 在**容器启动时从宿主机读**。所以同一个 GHCR 镜像在任何机器都通用,
-   机器自己的 `docker/*.env` 决定它连哪个库、用什么密钥。
-2. **只有 infra 的生产 compose 用 `${VAR:?}` 插值**(postgres/minio/meili 这几个基础设施的密码)。
-   kungal/moyu 生产 compose **没有任何 `${VAR}`**,它们的全部配置都在 `docker/api.env` / `docker/web.env` 里。
+1. **prod compose 不用 `env_file`、不需要任何 `docker/*.env` 文件**(那是 dev/本地用的)。三仓 `docker-compose.prod.yml`
+   把配置内联进 `environment:`:**非密钥/域名是字面值**(写死在 compose),**密钥/部署相关用 `${VAR}`** 从
+   Dokploy 面板取。所以 Dokploy 部署**不用在服务器放任何 env 文件**,面板里只填那几个密钥即可。
+2. **三仓 prod compose 都用 `${VAR}` 插值**(不再只 infra)。infra 内 oauth/image/galgame 读**同一个** `${POSTGRES_PASSWORD}`/`${JWT_SECRET}`/`${MEILI_MASTER_KEY}`(YAML anchor 共享)→ **应用内一致性自动保证**;跨应用(kungal/moyu 各自面板)需手动设成相同值(见 [§15.3](#153-跨服务一致性铁律最容易踩))。
 
 ---
 
@@ -253,10 +252,10 @@
 
 | | **infra web / wiki** | **kungal / moyu web** |
 |---|---|---|
-| public 值从哪来 | **构建期烤进镜像**(`PUBLIC_*` build args → `nuxt build`) | **运行期** `docker/web.env` 的 `NUXT_PUBLIC_*`(Nitro 覆盖 runtimeConfig) |
+| public 值从哪来 | **构建期烤进镜像**(`PUBLIC_*` build args → `nuxt build`) | **运行期** `NUXT_PUBLIC_*`(Nitro 覆盖 runtimeConfig);prod 在 `docker-compose.prod.yml` 的 `environment:`,dev 在 `docker/web.env` |
 | 为什么 | `oauthClientID`/`oauthRedirectURI` 的运行期 env 名映射别扭,索性 build 时定死 | 标准 Nitro 覆盖,**一次构建到处部署** |
-| 生产改域名怎么做 | 改 `.github/workflows/build.yml` 的 `build-args` → **重新构建推镜像** → Dokploy 拉新镜像 | 改 `docker/web.env` 的 `NUXT_PUBLIC_*` → **重启容器**即可,无需重构 |
-| 运行期还注入什么 | 仅 SSR 内部 base(`NUXT_API_BASE_SSR` / `NUXT_AUTH_API_BASE_SSR`) | SSR base 也在 web.env(`NUXT_API_BASE_SSR` / kungal `NUXT_API_BASE_URL`)|
+| 生产改域名怎么做 | 改 `.github/workflows/build.yml` 的 `build-args` → **重新构建推镜像** → Dokploy 拉新镜像 | 改 `docker-compose.prod.yml` web 服务的 `NUXT_PUBLIC_*` → **重部署**即可,无需重构 |
+| 运行期还注入什么 | 仅 SSR 内部 base(`NUXT_API_BASE_SSR` / `NUXT_AUTH_API_BASE_SSR`) | SSR base 同在 web `environment:`(moyu `NUXT_API_BASE_SSR` / kungal `NUXT_API_BASE_URL`)|
 
 **双 base 原则(三仓一致)**:SSR(容器内)永远用**服务名**(`http://oauth:9277`、`http://api:2334`…),
 浏览器永远用**公网域名**。Dokploy 下没有宿主端口,这套正好契合(详见 [12-dokploy §12.5](./12-dokploy.md))。
@@ -308,51 +307,71 @@
 | `kungal-api` / `kungal-migrate` / `kungal-web` | `CMD=server` / `CMD=migrate` / (web 无,public 走运行期) |
 | `moyu-api` / `moyu-migrate` / `moyu-web` | `CMD=server` / `CMD=migrate` / `APP=web`(public 走运行期) |
 
-> **改 infra 前端域名 = 改 build.yml 这两行再重构**(因为是烤进去的);改 kungal/moyu 前端域名 = 改各自 `docker/web.env` 重启即可。
+> **改 infra 前端域名 = 改 build.yml 这两行再重构**(因为是烤进去的);改 kungal/moyu 前端域名 = 改各自 `docker-compose.prod.yml` 的 `NUXT_PUBLIC_*` 重启即可。
 
 ---
 
-## 15.8 生产 / Dokploy 注入方法
+## 15.8 生产 / Dokploy 注入方法(全部走面板,无 env 文件)
 
-生产用 [Dokploy](./12-dokploy.md):3 个 Compose 应用,共享 `dokploy-network`,镜像走 GHCR 预构建。
-环境变量分两条注入路径:
+生产三仓 `docker-compose.prod.yml` **已把配置内联进 `environment:`**:非密钥/域名是字面值,密钥/部署相关用
+`${VAR}` 从 **Dokploy 各应用的 Environment 面板** 取。所以 **Dokploy 部署不需要在服务器放任何 `docker/*.env`**,
+每个应用的面板里只填下面这几个值即可。Dokploy 把面板写成部署目录的根 `.env`,`docker compose up` 时插值;
+`${VAR:?}` 留空会**直接报错**(不静默用空值),`${VAR:-default}` 留空用默认。
 
-### A. `${VAR:?}` 插值 → Dokploy 的 **Environment**(仅 infra 应用)
-
-infra 的 `docker-compose.prod.yml` 用了 4 个必填插值。在 **infra 这个 Dokploy 应用的 Environment** 里填:
-
+### A. infra 应用 · Environment 面板
 ```env
-POSTGRES_PASSWORD=<强随机>          # = 各 KUN_PG_PASSWORD / KUN_DATABASE_URL 密码
-MINIO_ROOT_USER=<自定义>            # 自托管图床才需要;用 R2 可随便填
-MINIO_ROOT_PASSWORD=<强随机>
-MEILI_MASTER_KEY=<强随机>           # = galgame KUN_MEILISEARCH_API_KEY
-# 可选:POSTGRES_USER(默认 postgres)
+POSTGRES_PASSWORD=<强随机>          # 必填;= 下游 KUN_DATABASE_URL 里的密码
+JWT_SECRET=<强随机>                 # 必填;infra oauth/image/galgame 共用(同一 ${VAR},自动一致)
+MEILI_MASTER_KEY=<强随机>           # 必填
+MINIO_ROOT_USER=<自定义>            # 必填(用 R2 可填占位,minio 空跑)
+MINIO_ROOT_PASSWORD=<强随机>        # 必填
+KUN_IMAGE_S3_ENDPOINT=https://<acct>.r2.cloudflarestorage.com   # 图床要工作就填(R2)
+KUN_IMAGE_S3_ACCESS_KEY=<R2 key>
+KUN_IMAGE_S3_SECRET_KEY=<R2 secret>
+# 可选:KUN_IMAGE_S3_REGION(默认 auto)/ _BUCKET(默认 kun-images)/ _FORCE_PATH_STYLE(默认 false)
+# 可选:KUN_VISUAL_NOVEL_EMAIL_PASSWORD(SMTP)
 ```
 
-> Dokploy 把 Environment 写成部署目录的根 `.env`,`docker compose up` 时插值。`:?` 表示**留空直接报错**,不会静默用空密码。
+### B. kungal 应用 · Environment 面板
+```env
+POSTGRES_PASSWORD=<= infra 同名值>     # 必填
+OAUTH_CLIENT_SECRET=<注册论坛 client 的明文>   # 必填
+JWT_SECRET=<强随机>                    # 必填;kungal 自己的会话密钥(不必=infra)
+MEILI_MASTER_KEY=<= infra 同名值>      # 必填
+# 可选:KUN_IMAGE_CLIENT_ID/SECRET、FILE_STORAGE_*(B2 工具集)、MAIL_*、S3_*(内联图床)
+```
 
-### B. `env_file: docker/*.env` → 文件必须在部署目录(三仓均 **gitignore**)
+### C. moyu 应用 · Environment 面板
+```env
+POSTGRES_PASSWORD=<= infra 同名值>     # 必填
+OAUTH_CLIENT_SECRET=<注册补丁 client 的明文>   # 必填
+KUN_VISUAL_NOVEL_S3_STORAGE_ACCESS_KEY_ID=<B2 key>      # 补丁文件要工作就填
+KUN_VISUAL_NOVEL_S3_STORAGE_SECRET_ACCESS_KEY=<B2 secret>
+# 可选:KUN_VISUAL_NOVEL_EMAIL_PASSWORD、KUN_IMAGE_OAUTH_CLIENT_ID/SECRET
+```
 
-三仓生产 compose 都 `env_file: ./docker/*.env`,这些文件**不在 git 里**(`.gitignore`),Dokploy
-克隆仓库时**不会带它们**。所以 **A 步在 Environment 里填 `${VAR}` 并不能替代它们**——`${VAR}` 只解决 compose
-插值那几个基础设施密码;Go/Nuxt 服务的全部业务配置在 `env_file` 里,文件缺了 compose 直接报 `env file ... not found`。三种补法:
+> **跨应用一致性**(各应用面板独立,需手动对齐,见 [§15.3](#153-跨服务一致性铁律最容易踩)):
+> `POSTGRES_PASSWORD`、`MEILI_MASTER_KEY` 三个面板填**同一个值**;每个 `OAUTH_CLIENT_SECRET` = 注册该 client 时的明文。
+> infra 内部(oauth/image/galgame 同一 compose)读同一 `${VAR}`,自动一致,无需重复。
 
-1. **(推荐)Dokploy「Environment / Env File」面板**:把每个服务该有的 `KEY=value` 贴进去,
-   或用 Dokploy 的文件挂载功能把内容写到 `docker/oauth.env` 等路径。
-2. **部署机手动放**:SSH 到服务器,在 Dokploy 的应用代码目录补齐 `docker/*.env`(适合一次性)。
-3. **私有配置仓**:把脱敏后的 env 模板入一个私有仓 / secret 管理器,部署时拉取生成。
+### D. 一次性 job / 数据迁移(jobs profile)
 
-> 不论哪种,**§15.3 的一致性铁律照样要满足**:`docker/*.env` 里的库密码/Meili key 必须等于 A 步在 Environment 里设的 `${VAR}`。
->
-> ⚠️ **历史坑(已修)**:infra 仓曾**误把** `docker/oauth.env`/`image.env`/`galgame.env` 提交进版本库
-> (`.gitignore` 没覆盖到 `*.env` 这种非点开头文件名)。后果是:即便你在 Dokploy Environment 填了新密钥,
-> infra 服务仍会从仓库里那份**旧 env_file** 读到测试值/泄露值。现已 `git rm --cached` 移出跟踪并补全 `.gitignore`;
-> **若你的远端历史里还有这些文件,请把里面所有出现过的密钥(邮箱密码、JWT、S3 等)视为已泄露并轮换**。
+schema 迁移与数据 cutover 的工具也都内联了 environment,用 compose 的 jobs profile 跑(无需 env 文件):
+```bash
+docker compose -f docker-compose.prod.yml --profile jobs run --rm migrate            # infra schema
+docker compose -f docker-compose.prod.yml --profile jobs run --rm migrate-galgame     # wiki schema
+docker compose -f docker-compose.prod.yml --profile jobs run --rm tools migrate-users --kungal-dsn=… --moyu-dsn=…
+```
+完整带数据上线见 [16-data-cutover.md](./16-data-cutover.md)。
 
-### C. 顺序与首启
+### E. 顺序与首启
 
-先部署 **infra**(等 pg/redis/minio/meili healthy)→ 在 Dokploy Terminal 跑 `migrate` / `migrate-galgame`
-→ 再部署 **kungal**、**moyu**(它们连 infra 的服务名)。详见 [12-dokploy §12.4/§12.6](./12-dokploy.md) 与 [03-bootstrap.md](./03-bootstrap.md)。
+先部署 **infra**(等 pg/redis/minio/meili healthy)→ 跑 schema/数据迁移 → 注册 OAuth client → 再部署 **kungal**、**moyu**。
+详见 [12-dokploy §12.4](./12-dokploy.md)、[03-bootstrap.md](./03-bootstrap.md)、[17-go-live-checklist.md](./17-go-live-checklist.md)。
+
+> ⚠️ **历史坑(已修)**:infra 仓曾误把 `docker/oauth.env`/`image.env`/`galgame.env` 提交进版本库(已 `git rm --cached` + 补 `.gitignore`)。
+> 若远端历史里还有这些文件,把里面出现过的密钥(邮箱密码、JWT、S3 等)**视为已泄露并轮换**。
+> (dev 本地仍用 `docker/*.env`;只是 **prod compose 不再读它们**。)
 
 > **完整数据 cutover 需要更多 job 镜像**:`migrate` / `migrate-galgame` 只够「空库起服务」。
 > 带数据上线([03-bootstrap §B](./03-bootstrap.md))还要 `migrate-users`、`migrate-galgame-data`、

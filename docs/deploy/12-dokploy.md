@@ -49,6 +49,8 @@ DNS 把下列域名的 A/AAAA 记录指向**服务器公网 IP**;Traefik 自动�
 
 当前栈用 `ports: ["1xxxx:..."]` 暴露宿主端口 + 前端把浏览器 URL 烤成 `localhost:1xxxx`。Dokploy/Traefik 走容器内部端口路由,需做以下调整(都是**编排/配置层**,不动业务代码):
 
+> ℹ️ **下面 A/B/C/D/E 列的值,三仓 `docker-compose.prod.yml` 已替你写死(非密钥/域名)**;真正要你填的只剩**各应用 Dokploy Environment 面板里的几个密钥**(`POSTGRES_PASSWORD`/`JWT_SECRET`/`MEILI_MASTER_KEY`/`OAUTH_CLIENT_SECRET`/S3 keys…)。逐个面板清单见 [15-environment §15.8](./15-environment.md) 与 [17-go-live-checklist.md](./17-go-live-checklist.md)。C/D/E 仅作"哪个值是什么"的参考。
+
 **A. compose 网络**
 - 各仓 compose 的网络从 `kun-galgame-infra_default`(external)改为 **`dokploy-network`**(external):
   ```yaml
@@ -97,7 +99,7 @@ OAuth client 的 `redirect_uris` 存在枢纽 `kun_galgame_infra.oauth_clients` 
 1. **装 Dokploy**(目标服务器):`curl -sSL https://dokploy.com/install.sh | sh`([安装文档](https://docs.dokploy.com/docs/core/manual-installation))。
 2. **DNS**:把 12.1 所有域名 A 记录指向服务器公网 IP(`image.kungal.iloveren.link` 走 R2 则指 Cloudflare,不指本机)。
 3. **建 3 个 Compose 应用**。两种来源:**(推荐·生产)** 指向各仓 `docker-compose.prod.yml`(用 `image:` 引用 GHCR 预构建镜像,见 [13-registry-ci.md](./13-registry-ci.md));**(起步)** 直接 Git source + 在 Dokploy 上 build(简单,但重镜像有拖垮单机风险)。
-4. **填环境变量**(Dokploy 的 Environment / 各服务 env_file 对应内容):按 12.2 C/D/E + 12.3 的 https 域名;**密钥务必全部轮换**(见 [05-configuration.md](./05-configuration.md))。
+4. **填环境变量**:prod compose 已内联非密钥/域名;**只需在各应用 Dokploy Environment 面板填密钥**(逐个清单见 [15-environment §15.8](./15-environment.md) / [17-go-live-checklist.md](./17-go-live-checklist.md));**全部轮换测试值**(见 [05-configuration.md](./05-configuration.md))。
 5. **部署顺序**:先部署 **infra**(等 `postgres`/`redis`/`minio`/`meili` healthy)→ 在 Dokploy **Terminal/Run** 跑首启迁移(见 12.6)→ 再部署 **kungal**、**moyu**。
 6. **配域名**:每个应用的对外服务在 **Domains** 标签按 12.1 添加(含 `/api*` 与 `/` 两条),Dokploy 自动注入 Traefik labels + 签发证书。
 7. **验证**:`curl -I https://oauth.kungal.com`(302→登录,有效证书)、`https://www.moyu.moe`、`https://wiki.kungal.com`。

@@ -55,31 +55,26 @@ git push        # → GitHub Actions 自动 build 并推 ghcr.io/kunmoe/*(:lates
 
 三应用共享 Dokploy 提供的 `dokploy-network`(external),跨应用按枢纽**唯一服务名**(`postgres`/`redis`/`oauth`/`galgame`/`image`)互通。
 
-## 5. 配置环境变量(真实域名 + 轮换密钥)
+## 5. 配置环境变量(只填密钥,域名已写死在 prod compose)
 
-⚠️ **两套机制别混**(详见 [15-environment §15.8](./15-environment.md)):
+三仓 `docker-compose.prod.yml` 已把**非密钥/域名写死在 `environment:`**,**密钥用 `${VAR}` 从各应用的 Dokploy Environment 面板取**——所以**不用放任何 `docker/*.env`**,每个应用面板只填这几个密钥(**务必轮换所有测试值**):
 
-- **① `docker/*.env` 文件**:三仓 prod compose 都 `env_file: ./docker/*.env`,这些文件**被 gitignore、不在 Dokploy 克隆里**。必须用 Dokploy 的 **Env File / 文件挂载**(或 SSH 到部署机手动放)**真正生成这些文件**——**光在 Environment 变量面板填值不够**,文件缺了 compose 直接报 `env file ... not found`。
-- **② `${VAR:?}` 插值密钥**:仅 infra prod compose 的 `POSTGRES_PASSWORD` / `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD` / `MEILI_MASTER_KEY` 走 compose 插值,填进 **infra 应用的 Environment 面板**(不设起不来)。
+- **infra 面板**:`POSTGRES_PASSWORD`、`JWT_SECRET`、`MEILI_MASTER_KEY`、`MINIO_ROOT_USER`、`MINIO_ROOT_PASSWORD`、`KUN_IMAGE_S3_ENDPOINT`/`_ACCESS_KEY`/`_SECRET_KEY`(R2)、(可选 `KUN_VISUAL_NOVEL_EMAIL_PASSWORD`)
+- **kungal 面板**:`POSTGRES_PASSWORD`(=infra)、`OAUTH_CLIENT_SECRET`(§6 拿到后填)、`JWT_SECRET`(kungal 自己的)、`MEILI_MASTER_KEY`(=infra)、(可选 B2/MAIL/image client)
+- **moyu 面板**:`POSTGRES_PASSWORD`(=infra)、`OAUTH_CLIENT_SECRET`、`KUN_VISUAL_NOVEL_S3_STORAGE_ACCESS_KEY_ID`/`_SECRET_ACCESS_KEY`(B2)、(可选 MAIL)
 
-下面按服务列**要改 / 要轮换**的值(填进上面对应的 ① 文件或 ② 面板;**务必轮换所有测试密钥**):
-
-- **infra**:`POSTGRES_PASSWORD` / `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD` / `MEILI_MASTER_KEY`(prod compose 用必填插值,不设起不来);`oauth.env` 的 `KUN_SITE_URL`=`KUN_FRONTEND_URL`=`https://oauth.kungal.com`、`KUN_FRONTEND_CORS_ORIGIN`=全部 https 域名、SMTP;`image.env` 的 R2 凭证 + `KUN_IMAGE_PUBLIC_BASE_URL=https://image.kungal.iloveren.link`
-- **kungal**:`CORS_ALLOW_ORIGINS=https://www.kungal.com,https://kungal.com`、`OAUTH_CLIENT_ID/SECRET`(§6 拿到后填)、web 的 `NUXT_PUBLIC_*`=真实域名、`NUXT_API_BASE_URL=http://api:2334`(SSR 走服务名,勿改)
-- **moyu**:`CORS_ALLOW_ORIGINS=https://www.moyu.moe,https://moyu.moe`、`OAUTH_*`、web 的 `NUXT_PUBLIC_*`=真实域名、`NUXT_API_BASE_SSR=http://api:5214/api/v1`
-
-> 后端→后端 base 用容器服务名(`http://oauth:9277/api/v1` 等)保持不变。完整清单见 [12-dokploy §12.2](./12-dokploy.md) + [05-configuration.md](./05-configuration.md)。
+> 真实 https 域名、OAuth client_id、服务名 base、CDN 域、CORS 都已是 prod compose 里的字面值;改前端域名改对应 web 服务的 `NUXT_PUBLIC_*`。infra 前端域名烤在 CI(build.yml)。逐项见 [15-environment §15.8](./15-environment.md) 与 [17-go-live-checklist.md](./17-go-live-checklist.md)。
 
 ## 6. 部署顺序 + 建库 + 注册 OAuth client
 
 1. **先部署 infra**,等 `postgres`/`redis`/`minio`/`meili` healthy。
 2. 在 infra 应用的 **Terminal** 跑首启迁移:
    ```bash
-   docker compose -f docker-compose.prod.yml run --rm migrate           # kun_galgame_infra:表 + 站点/角色种子
-   docker compose -f docker-compose.prod.yml run --rm migrate-galgame   # kun_galgame_wiki:表 + 约束
+   docker compose -f docker-compose.prod.yml --profile jobs run --rm migrate           # kun_galgame_infra:表 + 站点/角色种子
+   docker compose -f docker-compose.prod.yml --profile jobs run --rm migrate-galgame   # kun_galgame_wiki:表 + 约束
    ```
-3. **注册 OAuth client**(否则前端登录走不通,不在任何 migrate 种子里):登录 infra 管理端建 **论坛 / 补丁 / wiki** 三个 client(`redirect_uri` 填各自 https 回调),把生成的 **secret 写回** kungal/moyu 的 Environment。见 [03-bootstrap §A.5](./03-bootstrap.md) + [12-dokploy §12.3](./12-dokploy.md)。
-4. **再部署 kungal、moyu**;各自 Terminal 跑 `docker compose -f docker-compose.prod.yml run --rm migrate`(清理型迁移,空库打印「无迁移」即正常)。
+3. **注册 OAuth client**(否则前端登录走不通,不在任何 migrate 种子里):登录 infra 管理端建 **论坛 / 补丁 / wiki** 三个 client(`redirect_uri` 填各自 https 回调),把生成的 **secret 写回** kungal/moyu 应用的 **Environment 面板**(`OAUTH_CLIENT_SECRET`)。见 [03-bootstrap §A.5](./03-bootstrap.md) + [12-dokploy §12.3](./12-dokploy.md)。
+4. **再部署 kungal、moyu**;各自 Terminal 跑 `docker compose -f docker-compose.prod.yml --profile jobs run --rm migrate`(清理型迁移,空库打印「无迁移」即正常)。
 
 > 要导入旧 Node 站点真实数据 → [03-bootstrap §B](./03-bootstrap.md) + `docs/migration`(`migrate-users` 是分水岭,**严格按序**)。
 

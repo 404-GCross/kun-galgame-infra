@@ -54,10 +54,10 @@ CI 按各仓**现有 Dockerfile**(参数化)构建以下镜像并推到 `ghcr.io
 > **`*-tools` 镜像**:把该仓 `apps/api/cmd/*` 的**每个**二进制打进一个镜像(infra 用 cgo+libwebp 编,
 > 下游纯 Go)。`migrate`/`migrate-galgame` 只够空库起服务;完整数据 cutover([03-bootstrap §B](./03-bootstrap.md))
 > 需要 `migrate-users`/`migrate-galgame-data`/`migrate-moyu-galgame`/`dedup-galgame-alias`/`reindex-search` 等,
-> 而一镜像只含一个 `CMD` 二进制,**不能** `--entrypoint` 复用。用 `*-tools` 按名跑这些一次性 job:
+> 而一镜像只含一个 `CMD` 二进制,**不能** `--entrypoint` 复用。`tools` 已是各仓 prod compose 的
+> jobs-profile 服务(environment 内联),按名跑一次性 job:
 > ```bash
-> docker run --rm --network dokploy-network --env-file docker/galgame.env \
->   ghcr.io/kunmoe/infra-tools reindex-search
+> docker compose -f docker-compose.prod.yml --profile jobs run --rm tools reindex-search -tagmap docs/tagMap.ts
 > ```
 
 ## 13.3 Tag 与回滚约定
@@ -157,7 +157,7 @@ name: kun-galgame-infra
 services:
   oauth:
     image: ghcr.io/kunmoe/infra-oauth:latest   # ← 不再有 build:
-    env_file: [./docker/oauth.env]
+    environment: { <<: *infra-env }            # ← 内联 environment(非密钥字面值 + ${VAR} 取密钥);无 env_file
     expose: ["9277"]                           # ← expose 而非 ports(见 12-dokploy §12.2-B)
     depends_on: { postgres: { condition: service_healthy }, redis: { condition: service_healthy } }
     healthcheck: { test: ["CMD", "/app/app", "healthcheck"], <<: *svc-health }
@@ -208,5 +208,5 @@ networks:
 - [ ] workflow `permissions: packages: write`,用 `GITHUB_TOKEN`(不要长期 PAT 推送)。
 - [ ] Dokploy webhook URL / API key 放 **GitHub Secrets**,不入库。
 - [ ] 私有镜像在 Dokploy 用最小权限 PAT(`read:packages`);能公开则公开免凭证。
-- [ ] 各服务 env(`docker/*.env`、`web.env`)里的**密钥全部轮换**(见 [05-configuration.md](./05-configuration.md)),不要把生产密钥烤进镜像——走 Dokploy env / env_file。
+- [ ] **密钥全部轮换**(见 [05-configuration.md](./05-configuration.md)),不烤进镜像——prod compose 用 `environment: + ${VAR}`,密钥填 **Dokploy 各应用 Environment 面板**(见 [15-environment §15.8](./15-environment.md))。
 - [ ] 镜像 tag 用 `:<git-sha>` 保证可追溯/可回滚。

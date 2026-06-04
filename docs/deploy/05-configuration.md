@@ -1,6 +1,6 @@
 # 5 · 配置参考
 
-每个服务通过 `env_file`(`docker/*.env`)读取 12-factor 环境变量;前端 public 配置走 build args。下面按服务列关键项,**主机名一律用容器服务名**(`postgres`/`redis`/`oauth`/`galgame`/`image`/`minio`/`meilisearch`)。
+每个服务读 12-factor 环境变量:**本地 dev** 走 `env_file`(`docker/*.env`),**生产** 走 `docker-compose.prod.yml` 内联的 `environment:` + Dokploy 面板的 `${VAR}`(见 [15-environment §15.8](./15-environment.md));前端 public 走 build args / `NUXT_PUBLIC_*`。下面按服务列关键项的**值**,**主机名一律用容器服务名**(`postgres`/`redis`/`oauth`/`galgame`/`image`/`minio`/`meilisearch`)。
 
 ## 跨服务共享值(测试)
 

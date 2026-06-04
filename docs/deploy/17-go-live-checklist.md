@@ -1,0 +1,147 @@
+# 17 · 上线 Checklist(三仓生态 → 三站上线)
+
+> 你在这里:Dokploy 已装好、`counter.kungal.com` 测试应用正常 → 平台层(Dokploy/Traefik/DNS/SSL/`dokploy-network`)已验证。
+> 本篇是**边做边打勾**的上线清单,标注**每一步在哪配什么环境变量**。原理见
+> [12-dokploy](./12-dokploy.md) / [13-registry-ci](./13-registry-ci.md) / [15-environment](./15-environment.md) / [16-data-cutover](./16-data-cutover.md)。
+>
+> **只有一个配置落点**:三仓 `docker-compose.prod.yml` 已把**非密钥/域名写死在 `environment:`**,
+> **密钥用 `${VAR}` 从各应用的 Dokploy Environment 面板取**。所以**不用在服务器放任何 `docker/*.env`**——
+> 每个应用面板里只填下面列的那几个密钥即可。(`docker/*.env` 只剩**本地 dev** 用。)
+
+---
+
+## 0 · 一次性生成密钥(后面复用,先备齐)
+
+- [ ] `POSTGRES_PASSWORD` = 强随机(三仓面板都要填这个**同一个值**)
+- [ ] `JWT_SECRET`(infra)= 强随机(infra 面板;oauth/image/galgame 共用)
+- [ ] `JWT_SECRET`(kungal)= 强随机(kungal 面板;**与 infra 不同**,只是同名变量)
+- [ ] `MEILI_MASTER_KEY` = 强随机(infra + kungal 面板填**同一个值**)
+- [ ] `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD`(用 R2 则填占位即可)
+- [ ] **Cloudflare R2**:endpoint、Access Key、Secret(、bucket)
+- [ ] **B2**:moyu 补丁一套 key、kungal 工具集一套 key(可选)
+- [ ] **SMTP** 密码(可选)
+- [ ] OAuth client secret ×3 —— **Phase 2 注册时生成**,先留空
+
+> 🔒 **一致性铁律**(配错→能起但 401/403/连不上,见 [15-environment §15.3](./15-environment.md)):
+> - 三仓面板的 `POSTGRES_PASSWORD` 填**同一个值**(infra postgres 密码 = 下游 DSN 密码)
+> - infra + kungal 面板的 `MEILI_MASTER_KEY` 填**同一个值**
+> - 每个 `OAUTH_CLIENT_SECRET` = 注册该 client 时枢纽生成的明文
+> - infra 内部 oauth/image/galgame 读同一 `${JWT_SECRET}`(YAML anchor),自动一致;kungal 的 `JWT_SECRET` 是它自己的,无需匹配 infra;moyu **没有** JWT_SECRET
+> - 图床 CDN 域 `https://image.kungal.iloveren.link` 已写死在三仓 prod compose,天然一致
+
+---
+
+## Phase 0 · 前置(动 Dokploy 应用之前)
+
+- [ ] **镜像上 GHCR**:三仓 push 到 main → CI build+push `ghcr.io/kunmoe/*`(含 `*-tools`)。→ [13-registry-ci](./13-registry-ci.md)
+- [ ] **GHCR 包设 Public**(或给 Dokploy 配 registry 凭证)。
+- [ ] **(可选)GitHub repo Secrets**:`DOKPLOY_WEBHOOK_INFRA` / `_KUNGAL` / `_MOYU`。
+- [ ] **DNS A 记录 → 服务器公网 IP**:`oauth.kungal.com`、`wiki.kungal.com`、`kungal.com`+`www`、`moyu.moe`+`www`。
+- [ ] **DNS**:`image.kungal.iloveren.link` → **Cloudflare R2 自定义域**(不指服务器)。
+- [ ] **定方向**:空库验证(Phase 2A)/ 带生产数据(Phase 2B)。**建议先空库跑通,再做数据 cutover**。
+
+---
+
+## Phase 1 · 起枢纽 infra(地基)
+
+- [ ] Dokploy 建 **Compose 应用 `infra`** → 指向 `kun-galgame-infra/docker-compose.prod.yml`,网络 `dokploy-network`。
+- [ ] **infra 应用 Environment 面板**填(其余非密钥/域名 prod compose 已写死):
+```env
+POSTGRES_PASSWORD=<强随机>
+JWT_SECRET=<强随机>                 # oauth/image/galgame 共用
+MEILI_MASTER_KEY=<强随机>
+MINIO_ROOT_USER=<自定义>            # 用 R2 填占位即可
+MINIO_ROOT_PASSWORD=<强随机>
+KUN_IMAGE_S3_ENDPOINT=https://<account>.r2.cloudflarestorage.com   # 图床要工作就填
+KUN_IMAGE_S3_ACCESS_KEY=<R2 key>
+KUN_IMAGE_S3_SECRET_KEY=<R2 secret>
+# 可选:KUN_IMAGE_S3_REGION(默认 auto)/ _BUCKET(默认 kun-images)/ _FORCE_PATH_STYLE(默认 false,自托管 MinIO 改 true)
+# 可选:KUN_VISUAL_NOVEL_EMAIL_PASSWORD(SMTP)
+```
+> infra web/wiki 前端域名是 **CI 构建期烤进镜像**的(build.yml),**部署时无需配**;要改改 build.yml 重构。
+- [ ] **部署 infra**,等 `postgres`/`redis`/`minio`/`meili` **healthy**(oauth/image/galgame/web/wiki 这时可能因空库/未注册 client 还没完全就绪,正常)。
+
+---
+
+## Phase 2 · 数据 / Schema + OAuth client
+
+> 一次性 job 都用 prod compose 的 jobs profile 跑(已内联 environment,无需 env 文件):
+> `docker compose -f docker-compose.prod.yml --profile jobs run --rm <migrate|migrate-galgame|tools> …`
+
+### 2A · 空库(先验证管线)
+- [ ] `docker compose -f docker-compose.prod.yml --profile jobs run --rm migrate`(infra schema + 种子)
+- [ ] `docker compose -f docker-compose.prod.yml --profile jobs run --rm migrate-galgame`(wiki schema)→ [03-bootstrap §A](./03-bootstrap.md)
+
+### 2B · 带生产数据(正式上线)
+- [ ] `scp` 两个 dump → 还原 → 整条迁移流水线(`--profile jobs run --rm tools <job>`,严格按序、含 dry-run/校验)。→ [16-data-cutover](./16-data-cutover.md)
+
+### 2.1 注册 3 个 OAuth client(**不做登录全废**)→ [12-dokploy §12.3](./12-dokploy.md) / [03-bootstrap §A.5](./03-bootstrap.md)
+- [ ] 论坛 client `4ed9bc99ec0a789a4796b83e22bd84c5` → redirect_uris 加 `https://www.kungal.com/auth/callback`、`https://kungal.com/auth/callback`
+- [ ] 补丁 client `df3ff6008d740bfacbe46aa8cf483cf2` → redirect_uris 加 `https://www.moyu.moe/auth/callback`、`https://moyu.moe/auth/callback`
+- [ ] wiki client `galgame-wiki-admin` → redirect_uri 加 `https://wiki.kungal.com/auth/callback`
+- [ ] **记下每个生成的明文 secret** → 填到下游应用面板的 `OAUTH_CLIENT_SECRET`(Phase 3)。
+
+---
+
+## Phase 3 · 起 forum(kungal)
+
+- [ ] Dokploy 建 **Compose 应用 `kungal`** → `kun-galgame-forum/docker-compose.prod.yml`,网络 `dokploy-network`。
+- [ ] **kungal 应用 Environment 面板**填:
+```env
+POSTGRES_PASSWORD=<= infra 同名值>
+OAUTH_CLIENT_SECRET=<注册论坛 client 的明文>
+JWT_SECRET=<强随机>                 # kungal 自己的会话密钥(不必=infra)
+MEILI_MASTER_KEY=<= infra 同名值>
+# 可选:KUN_IMAGE_CLIENT_ID / KUN_IMAGE_CLIENT_SECRET(直传封面)
+# 可选:FILE_STORAGE_*(B2 工具集)、MAIL_*(发信)、S3_*(内联图床)
+```
+> 域名、OAuth client_id、服务名 base、CDN 域均已写死在 prod compose;web 前端 `NUXT_PUBLIC_*` 也在 compose 里(改域名改那里重部署)。
+- [ ] 部署 kungal,等 `api`(healthy)→ `web`(healthy)。
+
+---
+
+## Phase 3′ · 起 moyu(patch)
+
+- [ ] Dokploy 建 **Compose 应用 `moyu`** → `kun-galgame-patch/docker-compose.prod.yml`,网络 `dokploy-network`。
+- [ ] **moyu 应用 Environment 面板**填:
+```env
+POSTGRES_PASSWORD=<= infra 同名值>
+OAUTH_CLIENT_SECRET=<注册补丁 client 的明文>
+KUN_VISUAL_NOVEL_S3_STORAGE_ACCESS_KEY_ID=<B2 key>        # 补丁文件要工作就填
+KUN_VISUAL_NOVEL_S3_STORAGE_SECRET_ACCESS_KEY=<B2 secret>
+# 可选:KUN_VISUAL_NOVEL_EMAIL_PASSWORD、KUN_IMAGE_OAUTH_CLIENT_ID/SECRET
+```
+> moyu **没有 JWT_SECRET**(不透明会话)。B2 endpoint/region/bucket/url、CDN 域、域名、client_id 均已写死在 prod compose;前端图床域是 `moyu-moe.ts` 常量(已对齐)。
+- [ ] 部署 moyu,等 `api`(healthy)→ `web`(healthy)。
+
+---
+
+## Phase 4 · 域名 + Cloudflare + 验收
+
+### 4.1 Dokploy Domains(每个应用对外服务加「域名+路径→服务:端口」,`/api*` 与 `/` 各一条)→ [12-dokploy §12.1](./12-dokploy.md)
+- [ ] infra:`oauth.kungal.com` `/api/v1`→`oauth:9277`、`/`→`web:3000`
+- [ ] infra:`wiki.kungal.com` `/api`→`galgame:9280`、`/`→`wiki:3000`
+- [ ] kungal:`kungal.com`+`www` `/api`→`api:2334`、`/`→`web:7777`
+- [ ] moyu:`moyu.moe`+`www` `/api/v1`→`api:5214`、`/`→`web:3000`
+
+### 4.2 Cloudflare → [15-environment §15.9](./15-environment.md) + [NOTES.md](./NOTES.md)
+- [ ] 各域名开**橙云代理(Proxied)**
+- [ ] R2:bucket + 自定义域 `image.kungal.iloveren.link`(对应 infra 面板的 `KUN_IMAGE_S3_*`)
+- [ ] **源站锁定**:ufw 只放行 Cloudflare IP 段 + SSH
+- [ ] **不开 Cloudflare Tunnel**(高并发 Error 1033)
+
+### 4.3 验收
+- [ ] `curl -I https://oauth.kungal.com https://wiki.kungal.com https://www.kungal.com https://www.moyu.moe`(有效证书 + 200/302)
+- [ ] 烟雾测试:注册/登录(OAuth 跳转回各站)、发帖/评论、传图(进 R2)、wiki 搜索出结果、补丁下载
+- [ ] `docker ps` 看各应用容器全 healthy
+
+---
+
+## 上线后
+- [ ] 配 Postgres 定时备份(`pg_dumpall` cron + 异地)→ [14-backup-restore](./14-backup-restore.md)
+- [ ] VNDB 增量同步做成 cron(`--profile jobs run --rm tools sync-vndb -tagmap docs/tagMap.ts`)
+- [ ] 复核没有遗留测试密钥(`191007` / `kun-docker-test-*` / `minioadmin`)→ [15-environment §15.10](./15-environment.md)
+
+---
+
+**相关**:[QUICKSTART.md](./QUICKSTART.md) · [12-dokploy](./12-dokploy.md) · [13-registry-ci](./13-registry-ci.md) · [15-environment](./15-environment.md)(变量全集) · [16-data-cutover](./16-data-cutover.md) · [NOTES.md](./NOTES.md)

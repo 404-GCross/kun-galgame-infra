@@ -1,24 +1,26 @@
 # kun-galgame-infra — PRODUCTION compose (Dokploy + GHCR prebuilt images).
 #
-# Differs from docker-compose.yml (local/dev) in exactly the ways
-# docs/deploy/12-dokploy.md §12.2 + 13-registry-ci.md §13.6 prescribe:
-#   1. services use `image: ghcr.io/kunmoe/infra-*` — NOT `build:`. CI
-#      (.github/workflows/build.yml) builds + pushes; Dokploy only PULLS.
-#   2. `expose:` (container-network only) instead of `ports:` — Traefik routes
-#      internally; the prod box publishes NO 1xxxx host ports.
-#   3. network = `dokploy-network` (external) — shared by the 3 Dokploy apps so
-#      kungal/moyu resolve this stack's service names (oauth/galgame/image/…).
+# Differs from docker-compose.yml (local/dev):
+#   1. `image: ghcr.io/kunmoe/infra-*` — NOT `build:`. CI builds+pushes; Dokploy PULLS.
+#   2. `expose:` (container-network only) not `ports:` — Traefik routes internally.
+#   3. network = `dokploy-network` (external) — shared by the 3 Dokploy apps.
+#   4. **NO `env_file`** — all runtime config is inline `environment:` here, so Dokploy
+#      needs no `docker/*.env` files on disk. Non-secret/structural values are literal;
+#      secrets + deploy-specifics come from **Dokploy's Environment panel** via `${VAR}`.
 #
-# SECRETS: this is the prod file — it carries NO test values. Set the backing
-# secrets below in Dokploy's Environment (or a root .env). They MUST match the
-# DB/Redis/MinIO/Meili creds the app env files (docker/*.env) use. Rotate
-# everything (see 05-configuration.md); never bake prod secrets into images.
+# Set these in the infra app's Dokploy **Environment**:
+#   POSTGRES_PASSWORD  JWT_SECRET  MEILI_MASTER_KEY  MINIO_ROOT_USER  MINIO_ROOT_PASSWORD
+#   KUN_IMAGE_S3_ENDPOINT  KUN_IMAGE_S3_ACCESS_KEY  KUN_IMAGE_S3_SECRET_KEY   (R2/MinIO)
+#   KUN_VISUAL_NOVEL_EMAIL_PASSWORD                                          (SMTP, 可选)
+# Within infra, oauth/image/galgame all read the SAME ${JWT_SECRET}/${POSTGRES_PASSWORD}/
+# ${MEILI_MASTER_KEY} → intra-app consistency is automatic.
 #
 #   docker compose -f docker-compose.prod.yml pull
 #   docker compose -f docker-compose.prod.yml up -d postgres redis minio meili
-#   docker compose -f docker-compose.prod.yml run --rm migrate          # oauth schema + seed
-#   docker compose -f docker-compose.prod.yml run --rm migrate-galgame  # galgame wiki schema
+#   docker compose -f docker-compose.prod.yml --profile jobs run --rm migrate           # oauth schema + seed
+#   docker compose -f docker-compose.prod.yml --profile jobs run --rm migrate-galgame    # wiki schema
 #   docker compose -f docker-compose.prod.yml up -d oauth image galgame web wiki
+#   # full data cutover (16-data-cutover.md): docker compose ... run --rm tools <job> ...
 name: kun-galgame-infra
 
 x-svc-health: &svc-health
@@ -27,14 +29,59 @@ x-svc-health: &svc-health
   retries: 5
   start_period: 15s
 
+# ── shared backend env (union; services ignore keys they don't read) ──────────
+# Literal = non-secret/structural. ${VAR:?} = required secret (set in Dokploy).
+# ${VAR:-default} = optional override.
+x-infra-env: &infra-env
+  KUN_ENV: production
+  # Postgres (one server, 5 DBs)
+  KUN_PG_HOST: postgres
+  KUN_PG_PORT: "5432"
+  KUN_PG_USER: postgres
+  KUN_PG_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in Dokploy Environment}
+  KUN_PG_DATABASE: kun_galgame_infra
+  KUN_PG_SSLMODE: disable
+  KUN_PG_TIMEZONE: Asia/Shanghai
+  KUN_GALGAME_PG_DATABASE: kun_galgame_wiki
+  KUN_IMAGES_PG_DATABASE: kun_images
+  # Redis
+  REDIS_ENABLED: "true"
+  REDIS_HOST: redis
+  REDIS_PORT: "6379"
+  # JWT — oauth signs access_token (HS256), image/galgame verify locally. Same secret.
+  JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in Dokploy Environment (shared by oauth/image/galgame)}
+  # CORS — real https web origins
+  KUN_FRONTEND_CORS_ORIGIN: https://oauth.kungal.com,https://www.kungal.com,https://kungal.com,https://wiki.kungal.com,https://www.moyu.moe,https://moyu.moe
+  # oauth identity URLs
+  KUN_SITE_URL: https://oauth.kungal.com
+  KUN_FRONTEND_URL: https://oauth.kungal.com
+  # image_service S3 — Cloudflare R2 in prod (keys/endpoint from Dokploy). For
+  # self-hosted MinIO set ENDPOINT=http://minio:9000 / FORCE_PATH_STYLE=true.
+  KUN_IMAGE_S3_ENDPOINT: ${KUN_IMAGE_S3_ENDPOINT:-}
+  KUN_IMAGE_S3_REGION: ${KUN_IMAGE_S3_REGION:-auto}
+  KUN_IMAGE_S3_ACCESS_KEY: ${KUN_IMAGE_S3_ACCESS_KEY:-}
+  KUN_IMAGE_S3_SECRET_KEY: ${KUN_IMAGE_S3_SECRET_KEY:-}
+  KUN_IMAGE_S3_BUCKET: ${KUN_IMAGE_S3_BUCKET:-kun-images}
+  KUN_IMAGE_S3_FORCE_PATH_STYLE: ${KUN_IMAGE_S3_FORCE_PATH_STYLE:-false}
+  KUN_IMAGE_PUBLIC_BASE_URL: https://image.kungal.iloveren.link
+  KUN_IMAGE_CLIENT_BASE_URL: http://image:9278
+  # Meilisearch — galgame uses; key MUST == meili MEILI_MASTER_KEY (same ${VAR})
+  KUN_MEILISEARCH_HOST: http://meili:7700
+  KUN_MEILISEARCH_API_KEY: ${MEILI_MASTER_KEY:?set MEILI_MASTER_KEY in Dokploy Environment}
+  # Mail — oauth uses; PASSWORD is the only secret
+  KUN_VISUAL_NOVEL_EMAIL_FROM: 鲲 Galgame OAuth
+  KUN_VISUAL_NOVEL_EMAIL_HOST: tuesday.mxrouting.net
+  KUN_VISUAL_NOVEL_EMAIL_PORT: "587"
+  KUN_VISUAL_NOVEL_EMAIL_ACCOUNT: auth@kungal.com
+  KUN_VISUAL_NOVEL_EMAIL_PASSWORD: ${KUN_VISUAL_NOVEL_EMAIL_PASSWORD:-}
+
 services:
   # ───────────────────────── shared backing services ─────────────────────────
-  # Internal-only (no expose/ports): reached by service name on dokploy-network.
   postgres:
     image: postgres:18-alpine
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in Dokploy (must match docker/*.env KUN_PG_PASSWORD / DATABASE_URL)}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in Dokploy (must match the app KUN_PG_PASSWORD / DATABASE_URL)}
       POSTGRES_DB: kun_galgame_infra
     volumes:
       - pg:/var/lib/postgresql   # pg18: VOLUME moved here (was /data on <=17)
@@ -65,27 +112,28 @@ services:
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in Dokploy}
     volumes: ["minio:/data"]
     restart: unless-stopped
-    # Prod usually serves images from Cloudflare R2 (image.env points there); this
-    # MinIO is only needed when self-hosting blobs. Safe to leave running unused.
+    # Prod usually serves images from Cloudflare R2; this MinIO is only needed when
+    # self-hosting blobs. Safe to leave running unused.
 
   meili:
     image: getmeili/meilisearch:v1.45
     environment:
-      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:?set MEILI_MASTER_KEY in Dokploy (must match docker/galgame.env)}
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:?set MEILI_MASTER_KEY in Dokploy}
       MEILI_NO_ANALYTICS: "true"
       MEILI_ENV: production
     volumes: ["meili:/meili_data"]
-    # kungal connects by the name `meilisearch`; expose that alias too.
     networks:
       default:
-        aliases: [meilisearch]
+        aliases: [meilisearch]   # kungal connects by the name `meilisearch`
     restart: unless-stopped
 
   # ───────────────────────────── Go services ─────────────────────────────────
-  # oauth + image are cgo (libwebp) → debian-slim runtime, binary at /app/app.
   oauth:
     image: ghcr.io/kunmoe/infra-oauth:latest
-    env_file: [./docker/oauth.env]
+    environment:
+      <<: *infra-env
+      KUN_FIBER_SERVER_HOST: 0.0.0.0
+      KUN_FIBER_SERVER_PORT: "9277"
     expose: ["9277"]
     depends_on:
       postgres: { condition: service_healthy }
@@ -97,7 +145,11 @@ services:
 
   image:
     image: ghcr.io/kunmoe/infra-image:latest
-    env_file: [./docker/image.env]
+    environment:
+      <<: *infra-env
+      KUN_IMAGE_SERVICE_HOST: 0.0.0.0
+      KUN_IMAGE_SERVICE_PORT: "9278"
+      KUN_IMAGE_UPLOAD_ENABLED: "true"
     expose: ["9278"]
     depends_on:
       postgres: { condition: service_healthy }
@@ -108,10 +160,12 @@ services:
       <<: *svc-health
     restart: unless-stopped
 
-  # galgame is pure-Go (distroless static) → binary at /app.
   galgame:
     image: ghcr.io/kunmoe/infra-galgame:latest
-    env_file: [./docker/galgame.env]
+    environment:
+      <<: *infra-env
+      KUN_FIBER_SERVER_HOST: 0.0.0.0
+      KUN_GALGAME_PORT: "9280"
     expose: ["9280"]
     depends_on:
       postgres: { condition: service_healthy }
@@ -122,11 +176,8 @@ services:
     restart: unless-stopped
 
   # ───────────────────────────── Nuxt frontends ──────────────────────────────
-  # Public (browser) config is BAKED into the image at CI build time (the repo
-  # default — `oauthClientID`/`oauthRedirectURI` have awkward runtime env-name
-  # mappings, see docker/README.md). The image is built with the real https
-  # domains via build-args in .github/workflows/build.yml. Only the SSR base
-  # (in-container service name) is injected at runtime here.
+  # Public (browser) config is BAKED into the image at CI build time (build-args in
+  # .github/workflows/build.yml). Only the SSR base (service name) is injected here.
   web:
     image: ghcr.io/kunmoe/infra-web:latest
     environment:
@@ -153,11 +204,11 @@ services:
     restart: unless-stopped
 
   # ─────────────────────── one-off jobs (profile: jobs) ──────────────────────
-  #   docker compose -f docker-compose.prod.yml run --rm migrate
-  #   docker compose -f docker-compose.prod.yml run --rm migrate-galgame
+  #   docker compose -f docker-compose.prod.yml --profile jobs run --rm migrate
+  #   docker compose -f docker-compose.prod.yml --profile jobs run --rm migrate-galgame
   migrate:
     image: ghcr.io/kunmoe/infra-migrate:latest
-    env_file: [./docker/oauth.env]
+    environment: { <<: *infra-env }
     profiles: ["jobs"]
     depends_on:
       postgres: { condition: service_healthy }
@@ -165,7 +216,18 @@ services:
 
   migrate-galgame:
     image: ghcr.io/kunmoe/infra-migrate-galgame:latest
-    env_file: [./docker/galgame.env]
+    environment: { <<: *infra-env }
+    profiles: ["jobs"]
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: "no"
+
+  # All cmd/* binaries (data cutover). Run a job by name (see 16-data-cutover.md):
+  #   docker compose -f docker-compose.prod.yml --profile jobs run --rm tools migrate-users --kungal-dsn=... --moyu-dsn=...
+  #   docker compose -f docker-compose.prod.yml --profile jobs run --rm tools sync-vndb -tagmap docs/tagMap.ts
+  tools:
+    image: ghcr.io/kunmoe/infra-tools:latest
+    environment: { <<: *infra-env }
     profiles: ["jobs"]
     depends_on:
       postgres: { condition: service_healthy }

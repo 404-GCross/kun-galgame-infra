@@ -27,14 +27,14 @@ kungalgame(_patch)_backup.dump
 | 维度 | 本地 | 服务器(本篇) |
 |---|---|---|
 | 仓库名 | kun-oauth-admin / kun-galgame-nuxt4 / kun-galgame-patch-next | **kun-galgame-infra / kun-galgame-forum / kun-galgame-patch** |
-| 跑工具 | `cd apps/api && go run ./cmd/X …` | `docker run --rm --network … --env-file … ghcr.io/kunmoe/<repo>-tools X …` |
+| 跑工具 | `cd apps/api && go run ./cmd/X …` | `docker compose -f <repo>/docker-compose.prod.yml --profile jobs run --rm tools X …` |
 | 数据库 | 各仓独立 pg、密码 `kunloveren`/`renlovekun` | **同一个 pg、同一个 `POSTGRES_PASSWORD`**;源库 DSN 用 `host=postgres` |
-| 连库 | `host=127.0.0.1` | `host=postgres`(容器服务名,工具容器要接入同一 `--network`) |
+| 连库 | `host=127.0.0.1` | `host=postgres`(容器服务名;`compose run` 自动接 `dokploy-network`) |
 
-每个 `cmd/*` 二进制都打包在对应 `*-tools` 镜像里(`infra-tools` / `kungal-tools` / `moyu-tools`,CI 推到 GHCR,**已含各仓 `/migrations` 与 infra 的 `docs/tagMap.ts`**)。镜像清单见 [13-registry-ci.md](./13-registry-ci.md)。
+每个 `cmd/*` 二进制都打包在对应 `*-tools` 镜像里(`infra-tools` / `kungal-tools` / `moyu-tools`,CI 推到 GHCR,**已含各仓 `/migrations` 与 infra 的 `docs/tagMap.ts`**)。`tools` 已是各仓 prod compose 的 jobs-profile 服务,**environment 内联、密钥从 Dokploy 面板的 `${VAR}` 取**——所以不用 `--env-file`、不用在服务器放任何 env 文件。镜像清单见 [13-registry-ci.md](./13-registry-ci.md)。
 
 > **本地→容器 速查**:`go run ./cmd/migrate-users --kungal-dsn=…` ⇒
-> `docker run --rm --network $NET --env-file $INFRA/docker/oauth.env $REG/infra-tools migrate-users --kungal-dsn=…`
+> `docker compose -f $INFRA/docker-compose.prod.yml --profile jobs run --rm tools migrate-users --kungal-dsn=…`
 
 ---
 
@@ -51,28 +51,29 @@ kungalgame(_patch)_backup.dump
 ```bash
 PG=kun-galgame-infra-postgres-1          # infra postgres 容器名(docker ps 确认)
 REDIS=kun-galgame-infra-redis-1
-NET=dokploy-network                      # Dokploy 生产用这个;若跑 dev compose 则 kun-galgame-infra_default
-REG=ghcr.io/kunmoe
-PGPASS='<你的 POSTGRES_PASSWORD>'          # = infra 的 ${POSTGRES_PASSWORD}(不是老的 kunloveren/renlovekun!)
+PGPASS='<你的 POSTGRES_PASSWORD>'          # = infra 的 POSTGRES_PASSWORD(不是老的 kunloveren/renlovekun!)
 DUMPS=/srv/dumps                         # 两个 .dump 在服务器上的目录
 
-# 各仓在服务器上的目录(含 docker/*.env —— 工具靠它连库)
-INFRA=/srv/apps/kun-galgame-infra
-FORUM=/srv/apps/kun-galgame-forum
-PATCH=/srv/apps/kun-galgame-patch
+# 各应用的 Dokploy 部署目录 —— 里面有 Dokploy 按面板写的 .env,`compose run` 会自动加载,
+# 所有 ${VAR}(POSTGRES_PASSWORD / JWT_SECRET / MEILI_MASTER_KEY / OAUTH_CLIENT_SECRET …)就位。
+INFRA=/etc/dokploy/compose/kun-galgame-infra/code   # 实际路径见 Dokploy 应用详情
+FORUM=/etc/dokploy/compose/kungal/code
+PATCH=/etc/dokploy/compose/moyu/code
 
-# 源库 DSN(容器内按服务名连同一个 pg,密码统一)
+# 源库 DSN(容器内按服务名连同一个 pg,密码统一;PGPASS 由本机 shell 展开进 flag)
 KDSN="host=postgres port=5432 user=postgres password=$PGPASS dbname=kungalgame sslmode=disable"
 MDSN="host=postgres port=5432 user=postgres password=$PGPASS dbname=kungalgame_patch sslmode=disable"
 
-# 跑工具的快捷前缀
-INFRA_OAUTH="docker run --rm --network $NET --env-file $INFRA/docker/oauth.env $REG/infra-tools"
-INFRA_WIKI="docker run --rm --network $NET --env-file $INFRA/docker/galgame.env $REG/infra-tools"
-KUNGAL="docker run --rm --network $NET --env-file $FORUM/docker/api.env $REG/kungal-tools"
-MOYU="docker run --rm --network $NET --env-file $PATCH/docker/api.env $REG/moyu-tools"
+# 跑工具的快捷前缀(jobs profile 的 tools 服务;environment 内联、密钥从该应用 .env 取)
+INFRA_OAUTH="docker compose -f $INFRA/docker-compose.prod.yml --profile jobs run --rm tools"
+INFRA_WIKI="$INFRA_OAUTH"                 # 同一个:infra-tools 含全套 infra env(身份库 + wiki 库)
+KUNGAL="docker compose -f $FORUM/docker-compose.prod.yml --profile jobs run --rm tools"
+MOYU="docker compose -f $PATCH/docker-compose.prod.yml --profile jobs run --rm tools"
 ```
 
-> `oauth.env` 与 `galgame.env` 都连同一个 pg、都定义了全部库名,严格说可互换;本篇按"写哪个库"选对应的那个(身份→oauth.env、wiki→galgame.env),最稳。
+> `tools` 服务 environment 内联了全套库名/JWT/Meili,所以同一个 `INFRA_*` 前缀既能跑写身份库的 cmd(migrate-users)
+> 也能跑写 wiki 库的(migrate-galgame*)。**从应用部署目录跑**(`-f $INFRA/...` 即指向那),compose 会加载 Dokploy 写的 `.env`,
+> 所有 `${VAR}` 自动就位;否则需自行 `export POSTGRES_PASSWORD JWT_SECRET MEILI_MASTER_KEY OAUTH_CLIENT_SECRET`。
 
 ---
 
