@@ -24,8 +24,8 @@
 ```
 website/
 ├── kun-galgame-infra/        # infra
-├── kun-galgame-nuxt4/      # kungal
-└── kun-galgame-patch-next/ # moyu
+├── kun-galgame-forum/      # kungal
+└── kun-galgame-patch/ # moyu
 ```
 
 每仓的 Docker 资产:

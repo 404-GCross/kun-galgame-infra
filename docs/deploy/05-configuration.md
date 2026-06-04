@@ -33,7 +33,7 @@
 
 `KUN_GALGAME_PORT=9280`、`KUN_GALGAME_PG_DATABASE=kun_galgame_wiki`、`KUN_MEILISEARCH_HOST=http://meili:7700`、`KUN_MEILISEARCH_API_KEY=`(共享 master key)。
 
-## moyu · api(`kun-galgame-patch-next/docker/api.env`)
+## moyu · api(`kun-galgame-patch/docker/api.env`)
 
 | 变量 | 值 |
 |---|---|
@@ -44,7 +44,7 @@
 | `KUN_IMAGE_SERVICE_BASE_URL` / `KUN_IMAGE_CDN_BASE` | `http://image:9278` / `http://localhost:15002/kun-images`(CDN 在 prod 模式**必填**) |
 | `KUN_VISUAL_NOVEL_S3_*` | B2(补丁文件,**非**图床)— 测试机为 `__SET_ME__`,补丁下载需填真值 |
 
-## kungal · api(`kun-galgame-nuxt4/docker/api.env`)
+## kungal · api(`kun-galgame-forum/docker/api.env`)
 
 ⚠️ kungal 仓库**自带的 api.env 是本地默认值**(密码 `kungal_dev_pw`、`meilisearch`、空 OAuth)。接 infra(生产则用 Dokploy Environment)必须改成:
 

@@ -66,11 +66,11 @@ curl -s localhost:15007/healthz
 
 ```bash
 # moyu(其 compose 自带 external 网络声明)
-cd kun-galgame-patch-next && docker compose build && \
+cd kun-galgame-patch && docker compose build && \
   docker compose run --rm migrate && docker compose up -d api web
 
 # kungal(与 moyu 一致,base 自带 external 网络)
-cd kun-galgame-nuxt4
+cd kun-galgame-forum
 docker compose build && docker compose run --rm migrate && docker compose up -d api web
 ```
 

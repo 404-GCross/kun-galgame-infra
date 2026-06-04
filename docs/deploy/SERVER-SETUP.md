@@ -235,8 +235,8 @@ sudo sysctl --system
 ssh -p <PORT> -i ~/.ssh/<your_key> kun@<SERVER_IP>
 mkdir -p ~/app && cd ~/app
 git clone https://github.com/KunMoe/kun-galgame-infra.git
-git clone https://github.com/KunMoe/kun-galgame-nuxt4.git
-git clone https://github.com/KunMoe/kun-galgame-patch-next.git
+git clone https://github.com/KunMoe/kun-galgame-forum.git
+git clone https://github.com/KunMoe/kun-galgame-patch.git
 fastfetch        # 欣赏一下你的新机器 :)
 ```
 > 仓库若是私有:先给服务器配 **deploy key**(`ssh-keygen` 后把公钥加到 GitHub repo

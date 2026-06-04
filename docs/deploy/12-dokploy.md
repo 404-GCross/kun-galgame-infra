@@ -20,7 +20,7 @@
                                                             oauth:9277 / galgame:9280 / image:9278
 ```
 
-- **3 个独立 Dokploy "Compose" 应用**(各对应一个 Git 仓库,Dokploy 克隆 + `build`):`kun-galgame-infra`(infra)、`kun-galgame-nuxt4`(kungal)、`kun-galgame-patch-next`(moyu)。
+- **3 个独立 Dokploy "Compose" 应用**(各对应一个 Git 仓库,Dokploy 克隆 + `build`):`kun-galgame-infra`(infra)、`kun-galgame-forum`(kungal)、`kun-galgame-patch`(moyu)。
 - **共享一个 `dokploy-network`**(external)。跨应用 s2s 只用枢纽的**唯一服务名**(`postgres`/`redis`/`meilisearch`/`oauth`/`galgame`/`image`)——这些名字全局唯一,在共享网络上可解析;各应用自己的 `api`/`web`/`migrate` 只在本应用内解析,不跨应用引用,因此**不存在名称冲突**(这点和手动反代文档里"web/api 别名跨仓冲突"是同一回事,Dokploy 用 Traefik router 区分对外路由,内部 s2s 只引用唯一名)。
 
 > 为什么**不用伞状单 compose**:Dokploy 的 Compose 应用是"一个 Git 仓库 → 克隆并 build"。三仓是三个独立仓库;伞状 compose 要么需要 monorepo,要么走 Raw compose(那样必须预先 build+push 镜像到 registry)。**单服务器 + 三应用 + 共享网络**才是 Dokploy 的原生形态。

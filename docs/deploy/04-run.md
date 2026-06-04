@@ -26,7 +26,7 @@ networks:
 ```
 所以直接:
 ```bash
-cd kun-galgame-patch-next
+cd kun-galgame-patch
 docker compose up -d api web
 ```
 
@@ -38,7 +38,7 @@ networks:
 ```
 api/migrate 不声明 pg/redis 依赖(它们在 infra、跨 project 无法 `depends_on`),靠 `restart: unless-stopped` 重连。所以直接:
 ```bash
-cd kun-galgame-nuxt4
+cd kun-galgame-forum
 docker compose up -d api web
 ```
 
@@ -56,7 +56,7 @@ docker ps --format '{{.Names}}\t{{.Status}}' | grep -E 'kun-galgame-infra-|moyu-
 # 单仓状态 / 日志
 docker compose ps
 docker compose logs -f oauth
-docker compose logs -f api   # kungal(在 kun-galgame-nuxt4 目录)
+docker compose logs -f api   # kungal(在 kun-galgame-forum 目录)
 
 # 停某仓(保留数据卷)
 docker compose down                 # 在对应仓目录
@@ -72,8 +72,8 @@ docker compose down -v              # 仅在 infra 目录会删 pg/redis/minio/m
 ```yaml
 include:
   - kun-galgame-infra/docker-compose.yml
-  - kun-galgame-patch-next/docker-compose.yml
-  - kun-galgame-nuxt4/docker-compose.yml
+  - kun-galgame-patch/docker-compose.yml
+  - kun-galgame-forum/docker-compose.yml
 # 注意:include 各子 compose 的 `name:` 与 moyu/kungal 的 external network 块在伞状下需调整
 # (同一 project 共享一张网络,external 块应去掉)。详见 07-troubleshooting.md。
 ```

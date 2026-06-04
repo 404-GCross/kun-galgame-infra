@@ -37,9 +37,9 @@ multipart 请求里如果带 `file`，wiki 用 `preset=galgame_banner` 上传到
 
 kungal 不只在「创建时」用 image_service，编辑器的 cover/screenshot 拖拽上传也走它：
 
-- 后端代理路由：[`kun-galgame-nuxt4/apps/api/internal/app/router.go:234`](../../../kun-galgame-nuxt4/apps/api/internal/app/router.go#L234) — `POST /image/galgame` 转发到 image_service
-- 前端 cover 编辑器：[`kun-galgame-nuxt4/apps/web/app/components/edit/galgame/pr/Covers.vue:56`](../../../kun-galgame-nuxt4/apps/web/app/components/edit/galgame/pr/Covers.vue#L56) — 拿 hash 后写入 `covers[]`
-- 前端 screenshot 编辑器：[`kun-galgame-nuxt4/apps/web/app/components/edit/galgame/pr/Screenshots.vue:48`](../../../kun-galgame-nuxt4/apps/web/app/components/edit/galgame/pr/Screenshots.vue#L48) — 拿 hash 后写入 `screenshots[]`
+- 后端代理路由：[`kun-galgame-forum/apps/api/internal/app/router.go:234`](../../../kun-galgame-forum/apps/api/internal/app/router.go#L234) — `POST /image/galgame` 转发到 image_service
+- 前端 cover 编辑器：[`kun-galgame-forum/apps/web/app/components/edit/galgame/pr/Covers.vue:56`](../../../kun-galgame-forum/apps/web/app/components/edit/galgame/pr/Covers.vue#L56) — 拿 hash 后写入 `covers[]`
+- 前端 screenshot 编辑器：[`kun-galgame-forum/apps/web/app/components/edit/galgame/pr/Screenshots.vue:48`](../../../kun-galgame-forum/apps/web/app/components/edit/galgame/pr/Screenshots.vue#L48) — 拿 hash 后写入 `screenshots[]`
 
 **preset 选择注**：kungal 的 screenshot 编辑器**复用 `galgame_banner` preset**（不是自己的 `galgame_screenshot`，因为 image_presets.yaml 里没有这个 preset）。main pipeline 的 1920×1080 fit 对 screenshot 也足够，多出来的 `mini` 变体不被 gallery 渲染但无害。见 `Screenshots.vue:48` 的 AUDIT FIX 注释。
 
@@ -50,11 +50,11 @@ moyu 走两条不同链路：
 - **screenshot** → moyu 自己的 `/upload/image-service` 代理（不经过 wiki）
 
 引用：
-- moyu 创建 galgame 的 banner multipart：[`apps/web/app/pages/edit/create.vue:246`](../../../kun-galgame-patch-next/apps/web/app/pages/edit/create.vue#L246) → `POST /galgame/submit`
-- moyu rewrite 的 banner multipart：[`apps/web/app/pages/edit/rewrite.vue:325`](../../../kun-galgame-patch-next/apps/web/app/pages/edit/rewrite.vue#L325) → `PUT /galgame/:id`
-- moyu screenshot 编辑器：[`apps/web/app/components/galgame/edit/ScreenshotsEditor.vue:33`](../../../kun-galgame-patch-next/apps/web/app/components/galgame/edit/ScreenshotsEditor.vue#L33) — 调 `ge.uploadImageService(f, 'topic')`
-- moyu 后端代理：[`apps/api/internal/app/router.go:313`](../../../kun-galgame-patch-next/apps/api/internal/app/router.go#L313) — `POST /upload/image-service`
-- 代理实现：[`apps/api/internal/common/upload/handler.go:109`](../../../kun-galgame-patch-next/apps/api/internal/common/upload/handler.go#L109)
+- moyu 创建 galgame 的 banner multipart：[`apps/web/app/pages/edit/create.vue:246`](../../../kun-galgame-patch/apps/web/app/pages/edit/create.vue#L246) → `POST /galgame/submit`
+- moyu rewrite 的 banner multipart：[`apps/web/app/pages/edit/rewrite.vue:325`](../../../kun-galgame-patch/apps/web/app/pages/edit/rewrite.vue#L325) → `PUT /galgame/:id`
+- moyu screenshot 编辑器：[`apps/web/app/components/galgame/edit/ScreenshotsEditor.vue:33`](../../../kun-galgame-patch/apps/web/app/components/galgame/edit/ScreenshotsEditor.vue#L33) — 调 `ge.uploadImageService(f, 'topic')`
+- moyu 后端代理：[`apps/api/internal/app/router.go:313`](../../../kun-galgame-patch/apps/api/internal/app/router.go#L313) — `POST /upload/image-service`
+- 代理实现：[`apps/api/internal/common/upload/handler.go:109`](../../../kun-galgame-patch/apps/api/internal/common/upload/handler.go#L109)
 
 **preset 不一致警告**：moyu screenshot 用 `'topic'` preset（不产 mini 变体），kungal screenshot 用 `'galgame_banner'`（产但不用 mini）。两边对"截图"这一同类资产用了不同 preset，应该统一 — 后续要么加一个 `galgame_screenshot` preset 显式表达，要么两边都迁到同一个 preset。
 
@@ -107,8 +107,8 @@ const userAvatarSrc = computed(() => {
 
 #### D2. DTO 透传不齐
 
-- **moyu 已透传**：chat / admin / auth DTO 都带 `AvatarImageHash` 字段（[`apps/api/internal/auth/dto/dto.go:32`](../../../kun-galgame-patch-next/apps/api/internal/auth/dto/dto.go#L32) 等多处）
-- **kungal 完全没透传**：grep `kun-galgame-nuxt4/apps/api/internal/` 查不到任何 `avatar_image_hash` / `AvatarImageHash` 字段，全部 DTO 仍只返回 `avatar` URL 字符串
+- **moyu 已透传**：chat / admin / auth DTO 都带 `AvatarImageHash` 字段（[`apps/api/internal/auth/dto/dto.go:32`](../../../kun-galgame-patch/apps/api/internal/auth/dto/dto.go#L32) 等多处）
+- **kungal 完全没透传**：grep `kun-galgame-forum/apps/api/internal/` 查不到任何 `avatar_image_hash` / `AvatarImageHash` 字段，全部 DTO 仍只返回 `avatar` URL 字符串
 
 #### D3. `resolveAvatarUrl()` 是死代码
 
@@ -137,7 +137,7 @@ ImageHash string `json:"image_hash" validate:"required,len=64"`
 
 ### F. 已知不接（按设计）
 
-- **kungal 论坛 topic / Markdown 图片**：[`kun-galgame-nuxt4/apps/api/internal/image/service/image_service.go:45`](../../../kun-galgame-nuxt4/apps/api/internal/image/service/image_service.go#L45) `UploadTopicImage` 把图片重编码为 PNG 直传 S3，不走 image_service。  
+- **kungal 论坛 topic / Markdown 图片**：[`kun-galgame-forum/apps/api/internal/image/service/image_service.go:45`](../../../kun-galgame-forum/apps/api/internal/image/service/image_service.go#L45) `UploadTopicImage` 把图片重编码为 PNG 直传 S3，不走 image_service。  
   原因：legacy 历史负担、用户日配额逻辑深度耦合自家 DB；切换需要单独迁移计划。
 - **patch 资源文件（zip/补丁包等）**：image_service 设计只管图片（webp/jpeg/png/gif），不接通用文件存储。
 - **静态资源**（doc banner、网站 icon、广告图、友链、静态 MDX 文章图）：这些是 build-time 资产，不需要走运行时图片服务。

@@ -50,8 +50,8 @@ git push        # → GitHub Actions 自动 build 并推 ghcr.io/kunmoe/*(:lates
 | 应用 | 仓库 | Compose 文件 |
 |---|---|---|
 | `kun-galgame-infra` | infra | `docker-compose.prod.yml` |
-| `kun-galgame-nuxt4` | kungal | `docker-compose.prod.yml` |
-| `kun-galgame-patch-next` | moyu | `docker-compose.prod.yml` |
+| `kun-galgame-forum` | kungal | `docker-compose.prod.yml` |
+| `kun-galgame-patch` | moyu | `docker-compose.prod.yml` |
 
 三应用共享 Dokploy 提供的 `dokploy-network`(external),跨应用按枢纽**唯一服务名**(`postgres`/`redis`/`oauth`/`galgame`/`image`)互通。
 

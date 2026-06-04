@@ -37,16 +37,16 @@ Docker 默认 bridge 容器的包路径是 `容器 → veth → docker 网桥 �
 
 ```bash
 # 1) 停下游
-cd kun-galgame-nuxt4 && docker compose down
-cd ../kun-galgame-patch-next && docker compose down
+cd kun-galgame-forum && docker compose down
+cd ../kun-galgame-patch && docker compose down
 # 2) 停 infra(网络归 infra project)
 cd ../kun-galgame-infra && docker compose down
 # 3) infra 用 dae override 重新起 → 新网桥名
 docker compose -f docker-compose.yml -f docker-compose.dae.yml up -d
 ip -o link show kungal-br0 && echo "✅ kungal-br0 已就位"
 # 4) 下游起回来
-cd ../kun-galgame-patch-next && docker compose up -d api web
-cd ../kun-galgame-nuxt4 && docker compose up -d api web
+cd ../kun-galgame-patch && docker compose up -d api web
+cd ../kun-galgame-forum && docker compose up -d api web
 ```
 
 > 之后日常启停 infra 都要带 `-f docker-compose.yml -f docker-compose.dae.yml`(否则网络会用回自动网桥名)。建议设个别名:

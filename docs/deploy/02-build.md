@@ -29,21 +29,21 @@ docker build -f docker/cgo.Dockerfile --build-arg CMD=oauth   -t kun-galgame-inf
 docker build -f docker/nuxt.Dockerfile --build-arg APP=wiki   -t kun-galgame-infra/wiki .
 ```
 
-## moyu(kun-galgame-patch-next)
+## moyu(kun-galgame-patch)
 
 纯 Go(单 `server` 二进制 + 迁移/同步工具)+ Nuxt。无 cgo。
 
 ```bash
-cd kun-galgame-patch-next
+cd kun-galgame-patch
 docker compose build          # api web(+ migrate job)
 ```
 
-## kungal(kun-galgame-nuxt4)
+## kungal(kun-galgame-forum)
 
 ⚠️ **kungal 的 `docker-compose.yml` 单独无法构建**——它在 `depends_on` 里引用了未定义的 `postgres`/`redis`,直接 `docker compose build` 会报 `invalid compose project`。必须叠加一个定义/外置了 pg+redis 的 compose:
 
 ```bash
-cd kun-galgame-nuxt4
+cd kun-galgame-forum
 docker compose build           # 与 moyu 一致;build 不依赖网络,infra 未起也能 build
 ```
 
