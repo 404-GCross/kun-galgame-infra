@@ -11,7 +11,7 @@
 | MinIO 凭据 | `minioadmin` / `minioadmin` | infra image、(下游图床经 image 服务) |
 | Meili master key | `kun_docker_test_meili_master_key_change_me` | infra galgame、kungal |
 
-> **JWT 密钥必须三仓一致**:infra oauth 用它签发 access_token,kungal/moyu 用同一密钥验签下游令牌。不一致 → 下游一律 401。
+> **JWT 密钥只需 infra 三服务一致**:oauth 用它 HS256 签发 access_token,image/galgame 用同一密钥**本地验签**——三者不一致 → image/galgame 401。下游 kungal/moyu **不本地验签**(走 `/oauth/userinfo` 网络校验),无需与 infra 共用:kungal 的 `JWT_SECRET` 只签自己的会话,moyu 没有 `JWT_SECRET`。详见 [15-environment.md §15.3](./15-environment.md)。
 
 ## infra · oauth(`kun-galgame-infra/docker/oauth.env`)
 

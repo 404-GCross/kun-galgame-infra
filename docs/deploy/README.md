@@ -15,7 +15,8 @@
 | 2 | [02-build.md](./02-build.md) | 镜像构建:infra 的 cgo/distroless 拆分、moyu/kungal、构建参数 |
 | 3 | [03-bootstrap.md](./03-bootstrap.md) | **首次启动**:基础设施、建库、跨仓迁移顺序、OAuth 客户端注册 |
 | 4 | [04-run.md](./04-run.md) | 日常启停:增量启动 / 伞状编排、kungal 的 infra override |
-| 5 | [05-configuration.md](./05-configuration.md) | 配置参考:各服务 env、前端 public 配置烘焙、密钥 |
+| 5 | [05-configuration.md](./05-configuration.md) | 配置参考:各服务 env、前端 public 配置烘焙、密钥(上线速查) |
+| 15 | [15-environment.md](./15-environment.md) | **环境变量大全**:三仓每个变量 + 构建参数 + CI secrets + 生产/Dokploy 注入 + Cloudflare/R2;分层模型、命名规律、跨服务一致性铁律、必改清单(配置层底层全集) |
 | 6 | [06-operations.md](./06-operations.md) | 运维:健康/日志、升级、备份恢复、迁移 job、扩缩容 |
 | 7 | [07-troubleshooting.md](./07-troubleshooting.md) | 故障排查:实跑中踩到的每一个坑 + 解法 |
 | 12 | [12-dokploy.md](./12-dokploy.md) | **Dokploy 部署(线上推荐)**:单服务器自托管 PaaS,内置 Traefik 反代 + 自动 SSL + 编排;含真实域名映射与改造清单 |
