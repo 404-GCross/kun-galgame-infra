@@ -113,6 +113,9 @@ services:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER in Dokploy}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in Dokploy}
     volumes: ["minio:/data"]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:9000/minio/health/live"]
+      <<: *svc-health
     restart: unless-stopped
     # Prod usually serves images from Cloudflare R2; this MinIO is only needed when
     # self-hosting blobs. Safe to leave running unused.
@@ -124,6 +127,9 @@ services:
       MEILI_NO_ANALYTICS: "true"
       MEILI_ENV: production
     volumes: ["meili:/meili_data"]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:7700/health"]
+      <<: *svc-health
     networks:
       default:
         aliases: [meilisearch]   # kungal connects by the name `meilisearch`
@@ -156,7 +162,7 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
-      minio: { condition: service_started }
+      minio: { condition: service_healthy }
     healthcheck:
       test: ["CMD", "/app/app", "healthcheck"]
       <<: *svc-health
@@ -171,7 +177,7 @@ services:
     expose: ["9280"]
     depends_on:
       postgres: { condition: service_healthy }
-      meili: { condition: service_started }
+      meili: { condition: service_healthy }
     healthcheck:
       test: ["CMD", "/app", "healthcheck"]
       <<: *svc-health

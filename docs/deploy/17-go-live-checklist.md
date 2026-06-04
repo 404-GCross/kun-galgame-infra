@@ -18,7 +18,7 @@
 - [ ] `MEILI_MASTER_KEY` = 强随机(**≥16 字节**,否则 `MEILI_ENV=production` 下 meili 崩溃重启;infra + kungal 面板填**同一个值**)
 - [ ] `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD`(用 R2 则填占位即可)
 - [ ] **Cloudflare R2**:endpoint、Access Key、Secret(、bucket)
-- [ ] **B2**:moyu 补丁一套 key、kungal 工具集一套 key(可选)
+- [ ] **B2**:moyu 补丁文件一套 key(**必填**,补丁站核心;moyu prod compose 已 fail-fast);kungal 工具集一套 key(**可选**,不填则 toolset 上传端点 500)
 - [ ] **SMTP** 密码(可选)
 - [ ] OAuth client secret ×3 —— **Phase 2 注册时生成**,先留空
 
@@ -47,19 +47,29 @@
 - [ ] Dokploy 建 **Compose 应用 `infra`** → 指向 `kun-galgame-infra/docker-compose.prod.yml`,网络 `dokploy-network`。
 - [ ] **infra 应用 Environment 面板**填(其余非密钥/域名 prod compose 已写死):
 ```env
-POSTGRES_PASSWORD=<强随机>
-JWT_SECRET=<强随机>                 # oauth/image/galgame 共用
-MEILI_MASTER_KEY=<强随机>
-MINIO_ROOT_USER=<自定义>            # 用 R2 填占位即可
-MINIO_ROOT_PASSWORD=<强随机>
-KUN_IMAGE_S3_ENDPOINT=https://<account>.r2.cloudflarestorage.com   # 图床要工作就填
-KUN_IMAGE_S3_ACCESS_KEY=<R2 key>
-KUN_IMAGE_S3_SECRET_KEY=<R2 secret>
-# 可选:KUN_IMAGE_S3_REGION(默认 auto)/ _BUCKET(默认 kun-images)/ _FORCE_PATH_STYLE(默认 false,自托管 MinIO 改 true)
-# 可选:KUN_VISUAL_NOVEL_EMAIL_PASSWORD(SMTP)
+# ── 必填(留空 → docker compose 直接报错,不启动)──
+POSTGRES_PASSWORD=<强随机>              # PG 超级用户密码;= 下游 KUN_DATABASE_URL 里的密码。必须 URL-safe(字母数字)
+JWT_SECRET=<强随机>                     # oauth 签发 / image·galgame 验签 access_token,三者共用同一个
+MEILI_MASTER_KEY=<强随机,≥16 字节>      # 搜索主密钥;galgame 用同一个。<16 字节 meili 会崩溃重启
+MINIO_ROOT_USER=<自定义>                # MinIO 管理员名(用 R2 也要填,可填占位如 minioadmin)
+MINIO_ROOT_PASSWORD=<强随机>            # MinIO 管理员密码
+KUN_IMAGE_S3_ENDPOINT=<R2 端点>         # 图床后端;R2=https://<acct>.r2.cloudflarestorage.com,自托管 MinIO=http://minio:9000
+KUN_IMAGE_S3_ACCESS_KEY=<R2 access key> # 图床 S3 访问密钥(空 → image 服务启动即退出)
+KUN_IMAGE_S3_SECRET_KEY=<R2 secret key> # 图床 S3 私钥
+
+# ── 可选(有默认值,按需覆盖)──
+KUN_IMAGE_S3_REGION=auto               # 默认 auto(R2)。AWS/MinIO 填区域,如 us-east-1
+KUN_IMAGE_S3_BUCKET=kun-images         # 默认 kun-images。改成你的桶名
+KUN_IMAGE_S3_FORCE_PATH_STYLE=false    # 默认 false(R2)。自托管 MinIO 必须改 true
+KUN_VISUAL_NOVEL_EMAIL_PASSWORD=<SMTP 密码>   # 默认空。不填则注册验证码/找回密码邮件发不出
+POSTGRES_USER=postgres                 # 默认 postgres,一般不改
 ```
 > infra web/wiki 前端域名是 **CI 构建期烤进镜像**的(build.yml),**部署时无需配**;要改改 build.yml 重构。
-- [ ] **部署 infra**,等 `postgres`/`redis`/`minio`/`meili` **healthy**(oauth/image/galgame/web/wiki 这时可能因空库/未注册 client 还没完全就绪,正常)。
+- [ ] **部署 infra**,确认 `postgres` / `redis` / `minio` / `meili` 全部 **`(healthy)`**(四个都已配 healthcheck)。oauth/image/galgame/web/wiki 此时可能因空库/未注册 client 未完全就绪,正常。
+  > **怎么看 healthy?** Dokploy 应用页能看到每个服务的容器状态和日志;最直接是在 Dokploy 应用的 **Terminal**(或 SSH 到服务器)跑:
+  > ```bash
+  > docker compose -f docker-compose.prod.yml ps   # STATUS 列:(healthy) / (unhealthy) / (health: starting)
+  > ```
 
 ---
 
@@ -107,8 +117,8 @@ MEILI_MASTER_KEY=<= infra 同名值>
 ```env
 POSTGRES_PASSWORD=<= infra 同名值>
 OAUTH_CLIENT_SECRET=<注册补丁 client 的明文>
-KUN_VISUAL_NOVEL_S3_STORAGE_ACCESS_KEY_ID=<B2 key>        # 补丁文件要工作就填
-KUN_VISUAL_NOVEL_S3_STORAGE_SECRET_ACCESS_KEY=<B2 secret>
+KUN_VISUAL_NOVEL_S3_STORAGE_ACCESS_KEY_ID=<B2 key>        # 必填(补丁站核心;空则 compose 报错不启动)
+KUN_VISUAL_NOVEL_S3_STORAGE_SECRET_ACCESS_KEY=<B2 secret> # 必填
 # 可选:KUN_VISUAL_NOVEL_EMAIL_PASSWORD、KUN_IMAGE_OAUTH_CLIENT_ID/SECRET
 ```
 > moyu **没有 JWT_SECRET**(不透明会话)。B2 endpoint/region/bucket/url、CDN 域、域名、client_id 均已写死在 prod compose;前端图床域是 `moyu-moe.ts` 常量(已对齐)。
