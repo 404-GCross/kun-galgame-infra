@@ -55,9 +55,14 @@ git push        # → GitHub Actions 自动 build 并推 ghcr.io/kun1007/*(:late
 
 三应用共享 Dokploy 提供的 `dokploy-network`(external),跨应用按枢纽**唯一服务名**(`postgres`/`redis`/`oauth`/`galgame`/`image`)互通。
 
-## 5. 填环境变量(Dokploy 各应用 Environment · 真实域名 + 轮换密钥)
+## 5. 配置环境变量(真实域名 + 轮换密钥)
 
-对应各仓 `docker/*.env` 的内容,在 Dokploy 应用的 **Environment** 填(**务必轮换所有测试密钥**):
+⚠️ **两套机制别混**(详见 [15-environment §15.8](./15-environment.md)):
+
+- **① `docker/*.env` 文件**:三仓 prod compose 都 `env_file: ./docker/*.env`,这些文件**被 gitignore、不在 Dokploy 克隆里**。必须用 Dokploy 的 **Env File / 文件挂载**(或 SSH 到部署机手动放)**真正生成这些文件**——**光在 Environment 变量面板填值不够**,文件缺了 compose 直接报 `env file ... not found`。
+- **② `${VAR:?}` 插值密钥**:仅 infra prod compose 的 `POSTGRES_PASSWORD` / `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD` / `MEILI_MASTER_KEY` 走 compose 插值,填进 **infra 应用的 Environment 面板**(不设起不来)。
+
+下面按服务列**要改 / 要轮换**的值(填进上面对应的 ① 文件或 ② 面板;**务必轮换所有测试密钥**):
 
 - **infra**:`POSTGRES_PASSWORD` / `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD` / `MEILI_MASTER_KEY`(prod compose 用必填插值,不设起不来);`oauth.env` 的 `KUN_SITE_URL`=`KUN_FRONTEND_URL`=`https://oauth.kungal.com`、`KUN_FRONTEND_CORS_ORIGIN`=全部 https 域名、SMTP;`image.env` 的 R2 凭证 + `KUN_IMAGE_PUBLIC_BASE_URL=https://image.kungal.iloveren.link`
 - **kungal**:`CORS_ALLOW_ORIGINS=https://www.kungal.com,https://kungal.com`、`OAUTH_CLIENT_ID/SECRET`(§6 拿到后填)、web 的 `NUXT_PUBLIC_*`=真实域名、`NUXT_API_BASE_URL=http://api:2334`(SSR 走服务名,勿改)

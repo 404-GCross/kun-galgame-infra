@@ -25,4 +25,7 @@ scripts/*.dump
 
 # Docs / references — not needed to build.
 docs
+# …except tagMap.ts: sync-vndb / sync-vndb-relations parse it at runtime, so the
+# tools image must be able to COPY it (re-include the one file under docs/).
+!docs/tagMap.ts
 **/refs

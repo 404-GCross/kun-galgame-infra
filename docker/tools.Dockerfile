@@ -39,5 +39,9 @@ COPY --from=build /out/ /usr/local/bin/
 # image* cmds read image_presets.yaml from this absolute path.
 COPY apps/api/configs /app/configs
 ENV KUN_IMAGE_PRESETS_PATH=/app/configs/image_presets.yaml
+# sync-vndb / sync-vndb-relations parse tagMap.ts at runtime. It lives in the
+# repo's docs/ (re-included in .dockerignore). Run them with -tagmap, e.g.
+#   docker run ... infra-tools sync-vndb -tagmap docs/tagMap.ts
+COPY docs/tagMap.ts /app/docs/tagMap.ts
 USER appuser
 # No ENTRYPOINT: run a job by name, e.g. `docker run ... infra-tools migrate-users`.
