@@ -13,9 +13,13 @@
 
 ```bash
 cd kun-galgame-infra
+# 首次:从模板生成运行时 env(docker/*.env 不入仓,见 15-environment §15.8)
+for f in oauth image galgame; do cp -n docker/$f.env.example docker/$f.env; done
 docker compose build
 docker compose up -d postgres redis minio meili
 ```
+
+> `docker/*.env` 已 `.gitignore`,fresh clone 里只有 `*.env.example`。生产则按 [15-environment §15.8](./15-environment.md) 用 Dokploy 注入,**别提交真实 env**。
 
 Postgres **首次**初始化时,`docker/initdb.d/01-create-databases.sh` 会一次性建好全部 5 个库
 (`kun_galgame_infra` 由 `POSTGRES_DB` 建,脚本再建 `kun_galgame_wiki`、`kun_images`、`kungalgame`、`kungalgame_patch`)。

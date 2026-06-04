@@ -43,6 +43,9 @@ jobs:
           - name: infra-migrate-galgame
             file: docker/go.Dockerfile
             args: CMD=migrate-galgame
+          - name: infra-tools          # every cmd/* binary, for one-off data-cutover jobs
+            file: docker/tools.Dockerfile
+            args: ""
           - name: infra-web
             file: docker/nuxt.Dockerfile
             args: |

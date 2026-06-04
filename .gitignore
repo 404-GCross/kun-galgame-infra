@@ -11,6 +11,9 @@ app.config.timestamp_*.js
 .env
 .env*.local
 .env*.production
+# Runtime secrets — read at runtime via env_file, never committed.
+# (*.env.example templates ARE tracked.)
+docker/*.env
 
 # dependencies
 **/node_modules

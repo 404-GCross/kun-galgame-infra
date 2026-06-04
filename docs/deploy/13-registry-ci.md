@@ -4,7 +4,7 @@
 
 ## 13.0 原则:不要在生产服务器上构建
 
-Dokploy 官方明确:在部署服务器上 build "**可能导致服务器超时甚至冻结,所有应用宕机**"(Docker build 吃大量 RAM/CPU)。本生态镜像偏重——**oauth/image 是 cgo + libwebp**,每个前端是 **Nuxt 全量 build**,三仓合计 **13 个镜像**。在一台生产机上全 build = 单点风险。
+Dokploy 官方明确:在部署服务器上 build "**可能导致服务器超时甚至冻结,所有应用宕机**"(Docker build 吃大量 RAM/CPU)。本生态镜像偏重——**oauth/image 是 cgo + libwebp**,每个前端是 **Nuxt 全量 build**,三仓合计 **16 个镜像**(含 3 个 `*-tools`)。在一台生产机上全 build = 单点风险。
 
 **最佳实践(业界 + Dokploy 一致)**:
 ```
@@ -39,14 +39,26 @@ CI 按各仓**现有 Dockerfile**(参数化)构建以下镜像并推到 `ghcr.io
 | `infra-wiki` | infra | `docker/nuxt.Dockerfile` | `APP=wiki` | 3000 |
 | `infra-migrate` | infra | `docker/go.Dockerfile` | `CMD=migrate` | —(一次性) |
 | `infra-migrate-galgame` | infra | `docker/go.Dockerfile` | `CMD=migrate-galgame` | —(一次性) |
+| `infra-tools` | infra | `docker/tools.Dockerfile` | —(打包全部 `cmd/*`) | —(一次性) |
 | `kungal-api` | nuxt4 | `docker/go.Dockerfile` | `CMD=server` | 2334 |
 | `kungal-web` | nuxt4 | `docker/nuxt.Dockerfile` | —(单一 app,无 `APP`) | 7777 |
 | `kungal-migrate` | nuxt4 | `docker/go.Dockerfile` | `CMD=migrate` | —(一次性) |
+| `kungal-tools` | nuxt4 | `docker/tools.Dockerfile` | —(打包全部 `cmd/*`) | —(一次性) |
 | `moyu-api` | patch-next | `docker/go.Dockerfile` | `CMD=server` | 5214 |
 | `moyu-web` | patch-next | `docker/nuxt.Dockerfile` | `APP=web` | 3000 |
 | `moyu-migrate` | patch-next | `docker/go.Dockerfile` | `CMD=migrate` | —(一次性) |
+| `moyu-tools` | patch-next | `docker/tools.Dockerfile` | —(打包全部 `cmd/*`) | —(一次性) |
 
 > 基础设施 `postgres`/`redis`/`minio`/`meili` 用上游官方镜像,不进 CI。
+>
+> **`*-tools` 镜像**:把该仓 `apps/api/cmd/*` 的**每个**二进制打进一个镜像(infra 用 cgo+libwebp 编,
+> 下游纯 Go)。`migrate`/`migrate-galgame` 只够空库起服务;完整数据 cutover([03-bootstrap §B](./03-bootstrap.md))
+> 需要 `migrate-users`/`migrate-galgame-data`/`migrate-moyu-galgame`/`dedup-galgame-alias`/`reindex-search` 等,
+> 而一镜像只含一个 `CMD` 二进制,**不能** `--entrypoint` 复用。用 `*-tools` 按名跑这些一次性 job:
+> ```bash
+> docker run --rm --network dokploy-network --env-file docker/galgame.env \
+>   ghcr.io/kun1007/infra-tools reindex-search
+> ```
 
 ## 13.3 Tag 与回滚约定
 

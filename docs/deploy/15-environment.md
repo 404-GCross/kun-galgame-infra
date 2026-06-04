@@ -74,12 +74,17 @@
 | **Meili master key** | infra meili ↔ 用搜索者 | meili `MEILI_MASTER_KEY` = galgame.env `KUN_MEILISEARCH_API_KEY` = kungal api.env `MEILISEARCH_KEY` |
 | **MinIO 凭据**(仅自托管图床时) | infra minio ↔ 连 S3 者 | minio `MINIO_ROOT_USER/PASSWORD` = oauth/image.env `KUN_IMAGE_S3_ACCESS_KEY/SECRET_KEY`。**生产用 R2 则填 R2 的 key,与 minio 无关** |
 | **OAuth client secret** | 枢纽注册的明文 ↔ 下游 env | 枢纽 `oauth_clients` 表存 `sha256:<hex>`;下游 `OAUTH_CLIENT_SECRET` 填**注册时的明文**。详见 [12-dokploy §12.3](./12-dokploy.md) |
-| **图片 CDN 公网域** | 所有「生成图片 URL」的后端 | infra 各 env 的 `KUN_IMAGE_PUBLIC_BASE_URL`、moyu `KUN_IMAGE_CDN_BASE`、kungal `KUN_IMAGE_PUBLIC_BASE_URL` 应指同一公网域(`https://image.kungal.iloveren.link`) |
+| **图片 CDN 公网域** | 所有「生成图片 URL」的后端/前端 | infra 各 env 的 `KUN_IMAGE_PUBLIC_BASE_URL`、moyu `KUN_IMAGE_CDN_BASE`(+ 前端 imageBed)、kungal `KUN_IMAGE_PUBLIC_BASE_URL` 应指**同一公网域**(`https://image.kungal.iloveren.link`) |
 
 > 🔑 **`JWT_SECRET` 的常见误解**:它**不需要**三仓一致。下游 kungal/moyu **不本地验签** infra 的
 > access_token —— 它们走 OAuth 授权码流程,再调 `GET /oauth/userinfo`(网络请求)拿身份。
 > 所以:**kungal** 的 `JWT_SECRET` 只用来签**它自己**的会话 cookie(仅需 kungal 内部自洽,生产换成强随机即可);
 > **moyu** 根本没有 `JWT_SECRET`(会话是不透明 session,靠调 OAuth 校验)。只有 **infra 内部**那三个服务必须共用同一个。
+
+> 🖼 **图片 URL 路径契约**:image_service 的对象键是 `{cdnBase}/{hash[:2]}/{hash[2:4]}/{hash}[_variant].webp`(**无 `/img/` 段**)。
+> infra/kungal 一直如此;moyu 早期前后端多加了 `/img/`(且 `imageBed` 硬编码成 `image.moyu.moe`),现已对齐——
+> moyu 前后端均用规范路径,`KUN_IMAGE_CDN_BASE` 与前端 imageBed 都指向共享的 `image.kungal.iloveren.link`。
+> 压缩按用途选 variant(均为 webp):整图/`topic` 截图用主图(主流水线 ≤1920×1080 q77)、banner 缩略用 `mini`(460×259)、头像列表用 `100`、设置页大图用 `256`。
 
 ---
 
@@ -326,9 +331,11 @@ MEILI_MASTER_KEY=<强随机>           # = galgame KUN_MEILISEARCH_API_KEY
 
 > Dokploy 把 Environment 写成部署目录的根 `.env`,`docker compose up` 时插值。`:?` 表示**留空直接报错**,不会静默用空密码。
 
-### B. `env_file: docker/*.env` → 文件必须在部署目录(它**被 gitignore**)
+### B. `env_file: docker/*.env` → 文件必须在部署目录(三仓均 **gitignore**)
 
-三仓生产 compose 都 `env_file: ./docker/*.env`,但这些文件**不在 git 里**(`.gitignore`),Dokploy 克隆仓库时不会带它们。三种补法:
+三仓生产 compose 都 `env_file: ./docker/*.env`,这些文件**不在 git 里**(`.gitignore`),Dokploy
+克隆仓库时**不会带它们**。所以 **A 步在 Environment 里填 `${VAR}` 并不能替代它们**——`${VAR}` 只解决 compose
+插值那几个基础设施密码;Go/Nuxt 服务的全部业务配置在 `env_file` 里,文件缺了 compose 直接报 `env file ... not found`。三种补法:
 
 1. **(推荐)Dokploy「Environment / Env File」面板**:把每个服务该有的 `KEY=value` 贴进去,
    或用 Dokploy 的文件挂载功能把内容写到 `docker/oauth.env` 等路径。
@@ -336,11 +343,23 @@ MEILI_MASTER_KEY=<强随机>           # = galgame KUN_MEILISEARCH_API_KEY
 3. **私有配置仓**:把脱敏后的 env 模板入一个私有仓 / secret 管理器,部署时拉取生成。
 
 > 不论哪种,**§15.3 的一致性铁律照样要满足**:`docker/*.env` 里的库密码/Meili key 必须等于 A 步在 Environment 里设的 `${VAR}`。
+>
+> ⚠️ **历史坑(已修)**:infra 仓曾**误把** `docker/oauth.env`/`image.env`/`galgame.env` 提交进版本库
+> (`.gitignore` 没覆盖到 `*.env` 这种非点开头文件名)。后果是:即便你在 Dokploy Environment 填了新密钥,
+> infra 服务仍会从仓库里那份**旧 env_file** 读到测试值/泄露值。现已 `git rm --cached` 移出跟踪并补全 `.gitignore`;
+> **若你的远端历史里还有这些文件,请把里面所有出现过的密钥(邮箱密码、JWT、S3 等)视为已泄露并轮换**。
 
 ### C. 顺序与首启
 
 先部署 **infra**(等 pg/redis/minio/meili healthy)→ 在 Dokploy Terminal 跑 `migrate` / `migrate-galgame`
 → 再部署 **kungal**、**moyu**(它们连 infra 的服务名)。详见 [12-dokploy §12.4/§12.6](./12-dokploy.md) 与 [03-bootstrap.md](./03-bootstrap.md)。
+
+> **完整数据 cutover 需要更多 job 镜像**:`migrate` / `migrate-galgame` 只够「空库起服务」。
+> 带数据上线([03-bootstrap §B](./03-bootstrap.md))还要 `migrate-users`、`migrate-galgame-data`、
+> `migrate-moyu-galgame`、`dedup-galgame-alias`、`reindex-search` 等——这些是**独立的 `cmd/` 二进制**,
+> 而 Dockerfile 一镜像只编一个 `CMD`,**不能**用 `infra-galgame` 镜像 `--entrypoint migrate-users`。
+> CI 现已额外发布 **`infra-tools` / `kungal-tools` / `moyu-tools`** 全量工具镜像([13-registry-ci.md](./13-registry-ci.md)),
+> 用 `docker run ... ghcr.io/kun1007/infra-tools <job-name>` 跑这些一次性迁移,**不依赖生产机临时 build / go run**。
 
 ---
 
