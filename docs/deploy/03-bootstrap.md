@@ -106,6 +106,8 @@ docker run --rm --network kun-galgame-infra_default --env-file docker/galgame.en
 
 ## B. 完整数据 Bootstrap(生产)
 
+> 📋 **要可直接抄的服务器命令**(从 dump 起、`docker run *-tools`、含 dry-run/校验/回滚)看 [16-data-cutover.md](./16-data-cutover.md)。本节只给顺序与原理。
+
 带数据上线是一条**有严格顺序的跨仓流水线**(不是单个 job)。Docker 不简化顺序,但每一步都能容器化成 `compose run` job。总体顺序(详见各仓 `docs/migration/`):
 
 1. **恢复源库 dump**:`kungalgame`、`kungalgame_patch` 从生产 dump 恢复;清空 infra 的 3 个库。
