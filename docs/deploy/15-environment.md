@@ -198,7 +198,7 @@
 | 变量 | 测试值 | 作用 |
 |---|---|---|
 | `NODE_ENV` | `production` | |
-| `NUXT_API_BASE_URL` | `http://api:2334` | **SSR** 内部 base(服务名)——kungal 的 SSR 名是 `..._URL` |
+| `NUXT_API_BASE_URL` | `http://kungal-api:2334` | **SSR** 内部 base(服务名)——kungal 的 SSR 名是 `..._URL` |
 | `NUXT_PUBLIC_API_BASE_URL` | `http://localhost:15012` | **浏览器** API 地址 → 生产 `https://www.kungal.com` |
 | `NUXT_PUBLIC_OAUTH_SERVER_URL` | `http://localhost:15005/api/v1` | OAuth API(浏览器)→ `https://oauth.kungal.com/api/v1` |
 | `NUXT_PUBLIC_OAUTH_FRONTEND_URL` | `http://localhost:15008` | OAuth 账户中心跳转 → `https://oauth.kungal.com` |
@@ -237,7 +237,7 @@
 
 | 变量 | 测试值 | 作用 |
 |---|---|---|
-| `NUXT_API_BASE_SSR` | `http://api:5214/api/v1` | **SSR** 内部 base(moyu 的 SSR 名是 `..._SSR`) |
+| `NUXT_API_BASE_SSR` | `http://moyu-api:5214/api/v1` | **SSR** 内部 base(moyu 的 SSR 名是 `..._SSR`) |
 | `NUXT_PUBLIC_API_BASE` | `http://localhost:15010/api/v1` | **浏览器** API → 生产 `https://www.moyu.moe/api/v1` |
 | `NUXT_PUBLIC_OAUTH_SERVER_URL` | `http://localhost:15005/api/v1` | OAuth API → `https://oauth.kungal.com/api/v1` |
 | `NUXT_PUBLIC_OAUTH_WEB_URL` | `http://localhost:15008` | OAuth 前端跳转 → `https://oauth.kungal.com` |
@@ -257,7 +257,7 @@
 | 生产改域名怎么做 | 改 `.github/workflows/build.yml` 的 `build-args` → **重新构建推镜像** → Dokploy 拉新镜像 | 改 `docker-compose.prod.yml` web 服务的 `NUXT_PUBLIC_*` → **重部署**即可,无需重构 |
 | 运行期还注入什么 | 仅 SSR 内部 base(`NUXT_API_BASE_SSR` / `NUXT_AUTH_API_BASE_SSR`) | SSR base 同在 web `environment:`(moyu `NUXT_API_BASE_SSR` / kungal `NUXT_API_BASE_URL`)|
 
-**双 base 原则(三仓一致)**:SSR(容器内)永远用**服务名**(`http://oauth:9277`、`http://api:2334`…),
+**双 base 原则(三仓一致)**:SSR(容器内)永远用**服务名**(`http://oauth:9277`、`http://kungal-api:2334`…),
 浏览器永远用**公网域名**。Dokploy 下没有宿主端口,这套正好契合(详见 [12-dokploy §12.5](./12-dokploy.md))。
 
 ---
@@ -322,7 +322,7 @@
 ```env
 POSTGRES_PASSWORD=<强随机>          # 必填;= 下游 KUN_DATABASE_URL 里的密码
 JWT_SECRET=<强随机>                 # 必填;infra oauth/image/galgame 共用(同一 ${VAR},自动一致)
-MEILI_MASTER_KEY=<强随机>           # 必填
+MEILI_MASTER_KEY=<强随机, ≥16 字节>  # 必填;太短 → MEILI_ENV=production 下 meili 崩溃重启
 MINIO_ROOT_USER=<自定义>            # 必填(用 R2 可填占位,minio 空跑)
 MINIO_ROOT_PASSWORD=<强随机>        # 必填
 KUN_IMAGE_S3_ENDPOINT=https://<acct>.r2.cloudflarestorage.com   # 图床要工作就填(R2)

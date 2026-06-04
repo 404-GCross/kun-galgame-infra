@@ -57,10 +57,12 @@ x-infra-env: &infra-env
   KUN_FRONTEND_URL: https://oauth.kungal.com
   # image_service S3 — Cloudflare R2 in prod (keys/endpoint from Dokploy). For
   # self-hosted MinIO set ENDPOINT=http://minio:9000 / FORCE_PATH_STYLE=true.
-  KUN_IMAGE_S3_ENDPOINT: ${KUN_IMAGE_S3_ENDPOINT:-}
+  # image 服务空 key/secret/bucket 会 os.Exit(1) → 崩溃重启,所以这三个 fail-fast。
+  # 自托管 MinIO:ENDPOINT=http://minio:9000、key/secret=MINIO_ROOT_*、FORCE_PATH_STYLE=true。
+  KUN_IMAGE_S3_ENDPOINT: ${KUN_IMAGE_S3_ENDPOINT:?R2/MinIO 端点,如 https://<acct>.r2.cloudflarestorage.com 或 http://minio:9000}
   KUN_IMAGE_S3_REGION: ${KUN_IMAGE_S3_REGION:-auto}
-  KUN_IMAGE_S3_ACCESS_KEY: ${KUN_IMAGE_S3_ACCESS_KEY:-}
-  KUN_IMAGE_S3_SECRET_KEY: ${KUN_IMAGE_S3_SECRET_KEY:-}
+  KUN_IMAGE_S3_ACCESS_KEY: ${KUN_IMAGE_S3_ACCESS_KEY:?image 服务必填(空则启动即退出)}
+  KUN_IMAGE_S3_SECRET_KEY: ${KUN_IMAGE_S3_SECRET_KEY:?image 服务必填}
   KUN_IMAGE_S3_BUCKET: ${KUN_IMAGE_S3_BUCKET:-kun-images}
   KUN_IMAGE_S3_FORCE_PATH_STYLE: ${KUN_IMAGE_S3_FORCE_PATH_STYLE:-false}
   KUN_IMAGE_PUBLIC_BASE_URL: https://image.kungal.iloveren.link
@@ -118,7 +120,7 @@ services:
   meili:
     image: getmeili/meilisearch:v1.45
     environment:
-      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:?set MEILI_MASTER_KEY in Dokploy}
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:?set MEILI_MASTER_KEY in Dokploy (≥16 bytes — MEILI_ENV=production 强制)}
       MEILI_NO_ANALYTICS: "true"
       MEILI_ENV: production
     volumes: ["meili:/meili_data"]

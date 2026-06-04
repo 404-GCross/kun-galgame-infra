@@ -106,7 +106,7 @@ OAuth client 的 `redirect_uris` 存在枢纽 `kun_galgame_infra.oauth_clients` 
 
 ## 12.5 双 base 与 SSR
 
-前端已实现**双 base**(见 `docs`/各仓 nuxt.config):**SSR 在容器内用服务名**(`http://api:2334`、`http://oauth:9277/api/v1`、`http://galgame:9280/api`),**浏览器用 12.1 的公网域名**。Dokploy 下这套**正好需要**——没有宿主端口,SSR 必须走内部服务名,浏览器走 Traefik 域名。所以 12.2-C 只改"浏览器侧"URL,SSR 的 `NUXT_API_BASE_SSR` / `NUXT_AUTH_API_BASE_SSR` / kungal 的 `NUXT_API_BASE_URL` 维持容器内部地址不变。
+前端已实现**双 base**(见 `docs`/各仓 nuxt.config):**SSR 在容器内用服务名**(`http://kungal-api:2334`、`http://oauth:9277/api/v1`、`http://galgame:9280/api`),**浏览器用 12.1 的公网域名**。Dokploy 下这套**正好需要**——没有宿主端口,SSR 必须走内部服务名,浏览器走 Traefik 域名。所以 12.2-C 只改"浏览器侧"URL,SSR 的 `NUXT_API_BASE_SSR` / `NUXT_AUTH_API_BASE_SSR` / kungal 的 `NUXT_API_BASE_URL` 维持容器内部地址不变。
 
 ## 12.6 数据迁移(首次切换)
 

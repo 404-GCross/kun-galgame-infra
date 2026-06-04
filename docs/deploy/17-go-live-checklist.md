@@ -12,10 +12,10 @@
 
 ## 0 · 一次性生成密钥(后面复用,先备齐)
 
-- [ ] `POSTGRES_PASSWORD` = 强随机(三仓面板都要填这个**同一个值**)
+- [ ] `POSTGRES_PASSWORD` = 强随机(三仓面板填**同一个值**;**必须 URL-safe = 字母数字**,勿含 `@ : / # % ? &` —— kungal/moyu 把它拼进 `KUN_DATABASE_URL`,特殊字符会让 DSN 解析坏)
 - [ ] `JWT_SECRET`(infra)= 强随机(infra 面板;oauth/image/galgame 共用)
 - [ ] `JWT_SECRET`(kungal)= 强随机(kungal 面板;**与 infra 不同**,只是同名变量)
-- [ ] `MEILI_MASTER_KEY` = 强随机(infra + kungal 面板填**同一个值**)
+- [ ] `MEILI_MASTER_KEY` = 强随机(**≥16 字节**,否则 `MEILI_ENV=production` 下 meili 崩溃重启;infra + kungal 面板填**同一个值**)
 - [ ] `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD`(用 R2 则填占位即可)
 - [ ] **Cloudflare R2**:endpoint、Access Key、Secret(、bucket)
 - [ ] **B2**:moyu 补丁一套 key、kungal 工具集一套 key(可选)
