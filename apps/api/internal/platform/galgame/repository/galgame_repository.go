@@ -338,12 +338,18 @@ func (r *GalgameRepository) Update(ctx context.Context, galgame *model.Galgame) 
 	return r.db.WithContext(ctx).Save(galgame).Error
 }
 
-// IncrementView increments the view count
+// IncrementView increments the view count.
+//
+// UpdateColumn (not Update) on purpose: Update would trip GORM's autoUpdateTime
+// and bump `updated` on every page view, making a merely-VIEWED galgame look
+// "recently updated" — polluting the updated sort/feed, cross-site freshness
+// signals, and any cache keyed on `updated`. UpdateColumn writes only `view`
+// (and skips hooks), so a view stays a view.
 func (r *GalgameRepository) IncrementView(ctx context.Context, id int) error {
 	return r.db.WithContext(ctx).
 		Model(&model.Galgame{}).
 		Where("id = ?", id).
-		Update("view", gorm.Expr("view + 1")).Error
+		UpdateColumn("view", gorm.Expr("view + 1")).Error
 }
 
 // GetUserStats returns aggregated galgame statistics for a user.
