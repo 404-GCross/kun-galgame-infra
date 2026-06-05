@@ -77,23 +77,29 @@ func (h *SearchHandler) Galgame(c fiber.Ctx) error {
 	// pending drafts still come back via the independent include_pending
 	// sub-query; callers needing other states pass `status` explicitly.
 	statuses := parseIntList(q["status"])
-	// `status` is an aggregation filter on a PUBLIC endpoint. Only admins /
-	// moderators may query arbitrary states; a non-privileged caller is
-	// clamped to published (0) so banned(1)/others'-pending(3)/declined(4)
-	// can never be read by simply passing ?status=. A logged-in viewer's OWN
-	// pending/declined still arrive via the user-scoped include_pending path.
+	// `status` is an aggregation filter on a PUBLIC endpoint.
+	//   - Non-admins may only see published (0) + claimable VNDB drafts (2).
+	//     Both are public by design (status=2 is the "草稿搜索 / 认领" inventory);
+	//     banned(1)/others'-pending(3)/declined(4) are never exposed via the
+	//     status filter (a viewer's OWN pending/declined still arrive via the
+	//     user-scoped include_pending path). Default = [0] (published only) so
+	//     the public /search excludes drafts; the publish wizard opts INTO
+	//     drafts by passing status=0,2.
+	//   - Admins/moderators (the wiki UI) are unclamped: empty status means
+	//     "all states" (the service applies no status filter), so a wiki search
+	//     surfaces every game.
 	roles, _ := c.Locals("user_roles").([]string)
 	if !hasRole(roles, "admin", "moderator") {
 		filtered := statuses[:0]
 		for _, st := range statuses {
-			if st == 0 { // 0 = published; only state a non-privileged caller may filter on
+			if st == 0 || st == 2 { // published OR claimable VNDB draft
 				filtered = append(filtered, st)
 			}
 		}
 		statuses = filtered
-	}
-	if len(statuses) == 0 {
-		statuses = []int{0}
+		if len(statuses) == 0 {
+			statuses = []int{0}
+		}
 	}
 
 	req := &search.GalgameSearchRequest{

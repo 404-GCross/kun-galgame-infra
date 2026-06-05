@@ -157,20 +157,14 @@ func (s *Service) SearchGalgames(ctx context.Context, req *GalgameSearchRequest)
 	// runs only when caller opted in AND authenticated. Failure here is
 	// non-fatal: we still return the main result.
 	//
-	// Inherits the same content_limit filter as the main query — without
-	// this, asking ?content_limit=sfw&include_pending=true would return
-	// SFW main results alongside the user's own NSFW pending entries,
-	// which contradicts the caller's stated filter. Pending entries are
-	// the user's own data either way, but the wire contract is "this
-	// response only contains content matching the requested limit".
+	// Matches the main query: NSFW (content_limit) is NOT filtered — the
+	// caller's own pending drafts come back regardless of NSFW, same as the
+	// main results. (SEO is handled by page-level noindex, not search filters.)
 	if req.IncludePending && req.ViewerUID > 0 {
 		pendingFilter := fmt.Sprintf(
 			"status IN [%d, %d] AND user_id = %d",
 			3, 4, req.ViewerUID,
 		)
-		if req.ContentLimit != "" {
-			pendingFilter += fmt.Sprintf(" AND content_limit = '%s'", escapeFilter(req.ContentLimit))
-		}
 		pendingReq := &meilisearch.SearchRequest{
 			Page:        1,
 			HitsPerPage: 20,
@@ -308,9 +302,11 @@ func buildGalgameFilter(r *GalgameSearchRequest) string {
 	if len(r.Statuses) > 0 {
 		clauses = append(clauses, inIntFilter("status", r.Statuses))
 	}
-	if r.ContentLimit != "" {
-		clauses = append(clauses, fmt.Sprintf("content_limit = '%s'", escapeFilter(r.ContentLimit)))
-	}
+	// NSFW (content_limit) is intentionally NOT filtered in search — search must
+	// surface ALL games regardless of NSFW (product decision). Keeping R18 out of
+	// search engines is handled at the PAGE layer via noindex (R18 detail pages +
+	// search-result pages), not by filtering search results. r.ContentLimit is
+	// therefore ignored here on purpose; do not re-add a content_limit clause.
 	if r.AgeLimit != "" {
 		clauses = append(clauses, fmt.Sprintf("age_limit = '%s'", escapeFilter(r.AgeLimit)))
 	}

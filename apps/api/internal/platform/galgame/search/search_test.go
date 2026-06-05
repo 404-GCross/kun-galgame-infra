@@ -143,7 +143,10 @@ func TestBuildGalgameFilter(t *testing.T) {
 	filter := buildGalgameFilter(req)
 	// Check key substrings — order is deterministic (built sequentially in function)
 	assert.Contains(t, filter, "status IN [0, 2]")
-	assert.Contains(t, filter, "content_limit = 'sfw'")
+	// NSFW (content_limit) is intentionally NOT filtered in search, even when the
+	// request carries a ContentLimit — search surfaces all games regardless of
+	// NSFW (SEO is handled by page-level noindex). See buildGalgameFilter.
+	assert.NotContains(t, filter, "content_limit")
 	assert.Contains(t, filter, "tag_ids = 1")
 	assert.Contains(t, filter, "tag_ids = 2")
 	assert.Contains(t, filter, "original_language IN ['ja-jp', 'en-us']")
