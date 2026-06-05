@@ -86,7 +86,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in Dokploy (must match the app KUN_PG_PASSWORD / DATABASE_URL)}
       POSTGRES_DB: kun_galgame_infra
     volumes:
-      - pg:/var/lib/postgresql   # pg18: VOLUME moved here (was /data on <=17)
+      - pg:/var/lib/postgresql # pg18: VOLUME moved here (was /data on <=17)
       - ./docker/initdb.d:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d kun_galgame_infra"]
@@ -132,12 +132,13 @@ services:
       <<: *svc-health
     networks:
       default:
-        aliases: [meilisearch]   # kungal connects by the name `meilisearch`
+        aliases: [meilisearch] # kungal connects by the name `meilisearch`
     restart: unless-stopped
 
   # ───────────────────────────── Go services ─────────────────────────────────
   oauth:
     image: ghcr.io/kunmoe/infra-oauth:latest
+    pull_policy: always
     environment:
       <<: *infra-env
       KUN_FIBER_SERVER_HOST: 0.0.0.0
@@ -153,6 +154,7 @@ services:
 
   image:
     image: ghcr.io/kunmoe/infra-image:latest
+    pull_policy: always
     environment:
       <<: *infra-env
       KUN_IMAGE_SERVICE_HOST: 0.0.0.0
@@ -170,6 +172,7 @@ services:
 
   galgame:
     image: ghcr.io/kunmoe/infra-galgame:latest
+    pull_policy: always
     environment:
       <<: *infra-env
       KUN_FIBER_SERVER_HOST: 0.0.0.0
@@ -188,18 +191,26 @@ services:
   # .github/workflows/build.yml). Only the SSR base (service name) is injected here.
   web:
     image: ghcr.io/kunmoe/infra-web:latest
+    pull_policy: always
     environment:
       NUXT_API_BASE_SSR: http://oauth:9277/api/v1
     expose: ["3000"]
     depends_on:
       oauth: { condition: service_started }
     healthcheck:
-      test: ["CMD", "node", "-e", "require('net').connect(3000,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))"]
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "require('net').connect(3000,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))",
+        ]
       <<: *svc-health
     restart: unless-stopped
 
   wiki:
     image: ghcr.io/kunmoe/infra-wiki:latest
+    pull_policy: always
     environment:
       NUXT_API_BASE_SSR: http://galgame:9280/api
       NUXT_AUTH_API_BASE_SSR: http://oauth:9277/api/v1
@@ -207,7 +218,13 @@ services:
     depends_on:
       galgame: { condition: service_started }
     healthcheck:
-      test: ["CMD", "node", "-e", "require('net').connect(3000,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))"]
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "require('net').connect(3000,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))",
+        ]
       <<: *svc-health
     restart: unless-stopped
 
@@ -216,6 +233,7 @@ services:
   #   docker compose -f docker-compose.prod.yml --profile jobs run --rm migrate-galgame
   migrate:
     image: ghcr.io/kunmoe/infra-migrate:latest
+    pull_policy: always
     environment: { <<: *infra-env }
     profiles: ["jobs"]
     depends_on:
@@ -224,6 +242,7 @@ services:
 
   migrate-galgame:
     image: ghcr.io/kunmoe/infra-migrate-galgame:latest
+    pull_policy: always
     environment: { <<: *infra-env }
     profiles: ["jobs"]
     depends_on:
@@ -235,6 +254,7 @@ services:
   #   docker compose -f docker-compose.prod.yml --profile jobs run --rm tools sync-vndb -tagmap docs/tagMap.ts
   tools:
     image: ghcr.io/kunmoe/infra-tools:latest
+    pull_policy: always
     environment: { <<: *infra-env }
     profiles: ["jobs"]
     depends_on:
