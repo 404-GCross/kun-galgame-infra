@@ -136,6 +136,33 @@ jobs:
 - kungal/moyu 的 workflow:`matrix` 换成 `kungal-api`/`kungal-web`/`kungal-migrate`(及 moyu 同理),`deploy` 步骤用各自的 `DOKPLOY_WEBHOOK_*`。
 - **三仓 workflow 均已创建**:`<repo>/.github/workflows/build.yml`。触发分支:**infra=`main`,kungal/moyu=`master`**。注意 **kungal-web 无 `APP` build-arg**(单一 app);infra-web/wiki 在此烤入真实域名(见 13.5);`deploy` 步骤已做 webhook 未设置时**优雅跳过**。
 
+> ⚠️ **关键:让"构建完成"成为唯一的部署触发,否则永远部署上一次的镜像**
+>
+> 一次 `push` 会同时点燃**两个**部署触发,它们在赛跑:
+> ```
+> push ──┬─► GitHub Actions build-and-push    (几分钟:build + 推 GHCR)
+>        └─► Dokploy autoDeploy(github 集成)  (几秒:compose pull + up)
+>                                              ↑ 此刻 :latest 还是上一次的镜像
+> ```
+> Dokploy 的 **Auto Deploy 是 push 一到就部署,根本不等构建** → `pull :latest` 拉到的是上一版,
+> 表现为"每次部署的都是上一次构建的镜像"。上面 workflow 里的 `deploy` job(`needs: build`,
+> 构建全部完成后才 `curl` webhook)才是**正确**的晚触发,但它依赖下面的 secret;secret 没设时它会
+> "优雅跳过",于是只剩错误的早触发在跑 —— 这正是这个坑的成因。
+>
+> **正确接法(两步,缺一不可):**
+> 1. **设 secret**:在 Dokploy 每个 app 的设置里复制它的"部署 Webhook URL",填进对应仓的
+>    Actions secret —— infra→`DOKPLOY_WEBHOOK_INFRA`、kungal(forum)→`DOKPLOY_WEBHOOK_KUNGAL`、
+>    moyu(patch)→`DOKPLOY_WEBHOOK_MOYU`。
+> 2. **关掉每个 app 的 Dokploy Auto Deploy**,去掉 push 早触发,消除赛跑。
+>
+> 接好后顺序才对:`push → Actions build + 推 GHCR → 构建完 curl webhook → Dokploy 拉新 :latest 部署`。
+>
+> **验证**:Actions 最近一次 run 的 `deploy` job 若打印"webhook 未设置…跳过",说明 secret 没设;
+> Dokploy 库 `SELECT name, "autoDeploy" FROM compose;` 应全部为 `f`。
+>
+> **过渡期**(还没配 webhook):只做第 2 步关掉 Auto Deploy,然后每次等 Actions 构建跑完再去
+> Dokploy 手动 Redeploy —— 麻烦但绝不会拉错镜像。
+
 ## 13.5 前端域名配置:两条路线(实测取舍)
 
 Nuxt 的 public 配置有两种注入方式,直接影响"镜像是否环境无关":
