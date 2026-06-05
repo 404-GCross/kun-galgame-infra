@@ -207,6 +207,14 @@ services:
         ]
       <<: *svc-health
     restart: unless-stopped
+    # Safety cap for the upstream Nuxt 4.2.2 SSR leak (nuxt#34071). infra-web
+    # (oauth frontend) is low-traffic (~75 MiB working set), so 1g is generous
+    # headroom; it just prevents an unbounded leak from starving the box, OOM-
+    # recycling via restart: unless-stopped if it ever grows that far.
+    deploy:
+      resources:
+        limits:
+          memory: 1g
 
   wiki:
     image: ghcr.io/kunmoe/infra-wiki:latest
@@ -227,6 +235,13 @@ services:
         ]
       <<: *svc-health
     restart: unless-stopped
+    # Safety cap for the upstream Nuxt 4.2.2 SSR leak (nuxt#34071). infra-wiki is
+    # low-traffic (~75 MiB working set); 1g is generous headroom and just OOM-
+    # recycles (restart: unless-stopped) if a leak ever grows unbounded.
+    deploy:
+      resources:
+        limits:
+          memory: 1g
 
   # ─────────────────────── one-off jobs (profile: jobs) ──────────────────────
   #   docker compose -f docker-compose.prod.yml --profile jobs run --rm migrate
