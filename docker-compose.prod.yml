@@ -81,6 +81,28 @@ services:
   # ───────────────────────── shared backing services ─────────────────────────
   postgres:
     image: postgres:18-alpine
+    # Tuned for the 24 GB host (defaults are sized for a tiny box). These are the
+    # version-controlled source of truth; the same values were applied live via
+    # ALTER SYSTEM (work_mem / effective_cache_size / maintenance_work_mem reload
+    # without a restart; shared_buffers needs one). On the next postgres restart
+    # the command-line flags below take over. Rationale:
+    #   shared_buffers 2GB     — PG's own page cache (default 128MB is tiny); ~8%
+    #                            of host RAM, leaves plenty for OS cache + the
+    #                            capped web containers. (restart-only)
+    #   work_mem 64MB          — per-sort/-hash; kills the wiki tag-list disk sorts
+    #                            (default 4MB spilled GBs of temp). See migrate-galgame indexes.
+    #   effective_cache_size 12GB — planner hint (no allocation); favors index scans.
+    #   maintenance_work_mem 512MB — faster VACUUM / CREATE INDEX.
+    command:
+      - postgres
+      - -c
+      - shared_buffers=2GB
+      - -c
+      - work_mem=64MB
+      - -c
+      - effective_cache_size=12GB
+      - -c
+      - maintenance_work_mem=512MB
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in Dokploy (must match the app KUN_PG_PASSWORD / DATABASE_URL)}
