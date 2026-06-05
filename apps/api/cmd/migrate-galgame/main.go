@@ -170,6 +170,35 @@ func main() {
 		os.Exit(1)
 	}
 
+	// (4) Performance indexes for the wiki tag-listing + tag-count queries.
+	// Without them the tag detail page (galgames-by-tag, ORDER BY
+	// resource_update_time DESC) parallel-seq-scans + disk-sorts every published
+	// galgame per request, dumping GBs of Postgres temp files under load
+	// (measured: a single page = ~4.5 MB external-merge sort; tens of GB temp_bytes
+	// cumulatively). With these two indexes the common case becomes an
+	// index-ordered scan + index-only tag probe (~11 ms + disk → ~0.3 ms, no temp).
+	//
+	//   - (tag_id, galgame_id): the PK is (galgame_id, tag_id), so filtering /
+	//     GROUP BY on tag_id had no usable leading-column index → full scans.
+	//   - (status, resource_update_time DESC): serves "WHERE status=0 ORDER BY
+	//     resource_update_time DESC" as an index-ordered scan → no disk sort.
+	//
+	// IF NOT EXISTS = idempotent. CONCURRENTLY is intentionally NOT used here:
+	// migrate-galgame is a one-off job (not against live traffic), so a brief lock
+	// on these small tables is fine. On an already-live DB, add them manually with
+	// CREATE INDEX CONCURRENTLY to avoid locking.
+	for _, stmt := range []string{
+		`CREATE INDEX IF NOT EXISTS idx_galgame_tag_relation_tag
+		    ON galgame_tag_relation(tag_id, galgame_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_galgame_status_resource_update
+		    ON galgame(status, resource_update_time DESC)`,
+	} {
+		if err := db.DB().Exec(stmt).Error; err != nil {
+			slog.Error("create wiki perf index failed", "stmt", stmt, "error", err)
+			os.Exit(1)
+		}
+	}
+
 	// (Old step 4 — backfill galgame_cover from banner_image_hash —
 	// removed in PR5: the legacy column was retired by migrate-drop-
 	// banner-image-hash. That migration also patched historical
