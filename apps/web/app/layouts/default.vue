@@ -65,12 +65,25 @@ onUnmounted(() => {
   }
 })
 
-onMounted(async () => {
+// Client safety net: if there's still no user by mount (token present but
+// /auth/me failed — revoked/invalid), bounce to login. The no-token case is
+// already handled by the auth middleware. Registered BEFORE the await below so
+// the component instance is still active when the lifecycle hook is set up.
+onMounted(() => {
+  if (!auth.user.value) {
+    router.push('/auth/login')
+  }
+})
+
+// Fetch the signed-in user ONCE, on the server, so the admin shell renders with
+// the user on first paint and the result hydrates to the client via Pinia — no
+// per-page client-side refetch. Previously BOTH this layout and
+// profile/Container.vue called auth.fetchUser() in onMounted; with an empty
+// persisted store both passed the `!user` guard and fired /auth/me twice (a
+// race). callOnce + Pinia hydration collapses that to a single SSR request.
+await callOnce('auth:user', async () => {
   if (!auth.user.value) {
     await auth.fetchUser()
-    if (!auth.user.value) {
-      router.push('/auth/login')
-    }
   }
 })
 </script>
