@@ -12,7 +12,12 @@
 
 ## 0 · 一次性生成密钥(后面复用,先备齐)
 
-- [ ] `POSTGRES_PASSWORD` = 强随机(三仓面板填**同一个值**;**必须 URL-safe = 字母数字**,勿含 `@ : / # % ? &` —— kungal/moyu 把它拼进 `KUN_DATABASE_URL`,特殊字符会让 DSN 解析坏)
+> ⚠️ **所有面板密钥都只用「字母数字(+ `-` `_`)」,不要含 `$ # % : / @ ? & 空格 引号`。**
+> 原因:面板值经 Dokploy 写成 `.env` → docker compose 解析 `${VAR}`,`$` 会被当变量替换、`#` 会被当注释截断 →
+> **密钥被悄悄改短/改坏**(典型:`MEILI_MASTER_KEY` 里带 `$#` → meili 只收到 5 字节 → "master key must be at least 16 bytes")。
+> 最省心:**`openssl rand -hex 32`**(64 位十六进制,纯 0-9a-f,绝不会被吃,且远超 16 字节;`POSTGRES_PASSWORD` 用它也天然 URL-safe)。
+
+- [ ] `POSTGRES_PASSWORD` = `openssl rand -hex 32`(三仓面板填**同一个值**;务必字母数字,它还要被拼进 `KUN_DATABASE_URL`)
 - [ ] `JWT_SECRET`(infra)= 强随机(infra 面板;oauth/image/galgame 共用)
 - [ ] `JWT_SECRET`(kungal)= 强随机(kungal 面板;**与 infra 不同**,只是同名变量)
 - [ ] `MEILI_MASTER_KEY` = 强随机(**≥16 字节**,否则 `MEILI_ENV=production` 下 meili 崩溃重启;infra + kungal 面板填**同一个值**)
@@ -82,7 +87,11 @@ POSTGRES_USER=postgres                 # 默认 postgres,一般不改
 - [ ] `docker compose -f docker-compose.prod.yml --profile jobs run --rm migrate`(infra schema + 种子)
 - [ ] `docker compose -f docker-compose.prod.yml --profile jobs run --rm migrate-galgame`(wiki schema)→ [03-bootstrap §A](./03-bootstrap.md)
 
-### 2B · 带生产数据(正式上线)
+### 2B · 带生产数据(正式上线)—— ⚠ 实际放到 Phase 3/3′ 之后做
+> 16 的流水线**交错跑 infra + kungal + moyu 三家工具**,需要 kungal/moyu **已部署**(`$FORUM`/`$PATCH` 目录 + `.env` 存在)才能跑 `$KUNGAL`/`$MOYU` 那几步。
+> 所以顺序是:**先 2A → 2.1 → Phase 3/3′ 把三站(空库)跑通,再回这里做 cutover**。
+> 注意 cutover 的 16.4 会 `DROP` `kun_galgame_infra` → **抹掉 2.1 注册的 OAuth client**;cutover 后需**重新注册这 3 个 client**(client_id 固定不变)并把新 secret 更新进下游面板重部署。
+> (想只注册一次:Phase 3/3′ 部署 kungal/moyu 时先填**占位** `OAUTH_CLIENT_SECRET` 把目录/`.env` 建出来 → 跑完 cutover → 再注册真 client、回填 secret 重部署。)
 - [ ] `scp` 两个 dump → 还原 → 整条迁移流水线(`--profile jobs run --rm tools <job>`,严格按序、含 dry-run/校验)。→ [16-data-cutover](./16-data-cutover.md)
 
 ### 2.1 注册 3 个 OAuth client(**不做登录全废**)→ [12-dokploy §12.3](./12-dokploy.md) / [03-bootstrap §A.5](./03-bootstrap.md)
@@ -106,7 +115,7 @@ MEILI_MASTER_KEY=<= infra 同名值>
 # 可选:FILE_STORAGE_*(B2 工具集)、MAIL_*(发信)、S3_*(内联图床)
 ```
 > 域名、OAuth client_id、服务名 base、CDN 域均已写死在 prod compose;web 前端 `NUXT_PUBLIC_*` 也在 compose 里(改域名改那里重部署)。
-- [ ] 部署 kungal,等 `api`(healthy)→ `web`(healthy)。
+- [ ] 部署 kungal,等 `kungal-api`(healthy)→ `web`(healthy)。
 
 ---
 
@@ -122,7 +131,7 @@ KUN_VISUAL_NOVEL_S3_STORAGE_SECRET_ACCESS_KEY=<B2 secret> # 必填
 # 可选:KUN_VISUAL_NOVEL_EMAIL_PASSWORD、KUN_IMAGE_OAUTH_CLIENT_ID/SECRET
 ```
 > moyu **没有 JWT_SECRET**(不透明会话)。B2 endpoint/region/bucket/url、CDN 域、域名、client_id 均已写死在 prod compose;前端图床域是 `moyu-moe.ts` 常量(已对齐)。
-- [ ] 部署 moyu,等 `api`(healthy)→ `web`(healthy)。
+- [ ] 部署 moyu,等 `moyu-api`(healthy)→ `web`(healthy)。
 
 ---
 
@@ -131,8 +140,9 @@ KUN_VISUAL_NOVEL_S3_STORAGE_SECRET_ACCESS_KEY=<B2 secret> # 必填
 ### 4.1 Dokploy Domains(每个应用对外服务加「域名+路径→服务:端口」,`/api*` 与 `/` 各一条)→ [12-dokploy §12.1](./12-dokploy.md)
 - [ ] infra:`oauth.kungal.com` `/api/v1`→`oauth:9277`、`/`→`web:3000`
 - [ ] infra:`wiki.kungal.com` `/api`→`galgame:9280`、`/`→`wiki:3000`
-- [ ] kungal:`kungal.com`+`www` `/api`→`api:2334`、`/`→`web:7777`
-- [ ] moyu:`moyu.moe`+`www` `/api/v1`→`api:5214`、`/`→`web:3000`
+- [ ] kungal:`kungal.com`+`www` `/api`→`kungal-api:2334`、`/`→`web:7777`
+- [ ] moyu:`moyu.moe`+`www` `/api/v1`→`moyu-api:5214`、`/`→`web:3000`
+> ⚠ 服务名是 **`kungal-api` / `moyu-api`**(不是 `api`)——Dokploy 不应用 compose 的 `networks.aliases`,只注册服务名;两仓都叫 `api` 会 DNS 冲突,导致 SSR(刷新页面)拉不到数据。所以服务名直接用唯一名。
 
 ### 4.2 Cloudflare → [15-environment §15.9](./15-environment.md) + [NOTES.md](./NOTES.md)
 - [ ] 各域名开**橙云代理(Proxied)**

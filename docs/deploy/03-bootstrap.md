@@ -67,11 +67,11 @@ curl -s localhost:15007/healthz
 ```bash
 # moyu(其 compose 自带 external 网络声明)
 cd kun-galgame-patch && docker compose build && \
-  docker compose run --rm migrate && docker compose up -d api web
+  docker compose run --rm migrate && docker compose up -d moyu-api web
 
 # kungal(与 moyu 一致,base 自带 external 网络)
 cd kun-galgame-forum
-docker compose build && docker compose run --rm migrate && docker compose up -d api web
+docker compose build && docker compose run --rm migrate && docker compose up -d kungal-api web
 ```
 
 ### A.5 OAuth 客户端注册(否则登录走不通)

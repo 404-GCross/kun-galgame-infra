@@ -35,9 +35,9 @@ DNS 把下列域名的 A/AAAA 记录指向**服务器公网 IP**;Traefik 自动�
 | `oauth.kungal.com` | `/`(默认) | infra | `web:3000`(admin 前端) |
 | `wiki.kungal.com` | `/api` | infra | `galgame:9280` |
 | `wiki.kungal.com` | `/`(默认) | infra | `wiki:3000` |
-| `kungal.com` + `www.kungal.com` | `/api` | kungal | `api:2334` |
+| `kungal.com` + `www.kungal.com` | `/api` | kungal | `kungal-api:2334` |
 | `kungal.com` + `www.kungal.com` | `/`(默认) | kungal | `web:7777` |
-| `moyu.moe` + `www.moyu.moe` | `/api/v1` | moyu | `api:5214` |
+| `moyu.moe` + `www.moyu.moe` | `/api/v1` | moyu | `moyu-api:5214` |
 | `moyu.moe` + `www.moyu.moe` | `/`(默认) | moyu | `web:3000` |
 | `image.kungal.iloveren.link` | `/` | —(见下) | Cloudflare **R2 自定义域**直供 / 或回源 `minio:9000` |
 

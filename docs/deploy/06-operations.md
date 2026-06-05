@@ -123,7 +123,7 @@ docker image prune          # 清悬空镜像
 ```
 oauth.kungal.com   → infra web:3000     ;  /api/* → oauth:9277
 www.kungal.com     → kungal web:7777
-www.moyu.moe       → moyu web:3000    ;  /api/* → moyu api:5214
+www.moyu.moe       → moyu web:3000    ;  /api/* → moyu moyu-api:5214
 image.kungal.com   → minio:9000/kun-images   (或 CDN 回源 MinIO)
 ```
 注意把对应 web 镜像的 `PUBLIC_*`/`NUXT_PUBLIC_*` 改成真实公网域名(见 [05-configuration.md](./05-configuration.md))。

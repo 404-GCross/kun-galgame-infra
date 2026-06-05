@@ -27,21 +27,31 @@ kungalgame(_patch)_backup.dump
 | 维度 | 本地 | 服务器(本篇) |
 |---|---|---|
 | 仓库名 | kun-oauth-admin / kun-galgame-nuxt4 / kun-galgame-patch-next | **kun-galgame-infra / kun-galgame-forum / kun-galgame-patch** |
-| 跑工具 | `cd apps/api && go run ./cmd/X …` | `docker compose -f <repo>/docker-compose.prod.yml --profile jobs run --rm tools X …` |
+| 跑工具 | `cd apps/api && go run ./cmd/X …` | `docker compose --env-file <repo>/.env -f <repo>/docker-compose.prod.yml --profile jobs run --rm tools X …` |
 | 数据库 | 各仓独立 pg、密码 `kunloveren`/`renlovekun` | **同一个 pg、同一个 `POSTGRES_PASSWORD`**;源库 DSN 用 `host=postgres` |
 | 连库 | `host=127.0.0.1` | `host=postgres`(容器服务名;`compose run` 自动接 `dokploy-network`) |
 
-每个 `cmd/*` 二进制都打包在对应 `*-tools` 镜像里(`infra-tools` / `kungal-tools` / `moyu-tools`,CI 推到 GHCR,**已含各仓 `/migrations` 与 infra 的 `docs/tagMap.ts`**)。`tools` 已是各仓 prod compose 的 jobs-profile 服务,**environment 内联、密钥从 Dokploy 面板的 `${VAR}` 取**——所以不用 `--env-file`、不用在服务器放任何 env 文件。镜像清单见 [13-registry-ci.md](./13-registry-ci.md)。
+每个 `cmd/*` 二进制都打包在对应 `*-tools` 镜像里(`infra-tools` / `kungal-tools` / `moyu-tools`,CI 推到 GHCR,**已含各仓 `/migrations` 与 infra 的 `docs/tagMap.ts`**)。`tools` 已是各仓 prod compose 的 jobs-profile 服务,**environment 内联、密钥从 Dokploy 面板取**(Dokploy 把面板写成应用目录的 `.env`)。**日常部署你不用手放任何 env 文件**;但**手动跑下面这些 cutover 命令时**,要用 `--env-file` 指向那个 `.env`(见 16.2)才能给 `${VAR}` 插值。镜像清单见 [13-registry-ci.md](./13-registry-ci.md)。
 
 > **本地→容器 速查**:`go run ./cmd/migrate-users --kungal-dsn=…` ⇒
-> `docker compose -f $INFRA/docker-compose.prod.yml --profile jobs run --rm tools migrate-users --kungal-dsn=…`
+> `docker compose --env-file $INFRA/.env -f $INFRA/docker-compose.prod.yml --profile jobs run --rm tools migrate-users --kungal-dsn=…`
 
 ---
 
-## 16.1 前置(三条铁律)
+## 16.1 前置(铁律)
 
+0. **先在服务器登录 GHCR**——`infra-*` 镜像是 **private**,而 cutover 的 `compose run tools` 是你在 SSH shell 里手动跑的(不走 Dokploy,Dokploy 的拉取凭据不在这个 shell 里),不登录会报 `unauthorized`:
+   ```bash
+   sudo docker login ghcr.io -u <你的 GitHub 用户名>   # 密码填有 read:packages 的 PAT,一次即可
+   #  ⚠ 必须带 sudo:本篇都以 root 跑 docker,凭据要落到 root 的 config。不带 sudo 登录会存进
+   #     你自己的 ~/.docker,sudo docker 读不到 → 报 unauthorized。
+   for img in infra-tools kungal-tools moyu-tools; do
+     printf "%-13s " "$img:"; sudo docker manifest inspect ghcr.io/kunmoe/$img:latest >/dev/null 2>&1 && echo OK || echo "拉不到 → 检查登录 / 包可见性"
+   done
+   ```
+   > 镜像都已由 CI 构建好(在 GitHub Packages 里),**无需重跑 CI**。`infra-*` 是 private(`infra-tools` 还打包了 oauth/image 二进制,**别设为 public**);`kungal-tools`/`moyu-tools` 是 public。
 1. **三库先备份**:dump 本身就是源库备份;`migrate-users` 还会改源库,**跑前先 `pg_dump` 一份 `kun_galgame_infra`** 以便重跑(见 [14-backup-restore.md](./14-backup-restore.md))。
-2. **下游必须停**:`migrate-users` 期间关了 FK 触发器,任何写入都会绕过校验、写进旧 ID。**只起 infra 的 `postgres`/`redis`,下游 api 一律别起/先停**。
+2. **要 DROP 的库不能有活动连接,迁移期不能有写入**:① 16.4 要 `DROP` `kun_galgame_infra`/`kun_galgame_wiki`/`kun_images`,而这三个库正被 infra 的 **oauth/image/galgame** 连着 → 不停它们,DROP 会报 `database is being accessed by other users`;② `migrate-users` 关了 FK 触发器,任何并发写入都会写进旧 ID。**所以:保留 `postgres`/`redis`/`minio`/`meili` 运行,停掉 infra 的 `oauth`/`image`/`galgame`/`web`/`wiki`,下游 kungal/moyu 也别起**(见步骤 0)。
 3. **先 dry-run**:`migrate-users`、`remap-patch-ids` 都支持 `--dry-run`,先看合并/跳过/孤儿计数符不符预期。
 
 ---
@@ -49,43 +59,59 @@ kungalgame(_patch)_backup.dump
 ## 16.2 变量(开个终端先 `export`)
 
 ```bash
-PG=kun-galgame-infra-postgres-1          # infra postgres 容器名(docker ps 确认)
-REDIS=kun-galgame-infra-redis-1
-PGPASS='<你的 POSTGRES_PASSWORD>'          # = infra 的 POSTGRES_PASSWORD(不是老的 kunloveren/renlovekun!)
-DUMPS=/srv/dumps                         # 两个 .dump 在服务器上的目录
+# ⚠ 本机 docker 需 root:先 `sudo -i` 进 root,再 export 下面变量并执行本篇所有命令
+#   (或 `sudo usermod -aG docker <你>` 后重登免 sudo)。
 
-# 各应用的 Dokploy 部署目录 —— 里面有 Dokploy 按面板写的 .env,`compose run` 会自动加载,
-# 所有 ${VAR}(POSTGRES_PASSWORD / JWT_SECRET / MEILI_MASTER_KEY / OAUTH_CLIENT_SECRET …)就位。
-INFRA=/etc/dokploy/compose/kun-galgame-infra/code   # 实际路径见 Dokploy 应用详情
-FORUM=/etc/dokploy/compose/kungal/code
-PATCH=/etc/dokploy/compose/moyu/code
+# Dokploy 给每个应用目录加随机后缀,容器名前缀 = COMPOSE_PROJECT_NAME = 目录名。先发现实际路径:
+ls -d /etc/dokploy/compose/*/code                              # 认出 infra / kungal / moyu 各自目录
+INFRA=/etc/dokploy/compose/kun-visual-novel-infra-vqvqbc/code  # ← 本部署实际值(后缀随机,以上面 ls 为准)
+FORUM=/etc/dokploy/compose/<kungal 部署后的目录>/code            # kungal 部署后才有此目录
+PATCH=/etc/dokploy/compose/<moyu 部署后的目录>/code              # moyu 部署后才有此目录
+ls "$INFRA/.env"                                               # 确认 .env 在(Dokploy 按面板写)
+
+# 容器名前缀 = COMPOSE_PROJECT_NAME(就在 .env 里);据此拼出 postgres/redis 容器名:
+PROJ=$(grep -m1 '^COMPOSE_PROJECT_NAME=' "$INFRA/.env" | cut -d= -f2)   # 例:kun-visual-novel-infra-vqvqbc
+PG=${PROJ}-postgres-1
+REDIS=${PROJ}-redis-1
+PGPASS='<你的 POSTGRES_PASSWORD>'                               # = infra 面板的 POSTGRES_PASSWORD(纯 hex)
+DUMPS=/srv/dumps                                              # 两个 .dump 在服务器上的目录
 
 # 源库 DSN(容器内按服务名连同一个 pg,密码统一;PGPASS 由本机 shell 展开进 flag)
 KDSN="host=postgres port=5432 user=postgres password=$PGPASS dbname=kungalgame sslmode=disable"
 MDSN="host=postgres port=5432 user=postgres password=$PGPASS dbname=kungalgame_patch sslmode=disable"
 
-# 跑工具的快捷前缀(jobs profile 的 tools 服务;environment 内联、密钥从该应用 .env 取)
-INFRA_OAUTH="docker compose -f $INFRA/docker-compose.prod.yml --profile jobs run --rm tools"
+# 跑工具的快捷前缀(jobs profile 的 tools 服务)。
+# ⚠ 必须带 --env-file 指向该应用 .env,否则 compose 解析到 ${POSTGRES_PASSWORD:?} 等 :? 变量会直接报 unset、命令不执行。
+INFRA_OAUTH="docker compose --env-file $INFRA/.env -f $INFRA/docker-compose.prod.yml --profile jobs run --rm tools"
 INFRA_WIKI="$INFRA_OAUTH"                 # 同一个:infra-tools 含全套 infra env(身份库 + wiki 库)
-KUNGAL="docker compose -f $FORUM/docker-compose.prod.yml --profile jobs run --rm tools"
-MOYU="docker compose -f $PATCH/docker-compose.prod.yml --profile jobs run --rm tools"
+KUNGAL="docker compose --env-file $FORUM/.env -f $FORUM/docker-compose.prod.yml --profile jobs run --rm tools"
+MOYU="docker compose --env-file $PATCH/.env -f $PATCH/docker-compose.prod.yml --profile jobs run --rm tools"
 ```
 
 > `tools` 服务 environment 内联了全套库名/JWT/Meili,所以同一个 `INFRA_*` 前缀既能跑写身份库的 cmd(migrate-users)
-> 也能跑写 wiki 库的(migrate-galgame*)。**从应用部署目录跑**(`-f $INFRA/...` 即指向那),compose 会加载 Dokploy 写的 `.env`,
-> 所有 `${VAR}` 自动就位;否则需自行 `export POSTGRES_PASSWORD JWT_SECRET MEILI_MASTER_KEY OAUTH_CLIENT_SECRET`。
+> 也能跑写 wiki 库的(migrate-galgame*)。`--env-file $X/.env` 做两件事:① 给 `${VAR:?}` 插值(否则报 unset);
+> ② `.env` 里的 `COMPOSE_PROJECT_NAME` 让 compose 归到**已部署的项目**,`run tools` 复用运行中的 postgres、**不会另起一个空库**。
+> (注意 kungal/moyu 的 `OAUTH_CLIENT_SECRET` 是**不同值**,各从自己 `.env` 取,所以前缀必须分开。)
+> 若 `.env` 不在该路径,改 `--env-file 正确路径`,或先 `export` 对应应用的那几个密钥。
 
 ---
 
-## 16.3 步骤 0 · 把 dump 放到位 + 只起基础设施
+## 16.3 步骤 0 · 把 dump 放到位 + 停 app 服务(保留基础设施)
 
 ```bash
 # (dump 已在机器上则跳过)从老机/本地拷过来
 scp kungalgame_backup.dump kungalgame_patch_backup.dump kun@SERVER:/srv/dumps/
 
-# 只起 infra 的 postgres + redis,下游不起
-docker compose -f "$INFRA/docker-compose.prod.yml" up -d postgres redis
+# 16.4 要 DROP 的 kun_galgame_infra/_wiki/_images 一旦被 oauth/image/galgame 连着,DROP 会报
+# "is being accessed by other users" → 先停这三个(连 web/wiki 一起停更干净),只保留
+# postgres/redis/minio/meili。容器名前缀 = $PROJ;docker stop 按名字,不解析 compose、不需要 ${VAR}:
+docker stop ${PROJ}-oauth-1 ${PROJ}-image-1 ${PROJ}-galgame-1 ${PROJ}-web-1 ${PROJ}-wiki-1 2>/dev/null
+#   ↑ 当前若只部署了基础服务(postgres/redis/minio/meili),这些 app 容器还不存在 → 报 "No such
+#     container" 即正常、自动跳过,无需理会。下游 kungal/moyu 起过的话也一并 docker stop。
 ```
+
+> 确认只剩基础设施在跑:`docker ps --format '{{.Names}}\t{{.Status}}' | grep "$PROJ"`
+> —— 应只看到 `postgres`/`redis`/`minio`/`meili`(healthy);oauth/image/galgame/web/wiki 不在(未部署或已 Exited)。
 
 ---
 
@@ -170,7 +196,8 @@ $KUNGAL migrate --only=012          # 广播游标:必须在 migrate-users 重�
 ```bash
 $MOYU migrate -dir=up -only=001
 $MOYU migrate -dir=up
-# 先看孤儿补丁(可选):$MOYU remap-patch-ids -dry-run -orphans-out=orphans.txt
+# 先看孤儿补丁(可选):$MOYU remap-patch-ids -dry-run          # 计数打到 stdout 直接看
+#   想留孤儿清单文件:-orphans-out 写在 --rm 容器内会随容器删掉 → 去掉 --rm 再 docker cp,或挂卷
 $MOYU remap-patch-ids               # patch id → galgame id 重映射
 ```
 
@@ -194,7 +221,7 @@ $INFRA_WIKI sync-vndb -tagmap docs/tagMap.ts        # 增量(以后做成 cron)
 `backfill-release-date` 通过 HTTP 调 wiki 服务(`KUN_GALGAME_WIKI_BASE_URL=http://galgame:9280/api`),所以先把它起来:
 
 ```bash
-docker compose -f "$INFRA/docker-compose.prod.yml" up -d galgame
+docker compose --env-file "$INFRA/.env" -f "$INFRA/docker-compose.prod.yml" up -d galgame
 
 $MOYU   backfill-release-date
 $KUNGAL backfill-release-date
@@ -205,10 +232,13 @@ $INFRA_OAUTH migrate-moemoepoint     # 迁移 kungal/moyu 萌萌点日志
 
 ## 16.12 步骤 9 · 全栈拉起 + 校验
 
+> 最省事:在 Dokploy 里对 **infra / kungal / moyu 三个应用点 Redeploy**(用面板环境重建,等价下面)。命令行起需带 `--env-file`:
+
 ```bash
-docker compose -f "$INFRA/docker-compose.prod.yml" up -d
-docker compose -f "$FORUM/docker-compose.prod.yml" up -d api web
-docker compose -f "$PATCH/docker-compose.prod.yml" up -d api web
+# 把步骤 0 停掉的 oauth/image/galgame/web/wiki 一起拉回
+docker compose --env-file "$INFRA/.env" -f "$INFRA/docker-compose.prod.yml" up -d
+docker compose --env-file "$FORUM/.env" -f "$FORUM/docker-compose.prod.yml" up -d kungal-api web
+docker compose --env-file "$PATCH/.env" -f "$PATCH/docker-compose.prod.yml" up -d moyu-api web
 ```
 
 校验:
@@ -233,6 +263,8 @@ curl -I https://oauth.kungal.com https://www.kungal.com https://www.moyu.moe htt
 
 | 现象 | 处理 |
 |---|---|
+| 16.4 `DROP DATABASE … is being accessed by other users` | oauth/image/galgame 还连着该库 → 回步骤 0 `docker stop` 它们(只留 postgres/redis/minio/meili)再重跑 |
+| `compose run` 报 `variable is not set`(如 `POSTGRES_PASSWORD`) | 前缀漏了 `--env-file $X/.env`,或该路径无 `.env` → 修正路径 / 改用 `export` |
 | step 1–4.1(连接/schema)失败 | 修好后**原地重跑**(OAuth 端写入是 idempotent skip) |
 | `migrate-users`(4.2)中途失败 | 事务回滚源库;OAuth 可能已部分写入 → 恢复 `kun_galgame_infra` 备份(或手动清)后重跑 |
 | 跑了一半发现数据不对 | **三库全恢复**:重跑步骤 1(重新 `pg_restore` 两个 dump)+ 恢复/重建 `kun_galgame_infra`,从头来 |
@@ -247,7 +279,7 @@ curl -I https://oauth.kungal.com https://www.kungal.com https://www.moyu.moe htt
 
 | 本地(`cd apps/api &&`) | 服务器(容器) |
 |---|---|
-| `kun-oauth-admin: ./scripts/reset_all.sh` | §16.4 的 `docker exec … psql DROP/CREATE` + `pg_restore` |
+| `kun-oauth-admin: ./scripts/reset_all.sh` | 步骤 0 先 `docker stop` oauth/image/galgame + §16.4 的 `docker exec … psql DROP/CREATE` + `pg_restore` |
 | `redis-cli FLUSHALL` | `docker exec $REDIS redis-cli FLUSHALL` |
 | `nuxt4: go run ./cmd/check-dup-email` | `$KUNGAL check-dup-email` |
 | `nuxt4: go run ./cmd/migrate` | `$KUNGAL migrate` |

@@ -318,6 +318,10 @@
 每个应用的面板里只填下面这几个值即可。Dokploy 把面板写成部署目录的根 `.env`,`docker compose up` 时插值;
 `${VAR:?}` 留空会**直接报错**(不静默用空值),`${VAR:-default}` 留空用默认。
 
+> ⚠️ **面板密钥只用字母数字(+ `-` `_`),勿含 `$ # % : / @ ? & 空格 引号`**。面板值经 `.env` → `${VAR}` 解析:
+> `$` 被当变量替换、`#` 被当注释截断 → **密钥被悄悄改短/改坏**(典型:`MEILI_MASTER_KEY` 带 `$#` → meili 只收到几字节 → "master key must be at least 16 bytes")。
+> 最省心:**`openssl rand -hex 32`**(纯十六进制,绝不被吃,且天然 URL-safe,可同时满足 `POSTGRES_PASSWORD` 拼进 DSN 的要求)。
+
 ### A. infra 应用 · Environment 面板
 ```env
 POSTGRES_PASSWORD=<强随机>          # 必填;= 下游 KUN_DATABASE_URL 里的密码

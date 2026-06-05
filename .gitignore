@@ -61,6 +61,8 @@ prompts
 # reference
 refs
 
-# dumps
+# dumps (contain production user data / password hashes — never commit)
 scripts/*.dump
+scripts/**/*.dump
+scripts/migrated/
 

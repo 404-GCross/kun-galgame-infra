@@ -90,9 +90,9 @@ git push        # → GitHub Actions 自动 build 并推 ghcr.io/kunmoe/*(:lates
 | `oauth.kungal.com` | `/` | infra | `web:3000`(管理端) |
 | `wiki.kungal.com` | `/api` | infra | `galgame:9280` |
 | `wiki.kungal.com` | `/` | infra | `wiki:3000` |
-| `kungal.com` + `www.kungal.com` | `/api` | kungal | `api:2334` |
+| `kungal.com` + `www.kungal.com` | `/api` | kungal | `kungal-api:2334` |
 | `kungal.com` + `www.kungal.com` | `/` | kungal | `web:7777` |
-| `moyu.moe` + `www.moyu.moe` | `/api/v1` | moyu | `api:5214` |
+| `moyu.moe` + `www.moyu.moe` | `/api/v1` | moyu | `moyu-api:5214` |
 | `moyu.moe` + `www.moyu.moe` | `/` | moyu | `web:3000` |
 
 > `image.kungal.iloveren.link` 走 Cloudflare R2(由 CF 直供 blob),**不在 Dokploy 挂域名**;`image` 服务(`:9278`)是 s2s 内部,不对外。

@@ -27,7 +27,7 @@ networks:
 所以直接:
 ```bash
 cd kun-galgame-patch
-docker compose up -d api web
+docker compose up -d moyu-api web
 ```
 
 ### 3) kungal（与 moyu 完全一致)
@@ -39,7 +39,7 @@ networks:
 api/migrate 不声明 pg/redis 依赖(它们在 infra、跨 project 无法 `depends_on`),靠 `restart: unless-stopped` 重连。所以直接:
 ```bash
 cd kun-galgame-forum
-docker compose up -d api web
+docker compose up -d kungal-api web
 ```
 
 ## 启停顺序
