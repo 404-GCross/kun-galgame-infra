@@ -98,11 +98,12 @@ func NewAuthServiceFull(
 // re-checks after consuming the code, but failing here keeps the error
 // path local to the send-code call.
 //
-// Rate limit: per-email Redis key with the same TTL as the code itself
-// (cfg.Auth.VerificationCodeTTL, default 15 min) doubles as a "you sent
-// a code recently" gate — re-entering SendRegisterCode for the same
-// email within the TTL window returns ErrAuthEmailChangeTooFrequent
-// (reused error code: same semantic).
+// Rate limit: a short per-email resend cooldown (resendCodeCooldown), kept in a
+// SEPARATE Redis key from the code — so a user who misses the first email is
+// only blocked for that brief window, NOT the code's full TTL. Returns
+// ErrAuthEmailChangeTooFrequent (reused error code: same semantic).
+const resendCodeCooldown = 60 * time.Second
+
 func (s *AuthService) SendRegisterCode(ctx context.Context, name, email string) error {
 	if s.cache == nil {
 		// No Redis = cannot store verification code = cannot guarantee
@@ -128,17 +129,14 @@ func (s *AuthService) SendRegisterCode(ctx context.Context, name, email string) 
 		return errors.NewWithCode(errors.ErrAuthEmailExists)
 	}
 
-	// Rate limit: refuse to send a second code while a previous one is
-	// still live. Forces a 10-minute cool-down — long enough to deter
-	// spam, short enough that a user who lost the first email can just
-	// wait it out. Mirrors SendEmailChangeCode.
-	//
-	// Keyed by email (lower-cased for safety) — sender identity is the
-	// email itself, no user UUID exists yet at this stage.
+	// Rate limit: a SHORT resend cooldown in its own key (resendCodeCooldown),
+	// NOT the code key — so missing the first email only blocks resends briefly,
+	// not for the code's full VerificationCodeTTL.
+	// Keyed by email (lower-cased) — no user UUID exists yet at this stage.
 	emailKey := strings.ToLower(strings.TrimSpace(email))
 	redisKey := fmt.Sprintf("register_code:%s", emailKey)
-	existing, _ := s.cache.Get(redisKey)
-	if existing != nil {
+	cooldownKey := fmt.Sprintf("register_code_cooldown:%s", emailKey)
+	if cd, _ := s.cache.Get(cooldownKey); cd != nil {
 		return errors.NewWithCode(errors.ErrAuthEmailChangeTooFrequent)
 	}
 
@@ -147,7 +145,11 @@ func (s *AuthService) SendRegisterCode(ctx context.Context, name, email string) 
 		return err
 	}
 
+	// Code valid for the full TTL; resend gated by the short cooldown only.
 	if err := s.cache.Set(redisKey, []byte(code), s.cfg.Auth.VerificationCodeTTL); err != nil {
+		return err
+	}
+	if err := s.cache.Set(cooldownKey, []byte("1"), resendCodeCooldown); err != nil {
 		return err
 	}
 
@@ -686,11 +688,12 @@ func (s *AuthService) SendEmailChangeCode(ctx context.Context, userUUID, newEmai
 		return errors.NewWithCode(errors.ErrAuthEmailExists)
 	}
 
-	// Rate limit: check if a code was already sent recently
+	// Rate limit: a SHORT resend cooldown in its own key (resendCodeCooldown),
+	// separate from the code's TTL — same fix as SendRegisterCode.
 	redisKey := fmt.Sprintf("email_change:%s", userUUID)
+	cooldownKey := fmt.Sprintf("email_change_cooldown:%s", userUUID)
 	if s.cache != nil {
-		existing, _ := s.cache.Get(redisKey)
-		if existing != nil {
+		if cd, _ := s.cache.Get(cooldownKey); cd != nil {
 			return errors.NewWithCode(errors.ErrAuthEmailChangeTooFrequent)
 		}
 	}
@@ -705,6 +708,9 @@ func (s *AuthService) SendEmailChangeCode(ctx context.Context, userUUID, newEmai
 	if s.cache != nil {
 		data, _ := json.Marshal(emailChangeData{Code: code, NewEmail: newEmail})
 		if err := s.cache.Set(redisKey, data, s.cfg.Auth.VerificationCodeTTL); err != nil {
+			return err
+		}
+		if err := s.cache.Set(cooldownKey, []byte("1"), resendCodeCooldown); err != nil {
 			return err
 		}
 	}
