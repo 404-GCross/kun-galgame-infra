@@ -199,6 +199,12 @@ services:
       <<: *infra-env
       KUN_FIBER_SERVER_HOST: 0.0.0.0
       KUN_GALGAME_PORT: "9280"
+      # Image-service client credentials — REQUIRED for multipart banner uploads in
+      # galgame Create/Update/PR. Without them the wiki logs "image client not
+      # configured" and rejects banner files (400). Set BOTH in the Dokploy
+      # Environment to the same image-upload OAuth client the kungal forum API uses.
+      KUN_IMAGE_CLIENT_ID: ${KUN_IMAGE_CLIENT_ID:-}
+      KUN_IMAGE_CLIENT_SECRET: ${KUN_IMAGE_CLIENT_SECRET:-}
     expose: ["9280"]
     depends_on:
       postgres: { condition: service_healthy }
