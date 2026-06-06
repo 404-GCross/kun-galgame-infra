@@ -392,7 +392,13 @@ func (s *GalgameService) Update(ctx context.Context, userID, galgameID int, role
 		return nil, err
 	}
 
-	if galgame.UserID != userID && !hasRole(roles, "admin") {
+	// Editable by the creator OR any elevated role. Accept admin / super_admin /
+	// moderator — NOT just the literal "admin". kungal's RoleFromOAuthRoles maps
+	// admin+super_admin to the same top tier, and the galgame create/status gates
+	// already allow admin+moderator; checking only "admin" here spuriously 403'd
+	// every super_admin- or moderator-tier admin who didn't carry the exact
+	// "admin" string.
+	if galgame.UserID != userID && !hasRole(roles, "admin", "super_admin", "moderator") {
 		return nil, errors.NewWithCode(errors.ErrGalgameForbidden)
 	}
 
@@ -400,7 +406,7 @@ func (s *GalgameService) Update(ctx context.Context, userID, galgameID int, role
 	// own pending(3)/declined(4) draft must go through PATCH/PatchDraft, which
 	// flips declined→pending and emits the review-queue message. Admins keep
 	// direct-edit on any status (e.g. fixing a VNDB draft).
-	if galgame.Status != model.GalgameStatusPublished && !hasRole(roles, "admin") {
+	if galgame.Status != model.GalgameStatusPublished && !hasRole(roles, "admin", "super_admin", "moderator") {
 		return nil, errors.NewWithCode(errors.ErrGalgameDraftStatusInvalid)
 	}
 
@@ -751,10 +757,16 @@ func strToPtr(s string) *string {
 	return &s
 }
 
-func hasRole(roles []string, target string) bool {
+// hasRole reports whether the caller's OAuth roles include ANY of targets.
+// Variadic so callers can accept several elevated roles in one check (the
+// galgame edit allows admin/super_admin/moderator); single-arg callers are
+// unchanged.
+func hasRole(roles []string, targets ...string) bool {
 	for _, r := range roles {
-		if r == target {
-			return true
+		for _, t := range targets {
+			if r == t {
+				return true
+			}
 		}
 	}
 	return false
