@@ -139,10 +139,10 @@ func ensureDatabaseExists(cfg config.DatabaseConfig) error {
 }
 
 // seedTestClient inserts (or refreshes) the kungal-test OAuth client used
-// for local smoke tests. All three presets enabled so any can be exercised
+// for local smoke tests. All presets enabled so any can be exercised
 // without re-seeding.
 func seedTestClient(db *gorm.DB) error {
-	allowedPresets, _ := datatypes.JSON(`["avatar","topic","galgame_banner"]`).MarshalJSON()
+	allowedPresets, _ := datatypes.JSON(`["avatar","topic","galgame_banner","message"]`).MarshalJSON()
 	emptyJSON, _ := datatypes.JSON(`[]`).MarshalJSON()
 
 	row := &siteModel.OAuthClient{

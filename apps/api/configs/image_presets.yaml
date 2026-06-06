@@ -55,3 +55,15 @@ presets:
       - image/png
       - image/webp
       - image/gif
+
+  # Private-message / chat inline images. Same handling as topic (main image
+  # only; global main_pipeline applies: webp q77, ≤1920×1080, EXIF stripped).
+  # Kept as its own preset so chat images get their own CDN folder + can be
+  # quota-gated independently of topic uploads.
+  message:
+    variants: []
+    allowed_mime:
+      - image/jpeg
+      - image/png
+      - image/webp
+      - image/gif
