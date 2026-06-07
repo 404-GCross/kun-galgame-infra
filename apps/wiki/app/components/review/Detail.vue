@@ -118,7 +118,7 @@ const relative = (iso?: string) => {
     <div class="flex items-center gap-3">
       <NuxtLink to="/review">
         <KunButton variant="light">
-          <Icon name="lucide:arrow-left" class="mr-1 size-4" />
+          <KunIcon name="lucide:arrow-left" class="mr-1 size-4" />
           返回队列
         </KunButton>
       </NuxtLink>
@@ -129,7 +129,7 @@ const relative = (iso?: string) => {
       v-if="loading"
       class="text-default-400 flex items-center justify-center py-16"
     >
-      <Icon name="lucide:loader-2" class="size-6 animate-spin" />
+      <KunIcon name="lucide:loader-circle" class="size-6 animate-spin" />
     </div>
 
     <div v-else-if="!galgame" class="text-default-500">galgame 不存在</div>
@@ -182,7 +182,7 @@ const relative = (iso?: string) => {
               v-else
               class="bg-default-100 text-default-400 flex h-48 w-32 items-center justify-center rounded"
             >
-              <Icon name="lucide:image-off" class="size-8" />
+              <KunIcon name="lucide:image-off" class="size-8" />
             </div>
           </div>
           <div class="flex flex-1 flex-col gap-3">
@@ -237,7 +237,7 @@ const relative = (iso?: string) => {
                 :color="(action.color as any)"
                 @click="actionOpen = action.id"
               >
-                <Icon :name="action.icon" class="mr-1 size-4" />
+                <KunIcon :name="action.icon" class="mr-1 size-4" />
                 {{ action.label }}
               </KunButton>
             </div>

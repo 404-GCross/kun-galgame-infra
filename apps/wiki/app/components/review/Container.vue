@@ -69,7 +69,7 @@ const switchTab = (id: string) => {
           size="sm"
           @click="switchTab(tab.id)"
         >
-          <Icon :name="tab.icon" class="mr-1 size-4" />
+          <KunIcon :name="tab.icon" class="mr-1 size-4" />
           {{ tab.label }}
         </KunButton>
       </div>

@@ -61,7 +61,7 @@ const cards = computed(() => {
     {
       label: '创建的 galgame',
       value: s?.galgame_created ?? 0,
-      icon: 'lucide:plus-circle',
+      icon: 'lucide:circle-plus',
       color: 'text-primary'
     },
     {
@@ -110,7 +110,7 @@ const prStats = computed(() => {
         aria-label="返回"
         @click="router.back()"
       >
-        <Icon name="lucide:arrow-left" class="size-5" />
+        <KunIcon name="lucide:arrow-left" class="size-5" />
       </KunButton>
       <h1 class="text-foreground text-2xl font-bold">
         用户贡献统计 · id={{ id }}
@@ -121,7 +121,7 @@ const prStats = computed(() => {
       v-if="loading && !stats"
       class="text-default-400 flex items-center justify-center py-20"
     >
-      <Icon name="lucide:loader-2" class="size-6 animate-spin" />
+      <KunIcon name="lucide:loader-circle" class="size-6 animate-spin" />
     </div>
 
     <template v-else-if="stats">
@@ -129,7 +129,7 @@ const prStats = computed(() => {
         <KunCard v-for="c in cards" :key="c.label" class="p-4">
           <div class="flex items-center gap-3">
             <div class="bg-default-100 rounded-lg p-2" :class="c.color">
-              <Icon :name="c.icon" class="size-6" />
+              <KunIcon :name="c.icon" class="size-6" />
             </div>
             <div class="min-w-0">
               <p class="text-default-500 truncate text-xs">{{ c.label }}</p>
@@ -171,7 +171,7 @@ const prStats = computed(() => {
           :disabled="banning"
           @click="banAllContent"
         >
-          <Icon name="lucide:trash-2" class="mr-1 size-4" />
+          <KunIcon name="lucide:trash-2" class="mr-1 size-4" />
           封禁该用户全部内容
         </KunButton>
       </KunCard>

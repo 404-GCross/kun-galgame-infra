@@ -50,7 +50,7 @@ onMounted(load)
     </h3>
 
     <div v-if="loading && items.length === 0" class="text-default-400 py-4 text-center">
-      <Icon name="lucide:loader-2" class="inline size-5 animate-spin" />
+      <KunIcon name="lucide:loader-circle" class="inline size-5 animate-spin" />
     </div>
 
     <div
@@ -93,7 +93,7 @@ onMounted(load)
           aria-label="移除贡献者"
           @click="remove(c.user_id, c.user?.name ?? String(c.user_id))"
         >
-          <Icon name="lucide:user-minus" class="size-4" />
+          <KunIcon name="lucide:user-minus" class="size-4" />
         </KunButton>
       </li>
     </ul>

@@ -134,7 +134,7 @@ const displayName = (g: Galgame) =>
         aria-label="返回"
         @click="router.back()"
       >
-        <Icon name="lucide:arrow-left" class="size-5" />
+        <KunIcon name="lucide:arrow-left" class="size-5" />
       </KunButton>
       <h1 class="text-foreground text-2xl font-bold">多标签交集筛选</h1>
     </div>
@@ -166,7 +166,7 @@ const displayName = (g: Galgame) =>
             class-name="ml-1"
             @click="removeTag(t.id)"
           >
-            <Icon name="lucide:x" class="size-3" />
+            <KunIcon name="lucide:x" class="size-3" />
           </KunButton>
         </span>
         <span
@@ -262,7 +262,7 @@ const displayName = (g: Galgame) =>
           v-if="loading && items.length === 0"
           class="text-default-400 py-10 text-center"
         >
-          <Icon name="lucide:loader-2" class="inline size-5 animate-spin" />
+          <KunIcon name="lucide:loader-circle" class="inline size-5 animate-spin" />
         </div>
         <div v-else-if="items.length === 0" class="text-default-400 py-10 text-center">
           无匹配结果
@@ -286,7 +286,7 @@ const displayName = (g: Galgame) =>
                 loading="lazy"
               />
               <div v-else class="flex size-full items-center justify-center">
-                <Icon name="lucide:image" class="text-default-300 size-8" />
+                <KunIcon name="lucide:image" class="text-default-300 size-8" />
               </div>
             </div>
             <p

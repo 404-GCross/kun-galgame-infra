@@ -74,7 +74,7 @@ const format = (v: unknown) => {
       </div>
 
       <div v-if="loading" class="text-default-400 py-10 text-center">
-        <Icon name="lucide:loader-2" class="inline size-6 animate-spin" />
+        <KunIcon name="lucide:loader-circle" class="inline size-6 animate-spin" />
       </div>
 
       <div v-else-if="!data" class="text-default-400 py-10 text-center">

@@ -142,7 +142,7 @@ const submit = async () => {
               class-name="ml-1"
               @click="remove(g.id)"
             >
-              <Icon name="lucide:x" class="size-3" />
+              <KunIcon name="lucide:x" class="size-3" />
             </KunButton>
           </span>
           <span
@@ -167,7 +167,7 @@ const submit = async () => {
               v-if="searching"
               class="text-default-400 px-3 py-2 text-sm"
             >
-              <Icon name="lucide:loader-2" class="inline size-4 animate-spin" />
+              <KunIcon name="lucide:loader-circle" class="inline size-4 animate-spin" />
               搜索中...
             </div>
             <button
@@ -190,7 +190,7 @@ const submit = async () => {
                 v-else
                 class="bg-default-100 flex size-8 items-center justify-center rounded"
               >
-                <Icon name="lucide:image" class="text-default-300 size-4" />
+                <KunIcon name="lucide:image" class="text-default-300 size-4" />
               </div>
               <div class="min-w-0 flex-1">
                 <p class="text-foreground truncate">{{ displayName(g) }}</p>
@@ -198,7 +198,7 @@ const submit = async () => {
                   {{ g.vndb_id }}
                 </p>
               </div>
-              <Icon
+              <KunIcon
                 v-if="pickedIds.includes(g.id)"
                 name="lucide:check"
                 class="text-success size-4"
@@ -211,9 +211,9 @@ const submit = async () => {
       <div class="flex justify-end gap-2 pt-2">
         <KunButton variant="light" @click="emit('close')">取消</KunButton>
         <KunButton color="primary" :disabled="submitting" @click="submit">
-          <Icon
+          <KunIcon
             v-if="submitting"
-            name="lucide:loader-2"
+            name="lucide:loader-circle"
             class="mr-1 size-4 animate-spin"
           />
           {{ isEdit ? '保存' : '创建' }}

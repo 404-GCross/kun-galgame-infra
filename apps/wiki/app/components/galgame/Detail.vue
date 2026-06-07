@@ -8,7 +8,7 @@ import {
 import type { Galgame } from '~/shared/types/galgame'
 import { resolveBannerUrl, imageHashUrl } from '~/shared/utils/resolveImage'
 import { formatReleaseDate } from '~/shared/utils/format'
-import type { KunUIColor } from '@kun/ui/app/components/kun/ui/type'
+import type { KunUIColor } from '@kungal/ui-core'
 
 const api = useApi()
 const route = useRoute()
@@ -238,7 +238,7 @@ const officialCategoryColor = (cat: string): KunUIColor =>
           aria-label="返回"
           @click="router.back()"
         >
-          <Icon name="lucide:arrow-left" class="size-5" />
+          <KunIcon name="lucide:arrow-left" class="size-5" />
         </KunButton>
         <h1 class="text-foreground text-2xl font-bold">Galgame 详情</h1>
         <span
@@ -254,7 +254,7 @@ const officialCategoryColor = (cat: string): KunUIColor =>
         variant="flat"
         size="md"
       >
-        <Icon name="lucide:circle-dot" class="size-3" />
+        <KunIcon name="lucide:circle-dot" class="size-3" />
         {{ GALGAME_STATUS_MAP[galgame.status]?.label }}
       </KunChip>
     </div>
@@ -263,7 +263,7 @@ const officialCategoryColor = (cat: string): KunUIColor =>
       v-if="loading && !galgame"
       class="text-default-400 flex items-center justify-center py-20"
     >
-      <Icon name="lucide:loader-2" class="size-6 animate-spin" />
+      <KunIcon name="lucide:loader-circle" class="size-6 animate-spin" />
     </div>
 
     <div
@@ -298,7 +298,7 @@ const officialCategoryColor = (cat: string): KunUIColor =>
             v-else
             class="flex size-full items-center justify-center"
           >
-            <Icon name="lucide:image" class="text-default-300 size-10" />
+            <KunIcon name="lucide:image" class="text-default-300 size-10" />
           </div>
           <!-- Content-limit chip overlaid on banner top-left -->
           <KunChip
@@ -384,7 +384,7 @@ const officialCategoryColor = (cat: string): KunUIColor =>
             full-width
             @click="editOpen = true"
           >
-            <Icon name="lucide:pencil" class="mr-1 size-4" />
+            <KunIcon name="lucide:pencil" class="mr-1 size-4" />
             编辑
           </KunButton>
           <!-- Wrap KunButton in NuxtLink (block) instead of KunButton's
@@ -399,7 +399,7 @@ const officialCategoryColor = (cat: string): KunUIColor =>
               class="block"
             >
               <KunButton variant="flat" size="sm" full-width>
-                <Icon name="lucide:history" class="mr-1 size-4" />
+                <KunIcon name="lucide:history" class="mr-1 size-4" />
                 修订
               </KunButton>
             </NuxtLink>
@@ -408,7 +408,7 @@ const officialCategoryColor = (cat: string): KunUIColor =>
               class="block"
             >
               <KunButton variant="flat" size="sm" full-width>
-                <Icon
+                <KunIcon
                   name="lucide:git-pull-request"
                   class="mr-1 size-4"
                 />
@@ -433,7 +433,7 @@ const officialCategoryColor = (cat: string): KunUIColor =>
               :disabled="updating"
               @click="changeStatus(0)"
             >
-              <Icon name="lucide:check-circle" class="mr-1 size-4" />
+              <KunIcon name="lucide:circle-check" class="mr-1 size-4" />
               发布
             </KunButton>
             <KunButton
@@ -444,7 +444,7 @@ const officialCategoryColor = (cat: string): KunUIColor =>
               :disabled="updating"
               @click="changeStatus(2)"
             >
-              <Icon name="lucide:file-edit" class="mr-1 size-4" />
+              <KunIcon name="lucide:file-pen-line" class="mr-1 size-4" />
               撤回草稿
             </KunButton>
             <KunButton
@@ -456,7 +456,7 @@ const officialCategoryColor = (cat: string): KunUIColor =>
               :disabled="updating"
               @click="changeStatus(1)"
             >
-              <Icon name="lucide:ban" class="mr-1 size-4" />
+              <KunIcon name="lucide:ban" class="mr-1 size-4" />
               封禁
             </KunButton>
           </div>
@@ -772,7 +772,7 @@ const officialCategoryColor = (cat: string): KunUIColor =>
                       OFFICIAL_CATEGORY_MAP[o.category]?.label ?? o.category
                     }}
                   </KunChip>
-                  <Icon
+                  <KunIcon
                     name="lucide:chevron-right"
                     class="text-default-300 group-hover:text-primary size-4 transition-colors"
                   />

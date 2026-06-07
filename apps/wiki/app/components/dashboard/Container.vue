@@ -62,7 +62,7 @@ const dayOptions = [
       v-if="loading && !stats"
       class="text-default-400 flex items-center justify-center py-20"
     >
-      <Icon name="lucide:loader-2" class="size-6 animate-spin" />
+      <KunIcon name="lucide:loader-circle" class="size-6 animate-spin" />
     </div>
 
     <template v-else-if="stats">
@@ -76,7 +76,7 @@ const dayOptions = [
         >
           <div class="flex items-center gap-3">
             <div class="bg-default-100 rounded-lg p-2" :class="item.color">
-              <Icon :name="item.icon" class="size-6" />
+              <KunIcon :name="item.icon" class="size-6" />
             </div>
             <div class="min-w-0">
               <p class="text-default-500 truncate text-xs">{{ item.label }}</p>

@@ -68,7 +68,7 @@ const inSearchMode = computed(() => !!search.value.trim())
       <div class="flex items-center gap-3">
         <span class="text-default-500 text-sm">共 {{ total }} 个</span>
         <KunButton color="primary" @click="createOpen = true">
-          <Icon name="lucide:plus" class="mr-1 size-4" />
+          <KunIcon name="lucide:plus" class="mr-1 size-4" />
           新建标签
         </KunButton>
       </div>
@@ -96,7 +96,7 @@ const inSearchMode = computed(() => !!search.value.trim())
           <tbody>
             <tr v-if="loading && items.length === 0">
               <td colspan="4" class="text-default-400 px-4 py-10 text-center">
-                <Icon name="lucide:loader-2" class="inline size-5 animate-spin" />
+                <KunIcon name="lucide:loader-circle" class="inline size-5 animate-spin" />
               </td>
             </tr>
             <tr v-else-if="items.length === 0">

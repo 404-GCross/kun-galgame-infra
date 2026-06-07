@@ -76,7 +76,7 @@ const openDiff = (revision: number) => {
         aria-label="返回 galgame 详情页"
         @click="router.push(`/galgame/${galgameId}`)"
       >
-        <Icon name="lucide:arrow-left" class="size-5" />
+        <KunIcon name="lucide:arrow-left" class="size-5" />
       </KunButton>
       <h1 class="text-foreground text-2xl font-bold">
         修订历史 · galgame #{{ galgameId }}
@@ -105,7 +105,7 @@ const openDiff = (revision: number) => {
           <tbody>
             <tr v-if="loading && items.length === 0">
               <td colspan="6" class="text-default-400 px-4 py-10 text-center">
-                <Icon name="lucide:loader-2" class="inline size-5 animate-spin" />
+                <KunIcon name="lucide:loader-circle" class="inline size-5 animate-spin" />
               </td>
             </tr>
             <tr v-else-if="items.length === 0">

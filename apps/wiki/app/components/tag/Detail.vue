@@ -95,7 +95,7 @@ const handleDelete = async () => {
         aria-label="返回"
         @click="router.back()"
       >
-        <Icon name="lucide:arrow-left" class="size-5" />
+        <KunIcon name="lucide:arrow-left" class="size-5" />
       </KunButton>
       <h1 class="text-foreground text-2xl font-bold">标签详情</h1>
     </div>
@@ -104,7 +104,7 @@ const handleDelete = async () => {
       v-if="loading && !tag"
       class="text-default-400 flex items-center justify-center py-20"
     >
-      <Icon name="lucide:loader-2" class="size-6 animate-spin" />
+      <KunIcon name="lucide:loader-circle" class="size-6 animate-spin" />
     </div>
 
     <template v-else-if="tag">
@@ -145,11 +145,11 @@ const handleDelete = async () => {
           </div>
           <div class="flex shrink-0 gap-2">
             <KunButton variant="light" @click="editOpen = true">
-              <Icon name="lucide:pencil" class="mr-1 size-4" />
+              <KunIcon name="lucide:pencil" class="mr-1 size-4" />
               编辑
             </KunButton>
             <KunButton color="danger" variant="light" @click="handleDelete">
-              <Icon name="lucide:trash-2" class="mr-1 size-4" />
+              <KunIcon name="lucide:trash-2" class="mr-1 size-4" />
               删除
             </KunButton>
           </div>
@@ -189,7 +189,7 @@ const handleDelete = async () => {
                 v-else
                 class="flex size-full items-center justify-center"
               >
-                <Icon
+                <KunIcon
                   name="lucide:image"
                   class="text-default-300 size-8"
                 />

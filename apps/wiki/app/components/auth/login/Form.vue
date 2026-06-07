@@ -34,12 +34,12 @@ onMounted(() => {
       :disabled="isLoading"
       @click="handleSubmit"
     >
-      <Icon
+      <KunIcon
         v-if="isLoading"
-        name="lucide:loader-2"
+        name="lucide:loader-circle"
         class="mr-2 size-4 animate-spin"
       />
-      <Icon v-else name="lucide:key-round" class="mr-2 size-4" />
+      <KunIcon v-else name="lucide:key-round" class="mr-2 size-4" />
       {{ isLoading ? '跳转中...' : '用 鲲 Galgame OAuth 登录' }}
     </KunButton>
 

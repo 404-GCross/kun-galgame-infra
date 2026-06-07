@@ -18,7 +18,8 @@ onMounted(() => {
 <template>
   <div>
     <NuxtRouteAnnouncer />
-    <KunAlertMessageContainer />
+    <KunMessageProvider />
+    <KunAlertProvider />
     <CommonConfirmHost />
     <NuxtLayout>
       <NuxtPage />

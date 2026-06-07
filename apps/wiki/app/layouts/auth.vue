@@ -29,7 +29,7 @@ const setColorMode = (mode: string) => {
             is-icon-only
             aria-label="切换主题"
           >
-            <Icon name="lucide:sun-moon" class="size-5" />
+            <KunIcon name="lucide:sun-moon" class="size-5" />
           </KunButton>
         </template>
 
@@ -45,7 +45,7 @@ const setColorMode = (mode: string) => {
             "
             @click="setColorMode(option.value)"
           >
-            <Icon :name="option.icon" class="size-4" />
+            <KunIcon :name="option.icon" class="size-4" />
             <span>{{ option.label }}</span>
           </button>
         </div>

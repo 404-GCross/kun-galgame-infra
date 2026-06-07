@@ -90,9 +90,9 @@ const submit = async () => {
       <div class="flex justify-end gap-2 pt-2">
         <KunButton variant="light" @click="emit('close')">取消</KunButton>
         <KunButton color="primary" :disabled="submitting" @click="submit">
-          <Icon
+          <KunIcon
             v-if="submitting"
-            name="lucide:loader-2"
+            name="lucide:loader-circle"
             class="mr-1 size-4 animate-spin"
           />
           {{ isEdit ? '保存' : '创建' }}

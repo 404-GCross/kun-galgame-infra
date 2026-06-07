@@ -122,7 +122,7 @@ onMounted(load)
           aria-label="删除链接"
           @click="remove(l.id, l.name)"
         >
-          <Icon name="lucide:trash-2" class="size-4" />
+          <KunIcon name="lucide:trash-2" class="size-4" />
         </KunButton>
       </li>
     </ul>

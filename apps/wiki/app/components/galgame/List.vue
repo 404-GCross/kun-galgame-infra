@@ -86,13 +86,13 @@ const switchTab = (id: number) => {
         <span class="text-default-500 text-sm">共 {{ total }} 条</span>
         <NuxtLink to="/galgame-filter">
           <KunButton variant="light">
-            <Icon name="lucide:filter" class="mr-1 size-4" />
+            <KunIcon name="lucide:filter" class="mr-1 size-4" />
             多标签筛选
           </KunButton>
         </NuxtLink>
         <NuxtLink to="/galgame/create">
           <KunButton color="primary">
-            <Icon name="lucide:plus" class="mr-1 size-4" />
+            <KunIcon name="lucide:plus" class="mr-1 size-4" />
             新建
           </KunButton>
         </NuxtLink>
@@ -109,7 +109,7 @@ const switchTab = (id: number) => {
           size="sm"
           @click="switchTab(tab.id)"
         >
-          <Icon :name="tab.icon" class="mr-1 size-4" />
+          <KunIcon :name="tab.icon" class="mr-1 size-4" />
           {{ tab.label }}
         </KunButton>
       </div>
@@ -144,8 +144,8 @@ const switchTab = (id: number) => {
               class="text-default-400"
             >
               <td colspan="8" class="px-4 py-10 text-center">
-                <Icon
-                  name="lucide:loader-2"
+                <KunIcon
+                  name="lucide:loader-circle"
                   class="inline size-5 animate-spin"
                 />
               </td>
@@ -175,7 +175,7 @@ const switchTab = (id: number) => {
                     v-else
                     class="bg-default-100 flex size-12 items-center justify-center rounded"
                   >
-                    <Icon
+                    <KunIcon
                       name="lucide:image"
                       class="text-default-300 size-5"
                     />

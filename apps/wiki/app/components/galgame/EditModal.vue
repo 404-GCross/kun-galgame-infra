@@ -235,7 +235,7 @@ const submit = async () => {
               class="size-full object-cover"
               alt="banner 预览"
             />
-            <Icon v-else name="lucide:image" class="text-default-300 size-6" />
+            <KunIcon v-else name="lucide:image" class="text-default-300 size-6" />
           </div>
           <div class="flex flex-1 flex-col gap-2">
             <KunFileInput
@@ -256,7 +256,7 @@ const submit = async () => {
               type="button"
               @click="clearPickedBanner"
             >
-              <Icon name="lucide:undo-2" class="mr-1 size-4" />
+              <KunIcon name="lucide:undo-2" class="mr-1 size-4" />
               不上传这张
             </KunButton>
             <p v-if="bannerFile" class="text-default-400 text-xs">
@@ -321,7 +321,7 @@ const submit = async () => {
             size="sm"
             @click="form.mode = 'direct'"
           >
-            <Icon name="lucide:check" class="mr-1 size-3.5" />
+            <KunIcon name="lucide:check" class="mr-1 size-3.5" />
             直接保存
           </KunButton>
           <KunButton
@@ -330,7 +330,7 @@ const submit = async () => {
             size="sm"
             @click="form.mode = 'pr'"
           >
-            <Icon name="lucide:git-pull-request" class="mr-1 size-3.5" />
+            <KunIcon name="lucide:git-pull-request" class="mr-1 size-3.5" />
             提交 PR
           </KunButton>
         </div>
@@ -354,9 +354,9 @@ const submit = async () => {
       <div class="flex justify-end gap-2 pt-2">
         <KunButton variant="light" @click="emit('close')">取消</KunButton>
         <KunButton color="primary" :disabled="submitting" @click="submit">
-          <Icon
+          <KunIcon
             v-if="submitting"
-            name="lucide:loader-2"
+            name="lucide:loader-circle"
             class="mr-1 size-4 animate-spin"
           />
           {{ form.mode === 'pr' ? '提交 PR' : '保存' }}

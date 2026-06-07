@@ -42,8 +42,8 @@ onMounted(async () => {
 <template>
   <KunCard class="p-8 text-center">
     <template v-if="status === 'processing'">
-      <Icon
-        name="lucide:loader-2"
+      <KunIcon
+        name="lucide:loader-circle"
         class="text-primary mx-auto mb-4 size-10 animate-spin"
       />
       <h1 class="text-foreground text-lg font-medium">正在完成登录...</h1>
@@ -51,8 +51,8 @@ onMounted(async () => {
     </template>
 
     <template v-else>
-      <Icon
-        name="lucide:alert-circle"
+      <KunIcon
+        name="lucide:circle-alert"
         class="text-danger mx-auto mb-4 size-10"
       />
       <h1 class="text-foreground text-lg font-medium">登录失败</h1>

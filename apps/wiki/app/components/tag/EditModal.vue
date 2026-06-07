@@ -114,9 +114,9 @@ const submit = async () => {
           :disabled="submitting"
           @click="submit"
         >
-          <Icon
+          <KunIcon
             v-if="submitting"
-            name="lucide:loader-2"
+            name="lucide:loader-circle"
             class="mr-1 size-4 animate-spin"
           />
           {{ isEdit ? '保存' : '创建' }}

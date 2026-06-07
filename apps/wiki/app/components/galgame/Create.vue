@@ -166,7 +166,7 @@ const submit = async () => {
         aria-label="返回"
         @click="router.back()"
       >
-        <Icon name="lucide:arrow-left" class="size-5" />
+        <KunIcon name="lucide:arrow-left" class="size-5" />
       </KunButton>
       <h1 class="text-foreground text-2xl font-bold">新建 galgame</h1>
     </div>
@@ -184,15 +184,15 @@ const submit = async () => {
             v-if="vndbCheck.status === 'checking'"
             class="text-default-400"
           >
-            <Icon name="lucide:loader-2" class="inline size-3 animate-spin" />
+            <KunIcon name="lucide:loader-circle" class="inline size-3 animate-spin" />
             校验中...
           </span>
           <span v-else-if="vndbCheck.status === 'ok'" class="text-success">
-            <Icon name="lucide:check" class="inline size-3" />
+            <KunIcon name="lucide:check" class="inline size-3" />
             可用
           </span>
           <span v-else-if="vndbCheck.status === 'exists'" class="text-danger">
-            <Icon name="lucide:alert-circle" class="inline size-3" />
+            <KunIcon name="lucide:circle-alert" class="inline size-3" />
             已存在
             <NuxtLink
               v-if="vndbCheck.galgameId"
@@ -225,7 +225,7 @@ const submit = async () => {
               class="size-full object-cover"
               alt="banner 预览"
             />
-            <Icon v-else name="lucide:image" class="text-default-300 size-6" />
+            <KunIcon v-else name="lucide:image" class="text-default-300 size-6" />
           </div>
           <div class="flex flex-1 flex-col gap-2">
             <KunFileInput
@@ -246,7 +246,7 @@ const submit = async () => {
               type="button"
               @click="clearPickedBanner"
             >
-              <Icon name="lucide:undo-2" class="mr-1 size-4" />
+              <KunIcon name="lucide:undo-2" class="mr-1 size-4" />
               不上传这张
             </KunButton>
             <p v-if="bannerFile" class="text-default-400 text-xs">
@@ -303,9 +303,9 @@ const submit = async () => {
       <div class="flex justify-end gap-2">
         <KunButton variant="light" @click="router.back()">取消</KunButton>
         <KunButton color="primary" :disabled="!canSubmit" @click="submit">
-          <Icon
+          <KunIcon
             v-if="submitting"
-            name="lucide:loader-2"
+            name="lucide:loader-circle"
             class="mr-1 size-4 animate-spin"
           />
           创建

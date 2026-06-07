@@ -39,7 +39,7 @@ const filtered = computed(() => {
           共 {{ items.length }} 个{{ search ? ` · 匹配 ${filtered.length}` : '' }}
         </span>
         <KunButton color="primary" @click="createOpen = true">
-          <Icon name="lucide:plus" class="mr-1 size-4" />
+          <KunIcon name="lucide:plus" class="mr-1 size-4" />
           新建引擎
         </KunButton>
       </div>
@@ -66,7 +66,7 @@ const filtered = computed(() => {
           <tbody>
             <tr v-if="loading && items.length === 0">
               <td colspan="3" class="text-default-400 px-4 py-10 text-center">
-                <Icon name="lucide:loader-2" class="inline size-5 animate-spin" />
+                <KunIcon name="lucide:loader-circle" class="inline size-5 animate-spin" />
               </td>
             </tr>
             <tr v-else-if="filtered.length === 0">

@@ -59,7 +59,7 @@ export const REVIEW_ACTIONS: Array<{
   {
     id: 'approve',
     label: '通过审核',
-    icon: 'lucide:check-circle',
+    icon: 'lucide:circle-check',
     color: 'success',
     status: 0,
     needs_reason: false
@@ -67,7 +67,7 @@ export const REVIEW_ACTIONS: Array<{
   {
     id: 'decline',
     label: '拒绝（可重新提交）',
-    icon: 'lucide:x-circle',
+    icon: 'lucide:circle-x',
     color: 'danger',
     status: 4,
     needs_reason: true
@@ -83,8 +83,8 @@ export const REVIEW_ACTIONS: Array<{
 ]
 
 export const GALGAME_STATUS_TABS = [
-  { id: 0, label: '已发布', icon: 'lucide:check-circle' },
-  { id: 2, label: '草稿 (VNDB)', icon: 'lucide:file-edit' },
+  { id: 0, label: '已发布', icon: 'lucide:circle-check' },
+  { id: 2, label: '草稿 (VNDB)', icon: 'lucide:file-pen-line' },
   { id: 1, label: '已封禁', icon: 'lucide:ban' }
 ] as const
 

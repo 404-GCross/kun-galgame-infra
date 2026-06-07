@@ -57,13 +57,13 @@ const relative = (iso: string) => {
       v-if="loading"
       class="text-default-400 flex items-center justify-center py-12"
     >
-      <Icon name="lucide:loader-2" class="size-6 animate-spin" />
+      <KunIcon name="lucide:loader-circle" class="size-6 animate-spin" />
     </div>
     <div
       v-else-if="!items.length"
       class="text-default-400 flex flex-col items-center justify-center py-16"
     >
-      <Icon name="lucide:check-check" class="mb-2 size-12 opacity-50" />
+      <KunIcon name="lucide:check-check" class="mb-2 size-12 opacity-50" />
       <p>队列已清空</p>
     </div>
     <div v-else class="overflow-x-auto">
@@ -124,7 +124,7 @@ const relative = (iso: string) => {
           <td class="px-4 py-3 text-right">
             <NuxtLink :to="`/review/${m.galgame_id}`">
               <KunButton variant="light" size="sm">
-                <Icon name="lucide:eye" class="mr-1 size-4" />
+                <KunIcon name="lucide:eye" class="mr-1 size-4" />
                 查看
               </KunButton>
             </NuxtLink>

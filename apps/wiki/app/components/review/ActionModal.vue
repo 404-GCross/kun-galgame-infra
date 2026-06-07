@@ -66,7 +66,7 @@ const submit = async () => {
   >
     <div class="space-y-4 p-6">
       <div class="flex items-center gap-2">
-        <Icon :name="action.icon" class="text-foreground size-5" />
+        <KunIcon :name="action.icon" class="text-foreground size-5" />
         <h2 class="text-foreground text-lg font-semibold">{{ action.label }}</h2>
       </div>
 
@@ -111,9 +111,9 @@ const submit = async () => {
           :disabled="submitting"
           @click="submit"
         >
-          <Icon
+          <KunIcon
             v-if="submitting"
-            name="lucide:loader-2"
+            name="lucide:loader-circle"
             class="mr-1 size-4 animate-spin"
           />
           确认{{ action.label }}

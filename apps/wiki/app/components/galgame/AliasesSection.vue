@@ -109,7 +109,7 @@ onMounted(load)
           class-name="ml-1"
           @click="remove(a.id, a.name)"
         >
-          <Icon name="lucide:x" class="size-3" />
+          <KunIcon name="lucide:x" class="size-3" />
         </KunButton>
       </span>
     </div>
