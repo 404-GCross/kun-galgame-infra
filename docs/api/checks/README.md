@@ -21,7 +21,7 @@
 
 ## 审计结果（2026-05-29）
 
-> 范围：逐个审计 oauth / image / galgame 三服务的全部端点（字段对齐 / 越权 / SQL 注入 / 静默失败 / 预期外副作用）。moderation / artifact 尚未实现（仅占位），按要求跳过。
+> 范围：逐个审计 oauth / image / galgame 三服务的全部端点（字段对齐 / 越权 / SQL 注入 / 静默失败 / 预期外副作用）。moderation / artifact 有独立服务与路由（`cmd/moderation` / `cmd/artifact`），本轮字段审计未覆盖（按要求跳过）。
 >
 > 方法：20 切片并行审计 + 逐项对抗式复核 → **46 项确认**（另有 5 项被复核驳回，见末尾）。全部已修复。
 
