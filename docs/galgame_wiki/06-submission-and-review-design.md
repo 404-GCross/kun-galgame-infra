@@ -149,7 +149,7 @@ CREATE INDEX idx_galgame_message_id
 
 **为什么 banned / unbanned 也带 target**：
 1. 用户应该被通知"你的作品被封 / 解封"
-2. `/messages/feed` 按 `target_user_id IS NOT NULL` 过滤，要让 kungal/moyu cron 拿到这些事件去同步本地 `galgame_stats.wiki_status_snapshot`，target 必须非空
+2. `/messages/feed` 按 `target_user_id IS NOT NULL` 过滤，让 kungal/moyu cron 拿到这些事件给作者发本地通知，target 必须非空（早期设计想据此同步本地 `wiki_status_snapshot` 列，**已不采用**——实际见 moyu `wiki_sync.go`）
 
 不要 schema validate jsonb，先约定俗成。
 
@@ -385,11 +385,11 @@ GET /api/admin/galgame/messages?type=submitted&page=1 认证：Bearer + admin/mo
    a) 选已发布 → kungal 后端直接 INSERT galgame_stats(galgame_id=该 id) + 跳详情
    b) 选 VNDB 草稿 → kungal 后端 POST /galgame/:gid/claim → INSERT stats → 跳详情
    c) 提交新作 → kungal 后端 POST /galgame/submit → 拿到 id → INSERT stats
-              本地标记此 galgame 为 pending（kungal 自己的 galgame_stats 加一列
-              wiki_status_snapshot，详见 7.2）
+              （早期设计在本地 galgame_stats 加 wiki_status_snapshot 列缓存状态，
+              详见 7.2——**已不采用**，下游不维护本地状态快照列）
 ```
 
-### 7.2 kungal / moyu 本地 galgame_stats 扩列
+### 7.2 kungal / moyu 本地 galgame_stats 扩列（早期设计，未采用）
 
 ```sql
 -- ⚠️ 历史设计，未采用：forum/patch 未建此列（见本文顶部更正），勿执行此 ALTER
@@ -405,29 +405,9 @@ ALTER TABLE galgame_stats
 > **不缓存** `name` / `banner` / `intro` 等展示字段——那些永远从 `/galgame/batch` 现拉。
 > 只有 status 这种"列表过滤需要"的字段才缓存。
 
-### 7.3 cron 同步
+### 7.3 cron 同步（早期设计，未采用 — 以代码为准）
 
-kungal 每天跑一次：
-
-```go
-// 拉 since 上次的 message feed
-GET /api/galgame/messages/feed?since_id=<本地存的 last_id>
-  Authorization: Basic base64(client_id:client_secret)
-
-for each message:
-  switch message.type {
-    case "approved":
-      UPDATE galgame_stats SET wiki_status_snapshot=0 WHERE galgame_id=message.galgame_id
-    case "declined":
-      UPDATE galgame_stats SET wiki_status_snapshot=4 WHERE galgame_id=message.galgame_id
-    case "banned":
-      UPDATE galgame_stats SET wiki_status_snapshot=1 WHERE galgame_id=message.galgame_id
-    case "edited_pending":
-      // 不变，仍是 3
-  }
-  // 如果有 target_user_id：可选发邮件通知该用户
-  // 记下 max(id) 作为下次 since_id
-```
+> 下方按 `wiki_status_snapshot` 列更新的写法**已不采用**。真实下游同步见 moyu `internal/infrastructure/cron/wiki_sync.go`（另见 [`07-submission.md` 调用方 cron 同步段](../integration/galgame_wiki/07-submission.md)）：游标 `cron_state.last_id` + `since_id`；每条先 `INSERT wiki_message_processed … ON CONFLICT DO NOTHING` 去重；`approved` 经 OAuth s2s 发 +3 并发通知，`declined` / `banned` / `unbanned` 仅发通知；**不写任何本地状态快照列**。
 
 ### 7.4 前端通知中心
 
@@ -476,7 +456,7 @@ CREATE TABLE wiki_message_read_state (
 |---|---|
 | 用户提交大量垃圾 | submit 每日配额 5 条 (Redis day-window)；admin 一键 ban + 封号 |
 | 同一新作并发提交两份 | 提交时 search 已经显示其他 pending；admin 在队列里手动 merge 路径见 §10 |
-| kungal 本地 wiki_status_snapshot 漂移 | cron 兜底每天对账；前端打开详情顺手刷一次 |
+| 下游本地缓存与 wiki 状态不一致 | 不维护本地状态快照列（早期 `wiki_status_snapshot` 方案未采用）；可见性按本地行 + 详情现拉 |
 | 提交者编辑 declined 草稿 → 翻回 pending 死循环 | admin 觉得用户故意刷 → status=1 ban，避免无限审核 |
 | message feed 太大 | 每日 cron 拉增量，单次 limit=1000；如果一年内累积 > 100w 行再考虑分表 |
 | 详情 ID 枚举泄露 pending 草稿 | 见 §6 注释，接受 |
