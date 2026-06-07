@@ -38,7 +38,7 @@
 
 | 路径 | 鉴权 | Handler | 状态 | 备注 |
 |---|---|---|---|---|
-| `GET /api/v1/health` | 🌐 | inline | ✅ | 健康检查 |
+| `GET /healthz` | 🌐 | inline | ✅ | 健康检查（root liveness，无 `/api/v1` 前缀；见 `cmd/oauth/main.go`） |
 
 ## 1. 认证 / 身份
 

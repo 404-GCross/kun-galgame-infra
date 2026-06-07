@@ -2,7 +2,7 @@
 
 > 目的：逐服务记录全部 API 端点 + FE↔BE 字段对齐审计状态。
 >
-> 当前进度：**审计完成（2026-05-29）** —— 全部 147 端点（GET 75 / POST 42 / PUT 12 / DELETE 14 / PATCH 4）已逐项扫描。oauth / image / galgame 三服务**全部审计**：发现并修复 **46 项**问题（10 HIGH / 16 MEDIUM / 20 LOW，跨 51 个端点行标 🔧），其余标 ✅（本轮未发现可处理问题）。moderation / artifact **未实现**，按要求跳过（状态保持 ⏳）。详见下方 [审计结果](#审计结果2026-05-29)。
+> 当前进度：**审计完成（2026-05-29）** —— 全部 147 端点（GET 75 / POST 42 / PUT 12 / DELETE 14 / PATCH 4）已逐项扫描。oauth / image / galgame 三服务**全部审计**：发现并修复 **46 项**问题（10 HIGH / 16 MEDIUM / 20 LOW，跨 51 个端点行标 🔧），其余标 ✅（本轮未发现可处理问题）。moderation / artifact **已有独立服务与路由**（`cmd/moderation` / `cmd/artifact`），本轮字段对齐审计未覆盖（状态 ⏳）——“未实现”的旧表述已不准确。详见下方 [审计结果](#审计结果2026-05-29)。
 >
 > 审计后新增（🆕）：`GET /api/v1/auth/me/moemoepoint/log` —— 用户自助查自己的萌萌点流水，供 oauth web `/profile`「萌萌点记录」使用。oauth GET 端点 19 → **20**，总计 147 → **148**。
 

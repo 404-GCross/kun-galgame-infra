@@ -311,9 +311,9 @@ SDK 内部只做字符串拼接（因为 URL 是 content-addressed 且无签名�
 
 ---
 
-## 5. 管理端点（V3）
+## 5. 管理端点（已实现）
 
-以下接口 **V3 才实现**，V1 / V2 不上，需要 `image:admin` scope。
+以下接口**已实现**，挂在 OAuth 进程，实际前缀为 `/api/v1/admin/image`（`cmd/oauth/main.go`），需要 `image:admin` scope。例如 `GET /api/v1/admin/image/list`、`PATCH /api/v1/admin/image/:hash/review`、`DELETE /api/v1/admin/image/:hash`。
 
 ### `GET /admin/image/list`
 
