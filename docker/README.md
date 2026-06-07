@@ -10,11 +10,11 @@ Meilisearch); kungal + moyu connect to these.
 |---|---|---|---|
 | `docker/go.Dockerfile` | galgame + every `migrate-*` / worker (pure Go) | `distroless/static` (~25–45 MB) | `CGO_ENABLED=0` static binary |
 | `docker/cgo.Dockerfile` | **oauth + image** | `debian:trixie-slim` (~180 MB) | both transitively import `kolesa-team/go-webp` → cgo → **libwebp** at build + runtime |
-| `docker/nuxt.Dockerfile` | web + wiki (Nitro `node-server`) | `node:24-trixie-slim` (~390 MB) | self-contained `.output`; sharp comes via the `@kun/ui` layer |
+| `docker/nuxt.Dockerfile` | web + wiki (Nitro `node-server`) | `node:24-trixie-slim` (~390 MB) | self-contained `.output`; sharp comes via `@kungal/ui-nuxt`'s `@nuxt/image` |
 
 Both Go Dockerfiles and the Nuxt one are **parametric** (`--build-arg CMD=…` /
-`APP=…`) and require the **repo root** as build context (the frontends consume
-`packages/ui` as a Nuxt layer from source).
+`APP=…`) and require the **repo root** as build context (the pnpm workspace
+install needs the lockfile + every workspace manifest).
 
 > Why oauth needs cgo: it embeds the image-admin endpoints, and
 > `image/service` imports the WebP `processor`. Extract that (or swap go-webp
