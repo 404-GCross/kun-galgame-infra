@@ -40,17 +40,17 @@ const handleDelete = async (id: number) => {
         <p class="mt-1 text-default-500">管理连接的站点和 OAuth 配置</p>
       </div>
       <KunButton color="primary" class-name="shrink-0 self-start" @click="showCreateModal = true">
-        <Icon name="lucide:plus" class="mr-2 size-4" />
+        <KunIcon name="lucide:plus" class="mr-2 size-4" />
         添加站点
       </KunButton>
     </div>
 
     <div v-if="isLoading" class="flex items-center justify-center py-12">
-      <Icon name="lucide:loader-2" class="size-8 animate-spin text-primary" />
+      <KunIcon name="lucide:loader-circle" class="size-8 animate-spin text-primary" />
     </div>
 
     <KunCard v-else-if="sites.length === 0" content-class="justify-start gap-0" class-name="py-12 text-center">
-      <Icon name="lucide:globe" class="mx-auto mb-4 size-12 text-default-200" />
+      <KunIcon name="lucide:globe" class="mx-auto mb-4 size-12 text-default-200" />
       <p class="text-default-400">暂无站点配置</p>
     </KunCard>
 

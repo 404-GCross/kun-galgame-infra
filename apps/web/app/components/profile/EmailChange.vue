@@ -89,7 +89,7 @@ onUnmounted(() => {
 <template>
   <KunCard class="p-6">
     <h3 class="mb-4 text-lg font-semibold text-foreground">
-      <Icon name="lucide:mail" class="mr-2 inline size-5" />
+      <KunIcon name="lucide:mail" class="mr-2 inline size-5" />
       修改邮箱
     </h3>
 
@@ -134,7 +134,7 @@ onUnmounted(() => {
           :disabled="isLoading || !newEmail"
           @click="handleSendCode"
         >
-          <Icon v-if="isLoading" name="lucide:loader-2" class="mr-2 size-4 animate-spin" />
+          <KunIcon v-if="isLoading" name="lucide:loader-circle" class="mr-2 size-4 animate-spin" />
           发送验证码
         </KunButton>
 
@@ -152,7 +152,7 @@ onUnmounted(() => {
             :disabled="isLoading || !code"
             @click="handleChangeEmail"
           >
-            <Icon v-if="isLoading" name="lucide:loader-2" class="mr-2 size-4 animate-spin" />
+            <KunIcon v-if="isLoading" name="lucide:loader-circle" class="mr-2 size-4 animate-spin" />
             确认修改
           </KunButton>
         </template>

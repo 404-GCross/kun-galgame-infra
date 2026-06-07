@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { SIDEBAR_MENU } from '~/constants/admin'
-import { useBodyScrollLock } from '@kun/ui/app/composables/useBodyScrollLock'
+import { useBodyScrollLock } from '@kungal/ui-vue'
 
 const auth = useAuth()
 const route = useRoute()
@@ -140,7 +140,7 @@ await callOnce('auth:user', async () => {
           class-name="md:hidden shrink-0"
           @click="isMobileMenuOpen = false"
         >
-          <Icon name="lucide:x" class="size-5" />
+          <KunIcon name="lucide:x" class="size-5" />
         </KunButton>
       </div>
 
@@ -153,7 +153,7 @@ await callOnce('auth:user', async () => {
           class="text-default-600 hover:bg-primary-50 hover:text-primary flex items-center gap-3 rounded-lg px-3 py-2 transition-colors"
           active-class="bg-primary-50 text-primary"
         >
-          <Icon :name="item.icon" class="size-5 shrink-0" />
+          <KunIcon :name="item.icon" class="size-5 shrink-0" />
           <span v-if="!isSidebarCollapsed" class="truncate">{{ item.label }}</span>
         </NuxtLink>
       </nav>
@@ -167,7 +167,7 @@ await callOnce('auth:user', async () => {
         class-name="border-default-200 hidden h-12 border-t md:flex"
         @click="isSidebarCollapsed = !isSidebarCollapsed"
       >
-        <Icon
+        <KunIcon
           :name="
             isSidebarCollapsed ? 'lucide:chevron-right' : 'lucide:chevron-left'
           "
@@ -198,7 +198,7 @@ await callOnce('auth:user', async () => {
             class-name="md:hidden shrink-0"
             @click="isMobileMenuOpen = true"
           >
-            <Icon name="lucide:menu" class="size-5" />
+            <KunIcon name="lucide:menu" class="size-5" />
           </KunButton>
           <h2 class="text-foreground truncate text-lg font-semibold">管理后台</h2>
         </div>
@@ -213,7 +213,7 @@ await callOnce('auth:user', async () => {
                 is-icon-only
                 aria-label="切换主题"
               >
-                <Icon name="lucide:sun-moon" class="size-6" />
+                <KunIcon name="lucide:sun-moon" class="size-6" />
               </KunButton>
             </template>
 
@@ -229,7 +229,7 @@ await callOnce('auth:user', async () => {
                 "
                 @click="setColorMode(option.value)"
               >
-                <Icon :name="option.icon" class="size-4" />
+                <KunIcon :name="option.icon" class="size-4" />
                 <span>{{ option.label }}</span>
               </button>
             </div>
@@ -257,7 +257,7 @@ await callOnce('auth:user', async () => {
               aria-label="退出登录"
               @click="handleLogout"
             >
-              <Icon name="lucide:log-out" class="size-6" />
+              <KunIcon name="lucide:log-out" class="size-6" />
             </KunButton>
           </div>
         </div>

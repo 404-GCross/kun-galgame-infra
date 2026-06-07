@@ -14,13 +14,13 @@ watch(show, (val) => {
     <div class="w-[28rem] max-w-[calc(100vw-1.5rem)] space-y-4 p-6">
       <div class="flex items-center gap-3">
         <div class="flex size-10 items-center justify-center rounded-full bg-success-100">
-          <Icon name="lucide:check" class="size-5 text-success" />
+          <KunIcon name="lucide:check" class="size-5 text-success" />
         </div>
         <h2 class="text-xl font-bold text-foreground">客户端创建成功</h2>
       </div>
 
       <div class="rounded-lg bg-warning-50 p-3 text-sm text-warning">
-        <Icon name="lucide:alert-triangle" class="mr-1 inline size-4" />
+        <KunIcon name="lucide:triangle-alert" class="mr-1 inline size-4" />
         请立即保存以下密钥，关闭后将无法再次查看。
       </div>
 

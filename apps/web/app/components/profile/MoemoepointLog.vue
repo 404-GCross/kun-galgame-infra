@@ -56,7 +56,7 @@ const formatDate = (s: string) =>
     </div>
 
     <div v-if="!loaded && loading" class="flex justify-center py-8">
-      <Icon name="lucide:loader-2" class="size-6 animate-spin text-primary" />
+      <KunIcon name="lucide:loader-circle" class="size-6 animate-spin text-primary" />
     </div>
 
     <div
@@ -104,9 +104,9 @@ const formatDate = (s: string) =>
         :disabled="loading"
         @click="loadPage"
       >
-        <Icon
+        <KunIcon
           v-if="loading"
-          name="lucide:loader-2"
+          name="lucide:loader-circle"
           class="mr-1 size-4 animate-spin"
         />
         加载更多

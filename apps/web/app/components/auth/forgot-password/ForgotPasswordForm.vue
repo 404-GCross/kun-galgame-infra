@@ -34,7 +34,7 @@ const handleSubmit = async () => {
 
     <div v-if="success" class="text-center">
       <div class="mb-4 inline-flex size-16 items-center justify-center rounded-full bg-success-100">
-        <Icon name="lucide:check" class="size-8 text-success" />
+        <KunIcon name="lucide:check" class="size-8 text-success" />
       </div>
       <h2 class="mb-2 text-lg font-semibold text-foreground">请检查您的邮箱</h2>
       <p class="mb-6 text-default-500">如果该邮箱已注册，我们已发送密码重置链接。</p>
@@ -48,7 +48,7 @@ const handleSubmit = async () => {
         <div v-if="error" class="rounded-lg bg-danger-50 p-3 text-sm text-danger">{{ error }}</div>
 
         <KunButton type="submit" color="primary" class="w-full" :disabled="isLoading">
-          <Icon v-if="isLoading" name="lucide:loader-2" class="mr-2 size-4 animate-spin" />
+          <KunIcon v-if="isLoading" name="lucide:loader-circle" class="mr-2 size-4 animate-spin" />
           {{ isLoading ? '发送中...' : '发送重置链接' }}
         </KunButton>
       </div>

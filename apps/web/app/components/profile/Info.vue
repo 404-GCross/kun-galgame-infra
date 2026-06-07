@@ -41,11 +41,11 @@ const formattedDate = computed(() => {
 
         <div class="flex flex-wrap items-center gap-4 text-sm">
           <span class="text-default-400 flex items-center gap-1">
-            <Icon name="lucide:star" class="size-4" />
+            <KunIcon name="lucide:star" class="size-4" />
             萌萌点：{{ user.moemoepoint }}
           </span>
           <span class="text-default-400 flex items-center gap-1">
-            <Icon name="lucide:calendar" class="size-4" />
+            <KunIcon name="lucide:calendar" class="size-4" />
             注册时间：{{ formattedDate }}
           </span>
         </div>

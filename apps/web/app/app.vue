@@ -6,7 +6,8 @@ useKunDisableSeo('鲲 Galgame 管理后台')
 <template>
   <div>
     <NuxtRouteAnnouncer />
-    <KunAlertMessageContainer />
+    <KunMessageProvider />
+    <KunAlertProvider />
     <NuxtLayout>
       <NuxtPage />
     </NuxtLayout>

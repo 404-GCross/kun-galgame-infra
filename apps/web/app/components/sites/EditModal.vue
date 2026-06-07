@@ -68,7 +68,7 @@ const handleSubmit = async () => {
           取消
         </KunButton>
         <KunButton color="primary" :disabled="isLoading" @click="handleSubmit">
-          <Icon v-if="isLoading" name="lucide:loader-2" class="mr-2 size-4 animate-spin" />
+          <KunIcon v-if="isLoading" name="lucide:loader-circle" class="mr-2 size-4 animate-spin" />
           保存
         </KunButton>
       </div>

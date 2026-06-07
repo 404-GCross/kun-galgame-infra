@@ -107,7 +107,7 @@ const confirmReject = () => {
               <KunTooltip :text="item.url" position="top">
                 <a :href="item.url" target="_blank" rel="noopener">
                   <KunChip color="default" size="xs" variant="flat" class-name="gap-1">
-                    <Icon name="lucide:image" class="size-3" />
+                    <KunIcon name="lucide:image" class="size-3" />
                     原图 {{ item.width }}×{{ item.height }}
                   </KunChip>
                 </a>
@@ -120,7 +120,7 @@ const confirmReject = () => {
               >
                 <a :href="url" target="_blank" rel="noopener">
                   <KunChip color="success" size="xs" variant="flat" class-name="gap-1">
-                    <Icon name="lucide:scaling" class="size-3" />
+                    <KunIcon name="lucide:scaling" class="size-3" />
                     {{ name }}
                     <span v-if="variantDims(String(name))" class="text-success-700/70">
                       {{ variantDims(String(name)) }}

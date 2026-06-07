@@ -58,7 +58,7 @@ const stats = computed(() =>
         最近活动
       </h2>
       <div class="py-8 text-center text-default-400">
-        <Icon name="lucide:inbox" class="mx-auto mb-2 size-12 opacity-50" />
+        <KunIcon name="lucide:inbox" class="mx-auto mb-2 size-12 opacity-50" />
         <p>暂无活动记录</p>
       </div>
     </KunCard>

@@ -46,17 +46,17 @@ const handleDelete = async (clientId: string) => {
         <p class="mt-1 text-default-500">管理 OAuth 2.0 客户端应用</p>
       </div>
       <KunButton color="primary" class-name="shrink-0 self-start" @click="showCreateModal = true">
-        <Icon name="lucide:plus" class="mr-2 size-4" />
+        <KunIcon name="lucide:plus" class="mr-2 size-4" />
         创建客户端
       </KunButton>
     </div>
 
     <div v-if="isLoading" class="flex items-center justify-center py-12">
-      <Icon name="lucide:loader-2" class="size-8 animate-spin text-primary" />
+      <KunIcon name="lucide:loader-circle" class="size-8 animate-spin text-primary" />
     </div>
 
     <div v-else-if="clients.length === 0" class="rounded-xl bg-content1 py-12 text-center shadow-sm">
-      <Icon name="lucide:key" class="mx-auto mb-4 size-12 text-default-200" />
+      <KunIcon name="lucide:key" class="mx-auto mb-4 size-12 text-default-200" />
       <p class="text-default-400">暂无 OAuth 客户端配置</p>
       <p class="mt-1 text-sm text-default-300">创建客户端以启用 OAuth 认证</p>
     </div>

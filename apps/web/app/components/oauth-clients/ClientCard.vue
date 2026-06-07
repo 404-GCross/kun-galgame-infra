@@ -17,7 +17,7 @@ const siteName = computed(() => {
     <div class="flex items-start justify-between">
       <div class="flex items-center gap-4">
         <div class="flex size-12 items-center justify-center rounded-lg bg-warning-100">
-          <Icon name="lucide:key" class="size-6 text-warning" />
+          <KunIcon name="lucide:key" class="size-6 text-warning" />
         </div>
         <div>
           <h3 class="text-lg font-semibold text-foreground">{{ client.name }}</h3>
@@ -32,7 +32,7 @@ const siteName = computed(() => {
           aria-label="编辑客户端"
           @click="emit('edit')"
         >
-          <Icon name="lucide:pencil" class="size-5" />
+          <KunIcon name="lucide:pencil" class="size-5" />
         </KunButton>
         <KunButton
           variant="light"
@@ -42,7 +42,7 @@ const siteName = computed(() => {
           aria-label="删除客户端"
           @click="emit('delete')"
         >
-          <Icon name="lucide:trash-2" class="size-5" />
+          <KunIcon name="lucide:trash-2" class="size-5" />
         </KunButton>
       </div>
     </div>

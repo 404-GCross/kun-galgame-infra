@@ -30,7 +30,7 @@ const _ = props // keep TS happy if `props` is never read elsewhere
 <template>
   <div class="overflow-x-auto rounded-xl bg-content1 shadow-sm">
     <div v-if="users.length === 0" class="py-12 text-center">
-      <Icon name="lucide:users" class="mx-auto mb-4 size-12 text-default-200" />
+      <KunIcon name="lucide:users" class="mx-auto mb-4 size-12 text-default-200" />
       <p class="text-default-400">暂无匹配用户</p>
     </div>
 
@@ -107,7 +107,7 @@ const _ = props // keep TS happy if `props` is never read elsewhere
                   is-icon-only
                   aria-label="更多操作"
                 >
-                  <Icon name="lucide:more-horizontal" class="size-5" />
+                  <KunIcon name="lucide:ellipsis" class="size-5" />
                 </KunButton>
               </template>
               <div class="w-44 py-1">
@@ -119,7 +119,7 @@ const _ = props // keep TS happy if `props` is never read elsewhere
                   class="flex w-full items-center gap-2 px-3 py-2 text-sm text-danger hover:bg-danger-50"
                   @click="emit('ban', user.uuid)"
                 >
-                  <Icon name="lucide:ban" class="size-4" />
+                  <KunIcon name="lucide:ban" class="size-4" />
                   封禁用户
                 </button>
                 <button
@@ -127,7 +127,7 @@ const _ = props // keep TS happy if `props` is never read elsewhere
                   class="flex w-full items-center gap-2 px-3 py-2 text-sm text-success hover:bg-success-50"
                   @click="emit('unban', user.uuid)"
                 >
-                  <Icon name="lucide:check-circle" class="size-4" />
+                  <KunIcon name="lucide:circle-check" class="size-4" />
                   解除封禁
                 </button>
 
@@ -138,7 +138,7 @@ const _ = props // keep TS happy if `props` is never read elsewhere
                   class="flex w-full items-center gap-2 px-3 py-2 text-sm text-danger hover:bg-danger-50"
                   @click="emit('anonymize', { uuid: user.uuid, name: user.name })"
                 >
-                  <Icon name="lucide:user-x" class="size-4" />
+                  <KunIcon name="lucide:user-x" class="size-4" />
                   注销并匿名化
                 </button>
 
@@ -147,7 +147,7 @@ const _ = props // keep TS happy if `props` is never read elsewhere
                   class="flex w-full items-center gap-2 px-3 py-2 text-sm text-default-500 hover:bg-default-100 hover:text-foreground"
                   @click="emit('moemoepoint', { uuid: user.uuid, name: user.name, moemoepoint: user.moemoepoint })"
                 >
-                  <Icon name="lucide:sparkles" class="size-4" />
+                  <KunIcon name="lucide:sparkles" class="size-4" />
                   萌萌点
                 </button>
                 <button
@@ -155,7 +155,7 @@ const _ = props // keep TS happy if `props` is never read elsewhere
                   class="flex w-full items-center gap-2 px-3 py-2 text-sm text-default-500 hover:bg-default-100 hover:text-foreground"
                   @click="emit('uploadAvatar', { uuid: user.uuid, name: user.name })"
                 >
-                  <Icon name="lucide:image-up" class="size-4" />
+                  <KunIcon name="lucide:image-up" class="size-4" />
                   上传头像
                 </button>
                 <button
@@ -163,7 +163,7 @@ const _ = props // keep TS happy if `props` is never read elsewhere
                   class="flex w-full items-center gap-2 px-3 py-2 text-sm text-default-500 hover:bg-default-100 hover:text-foreground"
                   @click="emit('deleteSessions', user.uuid)"
                 >
-                  <Icon name="lucide:log-out" class="size-4" />
+                  <KunIcon name="lucide:log-out" class="size-4" />
                   清除会话
                 </button>
 

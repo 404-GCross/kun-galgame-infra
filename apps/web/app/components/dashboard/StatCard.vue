@@ -11,7 +11,7 @@ defineProps<{
   <KunCard content-class="justify-start gap-0" class-name="p-6">
     <div class="flex items-center gap-4">
       <div :class="[color, 'flex size-12 items-center justify-center rounded-lg']">
-        <Icon :name="icon" class="size-6 text-white" />
+        <KunIcon :name="icon" class="size-6 text-white" />
       </div>
       <div>
         <p class="text-sm text-default-500">{{ label }}</p>

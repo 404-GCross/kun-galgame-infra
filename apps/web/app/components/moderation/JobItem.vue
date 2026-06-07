@@ -10,7 +10,7 @@ const statusBadge = computed(() => MODERATION_STATUS_MAP[props.job.status] ?? { 
   <div class="flex items-center justify-between p-4 hover:bg-default-100">
     <div class="flex items-center gap-4">
       <div class="flex size-10 items-center justify-center rounded-lg bg-default-100">
-        <Icon name="lucide:file-text" class="size-5 text-default-400" />
+        <KunIcon name="lucide:file-text" class="size-5 text-default-400" />
       </div>
       <div>
         <p class="font-medium text-foreground">

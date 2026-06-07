@@ -1,0 +1,12 @@
+@import 'tailwindcss';
+@import '@kungal/ui-tokens'; /* design tokens (colors, rounded-kun-*, dark variant) + base layer */
+@import '@kungal/ui-vue/style.css'; /* scoped component styles (modal/drawer/lightbox transitions, spoiler, toasts) */
+
+/*
+ * Tailwind v4 ignores node_modules by default, so it must be told to scan the
+ * compiled KunUI packages or the components render unstyled. Paths are relative
+ * to THIS file (app/assets/css/main.css → 3 levels up = the app's node_modules,
+ * where pnpm symlinks this app's direct deps).
+ */
+@source '../../../node_modules/@kungal/ui-vue';
+@source '../../../node_modules/@kungal/ui-core';

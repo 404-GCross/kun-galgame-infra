@@ -82,7 +82,7 @@ const handleSubmit = async () => {
 <template>
   <KunCard class="p-6">
     <h3 class="mb-4 text-lg font-semibold text-foreground">
-      <Icon name="lucide:user-pen" class="mr-2 inline size-5" />
+      <KunIcon name="lucide:user-pen" class="mr-2 inline size-5" />
       编辑资料
     </h3>
 
@@ -132,9 +132,9 @@ const handleSubmit = async () => {
         class="w-full"
         :disabled="isLoading || !dirty"
       >
-        <Icon
+        <KunIcon
           v-if="isLoading"
-          name="lucide:loader-2"
+          name="lucide:loader-circle"
           class="mr-2 size-4 animate-spin"
         />
         {{ isLoading ? '保存中...' : '保存修改' }}

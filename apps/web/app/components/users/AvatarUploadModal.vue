@@ -124,9 +124,9 @@ const submit = async () => {
           :disabled="!file || uploading"
           @click="submit"
         >
-          <Icon
+          <KunIcon
             v-if="uploading"
-            name="lucide:loader-2"
+            name="lucide:loader-circle"
             class="mr-1 size-4 animate-spin"
           />
           上传

@@ -44,7 +44,7 @@ const handleSubmit = async () => {
 <template>
   <KunCard class="p-6">
     <h3 class="mb-4 text-lg font-semibold text-foreground">
-      <Icon name="lucide:lock" class="mr-2 inline size-5" />
+      <KunIcon name="lucide:lock" class="mr-2 inline size-5" />
       修改密码
     </h3>
 
@@ -82,7 +82,7 @@ const handleSubmit = async () => {
       </div>
 
       <KunButton type="submit" color="primary" class="w-full" :disabled="isLoading">
-        <Icon v-if="isLoading" name="lucide:loader-2" class="mr-2 size-4 animate-spin" />
+        <KunIcon v-if="isLoading" name="lucide:loader-circle" class="mr-2 size-4 animate-spin" />
         {{ isLoading ? '修改中...' : '修改密码' }}
       </KunButton>
 

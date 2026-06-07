@@ -137,7 +137,7 @@ const bytesHuman = (n: number) => {
           size="sm"
           @click="reviewStatus = tab.id; currentPage = 1"
         >
-          <Icon :name="tab.icon" class="mr-1 size-4" />
+          <KunIcon :name="tab.icon" class="mr-1 size-4" />
           {{ tab.label }}
         </KunButton>
       </div>
@@ -155,7 +155,7 @@ const bytesHuman = (n: number) => {
     </div>
 
     <div v-if="isLoading" class="flex items-center justify-center py-12">
-      <Icon name="lucide:loader-2" class="size-8 animate-spin text-primary" />
+      <KunIcon name="lucide:loader-circle" class="size-8 animate-spin text-primary" />
     </div>
 
     <template v-else>
@@ -209,9 +209,9 @@ const bytesHuman = (n: number) => {
           :disabled="delLoading"
           @click="confirmDelete"
         >
-          <Icon
+          <KunIcon
             v-if="delLoading"
-            name="lucide:loader-2"
+            name="lucide:loader-circle"
             class="mr-2 size-4 animate-spin"
           />
           {{ delForce ? '确认硬删除' : '确认软删除' }}

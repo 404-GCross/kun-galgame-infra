@@ -136,7 +136,7 @@ const adjust = async (sign: 1 | -1) => {
             class-name="flex-1"
             @click="adjust(1)"
           >
-            <Icon name="lucide:plus" class="mr-1 size-4" />
+            <KunIcon name="lucide:plus" class="mr-1 size-4" />
             发放
           </KunButton>
           <KunButton
@@ -145,7 +145,7 @@ const adjust = async (sign: 1 | -1) => {
             class-name="flex-1"
             @click="adjust(-1)"
           >
-            <Icon name="lucide:minus" class="mr-1 size-4" />
+            <KunIcon name="lucide:minus" class="mr-1 size-4" />
             扣除
           </KunButton>
         </div>

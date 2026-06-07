@@ -14,7 +14,7 @@ import { QUICK_ACTIONS } from '~/constants/dashboard'
         :to="action.to"
         class="flex items-center gap-3 rounded-lg border border-default-200 p-4 transition-colors hover:bg-default-100"
       >
-        <Icon :name="action.icon" :class="['size-5', action.color]" />
+        <KunIcon :name="action.icon" :class="['size-5', action.color]" />
         <span class="text-foreground">{{ action.label }}</span>
       </NuxtLink>
     </div>

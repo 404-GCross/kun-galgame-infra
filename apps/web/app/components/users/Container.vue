@@ -152,14 +152,14 @@ const handleMoemoepoint = (user: { uuid: string; name: string; moemoepoint: numb
           class="flex-1"
         />
         <KunButton color="primary" type="submit" :disabled="isLoading">
-          <Icon name="lucide:search" class="mr-1 size-4" />
+          <KunIcon name="lucide:search" class="mr-1 size-4" />
           搜索
         </KunButton>
       </form>
     </KunCard>
 
     <div v-if="isLoading" class="flex items-center justify-center py-12">
-      <Icon name="lucide:loader-2" class="size-8 animate-spin text-primary" />
+      <KunIcon name="lucide:loader-circle" class="size-8 animate-spin text-primary" />
     </div>
 
     <template v-else>
@@ -212,9 +212,9 @@ const handleMoemoepoint = (user: { uuid: string; name: string; moemoepoint: numb
             取消
           </KunButton>
           <KunButton color="danger" :disabled="banLoading" @click="confirmBan">
-            <Icon
+            <KunIcon
               v-if="banLoading"
-              name="lucide:loader-2"
+              name="lucide:loader-circle"
               class="mr-2 size-4 animate-spin"
             />
             确认封禁
@@ -248,9 +248,9 @@ const handleMoemoepoint = (user: { uuid: string; name: string; moemoepoint: numb
             :disabled="anonymizeLoading"
             @click="confirmAnonymize"
           >
-            <Icon
+            <KunIcon
               v-if="anonymizeLoading"
-              name="lucide:loader-2"
+              name="lucide:loader-circle"
               class="mr-2 size-4 animate-spin"
             />
             确认注销

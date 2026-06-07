@@ -242,7 +242,7 @@ const handleRegister = async () => {
             :disabled="isLoading"
             @click="handleSendCode"
           >
-            <Icon v-if="isLoading" name="lucide:loader-2" class="mr-2 size-4 animate-spin" />
+            <KunIcon v-if="isLoading" name="lucide:loader-circle" class="mr-2 size-4 animate-spin" />
             {{ isLoading ? '发送中...' : '发送验证码' }}
           </KunButton>
 
@@ -262,7 +262,7 @@ const handleRegister = async () => {
               :disabled="isLoading || !code"
               @click="handleRegister"
             >
-              <Icon v-if="isLoading" name="lucide:loader-2" class="mr-2 size-4 animate-spin" />
+              <KunIcon v-if="isLoading" name="lucide:loader-circle" class="mr-2 size-4 animate-spin" />
               {{ isLoading ? '注册中...' : '确认注册' }}
             </KunButton>
           </template>

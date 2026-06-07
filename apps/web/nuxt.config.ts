@@ -6,7 +6,12 @@ export default defineNuxtConfig({
 
   devtools: { enabled: false },
 
-  extends: ['@kun/ui'],
+  extends: ['@kungal/ui-nuxt'],
+
+  // This app owns its Tailwind entry. The old @kun/ui layer injected its
+  // tailwindcss.css; @kungal/ui-nuxt deliberately does not (INTEGRATION §5),
+  // so the imports + @source scan live in app/assets/css/main.css.
+  css: ['~/assets/css/main.css'],
 
   modules: [
     '@nuxt/eslint',

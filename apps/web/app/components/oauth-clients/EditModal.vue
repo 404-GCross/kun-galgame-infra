@@ -144,7 +144,7 @@ const handleSubmit = async () => {
               class-name="shrink-0"
               @click="removeUri(index)"
             >
-              <Icon name="lucide:x" class="size-4" />
+              <KunIcon name="lucide:x" class="size-4" />
             </KunButton>
           </div>
         </div>
@@ -155,7 +155,7 @@ const handleSubmit = async () => {
           class-name="mt-2"
           @click="addUri"
         >
-          <Icon name="lucide:plus" class="mr-1 size-3" />
+          <KunIcon name="lucide:plus" class="mr-1 size-3" />
           添加回调地址
         </KunButton>
       </div>
@@ -235,7 +235,7 @@ const handleSubmit = async () => {
           取消
         </KunButton>
         <KunButton color="primary" :disabled="isLoading" @click="handleSubmit">
-          <Icon v-if="isLoading" name="lucide:loader-2" class="mr-2 size-4 animate-spin" />
+          <KunIcon v-if="isLoading" name="lucide:loader-circle" class="mr-2 size-4 animate-spin" />
           保存
         </KunButton>
       </div>

@@ -188,7 +188,7 @@ const handleDeny = () => {
 <template>
   <KunCard class="p-8">
     <div v-if="error && !clientId" class="text-center">
-      <Icon name="lucide:alert-circle" class="mx-auto mb-4 size-12 text-danger" />
+      <KunIcon name="lucide:circle-alert" class="mx-auto mb-4 size-12 text-danger" />
       <p class="text-danger">{{ error }}</p>
     </div>
 
@@ -204,7 +204,7 @@ const handleDeny = () => {
              consent fires, they bounce to redirect_uri seamlessly. -->
     <div v-else-if="needsLogin" class="space-y-6">
       <div class="text-center">
-        <Icon name="lucide:shield-check" class="text-primary mx-auto mb-3 size-12" />
+        <KunIcon name="lucide:shield-check" class="text-primary mx-auto mb-3 size-12" />
         <h1 class="text-foreground text-xl font-bold">需要登录后授权</h1>
         <p class="text-default-500 mt-2 text-sm">
           <template v-if="clientInfo">
@@ -243,7 +243,7 @@ const handleDeny = () => {
          while we POST /oauth/authorize/consent + bounce to redirect_uri.
          Typical wall-clock time visible to user: ~150 ms. -->
     <div v-else-if="autoConsenting || clientInfo === undefined" class="py-8 text-center">
-      <Icon name="lucide:loader-2" class="text-primary mx-auto mb-3 size-8 animate-spin" />
+      <KunIcon name="lucide:loader-circle" class="text-primary mx-auto mb-3 size-8 animate-spin" />
       <p class="text-default-500 text-sm">
         {{ autoConsenting ? '正在跳转回应用...' : '加载中...' }}
       </p>
@@ -251,7 +251,7 @@ const handleDeny = () => {
 
     <template v-else>
       <div class="mb-6 text-center">
-        <Icon name="lucide:shield-check" class="mx-auto mb-3 size-12 text-primary" />
+        <KunIcon name="lucide:shield-check" class="mx-auto mb-3 size-12 text-primary" />
         <h1 class="text-xl font-bold text-foreground">授权请求</h1>
         <p class="mt-2 text-sm text-default-500">
           <span v-if="clientInfo">「{{ clientInfo.name }}」</span>
@@ -267,14 +267,14 @@ const handleDeny = () => {
             :key="s"
             class="flex items-center gap-2 text-sm text-default-500"
           >
-            <Icon name="lucide:check" class="size-4 text-success" />
+            <KunIcon name="lucide:check" class="size-4 text-success" />
             {{ scopeLabels[s] || s }}
           </li>
           <li
             v-if="scopeList.length === 0"
             class="flex items-center gap-2 text-sm text-default-500"
           >
-            <Icon name="lucide:check" class="size-4 text-success" />
+            <KunIcon name="lucide:check" class="size-4 text-success" />
             基本账户信息
           </li>
         </ul>
@@ -294,7 +294,7 @@ const handleDeny = () => {
           :disabled="isLoading"
           @click="handleApprove"
         >
-          <Icon v-if="isLoading" name="lucide:loader-2" class="mr-2 size-4 animate-spin" />
+          <KunIcon v-if="isLoading" name="lucide:loader-circle" class="mr-2 size-4 animate-spin" />
           {{ isLoading ? '授权中...' : '同意授权' }}
         </KunButton>
       </div>

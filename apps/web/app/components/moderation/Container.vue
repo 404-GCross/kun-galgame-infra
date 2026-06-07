@@ -29,18 +29,18 @@ const isLoading = computed(() => status.value === 'pending')
         size="sm"
         @click="activeTab = tab.id"
       >
-        <Icon :name="tab.icon" class="mr-1 size-4" />
+        <KunIcon :name="tab.icon" class="mr-1 size-4" />
         {{ tab.label }}
       </KunButton>
     </div>
 
     <div class="rounded-xl bg-content1 shadow-sm">
       <div v-if="isLoading" class="flex items-center justify-center py-12">
-        <Icon name="lucide:loader-2" class="size-8 animate-spin text-primary" />
+        <KunIcon name="lucide:loader-circle" class="size-8 animate-spin text-primary" />
       </div>
 
       <div v-else-if="jobs.length === 0" class="py-12 text-center">
-        <Icon name="lucide:shield-check" class="mx-auto mb-4 size-12 text-default-200" />
+        <KunIcon name="lucide:shield-check" class="mx-auto mb-4 size-12 text-default-200" />
         <p class="text-default-400">
           暂无{{ activeTab === 'pending' ? '待审核' : activeTab === 'approved' ? '已通过' : '已拒绝' }}的审核任务
         </p>

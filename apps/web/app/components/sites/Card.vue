@@ -12,7 +12,7 @@ const showMenu = ref(false)
   <KunCard is-hoverable content-class="justify-start gap-0" class-name="p-6">
     <div class="mb-4 flex items-start justify-between">
       <div class="flex size-12 items-center justify-center rounded-lg bg-primary-100">
-        <Icon name="lucide:globe" class="size-6 text-primary" />
+        <KunIcon name="lucide:globe" class="size-6 text-primary" />
       </div>
 
       <KunPopover position="bottom-end">
@@ -23,7 +23,7 @@ const showMenu = ref(false)
             is-icon-only
             aria-label="更多操作"
           >
-            <Icon name="lucide:more-vertical" class="size-5" />
+            <KunIcon name="lucide:ellipsis-vertical" class="size-5" />
           </KunButton>
         </template>
         <div class="w-32 py-1">
@@ -31,14 +31,14 @@ const showMenu = ref(false)
             class="flex w-full items-center gap-2 px-3 py-2 text-sm text-default-500 hover:bg-default-100 hover:text-foreground"
             @click="emit('edit')"
           >
-            <Icon name="lucide:pencil" class="size-4" />
+            <KunIcon name="lucide:pencil" class="size-4" />
             编辑
           </button>
           <button
             class="flex w-full items-center gap-2 px-3 py-2 text-sm text-danger hover:bg-danger-50"
             @click="emit('delete')"
           >
-            <Icon name="lucide:trash-2" class="size-4" />
+            <KunIcon name="lucide:trash-2" class="size-4" />
             删除
           </button>
         </div>

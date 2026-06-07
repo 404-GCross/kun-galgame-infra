@@ -58,7 +58,7 @@ onMounted(() => {
 
     <div v-if="success" class="text-center">
       <div class="mb-4 inline-flex size-16 items-center justify-center rounded-full bg-success-100">
-        <Icon name="lucide:check" class="size-8 text-success" />
+        <KunIcon name="lucide:check" class="size-8 text-success" />
       </div>
       <h2 class="mb-2 text-lg font-semibold text-foreground">密码重置成功</h2>
       <p class="mb-6 text-default-500">您的密码已重置，正在跳转到登录页面...</p>
@@ -73,7 +73,7 @@ onMounted(() => {
         <div v-if="error" class="rounded-lg bg-danger-50 p-3 text-sm text-danger">{{ error }}</div>
 
         <KunButton type="submit" color="primary" class="w-full" :disabled="isLoading || !token">
-          <Icon v-if="isLoading" name="lucide:loader-2" class="mr-2 size-4 animate-spin" />
+          <KunIcon v-if="isLoading" name="lucide:loader-circle" class="mr-2 size-4 animate-spin" />
           {{ isLoading ? '重置中...' : '重置密码' }}
         </KunButton>
       </div>

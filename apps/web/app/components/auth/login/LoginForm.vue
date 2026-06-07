@@ -80,7 +80,7 @@ onMounted(async () => {
         </div>
 
         <KunButton type="submit" color="primary" class="w-full" :disabled="isLoading">
-          <Icon v-if="isLoading" name="lucide:loader-2" class="mr-2 size-4 animate-spin" />
+          <KunIcon v-if="isLoading" name="lucide:loader-circle" class="mr-2 size-4 animate-spin" />
           {{ isLoading ? '登录中...' : '登录' }}
         </KunButton>
       </div>
