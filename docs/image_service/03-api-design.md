@@ -19,7 +19,7 @@
 > ⚠️ 本节已对齐实现（2026-05 核对）。早期草案写的是嵌套
 > `{"error":{"code":"quota_exceeded"}}`（字符串 code）——**那是过期设计，
 > 从未落地**。实际服务端走全系统统一的扁平信封 `pkg/response`，`code` 是
-> **整数**。`pkg/imageclient` 也按整数 `code` 解析/分类，二者一致。
+> **整数**。`pkg/imageclient` 也按整数 `code` 解析/分类，二者一致（moyu 的 `pkg/imageclient` 曾按旧草案解析导致上传成功却回空 hash/url，2026-05-30 已修正）。
 
 统一格式（与 OAuth / galgame 等所有本仓服务同一套 `{code,message,data}`）：
 
