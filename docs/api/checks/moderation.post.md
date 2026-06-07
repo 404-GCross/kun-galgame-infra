@@ -1,5 +1,8 @@
 # Moderation 服务 — POST API 清单
 
+> ⚠️ **更正（2026-06）**：moderation / artifact **已有独立服务与路由**（`cmd/moderation` / `cmd/artifact`）；下文「未实现」为旧表述，仅指本轮未做字段对齐审计。
+
+
 > 服务: **moderation**（`apps/api/cmd/moderation`） · Base URL: `/api/v1` · 路由源: `cmd/moderation/main.go`
 >
 > 图例见 [README](./README.md)。配套: [moderation.get.md](./moderation.get.md)

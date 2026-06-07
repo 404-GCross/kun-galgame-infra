@@ -1,5 +1,8 @@
 # Artifact 服务 — POST API 清单
 
+> ⚠️ **更正（2026-06）**：moderation / artifact **已有独立服务与路由**（`cmd/moderation` / `cmd/artifact`）；下文「未实现」为旧表述，仅指本轮未做字段对齐审计。
+
+
 > 服务: **artifact**（`apps/api/cmd/artifact`） · Base URL: `/api/v1` · 路由源: `cmd/artifact/main.go`
 >
 > 图例见 [README](./README.md)。配套: [artifact.get.md](./artifact.get.md) · [artifact.delete.md](./artifact.delete.md)
