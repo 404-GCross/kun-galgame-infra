@@ -21,7 +21,7 @@ wiki 起一张 `galgame_message` 表，沉淀投稿审核流程产生的所有�
 
 > **没 target 的消息只给 admin 队列看**（`submitted` / `claimed` / `edited_pending`，因为没有用户需要被推送）。带 target 的（`approved` / `declined` / `banned` / `unbanned`）既会出现在用户的 `/messages/mine`，也会出现在 cron 的 `/messages/feed` 里。
 >
-> banned / unbanned 之所以也带 target，是因为 kungal/moyu 的 cron 需要这些事件来同步本地 `wiki_status_snapshot` 列。否则封禁过的作品在本地永远是 published 状态，渲染列表时会出现"指向不存在 galgame"的死链。
+> banned / unbanned 之所以也带 target，是因为 kungal/moyu 的 cron 要据此给作者发本地通知。moyu 实测（`internal/infrastructure/cron/wiki_sync.go`）：`approved` 经 OAuth s2s 发 +3 并写通知，`declined` / `banned` / `unbanned` **仅写通知**——**不**维护本地 `wiki_status_snapshot` 列（该列不存在）。封禁作品的可见性由下游本地行（moyu 的 `patch` 行）状态决定，不靠快照列。
 
 ### 通用响应字段
 
