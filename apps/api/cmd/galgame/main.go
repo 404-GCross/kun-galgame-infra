@@ -203,6 +203,7 @@ func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB, se
 	galgame.Get("/batch", optionalJWT, galgameH.BatchGet)
 	galgame.Get("/check", galgameH.CheckVNDB)
 	galgame.Get("/user/:id/stats", galgameH.UserStats)
+	galgame.Get("/user/:id/galgames", galgameH.UserGalgames)
 	// GET /mine MUST be registered before the /:gid catch-all: both are
 	// GET and Fiber matches by registration order, so a /:gid registered
 	// first binds :gid="mine" and the handler ParseInt-fails with
@@ -240,6 +241,12 @@ func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB, se
 	galgame.Get("/messages/feed",
 		middleware.OAuthClientBasicAuth(oauthClientRepo),
 		messageH.ListFeed,
+	)
+	// /revisions/recent: kungal/moyu cron pulls merged-revision (edit) events
+	// here via Basic Auth → mirror into their local activity timelines.
+	galgame.Get("/revisions/recent",
+		middleware.OAuthClientBasicAuth(oauthClientRepo),
+		revisionH.RecentRevisions,
 	)
 
 	// ─── Bearer JWT fence — every route below this point inherits jwtAuth ───

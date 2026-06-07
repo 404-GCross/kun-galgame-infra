@@ -58,6 +58,21 @@ func (h *RevisionHandler) ListRevisions(c fiber.Ctx) error {
 	return response.Success(c, fiber.Map{"items": items, "total": total})
 }
 
+// RecentRevisions serves GET /galgame/revisions/recent — the merged-revision
+// feed consumed by downstream crons (kungal/moyu) to mirror edit activity into
+// their local timelines. Basic-Auth (OAuth client), same as /messages/feed.
+func (h *RevisionHandler) RecentRevisions(c fiber.Ctx) error {
+	var req dto.RecentRevisionsRequest
+	if err := c.Bind().Query(&req); err != nil {
+		return response.BadRequest(c, errors.ErrBadRequest)
+	}
+	resp, err := h.svc.ListRecentRevisions(c.Context(), req.SinceID, req.Limit)
+	if err != nil {
+		return response.InternalError(c, errors.ErrOperationFailed)
+	}
+	return response.Success(c, resp)
+}
+
 // GetRevision returns a specific revision's snapshot
 func (h *RevisionHandler) GetRevision(c fiber.Ctx) error {
 	gid, err := strconv.Atoi(c.Params("gid"))

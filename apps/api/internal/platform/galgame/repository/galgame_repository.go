@@ -407,3 +407,27 @@ func (r *GalgameRepository) GetUserStats(ctx context.Context, userID int) (*dto.
 
 	return &stats, nil
 }
+
+// ListPublishedByUser returns a user's PUBLISHED galgames (status=0), newest
+// first, paginated — the rows behind GetUserStats.GalgameCreated (same WHERE).
+// Selects only the brief columns; the service maps them to GalgameBrief +
+// pinned-cover hashes (PinnedCoverHashes), exactly like BatchGet.
+func (r *GalgameRepository) ListPublishedByUser(ctx context.Context, userID, page, limit int, contentLimit string) (items []model.Galgame, total int64, err error) {
+	q := r.db.WithContext(ctx).Model(&model.Galgame{}).
+		Where("user_id = ? AND status = 0", userID)
+	// NSFW gating is the wiki's job (handbook §16) — filter server-side so the
+	// count + rows agree and nothing NSFW leaks to a SFW viewer.
+	if contentLimit != "" {
+		q = q.Where("content_limit = ?", contentLimit)
+	}
+
+	q.Count(&total)
+
+	err = q.
+		Select("id, vndb_id, name_en_us, name_ja_jp, name_zh_cn, name_zh_tw, banner, content_limit, status, user_id, resource_update_time, original_language, age_limit").
+		Order("created DESC").
+		Offset((page - 1) * limit).
+		Limit(limit).
+		Find(&items).Error
+	return items, total, err
+}

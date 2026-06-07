@@ -52,6 +52,28 @@ func (r *RevisionRepository) List(ctx context.Context, galgameID, page, limit in
 	return items, total, err
 }
 
+// ListRecentMerged returns merged revisions (a "PR landed = edit applied"
+// event) with id > sinceID, id-ascending — a linear since-id feed for
+// downstream activity timelines (kungal/moyu). UserID on a merged revision is
+// the editor (= pr.UserID at merge), so it's the correct actor. No galgame
+// status gate here: the consumer drops events whose galgame brief it can't see
+// (banned / NSFW), same contract as /messages/feed.
+func (r *RevisionRepository) ListRecentMerged(ctx context.Context, sinceID int64, limit int) ([]model.GalgameRevision, error) {
+	var items []model.GalgameRevision
+	q := r.db.WithContext(ctx).Model(&model.GalgameRevision{}).
+		Where("action = ?", "merged")
+	if sinceID > 0 {
+		q = q.Where("id > ?", sinceID)
+	}
+	// Project only the feed columns — never the heavy `snapshot` jsonb. The
+	// since_id=0 backfill can scan up to 50×1000 rows; loading a full galgame
+	// snapshot per row just to drop it in the DTO would read tens of MB for
+	// nothing.
+	err := q.Select("id", "galgame_id", "user_id", "action", "created").
+		Order("id ASC").Limit(limit).Find(&items).Error
+	return items, err
+}
+
 // FindByRevision finds a specific revision
 func (r *RevisionRepository) FindByRevision(ctx context.Context, galgameID, revision int) (*model.GalgameRevision, error) {
 	var rev model.GalgameRevision

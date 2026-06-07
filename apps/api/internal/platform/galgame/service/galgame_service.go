@@ -575,6 +575,51 @@ func (s *GalgameService) GetUserStats(ctx context.Context, userID int) (*dto.Use
 	return s.galgameRepo.GetUserStats(ctx, userID)
 }
 
+// ListUserGalgames returns a user's PUBLISHED galgames as briefs (newest first,
+// paginated) — the source for a consumer's profile "已发布 Galgame" tab. Mirrors
+// BatchGetWithViewer's brief mapping (incl. the pinned-cover hash lookup).
+func (s *GalgameService) ListUserGalgames(ctx context.Context, userID, page, limit int, contentLimit string) ([]dto.GalgameBrief, int64, error) {
+	galgames, total, err := s.galgameRepo.ListPublishedByUser(ctx, userID, page, limit, contentLimit)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	resultIDs := make([]int, 0, len(galgames))
+	for _, g := range galgames {
+		resultIDs = append(resultIDs, g.ID)
+	}
+	pinned, err := s.galgameRepo.PinnedCoverHashes(ctx, resultIDs)
+	if err != nil {
+		// Non-fatal: effective_banner_hash stays nil; FE falls back to Banner.
+		pinned = map[int]string{}
+	}
+
+	items := make([]dto.GalgameBrief, len(galgames))
+	for i, g := range galgames {
+		var effective *string
+		if h, ok := pinned[g.ID]; ok {
+			effective = &h
+		}
+		items[i] = dto.GalgameBrief{
+			ID:                  g.ID,
+			VNDBID:              g.VNDBID,
+			NameEnUS:            g.NameEnUS,
+			NameJaJP:            g.NameJaJP,
+			NameZhCN:            g.NameZhCN,
+			NameZhTW:            g.NameZhTW,
+			Banner:              g.Banner,
+			EffectiveBannerHash: effective,
+			ContentLimit:        g.ContentLimit,
+			Status:              g.Status,
+			UserID:              g.UserID,
+			ResourceUpdateTime:  g.ResourceUpdateTime.Time().UTC().Format("2006-01-02T15:04:05Z"),
+			OriginalLanguage:    g.OriginalLanguage,
+			AgeLimit:            g.AgeLimit,
+		}
+	}
+	return items, total, nil
+}
+
 // loadGalgameWithRelations loads a galgame with all relations using the given tx.
 // Cover/Screenshot get an explicit ORDER BY so consumers (and effective
 // banner derivation) see a deterministic sequence — sort_order asc,

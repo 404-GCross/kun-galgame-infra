@@ -9,6 +9,31 @@ type ListRevisionRequest struct {
 	IncludeMinor bool `query:"include_minor"`
 }
 
+// RecentRevisionsRequest is the query of GET /galgame/revisions/recent — the
+// since-id edit-activity feed consumed by downstream crons (kungal/moyu).
+type RecentRevisionsRequest struct {
+	SinceID int64 `query:"since_id" validate:"omitempty,min=0"`
+	Limit   int   `query:"limit" validate:"omitempty,min=1,max=5000"`
+}
+
+// RevisionFeedItem is one "edit landed" event for downstream activity
+// timelines. Minimal by design — who (UserID = the editor), which (GalgameID),
+// when (Created). ID is galgame_revision.id, used as the feed cursor.
+type RevisionFeedItem struct {
+	ID        int64  `json:"id"`
+	GalgameID int    `json:"galgame_id"`
+	UserID    int    `json:"user_id"`
+	Action    string `json:"action"`
+	Created   string `json:"created"`
+}
+
+// RevisionFeedResponse wraps the feed with has_more for cursor paging
+// (mirrors MessageFeedResponse).
+type RevisionFeedResponse struct {
+	Items   []RevisionFeedItem `json:"items"`
+	HasMore bool               `json:"has_more"`
+}
+
 // RevertRequest represents a revert request
 type RevertRequest struct {
 	Revision int `json:"revision" validate:"required,min=1"`

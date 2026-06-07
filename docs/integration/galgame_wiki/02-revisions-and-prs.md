@@ -158,6 +158,52 @@
 
 ---
 
+### GET /galgame/revisions/recent
+
+全站「最近编辑」事件流(`action='merged'` 的修订),`since_id` 游标 + `has_more`,**Basic Auth**(OAuth client),供下游 cron 拉取后镜像进各自的动态时间线(论坛「最近动态」)。和 `/messages/feed` 同一套消费模式。
+
+> **为什么需要它**:`galgame_revision`(改动落地日志)只有按游戏维度的 `/:gid/revisions`,没有全站 feed;而 **PR 合并(编辑落地)不写 message**,所以 `/messages/feed` 里根本没有编辑事件。下游要做「谁编辑了哪个 galgame」的动态,必须有这个全站修订 feed。
+
+**查询参数**:
+
+| 参数 | 类型 | 默认 | 说明 |
+|------|------|------|------|
+| since_id | int64 | 0 | 排他下界(返回 id > since_id),即游标 |
+| limit | int | 1000 | 每页数量(上限 5000) |
+
+**成功响应**:`data.items` 按 `id` 升序;`data.has_more` 指示是否还有下一页。
+
+```json
+{
+  "code": 0,
+  "message": "成功",
+  "data": {
+    "items": [
+      {
+        "id": 8231,
+        "galgame_id": 1207,
+        "user_id": 42,
+        "action": "merged",
+        "created": "2026-01-02T03:04:05Z"
+      }
+    ],
+    "has_more": false
+  }
+}
+```
+
+| 字段 | 说明 |
+|------|------|
+| id | `galgame_revision.id`,作游标 |
+| galgame_id | 被编辑的 galgame |
+| user_id | **编辑者**(= 合并时的 `pr.user_id`),即正确的动态 actor |
+| action | 目前恒为 `merged` |
+| created | 编辑落地时间 |
+
+只返回 `action='merged'`(PR 合并 = 一次编辑落地);**不做 status / NSFW 过滤**(和 `/messages/feed` 同契约)——消费方拿不到对应 galgame brief 时自行丢弃(banned / NSFW)。注意:**新建动态请用现有的 galgame 创建源,别拿这个 feed 重复计创建**。
+
+---
+
 ## PR (编辑请求)
 
 非创建者/非 admin 通过 PR 提交编辑。PR 支持字段级自动 rebase。

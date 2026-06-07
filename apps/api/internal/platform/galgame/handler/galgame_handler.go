@@ -238,6 +238,38 @@ func (h *GalgameHandler) UserStats(c fiber.Ctx) error {
 	return response.Success(c, stats)
 }
 
+// UserGalgames returns a user's PUBLISHED galgames (newest first, paginated)
+// as briefs — the source for a consumer's profile "已发布 Galgame" tab. Public
+// (profiles are publicly viewable); status=0 only, so no viewer gating needed.
+func (h *GalgameHandler) UserGalgames(c fiber.Ctx) error {
+	userID, err := strconv.Atoi(c.Params("id"))
+	if err != nil || userID <= 0 {
+		return response.BadRequest(c, errors.ErrInvalidID)
+	}
+
+	page, _ := strconv.Atoi(c.Query("page"))
+	if page < 1 {
+		page = 1
+	}
+	limit, _ := strconv.Atoi(c.Query("limit"))
+	if limit < 1 || limit > 100 {
+		limit = 24
+	}
+	// Profiles are crawlable → default SFW (handbook §16); callers pass
+	// content_limit=all to opt into NSFW.
+	contentLimit := utils.ParseContentLimit(c.Query("content_limit"), "sfw")
+
+	items, total, err := h.galgameService.ListUserGalgames(c.Context(), userID, page, limit, contentLimit)
+	if err != nil {
+		return response.InternalError(c, errors.ErrOperationFailed)
+	}
+
+	return response.Success(c, fiber.Map{
+		"galgames": items,
+		"total":    total,
+	})
+}
+
 // CheckVNDB checks if a VNDB ID already exists
 func (h *GalgameHandler) CheckVNDB(c fiber.Ctx) error {
 	var req dto.CheckVNDBRequest

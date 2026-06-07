@@ -111,6 +111,37 @@ func (s *GalgameService) ListRevisions(ctx context.Context, galgameID, page, lim
 	return s.revisionRepo.List(ctx, galgameID, page, limit, includeMinor)
 }
 
+// ListRecentRevisions returns the merged-revision feed (edit-landed events) for
+// downstream activity timelines. Mirrors MessageService.ListFeed's cursor shape
+// (since_id + has_more). Maps to a minimal DTO — no snapshot/note (the timeline
+// only needs who / which / when).
+func (s *GalgameService) ListRecentRevisions(ctx context.Context, sinceID int64, limit int) (*dto.RevisionFeedResponse, error) {
+	if limit <= 0 {
+		limit = 1000
+	}
+	if limit > 5000 {
+		limit = 5000
+	}
+	items, err := s.revisionRepo.ListRecentMerged(ctx, sinceID, limit)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]dto.RevisionFeedItem, len(items))
+	for i, rev := range items {
+		out[i] = dto.RevisionFeedItem{
+			ID:        int64(rev.ID),
+			GalgameID: rev.GalgameID,
+			UserID:    rev.UserID,
+			Action:    rev.Action,
+			Created:   rev.Created.Time().UTC().Format("2006-01-02T15:04:05Z"),
+		}
+	}
+	return &dto.RevisionFeedResponse{
+		Items:   out,
+		HasMore: len(items) == limit,
+	}, nil
+}
+
 // GetRevision returns a specific revision
 func (s *GalgameService) GetRevision(ctx context.Context, galgameID, revision int) (*model.GalgameRevision, error) {
 	rev, err := s.revisionRepo.FindByRevision(ctx, galgameID, revision)

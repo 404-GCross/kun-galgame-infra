@@ -44,6 +44,7 @@
 | `GET /api/galgame/batch` | 🔐 | `galgameH.BatchGet` | ✅ | 按 id 批量轻量 DTO（不含 release_date 等）|
 | `GET /api/galgame/check` | 🌐 | `galgameH.CheckVNDB` | ✅ | VNDB 重复校验 |
 | `GET /api/galgame/user/:id/stats` | 🌐 | `galgameH.UserStats` | 🔧 | 用户贡献统计；#37 8 个 Count 错误传播，不再静默返回零 |
+| `GET /api/galgame/user/:id/galgames` | 🌐 | `galgameH.UserGalgames` | ✅ | 用户已发布的 galgame 列表（下游个人主页「已发布」标签）；status=0 + content_limit 过滤（默认 sfw），total 为过滤后准确值 |
 | `GET /api/galgame/mine` | 🔒 | `submissionH.ListMine` | ✅ | 我的投稿 |
 | `GET /api/galgame/:gid` | 🔐 | `galgameH.Get` | 🔧 | 详情（嵌入 tag/official/engine 的 galgame_count、names 等）；#36 仅 published 才计 view，草稿不再被自增 |
 
@@ -65,6 +66,7 @@
 | 路径 | 鉴权 | Handler | 状态 | 备注 |
 |---|---|---|---|---|
 | `GET /api/galgame/messages/feed` | 🔑 | `messageH.ListFeed` | 🔧 | 下游 cron 拉取（含 target_user_id 的事件）；#24 填充 effective_banner_hash(pinned cover) |
+| `GET /api/galgame/revisions/recent` | 🔑 | `revisionH.RecentRevisions` | ✅ | 全站 merged 修订 feed（编辑动态）；下游 cron 镜像进本地时间线；since_id 游标 + has_more |
 | `GET /api/galgame/messages/mine` | 🔒 | `messageH.ListMine` | 🔧 | 我的通知；#24 effective_banner_hash |
 
 ## 4. 管理（admin / moderator）
