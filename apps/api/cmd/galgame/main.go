@@ -305,6 +305,8 @@ func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB, se
 	tag.Get("/search", searchH.Tag) // Meilisearch-backed (replaces DB LIKE search)
 	tag.Get("/multi", tagH.Multi)
 	tag.Get("/:name", tagH.GetByName)
+	// Member galgame ids → the forum intersects with local + filters there.
+	tag.Get("/:id/galgame-ids", tagH.GalgameIDs)
 	tag.Post("/", jwtAuth, tagH.Create)
 	tag.Put("/", jwtAuth, tagH.Update)
 	tag.Delete("/:id", jwtAuth, tagH.Delete)
@@ -319,6 +321,7 @@ func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB, se
 	official.Get("/", officialH.List)
 	official.Get("/search", searchH.Official) // Meilisearch-backed
 	official.Get("/:name", officialH.GetByName)
+	official.Get("/:id/galgame-ids", officialH.GalgameIDs)
 	official.Post("/", jwtAuth, officialH.Create)
 	official.Put("/", jwtAuth, officialH.Update)
 	official.Delete("/:id", jwtAuth, officialH.Delete)
@@ -330,6 +333,7 @@ func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB, se
 	engine := api.Group("/engine")
 	engine.Get("/", engineH.List)
 	engine.Get("/:name", engineH.GetByName)
+	engine.Get("/:id/galgame-ids", engineH.GalgameIDs)
 	engine.Post("/", jwtAuth, engineH.Create)
 	engine.Put("/", jwtAuth, engineH.Update)
 	engine.Delete("/:id", jwtAuth, engineH.Delete)

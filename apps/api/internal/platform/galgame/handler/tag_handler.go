@@ -33,6 +33,24 @@ func NewTagHandler(tagRepo *repository.TagRepository, taxSvc *service.TaxonomySe
 	return &TagHandler{tagRepo: tagRepo, taxSvc: taxSvc, searchHook: hook}
 }
 
+// GalgameIDs returns every published galgame id under this tag (id array only).
+// The forum intersects these with its local galgames to run resource-based
+// filtering the wiki can't do.
+func (h *TagHandler) GalgameIDs(c fiber.Ctx) error {
+	id, err := strconv.Atoi(c.Params("id"))
+	if err != nil || id <= 0 {
+		return response.BadRequest(c, errors.ErrInvalidID)
+	}
+	ids, err := h.tagRepo.GalgameIDsByTagID(c.Context(), id)
+	if err != nil {
+		return response.InternalError(c, errors.ErrOperationFailed)
+	}
+	if ids == nil {
+		ids = []int{}
+	}
+	return response.Success(c, fiber.Map{"ids": ids})
+}
+
 // List returns a paginated list of tags
 func (h *TagHandler) List(c fiber.Ctx) error {
 	var req dto.ListTagRequest

@@ -50,6 +50,18 @@ func (r *EngineRepository) FindByID(ctx context.Context, id int) (*model.Galgame
 	return &engine, err
 }
 
+// GalgameIDsByEngineID returns the ids of every PUBLISHED galgame on this
+// engine (ids only). See TagRepository.GalgameIDsByTagID for the rationale.
+func (r *EngineRepository) GalgameIDsByEngineID(ctx context.Context, engineID int) ([]int, error) {
+	var ids []int
+	err := r.db.WithContext(ctx).
+		Table("galgame_engine_relation r").
+		Joins("JOIN galgame g ON g.id = r.galgame_id AND g.status = 0").
+		Where("r.engine_id = ?", engineID).
+		Pluck("r.galgame_id", &ids).Error
+	return ids, err
+}
+
 // FindGalgamesByEngineID returns galgames for an engine.
 // If contentLimit is non-empty ("sfw" or "nsfw"), filters galgames accordingly
 // so total / pagination reflects only matching entries.

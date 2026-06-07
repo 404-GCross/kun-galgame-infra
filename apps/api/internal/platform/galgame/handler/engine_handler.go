@@ -26,6 +26,23 @@ func NewEngineHandler(engineRepo *repository.EngineRepository, taxSvc *service.T
 	return &EngineHandler{engineRepo: engineRepo, taxSvc: taxSvc}
 }
 
+// GalgameIDs returns every published galgame id on this engine (id array only).
+// See TagHandler.GalgameIDs.
+func (h *EngineHandler) GalgameIDs(c fiber.Ctx) error {
+	id, err := strconv.Atoi(c.Params("id"))
+	if err != nil || id <= 0 {
+		return response.BadRequest(c, errors.ErrInvalidID)
+	}
+	ids, err := h.engineRepo.GalgameIDsByEngineID(c.Context(), id)
+	if err != nil {
+		return response.InternalError(c, errors.ErrOperationFailed)
+	}
+	if ids == nil {
+		ids = []int{}
+	}
+	return response.Success(c, fiber.Map{"ids": ids})
+}
+
 // List returns all engines (small dataset, no pagination)
 func (h *EngineHandler) List(c fiber.Ctx) error {
 	items, err := h.engineRepo.ListAll(c.Context())

@@ -30,6 +30,23 @@ func NewOfficialHandler(officialRepo *repository.OfficialRepository, taxSvc *ser
 	return &OfficialHandler{officialRepo: officialRepo, taxSvc: taxSvc, searchHook: hook}
 }
 
+// GalgameIDs returns every published galgame id under this official (id array
+// only). See TagHandler.GalgameIDs.
+func (h *OfficialHandler) GalgameIDs(c fiber.Ctx) error {
+	id, err := strconv.Atoi(c.Params("id"))
+	if err != nil || id <= 0 {
+		return response.BadRequest(c, errors.ErrInvalidID)
+	}
+	ids, err := h.officialRepo.GalgameIDsByOfficialID(c.Context(), id)
+	if err != nil {
+		return response.InternalError(c, errors.ErrOperationFailed)
+	}
+	if ids == nil {
+		ids = []int{}
+	}
+	return response.Success(c, fiber.Map{"ids": ids})
+}
+
 // List returns a paginated list of officials
 func (h *OfficialHandler) List(c fiber.Ctx) error {
 	var req dto.ListOfficialRequest

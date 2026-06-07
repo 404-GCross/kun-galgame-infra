@@ -59,6 +59,18 @@ func (r *OfficialRepository) FindByID(ctx context.Context, id int) (*model.Galga
 	return &official, err
 }
 
+// GalgameIDsByOfficialID returns the ids of every PUBLISHED galgame under this
+// official (ids only). See TagRepository.GalgameIDsByTagID for the rationale.
+func (r *OfficialRepository) GalgameIDsByOfficialID(ctx context.Context, officialID int) ([]int, error) {
+	var ids []int
+	err := r.db.WithContext(ctx).
+		Table("galgame_official_relation r").
+		Joins("JOIN galgame g ON g.id = r.galgame_id AND g.status = 0").
+		Where("r.official_id = ?", officialID).
+		Pluck("r.galgame_id", &ids).Error
+	return ids, err
+}
+
 // FindGalgamesByOfficialID returns galgames for an official.
 // If contentLimit is non-empty ("sfw" or "nsfw"), filters galgames accordingly
 // so total / pagination reflects only matching entries.

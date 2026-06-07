@@ -58,6 +58,20 @@ func (r *TagRepository) FindByID(ctx context.Context, id int) (*model.GalgameTag
 	return &tag, err
 }
 
+// GalgameIDsByTagID returns the ids of every PUBLISHED galgame carrying this
+// tag (ids only — no metadata, no pagination). The downstream forum intersects
+// these with its local galgames and runs its own resource-based filtering
+// (platform/language/有无下载), which the wiki has no concept of.
+func (r *TagRepository) GalgameIDsByTagID(ctx context.Context, tagID int) ([]int, error) {
+	var ids []int
+	err := r.db.WithContext(ctx).
+		Table("galgame_tag_relation r").
+		Joins("JOIN galgame g ON g.id = r.galgame_id AND g.status = 0").
+		Where("r.tag_id = ?", tagID).
+		Pluck("r.galgame_id", &ids).Error
+	return ids, err
+}
+
 // FindGalgamesByTagID returns galgames associated with a tag.
 // If contentLimit is non-empty ("sfw" or "nsfw"), filters galgames accordingly
 // so total / pagination reflects only matching entries.
