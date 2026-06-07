@@ -7,7 +7,7 @@
 >
 > 图例见 [README](./README.md)。配套: [moderation.get.md](./moderation.get.md)
 >
-> **未审计** —— 该服务尚未实现（仅占位），本轮按要求跳过，状态保持 ⏳。
+> **未审计** —— 该服务已有独立 cmd（`cmd/moderation` / `cmd/artifact`，未接入 oauth 主进程），本轮字段审计未覆盖，状态 ⏳。
 
 ## 统计
 
