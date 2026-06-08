@@ -3,7 +3,8 @@ import {
   GALGAME_STATUS_MAP,
   CONTENT_LIMIT_MAP,
   TAG_CATEGORY_MAP,
-  OFFICIAL_CATEGORY_MAP
+  OFFICIAL_CATEGORY_MAP,
+  REVIEW_ACTIONS
 } from '~/constants/admin'
 import type { Galgame } from '~/shared/types/galgame'
 import { resolveBannerUrl, imageHashUrl } from '~/shared/utils/resolveImage'
@@ -16,7 +17,6 @@ const router = useRouter()
 const cdnBase = useRuntimeConfig().public.imageCdnBase as string
 
 const id = computed(() => Number(route.params.id))
-const updating = ref(false)
 const editOpen = ref(false)
 
 // SSR: server-fetched (token cookie is non-httpOnly so useApi can attach
@@ -109,40 +109,34 @@ const currentIntro = computed(
 // ────────────────────────────────────────────────
 // Actions
 // ────────────────────────────────────────────────
-const changeStatus = async (newStatus: number) => {
-  if (!galgame.value) return
-  if (newStatus === galgame.value.status) return
+// ────────────────────────────────────────────────
+// Admin status actions — reuse the canonical ReviewActionModal, which PUTs
+// /admin/galgame/:id/status with status 0/1/4 (+ reason). Each action is
+// gated to the source states the backend actually accepts, so no click can
+// ever hit the `oneof`/transition validation (the old hardcoded 撤回草稿→2
+// button always 400'd; 2 was dropped from the contract on 2026-05-12):
+//   通过审核 (→0)  any state except already-published
+//   拒绝     (→4)  pending(3) only — backend rejects decline from elsewhere
+//   封禁     (→1)  any state except already-banned
+// ────────────────────────────────────────────────
+const actionOpen = ref<'approve' | 'decline' | 'ban' | null>(null)
 
-  const actionMap: Record<number, string> = {
-    0: '发布',
-    1: '封禁',
-    2: '撤回为草稿'
-  }
-  const action = actionMap[newStatus]
-  if (
-    !(await useKunConfirm({
-      title: `${action}确认`,
-      content: `确认将该 galgame ${action} 吗？`,
-      confirmText: action,
-      danger: newStatus === 1
-    }))
+const availableActions = computed(() => {
+  const s = galgame.value?.status
+  if (s === undefined || s === null) return []
+  return REVIEW_ACTIONS.filter((a) =>
+    a.status === 4 ? s === 3 : a.status !== s
   )
-    return
+})
 
-  updating.value = true
-  try {
-    const response = await api.put(`/admin/galgame/${id.value}/status`, {
-      status: newStatus
-    })
-    if (response.code === 0) {
-      useKunMessage(`${action}成功`, 'success')
-      await refresh()
-    } else {
-      useKunMessage(response.message || `${action}失败`, 'error')
-    }
-  } finally {
-    updating.value = false
-  }
+const currentAction = computed(
+  () => REVIEW_ACTIONS.find((a) => a.id === actionOpen.value) ?? null
+)
+
+const onActionDone = () => {
+  useKunMessage(`${currentAction.value?.label ?? '操作'}成功`, 'success')
+  actionOpen.value = null
+  refresh()
 }
 
 // ────────────────────────────────────────────────
@@ -418,46 +412,23 @@ const officialCategoryColor = (cat: string): KunUIColor =>
           </div>
         </div>
 
-        <!-- Status change actions — separated by KunDivider to signal
-             they affect publication state -->
-        <div class="space-y-2">
+        <!-- Status change actions — gated to the transitions the backend
+             accepts (status 0/1/4); each opens ReviewActionModal. -->
+        <div v-if="availableActions.length" class="space-y-2">
           <KunDivider />
           <p class="text-default-400 text-xs">状态变更</p>
           <div class="flex flex-col gap-2">
             <KunButton
-              v-if="galgame.status !== 0"
-              color="success"
+              v-for="action in availableActions"
+              :key="action.id"
+              :color="(action.color as KunUIColor)"
               variant="flat"
               size="sm"
               full-width
-              :disabled="updating"
-              @click="changeStatus(0)"
+              @click="actionOpen = action.id"
             >
-              <KunIcon name="lucide:circle-check" class="mr-1 size-4" />
-              发布
-            </KunButton>
-            <KunButton
-              v-if="galgame.status !== 2"
-              variant="flat"
-              size="sm"
-              full-width
-              :disabled="updating"
-              @click="changeStatus(2)"
-            >
-              <KunIcon name="lucide:file-pen-line" class="mr-1 size-4" />
-              撤回草稿
-            </KunButton>
-            <KunButton
-              v-if="galgame.status !== 1"
-              color="danger"
-              variant="flat"
-              size="sm"
-              full-width
-              :disabled="updating"
-              @click="changeStatus(1)"
-            >
-              <KunIcon name="lucide:ban" class="mr-1 size-4" />
-              封禁
+              <KunIcon :name="action.icon" class="mr-1 size-4" />
+              {{ action.label }}
             </KunButton>
           </div>
         </div>
@@ -832,6 +803,16 @@ const officialCategoryColor = (cat: string): KunUIColor =>
           refresh()
         }
       "
+    />
+
+    <!-- Admin status-change modal (approve / decline / ban + reason) -->
+    <ReviewActionModal
+      v-if="currentAction && galgame"
+      :open="!!currentAction"
+      :galgame-id="galgame.id"
+      :action="currentAction"
+      @close="actionOpen = null"
+      @done="onActionDone"
     />
   </div>
 </template>
