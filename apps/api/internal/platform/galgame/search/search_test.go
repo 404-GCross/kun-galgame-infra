@@ -236,6 +236,48 @@ func TestGalgameSearch_ByVNDBID(t *testing.T) {
 	assert.EqualValues(t, 10, resp.Items[0]["id"])
 }
 
+// TestGalgameSearch_VNDBID_ExactSingle locks in the exact single-galgame
+// lookup: a bare "v<digits>" query resolves to the ONE game with that unique
+// vndb_id via an exact filter — no prefix bleed (v1965 must not also return
+// v19658/v196580 the way full-text would), case-insensitive, empty on no match.
+func TestGalgameSearch_VNDBID_ExactSingle(t *testing.T) {
+	clearIndex(t, IndexGalgames)
+	seedGalgames(t,
+		newGalgameDoc(20, "v1965", "マージ", "Marginal"),
+		newGalgameDoc(21, "v19658", "永不枯萎", "Never Wither"),
+		newGalgameDoc(22, "v196580", "decoy", "decoy"),
+	)
+
+	// exact id → exactly one, no prefix bleed to v19658 / v196580
+	resp, err := testSvc.SearchGalgames(context.Background(), &GalgameSearchRequest{Query: "v1965"})
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), resp.Total)
+	require.Len(t, resp.Items, 1)
+	assert.EqualValues(t, 20, resp.Items[0]["id"])
+
+	// case-insensitive
+	resp, err = testSvc.SearchGalgames(context.Background(), &GalgameSearchRequest{Query: "V19658"})
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), resp.Total)
+	require.Len(t, resp.Items, 1)
+	assert.EqualValues(t, 21, resp.Items[0]["id"])
+
+	// no such id → empty result (not an error)
+	resp, err = testSvc.SearchGalgames(context.Background(), &GalgameSearchRequest{Query: "v99999999"})
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), resp.Total)
+}
+
+func TestNormalizeVNDBID(t *testing.T) {
+	cases := map[string]string{
+		"v17": "v17", "V17": "v17", " v17 ": "v17", "v19658": "v19658",
+		"v": "", "17": "", "v17a": "", "abc": "", "": "", "v 17": "", "vv1": "",
+	}
+	for in, want := range cases {
+		assert.Equal(t, want, normalizeVNDBID(in), "in=%q", in)
+	}
+}
+
 func TestGalgameSearch_StatusFilter(t *testing.T) {
 	clearIndex(t, IndexGalgames)
 	d1 := newGalgameDoc(20, "v20", "pub1", "Published One")

@@ -114,6 +114,15 @@ const galgameSearchScoreThreshold = 0.4
 func (s *Service) SearchGalgames(ctx context.Context, req *GalgameSearchRequest) (*GalgameSearchResponse, error) {
 	req.normalize()
 
+	// VNDB-ID exact lookup. A query that is exactly "v<digits>" means the user
+	// wants that ONE galgame by its unique vndb_id — resolve it with an exact
+	// filter rather than full-text. Full-text would prefix-bleed ("v1965" also
+	// matches v19650/v19658) and depends on tokenization; an exact filter is
+	// single, deterministic, and case-insensitive.
+	if vid := normalizeVNDBID(req.Query); vid != "" {
+		return s.lookupByVNDBID(ctx, vid, req)
+	}
+
 	msReq := &meilisearch.SearchRequest{
 		Page:        int64(req.Page),
 		HitsPerPage: int64(req.Limit),
@@ -316,6 +325,47 @@ func normalizeLimit(limit *int, def, max int) {
 	if *limit > max {
 		*limit = max
 	}
+}
+
+// normalizeVNDBID returns the lowercased VNDB id when q is EXACTLY a VNDB id
+// ("v" followed by one or more digits, case-insensitive), else "". Used to
+// detect when a search query should resolve to a single galgame by vndb_id.
+func normalizeVNDBID(q string) string {
+	q = strings.TrimSpace(q)
+	if len(q) < 2 || (q[0] != 'v' && q[0] != 'V') {
+		return ""
+	}
+	for i := 1; i < len(q); i++ {
+		if q[i] < '0' || q[i] > '9' {
+			return ""
+		}
+	}
+	return strings.ToLower(q)
+}
+
+// lookupByVNDBID returns the single galgame whose unique vndb_id == vid via an
+// exact Meilisearch filter. It still applies the caller's status/age/language/
+// entity filters (so an unpublished or otherwise out-of-scope game stays
+// hidden), and returns the normal empty-result shape when nothing matches.
+// vid is pre-validated to [v0-9]+ by normalizeVNDBID, so it's filter-safe.
+func (s *Service) lookupByVNDBID(ctx context.Context, vid string, req *GalgameSearchRequest) (*GalgameSearchResponse, error) {
+	filter := fmt.Sprintf("vndb_id = '%s'", vid)
+	if base := buildGalgameFilter(req); base != "" {
+		filter += " AND " + base
+	}
+	msReq := &meilisearch.SearchRequest{
+		Page:        1,
+		HitsPerPage: 1, // vndb_id is unique → at most one match
+		Filter:      filter,
+	}
+	if len(req.Fields) > 0 {
+		msReq.AttributesToRetrieve = req.Fields
+	}
+	resp, err := s.client.Index(IndexGalgames).SearchWithContext(ctx, "", msReq)
+	if err != nil {
+		return nil, err
+	}
+	return toGalgameResponse(resp), nil
 }
 
 // buildGalgameFilter produces a Meilisearch filter string. Empty string = no filter.

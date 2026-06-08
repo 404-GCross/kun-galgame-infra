@@ -31,6 +31,10 @@ func galgamesSettings() *meilisearch.Settings {
 			"intro_zh_cn", "intro_ja_jp", "intro_en_us", "intro_zh_tw",
 		},
 		FilterableAttributes: []string{
+			// vndb_id: enables EXACT single-galgame lookup. A bare "v<digits>"
+			// search query resolves to one game via `vndb_id = '...'` (exact,
+			// tokenization-immune, no prefix bleed) instead of full-text.
+			"vndb_id",
 			"status",
 			"user_id",
 			"content_limit",
