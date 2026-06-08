@@ -86,17 +86,29 @@ type GalgameSearchResponse struct {
 	Pending []map[string]any `json:"pending,omitempty"`
 }
 
-// nonIntroSearchable mirrors the leading (non-intro) entries of
-// galgamesSettings().SearchableAttributes. By default we restrict the search
-// to these via attributesToSearchOn so intro_* doesn't affect results unless
-// the caller explicitly sets include_intro=true.
+// nonIntroSearchable is the DEFAULT free-text search scope (applied via
+// attributesToSearchOn). It deliberately covers only the identity fields —
+// vndb_id, localized names, aliases — and EXCLUDES:
+//   - intro_* : long markdown bodies, only searched when include_intro=true;
+//   - tag_names / official_names : ③ precision fix. These flooded results —
+//     a query word that happens to be a tag/studio name matched that tag's or
+//     studio's WHOLE catalog, drowning the by-name hits. Browse-by-tag/studio
+//     is served by the tag_ids/official_ids filters and the dedicated tag /
+//     official search indexes instead.
+//
+// tag_names/official_names stay in galgamesSettings().SearchableAttributes so
+// an explicit include_intro=true broad search can still reach them.
 var nonIntroSearchable = []string{
 	"vndb_id",
 	"name_zh_cn", "name_ja_jp", "name_en_us", "name_zh_tw",
 	"aliases",
-	"tag_names",
-	"official_names",
 }
+
+// galgameSearchScoreThreshold is the minimum Meilisearch _rankingScore (0..1)
+// a hit must clear to be returned (② relevance floor). It drops the long tail
+// of barely-relevant matches. Calibrated against real queries; raise to
+// tighten precision, lower to recover recall.
+const galgameSearchScoreThreshold = 0.4
 
 // SearchGalgames runs a galgame search.
 func (s *Service) SearchGalgames(ctx context.Context, req *GalgameSearchRequest) (*GalgameSearchResponse, error) {
@@ -105,6 +117,14 @@ func (s *Service) SearchGalgames(ctx context.Context, req *GalgameSearchRequest)
 	msReq := &meilisearch.SearchRequest{
 		Page:        int64(req.Page),
 		HitsPerPage: int64(req.Limit),
+		// ① Match documents containing the query terms; when there aren't
+		// enough, drop the MOST COMMON term first (keep the rarer, more
+		// meaningful ones) instead of blindly trimming from the query end
+		// (the "last" default, which produced the "matched only one loose
+		// word" results).
+		MatchingStrategy: meilisearch.Frequency,
+		// ② Drop weak matches below the relevance floor.
+		RankingScoreThreshold: galgameSearchScoreThreshold,
 	}
 
 	// Filter
@@ -169,6 +189,9 @@ func (s *Service) SearchGalgames(ctx context.Context, req *GalgameSearchRequest)
 			Page:        1,
 			HitsPerPage: 20,
 			Filter:      pendingFilter,
+			// Same matching as the main pass. No score threshold here: this is
+			// the viewer's own small, time-sorted draft set — keep recall high.
+			MatchingStrategy: meilisearch.Frequency,
 		}
 		// Keep the same Highlight / Fields config so consumers can render
 		// pending entries with the same shape. Sort by latest first.
