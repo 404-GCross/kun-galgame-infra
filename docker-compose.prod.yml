@@ -165,6 +165,15 @@ services:
       <<: *infra-env
       KUN_FIBER_SERVER_HOST: 0.0.0.0
       KUN_FIBER_SERVER_PORT: "9277"
+      # Image-service client for AVATAR uploads (POST /auth/me/avatar,
+      # /admin/users/:uuid/avatar). Without these the oauth process builds no
+      # imgClient, so the avatar route isn't even registered → 404 "无法更改头像".
+      # DEDICATED client (own Dokploy vars, NOT galgame's ${KUN_IMAGE_CLIENT_ID})
+      # so avatars get their own site_key + quota. The client must be
+      # image_enabled with "avatar" in image_allowed_presets — set via SQL, the
+      # oauth-clients admin UI does not write the image_* columns.
+      KUN_IMAGE_CLIENT_ID: ${KUN_OAUTH_IMAGE_CLIENT_ID:-}
+      KUN_IMAGE_CLIENT_SECRET: ${KUN_OAUTH_IMAGE_CLIENT_SECRET:-}
     expose: ["9277"]
     depends_on:
       postgres: { condition: service_healthy }
