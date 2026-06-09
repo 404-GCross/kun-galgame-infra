@@ -105,6 +105,9 @@ func NewAuthServiceFull(
 const resendCodeCooldown = 60 * time.Second
 
 func (s *AuthService) SendRegisterCode(ctx context.Context, name, email string) error {
+	if err := checkEmailDomainAllowed(email); err != nil {
+		return err
+	}
 	if s.cache == nil {
 		// No Redis = cannot store verification code = cannot guarantee
 		// the user is who they say they are. Fail closed instead of
@@ -182,6 +185,9 @@ func (s *AuthService) SendRegisterCode(ctx context.Context, name, email string) 
 // (the WriteSnapshot reads-and-checks in this same function, not in a
 // separate roundtrip).
 func (s *AuthService) Register(ctx context.Context, req *dto.RegisterRequest) (*dto.TokenPair, *model.User, error) {
+	if err := checkEmailDomainAllowed(req.Email); err != nil {
+		return nil, nil, err
+	}
 	if s.cache == nil {
 		return nil, nil, fmt.Errorf("cache not configured")
 	}
@@ -669,6 +675,9 @@ func (s *AuthService) generateTokens(user *model.User) (*dto.TokenPair, error) {
 
 // SendEmailChangeCode sends a verification code to the user's current email for email change
 func (s *AuthService) SendEmailChangeCode(ctx context.Context, userUUID, newEmail string) error {
+	if err := checkEmailDomainAllowed(newEmail); err != nil {
+		return err
+	}
 	user, err := s.userRepo.FindByUUID(ctx, userUUID)
 	if err != nil {
 		return errors.NewWithCode(errors.ErrAuthUserNotFound)
@@ -773,6 +782,9 @@ func (s *AuthService) UpdateProfile(ctx context.Context, userUUID string, req *d
 
 // ChangeEmail verifies the code and updates the user's email
 func (s *AuthService) ChangeEmail(ctx context.Context, userUUID, code, newEmail string) error {
+	if err := checkEmailDomainAllowed(newEmail); err != nil {
+		return err
+	}
 	redisKey := fmt.Sprintf("email_change:%s", userUUID)
 
 	// Read from Redis
