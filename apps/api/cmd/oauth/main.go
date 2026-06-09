@@ -232,6 +232,10 @@ func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 	admin.Delete("/users/:uuid/sessions", adminH.DeleteUserSessions)
 	admin.Post("/users/:uuid/moemoepoint", moemoepointH.AdminAdjust)
 	admin.Get("/users/:uuid/moemoepoint/log", moemoepointH.AdminGetLog)
+	// Registration analytics — under /stats so it can't collide with the
+	// /users/:uuid param route.
+	admin.Get("/stats/registrations", adminH.RegistrationStats)
+	admin.Get("/stats/registrations/hourly", adminH.HourlyRegistrationStats)
 	if avatarUploadH != nil {
 		admin.Post("/users/:uuid/avatar", avatarUploadH.Upload)
 	}

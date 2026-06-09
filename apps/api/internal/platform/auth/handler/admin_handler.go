@@ -41,6 +41,46 @@ func (h *AdminHandler) ListUsers(c fiber.Ctx) error {
 	return response.Success(c, result)
 }
 
+// RegistrationStats returns the daily user-registration series (last `days`
+// days, 1-90, default 30) plus summary figures. GET /admin/stats/registrations.
+func (h *AdminHandler) RegistrationStats(c fiber.Ctx) error {
+	var req dto.RegistrationStatsRequest
+	if err := c.Bind().Query(&req); err != nil {
+		return response.BadRequest(c, errors.ErrBadRequest)
+	}
+	if err := utils.Validate(&req); err != nil {
+		return response.BadRequestMsg(c, errors.ErrValidationFailed, err.Error())
+	}
+	days := req.Days
+	if days == 0 {
+		days = 30
+	}
+
+	result, err := h.adminService.RegistrationStats(c.Context(), days)
+	if err != nil {
+		return response.InternalError(c, errors.ErrOperationFailed)
+	}
+	return response.Success(c, result)
+}
+
+// HourlyRegistrationStats returns the 24-hour registration series for a single
+// day. GET /admin/stats/registrations/hourly?date=YYYY-MM-DD.
+func (h *AdminHandler) HourlyRegistrationStats(c fiber.Ctx) error {
+	var req dto.HourlyStatsRequest
+	if err := c.Bind().Query(&req); err != nil {
+		return response.BadRequest(c, errors.ErrBadRequest)
+	}
+	if err := utils.Validate(&req); err != nil {
+		return response.BadRequestMsg(c, errors.ErrValidationFailed, err.Error())
+	}
+
+	result, err := h.adminService.HourlyRegistrations(c.Context(), req.Date)
+	if err != nil {
+		return response.InternalError(c, errors.ErrOperationFailed)
+	}
+	return response.Success(c, result)
+}
+
 // GetUser gets a user by UUID
 func (h *AdminHandler) GetUser(c fiber.Ctx) error {
 	uuid := c.Params("uuid")

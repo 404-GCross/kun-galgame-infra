@@ -19,8 +19,17 @@ export default defineNuxtConfig({
     '@pinia/nuxt',
     'pinia-plugin-persistedstate/nuxt',
     'nuxt-schema-org',
-    'nuxt-umami'
+    'nuxt-umami',
+    'nuxt-echarts'
   ],
+
+  // Tree-shaken ECharts: only the bar chart + the components the registration
+  // dashboard uses are bundled. <VChart> is auto-imported and client-rendered.
+  echarts: {
+    renderer: 'canvas',
+    charts: ['BarChart'],
+    components: ['GridComponent', 'TooltipComponent', 'MarkLineComponent']
+  },
 
   devServer: {
     host: '127.0.0.1',

@@ -51,6 +51,8 @@ const stats = computed(() =>
       />
     </div>
 
+    <DashboardRegistrationStats />
+
     <DashboardQuickActions />
 
     <KunCard content-class="justify-start gap-0" class-name="p-6">
