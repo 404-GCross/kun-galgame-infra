@@ -38,3 +38,11 @@
 ### 代码风格
 
 - 前端所有函数使用箭头函数编写，不使用 `function` 关键字声明
+
+## 跨仓契约文档（Tier A，本仓为唯一源）
+
+`docs/integration/oauth`、`docs/image_service`、`docs/integration/galgame_wiki` 是 OAuth / 图床 / galgame-wiki 三套**跨服务契约的唯一源**。forum / patch 仓里的 `docs/{oauth,image_service,galgame_wiki}` 是 **kungal-docs 的 `pnpm docs:sync` 生成的带 banner 镜像**，**不要去手改下游副本**（下次 sync 会覆盖）。
+
+- **改契约**：只改本仓这些源文件 → 到 `../kungal-docs` 跑 `pnpm docs:sync --write`（下发镜像到 forum/patch）→ `pnpm docs:audit`（`docs:check` 验镜像一致 + `docs:verify` 验源==代码）应 0 error。
+- 这些契约的**真值在代码里**（`cmd/oauth`、`cmd/image`、`cmd/galgame` 等 handler）——改了代码就在同 PR 改这里的源文档，`docs:verify` 会抓「文档与代码现实不符」。
+- 统一文档门户：`docs-kungal.nextmoe.dev`；完整所有权模型（Tier A/B/C）见 `../kungal-docs/docs/_meta/ownership.md`。
