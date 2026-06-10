@@ -178,6 +178,7 @@ export const useAuth = () => {
     user: computed(() => userStore.user),
     isLoggedIn: computed(() => userStore.isLoggedIn),
     isAdmin: computed(() => userStore.isAdmin),
+    isRen: computed(() => userStore.isRen),
     login,
     sendRegisterCode,
     register,

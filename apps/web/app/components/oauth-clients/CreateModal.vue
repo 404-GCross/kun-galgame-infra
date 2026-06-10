@@ -7,6 +7,14 @@ const emit = defineEmits<{ created: [client: OAuthClientCreated] }>()
 
 const api = useApi()
 
+// image:upload scope + auto_consent are ren（莲）-only (server-enforced via the
+// ren-gate in site_handler). Hide the controls for non-ren so they never
+// submit a request the API would 403; both stay default-off regardless.
+const { isRen } = useAuth()
+const scopeOptions = computed(() =>
+  isRen.value ? KNOWN_SCOPES : KNOWN_SCOPES.filter((s) => s !== 'image:upload')
+)
+
 const siteId = ref<number | ''>('')
 const name = ref('')
 const redirectUris = ref([''])
@@ -200,7 +208,7 @@ const handleSubmit = async () => {
         </span>
         <div class="flex flex-wrap gap-2">
           <KunCheckBox
-            v-for="s in KNOWN_SCOPES"
+            v-for="s in scopeOptions"
             :key="s"
             :model-value="allowedScopes.includes(s)"
             :label="s"
@@ -237,7 +245,7 @@ const handleSubmit = async () => {
         <span class="text-xs text-default-400">— PKCE 必须；refresh 不需要 client_secret</span>
       </div>
 
-      <div class="rounded-lg border border-warning-200 bg-warning-50 p-3">
+      <div v-if="isRen" class="rounded-lg border border-warning-200 bg-warning-50 p-3">
         <div class="flex items-center gap-2 text-sm">
           <KunCheckBox
             v-model="autoConsent"

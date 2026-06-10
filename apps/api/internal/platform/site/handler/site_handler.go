@@ -2,8 +2,10 @@ package handler
 
 import (
 	"encoding/json"
+	"slices"
 	"strconv"
 
+	"api/internal/middleware"
 	"api/internal/platform/site/dto"
 	"api/internal/platform/site/service"
 	siteModel "api/internal/platform/site/model"
@@ -13,6 +15,17 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 )
+
+// imageUploadScope is the sensitive OAuth scope that lets a client upload
+// directly to the image service. Granting it — like enabling a client's
+// auto_consent — is restricted to the ren（莲）role; ordinary admins create
+// normal login clients with neither. See the ren-gate in CreateClient /
+// UpdateClient and middleware.HasRole.
+const imageUploadScope = "image:upload"
+
+// renSensitiveFieldMsg is the 403 message when a non-ren caller tries to grant
+// image:upload or enable auto_consent on a client.
+const renSensitiveFieldMsg = "仅 ren（莲）可授予 image:upload scope 或开启自动同意"
 
 // SiteHandler handles site requests
 type SiteHandler struct {
@@ -219,6 +232,15 @@ func (h *SiteHandler) CreateClient(c fiber.Ctx) error {
 		return response.BadRequestMsg(c, errors.ErrValidationFailed, err.Error())
 	}
 
+	// ren-gate: only ren（莲）may grant the image:upload scope or enable
+	// auto_consent. Both are default-off, so an ordinary admin simply creates
+	// a normal login client; a non-ren who explicitly asks for either is
+	// refused. (Backstops the frontend, which hides these controls for non-ren.)
+	if !middleware.HasRole(c, "ren") &&
+		(slices.Contains(req.AllowedScopes, imageUploadScope) || req.AutoConsent) {
+		return response.ForbiddenMsg(c, errors.ErrForbidden, renSensitiveFieldMsg)
+	}
+
 	// Verify site exists
 	if _, err := h.siteService.GetByID(c.Context(), req.SiteID); err != nil {
 		return response.NotFound(c, errors.ErrSiteNotFound)
@@ -269,6 +291,27 @@ func (h *SiteHandler) UpdateClient(c fiber.Ctx) error {
 
 	if err := utils.Validate(&req); err != nil {
 		return response.BadRequestMsg(c, errors.ErrValidationFailed, err.Error())
+	}
+
+	// ren-gate (no-escalation): a non-ren admin may edit a client, but may not
+	// ADD the image:upload scope or turn ON auto_consent. Leaving a
+	// ren-provisioned client's existing sensitive fields untouched (the form
+	// re-submits them) and de-escalating are both fine — only escalation is
+	// blocked, compared against the current row.
+	if !middleware.HasRole(c, "ren") {
+		cur, err := h.siteService.GetOAuthClient(c.Context(), clientID)
+		if err != nil {
+			return response.NotFound(c, errors.ErrOperationFailed)
+		}
+		var curScopes []string
+		_ = json.Unmarshal(cur.AllowedScopes, &curScopes)
+		addsImage := req.AllowedScopes != nil &&
+			slices.Contains(req.AllowedScopes, imageUploadScope) &&
+			!slices.Contains(curScopes, imageUploadScope)
+		enablesAutoConsent := req.AutoConsent != nil && *req.AutoConsent && !cur.AutoConsent
+		if addsImage || enablesAutoConsent {
+			return response.ForbiddenMsg(c, errors.ErrForbidden, renSensitiveFieldMsg)
+		}
 	}
 
 	client, err := h.siteService.UpdateOAuthClient(

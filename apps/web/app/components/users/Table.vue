@@ -73,14 +73,15 @@ const _ = props // keep TS happy if `props` is never read elsewhere
             </div>
           </td>
           <td class="whitespace-nowrap px-6 py-4 text-default-400">
-            {{ user.email }}
+            <!-- Email is ren-only; the API redacts it to "" for non-ren admins. -->
+            {{ user.email || '——' }}
           </td>
           <td class="whitespace-nowrap px-6 py-4">
             <div class="flex gap-1">
               <KunChip
                 v-for="role in (user.roles || [])"
                 :key="role"
-                :color="role === 'admin' ? 'primary' : role === 'moderator' ? 'warning' : 'default'"
+                :color="role === 'ren' ? 'secondary' : role === 'admin' ? 'primary' : role === 'moderator' ? 'warning' : 'default'"
                 variant="flat"
                 size="sm"
               >

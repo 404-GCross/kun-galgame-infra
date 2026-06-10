@@ -174,6 +174,16 @@ func seedInitialData(db *gorm.DB) error {
 		{Name: "user", Description: "Regular user"},
 		{Name: "moderator", Description: "Content moderator"},
 		{Name: "admin", Description: "Administrator"},
+		// ren（莲）— elevated operator above admin. Flat RBAC has no
+		// hierarchy, so ren is a SEPARATE role granted ALONGSIDE admin to a
+		// tiny set of fully-trusted owners. It gates the genuinely dangerous
+		// OAuth-admin capabilities that ordinary admins should not hold:
+		//   - granting the image:upload scope to a client
+		//   - flipping a client to auto_consent (silent first-party authorize)
+		//   - seeing user email / IP in the admin user list & detail
+		// Enforcement lives at the handlers (site_handler, admin_handler);
+		// see middleware.HasRole.
+		{Name: "ren", Description: "莲 — elevated operator above admin"},
 	}
 
 	for _, role := range defaultRoles {

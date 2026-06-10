@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"api/internal/middleware"
 	"api/internal/platform/auth/dto"
 	"api/internal/platform/auth/service"
 	"api/pkg/errors"
@@ -33,7 +34,7 @@ func (h *AdminHandler) ListUsers(c fiber.Ctx) error {
 		return response.BadRequestMsg(c, errors.ErrValidationFailed, err.Error())
 	}
 
-	result, err := h.adminService.ListUsers(c.Context(), &req)
+	result, err := h.adminService.ListUsers(c.Context(), &req, middleware.HasRole(c, "ren"))
 	if err != nil {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
@@ -88,7 +89,7 @@ func (h *AdminHandler) GetUser(c fiber.Ctx) error {
 		return response.BadRequest(c, errors.ErrMissingParam)
 	}
 
-	user, err := h.adminService.GetUser(c.Context(), uuid)
+	user, err := h.adminService.GetUser(c.Context(), uuid, middleware.HasRole(c, "ren"))
 	if err != nil {
 		if appErr, ok := err.(*errors.AppError); ok {
 			if appErr.Code == errors.ErrForbidden {

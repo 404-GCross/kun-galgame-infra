@@ -7,6 +7,15 @@ const emit = defineEmits<{ close: []; updated: [] }>()
 const api = useApi()
 const show = ref(true)
 
+// image:upload scope + auto_consent are ren（莲）-only (server-enforced). For a
+// non-ren editor we hide the controls; any existing sensitive values stay in
+// the submitted payload unchanged (the API's no-escalation guard permits
+// keeping them — only ADDING is blocked).
+const { isRen } = useAuth()
+const scopeOptions = computed(() =>
+  isRen.value ? KNOWN_SCOPES : KNOWN_SCOPES.filter((s) => s !== 'image:upload')
+)
+
 const name = ref(props.client.name)
 const redirectUris = ref([...props.client.redirect_uris])
 const grants = ref<string[]>([...(props.client.grants ?? [])])
@@ -185,7 +194,7 @@ const handleSubmit = async () => {
         </span>
         <div class="flex flex-wrap gap-2">
           <KunCheckBox
-            v-for="s in KNOWN_SCOPES"
+            v-for="s in scopeOptions"
             :key="s"
             :model-value="allowedScopes.includes(s)"
             :label="s"
@@ -210,7 +219,7 @@ const handleSubmit = async () => {
         />
       </div>
 
-      <div class="rounded-lg border border-warning-200 bg-warning-50 p-3">
+      <div v-if="isRen" class="rounded-lg border border-warning-200 bg-warning-50 p-3">
         <div class="flex items-center gap-2 text-sm">
           <KunCheckBox
             v-model="autoConsent"

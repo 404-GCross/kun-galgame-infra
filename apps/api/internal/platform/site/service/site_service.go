@@ -160,6 +160,14 @@ func (s *SiteService) UpdateOAuthClient(ctx context.Context, clientID string, na
 	return client, nil
 }
 
+// GetOAuthClient returns a single OAuth client by its client_id. Used by the
+// admin update path to compare the request against the current row (the ren
+// no-escalation guard needs to know whether image:upload / auto_consent were
+// already set before this edit).
+func (s *SiteService) GetOAuthClient(ctx context.Context, clientID string) (*model.OAuthClient, error) {
+	return s.oauthClientRepo.FindByClientID(ctx, clientID)
+}
+
 // DeleteOAuthClient deletes an OAuth client
 func (s *SiteService) DeleteOAuthClient(ctx context.Context, clientID string) error {
 	return s.oauthClientRepo.Delete(ctx, clientID)

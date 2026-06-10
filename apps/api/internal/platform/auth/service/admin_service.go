@@ -24,6 +24,17 @@ func adminProtected(u *model.User) bool {
 	return slices.Contains(u.RoleNames(), "admin")
 }
 
+// piiOrRedacted returns the value only when the caller may see PII (the ren
+// role); otherwise it returns "". Email and (in the detail view) IP are the
+// two contact identifiers ren-gated out of the admin user list — ordinary
+// admins manage users without seeing how to reach them off-platform.
+func piiOrRedacted(canSeePII bool, value string) string {
+	if canSeePII {
+		return value
+	}
+	return ""
+}
+
 // AdminService handles admin operations
 type AdminService struct {
 	userRepo    *repository.UserRepository
@@ -47,8 +58,9 @@ func NewAdminService(
 	}
 }
 
-// ListUsers returns a paginated list of users
-func (s *AdminService) ListUsers(ctx context.Context, req *dto.UserListRequest) (*dto.UserListResponse, error) {
+// ListUsers returns a paginated list of users. canSeePII gates the per-user
+// email column to ren callers (see piiOrRedacted).
+func (s *AdminService) ListUsers(ctx context.Context, req *dto.UserListRequest, canSeePII bool) (*dto.UserListResponse, error) {
 	// Set defaults
 	if req.Page < 1 {
 		req.Page = 1
@@ -68,7 +80,7 @@ func (s *AdminService) ListUsers(ctx context.Context, req *dto.UserListRequest) 
 		userResponses[i] = dto.UserResponse{
 			UUID:            user.UUID,
 			Name:            user.Name,
-			Email:           user.Email,
+			Email:           piiOrRedacted(canSeePII, user.Email),
 			Avatar:          user.Avatar,
 			AvatarImageHash: user.AvatarImageHash,
 			Bio:             user.Bio,
@@ -94,8 +106,9 @@ func (s *AdminService) ListUsers(ctx context.Context, req *dto.UserListRequest) 
 	}, nil
 }
 
-// GetUser returns a user by UUID
-func (s *AdminService) GetUser(ctx context.Context, uuid string) (*dto.UserDetailResponse, error) {
+// GetUser returns a user by UUID. canSeePII gates email + IP to ren callers
+// (see piiOrRedacted).
+func (s *AdminService) GetUser(ctx context.Context, uuid string, canSeePII bool) (*dto.UserDetailResponse, error) {
 	user, err := s.userRepo.FindByUUIDWithRoles(ctx, uuid)
 	if err != nil {
 		return nil, errors.NewWithCode(errors.ErrAuthUserNotFound)
@@ -108,7 +121,7 @@ func (s *AdminService) GetUser(ctx context.Context, uuid string) (*dto.UserDetai
 		UserResponse: dto.UserResponse{
 			UUID:            user.UUID,
 			Name:            user.Name,
-			Email:           user.Email,
+			Email:           piiOrRedacted(canSeePII, user.Email),
 			Avatar:          user.Avatar,
 			AvatarImageHash: user.AvatarImageHash,
 			Bio:             user.Bio,
@@ -118,7 +131,7 @@ func (s *AdminService) GetUser(ctx context.Context, uuid string) (*dto.UserDetai
 			Roles:           user.RoleNames(),
 			CreatedAt:       user.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
 		},
-		IP:           user.IP,
+		IP:           piiOrRedacted(canSeePII, user.IP),
 		SessionCount: int(sessionCount),
 	}, nil
 }
