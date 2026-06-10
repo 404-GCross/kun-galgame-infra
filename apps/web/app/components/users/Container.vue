@@ -130,6 +130,14 @@ const handleMoemoepoint = (user: { uuid: string; name: string; moemoepoint: numb
   moemoepointTarget.value = user
   moemoepointOpen.value = true
 }
+
+const roleOpen = ref(false)
+const roleTarget = ref<{ uuid: string; name: string; roles: string[] } | null>(null)
+
+const handleRoles = (user: { uuid: string; name: string; roles: string[] }) => {
+  roleTarget.value = user
+  roleOpen.value = true
+}
 </script>
 
 <template>
@@ -171,6 +179,7 @@ const handleMoemoepoint = (user: { uuid: string; name: string; moemoepoint: numb
         @delete-sessions="handleDeleteSessions"
         @upload-avatar="handleUploadAvatar"
         @moemoepoint="handleMoemoepoint"
+        @roles="handleRoles"
       />
 
       <div v-if="totalPages > 1" class="flex justify-center">
@@ -191,6 +200,12 @@ const handleMoemoepoint = (user: { uuid: string; name: string; moemoepoint: numb
     <UsersMoemoepointModal
       v-model:open="moemoepointOpen"
       :user="moemoepointTarget"
+      @success="refresh"
+    />
+
+    <UsersRoleModal
+      v-model:open="roleOpen"
+      :user="roleTarget"
       @success="refresh"
     />
 

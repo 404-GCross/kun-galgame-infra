@@ -57,6 +57,27 @@ func (r *UserRepository) FindByUUIDWithRoles(ctx context.Context, uuid string) (
 	return &user, nil
 }
 
+// AddRole grants the named role to the user. Idempotent — a role the user
+// already holds is a no-op (ON CONFLICT DO NOTHING on the user_roles PK). The
+// name is resolved to its id from the roles table; an unknown name inserts
+// nothing (the handler validates the name first). Used by the admin
+// role-management endpoints.
+func (r *UserRepository) AddRole(ctx context.Context, userID uint, roleName string) error {
+	return r.db.WithContext(ctx).Exec(
+		`INSERT INTO user_roles (user_id, role_id)
+		 SELECT ?, id FROM roles WHERE name = ?
+		 ON CONFLICT DO NOTHING`, userID, roleName).Error
+}
+
+// RemoveRole revokes the named role from the user. No-op if the user doesn't
+// hold it. Used by the admin role-management endpoints.
+func (r *UserRepository) RemoveRole(ctx context.Context, userID uint, roleName string) error {
+	return r.db.WithContext(ctx).Exec(
+		`DELETE FROM user_roles
+		 WHERE user_id = ? AND role_id = (SELECT id FROM roles WHERE name = ?)`,
+		userID, roleName).Error
+}
+
 // FindByIDWithRoles finds a user by ID and preloads their roles
 func (r *UserRepository) FindByIDWithRoles(ctx context.Context, id uint) (*model.User, error) {
 	var user model.User

@@ -230,6 +230,11 @@ func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 	admin.Post("/users/:uuid/unban", adminH.UnbanUser)
 	admin.Post("/users/:uuid/anonymize", adminH.AnonymizeUser)
 	admin.Delete("/users/:uuid/sessions", adminH.DeleteUserSessions)
+	// Role management. Group is RequireRole("admin") so admin + ren both pass;
+	// the per-role matrix (admin→moderator only, ren→all except ren) is enforced
+	// in the handler (callerCanManageRole). `ren` is never grantable via API.
+	admin.Post("/users/:uuid/roles", adminH.AssignRole)
+	admin.Delete("/users/:uuid/roles/:role", adminH.RevokeRole)
 	admin.Post("/users/:uuid/moemoepoint", moemoepointH.AdminAdjust)
 	admin.Get("/users/:uuid/moemoepoint/log", moemoepointH.AdminGetLog)
 	// Registration analytics — under /stats so it can't collide with the

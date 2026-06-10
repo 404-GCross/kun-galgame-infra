@@ -44,6 +44,13 @@ type BanUserRequest struct {
 	Reason string `json:"reason" validate:"required,min=1,max=500"`
 }
 
+// AssignRoleRequest grants a role to a user. `ren` is intentionally absent from
+// the oneof — it is provisioned via DB only and never grantable through the API
+// (see the role-management ren-gate in admin_handler.callerCanManageRole).
+type AssignRoleRequest struct {
+	Role string `json:"role" validate:"required,oneof=user moderator admin"`
+}
+
 // UserDetailResponse represents detailed user info for admin
 type UserDetailResponse struct {
 	UserResponse

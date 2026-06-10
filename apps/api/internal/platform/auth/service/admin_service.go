@@ -136,6 +136,41 @@ func (s *AdminService) GetUser(ctx context.Context, uuid string, canSeePII bool)
 	}, nil
 }
 
+// AssignRole grants a role to a user and returns the user's resulting role
+// names. WHO may grant WHICH role is enforced by the handler
+// (callerCanManageRole); this method only performs the (idempotent) change.
+func (s *AdminService) AssignRole(ctx context.Context, uuid, role string) ([]string, error) {
+	user, err := s.userRepo.FindByUUID(ctx, uuid)
+	if err != nil {
+		return nil, errors.NewWithCode(errors.ErrAuthUserNotFound)
+	}
+	if err := s.userRepo.AddRole(ctx, user.ID, role); err != nil {
+		return nil, err
+	}
+	return s.userRoleNames(ctx, uuid)
+}
+
+// RevokeRole removes a role from a user and returns the resulting role names.
+func (s *AdminService) RevokeRole(ctx context.Context, uuid, role string) ([]string, error) {
+	user, err := s.userRepo.FindByUUID(ctx, uuid)
+	if err != nil {
+		return nil, errors.NewWithCode(errors.ErrAuthUserNotFound)
+	}
+	if err := s.userRepo.RemoveRole(ctx, user.ID, role); err != nil {
+		return nil, err
+	}
+	return s.userRoleNames(ctx, uuid)
+}
+
+// userRoleNames reloads a user's role names after a grant/revoke.
+func (s *AdminService) userRoleNames(ctx context.Context, uuid string) ([]string, error) {
+	u, err := s.userRepo.FindByUUIDWithRoles(ctx, uuid)
+	if err != nil {
+		return nil, err
+	}
+	return u.RoleNames(), nil
+}
+
 // UpdateUser updates a user
 func (s *AdminService) UpdateUser(ctx context.Context, uuid string, req *dto.UpdateUserRequest) (*model.User, error) {
 	user, err := s.userRepo.FindByUUIDWithRoles(ctx, uuid)

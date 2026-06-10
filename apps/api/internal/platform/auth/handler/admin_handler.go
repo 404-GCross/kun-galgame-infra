@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"slices"
+
 	"api/internal/middleware"
 	"api/internal/platform/auth/dto"
 	"api/internal/platform/auth/service"
@@ -10,6 +12,31 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 )
+
+// manageableRoles are the roles assignable/revocable via the admin API. `ren`
+// is deliberately absent — it is DB-provisioned only, never granted through
+// the API.
+var manageableRoles = []string{"user", "moderator", "admin"}
+
+// callerCanManageRole reports whether the authenticated caller may grant or
+// revoke `role` on another user:
+//   - ren   → any manageable role (user / moderator / admin)
+//   - admin → moderator only
+//
+// `ren` is never manageable via the API regardless of caller (not in
+// manageableRoles), so it can be neither granted nor revoked here.
+func callerCanManageRole(c fiber.Ctx, role string) bool {
+	if !slices.Contains(manageableRoles, role) {
+		return false
+	}
+	if middleware.HasRole(c, "ren") {
+		return true
+	}
+	if middleware.HasRole(c, "admin") {
+		return role == "moderator"
+	}
+	return false
+}
 
 // AdminHandler handles admin requests
 type AdminHandler struct {
@@ -101,6 +128,66 @@ func (h *AdminHandler) GetUser(c fiber.Ctx) error {
 	}
 
 	return response.Success(c, user)
+}
+
+// AssignRole grants a role to a user. POST /admin/users/:uuid/roles {role}.
+// Authorization: ren may grant any manageable role; admin may grant moderator
+// only (callerCanManageRole). `ren` itself is not grantable (DTO oneof).
+func (h *AdminHandler) AssignRole(c fiber.Ctx) error {
+	uuid := c.Params("uuid")
+	if uuid == "" {
+		return response.BadRequest(c, errors.ErrMissingParam)
+	}
+	// Managing your own roles is almost always a mistake (e.g. ren revoking
+	// their own admin would lock them out of /admin), so refuse self-edits.
+	if callerUUID, _ := c.Locals("user_uuid").(string); callerUUID == uuid {
+		return response.ForbiddenMsg(c, errors.ErrForbidden, "不能修改自己的角色")
+	}
+
+	var req dto.AssignRoleRequest
+	if err := c.Bind().JSON(&req); err != nil {
+		return response.BadRequest(c, errors.ErrBadRequest)
+	}
+	if err := utils.Validate(&req); err != nil {
+		return response.BadRequestMsg(c, errors.ErrValidationFailed, err.Error())
+	}
+	if !callerCanManageRole(c, req.Role) {
+		return response.ForbiddenMsg(c, errors.ErrForbidden, "无权赋予该角色")
+	}
+
+	roles, err := h.adminService.AssignRole(c.Context(), uuid, req.Role)
+	if err != nil {
+		if appErr, ok := err.(*errors.AppError); ok {
+			return response.NotFound(c, appErr.Code)
+		}
+		return response.InternalError(c, errors.ErrOperationFailed)
+	}
+	return response.Success(c, fiber.Map{"roles": roles})
+}
+
+// RevokeRole removes a role from a user. DELETE /admin/users/:uuid/roles/:role.
+// Same authorization matrix as AssignRole.
+func (h *AdminHandler) RevokeRole(c fiber.Ctx) error {
+	uuid := c.Params("uuid")
+	role := c.Params("role")
+	if uuid == "" || role == "" {
+		return response.BadRequest(c, errors.ErrMissingParam)
+	}
+	if callerUUID, _ := c.Locals("user_uuid").(string); callerUUID == uuid {
+		return response.ForbiddenMsg(c, errors.ErrForbidden, "不能修改自己的角色")
+	}
+	if !callerCanManageRole(c, role) {
+		return response.ForbiddenMsg(c, errors.ErrForbidden, "无权移除该角色")
+	}
+
+	roles, err := h.adminService.RevokeRole(c.Context(), uuid, role)
+	if err != nil {
+		if appErr, ok := err.(*errors.AppError); ok {
+			return response.NotFound(c, appErr.Code)
+		}
+		return response.InternalError(c, errors.ErrOperationFailed)
+	}
+	return response.Success(c, fiber.Map{"roles": roles})
 }
 
 // UpdateUser updates a user
