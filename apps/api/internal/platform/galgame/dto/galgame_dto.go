@@ -56,7 +56,7 @@ type CreateGalgameRequest struct {
 	AgeLimit         string `json:"age_limit" validate:"omitempty,oneof=all r18"`
 	// ReleaseDate is "YYYY-MM-DD" or "" (= unknown). Empty / omitted →
 	// no date is recorded. Independent of ReleaseDateTBA.
-	ReleaseDate      string `json:"release_date" validate:"omitempty,datetime=2006-01-02"`
+	ReleaseDate      string `json:"release_date" validate:"omitempty,date_or_empty"`
 	ReleaseDateTBA   bool   `json:"release_date_tba"`
 	SeriesID         *int   `json:"series_id"`
 	Aliases          string `json:"aliases"` // Comma-separated alias names
@@ -130,7 +130,7 @@ type UpdateGalgameRequest struct {
 	// ReleaseDate / ReleaseDateTBA both use pointer-presence: nil = field
 	// omitted = keep current; non-nil overwrites (incl. &"" = clear date
 	// to unknown). The two are independent and overlay separately.
-	ReleaseDate      *string `json:"release_date" validate:"omitempty,datetime=2006-01-02"`
+	ReleaseDate      *string `json:"release_date" validate:"omitempty,date_or_empty"`
 	ReleaseDateTBA   *bool   `json:"release_date_tba"`
 	SeriesID         *int    `json:"series_id"`
 	// Relational / multi-value fields use POINTER types for presence

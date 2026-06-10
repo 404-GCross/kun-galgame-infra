@@ -59,7 +59,7 @@ type SubmitPRRequest struct {
 	AgeLimit         *string              `json:"age_limit"`
 	// ReleaseDate / ReleaseDateTBA: pointer-presence like other scalars.
 	// nil = field omitted = inherit base; non-nil overwrites in the PR.
-	ReleaseDate      *string              `json:"release_date" validate:"omitempty,datetime=2006-01-02"`
+	ReleaseDate      *string              `json:"release_date" validate:"omitempty,date_or_empty"`
 	ReleaseDateTBA   *bool                `json:"release_date_tba"`
 	SeriesID         *int                 `json:"series_id"`
 	Aliases          []string             `json:"aliases"`
