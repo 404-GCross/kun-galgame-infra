@@ -338,9 +338,13 @@ func (r *UserRepository) FindAllPaginated(
 		Desc:   sortDesc,
 	})
 
-	// Apply pagination
+	// Apply pagination. Preload Roles so the list response carries each user's
+	// roles (RoleNames()) — the table's role chips and the role-management
+	// modal both rely on UserResponse.Roles; without this they'd be empty and
+	// every role would render as "未拥有" even when held. (GORM runs Preload as
+	// one extra IN query for the page; it's ignored by the earlier Count.)
 	offset := (page - 1) * limit
-	if err := query.Offset(offset).Limit(limit).Find(&users).Error; err != nil {
+	if err := query.Preload("Roles").Offset(offset).Limit(limit).Find(&users).Error; err != nil {
 		return nil, 0, err
 	}
 
