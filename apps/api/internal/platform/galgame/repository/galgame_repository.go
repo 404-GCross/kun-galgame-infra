@@ -431,3 +431,32 @@ func (r *GalgameRepository) ListPublishedByUser(ctx context.Context, userID, pag
 		Find(&items).Error
 	return items, total, err
 }
+
+// ListContributedByUser returns the published galgames a user has CONTRIBUTED
+// to — the galgame_contributor relation (populated on create AND on
+// edit/PR-merge), newest-contribution-first, paginated. Distinct from
+// ListPublishedByUser, which is CREATED-only (galgame.user_id); the contributed
+// set is a superset that also includes titles the user only edited. status=0
+// only (public profile view — never leak drafts/banned) and NSFW-gated like the
+// created list. Ordered by the contributor row's `created` (when this user first
+// contributed to that title). galgame_contributor holds one row per
+// (galgame,user) (the create/edit paths check-then-insert), so the JOIN doesn't
+// duplicate rows.
+func (r *GalgameRepository) ListContributedByUser(ctx context.Context, userID, page, limit int, contentLimit string) (items []model.Galgame, total int64, err error) {
+	q := r.db.WithContext(ctx).Model(&model.Galgame{}).
+		Joins("JOIN galgame_contributor gc ON gc.galgame_id = galgame.id").
+		Where("gc.user_id = ? AND galgame.status = 0", userID)
+	if contentLimit != "" {
+		q = q.Where("galgame.content_limit = ?", contentLimit)
+	}
+
+	q.Count(&total)
+
+	err = q.
+		Select("galgame.id, galgame.vndb_id, galgame.name_en_us, galgame.name_ja_jp, galgame.name_zh_cn, galgame.name_zh_tw, galgame.banner, galgame.content_limit, galgame.status, galgame.user_id, galgame.resource_update_time, galgame.original_language, galgame.age_limit").
+		Order("gc.created DESC").
+		Offset((page - 1) * limit).
+		Limit(limit).
+		Find(&items).Error
+	return items, total, err
+}

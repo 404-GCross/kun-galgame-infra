@@ -204,6 +204,7 @@ func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB, se
 	galgame.Get("/check", galgameH.CheckVNDB)
 	galgame.Get("/user/:id/stats", galgameH.UserStats)
 	galgame.Get("/user/:id/galgames", galgameH.UserGalgames)
+	galgame.Get("/user/:id/contributed", galgameH.UserContributedGalgames)
 	// GET /mine MUST be registered before the /:gid catch-all: both are
 	// GET and Fiber matches by registration order, so a /:gid registered
 	// first binds :gid="mine" and the handler ParseInt-fails with

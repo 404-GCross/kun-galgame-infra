@@ -270,6 +270,39 @@ func (h *GalgameHandler) UserGalgames(c fiber.Ctx) error {
 	})
 }
 
+// UserContributedGalgames returns the galgames a user has CONTRIBUTED to
+// (created OR edited — the galgame_contributor relation), newest-contribution-
+// first, paginated, as briefs — the source for a profile "贡献的 Galgame" tab.
+// Public (profiles are publicly viewable); status=0 only + SFW-by-default
+// (handbook §16, pass content_limit=all to include NSFW). Distinct from
+// UserGalgames, which lists only galgames the user CREATED.
+func (h *GalgameHandler) UserContributedGalgames(c fiber.Ctx) error {
+	userID, err := strconv.Atoi(c.Params("id"))
+	if err != nil || userID <= 0 {
+		return response.BadRequest(c, errors.ErrInvalidID)
+	}
+
+	page, _ := strconv.Atoi(c.Query("page"))
+	if page < 1 {
+		page = 1
+	}
+	limit, _ := strconv.Atoi(c.Query("limit"))
+	if limit < 1 || limit > 100 {
+		limit = 24
+	}
+	contentLimit := utils.ParseContentLimit(c.Query("content_limit"), "sfw")
+
+	items, total, err := h.galgameService.ListContributedGalgames(c.Context(), userID, page, limit, contentLimit)
+	if err != nil {
+		return response.InternalError(c, errors.ErrOperationFailed)
+	}
+
+	return response.Success(c, fiber.Map{
+		"galgames": items,
+		"total":    total,
+	})
+}
+
 // CheckVNDB checks if a VNDB ID already exists
 func (h *GalgameHandler) CheckVNDB(c fiber.Ctx) error {
 	var req dto.CheckVNDBRequest

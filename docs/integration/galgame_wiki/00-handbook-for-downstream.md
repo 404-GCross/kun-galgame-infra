@@ -78,7 +78,8 @@ moyu 现有调 `OAuth /users/batch` 的 `client_id / client_secret`，**直接�
 |---|---|---|
 | 首页 / 默认列表 / 默认搜索 | **不带** | 用户期望首页是"公共已发布"视图，不要混入自己的 pending |
 | "发布 galgame" 向导的搜索框 | **带 + `?include_pending=true`** | 帮用户发现"你已提过这个" |
-| `/user/:id/galgames`（任意人作品页） | **不带** | 只看 status=0 |
+| `/user/:id/galgames`（任意人作品页·已创建） | **不带** | 只看 status=0 |
+| `/user/:id/contributed`（任意人作品页·已贡献） | **不带** | 只看 status=0；创建+编辑的超集 |
 | "我的提交"页 | **不调 search/batch**，直接代理 `GET /galgame/mine` | 一条 RPC 拿齐 |
 | 详情页 | **不带**（详情端点对任意 status 开放，owner 也能看） | wiki 详情逻辑已处理 |
 
@@ -757,6 +758,7 @@ const merged = [...localMsgs, ...wikiMsgs].sort(byCreatedAtDesc)
 | `GET /galgame/mine` (我的提交) | 不应用此过滤 | 用户看自己提交的内容 |
 | `GET /galgame/user/:id/stats` | 不应用此过滤 | 仅返回聚合 counts，不含 per-entry 数据；不构成内容泄漏 |
 | `GET /galgame/user/:id/galgames` | **sfw** | 列出用户已发布的 galgame（个人主页「已发布」标签）；个人主页可被爬虫抓取，故默认 sfw，传 `?content_limit=all` 含 NSFW |
+| `GET /galgame/user/:id/contributed` | **sfw** | 列出用户贡献过（创建+编辑）的 galgame（个人主页「贡献的」标签）；同上默认 sfw，传 `?content_limit=all` 含 NSFW |
 
 > **batch 默认不过滤是有意的反对称**：browse 默认 safe-by-default、batch 默认 explicit-only。原因是 batch 的调用方已经持有 ID（patch / 收藏 / 引用），过滤会让"我请求 5 个，wiki 只回 3 个"变成调用方的隐性问题。
 

@@ -583,7 +583,26 @@ func (s *GalgameService) ListUserGalgames(ctx context.Context, userID, page, lim
 	if err != nil {
 		return nil, 0, err
 	}
+	return s.galgameBriefsWithCovers(ctx, galgames), total, nil
+}
 
+// ListContributedGalgames returns the galgames a user has CONTRIBUTED to
+// (created OR edited — the galgame_contributor relation) as briefs,
+// newest-contribution-first, paginated. The source for a profile "贡献的
+// Galgame" tab; a superset of ListUserGalgames (which is created-only).
+// status=0 + NSFW gating are applied in the repo (public profile view).
+func (s *GalgameService) ListContributedGalgames(ctx context.Context, userID, page, limit int, contentLimit string) ([]dto.GalgameBrief, int64, error) {
+	galgames, total, err := s.galgameRepo.ListContributedByUser(ctx, userID, page, limit, contentLimit)
+	if err != nil {
+		return nil, 0, err
+	}
+	return s.galgameBriefsWithCovers(ctx, galgames), total, nil
+}
+
+// galgameBriefsWithCovers maps galgames → briefs, filling EffectiveBannerHash
+// from the pinned-cover (sort_order=0) lookup. Shared by the per-user list
+// endpoints (created / contributed); mirrors BatchGetWithViewer's brief mapping.
+func (s *GalgameService) galgameBriefsWithCovers(ctx context.Context, galgames []model.Galgame) []dto.GalgameBrief {
 	resultIDs := make([]int, 0, len(galgames))
 	for _, g := range galgames {
 		resultIDs = append(resultIDs, g.ID)
@@ -617,7 +636,7 @@ func (s *GalgameService) ListUserGalgames(ctx context.Context, userID, page, lim
 			AgeLimit:            g.AgeLimit,
 		}
 	}
-	return items, total, nil
+	return items
 }
 
 // loadGalgameWithRelations loads a galgame with all relations using the given tx.
