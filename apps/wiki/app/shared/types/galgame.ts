@@ -199,5 +199,6 @@ export interface ContributorWithUser {
     id: number
     name: string
     avatar: string
+    avatar_image_hash?: string | null
   }
 }

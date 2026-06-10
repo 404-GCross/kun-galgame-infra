@@ -216,9 +216,16 @@ type UserGalgameStats struct {
 	PRPending           int `json:"pr_pending"`
 }
 
-// UserBrief is a minimal user info for display purposes
+// UserBrief is a minimal user info for display purposes.
+//
+// Avatar is the legacy URL; AvatarImageHash is the image_service content hash
+// (set on new uploads). The frontend resolves the right URL/variant from the
+// hash (resolveAvatarUrl) — KunAvatar ≥0.3.4 renders the URL as-is and no
+// longer derives thumbnail variants, so small avatars (actor/contributor) need
+// the hash here to build the `_100` variant.
 type UserBrief struct {
-	ID     int    `json:"id"`
-	Name   string `json:"name"`
-	Avatar string `json:"avatar"`
+	ID              int     `json:"id"`
+	Name            string  `json:"name"`
+	Avatar          string  `json:"avatar"`
+	AvatarImageHash *string `json:"avatar_image_hash,omitempty"`
 }

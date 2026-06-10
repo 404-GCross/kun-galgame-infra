@@ -78,6 +78,19 @@ export const resolveAvatarUrl = (
   if (user.avatar_image_hash) {
     return imageHashUrl(user.avatar_image_hash, opts)
   }
-  if (user.avatar) return user.avatar
+  if (user.avatar) return legacyAvatarVariant(user.avatar, opts.variant)
   return placeholder
+}
+
+// Legacy avatars (no image_service hash). The kungal legacy CDN stores a fixed
+// square thumbnail next to the original (`.../avatar.webp` →
+// `.../avatar-100.webp`); when a small variant is requested we prefer it, since
+// KunAvatar ≥0.3.4 no longer derives thumbnails itself. moyu legacy URLs are
+// already a `-mini` variant, and any other shape is rendered as-is. With no
+// variant (e.g. profile) the original is returned untouched.
+const legacyAvatarVariant = (url: string, variant?: string): string => {
+  if (variant && /\/avatar\.webp$/.test(url)) {
+    return url.replace(/\/avatar\.webp$/, '/avatar-100.webp')
+  }
+  return url
 }

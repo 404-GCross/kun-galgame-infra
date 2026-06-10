@@ -1,9 +1,17 @@
 <script setup lang="ts">
 import type { ContributorWithUser } from '~/shared/types/galgame'
+import { resolveAvatarUrl } from '~/shared/utils/resolveImage'
 
 const props = defineProps<{ galgameId: number }>()
 
 const api = useApi()
+
+// KunAvatar ≥0.3.4 renders the URL as-is; resolve the small (_100) variant
+// from the user's image_service hash (falls back to legacy avatar / sticker).
+const cdnBase = useRuntimeConfig().public.imageCdnBase as string
+const avatarOf = (
+  user?: { avatar: string; avatar_image_hash?: string | null }
+) => resolveAvatarUrl(user ?? null, { cdnBase, variant: '100' }, '')
 const items = ref<ContributorWithUser[]>([])
 const loading = ref(false)
 
@@ -72,7 +80,7 @@ onMounted(load)
         >
           <KunAvatar
             v-if="c.user"
-            :user="{ id: c.user_id, name: c.user.name, avatar: c.user.avatar }"
+            :user="{ id: c.user_id, name: c.user.name, avatar: avatarOf(c.user) }"
             size="sm"
             :is-navigation="false"
           />

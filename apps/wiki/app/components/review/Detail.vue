@@ -11,7 +11,7 @@ import {
 } from '~/constants/admin'
 import type { Galgame } from '~/shared/types/galgame'
 import type { ReviewQueueResponse } from '~/shared/types/review'
-import { resolveBannerUrl } from '~/shared/utils/resolveImage'
+import { resolveAvatarUrl, resolveBannerUrl } from '~/shared/utils/resolveImage'
 
 const api = useApi()
 const route = useRoute()
@@ -56,6 +56,12 @@ const {
 const galgame = computed(() => data.value?.galgame ?? null)
 const submissionMsg = computed(() => data.value?.submissionMsg ?? null)
 const loading = computed(() => fetchStatus.value === 'pending')
+
+// KunAvatar ≥0.3.4 renders the URL as-is; resolve the small (_100) variant from
+// the submission actor's image_service hash (falls back to legacy / sticker).
+const submissionActorAvatar = computed(() =>
+  resolveAvatarUrl(submissionMsg.value?.actor ?? null, { cdnBase, variant: '100' }, '')
+)
 
 // Self-heal the SSR-without-token edge: only when the fetch actually failed.
 onMounted(() => {
@@ -145,7 +151,7 @@ const relative = (iso?: string) => {
           :user="{
             id: submissionMsg.actor.id,
             name: submissionMsg.actor.name,
-            avatar: submissionMsg.actor.avatar
+            avatar: submissionActorAvatar
           }"
           size="sm"
           :is-navigation="false"

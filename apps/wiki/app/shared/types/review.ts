@@ -26,6 +26,7 @@ export interface ReviewMessageActor {
   id: number
   name: string
   avatar: string
+  avatar_image_hash?: string | null
 }
 
 export interface ReviewMessage {

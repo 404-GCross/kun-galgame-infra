@@ -23,7 +23,7 @@ func (r *UserReadonlyRepository) FindByID(ctx context.Context, id int) (*dto.Use
 	var user dto.UserBrief
 	err := r.db.WithContext(ctx).
 		Table("users").
-		Select("id, name, avatar").
+		Select("id, name, avatar, avatar_image_hash").
 		Where("id = ?", id).
 		First(&user).Error
 	if err != nil {
@@ -41,7 +41,7 @@ func (r *UserReadonlyRepository) FindByIDs(ctx context.Context, ids []int) (map[
 	var users []dto.UserBrief
 	err := r.db.WithContext(ctx).
 		Table("users").
-		Select("id, name, avatar").
+		Select("id, name, avatar, avatar_image_hash").
 		Where("id IN ?", ids).
 		Find(&users).Error
 	if err != nil {

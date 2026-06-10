@@ -2,7 +2,7 @@
 // One row per pending message. Each row carries: actor (who triggered),
 // galgame brief, type-specific badge, created_at. Click goes to /review/:gid.
 import type { ReviewMessage } from '~/shared/types/review'
-import { resolveBannerUrl } from '~/shared/utils/resolveImage'
+import { resolveAvatarUrl, resolveBannerUrl } from '~/shared/utils/resolveImage'
 
 defineProps<{
   items: ReviewMessage[]
@@ -16,6 +16,11 @@ const displayName = (m: ReviewMessage) => {
   if (!g) return '(已删除)'
   return g.name_zh_cn || g.name_ja_jp || g.name_en_us || g.name_zh_tw || '(无标题)'
 }
+
+// KunAvatar ≥0.3.4 renders the URL as-is; resolve the small (_100) variant
+// from the actor's image_service hash (falls back to legacy avatar / sticker).
+const actorAvatar = (m: ReviewMessage) =>
+  resolveAvatarUrl(m.actor ?? null, { cdnBase, variant: '100' }, '')
 
 const bannerUrl = (m: ReviewMessage) => {
   if (!m.galgame) return ''
@@ -87,7 +92,7 @@ const relative = (iso: string) => {
             <div class="flex items-center gap-2">
               <KunAvatar
                 v-if="m.actor"
-                :user="{ id: m.actor.id, name: m.actor.name, avatar: m.actor.avatar }"
+                :user="{ id: m.actor.id, name: m.actor.name, avatar: actorAvatar(m) }"
                 size="sm"
                 :is-navigation="false"
               />
