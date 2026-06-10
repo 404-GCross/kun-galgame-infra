@@ -84,6 +84,7 @@ const confirmReject = () => {
                 :src="item.variant_urls['100'] || item.variant_urls['mini'] || item.url"
                 :alt="item.hash"
                 class="size-16 rounded-md border border-default-200 object-cover"
+                loading="lazy"
               />
             </KunLightboxGalleryItem>
           </td>

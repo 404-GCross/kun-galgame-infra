@@ -183,6 +183,7 @@ const relative = (iso?: string) => {
               :src="bannerSrc"
               :alt="displayName"
               class="border-default-200 h-48 w-32 rounded border object-cover"
+              loading="lazy"
             >
             <div
               v-else

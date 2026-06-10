@@ -108,6 +108,7 @@ const relative = (iso: string) => {
                 :src="bannerUrl(m)"
                 :alt="displayName(m)"
                 class="border-default-200 size-10 rounded border object-cover"
+                loading="lazy"
                 @error="
                   (e) => ((e.target as HTMLImageElement).style.display = 'none')
                 "
