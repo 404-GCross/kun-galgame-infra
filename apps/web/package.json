@@ -15,10 +15,10 @@
     "postinstall": "nuxt prepare"
   },
   "dependencies": {
-    "@kungal/ui-core": "^0.2.2",
-    "@kungal/ui-nuxt": "^0.2.2",
-    "@kungal/ui-tokens": "^0.2.2",
-    "@kungal/ui-vue": "^0.2.2",
+    "@kungal/ui-core": "^0.3.4",
+    "@kungal/ui-nuxt": "^0.3.4",
+    "@kungal/ui-tokens": "^0.3.4",
+    "@kungal/ui-vue": "^0.3.4",
     "@nuxt/eslint": "1.15.2",
     "@tailwindcss/vite": "^4.2.1",
     "@vueuse/core": "^14.2.1",

@@ -1,11 +1,21 @@
 <script setup lang="ts">
 import { SIDEBAR_MENU } from '~/constants/admin'
 import { useBodyScrollLock } from '@kungal/ui-vue'
+import { resolveAvatarUrl } from '~~/shared/utils/resolveImage'
 
 const auth = useAuth()
 const route = useRoute()
 const router = useRouter()
 const colorMode = useColorMode()
+
+// KunAvatar (ui ≥0.3.4) renders the URL as-is — it no longer derives a
+// thumbnail variant. So resolve the small (_100) variant here: header avatar
+// is tiny, no need to ship the original. Falls back to the legacy `avatar`
+// URL (or sticker, inside KunAvatar) when there's no image_service hash.
+const cdnBase = useRuntimeConfig().public.imageCdnBase as string
+const headerAvatar = computed(() =>
+  resolveAvatarUrl(auth.user.value, { cdnBase, variant: '100' }, '')
+)
 
 // Desktop-only collapse (md+). On mobile the sidebar is a full-width
 // slide-in drawer, so collapse width is irrelevant there.
@@ -244,7 +254,7 @@ await callOnce('auth:user', async () => {
               :user="{
                 id: 0,
                 name: auth.user.value.name,
-                avatar: auth.user.value.avatar
+                avatar: headerAvatar
               }"
               size="md"
               :is-navigation="false"
