@@ -21,8 +21,19 @@ export default defineNuxtRouteMiddleware(async (to) => {
     return
   }
 
-  // No access token — try to refresh using httpOnly cookie
-  // (We can't check if refresh_token cookie exists since it's httpOnly)
+  // No access token. The refresh_token is an httpOnly cookie scoped to
+  // /api/v1/auth — the browser never sends it to the Nuxt SSR server (path
+  // mismatch) and $fetch can't forward it, so a SERVER-side refresh always
+  // fails. Redirecting here would bounce a returning user with a perfectly
+  // valid session to /auth/login on every full page load (the "refresh the
+  // page to log in" bug). Defer to the client, where the browser DOES send the
+  // refresh cookie: the auth.client plugin restores the session on startup, and
+  // this middleware refreshes on client-side navigations. A genuinely expired
+  // session is caught by the layout's mount guard.
+  if (import.meta.server) {
+    return
+  }
+
   const auth = useAuth()
   const refreshed = await auth.refreshAccessToken()
   if (!refreshed) {
