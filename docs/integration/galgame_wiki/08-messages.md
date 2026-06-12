@@ -34,6 +34,7 @@ wiki 起一张 `galgame_message` 表，沉淀投稿审核流程产生的所有�
   "galgame_id": 10000,
   "galgame": {
     "id": 10000,
+    "vndb_id": "v17",
     "name_zh_cn": "...",
     "name_ja_jp": "...",
     "effective_banner_hash": "...",
@@ -48,6 +49,8 @@ wiki 起一张 `galgame_message` 表，沉淀投稿审核流程产生的所有�
 
 `galgame` 字段是即时 JOIN 出来的，**始终反映 galgame 当前状态**（如果 galgame 被硬删了，
 返回 NULL，消费端要做空判断）。
+
+> 🆕 **2026-06-12（非破坏性·新增）**：brief 内嵌 **`vndb_id`**。当 `name_*` 全空（如 VNDB 占位提交）时，消费端可用它兜底显示「VNDB v4136」而非裸 `#id`。**所有消息类型的 brief 都带**——比挖 `payload.vndb_id`（只有 `submitted` 有）更稳;字段口径与 [01-galgame.md GalgameBrief](./01-galgame.md#get-galgamebatch) 的 `vndb_id` 一致。
 
 ---
 
@@ -142,6 +145,7 @@ admin 队列。**认证**：Bearer + admin/moderator role。
         "galgame_id": 10000,
         "galgame": {
           "id": 10000,
+          "vndb_id": "v4136",
           "name_zh_cn": "...",
           "effective_banner_hash": "...",
           "status": 3,

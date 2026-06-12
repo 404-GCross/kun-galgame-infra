@@ -138,6 +138,7 @@ func (s *MessageService) enrich(ctx context.Context, items []model.GalgameMessag
 		}
 		galgameBrief[g.ID] = &dto.MessageGalgameBrief{
 			ID:                  g.ID,
+			VNDBID:              g.VNDBID,
 			NameEnUS:            g.NameEnUS,
 			NameJaJP:            g.NameJaJP,
 			NameZhCN:            g.NameZhCN,

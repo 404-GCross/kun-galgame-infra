@@ -6,12 +6,17 @@ import "api/internal/platform/galgame/model"
 // message. Reflects the galgame's CURRENT state (not at message time).
 // May be nil if the galgame was deleted (withdrawn submission).
 type MessageGalgameBrief struct {
-	ID                  int     `json:"id"`
-	NameEnUS            string  `json:"name_en_us"`
-	NameJaJP            string  `json:"name_ja_jp"`
-	NameZhCN            string  `json:"name_zh_cn"`
-	NameZhTW            string  `json:"name_zh_tw"`
-	Banner              string  `json:"banner"`
+	ID int `json:"id"`
+	// VNDBID lets a consumer render a stable identifier when all name_* are
+	// empty (e.g. a VNDB-placeholder submission) — show "VNDB v4136" instead
+	// of a bare "#id". Present on every message type's brief, so the fallback
+	// is uniform (the per-type `payload.vndb_id` only existed on `submitted`).
+	VNDBID   string `json:"vndb_id"`
+	NameEnUS string `json:"name_en_us"`
+	NameJaJP string `json:"name_ja_jp"`
+	NameZhCN string `json:"name_zh_cn"`
+	NameZhTW string `json:"name_zh_tw"`
+	Banner   string `json:"banner"`
 	// EffectiveBannerHash is the pinned cover (sort_order=0) hash — the
 	// only image-service banner reference now that PR5 retired
 	// banner_image_hash. Frontends render thumbnails via resolveBannerUrl.
@@ -22,15 +27,15 @@ type MessageGalgameBrief struct {
 
 // MessageResponse is the wire format for one galgame_message row.
 type MessageResponse struct {
-	ID            int64                `json:"id"`
-	Type          string               `json:"type"`
-	GalgameID     int                  `json:"galgame_id"`
-	Galgame       *MessageGalgameBrief `json:"galgame,omitempty"`
-	ActorUserID   *int                 `json:"actor_user_id,omitempty"`
-	Actor         *UserBrief           `json:"actor,omitempty"` // populated for admin queue only
-	TargetUserID  *int                 `json:"target_user_id,omitempty"`
-	Payload       any                  `json:"payload,omitempty"`
-	CreatedAt     model.Timestamp      `json:"created_at"`
+	ID           int64                `json:"id"`
+	Type         string               `json:"type"`
+	GalgameID    int                  `json:"galgame_id"`
+	Galgame      *MessageGalgameBrief `json:"galgame,omitempty"`
+	ActorUserID  *int                 `json:"actor_user_id,omitempty"`
+	Actor        *UserBrief           `json:"actor,omitempty"` // populated for admin queue only
+	TargetUserID *int                 `json:"target_user_id,omitempty"`
+	Payload      any                  `json:"payload,omitempty"`
+	CreatedAt    model.Timestamp      `json:"created_at"`
 }
 
 // ListMineMessagesRequest is the query of GET /galgame/messages/mine.
