@@ -5,12 +5,15 @@ package dto
 // (kungal / moyu) that need to render comments, profile pills, etc.
 //
 // Excluded vs UserResponse: email (PII; consumers shouldn't depend on it),
-// moemoepoint (not display-relevant cross-service), created_at (rarely
-// used in display contexts and JSON-easier to omit).
+// moemoepoint (not display-relevant cross-service).
 //
 // Included: id (the integer key consumers store as foreign key),
 // avatar_image_hash (so consumers can resolve to the right CDN URL),
-// status (so consumers can hide banned users).
+// status (so consumers can hide banned users), created_at (the user's real
+// OAuth registration time — consumers MUST source the "join date" from here,
+// NOT from a local first-seen/lazily-created row, which is blank for users
+// who registered but never visited that site and wrong for those whose first
+// visit lagged their registration).
 type UserBrief struct {
 	ID              uint     `json:"id"`
 	UUID            string   `json:"uuid"`
@@ -20,6 +23,9 @@ type UserBrief struct {
 	Bio             string   `json:"bio"`
 	Status          int      `json:"status"`
 	Roles           []string `json:"roles"`
+	// CreatedAt is the user's OAuth registration time as UTC RFC3339
+	// ("2006-01-02T15:04:05Z"), matching UserResponse.CreatedAt's format.
+	CreatedAt string `json:"created_at"`
 }
 
 // BatchGetUsersRequest is the parsed query for GET /users/batch.

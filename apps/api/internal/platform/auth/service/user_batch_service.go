@@ -78,5 +78,6 @@ func toBrief(u *model.User) dto.UserBrief {
 		Bio:             u.Bio,
 		Status:          u.Status,
 		Roles:           roles,
+		CreatedAt:       u.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
 	}
 }
