@@ -73,12 +73,14 @@ func (h *GalgameHandler) Get(c fiber.Ctx) error {
 		return response.BadRequest(c, errors.ErrInvalidID)
 	}
 
-	// Viewer-aware: optionalJWT populates user_id when a valid Bearer is
-	// present. Lets a submitter open their own pending/declined draft
-	// (kungal/moyu /edit/.../draft/<gid>); anonymous sees status=0 only.
+	// Viewer-aware: optionalJWT populates user_id + user_roles when a valid
+	// Bearer is present. Lets a submitter open their own pending/declined
+	// draft (kungal/moyu /edit/.../draft/<gid>), and an admin/moderator
+	// preview any pending submission for review; anonymous sees status=0 only.
 	viewerUserID, _ := c.Locals("user_id").(uint)
+	viewerRoles, _ := c.Locals("user_roles").([]string)
 	contentLimit := utils.ParseContentLimit(c.Query("content_limit"), "")
-	galgame, users, err := h.galgameService.GetByIDWithViewer(c.Context(), id, int(viewerUserID), contentLimit)
+	galgame, users, err := h.galgameService.GetByIDWithViewer(c.Context(), id, int(viewerUserID), viewerRoles, contentLimit)
 	if err != nil {
 		if appErr, ok := err.(*errors.AppError); ok {
 			return response.NotFound(c, appErr.Code)

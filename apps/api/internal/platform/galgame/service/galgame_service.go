@@ -110,21 +110,24 @@ func (s *GalgameService) List(ctx context.Context, req *dto.ListGalgameRequest) 
 // gid resolves regardless of NSFW state. Callers that need filtering
 // should use GetByIDWithViewer directly with a non-empty contentLimit.
 func (s *GalgameService) GetByID(ctx context.Context, id int) (*model.Galgame, map[int]*dto.UserBrief, error) {
-	return s.GetByIDWithViewer(ctx, id, 0, "")
+	return s.GetByIDWithViewer(ctx, id, 0, nil, "")
 }
 
-// GetByIDWithViewer is the viewer-aware detail fetch. Visibility mirrors
-// the repo's FindByIDsWithViewer / search predicate exactly:
+// GetByIDWithViewer is the viewer-aware detail fetch. Visibility:
 //   - status=0                       → visible to anyone
-//   - status ∈ {3,4}                 → visible only to the submitter
+//   - status ∈ {3,4}                 → visible to the submitter, AND to a
+//     reviewer (admin/super_admin/moderator)
+//     so the review queue's "查看" can
+//     preview a pending/declined submission
 //   - status=1 (banned) / status=2 (VNDB draft) / other → NotFound
 //
-// status=2 stays hidden here on purpose: VNDB drafts are discovered via
-// search and taken via POST /:gid/claim, never through this endpoint.
-// Without this, an owner opening /edit/.../draft/<gid> for their own
-// pending submission got "galgame 不存在" because the old code hard-cut
-// every status != 0.
-func (s *GalgameService) GetByIDWithViewer(ctx context.Context, id, viewerUserID int, contentLimit string) (*model.Galgame, map[int]*dto.UserBrief, error) {
+// status=2 stays hidden even for reviewers on purpose: VNDB drafts are
+// discovered via search and taken via POST /:gid/claim, never through this
+// endpoint. The submitter case is what lets an owner open their own
+// /edit/.../draft/<gid>; the reviewer case is what lets the kungal/moyu
+// review queue open someone else's pending(3) submission (a reviewer who
+// is not the submitter otherwise hit "galgame 不存在").
+func (s *GalgameService) GetByIDWithViewer(ctx context.Context, id, viewerUserID int, viewerRoles []string, contentLimit string) (*model.Galgame, map[int]*dto.UserBrief, error) {
 	galgame, err := s.galgameRepo.FindByID(ctx, id)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -133,11 +136,18 @@ func (s *GalgameService) GetByIDWithViewer(ctx context.Context, id, viewerUserID
 		return nil, nil, err
 	}
 
+	// reviewer = the roles that staff the review queue (admin/super_admin/
+	// moderator — the same set RequireRole guards /admin/galgame/* with).
+	// Matches the role set Update() already accepts for any-status edits.
+	reviewer := hasRole(viewerRoles, "admin", "super_admin", "moderator")
+
 	switch {
 	case galgame.Status == 0:
 		// published — visible to all
 	case (galgame.Status == 3 || galgame.Status == 4) && viewerUserID > 0 && galgame.UserID == viewerUserID:
 		// submitter viewing their own pending / declined draft
+	case (galgame.Status == 3 || galgame.Status == 4) && reviewer:
+		// admin / moderator previewing any pending / declined submission
 	default:
 		return nil, nil, errors.NewWithCode(errors.ErrGalgameNotFound)
 	}
@@ -150,7 +160,14 @@ func (s *GalgameService) GetByIDWithViewer(ctx context.Context, id, viewerUserID
 	// own NSFW pending draft is still gated by their own filter request
 	// — consistent with how the search "pending" list inherits the same
 	// content_limit (search/service.go second-pass query).
-	if contentLimit != "" && galgame.ContentLimit != contentLimit {
+	//
+	// Bypassed when a reviewer is previewing a non-published submission: a
+	// reviewer must be able to open an NSFW pending(3)/declined(4) draft for
+	// review regardless of their own sfw/nsfw filter, otherwise the review
+	// "查看" would 404 on exactly the submissions that most need a look.
+	// Published (status=0) browsing still filters normally, even for admins.
+	reviewingDraft := reviewer && galgame.Status != 0
+	if contentLimit != "" && galgame.ContentLimit != contentLimit && !reviewingDraft {
 		return nil, nil, errors.NewWithCode(errors.ErrGalgameNotFound)
 	}
 
