@@ -66,6 +66,15 @@ export const useApi = () => {
     // self-redirects when a user back-buttons into a stale tab) or
     // running in SSR (we have no window.location to capture).
     accessToken.value = null
+    // Also clear the PERSISTED user store. `isLoggedIn` is derived from the
+    // store (`!!user`), not the token — so leaving the store set after a
+    // dead-session logout keeps `isLoggedIn` stale-true, and pages that trust
+    // it ping-pong forever: LoginForm.onMounted auto-redirects to its
+    // ?redirect= target, /oauth/authorize auto-consents, both 401 again and
+    // bounce back here → infinite redirect (seen when the session row is gone,
+    // e.g. after a dev DB reset). Mirrors useAuth.logout()'s clearAuth(); a
+    // forced logout should never leave isLoggedIn true.
+    useUserStore().clearUser()
     if (import.meta.client) {
       const here = window.location.pathname + window.location.search
       if (!here.startsWith('/auth/login')) {
