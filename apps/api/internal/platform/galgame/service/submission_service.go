@@ -374,6 +374,13 @@ func (s *SubmissionService) DeleteDraft(ctx context.Context, userID, gid int) er
 		}
 
 		// Wipe relations explicitly (no FK CASCADE configured for some of these).
+		// EVERY table with an FK → galgame (all ON DELETE NO ACTION) must be
+		// cleared before the parent delete, or `DELETE galgame` is blocked.
+		// galgame_cover / galgame_screenshot were missing here: a submission
+		// with an uploaded cover (the common case — most submitters add one)
+		// hit a fk_galgame_cover violation on withdraw and surfaced as the
+		// generic "操作失败". history / pr can't exist on a never-merged draft
+		// today, but are kept for completeness so this stays the full FK set.
 		tables := []any{
 			&model.GalgameAlias{},
 			&model.GalgameTagRelation{},
@@ -381,6 +388,10 @@ func (s *SubmissionService) DeleteDraft(ctx context.Context, userID, gid int) er
 			&model.GalgameEngineRelation{},
 			&model.GalgameLink{},
 			&model.GalgameContributor{},
+			&model.GalgameCover{},
+			&model.GalgameScreenshot{},
+			&model.GalgameHistory{},
+			&model.GalgamePR{},
 			&model.GalgameRevision{},
 		}
 		for _, m := range tables {
