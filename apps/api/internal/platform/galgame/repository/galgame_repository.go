@@ -177,7 +177,7 @@ func (r *GalgameRepository) List(ctx context.Context, page, limit int, sortField
 
 	err = query.
 		Order(order).
-		Offset((page - 1) * limit).
+		Offset((page-1)*limit).
 		Limit(limit).
 		Preload("Tag.Tag").
 		Preload("Official.Official").
@@ -296,7 +296,7 @@ func (r *GalgameRepository) ListMine(ctx context.Context, userID int, statuses [
 	q.Count(&total)
 
 	err = q.Order("updated DESC").
-		Offset((page - 1) * limit).
+		Offset((page-1)*limit).
 		Limit(limit).
 		Preload("Cover", func(db *gorm.DB) *gorm.DB {
 			return db.Order("sort_order ASC, created ASC")
@@ -380,8 +380,14 @@ func (r *GalgameRepository) GetUserStats(ctx context.Context, userID int) (*dto.
 		Where("user_id = ? AND status = 0 AND created >= ?", userID, todayStart)); err != nil {
 		return nil, err
 	}
-	if stats.GalgameContributed, err = count(r.db.WithContext(ctx).Model(&model.GalgameContributor{}).
-		Where("user_id = ?", userID).Distinct("galgame_id")); err != nil {
+	// CREATED ∪ EDITED, matching ListContributedByUser's set (minus the
+	// status=0 filter — this stat is intentionally all-status). Counting only
+	// galgame_contributor here would undercount by the ~35% of titles whose
+	// creator was never written as a contributor (migrated/synced entries), so
+	// the badge could read 0 while the contributed list shows the user's own
+	// creations. OR galgame.user_id closes that gap.
+	if stats.GalgameContributed, err = count(r.db.WithContext(ctx).Model(&model.Galgame{}).
+		Where("user_id = ? OR id IN (SELECT galgame_id FROM galgame_contributor WHERE user_id = ?)", userID, userID)); err != nil {
 		return nil, err
 	}
 	if stats.RevisionCount, err = count(r.db.WithContext(ctx).Model(&model.GalgameRevision{}).
@@ -432,20 +438,26 @@ func (r *GalgameRepository) ListPublishedByUser(ctx context.Context, userID, pag
 	return items, total, err
 }
 
-// ListContributedByUser returns the published galgames a user has CONTRIBUTED
-// to — the galgame_contributor relation (populated on create AND on
-// edit/PR-merge), newest-contribution-first, paginated. Distinct from
-// ListPublishedByUser, which is CREATED-only (galgame.user_id); the contributed
-// set is a superset that also includes titles the user only edited. status=0
-// only (public profile view — never leak drafts/banned) and NSFW-gated like the
-// created list. Ordered by the contributor row's `created` (when this user first
-// contributed to that title). galgame_contributor holds one row per
-// (galgame,user) (the create/edit paths check-then-insert), so the JOIN doesn't
-// duplicate rows.
+// ListContributedByUser returns the published galgames a user CONTRIBUTED to —
+// defined as CREATED ∪ EDITED, newest-contribution-first, paginated. Distinct
+// from ListPublishedByUser, which is CREATED-only (galgame.user_id); this is a
+// superset that also includes titles the user only edited. status=0 only
+// (public profile view — never leak drafts/banned) and NSFW-gated like the
+// created list.
+//
+// Why the OR galgame.user_id (not a plain JOIN on galgame_contributor): the
+// contributor row is *supposed* to be written on create too, but ~35% of
+// published titles predate that invariant (migrated / VNDB-synced entries have
+// galgame.user_id set with NO matching galgame_contributor row). A plain JOIN
+// would silently drop a creator's own titles from their "contributed" list —
+// the exact bug a user reported. The OR is robust to that gap (and to any
+// future create-path miss), and only ever evaluates status=0, so the bulk
+// status=2 VNDB-draft rows never enter. galgame_contributor holds at most one
+// row per (galgame,user), so the LEFT JOIN can't duplicate rows.
 func (r *GalgameRepository) ListContributedByUser(ctx context.Context, userID, page, limit int, contentLimit string) (items []model.Galgame, total int64, err error) {
 	q := r.db.WithContext(ctx).Model(&model.Galgame{}).
-		Joins("JOIN galgame_contributor gc ON gc.galgame_id = galgame.id").
-		Where("gc.user_id = ? AND galgame.status = 0", userID)
+		Joins("LEFT JOIN galgame_contributor gc ON gc.galgame_id = galgame.id AND gc.user_id = ?", userID).
+		Where("galgame.status = 0 AND (galgame.user_id = ? OR gc.user_id IS NOT NULL)", userID)
 	if contentLimit != "" {
 		q = q.Where("galgame.content_limit = ?", contentLimit)
 	}
@@ -454,7 +466,9 @@ func (r *GalgameRepository) ListContributedByUser(ctx context.Context, userID, p
 
 	err = q.
 		Select("galgame.id, galgame.vndb_id, galgame.name_en_us, galgame.name_ja_jp, galgame.name_zh_cn, galgame.name_zh_tw, galgame.banner, galgame.content_limit, galgame.status, galgame.user_id, galgame.resource_update_time, galgame.original_language, galgame.age_limit").
-		Order("gc.created DESC").
+		// newest contribution first: the contributor row's `created` when the
+		// user edited it, else the galgame's own `created` (created-only).
+		Order("COALESCE(gc.created, galgame.created) DESC").
 		Offset((page - 1) * limit).
 		Limit(limit).
 		Find(&items).Error
