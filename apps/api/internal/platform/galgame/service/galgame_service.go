@@ -396,7 +396,7 @@ func vndbLink(vndbID string) []model.SnapshotLink {
 	if vndbID == "" {
 		return []model.SnapshotLink{}
 	}
-	return []model.SnapshotLink{{Name: "VNDB", Link: "https://vndb.org/" + vndbID}}
+	return []model.SnapshotLink{{Name: "VNDB", Link: "https://vndb.org/" + vndbID, Source: "vndb", SourceKey: "vndb"}}
 }
 
 // Update directly updates a galgame (creator or admin) and creates a new revision
@@ -667,7 +667,12 @@ func loadGalgameWithRelations(tx *gorm.DB, id int) (*model.Galgame, error) {
 		Preload("Tag").
 		Preload("Official").
 		Preload("Engine").
-		Preload("Link").
+		Preload("Link", func(db *gorm.DB) *gorm.DB {
+			// Deterministic order (insertion id) so the snapshot's Links —
+			// compared order-sensitively by linksEqual — is stable across
+			// reads; without it VNDB link re-sync would spuriously re-diff.
+			return db.Order("id ASC")
+		}).
 		Preload("Cover", func(db *gorm.DB) *gorm.DB {
 			return db.Order("sort_order ASC, created ASC")
 		}).

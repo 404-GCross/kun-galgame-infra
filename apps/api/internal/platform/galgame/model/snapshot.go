@@ -42,8 +42,10 @@ type Snapshot struct {
 
 // SnapshotLink represents an external link in a snapshot
 type SnapshotLink struct {
-	Name string `json:"name"`
-	Link string `json:"link"`
+	Name      string `json:"name"`
+	Link      string `json:"link"`
+	Source    string `json:"source"`
+	SourceKey string `json:"source_key"`
 }
 
 // SnapshotCover is one cover candidate in a Snapshot. Mirrors
@@ -126,7 +128,7 @@ func TakeSnapshot(g *Galgame) *Snapshot {
 		s.EngineIDs = append(s.EngineIDs, e.EngineID)
 	}
 	for _, l := range g.Link {
-		s.Links = append(s.Links, SnapshotLink{Name: l.Name, Link: l.Link})
+		s.Links = append(s.Links, SnapshotLink{Name: l.Name, Link: l.Link, Source: l.Source, SourceKey: l.SourceKey})
 	}
 	for _, c := range g.Cover {
 		s.Covers = append(s.Covers, SnapshotCover{
