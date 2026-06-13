@@ -4,10 +4,12 @@
 // from VNDB descriptions that use BBCode, so ~half of intro_en_us still carry
 // raw BBCode that a Markdown renderer shows as literal junk:
 //
-//   - a trailing attribution line: "[From [url=...]getchu[/url]]", "[From
-//     ErogeShop]", "[Edited from ...]" (sometimes backslash-escaped) → DELETED.
+//   - source-attribution lines anywhere in the text — "[From [url=…]getchu
+//     [/url]]", "[From ErogeShop]", "[Edited from …]", "(edited from …)",
+//     "*[From …]" (often backslash-escaped, sometimes mid-document in a
+//     multi-description blurb) → DELETED.
 //   - inline links "[url=X]Y[/url]" / "[url]X[/url]" → Markdown link [Y](X) / <X>.
-//   - every other BBCode tag ([b] [i] [spoiler] [quote] [code] [color] ...) →
+//   - every other BBCode tag ([b] [i] [spoiler] [quote] [code] [color] …) →
 //     stripped, inner text kept as plain text.
 //   - images (Markdown ![](url) and BBCode [img]url[/img]) → removed from the
 //     text entirely (collected for an export manifest; NOT migrated).
@@ -31,15 +33,22 @@ var (
 	reImgMarkdown = regexp.MustCompile(`!\[[^\]]*\]\(\s*<?([^)>\s]+)[^)]*\)`)
 	// BBCode image: [img]url[/img] or [img=url]...[/img] (optionally escaped).
 	reImgBBCode = regexp.MustCompile(`(?is)\\?\[img(?:=([^\]]*))?\\?\]\s*<?([^\[<>\s]*)[^\[]*?\\?\[/img\\?\]`)
-	// [url=X]Y[/url] → [Y](X). Tolerates escapes and <url> wrapping.
-	reURLLabeled = regexp.MustCompile(`(?is)\\?\[url=\s*<?\s*([^\]<>\s]+?)\s*>?\s*\\?\]([\s\S]*?)\\?\[/url\\?\]`)
+	// [url=X]Y[/url] → [Y](X). Tolerates escapes, <url> wrapping, and a malformed
+	// closing tag like [/url>] (a stray ">" from a broken <url>).
+	reURLLabeled = regexp.MustCompile(`(?is)\\?\[url=\s*<?\s*([^\]<>\s]+?)\s*>?\s*\\?\]([\s\S]*?)\\?\[/url\s*>?\s*\\?\]`)
 	// [url]X[/url] → <X>.
-	reURLBare = regexp.MustCompile(`(?is)\\?\[url\\?\]\s*<?([^\[<>\s]+?)>?\s*\\?\[/url\\?\]`)
+	reURLBare = regexp.MustCompile(`(?is)\\?\[url\\?\]\s*<?([^\[<>\s]+?)>?\s*\\?\[/url\s*>?\s*\\?\]`)
 	// Any remaining (whitelisted) BBCode tag — opening or closing, with optional
-	// =value and optional escape. Stripped; inner text is kept.
-	reBBTag = regexp.MustCompile(`(?i)\\?\[/?(?:b|i|u|s|strike|spoiler|quote|code|raw|center|left|right|justify|color|size|sub|sup|list|\*|h[1-6]|font|heading)(?:=[^\]]*)?\\?\]`)
-	reTrailingWS = regexp.MustCompile(`[ \t]+\n`)
-	reMultiBlank = regexp.MustCompile(`\n{3,}`)
+	// =value, optional escape and a stray ">" before "]". Stripped; inner text is
+	// kept. `url` mops up ORPHAN url tags reURLLabeled/reURLBare couldn't pair up.
+	reBBTag = regexp.MustCompile(`(?i)\\?\[/?(?:url|b|i|u|s|strike|spoiler|quote|code|raw|center|left|right|justify|color|size|sub|sup|list|\*|h[1-6]|font|heading)(?:=[^\]]*)?\s*>?\s*\\?\]`)
+	// Inline-appended trailing attribution (not on its own line — tacked onto the
+	// end of the last sentence): "…story. [From [x](url)]". Anchored on "from"
+	// (optionally after up to 3 words) + a link gate in stripTrailer, so a
+	// legitimate trailing link like "[Source code](url)" is left alone.
+	reTrailerCandidate = regexp.MustCompile(`(?i)\s*(?:\\?[*>][ \t]*)?\\?[\[(]\s*(?:[a-z]+ ){0,3}from\b[^\n]*$`)
+	reTrailingWS       = regexp.MustCompile(`[ \t]+\n`)
+	reMultiBlank       = regexp.MustCompile(`\n{3,}`)
 )
 
 // normalizeLineEndings folds CRLF / CR to LF.
@@ -70,19 +79,13 @@ func NormalizeEnglishIntro(in string) (out string, removedImages []string, chang
 	}
 	s = reImgMarkdown.ReplaceAllString(s, "")
 
-	// 2. Remove trailing VNDB attribution line(s): a standalone, wholly
-	//    bracketed final line — [From ...], [Translated from ...], [Edited
-	//    from ...], [Source: ...], even typos. Structural detection (whole
-	//    line bracketed + a link or attribution verb) covers every verb
-	//    variant without an exhaustive whitelist. Up to 2 stacked lines.
-	s = strings.TrimRight(s, " \t\n")
-	for range 2 {
-		nl := strings.LastIndexByte(s, '\n')
-		if !isAttributionLine(s[nl+1:]) {
-			break
-		}
-		s = strings.TrimRight(s[:nl+1], " \t\n")
-	}
+	// 2. Drop standalone source-attribution lines ANYWHERE (not just trailing):
+	//    own-line "[From …]" / "(edited from …)" / "*[From …]". A mid-document
+	//    line must carry a link to qualify (these multi-blurb attributions always
+	//    do) so a stray bracketed aside isn't removed; the final line may be a
+	//    link-less "[From ErogeShop]". Done before conversion so the line's messy
+	//    inner [url]/[/url>] is removed wholesale.
+	s = dropAttributionLines(s)
 
 	// 3. Links → Markdown (labeled first, then bare).
 	s = reURLLabeled.ReplaceAllString(s, "[$2]($1)")
@@ -91,13 +94,17 @@ func NormalizeEnglishIntro(in string) (out string, removedImages []string, chang
 	// 4. Strip remaining BBCode tags, keep inner text.
 	s = reBBTag.ReplaceAllString(s, "")
 
+	// 5. Remove a trailing sourced attribution appended inline to a content line
+	//    (not its own line, so step 2 left it). Link-gated; idempotent.
+	s = stripTrailer(s)
+
 	// Decide substantive change against the line-ending-folded base (so a pure
 	// CRLF intro is NOT considered changed and won't be rewritten).
 	if s == base {
 		return in, nil, false
 	}
 
-	// 5. Tidy whitespace left behind by removals — only on rows we changed.
+	// 6. Tidy whitespace left behind by removals — only on rows we changed.
 	s = reTrailingWS.ReplaceAllString(s, "\n")
 	s = reMultiBlank.ReplaceAllString(s, "\n\n")
 	s = strings.TrimSpace(s)
@@ -113,8 +120,9 @@ func firstNonEmpty(a, b string) string {
 }
 
 // attributionVerbs are the leading words of a VNDB source-attribution line.
-// Kept broad (incl. the common "fom" typo) because detection ALSO requires the
-// line to be wholly bracketed, so a stray verb in prose can't trigger it.
+// Kept broad (incl. the common "fom" typo); detection also requires the line to
+// be wholly bracketed AND (mid-document) to carry a link, so a stray verb in
+// prose can't trigger it.
 var attributionVerbs = []string{
 	"from", "edited", "translated", "translation", "taken", "adapted", "based",
 	"source", "modified", "condensed", "summarized", "description", "roughly",
@@ -122,28 +130,81 @@ var attributionVerbs = []string{
 	"copied", "courtesy", "official", "rewritten", "compiled", "fom",
 }
 
-// isAttributionLine reports whether one line is a standalone VNDB attribution:
-// wholly wrapped in (optionally escaped) brackets AND carrying a link or a known
-// attribution verb. Requiring both bracket-wrapping and a signal avoids nuking a
-// legitimate short bracketed last line like "[END]" or a markdown link/footnote
-// (which ends in ")" or ":" , not "]").
-func isAttributionLine(line string) bool {
+// dropAttributionLines removes whole lines that are standalone VNDB source
+// attributions. A non-final line must carry a link to qualify (mid-document
+// blurb attributions always link their source); the final non-empty line may be
+// link-less (e.g. "[From ErogeShop]").
+func dropAttributionLines(s string) string {
+	lines := strings.Split(s, "\n")
+	lastNonEmpty := -1
+	for i, ln := range lines {
+		if strings.TrimSpace(ln) != "" {
+			lastNonEmpty = i
+		}
+	}
+	kept := lines[:0]
+	for i, ln := range lines {
+		if isAttributionLine(ln, i != lastNonEmpty) {
+			continue
+		}
+		kept = append(kept, ln)
+	}
+	return strings.Join(kept, "\n")
+}
+
+// isAttributionLine reports whether a whole line is a standalone attribution:
+// wrapped in [..] or (..) (optionally escaped / markdown-prefixed by * or >),
+// led by an attribution verb. requireLink additionally demands a link/source
+// signal — used for mid-document lines so a verb-less-but-bracketed aside or a
+// link-less bracketed phrase isn't removed; the final line passes requireLink
+// =false so a link-less "[From ErogeShop]" still goes.
+func isAttributionLine(line string, requireLink bool) bool {
 	t := strings.TrimSpace(line)
-	t = strings.TrimPrefix(t, `\`)
-	if !strings.HasPrefix(t, "[") {
+	t = strings.TrimLeft(t, "\\*> \t")
+	if !strings.HasPrefix(t, "[") && !strings.HasPrefix(t, "(") {
 		return false
 	}
-	if end := strings.TrimRight(t, " \t"); !strings.HasSuffix(end, "]") && !strings.HasSuffix(end, `\]`) {
+	if end := strings.TrimRight(t, " \t"); !strings.HasSuffix(end, "]") &&
+		!strings.HasSuffix(end, ")") && !strings.HasSuffix(end, `\]`) {
 		return false
 	}
 	low := strings.ToLower(t[1:])
-	if strings.Contains(low, "[url") || strings.Contains(low, "http") {
-		return true
+	if !hasAttributionVerb(low) {
+		return false
 	}
+	if requireLink {
+		return strings.Contains(low, "http") || strings.Contains(low, "](") ||
+			strings.Contains(low, "[url") || strings.Contains(low, "[/url")
+	}
+	return true
+}
+
+func hasAttributionVerb(low string) bool {
 	for _, v := range attributionVerbs {
 		if low == v || strings.HasPrefix(low, v+" ") || strings.HasPrefix(low, v+"]") {
 			return true
 		}
 	}
 	return false
+}
+
+// stripTrailer removes a trailing sourced attribution appended INLINE to a
+// content line (so dropAttributionLines, which only drops whole attribution
+// lines, left it). Anchored on "from" + gated on a link signal so prose like
+// "(Based on a true story)" is never touched. Looped for the stacked case.
+func stripTrailer(s string) string {
+	s = strings.TrimRight(s, " \t\n")
+	for range 3 {
+		loc := reTrailerCandidate.FindStringIndex(s)
+		if loc == nil {
+			break
+		}
+		seg := strings.ToLower(s[loc[0]:])
+		if !strings.Contains(seg, "http") && !strings.Contains(seg, "](") &&
+			!strings.Contains(seg, "[url") && !strings.Contains(seg, "[/url") {
+			break
+		}
+		s = strings.TrimRight(s[:loc[0]], " \t\n")
+	}
+	return s
 }

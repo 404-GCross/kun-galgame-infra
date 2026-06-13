@@ -88,6 +88,72 @@ func TestNormalizeEnglishIntro(t *testing.T) {
 			wantImgs:  []string{"http://x.com/i.png"},
 			wantChang: true,
 		},
+		{
+			name:      "inline-appended trailer with markdown link removed",
+			in:        "He wins her heart.\n\n[From [Getchu](https://www.getchu.com/x)]",
+			wantOut:   "He wins her heart.",
+			wantChang: true,
+		},
+		{
+			name:      "parenthesized attribution removed",
+			in:        "A snowy love story.\n\n(edited from [Wikipedia](https://en.wikipedia.org/x))",
+			wantOut:   "A snowy love story.",
+			wantChang: true,
+		},
+		{
+			name:      "markdown-prefixed trailer removed",
+			in:        "Plastic memories.\n\n*[From [steam](https://store.steampowered.com/app/1)]",
+			wantOut:   "Plastic memories.",
+			wantChang: true,
+		},
+		{
+			name:      "prose 'based on a true story' kept (no link)",
+			in:        "It's loosely based on a true story. (Based on a true story.)",
+			wantOut:   "It's loosely based on a true story. (Based on a true story.)",
+			wantChang: false,
+		},
+		{
+			name:      "mid-text 'Based on [novel](url)' kept",
+			in:        "Based on [the novel](https://x.com/n) by Y, the game expands the plot.",
+			wantOut:   "Based on [the novel](https://x.com/n) by Y, the game expands the plot.",
+			wantChang: false,
+		},
+		{
+			name:      "orphan url tag stripped to text",
+			in:        "See [url=https://x.com]the site for details.",
+			wantOut:   "See the site for details.",
+			wantChang: true,
+		},
+		{
+			name:      "mid-document attribution with content after removed",
+			in:        "Main description here.\n\n[From [Hau](https://omochikaeri.wordpress.com/x)]\n\nEditor note added after the attribution.",
+			wantOut:   "Main description here.\n\nEditor note added after the attribution.",
+			wantChang: true,
+		},
+		{
+			name:      "mid-document verb-less bracket kept",
+			in:        "Para one.\n\n[A bracketed aside, not an attribution]\n\nPara two.",
+			wantOut:   "Para one.\n\n[A bracketed aside, not an attribution]\n\nPara two.",
+			wantChang: false,
+		},
+		{
+			name:      "mid-document link-less from-phrase kept",
+			in:        "Para one.\n\n[From now on everything changed]\n\nPara two.",
+			wantOut:   "Para one.\n\n[From now on everything changed]\n\nPara two.",
+			wantChang: false,
+		},
+		{
+			name:      "malformed [/url>] closing converted",
+			in:        "Buy on [url=https://x.com]Steam[/url>] now.",
+			wantOut:   "Buy on [Steam](https://x.com) now.",
+			wantChang: true,
+		},
+		{
+			name:      "trailing malformed [From X[/url>]] removed",
+			in:        "A great story.\n\n[From [url=<https://mangagamer.org/x>]MangaGamer[/url>]]",
+			wantOut:   "A great story.",
+			wantChang: true,
+		},
 	}
 
 	for _, tc := range cases {
@@ -114,6 +180,9 @@ func TestNormalizeEnglishIntro_Idempotent(t *testing.T) {
 		"Some story text.\n\n[From [url=https://x.com/a]getchu[/url]]",
 		"Buy it on [url=https://x.com]Steam[/url].\n\n![cg](https://x.com/c.png)",
 		"The hero is [b]strong[/b].",
+		"He wins her heart.\n\n[From [Getchu](https://www.getchu.com/x)]",
+		"A snowy love story.\n\n(edited from [Wikipedia](https://en.wikipedia.org/x))",
+		"Plastic memories.\n\n*[From [steam](https://store.steampowered.com/app/1)]",
 	}
 	for _, in := range inputs {
 		once, _, _ := NormalizeEnglishIntro(in)
