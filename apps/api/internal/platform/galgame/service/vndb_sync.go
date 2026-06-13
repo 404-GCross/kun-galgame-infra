@@ -2,24 +2,29 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 
 	"api/internal/platform/galgame/model"
-	"api/internal/platform/galgame/repository"
 	"api/internal/platform/galgame/vndb"
 
 	"gorm.io/gorm"
 )
 
-// SyncVndbLinks reconciles a galgame's VNDB-sourced links (Source="vndb") to the
-// current VNDB truth — adding new store/official links, dropping ones VNDB no
-// longer lists — while leaving user-added links (Source="") completely
-// untouched. It commits through the canonical ApplySnapshot path as a MINOR
-// system revision, so there is no snapshot drift (§1.5 #4) and the change is
-// auditable / revertible like any edit.
+// SyncVndbLinks reconciles a galgame's VNDB-sourced links to the current VNDB
+// truth — adding store/official links, dropping ones VNDB no longer lists —
+// while keeping genuinely user-added links. Legacy UNMARKED imports (dumped as
+// source="" by old syncs) are recognized by host (matches a fresh link's host,
+// or a known info/stats host) and replaced, so the result is clean.
+//
+// Write strategy is APPROACH B (matching the intro cleanup): it rewrites just
+// galgame_link and jsonb-patches the latest revision's snapshot so live ==
+// latest snapshot (§1.5 #4), WITHOUT minting a new revision — a ~50k-row
+// backfill must not create 50k revisions. (The future create-time path will use
+// the ApplySnapshot+revision flow instead, where volume is tiny.)
 //
 // Returns whether anything changed and the freshly-fetched VNDB link set (for
-// reporting). No-op (no fetch side effects aside) for galgames without a
-// canonical vndb_id. When apply is false it fetches + diffs but writes nothing.
+// reporting). No-op for galgames without a canonical vndb_id. apply=false
+// fetches + diffs but writes nothing.
 func SyncVndbLinks(ctx context.Context, db *gorm.DB, vc *vndb.Client, galgameID int, apply bool) (bool, []model.SnapshotLink, error) {
 	full, err := loadGalgameWithRelations(db.WithContext(ctx), galgameID)
 	if err != nil {
@@ -39,9 +44,7 @@ func SyncVndbLinks(ctx context.Context, db *gorm.DB, vc *vndb.Client, galgameID 
 
 	// VNDB sync OWNS the store/official/info link space. Drop anything it
 	// manages — old vndb-marked links (replaced by fresh), plus legacy UNMARKED
-	// imports that earlier syncs dumped as source="" — recognized by host
-	// (matches a fresh link's host, or a known info/stats host). What remains is
-	// genuinely user-authored (forum topics, misc) and is kept untouched.
+	// imports recognized by host — and keep the rest as user links.
 	managed := make(map[string]bool, len(fresh))
 	for _, l := range fresh {
 		if h := vndb.Host(l.Link); h != "" {
@@ -68,32 +71,34 @@ func SyncVndbLinks(ctx context.Context, db *gorm.DB, vc *vndb.Client, galgameID 
 		return true, fresh, nil
 	}
 
+	linksJSON, err := json.Marshal(next.Links)
+	if err != nil {
+		return false, fresh, err
+	}
 	userID := full.UserID
 	err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := repository.ApplySnapshot(tx, galgameID, userID, &next); err != nil {
+		if err := tx.Where("galgame_id = ?", galgameID).Delete(&model.GalgameLink{}).Error; err != nil {
 			return err
 		}
-		nextRev, err := repository.NextRevision(tx, galgameID)
-		if err != nil {
-			return err
+		rows := make([]model.GalgameLink, 0, len(next.Links))
+		for _, l := range next.Links {
+			rows = append(rows, model.GalgameLink{
+				GalgameID: galgameID, UserID: userID,
+				Name: l.Name, Link: l.Link, Source: l.Source, SourceKey: l.SourceKey,
+			})
 		}
-		after, err := loadGalgameWithRelations(tx, galgameID)
-		if err != nil {
-			return err
+		if len(rows) > 0 {
+			if err := tx.Create(&rows).Error; err != nil {
+				return err
+			}
 		}
-		snap, err := model.TakeSnapshot(after).ToJSON()
-		if err != nil {
-			return err
-		}
-		return tx.Create(&model.GalgameRevision{
-			GalgameID: galgameID,
-			Revision:  nextRev,
-			UserID:    userID,
-			Action:    "updated",
-			Note:      "vndb link sync",
-			Snapshot:  snap,
-			IsMinor:   true,
-		}).Error
+		// Keep the latest revision snapshot == DB (§1.5 #4) without a new revision.
+		return tx.Exec(`
+			UPDATE galgame_revision
+			SET snapshot = jsonb_set(snapshot, '{links}', ?::jsonb, true)
+			WHERE galgame_id = ?
+			  AND revision = (SELECT max(revision) FROM galgame_revision WHERE galgame_id = ?)
+		`, string(linksJSON), galgameID, galgameID).Error
 	})
 	if err != nil {
 		return false, fresh, err
