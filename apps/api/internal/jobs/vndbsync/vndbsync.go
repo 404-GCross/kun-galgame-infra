@@ -301,12 +301,15 @@ func (s *syncer) getStartID(full bool) (string, error) {
 
 	// Max vndb_id in DB, capped at VNDB's real max so we skip garbage.
 	var maxID int
-	s.db.Raw(`
+	if err := s.db.Raw(`
 		SELECT COALESCE(MAX(CAST(SUBSTRING(vndb_id FROM 2) AS INTEGER)), 0)
 		FROM galgame
 		WHERE vndb_id ~ '^v[0-9]+$'
 		  AND CAST(SUBSTRING(vndb_id FROM 2) AS INTEGER) <= ?
-	`, vndbMax).Scan(&maxID)
+	`, vndbMax).Scan(&maxID).Error; err != nil {
+		// Don't silently restart the whole scan from v0 on a DB error.
+		return "", fmt.Errorf("max local vndb_id: %w", err)
+	}
 
 	startID := fmt.Sprintf("v%d", maxID)
 	slog.Info("incremental mode", "starting_after", startID)
@@ -406,7 +409,9 @@ func (s *syncer) insertVN(vn *vndbVN) error {
 			if alias == "" {
 				continue
 			}
-			tx.Create(&model.GalgameAlias{GalgameID: galgame.ID, Name: alias})
+			if err := tx.Create(&model.GalgameAlias{GalgameID: galgame.ID, Name: alias}).Error; err != nil {
+				return fmt.Errorf("create alias: %w", err)
+			}
 		}
 
 		// Tag relations — marked source="vndb" so the enrichment recognizes them
@@ -416,26 +421,30 @@ func (s *syncer) insertVN(vn *vndbVN) error {
 			if vndbresolve.TagSkipped(rt) {
 				continue
 			}
-			tagID := s.resolver.ResolveTag(tx, rt)
-			if tagID == 0 {
-				continue
+			tagID, err := s.resolver.ResolveTag(tx, rt)
+			if err != nil {
+				return fmt.Errorf("resolve tag %q: %w", rt.Name, err)
 			}
-			tx.Exec(
+			if err := tx.Exec(
 				"INSERT INTO galgame_tag_relation (galgame_id, tag_id, spoiler_level, source, created, updated) VALUES (?, ?, ?, 'vndb', NOW(), NOW()) ON CONFLICT DO NOTHING",
 				galgame.ID, tagID, tag.Spoiler,
-			)
+			).Error; err != nil {
+				return fmt.Errorf("insert tag relation: %w", err)
+			}
 		}
 
 		// Developer/Official relations — source="vndb".
 		for _, dev := range vn.Developers {
-			officialID := s.resolver.ResolveOfficial(tx, vndbresolve.Developer{ID: dev.ID, Name: dev.Name, Original: dev.Original, Type: dev.Type, Lang: dev.Lang})
-			if officialID == 0 {
-				continue
+			officialID, err := s.resolver.ResolveOfficial(tx, vndbresolve.Developer{ID: dev.ID, Name: dev.Name, Original: dev.Original, Type: dev.Type, Lang: dev.Lang})
+			if err != nil {
+				return fmt.Errorf("resolve official %q: %w", dev.Name, err)
 			}
-			tx.Exec(
+			if err := tx.Exec(
 				"INSERT INTO galgame_official_relation (galgame_id, official_id, source, created, updated) VALUES (?, ?, 'vndb', NOW(), NOW()) ON CONFLICT DO NOTHING",
 				galgame.ID, officialID,
-			)
+			).Error; err != nil {
+				return fmt.Errorf("insert official relation: %w", err)
+			}
 		}
 
 		return nil
@@ -463,6 +472,21 @@ func (s *syncer) buildGalgame(vn *vndbVN) *model.Galgame {
 			g.NameZhCN = t.Title
 		case "zh-Hant":
 			g.NameZhTW = t.Title
+		}
+	}
+	// Fallback: a VN whose olang isn't en/ja/zh (e.g. ko/ru) would otherwise get
+	// no name at all. Put the always-present main title on the original-language
+	// slot so we never insert a nameless draft.
+	if g.NameEnUS == "" && g.NameJaJP == "" && g.NameZhCN == "" && g.NameZhTW == "" && vn.Title != "" {
+		switch g.OriginalLanguage {
+		case "ja-jp":
+			g.NameJaJP = vn.Title
+		case "zh-cn":
+			g.NameZhCN = vn.Title
+		case "zh-tw":
+			g.NameZhTW = vn.Title
+		default:
+			g.NameEnUS = vn.Title
 		}
 	}
 

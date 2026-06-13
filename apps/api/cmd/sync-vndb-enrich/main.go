@@ -34,7 +34,6 @@ func main() {
 	offset := flag.Int("offset", 0, "skip this many galgames (for chunking)")
 	ids := flag.String("ids", "", "comma-separated galgame ids to process (targeted; any status; overrides only-missing/limit/offset)")
 	gap := flag.Duration("gap", 2*time.Second, "min delay between VNDB API calls")
-	samples := flag.Int("samples", 6, "number of per-game previews to print")
 	tagmap := flag.String("tagmap", "", "path to tagMap.ts (default: env KUN_VNDB_TAGMAP_PATH or docs/tagMap.ts)")
 	flag.Parse()
 
@@ -52,7 +51,6 @@ func main() {
 		IDs:         parseIDs(*ids),
 		Limit:       *limit,
 		Offset:      *offset,
-		Samples:     *samples,
 		TagMapPath:  *tagmap,
 	}); err != nil {
 		slog.Error("sync-vndb-enrich", "error", err)

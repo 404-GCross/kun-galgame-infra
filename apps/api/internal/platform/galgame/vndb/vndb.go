@@ -20,6 +20,7 @@ package vndb
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -146,30 +147,64 @@ type extLink struct {
 	Name  string `json:"name"`
 }
 
-func (c *Client) post(path string, body any, out any) error {
-	for {
-		if d := c.minGap - time.Since(c.lastReq); d > 0 {
-			time.Sleep(d)
-		}
-		c.lastReq = time.Now()
+// maxThrottleRetries bounds the 429 back-off loop so a sustained throttle/ban
+// can't hang a scheduled job forever (it returns an error instead).
+const maxThrottleRetries = 5
 
-		buf, _ := json.Marshal(body)
-		resp, err := c.http.Post(apiBase+path, "application/json", bytes.NewReader(buf))
+func (c *Client) post(ctx context.Context, path string, body any, out any) error {
+	for attempt := 0; ; attempt++ {
+		throttled, err := c.attempt(ctx, path, body, out)
 		if err != nil {
 			return err
 		}
-		if resp.StatusCode == http.StatusTooManyRequests { // 429: back off and retry
-			resp.Body.Close()
-			time.Sleep(60 * time.Second)
-			continue
+		if !throttled {
+			return nil
 		}
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			msg, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-			return fmt.Errorf("vndb %s: status %d: %s", path, resp.StatusCode, strings.TrimSpace(string(msg)))
+		if attempt >= maxThrottleRetries {
+			return fmt.Errorf("vndb %s: still throttled (429) after %d retries", path, maxThrottleRetries)
 		}
-		return json.NewDecoder(resp.Body).Decode(out)
+		select { // back off, but stay interruptible (graceful shutdown / run timeout)
+		case <-time.After(60 * time.Second):
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 	}
+}
+
+// attempt makes one rate-limited request and closes the body. It reports
+// throttled=true on a 429 (caller backs off + retries) without consuming an error.
+func (c *Client) attempt(ctx context.Context, path string, body, out any) (bool, error) {
+	if d := c.minGap - time.Since(c.lastReq); d > 0 {
+		select {
+		case <-time.After(d):
+		case <-ctx.Done():
+			return false, ctx.Err()
+		}
+	}
+	c.lastReq = time.Now()
+
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return false, fmt.Errorf("marshal vndb %s body: %w", path, err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiBase+path, bytes.NewReader(buf))
+	if err != nil {
+		return false, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return false, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusTooManyRequests {
+		return true, nil
+	}
+	if resp.StatusCode != http.StatusOK {
+		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return false, fmt.Errorf("vndb %s: status %d: %s", path, resp.StatusCode, strings.TrimSpace(string(msg)))
+	}
+	return false, json.NewDecoder(resp.Body).Decode(out)
 }
 
 // curate turns a VN's raw release extlinks into the clean, deterministic
@@ -208,7 +243,7 @@ func curate(vndbID string, links []extLink) []model.SnapshotLink {
 // id. This is what makes a bulk backfill fast: ~(releases/100) calls per 100 VNs
 // instead of one call per VN. (VN-level extlinks are purely encyclopedic — see
 // the package doc — so they aren't fetched.)
-func (c *Client) FetchGameLinksBatch(ids []string) (map[string][]model.SnapshotLink, error) {
+func (c *Client) FetchGameLinksBatch(ctx context.Context, ids []string) (map[string][]model.SnapshotLink, error) {
 	want := make(map[string]bool, len(ids))
 	or := []any{"or"}
 	for _, id := range ids {
@@ -230,11 +265,13 @@ func (c *Client) FetchGameLinksBatch(ids []string) (map[string][]model.SnapshotL
 		var relResp struct {
 			More    bool `json:"more"`
 			Results []struct {
-				VNs      []struct{ ID string `json:"id"` } `json:"vns"`
-				Extlinks []extLink                         `json:"extlinks"`
+				VNs []struct {
+					ID string `json:"id"`
+				} `json:"vns"`
+				Extlinks []extLink `json:"extlinks"`
 			} `json:"results"`
 		}
-		if err := c.post("/release", map[string]any{
+		if err := c.post(ctx, "/release", map[string]any{
 			"filters": relFilter, "fields": "vns{id}, extlinks{url,label,name}",
 			"results": 100, "page": page,
 		}, &relResp); err != nil {
@@ -261,8 +298,8 @@ func (c *Client) FetchGameLinksBatch(ids []string) (map[string][]model.SnapshotL
 
 // FetchGameLinks is the single-VN convenience wrapper (for the future
 // create-time path). The vndb.org self-link is always present.
-func (c *Client) FetchGameLinks(vndbID string) ([]model.SnapshotLink, error) {
-	m, err := c.FetchGameLinksBatch([]string{vndbID})
+func (c *Client) FetchGameLinks(ctx context.Context, vndbID string) ([]model.SnapshotLink, error) {
+	m, err := c.FetchGameLinksBatch(ctx, []string{vndbID})
 	if err != nil {
 		return nil, err
 	}
@@ -299,7 +336,7 @@ type VNMeta struct {
 // call (≤100 ids → ≤100 results, one page), keyed by vndb id. Paired with
 // FetchGameLinksBatch (which hits /release), this is the "one /vn + paginated
 // /release per 100 VNs" combined enrichment fetch.
-func (c *Client) FetchVNMetaBatch(ids []string) (map[string]VNMeta, error) {
+func (c *Client) FetchVNMetaBatch(ctx context.Context, ids []string) (map[string]VNMeta, error) {
 	want := make(map[string]bool, len(ids))
 	or := []any{"or"}
 	for _, id := range ids {
@@ -320,7 +357,7 @@ func (c *Client) FetchVNMetaBatch(ids []string) (map[string]VNMeta, error) {
 			Developers []Developer `json:"developers"`
 		} `json:"results"`
 	}
-	if err := c.post("/vn", map[string]any{
+	if err := c.post(ctx, "/vn", map[string]any{
 		"filters": or,
 		"fields":  "id, tags{id,name,category,rating,spoiler,lie}, developers{id,name,original,type,lang}",
 		"results": 100,

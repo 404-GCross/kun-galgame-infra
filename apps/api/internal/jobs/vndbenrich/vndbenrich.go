@@ -35,7 +35,6 @@ type Opts struct {
 	IDs         []int         // process exactly these ids (any status); overrides OnlyMissing/Limit/Offset
 	Limit       int
 	Offset      int
-	Samples     int
 	TagMapPath  string // defaults to vndbresolve.DefaultTagMapPath()
 }
 
@@ -88,20 +87,13 @@ func Run(ctx context.Context, cfg *config.Config, opts Opts) (map[string]any, er
 		for _, c := range batch {
 			ids = append(ids, c.VNDBID)
 		}
-		links, err := vc.FetchGameLinksBatch(ids)
-		if err != nil {
-			failed += len(batch)
-			slog.Error("fetch links batch", "from", batch[0].ID, "to", batch[len(batch)-1].ID, "error", err)
-			continue
-		}
-		meta, err := vc.FetchVNMetaBatch(ids)
-		if err != nil {
-			failed += len(batch)
-			slog.Error("fetch meta batch", "from", batch[0].ID, "to", batch[len(batch)-1].ID, "error", err)
-			continue
-		}
+		links, meta, bad := fetchBatchData(ctx, vc, ids)
 
 		for _, c := range batch {
+			if bad[c.VNDBID] { // fetch failed even per-id (e.g. a stale/out-of-range vndb_id)
+				failed++
+				continue
+			}
 			didChange, err := reconcileOne(ctx, db.DB(), resolver, c.ID, links[c.VNDBID], meta[c.VNDBID], opts.Apply)
 			if err != nil {
 				failed++
@@ -123,24 +115,63 @@ func Run(ctx context.Context, cfg *config.Config, opts Opts) (map[string]any, er
 	return summary(len(cands), len(cands), changed, failed, resolver), nil
 }
 
+// fetchBatchData fetches links + meta for a batch in 2 calls. If the batch query
+// errors — most often one stale/out-of-range vndb_id poisoning the `or` filter —
+// it retries per id so the other ~99 still enrich; ids that fail even alone are
+// returned in `bad` (and logged) so the caller counts them failed in isolation,
+// instead of silently dropping all 100.
+func fetchBatchData(ctx context.Context, vc *vndb.Client, ids []string) (map[string][]model.SnapshotLink, map[string]vndb.VNMeta, map[string]bool) {
+	bad := map[string]bool{}
+	links, errL := vc.FetchGameLinksBatch(ctx, ids)
+	meta, errM := vc.FetchVNMetaBatch(ctx, ids)
+	if errL == nil && errM == nil {
+		return links, meta, bad
+	}
+	slog.Warn("batch fetch failed; retrying per id", "links_err", errL, "meta_err", errM, "count", len(ids))
+	links = make(map[string][]model.SnapshotLink, len(ids))
+	meta = make(map[string]vndb.VNMeta, len(ids))
+	for _, id := range ids {
+		l, e1 := vc.FetchGameLinksBatch(ctx, []string{id})
+		m, e2 := vc.FetchVNMetaBatch(ctx, []string{id})
+		if e1 != nil || e2 != nil {
+			bad[id] = true
+			slog.Error("fetch vndb id failed", "vndb_id", id, "links_err", e1, "meta_err", e2)
+			continue
+		}
+		links[id] = l[id]
+		meta[id] = m[id]
+	}
+	return links, meta, bad
+}
+
 // reconcileOne reconciles one galgame's links, tags and officials. Returns true
 // if any of the three changed.
 func reconcileOne(ctx context.Context, db *gorm.DB, resolver *vndbresolve.Resolver, galgameID int, links []model.SnapshotLink, meta vndb.VNMeta, apply bool) (bool, error) {
+	// Resolve VNDB tags/developers to wiki ids. A resolution ERROR (genuine
+	// create failure) aborts this galgame — never reconcile a PARTIAL desired
+	// set, or ReconcileVndb* would delete the relations that failed to resolve.
 	desiredTags := make(map[int]int, len(meta.Tags)) // wiki tag_id → spoiler
 	for _, t := range meta.Tags {
 		rt := vndbresolve.Tag{ID: t.ID, Name: t.Name, Category: t.Category, Rating: t.Rating, Spoiler: t.Spoiler, Lie: t.Lie}
 		if vndbresolve.TagSkipped(rt) {
 			continue
 		}
-		id := resolveTagID(db, resolver, rt, apply)
-		if id != 0 {
+		id, err := resolveTagID(db, resolver, rt, apply)
+		if err != nil {
+			return false, fmt.Errorf("resolve tag %q: %w", rt.Name, err)
+		}
+		if id != 0 { // 0 = dry-run lookup miss (tag not yet created) — skip from preview
 			desiredTags[id] = t.Spoiler
 		}
 	}
 	desiredOfficials := make([]int, 0, len(meta.Developers))
 	for _, d := range meta.Developers {
 		rd := vndbresolve.Developer{ID: d.ID, Name: d.Name, Original: d.Original, Type: d.Type, Lang: d.Lang}
-		if id := resolveOfficialID(db, resolver, rd, apply); id != 0 {
+		id, err := resolveOfficialID(db, resolver, rd, apply)
+		if err != nil {
+			return false, fmt.Errorf("resolve official %q: %w", rd.Name, err)
+		}
+		if id != 0 {
 			desiredOfficials = append(desiredOfficials, id)
 		}
 	}
@@ -161,21 +192,22 @@ func reconcileOne(ctx context.Context, db *gorm.DB, resolver *vndbresolve.Resolv
 }
 
 // resolveTagID creates-if-missing on apply, lookup-only on dry-run (so a preview
-// never writes new wiki tags).
-func resolveTagID(db *gorm.DB, resolver *vndbresolve.Resolver, t vndbresolve.Tag, apply bool) int {
+// never writes new wiki tags). Dry-run returns (0, nil) for an as-yet-uncreated
+// tag — not an error.
+func resolveTagID(db *gorm.DB, resolver *vndbresolve.Resolver, t vndbresolve.Tag, apply bool) (int, error) {
 	if apply {
 		return resolver.ResolveTag(db, t)
 	}
 	id, _ := resolver.LookupTag(t)
-	return id
+	return id, nil
 }
 
-func resolveOfficialID(db *gorm.DB, resolver *vndbresolve.Resolver, d vndbresolve.Developer, apply bool) int {
+func resolveOfficialID(db *gorm.DB, resolver *vndbresolve.Resolver, d vndbresolve.Developer, apply bool) (int, error) {
 	if apply {
 		return resolver.ResolveOfficial(db, d)
 	}
 	id, _ := resolver.LookupOfficial(d)
-	return id
+	return id, nil
 }
 
 type candidate struct {

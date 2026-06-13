@@ -13,9 +13,9 @@ const (
 
 // GalgameLink represents an external link for a galgame
 type GalgameLink struct {
-	ID        int       `gorm:"primaryKey;autoIncrement" json:"id"`
-	Name      string    `gorm:"size:107;default:''" json:"name"`
-	Link      string    `gorm:"size:500;default:''" json:"link"`
+	ID   int    `gorm:"primaryKey;autoIncrement" json:"id"`
+	Name string `gorm:"size:107;default:''" json:"name"`
+	Link string `gorm:"size:500;default:''" json:"link"`
 	// Source provenance: "" = user-added; "vndb" = auto-synced from VNDB.
 	// SourceKey is the VNDB extlinks site name ("steam", "dlsite", "website",
 	// "vndb", …), so the vndb-sourced subset can be reconciled idempotently

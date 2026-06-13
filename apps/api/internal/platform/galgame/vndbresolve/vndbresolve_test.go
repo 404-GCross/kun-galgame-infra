@@ -10,20 +10,20 @@ func TestResolveTag_ReuseFirst(t *testing.T) {
 	// Chinese already exists (canonical) → reuse it for the English VNDB name.
 	r := New(map[string]string{"Protagonist": "主人公"})
 	r.tagCache["主人公"] = 42
-	if id := r.ResolveTag(nil, Tag{Name: "Protagonist"}); id != 42 {
-		t.Fatalf("Chinese reuse: got %d, want 42", id)
+	if id, err := r.ResolveTag(nil, Tag{Name: "Protagonist"}); err != nil || id != 42 {
+		t.Fatalf("Chinese reuse: got (%d,%v), want (42,nil)", id, err)
 	}
 	// English row already exists, no tagMap entry → reuse the English row.
 	r2 := New(map[string]string{})
 	r2.tagCache["Comedy"] = 7
-	if id := r2.ResolveTag(nil, Tag{Name: "Comedy"}); id != 7 {
-		t.Fatalf("English reuse: got %d, want 7", id)
+	if id, err := r2.ResolveTag(nil, Tag{Name: "Comedy"}); err != nil || id != 7 {
+		t.Fatalf("English reuse: got (%d,%v), want (7,nil)", id, err)
 	}
 	// Mapped, but only the English row exists (legacy) → reuse English, don't dup.
 	r3 := New(map[string]string{"Loli": "萝莉"})
 	r3.tagCache["Loli"] = 9
-	if id := r3.ResolveTag(nil, Tag{Name: "Loli"}); id != 9 {
-		t.Fatalf("mapped-but-only-English reuse: got %d, want 9", id)
+	if id, err := r3.ResolveTag(nil, Tag{Name: "Loli"}); err != nil || id != 9 {
+		t.Fatalf("mapped-but-only-English reuse: got (%d,%v), want (9,nil)", id, err)
 	}
 	if r.NewTags() != 0 || r2.NewTags() != 0 || r3.NewTags() != 0 {
 		t.Errorf("reuse must not create tags")
@@ -49,11 +49,11 @@ func TestResolveOfficial_ReuseFirst(t *testing.T) {
 	r := New(nil)
 	r.officialCache["Key"] = 5
 	r.officialCache["オーガスト"] = 9
-	if id := r.ResolveOfficial(nil, Developer{Name: "Key"}); id != 5 {
-		t.Fatalf("name reuse: got %d, want 5", id)
+	if id, err := r.ResolveOfficial(nil, Developer{Name: "Key"}); err != nil || id != 5 {
+		t.Fatalf("name reuse: got (%d,%v), want (5,nil)", id, err)
 	}
-	if id := r.ResolveOfficial(nil, Developer{Name: "August", Original: "オーガスト"}); id != 9 {
-		t.Fatalf("original reuse: got %d, want 9", id)
+	if id, err := r.ResolveOfficial(nil, Developer{Name: "August", Original: "オーガスト"}); err != nil || id != 9 {
+		t.Fatalf("original reuse: got (%d,%v), want (9,nil)", id, err)
 	}
 	if r.NewOfficials() != 0 {
 		t.Errorf("reuse must not create officials")

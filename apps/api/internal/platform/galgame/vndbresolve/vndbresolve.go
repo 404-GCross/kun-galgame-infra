@@ -15,6 +15,7 @@
 package vndbresolve
 
 import (
+	"fmt"
 	"os"
 	"regexp"
 	"strings"
@@ -122,18 +123,21 @@ func (r *Resolver) LookupOfficial(d Developer) (int, bool) {
 
 // ResolveTag returns the wiki galgame_tag.id for a VNDB tag, reusing an existing
 // Chinese or English row, else creating the canonical (Chinese when mapped) row.
-// Returns 0 on failure.
-func (r *Resolver) ResolveTag(tx *gorm.DB, t Tag) int {
+// Returns a non-nil error only on a genuine create failure (NOT a unique-name
+// race, which is recovered by re-read) — callers MUST treat that as fatal for the
+// galgame, because silently dropping a tag would let a reconcile delete a valid
+// existing relation (the desired set is authoritative).
+func (r *Resolver) ResolveTag(tx *gorm.DB, t Tag) (int, error) {
 	zh, mapped := r.tagMap[t.Name]
 	// Reuse existing first — Chinese (canonical) then English — so a tag already
 	// present under either name is never duplicated.
 	if mapped {
 		if id, ok := r.tagCache[zh]; ok {
-			return id
+			return id, nil
 		}
 	}
 	if id, ok := r.tagCache[t.Name]; ok {
-		return id
+		return id, nil
 	}
 	name := t.Name
 	if mapped {
@@ -141,29 +145,30 @@ func (r *Resolver) ResolveTag(tx *gorm.DB, t Tag) int {
 	}
 	newTag := model.GalgameTag{Name: name, Category: mapTagCategory(t.Category)}
 	if err := tx.Create(&newTag).Error; err != nil {
-		// Unique-constraint race / pre-existing row — re-read.
+		// Unique-constraint race / pre-existing row — re-read. If the re-read
+		// itself errors (e.g. the tx is already aborted), surface the original.
 		var existing model.GalgameTag
-		tx.Where("name = ?", name).Limit(1).Find(&existing)
-		if existing.ID != 0 {
+		if e := tx.Where("name = ?", name).Limit(1).Find(&existing).Error; e == nil && existing.ID != 0 {
 			r.tagCache[name] = existing.ID
-			return existing.ID
+			return existing.ID, nil
 		}
-		return 0
+		return 0, fmt.Errorf("create tag %q: %w", name, err)
 	}
 	r.tagCache[name] = newTag.ID
 	r.newTags++
-	return newTag.ID
+	return newTag.ID, nil
 }
 
 // ResolveOfficial returns the wiki galgame_official.id for a VNDB developer,
 // matching by name or original, else creating one (original-preferred name).
-func (r *Resolver) ResolveOfficial(tx *gorm.DB, d Developer) int {
+// Error semantics match ResolveTag.
+func (r *Resolver) ResolveOfficial(tx *gorm.DB, d Developer) (int, error) {
 	if id, ok := r.officialCache[d.Name]; ok {
-		return id
+		return id, nil
 	}
 	if d.Original != "" {
 		if id, ok := r.officialCache[d.Original]; ok {
-			return id
+			return id, nil
 		}
 	}
 	primary := d.Original
@@ -173,16 +178,15 @@ func (r *Resolver) ResolveOfficial(tx *gorm.DB, d Developer) int {
 	off := model.GalgameOfficial{Name: primary, Original: d.Original, Category: mapDevType(d.Type), Lang: d.Lang}
 	if err := tx.Create(&off).Error; err != nil {
 		var existing model.GalgameOfficial
-		tx.Where("name = ?", primary).Limit(1).Find(&existing)
-		if existing.ID != 0 {
+		if e := tx.Where("name = ?", primary).Limit(1).Find(&existing).Error; e == nil && existing.ID != 0 {
 			r.cacheOfficial(d, existing.ID)
-			return existing.ID
+			return existing.ID, nil
 		}
-		return 0
+		return 0, fmt.Errorf("create official %q: %w", primary, err)
 	}
 	r.cacheOfficial(d, off.ID)
 	r.newOfficials++
-	return off.ID
+	return off.ID, nil
 }
 
 func (r *Resolver) cacheOfficial(d Developer, id int) {
