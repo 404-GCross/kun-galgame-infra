@@ -186,6 +186,24 @@ func TestNormalizeEnglishIntro(t *testing.T) {
 	}
 }
 
+func TestStripImages(t *testing.T) {
+	cases := []struct{ name, in, want string }{
+		{"no image untouched (verbatim)", "ただの紹介文です。\n\n二段落目。", "ただの紹介文です。\n\n二段落目。"},
+		{"markdown link kept", "詳細は [公式サイト](https://x.com) を参照。", "詳細は [公式サイト](https://x.com) を参照。"},
+		{"markdown image removed", "紹介。\n\n![cg](https://x.com/a.png)\n\n続き。", "紹介。\n\n続き。"},
+		{"bbcode image removed", "Look [img]https://x.com/a.jpg[/img] here.", "Look  here."},
+		{"bbcode/attribution NOT touched (English-legacy only)", "Plot. [From [Steam](https://x.com)] and [b]bold[/b].", "Plot. [From [Steam](https://x.com)] and [b]bold[/b]."},
+		{"only image, trimmed", "![x](https://x.com/y.png)", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := StripImages(tc.in); got != tc.want {
+				t.Fatalf("StripImages(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
 // Idempotence: normalizing an already-normalized intro must be a no-op.
 func TestNormalizeEnglishIntro_Idempotent(t *testing.T) {
 	inputs := []string{

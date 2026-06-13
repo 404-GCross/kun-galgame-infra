@@ -112,6 +112,27 @@ func NormalizeEnglishIntro(in string) (out string, removedImages []string, chang
 	return s, removedImages, true
 }
 
+// StripImages removes Markdown ![](url) and BBCode [img]…[/img] images, leaving
+// everything else untouched. It enforces the wiki's "no images in intros — use
+// the gallery" rule at the write path, for ALL languages. Unlike
+// NormalizeEnglishIntro it deliberately does NOT touch BBCode/attributions —
+// those are an English-only legacy concern and must never be applied to
+// user-authored ja/zh/etc. text. Image-free input is returned verbatim (fast
+// path) so ordinary edits aren't perturbed.
+func StripImages(s string) string {
+	if !strings.Contains(s, "![") && !strings.Contains(strings.ToLower(s), "[img") {
+		return s
+	}
+	out := reImgBBCode.ReplaceAllString(s, "")
+	out = reImgMarkdown.ReplaceAllString(out, "")
+	if out == s {
+		return s
+	}
+	out = reTrailingWS.ReplaceAllString(out, "\n")
+	out = reMultiBlank.ReplaceAllString(out, "\n\n")
+	return strings.TrimSpace(out)
+}
+
 func firstNonEmpty(a, b string) string {
 	if strings.TrimSpace(a) != "" {
 		return a

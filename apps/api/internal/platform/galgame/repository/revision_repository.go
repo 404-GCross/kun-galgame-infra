@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 
+	"api/internal/platform/galgame/intronorm"
 	"api/internal/platform/galgame/model"
 
 	"gorm.io/gorm"
@@ -113,10 +114,13 @@ func ApplySnapshot(tx *gorm.DB, galgameID, userID int, snapshot *model.Snapshot)
 		"name_zh_cn":        snapshot.NameZhCN,
 		"name_zh_tw":        snapshot.NameZhTW,
 		"banner":            snapshot.Banner,
-		"intro_en_us":       snapshot.IntroEnUS,
-		"intro_ja_jp":       snapshot.IntroJaJP,
-		"intro_zh_cn":       snapshot.IntroZhCN,
-		"intro_zh_tw":       snapshot.IntroZhTW,
+		// Enforce "no images in intros — use the gallery" at the single write
+		// path, for all languages and every caller (create / submit / edit /
+		// PR-merge / revert). Images-free intros pass through verbatim.
+		"intro_en_us":       intronorm.StripImages(snapshot.IntroEnUS),
+		"intro_ja_jp":       intronorm.StripImages(snapshot.IntroJaJP),
+		"intro_zh_cn":       intronorm.StripImages(snapshot.IntroZhCN),
+		"intro_zh_tw":       intronorm.StripImages(snapshot.IntroZhTW),
 		"content_limit":     snapshot.ContentLimit,
 		"original_language": snapshot.OriginalLanguage,
 		"age_limit":         snapshot.AgeLimit,
