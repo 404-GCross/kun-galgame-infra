@@ -93,16 +93,18 @@ func NextTaxonomyRevision(tx *gorm.DB, entity string, targetID int) (int, error)
 // Each one runs the same two-step skeleton:
 //
 //   1. Updates the main entity row's scalar columns.
-//   2. Clears + rebuilds the aliases (separate-table or jsonb-inlined
-//      depending on entity).
+//   2. Reconciles the aliases to match the snapshot — separate-table aliases
+//      (tag/official) by delta via reconcileSet (order-independent set, only
+//      added/removed written); engine aliases are jsonb-inlined in step 1.
 //
 // The transaction is the caller's responsibility (tx parameter).
 // Concurrent edits on the same entity must be serialised by the caller
 // via SELECT FOR UPDATE on the main row.
 
-// ApplyTagSnapshot rebuilds the tag row + its galgame_tag_alias rows
-// to match snap. Same clear-rebuild discipline as galgame's
-// ApplySnapshot. Caller has already locked galgame_tag where id=tagID.
+// ApplyTagSnapshot updates the tag row + reconciles its galgame_tag_alias rows
+// to match snap. Same set-reconcile discipline as galgame's ApplySnapshot
+// (aliases are an order-independent set → only the delta is written). Caller
+// has already locked galgame_tag where id=tagID.
 func ApplyTagSnapshot(tx *gorm.DB, tagID int, snap *model.TagSnapshot) error {
 	if err := tx.Model(&model.GalgameTag{}).
 		Where("id = ?", tagID).
@@ -113,15 +115,10 @@ func ApplyTagSnapshot(tx *gorm.DB, tagID int, snap *model.TagSnapshot) error {
 		}).Error; err != nil {
 		return err
 	}
-	if err := tx.Where("galgame_tag_id = ?", tagID).Delete(&model.GalgameTagAlias{}).Error; err != nil {
-		return err
-	}
-	for _, name := range snap.Aliases {
-		if err := tx.Create(&model.GalgameTagAlias{GalgameTagID: tagID, Name: name}).Error; err != nil {
-			return err
-		}
-	}
-	return nil
+	return reconcileSet(tx, "galgame_tag_id", tagID, "name", snap.Aliases,
+		func(name string) model.GalgameTagAlias {
+			return model.GalgameTagAlias{GalgameTagID: tagID, Name: name}
+		})
 }
 
 // ApplyOfficialSnapshot — same shape as ApplyTagSnapshot but writes
@@ -140,19 +137,10 @@ func ApplyOfficialSnapshot(tx *gorm.DB, officialID int, snap *model.OfficialSnap
 		}).Error; err != nil {
 		return err
 	}
-	if err := tx.Where("galgame_official_id = ?", officialID).
-		Delete(&model.GalgameOfficialAlias{}).Error; err != nil {
-		return err
-	}
-	for _, name := range snap.Aliases {
-		if err := tx.Create(&model.GalgameOfficialAlias{
-			GalgameOfficialID: officialID,
-			Name:              name,
-		}).Error; err != nil {
-			return err
-		}
-	}
-	return nil
+	return reconcileSet(tx, "galgame_official_id", officialID, "name", snap.Aliases,
+		func(name string) model.GalgameOfficialAlias {
+			return model.GalgameOfficialAlias{GalgameOfficialID: officialID, Name: name}
+		})
 }
 
 // ApplyEngineSnapshot writes engine scalars AND the inline jsonb alias

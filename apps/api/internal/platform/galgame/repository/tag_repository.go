@@ -183,20 +183,17 @@ func (r *TagRepository) Update(ctx context.Context, tagID int, updates map[strin
 		}
 
 		if aliases != nil {
-			if err := tx.Where("galgame_tag_id = ?", tagID).Delete(&model.GalgameTagAlias{}).Error; err != nil {
-				return err
-			}
+			cleaned := make([]string, 0, len(aliases))
 			for _, name := range aliases {
-				name = strings.TrimSpace(name)
-				if name == "" {
-					continue
+				if name = strings.TrimSpace(name); name != "" {
+					cleaned = append(cleaned, name)
 				}
-				if err := tx.Create(&model.GalgameTagAlias{
-					GalgameTagID: tagID,
-					Name:         name,
-				}).Error; err != nil {
-					return err
-				}
+			}
+			if err := reconcileSet(tx, "galgame_tag_id", tagID, "name", cleaned,
+				func(name string) model.GalgameTagAlias {
+					return model.GalgameTagAlias{GalgameTagID: tagID, Name: name}
+				}); err != nil {
+				return err
 			}
 		}
 

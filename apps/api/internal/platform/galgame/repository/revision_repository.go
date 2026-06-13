@@ -94,7 +94,10 @@ func (r *RevisionRepository) FindLatest(ctx context.Context, galgameID int) (*mo
 }
 
 // ApplySnapshot applies a snapshot to the galgame table and all relation tables.
-// Must be called inside a transaction. Strategy: update scalar fields, clear+rebuild relations.
+// Must be called inside a transaction. Strategy: update scalar fields; reconcile
+// the set-valued relations (alias/tag/official/engine) by delta via reconcileSet
+// (only added/removed rows touched); clear-and-rebuild the order-significant /
+// per-row-payload relations (links/covers/screenshots).
 //
 // Banner image is now sourced solely from galgame_cover (sort_order=0);
 // the legacy galgame.banner_image_hash column was retired by PR5.
@@ -123,44 +126,36 @@ func ApplySnapshot(tx *gorm.DB, galgameID, userID int, snapshot *model.Snapshot)
 		return err
 	}
 
-	// 2. Rebuild aliases
-	if err := tx.Where("galgame_id = ?", galgameID).Delete(&model.GalgameAlias{}).Error; err != nil {
+	// 2-5. Reconcile the set-valued relations (aliases / tags / officials /
+	// engines) to match the snapshot. These are order-independent sets that the
+	// snapshot canonical-sorts (§1.5 #6), so we write only the delta instead of
+	// delete-all + per-row rebuild — identical end state, far less churn on
+	// bulk edits. Still a complete authoritative write (§1.5 #2). See
+	// reconcileSet. Links / covers / screenshots below intentionally keep the
+	// clear-and-rebuild path (order-significant / mutable per-row payload).
+	if err := reconcileSet(tx, "galgame_id", galgameID, "name", snapshot.Aliases,
+		func(name string) model.GalgameAlias {
+			return model.GalgameAlias{GalgameID: galgameID, Name: name}
+		}); err != nil {
 		return err
 	}
-	for _, name := range snapshot.Aliases {
-		if err := tx.Create(&model.GalgameAlias{GalgameID: galgameID, Name: name}).Error; err != nil {
-			return err
-		}
-	}
-
-	// 3. Rebuild tag relations
-	if err := tx.Where("galgame_id = ?", galgameID).Delete(&model.GalgameTagRelation{}).Error; err != nil {
+	if err := reconcileSet(tx, "galgame_id", galgameID, "tag_id", snapshot.TagIDs,
+		func(id int) model.GalgameTagRelation {
+			return model.GalgameTagRelation{GalgameID: galgameID, TagID: id}
+		}); err != nil {
 		return err
 	}
-	for _, tagID := range snapshot.TagIDs {
-		if err := tx.Create(&model.GalgameTagRelation{GalgameID: galgameID, TagID: tagID}).Error; err != nil {
-			return err
-		}
-	}
-
-	// 4. Rebuild official relations
-	if err := tx.Where("galgame_id = ?", galgameID).Delete(&model.GalgameOfficialRelation{}).Error; err != nil {
+	if err := reconcileSet(tx, "galgame_id", galgameID, "official_id", snapshot.OfficialIDs,
+		func(id int) model.GalgameOfficialRelation {
+			return model.GalgameOfficialRelation{GalgameID: galgameID, OfficialID: id}
+		}); err != nil {
 		return err
 	}
-	for _, officialID := range snapshot.OfficialIDs {
-		if err := tx.Create(&model.GalgameOfficialRelation{GalgameID: galgameID, OfficialID: officialID}).Error; err != nil {
-			return err
-		}
-	}
-
-	// 5. Rebuild engine relations
-	if err := tx.Where("galgame_id = ?", galgameID).Delete(&model.GalgameEngineRelation{}).Error; err != nil {
+	if err := reconcileSet(tx, "galgame_id", galgameID, "engine_id", snapshot.EngineIDs,
+		func(id int) model.GalgameEngineRelation {
+			return model.GalgameEngineRelation{GalgameID: galgameID, EngineID: id}
+		}); err != nil {
 		return err
-	}
-	for _, engineID := range snapshot.EngineIDs {
-		if err := tx.Create(&model.GalgameEngineRelation{GalgameID: galgameID, EngineID: engineID}).Error; err != nil {
-			return err
-		}
 	}
 
 	// 6. Rebuild links (use the current user as link owner)

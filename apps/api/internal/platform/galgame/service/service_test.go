@@ -54,6 +54,9 @@ func TestMain(m *testing.M) {
 		&model.TaxonomyRevision{},
 		&model.GalgameContributor{},
 		&model.GalgameMessage{},
+		// Legacy table, still wiped by DeleteDraft — test DB must mirror the
+		// production schema (migrate-galgame) or DeleteDraft 42P01s.
+		&model.GalgameHistory{},
 	); err != nil {
 		fmt.Fprintf(os.Stderr, "SKIP: migration failed: %v\n", err)
 		os.Exit(0)

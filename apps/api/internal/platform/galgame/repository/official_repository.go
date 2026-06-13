@@ -147,20 +147,17 @@ func (r *OfficialRepository) Update(ctx context.Context, officialID int, updates
 		}
 
 		if aliases != nil {
-			if err := tx.Where("galgame_official_id = ?", officialID).Delete(&model.GalgameOfficialAlias{}).Error; err != nil {
-				return err
-			}
+			cleaned := make([]string, 0, len(aliases))
 			for _, name := range aliases {
-				name = strings.TrimSpace(name)
-				if name == "" {
-					continue
+				if name = strings.TrimSpace(name); name != "" {
+					cleaned = append(cleaned, name)
 				}
-				if err := tx.Create(&model.GalgameOfficialAlias{
-					GalgameOfficialID: officialID,
-					Name:              name,
-				}).Error; err != nil {
-					return err
-				}
+			}
+			if err := reconcileSet(tx, "galgame_official_id", officialID, "name", cleaned,
+				func(name string) model.GalgameOfficialAlias {
+					return model.GalgameOfficialAlias{GalgameOfficialID: officialID, Name: name}
+				}); err != nil {
+				return err
 			}
 		}
 

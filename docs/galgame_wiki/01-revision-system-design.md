@@ -19,7 +19,7 @@
 
 1. **快照 = 全量可编辑状态，关联字段是一等公民。** `tag_ids`/`official_ids`/`engine_ids`/`aliases`/`links` 与标量字段平级，都在 `Snapshot` 里、都进 revision、都参与 diff/revert/PR-rebase。不存在"标量走 revision、关联走别的路"这种二元。
 
-2. **唯一写入路径 = `ApplySnapshot`（现已是事实，非口号）。** create / submit / update / patch-draft / PR-merge / revert **全部**通过 `repository.ApplySnapshot(tx, gid, uid, snapshot)` 落库（标量 update + 五张关联表"清空重建"）。Create/Submit 现在只插入一行裸 galgame（仅 system 字段 status/user_id/vndb_id）拿 ID，其余字段一律由 ApplySnapshot 写入——**全仓只剩这一个关联写入实现**。**禁止**任何路径用 `tx.Updates(scalarMap)` 或手写 `tx.Create(&GalgameTagRelation{})` 循环之类只写一部分字段的旁路。
+2. **唯一写入路径 = `ApplySnapshot`（现已是事实，非口号）。** create / submit / update / patch-draft / PR-merge / revert **全部**通过 `repository.ApplySnapshot(tx, gid, uid, snapshot)` 落库（标量 update + 关联表写入：`tag`/`official`/`engine`/`alias` 等**集合型**关系走**差量协调** `reconcileSet`——只增删变化项、语义等价于清空重建[见 #6]；有序或含行级负载的 `link`/`cover`/`screenshot` 仍清空重建）。Create/Submit 现在只插入一行裸 galgame（仅 system 字段 status/user_id/vndb_id）拿 ID，其余字段一律由 ApplySnapshot 写入——**全仓只剩这一个关联写入实现**。**禁止**任何路径用 `tx.Updates(scalarMap)` 或手写 `tx.Create(&GalgameTagRelation{})` 循环之类只写一部分字段的旁路。（注：差量协调写在 ApplySnapshot **内部**、落的是**全量集合**[delta=补齐到快照全集]，不是旁路——"单一写者"与"DB==快照"两条均不变。）
 
 2b. **可编辑字段集 == 编辑 DTO 字段集。** `model.Snapshot` 里每个可编辑字段都必须能被某条编辑 API 改到。唯一保留例外是 **`bid`（BangumiID）**：sync 托管、Bangumi 同步暂缓，故意不进编辑 DTO，但保留在 Snapshot 里以便 revert 不丢失将来 sync 写入的值。有 `TestEditableSnapshotFieldsAllReachable` 单测做防回归护栏——新增 Snapshot 字段却忘了接 DTO/overlay 会直接红。
 
