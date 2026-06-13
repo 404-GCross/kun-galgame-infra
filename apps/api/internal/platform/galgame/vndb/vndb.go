@@ -268,3 +268,69 @@ func (c *Client) FetchGameLinks(vndbID string) ([]model.SnapshotLink, error) {
 	}
 	return m[vndbID], nil
 }
+
+// Tag / Developer are the VN-level metadata used for relation enrichment (tags
+// live on /vn, developers are the producers with a developer role). Callers map
+// these into wiki entities via the vndbresolve package.
+type Tag struct {
+	ID       string  `json:"id"`
+	Name     string  `json:"name"`
+	Category string  `json:"category"`
+	Rating   float64 `json:"rating"`
+	Spoiler  int     `json:"spoiler"`
+	Lie      bool    `json:"lie"`
+}
+
+type Developer struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Original string `json:"original"`
+	Type     string `json:"type"`
+	Lang     string `json:"lang"`
+}
+
+// VNMeta is the per-VN tag/developer payload from /vn.
+type VNMeta struct {
+	Tags       []Tag
+	Developers []Developer
+}
+
+// FetchVNMetaBatch fetches tags + developers for up to 100 VNs in a single /vn
+// call (≤100 ids → ≤100 results, one page), keyed by vndb id. Paired with
+// FetchGameLinksBatch (which hits /release), this is the "one /vn + paginated
+// /release per 100 VNs" combined enrichment fetch.
+func (c *Client) FetchVNMetaBatch(ids []string) (map[string]VNMeta, error) {
+	want := make(map[string]bool, len(ids))
+	or := []any{"or"}
+	for _, id := range ids {
+		if id == "" || want[id] {
+			continue
+		}
+		want[id] = true
+		or = append(or, []any{"id", "=", id})
+	}
+	if len(want) == 0 {
+		return map[string]VNMeta{}, nil
+	}
+
+	var resp struct {
+		Results []struct {
+			ID         string      `json:"id"`
+			Tags       []Tag       `json:"tags"`
+			Developers []Developer `json:"developers"`
+		} `json:"results"`
+	}
+	if err := c.post("/vn", map[string]any{
+		"filters": or,
+		"fields":  "id, tags{id,name,category,rating,spoiler,lie}, developers{id,name,original,type,lang}",
+		"results": 100,
+	}, &resp); err != nil {
+		return nil, fmt.Errorf("vn meta batch: %w", err)
+	}
+
+	out := make(map[string]VNMeta, len(resp.Results))
+	for _, r := range resp.Results {
+		out[r.ID] = VNMeta{Tags: r.Tags, Developers: r.Developers}
+	}
+	return out, nil
+}

@@ -13,14 +13,13 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"os"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
 	"api/internal/infrastructure/database"
 	"api/internal/platform/galgame/model"
+	"api/internal/platform/galgame/vndbresolve"
 	"api/pkg/config"
 
 	"gorm.io/gorm"
@@ -34,7 +33,6 @@ const (
 	vndbAPI      = "https://api.vndb.org/kana"
 	batchSize    = 100
 	requestDelay = 2 * time.Second
-	tagRatingMin = 1.0 // minimum tag rating to include
 )
 
 // VNDB fields to request
@@ -238,66 +236,29 @@ func (c *vndbClient) fetchVNs(afterID string) (*vndbResponse, error) {
 }
 
 // ---------------------------------------------------------------------------
-// tagMap parser
-// ---------------------------------------------------------------------------
-
-var tagMapLineRegex = regexp.MustCompile(`^\s*(?:'([^']+)'|(\w[\w\s./()\-]*\w|\w+))\s*:\s*'([^']+)'`)
-
-func parseTagMap(path string) (map[string]string, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-
-	result := make(map[string]string)
-	for _, line := range strings.Split(string(data), "\n") {
-		m := tagMapLineRegex.FindStringSubmatch(line)
-		if m == nil {
-			continue
-		}
-		key := m[1]
-		if key == "" {
-			key = m[2]
-		}
-		value := m[3]
-		if key != "" && value != "" {
-			result[key] = value
-		}
-	}
-
-	return result, nil
-}
-
-// ---------------------------------------------------------------------------
 // Syncer
 // ---------------------------------------------------------------------------
 
 type syncer struct {
-	db     *gorm.DB
-	client *vndbClient
-	tagMap map[string]string // english → chinese
+	db       *gorm.DB
+	client   *vndbClient
+	resolver *vndbresolve.Resolver // shared VNDB tag/official resolution
 
 	existingVNDBIDs map[string]bool
-	tagCache        map[string]int // tag name (zh or en) → id
-	officialCache   map[string]int // official name → id
 
 	stats struct {
-		created      int
-		skipped      int
-		cancelled    int
-		newTags      int
-		newOfficials int
+		created   int
+		skipped   int
+		cancelled int
 	}
 }
 
-func newSyncer(db *gorm.DB, tagMap map[string]string) *syncer {
+func newSyncer(db *gorm.DB, resolver *vndbresolve.Resolver) *syncer {
 	return &syncer{
 		db:              db,
 		client:          newVNDBClient(),
-		tagMap:          tagMap,
+		resolver:        resolver,
 		existingVNDBIDs: make(map[string]bool),
-		tagCache:        make(map[string]int),
-		officialCache:   make(map[string]int),
 	}
 }
 
@@ -314,25 +275,10 @@ func (s *syncer) loadExistingData() error {
 	}
 	slog.Info("loaded existing data", "vndb_ids", len(s.existingVNDBIDs))
 
-	// Load existing tags
-	var tags []model.GalgameTag
-	if err := s.db.Find(&tags).Error; err != nil {
-		return fmt.Errorf("load tags: %w", err)
+	// Existing tags/officials caches live in the shared resolver.
+	if err := s.resolver.LoadCaches(s.db); err != nil {
+		return fmt.Errorf("load tag/official caches: %w", err)
 	}
-	for _, t := range tags {
-		s.tagCache[t.Name] = t.ID
-	}
-	slog.Info("loaded tags", "count", len(s.tagCache))
-
-	// Load existing officials
-	var officials []model.GalgameOfficial
-	if err := s.db.Find(&officials).Error; err != nil {
-		return fmt.Errorf("load officials: %w", err)
-	}
-	for _, o := range officials {
-		s.officialCache[o.Name] = o.ID
-	}
-	slog.Info("loaded officials", "count", len(s.officialCache))
 
 	return nil
 }
@@ -413,8 +359,8 @@ func (s *syncer) run(ctx context.Context, full bool) error {
 	fmt.Printf("  Created:       %d galgames\n", s.stats.created)
 	fmt.Printf("  Skipped:       %d (already exist)\n", s.stats.skipped)
 	fmt.Printf("  Cancelled:     %d (devstatus=2)\n", s.stats.cancelled)
-	fmt.Printf("  New tags:      %d\n", s.stats.newTags)
-	fmt.Printf("  New officials: %d\n", s.stats.newOfficials)
+	fmt.Printf("  New tags:      %d\n", s.resolver.NewTags())
+	fmt.Printf("  New officials: %d\n", s.resolver.NewOfficials())
 
 	return nil
 }
@@ -463,29 +409,31 @@ func (s *syncer) insertVN(vn *vndbVN) error {
 			tx.Create(&model.GalgameAlias{GalgameID: galgame.ID, Name: alias})
 		}
 
-		// Tag relations
+		// Tag relations — marked source="vndb" so the enrichment recognizes them
+		// once the draft is claimed (status 2→0).
 		for _, tag := range vn.Tags {
-			if tag.Lie || tag.Rating < tagRatingMin {
+			rt := vndbresolve.Tag{ID: tag.ID, Name: tag.Name, Category: tag.Category, Rating: tag.Rating, Spoiler: tag.Spoiler, Lie: tag.Lie}
+			if vndbresolve.TagSkipped(rt) {
 				continue
 			}
-			tagID := s.resolveTag(tx, &tag)
+			tagID := s.resolver.ResolveTag(tx, rt)
 			if tagID == 0 {
 				continue
 			}
 			tx.Exec(
-				"INSERT INTO galgame_tag_relation (galgame_id, tag_id, spoiler_level, created, updated) VALUES (?, ?, ?, NOW(), NOW()) ON CONFLICT DO NOTHING",
+				"INSERT INTO galgame_tag_relation (galgame_id, tag_id, spoiler_level, source, created, updated) VALUES (?, ?, ?, 'vndb', NOW(), NOW()) ON CONFLICT DO NOTHING",
 				galgame.ID, tagID, tag.Spoiler,
 			)
 		}
 
-		// Developer/Official relations
+		// Developer/Official relations — source="vndb".
 		for _, dev := range vn.Developers {
-			officialID := s.resolveOfficial(tx, &dev)
+			officialID := s.resolver.ResolveOfficial(tx, vndbresolve.Developer{ID: dev.ID, Name: dev.Name, Original: dev.Original, Type: dev.Type, Lang: dev.Lang})
 			if officialID == 0 {
 				continue
 			}
 			tx.Exec(
-				"INSERT INTO galgame_official_relation (galgame_id, official_id, created, updated) VALUES (?, ?, NOW(), NOW()) ON CONFLICT DO NOTHING",
+				"INSERT INTO galgame_official_relation (galgame_id, official_id, source, created, updated) VALUES (?, ?, 'vndb', NOW(), NOW()) ON CONFLICT DO NOTHING",
 				galgame.ID, officialID,
 			)
 		}
@@ -544,74 +492,6 @@ func (s *syncer) buildGalgame(vn *vndbVN) *model.Galgame {
 	return g
 }
 
-
-func (s *syncer) resolveTag(tx *gorm.DB, tag *vndbTag) int {
-	// 1. Check tagMap for Chinese name
-	if zhName, ok := s.tagMap[tag.Name]; ok {
-		if id, ok := s.tagCache[zhName]; ok {
-			return id
-		}
-	}
-
-	// 2. Check if tag already exists by English name
-	if id, ok := s.tagCache[tag.Name]; ok {
-		return id
-	}
-
-	// 3. Create new tag with English name
-	category := mapTagCategory(tag.Category)
-	newTag := model.GalgameTag{
-		Name:     tag.Name,
-		Category: category,
-	}
-	if err := tx.Create(&newTag).Error; err != nil {
-		// Might be unique constraint violation (concurrent insert)
-		var existing model.GalgameTag
-		if tx.Where("name = ?", tag.Name).First(&existing).Error == nil {
-			s.tagCache[tag.Name] = existing.ID
-			return existing.ID
-		}
-		return 0
-	}
-
-	s.tagCache[tag.Name] = newTag.ID
-	s.stats.newTags++
-	return newTag.ID
-}
-
-func (s *syncer) resolveOfficial(tx *gorm.DB, dev *vndbDeveloper) int {
-	// Check by name
-	if id, ok := s.officialCache[dev.Name]; ok {
-		return id
-	}
-
-	// Check by original name (Japanese etc.)
-	if dev.Original != "" {
-		if id, ok := s.officialCache[dev.Original]; ok {
-			return id
-		}
-	}
-
-	// Create new official
-	official := model.GalgameOfficial{
-		Name:     dev.Name,
-		Category: mapDevType(dev.Type),
-		Lang:     dev.Lang,
-	}
-	if err := tx.Create(&official).Error; err != nil {
-		var existing model.GalgameOfficial
-		if tx.Where("name = ?", dev.Name).First(&existing).Error == nil {
-			s.officialCache[dev.Name] = existing.ID
-			return existing.ID
-		}
-		return 0
-	}
-
-	s.officialCache[dev.Name] = official.ID
-	s.stats.newOfficials++
-	return official.ID
-}
-
 // ---------------------------------------------------------------------------
 // Mappings
 // ---------------------------------------------------------------------------
@@ -633,32 +513,6 @@ func mapLang(olang string) string {
 	}
 }
 
-func mapTagCategory(cat string) string {
-	switch cat {
-	case "cont":
-		return "content"
-	case "ero":
-		return "sexual"
-	case "tech":
-		return "technical"
-	default:
-		return "content"
-	}
-}
-
-func mapDevType(t string) string {
-	switch t {
-	case "co":
-		return "company"
-	case "in":
-		return "individual"
-	case "ng":
-		return "amateur"
-	default:
-		return "company"
-	}
-}
-
 // ---------------------------------------------------------------------------
 // Entrypoint
 // ---------------------------------------------------------------------------
@@ -669,15 +523,9 @@ type Opts struct {
 	TagMapPath string // path to tagMap.ts
 }
 
-// DefaultTagMapPath resolves the tagMap path for the scheduler: env
-// override, else repo-root-relative default (consistent with other
-// path-style config defaults like KUN_IMAGE_PRESETS_PATH).
-func DefaultTagMapPath() string {
-	if p := os.Getenv("KUN_VNDB_TAGMAP_PATH"); p != "" {
-		return p
-	}
-	return "docs/tagMap.ts"
-}
+// DefaultTagMapPath is re-exported from vndbresolve so cmd/sync-vndb and the
+// jobs adapter don't import the resolver subpackage directly.
+func DefaultTagMapPath() string { return vndbresolve.DefaultTagMapPath() }
 
 // Run executes the VNDB sync. Returns a summary map (for job_run) and an
 // error. No os.Exit — caller decides exit/recording.
@@ -693,7 +541,7 @@ func Run(ctx context.Context, cfg *config.Config, opts Opts) (map[string]any, er
 	defer wikiDB.Close()
 	db := wikiDB.DB()
 
-	tagMap, err := parseTagMap(opts.TagMapPath)
+	tagMap, err := vndbresolve.ParseTagMap(opts.TagMapPath)
 	if err != nil {
 		return nil, fmt.Errorf("parse tagMap %q: %w", opts.TagMapPath, err)
 	}
@@ -708,7 +556,8 @@ func Run(ctx context.Context, cfg *config.Config, opts Opts) (map[string]any, er
 	}
 	slog.Info("starting VNDB sync", "mode", mode)
 
-	s := newSyncer(db, tagMap)
+	resolver := vndbresolve.New(tagMap)
+	s := newSyncer(db, resolver)
 	if err := s.run(ctx, opts.Full); err != nil {
 		return nil, fmt.Errorf("sync: %w", err)
 	}
@@ -723,7 +572,7 @@ func Run(ctx context.Context, cfg *config.Config, opts Opts) (map[string]any, er
 		"created":       s.stats.created,
 		"skipped":       s.stats.skipped,
 		"cancelled":     s.stats.cancelled,
-		"new_tags":      s.stats.newTags,
-		"new_officials": s.stats.newOfficials,
+		"new_tags":      resolver.NewTags(),
+		"new_officials": resolver.NewOfficials(),
 	}, nil
 }

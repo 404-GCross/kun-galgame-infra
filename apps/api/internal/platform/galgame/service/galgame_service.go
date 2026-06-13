@@ -453,7 +453,7 @@ func (s *GalgameService) Update(ctx context.Context, userID, galgameID int, role
 		return nil, err
 	}
 	cur := model.TakeSnapshot(full)
-	next := overlayUpdate(cur, req)
+	next := overlayUpdate(cur, req, vndbManagedTagIDs(full.Tag), vndbManagedOfficialIDs(full.Official))
 	if len(model.ChangedKeys(cur, next)) == 0 {
 		return galgame, nil
 	}
@@ -686,6 +686,47 @@ func loadGalgameWithRelations(tx *gorm.DB, id int) (*model.Galgame, error) {
 	return &g, err
 }
 
+// unionIDs returns the user ids plus any vndb-managed ids not already present
+// (order-insensitive; TakeSnapshot/ChangedKeys canonical-sort). It's how an edit
+// keeps the sync-managed relation subset it isn't allowed to drop.
+func unionIDs(user, vndb []int) []int {
+	seen := make(map[int]bool, len(user)+len(vndb))
+	out := make([]int, 0, len(user)+len(vndb))
+	for _, id := range user {
+		if !seen[id] {
+			seen[id] = true
+			out = append(out, id)
+		}
+	}
+	for _, id := range vndb {
+		if !seen[id] {
+			seen[id] = true
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+func vndbManagedTagIDs(rels []model.GalgameTagRelation) []int {
+	var out []int
+	for _, r := range rels {
+		if r.Source == "vndb" {
+			out = append(out, r.TagID)
+		}
+	}
+	return out
+}
+
+func vndbManagedOfficialIDs(rels []model.GalgameOfficialRelation) []int {
+	var out []int
+	for _, r := range rels {
+		if r.Source == "vndb" {
+			out = append(out, r.OfficialID)
+		}
+	}
+	return out
+}
+
 // overlayUpdate builds the *target snapshot* of a direct edit: it starts
 // from the current canonical snapshot and overlays only the fields the
 // request actually carries (pointer-presence semantics — nil leaves a
@@ -694,12 +735,13 @@ func loadGalgameWithRelations(tx *gorm.DB, id int) (*model.Galgame, error) {
 // edit change" is expressed; repository.ApplySnapshot then writes it and
 // the revision records exactly it. Every editable model.Snapshot field
 // is reachable here (released / aliases / links / tag_ids / official_ids
-// / engine_ids included). Two things are sync-managed and carried over
-// from `cur`, not user-editable: `bid` (BangumiID) entirely, and the
-// source="vndb" subset of `links` (the cron-synced store/official links —
-// req.Links replaces only the user links, see the block below). See the
-// invariant in docs/galgame_wiki/01-revision-system-design.md §1.5.
-func overlayUpdate(cur *model.Snapshot, req *dto.UpdateGalgameRequest) *model.Snapshot {
+// / engine_ids included). Sync-managed and carried over from `cur`, not
+// user-editable: `bid` (BangumiID) entirely, and the source="vndb" subset
+// of `links`, `tag_ids` and `official_ids` (the cron-synced store/official
+// links + VNDB tags/developers — req replaces only the user subset, the
+// vndb subset is unioned back; callers pass the current vndb-managed ids).
+// See the invariant in docs/galgame_wiki/01-revision-system-design.md §1.5.
+func overlayUpdate(cur *model.Snapshot, req *dto.UpdateGalgameRequest, vndbTagIDs, vndbOfficialIDs []int) *model.Snapshot {
 	n := *cur // copy; slices are replaced wholesale below, never mutated in place
 	if req.VNDBID != nil {
 		n.VNDBID = *req.VNDBID
@@ -772,11 +814,16 @@ func overlayUpdate(cur *model.Snapshot, req *dto.UpdateGalgameRequest) *model.Sn
 		}
 		n.Links = mergeUserAndVndbLinks(user, vndbManagedLinks(cur.Links))
 	}
+	// tag_ids / official_ids: req replaces the USER subset, but the sync-managed
+	// source="vndb" relations are carried over (like bid, and like vndb links) —
+	// union them in so an edit can't drop them. reconcileSet is delta-based so the
+	// kept rows retain their source column automatically. engine_ids has no vndb
+	// provenance (engines are wiki-only), so it's a plain replacement.
 	if req.TagIDs != nil {
-		n.TagIDs = append([]int(nil), (*req.TagIDs)...)
+		n.TagIDs = unionIDs(*req.TagIDs, vndbTagIDs)
 	}
 	if req.OfficialIDs != nil {
-		n.OfficialIDs = append([]int(nil), (*req.OfficialIDs)...)
+		n.OfficialIDs = unionIDs(*req.OfficialIDs, vndbOfficialIDs)
 	}
 	if req.EngineIDs != nil {
 		n.EngineIDs = append([]int(nil), (*req.EngineIDs)...)

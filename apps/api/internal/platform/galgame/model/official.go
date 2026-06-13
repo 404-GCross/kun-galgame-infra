@@ -30,10 +30,14 @@ type GalgameOfficialAlias struct {
 
 func (GalgameOfficialAlias) TableName() string { return "galgame_official_alias" }
 
-// GalgameOfficialRelation represents a galgame↔official association
+// GalgameOfficialRelation represents a galgame↔official association.
+//
+// Source provenance mirrors GalgameTagRelation / GalgameLink: "" = user-curated,
+// "vndb" = synced from VNDB. DB-column only (not in the revision Snapshot).
 type GalgameOfficialRelation struct {
 	GalgameID  int       `gorm:"column:galgame_id;primaryKey" json:"galgame_id"`
 	OfficialID int       `gorm:"column:official_id;primaryKey" json:"official_id"`
+	Source     string    `gorm:"column:source;size:16;default:''" json:"source"`
 	Created    Timestamp `gorm:"autoCreateTime" json:"created"`
 	Updated    Timestamp `gorm:"autoUpdateTime" json:"updated"`
 

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"sort"
 
 	"api/internal/platform/galgame/model"
 	"api/internal/platform/galgame/vndb"
@@ -122,4 +123,172 @@ func mergeUserAndVndbLinks(userCandidates, vndbLinks []model.SnapshotLink) []mod
 		out = append(out, l)
 	}
 	return append(out, vndbLinks...)
+}
+
+// ReconcileVndbTags reconciles a galgame's source="vndb" tag relations to the
+// freshly-resolved VNDB set, preserving user (source="") tags. `desired` maps
+// wiki tag_id → spoiler level (the caller resolved VNDB tags via vndbresolve).
+//
+// Like ReconcileVndbLinks this is APPROACH B: rewrite the relation rows +
+// jsonb-patch the latest revision snapshot's tag_ids, NO new revision. Provenance
+// (source) is a DB column only, never in the snapshot — reconcileSet (the
+// create/edit/revert path) is delta-based and preserves it on kept rows. The
+// first run over a game is the classification: tags VNDB lists become
+// source="vndb" (overlapping user rows convert), the rest stay user. Idempotent.
+//
+// Returns whether anything changed. apply=false diffs but writes nothing.
+func ReconcileVndbTags(ctx context.Context, db *gorm.DB, galgameID int, desired map[int]int, apply bool) (bool, error) {
+	var rels []model.GalgameTagRelation
+	if err := db.WithContext(ctx).Where("galgame_id = ?", galgameID).Find(&rels).Error; err != nil {
+		return false, err
+	}
+	type meta struct {
+		source  string
+		spoiler int
+	}
+	current := make(map[int]meta, len(rels))
+	for _, r := range rels {
+		current[r.TagID] = meta{r.Source, r.SpoilerLevel}
+	}
+	// Target = user tags not in the VNDB set (kept as-is) + the VNDB set (vndb-owned).
+	target := make(map[int]meta, len(current))
+	for id, m := range current {
+		if m.source != "vndb" {
+			if _, isVndb := desired[id]; !isVndb {
+				target[id] = m
+			}
+		}
+	}
+	for id, spoiler := range desired {
+		target[id] = meta{"vndb", spoiler}
+	}
+
+	if len(current) == len(target) {
+		same := true
+		for id, m := range current {
+			if t, ok := target[id]; !ok || t != m {
+				same = false
+				break
+			}
+		}
+		if same {
+			return false, nil
+		}
+	}
+	if !apply {
+		return true, nil
+	}
+
+	ids := make([]int, 0, len(target))
+	for id := range target {
+		ids = append(ids, id)
+	}
+	sort.Ints(ids)
+	idsJSON, err := json.Marshal(ids)
+	if err != nil {
+		return false, err
+	}
+
+	err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec("DELETE FROM galgame_tag_relation WHERE galgame_id = ? AND source = 'vndb'", galgameID).Error; err != nil {
+			return err
+		}
+		for id, spoiler := range desired {
+			if err := tx.Exec(`
+				INSERT INTO galgame_tag_relation (galgame_id, tag_id, spoiler_level, source, created, updated)
+				VALUES (?, ?, ?, 'vndb', NOW(), NOW())
+				ON CONFLICT (galgame_id, tag_id) DO UPDATE SET source = 'vndb', spoiler_level = EXCLUDED.spoiler_level, updated = NOW()
+			`, galgameID, id, spoiler).Error; err != nil {
+				return err
+			}
+		}
+		return patchSnapshotIDs(tx, galgameID, "tag_ids", idsJSON)
+	})
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// ReconcileVndbOfficials is ReconcileVndbTags for officials (developers) —
+// source-only, no spoiler. `desired` is the resolved wiki official_id set.
+func ReconcileVndbOfficials(ctx context.Context, db *gorm.DB, galgameID int, desired []int, apply bool) (bool, error) {
+	var rels []model.GalgameOfficialRelation
+	if err := db.WithContext(ctx).Where("galgame_id = ?", galgameID).Find(&rels).Error; err != nil {
+		return false, err
+	}
+	want := make(map[int]bool, len(desired))
+	for _, id := range desired {
+		want[id] = true
+	}
+	current := make(map[int]string, len(rels)) // official_id → source
+	for _, r := range rels {
+		current[r.OfficialID] = r.Source
+	}
+	target := make(map[int]string, len(current))
+	for id, src := range current {
+		if src != "vndb" && !want[id] {
+			target[id] = src
+		}
+	}
+	for id := range want {
+		target[id] = "vndb"
+	}
+
+	if len(current) == len(target) {
+		same := true
+		for id, src := range current {
+			if t, ok := target[id]; !ok || t != src {
+				same = false
+				break
+			}
+		}
+		if same {
+			return false, nil
+		}
+	}
+	if !apply {
+		return true, nil
+	}
+
+	ids := make([]int, 0, len(target))
+	for id := range target {
+		ids = append(ids, id)
+	}
+	sort.Ints(ids)
+	idsJSON, err := json.Marshal(ids)
+	if err != nil {
+		return false, err
+	}
+
+	err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec("DELETE FROM galgame_official_relation WHERE galgame_id = ? AND source = 'vndb'", galgameID).Error; err != nil {
+			return err
+		}
+		for id := range want {
+			if err := tx.Exec(`
+				INSERT INTO galgame_official_relation (galgame_id, official_id, source, created, updated)
+				VALUES (?, ?, 'vndb', NOW(), NOW())
+				ON CONFLICT (galgame_id, official_id) DO UPDATE SET source = 'vndb', updated = NOW()
+			`, galgameID, id).Error; err != nil {
+				return err
+			}
+		}
+		return patchSnapshotIDs(tx, galgameID, "official_ids", idsJSON)
+	})
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// patchSnapshotIDs jsonb-patches one int-array field of the latest revision
+// snapshot so live == latest snapshot (§1.5 #4) without minting a revision.
+func patchSnapshotIDs(tx *gorm.DB, galgameID int, field string, idsJSON []byte) error {
+	return tx.Exec(`
+		UPDATE galgame_revision
+		SET snapshot = jsonb_set(snapshot, ?, ?::jsonb, true)
+		WHERE galgame_id = ?
+		  AND revision = (SELECT max(revision) FROM galgame_revision WHERE galgame_id = ?)
+	`, "{"+field+"}", string(idsJSON), galgameID, galgameID).Error
 }

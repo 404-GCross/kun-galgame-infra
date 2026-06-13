@@ -1,15 +1,16 @@
-// sync-vndb-links enriches published galgames with curated VNDB store/official
-// links (source="vndb"), reconciled idempotently against the current VNDB truth.
-// User-added links are never touched.
+// sync-vndb-enrich enriches published galgames with curated VNDB links + tags +
+// developers(officials), reconciled idempotently against the current VNDB truth.
+// The source="vndb" subset is sync-managed; user-curated links/tags/officials
+// are preserved.
 //
-// Thin shell: logic lives in internal/jobs/vndblinks (single source of truth) so
-// this CLI and the scheduled "sync-vndb-links" job run identical code. The job
-// runs daily in --only-missing mode (new/claimed games); use this CLI for a full
-// manual reconcile or a targeted fix.
+// Thin shell: logic lives in internal/jobs/vndbenrich (single source of truth)
+// so this CLI and the scheduled "sync-vndb-enrich" job run identical code. The
+// job runs daily in --only-missing mode (new/claimed games); use this CLI for a
+// full manual reconcile or a targeted fix.
 //
-//	go run ./cmd/sync-vndb-links --only-missing       # dry run, just un-enriched games
-//	go run ./cmd/sync-vndb-links --apply              # apply, full pass
-//	go run ./cmd/sync-vndb-links --apply --ids 1,2,3  # targeted (any status)
+//	go run ./cmd/sync-vndb-enrich --only-missing       # dry run, just un-enriched games
+//	go run ./cmd/sync-vndb-enrich --apply              # apply, full pass
+//	go run ./cmd/sync-vndb-enrich --apply --ids 1,2,3  # targeted (any status)
 package main
 
 import (
@@ -33,7 +34,8 @@ func main() {
 	offset := flag.Int("offset", 0, "skip this many galgames (for chunking)")
 	ids := flag.String("ids", "", "comma-separated galgame ids to process (targeted; any status; overrides only-missing/limit/offset)")
 	gap := flag.Duration("gap", 2*time.Second, "min delay between VNDB API calls")
-	samples := flag.Int("samples", 6, "number of per-game link previews to print")
+	samples := flag.Int("samples", 6, "number of per-game previews to print")
+	tagmap := flag.String("tagmap", "", "path to tagMap.ts (default: env KUN_VNDB_TAGMAP_PATH or docs/tagMap.ts)")
 	flag.Parse()
 
 	cfg, err := config.Load()
@@ -43,7 +45,7 @@ func main() {
 	}
 	logger.Init(cfg.Server.Env)
 
-	if _, err := jobs.RunSyncVNDBLinks(context.Background(), cfg, jobs.SyncVNDBLinksOpts{
+	if _, err := jobs.RunSyncVNDBEnrich(context.Background(), cfg, jobs.SyncVNDBEnrichOpts{
 		Apply:       *apply,
 		Gap:         *gap,
 		OnlyMissing: *onlyMissing,
@@ -51,8 +53,9 @@ func main() {
 		Limit:       *limit,
 		Offset:      *offset,
 		Samples:     *samples,
+		TagMapPath:  *tagmap,
 	}); err != nil {
-		slog.Error("sync-vndb-links", "error", err)
+		slog.Error("sync-vndb-enrich", "error", err)
 		os.Exit(1)
 	}
 }

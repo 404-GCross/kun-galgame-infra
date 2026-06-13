@@ -9,8 +9,7 @@ import (
 // RegisterAll registers every job and its schedule in one place — the
 // authoritative "what jobs exist + when" list (in git, reviewable). Only
 // genuinely periodic tasks get a schedule; on-demand ones (future:
-// reindex-search, sync-vndb-relations) would register with a zero
-// Schedule (manual-trigger only).
+// reindex-search) would register with a zero Schedule (manual-trigger only).
 //
 // Schedules are in the process local timezone — set TZ on the oauth
 // container (docs/jobs/01-implementation-plan.md §6), else they are UTC.
@@ -25,11 +24,11 @@ func RegisterAll(r *Registry) {
 	})
 
 	r.Register(Job{
-		Name:     "sync-vndb-links",
-		Desc:     "VNDB → galgame wiki 链接富集（已发布游戏中尚缺 vndb 链接的，如新建/claim）",
+		Name:     "sync-vndb-enrich",
+		Desc:     "VNDB → galgame wiki 富集 links+tags+officials（已发布游戏中尚缺 vndb 数据的，如新建/claim）",
 		Schedule: Schedule{DailyAt: "05:00"}, // staggered after sync-vndb (03:00) + refpings
 		Run: func(ctx context.Context, cfg *config.Config) (Summary, error) {
-			return RunSyncVNDBLinks(ctx, cfg, DefaultSyncVNDBLinksOpts())
+			return RunSyncVNDBEnrich(ctx, cfg, DefaultSyncVNDBEnrichOpts())
 		},
 	})
 

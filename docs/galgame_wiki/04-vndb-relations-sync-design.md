@@ -1,5 +1,10 @@
 # VNDB 关联数据回填同步设计
 
+> ⚠️ **已被取代（历史设计）**：本文描述的一次性补洞脚本 `cmd/sync-vndb-relations`
+> 已删除，关联同步并入持续运行的 `cmd/sync-vndb-enrich`（与 links 一起，走带
+> provenance 的 approach-B 对账，resolver 也统一了）。现状以
+> `docs/sync/vndb/README.md` + 代码为准；本文仅留作决策追溯。
+
 ## 背景
 
 `sync-vndb` 脚本在插入新 galgame 时会 **顺带** 创建 `galgame_tag_relation` 和 `galgame_official_relation`。但存在两类"关联缺失"数据：

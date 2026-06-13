@@ -28,6 +28,29 @@ func tagIDsOf(t *testing.T, gid int) []int {
 	return ids
 }
 
+// tagRelations / officialRelations return tag_id|official_id → source for a game.
+func tagRelations(t *testing.T, gid int) map[int]string {
+	t.Helper()
+	var rels []model.GalgameTagRelation
+	require.NoError(t, testDB.Where("galgame_id = ?", gid).Find(&rels).Error)
+	out := make(map[int]string, len(rels))
+	for _, r := range rels {
+		out[r.TagID] = r.Source
+	}
+	return out
+}
+
+func officialRelations(t *testing.T, gid int) map[int]string {
+	t.Helper()
+	var rels []model.GalgameOfficialRelation
+	require.NoError(t, testDB.Where("galgame_id = ?", gid).Find(&rels).Error)
+	out := make(map[int]string, len(rels))
+	for _, r := range rels {
+		out[r.OfficialID] = r.Source
+	}
+	return out
+}
+
 func latestRevSnapshot(t *testing.T, gid int) *model.Snapshot {
 	t.Helper()
 	var rev model.GalgameRevision
@@ -361,4 +384,87 @@ func TestCreate_ThroughApplySnapshot(t *testing.T) {
 	testDB.Model(&model.GalgameLink{}).Where("galgame_id = ?", g.ID).Count(&linkCnt)
 	assert.Equal(t, int64(1), tagCnt)
 	assert.Equal(t, int64(1), linkCnt)
+}
+
+// ReconcileVndbTags: source="vndb" tags reconcile to the fresh set (add new,
+// drop stale, convert overlapping user rows), user (source="") tags are
+// preserved, and a re-run is a no-op.
+func TestReconcileVndbTags(t *testing.T) {
+	cleanTables(t)
+	getRepos()
+	ctx := context.Background()
+	gid := makeGalgame(t)
+	tUser := createTestTag(t, "user-tag", "content")
+	tStale := createTestTag(t, "stale-vndb", "content")
+	tV2 := createTestTag(t, "vndb-2", "content")
+	tV3 := createTestTag(t, "vndb-3", "content")
+
+	require.NoError(t, testDB.Create(&model.GalgameTagRelation{GalgameID: gid, TagID: tUser, Source: ""}).Error)
+	require.NoError(t, testDB.Create(&model.GalgameTagRelation{GalgameID: gid, TagID: tStale, Source: "vndb", SpoilerLevel: 1}).Error)
+
+	changed, err := ReconcileVndbTags(ctx, testDB, gid, map[int]int{tV2: 2, tV3: 0}, true)
+	require.NoError(t, err)
+	assert.True(t, changed)
+
+	got := tagRelations(t, gid)
+	assert.Equal(t, "", got[tUser], "user tag preserved")
+	_, hasStale := got[tStale]
+	assert.False(t, hasStale, "stale vndb tag removed")
+	assert.Equal(t, "vndb", got[tV2])
+	assert.Equal(t, "vndb", got[tV3])
+	require.Len(t, got, 3)
+
+	// spoiler carried from the desired map.
+	var sp int
+	testDB.Model(&model.GalgameTagRelation{}).Where("galgame_id = ? AND tag_id = ?", gid, tV2).Pluck("spoiler_level", &sp)
+	assert.Equal(t, 2, sp)
+
+	// Idempotent.
+	changed, err = ReconcileVndbTags(ctx, testDB, gid, map[int]int{tV2: 2, tV3: 0}, true)
+	require.NoError(t, err)
+	assert.False(t, changed, "re-run must be a no-op")
+
+	// A user tag that VNDB also lists converts to vndb (vndb authoritative).
+	changed, err = ReconcileVndbTags(ctx, testDB, gid, map[int]int{tV2: 2, tV3: 0, tUser: 0}, true)
+	require.NoError(t, err)
+	assert.True(t, changed)
+	assert.Equal(t, "vndb", tagRelations(t, gid)[tUser], "user tag in VNDB set becomes vndb-managed")
+}
+
+// A user edit of tag_ids/official_ids must preserve the sync-managed
+// source="vndb" relations (union), like it does for links.
+func TestUpdate_PreservesVndbRelations(t *testing.T) {
+	cleanTables(t)
+	getRepos()
+	ctx := context.Background()
+	gid := makeGalgame(t)
+	tUser := createTestTag(t, "u-tag", "content")
+	tUser2 := createTestTag(t, "u-tag-2", "content")
+	tVndb := createTestTag(t, "v-tag", "content")
+	oUser := createTestOfficial(t, "u-off", "company")
+	oVndb := createTestOfficial(t, "v-off", "company")
+
+	require.NoError(t, testDB.Create(&model.GalgameTagRelation{GalgameID: gid, TagID: tUser, Source: ""}).Error)
+	require.NoError(t, testDB.Create(&model.GalgameTagRelation{GalgameID: gid, TagID: tVndb, Source: "vndb"}).Error)
+	require.NoError(t, testDB.Create(&model.GalgameOfficialRelation{GalgameID: gid, OfficialID: oUser, Source: ""}).Error)
+	require.NoError(t, testDB.Create(&model.GalgameOfficialRelation{GalgameID: gid, OfficialID: oVndb, Source: "vndb"}).Error)
+
+	// User adds a tag (real change) and submits only their officials — neither
+	// echoes the vndb relations.
+	tagIDs := []int{tUser, tUser2}
+	offIDs := []int{oUser}
+	_, err := testSvc.Update(ctx, 1, gid, nil, &dto.UpdateGalgameRequest{TagIDs: &tagIDs, OfficialIDs: &offIDs})
+	require.NoError(t, err)
+
+	gotT := tagRelations(t, gid)
+	assert.Equal(t, "vndb", gotT[tVndb], "vndb tag must survive the edit")
+	assert.Equal(t, "", gotT[tUser])
+	assert.Equal(t, "", gotT[tUser2])
+	gotO := officialRelations(t, gid)
+	assert.Equal(t, "vndb", gotO[oVndb], "vndb official must survive the edit")
+	assert.Equal(t, "", gotO[oUser])
+
+	snap := latestRevSnapshot(t, gid)
+	assert.ElementsMatch(t, []int{tUser, tUser2, tVndb}, snap.TagIDs)
+	assert.ElementsMatch(t, []int{oUser, oVndb}, snap.OfficialIDs)
 }

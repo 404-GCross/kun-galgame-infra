@@ -289,7 +289,7 @@ func (s *SubmissionService) PatchDraft(ctx context.Context, userID, gid int, req
 			return err
 		}
 		cur := model.TakeSnapshot(full)
-		next := overlayUpdate(cur, req)
+		next := overlayUpdate(cur, req, vndbManagedTagIDs(full.Tag), vndbManagedOfficialIDs(full.Official))
 		changed := model.ChangedKeys(cur, next)
 
 		// A declined draft re-enters the review queue even if the
