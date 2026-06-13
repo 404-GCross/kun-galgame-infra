@@ -1,5 +1,13 @@
 package model
 
+// Column length caps for galgame_link. Keep these in sync with the gorm `size:`
+// tags below — callers that build links from external data (e.g. VNDB curation)
+// use them to drop values that wouldn't fit, rather than letting the INSERT fail.
+const (
+	LinkNameMaxLen = 107
+	LinkURLMaxLen  = 233
+)
+
 // GalgameLink represents an external link for a galgame
 type GalgameLink struct {
 	ID        int       `gorm:"primaryKey;autoIncrement" json:"id"`

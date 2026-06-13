@@ -10,11 +10,14 @@ import (
 	"gorm.io/gorm"
 )
 
-// SyncVndbLinks reconciles a galgame's VNDB-sourced links to the current VNDB
-// truth — adding store/official links, dropping ones VNDB no longer lists —
+// ReconcileVndbLinks reconciles one galgame's links to a freshly-fetched VNDB
+// link set — adding store/official links, dropping ones VNDB no longer lists —
 // while keeping genuinely user-added links. Legacy UNMARKED imports (dumped as
 // source="" by old syncs) are recognized by host (matches a fresh link's host,
 // or a known info/stats host) and replaced, so the result is clean.
+//
+// The caller fetches `fresh` (batched, see vndb.FetchGameLinksBatch) so a bulk
+// backfill makes ~one VNDB call per 100 games instead of two per game.
 //
 // Write strategy is APPROACH B (matching the intro cleanup): it rewrites just
 // galgame_link and jsonb-patches the latest revision's snapshot so live ==
@@ -22,21 +25,11 @@ import (
 // backfill must not create 50k revisions. (The future create-time path will use
 // the ApplySnapshot+revision flow instead, where volume is tiny.)
 //
-// Returns whether anything changed and the freshly-fetched VNDB link set (for
-// reporting). No-op for galgames without a canonical vndb_id. apply=false
-// fetches + diffs but writes nothing.
-func SyncVndbLinks(ctx context.Context, db *gorm.DB, vc *vndb.Client, galgameID int, apply bool) (bool, []model.SnapshotLink, error) {
+// Returns whether anything changed. apply=false diffs but writes nothing.
+func ReconcileVndbLinks(ctx context.Context, db *gorm.DB, galgameID int, fresh []model.SnapshotLink, apply bool) (bool, error) {
 	full, err := loadGalgameWithRelations(db.WithContext(ctx), galgameID)
 	if err != nil {
-		return false, nil, err
-	}
-	if !vndbIDRegex.MatchString(full.VNDBID) {
-		return false, nil, nil // no canonical vndb_id → nothing to sync
-	}
-
-	fresh, err := vc.FetchGameLinks(full.VNDBID)
-	if err != nil {
-		return false, nil, err
+		return false, err
 	}
 
 	cur := model.TakeSnapshot(full)
@@ -65,15 +58,15 @@ func SyncVndbLinks(ctx context.Context, db *gorm.DB, vc *vndb.Client, galgameID 
 	next.Links = append(userLinks, fresh...)
 
 	if len(model.ChangedKeys(cur, &next)) == 0 {
-		return false, fresh, nil
+		return false, nil
 	}
 	if !apply {
-		return true, fresh, nil
+		return true, nil
 	}
 
 	linksJSON, err := json.Marshal(next.Links)
 	if err != nil {
-		return false, fresh, err
+		return false, err
 	}
 	userID := full.UserID
 	err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -101,7 +94,7 @@ func SyncVndbLinks(ctx context.Context, db *gorm.DB, vc *vndb.Client, galgameID 
 		`, string(linksJSON), galgameID, galgameID).Error
 	})
 	if err != nil {
-		return false, fresh, err
+		return false, err
 	}
-	return true, fresh, nil
+	return true, nil
 }

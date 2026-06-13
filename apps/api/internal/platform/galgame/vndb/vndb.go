@@ -1,21 +1,21 @@
 // Package vndb is a small read-only client for the VNDB Kana API, used to
 // enrich wiki galgames with accurate data straight from the source.
 //
-// Today it fetches a game's external links (store / official pages). The links
-// VNDB exposes are spread across two places and are noisy, so the fetch is
-// curated rather than dumped verbatim:
+// Today it fetches a game's external links (store / official pages). The real
+// store/official links all live on a VN's RELEASES (Steam, DLsite, Getchu, GOG,
+// JAST, console stores, the official website, …), but VNDB returns them noisily:
+// heavy per-release redundancy (the same shop repeated for every SKU) plus
+// auto-fetched extras (SteamDB next to Steam, gogdb, lutris, gamefaqs, the
+// wikis, …). A VN's own extlinks are purely encyclopedic (Wikidata / Wikipedia /
+// IGDB / MobyGames / …) and carry no store or official link, so we don't fetch
+// them at all.
 //
-//   - a VN's own extlinks are mostly encyclopedic (Wikipedia / Wikidata / IGDB);
-//   - each RELEASE carries the real store/official links (Steam, DLsite, Getchu,
-//     GOG, JAST, console stores, …) but with heavy per-release redundancy (the
-//     same shop repeated for every SKU) and auto-fetched noise (SteamDB next to
-//     Steam, stats sites, …).
-//
-// We aggregate VN + all release extlinks, drop info/stats sites (denylist),
-// collapse to one entry per site (VNDB's stable `name`), and label them with
-// VNDB's `label`. Producer/developer links are deliberately NOT pulled here —
-// the company's official site belongs on the official ENTITY, not the game's
-// related links (the legacy nitro-server conflated the two).
+// Curation keeps only sites on a small ALLOWLIST (see storeSites) — the
+// canonical storefront set from VNDB's GET /schema — collapses to one entry per
+// site (VNDB's stable `name`), and labels them with VNDB's `label`.
+// Producer/developer links are deliberately NOT pulled here — the company's
+// official site belongs on the official ENTITY, not the game's related links
+// (the legacy nitro-server conflated the two).
 package vndb
 
 import (
@@ -34,32 +34,63 @@ import (
 
 const apiBase = "https://api.vndb.org/kana"
 
-// denyExact / denySubstrings drop VNDB extlink sites that are pure info / stats
-// / aggregator entries (never a store or official page). Stores, console shops
-// and the official `website` are kept. VNDB suffixes its site names
-// (igdb_game, mobygames_game, acdb_source, enwiki/jawiki/wikidata…), so the
-// info sites are matched by substring; precise stats sites by exact name.
-var denyExact = map[string]bool{
-	"egs":           true, // ErogameScape (stats)
-	"steamdb":       true, // redundant with steam
-	"howlongtobeat": true,
-	"renai":         true,
-	"vndb":          true, // self — added explicitly below
+// storeSites is the allowlist of VNDB release extlink names we keep as a
+// galgame's related links: real stores, shops and official platforms. It is the
+// canonical `extlinks["/release"]` list from VNDB's GET /schema, MINUS `egs`
+// (ErogameScape — a stats/ratings database, not a store), PLUS `website` (the
+// official-website extlink, which VNDB returns on releases but does not list in
+// the schema's named-site set).
+//
+// Everything else VNDB returns is auto-fetched noise and dropped by omission:
+// the encyclopedic/stats/aggregator sites (wikidata, the wikis, igdb, mobygames,
+// gogdb, steamdb, lutris, gamefaqs, howlongtobeat, pcgamingwiki, winehq, …).
+//
+// Source of truth: https://api.vndb.org/kana/schema → extlinks["/release"].
+// Re-derive and update this list if VNDB adds a storefront (rare).
+var storeSites = map[string]bool{
+	"website":        true, // official website (returned on releases; not in schema's named set)
+	"steam":          true,
+	"dlsite":         true,
+	"dmm":            true,
+	"getchu":         true,
+	"getchudl":       true, // DL.Getchu
+	"digiket":        true,
+	"gyutto":         true,
+	"melon":          true, // Melonbooks.com
+	"melonjp":        true, // Melonbooks.co.jp
+	"toranoana":      true,
+	"booth":          true,
+	"animateg":       true, // Animate Games
+	"novelgam":       true, // NovelGame
+	"freem":          true, // Freem!
+	"freegame":       true, // Freegame Mugen
+	"gog":            true,
+	"mg":             true, // MangaGamer
+	"jastusa":        true, // JAST USA
+	"jlist":          true, // J-List
+	"denpa":          true, // Denpasoft
+	"kagura":         true, // Kagura Games
+	"johren":         true,
+	"nutaku":         true,
+	"fakku":          true,
+	"playasia":       true,
+	"itch":           true, // Itch.io
+	"gamejolt":       true, // Game Jolt
+	"appstore":       true, // App Store
+	"googplay":       true, // Google Play
+	"nintendo":       true,
+	"nintendo_jp":    true,
+	"nintendo_hk":    true,
+	"playstation_jp": true,
+	"playstation_na": true,
+	"playstation_eu": true,
+	"playstation_hk": true,
+	"patreon":        true,
+	"patreonp":       true, // Patreon post
+	"substar":        true, // SubscribeStar
 }
 
-var denySubstrings = []string{"wiki", "igdb", "mobygames", "acdb", "anidb", "vgmdb"}
-
-func denied(name string) bool {
-	if denyExact[name] {
-		return true
-	}
-	for _, sub := range denySubstrings {
-		if strings.Contains(name, sub) {
-			return true
-		}
-	}
-	return false
-}
+func isStore(name string) bool { return storeSites[name] }
 
 // infoHostSubstrings identify legacy links to info/stats/encyclopedic sites that
 // earlier imports dumped into galgame_link unmarked. On re-sync we drop links on
@@ -67,7 +98,8 @@ func denied(name string) bool {
 var infoHostSubstrings = []string{
 	"wikipedia.org", "wikidata.org", "igdb.com", "animecharactersdatabase.com",
 	"anidb.net", "vgmdb.net", "mobygames.com", "gamefaqs", "erogamescape",
-	"howlongtobeat", "steamdb",
+	"howlongtobeat", "steamdb", "gogdb.org", "lutris.net", "pcgamingwiki.com",
+	"winehq.org",
 }
 
 // Host returns the lowercased registrable host of a URL without a leading
@@ -115,81 +147,124 @@ type extLink struct {
 }
 
 func (c *Client) post(path string, body any, out any) error {
-	if d := c.minGap - time.Since(c.lastReq); d > 0 {
-		time.Sleep(d)
-	}
-	c.lastReq = time.Now()
+	for {
+		if d := c.minGap - time.Since(c.lastReq); d > 0 {
+			time.Sleep(d)
+		}
+		c.lastReq = time.Now()
 
-	buf, _ := json.Marshal(body)
-	resp, err := c.http.Post(apiBase+path, "application/json", bytes.NewReader(buf))
-	if err != nil {
-		return err
+		buf, _ := json.Marshal(body)
+		resp, err := c.http.Post(apiBase+path, "application/json", bytes.NewReader(buf))
+		if err != nil {
+			return err
+		}
+		if resp.StatusCode == http.StatusTooManyRequests { // 429: back off and retry
+			resp.Body.Close()
+			time.Sleep(60 * time.Second)
+			continue
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			msg, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+			return fmt.Errorf("vndb %s: status %d: %s", path, resp.StatusCode, strings.TrimSpace(string(msg)))
+		}
+		return json.NewDecoder(resp.Body).Decode(out)
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return fmt.Errorf("vndb %s: status %d: %s", path, resp.StatusCode, strings.TrimSpace(string(msg)))
-	}
-	return json.NewDecoder(resp.Body).Decode(out)
 }
 
-// FetchGameLinks returns the curated VNDB-sourced links for a VN, as
-// SnapshotLinks tagged Source="vndb" and SourceKey=<site name>. The vndb.org
-// self-link is always first. Returns deduped, deterministic-ordered results.
-func (c *Client) FetchGameLinks(vndbID string) ([]model.SnapshotLink, error) {
-	var vnResp struct {
-		Results []struct {
-			Extlinks []extLink `json:"extlinks"`
-		} `json:"results"`
-	}
-	if err := c.post("/vn", map[string]any{
-		"filters": []any{"id", "=", vndbID},
-		"fields":  "extlinks{url,label,name}",
-	}, &vnResp); err != nil {
-		return nil, fmt.Errorf("fetch vn: %w", err)
-	}
-
-	var relResp struct {
-		Results []struct {
-			Extlinks []extLink `json:"extlinks"`
-		} `json:"results"`
-	}
-	if err := c.post("/release", map[string]any{
-		"filters": []any{"vn", "=", []any{"id", "=", vndbID}},
-		"fields":  "extlinks{url,label,name}",
-		"results": 100,
-	}, &relResp); err != nil {
-		return nil, fmt.Errorf("fetch releases: %w", err)
-	}
-
-	// Aggregate VN + all release extlinks, drop denied sites, keep one per site.
+// curate turns a VN's raw release extlinks into the clean, deterministic
+// SnapshotLink set: keep only allowlisted store/official sites, one entry per
+// VNDB site name, label from VNDB, vndb.org self-link first.
+func curate(vndbID string, links []extLink) []model.SnapshotLink {
 	seen := map[string]bool{}
-	var curated []extLink
-	add := func(links []extLink) {
-		for _, l := range links {
-			if l.URL == "" || l.Name == "" || denied(l.Name) || seen[l.Name] {
-				continue
-			}
-			seen[l.Name] = true
-			curated = append(curated, l)
+	kept := make([]extLink, 0, len(links))
+	for _, l := range links {
+		if l.URL == "" || !isStore(l.Name) || seen[l.Name] {
+			continue
 		}
+		// Drop links that wouldn't fit galgame_link's columns (rare: a few
+		// percent-encoded forum URLs mislabeled "website" run past the cap).
+		// Dropping here keeps the snapshot and the table in agreement.
+		if len(l.URL) > model.LinkURLMaxLen || len(l.Label) > model.LinkNameMaxLen {
+			continue
+		}
+		seen[l.Name] = true
+		kept = append(kept, l)
 	}
-	for _, vn := range vnResp.Results {
-		add(vn.Extlinks)
-	}
-	for _, r := range relResp.Results {
-		add(r.Extlinks)
-	}
-	sort.Slice(curated, func(i, j int) bool { return curated[i].Name < curated[j].Name })
+	sort.Slice(kept, func(i, j int) bool { return kept[i].Name < kept[j].Name })
 
-	out := make([]model.SnapshotLink, 0, len(curated)+1)
+	out := make([]model.SnapshotLink, 0, len(kept)+1)
 	out = append(out, model.SnapshotLink{
 		Name: "VNDB", Link: "https://vndb.org/" + vndbID, Source: "vndb", SourceKey: "vndb",
 	})
-	for _, l := range curated {
-		out = append(out, model.SnapshotLink{
-			Name: l.Label, Link: l.URL, Source: "vndb", SourceKey: l.Name,
-		})
+	for _, l := range kept {
+		out = append(out, model.SnapshotLink{Name: l.Label, Link: l.URL, Source: "vndb", SourceKey: l.Name})
+	}
+	return out
+}
+
+// FetchGameLinksBatch fetches curated links for up to 100 VNs in one batched
+// query group — paginated /release calls filtered to those VNs — keyed by vndb
+// id. This is what makes a bulk backfill fast: ~(releases/100) calls per 100 VNs
+// instead of one call per VN. (VN-level extlinks are purely encyclopedic — see
+// the package doc — so they aren't fetched.)
+func (c *Client) FetchGameLinksBatch(ids []string) (map[string][]model.SnapshotLink, error) {
+	want := make(map[string]bool, len(ids))
+	or := []any{"or"}
+	for _, id := range ids {
+		if id == "" || want[id] {
+			continue
+		}
+		want[id] = true
+		or = append(or, []any{"id", "=", id})
+	}
+	if len(want) == 0 {
+		return map[string][]model.SnapshotLink{}, nil
+	}
+
+	agg := make(map[string][]extLink, len(want)) // vndb id → its releases' extlinks
+
+	// Release extlinks — paginated; each release is attributed to its VN(s).
+	relFilter := []any{"vn", "=", or}
+	for page := 1; ; page++ {
+		var relResp struct {
+			More    bool `json:"more"`
+			Results []struct {
+				VNs      []struct{ ID string `json:"id"` } `json:"vns"`
+				Extlinks []extLink                         `json:"extlinks"`
+			} `json:"results"`
+		}
+		if err := c.post("/release", map[string]any{
+			"filters": relFilter, "fields": "vns{id}, extlinks{url,label,name}",
+			"results": 100, "page": page,
+		}, &relResp); err != nil {
+			return nil, fmt.Errorf("release batch page %d: %w", page, err)
+		}
+		for _, r := range relResp.Results {
+			for _, v := range r.VNs {
+				if want[v.ID] {
+					agg[v.ID] = append(agg[v.ID], r.Extlinks...)
+				}
+			}
+		}
+		if !relResp.More {
+			break
+		}
+	}
+
+	out := make(map[string][]model.SnapshotLink, len(want))
+	for id := range want {
+		out[id] = curate(id, agg[id])
 	}
 	return out, nil
+}
+
+// FetchGameLinks is the single-VN convenience wrapper (for the future
+// create-time path). The vndb.org self-link is always present.
+func (c *Client) FetchGameLinks(vndbID string) ([]model.SnapshotLink, error) {
+	m, err := c.FetchGameLinksBatch([]string{vndbID})
+	if err != nil {
+		return nil, err
+	}
+	return m[vndbID], nil
 }
