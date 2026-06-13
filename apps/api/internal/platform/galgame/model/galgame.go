@@ -7,6 +7,14 @@ type Galgame struct {
 	// leave this empty. Uniqueness is enforced by a partial unique index
 	// created in migrate-galgame: UNIQUE on vndb_id WHERE vndb_id <> ''.
 	// (GORM AutoMigrate cannot express partial unique, so raw SQL.)
+	//
+	// Format is constrained at the DB level (chk_galgame_vndb_id_format in
+	// migrate-galgame): vndb_id must be '' or a canonical VNDB visual-novel
+	// id (`^v[0-9]+$`). This is the path-independent backstop behind the
+	// service-layer vndbIDRegex check — a *release* id (`r123`) or a
+	// slash-prefixed id (`/v123`) is a different value to the exact-match
+	// unique index, so without this constraint such variants created
+	// duplicate galgames for the same VN.
 	VNDBID    string `gorm:"column:vndb_id;size:10;not null;default:'';index" json:"vndb_id"`
 	BangumiID *int   `gorm:"column:bid;uniqueIndex" json:"bid,omitempty"`
 	// ReleaseDate is the (best-known) galgame release date. nil = unknown.

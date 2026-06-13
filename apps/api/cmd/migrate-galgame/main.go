@@ -205,5 +205,36 @@ func main() {
 	// galgame_revision/galgame_pr snapshot jsonb to embed the value
 	// into covers[], so no data is lost.)
 
+	// (5) galgame.vndb_id format CHECK. vndb_id must be '' (user-submitted
+	// original with no VNDB entry) or a canonical VNDB visual-novel id
+	// (`v` + digits). Historically, legacy imports / one-off scripts slipped
+	// in VNDB *release* ids (`r12345`) and slash-prefixed ids (`/v46506`).
+	// Those bypass the service-layer `^v\d+$` regex (Create/Submit/Update)
+	// AND the partial-unique index (exact-match, so format variants don't
+	// collide) — producing DUPLICATE galgames for the same VN. This DB-level
+	// CHECK is the path-independent backstop: no code path, admin tool,
+	// sync/import, or raw INSERT can reintroduce a non-canonical vndb_id.
+	//
+	// Drop-then-add by a stable name (same idempotent style as step 2). The
+	// galgame table was cleaned of all non-canonical rows before this was
+	// introduced, so ADD CONSTRAINT validates every existing row. For a
+	// 60k-row table the validation scan is sub-second; the brief
+	// ACCESS EXCLUSIVE lock is acceptable for this one-off job.
+	if err := db.DB().Exec(`
+		ALTER TABLE galgame
+		    DROP CONSTRAINT IF EXISTS chk_galgame_vndb_id_format
+	`).Error; err != nil {
+		slog.Error("drop stale chk_galgame_vndb_id_format failed", "error", err)
+		os.Exit(1)
+	}
+	if err := db.DB().Exec(`
+		ALTER TABLE galgame
+		    ADD CONSTRAINT chk_galgame_vndb_id_format
+		    CHECK (vndb_id = '' OR vndb_id ~ '^v[0-9]+$')
+	`).Error; err != nil {
+		slog.Error("create chk_galgame_vndb_id_format failed", "error", err)
+		os.Exit(1)
+	}
+
 	slog.Info("galgame wiki migration completed successfully")
 }
