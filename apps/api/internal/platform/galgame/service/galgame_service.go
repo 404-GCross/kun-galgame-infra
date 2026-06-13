@@ -694,9 +694,10 @@ func loadGalgameWithRelations(tx *gorm.DB, id int) (*model.Galgame, error) {
 // edit change" is expressed; repository.ApplySnapshot then writes it and
 // the revision records exactly it. Every editable model.Snapshot field
 // is reachable here (released / aliases / links / tag_ids / official_ids
-// / engine_ids included); the only reserved exception is `bid`
-// (BangumiID) — sync-managed, intentionally not user-editable, carried
-// over from `cur` untouched so revert keeps any synced value. See the
+// / engine_ids included). Two things are sync-managed and carried over
+// from `cur`, not user-editable: `bid` (BangumiID) entirely, and the
+// source="vndb" subset of `links` (the cron-synced store/official links —
+// req.Links replaces only the user links, see the block below). See the
 // invariant in docs/galgame_wiki/01-revision-system-design.md §1.5.
 func overlayUpdate(cur *model.Snapshot, req *dto.UpdateGalgameRequest) *model.Snapshot {
 	n := *cur // copy; slices are replaced wholesale below, never mutated in place
@@ -760,11 +761,16 @@ func overlayUpdate(cur *model.Snapshot, req *dto.UpdateGalgameRequest) *model.Sn
 		n.Aliases = append([]string(nil), (*req.Aliases)...)
 	}
 	if req.Links != nil {
-		links := make([]model.SnapshotLink, 0, len(*req.Links))
+		// req.Links authoritatively replaces the USER links only. The
+		// VNDB-sourced links (source="vndb") are sync-managed — like bid — so
+		// they're carried over from cur and merged back, deduped against any the
+		// client echoed. Otherwise every user edit would wipe the synced
+		// store/official links until the next cron. See mergeUserAndVndbLinks.
+		user := make([]model.SnapshotLink, 0, len(*req.Links))
 		for _, l := range *req.Links {
-			links = append(links, model.SnapshotLink{Name: l.Name, Link: l.Link})
+			user = append(user, model.SnapshotLink{Name: l.Name, Link: l.Link})
 		}
-		n.Links = links
+		n.Links = mergeUserAndVndbLinks(user, vndbManagedLinks(cur.Links))
 	}
 	if req.TagIDs != nil {
 		n.TagIDs = append([]int(nil), (*req.TagIDs)...)

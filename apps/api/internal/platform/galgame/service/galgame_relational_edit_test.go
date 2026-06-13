@@ -125,6 +125,27 @@ func TestUpdate_OfficialAndEngineRelations(t *testing.T) {
 	assert.Equal(t, []int{e1}, snap.EngineIDs)
 }
 
+// mergeUserAndVndbLinks: user links kept, vndb links appended after, echoes
+// and info/stats hosts dropped, source="vndb" among user candidates ignored.
+func TestMergeUserAndVndbLinks(t *testing.T) {
+	vndbLinks := []model.SnapshotLink{
+		{Name: "Steam", Link: "https://store.steampowered.com/app/1/", Source: "vndb", SourceKey: "steam"},
+		{Name: "DLsite", Link: "https://www.dlsite.com/x", Source: "vndb", SourceKey: "dlsite"},
+	}
+	user := []model.SnapshotLink{
+		{Name: "官网", Link: "https://x.example"},                            // genuine user link → kept
+		{Name: "Steam", Link: "https://store.steampowered.com/app/1/"},        // echoed managed host → dropped
+		{Name: "Wikipedia", Link: "https://en.wikipedia.org/wiki/X"},          // info host → dropped
+		{Name: "stale vndb", Link: "https://old", Source: "vndb"},             // source=vndb among user → ignored
+	}
+	got := mergeUserAndVndbLinks(user, vndbLinks)
+
+	require.Len(t, got, 3)
+	assert.Equal(t, "官网", got[0].Name)
+	assert.Equal(t, "", got[0].Source, "user link stays unmarked")
+	assert.Equal(t, []model.SnapshotLink{vndbLinks[0], vndbLinks[1]}, got[1:], "vndb set appended verbatim, after user links")
+}
+
 // released / aliases / links must be editable via the unified PUT path,
 // atomically (one edit = one revision), with the snapshot == DB.
 func TestUpdate_ReleasedAliasesLinks(t *testing.T) {
@@ -172,6 +193,59 @@ func TestUpdate_ReleasedAliasesLinks(t *testing.T) {
 	require.Len(t, s2.Links, 1)
 	require.NotNil(t, s2.ReleaseDate)
 	assert.Equal(t, "2019-08-16", *s2.ReleaseDate)
+}
+
+// A user edit replaces only the USER links; the sync-managed source="vndb"
+// links (store/official, maintained by the cron) must survive the edit and
+// must not duplicate when the client echoes one back. Pre-fix, any edit that
+// carried Links wiped every vndb link until the next sync (the cause of the
+// backfill's ~10 concurrent-edit casualties).
+func TestUpdate_PreservesVndbLinks(t *testing.T) {
+	cleanTables(t)
+	getRepos()
+	ctx := context.Background()
+	gid := makeGalgame(t)
+
+	// Simulate the cron sync: a vndb-sourced store link lives in galgame_link.
+	require.NoError(t, testDB.Create(&model.GalgameLink{
+		GalgameID: gid, UserID: 1,
+		Name: "Steam", Link: "https://store.steampowered.com/app/1/",
+		Source: "vndb", SourceKey: "steam",
+	}).Error)
+
+	// User edits, submitting only their own link.
+	lk := []dto.GalgameLinkInput{{Name: "官网", Link: "https://x.example"}}
+	_, err := testSvc.Update(ctx, 1, gid, nil, &dto.UpdateGalgameRequest{Links: &lk})
+	require.NoError(t, err)
+
+	snap := latestRevSnapshot(t, gid)
+	require.Len(t, snap.Links, 2, "user link + preserved vndb link")
+	assert.Equal(t, "官网", snap.Links[0].Name)
+	assert.Equal(t, "", snap.Links[0].Source)
+	assert.Equal(t, "Steam", snap.Links[1].Name)
+	assert.Equal(t, "vndb", snap.Links[1].Source)
+	assert.Equal(t, "steam", snap.Links[1].SourceKey)
+
+	// DB matches, vndb provenance intact.
+	var links []model.GalgameLink
+	require.NoError(t, testDB.Where("galgame_id = ?", gid).Order("id").Find(&links).Error)
+	require.Len(t, links, 2)
+	assert.Equal(t, "vndb", links[1].Source)
+
+	// Client echoes the managed Steam URL back as a plain link → no duplicate,
+	// and no new revision (the resulting set is unchanged).
+	before := revCount(t, gid)
+	lk2 := []dto.GalgameLinkInput{
+		{Name: "官网", Link: "https://x.example"},
+		{Name: "Steam", Link: "https://store.steampowered.com/app/1/"},
+	}
+	_, err = testSvc.Update(ctx, 1, gid, nil, &dto.UpdateGalgameRequest{Links: &lk2})
+	require.NoError(t, err)
+	snap2 := latestRevSnapshot(t, gid)
+	require.Len(t, snap2.Links, 2, "echoed vndb link must not duplicate")
+	assert.Equal(t, "Steam", snap2.Links[1].Name)
+	assert.Equal(t, "vndb", snap2.Links[1].Source)
+	assert.Equal(t, before, revCount(t, gid), "echo-only edit changes nothing → no new revision")
 }
 
 // Anti-regression invariant: EVERY editable model.Snapshot field must be

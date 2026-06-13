@@ -34,28 +34,10 @@ func ReconcileVndbLinks(ctx context.Context, db *gorm.DB, galgameID int, fresh [
 
 	cur := model.TakeSnapshot(full)
 	next := *cur
-
-	// VNDB sync OWNS the store/official/info link space. Drop anything it
-	// manages — old vndb-marked links (replaced by fresh), plus legacy UNMARKED
-	// imports recognized by host — and keep the rest as user links.
-	managed := make(map[string]bool, len(fresh))
-	for _, l := range fresh {
-		if h := vndb.Host(l.Link); h != "" {
-			managed[h] = true
-		}
-	}
-	userLinks := make([]model.SnapshotLink, 0, len(cur.Links))
-	for _, l := range cur.Links {
-		if l.Source == "vndb" {
-			continue
-		}
-		h := vndb.Host(l.Link)
-		if managed[h] || vndb.IsInfoHost(h) {
-			continue
-		}
-		userLinks = append(userLinks, l)
-	}
-	next.Links = append(userLinks, fresh...)
+	// VNDB sync OWNS the store/official/info link space: replace the old
+	// vndb-marked set (and legacy unmarked imports recognized by host) with
+	// `fresh`, keeping genuine user links. See mergeUserAndVndbLinks.
+	next.Links = mergeUserAndVndbLinks(cur.Links, fresh)
 
 	if len(model.ChangedKeys(cur, &next)) == 0 {
 		return false, nil
@@ -97,4 +79,44 @@ func ReconcileVndbLinks(ctx context.Context, db *gorm.DB, galgameID int, fresh [
 		return false, err
 	}
 	return true, nil
+}
+
+// vndbManagedLinks returns the sync-owned (source="vndb") subset of a link set.
+func vndbManagedLinks(links []model.SnapshotLink) []model.SnapshotLink {
+	out := make([]model.SnapshotLink, 0, len(links))
+	for _, l := range links {
+		if l.Source == "vndb" {
+			out = append(out, l)
+		}
+	}
+	return out
+}
+
+// mergeUserAndVndbLinks combines user-supplied links with the sync-managed VNDB
+// link set, keeping the two disjoint by host: a user link is dropped when it
+// lands on a host a VNDB link already covers (the client echoing a managed link
+// back) or on a known info/stats host. Any source="vndb" entries among the user
+// candidates are ignored — vndbLinks is the authoritative managed set. The
+// result is ordered [user…, vndb…], the one canonical order shared by the sync
+// (ReconcileVndbLinks) and the edit path (overlayUpdate) so re-syncs and
+// no-op edits stay change-free.
+func mergeUserAndVndbLinks(userCandidates, vndbLinks []model.SnapshotLink) []model.SnapshotLink {
+	managed := make(map[string]bool, len(vndbLinks))
+	for _, l := range vndbLinks {
+		if h := vndb.Host(l.Link); h != "" {
+			managed[h] = true
+		}
+	}
+	out := make([]model.SnapshotLink, 0, len(userCandidates)+len(vndbLinks))
+	for _, l := range userCandidates {
+		if l.Source == "vndb" {
+			continue
+		}
+		h := vndb.Host(l.Link)
+		if managed[h] || vndb.IsInfoHost(h) {
+			continue
+		}
+		out = append(out, l)
+	}
+	return append(out, vndbLinks...)
 }
