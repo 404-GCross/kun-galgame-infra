@@ -87,13 +87,23 @@ func Run(ctx context.Context, cfg *config.Config, opts Opts) (map[string]any, er
 		for _, c := range batch {
 			ids = append(ids, c.VNDBID)
 		}
-		links, meta, bad := fetchBatchData(ctx, vc, ids)
+		// One batched /release + one /vn per 100 VNs. On error (VNDB down, or a
+		// rare out-of-range vndb_id), skip the batch and retry next run — the
+		// failed count + log surface it; we don't hammer the API per-id.
+		links, err := vc.FetchGameLinksBatch(ctx, ids)
+		if err != nil {
+			failed += len(batch)
+			slog.Error("fetch links batch", "from", batch[0].ID, "to", batch[len(batch)-1].ID, "error", err)
+			continue
+		}
+		meta, err := vc.FetchVNMetaBatch(ctx, ids)
+		if err != nil {
+			failed += len(batch)
+			slog.Error("fetch meta batch", "from", batch[0].ID, "to", batch[len(batch)-1].ID, "error", err)
+			continue
+		}
 
 		for _, c := range batch {
-			if bad[c.VNDBID] { // fetch failed even per-id (e.g. a stale/out-of-range vndb_id)
-				failed++
-				continue
-			}
 			didChange, err := reconcileOne(ctx, db.DB(), resolver, c.ID, links[c.VNDBID], meta[c.VNDBID], opts.Apply)
 			if err != nil {
 				failed++
@@ -113,35 +123,6 @@ func Run(ctx context.Context, cfg *config.Config, opts Opts) (map[string]any, er
 		slog.Info("DRY RUN — nothing written; re-run with Apply")
 	}
 	return summary(len(cands), len(cands), changed, failed, resolver), nil
-}
-
-// fetchBatchData fetches links + meta for a batch in 2 calls. If the batch query
-// errors — most often one stale/out-of-range vndb_id poisoning the `or` filter —
-// it retries per id so the other ~99 still enrich; ids that fail even alone are
-// returned in `bad` (and logged) so the caller counts them failed in isolation,
-// instead of silently dropping all 100.
-func fetchBatchData(ctx context.Context, vc *vndb.Client, ids []string) (map[string][]model.SnapshotLink, map[string]vndb.VNMeta, map[string]bool) {
-	bad := map[string]bool{}
-	links, errL := vc.FetchGameLinksBatch(ctx, ids)
-	meta, errM := vc.FetchVNMetaBatch(ctx, ids)
-	if errL == nil && errM == nil {
-		return links, meta, bad
-	}
-	slog.Warn("batch fetch failed; retrying per id", "links_err", errL, "meta_err", errM, "count", len(ids))
-	links = make(map[string][]model.SnapshotLink, len(ids))
-	meta = make(map[string]vndb.VNMeta, len(ids))
-	for _, id := range ids {
-		l, e1 := vc.FetchGameLinksBatch(ctx, []string{id})
-		m, e2 := vc.FetchVNMetaBatch(ctx, []string{id})
-		if e1 != nil || e2 != nil {
-			bad[id] = true
-			slog.Error("fetch vndb id failed", "vndb_id", id, "links_err", e1, "meta_err", e2)
-			continue
-		}
-		links[id] = l[id]
-		meta[id] = m[id]
-	}
-	return links, meta, bad
 }
 
 // reconcileOne reconciles one galgame's links, tags and officials. Returns true
