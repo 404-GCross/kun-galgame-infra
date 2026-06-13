@@ -18,6 +18,8 @@ import (
 	"flag"
 	"log/slog"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	"api/internal/infrastructure/database"
@@ -34,6 +36,7 @@ func main() {
 	apply := flag.Bool("apply", false, "write changes (default: dry run, fetch + diff only)")
 	limit := flag.Int("limit", 0, "max galgames to process (0 = all)")
 	offset := flag.Int("offset", 0, "skip this many galgames (for chunking)")
+	ids := flag.String("ids", "", "comma-separated galgame ids to process (targeted fix; overrides offset/limit/status filter)")
 	gap := flag.Duration("gap", 2*time.Second, "min delay between VNDB API calls")
 	samples := flag.Int("samples", 6, "number of per-game link previews to print")
 	flag.Parse()
@@ -59,10 +62,16 @@ func main() {
 	var cands []candidate
 	q := db.DB().Model(&model.Galgame{}).
 		Select("id", "vndb_id").
-		Where("status = 0 AND vndb_id ~ '^v[0-9]+$'").
-		Order("id").Offset(*offset)
-	if *limit > 0 {
-		q = q.Limit(*limit)
+		Where("vndb_id ~ '^v[0-9]+$'").
+		Order("id")
+	if *ids != "" {
+		// Targeted fix: process exactly these ids (any status), ignore offset/limit.
+		q = q.Where("id IN ?", parseIDs(*ids))
+	} else {
+		q = q.Where("status = 0").Offset(*offset)
+		if *limit > 0 {
+			q = q.Limit(*limit)
+		}
 	}
 	if err := q.Scan(&cands).Error; err != nil {
 		slog.Error("list galgame candidates", "error", err)
@@ -112,6 +121,18 @@ func main() {
 	if !*apply {
 		slog.Info("DRY RUN — nothing written; re-run with --apply")
 	}
+}
+
+// parseIDs turns "2167, 4121,4793" into []int{2167,4121,4793}, skipping blanks
+// and non-numbers.
+func parseIDs(s string) []int {
+	var out []int
+	for _, part := range strings.Split(s, ",") {
+		if n, err := strconv.Atoi(strings.TrimSpace(part)); err == nil {
+			out = append(out, n)
+		}
+	}
+	return out
 }
 
 func printPreview(id int, links []model.SnapshotLink) {

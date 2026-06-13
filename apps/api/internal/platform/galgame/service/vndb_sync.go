@@ -95,9 +95,10 @@ func vndbManagedLinks(links []model.SnapshotLink) []model.SnapshotLink {
 // mergeUserAndVndbLinks combines user-supplied links with the sync-managed VNDB
 // link set, keeping the two disjoint by host: a user link is dropped when it
 // lands on a host a VNDB link already covers (the client echoing a managed link
-// back) or on a known info/stats host. Any source="vndb" entries among the user
-// candidates are ignored — vndbLinks is the authoritative managed set. The
-// result is ordered [user…, vndb…], the one canonical order shared by the sync
+// back) or on a known info/stats host, and exact-duplicate user URLs collapse to
+// one. Any source="vndb" entries among the user candidates are ignored —
+// vndbLinks is the authoritative managed set. The result is ordered
+// [user…, vndb…], the one canonical order shared by the sync
 // (ReconcileVndbLinks) and the edit path (overlayUpdate) so re-syncs and
 // no-op edits stay change-free.
 func mergeUserAndVndbLinks(userCandidates, vndbLinks []model.SnapshotLink) []model.SnapshotLink {
@@ -108,14 +109,16 @@ func mergeUserAndVndbLinks(userCandidates, vndbLinks []model.SnapshotLink) []mod
 		}
 	}
 	out := make([]model.SnapshotLink, 0, len(userCandidates)+len(vndbLinks))
+	seen := make(map[string]bool, len(userCandidates)) // collapse duplicate user URLs
 	for _, l := range userCandidates {
 		if l.Source == "vndb" {
 			continue
 		}
 		h := vndb.Host(l.Link)
-		if managed[h] || vndb.IsInfoHost(h) {
+		if managed[h] || vndb.IsInfoHost(h) || seen[l.Link] {
 			continue
 		}
+		seen[l.Link] = true
 		out = append(out, l)
 	}
 	return append(out, vndbLinks...)

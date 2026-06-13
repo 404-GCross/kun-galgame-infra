@@ -1,18 +1,21 @@
 package model
 
 // Column length caps for galgame_link. Keep these in sync with the gorm `size:`
-// tags below — callers that build links from external data (e.g. VNDB curation)
-// use them to drop values that wouldn't fit, rather than letting the INSERT fail.
+// tags below AND the dto link validators — callers that build links from
+// external data (e.g. VNDB curation) use them to drop values that wouldn't fit,
+// rather than letting the INSERT fail. The URL cap is 500 (was 233): a few
+// percent-encoded store/forum URLs run past 233, and the edit DTO already
+// accepted longer values than the column held.
 const (
 	LinkNameMaxLen = 107
-	LinkURLMaxLen  = 233
+	LinkURLMaxLen  = 500
 )
 
 // GalgameLink represents an external link for a galgame
 type GalgameLink struct {
 	ID        int       `gorm:"primaryKey;autoIncrement" json:"id"`
 	Name      string    `gorm:"size:107;default:''" json:"name"`
-	Link      string    `gorm:"size:233;default:''" json:"link"`
+	Link      string    `gorm:"size:500;default:''" json:"link"`
 	// Source provenance: "" = user-added; "vndb" = auto-synced from VNDB.
 	// SourceKey is the VNDB extlinks site name ("steam", "dlsite", "website",
 	// "vndb", …), so the vndb-sourced subset can be reconciled idempotently

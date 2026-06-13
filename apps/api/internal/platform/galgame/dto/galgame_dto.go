@@ -75,8 +75,8 @@ type CreateGalgameRequest struct {
 // GalgameLinkInput is one external link in a galgame edit body. Kept in
 // the dto layer (not model.SnapshotLink) so dto stays model-free.
 type GalgameLinkInput struct {
-	Name string `json:"name" validate:"required,max=233"`
-	Link string `json:"link" validate:"required,max=1007"`
+	Name string `json:"name" validate:"required,max=107"`
+	Link string `json:"link" validate:"required,max=500"`
 }
 
 // GalgameCoverInput is one cover candidate in a galgame edit body. The

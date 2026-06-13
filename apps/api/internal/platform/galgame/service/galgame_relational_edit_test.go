@@ -134,6 +134,7 @@ func TestMergeUserAndVndbLinks(t *testing.T) {
 	}
 	user := []model.SnapshotLink{
 		{Name: "官网", Link: "https://x.example"},                            // genuine user link → kept
+		{Name: "官网", Link: "https://x.example"},                            // exact-duplicate URL → collapsed
 		{Name: "Steam", Link: "https://store.steampowered.com/app/1/"},        // echoed managed host → dropped
 		{Name: "Wikipedia", Link: "https://en.wikipedia.org/wiki/X"},          // info host → dropped
 		{Name: "stale vndb", Link: "https://old", Source: "vndb"},             // source=vndb among user → ignored
