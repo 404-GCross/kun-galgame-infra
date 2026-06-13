@@ -47,6 +47,16 @@ func (h *MoemoepointHandler) Adjust(c fiber.Ctx) error {
 	if client == nil {
 		return response.Unauthorized(c, errors.ErrAuthUnauthorized)
 	}
+	// Minting into the shared moemoepoint wallet is allow-listed: only clients
+	// flagged MoemoepointAwarder may award. Reading the balance (GetBalance)
+	// stays open to any registered client, and admin grants go through the
+	// admin-JWT path — neither hits this gate. Fail-closed by default so a
+	// new client (e.g. a content site that only seeds a local economy from
+	// the balance) can't write to the shared ledger. See
+	// docs/integration/oauth/06-moemoepoint.md §awarder allow-list.
+	if !client.MoemoepointAwarder {
+		return response.Forbidden(c, errors.ErrMoemoepointNotAwarder)
+	}
 
 	var req adjustRequest
 	if err := c.Bind().JSON(&req); err != nil {

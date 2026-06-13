@@ -46,6 +46,10 @@ type UploadRequest struct {
 	UploaderSub    string
 	UploaderClient string
 	UploaderIP     string
+	// CDNBase is the calling client's per-site image CDN base ("" → global
+	// default). Set from oauth_clients.image_cdn_base so the upload response
+	// carries URLs under the client's own domain. See docs/image_service.
+	CDNBase string
 }
 
 // UploadResult is what the handler turns into JSON.
@@ -237,7 +241,7 @@ func (s *Service) handleExisting(ctx context.Context, img *model.Image, ps prese
 		return nil, fmt.Errorf("record usage: %w", err)
 	}
 
-	return s.buildResult(img.Hash, img.Ext, img.Width, img.Height, img.SizeBytes, ps, true), nil
+	return s.buildResult(req.CDNBase, img.Hash, img.Ext, img.Width, img.Height, img.SizeBytes, ps, true), nil
 }
 
 // handleNew runs the full pipeline for an unseen hash.
@@ -350,7 +354,7 @@ func (s *Service) handleNew(ctx context.Context, hash, originMIME string, ps pre
 		}
 	}
 
-	return s.buildResult(hash, mainOut.Ext, mainOut.Width, mainOut.Height, int64(len(mainOut.Data)), ps, false), nil
+	return s.buildResult(req.CDNBase, hash, mainOut.Ext, mainOut.Width, mainOut.Height, int64(len(mainOut.Data)), ps, false), nil
 }
 
 // SoftDelete marks an image deleted (sets deleted_at) when the calling
@@ -388,14 +392,17 @@ func (s *Service) SoftDelete(ctx context.Context, hash, site string) (bool, erro
 }
 
 // buildResult composes the JSON-shaped result including variant URLs.
-func (s *Service) buildResult(hash, ext string, w, h int, size int64, ps preset.Preset, dedup bool) *UploadResult {
+// clientBase is the calling client's image CDN base ("" → global default) so
+// each site's upload response carries URLs under its own domain.
+func (s *Service) buildResult(clientBase, hash, ext string, w, h int, size int64, ps preset.Preset, dedup bool) *UploadResult {
+	base := s.resolveCDNBase(clientBase)
 	variants := make(map[string]string, len(ps.Variants))
 	for _, v := range ps.Variants {
-		variants[v.Name] = s.VariantURL(hash, v.Name, "webp")
+		variants[v.Name] = joinURL(base, variantStorageKey(hash, v.Name, "webp"))
 	}
 	return &UploadResult{
 		Hash:         hash,
-		URL:          s.MainURL(hash, ext),
+		URL:          joinURL(base, mainStorageKey(hash, ext)),
 		VariantURLs:  variants,
 		Width:        w,
 		Height:       h,
@@ -404,14 +411,41 @@ func (s *Service) buildResult(hash, ext string, w, h int, size int64, ps preset.
 	}
 }
 
-// MainURL builds the public URL for a hash's main image.
-func (s *Service) MainURL(hash, ext string) string {
-	return fmt.Sprintf("%s/%s", s.cdnBase, mainStorageKey(hash, ext))
+// resolveCDNBase returns the per-client CDN base when set, else the global
+// default. Empty/whitespace clientBase falls back so existing clients (which
+// don't set one) keep serving under the global domain unchanged.
+func (s *Service) resolveCDNBase(clientBase string) string {
+	if b := strings.TrimRight(clientBase, "/"); b != "" {
+		return b
+	}
+	return s.cdnBase
 }
 
-// VariantURL builds the public URL for a given variant.
+// MainURL builds a hash's main-image URL under the GLOBAL CDN base. Used by
+// callers without a per-client context (admin tooling, avatar URLs).
+func (s *Service) MainURL(hash, ext string) string {
+	return s.MainURLFor("", hash, ext)
+}
+
+// VariantURL builds a variant URL under the GLOBAL CDN base.
 func (s *Service) VariantURL(hash, variant, ext string) string {
-	return fmt.Sprintf("%s/%s", s.cdnBase, variantStorageKey(hash, variant, ext))
+	return s.VariantURLFor("", hash, variant, ext)
+}
+
+// MainURLFor builds a hash's main-image URL under the calling client's CDN
+// base (clientBase=="" → global default).
+func (s *Service) MainURLFor(clientBase, hash, ext string) string {
+	return joinURL(s.resolveCDNBase(clientBase), mainStorageKey(hash, ext))
+}
+
+// VariantURLFor builds a variant URL under the calling client's CDN base.
+func (s *Service) VariantURLFor(clientBase, hash, variant, ext string) string {
+	return joinURL(s.resolveCDNBase(clientBase), variantStorageKey(hash, variant, ext))
+}
+
+// joinURL joins a resolved CDN base with a storage key.
+func joinURL(base, key string) string {
+	return fmt.Sprintf("%s/%s", base, key)
 }
 
 // mainStorageKey returns the S3 key for a hash's main image.

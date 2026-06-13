@@ -111,9 +111,40 @@ type OAuthClient struct {
 	// `image:upload`) MUST be explicitly listed.
 	AllowedScopes datatypes.JSON `gorm:"type:jsonb" json:"allowed_scopes,omitempty"`
 
+	// MoemoepointAwarder authorizes this client to MINT moemoepoint via the
+	// service-to-service POST /users/:id/moemoepoint endpoint. Reading the
+	// balance (GET /users/:id/moemoepoint) and the admin grant path (admin
+	// JWT) are NOT affected — this gate is only on downstream s2s awards.
+	//
+	// Default false (fail-closed): a newly-registered client can log users in
+	// and read their balance, but CANNOT write to the shared unified-currency
+	// wallet. Only the galgame-ecosystem apps that legitimately award points
+	// (forum / patch) are flipped to true — cmd/migrate backfills them by
+	// parent Site.Domain, never by hardcoded per-env client_id.
+	//
+	// Rationale: moemoepoint is ONE shared wallet across the whole ecosystem.
+	// A content site with a different positioning (e.g. an adult-games site)
+	// that seeds a local economy from this balance must not be able to mint
+	// into the shared ledger — that would stamp its provenance onto every
+	// user's wallet history. Read-to-seed is fine; minting is allow-listed.
+	// Policy: docs/integration/oauth/06-moemoepoint.md §awarder allow-list.
+	MoemoepointAwarder bool `gorm:"not null;default:false" json:"moemoepoint_awarder"`
+
 	// --- Image service extension fields ---
 	ImageEnabled          bool           `gorm:"not null;default:false" json:"image_enabled"`
 	ImageSiteKey          string         `gorm:"size:32" json:"image_site_key,omitempty"`
+
+	// ImageCDNBase overrides the global image CDN base (KUN_IMAGE_CDN_BASE)
+	// for THIS client's image URLs. Empty → global default. Lets a site serve
+	// its images under its own domain (e.g. https://img.letmoe.com/img) off
+	// the SAME content-addressed bucket. This is brand / domain-reputation /
+	// payment-processor isolation, NOT content isolation: the same hash is
+	// reachable under any site's domain (opaque hash keys, low discoverability)
+	// — physical isolation would require a separate bucket. The image service
+	// resolves this per request from the authenticated client; downstreams
+	// that build URLs themselves should configure their imageclient CDNBase to
+	// the same value. See docs/image_service.
+	ImageCDNBase          string         `gorm:"size:255" json:"image_cdn_base,omitempty"`
 	ImageQuotaDaily       int            `gorm:"default:10000" json:"image_quota_daily"`
 	ImageQuotaBytesDaily  int64          `gorm:"default:10737418240" json:"image_quota_bytes_daily"`
 	ImageMaxFileSize      int64          `gorm:"default:10485760" json:"image_max_file_size"`

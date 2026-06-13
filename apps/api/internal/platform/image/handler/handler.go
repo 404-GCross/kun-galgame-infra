@@ -117,6 +117,9 @@ func (h *Handler) Upload(c fiber.Ctx) error {
 		UploaderSub:    uploaderSub,
 		UploaderClient: client.ID,
 		UploaderIP:     c.IP(),
+		// Per-site CDN base so the response URLs are under the client's own
+		// domain (e.g. img.letmoe.com) instead of the global galgame CDN.
+		CDNBase: client.ImageCDNBase,
 	}
 	result, err := h.svc.Upload(c.Context(), req)
 	if err != nil {
@@ -214,14 +217,21 @@ func (h *Handler) Meta(c fiber.Ctx) error {
 	}
 	sites = scoped
 
+	// Build URLs under the CALLER's own CDN base (per-site domain) so e.g.
+	// letmoe gets img.letmoe.com URLs, not the global galgame CDN. Empty →
+	// global default.
+	clientBase := ""
+	if cl := imgMW.ClientFromCtx(c); cl != nil {
+		clientBase = cl.ImageCDNBase
+	}
 	variantURLs := make(map[string]string, len(img.VariantList()))
 	for _, v := range img.VariantList() {
-		variantURLs[v] = h.svc.VariantURL(img.Hash, v, img.Ext)
+		variantURLs[v] = h.svc.VariantURLFor(clientBase, img.Hash, v, img.Ext)
 	}
 
 	return response.Success(c, fiber.Map{
 		"hash":               img.Hash,
-		"url":                h.svc.MainURL(img.Hash, img.Ext),
+		"url":                h.svc.MainURLFor(clientBase, img.Hash, img.Ext),
 		"variant_urls":       variantURLs,
 		"width":              img.Width,
 		"height":             img.Height,

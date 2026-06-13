@@ -257,5 +257,36 @@ func seedInitialData(db *gorm.DB) error {
 		slog.Info("Backfilled oauth_clients.auto_consent for first-party clients", "rows", res.RowsAffected)
 	}
 
+	// Backfill: moemoepoint awarder allow-list. The service-to-service
+	// POST /users/:id/moemoepoint (mint) endpoint is gated on
+	// oauth_clients.moemoepoint_awarder (column added by GORM AutoMigrate from
+	// siteModel.OAuthClient, default false = fail-closed). The only legitimate
+	// minters are the forum + patch backends; flip them on by parent
+	// Site.Domain so freshly-created clients on these domains in any
+	// environment get it without hardcoding per-env client UUIDs. Idempotent:
+	// WHERE moemoepoint_awarder = false skips re-runs / manual toggles.
+	//
+	// New content sites are deliberately NOT added here. A client that only
+	// READS the balance (e.g. to seed its own local economy) must stay
+	// fail-closed — minting into the shared wallet would stamp its provenance
+	// onto every user's ledger. Add a domain only when that site legitimately
+	// awards into the shared currency. Policy:
+	// docs/integration/oauth/06-moemoepoint.md §awarder allow-list.
+	awarderDomains := []string{
+		"www.kungal.com",
+		"www.moyu.moe",
+	}
+	res = db.Exec(`
+		UPDATE oauth_clients
+		SET moemoepoint_awarder = true
+		WHERE moemoepoint_awarder = false
+		  AND site_id IN (SELECT id FROM sites WHERE domain IN ?)
+	`, awarderDomains)
+	if res.Error != nil {
+		slog.Warn("failed to backfill oauth_clients.moemoepoint_awarder", "error", res.Error)
+	} else if res.RowsAffected > 0 {
+		slog.Info("Backfilled oauth_clients.moemoepoint_awarder for awarder clients", "rows", res.RowsAffected)
+	}
+
 	return nil
 }
