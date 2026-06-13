@@ -25,6 +25,15 @@ func RegisterAll(r *Registry) {
 	})
 
 	r.Register(Job{
+		Name:     "sync-vndb-links",
+		Desc:     "VNDB → galgame wiki 链接富集（已发布游戏中尚缺 vndb 链接的，如新建/claim）",
+		Schedule: Schedule{DailyAt: "05:00"}, // staggered after sync-vndb (03:00) + refpings
+		Run: func(ctx context.Context, cfg *config.Config) (Summary, error) {
+			return RunSyncVNDBLinks(ctx, cfg, DefaultSyncVNDBLinksOpts())
+		},
+	})
+
+	r.Register(Job{
 		Name:     "image-gc",
 		Desc:     "image_service TTL 生命周期（冷候选/软删/物删）",
 		Schedule: Schedule{DailyAt: "03:30"},
