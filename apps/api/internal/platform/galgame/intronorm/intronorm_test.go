@@ -137,10 +137,22 @@ func TestNormalizeEnglishIntro(t *testing.T) {
 			wantChang: false,
 		},
 		{
-			name:      "mid-document link-less from-phrase kept",
-			in:        "Para one.\n\n[From now on everything changed]\n\nPara two.",
-			wantOut:   "Para one.\n\n[From now on everything changed]\n\nPara two.",
-			wantChang: false,
+			name:      "mid-document link-less shop attribution removed",
+			in:        "Para one.\n\n[From ErogeShop]\n\nPara two.",
+			wantOut:   "Para one.\n\nPara two.",
+			wantChang: true,
+		},
+		{
+			name:      "attribution with trailing period removed",
+			in:        "A good story.\n\n[From Wikipedia].",
+			wantOut:   "A good story.",
+			wantChang: true,
+		},
+		{
+			name:      "attribution with brace typo removed",
+			in:        "Another story.\n\n[From F95Zone}",
+			wantOut:   "Another story.",
+			wantChang: true,
 		},
 		{
 			name:      "malformed [/url>] closing converted",

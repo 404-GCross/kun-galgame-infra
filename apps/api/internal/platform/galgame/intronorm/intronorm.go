@@ -131,20 +131,16 @@ var attributionVerbs = []string{
 }
 
 // dropAttributionLines removes whole lines that are standalone VNDB source
-// attributions. A non-final line must carry a link to qualify (mid-document
-// blurb attributions always link their source); the final non-empty line may be
-// link-less (e.g. "[From ErogeShop]").
+// attributions, anywhere in the text. A whole line wrapped in [..]/(..) and led
+// by an attribution verb is metadata, not prose (real paragraphs don't bracket
+// an entire line), so it goes whether or not it carries a link — covering both
+// linked blurb attributions ("[Edited from [wiki](url)]") and link-less shop
+// credits ("[From ErogeShop]", "[From Himeya Shop]").
 func dropAttributionLines(s string) string {
 	lines := strings.Split(s, "\n")
-	lastNonEmpty := -1
-	for i, ln := range lines {
-		if strings.TrimSpace(ln) != "" {
-			lastNonEmpty = i
-		}
-	}
 	kept := lines[:0]
-	for i, ln := range lines {
-		if isAttributionLine(ln, i != lastNonEmpty) {
+	for _, ln := range lines {
+		if isAttributionLine(ln) {
 			continue
 		}
 		kept = append(kept, ln)
@@ -153,30 +149,25 @@ func dropAttributionLines(s string) string {
 }
 
 // isAttributionLine reports whether a whole line is a standalone attribution:
-// wrapped in [..] or (..) (optionally escaped / markdown-prefixed by * or >),
-// led by an attribution verb. requireLink additionally demands a link/source
-// signal — used for mid-document lines so a verb-less-but-bracketed aside or a
-// link-less bracketed phrase isn't removed; the final line passes requireLink
-// =false so a link-less "[From ErogeShop]" still goes.
-func isAttributionLine(line string, requireLink bool) bool {
+// wrapped in [..] or (..) (optionally escaped / markdown-prefixed by * or >)
+// and led by an attribution verb. The whole-line bracket + verb is the signal;
+// a link is not required. A verb-less bracketed aside ("[A note here]") and an
+// inline mention inside a sentence are both left untouched (the latter isn't a
+// whole bracketed line).
+func isAttributionLine(line string) bool {
 	t := strings.TrimSpace(line)
 	t = strings.TrimLeft(t, "\\*> \t")
 	if !strings.HasPrefix(t, "[") && !strings.HasPrefix(t, "(") {
 		return false
 	}
-	if end := strings.TrimRight(t, " \t"); !strings.HasSuffix(end, "]") &&
-		!strings.HasSuffix(end, ")") && !strings.HasSuffix(end, `\]`) {
+	// Tolerate a trailing period and a "}" typo'd in place of "]" (both seen in
+	// the wild: "[From Wikipedia].", "[From F95Zone}").
+	if end := strings.TrimRight(t, " \t."); !strings.HasSuffix(end, "]") &&
+		!strings.HasSuffix(end, ")") && !strings.HasSuffix(end, `\]`) &&
+		!strings.HasSuffix(end, "}") {
 		return false
 	}
-	low := strings.ToLower(t[1:])
-	if !hasAttributionVerb(low) {
-		return false
-	}
-	if requireLink {
-		return strings.Contains(low, "http") || strings.Contains(low, "](") ||
-			strings.Contains(low, "[url") || strings.Contains(low, "[/url")
-	}
-	return true
+	return hasAttributionVerb(strings.ToLower(t[1:]))
 }
 
 func hasAttributionVerb(low string) bool {
