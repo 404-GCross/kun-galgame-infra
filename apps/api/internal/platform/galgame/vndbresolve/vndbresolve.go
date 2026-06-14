@@ -233,16 +233,30 @@ func DefaultTagMapPath() string {
 	return "docs/tagMap.ts"
 }
 
-// ParseTagMap reads docs/tagMap.ts into an english→chinese map.
-var tagMapLineRegex = regexp.MustCompile(`^\s*(?:'([^']+)'|(\w[\w\s./()\-]*\w|\w+))\s*:\s*'([^']+)'`)
+// ParseTagMap reads docs/tagMap.ts into an english→chinese map. It must tolerate
+// every shape the file actually uses, or the resolver misses a key's Chinese
+// mapping and the sync keeps recreating that tag under its English name:
+//   - keys single-quoted, double-quoted (when the key has an apostrophe, e.g.
+//     "Protagonist's Pronoun Choice"), or bareword incl. non-ASCII (Pokémon);
+//   - long entries Prettier-wraps onto two lines (`key:\n    'value'`).
+var (
+	// tagMapWrapRegex rejoins a Prettier-wrapped `key:\n    'value'` so the
+	// line-oriented match below sees `key: 'value'`. It only fires on a `:` that
+	// is followed (after whitespace/newline) by the opening value quote, so it
+	// never merges two separate single-line entries (those have `,` before the
+	// newline, not `:`).
+	tagMapWrapRegex = regexp.MustCompile(`:[ \t]*\r?\n[ \t]*'`)
+	tagMapLineRegex = regexp.MustCompile(`^\s*(?:'([^']+)'|"([^"]+)"|([\pL\pN_][\pL\pN_\s./()\-]*[\pL\pN_]|[\pL\pN_]))\s*:\s*'([^']+)'`)
+)
 
 func ParseTagMap(path string) (map[string]string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
+	joined := tagMapWrapRegex.ReplaceAllString(string(data), ": '")
 	result := make(map[string]string)
-	for _, line := range strings.Split(string(data), "\n") {
+	for _, line := range strings.Split(joined, "\n") {
 		m := tagMapLineRegex.FindStringSubmatch(line)
 		if m == nil {
 			continue
@@ -251,7 +265,10 @@ func ParseTagMap(path string) (map[string]string, error) {
 		if key == "" {
 			key = m[2]
 		}
-		if value := m[3]; key != "" && value != "" {
+		if key == "" {
+			key = m[3]
+		}
+		if value := m[4]; key != "" && value != "" {
 			result[key] = value
 		}
 	}
