@@ -6,24 +6,24 @@
 
 ```
 internal/topic/
-├── model/topic.go            ✅ 已定义 (276 行, 15+ 模型)
+├── model/topic.go            已定义 (276 行, 15+ 模型)
 ├── dto/
-│   ├── topic_dto.go          ❌
-│   ├── reply_dto.go          ❌
-│   ├── comment_dto.go        ❌
-│   └── poll_dto.go           ❌
+│   ├── topic_dto.go          待创建
+│   ├── reply_dto.go          待创建
+│   ├── comment_dto.go        待创建
+│   └── poll_dto.go           待创建
 ├── repository/
-│   ├── topic_repo.go         ❌
-│   ├── reply_repo.go         ❌
-│   └── poll_repo.go          ❌
+│   ├── topic_repo.go         待创建
+│   ├── reply_repo.go         待创建
+│   └── poll_repo.go          待创建
 ├── service/
-│   ├── topic_service.go      ❌
-│   ├── reply_service.go      ❌
-│   └── poll_service.go       ❌
+│   ├── topic_service.go      待创建
+│   ├── reply_service.go      待创建
+│   └── poll_service.go       待创建
 └── handler/
-    ├── topic_handler.go      ❌
-    ├── reply_handler.go      ❌
-    └── poll_handler.go       ❌
+    ├── topic_handler.go      待创建
+    ├── reply_handler.go      待创建
+    └── poll_handler.go       待创建
 ```
 
 ## 实现顺序
@@ -171,8 +171,8 @@ topic/
 
 | Step | 端点数 | 复杂度 | 关键难点 |
 |------|--------|--------|---------|
-| 1. 基础 CRUD | 5 | ⭐⭐⭐⭐ | 创建事务 (section + 发帖限制) |
-| 2. 互动 | 5 | ⭐⭐ | like/dislike 互斥, upvote 特殊 |
-| 3. 回复 | 8 | ⭐⭐⭐⭐ | 楼层计算, 消息通知, Markdown |
-| 4. 评论 | 3 | ⭐⭐ | 同 galgame comment |
-| 5. 投票 | 7 | ⭐⭐⭐ | 多选/单选约束, 截止时间 |
+| 1. 基础 CRUD | 5 | 4/5 | 创建事务 (section + 发帖限制) |
+| 2. 互动 | 5 | 2/5 | like/dislike 互斥, upvote 特殊 |
+| 3. 回复 | 8 | 4/5 | 楼层计算, 消息通知, Markdown |
+| 4. 评论 | 3 | 2/5 | 同 galgame comment |
+| 5. 投票 | 7 | 3/5 | 多选/单选约束, 截止时间 |

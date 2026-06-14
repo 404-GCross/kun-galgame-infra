@@ -4,7 +4,7 @@
 >
 > 图例见 [README](./README.md)。配套: [oauth.get.md](./oauth.get.md) · [oauth.post.md](./oauth.post.md) · [oauth.put.md](./oauth.put.md) · [oauth.patch.md](./oauth.patch.md)
 >
-> **审计完成** —— 🔧 已修 / ✅ 已审计无问题（本轮字段对齐/越权/SQL注入/副作用扫描未发现可处理问题）。详见 [README 审计结果](./README.md#审计结果2026-05-29)。
+> **审计完成** —— 已修 / 已审计无问题（本轮字段对齐/越权/SQL注入/副作用扫描未发现可处理问题）。详见 [README 审计结果](./README.md#审计结果2026-05-29)。
 
 ## 统计
 
@@ -17,11 +17,11 @@
 
 | 路径 | 鉴权 | Handler | 状态 | 备注 |
 |---|---|---|---|---|
-| `DELETE /api/v1/admin/users/:uuid/sessions` | ⚙️ | `adminH.DeleteUserSessions` | ✅ | 强制下线（清所有会话）|
+| `DELETE /api/v1/admin/users/:uuid/sessions` | admin | `adminH.DeleteUserSessions` | 已审计 | 强制下线（清所有会话）|
 
 ## 2. 管理 — 站点 / OAuth 客户端
 
 | 路径 | 鉴权 | Handler | 状态 | 备注 |
 |---|---|---|---|---|
-| `DELETE /api/v1/sites/:id` | ⚙️ | `siteH.Delete` | 🔧 | #16 站点下有客户端时返回可读 400(预检) 而非 FK 500 |
-| `DELETE /api/v1/oauth/clients/:id` | ⚙️ | `siteH.DeleteClient` | ✅ | |
+| `DELETE /api/v1/sites/:id` | admin | `siteH.Delete` | 已修 | #16 站点下有客户端时返回可读 400(预检) 而非 FK 500 |
+| `DELETE /api/v1/oauth/clients/:id` | admin | `siteH.DeleteClient` | 已审计 | |

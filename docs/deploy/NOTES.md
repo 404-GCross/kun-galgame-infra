@@ -16,7 +16,7 @@
 2. **配了密钥却还要输密码 —— 这不是 sudo 的事**
    `kun@<ip>'s password:` 是 **SSH 登录**回落到了密码(= 公钥认证失败),和 `NOPASSWD sudo` **完全无关**(后者只管登录**之后**的 `sudo`)。
 
-3. **⚠ 最常见的元凶:家目录权限太松**
+3. **最常见的元凶:家目录权限太松**
    sshd 的 `StrictModes` 要求 `~` / `~/.ssh` / `authorized_keys` **不被同组或其他人可写**、且属主是本人;否则 sshd **直接忽略 key**、回落密码。很多 VPS 把 `/home/kun` 建成 `775`(g+w)就会中招。
    ```bash
    chmod go-w ~ ; chmod 700 ~/.ssh ; chmod 600 ~/.ssh/authorized_keys ; chown -R kun:kun ~/.ssh
@@ -33,14 +33,14 @@
 
 ## 二、防火墙 / 端口
 
-1. **⚠ Docker 绕过 ufw 的本质:它直接改 iptables**
+1. **Docker 绕过 ufw 的本质:它直接改 iptables**
    `-p 宿主:容器` 发布端口时,Docker 在 `nat` 表做 **DNAT**、在 `filter` 表的 **FORWARD** 路径(`DOCKER` 链)放行;而 ufw 的规则在 **INPUT** 链。发往容器的流量是被**转发**进容器、**不经过 host 的 INPUT** → `ufw deny X` 管不到(且 Docker 规则还插在 ufw 之前)。
    - 真正管控:**云厂商防火墙**(在 Docker iptables 之前生效),或 [`ufw-docker`](https://github.com/chaifeng/ufw-docker)(往 Docker 预留的 `DOCKER-USER` 链写规则,FORWARD 里先于 `DOCKER` 链执行)。
    - **关键:只有 `ports:`(发布到宿主)才有此坑;`expose:`(仅容器网络)不映射宿主端口、外网根本到不了,与 ufw 无关。**
 
 2. **本项目三仓:线上(prod compose)不受此坑影响,dev compose 受**
    - **prod `docker-compose.prod.yml`(线上用)**:oauth/image/galgame/web/wiki/api 全用 **`expose:`**;postgres/redis/minio/meili 连 expose 都没有 → **没有任何应用端口映射到宿主、不暴露公网**。生产唯一对外的是 Dokploy 的 Traefik(80/443)+ 面板 3000 → 需要「绕 ufw」处理的**只有 3000**(见三.4,用 `--publish-rm` 关最干净)。
-   - ⚠ **dev `docker-compose.yml`(本地/测试用)用 `ports: 15xxx`** → 发布宿主端口、会绕过 ufw。**绝不要在公网服务器上跑 dev compose**,否则 `15000(pg)` / `15001(redis)` / `15002(minio)` … 一串会直接暴露公网且 ufw 拦不住。线上只用 prod compose。
+   - **dev `docker-compose.yml`(本地/测试用)用 `ports: 15xxx`** → 发布宿主端口、会绕过 ufw。**绝不要在公网服务器上跑 dev compose**,否则 `15000(pg)` / `15001(redis)` / `15002(minio)` … 一串会直接暴露公网且 ufw 拦不住。线上只用 prod compose。
 
 3. **入站只需要 SSH / 80 / 443**(+ 初装临时的 3000)
    其余 postgres / redis / oauth / galgame / image / meili / minio 线上全是容器内网(`expose`),无需任何入站规则。临时从笔记本连库走 **SSH 隧道** `ssh -L`,别长期开端口。
@@ -62,7 +62,7 @@
 3. **它装的 Docker 靠谱,但启用了 Swarm**
    装的是**官方 Docker**(`get.docker.com`),可靠。但会 `docker swarm init`,**应用都跑成 Swarm 服务**(不是普通 `docker compose`)。Swarm 小坑:Deploy 偶尔不更新运行中的容器 → 用 **Stop + Deploy**;挂载路径非法会「部署成功但其实没跑」。
 
-4. **⚠ 面板 3000 默认对全网开放、ufw 管不住**(见二.1)
+4. **面板 3000 默认对全网开放、ufw 管不住**(见二.1)
    收口三选一:**挂域名 + HTTPS**(下条,推荐)/ **SSH 隧道**(`ssh -L 3000:127.0.0.1:3000 …`)+ 云防火墙封 3000 / [`ufw-docker`](https://github.com/chaifeng/ufw-docker)。Cloudflare 只代理 80/443 的域名,**3000 不在其保护内**。
    彻底禁止 3000 端口只需要 `docker service update --publish-rm "published=3000,target=3000,mode=host" dokploy` （官方推荐），再次开启只需要 `docker service update --publish-add "published=3000,target=3000,mode=host" dokploy`
 
@@ -83,7 +83,7 @@
 2. **隐藏源站 = 橙云代理 + ufw 只放 Cloudflare 段**
    所有公网记录开 **Proxy(橙云)**(顺带 CDN/缓存/DDoS);防火墙只放行 `cloudflare.com/ips-v4|v6` 访问 80/443(用 [ufw-cf](https://github.com/Malith-Rukshan/ufw-cf) 定时同步,因为 CF 段会变)。详见 [QUICKSTART §10](./QUICKSTART.md)。
 
-3. **⚠ 橙云下 Traefik 的 Let's Encrypt 签不出**
+3. **橙云下 Traefik 的 Let's Encrypt 签不出**
    橙云会拦截 LE 的 HTTP-01 验证 → Traefik 改用 **DNS-01**(填 Cloudflare API token)或挂 **Cloudflare Origin CA 证书**,CF 的 SSL 模式设 **Full (strict)**。**面板域名(三.5)同理**。
 
 4. **防泄漏清单**
@@ -91,7 +91,7 @@
 
 ## 五、数据库 / 迁移
 
-1. **⚠ pg18 的卷路径变了**
+1. **pg18 的卷路径变了**
    官方镜像把 `VOLUME` 从 `/var/lib/postgresql/data` 改到 `/var/lib/postgresql`(PGDATA=`…/18/docker`),所有 compose 的 pg 卷挂载点要同步改,否则数据不持久(本仓已改)。大版本升级见 [06-operations.md](./06-operations.md)(dump → 临时容器恢复)。
 
 2. **迁移是「每个库各跑一次」,新迁移不用单独执行**
@@ -108,4 +108,4 @@
 - **GitHub Actions** 已全升最新:`actions/checkout@v6`、`docker/setup-buildx-action@v4`、`docker/login-action@v4`、`docker/build-push-action@v7`。
 - **镜像**:`postgres:18-alpine`、`redis:8-alpine`、`getmeili/meilisearch:v1.45` 均为最新大版本。
 - **Node 24 是当前 LTS**(Node 26 已发但 2026-10 才转 LTS,**勿提前上 26**)。
-- **⚠ MinIO 官方社区镜像已停更 / 归档**(约 2026-04);生产图床走 **Cloudflare R2**,影响小;长期自托管可换 Chainguard 或其它 S3 实现。
+- **MinIO 官方社区镜像已停更 / 归档**(约 2026-04);生产图床走 **Cloudflare R2**,影响小;长期自托管可换 Chainguard 或其它 S3 实现。

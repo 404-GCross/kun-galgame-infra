@@ -167,17 +167,17 @@
 
 | HTTP | 路径 | 说明 | 复杂度 |
 |------|------|------|--------|
-| GET | /api/search | 统一搜索 (Meilisearch) | ⭐⭐⭐ |
-| POST | /api/report/submit | 提交举报 | ⭐ |
-| GET | /api/rss/galgame | Galgame RSS | ⭐⭐ |
-| GET | /api/rss/topic | Topic RSS | ⭐⭐ |
-| POST | /api/image/topic | 话题图片上传 (S3) | ⭐⭐ |
-| GET | /api/resource | 资源首页数据 | ⭐ |
-| GET | /api/section | 板块列表 | ⭐ |
-| GET | /api/category | 分类列表 | ⭐ |
-| GET | /api/unmoe | Unmoe 翻译器 | ⭐ |
-| GET | /api/auth/email/send-code | 发送验证码 | ⭐⭐ |
-| POST | /api/auth/email/verify | 验证码校验 | ⭐⭐ |
+| GET | /api/search | 统一搜索 (Meilisearch) | 3/5 |
+| POST | /api/report/submit | 提交举报 | 1/5 |
+| GET | /api/rss/galgame | Galgame RSS | 2/5 |
+| GET | /api/rss/topic | Topic RSS | 2/5 |
+| POST | /api/image/topic | 话题图片上传 (S3) | 2/5 |
+| GET | /api/resource | 资源首页数据 | 1/5 |
+| GET | /api/section | 板块列表 | 1/5 |
+| GET | /api/category | 分类列表 | 1/5 |
+| GET | /api/unmoe | Unmoe 翻译器 | 1/5 |
+| GET | /api/auth/email/send-code | 发送验证码 | 2/5 |
+| POST | /api/auth/email/verify | 验证码校验 | 2/5 |
 
 ---
 

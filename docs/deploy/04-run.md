@@ -64,7 +64,7 @@ docker compose down                 # 在对应仓目录
 docker compose down -v              # 仅在 infra 目录会删 pg/redis/minio/meili 卷
 ```
 
-> ⚠️ **数据卷只在 infra**(`pg`/`redis`/`minio`/`meili`)。moyu/kungal 无自己的卷(无状态),`down -v` 对它们无影响;但在 **infra** 目录 `down -v` 会清空全生态数据。
+> **数据卷只在 infra**(`pg`/`redis`/`minio`/`meili`)。moyu/kungal 无自己的卷(无状态),`down -v` 对它们无影响;但在 **infra** 目录 `down -v` 会清空全生态数据。
 
 ## 伞状编排(生产建议)
 

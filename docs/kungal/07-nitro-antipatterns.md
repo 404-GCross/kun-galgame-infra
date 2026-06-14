@@ -555,12 +555,12 @@ if !allowedExts[ext] {
 Fiber 的 `c.Context()` 返回的是 `*fasthttp.RequestCtx`，请求结束后会被回收。**不要**把它传给 goroutine：
 
 ```go
-// ❌ 错误
+// 错误
 go func() {
     db.WithContext(c.Context()).Create(&record)  // ctx 已被回收
 }()
 
-// ✅ 正确
+// 正确
 ctx := context.Background()  // 或 copy 出来
 go func() {
     db.WithContext(ctx).Create(&record)
@@ -572,12 +572,12 @@ go func() {
 Prisma 的 `include` 会生成复杂 JOIN 查询。GORM 的 `Preload` 是 N+1 查询 (每个关联一次 SELECT)。对于深度嵌套关联，应该手动写 JOIN 或分步查询。
 
 ```go
-// ❌ 不要模仿 Prisma 的 10 层 include
+// 不要模仿 Prisma 的 10 层 include
 db.Preload("Tags.Tag").Preload("Officials.Official").
    Preload("Engines.Engine").Preload("Contributors.User").
    Preload("Series").Preload("Likes").First(&galgame, id)
 
-// ✅ 分步并行查询
+// 分步并行查询
 g, _ := errgroup.WithContext(ctx)
 g.Go(func() error { return db.First(&galgame, id).Error })
 g.Go(func() error { return db.Where(...).Find(&tags).Error })
@@ -591,10 +591,10 @@ g.Wait()
 - 始终用 `Updates()` + 指定字段
 
 ```go
-// ❌ 危险
+// 危险
 db.Save(&user)  // 如果 user.Moemoepoint 是 0，会覆盖为 0
 
-// ✅ 安全
+// 安全
 db.Model(&user).Updates(map[string]any{"bio": newBio})
 ```
 

@@ -43,7 +43,7 @@ kungalgame(_patch)_backup.dump
 0. **先在服务器登录 GHCR**——`infra-*` 镜像是 **private**,而 cutover 的 `compose run tools` 是你在 SSH shell 里手动跑的(不走 Dokploy,Dokploy 的拉取凭据不在这个 shell 里),不登录会报 `unauthorized`:
    ```bash
    sudo docker login ghcr.io -u <你的 GitHub 用户名>   # 密码填有 read:packages 的 PAT,一次即可
-   #  ⚠ 必须带 sudo:本篇都以 root 跑 docker,凭据要落到 root 的 config。不带 sudo 登录会存进
+   #  必须带 sudo:本篇都以 root 跑 docker,凭据要落到 root 的 config。不带 sudo 登录会存进
    #     你自己的 ~/.docker,sudo docker 读不到 → 报 unauthorized。
    for img in infra-tools kungal-tools moyu-tools; do
      printf "%-13s " "$img:"; sudo docker manifest inspect ghcr.io/kunmoe/$img:latest >/dev/null 2>&1 && echo OK || echo "拉不到 → 检查登录 / 包可见性"
@@ -59,7 +59,7 @@ kungalgame(_patch)_backup.dump
 ## 16.2 变量(开个终端先 `export`)
 
 ```bash
-# ⚠ 本机 docker 需 root:先 `sudo -i` 进 root,再 export 下面变量并执行本篇所有命令
+# 本机 docker 需 root:先 `sudo -i` 进 root,再 export 下面变量并执行本篇所有命令
 #   (或 `sudo usermod -aG docker <你>` 后重登免 sudo)。
 
 # Dokploy 给每个应用目录加随机后缀,容器名前缀 = COMPOSE_PROJECT_NAME = 目录名。先发现实际路径:
@@ -81,7 +81,7 @@ KDSN="host=postgres port=5432 user=postgres password=$PGPASS dbname=kungalgame s
 MDSN="host=postgres port=5432 user=postgres password=$PGPASS dbname=kungalgame_patch sslmode=disable"
 
 # 跑工具的快捷前缀(jobs profile 的 tools 服务)。
-# ⚠ 必须带 --env-file 指向该应用 .env,否则 compose 解析到 ${POSTGRES_PASSWORD:?} 等 :? 变量会直接报 unset、命令不执行。
+# 必须带 --env-file 指向该应用 .env,否则 compose 解析到 ${POSTGRES_PASSWORD:?} 等 :? 变量会直接报 unset、命令不执行。
 INFRA_OAUTH="docker compose --env-file $INFRA/.env -f $INFRA/docker-compose.prod.yml --profile jobs run --rm tools"
 INFRA_WIKI="$INFRA_OAUTH"                 # 同一个:infra-tools 含全套 infra env(身份库 + wiki 库)
 KUNGAL="docker compose --env-file $FORUM/.env -f $FORUM/docker-compose.prod.yml --profile jobs run --rm tools"
@@ -134,7 +134,7 @@ docker exec -i "$PG" pg_restore -U postgres -d kungalgame_patch -n public < "$DU
 docker exec "$REDIS" redis-cli FLUSHALL
 ```
 
-> ⚠️ **排序版本不匹配**:dump 多来自 glibc Debian,容器 pg 是 alpine/musl,还原后会有 collation 警告。对两个源库各做一遍(本地只对 patch 做过,这里两库都做更稳):
+> **排序版本不匹配**:dump 多来自 glibc Debian,容器 pg 是 alpine/musl,还原后会有 collation 警告。对两个源库各做一遍(本地只对 patch 做过,这里两库都做更稳):
 > ```bash
 > for db in kungalgame kungalgame_patch; do
 >   docker exec "$PG" psql -U postgres -d "$db" -c "REINDEX DATABASE \"$db\";"
@@ -159,7 +159,7 @@ $MOYU migrate-oauth-prep -yes
 
 ---
 
-## 16.7 步骤 4 · infra 身份 + 内容(★ 顺序敏感,`migrate-users` 是分水岭)
+## 16.7 步骤 4 · infra 身份 + 内容(顺序敏感,`migrate-users` 是分水岭)
 
 ```bash
 # 4.1 infra schema + 站点/角色种子

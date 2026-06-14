@@ -1,6 +1,6 @@
 # Galgame 用户投稿与审核流程设计
 
-> ⚠️ **更正（2026-06，以代码为准）**：本设计稿的本地 `galgame_stats.wiki_status_snapshot` 列**最终未采用**（forum/patch 均未建此列）。真实下游同步见 moyu `internal/infrastructure/cron/wiki_sync.go`：游标 `cron_state.last_id` + `since_id`、幂等 `wiki_message_processed` 表、`approved` 经 OAuth s2s 发 +3、其余仅发通知。下文 `wiki_status_snapshot` 的 `ALTER` / `UPDATE` 为历史设计，**勿执行**。
+> **更正（2026-06，以代码为准）**：本设计稿的本地 `galgame_stats.wiki_status_snapshot` 列**最终未采用**（forum/patch 均未建此列）。真实下游同步见 moyu `internal/infrastructure/cron/wiki_sync.go`：游标 `cron_state.last_id` + `since_id`、幂等 `wiki_message_processed` 表、`approved` 经 OAuth s2s 发 +3、其余仅发通知。下文 `wiki_status_snapshot` 的 `ALTER` / `UPDATE` 为历史设计，**勿执行**。
 
 > 2026-05-12 — 让 kungal / moyu 的普通用户也能"创建新 galgame"，但走轻量审核闸口；
 > 同时把 VNDB 已同步过来的草稿暴露成可直接"认领发布"的库存。
@@ -15,10 +15,10 @@
 
 ## 2. 非目标
 
-- ❌ 不做 webhook（kungal / moyu 主动拉取就够）
-- ❌ 不做 admin 队列的工作流引擎（claim / assign / SLA 等先不考虑，单一 pending 列表就行）
-- ❌ wiki 不持久化"已读"状态，每个消费端各管各
-- ❌ 不删现有 PR 流程（PR 是"已发布条目的修订请求"，submission 是"新建条目的申请"，两条独立路径）
+- 不做 webhook（kungal / moyu 主动拉取就够）
+- 不做 admin 队列的工作流引擎（claim / assign / SLA 等先不考虑，单一 pending 列表就行）
+- wiki 不持久化"已读"状态，每个消费端各管各
+- 不删现有 PR 流程（PR 是"已发布条目的修订请求"，submission 是"新建条目的申请"，两条独立路径）
 
 ## 3. status 状态机扩展
 
@@ -355,7 +355,7 @@ GET /api/admin/galgame/messages?type=submitted&page=1 认证：Bearer + admin/mo
 | admin | `GET /admin/galgame?status=3` | 全部 status=3 | 看到 |
 | admin | `GET /admin/galgame/messages?type=submitted` | 未处理队列 | 看到 |
 
-> ⚠️ 注意 `GET /galgame/:gid` 详情接口当前**不按 status 过滤**（参见
+> 注意:`GET /galgame/:gid` 详情接口当前**不按 status 过滤**（参见
 > `galgame_repository.go:30` 的 FindByID）。pending/declined 的详情能被任何拿到 id
 > 的人看到，这是个轻量泄露。本设计选择**保留这个行为**——理由：
 >
@@ -392,7 +392,7 @@ GET /api/admin/galgame/messages?type=submitted&page=1 认证：Bearer + admin/mo
 ### 7.2 kungal / moyu 本地 galgame_stats 扩列（早期设计，未采用）
 
 ```sql
--- ⚠️ 历史设计，未采用：forum/patch 未建此列（见本文顶部更正），勿执行此 ALTER
+-- 历史设计，未采用：forum/patch 未建此列（见本文顶部更正），勿执行此 ALTER
 ALTER TABLE galgame_stats
     ADD COLUMN wiki_status_snapshot SMALLINT NOT NULL DEFAULT 0;
 -- 0=已发布 / 1=banned / 3=pending / 4=declined

@@ -4,7 +4,7 @@
 >
 > 鉴权/状态图例见 [README](./README.md)。配套: [oauth.get.md](./oauth.get.md) · [oauth.put.md](./oauth.put.md) · [oauth.delete.md](./oauth.delete.md) · [oauth.patch.md](./oauth.patch.md)
 >
-> **审计完成** —— 🔧 已修 / ✅ 已审计无问题（本轮字段对齐/越权/SQL注入/副作用扫描未发现可处理问题）。详见 [README 审计结果](./README.md#审计结果2026-05-29)。
+> **审计完成** —— 已修 / 已审计无问题（本轮字段对齐/越权/SQL注入/副作用扫描未发现可处理问题）。详见 [README 审计结果](./README.md#审计结果2026-05-29)。
 
 ## 统计
 
@@ -18,54 +18,54 @@
 
 | 路径 | 鉴权 | Handler | 状态 | 备注 |
 |---|---|---|---|---|
-| `POST /api/v1/auth/register/send-code` | 🌐 +strict | `authH.SendRegisterCode` | ✅ | 注册邮箱验证码 |
-| `POST /api/v1/auth/register` | 🌐 +strict | `authH.Register` | ✅ | 注册（需验证码）|
-| `POST /api/v1/auth/login` | 🌐 +strict | `authH.Login` | ✅ | 登录（封禁用户拒）|
-| `POST /api/v1/auth/refresh` | 🌐 | `authH.Refresh` | 🔧 | 用 httpOnly refresh cookie 续 access_token；#11 封禁用户拒发新 token 并撤销会话 |
-| `POST /api/v1/auth/password/forgot` | 🌐 +strict | `authH.ForgotPassword` | ✅ | 发重置邮件 |
-| `POST /api/v1/auth/password/reset` | 🌐 +strict | `authH.ResetPassword` | 🔧 | 用 token 重置；#27 基础设施错误→500(非误导性400)；#28 先原子消费 token，消除重放窗口 |
+| `POST /api/v1/auth/register/send-code` | 公开 +strict | `authH.SendRegisterCode` | 已审计 | 注册邮箱验证码 |
+| `POST /api/v1/auth/register` | 公开 +strict | `authH.Register` | 已审计 | 注册（需验证码）|
+| `POST /api/v1/auth/login` | 公开 +strict | `authH.Login` | 已审计 | 登录（封禁用户拒）|
+| `POST /api/v1/auth/refresh` | 公开 | `authH.Refresh` | 已修 | 用 httpOnly refresh cookie 续 access_token；#11 封禁用户拒发新 token 并撤销会话 |
+| `POST /api/v1/auth/password/forgot` | 公开 +strict | `authH.ForgotPassword` | 已审计 | 发重置邮件 |
+| `POST /api/v1/auth/password/reset` | 公开 +strict | `authH.ResetPassword` | 已修 | 用 token 重置；#27 基础设施错误→500(非误导性400)；#28 先原子消费 token，消除重放窗口 |
 
 ## 2. 认证 — 自助（登录态）
 
 | 路径 | 鉴权 | Handler | 状态 | 备注 |
 |---|---|---|---|---|
-| `POST /api/v1/auth/logout` | 🔒 | `authH.Logout` | ✅ | |
-| `POST /api/v1/auth/email/send-code` | 🔒 | `authH.SendEmailChangeCode` | ✅ | 改邮箱验证码 |
-| `POST /api/v1/auth/me/avatar` | 🔒 | `avatarUploadH.UploadMine` | ✅ | 仅 image client 配置时注册 |
+| `POST /api/v1/auth/logout` | 登录 | `authH.Logout` | 已审计 | |
+| `POST /api/v1/auth/email/send-code` | 登录 | `authH.SendEmailChangeCode` | 已审计 | 改邮箱验证码 |
+| `POST /api/v1/auth/me/avatar` | 登录 | `avatarUploadH.UploadMine` | 已审计 | 仅 image client 配置时注册 |
 
 ## 3. OAuth 2.0 协议
 
 | 路径 | 鉴权 | Handler | 状态 | 备注 |
 |---|---|---|---|---|
-| `POST /api/v1/oauth/token` | 🔑 | `oauthH.Token` | ✅ | token 端点（client 凭证 + 限流 `oauthTokenLimiter`）；含授权码兑换/refresh grant，已加 banned 检查 |
-| `POST /api/v1/oauth/revoke` | 🌐 | `oauthH.Revoke` | ✅ | 吊销 token（凭 token 本身）|
-| `POST /api/v1/oauth/authorize/consent` | 🔒 | `oauthH.Consent` | ✅ | 同意授权 → 下发 code |
+| `POST /api/v1/oauth/token` | ClientAuth | `oauthH.Token` | 已审计 | token 端点（client 凭证 + 限流 `oauthTokenLimiter`）；含授权码兑换/refresh grant，已加 banned 检查 |
+| `POST /api/v1/oauth/revoke` | 公开 | `oauthH.Revoke` | 已审计 | 吊销 token（凭 token 本身）|
+| `POST /api/v1/oauth/authorize/consent` | 登录 | `oauthH.Consent` | 已审计 | 同意授权 → 下发 code |
 
 ## 4. 用户（服务到服务）
 
 | 路径 | 鉴权 | Handler | 状态 | 备注 |
 |---|---|---|---|---|
-| `POST /api/v1/users/:id/moemoepoint` | 🔑 | `moemoepointH.Adjust` | ✅ | 发放/扣除（幂等）；s2s 不可用 admin_*/migration reason |
+| `POST /api/v1/users/:id/moemoepoint` | ClientAuth | `moemoepointH.Adjust` | 已审计 | 发放/扣除（幂等）；s2s 不可用 admin_*/migration reason |
 
 ## 5. 管理 — 用户
 
 | 路径 | 鉴权 | Handler | 状态 | 备注 |
 |---|---|---|---|---|
-| `POST /api/v1/admin/users/:uuid/ban` | ⚙️ | `adminH.BanUser` | ✅ | 封禁 + 清会话 |
-| `POST /api/v1/admin/users/:uuid/unban` | ⚙️ | `adminH.UnbanUser` | ✅ | 解封（拒已匿名化）|
-| `POST /api/v1/admin/users/:uuid/anonymize` | ⚙️ | `adminH.AnonymizeUser` | ✅ | PII 清洗 + 封禁 + 头像 GC（不可逆）|
-| `POST /api/v1/admin/users/:uuid/moemoepoint` | ⚙️ | `moemoepointH.AdminAdjust` | ✅ | 管理员发放/扣除（reason 按 delta 正负派生）|
-| `POST /api/v1/admin/users/:uuid/avatar` | ⚙️ | `avatarUploadH.Upload` | ✅ | 仅 image client 配置时注册 |
+| `POST /api/v1/admin/users/:uuid/ban` | admin | `adminH.BanUser` | 已审计 | 封禁 + 清会话 |
+| `POST /api/v1/admin/users/:uuid/unban` | admin | `adminH.UnbanUser` | 已审计 | 解封（拒已匿名化）|
+| `POST /api/v1/admin/users/:uuid/anonymize` | admin | `adminH.AnonymizeUser` | 已审计 | PII 清洗 + 封禁 + 头像 GC（不可逆）|
+| `POST /api/v1/admin/users/:uuid/moemoepoint` | admin | `moemoepointH.AdminAdjust` | 已审计 | 管理员发放/扣除（reason 按 delta 正负派生）|
+| `POST /api/v1/admin/users/:uuid/avatar` | admin | `avatarUploadH.Upload` | 已审计 | 仅 image client 配置时注册 |
 
 ## 6. 管理 — 站点 / OAuth 客户端
 
 | 路径 | 鉴权 | Handler | 状态 | 备注 |
 |---|---|---|---|---|
-| `POST /api/v1/sites` | ⚙️ | `siteH.Create` | ✅ | |
-| `POST /api/v1/oauth/clients` | ⚙️ | `siteH.CreateClient` | 🔧 | #32 grants 校验(非空+枚举子集) |
+| `POST /api/v1/sites` | admin | `siteH.Create` | 已审计 | |
+| `POST /api/v1/oauth/clients` | admin | `siteH.CreateClient` | 已修 | #32 grants 校验(非空+枚举子集) |
 
 ## 7. 管理 — 任务
 
 | 路径 | 鉴权 | Handler | 状态 | 备注 |
 |---|---|---|---|---|
-| `POST /api/v1/admin/jobs/:name/run` | ⚙️ | inline（`registerJobsAdmin`）| ✅ | 手动触发 job（后台运行）|
+| `POST /api/v1/admin/jobs/:name/run` | admin | inline（`registerJobsAdmin`）| 已审计 | 手动触发 job（后台运行）|

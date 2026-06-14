@@ -12,7 +12,7 @@
 
 ## 0 · 一次性生成密钥(后面复用,先备齐)
 
-> ⚠️ **所有面板密钥都只用「字母数字(+ `-` `_`)」,不要含 `$ # % : / @ ? & 空格 引号`。**
+> **所有面板密钥都只用「字母数字(+ `-` `_`)」,不要含 `$ # % : / @ ? & 空格 引号`。**
 > 原因:面板值经 Dokploy 写成 `.env` → docker compose 解析 `${VAR}`,`$` 会被当变量替换、`#` 会被当注释截断 →
 > **密钥被悄悄改短/改坏**(典型:`MEILI_MASTER_KEY` 里带 `$#` → meili 只收到 5 字节 → "master key must be at least 16 bytes")。
 > 最省心:**`openssl rand -hex 32`**(64 位十六进制,纯 0-9a-f,绝不会被吃,且远超 16 字节;`POSTGRES_PASSWORD` 用它也天然 URL-safe)。
@@ -27,7 +27,7 @@
 - [ ] **SMTP** 密码(可选)
 - [ ] OAuth client secret ×3 —— **Phase 2 注册时生成**,先留空
 
-> 🔒 **一致性铁律**(配错→能起但 401/403/连不上,见 [15-environment §15.3](./15-environment.md)):
+> **一致性铁律**(配错→能起但 401/403/连不上,见 [15-environment §15.3](./15-environment.md)):
 > - 三仓面板的 `POSTGRES_PASSWORD` 填**同一个值**(infra postgres 密码 = 下游 DSN 密码)
 > - infra + kungal 面板的 `MEILI_MASTER_KEY` 填**同一个值**
 > - 每个 `OAUTH_CLIENT_SECRET` = 注册该 client 时枢纽生成的明文
@@ -87,7 +87,7 @@ POSTGRES_USER=postgres                 # 默认 postgres,一般不改
 - [ ] `docker compose -f docker-compose.prod.yml --profile jobs run --rm migrate`(infra schema + 种子)
 - [ ] `docker compose -f docker-compose.prod.yml --profile jobs run --rm migrate-galgame`(wiki schema)→ [03-bootstrap §A](./03-bootstrap.md)
 
-### 2B · 带生产数据(正式上线)—— ⚠ 实际放到 Phase 3/3′ 之后做
+### 2B · 带生产数据(正式上线)—— 实际放到 Phase 3/3′ 之后做
 > 16 的流水线**交错跑 infra + kungal + moyu 三家工具**,需要 kungal/moyu **已部署**(`$FORUM`/`$PATCH` 目录 + `.env` 存在)才能跑 `$KUNGAL`/`$MOYU` 那几步。
 > 所以顺序是:**先 2A → 2.1 → Phase 3/3′ 把三站(空库)跑通,再回这里做 cutover**。
 > 注意 cutover 的 16.4 会 `DROP` `kun_galgame_infra` → **抹掉 2.1 注册的 OAuth client**;cutover 后需**重新注册这 3 个 client**(client_id 固定不变)并把新 secret 更新进下游面板重部署。
@@ -142,7 +142,7 @@ KUN_VISUAL_NOVEL_S3_STORAGE_SECRET_ACCESS_KEY=<B2 secret> # 必填
 - [ ] infra:`wiki.kungal.com` `/api`→`galgame:9280`、`/`→`wiki:3000`
 - [ ] kungal:`kungal.com`+`www` `/api`→`kungal-api:2334`、`/`→`web:7777`
 - [ ] moyu:`moyu.moe`+`www` `/api/v1`→`moyu-api:5214`、`/`→`web:3000`
-> ⚠ 服务名是 **`kungal-api` / `moyu-api`**(不是 `api`)——Dokploy 不应用 compose 的 `networks.aliases`,只注册服务名;两仓都叫 `api` 会 DNS 冲突,导致 SSR(刷新页面)拉不到数据。所以服务名直接用唯一名。
+> 服务名是 **`kungal-api` / `moyu-api`**(不是 `api`)——Dokploy 不应用 compose 的 `networks.aliases`,只注册服务名;两仓都叫 `api` 会 DNS 冲突,导致 SSR(刷新页面)拉不到数据。所以服务名直接用唯一名。
 
 ### 4.2 Cloudflare → [15-environment §15.9](./15-environment.md) + [NOTES.md](./NOTES.md)
 - [ ] 各域名开**橙云代理(Proxied)**

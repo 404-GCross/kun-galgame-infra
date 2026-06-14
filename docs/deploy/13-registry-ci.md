@@ -19,7 +19,7 @@ Dokploy 官方明确:在部署服务器上 build "**可能导致服务器超时�
 
 | 方案 | 何时用 | 评价 |
 |---|---|---|
-| **GHCR(GitHub Container Registry)** ✅ 首选 | 你们当前(已在 GitHub、单服务器) | 免费、原生集成 Actions(`GITHUB_TOKEN` 直接推)、**公开仓库镜像可设公开 → Dokploy 免凭证拉**、零额外基础设施 |
+| **GHCR(GitHub Container Registry)**(首选) | 你们当前(已在 GitHub、单服务器) | 免费、原生集成 Actions(`GITHUB_TOKEN` 直接推)、**公开仓库镜像可设公开 → Dokploy 免凭证拉**、零额外基础设施 |
 | 自托管 `distribution/registry:2` | 需私有 + 全自托管,且有**独立构建机/CI** | 轻量(单容器),但要自己加 **TLS + 认证 + GC**;若 build 仍在同一台生产机则**白搭**(没卸掉构建负载) |
 | 自托管 **Harbor** | 多节点 / 需 RBAC、漏洞扫描、镜像签名、复制 | 功能全(CNCF 毕业),但**重**(core/db/redis/jobservice/registry/trivy 多容器),单台生产机不划算 |
 | Dokploy **Build Server** | 不想用 GitHub Actions、想全自托管构建 | 独立 build VPS → 推 registry → 部署机拉(官方:"用 build server 时 registry 必需") |
@@ -136,7 +136,7 @@ jobs:
 - kungal/moyu 的 workflow:`matrix` 换成 `kungal-api`/`kungal-web`/`kungal-migrate`(及 moyu 同理),`deploy` 步骤用各自的 `DOKPLOY_WEBHOOK_*`。
 - **三仓 workflow 均已创建**:`<repo>/.github/workflows/build.yml`。触发分支:**infra=`main`,kungal/moyu=`master`**。注意 **kungal-web 无 `APP` build-arg**(单一 app);infra-web/wiki 在此烤入真实域名(见 13.5);`deploy` 步骤已做 webhook 未设置时**优雅跳过**。
 
-> ⚠️ **关键:让"构建完成"成为唯一的部署触发,否则永远部署上一次的镜像**
+> **关键:让"构建完成"成为唯一的部署触发,否则永远部署上一次的镜像**
 >
 > 一次 `push` 会同时点燃**两个**部署触发,它们在赛跑:
 > ```

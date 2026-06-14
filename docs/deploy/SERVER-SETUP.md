@@ -4,7 +4,7 @@
 > 装基础工具 → 建用户 `kun` → SSH 加固(禁 root / 禁密码登录)→ 防火墙 + fail2ban →
 > 自动安全更新 → 克隆仓库。做完接 [QUICKSTART.md](./QUICKSTART.md) 部署三站。
 >
-> ⚠️ **顺序至关重要 —— 别把自己锁在门外**:先建好 `kun` 用户 + 公钥 + sudo,并
+> **顺序至关重要 —— 别把自己锁在门外**:先建好 `kun` 用户 + 公钥 + sudo,并
 > **另开一个新终端验证能用 kun 登录**,再去禁用 root / 密码登录。每次改 SSH/防火墙后
 > **保留当前会话**,用新会话验证通过,再关旧会话。再留一个 VPS 厂商的 Web Console
 > 作最后兜底。
@@ -49,7 +49,7 @@ Host kungal-neo             # 目标机:经跳板到达
     ServerAliveInterval 60
 ```
 
-> ⚠️ **ProxyJump 只是隧道**:公钥认证发生在「**本地 ↔ 目标机**」之间,所以公钥要装在
+> **ProxyJump 只是隧道**:公钥认证发生在「**本地 ↔ 目标机**」之间,所以公钥要装在
 > **目标机的 `kun`** 上,**跳板机不持有它**。下面 §2 的 `ssh-copy-id … kungal-neo` /
 > 平时的 `ssh kungal-neo` 都会自动走这条跳板链路。配好别名后,§0/§9 里凡是
 > `ssh -p <PORT> -i … kun@<IP>` 都可简写成 `ssh kungal-neo`。
@@ -95,7 +95,7 @@ cp /root/.ssh/authorized_keys /home/kun/.ssh/authorized_keys 2>/dev/null || true
 #   vim /home/kun/.ssh/authorized_keys   # 粘贴一行 ssh-ed25519/ssh-rsa AAAA... your-comment
 chmod 600 /home/kun/.ssh/authorized_keys
 chown -R kun:kun /home/kun/.ssh
-# ★★ 关键权限:家目录不能被同组/其他人可写,否则 sshd 的 StrictModes 会【忽略 key】、
+# 关键权限:家目录不能被同组/其他人可写,否则 sshd 的 StrictModes 会【忽略 key】、
 #    回落到密码登录 —— 这是「配了 key 还在要密码」最常见的原因(很多 VPS 默认 /home/kun
 #    是 755 反而没事,但有的给成 775/g+w 就会中招)。
 chmod go-w /home/kun
@@ -107,7 +107,7 @@ chmod go-w /home/kun
 > ```
 > 装完仍要密码 → 多半是上面那条 `chmod go-w /home/kun`(详见文末「排错」)。
 
-> 🔑 **现在另开一个本地终端验证(别关 root 会话!)**:
+> **现在另开一个本地终端验证(别关 root 会话!)**:
 > ```bash
 > ssh kungal-neo          # 或 ssh -p <PORT> -i ~/.ssh/<your_key> kun@<SERVER_IP>
 > sudo whoami             # 应输出 root
@@ -144,14 +144,14 @@ sudo sshd -t        # 校验语法;有报错就别重启,先改对
 ```bash
 sudo systemctl restart ssh
 ```
-> ⚠️ **socket 激活的坑**:若 `systemctl status ssh.socket` 显示 active,则 `sshd_config`
+> **socket 激活的坑**:若 `systemctl status ssh.socket` 显示 active,则 `sshd_config`
 > 里的 `Port` **不生效**(端口由 socket 控制)。改用 service 即可:
 > ```bash
 > sudo systemctl disable --now ssh.socket
 > sudo systemctl enable  --now ssh.service
 > ```
 
-> 🔑 **再次另开终端验证**:`ssh -p <PORT> -i key kun@ip` 能进;`ssh root@ip` 被拒、
+> **再次另开终端验证**:`ssh -p <PORT> -i key kun@ip` 能进;`ssh root@ip` 被拒、
 > 密码登录被拒。**全部通过后**才关掉旧的 root 会话。
 
 ## 4. 防火墙(ufw)
@@ -159,7 +159,7 @@ sudo systemctl restart ssh
 ```bash
 sudo ufw default deny incoming
 sudo ufw default allow outgoing
-sudo ufw allow <PORT>/tcp comment 'ssh'    # ★ 先放行 SSH 端口,否则 enable 后立刻断连
+sudo ufw allow <PORT>/tcp comment 'ssh'    # 先放行 SSH 端口,否则 enable 后立刻断连
 sudo ufw allow 80/tcp  comment 'http'
 sudo ufw allow 443/tcp comment 'https'
 sudo ufw --force enable
@@ -218,7 +218,7 @@ echo 'vm.swappiness=10' | sudo tee /etc/sysctl.d/99-swap.conf && sudo sysctl -p 
 
 ```bash
 sudo hostnamectl set-hostname kun-prod
-# ★ 同步写进 /etc/hosts,否则之后每条 sudo 都会报 "unable to resolve host kun-prod"
+# 同步写进 /etc/hosts,否则之后每条 sudo 都会报 "unable to resolve host kun-prod"
 grep -q 'kun-prod' /etc/hosts || echo '127.0.1.1 kun-prod' | sudo tee -a /etc/hosts
 sudo tee /etc/sysctl.d/99-hardening.conf >/dev/null <<'EOF'
 net.ipv4.conf.all.accept_redirects = 0
@@ -244,7 +244,7 @@ fastfetch        # 欣赏一下你的新机器 :)
 
 ## 10. 下一步:部署
 
-服务器开荒完成 ✅ → 接 [QUICKSTART.md](./QUICKSTART.md):
+服务器开荒完成 → 接 [QUICKSTART.md](./QUICKSTART.md):
 - 装 **Dokploy**(`dokploy.com/install.sh` 会**自动装 Docker**,所以本篇不单独装 Docker)
 - 建 3 个 Compose 应用 → 填环境变量 → 挂域名(Traefik 自动 SSL)→ §10 隐藏源站 IP
 
@@ -273,7 +273,7 @@ fastfetch        # 欣赏一下你的新机器 :)
 5. **authorized_keys 路径被改**:`sudo sshd -T | grep -i authorizedkeysfile`(默认 `.ssh/authorized_keys`)。
 6. **RSA 被新 sshd 拒**(少见;同把 key 在别的机器能用就基本排除):日志报 `signature algorithm ssh-rsa not in PubkeyAcceptedAlgorithms` → 换 **ed25519** key 最干净。
 
-> ✅ 确认 `ssh kungal-neo` **免密直接进**之后,才做 §3 的 `PasswordAuthentication no` —— 否则公钥没配通又关了密码,就把自己锁门外了。
+> 提示:确认 `ssh kungal-neo` **免密直接进**之后,才做 §3 的 `PasswordAuthentication no` —— 否则公钥没配通又关了密码,就把自己锁门外了。
 
 ## 收尾检查清单
 

@@ -8,15 +8,15 @@
 
 | 业务域 | 接入状态 | 说明 |
 |---|---|---|
-| galgame banner 上传（创建/编辑/PR/rewrite） | ✅ 全链路 | wiki 主接入点；kungal/moyu 都已切到 multipart → wiki |
-| galgame cover / screenshot 上传 | ✅ 已接 | kungal 走 `/image/galgame` 代理；moyu 走 `/upload/image-service` 代理；都拿 hash 写 covers[]/screenshots[] |
-| 头像上传 | ✅ 已接 | kungal/moyu 都代理到 OAuth `/auth/me/avatar` |
-| 图片保活（refping） | ✅ 已接 | oauth/wiki 侧 `galgame_image_refping` 扫 cover/screenshot/revision/PR snapshot |
-| **头像「展示」** | ⚠️ **不完整** | `KunAvatar` 不读 `avatar_image_hash`；kungal DTO 几乎都没透传该字段 |
-| **JSON 写入时的 hash 探活** | ⚠️ **缺失** | wiki 接受 64 位假 hash 写入，跑到展示时才发现死图 |
-| kungal 论坛 topic / Markdown 图片 | ❌ 未接 | 仍走旧 S3 + 自家 daily-quota |
-| 文档 banner / 网站 icon / 广告图 / 友链 / 静态 MDX 文章图 | ❌ 未接 | 静态资源，按设计不需要接 |
-| patch 资源文件（压缩包/补丁包） | ❌ 不需要接 | image_service 只管图片 |
+| galgame banner 上传（创建/编辑/PR/rewrite） | 全链路 | wiki 主接入点；kungal/moyu 都已切到 multipart → wiki |
+| galgame cover / screenshot 上传 | 已接 | kungal 走 `/image/galgame` 代理；moyu 走 `/upload/image-service` 代理；都拿 hash 写 covers[]/screenshots[] |
+| 头像上传 | 已接 | kungal/moyu 都代理到 OAuth `/auth/me/avatar` |
+| 图片保活（refping） | 已接 | oauth/wiki 侧 `galgame_image_refping` 扫 cover/screenshot/revision/PR snapshot |
+| **头像「展示」** | **不完整** | `KunAvatar` 不读 `avatar_image_hash`；kungal DTO 几乎都没透传该字段 |
+| **JSON 写入时的 hash 探活** | **缺失** | wiki 接受 64 位假 hash 写入，跑到展示时才发现死图 |
+| kungal 论坛 topic / Markdown 图片 | 未接 | 仍走旧 S3 + 自家 daily-quota |
+| 文档 banner / 网站 icon / 广告图 / 友链 / 静态 MDX 文章图 | 未接 | 静态资源，按设计不需要接 |
+| patch 资源文件（压缩包/补丁包） | 不需要接 | image_service 只管图片 |
 
 ## 已接入：详细引用
 
@@ -77,11 +77,11 @@ image_service 用 `last_referenced_at` + TTL 做软清理（见 README 决策 0�
 3. 全部 `galgame_revision.snapshot` 中出现过的 hash（历史 revert / diff 不能让 TTL 复活失败）
 4. 全部 `galgame_pr.snapshot` 中的 hash（待合并的 PR）
 
-> ⚠️ 这意味着：上游项目自己 DB 里如果还存了 galgame 图片的 hash（比如 moyu patch 的 `cover_image_hash`），**oauth/wiki 的 refping 不会扫到它**。如果上游有这种独立持有的 hash，必须自己加一个独立的 refping job。
+> 这意味着：上游项目自己 DB 里如果还存了 galgame 图片的 hash（比如 moyu patch 的 `cover_image_hash`），**oauth/wiki 的 refping 不会扫到它**。如果上游有这种独立持有的 hash，必须自己加一个独立的 refping job。
 
 ## 未接入 / 不完整：详细引用
 
-### D. 头像「展示」缺口（⚠️ 真实问题）
+### D. 头像「展示」缺口（真实问题）
 
 **问题**：上传链路通了，展示链路没接完。
 
@@ -120,7 +120,7 @@ const userAvatarSrc = computed(() => {
 3. kungal DTO 补 `AvatarImageHash` 字段透传
 4. 全站搜 `<KunAvatar :user=` 确保所有调用点的 user 对象都带 hash
 
-### E. JSON 写入路径的 hash 验证缺口（⚠️ 真实问题）
+### E. JSON 写入路径的 hash 验证缺口（真实问题）
 
 [`apps/api/internal/platform/galgame/dto/galgame_dto.go:63`](../../apps/api/internal/platform/galgame/dto/galgame_dto.go#L63) 和 `:74`：
 

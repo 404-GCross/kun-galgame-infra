@@ -72,7 +72,7 @@ const art = await api(`/api/v1/artifacts/${init.uuid}/complete`, {
 
 > **可选 sha256**：大文件可用 Web Crypto 流式算 `checksum` 传给 init（存元数据备查）。v1 服务端不复算，但传了对将来开启校验有益。
 
-## 3. ⚠️ B2 桶 CORS（前端直传必读）
+## 3. B2 桶 CORS（前端直传必读）
 
 浏览器直接 `PUT` 到 B2、且 multipart 需读取 `ETag` 响应头——这要求 **B2 桶的 CORS 规则**：
 

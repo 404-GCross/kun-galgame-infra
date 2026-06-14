@@ -4,7 +4,7 @@
 >
 > 图例见 [README](./README.md)。配套: [image.get.md](./image.get.md) · [image.delete.md](./image.delete.md) · [image.patch.md](./image.patch.md)
 >
-> **审计完成** —— 🔧 已修 / ✅ 已审计无问题（本轮字段对齐/越权/SQL注入/副作用扫描未发现可处理问题）。详见 [README 审计结果](./README.md#审计结果2026-05-29)。
+> **审计完成** —— 已修 / 已审计无问题（本轮字段对齐/越权/SQL注入/副作用扫描未发现可处理问题）。详见 [README 审计结果](./README.md#审计结果2026-05-29)。
 
 ## 统计
 
@@ -14,5 +14,5 @@
 
 | 路径 | 鉴权 | Handler | 状态 | 备注 |
 |---|---|---|---|---|
-| `POST /image/upload` | 🔑 | `h.Upload` | 🔧 | 上传（multipart：file + preset）；未配置上传时为 `uploadDisabled` 占位；#17 复活软删 hash(避免 UNIQUE 500)；#33 并发去重 OnConflict 收敛 |
-| `POST /image/reference-ping` | 🔑 | `h.Ping` | ✅ | 刷新 `last_referenced_at`（GC 保活）|
+| `POST /image/upload` | ClientAuth | `h.Upload` | 已修 | 上传（multipart：file + preset）；未配置上传时为 `uploadDisabled` 占位；#17 复活软删 hash(避免 UNIQUE 500)；#33 并发去重 OnConflict 收敛 |
+| `POST /image/reference-ping` | ClientAuth | `h.Ping` | 已审计 | 刷新 `last_referenced_at`（GC 保活）|

@@ -116,9 +116,9 @@ galgame service 的认证中间件直接从 JWT 提取 `uid`，无需查库。
 调用顺序：先 galgame service（创建元数据），成功后 kungal 后端本地事务（加萌萌点）。
 
 失败方向正确：
-- galgame service 失败 → 不加萌萌点 ✅
-- galgame service 成功 + 萌萌点失败 → 数据已创建但无奖励（可接受）✅
-- 不会出现萌萌点加了但数据没创建 ✅
+- galgame service 失败 → 不加萌萌点
+- galgame service 成功 + 萌萌点失败 → 数据已创建但无奖励（可接受）
+- 不会出现萌萌点加了但数据没创建
 
 ---
 

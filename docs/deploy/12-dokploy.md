@@ -49,7 +49,7 @@ DNS 把下列域名的 A/AAAA 记录指向**服务器公网 IP**;Traefik 自动�
 
 当前栈用 `ports: ["1xxxx:..."]` 暴露宿主端口 + 前端把浏览器 URL 烤成 `localhost:1xxxx`。Dokploy/Traefik 走容器内部端口路由,需做以下调整(都是**编排/配置层**,不动业务代码):
 
-> ℹ️ **下面 A/B/C/D/E 列的值,三仓 `docker-compose.prod.yml` 已替你写死(非密钥/域名)**;真正要你填的只剩**各应用 Dokploy Environment 面板里的几个密钥**(`POSTGRES_PASSWORD`/`JWT_SECRET`/`MEILI_MASTER_KEY`/`OAUTH_CLIENT_SECRET`/S3 keys…)。逐个面板清单见 [15-environment §15.8](./15-environment.md) 与 [17-go-live-checklist.md](./17-go-live-checklist.md)。C/D/E 仅作"哪个值是什么"的参考。
+> **下面 A/B/C/D/E 列的值,三仓 `docker-compose.prod.yml` 已替你写死(非密钥/域名)**;真正要你填的只剩**各应用 Dokploy Environment 面板里的几个密钥**(`POSTGRES_PASSWORD`/`JWT_SECRET`/`MEILI_MASTER_KEY`/`OAUTH_CLIENT_SECRET`/S3 keys…)。逐个面板清单见 [15-environment §15.8](./15-environment.md) 与 [17-go-live-checklist.md](./17-go-live-checklist.md)。C/D/E 仅作"哪个值是什么"的参考。
 
 **A. compose 网络**
 - 各仓 compose 的网络从 `kun-galgame-infra_default`(external)改为 **`dokploy-network`**(external):

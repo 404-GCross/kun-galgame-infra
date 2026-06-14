@@ -46,7 +46,7 @@
 
 ## kungal · api(`kun-galgame-forum/docker/api.env`)
 
-⚠️ kungal 仓库**自带的 api.env 是本地默认值**(密码 `kungal_dev_pw`、`meilisearch`、空 OAuth)。接 infra(生产则用 Dokploy Environment)必须改成:
+kungal 仓库**自带的 api.env 是本地默认值**(密码 `kungal_dev_pw`、`meilisearch`、空 OAuth)。接 infra(生产则用 Dokploy Environment)必须改成:
 
 | 变量 | 仓库默认 | **接 infra 改为** |
 |---|---|---|

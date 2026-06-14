@@ -4,7 +4,7 @@
 > 用 **Dokploy**(自托管 PaaS):它**内置 Traefik 反代 + 自动 Let's Encrypt SSL + 编排**,所以**不需要 Caddy/Nginx**,也别再叠加。
 > 深入原理见 [12-dokploy.md](./12-dokploy.md)(部署/路由)+ [13-registry-ci.md](./13-registry-ci.md)(镜像从哪来)。
 >
-> 🆕 **服务器还是全新裸机**?先做 [SERVER-SETUP.md](./SERVER-SETUP.md)(登录 / 系统更新 / 建用户 `kun` / SSH 加固 / 防火墙 / 克隆仓库),再回这里。**本篇假设你已用 `kun` 登录、仓库已 clone 到 `~/app`**。
+> **服务器还是全新裸机**?先做 [SERVER-SETUP.md](./SERVER-SETUP.md)(登录 / 系统更新 / 建用户 `kun` / SSH 加固 / 防火墙 / 克隆仓库),再回这里。**本篇假设你已用 `kun` 登录、仓库已 clone 到 `~/app`**。
 
 **线上域名**:`kungal.com`/`www.kungal.com`、`moyu.moe`/`www.moyu.moe`、`wiki.kungal.com`、`oauth.kungal.com`、`image.kungal.iloveren.link`(走 Cloudflare R2,**不经本机**)。
 
@@ -15,7 +15,7 @@
 把下列域名的 **A 记录指向服务器公网 IP**(`image.*` 指向 Cloudflare,不指本机):
 `kungal.com`、`www.kungal.com`、`moyu.moe`、`www.moyu.moe`、`wiki.kungal.com`、`oauth.kungal.com`
 
-> 🔒 **要隐藏源站 IP**(强烈建议)见 [§10](#10-隐藏源站-ip--防泄漏强烈建议):**本项目**给这些记录开 **Proxy(橙云 / CDN)** 并把防火墙锁到 Cloudflare 段(方案 A);仅当服务器无公网 IP / 在 NAT 后才考虑 Tunnel(方案 B,高并发易 1033)。下面 §1–§9 是"公网直连"基线,§10 在其上加固。
+> **要隐藏源站 IP**(强烈建议)见 [§10](#10-隐藏源站-ip--防泄漏强烈建议):**本项目**给这些记录开 **Proxy(橙云 / CDN)** 并把防火墙锁到 Cloudflare 段(方案 A);仅当服务器无公网 IP / 在 NAT 后才考虑 Tunnel(方案 B,高并发易 1033)。下面 §1–§9 是"公网直连"基线,§10 在其上加固。
 
 ## 2. 装 Dokploy(自动装 Docker)
 
@@ -23,14 +23,14 @@
 sudo apt update && sudo apt -y install ufw            # 防火墙
 sudo ufw allow OpenSSH && sudo ufw allow 80 && sudo ufw allow 443 && sudo ufw --force enable
 #   80/443 = Traefik 对外(§10 隐藏源站后改为"只放 Cloudflare 段")
-curl -sSL https://dokploy.com/install.sh | sudo sh        # ★ sudo 加在 sh 上(不是 curl):管道后半段才是 root 跑脚本
+curl -sSL https://dokploy.com/install.sh | sudo sh        # sudo 加在 sh 上(不是 curl):管道后半段才是 root 跑脚本
 ```
 > `sudo curl … | sh` 是**错的** —— `sudo` 只管 `curl`,`sh` 仍以普通用户跑 → 脚本报 `This script must be run as root`。更稳:`curl -fsSL …/install.sh -o /tmp/dokploy.sh && sudo sh /tmp/dokploy.sh`(还能先看一眼脚本)。
 
 装完浏览器开 `http://<服务器IP>:3000` 注册管理员(**立刻设强密码**)。
 
 > **装前自查(避坑)**:① 内存 ≥ 2G、磁盘 ≥ 30G(本项目走 GHCR 预构建已大减构建负载);② **80/443/3000 必须空闲**,别先装别的 web 服务;③ 必须 **root 直接装、不要在 LXC 容器内**;④ 脚本用 `curl ifconfig.me` 取公网 IP 来 `docker swarm init` —— 该服务不可达会装失败,确认能出站访问它,或装后手动 `docker swarm init --advertise-addr <你的IP>`;⑤ 磁盘写满会让 Dokploy 内置 DB 进 recovery、面板打不开 → 定期 `docker system prune`。
-> ⚠️ Dokploy 把应用跑成 **Docker Swarm 服务**(不是普通 `docker compose`);且**面板 3000 默认对全网开放、ufw 还管不住它**(Docker 绕过 ufw)→ 安全收口见 [§9](#9-收尾),务必做。
+> Dokploy 把应用跑成 **Docker Swarm 服务**(不是普通 `docker compose`);且**面板 3000 默认对全网开放、ufw 还管不住它**(Docker 绕过 ufw)→ 安全收口见 [§9](#9-收尾),务必做。
 
 ## 3. 镜像:CI 构建 → GHCR(不在生产机 build)
 
@@ -109,7 +109,7 @@ Dokploy 各应用看 **Logs / 健康状态**。**回滚** = 镜像引用从 `:la
 
 ## 9. 收尾
 
-- **收口面板 3000(重要)**:⚠️ Dokploy 用 Docker 发布 3000,**Docker 会绕过 ufw**(自己写 iptables),`ufw deny 3000` 挡不住、面板默认对全网开放。三选一**真正**收口:
+- **收口面板 3000(重要)**:Dokploy 用 Docker 发布 3000,**Docker 会绕过 ufw**(自己写 iptables),`ufw deny 3000` 挡不住、面板默认对全网开放。三选一**真正**收口:
   1. **挂域名 + HTTPS**(推荐,顺带把 `http://IP:3000` 变成 https):Dokploy → **Settings → Server** → 填 **Web Server Domain** = `panel.kungal.com` + 管理员 Email + 开 **HTTPS(Let's Encrypt)** → Save。前提:A 记录 `panel.kungal.com → 服务器IP`,且签发时 80/443 对 LE 可达(走 CF 橙云则签发期临时设 DNS-only,或用 DNS-01)。之后用 `https://panel.kungal.com`(面板自带登录),再用下面任一方式封掉直连 3000;
   2. **SSH 隧道访问**:`ssh -L 3000:127.0.0.1:3000 kungal-neo` 后开 `http://localhost:3000`,并用**云厂商防火墙**(在 Docker iptables 之前生效)封公网 3000;
   3. 装 [`ufw-docker`](https://github.com/chaifeng/ufw-docker) 让 ufw 真正管住 Docker 端口,再拒绝 3000。
@@ -136,7 +136,7 @@ sudo ufw delete allow 80 && sudo ufw delete allow 443     # 删掉对所有人�
 > CF 段会变,用 [ufw-cf](https://github.com/Malith-Rukshan/ufw-cf) 或 [cloudflare-ufw-updater](https://github.com/jakejarvis/cloudflare-ufw-updater) 定时同步。
 > **SSL**:橙云会拦截 LE 的 HTTP 验证 → Traefik 改用 **DNS-01**(填 Cloudflare API token)或挂 **Cloudflare Origin CA 证书**,CF 的 SSL 模式设 **Full (strict)**。
 
-### 方案 B · Cloudflare Tunnel(备选:无公网 IP / NAT 后;⚠ 高并发慎用)
+### 方案 B · Cloudflare Tunnel(备选:无公网 IP / NAT 后;高并发慎用)
 
 源站**只出不进、零入站端口**,IP 永不进 DNS。但**全部流量经单个 `cloudflared` 进程汇聚**,它是吞吐 / 连接瓶颈(每隧道默认 100 连接上限;CF 官方建议高流量跑 **≥2 个 4C4G replica**),**并发一高就容易 [Error 1033](https://developers.cloudflare.com/support/troubleshooting/http-status-codes/cloudflare-1xxx-errors/error-1033/)(找不到健康连接器)**。所以**本项目不用它**,仅当「服务器无公网 IP / 在 NAT 后、80/443 无法对外」时才考虑:
 ```bash

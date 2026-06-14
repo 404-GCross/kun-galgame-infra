@@ -97,7 +97,7 @@ services:
     ports: ["80:80", "443:443", "443:443/udp"]   # udp=HTTP/3
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data        # ★ 证书持久化,否则重启会重签触发 LE 限额
+      - caddy_data:/data        # 证书持久化,否则重启会重签触发 LE 限额
       - caddy_config:/config
 networks:
   default:
@@ -111,7 +111,7 @@ volumes:
 cd edge && docker compose up -d
 ```
 
-> ⚠️ **证书卷必须持久化**(`caddy_data:/data`)——否则每次重启都重新签发,会撞 Let's Encrypt 限额([见实践](https://nerdleveltech.com/caddy-reverse-proxy-docker-compose-production-https-tutorial))。
+> **证书卷必须持久化**(`caddy_data:/data`)——否则每次重启都重新签发,会撞 Let's Encrypt 限额([见实践](https://nerdleveltech.com/caddy-reverse-proxy-docker-compose-production-https-tutorial))。
 
 ## 9.4 收尾:关闭直接暴露的 host 端口
 反代就绪后,把各仓 compose 里 `ports: ["1xxxx:..."]` 改成只绑本机回环(`127.0.0.1:1xxxx:...`)或整段删掉,只让 Caddy 的 80/443 对外。防火墙只放行 80/443。

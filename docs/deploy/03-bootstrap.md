@@ -24,7 +24,7 @@ docker compose up -d postgres redis minio meili
 Postgres **首次**初始化时,`docker/initdb.d/01-create-databases.sh` 会一次性建好全部 5 个库
 (`kun_galgame_infra` 由 `POSTGRES_DB` 建,脚本再建 `kun_galgame_wiki`、`kun_images`、`kungalgame`、`kungalgame_patch`)。
 
-> ⚠️ initdb 脚本**只在数据卷为空时运行一次**。若卷已存在(如本机重启后复用),需手动补建缺的库:
+> initdb 脚本**只在数据卷为空时运行一次**。若卷已存在(如本机重启后复用),需手动补建缺的库:
 > ```bash
 > docker exec kun-galgame-infra-postgres-1 psql -U postgres \
 >   -c "CREATE DATABASE kungalgame" -c "CREATE DATABASE kungalgame_patch"
@@ -106,7 +106,7 @@ docker run --rm --network kun-galgame-infra_default --env-file docker/galgame.en
 
 ## B. 完整数据 Bootstrap(生产)
 
-> 📋 **要可直接抄的服务器命令**(从 dump 起、`docker run *-tools`、含 dry-run/校验/回滚)看 [16-data-cutover.md](./16-data-cutover.md)。本节只给顺序与原理。
+> **要可直接抄的服务器命令**(从 dump 起、`docker run *-tools`、含 dry-run/校验/回滚)看 [16-data-cutover.md](./16-data-cutover.md)。本节只给顺序与原理。
 
 带数据上线是一条**有严格顺序的跨仓流水线**(不是单个 job)。Docker 不简化顺序,但每一步都能容器化成 `compose run` job。总体顺序(详见各仓 `docs/migration/`):
 

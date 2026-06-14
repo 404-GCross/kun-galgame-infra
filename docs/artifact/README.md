@@ -10,13 +10,13 @@
 
 | # | 文件 | 内容 | 状态 |
 |---|------|------|------|
-| 01 | [design.md](./01-design.md) | 背景、目标、服务边界（图床 vs artifact）、整体架构、上传/下载流程、核心设计决策、技术栈、风险 | ✅ |
-| 02 | [storage-and-schema.md](./02-storage-and-schema.md) | B2 对象存储布局、私有桶 + 双密钥、生命周期/GC、`kun_artifacts` schema、OAuth Client 扩展、配额 | ✅ |
-| 03 | [api-design.md](./03-api-design.md) | 对外 API：Init / Complete / Download / Delete / List / Get（含 multipart 契约） | ✅ |
-| 04 | [cloudflare-worker.md](./04-cloudflare-worker.md) | 私有桶经 CF Worker 分发：token 刷新、缓存、header 剥离、防盗链 | ✅ |
-| 05 | [engineering-plan.md](./05-engineering-plan.md) | 工程里程碑、交付物、迁移（空表下沉独立库）、CI/部署 | ✅ |
-| 06 | [integration-guide.md](./06-integration-guide.md) | **调用方视角**：OAuth 注册、直传 SDK、前端 multipart 分片、降级 | ✅ |
-| 07 | [ops-and-config-status.md](./07-ops-and-config-status.md) | **运维待办清单**：现状速览、本地/生产剩余配置、部署安全（不影响 oauth/wiki/image）| ✅ |
+| 01 | [design.md](./01-design.md) | 背景、目标、服务边界（图床 vs artifact）、整体架构、上传/下载流程、核心设计决策、技术栈、风险 | 已完成 |
+| 02 | [storage-and-schema.md](./02-storage-and-schema.md) | B2 对象存储布局、私有桶 + 双密钥、生命周期/GC、`kun_artifacts` schema、OAuth Client 扩展、配额 | 已完成 |
+| 03 | [api-design.md](./03-api-design.md) | 对外 API：Init / Complete / Download / Delete / List / Get（含 multipart 契约） | 已完成 |
+| 04 | [cloudflare-worker.md](./04-cloudflare-worker.md) | 私有桶经 CF Worker 分发：token 刷新、缓存、header 剥离、防盗链 | 已完成 |
+| 05 | [engineering-plan.md](./05-engineering-plan.md) | 工程里程碑、交付物、迁移（空表下沉独立库）、CI/部署 | 已完成 |
+| 06 | [integration-guide.md](./06-integration-guide.md) | **调用方视角**：OAuth 注册、直传 SDK、前端 multipart 分片、降级 | 已完成 |
+| 07 | [ops-and-config-status.md](./07-ops-and-config-status.md) | **运维待办清单**：现状速览、本地/生产剩余配置、部署安全（不影响 oauth/wiki/image）| 已完成 |
 
 ## 一句话总结
 
@@ -24,16 +24,16 @@
 
 ## 关键决策速查
 
-- ✅ **桶恒私有 + 预签名直传直下** —— 绝不公开桶；上传 30m–1h、下载 ~1h 短时效签发，防直链盗刷（决策 0）
-- ✅ **复用 OAuth** —— 不新增凭证，沿用 `oauth_client` 作「站点」registry，加 `artifact_*` 字段（决策 1）
-- ✅ **uuid 寻址 + site 前缀** —— `key={site}/{uuid}/{name}`，**不**内容寻址、不跨站去重（刻意区别于图床；决策 2）
-- ✅ **两段式直传** —— `<50MB` 单段 presigned PUT；`≥50MB` S3 multipart 分片 presigned 并发上传（决策 3）
-- ✅ **Complete 时 HeadObject 校验大小** —— 挡配额欺骗；全量校验/病毒扫描可插拔、v1 noop（决策 4）
-- ✅ **生命周期** —— `status` 0/1/2 + 孤儿 GC（`status=0` 超时）+ 软删 TTL 物理回收（决策 5）
-- ✅ **最小权限密钥** —— `presigner`（签发）/ `cleanup`（仅删，只给 GC）分离（决策 6）
-- ✅ **下载分发** —— 默认私有预签名 GET；`public` + 站点 `artifact_cdn_base` 时走 CF Worker 缓存域名（B2→CF 出流量免费；决策 7）
-- ✅ **manifest 可选** —— 调用方在 Complete 时提交结构化清单，不从压缩包解（决策 8）
-- ✅ **权限 ren-only + 默认关闭** —— 授予 `artifact:upload`（= 开启某站 artifact 能力）仅 ren（莲）可操作（同 image:upload 的 ren-gate）；所有开关默认关；未来 artifact 管理端点一律 `RequireRole("ren")`（决策 9）
+- **桶恒私有 + 预签名直传直下** —— 绝不公开桶；上传 30m–1h、下载 ~1h 短时效签发，防直链盗刷（决策 0）
+- **复用 OAuth** —— 不新增凭证，沿用 `oauth_client` 作「站点」registry，加 `artifact_*` 字段（决策 1）
+- **uuid 寻址 + site 前缀** —— `key={site}/{uuid}/{name}`，**不**内容寻址、不跨站去重（刻意区别于图床；决策 2）
+- **两段式直传** —— `<50MB` 单段 presigned PUT；`≥50MB` S3 multipart 分片 presigned 并发上传（决策 3）
+- **Complete 时 HeadObject 校验大小** —— 挡配额欺骗；全量校验/病毒扫描可插拔、v1 noop（决策 4）
+- **生命周期** —— `status` 0/1/2 + 孤儿 GC（`status=0` 超时）+ 软删 TTL 物理回收（决策 5）
+- **最小权限密钥** —— `presigner`（签发）/ `cleanup`（仅删，只给 GC）分离（决策 6）
+- **下载分发** —— 默认私有预签名 GET；`public` + 站点 `artifact_cdn_base` 时走 CF Worker 缓存域名（B2→CF 出流量免费；决策 7）
+- **manifest 可选** —— 调用方在 Complete 时提交结构化清单，不从压缩包解（决策 8）
+- **权限 ren-only + 默认关闭** —— 授予 `artifact:upload`（= 开启某站 artifact 能力）仅 ren（莲）可操作（同 image:upload 的 ren-gate）；所有开关默认关；未来 artifact 管理端点一律 `RequireRole("ren")`（决策 9）
 
 ## V1 必要性下限（不可拆）
 
@@ -52,11 +52,11 @@ V1 上线**必须**包含：
 
 ## 非目标
 
-- ❌ 不接管图片（`image/*` 走 `image_service`）
-- ❌ 不做在线解压 / 转码 / 改写文件内容（原样存取）
-- ❌ 不做面向匿名用户的公开上传端点（仅服务已注册 OAuth Client）
-- ❌ v1 不做服务端全量校验 / 病毒扫描（可插拔延后）
-- ❌ v1 不做断点续传（multipart 重传由前端处理）
+- 不接管图片（`image/*` 走 `image_service`）
+- 不做在线解压 / 转码 / 改写文件内容（原样存取）
+- 不做面向匿名用户的公开上传端点（仅服务已注册 OAuth Client）
+- v1 不做服务端全量校验 / 病毒扫描（可插拔延后）
+- v1 不做断点续传（multipart 重传由前端处理）
 
 ## 跨仓契约说明
 

@@ -4,10 +4,10 @@
 
 ## 接入前置条件
 
-- ✅ 本站已经是已注册的 OAuth Client（在 `oauth_client` 表里有一行）
-- ✅ image_service V1 已经上线并能访问
-- ✅ 本站后端有 cron 能力（能跑每日定时任务）
-- ✅ 本站业务库是 Postgres / MySQL（支持加字段）
+- 本站已经是已注册的 OAuth Client（在 `oauth_client` 表里有一行）
+- image_service V1 已经上线并能访问
+- 本站后端有 cron 能力（能跑每日定时任务）
+- 本站业务库是 Postgres / MySQL（支持加字段）
 
 ## 一、注册图片服务能力
 
@@ -81,7 +81,7 @@ WHERE id = '<client_id>';
 
 对每个"持有图片"的业务实体，加一个 `*_image_hash CHAR(64)` 字段。保留原 `*_url` 字段作为永久 fallback。
 
-> ⚠️ **kungal / moyu 的老图豁免迁移**：所有历史 avatar / topic 已经是压缩 WebP / AVIF，无需进新流水线再压一次。`avatar_url_legacy` 是**永久字段**（不是 transient），老用户永远走 fallback 分支。详见 [04-migration-plan.md "已压缩老图豁免原则"](./04-migration-plan.md#已压缩老图豁免原则)。
+> **kungal / moyu 的老图豁免迁移**：所有历史 avatar / topic 已经是压缩 WebP / AVIF，无需进新流水线再压一次。`avatar_url_legacy` 是**永久字段**（不是 transient），老用户永远走 fallback 分支。详见 [04-migration-plan.md "已压缩老图豁免原则"](./04-migration-plan.md#已压缩老图豁免原则)。
 >
 > 因此 kungal / moyu **不需要写迁移脚本**，只在业务库加 `*_image_hash` 列 + 改新上传逻辑即可。
 
@@ -264,12 +264,12 @@ image_service 不可用时，本站**必须返回 503**（或业务错误码）�
 ```go
 result, err := cli.Upload(ctx, req)
 if err != nil {
-    // ❌ 禁止: 回退到本地 S3 / 本地磁盘
+    // 禁止: 回退到本地 S3 / 本地磁盘
     // if errors.Is(err, imageclient.ErrServiceUnavailable) {
     //     return uploadToLocalS3(req)
     // }
 
-    // ✅ 正确: 返回 503 给前端
+    // 正确: 返回 503 给前端
     return c.Status(503).JSON(fiber.Map{
         "error": "image service temporarily unavailable, please retry",
     })

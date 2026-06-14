@@ -1,4 +1,4 @@
-# Galgame Wiki 升级方案最终版（v1，✅ 已全部实施）
+# Galgame Wiki 升级方案最终版（v1，已全部实施）
 
 > 状态：**全部 5 个 PR 已落地 + 5 轮系统审计闭环（2026-05-18 → 2026-05-20）。本文档保留为实施依据，与代码一对一对应。**
 > 阅读次序：先读 `01-revision-system-design.md §1.5 不变量` → 再读本文 §2 设计哲学 → 再读 §7 完整 Revision 逻辑梳理。
@@ -7,11 +7,11 @@
 
 | PR | 范围 | 提交 | 状态 |
 |---|---|---|---|
-| **PR1** | U1：`released` 字符串 → `release_date date?` + `release_date_tba bool`（一刀切迁移） | committed | ✅ |
-| **PR2** | U2.a：`galgame_cover` / `galgame_screenshot` schema + Snapshot 扩展 + `ApplySnapshot` 第 7、8 张关联表 + `effective_banner_hash` 派生 | committed | ✅ |
-| **PR3** | U2.b：`refping` 收集集合扩展到 4 source（含历史 revision/PR snapshot 内 hash）+ revert 死图 graceful degrade + MergePR 同款 scrub | committed | ✅ |
-| **PR4** | U3：`taxonomy_revision` 多态全快照表 + 4 实体 Create/Update/Delete/Revert + 12 条新端点（List/Get/Revert × 4 entity）+ 字段级 RBAC 扩展位 | committed | ✅ |
-| **PR5** | U2.c：`galgame.banner_image_hash` 列彻底退役 + Snapshot 字段移除 + 历史 jsonb flatten 进 covers + multipart UX 改走 `PromoteCoverHash` transient field | committed | ✅ |
+| **PR1** | U1：`released` 字符串 → `release_date date?` + `release_date_tba bool`（一刀切迁移） | committed | 已完成 |
+| **PR2** | U2.a：`galgame_cover` / `galgame_screenshot` schema + Snapshot 扩展 + `ApplySnapshot` 第 7、8 张关联表 + `effective_banner_hash` 派生 | committed | 已完成 |
+| **PR3** | U2.b：`refping` 收集集合扩展到 4 source（含历史 revision/PR snapshot 内 hash）+ revert 死图 graceful degrade + MergePR 同款 scrub | committed | 已完成 |
+| **PR4** | U3：`taxonomy_revision` 多态全快照表 + 4 实体 Create/Update/Delete/Revert + 12 条新端点（List/Get/Revert × 4 entity）+ 字段级 RBAC 扩展位 | committed | 已完成 |
+| **PR5** | U2.c：`galgame.banner_image_hash` 列彻底退役 + Snapshot 字段移除 + 历史 jsonb flatten 进 covers + multipart UX 改走 `PromoteCoverHash` transient field | committed | 已完成 |
 
 新增数据库表 / 列：
 - `galgame.release_date date` + `galgame.release_date_tba bool`
@@ -38,7 +38,7 @@
 
 5 轮审计共发现 13 个真实漏洞（4 红 / 5 橙 / 4 黄）；12 个已修复，1 个登记为 §9.2 已知技术债（VNDB sync 创建 tag/official 绕过 taxonomy_revision，合理取舍）。
 
-> 📌 **2026-05-20 文档对外发布前补审 (Round 6) 发现 1 个红色漏洞**：PR2 引入的派生字段 `effective_banner_hash` 在 Meilisearch 索引文档（`search.GalgameDoc`）里**未被建模**，且 `search.Hook.Galgame` / `cmd/reindex-search` 都未 `Preload("Cover")`。这会导致**搜索结果返回的卡片没有 banner hash 字段**，前端 `resolveBannerUrl` 走不到 image_service 分支，只能 fallback 到老 `banner` URL —— 在新作（无 `banner` 老 URL，只有 cover）上会显示占位图。**已修复**：`doc.go` 新增字段、`indexer.go::ToGalgameDoc` 加派生逻辑、`hook.go` + `reindex-search/main.go` 加 `Preload("Cover")`。**上线动作**：升级镜像后必须再跑一次 `reindex-search` 让旧文档带上新字段（这是 `99-appendix.md` 已声明的标准流程）。
+> **2026-05-20 文档对外发布前补审 (Round 6) 发现 1 个红色漏洞**：PR2 引入的派生字段 `effective_banner_hash` 在 Meilisearch 索引文档（`search.GalgameDoc`）里**未被建模**，且 `search.Hook.Galgame` / `cmd/reindex-search` 都未 `Preload("Cover")`。这会导致**搜索结果返回的卡片没有 banner hash 字段**，前端 `resolveBannerUrl` 走不到 image_service 分支，只能 fallback 到老 `banner` URL —— 在新作（无 `banner` 老 URL，只有 cover）上会显示占位图。**已修复**：`doc.go` 新增字段、`indexer.go::ToGalgameDoc` 加派生逻辑、`hook.go` + `reindex-search/main.go` 加 `Preload("Cover")`。**上线动作**：升级镜像后必须再跑一次 `reindex-search` 让旧文档带上新字段（这是 `99-appendix.md` 已声明的标准流程）。
 
 实施流程详见 `docs/integration/galgame_wiki/00-handbook-for-downstream.md`；上线迁移命令顺序见本文 §10 + 文末 PR5 解耦说明。
 
@@ -50,9 +50,9 @@
 
 | # | 内容 | 状态 |
 |---|---|---|
-| **U1** | `released string` → `release_date date?` + `release_date_tba bool`（**一刀切**，无双发） | ✅ 实施 |
-| **U2** | Galgame 图片模型升级：新增 `galgame_cover` / `galgame_screenshot` 关联表，banner 一般化（**无票选、无 override**），refping 扩展为 ping「当前 + 所有 revision/PR snapshot 中的 hash」 | ✅ 实施 |
-| **U3** | Taxonomy 修订：新增**单张多态全快照表** `taxonomy_revision`，覆盖 tag/official/engine/series | ✅ 实施 |
+| **U1** | `released string` → `release_date date?` + `release_date_tba bool`（**一刀切**，无双发） | 已实施 |
+| **U2** | Galgame 图片模型升级：新增 `galgame_cover` / `galgame_screenshot` 关联表，banner 一般化（**无票选、无 override**），refping 扩展为 ping「当前 + 所有 revision/PR snapshot 中的 hash」 | 已实施 |
+| **U3** | Taxonomy 修订：新增**单张多态全快照表** `taxonomy_revision`，覆盖 tag/official/engine/series | 已实施 |
 
 **显式不做的范围**：见 §9。所有"未做"项均**留 schema 扩展位**，将来加都不需要破坏性迁移。
 
@@ -399,7 +399,7 @@ func (r *TagRepository) ApplySnapshot(tx *gorm.DB, tagID int, snap *model.TagSna
 
 ---
 
-## 7. ★完整 Revision 逻辑梳理（实施时审计核心）
+## 7. 完整 Revision 逻辑梳理（实施时审计核心）
 
 本节按"实体类型 × 操作类型"枚举所有 revision 触发路径与 snapshot 含义。所有路径**严格遵循 §2 脊柱**——五步骤：`读 cur → overlay(req) → next → ChangedKeys 空则 no-op → Apply → 重新 Take → 落 revision`。
 
@@ -499,9 +499,9 @@ Step 2 (DELETE /galgame/tag/:id?force=true)：
         snapshot=cur_snap,                         // 删除前最后状态
         changed_fields=[],                         // §6.5 约定：deleted 用空数组
         ref_count=ref_count,                       // 关键：记录被多少 galgame 引用
-        affected_galgame_ids=affected_gids         // ★存盘：将来"撤销删除"UI 据此向 admin 提议恢复列表（见 §7.2.4）
+        affected_galgame_ids=affected_gids         // 存盘：将来"撤销删除"UI 据此向 admin 提议恢复列表（见 §7.2.4）
       )
-  11. ★对每个 affected_gid 落一条 galgame_revision (action='updated', changed_fields=['tag_ids'])：
+  11. 对每个 affected_gid 落一条 galgame_revision (action='updated', changed_fields=['tag_ids'])：
       - 因为 galgame_tag_relation 的删除等价于这些 galgame 的"tag_ids 集合变化"
       - 不落 galgame revision 会让 galgame 历史出现"tag 莫名消失"无迹可循
       - 实现：对每个 gid 重新 TakeSnapshot 后落 galgame_revision
@@ -527,7 +527,7 @@ Step 2 (DELETE /galgame/tag/:id?force=true)：
        // 用户要 revert 到一个"删除"事件 = 撤销该次删除
        INSERT INTO galgame_tag (id=target_id, name=target_snap.Name, ...)  // 复活
        tagRepository.ApplySnapshot(tx, id, target_snap)                    // 重建 aliases
-       // ★还原 galgame_tag_relation 引用？默认 NO：撤销删除只复活 tag 本身，
+       // 还原 galgame_tag_relation 引用？默认 NO：撤销删除只复活 tag 本身，
        // 不自动恢复引用关系（避免悄悄改 galgame 状态）。
        // 但 target_rev.affected_galgame_ids 已存盘（§7.2.3 step 10），
        // 前端/admin UI 据此 SHOW 一份"该 tag 删除前被以下 N 部作品引用，要恢复哪些？"
@@ -651,7 +651,7 @@ WITH all_active_hashes AS (
     -- 3. 当前 galgame_screenshot
     SELECT image_hash AS hash FROM galgame_screenshot
     UNION
-    -- 4. ★所有 galgame_revision snapshot 中曾出现的 hash
+    -- 4. 所有 galgame_revision snapshot 中曾出现的 hash
     SELECT jsonb_extract_path_text(snapshot, 'banner_image_hash') AS hash
       FROM galgame_revision
       WHERE jsonb_extract_path_text(snapshot, 'banner_image_hash') IS NOT NULL
@@ -799,30 +799,30 @@ PR1 / PR2 / PR4 可并行。PR2 → PR3 → PR5 串行。
 每条标"新增"的测试在对应 PR 必加，作为 `01-revision-system-design.md §1.5` 不变量的护栏：
 
 ### Galgame（升级）
-- ✅ 既有：`TestEditableSnapshotFieldsAllReachable`——自动覆盖新增的 ReleaseDate / ReleaseDateTBA / Covers / Screenshots（结构体反射）
-- 🆕 `TestApplySnapshot_RebuildsCoversAndScreenshots`：写入两张图后 cur snapshot 应等于 input
-- 🆕 `TestUpdate_ReleaseDateAndTBAOverlay`：release_date / tba 的 presence 语义（含 `&""` 清空、`&"2024-01"` 非法、`&"2024-06-15"` 合法）
-- 🆕 `TestUpdate_CoversPresenceSemantics`：nil 保持 / 空数组清空 / 非空全量替换
-- 🆕 `TestRevert_RestoresCoversAndScreenshots`
+- 既有：`TestEditableSnapshotFieldsAllReachable`——自动覆盖新增的 ReleaseDate / ReleaseDateTBA / Covers / Screenshots（结构体反射）
+- `TestApplySnapshot_RebuildsCoversAndScreenshots`：写入两张图后 cur snapshot 应等于 input
+- `TestUpdate_ReleaseDateAndTBAOverlay`：release_date / tba 的 presence 语义（含 `&""` 清空、`&"2024-01"` 非法、`&"2024-06-15"` 合法）
+- `TestUpdate_CoversPresenceSemantics`：nil 保持 / 空数组清空 / 非空全量替换
+- `TestRevert_RestoresCoversAndScreenshots`
 
 ### Taxonomy（新增）
-- 🆕 `TestTaxonomyEditableFieldsAllReachable`：一个反射单测覆盖 4 个 Snapshot 结构 vs 对应 DTO
-- 🆕 `TestTaxonomyUpdate_NoOpProducesNoRevision`（按 entity 参数化跑 4 次）
-- 🆕 `TestTaxonomyDelete_RecordsRefCountAndAffectedGalgameIDsAndGalgameRevisions`（参数化；含 §7.2.3 step 10 的 affected_galgame_ids 落盘断言）
-- 🆕 `TestTaxonomyRevert_FromDeleted_ResurrectsButNoRelationRestore_AffectedIDsAvailableForUI`（参数化）
-- 🆕 `TestSeriesUpdate_GalgameIDsProducesGalgameRevisionsNotTaxonomyRevision`
-- 🆕 `TestSeriesUpdate_NameOnlyProducesTaxonomyRevisionOnly`
-- 🆕 `TestChangedFieldsSemantics_CreatedListsAll_DeletedEmpty_UpdatedDiffOnly`（§6.5 约定护栏）
-- 🆕 `TestTaxonomyConcurrentUpdate_SerializedByMainRowLock`（验证 §2 并发安全：两个并发 update 同一 tag 不出现重复 revision 序号）
+- `TestTaxonomyEditableFieldsAllReachable`：一个反射单测覆盖 4 个 Snapshot 结构 vs 对应 DTO
+- `TestTaxonomyUpdate_NoOpProducesNoRevision`（按 entity 参数化跑 4 次）
+- `TestTaxonomyDelete_RecordsRefCountAndAffectedGalgameIDsAndGalgameRevisions`（参数化；含 §7.2.3 step 10 的 affected_galgame_ids 落盘断言）
+- `TestTaxonomyRevert_FromDeleted_ResurrectsButNoRelationRestore_AffectedIDsAvailableForUI`（参数化）
+- `TestSeriesUpdate_GalgameIDsProducesGalgameRevisionsNotTaxonomyRevision`
+- `TestSeriesUpdate_NameOnlyProducesTaxonomyRevisionOnly`
+- `TestChangedFieldsSemantics_CreatedListsAll_DeletedEmpty_UpdatedDiffOnly`（§6.5 约定护栏）
+- `TestTaxonomyConcurrentUpdate_SerializedByMainRowLock`（验证 §2 并发安全：两个并发 update 同一 tag 不出现重复 revision 序号）
 
 ### 图片不变量护栏
-- 🆕 `TestGalgameCover_PartialUniqueIndexEnforcesOnePinned`（两次 INSERT sort_order=0 同一 galgame_id 应 DB-level 拒绝）
-- 🆕 `TestPinNewBanner_FlowAtomicallyDemotesOld`（事务内先降级旧、再升新；中途回滚不留并列态）
+- `TestGalgameCover_PartialUniqueIndexEnforcesOnePinned`（两次 INSERT sort_order=0 同一 galgame_id 应 DB-level 拒绝）
+- `TestPinNewBanner_FlowAtomicallyDemotesOld`（事务内先降级旧、再升新；中途回滚不留并列态）
 
 ### Refping
-- 🆕 `TestRefping_IncludesCurrentCoverAndScreenshotHashes`
-- 🆕 `TestRefping_IncludesRevisionSnapshotHashes`（构造一个已删图的 cover + 一条历史 revision 仍持有该 hash）
-- 🆕 `TestRevert_GracefulDegradeOnMissingImage`
+- `TestRefping_IncludesCurrentCoverAndScreenshotHashes`
+- `TestRefping_IncludesRevisionSnapshotHashes`（构造一个已删图的 cover + 一条历史 revision 仍持有该 hash）
+- `TestRevert_GracefulDegradeOnMissingImage`
 
 ---
 

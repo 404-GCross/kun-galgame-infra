@@ -15,11 +15,11 @@
 
 | 类别 | 成员 | 自动调度？ |
 |---|---|---|
-| **真·周期任务** | `sync-vndb`(日增量)、`galgame-image-refping`(日)、`image-gc`(日 TTL GC) | ✅ 本文核心对象 |
-| **按需/偶发**（适合 admin 手动触发，不自动） | `reindex-search`、`sync-vndb-relations` | ⚠️ 手动为主 |
-| **常驻 worker**（不是 cron，是服务） | `image-moderation-worker`、`worker` | ❌ 独立常驻进程 |
-| **一次性运维/迁移**（绝不能自动跑） | `migrate`、`migrate-galgame`、`migrate-galgame-data`、`migrate-moyu-galgame`、`migrate-users`、`migrate-galgame-banners-to-image-service`、`seed`、`image-setup`、`cleanup-bogus-vndb-id`、`dedup-galgame-alias` | ❌ 永远手动 |
-| **HTTP 服务** | `galgame`、`image`、`oauth`、`artifact`、`moderation` | ❌ |
+| **真·周期任务** | `sync-vndb`(日增量)、`galgame-image-refping`(日)、`image-gc`(日 TTL GC) | 是（本文核心对象） |
+| **按需/偶发**（适合 admin 手动触发，不自动） | `reindex-search`、`sync-vndb-relations` | 否（手动为主） |
+| **常驻 worker**（不是 cron，是服务） | `image-moderation-worker`、`worker` | 否（独立常驻进程） |
+| **一次性运维/迁移**（绝不能自动跑） | `migrate`、`migrate-galgame`、`migrate-galgame-data`、`migrate-moyu-galgame`、`migrate-users`、`migrate-galgame-banners-to-image-service`、`seed`、`image-setup`、`cleanup-bogus-vndb-id`、`dedup-galgame-alias` | 否（永远手动） |
+| **HTTP 服务** | `galgame`、`image`、`oauth`、`artifact`、`moderation` | 否 |
 
 **关键事实**：真正"要定时 + 想可手动"的核心集合只有 **3 个日任务 + 2 个按需任务**，规模小且稳定。
 

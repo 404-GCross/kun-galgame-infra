@@ -4,7 +4,7 @@
 >
 > 图例见 [README](./README.md)。配套: [galgame.get.md](./galgame.get.md) · [galgame.put.md](./galgame.put.md) · [galgame.delete.md](./galgame.delete.md) · [galgame.patch.md](./galgame.patch.md)
 >
-> **审计完成** —— 🔧 已修 / ✅ 已审计无问题（本轮字段对齐/越权/SQL注入/副作用扫描未发现可处理问题）。详见 [README 审计结果](./README.md#审计结果2026-05-29)。
+> **审计完成** —— 已修 / 已审计无问题（本轮字段对齐/越权/SQL注入/副作用扫描未发现可处理问题）。详见 [README 审计结果](./README.md#审计结果2026-05-29)。
 
 ## 统计
 
@@ -17,45 +17,45 @@
 
 | 路径 | 鉴权 | Handler | 状态 | 备注 |
 |---|---|---|---|---|
-| `POST /api/galgame` | 🛡️ | `galgameH.Create` | 🔧 | 管理员直发（绕过审核）；#20 covers/screenshots 元素校验(dive + hex hash) |
-| `POST /api/galgame/:gid/revert` | 🔒 | `revisionH.Revert` | ✅ | 回滚到某版本 |
-| `POST /api/galgame/:gid/prs` | 🔒 | `revisionH.SubmitPR` | 🔧 | 提交编辑 PR；#07 title/message 不再被丢弃(模型/DTO 拆分) |
-| `POST /api/galgame/:gid/links` | 🔒 | `linkH.CreateLink` | 🔧 | #08 owner/admin 越权门；#42 不存在 gid→404 |
-| `POST /api/galgame/:gid/aliases` | 🔒 | `linkH.CreateAlias` | 🔧 | #08 越权门；#42 不存在 gid→404 |
-| `POST /api/galgame/submit` | 🔒 | `submissionH.Submit` | ✅ | 用户投稿（status=3 待审）|
-| `POST /api/galgame/:gid/claim` | 🔒 | `submissionH.Claim` | ✅ | 认领 VNDB 草稿 |
+| `POST /api/galgame` | admin/mod | `galgameH.Create` | 已修 | 管理员直发（绕过审核）；#20 covers/screenshots 元素校验(dive + hex hash) |
+| `POST /api/galgame/:gid/revert` | 登录 | `revisionH.Revert` | 已审计 | 回滚到某版本 |
+| `POST /api/galgame/:gid/prs` | 登录 | `revisionH.SubmitPR` | 已修 | 提交编辑 PR；#07 title/message 不再被丢弃(模型/DTO 拆分) |
+| `POST /api/galgame/:gid/links` | 登录 | `linkH.CreateLink` | 已修 | #08 owner/admin 越权门；#42 不存在 gid→404 |
+| `POST /api/galgame/:gid/aliases` | 登录 | `linkH.CreateAlias` | 已修 | #08 越权门；#42 不存在 gid→404 |
+| `POST /api/galgame/submit` | 登录 | `submissionH.Submit` | 已审计 | 用户投稿（status=3 待审）|
+| `POST /api/galgame/:gid/claim` | 登录 | `submissionH.Claim` | 已审计 | 认领 VNDB 草稿 |
 
 ## 2. 管理（admin / moderator）
 
 | 路径 | 鉴权 | Handler | 状态 | 备注 |
 |---|---|---|---|---|
-| `POST /api/admin/galgame/ban-by-user/:userId` | 🛡️ | `adminH.BanGalgamesByUser` | ✅ | 批量软删某用户全部 galgame（spam 清理）|
+| `POST /api/admin/galgame/ban-by-user/:userId` | admin/mod | `adminH.BanGalgamesByUser` | 已审计 | 批量软删某用户全部 galgame（spam 清理）|
 
 ## 3. Tag
 
 | 路径 | 鉴权 | Handler | 状态 | 备注 |
 |---|---|---|---|---|
-| `POST /api/tag` | 🔒 | `tagH.Create` | ✅ | 任何登录用户可新建（补 VNDB 缺失）|
-| `POST /api/tag/:id/revert` | 🔒 | `taxRevH.TagRevert` | ✅ | |
+| `POST /api/tag` | 登录 | `tagH.Create` | 已审计 | 任何登录用户可新建（补 VNDB 缺失）|
+| `POST /api/tag/:id/revert` | 登录 | `taxRevH.TagRevert` | 已审计 | |
 
 ## 4. Official（会社）
 
 | 路径 | 鉴权 | Handler | 状态 | 备注 |
 |---|---|---|---|---|
-| `POST /api/official` | 🔒 | `officialH.Create` | ✅ | |
-| `POST /api/official/:id/revert` | 🔒 | `taxRevH.OfficialRevert` | ✅ | |
+| `POST /api/official` | 登录 | `officialH.Create` | 已审计 | |
+| `POST /api/official/:id/revert` | 登录 | `taxRevH.OfficialRevert` | 已审计 | |
 
 ## 5. Engine（引擎）
 
 | 路径 | 鉴权 | Handler | 状态 | 备注 |
 |---|---|---|---|---|
-| `POST /api/engine` | 🔒 | `engineH.Create` | ✅ | |
-| `POST /api/engine/:id/revert` | 🔒 | `taxRevH.EngineRevert` | ✅ | |
+| `POST /api/engine` | 登录 | `engineH.Create` | 已审计 | |
+| `POST /api/engine/:id/revert` | 登录 | `taxRevH.EngineRevert` | 已审计 | |
 
 ## 6. Series（系列）
 
 | 路径 | 鉴权 | Handler | 状态 | 备注 |
 |---|---|---|---|---|
-| `POST /api/series` | 🔒 | `seriesH.Create` | 🔧 | #46 同名预检返回 400(非 500) |
-| `POST /api/series/modal` | 🔒 | `seriesH.Modal` | ✅ | 弹窗用轻量创建/检索 |
-| `POST /api/series/:id/revert` | 🔒 | `taxRevH.SeriesRevert` | ✅ | |
+| `POST /api/series` | 登录 | `seriesH.Create` | 已修 | #46 同名预检返回 400(非 500) |
+| `POST /api/series/modal` | 登录 | `seriesH.Modal` | 已审计 | 弹窗用轻量创建/检索 |
+| `POST /api/series/:id/revert` | 登录 | `taxRevH.SeriesRevert` | 已审计 | |

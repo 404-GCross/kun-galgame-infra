@@ -43,7 +43,7 @@ cd ../kun-galgame-patch && docker compose down
 cd ../kun-galgame-infra && docker compose down
 # 3) infra 用 dae override 重新起 → 新网桥名
 docker compose -f docker-compose.yml -f docker-compose.dae.yml up -d
-ip -o link show kungal-br0 && echo "✅ kungal-br0 已就位"
+ip -o link show kungal-br0 && echo "OK: kungal-br0 已就位"
 # 4) 下游起回来
 cd ../kun-galgame-patch && docker compose up -d api web
 cd ../kun-galgame-forum && docker compose up -d api web
@@ -88,7 +88,7 @@ sudo ufw status                            # 若开了 ufw,需放行 FORWARD(见
 ```bash
 # A) bridge 容器现在应能连(之前超时)
 docker run --rm golang:1.25-bookworm bash -c \
-  'timeout 12 bash -c "echo > /dev/tcp/proxy.golang.org/443" && echo "✅ bridge 经 dae 通了" || echo "❌ 仍不通"'
+  'timeout 12 bash -c "echo > /dev/tcp/proxy.golang.org/443" && echo "OK: bridge 经 dae 通了" || echo "FAIL: 仍不通"'
 # B) 实跑构建,确认默认 proxy(无 goproxy.cn)经 dae 通过
 cd kun-galgame-infra && docker build --no-cache -f docker/go.Dockerfile \
   --build-arg CMD=galgame -t kun-galgame-infra/galgame:daetest . 2>&1 | grep -iE "go mod download|error|Successfully"

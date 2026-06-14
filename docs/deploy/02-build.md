@@ -40,7 +40,7 @@ docker compose build          # api web(+ migrate job)
 
 ## kungal(kun-galgame-forum)
 
-⚠️ **kungal 的 `docker-compose.yml` 单独无法构建**——它在 `depends_on` 里引用了未定义的 `postgres`/`redis`,直接 `docker compose build` 会报 `invalid compose project`。必须叠加一个定义/外置了 pg+redis 的 compose:
+**kungal 的 `docker-compose.yml` 单独无法构建**——它在 `depends_on` 里引用了未定义的 `postgres`/`redis`,直接 `docker compose build` 会报 `invalid compose project`。必须叠加一个定义/外置了 pg+redis 的 compose:
 
 ```bash
 cd kun-galgame-forum
@@ -57,7 +57,7 @@ docker compose build           # 与 moyu 一致;build 不依赖网络,infra 未
 | 纯 Go runtime | `gcr.io/distroless/static-debian13:nonroot` | Debian 13 基线 |
 | cgo runtime(oauth/image) | `debian:trixie-slim` + `libwebp7 libsharpyuv0` | Debian 13 的 libwebp 1.5 把 sharpyuv 拆成独立包,故需补 `libsharpyuv0`(bookworm 时是打进 libwebp7 的) |
 | 前端 runtime/构建 | `node:24-trixie-slim` | Node 24 = 当前 Active LTS |
-| Postgres | `postgres:18-alpine` | **已升级 16→18**(2026-06,dump/restore;⚠ pg18 的 VOLUME 从 `/var/lib/postgresql/data` 改到 `/var/lib/postgresql`,挂载点已同步,见 [06-operations.md](./06-operations.md)) |
+| Postgres | `postgres:18-alpine` | **已升级 16→18**(2026-06,dump/restore;pg18 的 VOLUME 从 `/var/lib/postgresql/data` 改到 `/var/lib/postgresql`,挂载点已同步,见 [06-operations.md](./06-operations.md)) |
 | Redis | `redis:8-alpine` | 已是最新大版本(`8-alpine` 自动取 8.8.x);向前兼容旧数据(本就是缓存/会话) |
 | MinIO | `minio/minio:RELEASE.2025-09-07T16-13-09Z` | 已锁版本(原先是 `latest`)。注:MinIO 官方社区镜像已停更/归档(~2026-04),生产图床走 Cloudflare R2,影响小 |
 | Meilisearch | `getmeili/meilisearch:v1.45` | **已升级 v1.20→v1.45**(2026-06,清卷 + `reindex-search` 重建索引;跨版本不兼容详见 [07-troubleshooting.md](./07-troubleshooting.md) I2) |

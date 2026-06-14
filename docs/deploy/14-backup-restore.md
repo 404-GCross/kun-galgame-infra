@@ -7,10 +7,10 @@
 
 | 存储 | 内容 | 要不要备份 |
 |---|---|---|
-| **Postgres**(5 库) | 用户 / galgame / wiki / 图片元数据 / 论坛 / 补丁 —— **核心真数据** | ✅ **必须**,本篇重点 |
-| Redis | 会话 / 缓存 / 限流 / 验证码 | 🔸 可选(多为临时,丢了重登/重发即可),已开 AOF |
-| MinIO | 图片 blob | 🔸 生产走 **Cloudflare R2**(自带冗余);自托管才需备份桶 |
-| Meilisearch | 搜索索引 | ❌ **派生自 Postgres**,`reindex-search` 可重建,不必备份 |
+| **Postgres**(5 库) | 用户 / galgame / wiki / 图片元数据 / 论坛 / 补丁 —— **核心真数据** | **必须**,本篇重点 |
+| Redis | 会话 / 缓存 / 限流 / 验证码 | 可选(多为临时,丢了重登/重发即可),已开 AOF |
+| MinIO | 图片 blob | 可选:生产走 **Cloudflare R2**(自带冗余);自托管才需备份桶 |
+| Meilisearch | 搜索索引 | 不必:**派生自 Postgres**,`reindex-search` 可重建,不必备份 |
 
 **5 个库**:`kun_galgame_infra`(oauth/用户)、`kun_galgame_wiki`、`kun_images`、`kungalgame`(论坛)、`kungalgame_patch`(补丁)。
 
@@ -53,7 +53,7 @@ docker exec "$PG" pg_dump -U postgres -s -d kungalgame > kungalgame-schema.sql  
 docker exec "$PG" pg_dump -U postgres -a -Fc -d kungalgame > kungalgame-data.dump     # 仅数据 -a
 ```
 
-> ⚠ **备份含用户隐私**(邮箱、密码哈希)。异地上传前**加密**:`gpg -c cluster-*.sql.gz`(对称加密),或用服务端加密的桶。
+> **备份含用户隐私**(邮箱、密码哈希)。异地上传前**加密**:`gpg -c cluster-*.sql.gz`(对称加密),或用服务端加密的桶。
 
 ## 3. 自动备份 + 异地 + 保留
 
@@ -87,7 +87,7 @@ Dokploy 面板支持**数据库定时备份到 S3**:Settings → **Destinations*
 
 ## 4. 还原
 
-> ⚠ 还原会**覆盖/删数据,不可逆**。先确认备份可用(§4.5),能演练就先在测试库/测试机演练。
+> 还原会**覆盖/删数据,不可逆**。先确认备份可用(§4.5),能演练就先在测试库/测试机演练。
 
 ### 4.1 全集群还原(灾难恢复 / 迁新机)
 pg18 把卷挂载点改到了 `/var/lib/postgresql`,且 `initdb.d` 会在空库初始化时建 4 个库、与 `pg_dumpall` 的 `CREATE DATABASE` 冲突 —— 所以用**临时容器**(不挂 initdb.d、不设 `POSTGRES_DB`)回灌,最干净(即 pg16→18 升级实测用的法):

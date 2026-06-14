@@ -237,7 +237,7 @@ status 4→3 复活 + edited_pending 消息外，结构完全一致。
 8. 确保编辑者在 contributor 列表
 ```
 
-> ⚠️ 反面教材（曾经的 bug）：跳过 1–4、直接 `tx.Updates(只含标量的 map)` 再
+> 注意:反面教材（曾经的 bug）：跳过 1–4、直接 `tx.Updates(只含标量的 map)` 再
 > `TakeSnapshot(未应用关联的状态)` —— 关联编辑全部丢失，且 revision 快照被污染。
 > 不要再出现任何"只写部分字段"的旁路。
 

@@ -1,6 +1,6 @@
 # Phase 2: Galgame 核心模块实现计划
 
-> **⚠️ 已过时** — 本文档在 galgame service 独立方案确定之前编写。
+> **已过时** — 本文档在 galgame service 独立方案确定之前编写。
 > 最终架构见 `08-galgame-service-architecture.md`。
 >
 > 端点拆分：
@@ -15,35 +15,35 @@
 
 ```
 internal/galgame/
-├── model/galgame.go          ✅ 已定义 (434 行, 30+ 模型)
+├── model/galgame.go          已定义 (434 行, 30+ 模型)
 ├── dto/
-│   ├── galgame_dto.go        ❌ 待创建
-│   ├── comment_dto.go        ❌
-│   ├── resource_dto.go       ❌
-│   ├── pr_dto.go             ❌
-│   ├── rating_dto.go         ❌
-│   └── series_dto.go         ❌
+│   ├── galgame_dto.go        待创建
+│   ├── comment_dto.go        待创建
+│   ├── resource_dto.go       待创建
+│   ├── pr_dto.go             待创建
+│   ├── rating_dto.go         待创建
+│   └── series_dto.go         待创建
 ├── repository/
-│   ├── galgame_repo.go       ❌
-│   ├── comment_repo.go       ❌
-│   ├── resource_repo.go      ❌
-│   ├── pr_repo.go            ❌
-│   ├── rating_repo.go        ❌
-│   └── series_repo.go        ❌
+│   ├── galgame_repo.go       待创建
+│   ├── comment_repo.go       待创建
+│   ├── resource_repo.go      待创建
+│   ├── pr_repo.go            待创建
+│   ├── rating_repo.go        待创建
+│   └── series_repo.go        待创建
 ├── service/
-│   ├── galgame_service.go    ❌
-│   ├── comment_service.go    ❌
-│   ├── resource_service.go   ❌
-│   ├── pr_service.go         ❌
-│   ├── rating_service.go     ❌
-│   └── series_service.go     ❌
+│   ├── galgame_service.go    待创建
+│   ├── comment_service.go    待创建
+│   ├── resource_service.go   待创建
+│   ├── pr_service.go         待创建
+│   ├── rating_service.go     待创建
+│   └── series_service.go     待创建
 └── handler/
-    ├── galgame_handler.go    ❌
-    ├── comment_handler.go    ❌
-    ├── resource_handler.go   ❌
-    ├── pr_handler.go         ❌
-    ├── rating_handler.go     ❌
-    └── series_handler.go     ❌
+    ├── galgame_handler.go    待创建
+    ├── comment_handler.go    待创建
+    ├── resource_handler.go   待创建
+    ├── pr_handler.go         待创建
+    ├── rating_handler.go     待创建
+    └── series_handler.go     待创建
 ```
 
 ## 实现顺序
@@ -251,12 +251,12 @@ galgame/
 
 | Step | 端点数 | 复杂度 | 关键难点 |
 |------|--------|--------|---------|
-| 1. 基础 CRUD | 5 | ⭐⭐⭐⭐ | 详情页 10+ 关联查询, 创建事务 |
-| 2. 互动 | 3 | ⭐⭐ | Toggle 模式 + count 维护 |
-| 3. 评论 | 4 | ⭐⭐ | 消息通知 |
-| 4. 资源 | 8 | ⭐⭐⭐ | Provider 检测, 多关联表 |
-| 5. PR | 6 | ⭐⭐⭐⭐⭐ | 最复杂: diff 存储, merge 逻辑 |
-| 6. 链接 | 3 | ⭐ | 简单 CRUD |
-| 7. 评分 | 9 | ⭐⭐⭐ | 8 维度评分, 萌萌点分级 |
-| 8. 系列 | 7 | ⭐⭐ | 标准 CRUD |
-| 9. 元数据 | 12 | ⭐⭐ | 搜索 + 别名管理 |
+| 1. 基础 CRUD | 5 | 4/5 | 详情页 10+ 关联查询, 创建事务 |
+| 2. 互动 | 3 | 2/5 | Toggle 模式 + count 维护 |
+| 3. 评论 | 4 | 2/5 | 消息通知 |
+| 4. 资源 | 8 | 3/5 | Provider 检测, 多关联表 |
+| 5. PR | 6 | 5/5 | 最复杂: diff 存储, merge 逻辑 |
+| 6. 链接 | 3 | 1/5 | 简单 CRUD |
+| 7. 评分 | 9 | 3/5 | 8 维度评分, 萌萌点分级 |
+| 8. 系列 | 7 | 2/5 | 标准 CRUD |
+| 9. 元数据 | 12 | 2/5 | 搜索 + 别名管理 |

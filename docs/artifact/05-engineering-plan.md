@@ -2,7 +2,7 @@
 
 ## 里程碑
 
-### Phase 1 — 核心直传链路 ✅（已实现）
+### Phase 1 — 核心直传链路（已实现）
 
 代码落地（`commit feat(artifact): implement Phase 1`），`go build/vet/test` 全绿：
 
@@ -15,14 +15,14 @@
 - 库：独立 `kun_artifacts`（模型从 `cmd/migrate` 下沉）。
 - 上传 `KUN_ARTIFACT_UPLOAD_ENABLED` 门控（默认关）。
 
-### Phase 2 — 上线工程 ⏳（本轮文档 + 待运维）
+### Phase 2 — 上线工程（本轮文档 + 待运维）
 
 - 文档：`03-api` / `04-cloudflare-worker` / `05-engineering`(本篇) / `06-integration`。
 - CI：`build.yml` 矩阵加 `infra-artifact` 镜像。
 - 部署：Dokploy 新服务 + B2 凭证 + 私有桶 + 站点 OAuth Client 配置；灰度开 `UPLOAD_ENABLED`。
 - 下游真正接入时，把对外契约（03/06）登记进 `../kungal-docs` 的 ownership 并 `docs:sync` 下发镜像（参照 image_service）。
 
-### Phase 3 — 增强 ⏳（后续）
+### Phase 3 — 增强（后续）
 
 可插拔病毒扫描 worker（ClamAV / 云 API）、服务端全量 checksum 复算、从压缩包解析 manifest、断点续传（前端 IndexedDB 缓存 ETag）、管理端「全站制品」视图。
 
@@ -64,7 +64,7 @@
 
 产出 `ghcr.io/kunmoe/infra-artifact`，Dokploy 配新服务，端口 `9279`，注入上表 B2/DB 环境变量。
 
-### GC 任务的部署位置 ⚠️
+### GC 任务的部署位置
 
 `artifact-gc` 注册在 `internal/jobs`，与其它定时任务一样**跑在 oauth 进程**（jobs 调度器所在）。因此 **oauth 服务的环境也要带** `KUN_ARTIFACTS_PG_*` + `KUN_ARTIFACT_S3_*`（尤其 cleanup 密钥），否则 `artifact-gc` 连不上库/桶会报错。
 

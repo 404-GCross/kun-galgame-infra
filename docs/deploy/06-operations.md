@@ -37,7 +37,7 @@ docker compose build oauth && docker compose up -d oauth
 docker exec kun-galgame-infra-postgres-1 pg_dumpall -U postgres > all.sql
 # 2. 停栈、删旧卷(备份在手才删)
 docker compose down && docker volume rm kun-galgame-infra_pg
-# 3. ⚠ pg18 把 VOLUME 从 /var/lib/postgresql/data 改到 /var/lib/postgresql(PGDATA=/var/lib/postgresql/18/docker)
+# 3. pg18 把 VOLUME 从 /var/lib/postgresql/data 改到 /var/lib/postgresql(PGDATA=/var/lib/postgresql/18/docker)
 #    —— compose 的卷挂载点要同步改成 /var/lib/postgresql(本仓已改)。
 #    用临时 pg18 容器恢复:不挂 initdb.d、不设 POSTGRES_DB,避免和 dumpall 的 CREATE DATABASE 冲突。
 docker run -d --name pg18r -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=<pw> \
@@ -64,7 +64,7 @@ cd apps/api && KUN_PG_HOST=localhost KUN_PG_PORT=15000 KUN_PG_PASSWORD=<pw> \
 
 ## 备份 / 恢复
 
-> 📦 **完整的备份/还原详解**(手动/自动/异地、各类还原场景、PITR)见 [14-backup-restore.md](./14-backup-restore.md)。下面是速记。
+> **完整的备份/还原详解**(手动/自动/异地、各类还原场景、PITR)见 [14-backup-restore.md](./14-backup-restore.md)。下面是速记。
 
 数据全在 infra 的 4 个命名卷:`kun-galgame-infra_{pg,redis,minio,meili}`。
 

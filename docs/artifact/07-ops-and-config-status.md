@@ -6,15 +6,15 @@
 
 | 项 | 本地 dev | 生产 |
 |----|---------|------|
-| 代码（Phase 1 服务）| ✅ 已实现、build/vet/test 绿 | ✅ 同（随仓库）|
-| 设计/契约文档 01–07 | ✅ | ✅ |
-| CI 镜像 `infra-artifact` | ✅ 已加入 `build.yml` 矩阵 | ⏳ 待 push 触发构建 |
-| 元数据库（`artifacts`/`manifests`）| ✅ `kun_artifacts_dev` 已建表 | ❌ 待建 `kun_artifacts` |
-| `oauth_clients.artifact_*` 列 | ✅ 已 `cmd/migrate` 加列 | ❌ 待随部署跑 `cmd/migrate` |
-| 对象存储（B2 桶 + 密钥）| ❌ **待配置**（你之后配）| ❌ 待配置 |
-| 服务进程（`cmd/artifact`）| ⏳ 待 B2 配好才能启动 | ❌ 待 Dokploy 部署 |
-| 站点接入（OAuth client `artifact_*`）| ❌ 待按需配 | ❌ 待按需配 |
-| Cloudflare Worker（公开下载，可选）| ❌ | ❌ |
+| 代码（Phase 1 服务）| 已完成：已实现、build/vet/test 绿 | 已完成：同（随仓库）|
+| 设计/契约文档 01–07 | 已完成 | 已完成 |
+| CI 镜像 `infra-artifact` | 已完成：已加入 `build.yml` 矩阵 | 进行中：待 push 触发构建 |
+| 元数据库（`artifacts`/`manifests`）| 已完成：`kun_artifacts_dev` 已建表 | 未完成：待建 `kun_artifacts` |
+| `oauth_clients.artifact_*` 列 | 已完成：已 `cmd/migrate` 加列 | 未完成：待随部署跑 `cmd/migrate` |
+| 对象存储（B2 桶 + 密钥）| 未完成：**待配置**（你之后配）| 未完成：待配置 |
+| 服务进程（`cmd/artifact`）| 进行中：待 B2 配好才能启动 | 未完成：待 Dokploy 部署 |
+| 站点接入（OAuth client `artifact_*`）| 未完成：待按需配 | 未完成：待按需配 |
+| Cloudflare Worker（公开下载，可选）| 未完成 | 未完成 |
 
 > **当前未推送、未部署**——生产完全未受影响。
 
@@ -45,14 +45,14 @@
 | 4 | 跑 `cmd/migrate` | 给 `oauth_clients` 加 `artifact_*` 列（**见下方部署安全**）|
 | 5 | 给 **oauth 服务**补 artifact env | `KUN_ARTIFACTS_PG_*` + `KUN_ARTIFACT_S3_*`（尤其 cleanup 密钥）——因为 `artifact-gc` 跑在 oauth 进程；重部 oauth |
 | 6 | 部署 `infra-artifact` | Dokploy 新服务，端口 9279，注入 DB+S3 env；先 `UPLOAD_ENABLED=false` 验证 list/get/download/healthz |
-| 7 | 配站点 OAuth Client | 目标站 `artifact_enabled=true`、`artifact_site_key`、配额、scope 加 `artifact:upload`、可选 `artifact_cdn_base`。⚠️ **授予 `artifact:upload` 仅 ren（莲）可操作**（前端对非 ren 隐藏、后端 ren-gate 兜底）；`artifact_*` 配置列 SQL-only，由 ren 运维设置。见 [01 决策 9](./01-design.md#决策-9权限控制--artifact-能力全部-ren莲-only默认关闭) |
+| 7 | 配站点 OAuth Client | 目标站 `artifact_enabled=true`、`artifact_site_key`、配额、scope 加 `artifact:upload`、可选 `artifact_cdn_base`。**授予 `artifact:upload` 仅 ren（莲）可操作**（前端对非 ren 隐藏、后端 ren-gate 兜底）；`artifact_*` 配置列 SQL-only，由 ren 运维设置。见 [01 决策 9](./01-design.md#决策-9权限控制--artifact-能力全部-ren莲-only默认关闭) |
 | 8 | 配 B2 桶 CORS | 前端直传需要（同本地 §2）|
 | 9 | （可选）Cloudflare Worker | 公开/热门内容免流量下载，见 [04](./04-cloudflare-worker.md) |
 | 10 | 灰度 `KUN_ARTIFACT_UPLOAD_ENABLED=true` | 端到端验证后放量 |
 
 环境变量全表见 [05 §环境变量](./05-engineering-plan.md#环境变量)。
 
-## ⚠️ 生产安全：不影响 oauth / image / wiki 等现有服务
+## 生产安全：不影响 oauth / image / wiki 等现有服务
 
 本轮改动对共享代码（`pkg/config`、`pkg/errors`、`oauth_client` 模型、`internal/jobs`）均**增量**，但部署时有一处要注意：
 
