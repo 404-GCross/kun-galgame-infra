@@ -37,6 +37,12 @@ const scope = computed(() => route.query.scope as string)
 const state = computed(() => route.query.state as string)
 const codeChallenge = computed(() => route.query.code_challenge as string | undefined)
 const codeChallengeMethod = computed(() => route.query.code_challenge_method as string | undefined)
+// prompt=login forces the login screen even if an OP session exists — the
+// RP-side "log out of this site, re-prompt on next login" path. See
+// docs/integration/oauth/07-logout.md. currentUrl deliberately omits `prompt`,
+// so after the user logs in, re-entry to this page proceeds to normal
+// auto-consent (no loop).
+const forceLogin = computed(() => route.query.prompt === 'login')
 
 // Build the full authorize URL for login redirect
 const currentUrl = computed(() => {
@@ -83,7 +89,10 @@ onMounted(async () => {
     return
   }
 
-  if (!auth.isLoggedIn.value) {
+  if (forceLogin.value) {
+    // prompt=login: always re-prompt; never silently reuse the OP session.
+    needsLogin.value = true
+  } else if (!auth.isLoggedIn.value) {
     const refreshed = await auth.refreshAccessToken()
     if (!refreshed) {
       // Show login prompt, NOT auto-navigateTo — see needsLogin comment.

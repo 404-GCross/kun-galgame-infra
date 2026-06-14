@@ -191,6 +191,13 @@ func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 	// "你将授权访问 X" display. Returns only safe fields (name, auto_consent,
 	// site_domain). See ClientPublicInfo + docs/integration/oauth/05-registration.md.
 	oauth.Get("/client-info", oauthH.GetClientPublic)
+	// Public: validates a post-logout redirect against a client's registered
+	// redirect_uris (origin match) for the OP logout page. See
+	// docs/integration/oauth/07-logout.md.
+	oauth.Get("/post-logout-redirect", oauthH.PostLogoutRedirect)
+	// RP-initiated logout entrypoint (browser top-level nav). Bounces to the
+	// OP frontend /auth/logout page. Symmetric with /oauth/authorize.
+	oauth.Get("/logout", oauthH.LogoutRedirect)
 	oauthProtected := oauth.Group("", middleware.Auth(authSvc))
 	oauthProtected.Post("/authorize/consent", oauthH.Consent)
 	oauthProtected.Get("/userinfo", oauthH.UserInfo)

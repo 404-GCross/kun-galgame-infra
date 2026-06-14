@@ -3,11 +3,11 @@ package dto
 // AuthorizeRequest represents an OAuth authorization request.
 // Supports both query parameters (GET /authorize) and JSON body (POST /authorize/consent).
 type AuthorizeRequest struct {
-	ClientID            string `query:"client_id" json:"client_id" validate:"required"`
-	RedirectURI         string `query:"redirect_uri" json:"redirect_uri" validate:"required,url"`
-	ResponseType        string `query:"response_type" json:"response_type" validate:"required,oneof=code"`
-	Scope               string `query:"scope" json:"scope"`
-	State               string `query:"state" json:"state" validate:"required"`
+	ClientID      string `query:"client_id" json:"client_id" validate:"required"`
+	RedirectURI   string `query:"redirect_uri" json:"redirect_uri" validate:"required,url"`
+	ResponseType  string `query:"response_type" json:"response_type" validate:"required,oneof=code"`
+	Scope         string `query:"scope" json:"scope"`
+	State         string `query:"state" json:"state" validate:"required"`
 	CodeChallenge string `query:"code_challenge" json:"code_challenge"` // PKCE
 	// PKCE method. We deliberately accept only S256 (RFC 7636 §4.2 says
 	// `plain` is permitted but discouraged; OAuth 2.1 drafts remove it
@@ -16,6 +16,11 @@ type AuthorizeRequest struct {
 	// when CodeChallenge is non-empty does the server treat "" as S256
 	// (the OIDC default).
 	CodeChallengeMethod string `query:"code_challenge_method" json:"code_challenge_method" validate:"omitempty,oneof=S256"`
+	// Prompt is the OIDC `prompt` param. We honor `login` (force the OP to
+	// re-authenticate even if a session exists — RP-initiated "log out of this
+	// site, re-prompt on next login" semantics). Other values are ignored.
+	// See docs/integration/oauth/07-logout.md.
+	Prompt string `query:"prompt" json:"prompt" validate:"omitempty,oneof=login"`
 }
 
 // TokenRequest represents an OAuth token request

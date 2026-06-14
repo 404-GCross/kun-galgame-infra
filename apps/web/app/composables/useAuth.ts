@@ -75,6 +75,24 @@ export const useAuth = () => {
     }
   }
 
+  // logoutSilent clears the OP session WITHOUT the navigateTo — used by the
+  // /auth/logout RP-initiated-logout page, which does its own validated
+  // redirect afterwards. We refresh first so the auth-gated POST /auth/logout
+  // is accepted even when the access_token already expired (the httpOnly
+  // refresh cookie is still valid); if refresh fails there's no live session
+  // to clear server-side, and clearAuth still wipes local state.
+  // See docs/integration/oauth/07-logout.md.
+  const logoutSilent = async () => {
+    try {
+      await refreshAccessToken()
+      await api.post('/auth/logout')
+    } catch {
+      // ignore — clearAuth below still runs
+    } finally {
+      clearAuth()
+    }
+  }
+
   // Probe-style call: returns true/false without side effects so callers
   // (Container.vue's /oauth/authorize check, middleware/auth.ts, etc.)
   // can branch on session liveness. We deliberately bypass `useApi` here
@@ -183,6 +201,7 @@ export const useAuth = () => {
     sendRegisterCode,
     register,
     logout,
+    logoutSilent,
     fetchUser,
     refreshAccessToken,
     forgotPassword,

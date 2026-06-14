@@ -6,9 +6,11 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	stderrors "errors"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -100,6 +102,36 @@ func (s *OAuthService) ValidateClient(ctx context.Context, clientID, redirectURI
 	}
 
 	return client, nil
+}
+
+// ValidatePostLogoutRedirect checks that a post-logout redirect URL is safe to
+// send the browser to: its origin (scheme+host) must match one of the client's
+// registered redirect_uris. Returns ("", false) for an unknown client, an
+// unparseable URL, or an origin not in the allow-list — the caller then falls
+// back to a safe default. This is the open-redirect guard for the logout
+// entrypoint. See docs/integration/oauth/07-logout.md.
+func (s *OAuthService) ValidatePostLogoutRedirect(ctx context.Context, clientID, redirect string) (string, bool) {
+	if redirect == "" || clientID == "" {
+		return "", false
+	}
+	target, err := url.Parse(redirect)
+	if err != nil || target.Scheme == "" || target.Host == "" {
+		return "", false
+	}
+	client, err := s.clientRepo.FindByClientID(ctx, clientID)
+	if err != nil {
+		return "", false
+	}
+	var uris []string
+	if err := json.Unmarshal(client.RedirectURIs, &uris); err != nil {
+		return "", false
+	}
+	for _, u := range uris {
+		if ru, err := url.Parse(u); err == nil && ru.Scheme == target.Scheme && ru.Host == target.Host {
+			return redirect, true
+		}
+	}
+	return "", false
 }
 
 // CreateAuthorizationCode creates a new authorization code.

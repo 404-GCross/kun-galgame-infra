@@ -76,6 +76,11 @@ func (h *OAuthHandler) Authorize(c fiber.Ctx) error {
 	if req.CodeChallengeMethod != "" {
 		q.Set("code_challenge_method", req.CodeChallengeMethod)
 	}
+	// Pass `prompt` through so the frontend can force re-login (prompt=login)
+	// even when an OP session exists. See docs/integration/oauth/07-logout.md.
+	if req.Prompt != "" {
+		q.Set("prompt", req.Prompt)
+	}
 
 	consentURL := h.cfg.Server.FrontendURL + "/oauth/authorize?" + q.Encode()
 	return c.Redirect().To(consentURL)
@@ -236,6 +241,43 @@ func (h *OAuthHandler) GetClientPublic(c fiber.Ctx) error {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
 	return response.Success(c, info)
+}
+
+// PostLogoutRedirect validates a post-logout redirect URL against the named
+// client's registered redirect_uris (origin match) and returns the safe URL to
+// send the browser to, or "" when not allow-listed. Used by the OP logout page
+// to guard against open-redirect. No authentication (it only echoes a URL the
+// caller already proposed, after validating it). See
+// docs/integration/oauth/07-logout.md.
+func (h *OAuthHandler) PostLogoutRedirect(c fiber.Ctx) error {
+	clientID := c.Query("client_id")
+	redirect := c.Query("redirect")
+	validated, _ := h.oauthService.ValidatePostLogoutRedirect(c.Context(), clientID, redirect)
+	return response.Success(c, fiber.Map{"url": validated})
+}
+
+// LogoutRedirect is the RP-initiated logout entrypoint (a browser top-level
+// navigation, symmetric with Authorize). It bounces to the OP frontend logout
+// page, which clears the central SSO session and redirects back to a validated
+// RP URL. client_id + redirect are passed through unchanged (the frontend page
+// validates `redirect` via /oauth/post-logout-redirect before using it).
+// Bouncing through the backend means RPs reuse the same OAuth API base they
+// already use for /oauth/authorize, and it resolves correctly in dev (where the
+// frontend and API are different origins) via cfg.Server.FrontendURL.
+// See docs/integration/oauth/07-logout.md.
+func (h *OAuthHandler) LogoutRedirect(c fiber.Ctx) error {
+	q := url.Values{}
+	if cid := c.Query("client_id"); cid != "" {
+		q.Set("client_id", cid)
+	}
+	if r := c.Query("redirect"); r != "" {
+		q.Set("redirect", r)
+	}
+	dest := h.cfg.Server.FrontendURL + "/auth/logout"
+	if enc := q.Encode(); enc != "" {
+		dest += "?" + enc
+	}
+	return c.Redirect().To(dest)
 }
 
 // Revoke revokes an OAuth token (RFC 7009).

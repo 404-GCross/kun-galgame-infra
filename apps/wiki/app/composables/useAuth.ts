@@ -54,6 +54,22 @@ export const useAuth = () => {
       }
     }
     clearAuth()
+
+    // RP-initiated logout: revoking our own refresh_token + clearing local
+    // cookies is NOT enough — the central OP (oauth.kungal.com) SSO session
+    // survives (its localStorage user is cross-origin, its refresh cookie is
+    // cross-site), so the next login would silently re-consent into the same
+    // account. Top-level navigate to the OP logout entrypoint (symmetric with
+    // the /oauth/authorize login redirect) so the OP clears its session, then
+    // returns here. See docs/integration/oauth/07-logout.md.
+    if (import.meta.client) {
+      const params = new URLSearchParams({
+        client_id: config.public.oauthClientID as string,
+        redirect: window.location.origin + '/'
+      })
+      window.location.href = `${config.public.oauthAuthorizeBase}/oauth/logout?${params.toString()}`
+      return
+    }
     navigateTo('/auth/login')
   }
 
