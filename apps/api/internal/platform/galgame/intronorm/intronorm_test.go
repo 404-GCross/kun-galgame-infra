@@ -201,6 +201,10 @@ func TestStripImages(t *testing.T) {
 		// Backslash hard-break residue ("\" alone on a line) left by image removal.
 		{"backslash hard-break lines cleaned", "描述\n\\\n![](https://x.com/a.png)\n\\\n续き。", "描述\n\n续き。"},
 		{"image with trailing backslash line", "前文\n\n![](https://x.com/a.png)\\\n后文。", "前文\n\n后文。"},
+		// Escaped brackets in alt text must not cut the image match short — real
+		// touchgal/dlsite imports carry alts like "图片\[1\]" / "\[4H\]".
+		{"escaped-bracket alt removed", "前 ![图片\\[1\\]\\_X](https://x.com/a.png) 后", "前  后"},
+		{"escaped-bracket alt only", "![全裸登校訓練 \\[4H\\]](https://img.dlsite.jp/x.jpg)", ""},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

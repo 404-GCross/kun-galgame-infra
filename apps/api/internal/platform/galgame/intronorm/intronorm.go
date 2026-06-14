@@ -29,13 +29,20 @@ import (
 )
 
 var (
+	// altText matches a Markdown image's alt body: any run of non-"]" chars, but
+	// with backslash-escapes consumed as a unit so an ESCAPED bracket (\[ \])
+	// inside the alt doesn't prematurely terminate it. Real VNDB/touchgal imports
+	// carry alts like "图片\[1\]\_…" / "全裸登校訓練 \[4H\]"; a bare [^\]]* would
+	// stop at the first "\]" and miss the whole image.
+	altText = `(?:[^\]\\]|\\.)*`
 	// Linked image [![alt](img)](link): a Markdown image wrapped in a link.
 	// Must be removed WHOLE — stripping only the inner image would leave a
 	// dangling empty-text link shell "[](link)". Tolerates whitespace around the
 	// inner image. Applied before reImgMarkdown.
-	reLinkedImg = regexp.MustCompile(`\[\s*!\[[^\]]*\]\([^)]*\)\s*\]\([^)]*\)`)
-	// Markdown image: ![alt](url ...optional title). Captures the URL.
-	reImgMarkdown = regexp.MustCompile(`!\[[^\]]*\]\(\s*<?([^)>\s]+)[^)]*\)`)
+	reLinkedImg = regexp.MustCompile(`\[\s*!\[` + altText + `\]\([^)]*\)\s*\]\([^)]*\)`)
+	// Markdown image: ![alt](url ...optional title). Captures the URL. The alt may
+	// contain escaped brackets (see altText).
+	reImgMarkdown = regexp.MustCompile(`!\[` + altText + `\]\(\s*<?([^)>\s]+)[^)]*\)`)
 	// BBCode image: [img]url[/img] or [img=url]...[/img] (optionally escaped).
 	reImgBBCode = regexp.MustCompile(`(?is)\\?\[img(?:=([^\]]*))?\\?\]\s*<?([^\[<>\s]*)[^\[]*?\\?\[/img\\?\]`)
 	// [url=X]Y[/url] → [Y](X). Tolerates escapes, <url> wrapping, and a malformed

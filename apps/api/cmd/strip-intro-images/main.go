@@ -61,7 +61,9 @@ const candidateFilter = `intro_en_us LIKE '%![%' OR intro_ja_jp LIKE '%![%' OR i
 // Image-URL extractors for the OPTIONAL manifest only — the authoritative
 // cleaning is intronorm.StripImages. Lenient: just capture the URL.
 var (
-	reImgMarkdown = regexp.MustCompile(`!\[[^\]]*\]\(\s*<?([^)>\s]+)`)
+	// Alt body skips escaped brackets so "图片\[1\]" / "\[4H\]" alts don't cut
+	// the match short (mirrors intronorm.altText).
+	reImgMarkdown = regexp.MustCompile(`!\[(?:[^\]\\]|\\.)*\]\(\s*<?([^)>\s]+)`)
 	reImgBBCode   = regexp.MustCompile(`(?is)\[img(?:=([^\]]*))?\]\s*<?([^\[<>\s]*)`)
 )
 
