@@ -13,8 +13,11 @@ CYAN='\033[0;36m'
 GRAY='\033[0;90m'
 NC='\033[0m'
 
-# Tracked binary PIDs only (not the label subshells).
+# Tracked binary PIDs (killed on exit). core_pids is the subset whose exit tears
+# the whole stack down so air rebuilds; artifact is deliberately NOT in it — it
+# needs B2/S3 (often unconfigured in local dev) and must never stop the rest.
 pids=()
+core_pids=()
 
 cleanup() {
     # Clear traps first to avoid re-entry if kill propagates a signal.
@@ -38,7 +41,7 @@ label() {
 }
 
 start() {
-    local color=$1 name=$2 bin=$3
+    local color=$1 name=$2 bin=$3 core=$4
     if [[ ! -x $bin ]]; then
         printf '%b%s %b|%b binary not found or not executable: %s\n' \
             "$color" "$name" "$GRAY" "$NC" "$bin" >&2
@@ -47,7 +50,10 @@ start() {
     # Process substitution (not pipe) so $! captures the binary's PID,
     # not the label subshell's. This lets us kill and wait on the right thing.
     "$bin" > >(label "$color" "$name") 2>&1 &
-    pids+=("$!")
+    local pid=$!
+    pids+=("$pid")
+    [[ $core == core ]] && core_pids+=("$pid")
+    return 0
 }
 
 printf '\n'
@@ -58,15 +64,25 @@ printf '%bmoderation%b :9281\n'    "$MAGENTA" "$NC"
 printf '%bimage%b      :9278\n'    "$CYAN"    "$NC"
 printf '\n'
 
-start "$BLUE"    "oauth     " ./tmp/oauth      || { cleanup; exit 1; }
-start "$GREEN"   "galgame   " ./tmp/galgame    || { cleanup; exit 1; }
-start "$YELLOW"  "artifact  " ./tmp/artifact   || { cleanup; exit 1; }
-start "$MAGENTA" "moderation" ./tmp/moderation || { cleanup; exit 1; }
-start "$CYAN"    "image     " ./tmp/image      || { cleanup; exit 1; }
+start "$BLUE"    "oauth     " ./tmp/oauth      core || { cleanup; exit 1; }
+start "$GREEN"   "galgame   " ./tmp/galgame    core || { cleanup; exit 1; }
+start "$MAGENTA" "moderation" ./tmp/moderation core || { cleanup; exit 1; }
+start "$CYAN"    "image     " ./tmp/image      core || { cleanup; exit 1; }
 
-# Fail fast: if any single service exits, tear the rest down so air rebuilds.
-# Restricting to $pids means we don't react to the label subshell finishing
-# by itself (it exits on EOF after the binary does, which is the normal order).
-wait -n "${pids[@]}"
+# artifact is OPTIONAL in local dev: it needs B2/S3 (KUN_ARTIFACT_S3_*). Start it
+# only when configured, and never as "core" — so an unconfigured or broken B2
+# never tears down oauth/galgame/moderation/image. (cmd/artifact still fail-fasts
+# in prod, where it runs as its own service.)
+if grep -qE '^[[:space:]]*KUN_ARTIFACT_S3_ACCESS_KEY=[^[:space:]#]' .env 2>/dev/null; then
+    start "$YELLOW" "artifact  " ./tmp/artifact \
+        || printf '%bartifact  %b|%b failed to start (optional) — continuing without it\n' "$YELLOW" "$GRAY" "$NC"
+else
+    printf '%bartifact  %b|%b skipped — KUN_ARTIFACT_S3_* not set in .env (configure B2 to enable)\n' \
+        "$YELLOW" "$GRAY" "$NC"
+fi
+
+# Fail fast on CORE services only: if one exits, tear the rest down so air
+# rebuilds. artifact (optional) exiting is ignored here so it can't stop the stack.
+wait -n "${core_pids[@]}"
 cleanup
 exit 1
