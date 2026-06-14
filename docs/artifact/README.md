@@ -12,10 +12,10 @@
 |---|------|------|------|
 | 01 | [design.md](./01-design.md) | 背景、目标、服务边界（图床 vs artifact）、整体架构、上传/下载流程、核心设计决策、技术栈、风险 | ✅ |
 | 02 | [storage-and-schema.md](./02-storage-and-schema.md) | B2 对象存储布局、私有桶 + 双密钥、生命周期/GC、`kun_artifacts` schema、OAuth Client 扩展、配额 | ✅ |
-| 03 | [api-design.md](./03-api-design.md) | 对外 API：Init / Complete / Download / Delete / List / Get（含 multipart 契约） | ⏳ 待写 |
-| 04 | [cloudflare-worker.md](./04-cloudflare-worker.md) | 私有桶经 CF Worker 分发：token 刷新、缓存、header 剥离、防盗链 | ⏳ 待写 |
-| 05 | [engineering-plan.md](./05-engineering-plan.md) | 工程里程碑、交付物、迁移（空表下沉独立库）、CI/部署 | ⏳ 待写 |
-| 06 | [integration-guide.md](./06-integration-guide.md) | **调用方视角**：OAuth 注册、直传 SDK、前端 multipart 分片、降级 | ⏳ 待写 |
+| 03 | [api-design.md](./03-api-design.md) | 对外 API：Init / Complete / Download / Delete / List / Get（含 multipart 契约） | ✅ |
+| 04 | [cloudflare-worker.md](./04-cloudflare-worker.md) | 私有桶经 CF Worker 分发：token 刷新、缓存、header 剥离、防盗链 | ✅ |
+| 05 | [engineering-plan.md](./05-engineering-plan.md) | 工程里程碑、交付物、迁移（空表下沉独立库）、CI/部署 | ✅ |
+| 06 | [integration-guide.md](./06-integration-guide.md) | **调用方视角**：OAuth 注册、直传 SDK、前端 multipart 分片、降级 | ✅ |
 
 ## 一句话总结
 
@@ -58,4 +58,4 @@ V1 上线**必须**包含：
 
 ## 跨仓契约说明
 
-artifact 目前**尚无下游接入**，故未纳入 `kungal-docs` 的 `docs:sync` 镜像体系。待 03（API）/ 06（接入指南）完成、下游开始接入时，再把对外契约部分登记进 `../kungal-docs` 的 ownership 并下发镜像（参照 `image_service` 的做法）。本目录现阶段是**纯本仓设计文档**。
+artifact 目前**尚无下游接入**，故未纳入 `kungal-docs` 的 `docs:sync` 镜像体系。01–06 设计/契约文档已就绪；待下游开始接入时，再把对外契约部分（03 API / 06 接入指南）登记进 `../kungal-docs` 的 ownership 并下发镜像（参照 `image_service` 的做法）。本目录现阶段是**纯本仓设计文档**。
