@@ -73,6 +73,25 @@ func galgamesSettings() *meilisearch.Settings {
 			"exactness",
 			"view:desc", // same-score tiebreaker — popular first
 		},
+		// StopWords — drop a handful of pure CJK function words from BOTH
+		// indexing and queries. Why: Chinese titles are saturated with the
+		// possessive/connective particles 的 / 之 (the の-equivalent), so a
+		// partial-title query like "时间奏响的" otherwise matches every
+		// unrelated title that merely shares 时间 + 的 ("秘密的时间", …). With
+		// these removed, the query reduces to its meaningful tokens
+		// (时间 + 奏响), and combined with MatchingStrategy=All (service.go)
+		// a title that isn't actually present returns nothing instead of
+		// common-token noise.
+		//
+		// DELIBERATELY conservative: only particles/conjunctions that never
+		// carry title meaning and split off cleanly from compound nouns under
+		// jieba. NO pronouns (你/我/她 — central to galgame titles), NO
+		// negation (不), NO homographs that double as nouns/verbs
+		// (地/得/着/是/在/有). Both simplified and traditional forms where they
+		// differ (与/與), since names exist in zh_cn and zh_tw.
+		StopWords: []string{
+			"的", "之", "了", "而", "与", "與", "及", "或",
+		},
 		TypoTolerance: &meilisearch.TypoTolerance{
 			Enabled: true,
 			MinWordSizeForTypos: meilisearch.MinWordSizeForTypos{

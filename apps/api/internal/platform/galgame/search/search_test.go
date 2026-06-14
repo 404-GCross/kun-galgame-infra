@@ -220,6 +220,65 @@ func TestGalgameSearch_ByName(t *testing.T) {
 	assert.EqualValues(t, 2, resp.Items[0]["id"])
 }
 
+// newGalgameDocZh builds a doc with a Chinese (zh_cn) name. The CJK cases
+// need name_zh_cn populated — newGalgameDoc only sets ja/en.
+func newGalgameDocZh(id int, vndbID, zhName string) *GalgameDoc {
+	d := newGalgameDoc(id, vndbID, "", "")
+	d.NameZhCN = zhName
+	return d
+}
+
+// TestGalgameSearch_CJK_NoCoTokenNoise locks in the fix for the reported bug
+// (search "时间奏响的" / "双子迷宫" → flood of unrelated titles). A partial /
+// absent Chinese title query used to surface every title sharing ONE common
+// token (时间 / 双子) because MatchingStrategy=Frequency dropped the rare term
+// and the 0.4 score floor didn't catch single-common-token hits. The fix is
+// two-part and this exercises both:
+//   - MatchingStrategy=All (service.go): a doc must contain ALL query tokens,
+//     so the decoys that lack the distinguishing token (迷宫) are excluded.
+//   - StopWords 的 (settings.go): the possessive particle is dropped from the
+//     query, so a legitimate title that omits 的 still matches.
+//
+// Decoys deliberately lack the distinguishing token, so the assertions hold
+// whether Meilisearch segments at word level (jieba) or per character.
+func TestGalgameSearch_CJK_NoCoTokenNoise(t *testing.T) {
+	clearIndex(t, IndexGalgames)
+	seedGalgames(t,
+		newGalgameDocZh(9001, "v9001", "魔法学院"), // decoy: shares 学院, no 迷宫
+		newGalgameDocZh(9002, "v9002", "贵族学院"), // decoy: shares 学院, no 迷宫
+		newGalgameDocZh(9003, "v9003", "学院迷宫"), // target: 学院 + 迷宫
+	)
+
+	// (A) Multi-token query resolves ONLY to the title containing every token.
+	// Pre-fix this returned all three (shared 学院); now the 迷宫-less decoys
+	// are gone.
+	resp, err := testSvc.SearchGalgames(context.Background(), &GalgameSearchRequest{Query: "学院迷宫"})
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), resp.Total, "multi-token CJK query must not surface co-token noise")
+	require.Len(t, resp.Items, 1)
+	assert.EqualValues(t, 9003, resp.Items[0]["id"])
+
+	// (C) The stop word 的 is dropped, so "学院的迷宫" still matches "学院迷宫"
+	// (which has no 的) — the particle is never a spuriously-required term.
+	resp, err = testSvc.SearchGalgames(context.Background(), &GalgameSearchRequest{Query: "学院的迷宫"})
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), resp.Total, "stop word 的 must not be a required term")
+	require.Len(t, resp.Items, 1)
+	assert.EqualValues(t, 9003, resp.Items[0]["id"])
+
+	// Recall preserved: an exact full title still resolves to itself.
+	resp, err = testSvc.SearchGalgames(context.Background(), &GalgameSearchRequest{Query: "魔法学院"})
+	require.NoError(t, err)
+	assert.GreaterOrEqual(t, resp.Total, int64(1))
+	assert.EqualValues(t, 9001, resp.Items[0]["id"])
+
+	// A wholly-absent title returns nothing rather than fuzzy noise — the
+	// "双子迷宫" symptom (none of the seeded docs contain either token).
+	resp, err = testSvc.SearchGalgames(context.Background(), &GalgameSearchRequest{Query: "图书馆秘境"})
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), resp.Total, "absent title must return 0, not fuzzy noise")
+}
+
 func TestGalgameSearch_ByVNDBID(t *testing.T) {
 	clearIndex(t, IndexGalgames)
 	seedGalgames(t,

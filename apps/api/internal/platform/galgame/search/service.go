@@ -126,12 +126,18 @@ func (s *Service) SearchGalgames(ctx context.Context, req *GalgameSearchRequest)
 	msReq := &meilisearch.SearchRequest{
 		Page:        int64(req.Page),
 		HitsPerPage: int64(req.Limit),
-		// ① Match documents containing the query terms; when there aren't
-		// enough, drop the MOST COMMON term first (keep the rarer, more
-		// meaningful ones) instead of blindly trimming from the query end
-		// (the "last" default, which produced the "matched only one loose
-		// word" results).
-		MatchingStrategy: meilisearch.Frequency,
+		// ① Require ALL query terms to be present. CJK is the reason: with the
+		// previous Frequency strategy (drop the most-common term, retry) a
+		// partial-title query segmented into common tokens — "时间奏响的" →
+		// 时间 / 奏响 / (的, now a stop word) — and any single shared token
+		// (时间) was enough to surface unrelated titles ("秘密的时间", …), while
+		// the full title diluted those matches below the score floor → 0. All
+		// flips that: a title that isn't actually in the corpus returns
+		// nothing instead of common-token noise. Trade-off is lower recall (a
+		// query word absent from every title yields 0), which is the right
+		// call for title lookup. StopWords (settings.go) keep particles like
+		// 的/之 from becoming spuriously-required terms under this strategy.
+		MatchingStrategy: meilisearch.All,
 		// ② Drop weak matches below the relevance floor.
 		RankingScoreThreshold: galgameSearchScoreThreshold,
 	}
@@ -200,7 +206,7 @@ func (s *Service) SearchGalgames(ctx context.Context, req *GalgameSearchRequest)
 			Filter:      pendingFilter,
 			// Same matching as the main pass. No score threshold here: this is
 			// the viewer's own small, time-sorted draft set — keep recall high.
-			MatchingStrategy: meilisearch.Frequency,
+			MatchingStrategy: meilisearch.All,
 		}
 		// Keep the same Highlight / Fields config so consumers can render
 		// pending entries with the same shape. Sort by latest first.
