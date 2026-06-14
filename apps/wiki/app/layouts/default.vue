@@ -38,8 +38,11 @@ const setColorMode = (mode: string) => {
   colorMode.preference = mode
 }
 
-const handleLogout = async () => {
-  await auth.logout()
+// Open the scope chooser instead of logging out directly — the user picks
+// "this site only" vs "this site + OAuth". See AuthLogoutModal.
+const showLogoutModal = ref(false)
+const handleLogout = () => {
+  showLogoutModal.value = true
 }
 
 // Close the mobile drawer on navigation — a client-side route change
@@ -258,5 +261,7 @@ onMounted(async () => {
         <slot />
       </main>
     </div>
+
+    <AuthLogoutModal v-model="showLogoutModal" />
   </div>
 </template>

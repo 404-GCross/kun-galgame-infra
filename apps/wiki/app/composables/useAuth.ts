@@ -42,10 +42,10 @@ export const useAuth = () => {
     userStore.clearUser()
   }
 
-  const logout = async () => {
-    // Revoke the refresh_token at OAuth server (RFC 7009). Public client —
-    // no client_secret required. Errors are swallowed so a server-side
-    // failure doesn't block the local logout.
+  // Revoke this RP's refresh_token (RFC 7009) and clear local cookies + store.
+  // Public client — no client_secret. Revoke is best-effort: a server failure
+  // must not block the local clear. Shared by both logout modes.
+  const clearLocalSession = async () => {
     if (refreshToken.value) {
       try {
         await authApi.post('/oauth/revoke', { token: refreshToken.value })
@@ -54,14 +54,28 @@ export const useAuth = () => {
       }
     }
     clearAuth()
+  }
 
-    // RP-initiated logout: revoking our own refresh_token + clearing local
-    // cookies is NOT enough — the central OP (oauth.kungal.com) SSO session
-    // survives (its localStorage user is cross-origin, its refresh cookie is
-    // cross-site), so the next login would silently re-consent into the same
-    // account. Top-level navigate to the OP logout entrypoint (symmetric with
-    // the /oauth/authorize login redirect) so the OP clears its session, then
-    // returns here. See docs/integration/oauth/07-logout.md.
+  // "This site only" — end the wiki session but KEEP the central OP (SSO)
+  // session. Other sites stay logged in, and logging back in here is silent
+  // (the OP still has the session, so /oauth/authorize auto-consents). Good for
+  // the user's own device.
+  const logoutLocal = async () => {
+    await clearLocalSession()
+    return navigateTo('/auth/login')
+  }
+
+  // "Everywhere" — end the wiki session AND the central OP session via
+  // RP-initiated logout. Clearing our refresh_token + local cookies alone is
+  // NOT enough: the OP session (cross-origin localStorage user + cross-site
+  // refresh cookie) survives, so the next login would silently re-consent into
+  // the same account. Top-level navigate to the OP logout entrypoint (symmetric
+  // with the /oauth/authorize login redirect) so the OP clears its session,
+  // then returns here. No site can silently re-login afterwards, and other
+  // sites' sessions lapse on their next refresh. See
+  // docs/integration/oauth/07-logout.md.
+  const logoutEverywhere = async () => {
+    await clearLocalSession()
     if (import.meta.client) {
       const params = new URLSearchParams({
         client_id: config.public.oauthClientID as string,
@@ -70,7 +84,7 @@ export const useAuth = () => {
       window.location.href = `${config.public.oauthAuthorizeBase}/oauth/logout?${params.toString()}`
       return
     }
-    navigateTo('/auth/login')
+    return navigateTo('/auth/login')
   }
 
   const refreshAccessToken = async () => {
@@ -119,7 +133,8 @@ export const useAuth = () => {
     user: computed(() => userStore.user),
     isLoggedIn: computed(() => userStore.isLoggedIn),
     isAdmin: computed(() => userStore.isAdmin),
-    logout,
+    logoutLocal,
+    logoutEverywhere,
     fetchUser,
     refreshAccessToken
   }
