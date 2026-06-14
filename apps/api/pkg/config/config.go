@@ -23,6 +23,43 @@ type Config struct {
 	ImageService    ImageServiceConfig
 	ImageS3         S3Config
 	ImageClient     ImageClientConfig
+
+	ArtifactsDatabase DatabaseConfig
+	ArtifactS3        S3Config
+	ArtifactService   ArtifactServiceConfig
+}
+
+// ArtifactServiceConfig holds artifact-service-specific configuration. See
+// docs/artifact/ for the design. The artifact service is a private-bucket,
+// presigned direct-upload/download platform for large files (game packages,
+// patches, arbitrary attachments) — distinct from image_service.
+type ArtifactServiceConfig struct {
+	Host string // Bind address
+	Port int    // Bind port
+
+	// UploadEnabled gates the upload endpoints (Init/Complete). Default
+	// false — uploads are off until B2 credentials + per-site config are
+	// finalized. Download/list/get still serve so existing artifacts resolve.
+	UploadEnabled bool
+
+	// MultipartThreshold: reported sizes >= this use S3 multipart; smaller
+	// use a single presigned PUT. Default 50MiB.
+	MultipartThreshold int64
+	// PartSize is the multipart chunk size (5MiB..5GiB per S3). Default 16MiB.
+	PartSize int64
+
+	// Presign TTLs: how long the issued upload/download URLs stay valid.
+	PresignUploadTTL   time.Duration // default 1h
+	PresignDownloadTTL time.Duration // default 1h
+
+	// GC TTLs (used by internal/jobs/artifact_gc).
+	OrphanTTL     time.Duration // status=0 never completed → abort+delete; default 24h
+	SoftDeleteTTL time.Duration // deleted_at older than this → physical delete; default 7d
+
+	// Least-privilege cleanup key (DeleteObject only), used ONLY by the GC
+	// job. Empty → fall back to the presigner key (see Config.ArtifactCleanupS3).
+	CleanupAccessKey string
+	CleanupSecretKey string
 }
 
 // ImageClientConfig is caller-side configuration for processes (cmd/galgame,
@@ -259,6 +296,47 @@ func Load() (*Config, error) {
 		ClientSecret: getEnv("KUN_IMAGE_CLIENT_SECRET", ""),
 	}
 
+	// Artifacts database config (defaults to same server, different db name)
+	cfg.ArtifactsDatabase = DatabaseConfig{
+		Host:     getEnv("KUN_ARTIFACTS_PG_HOST", cfg.Database.Host),
+		Port:     getEnv("KUN_ARTIFACTS_PG_PORT", cfg.Database.Port),
+		User:     getEnv("KUN_ARTIFACTS_PG_USER", cfg.Database.User),
+		Password: getEnv("KUN_ARTIFACTS_PG_PASSWORD", cfg.Database.Password),
+		DBName:   getEnv("KUN_ARTIFACTS_PG_DATABASE", "kun_artifacts"),
+		SSLMode:  getEnv("KUN_ARTIFACTS_PG_SSLMODE", cfg.Database.SSLMode),
+		Timezone: getEnv("KUN_ARTIFACTS_PG_TIMEZONE", cfg.Database.Timezone),
+	}
+
+	// Artifact S3/B2 (object storage) config. Prod points at Backblaze B2
+	// (S3-compatible): endpoint s3.<region>.backblazeb2.com, UsePathStyle=false.
+	// Dev defaults to local MinIO (path style).
+	artifactPathStyle, _ := strconv.ParseBool(getEnv("KUN_ARTIFACT_S3_FORCE_PATH_STYLE", "true"))
+	cfg.ArtifactS3 = S3Config{
+		Endpoint:        getEnv("KUN_ARTIFACT_S3_ENDPOINT", "http://127.0.0.1:9000"),
+		Region:          getEnv("KUN_ARTIFACT_S3_REGION", "us-east-1"),
+		AccessKeyID:     getEnv("KUN_ARTIFACT_S3_ACCESS_KEY", ""),
+		SecretAccessKey: getEnv("KUN_ARTIFACT_S3_SECRET_KEY", ""),
+		Bucket:          getEnv("KUN_ARTIFACT_S3_BUCKET", "kun-artifacts-dev"),
+		UsePathStyle:    artifactPathStyle,
+	}
+
+	// Artifact service config.
+	artifactPort, _ := strconv.Atoi(getEnv("KUN_ARTIFACT_PORT", "9279"))
+	artifactUploadEnabled, _ := strconv.ParseBool(getEnv("KUN_ARTIFACT_UPLOAD_ENABLED", "false"))
+	cfg.ArtifactService = ArtifactServiceConfig{
+		Host:               getEnv("KUN_ARTIFACT_HOST", "127.0.0.1"),
+		Port:               artifactPort,
+		UploadEnabled:      artifactUploadEnabled,
+		MultipartThreshold: getEnvInt64("KUN_ARTIFACT_MULTIPART_THRESHOLD", 50*1024*1024),
+		PartSize:           getEnvInt64("KUN_ARTIFACT_PART_SIZE", 16*1024*1024),
+		PresignUploadTTL:   time.Duration(getEnvInt64("KUN_ARTIFACT_PRESIGN_UPLOAD_TTL_SECONDS", 3600)) * time.Second,
+		PresignDownloadTTL: time.Duration(getEnvInt64("KUN_ARTIFACT_PRESIGN_DOWNLOAD_TTL_SECONDS", 3600)) * time.Second,
+		OrphanTTL:          time.Duration(getEnvInt64("KUN_ARTIFACT_ORPHAN_TTL_HOURS", 24)) * time.Hour,
+		SoftDeleteTTL:      time.Duration(getEnvInt64("KUN_ARTIFACT_SOFTDELETE_TTL_HOURS", 168)) * time.Hour,
+		CleanupAccessKey:   getEnv("KUN_ARTIFACT_S3_CLEANUP_ACCESS_KEY", ""),
+		CleanupSecretKey:   getEnv("KUN_ARTIFACT_S3_CLEANUP_SECRET_KEY", ""),
+	}
+
 	// Validate required fields
 	if err := cfg.validate(); err != nil {
 		return nil, err
@@ -299,6 +377,28 @@ func (c *ServerConfig) IsDevelopment() bool {
 // IsProduction returns true if running in production mode
 func (c *ServerConfig) IsProduction() bool {
 	return c.Env == "production"
+}
+
+// ArtifactCleanupS3 returns the S3 config for the GC job: the artifact bucket
+// with the least-privilege cleanup credentials (DeleteObject only) if set,
+// else falling back to the presigner credentials.
+func (c *Config) ArtifactCleanupS3() S3Config {
+	s3 := c.ArtifactS3
+	if c.ArtifactService.CleanupAccessKey != "" {
+		s3.AccessKeyID = c.ArtifactService.CleanupAccessKey
+		s3.SecretAccessKey = c.ArtifactService.CleanupSecretKey
+	}
+	return s3
+}
+
+// getEnvInt64 parses an int64 env var, returning the default on missing/invalid.
+func getEnvInt64(key string, defaultValue int64) int64 {
+	if v := os.Getenv(key); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
+			return n
+		}
+	}
+	return defaultValue
 }
 
 // getEnv gets an environment variable or returns a default value

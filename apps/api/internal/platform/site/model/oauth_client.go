@@ -131,8 +131,8 @@ type OAuthClient struct {
 	MoemoepointAwarder bool `gorm:"not null;default:false" json:"moemoepoint_awarder"`
 
 	// --- Image service extension fields ---
-	ImageEnabled          bool           `gorm:"not null;default:false" json:"image_enabled"`
-	ImageSiteKey          string         `gorm:"size:32" json:"image_site_key,omitempty"`
+	ImageEnabled bool   `gorm:"not null;default:false" json:"image_enabled"`
+	ImageSiteKey string `gorm:"size:32" json:"image_site_key,omitempty"`
 
 	// ImageCDNBase overrides the global image CDN base (KUN_IMAGE_CDN_BASE)
 	// for THIS client's image URLs. Empty → global default. Lets a site serve
@@ -144,11 +144,26 @@ type OAuthClient struct {
 	// resolves this per request from the authenticated client; downstreams
 	// that build URLs themselves should configure their imageclient CDNBase to
 	// the same value. See docs/image_service.
-	ImageCDNBase          string         `gorm:"size:255" json:"image_cdn_base,omitempty"`
-	ImageQuotaDaily       int            `gorm:"default:10000" json:"image_quota_daily"`
-	ImageQuotaBytesDaily  int64          `gorm:"default:10737418240" json:"image_quota_bytes_daily"`
-	ImageMaxFileSize      int64          `gorm:"default:10485760" json:"image_max_file_size"`
-	ImageAllowedPresets   datatypes.JSON `gorm:"type:jsonb" json:"image_allowed_presets,omitempty"`
+	ImageCDNBase         string         `gorm:"size:255" json:"image_cdn_base,omitempty"`
+	ImageQuotaDaily      int            `gorm:"default:10000" json:"image_quota_daily"`
+	ImageQuotaBytesDaily int64          `gorm:"default:10737418240" json:"image_quota_bytes_daily"`
+	ImageMaxFileSize     int64          `gorm:"default:10485760" json:"image_max_file_size"`
+	ImageAllowedPresets  datatypes.JSON `gorm:"type:jsonb" json:"image_allowed_presets,omitempty"`
+
+	// --- Artifact service extension fields ---
+	// Mirror the Image* fields for the large-file artifact service. See
+	// docs/artifact/02-storage-and-schema.md.
+	ArtifactEnabled bool   `gorm:"not null;default:false" json:"artifact_enabled"`
+	ArtifactSiteKey string `gorm:"size:32" json:"artifact_site_key,omitempty"`
+	// ArtifactCDNBase is this site's Cloudflare-Worker download domain (e.g.
+	// https://patch.touchgal.moe). Empty → downloads only via presigned GET.
+	// When set AND an artifact is public, the download endpoint returns a
+	// Worker-domain URL (cacheable, B2→CF egress free) instead of a presign.
+	ArtifactCDNBase         string         `gorm:"size:255" json:"artifact_cdn_base,omitempty"`
+	ArtifactQuotaDaily      int            `gorm:"default:1000" json:"artifact_quota_daily"`
+	ArtifactQuotaBytesDaily int64          `gorm:"default:107374182400" json:"artifact_quota_bytes_daily"`
+	ArtifactMaxFileSize     int64          `gorm:"default:21474836480" json:"artifact_max_file_size"`
+	ArtifactAllowedMime     datatypes.JSON `gorm:"type:jsonb" json:"artifact_allowed_mime,omitempty"`
 
 	// Relations
 	Site *Site `gorm:"foreignKey:SiteID" json:"site,omitempty"`
@@ -189,6 +204,19 @@ func (c *OAuthClient) AllowedPresets() []string {
 // IsPresetAllowed checks if the given preset is in AllowedPresets.
 func (c *OAuthClient) IsPresetAllowed(preset string) bool {
 	return slices.Contains(c.AllowedPresets(), preset)
+}
+
+// ArtifactAllowedMimes returns the parsed per-site allowlist of MIME types
+// and/or file extensions for the artifact service. Empty/unset = allow all.
+func (c *OAuthClient) ArtifactAllowedMimes() []string {
+	if len(c.ArtifactAllowedMime) == 0 {
+		return nil
+	}
+	var list []string
+	if err := json.Unmarshal(c.ArtifactAllowedMime, &list); err != nil {
+		return nil
+	}
+	return list
 }
 
 // oidcCoreScopes are the scopes implicitly granted to any client when

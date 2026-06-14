@@ -58,4 +58,13 @@ func RegisterAll(r *Registry) {
 			return RunUserAvatarRefping(ctx, cfg, DefaultUserAvatarRefpingOpts())
 		},
 	})
+
+	r.Register(Job{
+		Name:     "artifact-gc",
+		Desc:     "artifact 生命周期（孤儿上传回收 + 软删物理回收）",
+		Schedule: Schedule{DailyAt: "05:30"},
+		Run: func(ctx context.Context, cfg *config.Config) (Summary, error) {
+			return RunArtifactGC(ctx, cfg, DefaultArtifactGCOpts(cfg))
+		},
+	})
 }

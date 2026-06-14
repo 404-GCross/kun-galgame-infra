@@ -11,7 +11,6 @@ import (
 
 	// Import all models
 	jobsModel "api/internal/jobs/model"
-	artifactModel "api/internal/platform/artifact/model"
 	authModel "api/internal/platform/auth/model"
 	moderationModel "api/internal/platform/moderation/model"
 	siteModel "api/internal/platform/site/model"
@@ -96,9 +95,9 @@ func getAllModels() []any {
 		&siteModel.Role{},
 		&siteModel.Permission{},
 
-		// Artifact models
-		&artifactModel.Artifact{},
-		&artifactModel.Manifest{},
+		// NOTE: artifact models (Artifact/Manifest) moved to the dedicated
+		// kun_artifacts DB — migrated by cmd/artifact's AutoMigrate, not here.
+		// See docs/artifact/02-storage-and-schema.md.
 
 		// Moderation models
 		&moderationModel.Job{},

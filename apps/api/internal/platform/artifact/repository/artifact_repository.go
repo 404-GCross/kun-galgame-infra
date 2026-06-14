@@ -2,72 +2,102 @@ package repository
 
 import (
 	"context"
+	"time"
 
 	"api/internal/platform/artifact/model"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
-// ArtifactRepository handles artifact data access
+// ArtifactRepository handles artifact data access.
 type ArtifactRepository struct {
 	db *gorm.DB
 }
 
-// NewArtifactRepository creates a new ArtifactRepository
+// NewArtifactRepository creates a new ArtifactRepository.
 func NewArtifactRepository(db *gorm.DB) *ArtifactRepository {
 	return &ArtifactRepository{db: db}
 }
 
-// FindByID finds an artifact by ID
-func (r *ArtifactRepository) FindByID(ctx context.Context, id uint) (*model.Artifact, error) {
-	var artifact model.Artifact
-	if err := r.db.WithContext(ctx).First(&artifact, id).Error; err != nil {
-		return nil, err
-	}
-	return &artifact, nil
+// Create inserts a new artifact row.
+func (r *ArtifactRepository) Create(ctx context.Context, a *model.Artifact) error {
+	return r.db.WithContext(ctx).Create(a).Error
 }
 
-// FindByUUID finds an artifact by UUID
+// FindByUUID finds an artifact by its uuid (excludes soft-deleted).
 func (r *ArtifactRepository) FindByUUID(ctx context.Context, uuid string) (*model.Artifact, error) {
-	var artifact model.Artifact
-	if err := r.db.WithContext(ctx).Where("uuid = ?", uuid).First(&artifact).Error; err != nil {
+	var a model.Artifact
+	if err := r.db.WithContext(ctx).Where("uuid = ?", uuid).First(&a).Error; err != nil {
 		return nil, err
 	}
-	return &artifact, nil
+	return &a, nil
 }
 
-// Create creates a new artifact
-func (r *ArtifactRepository) Create(ctx context.Context, artifact *model.Artifact) error {
-	return r.db.WithContext(ctx).Create(artifact).Error
+// Update saves all fields of an artifact.
+func (r *ArtifactRepository) Update(ctx context.Context, a *model.Artifact) error {
+	return r.db.WithContext(ctx).Save(a).Error
 }
 
-// Update updates an artifact
-func (r *ArtifactRepository) Update(ctx context.Context, artifact *model.Artifact) error {
-	return r.db.WithContext(ctx).Save(artifact).Error
-}
-
-// Delete soft deletes an artifact
-func (r *ArtifactRepository) Delete(ctx context.Context, id uint) error {
-	return r.db.WithContext(ctx).Delete(&model.Artifact{}, id).Error
-}
-
-// List lists artifacts with pagination
-func (r *ArtifactRepository) List(ctx context.Context, offset, limit int) ([]model.Artifact, int64, error) {
-	var artifacts []model.Artifact
-	var total int64
-
-	if err := r.db.WithContext(ctx).Model(&model.Artifact{}).Count(&total).Error; err != nil {
+// ListBySite returns a site's artifacts (newest first), with the total count.
+func (r *ArtifactRepository) ListBySite(ctx context.Context, site string, offset, limit int) ([]model.Artifact, int64, error) {
+	var (
+		items []model.Artifact
+		total int64
+	)
+	q := r.db.WithContext(ctx).Model(&model.Artifact{}).Where("site_key = ?", site)
+	if err := q.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
-
-	if err := r.db.WithContext(ctx).Offset(offset).Limit(limit).Order("created_at DESC").Find(&artifacts).Error; err != nil {
+	if err := q.Offset(offset).Limit(limit).Order("created_at DESC").Find(&items).Error; err != nil {
 		return nil, 0, err
 	}
-
-	return artifacts, total, nil
+	return items, total, nil
 }
 
-// UpdateStatus updates artifact status
-func (r *ArtifactRepository) UpdateStatus(ctx context.Context, id uint, status int) error {
-	return r.db.WithContext(ctx).Model(&model.Artifact{}).Where("id = ?", id).Update("status", status).Error
+// SoftDeleteByUUID soft-deletes an artifact scoped to a site. Returns false if
+// no matching live row existed (unknown uuid or other site).
+func (r *ArtifactRepository) SoftDeleteByUUID(ctx context.Context, uuid, site string) (bool, error) {
+	res := r.db.WithContext(ctx).
+		Where("uuid = ? AND site_key = ?", uuid, site).
+		Delete(&model.Artifact{})
+	if res.Error != nil {
+		return false, res.Error
+	}
+	return res.RowsAffected > 0, nil
+}
+
+// SaveManifest upserts the (1:1) manifest for an artifact.
+func (r *ArtifactRepository) SaveManifest(ctx context.Context, m *model.Manifest) error {
+	return r.db.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "artifact_id"}},
+		UpdateAll: true,
+	}).Create(m).Error
+}
+
+// FindOrphans returns live artifacts stuck uploading (status=0) since before
+// the given time — Init'd but never Completed. Used by the GC job.
+func (r *ArtifactRepository) FindOrphans(ctx context.Context, before time.Time, limit int) ([]model.Artifact, error) {
+	var items []model.Artifact
+	err := r.db.WithContext(ctx).
+		Where("status = ? AND created_at < ?", model.StatusUploading, before).
+		Limit(limit).
+		Find(&items).Error
+	return items, err
+}
+
+// FindExpiredSoftDeleted returns soft-deleted artifacts whose deleted_at is
+// older than the given time — ready for physical removal. Used by the GC job.
+func (r *ArtifactRepository) FindExpiredSoftDeleted(ctx context.Context, before time.Time, limit int) ([]model.Artifact, error) {
+	var items []model.Artifact
+	err := r.db.WithContext(ctx).Unscoped().
+		Where("deleted_at IS NOT NULL AND deleted_at < ?", before).
+		Limit(limit).
+		Find(&items).Error
+	return items, err
+}
+
+// HardDelete physically removes an artifact row (and cascades its manifest).
+func (r *ArtifactRepository) HardDelete(ctx context.Context, id uint) error {
+	return r.db.WithContext(ctx).Unscoped().Delete(&model.Artifact{}, id).Error
 }

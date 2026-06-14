@@ -26,21 +26,21 @@ const (
 	ErrOperationFailed  = 10 // 操作失败
 
 	// Auth (10000-19999)
-	ErrAuthUnauthorized     = 10001
-	ErrAuthInvalidToken     = 10002
-	ErrAuthTokenExpired     = 10003
-	ErrAuthInvalidPassword  = 10004
-	ErrAuthUserNotFound     = 10005
-	ErrAuthEmailExists      = 10006
-	ErrAuthNameExists       = 10007
-	ErrAuthPasswordRequired = 10008
-	ErrAuthInvalidEmail     = 10009
-	ErrAuthCodeInvalid              = 10010
-	ErrAuthCodeExpired              = 10011
-	ErrAuthEmailChangeTooFrequent   = 10012
-	ErrAuthEmailSameAsCurrent       = 10013
-	ErrAuthUserBanned               = 10014
-	ErrAuthEmailDomainNotAllowed    = 10015
+	ErrAuthUnauthorized           = 10001
+	ErrAuthInvalidToken           = 10002
+	ErrAuthTokenExpired           = 10003
+	ErrAuthInvalidPassword        = 10004
+	ErrAuthUserNotFound           = 10005
+	ErrAuthEmailExists            = 10006
+	ErrAuthNameExists             = 10007
+	ErrAuthPasswordRequired       = 10008
+	ErrAuthInvalidEmail           = 10009
+	ErrAuthCodeInvalid            = 10010
+	ErrAuthCodeExpired            = 10011
+	ErrAuthEmailChangeTooFrequent = 10012
+	ErrAuthEmailSameAsCurrent     = 10013
+	ErrAuthUserBanned             = 10014
+	ErrAuthEmailDomainNotAllowed  = 10015
 
 	// OAuth (15000-15999)
 	ErrOAuthInvalidClient       = 15001
@@ -72,11 +72,23 @@ const (
 	ErrGalgameQuotaExceeded      = 20009 // 今日投稿配额已用尽
 
 	// Artifact (50000-59999)
-	ErrArtifactNotFound   = 50001
-	ErrArtifactInvalid    = 50002
-	ErrArtifactVirusFound = 50003
-	ErrArtifactTooBig     = 50004
-	ErrArtifactProcessing = 50005
+	ErrArtifactNotFound         = 50001
+	ErrArtifactInvalid          = 50002
+	ErrArtifactVirusFound       = 50003
+	ErrArtifactTooBig           = 50004
+	ErrArtifactProcessing       = 50005
+	ErrArtifactUnauthorized     = 50006
+	ErrArtifactBadClient        = 50007
+	ErrArtifactBadSecret        = 50008
+	ErrArtifactSiteDisabled     = 50009
+	ErrArtifactSiteUnconfigured = 50010
+	ErrArtifactBadRequest       = 50011
+	ErrArtifactQuotaExceeded    = 50012
+	ErrArtifactStoreFailed      = 50013
+	ErrArtifactUploadDisabled   = 50014
+	ErrArtifactSizeMismatch     = 50015
+	ErrArtifactForbidden        = 50016
+	ErrArtifactMIMEDenied       = 50017
 
 	// Moderation (60000-69999)
 	ErrModerationPending  = 60001
@@ -120,15 +132,15 @@ var codeMessages = map[int]string{
 	ErrOperationFailed:  "操作失败",
 
 	// Auth
-	ErrAuthUnauthorized:     "未授权，请先登录",
-	ErrAuthInvalidToken:     "无效的令牌",
-	ErrAuthTokenExpired:     "令牌已过期，请重新登录",
-	ErrAuthInvalidPassword:  "邮箱或密码错误",
-	ErrAuthUserNotFound:     "用户不存在",
-	ErrAuthEmailExists:      "该邮箱已被注册",
-	ErrAuthNameExists:       "该用户名已被使用",
-	ErrAuthPasswordRequired: "需要重置密码",
-	ErrAuthInvalidEmail:     "邮箱格式不正确",
+	ErrAuthUnauthorized:           "未授权，请先登录",
+	ErrAuthInvalidToken:           "无效的令牌",
+	ErrAuthTokenExpired:           "令牌已过期，请重新登录",
+	ErrAuthInvalidPassword:        "邮箱或密码错误",
+	ErrAuthUserNotFound:           "用户不存在",
+	ErrAuthEmailExists:            "该邮箱已被注册",
+	ErrAuthNameExists:             "该用户名已被使用",
+	ErrAuthPasswordRequired:       "需要重置密码",
+	ErrAuthInvalidEmail:           "邮箱格式不正确",
 	ErrAuthCodeInvalid:            "验证码无效",
 	ErrAuthCodeExpired:            "验证码已过期",
 	ErrAuthEmailChangeTooFrequent: "邮箱验证码发送过于频繁，请稍后再试",
@@ -163,11 +175,23 @@ var codeMessages = map[int]string{
 	ErrGalgameDraftStatusInvalid: "草稿仅可在待审/已拒状态编辑",
 	ErrGalgameQuotaExceeded:      "今日投稿配额已用尽",
 
-	ErrArtifactNotFound:   "资源不存在",
-	ErrArtifactInvalid:    "无效的资源",
-	ErrArtifactVirusFound: "检测到病毒文件",
-	ErrArtifactTooBig:     "文件过大",
-	ErrArtifactProcessing: "资源正在处理中",
+	ErrArtifactNotFound:         "资源不存在",
+	ErrArtifactInvalid:          "无效的资源",
+	ErrArtifactVirusFound:       "检测到病毒文件",
+	ErrArtifactTooBig:           "文件过大",
+	ErrArtifactProcessing:       "资源正在处理中",
+	ErrArtifactUnauthorized:     "未授权访问制品服务",
+	ErrArtifactBadClient:        "无效的客户端 ID",
+	ErrArtifactBadSecret:        "客户端密钥错误",
+	ErrArtifactSiteDisabled:     "该站点未开启制品服务",
+	ErrArtifactSiteUnconfigured: "该站点缺少制品服务配置",
+	ErrArtifactBadRequest:       "请求格式错误",
+	ErrArtifactQuotaExceeded:    "当日配额已用完",
+	ErrArtifactStoreFailed:      "制品存储失败",
+	ErrArtifactUploadDisabled:   "制品上传功能暂未开放，敬请期待",
+	ErrArtifactSizeMismatch:     "上传文件大小与声明不符",
+	ErrArtifactForbidden:        "无权操作此制品",
+	ErrArtifactMIMEDenied:       "该站点不接受此文件类型",
 
 	ErrModerationPending:  "内容待审核",
 	ErrModerationRejected: "内容审核未通过",
