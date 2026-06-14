@@ -5525,6 +5525,8 @@ export const TAG_MAP: Record<string, string> = {
   'Son-in-law': '女婿',
   'Non-blood-related Son': '非血缘儿子',
   // ---- 2026-06: VNDB tags translated (were English-only in prod, added per cleanup) ----
+  'Based on Theatre': '改编自舞台剧',
+  'Mothercon Protagonist': '母控主人公',
   'DC Comics': 'DC漫画',
   'Dragon Ball': '龙珠',
   'Free!': 'Free!',
