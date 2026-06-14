@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ALL_GRANTS, KNOWN_SCOPES, DEFAULT_REFRESH_TOKEN_TTL_SECONDS } from '~~/shared/types/oauth-client'
+import { ALL_GRANTS, KNOWN_SCOPES, REN_ONLY_SCOPES, DEFAULT_REFRESH_TOKEN_TTL_SECONDS } from '~~/shared/types/oauth-client'
 
 const props = defineProps<{ client: OAuthClient }>()
 const emit = defineEmits<{ close: []; updated: [] }>()
@@ -7,13 +7,13 @@ const emit = defineEmits<{ close: []; updated: [] }>()
 const api = useApi()
 const show = ref(true)
 
-// image:upload scope + auto_consent are ren（莲）-only (server-enforced). For a
-// non-ren editor we hide the controls; any existing sensitive values stay in
-// the submitted payload unchanged (the API's no-escalation guard permits
-// keeping them — only ADDING is blocked).
+// Ren-only scopes (image:upload / artifact:upload) + auto_consent are ren（莲）-
+// only (server-enforced). For a non-ren editor we hide the controls; any
+// existing sensitive values stay in the submitted payload unchanged (the API's
+// no-escalation guard permits keeping them — only ADDING is blocked).
 const { isRen } = useAuth()
 const scopeOptions = computed(() =>
-  isRen.value ? KNOWN_SCOPES : KNOWN_SCOPES.filter((s) => s !== 'image:upload')
+  isRen.value ? KNOWN_SCOPES : KNOWN_SCOPES.filter((s) => !REN_ONLY_SCOPES.includes(s))
 )
 
 const name = ref(props.client.name)
@@ -190,7 +190,7 @@ const handleSubmit = async () => {
       <div>
         <span class="mb-1 block text-sm font-medium text-default-500">
           允许的 scope (allowed_scopes)
-          <span class="text-xs text-default-400">— image:upload 这类敏感 scope 必须显式勾选</span>
+          <span class="text-xs text-default-400">— image:upload / artifact:upload 这类敏感 scope 必须显式勾选（仅 ren 可授予）</span>
         </span>
         <div class="flex flex-wrap gap-2">
           <KunCheckBox

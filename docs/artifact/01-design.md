@@ -185,6 +185,18 @@ client GET /artifacts/:uuid/download
 
 **理由**：解压 GB 压缩包找清单成本高且脆弱；让调用方在完成上传时直接声明结构化 manifest，便宜、明确。（未来若确需「从包内解析」，作为可插拔 pipeline step 接入。）
 
+### 决策 9：权限控制 —— artifact 能力全部 ren（莲）-only，默认关闭
+
+**选择**：开启某站点的 artifact 能力 = 给它的 OAuth Client 授予 `artifact:upload` scope，而**授予该 scope 仅 ren（莲）可操作**（与 `image:upload` / `auto_consent` 同一条 ren-gate，见 `internal/platform/site/handler/site_handler.go` 的 `renOnlyScopes` + `CreateClient`/`UpdateClient`）。所有 artifact 相关开关**默认关闭**：
+
+- `oauth_client.artifact_enabled` 默认 `false`；
+- `artifact:upload` 不在 OIDC 默认 scope 集 `{openid,profile,email}` 里，必须被**显式授予**；
+- 普通 admin 创建/编辑 client 时**无法**授予 `artifact:upload`——前端对非 ren 隐藏该勾选项（`oauth-clients/CreateModal`、`EditModal` 的 `REN_ONLY_SCOPES` 过滤），后端 ren-gate 兜底（create 拒绝授予、update 只挡「新增」不挡「保留/降权」）。
+
+**推论（强制约定）**：未来任何 artifact 管理面（如「全站制品」面板、按站配额编辑端点）一律 `middleware.RequireRole("ren")` + 默认关闭，**不对普通 admin 开放**。当前 `artifact_*` 配置列（`artifact_quota_*`、`artifact_max_file_size`、`artifact_cdn_base` 等）是 SQL-only，应由 ren 运维设置。
+
+**理由**：artifact 直接对应真金白银的对象存储 + 出流量成本、且是大文件分发面，能力收敛到最高信任的 ren 一档，避免普通 admin 误开导致刷量/费用失控。与 `ren` 既有定位（"gates the genuinely dangerous OAuth-admin capabilities"）一致。
+
 ## 技术栈
 
 | 层 | 选型 | 备注 |

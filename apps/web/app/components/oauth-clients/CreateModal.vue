@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ALL_GRANTS, KNOWN_SCOPES, DEFAULT_REFRESH_TOKEN_TTL_SECONDS } from '~~/shared/types/oauth-client'
+import { ALL_GRANTS, KNOWN_SCOPES, REN_ONLY_SCOPES, DEFAULT_REFRESH_TOKEN_TTL_SECONDS } from '~~/shared/types/oauth-client'
 
 const show = defineModel<boolean>({ required: true })
 const props = defineProps<{ sites: Site[] }>()
@@ -7,12 +7,13 @@ const emit = defineEmits<{ created: [client: OAuthClientCreated] }>()
 
 const api = useApi()
 
-// image:upload scope + auto_consent are ren（莲）-only (server-enforced via the
-// ren-gate in site_handler). Hide the controls for non-ren so they never
-// submit a request the API would 403; both stay default-off regardless.
+// Ren-only scopes (image:upload / artifact:upload) + auto_consent are ren（莲）-
+// only (server-enforced via the ren-gate in site_handler). Hide the controls
+// for non-ren so they never submit a request the API would 403; all stay
+// default-off regardless.
 const { isRen } = useAuth()
 const scopeOptions = computed(() =>
-  isRen.value ? KNOWN_SCOPES : KNOWN_SCOPES.filter((s) => s !== 'image:upload')
+  isRen.value ? KNOWN_SCOPES : KNOWN_SCOPES.filter((s) => !REN_ONLY_SCOPES.includes(s))
 )
 
 const siteId = ref<number | ''>('')
@@ -204,7 +205,7 @@ const handleSubmit = async () => {
       <div>
         <span class="mb-1 block text-sm font-medium text-default-500">
           允许的 scope (allowed_scopes)
-          <span class="text-xs text-default-400">— image:upload 这类敏感 scope 必须显式勾选</span>
+          <span class="text-xs text-default-400">— image:upload / artifact:upload 这类敏感 scope 必须显式勾选（仅 ren 可授予）</span>
         </span>
         <div class="flex flex-wrap gap-2">
           <KunCheckBox

@@ -43,4 +43,12 @@ export const KNOWN_SCOPES = [
   'profile',
   'email',
   'image:upload',
+  'artifact:upload',
 ] as const
+
+// Sensitive scopes only the ren（莲）role may grant. The create/edit modals
+// hide these from non-ren admins, and the server enforces the same gate
+// (api .../site_handler.go renOnlyScopes). Granting artifact:upload turns on
+// the whole artifact (large-file) capability for a client; both are default-off.
+// Keep in sync with the backend.
+export const REN_ONLY_SCOPES: readonly string[] = ['image:upload', 'artifact:upload']

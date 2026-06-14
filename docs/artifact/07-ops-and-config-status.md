@@ -45,7 +45,7 @@
 | 4 | 跑 `cmd/migrate` | 给 `oauth_clients` 加 `artifact_*` 列（**见下方部署安全**）|
 | 5 | 给 **oauth 服务**补 artifact env | `KUN_ARTIFACTS_PG_*` + `KUN_ARTIFACT_S3_*`（尤其 cleanup 密钥）——因为 `artifact-gc` 跑在 oauth 进程；重部 oauth |
 | 6 | 部署 `infra-artifact` | Dokploy 新服务，端口 9279，注入 DB+S3 env；先 `UPLOAD_ENABLED=false` 验证 list/get/download/healthz |
-| 7 | 配站点 OAuth Client | 目标站 `artifact_enabled=true`、`artifact_site_key`、配额、scope 加 `artifact:upload`、可选 `artifact_cdn_base` |
+| 7 | 配站点 OAuth Client | 目标站 `artifact_enabled=true`、`artifact_site_key`、配额、scope 加 `artifact:upload`、可选 `artifact_cdn_base`。⚠️ **授予 `artifact:upload` 仅 ren（莲）可操作**（前端对非 ren 隐藏、后端 ren-gate 兜底）；`artifact_*` 配置列 SQL-only，由 ren 运维设置。见 [01 决策 9](./01-design.md#决策-9权限控制--artifact-能力全部-ren莲-only默认关闭) |
 | 8 | 配 B2 桶 CORS | 前端直传需要（同本地 §2）|
 | 9 | （可选）Cloudflare Worker | 公开/热门内容免流量下载，见 [04](./04-cloudflare-worker.md) |
 | 10 | 灰度 `KUN_ARTIFACT_UPLOAD_ENABLED=true` | 端到端验证后放量 |

@@ -33,6 +33,7 @@
 - ✅ **最小权限密钥** —— `presigner`（签发）/ `cleanup`（仅删，只给 GC）分离（决策 6）
 - ✅ **下载分发** —— 默认私有预签名 GET；`public` + 站点 `artifact_cdn_base` 时走 CF Worker 缓存域名（B2→CF 出流量免费；决策 7）
 - ✅ **manifest 可选** —— 调用方在 Complete 时提交结构化清单，不从压缩包解（决策 8）
+- ✅ **权限 ren-only + 默认关闭** —— 授予 `artifact:upload`（= 开启某站 artifact 能力）仅 ren（莲）可操作（同 image:upload 的 ren-gate）；所有开关默认关；未来 artifact 管理端点一律 `RequireRole("ren")`（决策 9）
 
 ## V1 必要性下限（不可拆）
 

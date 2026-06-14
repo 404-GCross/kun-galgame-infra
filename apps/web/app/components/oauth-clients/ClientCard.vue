@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { REN_ONLY_SCOPES } from '~~/shared/types/oauth-client'
+
 const props = defineProps<{
   client: OAuthClient
   sites: Site[]
@@ -90,7 +92,7 @@ const siteName = computed(() => {
           <KunChip
             v-for="scope in client.allowed_scopes"
             :key="scope"
-            :color="scope === 'image:upload' ? 'warning' : 'default'"
+            :color="REN_ONLY_SCOPES.includes(scope) ? 'warning' : 'default'"
             variant="flat"
             size="sm"
           >
