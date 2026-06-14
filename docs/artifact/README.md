@@ -16,6 +16,7 @@
 | 04 | [cloudflare-worker.md](./04-cloudflare-worker.md) | 私有桶经 CF Worker 分发：token 刷新、缓存、header 剥离、防盗链 | ✅ |
 | 05 | [engineering-plan.md](./05-engineering-plan.md) | 工程里程碑、交付物、迁移（空表下沉独立库）、CI/部署 | ✅ |
 | 06 | [integration-guide.md](./06-integration-guide.md) | **调用方视角**：OAuth 注册、直传 SDK、前端 multipart 分片、降级 | ✅ |
+| 07 | [ops-and-config-status.md](./07-ops-and-config-status.md) | **运维待办清单**：现状速览、本地/生产剩余配置、部署安全（不影响 oauth/wiki/image）| ✅ |
 
 ## 一句话总结
 

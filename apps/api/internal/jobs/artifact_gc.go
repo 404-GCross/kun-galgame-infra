@@ -42,6 +42,15 @@ func DefaultArtifactGCOpts(cfg *config.Config) ArtifactGCOpts {
 //     abort any multipart upload + delete object + drop the row
 //   - expired soft-deletes: deleted_at past SoftDeleteTTL → delete object + drop row
 func RunArtifactGC(ctx context.Context, cfg *config.Config, opts ArtifactGCOpts) (Summary, error) {
+	// No-op when the artifact service isn't configured yet (e.g. prod oauth
+	// before B2 credentials are set). This job is registered in the oauth
+	// process; without this guard it would error daily trying to reach an
+	// absent kun_artifacts DB / unconfigured S3. Storage creds are the signal
+	// that artifact is live.
+	if cfg.ArtifactS3.AccessKeyID == "" {
+		return Summary{"skipped": "artifact storage not configured"}, nil
+	}
+
 	if opts.MaxPerRun <= 0 {
 		opts.MaxPerRun = 10000
 	}

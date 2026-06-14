@@ -1,0 +1,50 @@
+// migrate-artifact creates/updates the artifact service's dedicated database
+// (kun_artifacts): the `artifacts` and `manifests` tables. Split from the main
+// cmd/migrate so the artifact DB can be provisioned WITHOUT object-storage
+// credentials (B2 can be configured later) — cmd/artifact also AutoMigrates
+// these on boot, but it requires S3 to start, so this is the DB-first path for
+// local dev and pre-storage prod setup. See docs/artifact/.
+//
+//	go run ./cmd/migrate-artifact
+package main
+
+import (
+	"log/slog"
+	"os"
+
+	"api/internal/infrastructure/database"
+	artifactModel "api/internal/platform/artifact/model"
+	"api/pkg/config"
+	"api/pkg/logger"
+)
+
+func main() {
+	cfg, err := config.Load()
+	if err != nil {
+		slog.Error("failed to load config", "error", err)
+		os.Exit(1)
+	}
+
+	logger.Init(cfg.Server.Env)
+	slog.Info("connecting to artifacts database", "dbname", cfg.ArtifactsDatabase.DBName)
+
+	db, err := database.NewPostgresDB(cfg.ArtifactsDatabase)
+	if err != nil {
+		slog.Error("failed to connect to database", "error", err,
+			"hint", "create the database first, e.g. `createdb kun_artifacts`")
+		os.Exit(1)
+	}
+	defer db.Close()
+
+	slog.Info("running artifact migrations...")
+
+	if err := db.AutoMigrate(
+		&artifactModel.Artifact{},
+		&artifactModel.Manifest{},
+	); err != nil {
+		slog.Error("migration failed", "error", err)
+		os.Exit(1)
+	}
+
+	slog.Info("artifact migration completed successfully")
+}
