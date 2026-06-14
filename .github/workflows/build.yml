@@ -37,6 +37,9 @@ jobs:
           - name: infra-galgame
             file: docker/go.Dockerfile
             args: CMD=galgame
+          - name: infra-artifact         # large-file upload/download service (B2)
+            file: docker/go.Dockerfile
+            args: CMD=artifact
           - name: infra-migrate
             file: docker/go.Dockerfile
             args: CMD=migrate
