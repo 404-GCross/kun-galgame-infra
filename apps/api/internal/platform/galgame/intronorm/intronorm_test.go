@@ -194,6 +194,13 @@ func TestStripImages(t *testing.T) {
 		{"bbcode image removed", "Look [img]https://x.com/a.jpg[/img] here.", "Look  here."},
 		{"bbcode/attribution NOT touched (English-legacy only)", "Plot. [From [Steam](https://x.com)] and [b]bold[/b].", "Plot. [From [Steam](https://x.com)] and [b]bold[/b]."},
 		{"only image, trimmed", "![x](https://x.com/y.png)", ""},
+		// Linked image [![](img)](link): removed WHOLE, no dangling "[](link)" shell.
+		{"linked image removed whole", "见图 [![](https://x.com/a.png)](https://x.com/page) 完。", "见图  完。"},
+		{"linked image with alt, only content", "[![缩略图](https://x.com/t.jpg)](https://baike.com/p)", ""},
+		{"linked-image markdown link still kept", "[文字链接](https://x.com) 和 [![](https://x.com/i.png)](https://x.com/p)", "[文字链接](https://x.com) 和"},
+		// Backslash hard-break residue ("\" alone on a line) left by image removal.
+		{"backslash hard-break lines cleaned", "描述\n\\\n![](https://x.com/a.png)\n\\\n续き。", "描述\n\n续き。"},
+		{"image with trailing backslash line", "前文\n\n![](https://x.com/a.png)\\\n后文。", "前文\n\n后文。"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -201,6 +208,27 @@ func TestStripImages(t *testing.T) {
 				t.Fatalf("StripImages(%q) = %q, want %q", tc.in, got, tc.want)
 			}
 		})
+	}
+}
+
+// StripImages runs on EVERY galgame write (repository.ApplySnapshot), so
+// re-saving an already-cleaned intro must be a no-op — no churn, no drift
+// between the live column and the latest revision snapshot.
+func TestStripImages_Idempotent(t *testing.T) {
+	inputs := []string{
+		"见图 [![](https://x.com/a.png)](https://x.com/page) 完。",
+		"[![缩略图](https://x.com/t.jpg)](https://baike.com/p)",
+		"描述\n\\\n![](https://x.com/a.png)\n\\\n续き。",
+		"前文\n\n![](https://x.com/a.png)\\\n后文。",
+		"紹介。\n\n![cg](https://x.com/a.png)\n\n続き。",
+		"Look [img]https://x.com/a.jpg[/img] here.",
+	}
+	for _, in := range inputs {
+		once := StripImages(in)
+		twice := StripImages(once)
+		if once != twice {
+			t.Errorf("StripImages not idempotent:\n in   =%q\n once =%q\n twice=%q", in, once, twice)
+		}
 	}
 }
 

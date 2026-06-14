@@ -29,6 +29,11 @@ import (
 )
 
 var (
+	// Linked image [![alt](img)](link): a Markdown image wrapped in a link.
+	// Must be removed WHOLE — stripping only the inner image would leave a
+	// dangling empty-text link shell "[](link)". Tolerates whitespace around the
+	// inner image. Applied before reImgMarkdown.
+	reLinkedImg = regexp.MustCompile(`\[\s*!\[[^\]]*\]\([^)]*\)\s*\]\([^)]*\)`)
 	// Markdown image: ![alt](url ...optional title). Captures the URL.
 	reImgMarkdown = regexp.MustCompile(`!\[[^\]]*\]\(\s*<?([^)>\s]+)[^)]*\)`)
 	// BBCode image: [img]url[/img] or [img=url]...[/img] (optionally escaped).
@@ -49,6 +54,10 @@ var (
 	reTrailerCandidate = regexp.MustCompile(`(?i)\s*(?:\\?[*>][ \t]*)?\\?[\[(]\s*(?:[a-z]+ ){0,3}from\b[^\n]*$`)
 	reTrailingWS       = regexp.MustCompile(`[ \t]+\n`)
 	reMultiBlank       = regexp.MustCompile(`\n{3,}`)
+	// A Markdown hard-break line that is nothing but backslash(es) — the residue
+	// left after removing an image that sat on a "\"-terminated line. Dropped by
+	// StripImages only (it runs after an image was actually removed).
+	reBackslashLine = regexp.MustCompile(`(?m)^[ \t]*\\+[ \t]*$`)
 )
 
 // normalizeLineEndings folds CRLF / CR to LF.
@@ -123,11 +132,17 @@ func StripImages(s string) string {
 	if !strings.Contains(s, "![") && !strings.Contains(strings.ToLower(s), "[img") {
 		return s
 	}
-	out := reImgBBCode.ReplaceAllString(s, "")
+	// Linked images first, whole — else the inner-image strip below leaves a
+	// dangling empty-text link shell "[](link)".
+	out := reLinkedImg.ReplaceAllString(s, "")
+	out = reImgBBCode.ReplaceAllString(out, "")
 	out = reImgMarkdown.ReplaceAllString(out, "")
 	if out == s {
 		return s
 	}
+	// Tidy the residue left where images sat: stray "\"-only hard-break lines,
+	// trailing whitespace, and runs of blank lines.
+	out = reBackslashLine.ReplaceAllString(out, "")
 	out = reTrailingWS.ReplaceAllString(out, "\n")
 	out = reMultiBlank.ReplaceAllString(out, "\n\n")
 	return strings.TrimSpace(out)
