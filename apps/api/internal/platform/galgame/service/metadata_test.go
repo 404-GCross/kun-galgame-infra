@@ -27,10 +27,27 @@ func TestTag_List(t *testing.T) {
 	createTestTag(t, "Drama", "content")
 	createTestTag(t, "Sexual Content", "sexual")
 
-	items, total, err := testTagRepo.List(ctx, 1, 10)
+	// "" (all) → every category
+	items, total, err := testTagRepo.List(ctx, 1, 10, "")
 	require.NoError(t, err)
 	assert.Equal(t, int64(3), total)
 	assert.Len(t, items, 3)
+
+	// "sfw" → hide the "sexual" category; total + page both reflect the filter
+	sfw, sfwTotal, err := testTagRepo.List(ctx, 1, 10, "sfw")
+	require.NoError(t, err)
+	assert.Equal(t, int64(2), sfwTotal)
+	assert.Len(t, sfw, 2)
+	for _, it := range sfw {
+		assert.NotEqual(t, "sexual", it.Category)
+	}
+
+	// "nsfw" → only the "sexual" category
+	nsfw, nsfwTotal, err := testTagRepo.List(ctx, 1, 10, "nsfw")
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), nsfwTotal)
+	assert.Len(t, nsfw, 1)
+	assert.Equal(t, "sexual", nsfw[0].Category)
 }
 
 func TestTag_List_Pagination(t *testing.T) {
@@ -42,17 +59,17 @@ func TestTag_List_Pagination(t *testing.T) {
 		createTestTag(t, "tag_"+string(rune('A'+i)), "content")
 	}
 
-	items, total, err := testTagRepo.List(ctx, 1, 5)
+	items, total, err := testTagRepo.List(ctx, 1, 5, "")
 	require.NoError(t, err)
 	assert.Equal(t, int64(15), total)
 	assert.Len(t, items, 5)
 
-	items2, _, err := testTagRepo.List(ctx, 3, 5)
+	items2, _, err := testTagRepo.List(ctx, 3, 5, "")
 	require.NoError(t, err)
 	assert.Len(t, items2, 5)
 
 	// Page beyond data
-	items3, _, err := testTagRepo.List(ctx, 100, 5)
+	items3, _, err := testTagRepo.List(ctx, 100, 5, "")
 	require.NoError(t, err)
 	assert.Len(t, items3, 0)
 }

@@ -2,8 +2,9 @@ package dto
 
 // ListTagRequest represents a tag list query
 type ListTagRequest struct {
-	Page  int `query:"page" validate:"min=1"`
-	Limit int `query:"limit" validate:"min=1,max=100"`
+	Page         int    `query:"page" validate:"min=1"`
+	Limit        int    `query:"limit" validate:"min=1,max=100"`
+	ContentLimit string `query:"content_limit" validate:"omitempty,oneof=sfw nsfw all"`
 }
 
 // GetTagByNameRequest represents a tag detail query

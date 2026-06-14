@@ -24,19 +24,38 @@ func (r *TagRepository) DB() *gorm.DB {
 	return r.db
 }
 
-// List returns a paginated list of tags with galgame counts
-func (r *TagRepository) List(ctx context.Context, page, limit int) ([]model.GalgameTag, int64, error) {
+// List returns a paginated list of tags with galgame counts.
+//
+// contentLimit gates which tag categories are returned — the "sexual" category
+// is the NSFW tag set, so "sfw" hides it (safe-by-default, handbook §16), "nsfw"
+// returns only it, and "" (= all) returns every category. The filter is applied
+// to BOTH the count and the page so total + pagination reflect the filtered set
+// — this lets downstream sites forward page/limit/content_limit and proxy total
+// for real server-side pagination instead of over-fetching every page + doing
+// client-side filtering (handbook §16: gating belongs in the query, not the RP).
+func (r *TagRepository) List(ctx context.Context, page, limit int, contentLimit string) ([]model.GalgameTag, int64, error) {
 	var items []model.GalgameTag
 	var total int64
 
-	r.db.WithContext(ctx).Model(&model.GalgameTag{}).Count(&total)
+	applyCategory := func(q *gorm.DB) *gorm.DB {
+		switch contentLimit {
+		case "sfw":
+			return q.Where("galgame_tag.category <> ?", "sexual")
+		case "nsfw":
+			return q.Where("galgame_tag.category = ?", "sexual")
+		default: // "" = all
+			return q
+		}
+	}
 
-	err := r.db.WithContext(ctx).
+	applyCategory(r.db.WithContext(ctx).Model(&model.GalgameTag{})).Count(&total)
+
+	err := applyCategory(r.db.WithContext(ctx).
 		Select("galgame_tag.*, COALESCE(tc.cnt, 0) AS cnt").
 		Preload("Alias").
 		// Count only published galgames so the list total matches the detail
 		// page (FindGalgamesByTagID filters status=0).
-		Joins("LEFT JOIN (SELECT r.tag_id, COUNT(*) AS cnt FROM galgame_tag_relation r JOIN galgame g ON g.id = r.galgame_id AND g.status = 0 GROUP BY r.tag_id) tc ON tc.tag_id = galgame_tag.id").
+		Joins("LEFT JOIN (SELECT r.tag_id, COUNT(*) AS cnt FROM galgame_tag_relation r JOIN galgame g ON g.id = r.galgame_id AND g.status = 0 GROUP BY r.tag_id) tc ON tc.tag_id = galgame_tag.id")).
 		Order("cnt DESC").
 		Offset((page - 1) * limit).
 		Limit(limit).

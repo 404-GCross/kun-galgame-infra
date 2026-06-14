@@ -38,9 +38,13 @@ const { data, status, refresh } = await useAsyncData(
       const d = r.code === 0 && r.data ? r.data : { items: [], total: 0 }
       return { items: d.items ?? [], total: d.total ?? 0 }
     }
+    // content_limit=all: the wiki IS the catalog — show every category. The
+    // /tag list is safe-by-default (sfw) for downstream RPs, so opt into the
+    // full set explicitly here.
     const r = await api.get<{ items: GalgameTag[]; total: number }>('/tag', {
       page: page.value,
-      limit: limit.value
+      limit: limit.value,
+      content_limit: 'all'
     })
     return r.code === 0
       ? r.data

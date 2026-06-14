@@ -67,7 +67,13 @@ func (h *TagHandler) List(c fiber.Ctx) error {
 		req.Limit = 100
 	}
 
-	items, total, err := h.tagRepo.List(c.Context(), req.Page, req.Limit)
+	// Safe-by-default (sfw → hide sexual-category tags) per handbook §16, like
+	// the other list endpoints. Downstream SFW sites can omit it (or send sfw)
+	// and paginate normally; pass content_limit=all for the full catalog (the
+	// wiki's own tag list does this).
+	contentLimit := utils.ParseContentLimit(req.ContentLimit, "sfw")
+
+	items, total, err := h.tagRepo.List(c.Context(), req.Page, req.Limit, contentLimit)
 	if err != nil {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
