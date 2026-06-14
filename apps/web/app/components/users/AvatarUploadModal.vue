@@ -105,7 +105,7 @@ const submit = async () => {
           :key="uploadKey"
           :size="512"
           :aspect="1"
-          hint="点击或拖拽选择图片，可裁剪为正方形"
+          description="点击或拖拽选择图片，可裁剪为正方形"
           class-name="mx-auto w-48"
           @set-image="onCropped"
         />
