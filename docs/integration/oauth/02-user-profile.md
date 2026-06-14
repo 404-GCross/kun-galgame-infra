@@ -2,7 +2,7 @@
 
 返回 [README](./README.md)
 
-> 🔒 **重要 — 身份层操作必须在 OAuth profile 完成，下游禁止代理**
+> **重要 — 身份层操作必须在 OAuth profile 完成，下游禁止代理**
 >
 > **改邮箱、改密码、注销账号、管理登录设备**这类操作**只能**走 OAuth 自己的前端（https://oauth.kungal.com/profile）。**kungal / moyu / wiki 都不要在自己前端实现这些 UI**，即使技术上可以代理 JWT。详细分类见下表。
 
@@ -10,7 +10,7 @@
 
 OAuth 的用户自助 API 在设计上分两层。下游接入时**不要**把所有写操作都拉到自己前端做——身份层修改强制走 OAuth profile，展示层可以站内提供 UI。
 
-### 🔒 身份层（OAuth profile 专用，下游用跳转模式）
+### 身份层（OAuth profile 专用，下游用跳转模式）
 
 凡是涉及"账号所有权"的操作，必须由 OAuth 自己的前端承担。原因：流程敏感、需要集中审计、未来要加 2FA / 异地通知 / 安全日志时只改一处。
 
@@ -41,7 +41,7 @@ OAuth 的用户自助 API 在设计上分两层。下游接入时**不要**把�
 
 下面那些端点的文档保留为**完整性**目的——OAuth 自己的前端 (apps/web) 是唯一应该调用它们的客户端。**kungal / moyu / wiki 前端不要直接 fetch 这些路径**。
 
-### 🎨 展示层（任何接入站都可以代理 / 自己实现 UI）
+### 展示层（任何接入站都可以代理 / 自己实现 UI）
 
 | 操作 | 端点 | 说明 |
 |------|------|------|
@@ -58,11 +58,11 @@ OAuth 的用户自助 API 在设计上分两层。下游接入时**不要**把�
 | 端点 | 方法 | 层级 | 鉴权 | 用途 |
 |------|------|------|------|------|
 | `/auth/me` | GET | — | Bearer | 读自己完整资料 |
-| `/auth/me` | PATCH | 🎨 展示 | Bearer | 改 name / avatar / bio |
-| `/auth/me/avatar` | POST | 🎨 展示 | Bearer | 上传头像 multipart |
-| `/auth/email/send-code` | POST | 🔒 身份 | Bearer（仅 OAuth 前端） | 发送邮箱变更验证码到**旧**邮箱 |
-| `/auth/email` | PUT | 🔒 身份 | Bearer（仅 OAuth 前端） | 用验证码确认改邮箱 |
-| `/auth/password` | PUT | 🔒 身份 | Bearer（仅 OAuth 前端） | 改密码（需旧密码） |
+| `/auth/me` | PATCH | 展示 | Bearer | 改 name / avatar / bio |
+| `/auth/me/avatar` | POST | 展示 | Bearer | 上传头像 multipart |
+| `/auth/email/send-code` | POST | 身份 | Bearer（仅 OAuth 前端） | 发送邮箱变更验证码到**旧**邮箱 |
+| `/auth/email` | PUT | 身份 | Bearer（仅 OAuth 前端） | 用验证码确认改邮箱 |
+| `/auth/password` | PUT | 身份 | Bearer（仅 OAuth 前端） | 改密码（需旧密码） |
 
 ---
 
@@ -147,7 +147,7 @@ curl -X PATCH https://oauth.kungal.com/api/v1/auth/me \
 
 ## POST /auth/me/avatar
 
-> 🆕 **2026-05-23 新增**：一次性"上传头像图片 → 写入用户记录"端点，**避免下游 kungal / moyu 自己维护 image_service client**。
+> **2026-05-23 新增**：一次性"上传头像图片 → 写入用户记录"端点，**避免下游 kungal / moyu 自己维护 image_service client**。
 
 直接接收图片二进制（multipart），OAuth 内部转发到 image_service，并在响应返回前把拿到的 hash 写入当前用户的 `avatar_image_hash`。**调用方拿到响应时数据库已经更新**，无需再调 `PATCH /auth/me`。
 
@@ -157,7 +157,7 @@ curl -X PATCH https://oauth.kungal.com/api/v1/auth/me \
 
 | 字段 | 必填 | 说明 |
 |------|------|------|
-| file | ✓ | 图片文件，MIME 必须 `image/*`；建议 ≤ 4 MiB（fiber 默认 body 上限） |
+| file | 是 | 图片文件，MIME 必须 `image/*`；建议 ≤ 4 MiB（fiber 默认 body 上限） |
 
 **成功响应**：直接透传 image_service 的上传结果。
 
@@ -227,7 +227,7 @@ const { data } = await r.json()
 
 ---
 
-# 🔒 身份层端点
+# 身份层端点
 
 > 下面三个端点**仅供 OAuth 自己的前端（apps/web）使用**。kungal / moyu / wiki 等下游接入站**不应直接调用**，应该跳转到 OAuth profile 让用户在那里完成。原因和跳转示例见本文档开头的"身份操作 vs 展示操作"小节。
 
