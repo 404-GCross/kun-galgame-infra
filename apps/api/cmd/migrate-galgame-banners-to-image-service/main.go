@@ -23,6 +23,8 @@ import (
 	stderrors "errors"
 	"flag"
 	"fmt"
+	"image"
+	"image/png"
 	"io"
 	"log/slog"
 	"net/http"
@@ -32,6 +34,13 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	// Decoders for image.Decode (side-effect). webp/png/jpeg pass through to
+	// image_service; gif/other get transcoded to PNG.
+	_ "image/gif"
+	_ "image/jpeg"
+
+	"github.com/gen2brain/avif" // pure-Go AVIF decoder (wazero); moyu banners are AVIF
 
 	"api/internal/infrastructure/database"
 	"api/internal/platform/galgame/model"
@@ -256,6 +265,16 @@ func processOne(
 		return outcome{kind: outcomeDryRun}
 	}
 
+	// image_service's galgame_banner preset accepts jpeg/png/webp and can't
+	// decode AVIF. moyu banners are AVIF → decode to PNG here (image_service
+	// re-encodes to webp). VNDB (jpg) / kungal (webp) pass straight through.
+	body, err = normalizeForUpload(body)
+	if err != nil {
+		recordFailure(db, g.ID, g.BannerMigrationAttempts, fmt.Errorf("normalize: %w", err))
+		slog.Warn("normalize", "gid", g.ID, "url", g.Banner, "err", err)
+		return outcome{kind: outcomeFail}
+	}
+
 	result, err := cli.Upload(ctx, bytes.NewReader(body), "banner.bin", defaultPreset)
 	if err != nil {
 		recordFailure(db, g.ID, g.BannerMigrationAttempts, fmt.Errorf("upload: %w", err))
@@ -299,6 +318,61 @@ func processOne(
 		return outcome{kind: outcomeFail}
 	}
 	return outcome{kind: outcomeSuccess, hash: result.Hash}
+}
+
+// avifDecodeMu serializes wazero-backed AVIF decodes across workers.
+var avifDecodeMu sync.Mutex
+
+// normalizeForUpload makes bytes acceptable to image_service's galgame_banner
+// preset (jpeg/png/webp). webp/png/jpeg pass through unchanged; AVIF (moyu
+// banners) and anything else decodable are re-encoded to PNG. image_service
+// then re-encodes everything to webp + the mini variant.
+func normalizeForUpload(raw []byte) ([]byte, error) {
+	switch sniffFormat(raw) {
+	case "webp", "png", "jpeg":
+		return raw, nil
+	case "avif":
+		avifDecodeMu.Lock()
+		img, err := avif.Decode(bytes.NewReader(raw))
+		avifDecodeMu.Unlock()
+		if err != nil {
+			return nil, fmt.Errorf("avif decode: %w", err)
+		}
+		return encodePNG(img)
+	default:
+		img, _, err := image.Decode(bytes.NewReader(raw))
+		if err != nil {
+			return nil, fmt.Errorf("decode: %w", err)
+		}
+		return encodePNG(img)
+	}
+}
+
+func encodePNG(img image.Image) ([]byte, error) {
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+// sniffFormat identifies the image format by magic bytes (old CDNs return
+// application/octet-stream). AVIF = ISO-BMFF ftyp box with the avif/avis brand.
+func sniffFormat(b []byte) string {
+	switch {
+	case len(b) >= 12 && string(b[:4]) == "RIFF" && string(b[8:12]) == "WEBP":
+		return "webp"
+	case len(b) >= 8 && string(b[:8]) == "\x89PNG\r\n\x1a\n":
+		return "png"
+	case len(b) >= 3 && b[0] == 0xFF && b[1] == 0xD8 && b[2] == 0xFF:
+		return "jpeg"
+	case len(b) >= 6 && (string(b[:6]) == "GIF87a" || string(b[:6]) == "GIF89a"):
+		return "gif"
+	case len(b) >= 12 && string(b[4:8]) == "ftyp" && (bytes.Contains(b[8:min(32, len(b))], []byte("avif")) || bytes.Contains(b[8:min(32, len(b))], []byte("avis"))):
+		return "avif"
+	default:
+		return "unknown"
+	}
 }
 
 const vndbImagePrefix = "https://t.vndb.org/"
