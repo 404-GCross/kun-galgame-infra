@@ -4,14 +4,15 @@
 // 这是一次性脚本。幂等 + 可中断 + 死链跳过。
 //
 // 用法:
-//   go run ./cmd/migrate-galgame-banners-to-image-service \
-//       --client-id=galgame-wiki \
-//       --client-secret=$KUN_GALGAME_IMAGE_SECRET \
-//       --batch=100 --rps=20 --dry-run     # 先空跑确认
 //
-//   go run ./cmd/migrate-galgame-banners-to-image-service \
-//       --client-id=galgame-wiki \
-//       --client-secret=$KUN_GALGAME_IMAGE_SECRET
+//	go run ./cmd/migrate-galgame-banners-to-image-service \
+//	    --client-id=galgame-wiki \
+//	    --client-secret=$KUN_GALGAME_IMAGE_SECRET \
+//	    --batch=100 --rps=20 --dry-run     # 先空跑确认
+//
+//	go run ./cmd/migrate-galgame-banners-to-image-service \
+//	    --client-id=galgame-wiki \
+//	    --client-secret=$KUN_GALGAME_IMAGE_SECRET
 //
 // 设计参考 docs/image_service/04-migration-plan.md 阶段 2 的骨架。
 package main
@@ -26,6 +27,8 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"api/internal/infrastructure/database"
@@ -53,6 +56,7 @@ func main() {
 		rps          = flag.Int("rps", 20, "上传速率限制（次/秒）")
 		dryRun       = flag.Bool("dry-run", false, "只扫描 + 拉老 URL，不调用 image_service / 不改 DB")
 		limit        = flag.Int("limit", 0, "最多处理多少行（0=全量）；调试时用 100 先跑")
+		vndbImageDir = flag.String("vndb-image-dir", "", "本地 VNDB 图片 dump 目录（rsync rsync://dl.vndb.org/vndb-img/）。t.vndb.org 的 banner 从这里读，避开外站限流；本地缺失再回退 HTTP")
 	)
 	flag.Parse()
 
@@ -143,7 +147,7 @@ func main() {
 			lastID = g.ID
 			<-tick.C // rate-limit
 
-			outcome := processOne(ctx, &g, httpClient, cli, db.DB(), *dryRun)
+			outcome := processOne(ctx, &g, httpClient, cli, db.DB(), *dryRun, *vndbImageDir)
 			switch outcome.kind {
 			case outcomeSuccess:
 				succeeded++
@@ -224,8 +228,9 @@ func processOne(
 	cli *imageclient.Client,
 	db *gorm.DB,
 	dryRun bool,
+	vndbDir string,
 ) outcome {
-	body, err := fetchOldObject(httpClient, g.Banner)
+	body, err := fetchBanner(httpClient, vndbDir, g.Banner)
 	if err != nil {
 		recordFailure(db, g.ID, g.BannerMigrationAttempts, fmt.Errorf("fetch: %w", err))
 		slog.Warn("fetch", "gid", g.ID, "url", g.Banner, "err", err)
@@ -276,6 +281,24 @@ func processOne(
 		return outcome{kind: outcomeFail}
 	}
 	return outcome{kind: outcomeSuccess, hash: result.Hash}
+}
+
+const vndbImagePrefix = "https://t.vndb.org/"
+
+// fetchBanner 取 banner 字节。设置了 vndbDir 且 URL 是 t.vndb.org 图片时，从本地
+// VNDB 图片 dump（rsync 镜像）读取，避开对 t.vndb.org 的批量抓取（官方限带宽/限并发）；
+// 本地缺失/为空时回退到 HTTP（极少数：dump 里没有或当天还没同步的）。其余 host（我方
+// 老图床 image.kungal.com / image.moyu.moe）一律走 HTTP。
+func fetchBanner(c *http.Client, vndbDir, url string) ([]byte, error) {
+	if vndbDir != "" && strings.HasPrefix(url, vndbImagePrefix) {
+		rel := strings.TrimPrefix(url, vndbImagePrefix) // 例如 cv/48/20348.jpg
+		p := filepath.Join(vndbDir, filepath.FromSlash(rel))
+		if b, err := os.ReadFile(p); err == nil && len(b) > 0 {
+			return b, nil
+		}
+		// 本地没有/为空 → 落到 HTTP 兜底
+	}
+	return fetchOldObject(c, url)
 }
 
 // fetchOldObject HTTP-GET 老 CDN URL，限制最大 50MB body。
