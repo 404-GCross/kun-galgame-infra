@@ -29,6 +29,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"api/internal/infrastructure/database"
@@ -57,6 +59,7 @@ func main() {
 		dryRun       = flag.Bool("dry-run", false, "只扫描 + 拉老 URL，不调用 image_service / 不改 DB")
 		limit        = flag.Int("limit", 0, "最多处理多少行（0=全量）；调试时用 100 先跑")
 		vndbImageDir = flag.String("vndb-image-dir", "", "本地 VNDB 图片 dump 目录（rsync rsync://dl.vndb.org/vndb-img/）。t.vndb.org 的 banner 从这里读，避开外站限流；本地缺失再回退 HTTP")
+		concurrency  = flag.Int("concurrency", 1, "并发 worker 数（每个 worker 串行 fetch→upload→DB）；默认 1=串行。本地 dump + 我方 image_service 可调高到 12~16")
 	)
 	flag.Parse()
 
@@ -113,25 +116,32 @@ func main() {
 
 	var (
 		processed, succeeded, failed, skipped int64
+		fatal                                 int32 // set when quota exceeded → stop launching
 		migratedHashes                        []string
+		hashMu                                sync.Mutex
 	)
 	start := time.Now()
 
-	// Keyset pagination over `id`. Resumable: every successful row gets
+	// Keyset pagination over `id` (serial page fetch), each page processed by a
+	// pool of `concurrency` workers. Resumable: every successful row gets
 	// banner_migration_status=1 (success) or =2 (permanent failure after
-	// retries). PR5 retired the banner_image_hash column, so the WHERE
-	// clause now relies solely on banner_migration_status — galgames
-	// whose banner has already been migrated (status=1) or permanently
-	// failed (status=2) are skipped.
+	// retries); rows already 1/2 are skipped by the WHERE. The rps ticker gates
+	// the *launch* rate; concurrency gates the in-flight count.
+	sem := make(chan struct{}, maxInt(1, *concurrency))
+	var wg sync.WaitGroup
 	lastID := 0
-	for {
+	for atomic.LoadInt32(&fatal) == 0 {
 		var rows []model.Galgame
 		q := db.DB().WithContext(ctx).
 			Where(`id > ? AND banner != '' AND banner_migration_status NOT IN (1, 2)`, lastID).
 			Order("id ASC").
 			Limit(*batch)
 		if *limit > 0 {
-			q = q.Limit(minInt(*batch, *limit-int(processed)))
+			remaining := *limit - int(atomic.LoadInt64(&processed))
+			if remaining <= 0 {
+				break
+			}
+			q = q.Limit(minInt(*batch, remaining))
 		}
 		if err := q.Find(&rows).Error; err != nil {
 			slog.Error("query batch", "err", err, "last_id", lastID)
@@ -140,51 +150,55 @@ func main() {
 		if len(rows) == 0 {
 			break
 		}
+		lastID = rows[len(rows)-1].ID // rows are id-ascending
 
-		stop := false
-		for _, g := range rows {
-			processed++
-			lastID = g.ID
-			<-tick.C // rate-limit
-
-			outcome := processOne(ctx, &g, httpClient, cli, db.DB(), *dryRun, *vndbImageDir)
-			switch outcome.kind {
-			case outcomeSuccess:
-				succeeded++
-				migratedHashes = append(migratedHashes, outcome.hash)
-			case outcomeDryRun:
-				skipped++
-			case outcomeFail:
-				failed++
-				if outcome.fatal {
-					slog.Error("quota exceeded; stopping",
-						"processed", processed, "succeeded", succeeded, "failed", failed)
-					stop = true
-				}
-			}
-
-			if processed%100 == 0 {
-				elapsed := time.Since(start)
-				rate := float64(processed) / elapsed.Seconds()
-				slog.Info("progress",
-					"processed", processed,
-					"succeeded", succeeded,
-					"failed", failed,
-					"skipped_dry_run", skipped,
-					"rate_per_sec", fmt.Sprintf("%.1f", rate),
-					"elapsed", elapsed.Truncate(time.Second),
-				)
-			}
-			if *limit > 0 && processed >= int64(*limit) {
-				stop = true
-			}
-			if stop {
+		for i := range rows {
+			if atomic.LoadInt32(&fatal) != 0 {
 				break
 			}
+			if *limit > 0 && atomic.LoadInt64(&processed) >= int64(*limit) {
+				break
+			}
+			<-tick.C // rate-limit the launch
+			wg.Add(1)
+			sem <- struct{}{}
+			go func(g model.Galgame) {
+				defer wg.Done()
+				defer func() { <-sem }()
+				n := atomic.AddInt64(&processed, 1)
+				switch oc := processOne(ctx, &g, httpClient, cli, db.DB(), *dryRun, *vndbImageDir); oc.kind {
+				case outcomeSuccess:
+					atomic.AddInt64(&succeeded, 1)
+					hashMu.Lock()
+					migratedHashes = append(migratedHashes, oc.hash)
+					hashMu.Unlock()
+				case outcomeDryRun:
+					atomic.AddInt64(&skipped, 1)
+				case outcomeFail:
+					atomic.AddInt64(&failed, 1)
+					if oc.fatal {
+						atomic.StoreInt32(&fatal, 1)
+					}
+				}
+				if n%200 == 0 {
+					elapsed := time.Since(start)
+					slog.Info("progress",
+						"processed", n,
+						"succeeded", atomic.LoadInt64(&succeeded),
+						"failed", atomic.LoadInt64(&failed),
+						"skipped_dry_run", atomic.LoadInt64(&skipped),
+						"rate_per_sec", fmt.Sprintf("%.1f", float64(n)/elapsed.Seconds()),
+						"elapsed", elapsed.Truncate(time.Second),
+					)
+				}
+			}(rows[i])
 		}
-		if stop {
-			break
-		}
+		wg.Wait() // barrier per page (keeps memory bounded; lastID already advanced)
+	}
+	wg.Wait()
+	if atomic.LoadInt32(&fatal) != 0 {
+		slog.Error("quota exceeded; stopped early",
+			"processed", processed, "succeeded", succeeded, "failed", failed)
 	}
 
 	slog.Info("migration finished",
