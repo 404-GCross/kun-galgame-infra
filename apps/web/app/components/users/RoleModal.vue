@@ -72,7 +72,7 @@ const toggle = async (role: string) => {
 
 <template>
   <KunModal v-model="open">
-    <div class="w-[26rem] max-w-[calc(100vw-1.5rem)] space-y-4 p-6">
+    <div class="space-y-4">
       <div>
         <h2 class="text-xl font-bold text-foreground">管理角色</h2>
         <p class="text-default-500 mt-1 text-sm">

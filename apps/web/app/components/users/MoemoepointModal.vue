@@ -101,8 +101,8 @@ const adjust = async (sign: 1 | -1) => {
 </script>
 
 <template>
-  <KunModal :model-value="open" @update:model-value="close">
-    <div class="w-[30rem] max-w-[calc(100vw-1.5rem)] space-y-4 p-6">
+  <KunModal :model-value="open" size="lg" @update:model-value="close">
+    <div class="space-y-4">
       <div class="flex items-center justify-between">
         <h2 class="text-foreground text-xl font-bold">萌萌点管理</h2>
         <span class="text-default-500 text-sm">{{ user?.name }}</span>

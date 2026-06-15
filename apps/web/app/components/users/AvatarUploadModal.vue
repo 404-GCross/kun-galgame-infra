@@ -89,7 +89,7 @@ const submit = async () => {
       KunModal 只有一个默认 slot — `#header` / `#footer` 不存在。
       所有内容（标题、表单、按钮）都按从上到下的顺序放进这一个 slot。
     -->
-    <div class="w-[28rem] max-w-[calc(100vw-1.5rem)] space-y-4 p-2">
+    <div class="space-y-4">
       <h2 class="text-foreground text-lg font-semibold">
         上传头像 — {{ user?.name }}
       </h2>

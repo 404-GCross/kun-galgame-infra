@@ -210,7 +210,7 @@ const handleRoles = (user: { uuid: string; name: string; roles: string[] }) => {
     />
 
     <KunModal v-model="banOpen">
-      <div class="w-[28rem] max-w-[calc(100vw-1.5rem)] space-y-4 p-6">
+      <div class="space-y-4">
         <h2 class="text-xl font-bold text-foreground">封禁用户</h2>
         <p class="rounded-lg bg-danger-50 p-3 text-sm text-danger-700">
           将封禁
@@ -239,7 +239,7 @@ const handleRoles = (user: { uuid: string; name: string; roles: string[] }) => {
     </KunModal>
 
     <KunModal v-model="anonymizeOpen">
-      <div class="w-[28rem] max-w-[calc(100vw-1.5rem)] space-y-4 p-6">
+      <div class="space-y-4">
         <h2 class="text-xl font-bold text-foreground">注销并匿名化</h2>
         <p class="rounded-lg bg-danger-50 p-3 text-sm text-danger-700">
           将<span class="font-semibold">不可逆</span>地清除

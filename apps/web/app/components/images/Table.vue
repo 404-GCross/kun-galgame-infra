@@ -208,7 +208,7 @@ const confirmReject = () => {
   </KunLightboxGallery>
 
   <KunModal v-model="rejectOpen">
-    <div class="w-[28rem] max-w-[calc(100vw-1.5rem)] space-y-4">
+    <div class="space-y-4">
       <h2 class="text-xl font-bold text-foreground">拒绝图片</h2>
       <p class="text-sm text-default-500">
         填写拒绝原因（可选），将记录到审核日志。

@@ -131,8 +131,8 @@ const handleSubmit = async () => {
 </script>
 
 <template>
-  <KunModal v-model="show">
-    <div class="w-[32rem] max-w-[calc(100vw-1.5rem)] space-y-4 p-6">
+  <KunModal v-model="show" size="lg">
+    <div class="space-y-4">
       <h2 class="text-xl font-bold text-foreground">创建 OAuth 客户端</h2>
 
       <KunSelect
