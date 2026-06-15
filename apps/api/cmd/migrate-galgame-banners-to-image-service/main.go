@@ -281,13 +281,17 @@ func processOne(
 			}).Error; err != nil {
 			return err
 		}
-		// Idempotent: if the cover row already exists (e.g. inserted by
-		// the wiki edit UI between sweeps), ON CONFLICT DO NOTHING keeps
-		// the row but we still mark status=1 above so we won't retry.
+		// Idempotent + don't clobber a curated cover. Target-less ON CONFLICT
+		// DO NOTHING swallows BOTH unique constraints on galgame_cover: the
+		// (galgame_id, image_hash) pair AND idx_galgame_cover_pinned (one
+		// sort_order=0 cover per galgame, WHERE sort_order=0). So a galgame
+		// that already has a pinned cover (e.g. set via the wiki edit UI)
+		// keeps it — we just mark status=1 above so we won't retry. Without
+		// the target-less form, those ~100 galgames violate the pinned index.
 		return tx.Exec(
 			`INSERT INTO galgame_cover (galgame_id, image_hash, sort_order, sexual, violence, source, source_key, created)
 			 VALUES (?, ?, 0, 0, 0, '', '', NOW())
-			 ON CONFLICT (galgame_id, image_hash) DO NOTHING`,
+			 ON CONFLICT DO NOTHING`,
 			g.ID, result.Hash,
 		).Error
 	}); err != nil {
