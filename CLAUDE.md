@@ -1,58 +1,73 @@
 # Project Guidelines
 
-## 前端规范（apps/web）
+## Core Engineering Principles
 
-### UI 组件
+> Shared baseline across all KUN Galgame repositories. Defaults, not dogma — apply judgment.
 
-- 所有 UI 组件均位于 `components/kun/` 目录，项目必须使用这些 UI 组件，不要自造组件
-- 如果需要修改 `components/kun/` 中的组件，必须先询问用户确认
+1. All commit messages must be written entirely in English.
+2. All code comments must be written entirely in English.
+3. Keep each source file under ~500 lines where practical; once a file grows past ~300 lines, consider splitting it (a guideline, not a hard rule).
+4. Write every frontend function as an arrow function; compose/merge class names with `cn` wherever practical.
+5. Deliberately balance elegant modularity against necessary duplication — choose per case instead of always favoring either.
+6. Constantly verify that frontend and backend agree on the data: field shapes and response formats must match what each side expects.
+7. After every change, watch for unintended side effects elsewhere.
+8. If a change requires running a migration, tell the user explicitly at the end — which command, and against which database.
+9. Always seek the most modern, elegant solution that fits the project's current state; consult the latest official docs and resources online when useful.
+10. Never let the pursuit of elegance or modularity make the code complex or hard to follow, and don't write over-defensive code.
 
-### 页面与组件拆分
+## Frontend Conventions (apps/web)
 
-- `pages/` 目录只负责路由定义，每个页面文件只包含 `definePageMeta` 和一个容器组件引用
-- 每个页面对应的业务组件放在 `components/` 对应文件夹中，例如：
-  - `/users` 页面 → `components/users/`
-  - `/auth/login` 页面 → `components/auth/login/`
-  - `/sites` 页面 → `components/sites/`
-- 组件文件名不要重复目录前缀（Nuxt 自动导入会拼接目录名）：
-  - `components/users/Container.vue` → 自动导入为 `UsersContainer`
-  - `components/users/Table.vue` → 自动导入为 `UsersTable`
-  - ❌ 不要写成 `components/users/UsersContainer.vue`（会变成 `UsersContainer` 但容易混淆）
+### UI Components
 
-### 常量与类型
+- All UI components live in the `components/kun/` directory; the project must use these UI components and must not build its own components
+- If you need to modify a component in `components/kun/`, you must first ask the user for confirmation
 
-- 所有常量放在 `app/constants/` 目录
-- 所有接口类型放在 `shared/types/` 目录（Nuxt 4 自动导入第一层导出）
-- `shared/` 目录下的 `types/` 和 `utils/` 会被 Nuxt 自动导入
+### Page and Component Splitting
 
-### 颜色系统
+- The `pages/` directory is responsible only for route definitions; each page file contains only `definePageMeta` and a reference to a single container component
+- The business components for each page go in the corresponding folder under `components/`, for example:
+  - `/users` page → `components/users/`
+  - `/auth/login` page → `components/auth/login/`
+  - `/sites` page → `components/sites/`
+- Do not repeat the directory prefix in component file names (Nuxt auto-import concatenates the directory name):
+  - `components/users/Container.vue` → auto-imported as `UsersContainer`
+  - `components/users/Table.vue` → auto-imported as `UsersTable`
+  - ❌ Do not write it as `components/users/UsersContainer.vue` (it becomes `UsersContainer` but is easily confused)
 
-- 使用 `app/styles/tailwindcss.css` 中定义的自定义颜色，不使用 Tailwind 固有颜色（gray、indigo、blue、green、red 等）
-- 自定义颜色自动适配浅色/深色模式，不需要 `dark:` 前缀
-- 颜色映射：
-  - 文字：`text-foreground`（主文字）、`text-default-500`（次要）、`text-default-400`（辅助）、`text-default-300`（弱化）
-  - 边框：`border-default-200`
-  - 语义色：`primary`（蓝，主操作）、`success`（绿）、`danger`（红）、`warning`（黄/橙）、`default`（灰/紫）、`secondary`（粉）、`info`（青）
-  - 每种语义色都有 50-950 色阶，如 `bg-primary-100`、`text-danger-600`
+### Constants and Types
 
-### 代码风格
+- Put all constants in the `app/constants/` directory
+- Put all interface types in the `shared/types/` directory (Nuxt 4 auto-imports the first level of exports)
+- The `types/` and `utils/` under the `shared/` directory are auto-imported by Nuxt
 
-- 前端所有函数使用箭头函数编写，不使用 `function` 关键字声明
+### Color System
 
-## 跨仓契约文档（Tier A，本仓为唯一源）
+- Use the custom colors defined in `app/styles/tailwindcss.css`; do not use Tailwind's built-in colors (gray, indigo, blue, green, red, etc.)
+- Custom colors automatically adapt to light/dark mode, so no `dark:` prefix is needed
+- Color mapping:
+  - Text: `text-foreground` (primary text), `text-default-500` (secondary), `text-default-400` (auxiliary), `text-default-300` (de-emphasized)
+  - Border: `border-default-200`
+  - Semantic colors: `primary` (blue, primary action), `success` (green), `danger` (red), `warning` (yellow/orange), `default` (gray/purple), `secondary` (pink), `info` (cyan)
+  - Each semantic color has a 50-950 scale, e.g. `bg-primary-100`, `text-danger-600`
 
-`docs/integration/oauth`、`docs/image_service`、`docs/integration/galgame_wiki` 是 OAuth / 图床 / galgame-wiki 三套**跨服务契约的唯一源**。forum / patch 仓里的 `docs/{oauth,image_service,galgame_wiki}` 是 **kungal-docs 的 `pnpm docs:sync` 生成的带 banner 镜像**，**不要去手改下游副本**（下次 sync 会覆盖）。
+### Code Style
 
-- **改契约**：只改本仓这些源文件 → 到 `../kungal-docs` 跑 `pnpm docs:sync --write`（下发镜像到 forum/patch）→ `pnpm docs:audit`（`docs:check` 验镜像一致 + `docs:verify` 验源==代码）应 0 error。
-- 这些契约的**真值在代码里**（`cmd/oauth`、`cmd/image`、`cmd/galgame` 等 handler）——改了代码就在同 PR 改这里的源文档，`docs:verify` 会抓「文档与代码现实不符」。
-- 统一文档门户：`docs-kungal.nextmoe.dev`；完整所有权模型（Tier A/B/C）见 `../kungal-docs/docs/_meta/ownership.md`。
+- Write all frontend functions as arrow functions; do not declare them with the `function` keyword
 
-## 数据库 schema 变更 → 必须提醒迁移
+## Cross-Repo Contract Docs (Tier A, this repo is the single source)
 
-**只要本次改动动了数据库 schema（GORM model 加/改字段或表、`cmd/migrate*` 里的 raw SQL/约束/索引），就必须在任务结束时明确告诉用户：是否需要跑迁移、跑哪个命令、对哪个库。** 部署（push → CI → Dokploy 重部署）**不会自动跑迁移**——漏跑会让线上代码读到不存在的列（GORM `SELECT *` 静默读成零值）→ **静默故障**。
+`docs/integration/oauth`, `docs/image_service`, and `docs/integration/galgame_wiki` are the **single source for the three cross-service contracts** OAuth / image hosting / galgame-wiki. The `docs/{oauth,image_service,galgame_wiki}` in the forum / patch repos are **banner-stamped mirrors generated by kungal-docs's `pnpm docs:sync`**; **do not hand-edit the downstream copies** (the next sync will overwrite them).
 
-- 主库 `kun_galgame_infra`（oauth + 各 site model）→ `go run ./cmd/migrate`（**部署不自动跑**）。
-- wiki 库 `kun_galgame_wiki`（galgame model）→ `go run ./cmd/migrate-galgame`（**部署不自动跑**）。
-- `cmd/image` / `cmd/artifact` → 服务启动时自带 `AutoMigrate`（随部署自动，无需手动）。
-- 生产执行：`infra-tools` 镜像 + 从对应容器 `.Config.Env` dump 出的 env-file（见 prod 运维笔记）。
-- 教训：2026-06 `oauth_clients.moemoepoint_awarder` 列没迁移 → 全站 ~29h 发不出萌萌点。
+- **To change a contract**: edit only these source files in this repo → go to `../kungal-docs` and run `pnpm docs:sync --write` (pushes the mirrors out to forum/patch) → `pnpm docs:audit` (`docs:check` verifies the mirrors are consistent + `docs:verify` verifies source == code) should report 0 error.
+- The **source of truth for these contracts is in the code** (`cmd/oauth`, `cmd/image`, `cmd/galgame`, and other handlers) — when you change the code, change the source docs here in the same PR; `docs:verify` will catch "docs that don't match the reality of the code".
+- Unified docs portal: `docs-kungal.nextmoe.dev`; for the full ownership model (Tier A/B/C) see `../kungal-docs/docs/_meta/ownership.md`.
+
+## Database schema changes → you must remind about migrations
+
+**Whenever this change touches the database schema (a GORM model adding/changing a field or table, or raw SQL/constraints/indexes in `cmd/migrate*`), you must explicitly tell the user at the end of the task: whether a migration needs to run, which command to run, and against which database.** Deployment (push → CI → Dokploy redeploy) **does not run migrations automatically** — skipping one makes the live code read a column that doesn't exist (GORM `SELECT *` silently reads it as a zero value) → **silent failure**.
+
+- Main database `kun_galgame_infra` (oauth + the various site models) → `go run ./cmd/migrate` (**not run automatically by deployment**).
+- wiki database `kun_galgame_wiki` (galgame models) → `go run ./cmd/migrate-galgame` (**not run automatically by deployment**).
+- `cmd/image` / `cmd/artifact` → ship with `AutoMigrate` at service startup (runs automatically with deployment, no manual step needed).
+- Production execution: the `infra-tools` image + an env-file dumped from the corresponding container's `.Config.Env` (see the prod ops notes).
+- Lesson learned: in 2026-06 the `oauth_clients.moemoepoint_awarder` column was not migrated → the entire site could not award moemoepoints for ~29h.
