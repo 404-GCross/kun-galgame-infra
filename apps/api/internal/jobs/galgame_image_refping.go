@@ -78,17 +78,31 @@ func RunGalgameImageRefping(ctx context.Context, cfg *config.Config, opts Galgam
 		return Summary{"dry_run": true, "would_ping": len(hashes)}, nil
 	}
 
-	// This job's entire purpose is authenticating to image_service and
-	// pinging. Missing credentials means banners silently rot — fail
-	// loudly so the run is recorded failed and surfaces in alerting.
-	if cfg.ImageClient.ClientID == "" || cfg.ImageClient.ClientSecret == "" {
-		return nil, fmt.Errorf("image client not configured (KUN_IMAGE_CLIENT_ID / KUN_IMAGE_CLIENT_SECRET); refusing to run, banners would rot")
+	// reference-ping is SITE-SCOPED: a client can only keep alive hashes its
+	// OWN site uploaded. galgame banners/covers live under site=galgame_wiki,
+	// so this job MUST authenticate as the galgame_wiki client. In the oauth
+	// container (where the scheduler runs) cfg.ImageClient is the *account*
+	// client — pinging with it 404s every hash and banners rot. Prefer the
+	// dedicated GalgameImageClient; fall back to ImageClient (correct in the
+	// galgame container, where ImageClient already == galgame_wiki).
+	clientCfg := cfg.ImageClient
+	usingDedicated := false
+	if cfg.GalgameImageClient.ClientID != "" && cfg.GalgameImageClient.ClientSecret != "" {
+		clientCfg = cfg.GalgameImageClient
+		usingDedicated = true
 	}
+	// Missing credentials means banners silently rot — fail loudly so the run
+	// is recorded failed and surfaces in alerting.
+	if clientCfg.ClientID == "" || clientCfg.ClientSecret == "" {
+		return nil, fmt.Errorf("galgame image client not configured (set KUN_GALGAME_IMAGE_CLIENT_ID/SECRET on the oauth container, or KUN_IMAGE_CLIENT_ID/SECRET); refusing to run, banners would rot")
+	}
+	slog.Info("refping: image client selected",
+		"dedicated_galgame_client", usingDedicated, "client_id", clientCfg.ClientID)
 	cli := imageclient.New(imageclient.Config{
-		BaseURL:      cfg.ImageClient.BaseURL,
+		BaseURL:      clientCfg.BaseURL,
 		CDNBase:      cfg.ImageService.CDNBase,
-		ClientID:     cfg.ImageClient.ClientID,
-		ClientSecret: cfg.ImageClient.ClientSecret,
+		ClientID:     clientCfg.ClientID,
+		ClientSecret: clientCfg.ClientSecret,
 	})
 
 	var (
@@ -130,6 +144,14 @@ func RunGalgameImageRefping(ctx context.Context, cfg *config.Config, opts Galgam
 	if batchErrors > 0 {
 		return summary, fmt.Errorf("reference-ping had %d failed batch(es)", batchErrors)
 	}
+	// All-not-found with zero transport errors is the exact signature of a
+	// site/client misconfiguration (this job pinging as the wrong site, e.g.
+	// account instead of galgame_wiki) — or every image already TTL-deleted.
+	// Either way it must NOT pass silently: the job's whole purpose is keeping
+	// banners alive, so 0 kept alive is a failed run worth alerting on.
+	if totalUpdated == 0 && len(hashes) > 0 {
+		return summary, fmt.Errorf("reference-ping kept 0/%d hashes alive (all not_found) — wrong image client/site (need site=galgame_wiki) or images already deleted", len(hashes))
+	}
 	return summary, nil
 }
 
@@ -137,11 +159,11 @@ func RunGalgameImageRefping(ctx context.Context, cfg *config.Config, opts Galgam
 // the galgame wiki currently OR historically references. Four sources
 // (see RunGalgameImageRefping comment for the rationale):
 //
-//   1. galgame_cover.image_hash
-//   2. galgame_screenshot.image_hash
-//   3. galgame_revision.snapshot — jsonb walk of covers[].image_hash +
-//      screenshots[].image_hash
-//   4. galgame_pr.snapshot — same as #3
+//  1. galgame_cover.image_hash
+//  2. galgame_screenshot.image_hash
+//  3. galgame_revision.snapshot — jsonb walk of covers[].image_hash +
+//     screenshots[].image_hash
+//  4. galgame_pr.snapshot — same as #3
 //
 // All NULL / empty values are filtered out. Postgres jsonb operators
 // `?` (top-key exists), `->` and `jsonb_array_elements` do the heavy

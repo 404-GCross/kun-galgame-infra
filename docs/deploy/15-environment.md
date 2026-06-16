@@ -132,6 +132,7 @@
 | `KUN_IMAGE_S3_FORCE_PATH_STYLE` | `true` | | MinIO 必须 true;R2 可 false |
 | `KUN_IMAGE_PUBLIC_BASE_URL` | `http://localhost:15002/kun-images` | | **浏览器取图前缀** → 生产 `https://image.kungal.iloveren.link` |
 | `KUN_IMAGE_CLIENT_BASE_URL` | `http://image:9278` | | s2s 调 image 服务 |
+| `KUN_GALGAME_IMAGE_CLIENT_ID` / `KUN_GALGAME_IMAGE_CLIENT_SECRET` | / | 是* | **`galgame-image-refping` 专用**:必须 = galgame 容器的 `KUN_IMAGE_CLIENT_ID/SECRET`(`galgame_wiki` client)。job 在 oauth 容器跑,但封面属 `galgame_wiki` site、reference-ping 按 site 隔离——**不设则 fallback 到 account client,6 万封面全 not_found 不续期,~365 天后被 GC 删**。空时 job 失败并报错(可观测) |
 | `KUN_VISUAL_NOVEL_EMAIL_HOST/PORT/ACCOUNT/PASSWORD/FROM` | `tuesday.mxrouting.net`/`587`/`auth@kungal.com`/(密钥)/`KUN VISUAL NOVEL` | (密钥) | 发信(验证码/找回)。**纯出站**,无需开入站端口 |
 
 ### 15.4.3 infra · image(`docker/image.env`)

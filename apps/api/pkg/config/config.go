@@ -23,6 +23,15 @@ type Config struct {
 	ImageService    ImageServiceConfig
 	ImageS3         S3Config
 	ImageClient     ImageClientConfig
+	// GalgameImageClient is a SECOND image client identity, used only by the
+	// galgame-image-refping job. The job runs in the oauth container (central
+	// scheduler), where ImageClient is the *account* client — but galgame
+	// banners/covers were uploaded under the *galgame_wiki* site, and
+	// reference-ping is site-scoped, so pinging as account silently 404s every
+	// hash. This lets the oauth container ping as galgame_wiki. Falls back to
+	// ImageClient when unset (the standalone cmd in the galgame container,
+	// where ImageClient already == galgame_wiki, needs no extra env).
+	GalgameImageClient ImageClientConfig
 
 	ArtifactsDatabase DatabaseConfig
 	ArtifactS3        S3Config
@@ -294,6 +303,16 @@ func Load() (*Config, error) {
 		BaseURL:      getEnv("KUN_IMAGE_CLIENT_BASE_URL", defaultBase),
 		ClientID:     getEnv("KUN_IMAGE_CLIENT_ID", ""),
 		ClientSecret: getEnv("KUN_IMAGE_CLIENT_SECRET", ""),
+	}
+
+	// Second image identity for galgame-image-refping (see Config.GalgameImageClient).
+	// Set KUN_GALGAME_IMAGE_CLIENT_ID / _SECRET in the oauth container to the
+	// galgame_wiki client (= the galgame container's KUN_IMAGE_CLIENT_ID/SECRET).
+	// Empty ClientID → the job falls back to cfg.ImageClient.
+	cfg.GalgameImageClient = ImageClientConfig{
+		BaseURL:      getEnv("KUN_GALGAME_IMAGE_CLIENT_BASE_URL", cfg.ImageClient.BaseURL),
+		ClientID:     getEnv("KUN_GALGAME_IMAGE_CLIENT_ID", ""),
+		ClientSecret: getEnv("KUN_GALGAME_IMAGE_CLIENT_SECRET", ""),
 	}
 
 	// Artifacts database config (defaults to same server, different db name)
