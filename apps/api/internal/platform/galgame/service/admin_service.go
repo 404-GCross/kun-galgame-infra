@@ -103,14 +103,18 @@ func (s *AdminService) UpdateStatus(ctx context.Context, adminUserID, gid, newSt
 		if err != nil {
 			return err
 		}
-		if err := tx.Create(&model.GalgameRevision{
+		statusRev := &model.GalgameRevision{
 			GalgameID: gid,
 			Revision:  nextRev,
 			UserID:    adminUserID,
 			Action:    revAction,
 			Note:      reason,
 			Snapshot:  snapJSON,
-		}).Error; err != nil {
+		}
+		// approve / ban / unban / decline change only status — not a snapshot
+		// field — so no editable field changed. Record [] (not legacy NULL).
+		statusRev.SetChangedFields([]string{})
+		if err := tx.Create(statusRev).Error; err != nil {
 			return err
 		}
 

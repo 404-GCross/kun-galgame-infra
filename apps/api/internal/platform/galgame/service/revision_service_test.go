@@ -273,3 +273,43 @@ func TestGetRevisionDiff(t *testing.T) {
 	assert.Equal(t, "原始名", oldSnap.NameZhCN)
 	assert.Equal(t, "新名字", newSnap.NameZhCN)
 }
+
+// TestGetRevisionDiff_StaleBaselineDoesNotOverReport reproduces the kungal bug
+// report: VNDB enrichment mutated the LIVE tables (added a screenshot, set bid)
+// without minting a revision, leaving the previous revision's snapshot stale.
+// A subsequent one-field user edit must diff to exactly that one field — the
+// recorded changed_fields makes /diff immune to the stale baseline, instead of
+// over-reporting screenshots/bid as "newly added".
+func TestGetRevisionDiff_StaleBaselineDoesNotOverReport(t *testing.T) {
+	cleanTables(t)
+	ctx := context.Background()
+
+	g := createTestGalgame(t, "v30099", "原始名") // rev 1
+
+	// Simulate post-creation enrichment straight into the live tables, with NO
+	// revision (the historical root cause). rev 1's snapshot stays stale.
+	require.NoError(t, testDB.Create(&model.GalgameScreenshot{
+		GalgameID: g.ID, ImageHash: "deadbeefdeadbeef", SortOrder: 0, Source: "vndb",
+	}).Error)
+	require.NoError(t, testDB.Model(&model.Galgame{}).Where("id = ?", g.ID).
+		Update("bid", 12345).Error)
+
+	// User edits exactly one field. overlayUpdate diffs against live (which now
+	// holds the screenshot + bid), so the recorded change set is {name_zh_cn}.
+	name := "新名字"
+	_, err := testSvc.Update(ctx, 1, g.ID, []string{"admin"}, &dto.UpdateGalgameRequest{NameZhCN: &name})
+	require.NoError(t, err)
+
+	changedKeys, _, _, err := testSvc.GetRevisionDiff(ctx, g.ID, 2)
+	require.NoError(t, err)
+	assert.True(t, changedKeys["name_zh_cn"], "the field the user actually edited")
+	assert.False(t, changedKeys["screenshots"], "stale-baseline drift must NOT be reported")
+	assert.False(t, changedKeys["bid"], "stale-baseline drift must NOT be reported")
+	assert.Len(t, changedKeys, 1, "exactly one field changed")
+
+	// Sanity: the edit revision recorded the precise change set.
+	rev2, err := testSvc.GetRevision(ctx, g.ID, 2)
+	require.NoError(t, err)
+	assert.True(t, rev2.HasChangedFields())
+	assert.Equal(t, []string{"name_zh_cn"}, rev2.ChangedFieldsList())
+}

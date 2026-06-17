@@ -94,17 +94,21 @@ func (s *SubmissionService) Submit(ctx context.Context, userID int, req *dto.Sub
 		if err != nil {
 			return err
 		}
-		snapJSON, err := model.TakeSnapshot(full).ToJSON()
+		snap := model.TakeSnapshot(full)
+		snapJSON, err := snap.ToJSON()
 		if err != nil {
 			return err
 		}
-		if err := tx.Create(&model.GalgameRevision{
+		rev := &model.GalgameRevision{
 			GalgameID: g.ID,
 			Revision:  1,
 			UserID:    userID,
 			Action:    "created",
 			Snapshot:  snapJSON,
-		}).Error; err != nil {
+		}
+		// created → every populated field is "new" (delta vs empty).
+		rev.SetChangedFields(model.KeysOf(model.ChangedKeys(&model.Snapshot{}, snap)))
+		if err := tx.Create(rev).Error; err != nil {
 			return err
 		}
 
@@ -214,13 +218,17 @@ func (s *SubmissionService) Claim(ctx context.Context, userID, gid int) (*model.
 		if err != nil {
 			return err
 		}
-		if err := tx.Create(&model.GalgameRevision{
+		claimRev := &model.GalgameRevision{
 			GalgameID: gid,
 			Revision:  nextRev,
 			UserID:    userID,
 			Action:    "claimed",
 			Snapshot:  snapJSON,
-		}).Error; err != nil {
+		}
+		// claim flips status + ownership only — neither is a snapshot field,
+		// so no editable field changed. Record [] (not legacy NULL).
+		claimRev.SetChangedFields([]string{})
+		if err := tx.Create(claimRev).Error; err != nil {
 			return err
 		}
 
@@ -325,13 +333,17 @@ func (s *SubmissionService) PatchDraft(ctx context.Context, userID, gid int, req
 		if err != nil {
 			return err
 		}
-		if err := tx.Create(&model.GalgameRevision{
+		editRev := &model.GalgameRevision{
 			GalgameID: gid,
 			Revision:  nextRev,
 			UserID:    userID,
 			Action:    "edited_pending",
 			Snapshot:  snapJSON,
-		}).Error; err != nil {
+		}
+		// `changed` (= ChangedKeys(cur, next)) is the genuine edit delta; a
+		// declined draft re-submitted unchanged records [] (revive intent only).
+		editRev.SetChangedFields(model.KeysOf(changed))
+		if err := tx.Create(editRev).Error; err != nil {
 			return err
 		}
 

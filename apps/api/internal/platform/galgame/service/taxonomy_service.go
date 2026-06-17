@@ -980,14 +980,17 @@ func writeAffectedGalgameRevisions(tx *gorm.DB, gids []int, userID int, changedK
 		if err != nil {
 			return err
 		}
-		if err := tx.Create(&model.GalgameRevision{
+		rippleRev := &model.GalgameRevision{
 			GalgameID: gid,
 			Revision:  nextRev,
 			UserID:    userID,
 			Action:    "updated",
 			Snapshot:  snapJSON,
 			Note:      fmt.Sprintf("taxonomy delete cascade: %s", changedKey),
-		}).Error; err != nil {
+		}
+		// The taxonomy op changed exactly one per-galgame relation field.
+		rippleRev.SetChangedFields([]string{changedKey})
+		if err := tx.Create(rippleRev).Error; err != nil {
 			return err
 		}
 	}

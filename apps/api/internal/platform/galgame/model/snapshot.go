@@ -240,6 +240,18 @@ func ChangedKeys(old, new *Snapshot) map[string]bool {
 	return keys
 }
 
+// KeysOf flattens a ChangedKeys-style set into a sorted string slice,
+// suitable for GalgameRevision.SetChangedFields. Sorted so the stored
+// changed_fields jsonb is deterministic (stable across re-runs / tests).
+func KeysOf(set map[string]bool) []string {
+	out := make([]string, 0, len(set))
+	for k := range set {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
 // ApplyChanges merges changed fields from source into target.
 // Only fields present in changedKeys are copied.
 func ApplyChanges(target *Snapshot, source *Snapshot, changedKeys map[string]bool) {

@@ -444,7 +444,7 @@ func TestLink_CreateAndRevision(t *testing.T) {
 		if err := tx.Create(&model.GalgameLink{GalgameID: g.ID, UserID: 1, Name: "Steam", Link: "https://store.steampowered.com/app/123"}).Error; err != nil {
 			return err
 		}
-		return testSvc.CreateRevisionFromCurrentState(tx, g.ID, 1, "updated", "添加链接: Steam", false)
+		return testSvc.CreateRevisionFromCurrentState(tx, g.ID, 1, "updated", "添加链接: Steam", false, []string{"links"})
 	})
 	require.NoError(t, err)
 
@@ -472,7 +472,7 @@ func TestLink_Delete(t *testing.T) {
 
 	err := testGalgameRepo.DB().Transaction(func(tx *gorm.DB) error {
 		tx.Where("id = ? AND galgame_id = ?", link.ID, g.ID).Delete(&model.GalgameLink{})
-		return testSvc.CreateRevisionFromCurrentState(tx, g.ID, 1, "updated", "删除链接", true)
+		return testSvc.CreateRevisionFromCurrentState(tx, g.ID, 1, "updated", "删除链接", true, []string{"links"})
 	})
 	require.NoError(t, err)
 
@@ -492,7 +492,7 @@ func TestAlias_CreateAndDelete(t *testing.T) {
 	// Add alias
 	err := testGalgameRepo.DB().Transaction(func(tx *gorm.DB) error {
 		tx.Create(&model.GalgameAlias{GalgameID: g.ID, Name: "新别名"})
-		return testSvc.CreateRevisionFromCurrentState(tx, g.ID, 1, "updated", "添加别名", false)
+		return testSvc.CreateRevisionFromCurrentState(tx, g.ID, 1, "updated", "添加别名", false, []string{"aliases"})
 	})
 	require.NoError(t, err)
 
@@ -506,7 +506,7 @@ func TestAlias_CreateAndDelete(t *testing.T) {
 
 	err = testGalgameRepo.DB().Transaction(func(tx *gorm.DB) error {
 		tx.Delete(&alias)
-		return testSvc.CreateRevisionFromCurrentState(tx, g.ID, 1, "updated", "删除别名", true)
+		return testSvc.CreateRevisionFromCurrentState(tx, g.ID, 1, "updated", "删除别名", true, []string{"aliases"})
 	})
 	require.NoError(t, err)
 

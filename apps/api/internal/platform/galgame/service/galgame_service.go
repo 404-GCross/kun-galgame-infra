@@ -235,18 +235,22 @@ func (s *GalgameService) Create(ctx context.Context, userID int, req *dto.Create
 		if err != nil {
 			return err
 		}
-		snapshotJSON, err := model.TakeSnapshot(full).ToJSON()
+		snap := model.TakeSnapshot(full)
+		snapshotJSON, err := snap.ToJSON()
 		if err != nil {
 			return err
 		}
 		newID = g.ID
-		return tx.Create(&model.GalgameRevision{
+		rev := &model.GalgameRevision{
 			GalgameID: g.ID,
 			Revision:  1,
 			UserID:    userID,
 			Action:    "created",
 			Snapshot:  snapshotJSON,
-		}).Error
+		}
+		// created → every populated field is "new" (delta vs empty).
+		rev.SetChangedFields(model.KeysOf(model.ChangedKeys(&model.Snapshot{}, snap)))
+		return tx.Create(rev).Error
 	})
 
 	if err != nil {
@@ -454,7 +458,11 @@ func (s *GalgameService) Update(ctx context.Context, userID, galgameID int, role
 	}
 	cur := model.TakeSnapshot(full)
 	next := overlayUpdate(cur, req, vndbManagedTagIDs(full.Tag), vndbManagedOfficialIDs(full.Official))
-	if len(model.ChangedKeys(cur, next)) == 0 {
+	// ChangedKeys(cur, next) is the genuine edit delta — cur is live, so this
+	// is exactly what the user touched, independent of any stale older
+	// revision. Reused as both the no-op guard and the recorded changed_fields.
+	changed := model.ChangedKeys(cur, next)
+	if len(changed) == 0 {
 		return galgame, nil
 	}
 
@@ -500,14 +508,16 @@ func (s *GalgameService) Update(ctx context.Context, userID, galgameID int, role
 			isMinor = *req.IsMinor
 		}
 
-		return tx.Create(&model.GalgameRevision{
+		rev := &model.GalgameRevision{
 			GalgameID: galgameID,
 			Revision:  nextRev,
 			UserID:    userID,
 			Action:    "updated",
 			Snapshot:  snapshotJSON,
 			IsMinor:   isMinor,
-		}).Error
+		}
+		rev.SetChangedFields(model.KeysOf(changed))
+		return tx.Create(rev).Error
 	})
 
 	if err != nil {
@@ -850,7 +860,12 @@ func overlayUpdate(cur *model.Snapshot, req *dto.UpdateGalgameRequest, vndbTagID
 
 // CreateRevisionFromCurrentState takes a snapshot of the current galgame state
 // and creates a new revision. Must be called inside a transaction.
-func (s *GalgameService) CreateRevisionFromCurrentState(tx *gorm.DB, galgameID, userID int, action, note string, isMinor bool) error {
+//
+// changedFields is the set of snapshot keys this operation actually changed —
+// the caller knows it explicitly (e.g. the link/alias handlers change exactly
+// "links" / "aliases"), which is more robust than re-deriving it here against a
+// possibly-stale adjacent snapshot. Pass an empty slice for "no field change".
+func (s *GalgameService) CreateRevisionFromCurrentState(tx *gorm.DB, galgameID, userID int, action, note string, isMinor bool, changedFields []string) error {
 	fullGalgame, err := loadGalgameWithRelations(tx, galgameID)
 	if err != nil {
 		return err
@@ -866,7 +881,7 @@ func (s *GalgameService) CreateRevisionFromCurrentState(tx *gorm.DB, galgameID, 
 		return err
 	}
 
-	return tx.Create(&model.GalgameRevision{
+	rev := &model.GalgameRevision{
 		GalgameID: galgameID,
 		Revision:  nextRev,
 		UserID:    userID,
@@ -874,7 +889,9 @@ func (s *GalgameService) CreateRevisionFromCurrentState(tx *gorm.DB, galgameID, 
 		Note:      note,
 		Snapshot:  snapshotJSON,
 		IsMinor:   isMinor,
-	}).Error
+	}
+	rev.SetChangedFields(changedFields)
+	return tx.Create(rev).Error
 }
 
 // optStr returns *p if non-nil, else "". Used to flatten optional string

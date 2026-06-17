@@ -97,7 +97,7 @@ func (h *LinkHandler) CreateLink(c fiber.Ctx) error {
 			return err
 		}
 
-		return h.svc.CreateRevisionFromCurrentState(tx, gid, int(userID), "updated", "添加链接: "+req.Name, false)
+		return h.svc.CreateRevisionFromCurrentState(tx, gid, int(userID), "updated", "添加链接: "+req.Name, false, []string{"links"})
 	})
 
 	if err != nil {
@@ -135,7 +135,7 @@ func (h *LinkHandler) DeleteLink(c fiber.Ctx) error {
 			return gorm.ErrRecordNotFound
 		}
 
-		return h.svc.CreateRevisionFromCurrentState(tx, gid, int(userID), "updated", "删除链接", true)
+		return h.svc.CreateRevisionFromCurrentState(tx, gid, int(userID), "updated", "删除链接", true, []string{"links"})
 	})
 
 	if err != nil {
@@ -196,7 +196,7 @@ func (h *LinkHandler) CreateAlias(c fiber.Ctx) error {
 			return err
 		}
 
-		return h.svc.CreateRevisionFromCurrentState(tx, gid, int(userID), "updated", "添加别名: "+req.Name, false)
+		return h.svc.CreateRevisionFromCurrentState(tx, gid, int(userID), "updated", "添加别名: "+req.Name, false, []string{"aliases"})
 	})
 
 	if err != nil {
@@ -234,7 +234,7 @@ func (h *LinkHandler) DeleteAlias(c fiber.Ctx) error {
 			return gorm.ErrRecordNotFound
 		}
 
-		return h.svc.CreateRevisionFromCurrentState(tx, gid, int(userID), "updated", "删除别名", true)
+		return h.svc.CreateRevisionFromCurrentState(tx, gid, int(userID), "updated", "删除别名", true, []string{"aliases"})
 	})
 
 	if err != nil {

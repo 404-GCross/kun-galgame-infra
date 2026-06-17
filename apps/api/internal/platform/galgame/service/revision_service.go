@@ -154,7 +154,15 @@ func (s *GalgameService) GetRevision(ctx context.Context, galgameID, revision in
 	return rev, nil
 }
 
-// GetRevisionDiff computes the diff between a revision and its predecessor
+// GetRevisionDiff computes the diff between a revision and its predecessor.
+//
+// changed_keys is authoritative when the revision recorded changed_fields at
+// write time (every revision minted after that feature shipped): it reflects
+// exactly what the editor touched, so an edit to one field shows one field —
+// even if the adjacent snapshot drifted because VNDB enrichment mutated the
+// live tables without minting a revision. Legacy revisions (changed_fields
+// NULL) fall back to the historical whole-snapshot comparison. The old/new
+// snapshots are always returned for value rendering.
 func (s *GalgameService) GetRevisionDiff(ctx context.Context, galgameID, revision int) (map[string]bool, *model.Snapshot, *model.Snapshot, error) {
 	current, err := s.revisionRepo.FindByRevision(ctx, galgameID, revision)
 	if err != nil {
@@ -166,23 +174,26 @@ func (s *GalgameService) GetRevisionDiff(ctx context.Context, galgameID, revisio
 		return nil, nil, nil, err
 	}
 
-	if revision <= 1 {
-		// First revision: diff against empty
-		empty := &model.Snapshot{}
-		return model.ChangedKeys(empty, currentSnapshot), empty, currentSnapshot, nil
+	// Resolve the baseline snapshot (empty for the first revision or when the
+	// predecessor is missing — only used for value rendering + legacy fallback).
+	prevSnapshot := &model.Snapshot{}
+	if revision > 1 {
+		if prev, err := s.revisionRepo.FindByRevision(ctx, galgameID, revision-1); err == nil {
+			if ps, err := model.SnapshotFromJSON(prev.Snapshot); err == nil {
+				prevSnapshot = ps
+			}
+		}
 	}
 
-	prev, err := s.revisionRepo.FindByRevision(ctx, galgameID, revision-1)
-	if err != nil {
-		empty := &model.Snapshot{}
-		return model.ChangedKeys(empty, currentSnapshot), empty, currentSnapshot, nil
+	if current.HasChangedFields() {
+		recorded := map[string]bool{}
+		for _, k := range current.ChangedFieldsList() {
+			recorded[k] = true
+		}
+		return recorded, prevSnapshot, currentSnapshot, nil
 	}
 
-	prevSnapshot, err := model.SnapshotFromJSON(prev.Snapshot)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-
+	// Legacy revision: derive from the snapshot delta.
 	return model.ChangedKeys(prevSnapshot, currentSnapshot), prevSnapshot, currentSnapshot, nil
 }
 
@@ -217,6 +228,14 @@ func (s *GalgameService) Revert(ctx context.Context, userID, galgameID, targetRe
 	missing, noteSuffix := s.scrubMissingImages(ctx, snapshot)
 
 	return s.galgameRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Capture the live state before the revert so changed_fields records
+		// exactly what rolling back to the target alters (live → target).
+		beforeFull, err := loadGalgameWithRelations(tx, galgameID)
+		if err != nil {
+			return err
+		}
+		revertChanged := model.KeysOf(model.ChangedKeys(model.TakeSnapshot(beforeFull), snapshot))
+
 		// Apply the old snapshot
 		if err := repository.ApplySnapshot(tx, galgameID, userID, snapshot); err != nil {
 			return err
@@ -242,7 +261,7 @@ func (s *GalgameService) Revert(ctx context.Context, userID, galgameID, targetRe
 			note = note + "；" + noteSuffix
 		}
 		_ = missing // surfaced via Note; future API could echo the list to the response
-		return tx.Create(&model.GalgameRevision{
+		rev := &model.GalgameRevision{
 			GalgameID:  galgameID,
 			Revision:   nextRev,
 			UserID:     userID,
@@ -250,7 +269,9 @@ func (s *GalgameService) Revert(ctx context.Context, userID, galgameID, targetRe
 			Note:       note,
 			Snapshot:   snapshotJSON,
 			RevertedTo: &revertedTo,
-		}).Error
+		}
+		rev.SetChangedFields(revertChanged)
+		return tx.Create(rev).Error
 	})
 }
 
@@ -444,6 +465,15 @@ func (s *GalgameService) MergePR(ctx context.Context, userID, galgameID, prID in
 		// merged revision's Note. Skipped when probeImages is unset.
 		_, mergeNoteSuffix := s.scrubMissingImages(ctx, finalSnapshot)
 
+		// Capture the live state before applying so changed_fields records the
+		// net effect of the merge (live → finalSnapshot), independent of how
+		// stale the PR's base revision was.
+		beforeFull, err := loadGalgameWithRelations(tx, pr.GalgameID)
+		if err != nil {
+			return err
+		}
+		mergeChanged := model.KeysOf(model.ChangedKeys(model.TakeSnapshot(beforeFull), finalSnapshot))
+
 		// Apply snapshot to galgame tables
 		if err := repository.ApplySnapshot(tx, pr.GalgameID, userID, finalSnapshot); err != nil {
 			return err
@@ -471,6 +501,7 @@ func (s *GalgameService) MergePR(ctx context.Context, userID, galgameID, prID in
 			Note:      mergedNote,
 			Snapshot:  snapshotJSON,
 		}
+		rev.SetChangedFields(mergeChanged)
 		if err := tx.Create(rev).Error; err != nil {
 			return err
 		}

@@ -1,6 +1,8 @@
 package model
 
 import (
+	"encoding/json"
+
 	"gorm.io/datatypes"
 )
 
@@ -47,10 +49,54 @@ type GalgameRevision struct {
 	Snapshot   datatypes.JSON `gorm:"type:jsonb;not null" json:"snapshot"`
 	IsMinor    bool           `gorm:"default:false" json:"is_minor"`
 	RevertedTo *int           `gorm:"column:reverted_to" json:"reverted_to,omitempty"`
-	Created    Timestamp      `gorm:"autoCreateTime" json:"created"`
+	// ChangedFields is the set of snapshot keys this revision actually changed
+	// relative to the live state at edit time, stored as a jsonb array of
+	// strings. It is RECORDED at write time (from ChangedKeys(live_before,
+	// new)) rather than re-derived by /diff comparing adjacent snapshots —
+	// which over-reported whenever VNDB enrichment mutated the live tables
+	// without minting a revision, leaving an adjacent snapshot stale (see
+	// docs/integration/galgame_wiki/02-revisions-and-prs.md). Mirrors
+	// taxonomy_revision.changed_fields.
+	//
+	// Tri-state on purpose (NO default, so the column is nullable):
+	//   NULL        → legacy revision written before this column existed;
+	//                 /diff falls back to whole-snapshot ChangedKeys.
+	//   []          → recorded, but no editable field changed (claim, admin
+	//                 status transition — status is not a snapshot field).
+	//   ["screenshots", …] → the recorded change set.
+	// Use ChangedFieldsList / SetChangedFields / HasChangedFields on the Go
+	// side; never read the raw bytes.
+	ChangedFields datatypes.JSON `gorm:"column:changed_fields;type:jsonb" json:"changed_fields,omitempty"`
+	Created       Timestamp      `gorm:"autoCreateTime" json:"created"`
 }
 
 func (GalgameRevision) TableName() string { return "galgame_revision" }
+
+// HasChangedFields reports whether changed_fields was recorded (column is
+// non-NULL). False = legacy revision → callers fall back to snapshot diff.
+func (r *GalgameRevision) HasChangedFields() bool { return len(r.ChangedFields) > 0 }
+
+// ChangedFieldsList decodes ChangedFields jsonb into a Go []string.
+// NULL / parse error → nil (callers don't need to nil-check).
+func (r *GalgameRevision) ChangedFieldsList() []string {
+	if len(r.ChangedFields) == 0 {
+		return nil
+	}
+	var out []string
+	_ = json.Unmarshal(r.ChangedFields, &out)
+	return out
+}
+
+// SetChangedFields encodes a []string into the ChangedFields column. Pass an
+// empty (non-nil) slice for "recorded, nothing changed"; this still writes a
+// non-NULL `[]` so /diff knows the set was recorded, not legacy.
+func (r *GalgameRevision) SetChangedFields(fields []string) {
+	if fields == nil {
+		fields = []string{}
+	}
+	b, _ := json.Marshal(fields)
+	r.ChangedFields = datatypes.JSON(b)
+}
 
 // GalgameHistory is the legacy history table (kept for migration, will be removed later)
 type GalgameHistory struct {
