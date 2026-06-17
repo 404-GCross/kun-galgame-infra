@@ -258,6 +258,14 @@ func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB, se
 	// review). Locked to admin/moderator so non-staff can't bypass review.
 	galgameAuth.Post("/", middleware.RequireRole("admin", "moderator"), galgameH.Create)
 	galgameAuth.Put("/:gid", galgameH.Update)
+	// Canonical galgame image upload (cover + screenshot). Any logged-in user —
+	// incl. forum/moyu proxying their users via their wiki client — POSTs
+	// multipart {file, preset}; uploads under the wiki image client
+	// (site=galgame_wiki) and returns the hash. Centralizing here makes the
+	// wiki the single owner of galgame image bytes, so the site-scoped galgame
+	// reference-ping covers everything. Single-segment static path, no collision
+	// with /:gid (which is GET-only here).
+	galgameAuth.Post("/image", galgameH.UploadImage)
 	galgameAuth.Post("/:gid/revert", revisionH.Revert)
 	galgameAuth.Post("/:gid/prs", revisionH.SubmitPR)
 	galgameAuth.Put("/:gid/prs/:id/merge", revisionH.MergePR)

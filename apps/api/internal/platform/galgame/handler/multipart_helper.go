@@ -33,8 +33,8 @@ var errImageClientUnconfigured = stderrors.New("image client not configured (KUN
 //
 //  2. multipart/form-data — used by the wiki frontend when the user wants
 //     to upload a new banner file in the same edit operation:
-//        data: <JSON> (required)  — same payload as JSON mode
-//        file: <binary> (optional) — banner image
+//     data: <JSON> (required)  — same payload as JSON mode
+//     file: <binary> (optional) — banner image
 //     If the file part is present, this helper streams it to image_service
 //     via imageclient.Upload(preset=galgame_banner) and returns the resulting
 //     hash. Caller assigns the hash to its DTO's PromoteCoverHash field;
@@ -127,4 +127,69 @@ func mapWriteBodyError(c fiber.Ctx, err error) error {
 	// Anything else (JSON parse failure, file open failure) → 400.
 	slog.Warn("parse galgame write body failed", "err", err)
 	return response.BadRequest(c, apperr.ErrBadRequest)
+}
+
+// allowedGalgameUploadPresets gates the standalone upload endpoint to the two
+// galgame image presets (both land under site=galgame_wiki).
+var allowedGalgameUploadPresets = map[string]struct{}{
+	"galgame_banner":     {},
+	"galgame_screenshot": {},
+}
+
+// UploadImage is the canonical, single entry point for galgame image bytes
+// (covers + screenshots) across the whole ecosystem. A logged-in user POSTs
+// multipart {file, preset}; it uploads to image_service under the WIKI's image
+// client (site=galgame_wiki) and returns the content hash, which the caller
+// references in covers[]/screenshots[] on a later Create/Update/PR.
+//
+// forum and moyu proxy their users' cover/screenshot uploads here (via their
+// server-to-server wiki client, forwarding the user's JWT) instead of
+// uploading under their own image_service sites. That way EVERY galgame image
+// is owned by site=galgame_wiki, so the single site-scoped galgame
+// reference-ping keeps them all alive and the wiki is the one source of truth
+// for galgame image bytes — not just the galgame rows.
+func (h *GalgameHandler) UploadImage(c fiber.Ctx) error {
+	userID, _ := c.Locals("user_id").(uint)
+	if userID == 0 {
+		return response.Unauthorized(c, apperr.ErrAuthUnauthorized)
+	}
+	if h.imgClient == nil {
+		return response.BadRequestMsg(c, apperr.ErrBadRequest,
+			"图片服务未配置, 无法上传 galgame 图片 (KUN_IMAGE_CLIENT_ID/SECRET 未设置)")
+	}
+
+	preset := c.FormValue("preset")
+	if _, ok := allowedGalgameUploadPresets[preset]; !ok {
+		return response.BadRequestMsg(c, apperr.ErrBadRequest,
+			"preset 必须是 galgame_banner 或 galgame_screenshot")
+	}
+
+	fh, err := c.FormFile("file")
+	if err != nil || fh == nil {
+		return response.BadRequestMsg(c, apperr.ErrMissingParam, "缺少上传文件 file")
+	}
+	src, err := fh.Open()
+	if err != nil {
+		return response.BadRequest(c, apperr.ErrBadRequest)
+	}
+	defer src.Close()
+
+	result, err := h.imgClient.Upload(c.Context(), src, fh.Filename, preset)
+	if err != nil {
+		// image_service propagation (quota / moderation / upload-disabled):
+		// pass through status + code so callers can branch on it.
+		if e, ok := err.(*imageclient.Error); ok {
+			slog.Warn("galgame image upload rejected by image_service",
+				"status", e.StatusCode, "code", e.Code, "msg", e.Message, "preset", preset)
+			return response.Error(c, e.StatusCode, e.Code, e.Message)
+		}
+		slog.Error("galgame image upload failed", "err", err, "preset", preset)
+		return response.InternalError(c, apperr.ErrOperationFailed)
+	}
+
+	return response.Success(c, fiber.Map{
+		"hash":         result.Hash,
+		"url":          result.URL,
+		"variant_urls": result.VariantURLs,
+	})
 }
