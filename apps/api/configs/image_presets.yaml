@@ -47,17 +47,23 @@ presets:
       - image/png
       - image/webp
 
-  # galgame wiki gallery screenshots. Main image only — the gallery renders the
-  # full image in a lightbox and consumes no thumbnail variant today (add one
-  # here later if the grid wants a smaller derivative). Split out for the same
-  # reasons `message` is split from `topic`: its own CDN folder + independent
-  # quota gating, and an explicit name for the "galgame screenshot" asset.
-  # Before this preset existed kungal reused `galgame_banner` (generating an
-  # unused `mini` variant) and moyu reused `topic` — neither expressed intent
-  # and the two diverged. MIME is the union of both old presets (incl. gif) so
-  # migrating either consumer onto this name is non-breaking.
+  # galgame wiki gallery screenshots. The gallery grid renders a `mini`
+  # thumbnail (460x259, matching galgame_banner) while the lightbox shows the
+  # full image. Split out for the same reasons `message` is split from `topic`:
+  # its own CDN folder + independent quota gating, and an explicit name for the
+  # "galgame screenshot" asset.
+  # Before this preset existed kungal reused `galgame_banner` and moyu reused
+  # `topic` — neither expressed intent and the two diverged. MIME is the union
+  # of both old presets (incl. gif) so migrating either consumer onto this name
+  # is non-breaking.
   galgame_screenshot:
-    variants: []
+    variants:
+      - name: "mini"
+        width: 460
+        height: 259
+        fit: cover
+        format: webp
+        quality: 77
     allowed_mime:
       - image/jpeg
       - image/png
