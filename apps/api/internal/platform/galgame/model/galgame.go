@@ -74,8 +74,8 @@ type Galgame struct {
 	Official    []GalgameOfficialRelation `gorm:"foreignKey:GalgameID" json:"official,omitempty"`
 	Engine      []GalgameEngineRelation   `gorm:"foreignKey:GalgameID" json:"engine,omitempty"`
 	Tag         []GalgameTagRelation      `gorm:"foreignKey:GalgameID" json:"tag,omitempty"`
-	Cover       []GalgameCover            `gorm:"foreignKey:GalgameID" json:"cover,omitempty"`
-	Screenshot  []GalgameScreenshot       `gorm:"foreignKey:GalgameID" json:"screenshot,omitempty"`
+	Cover       []GalgameCover            `gorm:"foreignKey:GalgameID" json:"covers,omitempty"`
+	Screenshot  []GalgameScreenshot       `gorm:"foreignKey:GalgameID" json:"screenshots,omitempty"`
 
 	// EffectiveBannerHash is a derived, read-only field: the image_hash of
 	// the cover with sort_order=0 (= the "pinned" banner). Populated by

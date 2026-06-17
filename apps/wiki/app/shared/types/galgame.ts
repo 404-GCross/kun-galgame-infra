@@ -36,8 +36,8 @@ export interface Galgame {
   tag?: GalgameTagRelation[]
   official?: GalgameOfficialRelation[]
   series?: GalgameSeries | null
-  cover?: GalgameCover[]
-  screenshot?: GalgameScreenshot[]
+  covers?: GalgameCover[]
+  screenshots?: GalgameScreenshot[]
 }
 
 // GalgameCover — one entry in a galgame's cover candidate set.

@@ -155,8 +155,8 @@ const activeTab = ref<TabId>('overview')
 
 const galleryCount = computed(
   () =>
-    (galgame.value?.cover?.length ?? 0) +
-    (galgame.value?.screenshot?.length ?? 0)
+    (galgame.value?.covers?.length ?? 0) +
+    (galgame.value?.screenshots?.length ?? 0)
 )
 
 const tabItems = computed(() => [
@@ -555,17 +555,17 @@ const officialCategoryColor = (cat: string): KunUIColor =>
             </div>
             <KunLightboxGallery v-else>
               <div
-                v-if="galgame.cover && galgame.cover.length"
+                v-if="galgame.covers && galgame.covers.length"
                 class="space-y-2"
               >
                 <p class="text-default-500 text-sm font-medium">
-                  封面候选 ({{ galgame.cover.length }})
+                  封面候选 ({{ galgame.covers.length }})
                 </p>
                 <div
                   class="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4"
                 >
                   <KunLightboxGalleryItem
-                    v-for="c in [...galgame.cover].sort((a, b) => a.sort_order - b.sort_order)"
+                    v-for="c in [...galgame.covers].sort((a, b) => a.sort_order - b.sort_order)"
                     :key="`cover-${c.image_hash}`"
                     :src="imageHashUrl(c.image_hash, { cdnBase })"
                     :alt="`封面 sort_order=${c.sort_order}`"
@@ -597,17 +597,17 @@ const officialCategoryColor = (cat: string): KunUIColor =>
               </div>
 
               <div
-                v-if="galgame.screenshot && galgame.screenshot.length"
+                v-if="galgame.screenshots && galgame.screenshots.length"
                 class="space-y-2"
               >
                 <p class="text-default-500 text-sm font-medium">
-                  截图 / CG ({{ galgame.screenshot.length }})
+                  截图 / CG ({{ galgame.screenshots.length }})
                 </p>
                 <div
                   class="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4"
                 >
                   <KunLightboxGalleryItem
-                    v-for="s in [...galgame.screenshot].sort((a, b) => a.sort_order - b.sort_order)"
+                    v-for="s in [...galgame.screenshots].sort((a, b) => a.sort_order - b.sort_order)"
                     :key="`shot-${s.image_hash}`"
                     :src="imageHashUrl(s.image_hash, { cdnBase })"
                     :alt="s.caption || `截图 ${s.sort_order}`"
