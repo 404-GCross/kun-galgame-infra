@@ -187,9 +187,8 @@ func (h *GalgameHandler) UploadImage(c fiber.Ctx) error {
 		return response.InternalError(c, apperr.ErrOperationFailed)
 	}
 
-	return response.Success(c, fiber.Map{
-		"hash":         result.Hash,
-		"url":          result.URL,
-		"variant_urls": result.VariantURLs,
-	})
+	// Return the full UploadResult (hash, url, variant_urls, width, height,
+	// size_bytes, deduplicated) so downstream proxies (forum/moyu) keep the
+	// same response shape their FE already consumes.
+	return response.Success(c, result)
 }
