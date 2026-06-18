@@ -48,7 +48,7 @@ type BanUserRequest struct {
 // the oneof — it is provisioned via DB only and never grantable through the API
 // (see the role-management ren-gate in admin_handler.callerCanManageRole).
 type AssignRoleRequest struct {
-	Role string `json:"role" validate:"required,oneof=user moderator admin"`
+	Role string `json:"role" validate:"required,oneof=user creator moderator admin"`
 }
 
 // UserDetailResponse represents detailed user info for admin

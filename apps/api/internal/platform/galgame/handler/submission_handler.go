@@ -36,6 +36,9 @@ func (h *SubmissionHandler) Submit(c fiber.Ctx) error {
 	if userID == 0 {
 		return response.Unauthorized(c, errors.ErrAuthUnauthorized)
 	}
+	// Roles decide direct-publish vs review-queue (creator/moderator/admin publish
+	// straight to status=0). optionalJWT/jwtAuth populates user_roles.
+	roles, _ := c.Locals("user_roles").([]string)
 
 	var req dto.SubmitGalgameRequest
 	bannerHash, err := parseGalgameWriteBody(c, h.imgClient, &req)
@@ -51,7 +54,7 @@ func (h *SubmissionHandler) Submit(c fiber.Ctx) error {
 		return response.BadRequestMsg(c, errors.ErrValidationFailed, err.Error())
 	}
 
-	g, err := h.submissionSvc.Submit(c.Context(), int(userID), &req)
+	g, err := h.submissionSvc.Submit(c.Context(), int(userID), roles, &req)
 	if err != nil {
 		return mapSubmissionError(c, err)
 	}

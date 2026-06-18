@@ -33,6 +33,15 @@ func RegisterAll(r *Registry) {
 	})
 
 	r.Register(Job{
+		Name:     "grant-creator-role",
+		Desc:     "自动晋升:对已发布贡献达标的用户授予 creator 角色（grant-only，不降级）",
+		Schedule: Schedule{DailyAt: "05:15"}, // after sync-vndb-enrich (05:00)
+		Run: func(ctx context.Context, cfg *config.Config) (Summary, error) {
+			return RunGrantCreatorRole(ctx, cfg, DefaultGrantCreatorRoleOpts())
+		},
+	})
+
+	r.Register(Job{
 		Name:     "image-gc",
 		Desc:     "image_service TTL 生命周期（冷候选/软删/物删）",
 		Schedule: Schedule{DailyAt: "03:30"},

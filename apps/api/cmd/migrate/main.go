@@ -171,6 +171,12 @@ func seedInitialData(db *gorm.DB) error {
 	// Create default roles
 	defaultRoles := []siteModel.Role{
 		{Name: "user", Description: "Regular user"},
+		// creator（创作者）— trusted publisher tier between user and moderator.
+		// Flat RBAC: granted ALONGSIDE user, gates publish-trust capabilities
+		// (direct galgame publish incl. without a VNDB id) without any moderation
+		// power. Auto-granted on contribution threshold + admin-grantable.
+		// See docs/auth/01-creator-role-design.md.
+		{Name: "creator", Description: "创作者 — trusted creator (direct galgame publish)"},
 		{Name: "moderator", Description: "Content moderator"},
 		{Name: "admin", Description: "Administrator"},
 		// ren（莲）— elevated operator above admin. Flat RBAC has no

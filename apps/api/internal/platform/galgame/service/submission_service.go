@@ -43,20 +43,30 @@ func NewSubmissionService(g *repository.GalgameRepository, m *repository.Message
 //   - INSERT VNDB link if vndb_id non-empty
 //   - INSERT revision 1 (action='created')
 //   - INSERT message (type='submitted', actor=userID, target=NULL)
-func (s *SubmissionService) Submit(ctx context.Context, userID int, req *dto.SubmitGalgameRequest) (*model.Galgame, error) {
+func (s *SubmissionService) Submit(ctx context.Context, userID int, roles []string, req *dto.SubmitGalgameRequest) (*model.Galgame, error) {
 	// VNDB id validation: empty allowed; non-empty must match pattern.
 	if req.VNDBID != "" && !vndbIDRegex.MatchString(req.VNDBID) {
 		return nil, errors.NewWithCode(errors.ErrGalgameInvalidVNDB)
 	}
 
-	// Quota: count today's submissions for this user (status IN 3,4 — declined
-	// rejects still count to avoid quota-evasion by submit→edit cycles).
-	count, err := s.galgameRepo.CountSubmissionsToday(ctx, userID)
-	if err != nil {
-		return nil, err
-	}
-	if count >= DailySubmissionQuota {
-		return nil, errors.NewWithCode(errors.ErrGalgameQuotaExceeded)
+	// Trusted publishers (creator / moderator / admin) publish directly to
+	// status=0, bypassing the review queue AND the submission quota; everyone
+	// else creates a pending(3) draft. Empty vndb_id is allowed for all here, so
+	// a trusted publisher can publish a doujin/indie title with no VNDB entry.
+	// See docs/auth/01-creator-role-design.md.
+	publishDirect := hasRole(roles, "creator", "moderator", "admin", "super_admin")
+
+	if !publishDirect {
+		// Quota: count today's submissions for this user (status IN 3,4 —
+		// declined rejects still count, to avoid quota-evasion by submit→edit
+		// cycles).
+		count, err := s.galgameRepo.CountSubmissionsToday(ctx, userID)
+		if err != nil {
+			return nil, err
+		}
+		if count >= DailySubmissionQuota {
+			return nil, errors.NewWithCode(errors.ErrGalgameQuotaExceeded)
+		}
 	}
 
 	// Global vndb_id uniqueness (across any status). Empty vndb_id skips the check.
@@ -70,15 +80,21 @@ func (s *SubmissionService) Submit(ctx context.Context, userID int, req *dto.Sub
 		}
 	}
 
+	status := model.GalgameStatusPending
+	if publishDirect {
+		status = model.GalgameStatusPublished
+	}
+
 	var newID int
-	err = s.galgameRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// Bare insert with system fields only (status=pending). Every
-		// editable field is written by the SINGLE ApplySnapshot path —
-		// identical to admin Create; no manual relation loops.
+	err := s.galgameRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Bare insert with system fields only. Every editable field is written
+		// by the SINGLE ApplySnapshot path — identical to admin Create; no
+		// manual relation loops. status = published(0) for trusted publishers,
+		// else pending(3) for the review queue.
 		g := model.Galgame{
 			VNDBID: req.VNDBID,
 			UserID: userID,
-			Status: model.GalgameStatusPending,
+			Status: status,
 		}
 		if err := tx.Create(&g).Error; err != nil {
 			return err
@@ -113,7 +129,12 @@ func (s *SubmissionService) Submit(ctx context.Context, userID int, req *dto.Sub
 		}
 
 		newID = g.ID
-		// Message: submitted
+		if publishDirect {
+			// Published straight to status=0 by a trusted publisher — no
+			// review-queue message (the queue is driven by status=3).
+			return nil
+		}
+		// Message: submitted (enters the admin review queue via status=3).
 		payload, _ := json.Marshal(map[string]any{"vndb_id": req.VNDBID})
 		uidVal := userID
 		return s.messageRepo.Create(ctx, tx, &model.GalgameMessage{

@@ -16,12 +16,12 @@ import (
 // manageableRoles are the roles assignable/revocable via the admin API. `ren`
 // is deliberately absent — it is DB-provisioned only, never granted through
 // the API.
-var manageableRoles = []string{"user", "moderator", "admin"}
+var manageableRoles = []string{"user", "creator", "moderator", "admin"}
 
 // callerCanManageRole reports whether the authenticated caller may grant or
 // revoke `role` on another user:
-//   - ren   → any manageable role (user / moderator / admin)
-//   - admin → moderator only
+//   - ren   → any manageable role (user / creator / moderator / admin)
+//   - admin → moderator or creator (both below admin)
 //
 // `ren` is never manageable via the API regardless of caller (not in
 // manageableRoles), so it can be neither granted nor revoked here.
@@ -33,7 +33,7 @@ func callerCanManageRole(c fiber.Ctx, role string) bool {
 		return true
 	}
 	if middleware.HasRole(c, "admin") {
-		return role == "moderator"
+		return role == "moderator" || role == "creator"
 	}
 	return false
 }

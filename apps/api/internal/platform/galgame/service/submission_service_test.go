@@ -23,7 +23,7 @@ func TestSubmit_WithVNDB(t *testing.T) {
 	getRepos()
 	ctx := context.Background()
 
-	g, err := testSubmissionSvc.Submit(ctx, 42, &dto.SubmitGalgameRequest{
+	g, err := testSubmissionSvc.Submit(ctx, 42, nil, &dto.SubmitGalgameRequest{
 		VNDBID:   "v999",
 		NameZhCN: "测试投稿",
 	})
@@ -60,12 +60,46 @@ func TestSubmit_WithVNDB(t *testing.T) {
 	assert.Equal(t, int64(1), linkCount)
 }
 
+// TestSubmit_CreatorPublishesDirectly: a trusted publisher (creator role)
+// publishes straight to status=0 with NO review-queue message, including a
+// VNDB-less title; a plain user stays pending(3) with a submitted message.
+func TestSubmit_CreatorPublishesDirectly(t *testing.T) {
+	cleanTables(t)
+	getRepos()
+	ctx := context.Background()
+
+	// creator, VNDB-less → published directly
+	g, err := testSubmissionSvc.Submit(ctx, 7, []string{"creator"}, &dto.SubmitGalgameRequest{
+		NameZhCN: "同人作品（无 VNDB）",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, model.GalgameStatusPublished, g.Status, "creator submit publishes directly")
+	assert.Equal(t, "", g.VNDBID, "VNDB-less publish allowed for creator")
+
+	// revision 1 recorded as created
+	var rev model.GalgameRevision
+	require.NoError(t, testDB.Where("galgame_id = ?", g.ID).First(&rev).Error)
+	assert.Equal(t, "created", rev.Action)
+
+	// NO submitted message (it did not enter the review queue)
+	var msgCount int64
+	testDB.Model(&model.GalgameMessage{}).Where("galgame_id = ?", g.ID).Count(&msgCount)
+	assert.Equal(t, int64(0), msgCount, "direct publish emits no review-queue message")
+
+	// contrast: plain user → pending(3)
+	g2, err := testSubmissionSvc.Submit(ctx, 8, []string{"user"}, &dto.SubmitGalgameRequest{
+		VNDBID: "v77", NameZhCN: "普通投稿",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, model.GalgameStatusPending, g2.Status, "plain user stays pending")
+}
+
 func TestSubmit_NoVNDB(t *testing.T) {
 	cleanTables(t)
 	getRepos()
 	ctx := context.Background()
 
-	g, err := testSubmissionSvc.Submit(ctx, 1, &dto.SubmitGalgameRequest{
+	g, err := testSubmissionSvc.Submit(ctx, 1, nil, &dto.SubmitGalgameRequest{
 		VNDBID:   "",
 		NameZhCN: "国产作品",
 	})
@@ -79,7 +113,7 @@ func TestSubmit_NoVNDB(t *testing.T) {
 	assert.Equal(t, int64(0), linkCount)
 
 	// Two empty-vndb submissions must coexist (partial unique index)
-	_, err = testSubmissionSvc.Submit(ctx, 2, &dto.SubmitGalgameRequest{
+	_, err = testSubmissionSvc.Submit(ctx, 2, nil, &dto.SubmitGalgameRequest{
 		VNDBID:   "",
 		NameZhCN: "另一个原创",
 	})
@@ -91,13 +125,13 @@ func TestSubmit_DuplicateVNDB(t *testing.T) {
 	getRepos()
 	ctx := context.Background()
 
-	_, err := testSubmissionSvc.Submit(ctx, 1, &dto.SubmitGalgameRequest{
+	_, err := testSubmissionSvc.Submit(ctx, 1, nil, &dto.SubmitGalgameRequest{
 		VNDBID:   "v123",
 		NameZhCN: "first",
 	})
 	require.NoError(t, err)
 
-	_, err = testSubmissionSvc.Submit(ctx, 2, &dto.SubmitGalgameRequest{
+	_, err = testSubmissionSvc.Submit(ctx, 2, nil, &dto.SubmitGalgameRequest{
 		VNDBID:   "v123",
 		NameZhCN: "second",
 	})
@@ -112,13 +146,13 @@ func TestSubmit_QuotaEnforced(t *testing.T) {
 	userID := 99
 
 	for i := 0; i < DailySubmissionQuota; i++ {
-		_, err := testSubmissionSvc.Submit(ctx, userID, &dto.SubmitGalgameRequest{
+		_, err := testSubmissionSvc.Submit(ctx, userID, nil, &dto.SubmitGalgameRequest{
 			NameZhCN: "fill",
 		})
 		require.NoError(t, err, "submission %d should succeed", i+1)
 	}
 
-	_, err := testSubmissionSvc.Submit(ctx, userID, &dto.SubmitGalgameRequest{
+	_, err := testSubmissionSvc.Submit(ctx, userID, nil, &dto.SubmitGalgameRequest{
 		NameZhCN: "overflow",
 	})
 	require.Error(t, err)
@@ -432,7 +466,7 @@ func TestDeleteDraft_RemovesGalgameAndRelations(t *testing.T) {
 	getRepos()
 	ctx := context.Background()
 
-	g, err := testSubmissionSvc.Submit(ctx, 50, &dto.SubmitGalgameRequest{
+	g, err := testSubmissionSvc.Submit(ctx, 50, nil, &dto.SubmitGalgameRequest{
 		VNDBID:   "v77",
 		NameZhCN: "to be deleted",
 		Aliases:  "别名",
