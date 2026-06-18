@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"slices"
+	"strings"
 	"time"
 
 	"api/internal/platform/auth/model"
@@ -71,6 +72,12 @@ func (s *CreatorApplicationService) Apply(ctx context.Context, userID uint, sour
 		Evidence: evidence,
 	}
 	if err := s.repo.Create(ctx, app); err != nil {
+		// Lost a race against a concurrent apply: the partial unique index
+		// uq_creator_app_pending fired (the service-level guard above and the
+		// index aren't atomic). Surface the clean "pending" error, not a 500.
+		if strings.Contains(err.Error(), "uq_creator_app_pending") {
+			return nil, errors.NewWithCode(errors.ErrCreatorAppPending)
+		}
 		return nil, err
 	}
 	return app, nil
