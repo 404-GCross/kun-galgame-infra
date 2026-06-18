@@ -60,6 +60,13 @@ const (
 	ErrMoemoepointIdemConflict  = 16004
 	ErrMoemoepointNotAwarder    = 16005
 
+	// Creator application (17000-17999)
+	ErrCreatorAlreadyHas    = 17001 // user already holds the creator role
+	ErrCreatorAppPending    = 17002 // a pending application already exists
+	ErrCreatorAppCooldown   = 17003 // re-apply cooldown not elapsed
+	ErrCreatorAppNotFound   = 17004 // application not found
+	ErrCreatorAppNotPending = 17005 // application already reviewed
+
 	// Galgame (20000-29999)
 	ErrGalgameNotFound           = 20001
 	ErrGalgameAlreadyExists      = 20002
@@ -147,6 +154,12 @@ var codeMessages = map[int]string{
 	ErrAuthEmailSameAsCurrent:     "新邮箱与当前邮箱相同",
 	ErrAuthUserBanned:             "账号已被封禁",
 	ErrAuthEmailDomainNotAllowed:  "仅支持 qq.com、gmail.com、outlook.com 邮箱",
+
+	ErrCreatorAlreadyHas:    "你已经是创作者了",
+	ErrCreatorAppPending:    "已有一份待审核的创作者申请",
+	ErrCreatorAppCooldown:   "申请被拒绝后需等待冷却期才能重新申请",
+	ErrCreatorAppNotFound:   "申请不存在",
+	ErrCreatorAppNotPending: "该申请已被处理",
 
 	ErrOAuthInvalidClient:       "无效的客户端",
 	ErrOAuthInvalidRedirectURI:  "无效的回调地址",

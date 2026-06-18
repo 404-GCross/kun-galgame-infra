@@ -66,6 +66,16 @@ func main() {
 
 	slog.Info("Migrations completed successfully")
 
+	// At most one PENDING creator application per user (GORM can't express a
+	// partial unique index). Backstops the service-layer "one pending" guard.
+	if err := gormDB.Exec(`
+		CREATE UNIQUE INDEX IF NOT EXISTS uq_creator_app_pending
+		ON creator_applications (user_id) WHERE status = 'pending'
+	`).Error; err != nil {
+		slog.Error("failed to create creator_applications partial unique index", "error", err)
+		os.Exit(1)
+	}
+
 	// Create initial data if needed
 	if err := seedInitialData(gormDB); err != nil {
 		slog.Error("failed to seed initial data", "error", err)
@@ -88,6 +98,7 @@ func getAllModels() []any {
 		&authModel.PasswordReset{},
 		&authModel.AuthorizationCode{},
 		&authModel.MoemoepointLog{},
+		&authModel.CreatorApplication{},
 
 		// Site models
 		&siteModel.Site{},

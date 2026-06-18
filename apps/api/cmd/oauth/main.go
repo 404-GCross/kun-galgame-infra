@@ -105,6 +105,7 @@ func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 	oauthSvc := authService.NewOAuthService(userRepo, authCodeRepo, sessionRepo, oauthClientRepo, cfg)
 	adminSvc := authService.NewAdminService(userRepo, sessionRepo, imgCli)
 	userBatchSvc := authService.NewUserBatchService(userRepo)
+	creatorAppSvc := authService.NewCreatorApplicationService(authRepo.NewCreatorApplicationRepository(db), userRepo)
 	moemoepointSvc := authService.NewMoemoepointService(a.DB.DB(), userRepo)
 	// Registration grants a welcome gift via the moemoepoint ledger.
 	authSvc.WithMoemoepoint(moemoepointSvc)
@@ -116,6 +117,7 @@ func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 	adminH := authHandler.NewAdminHandler(adminSvc)
 	moemoepointH := authHandler.NewMoemoepointHandler(moemoepointSvc)
 	userBatchH := authHandler.NewUserBatchHandler(userBatchSvc)
+	creatorAppH := authHandler.NewCreatorApplicationHandler(creatorAppSvc)
 
 	var avatarUploadH *authHandler.AvatarUploadHandler
 	if imgCli != nil {
@@ -228,6 +230,12 @@ func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 	users := v1.Group("/users", middleware.Auth(authSvc))
 	users.Get("/:uuid", authH.GetProfile)
 
+	// Creator-role application (apply -> admin review -> approve/decline).
+	// Eligibility is gated downstream (forum/moyu); these are the central queue.
+	creator := v1.Group("/creator", middleware.Auth(authSvc))
+	creator.Post("/applications", creatorAppH.Apply)
+	creator.Get("/applications/me", creatorAppH.MyApplication)
+
 	// Admin routes (admin only)
 	admin := v1.Group("/admin", middleware.Auth(authSvc), middleware.RequireRole("admin"))
 	admin.Get("/users", adminH.ListUsers)
@@ -242,6 +250,10 @@ func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 	// in the handler (callerCanManageRole). `ren` is never grantable via API.
 	admin.Post("/users/:uuid/roles", adminH.AssignRole)
 	admin.Delete("/users/:uuid/roles/:role", adminH.RevokeRole)
+	// Creator application review queue.
+	admin.Get("/creator/applications", creatorAppH.AdminList)
+	admin.Post("/creator/applications/:id/approve", creatorAppH.AdminApprove)
+	admin.Post("/creator/applications/:id/decline", creatorAppH.AdminDecline)
 	admin.Post("/users/:uuid/moemoepoint", moemoepointH.AdminAdjust)
 	admin.Get("/users/:uuid/moemoepoint/log", moemoepointH.AdminGetLog)
 	// Registration analytics — under /stats so it can't collide with the
