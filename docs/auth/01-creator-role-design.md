@@ -6,6 +6,10 @@
 >
 > 关联:角色 claim 见 [integration/oauth](../integration/oauth/01-oauth-endpoints.md);发布信任
 > 能力落在 wiki(galgame 服务);贡献数据复用 wiki 既有 `GET /galgame/user/:id/stats`。
+>
+> **下游接入契约**(论坛/补丁站如何调申请队列、字段/错误码/耦合点)见
+> [integration/oauth/08-creator-applications.md](../integration/oauth/08-creator-applications.md)——
+> 该文件是 Tier-A 跨服务契约、会 `docs:sync` 到下游镜像;本文件是 infra 内部设计(决策/取舍),不下发。
 
 ## 1. 背景与现状
 
