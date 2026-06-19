@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { resolveAvatarUrl } from '~~/shared/utils/resolveImage'
+import { roleColor } from '~/constants/roles'
 
 const props = defineProps<{ users: User[] }>()
 const emit = defineEmits<{
@@ -82,7 +83,7 @@ const _ = props // keep TS happy if `props` is never read elsewhere
               <KunChip
                 v-for="role in (user.roles || [])"
                 :key="role"
-                :color="role === 'ren' ? 'secondary' : role === 'admin' ? 'primary' : role === 'moderator' ? 'warning' : 'default'"
+                :color="roleColor(role)"
                 variant="flat"
                 size="sm"
               >

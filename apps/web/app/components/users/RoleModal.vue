@@ -1,10 +1,12 @@
 <script setup lang="ts">
 // Role management. WHO may toggle WHICH role mirrors the server matrix
 // (admin_handler.callerCanManageRole):
-//   - ren   → user / moderator / admin
-//   - admin → moderator only
+//   - ren   → user / creator / moderator / admin
+//   - admin → creator / moderator
 // `ren` itself is DB-provisioned and never toggleable here (shown read-only
 // when present). The server re-checks every call — this UI only hides controls.
+import { roleColor } from '~/constants/roles'
+
 const open = defineModel<boolean>('open', { required: true })
 const props = defineProps<{
   user: { uuid: string; name: string; roles: string[] } | null
@@ -15,20 +17,11 @@ const api = useApi()
 const { isRen, isAdmin } = useAuth()
 
 // Manageable roles, low → high. `ren` is excluded (DB-only).
-const MANAGEABLE_ROLES = ['user', 'moderator', 'admin'] as const
-
-const roleColor = (role: string) =>
-  role === 'ren'
-    ? 'secondary'
-    : role === 'admin'
-      ? 'primary'
-      : role === 'moderator'
-        ? 'warning'
-        : 'default'
+const MANAGEABLE_ROLES = ['user', 'creator', 'moderator', 'admin'] as const
 
 const canManage = (role: string) => {
   if (isRen.value) return true // ren manages every manageable role
-  if (isAdmin.value) return role === 'moderator'
+  if (isAdmin.value) return role === 'moderator' || role === 'creator'
   return false
 }
 

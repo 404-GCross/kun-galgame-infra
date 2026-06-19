@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { resolveAvatarUrl } from '~~/shared/utils/resolveImage'
+import { roleColor } from '~/constants/roles'
 
 const auth = useAuth()
 const user = auth.user
@@ -54,7 +55,7 @@ const formattedDate = computed(() => {
           <KunChip
             v-for="role in user.roles"
             :key="role"
-            :color="role === 'admin' ? 'primary' : role === 'moderator' ? 'warning' : 'default'"
+            :color="roleColor(role)"
           >
             {{ role }}
           </KunChip>
