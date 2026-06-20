@@ -125,6 +125,65 @@ func mergeUserAndVndbLinks(userCandidates, vndbLinks []model.SnapshotLink) []mod
 	return append(out, vndbLinks...)
 }
 
+// vndbManagedCovers returns the sync-owned (source="vndb") subset of a cover set.
+func vndbManagedCovers(covers []model.SnapshotCover) []model.SnapshotCover {
+	out := make([]model.SnapshotCover, 0, len(covers))
+	for _, c := range covers {
+		if c.Source == "vndb" {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// mergeUserAndVndbCovers combines a user's submitted covers with the sync-managed
+// VNDB cover set (the full /cv gallery: main + release covers). The user's array is
+// authoritative for the covers it INCLUDES (their pinning/order, deduped by
+// image_hash); the only thing carried over is the VNDB covers the user OMITTED —
+// so an edit can reorder/repin covers but can't DELETE a synced one (it's re-added
+// from cur). At most one row stays pinned (sort_order=0, DB partial-unique): a
+// re-added vndb cover at sort_order=0 is demoted when the user already pinned one.
+// Dedup is by image_hash (a user-echoed vndb cover collapses to the user's copy).
+// Mirrors the vndb-subset preservation of mergeUserAndVndbLinks; this is why a
+// user edit can't wipe the synced cover gallery.
+func mergeUserAndVndbCovers(userCandidates, vndbCovers []model.SnapshotCover) []model.SnapshotCover {
+	vndbByHash := make(map[string]model.SnapshotCover, len(vndbCovers))
+	for _, c := range vndbCovers {
+		vndbByHash[c.ImageHash] = c
+	}
+	out := make([]model.SnapshotCover, 0, len(userCandidates)+len(vndbCovers))
+	seen := make(map[string]bool, len(userCandidates)+len(vndbCovers))
+	userPinned := false
+	for _, c := range userCandidates {
+		if seen[c.ImageHash] {
+			continue // collapse duplicate hashes
+		}
+		seen[c.ImageHash] = true
+		// For a cover that is a managed vndb one, source/source_key/kind are
+		// sync-owned — restore them from cur (the client may have stripped or
+		// changed them, e.g. an editor that drops `kind` from its payload), but
+		// honor the user's sort_order so they can still repin/reorder it.
+		if v, ok := vndbByHash[c.ImageHash]; ok {
+			c.Source, c.SourceKey, c.Kind = v.Source, v.SourceKey, v.Kind
+		}
+		if c.SortOrder == 0 {
+			userPinned = true
+		}
+		out = append(out, c)
+	}
+	for _, c := range vndbCovers {
+		if seen[c.ImageHash] {
+			continue // the user already included this cover (handled above)
+		}
+		seen[c.ImageHash] = true
+		if userPinned && c.SortOrder == 0 {
+			c.SortOrder = 1 // user's pin wins; keep at most one sort_order=0
+		}
+		out = append(out, c)
+	}
+	return out
+}
+
 // ReconcileVndbTags reconciles a galgame's source="vndb" tag relations to the
 // freshly-resolved VNDB set, preserving user (source="") tags. `desired` maps
 // wiki tag_id → spoiler level (the caller resolved VNDB tags via vndbresolve).

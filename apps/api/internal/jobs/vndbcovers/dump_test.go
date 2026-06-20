@@ -115,16 +115,65 @@ func TestLoadCoverRatings(t *testing.T) {
 	}
 }
 
+func TestLoadReleaseCovers(t *testing.T) {
+	dir := t.TempDir()
+	relVN := filepath.Join(dir, "releases_vn")
+	relImg := filepath.Join(dir, "releases_images")
+	writeFile(t, relVN+".header", "id\tvid\trtype")
+	writeFile(t, relVN, "r1\tv1\tcomplete\nr2\tv1\tpartial\nr3\tv2\tcomplete\n")
+	writeFile(t, relImg+".header", "id\timg\tvid\titype\tlang")
+	writeFile(t, relImg,
+		"r1\tcv10\t\\N\tpkgfront\t\\N\n"+
+			"r1\tch99\t\\N\tpkgfront\t\\N\n"+ // non-cv id → skipped
+			"r2\tcv11\t\\N\tdig\t\\N\n"+
+			"r3\tcv20\t\\N\tpkgback\t\\N\n")
+
+	ratings := map[string]rate{"cv10": {sexual: 1, violence: 0}}
+	out, err := loadReleaseCovers(relVN, relImg, ratings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out["v1"]) != 2 || len(out["v2"]) != 1 {
+		t.Fatalf("want v1:2 (cv10+cv11) v2:1 (cv20), got v1:%d v2:%d", len(out["v1"]), len(out["v2"]))
+	}
+	var cv10 *coverItem
+	for i := range out["v1"] {
+		if out["v1"][i].cvID == "cv10" {
+			cv10 = &out["v1"][i]
+		}
+	}
+	if cv10 == nil || cv10.kind != "pkgfront" || cv10.sexual != 1 {
+		t.Fatalf("cv10 wrong/missing: %+v", cv10)
+	}
+}
+
 func TestDumpSourceLookup(t *testing.T) {
 	d := &dumpSource{
 		vnCover: map[string]string{"v1": "cv11"},
+		relCovers: map[string][]coverItem{
+			"v1": {
+				{cvID: "cv22", kind: "pkgfront", sexual: 1, violence: 0},
+				{cvID: "cv11", kind: "dig", sexual: 2, violence: 1}, // dup of the main cover → dropped
+				{cvID: "cv33", kind: "pkgback"},
+			},
+		},
 		ratings: map[string]rate{"cv11": {sexual: 1, violence: 2}},
 	}
-	m, ok := d.lookup("v1")
-	if !ok || m.cvID != "cv11" || m.sexual != 1 || m.violence != 2 {
-		t.Fatalf("lookup(v1) = (%+v, %v)", m, ok)
+	got := d.lookup("v1")
+	// main first (cv11, kind=main, ratings from db/images), then cv22, cv33; cv11 dup dropped.
+	if len(got) != 3 {
+		t.Fatalf("want 3 covers (main + 2 release, dup dropped), got %d: %+v", len(got), got)
 	}
-	if _, ok := d.lookup("v9"); ok {
-		t.Error("lookup(v9) should be a miss")
+	if got[0].cvID != "cv11" || got[0].kind != kindMain || got[0].sexual != 1 || got[0].violence != 2 {
+		t.Fatalf("main cover wrong: %+v", got[0])
+	}
+	if got[1].cvID != "cv22" || got[1].kind != "pkgfront" {
+		t.Fatalf("release cover[1] wrong: %+v", got[1])
+	}
+	if got[2].cvID != "cv33" || got[2].kind != "pkgback" {
+		t.Fatalf("release cover[2] wrong: %+v", got[2])
+	}
+	if len(d.lookup("v9")) != 0 {
+		t.Error("lookup(v9) should be empty")
 	}
 }

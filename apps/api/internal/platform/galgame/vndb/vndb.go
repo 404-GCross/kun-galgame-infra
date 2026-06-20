@@ -489,3 +489,75 @@ func (c *Client) FetchVNScreenshotsBatch(ctx context.Context, ids []string) (map
 	}
 	return out, nil
 }
+
+// VNCover is one release cover image from /release images{}. Type is the VNDB
+// package image type (pkgfront/dig/pkgback/pkgcontent/pkgside/pkgmed). ID is the
+// cv-id (same namespace as vn.image), stored as galgame_cover.source_key. A VN's
+// full /cv cover set = vn.image (FetchVNImagesBatch) ∪ these, deduped by cv-id.
+type VNCover struct {
+	ID       string
+	Type     string
+	Sexual   float64
+	Violence float64
+}
+
+// FetchVNReleaseCoversBatch fetches the release cover images of up to 100 VNs in
+// one paginated /release query group (filtered to those VNs), keyed by vndb id —
+// mirrors FetchGameLinksBatch (which hits /release for extlinks). The result is
+// raw (a cv-id may repeat across releases / overlap vn.image); the caller dedups.
+func (c *Client) FetchVNReleaseCoversBatch(ctx context.Context, ids []string) (map[string][]VNCover, error) {
+	want := make(map[string]bool, len(ids))
+	or := []any{"or"}
+	for _, id := range ids {
+		if id == "" || want[id] {
+			continue
+		}
+		want[id] = true
+		or = append(or, []any{"id", "=", id})
+	}
+	if len(want) == 0 {
+		return map[string][]VNCover{}, nil
+	}
+
+	agg := make(map[string][]VNCover, len(want))
+	relFilter := []any{"vn", "=", or}
+	for page := 1; ; page++ {
+		var relResp struct {
+			More    bool `json:"more"`
+			Results []struct {
+				VNs []struct {
+					ID string `json:"id"`
+				} `json:"vns"`
+				Images []struct {
+					ID       string  `json:"id"`
+					Type     string  `json:"type"`
+					Sexual   float64 `json:"sexual"`
+					Violence float64 `json:"violence"`
+				} `json:"images"`
+			} `json:"results"`
+		}
+		if err := c.post(ctx, "/release", map[string]any{
+			"filters": relFilter, "fields": "vns{id}, images{id,type,sexual,violence}",
+			"results": 100, "page": page,
+		}, &relResp); err != nil {
+			return nil, fmt.Errorf("release cover batch page %d: %w", page, err)
+		}
+		for _, r := range relResp.Results {
+			for _, v := range r.VNs {
+				if !want[v.ID] {
+					continue
+				}
+				for _, img := range r.Images {
+					if img.ID == "" {
+						continue
+					}
+					agg[v.ID] = append(agg[v.ID], VNCover{ID: img.ID, Type: img.Type, Sexual: img.Sexual, Violence: img.Violence})
+				}
+			}
+		}
+		if !relResp.More {
+			break
+		}
+	}
+	return agg, nil
+}

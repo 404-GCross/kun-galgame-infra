@@ -308,7 +308,7 @@ func coverInputsToSnapshot(in []dto.GalgameCoverInput) []model.SnapshotCover {
 		out = append(out, model.SnapshotCover{
 			ImageHash: c.ImageHash, SortOrder: c.SortOrder,
 			Sexual: c.Sexual, Violence: c.Violence,
-			Source: c.Source, SourceKey: c.SourceKey,
+			Source: c.Source, SourceKey: c.SourceKey, Kind: c.Kind,
 		})
 	}
 	return out
@@ -839,7 +839,13 @@ func overlayUpdate(cur *model.Snapshot, req *dto.UpdateGalgameRequest, vndbTagID
 		n.EngineIDs = append([]int(nil), (*req.EngineIDs)...)
 	}
 	if req.Covers != nil {
-		n.Covers = coverInputsToSnapshot(*req.Covers)
+		// req.Covers authoritatively replaces the USER covers only. The
+		// VNDB-synced covers (source="vndb": the full /cv gallery — main +
+		// release covers) are sync-managed like vndb links — carried over from
+		// cur and merged back, deduped by image_hash. Otherwise a user setting
+		// a custom banner would wipe the synced cover gallery. See
+		// mergeUserAndVndbCovers (keeps at most one pinned sort_order=0).
+		n.Covers = mergeUserAndVndbCovers(coverInputsToSnapshot(*req.Covers), vndbManagedCovers(cur.Covers))
 	}
 	if req.Screenshots != nil {
 		n.Screenshots = screenshotInputsToSnapshot(*req.Screenshots)

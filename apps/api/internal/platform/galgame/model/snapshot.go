@@ -58,6 +58,7 @@ type SnapshotCover struct {
 	Violence  int16  `json:"violence"`
 	Source    string `json:"source"`
 	SourceKey string `json:"source_key"`
+	Kind      string `json:"kind"`
 }
 
 // SnapshotScreenshot is one gallery/CG entry in a Snapshot. Mirrors
@@ -134,7 +135,7 @@ func TakeSnapshot(g *Galgame) *Snapshot {
 		s.Covers = append(s.Covers, SnapshotCover{
 			ImageHash: c.ImageHash, SortOrder: c.SortOrder,
 			Sexual: c.Sexual, Violence: c.Violence,
-			Source: c.Source, SourceKey: c.SourceKey,
+			Source: c.Source, SourceKey: c.SourceKey, Kind: c.Kind,
 		})
 	}
 	for _, sh := range g.Screenshot {

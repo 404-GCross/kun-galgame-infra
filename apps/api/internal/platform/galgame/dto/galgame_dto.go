@@ -92,6 +92,10 @@ type GalgameCoverInput struct {
 	Violence  int16  `json:"violence" validate:"omitempty,min=0,max=3"`
 	Source    string `json:"source" validate:"omitempty,max=16"`
 	SourceKey string `json:"source_key" validate:"omitempty,max=128"`
+	// Kind labels the VNDB cover type (main/pkgfront/dig/pkgback/…); "" for
+	// user uploads. Sync-managed covers are preserved on edit, so downstream
+	// echoes it back as-is (or omits it — the wiki re-applies the vndb set).
+	Kind string `json:"kind" validate:"omitempty,max=16"`
 }
 
 // GalgameScreenshotInput is one gallery / CG entry. Same shape as

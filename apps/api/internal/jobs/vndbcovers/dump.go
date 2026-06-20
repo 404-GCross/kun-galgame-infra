@@ -47,6 +47,10 @@ var (
 	// (col 2 `c_image` is a cache field; don't use it).
 	vnFallbackCols     = map[string]int{"id": 0, "image": 1}
 	imagesFallbackCols = map[string]int{"id": 0, "c_sexual_avg": 4, "c_violence_avg": 6}
+	// db/releases_vn: `id vid rtype` — release id + vn id.
+	relVNFallbackCols = map[string]int{"id": 0, "vid": 1}
+	// db/releases_images: `id img vid itype lang` — release id + cover cv-id + type.
+	relImgFallbackCols = map[string]int{"id": 0, "img": 1, "itype": 3}
 )
 
 // resolveCols returns the 0-based index of each named column, preferring the
@@ -157,14 +161,80 @@ func loadCoverRatings(imagesPath string) (map[string]rate, error) {
 	return out, sc.Err()
 }
 
-// dumpSource resolves cover metadata from the offline VNDB dump (one-time bulk
-// backfill). Byte fetching is shared with the API path via fetchCover.
-type dumpSource struct {
-	vnCover map[string]string // v-id -> cv-id
-	ratings map[string]rate   // cv-id -> sexual/violence
+// loadReleaseCovers reads db/releases_vn (release→vn) + db/releases_images
+// (release→cv-id+type) and returns v-id → release covers (raw; the caller dedups
+// against the main cover). Only cv* images are kept; ratings come from db/images.
+func loadReleaseCovers(relVNPath, relImgPath string, ratings map[string]rate) (map[string][]coverItem, error) {
+	cols, err := resolveCols(relVNPath, relVNFallbackCols, "id", "vid")
+	if err != nil {
+		return nil, err
+	}
+	relCol, vnCol := cols[0], cols[1]
+	maxRV := max(relCol, vnCol)
+
+	rf, err := os.Open(relVNPath)
+	if err != nil {
+		return nil, err
+	}
+	defer rf.Close()
+	relToVNs := map[string][]string{}
+	sc := bufio.NewScanner(rf)
+	sc.Buffer(make([]byte, 1024*1024), 1024*1024)
+	for sc.Scan() {
+		f := strings.Split(sc.Text(), "\t")
+		if len(f) <= maxRV {
+			continue
+		}
+		rel, vn := f[relCol], f[vnCol]
+		if strings.HasPrefix(vn, "v") {
+			relToVNs[rel] = append(relToVNs[rel], vn)
+		}
+	}
+	if err := sc.Err(); err != nil {
+		return nil, err
+	}
+
+	cols2, err := resolveCols(relImgPath, relImgFallbackCols, "id", "img", "itype")
+	if err != nil {
+		return nil, err
+	}
+	relC, imgC, typeC := cols2[0], cols2[1], cols2[2]
+	maxRI := max(relC, max(imgC, typeC))
+
+	imgf, err := os.Open(relImgPath)
+	if err != nil {
+		return nil, err
+	}
+	defer imgf.Close()
+	out := map[string][]coverItem{}
+	sc2 := bufio.NewScanner(imgf)
+	sc2.Buffer(make([]byte, 1024*1024), 1024*1024)
+	for sc2.Scan() {
+		f := strings.Split(sc2.Text(), "\t")
+		if len(f) <= maxRI {
+			continue
+		}
+		rel, img, kind := f[relC], f[imgC], f[typeC]
+		if !strings.HasPrefix(img, cvPrefix) {
+			continue // covers are cv*; skip any other id namespace
+		}
+		r := ratings[img]
+		for _, vn := range relToVNs[rel] {
+			out[vn] = append(out[vn], coverItem{cvID: img, kind: kind, sexual: r.sexual, violence: r.violence})
+		}
+	}
+	return out, sc2.Err()
 }
 
-func newDumpSource(vnPath, imagesPath string) (*dumpSource, error) {
+// dumpSource resolves the full cover set per VN from the offline VNDB dump
+// (one-time bulk backfill). Byte fetching is shared with the API path via fetchCover.
+type dumpSource struct {
+	vnCover   map[string]string      // v-id -> main cover cv-id (db/vn.image)
+	relCovers map[string][]coverItem // v-id -> release covers (db/releases_*)
+	ratings   map[string]rate        // cv-id -> sexual/violence
+}
+
+func newDumpSource(vnPath, imagesPath, relVNPath, relImgPath string) (*dumpSource, error) {
 	vnCover, err := loadVNCoverMap(vnPath)
 	if err != nil {
 		return nil, fmt.Errorf("load db/vn (%s): %w", vnPath, err)
@@ -179,16 +249,34 @@ func newDumpSource(vnPath, imagesPath string) (*dumpSource, error) {
 	if len(ratings) == 0 {
 		return nil, fmt.Errorf("db/images (%s) produced 0 cv ratings — wrong path or column layout", imagesPath)
 	}
-	return &dumpSource{vnCover: vnCover, ratings: ratings}, nil
+	relCovers, err := loadReleaseCovers(relVNPath, relImgPath, ratings)
+	if err != nil {
+		return nil, fmt.Errorf("load release covers (%s + %s): %w", relVNPath, relImgPath, err)
+	}
+	if len(relCovers) == 0 {
+		return nil, fmt.Errorf("db/releases_images (%s) produced 0 release covers — wrong path or column layout", relImgPath)
+	}
+	return &dumpSource{vnCover: vnCover, relCovers: relCovers, ratings: ratings}, nil
 }
 
 func (d *dumpSource) prefetch(context.Context, []string) error { return nil }
 
-func (d *dumpSource) lookup(vndbID string) (coverMeta, bool) {
-	cv, ok := d.vnCover[vndbID]
-	if !ok {
-		return coverMeta{}, false
+// lookup returns the deduped cover set for a VN: the main cover (kind="main")
+// first, then release covers (kind=their type), skipping any repeated cv-id.
+func (d *dumpSource) lookup(vndbID string) []coverItem {
+	out := make([]coverItem, 0, 8)
+	seen := map[string]bool{}
+	if cv, ok := d.vnCover[vndbID]; ok {
+		r := d.ratings[cv]
+		out = append(out, coverItem{cvID: cv, kind: kindMain, sexual: r.sexual, violence: r.violence})
+		seen[cv] = true
 	}
-	r := d.ratings[cv] // zero value (0/0) if the cv has no images row — safe default
-	return coverMeta{cvID: cv, sexual: r.sexual, violence: r.violence}, true
+	for _, it := range d.relCovers[vndbID] {
+		if seen[it.cvID] {
+			continue
+		}
+		seen[it.cvID] = true
+		out = append(out, it)
+	}
+	return out
 }

@@ -1,20 +1,26 @@
 // Package vndbcovers is the shared logic behind the sync-vndb-covers CLI and the
-// scheduled "sync-vndb-covers" job: fill the cover of every PUBLISHED galgame
-// that has none from VNDB, upload it into image_service (site=galgame_wiki), and
-// pin it (galgame_cover sort_order=0, source="vndb", source_key=<cv-id>).
+// scheduled "sync-vndb-covers" job: fill the cover gallery of PUBLISHED galgames
+// from VNDB — the VN main cover (vn.image) PLUS every release cover (the /cv page:
+// pkgfront/dig/pkgback/pkgcontent/pkgside/pkgmed) — uploading each into
+// image_service (site=galgame_wiki) and recording it in galgame_cover with a
+// `kind` label (source="vndb", source_key=<cv-id>). One is pinned (sort_order=0,
+// the effective banner); the rest are non-pinned candidates a "view all covers"
+// gallery can group by kind.
 //
-// Two image-byte sources share one upload/insert path:
-//   - DUMP mode (Opts.VNDBImageDir set) — the one-time bulk backfill reads the
-//     offline VNDB dump (db/vn → cover cv-id, db/images → rating, the rsync'd
-//     cv/ tree → bytes). No VNDB API hammering — the established bulk technique.
-//   - API mode (default) — the daily job fetches cover metadata via /vn for the
-//     trickle of newly-claimed games and downloads the bytes from t.vndb.org.
+// Two byte sources share one upload/upsert path:
+//   - DUMP mode (Opts.VNDBImageDir set) — bulk backfill off the offline VNDB dump
+//     (db/vn main + db/releases_vn + db/releases_images + db/images ratings + cv/
+//     tree). No VNDB API hammering — the established bulk technique.
+//   - API mode (default; the daily job) — /vn image{} + paginated /release images{}
+//     for the trickle of newly-claimed games; bytes from t.vndb.org.
 //
-// Candidate = published game (status=0) with a vndb_id and NO cover at all, so a
-// user's own uploaded cover is never touched and re-runs only fill gaps. Writes
-// the galgame_cover row only (no revision/snapshot) — same as the screenshot /
-// banner backfills; the daily galgame-image-refping already pins historical
-// hashes. CLI and scheduler run identical code from here.
+// Default candidate = published game (status=0, vndb_id) with NO cover yet (new /
+// claimed games get the full set on first sync). Opts.All drops that gate for the
+// one-time backfill over every published vndb game (idempotent: existing cv-ids
+// are skipped, and the INSERT upserts by (galgame_id,image_hash) so a cover shared
+// with a migrated row is relabeled, never duplicated). Writes galgame_cover rows
+// only (no revision/snapshot) — the daily galgame-image-refping pins them; an edit
+// preserves them via the source="vndb" union in overlayUpdate.
 package vndbcovers
 
 import (
@@ -41,80 +47,101 @@ const (
 	coverPreset    = "galgame_banner"
 	defaultTimeout = 60 * time.Second
 	vndbImageHost  = "https://t.vndb.org/"
+	kindMain       = "main" // the VN's primary cover (vn.image); release covers use their VNDB type
 )
 
 // Opts selects the games to fill and where the cover bytes come from.
 type Opts struct {
-	Apply  bool          // false = dry run (resolve + count, no upload/insert)
+	Apply  bool          // false = dry run (resolve + count, no upload/upsert)
 	Gap    time.Duration // min delay between VNDB API calls (API mode; default 2s)
+	All    bool          // drop the "no cover yet" gate — process every published vndb game (backfill)
 	IDs    []int         // process exactly these ids (any status); else published-only
 	Limit  int
 	Offset int
 
-	// Dump mode (one-time bulk). When VNDBImageDir is set, cover bytes + cv-id +
-	// ratings come from the offline dump instead of the VNDB API.
-	VNDBImageDir   string // rsync mirror of rsync://dl.vndb.org/vndb-img (must contain cv/)
-	VNDumpPath     string // dump's db/vn  (v-id -> cover cv-id)
-	ImagesDumpPath string // dump's db/images (cv-id -> sexual/violence)
+	// Dump mode (one-time bulk). When VNDBImageDir is set, covers + ratings come
+	// from the offline dump instead of the VNDB API.
+	VNDBImageDir      string // rsync mirror of rsync://dl.vndb.org/vndb-img (must contain cv/)
+	VNDumpPath        string // dump's db/vn            (v-id -> main cover cv-id)
+	ImagesDumpPath    string // dump's db/images        (cv-id -> sexual/violence)
+	RelVNDumpPath     string // dump's db/releases_vn   (release -> vn)
+	RelImagesDumpPath string // dump's db/releases_images (release -> cover cv-id + type)
 
 	ImageBaseURL string // optional image_service base override (else the client's configured base)
 }
 
-// coverMeta is the per-game cover descriptor both sources produce; the bytes are
-// fetched separately (and only when applying) via fetchCover.
-type coverMeta struct {
+// coverItem is one cover in a VN's set; bytes are fetched separately (and only
+// when applying) via fetchCover, since a VNDB cover URL is deterministic from cv-id.
+type coverItem struct {
 	cvID             string
+	kind             string
 	sexual, violence int16
 }
 
-// coverSource yields cover metadata per VN. The byte fetch is shared (fetchCover)
-// because a VNDB cover URL is deterministic from its cv-id, so the only real
-// difference between dump and API is where the metadata comes from.
+// coverSource yields the full, deduped cover set per VN (main first). The byte
+// fetch is shared (fetchCover) — only the metadata source differs (dump vs API).
 type coverSource interface {
 	prefetch(ctx context.Context, vndbIDs []string) error
-	lookup(vndbID string) (coverMeta, bool)
+	lookup(vndbID string) []coverItem
 }
 
-// apiSource resolves cover metadata from the VNDB /vn API (daily trickle).
+// apiSource resolves cover metadata from the VNDB API (daily trickle): /vn for the
+// main cover + /release for release covers.
 type apiSource struct {
 	vc    *vndb.Client
-	cache map[string]coverMeta
+	cache map[string][]coverItem
 }
 
 func newAPISource(gap time.Duration) *apiSource {
-	return &apiSource{vc: vndb.New(gap), cache: map[string]coverMeta{}}
+	return &apiSource{vc: vndb.New(gap), cache: map[string][]coverItem{}}
 }
 
 func (a *apiSource) prefetch(ctx context.Context, ids []string) error {
-	m, err := a.vc.FetchVNImagesBatch(ctx, ids)
+	mains, err := a.vc.FetchVNImagesBatch(ctx, ids)
 	if err != nil {
-		return err
+		return fmt.Errorf("fetch main covers: %w", err)
 	}
-	for id, img := range m {
-		a.cache[id] = coverMeta{cvID: img.ID, sexual: ratingFloat(img.Sexual), violence: ratingFloat(img.Violence)}
+	rels, err := a.vc.FetchVNReleaseCoversBatch(ctx, ids)
+	if err != nil {
+		return fmt.Errorf("fetch release covers: %w", err)
+	}
+	for _, id := range ids {
+		seen := map[string]bool{}
+		var items []coverItem
+		if m, ok := mains[id]; ok {
+			items = append(items, coverItem{cvID: m.ID, kind: kindMain, sexual: ratingFloat(m.Sexual), violence: ratingFloat(m.Violence)})
+			seen[m.ID] = true
+		}
+		for _, rc := range rels[id] {
+			if seen[rc.ID] {
+				continue
+			}
+			seen[rc.ID] = true
+			items = append(items, coverItem{cvID: rc.ID, kind: rc.Type, sexual: ratingFloat(rc.Sexual), violence: ratingFloat(rc.Violence)})
+		}
+		if len(items) > 0 {
+			a.cache[id] = items
+		}
 	}
 	return nil
 }
 
-func (a *apiSource) lookup(vndbID string) (coverMeta, bool) {
-	m, ok := a.cache[vndbID]
-	return m, ok
-}
+func (a *apiSource) lookup(vndbID string) []coverItem { return a.cache[vndbID] }
 
 // ratingFloat maps a VNDB API 0-2 average flag vote onto our int16 0-2 column
 // (reuses the dump rating's round-half-up + clamp by scaling to the 0-200 form).
 func ratingFloat(avg float64) int16 { return rating(int(avg * 100)) }
 
-// Run fills covers for the selected games and returns a summary.
+// Run fills cover galleries for the selected games and returns a summary.
 func Run(ctx context.Context, cfg *config.Config, opts Opts) (map[string]any, error) {
 	if opts.Gap <= 0 {
 		opts.Gap = 2 * time.Second
 	}
 
-	// Covers live under site=galgame_wiki, and upload + reference-ping are
-	// site-scoped. In the oauth scheduler container ImageClient is the *account*
-	// client, so prefer the dedicated galgame client; fall back to ImageClient
-	// (correct in the galgame container / CLI env-file). Mirror galgame-image-refping.
+	// Covers live under site=galgame_wiki; upload + reference-ping are site-scoped.
+	// In the oauth scheduler container ImageClient is the *account* client, so
+	// prefer the dedicated galgame client; fall back to ImageClient (CLI env-file /
+	// galgame container). Mirror galgame-image-refping.
 	clientCfg := cfg.ImageClient
 	if cfg.GalgameImageClient.ClientID != "" && cfg.GalgameImageClient.ClientSecret != "" {
 		clientCfg = cfg.GalgameImageClient
@@ -123,12 +150,11 @@ func Run(ctx context.Context, cfg *config.Config, opts Opts) (map[string]any, er
 		return nil, fmt.Errorf("galgame image client not configured (set KUN_GALGAME_IMAGE_CLIENT_ID/SECRET on the oauth container, or KUN_IMAGE_CLIENT_ID/SECRET); refusing to run")
 	}
 
-	// Build the metadata source: dump (one-time bulk) or API (daily trickle).
 	var src coverSource
 	mode := "api"
 	if opts.VNDBImageDir != "" {
 		mode = "dump"
-		ds, err := newDumpSource(opts.VNDumpPath, opts.ImagesDumpPath)
+		ds, err := newDumpSource(opts.VNDumpPath, opts.ImagesDumpPath, opts.RelVNDumpPath, opts.RelImagesDumpPath)
 		if err != nil {
 			return nil, fmt.Errorf("init dump source: %w", err)
 		}
@@ -166,7 +192,7 @@ func Run(ctx context.Context, cfg *config.Config, opts Opts) (map[string]any, er
 		return nil, fmt.Errorf("list candidates: %w", err)
 	}
 	slog.Info("sync-vndb-covers start", "candidates", len(cands), "mode", mode,
-		"apply", opts.Apply, "client_id", clientCfg.ClientID)
+		"all", opts.All, "apply", opts.Apply, "client_id", clientCfg.ClientID)
 
 	var uploaded, noCover, wouldUpload, failed int
 	var pingHashes []string
@@ -189,33 +215,25 @@ func Run(ctx context.Context, cfg *config.Config, opts Opts) (map[string]any, er
 		}
 
 		for _, c := range batch {
-			meta, ok := src.lookup(c.VNDBID)
-			if !ok {
-				noCover++ // VNDB has no cover for this VN
+			items := src.lookup(c.VNDBID)
+			if len(items) == 0 {
+				noCover++ // VNDB has no covers for this VN
 				continue
 			}
 			if !opts.Apply {
-				wouldUpload++
+				wouldUpload += len(items)
 				continue
 			}
-			body, err := fetchCover(httpClient, opts.VNDBImageDir, meta.cvID)
-			if err != nil {
-				failed++
-				slog.Warn("fetch cover", "gid", c.ID, "cv", meta.cvID, "err", err)
-				continue
+			hashes, fail, quota := processGame(ctx, db.DB(), cli, httpClient, opts.VNDBImageDir, c.ID, items)
+			uploaded += len(hashes)
+			failed += fail
+			pingHashes = append(pingHashes, hashes...)
+			if quota {
+				slog.Error("upload quota exceeded — bump galgame_wiki image_quota_daily and re-run")
+				pingUploaded(ctx, cli, pingHashes)
+				return summary(len(cands), uploaded, noCover, wouldUpload, failed),
+					fmt.Errorf("image quota exceeded after %d covers", uploaded)
 			}
-			hash, err := uploadAndInsert(ctx, db.DB(), cli, c.ID, body, meta)
-			if err != nil {
-				if stderrors.Is(err, imageclient.ErrQuotaExceeded) {
-					slog.Error("upload quota exceeded — bump galgame_wiki image_quota_daily and re-run")
-					return summary(len(cands), uploaded, noCover, wouldUpload, failed), err
-				}
-				failed++
-				slog.Warn("upload+insert cover", "gid", c.ID, "cv", meta.cvID, "err", err)
-				continue
-			}
-			uploaded++
-			pingHashes = append(pingHashes, hash)
 		}
 		slog.Info("progress", "processed", end, "of", len(cands),
 			"uploaded", uploaded, "no_cover", noCover, "failed", failed)
@@ -223,12 +241,8 @@ func Run(ctx context.Context, cfg *config.Config, opts Opts) (map[string]any, er
 
 	// Keep freshly-uploaded covers alive immediately (galgame-image-refping also
 	// covers galgame_cover daily, but don't wait for it).
-	if opts.Apply && len(pingHashes) > 0 {
-		for _, b := range chunk(pingHashes, 1000) {
-			if _, err := cli.ReferencePing(ctx, b); err != nil {
-				slog.Warn("final reference-ping failed", "err", err)
-			}
-		}
+	if opts.Apply {
+		pingUploaded(ctx, cli, pingHashes)
 	}
 
 	slog.Info("sync-vndb-covers done", "candidates", len(cands), "uploaded", uploaded,
@@ -239,25 +253,88 @@ func Run(ctx context.Context, cfg *config.Config, opts Opts) (map[string]any, er
 	return summary(len(cands), uploaded, noCover, wouldUpload, failed), nil
 }
 
-// uploadAndInsert uploads the cover bytes and pins the resulting hash. Returns
-// the image hash. The INSERT is target-less ON CONFLICT DO NOTHING so it swallows
-// BOTH unique constraints — (galgame_id,image_hash) and idx_galgame_cover_pinned
-// (one sort_order=0 per game) — leaving a game that gained a cover between the
-// candidate scan and now untouched.
-func uploadAndInsert(ctx context.Context, db *gorm.DB, cli *imageclient.Client, gid int, body []byte, meta coverMeta) (string, error) {
-	res, err := cli.Upload(ctx, bytes.NewReader(body), "cover.jpg", coverPreset)
-	if err != nil {
-		return "", fmt.Errorf("upload: %w", err)
+// processGame uploads + upserts the not-yet-present covers of one game. Returns the
+// processed hashes, the per-cover failure count, and whether a quota error was hit
+// (caller aborts the run). The pinned cover (sort_order=0) is left as-is when the
+// game already has one; otherwise the first cover (main-first ordering) is pinned.
+func processGame(ctx context.Context, db *gorm.DB, cli *imageclient.Client, httpClient *http.Client, vndbDir string, gid int, items []coverItem) (hashes []string, failed int, quota bool) {
+	type ex struct {
+		SortOrder int    `gorm:"column:sort_order"`
+		SourceKey string `gorm:"column:source_key"`
 	}
-	if err := db.WithContext(ctx).Exec(
-		`INSERT INTO galgame_cover (galgame_id, image_hash, sort_order, sexual, violence, source, source_key, created)
-		 VALUES (?, ?, 0, ?, ?, 'vndb', ?, NOW())
-		 ON CONFLICT DO NOTHING`,
-		gid, res.Hash, meta.sexual, meta.violence, meta.cvID,
-	).Error; err != nil {
-		return "", fmt.Errorf("insert galgame_cover: %w", err)
+	var rows []ex
+	if err := db.WithContext(ctx).Table("galgame_cover").
+		Select("sort_order", "source_key").Where("galgame_id = ?", gid).Scan(&rows).Error; err != nil {
+		slog.Warn("load existing covers", "gid", gid, "err", err)
+		return nil, 1, false
 	}
-	return res.Hash, nil
+	existingKeys := make(map[string]bool, len(rows))
+	hasPinned := false
+	maxSort := 0
+	for _, r := range rows {
+		if r.SourceKey != "" {
+			existingKeys[r.SourceKey] = true
+		}
+		if r.SortOrder == 0 {
+			hasPinned = true
+		}
+		if r.SortOrder > maxSort {
+			maxSort = r.SortOrder
+		}
+	}
+
+	for _, it := range items {
+		if existingKeys[it.cvID] {
+			continue // already synced — skip the re-upload
+		}
+		body, err := fetchCover(httpClient, vndbDir, it.cvID)
+		if err != nil {
+			failed++
+			slog.Warn("fetch cover", "gid", gid, "cv", it.cvID, "err", err)
+			continue
+		}
+		res, err := cli.Upload(ctx, bytes.NewReader(body), it.cvID+".jpg", coverPreset)
+		if err != nil {
+			if stderrors.Is(err, imageclient.ErrQuotaExceeded) {
+				return hashes, failed, true
+			}
+			failed++
+			slog.Warn("upload cover", "gid", gid, "cv", it.cvID, "err", err)
+			continue
+		}
+		so := 0
+		if hasPinned {
+			maxSort++
+			so = maxSort
+		} else {
+			hasPinned = true // no pinned yet → pin this one (items are main-first)
+		}
+		// Upsert: insert new; on (galgame_id,image_hash) conflict — e.g. a migrated
+		// row sharing this image — (re)label it as the vndb cover WITHOUT disturbing
+		// its existing pin/order. sort_order is only ever set to 0 when no pin
+		// existed, so the partial-unique pinned index never conflicts here.
+		if err := db.WithContext(ctx).Exec(
+			`INSERT INTO galgame_cover (galgame_id, image_hash, sort_order, sexual, violence, source, source_key, kind, created)
+			 VALUES (?, ?, ?, ?, ?, 'vndb', ?, ?, NOW())
+			 ON CONFLICT (galgame_id, image_hash) DO UPDATE
+			   SET source = 'vndb', source_key = EXCLUDED.source_key, kind = EXCLUDED.kind`,
+			gid, res.Hash, so, it.sexual, it.violence, it.cvID, it.kind,
+		).Error; err != nil {
+			failed++
+			slog.Warn("upsert cover", "gid", gid, "cv", it.cvID, "err", err)
+			continue
+		}
+		hashes = append(hashes, res.Hash)
+	}
+	return hashes, failed, false
+}
+
+func pingUploaded(ctx context.Context, cli *imageclient.Client, hashes []string) {
+	for _, b := range chunk(hashes, 1000) {
+		if _, err := cli.ReferencePing(ctx, b); err != nil {
+			slog.Warn("reference-ping failed", "err", err)
+		}
+	}
 }
 
 // fetchCover returns the bytes for a VNDB cover id ("cv12345"). When vndbDir is
@@ -297,12 +374,18 @@ func candidates(db *gorm.DB, opts Opts) ([]candidate, error) {
 	q := db.Model(&model.Galgame{}).
 		Select("id", "vndb_id").
 		Where("vndb_id ~ '^v[0-9]+$'").
-		Where("NOT EXISTS (SELECT 1 FROM galgame_cover c WHERE c.galgame_id = galgame.id)").
 		Order("id")
-	if len(opts.IDs) > 0 {
+	switch {
+	case len(opts.IDs) > 0:
 		q = q.Where("id IN ?", opts.IDs) // targeted (any status)
-	} else {
-		q = q.Where("status = 0").Offset(opts.Offset)
+	default:
+		q = q.Where("status = 0")
+		if !opts.All {
+			// Default: only cover-less games (new/claimed). --all drops this for the
+			// one-time backfill that adds release covers to existing games.
+			q = q.Where("NOT EXISTS (SELECT 1 FROM galgame_cover c WHERE c.galgame_id = galgame.id)")
+		}
+		q = q.Offset(opts.Offset)
 		if opts.Limit > 0 {
 			q = q.Limit(opts.Limit)
 		}

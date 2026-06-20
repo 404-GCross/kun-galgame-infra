@@ -18,8 +18,11 @@ package model
 // must demote the old (sort_order=0 → 1) before promoting the new
 // (sort_order=N → 0), inside the same transaction.
 //
-// `Source`/`SourceKey` are extension positions for a future fill-only
-// re-sync flow; they cost two empty-string columns until then.
+// `Source`/`SourceKey` carry provenance (""=user, "vndb"=sync; SourceKey is
+// the VNDB cv-id). `Kind` labels the VNDB cover type so a "view all covers"
+// gallery can group/filter: "" (unknown / user upload) / "main" (vn.image) /
+// "pkgfront" / "dig" / "pkgback" / "pkgcontent" / "pkgside" / "pkgmed" (the
+// VNDB release image types). VNDB syncs the full set; one is pinned (sort_order=0).
 type GalgameCover struct {
 	GalgameID int       `gorm:"column:galgame_id;primaryKey" json:"galgame_id"`
 	ImageHash string    `gorm:"column:image_hash;type:char(64);primaryKey" json:"image_hash"`
@@ -28,6 +31,7 @@ type GalgameCover struct {
 	Violence  int16     `gorm:"column:violence;not null;default:0" json:"violence"`
 	Source    string    `gorm:"column:source;size:16;default:''" json:"source"`
 	SourceKey string    `gorm:"column:source_key;size:128;default:''" json:"source_key"`
+	Kind      string    `gorm:"column:kind;size:16;default:''" json:"kind"`
 	Created   Timestamp `gorm:"column:created;autoCreateTime" json:"created"`
 }
 

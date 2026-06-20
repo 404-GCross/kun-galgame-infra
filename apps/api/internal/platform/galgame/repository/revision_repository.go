@@ -197,6 +197,7 @@ func ApplySnapshot(tx *gorm.DB, galgameID, userID int, snapshot *model.Snapshot)
 			Violence:  c.Violence,
 			Source:    c.Source,
 			SourceKey: c.SourceKey,
+			Kind:      c.Kind,
 		}).Error; err != nil {
 			return err
 		}
