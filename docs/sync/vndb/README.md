@@ -8,6 +8,7 @@
 > 代码位置：
 > - `apps/api/internal/jobs/vndbsync`（草稿同步，`cmd/sync-vndb` 薄壳）
 > - `apps/api/internal/jobs/vndbenrich`（已发布游戏富集，`cmd/sync-vndb-enrich` 薄壳）
+> - `apps/api/internal/jobs/vndbcovers`（已发布游戏封面同步，`cmd/sync-vndb-covers` 薄壳）
 > - `apps/api/internal/platform/galgame/vndbresolve`（共享的 tag/official 解析）
 > - `apps/api/internal/platform/galgame/vndb`（VNDB API 客户端 + 链接 curation）
 > - `apps/api/internal/platform/galgame/service/vndb_sync.go`（approach-B reconcile）
@@ -16,13 +17,14 @@
 
 ## 1. 一句话总览
 
-两条 VNDB 同步路径，按职责切分；两者共用同一套 tag/official 解析（`vndbresolve`），
+三条 VNDB 同步路径，按职责切分；前两条共用同一套 tag/official 解析（`vndbresolve`），
 不再分叉：
 
 | 命令 / job | 职责 | 触发 | 写法 |
 |---|---|---|---|
 | `sync-vndb` | 拉 VN 主表 → 建 **status=2 草稿** + 标签/会社关联（标 `source="vndb"`） | 每日 03:00 + 手动 | 直接写（草稿，不建 revision） |
 | `sync-vndb-enrich` | 给**已发布游戏**（status=0）富集 **links + tags + officials**，与 VNDB 当前真值幂等对账 | 每日 05:00 + 手动 | approach-B：改关联表 + jsonb-patch 最新快照，不建 revision |
+| `sync-vndb-covers` | 给**已发布游戏**（status=0）中**尚无封面**的，从 VNDB 取封面 → 上传 image_service（site=galgame_wiki）+ 置顶 | 每日 03:45 + 手动 | 直接 `INSERT galgame_cover`（sort_order=0, `source="vndb"`），`ON CONFLICT DO NOTHING`，不建 revision |
 
 > 旧的 `sync-vndb-relations`（一次性「零关联」补洞、且 resolver 与 `sync-vndb`
 > 分叉）已**废弃删除**，能力并入 `sync-vndb-enrich`。
@@ -77,6 +79,32 @@ VNDB，wiki 自管）。
 
 ---
 
+## 4b. `sync-vndb-covers` —— 已发布游戏封面同步
+
+只补**缺口**：候选 = 已发布（status=0）+ `vndb_id` + **完全没有任何封面**的游戏
+（`NOT EXISTS galgame_cover`）。所以用户自传的封面、已有的封面都不动，重跑只填新空
+（claim 草稿→发布时 `Claim` 不建封面，是这条 job 的主要持续来源）。每个游戏：取
+VNDB 封面字节 → `cli.Upload`（preset `galgame_banner`，site=galgame_wiki）→
+`INSERT galgame_cover (sort_order=0, source="vndb", source_key=<cv-id>, sexual/violence)`
+`ON CONFLICT DO NOTHING`（同时挡住 `(galgame_id,image_hash)` 和 `idx_galgame_cover_pinned`
+两个唯一约束）。只写表行、不建 revision（同 screenshot/banner 回填；每日
+`galgame-image-refping` 已托住历史 hash）。跑完对新上传 hash 立即补一次 reference-ping。
+
+**封面字节两种来源，共用上传/写库：**
+
+- **dump 模式**（`--vndb-image-dir`，一次性批量回填）：读离线 VNDB dump
+  —— `db/vn`（v-id→封面 cv-id，列位置优先读 `db/vn.header`，无 header 退回文档化列序）
+  + `db/images`（cv-id→sexual/violence）+ rsync 的 `cv/<n%100>/<n>.jpg` 树。不打 VNDB API
+  （沿用 banner/screenshot 回填的既有手法）。
+- **API 模式**（默认，每日 job）：每批 ≤100 个 VN 一次 `/vn`（`image{id,url,sexual,violence}`，
+  `FetchVNImagesBatch`）取元数据，从 t.vndb.org 下字节。新建/claim 的少量游戏，几次调用/天。
+
+封面归 site=galgame_wiki，上传/ping 都是 site-scoped → 必须以 galgame_wiki client 认证
+（oauth 容器里走 `cfg.GalgameImageClient`，与 `galgame-image-refping` 同源；缺凭据直接
+报错退出）。dry-run（不带 `--apply`）只数有多少能补，不下载、不写。
+
+---
+
 ## 5. 共享 resolver（`vndbresolve`）
 
 `sync-vndb` 和 `sync-vndb-enrich` **共用**，命名统一、不再分叉：
@@ -102,12 +130,18 @@ go run ./cmd/sync-vndb --full                   # 草稿全量
 go run ./cmd/sync-vndb-enrich --only-missing    # dry，仅未富集的已发布游戏
 go run ./cmd/sync-vndb-enrich --apply           # 全量富集对账（已发布）
 go run ./cmd/sync-vndb-enrich --apply --ids 1,2 # 定向（任意 status）
+go run ./cmd/sync-vndb-covers                    # dry，API，数缺封面的已发布游戏
+go run ./cmd/sync-vndb-covers --apply            # API 补缺封面（每日 job 同款）
+go run ./cmd/sync-vndb-covers --apply \          # 一次性批量回填：离线 dump（不打 VNDB API）
+    --vndb-image-dir=/data/vndb-img --vn-dump=/data/db/vn --images-dump=/data/db/images
 ```
 
-- 都连 `cfg.GalgameDatabase`（默认库 `kun_galgame_wiki`）、依赖 `docs/tagMap.ts`
-  （`--tagmap`/`KUN_VNDB_TAGMAP_PATH` 可改；<100 条报错退出）。
-- 调度跑在 oauth 进程内置 job 调度器里（`sync-vndb` 03:00 / `sync-vndb-enrich` 05:00），
-  admin `/api/v1/admin/jobs/*` 可手动触发 / 看历史。
+- `sync-vndb` / `sync-vndb-enrich` 依赖 `docs/tagMap.ts`（`--tagmap`/`KUN_VNDB_TAGMAP_PATH`
+  可改；<100 条报错退出）；`sync-vndb-covers` 不用 tagMap，但上传需 galgame_wiki image
+  client 凭据（`cfg.GalgameImageClient`，缺则报错退出）。三者都连 `cfg.GalgameDatabase`
+  （默认库 `kun_galgame_wiki`）。
+- 调度跑在 oauth 进程内置 job 调度器里（`sync-vndb` 03:00 / `sync-vndb-covers` 03:45 /
+  `sync-vndb-enrich` 05:00），admin `/api/v1/admin/jobs/*` 可手动触发 / 看历史。
 
 ---
 
@@ -119,7 +153,8 @@ go run ./cmd/sync-vndb-enrich --apply --ids 1,2 # 定向（任意 status）
 | **系列 `GalgameSeries` / `series_id`** | 不同步 |
 | **引擎 `GalgameEngine`** | 不同步（VNDB 仅在 /release 暴露 engine 字符串，且需名称→实体映射；引擎 wiki 自管） |
 | **标签别名 / 描述、会社别名 / 描述 / Link** | 不写 |
-| **banner 转存** | 直接存 VNDB 图床 URL，未过 image service |
+| **草稿封面** | `sync-vndb` 建草稿时只把 VNDB 图床 URL 存进 `galgame.banner`，不转存 image_service；封面转存只覆盖**已发布**游戏（`sync-vndb-covers`，claim 发布后补） |
+| **已发布游戏封面的「更新」** | `sync-vndb-covers` 只**补缺**（无封面才加），VNDB 换了封面不回传；已有封面（用户或历史迁移）一律不动 |
 | **devstatus=2（已取消）VN** | 整条不入库 |
 
 ---

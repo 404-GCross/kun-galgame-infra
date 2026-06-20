@@ -33,6 +33,15 @@ func RegisterAll(r *Registry) {
 	})
 
 	r.Register(Job{
+		Name:     "sync-vndb-covers",
+		Desc:     "VNDB → galgame wiki 封面同步（已发布但尚无封面的游戏，如新建/claim）",
+		Schedule: Schedule{DailyAt: "03:45"}, // after image-gc (03:30), before galgame-image-refping (04:00)
+		Run: func(ctx context.Context, cfg *config.Config) (Summary, error) {
+			return RunSyncVNDBCovers(ctx, cfg, DefaultSyncVNDBCoversOpts())
+		},
+	})
+
+	r.Register(Job{
 		Name:     "image-gc",
 		Desc:     "image_service TTL 生命周期（冷候选/软删/物删）",
 		Schedule: Schedule{DailyAt: "03:30"},

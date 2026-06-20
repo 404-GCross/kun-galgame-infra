@@ -371,3 +371,61 @@ func (c *Client) FetchVNMetaBatch(ctx context.Context, ids []string) (map[string
 	}
 	return out, nil
 }
+
+// VNImage is the per-VN cover image from /vn. ID is the VNDB image id
+// (e.g. "cv12345", stored as galgame_cover.source_key); URL is the t.vndb.org
+// cover URL; Sexual/Violence are VNDB's 0-2 average flag votes (rounded to the
+// 0-2 cover columns by the caller).
+type VNImage struct {
+	ID       string
+	URL      string
+	Sexual   float64
+	Violence float64
+}
+
+// FetchVNImagesBatch fetches the cover image for up to 100 VNs in a single /vn
+// call, keyed by vndb id. A VN with no cover (image{} == null) is simply absent
+// from the result. Used by the cover-sync daily job (API mode); the bulk
+// backfill reads the offline VNDB dump instead (see internal/jobs/vndbcovers).
+func (c *Client) FetchVNImagesBatch(ctx context.Context, ids []string) (map[string]VNImage, error) {
+	want := make(map[string]bool, len(ids))
+	or := []any{"or"}
+	for _, id := range ids {
+		if id == "" || want[id] {
+			continue
+		}
+		want[id] = true
+		or = append(or, []any{"id", "=", id})
+	}
+	if len(want) == 0 {
+		return map[string]VNImage{}, nil
+	}
+
+	var resp struct {
+		Results []struct {
+			ID    string `json:"id"`
+			Image *struct {
+				ID       string  `json:"id"`
+				URL      string  `json:"url"`
+				Sexual   float64 `json:"sexual"`
+				Violence float64 `json:"violence"`
+			} `json:"image"`
+		} `json:"results"`
+	}
+	if err := c.post(ctx, "/vn", map[string]any{
+		"filters": or,
+		"fields":  "id, image{id,url,sexual,violence}",
+		"results": 100,
+	}, &resp); err != nil {
+		return nil, fmt.Errorf("vn image batch: %w", err)
+	}
+
+	out := make(map[string]VNImage, len(resp.Results))
+	for _, r := range resp.Results {
+		if r.Image == nil || r.Image.URL == "" {
+			continue
+		}
+		out[r.ID] = VNImage{ID: r.Image.ID, URL: r.Image.URL, Sexual: r.Image.Sexual, Violence: r.Image.Violence}
+	}
+	return out, nil
+}
