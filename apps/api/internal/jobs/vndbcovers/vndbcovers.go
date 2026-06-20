@@ -31,6 +31,8 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"api/internal/infrastructure/database"
@@ -52,12 +54,13 @@ const (
 
 // Opts selects the games to fill and where the cover bytes come from.
 type Opts struct {
-	Apply  bool          // false = dry run (resolve + count, no upload/upsert)
-	Gap    time.Duration // min delay between VNDB API calls (API mode; default 2s)
-	All    bool          // drop the "no cover yet" gate — process every published vndb game (backfill)
-	IDs    []int         // process exactly these ids (any status); else published-only
-	Limit  int
-	Offset int
+	Apply       bool          // false = dry run (resolve + count, no upload/upsert)
+	Gap         time.Duration // min delay between VNDB API calls (API mode; default 2s)
+	All         bool          // drop the "no cover yet" gate — process every published vndb game (backfill)
+	Concurrency int           // parallel per-game workers (default 1). Safe to raise in DUMP mode (local reads); keep 1 in API mode to not hammer t.vndb.org
+	IDs         []int         // process exactly these ids (any status); else published-only
+	Limit       int
+	Offset      int
 
 	// Dump mode (one-time bulk). When VNDBImageDir is set, covers + ratings come
 	// from the offline dump instead of the VNDB API.
@@ -194,11 +197,18 @@ func Run(ctx context.Context, cfg *config.Config, opts Opts) (map[string]any, er
 	slog.Info("sync-vndb-covers start", "candidates", len(cands), "mode", mode,
 		"all", opts.All, "apply", opts.Apply, "client_id", clientCfg.ClientID)
 
-	var uploaded, noCover, wouldUpload, failed int
-	var pingHashes []string
+	conc := max(1, opts.Concurrency)
+	var (
+		uploaded, noCover, wouldUpload, failed int64
+		quotaHit                               int32
+		pingHashes                             []string
+		mu                                     sync.Mutex
+		sem                                    = make(chan struct{}, conc)
+		wg                                     sync.WaitGroup
+	)
 	for start := 0; start < len(cands); start += batchSize {
 		if err := ctx.Err(); err != nil {
-			return summary(len(cands), uploaded, noCover, wouldUpload, failed), err
+			return summary(len(cands), int(uploaded), int(noCover), int(wouldUpload), int(failed)), err
 		}
 		end := min(start+batchSize, len(cands))
 		batch := cands[start:end]
@@ -209,34 +219,54 @@ func Run(ctx context.Context, cfg *config.Config, opts Opts) (map[string]any, er
 		}
 		if err := src.prefetch(ctx, ids); err != nil {
 			// VNDB down / out-of-range id: skip the batch, retry next run.
-			failed += len(batch)
+			atomic.AddInt64(&failed, int64(len(batch)))
 			slog.Error("prefetch batch", "from", batch[0].ID, "to", batch[len(batch)-1].ID, "err", err)
 			continue
 		}
 
+		// Per-game workers (parallel up to conc). Different games touch different
+		// galgame_ids, so the pinned/sort_order logic stays per-game-serial inside
+		// processGame; only the slow upload+upsert fans out.
 		for _, c := range batch {
+			if atomic.LoadInt32(&quotaHit) != 0 {
+				break
+			}
 			items := src.lookup(c.VNDBID)
 			if len(items) == 0 {
-				noCover++ // VNDB has no covers for this VN
+				atomic.AddInt64(&noCover, 1) // VNDB has no covers for this VN
 				continue
 			}
 			if !opts.Apply {
-				wouldUpload += len(items)
+				atomic.AddInt64(&wouldUpload, int64(len(items)))
 				continue
 			}
-			hashes, fail, quota := processGame(ctx, db.DB(), cli, httpClient, opts.VNDBImageDir, c.ID, items)
-			uploaded += len(hashes)
-			failed += fail
-			pingHashes = append(pingHashes, hashes...)
-			if quota {
-				slog.Error("upload quota exceeded — bump galgame_wiki image_quota_daily and re-run")
-				pingUploaded(ctx, cli, pingHashes)
-				return summary(len(cands), uploaded, noCover, wouldUpload, failed),
-					fmt.Errorf("image quota exceeded after %d covers", uploaded)
-			}
+			wg.Add(1)
+			sem <- struct{}{}
+			go func(c candidate, items []coverItem) {
+				defer wg.Done()
+				defer func() { <-sem }()
+				hashes, fail, quota := processGame(ctx, db.DB(), cli, httpClient, opts.VNDBImageDir, c.ID, items)
+				atomic.AddInt64(&uploaded, int64(len(hashes)))
+				atomic.AddInt64(&failed, int64(fail))
+				if len(hashes) > 0 {
+					mu.Lock()
+					pingHashes = append(pingHashes, hashes...)
+					mu.Unlock()
+				}
+				if quota {
+					atomic.StoreInt32(&quotaHit, 1)
+				}
+			}(c, items)
 		}
+		wg.Wait() // barrier per batch (bounds memory + lets progress log)
 		slog.Info("progress", "processed", end, "of", len(cands),
-			"uploaded", uploaded, "no_cover", noCover, "failed", failed)
+			"uploaded", atomic.LoadInt64(&uploaded), "no_cover", atomic.LoadInt64(&noCover), "failed", atomic.LoadInt64(&failed))
+		if atomic.LoadInt32(&quotaHit) != 0 {
+			slog.Error("upload quota exceeded — bump galgame_wiki image_quota_daily and re-run")
+			pingUploaded(ctx, cli, pingHashes)
+			return summary(len(cands), int(uploaded), int(noCover), int(wouldUpload), int(failed)),
+				fmt.Errorf("image quota exceeded after %d covers", uploaded)
+		}
 	}
 
 	// Keep freshly-uploaded covers alive immediately (galgame-image-refping also
@@ -250,7 +280,7 @@ func Run(ctx context.Context, cfg *config.Config, opts Opts) (map[string]any, er
 	if !opts.Apply {
 		slog.Info("DRY RUN — nothing written; re-run with Apply")
 	}
-	return summary(len(cands), uploaded, noCover, wouldUpload, failed), nil
+	return summary(len(cands), int(uploaded), int(noCover), int(wouldUpload), int(failed)), nil
 }
 
 // processGame uploads + upserts the not-yet-present covers of one game. Returns the

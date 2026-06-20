@@ -34,6 +34,7 @@ import (
 func main() {
 	apply := flag.Bool("apply", false, "write changes (default: dry run — resolve + count only)")
 	all := flag.Bool("all", false, "process EVERY published vndb game (the one-time backfill), not just cover-less ones")
+	concurrency := flag.Int("concurrency", 1, "parallel per-game upload workers (raise for the dump backfill, e.g. 16; keep 1 for API mode)")
 	ids := flag.String("ids", "", "comma-separated galgame ids (targeted; any status; overrides published-only)")
 	limit := flag.Int("limit", 0, "max galgames to process (0 = all)")
 	offset := flag.Int("offset", 0, "skip this many galgames (for chunking)")
@@ -56,6 +57,7 @@ func main() {
 	if _, err := jobs.RunSyncVNDBCovers(context.Background(), cfg, jobs.SyncVNDBCoversOpts{
 		Apply:             *apply,
 		All:               *all,
+		Concurrency:       *concurrency,
 		Gap:               *gap,
 		IDs:               parseIDs(*ids),
 		Limit:             *limit,
