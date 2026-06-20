@@ -1,6 +1,10 @@
 package database
 
 import (
+	"log"
+	"os"
+	"time"
+
 	"api/pkg/config"
 	"api/pkg/logger"
 
@@ -18,8 +22,19 @@ type PostgresDB struct {
 func NewPostgresDB(cfg config.DatabaseConfig) (*PostgresDB, error) {
 	gormConfig := &gorm.Config{}
 
-	// Set logger based on environment
-	gormConfig.Logger = gormlogger.Default.LogMode(gormlogger.Warn)
+	// Log slow queries + real errors, but treat ErrRecordNotFound as the normal
+	// "no row" control-flow signal it is (services handle it explicitly) —
+	// otherwise every first-time lookup (e.g. GET /creator/applications/me for a
+	// user who never applied) logs a noisy "record not found" line.
+	gormConfig.Logger = gormlogger.New(
+		log.New(os.Stdout, "\r\n", log.LstdFlags),
+		gormlogger.Config{
+			SlowThreshold:             200 * time.Millisecond,
+			LogLevel:                  gormlogger.Warn,
+			IgnoreRecordNotFoundError: true,
+			Colorful:                  true,
+		},
+	)
 
 	db, err := gorm.Open(postgres.Open(cfg.DSN()), gormConfig)
 	if err != nil {
