@@ -79,8 +79,8 @@ func TestLoadVNCoverMap_WithHeader(t *testing.T) {
 func TestLoadVNCoverMap_FallbackNoHeader(t *testing.T) {
 	dir := t.TempDir()
 	vn := filepath.Join(dir, "vn")
-	// No .header → documented layout id=0, image=2.
-	writeFile(t, vn, "v1\tja\tcv11\tfoo\nv2\ten\t\\N\tbar\n")
+	// No .header → documented layout id=0, image=1.
+	writeFile(t, vn, "v1\tcv11\tja\tfoo\nv2\t\\N\ten\tbar\n")
 
 	m, err := loadVNCoverMap(vn)
 	if err != nil {

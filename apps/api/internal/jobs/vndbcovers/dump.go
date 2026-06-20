@@ -43,7 +43,9 @@ func cvRelPath(cv string) (string, error) {
 // db/<table>.header file is absent. Stable for years; a present .header overrides
 // these so a schema drift is handled transparently.
 var (
-	vnFallbackCols     = map[string]int{"id": 0, "image": 2}
+	// db/vn: `id image c_image olang ...` — `image` is the VN's cover id, col 1
+	// (col 2 `c_image` is a cache field; don't use it).
+	vnFallbackCols     = map[string]int{"id": 0, "image": 1}
 	imagesFallbackCols = map[string]int{"id": 0, "c_sexual_avg": 4, "c_violence_avg": 6}
 )
 
