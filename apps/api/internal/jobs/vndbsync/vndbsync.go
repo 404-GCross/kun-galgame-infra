@@ -299,14 +299,23 @@ func (s *syncer) getStartID(full bool) (string, error) {
 	}
 	slog.Info("VNDB max VN id", "id", fmt.Sprintf("v%d", vndbMax))
 
-	// Max vndb_id in DB, capped at VNDB's real max so we skip garbage.
+	// Resume from the high-water mark of SYNC-CREATED drafts (status=2),
+	// capped at VNDB's real max so we skip garbage ids. We deliberately do
+	// NOT take the max over all rows: a manually-created *published* entry
+	// (status=0) with a VNDB id ahead of the sync would otherwise jump the
+	// cursor past it and permanently skip the gap below — exactly what
+	// stranded v65707..v66154 when a manual v66155 was created. Claimed
+	// drafts (status 2→0) drop out of this max, so the scan may revisit a few
+	// already-present ids on resume; that's harmless — processBatch dedups
+	// them via the existing-id set.
 	var maxID int
 	if err := s.db.Raw(`
 		SELECT COALESCE(MAX(CAST(SUBSTRING(vndb_id FROM 2) AS INTEGER)), 0)
 		FROM galgame
 		WHERE vndb_id ~ '^v[0-9]+$'
+		  AND status = ?
 		  AND CAST(SUBSTRING(vndb_id FROM 2) AS INTEGER) <= ?
-	`, vndbMax).Scan(&maxID).Error; err != nil {
+	`, model.GalgameStatusVNDBDraft, vndbMax).Scan(&maxID).Error; err != nil {
 		// Don't silently restart the whole scan from v0 on a DB error.
 		return "", fmt.Errorf("max local vndb_id: %w", err)
 	}
