@@ -72,6 +72,8 @@ CI 按各仓**现有 Dockerfile**(参数化)构建以下镜像并推到 `ghcr.io
 
 每仓放一个 `.github/workflows/build.yml`。下面是 **infra(最复杂,cgo + 2×Nuxt + Go)** 的完整示例;kungal/moyu **同构**,仅 `matrix` 列表不同。
 
+> **省额度:infra 的实际 workflow 已改为「路径过滤 + 动态 matrix」**(下面这段是说明结构的简化示例,不是逐字现状)。GitHub 按 job 数×分钟计费且每 job 向上取整到 1 分钟,9 镜像全量 matrix 即使全缓存每次 push 也要 ~10 分钟。现状:`changes` job 用 `dorny/paths-filter` 算出哪些组变了,只构建变更的镜像 —— `go`(oauth/image/galgame/artifact ← `apps/api/**`)、`web`(← `apps/web/**`+根 manifest)、`wiki`(← `apps/wiki/**`+根 manifest);**`infra-migrate` / `infra-migrate-galgame` / `infra-tools` 不再随 push 构建,改为按需**(Actions → Run workflow → `scope=ondemand` 或 `all`)。docs-only 的 push 不构建任何镜像(~1 分钟)。**跑 prod 迁移前,先 `scope=ondemand` 手动构建刷新 `infra-migrate`/`infra-tools`,否则拉到旧镜像 → 静默失败。**
+
 ```yaml
 # kun-galgame-infra/.github/workflows/build.yml
 name: build-and-push

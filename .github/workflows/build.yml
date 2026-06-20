@@ -1,17 +1,33 @@
-# Build every infra image and push to GHCR, then trigger a Dokploy redeploy.
-# See docs/deploy/13-registry-ci.md. cgo images (oauth/image) build fine on
-# ubuntu-latest — cgo happens inside the build container (cgo.Dockerfile).
+# Build infra images and push to GHCR, then trigger a Dokploy redeploy.
+# See docs/deploy/13-registry-ci.md.
 #
-# web/wiki BAKE their browser-facing public config from build-args here (the
-# repo default; oauthClientID/oauthRedirectURI have awkward runtime env names,
-# see docker/README.md). Change the https domains below if yours differ, or
-# move them to repository Variables and reference ${{ vars.* }}.
+# COST CONTROL — GitHub bills each matrix job rounded UP to a whole minute, so
+# rebuilding all 9 images on every push burned ~10+ billed min even fully cached.
+# This workflow now builds ONLY the images whose inputs changed (path-filtered
+# dynamic matrix), and the rarely-changing migrate* / tools images are built
+# ON-DEMAND (workflow_dispatch) instead of on every push:
+#   - go images   (oauth/image/galgame/artifact)  ← apps/api/** + their Dockerfiles
+#   - web                                          ← apps/web/** + root manifests + nuxt.Dockerfile
+#   - wiki                                         ← apps/wiki/** + root manifests + nuxt.Dockerfile
+#   - migrate / migrate-galgame / tools            ← on-demand only (Run workflow → scope)
+# A docs-only push therefore builds nothing and costs ~1 min (the `changes` job).
+#
+# NOTE: migrate*/tools no longer auto-build. Before running a migration on prod,
+# refresh them via Actions → Run workflow → scope=ondemand (or scope=all).
+#
+# web/wiki BAKE their browser-facing public config from build-args here.
 name: build-and-push
 
 on:
   push:
     branches: [main]
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      scope:
+        description: 'What to build (all = every image incl. migrate/tools; ondemand = only migrate/migrate-galgame/tools)'
+        type: choice
+        options: [all, ondemand]
+        default: all
 
 permissions:
   contents: read
@@ -22,49 +38,90 @@ concurrency:                 # a newer push on the same ref cancels the older bu
   cancel-in-progress: true
 
 jobs:
-  build:
+  # Decide which images to build. On push: only the groups whose paths changed.
+  # On workflow_dispatch: all images, or just the on-demand ones (scope input).
+  changes:
     runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set.outputs.matrix }}
+      any: ${{ steps.set.outputs.any }}        # is there anything to build?
+      deploy: ${{ steps.set.outputs.deploy }}  # did a *deployable* (non-tool) image change?
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dorny/paths-filter@v3
+        id: filter
+        if: github.event_name == 'push'
+        with:
+          filters: |
+            go:
+              - 'apps/api/**'
+              - 'docker/go.Dockerfile'
+              - 'docker/cgo.Dockerfile'
+              - '.github/workflows/build.yml'
+            web:
+              - 'apps/web/**'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
+              - 'package.json'
+              - 'docker/nuxt.Dockerfile'
+              - '.github/workflows/build.yml'
+            wiki:
+              - 'apps/wiki/**'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
+              - 'package.json'
+              - 'docker/nuxt.Dockerfile'
+              - '.github/workflows/build.yml'
+      - id: set
+        env:
+          EVENT: ${{ github.event_name }}
+          SCOPE: ${{ github.event.inputs.scope }}
+          GO: ${{ steps.filter.outputs.go }}
+          WEB: ${{ steps.filter.outputs.web }}
+          WIKI: ${{ steps.filter.outputs.wiki }}
+        run: |
+          set -euo pipefail
+          # Auto-built on push (path-filtered). web/wiki args are baked at build.
+          push_catalog='[
+            {"name":"infra-oauth","file":"docker/cgo.Dockerfile","args":"CMD=oauth","group":"go"},
+            {"name":"infra-image","file":"docker/cgo.Dockerfile","args":"CMD=image","group":"go"},
+            {"name":"infra-galgame","file":"docker/go.Dockerfile","args":"CMD=galgame","group":"go"},
+            {"name":"infra-artifact","file":"docker/go.Dockerfile","args":"CMD=artifact","group":"go"},
+            {"name":"infra-web","file":"docker/nuxt.Dockerfile","args":"APP=web\nPUBLIC_API_BASE=https://oauth.kungal.com/api/v1\nPUBLIC_IMAGE_CDN_BASE=https://image.kungal.iloveren.link","group":"web"},
+            {"name":"infra-wiki","file":"docker/nuxt.Dockerfile","args":"APP=wiki\nPUBLIC_API_BASE=https://wiki.kungal.com/api\nPUBLIC_AUTH_API_BASE=https://oauth.kungal.com/api/v1\nPUBLIC_OAUTH_AUTHORIZE_BASE=https://oauth.kungal.com/api/v1\nPUBLIC_OAUTH_CLIENT_ID=galgame-wiki-admin\nPUBLIC_OAUTH_REDIRECT_URI=https://wiki.kungal.com/auth/callback\nPUBLIC_IMAGE_CDN_BASE=https://image.kungal.iloveren.link","group":"wiki"}
+          ]'
+          # On-demand only (workflow_dispatch). Run before a prod migration.
+          ondemand_catalog='[
+            {"name":"infra-migrate","file":"docker/go.Dockerfile","args":"CMD=migrate","group":"ondemand"},
+            {"name":"infra-migrate-galgame","file":"docker/go.Dockerfile","args":"CMD=migrate-galgame","group":"ondemand"},
+            {"name":"infra-tools","file":"docker/tools.Dockerfile","args":"","group":"ondemand"}
+          ]'
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            if [ "$SCOPE" = "ondemand" ]; then
+              sel=$(jq -cn --argjson b "$ondemand_catalog" '$b')
+            else
+              sel=$(jq -cn --argjson a "$push_catalog" --argjson b "$ondemand_catalog" '$a + $b')
+            fi
+          else
+            sel=$(jq -cn --argjson c "$push_catalog" --arg go "$GO" --arg web "$WEB" --arg wiki "$WIKI" \
+              '([{g:"go",v:$go},{g:"web",v:$web},{g:"wiki",v:$wiki}] | map(select(.v=="true") | .g)) as $grp
+               | $c | map(select(.group as $x | $grp | index($x)))')
+          fi
+          n=$(jq -n --argjson s "$sel" '$s | length')
+          echo "any=$([ "$n" -gt 0 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "deploy=$(jq -n --argjson s "$sel" '$s | any(.[]; .group != "ondemand")')" >> "$GITHUB_OUTPUT"
+          printf 'matrix={"include":%s}\n' "$sel" >> "$GITHUB_OUTPUT"
+          echo "Selected $n image(s) to build:"
+          jq -rn --argjson s "$sel" '$s[].name' | sed 's/^/  - /'
+
+  build:
+    needs: changes
+    if: needs.changes.outputs.any == 'true'
+    runs-on: ubuntu-latest
+    name: build ${{ matrix.name }}
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - name: infra-oauth
-            file: docker/cgo.Dockerfile
-            args: CMD=oauth
-          - name: infra-image
-            file: docker/cgo.Dockerfile
-            args: CMD=image
-          - name: infra-galgame
-            file: docker/go.Dockerfile
-            args: CMD=galgame
-          - name: infra-artifact         # large-file upload/download service (B2)
-            file: docker/go.Dockerfile
-            args: CMD=artifact
-          - name: infra-migrate
-            file: docker/go.Dockerfile
-            args: CMD=migrate
-          - name: infra-migrate-galgame
-            file: docker/go.Dockerfile
-            args: CMD=migrate-galgame
-          - name: infra-tools          # every cmd/* binary, for one-off data-cutover jobs
-            file: docker/tools.Dockerfile
-            args: ""
-          - name: infra-web
-            file: docker/nuxt.Dockerfile
-            args: |
-              APP=web
-              PUBLIC_API_BASE=https://oauth.kungal.com/api/v1
-              PUBLIC_IMAGE_CDN_BASE=https://image.kungal.iloveren.link
-          - name: infra-wiki
-            file: docker/nuxt.Dockerfile
-            args: |
-              APP=wiki
-              PUBLIC_API_BASE=https://wiki.kungal.com/api
-              PUBLIC_AUTH_API_BASE=https://oauth.kungal.com/api/v1
-              PUBLIC_OAUTH_AUTHORIZE_BASE=https://oauth.kungal.com/api/v1
-              PUBLIC_OAUTH_CLIENT_ID=galgame-wiki-admin
-              PUBLIC_OAUTH_REDIRECT_URI=https://wiki.kungal.com/auth/callback
-              PUBLIC_IMAGE_CDN_BASE=https://image.kungal.iloveren.link
+      matrix: ${{ fromJSON(needs.changes.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v6
       - uses: docker/setup-buildx-action@v4
@@ -85,8 +142,9 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
 
-  deploy:                    # once every image is pushed, tell Dokploy to pull + redeploy
-    needs: build
+  deploy:                    # only when a deployable (non-tool) image was built
+    needs: [changes, build]
+    if: needs.changes.outputs.deploy == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Trigger Dokploy redeploy
