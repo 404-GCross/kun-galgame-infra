@@ -42,6 +42,15 @@ func RegisterAll(r *Registry) {
 	})
 
 	r.Register(Job{
+		Name:     "sync-vndb-screenshots",
+		Desc:     "VNDB → galgame wiki 截图同步（已发布但尚无 vndb 截图的游戏，如新建/claim）",
+		Schedule: Schedule{DailyAt: "03:50"}, // after sync-vndb-covers (03:45), before galgame-image-refping (04:00)
+		Run: func(ctx context.Context, cfg *config.Config) (Summary, error) {
+			return RunSyncVNDBScreenshots(ctx, cfg, DefaultSyncVNDBScreenshotsOpts())
+		},
+	})
+
+	r.Register(Job{
 		Name:     "image-gc",
 		Desc:     "image_service TTL 生命周期（冷候选/软删/物删）",
 		Schedule: Schedule{DailyAt: "03:30"},

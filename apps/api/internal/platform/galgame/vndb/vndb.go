@@ -429,3 +429,63 @@ func (c *Client) FetchVNImagesBatch(ctx context.Context, ids []string) (map[stri
 	}
 	return out, nil
 }
+
+// VNScreenshot is one screenshot from /vn screenshots{} — VNDB caps these at 10
+// per VN. ID is the VNDB image id ("sf12345", stored as
+// galgame_screenshot.source_key); URL is the t.vndb.org URL; Sexual/Violence are
+// 0-2 average flag votes (rounded to the 0-2 columns by the caller).
+type VNScreenshot struct {
+	ID       string
+	URL      string
+	Sexual   float64
+	Violence float64
+}
+
+// FetchVNScreenshotsBatch fetches the screenshot set for up to 100 VNs in a
+// single /vn call, keyed by vndb id, preserving VNDB's order. A VN with no
+// screenshots is absent. Used by the sync-vndb-screenshots job (the cover
+// sibling); the one-time bulk was done offline (cmd/migrate-galgame-screenshots).
+func (c *Client) FetchVNScreenshotsBatch(ctx context.Context, ids []string) (map[string][]VNScreenshot, error) {
+	want := make(map[string]bool, len(ids))
+	or := []any{"or"}
+	for _, id := range ids {
+		if id == "" || want[id] {
+			continue
+		}
+		want[id] = true
+		or = append(or, []any{"id", "=", id})
+	}
+	if len(want) == 0 {
+		return map[string][]VNScreenshot{}, nil
+	}
+
+	var resp struct {
+		Results []struct {
+			ID          string `json:"id"`
+			Screenshots []struct {
+				ID       string  `json:"id"`
+				URL      string  `json:"url"`
+				Sexual   float64 `json:"sexual"`
+				Violence float64 `json:"violence"`
+			} `json:"screenshots"`
+		} `json:"results"`
+	}
+	if err := c.post(ctx, "/vn", map[string]any{
+		"filters": or,
+		"fields":  "id, screenshots{id,url,sexual,violence}",
+		"results": 100,
+	}, &resp); err != nil {
+		return nil, fmt.Errorf("vn screenshots batch: %w", err)
+	}
+
+	out := make(map[string][]VNScreenshot, len(resp.Results))
+	for _, r := range resp.Results {
+		for _, s := range r.Screenshots {
+			if s.ID == "" || s.URL == "" {
+				continue
+			}
+			out[r.ID] = append(out[r.ID], VNScreenshot{ID: s.ID, URL: s.URL, Sexual: s.Sexual, Violence: s.Violence})
+		}
+	}
+	return out, nil
+}
