@@ -64,6 +64,14 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		// color-mode, etc). Hitting the limit returns 431 before CORS runs,
 		// surfacing as a misleading "missing Access-Control-Allow-Origin".
 		ReadBufferSize: 32 * 1024,
+		// Image uploads flow through Fiber on every service that touches
+		// image_service (image directly; oauth for avatars/image-admin; galgame
+		// for POST /galgame/image). Fiber's 4 MiB default BodyLimit silently
+		// 413'd any upload above it — well under the intended per-site cap
+		// (oauth_clients.image_max_file_size, up to 20 MiB). Raise the global
+		// ceiling above the largest per-site cap (+ multipart overhead) so the
+		// per-client size check stays the real, configurable guard.
+		BodyLimit: 32 * 1024 * 1024,
 	})
 
 	return a, nil
