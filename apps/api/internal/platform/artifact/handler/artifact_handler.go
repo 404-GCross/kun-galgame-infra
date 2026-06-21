@@ -144,6 +144,9 @@ func (h *Handler) Get(c fiber.Ctx) error {
 		return response.Unauthorized(c, errors.ErrArtifactUnauthorized)
 	}
 	id := c.Params("uuid")
+	if id == "" {
+		return response.BadRequest(c, errors.ErrArtifactBadRequest)
+	}
 	resp, err := h.svc.Get(c.Context(), id, site)
 	if err != nil {
 		if stderrors.Is(err, service.ErrNotFound) {

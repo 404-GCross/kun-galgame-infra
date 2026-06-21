@@ -198,6 +198,13 @@ func (s *Service) CompleteUpload(ctx context.Context, uuidStr, site string, req 
 		}
 		sort.Slice(parts, func(i, j int) bool { return parts[i].PartNumber < parts[j].PartNumber })
 		if err := s.store.CompleteMultipart(ctx, a.FileKey, a.UploadID, parts); err != nil {
+			// Abort the dangling multipart upload so its uploaded parts don't
+			// linger in B2 (billed; never reclaimed once the row goes status=2,
+			// as the GC orphan sweep only scans status=uploading rows). Matches
+			// docs/artifact/01-design.md ("multipart 完成失败 → status=2 + Abort").
+			if abErr := s.store.AbortMultipart(ctx, a.FileKey, a.UploadID); abErr != nil {
+				slog.Warn("artifact: abort multipart on complete-failure", "uuid", a.UUID, "err", abErr)
+			}
 			s.markFailed(ctx, a)
 			return nil, err
 		}
