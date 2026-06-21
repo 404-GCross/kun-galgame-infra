@@ -381,6 +381,7 @@ type VNImage struct {
 	URL      string
 	Sexual   float64
 	Violence float64
+	Dims     []int // [width, height]; used to pre-check the pixel limit before upload
 }
 
 // FetchVNImagesBatch fetches the cover image for up to 100 VNs in a single /vn
@@ -409,12 +410,13 @@ func (c *Client) FetchVNImagesBatch(ctx context.Context, ids []string) (map[stri
 				URL      string  `json:"url"`
 				Sexual   float64 `json:"sexual"`
 				Violence float64 `json:"violence"`
+				Dims     []int   `json:"dims"`
 			} `json:"image"`
 		} `json:"results"`
 	}
 	if err := c.post(ctx, "/vn", map[string]any{
 		"filters": or,
-		"fields":  "id, image{id,url,sexual,violence}",
+		"fields":  "id, image{id,url,sexual,violence,dims}",
 		"results": 100,
 	}, &resp); err != nil {
 		return nil, fmt.Errorf("vn image batch: %w", err)
@@ -425,7 +427,7 @@ func (c *Client) FetchVNImagesBatch(ctx context.Context, ids []string) (map[stri
 		if r.Image == nil || r.Image.URL == "" {
 			continue
 		}
-		out[r.ID] = VNImage{ID: r.Image.ID, URL: r.Image.URL, Sexual: r.Image.Sexual, Violence: r.Image.Violence}
+		out[r.ID] = VNImage{ID: r.Image.ID, URL: r.Image.URL, Sexual: r.Image.Sexual, Violence: r.Image.Violence, Dims: r.Image.Dims}
 	}
 	return out, nil
 }
@@ -499,6 +501,7 @@ type VNCover struct {
 	Type     string
 	Sexual   float64
 	Violence float64
+	Dims     []int // [width, height]; used to pre-check the pixel limit before upload
 }
 
 // FetchVNReleaseCoversBatch fetches the release cover images of up to 100 VNs in
@@ -533,11 +536,12 @@ func (c *Client) FetchVNReleaseCoversBatch(ctx context.Context, ids []string) (m
 					Type     string  `json:"type"`
 					Sexual   float64 `json:"sexual"`
 					Violence float64 `json:"violence"`
+					Dims     []int   `json:"dims"`
 				} `json:"images"`
 			} `json:"results"`
 		}
 		if err := c.post(ctx, "/release", map[string]any{
-			"filters": relFilter, "fields": "vns{id}, images{id,type,sexual,violence}",
+			"filters": relFilter, "fields": "vns{id}, images{id,type,sexual,violence,dims}",
 			"results": 100, "page": page,
 		}, &relResp); err != nil {
 			return nil, fmt.Errorf("release cover batch page %d: %w", page, err)
@@ -551,7 +555,7 @@ func (c *Client) FetchVNReleaseCoversBatch(ctx context.Context, ids []string) (m
 					if img.ID == "" {
 						continue
 					}
-					agg[v.ID] = append(agg[v.ID], VNCover{ID: img.ID, Type: img.Type, Sexual: img.Sexual, Violence: img.Violence})
+					agg[v.ID] = append(agg[v.ID], VNCover{ID: img.ID, Type: img.Type, Sexual: img.Sexual, Violence: img.Violence, Dims: img.Dims})
 				}
 			}
 		}

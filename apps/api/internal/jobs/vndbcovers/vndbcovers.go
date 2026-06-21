@@ -28,6 +28,9 @@ import (
 	"context"
 	stderrors "errors"
 	"fmt"
+	"image"
+	"image/jpeg"
+	_ "image/png" // register PNG decoder for image.Decode
 	"io"
 	"log/slog"
 	"net/http"
@@ -41,6 +44,9 @@ import (
 	"api/pkg/config"
 	"api/pkg/imageclient"
 
+	"golang.org/x/image/draw"
+	_ "golang.org/x/image/webp" // register WebP decoder for image.Decode
+
 	"gorm.io/gorm"
 )
 
@@ -50,6 +56,14 @@ const (
 	defaultTimeout = 60 * time.Second
 	vndbImageHost  = "https://t.vndb.org/"
 	kindMain       = "main" // the VN's primary cover (vn.image); release covers use their VNDB type
+
+	// Upload-fit limits (fitForUpload). The image service rejects bodies over its
+	// Fiber BodyLimit (4 MiB) and images over MaxDecodedPixels (50 MP); we
+	// downscale to stay safely under BOTH before uploading.
+	maxUploadBytes   = 3_500_000   // under the 4 MiB BodyLimit, with margin for multipart overhead
+	maxPixels        = 50_000_000  // == processor MaxDecodedPixels (decode-bomb guard)
+	safeDecodePixels = 200_000_000 // refuse to decode beyond this (OOM guard); dump max is ~112 MP
+	downscaleLongest = 2560        // cap the longest side when downscaling
 )
 
 // Opts selects the games to fill and where the cover bytes come from.
@@ -79,6 +93,7 @@ type coverItem struct {
 	cvID             string
 	kind             string
 	sexual, violence int16
+	pixels           int // width*height (0 = unknown); used to pre-check the pixel limit
 }
 
 // coverSource yields the full, deduped cover set per VN (main first). The byte
@@ -112,7 +127,7 @@ func (a *apiSource) prefetch(ctx context.Context, ids []string) error {
 		seen := map[string]bool{}
 		var items []coverItem
 		if m, ok := mains[id]; ok {
-			items = append(items, coverItem{cvID: m.ID, kind: kindMain, sexual: ratingFloat(m.Sexual), violence: ratingFloat(m.Violence)})
+			items = append(items, coverItem{cvID: m.ID, kind: kindMain, sexual: ratingFloat(m.Sexual), violence: ratingFloat(m.Violence), pixels: dimsToPixels(m.Dims)})
 			seen[m.ID] = true
 		}
 		for _, rc := range rels[id] {
@@ -120,7 +135,7 @@ func (a *apiSource) prefetch(ctx context.Context, ids []string) error {
 				continue
 			}
 			seen[rc.ID] = true
-			items = append(items, coverItem{cvID: rc.ID, kind: rc.Type, sexual: ratingFloat(rc.Sexual), violence: ratingFloat(rc.Violence)})
+			items = append(items, coverItem{cvID: rc.ID, kind: rc.Type, sexual: ratingFloat(rc.Sexual), violence: ratingFloat(rc.Violence), pixels: dimsToPixels(rc.Dims)})
 		}
 		if len(items) > 0 {
 			a.cache[id] = items
@@ -323,6 +338,14 @@ func processGame(ctx context.Context, db *gorm.DB, cli *imageclient.Client, http
 			slog.Warn("fetch cover", "gid", gid, "cv", it.cvID, "err", err)
 			continue
 		}
+		// Downscale to fit the image service's byte + pixel limits (skip the rare
+		// un-decodable / absurdly-large image rather than fail the whole game).
+		body, skip, ferr := fitForUpload(body, it.pixels)
+		if skip {
+			failed++
+			slog.Warn("skip oversized cover", "gid", gid, "cv", it.cvID, "pixels", it.pixels, "err", ferr)
+			continue
+		}
 		res, err := cli.Upload(ctx, bytes.NewReader(body), it.cvID+".jpg", coverPreset)
 		if err != nil {
 			if stderrors.Is(err, imageclient.ErrQuotaExceeded) {
@@ -381,6 +404,70 @@ func fetchCover(c *http.Client, vndbDir, cvID string) ([]byte, error) {
 		}
 	}
 	return httpGetLimited(c, vndbImageHost+rel)
+}
+
+// dimsToPixels turns VNDB's [w,h] dims array into a pixel count (0 if unknown).
+func dimsToPixels(d []int) int {
+	if len(d) >= 2 {
+		return d[0] * d[1]
+	}
+	return 0
+}
+
+// fitForUpload returns bytes safe to upload — within both the byte (BodyLimit) and
+// pixel (processor) limits. Within-limit images pass through untouched (no decode).
+// Oversized ones are decoded + downscaled (longest side ≤ downscaleLongest) and
+// re-encoded as JPEG. Images that can't be decoded, or are so large that decoding
+// risks OOM, return skip=true (caller logs + skips — no URL fallback).
+func fitForUpload(body []byte, pixels int) (out []byte, skip bool, err error) {
+	if len(body) <= maxUploadBytes && (pixels == 0 || pixels <= maxPixels) {
+		return body, false, nil
+	}
+	if pixels > safeDecodePixels {
+		return nil, true, fmt.Errorf("%d MP exceeds safe-decode limit", pixels/1_000_000)
+	}
+	src, _, derr := image.Decode(bytes.NewReader(body))
+	if derr != nil {
+		return nil, true, fmt.Errorf("decode: %w", derr)
+	}
+	resized := downscale(src, downscaleLongest)
+	for _, q := range []int{82, 68, 55} {
+		var buf bytes.Buffer
+		if err := jpeg.Encode(&buf, resized, &jpeg.Options{Quality: q}); err != nil {
+			return nil, true, fmt.Errorf("encode: %w", err)
+		}
+		if buf.Len() <= maxUploadBytes {
+			return buf.Bytes(), false, nil
+		}
+	}
+	// Still too big after quality drops — shrink once more.
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, downscale(resized, 1600), &jpeg.Options{Quality: 70}); err != nil {
+		return nil, true, fmt.Errorf("encode: %w", err)
+	}
+	if buf.Len() > maxUploadBytes {
+		return nil, true, fmt.Errorf("still %d bytes after downscale", buf.Len())
+	}
+	return buf.Bytes(), false, nil
+}
+
+// downscale returns src resized so its longest side is ≤ longest (aspect kept),
+// or src unchanged if already within bounds. Uses high-quality CatmullRom.
+func downscale(src image.Image, longest int) image.Image {
+	b := src.Bounds()
+	w, h := b.Dx(), b.Dy()
+	if w <= longest && h <= longest {
+		return src
+	}
+	nw, nh := longest, longest
+	if w >= h {
+		nh = h * longest / w
+	} else {
+		nw = w * longest / h
+	}
+	dst := image.NewRGBA(image.Rect(0, 0, nw, nh))
+	draw.CatmullRom.Scale(dst, dst.Bounds(), src, b, draw.Over, nil)
+	return dst
 }
 
 func httpGetLimited(c *http.Client, url string) ([]byte, error) {

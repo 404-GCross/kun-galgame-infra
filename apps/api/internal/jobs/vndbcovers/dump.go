@@ -21,7 +21,12 @@ func rating(avg100 int) int16 {
 	return int16(min(2, max(0, (avg100+50)/100)))
 }
 
-type rate struct{ sexual, violence int16 }
+// cvMeta is the per-cover metadata read from the dump's db/images: content
+// ratings + pixel count (for the pre-upload pixel-limit check).
+type cvMeta struct {
+	sexual, violence int16
+	pixels           int
+}
 
 // readLocal reads a cover file from the rsync mirror at <dir>/<rel>.
 func readLocal(dir, rel string) ([]byte, error) {
@@ -46,7 +51,7 @@ var (
 	// db/vn: `id image c_image olang ...` — `image` is the VN's cover id, col 1
 	// (col 2 `c_image` is a cache field; don't use it).
 	vnFallbackCols     = map[string]int{"id": 0, "image": 1}
-	imagesFallbackCols = map[string]int{"id": 0, "c_sexual_avg": 4, "c_violence_avg": 6}
+	imagesFallbackCols = map[string]int{"id": 0, "width": 1, "height": 2, "c_sexual_avg": 4, "c_violence_avg": 6}
 	// db/releases_vn: `id vid rtype` — release id + vn id.
 	relVNFallbackCols = map[string]int{"id": 0, "vid": 1}
 	// db/releases_images: `id img vid itype lang` — release id + cover cv-id + type.
@@ -126,15 +131,15 @@ func loadVNCoverMap(vnPath string) (map[string]string, error) {
 	return out, sc.Err()
 }
 
-// loadCoverRatings reads the dump's db/images, keeping only cv* rows ->
-// {sexual, violence}.
-func loadCoverRatings(imagesPath string) (map[string]rate, error) {
-	cols, err := resolveCols(imagesPath, imagesFallbackCols, "id", "c_sexual_avg", "c_violence_avg")
+// loadCoverMeta reads the dump's db/images, keeping only cv* rows ->
+// {sexual, violence, pixels (width*height)}.
+func loadCoverMeta(imagesPath string) (map[string]cvMeta, error) {
+	cols, err := resolveCols(imagesPath, imagesFallbackCols, "id", "width", "height", "c_sexual_avg", "c_violence_avg")
 	if err != nil {
 		return nil, err
 	}
-	idCol, sexCol, violCol := cols[0], cols[1], cols[2]
-	maxCol := max(idCol, max(sexCol, violCol))
+	idCol, wCol, hCol, sexCol, violCol := cols[0], cols[1], cols[2], cols[3], cols[4]
+	maxCol := max(idCol, max(wCol, max(hCol, max(sexCol, violCol))))
 
 	f, err := os.Open(imagesPath)
 	if err != nil {
@@ -142,7 +147,7 @@ func loadCoverRatings(imagesPath string) (map[string]rate, error) {
 	}
 	defer f.Close()
 
-	out := map[string]rate{}
+	out := map[string]cvMeta{}
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 1024*1024), 1024*1024)
 	for sc.Scan() {
@@ -156,7 +161,9 @@ func loadCoverRatings(imagesPath string) (map[string]rate, error) {
 		}
 		sexAvg, _ := strconv.Atoi(fields[sexCol])
 		violAvg, _ := strconv.Atoi(fields[violCol])
-		out[id] = rate{sexual: rating(sexAvg), violence: rating(violAvg)}
+		w, _ := strconv.Atoi(fields[wCol])
+		h, _ := strconv.Atoi(fields[hCol])
+		out[id] = cvMeta{sexual: rating(sexAvg), violence: rating(violAvg), pixels: w * h}
 	}
 	return out, sc.Err()
 }
@@ -164,7 +171,7 @@ func loadCoverRatings(imagesPath string) (map[string]rate, error) {
 // loadReleaseCovers reads db/releases_vn (release→vn) + db/releases_images
 // (release→cv-id+type) and returns v-id → release covers (raw; the caller dedups
 // against the main cover). Only cv* images are kept; ratings come from db/images.
-func loadReleaseCovers(relVNPath, relImgPath string, ratings map[string]rate) (map[string][]coverItem, error) {
+func loadReleaseCovers(relVNPath, relImgPath string, meta map[string]cvMeta) (map[string][]coverItem, error) {
 	cols, err := resolveCols(relVNPath, relVNFallbackCols, "id", "vid")
 	if err != nil {
 		return nil, err
@@ -218,9 +225,9 @@ func loadReleaseCovers(relVNPath, relImgPath string, ratings map[string]rate) (m
 		if !strings.HasPrefix(img, cvPrefix) {
 			continue // covers are cv*; skip any other id namespace
 		}
-		r := ratings[img]
+		m := meta[img]
 		for _, vn := range relToVNs[rel] {
-			out[vn] = append(out[vn], coverItem{cvID: img, kind: kind, sexual: r.sexual, violence: r.violence})
+			out[vn] = append(out[vn], coverItem{cvID: img, kind: kind, sexual: m.sexual, violence: m.violence, pixels: m.pixels})
 		}
 	}
 	return out, sc2.Err()
@@ -231,7 +238,7 @@ func loadReleaseCovers(relVNPath, relImgPath string, ratings map[string]rate) (m
 type dumpSource struct {
 	vnCover   map[string]string      // v-id -> main cover cv-id (db/vn.image)
 	relCovers map[string][]coverItem // v-id -> release covers (db/releases_*)
-	ratings   map[string]rate        // cv-id -> sexual/violence
+	meta      map[string]cvMeta      // cv-id -> sexual/violence/pixels
 }
 
 func newDumpSource(vnPath, imagesPath, relVNPath, relImgPath string) (*dumpSource, error) {
@@ -242,21 +249,21 @@ func newDumpSource(vnPath, imagesPath, relVNPath, relImgPath string) (*dumpSourc
 	if len(vnCover) == 0 {
 		return nil, fmt.Errorf("db/vn (%s) produced 0 cover mappings — wrong path or column layout", vnPath)
 	}
-	ratings, err := loadCoverRatings(imagesPath)
+	meta, err := loadCoverMeta(imagesPath)
 	if err != nil {
 		return nil, fmt.Errorf("load db/images (%s): %w", imagesPath, err)
 	}
-	if len(ratings) == 0 {
-		return nil, fmt.Errorf("db/images (%s) produced 0 cv ratings — wrong path or column layout", imagesPath)
+	if len(meta) == 0 {
+		return nil, fmt.Errorf("db/images (%s) produced 0 cv rows — wrong path or column layout", imagesPath)
 	}
-	relCovers, err := loadReleaseCovers(relVNPath, relImgPath, ratings)
+	relCovers, err := loadReleaseCovers(relVNPath, relImgPath, meta)
 	if err != nil {
 		return nil, fmt.Errorf("load release covers (%s + %s): %w", relVNPath, relImgPath, err)
 	}
 	if len(relCovers) == 0 {
 		return nil, fmt.Errorf("db/releases_images (%s) produced 0 release covers — wrong path or column layout", relImgPath)
 	}
-	return &dumpSource{vnCover: vnCover, relCovers: relCovers, ratings: ratings}, nil
+	return &dumpSource{vnCover: vnCover, relCovers: relCovers, meta: meta}, nil
 }
 
 func (d *dumpSource) prefetch(context.Context, []string) error { return nil }
@@ -267,8 +274,8 @@ func (d *dumpSource) lookup(vndbID string) []coverItem {
 	out := make([]coverItem, 0, 8)
 	seen := map[string]bool{}
 	if cv, ok := d.vnCover[vndbID]; ok {
-		r := d.ratings[cv]
-		out = append(out, coverItem{cvID: cv, kind: kindMain, sexual: r.sexual, violence: r.violence})
+		m := d.meta[cv]
+		out = append(out, coverItem{cvID: cv, kind: kindMain, sexual: m.sexual, violence: m.violence, pixels: m.pixels})
 		seen[cv] = true
 	}
 	for _, it := range d.relCovers[vndbID] {

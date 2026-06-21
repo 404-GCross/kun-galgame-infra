@@ -100,18 +100,19 @@ func TestLoadCoverRatings(t *testing.T) {
 			"cv22\t1\t1\t1\t150\t0\t50\t0\t1\n"+
 			"sf99\t1\t1\t1\t200\t0\t200\t0\t1\n")
 
-	m, err := loadCoverRatings(img)
+	m, err := loadCoverMeta(img)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(m) != 2 {
-		t.Fatalf("want 2 cv ratings (sf99 skipped), got %d: %v", len(m), m)
+		t.Fatalf("want 2 cv rows (sf99 skipped), got %d: %v", len(m), m)
 	}
-	if m["cv11"] != (rate{sexual: 0, violence: 2}) {
-		t.Errorf("cv11 = %+v, want {0,2}", m["cv11"])
+	// cv11: 800x600 -> pixels 480000; sexual rating(40)=0, violence rating(160)=2.
+	if m["cv11"] != (cvMeta{sexual: 0, violence: 2, pixels: 480000}) {
+		t.Errorf("cv11 = %+v, want {0,2,480000}", m["cv11"])
 	}
-	if m["cv22"] != (rate{sexual: 2, violence: 1}) {
-		t.Errorf("cv22 = %+v, want {2,1}", m["cv22"])
+	if m["cv22"] != (cvMeta{sexual: 2, violence: 1, pixels: 1}) {
+		t.Errorf("cv22 = %+v, want {2,1,1}", m["cv22"])
 	}
 }
 
@@ -128,8 +129,8 @@ func TestLoadReleaseCovers(t *testing.T) {
 			"r2\tcv11\t\\N\tdig\t\\N\n"+
 			"r3\tcv20\t\\N\tpkgback\t\\N\n")
 
-	ratings := map[string]rate{"cv10": {sexual: 1, violence: 0}}
-	out, err := loadReleaseCovers(relVN, relImg, ratings)
+	meta := map[string]cvMeta{"cv10": {sexual: 1, violence: 0, pixels: 200}}
+	out, err := loadReleaseCovers(relVN, relImg, meta)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,7 +143,7 @@ func TestLoadReleaseCovers(t *testing.T) {
 			cv10 = &out["v1"][i]
 		}
 	}
-	if cv10 == nil || cv10.kind != "pkgfront" || cv10.sexual != 1 {
+	if cv10 == nil || cv10.kind != "pkgfront" || cv10.sexual != 1 || cv10.pixels != 200 {
 		t.Fatalf("cv10 wrong/missing: %+v", cv10)
 	}
 }
@@ -157,7 +158,7 @@ func TestDumpSourceLookup(t *testing.T) {
 				{cvID: "cv33", kind: "pkgback"},
 			},
 		},
-		ratings: map[string]rate{"cv11": {sexual: 1, violence: 2}},
+		meta: map[string]cvMeta{"cv11": {sexual: 1, violence: 2, pixels: 12345}},
 	}
 	got := d.lookup("v1")
 	// main first (cv11, kind=main, ratings from db/images), then cv22, cv33; cv11 dup dropped.
