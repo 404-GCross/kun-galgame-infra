@@ -141,11 +141,13 @@ func New(gap time.Duration) *Client {
 	return &Client{http: &http.Client{Timeout: 30 * time.Second}, minGap: gap}
 }
 
-// FetchExistingVNIDs returns the subset of the given VNDB ids that exist on VNDB,
-// each mapped to its primary title. Ids ABSENT from the returned map do not exist
-// on VNDB (deleted, or fabricated/typo'd) — i.e. a wrong/squatted vndb_id. Pass
+// FetchVNTitleSets returns, for each given VNDB id that exists, the full set of
+// its title strings: the main title, every titles{} entry (title + latin), and
+// every alias. Ids ABSENT from the returned map do not exist on VNDB (deleted,
+// or fabricated/typo'd) — i.e. a wrong/squatted vndb_id. The title set lets a
+// caller decide whether a wiki game's own names match the VN it points at. Pass
 // at most 100 ids per call (a single /vn page); callers batch larger sets.
-func (c *Client) FetchExistingVNIDs(ctx context.Context, ids []string) (map[string]string, error) {
+func (c *Client) FetchVNTitleSets(ctx context.Context, ids []string) (map[string][]string, error) {
 	or := []any{"or"}
 	seen := make(map[string]bool, len(ids))
 	for _, id := range ids {
@@ -156,24 +158,42 @@ func (c *Client) FetchExistingVNIDs(ctx context.Context, ids []string) (map[stri
 		or = append(or, []any{"id", "=", id})
 	}
 	if len(seen) == 0 {
-		return map[string]string{}, nil
+		return map[string][]string{}, nil
 	}
 	var resp struct {
 		Results []struct {
-			ID    string `json:"id"`
-			Title string `json:"title"`
+			ID      string   `json:"id"`
+			Title   string   `json:"title"`
+			Aliases []string `json:"aliases"`
+			Titles  []struct {
+				Title string `json:"title"`
+				Latin string `json:"latin"`
+			} `json:"titles"`
 		} `json:"results"`
 	}
 	if err := c.post(ctx, "/vn", map[string]any{
 		"filters": or,
-		"fields":  "id, title",
+		"fields":  "id, title, titles{title,latin}, aliases",
 		"results": len(seen),
 	}, &resp); err != nil {
-		return nil, fmt.Errorf("vn existence batch: %w", err)
+		return nil, fmt.Errorf("vn title batch: %w", err)
 	}
-	out := make(map[string]string, len(resp.Results))
+	out := make(map[string][]string, len(resp.Results))
 	for _, r := range resp.Results {
-		out[r.ID] = r.Title
+		set := make([]string, 0, len(r.Titles)*2+len(r.Aliases)+1)
+		if r.Title != "" {
+			set = append(set, r.Title)
+		}
+		for _, t := range r.Titles {
+			if t.Title != "" {
+				set = append(set, t.Title)
+			}
+			if t.Latin != "" {
+				set = append(set, t.Latin)
+			}
+		}
+		set = append(set, r.Aliases...)
+		out[r.ID] = set
 	}
 	return out, nil
 }
