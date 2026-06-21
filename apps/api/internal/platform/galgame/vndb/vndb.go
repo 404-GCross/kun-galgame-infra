@@ -141,6 +141,43 @@ func New(gap time.Duration) *Client {
 	return &Client{http: &http.Client{Timeout: 30 * time.Second}, minGap: gap}
 }
 
+// FetchExistingVNIDs returns the subset of the given VNDB ids that exist on VNDB,
+// each mapped to its primary title. Ids ABSENT from the returned map do not exist
+// on VNDB (deleted, or fabricated/typo'd) — i.e. a wrong/squatted vndb_id. Pass
+// at most 100 ids per call (a single /vn page); callers batch larger sets.
+func (c *Client) FetchExistingVNIDs(ctx context.Context, ids []string) (map[string]string, error) {
+	or := []any{"or"}
+	seen := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		if id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		or = append(or, []any{"id", "=", id})
+	}
+	if len(seen) == 0 {
+		return map[string]string{}, nil
+	}
+	var resp struct {
+		Results []struct {
+			ID    string `json:"id"`
+			Title string `json:"title"`
+		} `json:"results"`
+	}
+	if err := c.post(ctx, "/vn", map[string]any{
+		"filters": or,
+		"fields":  "id, title",
+		"results": len(seen),
+	}, &resp); err != nil {
+		return nil, fmt.Errorf("vn existence batch: %w", err)
+	}
+	out := make(map[string]string, len(resp.Results))
+	for _, r := range resp.Results {
+		out[r.ID] = r.Title
+	}
+	return out, nil
+}
+
 type extLink struct {
 	URL   string `json:"url"`
 	Label string `json:"label"`
