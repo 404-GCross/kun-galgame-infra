@@ -4,22 +4,23 @@
 #
 # What it does, in order:
 #
-#   1. Drops + recreates the 3 application databases (empty; the apps'
+#   1. Drops + recreates the 4 application databases (empty; the apps'
 #      own schema-migration commands will rebuild structure):
 #        - kun_galgame_infra   (OAuth target / user_migrations)
-#        - kun_images_dev    (image_service)
-#        - kun_galgame_wiki  (galgame_wiki)
+#        - kun_images          (image_service)
+#        - kun_artifacts       (artifact_service)
+#        - kun_galgame_wiki    (galgame_wiki)
 #
 #   2. Drops + recreates + restores the 2 source databases from local dumps:
 #        - kungalgame        ← kungalgame_backup.dump
 #        - kungalgame_patch  ← kungalgame_patch_backup.dump
 #
-# After this script finishes, the 5 databases are in their pre-migration
+# After this script finishes, the 6 databases are in their pre-migration
 # pristine state and you can run the migration commands in sequence
 # (see docs/migration/user/05-execution.md and
 #       docs/galgame_wiki/02-moyu-migration-design.md).
 #
-# DESTRUCTIVE — drops 5 databases without confirmation. If you have dev
+# DESTRUCTIVE — drops 6 databases without confirmation. If you have dev
 # data in any of them you care about, dump it first.
 #
 # Usage:
@@ -33,8 +34,8 @@ DB_USER="postgres"
 DB_HOST="localhost"
 DB_PORT="5432"
 
-# 3 application databases — drop + create empty
-APP_DBS=(kun_galgame_infra kun_images_dev kun_galgame_wiki)
+# 4 application databases — drop + create empty
+APP_DBS=(kun_galgame_infra kun_images kun_artifacts kun_galgame_wiki)
 
 # 2 source databases — drop + create + restore from .dump in same dir
 typeset -A SOURCE_DBS
@@ -106,7 +107,7 @@ done
 
 echo
 echo "═══════════════════════════════════════════════════════════════"
-echo "  ✅ All 5 databases ready"
+echo "  ✅ All 6 databases ready"
 echo "═══════════════════════════════════════════════════════════════"
 echo "    application (empty): ${APP_DBS[*]}"
 echo "    source (restored):   ${(@k)SOURCE_DBS}"
