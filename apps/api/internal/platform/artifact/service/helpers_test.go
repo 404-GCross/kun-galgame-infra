@@ -29,18 +29,20 @@ func TestMimeAllowed(t *testing.T) {
 	}
 }
 
-func TestSanitizeName(t *testing.T) {
+func TestExtForKey(t *testing.T) {
 	cases := []struct{ in, want string }{
-		{"normal.zip", "normal.zip"},
-		{"a/b/c.zip", "a_b_c.zip"},
-		{`a\b.zip`, "a_b.zip"},
-		{"  spaced.zip  ", "spaced.zip"},
-		{"", "file"},
-		{"   ", "file"},
+		{"normal.zip", ".zip"},
+		{"GAME.RAR", ".rar"},
+		{"archive.7z", ".7z"},
+		{"战国兰斯.zip", ".zip"},        // CJK basename, clean ext
+		{"no-extension", ""},          // no dot
+		{"weird. zip", ""},            // space in ext → opaque
+		{"trailingdot.", ""},          // empty ext after dot
+		{"", ""},
 	}
 	for _, c := range cases {
-		if got := sanitizeName(c.in); got != c.want {
-			t.Errorf("sanitizeName(%q) = %q, want %q", c.in, got, c.want)
+		if got := extForKey(c.in); got != c.want {
+			t.Errorf("extForKey(%q) = %q, want %q", c.in, got, c.want)
 		}
 	}
 }

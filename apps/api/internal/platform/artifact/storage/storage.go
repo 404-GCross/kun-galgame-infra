@@ -214,6 +214,29 @@ func (c *Client) Delete(ctx context.Context, key string) error {
 	return nil
 }
 
+// SetContentDisposition rewrites the object's metadata in place via a
+// server-side copy onto its own key (MetadataDirective=REPLACE), baking an
+// attachment Content-Disposition that carries downloadName. This lets the object
+// key stay opaque (uuid<ext>) while downloads — presigned or via the CDN/Worker
+// passthrough — still save under the original filename. No bytes move (same
+// bucket+key); B2 caps single CopyObject at 5 GB, which covers all upload sizes.
+func (c *Client) SetContentDisposition(ctx context.Context, key, downloadName, contentType string) error {
+	in := &s3.CopyObjectInput{
+		Bucket:             aws.String(c.bucket),
+		Key:                aws.String(key),
+		CopySource:         aws.String(c.bucket + "/" + key),
+		MetadataDirective:  types.MetadataDirectiveReplace,
+		ContentDisposition: aws.String(contentDisposition(downloadName)),
+	}
+	if contentType != "" {
+		in.ContentType = aws.String(contentType)
+	}
+	if _, err := c.s3.CopyObject(ctx, in); err != nil {
+		return fmt.Errorf("artifact storage: set content-disposition %q: %w", key, err)
+	}
+	return nil
+}
+
 // EnsureBucket creates the bucket if missing. Intended for local dev (MinIO);
 // production should pre-provision the (private) bucket.
 func (c *Client) EnsureBucket(ctx context.Context) error {

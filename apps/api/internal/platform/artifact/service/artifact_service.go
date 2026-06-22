@@ -109,7 +109,11 @@ func (s *Service) InitUpload(ctx context.Context, req dto.InitUploadRequest, p I
 	}
 
 	id := uuid.NewString()
-	fileKey := p.Site + "/" + id + "/" + sanitizeName(req.Name)
+	// Opaque key: {site}/{uuid}<ext>. The user's filename is NOT in the key, so
+	// every download URL (presigned or CDN) is free of special characters; the
+	// original name is preserved in artifact.Name and applied at download time
+	// via Content-Disposition (baked onto the object at complete).
+	fileKey := p.Site + "/" + id + extForKey(req.Name)
 
 	a := &model.Artifact{
 		UUID:           id,
@@ -222,6 +226,15 @@ func (s *Service) CompleteUpload(ctx context.Context, uuidStr, site string, req 
 		}
 		s.markFailed(ctx, a)
 		return nil, ErrSizeMismatch
+	}
+
+	// Bake an attachment Content-Disposition carrying the original filename onto
+	// the object (server-side, in place) so downloads — presigned OR via the
+	// CDN/Worker — save under req.Name even though the key is opaque (uuid<ext>).
+	// Best-effort: a failure only degrades the saved filename to the opaque key,
+	// never the upload itself.
+	if err := s.store.SetContentDisposition(ctx, a.FileKey, a.Name, a.MimeType); err != nil {
+		slog.Warn("artifact: bake content-disposition", "uuid", a.UUID, "err", err)
 	}
 
 	a.FileSize = actual
@@ -339,16 +352,22 @@ func toResponse(a *model.Artifact) *dto.ArtifactResponse {
 	}
 }
 
-// sanitizeName strips path separators so the filename can't break out of the
-// {site}/{uuid}/ key prefix. Empty falls back to the uuid-less "file".
-func sanitizeName(name string) string {
-	name = strings.ReplaceAll(name, "/", "_")
-	name = strings.ReplaceAll(name, "\\", "_")
-	name = strings.TrimSpace(name)
-	if name == "" {
-		return "file"
+// extForKey returns a lowercase, URL-safe extension (e.g. ".zip") for the
+// opaque {site}/{uuid}<ext> object key, or "" when the name has no extension or
+// an unsafe one. The original filename is preserved separately (artifact.Name)
+// and surfaced at download time via Content-Disposition, so the key never needs
+// to carry it — keeping every download URL free of special characters.
+func extForKey(name string) string {
+	ext := strings.ToLower(filepath.Ext(name))
+	if len(ext) < 2 {
+		return "" // no extension, or a bare "."
 	}
-	return name
+	for _, r := range ext[1:] {
+		if !((r >= 'a' && r <= 'z') || (r >= '0' && r <= '9')) {
+			return "" // unusual extension → keep the key fully opaque
+		}
+	}
+	return ext
 }
 
 // mimeAllowed reports whether the declared MIME or the filename extension is in
