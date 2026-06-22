@@ -92,6 +92,48 @@ type OAuthClientResponse struct {
 	AutoConsent            bool     `json:"auto_consent"`
 	RefreshTokenTTLSeconds int      `json:"refresh_token_ttl_seconds"`
 	CreatedAt              string   `json:"created_at"`
+	// Storage holds the per-client object-storage capability config (the
+	// artifact_*/image_* columns), surfaced for the admin storage-config page.
+	Storage OAuthClientStorageConfig `json:"storage"`
+}
+
+// OAuthClientStorageConfig mirrors the artifact_*/image_* columns on an OAuth
+// client. JSON-list columns (allowed mime/presets) are decoded to []string.
+type OAuthClientStorageConfig struct {
+	ArtifactEnabled         bool     `json:"artifact_enabled"`
+	ArtifactSiteKey         string   `json:"artifact_site_key"`
+	ArtifactCDNBase         string   `json:"artifact_cdn_base"`
+	ArtifactAllowedMime     []string `json:"artifact_allowed_mime"`
+	ArtifactMaxFileSize     int64    `json:"artifact_max_file_size"`
+	ArtifactQuotaDaily      int      `json:"artifact_quota_daily"`
+	ArtifactQuotaBytesDaily int64    `json:"artifact_quota_bytes_daily"`
+	ImageEnabled            bool     `json:"image_enabled"`
+	ImageSiteKey            string   `json:"image_site_key"`
+	ImageCDNBase            string   `json:"image_cdn_base"`
+	ImageAllowedPresets     []string `json:"image_allowed_presets"`
+	ImageMaxFileSize        int64    `json:"image_max_file_size"`
+	ImageQuotaDaily         int      `json:"image_quota_daily"`
+	ImageQuotaBytesDaily    int64    `json:"image_quota_bytes_daily"`
+}
+
+// UpdateClientStorageRequest is the admin storage-config form payload. It always
+// carries the full state (the form loads current values and re-submits all), so
+// fields are non-pointer — an omitted field reads as its zero value.
+type UpdateClientStorageRequest struct {
+	ArtifactEnabled         bool     `json:"artifact_enabled"`
+	ArtifactSiteKey         string   `json:"artifact_site_key" validate:"max=32"`
+	ArtifactCDNBase         string   `json:"artifact_cdn_base" validate:"max=255"`
+	ArtifactAllowedMime     []string `json:"artifact_allowed_mime"`
+	ArtifactMaxFileSize     int64    `json:"artifact_max_file_size" validate:"min=0"`
+	ArtifactQuotaDaily      int      `json:"artifact_quota_daily" validate:"min=0"`
+	ArtifactQuotaBytesDaily int64    `json:"artifact_quota_bytes_daily" validate:"min=0"`
+	ImageEnabled            bool     `json:"image_enabled"`
+	ImageSiteKey            string   `json:"image_site_key" validate:"max=32"`
+	ImageCDNBase            string   `json:"image_cdn_base" validate:"max=255"`
+	ImageAllowedPresets     []string `json:"image_allowed_presets"`
+	ImageMaxFileSize        int64    `json:"image_max_file_size" validate:"min=0"`
+	ImageQuotaDaily         int      `json:"image_quota_daily" validate:"min=0"`
+	ImageQuotaBytesDaily    int64    `json:"image_quota_bytes_daily" validate:"min=0"`
 }
 
 // OAuthClientCreatedResponse includes the secret (only shown once on creation)

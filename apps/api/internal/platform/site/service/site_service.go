@@ -168,6 +168,62 @@ func (s *SiteService) GetOAuthClient(ctx context.Context, clientID string) (*mod
 	return s.oauthClientRepo.FindByClientID(ctx, clientID)
 }
 
+// StorageConfig carries the per-client object-storage capability knobs the admin
+// storage-config endpoint manages (the artifact_*/image_* oauth_clients columns).
+type StorageConfig struct {
+	ArtifactEnabled         bool
+	ArtifactSiteKey         string
+	ArtifactCDNBase         string
+	ArtifactAllowedMime     []string
+	ArtifactMaxFileSize     int64
+	ArtifactQuotaDaily      int
+	ArtifactQuotaBytesDaily int64
+	ImageEnabled            bool
+	ImageSiteKey            string
+	ImageCDNBase            string
+	ImageAllowedPresets     []string
+	ImageMaxFileSize        int64
+	ImageQuotaDaily         int
+	ImageQuotaBytesDaily    int64
+}
+
+// UpdateOAuthClientStorage sets the artifact_*/image_* capability columns on a
+// client (admin storage-config endpoint). It writes the full state — the admin
+// form always submits every field.
+func (s *SiteService) UpdateOAuthClientStorage(ctx context.Context, clientID string, cfg StorageConfig) (*model.OAuthClient, error) {
+	client, err := s.oauthClientRepo.FindByClientID(ctx, clientID)
+	if err != nil {
+		return nil, err
+	}
+	client.ArtifactEnabled = cfg.ArtifactEnabled
+	client.ArtifactSiteKey = cfg.ArtifactSiteKey
+	client.ArtifactCDNBase = cfg.ArtifactCDNBase
+	client.ArtifactAllowedMime = marshalStringList(cfg.ArtifactAllowedMime)
+	client.ArtifactMaxFileSize = cfg.ArtifactMaxFileSize
+	client.ArtifactQuotaDaily = cfg.ArtifactQuotaDaily
+	client.ArtifactQuotaBytesDaily = cfg.ArtifactQuotaBytesDaily
+	client.ImageEnabled = cfg.ImageEnabled
+	client.ImageSiteKey = cfg.ImageSiteKey
+	client.ImageCDNBase = cfg.ImageCDNBase
+	client.ImageAllowedPresets = marshalStringList(cfg.ImageAllowedPresets)
+	client.ImageMaxFileSize = cfg.ImageMaxFileSize
+	client.ImageQuotaDaily = cfg.ImageQuotaDaily
+	client.ImageQuotaBytesDaily = cfg.ImageQuotaBytesDaily
+	if err := s.oauthClientRepo.Update(ctx, client); err != nil {
+		return nil, err
+	}
+	return client, nil
+}
+
+// marshalStringList JSON-encodes a list for a jsonb column, normalising nil → [].
+func marshalStringList(list []string) []byte {
+	if list == nil {
+		list = []string{}
+	}
+	b, _ := json.Marshal(list)
+	return b
+}
+
 // DeleteOAuthClient deletes an OAuth client
 func (s *SiteService) DeleteOAuthClient(ctx context.Context, clientID string) error {
 	return s.oauthClientRepo.Delete(ctx, clientID)

@@ -21,6 +21,9 @@ import (
 	authService "api/internal/platform/auth/service"
 	"api/pkg/imageclient"
 
+	artifactHandler "api/internal/platform/artifact/handler"
+	artifactRepo "api/internal/platform/artifact/repository"
+
 	imgHandler "api/internal/platform/image/handler"
 	imgRepoPkg "api/internal/platform/image/repository"
 	imgService "api/internal/platform/image/service"
@@ -278,11 +281,13 @@ func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 	oauthClients.Get("/", siteH.ListClients)
 	oauthClients.Post("/", siteH.CreateClient)
 	oauthClients.Put("/:id", siteH.UpdateClient)
+	oauthClients.Put("/:id/storage", siteH.UpdateClientStorage)
 	oauthClients.Delete("/:id", siteH.DeleteClient)
 
 	// Image admin routes — best-effort; if images DB or S3 are unreachable
 	// in dev, skip registration rather than failing the whole oauth service.
 	registerImageAdmin(a, cfg, admin)
+	registerArtifactAdmin(cfg, admin)
 
 	// Job registry: in-process scheduler (default auto-run) + admin
 	// trigger/visibility. Pure docker-compose: scheduler lives in this
@@ -385,4 +390,26 @@ func registerImageAdmin(_ *app.App, cfg *config.Config, admin fiber.Router) {
 	g.Delete("/:hash", adminH.Delete)
 
 	slog.Info("image admin endpoints registered under /api/v1/admin/image/*")
+}
+
+// registerArtifactAdmin wires admin endpoints for the artifact service. Like the
+// image admin, these run inside the oauth service (admin auth lives here) and
+// read the dedicated kun_artifacts DB. Failures are logged + skipped, not fatal.
+// Delete is soft-only (the artifact GC reclaims the B2 object later); the oauth
+// service holds no artifact object-storage credentials.
+func registerArtifactAdmin(cfg *config.Config, admin fiber.Router) {
+	artifactsDB, err := database.NewPostgresDB(cfg.ArtifactsDatabase)
+	if err != nil {
+		slog.Warn("artifact admin: artifacts db unreachable; admin endpoints disabled", "err", err)
+		return
+	}
+	statsRepo := artifactRepo.NewStatsRepository(artifactsDB.DB())
+	adminH := artifactHandler.NewAdmin(artifactsDB.DB(), statsRepo)
+
+	g := admin.Group("/artifact")
+	g.Get("/list", adminH.List)
+	g.Get("/stats", adminH.Stats)
+	g.Delete("/:uuid", adminH.Delete)
+
+	slog.Info("artifact admin endpoints registered under /api/v1/admin/artifact/*")
 }

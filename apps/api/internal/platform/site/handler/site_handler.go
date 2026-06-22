@@ -355,6 +355,55 @@ func (h *SiteHandler) UpdateClient(c fiber.Ctx) error {
 	return response.Success(c, toOAuthClientResponse(client))
 }
 
+// UpdateClientStorage sets a client's object-storage capability config (the
+// artifact_*/image_* columns). Admin-only; a non-ren admin may not ENABLE a
+// capability that is currently off (mirrors the upload-scope ren-gate).
+func (h *SiteHandler) UpdateClientStorage(c fiber.Ctx) error {
+	clientID := c.Params("id")
+	if clientID == "" {
+		return response.BadRequest(c, errors.ErrMissingParam)
+	}
+
+	var req dto.UpdateClientStorageRequest
+	if err := c.Bind().JSON(&req); err != nil {
+		return response.BadRequest(c, errors.ErrBadRequest)
+	}
+	if err := utils.Validate(&req); err != nil {
+		return response.BadRequestMsg(c, errors.ErrValidationFailed, err.Error())
+	}
+
+	if !middleware.HasRole(c, "ren") {
+		cur, err := h.siteService.GetOAuthClient(c.Context(), clientID)
+		if err != nil {
+			return response.NotFound(c, errors.ErrOperationFailed)
+		}
+		if (req.ArtifactEnabled && !cur.ArtifactEnabled) || (req.ImageEnabled && !cur.ImageEnabled) {
+			return response.ForbiddenMsg(c, errors.ErrForbidden, renSensitiveFieldMsg)
+		}
+	}
+
+	client, err := h.siteService.UpdateOAuthClientStorage(c.Context(), clientID, service.StorageConfig{
+		ArtifactEnabled:         req.ArtifactEnabled,
+		ArtifactSiteKey:         req.ArtifactSiteKey,
+		ArtifactCDNBase:         req.ArtifactCDNBase,
+		ArtifactAllowedMime:     req.ArtifactAllowedMime,
+		ArtifactMaxFileSize:     req.ArtifactMaxFileSize,
+		ArtifactQuotaDaily:      req.ArtifactQuotaDaily,
+		ArtifactQuotaBytesDaily: req.ArtifactQuotaBytesDaily,
+		ImageEnabled:            req.ImageEnabled,
+		ImageSiteKey:            req.ImageSiteKey,
+		ImageCDNBase:            req.ImageCDNBase,
+		ImageAllowedPresets:     req.ImageAllowedPresets,
+		ImageMaxFileSize:        req.ImageMaxFileSize,
+		ImageQuotaDaily:         req.ImageQuotaDaily,
+		ImageQuotaBytesDaily:    req.ImageQuotaBytesDaily,
+	})
+	if err != nil {
+		return response.InternalError(c, errors.ErrOperationFailed)
+	}
+	return response.Success(c, toOAuthClientResponse(client))
+}
+
 // DeleteClient deletes an OAuth client
 func (h *SiteHandler) DeleteClient(c fiber.Ctx) error {
 	clientID := c.Params("id")
@@ -382,6 +431,15 @@ func toOAuthClientResponse(cl *siteModel.OAuthClient) dto.OAuthClientResponse {
 		_ = json.Unmarshal(cl.AllowedScopes, &allowedScopes)
 	}
 
+	var artifactMime []string
+	if len(cl.ArtifactAllowedMime) > 0 {
+		_ = json.Unmarshal(cl.ArtifactAllowedMime, &artifactMime)
+	}
+	var imagePresets []string
+	if len(cl.ImageAllowedPresets) > 0 {
+		_ = json.Unmarshal(cl.ImageAllowedPresets, &imagePresets)
+	}
+
 	return dto.OAuthClientResponse{
 		ID:                     cl.ID,
 		SiteID:                 cl.SiteID,
@@ -393,5 +451,21 @@ func toOAuthClientResponse(cl *siteModel.OAuthClient) dto.OAuthClientResponse {
 		AutoConsent:            cl.AutoConsent,
 		RefreshTokenTTLSeconds: cl.RefreshTokenTTLSeconds,
 		CreatedAt:              cl.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
+		Storage: dto.OAuthClientStorageConfig{
+			ArtifactEnabled:         cl.ArtifactEnabled,
+			ArtifactSiteKey:         cl.ArtifactSiteKey,
+			ArtifactCDNBase:         cl.ArtifactCDNBase,
+			ArtifactAllowedMime:     artifactMime,
+			ArtifactMaxFileSize:     cl.ArtifactMaxFileSize,
+			ArtifactQuotaDaily:      cl.ArtifactQuotaDaily,
+			ArtifactQuotaBytesDaily: cl.ArtifactQuotaBytesDaily,
+			ImageEnabled:            cl.ImageEnabled,
+			ImageSiteKey:            cl.ImageSiteKey,
+			ImageCDNBase:            cl.ImageCDNBase,
+			ImageAllowedPresets:     imagePresets,
+			ImageMaxFileSize:        cl.ImageMaxFileSize,
+			ImageQuotaDaily:         cl.ImageQuotaDaily,
+			ImageQuotaBytesDaily:    cl.ImageQuotaBytesDaily,
+		},
 	}
 }
