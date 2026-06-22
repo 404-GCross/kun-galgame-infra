@@ -82,6 +82,33 @@ moyu/kungal 现在**手写**各 infra 服务的薄 Go client(`userclient`/`image
 - Huma 的 input struct 同时承载 header(如 `Authorization` / `X-Kun-Artifact-Client-Id`)、path、query、body —— `ClientAuth` 中间件仍在 Fiber 层跑,Huma 端点从 `c.Locals` 取已认证的 client/site(或改成 Huma resolver)。落地时统一其中一种取法。
 - 大文件**字节不经服务**(直传 B2),故 artifact 的 OAS 只描述 init/complete/download/get/list/delete 这些小 JSON,**不涉及流式 body** —— Huma 完全适配,无大小/流式顾虑。
 
+## 9. 已落地:spec 快照 + 生成配方
+
+P0 retrofit 已完成(artifact 全 6 端点走 Huma-on-Fiber,见 [07](./07-ops-and-config-status.md))。本仓现已提交可复现的契约产物:
+
+**committed specs(生成物,勿手改):**
+- `docs/artifact/openapi.yaml` —— **OpenAPI 3.1**(canonical;docs / kungal-docs / Dart)。
+- `docs/artifact/openapi-3.0.yaml` —— **3.0.3 降级版**(给 Go 的 oapi-codegen 用;见下方坑)。
+
+**重新生成**(从代码导出,二者同源):
+```bash
+cd apps/api
+go run ./cmd/gen-openapi            -o ../../docs/artifact/openapi.yaml
+go run ./cmd/gen-openapi -downgrade -o ../../docs/artifact/openapi-3.0.yaml
+```
+
+**Go 客户端**(消费方仓库 forum/moyu;配置 = `docs/artifact/oapi-codegen.yaml`):
+```bash
+oapi-codegen -config oapi-codegen.yaml openapi-3.0.yaml   # → artifact_client.gen.go
+```
+- ✅ 已验证:据此生成的 Go client(types + ClientWithResponses)**编译通过**。
+- **坑 1**:oapi-codegen **尚不支持 OpenAPI 3.1**(会在 3.1 的 `[array, null]` 上报错)→ 必须喂 `openapi-3.0.yaml`。
+- **坑 2**:operation 的 `<Op>Response` 包装类型会与 `*Response` body schema(如 `InitUploadResponse`)**重名冲突** → 用 `output-options.response-type-suffix: Resp` 规避(已写进配置)。
+
+**Dart 客户端**(Flutter 仓):`openapi-generator`(dart-dio)支持 3.1 → 直接喂 `openapi.yaml`,再包进 Riverpod(§4.2)。
+
+> 这两份 spec 是 prose 契约的机器孪生;[08](./08-migration-forum-moyu.md) 的 P0 会把它们 + prose 一起登记进 `../kungal-docs`。
+
 ---
 
 ← 返回 [README 索引](./README.md) · 迁移全局见 [08](./08-migration-forum-moyu.md) · API 契约见 [03](./03-api-design.md)
