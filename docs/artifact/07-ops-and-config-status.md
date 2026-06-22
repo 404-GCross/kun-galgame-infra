@@ -1,36 +1,37 @@
-# 07 — 运维与配置现状（待办清单）
+# 07 — 运维与配置现状
 
-> 本篇是 artifact 服务「**还差什么、什么还没配**」的**唯一权威清单**。每完成一项就勾掉。最后更新：2026-06-22。
+> 本篇是 artifact 服务运维/配置现状清单。最后更新：2026-06-22。
+>
+> **🚀 生产已全量上线（2026-06-22）。** `infra-artifact` 服务已部署（:9279，healthy）、`kun_artifacts` 已建库建表、B2 桶 `kungal-artifact-v1` + 密钥已配、`oauth_clients.artifact_*` 列已迁移、专用下载域 **`dl.imoe.uk`**（Cloudflare Worker）已上线。**首个生产下游 = moyu**：补丁文件已**全量回填**进 artifact（统一 opaque key `{site}/{uuid}.<ext>` + 原文件名经 `Content-Disposition` 保留），经 `dl.imoe.uk` 提供下载。平台本身已就绪——新下游（forum / letmoe / …）只差**各自 client 的 ren 运维开通**（见「生产部署 — 已完成」表步骤 7），**不是 infra 阻塞项**。
 
 ## 现状速览
 
 | 项 | 本地 dev | 生产 |
 |----|---------|------|
-| 代码（Phase 1 服务）| 已完成：已实现、build/vet/test 绿 | 已完成：同（随仓库）|
-| 设计/契约文档 01–10 | 已完成（08–10 = forum/moyu 接管 + `imoe.uk` + OpenAPI 设计）| 已完成 |
-| CI 镜像 `infra-artifact` | 已完成：已加入 `build.yml` 矩阵 | 进行中：待 push 触发构建 |
-| 元数据库（`artifacts`/`manifests`）| 已完成：`kun_artifacts_dev` 已建表 | 未完成：待建 `kun_artifacts` |
-| `oauth_clients.artifact_*` 列 | 已完成：已 `cmd/migrate` 加列 | 未完成：待随部署跑 `cmd/migrate` |
-| 对象存储（B2 桶 + 密钥）| 已完成：`kungal-artifact-v1` @ `us-east-005`（presigner 单密钥）| 未完成：待配置 |
-| 服务进程（`cmd/artifact`）| 已就绪：B2 已配，可 `go run ./cmd/artifact` 启动 | 未完成：待 Dokploy 部署 |
-| 站点接入（OAuth client `artifact_*`）| 未完成：待按需配 | 未完成：待按需配 |
-| Cloudflare Worker（公开下载，专用域 `imoe.uk`）| 未完成 | 未完成（域名待购 + Worker 待写，见 [09](./09-download-domain-and-worker.md)）|
+| 代码（Phase 1 服务 + opaque key + 原名 CD）| ✅ 已完成 | ✅ 已完成 |
+| 设计/契约文档 01–10 | ✅ 已完成 | ✅ 已完成 |
+| CI 镜像 `infra-artifact` | ✅ 已完成 | ✅ 已构建 + 部署 |
+| 元数据库（`artifacts`/`manifests`）| ✅ `kun_artifacts` 已建表 | ✅ `kun_artifacts` 已建库建表（8200+ 制品）|
+| `oauth_clients.artifact_*` 列 | ✅ 已 `cmd/migrate` 加列 | ✅ 已 `cmd/migrate` 加列 |
+| 对象存储（B2 桶 + 密钥）| ✅ `kungal-artifact-v1` @ `us-east-005` | ✅ 同桶 + 密钥已配 |
+| 服务进程（`cmd/artifact`）| ✅ 可本地启动 | ✅ Dokploy 已部署（:9279 healthy）|
+| 站点接入（OAuth client `artifact_*`）| 按需 | ✅ moyu 已开通；其余下游按需 ren 开通 |
+| Cloudflare Worker（公开下载，专用域 `dl.imoe.uk`）| — | ✅ `dl.imoe.uk` 已上线（cdn_base 已配）|
 
-> **代码已在 `main`（本轮 abort-fix / 清理待推送）；生产未部署**——生产完全未受影响。
+> **代码在 `main`；生产已部署并上线（2026-06-22），首个下游 moyu 已切换 + 存量已回填。**
 
-## 下一阶段:接管 forum/moyu 文件服务(设计已就绪)
+## forum/moyu 接管路线 —— moyu 已完成（2026-06-22），forum 暂缓
 
-把 kungal(forum)工具资源 + moyu 补丁资源的上传/下载收口到 artifact。设计见 [08](./08-migration-forum-moyu.md) / [09](./09-download-domain-and-worker.md) / [10](./10-openapi-and-clients.md)。粗粒度路线:
+把 kungal(forum)工具资源 + moyu 补丁资源的上传/下载收口到 artifact。设计见 [08](./08-migration-forum-moyu.md) / [09](./09-download-domain-and-worker.md) / [10](./10-openapi-and-clients.md)。**moyu 已走完全程**：
 
-1. **P0 — artifact code-first 改造**(Huma 叠 Fiber v3 + house 信封 transformer)→ 导出 OAS 3.1 → 登记进 `../kungal-docs`(此时 artifact 升级为 Tier-A 跨仓契约)。趁**零下游**做,最便宜。([10](./10-openapi-and-clients.md))
-2. **P0 — 专用下载域 `imoe.uk`**:购域 + 独立 Cloudflare zone + 写/部署 Worker(签名 token 网关 + 强制 attachment)。([09](./09-download-domain-and-worker.md))
-3. **配站点 client**:给 forum/moyu 的 `oauth_client` 开 `artifact_enabled` + `artifact_site_key` + `allowed_mime` + `max_file_size` + `cdn_base=https://imoe.uk`。
-4. **P1 — 集成(forward-only)**:两站后端用**生成的** Go client(oapi-codegen)替换内联上传逻辑;存 `artifact_uuid`;下载改调 artifact。前端 `/upload/*` 契约不变。
-5. **P2 — 回填**:`cmd/migrate-adopt-resources` 服务端 CopyObject 搬存量(同 region/账号)+ 回写 `artifact_uuid`。
-6. **P3 — 切换 + 退役**:下载域切 `imoe.uk`;老桶置只读再删;删站侧内联 upload service。
+1. ✅ **artifact code-first**(Huma 叠 Fiber v3 + house 信封)→ 导出 OAS 3.1。([10](./10-openapi-and-clients.md)) （登记进 `../kungal-docs` 仍待办。）
+2. ✅ **专用下载域 `dl.imoe.uk`** + Cloudflare Worker(缓存公开下载)。([09](./09-download-domain-and-worker.md))
+3. ✅ **配 moyu client**:`artifact_enabled` + `site_key=moyu` + `allowed_mime` + `max_file_size` + `cdn_base=https://dl.imoe.uk`。
+4. ✅ **集成(forward-only)**:moyu 后端改调 artifact(生成的 Go client);存 `artifact_uuid`;dual-read 下载。前端 `/upload/*` 契约不变。
+5. ✅ **回填**:`adopt-moyu-resources` 服务端 CopyObject 搬 8200+ 存量(同 region/账号)+ 回写 `artifact_uuid`(统一 opaque key + 原名 CD)。
+6. **退役(剩余)**:老桶 `kun-galgame-patch` 验证期后置只读再删 + 退 `oss.moyu.moe`;清理 moyu 侧已替换的内联 upload service。
 
-**两个待定岔路**(见 [08 §11](./08-migration-forum-moyu.md)):下载是否经 presigned 过渡阶段;回填范围(forward-only→一次性回填 vs 永不迁存量 vs 大爆炸)。
-**待你确认**:patch 是否同时跑 moyu.moe + touchgal.moe(决定配几个 site_key,[08 §9](./08-migration-forum-moyu.md))。
+**forum**:同一套路线,因 forum 重构**暂缓**(`galgame_toolset_resource`;artifact 平台已就绪)。**letmoe / 其它新下游**:只差各自 client 的 ren 开通(步骤 3,一条 SQL)。touchgal 不在范围内。
 
 ## 已完成（本轮）
 
@@ -39,7 +40,7 @@
 - CI：`build.yml` 矩阵加 `infra-artifact`。
 - 单测：纯函数（MIME 白名单 / 文件名清洗 / RFC5987 编码）。
 - 文档：`docs/artifact/01–07`。
-- **本地 dev 已打通（DB 侧）**：建库 `kun_artifacts_dev` → `cmd/migrate-artifact` 建表 → `cmd/migrate` 给本地 `oauth_clients` 加 `artifact_*` 列 → `.env` 加 artifact 段（`KUN_ARTIFACTS_PG_DATABASE=kun_artifacts_dev`，S3 段留 TODO）。
+- **本地 dev 已打通**：本地库名已与生产对齐（`kun_artifacts`，不再用 `_dev`/`_test` — 见 `reset_all.sh` / `initdb`），`cmd/migrate-artifact` 建表 + `cmd/migrate` 加 `oauth_clients.artifact_*` 列；`apps/api/.env` artifact 段已配（`KUN_ARTIFACTS_PG_DATABASE=kun_artifacts` + B2）。
 - **2026-06-21 加固 + 本地 B2 接通**：
   - **修 multipart 泄漏**：`CompleteMultipart` 失败时补 `AbortMultipart`（之前只置 `status=2`，泄漏的分片永不回收——孤儿 GC 只扫 `status=0`；B2 按未完成 multipart 分片计费）。对齐 [01 风险表](./01-design.md)「multipart 完成失败 → status=2 + Abort」。
   - **删未接线脚手架**：移除 `internal/platform/artifact/pipeline/`（`Checksum`/`VirusScan`/`ManifestValidator` 全是 TODO no-op、零引用），避免「以为扫了毒其实没扫」的误导；真要做时随 Phase 3 实装。
@@ -54,21 +55,23 @@ B2 凭证已写入 `apps/api/.env`（bucket `kungal-artifact-v1` @ `us-east-005`
 2. 端到端验证 init→PUT→complete→download。
 3. 前端直传还需在桶上配 **CORS**（允许来源 `PUT`/`GET`，`exposeHeaders` 含 `ETag`）。
 
-## 待办 —— 生产（全部待你/运维）
+## 生产部署 —— 已完成（2026-06-22）
 
-| # | 步骤 | 说明 |
+下列步骤已在生产执行（`infra-tools` 镜像 + trust-psql + Dokploy）：
+
+| # | 步骤 | 状态 |
 |---|------|------|
-| 1 | 建库 `kun_artifacts` | `CREATE DATABASE kun_artifacts;` |
-| 2 | 建 **私有** B2 桶 + 三把密钥 | `presigner`(put/multipart/sign-get/head) · `cleanup`(仅 delete) · worker(只读，给 CF Worker) |
-| 2b | **加桶生命周期规则**：自动 Abort 超期（≥1d）未完成的 multipart 上传 | 兜底回收任何泄漏分片，独立于代码路径（代码已在完成失败时 Abort，这是双保险）|
-| 3 | 跑 `cmd/migrate-artifact` | 经 `infra-tools` 镜像；建 `artifacts`/`manifests` 表 |
-| 4 | 跑 `cmd/migrate` | 给 `oauth_clients` 加 `artifact_*` 列（**见下方部署安全**）|
-| 5 | 给 **oauth 服务**补 artifact env | `KUN_ARTIFACTS_PG_*` + `KUN_ARTIFACT_S3_*`（尤其 cleanup 密钥）——因为 `artifact-gc` 跑在 oauth 进程；重部 oauth |
-| 6 | 部署 `infra-artifact` | Dokploy 新服务，端口 9279，注入 DB+S3 env；先 `UPLOAD_ENABLED=false` 验证 list/get/download/healthz |
-| 7 | 配站点 OAuth Client | 目标站 `artifact_enabled=true`、`artifact_site_key`、配额、scope 加 `artifact:upload`、可选 `artifact_cdn_base`。**授予 `artifact:upload` 仅 ren（莲）可操作**（前端对非 ren 隐藏、后端 ren-gate 兜底）；`artifact_*` 配置列 SQL-only，由 ren 运维设置。见 [01 决策 9](./01-design.md#决策-9权限控制--artifact-能力全部-ren莲-only默认关闭) |
-| 8 | 配 B2 桶 CORS | 前端直传需要（同本地 §2）|
-| 9 | （可选）Cloudflare Worker | 公开/热门内容免流量下载，见 [04](./04-cloudflare-worker.md)。**Worker 必须强制 `Content-Disposition: attachment`（或安全 Content-Type）**：直传 PUT 不固定 Content-Type，公开制品若被存成 `text/html` 经 Worker 可能在 CDN 域名内联渲染（预签名 GET 路径已固定 attachment，无此问题）|
-| 10 | 灰度 `KUN_ARTIFACT_UPLOAD_ENABLED=true` | 端到端验证后放量 |
+| 1 | 建库 `kun_artifacts` | ✅ |
+| 2 | 私有 B2 桶 `kungal-artifact-v1` + 密钥 + 生命周期（Abort ≥1d multipart）| ✅（**当前服务/presigner 复用同一把账号级 key**；待办：拆专用 `cleanup`/worker 只读 key + 轮换早期共享 key）|
+| 3 | `cmd/migrate-artifact`（建 `artifacts`/`manifests`）| ✅ |
+| 4 | `cmd/migrate`（`oauth_clients` 加 `artifact_*` 列）| ✅ |
+| 5 | 部署 `infra-artifact`（Dokploy，:9279，DB+S3 env）| ✅ Up healthy |
+| 6 | 专用下载域 `dl.imoe.uk` + Cloudflare Worker | ✅ 上线（e2e 验证：opaque URL + 原名 + cache HIT）|
+| 7 | 配站点 OAuth Client（**ren-only**）| ✅ **moyu**（`artifact_enabled` / `site_key=moyu` / 配额 / `allowed_mime` / `cdn_base=https://dl.imoe.uk`）；**forum / letmoe 等新下游：各自 client 待 ren 按需开通**（一条 SQL，同 moyu）+ 授予 `artifact:upload` scope。见 [01 决策 9](./01-design.md#决策-9权限控制--artifact-能力全部-ren莲-only默认关闭)、文件浏览/存储配置管理 UI 亦 ren-only |
+| 8 | B2 桶 CORS（前端直传）| ✅ |
+| 9 | moyu 存量回填（`adopt-moyu-resources`，服务端 CopyObject）| ✅ 8200+ 文件（opaque key + 原名 CD）|
+
+**剩余（非阻塞）**：① `dl.imoe.uk` 加 response-header 规则剥 `x-bz-*`（**不要加静态 `Content-Disposition`** — 会覆盖每文件原名）。② 启用 `artifact-gc`（给 oauth 进程补 `KUN_ARTIFACTS_PG_DATABASE` + `KUN_ARTIFACT_S3_*`，含 cleanup key）。③ 轮换早期共享 B2 key + 拆专用 key。④ 把对外契约（03/06 + OAS）登记进 `../kungal-docs` + `docs:sync`。⑤ forum 接入（设计就绪，因 forum 重构暂缓）。⑥ 自托管 UGC 文件的审核/合规决策（[09 §18.2](./09-download-domain-and-worker.md)，产品侧）。
 
 环境变量全表见 [05 §环境变量](./05-engineering-plan.md#环境变量)。
 
