@@ -2,21 +2,27 @@
 // upload/download platform (Backblaze B2 + Cloudflare). Clients upload/download
 // directly to B2 via presigned URLs; the service never handles file bytes.
 //
+// The HTTP surface is code-first OpenAPI 3.1 via Huma layered on Fiber v3
+// (see docs/artifact/10). ClientAuth runs as path-scoped Fiber middleware; the
+// Huma operations read the authenticated site/client through AuthBridge.
+//
 // See docs/artifact/ for the design.
 //
 // Endpoints (Phase 1):
 //
-//	POST   /api/v1/artifacts                 — InitUpload   (gated by KUN_ARTIFACT_UPLOAD_ENABLED)
-//	POST   /api/v1/artifacts/:uuid/complete  — CompleteUpload (gated)
-//	GET    /api/v1/artifacts                  — List (site-scoped)
-//	GET    /api/v1/artifacts/:uuid            — Get metadata
+//	POST   /api/v1/artifacts                 — initUpload     (gated by KUN_ARTIFACT_UPLOAD_ENABLED)
+//	POST   /api/v1/artifacts/:uuid/complete  — completeUpload (gated)
+//	GET    /api/v1/artifacts                  — list (site-scoped)
+//	GET    /api/v1/artifacts/:uuid            — get metadata
 //	GET    /api/v1/artifacts/:uuid/download   — issue download URL
 //	DELETE /api/v1/artifacts/:uuid            — soft delete
+//	GET    /openapi.json                      — OpenAPI 3.1 spec (no auth)
 //	GET    /healthz                           — no auth
 package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -33,10 +39,8 @@ import (
 	"api/internal/platform/artifact/storage"
 	siteRepo "api/internal/platform/site/repository"
 	"api/pkg/config"
-	"api/pkg/errors"
 	"api/pkg/health"
 	"api/pkg/logger"
-	"api/pkg/response"
 
 	"github.com/gofiber/fiber/v3"
 )
@@ -89,7 +93,6 @@ func main() {
 		PresignUploadTTL:   cfg.ArtifactService.PresignUploadTTL,
 		PresignDownloadTTL: cfg.ArtifactService.PresignDownloadTTL,
 	})
-	h := artHandler.New(svc)
 
 	application.Fiber.Use(middleware.RequestID())
 	application.Fiber.Use(middleware.Logger())
@@ -98,20 +101,24 @@ func main() {
 	})
 	application.Fiber.Use(middleware.CORS(cfg.Server.CORSOrigin))
 
-	arts := application.Fiber.Group("/api/v1/artifacts", artMW.ClientAuth(clientRepo, cfg))
-	arts.Get("/", h.List)
-	arts.Get("/:uuid", h.Get)
-	arts.Get("/:uuid/download", h.Download)
-	arts.Delete("/:uuid", h.Delete)
+	// ClientAuth (Basic S2S / Bearer JWT) is path-scoped Fiber middleware: it runs
+	// before the Huma operations and writes the authenticated client/site into
+	// fiber.Ctx.Locals, which artHandler.AuthBridge lifts into the Huma context.
+	// Registered BEFORE Setup so it precedes the operation routes in the stack.
+	application.Fiber.Use("/api/v1/artifacts", artMW.ClientAuth(clientRepo, cfg))
 
-	if cfg.ArtifactService.UploadEnabled {
-		arts.Post("/", h.InitUpload)
-		arts.Post("/:uuid/complete", h.CompleteUpload)
-	} else {
-		arts.Post("/", uploadDisabled)
-		arts.Post("/:uuid/complete", uploadDisabled)
-		slog.Warn("upload disabled (set KUN_ARTIFACT_UPLOAD_ENABLED=true to allow); other endpoints still serve")
-	}
+	humaAPI := artHandler.Setup(application.Fiber, svc, cfg.ArtifactService.UploadEnabled)
+
+	// Serve the OpenAPI 3.1 spec unauthenticated at the app root (the auto doc
+	// routes are disabled in Setup so they don't land under the authed prefix).
+	application.Fiber.Get("/openapi.json", func(c fiber.Ctx) error {
+		b, err := json.Marshal(humaAPI.OpenAPI())
+		if err != nil {
+			return err
+		}
+		c.Set("Content-Type", "application/json")
+		return c.Send(b)
+	})
 
 	slog.Info("artifact service starting",
 		"addr", fmt.Sprintf("%s:%d", cfg.ArtifactService.Host, cfg.ArtifactService.Port),
@@ -129,14 +136,4 @@ func main() {
 		slog.Error("run", "error", err)
 		os.Exit(1)
 	}
-}
-
-// uploadDisabled stands in for the upload handlers when KUN_ARTIFACT_UPLOAD_ENABLED
-// is unset/false. Returns 503 + a clear code so callers can branch on it.
-func uploadDisabled(c fiber.Ctx) error {
-	return response.Error(c,
-		fiber.StatusServiceUnavailable,
-		errors.ErrArtifactUploadDisabled,
-		errors.GetMessage(errors.ErrArtifactUploadDisabled),
-	)
 }

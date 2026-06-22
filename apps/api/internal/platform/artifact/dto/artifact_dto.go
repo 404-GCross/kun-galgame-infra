@@ -4,14 +4,14 @@ package dto
 // gets back presigned URL(s) to PUT bytes straight to B2.
 type InitUploadRequest struct {
 	Name        string `json:"name" validate:"required,max=255"`
-	Description string `json:"description" validate:"max=2000"`
+	Description string `json:"description,omitempty" validate:"max=2000"`
 	FileSize    int64  `json:"file_size" validate:"required,gt=0"`
-	MimeType    string `json:"mime_type" validate:"max=100"`
-	Checksum    string `json:"checksum" validate:"omitempty,len=64"` // optional sha256 hex
-	Public      bool   `json:"public"`
+	MimeType    string `json:"mime_type,omitempty" validate:"max=100"`
+	Checksum    string `json:"checksum,omitempty" validate:"omitempty,len=64"` // optional sha256 hex
+	Public      bool   `json:"public,omitempty"`
 	// UploaderSub names the acting user on the backend (Basic) path, where
 	// there's no user JWT. Ignored on the JWT path (the sub comes from claims).
-	UploaderSub string `json:"uploader_sub" validate:"max=64"`
+	UploaderSub string `json:"uploader_sub,omitempty" validate:"max=64"`
 }
 
 // PartURL is one presigned multipart part URL.
@@ -41,16 +41,16 @@ type CompletedPart struct {
 // ManifestInput is the optional game-launch manifest, supplied at Complete time.
 type ManifestInput struct {
 	Executable   string         `json:"executable" validate:"required,max=500"`
-	Arguments    string         `json:"arguments" validate:"max=1000"`
-	WorkingDir   string         `json:"working_dir" validate:"max=500"`
-	SavePath     string         `json:"save_path" validate:"max=500"`
-	Requirements map[string]any `json:"requirements"`
+	Arguments    string         `json:"arguments,omitempty" validate:"max=1000"`
+	WorkingDir   string         `json:"working_dir,omitempty" validate:"max=500"`
+	SavePath     string         `json:"save_path,omitempty" validate:"max=500"`
+	Requirements map[string]any `json:"requirements,omitempty"`
 }
 
 // CompleteUploadRequest finalises an upload. Parts is required for multipart
 // (ignored for single-PUT). Manifest is optional.
 type CompleteUploadRequest struct {
-	Parts    []CompletedPart `json:"parts"`
+	Parts    []CompletedPart `json:"parts,omitempty"`
 	Manifest *ManifestInput  `json:"manifest,omitempty"`
 }
 
