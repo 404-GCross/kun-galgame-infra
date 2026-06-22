@@ -17,6 +17,9 @@
 | 05 | [engineering-plan.md](./05-engineering-plan.md) | 工程里程碑、交付物、迁移（空表下沉独立库）、CI/部署 | 已完成 |
 | 06 | [integration-guide.md](./06-integration-guide.md) | **调用方视角**：OAuth 注册、直传 SDK、前端 multipart 分片、降级 | 已完成 |
 | 07 | [ops-and-config-status.md](./07-ops-and-config-status.md) | **运维待办清单**：现状速览、本地/生产剩余配置、部署安全（不影响 oauth/wiki/image）| 已完成 |
+| 08 | [migration-forum-moyu.md](./08-migration-forum-moyu.md) | **接管 forum/moyu 文件服务**：现状对照、后端代理式 S2S、数据模型映射、配额双轴、回填/切换/退役、平价清单、推送顺序 | 设计 |
+| 09 | [download-domain-and-worker.md](./09-download-domain-and-worker.md) | **专用下载域 `imoe.uk`**：爆炸半径隔离、Worker 签名 token 网关、公开 vs presigned、可替换性、运维卫生 | 设计 |
+| 10 | [openapi-and-clients.md](./10-openapi-and-clients.md) | **OpenAPI 与生成式客户端**：Huma code-first（叠 Fiber v3）、house 信封、生成 Dart/Go client、防漂移、范围纪律 | 设计 |
 
 ## 一句话总结
 
@@ -60,4 +63,6 @@ V1 上线**必须**包含：
 
 ## 跨仓契约说明
 
-artifact 目前**尚无下游接入**，故未纳入 `kungal-docs` 的 `docs:sync` 镜像体系。01–06 设计/契约文档已就绪；待下游开始接入时，再把对外契约部分（03 API / 06 接入指南）登记进 `../kungal-docs` 的 ownership 并下发镜像（参照 `image_service` 的做法）。本目录现阶段是**纯本仓设计文档**。
+artifact 目前**尚无生产下游接入**，故暂未纳入 `kungal-docs` 的 `docs:sync` 镜像体系。但**第一批接入已在设计**：[08](./08-migration-forum-moyu.md) 把 forum 工具资源 + moyu 补丁资源迁来，[09](./09-download-domain-and-worker.md) 定下专用下载域 `imoe.uk` + Worker，[10](./10-openapi-and-clients.md) 定下 code-first OpenAPI（随出 Dart/Go 生成式客户端）。
+
+**登记时点（08/10 的 P0 步骤）**：artifact code-first 改造导出 OAS 3.1 后，把对外契约（03 API / 06 接入指南 + OAS）登记进 `../kungal-docs` 的 ownership 并 `docs:sync` 下发 forum/patch 镜像（参照 `image_service` 的做法）。在此之前，本目录是**纯本仓设计文档**。

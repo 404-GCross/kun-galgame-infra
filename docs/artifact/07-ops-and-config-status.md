@@ -1,22 +1,36 @@
 # 07 — 运维与配置现状（待办清单）
 
-> 本篇是 artifact 服务「**还差什么、什么还没配**」的**唯一权威清单**。每完成一项就勾掉。最后更新：2026-06-21。
+> 本篇是 artifact 服务「**还差什么、什么还没配**」的**唯一权威清单**。每完成一项就勾掉。最后更新：2026-06-22。
 
 ## 现状速览
 
 | 项 | 本地 dev | 生产 |
 |----|---------|------|
 | 代码（Phase 1 服务）| 已完成：已实现、build/vet/test 绿 | 已完成：同（随仓库）|
-| 设计/契约文档 01–07 | 已完成 | 已完成 |
+| 设计/契约文档 01–10 | 已完成（08–10 = forum/moyu 接管 + `imoe.uk` + OpenAPI 设计）| 已完成 |
 | CI 镜像 `infra-artifact` | 已完成：已加入 `build.yml` 矩阵 | 进行中：待 push 触发构建 |
 | 元数据库（`artifacts`/`manifests`）| 已完成：`kun_artifacts_dev` 已建表 | 未完成：待建 `kun_artifacts` |
 | `oauth_clients.artifact_*` 列 | 已完成：已 `cmd/migrate` 加列 | 未完成：待随部署跑 `cmd/migrate` |
 | 对象存储（B2 桶 + 密钥）| 已完成：`kungal-artifact-v1` @ `us-east-005`（presigner 单密钥）| 未完成：待配置 |
 | 服务进程（`cmd/artifact`）| 已就绪：B2 已配，可 `go run ./cmd/artifact` 启动 | 未完成：待 Dokploy 部署 |
 | 站点接入（OAuth client `artifact_*`）| 未完成：待按需配 | 未完成：待按需配 |
-| Cloudflare Worker（公开下载，可选）| 未完成 | 未完成 |
+| Cloudflare Worker（公开下载，专用域 `imoe.uk`）| 未完成 | 未完成（域名待购 + Worker 待写，见 [09](./09-download-domain-and-worker.md)）|
 
 > **代码已在 `main`（本轮 abort-fix / 清理待推送）；生产未部署**——生产完全未受影响。
+
+## 下一阶段:接管 forum/moyu 文件服务(设计已就绪)
+
+把 kungal(forum)工具资源 + moyu 补丁资源的上传/下载收口到 artifact。设计见 [08](./08-migration-forum-moyu.md) / [09](./09-download-domain-and-worker.md) / [10](./10-openapi-and-clients.md)。粗粒度路线:
+
+1. **P0 — artifact code-first 改造**(Huma 叠 Fiber v3 + house 信封 transformer)→ 导出 OAS 3.1 → 登记进 `../kungal-docs`(此时 artifact 升级为 Tier-A 跨仓契约)。趁**零下游**做,最便宜。([10](./10-openapi-and-clients.md))
+2. **P0 — 专用下载域 `imoe.uk`**:购域 + 独立 Cloudflare zone + 写/部署 Worker(签名 token 网关 + 强制 attachment)。([09](./09-download-domain-and-worker.md))
+3. **配站点 client**:给 forum/moyu 的 `oauth_client` 开 `artifact_enabled` + `artifact_site_key` + `allowed_mime` + `max_file_size` + `cdn_base=https://imoe.uk`。
+4. **P1 — 集成(forward-only)**:两站后端用**生成的** Go client(oapi-codegen)替换内联上传逻辑;存 `artifact_uuid`;下载改调 artifact。前端 `/upload/*` 契约不变。
+5. **P2 — 回填**:`cmd/migrate-adopt-resources` 服务端 CopyObject 搬存量(同 region/账号)+ 回写 `artifact_uuid`。
+6. **P3 — 切换 + 退役**:下载域切 `imoe.uk`;老桶置只读再删;删站侧内联 upload service。
+
+**两个待定岔路**(见 [08 §11](./08-migration-forum-moyu.md)):下载是否经 presigned 过渡阶段;回填范围(forward-only→一次性回填 vs 永不迁存量 vs 大爆炸)。
+**待你确认**:patch 是否同时跑 moyu.moe + touchgal.moe(决定配几个 site_key,[08 §9](./08-migration-forum-moyu.md))。
 
 ## 已完成（本轮）
 
