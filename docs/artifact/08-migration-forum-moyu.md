@@ -189,13 +189,14 @@ patch 这套代码若**同时跑 moyu.moe 和 touchgal.moe**:
 
 ### 阶段 B —— moyu 切换(阶段 A 全绿后)
 
+> moyu 的迁移是**部署时自动跑**的:`migrate` 服务(`moyu-migrate`,每次 push master 自动构建)以 `-path /migrations -yes`(非交互)在 `moyu-api` 之前运行,api `depends_on` 它完成——**没有手动 B3 步骤**,迁移失败会挡住 api 启动(绝不服务未迁移的 schema)。
+
 | # | 谁 | 操作 |
 |---|----|------|
-| B1 | (运维) | 设 moyu prod env:`KUN_ARTIFACT_SERVICE_BASE_URL=<artifact 内网地址,如 http://artifact:9279>`(prod 强制,否则 fail-fast)。client 凭据走 OAuth 回退,**无需** `KUN_ARTIFACT_OAUTH_*` |
-| B2 | (运维) | push moyu |
-| B3 | (迁移) | moyu `go run ./cmd/migrate`(021)→ prod `kungalgame_patch`(加 `artifact_uuid` + 唯一索引 + history.`old_artifact_uuid`)|
-| B4 | (运维) | 部署 moyu(api + web)|
-| B5 | (验证) | 生产传一个测试补丁端到端;确认**旧补丁下载照常**(dual-read 走老 `oss.moyu.moe`)|
+| B1 | (运维) | moyu Dokploy Environment 设 `KUN_ARTIFACT_SERVICE_BASE_URL=http://artifact:9279`(prod 强制,否则 moyu-api fail-fast)。client 凭据走 OAuth 回退,**无需** `KUN_ARTIFACT_OAUTH_*` |
+| B2 | (运维) | push moyu master → CI 构建 moyu-migrate(含 021)+ moyu-api + moyu-web |
+| B3 | (运维) | 重部署 moyu → `migrate` 服务**自动**应用 021(加 `artifact_uuid` + 唯一索引 + history.`old_artifact_uuid`),随后 api/web 启动 |
+| B4 | (验证,agent) | 生产传一个测试补丁端到端;确认 `artifact_uuid` 列已加、**旧补丁下载照常**(dual-read 走老 `oss.moyu.moe`)|
 
 ### 之后(非阻塞)
 
