@@ -232,6 +232,35 @@ services:
       <<: *svc-health
     restart: unless-stopped
 
+  artifact:
+    image: ghcr.io/kunmoe/infra-artifact:latest
+    pull_policy: always
+    environment:
+      <<: *infra-env
+      KUN_ARTIFACT_HOST: 0.0.0.0
+      KUN_ARTIFACT_PORT: "9279"
+      KUN_ARTIFACT_UPLOAD_ENABLED: "true"
+      # Dedicated artifacts DB on the same PG server (host/user/pass from *infra-env).
+      KUN_ARTIFACTS_PG_DATABASE: kun_artifacts
+      # B2 object storage — shared bucket kungal-artifact-v1. The service key needs
+      # read+write+delete; set the two keys in the Dokploy Environment panel.
+      KUN_ARTIFACT_S3_ENDPOINT: https://s3.us-east-005.backblazeb2.com
+      KUN_ARTIFACT_S3_REGION: us-east-005
+      KUN_ARTIFACT_S3_BUCKET: kungal-artifact-v1
+      KUN_ARTIFACT_S3_ACCESS_KEY: ${KUN_ARTIFACT_S3_ACCESS_KEY:?set KUN_ARTIFACT_S3_ACCESS_KEY in Dokploy (kun-artifact-prod keyID)}
+      KUN_ARTIFACT_S3_SECRET_KEY: ${KUN_ARTIFACT_S3_SECRET_KEY:?set KUN_ARTIFACT_S3_SECRET_KEY in Dokploy (kun-artifact-prod appKey)}
+      KUN_ARTIFACT_S3_FORCE_PATH_STYLE: "false"
+    # Internal only — moyu/forum backends reach it at http://artifact:9279 over
+    # dokploy-network (browsers PUT straight to B2; no public domain needed).
+    expose: ["9279"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "/app", "healthcheck"]
+      <<: *svc-health
+    restart: unless-stopped
+
   # ───────────────────────────── Nuxt frontends ──────────────────────────────
   # Public (browser) config is BAKED into the image at CI build time (build-args in
   # .github/workflows/build.yml). Only the SSR base (service name) is injected here.
