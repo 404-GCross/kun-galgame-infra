@@ -93,7 +93,7 @@ func (c *Client) PresignGet(ctx context.Context, key, downloadName string, ttl t
 		Key:    aws.String(key),
 	}
 	if downloadName != "" {
-		in.ResponseContentDisposition = aws.String(contentDisposition(downloadName))
+		in.ResponseContentDisposition = aws.String(ContentDisposition(downloadName))
 	}
 	req, err := c.presign.PresignGetObject(ctx, in, s3.WithPresignExpires(ttl))
 	if err != nil {
@@ -226,7 +226,7 @@ func (c *Client) SetContentDisposition(ctx context.Context, key, downloadName, c
 		Key:                aws.String(key),
 		CopySource:         aws.String(c.bucket + "/" + key),
 		MetadataDirective:  types.MetadataDirectiveReplace,
-		ContentDisposition: aws.String(contentDisposition(downloadName)),
+		ContentDisposition: aws.String(ContentDisposition(downloadName)),
 	}
 	if contentType != "" {
 		in.ContentType = aws.String(contentType)
@@ -256,9 +256,9 @@ func (c *Client) EnsureBucket(ctx context.Context) error {
 	return nil
 }
 
-// contentDisposition builds an RFC 5987 attachment header that survives
+// ContentDisposition builds an RFC 5987 attachment header that survives
 // non-ASCII filenames (filename* + UTF-8), matching the production pattern.
-func contentDisposition(name string) string {
+func ContentDisposition(name string) string {
 	return fmt.Sprintf("attachment; filename*=UTF-8''%s", percentEncode(name))
 }
 
