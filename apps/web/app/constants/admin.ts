@@ -1,4 +1,15 @@
-export const SIDEBAR_MENU = [
+// A sidebar entry is either a leaf (has `to`) or a collapsible group (has
+// `children`). Groups render an expandable header in the expanded sidebar and
+// flatten to their child icons when the sidebar is collapsed.
+export interface SidebarItem {
+  icon: string
+  label: string
+  to?: string
+  adminOnly?: boolean
+  children?: SidebarItem[]
+}
+
+export const SIDEBAR_MENU: SidebarItem[] = [
   { icon: 'lucide:layout-dashboard', label: '仪表盘', to: '/', adminOnly: true },
   { icon: 'lucide:users', label: '用户管理', to: '/users', adminOnly: true },
   { icon: 'lucide:globe', label: '站点管理', to: '/sites', adminOnly: true },
@@ -6,6 +17,16 @@ export const SIDEBAR_MENU = [
   { icon: 'lucide:shield', label: '内容审核', to: '/moderation', adminOnly: true },
   { icon: 'lucide:user-plus', label: '创作者申请', to: '/creator-applications', adminOnly: true },
   { icon: 'lucide:image', label: '图片管理', to: '/images', adminOnly: true },
+  {
+    icon: 'lucide:package',
+    label: '文件存储',
+    adminOnly: true,
+    children: [
+      { icon: 'lucide:chart-pie', label: '用量概览', to: '/artifacts', adminOnly: true },
+      { icon: 'lucide:files', label: '文件列表', to: '/artifacts/list', adminOnly: true },
+      { icon: 'lucide:sliders-horizontal', label: '存储配置', to: '/artifacts/config', adminOnly: true },
+    ],
+  },
   { icon: 'lucide:user', label: '个人信息', to: '/profile' },
 ]
 

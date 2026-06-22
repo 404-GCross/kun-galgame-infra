@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { SIDEBAR_MENU } from '~/constants/admin'
+import { SIDEBAR_MENU, type SidebarItem } from '~/constants/admin'
 import { useBodyScrollLock } from '@kungal/ui-vue'
 import { resolveAvatarUrl } from '~~/shared/utils/resolveImage'
 
@@ -25,8 +25,28 @@ const isSidebarCollapsed = ref(false)
 const isMobileMenuOpen = ref(false)
 
 const visibleMenu = computed(() =>
-  SIDEBAR_MENU.filter((item) => !item.adminOnly || auth.isAdmin.value)
+  SIDEBAR_MENU.filter((item) => !item.adminOnly || auth.isAdmin.value).map(
+    (item) => ({
+      ...item,
+      children: item.children?.filter((c) => !c.adminOnly || auth.isAdmin.value)
+    })
+  )
 )
+
+// Expanded state for collapsible sidebar groups (keyed by label). A group is
+// open if explicitly toggled, otherwise auto-open when one of its children is
+// the active route.
+const expandedGroups = ref<Record<string, boolean>>({})
+const isGroupOpen = (item: SidebarItem) =>
+  item.label in expandedGroups.value
+    ? expandedGroups.value[item.label]
+    : (item.children?.some((c) => c.to === route.path) ?? false)
+const toggleGroup = (item: SidebarItem) => {
+  expandedGroups.value = {
+    ...expandedGroups.value,
+    [item.label]: !isGroupOpen(item)
+  }
+}
 
 // Trigger uses a fixed icon (not derived from colorMode.preference) so
 // SSR and CSR render the exact same DOM. The current preference is
@@ -156,16 +176,59 @@ await callOnce('auth:user', async () => {
 
       <!-- Navigation -->
       <nav class="flex-1 space-y-1 overflow-y-auto p-4">
-        <NuxtLink
-          v-for="item in visibleMenu"
-          :key="item.to"
-          :to="item.to"
-          class="text-default-600 hover:bg-primary-50 hover:text-primary flex items-center gap-3 rounded-lg px-3 py-2 transition-colors"
-          active-class="bg-primary-50 text-primary"
-        >
-          <KunIcon :name="item.icon" class="size-5 shrink-0" />
-          <span v-if="!isSidebarCollapsed" class="truncate">{{ item.label }}</span>
-        </NuxtLink>
+        <template v-for="item in visibleMenu" :key="item.label">
+          <!-- Leaf item -->
+          <NuxtLink
+            v-if="!item.children"
+            :to="item.to"
+            class="text-default-600 hover:bg-primary-50 hover:text-primary flex items-center gap-3 rounded-lg px-3 py-2 transition-colors"
+            active-class="bg-primary-50 text-primary"
+          >
+            <KunIcon :name="item.icon" class="size-5 shrink-0" />
+            <span v-if="!isSidebarCollapsed" class="truncate">{{ item.label }}</span>
+          </NuxtLink>
+
+          <!-- Collapsed sidebar: flatten the group to its child icons -->
+          <template v-else-if="isSidebarCollapsed">
+            <NuxtLink
+              v-for="child in item.children"
+              :key="child.to"
+              :to="child.to"
+              class="text-default-600 hover:bg-primary-50 hover:text-primary flex items-center gap-3 rounded-lg px-3 py-2 transition-colors"
+              active-class="bg-primary-50 text-primary"
+            >
+              <KunIcon :name="child.icon" class="size-5 shrink-0" />
+            </NuxtLink>
+          </template>
+
+          <!-- Expanded sidebar: group header + collapsible children -->
+          <div v-else>
+            <button
+              type="button"
+              class="text-default-600 hover:bg-primary-50 hover:text-primary flex w-full items-center gap-3 rounded-lg px-3 py-2 transition-colors"
+              @click="toggleGroup(item)"
+            >
+              <KunIcon :name="item.icon" class="size-5 shrink-0" />
+              <span class="flex-1 truncate text-left">{{ item.label }}</span>
+              <KunIcon
+                :name="isGroupOpen(item) ? 'lucide:chevron-down' : 'lucide:chevron-right'"
+                class="size-4 shrink-0"
+              />
+            </button>
+            <div v-if="isGroupOpen(item)" class="mt-1 space-y-1 pl-4">
+              <NuxtLink
+                v-for="child in item.children"
+                :key="child.to"
+                :to="child.to"
+                class="text-default-600 hover:bg-primary-50 hover:text-primary flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors"
+                active-class="bg-primary-50 text-primary"
+              >
+                <KunIcon :name="child.icon" class="size-4 shrink-0" />
+                <span class="truncate">{{ child.label }}</span>
+              </NuxtLink>
+            </div>
+          </div>
+        </template>
       </nav>
 
       <!-- Collapse button (desktop only) -->

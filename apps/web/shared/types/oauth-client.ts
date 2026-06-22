@@ -21,6 +21,27 @@ export interface OAuthClient {
   // Shorter for sensitive clients (e.g. 1d), longer for background services.
   refresh_token_ttl_seconds?: number
   created_at: string
+  // Per-client object-storage capability config (artifact_*/image_* columns),
+  // managed by the artifact admin "存储配置" page.
+  storage?: OAuthClientStorageConfig
+}
+
+// Mirrors the backend OAuthClientStorageConfig (artifact_*/image_* columns).
+export interface OAuthClientStorageConfig {
+  artifact_enabled: boolean
+  artifact_site_key: string
+  artifact_cdn_base: string
+  artifact_allowed_mime: string[]
+  artifact_max_file_size: number
+  artifact_quota_daily: number
+  artifact_quota_bytes_daily: number
+  image_enabled: boolean
+  image_site_key: string
+  image_cdn_base: string
+  image_allowed_presets: string[]
+  image_max_file_size: number
+  image_quota_daily: number
+  image_quota_bytes_daily: number
 }
 
 // Default refresh_token TTL when creating a new client (90 days in seconds).
