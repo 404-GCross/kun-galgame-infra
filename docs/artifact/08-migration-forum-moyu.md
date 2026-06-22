@@ -150,10 +150,12 @@ patch 这套代码若**同时跑 moyu.moe 和 touchgal.moe**:
 - [ ] 完成幂等(对已 ready 的 uuid 再 complete 安全)
 - [ ] 限流(`/link` 30/min、`/download` 60/min 等,站侧)
 
-## 11. 待定岔路(影响实施细节)
+## 11. 已定决策(原岔路)
 
-1. **下载模型**:presigned 先行(简单、防盗链、但 B2 出流量计费)→ 再上 Worker;还是一步到位上 Worker(端态,免流量+缓存)。**端态已定 = Worker(点一)**;只剩"是否经过 presigned 过渡阶段"。
-2. **回填范围**:forward-only 后**一次性回填**(推荐),还是只 forward-only 永不迁存量(两套并存),还是大爆炸全迁。
+1. **下载模型**:**presigned 先行 → 再上 `imoe.uk` Worker**(端态)。Option B 下前端按服务端返回的 `part_size` 走,**无需任何 threshold/part 配置**。新上传的下载在 Worker 就绪前走 presigned(B2 出口计费);存量走老 CDN 不变。
+2. **回填**:**forward-only,不回填**——dual-read 让存量继续从老 `oss.moyu.moe` 下载、新上传走 artifact。`cmd/migrate-adopt-resources` 仅在将来想彻底退役老桶时才需要。
+3. **桶**:artifact 服务统一用 **`kungal-artifact-v1`**(dev + prod 共用一个桶;key 方案 `{site}/{uuid}/{file}` + uuid 唯一,dev/prod 元数据库分离 `kun_artifacts_dev`/`kun_artifacts`,GC 各扫各库,互不误删)。
+4. **touchgal** 不在本项目范围,忽略。
 
 ## 12. 迁移 / Schema / 推送顺序
 
@@ -167,6 +169,41 @@ patch 这套代码若**同时跑 moyu.moe 和 touchgal.moe**:
 | 存量回填 | artifact 库 + 各站库 | `cmd/migrate-adopt-resources --apply`(经 infra-tools)|
 
 **推送顺序:infra 先**(artifact code-first 改造 + 契约 + 开 `oauth_clients` 列 + 部署 artifact/Worker)**→ 再 forum / moyu**(集成 + 各自加列)。详见 [10](./10-openapi-and-clients.md) 的客户端生成步骤。
+
+## 13. 生产部署 runbook(以 moyu 首切为例)
+
+> **铁律:artifact 服务必须先在生产搭好,moyu 新代码才能上**——否则补丁上传/新下载全挂。分两阶段;标 **(运维)** 的是人工/Dokploy/B2 操作,**(迁移)** 的是数据库迁移/SQL(可由 agent 经 `infra-tools` + trust-psql 执行,见 [prod ops](./07-ops-and-config-status.md))。
+
+### 阶段 A —— 先在生产把 artifact 搭起来
+
+| # | 谁 | 操作 |
+|---|----|------|
+| A1 | (运维) | push infra → CI 出 `infra-artifact` 镜像(改了 `apps/api/**` 会自动触发 go 镜像构建;**验证镜像确实出了**)|
+| A2 | (运维) | **B2 桶 = `kungal-artifact-v1`(复用)**:确认桶为 **Private**;给 artifact 服务一把对该桶 **读+写+删**的 application key(可复用现有 key,或新建桶级 scoped key);**给 CF Worker 另备一把只读 key**(下载阶段用);CORS 已配;加生命周期规则(自动 Abort ≥1d 未完成 multipart)|
+| A3 | (运维) | 建库:`CREATE DATABASE kun_artifacts;` |
+| A4 | (迁移) | `cmd/migrate-artifact` → 建 `artifacts`/`manifests` 表(无需 S3 即可跑)|
+| A5 | (迁移) | `cmd/migrate`(infra 主库)→ **给 prod `oauth_clients` 补 `artifact_*` 列**(prod 现在没有这些列!)|
+| A6 | (运维) | Dokploy 新建 `infra-artifact` 服务:端口 9279,注入 `KUN_ARTIFACTS_PG_*` + `KUN_ARTIFACT_S3_*`(endpoint `https://s3.us-east-005.backblazeb2.com`、region `us-east-005`、bucket `kungal-artifact-v1`、FORCE_PATH_STYLE=false)+ `KUN_ARTIFACT_UPLOAD_ENABLED=true`;**给 oauth 服务也补 `KUN_ARTIFACTS_PG_*` + `KUN_ARTIFACT_S3_*` 并重部**(artifact-gc 跑在 oauth 进程)|
+| A7 | (迁移) | 配 moyu 的 **prod** oauth_client:`UPDATE oauth_clients SET artifact_enabled=true, artifact_site_key='moyu', artifact_allowed_mime='[".zip",".rar",".7z"]'::jsonb, artifact_max_file_size=1073741824 WHERE id='<moyu client_id>';`(prod 是否同一 client_id 需确认)|
+| A8 | (验证) | `GET /healthz`、`GET /openapi.json`(无鉴权)、一次 Basic `POST /api/v1/artifacts` init 冒烟 |
+
+### 阶段 B —— moyu 切换(阶段 A 全绿后)
+
+| # | 谁 | 操作 |
+|---|----|------|
+| B1 | (运维) | 设 moyu prod env:`KUN_ARTIFACT_SERVICE_BASE_URL=<artifact 内网地址,如 http://artifact:9279>`(prod 强制,否则 fail-fast)。client 凭据走 OAuth 回退,**无需** `KUN_ARTIFACT_OAUTH_*` |
+| B2 | (运维) | push moyu |
+| B3 | (迁移) | moyu `go run ./cmd/migrate`(021)→ prod `kungalgame_patch`(加 `artifact_uuid` + 唯一索引 + history.`old_artifact_uuid`)|
+| B4 | (运维) | 部署 moyu(api + web)|
+| B5 | (验证) | 生产传一个测试补丁端到端;确认**旧补丁下载照常**(dual-read 走老 `oss.moyu.moe`)|
+
+### 之后(非阻塞)
+
+- **`imoe.uk` Worker**:建好后把 moyu prod oauth_client 的 `artifact_cdn_base` 设成 `https://imoe.uk` → 新上传的下载即从 presigned(计费)切到免流量 CDN([09](./09-download-domain-and-worker.md))。
+- **forum**:同一套(client 生成 + 上传/下载接入 + `galgame_toolset_resource.artifact_uuid` 迁移),artifact 服务已就绪可直接接。
+- **登记契约**:把 03/06 + OAS 登记进 `../kungal-docs` 并 `docs:sync`。
+
+> ⚠️ **不要**在阶段 A 全绿前部署 moyu 新代码(B4)。存量下载不受影响(dual-read);新上传依赖 artifact 在线。
 
 ---
 
