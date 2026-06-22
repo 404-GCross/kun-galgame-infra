@@ -550,43 +550,96 @@ func (s *GalgameService) BatchGetWithViewer(ctx context.Context, ids []int, view
 	if err != nil {
 		return nil, err
 	}
-
-	// Single batch lookup for the pinned cover of every brief — avoids
-	// O(N) per-row queries while still letting EffectiveBannerHash come
-	// out non-nil on the response.
-	resultIDs := make([]int, 0, len(galgames))
-	for _, g := range galgames {
-		resultIDs = append(resultIDs, g.ID)
-	}
-	pinned, err := s.galgameRepo.PinnedCoverHashes(ctx, resultIDs)
-	if err != nil {
-		// Non-fatal: covers query failed → effective_banner_hash stays nil
-		// for every row this batch. Frontend renders the legacy Banner
-		// URL fallback in resolveBannerUrl when no hash is available.
-		pinned = map[int]string{}
-	}
-
+	pinned := s.pinnedCovers(ctx, galgames)
 	items := make([]dto.GalgameBrief, len(galgames))
-	for i, g := range galgames {
-		var effective *string
-		if h, ok := pinned[g.ID]; ok {
-			effective = &h
+	for i := range galgames {
+		items[i] = briefFromModel(&galgames[i], pinned)
+	}
+	return items, nil
+}
+
+// pinnedCovers batches the pinned-cover (sort_order=0) hash lookup for a set of
+// galgames into {id → image_hash}, avoiding O(N) per-row queries. Non-fatal on
+// error (returns empty → briefs fall back to the legacy Banner URL). Shared by
+// the brief + detail builders.
+func (s *GalgameService) pinnedCovers(ctx context.Context, galgames []model.Galgame) map[int]string {
+	ids := make([]int, 0, len(galgames))
+	for i := range galgames {
+		ids = append(ids, galgames[i].ID)
+	}
+	pinned, err := s.galgameRepo.PinnedCoverHashes(ctx, ids)
+	if err != nil {
+		return map[int]string{}
+	}
+	return pinned
+}
+
+// briefFromModel maps a galgame row + the batch's pinned-cover map to a
+// GalgameBrief — the single source of truth for the brief shape (BatchGet,
+// per-user lists, and the detail view all build on it).
+func briefFromModel(g *model.Galgame, pinned map[int]string) dto.GalgameBrief {
+	var effective *string
+	if h, ok := pinned[g.ID]; ok {
+		effective = &h
+	}
+	return dto.GalgameBrief{
+		ID:                  g.ID,
+		VNDBID:              g.VNDBID,
+		NameEnUS:            g.NameEnUS,
+		NameJaJP:            g.NameJaJP,
+		NameZhCN:            g.NameZhCN,
+		NameZhTW:            g.NameZhTW,
+		Banner:              g.Banner,
+		EffectiveBannerHash: effective,
+		ContentLimit:        g.ContentLimit,
+		Status:              g.Status,
+		UserID:              g.UserID,
+		ResourceUpdateTime:  g.ResourceUpdateTime.Time().UTC().Format("2006-01-02T15:04:05Z"),
+		OriginalLanguage:    g.OriginalLanguage,
+		AgeLimit:            g.AgeLimit,
+	}
+}
+
+// BatchDetailWithViewer returns rich detail briefs (brief + intro / officials /
+// release date) for a list of IDs. Powers GET /galgame/batch?view=detail — e.g.
+// the forum's "new Galgame" feed card. Heavier than BatchGet (intro text + an
+// officials join); the lightweight brief path is left untouched.
+func (s *GalgameService) BatchDetailWithViewer(ctx context.Context, ids []int, viewerUserID int, contentLimit string) ([]dto.GalgameDetailBrief, error) {
+	galgames, err := s.galgameRepo.FindDetailByIDs(ctx, ids, viewerUserID, contentLimit)
+	if err != nil {
+		return nil, err
+	}
+	pinned := s.pinnedCovers(ctx, galgames)
+
+	resultIDs := make([]int, 0, len(galgames))
+	for i := range galgames {
+		resultIDs = append(resultIDs, galgames[i].ID)
+	}
+	officials, err := s.galgameRepo.OfficialNames(ctx, resultIDs)
+	if err != nil {
+		officials = map[int][]string{} // non-fatal: card just shows no maker line
+	}
+
+	items := make([]dto.GalgameDetailBrief, len(galgames))
+	for i := range galgames {
+		g := &galgames[i]
+		releaseDate := ""
+		if g.ReleaseDate != nil && !g.ReleaseDate.Time().IsZero() {
+			releaseDate = g.ReleaseDate.Time().UTC().Format("2006-01-02")
 		}
-		items[i] = dto.GalgameBrief{
-			ID:                  g.ID,
-			VNDBID:              g.VNDBID,
-			NameEnUS:            g.NameEnUS,
-			NameJaJP:            g.NameJaJP,
-			NameZhCN:            g.NameZhCN,
-			NameZhTW:            g.NameZhTW,
-			Banner:              g.Banner,
-			EffectiveBannerHash: effective,
-			ContentLimit:        g.ContentLimit,
-			Status:              g.Status,
-			UserID:              g.UserID,
-			ResourceUpdateTime:  g.ResourceUpdateTime.Time().UTC().Format("2006-01-02T15:04:05Z"),
-			OriginalLanguage:    g.OriginalLanguage,
-			AgeLimit:            g.AgeLimit,
+		names := officials[g.ID]
+		if names == nil {
+			names = []string{}
+		}
+		items[i] = dto.GalgameDetailBrief{
+			GalgameBrief:   briefFromModel(g, pinned),
+			ReleaseDate:    releaseDate,
+			ReleaseDateTBA: g.ReleaseDateTBA,
+			IntroEnUS:      g.IntroEnUS,
+			IntroJaJP:      g.IntroJaJP,
+			IntroZhCN:      g.IntroZhCN,
+			IntroZhTW:      g.IntroZhTW,
+			Officials:      names,
 		}
 	}
 	return items, nil
@@ -630,38 +683,10 @@ func (s *GalgameService) ListContributedGalgames(ctx context.Context, userID, pa
 // from the pinned-cover (sort_order=0) lookup. Shared by the per-user list
 // endpoints (created / contributed); mirrors BatchGetWithViewer's brief mapping.
 func (s *GalgameService) galgameBriefsWithCovers(ctx context.Context, galgames []model.Galgame) []dto.GalgameBrief {
-	resultIDs := make([]int, 0, len(galgames))
-	for _, g := range galgames {
-		resultIDs = append(resultIDs, g.ID)
-	}
-	pinned, err := s.galgameRepo.PinnedCoverHashes(ctx, resultIDs)
-	if err != nil {
-		// Non-fatal: effective_banner_hash stays nil; FE falls back to Banner.
-		pinned = map[int]string{}
-	}
-
+	pinned := s.pinnedCovers(ctx, galgames)
 	items := make([]dto.GalgameBrief, len(galgames))
-	for i, g := range galgames {
-		var effective *string
-		if h, ok := pinned[g.ID]; ok {
-			effective = &h
-		}
-		items[i] = dto.GalgameBrief{
-			ID:                  g.ID,
-			VNDBID:              g.VNDBID,
-			NameEnUS:            g.NameEnUS,
-			NameJaJP:            g.NameJaJP,
-			NameZhCN:            g.NameZhCN,
-			NameZhTW:            g.NameZhTW,
-			Banner:              g.Banner,
-			EffectiveBannerHash: effective,
-			ContentLimit:        g.ContentLimit,
-			Status:              g.Status,
-			UserID:              g.UserID,
-			ResourceUpdateTime:  g.ResourceUpdateTime.Time().UTC().Format("2006-01-02T15:04:05Z"),
-			OriginalLanguage:    g.OriginalLanguage,
-			AgeLimit:            g.AgeLimit,
-		}
+	for i := range galgames {
+		items[i] = briefFromModel(&galgames[i], pinned)
 	}
 	return items
 }

@@ -189,22 +189,44 @@ func (r *GalgameRepository) List(ctx context.Context, page, limit int, sortField
 	return items, total, err
 }
 
-// FindByIDs finds galgames by a list of IDs (lightweight, no relations).
-// status is selected so the brief can carry it through to the caller —
-// FindByIDs filters status=0 here so the value is always 0 in this code
-// path, but the column is still in the projection to keep one consistent
-// brief shape across FindByIDs / FindByIDsWithViewer.
-//
-// contentLimit follows ParseContentLimit semantics ("" = no filter).
-func (r *GalgameRepository) FindByIDs(ctx context.Context, ids []int, contentLimit string) ([]model.Galgame, error) {
-	q := r.db.WithContext(ctx).
-		Select("id, vndb_id, name_en_us, name_ja_jp, name_zh_cn, name_zh_tw, banner, content_limit, status, user_id, resource_update_time, original_language, age_limit").
-		Where("id IN ? AND status = 0", ids)
-	if contentLimit != "" {
-		q = q.Where("content_limit = ?", contentLimit)
+// briefColumns is the projection shared by the lightweight brief queries
+// (FindByIDs / FindByIDsAny / FindByIDsWithViewer) — one source of truth for the
+// GalgameBrief shape. detailColumns adds the heavier intro / release_date the
+// detail view needs.
+const briefColumns = "id, vndb_id, name_en_us, name_ja_jp, name_zh_cn, name_zh_tw, " +
+	"banner, content_limit, status, user_id, resource_update_time, original_language, age_limit"
+
+const detailColumns = briefColumns +
+	", intro_en_us, intro_ja_jp, intro_zh_cn, intro_zh_tw, release_date, release_date_tba"
+
+// galgameVisibilityScope is the shared row-visibility filter for the brief /
+// detail batch queries: published (status=0) plus, when a viewer is given, that
+// viewer's own pending/declined (3/4) rows; with the optional content_limit
+// filter. One source of truth so the visibility rule lives in a single place.
+func galgameVisibilityScope(viewerUserID int, contentLimit string) func(*gorm.DB) *gorm.DB {
+	return func(db *gorm.DB) *gorm.DB {
+		if viewerUserID > 0 {
+			db = db.Where("status = 0 OR (status IN (3, 4) AND user_id = ?)", viewerUserID)
+		} else {
+			db = db.Where("status = 0")
+		}
+		if contentLimit != "" {
+			db = db.Where("content_limit = ?", contentLimit)
+		}
+		return db
 	}
+}
+
+// FindByIDs finds published galgames by a list of IDs (lightweight, no
+// relations). status is selected so the brief can carry it through, though it's
+// always 0 on this path. contentLimit follows ParseContentLimit ("" = no filter).
+func (r *GalgameRepository) FindByIDs(ctx context.Context, ids []int, contentLimit string) ([]model.Galgame, error) {
 	var galgames []model.Galgame
-	err := q.Find(&galgames).Error
+	err := r.db.WithContext(ctx).
+		Select(briefColumns).
+		Where("id IN ?", ids).
+		Scopes(galgameVisibilityScope(0, contentLimit)).
+		Find(&galgames).Error
 	return galgames, err
 }
 
@@ -218,7 +240,7 @@ func (r *GalgameRepository) FindByIDsAny(ctx context.Context, ids []int) ([]mode
 	}
 	var galgames []model.Galgame
 	err := r.db.WithContext(ctx).
-		Select("id, vndb_id, name_en_us, name_ja_jp, name_zh_cn, name_zh_tw, banner, content_limit, status, user_id, resource_update_time, original_language, age_limit").
+		Select(briefColumns).
 		Where("id IN ?", ids).
 		Find(&galgames).Error
 	return galgames, err
@@ -236,19 +258,57 @@ func (r *GalgameRepository) FindByIDsAny(ctx context.Context, ids []int) ([]mode
 // content_limit=sfw, you won't see it in batch results either (consistent
 // with how List/search behave for the same caller's data).
 func (r *GalgameRepository) FindByIDsWithViewer(ctx context.Context, ids []int, viewerUserID int, contentLimit string) ([]model.Galgame, error) {
-	if viewerUserID <= 0 {
-		return r.FindByIDs(ctx, ids, contentLimit)
-	}
-	q := r.db.WithContext(ctx).
-		Select("id, vndb_id, name_en_us, name_ja_jp, name_zh_cn, name_zh_tw, banner, content_limit, status, user_id, resource_update_time, original_language, age_limit").
+	var galgames []model.Galgame
+	err := r.db.WithContext(ctx).
+		Select(briefColumns).
 		Where("id IN ?", ids).
-		Where("status = 0 OR (status IN (3, 4) AND user_id = ?)", viewerUserID)
-	if contentLimit != "" {
-		q = q.Where("content_limit = ?", contentLimit)
+		Scopes(galgameVisibilityScope(viewerUserID, contentLimit)).
+		Find(&galgames).Error
+	return galgames, err
+}
+
+// FindDetailByIDs is FindByIDsWithViewer with the extra columns the detail view
+// needs (intro_* + release_date). Heavier than the brief query — only the
+// view=detail batch path uses it; the brief path stays narrow. Safe for empty.
+func (r *GalgameRepository) FindDetailByIDs(ctx context.Context, ids []int, viewerUserID int, contentLimit string) ([]model.Galgame, error) {
+	if len(ids) == 0 {
+		return nil, nil
 	}
 	var galgames []model.Galgame
-	err := q.Find(&galgames).Error
+	err := r.db.WithContext(ctx).
+		Select(detailColumns).
+		Where("id IN ?", ids).
+		Scopes(galgameVisibilityScope(viewerUserID, contentLimit)).
+		Find(&galgames).Error
 	return galgames, err
+}
+
+// OfficialNames returns {galgame_id → [maker names]} for the given ids,
+// resolving the galgame_official_relation → galgame_official join. Used by the
+// detail view to render "由 <maker> 制作". Safe for empty input.
+func (r *GalgameRepository) OfficialNames(ctx context.Context, ids []int) (map[int][]string, error) {
+	out := make(map[int][]string, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	type row struct {
+		GalgameID int
+		Name      string
+	}
+	var rows []row
+	if err := r.db.WithContext(ctx).
+		Table("galgame_official_relation AS rel").
+		Select("rel.galgame_id AS galgame_id, o.name AS name").
+		Joins("JOIN galgame_official AS o ON o.id = rel.official_id").
+		Where("rel.galgame_id IN ?", ids).
+		Order("rel.galgame_id, o.name").
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, rw := range rows {
+		out[rw.GalgameID] = append(out[rw.GalgameID], rw.Name)
+	}
+	return out, nil
 }
 
 // PinnedCoverHashes returns the {galgame_id → image_hash} mapping of the

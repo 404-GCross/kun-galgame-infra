@@ -172,6 +172,10 @@ type UpdateGalgameRequest struct {
 type BatchGetGalgameRequest struct {
 	IDs          []int  `query:"ids" validate:"required,min=1,max=100"`
 	ContentLimit string `query:"content_limit" validate:"omitempty,oneof=sfw nsfw all"`
+	// View selects the response representation: "" / "brief" → GalgameBrief
+	// (default, lightweight); "detail" → GalgameDetailBrief (adds intro /
+	// officials / release date for richer list cards).
+	View string `query:"view" validate:"omitempty,oneof=brief detail"`
 }
 
 // GalgameBrief is a lightweight galgame info for cross-service display.
@@ -201,6 +205,24 @@ type GalgameBrief struct {
 	ResourceUpdateTime string  `json:"resource_update_time"`
 	OriginalLanguage   string  `json:"original_language"`
 	AgeLimit           string  `json:"age_limit"`
+}
+
+// GalgameDetailBrief is GalgameBrief plus the introduction, officials, and
+// release date richer list views need (e.g. a "new Galgame" feed card). Served
+// by GET /galgame/batch?view=detail — kept distinct so GalgameBrief stays
+// lightweight for messages / profile lists / the default batch. Officials are
+// bare maker names; the caller joins them (e.g. with 、) for "由 X 制作".
+// release_date is "" when unknown (release_date_tba distinguishes "scheduled,
+// no exact date" from "truly unknown").
+type GalgameDetailBrief struct {
+	GalgameBrief
+	ReleaseDate    string   `json:"release_date"`
+	ReleaseDateTBA bool     `json:"release_date_tba"`
+	IntroEnUS      string   `json:"intro_en_us"`
+	IntroJaJP      string   `json:"intro_ja_jp"`
+	IntroZhCN      string   `json:"intro_zh_cn"`
+	IntroZhTW      string   `json:"intro_zh_tw"`
+	Officials      []string `json:"officials"`
 }
 
 // CheckVNDBRequest represents a VNDB existence check

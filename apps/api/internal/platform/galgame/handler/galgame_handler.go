@@ -217,11 +217,22 @@ func (h *GalgameHandler) BatchGet(c fiber.Ctx) error {
 
 	viewerUserID, _ := c.Locals("user_id").(uint)
 	contentLimit := utils.ParseContentLimit(req.ContentLimit, "")
+
+	// view=detail returns the richer GalgameDetailBrief (intro / officials /
+	// release date); any other value (incl. empty) returns the lightweight
+	// GalgameBrief.
+	if req.View == "detail" {
+		items, err := h.galgameService.BatchDetailWithViewer(c.Context(), req.IDs, int(viewerUserID), contentLimit)
+		if err != nil {
+			return response.InternalError(c, errors.ErrOperationFailed)
+		}
+		return response.Success(c, items)
+	}
+
 	items, err := h.galgameService.BatchGetWithViewer(c.Context(), req.IDs, int(viewerUserID), contentLimit)
 	if err != nil {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
-
 	return response.Success(c, items)
 }
 
