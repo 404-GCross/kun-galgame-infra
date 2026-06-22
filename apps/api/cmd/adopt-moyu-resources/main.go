@@ -122,11 +122,8 @@ func main() {
 	sem := make(chan struct{}, *concurrency)
 	var wg sync.WaitGroup
 	for _, r := range rows {
-		r := r
 		sem <- struct{}{}
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			defer func() { <-sem }()
 
 			name := path.Base(r.S3Key) // the real (CJK-preserving) filename
@@ -206,7 +203,7 @@ func main() {
 				return
 			}
 			atomic.AddInt64(&copied, 1)
-		}()
+		})
 	}
 	wg.Wait()
 
