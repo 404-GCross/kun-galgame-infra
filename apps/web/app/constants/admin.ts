@@ -6,6 +6,8 @@ export interface SidebarItem {
   label: string
   to?: string
   adminOnly?: boolean
+  // renOnly entries are visible only to the ren(莲) role (stricter than admin).
+  renOnly?: boolean
   children?: SidebarItem[]
 }
 
@@ -23,8 +25,8 @@ export const SIDEBAR_MENU: SidebarItem[] = [
     adminOnly: true,
     children: [
       { icon: 'lucide:chart-pie', label: '用量概览', to: '/artifacts', adminOnly: true },
-      { icon: 'lucide:files', label: '文件列表', to: '/artifacts/list', adminOnly: true },
-      { icon: 'lucide:sliders-horizontal', label: '存储配置', to: '/artifacts/config', adminOnly: true },
+      { icon: 'lucide:files', label: '文件列表', to: '/artifacts/list', renOnly: true },
+      { icon: 'lucide:sliders-horizontal', label: '存储配置', to: '/artifacts/config', renOnly: true },
     ],
   },
   { icon: 'lucide:user', label: '个人信息', to: '/profile' },

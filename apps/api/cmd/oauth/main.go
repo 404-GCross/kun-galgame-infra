@@ -281,7 +281,7 @@ func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 	oauthClients.Get("/", siteH.ListClients)
 	oauthClients.Post("/", siteH.CreateClient)
 	oauthClients.Put("/:id", siteH.UpdateClient)
-	oauthClients.Put("/:id/storage", siteH.UpdateClientStorage)
+	oauthClients.Put("/:id/storage", middleware.RequireRole("ren"), siteH.UpdateClientStorage)
 	oauthClients.Delete("/:id", siteH.DeleteClient)
 
 	// Image admin routes — best-effort; if images DB or S3 are unreachable
@@ -407,9 +407,11 @@ func registerArtifactAdmin(cfg *config.Config, admin fiber.Router) {
 	adminH := artifactHandler.NewAdmin(artifactsDB.DB(), statsRepo)
 
 	g := admin.Group("/artifact")
-	g.Get("/list", adminH.List)
+	// Stats power the admin dashboard (用量概览) — admin-visible.
 	g.Get("/stats", adminH.Stats)
-	g.Delete("/:uuid", adminH.Delete)
+	// Browsing individual files + soft-deleting them is ren(莲)-only.
+	g.Get("/list", middleware.RequireRole("ren"), adminH.List)
+	g.Delete("/:uuid", middleware.RequireRole("ren"), adminH.Delete)
 
 	slog.Info("artifact admin endpoints registered under /api/v1/admin/artifact/*")
 }

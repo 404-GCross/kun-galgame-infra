@@ -24,13 +24,14 @@ const isSidebarCollapsed = ref(false)
 // always visible via md:translate-x-0.
 const isMobileMenuOpen = ref(false)
 
+const canSee = (item: SidebarItem) =>
+  (!item.adminOnly || auth.isAdmin.value) && (!item.renOnly || auth.isRen.value)
+
 const visibleMenu = computed(() =>
-  SIDEBAR_MENU.filter((item) => !item.adminOnly || auth.isAdmin.value).map(
-    (item) => ({
-      ...item,
-      children: item.children?.filter((c) => !c.adminOnly || auth.isAdmin.value)
-    })
-  )
+  SIDEBAR_MENU.filter(canSee).map((item) => ({
+    ...item,
+    children: item.children?.filter(canSee)
+  }))
 )
 
 // Expanded state for collapsible sidebar groups (keyed by label). A group is
