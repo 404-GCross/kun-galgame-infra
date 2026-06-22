@@ -157,7 +157,9 @@ func main() {
 			}
 
 			// CopySource must be URL-encoded (keys carry CJK); EscapedPath keeps "/".
-			copySource := (&url.URL{Path: *srcBucket + "/" + r.S3Key}).EscapedPath()
+			// EscapedPath leaves "+" literal, but B2 decodes a literal "+" in
+			// x-amz-copy-source as a space → NoSuchKey, so percent-encode it.
+			copySource := strings.ReplaceAll((&url.URL{Path: *srcBucket + "/" + r.S3Key}).EscapedPath(), "+", "%2B")
 			in := &s3.CopyObjectInput{
 				Bucket:             aws.String(dstBucket),
 				Key:                aws.String(dstKey),
