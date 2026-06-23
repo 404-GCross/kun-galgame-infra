@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"api/internal/platform/auth/dto"
 	"api/internal/platform/auth/model"
 	"api/internal/platform/auth/repository"
 	"api/pkg/errors"
@@ -26,12 +27,13 @@ const CreatorRoleName = "creator"
 // Eligibility is gated downstream (forum/moyu); this owns the queue, the admin
 // decision, and the role grant. See docs/auth/01-creator-role-design.md.
 type CreatorApplicationService struct {
-	repo     *repository.CreatorApplicationRepository
-	userRepo *repository.UserRepository
+	repo         *repository.CreatorApplicationRepository
+	userRepo     *repository.UserRepository
+	userBatchSvc *UserBatchService
 }
 
-func NewCreatorApplicationService(repo *repository.CreatorApplicationRepository, userRepo *repository.UserRepository) *CreatorApplicationService {
-	return &CreatorApplicationService{repo: repo, userRepo: userRepo}
+func NewCreatorApplicationService(repo *repository.CreatorApplicationRepository, userRepo *repository.UserRepository, userBatchSvc *UserBatchService) *CreatorApplicationService {
+	return &CreatorApplicationService{repo: repo, userRepo: userRepo, userBatchSvc: userBatchSvc}
 }
 
 // Apply files a pending application for userID. Guards: not already a creator,
@@ -92,14 +94,53 @@ func (s *CreatorApplicationService) MyApplication(ctx context.Context, userID ui
 	return app, err
 }
 
-func (s *CreatorApplicationService) List(ctx context.Context, status string, page, limit int) ([]model.CreatorApplication, int64, error) {
+// AdminApplicationItem is one row of the admin review queue: the application
+// plus its applicant's brief, resolved server-side so the admin UI renders
+// names/avatars in a single round-trip. This is the clean alternative to the
+// browser calling /users/batch — that endpoint is S2S-only (client Basic auth)
+// and must not be hit from the frontend (it returns 401 with a user JWT).
+type AdminApplicationItem struct {
+	*model.CreatorApplication
+	User *dto.UserBrief `json:"user"`
+}
+
+// List returns a page of applications for the admin queue, each enriched with
+// its applicant brief (one batched user lookup for the whole page).
+func (s *CreatorApplicationService) List(ctx context.Context, status string, page, limit int) ([]AdminApplicationItem, int64, error) {
 	if page <= 0 {
 		page = 1
 	}
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
-	return s.repo.ListByStatus(ctx, status, page, limit)
+	apps, total, err := s.repo.ListByStatus(ctx, status, page, limit)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	ids := make([]uint, 0, len(apps))
+	for i := range apps {
+		ids = append(ids, apps[i].UserID)
+	}
+	briefByID := make(map[uint]*dto.UserBrief, len(ids))
+	if len(ids) > 0 {
+		res, err := s.userBatchSvc.GetBriefs(ctx, ids)
+		if err != nil {
+			return nil, 0, err
+		}
+		for i := range res.Users {
+			briefByID[res.Users[i].ID] = &res.Users[i]
+		}
+	}
+
+	items := make([]AdminApplicationItem, len(apps))
+	for i := range apps {
+		items[i] = AdminApplicationItem{
+			CreatorApplication: &apps[i],
+			User:               briefByID[apps[i].UserID],
+		}
+	}
+	return items, total, nil
 }
 
 // Approve grants the creator role and marks the application approved. The role

@@ -5,6 +5,11 @@
 // docs/auth/01-creator-role-design.md.
 const api = useApi()
 
+interface UserBrief {
+  id: number
+  name: string
+  avatar: string
+}
 interface CreatorApplication {
   id: number
   user_id: number
@@ -15,11 +20,10 @@ interface CreatorApplication {
   decline_reason: string
   reviewed_at: string | null
   created_at: string
-}
-interface UserBrief {
-  id: number
-  name: string
-  avatar: string
+  // Applicant brief, embedded server-side by /admin/creator/applications so the
+  // admin UI needs no separate (S2S-only) /users/batch hydrate. Null if the
+  // user row no longer exists.
+  user: UserBrief | null
 }
 
 type AppStatus = 'pending' | 'approved' | 'declined'
@@ -62,32 +66,6 @@ const applications = computed(() => data.value?.items ?? [])
 const total = computed(() => data.value?.total ?? 0)
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / limit)))
 const isLoading = computed(() => status.value === 'pending')
-
-// The application only carries user_id; resolve display names via the user
-// batch endpoint (best-effort — falls back to "用户 #id").
-const userMap = ref<Record<number, UserBrief>>({})
-watch(
-  applications,
-  async (apps) => {
-    const ids = [...new Set(apps.map((a) => a.user_id))].filter(
-      (id) => !userMap.value[id]
-    )
-    if (!ids.length) {
-      return
-    }
-    const res = await api.get<{ users: UserBrief[] }>('/users/batch', {
-      ids: ids.join(','),
-    })
-    if (res.code === 0 && res.data?.users) {
-      const next = { ...userMap.value }
-      for (const u of res.data.users) {
-        next[u.id] = u
-      }
-      userMap.value = next
-    }
-  },
-  { immediate: true }
-)
 
 const setTab = (s: AppStatus) => {
   statusFilter.value = s
@@ -192,7 +170,7 @@ const confirmDecline = async () => {
     >
       <div class="flex flex-wrap items-center gap-2">
         <span class="text-foreground font-medium">
-          {{ userMap[app.user_id]?.name || `用户 #${app.user_id}` }}
+          {{ app.user?.name || `用户 #${app.user_id}` }}
         </span>
         <KunChip color="default" variant="flat" size="sm">
           {{ SOURCE_LABEL[app.source] || app.source }}
