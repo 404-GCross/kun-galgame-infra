@@ -70,7 +70,7 @@ func (r *RevisionRepository) ListRecentMerged(ctx context.Context, sinceID int64
 	// since_id=0 backfill can scan up to 50×1000 rows; loading a full galgame
 	// snapshot per row just to drop it in the DTO would read tens of MB for
 	// nothing.
-	err := q.Select("id", "galgame_id", "user_id", "action", "created").
+	err := q.Select("id", "galgame_id", "revision", "user_id", "action", "created").
 		Order("id ASC").Limit(limit).Find(&items).Error
 	return items, err
 }

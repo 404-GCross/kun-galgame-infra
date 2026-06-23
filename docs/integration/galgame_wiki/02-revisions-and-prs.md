@@ -193,6 +193,7 @@
       {
         "id": 8231,
         "galgame_id": 1207,
+        "revision": 2,
         "user_id": 42,
         "action": "merged",
         "created": "2026-01-02T03:04:05Z"
@@ -205,8 +206,9 @@
 
 | 字段 | 说明 |
 |------|------|
-| id | `galgame_revision.id`,作游标 |
+| id | `galgame_revision.id`（全局行号），作游标 |
 | galgame_id | 被编辑的 galgame |
+| revision | 该 galgame 内的**第几版**（per-galgame 递增号）。与 `galgame_id` 一起即可直接拼 [GET /galgame/:gid/revisions/:rev/diff](#get-galgamegidrevisionsrevdiff)（`:rev` = 这个 `revision`，**不是 `id`**），也是「第 N 版」展示标签。**注意**：diff 端点按 `revision` 而非 `id` 寻址——别拿 `id` 去拼 diff URL（会 404）。 |
 | user_id | **编辑者**(= 合并时的 `pr.user_id`),即正确的动态 actor |
 | action | 目前恒为 `merged` |
 | created | 编辑落地时间 |

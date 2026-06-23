@@ -17,11 +17,17 @@ type RecentRevisionsRequest struct {
 }
 
 // RevisionFeedItem is one "edit landed" event for downstream activity
-// timelines. Minimal by design — who (UserID = the editor), which (GalgameID),
-// when (Created). ID is galgame_revision.id, used as the feed cursor.
+// timelines. who (UserID = the editor), which (GalgameID), when (Created).
+//
+// ID is galgame_revision.id (global) — used as the feed cursor. Revision is the
+// per-galgame sequential number; together with GalgameID it's what the diff
+// endpoint keys on (GET /galgame/:gid/revisions/:revision/diff) and the
+// human-facing label ("第 N 版"). Carrying both makes a feed item self-describing
+// (cursor + diff link + label) without a follow-up id→number lookup.
 type RevisionFeedItem struct {
 	ID        int64  `json:"id"`
 	GalgameID int    `json:"galgame_id"`
+	Revision  int    `json:"revision"`
 	UserID    int    `json:"user_id"`
 	Action    string `json:"action"`
 	Created   string `json:"created"`

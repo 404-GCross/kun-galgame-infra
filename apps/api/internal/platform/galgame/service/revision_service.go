@@ -131,6 +131,7 @@ func (s *GalgameService) ListRecentRevisions(ctx context.Context, sinceID int64,
 		out[i] = dto.RevisionFeedItem{
 			ID:        int64(rev.ID),
 			GalgameID: rev.GalgameID,
+			Revision:  rev.Revision,
 			UserID:    rev.UserID,
 			Action:    rev.Action,
 			Created:   rev.Created.Time().UTC().Format("2006-01-02T15:04:05Z"),
