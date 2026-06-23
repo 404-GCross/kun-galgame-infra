@@ -9,8 +9,6 @@ onMounted(() => {
       '__VUE_DEVTOOLS_NEXT_PLUGIN_SETTINGS__dev.esm.pinia__',
       '{"logStoreChanges":false}'
     )
-    // Disable umami for dev
-    localStorage.setItem('umami.disabled', '1')
   }
 })
 </script>

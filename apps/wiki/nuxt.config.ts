@@ -18,8 +18,7 @@ export default defineNuxtConfig({
     '@nuxtjs/color-mode',
     '@pinia/nuxt',
     'pinia-plugin-persistedstate/nuxt',
-    'nuxt-schema-org',
-    'nuxt-umami'
+    'nuxt-schema-org'
   ],
 
   devServer: {
@@ -51,12 +50,6 @@ export default defineNuxtConfig({
   vite: {
     // @ts-expect-error ts-expect-error
     plugins: [tailwindcss()]
-  },
-
-  umami: {
-    id: process.env.KUN_VISUAL_NOVEL_FORUM_UMAMI_ID,
-    host: 'https://stats.kungal.org/',
-    autoTrack: true
   },
 
   runtimeConfig: {
