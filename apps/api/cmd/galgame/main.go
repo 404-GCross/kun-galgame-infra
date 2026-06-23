@@ -249,6 +249,13 @@ func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB, se
 		middleware.OAuthClientBasicAuth(oauthClientRepo),
 		revisionH.RecentRevisions,
 	)
+	// /taxonomy/recent: kungal/moyu cron pulls taxonomy change events (e.g.
+	// series creation) here via Basic Auth → mirror into their local timelines.
+	// Filterable by ?entity=&action= (e.g. entity=series&action=created).
+	galgame.Get("/taxonomy/recent",
+		middleware.OAuthClientBasicAuth(oauthClientRepo),
+		taxRevH.RecentFeed,
+	)
 
 	// ─── Bearer JWT fence — every route below this point inherits jwtAuth ───
 	galgameAuth := galgame.Group("", jwtAuth)

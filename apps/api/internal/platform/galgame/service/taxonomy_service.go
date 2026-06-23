@@ -67,6 +67,53 @@ func (s *TaxonomyService) ListRevisions(ctx context.Context, entity string, targ
 	return s.taxRevRepo.List(ctx, entity, targetID, page, limit)
 }
 
+// ListRecentTaxonomy returns the cross-entity "taxonomy changed" feed for
+// downstream activity timelines (e.g. the forum's "new series created" card).
+// Same shape/contract as GalgameService.ListRecentRevisions: id cursor +
+// has_more. Each item is self-describing — the entity's display name is read
+// from its revision snapshot so a consumer needs no follow-up fetch.
+func (s *TaxonomyService) ListRecentTaxonomy(ctx context.Context, entity, action string, sinceID int64, limit int) (*dto.TaxonomyFeedResponse, error) {
+	if limit <= 0 {
+		limit = 1000
+	}
+	if limit > 5000 {
+		limit = 5000
+	}
+	items, err := s.taxRevRepo.ListRecent(ctx, entity, action, sinceID, limit)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]dto.TaxonomyFeedItem, len(items))
+	for i, rev := range items {
+		out[i] = dto.TaxonomyFeedItem{
+			ID:       int64(rev.ID),
+			Entity:   rev.Entity,
+			TargetID: rev.TargetID,
+			Revision: rev.Revision,
+			Action:   rev.Action,
+			UserID:   rev.UserID,
+			Name:     snapshotName(rev.Snapshot),
+			Created:  rev.Created.Time().UTC().Format("2006-01-02T15:04:05Z"),
+		}
+	}
+	return &dto.TaxonomyFeedResponse{Items: out, HasMore: len(items) == limit}, nil
+}
+
+// snapshotName extracts the entity's display name from a taxonomy_revision
+// snapshot. All four entity snapshots (tag/official/engine/series) carry a
+// top-level `name`, so one generic parse covers every entity. Returns "" on a
+// missing/unparseable snapshot — callers treat that as "no name available".
+func snapshotName(snapshot datatypes.JSON) string {
+	if len(snapshot) == 0 {
+		return ""
+	}
+	var s struct {
+		Name string `json:"name"`
+	}
+	_ = json.Unmarshal(snapshot, &s)
+	return s.Name
+}
+
 // GetRevision returns one specific revision row by (entity, target, revision).
 func (s *TaxonomyService) GetRevision(ctx context.Context, entity string, targetID, revision int) (*model.TaxonomyRevision, error) {
 	if !isValidEntity(entity) {

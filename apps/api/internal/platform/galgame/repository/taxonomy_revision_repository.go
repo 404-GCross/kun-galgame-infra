@@ -43,6 +43,32 @@ func (r *TaxonomyRevisionRepository) List(ctx context.Context, entity string, ta
 	return items, total, err
 }
 
+// ListRecent returns the cross-entity "taxonomy changed" feed ordered by id ASC
+// (sinceID = exclusive lower-bound cursor), optionally filtered by entity and
+// action. Mirrors RevisionRepository.ListRecentMerged. The snapshot IS selected
+// here — taxonomy snapshots are small (name/desc/aliases, not the heavy galgame
+// snapshot jsonb) — so the service can extract the display name without a second
+// query.
+func (r *TaxonomyRevisionRepository) ListRecent(ctx context.Context, entity, action string, sinceID int64, limit int) ([]model.TaxonomyRevision, error) {
+	var items []model.TaxonomyRevision
+	q := r.db.WithContext(ctx).Model(&model.TaxonomyRevision{})
+	if entity != "" {
+		q = q.Where("entity = ?", entity)
+	}
+	if action != "" {
+		q = q.Where("action = ?", action)
+	}
+	if sinceID > 0 {
+		q = q.Where("id > ?", sinceID)
+	}
+	err := q.
+		Select("id", "entity", "target_id", "revision", "action", "user_id", "snapshot", "created").
+		Order("id ASC").
+		Limit(limit).
+		Find(&items).Error
+	return items, err
+}
+
 // FindByEntityTargetRevision loads a specific revision for an entity
 // row. Used by Revert (to load the target snapshot) and by the
 // "view revision N" admin endpoint.

@@ -28,6 +28,23 @@ func NewTaxonomyRevisionHandler(svc *service.TaxonomyService) *TaxonomyRevisionH
 	return &TaxonomyRevisionHandler{svc: svc}
 }
 
+// RecentFeed serves GET /galgame/taxonomy/recent — the cross-entity "taxonomy
+// changed" feed consumed by downstream crons (kungal/moyu) to mirror taxonomy
+// activity (e.g. "new series created") into their local timelines. Basic-Auth
+// (OAuth client), same as /revisions/recent and /messages/feed. entity/action
+// are optional filters (e.g. ?entity=series&action=created).
+func (h *TaxonomyRevisionHandler) RecentFeed(c fiber.Ctx) error {
+	var req dto.RecentTaxonomyRequest
+	if err := c.Bind().Query(&req); err != nil {
+		return response.BadRequest(c, apperr.ErrBadRequest)
+	}
+	resp, err := h.svc.ListRecentTaxonomy(c.Context(), req.Entity, req.Action, req.SinceID, req.Limit)
+	if err != nil {
+		return response.InternalError(c, apperr.ErrOperationFailed)
+	}
+	return response.Success(c, resp)
+}
+
 // listRevisions answers GET /<entity>/:id/revisions with newest-first pagination.
 // entity MUST be one of the four taxonomy entity discriminators.
 func (h *TaxonomyRevisionHandler) listRevisions(c fiber.Ctx, entity string) error {

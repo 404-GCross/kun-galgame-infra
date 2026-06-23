@@ -304,6 +304,7 @@ admin 在 wiki 后台审核队列看到这条
 |---|---|---|
 | `MessageFeed(ctx, sinceID, limit)` | GET `/galgame/messages/feed` | cron 拉新消息（approved/declined/banned/unbanned） |
 | `RecentRevisions(ctx, sinceID, limit)` | GET `/galgame/revisions/recent` | cron 拉最近编辑（merged 修订），镜像进本地动态时间线 |
+| `RecentTaxonomy(ctx, entity, action, sinceID, limit)` | GET `/galgame/taxonomy/recent` | cron 拉分类变更（如 series 新建），镜像进本地动态时间线（见 [02 GET /galgame/taxonomy/recent](./02-revisions-and-prs.md#get-galgametaxonomyrecent)） |
 
 ### 5.3 调用样板
 
