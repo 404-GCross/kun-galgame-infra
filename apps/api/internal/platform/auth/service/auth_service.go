@@ -234,10 +234,11 @@ func (s *AuthService) Register(ctx context.Context, req *dto.RegisterRequest) (*
 		return nil, nil, err
 	}
 
-	// Create user
+	// Create user. Store the email normalized (the existence check above is
+	// case-insensitive, so this can't collide) — keeps stored data canonical.
 	user := &model.User{
 		Name:     req.Name,
-		Email:    req.Email,
+		Email:    model.NormalizeEmail(req.Email),
 		Password: &hashedPassword,
 	}
 
@@ -818,8 +819,9 @@ func (s *AuthService) ChangeEmail(ctx context.Context, userUUID, code, newEmail 
 		return errors.NewWithCode(errors.ErrAuthEmailExists)
 	}
 
-	// Update email
-	if err := s.userRepo.UpdateEmail(ctx, userUUID, newEmail); err != nil {
+	// Update email (store normalized — the uniqueness check above is
+	// case-insensitive, so the canonical form can't collide with another user).
+	if err := s.userRepo.UpdateEmail(ctx, userUUID, model.NormalizeEmail(newEmail)); err != nil {
 		return err
 	}
 

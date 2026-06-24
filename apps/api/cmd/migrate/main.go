@@ -76,6 +76,18 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Case-insensitive email lookups. Login / forgot-password / existence checks
+	// query LOWER(email) (email is case-insensitive in practice); this functional
+	// index keeps those lookups index-backed. NON-unique on purpose: legacy data
+	// has a few case-variant duplicate emails, so a unique LOWER(email) index
+	// can't be created until those are deduped.
+	if err := gormDB.Exec(`
+		CREATE INDEX IF NOT EXISTS idx_users_email_lower ON users (LOWER(email))
+	`).Error; err != nil {
+		slog.Error("failed to create users LOWER(email) index", "error", err)
+		os.Exit(1)
+	}
+
 	// Create initial data if needed
 	if err := seedInitialData(gormDB); err != nil {
 		slog.Error("failed to seed initial data", "error", err)

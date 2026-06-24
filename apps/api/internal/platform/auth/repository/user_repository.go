@@ -156,9 +156,12 @@ func (r *UserRepository) FindByIDsWithRoles(ctx context.Context, ids []uint) ([]
 }
 
 // FindByEmail finds a user by email
+// FindByEmail looks up a user by email case-insensitively (email is
+// case-insensitive in practice). Uses LOWER(email) so legacy mixed-case rows
+// match too; backed by the idx_users_email_lower functional index.
 func (r *UserRepository) FindByEmail(ctx context.Context, email string) (*model.User, error) {
 	var user model.User
-	if err := r.db.WithContext(ctx).Where("email = ?", email).First(&user).Error; err != nil {
+	if err := r.db.WithContext(ctx).Where("LOWER(email) = ?", model.NormalizeEmail(email)).First(&user).Error; err != nil {
 		return nil, err
 	}
 	return &user, nil
@@ -256,7 +259,7 @@ func (r *UserRepository) List(ctx context.Context, offset, limit int) ([]model.U
 // ExistsByEmail checks if a user exists by email
 func (r *UserRepository) ExistsByEmail(ctx context.Context, email string) (bool, error) {
 	var count int64
-	if err := r.db.WithContext(ctx).Model(&model.User{}).Where("email = ?", email).Count(&count).Error; err != nil {
+	if err := r.db.WithContext(ctx).Model(&model.User{}).Where("LOWER(email) = ?", model.NormalizeEmail(email)).Count(&count).Error; err != nil {
 		return false, err
 	}
 	return count > 0, nil
@@ -275,7 +278,7 @@ func (r *UserRepository) ExistsByName(ctx context.Context, name string) (bool, e
 func (r *UserRepository) ExistsByEmailExcluding(ctx context.Context, email, excludeUUID string) (bool, error) {
 	var count int64
 	if err := r.db.WithContext(ctx).Model(&model.User{}).
-		Where("email = ? AND uuid != ?", email, excludeUUID).
+		Where("LOWER(email) = ? AND uuid != ?", model.NormalizeEmail(email), excludeUUID).
 		Count(&count).Error; err != nil {
 		return false, err
 	}

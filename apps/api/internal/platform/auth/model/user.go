@@ -1,12 +1,22 @@
 package model
 
 import (
+	"strings"
 	"time"
 
 	siteModel "api/internal/platform/site/model"
 
 	"gorm.io/gorm"
 )
+
+// NormalizeEmail canonicalizes an email for storage and lookup: trimmed and
+// lowercased. Email is case-insensitive in practice (every major provider), so
+// "Kun@kungal.com" and "kun@kungal.com" are the same account. New rows store the
+// normalized form; lookups normalize the input AND query LOWER(email) (backed by
+// a functional index) so legacy mixed-case rows still match.
+func NormalizeEmail(email string) string {
+	return strings.ToLower(strings.TrimSpace(email))
+}
 
 // User represents the core user identity
 type User struct {
