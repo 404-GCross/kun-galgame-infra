@@ -76,10 +76,12 @@ const browserCookieName = "kg_browser"
 // cookie or minting + setting a new one (httpOnly, long-lived, host-only on the
 // OP). Behaviour-preserving for single-account — the bag is simply size 1.
 func (h *AuthHandler) browserID(c fiber.Ctx) string {
-	if id := c.Cookies(browserCookieName); id != "" {
-		return id
+	id := c.Cookies(browserCookieName)
+	if id == "" {
+		id = uuid.NewString()
 	}
-	id := uuid.NewString()
+	// Always (re)set so the anchor's 1-year TTL slides forward on every login and
+	// switch — a bag kept alive purely by switching never expires mid-use.
 	c.Cookie(&fiber.Cookie{
 		Name:     browserCookieName,
 		Value:    id,
@@ -97,10 +99,14 @@ func (h *AuthHandler) browserID(c fiber.Ctx) string {
 // §3.3). Reads the kg_browser anchor + the refresh_token (to flag the active
 // account). Cross-TLD apps use the redirect chooser instead.
 func (h *AuthHandler) ListSessions(c fiber.Ctx) error {
+	callerUUID := c.Locals("user_uuid").(string)
 	browserID := c.Cookies(browserCookieName)
 	activeRT := c.Cookies(refreshTokenCookieName)
-	items, err := h.authService.ListBrowserSessions(c.Context(), browserID, activeRT)
+	items, err := h.authService.ListBrowserSessions(c.Context(), browserID, callerUUID, activeRT)
 	if err != nil {
+		if appErr, ok := err.(*errors.AppError); ok {
+			return response.Unauthorized(c, appErr.Code)
+		}
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
 	return response.Success(c, dto.ListSessionsResponse{Items: items})
@@ -111,15 +117,16 @@ func (h *AuthHandler) ListSessions(c fiber.Ctx) error {
 // admin/ren → 10016 step-up-required, which the caller resolves via prompt=login).
 // See docs/integration/oauth/09 §3.6.
 func (h *AuthHandler) SwitchSession(c fiber.Ctx) error {
-	var req dto.SwitchSessionRequest
+	var req dto.AccountSubRequest
 	if err := c.Bind().JSON(&req); err != nil {
 		return response.BadRequest(c, errors.ErrBadRequest)
 	}
 	if err := utils.Validate(&req); err != nil {
 		return response.BadRequestMsg(c, errors.ErrValidationFailed, err.Error())
 	}
+	callerUUID := c.Locals("user_uuid").(string)
 	browserID := c.Cookies(browserCookieName)
-	tokens, user, err := h.authService.SwitchActiveSession(c.Context(), browserID, req.Sub)
+	tokens, user, err := h.authService.SwitchActiveSession(c.Context(), browserID, callerUUID, req.Sub)
 	if err != nil {
 		if appErr, ok := err.(*errors.AppError); ok {
 			return response.Unauthorized(c, appErr.Code)
@@ -127,6 +134,7 @@ func (h *AuthHandler) SwitchSession(c fiber.Ctx) error {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
 	h.setRefreshTokenCookie(c, tokens.RefreshToken)
+	h.browserID(c) // re-anchor: slide the bag cookie's TTL forward on switch-only activity
 	return response.Success(c, dto.LoginResponse{
 		User: dto.UserResponse{
 			UUID:            user.UUID,
@@ -148,18 +156,25 @@ func (h *AuthHandler) SwitchSession(c fiber.Ctx) error {
 // from this browser's bag. If it was the active account, the refresh cookie is
 // cleared (the caller reconciles / picks another). See oauth doc 09 §3.3.
 func (h *AuthHandler) LogoutAccount(c fiber.Ctx) error {
-	var req dto.LogoutAccountRequest
+	var req dto.AccountSubRequest
 	if err := c.Bind().JSON(&req); err != nil {
 		return response.BadRequest(c, errors.ErrBadRequest)
 	}
 	if err := utils.Validate(&req); err != nil {
 		return response.BadRequestMsg(c, errors.ErrValidationFailed, err.Error())
 	}
+	callerUUID := c.Locals("user_uuid").(string)
 	browserID := c.Cookies(browserCookieName)
 	activeRT := c.Cookies(refreshTokenCookieName)
-	clearedActive, err := h.authService.LogoutBrowserAccount(c.Context(), browserID, req.Sub, activeRT)
+	removed, clearedActive, err := h.authService.LogoutBrowserAccount(c.Context(), browserID, callerUUID, req.Sub, activeRT)
 	if err != nil {
+		if appErr, ok := err.(*errors.AppError); ok {
+			return response.Unauthorized(c, appErr.Code)
+		}
 		return response.InternalError(c, errors.ErrOperationFailed)
+	}
+	if !removed {
+		return response.NotFound(c, errors.ErrAuthUserNotFound)
 	}
 	if clearedActive {
 		h.clearRefreshTokenCookie(c)

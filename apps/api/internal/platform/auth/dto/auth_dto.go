@@ -51,6 +51,7 @@ type RefreshRequest struct {
 type SessionBrief struct {
 	Sub             string  `json:"sub"` // user uuid
 	Name            string  `json:"name"`
+	Email           string  `json:"email"`
 	Avatar          string  `json:"avatar"`
 	AvatarImageHash *string `json:"avatar_image_hash,omitempty"`
 	Active          bool    `json:"active"`
@@ -62,15 +63,9 @@ type ListSessionsResponse struct {
 	Items []SessionBrief `json:"items"`
 }
 
-// SwitchSessionRequest is POST /auth/sessions/switch — switch the active account
-// to `sub` (a user uuid already in this browser's bag).
-type SwitchSessionRequest struct {
-	Sub string `json:"sub" validate:"required"`
-}
-
-// LogoutAccountRequest is POST /auth/sessions/logout — remove one account (by
-// user uuid) from this browser's bag.
-type LogoutAccountRequest struct {
+// AccountSubRequest targets one account (by user uuid) in this browser's bag —
+// shared by POST /auth/sessions/switch and /auth/sessions/logout.
+type AccountSubRequest struct {
 	Sub string `json:"sub" validate:"required"`
 }
 

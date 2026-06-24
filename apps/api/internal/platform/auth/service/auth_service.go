@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math/big"
+	"slices"
 	"strings"
 	"time"
 
@@ -413,10 +414,40 @@ func (s *AuthService) Login(ctx context.Context, req *dto.LoginRequest) (*dto.To
 // entry per account), marking the active one (the account behind
 // activeRefreshToken). Powers the same-site account chooser / GET /auth/sessions;
 // cross-TLD clients use the redirect chooser instead (docs/integration/oauth/09).
-func (s *AuthService) ListBrowserSessions(ctx context.Context, browserID, activeRefreshToken string) ([]dto.SessionBrief, error) {
+// loadBag fetches this browser's session bag, batch-resolves its member users in
+// one query, and verifies the caller is a member — the shared authorization spine
+// for list/switch/logout. Returns the sessions, a userID→user map, and the active
+// account's userID (the account behind activeRefreshToken; "" to skip). A caller
+// acting on a non-empty bag it does not belong to is rejected (confused-deputy
+// guard); an empty/absent bag is not an error.
+func (s *AuthService) loadBag(ctx context.Context, browserID, callerUUID, activeRefreshToken string) ([]model.Session, map[uint]*model.User, uint, error) {
 	sessions, err := s.sessionRepo.FindByBrowserID(ctx, browserID)
 	if err != nil {
-		return nil, err
+		return nil, nil, 0, err
+	}
+
+	ids := make([]uint, 0, len(sessions))
+	seen := make(map[uint]bool, len(sessions))
+	for i := range sessions {
+		if id := sessions[i].UserID; !seen[id] {
+			seen[id] = true
+			ids = append(ids, id)
+		}
+	}
+	users, err := s.userRepo.FindByIDsWithRoles(ctx, ids)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+	usersByID := make(map[uint]*model.User, len(users))
+	callerInBag := false
+	for i := range users {
+		usersByID[users[i].ID] = &users[i]
+		if users[i].UUID == callerUUID {
+			callerInBag = true
+		}
+	}
+	if len(sessions) > 0 && !callerInBag {
+		return nil, nil, 0, errors.NewWithCode(errors.ErrAuthUnauthorized)
 	}
 
 	var activeUserID uint
@@ -425,8 +456,16 @@ func (s *AuthService) ListBrowserSessions(ctx context.Context, browserID, active
 			activeUserID = act.UserID
 		}
 	}
+	return sessions, usersByID, activeUserID, nil
+}
 
-	out := make([]dto.SessionBrief, 0, len(sessions))
+func (s *AuthService) ListBrowserSessions(ctx context.Context, browserID, callerUUID, activeRefreshToken string) ([]dto.SessionBrief, error) {
+	sessions, usersByID, activeUserID, err := s.loadBag(ctx, browserID, callerUUID, activeRefreshToken)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]dto.SessionBrief, 0, len(usersByID))
 	seen := make(map[uint]bool, len(sessions))
 	for i := range sessions {
 		sess := sessions[i]
@@ -434,13 +473,14 @@ func (s *AuthService) ListBrowserSessions(ctx context.Context, browserID, active
 			continue // one entry per account, not per session
 		}
 		seen[sess.UserID] = true
-		u, e := s.userRepo.FindByID(ctx, sess.UserID)
-		if e != nil || u == nil {
+		u := usersByID[sess.UserID]
+		if u == nil {
 			continue
 		}
 		brief := dto.SessionBrief{
 			Sub:             u.UUID,
 			Name:            u.Name,
+			Email:           u.Email,
 			Avatar:          u.Avatar,
 			AvatarImageHash: u.AvatarImageHash,
 			Active:          sess.UserID == activeUserID,
@@ -458,27 +498,24 @@ func (s *AuthService) ListBrowserSessions(ctx context.Context, browserID, active
 // refresh/rotation path for that account's session, which makes its (new)
 // refresh token the active one. Refuses privileged (admin/ren) targets with
 // ErrAuthStepUpRequired so the caller forces a fresh login (decision #3).
+// callerUUID must itself be a member of the bag (enforced by loadBag).
 // See docs/auth/02 + docs/integration/oauth/09.
-func (s *AuthService) SwitchActiveSession(ctx context.Context, browserID, targetSub string) (*dto.TokenPair, *model.User, error) {
-	if browserID == "" || targetSub == "" {
-		return nil, nil, errors.NewWithCode(errors.ErrAuthUserNotFound)
-	}
-	sessions, err := s.sessionRepo.FindByBrowserID(ctx, browserID)
+func (s *AuthService) SwitchActiveSession(ctx context.Context, browserID, callerUUID, targetSub string) (*dto.TokenPair, *model.User, error) {
+	sessions, usersByID, _, err := s.loadBag(ctx, browserID, callerUUID, "")
 	if err != nil {
 		return nil, nil, err
 	}
 	for i := range sessions {
 		sess := sessions[i]
-		user, e := s.userRepo.FindByIDWithRoles(ctx, sess.UserID)
-		if e != nil || user == nil || user.UUID != targetSub {
+		user := usersByID[sess.UserID]
+		if user == nil || user.UUID != targetSub {
 			continue
 		}
 		// Target account found in the bag. Privileged accounts require step-up
 		// — refuse the silent switch; the caller redirects via prompt=login.
-		for _, rn := range user.RoleNames() {
-			if rn == "admin" || rn == "ren" {
-				return nil, nil, errors.NewWithCode(errors.ErrAuthStepUpRequired)
-			}
+		names := user.RoleNames()
+		if slices.Contains(names, "admin") || slices.Contains(names, "ren") {
+			return nil, nil, errors.NewWithCode(errors.ErrAuthStepUpRequired)
 		}
 		// Reuse the vetted refresh+rotation path (OP-login sessions have
 		// ClientID="" so this is exactly the /auth/refresh flow).
@@ -486,41 +523,39 @@ func (s *AuthService) SwitchActiveSession(ctx context.Context, browserID, target
 		if e != nil {
 			return nil, nil, e
 		}
+		// Stamp recency (column-only, so it can't clobber the rotation above)
+		// so the chooser orders by most-recent switch.
+		_ = s.sessionRepo.TouchLastUsed(ctx, sess.ID, time.Now())
 		return tokens, user, nil
 	}
 	return nil, nil, errors.NewWithCode(errors.ErrAuthUserNotFound)
 }
 
 // LogoutBrowserAccount removes one account (by user uuid) from this browser's
-// session bag. Returns whether the removed account was the active one so the
-// caller can clear the refresh cookie. Scope = the OP bag entry; downstream app
+// session bag. Returns whether anything was removed (so the caller can 404 a
+// no-op instead of reporting a false success) and whether the removed account
+// was the active one (so the caller clears the refresh cookie). callerUUID must
+// be a bag member (enforced by loadBag). Scope = the OP bag entry; downstream app
 // sessions follow the revocation-based propagation (docs/integration/oauth/09 §3.4).
-func (s *AuthService) LogoutBrowserAccount(ctx context.Context, browserID, sub, activeRefreshToken string) (bool, error) {
-	if browserID == "" || sub == "" {
-		return false, nil
-	}
-	var activeUserID uint
-	if activeRefreshToken != "" {
-		if act, e := s.sessionRepo.FindByRefreshTokenOrPrev(ctx, activeRefreshToken); e == nil && act != nil {
-			activeUserID = act.UserID
-		}
-	}
-	sessions, err := s.sessionRepo.FindByBrowserID(ctx, browserID)
+func (s *AuthService) LogoutBrowserAccount(ctx context.Context, browserID, callerUUID, sub, activeRefreshToken string) (removed, clearedActive bool, err error) {
+	sessions, usersByID, activeUserID, err := s.loadBag(ctx, browserID, callerUUID, activeRefreshToken)
 	if err != nil {
-		return false, err
+		return false, false, err
 	}
-	clearedActive := false
 	for i := range sessions {
 		sess := sessions[i]
-		u, e := s.userRepo.FindByID(ctx, sess.UserID)
-		if e != nil || u == nil || u.UUID != sub {
+		u := usersByID[sess.UserID]
+		if u == nil || u.UUID != sub {
 			continue
 		}
-		if e := s.sessionRepo.Delete(ctx, sess.ID); e == nil && sess.UserID == activeUserID {
-			clearedActive = true
+		if e := s.sessionRepo.Delete(ctx, sess.ID); e == nil {
+			removed = true
+			if sess.UserID == activeUserID {
+				clearedActive = true
+			}
 		}
 	}
-	return clearedActive, nil
+	return removed, clearedActive, nil
 }
 
 // LogoutBrowserAll removes every account from this browser's session bag.

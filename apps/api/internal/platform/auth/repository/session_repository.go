@@ -77,6 +77,12 @@ func (r *SessionRepository) FindByBrowserID(ctx context.Context, browserID strin
 	return sessions, nil
 }
 
+// TouchLastUsed bumps a session's last_used_at as a single-column update, so it
+// can't clobber a concurrent token rotation on the same row.
+func (r *SessionRepository) TouchLastUsed(ctx context.Context, id uint, t time.Time) error {
+	return r.db.WithContext(ctx).Model(&model.Session{}).Where("id = ?", id).Update("last_used_at", t).Error
+}
+
 // Create creates a new session
 func (r *SessionRepository) Create(ctx context.Context, session *model.Session) error {
 	return r.db.WithContext(ctx).Create(session).Error
