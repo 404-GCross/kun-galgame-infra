@@ -6,6 +6,14 @@
 > OIDC Core, OIDC Back-Channel Logout, RFC 9700 (BCP 240, 2025) and RFC 6819.
 > See also [01-creator-role-design](./01-creator-role-design.md).
 
+> **Implementation status (2026-06-24)**: Phase 1 shipped — session-bag data layer
+> (`sessions.browser_id/auth_time/last_used_at`), `/auth/sessions` (+ switch/logout/
+> logout-all, Bearer + confused-deputy guard), `/oauth/authorize` `prompt=select_account|none`
+> + `login_hint`, admin step-up (`10016`); in-place switcher in apps/web + the redirect/
+> local-cache switcher in wiki. Downstream contract: `docs/integration/oauth/09`. **Not yet**:
+> forum/moyu switchers, `prompt=none` focus-reconcile, short access-TTL + audit log.
+> ⚠️ Prod needs `go run ./cmd/migrate` on `kun_galgame_infra` (deploy doesn't auto-run it).
+
 ## 0. Locked decisions
 
 | # | Decision | Consequence |
