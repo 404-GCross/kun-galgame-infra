@@ -22,6 +22,10 @@ export interface KnownAccount {
   avatar: string
   avatar_image_hash?: string | null
   email: string
+  // Roles as of when this account was last active on this browser — drives the
+  // switcher's role chip + step-up hint. May be slightly stale (best-effort,
+  // like the rest of this cache); the OP is the source of truth.
+  roles?: string[]
 }
 
 const read = (): KnownAccount[] => {

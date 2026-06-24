@@ -40,7 +40,8 @@ const rememberCurrentAccount = () => {
     name: user.name,
     avatar: user.avatar,
     avatar_image_hash: user.avatar_image_hash,
-    email: user.email
+    email: user.email,
+    roles: user.roles
   })
 }
 

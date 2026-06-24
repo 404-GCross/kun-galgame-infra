@@ -10,6 +10,7 @@
 // source of truth (a stale entry gracefully falls back to login).
 import { resolveAvatarUrl } from '~/shared/utils/resolveImage'
 import type { KnownAccount } from '~/composables/useKnownAccounts'
+import { roleColor, roleLabel, primaryRole, needsStepUp } from '~/constants/roles'
 
 const auth = useAuth()
 const { login } = useOAuthLogin()
@@ -87,9 +88,19 @@ const handleLogout = () => {
           :is-navigation="false"
         />
         <div class="min-w-0">
-          <p class="text-foreground truncate text-sm font-medium">
-            {{ auth.user.value.name }}
-          </p>
+          <div class="flex items-center gap-1.5">
+            <p class="text-foreground truncate text-sm font-medium">
+              {{ auth.user.value.name }}
+            </p>
+            <KunChip
+              v-if="primaryRole(auth.user.value.roles)"
+              :color="roleColor(primaryRole(auth.user.value.roles))"
+              variant="flat"
+              size="sm"
+            >
+              {{ roleLabel(primaryRole(auth.user.value.roles)) }}
+            </KunChip>
+          </div>
           <p class="text-default-400 truncate text-xs">
             {{ auth.user.value.email }}
           </p>
@@ -126,8 +137,21 @@ const handleLogout = () => {
             :is-navigation="false"
           />
           <div class="min-w-0">
-            <p class="text-foreground truncate text-sm">{{ account.name }}</p>
+            <div class="flex items-center gap-1.5">
+              <p class="text-foreground truncate text-sm">{{ account.name }}</p>
+              <KunChip
+                v-if="primaryRole(account.roles)"
+                :color="roleColor(primaryRole(account.roles))"
+                variant="flat"
+                size="sm"
+              >
+                {{ roleLabel(primaryRole(account.roles)) }}
+              </KunChip>
+            </div>
             <p class="text-default-400 truncate text-xs">{{ account.email }}</p>
+            <p v-if="needsStepUp(account.roles)" class="text-warning text-xs">
+              切换需重新登录
+            </p>
           </div>
         </button>
 

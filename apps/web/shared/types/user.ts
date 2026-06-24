@@ -30,6 +30,7 @@ export interface BagSession {
   email: string
   avatar: string
   avatar_image_hash?: string | null
+  roles: string[]
   active: boolean
   last_used_at: string
 }

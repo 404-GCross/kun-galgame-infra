@@ -483,6 +483,7 @@ func (s *AuthService) ListBrowserSessions(ctx context.Context, browserID, caller
 			Email:           u.Email,
 			Avatar:          u.Avatar,
 			AvatarImageHash: u.AvatarImageHash,
+			Roles:           u.RoleNames(),
 			Active:          sess.UserID == activeUserID,
 		}
 		if sess.LastUsedAt != nil {

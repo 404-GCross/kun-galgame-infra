@@ -2,6 +2,7 @@
 import { cn } from '@kungal/ui-core'
 import { resolveAvatarUrl } from '~~/shared/utils/resolveImage'
 import type { BagSession } from '~~/shared/types/user'
+import { roleColor, roleLabel, primaryRole, needsStepUp } from '~/constants/roles'
 
 // Avatar menu in the header with an in-place multi-account switcher.
 // apps/web IS the OAuth provider, so switching is done via useAccountSwitch
@@ -131,9 +132,19 @@ const handleLogout = async () => {
           :is-navigation="false"
         />
         <div class="min-w-0 flex-1">
-          <p class="text-foreground truncate text-sm font-medium">
-            {{ auth.user.value.name }}
-          </p>
+          <div class="flex items-center gap-1.5">
+            <p class="text-foreground truncate text-sm font-medium">
+              {{ auth.user.value.name }}
+            </p>
+            <KunChip
+              v-if="primaryRole(auth.user.value.roles)"
+              :color="roleColor(primaryRole(auth.user.value.roles))"
+              variant="flat"
+              size="sm"
+            >
+              {{ roleLabel(primaryRole(auth.user.value.roles)) }}
+            </KunChip>
+          </div>
           <p class="text-default-400 truncate text-xs">
             {{ auth.user.value.email }}
           </p>
@@ -185,8 +196,24 @@ const handleLogout = async () => {
               :is-navigation="false"
             />
             <div class="min-w-0 flex-1">
-              <p class="text-foreground truncate text-sm">{{ session.name }}</p>
+              <div class="flex items-center gap-1.5">
+                <p class="text-foreground truncate text-sm">{{ session.name }}</p>
+                <KunChip
+                  v-if="primaryRole(session.roles)"
+                  :color="roleColor(primaryRole(session.roles))"
+                  variant="flat"
+                  size="sm"
+                >
+                  {{ roleLabel(primaryRole(session.roles)) }}
+                </KunChip>
+              </div>
               <p class="text-default-400 truncate text-xs">{{ session.email }}</p>
+              <p
+                v-if="!session.active && needsStepUp(session.roles)"
+                class="text-warning text-xs"
+              >
+                切换需重新登录
+              </p>
             </div>
             <KunIcon
               v-if="switchingSub === session.sub"

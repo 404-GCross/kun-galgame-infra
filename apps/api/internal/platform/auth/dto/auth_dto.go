@@ -49,13 +49,14 @@ type RefreshRequest struct {
 // SessionBrief is one account in the browser's multi-account session bag
 // (docs/integration/oauth/09 §3.3). No tokens — display + identity only.
 type SessionBrief struct {
-	Sub             string  `json:"sub"` // user uuid
-	Name            string  `json:"name"`
-	Email           string  `json:"email"`
-	Avatar          string  `json:"avatar"`
-	AvatarImageHash *string `json:"avatar_image_hash,omitempty"`
-	Active          bool    `json:"active"`
-	LastUsedAt      string  `json:"last_used_at,omitempty"`
+	Sub             string   `json:"sub"` // user uuid
+	Name            string   `json:"name"`
+	Email           string   `json:"email"`
+	Avatar          string   `json:"avatar"`
+	AvatarImageHash *string  `json:"avatar_image_hash,omitempty"`
+	Roles           []string `json:"roles"` // for the chooser's role badge + step-up hint
+	Active          bool     `json:"active"`
+	LastUsedAt      string   `json:"last_used_at,omitempty"`
 }
 
 // ListSessionsResponse is the GET /auth/sessions body (the session bag).
