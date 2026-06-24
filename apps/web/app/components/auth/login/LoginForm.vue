@@ -3,7 +3,9 @@ const auth = useAuth()
 const router = useRouter()
 const route = useRoute()
 
-const account = ref('')
+// Pre-fillable via ?account= (the step-up flow passes the target account's
+// email so the user only types the password).
+const account = ref((route.query.account as string) || '')
 const password = ref('')
 const error = ref('')
 const isLoading = ref(false)

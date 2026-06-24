@@ -67,8 +67,12 @@ const handleSwitch = async (session: BagSession) => {
       return
     }
     if (result.stepUp) {
-      // Privileged target — must re-authenticate, no silent switch.
-      await navigateTo('/auth/login')
+      // Privileged target (admin/ren) — must re-authenticate, no silent switch.
+      // force=1 keeps the login form visible (we're still logged in as the
+      // current account); pre-fill the target's email so it's password-only.
+      await navigateTo(
+        `/auth/login?force=1&account=${encodeURIComponent(session.email)}`
+      )
       return
     }
     // Switch failed (account no longer in the bag, etc.) — refresh the list
