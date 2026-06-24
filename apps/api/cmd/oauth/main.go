@@ -172,6 +172,9 @@ func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 	authProtected := auth.Group("", middleware.Auth(authSvc))
 	authProtected.Post("/logout", authH.Logout)
 	authProtected.Get("/me", authH.Me)
+	// Multi-account session bag (account chooser, same-site). See
+	// docs/integration/oauth/09-account-switching.md.
+	authProtected.Get("/sessions", authH.ListSessions)
 	authProtected.Patch("/me", authH.UpdateProfile)
 	// Self-service moemoepoint ledger: the user's OWN audit rows (reduced
 	// view — no admin note/actor). Balance itself is already on /auth/me.

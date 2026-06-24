@@ -46,6 +46,22 @@ type RefreshRequest struct {
 	RefreshToken string `json:"refresh_token" validate:"required"`
 }
 
+// SessionBrief is one account in the browser's multi-account session bag
+// (docs/integration/oauth/09 §3.3). No tokens — display + identity only.
+type SessionBrief struct {
+	Sub             string  `json:"sub"` // user uuid
+	Name            string  `json:"name"`
+	Avatar          string  `json:"avatar"`
+	AvatarImageHash *string `json:"avatar_image_hash,omitempty"`
+	Active          bool    `json:"active"`
+	LastUsedAt      string  `json:"last_used_at,omitempty"`
+}
+
+// ListSessionsResponse is the GET /auth/sessions body (the session bag).
+type ListSessionsResponse struct {
+	Items []SessionBrief `json:"items"`
+}
+
 // ChangePasswordRequest represents a password change request
 type ChangePasswordRequest struct {
 	OldPassword string `json:"old_password"`

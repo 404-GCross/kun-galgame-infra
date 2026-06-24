@@ -409,6 +409,50 @@ func (s *AuthService) Login(ctx context.Context, req *dto.LoginRequest) (*dto.To
 	return tokens, user, nil
 }
 
+// ListBrowserSessions returns the accounts in this browser's session bag (one
+// entry per account), marking the active one (the account behind
+// activeRefreshToken). Powers the same-site account chooser / GET /auth/sessions;
+// cross-TLD clients use the redirect chooser instead (docs/integration/oauth/09).
+func (s *AuthService) ListBrowserSessions(ctx context.Context, browserID, activeRefreshToken string) ([]dto.SessionBrief, error) {
+	sessions, err := s.sessionRepo.FindByBrowserID(ctx, browserID)
+	if err != nil {
+		return nil, err
+	}
+
+	var activeUserID uint
+	if activeRefreshToken != "" {
+		if act, e := s.sessionRepo.FindByRefreshTokenOrPrev(ctx, activeRefreshToken); e == nil && act != nil {
+			activeUserID = act.UserID
+		}
+	}
+
+	out := make([]dto.SessionBrief, 0, len(sessions))
+	seen := make(map[uint]bool, len(sessions))
+	for i := range sessions {
+		sess := sessions[i]
+		if seen[sess.UserID] {
+			continue // one entry per account, not per session
+		}
+		seen[sess.UserID] = true
+		u, e := s.userRepo.FindByID(ctx, sess.UserID)
+		if e != nil || u == nil {
+			continue
+		}
+		brief := dto.SessionBrief{
+			Sub:             u.UUID,
+			Name:            u.Name,
+			Avatar:          u.Avatar,
+			AvatarImageHash: u.AvatarImageHash,
+			Active:          sess.UserID == activeUserID,
+		}
+		if sess.LastUsedAt != nil {
+			brief.LastUsedAt = sess.LastUsedAt.UTC().Format("2006-01-02T15:04:05Z")
+		}
+		out = append(out, brief)
+	}
+	return out, nil
+}
+
 // Logout logs out a user
 func (s *AuthService) Logout(ctx context.Context, sessionToken string) error {
 	session, err := s.sessionRepo.FindBySessionToken(ctx, sessionToken)

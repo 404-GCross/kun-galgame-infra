@@ -60,6 +60,23 @@ func (r *SessionRepository) FindByUserID(ctx context.Context, userID uint) ([]mo
 	return sessions, nil
 }
 
+// FindByBrowserID returns the non-expired sessions sharing a browser anchor —
+// the multi-account "session bag" (docs/auth/02) — newest activity first.
+// Logged-out accounts are hard-deleted, so they naturally drop out.
+func (r *SessionRepository) FindByBrowserID(ctx context.Context, browserID string) ([]model.Session, error) {
+	var sessions []model.Session
+	if browserID == "" {
+		return sessions, nil
+	}
+	if err := r.db.WithContext(ctx).
+		Where("browser_id = ? AND expires_at > ?", browserID, time.Now()).
+		Order("last_used_at DESC NULLS LAST").
+		Find(&sessions).Error; err != nil {
+		return nil, err
+	}
+	return sessions, nil
+}
+
 // Create creates a new session
 func (r *SessionRepository) Create(ctx context.Context, session *model.Session) error {
 	return r.db.WithContext(ctx).Create(session).Error

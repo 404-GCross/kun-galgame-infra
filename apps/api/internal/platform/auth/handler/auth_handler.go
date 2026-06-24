@@ -79,6 +79,20 @@ func (h *AuthHandler) browserID(c fiber.Ctx) string {
 	return id
 }
 
+// ListSessions serves GET /auth/sessions — the accounts in this browser's
+// session bag, for the same-site account chooser (docs/integration/oauth/09
+// §3.3). Reads the kg_browser anchor + the refresh_token (to flag the active
+// account). Cross-TLD apps use the redirect chooser instead.
+func (h *AuthHandler) ListSessions(c fiber.Ctx) error {
+	browserID := c.Cookies(browserCookieName)
+	activeRT := c.Cookies(refreshTokenCookieName)
+	items, err := h.authService.ListBrowserSessions(c.Context(), browserID, activeRT)
+	if err != nil {
+		return response.InternalError(c, errors.ErrOperationFailed)
+	}
+	return response.Success(c, dto.ListSessionsResponse{Items: items})
+}
+
 // SendRegisterCode handles `POST /auth/register/send-code` — the first
 // half of the two-step unified registration flow. The follow-up call is
 // `POST /auth/register` with the 6-digit code in the body. See
