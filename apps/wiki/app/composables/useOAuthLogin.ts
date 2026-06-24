@@ -53,7 +53,18 @@ export const useOAuthLogin = () => {
     secure: !import.meta.dev
   })
 
-  const login = async () => {
+  // Optional authorize params for the multi-account switcher (see
+  // docs/integration/oauth/09-account-switching.md §3.1 / §3.6):
+  //   - prompt=select_account → OP renders the account chooser
+  //   - prompt=login          → OP forces re-auth ("add another account")
+  //   - login_hint=<sub|email> → silently target a specific known account
+  // Default (no options) = the original login flow, unchanged.
+  interface AuthorizeOptions {
+    prompt?: 'select_account' | 'login' | 'none'
+    loginHint?: string
+  }
+
+  const login = async (options: AuthorizeOptions = {}) => {
     if (!import.meta.client) return
 
     const verifier = randomString(48)
@@ -72,6 +83,9 @@ export const useOAuthLogin = () => {
       code_challenge: codeChallenge,
       code_challenge_method: 'S256'
     })
+
+    if (options.prompt) params.set('prompt', options.prompt)
+    if (options.loginHint) params.set('login_hint', options.loginHint)
 
     window.location.href = `${config.public.oauthAuthorizeBase}/oauth/authorize?${params.toString()}`
   }

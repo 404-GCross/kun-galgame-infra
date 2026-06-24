@@ -1,21 +1,12 @@
 <script setup lang="ts">
 import { SIDEBAR_MENU } from '~/constants/admin'
 import { useBodyScrollLock } from '@kungal/ui-vue'
-import { resolveAvatarUrl } from '~/shared/utils/resolveImage'
 
 const auth = useAuth()
 const route = useRoute()
 const router = useRouter()
 const colorMode = useColorMode()
-
-// KunAvatar (ui ≥0.3.4) renders the URL as-is — it no longer derives a
-// thumbnail variant. Resolve the small (_100) variant here for the tiny header
-// avatar; prefers the image_service hash, falls back to the legacy `avatar`
-// URL (or sticker, inside KunAvatar) when there's no hash.
-const cdnBase = useRuntimeConfig().public.imageCdnBase as string
-const headerAvatar = computed(() =>
-  resolveAvatarUrl(auth.user.value, { cdnBase, variant: '100' }, '')
-)
+const { upsert: upsertKnownAccount } = useKnownAccounts()
 
 // Desktop-only collapse (md+). On mobile the sidebar is a full-width
 // slide-in drawer, so collapse width is irrelevant there.
@@ -38,11 +29,19 @@ const setColorMode = (mode: string) => {
   colorMode.preference = mode
 }
 
-// Open the scope chooser instead of logging out directly — the user picks
-// "this site only" vs "this site + OAuth". See AuthLogoutModal.
-const showLogoutModal = ref(false)
-const handleLogout = () => {
-  showLogoutModal.value = true
+// Remember the current account in the local known-accounts cache so the
+// switcher submenu can offer it later. Runs whenever the user resolves (initial
+// load or after returning from an OAuth switch/add). See useKnownAccounts.ts.
+const rememberCurrentAccount = () => {
+  const user = auth.user.value
+  if (!user) return
+  upsertKnownAccount({
+    sub: user.uuid,
+    name: user.name,
+    avatar: user.avatar,
+    avatar_image_hash: user.avatar_image_hash,
+    email: user.email
+  })
 }
 
 // Close the mobile drawer on navigation — a client-side route change
@@ -79,9 +78,15 @@ onMounted(async () => {
     await auth.fetchUser()
     if (!auth.user.value) {
       router.push('/auth/login')
+      return
     }
   }
+  rememberCurrentAccount()
 })
+
+// The user may also resolve asynchronously (e.g. a refresh elsewhere); keep
+// the cache in step with whoever is currently active.
+watch(() => auth.user.value?.uuid, rememberCurrentAccount)
 </script>
 
 <template>
@@ -230,30 +235,7 @@ onMounted(async () => {
             </div>
           </KunPopover>
 
-          <div v-if="auth.user.value" class="flex items-center gap-2 md:gap-3">
-            <span class="text-default-500 hidden text-sm sm:inline">
-              {{ auth.user.value.name }}
-            </span>
-            <KunAvatar
-              :user="{
-                id: 0,
-                name: auth.user.value.name,
-                avatar: headerAvatar
-              }"
-              size="md"
-              :is-navigation="false"
-            />
-            <KunButton
-              variant="light"
-              color="danger"
-              size="md"
-              is-icon-only
-              aria-label="退出登录"
-              @click="handleLogout"
-            >
-              <KunIcon name="lucide:log-out" class="size-6" />
-            </KunButton>
-          </div>
+          <AuthAccountMenu />
         </div>
       </header>
 
@@ -261,7 +243,5 @@ onMounted(async () => {
         <slot />
       </main>
     </div>
-
-    <AuthLogoutModal v-model="showLogoutModal" />
   </div>
 </template>
