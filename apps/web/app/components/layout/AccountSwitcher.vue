@@ -82,7 +82,9 @@ const handleSwitch = async (session: BagSession) => {
 
 const handleAddAccount = async () => {
   popoverRef.value?.close()
-  await navigateTo('/auth/login')
+  // force=1 so the login form shows even though we're logged in (the point is
+  // to authenticate a different account) — see LoginForm.
+  await navigateTo('/auth/login?force=1')
 }
 
 const handleLogout = async () => {

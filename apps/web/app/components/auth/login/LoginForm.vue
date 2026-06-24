@@ -11,6 +11,13 @@ const isLoading = ref(false)
 // If redirected from OAuth authorize, go back after login
 const redirectUrl = computed(() => route.query.redirect as string | undefined)
 
+// `force=1` keeps the login form visible even when a session already exists —
+// used by "add account" and the account-switch step-up, where the whole point
+// is to authenticate a DIFFERENT account. Without it onMounted would bounce the
+// still-logged-in user straight back out (the "page flashes then returns home"
+// symptom), and step-up would loop.
+const forceLogin = computed(() => route.query.force === '1')
+
 const navigateAfterLogin = () => {
   if (redirectUrl.value) {
     // Check if redirect is a relative path (same-domain) or absolute URL
@@ -43,7 +50,7 @@ const handleSubmit = async () => {
 }
 
 onMounted(async () => {
-  if (auth.isLoggedIn.value) {
+  if (auth.isLoggedIn.value && !forceLogin.value) {
     navigateAfterLogin()
   }
 })
@@ -52,8 +59,8 @@ onMounted(async () => {
 <template>
   <KunCard class="p-8">
     <div class="mb-8 text-center">
-      <h1 class="text-2xl font-bold text-foreground">欢迎回来</h1>
-      <p class="mt-2 text-default-500">登录 鲲 Galgame OAuth 管理后台</p>
+      <h1 class="text-2xl font-bold text-foreground">{{ forceLogin ? '登录其他账号' : '欢迎回来' }}</h1>
+      <p class="mt-2 text-default-500">{{ forceLogin ? '登录另一个账号以添加或切换' : '登录 鲲 Galgame OAuth 管理后台' }}</p>
     </div>
 
     <form @submit.prevent="handleSubmit">

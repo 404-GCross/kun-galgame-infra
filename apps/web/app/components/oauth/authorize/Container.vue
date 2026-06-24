@@ -220,7 +220,10 @@ const maybeAutoConsent = async () => {
 // re-entry proceeds straight to consent.
 const redirectStepUp = (sub: string) => {
   const target = buildAuthorizeUrl({ login_hint: sub })
-  router.push(`/auth/login?redirect=${encodeURIComponent(target)}`)
+  // force=1 so the login form actually shows for the re-auth (we're still logged
+  // in as the non-privileged account); without it this bounces back to authorize
+  // and loops on the step-up. See LoginForm.
+  router.push(`/auth/login?force=1&redirect=${encodeURIComponent(target)}`)
 }
 
 // Chooser row click: switch to the picked account, then proceed. On ok →
@@ -252,7 +255,9 @@ const handleChooserPick = async (sub: string) => {
 // (prompt stripped via buildAuthorizeUrl). After login the user re-enters
 // this page as the new account and proceeds to consent.
 const handleChooserAdd = () => {
-  router.push(`/auth/login?redirect=${encodeURIComponent(currentUrl.value)}`)
+  // force=1: we're logged in (the bag exists), but "add account" must show the
+  // login form for a different account rather than bounce back. See LoginForm.
+  router.push(`/auth/login?force=1&redirect=${encodeURIComponent(currentUrl.value)}`)
 }
 
 // User-initiated login — keeps the OAuth params in the redirect so
