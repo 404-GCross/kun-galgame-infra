@@ -491,6 +491,43 @@ func (s *AuthService) SwitchActiveSession(ctx context.Context, browserID, target
 	return nil, nil, errors.NewWithCode(errors.ErrAuthUserNotFound)
 }
 
+// LogoutBrowserAccount removes one account (by user uuid) from this browser's
+// session bag. Returns whether the removed account was the active one so the
+// caller can clear the refresh cookie. Scope = the OP bag entry; downstream app
+// sessions follow the revocation-based propagation (docs/integration/oauth/09 §3.4).
+func (s *AuthService) LogoutBrowserAccount(ctx context.Context, browserID, sub, activeRefreshToken string) (bool, error) {
+	if browserID == "" || sub == "" {
+		return false, nil
+	}
+	var activeUserID uint
+	if activeRefreshToken != "" {
+		if act, e := s.sessionRepo.FindByRefreshTokenOrPrev(ctx, activeRefreshToken); e == nil && act != nil {
+			activeUserID = act.UserID
+		}
+	}
+	sessions, err := s.sessionRepo.FindByBrowserID(ctx, browserID)
+	if err != nil {
+		return false, err
+	}
+	clearedActive := false
+	for i := range sessions {
+		sess := sessions[i]
+		u, e := s.userRepo.FindByID(ctx, sess.UserID)
+		if e != nil || u == nil || u.UUID != sub {
+			continue
+		}
+		if e := s.sessionRepo.Delete(ctx, sess.ID); e == nil && sess.UserID == activeUserID {
+			clearedActive = true
+		}
+	}
+	return clearedActive, nil
+}
+
+// LogoutBrowserAll removes every account from this browser's session bag.
+func (s *AuthService) LogoutBrowserAll(ctx context.Context, browserID string) error {
+	return s.sessionRepo.DeleteByBrowserID(ctx, browserID)
+}
+
 // Logout logs out a user
 func (s *AuthService) Logout(ctx context.Context, sessionToken string) error {
 	session, err := s.sessionRepo.FindBySessionToken(ctx, sessionToken)

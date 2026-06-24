@@ -68,6 +68,12 @@ type SwitchSessionRequest struct {
 	Sub string `json:"sub" validate:"required"`
 }
 
+// LogoutAccountRequest is POST /auth/sessions/logout — remove one account (by
+// user uuid) from this browser's bag.
+type LogoutAccountRequest struct {
+	Sub string `json:"sub" validate:"required"`
+}
+
 // ChangePasswordRequest represents a password change request
 type ChangePasswordRequest struct {
 	OldPassword string `json:"old_password"`

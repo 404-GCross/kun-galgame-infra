@@ -97,6 +97,14 @@ func (r *SessionRepository) DeleteByUserID(ctx context.Context, userID uint) err
 	return r.db.WithContext(ctx).Where("user_id = ?", userID).Delete(&model.Session{}).Error
 }
 
+// DeleteByBrowserID removes every session in a browser's bag (logout all).
+func (r *SessionRepository) DeleteByBrowserID(ctx context.Context, browserID string) error {
+	if browserID == "" {
+		return nil
+	}
+	return r.db.WithContext(ctx).Where("browser_id = ?", browserID).Delete(&model.Session{}).Error
+}
+
 // DeleteExpired deletes expired sessions
 func (r *SessionRepository) DeleteExpired(ctx context.Context) error {
 	return r.db.WithContext(ctx).Where("expires_at < ?", time.Now()).Delete(&model.Session{}).Error

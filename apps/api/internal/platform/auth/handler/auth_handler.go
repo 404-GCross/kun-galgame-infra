@@ -55,6 +55,19 @@ func (h *AuthHandler) clearRefreshTokenCookie(c fiber.Ctx) {
 	})
 }
 
+// clearBrowserCookie clears the kg_browser session-bag anchor (logout all).
+func (h *AuthHandler) clearBrowserCookie(c fiber.Ctx) {
+	c.Cookie(&fiber.Cookie{
+		Name:     browserCookieName,
+		Value:    "",
+		Path:     "/",
+		HTTPOnly: true,
+		Secure:   h.cfg.Server.Env == "production",
+		SameSite: fiber.CookieSameSiteLaxMode,
+		MaxAge:   -1,
+	})
+}
+
 // browserCookieName anchors the multi-account "session bag" (docs/auth/02): all
 // OP login sessions sharing this opaque id belong to the same browser.
 const browserCookieName = "kg_browser"
@@ -129,6 +142,41 @@ func (h *AuthHandler) SwitchSession(c fiber.Ctx) error {
 		},
 		AccessToken: tokens.AccessToken,
 	})
+}
+
+// LogoutAccount serves POST /auth/sessions/logout {sub} — remove one account
+// from this browser's bag. If it was the active account, the refresh cookie is
+// cleared (the caller reconciles / picks another). See oauth doc 09 §3.3.
+func (h *AuthHandler) LogoutAccount(c fiber.Ctx) error {
+	var req dto.LogoutAccountRequest
+	if err := c.Bind().JSON(&req); err != nil {
+		return response.BadRequest(c, errors.ErrBadRequest)
+	}
+	if err := utils.Validate(&req); err != nil {
+		return response.BadRequestMsg(c, errors.ErrValidationFailed, err.Error())
+	}
+	browserID := c.Cookies(browserCookieName)
+	activeRT := c.Cookies(refreshTokenCookieName)
+	clearedActive, err := h.authService.LogoutBrowserAccount(c.Context(), browserID, req.Sub, activeRT)
+	if err != nil {
+		return response.InternalError(c, errors.ErrOperationFailed)
+	}
+	if clearedActive {
+		h.clearRefreshTokenCookie(c)
+	}
+	return response.Success(c, nil)
+}
+
+// LogoutAll serves POST /auth/sessions/logout-all — remove every account from
+// this browser's bag + clear the anchor. See oauth doc 09 §3.3.
+func (h *AuthHandler) LogoutAll(c fiber.Ctx) error {
+	browserID := c.Cookies(browserCookieName)
+	if err := h.authService.LogoutBrowserAll(c.Context(), browserID); err != nil {
+		return response.InternalError(c, errors.ErrOperationFailed)
+	}
+	h.clearRefreshTokenCookie(c)
+	h.clearBrowserCookie(c)
+	return response.Success(c, nil)
 }
 
 // SendRegisterCode handles `POST /auth/register/send-code` — the first
