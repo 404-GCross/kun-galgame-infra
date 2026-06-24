@@ -56,10 +56,12 @@ import (
 const maxSingleCopyBytes = 5 * 1024 * 1024 * 1024
 
 // forumKeyRe recovers the original filename stem from a legacy toolset key. The
-// forum built keys as `toolset/{toolsetID}/{userID}_{base}_{salt}{ext}` (see
-// upload_service.buildS3Key), where salt is exactly 7 lowercase hex chars. This
-// strips the leading numeric userID_ and the trailing _{salt}, leaving {base}.
-var forumKeyRe = regexp.MustCompile(`^\d+_(.+)_[0-9a-f]{7}$`)
+// forum built keys as `toolset/{toolsetID}/{userID}_{base}_{salt}{ext}`, where
+// salt is exactly 7 alphanumeric chars — lowercase hex for current uploads, but
+// mixed-case base62 for older ones (a pre-refactor generator), so match
+// [0-9A-Za-z]. This strips the leading numeric userID_ and the trailing _{salt},
+// leaving {base}; the greedy (.+) anchors on the LAST _{7-alnum} = the real salt.
+var forumKeyRe = regexp.MustCompile(`^\d+_(.+)_[0-9A-Za-z]{7}$`)
 
 func main() {
 	var (
