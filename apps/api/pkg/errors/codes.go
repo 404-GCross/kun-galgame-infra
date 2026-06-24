@@ -41,6 +41,7 @@ const (
 	ErrAuthEmailSameAsCurrent     = 10013
 	ErrAuthUserBanned             = 10014
 	ErrAuthEmailDomainNotAllowed  = 10015
+	ErrAuthStepUpRequired         = 10016
 
 	// OAuth (15000-15999)
 	ErrOAuthInvalidClient       = 15001
@@ -154,6 +155,7 @@ var codeMessages = map[int]string{
 	ErrAuthEmailSameAsCurrent:     "新邮箱与当前邮箱相同",
 	ErrAuthUserBanned:             "账号已被封禁",
 	ErrAuthEmailDomainNotAllowed:  "仅支持 qq.com、gmail.com、outlook.com 邮箱",
+	ErrAuthStepUpRequired:         "切换到该账号需要重新验证身份",
 
 	ErrCreatorAlreadyHas:    "你已经是创作者了",
 	ErrCreatorAppPending:    "已有一份待审核的创作者申请",

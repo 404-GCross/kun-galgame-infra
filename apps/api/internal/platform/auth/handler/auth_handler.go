@@ -93,6 +93,44 @@ func (h *AuthHandler) ListSessions(c fiber.Ctx) error {
 	return response.Success(c, dto.ListSessionsResponse{Items: items})
 }
 
+// SwitchSession serves POST /auth/sessions/switch {sub} — switch the active
+// account to another account already in this browser's bag (no re-auth, except
+// admin/ren → 10016 step-up-required, which the caller resolves via prompt=login).
+// See docs/integration/oauth/09 §3.6.
+func (h *AuthHandler) SwitchSession(c fiber.Ctx) error {
+	var req dto.SwitchSessionRequest
+	if err := c.Bind().JSON(&req); err != nil {
+		return response.BadRequest(c, errors.ErrBadRequest)
+	}
+	if err := utils.Validate(&req); err != nil {
+		return response.BadRequestMsg(c, errors.ErrValidationFailed, err.Error())
+	}
+	browserID := c.Cookies(browserCookieName)
+	tokens, user, err := h.authService.SwitchActiveSession(c.Context(), browserID, req.Sub)
+	if err != nil {
+		if appErr, ok := err.(*errors.AppError); ok {
+			return response.Unauthorized(c, appErr.Code)
+		}
+		return response.InternalError(c, errors.ErrOperationFailed)
+	}
+	h.setRefreshTokenCookie(c, tokens.RefreshToken)
+	return response.Success(c, dto.LoginResponse{
+		User: dto.UserResponse{
+			UUID:            user.UUID,
+			Name:            user.Name,
+			Email:           user.Email,
+			Avatar:          user.Avatar,
+			AvatarImageHash: user.AvatarImageHash,
+			Bio:             user.Bio,
+			Moemoepoint:     user.Moemoepoint,
+			Status:          user.Status,
+			Roles:           user.RoleNames(),
+			CreatedAt:       user.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
+		},
+		AccessToken: tokens.AccessToken,
+	})
+}
+
 // SendRegisterCode handles `POST /auth/register/send-code` — the first
 // half of the two-step unified registration flow. The follow-up call is
 // `POST /auth/register` with the 6-digit code in the body. See

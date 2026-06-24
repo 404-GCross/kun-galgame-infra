@@ -62,6 +62,12 @@ type ListSessionsResponse struct {
 	Items []SessionBrief `json:"items"`
 }
 
+// SwitchSessionRequest is POST /auth/sessions/switch — switch the active account
+// to `sub` (a user uuid already in this browser's bag).
+type SwitchSessionRequest struct {
+	Sub string `json:"sub" validate:"required"`
+}
+
 // ChangePasswordRequest represents a password change request
 type ChangePasswordRequest struct {
 	OldPassword string `json:"old_password"`

@@ -453,6 +453,44 @@ func (s *AuthService) ListBrowserSessions(ctx context.Context, browserID, active
 	return out, nil
 }
 
+// SwitchActiveSession switches the active account to targetSub (a user uuid
+// already in this browser's session bag) WITHOUT re-auth — by reusing the
+// refresh/rotation path for that account's session, which makes its (new)
+// refresh token the active one. Refuses privileged (admin/ren) targets with
+// ErrAuthStepUpRequired so the caller forces a fresh login (decision #3).
+// See docs/auth/02 + docs/integration/oauth/09.
+func (s *AuthService) SwitchActiveSession(ctx context.Context, browserID, targetSub string) (*dto.TokenPair, *model.User, error) {
+	if browserID == "" || targetSub == "" {
+		return nil, nil, errors.NewWithCode(errors.ErrAuthUserNotFound)
+	}
+	sessions, err := s.sessionRepo.FindByBrowserID(ctx, browserID)
+	if err != nil {
+		return nil, nil, err
+	}
+	for i := range sessions {
+		sess := sessions[i]
+		user, e := s.userRepo.FindByIDWithRoles(ctx, sess.UserID)
+		if e != nil || user == nil || user.UUID != targetSub {
+			continue
+		}
+		// Target account found in the bag. Privileged accounts require step-up
+		// — refuse the silent switch; the caller redirects via prompt=login.
+		for _, rn := range user.RoleNames() {
+			if rn == "admin" || rn == "ren" {
+				return nil, nil, errors.NewWithCode(errors.ErrAuthStepUpRequired)
+			}
+		}
+		// Reuse the vetted refresh+rotation path (OP-login sessions have
+		// ClientID="" so this is exactly the /auth/refresh flow).
+		tokens, e := s.RefreshToken(ctx, sess.RefreshToken)
+		if e != nil {
+			return nil, nil, e
+		}
+		return tokens, user, nil
+	}
+	return nil, nil, errors.NewWithCode(errors.ErrAuthUserNotFound)
+}
+
 // Logout logs out a user
 func (s *AuthService) Logout(ctx context.Context, sessionToken string) error {
 	session, err := s.sessionRepo.FindBySessionToken(ctx, sessionToken)
