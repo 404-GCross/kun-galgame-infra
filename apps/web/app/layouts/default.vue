@@ -1,21 +1,11 @@
 <script setup lang="ts">
 import { SIDEBAR_MENU, type SidebarItem } from '~/constants/admin'
 import { useBodyScrollLock } from '@kungal/ui-vue'
-import { resolveAvatarUrl } from '~~/shared/utils/resolveImage'
 
 const auth = useAuth()
 const route = useRoute()
 const router = useRouter()
 const colorMode = useColorMode()
-
-// KunAvatar (ui ≥0.3.4) renders the URL as-is — it no longer derives a
-// thumbnail variant. So resolve the small (_100) variant here: header avatar
-// is tiny, no need to ship the original. Falls back to the legacy `avatar`
-// URL (or sticker, inside KunAvatar) when there's no image_service hash.
-const cdnBase = useRuntimeConfig().public.imageCdnBase as string
-const headerAvatar = computed(() =>
-  resolveAvatarUrl(auth.user.value, { cdnBase, variant: '100' }, '')
-)
 
 // Desktop-only collapse (md+). On mobile the sidebar is a full-width
 // slide-in drawer, so collapse width is irrelevant there.
@@ -61,10 +51,6 @@ const colorModeOptions = [
 
 const setColorMode = (mode: string) => {
   colorMode.preference = mode
-}
-
-const handleLogout = async () => {
-  await auth.logout()
 }
 
 // Close the mobile drawer on navigation — a client-side route change
@@ -309,31 +295,8 @@ await callOnce('auth:user', async () => {
             </div>
           </KunPopover>
 
-          <!-- User Menu -->
-          <div v-if="auth.user.value" class="flex items-center gap-2 md:gap-3">
-            <span class="text-default-500 hidden text-sm sm:inline">
-              {{ auth.user.value.name }}
-            </span>
-            <KunAvatar
-              :user="{
-                id: 0,
-                name: auth.user.value.name,
-                avatar: headerAvatar
-              }"
-              size="md"
-              :is-navigation="false"
-            />
-            <KunButton
-              variant="light"
-              color="danger"
-              size="md"
-              is-icon-only
-              aria-label="退出登录"
-              @click="handleLogout"
-            >
-              <KunIcon name="lucide:log-out" class="size-6" />
-            </KunButton>
-          </div>
+          <!-- User Menu — avatar dropdown with in-place account switcher -->
+          <LayoutAccountSwitcher />
         </div>
       </header>
 
