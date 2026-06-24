@@ -76,10 +76,16 @@ func (h *OAuthHandler) Authorize(c fiber.Ctx) error {
 	if req.CodeChallengeMethod != "" {
 		q.Set("code_challenge_method", req.CodeChallengeMethod)
 	}
-	// Pass `prompt` through so the frontend can force re-login (prompt=login)
-	// even when an OP session exists. See docs/integration/oauth/07-logout.md.
+	// Pass `prompt` through so the frontend can force re-login (prompt=login),
+	// show the account chooser (select_account), or go silent (none).
+	// See docs/integration/oauth/07-logout.md + 09-account-switching.md.
 	if req.Prompt != "" {
 		q.Set("prompt", req.Prompt)
+	}
+	// login_hint names the account to switch to (multi-account); the OP frontend
+	// chooser pre-selects / silently switches to it. See 09-account-switching.md.
+	if req.LoginHint != "" {
+		q.Set("login_hint", req.LoginHint)
 	}
 
 	consentURL := h.cfg.Server.FrontendURL + "/oauth/authorize?" + q.Encode()

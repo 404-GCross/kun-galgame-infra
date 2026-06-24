@@ -16,11 +16,15 @@ type AuthorizeRequest struct {
 	// when CodeChallenge is non-empty does the server treat "" as S256
 	// (the OIDC default).
 	CodeChallengeMethod string `query:"code_challenge_method" json:"code_challenge_method" validate:"omitempty,oneof=S256"`
-	// Prompt is the OIDC `prompt` param. We honor `login` (force the OP to
-	// re-authenticate even if a session exists — RP-initiated "log out of this
-	// site, re-prompt on next login" semantics). Other values are ignored.
-	// See docs/integration/oauth/07-logout.md.
-	Prompt string `query:"prompt" json:"prompt" validate:"omitempty,oneof=login"`
+	// Prompt is the OIDC `prompt` param. Honored: `login` (force re-auth —
+	// RP-initiated re-prompt, see 07-logout.md), `select_account` (show the
+	// account chooser), `none` (silent — frontend errors if interaction is
+	// needed). The backend just passes it through; the OP frontend acts on it.
+	Prompt string `query:"prompt" json:"prompt" validate:"omitempty,oneof=login select_account none"`
+	// LoginHint (OIDC) names the account to switch to in a multi-account switch;
+	// the frontend chooser uses it to pre-select / silently switch.
+	// See docs/integration/oauth/09-account-switching.md.
+	LoginHint string `query:"login_hint" json:"login_hint"`
 }
 
 // TokenRequest represents an OAuth token request
