@@ -10,9 +10,16 @@ const route = useRoute()
 const router = useRouter()
 const auth = useAuth()
 const api = useApi()
+const accountSwitch = useAccountSwitch()
 
 const isLoading = ref(false)
 const error = ref('')
+// Multi-account chooser state. `showChooser` gates the AccountChooser render
+// (prompt=select_account, or login_hint miss). `bagSessions` is the browser's
+// session bag. `switchingSub` drives the per-row spinner during a switch.
+const showChooser = ref(false)
+const bagSessions = ref<BagSession[]>([])
+const switchingSub = ref<string | null>(null)
 // `clientInfo === null` after fetch = lookup failed (probably bad client_id);
 // `=== undefined` = still loading. `auto_consent` drives the silent grant
 // path so we render skeleton state until we know which branch to take —
@@ -43,9 +50,18 @@ const codeChallengeMethod = computed(() => route.query.code_challenge_method as 
 // so after the user logs in, re-entry to this page proceeds to normal
 // auto-consent (no loop).
 const forceLogin = computed(() => route.query.prompt === 'login')
+// prompt=select_account forces the multi-account chooser even when an OP
+// session exists. login_hint pre-selects a specific account from the bag
+// (match by sub or email). See docs/integration/oauth/09.
+const promptSelectAccount = computed(() => route.query.prompt === 'select_account')
+const loginHint = computed(() => route.query.login_hint as string | undefined)
 
-// Build the full authorize URL for login redirect
-const currentUrl = computed(() => {
+// Build the full authorize URL. `extra` lets callers re-add params that the
+// base URL deliberately omits — notably `login_hint` for the step-up
+// round-trip (re-auth lands back here, the hint auto-selects the account).
+// `prompt` is ALWAYS omitted so post-login re-entry proceeds to normal
+// auto-consent instead of bouncing back into the login/chooser screen.
+const buildAuthorizeUrl = (extra?: Record<string, string>) => {
   const params = new URLSearchParams()
   params.set('client_id', clientId.value)
   params.set('redirect_uri', redirectUri.value)
@@ -54,8 +70,13 @@ const currentUrl = computed(() => {
   params.set('state', state.value)
   if (codeChallenge.value) params.set('code_challenge', codeChallenge.value)
   if (codeChallengeMethod.value) params.set('code_challenge_method', codeChallengeMethod.value)
+  if (extra) {
+    for (const [k, v] of Object.entries(extra)) params.set(k, v)
+  }
   return `/oauth/authorize?${params.toString()}`
-})
+}
+
+const currentUrl = computed(() => buildAuthorizeUrl())
 
 const scopeList = computed(() => {
   if (!scope.value) return []
@@ -122,10 +143,66 @@ onMounted(async () => {
     clientInfo.value = null
   }
 
-  // Auto-consent only fires when actually logged in. The metadata flag
-  // alone isn't enough — POST /oauth/authorize/consent requires a
-  // Bearer token, and silently 401-ing in the background would leave
-  // the user staring at a spinner.
+  // Multi-account handling (prompt=select_account / login_hint), gated on a
+  // live session. Runs BEFORE auto-consent: a hit either silently switches +
+  // proceeds, or step-up-redirects; a select_account / hint-miss renders the
+  // chooser instead of auto-consenting. When this consumes the request
+  // (chooser shown or step-up redirect issued) we return early.
+  if (!needsLogin.value && auth.isLoggedIn.value) {
+    const handled = await handleMultiAccount()
+    if (handled) return
+  }
+
+  await maybeAutoConsent()
+})
+
+// Resolve prompt=select_account + login_hint against the session bag.
+// Returns true when the request is "consumed" (chooser shown or a step-up
+// redirect was issued) so onMounted skips auto-consent; false to fall through
+// to the normal consent / auto-consent path.
+const handleMultiAccount = async (): Promise<boolean> => {
+  if (!loginHint.value && !promptSelectAccount.value) return false
+
+  bagSessions.value = await accountSwitch.listBagSessions()
+
+  // login_hint: pre-select a specific account (match by sub or email).
+  if (loginHint.value) {
+    const hint = loginHint.value
+    const match = bagSessions.value.find(
+      (s) => s.sub === hint || s.email === hint
+    )
+    if (match) {
+      // Already the active account → nothing to switch; fall through to the
+      // normal consent / auto-consent path as that account.
+      if (match.active) return false
+      const result = await accountSwitch.switchAccount(match.sub)
+      if (result.ok) {
+        // Now acting as the hinted account → continue normal flow.
+        return false
+      }
+      if (result.stepUp) {
+        redirectStepUp(match.sub)
+        return true
+      }
+      // Switch failed for another reason → fall through (chooser if
+      // select_account was also requested, else normal flow).
+    }
+    // Hint not in the bag (or switch failed): if select_account was also
+    // asked for, show the chooser; otherwise fall through to normal flow.
+    if (!promptSelectAccount.value) return false
+  }
+
+  // prompt=select_account (or login_hint miss with select_account): render
+  // the chooser, do NOT auto-consent.
+  showChooser.value = true
+  return true
+}
+
+// Auto-consent only fires when actually logged in. The metadata flag
+// alone isn't enough — POST /oauth/authorize/consent requires a
+// Bearer token, and silently 401-ing in the background would leave
+// the user staring at a spinner.
+const maybeAutoConsent = async () => {
   if (
     !needsLogin.value &&
     auth.isLoggedIn.value &&
@@ -134,7 +211,49 @@ onMounted(async () => {
     autoConsenting.value = true
     await handleApprove()
   }
-})
+}
+
+// Step-up: switching to a privileged account requires fresh re-auth. Bounce
+// to /auth/login with this authorize URL as ?redirect=, KEEPING login_hint=
+// <sub> (so the hint auto-selects the freshly-authed account on return) but
+// dropping prompt=select_account (buildAuthorizeUrl already omits prompt) so
+// re-entry proceeds straight to consent.
+const redirectStepUp = (sub: string) => {
+  const target = buildAuthorizeUrl({ login_hint: sub })
+  router.push(`/auth/login?redirect=${encodeURIComponent(target)}`)
+}
+
+// Chooser row click: switch to the picked account, then proceed. On ok →
+// hide the chooser + run consent/auto-consent (or fall to the manual consent
+// UI). On step-up → step-up redirect. On other failure → surface an error and
+// keep the chooser open.
+const handleChooserPick = async (sub: string) => {
+  if (switchingSub.value) return
+  switchingSub.value = sub
+  error.value = ''
+  try {
+    const result = await accountSwitch.switchAccount(sub)
+    if (result.ok) {
+      showChooser.value = false
+      await maybeAutoConsent()
+      return
+    }
+    if (result.stepUp) {
+      redirectStepUp(sub)
+      return
+    }
+    error.value = '切换账号失败，请重试'
+  } finally {
+    switchingSub.value = null
+  }
+}
+
+// "使用其他账号登录" → /auth/login with the authorize URL as ?redirect=
+// (prompt stripped via buildAuthorizeUrl). After login the user re-enters
+// this page as the new account and proceeds to consent.
+const handleChooserAdd = () => {
+  router.push(`/auth/login?redirect=${encodeURIComponent(currentUrl.value)}`)
+}
 
 // User-initiated login — keeps the OAuth params in the redirect so
 // /auth/login chains back to this page, and from there into auto-
@@ -256,6 +375,22 @@ const handleDeny = () => {
       <p class="text-default-500 text-sm">
         {{ autoConsenting ? '正在跳转回应用...' : '加载中...' }}
       </p>
+    </div>
+
+    <!-- Multi-account chooser: prompt=select_account (or a login_hint miss).
+         Picking a row switches to that account then proceeds to consent /
+         auto-consent; a step-up account bounces to re-auth. -->
+    <div v-else-if="showChooser" class="space-y-4">
+      <OauthAuthorizeAccountChooser
+        :sessions="bagSessions"
+        :client-name="clientInfo?.name"
+        :switching-sub="switchingSub"
+        @pick="handleChooserPick"
+        @add="handleChooserAdd"
+      />
+      <div v-if="error" class="bg-danger-50 text-danger rounded-lg p-3 text-sm">
+        {{ error }}
+      </div>
     </div>
 
     <template v-else>

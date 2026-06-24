@@ -1,0 +1,98 @@
+<script setup lang="ts">
+import { resolveAvatarUrl } from '~~/shared/utils/resolveImage'
+
+// Presentational account picker for the OAuth authorize flow
+// (prompt=select_account). The parent owns the switch + step-up logic; this
+// component only renders the bag and surfaces a per-row "switching" spinner.
+const props = defineProps<{
+  sessions: BagSession[]
+  clientName?: string
+  // sub of the row currently being switched (parent-controlled), so the
+  // clicked row shows a spinner + the whole list disables during the switch.
+  switchingSub?: string | null
+}>()
+
+const emit = defineEmits<{
+  pick: [sub: string]
+  add: []
+}>()
+
+const cdnBase = useRuntimeConfig().public.imageCdnBase as string
+
+const avatarSrc = (session: BagSession) =>
+  resolveAvatarUrl(session, { cdnBase, variant: '100' }, '')
+
+const isSwitching = computed(() => !!props.switchingSub)
+</script>
+
+<template>
+  <div class="space-y-6">
+    <div class="text-center">
+      <KunIcon name="lucide:users" class="text-primary mx-auto mb-3 size-12" />
+      <h1 class="text-foreground text-xl font-bold">选择账号</h1>
+      <p class="text-default-500 mt-2 text-sm">
+        继续访问
+        <span v-if="clientName" class="text-foreground font-medium">「{{ clientName }}」</span>
+        <span v-else class="text-foreground font-medium">应用</span>
+      </p>
+    </div>
+
+    <ul class="space-y-2">
+      <li v-for="session in sessions" :key="session.sub">
+        <button
+          type="button"
+          class="border-default-200 hover:bg-default-100 flex w-full items-center gap-3 rounded-xl border p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60"
+          :disabled="isSwitching"
+          @click="emit('pick', session.sub)"
+        >
+          <KunAvatar
+            :user="{ id: 0, name: session.name, avatar: avatarSrc(session) }"
+            size="md"
+            :is-navigation="false"
+          />
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-2">
+              <span class="text-foreground truncate font-medium">{{ session.name }}</span>
+              <!-- KunChip (not KunBadge): KunBadge is a dot/count notification
+                   overlay that can't render a text label; KunChip is the pill
+                   used elsewhere (e.g. users/Table.vue role chips). -->
+              <KunChip
+                v-if="session.active"
+                color="primary"
+                variant="flat"
+                size="sm"
+              >
+                当前
+              </KunChip>
+            </div>
+            <p class="text-default-400 truncate text-sm">{{ session.email }}</p>
+          </div>
+          <KunIcon
+            v-if="switchingSub === session.sub"
+            name="lucide:loader-circle"
+            class="text-primary size-5 shrink-0 animate-spin"
+          />
+          <KunIcon
+            v-else
+            name="lucide:chevron-right"
+            class="text-default-300 size-5 shrink-0"
+          />
+        </button>
+      </li>
+    </ul>
+
+    <KunDivider />
+
+    <button
+      type="button"
+      class="hover:bg-default-100 flex w-full items-center gap-3 rounded-xl p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60"
+      :disabled="isSwitching"
+      @click="emit('add')"
+    >
+      <span class="border-default-200 text-default-400 flex size-10 shrink-0 items-center justify-center rounded-full border border-dashed">
+        <KunIcon name="lucide:plus" class="size-5" />
+      </span>
+      <span class="text-default-500 font-medium">使用其他账号登录</span>
+    </button>
+  </div>
+</template>

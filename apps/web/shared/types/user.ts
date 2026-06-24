@@ -20,3 +20,16 @@ export interface LoginResponse {
 export interface RefreshResponse {
   access_token: string
 }
+
+// One account in the browser's session "bag" (multi-account support).
+// Returned by GET /auth/sessions. `sub` is the user uuid; `active:true`
+// marks the currently-active account. See docs/integration/oauth/09.
+export interface BagSession {
+  sub: string
+  name: string
+  email: string
+  avatar: string
+  avatar_image_hash?: string | null
+  active: boolean
+  last_used_at: string
+}
