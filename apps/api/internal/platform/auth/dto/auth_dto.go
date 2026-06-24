@@ -19,6 +19,7 @@ type RegisterRequest struct {
 	Code      string `json:"code" validate:"required,len=6"`
 	UserAgent string `json:"-"`
 	IPAddress string `json:"-"`
+	BrowserID string `json:"-"` // server-set from the kg_browser cookie (session bag)
 }
 
 // SendRegisterCodeRequest is the body for `POST /auth/register/send-code`.
@@ -37,6 +38,7 @@ type LoginRequest struct {
 	Password  string `json:"password" validate:"required"`
 	UserAgent string `json:"-"`
 	IPAddress string `json:"-"`
+	BrowserID string `json:"-"` // server-set from the kg_browser cookie (session bag)
 }
 
 // RefreshRequest represents a token refresh request

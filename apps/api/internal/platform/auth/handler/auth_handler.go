@@ -11,6 +11,7 @@ import (
 	"api/pkg/utils"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/google/uuid"
 )
 
 const refreshTokenCookieName = "refresh_token"
@@ -52,6 +53,30 @@ func (h *AuthHandler) clearRefreshTokenCookie(c fiber.Ctx) {
 		SameSite: fiber.CookieSameSiteLaxMode,
 		MaxAge:   -1,
 	})
+}
+
+// browserCookieName anchors the multi-account "session bag" (docs/auth/02): all
+// OP login sessions sharing this opaque id belong to the same browser.
+const browserCookieName = "kg_browser"
+
+// browserID returns this browser's session-bag id, reading the kg_browser
+// cookie or minting + setting a new one (httpOnly, long-lived, host-only on the
+// OP). Behaviour-preserving for single-account — the bag is simply size 1.
+func (h *AuthHandler) browserID(c fiber.Ctx) string {
+	if id := c.Cookies(browserCookieName); id != "" {
+		return id
+	}
+	id := uuid.NewString()
+	c.Cookie(&fiber.Cookie{
+		Name:     browserCookieName,
+		Value:    id,
+		Path:     "/",
+		HTTPOnly: true,
+		Secure:   h.cfg.Server.Env == "production",
+		SameSite: fiber.CookieSameSiteLaxMode,
+		MaxAge:   int((365 * 24 * time.Hour).Seconds()),
+	})
+	return id
 }
 
 // SendRegisterCode handles `POST /auth/register/send-code` — the first
@@ -99,6 +124,7 @@ func (h *AuthHandler) Register(c fiber.Ctx) error {
 	// Capture session context — same pattern as Login.
 	req.UserAgent = string(c.Request().Header.UserAgent())
 	req.IPAddress = c.IP()
+	req.BrowserID = h.browserID(c)
 
 	tokens, user, err := h.authService.Register(c.Context(), &req)
 	if err != nil {
@@ -141,6 +167,7 @@ func (h *AuthHandler) Login(c fiber.Ctx) error {
 	// Set user agent and IP
 	req.UserAgent = string(c.Request().Header.UserAgent())
 	req.IPAddress = c.IP()
+	req.BrowserID = h.browserID(c)
 
 	tokens, user, err := h.authService.Login(c.Context(), &req)
 	if err != nil {

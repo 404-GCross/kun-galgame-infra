@@ -47,6 +47,18 @@ type Session struct {
 	ExpiresAt time.Time `gorm:"not null" json:"expires_at"`
 	CreatedAt time.Time `json:"created_at"`
 
+	// BrowserID groups all OP login sessions in one browser into a "session
+	// bag" for multi-account switching (see docs/auth/02-account-switching-design.md).
+	// Set from the kg_browser httpOnly cookie at login; a single-account browser
+	// is simply a bag of one. Empty for pre-migration rows (treated as their own
+	// singleton bag).
+	BrowserID string `gorm:"size:64;index;default:''" json:"-"`
+	// AuthTime is when the user last actively authenticated for this session
+	// (set at login). Used for admin step-up / max_age re-auth checks.
+	AuthTime *time.Time `json:"-"`
+	// LastUsedAt tracks session activity, for the account chooser / device list.
+	LastUsedAt *time.Time `json:"-"`
+
 	// Relations
 	User User `gorm:"foreignKey:UserID;constraint:OnDelete:CASCADE" json:"-"`
 }

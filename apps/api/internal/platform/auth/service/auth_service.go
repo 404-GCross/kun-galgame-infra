@@ -255,13 +255,17 @@ func (s *AuthService) Register(ctx context.Context, req *dto.RegisterRequest) (*
 		return nil, nil, err
 	}
 
+	authAt := time.Now()
 	session := &model.Session{
 		UserID:       user.ID,
 		SessionToken: tokens.AccessToken,
 		RefreshToken: tokens.RefreshToken,
 		UserAgent:    req.UserAgent,
 		IPAddress:    req.IPAddress,
-		ExpiresAt:    time.Now().Add(7 * 24 * time.Hour),
+		BrowserID:    req.BrowserID,
+		AuthTime:     &authAt,
+		LastUsedAt:   &authAt,
+		ExpiresAt:    authAt.Add(7 * 24 * time.Hour),
 	}
 	if err := s.sessionRepo.Create(ctx, session); err != nil {
 		return nil, nil, err
@@ -385,13 +389,17 @@ func (s *AuthService) Login(ctx context.Context, req *dto.LoginRequest) (*dto.To
 	}
 
 	// Create session
+	authAt := time.Now()
 	session := &model.Session{
 		UserID:       user.ID,
 		SessionToken: tokens.AccessToken,
 		RefreshToken: tokens.RefreshToken,
 		UserAgent:    req.UserAgent,
 		IPAddress:    req.IPAddress,
-		ExpiresAt:    time.Now().Add(7 * 24 * time.Hour), // 7 days
+		BrowserID:    req.BrowserID,
+		AuthTime:     &authAt,
+		LastUsedAt:   &authAt,
+		ExpiresAt:    authAt.Add(7 * 24 * time.Hour), // 7 days
 	}
 
 	if err := s.sessionRepo.Create(ctx, session); err != nil {
