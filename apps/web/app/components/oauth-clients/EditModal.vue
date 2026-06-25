@@ -42,6 +42,21 @@ const displayOrder = ref<number | null>(props.client.display_order ?? 0)
 const error = ref('')
 const isLoading = ref(false)
 
+// Logo upload — POSTs a cropped square Blob to image_service and fills logoUrl
+// with the returned CDN URL. The logoUrl KunInput stays as a paste fallback.
+const { uploading: logoUploading, error: logoError, upload: uploadLogo } = useClientLogoUpload()
+// KunUpload keeps its picked image in internal state with no reset API, so we
+// remount it via :key to clear the preview after a successful upload.
+const logoUploadKey = ref(0)
+
+const onLogoPicked = async (blob: Blob) => {
+  const url = await uploadLogo(blob)
+  if (url) {
+    logoUrl.value = url
+    logoUploadKey.value++
+  }
+}
+
 watch(show, (val) => {
   if (!val) emit('close')
 })
@@ -236,9 +251,25 @@ const handleSubmit = async () => {
             — 开启后此应用会出现在注册/登录页的「一键登录」生态 strip（公开）。内部 / 管理类客户端请保持关闭
           </p>
         </div>
+        <div class="space-y-1">
+          <span class="block text-sm font-medium text-default-500">Logo / 图标</span>
+          <KunUpload
+            :key="logoUploadKey"
+            :aspect="1"
+            :size="256"
+            class-name="w-32"
+            description="上传图标（裁剪为正方形）"
+            @set-image="onLogoPicked"
+          />
+          <p v-if="logoUploading" class="flex items-center gap-1 text-xs text-default-400">
+            <KunIcon name="lucide:loader-circle" class="size-3 animate-spin" />
+            上传中…
+          </p>
+          <p v-else-if="logoError" class="text-xs text-danger-600">{{ logoError }}</p>
+        </div>
         <KunInput
           v-model="logoUrl"
-          label="Logo URL"
+          label="Logo URL（也可直接粘贴）"
           placeholder="https://example.com/logo.png"
         />
         <KunInput
