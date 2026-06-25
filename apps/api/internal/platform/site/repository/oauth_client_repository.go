@@ -62,13 +62,14 @@ func (r *OAuthClientRepository) FindAll(ctx context.Context) ([]model.OAuthClien
 }
 
 // FindListed returns the opt-in (listed) clients for the public app directory,
-// Site preloaded, ordered by display_order then name. See GET /oauth/ecosystem.
+// Site preloaded. Ordered official (auto_consent) first, then display_order,
+// then name. See GET /oauth/ecosystem.
 func (r *OAuthClientRepository) FindListed(ctx context.Context) ([]model.OAuthClient, error) {
 	var clients []model.OAuthClient
 	if err := r.db.WithContext(ctx).
 		Preload("Site").
 		Where("listed = ?", true).
-		Order("display_order ASC, name ASC").
+		Order("auto_consent DESC, display_order ASC, name ASC").
 		Find(&clients).Error; err != nil {
 		return nil, err
 	}

@@ -176,7 +176,7 @@ const handleRegister = async () => {
   <KunCard class="p-8">
     <div class="mb-8 text-center">
       <h1 class="text-2xl font-bold text-foreground">创建账号</h1>
-      <p class="mt-2 text-default-500">加入 KUN Visual Novel 社区</p>
+      <p class="mt-2 text-default-500">加入鲲 Galgame 社区</p>
     </div>
 
     <form @submit.prevent>

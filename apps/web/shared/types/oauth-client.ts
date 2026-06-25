@@ -69,6 +69,8 @@ export interface EcosystemApp {
   site_domain: string
   logo_url?: string
   tagline?: string
+  // First-party ("官方") site — shown with an "官方" chip; sorts first.
+  auto_consent: boolean
 }
 
 // Grant types supported by the server. Keep in sync with

@@ -94,10 +94,14 @@ type EcosystemApp struct {
 	SiteDomain string `json:"site_domain"`
 	LogoURL    string `json:"logo_url,omitempty"`
 	Tagline    string `json:"tagline,omitempty"`
+	// AutoConsent marks a first-party ("官方") site — the downstream strip shows
+	// an "官方" chip and these sort ahead of third-party sites (see FindListed).
+	AutoConsent bool `json:"auto_consent"`
 }
 
 // ListEcosystem returns the opt-in (Listed) clients for the public app
-// directory, ordered by DisplayOrder then Name. Public marketing metadata.
+// directory, official (auto_consent) first, then DisplayOrder then Name.
+// Public marketing metadata.
 func (s *OAuthService) ListEcosystem(ctx context.Context) ([]EcosystemApp, error) {
 	clients, err := s.clientRepo.FindListed(ctx)
 	if err != nil {
@@ -106,7 +110,7 @@ func (s *OAuthService) ListEcosystem(ctx context.Context) ([]EcosystemApp, error
 	apps := make([]EcosystemApp, 0, len(clients))
 	for i := range clients {
 		c := &clients[i]
-		app := EcosystemApp{Name: c.Name, LogoURL: c.LogoURL, Tagline: c.Tagline}
+		app := EcosystemApp{Name: c.Name, LogoURL: c.LogoURL, Tagline: c.Tagline, AutoConsent: c.AutoConsent}
 		if c.Site != nil {
 			app.SiteDomain = c.Site.Domain
 		}

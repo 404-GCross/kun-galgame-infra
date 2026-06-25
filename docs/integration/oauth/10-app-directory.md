@@ -33,12 +33,12 @@ Microsoft 365 的「九宫格」），各家都是**私有实现 + 每个 app �
 ```json
 {
   "apps": [
-    { "name": "鲲Galgame论坛", "site_domain": "www.kungal.com", "logo_url": "https://…", "tagline": "Galgame 论坛" },
-    { "name": "摸鱼galgame", "site_domain": "moyu.moe", "logo_url": "https://…", "tagline": "Galgame 补丁站" }
+    { "name": "鲲Galgame论坛", "site_domain": "www.kungal.com", "logo_url": "https://…", "tagline": "Galgame 论坛", "auto_consent": true },
+    { "name": "摸鱼galgame", "site_domain": "moyu.moe", "logo_url": "https://…", "tagline": "Galgame 补丁站", "auto_consent": true }
   ]
 }
 ```
-只返回 `listed=true` 的 client，按 `display_order` 再 `name` 排序。
+只返回 `listed=true` 的 client；排序 = **官方（`auto_consent=true`）在前**，再 `display_order`，再 `name`。`auto_consent` 复用已有的第一方标志（见 doc 05）：`true` = 第一方「官方」站点，下游据此展示「官方」标识并排在前面。
 
 ## 3. 下游接入（展示「生态 strip」）
 
@@ -56,8 +56,9 @@ origin 必须在 OP 的 CORS 白名单内**（`internal/middleware/cors.go`：�
 `moyu.moe` + 开发 origin）。接入子域（`www.kungal.com` / `wiki.kungal.com`）时需把其 origin
 加进白名单，否则被 CORS 拦截。
 
-**UX 建议**：logo + 名称、当前站点高亮、轻量横向 strip（不是重网格）；缓存端点；纯展示，不
-触碰认证流。参考实现见 apps/web 注册页（待接入）。
+**UX 建议**：logo + 名称、官方站点（`auto_consent`）显示 primary「官方」chip 并排在前、缓存
+端点；纯展示，不触碰认证流。参考实现：apps/web 注册页（折叠为一排圆形 icon + 点击展开列表）、
+moyu 登录 modal。
 
 ## 4. 安全 / 隐私
 
