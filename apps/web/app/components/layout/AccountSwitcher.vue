@@ -10,7 +10,8 @@ import { roleColor, roleLabel, primaryRole, needsStepUp } from '~/constants/role
 // time the menu opens — so it costs nothing on a normal page load.
 
 const auth = useAuth()
-const { listBagSessions, switchAccount } = useAccountSwitch()
+const { listBagSessions, switchAccount, logoutAccount, logoutAllAccounts } =
+  useAccountSwitch()
 
 const cdnBase = useRuntimeConfig().public.imageCdnBase as string
 
@@ -99,8 +100,35 @@ const handleAddAccount = async () => {
   await navigateTo('/auth/login?force=1')
 }
 
-const handleLogout = async () => {
+// Log out ONLY the current account. If a non-privileged account remains in the
+// bag we land on it (you stay signed in to your other accounts, Gmail-mobile
+// style); otherwise it's a full logout. We switch FIRST so the caller stays a
+// bag member (passes the confused-deputy guard), then remove the old account.
+const handleLogoutCurrent = async () => {
   popoverRef.value?.close()
+  if (!hasLoaded.value) await loadSessions()
+  const currentSub = auth.user.value?.uuid
+  const next = sessions.value.find(
+    (s) => s.sub !== currentSub && !needsStepUp(s.roles)
+  )
+  if (next && currentSub) {
+    const result = await switchAccount(next.sub)
+    if (result.ok) {
+      await logoutAccount(currentSub)
+      window.location.reload()
+      return
+    }
+  }
+  // Last account, switch failed, or only privileged accounts remain → full logout.
+  await auth.logout()
+}
+
+// Log out EVERY account in this browser's bag.
+const handleLogoutAll = async () => {
+  popoverRef.value?.close()
+  await logoutAllAccounts()
+  // auth.logout() POSTs /auth/logout (now a no-op — the session is already gone)
+  // but reuses its clearAuth + redirect-to-login.
   await auth.logout()
 }
 </script>
@@ -254,14 +282,23 @@ const handleLogout = async () => {
         </button>
       </div>
 
-      <!-- 退出登录 -->
+      <!-- 退出：当前账号 vs 全部账号 -->
       <button
         type="button"
         class="text-danger hover:bg-danger-50 border-default-200 mt-1 flex w-full items-center gap-3 border-t px-3 py-2 text-sm transition-colors"
-        @click="handleLogout"
+        @click="handleLogoutCurrent"
       >
         <KunIcon name="lucide:log-out" class="size-4 shrink-0" />
-        <span>退出登录</span>
+        <span>退出当前账号</span>
+      </button>
+      <button
+        v-if="sessions.length > 1"
+        type="button"
+        class="text-default-500 hover:bg-default-100 hover:text-danger flex w-full items-center gap-3 px-3 py-2 text-sm transition-colors"
+        @click="handleLogoutAll"
+      >
+        <KunIcon name="lucide:log-out" class="size-4 shrink-0" />
+        <span>退出全部账号</span>
       </button>
     </div>
   </KunPopover>
