@@ -9,6 +9,10 @@ const account = ref((route.query.account as string) || '')
 const password = ref('')
 const error = ref('')
 const isLoading = ref(false)
+// Set when the user re-logs-in the account that's already active (in the force=1
+// "登录其他账号" flow, no pending OAuth redirect) — we show this in-place notice
+// instead of a silent jump to /profile.
+const sameAccountName = ref('')
 
 // If redirected from OAuth authorize, go back after login
 const redirectUrl = computed(() => route.query.redirect as string | undefined)
@@ -35,21 +39,42 @@ const navigateAfterLogin = () => {
 
 const handleSubmit = async () => {
   error.value = ''
+  sameAccountName.value = ''
   isLoading.value = true
 
   try {
+    const prevUuid = auth.user.value?.uuid
     const response = await auth.login(account.value, password.value)
-    if (response.code === 0) {
-      navigateAfterLogin()
-    } else {
+    if (response.code !== 0) {
       error.value = response.message || '登录失败'
+      return
     }
+
+    const next = response.data.user
+    // Account-center flow (no OAuth redirect to complete back to a downstream).
+    if (!redirectUrl.value) {
+      // Re-logged the already-active account → it's a no-op; show an in-place
+      // notice instead of a pointless jump to /profile.
+      if (prevUuid && next.uuid === prevUuid) {
+        sameAccountName.value = next.name
+        return
+      }
+      // Switched to a different account via the "登录其他账号" form → confirm.
+      if (forceLogin.value && prevUuid) {
+        useKunMessage(`已切换到「${next.name}」`, 'success')
+      }
+    }
+    navigateAfterLogin()
   } catch (e: unknown) {
     error.value = e instanceof Error ? e.message : '登录失败'
   } finally {
     isLoading.value = false
   }
 }
+
+// "返回" from the "already this account" notice → back to wherever the user
+// opened the switcher / add-account from.
+const goBack = () => router.back()
 
 onMounted(async () => {
   if (auth.isLoggedIn.value && !forceLogin.value) {
@@ -63,6 +88,16 @@ onMounted(async () => {
     <div class="mb-8 text-center">
       <h1 class="text-2xl font-bold text-foreground">{{ forceLogin ? '登录其他账号' : '欢迎回来' }}</h1>
       <p class="mt-2 text-default-500">{{ forceLogin ? '登录另一个账号以添加或切换' : '登录 鲲 Galgame OAuth 管理后台' }}</p>
+    </div>
+
+    <div v-if="sameAccountName" class="mb-6 rounded-lg bg-primary-50 p-4 text-sm">
+      <p class="text-foreground">
+        这已是你当前登录的账号「<span class="font-medium">{{ sameAccountName }}</span>」
+      </p>
+      <p class="mt-1 text-default-500">想换一个账号？在下方重新输入即可。</p>
+      <KunButton color="primary" variant="flat" size="sm" class="mt-3" @click="goBack">
+        返回
+      </KunButton>
     </div>
 
     <form @submit.prevent="handleSubmit">
