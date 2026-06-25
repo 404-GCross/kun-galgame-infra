@@ -38,9 +38,9 @@ const autoConsent = ref(false)
 // Refresh token lifetime — exposed in the UI as days for usability,
 // converted to seconds at submit time. Default 90d matches the server.
 const refreshTokenTtlDays = ref(DEFAULT_REFRESH_TOKEN_TTL_SECONDS / 86400)
-// App-directory (生态一键登录) display fields — plain presentation metadata
-// shown on the register/login strip via GET /oauth/ecosystem. NOT ren-gated.
-// `listed` is opt-in (default off) so internal/admin clients stay hidden.
+// App-directory (生态一键登录) display fields — shown on the register/login
+// strip via GET /oauth/ecosystem. listed (opt-in, default off)/logo/tagline are
+// admin-settable; display_order is ren-only (cross-site ordering, gated in the API).
 const listed = ref(false)
 const logoUrl = ref('')
 const tagline = ref('')
@@ -291,7 +291,7 @@ const handleSubmit = async () => {
             :aspect="1"
             :size="256"
             class-name="w-32"
-            description="上传图标（裁剪为正方形）"
+            description="上传图标"
             @set-image="onLogoPicked"
           />
           <p v-if="logoUploading" class="flex items-center gap-1 text-xs text-default-400">
@@ -311,10 +311,11 @@ const handleSubmit = async () => {
           placeholder="例如：Galgame 论坛"
         />
         <KunNumberInput
+          v-if="isRen"
           v-model="displayOrder"
           label="排序 (display_order)"
           :min="0"
-          description="小在前，相同再按名称排序"
+          description="小在前，相同再按名称排序（仅 ren 可设置）"
         />
       </div>
 

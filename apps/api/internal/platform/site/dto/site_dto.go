@@ -56,10 +56,10 @@ type CreateOAuthClientRequest struct {
 	// semantics: model.OAuthClient.AutoConsent (auth_clients column).
 	AutoConsent            bool     `json:"auto_consent"`
 	RefreshTokenTTLSeconds *int     `json:"refresh_token_ttl_seconds" validate:"omitempty,min=60"`
-	// App-directory (public, opt-in) display fields. Plain presentation
-	// metadata surfaced by GET /oauth/ecosystem — NOT ren-gated. Listed
-	// defaults false (opt-in); the rest are display-only.
-	// See docs/integration/oauth/10-app-directory.md.
+	// App-directory (public, opt-in) display fields surfaced by
+	// GET /oauth/ecosystem. listed (default false)/logo_url/tagline are
+	// admin-settable; display_order is ren-only (cross-site ordering — pinned to
+	// 0 for non-ren in the handler). See docs/integration/oauth/10-app-directory.md.
 	Listed       bool   `json:"listed"`
 	LogoURL      string `json:"logo_url" validate:"omitempty,url,max=255"`
 	Tagline      string `json:"tagline" validate:"omitempty,max=100"`
@@ -87,8 +87,9 @@ type UpdateOAuthClientRequest struct {
 	AutoConsent            *bool    `json:"auto_consent"`
 	RefreshTokenTTLSeconds *int     `json:"refresh_token_ttl_seconds" validate:"omitempty,min=60"`
 	// App-directory display fields. PATCH-style: nil = leave alone, non-nil
-	// = set. Plain presentation metadata (NOT ren-gated). See
-	// docs/integration/oauth/10-app-directory.md.
+	// = set. listed/logo_url/tagline are admin-settable; display_order is
+	// ren-only (forced to nil = unchanged for non-ren in the handler).
+	// See docs/integration/oauth/10-app-directory.md.
 	Listed       *bool   `json:"listed"`
 	LogoURL      *string `json:"logo_url" validate:"omitempty,url,max=255"`
 	Tagline      *string `json:"tagline" validate:"omitempty,max=100"`

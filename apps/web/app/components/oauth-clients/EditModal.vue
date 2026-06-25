@@ -33,8 +33,9 @@ const isPublicReadonly = computed(() => props.client.is_public ?? false)
 // rendering, no token semantics change. Toggling on/off takes effect
 // on the next /oauth/authorize visit for this client.
 const autoConsent = ref(props.client.auto_consent ?? false)
-// App-directory (生态一键登录) display fields — plain presentation metadata
-// (NOT ren-gated). Sent on every save; the backend treats non-nil as "set".
+// App-directory (生态一键登录) display fields. listed/logo/tagline are
+// admin-settable; display_order is ren-only (the API leaves it unchanged for
+// non-ren, so re-sending the current value on save is harmless).
 const listed = ref(props.client.listed ?? false)
 const logoUrl = ref(props.client.logo_url ?? '')
 const tagline = ref(props.client.tagline ?? '')
@@ -258,7 +259,7 @@ const handleSubmit = async () => {
             :aspect="1"
             :size="256"
             class-name="w-32"
-            description="上传图标（裁剪为正方形）"
+            description="上传图标"
             @set-image="onLogoPicked"
           />
           <p v-if="logoUploading" class="flex items-center gap-1 text-xs text-default-400">
@@ -278,10 +279,11 @@ const handleSubmit = async () => {
           placeholder="例如：Galgame 论坛"
         />
         <KunNumberInput
+          v-if="isRen"
           v-model="displayOrder"
           label="排序 (display_order)"
           :min="0"
-          description="小在前，相同再按名称排序"
+          description="小在前，相同再按名称排序（仅 ren 可设置）"
         />
       </div>
 

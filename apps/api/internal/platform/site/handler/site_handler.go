@@ -267,6 +267,14 @@ func (h *SiteHandler) CreateClient(c fiber.Ctx) error {
 		return response.ForbiddenMsg(c, errors.ErrForbidden, renSensitiveFieldMsg)
 	}
 
+	// display_order is ren-only: it controls the cross-site ordering of the
+	// public app directory (a central decision), unlike the per-client display
+	// fields (listed/logo/tagline) any admin may set. Silently pin a non-ren's
+	// value to the default so their save still succeeds (the frontend hides it).
+	if !middleware.HasRole(c, "ren") {
+		req.DisplayOrder = 0
+	}
+
 	// Verify site exists
 	if _, err := h.siteService.GetByID(c.Context(), req.SiteID); err != nil {
 		return response.NotFound(c, errors.ErrSiteNotFound)
@@ -319,6 +327,18 @@ func (h *SiteHandler) UpdateClient(c fiber.Ctx) error {
 		return response.BadRequest(c, errors.ErrBadRequest)
 	}
 
+	// The edit form re-sends every field, so an empty optional string arrives as
+	// a non-nil pointer to "". Normalize "" → nil (= leave unchanged) so it skips
+	// the validators — go-validator's omitempty only skips a NIL pointer, not a
+	// pointer to "", so "" would otherwise trip the url tag. (To swap a logo set a
+	// new one; emptying the field leaves the current value as-is.)
+	if req.LogoURL != nil && *req.LogoURL == "" {
+		req.LogoURL = nil
+	}
+	if req.Tagline != nil && *req.Tagline == "" {
+		req.Tagline = nil
+	}
+
 	if err := utils.Validate(&req); err != nil {
 		return response.BadRequestMsg(c, errors.ErrValidationFailed, err.Error())
 	}
@@ -340,6 +360,8 @@ func (h *SiteHandler) UpdateClient(c fiber.Ctx) error {
 		if addsScope || enablesAutoConsent {
 			return response.ForbiddenMsg(c, errors.ErrForbidden, renSensitiveFieldMsg)
 		}
+		// display_order is ren-only — leave it unchanged on a non-ren edit.
+		req.DisplayOrder = nil
 	}
 
 	client, err := h.siteService.UpdateOAuthClient(
