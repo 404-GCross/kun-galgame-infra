@@ -177,8 +177,12 @@ const handleMultiAccount = async (): Promise<boolean> => {
       if (match.active) return false
       const result = await accountSwitch.switchAccount(match.sub)
       if (result.ok) {
-        // Now acting as the hinted account → continue normal flow.
-        return false
+        // Reload to the (prompt-stripped) authorize URL so a FRESH useApi reads
+        // the new account's token before minting the code. Continuing in-place
+        // would consent with the OLD token — Nuxt useCookie refs don't cross-sync
+        // between useAccountSwitch and this page's useApi. See useAccountSwitch.
+        window.location.href = buildAuthorizeUrl()
+        return true
       }
       if (result.stepUp) {
         redirectStepUp(match.sub)
@@ -237,8 +241,9 @@ const handleChooserPick = async (sub: string) => {
   try {
     const result = await accountSwitch.switchAccount(sub)
     if (result.ok) {
-      showChooser.value = false
-      await maybeAutoConsent()
+      // Full reload (prompt stripped) so a fresh useApi mints the code with the
+      // new account's token — see handleMultiAccount / useAccountSwitch.
+      window.location.href = buildAuthorizeUrl()
       return
     }
     if (result.stepUp) {
