@@ -23,15 +23,30 @@ const redirectUrl = computed(() => route.query.redirect as string | undefined)
 // still-logged-in user straight back out (the "page flashes then returns home"
 // symptom), and step-up would loop.
 const forceLogin = computed(() => route.query.force === '1')
+// `reauth=1` marks a FORCED re-authentication (prompt=login): re-entering the
+// current account should COMPLETE the flow, not stall on the "already this
+// account" notice (that notice is only for the add-account flow).
+const reauth = computed(() => route.query.reauth === '1')
+
+// Only follow a redirect that stays on THIS origin: a relative path (but not a
+// protocol-relative "//evil.com") or a same-origin absolute URL. Otherwise fall
+// back to the default landing — blocks open-redirect via ?redirect= (which the
+// force=1 add-account / step-up flows all funnel through here).
+const isSafeRedirect = (url: string): boolean => {
+  if (url.startsWith('//')) return false
+  if (url.startsWith('/')) return true
+  try {
+    return new URL(url).origin === window.location.origin
+  } catch {
+    return false
+  }
+}
 
 const navigateAfterLogin = () => {
-  if (redirectUrl.value) {
-    // Check if redirect is a relative path (same-domain) or absolute URL
-    if (redirectUrl.value.startsWith('/')) {
-      router.push(redirectUrl.value)
-    } else {
-      window.location.href = redirectUrl.value
-    }
+  const r = redirectUrl.value
+  if (r && isSafeRedirect(r)) {
+    if (r.startsWith('/')) router.push(r)
+    else window.location.href = r
   } else {
     router.push(auth.isAdmin.value ? '/' : '/profile')
   }
@@ -56,7 +71,7 @@ const handleSubmit = async () => {
     // Applies to BOTH flows — in the OAuth flow the notice offers "继续访问" to
     // finish the handshake as this account instead of a silent bounce back to
     // the downstream.
-    if (prevUuid && next.uuid === prevUuid) {
+    if (!reauth.value && prevUuid && next.uuid === prevUuid) {
       sameAccountName.value = next.name
       return
     }

@@ -67,14 +67,18 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		// Real client IP behind Cloudflare → Traefik (dokploy). Without this,
 		// c.IP() returns the immediate peer (Traefik, ~10.0.1.x) for EVERY user,
 		// which silently makes the rate limiters global-per-proxy (the strict
-		// 10/min would throttle all logins site-wide) and stores a useless
-		// proxy IP on sessions/audit. Cloudflare sets CF-Connecting-IP to the
-		// true client; we only honor it when the peer is a trusted private proxy
-		// (TrustProxy + Private) so it can't be spoofed — the app is reachable
-		// only via Traefik. In dev (loopback peer, no CF header) c.IP() falls
-		// back to the direct connection IP.
-		ProxyHeader: "CF-Connecting-IP",
-		TrustProxy:  true,
+		// 10/min would throttle all logins site-wide) and stores a useless proxy
+		// IP on sessions/audit. Cloudflare sets CF-Connecting-IP to the true
+		// client; TrustProxy+Private only honors the header when the PEER is a
+		// trusted private proxy (Traefik) — it does NOT verify the header value.
+		// So this is only spoof-proof when the origin is locked to Cloudflare IPs
+		// (infra hardening, see docs/runbook): a request reaching Traefik OFF the
+		// CF path could forge CF-Connecting-IP and bypass the IP rate limiters.
+		// EnableIPValidation rejects malformed header values. In dev (loopback
+		// peer / no CF header) c.IP() falls back to the direct connection IP.
+		ProxyHeader:        "CF-Connecting-IP",
+		TrustProxy:         true,
+		EnableIPValidation: true,
 		TrustProxyConfig: fiber.TrustProxyConfig{
 			Private: true,
 		},

@@ -190,11 +190,13 @@ const handleMultiAccount = async (): Promise<boolean> => {
         redirectStepUp(match.sub)
         return true
       }
-      // Switch failed for another reason → fall through (chooser if
-      // select_account was also requested, else normal flow).
+      // Hint matched but the switch failed (not step-up) → do NOT silently
+      // consent as the current account; show the chooser so the user picks.
+      showChooser.value = true
+      return true
     }
-    // Hint not in the bag (or switch failed): if select_account was also
-    // asked for, show the chooser; otherwise fall through to normal flow.
+    // Hint not in the bag: show the chooser if select_account was also asked,
+    // otherwise fall through to the normal flow as the current account.
     if (!promptSelectAccount.value) return false
   }
 
@@ -282,11 +284,12 @@ const handleChooserAdd = () => {
 // button can escape.
 const goLogin = () => {
   // force=1 so /auth/login shows the form even if an OP session still exists.
-  // needsLogin is also raised by prompt=login (re-auth / "add account"), where
-  // the user must enter credentials for a possibly-different account — without
-  // force=1, /auth/login would bounce the still-logged-in user back and
-  // auto-consent the existing account. See LoginForm + docs 09 §3.6.
-  router.push(`/auth/login?force=1&redirect=${encodeURIComponent(currentUrl.value)}`)
+  // reauth=1 marks this as a forced re-auth (prompt=login) so re-entering the
+  // current account COMPLETES the flow instead of stalling on the same-account
+  // notice. See LoginForm + docs 09 §3.6.
+  router.push(
+    `/auth/login?force=1&reauth=1&redirect=${encodeURIComponent(currentUrl.value)}`
+  )
 }
 
 const goRegister = () => {

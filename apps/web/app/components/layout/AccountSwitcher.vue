@@ -114,7 +114,13 @@ const handleLogoutCurrent = async () => {
   if (next && currentSub) {
     const result = await switchAccount(next.sub)
     if (result.ok) {
-      await logoutAccount(currentSub)
+      // Best-effort: drop the old account. If it fails (network/etc.) we still
+      // land on the switched-into account; the old one can be logged out again.
+      try {
+        await logoutAccount(currentSub)
+      } catch {
+        // ignore — proceed to reload as the new account
+      }
       window.location.reload()
       return
     }
