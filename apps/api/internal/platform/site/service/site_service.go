@@ -77,7 +77,9 @@ func (s *SiteService) GetOAuthClientsBySiteID(ctx context.Context, siteID uint) 
 //   - autoConsent:   first-party flag (skips /oauth/authorize consent UI). Defaults
 //                    false — only enable for clients you fully own.
 //   - refreshTokenTTLSeconds: per-client refresh_token lifetime in seconds; nil → DB default (90d).
-func (s *SiteService) CreateOAuthClient(ctx context.Context, siteID uint, name string, redirectURIs, grants, allowedScopes []string, isPublic, autoConsent bool, refreshTokenTTLSeconds *int) (*model.OAuthClient, string, error) {
+//   - listed/logoURL/tagline/displayOrder: public app-directory display fields
+//     (GET /oauth/ecosystem). Plain metadata, not ren-gated.
+func (s *SiteService) CreateOAuthClient(ctx context.Context, siteID uint, name string, redirectURIs, grants, allowedScopes []string, isPublic, autoConsent bool, refreshTokenTTLSeconds *int, listed bool, logoURL, tagline string, displayOrder int) (*model.OAuthClient, string, error) {
 	// Generate client ID (16 bytes = 32 hex chars)
 	clientID, err := generateRandomHex(16)
 	if err != nil {
@@ -104,6 +106,10 @@ func (s *SiteService) CreateOAuthClient(ctx context.Context, siteID uint, name s
 		Grants:       grantsJSON,
 		IsPublic:     isPublic,
 		AutoConsent:  autoConsent,
+		Listed:       listed,
+		LogoURL:      logoURL,
+		Tagline:      tagline,
+		DisplayOrder: displayOrder,
 	}
 	if allowedScopes != nil {
 		scopesJSON, _ := json.Marshal(allowedScopes)
@@ -126,7 +132,10 @@ func (s *SiteService) CreateOAuthClient(ctx context.Context, siteID uint, name s
 // (changing it retroactively breaks the auth-model invariants for
 // existing tokens). auto_consent IS updatable — its only effect is on
 // the consent-screen rendering, no token semantics change.
-func (s *SiteService) UpdateOAuthClient(ctx context.Context, clientID string, name *string, redirectURIs, grants, allowedScopes []string, autoConsent *bool, refreshTokenTTLSeconds *int) (*model.OAuthClient, error) {
+//
+// listed/logoURL/tagline/displayOrder are the public app-directory display
+// fields — PATCH-style pointers (nil = leave alone).
+func (s *SiteService) UpdateOAuthClient(ctx context.Context, clientID string, name *string, redirectURIs, grants, allowedScopes []string, autoConsent *bool, refreshTokenTTLSeconds *int, listed *bool, logoURL, tagline *string, displayOrder *int) (*model.OAuthClient, error) {
 	client, err := s.oauthClientRepo.FindByClientID(ctx, clientID)
 	if err != nil {
 		return nil, err
@@ -152,6 +161,18 @@ func (s *SiteService) UpdateOAuthClient(ctx context.Context, clientID string, na
 	}
 	if refreshTokenTTLSeconds != nil {
 		client.RefreshTokenTTLSeconds = *refreshTokenTTLSeconds
+	}
+	if listed != nil {
+		client.Listed = *listed
+	}
+	if logoURL != nil {
+		client.LogoURL = *logoURL
+	}
+	if tagline != nil {
+		client.Tagline = *tagline
+	}
+	if displayOrder != nil {
+		client.DisplayOrder = *displayOrder
 	}
 
 	if err := s.oauthClientRepo.Update(ctx, client); err != nil {

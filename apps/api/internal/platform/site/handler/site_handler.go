@@ -292,6 +292,10 @@ func (h *SiteHandler) CreateClient(c fiber.Ctx) error {
 		req.IsPublic,
 		req.AutoConsent,
 		req.RefreshTokenTTLSeconds,
+		req.Listed,
+		req.LogoURL,
+		req.Tagline,
+		req.DisplayOrder,
 	)
 	if err != nil {
 		return response.InternalError(c, errors.ErrOperationFailed)
@@ -347,6 +351,10 @@ func (h *SiteHandler) UpdateClient(c fiber.Ctx) error {
 		req.AllowedScopes,
 		req.AutoConsent,
 		req.RefreshTokenTTLSeconds,
+		req.Listed,
+		req.LogoURL,
+		req.Tagline,
+		req.DisplayOrder,
 	)
 	if err != nil {
 		return response.InternalError(c, errors.ErrOperationFailed)
@@ -450,6 +458,10 @@ func toOAuthClientResponse(cl *siteModel.OAuthClient) dto.OAuthClientResponse {
 		IsPublic:               cl.IsPublic,
 		AutoConsent:            cl.AutoConsent,
 		RefreshTokenTTLSeconds: cl.RefreshTokenTTLSeconds,
+		Listed:                 cl.Listed,
+		LogoURL:                cl.LogoURL,
+		Tagline:                cl.Tagline,
+		DisplayOrder:           cl.DisplayOrder,
 		CreatedAt:              cl.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
 		Storage: dto.OAuthClientStorageConfig{
 			ArtifactEnabled:         cl.ArtifactEnabled,

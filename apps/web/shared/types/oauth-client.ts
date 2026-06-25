@@ -20,6 +20,14 @@ export interface OAuthClient {
   // Refresh token / session lifetime in seconds. Server default 90d.
   // Shorter for sensitive clients (e.g. 1d), longer for background services.
   refresh_token_ttl_seconds?: number
+  // Public app-directory (生态一键登录) display fields. Plain presentation
+  // metadata surfaced by GET /oauth/ecosystem — NOT ren-gated. `listed`
+  // opt-in (default false); logo_url/tagline/display_order are display-only.
+  // Contract: docs/integration/oauth/10-app-directory.md.
+  listed?: boolean
+  logo_url?: string
+  tagline?: string
+  display_order?: number
   created_at: string
   // Per-client object-storage capability config (artifact_*/image_* columns),
   // managed by the artifact admin "存储配置" page.
@@ -50,6 +58,17 @@ export const DEFAULT_REFRESH_TOKEN_TTL_SECONDS = 60 * 60 * 24 * 90
 
 export interface OAuthClientCreated extends OAuthClient {
   secret: string
+}
+
+// One entry in the public app directory (GET /oauth/ecosystem) — the
+// "拥有鲲 Galgame 账号，一键登录以下网站" strip. Only public display fields;
+// mirrors the backend service.EcosystemApp. Contract:
+// docs/integration/oauth/10-app-directory.md.
+export interface EcosystemApp {
+  name: string
+  site_domain: string
+  logo_url?: string
+  tagline?: string
 }
 
 // Grant types supported by the server. Keep in sync with

@@ -7,4 +7,5 @@ definePageMeta({
 
 <template>
   <AuthRegisterForm />
+  <AuthEcosystemStrip />
 </template>

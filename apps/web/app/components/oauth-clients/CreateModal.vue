@@ -38,6 +38,13 @@ const autoConsent = ref(false)
 // Refresh token lifetime — exposed in the UI as days for usability,
 // converted to seconds at submit time. Default 90d matches the server.
 const refreshTokenTtlDays = ref(DEFAULT_REFRESH_TOKEN_TTL_SECONDS / 86400)
+// App-directory (生态一键登录) display fields — plain presentation metadata
+// shown on the register/login strip via GET /oauth/ecosystem. NOT ren-gated.
+// `listed` is opt-in (default off) so internal/admin clients stay hidden.
+const listed = ref(false)
+const logoUrl = ref('')
+const tagline = ref('')
+const displayOrder = ref<number | null>(0)
 const error = ref('')
 const isLoading = ref(false)
 
@@ -109,6 +116,10 @@ const handleSubmit = async () => {
       is_public: isPublic.value,
       auto_consent: autoConsent.value,
       refresh_token_ttl_seconds: refreshTokenTtlDays.value * 86400,
+      listed: listed.value,
+      logo_url: logoUrl.value,
+      tagline: tagline.value,
+      display_order: displayOrder.value ?? 0,
     })
     if (response.code === 0) {
       emit('created', response.data)
@@ -121,6 +132,10 @@ const handleSubmit = async () => {
       isPublic.value = false
       autoConsent.value = false
       refreshTokenTtlDays.value = DEFAULT_REFRESH_TOKEN_TTL_SECONDS / 86400
+      listed.value = false
+      logoUrl.value = ''
+      tagline.value = ''
+      displayOrder.value = 0
     } else {
       error.value = response.message || '创建失败'
     }
@@ -244,6 +259,31 @@ const handleSubmit = async () => {
           color="primary"
         />
         <span class="text-xs text-default-400">— PKCE 必须；refresh 不需要 client_secret</span>
+      </div>
+
+      <div class="space-y-3 rounded-lg border border-default-200 p-3">
+        <div>
+          <KunSwitch v-model="listed" label="在应用目录中展示 (listed)" />
+          <p class="mt-1 text-xs text-default-400">
+            — 开启后此应用会出现在注册/登录页的「一键登录」生态 strip（公开）。内部 / 管理类客户端请保持关闭
+          </p>
+        </div>
+        <KunInput
+          v-model="logoUrl"
+          label="Logo URL"
+          placeholder="https://example.com/logo.png"
+        />
+        <KunInput
+          v-model="tagline"
+          label="一句话简介 (tagline)"
+          placeholder="例如：Galgame 论坛"
+        />
+        <KunNumberInput
+          v-model="displayOrder"
+          label="排序 (display_order)"
+          :min="0"
+          description="小在前，相同再按名称排序"
+        />
       </div>
 
       <div v-if="isRen" class="rounded-lg border border-warning-200 bg-warning-50 p-3">

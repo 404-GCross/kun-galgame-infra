@@ -33,6 +33,12 @@ const isPublicReadonly = computed(() => props.client.is_public ?? false)
 // rendering, no token semantics change. Toggling on/off takes effect
 // on the next /oauth/authorize visit for this client.
 const autoConsent = ref(props.client.auto_consent ?? false)
+// App-directory (生态一键登录) display fields — plain presentation metadata
+// (NOT ren-gated). Sent on every save; the backend treats non-nil as "set".
+const listed = ref(props.client.listed ?? false)
+const logoUrl = ref(props.client.logo_url ?? '')
+const tagline = ref(props.client.tagline ?? '')
+const displayOrder = ref<number | null>(props.client.display_order ?? 0)
 const error = ref('')
 const isLoading = ref(false)
 
@@ -101,6 +107,10 @@ const handleSubmit = async () => {
       allowed_scopes: allowedScopes.value,
       auto_consent: autoConsent.value,
       refresh_token_ttl_seconds: refreshTokenTtlDays.value * 86400,
+      listed: listed.value,
+      logo_url: logoUrl.value,
+      tagline: tagline.value,
+      display_order: displayOrder.value ?? 0,
     })
     if (response.code === 0) {
       emit('updated')
@@ -216,6 +226,31 @@ const handleSubmit = async () => {
           min="1"
           max="3650"
           @update:model-value="refreshTokenTtlDays = Number($event)"
+        />
+      </div>
+
+      <div class="space-y-3 rounded-lg border border-default-200 p-3">
+        <div>
+          <KunSwitch v-model="listed" label="在应用目录中展示 (listed)" />
+          <p class="mt-1 text-xs text-default-400">
+            — 开启后此应用会出现在注册/登录页的「一键登录」生态 strip（公开）。内部 / 管理类客户端请保持关闭
+          </p>
+        </div>
+        <KunInput
+          v-model="logoUrl"
+          label="Logo URL"
+          placeholder="https://example.com/logo.png"
+        />
+        <KunInput
+          v-model="tagline"
+          label="一句话简介 (tagline)"
+          placeholder="例如：Galgame 论坛"
+        />
+        <KunNumberInput
+          v-model="displayOrder"
+          label="排序 (display_order)"
+          :min="0"
+          description="小在前，相同再按名称排序"
         />
       </div>
 

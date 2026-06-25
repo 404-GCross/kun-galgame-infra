@@ -56,6 +56,14 @@ type CreateOAuthClientRequest struct {
 	// semantics: model.OAuthClient.AutoConsent (auth_clients column).
 	AutoConsent            bool     `json:"auto_consent"`
 	RefreshTokenTTLSeconds *int     `json:"refresh_token_ttl_seconds" validate:"omitempty,min=60"`
+	// App-directory (public, opt-in) display fields. Plain presentation
+	// metadata surfaced by GET /oauth/ecosystem — NOT ren-gated. Listed
+	// defaults false (opt-in); the rest are display-only.
+	// See docs/integration/oauth/10-app-directory.md.
+	Listed       bool   `json:"listed"`
+	LogoURL      string `json:"logo_url" validate:"omitempty,url,max=255"`
+	Tagline      string `json:"tagline" validate:"omitempty,max=100"`
+	DisplayOrder int    `json:"display_order" validate:"omitempty,min=0"`
 }
 
 // UpdateOAuthClientRequest represents an OAuth client update request.
@@ -78,6 +86,13 @@ type UpdateOAuthClientRequest struct {
 	// /oauth/authorize silently consents for this client's users.
 	AutoConsent            *bool    `json:"auto_consent"`
 	RefreshTokenTTLSeconds *int     `json:"refresh_token_ttl_seconds" validate:"omitempty,min=60"`
+	// App-directory display fields. PATCH-style: nil = leave alone, non-nil
+	// = set. Plain presentation metadata (NOT ren-gated). See
+	// docs/integration/oauth/10-app-directory.md.
+	Listed       *bool   `json:"listed"`
+	LogoURL      *string `json:"logo_url" validate:"omitempty,url,max=255"`
+	Tagline      *string `json:"tagline" validate:"omitempty,max=100"`
+	DisplayOrder *int    `json:"display_order" validate:"omitempty,min=0"`
 }
 
 // OAuthClientResponse represents an OAuth client in API responses
@@ -91,7 +106,12 @@ type OAuthClientResponse struct {
 	IsPublic               bool     `json:"is_public"`
 	AutoConsent            bool     `json:"auto_consent"`
 	RefreshTokenTTLSeconds int      `json:"refresh_token_ttl_seconds"`
-	CreatedAt              string   `json:"created_at"`
+	// App-directory (public, opt-in) display fields.
+	Listed       bool   `json:"listed"`
+	LogoURL      string `json:"logo_url"`
+	Tagline      string `json:"tagline"`
+	DisplayOrder int    `json:"display_order"`
+	CreatedAt    string `json:"created_at"`
 	// Storage holds the per-client object-storage capability config (the
 	// artifact_*/image_* columns), surfaced for the admin storage-config page.
 	Storage OAuthClientStorageConfig `json:"storage"`
