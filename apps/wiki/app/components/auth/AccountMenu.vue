@@ -150,7 +150,7 @@ const handleLogout = () => {
             </div>
             <p class="text-default-400 truncate text-xs">{{ account.email }}</p>
             <p v-if="needsStepUp(account.roles)" class="text-warning text-xs">
-              切换需重新登录
+              切换管理员账号需要重新登录
             </p>
           </div>
         </button>

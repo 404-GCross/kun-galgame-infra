@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { resolveAvatarUrl } from '~~/shared/utils/resolveImage'
+import { roleColor, roleLabel, primaryRole, needsStepUp } from '~/constants/roles'
 
 // Presentational account picker for the OAuth authorize flow
 // (prompt=select_account). The parent owns the switch + step-up logic; this
@@ -57,6 +58,14 @@ const isSwitching = computed(() => !!props.switchingSub)
                    overlay that can't render a text label; KunChip is the pill
                    used elsewhere (e.g. users/Table.vue role chips). -->
               <KunChip
+                v-if="primaryRole(session.roles)"
+                :color="roleColor(primaryRole(session.roles))"
+                variant="flat"
+                size="sm"
+              >
+                {{ roleLabel(primaryRole(session.roles)) }}
+              </KunChip>
+              <KunChip
                 v-if="session.active"
                 color="primary"
                 variant="flat"
@@ -66,6 +75,12 @@ const isSwitching = computed(() => !!props.switchingSub)
               </KunChip>
             </div>
             <p class="text-default-400 truncate text-sm">{{ session.email }}</p>
+            <p
+              v-if="!session.active && needsStepUp(session.roles)"
+              class="text-warning text-xs"
+            >
+              切换管理员账号需要重新登录
+            </p>
           </div>
           <KunIcon
             v-if="switchingSub === session.sub"

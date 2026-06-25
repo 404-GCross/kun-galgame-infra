@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { needsStepUp } from '~/constants/roles'
+
 interface ClientPublicInfo {
   id: string
   name: string
@@ -236,6 +238,14 @@ const redirectStepUp = (sub: string) => {
 // keep the chooser open.
 const handleChooserPick = async (sub: string) => {
   if (switchingSub.value) return
+  // Admin/ren accounts always require fresh re-auth — go straight to the step-up
+  // login instead of calling switch (which would just return 10016). We know the
+  // role from the bag, so no round-trip / no confusing 401.
+  const target = bagSessions.value.find((s) => s.sub === sub)
+  if (target && needsStepUp(target.roles)) {
+    redirectStepUp(sub)
+    return
+  }
   switchingSub.value = sub
   error.value = ''
   try {

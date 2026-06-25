@@ -57,8 +57,20 @@ const toggleSwitcher = () => {
 const sessionAvatar = (session: BagSession) =>
   resolveAvatarUrl(session, { cdnBase, variant: '100' }, '')
 
+const goStepUp = (session: BagSession) =>
+  // Privileged target (admin/ren) — must re-authenticate, no silent switch.
+  // force=1 keeps the login form visible (we're still logged in as the current
+  // account); pre-fill the target's email so it's password-only.
+  navigateTo(`/auth/login?force=1&account=${encodeURIComponent(session.email)}`)
+
 const handleSwitch = async (session: BagSession) => {
   if (session.active || switchingSub.value) return
+  // Admin/ren always need fresh re-auth — go straight to step-up (skip the
+  // switch call, which would just return 10016). Role is known from the bag.
+  if (needsStepUp(session.roles)) {
+    await goStepUp(session)
+    return
+  }
   switchingSub.value = session.sub
   try {
     const result = await switchAccount(session.sub)
@@ -68,12 +80,7 @@ const handleSwitch = async (session: BagSession) => {
       return
     }
     if (result.stepUp) {
-      // Privileged target (admin/ren) — must re-authenticate, no silent switch.
-      // force=1 keeps the login form visible (we're still logged in as the
-      // current account); pre-fill the target's email so it's password-only.
-      await navigateTo(
-        `/auth/login?force=1&account=${encodeURIComponent(session.email)}`
-      )
+      await goStepUp(session)
       return
     }
     // Switch failed (account no longer in the bag, etc.) — refresh the list
@@ -212,7 +219,7 @@ const handleLogout = async () => {
                 v-if="!session.active && needsStepUp(session.roles)"
                 class="text-warning text-xs"
               >
-                切换需重新登录
+                切换管理员账号需要重新登录
               </p>
             </div>
             <KunIcon
