@@ -290,6 +290,12 @@ func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 	oauthClients := v1.Group("/oauth/clients", middleware.Auth(authSvc), middleware.RequireRole("admin"))
 	oauthClients.Get("/", siteH.ListClients)
 	oauthClients.Post("/", siteH.CreateClient)
+	// Admin app-directory logo upload → image_service, returns {hash,url}; the
+	// form saves url into the client's logo_url. Decoupled from :id so it works
+	// at create time too. See docs/integration/oauth/10-app-directory.md.
+	if avatarUploadH != nil {
+		oauthClients.Post("/logo", avatarUploadH.UploadClientLogo)
+	}
 	oauthClients.Put("/:id", siteH.UpdateClient)
 	oauthClients.Put("/:id/storage", middleware.RequireRole("ren"), siteH.UpdateClientStorage)
 	oauthClients.Delete("/:id", siteH.DeleteClient)

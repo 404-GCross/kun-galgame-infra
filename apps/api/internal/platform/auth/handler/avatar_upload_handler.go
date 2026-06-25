@@ -56,6 +56,37 @@ func (h *AvatarUploadHandler) UploadMine(c fiber.Ctx) error {
 	return h.uploadFor(c, uuid)
 }
 
+// UploadClientLogo uploads an OAuth-client logo/icon to image_service and
+// returns the result ({hash, url, …}) WITHOUT touching any client row — the
+// admin form saves the returned `url` into oauth_clients.logo_url via the
+// normal create/update call. Decoupling the upload from the client id lets the
+// same flow work at create time (no id yet) and edit time alike.
+//
+// Uses the account image client's only allowed preset ("avatar": square
+// 256/100), which is exactly what an app icon wants. Admin-only route.
+func (h *AvatarUploadHandler) UploadClientLogo(c fiber.Ctx) error {
+	if h.imgClient == nil {
+		return response.InternalErrorMsg(c, "image client not configured (KUN_IMAGE_CLIENT_ID/SECRET unset)")
+	}
+
+	fh, err := c.FormFile("file")
+	if err != nil || fh == nil {
+		return response.BadRequest(c, errors.ErrMissingParam)
+	}
+	src, err := fh.Open()
+	if err != nil {
+		return response.InternalError(c, errors.ErrOperationFailed)
+	}
+	defer src.Close()
+
+	result, err := h.imgClient.Upload(c.Context(), src, fh.Filename, "avatar")
+	if err != nil {
+		slog.Error("upload client logo failed", "err", err)
+		return response.InternalError(c, errors.ErrOperationFailed)
+	}
+	return response.Success(c, result)
+}
+
 // uploadFor performs the multipart receive + image_service upload + DB
 // write for the given user uuid. Common to both Upload and UploadMine.
 func (h *AvatarUploadHandler) uploadFor(c fiber.Ctx, uuid string) error {
