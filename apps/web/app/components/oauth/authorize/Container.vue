@@ -266,7 +266,12 @@ const handleChooserAdd = () => {
 // auto-navigateTo used, but now gated on an actual click so the back
 // button can escape.
 const goLogin = () => {
-  router.push(`/auth/login?redirect=${encodeURIComponent(currentUrl.value)}`)
+  // force=1 so /auth/login shows the form even if an OP session still exists.
+  // needsLogin is also raised by prompt=login (re-auth / "add account"), where
+  // the user must enter credentials for a possibly-different account — without
+  // force=1, /auth/login would bounce the still-logged-in user back and
+  // auto-consent the existing account. See LoginForm + docs 09 §3.6.
+  router.push(`/auth/login?force=1&redirect=${encodeURIComponent(currentUrl.value)}`)
 }
 
 const goRegister = () => {
