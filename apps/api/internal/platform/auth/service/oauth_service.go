@@ -85,6 +85,36 @@ func (s *OAuthService) GetClientPublicInfo(ctx context.Context, clientID string)
 	return info, nil
 }
 
+// EcosystemApp is one entry in the public app directory (GET /oauth/ecosystem):
+// the "one KUN Galgame account → these sites" strip on register/login. Only
+// public display fields — no secret/redirect/scope. See
+// docs/integration/oauth/10-app-directory.md.
+type EcosystemApp struct {
+	Name       string `json:"name"`
+	SiteDomain string `json:"site_domain"`
+	LogoURL    string `json:"logo_url,omitempty"`
+	Tagline    string `json:"tagline,omitempty"`
+}
+
+// ListEcosystem returns the opt-in (Listed) clients for the public app
+// directory, ordered by DisplayOrder then Name. Public marketing metadata.
+func (s *OAuthService) ListEcosystem(ctx context.Context) ([]EcosystemApp, error) {
+	clients, err := s.clientRepo.FindListed(ctx)
+	if err != nil {
+		return nil, err
+	}
+	apps := make([]EcosystemApp, 0, len(clients))
+	for i := range clients {
+		c := &clients[i]
+		app := EcosystemApp{Name: c.Name, LogoURL: c.LogoURL, Tagline: c.Tagline}
+		if c.Site != nil {
+			app.SiteDomain = c.Site.Domain
+		}
+		apps = append(apps, app)
+	}
+	return apps, nil
+}
+
 // ValidateClient validates an OAuth client
 func (s *OAuthService) ValidateClient(ctx context.Context, clientID, redirectURI string) (*sitemodel.OAuthClient, error) {
 	client, err := s.clientRepo.FindByClientID(ctx, clientID)

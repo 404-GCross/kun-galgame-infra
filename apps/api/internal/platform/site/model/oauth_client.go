@@ -130,6 +130,17 @@ type OAuthClient struct {
 	// Policy: docs/integration/oauth/06-moemoepoint.md §awarder allow-list.
 	MoemoepointAwarder bool `gorm:"not null;default:false" json:"moemoepoint_awarder"`
 
+	// --- App directory / ecosystem display (public, opt-in) ---
+	// Listed surfaces this client in the public GET /oauth/ecosystem app
+	// directory — the "one KUN Galgame account → these sites" strip on the
+	// register/login screens. Opt-in: default false so internal/admin clients
+	// stay out of the public list. LogoURL/Tagline/DisplayOrder are display-only.
+	// See docs/integration/oauth/10-app-directory.md.
+	Listed       bool   `gorm:"not null;default:false" json:"listed"`
+	LogoURL      string `gorm:"size:255" json:"logo_url,omitempty"`
+	Tagline      string `gorm:"size:100" json:"tagline,omitempty"`
+	DisplayOrder int    `gorm:"not null;default:0" json:"display_order"`
+
 	// --- Image service extension fields ---
 	ImageEnabled bool   `gorm:"not null;default:false" json:"image_enabled"`
 	ImageSiteKey string `gorm:"size:32" json:"image_site_key,omitempty"`

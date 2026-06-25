@@ -249,6 +249,18 @@ func (h *OAuthHandler) GetClientPublic(c fiber.Ctx) error {
 	return response.Success(c, info)
 }
 
+// GetEcosystem serves the public app directory (GET /oauth/ecosystem): the
+// opt-in (listed) clients for the "one KUN Galgame account → these sites" strip
+// on register/login. Public + cacheable; only public display fields. See
+// docs/integration/oauth/10-app-directory.md.
+func (h *OAuthHandler) GetEcosystem(c fiber.Ctx) error {
+	apps, err := h.oauthService.ListEcosystem(c.Context())
+	if err != nil {
+		return response.InternalError(c, errors.ErrOperationFailed)
+	}
+	return response.Success(c, fiber.Map{"apps": apps})
+}
+
 // PostLogoutRedirect validates a post-logout redirect URL against the named
 // client's registered redirect_uris (origin match) and returns the safe URL to
 // send the browser to, or "" when not allow-listed. Used by the OP logout page
