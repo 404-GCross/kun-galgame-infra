@@ -51,18 +51,20 @@ const handleSubmit = async () => {
     }
 
     const next = response.data.user
-    // Account-center flow (no OAuth redirect to complete back to a downstream).
-    if (!redirectUrl.value) {
-      // Re-logged the already-active account → it's a no-op; show an in-place
-      // notice instead of a pointless jump to /profile.
-      if (prevUuid && next.uuid === prevUuid) {
-        sameAccountName.value = next.name
-        return
-      }
-      // Switched to a different account via the "登录其他账号" form → confirm.
-      if (forceLogin.value && prevUuid) {
-        useKunMessage(`已切换到「${next.name}」`, 'success')
-      }
+    // Re-logged the account that's already active → no-op. Don't silently
+    // proceed (a confusing flash with no feedback); show an in-place notice.
+    // Applies to BOTH flows — in the OAuth flow the notice offers "继续访问" to
+    // finish the handshake as this account instead of a silent bounce back to
+    // the downstream.
+    if (prevUuid && next.uuid === prevUuid) {
+      sameAccountName.value = next.name
+      return
+    }
+    // Switched to a different account in the account-center "登录其他账号" form
+    // (no redirect carries the result onward) → confirm with a toast. The OAuth
+    // flow redirects away, so a toast there would be lost — skip it.
+    if (!redirectUrl.value && forceLogin.value && prevUuid) {
+      useKunMessage(`已切换到「${next.name}」`, 'success')
     }
     navigateAfterLogin()
   } catch (e: unknown) {
@@ -95,7 +97,24 @@ onMounted(async () => {
         这已是你当前登录的账号「<span class="font-medium">{{ sameAccountName }}</span>」
       </p>
       <p class="mt-1 text-default-500">想换一个账号？在下方重新输入即可。</p>
-      <KunButton color="primary" variant="flat" size="sm" class="mt-3" @click="goBack">
+      <KunButton
+        v-if="redirectUrl"
+        color="primary"
+        variant="flat"
+        size="sm"
+        class="mt-3"
+        @click="navigateAfterLogin"
+      >
+        继续访问应用
+      </KunButton>
+      <KunButton
+        v-else
+        color="primary"
+        variant="flat"
+        size="sm"
+        class="mt-3"
+        @click="goBack"
+      >
         返回
       </KunButton>
     </div>
