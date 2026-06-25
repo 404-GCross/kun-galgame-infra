@@ -64,6 +64,20 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		// color-mode, etc). Hitting the limit returns 431 before CORS runs,
 		// surfacing as a misleading "missing Access-Control-Allow-Origin".
 		ReadBufferSize: 32 * 1024,
+		// Real client IP behind Cloudflare → Traefik (dokploy). Without this,
+		// c.IP() returns the immediate peer (Traefik, ~10.0.1.x) for EVERY user,
+		// which silently makes the rate limiters global-per-proxy (the strict
+		// 10/min would throttle all logins site-wide) and stores a useless
+		// proxy IP on sessions/audit. Cloudflare sets CF-Connecting-IP to the
+		// true client; we only honor it when the peer is a trusted private proxy
+		// (TrustProxy + Private) so it can't be spoofed — the app is reachable
+		// only via Traefik. In dev (loopback peer, no CF header) c.IP() falls
+		// back to the direct connection IP.
+		ProxyHeader: "CF-Connecting-IP",
+		TrustProxy:  true,
+		TrustProxyConfig: fiber.TrustProxyConfig{
+			Private: true,
+		},
 	})
 
 	return a, nil
