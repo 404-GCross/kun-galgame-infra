@@ -79,6 +79,14 @@ export const useAccountSwitch = () => {
       if (response.code === 0 && response.data) {
         accessToken.value = response.data.access_token
         userStore.setUser(response.data.user)
+        // A useCookie('access_token') ref created in ANOTHER composable (e.g. the
+        // authorize page's useApi instance) does NOT observe the write above, so
+        // an immediate auto-consent would post with the OLD account's Bearer →
+        // code minted for the old account (the "switch takes two clicks" bug).
+        // Flush the cookie write (nextTick) then refreshCookie so every
+        // useCookie('access_token') ref across the app re-reads the new token.
+        await nextTick()
+        refreshCookie('access_token')
         return { ok: true, user: response.data.user }
       }
       return { ok: false }
