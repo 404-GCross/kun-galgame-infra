@@ -634,19 +634,35 @@ func (s *AuthService) RefreshToken(ctx context.Context, refreshToken string) (*d
 		return nil, errors.NewWithCode(errors.ErrAuthInvalidToken)
 	}
 
-	// Case A: matched current — normal rotation.
+	// Case A: matched current — rotate atomically (compare-and-swap on the
+	// presented token). Two concurrent refreshes that both read this current
+	// token would otherwise each Save a different new token (lost update),
+	// desyncing the cookie vs DB → the next request 401s forever. The CAS lets
+	// exactly one win.
 	now := time.Now()
-	session.SessionToken = tokens.AccessToken
-	session.PrevRefreshToken = session.RefreshToken
-	session.RotatedAt = &now
-	session.RefreshToken = tokens.RefreshToken
-	session.ExpiresAt = now.Add(7 * 24 * time.Hour)
-
-	if err := s.sessionRepo.Update(ctx, session); err != nil {
+	won, err := s.sessionRepo.RotateRefreshToken(
+		ctx, session.ID, refreshToken, tokens.AccessToken, tokens.RefreshToken,
+		now, now.Add(7*24*time.Hour),
+	)
+	if err != nil {
 		return nil, err
 	}
+	if won {
+		return tokens, nil
+	}
 
-	return tokens, nil
+	// Lost the race: a concurrent refresh rotated first. Converge on the
+	// winner's CURRENT refresh token (+ our fresh access token) instead of
+	// returning a token the DB never stored — same outcome as the grace path,
+	// reached via the CAS miss. If the row vanished (logout/revoke), it's gone.
+	fresh, ferr := s.sessionRepo.FindByID(ctx, session.ID)
+	if ferr != nil {
+		return nil, errors.NewWithCode(errors.ErrAuthInvalidToken)
+	}
+	return &dto.TokenPair{
+		AccessToken:  tokens.AccessToken,
+		RefreshToken: fresh.RefreshToken,
+	}, nil
 }
 
 // GetCurrentUser gets the current user from token

@@ -37,23 +37,15 @@ export const useApi = () => {
   }
 
   const handleUnauthorized = async () => {
-    // Try to refresh using httpOnly cookie (sent automatically by browser)
-    try {
-      const response = await $fetch<ApiResponse<{ access_token: string }>>(
-        `${baseUrl}/auth/refresh`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include'
-        }
-      )
-
-      if (response.code === 0) {
-        accessToken.value = response.data.access_token
-        return true
-      }
-    } catch {
-      // Refresh failed
+    // Refresh via the SHARED, single-flighted helper so concurrent 401s (a
+    // navigation that fires several requests at once) collapse into ONE
+    // /auth/refresh instead of racing each other and the backend's token
+    // rotation. On success store the new token into THIS composable's cookie
+    // ref so the retry below sends it.
+    const token = await requestTokenRefresh()
+    if (token) {
+      accessToken.value = token
+      return true
     }
 
     // Clear local token. Then navigate to login, preserving the current

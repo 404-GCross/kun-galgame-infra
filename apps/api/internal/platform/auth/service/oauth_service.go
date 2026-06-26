@@ -675,17 +675,40 @@ func (s *OAuthService) RefreshWithClient(ctx context.Context, refreshToken, clie
 		return nil, err
 	}
 
+	// Rotate atomically (compare-and-swap on the presented token). Two
+	// concurrent refreshes that both read this current token would otherwise
+	// each Save a different new token (lost update) → cookie/DB desync → the
+	// next refresh presents a token that is neither current nor prev → a 401
+	// that even a reload can't fix. The CAS lets exactly one win; the loser
+	// converges on the winner's token below. (The grace window only catches the
+	// sequential case where the racer presents the PREVIOUS token; it cannot fix
+	// truly-overlapping rotations, which both take this current-token path.)
 	now := time.Now()
-	session.SessionToken = accessToken
-	session.PrevRefreshToken = session.RefreshToken // demote, honored for RefreshGraceWindow
-	session.RotatedAt = &now
-	session.RefreshToken = newRefreshToken
-	session.ExpiresAt = now.Add(refreshTokenTTL)
-
-	if err := s.sessionRepo.Update(ctx, session); err != nil {
+	won, err := s.sessionRepo.RotateRefreshToken(
+		ctx, session.ID, refreshToken, accessToken, newRefreshToken,
+		now, now.Add(refreshTokenTTL),
+	)
+	if err != nil {
 		slog.Error("oauth refresh reject", "stage", "session_update_failed",
 			"session_id", session.ID, "user_id", session.UserID, "err", err)
 		return nil, err
+	}
+	if !won {
+		// Lost the race: a concurrent refresh rotated first. Converge on the
+		// winner's current refresh token instead of returning a discarded one.
+		fresh, ferr := s.sessionRepo.FindByID(ctx, session.ID)
+		if ferr != nil {
+			return nil, errors.NewWithCode(errors.ErrAuthInvalidToken)
+		}
+		slog.Info("oauth refresh rotation-race converged",
+			"client_id", clientID, "session_id", session.ID, "user_id", session.UserID,
+			"presented_fp", tokenFingerprint(refreshToken))
+		return &dto.TokenResponse{
+			AccessToken:  accessToken,
+			TokenType:    "Bearer",
+			ExpiresIn:    900,
+			RefreshToken: fresh.RefreshToken,
+		}, nil
 	}
 
 	slog.Debug("oauth refresh ok",

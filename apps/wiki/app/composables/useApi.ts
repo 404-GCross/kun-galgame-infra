@@ -25,9 +25,6 @@ export const useApi = () => {
   const baseUrl = (import.meta.server && config.apiBaseSsr
     ? config.apiBaseSsr
     : config.public.apiBase) as string
-  const authApiBase = (import.meta.server && config.authApiBaseSsr
-    ? config.authApiBaseSsr
-    : config.public.authApiBase) as string
   const accessToken = useCookie('wiki_access_token')
 
   const getAuthHeaders = (): Record<string, string> => {
@@ -44,26 +41,23 @@ export const useApi = () => {
     // SSR data fetch would abort the render unpredictably.
     if (import.meta.server) return false
 
-    // Refresh token lives on oauth backend, not wiki
-    try {
-      const response = await $fetch<ApiResponse<{ access_token: string }>>(
-        `${authApiBase}/auth/refresh`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include'
-        }
-      )
-
-      if (response.code === 0) {
-        accessToken.value = response.data.access_token
-        return true
-      }
-    } catch {
-      // Refresh failed
+    // Refresh through the SHARED, single-flighted OAuth client refresh
+    // (grant_type=refresh_token via the wiki_refresh_token cookie). This is the
+    // wiki's CORRECT refresh path — NOT /auth/refresh, which targets the IdP's
+    // separate first-party session and only worked on localhost (same-site) by
+    // borrowing it, failing cross-site in prod. Single-flight collapses
+    // concurrent 401s into one refresh. Store the new token into THIS
+    // composable's cookie ref so the retry below sends it.
+    const token = await requestTokenRefresh()
+    if (token) {
+      accessToken.value = token
+      return true
     }
 
-    accessToken.value = null
+    // Definitive failure: clear the full session (tokens + persisted user store)
+    // so `isLoggedIn` can't stay stale-true (→ login/redirect loops), then go to
+    // login. clearAuth lives in useAuth (single source of clearing logic).
+    useAuth().clearAuth()
     navigateTo('/auth/login')
     return false
   }

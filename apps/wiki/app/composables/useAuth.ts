@@ -87,31 +87,18 @@ export const useAuth = () => {
     return navigateTo('/auth/login')
   }
 
+  // Refresh via the SHARED, single-flighted /oauth/token grant so this path,
+  // useApi's 401 retry, and the route middleware never fire competing refreshes
+  // (which would race the server's token rotation). On definitive failure clear
+  // the local session — the persisted user store must not outlive a dead
+  // refresh token, or `isLoggedIn` stays stale-true and login/redirect loops.
   const refreshAccessToken = async () => {
-    if (!refreshToken.value) {
-      // No refresh_token to use — caller must re-run the OAuth flow.
-      return false
+    const token = await requestTokenRefresh()
+    if (token) {
+      accessToken.value = token
+      return true
     }
-    try {
-      const response = await authApi.post<{
-        access_token: string
-        refresh_token?: string
-      }>('/oauth/token', {
-        grant_type: 'refresh_token',
-        refresh_token: refreshToken.value,
-        client_id: config.public.oauthClientID as string
-      })
-      if (response.code === 0 && response.data?.access_token) {
-        accessToken.value = response.data.access_token
-        // Server may rotate refresh_token; if it returns a new one, save it.
-        if (response.data.refresh_token) {
-          refreshToken.value = response.data.refresh_token
-        }
-        return true
-      }
-    } catch {
-      clearAuth()
-    }
+    clearAuth()
     return false
   }
 
@@ -133,6 +120,7 @@ export const useAuth = () => {
     user: computed(() => userStore.user),
     isLoggedIn: computed(() => userStore.isLoggedIn),
     isAdmin: computed(() => userStore.isAdmin),
+    clearAuth,
     logoutLocal,
     logoutEverywhere,
     fetchUser,

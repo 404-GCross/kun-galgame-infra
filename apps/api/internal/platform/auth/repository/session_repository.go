@@ -51,6 +51,47 @@ func (r *SessionRepository) FindByRefreshTokenOrPrev(ctx context.Context, token 
 	return &session, nil
 }
 
+// FindByID loads a session by primary key. Used to re-read a session after a
+// lost rotation race (see RotateRefreshToken) so the caller can converge on the
+// winning rotation's current token instead of a token the DB never stored.
+func (r *SessionRepository) FindByID(ctx context.Context, id uint) (*model.Session, error) {
+	var session model.Session
+	if err := r.db.WithContext(ctx).First(&session, id).Error; err != nil {
+		return nil, err
+	}
+	return &session, nil
+}
+
+// RotateRefreshToken atomically rotates a session's tokens, but ONLY if its
+// current refresh_token still equals oldRefresh (compare-and-swap). It demotes
+// oldRefresh to prev_refresh_token and installs the new access/refresh tokens.
+// Returns won=true when THIS call performed the rotation (1 row matched), or
+// won=false when a concurrent refresh already rotated (0 rows) — the caller
+// then converges on the winner's current token.
+//
+// This is the fix for the lost-update race: two concurrent refreshes that read
+// the same current token would otherwise both Save divergent new tokens, so the
+// cookie and DB end up holding different tokens → the next request 401s with a
+// token that is neither current nor prev. The CAS lets exactly one win. Only
+// the rotation columns are written (like TouchLastUsed) so it can't clobber a
+// concurrent single-column update on the same row.
+func (r *SessionRepository) RotateRefreshToken(ctx context.Context, id uint, oldRefresh, newAccess, newRefresh string, rotatedAt, expiresAt time.Time) (bool, error) {
+	res := r.db.WithContext(ctx).
+		Model(&model.Session{}).
+		Where("id = ? AND refresh_token = ?", id, oldRefresh).
+		Updates(map[string]any{
+			"session_token":      newAccess,
+			"prev_refresh_token": oldRefresh,
+			"refresh_token":      newRefresh,
+			"rotated_at":         rotatedAt,
+			"expires_at":         expiresAt,
+		})
+	if res.Error != nil {
+		return false, res.Error
+	}
+	return res.RowsAffected == 1, nil
+}
+
 // FindByUserID finds sessions by user ID
 func (r *SessionRepository) FindByUserID(ctx context.Context, userID uint) ([]model.Session, error) {
 	var sessions []model.Session
