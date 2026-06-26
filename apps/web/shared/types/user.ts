@@ -8,6 +8,10 @@ export interface User {
   moemoepoint: number
   status: number
   is_anonymized?: boolean // PII irreversibly scrubbed (terminal); shows 已注销
+  // Pre-anonymize email, preserved for 备查. The API returns it ONLY to ren
+  // admins (PII) and only for anonymized users — so its mere presence means
+  // "ren is viewing an anonymized account". Absent otherwise.
+  original_email?: string
   roles: string[]
   created_at: string
 }

@@ -50,6 +50,13 @@ type User struct {
 	// column rather than a status value so it can't collide with migrated
 	// legacy statuses. See IsAnonymized().
 	AnonymizedAt *time.Time `gorm:"index" json:"anonymized_at,omitempty"`
+	// OriginalEmail preserves the pre-scrub email when a user is anonymized,
+	// for later lookup (备查). nil for everyone else. NOT unique (a fresh user
+	// may re-register a since-freed address, then itself be anonymized) and
+	// json:"-" so this retained PII never leaks through any model serialization
+	// — read it from the DB directly. NOTE: keeping it means anonymize is no
+	// longer a full PII scrub for the email field; this is a deliberate trade.
+	OriginalEmail *string `gorm:"size:255" json:"-"`
 	IP          string         `gorm:"size:45;default:''" json:"-"`
 	CreatedAt   time.Time      `json:"created_at"`
 	UpdatedAt   time.Time      `json:"updated_at"`

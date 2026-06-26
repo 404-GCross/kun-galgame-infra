@@ -35,6 +35,16 @@ func piiOrRedacted(canSeePII bool, value string) string {
 	return ""
 }
 
+// origEmailForAdmin returns the preserved pre-anonymize email, but only to ren
+// callers (canSeePII). Empty (→ omitempty) when not ren or never set — so the
+// retained PII reaches the admin UI for ren alone. nil-safe.
+func origEmailForAdmin(canSeePII bool, v *string) string {
+	if canSeePII && v != nil {
+		return *v
+	}
+	return ""
+}
+
 // AdminService handles admin operations
 type AdminService struct {
 	userRepo    *repository.UserRepository
@@ -87,6 +97,7 @@ func (s *AdminService) ListUsers(ctx context.Context, req *dto.UserListRequest, 
 			Moemoepoint:     user.Moemoepoint,
 			Status:          user.Status,
 			IsAnonymized:    user.IsAnonymized(),
+			OriginalEmail:   origEmailForAdmin(canSeePII, user.OriginalEmail),
 			Roles:           user.RoleNames(),
 			CreatedAt:       user.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
 		}
@@ -128,6 +139,7 @@ func (s *AdminService) GetUser(ctx context.Context, uuid string, canSeePII bool)
 			Moemoepoint:     user.Moemoepoint,
 			Status:          user.Status,
 			IsAnonymized:    user.IsAnonymized(),
+			OriginalEmail:   origEmailForAdmin(canSeePII, user.OriginalEmail),
 			Roles:           user.RoleNames(),
 			CreatedAt:       user.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
 		},
@@ -299,6 +311,13 @@ func (s *AdminService) AnonymizeUser(ctx context.Context, uuid string) error {
 	if user.AvatarImageHash != nil {
 		oldAvatarHash = *user.AvatarImageHash
 	}
+
+	// Preserve the original email before scrubbing (备查). Copy the value —
+	// user.Email is overwritten on the next line. The IsAnonymized() early
+	// return above keeps this idempotent: a second anonymize won't clobber
+	// OriginalEmail with the deleted- placeholder.
+	origEmail := user.Email
+	user.OriginalEmail = &origEmail
 
 	// Name + Email are NOT NULL + unique, so replace with deterministic
 	// placeholders derived from the immutable id (guaranteed unique, and

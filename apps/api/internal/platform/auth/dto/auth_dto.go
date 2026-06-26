@@ -146,8 +146,13 @@ type UserResponse struct {
 	// IsAnonymized = PII was irreversibly scrubbed (terminal). The frontend
 	// shows "已注销" and hides ban/unban/anonymize actions when true.
 	IsAnonymized bool     `json:"is_anonymized"`
-	Roles        []string `json:"roles"`
-	CreatedAt    string   `json:"created_at"`
+	// OriginalEmail is the pre-anonymize email, preserved for 备查. Populated
+	// ONLY by the admin list/detail constructors and ONLY for ren callers
+	// (retained PII); omitempty hides it everywhere else — self-facing payloads
+	// (/me, login) never set it. See model.User.OriginalEmail / AnonymizeUser.
+	OriginalEmail string   `json:"original_email,omitempty"`
+	Roles         []string `json:"roles"`
+	CreatedAt     string   `json:"created_at"`
 }
 
 // LoginResponse represents a login response

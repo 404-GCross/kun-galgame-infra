@@ -77,6 +77,11 @@ const _ = props // keep TS happy if `props` is never read elsewhere
           <td class="whitespace-nowrap px-6 py-4 text-default-400">
             <!-- Email is ren-only; the API redacts it to "" for non-ren admins. -->
             {{ user.email || '——' }}
+            <!-- original_email is the pre-anonymize address, returned only to ren
+                 for anonymized users — so this line shows up for ren alone. -->
+            <div v-if="user.original_email" class="text-default-300 text-xs">
+              原邮箱：{{ user.original_email }}
+            </div>
           </td>
           <td class="whitespace-nowrap px-6 py-4">
             <div class="flex gap-1">
