@@ -16,6 +16,9 @@ export interface ArtifactAdminRow {
   uploader_client: string
   checksum: string
   created_at: string
+  // Last progress time (init / multipart persist / resume). For uploading rows
+  // it's the "idle since" signal used to display idle age + gate reclaim.
+  updated_at: string
 }
 
 export interface ArtifactAdminListResponse {

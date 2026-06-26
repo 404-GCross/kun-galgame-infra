@@ -82,6 +82,7 @@ B2 凭证已写入 `apps/api/.env`（bucket `kungal-artifact-v1` @ `us-east-005`
 - **`oauth_clients` 加列的时机**：现有服务对 `oauth_clients` 的**读**是 GORM `SELECT *`，即使列还没加也**不报错**（新字段读成零值，`artifact_enabled=false`）。但**写**（admin 编辑 client 走 `db.Save`）会带上 `artifact_*` 列，**列不存在则 UPDATE 失败**。
   → **部署顺序**：跑 `cmd/migrate`（加列，步骤 4）**先于或同步于**部署带本轮代码的 oauth/image/artifact。这与图床当初加 `image_*` 列同理。
 - **`artifact-gc` 已做空配置保护**：该任务注册在 oauth 进程，但 `RunArtifactGC` 在 `cfg.ArtifactS3.AccessKeyID == ""` 时直接返回 `{"skipped":...}`，**不连库、不报错**。所以即使 oauth 还没配 artifact env，每天 05:30 的调度也只是 no-op，不会产生错误噪音或拖垮 oauth。
+- **「立即回收」(reclaim) 与 GC 同源依赖 cleanup 凭证**：`POST /admin/artifact/:uuid/reclaim`(ren-only) 在 oauth 进程内用**同一把 cleanup S3 client**（`ArtifactCleanupS3()`）做 Abort+Delete。`registerArtifactAdmin` 仅在 `cfg.ArtifactS3.AccessKeyID != ""` 时构建它，否则 reclaim 返回 **503**（与 GC 的 no-op 是同一信号）。**含义**：若生产 oauth 容器没带 `KUN_ARTIFACT_S3_*`（含 cleanup key），则 GC 静默跳过、reclaim 也 503——上传中孤儿将无人回收。**部署前确认 oauth 环境带了这些变量**（GC 一直在跑 = 已具备）。
 - **`cmd/migrate` 移除了 artifact 模型**：主库 `kun_galgame_infra` 不再 AutoMigrate `artifacts`/`manifests`；早期脚手架在主库建的两张**空表**保持原样（AutoMigrate 从不删表），确认 0 行后可手动 `DROP TABLE` 清理。
 - **OAuth API 响应新增 `artifact_*` 字段**：client 元数据 JSON 多了这些字段（默认 false/空），下游解析器忽略未知字段即可，无破坏。
 
@@ -91,7 +92,11 @@ B2 凭证已写入 `apps/api/.env`（bucket `kungal-artifact-v1` @ `us-east-005`
 
 可插拔病毒扫描 worker（ClamAV / 云）、服务端全量 checksum 复算、从压缩包解析 manifest、管理端「全站制品」视图。（断点续传**已落地**，见 [01 决策 10](./01-design.md)。）届时把对外契约（03/06）登记进 `../kungal-docs` 并 `docs:sync` 下发 forum/patch 镜像。
 
-> 新增配置：`KUN_ARTIFACT_PRESIGN_DOWNLOAD_TTL_SECONDS` 默认从 3600 调到 **86400（24h）**，让下载断点续传在窗口内可对同一预签名 URL 反复续传。需要更短可显式设回。
+> 新增配置：
+> - `KUN_ARTIFACT_PRESIGN_DOWNLOAD_TTL_SECONDS` 默认从 3600 调到 **86400（24h）**，让下载断点续传在窗口内可对同一预签名 URL 反复续传。需要更短可显式设回。
+> - `KUN_ARTIFACT_RECLAIM_MIN_IDLE_SECONDS` 默认 **3600（1h）**：管理员「立即回收上传中文件」的最小闲置门槛，低于此服务端拒绝（防中断活跃/可续传上传）。
+>
+> 权限：除「用量概览」(`/admin/artifact/stats`，admin) 外，**所有 artifact 管理操作（文件列表 / 软删 / 回收 / 存储配置）均 ren-only**（页面 `middleware:['auth','ren']` + 端点 `RequireRole("ren")`）。完整矩阵见 [01 决策 9](./01-design.md#决策-9权限控制--artifact-能力全部-ren莲-only默认关闭)。
 
 ---
 

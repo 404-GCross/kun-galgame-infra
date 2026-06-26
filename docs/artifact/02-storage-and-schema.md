@@ -50,6 +50,10 @@
 | **失败清理** | `status=2` 且超时 | 删对象（若存在）+ 删行 | `cleanup` |
 | **软删 → 物理删** | `deleted_at < now − SOFTDELETE_TTL`（默认 7d） | 从 B2 物理删除对象 + 删行 | `cleanup` |
 
+> **手动「立即回收」上传中文件(管理面)**：`POST /admin/artifact/:uuid/reclaim`(ren-only)对 `status=uploading` 行立即执行**与孤儿清理同款的动作**(Abort multipart + 删对象 + 删行)，不必等 24h 孤儿扫描。两道护栏：① 仅 `status=uploading`(ready/failed 走软删)；② `updated_at` 闲置须 ≥ `RECLAIM_MIN_IDLE`(默认 1h)否则拒绝，避免中断活跃/可续传上传；并采用「先按 `status=uploading` 条件删行占位、再清存储」的顺序，杜绝与并发 Complete 竞争误删已完成对象。
+>
+> ⚠️ **不要对 `status=uploading` 的 multipart 行用普通软删(`DELETE`)**：软删 GC 阶段只 `Delete(file_key)`、**不 Abort**，而上传中 multipart 此刻在 `file_key` 还没有完整对象 → 其分片会**永远悬在 B2、持续计费、再不回收**。所以上传中文件务必走 **reclaim**；管理 UI 已据此对上传中行只给「回收」按钮、对 ready/failed 才给软删。
+
 > 与图床的差异：图床生命周期由调用方 `reference-ping` + `last_referenced_at` 驱动（内容寻址 + 跨站共享，「谁都不 ping 才能删」）。artifact 是**有归属的独立对象**，删除语义直接：调用方 `DELETE /artifacts/:uuid` 软删 → TTL 后物理回收。不需要 ping 模型。
 
 实现：GC 是 `internal/jobs` 的定时任务（仿 `image_gc.go`），扫 `artifacts` 行，用 `cleanup` 密钥做对象删除。

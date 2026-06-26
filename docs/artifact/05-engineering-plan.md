@@ -44,9 +44,10 @@
 | `KUN_ARTIFACT_MULTIPART_THRESHOLD` | `52428800`(50MB) | ≥ 此值走 multipart |
 | `KUN_ARTIFACT_PART_SIZE` | `16777216`(16MB) | 分片大小 |
 | `KUN_ARTIFACT_PRESIGN_UPLOAD_TTL_SECONDS` | `3600` | 上传 URL 有效期 |
-| `KUN_ARTIFACT_PRESIGN_DOWNLOAD_TTL_SECONDS` | `3600` | 下载 URL 有效期 |
+| `KUN_ARTIFACT_PRESIGN_DOWNLOAD_TTL_SECONDS` | `86400`(24h) | 下载 URL 有效期（调长以支持 Range 断点续传，见 [01 决策 10]）|
 | `KUN_ARTIFACT_ORPHAN_TTL_HOURS` | `24` | status=0 超时回收 |
 | `KUN_ARTIFACT_SOFTDELETE_TTL_HOURS` | `168`(7d) | 软删后物删 |
+| `KUN_ARTIFACT_RECLAIM_MIN_IDLE_SECONDS` | `3600`(1h) | 管理员「立即回收上传中文件」的最小闲置门槛；低于此拒绝，防误中断活跃/可续传上传 |
 
 ## 数据库迁移
 

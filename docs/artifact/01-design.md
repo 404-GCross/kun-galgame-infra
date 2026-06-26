@@ -193,7 +193,18 @@ client GET /artifacts/:uuid/download
 - `artifact:upload` 不在 OIDC 默认 scope 集 `{openid,profile,email}` 里，必须被**显式授予**；
 - 普通 admin 创建/编辑 client 时**无法**授予 `artifact:upload`——前端对非 ren 隐藏该勾选项（`oauth-clients/CreateModal`、`EditModal` 的 `REN_ONLY_SCOPES` 过滤），后端 ren-gate 兜底（create 拒绝授予、update 只挡「新增」不挡「保留/降权」）。
 
-**推论（强制约定）**：未来任何 artifact 管理面（如「全站制品」面板、按站配额编辑端点）一律 `middleware.RequireRole("ren")` + 默认关闭，**不对普通 admin 开放**。当前 `artifact_*` 配置列（`artifact_quota_*`、`artifact_max_file_size`、`artifact_cdn_base` 等）是 SQL-only，应由 ren 运维设置。
+**推论（强制约定）—— 管理面权限矩阵**：artifact 管理面分两档，**只有"用量概览"对普通 admin 开放，其余一律 ren(莲)-only（查看 + 操作）**：
+
+| 管理面 | 端点 | 页面 | 角色 |
+|---|---|---|---|
+| **用量概览（聚合）** | `GET /admin/artifact/stats` | `/artifacts` | **admin**（唯一例外）|
+| 文件列表（暴露单文件来源/上传者）| `GET /admin/artifact/list` | `/artifacts/list` | **ren** |
+| 软删文件 | `DELETE /admin/artifact/:uuid` | （列表内）| **ren** |
+| 立即回收上传中文件 | `POST /admin/artifact/:uuid/reclaim` | （列表内）| **ren** |
+| 存储配置（写 `oauth_client.artifact_*`）| `PUT /oauth/clients/:id/storage` | `/artifacts/config` | **ren** |
+| 授予 `artifact:upload` scope（= 开站能力）| client create/update | OAuth 客户端 | **ren** |
+
+页面 `definePageMeta({ middleware:['auth','ren'] })` + 端点 `middleware.RequireRole("ren")` 双重把关。**用量概览只返回聚合计数（总数/字节/各状态/按站），不含单文件来源/上传者**，故对 admin 监控用量足够而无泄露——这是它能开放给 admin 的原因。其余暴露来源、可变更、或直接花钱（对象存储 + 出流量）的操作一律收敛到 ren。`artifact_*` 配置列也由 ren 经存储配置页 / SQL 设置。
 
 **理由**：artifact 直接对应真金白银的对象存储 + 出流量成本、且是大文件分发面，能力收敛到最高信任的 ren 一档，避免普通 admin 误开导致刷量/费用失控。与 `ren` 既有定位（"gates the genuinely dangerous OAuth-admin capabilities"）一致。
 

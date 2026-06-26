@@ -23,6 +23,7 @@ import (
 
 	artifactHandler "api/internal/platform/artifact/handler"
 	artifactRepo "api/internal/platform/artifact/repository"
+	artifactStorage "api/internal/platform/artifact/storage"
 
 	imgHandler "api/internal/platform/image/handler"
 	imgRepoPkg "api/internal/platform/image/repository"
@@ -411,8 +412,11 @@ func registerImageAdmin(_ *app.App, cfg *config.Config, admin fiber.Router) {
 // registerArtifactAdmin wires admin endpoints for the artifact service. Like the
 // image admin, these run inside the oauth service (admin auth lives here) and
 // read the dedicated kun_artifacts DB. Failures are logged + skipped, not fatal.
-// Delete is soft-only (the artifact GC reclaims the B2 object later); the oauth
-// service holds no artifact object-storage credentials.
+// Delete is soft-only. Reclaim (immediate hard-clean of an interrupted upload)
+// needs object-storage access, so it gets the SAME least-privilege cleanup S3
+// client the artifact GC uses (built from ArtifactCleanupS3). When those creds
+// aren't configured, the client is nil and Reclaim returns 503 — exactly the
+// same condition under which the GC no-ops.
 func registerArtifactAdmin(cfg *config.Config, admin fiber.Router) {
 	artifactsDB, err := database.NewPostgresDB(cfg.ArtifactsDatabase)
 	if err != nil {
@@ -420,14 +424,27 @@ func registerArtifactAdmin(cfg *config.Config, admin fiber.Router) {
 		return
 	}
 	statsRepo := artifactRepo.NewStatsRepository(artifactsDB.DB())
-	adminH := artifactHandler.NewAdmin(artifactsDB.DB(), statsRepo)
+
+	// Cleanup-scoped S3 client (Abort/Delete), only when creds are configured —
+	// mirrors the GC's guard (RunArtifactGC skips when ArtifactS3 key is empty).
+	var store *artifactStorage.Client
+	if cfg.ArtifactS3.AccessKeyID != "" {
+		if c, serr := artifactStorage.NewClient(cfg.ArtifactCleanupS3()); serr != nil {
+			slog.Warn("artifact admin: cleanup storage init failed; reclaim disabled", "err", serr)
+		} else {
+			store = c
+		}
+	}
+	adminH := artifactHandler.NewAdmin(artifactsDB.DB(), statsRepo, store, cfg.ArtifactService.ReclaimMinIdle)
 
 	g := admin.Group("/artifact")
 	// Stats power the admin dashboard (用量概览) — admin-visible.
 	g.Get("/stats", adminH.Stats)
-	// Browsing individual files + soft-deleting them is ren(莲)-only.
+	// Browsing files + cleanup are ren(莲)-only.
 	g.Get("/list", middleware.RequireRole("ren"), adminH.List)
 	g.Delete("/:uuid", middleware.RequireRole("ren"), adminH.Delete)
+	// Reclaim = immediate abort+delete of an interrupted (status=uploading) upload.
+	g.Post("/:uuid/reclaim", middleware.RequireRole("ren"), adminH.Reclaim)
 
 	slog.Info("artifact admin endpoints registered under /api/v1/admin/artifact/*")
 }

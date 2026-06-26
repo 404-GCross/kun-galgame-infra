@@ -70,6 +70,13 @@ type ArtifactServiceConfig struct {
 	OrphanTTL     time.Duration // status=0 never completed → abort+delete; default 24h
 	SoftDeleteTTL time.Duration // deleted_at older than this → physical delete; default 7d
 
+	// ReclaimMinIdle is the safety floor for the MANUAL admin "reclaim now" of an
+	// in-progress (status=uploading) upload: refuse if the row's updated_at is
+	// more recent than this, so an actively-uploading or just-resumed upload is
+	// not interrupted. Deliberately smaller than OrphanTTL (the unattended auto
+	// sweep) — this is the "I can see it's stuck, clean it sooner" path. Default 1h.
+	ReclaimMinIdle time.Duration
+
 	// Least-privilege cleanup key (DeleteObject only), used ONLY by the GC
 	// job. Empty → fall back to the presigner key (see Config.ArtifactCleanupS3).
 	CleanupAccessKey string
@@ -357,6 +364,7 @@ func Load() (*Config, error) {
 		PresignDownloadTTL: time.Duration(getEnvInt64("KUN_ARTIFACT_PRESIGN_DOWNLOAD_TTL_SECONDS", 86400)) * time.Second,
 		OrphanTTL:          time.Duration(getEnvInt64("KUN_ARTIFACT_ORPHAN_TTL_HOURS", 24)) * time.Hour,
 		SoftDeleteTTL:      time.Duration(getEnvInt64("KUN_ARTIFACT_SOFTDELETE_TTL_HOURS", 168)) * time.Hour,
+		ReclaimMinIdle:     time.Duration(getEnvInt64("KUN_ARTIFACT_RECLAIM_MIN_IDLE_SECONDS", 3600)) * time.Second,
 		CleanupAccessKey:   getEnv("KUN_ARTIFACT_S3_CLEANUP_ACCESS_KEY", ""),
 		CleanupSecretKey:   getEnv("KUN_ARTIFACT_S3_CLEANUP_SECRET_KEY", ""),
 	}
