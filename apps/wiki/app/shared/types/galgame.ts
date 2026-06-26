@@ -55,6 +55,13 @@ export interface GalgameCover {
   source: string
   source_key: string
   created: string
+  // Intrinsic image_service metadata, filled by the backend at read time
+  // (not stored on the cover row). Lets the UI reserve the correct aspect
+  // ratio + show a blur-up placeholder with no layout shift. Absent when the
+  // backend couldn't resolve it → skeleton fallback. thumbhash is base64.
+  width?: number
+  height?: number
+  thumbhash?: string
 }
 
 // GalgameScreenshot — gallery / CG entry. Same shape as GalgameCover
@@ -69,6 +76,11 @@ export interface GalgameScreenshot {
   source: string
   source_key: string
   created: string
+  // See GalgameCover: transient image_service metadata for placeholder +
+  // aspect-ratio reservation. thumbhash is base64; all absent when unresolved.
+  width?: number
+  height?: number
+  thumbhash?: string
 }
 
 export interface GalgameAlias {

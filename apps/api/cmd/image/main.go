@@ -5,19 +5,21 @@
 //
 // Usage:
 //
-//   go run ./cmd/image           # 启动服务（要求已经跑过 ./cmd/image-setup）
+//	go run ./cmd/image           # 启动服务（要求已经跑过 ./cmd/image-setup）
 //
 // 首次接入或新环境，先跑一次：
 //
-//   go run ./cmd/image-setup --seed-test-client
+//	go run ./cmd/image-setup --seed-test-client
 //
 // Endpoints (V1+V2):
-//   POST /image/upload           — multipart/form-data: file + preset
-//   GET  /image/:hash            — metadata lookup
-//   GET  /image/stats            — per-site stats
-//   POST /image/reference-ping   — JSON: {hashes: [...]}
-//   GET  /healthz                — no auth
-//   GET  /metrics                — no auth, internal-only by deployment
+//
+//	POST /image/upload           — multipart/form-data: file + preset
+//	GET  /image/:hash            — metadata lookup
+//	GET  /image/stats            — per-site stats
+//	POST /image/meta-batch       — JSON: {hashes: [...]} → {metas: {hash: {width,height,thumbhash}}}
+//	POST /image/reference-ping   — JSON: {hashes: [...]}
+//	GET  /healthz                — no auth
+//	GET  /metrics                — no auth, internal-only by deployment
 package main
 
 import (
@@ -136,6 +138,7 @@ func main() {
 	img := application.Fiber.Group("/image", imgMW.ClientAuth(clientRepo, cfg))
 	img.Get("/stats", h.Stats)
 	img.Get("/:hash", h.Meta)
+	img.Post("/meta-batch", h.MetaBatch)
 	img.Post("/reference-ping", h.Ping)
 	// Soft-delete an image the caller's site used (GC physically removes
 	// after the TTL). Backs the OAuth avatar-GC-on-anonymize path.

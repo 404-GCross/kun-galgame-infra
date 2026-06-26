@@ -33,6 +33,18 @@ type GalgameCover struct {
 	SourceKey string    `gorm:"column:source_key;size:128;default:''" json:"source_key"`
 	Kind      string    `gorm:"column:kind;size:16;default:''" json:"kind"`
 	Created   Timestamp `gorm:"column:created;autoCreateTime" json:"created"`
+
+	// Width/Height/Thumbhash are NOT columns here — image bytes + intrinsic
+	// metadata live in image_service (the single source of truth, keyed by
+	// ImageHash). They are filled at READ time by the galgame service from a
+	// batched, cached image-meta lookup so the frontend can render a blur-up
+	// placeholder AND reserve the correct aspect ratio with no second
+	// roundtrip and no layout shift. `gorm:"-"` → never read/written by SQL;
+	// `omitempty` → absent (not 0/"") when the lookup is unavailable, so the
+	// frontend falls back to a skeleton. See GalgameService image enrichment.
+	Width     int    `gorm:"-" json:"width,omitempty"`
+	Height    int    `gorm:"-" json:"height,omitempty"`
+	Thumbhash string `gorm:"-" json:"thumbhash,omitempty"`
 }
 
 func (GalgameCover) TableName() string { return "galgame_cover" }
@@ -56,6 +68,12 @@ type GalgameScreenshot struct {
 	Source    string    `gorm:"column:source;size:16;default:''" json:"source"`
 	SourceKey string    `gorm:"column:source_key;size:128;default:''" json:"source_key"`
 	Created   Timestamp `gorm:"column:created;autoCreateTime" json:"created"`
+
+	// Width/Height/Thumbhash: transient image_service metadata filled at read
+	// time (not columns). See GalgameCover for the full rationale.
+	Width     int    `gorm:"-" json:"width,omitempty"`
+	Height    int    `gorm:"-" json:"height,omitempty"`
+	Thumbhash string `gorm:"-" json:"thumbhash,omitempty"`
 }
 
 func (GalgameScreenshot) TableName() string { return "galgame_screenshot" }

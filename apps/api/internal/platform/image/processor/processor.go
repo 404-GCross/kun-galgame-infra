@@ -16,6 +16,7 @@ package processor
 
 import (
 	"bytes"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"image"
@@ -29,6 +30,7 @@ import (
 
 	"github.com/kolesa-team/go-webp/encoder"
 	"github.com/kolesa-team/go-webp/webp"
+	"go.n16f.net/thumbhash"
 	"golang.org/x/image/draw"
 	_ "golang.org/x/image/webp" // register WebP decoder (read-only, pure-Go)
 )
@@ -51,6 +53,7 @@ type Output struct {
 	Ext         string
 	Width       int
 	Height      int
+	Thumbhash   string // base64 ThumbHash placeholder; set on the main image only
 	VariantName string // "" for main image, otherwise preset variant name
 }
 
@@ -171,7 +174,18 @@ func ProcessMain(src image.Image, main preset.MainPipelineConfig) (*Output, erro
 		Ext:    "webp",
 		Width:  bounds.Dx(),
 		Height: bounds.Dy(),
+		// ThumbHash placeholder, computed from the same image we store.
+		Thumbhash: Thumbhash(resized),
 	}, nil
+}
+
+// Thumbhash computes the base64-encoded ThumbHash placeholder for a decoded
+// image. The encoder internally downsamples to ≤128px, so any input size is
+// cheap. base64 so it threads cleanly through JSON + DB. Single source of
+// truth shared by the upload pipeline (ProcessMain) and the thumbhash backfill
+// (cmd/migrate-image-thumbhash).
+func Thumbhash(img image.Image) string {
+	return base64.StdEncoding.EncodeToString(thumbhash.EncodeImage(img))
 }
 
 // ProcessVariant generates a single derivative from the decoded image.
@@ -214,4 +228,3 @@ func DecodeFromBytes(b []byte) (image.Image, string, error) {
 	}
 	return Decode(bytes.NewReader(b))
 }
-

@@ -146,6 +146,22 @@ func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB, se
 			}
 			return res.NotFound, nil
 		})
+
+		// Wire the image-metadata lookup so the read paths enrich covers /
+		// screenshots / banners with dimensions + thumbhash (blur-up
+		// placeholder + correct aspect ratio, no layout shift). Results are
+		// cached in the service (immutable per content-addressed hash).
+		galgameSvc.WithImageMeta(func(ctx context.Context, hashes []string) (map[string]galgameService.ImageMeta, error) {
+			raw, err := imgCli.MetaBatch(ctx, hashes)
+			if err != nil {
+				return nil, err
+			}
+			out := make(map[string]galgameService.ImageMeta, len(raw))
+			for h, m := range raw {
+				out[h] = galgameService.ImageMeta{Width: m.Width, Height: m.Height, Thumbhash: m.Thumbhash}
+			}
+			return out, nil
+		})
 	} else {
 		slog.Warn("image client not configured; multipart banner uploads in galgame Create/Update/PR will be rejected; Revert will skip image-existence probe")
 	}

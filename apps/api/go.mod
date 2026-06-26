@@ -22,6 +22,7 @@ require (
 	github.com/meilisearch/meilisearch-go v0.36.2
 	github.com/prometheus/client_golang v1.23.2
 	github.com/stretchr/testify v1.11.1
+	go.n16f.net/thumbhash v1.1.0
 	golang.org/x/crypto v0.50.0
 	golang.org/x/image v0.39.0
 	gopkg.in/yaml.v3 v3.0.1

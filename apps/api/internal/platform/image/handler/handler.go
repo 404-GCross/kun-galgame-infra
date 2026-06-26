@@ -235,6 +235,7 @@ func (h *Handler) Meta(c fiber.Ctx) error {
 		"variant_urls":       variantURLs,
 		"width":              img.Width,
 		"height":             img.Height,
+		"thumbhash":          img.Thumbhash,
 		"size_bytes":         img.SizeBytes,
 		"mime":               img.MIME,
 		"review_status":      reviewStatusLabel(img.ReviewStatus),
@@ -243,6 +244,43 @@ func (h *Handler) Meta(c fiber.Ctx) error {
 		"last_referenced_at": img.LastReferencedAt,
 		"sites":              sites,
 	})
+}
+
+// ---- POST /image/meta-batch ----
+
+// metaBatchRequest is accepted as JSON.
+type metaBatchRequest struct {
+	Hashes []string `json:"hashes"`
+}
+
+// MetaBatch returns {hash: {width,height,thumbhash}} for the given hashes —
+// the batch form of GET /image/:hash's intrinsic metadata, so a consumer can
+// fetch placeholders + dimensions for a whole page of images in one roundtrip
+// (eliminating per-image lookups and layout shift). Metadata is immutable per
+// hash, so callers may cache it forever. Authenticated like every /image
+// route; intentionally NOT site-scoped — dimensions and the thumbhash are not
+// sensitive (GET /image/:hash already returns width/height regardless of site).
+// Unknown hashes are simply absent from the result.
+func (h *Handler) MetaBatch(c fiber.Ctx) error {
+	var req metaBatchRequest
+	if err := c.Bind().JSON(&req); err != nil {
+		return response.BadRequest(c, errors.ErrImageBadRequest)
+	}
+	if len(req.Hashes) > 1000 {
+		return response.BadRequest(c, errors.ErrImageBadRequest)
+	}
+	cleaned := make([]string, 0, len(req.Hashes))
+	for _, hh := range req.Hashes {
+		if len(hh) == 64 {
+			cleaned = append(cleaned, hh)
+		}
+	}
+	metas, err := h.svc.MetaBatch(c.Context(), cleaned)
+	if err != nil {
+		slog.Error("meta-batch lookup failed", "count", len(cleaned), "err", err)
+		return response.InternalError(c, errors.ErrImageStoreFailed)
+	}
+	return response.Success(c, fiber.Map{"metas": metas})
 }
 
 // ---- POST /image/reference-ping ----

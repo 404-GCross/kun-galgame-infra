@@ -107,6 +107,39 @@ func (r *ImageRepository) TouchReferenced(ctx context.Context, hashes []string) 
 	return res.RowsAffected, res.Error
 }
 
+// ImageMeta is the intrinsic, display-relevant metadata of an image:
+// dimensions + the ThumbHash placeholder. Immutable per hash (content-
+// addressed), so consumers may cache it forever. Returned by MetaByHashes.
+type ImageMeta struct {
+	Hash      string `gorm:"column:hash" json:"-"`
+	Width     int    `gorm:"column:width" json:"width"`
+	Height    int    `gorm:"column:height" json:"height"`
+	Thumbhash string `gorm:"column:thumbhash" json:"thumbhash,omitempty"`
+}
+
+// MetaByHashes returns intrinsic metadata (width/height/thumbhash) for the
+// subset of the given hashes that exist and are not soft-deleted, keyed by
+// hash. Powers POST /image/meta-batch so a consumer can fetch placeholders +
+// dimensions for a whole page of images in one roundtrip.
+func (r *ImageRepository) MetaByHashes(ctx context.Context, hashes []string) (map[string]ImageMeta, error) {
+	out := make(map[string]ImageMeta, len(hashes))
+	if len(hashes) == 0 {
+		return out, nil
+	}
+	var rows []ImageMeta
+	if err := r.db.WithContext(ctx).
+		Model(&model.Image{}).
+		Select("hash", "width", "height", "thumbhash").
+		Where("hash IN ? AND deleted_at IS NULL", hashes).
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, m := range rows {
+		out[m.Hash] = m
+	}
+	return out, nil
+}
+
 // FindExistingHashes returns the subset of the given hashes that exist and
 // are not soft-deleted. Used by reference-ping to report "not_found".
 func (r *ImageRepository) FindExistingHashes(ctx context.Context, hashes []string) ([]string, error) {

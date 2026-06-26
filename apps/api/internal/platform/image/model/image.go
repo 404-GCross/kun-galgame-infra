@@ -30,6 +30,15 @@ type Image struct {
 	Height    int   `gorm:"not null" json:"height"`
 	SizeBytes int64 `gorm:"not null" json:"size_bytes"`
 
+	// Thumbhash is the base64-encoded ThumbHash placeholder — a compact
+	// (~30-char) blur-up preview computed from the decoded image at upload.
+	// Lets consumers render a meaningful placeholder AND reserve the correct
+	// aspect ratio before the real bytes load, eliminating layout shift.
+	// Empty for rows created before this column existed until the backfill
+	// job fills them (graceful: no thumbhash → skeleton fallback on the
+	// frontend). Immutable per hash (content-addressed), so safe to copy.
+	Thumbhash string `gorm:"size:64;not null;default:''" json:"thumbhash,omitempty"`
+
 	// Variants stores a JSONB array of variant names already generated
 	// (e.g. ["100","256"]). Checked on upload to avoid regenerating.
 	Variants datatypes.JSON `gorm:"type:jsonb;not null;default:'[]'" json:"variants"`

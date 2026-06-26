@@ -54,13 +54,18 @@ type UploadRequest struct {
 
 // UploadResult is what the handler turns into JSON.
 type UploadResult struct {
-	Hash         string            `json:"hash"`
-	URL          string            `json:"url"`
-	VariantURLs  map[string]string `json:"variant_urls"`
-	Width        int               `json:"width"`
-	Height       int               `json:"height"`
-	SizeBytes    int64             `json:"size_bytes"`
-	Deduplicated bool              `json:"deduplicated"`
+	Hash        string            `json:"hash"`
+	URL         string            `json:"url"`
+	VariantURLs map[string]string `json:"variant_urls"`
+	Width       int               `json:"width"`
+	Height      int               `json:"height"`
+	// Thumbhash is the base64 ThumbHash placeholder so callers can persist it
+	// alongside the hash (denormalized) and render a blur-up placeholder + the
+	// correct aspect ratio without a second roundtrip. Empty for images whose
+	// row predates the column until the backfill fills it.
+	Thumbhash    string `json:"thumbhash,omitempty"`
+	SizeBytes    int64  `json:"size_bytes"`
+	Deduplicated bool   `json:"deduplicated"`
 }
 
 // Service is the upload orchestrator.
@@ -79,9 +84,9 @@ type Service struct {
 // moderation plumbing. All fields are optional; zero values give V1
 // behavior (no moderation, no queue).
 type Options struct {
-	Moderation   moderation.Provider
-	SyncTimeout  time.Duration // default 300ms
-	DB           *gorm.DB      // images DB, required to enqueue async work
+	Moderation  moderation.Provider
+	SyncTimeout time.Duration // default 300ms
+	DB          *gorm.DB      // images DB, required to enqueue async work
 }
 
 // New builds a Service with its dependencies. Moderation and DB handle
@@ -241,7 +246,7 @@ func (s *Service) handleExisting(ctx context.Context, img *model.Image, ps prese
 		return nil, fmt.Errorf("record usage: %w", err)
 	}
 
-	return s.buildResult(req.CDNBase, img.Hash, img.Ext, img.Width, img.Height, img.SizeBytes, ps, true), nil
+	return s.buildResult(req.CDNBase, img.Hash, img.Ext, img.Thumbhash, img.Width, img.Height, img.SizeBytes, ps, true), nil
 }
 
 // handleNew runs the full pipeline for an unseen hash.
@@ -308,6 +313,7 @@ func (s *Service) handleNew(ctx context.Context, hash, originMIME string, ps pre
 		Ext:                 mainOut.Ext,
 		Width:               mainOut.Width,
 		Height:              mainOut.Height,
+		Thumbhash:           mainOut.Thumbhash,
 		SizeBytes:           int64(len(mainOut.Data)),
 		OriginMIME:          originMIME,
 		OriginSize:          int64(len(req.Body)),
@@ -354,7 +360,7 @@ func (s *Service) handleNew(ctx context.Context, hash, originMIME string, ps pre
 		}
 	}
 
-	return s.buildResult(req.CDNBase, hash, mainOut.Ext, mainOut.Width, mainOut.Height, int64(len(mainOut.Data)), ps, false), nil
+	return s.buildResult(req.CDNBase, hash, mainOut.Ext, mainOut.Thumbhash, mainOut.Width, mainOut.Height, int64(len(mainOut.Data)), ps, false), nil
 }
 
 // SoftDelete marks an image deleted (sets deleted_at) when the calling
@@ -363,6 +369,7 @@ func (s *Service) handleNew(ctx context.Context, hash, originMIME string, ps pre
 //   - soft (recoverable until GC) — safe under content dedup, where a hash
 //     may be shared and a hard delete would break other referrers;
 //   - site-scoped — a client can only retire images its own site referenced.
+//
 // Returns false (not found) when the caller's site never used the hash, so
 // one client can't retire another's images. For irreversible compliance
 // deletes use the admin force path.
@@ -394,7 +401,7 @@ func (s *Service) SoftDelete(ctx context.Context, hash, site string) (bool, erro
 // buildResult composes the JSON-shaped result including variant URLs.
 // clientBase is the calling client's image CDN base ("" → global default) so
 // each site's upload response carries URLs under its own domain.
-func (s *Service) buildResult(clientBase, hash, ext string, w, h int, size int64, ps preset.Preset, dedup bool) *UploadResult {
+func (s *Service) buildResult(clientBase, hash, ext, thumbhash string, w, h int, size int64, ps preset.Preset, dedup bool) *UploadResult {
 	base := s.resolveCDNBase(clientBase)
 	variants := make(map[string]string, len(ps.Variants))
 	for _, v := range ps.Variants {
@@ -406,6 +413,7 @@ func (s *Service) buildResult(clientBase, hash, ext string, w, h int, size int64
 		VariantURLs:  variants,
 		Width:        w,
 		Height:       h,
+		Thumbhash:    thumbhash,
 		SizeBytes:    size,
 		Deduplicated: dedup,
 	}
@@ -471,6 +479,14 @@ func (s *Service) GetByHash(ctx context.Context, hash string) (*model.Image, []s
 		return img, nil, err
 	}
 	return img, sites, nil
+}
+
+// MetaBatch returns intrinsic metadata (width/height/thumbhash) for the
+// subset of the given hashes that exist, keyed by hash. Powers the batch
+// meta endpoint so consumers can render placeholders + reserve aspect ratio
+// for many images in one roundtrip. Metadata is immutable per hash.
+func (s *Service) MetaBatch(ctx context.Context, hashes []string) (map[string]repository.ImageMeta, error) {
+	return s.imgRepo.MetaByHashes(ctx, hashes)
 }
 
 // ReferencePing refreshes last_referenced_at for the given hashes filtered

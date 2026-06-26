@@ -35,12 +35,12 @@ type ListGalgameRequest struct {
 
 // CreateGalgameRequest represents a galgame creation request
 type CreateGalgameRequest struct {
-	VNDBID           string `json:"vndb_id" validate:"required,max=10"`
-	NameEnUS         string `json:"name_en_us" validate:"max=1000"`
-	NameJaJP         string `json:"name_ja_jp" validate:"max=1000"`
-	NameZhCN         string `json:"name_zh_cn" validate:"max=1000"`
-	NameZhTW         string `json:"name_zh_tw" validate:"max=1000"`
-	Banner           string `json:"banner"`
+	VNDBID   string `json:"vndb_id" validate:"required,max=10"`
+	NameEnUS string `json:"name_en_us" validate:"max=1000"`
+	NameJaJP string `json:"name_ja_jp" validate:"max=1000"`
+	NameZhCN string `json:"name_zh_cn" validate:"max=1000"`
+	NameZhTW string `json:"name_zh_tw" validate:"max=1000"`
+	Banner   string `json:"banner"`
 	// PromoteCoverHash is the image_service hash uploaded via multipart
 	// `file` field on this Create. Handler sets it after the upload
 	// succeeds; service merges it into Covers as sort_order=0 (pinned
@@ -56,20 +56,20 @@ type CreateGalgameRequest struct {
 	AgeLimit         string `json:"age_limit" validate:"omitempty,oneof=all r18"`
 	// ReleaseDate is "YYYY-MM-DD" or "" (= unknown). Empty / omitted →
 	// no date is recorded. Independent of ReleaseDateTBA.
-	ReleaseDate      string `json:"release_date" validate:"omitempty,date_or_empty"`
-	ReleaseDateTBA   bool   `json:"release_date_tba"`
-	SeriesID         *int   `json:"series_id"`
-	Aliases          string `json:"aliases"` // Comma-separated alias names
-	TagIDs           []int  `json:"tag_ids"`
-	OfficialIDs      []int  `json:"official_ids"`
-	EngineIDs        []int  `json:"engine_ids"`
+	ReleaseDate    string `json:"release_date" validate:"omitempty,date_or_empty"`
+	ReleaseDateTBA bool   `json:"release_date_tba"`
+	SeriesID       *int   `json:"series_id"`
+	Aliases        string `json:"aliases"` // Comma-separated alias names
+	TagIDs         []int  `json:"tag_ids"`
+	OfficialIDs    []int  `json:"official_ids"`
+	EngineIDs      []int  `json:"engine_ids"`
 	// Cover candidate set (sort_order=0 = pinned banner). On Create the
 	// empty default is "no covers yet"; downstream wizards typically
 	// supply [{ImageHash, SortOrder: 0}] for a single initial banner.
 	// `dive` is required for the element-level validations below to run —
 	// without it the validator does not descend into slice-of-struct.
-	Covers           []GalgameCoverInput      `json:"covers" validate:"omitempty,dive"`
-	Screenshots      []GalgameScreenshotInput `json:"screenshots" validate:"omitempty,dive"`
+	Covers      []GalgameCoverInput      `json:"covers" validate:"omitempty,dive"`
+	Screenshots []GalgameScreenshotInput `json:"screenshots" validate:"omitempty,dive"`
 }
 
 // GalgameLinkInput is one external link in a galgame edit body. Kept in
@@ -112,12 +112,12 @@ type GalgameScreenshotInput struct {
 
 // UpdateGalgameRequest represents a galgame update request
 type UpdateGalgameRequest struct {
-	VNDBID           *string `json:"vndb_id" validate:"omitempty,max=10"`
-	NameEnUS         *string `json:"name_en_us" validate:"omitempty,max=1000"`
-	NameJaJP         *string `json:"name_ja_jp" validate:"omitempty,max=1000"`
-	NameZhCN         *string `json:"name_zh_cn" validate:"omitempty,max=1000"`
-	NameZhTW         *string `json:"name_zh_tw" validate:"omitempty,max=1000"`
-	Banner           *string `json:"banner"`
+	VNDBID   *string `json:"vndb_id" validate:"omitempty,max=10"`
+	NameEnUS *string `json:"name_en_us" validate:"omitempty,max=1000"`
+	NameJaJP *string `json:"name_ja_jp" validate:"omitempty,max=1000"`
+	NameZhCN *string `json:"name_zh_cn" validate:"omitempty,max=1000"`
+	NameZhTW *string `json:"name_zh_tw" validate:"omitempty,max=1000"`
+	Banner   *string `json:"banner"`
 	// PromoteCoverHash mirrors CreateGalgameRequest.PromoteCoverHash:
 	// the handler sets it from a multipart-uploaded banner file. Service
 	// merges it as sort_order=0 in the resulting snapshot, demoting any
@@ -134,9 +134,9 @@ type UpdateGalgameRequest struct {
 	// ReleaseDate / ReleaseDateTBA both use pointer-presence: nil = field
 	// omitted = keep current; non-nil overwrites (incl. &"" = clear date
 	// to unknown). The two are independent and overlay separately.
-	ReleaseDate      *string `json:"release_date" validate:"omitempty,date_or_empty"`
-	ReleaseDateTBA   *bool   `json:"release_date_tba"`
-	SeriesID         *int    `json:"series_id"`
+	ReleaseDate    *string `json:"release_date" validate:"omitempty,date_or_empty"`
+	ReleaseDateTBA *bool   `json:"release_date_tba"`
+	SeriesID       *int    `json:"series_id"`
 	// Relational / multi-value fields use POINTER types for presence
 	// semantics, mirroring the *string scalars above: nil = field
 	// omitted = keep the galgame's current set; non-nil (including an
@@ -146,7 +146,7 @@ type UpdateGalgameRequest struct {
 	// invariant in docs/galgame_wiki/01-revision-system-design.md §1.5
 	// (`bid`/BangumiID is the only reserved exception: sync-managed,
 	// intentionally not user-editable; Bangumi sync is deferred).
-	Aliases     *[]string           `json:"aliases"`
+	Aliases *[]string `json:"aliases"`
 	// `dive` descends into the slice elements so GalgameLinkInput's
 	// required/max tags actually run (the pointer + omitempty skips when nil).
 	Links       *[]GalgameLinkInput `json:"links" validate:"omitempty,dive"`
@@ -186,25 +186,33 @@ type BatchGetGalgameRequest struct {
 // the pinned cover (sort_order=0), preferred over the legacy Banner URL
 // for thumbnail rendering. Both fields work for any caller regardless of viewer.
 type GalgameBrief struct {
-	ID                 int     `json:"id"`
-	VNDBID             string  `json:"vndb_id"`
-	NameEnUS           string  `json:"name_en_us"`
-	NameJaJP           string  `json:"name_ja_jp"`
-	NameZhCN           string  `json:"name_zh_cn"`
-	NameZhTW           string  `json:"name_zh_tw"`
-	Banner             string  `json:"banner"`
+	ID       int    `json:"id"`
+	VNDBID   string `json:"vndb_id"`
+	NameEnUS string `json:"name_en_us"`
+	NameJaJP string `json:"name_ja_jp"`
+	NameZhCN string `json:"name_zh_cn"`
+	NameZhTW string `json:"name_zh_tw"`
+	Banner   string `json:"banner"`
 	// EffectiveBannerHash is the image_hash of the pinned cover
 	// (sort_order=0) — the "currently shown" banner. Derived from
 	// galgame_cover during the BatchGet query; nil when the galgame has
 	// no covers yet. The legacy banner_image_hash column was retired
 	// by PR5, so this is now the SOLE image-service banner reference.
 	EffectiveBannerHash *string `json:"effective_banner_hash,omitempty"`
-	ContentLimit       string  `json:"content_limit"`
-	Status             int     `json:"status"`
-	UserID             int     `json:"user_id"`
-	ResourceUpdateTime string  `json:"resource_update_time"`
-	OriginalLanguage   string  `json:"original_language"`
-	AgeLimit           string  `json:"age_limit"`
+	// EffectiveBanner{Width,Height,Thumbhash} are the pinned cover's intrinsic
+	// image_service metadata, filled at read time (cached) so a card can
+	// reserve the right aspect ratio + show a blur-up placeholder with no
+	// layout shift and no per-image roundtrip. Absent when enrichment is
+	// unavailable or the galgame has no pinned cover (→ skeleton fallback).
+	EffectiveBannerWidth     int    `json:"effective_banner_width,omitempty"`
+	EffectiveBannerHeight    int    `json:"effective_banner_height,omitempty"`
+	EffectiveBannerThumbhash string `json:"effective_banner_thumbhash,omitempty"`
+	ContentLimit             string `json:"content_limit"`
+	Status                   int    `json:"status"`
+	UserID                   int    `json:"user_id"`
+	ResourceUpdateTime       string `json:"resource_update_time"`
+	OriginalLanguage         string `json:"original_language"`
+	AgeLimit                 string `json:"age_limit"`
 }
 
 // GalgameDetailBrief is GalgameBrief plus the introduction, officials, and

@@ -8,6 +8,7 @@ import {
 } from '~/constants/admin'
 import type { Galgame } from '~/shared/types/galgame'
 import { resolveBannerUrl, imageHashUrl } from '~/shared/utils/resolveImage'
+import { imageBoxStyles } from '~/shared/utils/thumbhash'
 import { formatReleaseDate } from '~/shared/utils/format'
 import type { KunUIColor } from '@kungal/ui-core'
 
@@ -74,6 +75,14 @@ const officials = computed(() =>
     .map((r) => r.official)
     .filter((o): o is NonNullable<typeof o> => !!o)
 )
+
+// Per-image box styles: reserve each image's real aspect ratio (no crop, no
+// layout shift) and paint its thumbhash blur-up while the file loads. Computed
+// once per list so the thumbhash decode doesn't re-run on every render.
+// width/height/thumbhash come from image_service via the backend enrichment;
+// when absent the helper falls back to a 16/9 skeleton box.
+const coverStyles = computed(() => imageBoxStyles(galgame.value?.covers))
+const shotStyles = computed(() => imageBoxStyles(galgame.value?.screenshots))
 
 // ────────────────────────────────────────────────
 // Intro language switcher — KunTab pills variant
@@ -573,12 +582,13 @@ const officialCategoryColor = (cat: string): KunUIColor =>
                   >
                     <div
                       class="bg-default-100 border-default-200 relative overflow-hidden rounded-lg border"
-                      style="aspect-ratio: 16 / 9"
+                      :style="coverStyles[c.image_hash]"
                     >
                       <KunImage
                         :src="imageHashUrl(c.image_hash, { cdnBase, variant: 'mini' })"
                         :alt="`封面 ${c.sort_order}`"
                         loading="lazy"
+                        :skeleton="false"
                         class-name="size-full object-cover"
                       />
                       <!-- sort_order=0 = pinned (= effective banner). -->
@@ -615,12 +625,13 @@ const officialCategoryColor = (cat: string): KunUIColor =>
                   >
                     <div
                       class="bg-default-100 border-default-200 relative overflow-hidden rounded-lg border"
-                      style="aspect-ratio: 16 / 9"
+                      :style="shotStyles[s.image_hash]"
                     >
                       <KunImage
                         :src="imageHashUrl(s.image_hash, { cdnBase, variant: 'mini' })"
                         :alt="s.caption || `截图 ${s.sort_order}`"
                         loading="lazy"
+                        :skeleton="false"
                         class-name="size-full object-cover"
                       />
                     </div>

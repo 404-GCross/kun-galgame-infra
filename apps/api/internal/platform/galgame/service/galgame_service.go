@@ -36,6 +36,15 @@ type GalgameService struct {
 	// probeImages is optional; when nil, Revert skips the dead-image
 	// pre-check. Production wires this via WithImageProbe in cmd/galgame.
 	probeImages ImageProbeFunc
+
+	// imageMeta fetches intrinsic image metadata (width/height/thumbhash) from
+	// image_service to enrich covers / screenshots / banners at READ time; nil
+	// disables enrichment (images still render, just without dimensions or a
+	// blur-up placeholder). Wired via WithImageMeta in cmd/galgame. metaCache
+	// memoizes results — safe forever because metadata is immutable per
+	// content-addressed hash. See image_meta.go.
+	imageMeta ImageMetaFunc
+	metaCache *imageMetaCache
 }
 
 // NewGalgameService creates a new GalgameService
@@ -50,6 +59,7 @@ func NewGalgameService(
 		revisionRepo: revisionRepo,
 		prRepo:       prRepo,
 		userRepo:     userRepo,
+		metaCache:    newImageMetaCache(200000),
 	}
 }
 
@@ -195,6 +205,12 @@ func (s *GalgameService) GetByIDWithViewer(ctx context.Context, id, viewerUserID
 			_ = s.galgameRepo.IncrementView(context.Background(), id)
 		}()
 	}
+
+	// Fill covers/screenshots with image_service dimensions + thumbhash so the
+	// detail page reserves the right aspect ratio and shows a blur-up
+	// placeholder (no crop, no layout shift). Non-fatal / cached; no-op when
+	// enrichment is unwired.
+	s.enrichGalgameImages(ctx, galgame)
 
 	return galgame, users, nil
 }
@@ -555,6 +571,7 @@ func (s *GalgameService) BatchGetWithViewer(ctx context.Context, ids []int, view
 	for i := range galgames {
 		items[i] = briefFromModel(&galgames[i], pinned)
 	}
+	s.enrichBriefValues(ctx, items)
 	return items, nil
 }
 
@@ -642,6 +659,12 @@ func (s *GalgameService) BatchDetailWithViewer(ctx context.Context, ids []int, v
 			Officials:      names,
 		}
 	}
+	// Enrich the embedded briefs' banner metadata in one batched lookup.
+	ptrs := make([]*dto.GalgameBrief, len(items))
+	for i := range items {
+		ptrs[i] = &items[i].GalgameBrief
+	}
+	s.enrichBriefBanners(ctx, ptrs)
 	return items, nil
 }
 
@@ -688,6 +711,7 @@ func (s *GalgameService) galgameBriefsWithCovers(ctx context.Context, galgames [
 	for i := range galgames {
 		items[i] = briefFromModel(&galgames[i], pinned)
 	}
+	s.enrichBriefValues(ctx, items)
 	return items
 }
 
