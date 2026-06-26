@@ -72,6 +72,30 @@ const art = await api(`/api/v1/artifacts/${init.uuid}/complete`, {
 
 > **可选 sha256**：大文件可用 Web Crypto 流式算 `checksum` 传给 init（存元数据备查）。v1 服务端不复算，但传了对将来开启校验有益。
 
+### 2.3 断点续传（暂停 / 断线 / 刷新后恢复）
+
+不用重头来过。对一个已 init、未 complete 的上传调 **`GET /api/v1/artifacts/{uuid}/resume`**：服务端向 B2 查已落盘分片，返回 `uploaded_parts`（跳过）+ 仅缺失分片的**新** `part_urls`（旧 URL 会过期）。
+
+```ts
+// 恢复时（拿到之前持久化的 uuid —— 建议存 IndexedDB/localStorage）
+const r = await api(`/api/v1/artifacts/${uuid}/resume`, { method: 'GET' })
+// r = { multipart:true, part_size, uploaded_parts:[{part_number,etag,size}], part_urls:[缺失], expires_at }
+
+const done = new Map(r.uploaded_parts.map((p) => [p.part_number, p.etag]))   // 已传：直接复用 etag
+const fresh = await Promise.all(r.part_urls.map(async (p) => {               // 缺失：只传这些
+  const start = (p.part_number - 1) * r.part_size
+  const res = await fetch(p.url, { method: 'PUT', body: file.slice(start, start + r.part_size) })
+  return [p.part_number, res.headers.get('ETag')!] as const
+}))
+const parts = [...done, ...fresh]
+  .map(([part_number, etag]) => ({ part_number, etag }))
+  .sort((a, b) => a.part_number - b.part_number)
+await api(`/api/v1/artifacts/${uuid}/complete`, { method: 'POST', body: { parts } })
+// 单段上传：resume 返回 { multipart:false, upload_url } —— 用新 upload_url 重传整体即可。
+```
+
+调用 `resume` 会刷新该上传的"活跃"时间戳，使**正在续传的上传不会被 GC 当孤儿清掉**（孤儿 = `OrphanTTL` 内无任何进展/resume）。`uuid` 请在 init 后持久化，这样刷新页面/重开浏览器也能恢复。
+
 ## 3. B2 桶 CORS（前端直传必读）
 
 浏览器直接 `PUT` 到 B2、且 multipart 需读取 `ETag` 响应头——这要求 **B2 桶的 CORS 规则**：
@@ -90,6 +114,8 @@ window.location.href = url     // 或 <a href={url} download>
 ```
 
 下载也走鉴权（同一 client）。私有内容请保持 `public=false`（每次签发、短时效）；只有真正公开、希望走 CF 缓存省流量的才设 `public=true` 且站点配 `artifact_cdn_base`。
+
+**断点续传 / 暂停继续 / 多线程下载**：拿到的 `url` 原生支持 HTTP `Range`——浏览器 `<a download>`、`wget -c`、aria2、IDM 等下载器对它发 `Range: bytes=N-` 即得 `206`，暂停后继续不用特殊处理。presigned URL 默认 **24h** 内有效（`KUN_ARTIFACT_PRESIGN_DOWNLOAD_TTL_SECONDS`），同一 URL 可反复续传；若暂停超过有效期，再调一次 `download` 换个新 URL 即可（uuid 内容不可变，`If-Range` 安全）。Worker（`public`）路径同样透传 `Range`（见 [04](./04-cloudflare-worker.md)）。自己写下载器时：先 `HEAD` 读 `Accept-Ranges: bytes` + `Content-Length`，断点处带 `Range` + `If-Range: <ETag>`，收到 `206` 续写、`200` 则从头覆盖。
 
 ## 5. 删除 / 查询
 
@@ -116,10 +142,10 @@ await api(`/api/v1/artifacts?page=1&page_size=20`, { method: 'GET' }) // 本站�
 
 ## 7. 注意事项
 
-- **预签名有效期**：init 返回的 URL ~1h 过期；大文件分片要在窗口内传完，否则重新 init（旧的成孤儿，GC 回收）。
-- **重传**：分片失败可只重 PUT 失败的那片（同 `part_url` 在有效期内可重试）；整体失败就重新 init。
+- **预签名有效期**：init 返回的上传 URL ~1h 过期。超时**不必**重新 init——调 `GET /artifacts/:uuid/resume` 拿新 URL 续传（§2.3）。下载 URL 默认 24h。
+- **重传 / 续传**：分片失败可只重 PUT 失败的那片（同 `part_url` 有效期内可重试）；窗口过了 / 断线 / 刷新后用 `resume` 续传（跳过已传分片）；整体彻底放弃才重新 init。
 - **幂等**：对已 `ready` 的 uuid 再 complete 是安全的（只会补 manifest）。
-- **孤儿**：init 后不 complete 的会被 `artifact-gc` 在 `ORPHAN_TTL`（默认 24h）后清掉，无需调用方干预。
+- **孤儿**：init 后**在 `ORPHAN_TTL`（默认 24h）内无任何 complete/resume 进展**的上传会被 `artifact-gc` 清掉（判定按 `updated_at`，所以仍在续传的不会被误杀），无需调用方干预。
 - **跨站隔离**：你只能看/操作自己 `site_key` 的制品；别站 uuid 一律 404。
 
 ---

@@ -46,7 +46,7 @@
 
 | 规则 | 触发条件 | 动作 | 用的密钥 |
 |------|---------|------|---------|
-| **孤儿清理** | `status=0` 且 `created_at` 早于 now − `ORPHAN_TTL`（默认 24h） | `AbortMultipartUpload`（若有 `upload_id`）+ 删对象 + 删行 | `cleanup` |
+| **孤儿清理** | `status=0` 且 **`updated_at`**（非 `created_at`）早于 now − `ORPHAN_TTL`（默认 24h） | `AbortMultipartUpload`（若有 `upload_id`）+ 删对象 + 删行 | `cleanup` |
 | **失败清理** | `status=2` 且超时 | 删对象（若存在）+ 删行 | `cleanup` |
 | **软删 → 物理删** | `deleted_at < now − SOFTDELETE_TTL`（默认 7d） | 从 B2 物理删除对象 + 删行 | `cleanup` |
 

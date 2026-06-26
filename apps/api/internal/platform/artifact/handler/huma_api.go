@@ -87,6 +87,10 @@ type downloadOutput struct {
 	Body Envelope[*dto.DownloadResponse]
 }
 
+type resumeOutput struct {
+	Body Envelope[*dto.ResumeUploadResponse]
+}
+
 type deleteData struct {
 	UUID    string `json:"uuid"`
 	Deleted bool   `json:"deleted"`
@@ -163,6 +167,10 @@ func (s *HumaServer) register(api huma.API) {
 		OperationID: "completeUpload", Method: http.MethodPost, Path: "/api/v1/artifacts/{uuid}/complete",
 		Summary: "Finalize an upload (verify size, optional manifest)", Tags: tags,
 	}, s.completeUpload)
+	huma.Register(api, huma.Operation{
+		OperationID: "resumeUpload", Method: http.MethodGet, Path: "/api/v1/artifacts/{uuid}/resume",
+		Summary: "Resume an interrupted upload (lists stored parts, re-presigns the missing ones)", Tags: tags,
+	}, s.resumeUpload)
 }
 
 func (s *HumaServer) list(ctx context.Context, in *listInput) (*listOutput, error) {
@@ -211,6 +219,33 @@ func (s *HumaServer) download(ctx context.Context, in *uuidInput) (*downloadOutp
 		return nil, apiErr(http.StatusInternalServerError, errors.ErrArtifactStoreFailed)
 	}
 	return &downloadOutput{Body: okEnvelope(resp)}, nil
+}
+
+func (s *HumaServer) resumeUpload(ctx context.Context, in *uuidInput) (*resumeOutput, error) {
+	if !s.uploadEnabled {
+		return nil, apiErr(http.StatusServiceUnavailable, errors.ErrArtifactUploadDisabled)
+	}
+	site := siteFromCtx(ctx)
+	if site == "" {
+		return nil, apiErr(http.StatusUnauthorized, errors.ErrArtifactUnauthorized)
+	}
+	resp, err := s.svc.ResumeUpload(ctx, in.UUID, site)
+	if err != nil {
+		switch {
+		case stderrors.Is(err, service.ErrNotFound):
+			return nil, apiErr(http.StatusNotFound, errors.ErrArtifactNotFound)
+		case stderrors.Is(err, service.ErrNotResumable):
+			// Artifact exists but is already completed/failed — conflict, not a 4xx
+			// the client can fix by retrying the same way.
+			return nil, apiErr(http.StatusConflict, errors.ErrArtifactBadRequest)
+		case stderrors.Is(err, service.ErrBadRequest):
+			return nil, apiErr(http.StatusBadRequest, errors.ErrArtifactBadRequest)
+		default:
+			slog.Error("artifact resume", "uuid", in.UUID, "site", site, "err", err)
+			return nil, apiErr(http.StatusInternalServerError, errors.ErrArtifactStoreFailed)
+		}
+	}
+	return &resumeOutput{Body: okEnvelope(resp)}, nil
 }
 
 func (s *HumaServer) delete(ctx context.Context, in *uuidInput) (*deleteOutput, error) {

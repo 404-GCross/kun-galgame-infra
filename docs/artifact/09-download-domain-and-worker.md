@@ -76,7 +76,7 @@ artifact `Download` 已同时支持两条路(`public` 标志 + `cdn_base`),**按
 ## 6. 缓存与 Range
 
 - **缓存**:只对**公开**内容按"去掉 query 的 path"做边缘缓存;**token 受控**内容校验后**不缓存**(或把 token 纳入 cache key = 等于不缓存),否则会从缓存把内容喂给无权请求。
-- **Range**:下载器/断点续传依赖 `Range` + `206`,Worker 必须透传 `Range` / `If-Range` 并回 `206`。GB 级文件用**流式 `fetch` body 透传**(无 Worker CPU/大小上限)。[04] 的骨架未含 Range,落地时补。
+- **Range**:下载器/断点续传依赖 `Range` + `206`,Worker 必须透传 `Range` / `If-Range`(及 `If-None-Match`/`If-Modified-Since`)并**原样回** `206` + `Content-Range`。GB 级文件用**流式 `fetch` body 透传**(无 Worker CPU/大小上限)。**`206` 绝不写边缘缓存**(否则把分片当整文件喂给后续请求 → 损坏);只缓存完整 `200`。[04] 的参考实现**已含完整 Range 透传**(`fetch` 前透传请求头、`new Response(res.body, res)` 原样回、按 `isRange`/`status===200` 决定是否入缓存)。后端侧:预签名下载 TTL 默认 24h,使同一 URL 在窗口内可反复续传(见 [01 决策 10](./01-design.md))。
 
 ## 7. 运维卫生(保持隔离)
 

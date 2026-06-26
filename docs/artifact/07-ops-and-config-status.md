@@ -89,7 +89,9 @@ B2 凭证已写入 `apps/api/.env`（bucket `kungal-artifact-v1` @ `us-east-005`
 
 ## Phase 3（后续增强）
 
-可插拔病毒扫描 worker（ClamAV / 云）、服务端全量 checksum 复算、从压缩包解析 manifest、断点续传、管理端「全站制品」视图。届时把对外契约（03/06）登记进 `../kungal-docs` 并 `docs:sync` 下发 forum/patch 镜像。
+可插拔病毒扫描 worker（ClamAV / 云）、服务端全量 checksum 复算、从压缩包解析 manifest、管理端「全站制品」视图。（断点续传**已落地**，见 [01 决策 10](./01-design.md)。）届时把对外契约（03/06）登记进 `../kungal-docs` 并 `docs:sync` 下发 forum/patch 镜像。
+
+> 新增配置：`KUN_ARTIFACT_PRESIGN_DOWNLOAD_TTL_SECONDS` 默认从 3600 调到 **86400（24h）**，让下载断点续传在窗口内可对同一预签名 URL 反复续传。需要更短可显式设回。
 
 ---
 

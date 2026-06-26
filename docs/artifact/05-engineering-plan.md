@@ -24,7 +24,9 @@
 
 ### Phase 3 — 增强（后续）
 
-可插拔病毒扫描 worker（ClamAV / 云 API）、服务端全量 checksum 复算、从压缩包解析 manifest、断点续传（前端 IndexedDB 缓存 ETag）、管理端「全站制品」视图。
+可插拔病毒扫描 worker（ClamAV / 云 API）、服务端全量 checksum 复算、从压缩包解析 manifest、管理端「全站制品」视图。
+
+> 断点续传**已落地**（不再是 Phase 3）：上传 `GET /artifacts/:uuid/resume`（`ListParts` + 重签缺失分片 + `updated_at` 防 GC 误杀）、下载 HTTP `Range`（预签名 TTL 默认 24h + Worker 透传 `Range`）。前端可把 `uuid` 存 IndexedDB 以便刷新后恢复。见 [01 决策 10](./01-design.md) / [03 §2.5](./03-api-design.md) / [06 §2.3](./06-integration-guide.md)。
 
 ## 环境变量
 

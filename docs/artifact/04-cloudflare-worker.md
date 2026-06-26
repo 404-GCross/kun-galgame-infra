@@ -62,28 +62,50 @@ export default {
   async scheduled(_e, env) { await refreshAuth(env); },
 
   async fetch(req, env, ctx) {
+    if (req.method !== "GET" && req.method !== "HEAD") {
+      return new Response("method not allowed", { status: 405 });
+    }
+    // 断点续传 / 拖进度 / 多线程下载 = HTTP Range。Range 请求一律回源（不走边缘
+    // 缓存的整文件副本），其余完整 GET 才走缓存。
+    const isRange = req.headers.has("Range");
+
     const cache = caches.default;
-    const hit = await cache.match(req);
-    if (hit) return hit;                                   // 缓存命中，不碰 B2
+    if (req.method === "GET" && !isRange) {
+      const hit = await cache.match(req);
+      if (hit) return hit;                                  // 命中完整副本，不碰 B2
+    }
 
     let auth = JSON.parse((await env.AUTH.get("b2")) || "null");
     if (!auth) { await refreshAuth(env); auth = JSON.parse(await env.AUTH.get("b2")); }
 
     const key = new URL(req.url).pathname.replace(/^\//, ""); // {site}/{uuid}/{name}
     const upstream = `${auth.downloadUrl}/file/${env.B2_BUCKET}/${key}`;
-    let res = await fetch(upstream, { headers: { Authorization: auth.token } });
 
-    // 剥离后端指纹头
+    // 关键：把续传相关请求头透传给 B2 —— 否则永远只能整文件下载。
+    const fwd = { Authorization: auth.token };
+    for (const h of ["Range", "If-Range", "If-None-Match", "If-Modified-Since"]) {
+      const v = req.headers.get(h);
+      if (v) fwd[h] = v;
+    }
+
+    // 流式 body 透传（无 Worker CPU / 大小上限）。原样保留 B2 的状态与头：
+    // 206 + Content-Range（续传）/ 200（整文件）/ 416（范围非法）/ 304。
+    let res = await fetch(upstream, { method: req.method, headers: fwd });
     res = new Response(res.body, res);
     for (const h of [...res.headers.keys()]) if (h.toLowerCase().startsWith("x-bz-")) res.headers.delete(h);
+    if (!res.headers.has("Accept-Ranges")) res.headers.set("Accept-Ranges", "bytes");
 
-    if (res.ok) ctx.waitUntil(cache.put(req, res.clone()));  // 写边缘缓存
+    // 只缓存【完整 200 且本次非 Range】的公开响应；206 绝不写缓存（否则会把分片
+    // 当整文件喂给后续请求 → 文件损坏）。
+    if (req.method === "GET" && !isRange && res.status === 200) {
+      ctx.waitUntil(cache.put(req, res.clone()));
+    }
     return res;
   },
 };
 ```
 
-> 这是参考骨架，非本仓产物。生产实现可参照官方样例 [backblaze-b2-samples/cloudflare-b2](https://github.com/backblaze-b2-samples/cloudflare-b2)（含 SigV4 签名版本）与作者文章。
+> 这是参考实现（非本仓产物）。**断点续传的要点全在上面**：透传 `Range`/`If-Range`、原样回 `206`、`206` 不入缓存。私有/受控制品再在 `fetch upstream` 之前加一层 HMAC token 校验（见 [09 §5](./09-download-domain-and-worker.md)）。SigV4 签名版可参照官方样例 [backblaze-b2-samples/cloudflare-b2](https://github.com/backblaze-b2-samples/cloudflare-b2)。
 
 ## Go 侧如何接入
 

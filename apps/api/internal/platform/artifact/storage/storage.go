@@ -36,6 +36,15 @@ type CompletedPart struct {
 	ETag       string
 }
 
+// UploadedPart is one part already stored for an in-progress multipart upload,
+// as reported by ListParts. Used to resume an interrupted upload: the client
+// skips these and only re-sends the missing parts.
+type UploadedPart struct {
+	PartNumber int32
+	ETag       string
+	Size       int64
+}
+
 // NewClient creates an S3 client from the given config. Works with B2 /
 // MinIO / R2 / S3 via the UsePathStyle knob (B2: false; MinIO dev: true).
 func NewClient(cfg config.S3Config) (*Client, error) {
@@ -129,6 +138,44 @@ func (c *Client) PresignUploadPart(ctx context.Context, key, uploadID string, pa
 		return "", fmt.Errorf("artifact storage: presign part %d of %q: %w", partNumber, key, err)
 	}
 	return req.URL, nil
+}
+
+// ListParts returns the parts already uploaded for an in-progress multipart
+// upload, so a resumed client can skip them and re-send only what's missing.
+// Follows S3 pagination (PartNumberMarker) to cover uploads with >1000 parts.
+func (c *Client) ListParts(ctx context.Context, key, uploadID string) ([]UploadedPart, error) {
+	var out []UploadedPart
+	var marker *string
+	for {
+		resp, err := c.s3.ListParts(ctx, &s3.ListPartsInput{
+			Bucket:           aws.String(c.bucket),
+			Key:              aws.String(key),
+			UploadId:         aws.String(uploadID),
+			PartNumberMarker: marker,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("artifact storage: list parts %q: %w", key, err)
+		}
+		for _, p := range resp.Parts {
+			up := UploadedPart{}
+			if p.PartNumber != nil {
+				up.PartNumber = *p.PartNumber
+			}
+			if p.ETag != nil {
+				up.ETag = *p.ETag
+			}
+			if p.Size != nil {
+				up.Size = *p.Size
+			}
+			out = append(out, up)
+		}
+		if resp.IsTruncated != nil && *resp.IsTruncated {
+			marker = resp.NextPartNumberMarker
+			continue
+		}
+		break
+	}
+	return out, nil
 }
 
 // CompleteMultipart finalises a multipart upload. Parts must be sorted ascending

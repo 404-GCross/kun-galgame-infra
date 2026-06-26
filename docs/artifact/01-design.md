@@ -35,7 +35,7 @@
 - 不做在线解压 / 转码 / 改写文件内容（artifact 是「原样存取」的 blob 仓）。
 - 不做面向匿名最终用户的公开上传端点（仅服务已注册的 OAuth Client，与图床一致）。
 - v1 不做服务端全量内容校验 / 病毒扫描（成本高，做成**可插拔**步骤延后，见决策 4）。
-- v1 不做断点续传（resumable）；multipart 分片重传由调用方在前端处理。
+- ~~v1 不做断点续传~~ **已支持断点续传**（见决策 8）：上传走 `GET /artifacts/:uuid/resume`（S3 `ListParts` 列已传分片 + 重签缺失分片），下载走对预签名/Worker URL 发 HTTP `Range`。无需引入 tus——multipart 本就是"可恢复"的底层。
 
 ## 服务边界 — 图床 vs artifact 谁接什么
 
@@ -196,6 +196,16 @@ client GET /artifacts/:uuid/download
 **推论（强制约定）**：未来任何 artifact 管理面（如「全站制品」面板、按站配额编辑端点）一律 `middleware.RequireRole("ren")` + 默认关闭，**不对普通 admin 开放**。当前 `artifact_*` 配置列（`artifact_quota_*`、`artifact_max_file_size`、`artifact_cdn_base` 等）是 SQL-only，应由 ren 运维设置。
 
 **理由**：artifact 直接对应真金白银的对象存储 + 出流量成本、且是大文件分发面，能力收敛到最高信任的 ren 一档，避免普通 admin 误开导致刷量/费用失控。与 `ren` 既有定位（"gates the genuinely dangerous OAuth-admin capabilities"）一致。
+
+### 决策 10：断点续传 —— 复用 S3 multipart + HTTP Range，不引入 tus
+
+**选择**：上传与下载的"暂停/继续/断点续传"都建立在**既有原语**上，不新增协议、不让字节流经后端。
+
+- **下载续传 = HTTP Range**。下载始终是"发 URL"（预签名 GET 或 Worker 域名），客户端对该 URL 发 `Range: bytes=N-`，B2 原生回 `206`。后端只把**预签名下载 TTL 默认调到 24h**（`KUN_ARTIFACT_PRESIGN_DOWNLOAD_TTL_SECONDS`），让同一 URL 在窗口内可反复续传;超时则客户端再调一次 `download` 换新 URL。uuid 即不可变内容 → `If-Range` 天然安全，不会拼接到不同版本。Worker 路径须透传 `Range`/`If-Range`（见 [04](./04-cloudflare-worker.md)）。
+- **上传续传 = `ListParts` 重签**。新增 `GET /artifacts/:uuid/resume`：对 multipart 上传调 S3 `ListParts` 列出**已落盘分片**，只对**缺失分片**重签 presigned URL；单段则重签 PUT。客户端跳过已传、补传缺失、Complete 时合并全部 ETag。这正是 tus「查当前 offset 再续」原则的 S3-multipart 原生等价物——**"S3 multipart 本就是 tus 可恢复性的底层实现"**，故不必再叠一层 tus。
+- **GC 不误杀**：孤儿判定从 `created_at` 改为 `updated_at`，`resume` 调用 `Touch` 刷新 `updated_at` → 正在续传的上传不会在窗口内被回收（真正废弃的——`OrphanTTL` 内无任何 resume——才回收）。
+
+**理由**：multipart + Range 是对象存储/HTTP 既有、稳定、零额外依赖的能力;在其上加一个 `resume` 查询端点 + 调长下载 TTL，就拿到"受益终生"的断点续传，而**不**承担 tus 服务端/状态机的复杂度，也不破坏"后端不碰字节"的核心架构。
 
 ## 技术栈
 

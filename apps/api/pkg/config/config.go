@@ -58,8 +58,13 @@ type ArtifactServiceConfig struct {
 	PartSize int64
 
 	// Presign TTLs: how long the issued upload/download URLs stay valid.
+	// Download default is 24h (not 1h) so a paused/interrupted download can be
+	// resumed via HTTP Range against the SAME presigned URL well after it
+	// started — B2 honors Range on presigned GETs, so resume "just works" inside
+	// this window without re-issuing. Uploads stay 1h: a resumed upload calls
+	// GET /artifacts/{uuid}/resume to get fresh part URLs anyway.
 	PresignUploadTTL   time.Duration // default 1h
-	PresignDownloadTTL time.Duration // default 1h
+	PresignDownloadTTL time.Duration // default 24h
 
 	// GC TTLs (used by internal/jobs/artifact_gc).
 	OrphanTTL     time.Duration // status=0 never completed → abort+delete; default 24h
@@ -349,7 +354,7 @@ func Load() (*Config, error) {
 		MultipartThreshold: getEnvInt64("KUN_ARTIFACT_MULTIPART_THRESHOLD", 50*1024*1024),
 		PartSize:           getEnvInt64("KUN_ARTIFACT_PART_SIZE", 16*1024*1024),
 		PresignUploadTTL:   time.Duration(getEnvInt64("KUN_ARTIFACT_PRESIGN_UPLOAD_TTL_SECONDS", 3600)) * time.Second,
-		PresignDownloadTTL: time.Duration(getEnvInt64("KUN_ARTIFACT_PRESIGN_DOWNLOAD_TTL_SECONDS", 3600)) * time.Second,
+		PresignDownloadTTL: time.Duration(getEnvInt64("KUN_ARTIFACT_PRESIGN_DOWNLOAD_TTL_SECONDS", 86400)) * time.Second,
 		OrphanTTL:          time.Duration(getEnvInt64("KUN_ARTIFACT_ORPHAN_TTL_HOURS", 24)) * time.Hour,
 		SoftDeleteTTL:      time.Duration(getEnvInt64("KUN_ARTIFACT_SOFTDELETE_TTL_HOURS", 168)) * time.Hour,
 		CleanupAccessKey:   getEnv("KUN_ARTIFACT_S3_CLEANUP_ACCESS_KEY", ""),

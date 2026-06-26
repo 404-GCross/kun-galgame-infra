@@ -33,6 +33,7 @@ var (
 	ErrNotFound     = stderrors.New("artifact: not found")
 	ErrSizeMismatch = stderrors.New("artifact: uploaded size does not match declared size")
 	ErrBadRequest   = stderrors.New("artifact: bad request")
+	ErrNotResumable = stderrors.New("artifact: upload is not resumable (already completed or failed)")
 )
 
 // maxS3Parts is the S3/B2 multipart hard cap.
@@ -66,7 +67,9 @@ func New(repo *repository.ArtifactRepository, store *storage.Client, q *quota.Ch
 		opts.PresignUploadTTL = time.Hour
 	}
 	if opts.PresignDownloadTTL <= 0 {
-		opts.PresignDownloadTTL = time.Hour
+		// 24h so an interrupted download can resume via Range against the same
+		// presigned URL long after it started (B2 honors Range on presigned GETs).
+		opts.PresignDownloadTTL = 24 * time.Hour
 	}
 	return &Service{repo: repo, store: store, quota: q, opts: opts}
 }
@@ -172,6 +175,84 @@ func (s *Service) InitUpload(ctx context.Context, req dto.InitUploadRequest, p I
 		return nil, err
 	}
 	resp.UploadURL = url
+	return resp, nil
+}
+
+// ResumeUpload re-drives an upload that was Init'd but never Completed (e.g. the
+// client paused, lost connection, or its presigned URLs expired). It is the
+// S3-multipart-native equivalent of resumable upload — no separate protocol
+// (tus) needed:
+//   - single-PUT: re-presign the PUT URL (the original almost certainly expired).
+//   - multipart: ask B2 which parts already landed (ListParts) and re-presign
+//     ONLY the missing ones, so the client uploads the remainder and Completes
+//     with the union of already-stored + newly-uploaded ETags.
+//
+// It Touches updated_at so the GC orphan sweep (keyed on updated_at) won't reap
+// an upload that's actively being resumed. Safe to call repeatedly.
+func (s *Service) ResumeUpload(ctx context.Context, uuidStr, site string) (*dto.ResumeUploadResponse, error) {
+	a, err := s.repo.FindByUUID(ctx, uuidStr)
+	if err != nil {
+		if stderrors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	if a.SiteKey != site {
+		return nil, ErrNotFound // don't leak cross-site existence
+	}
+	if a.Status != model.StatusUploading {
+		return nil, ErrNotResumable // ready or failed → nothing to resume
+	}
+
+	// Keep this upload out of the GC orphan sweep while it's being continued.
+	// Best-effort: a lagging touch only risks an over-TTL idle upload being
+	// reclaimed, never a correctness issue.
+	if err := s.repo.Touch(ctx, a.ID); err != nil {
+		slog.Warn("artifact: touch on resume", "uuid", a.UUID, "err", err)
+	}
+
+	expiresAt := time.Now().Add(s.opts.PresignUploadTTL).UTC().Format(time.RFC3339)
+	resp := &dto.ResumeUploadResponse{UUID: a.UUID, ExpiresAt: expiresAt}
+
+	// Single-PUT: just hand back a fresh PUT URL.
+	if !a.IsMultipart() {
+		url, err := s.store.PresignPut(ctx, a.FileKey, s.opts.PresignUploadTTL)
+		if err != nil {
+			return nil, err
+		}
+		resp.UploadURL = url
+		return resp, nil
+	}
+
+	if a.PartSize <= 0 {
+		return nil, ErrBadRequest // multipart row with no part size — corrupt
+	}
+
+	uploaded, err := s.store.ListParts(ctx, a.FileKey, a.UploadID)
+	if err != nil {
+		return nil, err
+	}
+	have := make(map[int32]struct{}, len(uploaded))
+	for _, p := range uploaded {
+		have[p.PartNumber] = struct{}{}
+		resp.UploadedParts = append(resp.UploadedParts, dto.UploadedPart{
+			PartNumber: p.PartNumber, ETag: p.ETag, Size: p.Size,
+		})
+	}
+
+	numParts := (a.ReportedSize + a.PartSize - 1) / a.PartSize
+	resp.Multipart = true
+	resp.PartSize = a.PartSize
+	for n := int32(1); int64(n) <= numParts; n++ {
+		if _, ok := have[n]; ok {
+			continue // already on B2 — skip
+		}
+		url, err := s.store.PresignUploadPart(ctx, a.FileKey, a.UploadID, n, s.opts.PresignUploadTTL)
+		if err != nil {
+			return nil, err
+		}
+		resp.PartURLs = append(resp.PartURLs, dto.PartURL{PartNumber: n, URL: url})
+	}
 	return resp, nil
 }
 

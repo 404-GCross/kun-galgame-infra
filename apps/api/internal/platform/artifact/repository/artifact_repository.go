@@ -75,12 +75,26 @@ func (r *ArtifactRepository) SaveManifest(ctx context.Context, m *model.Manifest
 	}).Create(m).Error
 }
 
-// FindOrphans returns live artifacts stuck uploading (status=0) since before
-// the given time — Init'd but never Completed. Used by the GC job.
+// Touch bumps updated_at on an artifact without rewriting its other columns.
+// Called when an upload is resumed so the GC orphan sweep — which keys off
+// updated_at (see FindOrphans) — won't reap an upload that's actively being
+// continued, only one genuinely abandoned for OrphanTTL.
+func (r *ArtifactRepository) Touch(ctx context.Context, id uint) error {
+	return r.db.WithContext(ctx).
+		Model(&model.Artifact{}).
+		Where("id = ?", id).
+		Update("updated_at", time.Now()).Error
+}
+
+// FindOrphans returns live artifacts stuck uploading (status=0) untouched since
+// before the given time — Init'd (or last resumed) but never Completed. Keyed on
+// updated_at, NOT created_at, so a long upload that's still being resumed (which
+// Touches updated_at) isn't reclaimed mid-flight; only a genuinely abandoned one
+// (no progress for OrphanTTL) is. Used by the GC job.
 func (r *ArtifactRepository) FindOrphans(ctx context.Context, before time.Time, limit int) ([]model.Artifact, error) {
 	var items []model.Artifact
 	err := r.db.WithContext(ctx).
-		Where("status = ? AND created_at < ?", model.StatusUploading, before).
+		Where("status = ? AND updated_at < ?", model.StatusUploading, before).
 		Limit(limit).
 		Find(&items).Error
 	return items, err

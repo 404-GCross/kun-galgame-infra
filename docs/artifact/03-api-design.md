@@ -47,8 +47,13 @@
 ② 客户端直传 B2:
      单段:  PUT <upload_url>  (整个文件体)
      分片:  并发 PUT <part_urls[i]>，从每个响应头收集 ETag
+   ⚡ 中断/暂停后续传:
+     GET /artifacts/:uuid/resume   → {uploaded_parts:[...], part_urls:[缺失分片], upload_url?}
+     跳过 uploaded_parts、只补 part_urls 里的缺失分片（单段则用新 upload_url 重传）
 ③ POST /artifacts/:uuid/complete   → {parts:[{part_number,etag}], manifest?} → 校验 → ready
 ④ GET  /artifacts/:uuid/download   → {url}（presigned GET 或 Worker 域名）
+   ⚡ 下载暂停/续传: 对 ④ 拿到的 URL 直接发 HTTP Range(`bytes=N-`)→ B2 回 206;
+     presigned URL 在 TTL(默认 24h)内可反复续传，过期再调一次 ④ 换新 URL
 ```
 
 ---
@@ -182,11 +187,44 @@
 
 ---
 
+## 2.5 续传上传（中断/暂停后恢复）
+
+### `GET /artifacts/:uuid/resume`
+
+对一个已 Init、尚未 Complete（`status=uploading`）的上传重新取得续传所需信息。是
+**S3 multipart 原生**的"断点续传"——无需 tus 之类的额外协议。鉴权 + 本站归属。
+
+- **单段（< 50MB）**：原 `upload_url` 多半已过期，返回**新的** `upload_url` 重传整体。
+- **分片（multipart）**：向 B2 `ListParts` 查**已落盘的分片**,返回 `uploaded_parts`（客户端跳过、其 ETag 在 complete 时复用）+ 仅缺失分片的**新** `part_urls`。
+
+调用本端点会 `Touch` 该上传的 `updated_at`，使正在续传的上传**不会**被 GC 孤儿清理（孤儿判定已改为按 `updated_at` 闲置超过 `OrphanTTL`，见 [02](./02-storage-and-schema.md)）。可重复调用。
+
+**成功响应（分片）**：
+
+```json
+{ "code": 0, "data": {
+  "uuid": "9f1c...",
+  "multipart": true,
+  "part_size": 16777216,
+  "uploaded_parts": [ { "part_number": 1, "etag": "\"abc...\"", "size": 16777216 } ],
+  "part_urls": [ { "part_number": 2, "url": "https://s3...UploadPart?X-Amz-..." } ],
+  "expires_at": "2026-06-13T09:00:00Z"
+} }
+```
+
+**成功响应（单段）**：`{ "multipart": false, "upload_url": "https://s3...PutObject?X-Amz-...", "expires_at": "..." }`
+
+**错误**：未知 uuid / 非本站 → `404`。已 `ready` 或 `failed`（无可续传）→ `409`。
+
+---
+
 ## 3. 获取下载地址
 
 ### `GET /artifacts/:uuid/download`
 
 鉴权 + 本站归属 + `ready` → 返回下载 URL。
+
+**断点续传 / 暂停继续 / 多线程下载**：对返回的 URL 直接发 HTTP `Range`（如 `Range: bytes=1048576-`）即可——B2 原生回 `206 Partial Content` + `Content-Range`，presigned 与 Worker 两条路径都支持。presigned URL 在 TTL（默认 24h，`KUN_ARTIFACT_PRESIGN_DOWNLOAD_TTL_SECONDS`）内可反复续传；暂停超过 TTL 后，客户端再调一次本端点换个新 URL 继续即可（字节不变 → `If-Range` 安全，uuid 即不可变内容）。Worker 路径须透传 `Range`/`If-Range` 并回 `206`（见 [04](./04-cloudflare-worker.md)）。
 
 **成功响应（默认：私有预签名）**：
 
@@ -252,6 +290,7 @@
 |--------|------|------|--------|
 | POST | `/api/v1/artifacts` | client + `artifact:upload`(JWT) | Phase 1（门控）|
 | POST | `/api/v1/artifacts/:uuid/complete` | 同上 | Phase 1（门控）|
+| GET | `/api/v1/artifacts/:uuid/resume` | 同上 | 续传（门控）|
 | GET | `/api/v1/artifacts` | client | Phase 1 |
 | GET | `/api/v1/artifacts/:uuid` | client | Phase 1 |
 | GET | `/api/v1/artifacts/:uuid/download` | client | Phase 1 |
@@ -261,8 +300,9 @@
 ## 没有的端点（v1 故意不提供）
 
 - 服务端字节上传 / 代理（一切走预签名直传）。
-- 断点续传状态查询（分片重传由前端处理，见 [06](./06-integration-guide.md)）。
 - 管理端「全站制品」列表（v1 仅按站作用域；admin 全站视图待 Phase 3）。
+
+> 注：上传断点续传**已提供**（`GET /artifacts/:uuid/resume`，§2.5）；下载断点续传通过对下载 URL 发 HTTP `Range`（§3）。集成配方见 [06](./06-integration-guide.md)。
 
 ## CORS
 

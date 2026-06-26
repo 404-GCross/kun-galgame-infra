@@ -38,6 +38,30 @@ type CompletedPart struct {
 	ETag       string `json:"etag" validate:"required"`
 }
 
+// UploadedPart is one multipart part already stored, returned by the resume
+// endpoint so the client skips re-uploading it (and reuses its ETag at Complete).
+type UploadedPart struct {
+	PartNumber int32  `json:"part_number"`
+	ETag       string `json:"etag"`
+	Size       int64  `json:"size"`
+}
+
+// ResumeUploadResponse re-drives an interrupted upload (status=uploading). For a
+// single-PUT upload it returns a fresh UploadURL (the original presigned URL has
+// usually expired). For multipart it returns the parts already on storage (skip
+// them; reuse their ETags at Complete) plus fresh presigned URLs for ONLY the
+// parts still missing — the S3-multipart-native equivalent of tus "give me the
+// current offset and let me continue".
+type ResumeUploadResponse struct {
+	UUID          string         `json:"uuid"`
+	Multipart     bool           `json:"multipart"`
+	UploadURL     string         `json:"upload_url,omitempty"`     // single-PUT: re-presigned PUT
+	PartSize      int64          `json:"part_size,omitempty"`      // multipart
+	UploadedParts []UploadedPart `json:"uploaded_parts,omitempty"` // multipart: already stored (skip)
+	PartURLs      []PartURL      `json:"part_urls,omitempty"`      // multipart: missing parts only
+	ExpiresAt     string         `json:"expires_at"`
+}
+
 // ManifestInput is the optional game-launch manifest, supplied at Complete time.
 type ManifestInput struct {
 	Executable   string         `json:"executable" validate:"required,max=500"`
