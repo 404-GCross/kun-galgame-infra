@@ -114,8 +114,10 @@ func (s *Service) InitUpload(ctx context.Context, req dto.InitUploadRequest, p I
 	id := uuid.NewString()
 	// Opaque key: {site}/{uuid}<ext>. The user's filename is NOT in the key, so
 	// every download URL (presigned or CDN) is free of special characters; the
-	// original name is preserved in artifact.Name and applied at download time
-	// via Content-Disposition (baked onto the object at complete).
+	// original name is preserved in artifact.Name and surfaced via
+	// Content-Disposition — baked onto the object at upload start
+	// (CreateMultipartUpload for multipart; at complete for single-PUT) and
+	// additionally overridden per-download on presigned GETs.
 	fileKey := p.Site + "/" + id + extForKey(req.Name)
 
 	a := &model.Artifact{
@@ -146,7 +148,7 @@ func (s *Service) InitUpload(ctx context.Context, req dto.InitUploadRequest, p I
 		if numParts > maxS3Parts {
 			return nil, ErrTooBig
 		}
-		uploadID, err := s.store.CreateMultipart(ctx, fileKey)
+		uploadID, err := s.store.CreateMultipart(ctx, fileKey, a.Name, a.MimeType)
 		if err != nil {
 			return nil, err
 		}
@@ -309,13 +311,19 @@ func (s *Service) CompleteUpload(ctx context.Context, uuidStr, site string, req 
 		return nil, ErrSizeMismatch
 	}
 
-	// Bake an attachment Content-Disposition carrying the original filename onto
-	// the object (server-side, in place) so downloads — presigned OR via the
-	// CDN/Worker — save under req.Name even though the key is opaque (uuid<ext>).
-	// Best-effort: a failure only degrades the saved filename to the opaque key,
-	// never the upload itself.
-	if err := s.store.SetContentDisposition(ctx, a.FileKey, a.Name, a.MimeType); err != nil {
-		slog.Warn("artifact: bake content-disposition", "uuid", a.UUID, "err", err)
+	// Single-PUT objects get their attachment Content-Disposition baked here, via
+	// a server-side in-place metadata copy. They are always below the multipart
+	// threshold, so the copy is small and sub-second. Multipart objects are NOT
+	// copied: they already carry the filename + content type set once at
+	// CreateMultipartUpload (InitUpload), so a GB-scale complete never pays the
+	// O(size) server-side copy that used to blow past client timeouts. Either way
+	// the opaque key (uuid<ext>) downloads under a.Name on both the Worker path
+	// (baked disposition) and the presigned path (per-download override).
+	// Best-effort: a failure only degrades the saved filename, never the upload.
+	if !a.IsMultipart() {
+		if err := s.store.SetContentDisposition(ctx, a.FileKey, a.Name, a.MimeType); err != nil {
+			slog.Warn("artifact: bake content-disposition", "uuid", a.UUID, "err", err)
+		}
 	}
 
 	a.FileSize = actual

@@ -111,12 +111,24 @@ func (c *Client) PresignGet(ctx context.Context, key, downloadName string, ttl t
 	return req.URL, nil
 }
 
-// CreateMultipart starts a multipart upload and returns its UploadId.
-func (c *Client) CreateMultipart(ctx context.Context, key string) (string, error) {
-	out, err := c.s3.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
+// CreateMultipart starts a multipart upload and returns its UploadId. The
+// download filename and content type are baked here as object metadata: B2 maps
+// Content-Disposition → b2-content-disposition and preserves both onto the
+// finished object, so the attachment name is set ONCE at upload start and the
+// completion path never pays an O(size) server-side copy. downloadName /
+// contentType may be empty (then left unset).
+func (c *Client) CreateMultipart(ctx context.Context, key, downloadName, contentType string) (string, error) {
+	in := &s3.CreateMultipartUploadInput{
 		Bucket: aws.String(c.bucket),
 		Key:    aws.String(key),
-	})
+	}
+	if downloadName != "" {
+		in.ContentDisposition = aws.String(ContentDisposition(downloadName))
+	}
+	if contentType != "" {
+		in.ContentType = aws.String(contentType)
+	}
+	out, err := c.s3.CreateMultipartUpload(ctx, in)
 	if err != nil {
 		return "", fmt.Errorf("artifact storage: create multipart %q: %w", key, err)
 	}
@@ -263,10 +275,13 @@ func (c *Client) Delete(ctx context.Context, key string) error {
 
 // SetContentDisposition rewrites the object's metadata in place via a
 // server-side copy onto its own key (MetadataDirective=REPLACE), baking an
-// attachment Content-Disposition that carries downloadName. This lets the object
-// key stay opaque (uuid<ext>) while downloads — presigned or via the CDN/Worker
-// passthrough — still save under the original filename. No bytes move (same
-// bucket+key); B2 caps single CopyObject at 5 GB, which covers all upload sizes.
+// attachment Content-Disposition that carries downloadName. Used ONLY for
+// single-PUT uploads (always smaller than the multipart threshold, so the copy
+// is small and sub-second); multipart objects bake the same metadata at
+// CreateMultipartUpload instead, so a GB-scale completion never pays this
+// O(size) copy. B2 caps a single CopyObject at 5 GB — fine here, since single-
+// PUT objects are far under it (multipart, which can reach far past 5 GB, never
+// takes this path).
 func (c *Client) SetContentDisposition(ctx context.Context, key, downloadName, contentType string) error {
 	in := &s3.CopyObjectInput{
 		Bucket:             aws.String(c.bucket),
