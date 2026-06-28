@@ -109,7 +109,14 @@ func (s *GalgameService) resolveImageMeta(ctx context.Context, hashes []string) 
 		}
 		for h, m := range fetched {
 			out[h] = m
-			if s.metaCache != nil {
+			// Cache COMPLETE entries only. A result with an empty Thumbhash is
+			// a partial hit: the hash is known (width/height set) but the
+			// thumbhash hasn't been computed/backfilled yet. The cache never
+			// expires, so caching the empty value would pin the missing
+			// placeholder forever (the bug that left backfilled images without
+			// blur-up until a service restart). Return it for its dimensions
+			// but don't cache, so a later read re-resolves and lights it up.
+			if s.metaCache != nil && m.Thumbhash != "" {
 				s.metaCache.put(h, m)
 			}
 		}
