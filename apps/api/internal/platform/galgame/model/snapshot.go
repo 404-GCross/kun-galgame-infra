@@ -18,6 +18,12 @@ type Snapshot struct {
 	// tba=true) meaning "approximate target".
 	ReleaseDate      *string              `json:"release_date"`
 	ReleaseDateTBA   bool                 `json:"release_date_tba"`
+	// ReleasePrecision is the granularity of ReleaseDate (day/month/year/tba/
+	// unknown), carried through revisions so a diff/revert preserves it and an
+	// unrelated edit can't downgrade a VNDB-provided month/year date to day.
+	// Empty in pre-P3 snapshots — ResolveReleasePrecision supplies a safe
+	// fallback. See docs/galgame_wiki/06-release-calendar-design.md §2.
+	ReleasePrecision string               `json:"release_precision,omitempty"`
 	NameEnUS         string               `json:"name_en_us"`
 	NameJaJP         string               `json:"name_ja_jp"`
 	NameZhCN         string               `json:"name_zh_cn"`
@@ -94,6 +100,7 @@ func TakeSnapshot(g *Galgame) *Snapshot {
 		BangumiID:        g.BangumiID,
 		ReleaseDate:      formatReleaseDate(g.ReleaseDate),
 		ReleaseDateTBA:   g.ReleaseDateTBA,
+		ReleasePrecision: string(g.ReleasePrecision),
 		NameEnUS:         g.NameEnUS,
 		NameJaJP:         g.NameJaJP,
 		NameZhCN:         g.NameZhCN,
@@ -176,6 +183,9 @@ func ChangedKeys(old, new *Snapshot) map[string]bool {
 	}
 	if old.ReleaseDateTBA != new.ReleaseDateTBA {
 		keys["release_date_tba"] = true
+	}
+	if old.ReleasePrecision != new.ReleasePrecision {
+		keys["release_precision"] = true
 	}
 	if old.NameEnUS != new.NameEnUS {
 		keys["name_en_us"] = true
@@ -267,6 +277,9 @@ func ApplyChanges(target *Snapshot, source *Snapshot, changedKeys map[string]boo
 	}
 	if changedKeys["release_date_tba"] {
 		target.ReleaseDateTBA = source.ReleaseDateTBA
+	}
+	if changedKeys["release_precision"] {
+		target.ReleasePrecision = source.ReleasePrecision
 	}
 	if changedKeys["name_en_us"] {
 		target.NameEnUS = source.NameEnUS
@@ -382,6 +395,38 @@ func ParseSnapshotReleaseDate(s *string) *time.Time {
 // An out-of-range month/day degrades precision to the last fully-parsed level
 // (e.g. "YYYY-13" → year, "YYYY-MM-45" → month). See
 // docs/galgame_wiki/06-release-calendar-design.md §2.
+// DeriveInputPrecision computes the release precision for a write-side input:
+// tba wins (date pending); otherwise the granularity of the date string
+// (""→unknown, "YYYY"→year, "YYYY-MM"→month, "YYYY-MM-DD"→day). Used by the
+// create/edit/PR snapshot builders so release_precision stays consistent with
+// the date the editor set. See docs/galgame_wiki/06-release-calendar-design.md §2.
+func DeriveInputPrecision(dateInput string, tba bool) ReleasePrecision {
+	if tba {
+		return PrecisionTBA
+	}
+	_, prec := ParseLegacyReleased(dateInput)
+	return prec
+}
+
+// ResolveReleasePrecision returns the snapshot's stored precision, or derives a
+// safe value for pre-P3 snapshots that lack the field — so ApplySnapshot never
+// writes an empty release_precision (which the CHECK constraint rejects), e.g.
+// when reverting to an old revision. Fallback: tba → tba, a present date → day,
+// else unknown.
+func (s *Snapshot) ResolveReleasePrecision() ReleasePrecision {
+	if s.ReleasePrecision != "" {
+		return ReleasePrecision(s.ReleasePrecision)
+	}
+	switch {
+	case s.ReleaseDateTBA:
+		return PrecisionTBA
+	case s.ReleaseDate != nil:
+		return PrecisionDay
+	default:
+		return PrecisionUnknown
+	}
+}
+
 func ParseLegacyReleased(s string) (*time.Time, ReleasePrecision) {
 	v := s
 	// trim spaces without pulling in strings package — micro-helper

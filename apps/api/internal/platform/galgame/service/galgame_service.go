@@ -285,6 +285,7 @@ func buildCreateSnapshot(req *dto.CreateGalgameRequest) *model.Snapshot {
 		VNDBID:           req.VNDBID,
 		ReleaseDate:      strNonEmpty(req.ReleaseDate),
 		ReleaseDateTBA:   req.ReleaseDateTBA,
+		ReleasePrecision: string(model.DeriveInputPrecision(req.ReleaseDate, req.ReleaseDateTBA)),
 		NameEnUS:         req.NameEnUS,
 		NameJaJP:         req.NameJaJP,
 		NameZhCN:         req.NameZhCN,
@@ -853,6 +854,16 @@ func overlayUpdate(cur *model.Snapshot, req *dto.UpdateGalgameRequest, vndbTagID
 	}
 	if req.ReleaseDateTBA != nil {
 		n.ReleaseDateTBA = *req.ReleaseDateTBA
+	}
+	// Re-derive precision only when this edit touched the date or tba; otherwise
+	// the base snapshot's precision (carried from the model by TakeSnapshot) is
+	// left intact, so an unrelated edit can't downgrade a month/year date to day.
+	if req.ReleaseDate != nil || req.ReleaseDateTBA != nil {
+		raw := ""
+		if n.ReleaseDate != nil {
+			raw = *n.ReleaseDate
+		}
+		n.ReleasePrecision = string(model.DeriveInputPrecision(raw, n.ReleaseDateTBA))
 	}
 	if req.SeriesID != nil {
 		v := *req.SeriesID

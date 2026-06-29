@@ -109,6 +109,9 @@ func ApplySnapshot(tx *gorm.DB, galgameID, userID int, snapshot *model.Snapshot)
 		"bid":               snapshot.BangumiID,
 		"release_date":      model.ParseSnapshotReleaseDate(snapshot.ReleaseDate),
 		"release_date_tba": snapshot.ReleaseDateTBA,
+		// ResolveReleasePrecision supplies a safe value for pre-P3 snapshots
+		// (empty field) so a revert never writes "" and trips the CHECK.
+		"release_precision": string(snapshot.ResolveReleasePrecision()),
 		"name_en_us":        snapshot.NameEnUS,
 		"name_ja_jp":        snapshot.NameJaJP,
 		"name_zh_cn":        snapshot.NameZhCN,

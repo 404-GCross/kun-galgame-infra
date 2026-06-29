@@ -136,6 +136,16 @@ func (r *SubmitPRRequest) ApplyToSnapshot(base *model.Snapshot) *model.Snapshot 
 	if r.ReleaseDateTBA != nil {
 		s.ReleaseDateTBA = *r.ReleaseDateTBA
 	}
+	// Re-derive precision only when this PR touched the date or tba; otherwise
+	// keep the base snapshot's precision so an unrelated change can't downgrade
+	// a month/year date to day.
+	if r.ReleaseDate != nil || r.ReleaseDateTBA != nil {
+		raw := ""
+		if s.ReleaseDate != nil {
+			raw = *s.ReleaseDate
+		}
+		s.ReleasePrecision = string(model.DeriveInputPrecision(raw, s.ReleaseDateTBA))
+	}
 	if r.SeriesID != nil {
 		s.SeriesID = r.SeriesID
 	}

@@ -2,6 +2,64 @@ package model
 
 import "testing"
 
+func TestDeriveInputPrecision(t *testing.T) {
+	cases := []struct {
+		date string
+		tba  bool
+		want ReleasePrecision
+	}{
+		{"", false, PrecisionUnknown},
+		{"2026", false, PrecisionYear},
+		{"2026-06", false, PrecisionMonth},
+		{"2026-06-15", false, PrecisionDay},
+		{"2026-06-15", true, PrecisionTBA},  // tba wins over a set date
+		{"", true, PrecisionTBA},
+	}
+	for _, c := range cases {
+		if got := DeriveInputPrecision(c.date, c.tba); got != c.want {
+			t.Errorf("DeriveInputPrecision(%q, %v) = %q, want %q", c.date, c.tba, got, c.want)
+		}
+	}
+}
+
+func TestResolveReleasePrecision(t *testing.T) {
+	d := "2026-06-15"
+	cases := []struct {
+		name string
+		snap Snapshot
+		want ReleasePrecision
+	}{
+		{"stored wins", Snapshot{ReleasePrecision: "month", ReleaseDate: &d}, PrecisionMonth},
+		{"empty + tba", Snapshot{ReleaseDateTBA: true}, PrecisionTBA},
+		{"empty + date", Snapshot{ReleaseDate: &d}, PrecisionDay},
+		{"empty + nothing", Snapshot{}, PrecisionUnknown},
+	}
+	for _, c := range cases {
+		if got := c.snap.ResolveReleasePrecision(); got != c.want {
+			t.Errorf("%s: ResolveReleasePrecision() = %q, want %q", c.name, got, c.want)
+		}
+	}
+}
+
+func TestSnapshotReleasePrecisionDiffAndApply(t *testing.T) {
+	old := &Snapshot{ReleasePrecision: "day"}
+	neu := &Snapshot{ReleasePrecision: "month"}
+	keys := ChangedKeys(old, neu)
+	if !keys["release_precision"] {
+		t.Fatal("ChangedKeys did not flag release_precision")
+	}
+	target := &Snapshot{ReleasePrecision: "day"}
+	ApplyChanges(target, neu, keys)
+	if target.ReleasePrecision != "month" {
+		t.Errorf("ApplyChanges: release_precision = %q, want month", target.ReleasePrecision)
+	}
+
+	// No spurious diff when precision is unchanged.
+	if ChangedKeys(&Snapshot{ReleasePrecision: "day"}, &Snapshot{ReleasePrecision: "day"})["release_precision"] {
+		t.Error("ChangedKeys flagged release_precision when unchanged")
+	}
+}
+
 func TestParseLegacyReleased(t *testing.T) {
 	cases := []struct {
 		in       string
