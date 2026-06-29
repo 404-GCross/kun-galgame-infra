@@ -429,6 +429,51 @@ func (c *Client) FetchVNMetaBatch(ctx context.Context, ids []string) (map[string
 	return out, nil
 }
 
+// FetchVNReleasedBatch fetches the VN-level release date string for up to 100
+// VNs in one /vn call, keyed by vndb id. The value is VNDB's raw `released`
+// field ("YYYY-MM-DD" | "YYYY-MM" | "YYYY" | "tba" | "" when null), suitable
+// for model.ParseLegacyReleased. Used by the release_precision backfill to
+// recover the original date precision the normalized release_date column lost.
+// A VN absent from the result (deleted/merged on VNDB) maps to "".
+func (c *Client) FetchVNReleasedBatch(ctx context.Context, ids []string) (map[string]string, error) {
+	want := make(map[string]bool, len(ids))
+	or := []any{"or"}
+	for _, id := range ids {
+		if id == "" || want[id] {
+			continue
+		}
+		want[id] = true
+		or = append(or, []any{"id", "=", id})
+	}
+	if len(want) == 0 {
+		return map[string]string{}, nil
+	}
+
+	var resp struct {
+		Results []struct {
+			ID       string  `json:"id"`
+			Released *string `json:"released"`
+		} `json:"results"`
+	}
+	if err := c.post(ctx, "/vn", map[string]any{
+		"filters": or,
+		"fields":  "id, released",
+		"results": 100,
+	}, &resp); err != nil {
+		return nil, fmt.Errorf("vn released batch: %w", err)
+	}
+
+	out := make(map[string]string, len(resp.Results))
+	for _, r := range resp.Results {
+		if r.Released != nil {
+			out[r.ID] = *r.Released
+		} else {
+			out[r.ID] = ""
+		}
+	}
+	return out, nil
+}
+
 // VNImage is the per-VN cover image from /vn. ID is the VNDB image id
 // (e.g. "cv12345", stored as galgame_cover.source_key); URL is the t.vndb.org
 // cover URL; Sexual/Violence are VNDB's 0-2 average flag votes (rounded to the
