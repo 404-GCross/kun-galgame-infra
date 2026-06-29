@@ -236,5 +236,38 @@ func main() {
 		os.Exit(1)
 	}
 
+	// (6) galgame.release_precision CHECK + the release-calendar index.
+	// release_precision records how precise release_date is (day/month/year/
+	// tba/unknown) — the single source of truth for partial release dates. The
+	// column itself is added by AutoMigrate (default 'unknown', which is in the
+	// allowed set so ADD CONSTRAINT validates existing rows). Idempotent
+	// drop-then-add, same style as steps 2/5. The calendar index serves the
+	// month-range query (release_date half-open range) AND covers its ORDER BY
+	// (release_date, release_precision, id) for published rows only. galgame has
+	// no soft-delete, so the partial predicate is just status = 0 (published).
+	// See docs/galgame_wiki/06-release-calendar-design.md §2, §7.
+	if err := db.DB().Exec(`
+		ALTER TABLE galgame
+		    DROP CONSTRAINT IF EXISTS chk_galgame_release_precision
+	`).Error; err != nil {
+		slog.Error("drop stale chk_galgame_release_precision failed", "error", err)
+		os.Exit(1)
+	}
+	if err := db.DB().Exec(`
+		ALTER TABLE galgame
+		    ADD CONSTRAINT chk_galgame_release_precision
+		    CHECK (release_precision IN ('day','month','year','tba','unknown'))
+	`).Error; err != nil {
+		slog.Error("create chk_galgame_release_precision failed", "error", err)
+		os.Exit(1)
+	}
+	if err := db.DB().Exec(`
+		CREATE INDEX IF NOT EXISTS idx_galgame_calendar
+		    ON galgame(release_date, release_precision, id) WHERE status = 0
+	`).Error; err != nil {
+		slog.Error("create idx_galgame_calendar failed", "error", err)
+		os.Exit(1)
+	}
+
 	slog.Info("galgame wiki migration completed successfully")
 }

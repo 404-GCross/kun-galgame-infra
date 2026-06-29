@@ -28,6 +28,15 @@ type Galgame struct {
 	// gorm `type:date` tag keep it a date-only PG column.
 	ReleaseDate    *Date  `gorm:"column:release_date;type:date;index" json:"release_date"`
 	ReleaseDateTBA bool   `gorm:"column:release_date_tba;not null;default:false" json:"release_date_tba"`
+	// ReleasePrecision records how precise ReleaseDate is (day/month/year/tba/
+	// unknown) — the single source of truth for date precision. ReleaseDate is
+	// normalized (day-unknown → 1st of month, month-unknown → Jan 1), so a
+	// calendar must read this flag to place "year only" games out of specific
+	// months and to render "2026-06 (day TBD)" vs "2026-06-15". ReleaseDateTBA
+	// is kept in sync (= ReleasePrecision == "tba") for existing readers; it is
+	// scheduled to be retired once all readers move to ReleasePrecision.
+	// See docs/galgame_wiki/06-release-calendar-design.md §2.
+	ReleasePrecision string `gorm:"column:release_precision;size:10;not null;default:'unknown'" json:"release_precision"`
 	NameEnUS       string `gorm:"column:name_en_us;size:1000;default:''" json:"name_en_us"`
 	NameJaJP       string `gorm:"column:name_ja_jp;size:1000;default:''" json:"name_ja_jp"`
 	NameZhCN       string `gorm:"column:name_zh_cn;size:1000;default:''" json:"name_zh_cn"`

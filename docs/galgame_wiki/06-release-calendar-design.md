@@ -51,21 +51,24 @@
 保留 `release_date` 作为**可排序的归一化日期**(日未知归一到当月 1 号),新增一个**精度枚举**承载真相:
 
 ```sql
--- migration on kun_galgame_wiki
-CREATE TYPE galgame_release_precision AS ENUM ('day','month','year','tba','unknown');
-
+-- migration on kun_galgame_wiki(cmd/migrate-galgame)
+-- 本项目全仓不使用 PG ENUM 类型(一律 int 码 + CHECK 约束),故 release_precision
+-- 用 varchar + CHECK,与既有 chk_galgame_revision_action / chk_galgame_vndb_id_format
+-- 同风格。列本身由 AutoMigrate 依模型字段创建(默认 'unknown');CHECK 用幂等的
+-- drop-then-add raw SQL 追加。
 ALTER TABLE galgame
-  ADD COLUMN release_precision galgame_release_precision NOT NULL DEFAULT 'unknown';
+  ADD CONSTRAINT chk_galgame_release_precision
+  CHECK (release_precision IN ('day','month','year','tba','unknown'));
 ```
 
 GORM 字段:
 
 ```go
 // model.Galgame
-ReleasePrecision string `gorm:"column:release_precision;type:galgame_release_precision;not null;default:'unknown'" json:"release_precision"`
+ReleasePrecision string `gorm:"column:release_precision;size:10;not null;default:'unknown'" json:"release_precision"`
 ```
 
-字段语义(`release_precision` 是 `release_date` 的唯一真相来源,**取代** `release_date_tba`):
+字段语义(`release_precision` 是 `release_date` 精度的唯一真相来源;**最终取代** `release_date_tba`——P1 阶段二者并存,`release_date_tba` 由 `release_precision == 'tba'` 派生保持同步,待所有读者迁移到 `release_precision` 后再删 bool):
 
 | 状态 | `release_date` | `release_precision` | 月表归属 |
 |---|---|---|---|
@@ -195,9 +198,9 @@ start := time.Date(y, m, 1, 0, 0, 0, 0, time.UTC) // 边界是 calendar date,UTC
 next  := start.AddDate(0, 1, 0)
 db.Where("release_date >= ? AND release_date < ?", start, next).
    Where("release_precision IN ?", []string{"day", "month"}).
-   Where("status = ?", model.StatusPublished).
+   Where("status = ?", model.GalgameStatusPublished). // 0 = 已发布
    Order("release_date ASC, (release_precision = 'month') ASC, id ASC")
-// GORM 软删除自动追加 deleted_at IS NULL,正好对上 partial index
+// galgame 无软删除,显式 status=0 即对上 partial index(见 §7.2)
 ```
 
 - **禁止**用 `EXTRACT(MONTH FROM release_date) = 6` 或 `date_trunc('month', release_date) = …` 作 `WHERE`——函数包住列会废掉 B-tree 索引、退化为 Seq Scan。只有半开 range 才 SARGable。
@@ -207,10 +210,11 @@ db.Where("release_date >= ? AND release_date < ?", start, next).
 ### 7.2 索引
 
 ```sql
--- 既服务 range 过滤,又覆盖 ORDER BY,且只索引可见行
-CREATE INDEX galgame_calendar_idx
+-- 既服务 range 过滤,又覆盖 ORDER BY,且只索引已发布行。
+-- galgame 无软删除(无 deleted_at),partial 谓词仅 status=0;名称与 cmd/migrate-galgame 一致。
+CREATE INDEX IF NOT EXISTS idx_galgame_calendar
   ON galgame (release_date, release_precision, id)
-  WHERE deleted_at IS NULL AND status = <published>;
+  WHERE status = 0;
 ```
 
 ### 7.3 每月计数 / 年度概览
@@ -264,7 +268,7 @@ ALTER TABLE galgame ADD COLUMN release_ym integer
 
 ## 10. 迁移与回填
 
-> **数据库 schema 变更 → 必须跑迁移**:加 `release_precision` 列(+ 可选 `release_ym` generated 列)+ `galgame_calendar_idx`。
+> **数据库 schema 变更 → 必须跑迁移**:加 `release_precision` 列(+ 可选 `release_ym` generated 列)+ `idx_galgame_calendar` 索引 + `chk_galgame_release_precision` 约束。
 > 命令:`go run ./cmd/migrate-galgame`,对 **`kun_galgame_wiki`**。部署**不自动跑迁移**。
 
 回填:**精度无法从已塌缩的 `release_date` 反推**(`2026-01-01` 既可能是真 1/1,也可能是"只知年")。需一个一次性回填,从 **VNDB 原始 `released` 串**重解析精度写回:

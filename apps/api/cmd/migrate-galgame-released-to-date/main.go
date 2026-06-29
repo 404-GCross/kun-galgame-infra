@@ -160,15 +160,16 @@ func backfillGalgameRows(ctx context.Context, db *gorm.DB, dryRun bool) error {
 			sample = sample[:10]
 		}
 		for _, r := range sample {
-			d, tba := model.ParseLegacyReleased(r.Released)
-			slog.Info("dry-run sample", "id", r.ID, "released", r.Released, "→date", formatDate(d), "→tba", tba)
+			d, prec := model.ParseLegacyReleased(r.Released)
+			slog.Info("dry-run sample", "id", r.ID, "released", r.Released, "→date", formatDate(d), "→tba", prec == model.PrecisionTBA)
 		}
 		return nil
 	}
 
 	updated, skipped := 0, 0
 	for _, r := range rows {
-		d, tba := model.ParseLegacyReleased(r.Released)
+		d, prec := model.ParseLegacyReleased(r.Released)
+		tba := prec == model.PrecisionTBA
 		if d == nil && !tba {
 			// Legacy "" / "unknown" / unparsable: leave the new fields at
 			// their defaults (NULL / false). No row update needed.
@@ -264,8 +265,8 @@ func patchSnapshotJSONBytes(raw []byte) ([]byte, bool, error) {
 	var dateStr *string
 	var tba bool
 	if s, isStr := rawReleased.(string); isStr {
-		d, t := model.ParseLegacyReleased(s)
-		tba = t
+		d, prec := model.ParseLegacyReleased(s)
+		tba = prec == model.PrecisionTBA
 		if d != nil {
 			ds := d.UTC().Format("2006-01-02")
 			dateStr = &ds

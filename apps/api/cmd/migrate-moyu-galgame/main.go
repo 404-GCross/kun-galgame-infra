@@ -301,7 +301,8 @@ func run(srcDB, tdb *gorm.DB, dryRun bool) error {
 		}
 		// Moyu's `released` is a free-form legacy string; convert via the
 		// shared parser. Only overwrite when the wiki row has no date.
-		if date, tba := model.ParseLegacyReleased(p.Released); date != nil || tba {
+		date, prec := model.ParseLegacyReleased(p.Released)
+		if tba := prec == model.PrecisionTBA; date != nil || tba {
 			result := tdb.Exec(
 				"UPDATE galgame SET release_date = ?, release_date_tba = ? "+
 					"WHERE id = ? AND release_date IS NULL AND release_date_tba = false",
@@ -338,9 +339,9 @@ func run(srcDB, tdb *gorm.DB, dryRun bool) error {
 				if p.VNDBID != nil {
 					vndbID = *p.VNDBID
 				}
-				rDate, rTBA := model.ParseLegacyReleased(p.Released)
+				rDate, rPrec := model.ParseLegacyReleased(p.Released)
 				return []any{
-					galgameID, vndbID, p.BID, rDate, rTBA,
+					galgameID, vndbID, p.BID, rDate, rPrec == model.PrecisionTBA,
 					p.NameEnUS, p.NameJaJP, p.NameZhCN, p.NameZhCN, // name_zh_tw = name_zh_cn
 					p.Banner, p.IntroductionEnUS, p.IntroductionJaJP, p.IntroductionZhCN, p.IntroductionZhCN, // intro_zh_tw = intro_zh_cn
 					p.ContentLimit, p.Status, p.View, p.ResourceUpdateTime,
@@ -567,14 +568,14 @@ func run(srcDB, tdb *gorm.DB, dryRun bool) error {
 			vndbID = *p.VNDBID
 		}
 
-		rDate, rTBA := model.ParseLegacyReleased(p.Released)
+		rDate, rPrec := model.ParseLegacyReleased(p.Released)
 		var rDateStr *string
 		if rDate != nil {
 			s := rDate.UTC().Format("2006-01-02")
 			rDateStr = &s
 		}
 		snapshot := model.Snapshot{
-			VNDBID: vndbID, BangumiID: p.BID, ReleaseDate: rDateStr, ReleaseDateTBA: rTBA,
+			VNDBID: vndbID, BangumiID: p.BID, ReleaseDate: rDateStr, ReleaseDateTBA: rPrec == model.PrecisionTBA,
 			NameEnUS: p.NameEnUS, NameJaJP: p.NameJaJP, NameZhCN: p.NameZhCN, NameZhTW: p.NameZhCN,
 			Banner: p.Banner, IntroEnUS: p.IntroductionEnUS, IntroJaJP: p.IntroductionJaJP,
 			IntroZhCN: p.IntroductionZhCN, IntroZhTW: p.IntroductionZhCN,

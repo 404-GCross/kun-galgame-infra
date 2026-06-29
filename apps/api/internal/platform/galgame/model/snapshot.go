@@ -366,18 +366,23 @@ func ParseSnapshotReleaseDate(s *string) *time.Time {
 }
 
 // ParseLegacyReleased maps a legacy `released` string (free-form, used by
-// VNDB / Bangumi imports and the now-retired galgame.released column)
-// into the typed (date, tba) pair. Single source of truth for migration,
-// VNDB sync, and any backfill script. Accepted inputs:
+// VNDB / Bangumi imports and the now-retired galgame.released column) into the
+// typed (date, precision) pair. Single source of truth for migration, VNDB
+// sync, and any backfill script. The date is normalized (day-unknown → 1st of
+// month, month-unknown → Jan 1) and MUST be read together with the precision.
+// Accepted inputs:
 //
-//	"" / "unknown":      unknown        → (nil, false)
-//	"tba":               date pending   → (nil, true)
-//	"YYYY":              year only      → (Jan 1 YYYY, false)
-//	"YYYY-MM":           year+month     → (1st of month, false)
-//	"YYYY-MM-DD":        full date      → (parsed, false)
+//	"" / "unknown":      unknown        → (nil, PrecisionUnknown)
+//	"tba":               date pending   → (nil, PrecisionTBA)
+//	"YYYY":              year only      → (Jan 1 YYYY, PrecisionYear)
+//	"YYYY-MM":           year+month     → (1st of month, PrecisionMonth)
+//	"YYYY-MM-DD":        full date      → (parsed, PrecisionDay)
 //
-// Years outside [1900, 2100] and anything else map to unknown.
-func ParseLegacyReleased(s string) (*time.Time, bool) {
+// Years outside [1900, 2100] and anything else map to (nil, PrecisionUnknown).
+// An out-of-range month/day degrades precision to the last fully-parsed level
+// (e.g. "YYYY-13" → year, "YYYY-MM-45" → month). See
+// docs/galgame_wiki/06-release-calendar-design.md §2.
+func ParseLegacyReleased(s string) (*time.Time, ReleasePrecision) {
 	v := s
 	// trim spaces without pulling in strings package — micro-helper
 	for len(v) > 0 && (v[0] == ' ' || v[0] == '\t') {
@@ -387,19 +392,20 @@ func ParseLegacyReleased(s string) (*time.Time, bool) {
 		v = v[:len(v)-1]
 	}
 	if v == "" || v == "unknown" {
-		return nil, false
+		return nil, PrecisionUnknown
 	}
 	if v == "tba" {
-		return nil, true
+		return nil, PrecisionTBA
 	}
 	y, m, d := 0, 1, 1
+	prec := PrecisionYear
 	i, n := 0, len(v)
 	for i < n && v[i] >= '0' && v[i] <= '9' {
 		y = y*10 + int(v[i]-'0')
 		i++
 	}
 	if i == 0 || y < 1900 || y > 2100 {
-		return nil, false
+		return nil, PrecisionUnknown
 	}
 	if i < n && v[i] == '-' {
 		i++
@@ -410,6 +416,7 @@ func ParseLegacyReleased(s string) (*time.Time, bool) {
 		}
 		if mm >= 1 && mm <= 12 {
 			m = mm
+			prec = PrecisionMonth
 		}
 		if i < n && v[i] == '-' {
 			i++
@@ -420,11 +427,12 @@ func ParseLegacyReleased(s string) (*time.Time, bool) {
 			}
 			if dd >= 1 && dd <= 31 {
 				d = dd
+				prec = PrecisionDay
 			}
 		}
 	}
 	t := time.Date(y, time.Month(m), d, 0, 0, 0, 0, time.UTC)
-	return &t, false
+	return &t, prec
 }
 
 func intPtrEqual(a, b *int) bool {
