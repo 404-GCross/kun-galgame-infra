@@ -100,14 +100,15 @@ func ParseLegacyReleased(s string) (*time.Time, ReleasePrecision)
 
 [07](./07-multi-source-aggregation-design.md) 里 `release_date` 是按源优先级 overlay 的标量字段(User > VNDB > EGS `sellday` > DLsite `regist_date`)。**`release_precision` 必须与 `release_date` 作为一个整体一起 overlay**——同一个胜出源,日期与其精度成对取用,不能日期来自 VNDB、精度来自别处。在 overlay 的 source-value 记录里把二者绑成一组。
 
-### 2.4 输入契约扩展
+### 2.4 输入契约扩展(✅ P4b 后端已实现)
 
-当前写接口 DTO 只接受完整 `YYYY-MM-DD`(validator `date_or_empty`)。目标是支持月/年精度录入:
+写接口 DTO 支持月/年精度录入:
 
-- DTO 接受 `YYYY-MM-DD` | `YYYY-MM` | `YYYY` | 空(+ 独立的 `release_date_tba`),后端推导 `release_date`(归一化)+ `release_precision`。
-- 校验复用解析器,非法串 → 400。
+- DTO 接受 `YYYY-MM-DD` | `YYYY-MM` | `YYYY` | 空(+ 独立的 `release_date_tba`)——`date_or_empty` validator 已放宽,非法串 → 400。
+- 后端把输入**归一化**(`model.NormalizeReleaseDateInput`:`"2026-06"`→`2026-06-01`、`"2026"`→`2026-01-01`)写入 `snapshot.ReleaseDate`,并由 `model.DeriveInputPrecision(rawInput, tba)`(tba 优先,否则按粒度给 day/month/year/unknown)记录 `release_precision`。**精度从 RAW 输入推,日期存归一化值**——二者配套,create/edit/PR 三条写路径一致。
+- 仅切 `release_date_tba`(日期不在本次 patch)时不重算粒度,沿用基线精度(tba→tba;关 tba 时退化为 day/unknown),避免丢失既有 month/year。
 
-> **P3 实现现状**:精度的**推导逻辑已就绪且前向兼容**——`model.DeriveInputPrecision(dateInput, tba)`(tba 优先,否则按 `ParseLegacyReleased` 的粒度给出 day/month/year/unknown)已接入 create/edit/PR 三条写路径。但 **validator 放宽 + 部分日期归一化推迟到 [P4](#11-落地阶段) 一起做**:在前端尚未发送 `YYYY-MM` 之前就放宽校验,会让未归一化的 `"2026-06"` 直接落进 `snapshot.ReleaseDate`,而 `ParseSnapshotReleaseDate` 只认 `YYYY-MM-DD` → 存坏。故现阶段写入仍只接受完整日期(= `day` 精度),`DeriveInputPrecision` 在 P4 放宽后即自动产出 month/year。
+> 仍待做(产品决策):wiki 的 Create/Edit 表单**目前没有发售日字段**(发售日来自 VNDB)。后端已能接收部分日期;要让编辑者**手动录入**还需在表单加一个精度感知的日期控件(日/月/年/待定)。见 [§11 P4](#11-落地阶段)。
 
 ### 2.5 快照 / ChangedKeys(✅ P3 已实现)
 
@@ -293,9 +294,10 @@ ALTER TABLE galgame ADD COLUMN release_ym integer
 |---|---|---|
 | **P1 模型** | 加 `release_precision` 列 + 索引;改 `ParseLegacyReleased` 返回精度;sync 写入;迁移(`cmd/migrate-galgame`)+ 回填(`cmd/migrate-galgame-release-precision`) | ✅ 已实现(待跑迁移+回填) |
 | **P2 接口** | `/galgame/calendar`(+ `pending` / `tba`);SARGable 查询 + 封面 preload + meta-ETag(命中 If-None-Match → 304)+ past/current 分治缓存头 | ✅ 已实现 |
-| **P3 写侧** | revision snapshot + ChangedKeys + ApplySnapshot 带精度;create/edit/PR 用 `DeriveInputPrecision` 重算;旧快照回退安全 | ✅ 已实现(snapshot 精度);validator 放宽 + 部分日期归一化随 P4 |
-| **P4 前端 + 部分日期录入** | Nuxt 月历容器(翻页 / 预取 / 跳转 / 分组 / 今日 / 空态 / a11y);放宽写入 validator 接受 `YYYY-MM` / `YYYY` + 归一化 | 待做 |
-| **P5 缓存失效** | 编辑保存时按月定向 purge + Redis key 失效 + TTL 兜底 | 待做 |
+| **P3 写侧(精度)** | revision snapshot + ChangedKeys + ApplySnapshot 带精度;create/edit/PR 用 `DeriveInputPrecision` 重算;旧快照回退安全 | ✅ 已实现 |
+| **P4 前端月历** | Nuxt 月历容器(翻页 / 跳转 / 按日分组 / 今日标记 / 空态 / a11y / 全年龄·R18 切换);apps/wiki `/galgame/calendar` + 侧栏入口 | ✅ 已实现(SSR 渲染已验证;像素截图受 dev CORS 限制) |
+| **P4b 部分日期录入** | 放宽 `date_or_empty` validator 接受 `YYYY-MM` / `YYYY` + `NormalizeReleaseDateInput` 归一化(后端✅);**wiki 表单加精度感知发售日控件**(产品决策,待定——表单当前无该字段) | 后端 ✅ / 表单控件待定 |
+| **P5 缓存失效** | 编辑保存时按月定向 purge + Redis key 失效 + TTL 兜底;`has_next` 边界 | 待做 |
 
 > P2 实现备注:`content_limit` 走 query 参数(默认 `sfw`,与 `List` 一致)→ URL 完整决定缓存。月接口返回 `{month, today, items, links{self,prev,next}, meta{prev_month,next_month,count}}`;**`has_prev/has_next` 边界夹取暂缓**(前端可自由翻页,空月是一等状态)——待 P5 一并补,届时 `has_next` 由"最晚有数据的月"判定。过去月用 `max-age=0, s-maxage=86400, swr=3600` + 弱 ETag,当前/未来月 `s-maxage=300, swr=60`;`max-age=0` 让浏览器每次以 ETag 复验(304 廉价、编辑不会被缓存成陈旧),CDN 按月定向 purge 在 P5 接。
 

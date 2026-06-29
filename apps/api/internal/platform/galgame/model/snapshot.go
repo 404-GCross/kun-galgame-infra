@@ -408,6 +408,20 @@ func DeriveInputPrecision(dateInput string, tba bool) ReleasePrecision {
 	return prec
 }
 
+// NormalizeReleaseDateInput turns a write-side date string ("YYYY" | "YYYY-MM" |
+// "YYYY-MM-DD" | "") into the normalized "YYYY-MM-DD" stored form: day-unknown →
+// 1st of month, month-unknown → Jan 1. Returns nil for empty / unparseable /
+// tba-only input (no concrete date). Pair with DeriveInputPrecision, which
+// records the granularity that normalization erases.
+func NormalizeReleaseDateInput(s string) *string {
+	t, prec := ParseLegacyReleased(s)
+	if t == nil || prec == PrecisionTBA || prec == PrecisionUnknown {
+		return nil
+	}
+	out := t.UTC().Format(dateLayout)
+	return &out
+}
+
 // ResolveReleasePrecision returns the snapshot's stored precision, or derives a
 // safe value for pre-P3 snapshots that lack the field — so ApplySnapshot never
 // writes an empty release_precision (which the CHECK constraint rejects), e.g.

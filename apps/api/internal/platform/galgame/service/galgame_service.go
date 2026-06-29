@@ -283,7 +283,7 @@ func (s *GalgameService) Create(ctx context.Context, userID int, req *dto.Create
 func buildCreateSnapshot(req *dto.CreateGalgameRequest) *model.Snapshot {
 	s := &model.Snapshot{
 		VNDBID:           req.VNDBID,
-		ReleaseDate:      strNonEmpty(req.ReleaseDate),
+		ReleaseDate:      model.NormalizeReleaseDateInput(req.ReleaseDate),
 		ReleaseDateTBA:   req.ReleaseDateTBA,
 		ReleasePrecision: string(model.DeriveInputPrecision(req.ReleaseDate, req.ReleaseDateTBA)),
 		NameEnUS:         req.NameEnUS,
@@ -843,27 +843,29 @@ func overlayUpdate(cur *model.Snapshot, req *dto.UpdateGalgameRequest, vndbTagID
 		n.AgeLimit = *req.AgeLimit
 	}
 	if req.ReleaseDate != nil {
-		// presence: nil = keep; non-nil & "" = clear to unknown; non-nil & date = set.
-		// validate.datetime upstream guarantees non-empty values are well-formed.
-		if *req.ReleaseDate == "" {
-			n.ReleaseDate = nil
-		} else {
-			v := *req.ReleaseDate
-			n.ReleaseDate = &v
-		}
+		// presence: nil = keep; "" = clear to unknown; "YYYY[-MM[-DD]]" normalizes
+		// (day-unknown → 1st of month, month-unknown → Jan 1). Validated upstream.
+		n.ReleaseDate = model.NormalizeReleaseDateInput(*req.ReleaseDate)
 	}
 	if req.ReleaseDateTBA != nil {
 		n.ReleaseDateTBA = *req.ReleaseDateTBA
 	}
-	// Re-derive precision only when this edit touched the date or tba; otherwise
-	// the base snapshot's precision (carried from the model by TakeSnapshot) is
-	// left intact, so an unrelated edit can't downgrade a month/year date to day.
-	if req.ReleaseDate != nil || req.ReleaseDateTBA != nil {
-		raw := ""
-		if n.ReleaseDate != nil {
-			raw = *n.ReleaseDate
+	// Re-derive precision only when this edit touched the date or tba; an
+	// unrelated edit leaves the base snapshot's precision (carried from the model
+	// by TakeSnapshot) intact, so it can't downgrade a month/year date to day.
+	// When the date is in the patch, derive from the RAW input granularity
+	// (n.ReleaseDate is already normalized and would read back as 'day').
+	if req.ReleaseDate != nil {
+		n.ReleasePrecision = string(model.DeriveInputPrecision(*req.ReleaseDate, n.ReleaseDateTBA))
+	} else if req.ReleaseDateTBA != nil {
+		switch {
+		case n.ReleaseDateTBA:
+			n.ReleasePrecision = string(model.PrecisionTBA)
+		case n.ReleaseDate != nil:
+			n.ReleasePrecision = string(model.PrecisionDay)
+		default:
+			n.ReleasePrecision = string(model.PrecisionUnknown)
 		}
-		n.ReleasePrecision = string(model.DeriveInputPrecision(raw, n.ReleaseDateTBA))
 	}
 	if req.SeriesID != nil {
 		v := *req.SeriesID

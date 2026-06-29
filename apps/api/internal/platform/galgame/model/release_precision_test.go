@@ -22,6 +22,32 @@ func TestDeriveInputPrecision(t *testing.T) {
 	}
 }
 
+func TestNormalizeReleaseDateInput(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string // "" = nil
+	}{
+		{"", ""},
+		{"unknown", ""},
+		{"tba", ""},
+		{"2026", "2026-01-01"},       // year → Jan 1
+		{"2026-06", "2026-06-01"},    // month → 1st
+		{"2026-06-15", "2026-06-15"}, // day → as-is
+	}
+	for _, c := range cases {
+		got := NormalizeReleaseDateInput(c.in)
+		if c.want == "" {
+			if got != nil {
+				t.Errorf("NormalizeReleaseDateInput(%q) = %v, want nil", c.in, *got)
+			}
+			continue
+		}
+		if got == nil || *got != c.want {
+			t.Errorf("NormalizeReleaseDateInput(%q) = %v, want %s", c.in, got, c.want)
+		}
+	}
+}
+
 func TestResolveReleasePrecision(t *testing.T) {
 	d := "2026-06-15"
 	cases := []struct {

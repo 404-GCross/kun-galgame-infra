@@ -125,26 +125,27 @@ func (r *SubmitPRRequest) ApplyToSnapshot(base *model.Snapshot) *model.Snapshot 
 		s.AgeLimit = *r.AgeLimit
 	}
 	if r.ReleaseDate != nil {
-		// "" clears the date; non-empty must be valid YYYY-MM-DD (validated upstream).
-		if *r.ReleaseDate == "" {
-			s.ReleaseDate = nil
-		} else {
-			v := *r.ReleaseDate
-			s.ReleaseDate = &v
-		}
+		// "" clears the date; "YYYY[-MM[-DD]]" normalizes (validated upstream).
+		s.ReleaseDate = model.NormalizeReleaseDateInput(*r.ReleaseDate)
 	}
 	if r.ReleaseDateTBA != nil {
 		s.ReleaseDateTBA = *r.ReleaseDateTBA
 	}
 	// Re-derive precision only when this PR touched the date or tba; otherwise
-	// keep the base snapshot's precision so an unrelated change can't downgrade
-	// a month/year date to day.
-	if r.ReleaseDate != nil || r.ReleaseDateTBA != nil {
-		raw := ""
-		if s.ReleaseDate != nil {
-			raw = *s.ReleaseDate
+	// keep the base snapshot's precision so an unrelated change can't downgrade a
+	// month/year date to day. With the date in the patch, derive from the RAW
+	// input granularity (s.ReleaseDate is already normalized).
+	if r.ReleaseDate != nil {
+		s.ReleasePrecision = string(model.DeriveInputPrecision(*r.ReleaseDate, s.ReleaseDateTBA))
+	} else if r.ReleaseDateTBA != nil {
+		switch {
+		case s.ReleaseDateTBA:
+			s.ReleasePrecision = string(model.PrecisionTBA)
+		case s.ReleaseDate != nil:
+			s.ReleasePrecision = string(model.PrecisionDay)
+		default:
+			s.ReleasePrecision = string(model.PrecisionUnknown)
 		}
-		s.ReleasePrecision = string(model.DeriveInputPrecision(raw, s.ReleaseDateTBA))
 	}
 	if r.SeriesID != nil {
 		s.SeriesID = r.SeriesID
