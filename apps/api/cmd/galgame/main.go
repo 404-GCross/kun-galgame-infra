@@ -221,6 +221,11 @@ func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB, se
 	galgame.Get("/user/:id/stats", galgameH.UserStats)
 	galgame.Get("/user/:id/galgames", galgameH.UserGalgames)
 	galgame.Get("/user/:id/contributed", galgameH.UserContributedGalgames)
+	// Release calendar (static paths → before the /:gid catch-all). Public,
+	// content_limit via query param so the URL fully keys the cache.
+	galgame.Get("/calendar", galgameH.Calendar)
+	galgame.Get("/calendar/pending", galgameH.CalendarPending)
+	galgame.Get("/calendar/tba", galgameH.CalendarTBA)
 	// GET /mine MUST be registered before the /:gid catch-all: both are
 	// GET and Fiber matches by registration order, so a /:gid registered
 	// first binds :gid="mine" and the handler ParseInt-fails with

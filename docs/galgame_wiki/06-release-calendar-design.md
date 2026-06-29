@@ -194,14 +194,18 @@ GET /galgame/calendar/tba                    # 全局 TBA 桶
 边界在 Go 里算好传参,走索引:
 
 ```go
-start := time.Date(y, m, 1, 0, 0, 0, 0, time.UTC) // 边界是 calendar date,UTC 仅作容器
-next  := start.AddDate(0, 1, 0)
-db.Where("release_date >= ? AND release_date < ?", start, next).
+// 月边界在 JST 算(决定"当前月"/"今天"),但传给 SQL 的是 calendar date 字符串。
+start    := time.Date(y, m, 1, 0, 0, 0, 0, jstZone)
+startStr := start.Format("2006-01-02")
+nextStr  := start.AddDate(0, 1, 0).Format("2006-01-02")
+db.Where("release_date >= ? AND release_date < ?", startStr, nextStr). // ← 字符串,不是 time.Time
    Where("release_precision IN ?", []string{"day", "month"}).
    Where("status = ?", model.GalgameStatusPublished). // 0 = 已发布
    Order("release_date ASC, (release_precision = 'month') ASC, id ASC")
 // galgame 无软删除,显式 status=0 即对上 partial index(见 §7.2)
 ```
+
+> ⚠️ **必须传 `YYYY-MM-DD` 字符串,不能传 `time.Time`**:`time.Time` 实参会被隐式强制成 `timestamptz`,导致与 `date` 列比较时**放弃 btree 索引**(与 `repo.List` 同一教训)。字符串字面量直接对 `date` 列比较、走索引。
 
 - **禁止**用 `EXTRACT(MONTH FROM release_date) = 6` 或 `date_trunc('month', release_date) = …` 作 `WHERE`——函数包住列会废掉 B-tree 索引、退化为 Seq Scan。只有半开 range 才 SARGable。
 - 年内待定桶:`release_precision='year' AND release_date >= 'YYYY-01-01' AND < 'YYYY+1-01-01'`。
@@ -282,13 +286,15 @@ ALTER TABLE galgame ADD COLUMN release_ym integer
 
 ## 11. 落地阶段
 
-| 阶段 | 内容 |
-|---|---|
-| **P1 模型** | 加 `release_precision` 列 + 索引;改 `ParseLegacyReleased` 返回精度;sync 写入;迁移 + 回填 |
-| **P2 接口** | `/galgame/calendar`(+ `pending` / `tba`);查询 + DTO + 缓存头 + ETag |
-| **P3 写侧** | 录入 DTO 接受 `YYYY-MM` / `YYYY` / `tba`;revision snapshot + ChangedKeys 带精度 |
-| **P4 前端** | Nuxt 月历容器(翻页 / 预取 / 跳转 / 分组 / 今日 / 空态 / a11y) |
-| **P5 缓存失效** | 编辑保存时按月定向 purge + Redis key 失效 + TTL 兜底 |
+| 阶段 | 内容 | 状态 |
+|---|---|---|
+| **P1 模型** | 加 `release_precision` 列 + 索引;改 `ParseLegacyReleased` 返回精度;sync 写入;迁移(`cmd/migrate-galgame`)+ 回填(`cmd/migrate-galgame-release-precision`) | ✅ 已实现(待跑迁移+回填) |
+| **P2 接口** | `/galgame/calendar`(+ `pending` / `tba`);SARGable 查询 + 封面 preload + meta-ETag(命中 If-None-Match → 304)+ past/current 分治缓存头 | ✅ 已实现 |
+| **P3 写侧** | 录入 DTO 接受 `YYYY-MM` / `YYYY` / `tba`;revision snapshot + ChangedKeys 带精度 | 待做 |
+| **P4 前端** | Nuxt 月历容器(翻页 / 预取 / 跳转 / 分组 / 今日 / 空态 / a11y) | 待做 |
+| **P5 缓存失效** | 编辑保存时按月定向 purge + Redis key 失效 + TTL 兜底 | 待做 |
+
+> P2 实现备注:`content_limit` 走 query 参数(默认 `sfw`,与 `List` 一致)→ URL 完整决定缓存。月接口返回 `{month, today, items, links{self,prev,next}, meta{prev_month,next_month,count}}`;**`has_prev/has_next` 边界夹取暂缓**(前端可自由翻页,空月是一等状态)——待 P5 一并补,届时 `has_next` 由"最晚有数据的月"判定。过去月用 `max-age=0, s-maxage=86400, swr=3600` + 弱 ETag,当前/未来月 `s-maxage=300, swr=60`;`max-age=0` 让浏览器每次以 ETag 复验(304 廉价、编辑不会被缓存成陈旧),CDN 按月定向 purge 在 P5 接。
 
 ---
 
