@@ -8,6 +8,11 @@ export interface Galgame {
   // meaning "approximate target"). Use formatReleaseDate() for display.
   release_date: string | null
   release_date_tba: boolean
+  // release_precision: granularity of release_date — 'day' | 'month' | 'year' |
+  // 'tba' | 'unknown'. release_date is normalized (day-unknown → 1st of month),
+  // so the calendar reads this to render "2026-06 (日未定)" vs a full date and to
+  // bucket year-only / TBA separately. Optional: lightweight briefs may omit it.
+  release_precision?: string
   name_en_us: string
   name_ja_jp: string
   name_zh_cn: string
@@ -213,4 +218,16 @@ export interface ContributorWithUser {
     avatar: string
     avatar_image_hash?: string | null
   }
+}
+
+// GalgameCalendarResponse — GET /galgame/calendar?month=YYYY-MM.
+// items are published day+month-precision releases in the month, ascending by
+// date (day-unknown trailing). `today` is the JST date for the "today" marker.
+// year-only and TBA titles live in /calendar/pending and /calendar/tba.
+export interface GalgameCalendarResponse {
+  month: string // "YYYY-MM"
+  today: string // "YYYY-MM-DD" (JST)
+  items: Galgame[]
+  links: { self: string; prev: string; next: string }
+  meta: { prev_month: string; next_month: string; count: number }
 }

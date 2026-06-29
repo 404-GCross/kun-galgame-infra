@@ -1,6 +1,7 @@
 export const SIDEBAR_MENU = [
   { icon: 'lucide:layout-dashboard', label: '仪表盘', to: '/' },
   { icon: 'lucide:gamepad-2', label: 'Galgame', to: '/galgame' },
+  { icon: 'lucide:calendar-days', label: '发售月历', to: '/galgame/calendar' },
   { icon: 'lucide:inbox', label: '审核队列', to: '/review' },
   { icon: 'lucide:tag', label: '标签', to: '/tag' },
   { icon: 'lucide:building', label: '会社', to: '/official' },
