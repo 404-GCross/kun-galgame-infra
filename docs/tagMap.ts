@@ -1649,7 +1649,7 @@ export const TAG_MAP: Record<string, string> = {
   'Inter-class Romance': '跨阶级恋情',
   'Interracial/interspecies Romance': '跨种族/跨物种恋情',
   'Long-distance Relationship': '异地恋',
-  'May-December Romance': '五十度灰恋情',
+  'May-December Romance': '忘年之恋',
   'Romancing a Family': '与一个家庭谈恋爱',
   'Secret Romance': '秘密恋情',
   'Slow-burn Romance': '缓慢升温的恋情',
