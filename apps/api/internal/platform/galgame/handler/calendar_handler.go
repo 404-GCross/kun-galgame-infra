@@ -23,8 +23,13 @@ var jstZone = time.FixedZone("Asia/Tokyo", 9*60*60)
 // get a longer shared-cache window than the mutable current/future months;
 // max-age=0 keeps the browser revalidating (cheap 304 via ETag) so an edit is
 // never served stale to a client. Per-month CDN purge is wired in P5.
-func setCalendarCache(c fiber.Ctx, etag string, isPast bool) bool {
+func setCalendarCache(c fiber.Ctx, etag, cacheTag string, isPast bool) bool {
 	c.Set("ETag", etag)
+	// Per-month/bucket cache tag so a CDN (Cloudflare) can purge exactly this key
+	// on edit. Until a CDN purge is wired, the ETag (which embeds max(updated))
+	// already busts caches on edit within the s-maxage window — purge only makes
+	// it immediate. See docs/galgame_wiki/06-release-calendar-design.md §8.
+	c.Set("Cache-Tag", cacheTag)
 	if isPast {
 		c.Set("Cache-Control", "public, max-age=0, s-maxage=86400, stale-while-revalidate=3600")
 	} else {
@@ -59,7 +64,7 @@ func (h *GalgameHandler) Calendar(c fiber.Ctx) error {
 
 	now := time.Now().In(jstZone)
 	curStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, jstZone)
-	if setCalendarCache(c, etag, start.Before(curStart)) {
+	if setCalendarCache(c, etag, "gal-cal-"+monthStr, start.Before(curStart)) {
 		return c.SendStatus(fiber.StatusNotModified)
 	}
 
@@ -67,6 +72,10 @@ func (h *GalgameHandler) Calendar(c fiber.Ctx) error {
 	if err != nil {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
+	// Navigable range so a client can disable prev/next at the data edges. A
+	// bounds error degrades to has_prev/has_next=false (nav disabled) — advisory
+	// only, never fails the request; the month's items already rendered.
+	minMonth, maxMonth, _ := h.galgameService.CalendarBounds(c.Context(), cl)
 	prev := start.AddDate(0, -1, 0).Format("2006-01")
 	next := start.AddDate(0, 1, 0).Format("2006-01")
 	return response.Success(c, fiber.Map{
@@ -81,6 +90,10 @@ func (h *GalgameHandler) Calendar(c fiber.Ctx) error {
 		"meta": fiber.Map{
 			"prev_month": prev,
 			"next_month": next,
+			"has_prev":   minMonth != "" && monthStr > minMonth,
+			"has_next":   maxMonth != "" && monthStr < maxMonth,
+			"min_month":  minMonth,
+			"max_month":  maxMonth,
 			"count":      count,
 		},
 	})
@@ -107,7 +120,7 @@ func (h *GalgameHandler) CalendarPending(c fiber.Ctx) error {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
 	etag := fmt.Sprintf(`W/"calpend-%s-%s-%d-%d"`, yearStr, cl, count, maxUpdated.Unix())
-	if setCalendarCache(c, etag, false) { // "pending" tracks live edits → short cache
+	if setCalendarCache(c, etag, "gal-cal-pending-"+yearStr, false) { // tracks live edits → short cache
 		return c.SendStatus(fiber.StatusNotModified)
 	}
 
@@ -131,7 +144,7 @@ func (h *GalgameHandler) CalendarTBA(c fiber.Ctx) error {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
 	etag := fmt.Sprintf(`W/"caltba-%s-%d-%d"`, cl, count, maxUpdated.Unix())
-	if setCalendarCache(c, etag, false) {
+	if setCalendarCache(c, etag, "gal-cal-tba", false) {
 		return c.SendStatus(fiber.StatusNotModified)
 	}
 

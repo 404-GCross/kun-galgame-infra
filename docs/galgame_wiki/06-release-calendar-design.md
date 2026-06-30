@@ -295,9 +295,9 @@ ALTER TABLE galgame ADD COLUMN release_ym integer
 | **P1 模型** | 加 `release_precision` 列 + 索引;改 `ParseLegacyReleased` 返回精度;sync 写入;迁移(`cmd/migrate-galgame`)+ 回填(`cmd/migrate-galgame-release-precision`) | ✅ 已实现(待跑迁移+回填) |
 | **P2 接口** | `/galgame/calendar`(+ `pending` / `tba`);SARGable 查询 + 封面 preload + meta-ETag(命中 If-None-Match → 304)+ past/current 分治缓存头 | ✅ 已实现 |
 | **P3 写侧(精度)** | revision snapshot + ChangedKeys + ApplySnapshot 带精度;create/edit/PR 用 `DeriveInputPrecision` 重算;旧快照回退安全 | ✅ 已实现 |
-| **P4 前端月历** | Nuxt 月历容器(翻页 / 跳转 / 按日分组 / 今日标记 / 空态 / a11y / 全年龄·R18 切换);apps/wiki `/galgame/calendar` + 侧栏入口 | ✅ 已实现(SSR 渲染已验证;像素截图受 dev CORS 限制) |
-| **P4b 部分日期录入** | 放宽 `date_or_empty` validator 接受 `YYYY-MM` / `YYYY` + `NormalizeReleaseDateInput` 归一化(后端✅);**wiki 表单加精度感知发售日控件**(产品决策,待定——表单当前无该字段) | 后端 ✅ / 表单控件待定 |
-| **P5 缓存失效** | 编辑保存时按月定向 purge + Redis key 失效 + TTL 兜底;`has_next` 边界 | 待做 |
+| **P4 前端月历** | 月历 UI(翻页 / 分组 / 今日 / 空态)—— **本仓 wiki 不需要,已撤除**;月历为下游(forum/moyu)消费,后端 API(P2)保留 | 撤除(下游各自实现) |
+| **P4b 部分日期录入** | 放宽 `date_or_empty` validator 接受 `YYYY-MM` / `YYYY` + `NormalizeReleaseDateInput` 归一化(后端✅);精度感知录入控件由下游表单实现 | 后端 ✅ |
+| **P5 边界 + 缓存失效** | `has_prev`/`has_next` + `min_month`/`max_month` 边界夹取;每键 `Cache-Tag`(`gal-cal-<month>` 等)供 CDN 定向 purge。编辑失效由 **ETag(嵌 `max(updated)`)自动兜住**——本服务无 Redis 缓存(无需)、无 CDN purge API(接 CDN 时按 tag purge 即可,属运维集成) | ✅ 已实现 |
 
 > P2 实现备注:`content_limit` 走 query 参数(默认 `sfw`,与 `List` 一致)→ URL 完整决定缓存。月接口返回 `{month, today, items, links{self,prev,next}, meta{prev_month,next_month,count}}`;**`has_prev/has_next` 边界夹取暂缓**(前端可自由翻页,空月是一等状态)——待 P5 一并补,届时 `has_next` 由"最晚有数据的月"判定。过去月用 `max-age=0, s-maxage=86400, swr=3600` + 弱 ETag,当前/未来月 `s-maxage=300, swr=60`;`max-age=0` 让浏览器每次以 ETag 复验(304 廉价、编辑不会被缓存成陈旧),CDN 按月定向 purge 在 P5 接。
 

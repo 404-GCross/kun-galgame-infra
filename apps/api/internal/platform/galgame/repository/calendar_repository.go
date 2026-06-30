@@ -89,6 +89,35 @@ func (r *GalgameRepository) CalendarMonth(ctx context.Context, startDate, nextDa
 	return r.calendarList(ctx, calendarFilter{precisions: monthPrecisions, startDate: startDate, nextDate: nextDate, contentLimit: contentLimit}, monthOrder)
 }
 
+// CalendarBounds returns the earliest and latest month ("YYYY-MM") that hold a
+// published day/month-precision release for the content limit — the navigable
+// range, so a client can disable prev/next at the edges. Empty strings when
+// there are no dated releases. Rides idx_galgame_calendar (MIN/MAX on the
+// leading release_date column).
+func (r *GalgameRepository) CalendarBounds(ctx context.Context, contentLimit string) (minMonth, maxMonth string, err error) {
+	q := r.db.WithContext(ctx).Model(&model.Galgame{}).
+		Where("status = 0").
+		Where("release_precision IN ?", monthPrecisions)
+	if contentLimit != "" {
+		q = q.Where("content_limit = ?", contentLimit)
+	}
+	var row struct {
+		MinMonth *string
+		MaxMonth *string
+	}
+	if err = q.Select("to_char(MIN(release_date), 'YYYY-MM') AS min_month, to_char(MAX(release_date), 'YYYY-MM') AS max_month").
+		Scan(&row).Error; err != nil {
+		return "", "", err
+	}
+	if row.MinMonth != nil {
+		minMonth = *row.MinMonth
+	}
+	if row.MaxMonth != nil {
+		maxMonth = *row.MaxMonth
+	}
+	return minMonth, maxMonth, nil
+}
+
 // CalendarYearPendingMeta / CalendarYearPending: year-precision games (month
 // unknown) within the given year — the "month TBD" bucket.
 func (r *GalgameRepository) CalendarYearPendingMeta(ctx context.Context, yearStart, yearNext, contentLimit string) (int64, time.Time, error) {

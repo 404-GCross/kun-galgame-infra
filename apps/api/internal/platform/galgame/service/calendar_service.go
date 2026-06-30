@@ -19,6 +19,10 @@ func (s *GalgameService) CalendarMonth(ctx context.Context, startDate, nextDate,
 	return s.galgameRepo.CalendarMonth(ctx, startDate, nextDate, contentLimit)
 }
 
+func (s *GalgameService) CalendarBounds(ctx context.Context, contentLimit string) (minMonth, maxMonth string, err error) {
+	return s.galgameRepo.CalendarBounds(ctx, contentLimit)
+}
+
 func (s *GalgameService) CalendarYearPendingMeta(ctx context.Context, yearStart, yearNext, contentLimit string) (int64, time.Time, error) {
 	return s.galgameRepo.CalendarYearPendingMeta(ctx, yearStart, yearNext, contentLimit)
 }
