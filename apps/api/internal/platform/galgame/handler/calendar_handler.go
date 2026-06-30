@@ -2,6 +2,7 @@ package handler
 
 import (
 	"fmt"
+	"log/slog"
 	"time"
 
 	"api/pkg/errors"
@@ -74,8 +75,15 @@ func (h *GalgameHandler) Calendar(c fiber.Ctx) error {
 	}
 	// Navigable range so a client can disable prev/next at the data edges. A
 	// bounds error degrades to has_prev/has_next=false (nav disabled) — advisory
-	// only, never fails the request; the month's items already rendered.
-	minMonth, maxMonth, _ := h.galgameService.CalendarBounds(c.Context(), cl)
+	// only, never fails the request (items already rendered) — but log it so a
+	// broken query stays observable. NOTE: bounds aren't folded into the ETag, so
+	// on a 304 has_next can lag a newly-added far-future month until s-maxage
+	// lapses — self-correcting (the phantom next month is an empty first-class
+	// state), traded for the cheap-304 win.
+	minMonth, maxMonth, err := h.galgameService.CalendarBounds(c.Context(), cl)
+	if err != nil {
+		slog.Warn("galgame calendar: bounds query failed", "err", err)
+	}
 	prev := start.AddDate(0, -1, 0).Format("2006-01")
 	next := start.AddDate(0, 1, 0).Format("2006-01")
 	return response.Success(c, fiber.Map{

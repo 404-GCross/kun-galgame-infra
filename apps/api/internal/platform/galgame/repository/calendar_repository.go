@@ -73,9 +73,13 @@ func (r *GalgameRepository) calendarList(ctx context.Context, f calendarFilter, 
 	return items, err
 }
 
-// monthOrder: ascending by date; within a day, exact-day before day-unknown
-// (release_precision = 'month'); id breaks ties. See design §5.
-const monthOrder = "release_date ASC, (release_precision = 'month') ASC, id ASC"
+// monthOrder: ascending by date; within a day, exact-day before day-unknown; id
+// breaks ties. Uses the bare release_precision column (not a boolean expression)
+// so the order is fully covered by idx_galgame_calendar (release_date,
+// release_precision, id) — no Sort node. Relies on monthPrecisions = {day,month}
+// and 'day' < 'month' lexically, which yields the same order as `(=
+// 'month') ASC` would. See design §5.
+const monthOrder = "release_date ASC, release_precision ASC, id ASC"
 
 var monthPrecisions = []string{string(model.PrecisionDay), string(model.PrecisionMonth)}
 
@@ -95,17 +99,14 @@ func (r *GalgameRepository) CalendarMonth(ctx context.Context, startDate, nextDa
 // there are no dated releases. Rides idx_galgame_calendar (MIN/MAX on the
 // leading release_date column).
 func (r *GalgameRepository) CalendarBounds(ctx context.Context, contentLimit string) (minMonth, maxMonth string, err error) {
-	q := r.db.WithContext(ctx).Model(&model.Galgame{}).
-		Where("status = 0").
-		Where("release_precision IN ?", monthPrecisions)
-	if contentLimit != "" {
-		q = q.Where("content_limit = ?", contentLimit)
-	}
 	var row struct {
 		MinMonth *string
 		MaxMonth *string
 	}
-	if err = q.Select("to_char(MIN(release_date), 'YYYY-MM') AS min_month, to_char(MAX(release_date), 'YYYY-MM') AS max_month").
+	// No date window: calendarBase gives status=0 + day/month precision + content
+	// limit; MIN/MAX walk idx_galgame_calendar from each end.
+	if err = r.calendarBase(ctx, calendarFilter{precisions: monthPrecisions, contentLimit: contentLimit}).
+		Select("to_char(MIN(release_date), 'YYYY-MM') AS min_month, to_char(MAX(release_date), 'YYYY-MM') AS max_month").
 		Scan(&row).Error; err != nil {
 		return "", "", err
 	}

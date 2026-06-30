@@ -22,8 +22,10 @@ type SubmitGalgameRequest struct {
 	ContentLimit     string `json:"content_limit" validate:"omitempty,oneof=sfw nsfw"`
 	OriginalLanguage string `json:"original_language"`
 	AgeLimit         string `json:"age_limit" validate:"omitempty,oneof=all r18"`
-	// ReleaseDate is "YYYY-MM-DD" or "" (= unknown). Independent of ReleaseDateTBA.
-	ReleaseDate      string `json:"release_date" validate:"omitempty,datetime=2006-01-02"`
+	// ReleaseDate is "YYYY-MM-DD" / "YYYY-MM" / "YYYY" / "" (= unknown). Partial
+	// dates are normalized + a release_precision derived (same as create/edit/PR).
+	// Independent of ReleaseDateTBA.
+	ReleaseDate      string `json:"release_date" validate:"omitempty,date_or_empty"`
 	ReleaseDateTBA   bool   `json:"release_date_tba"`
 	SeriesID         *int   `json:"series_id"`
 	Aliases          string `json:"aliases"`

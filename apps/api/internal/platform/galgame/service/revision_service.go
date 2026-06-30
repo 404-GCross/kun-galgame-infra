@@ -473,6 +473,15 @@ func (s *GalgameService) MergePR(ctx context.Context, userID, galgameID, prID in
 		if err != nil {
 			return err
 		}
+		// Pre-P3 base/current revision snapshots carry no release_precision, so a
+		// PR that didn't touch the date leaves finalSnapshot.ReleasePrecision="";
+		// ApplySnapshot's ResolveReleasePrecision would then downgrade a month/year
+		// date to day. A PR only carries a precision when it actually changed the
+		// date — so when empty, preserve the live model's precision. (Also keeps
+		// mergeChanged from recording a phantom release_precision change.)
+		if finalSnapshot.ReleasePrecision == "" {
+			finalSnapshot.ReleasePrecision = beforeFull.ReleasePrecision
+		}
 		mergeChanged := model.KeysOf(model.ChangedKeys(model.TakeSnapshot(beforeFull), finalSnapshot))
 
 		// Apply snapshot to galgame tables

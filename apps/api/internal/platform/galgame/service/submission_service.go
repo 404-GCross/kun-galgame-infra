@@ -158,8 +158,9 @@ func (s *SubmissionService) Submit(ctx context.Context, userID int, roles []stri
 func buildSubmitSnapshot(req *dto.SubmitGalgameRequest) *model.Snapshot {
 	s := &model.Snapshot{
 		VNDBID:           req.VNDBID,
-		ReleaseDate:      strNonEmpty(req.ReleaseDate),
+		ReleaseDate:      model.NormalizeReleaseDateInput(req.ReleaseDate),
 		ReleaseDateTBA:   req.ReleaseDateTBA,
+		ReleasePrecision: string(model.DeriveInputPrecision(req.ReleaseDate, req.ReleaseDateTBA)),
 		NameEnUS:         req.NameEnUS,
 		NameJaJP:         req.NameJaJP,
 		NameZhCN:         req.NameZhCN,

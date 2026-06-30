@@ -378,23 +378,6 @@ func ParseSnapshotReleaseDate(s *string) *time.Time {
 	return &t
 }
 
-// ParseLegacyReleased maps a legacy `released` string (free-form, used by
-// VNDB / Bangumi imports and the now-retired galgame.released column) into the
-// typed (date, precision) pair. Single source of truth for migration, VNDB
-// sync, and any backfill script. The date is normalized (day-unknown → 1st of
-// month, month-unknown → Jan 1) and MUST be read together with the precision.
-// Accepted inputs:
-//
-//	"" / "unknown":      unknown        → (nil, PrecisionUnknown)
-//	"tba":               date pending   → (nil, PrecisionTBA)
-//	"YYYY":              year only      → (Jan 1 YYYY, PrecisionYear)
-//	"YYYY-MM":           year+month     → (1st of month, PrecisionMonth)
-//	"YYYY-MM-DD":        full date      → (parsed, PrecisionDay)
-//
-// Years outside [1900, 2100] and anything else map to (nil, PrecisionUnknown).
-// An out-of-range month/day degrades precision to the last fully-parsed level
-// (e.g. "YYYY-13" → year, "YYYY-MM-45" → month). See
-// docs/galgame_wiki/06-release-calendar-design.md §2.
 // DeriveInputPrecision computes the release precision for a write-side input:
 // tba wins (date pending); otherwise the granularity of the date string
 // (""→unknown, "YYYY"→year, "YYYY-MM"→month, "YYYY-MM-DD"→day). Used by the
@@ -441,6 +424,23 @@ func (s *Snapshot) ResolveReleasePrecision() ReleasePrecision {
 	}
 }
 
+// ParseLegacyReleased maps a legacy `released` string (free-form, used by
+// VNDB / Bangumi imports and the now-retired galgame.released column) into the
+// typed (date, precision) pair. Single source of truth for migration, VNDB
+// sync, and any backfill script. The date is normalized (day-unknown → 1st of
+// month, month-unknown → Jan 1) and MUST be read together with the precision.
+// Accepted inputs:
+//
+//	"" / "unknown":      unknown        → (nil, PrecisionUnknown)
+//	"tba":               date pending   → (nil, PrecisionTBA)
+//	"YYYY":              year only      → (Jan 1 YYYY, PrecisionYear)
+//	"YYYY-MM":           year+month     → (1st of month, PrecisionMonth)
+//	"YYYY-MM-DD":        full date      → (parsed, PrecisionDay)
+//
+// Years outside [1900, 2100] and anything else map to (nil, PrecisionUnknown).
+// An out-of-range month/day degrades precision to the last fully-parsed level
+// (e.g. "YYYY-13" → year, "YYYY-MM-45" → month). See
+// docs/galgame_wiki/06-release-calendar-design.md §2.
 func ParseLegacyReleased(s string) (*time.Time, ReleasePrecision) {
 	v := s
 	// trim spaces without pulling in strings package — micro-helper
