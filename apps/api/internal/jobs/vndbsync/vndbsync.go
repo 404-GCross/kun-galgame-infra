@@ -18,7 +18,9 @@ import (
 	"time"
 
 	"api/internal/infrastructure/database"
+	searchInfra "api/internal/infrastructure/search"
 	"api/internal/platform/galgame/model"
+	galgameSearch "api/internal/platform/galgame/search"
 	"api/internal/platform/galgame/vndbresolve"
 	"api/pkg/config"
 
@@ -242,9 +244,11 @@ func (c *vndbClient) fetchVNs(afterID string) (*vndbResponse, error) {
 type syncer struct {
 	db       *gorm.DB
 	client   *vndbClient
-	resolver *vndbresolve.Resolver // shared VNDB tag/official resolution
+	resolver *vndbresolve.Resolver  // shared VNDB tag/official resolution
+	indexer  *galgameSearch.Indexer // optional Meili write-through; nil = skip (run cmd/reindex-search to catch up)
 
 	existingVNDBIDs map[string]bool
+	createdIDs      []int // galgame ids created this run; indexed into search at the end (write-through)
 
 	stats struct {
 		created   int
@@ -253,11 +257,12 @@ type syncer struct {
 	}
 }
 
-func newSyncer(db *gorm.DB, resolver *vndbresolve.Resolver) *syncer {
+func newSyncer(db *gorm.DB, resolver *vndbresolve.Resolver, indexer *galgameSearch.Indexer) *syncer {
 	return &syncer{
 		db:              db,
 		client:          newVNDBClient(),
 		resolver:        resolver,
+		indexer:         indexer,
 		existingVNDBIDs: make(map[string]bool),
 	}
 }
@@ -406,8 +411,8 @@ func (s *syncer) processBatch(vns []vndbVN) (newCount, skipCount, cancelCount in
 }
 
 func (s *syncer) insertVN(vn *vndbVN) error {
-	return s.db.Transaction(func(tx *gorm.DB) error {
-		galgame := s.buildGalgame(vn)
+	galgame := s.buildGalgame(vn)
+	if err := s.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(galgame).Error; err != nil {
 			return fmt.Errorf("create galgame: %w", err)
 		}
@@ -457,7 +462,47 @@ func (s *syncer) insertVN(vn *vndbVN) error {
 		}
 
 		return nil
-	})
+	}); err != nil {
+		return err
+	}
+	// Created in DB — remember it so the run indexes it into search at the end.
+	// vndbsync historically skipped search write-through, so freshly-synced
+	// drafts drifted out of the index until a manual cmd/reindex-search.
+	s.createdIDs = append(s.createdIDs, galgame.ID)
+	return nil
+}
+
+// indexCreated writes the galgames created this run into Meilisearch. Best-effort:
+// Postgres is the source of truth, so a Meili failure is logged (run
+// cmd/reindex-search to catch up) rather than failing the sync. Loads with the
+// same preloads as cmd/reindex-search so the search doc is complete.
+func (s *syncer) indexCreated(ctx context.Context) {
+	if s.indexer == nil || len(s.createdIDs) == 0 {
+		return
+	}
+	const batch = 500
+	indexed := 0
+	for start := 0; start < len(s.createdIDs); start += batch {
+		end := min(start+batch, len(s.createdIDs))
+		var rows []model.Galgame
+		if err := s.db.WithContext(ctx).
+			Preload("Alias").Preload("Tag.Tag").Preload("Official.Official").
+			Preload("Engine.Engine").Preload("Cover").
+			Where("id IN ?", s.createdIDs[start:end]).Find(&rows).Error; err != nil {
+			slog.Warn("vndbsync: load created galgames for indexing failed (run cmd/reindex-search)", "error", err)
+			return
+		}
+		ptrs := make([]*model.Galgame, len(rows))
+		for i := range rows {
+			ptrs[i] = &rows[i]
+		}
+		if err := s.indexer.UpsertGalgamesBatch(ctx, ptrs); err != nil {
+			slog.Warn("vndbsync: index created galgames failed (run cmd/reindex-search)", "error", err)
+			return
+		}
+		indexed += len(rows)
+	}
+	slog.Info("vndbsync: indexed newly-synced galgames into search", "count", indexed)
 }
 
 func (s *syncer) buildGalgame(vn *vndbVN) *model.Galgame {
@@ -592,9 +637,25 @@ func Run(ctx context.Context, cfg *config.Config, opts Opts) (map[string]any, er
 	slog.Info("starting VNDB sync", "mode", mode)
 
 	resolver := vndbresolve.New(tagMap)
-	s := newSyncer(db, resolver)
-	if err := s.run(ctx, opts.Full); err != nil {
-		return nil, fmt.Errorf("sync: %w", err)
+
+	// Search write-through: index newly-synced galgames into Meili at the end of
+	// the run (best-effort). Built from cfg so both cmd/sync-vndb and the
+	// scheduler get it. A nil indexer (Meili unavailable) just skips indexing —
+	// the data is in Postgres and cmd/reindex-search can always catch up.
+	var indexer *galgameSearch.Indexer
+	if msClient, msErr := searchInfra.NewClient(cfg.Meilisearch); msErr != nil {
+		slog.Warn("vndbsync: meilisearch unavailable; new syncs won't be indexed (run cmd/reindex-search to catch up)", "error", msErr)
+	} else {
+		indexer = galgameSearch.NewIndexer(msClient)
+	}
+
+	s := newSyncer(db, resolver, indexer)
+	runErr := s.run(ctx, opts.Full)
+	// Index whatever was created, even if run errored partway (those rows are
+	// already committed to Postgres).
+	s.indexCreated(ctx)
+	if runErr != nil {
+		return nil, fmt.Errorf("sync: %w", runErr)
 	}
 
 	// Reset sequences (unchanged from original)
