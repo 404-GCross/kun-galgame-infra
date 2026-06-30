@@ -3,6 +3,7 @@ package handler
 import (
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"api/pkg/errors"
@@ -18,6 +19,37 @@ import (
 // and "today" are computed in JST. A fixed offset (JST has no DST) avoids a
 // tzdata dependency in the binary.
 var jstZone = time.FixedZone("Asia/Tokyo", 9*60*60)
+
+// defaultCalendarLangs is the original-language filter applied when the caller
+// doesn't pass one: the JP/CN galgame audience's relevant set. VNDB carries a
+// large English/Western catalog (~19k en-us) that floods an unfiltered calendar,
+// so defaulting to these keeps the 新作月表 relevant.
+var defaultCalendarLangs = []string{"ja-jp", "zh-cn", "zh-tw"}
+
+// parseCalendarLangs resolves the ?original_language filter. Returns the language
+// list (nil = no filter) and a stable key folded into the ETag so each variant
+// caches separately:
+//   - omitted   → defaultCalendarLangs (JP/CN)
+//   - "all"     → nil (every language)
+//   - "a,b,c"   → that explicit set (e.g. ja-jp,en-us)
+func parseCalendarLangs(c fiber.Ctx) (langs []string, key string) {
+	switch raw := strings.TrimSpace(c.Query("original_language")); raw {
+	case "":
+		return defaultCalendarLangs, "jpcn"
+	case "all":
+		return nil, "all"
+	default:
+		for _, p := range strings.Split(raw, ",") {
+			if p = strings.TrimSpace(p); p != "" {
+				langs = append(langs, p)
+			}
+		}
+		if len(langs) == 0 {
+			return defaultCalendarLangs, "jpcn"
+		}
+		return langs, strings.Join(langs, "+")
+	}
+}
 
 // setCalendarCache writes the ETag + Cache-Control and reports whether the
 // request's If-None-Match already matches (caller should then 304). Past months
@@ -56,12 +88,13 @@ func (h *GalgameHandler) Calendar(c fiber.Ctx) error {
 	startStr := start.Format("2006-01-02")
 	nextStr := start.AddDate(0, 1, 0).Format("2006-01-02")
 	cl := utils.ParseContentLimit(c.Query("content_limit"), "sfw")
+	langs, langKey := parseCalendarLangs(c)
 
-	count, maxUpdated, err := h.galgameService.CalendarMonthMeta(c.Context(), startStr, nextStr, cl)
+	count, maxUpdated, err := h.galgameService.CalendarMonthMeta(c.Context(), startStr, nextStr, cl, langs)
 	if err != nil {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
-	etag := fmt.Sprintf(`W/"cal-%s-%s-%d-%d"`, monthStr, cl, count, maxUpdated.Unix())
+	etag := fmt.Sprintf(`W/"cal-%s-%s-%s-%d-%d"`, monthStr, cl, langKey, count, maxUpdated.Unix())
 
 	now := time.Now().In(jstZone)
 	curStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, jstZone)
@@ -69,7 +102,7 @@ func (h *GalgameHandler) Calendar(c fiber.Ctx) error {
 		return c.SendStatus(fiber.StatusNotModified)
 	}
 
-	items, err := h.galgameService.CalendarMonth(c.Context(), startStr, nextStr, cl)
+	items, err := h.galgameService.CalendarMonth(c.Context(), startStr, nextStr, cl, langs)
 	if err != nil {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
@@ -80,7 +113,7 @@ func (h *GalgameHandler) Calendar(c fiber.Ctx) error {
 	// on a 304 has_next can lag a newly-added far-future month until s-maxage
 	// lapses — self-correcting (the phantom next month is an empty first-class
 	// state), traded for the cheap-304 win.
-	minMonth, maxMonth, err := h.galgameService.CalendarBounds(c.Context(), cl)
+	minMonth, maxMonth, err := h.galgameService.CalendarBounds(c.Context(), cl, langs)
 	if err != nil {
 		slog.Warn("galgame calendar: bounds query failed", "err", err)
 	}
@@ -123,16 +156,18 @@ func (h *GalgameHandler) CalendarPending(c fiber.Ctx) error {
 	yNextStr := yStart.AddDate(1, 0, 0).Format("2006-01-02")
 	cl := utils.ParseContentLimit(c.Query("content_limit"), "sfw")
 
-	count, maxUpdated, err := h.galgameService.CalendarYearPendingMeta(c.Context(), yStartStr, yNextStr, cl)
+	langs, langKey := parseCalendarLangs(c)
+
+	count, maxUpdated, err := h.galgameService.CalendarYearPendingMeta(c.Context(), yStartStr, yNextStr, cl, langs)
 	if err != nil {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
-	etag := fmt.Sprintf(`W/"calpend-%s-%s-%d-%d"`, yearStr, cl, count, maxUpdated.Unix())
+	etag := fmt.Sprintf(`W/"calpend-%s-%s-%s-%d-%d"`, yearStr, cl, langKey, count, maxUpdated.Unix())
 	if setCalendarCache(c, etag, "gal-cal-pending-"+yearStr, false) { // tracks live edits → short cache
 		return c.SendStatus(fiber.StatusNotModified)
 	}
 
-	items, err := h.galgameService.CalendarYearPending(c.Context(), yStartStr, yNextStr, cl)
+	items, err := h.galgameService.CalendarYearPending(c.Context(), yStartStr, yNextStr, cl, langs)
 	if err != nil {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
@@ -146,17 +181,18 @@ func (h *GalgameHandler) CalendarPending(c fiber.Ctx) error {
 // CalendarTBA serves the global "release date pending" (TBA) bucket.
 func (h *GalgameHandler) CalendarTBA(c fiber.Ctx) error {
 	cl := utils.ParseContentLimit(c.Query("content_limit"), "sfw")
+	langs, langKey := parseCalendarLangs(c)
 
-	count, maxUpdated, err := h.galgameService.CalendarTBAMeta(c.Context(), cl)
+	count, maxUpdated, err := h.galgameService.CalendarTBAMeta(c.Context(), cl, langs)
 	if err != nil {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
-	etag := fmt.Sprintf(`W/"caltba-%s-%d-%d"`, cl, count, maxUpdated.Unix())
+	etag := fmt.Sprintf(`W/"caltba-%s-%s-%d-%d"`, cl, langKey, count, maxUpdated.Unix())
 	if setCalendarCache(c, etag, "gal-cal-tba", false) {
 		return c.SendStatus(fiber.StatusNotModified)
 	}
 
-	items, err := h.galgameService.CalendarTBA(c.Context(), cl)
+	items, err := h.galgameService.CalendarTBA(c.Context(), cl, langs)
 	if err != nil {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}

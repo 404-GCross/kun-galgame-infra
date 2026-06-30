@@ -24,6 +24,7 @@ type calendarFilter struct {
 	startDate    string   // "" = no lower bound; else "YYYY-MM-DD" (>=)
 	nextDate     string   // "" = no upper bound; else "YYYY-MM-DD" (<, half-open)
 	contentLimit string   // "" = any
+	origLangs    []string // nil/empty = any; else original_language IN (...) (handler defaults to JP/CN)
 }
 
 func (r *GalgameRepository) calendarBase(ctx context.Context, f calendarFilter) *gorm.DB {
@@ -41,6 +42,9 @@ func (r *GalgameRepository) calendarBase(ctx context.Context, f calendarFilter) 
 	}
 	if f.contentLimit != "" {
 		q = q.Where("content_limit = ?", f.contentLimit)
+	}
+	if len(f.origLangs) > 0 {
+		q = q.Where("original_language IN ?", f.origLangs)
 	}
 	return q
 }
@@ -93,28 +97,29 @@ var monthPrecisions = []string{string(model.PrecisionDay), string(model.Precisio
 var calendarStatuses = []int{model.GalgameStatusPublished, model.GalgameStatusVNDBDraft}
 
 // CalendarMonthMeta / CalendarMonth: day+month-precision games in the half-open
-// [startDate, nextDate) month window.
-func (r *GalgameRepository) CalendarMonthMeta(ctx context.Context, startDate, nextDate, contentLimit string) (int64, time.Time, error) {
-	return r.calendarMeta(ctx, calendarFilter{precisions: monthPrecisions, startDate: startDate, nextDate: nextDate, contentLimit: contentLimit})
+// [startDate, nextDate) month window. origLangs filters original_language
+// (nil = all; the handler defaults it to the JP/CN set).
+func (r *GalgameRepository) CalendarMonthMeta(ctx context.Context, startDate, nextDate, contentLimit string, origLangs []string) (int64, time.Time, error) {
+	return r.calendarMeta(ctx, calendarFilter{precisions: monthPrecisions, startDate: startDate, nextDate: nextDate, contentLimit: contentLimit, origLangs: origLangs})
 }
 
-func (r *GalgameRepository) CalendarMonth(ctx context.Context, startDate, nextDate, contentLimit string) ([]model.Galgame, error) {
-	return r.calendarList(ctx, calendarFilter{precisions: monthPrecisions, startDate: startDate, nextDate: nextDate, contentLimit: contentLimit}, monthOrder)
+func (r *GalgameRepository) CalendarMonth(ctx context.Context, startDate, nextDate, contentLimit string, origLangs []string) ([]model.Galgame, error) {
+	return r.calendarList(ctx, calendarFilter{precisions: monthPrecisions, startDate: startDate, nextDate: nextDate, contentLimit: contentLimit, origLangs: origLangs}, monthOrder)
 }
 
 // CalendarBounds returns the earliest and latest month ("YYYY-MM") that hold a
-// published day/month-precision release for the content limit — the navigable
-// range, so a client can disable prev/next at the edges. Empty strings when
-// there are no dated releases. Rides idx_galgame_calendar (MIN/MAX on the
-// leading release_date column).
-func (r *GalgameRepository) CalendarBounds(ctx context.Context, contentLimit string) (minMonth, maxMonth string, err error) {
+// day/month-precision release for the given content limit + original-language
+// filter — the navigable range, so a client can disable prev/next at the edges.
+// Empty strings when there are no matching releases. Rides idx_galgame_calendar
+// (MIN/MAX on the leading release_date column).
+func (r *GalgameRepository) CalendarBounds(ctx context.Context, contentLimit string, origLangs []string) (minMonth, maxMonth string, err error) {
 	var row struct {
 		MinMonth *string
 		MaxMonth *string
 	}
-	// No date window: calendarBase gives status=0 + day/month precision + content
-	// limit; MIN/MAX walk idx_galgame_calendar from each end.
-	if err = r.calendarBase(ctx, calendarFilter{precisions: monthPrecisions, contentLimit: contentLimit}).
+	// No date window: calendarBase gives status + day/month precision + content
+	// limit + lang; MIN/MAX walk idx_galgame_calendar from each end.
+	if err = r.calendarBase(ctx, calendarFilter{precisions: monthPrecisions, contentLimit: contentLimit, origLangs: origLangs}).
 		Select("to_char(MIN(release_date), 'YYYY-MM') AS min_month, to_char(MAX(release_date), 'YYYY-MM') AS max_month").
 		Scan(&row).Error; err != nil {
 		return "", "", err
@@ -130,20 +135,20 @@ func (r *GalgameRepository) CalendarBounds(ctx context.Context, contentLimit str
 
 // CalendarYearPendingMeta / CalendarYearPending: year-precision games (month
 // unknown) within the given year — the "month TBD" bucket.
-func (r *GalgameRepository) CalendarYearPendingMeta(ctx context.Context, yearStart, yearNext, contentLimit string) (int64, time.Time, error) {
-	return r.calendarMeta(ctx, calendarFilter{precisions: []string{string(model.PrecisionYear)}, startDate: yearStart, nextDate: yearNext, contentLimit: contentLimit})
+func (r *GalgameRepository) CalendarYearPendingMeta(ctx context.Context, yearStart, yearNext, contentLimit string, origLangs []string) (int64, time.Time, error) {
+	return r.calendarMeta(ctx, calendarFilter{precisions: []string{string(model.PrecisionYear)}, startDate: yearStart, nextDate: yearNext, contentLimit: contentLimit, origLangs: origLangs})
 }
 
-func (r *GalgameRepository) CalendarYearPending(ctx context.Context, yearStart, yearNext, contentLimit string) ([]model.Galgame, error) {
-	return r.calendarList(ctx, calendarFilter{precisions: []string{string(model.PrecisionYear)}, startDate: yearStart, nextDate: yearNext, contentLimit: contentLimit}, "id ASC")
+func (r *GalgameRepository) CalendarYearPending(ctx context.Context, yearStart, yearNext, contentLimit string, origLangs []string) ([]model.Galgame, error) {
+	return r.calendarList(ctx, calendarFilter{precisions: []string{string(model.PrecisionYear)}, startDate: yearStart, nextDate: yearNext, contentLimit: contentLimit, origLangs: origLangs}, "id ASC")
 }
 
 // CalendarTBAMeta / CalendarTBA: the global "release date pending" bucket
 // (announced, no date). Newest-touched first.
-func (r *GalgameRepository) CalendarTBAMeta(ctx context.Context, contentLimit string) (int64, time.Time, error) {
-	return r.calendarMeta(ctx, calendarFilter{precisions: []string{string(model.PrecisionTBA)}, contentLimit: contentLimit})
+func (r *GalgameRepository) CalendarTBAMeta(ctx context.Context, contentLimit string, origLangs []string) (int64, time.Time, error) {
+	return r.calendarMeta(ctx, calendarFilter{precisions: []string{string(model.PrecisionTBA)}, contentLimit: contentLimit, origLangs: origLangs})
 }
 
-func (r *GalgameRepository) CalendarTBA(ctx context.Context, contentLimit string) ([]model.Galgame, error) {
-	return r.calendarList(ctx, calendarFilter{precisions: []string{string(model.PrecisionTBA)}, contentLimit: contentLimit}, "updated DESC, id DESC")
+func (r *GalgameRepository) CalendarTBA(ctx context.Context, contentLimit string, origLangs []string) ([]model.Galgame, error) {
+	return r.calendarList(ctx, calendarFilter{precisions: []string{string(model.PrecisionTBA)}, contentLimit: contentLimit, origLangs: origLangs}, "updated DESC, id DESC")
 }
