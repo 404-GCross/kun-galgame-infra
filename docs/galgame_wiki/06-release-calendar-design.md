@@ -204,9 +204,9 @@ startStr := start.Format("2006-01-02")
 nextStr  := start.AddDate(0, 1, 0).Format("2006-01-02")
 db.Where("release_date >= ? AND release_date < ?", startStr, nextStr). // ← 字符串,不是 time.Time
    Where("release_precision IN ?", []string{"day", "month"}).
-   Where("status = ?", model.GalgameStatusPublished). // 0 = 已发布
-   Order("release_date ASC, (release_precision = 'month') ASC, id ASC")
-// galgame 无软删除,显式 status=0 即对上 partial index(见 §7.2)
+   Where("status IN ?", []int{0, 2}). // 0 已发布 + 2 未认领 VNDB 草稿(月历要完整)
+   Order("release_date ASC, release_precision ASC, id ASC") // 同日内 day 在前;裸列 = 走索引序、无 Sort
+// status IN (0,2) 对上 partial index idx_galgame_calendar_pubdraft(见 §7.2)
 ```
 
 > ⚠️ **必须传 `YYYY-MM-DD` 字符串,不能传 `time.Time`**:`time.Time` 实参会被隐式强制成 `timestamptz`,导致与 `date` 列比较时**放弃 btree 索引**(与 `repo.List` 同一教训)。字符串字面量直接对 `date` 列比较、走索引。
@@ -218,11 +218,12 @@ db.Where("release_date >= ? AND release_date < ?", startStr, nextStr). // ← �
 ### 7.2 索引
 
 ```sql
--- 既服务 range 过滤,又覆盖 ORDER BY,且只索引已发布行。
--- galgame 无软删除(无 deleted_at),partial 谓词仅 status=0;名称与 cmd/migrate-galgame 一致。
-CREATE INDEX IF NOT EXISTS idx_galgame_calendar
+-- 既服务 range 过滤,又覆盖 ORDER BY。月历收录 已发布(0) + 未认领 VNDB 草稿(2),
+-- 故 partial 谓词为 status IN (0,2);名称与 cmd/migrate-galgame 一致(旧的 status=0
+-- 版 idx_galgame_calendar 已 drop,改名避免每次部署重建同名索引)。
+CREATE INDEX IF NOT EXISTS idx_galgame_calendar_pubdraft
   ON galgame (release_date, release_precision, id)
-  WHERE status = 0;
+  WHERE status IN (0, 2);
 ```
 
 ### 7.3 每月计数 / 年度概览
