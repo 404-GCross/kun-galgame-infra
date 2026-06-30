@@ -16,11 +16,10 @@
 # ${MEILI_MASTER_KEY} → intra-app consistency is automatic.
 #
 #   docker compose -f docker-compose.prod.yml pull
-#   docker compose -f docker-compose.prod.yml up -d postgres redis minio meili
-#   docker compose -f docker-compose.prod.yml --profile jobs run --rm migrate           # oauth schema + seed
-#   docker compose -f docker-compose.prod.yml --profile jobs run --rm migrate-galgame    # wiki schema
-#   docker compose -f docker-compose.prod.yml up -d oauth image galgame web wiki
-#   # full data cutover (16-data-cutover.md): docker compose ... run --rm tools <job> ...
+#   docker compose -f docker-compose.prod.yml up -d
+#     ↳ migrate + migrate-galgame auto-run FIRST; oauth/image/galgame/artifact gate on
+#       them (depends_on: service_completed_successfully) — no manual migrate step.
+#   # full data cutover (16-data-cutover.md): docker compose ... --profile jobs run --rm tools <job> ...
 name: kun-galgame-infra
 
 x-svc-health: &svc-health
@@ -187,6 +186,7 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
     healthcheck:
       test: ["CMD", "/app/app", "healthcheck"]
       <<: *svc-health
@@ -205,6 +205,7 @@ services:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
       minio: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
     healthcheck:
       test: ["CMD", "/app/app", "healthcheck"]
       <<: *svc-health
@@ -227,6 +228,8 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
       meili: { condition: service_healthy }
+      migrate-galgame: { condition: service_completed_successfully }
+      migrate: { condition: service_completed_successfully } # reads users from kun_galgame_infra
     healthcheck:
       test: ["CMD", "/app", "healthcheck"]
       <<: *svc-health
@@ -256,6 +259,7 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
     healthcheck:
       test: ["CMD", "/app", "healthcheck"]
       <<: *svc-health
@@ -318,23 +322,31 @@ services:
         limits:
           memory: 1g
 
-  # ─────────────────────── one-off jobs (profile: jobs) ──────────────────────
-  #   docker compose -f docker-compose.prod.yml --profile jobs run --rm migrate
-  #   docker compose -f docker-compose.prod.yml --profile jobs run --rm migrate-galgame
+  # ─── schema migrations (auto-run on deploy) + one-off jobs (profile: jobs) ───
+  # migrate / migrate-galgame below are NOT in the jobs profile — they run on every
+  # `up` and gate the services. Only `tools` (data cutover) stays manual.
+  # Auto-applied on every deploy: dependent services wait for this to complete
+  # (depends_on: service_completed_successfully) so no service ever serves an
+  # un-migrated schema — this is what closes the "deploy doesn't run migrate →
+  # silent column drift" gap. cmd/migrate is idempotent + additive-only
+  # (AutoMigrate, CREATE INDEX IF NOT EXISTS, existence-guarded seeds), so a
+  # per-deploy re-run is a fast no-op when nothing changed. Built in lockstep
+  # with the go services (build.yml), so :latest never lags the code.
+  # Manual run still works: docker compose -f docker-compose.prod.yml run --rm migrate
   migrate:
     image: ghcr.io/kunmoe/infra-migrate:latest
     pull_policy: always
     environment: { <<: *infra-env }
-    profiles: ["jobs"]
     depends_on:
       postgres: { condition: service_healthy }
     restart: "no"
 
+  # Auto-applied on every deploy (galgame waits for it). Idempotent: AutoMigrate
+  # + guarded drop-then-recreate of constraints/indexes (all IF NOT EXISTS).
   migrate-galgame:
     image: ghcr.io/kunmoe/infra-migrate-galgame:latest
     pull_policy: always
     environment: { <<: *infra-env }
-    profiles: ["jobs"]
     depends_on:
       postgres: { condition: service_healthy }
     restart: "no"

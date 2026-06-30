@@ -2,18 +2,19 @@
 # See docs/deploy/13-registry-ci.md.
 #
 # COST CONTROL — GitHub bills each matrix job rounded UP to a whole minute, so
-# rebuilding all 9 images on every push burned ~10+ billed min even fully cached.
-# This workflow now builds ONLY the images whose inputs changed (path-filtered
-# dynamic matrix), and the rarely-changing migrate* / tools images are built
-# ON-DEMAND (workflow_dispatch) instead of on every push:
-#   - go images   (oauth/image/galgame/artifact)  ← apps/api/** + their Dockerfiles
+# rebuilding every image on each push burned billed minutes even fully cached.
+# This workflow builds ONLY the images whose inputs changed (path-filtered
+# dynamic matrix):
+#   - go images (oauth/image/galgame/artifact/migrate/migrate-galgame)  ← apps/api/** + Dockerfiles
 #   - web                                          ← apps/web/** + root manifests + nuxt.Dockerfile
 #   - wiki                                         ← apps/wiki/** + root manifests + nuxt.Dockerfile
-#   - migrate / migrate-galgame / tools            ← on-demand only (Run workflow → scope)
+#   - tools                                        ← on-demand only (Run workflow → scope)
 # A docs-only push therefore builds nothing and costs ~1 min (the `changes` job).
 #
-# NOTE: migrate*/tools no longer auto-build. Before running a migration on prod,
-# refresh them via Actions → Run workflow → scope=ondemand (or scope=all).
+# migrate / migrate-galgame build in LOCKSTEP with the go services (same apps/api
+# source + sha) — REQUIRED because prod now auto-applies migrations on deploy
+# (compose `depends_on: migrate`), so the migrate image must never lag the code.
+# Only `tools` (data-cutover one-offs) is on-demand: Actions → Run workflow → scope.
 #
 # web/wiki BAKE their browser-facing public config from build-args here.
 name: build-and-push
@@ -87,13 +88,13 @@ jobs:
             {"name":"infra-image","file":"docker/cgo.Dockerfile","args":"CMD=image","group":"go"},
             {"name":"infra-galgame","file":"docker/go.Dockerfile","args":"CMD=galgame","group":"go"},
             {"name":"infra-artifact","file":"docker/go.Dockerfile","args":"CMD=artifact","group":"go"},
+            {"name":"infra-migrate","file":"docker/go.Dockerfile","args":"CMD=migrate","group":"go"},
+            {"name":"infra-migrate-galgame","file":"docker/go.Dockerfile","args":"CMD=migrate-galgame","group":"go"},
             {"name":"infra-web","file":"docker/nuxt.Dockerfile","args":"APP=web\nPUBLIC_API_BASE=https://oauth.kungal.com/api/v1\nPUBLIC_IMAGE_CDN_BASE=https://image.kungal.iloveren.link","group":"web"},
             {"name":"infra-wiki","file":"docker/nuxt.Dockerfile","args":"APP=wiki\nPUBLIC_API_BASE=https://wiki.kungal.com/api\nPUBLIC_AUTH_API_BASE=https://oauth.kungal.com/api/v1\nPUBLIC_OAUTH_AUTHORIZE_BASE=https://oauth.kungal.com/api/v1\nPUBLIC_OAUTH_CLIENT_ID=galgame-wiki-admin\nPUBLIC_OAUTH_REDIRECT_URI=https://wiki.kungal.com/auth/callback\nPUBLIC_IMAGE_CDN_BASE=https://image.kungal.iloveren.link","group":"wiki"}
           ]'
           # On-demand only (workflow_dispatch). Run before a prod migration.
           ondemand_catalog='[
-            {"name":"infra-migrate","file":"docker/go.Dockerfile","args":"CMD=migrate","group":"ondemand"},
-            {"name":"infra-migrate-galgame","file":"docker/go.Dockerfile","args":"CMD=migrate-galgame","group":"ondemand"},
             {"name":"infra-tools","file":"docker/tools.Dockerfile","args":"","group":"ondemand"}
           ]'
           if [ "$EVENT" = "workflow_dispatch" ]; then
