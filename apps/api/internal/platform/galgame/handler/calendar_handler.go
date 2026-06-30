@@ -40,9 +40,9 @@ func setCalendarCache(c fiber.Ctx, etag, cacheTag string, isPast bool) bool {
 }
 
 // Calendar serves one ISO month (?month=YYYY-MM, default = current JST month) of
-// published releases at day + month precision — released and upcoming mixed,
-// ascending by date. Year-only and TBA titles live in /calendar/pending and
-// /calendar/tba respectively.
+// releases at day + month precision — published + unclaimed VNDB drafts (each
+// item's `status` distinguishes them), released and upcoming mixed, ascending by
+// date. Year-only and TBA titles live in /calendar/pending and /calendar/tba.
 func (h *GalgameHandler) Calendar(c fiber.Ctx) error {
 	monthStr := c.Query("month")
 	if monthStr == "" {

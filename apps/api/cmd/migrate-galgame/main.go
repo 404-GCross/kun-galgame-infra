@@ -243,9 +243,12 @@ func main() {
 	// allowed set so ADD CONSTRAINT validates existing rows). Idempotent
 	// drop-then-add, same style as steps 2/5. The calendar index serves the
 	// month-range query (release_date half-open range) AND covers its ORDER BY
-	// (release_date, release_precision, id) for published rows only. galgame has
-	// no soft-delete, so the partial predicate is just status = 0 (published).
-	// See docs/galgame_wiki/06-release-calendar-design.md §2, §7.
+	// (release_date, release_precision, id). The calendar surfaces PUBLISHED (0)
+	// games AND unclaimed VNDB DRAFTS (2) so the 新作月表 is comprehensive, so the
+	// partial predicate is status IN (0, 2) (excludes banned/pending/declined).
+	// Renamed from the old status=0-only idx_galgame_calendar: drop the legacy one
+	// + create the superset under a new name = idempotent (vs rebuilding a
+	// same-named index every deploy). See docs/galgame_wiki/06-release-calendar-design.md.
 	if err := db.DB().Exec(`
 		ALTER TABLE galgame
 		    DROP CONSTRAINT IF EXISTS chk_galgame_release_precision
@@ -261,11 +264,15 @@ func main() {
 		slog.Error("create chk_galgame_release_precision failed", "error", err)
 		os.Exit(1)
 	}
+	if err := db.DB().Exec(`DROP INDEX IF EXISTS idx_galgame_calendar`).Error; err != nil {
+		slog.Error("drop legacy idx_galgame_calendar failed", "error", err)
+		os.Exit(1)
+	}
 	if err := db.DB().Exec(`
-		CREATE INDEX IF NOT EXISTS idx_galgame_calendar
-		    ON galgame(release_date, release_precision, id) WHERE status = 0
+		CREATE INDEX IF NOT EXISTS idx_galgame_calendar_pubdraft
+		    ON galgame(release_date, release_precision, id) WHERE status IN (0, 2)
 	`).Error; err != nil {
-		slog.Error("create idx_galgame_calendar failed", "error", err)
+		slog.Error("create idx_galgame_calendar_pubdraft failed", "error", err)
 		os.Exit(1)
 	}
 

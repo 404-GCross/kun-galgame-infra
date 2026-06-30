@@ -11,9 +11,12 @@ import (
 
 // Release-calendar queries. See docs/galgame_wiki/06-release-calendar-design.md.
 //
-// All of these serve the precision-aware month view: published (status=0) games
-// of a given release_precision, optionally within a half-open date window. They
-// ride idx_galgame_calendar (release_date, release_precision, id) WHERE status=0.
+// These serve the precision-aware month view for BOTH published games AND
+// unclaimed VNDB drafts (status IN (0,2), see calendarStatuses) — so the 新作月表
+// is comprehensive, not just the curated ~12%. Each item carries `status`;
+// consumers render status=2 as "unclaimed" and route the click to the claim flow
+// (POST /galgame/:gid/claim), NOT to GET /galgame/:gid (which 404s drafts). They
+// ride idx_galgame_calendar_pubdraft (release_date, release_precision, id) WHERE status IN (0,2).
 
 // calendarFilter is the internal predicate shared by the meta + list queries.
 type calendarFilter struct {
@@ -25,7 +28,7 @@ type calendarFilter struct {
 
 func (r *GalgameRepository) calendarBase(ctx context.Context, f calendarFilter) *gorm.DB {
 	q := r.db.WithContext(ctx).Model(&model.Galgame{}).
-		Where("status = 0").
+		Where("status IN ?", calendarStatuses).
 		Where("release_precision IN ?", f.precisions)
 	// Dates pass as YYYY-MM-DD strings (NOT time.Time): a time.Time arg forces
 	// an implicit timestamptz coercion that drops the btree index — same lesson
@@ -82,6 +85,12 @@ func (r *GalgameRepository) calendarList(ctx context.Context, f calendarFilter, 
 const monthOrder = "release_date ASC, release_precision ASC, id ASC"
 
 var monthPrecisions = []string{string(model.PrecisionDay), string(model.PrecisionMonth)}
+
+// calendarStatuses: the calendar surfaces PUBLISHED (0) games AND unclaimed VNDB
+// DRAFTS (2), so the 新作月表 is comprehensive (drafts carry full VNDB name/cover/
+// date). Excludes banned(1)/pending(3)/declined(4). Items keep `status` so a
+// consumer renders status=2 as "unclaimed" + routes to POST /galgame/:gid/claim.
+var calendarStatuses = []int{model.GalgameStatusPublished, model.GalgameStatusVNDBDraft}
 
 // CalendarMonthMeta / CalendarMonth: day+month-precision games in the half-open
 // [startDate, nextDate) month window.
