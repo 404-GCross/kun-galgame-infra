@@ -219,15 +219,3 @@ export interface ContributorWithUser {
     avatar_image_hash?: string | null
   }
 }
-
-// GalgameCalendarResponse — GET /galgame/calendar?month=YYYY-MM.
-// items are published day+month-precision releases in the month, ascending by
-// date (day-unknown trailing). `today` is the JST date for the "today" marker.
-// year-only and TBA titles live in /calendar/pending and /calendar/tba.
-export interface GalgameCalendarResponse {
-  month: string // "YYYY-MM"
-  today: string // "YYYY-MM-DD" (JST)
-  items: Galgame[]
-  links: { self: string; prev: string; next: string }
-  meta: { prev_month: string; next_month: string; count: number }
-}
