@@ -45,6 +45,10 @@ jobs:
         with:
           go-version-file: apps/api/go.mod
           cache-dependency-path: apps/api/go.sum
+      # The image processor imports go-webp (cgo → libwebp), so a whole-module
+      # build/test needs the headers + pkg-config (matches docker/cgo.Dockerfile).
+      - name: Install CGO deps (libwebp)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libwebp-dev pkg-config
       - run: go build ./...
       - run: go vet ./...
       - run: go test ./...
@@ -106,6 +110,9 @@ jobs:
         with:
           go-version-file: apps/api/go.mod
           cache-dependency-path: apps/api/go.sum
+      # go-webp (cgo → libwebp) is compiled by the whole-module test run.
+      - name: Install CGO deps (libwebp)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libwebp-dev pkg-config
       - name: Wait for Meilisearch
         run: |
           for i in $(seq 1 30); do
