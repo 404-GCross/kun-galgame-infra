@@ -28,7 +28,13 @@
 > **Phase 2 done** — minimal `id_token` (ES256, iss/sub/aud/exp/iat + nonce) issued on the
 > `openid` scope for the code grant; `nonce` captured at `/authorize`→code→id_token (new
 > `authorization_codes.nonce` column → needs `cmd/migrate`); `end_session_endpoint` now
-> GET+POST with `id_token_hint` passthrough. **Phases 3–4 not started** (wire-format, deferred).
+> GET+POST with `id_token_hint` passthrough.
+> **Phase 3 producer-side done** — flag `KUN_OIDC_STANDARD_WIRE` (default off): when on,
+> `/oauth/token`·`/oauth/userinfo`·`/oauth/revoke` emit spec-compliant top-level JSON +
+> RFC 6749 error objects instead of the `{code,message,data}` envelope (discovery/jwks were
+> already standard). The flip is cross-repo expand→contract: make each first-party RP a
+> tolerant reader FIRST, then set the flag, then drop legacy. **Phase 4 not started** (deferred:
+> DCR, DPoP, RFC 7662, back-channel logout, id_token-on-refresh).
 > This is the keystone of the developer platform (todos #6), deliberately sequenced
 > **before** any Huma-ification of the auth surface, because an IdP's canonical
 > machine-readable contract is the **OIDC discovery document, not a hand-authored
@@ -289,8 +295,10 @@ Each phase is independently deployable; earlier phases are additive.
    ES256, `nonce` captured at `/authorize` → `authorization_codes.nonce` → id_token; the
    `end_session_endpoint` (`/oauth/logout`) now accepts GET+POST + `id_token_hint`. ⚠️ needs
    `cmd/migrate` (new `nonce` column). Deferred: id_token on refresh, `at_hash`.
-3. **Wire-format cutover.** Expand→contract (§7): tolerant RP readers → flip OP to standard
-   JSON + standard errors → remove legacy shape.
+3. **Wire-format cutover.** ✅ **PRODUCER DONE** (flag `KUN_OIDC_STANDARD_WIRE`, default off →
+   `/oauth/{token,userinfo,revoke}` emit standard top-level JSON + RFC 6749 error objects).
+   Remaining = the cross-repo expand→contract: tolerant RP readers → flip the flag → remove
+   legacy shape.
 4. **Deferred (when a third party actually arrives).** DCR, mTLS/DPoP sender-constraining,
    RFC 8707 resource indicators, RFC 7662 introspection, back-channel logout for confidential RPs.
 

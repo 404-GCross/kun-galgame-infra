@@ -40,6 +40,53 @@ func NewOAuthHandler(oauthService *service.OAuthService, cfg *config.Config) *OA
 	return &OAuthHandler{oauthService: oauthService, cfg: cfg}
 }
 
+// --- Phase 3: wire-format helpers (standard top-level JSON vs legacy envelope) ---
+
+func (h *OAuthHandler) stdWire() bool { return h.cfg.OIDC.StandardWire }
+
+// okJSON writes a protocol-endpoint success: spec-compliant top-level JSON in
+// standard-wire mode, else the legacy {code,message,data} envelope.
+func (h *OAuthHandler) okJSON(c fiber.Ctx, data any) error {
+	if h.stdWire() {
+		return c.JSON(data)
+	}
+	return response.Success(c, data)
+}
+
+// oauthErrString maps an internal AppError code to an RFC 6749 §5.2 error code.
+func oauthErrString(appCode int) string {
+	switch appCode {
+	case errors.ErrOAuthInvalidClient, errors.ErrOAuthInvalidClientSecret:
+		return "invalid_client"
+	case errors.ErrOAuthInvalidCode, errors.ErrOAuthInvalidCodeVerifier, errors.ErrOAuthInvalidRedirectURI:
+		return "invalid_grant"
+	case errors.ErrOAuthInvalidScope:
+		return "invalid_scope"
+	case errors.ErrOAuthInvalidGrant:
+		return "unsupported_grant_type"
+	default:
+		return "invalid_request"
+	}
+}
+
+// protoErr writes a protocol-endpoint error: an RFC 6749 error object in
+// standard-wire mode (invalid_client → 401, else 400), else the caller's legacy
+// response.* path (fallback).
+func (h *OAuthHandler) protoErr(c fiber.Ctx, appCode int, fallback func() error) error {
+	if !h.stdWire() {
+		return fallback()
+	}
+	errStr := oauthErrString(appCode)
+	status := fiber.StatusBadRequest
+	if errStr == "invalid_client" {
+		status = fiber.StatusUnauthorized
+	}
+	return c.Status(status).JSON(fiber.Map{
+		"error":             errStr,
+		"error_description": errors.GetMessage(appCode),
+	})
+}
+
 // Authorize handles the OAuth authorization request.
 // Validates the client, then always redirects to the frontend /oauth/authorize page.
 // The frontend handles login detection and consent UI, then calls POST /oauth/authorize/consent.
@@ -177,11 +224,14 @@ func (h *OAuthHandler) Token(c fiber.Ctx) error {
 			"body_len", len(c.Body()),
 			"err", err,
 		)
-		return response.BadRequest(c, errors.ErrBadRequest)
+		return h.protoErr(c, errors.ErrBadRequest, func() error { return response.BadRequest(c, errors.ErrBadRequest) })
 	}
 
 	if err := utils.Validate(&req); err != nil {
 		slog.Warn("oauth token validate failed", "grant_type", req.GrantType, "client_id", req.ClientID, "err", err)
+		if h.stdWire() {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid_request", "error_description": err.Error()})
+		}
 		return response.BadRequestMsg(c, errors.ErrValidationFailed, err.Error())
 	}
 
@@ -190,27 +240,27 @@ func (h *OAuthHandler) Token(c fiber.Ctx) error {
 		tokenResp, err := h.oauthService.ExchangeCode(c.Context(), &req)
 		if err != nil {
 			if appErr, ok := err.(*errors.AppError); ok {
-				return response.BadRequest(c, appErr.Code)
+				return h.protoErr(c, appErr.Code, func() error { return response.BadRequest(c, appErr.Code) })
 			}
 			return response.InternalError(c, errors.ErrOperationFailed)
 		}
-		return response.Success(c, tokenResp)
+		return h.okJSON(c, tokenResp)
 
 	case "refresh_token":
 		if req.RefreshToken == "" {
-			return response.BadRequest(c, errors.ErrBadRequest)
+			return h.protoErr(c, errors.ErrBadRequest, func() error { return response.BadRequest(c, errors.ErrBadRequest) })
 		}
 		tokenResp, err := h.oauthService.RefreshWithClient(c.Context(), req.RefreshToken, req.ClientID, req.ClientSecret)
 		if err != nil {
 			if appErr, ok := err.(*errors.AppError); ok {
-				return response.Unauthorized(c, appErr.Code)
+				return h.protoErr(c, appErr.Code, func() error { return response.Unauthorized(c, appErr.Code) })
 			}
 			return response.InternalError(c, errors.ErrOperationFailed)
 		}
-		return response.Success(c, tokenResp)
+		return h.okJSON(c, tokenResp)
 
 	default:
-		return response.BadRequest(c, errors.ErrOAuthInvalidGrant)
+		return h.protoErr(c, errors.ErrOAuthInvalidGrant, func() error { return response.BadRequest(c, errors.ErrOAuthInvalidGrant) })
 	}
 }
 
@@ -223,12 +273,12 @@ func (h *OAuthHandler) UserInfo(c fiber.Ctx) error {
 	info, err := h.oauthService.GetUserInfo(c.Context(), userUUID, scope)
 	if err != nil {
 		if appErr, ok := err.(*errors.AppError); ok {
-			return response.NotFound(c, appErr.Code)
+			return h.protoErr(c, appErr.Code, func() error { return response.NotFound(c, appErr.Code) })
 		}
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
 
-	return response.Success(c, info)
+	return h.okJSON(c, info)
 }
 
 // GetClientPublic returns public-safe metadata for an OAuth client.
@@ -325,15 +375,18 @@ func (h *OAuthHandler) Revoke(c fiber.Ctx) error {
 		TokenTypeHint string `json:"token_type_hint"`
 	}
 	if err := c.Bind().JSON(&req); err != nil {
-		return response.BadRequest(c, errors.ErrBadRequest)
+		return h.protoErr(c, errors.ErrBadRequest, func() error { return response.BadRequest(c, errors.ErrBadRequest) })
 	}
 
 	if req.Token == "" {
-		return response.BadRequest(c, errors.ErrBadRequest)
+		return h.protoErr(c, errors.ErrBadRequest, func() error { return response.BadRequest(c, errors.ErrBadRequest) })
 	}
 
 	_ = h.oauthService.RevokeToken(c.Context(), req.Token, req.TokenTypeHint)
 
-	// RFC 7009: always return 200 OK regardless of whether the token was found
+	// RFC 7009: always return 200 OK regardless of whether the token was found.
+	if h.stdWire() {
+		return c.SendStatus(fiber.StatusOK) // empty body, no envelope
+	}
 	return response.Success(c, nil)
 }

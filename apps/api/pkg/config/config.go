@@ -197,6 +197,12 @@ type OIDCConfig struct {
 	// verification disabled (HS256-only), which is safe until asymmetric signing
 	// is enabled. Env: KUN_OIDC_JWKS_URL.
 	JWKSURL string
+	// StandardWire makes the OAuth/OIDC protocol endpoints (/oauth/token,
+	// /oauth/userinfo, /oauth/revoke) emit spec-compliant top-level JSON +
+	// standard OAuth error objects instead of the private {code,message,data}
+	// envelope. Default false. Flip only after every first-party RP is a
+	// tolerant reader (Phase 3 expand→contract). Env: KUN_OIDC_STANDARD_WIRE.
+	StandardWire bool
 }
 
 // AuthConfig holds auth-flow-tunable parameters that aren't tied to a
@@ -281,11 +287,13 @@ func Load() (*Config, error) {
 	// OIDC config. Issuer is the OAuth server's public base URL (== SiteURL);
 	// KeyEncKey encrypts signing private keys at rest (only cmd/oauth needs it).
 	signAsym, _ := strconv.ParseBool(getEnv("KUN_OIDC_SIGN_ASYMMETRIC", "false"))
+	stdWire, _ := strconv.ParseBool(getEnv("KUN_OIDC_STANDARD_WIRE", "false"))
 	cfg.OIDC = OIDCConfig{
 		Issuer:         cfg.Server.SiteURL,
 		KeyEncKey:      getEnv("KUN_OIDC_KEY_ENC_KEY", ""),
 		SignAsymmetric: signAsym,
 		JWKSURL:        getEnv("KUN_OIDC_JWKS_URL", ""),
+		StandardWire:   stdWire,
 	}
 
 	// Auth config — verification-code TTL and other auth-flow knobs.
