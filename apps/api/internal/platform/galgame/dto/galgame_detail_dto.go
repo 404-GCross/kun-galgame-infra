@@ -371,3 +371,11 @@ type MineGalgameListData struct {
 	Items []MineGalgame `json:"items"`
 	Total int64         `json:"total"`
 }
+
+// MessageMineData is the body of GET /galgame/messages/mine: the viewer's own
+// galgame notifications. (MessageResponse.CreatedAt is a model.Timestamp, now
+// typed by its huma.SchemaProvider as a date-time string.)
+type MessageMineData struct {
+	Items []MessageResponse `json:"items"`
+	Total int64             `json:"total"`
+}

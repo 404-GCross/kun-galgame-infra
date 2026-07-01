@@ -55,6 +55,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/galgame/messages/feed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Galgame notification feed (S2S; kungal/moyu cron pulls these) */
+        get: operations["getGalgameMessagesFeed"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/galgame/messages/mine": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The viewer's own galgame notifications */
+        get: operations["getMyGalgameMessages"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/galgame/mine": {
         parameters: {
             query?: never;
@@ -340,6 +374,30 @@ export interface components {
             /** Format: int64 */
             code: number;
             data: components["schemas"]["GalgameDetailBrief"][] | null;
+            message: string;
+        };
+        CalEnvelopeMessageFeedResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/CalEnvelopeMessageFeedResponse.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            code: number;
+            data: components["schemas"]["MessageFeedResponse"];
+            message: string;
+        };
+        CalEnvelopeMessageMineData: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/CalEnvelopeMessageMineData.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            code: number;
+            data: components["schemas"]["MessageMineData"];
             message: string;
         };
         CalEnvelopeMineGalgameListData: {
@@ -798,6 +856,46 @@ export interface components {
             view: number;
             vndb_id: string;
         };
+        MessageFeedResponse: {
+            has_more: boolean;
+            items: components["schemas"]["MessageResponse"][] | null;
+        };
+        MessageGalgameBrief: {
+            banner: string;
+            effective_banner_hash?: string;
+            /** Format: int64 */
+            id: number;
+            name_en_us: string;
+            name_ja_jp: string;
+            name_zh_cn: string;
+            name_zh_tw: string;
+            /** Format: int64 */
+            status: number;
+            /** Format: int64 */
+            user_id: number;
+            vndb_id: string;
+        };
+        MessageMineData: {
+            items: components["schemas"]["MessageResponse"][] | null;
+            /** Format: int64 */
+            total: number;
+        };
+        MessageResponse: {
+            actor?: components["schemas"]["UserBrief"];
+            /** Format: int64 */
+            actor_user_id?: number;
+            /** Format: date-time */
+            created_at: string | null;
+            galgame?: components["schemas"]["MessageGalgameBrief"];
+            /** Format: int64 */
+            galgame_id: number;
+            /** Format: int64 */
+            id: number;
+            payload?: unknown;
+            /** Format: int64 */
+            target_user_id?: number;
+            type: string;
+        };
         MineGalgame: {
             banner: string;
             content_limit: string;
@@ -996,6 +1094,74 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CalEnvelopeCheckVNDBResult"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    getGalgameMessagesFeed: {
+        parameters: {
+            query?: {
+                /** @description Cursor: return messages with id > since_id */
+                since_id?: number;
+                /** @description Max items */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalEnvelopeMessageFeedResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    getMyGalgameMessages: {
+        parameters: {
+            query?: {
+                /** @description Cursor: return messages with id > since_id */
+                since_id?: number;
+                /** @description Max items (1-100) */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalEnvelopeMessageMineData"];
                 };
             };
             /** @description Error */

@@ -123,11 +123,21 @@ type recentTaxonomyOutput struct {
 	Body calEnvelope[dto.TaxonomyFeedResponse]
 }
 
-// NOTE: /messages/feed + /messages/mine are intentionally NOT specced yet. Their
-// dto.MessageResponse carries a model.Timestamp field, which Huma renders as an
-// opaque object schema (Record<string, never>) instead of the RFC3339 string the
-// wire actually sends. Fix first (a huma.SchemaProvider on model.Timestamp/Date,
-// or a spec-safe message DTO with string timestamps), then add these ops.
+type messagesFeedInput struct {
+	SinceID int64 `query:"since_id" doc:"Cursor: return messages with id > since_id"`
+	Limit   int   `query:"limit" doc:"Max items"`
+}
+type messagesFeedOutput struct {
+	Body calEnvelope[dto.MessageFeedResponse]
+}
+
+type messagesMineInput struct {
+	SinceID int64 `query:"since_id" doc:"Cursor: return messages with id > since_id"`
+	Limit   int   `query:"limit" doc:"Max items (1-100)"`
+}
+type messagesMineOutput struct {
+	Body calEnvelope[dto.MessageMineData]
+}
 
 type mineInput struct {
 	Status string `query:"status" doc:"Filter by submission status"`
@@ -200,6 +210,14 @@ func SetupGalgameReadSpec(app *fiber.App) huma.API {
 		OperationID: "getMyGalgameSubmissions", Method: http.MethodGet, Path: "/api/galgame/mine",
 		Summary: "The viewer's own galgame submissions (all statuses)", Tags: tags,
 	}, func(context.Context, *mineInput) (*mineOutput, error) { return &mineOutput{}, nil })
+	huma.Register(api, huma.Operation{
+		OperationID: "getGalgameMessagesFeed", Method: http.MethodGet, Path: "/api/galgame/messages/feed",
+		Summary: "Galgame notification feed (S2S; kungal/moyu cron pulls these)", Tags: tags,
+	}, func(context.Context, *messagesFeedInput) (*messagesFeedOutput, error) { return &messagesFeedOutput{}, nil })
+	huma.Register(api, huma.Operation{
+		OperationID: "getMyGalgameMessages", Method: http.MethodGet, Path: "/api/galgame/messages/mine",
+		Summary: "The viewer's own galgame notifications", Tags: tags,
+	}, func(context.Context, *messagesMineInput) (*messagesMineOutput, error) { return &messagesMineOutput{}, nil })
 	registerGalgameSearchOps(api, tags)
 	return api
 }
