@@ -88,6 +88,44 @@ type userStatsOutput struct {
 type gidInput struct {
 	GID int `path:"gid" doc:"Galgame ID"`
 }
+
+type revisionsInput struct {
+	GID          int  `path:"gid" doc:"Galgame ID"`
+	Page         int  `query:"page" doc:"Page number (default 1)"`
+	Limit        int  `query:"limit" doc:"Items per page (default 20)"`
+	IncludeMinor bool `query:"include_minor" doc:"Include minor (enrichment) revisions"`
+}
+type revisionsOutput struct {
+	Body calEnvelope[dto.RevisionListData]
+}
+
+type revisionInput struct {
+	GID int `path:"gid" doc:"Galgame ID"`
+	Rev int `path:"rev" doc:"Revision number"`
+}
+type revisionOutput struct {
+	Body calEnvelope[dto.RevisionResponse]
+}
+type revisionDiffOutput struct {
+	Body calEnvelope[dto.RevisionDiffData]
+}
+
+type prsInput struct {
+	GID   int `path:"gid" doc:"Galgame ID"`
+	Page  int `query:"page" doc:"Page number (default 1)"`
+	Limit int `query:"limit" doc:"Items per page"`
+}
+type prsOutput struct {
+	Body calEnvelope[dto.PRListData]
+}
+
+type prInput struct {
+	GID int `path:"gid" doc:"Galgame ID"`
+	ID  int `path:"id" doc:"PR ID"`
+}
+type prOutput struct {
+	Body calEnvelope[dto.PRDetailData]
+}
 type linksOutput struct {
 	Body calEnvelope[[]dto.DetailLink]
 }
@@ -198,6 +236,26 @@ func SetupGalgameReadSpec(app *fiber.App) huma.API {
 		OperationID: "checkGalgameVNDB", Method: http.MethodGet, Path: "/api/galgame/check",
 		Summary: "Whether a vndb_id already exists (and which galgame holds it)", Tags: tags,
 	}, func(context.Context, *checkVNDBInput) (*checkVNDBOutput, error) { return &checkVNDBOutput{}, nil })
+	huma.Register(api, huma.Operation{
+		OperationID: "listGalgameRevisions", Method: http.MethodGet, Path: "/api/galgame/{gid}/revisions",
+		Summary: "A galgame's edit history (revisions, paginated)", Tags: tags,
+	}, func(context.Context, *revisionsInput) (*revisionsOutput, error) { return &revisionsOutput{}, nil })
+	huma.Register(api, huma.Operation{
+		OperationID: "getGalgameRevision", Method: http.MethodGet, Path: "/api/galgame/{gid}/revisions/{rev}",
+		Summary: "One revision (with its full snapshot)", Tags: tags,
+	}, func(context.Context, *revisionInput) (*revisionOutput, error) { return &revisionOutput{}, nil })
+	huma.Register(api, huma.Operation{
+		OperationID: "getGalgameRevisionDiff", Method: http.MethodGet, Path: "/api/galgame/{gid}/revisions/{rev}/diff",
+		Summary: "A revision's diff vs its predecessor (changed keys + old/new snapshot + entity names)", Tags: tags,
+	}, func(context.Context, *revisionInput) (*revisionDiffOutput, error) { return &revisionDiffOutput{}, nil })
+	huma.Register(api, huma.Operation{
+		OperationID: "listGalgamePRs", Method: http.MethodGet, Path: "/api/galgame/{gid}/prs",
+		Summary: "A galgame's pull requests (edit proposals, paginated)", Tags: tags,
+	}, func(context.Context, *prsInput) (*prsOutput, error) { return &prsOutput{}, nil })
+	huma.Register(api, huma.Operation{
+		OperationID: "getGalgamePR", Method: http.MethodGet, Path: "/api/galgame/{gid}/prs/{id}",
+		Summary: "One PR with its diff vs the base revision", Tags: tags,
+	}, func(context.Context, *prInput) (*prOutput, error) { return &prOutput{}, nil })
 	huma.Register(api, huma.Operation{
 		OperationID: "getRecentGalgameRevisions", Method: http.MethodGet, Path: "/api/galgame/revisions/recent",
 		Summary: "Recent merged galgame edit (revision) events — S2S activity feed", Tags: tags,

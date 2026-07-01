@@ -276,6 +276,91 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/galgame/{gid}/prs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** A galgame's pull requests (edit proposals, paginated) */
+        get: operations["listGalgamePRs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/galgame/{gid}/prs/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One PR with its diff vs the base revision */
+        get: operations["getGalgamePR"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/galgame/{gid}/revisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** A galgame's edit history (revisions, paginated) */
+        get: operations["listGalgameRevisions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/galgame/{gid}/revisions/{rev}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One revision (with its full snapshot) */
+        get: operations["getGalgameRevision"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/galgame/{gid}/revisions/{rev}/diff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** A revision's diff vs its predecessor (changed keys + old/new snapshot + entity names) */
+        get: operations["getGalgameRevisionDiff"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -412,6 +497,42 @@ export interface components {
             data: components["schemas"]["MineGalgameListData"];
             message: string;
         };
+        CalEnvelopePRDetailData: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/CalEnvelopePRDetailData.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            code: number;
+            data: components["schemas"]["PRDetailData"];
+            message: string;
+        };
+        CalEnvelopePRListData: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/CalEnvelopePRListData.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            code: number;
+            data: components["schemas"]["PRListData"];
+            message: string;
+        };
+        CalEnvelopeRevisionDiffData: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/CalEnvelopeRevisionDiffData.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            code: number;
+            data: components["schemas"]["RevisionDiffData"];
+            message: string;
+        };
         CalEnvelopeRevisionFeedResponse: {
             /**
              * Format: uri
@@ -422,6 +543,30 @@ export interface components {
             /** Format: int64 */
             code: number;
             data: components["schemas"]["RevisionFeedResponse"];
+            message: string;
+        };
+        CalEnvelopeRevisionListData: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/CalEnvelopeRevisionListData.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            code: number;
+            data: components["schemas"]["RevisionListData"];
+            message: string;
+        };
+        CalEnvelopeRevisionResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/CalEnvelopeRevisionResponse.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            code: number;
+            data: components["schemas"]["RevisionResponse"];
             message: string;
         };
         CalEnvelopeTaxonomyFeedResponse: {
@@ -918,6 +1063,51 @@ export interface components {
             /** Format: int64 */
             total: number;
         };
+        PRDetailData: {
+            changed_keys: {
+                [key: string]: boolean;
+            };
+            names: components["schemas"]["SnapshotEntityNames"];
+            pr: components["schemas"]["PRResponse"];
+        };
+        PRListData: {
+            items: components["schemas"]["PRResponse"][] | null;
+            /** Format: int64 */
+            total: number;
+        };
+        PRResponse: {
+            /** Format: int64 */
+            base_revision: number;
+            /** Format: int64 */
+            completed_by?: number;
+            /** Format: date-time */
+            completed_time?: string;
+            /** Format: date-time */
+            created: string | null;
+            /** Format: int64 */
+            galgame_id: number;
+            /** Format: int64 */
+            id: number;
+            message: string;
+            /** Format: int64 */
+            revision_id?: number;
+            snapshot: components["schemas"]["Snapshot"];
+            /** Format: int64 */
+            status: number;
+            title: string;
+            /** Format: date-time */
+            updated: string | null;
+            /** Format: int64 */
+            user_id: number;
+        };
+        RevisionDiffData: {
+            changed_keys: {
+                [key: string]: boolean;
+            };
+            names: components["schemas"]["SnapshotEntityNames"];
+            new: components["schemas"]["Snapshot"];
+            old: components["schemas"]["Snapshot"];
+        };
         RevisionFeedItem: {
             action: string;
             created: string;
@@ -933,6 +1123,103 @@ export interface components {
         RevisionFeedResponse: {
             has_more: boolean;
             items: components["schemas"]["RevisionFeedItem"][] | null;
+        };
+        RevisionListData: {
+            items: components["schemas"]["RevisionResponse"][] | null;
+            /** Format: int64 */
+            total: number;
+        };
+        RevisionResponse: {
+            action: string;
+            changed_fields?: string[] | null;
+            /** Format: date-time */
+            created: string | null;
+            /** Format: int64 */
+            galgame_id: number;
+            /** Format: int64 */
+            id: number;
+            is_minor: boolean;
+            note: string;
+            /** Format: int64 */
+            reverted_to?: number;
+            /** Format: int64 */
+            revision: number;
+            snapshot: components["schemas"]["Snapshot"];
+            /** Format: int64 */
+            user_id: number;
+        };
+        Snapshot: {
+            age_limit: string;
+            aliases: string[] | null;
+            banner: string;
+            /** Format: int64 */
+            bid?: number;
+            content_limit: string;
+            covers: components["schemas"]["SnapshotCover"][] | null;
+            engine_ids: number[] | null;
+            intro_en_us: string;
+            intro_ja_jp: string;
+            intro_zh_cn: string;
+            intro_zh_tw: string;
+            links: components["schemas"]["SnapshotLink"][] | null;
+            name_en_us: string;
+            name_ja_jp: string;
+            name_zh_cn: string;
+            name_zh_tw: string;
+            official_ids: number[] | null;
+            original_language: string;
+            release_date: string | null;
+            release_date_tba: boolean;
+            release_precision?: string;
+            screenshots: components["schemas"]["SnapshotScreenshot"][] | null;
+            /** Format: int64 */
+            series_id: number | null;
+            tag_ids: number[] | null;
+            vndb_id: string;
+        };
+        SnapshotCover: {
+            image_hash: string;
+            kind: string;
+            /** Format: int32 */
+            sexual: number;
+            /** Format: int64 */
+            sort_order: number;
+            source: string;
+            source_key: string;
+            /** Format: int32 */
+            violence: number;
+        };
+        SnapshotEntityNames: {
+            engines: {
+                [key: string]: string;
+            };
+            officials: {
+                [key: string]: string;
+            };
+            series: {
+                [key: string]: string;
+            };
+            tags: {
+                [key: string]: string;
+            };
+        };
+        SnapshotLink: {
+            link: string;
+            name: string;
+            source: string;
+            source_key: string;
+        };
+        SnapshotScreenshot: {
+            caption: string;
+            image_hash: string;
+            /** Format: int32 */
+            sexual: number;
+            /** Format: int64 */
+            sort_order: number;
+            source: string;
+            source_key: string;
+            /** Format: int32 */
+            violence: number;
         };
         TaxonomyFeedItem: {
             action: string;
@@ -1581,6 +1868,184 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CalEnvelopeListDetailLink"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    listGalgamePRs: {
+        parameters: {
+            query?: {
+                /** @description Page number (default 1) */
+                page?: number;
+                /** @description Items per page */
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                /** @description Galgame ID */
+                gid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalEnvelopePRListData"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    getGalgamePR: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Galgame ID */
+                gid: number;
+                /** @description PR ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalEnvelopePRDetailData"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    listGalgameRevisions: {
+        parameters: {
+            query?: {
+                /** @description Page number (default 1) */
+                page?: number;
+                /** @description Items per page (default 20) */
+                limit?: number;
+                /** @description Include minor (enrichment) revisions */
+                include_minor?: boolean;
+            };
+            header?: never;
+            path: {
+                /** @description Galgame ID */
+                gid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalEnvelopeRevisionListData"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    getGalgameRevision: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Galgame ID */
+                gid: number;
+                /** @description Revision number */
+                rev: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalEnvelopeRevisionResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    getGalgameRevisionDiff: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Galgame ID */
+                gid: number;
+                /** @description Revision number */
+                rev: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalEnvelopeRevisionDiffData"];
                 };
             };
             /** @description Error */

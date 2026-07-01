@@ -55,7 +55,7 @@ func (h *RevisionHandler) ListRevisions(c fiber.Ctx) error {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
 
-	return response.Success(c, fiber.Map{"items": items, "total": total})
+	return response.Success(c, dto.RevisionListData{Items: dto.NewRevisionResponses(items), Total: total})
 }
 
 // RecentRevisions serves GET /galgame/revisions/recent — the merged-revision
@@ -97,7 +97,7 @@ func (h *RevisionHandler) GetRevision(c fiber.Ctx) error {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
 
-	return response.Success(c, revision)
+	return response.Success(c, dto.NewRevisionResponse(revision))
 }
 
 // GetRevisionDiff returns the diff between a revision and its predecessor
@@ -130,11 +130,11 @@ func (h *RevisionHandler) GetRevisionDiff(c fiber.Ctx) error {
 	// service.LookupSnapshotNames for the cost / scope discussion.
 	names := h.svc.LookupSnapshotNames(c.Context(), oldSnapshot, newSnapshot)
 
-	return response.Success(c, fiber.Map{
-		"changed_keys": changedKeys,
-		"old":          oldSnapshot,
-		"new":          newSnapshot,
-		"names":        names,
+	return response.Success(c, dto.RevisionDiffData{
+		ChangedKeys: changedKeys,
+		Old:         oldSnapshot,
+		New:         newSnapshot,
+		Names:       names,
 	})
 }
 
@@ -202,7 +202,7 @@ func (h *RevisionHandler) ListPRs(c fiber.Ctx) error {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
 
-	return response.Success(c, fiber.Map{"items": items, "total": total})
+	return response.Success(c, dto.PRListData{Items: dto.NewPRResponses(items), Total: total})
 }
 
 // GetPR returns a PR with its diff against the base revision
@@ -244,10 +244,10 @@ func (h *RevisionHandler) GetPR(c fiber.Ctx) error {
 	// maps).
 	names := h.svc.LookupSnapshotNames(c.Context(), baseSnapshot, prSnapshot)
 
-	return response.Success(c, fiber.Map{
-		"pr":           pr,
-		"changed_keys": changedKeys,
-		"names":        names,
+	return response.Success(c, dto.PRDetailData{
+		PR:          dto.NewPRResponse(pr),
+		ChangedKeys: changedKeys,
+		Names:       names,
 	})
 }
 
