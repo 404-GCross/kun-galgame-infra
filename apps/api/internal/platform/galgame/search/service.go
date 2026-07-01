@@ -245,6 +245,7 @@ type EntitySearchResponse[T any] struct {
 // SearchTags runs a tag search.
 func (s *Service) SearchTags(ctx context.Context, req *TagSearchRequest) (*EntitySearchResponse[TagDoc], error) {
 	normalizeLimit(&req.Limit, 50, 100)
+	req.Query = sanitizeQuery(req.Query)
 
 	msReq := &meilisearch.SearchRequest{
 		HitsPerPage: int64(req.Limit),
@@ -282,6 +283,7 @@ type OfficialSearchRequest struct {
 // SearchOfficials runs an official search.
 func (s *Service) SearchOfficials(ctx context.Context, req *OfficialSearchRequest) (*EntitySearchResponse[OfficialDoc], error) {
 	normalizeLimit(&req.Limit, 50, 100)
+	req.Query = sanitizeQuery(req.Query)
 
 	msReq := &meilisearch.SearchRequest{
 		HitsPerPage: int64(req.Limit),
@@ -318,10 +320,36 @@ func (s *Service) SearchOfficials(ctx context.Context, req *OfficialSearchReques
 // ─────────────────────────── helpers ───────────────────────────
 
 func (r *GalgameSearchRequest) normalize() {
+	r.Query = sanitizeQuery(r.Query)
 	if r.Page < 1 {
 		r.Page = 1
 	}
 	normalizeLimit(&r.Limit, 24, 100)
+}
+
+// sanitizeQuery neutralizes Meilisearch's full-text query-string operators so a
+// plain title/name search box can't silently sabotage itself. Meilisearch (since
+// v1.8) treats a leading '-' on a term as NEGATION ("-word" excludes documents
+// containing that word) and '"' as phrase delimiters — and exposes NO
+// server-side switch to turn them off. VNDB titles routinely use the
+// "-サブタイトル-" convention (e.g. `CRAZY CHA!N -エルピスの鎖-`): pasted verbatim
+// into the search box, `-エルピスの鎖` was parsed as "exclude エルピスの鎖",
+// excluding the very game being searched — so searching a game by its exact name
+// returned zero (or the wrong) results. Both '-' and '"' are already tokenizer
+// separators, so mapping them to spaces is lossless for matching while stripping
+// the accidental operators. This is a title-lookup box, not an advanced-query
+// DSL, so no expressive power is lost. Only ASCII '-' (U+002D) triggers negation;
+// the Japanese long-vowel mark 'ー' (U+30FC) is a letter and left untouched.
+func sanitizeQuery(q string) string {
+	if strings.ContainsAny(q, "-\"") {
+		q = strings.Map(func(r rune) rune {
+			if r == '-' || r == '"' {
+				return ' '
+			}
+			return r
+		}, q)
+	}
+	return strings.TrimSpace(q)
 }
 
 func normalizeLimit(limit *int, def, max int) {

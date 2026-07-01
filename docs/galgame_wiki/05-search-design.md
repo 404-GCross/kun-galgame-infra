@@ -173,6 +173,8 @@ KUN_MEILISEARCH_INDEX_PREFIX=             # 可选：dev_ / staging_ 之类
 | `facets` | bool | `true` | 是否返回 facet 聚合 |
 | `highlight` | bool | `true` | 是否返回高亮片段 |
 
+**`q` 是纯文本，不是查询 DSL（`sanitizeQuery`）**：Meilisearch（v1.8+）在 `q` 里把前导 `-` 当作**取反算符**（`-word` = 排除含 word 的文档）、把 `"` 当作短语定界符，且**没有服务端开关可以关闭**。VNDB 标题大量使用 `-副标题-` 命名（如 `CRAZY CHA!N -エルピスの鎖-`）——用户原样粘贴标题搜索时，`-エルピスの鎖` 被解析成"排除 エルピスの鎖"，反而把要找的那部游戏排除掉 → 用游戏原名搜不到它。因此后端在进入 Meilisearch 前，对 galgame / tag / official 三个搜索的 `q` 统一做一次 `sanitizeQuery`：把 ASCII `-`、`"` 替换成空格（二者本就是分词分隔符，替换对匹配无损），再 TrimSpace。日文长音符 `ー`（U+30FC）是字母、非 ASCII `-`，不受影响。这是标题检索框，不是高级查询语法，不损失表达力。**纯查询层修复，改动即生效，不需要重建索引。**
+
 **后端 → Meilisearch 转换**：
 
 ```jsonc

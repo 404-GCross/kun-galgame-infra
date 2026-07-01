@@ -131,6 +131,30 @@ func TestParseReleased(t *testing.T) {
 	}
 }
 
+// TestSanitizeQuery locks in the neutralization of Meilisearch's query-string
+// operators (see sanitizeQuery). The regression that motivated it: VNDB's
+// "-サブタイトル-" title convention — pasted verbatim, the leading '-' was parsed
+// as NEGATION and excluded the game from its own name search.
+func TestSanitizeQuery(t *testing.T) {
+	cases := map[string]string{
+		// the reported bug: dash-delimited subtitle must not negate
+		"CRAZY CHA!N -エルピスの鎖-": "CRAZY CHA!N  エルピスの鎖",
+		"-エルピス":                 "エルピス", // bare leading-dash negation neutralized
+		`"CLANNAD"`:              "CLANNAD", // phrase quotes stripped
+		"Steins-Gate":           "Steins Gate", // internal dash → space (tokenizer splits it anyway)
+		// untouched cases
+		"CLANNAD":  "CLANNAD",
+		"ファントム":    "ファントム",
+		"":         "",
+		"  spaced  ": "spaced",
+		// Japanese long-vowel mark (U+30FC) is a letter, NOT ASCII '-' — keep it
+		"ソードアート": "ソードアート",
+	}
+	for in, want := range cases {
+		assert.Equal(t, want, sanitizeQuery(in), "in=%q", in)
+	}
+}
+
 func TestBuildGalgameFilter(t *testing.T) {
 	seven := 7
 	req := &GalgameSearchRequest{
@@ -277,6 +301,38 @@ func TestGalgameSearch_CJK_NoCoTokenNoise(t *testing.T) {
 	resp, err = testSvc.SearchGalgames(context.Background(), &GalgameSearchRequest{Query: "图书馆秘境"})
 	require.NoError(t, err)
 	assert.Equal(t, int64(0), resp.Total, "absent title must return 0, not fuzzy noise")
+}
+
+// TestGalgameSearch_DashSubtitleTitle is the end-to-end regression for the
+// reported bug: a game whose only name is a "-サブタイトル-" title
+// (`CRAZY CHA!N -エルピスの鎖-`, VNDB v54934, a status=2 draft) was unfindable by
+// its exact name because Meilisearch parsed `-エルピスの鎖` as a NEGATION term and
+// excluded the game itself. sanitizeQuery neutralizes the operator; the verbatim
+// title must now resolve to the game — under the real search path (default
+// MatchingStrategy=All + score floor + status[0,2] filter).
+func TestGalgameSearch_DashSubtitleTitle(t *testing.T) {
+	clearIndex(t, IndexGalgames)
+	d := newGalgameDoc(51456, "v54934", "CRAZY CHA!N -エルピスの鎖-", "")
+	d.Status = 2 // unclaimed VNDB draft, as on prod
+	seedGalgames(t, d)
+
+	// The verbatim title (dashes included) must find the game.
+	resp, err := testSvc.SearchGalgames(context.Background(), &GalgameSearchRequest{
+		Query:    "CRAZY CHA!N -エルピスの鎖-",
+		Statuses: []int{0, 2}, // publish/claim search scope
+	})
+	require.NoError(t, err)
+	require.Equal(t, int64(1), resp.Total, "verbatim dash-subtitle title must resolve to the game")
+	assert.EqualValues(t, 51456, resp.Items[0]["id"])
+
+	// A genuine negation intent is intentionally NOT supported here — the '-' is
+	// neutralized, so this still finds the game rather than excluding it.
+	resp, err = testSvc.SearchGalgames(context.Background(), &GalgameSearchRequest{
+		Query:    "CRAZY -エルピス",
+		Statuses: []int{0, 2},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), resp.Total, "leading-dash must not act as a negation operator")
 }
 
 func TestGalgameSearch_ByVNDBID(t *testing.T) {
