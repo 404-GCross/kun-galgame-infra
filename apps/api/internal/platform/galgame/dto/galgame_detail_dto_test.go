@@ -85,3 +85,36 @@ func TestGalgameDetail_WireIdenticalToModel(t *testing.T) {
 	assert.JSONEq(t, string(oldJSON), string(newJSON),
 		"GalgameDetail must be wire-identical to the FindByID-preloaded model.Galgame")
 }
+
+// TestGalgameDetail_WireIdenticalToListSubset covers GET /galgame (list), whose
+// items are a lighter preload subset (Tag.Tag / Official.Official (no alias) /
+// Cover) — the un-preloaded relations must be absent, matching the raw model.
+func TestGalgameDetail_WireIdenticalToListSubset(t *testing.T) {
+	ts := model.Timestamp(time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC))
+	g := &model.Galgame{
+		ID: 2, VNDBID: "v1", NameZhCN: "列表项", Banner: "b", ContentLimit: "sfw",
+		ReleasePrecision: "day", OriginalLanguage: "ja-jp", AgeLimit: "r18",
+		UserID: 1, Created: ts, Updated: ts, ResourceUpdateTime: ts,
+		Tag: []model.GalgameTagRelation{
+			{GalgameID: 2, TagID: 40, Source: "vndb", Created: ts, Updated: ts,
+				Tag: &model.GalgameTag{ID: 40, Name: "校园", Category: "content", Created: ts, Updated: ts, GalgameCount: 9}},
+		},
+		Official: []model.GalgameOfficialRelation{
+			// list preloads Official.Official WITHOUT its Alias
+			{GalgameID: 2, OfficialID: 144, Source: "vndb", Created: ts, Updated: ts,
+				Official: &model.GalgameOfficial{ID: 144, Name: "O", Category: "company", Created: ts, Updated: ts, GalgameCount: 42}},
+		},
+		Cover: []model.GalgameCover{
+			{GalgameID: 2, ImageHash: "h0", SortOrder: 0, Source: "vndb", SourceKey: "cv1", Kind: "main", Created: ts},
+		},
+	}
+	model.PopulateEffectiveBanner(g)
+
+	oldJSON, err := json.Marshal(g)
+	require.NoError(t, err)
+	newJSON, err := json.Marshal(NewGalgameDetail(g))
+	require.NoError(t, err)
+
+	assert.JSONEq(t, string(oldJSON), string(newJSON),
+		"GalgameDetail must be wire-identical for the lighter list preload subset")
+}

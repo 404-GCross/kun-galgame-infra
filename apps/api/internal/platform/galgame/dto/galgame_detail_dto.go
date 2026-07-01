@@ -323,3 +323,21 @@ func NewGalgameDetail(g *model.Galgame) GalgameDetail {
 	}
 	return d
 }
+
+// NewGalgameDetails maps a slice of galgames to detail DTOs. Used by GET /galgame
+// (list) too: its items are a lighter preload subset (Tag.Tag / Official.Official
+// / Cover), and GalgameDetail's relations are all omitempty, so the un-preloaded
+// ones are simply absent — the same shape the raw model already marshals to.
+func NewGalgameDetails(gs []model.Galgame) []GalgameDetail {
+	out := make([]GalgameDetail, 0, len(gs))
+	for i := range gs {
+		out = append(out, NewGalgameDetail(&gs[i]))
+	}
+	return out
+}
+
+// GalgameListData is the `data` payload of GET /galgame (list): items + total.
+type GalgameListData struct {
+	Items []GalgameDetail `json:"items"`
+	Total int64           `json:"total"`
+}

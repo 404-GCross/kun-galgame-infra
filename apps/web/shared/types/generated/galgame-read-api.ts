@@ -4,6 +4,23 @@
  */
 
 export interface paths {
+    "/api/galgame": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Paginated galgame list (search + sort + release-date filters); items are the full galgame shape with the list's preload subset populated */
+        get: operations["listGalgames"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/galgame/batch": {
         parameters: {
             query?: never;
@@ -52,6 +69,18 @@ export interface components {
             /** Format: int64 */
             code: number;
             data: components["schemas"]["GalgameDetailResponse"];
+            message: string;
+        };
+        CalEnvelopeGalgameListData: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/CalEnvelopeGalgameListData.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            code: number;
+            data: components["schemas"]["GalgameListData"];
             message: string;
         };
         CalEnvelopeListGalgameDetailBrief: {
@@ -353,6 +382,11 @@ export interface components {
                 [key: string]: components["schemas"]["UserBrief"];
             };
         };
+        GalgameListData: {
+            items: components["schemas"]["GalgameDetail"][] | null;
+            /** Format: int64 */
+            total: number;
+        };
         UserBrief: {
             avatar: string;
             avatar_image_hash?: string;
@@ -369,6 +403,54 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    listGalgames: {
+        parameters: {
+            query?: {
+                /** @description Page number (default 1) */
+                page?: number;
+                /** @description Items per page 1-50 (default 24) */
+                limit?: number;
+                /** @description Sort field (default created) */
+                sort_field?: "created" | "updated" | "view" | "resource_update_time" | "release_date";
+                /** @description Sort direction (default desc) */
+                sort_order?: "asc" | "desc";
+                /** @description Keyword across the four localized names */
+                search?: string;
+                /** @description sfw | nsfw | all (default sfw) */
+                content_limit?: string;
+                /** @description Release lower bound, YYYY or YYYY-MM */
+                released_from?: string;
+                /** @description Release upper bound, YYYY or YYYY-MM */
+                released_to?: string;
+                /** @description CSV of discontinuous months 1-12, AND'd on the year range */
+                released_months?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalEnvelopeGalgameListData"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
     batchGetGalgames: {
         parameters: {
             query?: {

@@ -24,6 +24,22 @@ import (
 	"github.com/gofiber/fiber/v3"
 )
 
+type listInput struct {
+	Page           int    `query:"page" doc:"Page number (default 1)"`
+	Limit          int    `query:"limit" doc:"Items per page 1-50 (default 24)"`
+	SortField      string `query:"sort_field" enum:"created,updated,view,resource_update_time,release_date" doc:"Sort field (default created)"`
+	SortOrder      string `query:"sort_order" enum:"asc,desc" doc:"Sort direction (default desc)"`
+	Search         string `query:"search" doc:"Keyword across the four localized names"`
+	ContentLimit   string `query:"content_limit" doc:"sfw | nsfw | all (default sfw)"`
+	ReleasedFrom   string `query:"released_from" doc:"Release lower bound, YYYY or YYYY-MM"`
+	ReleasedTo     string `query:"released_to" doc:"Release upper bound, YYYY or YYYY-MM"`
+	ReleasedMonths string `query:"released_months" doc:"CSV of discontinuous months 1-12, AND'd on the year range"`
+}
+
+type listOutput struct {
+	Body calEnvelope[dto.GalgameListData]
+}
+
 type batchInput struct {
 	IDs          string `query:"ids" doc:"Comma-separated galgame IDs (1-100)"`
 	ContentLimit string `query:"content_limit" doc:"sfw | nsfw | all (default sfw)"`
@@ -61,6 +77,10 @@ func SetupGalgameReadSpec(app *fiber.App) huma.API {
 	api := humafiber.New(app, cfg)
 
 	tags := []string{"galgame-read"}
+	huma.Register(api, huma.Operation{
+		OperationID: "listGalgames", Method: http.MethodGet, Path: "/api/galgame",
+		Summary: "Paginated galgame list (search + sort + release-date filters); items are the full galgame shape with the list's preload subset populated", Tags: tags,
+	}, func(context.Context, *listInput) (*listOutput, error) { return &listOutput{}, nil })
 	huma.Register(api, huma.Operation{
 		OperationID: "batchGetGalgames", Method: http.MethodGet, Path: "/api/galgame/batch",
 		Summary: "Batch galgame briefs (view=brief default; view=detail adds intro/officials/release)", Tags: tags,

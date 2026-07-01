@@ -22,6 +22,28 @@ components:
         - message
         - data
       type: object
+    CalEnvelopeGalgameListData:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/CalEnvelopeGalgameListData.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/GalgameListData"
+        message:
+          type: string
+      required:
+        - code
+        - message
+        - data
+      type: object
     CalEnvelopeListGalgameDetailBrief:
       additionalProperties: false
       properties:
@@ -783,6 +805,22 @@ components:
         - galgame
         - users
       type: object
+    GalgameListData:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: "#/components/schemas/GalgameDetail"
+          type:
+            - array
+            - "null"
+        total:
+          format: int64
+          type: integer
+      required:
+        - items
+        - total
+      type: object
     UserBrief:
       additionalProperties: false
       properties:
@@ -805,6 +843,100 @@ info:
   version: 1.0.0
 openapi: 3.1.0
 paths:
+  /api/galgame:
+    get:
+      operationId: listGalgames
+      parameters:
+        - description: Page number (default 1)
+          explode: false
+          in: query
+          name: page
+          schema:
+            description: Page number (default 1)
+            format: int64
+            type: integer
+        - description: Items per page 1-50 (default 24)
+          explode: false
+          in: query
+          name: limit
+          schema:
+            description: Items per page 1-50 (default 24)
+            format: int64
+            type: integer
+        - description: Sort field (default created)
+          explode: false
+          in: query
+          name: sort_field
+          schema:
+            description: Sort field (default created)
+            enum:
+              - created
+              - updated
+              - view
+              - resource_update_time
+              - release_date
+            type: string
+        - description: Sort direction (default desc)
+          explode: false
+          in: query
+          name: sort_order
+          schema:
+            description: Sort direction (default desc)
+            enum:
+              - asc
+              - desc
+            type: string
+        - description: Keyword across the four localized names
+          explode: false
+          in: query
+          name: search
+          schema:
+            description: Keyword across the four localized names
+            type: string
+        - description: sfw | nsfw | all (default sfw)
+          explode: false
+          in: query
+          name: content_limit
+          schema:
+            description: sfw | nsfw | all (default sfw)
+            type: string
+        - description: Release lower bound, YYYY or YYYY-MM
+          explode: false
+          in: query
+          name: released_from
+          schema:
+            description: Release lower bound, YYYY or YYYY-MM
+            type: string
+        - description: Release upper bound, YYYY or YYYY-MM
+          explode: false
+          in: query
+          name: released_to
+          schema:
+            description: Release upper bound, YYYY or YYYY-MM
+            type: string
+        - description: CSV of discontinuous months 1-12, AND'd on the year range
+          explode: false
+          in: query
+          name: released_months
+          schema:
+            description: CSV of discontinuous months 1-12, AND'd on the year range
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CalEnvelopeGalgameListData"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Paginated galgame list (search + sort + release-date filters); items are the full galgame shape with the list's preload subset populated
+      tags:
+        - galgame-read
   /api/galgame/batch:
     get:
       operationId: batchGetGalgames

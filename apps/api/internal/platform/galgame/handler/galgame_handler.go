@@ -53,9 +53,9 @@ func (h *GalgameHandler) List(c fiber.Ctx) error {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
 
-	return response.Success(c, fiber.Map{
-		"items": items,
-		"total": total,
+	return response.Success(c, dto.GalgameListData{
+		Items: dto.NewGalgameDetails(items),
+		Total: total,
 	})
 }
 
