@@ -1,0 +1,110 @@
+name: test
+
+# CI test gate for the Go module under apps/api. Two jobs:
+#   unit        — build + vet + `go test ./...` with NO external services.
+#                 Pure unit tests run; every service-gated test skips cleanly
+#                 (they're written to Skip when their env var is unset). This is
+#                 the always-green day-one gate: it catches "compiles but the
+#                 unit logic is wrong".
+#   integration — spins Postgres + Meilisearch service containers and re-runs
+#                 the suite with the env vars the integration tests look for, so
+#                 the galgame service / search / refping tests (which
+#                 self-migrate) actually execute instead of skipping. Auth and
+#                 image tests still skip here (they need a pre-migrated infra DB /
+#                 MinIO — a later follow-up). Marked continue-on-error for now so
+#                 the very first runs can't red a PR while the service-container
+#                 plumbing is observed; flip to required once it's green in CI.
+#
+# Independent of build.yml on purpose — deploys are not blocked while this
+# stabilizes. Add `needs: test` to build.yml once integration is required.
+
+on:
+  push:
+    paths:
+      - "apps/api/**"
+      - ".github/workflows/test.yml"
+  pull_request:
+    paths:
+      - "apps/api/**"
+      - ".github/workflows/test.yml"
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: apps/api
+
+jobs:
+  unit:
+    name: unit (build · vet · test, no services)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/api/go.mod
+          cache-dependency-path: apps/api/go.sum
+      - run: go build ./...
+      - run: go vet ./...
+      - run: go test ./...
+
+  integration:
+    name: integration (postgres + meilisearch)
+    runs-on: ubuntu-latest
+    # First-run safety: don't fail the workflow while the service-container
+    # plumbing is being observed in CI. Remove once a run is confirmed green.
+    continue-on-error: true
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: galtest
+        ports:
+          - 5432:5432
+        # pg_isready ships in the postgres image, so the container-level health
+        # check is reliable — the job waits until Postgres accepts connections.
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      meilisearch:
+        # Pin the same major as prod so tokenization/matching behaviour in the
+        # search tests reflects production.
+        image: getmeili/meilisearch:v1.45
+        env:
+          # >=16 bytes so it's valid regardless of MEILI_ENV.
+          MEILI_MASTER_KEY: citest_meili_master_key_change_me
+          MEILI_NO_ANALYTICS: "true"
+        ports:
+          - 7700:7700
+        # No container health-cmd: the meilisearch image has no guaranteed
+        # curl/wget, so readiness is gated from the runner (which has curl) in a
+        # step below instead.
+    env:
+      # The galgame service + jobs (refping) tests read TEST_DATABASE_DSN and
+      # self-AutoMigrate into it; an empty DB is all they need.
+      TEST_DATABASE_DSN: "host=localhost port=5432 user=postgres password=postgres dbname=galtest sslmode=disable"
+      MEILISEARCH_TEST_HOST: "http://127.0.0.1:7700"
+      MEILISEARCH_TEST_API_KEY: citest_meili_master_key_change_me
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/api/go.mod
+          cache-dependency-path: apps/api/go.sum
+      - name: Wait for Meilisearch
+        run: |
+          for i in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:7700/health && exit 0
+            sleep 2
+          done
+          echo "meilisearch did not become healthy" >&2
+          exit 1
+      # -p 1 serializes package test binaries: the service and jobs packages
+      # share TEST_DATABASE_DSN and both AutoMigrate/TRUNCATE the same tables, so
+      # running their binaries concurrently against the single CI Postgres would
+      # be racy. Within a package tests already run serially.
+      - run: go test -p 1 ./...
