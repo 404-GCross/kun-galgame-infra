@@ -70,6 +70,50 @@ components:
         - message
         - data
       type: object
+    CalEnvelopeUserGalgameListData:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/CalEnvelopeUserGalgameListData.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/UserGalgameListData"
+        message:
+          type: string
+      required:
+        - code
+        - message
+        - data
+      type: object
+    CalEnvelopeUserGalgameStats:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/CalEnvelopeUserGalgameStats.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/UserGalgameStats"
+        message:
+          type: string
+      required:
+        - code
+        - message
+        - data
+      type: object
     CalendarCover:
       additionalProperties: false
       properties:
@@ -563,6 +607,63 @@ components:
           format: uri
           type: string
       type: object
+    GalgameBrief:
+      additionalProperties: false
+      properties:
+        age_limit:
+          type: string
+        banner:
+          type: string
+        content_limit:
+          type: string
+        effective_banner_hash:
+          type: string
+        effective_banner_height:
+          format: int64
+          type: integer
+        effective_banner_thumbhash:
+          type: string
+        effective_banner_width:
+          format: int64
+          type: integer
+        id:
+          format: int64
+          type: integer
+        name_en_us:
+          type: string
+        name_ja_jp:
+          type: string
+        name_zh_cn:
+          type: string
+        name_zh_tw:
+          type: string
+        original_language:
+          type: string
+        resource_update_time:
+          type: string
+        status:
+          format: int64
+          type: integer
+        user_id:
+          format: int64
+          type: integer
+        vndb_id:
+          type: string
+      required:
+        - id
+        - vndb_id
+        - name_en_us
+        - name_ja_jp
+        - name_zh_cn
+        - name_zh_tw
+        - banner
+        - content_limit
+        - status
+        - user_id
+        - resource_update_time
+        - original_language
+        - age_limit
+      type: object
     GalgameDetail:
       additionalProperties: false
       properties:
@@ -838,6 +939,59 @@ components:
         - name
         - avatar
       type: object
+    UserGalgameListData:
+      additionalProperties: false
+      properties:
+        galgames:
+          items:
+            $ref: "#/components/schemas/GalgameBrief"
+          type:
+            - array
+            - "null"
+        total:
+          format: int64
+          type: integer
+      required:
+        - galgames
+        - total
+      type: object
+    UserGalgameStats:
+      additionalProperties: false
+      properties:
+        galgame_contributed:
+          format: int64
+          type: integer
+        galgame_created:
+          format: int64
+          type: integer
+        galgame_created_today:
+          format: int64
+          type: integer
+        pr_declined:
+          format: int64
+          type: integer
+        pr_merged:
+          format: int64
+          type: integer
+        pr_pending:
+          format: int64
+          type: integer
+        pr_submitted:
+          format: int64
+          type: integer
+        revision_count:
+          format: int64
+          type: integer
+      required:
+        - galgame_created
+        - galgame_created_today
+        - galgame_contributed
+        - revision_count
+        - pr_submitted
+        - pr_merged
+        - pr_declined
+        - pr_pending
+      type: object
 info:
   title: KUN Galgame Wiki — Reads
   version: 1.0.0
@@ -979,6 +1133,136 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Batch galgame briefs (view=brief default; view=detail adds intro/officials/release)
+      tags:
+        - galgame-read
+  /api/galgame/user/{id}/contributed:
+    get:
+      operationId: listUserContributedGalgames
+      parameters:
+        - description: User ID
+          in: path
+          name: id
+          required: true
+          schema:
+            description: User ID
+            format: int64
+            type: integer
+        - description: Page number (default 1)
+          explode: false
+          in: query
+          name: page
+          schema:
+            description: Page number (default 1)
+            format: int64
+            type: integer
+        - description: Items per page 1-100 (default 24)
+          explode: false
+          in: query
+          name: limit
+          schema:
+            description: Items per page 1-100 (default 24)
+            format: int64
+            type: integer
+        - description: sfw | nsfw | all (default sfw)
+          explode: false
+          in: query
+          name: content_limit
+          schema:
+            description: sfw | nsfw | all (default sfw)
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CalEnvelopeUserGalgameListData"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Galgames a user contributed to (briefs, paginated) — profile 参与编辑 tab
+      tags:
+        - galgame-read
+  /api/galgame/user/{id}/galgames:
+    get:
+      operationId: listUserGalgames
+      parameters:
+        - description: User ID
+          in: path
+          name: id
+          required: true
+          schema:
+            description: User ID
+            format: int64
+            type: integer
+        - description: Page number (default 1)
+          explode: false
+          in: query
+          name: page
+          schema:
+            description: Page number (default 1)
+            format: int64
+            type: integer
+        - description: Items per page 1-100 (default 24)
+          explode: false
+          in: query
+          name: limit
+          schema:
+            description: Items per page 1-100 (default 24)
+            format: int64
+            type: integer
+        - description: sfw | nsfw | all (default sfw)
+          explode: false
+          in: query
+          name: content_limit
+          schema:
+            description: sfw | nsfw | all (default sfw)
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CalEnvelopeUserGalgameListData"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: A user's published galgames (briefs, paginated) — profile 已发布 tab
+      tags:
+        - galgame-read
+  /api/galgame/user/{id}/stats:
+    get:
+      operationId: getUserGalgameStats
+      parameters:
+        - description: User ID
+          in: path
+          name: id
+          required: true
+          schema:
+            description: User ID
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CalEnvelopeUserGalgameStats"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: A user's aggregate galgame contribution stats
       tags:
         - galgame-read
   /api/galgame/{gid}:

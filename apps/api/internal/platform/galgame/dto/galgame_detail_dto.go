@@ -341,3 +341,10 @@ type GalgameListData struct {
 	Items []GalgameDetail `json:"items"`
 	Total int64           `json:"total"`
 }
+
+// UserGalgameListData is the `data` payload of the profile galgame lists
+// (GET /galgame/user/:id/galgames and /contributed): briefs keyed as `galgames`.
+type UserGalgameListData struct {
+	Galgames []GalgameBrief `json:"galgames"`
+	Total    int64          `json:"total"`
+}

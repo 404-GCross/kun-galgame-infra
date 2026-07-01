@@ -277,9 +277,9 @@ func (h *GalgameHandler) UserGalgames(c fiber.Ctx) error {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
 
-	return response.Success(c, fiber.Map{
-		"galgames": items,
-		"total":    total,
+	return response.Success(c, dto.UserGalgameListData{
+		Galgames: items,
+		Total:    total,
 	})
 }
 
@@ -310,9 +310,9 @@ func (h *GalgameHandler) UserContributedGalgames(c fiber.Ctx) error {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
 
-	return response.Success(c, fiber.Map{
-		"galgames": items,
-		"total":    total,
+	return response.Success(c, dto.UserGalgameListData{
+		Galgames: items,
+		Total:    total,
 	})
 }
 

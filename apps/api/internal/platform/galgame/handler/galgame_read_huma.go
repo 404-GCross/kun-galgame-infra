@@ -67,6 +67,23 @@ type detailOutput struct {
 	Body calEnvelope[galgameDetailResponse]
 }
 
+type userGalgamesInput struct {
+	ID           int    `path:"id" doc:"User ID"`
+	Page         int    `query:"page" doc:"Page number (default 1)"`
+	Limit        int    `query:"limit" doc:"Items per page 1-100 (default 24)"`
+	ContentLimit string `query:"content_limit" doc:"sfw | nsfw | all (default sfw)"`
+}
+type userGalgamesOutput struct {
+	Body calEnvelope[dto.UserGalgameListData]
+}
+
+type userStatsInput struct {
+	ID int `path:"id" doc:"User ID"`
+}
+type userStatsOutput struct {
+	Body calEnvelope[dto.UserGalgameStats]
+}
+
 // SetupGalgameReadSpec registers the galgame-wiki read operations to derive their
 // spec. Handlers are stubs (never invoked — Fiber serves these paths).
 func SetupGalgameReadSpec(app *fiber.App) huma.API {
@@ -89,5 +106,17 @@ func SetupGalgameReadSpec(app *fiber.App) huma.API {
 		OperationID: "getGalgameDetail", Method: http.MethodGet, Path: "/api/galgame/{gid}",
 		Summary: "Full galgame detail (all relations) + owner/contributor user briefs", Tags: tags,
 	}, func(context.Context, *detailInput) (*detailOutput, error) { return &detailOutput{}, nil })
+	huma.Register(api, huma.Operation{
+		OperationID: "listUserGalgames", Method: http.MethodGet, Path: "/api/galgame/user/{id}/galgames",
+		Summary: "A user's published galgames (briefs, paginated) — profile 已发布 tab", Tags: tags,
+	}, func(context.Context, *userGalgamesInput) (*userGalgamesOutput, error) { return &userGalgamesOutput{}, nil })
+	huma.Register(api, huma.Operation{
+		OperationID: "listUserContributedGalgames", Method: http.MethodGet, Path: "/api/galgame/user/{id}/contributed",
+		Summary: "Galgames a user contributed to (briefs, paginated) — profile 参与编辑 tab", Tags: tags,
+	}, func(context.Context, *userGalgamesInput) (*userGalgamesOutput, error) { return &userGalgamesOutput{}, nil })
+	huma.Register(api, huma.Operation{
+		OperationID: "getUserGalgameStats", Method: http.MethodGet, Path: "/api/galgame/user/{id}/stats",
+		Summary: "A user's aggregate galgame contribution stats", Tags: tags,
+	}, func(context.Context, *userStatsInput) (*userStatsOutput, error) { return &userStatsOutput{}, nil })
 	return api
 }
