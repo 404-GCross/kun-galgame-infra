@@ -8,6 +8,7 @@
     "dev": "nuxt dev",
     "generate": "nuxt generate",
     "gen:types:artifact": "pnpm dlx openapi-typescript@7.13.0 ../../docs/artifact/openapi.yaml -o shared/types/generated/artifact-api.ts",
+    "gen:types:artifact-admin": "pnpm dlx openapi-typescript@7.13.0 ../../docs/artifact/admin-openapi.yaml -o shared/types/generated/artifact-admin-api.ts",
     "preview": "nuxt preview",
     "typecheck": "nuxt typecheck",
     "lint": "eslint .",

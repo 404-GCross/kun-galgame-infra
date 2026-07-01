@@ -49,6 +49,12 @@ func apiErr(status, code int) *houseError {
 	return &houseError{status: status, Code: code, Message: errors.GetMessage(code)}
 }
 
+// apiErrMsg is apiErr with an explicit message — for cases that carry dynamic
+// detail (e.g. reclaim conflicts reporting the idle window).
+func apiErrMsg(status, code int, msg string) *houseError {
+	return &houseError{status: status, Code: code, Message: msg}
+}
+
 // InstallErrorEnvelope overrides huma.NewError so Huma-internal errors
 // (request validation, body parsing, etc.) also come out as the house envelope.
 // Call once at startup before registering operations.

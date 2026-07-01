@@ -4,6 +4,7 @@
 //
 //	go run ./cmd/gen-openapi -o ../../docs/artifact/openapi.yaml            # 3.1 (canonical)
 //	go run ./cmd/gen-openapi -downgrade -o ../../docs/artifact/openapi-3.0.yaml  # 3.0.3 (oapi-codegen)
+//	go run ./cmd/gen-openapi -admin -o ../../docs/artifact/admin-openapi.yaml    # oauth admin API (3.1)
 package main
 
 import (
@@ -14,19 +15,25 @@ import (
 	artHandler "api/internal/platform/artifact/handler"
 	"api/internal/platform/artifact/service"
 
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/gofiber/fiber/v3"
 )
 
 func main() {
 	out := flag.String("o", "", "output file (default: stdout)")
 	downgrade := flag.Bool("downgrade", false, "emit OpenAPI 3.0.3 instead of 3.1 (for tools without 3.1 support, e.g. oapi-codegen)")
+	admin := flag.Bool("admin", false, "emit the oauth-hosted admin API spec (/api/v1/admin/artifact/*) instead of the artifact service spec")
 	flag.Parse()
 
-	// Build the API to derive the spec; the service deps are nil because Setup
-	// only registers operations (handlers are never invoked here).
+	// Build the API to derive the spec; the deps are nil because Setup only
+	// registers operations (handlers are never invoked here).
 	app := fiber.New()
-	svc := service.New(nil, nil, nil, service.Options{})
-	api := artHandler.Setup(app, svc, true)
+	var api huma.API
+	if *admin {
+		api = artHandler.SetupAdmin(app, artHandler.NewAdmin(nil, nil, nil, 0))
+	} else {
+		api = artHandler.Setup(app, service.New(nil, nil, nil, service.Options{}), true)
+	}
 
 	var (
 		b   []byte

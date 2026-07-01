@@ -48,6 +48,15 @@ jobs:
       - run: go build ./...
       - run: go vet ./...
       - run: go test ./...
+      # code -> spec: the committed OpenAPI specs are exported from the Huma Go
+      # code, so they must never drift from it. Re-export and diff. (spec -> TS is
+      # covered by openapi-types.yml.)
+      - name: OpenAPI specs are in sync with the Go code
+        run: |
+          go run ./cmd/gen-openapi -o ../../docs/artifact/openapi.yaml
+          go run ./cmd/gen-openapi -downgrade -o ../../docs/artifact/openapi-3.0.yaml
+          go run ./cmd/gen-openapi -admin -o ../../docs/artifact/admin-openapi.yaml
+          git diff --exit-code -- ../../docs/artifact/
 
   integration:
     name: integration (postgres + meilisearch)

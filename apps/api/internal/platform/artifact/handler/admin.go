@@ -1,23 +1,25 @@
 package handler
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"log/slog"
-	"strconv"
 	"time"
 
+	"api/internal/platform/artifact/dto"
 	"api/internal/platform/artifact/model"
 	"api/internal/platform/artifact/repository"
 	"api/internal/platform/artifact/storage"
-	errs "api/pkg/errors"
-	"api/pkg/response"
 
-	"github.com/gofiber/fiber/v3"
 	"gorm.io/gorm"
 )
 
-// AdminHandler bundles admin-only artifact endpoints. Mounted behind
-// middleware.Auth + middleware.RequireRole(...) in the OAuth admin service
-// (not cmd/artifact itself).
+// AdminHandler holds the dependencies for the admin-only artifact operations
+// (served over Huma by SetupAdmin, mounted in the OAuth service behind
+// Auth + RequireRole("admin") — see cmd/oauth). Its methods are transport-free
+// (context in, typed data / sentinel errors out); the Huma layer in
+// admin_huma.go maps them to the house envelope.
 //
 // `store` is the least-privilege cleanup S3 client (same one the GC uses,
 // built from ArtifactCleanupS3). It may be nil when the oauth process has no
@@ -37,68 +39,81 @@ func NewAdmin(db *gorm.DB, statsRepo *repository.StatsRepository, store *storage
 	return &AdminHandler{db: db, statsRepo: statsRepo, store: store, reclaimMinIdle: reclaimMinIdle}
 }
 
+// Sentinel errors — the Huma layer maps these to HTTP status + house code.
+var (
+	errAdminNotFound   = errors.New("artifact not found")
+	errAdminBadRequest = errors.New("bad request")
+	// Reclaim-specific conflicts (all map to 409 except unavailable → 503).
+	errReclaimUnavailable  = errors.New("artifact storage not configured; reclaim unavailable")
+	errReclaimNotUploading = errors.New("only in-progress (uploading) artifacts can be reclaimed")
+	errReclaimActive       = errors.New("upload still active; refusing to interrupt")
+	errReclaimRaced        = errors.New("upload changed state; not reclaimed")
+)
+
 var statusLabels = map[int]string{
 	model.StatusUploading: "uploading",
 	model.StatusReady:     "ready",
 	model.StatusFailed:    "failed",
 }
 
-// ---- GET /admin/artifact/list ----
+// AdminListFilters is the parsed, validated filter set for List (the Huma layer
+// parses the raw query string into this).
+type AdminListFilters struct {
+	Site        string
+	Status      string // "" | uploading | ready | failed
+	UploaderSub string
+	Search      string
+	From        *time.Time // created_at >=
+	To          *time.Time // created_at <=
+	Page        int
+	Limit       int
+}
 
 // List paginates the artifacts table with optional filters.
-func (h *AdminHandler) List(c fiber.Ctx) error {
-	q := h.db.WithContext(c.Context()).Model(&model.Artifact{})
+func (h *AdminHandler) List(ctx context.Context, f AdminListFilters) (dto.AdminArtifactList, error) {
+	q := h.db.WithContext(ctx).Model(&model.Artifact{})
 
-	if site := c.Query("site"); site != "" {
-		q = q.Where("site_key = ?", site)
+	if f.Site != "" {
+		q = q.Where("site_key = ?", f.Site)
 	}
-	if status := c.Query("status"); status != "" {
-		switch status {
-		case "uploading":
-			q = q.Where("status = ?", model.StatusUploading)
-		case "ready":
-			q = q.Where("status = ?", model.StatusReady)
-		case "failed":
-			q = q.Where("status = ?", model.StatusFailed)
-		default:
-			return response.BadRequest(c, errs.ErrBadRequest)
-		}
+	switch f.Status {
+	case "":
+		// no status filter
+	case "uploading":
+		q = q.Where("status = ?", model.StatusUploading)
+	case "ready":
+		q = q.Where("status = ?", model.StatusReady)
+	case "failed":
+		q = q.Where("status = ?", model.StatusFailed)
+	default:
+		return dto.AdminArtifactList{}, errAdminBadRequest
 	}
-	if sub := c.Query("uploader_sub"); sub != "" {
-		q = q.Where("uploader_sub = ?", sub)
+	if f.UploaderSub != "" {
+		q = q.Where("uploader_sub = ?", f.UploaderSub)
 	}
-	if s := c.Query("search"); s != "" {
+	if f.Search != "" {
 		// Match by filename substring or exact UUID.
-		q = q.Where("name ILIKE ? OR uuid::text = ?", "%"+s+"%", s)
+		q = q.Where("name ILIKE ? OR uuid::text = ?", "%"+f.Search+"%", f.Search)
 	}
-	if from := c.Query("from"); from != "" {
-		t, err := time.Parse(time.RFC3339, from)
-		if err != nil {
-			return response.BadRequest(c, errs.ErrBadRequest)
-		}
-		q = q.Where("created_at >= ?", t)
+	if f.From != nil {
+		q = q.Where("created_at >= ?", *f.From)
 	}
-	if to := c.Query("to"); to != "" {
-		t, err := time.Parse(time.RFC3339, to)
-		if err != nil {
-			return response.BadRequest(c, errs.ErrBadRequest)
-		}
-		q = q.Where("created_at <= ?", t)
+	if f.To != nil {
+		q = q.Where("created_at <= ?", *f.To)
 	}
 
-	page, _ := strconv.Atoi(c.Query("page", "1"))
-	limit, _ := strconv.Atoi(c.Query("limit", "50"))
+	page := f.Page
 	if page < 1 {
 		page = 1
 	}
+	limit := f.Limit
 	if limit < 1 || limit > 200 {
 		limit = 50
 	}
 
 	var total int64
 	if err := q.Count(&total).Error; err != nil {
-		slog.Error("artifact admin list count", "err", err)
-		return response.InternalError(c, errs.ErrInternalServer)
+		return dto.AdminArtifactList{}, fmt.Errorf("count artifacts: %w", err)
 	}
 
 	var rows []model.Artifact
@@ -106,81 +121,76 @@ func (h *AdminHandler) List(c fiber.Ctx) error {
 		Offset((page - 1) * limit).
 		Limit(limit).
 		Find(&rows).Error; err != nil {
-		slog.Error("artifact admin list query", "err", err)
-		return response.InternalError(c, errs.ErrInternalServer)
+		return dto.AdminArtifactList{}, fmt.Errorf("query artifacts: %w", err)
 	}
 
-	items := make([]map[string]any, 0, len(rows))
+	items := make([]dto.AdminArtifactRow, 0, len(rows))
 	for i := range rows {
 		items = append(items, toAdminRow(&rows[i]))
 	}
-	return response.Success(c, fiber.Map{
-		"items": items,
-		"total": total,
-		"page":  page,
-		"limit": limit,
-	})
+	return dto.AdminArtifactList{Items: items, Total: total, Page: page, Limit: limit}, nil
 }
 
 // toAdminRow shapes an Artifact for admin list consumers (no S3 presigning).
-func toAdminRow(a *model.Artifact) map[string]any {
-	return map[string]any{
-		"uuid":            a.UUID,
-		"name":            a.Name,
-		"file_key":        a.FileKey,
-		"file_size":       a.FileSize,
-		"mime_type":       a.MimeType,
-		"site_key":        a.SiteKey,
-		"status":          statusLabels[a.Status],
-		"public":          a.Public,
-		"uploader_sub":    a.UploaderSub,
-		"uploader_client": a.UploaderClient,
-		"checksum":        a.Checksum,
-		"created_at":      a.CreatedAt,
-		// updated_at = last progress (init / multipart persist / resume Touch);
-		// for status=uploading rows it's the "idle since" signal the UI shows and
-		// Reclaim guards on.
-		"updated_at": a.UpdatedAt,
+func toAdminRow(a *model.Artifact) dto.AdminArtifactRow {
+	return dto.AdminArtifactRow{
+		UUID:           a.UUID,
+		Name:           a.Name,
+		FileKey:        a.FileKey,
+		FileSize:       a.FileSize,
+		MimeType:       a.MimeType,
+		SiteKey:        a.SiteKey,
+		Status:         statusLabels[a.Status],
+		Public:         a.Public,
+		UploaderSub:    a.UploaderSub,
+		UploaderClient: a.UploaderClient,
+		Checksum:       a.Checksum,
+		CreatedAt:      a.CreatedAt,
+		UpdatedAt:      a.UpdatedAt,
 	}
 }
-
-// ---- GET /admin/artifact/stats ----
 
 // Stats returns aggregate counters across all sites.
-func (h *AdminHandler) Stats(c fiber.Ctx) error {
-	res, err := h.statsRepo.Stats(c.Context())
+func (h *AdminHandler) Stats(ctx context.Context) (dto.AdminArtifactStats, error) {
+	res, err := h.statsRepo.Stats(ctx)
 	if err != nil {
-		slog.Error("artifact admin stats", "err", err)
-		return response.InternalError(c, errs.ErrInternalServer)
+		return dto.AdminArtifactStats{}, err
 	}
-	return response.Success(c, res)
+	out := dto.AdminArtifactStats{
+		TotalCount:  res.TotalCount,
+		TotalBytes:  res.TotalBytes,
+		Uploading:   res.Uploading,
+		Failed:      res.Failed,
+		SoftDeleted: res.SoftDeleted,
+	}
+	if len(res.BySite) > 0 {
+		out.BySite = make(map[string]dto.AdminArtifactSiteStats, len(res.BySite))
+		for k, v := range res.BySite {
+			out.BySite[k] = dto.AdminArtifactSiteStats{Count: v.Count, Bytes: v.Bytes}
+		}
+	}
+	return out, nil
 }
-
-// ---- DELETE /admin/artifact/:uuid ----
 
 // Delete soft-deletes an artifact (sets deleted_at). The artifact GC job
 // physically removes the B2 object after the soft-delete TTL — there is no
 // hard-delete path here because the OAuth admin service is not provisioned with
 // artifact object-storage credentials.
-func (h *AdminHandler) Delete(c fiber.Ctx) error {
-	uuid := c.Params("uuid")
+func (h *AdminHandler) Delete(ctx context.Context, uuid string) error {
 	if uuid == "" {
-		return response.BadRequest(c, errs.ErrBadRequest)
+		return errAdminBadRequest
 	}
-	res := h.db.WithContext(c.Context()).
+	res := h.db.WithContext(ctx).
 		Where("uuid = ?", uuid).
 		Delete(&model.Artifact{})
 	if res.Error != nil {
-		slog.Error("artifact admin delete", "err", res.Error)
-		return response.InternalError(c, errs.ErrInternalServer)
+		return fmt.Errorf("soft-delete artifact: %w", res.Error)
 	}
 	if res.RowsAffected == 0 {
-		return response.NotFound(c, errs.ErrNotFound)
+		return errAdminNotFound
 	}
-	return response.Success(c, fiber.Map{"uuid": uuid, "soft_deleted": true})
+	return nil
 }
-
-// ---- POST /admin/artifact/:uuid/reclaim ----
 
 // Reclaim immediately frees an INTERRUPTED upload (status=uploading) that the
 // normal soft-delete path would mishandle: it aborts the dangling B2 multipart
@@ -201,45 +211,41 @@ func (h *AdminHandler) Delete(c fiber.Ctx) error {
 //     concurrent Complete's FindByUUID misses and fails cleanly.
 //
 // Requires the cleanup S3 client (oauth must have artifact storage creds, same
-// as the GC). Without it → 503.
-func (h *AdminHandler) Reclaim(c fiber.Ctx) error {
+// as the GC). Without it → errReclaimUnavailable (503).
+func (h *AdminHandler) Reclaim(ctx context.Context, uuid string) error {
 	if h.store == nil {
-		return response.Error(c, fiber.StatusServiceUnavailable, errs.ErrOperationFailed, "artifact storage not configured; reclaim unavailable")
+		return errReclaimUnavailable
 	}
-	uuid := c.Params("uuid")
 	if uuid == "" {
-		return response.BadRequest(c, errs.ErrBadRequest)
+		return errAdminBadRequest
 	}
 
 	var a model.Artifact
-	if err := h.db.WithContext(c.Context()).Where("uuid = ?", uuid).First(&a).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return response.NotFound(c, errs.ErrNotFound)
+	if err := h.db.WithContext(ctx).Where("uuid = ?", uuid).First(&a).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errAdminNotFound
 		}
-		slog.Error("artifact reclaim: load", "uuid", uuid, "err", err)
-		return response.InternalError(c, errs.ErrInternalServer)
+		return fmt.Errorf("reclaim load: %w", err)
 	}
 	if a.Status != model.StatusUploading {
 		// ready/failed are not "in-progress"; soft-delete handles those.
-		return response.Error(c, fiber.StatusConflict, errs.ErrBadRequest, "only in-progress (uploading) artifacts can be reclaimed")
+		return errReclaimNotUploading
 	}
 	if idle := time.Since(a.UpdatedAt); idle < h.reclaimMinIdle {
-		return response.Error(c, fiber.StatusConflict, errs.ErrBadRequest,
-			"upload still active (idle "+idle.Round(time.Second).String()+" < min "+h.reclaimMinIdle.String()+"); refusing to interrupt")
+		return fmt.Errorf("%w (idle %s < min %s)", errReclaimActive, idle.Round(time.Second), h.reclaimMinIdle)
 	}
 
 	// Claim the row first (conditional on it still being uploading). This both
 	// makes double-reclaim safe and prevents racing a concurrent Complete.
-	claim := h.db.WithContext(c.Context()).Unscoped().
+	claim := h.db.WithContext(ctx).Unscoped().
 		Where("uuid = ? AND status = ?", uuid, model.StatusUploading).
 		Delete(&model.Artifact{})
 	if claim.Error != nil {
-		slog.Error("artifact reclaim: claim", "uuid", uuid, "err", claim.Error)
-		return response.InternalError(c, errs.ErrInternalServer)
+		return fmt.Errorf("reclaim claim: %w", claim.Error)
 	}
 	if claim.RowsAffected == 0 {
 		// Raced: it just completed, failed, or another reclaim won. Don't touch S3.
-		return response.Error(c, fiber.StatusConflict, errs.ErrBadRequest, "upload changed state; not reclaimed")
+		return errReclaimRaced
 	}
 
 	// We own the (now-deleted) row. Free storage best-effort: a transient failure
@@ -247,12 +253,12 @@ func (h *AdminHandler) Reclaim(c fiber.Ctx) error {
 	// uploading), recoverable via B2 lifecycle; it can never delete a finished
 	// object (that path was excluded by the conditional claim above).
 	if a.UploadID != "" {
-		if err := h.store.AbortMultipart(c.Context(), a.FileKey, a.UploadID); err != nil {
+		if err := h.store.AbortMultipart(ctx, a.FileKey, a.UploadID); err != nil {
 			slog.Warn("artifact reclaim: abort multipart", "uuid", uuid, "key", a.FileKey, "err", err)
 		}
 	}
-	if err := h.store.Delete(c.Context(), a.FileKey); err != nil {
+	if err := h.store.Delete(ctx, a.FileKey); err != nil {
 		slog.Warn("artifact reclaim: delete object", "uuid", uuid, "key", a.FileKey, "err", err)
 	}
-	return response.Success(c, fiber.Map{"uuid": uuid, "reclaimed": true})
+	return nil
 }

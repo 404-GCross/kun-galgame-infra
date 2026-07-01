@@ -1,46 +1,21 @@
 // Admin types for the artifact service (kun_artifacts), served by the oauth
-// gateway under /admin/artifact/*. Mirrors the Go handler/stats shapes.
+// gateway under /api/v1/admin/artifact/*.
+//
+// The API SHAPES below are now GENERATED from the OpenAPI spec
+// (docs/artifact/admin-openapi.yaml, itself exported code-first from the Go Huma
+// handlers) — see shared/types/generated/artifact-admin-api.ts and
+// `pnpm gen:types:artifact-admin`. Backend field changes surface here at compile
+// time. Only the UI-only helpers (status chip map / tabs) are hand-written.
+import type { components } from './generated/artifact-admin-api'
 
-export type ArtifactStatus = 'uploading' | 'ready' | 'failed'
+type Schemas = components['schemas']
 
-export interface ArtifactAdminRow {
-  uuid: string
-  name: string
-  file_key: string
-  file_size: number
-  mime_type: string
-  site_key: string
-  status: ArtifactStatus
-  public: boolean
-  uploader_sub: string
-  uploader_client: string
-  checksum: string
-  created_at: string
-  // Last progress time (init / multipart persist / resume). For uploading rows
-  // it's the "idle since" signal used to display idle age + gate reclaim.
-  updated_at: string
-}
-
-export interface ArtifactAdminListResponse {
-  items: ArtifactAdminRow[]
-  total: number
-  page: number
-  limit: number
-}
-
-export interface ArtifactSiteStats {
-  count: number
-  bytes: number
-}
-
-export interface ArtifactAdminStats {
-  total_count: number
-  total_bytes: number
-  uploading: number
-  failed: number
-  soft_deleted: number
-  by_site?: Record<string, ArtifactSiteStats>
-}
+export type ArtifactAdminRow = Schemas['AdminArtifactRow']
+export type ArtifactAdminListResponse = Schemas['AdminArtifactList']
+export type ArtifactSiteStats = Schemas['AdminArtifactSiteStats']
+export type ArtifactAdminStats = Schemas['AdminArtifactStats']
+// Union derived from the generated row's status field ('uploading' | 'ready' | 'failed').
+export type ArtifactStatus = ArtifactAdminRow['status']
 
 // Status chip colors, reused by the dashboard + browser pages.
 export const ARTIFACT_STATUS_MAP: Record<

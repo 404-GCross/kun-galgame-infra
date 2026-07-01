@@ -304,7 +304,7 @@ func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 	// Image admin routes — best-effort; if images DB or S3 are unreachable
 	// in dev, skip registration rather than failing the whole oauth service.
 	registerImageAdmin(a, cfg, admin)
-	registerArtifactAdmin(cfg, admin)
+	registerArtifactAdmin(a, cfg, authSvc)
 
 	// Job registry: in-process scheduler (default auto-run) + admin
 	// trigger/visibility. Pure docker-compose: scheduler lives in this
@@ -417,7 +417,7 @@ func registerImageAdmin(_ *app.App, cfg *config.Config, admin fiber.Router) {
 // client the artifact GC uses (built from ArtifactCleanupS3). When those creds
 // aren't configured, the client is nil and Reclaim returns 503 — exactly the
 // same condition under which the GC no-ops.
-func registerArtifactAdmin(cfg *config.Config, admin fiber.Router) {
+func registerArtifactAdmin(a *app.App, cfg *config.Config, authSvc *authService.AuthService) {
 	artifactsDB, err := database.NewPostgresDB(cfg.ArtifactsDatabase)
 	if err != nil {
 		slog.Warn("artifact admin: artifacts db unreachable; admin endpoints disabled", "err", err)
@@ -437,14 +437,14 @@ func registerArtifactAdmin(cfg *config.Config, admin fiber.Router) {
 	}
 	adminH := artifactHandler.NewAdmin(artifactsDB.DB(), statsRepo, store, cfg.ArtifactService.ReclaimMinIdle)
 
-	g := admin.Group("/artifact")
-	// Stats power the admin dashboard (用量概览) — admin-visible.
-	g.Get("/stats", adminH.Stats)
-	// Browsing files + cleanup are ren(莲)-only.
-	g.Get("/list", middleware.RequireRole("ren"), adminH.List)
-	g.Delete("/:uuid", middleware.RequireRole("ren"), adminH.Delete)
-	// Reclaim = immediate abort+delete of an interrupted (status=uploading) upload.
-	g.Post("/:uuid/reclaim", middleware.RequireRole("ren"), adminH.Reclaim)
+	// These endpoints are served by Huma (code-first OpenAPI — see docs/artifact/10
+	// §4.3). Huma registers on the app, so the /admin group's Auth+RequireRole("admin")
+	// does NOT cover them: gate the exact prefix here with path-scoped Fiber
+	// middleware, registered BEFORE SetupAdmin's routes so it precedes them in the
+	// stack. stats is admin-visible; list/delete/reclaim additionally require the
+	// ren(莲) role, enforced in-handler (admin_huma.go).
+	a.Fiber.Use("/api/v1/admin/artifact", middleware.Auth(authSvc), middleware.RequireRole("admin"))
+	artifactHandler.SetupAdmin(a.Fiber, adminH)
 
-	slog.Info("artifact admin endpoints registered under /api/v1/admin/artifact/*")
+	slog.Info("artifact admin endpoints (Huma) registered under /api/v1/admin/artifact/*")
 }

@@ -1,0 +1,221 @@
+// Admin artifact operations over Huma (code-first OpenAPI 3.1), layered on the
+// OAuth service's Fiber app. Auth is applied by the caller as path-scoped Fiber
+// middleware (Auth + RequireRole("admin")) BEFORE these operations — Huma
+// registers on the app, not on the admin group, so the group's middleware does
+// NOT cover these routes; the caller must gate the prefix. list/delete/reclaim
+// additionally require the "ren" role, enforced in-handler here. See
+// docs/artifact/10-openapi-and-clients.md §4.3 and cmd/oauth registerArtifactAdmin.
+package handler
+
+import (
+	"context"
+	"errors"
+	"log/slog"
+	"net/http"
+	"slices"
+	"time"
+
+	"api/internal/platform/artifact/dto"
+	apperr "api/pkg/errors"
+
+	"github.com/danielgtaylor/huma/v2"
+	"github.com/danielgtaylor/huma/v2/adapters/humafiber"
+	"github.com/gofiber/fiber/v3"
+)
+
+type adminCtxKey string
+
+// ctxKeyAdminRoles carries the authenticated caller's roles (lifted from the
+// Fiber Locals that middleware.Auth set) into the Huma request context.
+const ctxKeyAdminRoles adminCtxKey = "artifact_admin:roles"
+
+// AdminAuthBridge lifts user_roles from fiber.Ctx.Locals into the Huma context so
+// ren-gated operations can enforce the role in-handler. The Fiber-layer
+// Auth + RequireRole("admin") has already run and rejected non-admins before this.
+func AdminAuthBridge(ctx huma.Context, next func(huma.Context)) {
+	fc := humafiber.Unwrap(ctx)
+	if roles, ok := fc.Locals("user_roles").([]string); ok {
+		ctx = huma.WithValue(ctx, ctxKeyAdminRoles, roles)
+	}
+	next(ctx)
+}
+
+func adminHasRole(ctx context.Context, role string) bool {
+	roles, _ := ctx.Value(ctxKeyAdminRoles).([]string)
+	return slices.Contains(roles, role)
+}
+
+// AdminHumaServer adapts AdminHandler (transport-free core) to Huma operations.
+type AdminHumaServer struct {
+	h *AdminHandler
+}
+
+// SetupAdmin builds a Huma API over the Fiber app for the admin artifact
+// operations and returns it so the caller can export its OpenAPI (cmd/gen-openapi
+// -admin). The auto doc/openapi routes are disabled. NOTE: this does NOT apply
+// auth — the caller MUST gate the /api/v1/admin/artifact prefix with
+// Auth + RequireRole("admin") before invoking, because Huma registers on the app
+// (not the admin group).
+func SetupAdmin(app *fiber.App, h *AdminHandler) huma.API {
+	InstallErrorEnvelope()
+
+	cfg := huma.DefaultConfig("KUN Artifact Admin API", "1.0.0")
+	cfg.OpenAPIPath = ""
+	cfg.DocsPath = ""
+	cfg.SchemasPath = ""
+
+	api := humafiber.New(app, cfg)
+	api.UseMiddleware(AdminAuthBridge)
+
+	s := &AdminHumaServer{h: h}
+	s.register(api)
+	return api
+}
+
+func (s *AdminHumaServer) register(api huma.API) {
+	tags := []string{"artifact-admin"}
+	huma.Register(api, huma.Operation{
+		OperationID: "adminListArtifacts", Method: http.MethodGet, Path: "/api/v1/admin/artifact/list",
+		Summary: "List artifacts (paginated, filterable) — requires the ren role", Tags: tags,
+	}, s.list)
+	huma.Register(api, huma.Operation{
+		OperationID: "adminArtifactStats", Method: http.MethodGet, Path: "/api/v1/admin/artifact/stats",
+		Summary: "Aggregate artifact usage stats (admin dashboard)", Tags: tags,
+	}, s.stats)
+	huma.Register(api, huma.Operation{
+		OperationID: "adminDeleteArtifact", Method: http.MethodDelete, Path: "/api/v1/admin/artifact/{uuid}",
+		Summary: "Soft-delete an artifact — requires the ren role", Tags: tags,
+	}, s.delete)
+	huma.Register(api, huma.Operation{
+		OperationID: "adminReclaimArtifact", Method: http.MethodPost, Path: "/api/v1/admin/artifact/{uuid}/reclaim",
+		Summary: "Reclaim an interrupted upload (abort multipart + delete) — requires the ren role", Tags: tags,
+	}, s.reclaim)
+}
+
+// ---- inputs / outputs (house envelope) ----
+
+type adminListInput struct {
+	Site        string `query:"site" doc:"Filter by site key"`
+	Status      string `query:"status" enum:"uploading,ready,failed" doc:"Filter by upload status"`
+	UploaderSub string `query:"uploader_sub" doc:"Filter by uploader subject"`
+	Search      string `query:"search" doc:"Match filename substring or exact UUID"`
+	From        string `query:"from" doc:"created_at lower bound (RFC3339)"`
+	To          string `query:"to" doc:"created_at upper bound (RFC3339)"`
+	Page        int    `query:"page" doc:"1-based page number"`
+	Limit       int    `query:"limit" doc:"Items per page (max 200)"`
+}
+
+type adminListOutput struct {
+	Body Envelope[dto.AdminArtifactList]
+}
+
+type adminStatsOutput struct {
+	Body Envelope[dto.AdminArtifactStats]
+}
+
+type adminUUIDInput struct {
+	UUID string `path:"uuid" doc:"Artifact UUID"`
+}
+
+type adminDeleteOutput struct {
+	Body Envelope[dto.AdminArtifactDelete]
+}
+
+type adminReclaimOutput struct {
+	Body Envelope[dto.AdminArtifactReclaim]
+}
+
+// requireRen returns a 403 house error unless the caller carries the ren role.
+// The path prefix is already gated to admins at the Fiber layer; ren is the
+// extra restriction on browsing/mutating operations.
+func (s *AdminHumaServer) requireRen(ctx context.Context) error {
+	if !adminHasRole(ctx, "ren") {
+		return apiErr(http.StatusForbidden, apperr.ErrForbidden)
+	}
+	return nil
+}
+
+func (s *AdminHumaServer) list(ctx context.Context, in *adminListInput) (*adminListOutput, error) {
+	if err := s.requireRen(ctx); err != nil {
+		return nil, err
+	}
+	f := AdminListFilters{
+		Site: in.Site, Status: in.Status, UploaderSub: in.UploaderSub,
+		Search: in.Search, Page: in.Page, Limit: in.Limit,
+	}
+	if in.From != "" {
+		t, err := time.Parse(time.RFC3339, in.From)
+		if err != nil {
+			return nil, apiErr(http.StatusBadRequest, apperr.ErrBadRequest)
+		}
+		f.From = &t
+	}
+	if in.To != "" {
+		t, err := time.Parse(time.RFC3339, in.To)
+		if err != nil {
+			return nil, apiErr(http.StatusBadRequest, apperr.ErrBadRequest)
+		}
+		f.To = &t
+	}
+	data, err := s.h.List(ctx, f)
+	if err != nil {
+		if errors.Is(err, errAdminBadRequest) {
+			return nil, apiErr(http.StatusBadRequest, apperr.ErrBadRequest)
+		}
+		slog.Error("artifact admin list", "err", err)
+		return nil, apiErr(http.StatusInternalServerError, apperr.ErrInternalServer)
+	}
+	return &adminListOutput{Body: okEnvelope(data)}, nil
+}
+
+func (s *AdminHumaServer) stats(ctx context.Context, _ *struct{}) (*adminStatsOutput, error) {
+	// admin-gated at the path; stats power the dashboard so no extra ren check.
+	data, err := s.h.Stats(ctx)
+	if err != nil {
+		slog.Error("artifact admin stats", "err", err)
+		return nil, apiErr(http.StatusInternalServerError, apperr.ErrInternalServer)
+	}
+	return &adminStatsOutput{Body: okEnvelope(data)}, nil
+}
+
+func (s *AdminHumaServer) delete(ctx context.Context, in *adminUUIDInput) (*adminDeleteOutput, error) {
+	if err := s.requireRen(ctx); err != nil {
+		return nil, err
+	}
+	if err := s.h.Delete(ctx, in.UUID); err != nil {
+		switch {
+		case errors.Is(err, errAdminBadRequest):
+			return nil, apiErr(http.StatusBadRequest, apperr.ErrBadRequest)
+		case errors.Is(err, errAdminNotFound):
+			return nil, apiErr(http.StatusNotFound, apperr.ErrNotFound)
+		default:
+			slog.Error("artifact admin delete", "uuid", in.UUID, "err", err)
+			return nil, apiErr(http.StatusInternalServerError, apperr.ErrInternalServer)
+		}
+	}
+	return &adminDeleteOutput{Body: okEnvelope(dto.AdminArtifactDelete{UUID: in.UUID, SoftDeleted: true})}, nil
+}
+
+func (s *AdminHumaServer) reclaim(ctx context.Context, in *adminUUIDInput) (*adminReclaimOutput, error) {
+	if err := s.requireRen(ctx); err != nil {
+		return nil, err
+	}
+	if err := s.h.Reclaim(ctx, in.UUID); err != nil {
+		switch {
+		case errors.Is(err, errReclaimUnavailable):
+			return nil, apiErrMsg(http.StatusServiceUnavailable, apperr.ErrOperationFailed, err.Error())
+		case errors.Is(err, errAdminBadRequest):
+			return nil, apiErr(http.StatusBadRequest, apperr.ErrBadRequest)
+		case errors.Is(err, errAdminNotFound):
+			return nil, apiErr(http.StatusNotFound, apperr.ErrNotFound)
+		case errors.Is(err, errReclaimNotUploading),
+			errors.Is(err, errReclaimActive),
+			errors.Is(err, errReclaimRaced):
+			return nil, apiErrMsg(http.StatusConflict, apperr.ErrOperationFailed, err.Error())
+		default:
+			slog.Error("artifact admin reclaim", "uuid", in.UUID, "err", err)
+			return nil, apiErr(http.StatusInternalServerError, apperr.ErrInternalServer)
+		}
+	}
+	return &adminReclaimOutput{Body: okEnvelope(dto.AdminArtifactReclaim{UUID: in.UUID, Reclaimed: true})}, nil
+}

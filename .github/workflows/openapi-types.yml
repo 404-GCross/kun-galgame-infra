@@ -14,12 +14,14 @@ on:
   push:
     paths:
       - "docs/artifact/openapi.yaml"
+      - "docs/artifact/admin-openapi.yaml"
       - "apps/web/shared/types/generated/**"
       - "apps/web/package.json"
       - ".github/workflows/openapi-types.yml"
   pull_request:
     paths:
       - "docs/artifact/openapi.yaml"
+      - "docs/artifact/admin-openapi.yaml"
       - "apps/web/shared/types/generated/**"
       - "apps/web/package.json"
       - ".github/workflows/openapi-types.yml"
@@ -39,7 +41,9 @@ jobs:
           node-version: 24
       # The script uses `pnpm dlx openapi-typescript@<pinned>`, so no install /
       # lockfile entry is needed — it fetches the pinned generator on the fly.
-      - name: Regenerate TS types from the committed spec
-        run: pnpm -F web run gen:types:artifact
-      - name: Fail if the generated types are stale vs the spec
+      - name: Regenerate TS types from the committed specs
+        run: |
+          pnpm -F web run gen:types:artifact
+          pnpm -F web run gen:types:artifact-admin
+      - name: Fail if the generated types are stale vs the specs
         run: git diff --exit-code -- apps/web/shared/types/generated/

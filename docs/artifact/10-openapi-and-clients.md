@@ -61,14 +61,17 @@ moyu/kungal 现在**手写**各 infra 服务的薄 Go client(`userclient`/`image
 
 TS 是这套多语言客户端里最后补齐的一臂(Go/Dart 已就位)。用 **`openapi-typescript`** 从 3.1 spec 生成 `paths`/`operations`/`components` 类型,前端配 `openapi-fetch` 即得端到端类型化调用,后端改字段 → 前端**编译期**报错而非运行时炸。
 
-- **产物(committed,勿手改)**:`apps/web/shared/types/generated/artifact-api.ts` —— openapi-typescript 原样输出;已在 `.prettierignore` + eslint `ignores` 中排除(drift gate 用原始输出比对,格式化会造成假阳性)。
+两套 spec 都出 TS:artifact 服务 API(`openapi.yaml`)+ **oauth 托管的 admin API**(`admin-openapi.yaml`,`/api/v1/admin/artifact/*`)。
+
+- **产物(committed,勿手改)**:`apps/web/shared/types/generated/artifact-api.ts` 与 `.../artifact-admin-api.ts` —— openapi-typescript 原样输出;已在 `.prettierignore` + eslint `ignores` 中排除(drift gate 用原始输出比对,格式化会造成假阳性)。
 - **重新生成**(零依赖,pinned dlx,不入 lockfile):
   ```bash
-  pnpm -F web run gen:types:artifact
-  # = pnpm dlx openapi-typescript@7.13.0 ../../docs/artifact/openapi.yaml -o shared/types/generated/artifact-api.ts
+  pnpm -F web run gen:types:artifact         # 服务 API → artifact-api.ts
+  pnpm -F web run gen:types:artifact-admin   # admin API → artifact-admin-api.ts
   ```
-- **防漂移 CI**:`.github/workflows/openapi-types.yml` 在 spec / 生成物变更时重生成并 `git diff --exit-code` —— 堵住"改了 spec 没重生成 TS"和"手改生成物"。与 §6 的 `gen-openapi`(code→spec)合起来闭环 code→spec→TS。
-- **现状(pilot)**:artifact 服务 API 目前 infra 前端**零消费**(下载功能落地时接入);本产物先作为契约的 TS 孪生 + drift gate 基线。**注意**:`apps/web/shared/types/artifact.ts`(手写)是 oauth 网关 `/admin/artifact/*` 的 **admin** 形状,是**另一张面**、不在本 spec 内 —— 不能由本产物替换。要生成式消灭那张面的漂移,须先把 oauth admin 端点 Huma 化(下一步路线)。
+- **消费**:`apps/web/shared/types/artifact.ts` 的类型(`ArtifactAdminRow` / `ArtifactAdminListResponse` / `ArtifactAdminStats` / `ArtifactSiteStats` / `ArtifactStatus`)现在是 `artifact-admin-api.ts` 生成 schema 的**别名**(手写只剩 UI 用的 status chip 映射/tabs)。后端 admin handler 改字段 → spec 重出 → 这些别名编译期变化 → 消费组件(artifacts List/Dashboard)编译期接住。
+- **防漂移 CI**:`.github/workflows/openapi-types.yml` 在任一 spec / 生成物变更时重生成两个 TS 并 `git diff --exit-code`;`test.yml` 的 unit job 用 `gen-openapi`(含 `-admin`)重出三份 spec 并 diff。合起来闭环 **code→spec→TS**(admin 端点是真·Huma-served,spec 从代码导出,不会与代码漂移)。
+- **admin 端点 = 真·Huma-served**:`/api/v1/admin/artifact/{list,stats,:uuid,:uuid/reclaim}` 在 oauth 服务里由 Huma 提供(`handler.SetupAdmin`)。鉴权:Huma 注册在 app 上、不吃 `/admin` group 中间件,故在 `cmd/oauth` 用 path-scoped `Auth+RequireRole("admin")` 网住前缀;`list/delete/reclaim` 额外要求 `ren` 角色,在 handler 内校验(`admin_huma.go`)。
 
 ## 5. prose 与 spec 并存
 
