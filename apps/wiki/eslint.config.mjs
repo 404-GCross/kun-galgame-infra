@@ -2,6 +2,9 @@ import withNuxt from './.nuxt/eslint.config.mjs'
 import a11y from 'eslint-plugin-vuejs-accessibility'
 
 export default withNuxt(
+  // Generated OpenAPI types (openapi-typescript) — never lint/format; the CI
+  // drift gate regenerates and diffs, so it must stay the tool's raw output.
+  { ignores: ['app/shared/types/generated/**'] },
   // Apply the a11y plugin's recommended rules to all .vue files.
   // Documentation: https://vue-a11y.github.io/eslint-plugin-vuejs-accessibility/
   a11y.configs['flat/recommended'],

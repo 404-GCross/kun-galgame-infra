@@ -39,3 +39,7 @@ migrate/*.json
 
 # docs
 docs
+
+# generated from OpenAPI specs (openapi-typescript) — never hand-edit; the CI
+# drift gate regenerates and diffs, so the file must match the tool's raw output
+app/shared/types/generated

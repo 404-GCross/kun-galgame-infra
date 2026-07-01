@@ -1,9 +1,10 @@
 name: openapi-types
 
 # Drift gate for the TypeScript arm of the OpenAPI contracts. The committed
-# apps/web/shared/types/generated/*.ts must equal a fresh openapi-typescript run
-# against the committed spec — this catches "the spec changed but the generated
-# types weren't regenerated" and any hand-edit to a generated file.
+# generated *.ts must equal a fresh openapi-typescript run against the committed
+# spec — this catches "the spec changed but the generated types weren't
+# regenerated" and any hand-edit to a generated file. Types live in the app that
+# consumes them: artifact-* in apps/web, galgame-* in apps/wiki.
 #
 # Scope: spec -> TS only. The spec-vs-Go-code side is covered separately
 # (`go run ./cmd/gen-openapi` re-exports the spec from the Huma code; a future
@@ -12,23 +13,18 @@ name: openapi-types
 
 on:
   push:
-    paths:
+    paths: &paths
       - "docs/artifact/openapi.yaml"
       - "docs/artifact/admin-openapi.yaml"
       - "docs/galgame_wiki/calendar-openapi.yaml"
       - "docs/galgame_wiki/read-openapi.yaml"
       - "apps/web/shared/types/generated/**"
       - "apps/web/package.json"
+      - "apps/wiki/app/shared/types/generated/**"
+      - "apps/wiki/package.json"
       - ".github/workflows/openapi-types.yml"
   pull_request:
-    paths:
-      - "docs/artifact/openapi.yaml"
-      - "docs/artifact/admin-openapi.yaml"
-      - "docs/galgame_wiki/calendar-openapi.yaml"
-      - "docs/galgame_wiki/read-openapi.yaml"
-      - "apps/web/shared/types/generated/**"
-      - "apps/web/package.json"
-      - ".github/workflows/openapi-types.yml"
+    paths: *paths
 
 permissions:
   contents: read
@@ -49,7 +45,7 @@ jobs:
         run: |
           pnpm -F web run gen:types:artifact
           pnpm -F web run gen:types:artifact-admin
-          pnpm -F web run gen:types:galgame-calendar
-          pnpm -F web run gen:types:galgame-read
+          pnpm -F wiki run gen:types:galgame-read
+          pnpm -F wiki run gen:types:galgame-calendar
       - name: Fail if the generated types are stale vs the specs
-        run: git diff --exit-code -- apps/web/shared/types/generated/
+        run: git diff --exit-code -- apps/web/shared/types/generated/ apps/wiki/app/shared/types/generated/
