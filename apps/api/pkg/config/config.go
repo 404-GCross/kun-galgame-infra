@@ -185,6 +185,12 @@ type JWTConfig struct {
 type OIDCConfig struct {
 	Issuer    string
 	KeyEncKey string
+	// SignAsymmetric flips access-token signing from the legacy HS256 to the
+	// active ES256 key. Default false. MUST stay false until every verifier
+	// (oauth + galgame/image/artifact) is deployed with accept-both
+	// verification (Phase 1), else in-flight-issued ES256 tokens 401 on the
+	// services that only know HS256. Env: KUN_OIDC_SIGN_ASYMMETRIC.
+	SignAsymmetric bool
 }
 
 // AuthConfig holds auth-flow-tunable parameters that aren't tied to a
@@ -268,9 +274,11 @@ func Load() (*Config, error) {
 
 	// OIDC config. Issuer is the OAuth server's public base URL (== SiteURL);
 	// KeyEncKey encrypts signing private keys at rest (only cmd/oauth needs it).
+	signAsym, _ := strconv.ParseBool(getEnv("KUN_OIDC_SIGN_ASYMMETRIC", "false"))
 	cfg.OIDC = OIDCConfig{
-		Issuer:    cfg.Server.SiteURL,
-		KeyEncKey: getEnv("KUN_OIDC_KEY_ENC_KEY", ""),
+		Issuer:         cfg.Server.SiteURL,
+		KeyEncKey:      getEnv("KUN_OIDC_KEY_ENC_KEY", ""),
+		SignAsymmetric: signAsym,
 	}
 
 	// Auth config — verification-code TTL and other auth-flow knobs.

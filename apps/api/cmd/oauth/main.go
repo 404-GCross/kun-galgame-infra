@@ -14,6 +14,7 @@ import (
 	"api/pkg/config"
 	"api/pkg/health"
 	"api/pkg/logger"
+	"api/pkg/oidctoken"
 	"api/pkg/response"
 
 	authHandler "api/internal/platform/auth/handler"
@@ -142,6 +143,25 @@ func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 			slog.Error("oidc signing key bootstrap failed", "err", err)
 		}
 		oidcH = authHandler.NewOIDCHandler(signingKeySvc, cfg)
+
+		// Phase 1 token signing/verification. The verifier is accept-both
+		// (ES256/RS256 via the local key set + HS256 legacy) and is set
+		// regardless of the sign flag, so this OP verifies ES256 tokens before
+		// any signer flips. The signer uses ES256 only when
+		// KUN_OIDC_SIGN_ASYMMETRIC is on (and an active key exists); else HS256.
+		// See docs/auth/03-oidc-standardization-design.md §10 Phase 1.
+		verifier := oidctoken.NewVerifier(cfg.JWT.Secret, signingKeySvc)
+		var signer oidctoken.Signer = oidctoken.NewHS256Signer(cfg.JWT.Secret)
+		if cfg.OIDC.SignAsymmetric {
+			if kid, _, key, err := signingKeySvc.ActiveSigner(cleanupCtx); err != nil {
+				slog.Error("asymmetric signing enabled but no active ES256 key; falling back to HS256", "err", err)
+			} else {
+				signer = oidctoken.NewES256Signer(kid, key)
+				slog.Info("oauth signing access tokens with ES256", "kid", kid)
+			}
+		}
+		authSvc.WithTokenSigner(signer).WithTokenVerifier(verifier)
+		oauthSvc.WithTokenSigner(signer)
 	} else {
 		slog.Warn("KUN_OIDC_KEY_ENC_KEY unset; OIDC signing keys + jwks/discovery disabled")
 	}

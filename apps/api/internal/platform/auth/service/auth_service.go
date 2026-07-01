@@ -20,6 +20,7 @@ import (
 	"api/internal/platform/auth/repository"
 	"api/pkg/config"
 	"api/pkg/errors"
+	"api/pkg/oidctoken"
 	"api/pkg/utils"
 )
 
@@ -45,12 +46,31 @@ type AuthService struct {
 	// no gift) so the lighter NewAuthService constructor / tests stay valid;
 	// wired in via WithMoemoepoint during app startup.
 	moemoepointSvc *MoemoepointService
+	// signer / verifier for access tokens (Phase 1). Both optional: nil signer
+	// falls back to legacy HS256 signing, nil verifier to legacy HS256
+	// verification. Wired via WithTokenSigner / WithTokenVerifier at startup.
+	signer   oidctoken.Signer
+	verifier *oidctoken.Verifier
 }
 
 // WithMoemoepoint wires the moemoepoint service used to grant the registration
 // welcome gift. Returns the service for fluent chaining; nil disables the gift.
 func (s *AuthService) WithMoemoepoint(mp *MoemoepointService) *AuthService {
 	s.moemoepointSvc = mp
+	return s
+}
+
+// WithTokenSigner injects the access-token signer (ES256 or HS256). Returns the
+// service for chaining; nil keeps legacy HS256 signing.
+func (s *AuthService) WithTokenSigner(signer oidctoken.Signer) *AuthService {
+	s.signer = signer
+	return s
+}
+
+// WithTokenVerifier injects the accept-both access-token verifier. Returns the
+// service for chaining; nil keeps legacy HS256-only verification.
+func (s *AuthService) WithTokenVerifier(v *oidctoken.Verifier) *AuthService {
+	s.verifier = v
 	return s
 }
 
@@ -802,13 +822,27 @@ func (s *AuthService) ChangePassword(ctx context.Context, userUUID string, oldPa
 	return s.userRepo.UpdatePassword(ctx, userUUID, hashedPassword)
 }
 
-// ValidateAccessToken validates an access token and returns claims
+// ValidateAccessToken validates an access token and returns claims. Uses the
+// injected accept-both verifier (ES256/RS256 via JWKS + HS256 fallback) when
+// set; otherwise the legacy HS256-only path.
 func (s *AuthService) ValidateAccessToken(tokenString string) (*utils.TokenClaims, error) {
+	if s.verifier != nil {
+		return s.verifier.Parse(context.Background(), tokenString)
+	}
 	claims, err := utils.ParseToken(tokenString, s.cfg.JWT.Secret)
 	if err != nil {
 		return nil, err
 	}
 	return claims, nil
+}
+
+// signAccessToken mints an access token via the injected signer, falling back
+// to legacy HS256 when no signer is set.
+func (s *AuthService) signAccessToken(claims utils.TokenClaims, ttl time.Duration) (string, error) {
+	if s.signer != nil {
+		return s.signer.SignAccess(claims, ttl)
+	}
+	return utils.GenerateAccessToken(s.cfg.JWT.Secret, claims, ttl)
 }
 
 // generateTokens generates access and refresh tokens
@@ -822,8 +856,7 @@ func (s *AuthService) generateTokens(user *model.User) (*dto.TokenPair, error) {
 	}
 
 	// Access token (15 minutes)
-	accessToken, err := utils.GenerateAccessToken(
-		s.cfg.JWT.Secret,
+	accessToken, err := s.signAccessToken(
 		utils.TokenClaims{
 			UserUUID: user.UUID,
 			ID:       user.ID,
@@ -837,12 +870,9 @@ func (s *AuthService) generateTokens(user *model.User) (*dto.TokenPair, error) {
 		return nil, err
 	}
 
-	// Refresh token (7 days)
-	refreshToken, err := utils.GenerateRefreshToken(
-		s.cfg.JWT.Secret,
-		user.UUID,
-		7*24*time.Hour,
-	)
+	// Refresh token — opaque random (matched by DB value; the session row's
+	// expires_at governs lifetime).
+	refreshToken, err := utils.GenerateOpaqueRefreshToken()
 	if err != nil {
 		return nil, err
 	}

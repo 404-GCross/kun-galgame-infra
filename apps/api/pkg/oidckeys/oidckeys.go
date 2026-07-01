@@ -8,8 +8,10 @@
 package oidckeys
 
 import (
+	"crypto"
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/ecdh"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -133,6 +135,86 @@ func thumbprint(jwk map[string]string) (string, error) {
 // *rsa.PrivateKey).
 func ParsePrivate(der []byte) (any, error) {
 	return x509.ParsePKCS8PrivateKey(der)
+}
+
+// PublicKeyFromJWK reconstructs a crypto.PublicKey from a public JWK (the
+// inverse of the JWK encoding in Generate). EC keys go via crypto/ecdh + a PKIX
+// round-trip to a *ecdsa.PublicKey (avoids the deprecated ecdsa.X/Y fields);
+// RSA keys are built directly. Used by verifiers (golang-jwt ES256/RS256 accept
+// *ecdsa.PublicKey / *rsa.PublicKey).
+func PublicKeyFromJWK(jwk map[string]any) (crypto.PublicKey, error) {
+	kty, _ := jwk["kty"].(string)
+	switch kty {
+	case "EC":
+		if crv, _ := jwk["crv"].(string); crv != "P-256" {
+			return nil, fmt.Errorf("oidckeys: unsupported EC crv %q", crv)
+		}
+		xs, _ := jwk["x"].(string)
+		ys, _ := jwk["y"].(string)
+		x, err := base64.RawURLEncoding.DecodeString(xs)
+		if err != nil {
+			return nil, fmt.Errorf("oidckeys: bad EC x: %w", err)
+		}
+		y, err := base64.RawURLEncoding.DecodeString(ys)
+		if err != nil {
+			return nil, fmt.Errorf("oidckeys: bad EC y: %w", err)
+		}
+		point := make([]byte, 0, 1+len(x)+len(y))
+		point = append(point, 0x04) // uncompressed
+		point = append(point, x...)
+		point = append(point, y...)
+		ecdhPub, err := ecdh.P256().NewPublicKey(point) // validates on-curve
+		if err != nil {
+			return nil, fmt.Errorf("oidckeys: bad EC point: %w", err)
+		}
+		der, err := x509.MarshalPKIXPublicKey(ecdhPub)
+		if err != nil {
+			return nil, err
+		}
+		return x509.ParsePKIXPublicKey(der) // -> *ecdsa.PublicKey
+	case "RSA":
+		ns, _ := jwk["n"].(string)
+		es, _ := jwk["e"].(string)
+		n, err := base64.RawURLEncoding.DecodeString(ns)
+		if err != nil {
+			return nil, fmt.Errorf("oidckeys: bad RSA n: %w", err)
+		}
+		e, err := base64.RawURLEncoding.DecodeString(es)
+		if err != nil {
+			return nil, fmt.Errorf("oidckeys: bad RSA e: %w", err)
+		}
+		return &rsa.PublicKey{
+			N: new(big.Int).SetBytes(n),
+			E: int(new(big.Int).SetBytes(e).Int64()),
+		}, nil
+	default:
+		return nil, fmt.Errorf("oidckeys: unsupported kty %q", kty)
+	}
+}
+
+// ParseJWKSet parses a JWK Set ({"keys":[...]}) into a kid -> public key map.
+// Unsupported / malformed entries are skipped (best-effort) rather than
+// failing the whole set.
+func ParseJWKSet(raw []byte) (map[string]crypto.PublicKey, error) {
+	var set struct {
+		Keys []map[string]any `json:"keys"`
+	}
+	if err := json.Unmarshal(raw, &set); err != nil {
+		return nil, err
+	}
+	out := make(map[string]crypto.PublicKey, len(set.Keys))
+	for _, jwk := range set.Keys {
+		kid, _ := jwk["kid"].(string)
+		if kid == "" {
+			continue
+		}
+		pub, err := PublicKeyFromJWK(jwk)
+		if err != nil {
+			continue
+		}
+		out[kid] = pub
+	}
+	return out, nil
 }
 
 // --- AES-256-GCM at-rest encryption for private keys (KEK from config) ---

@@ -2,9 +2,11 @@ package service
 
 import (
 	"context"
+	"crypto"
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"api/internal/platform/auth/model"
@@ -22,6 +24,11 @@ import (
 type SigningKeyService struct {
 	repo *authrepo.SigningKeyRepository
 	kek  []byte
+
+	// pubCache is the parsed published public keys (kid -> key), the local
+	// implementation of oidctoken.Resolver for the OP's own verification.
+	mu       sync.RWMutex
+	pubCache map[string]crypto.PublicKey
 }
 
 // NewSigningKeyService creates the service. kekSecret is KUN_OIDC_KEY_ENC_KEY;
@@ -92,6 +99,50 @@ func (s *SigningKeyService) JWKS(ctx context.Context) (map[string]any, error) {
 		out = append(out, json.RawMessage(keys[i].PublicJWK))
 	}
 	return map[string]any{"keys": out}, nil
+}
+
+// Key implements oidctoken.Resolver: it maps a JWS kid to the published public
+// key, reloading the cache on a miss (e.g. after a rotation adds a new key).
+func (s *SigningKeyService) Key(ctx context.Context, kid string) (crypto.PublicKey, error) {
+	s.mu.RLock()
+	k := s.pubCache[kid]
+	s.mu.RUnlock()
+	if k != nil {
+		return k, nil
+	}
+	if err := s.reloadPublic(ctx); err != nil {
+		return nil, err
+	}
+	s.mu.RLock()
+	k = s.pubCache[kid]
+	s.mu.RUnlock()
+	if k == nil {
+		return nil, fmt.Errorf("signing key: unknown kid %q", kid)
+	}
+	return k, nil
+}
+
+func (s *SigningKeyService) reloadPublic(ctx context.Context) error {
+	keys, err := s.repo.FindPublished(ctx)
+	if err != nil {
+		return err
+	}
+	m := make(map[string]crypto.PublicKey, len(keys))
+	for i := range keys {
+		var jwk map[string]any
+		if err := json.Unmarshal(keys[i].PublicJWK, &jwk); err != nil {
+			continue
+		}
+		pub, err := oidckeys.PublicKeyFromJWK(jwk)
+		if err != nil {
+			continue
+		}
+		m[keys[i].Kid] = pub
+	}
+	s.mu.Lock()
+	s.pubCache = m
+	s.mu.Unlock()
+	return nil
 }
 
 // ActiveSigner returns the parsed private key + kid + alg for the ES256 active

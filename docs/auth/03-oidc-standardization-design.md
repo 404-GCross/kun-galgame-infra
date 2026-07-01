@@ -16,8 +16,14 @@
 > RFC 7638 thumbprint kid, JWK encoding, AES-256-GCM at-rest), startup key bootstrap,
 > and the public `GET /oauth/jwks` + `/.well-known/{openid-configuration,oauth-authorization-server}`
 > endpoints — all gated on `KUN_OIDC_KEY_ENC_KEY`, world-readable (ACAO *), standard JSON.
-> Verified end-to-end (crypto unit tests + live discovery/JWKS smoke test). **Phases 1–4
-> not started** (asymmetric signing cutover, id_token, wire-format, deferred items).
+> Verified end-to-end (crypto unit tests + live discovery/JWKS smoke test).
+> **Phase 1a done** — token core (`pkg/oidctoken`: ES256/HS256 signer + accept-both
+> verifier + JWKS resolver, JWK→pubkey decode in `pkg/oidckeys`), the **oauth** service
+> signs+verifies through it (flag `KUN_OIDC_SIGN_ASYMMETRIC`, default off → HS256), and
+> refresh tokens are now opaque random strings. **Phase 1b pending** — wire the
+> galgame/image/artifact verifiers to accept-both (they need a JWKS URL); **do NOT set
+> `KUN_OIDC_SIGN_ASYMMETRIC=true` until 1b ships**, or ES256 tokens 401 on those services.
+> **Phases 2–4 not started** (id_token, wire-format, deferred items).
 > This is the keystone of the developer platform (todos #6), deliberately sequenced
 > **before** any Huma-ification of the auth surface, because an IdP's canonical
 > machine-readable contract is the **OIDC discovery document, not a hand-authored
@@ -259,7 +265,9 @@ Each phase is independently deployable; earlier phases are additive.
    + both discovery documents (advertising ES256/RS256, code+PKCE, endpoints). Nothing
    consumes them yet → **zero break**. → `go run ./cmd/migrate` on `kun_galgame_infra`.
    (Files: `pkg/oidckeys/`, `internal/platform/auth/{model/signing_key.go,repository/signing_key_repository.go,service/signing_key_service.go,handler/oidc_handler.go}`, wired in `cmd/oauth/main.go`, gated on `KUN_OIDC_KEY_ENC_KEY`.)
-1. **Asymmetric signing.** Sign access tokens (and, next phase, id_tokens) with the `active`
+1. **Asymmetric signing.** 🔄 **1a DONE** (oauth: signer+verifier via `pkg/oidctoken`, flag-gated,
+   refresh→opaque) · **1b PENDING** (galgame/image/artifact verifiers). Sign access tokens
+   (and, next phase, id_tokens) with the `active`
    ES256 key; switch the **four** infra verifiers (§3) to public-key verification by `kid`
    (fetched from local JWKS / the key set); drop `cfg.JWT.Secret` from galgame/image/artifact
    verification (public key only). Make refresh tokens opaque random strings. **Externally

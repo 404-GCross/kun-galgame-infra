@@ -22,6 +22,7 @@ import (
 	siterepo "api/internal/platform/site/repository"
 	"api/pkg/config"
 	"api/pkg/errors"
+	"api/pkg/oidctoken"
 	"api/pkg/utils"
 )
 
@@ -32,6 +33,25 @@ type OAuthService struct {
 	sessionRepo  *authrepo.SessionRepository
 	clientRepo   *siterepo.OAuthClientRepository
 	cfg          *config.Config
+	// signer mints access tokens. When nil, falls back to the legacy HS256
+	// path (cfg.JWT.Secret). Injected via WithTokenSigner (Phase 1).
+	signer oidctoken.Signer
+}
+
+// WithTokenSigner injects the access-token signer (ES256 when asymmetric signing
+// is enabled, else HS256). Returns the service for chaining.
+func (s *OAuthService) WithTokenSigner(signer oidctoken.Signer) *OAuthService {
+	s.signer = signer
+	return s
+}
+
+// signAccessToken mints an access token via the injected signer, falling back
+// to legacy HS256 when no signer is set.
+func (s *OAuthService) signAccessToken(claims utils.TokenClaims, ttl time.Duration) (string, error) {
+	if s.signer != nil {
+		return s.signer.SignAccess(claims, ttl)
+	}
+	return utils.GenerateAccessToken(s.cfg.JWT.Secret, claims, ttl)
 }
 
 // NewOAuthService creates a new OAuthService
@@ -333,8 +353,7 @@ func (s *OAuthService) ExchangeCode(ctx context.Context, req *dto.TokenRequest) 
 	}
 
 	// Generate tokens with scope + site_id embedded in access token
-	accessToken, err := utils.GenerateAccessToken(
-		s.cfg.JWT.Secret,
+	accessToken, err := s.signAccessToken(
 		utils.TokenClaims{
 			UserUUID: user.UUID,
 			ID:       user.ID,
@@ -350,15 +369,11 @@ func (s *OAuthService) ExchangeCode(ctx context.Context, req *dto.TokenRequest) 
 		return nil, err
 	}
 
-	// refresh_token lifetime is per-client (defaults to 90 days). Both
-	// the JWT exp claim and the session expires_at use the same TTL so
-	// they expire together.
+	// refresh_token is an opaque random string (matched by DB value, never
+	// signature-verified). Its lifetime is governed by the session row's
+	// expires_at (per-client, defaults to 90 days) — see below.
 	refreshTokenTTL := client.RefreshTokenTTL()
-	refreshToken, err := utils.GenerateRefreshToken(
-		s.cfg.JWT.Secret,
-		user.UUID,
-		refreshTokenTTL,
-	)
+	refreshToken, err := utils.GenerateOpaqueRefreshToken()
 	if err != nil {
 		return nil, err
 	}
@@ -604,8 +619,7 @@ func (s *OAuthService) RefreshWithClient(ctx context.Context, refreshToken, clie
 	// lose its scope claim — privacy regression in /oauth/userinfo — and
 	// its site binding — image_service cross-site check silently allows).
 	freshAccess := func() (string, error) {
-		return utils.GenerateAccessToken(
-			s.cfg.JWT.Secret,
+		return s.signAccessToken(
 			utils.TokenClaims{
 				UserUUID: user.UUID,
 				ID:       user.ID,
@@ -666,11 +680,7 @@ func (s *OAuthService) RefreshWithClient(ctx context.Context, refreshToken, clie
 	// refresh_token rotation uses the client's current TTL — admins
 	// shortening the TTL effectively rolls out via natural refresh.
 	refreshTokenTTL := client.RefreshTokenTTL()
-	newRefreshToken, err := utils.GenerateRefreshToken(
-		s.cfg.JWT.Secret,
-		user.UUID,
-		refreshTokenTTL,
-	)
+	newRefreshToken, err := utils.GenerateOpaqueRefreshToken()
 	if err != nil {
 		return nil, err
 	}

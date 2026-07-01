@@ -2,6 +2,7 @@ package utils
 
 import (
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"time"
@@ -46,9 +47,26 @@ func GenerateAccessToken(secret string, claims TokenClaims, expiry time.Duration
 	return token.SignedString([]byte(secret))
 }
 
+// GenerateOpaqueRefreshToken returns a high-entropy opaque refresh token (32
+// random bytes, base64url). Refresh tokens are matched by DB value on both
+// refresh paths (never signature-verified — ParseRefreshToken has no callers),
+// so an opaque string is the correct, spec-clean form. Old JWT refresh tokens
+// keep working because the lookup is by value, not format.
+// Design: docs/auth/03-oidc-standardization-design.md §5.3.
+func GenerateOpaqueRefreshToken() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(b), nil
+}
+
 // GenerateRefreshToken generates a new refresh token.
 // Each token includes a unique jti (JWT ID) to prevent collisions
 // when multiple tokens are issued for the same user within the same second.
+//
+// Deprecated: refresh tokens are DB-looked-up, not signature-verified; use
+// GenerateOpaqueRefreshToken. Kept only until all mint sites migrate.
 func GenerateRefreshToken(secret string, userUUID string, expiry time.Duration) (string, error) {
 	jtiBytes := make([]byte, 16)
 	if _, err := rand.Read(jtiBytes); err != nil {
