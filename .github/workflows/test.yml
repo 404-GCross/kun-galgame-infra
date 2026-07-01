@@ -57,7 +57,8 @@ jobs:
           go run ./cmd/gen-openapi -downgrade -o ../../docs/artifact/openapi-3.0.yaml
           go run ./cmd/gen-openapi -admin -o ../../docs/artifact/admin-openapi.yaml
           go run ./cmd/gen-openapi -galgame-calendar -o ../../docs/galgame_wiki/calendar-openapi.yaml
-          git diff --exit-code -- ../../docs/artifact/ ../../docs/galgame_wiki/calendar-openapi.yaml
+          go run ./cmd/gen-openapi -galgame-read -o ../../docs/galgame_wiki/read-openapi.yaml
+          git diff --exit-code -- ../../docs/artifact/ ../../docs/galgame_wiki/calendar-openapi.yaml ../../docs/galgame_wiki/read-openapi.yaml
 
   integration:
     name: integration (postgres + meilisearch)

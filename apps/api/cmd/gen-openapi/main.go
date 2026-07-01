@@ -6,6 +6,7 @@
 //	go run ./cmd/gen-openapi -downgrade -o ../../docs/artifact/openapi-3.0.yaml  # 3.0.3 (oapi-codegen)
 //	go run ./cmd/gen-openapi -admin -o ../../docs/artifact/admin-openapi.yaml    # oauth admin API (3.1)
 //	go run ./cmd/gen-openapi -galgame-calendar -o ../../docs/galgame_wiki/calendar-openapi.yaml  # wiki release calendar (3.1)
+//	go run ./cmd/gen-openapi -galgame-read -o ../../docs/galgame_wiki/read-openapi.yaml          # wiki read endpoints (3.1)
 package main
 
 import (
@@ -26,6 +27,7 @@ func main() {
 	downgrade := flag.Bool("downgrade", false, "emit OpenAPI 3.0.3 instead of 3.1 (for tools without 3.1 support, e.g. oapi-codegen)")
 	admin := flag.Bool("admin", false, "emit the oauth-hosted admin API spec (/api/v1/admin/artifact/*) instead of the artifact service spec")
 	galgameCalendar := flag.Bool("galgame-calendar", false, "emit the galgame-wiki release-calendar spec (/api/galgame/calendar*)")
+	galgameRead := flag.Bool("galgame-read", false, "emit the galgame-wiki read-endpoint spec (/api/galgame/batch, …)")
 	flag.Parse()
 
 	// Build the API to derive the spec; the deps are nil / stub because Setup
@@ -33,6 +35,8 @@ func main() {
 	app := fiber.New()
 	var api huma.API
 	switch {
+	case *galgameRead:
+		api = galgameHandler.SetupGalgameReadSpec(app)
 	case *galgameCalendar:
 		api = galgameHandler.SetupCalendarSpec(app)
 	case *admin:

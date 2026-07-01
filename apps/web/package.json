@@ -10,6 +10,7 @@
     "gen:types:artifact": "pnpm dlx openapi-typescript@7.13.0 ../../docs/artifact/openapi.yaml -o shared/types/generated/artifact-api.ts",
     "gen:types:artifact-admin": "pnpm dlx openapi-typescript@7.13.0 ../../docs/artifact/admin-openapi.yaml -o shared/types/generated/artifact-admin-api.ts",
     "gen:types:galgame-calendar": "pnpm dlx openapi-typescript@7.13.0 ../../docs/galgame_wiki/calendar-openapi.yaml -o shared/types/generated/galgame-calendar-api.ts",
+    "gen:types:galgame-read": "pnpm dlx openapi-typescript@7.13.0 ../../docs/galgame_wiki/read-openapi.yaml -o shared/types/generated/galgame-read-api.ts",
     "preview": "nuxt preview",
     "typecheck": "nuxt typecheck",
     "lint": "eslint .",
