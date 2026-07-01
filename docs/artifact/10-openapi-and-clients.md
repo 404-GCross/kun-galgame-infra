@@ -57,6 +57,19 @@ moyu/kungal 现在**手写**各 infra 服务的薄 Go client(`userclient`/`image
 - 在 Flutter 仓 CI 用 `openapi-generator`(**dart-dio**,稳健)或 `openapi_retrofit_generator`(retrofit + dio + json_serializable,更地道)从 spec 生成**类型化模型 + Dio client**。
 - **Riverpod 接线**:一个 Provider 提供 Dio client(拦截器注入 OAuth bearer / session)→ 每个生成的 API 组一个 provider → `@riverpod` AsyncNotifier/FutureProvider 发起调用。生成的 client 保持"哑",Riverpod 管状态/缓存/鉴权。
 
+### 4.3 TypeScript(前端类型化,消灭手写 `shared/types` 漂移)
+
+TS 是这套多语言客户端里最后补齐的一臂(Go/Dart 已就位)。用 **`openapi-typescript`** 从 3.1 spec 生成 `paths`/`operations`/`components` 类型,前端配 `openapi-fetch` 即得端到端类型化调用,后端改字段 → 前端**编译期**报错而非运行时炸。
+
+- **产物(committed,勿手改)**:`apps/web/shared/types/generated/artifact-api.ts` —— openapi-typescript 原样输出;已在 `.prettierignore` + eslint `ignores` 中排除(drift gate 用原始输出比对,格式化会造成假阳性)。
+- **重新生成**(零依赖,pinned dlx,不入 lockfile):
+  ```bash
+  pnpm -F web run gen:types:artifact
+  # = pnpm dlx openapi-typescript@7.13.0 ../../docs/artifact/openapi.yaml -o shared/types/generated/artifact-api.ts
+  ```
+- **防漂移 CI**:`.github/workflows/openapi-types.yml` 在 spec / 生成物变更时重生成并 `git diff --exit-code` —— 堵住"改了 spec 没重生成 TS"和"手改生成物"。与 §6 的 `gen-openapi`(code→spec)合起来闭环 code→spec→TS。
+- **现状(pilot)**:artifact 服务 API 目前 infra 前端**零消费**(下载功能落地时接入);本产物先作为契约的 TS 孪生 + drift gate 基线。**注意**:`apps/web/shared/types/artifact.ts`(手写)是 oauth 网关 `/admin/artifact/*` 的 **admin** 形状,是**另一张面**、不在本 spec 内 —— 不能由本产物替换。要生成式消灭那张面的漂移,须先把 oauth admin 端点 Huma 化(下一步路线)。
+
 ## 5. prose 与 spec 并存
 
 - **OAS**:类型、codegen、请求/响应校验。

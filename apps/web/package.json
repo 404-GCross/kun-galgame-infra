@@ -7,6 +7,7 @@
     "icons": "node scripts/generate-icons.mjs",
     "dev": "nuxt dev",
     "generate": "nuxt generate",
+    "gen:types:artifact": "pnpm dlx openapi-typescript@7.13.0 ../../docs/artifact/openapi.yaml -o shared/types/generated/artifact-api.ts",
     "preview": "nuxt preview",
     "typecheck": "nuxt typecheck",
     "lint": "eslint .",
