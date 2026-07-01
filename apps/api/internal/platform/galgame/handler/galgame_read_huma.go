@@ -118,5 +118,6 @@ func SetupGalgameReadSpec(app *fiber.App) huma.API {
 		OperationID: "getUserGalgameStats", Method: http.MethodGet, Path: "/api/galgame/user/{id}/stats",
 		Summary: "A user's aggregate galgame contribution stats", Tags: tags,
 	}, func(context.Context, *userStatsInput) (*userStatsOutput, error) { return &userStatsOutput{}, nil })
+	registerGalgameSearchOps(api, tags)
 	return api
 }

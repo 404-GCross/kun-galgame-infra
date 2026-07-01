@@ -44,6 +44,28 @@ components:
         - message
         - data
       type: object
+    CalEnvelopeGalgameSearchData:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/CalEnvelopeGalgameSearchData.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/GalgameSearchData"
+        message:
+          type: string
+      required:
+        - code
+        - message
+        - data
+      type: object
     CalEnvelopeListGalgameDetailBrief:
       additionalProperties: false
       properties:
@@ -922,6 +944,187 @@ components:
         - items
         - total
       type: object
+    GalgameSearchData:
+      additionalProperties: false
+      properties:
+        facets:
+          additionalProperties:
+            additionalProperties:
+              format: int64
+              type: integer
+            type: object
+          description: facet → value → count (facets=true)
+          type: object
+        items:
+          items:
+            $ref: "#/components/schemas/GalgameSearchHit"
+          type:
+            - array
+            - "null"
+        pending:
+          description: The viewer's own pending/declined matches (include_pending=true + authenticated)
+          items:
+            $ref: "#/components/schemas/GalgameSearchHit"
+          type:
+            - array
+            - "null"
+        processing_time_ms:
+          format: int64
+          type: integer
+        total:
+          format: int64
+          type: integer
+      required:
+        - items
+        - total
+        - processing_time_ms
+      type: object
+    GalgameSearchHit:
+      additionalProperties: false
+      properties:
+        _formatted:
+          description: Highlighted variants of matched string fields (highlight=true)
+        age_limit:
+          type: string
+        aliases:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+        banner:
+          type: string
+        bid:
+          format: int64
+          type: integer
+        content_limit:
+          type: string
+        created_ts:
+          format: int64
+          type: integer
+        effective_banner_hash:
+          type: string
+        engine_ids:
+          items:
+            format: int64
+            type: integer
+          type:
+            - array
+            - "null"
+        engine_names:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+        id:
+          format: int64
+          type: integer
+        intro_en_us:
+          type: string
+        intro_ja_jp:
+          type: string
+        intro_zh_cn:
+          type: string
+        intro_zh_tw:
+          type: string
+        name_en_us:
+          type: string
+        name_ja_jp:
+          type: string
+        name_zh_cn:
+          type: string
+        name_zh_tw:
+          type: string
+        official_ids:
+          items:
+            format: int64
+            type: integer
+          type:
+            - array
+            - "null"
+        official_names:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+        original_language:
+          type: string
+        release_date:
+          type: string
+        release_date_tba:
+          type: boolean
+        released_month:
+          format: int64
+          type: integer
+        released_ts:
+          format: int64
+          type: integer
+        released_year:
+          format: int64
+          type: integer
+        series_id:
+          format: int64
+          type: integer
+        status:
+          format: int64
+          type: integer
+        tag_ids:
+          items:
+            format: int64
+            type: integer
+          type:
+            - array
+            - "null"
+        tag_names:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+        updated_ts:
+          format: int64
+          type: integer
+        user_id:
+          format: int64
+          type: integer
+        view:
+          format: int64
+          type: integer
+        vndb_id:
+          type: string
+      required:
+        - id
+        - vndb_id
+        - name_zh_cn
+        - name_ja_jp
+        - name_en_us
+        - name_zh_tw
+        - aliases
+        - tag_names
+        - tag_ids
+        - official_names
+        - official_ids
+        - engine_names
+        - engine_ids
+        - intro_zh_cn
+        - intro_ja_jp
+        - intro_en_us
+        - intro_zh_tw
+        - banner
+        - effective_banner_hash
+        - content_limit
+        - age_limit
+        - original_language
+        - status
+        - user_id
+        - view
+        - release_date
+        - release_date_tba
+        - updated_ts
+        - created_ts
+      type: object
     UserBrief:
       additionalProperties: false
       properties:
@@ -1133,6 +1336,174 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Batch galgame briefs (view=brief default; view=detail adds intro/officials/release)
+      tags:
+        - galgame-read
+  /api/galgame/search:
+    get:
+      operationId: searchGalgames
+      parameters:
+        - description: Full-text query (localized names / aliases; tag/studio names with include_intro)
+          explode: false
+          in: query
+          name: q
+          schema:
+            description: Full-text query (localized names / aliases; tag/studio names with include_intro)
+            type: string
+        - description: CSV of statuses; non-admins clamped to {0,2}, default 0 (published)
+          explode: false
+          in: query
+          name: status
+          schema:
+            description: CSV of statuses; non-admins clamped to {0,2}, default 0 (published)
+            type: string
+        - description: sfw | nsfw | all (default sfw)
+          explode: false
+          in: query
+          name: content_limit
+          schema:
+            description: sfw | nsfw | all (default sfw)
+            type: string
+        - description: all | r18
+          explode: false
+          in: query
+          name: age_limit
+          schema:
+            description: all | r18
+            type: string
+        - description: CSV; OR filter
+          explode: false
+          in: query
+          name: original_language
+          schema:
+            description: CSV; OR filter
+            type: string
+        - description: CSV; AND filter
+          explode: false
+          in: query
+          name: tag_ids
+          schema:
+            description: CSV; AND filter
+            type: string
+        - description: CSV; AND filter
+          explode: false
+          in: query
+          name: official_ids
+          schema:
+            description: CSV; AND filter
+            type: string
+        - description: CSV; AND filter
+          explode: false
+          in: query
+          name: engine_ids
+          schema:
+            description: CSV; AND filter
+            type: string
+        - description: Exact series id
+          explode: false
+          in: query
+          name: series_id
+          schema:
+            description: Exact series id
+            type: string
+        - description: YYYY or YYYY-MM
+          explode: false
+          in: query
+          name: released_from
+          schema:
+            description: YYYY or YYYY-MM
+            type: string
+        - description: YYYY or YYYY-MM
+          explode: false
+          in: query
+          name: released_to
+          schema:
+            description: YYYY or YYYY-MM
+            type: string
+        - description: CSV of months 1-12, AND'd on the year range
+          explode: false
+          in: query
+          name: released_months
+          schema:
+            description: CSV of months 1-12, AND'd on the year range
+            type: string
+        - description: Also search intro_* / tag / official names
+          explode: false
+          in: query
+          name: include_intro
+          schema:
+            description: Also search intro_* / tag / official names
+            type: boolean
+        - description: Sort (default relevance)
+          explode: false
+          in: query
+          name: sort
+          schema:
+            description: Sort (default relevance)
+            enum:
+              - relevance
+              - released_desc
+              - released_asc
+              - view
+              - updated
+            type: string
+        - description: Page number (default 1)
+          explode: false
+          in: query
+          name: page
+          schema:
+            description: Page number (default 1)
+            format: int64
+            type: integer
+        - description: Items per page (default 24, max 100)
+          explode: false
+          in: query
+          name: limit
+          schema:
+            description: Items per page (default 24, max 100)
+            format: int64
+            type: integer
+        - description: Return facet aggregation (default true)
+          explode: false
+          in: query
+          name: facets
+          schema:
+            description: Return facet aggregation (default true)
+            type: boolean
+        - description: Return _formatted highlights (default true)
+          explode: false
+          in: query
+          name: highlight
+          schema:
+            description: Return _formatted highlights (default true)
+            type: boolean
+        - description: CSV attribute projection; empty = all
+          explode: false
+          in: query
+          name: fields
+          schema:
+            description: CSV attribute projection; empty = all
+            type: string
+        - description: Also return the viewer's own pending/declined (needs auth)
+          explode: false
+          in: query
+          name: include_pending
+          schema:
+            description: Also return the viewer's own pending/declined (needs auth)
+            type: boolean
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CalEnvelopeGalgameSearchData"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: "Full-text galgame search (Meilisearch): filters, facets, highlights, projection"
       tags:
         - galgame-read
   /api/galgame/user/{id}/contributed:

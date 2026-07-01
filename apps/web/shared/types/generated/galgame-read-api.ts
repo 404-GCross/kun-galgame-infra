@@ -38,6 +38,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/galgame/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Full-text galgame search (Meilisearch): filters, facets, highlights, projection */
+        get: operations["searchGalgames"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/galgame/user/{id}/contributed": {
         parameters: {
             query?: never;
@@ -132,6 +149,18 @@ export interface components {
             /** Format: int64 */
             code: number;
             data: components["schemas"]["GalgameListData"];
+            message: string;
+        };
+        CalEnvelopeGalgameSearchData: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/CalEnvelopeGalgameSearchData.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            code: number;
+            data: components["schemas"]["GalgameSearchData"];
             message: string;
         };
         CalEnvelopeListGalgameDetailBrief: {
@@ -486,6 +515,70 @@ export interface components {
             /** Format: int64 */
             total: number;
         };
+        GalgameSearchData: {
+            /** @description facet → value → count (facets=true) */
+            facets?: {
+                [key: string]: {
+                    [key: string]: number;
+                };
+            };
+            items: components["schemas"]["GalgameSearchHit"][] | null;
+            /** @description The viewer's own pending/declined matches (include_pending=true + authenticated) */
+            pending?: components["schemas"]["GalgameSearchHit"][] | null;
+            /** Format: int64 */
+            processing_time_ms: number;
+            /** Format: int64 */
+            total: number;
+        };
+        GalgameSearchHit: {
+            /** @description Highlighted variants of matched string fields (highlight=true) */
+            _formatted?: unknown;
+            age_limit: string;
+            aliases: string[] | null;
+            banner: string;
+            /** Format: int64 */
+            bid?: number;
+            content_limit: string;
+            /** Format: int64 */
+            created_ts: number;
+            effective_banner_hash: string;
+            engine_ids: number[] | null;
+            engine_names: string[] | null;
+            /** Format: int64 */
+            id: number;
+            intro_en_us: string;
+            intro_ja_jp: string;
+            intro_zh_cn: string;
+            intro_zh_tw: string;
+            name_en_us: string;
+            name_ja_jp: string;
+            name_zh_cn: string;
+            name_zh_tw: string;
+            official_ids: number[] | null;
+            official_names: string[] | null;
+            original_language: string;
+            release_date: string;
+            release_date_tba: boolean;
+            /** Format: int64 */
+            released_month?: number;
+            /** Format: int64 */
+            released_ts?: number;
+            /** Format: int64 */
+            released_year?: number;
+            /** Format: int64 */
+            series_id?: number;
+            /** Format: int64 */
+            status: number;
+            tag_ids: number[] | null;
+            tag_names: string[] | null;
+            /** Format: int64 */
+            updated_ts: number;
+            /** Format: int64 */
+            user_id: number;
+            /** Format: int64 */
+            view: number;
+            vndb_id: string;
+        };
         UserBrief: {
             avatar: string;
             avatar_image_hash?: string;
@@ -596,6 +689,76 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CalEnvelopeListGalgameDetailBrief"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    searchGalgames: {
+        parameters: {
+            query?: {
+                /** @description Full-text query (localized names / aliases; tag/studio names with include_intro) */
+                q?: string;
+                /** @description CSV of statuses; non-admins clamped to {0,2}, default 0 (published) */
+                status?: string;
+                /** @description sfw | nsfw | all (default sfw) */
+                content_limit?: string;
+                /** @description all | r18 */
+                age_limit?: string;
+                /** @description CSV; OR filter */
+                original_language?: string;
+                /** @description CSV; AND filter */
+                tag_ids?: string;
+                /** @description CSV; AND filter */
+                official_ids?: string;
+                /** @description CSV; AND filter */
+                engine_ids?: string;
+                /** @description Exact series id */
+                series_id?: string;
+                /** @description YYYY or YYYY-MM */
+                released_from?: string;
+                /** @description YYYY or YYYY-MM */
+                released_to?: string;
+                /** @description CSV of months 1-12, AND'd on the year range */
+                released_months?: string;
+                /** @description Also search intro_* / tag / official names */
+                include_intro?: boolean;
+                /** @description Sort (default relevance) */
+                sort?: "relevance" | "released_desc" | "released_asc" | "view" | "updated";
+                /** @description Page number (default 1) */
+                page?: number;
+                /** @description Items per page (default 24, max 100) */
+                limit?: number;
+                /** @description Return facet aggregation (default true) */
+                facets?: boolean;
+                /** @description Return _formatted highlights (default true) */
+                highlight?: boolean;
+                /** @description CSV attribute projection; empty = all */
+                fields?: string;
+                /** @description Also return the viewer's own pending/declined (needs auth) */
+                include_pending?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalEnvelopeGalgameSearchData"];
                 };
             };
             /** @description Error */
