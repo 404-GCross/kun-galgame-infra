@@ -38,6 +38,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/galgame/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Whether a vndb_id already exists (and which galgame holds it) */
+        get: operations["checkGalgameVNDB"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/galgame/search": {
         parameters: {
             query?: never;
@@ -123,10 +140,73 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/galgame/{gid}/aliases": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** A galgame's alternative names */
+        get: operations["getGalgameAliases"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/galgame/{gid}/contributors": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** A galgame's contributors, each with the resolved user brief */
+        get: operations["getGalgameContributors"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/galgame/{gid}/links": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** A galgame's external links (official sites, stores, socials) */
+        get: operations["getGalgameLinks"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        CalEnvelopeCheckVNDBResult: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/CalEnvelopeCheckVNDBResult.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            code: number;
+            data: components["schemas"]["CheckVNDBResult"];
+            message: string;
+        };
         CalEnvelopeGalgameDetailResponse: {
             /**
              * Format: uri
@@ -161,6 +241,42 @@ export interface components {
             /** Format: int64 */
             code: number;
             data: components["schemas"]["GalgameSearchData"];
+            message: string;
+        };
+        CalEnvelopeListDetailAlias: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/CalEnvelopeListDetailAlias.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            code: number;
+            data: components["schemas"]["DetailAlias"][] | null;
+            message: string;
+        };
+        CalEnvelopeListDetailLink: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/CalEnvelopeListDetailLink.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            code: number;
+            data: components["schemas"]["DetailLink"][] | null;
+            message: string;
+        };
+        CalEnvelopeListGalgameContributorWithUser: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/CalEnvelopeListGalgameContributorWithUser.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            code: number;
+            data: components["schemas"]["GalgameContributorWithUser"][] | null;
             message: string;
         };
         CalEnvelopeListGalgameDetailBrief: {
@@ -218,6 +334,11 @@ export interface components {
             violence: number;
             /** Format: int64 */
             width?: number;
+        };
+        CheckVNDBResult: {
+            exists: boolean;
+            /** Format: int64 */
+            galgame_id?: number;
         };
         DetailAlias: {
             created: string | null;
@@ -429,6 +550,17 @@ export interface components {
             /** Format: int64 */
             user_id: number;
             vndb_id: string;
+        };
+        GalgameContributorWithUser: {
+            created: string | null;
+            /** Format: int64 */
+            galgame_id: number;
+            /** Format: int64 */
+            id: number;
+            updated: string | null;
+            user?: components["schemas"]["UserBrief"];
+            /** Format: int64 */
+            user_id: number;
         };
         GalgameDetail: {
             age_limit: string;
@@ -702,6 +834,38 @@ export interface operations {
             };
         };
     };
+    checkGalgameVNDB: {
+        parameters: {
+            query?: {
+                /** @description VNDB id to check (e.g. v12345) */
+                vndb_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalEnvelopeCheckVNDBResult"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
     searchGalgames: {
         parameters: {
             query?: {
@@ -904,6 +1068,102 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CalEnvelopeGalgameDetailResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    getGalgameAliases: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Galgame ID */
+                gid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalEnvelopeListDetailAlias"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    getGalgameContributors: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Galgame ID */
+                gid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalEnvelopeListGalgameContributorWithUser"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    getGalgameLinks: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Galgame ID */
+                gid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalEnvelopeListDetailLink"];
                 };
             };
             /** @description Error */

@@ -348,3 +348,19 @@ type UserGalgameListData struct {
 	Galgames []GalgameBrief `json:"galgames"`
 	Total    int64          `json:"total"`
 }
+
+// GalgameContributorWithUser is one row of GET /galgame/:gid/contributors — the
+// contributor plus the resolved user brief. DetailContributor is pinned to
+// model.GalgameContributor by the detail wire-equality test, so this stays
+// faithful to the handler's inline shape.
+type GalgameContributorWithUser struct {
+	DetailContributor
+	User *UserBrief `json:"user,omitempty"`
+}
+
+// CheckVNDBResult is the body of GET /galgame/check: whether a vndb_id already
+// exists and (if so) which galgame id holds it.
+type CheckVNDBResult struct {
+	Exists    bool `json:"exists"`
+	GalgameID *int `json:"galgame_id,omitempty"`
+}

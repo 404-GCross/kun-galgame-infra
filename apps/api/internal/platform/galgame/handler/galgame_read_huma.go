@@ -84,6 +84,27 @@ type userStatsOutput struct {
 	Body calEnvelope[dto.UserGalgameStats]
 }
 
+// gidInput is the bare {gid} path input shared by the relation-list reads.
+type gidInput struct {
+	GID int `path:"gid" doc:"Galgame ID"`
+}
+type linksOutput struct {
+	Body calEnvelope[[]dto.DetailLink]
+}
+type aliasesOutput struct {
+	Body calEnvelope[[]dto.DetailAlias]
+}
+type contributorsOutput struct {
+	Body calEnvelope[[]dto.GalgameContributorWithUser]
+}
+
+type checkVNDBInput struct {
+	VNDBID string `query:"vndb_id" doc:"VNDB id to check (e.g. v12345)"`
+}
+type checkVNDBOutput struct {
+	Body calEnvelope[dto.CheckVNDBResult]
+}
+
 // SetupGalgameReadSpec registers the galgame-wiki read operations to derive their
 // spec. Handlers are stubs (never invoked — Fiber serves these paths).
 func SetupGalgameReadSpec(app *fiber.App) huma.API {
@@ -118,6 +139,22 @@ func SetupGalgameReadSpec(app *fiber.App) huma.API {
 		OperationID: "getUserGalgameStats", Method: http.MethodGet, Path: "/api/galgame/user/{id}/stats",
 		Summary: "A user's aggregate galgame contribution stats", Tags: tags,
 	}, func(context.Context, *userStatsInput) (*userStatsOutput, error) { return &userStatsOutput{}, nil })
+	huma.Register(api, huma.Operation{
+		OperationID: "getGalgameLinks", Method: http.MethodGet, Path: "/api/galgame/{gid}/links",
+		Summary: "A galgame's external links (official sites, stores, socials)", Tags: tags,
+	}, func(context.Context, *gidInput) (*linksOutput, error) { return &linksOutput{}, nil })
+	huma.Register(api, huma.Operation{
+		OperationID: "getGalgameAliases", Method: http.MethodGet, Path: "/api/galgame/{gid}/aliases",
+		Summary: "A galgame's alternative names", Tags: tags,
+	}, func(context.Context, *gidInput) (*aliasesOutput, error) { return &aliasesOutput{}, nil })
+	huma.Register(api, huma.Operation{
+		OperationID: "getGalgameContributors", Method: http.MethodGet, Path: "/api/galgame/{gid}/contributors",
+		Summary: "A galgame's contributors, each with the resolved user brief", Tags: tags,
+	}, func(context.Context, *gidInput) (*contributorsOutput, error) { return &contributorsOutput{}, nil })
+	huma.Register(api, huma.Operation{
+		OperationID: "checkGalgameVNDB", Method: http.MethodGet, Path: "/api/galgame/check",
+		Summary: "Whether a vndb_id already exists (and which galgame holds it)", Tags: tags,
+	}, func(context.Context, *checkVNDBInput) (*checkVNDBOutput, error) { return &checkVNDBOutput{}, nil })
 	registerGalgameSearchOps(api, tags)
 	return api
 }
