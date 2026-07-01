@@ -173,6 +173,48 @@ func TestJWKSResolverEndToEnd(t *testing.T) {
 	}
 }
 
+// TestIDSigner checks the id_token carries the minimal claims (iss/sub/aud/
+// exp/iat), echoes nonce only when present, sets the kid header, and verifies
+// against the published public key.
+func TestIDSigner(t *testing.T) {
+	km, err := oidckeys.Generate(oidckeys.AlgES256)
+	if err != nil {
+		t.Fatal(err)
+	}
+	priv, err := oidckeys.ParsePrivate(km.PrivateDER)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pub := pubFromMaterial(t, km)
+	s := NewIDSigner(km.Kid, priv, "https://id.example")
+
+	tok, err := s.Sign("user-uuid", "client-1", "nonce-xyz", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := jwt.Parse(tok, func(*jwt.Token) (any, error) { return pub, nil })
+	if err != nil {
+		t.Fatalf("verify id_token: %v", err)
+	}
+	if parsed.Header["kid"] != km.Kid {
+		t.Fatalf("id_token kid mismatch: %v", parsed.Header["kid"])
+	}
+	claims := parsed.Claims.(jwt.MapClaims)
+	if claims["iss"] != "https://id.example" || claims["sub"] != "user-uuid" || claims["aud"] != "client-1" || claims["nonce"] != "nonce-xyz" {
+		t.Fatalf("id_token claims mismatch: %+v", claims)
+	}
+
+	// nonce omitted when empty.
+	tok2, err := s.Sign("u", "c", "", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p2, _ := jwt.Parse(tok2, func(*jwt.Token) (any, error) { return pub, nil })
+	if _, ok := p2.Claims.(jwt.MapClaims)["nonce"]; ok {
+		t.Fatal("id_token should omit nonce when not provided")
+	}
+}
+
 // TestRejectAlgNone guards against alg=none downgrade.
 func TestRejectAlgNone(t *testing.T) {
 	tok := jwt.NewWithClaims(jwt.SigningMethodNone, utils.TokenClaims{UserUUID: "x"})

@@ -96,6 +96,43 @@ func (s *es256Signer) SignAccess(claims utils.TokenClaims, ttl time.Duration) (s
 	return tok.SignedString(s.key)
 }
 
+// --- ID token signer ----------------------------------------------------
+
+// IDSigner mints OIDC id_tokens. Always ES256 (the id_token is a new,
+// asymmetric-only token — clients verify it via JWKS), independent of the
+// access-token HS256/ES256 flag.
+type IDSigner struct {
+	kid    string
+	key    crypto.PrivateKey
+	issuer string
+}
+
+// NewIDSigner builds an id_token signer from the active ES256 key and the OP
+// issuer identifier.
+func NewIDSigner(kid string, key crypto.PrivateKey, issuer string) *IDSigner {
+	return &IDSigner{kid: kid, key: key, issuer: issuer}
+}
+
+// Sign issues a minimal id_token: iss/sub/aud/exp/iat (+ nonce when the auth
+// request carried one). No roles/scope/authz data — the id_token authenticates
+// the user to the client, nothing more.
+func (s *IDSigner) Sign(sub, aud, nonce string, ttl time.Duration) (string, error) {
+	now := time.Now()
+	claims := jwt.MapClaims{
+		"iss": s.issuer,
+		"sub": sub,
+		"aud": aud,
+		"exp": now.Add(ttl).Unix(),
+		"iat": now.Unix(),
+	}
+	if nonce != "" {
+		claims["nonce"] = nonce
+	}
+	tok := jwt.NewWithClaims(jwt.SigningMethodES256, claims)
+	tok.Header["kid"] = s.kid
+	return tok.SignedString(s.key)
+}
+
 // --- Verifier -----------------------------------------------------------
 
 // Verifier validates access tokens. It accepts ES256/RS256 (via the Resolver)

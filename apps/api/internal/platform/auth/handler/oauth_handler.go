@@ -87,6 +87,11 @@ func (h *OAuthHandler) Authorize(c fiber.Ctx) error {
 	if req.LoginHint != "" {
 		q.Set("login_hint", req.LoginHint)
 	}
+	// nonce (OIDC) is carried through so the consent POST can bind it to the
+	// code → echoed into the id_token.
+	if req.Nonce != "" {
+		q.Set("nonce", req.Nonce)
+	}
 
 	consentURL := h.cfg.Server.FrontendURL + "/oauth/authorize?" + q.Encode()
 	return c.Redirect().To(consentURL)
@@ -133,6 +138,7 @@ func (h *OAuthHandler) Consent(c fiber.Ctx) error {
 		req.Scope,
 		req.CodeChallenge,
 		codeChallengeMethod,
+		req.Nonce,
 	)
 	if err != nil {
 		// Domain errors (e.g. ErrOAuthInvalidScope when the requested
@@ -290,6 +296,11 @@ func (h *OAuthHandler) LogoutRedirect(c fiber.Ctx) error {
 	}
 	if r := c.Query("redirect"); r != "" {
 		q.Set("redirect", r)
+	}
+	// id_token_hint (OIDC RP-Initiated Logout) — passed through so the OP logout
+	// page can identify the session to end / skip the confirm prompt.
+	if hint := c.Query("id_token_hint"); hint != "" {
+		q.Set("id_token_hint", hint)
 	}
 	dest := h.cfg.Server.FrontendURL + "/auth/logout"
 	if enc := q.Encode(); enc != "" {

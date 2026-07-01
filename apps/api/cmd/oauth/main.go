@@ -152,10 +152,13 @@ func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 		// See docs/auth/03-oidc-standardization-design.md §10 Phase 1.
 		verifier := oidctoken.NewVerifier(cfg.JWT.Secret, signingKeySvc)
 		var signer oidctoken.Signer = oidctoken.NewHS256Signer(cfg.JWT.Secret)
-		if cfg.OIDC.SignAsymmetric {
-			if kid, _, key, err := signingKeySvc.ActiveSigner(cleanupCtx); err != nil {
-				slog.Error("asymmetric signing enabled but no active ES256 key; falling back to HS256", "err", err)
-			} else {
+		if kid, _, key, err := signingKeySvc.ActiveSigner(cleanupCtx); err != nil {
+			slog.Error("no active ES256 signing key; id_token disabled + asymmetric signing unavailable", "err", err)
+		} else {
+			// id_token is always ES256 (asymmetric-only), independent of the
+			// access-token HS256/ES256 flag.
+			oauthSvc.WithIDSigner(oidctoken.NewIDSigner(kid, key, cfg.OIDC.Issuer))
+			if cfg.OIDC.SignAsymmetric {
 				signer = oidctoken.NewES256Signer(kid, key)
 				slog.Info("oauth signing access tokens with ES256", "kid", kid)
 			}
@@ -259,8 +262,10 @@ func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 	// docs/integration/oauth/07-logout.md.
 	oauth.Get("/post-logout-redirect", oauthH.PostLogoutRedirect)
 	// RP-initiated logout entrypoint (browser top-level nav). Bounces to the
-	// OP frontend /auth/logout page. Symmetric with /oauth/authorize.
+	// OP frontend /auth/logout page. Symmetric with /oauth/authorize. OIDC
+	// RP-Initiated Logout requires the end_session_endpoint to accept GET+POST.
 	oauth.Get("/logout", oauthH.LogoutRedirect)
+	oauth.Post("/logout", oauthH.LogoutRedirect)
 	oauthProtected := oauth.Group("", middleware.Auth(authSvc))
 	oauthProtected.Post("/authorize/consent", oauthH.Consent)
 	oauthProtected.Get("/userinfo", oauthH.UserInfo)

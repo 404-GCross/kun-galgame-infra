@@ -24,8 +24,11 @@
 > is on (default off → HS256); refresh tokens are opaque random strings. The flip is a
 > **staged ops rollout** (§10 Phase 1): (1) deploy these builds to ALL services with
 > `KUN_OIDC_JWKS_URL` set on the resource servers + `KUN_OIDC_KEY_ENC_KEY` on oauth; (2)
-> set `KUN_OIDC_SIGN_ASYMMETRIC=true` on oauth; (3) later drop HS256 acceptance. **Phases
-> 2–4 not started** (id_token, wire-format, deferred items).
+> set `KUN_OIDC_SIGN_ASYMMETRIC=true` on oauth; (3) later drop HS256 acceptance.
+> **Phase 2 done** — minimal `id_token` (ES256, iss/sub/aud/exp/iat + nonce) issued on the
+> `openid` scope for the code grant; `nonce` captured at `/authorize`→code→id_token (new
+> `authorization_codes.nonce` column → needs `cmd/migrate`); `end_session_endpoint` now
+> GET+POST with `id_token_hint` passthrough. **Phases 3–4 not started** (wire-format, deferred).
 > This is the keystone of the developer platform (todos #6), deliberately sequenced
 > **before** any Huma-ification of the auth surface, because an IdP's canonical
 > machine-readable contract is the **OIDC discovery document, not a hand-authored
@@ -282,8 +285,10 @@ Each phase is independently deployable; earlier phases are additive.
    (nothing external verifies our signature) — only this brief dual-*verify* window for tokens
    already in the wild. In-flight refresh tokens are unaffected: they're matched by DB value, not
    signature, so old JWT and new opaque refresh tokens coexist naturally.
-2. **id_token + logout.** Issue the minimal `id_token` on `openid` scope; formalize
-   `end_session_endpoint` (RP-Initiated Logout) over the existing `/oauth/logout`.
+2. **id_token + logout.** ✅ **DONE** — minimal `id_token` on `openid` scope (code grant),
+   ES256, `nonce` captured at `/authorize` → `authorization_codes.nonce` → id_token; the
+   `end_session_endpoint` (`/oauth/logout`) now accepts GET+POST + `id_token_hint`. ⚠️ needs
+   `cmd/migrate` (new `nonce` column). Deferred: id_token on refresh, `at_hash`.
 3. **Wire-format cutover.** Expand→contract (§7): tolerant RP readers → flip OP to standard
    JSON + standard errors → remove legacy shape.
 4. **Deferred (when a third party actually arrives).** DCR, mTLS/DPoP sender-constraining,

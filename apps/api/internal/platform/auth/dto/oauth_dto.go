@@ -25,6 +25,9 @@ type AuthorizeRequest struct {
 	// the frontend chooser uses it to pre-select / silently switch.
 	// See docs/integration/oauth/09-account-switching.md.
 	LoginHint string `query:"login_hint" json:"login_hint"`
+	// Nonce (OIDC) binds the auth request to the issued id_token; echoed back
+	// as the id_token `nonce` claim when present.
+	Nonce string `query:"nonce" json:"nonce"`
 }
 
 // TokenRequest represents an OAuth token request
@@ -45,6 +48,10 @@ type TokenResponse struct {
 	ExpiresIn    int    `json:"expires_in"`
 	RefreshToken string `json:"refresh_token,omitempty"`
 	Scope        string `json:"scope,omitempty"`
+	// IDToken is the OIDC id_token (ES256 JWT), present only on the
+	// authorization_code grant when the `openid` scope was granted and an
+	// id-token signer is configured.
+	IDToken string `json:"id_token,omitempty"`
 }
 
 // UserInfoResponse represents an OAuth userinfo response.

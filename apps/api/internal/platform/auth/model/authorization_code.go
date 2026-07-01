@@ -12,6 +12,9 @@ type AuthorizationCode struct {
 	UserID       uint      `gorm:"not null;index" json:"user_id"`
 	RedirectURI  string    `gorm:"size:255;not null" json:"redirect_uri"`
 	Scope        string    `gorm:"size:255" json:"scope"`
+	// Nonce (OIDC) is echoed into the issued id_token's `nonce` claim when the
+	// client supplied one on /authorize. Empty for non-OIDC / nonce-less flows.
+	Nonce         string   `gorm:"size:255" json:"nonce,omitempty"`
 	CodeChallenge string   `gorm:"size:128" json:"code_challenge"` // PKCE
 	CodeChallengeMethod string `gorm:"size:10" json:"code_challenge_method"` // S256 or plain
 	ExpiresAt    time.Time `gorm:"not null" json:"expires_at"`

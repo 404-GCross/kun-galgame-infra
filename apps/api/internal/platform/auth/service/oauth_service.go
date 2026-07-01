@@ -36,12 +36,22 @@ type OAuthService struct {
 	// signer mints access tokens. When nil, falls back to the legacy HS256
 	// path (cfg.JWT.Secret). Injected via WithTokenSigner (Phase 1).
 	signer oidctoken.Signer
+	// idSigner mints id_tokens (ES256, always asymmetric). Nil => no id_token
+	// issued (e.g. no active key). Injected via WithIDSigner (Phase 2).
+	idSigner *oidctoken.IDSigner
 }
 
 // WithTokenSigner injects the access-token signer (ES256 when asymmetric signing
 // is enabled, else HS256). Returns the service for chaining.
 func (s *OAuthService) WithTokenSigner(signer oidctoken.Signer) *OAuthService {
 	s.signer = signer
+	return s
+}
+
+// WithIDSigner injects the id_token signer (ES256). Returns the service for
+// chaining; nil disables id_token issuance.
+func (s *OAuthService) WithIDSigner(idSigner *oidctoken.IDSigner) *OAuthService {
+	s.idSigner = idSigner
 	return s
 }
 
@@ -204,6 +214,7 @@ func (s *OAuthService) CreateAuthorizationCode(
 	scope string,
 	codeChallenge string,
 	codeChallengeMethod string,
+	nonce string,
 ) (string, error) {
 	client, err := s.clientRepo.FindByClientID(ctx, clientID)
 	if err != nil {
@@ -226,6 +237,7 @@ func (s *OAuthService) CreateAuthorizationCode(
 		UserID:              userID,
 		RedirectURI:         redirectURI,
 		Scope:               scope,
+		Nonce:               nonce,
 		CodeChallenge:       codeChallenge,
 		CodeChallengeMethod: codeChallengeMethod,
 		ExpiresAt:           time.Now().Add(10 * time.Minute), // 10 minutes
@@ -397,13 +409,25 @@ func (s *OAuthService) ExchangeCode(ctx context.Context, req *dto.TokenRequest) 
 		return nil, err
 	}
 
-	return &dto.TokenResponse{
+	resp := &dto.TokenResponse{
 		AccessToken:  accessToken,
 		TokenType:    "Bearer",
 		ExpiresIn:    900, // 15 minutes in seconds
 		RefreshToken: refreshToken,
 		Scope:        authCode.Scope,
-	}, nil
+	}
+
+	// id_token: issued on the authorization_code grant when the `openid` scope
+	// was granted and an id-token signer is configured. Minimal claims; the
+	// client's nonce (if any) is echoed. See docs/auth/03 §5.2.
+	if s.idSigner != nil && parseScopes(authCode.Scope)["openid"] {
+		if idt, err := s.idSigner.Sign(user.UUID, req.ClientID, authCode.Nonce, 15*time.Minute); err != nil {
+			slog.Warn("id_token sign failed", "client_id", req.ClientID, "err", err)
+		} else {
+			resp.IDToken = idt
+		}
+	}
+	return resp, nil
 }
 
 // GetUserInfo returns user info for the authenticated user, filtered by scope.
