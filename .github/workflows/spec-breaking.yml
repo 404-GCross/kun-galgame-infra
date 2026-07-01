@@ -1,0 +1,88 @@
+name: spec-breaking
+
+# Breaking-change gate for the published OpenAPI contracts. The galgame-wiki
+# specs (and artifact) now have external consumers — moyu / forum and any
+# third-party generated client fetch them from the docs portal — so a breaking
+# change to a spec must not land silently. oasdiff compares the spec BEFORE this
+# change (the PR base, or the pre-push commit) against the new version and fails
+# on any breaking (ERR) difference.
+#
+# The specs are code-first (exported by cmd/gen-openapi), so a breaking spec diff
+# means a breaking CODE change — this catches it at the contract boundary,
+# complementing test.yml (code -> spec is in sync) and openapi-types.yml
+# (spec -> TS is in sync). A spec that is new in this change (absent in the base)
+# is skipped, not failed.
+
+on:
+  push:
+    branches: [main]
+    paths: &specs
+      - "docs/galgame_wiki/read-openapi.yaml"
+      - "docs/galgame_wiki/calendar-openapi.yaml"
+      - "docs/artifact/openapi.yaml"
+      - "docs/artifact/admin-openapi.yaml"
+      - ".github/workflows/spec-breaking.yml"
+  pull_request:
+    paths: *specs
+
+permissions:
+  contents: read
+
+env:
+  # Pin the checker; bump deliberately. Release assets:
+  # github.com/oasdiff/oasdiff/releases
+  OASDIFF_VERSION: "1.21.0"
+
+jobs:
+  breaking:
+    name: OpenAPI specs have no undeclared breaking changes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # need history to diff against the base version
+      - name: Install oasdiff (pinned)
+        run: |
+          curl -fsSL -o /tmp/oasdiff.tar.gz \
+            "https://github.com/oasdiff/oasdiff/releases/download/v${OASDIFF_VERSION}/oasdiff_${OASDIFF_VERSION}_linux_amd64.tar.gz"
+          tar -xzf /tmp/oasdiff.tar.gz -C /tmp oasdiff
+          sudo install /tmp/oasdiff /usr/local/bin/oasdiff
+          oasdiff --version
+      - name: Diff each spec against its base version
+        # github.* inputs go through env (never interpolated into run:) so a
+        # crafted ref/sha can't be injected into the shell.
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_BRANCH: ${{ github.base_ref }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          set -uo pipefail
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            git fetch --no-tags --quiet origin "$BASE_BRANCH"
+            BASE_REF="origin/$BASE_BRANCH"
+          else
+            BASE_REF="$PUSH_BEFORE"
+          fi
+          echo "base ref: $BASE_REF"
+          # A new branch / initial push has an all-zero before-sha → nothing to diff.
+          if ! git rev-parse --verify --quiet "${BASE_REF}^{commit}" >/dev/null; then
+            echo "base ref not resolvable (new branch / first push) — nothing to compare"
+            exit 0
+          fi
+          specs="
+            docs/galgame_wiki/read-openapi.yaml
+            docs/galgame_wiki/calendar-openapi.yaml
+            docs/artifact/openapi.yaml
+            docs/artifact/admin-openapi.yaml
+          "
+          rc=0
+          for spec in $specs; do
+            base="/tmp/base-$(echo "$spec" | tr '/' '_')"
+            if ! git show "${BASE_REF}:${spec}" > "$base" 2>/dev/null; then
+              echo "::notice::$spec is new in this change (absent in base) — skipping breaking check"
+              continue
+            fi
+            echo "── $spec ──"
+            oasdiff breaking "$base" "$spec" --fail-on ERR --format githubactions || rc=1
+          done
+          exit $rc
