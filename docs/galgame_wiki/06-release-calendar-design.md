@@ -304,10 +304,19 @@ ALTER TABLE galgame ADD COLUMN release_ym integer
 
 ---
 
+## 11.5 类型化契约(code-first OpenAPI → 生成式 TS)
+
+月历三端点的响应现由**类型化 DTO**（`dto.CalendarItem` / `CalendarMonthData` / `CalendarPendingData` / `CalendarTBAData`，见 `internal/platform/galgame/dto/calendar_dto.go`）单源产出：Fiber handler 用它们组装 body（**保留 ETag/304 + Cache-Control 条件缓存** —— 这套缓存语义不适合 Huma 的类型化 serving 模型，故月历**继续由 Fiber serving**），同一批 DTO 又经 Huma 导出 OpenAPI（`SetupCalendarSpec` + `gen-openapi -galgame-calendar` → `docs/galgame_wiki/calendar-openapi.yaml`），再经 `openapi-typescript` 生成 `apps/web/shared/types/generated/galgame-calendar-api.ts`。
+
+- **不漂移的保证**:`calendar_dto_test.go` 用 `assert.JSONEq` 把 `CalendarItem` 钉死为「月历预加载的 `model.Galgame`」的 JSON 孪生（含 covers / official.official / effective_banner_hash），所以这次改造是**零线缆变更**;`test.yml`(code→spec)+ `openapi-types.yml`(spec→TS)两道 CI 门闭环 code→spec→TS。
+- **重新生成**:`go run ./cmd/gen-openapi -galgame-calendar -o ../../docs/galgame_wiki/calendar-openapi.yaml` 然后 `pnpm -F web run gen:types:galgame-calendar`。
+- 这是 galgame-wiki 读端点 Huma 化的**第一片**(item 2 / step 2);其余读端点(详情 / batch / search / …)复用这套 DTO+spec+drift-gate 图式。
+
 ## 12. 关键文件 & 参考
 
 关键文件:
 
+- 类型化契约 / DTO:`internal/platform/galgame/dto/calendar_dto.go`(+ `calendar_dto_test.go` 线缆孪生测试);spec 注册 `internal/platform/galgame/handler/calendar_huma.go`
 - 模型 / 解析:`internal/platform/galgame/model/`(`Galgame`、`Date`、`ParseLegacyReleased@snapshot.go`)
 - 同步:`internal/jobs/vndbsync/`、`cmd/sync-vndb`
 - 搜索(已有月精度):`internal/platform/galgame/search/`

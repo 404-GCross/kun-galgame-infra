@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"api/internal/platform/galgame/dto"
 	"api/pkg/errors"
 	"api/pkg/response"
 	"api/pkg/utils"
@@ -119,23 +120,23 @@ func (h *GalgameHandler) Calendar(c fiber.Ctx) error {
 	}
 	prev := start.AddDate(0, -1, 0).Format("2006-01")
 	next := start.AddDate(0, 1, 0).Format("2006-01")
-	return response.Success(c, fiber.Map{
-		"month": monthStr,
-		"today": now.Format("2006-01-02"),
-		"items": items,
-		"links": fiber.Map{
-			"self": "/api/galgame/calendar?month=" + monthStr,
-			"prev": "/api/galgame/calendar?month=" + prev,
-			"next": "/api/galgame/calendar?month=" + next,
+	return response.Success(c, dto.CalendarMonthData{
+		Month: monthStr,
+		Today: now.Format("2006-01-02"),
+		Items: dto.NewCalendarItems(items),
+		Links: dto.CalendarLinks{
+			Self: "/api/galgame/calendar?month=" + monthStr,
+			Prev: "/api/galgame/calendar?month=" + prev,
+			Next: "/api/galgame/calendar?month=" + next,
 		},
-		"meta": fiber.Map{
-			"prev_month": prev,
-			"next_month": next,
-			"has_prev":   minMonth != "" && monthStr > minMonth,
-			"has_next":   maxMonth != "" && monthStr < maxMonth,
-			"min_month":  minMonth,
-			"max_month":  maxMonth,
-			"count":      count,
+		Meta: dto.CalendarMonthMeta{
+			PrevMonth: prev,
+			NextMonth: next,
+			HasPrev:   minMonth != "" && monthStr > minMonth,
+			HasNext:   maxMonth != "" && monthStr < maxMonth,
+			MinMonth:  minMonth,
+			MaxMonth:  maxMonth,
+			Count:     count,
 		},
 	})
 }
@@ -171,10 +172,10 @@ func (h *GalgameHandler) CalendarPending(c fiber.Ctx) error {
 	if err != nil {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
-	return response.Success(c, fiber.Map{
-		"year":  yearStr,
-		"items": items,
-		"meta":  fiber.Map{"count": count},
+	return response.Success(c, dto.CalendarPendingData{
+		Year:  yearStr,
+		Items: dto.NewCalendarItems(items),
+		Meta:  dto.CalendarCountMeta{Count: count},
 	})
 }
 
@@ -196,8 +197,8 @@ func (h *GalgameHandler) CalendarTBA(c fiber.Ctx) error {
 	if err != nil {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
-	return response.Success(c, fiber.Map{
-		"items": items,
-		"meta":  fiber.Map{"count": count},
+	return response.Success(c, dto.CalendarTBAData{
+		Items: dto.NewCalendarItems(items),
+		Meta:  dto.CalendarCountMeta{Count: count},
 	})
 }

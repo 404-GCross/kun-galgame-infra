@@ -5,6 +5,7 @@
 //	go run ./cmd/gen-openapi -o ../../docs/artifact/openapi.yaml            # 3.1 (canonical)
 //	go run ./cmd/gen-openapi -downgrade -o ../../docs/artifact/openapi-3.0.yaml  # 3.0.3 (oapi-codegen)
 //	go run ./cmd/gen-openapi -admin -o ../../docs/artifact/admin-openapi.yaml    # oauth admin API (3.1)
+//	go run ./cmd/gen-openapi -galgame-calendar -o ../../docs/galgame_wiki/calendar-openapi.yaml  # wiki release calendar (3.1)
 package main
 
 import (
@@ -14,6 +15,7 @@ import (
 
 	artHandler "api/internal/platform/artifact/handler"
 	"api/internal/platform/artifact/service"
+	galgameHandler "api/internal/platform/galgame/handler"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/gofiber/fiber/v3"
@@ -23,15 +25,19 @@ func main() {
 	out := flag.String("o", "", "output file (default: stdout)")
 	downgrade := flag.Bool("downgrade", false, "emit OpenAPI 3.0.3 instead of 3.1 (for tools without 3.1 support, e.g. oapi-codegen)")
 	admin := flag.Bool("admin", false, "emit the oauth-hosted admin API spec (/api/v1/admin/artifact/*) instead of the artifact service spec")
+	galgameCalendar := flag.Bool("galgame-calendar", false, "emit the galgame-wiki release-calendar spec (/api/galgame/calendar*)")
 	flag.Parse()
 
-	// Build the API to derive the spec; the deps are nil because Setup only
-	// registers operations (handlers are never invoked here).
+	// Build the API to derive the spec; the deps are nil / stub because Setup
+	// only registers operations (handlers are never invoked here).
 	app := fiber.New()
 	var api huma.API
-	if *admin {
+	switch {
+	case *galgameCalendar:
+		api = galgameHandler.SetupCalendarSpec(app)
+	case *admin:
 		api = artHandler.SetupAdmin(app, artHandler.NewAdmin(nil, nil, nil, 0))
-	} else {
+	default:
 		api = artHandler.Setup(app, service.New(nil, nil, nil, service.Options{}), true)
 	}
 

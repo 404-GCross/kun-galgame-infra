@@ -15,6 +15,7 @@ on:
     paths:
       - "docs/artifact/openapi.yaml"
       - "docs/artifact/admin-openapi.yaml"
+      - "docs/galgame_wiki/calendar-openapi.yaml"
       - "apps/web/shared/types/generated/**"
       - "apps/web/package.json"
       - ".github/workflows/openapi-types.yml"
@@ -22,6 +23,7 @@ on:
     paths:
       - "docs/artifact/openapi.yaml"
       - "docs/artifact/admin-openapi.yaml"
+      - "docs/galgame_wiki/calendar-openapi.yaml"
       - "apps/web/shared/types/generated/**"
       - "apps/web/package.json"
       - ".github/workflows/openapi-types.yml"
@@ -45,5 +47,6 @@ jobs:
         run: |
           pnpm -F web run gen:types:artifact
           pnpm -F web run gen:types:artifact-admin
+          pnpm -F web run gen:types:galgame-calendar
       - name: Fail if the generated types are stale vs the specs
         run: git diff --exit-code -- apps/web/shared/types/generated/
