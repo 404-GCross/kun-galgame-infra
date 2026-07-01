@@ -55,6 +55,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/galgame/mine": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The viewer's own galgame submissions (all statuses) */
+        get: operations["getMyGalgameSubmissions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/galgame/revisions/recent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Recent merged galgame edit (revision) events — S2S activity feed */
+        get: operations["getRecentGalgameRevisions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/galgame/search": {
         parameters: {
             query?: never;
@@ -64,6 +98,23 @@ export interface paths {
         };
         /** Full-text galgame search (Meilisearch): filters, facets, highlights, projection */
         get: operations["searchGalgames"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/galgame/taxonomy/recent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Recent taxonomy (tag/official/engine/series) change events — S2S activity feed */
+        get: operations["getRecentTaxonomyRevisions"];
         put?: never;
         post?: never;
         delete?: never;
@@ -289,6 +340,42 @@ export interface components {
             /** Format: int64 */
             code: number;
             data: components["schemas"]["GalgameDetailBrief"][] | null;
+            message: string;
+        };
+        CalEnvelopeMineGalgameListData: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/CalEnvelopeMineGalgameListData.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            code: number;
+            data: components["schemas"]["MineGalgameListData"];
+            message: string;
+        };
+        CalEnvelopeRevisionFeedResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/CalEnvelopeRevisionFeedResponse.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            code: number;
+            data: components["schemas"]["RevisionFeedResponse"];
+            message: string;
+        };
+        CalEnvelopeTaxonomyFeedResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/CalEnvelopeTaxonomyFeedResponse.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            code: number;
+            data: components["schemas"]["TaxonomyFeedResponse"];
             message: string;
         };
         CalEnvelopeUserGalgameListData: {
@@ -711,6 +798,62 @@ export interface components {
             view: number;
             vndb_id: string;
         };
+        MineGalgame: {
+            banner: string;
+            content_limit: string;
+            created: string;
+            decline_reason?: string;
+            effective_banner_hash?: string;
+            /** Format: int64 */
+            id: number;
+            name_en_us: string;
+            name_ja_jp: string;
+            name_zh_cn: string;
+            name_zh_tw: string;
+            /** Format: int64 */
+            status: number;
+            updated: string;
+            vndb_id: string;
+        };
+        MineGalgameListData: {
+            items: components["schemas"]["MineGalgame"][] | null;
+            /** Format: int64 */
+            total: number;
+        };
+        RevisionFeedItem: {
+            action: string;
+            created: string;
+            /** Format: int64 */
+            galgame_id: number;
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            revision: number;
+            /** Format: int64 */
+            user_id: number;
+        };
+        RevisionFeedResponse: {
+            has_more: boolean;
+            items: components["schemas"]["RevisionFeedItem"][] | null;
+        };
+        TaxonomyFeedItem: {
+            action: string;
+            created: string;
+            entity: string;
+            /** Format: int64 */
+            id: number;
+            name: string;
+            /** Format: int64 */
+            revision: number;
+            /** Format: int64 */
+            target_id: number;
+            /** Format: int64 */
+            user_id: number;
+        };
+        TaxonomyFeedResponse: {
+            has_more: boolean;
+            items: components["schemas"]["TaxonomyFeedItem"][] | null;
+        };
         UserBrief: {
             avatar: string;
             avatar_image_hash?: string;
@@ -866,6 +1009,76 @@ export interface operations {
             };
         };
     };
+    getMyGalgameSubmissions: {
+        parameters: {
+            query?: {
+                /** @description Filter by submission status */
+                status?: string;
+                /** @description Page number (default 1) */
+                page?: number;
+                /** @description Items per page (1-50) */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalEnvelopeMineGalgameListData"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    getRecentGalgameRevisions: {
+        parameters: {
+            query?: {
+                /** @description Cursor: return events with id > since_id */
+                since_id?: number;
+                /** @description Max items (1-5000) */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalEnvelopeRevisionFeedResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
     searchGalgames: {
         parameters: {
             query?: {
@@ -923,6 +1136,44 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CalEnvelopeGalgameSearchData"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    getRecentTaxonomyRevisions: {
+        parameters: {
+            query?: {
+                /** @description Filter by entity kind */
+                entity?: "tag" | "official" | "engine" | "series";
+                /** @description Filter by action */
+                action?: "created" | "updated" | "deleted" | "reverted";
+                /** @description Cursor: return events with id > since_id */
+                since_id?: number;
+                /** @description Max items (1-5000) */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalEnvelopeTaxonomyFeedResponse"];
                 };
             };
             /** @description Error */

@@ -364,3 +364,10 @@ type CheckVNDBResult struct {
 	Exists    bool `json:"exists"`
 	GalgameID *int `json:"galgame_id,omitempty"`
 }
+
+// MineGalgameListData is the body of GET /galgame/mine: the viewer's own
+// submissions (all statuses) as light MineGalgame rows.
+type MineGalgameListData struct {
+	Items []MineGalgame `json:"items"`
+	Total int64         `json:"total"`
+}

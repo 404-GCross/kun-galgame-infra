@@ -105,6 +105,39 @@ type checkVNDBOutput struct {
 	Body calEnvelope[dto.CheckVNDBResult]
 }
 
+type recentRevisionsInput struct {
+	SinceID int64 `query:"since_id" doc:"Cursor: return events with id > since_id"`
+	Limit   int   `query:"limit" doc:"Max items (1-5000)"`
+}
+type recentRevisionsOutput struct {
+	Body calEnvelope[dto.RevisionFeedResponse]
+}
+
+type recentTaxonomyInput struct {
+	Entity  string `query:"entity" enum:"tag,official,engine,series" doc:"Filter by entity kind"`
+	Action  string `query:"action" enum:"created,updated,deleted,reverted" doc:"Filter by action"`
+	SinceID int64  `query:"since_id" doc:"Cursor: return events with id > since_id"`
+	Limit   int    `query:"limit" doc:"Max items (1-5000)"`
+}
+type recentTaxonomyOutput struct {
+	Body calEnvelope[dto.TaxonomyFeedResponse]
+}
+
+// NOTE: /messages/feed + /messages/mine are intentionally NOT specced yet. Their
+// dto.MessageResponse carries a model.Timestamp field, which Huma renders as an
+// opaque object schema (Record<string, never>) instead of the RFC3339 string the
+// wire actually sends. Fix first (a huma.SchemaProvider on model.Timestamp/Date,
+// or a spec-safe message DTO with string timestamps), then add these ops.
+
+type mineInput struct {
+	Status string `query:"status" doc:"Filter by submission status"`
+	Page   int    `query:"page" doc:"Page number (default 1)"`
+	Limit  int    `query:"limit" doc:"Items per page (1-50)"`
+}
+type mineOutput struct {
+	Body calEnvelope[dto.MineGalgameListData]
+}
+
 // SetupGalgameReadSpec registers the galgame-wiki read operations to derive their
 // spec. Handlers are stubs (never invoked — Fiber serves these paths).
 func SetupGalgameReadSpec(app *fiber.App) huma.API {
@@ -155,6 +188,18 @@ func SetupGalgameReadSpec(app *fiber.App) huma.API {
 		OperationID: "checkGalgameVNDB", Method: http.MethodGet, Path: "/api/galgame/check",
 		Summary: "Whether a vndb_id already exists (and which galgame holds it)", Tags: tags,
 	}, func(context.Context, *checkVNDBInput) (*checkVNDBOutput, error) { return &checkVNDBOutput{}, nil })
+	huma.Register(api, huma.Operation{
+		OperationID: "getRecentGalgameRevisions", Method: http.MethodGet, Path: "/api/galgame/revisions/recent",
+		Summary: "Recent merged galgame edit (revision) events — S2S activity feed", Tags: tags,
+	}, func(context.Context, *recentRevisionsInput) (*recentRevisionsOutput, error) { return &recentRevisionsOutput{}, nil })
+	huma.Register(api, huma.Operation{
+		OperationID: "getRecentTaxonomyRevisions", Method: http.MethodGet, Path: "/api/galgame/taxonomy/recent",
+		Summary: "Recent taxonomy (tag/official/engine/series) change events — S2S activity feed", Tags: tags,
+	}, func(context.Context, *recentTaxonomyInput) (*recentTaxonomyOutput, error) { return &recentTaxonomyOutput{}, nil })
+	huma.Register(api, huma.Operation{
+		OperationID: "getMyGalgameSubmissions", Method: http.MethodGet, Path: "/api/galgame/mine",
+		Summary: "The viewer's own galgame submissions (all statuses)", Tags: tags,
+	}, func(context.Context, *mineInput) (*mineOutput, error) { return &mineOutput{}, nil })
 	registerGalgameSearchOps(api, tags)
 	return api
 }
