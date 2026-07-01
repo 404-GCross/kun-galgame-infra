@@ -80,6 +80,7 @@ func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 	authCodeRepo := authRepo.NewAuthorizationCodeRepository(db)
 	oauthClientRepo := siteRepo.NewOAuthClientRepository(db)
 	siteRepository := siteRepo.NewSiteRepository(db)
+	signingKeyRepo := authRepo.NewSigningKeyRepository(db)
 
 	// Start background cleanup for expired sessions and authorization codes
 	app.StartCleanup(cleanupCtx, sessionRepo, authCodeRepo)
@@ -129,6 +130,22 @@ func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 	}
 	siteH := siteHandler.NewSiteHandler(siteSvc)
 
+	// OIDC signing keys + public metadata (Phase 0). Gated on
+	// KUN_OIDC_KEY_ENC_KEY: when unset, key bootstrap + the jwks/discovery
+	// endpoints are skipped (dev without OIDC). Bootstrap is idempotent —
+	// generates one active ES256 + one active RS256 key on first run.
+	// See docs/auth/03-oidc-standardization-design.md §4/§5.4.
+	var oidcH *authHandler.OIDCHandler
+	if cfg.OIDC.KeyEncKey != "" {
+		signingKeySvc := authService.NewSigningKeyService(signingKeyRepo, cfg.OIDC.KeyEncKey)
+		if err := signingKeySvc.EnsureBootstrapped(cleanupCtx); err != nil {
+			slog.Error("oidc signing key bootstrap failed", "err", err)
+		}
+		oidcH = authHandler.NewOIDCHandler(signingKeySvc, cfg)
+	} else {
+		slog.Warn("KUN_OIDC_KEY_ENC_KEY unset; OIDC signing keys + jwks/discovery disabled")
+	}
+
 	// Global middleware
 	a.Fiber.Use(middleware.RequestID())
 	a.Fiber.Use(middleware.Logger())
@@ -139,6 +156,16 @@ func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 	a.Fiber.Get("/healthz", func(c fiber.Ctx) error {
 		return c.JSON(fiber.Map{"status": "ok"})
 	})
+
+	// Public OIDC/OAuth metadata — world-readable (handlers set ACAO *),
+	// registered BEFORE the origin-restricted CORS middleware so browser-based
+	// OIDC clients can fetch discovery/JWKS cross-origin.
+	// See docs/auth/03-oidc-standardization-design.md §5.4.
+	if oidcH != nil {
+		a.Fiber.Get("/oauth/jwks", oidcH.JWKS)
+		a.Fiber.Get("/.well-known/openid-configuration", oidcH.Discovery)
+		a.Fiber.Get("/.well-known/oauth-authorization-server", oidcH.Discovery)
+	}
 
 	a.Fiber.Use(middleware.CORS(cfg.Server.CORSOrigin))
 	a.Fiber.Use(middleware.RateLimit(a.Cache))

@@ -11,16 +11,24 @@
 > See also [01-creator-role-design](./01-creator-role-design.md) and
 > [02-account-switching-design](./02-account-switching-design.md).
 
-> **Implementation status (2026-07-01)**: **Design only — no code written.** This is
-> the keystone of the developer platform (todos #6); it is deliberately sequenced
+> **Implementation status (2026-07-01)**: **Phase 0 implemented** — key infrastructure:
+> `signing_keys` table (three-state, `kid`-tagged), `pkg/oidckeys` (ES256/RS256 keygen,
+> RFC 7638 thumbprint kid, JWK encoding, AES-256-GCM at-rest), startup key bootstrap,
+> and the public `GET /oauth/jwks` + `/.well-known/{openid-configuration,oauth-authorization-server}`
+> endpoints — all gated on `KUN_OIDC_KEY_ENC_KEY`, world-readable (ACAO *), standard JSON.
+> Verified end-to-end (crypto unit tests + live discovery/JWKS smoke test). **Phases 1–4
+> not started** (asymmetric signing cutover, id_token, wire-format, deferred items).
+> This is the keystone of the developer platform (todos #6), deliberately sequenced
 > **before** any Huma-ification of the auth surface, because an IdP's canonical
 > machine-readable contract is the **OIDC discovery document, not a hand-authored
 > OpenAPI spec**. Governing premise: **every current consumer is first-party**
 > (kungal / moyu / wiki, one team) → the ecosystem can afford a **coordinated clean
 > cutover**; we optimize for the cleanest correct end state, not for preserving the
 > legacy wire format forever.
-> ⚠️ Phase 0 adds a new `signing_keys` table on `kun_galgame_infra` → will need
+> ⚠️ Phase 0 added a new `signing_keys` table on `kun_galgame_infra` → run
 > `go run ./cmd/migrate` (deploy does NOT auto-run it — see the project migration rule).
+> Also set a strong `KUN_OIDC_KEY_ENC_KEY` (the KEK that encrypts signing keys) on the
+> oauth service, or key bootstrap + jwks/discovery stay disabled.
 
 ## 0. Locked decisions
 
@@ -247,9 +255,10 @@ is the right call here precisely because the fleet is mono-owned.
 
 Each phase is independently deployable; earlier phases are additive.
 
-0. **Key infrastructure.** `signing_keys` table + generation/encryption + `GET /oauth/jwks`
+0. **Key infrastructure.** ✅ **DONE** — `signing_keys` table + generation/encryption + `GET /oauth/jwks`
    + both discovery documents (advertising ES256/RS256, code+PKCE, endpoints). Nothing
    consumes them yet → **zero break**. → `go run ./cmd/migrate` on `kun_galgame_infra`.
+   (Files: `pkg/oidckeys/`, `internal/platform/auth/{model/signing_key.go,repository/signing_key_repository.go,service/signing_key_service.go,handler/oidc_handler.go}`, wired in `cmd/oauth/main.go`, gated on `KUN_OIDC_KEY_ENC_KEY`.)
 1. **Asymmetric signing.** Sign access tokens (and, next phase, id_tokens) with the `active`
    ES256 key; switch the **four** infra verifiers (§3) to public-key verification by `kid`
    (fetched from local JWKS / the key set); drop `cfg.JWT.Secret` from galgame/image/artifact

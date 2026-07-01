@@ -18,6 +18,7 @@ type Config struct {
 	Redis           RedisConfig
 	JWT             JWTConfig
 	Auth            AuthConfig
+	OIDC            OIDCConfig
 	Mail            MailConfig
 	Meilisearch     MeilisearchConfig
 	ImageService    ImageServiceConfig
@@ -169,6 +170,23 @@ type JWTConfig struct {
 	Expires    string
 }
 
+// OIDCConfig holds the OIDC OpenID Provider settings.
+//
+// Issuer is the canonical identifier (== Server.SiteURL) used as the token
+// `iss`, the discovery `issuer`, and the base the .well-known documents are
+// served from — all three MUST match (a classic OIDC footgun).
+//
+// KeyEncKey (KUN_OIDC_KEY_ENC_KEY) is the KEK that encrypts signing private
+// keys at rest. Only cmd/oauth needs it — it generates/decrypts keys; the
+// separate resource-server binaries verify with public keys only. When empty,
+// cmd/oauth skips signing-key bootstrap + the jwks/discovery endpoints.
+//
+// Design: docs/auth/03-oidc-standardization-design.md.
+type OIDCConfig struct {
+	Issuer    string
+	KeyEncKey string
+}
+
 // AuthConfig holds auth-flow-tunable parameters that aren't tied to a
 // single subsystem (JWT / Mail / Redis).
 type AuthConfig struct {
@@ -246,6 +264,13 @@ func Load() (*Config, error) {
 		Secret:     getEnv("JWT_SECRET", ""),
 		CookieName: getEnv("JWT_COOKIE_NAME", "kun_token"),
 		Expires:    getEnv("JWT_EXPIRES", "90d"),
+	}
+
+	// OIDC config. Issuer is the OAuth server's public base URL (== SiteURL);
+	// KeyEncKey encrypts signing private keys at rest (only cmd/oauth needs it).
+	cfg.OIDC = OIDCConfig{
+		Issuer:    cfg.Server.SiteURL,
+		KeyEncKey: getEnv("KUN_OIDC_KEY_ENC_KEY", ""),
 	}
 
 	// Auth config — verification-code TTL and other auth-flow knobs.

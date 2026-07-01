@@ -111,6 +111,7 @@ func getAllModels() []any {
 		&authModel.AuthorizationCode{},
 		&authModel.MoemoepointLog{},
 		&authModel.CreatorApplication{},
+		&authModel.SigningKey{},
 
 		// Site models
 		&siteModel.Site{},
