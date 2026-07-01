@@ -12,6 +12,7 @@ import (
 	"api/pkg/config"
 	"api/pkg/health"
 	"api/pkg/logger"
+	"api/pkg/oidctoken"
 
 	galgameHandler "api/internal/platform/galgame/handler"
 	galgameRepo "api/internal/platform/galgame/repository"
@@ -184,13 +185,16 @@ func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB, se
 	messageH := galgameHandler.NewMessageHandler(messageSvc)
 	searchH := galgameHandler.NewSearchHandler(searchSvc)
 
-	// JWT auth middleware
-	jwtAuth := middleware.JWTAuth(cfg.JWT.Secret)
+	// JWT auth middleware — backed by an accept-both verifier (ES256/RS256 via
+	// the OP's JWKS + legacy HS256). HS256-only when KUN_OIDC_JWKS_URL is unset.
+	// See docs/auth/03-oidc-standardization-design.md §10 Phase 1.
+	tokenVerifier := oidctoken.NewVerifierWithJWKS(cfg.JWT.Secret, cfg.OIDC.JWKSURL)
+	jwtAuth := middleware.JWTAuth(tokenVerifier)
 	// OptionalJWT — populates user_id when a valid Bearer token is present,
 	// but never blocks the request. Used on /galgame/batch and /galgame/search
 	// so anonymous callers still get status=0-only results while authenticated
 	// ones additionally see their own pending/declined drafts.
-	optionalJWT := middleware.OptionalJWT(cfg.JWT.Secret)
+	optionalJWT := middleware.OptionalJWT(tokenVerifier)
 
 	// Global middleware
 	a.Fiber.Use(middleware.RequestID())

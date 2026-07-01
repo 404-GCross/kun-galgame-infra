@@ -12,8 +12,8 @@ import (
 	siteRepo "api/internal/platform/site/repository"
 	"api/pkg/config"
 	"api/pkg/errors"
+	"api/pkg/oidctoken"
 	"api/pkg/response"
-	"api/pkg/utils"
 
 	"github.com/gofiber/fiber/v3"
 )
@@ -41,6 +41,9 @@ const uploadScope = "artifact:upload"
 //     direct upload. The JWT must carry the `artifact:upload` scope and the
 //     named client must belong to the same SiteID as the JWT (fail-closed).
 func ClientAuth(clientRepo *siteRepo.OAuthClientRepository, cfg *config.Config) fiber.Handler {
+	// Accept-both verifier (ES256/RS256 via the OP's JWKS + legacy HS256).
+	// HS256-only when KUN_OIDC_JWKS_URL is unset. Built once at startup.
+	verifier := oidctoken.NewVerifierWithJWKS(cfg.JWT.Secret, cfg.OIDC.JWKSURL)
 	return func(c fiber.Ctx) error {
 		authHeader := c.Get("Authorization")
 
@@ -56,7 +59,7 @@ func ClientAuth(clientRepo *siteRepo.OAuthClientRepository, cfg *config.Config) 
 			client, err = authenticateBasic(c, clientRepo, authHeader)
 			method = "basic"
 		case strings.HasPrefix(authHeader, "Bearer "):
-			client, userSub, err = authenticateJWT(c, clientRepo, authHeader, cfg)
+			client, userSub, err = authenticateJWT(c, clientRepo, authHeader, verifier)
 			method = "jwt"
 		default:
 			return response.Unauthorized(c, errors.ErrArtifactUnauthorized)
@@ -122,9 +125,9 @@ func authenticateBasic(c fiber.Ctx, repo *siteRepo.OAuthClientRepository, authHe
 	return client, nil
 }
 
-func authenticateJWT(c fiber.Ctx, repo *siteRepo.OAuthClientRepository, authHeader string, cfg *config.Config) (*siteModel.OAuthClient, string, error) {
+func authenticateJWT(c fiber.Ctx, repo *siteRepo.OAuthClientRepository, authHeader string, verifier *oidctoken.Verifier) (*siteModel.OAuthClient, string, error) {
 	tokenStr := strings.TrimPrefix(authHeader, "Bearer ")
-	claims, err := utils.ParseToken(tokenStr, cfg.JWT.Secret)
+	claims, err := verifier.Parse(c.Context(), tokenStr)
 	if err != nil {
 		return nil, "", errBadClient
 	}

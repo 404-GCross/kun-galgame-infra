@@ -5,6 +5,8 @@ import (
 	"crypto"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -118,6 +120,56 @@ func TestAcceptBothHS256(t *testing.T) {
 	// wrong secret rejected.
 	if _, err := NewVerifier("other-secret", stubResolver{}).Parse(context.Background(), tok); err == nil {
 		t.Fatal("verifier should reject HS256 signed with a different secret")
+	}
+}
+
+// TestJWKSResolverEndToEnd exercises the full resource-server path: an ES256
+// token is verified by fetching the signer's public key from an HTTP JWK Set
+// (as galgame/image/artifact do against the OP's /oauth/jwks).
+func TestJWKSResolverEndToEnd(t *testing.T) {
+	km, err := oidckeys.Generate(oidckeys.AlgES256)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := json.Marshal(map[string]any{"keys": []any{km.PublicJWK}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var hits int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits++
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(body)
+	}))
+	defer srv.Close()
+
+	v := NewVerifierWithJWKS("", srv.URL) // asymmetric-only, keys fetched over HTTP
+	priv, err := oidckeys.ParsePrivate(km.PrivateDER)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tok, err := NewES256Signer(km.Kid, priv).SignAccess(utils.TokenClaims{UserUUID: "u-jwks"}, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := v.Parse(context.Background(), tok)
+	if err != nil {
+		t.Fatalf("verify via JWKS resolver: %v", err)
+	}
+	if got.UserUUID != "u-jwks" {
+		t.Fatalf("claims mismatch: %+v", got)
+	}
+	if hits == 0 {
+		t.Fatal("expected the resolver to fetch the JWK Set")
+	}
+
+	// A second verify reuses the cache (no forced refetch for a known kid).
+	before := hits
+	if _, err := v.Parse(context.Background(), tok); err != nil {
+		t.Fatalf("second verify: %v", err)
+	}
+	if hits != before {
+		t.Fatalf("expected cache hit, but resolver refetched (%d -> %d)", before, hits)
 	}
 }
 

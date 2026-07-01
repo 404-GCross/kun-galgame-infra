@@ -191,6 +191,12 @@ type OIDCConfig struct {
 	// verification (Phase 1), else in-flight-issued ES256 tokens 401 on the
 	// services that only know HS256. Env: KUN_OIDC_SIGN_ASYMMETRIC.
 	SignAsymmetric bool
+	// JWKSURL is the OP's JWK Set URL that the resource-server verifiers
+	// (galgame / image / artifact) fetch to validate ES256/RS256 tokens — the
+	// INTERNAL address, e.g. http://oauth:9277/oauth/jwks. Empty => asymmetric
+	// verification disabled (HS256-only), which is safe until asymmetric signing
+	// is enabled. Env: KUN_OIDC_JWKS_URL.
+	JWKSURL string
 }
 
 // AuthConfig holds auth-flow-tunable parameters that aren't tied to a
@@ -279,6 +285,7 @@ func Load() (*Config, error) {
 		Issuer:         cfg.Server.SiteURL,
 		KeyEncKey:      getEnv("KUN_OIDC_KEY_ENC_KEY", ""),
 		SignAsymmetric: signAsym,
+		JWKSURL:        getEnv("KUN_OIDC_JWKS_URL", ""),
 	}
 
 	// Auth config — verification-code TTL and other auth-flow knobs.

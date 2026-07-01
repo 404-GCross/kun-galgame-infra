@@ -116,6 +116,18 @@ func NewVerifier(hs256Secret string, resolver Resolver) *Verifier {
 	return &Verifier{hs256Secret: s, resolver: resolver}
 }
 
+// NewVerifierWithJWKS is the resource-server convenience: an accept-both
+// verifier whose asymmetric side fetches the OP's JWK Set from jwksURL. When
+// jwksURL is empty the verifier is HS256-only (asymmetric disabled) — safe
+// until asymmetric signing is turned on.
+func NewVerifierWithJWKS(hs256Secret, jwksURL string) *Verifier {
+	var r Resolver
+	if jwksURL != "" {
+		r = NewJWKSResolver(jwksURL)
+	}
+	return NewVerifier(hs256Secret, r)
+}
+
 // Parse validates the token and returns its claims. The keyfunc returns the
 // HMAC secret ONLY for HMAC tokens and a public key ONLY for ES/RS tokens, so a
 // token signed HS256 can never be validated against a public key (no

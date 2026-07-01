@@ -4,15 +4,15 @@ import (
 	"strings"
 
 	"api/pkg/errors"
-	"api/pkg/utils"
+	"api/pkg/oidctoken"
 
 	"github.com/gofiber/fiber/v3"
 )
 
-// JWTAuth is a lightweight JWT middleware that only requires the JWT secret.
-// Unlike Auth(), it does not depend on AuthService — suitable for services
-// that only need to verify tokens without full auth capabilities.
-func JWTAuth(jwtSecret string) fiber.Handler {
+// JWTAuth is a lightweight JWT middleware backed by an accept-both verifier
+// (ES256/RS256 via JWKS + legacy HS256). Unlike Auth(), it does not depend on
+// AuthService — suitable for services that only need to verify tokens.
+func JWTAuth(verifier *oidctoken.Verifier) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		authHeader := c.Get("Authorization")
 		if authHeader == "" {
@@ -30,7 +30,7 @@ func JWTAuth(jwtSecret string) fiber.Handler {
 			})
 		}
 
-		claims, err := utils.ParseToken(parts[1], jwtSecret)
+		claims, err := verifier.Parse(c.Context(), parts[1])
 		if err != nil {
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
 				"code":    errors.ErrAuthTokenExpired,
@@ -55,7 +55,7 @@ func JWTAuth(jwtSecret string) fiber.Handler {
 // callers (e.g. /galgame/search ?include_pending=true,
 // /galgame/batch returning the caller's pending drafts) without forcing
 // every anonymous caller to authenticate.
-func OptionalJWT(jwtSecret string) fiber.Handler {
+func OptionalJWT(verifier *oidctoken.Verifier) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		authHeader := c.Get("Authorization")
 		if authHeader == "" {
@@ -65,7 +65,7 @@ func OptionalJWT(jwtSecret string) fiber.Handler {
 		if len(parts) != 2 || parts[0] != "Bearer" {
 			return c.Next()
 		}
-		claims, err := utils.ParseToken(parts[1], jwtSecret)
+		claims, err := verifier.Parse(c.Context(), parts[1])
 		if err != nil {
 			return c.Next()
 		}
