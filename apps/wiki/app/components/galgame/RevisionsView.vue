@@ -123,7 +123,7 @@ const openDiff = (revision: number) => {
                 #{{ r.revision }}
               </td>
               <td class="text-foreground max-w-md px-4 py-2">
-                {{ r.message || '—' }}
+                {{ r.note || '—' }}
               </td>
               <td class="px-4 py-2">
                 <span

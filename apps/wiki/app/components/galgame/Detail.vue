@@ -527,7 +527,9 @@ const officialCategoryColor = (cat: string): KunUIColor =>
                 <p class="text-default-400 text-xs">创建</p>
                 <p class="text-foreground">
                   {{
-                    new Date(galgame.created).toLocaleString('zh-CN')
+                    galgame.created
+                      ? new Date(galgame.created).toLocaleString('zh-CN')
+                      : '—'
                   }}
                 </p>
               </div>
@@ -535,7 +537,9 @@ const officialCategoryColor = (cat: string): KunUIColor =>
                 <p class="text-default-400 text-xs">更新</p>
                 <p class="text-foreground">
                   {{
-                    new Date(galgame.updated).toLocaleString('zh-CN')
+                    galgame.updated
+                      ? new Date(galgame.updated).toLocaleString('zh-CN')
+                      : '—'
                   }}
                 </p>
               </div>
