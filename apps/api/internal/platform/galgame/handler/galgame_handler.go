@@ -89,7 +89,7 @@ func (h *GalgameHandler) Get(c fiber.Ctx) error {
 	}
 
 	return response.Success(c, fiber.Map{
-		"galgame": galgame,
+		"galgame": dto.NewGalgameDetail(galgame),
 		"users":   users,
 	})
 }

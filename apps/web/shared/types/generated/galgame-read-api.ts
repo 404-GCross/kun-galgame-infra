@@ -21,10 +21,39 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/galgame/{gid}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Full galgame detail (all relations) + owner/contributor user briefs */
+        get: operations["getGalgameDetail"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        CalEnvelopeGalgameDetailResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/CalEnvelopeGalgameDetailResponse.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            code: number;
+            data: components["schemas"]["GalgameDetailResponse"];
+            message: string;
+        };
         CalEnvelopeListGalgameDetailBrief: {
             /**
              * Format: uri
@@ -36,6 +65,166 @@ export interface components {
             code: number;
             data: components["schemas"]["GalgameDetailBrief"][] | null;
             message: string;
+        };
+        CalendarCover: {
+            created: string | null;
+            /** Format: int64 */
+            galgame_id: number;
+            /** Format: int64 */
+            height?: number;
+            image_hash: string;
+            kind: string;
+            /** Format: int32 */
+            sexual: number;
+            /** Format: int64 */
+            sort_order: number;
+            source: string;
+            source_key: string;
+            thumbhash?: string;
+            /** Format: int32 */
+            violence: number;
+            /** Format: int64 */
+            width?: number;
+        };
+        DetailAlias: {
+            created: string | null;
+            /** Format: int64 */
+            galgame_id: number;
+            /** Format: int64 */
+            id: number;
+            name: string;
+            updated: string | null;
+        };
+        DetailContributor: {
+            created: string | null;
+            /** Format: int64 */
+            galgame_id: number;
+            /** Format: int64 */
+            id: number;
+            updated: string | null;
+            /** Format: int64 */
+            user_id: number;
+        };
+        DetailEngine: {
+            alias: unknown;
+            created: string | null;
+            description: string;
+            /** Format: int64 */
+            galgame_count: number;
+            /** Format: int64 */
+            id: number;
+            name: string;
+            updated: string | null;
+        };
+        DetailEngineRelation: {
+            created: string | null;
+            engine?: components["schemas"]["DetailEngine"];
+            /** Format: int64 */
+            engine_id: number;
+            /** Format: int64 */
+            galgame_id: number;
+            updated: string | null;
+        };
+        DetailLink: {
+            created: string | null;
+            /** Format: int64 */
+            galgame_id: number;
+            /** Format: int64 */
+            id: number;
+            link: string;
+            name: string;
+            source: string;
+            source_key: string;
+            updated: string | null;
+            /** Format: int64 */
+            user_id: number;
+        };
+        DetailOfficial: {
+            alias?: components["schemas"]["DetailOfficialAlias"][] | null;
+            category: string;
+            created: string | null;
+            description: string;
+            /** Format: int64 */
+            galgame_count: number;
+            /** Format: int64 */
+            id: number;
+            lang: string;
+            link: string;
+            name: string;
+            original: string;
+            updated: string | null;
+        };
+        DetailOfficialAlias: {
+            created: string | null;
+            /** Format: int64 */
+            galgame_official_id: number;
+            /** Format: int64 */
+            id: number;
+            name: string;
+            updated: string | null;
+        };
+        DetailOfficialRelation: {
+            created: string | null;
+            /** Format: int64 */
+            galgame_id: number;
+            official?: components["schemas"]["DetailOfficial"];
+            /** Format: int64 */
+            official_id: number;
+            source: string;
+            updated: string | null;
+        };
+        DetailScreenshot: {
+            caption: string;
+            created: string | null;
+            /** Format: int64 */
+            galgame_id: number;
+            /** Format: int64 */
+            height?: number;
+            image_hash: string;
+            /** Format: int32 */
+            sexual: number;
+            /** Format: int64 */
+            sort_order: number;
+            source: string;
+            source_key: string;
+            thumbhash?: string;
+            /** Format: int32 */
+            violence: number;
+            /** Format: int64 */
+            width?: number;
+        };
+        DetailSeries: {
+            created: string | null;
+            description: string;
+            /** Format: int64 */
+            galgame_count: number;
+            /** Format: int64 */
+            id: number;
+            name: string;
+            updated: string | null;
+        };
+        DetailTag: {
+            category: string;
+            created: string | null;
+            description: string;
+            /** Format: int64 */
+            galgame_count: number;
+            /** Format: int64 */
+            id: number;
+            name: string;
+            updated: string | null;
+        };
+        DetailTagRelation: {
+            created: string | null;
+            /** Format: int64 */
+            galgame_id: number;
+            source: string;
+            /** Format: int64 */
+            spoiler_level: number;
+            tag?: components["schemas"]["DetailTag"];
+            /** Format: int64 */
+            tag_id: number;
+            updated: string | null;
         };
         ErrorDetail: {
             /** @description Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id' */
@@ -84,6 +273,49 @@ export interface components {
              */
             type: string;
         };
+        GalgameDetail: {
+            age_limit: string;
+            alias?: components["schemas"]["DetailAlias"][] | null;
+            banner: string;
+            /** Format: int64 */
+            bid?: number;
+            content_limit: string;
+            contributor?: components["schemas"]["DetailContributor"][] | null;
+            covers?: components["schemas"]["CalendarCover"][] | null;
+            created: string | null;
+            effective_banner_hash?: string;
+            engine?: components["schemas"]["DetailEngineRelation"][] | null;
+            /** Format: int64 */
+            id: number;
+            intro_en_us: string;
+            intro_ja_jp: string;
+            intro_zh_cn: string;
+            intro_zh_tw: string;
+            link?: components["schemas"]["DetailLink"][] | null;
+            name_en_us: string;
+            name_ja_jp: string;
+            name_zh_cn: string;
+            name_zh_tw: string;
+            official?: components["schemas"]["DetailOfficialRelation"][] | null;
+            original_language: string;
+            release_date: string | null;
+            release_date_tba: boolean;
+            release_precision: string;
+            resource_update_time: string | null;
+            screenshots?: components["schemas"]["DetailScreenshot"][] | null;
+            series?: components["schemas"]["DetailSeries"];
+            /** Format: int64 */
+            series_id: number | null;
+            /** Format: int64 */
+            status: number;
+            tag?: components["schemas"]["DetailTagRelation"][] | null;
+            updated: string | null;
+            /** Format: int64 */
+            user_id: number;
+            /** Format: int64 */
+            view: number;
+            vndb_id: string;
+        };
         GalgameDetailBrief: {
             age_limit: string;
             banner: string;
@@ -114,6 +346,19 @@ export interface components {
             /** Format: int64 */
             user_id: number;
             vndb_id: string;
+        };
+        GalgameDetailResponse: {
+            galgame: components["schemas"]["GalgameDetail"];
+            users: {
+                [key: string]: components["schemas"]["UserBrief"];
+            };
+        };
+        UserBrief: {
+            avatar: string;
+            avatar_image_hash?: string;
+            /** Format: int64 */
+            id: number;
+            name: string;
         };
     };
     responses: never;
@@ -147,6 +392,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CalEnvelopeListGalgameDetailBrief"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    getGalgameDetail: {
+        parameters: {
+            query?: {
+                /** @description sfw | nsfw | all (default: no filter) */
+                content_limit?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Galgame ID */
+                gid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalEnvelopeGalgameDetailResponse"];
                 };
             };
             /** @description Error */

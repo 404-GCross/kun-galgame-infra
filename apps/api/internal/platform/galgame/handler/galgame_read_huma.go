@@ -34,6 +34,23 @@ type batchOutput struct {
 	Body calEnvelope[[]dto.GalgameDetailBrief]
 }
 
+type detailInput struct {
+	GID          int    `path:"gid" doc:"Galgame ID"`
+	ContentLimit string `query:"content_limit" doc:"sfw | nsfw | all (default: no filter)"`
+}
+
+// galgameDetailResponse mirrors the {galgame, users} body of GET /galgame/:gid.
+// users is keyed by user id (JSON object keys are strings) — the owner +
+// contributor briefs, so a consumer renders names/avatars without extra lookups.
+type galgameDetailResponse struct {
+	Galgame dto.GalgameDetail        `json:"galgame"`
+	Users   map[string]dto.UserBrief `json:"users"`
+}
+
+type detailOutput struct {
+	Body calEnvelope[galgameDetailResponse]
+}
+
 // SetupGalgameReadSpec registers the galgame-wiki read operations to derive their
 // spec. Handlers are stubs (never invoked — Fiber serves these paths).
 func SetupGalgameReadSpec(app *fiber.App) huma.API {
@@ -48,5 +65,9 @@ func SetupGalgameReadSpec(app *fiber.App) huma.API {
 		OperationID: "batchGetGalgames", Method: http.MethodGet, Path: "/api/galgame/batch",
 		Summary: "Batch galgame briefs (view=brief default; view=detail adds intro/officials/release)", Tags: tags,
 	}, func(context.Context, *batchInput) (*batchOutput, error) { return &batchOutput{}, nil })
+	huma.Register(api, huma.Operation{
+		OperationID: "getGalgameDetail", Method: http.MethodGet, Path: "/api/galgame/{gid}",
+		Summary: "Full galgame detail (all relations) + owner/contributor user briefs", Tags: tags,
+	}, func(context.Context, *detailInput) (*detailOutput, error) { return &detailOutput{}, nil })
 	return api
 }
