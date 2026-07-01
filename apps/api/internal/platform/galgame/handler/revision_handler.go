@@ -55,7 +55,11 @@ func (h *RevisionHandler) ListRevisions(c fiber.Ctx) error {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
 
-	return response.Success(c, dto.RevisionListData{Items: dto.NewRevisionResponses(items), Total: total})
+	// Return the raw revision rows verbatim (snapshot stays the stored jsonb).
+	// The typed contract is dto.RevisionListData / RevisionResponse (spec-only,
+	// pinned by revision_read_dto_test.go); decoding+re-encoding the snapshot here
+	// would normalize pre-existing rows that predate later snapshot fields.
+	return response.Success(c, fiber.Map{"items": items, "total": total})
 }
 
 // RecentRevisions serves GET /galgame/revisions/recent — the merged-revision
@@ -97,7 +101,7 @@ func (h *RevisionHandler) GetRevision(c fiber.Ctx) error {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
 
-	return response.Success(c, dto.NewRevisionResponse(revision))
+	return response.Success(c, revision) // verbatim; typed as dto.RevisionResponse (spec-only)
 }
 
 // GetRevisionDiff returns the diff between a revision and its predecessor
@@ -202,7 +206,8 @@ func (h *RevisionHandler) ListPRs(c fiber.Ctx) error {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
 
-	return response.Success(c, dto.PRListData{Items: dto.NewPRResponses(items), Total: total})
+	// Verbatim (see ListRevisions); typed as dto.PRListData / PRResponse (spec-only).
+	return response.Success(c, fiber.Map{"items": items, "total": total})
 }
 
 // GetPR returns a PR with its diff against the base revision
@@ -244,10 +249,12 @@ func (h *RevisionHandler) GetPR(c fiber.Ctx) error {
 	// maps).
 	names := h.svc.LookupSnapshotNames(c.Context(), baseSnapshot, prSnapshot)
 
-	return response.Success(c, dto.PRDetailData{
-		PR:          dto.NewPRResponse(pr),
-		ChangedKeys: changedKeys,
-		Names:       names,
+	// pr verbatim (snapshot stays stored jsonb); typed as dto.PRDetailData /
+	// PRResponse (spec-only, pinned by revision_read_dto_test.go).
+	return response.Success(c, fiber.Map{
+		"pr":           pr,
+		"changed_keys": changedKeys,
+		"names":        names,
 	})
 }
 

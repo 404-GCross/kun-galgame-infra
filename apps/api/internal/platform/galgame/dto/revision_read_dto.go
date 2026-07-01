@@ -38,15 +38,6 @@ func NewRevisionResponse(r *model.GalgameRevision) RevisionResponse {
 	return out
 }
 
-// NewRevisionResponses maps a slice of revisions.
-func NewRevisionResponses(rs []model.GalgameRevision) []RevisionResponse {
-	out := make([]RevisionResponse, 0, len(rs))
-	for i := range rs {
-		out = append(out, NewRevisionResponse(&rs[i]))
-	}
-	return out
-}
-
 // PRResponse is the typed form of model.GalgamePR.
 type PRResponse struct {
 	ID            int              `json:"id"`
@@ -74,15 +65,6 @@ func NewPRResponse(p *model.GalgamePR) PRResponse {
 	}
 	if s, err := model.SnapshotFromJSON([]byte(p.Snapshot)); err == nil {
 		out.Snapshot = s
-	}
-	return out
-}
-
-// NewPRResponses maps a slice of PRs.
-func NewPRResponses(ps []model.GalgamePR) []PRResponse {
-	out := make([]PRResponse, 0, len(ps))
-	for i := range ps {
-		out = append(out, NewPRResponse(&ps[i]))
 	}
 	return out
 }
