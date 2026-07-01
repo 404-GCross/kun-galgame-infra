@@ -11,12 +11,11 @@ name: test
 #                 the galgame service / search / refping tests (which
 #                 self-migrate) actually execute instead of skipping. Auth and
 #                 image tests still skip here (they need a pre-migrated infra DB /
-#                 MinIO — a later follow-up). Marked continue-on-error for now so
-#                 the very first runs can't red a PR while the service-container
-#                 plumbing is observed; flip to required once it's green in CI.
+#                 MinIO — a later follow-up). Required as of 2026-07-01 (first CI
+#                 run was green): a failure now fails the workflow.
 #
-# Independent of build.yml on purpose — deploys are not blocked while this
-# stabilizes. Add `needs: test` to build.yml once integration is required.
+# Independent of build.yml on purpose — this is a merge/PR signal, not a deploy
+# gate (build.yml is a separate workflow; deploys aren't blocked on it).
 
 on:
   push:
@@ -67,9 +66,6 @@ jobs:
   integration:
     name: integration (postgres + meilisearch)
     runs-on: ubuntu-latest
-    # First-run safety: don't fail the workflow while the service-container
-    # plumbing is being observed in CI. Remove once a run is confirmed green.
-    continue-on-error: true
     services:
       postgres:
         image: postgres:17-alpine
