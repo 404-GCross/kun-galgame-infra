@@ -67,7 +67,7 @@ func (h *OIDCHandler) metadata() fiber.Map {
 		"scopes_supported":                      []string{"openid", "profile", "email"},
 		"subject_types_supported":               []string{"public"},
 		"id_token_signing_alg_values_supported": []string{"ES256", "RS256"},
-		"token_endpoint_auth_methods_supported": []string{"client_secret_post", "none"},
+		"token_endpoint_auth_methods_supported": []string{"client_secret_basic", "client_secret_post", "none"},
 		"code_challenge_methods_supported":      []string{"S256"},
 		"claims_supported": []string{
 			"iss", "sub", "aud", "exp", "iat", "nonce",

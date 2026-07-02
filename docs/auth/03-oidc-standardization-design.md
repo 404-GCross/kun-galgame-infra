@@ -299,8 +299,21 @@ Each phase is independently deployable; earlier phases are additive.
    `/oauth/{token,userinfo,revoke}` emit standard top-level JSON + RFC 6749 error objects).
    Remaining = the cross-repo expand→contract: tolerant RP readers → flip the flag → remove
    legacy shape.
-4. **Deferred (when a third party actually arrives).** DCR, mTLS/DPoP sender-constraining,
-   RFC 8707 resource indicators, RFC 7662 introspection, back-channel logout for confidential RPs.
+4. **Third parties arrived (2026-07) — the real need is OIDC compliance, not the grab-bag.**
+   The registered third parties (hikarinagi, letmoe, LyCorisGal, 紫缘社, …) are all standard
+   OIDC-library **SSO relying parties** (confidential code+refresh, scopes `openid profile email`,
+   generic-OAuth callback paths) — **not resource servers**. So they need the OP to behave like a
+   standard OP for standard client libraries, NOT DCR/DPoP/introspection.
+   - ✅ **DONE — token-endpoint request compliance**: `/oauth/token` + `/oauth/revoke` now accept
+     `application/x-www-form-urlencoded` (RFC 6749 §4.1.3 mandatory — what standard libs send) in
+     addition to JSON, and `client_secret_basic` (HTTP Basic) in addition to `client_secret_post`;
+     discovery advertises both auth methods. This was the hard blocker (standard libs couldn't even
+     exchange the code).
+   - ⏳ **Still blocking these RPs**: the `KUN_OIDC_STANDARD_WIRE` response cutover (their libs need
+     top-level JSON on token/userinfo). And `id_token`-on-refresh (some libs expect it).
+   - **Genuinely deferred** (no current third party needs them — all are RPs, none host APIs that
+     validate our access tokens): RFC 7662 introspection, DCR (RFC 7591), mTLS/DPoP (RFC 9449),
+     RFC 8707 resource indicators. Back-channel logout is the one SSO-relevant deferred item.
 
 **Contract-doc impact (Tier-A):** implementing this changes the source contracts under
 `docs/integration/oauth/` (`01-oauth-endpoints`, `04-tokens-and-errors`, `07-logout`) and adds

@@ -1,8 +1,10 @@
 package handler
 
 import (
+	"encoding/base64"
 	"log/slog"
 	"net/url"
+	"strings"
 
 	"api/internal/platform/auth/dto"
 	"api/internal/platform/auth/service"
@@ -13,6 +15,41 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 )
+
+// bindByContentType binds an x-www-form-urlencoded body (RFC 6749 — what
+// standard OAuth/OIDC libraries send to the token/revoke endpoints) or a JSON
+// body (legacy first-party clients), chosen by Content-Type.
+func bindByContentType(c fiber.Ctx, out any) error {
+	if strings.HasPrefix(c.Get("Content-Type"), "application/x-www-form-urlencoded") {
+		return c.Bind().Form(out)
+	}
+	return c.Bind().JSON(out)
+}
+
+// basicClientAuth extracts client_id + client_secret from an HTTP Basic
+// Authorization header (RFC 6749 §2.3.1 client_secret_basic). The two values
+// are form-urlencoded before base64 per the spec, so they're unescaped here.
+func basicClientAuth(authHeader string) (clientID, secret string, ok bool) {
+	const prefix = "Basic "
+	if !strings.HasPrefix(authHeader, prefix) {
+		return "", "", false
+	}
+	raw, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(authHeader, prefix))
+	if err != nil {
+		return "", "", false
+	}
+	id, sec, found := strings.Cut(string(raw), ":")
+	if !found {
+		return "", "", false
+	}
+	if u, err := url.QueryUnescape(id); err == nil {
+		id = u
+	}
+	if u, err := url.QueryUnescape(sec); err == nil {
+		sec = u
+	}
+	return id, sec, true
+}
 
 // buildRedirectURL safely constructs a redirect URL with query parameters
 func buildRedirectURL(baseURI, code, state string) (string, error) {
@@ -214,17 +251,23 @@ func (h *OAuthHandler) Consent(c fiber.Ctx) error {
 // Supports grant_type=authorization_code and grant_type=refresh_token.
 func (h *OAuthHandler) Token(c fiber.Ctx) error {
 	var req dto.TokenRequest
-	if err := c.Bind().JSON(&req); err != nil {
-		// Diagnostic: an OAuth client sending application/x-www-form-urlencoded
-		// (the RFC 6749 standard, what many OAuth libraries default to) would
-		// land here because the handler only binds JSON. Log the content-type
-		// so we can tell a form-encoded client apart from a malformed body.
+	if err := bindByContentType(c, &req); err != nil {
 		slog.Warn("oauth token bind failed",
 			"content_type", c.Get("Content-Type"),
 			"body_len", len(c.Body()),
 			"err", err,
 		)
 		return h.protoErr(c, errors.ErrBadRequest, func() error { return response.BadRequest(c, errors.ErrBadRequest) })
+	}
+	// client_secret_basic (RFC 6749 §2.3.1): fill client_id/secret from the
+	// Basic header when not supplied in the body (client_secret_post wins).
+	if id, secret, ok := basicClientAuth(c.Get("Authorization")); ok {
+		if req.ClientID == "" {
+			req.ClientID = id
+		}
+		if req.ClientSecret == "" {
+			req.ClientSecret = secret
+		}
 	}
 
 	if err := utils.Validate(&req); err != nil {
@@ -371,10 +414,10 @@ func (h *OAuthHandler) LogoutRedirect(c fiber.Ctx) error {
 // Always returns 200 — never disclose whether the token existed.
 func (h *OAuthHandler) Revoke(c fiber.Ctx) error {
 	var req struct {
-		Token         string `json:"token" validate:"required"`
-		TokenTypeHint string `json:"token_type_hint"`
+		Token         string `json:"token" form:"token" validate:"required"`
+		TokenTypeHint string `json:"token_type_hint" form:"token_type_hint"`
 	}
-	if err := c.Bind().JSON(&req); err != nil {
+	if err := bindByContentType(c, &req); err != nil {
 		return h.protoErr(c, errors.ErrBadRequest, func() error { return response.BadRequest(c, errors.ErrBadRequest) })
 	}
 

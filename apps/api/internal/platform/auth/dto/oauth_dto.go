@@ -30,15 +30,18 @@ type AuthorizeRequest struct {
 	Nonce string `query:"nonce" json:"nonce"`
 }
 
-// TokenRequest represents an OAuth token request
+// TokenRequest represents an OAuth token request. Carries both `json` and
+// `form` tags: RFC 6749 §4.1.3 mandates application/x-www-form-urlencoded on
+// the token endpoint (what standard OAuth/OIDC libraries send), while the
+// legacy first-party clients post JSON. The handler binds by Content-Type.
 type TokenRequest struct {
-	GrantType    string `json:"grant_type" validate:"required,oneof=authorization_code refresh_token"`
-	Code         string `json:"code"`
-	RedirectURI  string `json:"redirect_uri"`
-	ClientID     string `json:"client_id" validate:"required"`
-	ClientSecret string `json:"client_secret"`
-	RefreshToken string `json:"refresh_token"`
-	CodeVerifier string `json:"code_verifier"` // PKCE
+	GrantType    string `json:"grant_type" form:"grant_type" validate:"required,oneof=authorization_code refresh_token"`
+	Code         string `json:"code" form:"code"`
+	RedirectURI  string `json:"redirect_uri" form:"redirect_uri"`
+	ClientID     string `json:"client_id" form:"client_id" validate:"required"`
+	ClientSecret string `json:"client_secret" form:"client_secret"`
+	RefreshToken string `json:"refresh_token" form:"refresh_token"`
+	CodeVerifier string `json:"code_verifier" form:"code_verifier"` // PKCE
 }
 
 // TokenResponse represents an OAuth token response
