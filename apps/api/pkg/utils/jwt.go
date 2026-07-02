@@ -26,6 +26,9 @@ type TokenClaims struct {
 	SiteID   uint     `json:"site_id,omitempty"`
 	Role     int      `json:"role,omitempty"`
 	Roles    []string `json:"roles,omitempty"`
+	// ClientID is the OAuth client the token was issued to (RFC 9068 §2.2).
+	// Empty for first-party /auth/login tokens, which have no client.
+	ClientID string `json:"client_id,omitempty"`
 	jwt.RegisteredClaims
 }
 

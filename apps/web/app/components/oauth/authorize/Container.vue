@@ -57,6 +57,11 @@ const forceLogin = computed(() => route.query.prompt === 'login')
 // (match by sub or email). See docs/integration/oauth/09.
 const promptSelectAccount = computed(() => route.query.prompt === 'select_account')
 const loginHint = computed(() => route.query.login_hint as string | undefined)
+// nonce (OIDC) must survive every round-trip on this page (login bounce,
+// account switch reload) and reach the consent POST — the backend binds it to
+// the auth code and echoes it into the id_token, which standard RP libraries
+// verify against the nonce they sent. Dropping it fails their login.
+const nonce = computed(() => route.query.nonce as string | undefined)
 
 // Build the full authorize URL. `extra` lets callers re-add params that the
 // base URL deliberately omits — notably `login_hint` for the step-up
@@ -72,6 +77,7 @@ const buildAuthorizeUrl = (extra?: Record<string, string>) => {
   params.set('state', state.value)
   if (codeChallenge.value) params.set('code_challenge', codeChallenge.value)
   if (codeChallengeMethod.value) params.set('code_challenge_method', codeChallengeMethod.value)
+  if (nonce.value) params.set('nonce', nonce.value)
   if (extra) {
     for (const [k, v] of Object.entries(extra)) params.set(k, v)
   }
@@ -310,6 +316,7 @@ const handleApprove = async () => {
     }
     if (codeChallenge.value) body.code_challenge = codeChallenge.value
     if (codeChallengeMethod.value) body.code_challenge_method = codeChallengeMethod.value
+    if (nonce.value) body.nonce = nonce.value
 
     const response = await api.post<{ redirect_url: string }>('/oauth/authorize/consent', body)
 

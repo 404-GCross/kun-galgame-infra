@@ -14,6 +14,7 @@ import (
 	"api/pkg/config"
 	"api/pkg/health"
 	"api/pkg/logger"
+	"api/pkg/oidckeys"
 	"api/pkg/oidctoken"
 	"api/pkg/response"
 
@@ -147,21 +148,24 @@ func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 		// Phase 1 token signing/verification. The verifier is accept-both
 		// (ES256/RS256 via the local key set + HS256 legacy) and is set
 		// regardless of the sign flag, so this OP verifies ES256 tokens before
-		// any signer flips. The signer uses ES256 only when
+		// any signer flips. The access-token signer uses ES256 only when
 		// KUN_OIDC_SIGN_ASYMMETRIC is on (and an active key exists); else HS256.
 		// See docs/auth/03-oidc-standardization-design.md §10 Phase 1.
 		verifier := oidctoken.NewVerifier(cfg.JWT.Secret, signingKeySvc)
-		var signer oidctoken.Signer = oidctoken.NewHS256Signer(cfg.JWT.Secret)
-		if kid, _, key, err := signingKeySvc.ActiveSigner(cleanupCtx); err != nil {
-			slog.Error("no active ES256 signing key; id_token disabled + asymmetric signing unavailable", "err", err)
+		var signer oidctoken.Signer = oidctoken.NewHS256Signer(cfg.JWT.Secret, cfg.OIDC.Issuer)
+		// id_token: always asymmetric (independent of the access-token flag) and
+		// signed RS256 — the OIDC registration default id_token_signed_response_alg,
+		// so standard RP libraries verify it without per-client alg configuration.
+		if kid, key, err := signingKeySvc.ActiveSigner(cleanupCtx, oidckeys.AlgRS256); err != nil {
+			slog.Error("no active RS256 signing key; id_token issuance disabled", "err", err)
 		} else {
-			// id_token is always ES256 (asymmetric-only), independent of the
-			// access-token HS256/ES256 flag.
-			oauthSvc.WithIDSigner(oidctoken.NewIDSigner(kid, key, cfg.OIDC.Issuer))
-			if cfg.OIDC.SignAsymmetric {
-				signer = oidctoken.NewES256Signer(kid, key)
-				slog.Info("oauth signing access tokens with ES256", "kid", kid)
-			}
+			oauthSvc.WithIDSigner(oidctoken.NewIDSigner(kid, oidckeys.AlgRS256, key, cfg.OIDC.Issuer))
+		}
+		if kid, key, err := signingKeySvc.ActiveSigner(cleanupCtx, oidckeys.AlgES256); err != nil {
+			slog.Error("no active ES256 signing key; asymmetric access-token signing unavailable", "err", err)
+		} else if cfg.OIDC.SignAsymmetric {
+			signer = oidctoken.NewES256Signer(kid, key, cfg.OIDC.Issuer)
+			slog.Info("oauth signing access tokens with ES256", "kid", kid)
 		}
 		authSvc.WithTokenSigner(signer).WithTokenVerifier(verifier)
 		oauthSvc.WithTokenSigner(signer)

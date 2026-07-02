@@ -54,6 +54,11 @@ const (
 	ErrOAuthInvalidClientSecret = 15008
 	ErrOAuthPKCERequired        = 15009
 	ErrOAuthConsentRequired     = 15010
+	// ErrOAuthUnsupportedGrantType: the grant_type value itself is not
+	// implemented (RFC 6749 unsupported_grant_type). Distinct from
+	// ErrOAuthInvalidGrant (15005) = "this client is not allowed this grant"
+	// (RFC 6749 unauthorized_client), which RPs classify as refresh-dead.
+	ErrOAuthUnsupportedGrantType = 15011
 
 	// Moemoepoint (16000-16999)
 	ErrMoemoepointInvalidDelta  = 16002
@@ -167,12 +172,13 @@ var codeMessages = map[int]string{
 	ErrOAuthInvalidRedirectURI:  "无效的回调地址",
 	ErrOAuthInvalidCode:         "无效的授权码",
 	ErrOAuthInvalidCodeVerifier: "无效的代码验证器",
-	ErrOAuthInvalidGrant:        "无效的授权类型",
-	ErrOAuthInvalidScope:        "无效的权限范围",
-	ErrOAuthAccessDenied:        "访问被拒绝",
-	ErrOAuthInvalidClientSecret: "客户端密钥无效",
-	ErrOAuthPKCERequired:        "公开客户端必须使用 PKCE",
-	ErrOAuthConsentRequired:     "需要用户授权同意",
+	ErrOAuthInvalidGrant:         "客户端未被授权使用该授权类型",
+	ErrOAuthInvalidScope:         "无效的权限范围",
+	ErrOAuthAccessDenied:         "访问被拒绝",
+	ErrOAuthInvalidClientSecret:  "客户端密钥无效",
+	ErrOAuthPKCERequired:         "公开客户端必须使用 PKCE",
+	ErrOAuthConsentRequired:      "需要用户授权同意",
+	ErrOAuthUnsupportedGrantType: "不支持的授权类型",
 
 	// Moemoepoint
 	ErrMoemoepointInvalidDelta:  "萌萌点变动值不能为 0",

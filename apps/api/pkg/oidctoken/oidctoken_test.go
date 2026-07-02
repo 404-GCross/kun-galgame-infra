@@ -62,14 +62,17 @@ func TestAsymmetricSignVerifyRoundtrip(t *testing.T) {
 	}}
 	v := NewVerifier("", resolver) // asymmetric-only (HS256 rejected)
 
-	claims := utils.TokenClaims{UserUUID: "u-1", ID: 42, Roles: []string{"admin"}, Scope: "openid profile"}
+	claims := utils.TokenClaims{
+		UserUUID: "u-1", ID: 42, Roles: []string{"admin"}, Scope: "openid profile",
+		RegisteredClaims: jwt.RegisteredClaims{Audience: jwt.ClaimStrings{"www.example.com"}},
+	}
 
 	// ES256 via the production signer.
 	esPriv, err := oidckeys.ParsePrivate(esKM.PrivateDER)
 	if err != nil {
 		t.Fatal(err)
 	}
-	esTok, err := NewES256Signer(esKM.Kid, esPriv).SignAccess(claims, time.Minute)
+	esTok, err := NewES256Signer(esKM.Kid, esPriv, "https://id.example").SignAccess(claims, time.Minute)
 	if err != nil {
 		t.Fatalf("ES256 sign: %v", err)
 	}
@@ -79,6 +82,20 @@ func TestAsymmetricSignVerifyRoundtrip(t *testing.T) {
 	}
 	if got.UserUUID != "u-1" || got.ID != 42 || len(got.Roles) != 1 || got.Roles[0] != "admin" || got.Scope != "openid profile" {
 		t.Fatalf("ES256 claims mismatch: %+v", got)
+	}
+	// RFC 9068: iss stamped by the signer, caller-set aud preserved, typ=at+jwt.
+	if got.Issuer != "https://id.example" {
+		t.Fatalf("access token iss mismatch: %q", got.Issuer)
+	}
+	if len(got.Audience) != 1 || got.Audience[0] != "www.example.com" {
+		t.Fatalf("access token aud mismatch: %v", got.Audience)
+	}
+	hdr, _, err := jwt.NewParser().ParseUnverified(esTok, jwt.MapClaims{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hdr.Header["typ"] != "at+jwt" {
+		t.Fatalf("access token typ header mismatch: %v", hdr.Header["typ"])
 	}
 
 	// RS256 signed directly (verification-only path).
@@ -104,7 +121,7 @@ func TestAsymmetricSignVerifyRoundtrip(t *testing.T) {
 func TestAcceptBothHS256(t *testing.T) {
 	const secret = "legacy-secret"
 	claims := utils.TokenClaims{UserUUID: "u-2", ID: 7}
-	tok, err := NewHS256Signer(secret).SignAccess(claims, time.Minute)
+	tok, err := NewHS256Signer(secret, "https://id.example").SignAccess(claims, time.Minute)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,7 +165,7 @@ func TestJWKSResolverEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tok, err := NewES256Signer(km.Kid, priv).SignAccess(utils.TokenClaims{UserUUID: "u-jwks"}, time.Minute)
+	tok, err := NewES256Signer(km.Kid, priv, "https://id.example").SignAccess(utils.TokenClaims{UserUUID: "u-jwks"}, time.Minute)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,7 +203,7 @@ func TestIDSigner(t *testing.T) {
 		t.Fatal(err)
 	}
 	pub := pubFromMaterial(t, km)
-	s := NewIDSigner(km.Kid, priv, "https://id.example")
+	s := NewIDSigner(km.Kid, oidckeys.AlgES256, priv, "https://id.example")
 
 	tok, err := s.Sign("user-uuid", "client-1", "nonce-xyz", time.Minute)
 	if err != nil {

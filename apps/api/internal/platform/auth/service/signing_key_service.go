@@ -12,6 +12,7 @@ import (
 	"api/internal/platform/auth/model"
 	authrepo "api/internal/platform/auth/repository"
 	"api/pkg/oidckeys"
+	"api/pkg/oidctoken"
 
 	"gorm.io/datatypes"
 )
@@ -27,8 +28,9 @@ type SigningKeyService struct {
 
 	// pubCache is the parsed published public keys (kid -> key), the local
 	// implementation of oidctoken.Resolver for the OP's own verification.
-	mu       sync.RWMutex
-	pubCache map[string]crypto.PublicKey
+	mu         sync.RWMutex
+	pubCache   map[string]crypto.PublicKey
+	lastReload time.Time
 }
 
 // NewSigningKeyService creates the service. kekSecret is KUN_OIDC_KEY_ENC_KEY;
@@ -111,7 +113,7 @@ func (s *SigningKeyService) Key(ctx context.Context, kid string) (crypto.PublicK
 		return k, nil
 	}
 	if err := s.reloadPublic(ctx); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %v", oidctoken.ErrKeyUnavailable, err)
 	}
 	s.mu.RLock()
 	k = s.pubCache[kid]
@@ -123,6 +125,15 @@ func (s *SigningKeyService) Key(ctx context.Context, kid string) (crypto.PublicK
 }
 
 func (s *SigningKeyService) reloadPublic(ctx context.Context) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	// Reload throttle (mirrors JWKSResolver.minRefresh): an unknown-kid miss
+	// hits the signing_keys table at most once per window, so a spray of
+	// garbage-kid tokens can't amplify into per-request queries on the
+	// primary DB.
+	if s.pubCache != nil && time.Since(s.lastReload) < 30*time.Second {
+		return nil
+	}
 	keys, err := s.repo.FindPublished(ctx)
 	if err != nil {
 		return err
@@ -139,27 +150,25 @@ func (s *SigningKeyService) reloadPublic(ctx context.Context) error {
 		}
 		m[keys[i].Kid] = pub
 	}
-	s.mu.Lock()
 	s.pubCache = m
-	s.mu.Unlock()
+	s.lastReload = time.Now()
 	return nil
 }
 
-// ActiveSigner returns the parsed private key + kid + alg for the ES256 active
-// signer (the token signer, used from Phase 1). Exposed in Phase 0 so the
-// decrypt/parse path is wired and testable end-to-end.
-func (s *SigningKeyService) ActiveSigner(ctx context.Context) (kid, alg string, key any, err error) {
-	k, err := s.repo.FindActive(ctx, oidckeys.AlgES256)
+// ActiveSigner returns the parsed private key + kid + alg for the active key
+// of the given algorithm (ES256 → access tokens, RS256 → id_tokens).
+func (s *SigningKeyService) ActiveSigner(ctx context.Context, alg string) (kid string, key any, err error) {
+	k, err := s.repo.FindActive(ctx, alg)
 	if err != nil {
-		return "", "", nil, err
+		return "", nil, err
 	}
 	der, err := oidckeys.Decrypt(s.kek, k.PrivateKeyEnc)
 	if err != nil {
-		return "", "", nil, err
+		return "", nil, err
 	}
 	priv, err := oidckeys.ParsePrivate(der)
 	if err != nil {
-		return "", "", nil, err
+		return "", nil, err
 	}
-	return k.Kid, k.Alg, priv, nil
+	return k.Kid, priv, nil
 }

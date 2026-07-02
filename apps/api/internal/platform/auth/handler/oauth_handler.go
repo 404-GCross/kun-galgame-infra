@@ -14,6 +14,7 @@ import (
 	"api/pkg/utils"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/golang-jwt/jwt/v5"
 )
 
 // bindByContentType binds an x-www-form-urlencoded body (RFC 6749 — what
@@ -104,6 +105,10 @@ func oauthErrString(appCode int) string {
 	case errors.ErrOAuthInvalidScope:
 		return "invalid_scope"
 	case errors.ErrOAuthInvalidGrant:
+		// Grant-allowlist rejection (RFC 6749 §5.2 unauthorized_client) —
+		// refresh-dead for RPs, same as the legacy numeric 15005.
+		return "unauthorized_client"
+	case errors.ErrOAuthUnsupportedGrantType:
 		return "unsupported_grant_type"
 	default:
 		return "invalid_request"
@@ -307,7 +312,7 @@ func (h *OAuthHandler) Token(c fiber.Ctx) error {
 		return h.okJSON(c, tokenResp)
 
 	default:
-		return h.protoErr(c, errors.ErrOAuthInvalidGrant, func() error { return response.BadRequest(c, errors.ErrOAuthInvalidGrant) })
+		return h.protoErr(c, errors.ErrOAuthUnsupportedGrantType, func() error { return response.BadRequest(c, errors.ErrOAuthUnsupportedGrantType) })
 	}
 }
 
@@ -380,23 +385,44 @@ func (h *OAuthHandler) PostLogoutRedirect(c fiber.Ctx) error {
 // LogoutRedirect is the RP-initiated logout entrypoint (a browser top-level
 // navigation, symmetric with Authorize). It bounces to the OP frontend logout
 // page, which clears the central SSO session and redirects back to a validated
-// RP URL. client_id + redirect are passed through unchanged (the frontend page
-// validates `redirect` via /oauth/post-logout-redirect before using it).
+// RP URL. Accepts both the first-party params (client_id + redirect) and the
+// OIDC RP-Initiated Logout standard ones (post_logout_redirect_uri + state +
+// id_token_hint); GET query or POST form, per the spec. The frontend page
+// validates the redirect via /oauth/post-logout-redirect before using it and
+// echoes `state` onto it. When a standard RP sends only id_token_hint (no
+// client_id), the hint's aud names the client to validate against.
 // Bouncing through the backend means RPs reuse the same OAuth API base they
 // already use for /oauth/authorize, and it resolves correctly in dev (where the
 // frontend and API are different origins) via cfg.Server.FrontendURL.
 // See docs/integration/oauth/07-logout.md.
 func (h *OAuthHandler) LogoutRedirect(c fiber.Ctx) error {
+	param := func(key string) string {
+		if v := c.Query(key); v != "" {
+			return v
+		}
+		return c.FormValue(key)
+	}
+	clientID := param("client_id")
+	redirect := param("redirect")
+	if redirect == "" {
+		redirect = param("post_logout_redirect_uri")
+	}
+	hint := param("id_token_hint")
+	if clientID == "" && hint != "" {
+		clientID = clientIDFromIDTokenHint(hint)
+	}
+
 	q := url.Values{}
-	if cid := c.Query("client_id"); cid != "" {
-		q.Set("client_id", cid)
+	if clientID != "" {
+		q.Set("client_id", clientID)
 	}
-	if r := c.Query("redirect"); r != "" {
-		q.Set("redirect", r)
+	if redirect != "" {
+		q.Set("redirect", redirect)
 	}
-	// id_token_hint (OIDC RP-Initiated Logout) — passed through so the OP logout
-	// page can identify the session to end / skip the confirm prompt.
-	if hint := c.Query("id_token_hint"); hint != "" {
+	if st := param("state"); st != "" {
+		q.Set("state", st)
+	}
+	if hint != "" {
 		q.Set("id_token_hint", hint)
 	}
 	dest := h.cfg.Server.FrontendURL + "/auth/logout"
@@ -404,6 +430,22 @@ func (h *OAuthHandler) LogoutRedirect(c fiber.Ctx) error {
 		dest += "?" + enc
 	}
 	return c.Redirect().To(dest)
+}
+
+// clientIDFromIDTokenHint extracts the aud (client_id) from an id_token_hint
+// WITHOUT verifying the signature: it only selects which client's registered
+// redirect_uris the post-logout redirect is validated against, so a forged
+// hint gains nothing beyond a redirect that client already allows.
+func clientIDFromIDTokenHint(hint string) string {
+	tok, _, err := jwt.NewParser().ParseUnverified(hint, jwt.MapClaims{})
+	if err != nil {
+		return ""
+	}
+	aud, err := tok.Claims.GetAudience()
+	if err != nil || len(aud) == 0 {
+		return ""
+	}
+	return aud[0]
 }
 
 // Revoke revokes an OAuth token (RFC 7009).

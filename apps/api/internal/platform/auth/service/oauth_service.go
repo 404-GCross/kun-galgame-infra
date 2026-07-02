@@ -24,6 +24,8 @@ import (
 	"api/pkg/errors"
 	"api/pkg/oidctoken"
 	"api/pkg/utils"
+
+	"github.com/golang-jwt/jwt/v5"
 )
 
 // OAuthService handles OAuth 2.0 logic
@@ -275,12 +277,12 @@ func (s *OAuthService) ExchangeCode(ctx context.Context, req *dto.TokenRequest) 
 		return nil, errors.NewWithCode(errors.ErrOAuthInvalidClient)
 	}
 
-	// Fetch the full client record — we need IsPublic (for confidential
-	// secret enforcement below), SiteID (to bind the JWT to a site so
-	// image_service can do its cross-site quota check), and Grants (to
-	// confirm this client is even allowed to use the authorization_code
-	// grant).
-	client, err := s.clientRepo.FindByClientID(ctx, req.ClientID)
+	// Fetch the full client record (with its Site — the site domain becomes
+	// the access token's `aud`). We need IsPublic (for confidential secret
+	// enforcement below), SiteID (to bind the JWT to a site so image_service
+	// can do its cross-site quota check), and Grants (to confirm this client
+	// is even allowed to use the authorization_code grant).
+	client, err := s.clientRepo.FindByClientIDWithSite(ctx, req.ClientID)
 	if err != nil {
 		return nil, errors.NewWithCode(errors.ErrOAuthInvalidClient)
 	}
@@ -364,7 +366,10 @@ func (s *OAuthService) ExchangeCode(ctx context.Context, req *dto.TokenRequest) 
 		siteID = *client.SiteID
 	}
 
-	// Generate tokens with scope + site_id embedded in access token
+	// Generate tokens with scope + site_id embedded in access token.
+	// RFC 9068 claims: `aud` = the client's site domain (the resource-server
+	// identifier — see docs/auth/03 §5.1; site_id stays as the claim the
+	// resource servers actually check), `client_id` = the requesting client.
 	accessToken, err := s.signAccessToken(
 		utils.TokenClaims{
 			UserUUID: user.UUID,
@@ -374,6 +379,10 @@ func (s *OAuthService) ExchangeCode(ctx context.Context, req *dto.TokenRequest) 
 			Roles:    user.RoleNames(),
 			Scope:    authCode.Scope,
 			SiteID:   siteID,
+			ClientID: req.ClientID,
+			RegisteredClaims: jwt.RegisteredClaims{
+				Audience: clientAudience(client),
+			},
 		},
 		15*time.Minute,
 	)
@@ -494,6 +503,16 @@ func (s *OAuthService) resolveAvatar(u *model.User) string {
 	return u.Avatar
 }
 
+// clientAudience returns the access token's `aud` (RFC 9068): the client's
+// site domain — the resource-server identifier per docs/auth/03 §5.1. Nil
+// (claim omitted) for clients not bound to a site.
+func clientAudience(client *sitemodel.OAuthClient) jwt.ClaimStrings {
+	if client.Site != nil && client.Site.Domain != "" {
+		return jwt.ClaimStrings{client.Site.Domain}
+	}
+	return nil
+}
+
 // parseScopes splits a space-separated scope string into a set
 func parseScopes(scope string) map[string]bool {
 	result := make(map[string]bool)
@@ -560,7 +579,8 @@ func (s *OAuthService) GetUserIDByUUID(ctx context.Context, uuid string) (uint, 
 //     PKCE): the refresh_token itself is the proof of authorization; no
 //     client_secret is needed. We still verify the client_id exists.
 func (s *OAuthService) RefreshWithClient(ctx context.Context, refreshToken, clientID, clientSecret string) (*dto.TokenResponse, error) {
-	client, err := s.clientRepo.FindByClientID(ctx, clientID)
+	// Site preloaded: its domain is the refreshed access token's `aud`.
+	client, err := s.clientRepo.FindByClientIDWithSite(ctx, clientID)
 	if err != nil {
 		slog.Warn("oauth refresh reject", "stage", "client_lookup", "client_id", clientID, "err", err)
 		return nil, errors.NewWithCode(errors.ErrOAuthInvalidClient)
@@ -652,6 +672,10 @@ func (s *OAuthService) RefreshWithClient(ctx context.Context, refreshToken, clie
 				Roles:    user.RoleNames(),
 				Scope:    session.Scope,
 				SiteID:   siteID,
+				ClientID: clientID,
+				RegisteredClaims: jwt.RegisteredClaims{
+					Audience: clientAudience(client),
+				},
 			},
 			15*time.Minute,
 		)

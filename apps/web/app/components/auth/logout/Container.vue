@@ -21,6 +21,7 @@ onMounted(async () => {
   //    open-redirect; anything unknown falls back to the OP home.
   const clientId = route.query.client_id as string | undefined
   const redirect = route.query.redirect as string | undefined
+  const state = route.query.state as string | undefined
   let dest = '/'
   if (clientId && redirect) {
     try {
@@ -28,7 +29,16 @@ onMounted(async () => {
         client_id: clientId,
         redirect,
       })
-      if (res.code === 0 && res.data?.url) dest = res.data.url
+      if (res.code === 0 && res.data?.url) {
+        dest = res.data.url
+        // OIDC RP-Initiated Logout: echo `state` onto the validated redirect
+        // (never onto the OP-home fallback) so the RP can correlate the return.
+        if (state) {
+          const u = new URL(dest)
+          u.searchParams.set('state', state)
+          dest = u.toString()
+        }
+      }
     } catch {
       // fall back to OP home
     }

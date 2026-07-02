@@ -65,8 +65,11 @@ func (h *OIDCHandler) metadata() fiber.Map {
 		"response_types_supported":              []string{"code"},
 		"grant_types_supported":                 []string{"authorization_code", "refresh_token"},
 		"scopes_supported":                      []string{"openid", "profile", "email"},
-		"subject_types_supported":               []string{"public"},
-		"id_token_signing_alg_values_supported": []string{"ES256", "RS256"},
+		"subject_types_supported": []string{"public"},
+		// id_tokens are signed RS256 only (the registration default
+		// id_token_signed_response_alg — RP libs verify with zero config);
+		// ES256 signs access tokens, which discovery doesn't describe.
+		"id_token_signing_alg_values_supported": []string{"RS256"},
 		"token_endpoint_auth_methods_supported": []string{"client_secret_basic", "client_secret_post", "none"},
 		"code_challenge_methods_supported":      []string{"S256"},
 		"claims_supported": []string{

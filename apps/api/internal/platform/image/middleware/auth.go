@@ -5,6 +5,7 @@ package middleware
 import (
 	"encoding/base64"
 	stderrors "errors"
+	"fmt"
 	"slices"
 	"strings"
 
@@ -72,6 +73,11 @@ func ClientAuth(clientRepo *siteRepo.OAuthClientRepository, cfg *config.Config) 
 
 		if err != nil {
 			// Translate known sentinel errors; fall back to generic 401/403.
+			// A key-store outage (JWKS unreachable) is a 503, not a 401 — the
+			// token may be perfectly valid.
+			if stderrors.Is(err, oidctoken.ErrKeyUnavailable) {
+				return response.Error(c, fiber.StatusServiceUnavailable, errors.ErrImageUnauthorized, "token verification temporarily unavailable")
+			}
 			var code int
 			switch {
 			case stderrors.Is(err, errBadClient):
@@ -140,7 +146,9 @@ func authenticateJWT(c fiber.Ctx, repo *siteRepo.OAuthClientRepository, authHead
 	tokenStr := strings.TrimPrefix(authHeader, "Bearer ")
 	claims, err := verifier.Parse(c.Context(), tokenStr)
 	if err != nil {
-		return nil, "", errBadClient
+		// Wrap rather than replace: errBadClient keeps the wire code, while a
+		// wrapped oidctoken.ErrKeyUnavailable lets the caller return 503.
+		return nil, "", fmt.Errorf("%w: %w", errBadClient, err)
 	}
 
 	scopes := strings.Fields(claims.Scope)

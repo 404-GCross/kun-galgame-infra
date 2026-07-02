@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	stderrors "errors"
 	"strings"
 
 	"api/pkg/errors"
@@ -8,6 +9,17 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 )
+
+// keyUnavailable writes the 503 for a key-store outage (JWKS unreachable):
+// the service's failure, not the caller's — a 401 would make RPs kill live
+// sessions, and OptionalJWT would silently serve logged-in users anonymous
+// responses.
+func keyUnavailable(c fiber.Ctx) error {
+	return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
+		"code":    errors.ErrOperationFailed,
+		"message": "令牌验证暂不可用，请稍后重试",
+	})
+}
 
 // JWTAuth is a lightweight JWT middleware backed by an accept-both verifier
 // (ES256/RS256 via JWKS + legacy HS256). Unlike Auth(), it does not depend on
@@ -32,6 +44,9 @@ func JWTAuth(verifier *oidctoken.Verifier) fiber.Handler {
 
 		claims, err := verifier.Parse(c.Context(), parts[1])
 		if err != nil {
+			if stderrors.Is(err, oidctoken.ErrKeyUnavailable) {
+				return keyUnavailable(c)
+			}
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
 				"code":    errors.ErrAuthTokenExpired,
 				"message": errors.GetMessage(errors.ErrAuthTokenExpired),
@@ -67,6 +82,12 @@ func OptionalJWT(verifier *oidctoken.Verifier) fiber.Handler {
 		}
 		claims, err := verifier.Parse(c.Context(), parts[1])
 		if err != nil {
+			// A key-store outage must not demote a presented token to anonymous
+			// (users would see their own pending drafts silently vanish) — fail
+			// loud so the caller retries.
+			if stderrors.Is(err, oidctoken.ErrKeyUnavailable) {
+				return keyUnavailable(c)
+			}
 			return c.Next()
 		}
 		c.Locals("user_uuid", claims.UserUUID)

@@ -18,8 +18,10 @@ import (
 	"crypto"
 	"crypto/rand"
 	"encoding/hex"
+	stderrors "errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"sync"
 	"time"
@@ -29,6 +31,12 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 )
+
+// ErrKeyUnavailable marks a verification failure caused by the key store being
+// unreachable (JWKS fetch / signing_keys query failed) — the service's problem,
+// not the token's. Middlewares surface it as 503 so a logged-in caller retries
+// instead of being treated as anonymous or logged out.
+var ErrKeyUnavailable = stderrors.New("oidctoken: signing keys unavailable")
 
 // Resolver resolves a JWS `kid` to the public key that verifies tokens signed
 // with it.
@@ -43,80 +51,103 @@ type Signer interface {
 	SignAccess(claims utils.TokenClaims, ttl time.Duration) (string, error)
 }
 
-// finalizeAccess stamps the registered claims (jti/exp/iat/nbf) exactly as the
-// legacy utils.GenerateAccessToken did, so the ONLY difference between the HS256
-// and ES256 paths is the signature — keeping the accept-both window purely about
-// the signing algorithm.
-func finalizeAccess(claims utils.TokenClaims, ttl time.Duration) (utils.TokenClaims, error) {
+// finalizeAccess stamps the registered claims (jti/exp/iat/nbf + RFC 9068
+// iss/aud) identically on the HS256 and ES256 paths, so the ONLY difference
+// between them is the signature — keeping the accept-both window purely about
+// the signing algorithm. The audience (resource identifier, set by the caller
+// per token) is preserved; everything else is minted here.
+func finalizeAccess(claims utils.TokenClaims, ttl time.Duration, issuer string) (utils.TokenClaims, error) {
 	jti := make([]byte, 16)
 	if _, err := rand.Read(jti); err != nil {
 		return claims, err
 	}
 	now := time.Now()
+	aud := claims.Audience
 	claims.RegisteredClaims = jwt.RegisteredClaims{
 		ID:        hex.EncodeToString(jti),
 		ExpiresAt: jwt.NewNumericDate(now.Add(ttl)),
 		IssuedAt:  jwt.NewNumericDate(now),
 		NotBefore: jwt.NewNumericDate(now),
+		Issuer:    issuer,
+		Audience:  aud,
 	}
 	return claims, nil
 }
 
-type hs256Signer struct{ secret []byte }
-
-// NewHS256Signer signs with the legacy shared secret (HS256).
-func NewHS256Signer(secret string) Signer { return &hs256Signer{secret: []byte(secret)} }
-
-func (s *hs256Signer) SignAccess(claims utils.TokenClaims, ttl time.Duration) (string, error) {
-	c, err := finalizeAccess(claims, ttl)
+// signAccess builds and signs the access token: RFC 9068 `typ: at+jwt` header
+// (RFC 8725 token typing — keeps access tokens distinct from id_tokens), plus
+// `kid` when set.
+func signAccess(method jwt.SigningMethod, key any, kid, issuer string, claims utils.TokenClaims, ttl time.Duration) (string, error) {
+	c, err := finalizeAccess(claims, ttl, issuer)
 	if err != nil {
 		return "", err
 	}
-	return jwt.NewWithClaims(jwt.SigningMethodHS256, c).SignedString(s.secret)
+	tok := jwt.NewWithClaims(method, c)
+	tok.Header["typ"] = "at+jwt"
+	if kid != "" {
+		tok.Header["kid"] = kid
+	}
+	return tok.SignedString(key)
+}
+
+type hs256Signer struct {
+	secret []byte
+	issuer string
+}
+
+// NewHS256Signer signs with the legacy shared secret (HS256).
+func NewHS256Signer(secret, issuer string) Signer {
+	return &hs256Signer{secret: []byte(secret), issuer: issuer}
+}
+
+func (s *hs256Signer) SignAccess(claims utils.TokenClaims, ttl time.Duration) (string, error) {
+	return signAccess(jwt.SigningMethodHS256, s.secret, "", s.issuer, claims, ttl)
 }
 
 type es256Signer struct {
-	kid string
-	key crypto.PrivateKey
-}
-
-// NewES256Signer signs with the active ES256 key, stamping its `kid` in the
-// JWS header so verifiers can select the matching public key.
-func NewES256Signer(kid string, key crypto.PrivateKey) Signer {
-	return &es256Signer{kid: kid, key: key}
-}
-
-func (s *es256Signer) SignAccess(claims utils.TokenClaims, ttl time.Duration) (string, error) {
-	c, err := finalizeAccess(claims, ttl)
-	if err != nil {
-		return "", err
-	}
-	tok := jwt.NewWithClaims(jwt.SigningMethodES256, c)
-	tok.Header["kid"] = s.kid
-	return tok.SignedString(s.key)
-}
-
-// --- ID token signer ----------------------------------------------------
-
-// IDSigner mints OIDC id_tokens. Always ES256 (the id_token is a new,
-// asymmetric-only token — clients verify it via JWKS), independent of the
-// access-token HS256/ES256 flag.
-type IDSigner struct {
 	kid    string
 	key    crypto.PrivateKey
 	issuer string
 }
 
-// NewIDSigner builds an id_token signer from the active ES256 key and the OP
-// issuer identifier.
-func NewIDSigner(kid string, key crypto.PrivateKey, issuer string) *IDSigner {
-	return &IDSigner{kid: kid, key: key, issuer: issuer}
+// NewES256Signer signs with the active ES256 key, stamping its `kid` in the
+// JWS header so verifiers can select the matching public key.
+func NewES256Signer(kid string, key crypto.PrivateKey, issuer string) Signer {
+	return &es256Signer{kid: kid, key: key, issuer: issuer}
+}
+
+func (s *es256Signer) SignAccess(claims utils.TokenClaims, ttl time.Duration) (string, error) {
+	return signAccess(jwt.SigningMethodES256, s.key, s.kid, s.issuer, claims, ttl)
+}
+
+// --- ID token signer ----------------------------------------------------
+
+// IDSigner mints OIDC id_tokens — always asymmetric (clients verify via JWKS),
+// independent of the access-token HS256/ES256 flag. The algorithm comes from
+// the signing key; the OP signs id_tokens RS256: it is the OIDC registration
+// default for `id_token_signed_response_alg`, so standard RP libraries verify
+// them with zero per-client alg configuration (and OIDC Core §15.1 makes RS256
+// mandatory-to-implement anyway).
+type IDSigner struct {
+	kid    string
+	method jwt.SigningMethod
+	key    crypto.PrivateKey
+	issuer string
+}
+
+// NewIDSigner builds an id_token signer from an active signing key (alg is the
+// key's algorithm, e.g. "RS256") and the OP issuer identifier.
+func NewIDSigner(kid, alg string, key crypto.PrivateKey, issuer string) *IDSigner {
+	return &IDSigner{kid: kid, method: jwt.GetSigningMethod(alg), key: key, issuer: issuer}
 }
 
 // Sign issues a minimal id_token: iss/sub/aud/exp/iat (+ nonce when the auth
 // request carried one). No roles/scope/authz data — the id_token authenticates
 // the user to the client, nothing more.
 func (s *IDSigner) Sign(sub, aud, nonce string, ttl time.Duration) (string, error) {
+	if s.method == nil {
+		return "", fmt.Errorf("oidctoken: unknown id_token signing alg")
+	}
 	now := time.Now()
 	claims := jwt.MapClaims{
 		"iss": s.issuer,
@@ -128,7 +159,7 @@ func (s *IDSigner) Sign(sub, aud, nonce string, ttl time.Duration) (string, erro
 	if nonce != "" {
 		claims["nonce"] = nonce
 	}
-	tok := jwt.NewWithClaims(jwt.SigningMethodES256, claims)
+	tok := jwt.NewWithClaims(s.method, claims)
 	tok.Header["kid"] = s.kid
 	return tok.SignedString(s.key)
 }
@@ -157,10 +188,24 @@ func NewVerifier(hs256Secret string, resolver Resolver) *Verifier {
 // verifier whose asymmetric side fetches the OP's JWK Set from jwksURL. When
 // jwksURL is empty the verifier is HS256-only (asymmetric disabled) — safe
 // until asymmetric signing is turned on.
+//
+// The key cache is warmed in the background so a service restarting while the
+// OP is briefly unreachable doesn't start with a cold cache that fails every
+// ES256 token; a warm-up failure is non-fatal (the resolver refetches on
+// demand) but logged loudly.
 func NewVerifierWithJWKS(hs256Secret, jwksURL string) *Verifier {
 	var r Resolver
 	if jwksURL != "" {
-		r = NewJWKSResolver(jwksURL)
+		jr := NewJWKSResolver(jwksURL)
+		r = jr
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			if err := jr.refetch(ctx); err != nil {
+				slog.Error("oidctoken: JWKS warm-up failed; ES256 verification degraded until the OP is reachable",
+					"url", jwksURL, "err", err)
+			}
+		}()
 	}
 	return NewVerifier(hs256Secret, r)
 }
@@ -235,7 +280,7 @@ func (r *JWKSResolver) Key(ctx context.Context, kid string) (crypto.PublicKey, e
 		return k, nil
 	}
 	if err := r.refetch(ctx); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %v", ErrKeyUnavailable, err)
 	}
 	r.mu.RLock()
 	k = r.keys[kid]
