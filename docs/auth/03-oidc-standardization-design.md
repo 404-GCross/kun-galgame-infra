@@ -340,3 +340,74 @@ discovery/JWKS pages. Update the **source** docs in this repo in the same PR, th
   change covers it (`AuthService.RefreshToken:579`) as well as the OAuth path.
 - **Rotation cadence & overlap defaults** and whether rotation is a scheduled job (fits the
   existing in-process job registry / scheduler) or manual.
+
+## 12. Cutover runbook (ops)
+
+All code (Phases 0–3 + token-endpoint request compliance + first-party tolerant readers) is
+committed but **not pushed**, and both cutover flags default **off** — so nothing has changed in
+production yet. This is the operator sequence to actually turn it on. The two flags
+(`KUN_OIDC_SIGN_ASYMMETRIC`, `KUN_OIDC_STANDARD_WIRE`) are **independent** — do either, both, or
+neither — but within each, the order is load-bearing.
+
+### 12.0 Prerequisites (once, before either flip)
+- [ ] **Migrate** `kun_galgame_infra`: `go run ./cmd/migrate` (adds `signing_keys` +
+  `authorization_codes.nonce`). Deploy does NOT auto-run it.
+- [ ] Set a strong random **`KUN_OIDC_KEY_ENC_KEY`** on the **oauth** service (the KEK that encrypts
+  signing keys). **Immutable once set** — changing it makes existing encrypted keys undecryptable.
+- [ ] Redeploy oauth → verify `{issuer}/.well-known/openid-configuration` and `{issuer}/oauth/jwks`
+  return 200 with the two published keys. (`issuer` = `KUN_SITE_URL`, e.g. `https://oauth.kungal.com`.)
+
+### 12.1 Asymmetric signing — flip `KUN_OIDC_SIGN_ASYMMETRIC`
+Makes access tokens ES256 (JWKS-verifiable) instead of HS256. Verifiers are already accept-both
+(Phase 1), so this is safe once they can reach the JWKS.
+- [ ] Set **`KUN_OIDC_JWKS_URL=http://oauth:9277/oauth/jwks`** (the **internal** service address) on
+  **galgame, image, artifact, moderation**; redeploy them.
+- [ ] Verify each resource server can fetch the JWK Set (a token minted after the flip must validate
+  on each).
+- [ ] Set **`KUN_OIDC_SIGN_ASYMMETRIC=true`** on oauth; redeploy oauth.
+- [ ] Verify: a fresh login's access token header is `alg:ES256` + `kid`; calls to galgame/image/
+  artifact with it succeed; in-flight HS256 tokens (≤15 min) still verify (accept-both window).
+- [ ] **(Stage 3, later)** once no HS256 tokens remain in the wild, drop HS256 acceptance from the
+  verifiers and remove `cfg.JWT.Secret` from galgame/image/artifact.
+
+### 12.2 Standard wire format — flip `KUN_OIDC_STANDARD_WIRE`
+Makes `/oauth/{token,userinfo,revoke}` emit spec-compliant top-level JSON so standard OIDC client
+libraries (the third parties) can parse them.
+- [ ] **Deploy the first-party tolerant-reader builds** to ALL three RPs first — they read BOTH the
+  envelope and standard shapes, so they survive the flip: forum (`d9a8c7b6`), moyu (`4b7f3387`),
+  infra/wiki (`620f64a`).
+- [ ] Verify first-party login/refresh still works (OP still enveloped; RPs read both) — no change yet.
+- [ ] **Notify third parties** (see §12.3) and confirm none depend on the envelope.
+- [ ] Set **`KUN_OIDC_STANDARD_WIRE=true`** on oauth; redeploy oauth.
+- [ ] Verify: `/oauth/token` + `/oauth/userinfo` now return top-level JSON + RFC 6749 error objects;
+  first-party login still works; a standard third-party (e.g. letmoe) completes a full login.
+- [ ] **(Stage 3, later)** remove the legacy-envelope emission from the OP and the both-shape
+  tolerance from the first-party RPs (contract step).
+
+### 12.3 Third-party impact (do they need code changes?)
+- **Standard OIDC-library RPs (letmoe, hikarinagi, LyCorisGal, 紫缘社, … — all of the current ones):
+  NO code change.** Standardization is exactly what makes their standard integration work — point
+  their OIDC client at `{issuer}/.well-known/openid-configuration` (+ client_id/secret) and after the
+  flip they parse token/userinfo natively. They were most likely blocked until now (envelope +
+  previously-missing id_token); the cutover unblocks them.
+- **Only exception:** any RP that wrote **custom code to unwrap the `{code,message,data}` envelope**
+  (a workaround for the old non-standard OP) — that workaround **breaks at the flip** and must be
+  removed / switched to standard. Because `STANDARD_WIRE` is a **global** switch, confirm no third
+  party relies on the envelope **before** flipping.
+- Communication template: *"The IdP is now a full standards OIDC provider (discovery / JWKS /
+  id_token / spec-compliant token & userinfo responses). Configure a standard OIDC client against
+  `{issuer}/.well-known/openid-configuration`; if you did anything custom to handle the old
+  `{code,message,data}` wrapper, remove it."*
+
+### 12.4 Rollback
+Both flags are independently reversible: set back to `false` + redeploy oauth.
+- `SIGN_ASYMMETRIC=false` → back to HS256 signing; verifiers still accept both, so **no first-party
+  breakage**.
+- `STANDARD_WIRE=false` → back to the envelope; first-party RPs are tolerant so **no first-party
+  breakage**. **Third parties on standard would break on rollback** — coordinate before reverting.
+
+### 12.5 Push order
+The committed changes are all **additive / behavior-neutral while the flags are off**, so the repos
+can be **pushed in any order**: infra (`04ad0d9` request compliance + `620f64a` wiki tolerant + OP
+error mapping), forum (`d9a8c7b6`), moyu (`4b7f3387`). What is order-sensitive is the *rollout*:
+**deploy all RP tolerant builds → then flip `STANDARD_WIRE`** (§12.2), never the reverse.
