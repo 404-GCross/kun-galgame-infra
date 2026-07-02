@@ -25,10 +25,13 @@
 > **staged ops rollout** (§10 Phase 1): (1) deploy these builds to ALL services with
 > `KUN_OIDC_JWKS_URL` set on the resource servers + `KUN_OIDC_KEY_ENC_KEY` on oauth; (2)
 > set `KUN_OIDC_SIGN_ASYMMETRIC=true` on oauth; (3) later drop HS256 acceptance.
-> **Phase 2 done** — minimal `id_token` (ES256, iss/sub/aud/exp/iat + nonce) issued on the
-> `openid` scope for the code grant; `nonce` captured at `/authorize`→code→id_token (new
-> `authorization_codes.nonce` column → needs `cmd/migrate`); `end_session_endpoint` now
-> GET+POST with `id_token_hint` passthrough.
+> **Phase 2 done** — minimal `id_token` (**RS256** — the OIDC registration default
+> `id_token_signed_response_alg`, so standard RP libraries verify it with zero per-client
+> config; iss/sub/aud/exp/iat + nonce) issued on the `openid` scope for the code grant;
+> `nonce` captured at `/authorize`→consent page→code→id_token (new
+> `authorization_codes.nonce` column → needs `cmd/migrate` **BEFORE deploy** — the column
+> is written on every consent, flag-independent); `end_session_endpoint` now GET+POST with
+> the RP-Initiated Logout params (`post_logout_redirect_uri`, `state`, `id_token_hint`).
 > **Phase 3 producer-side done** — flag `KUN_OIDC_STANDARD_WIRE` (default off): when on,
 > `/oauth/token`·`/oauth/userinfo`·`/oauth/revoke` emit spec-compliant top-level JSON +
 > RFC 6749 error objects instead of the `{code,message,data}` envelope (discovery/jwks were
@@ -167,15 +170,22 @@ option if/when the threat model warrants it.)
 ## 5. Token & endpoint design
 
 ### 5.1 Access token (RFC 9068)
-- Header: `typ: at+jwt`, `alg: ES256`, `kid`.
-- Claims (per RFC 9068 §2.2): `iss` (the OP issuer URL), `sub` (user UUID), `aud` (resource
-  server identifier — map from the client's `site_id`; today `SiteID` already binds the token to
-  a site for image_service's cross-site quota check), `client_id` (the requesting client),
-  `exp` (15 min), `iat`, `jti` (already minted), plus `scope`, `roles`, `site_id`. Signed ES256.
+- Header: `typ: at+jwt` (stamped on BOTH the HS256 and ES256 paths — the flag flips only
+  the signature), `alg: ES256` (post-flip; `kid` set), HS256 pre-flip.
+- Claims (per RFC 9068 §2.2): `iss` (the OP issuer URL), `sub` (user UUID), `aud` = the
+  client's **site domain** (the resource-server identifier, resolved from the client's Site;
+  omitted for clients not bound to a site), `client_id` (the requesting client), `exp`
+  (15 min), `iat`, `jti`, plus `scope`, `roles`, `site_id`. The resource servers keep
+  checking `site_id` (no lockstep change); `aud` serves standard validators.
 - Verified by the four infra sites (§3) via the `active`/`retired` public keys.
 
 ### 5.2 id_token (minimal)
-- Header: `typ: JWT`, `alg: ES256`, `kid`.
+- Header: `typ: JWT`, `alg: RS256`, `kid`. **RS256, not ES256**: it is the OIDC
+  registration default for `id_token_signed_response_alg`, and this OP has no per-client
+  alg registration — standard RP libraries (openid-client etc.) verify against their
+  configured alg, which defaults to RS256, so RS256 is the only choice that makes
+  "point a standard library at discovery, zero extra config" true. (Also OIDC Core §15.1
+  mandatory-to-implement.) ES256 stays the access-token algorithm.
 - Claims: `iss`, `sub`, `aud` = **client_id** (the RP, distinct from the access token's `aud`),
   `exp`, `iat`, `nonce` (only if the auth request carried one), `auth_time` (when `max_age`/
   the account-switch step-up applies — ties into [02](./02-account-switching-design.md) §6).
@@ -191,7 +201,7 @@ option if/when the threat model warrants it.)
 ### 5.4 New / changed endpoints
 | Endpoint | Change |
 |---|---|
-| `GET /.well-known/openid-configuration` | **new** — discovery (issuer, endpoints, `jwks_uri`, `id_token_signing_alg_values_supported: [ES256, RS256]`, `response_types_supported: [code]`, `grant_types_supported: [authorization_code, refresh_token]`, `scopes_supported`, `subject_types_supported: [public]`, `code_challenge_methods_supported: [S256]`, `end_session_endpoint`) |
+| `GET /.well-known/openid-configuration` | **new** — discovery (issuer, endpoints, `jwks_uri`, `id_token_signing_alg_values_supported: [RS256]` (what the OP actually signs id_tokens with — see §5.2), `response_types_supported: [code]`, `grant_types_supported: [authorization_code, refresh_token]`, `scopes_supported`, `subject_types_supported: [public]`, `code_challenge_methods_supported: [S256]`, `end_session_endpoint`) |
 | `GET /.well-known/oauth-authorization-server` | **new** — RFC 8414 body (same content) |
 | `GET /oauth/jwks` | **new** — JWK Set of all `pending`/`active`/`retired` public keys |
 | `POST /oauth/token` | issue `id_token` on `openid` scope; **standard top-level JSON**; standard OAuth error objects |
@@ -246,8 +256,10 @@ is the right call here precisely because the fleet is mono-owned.
   (ES256/RS256) and reject HS* and `none` — extend the current HMAC-only guard to an
   asymmetric allow-list. (RFC 9068 §4)
 - [ ] **JWKS over HTTPS**, public keys only, `kid` on every key + every JWS header. (RFC 7517)
-- [ ] **Audience-restrict** access tokens (`aud` = resource server) so a moyu token can't be
-  replayed against kungal's API. (RFC 9700 §2.3)
+- [x] **Audience-restrict** access tokens (`aud` = the client's site domain) so a moyu token
+  can't be replayed against kungal's API. (RFC 9700 §2.3) — `aud`/`client_id`/`iss`/`typ:at+jwt`
+  are stamped on every access token; the enforcing check in the resource servers remains
+  `site_id` (equivalent restriction, no lockstep change).
 - [ ] **`id_token` minimal** — no `roles`/authz data; validate `nonce` when present. (OIDC Core)
 - [ ] **Private keys encrypted at rest**, KEK never logged, never in the JWKS.
 - [ ] **Discovery leaks nothing** beyond endpoints/capabilities (no secrets, no internal hosts).
@@ -292,9 +304,11 @@ Each phase is independently deployable; earlier phases are additive.
    already in the wild. In-flight refresh tokens are unaffected: they're matched by DB value, not
    signature, so old JWT and new opaque refresh tokens coexist naturally.
 2. **id_token + logout.** ✅ **DONE** — minimal `id_token` on `openid` scope (code grant),
-   ES256, `nonce` captured at `/authorize` → `authorization_codes.nonce` → id_token; the
-   `end_session_endpoint` (`/oauth/logout`) now accepts GET+POST + `id_token_hint`. ⚠️ needs
-   `cmd/migrate` (new `nonce` column). Deferred: id_token on refresh, `at_hash`.
+   **RS256** (§5.2), `nonce` captured at `/authorize` → consent page → `authorization_codes.nonce`
+   → id_token; the `end_session_endpoint` (`/oauth/logout`) accepts GET+POST with the
+   RP-Initiated Logout params (`post_logout_redirect_uri` + `state` echo + `id_token_hint`,
+   whose `aud` substitutes a missing `client_id`). ⚠️ needs `cmd/migrate` (new `nonce`
+   column) **before deploy** — see §12.0. Deferred: id_token on refresh, `at_hash`.
 3. **Wire-format cutover.** ✅ **PRODUCER DONE** (flag `KUN_OIDC_STANDARD_WIRE`, default off →
    `/oauth/{token,userinfo,revoke}` emit standard top-level JSON + RFC 6749 error objects).
    Remaining = the cross-repo expand→contract: tolerant RP readers → flip the flag → remove
@@ -326,10 +340,11 @@ discovery/JWKS pages. Update the **source** docs in this repo in the same PR, th
 - **KEK provisioning & rotation** (`KUN_OIDC_KEY_ENC_KEY`): where it lives, how it's rotated
   without re-encrypting all private keys at once (envelope-encrypt each private key under a
   per-key DEK wrapped by the KEK).
-- **Exact `aud` values**: resource-server identifiers for the access token (per-site? per-API?)
-  vs `client_id` for the `id_token`. Note the access token **keeps** its `site_id` claim (§5.1),
-  so galgame/image/artifact need **no lockstep logic change** — `aud` is added for RFC 9068
-  compliance; migrating those checks from `site_id` to `aud` is optional and can happen later.
+- ~~**Exact `aud` values**~~ **RESOLVED**: access token `aud` = the client's **site domain**
+  (from the client's Site; omitted when unbound), `client_id` claim = the requesting client;
+  id_token `aud` = client_id. The access token **keeps** its `site_id` claim (§5.1), so
+  galgame/image/artifact need **no lockstep logic change** — migrating those checks from
+  `site_id` to `aud` is optional and can happen later.
 - **Verifier key-fetch mechanism** for the separate `image`/`artifact` binaries: pull the JWK
   Set from `/oauth/jwks` (cache + refresh on unknown `kid`) vs read the `signing_keys` table
   directly (same DB is reachable). JWKS-over-HTTP is the more decoupled, standard choice.
@@ -349,9 +364,16 @@ production yet. This is the operator sequence to actually turn it on. The two fl
 (`KUN_OIDC_SIGN_ASYMMETRIC`, `KUN_OIDC_STANDARD_WIRE`) are **independent** — do either, both, or
 neither — but within each, the order is load-bearing.
 
-### 12.0 Prerequisites (once, before either flip)
-- [ ] **Migrate** `kun_galgame_infra`: `go run ./cmd/migrate` (adds `signing_keys` +
-  `authorization_codes.nonce`). Deploy does NOT auto-run it.
+### 12.0 Prerequisites — ⚠️ ordered against the DEPLOY, not the flips
+- [x] **Migrate `kun_galgame_infra` BEFORE pushing these commits** — ✅ **RUN ON PROD
+  2026-07-02** (`signing_keys` + `authorization_codes.nonce` verified present; executed via
+  a cross-compiled `cmd/migrate` on the stack network, ahead of any push). Why the ordering
+  matters: this is **flag-independent** — the new oauth binary INSERTs
+  `authorization_codes.nonce` on **every consent**, so an unmigrated DB 500s ALL SSO logins
+  the moment the new build serves traffic (Postgres 42703). The prod compose DOES auto-run
+  `migrate` on every deploy since `85ea4ab` (depends_on gate, sha-lockstep images), but that
+  only helps when the deploy actually pulls the fresh migrate image (the known
+  stale-`:latest` redeploy gap) — so the reliable order stays **migrate → push → verify**.
 - [ ] Set a strong random **`KUN_OIDC_KEY_ENC_KEY`** on the **oauth** service (the KEK that encrypts
   signing keys). **Immutable once set** — changing it makes existing encrypted keys undecryptable.
 - [ ] Redeploy oauth → verify `{issuer}/.well-known/openid-configuration` and `{issuer}/oauth/jwks`
@@ -374,8 +396,10 @@ Makes access tokens ES256 (JWKS-verifiable) instead of HS256. Verifiers are alre
 Makes `/oauth/{token,userinfo,revoke}` emit spec-compliant top-level JSON so standard OIDC client
 libraries (the third parties) can parse them.
 - [ ] **Deploy the first-party tolerant-reader builds** to ALL three RPs first — they read BOTH the
-  envelope and standard shapes, so they survive the flip: forum (`d9a8c7b6`), moyu (`4b7f3387`),
-  infra/wiki (`620f64a`).
+  envelope and standard shapes, so they survive the flip: forum (`d9a8c7b6` + the
+  `unauthorized_client` mapping fix), moyu (`4b7f3387` + the refresh-path tolerant fix in
+  `middleware/auth.go` — 4b7f3387 alone does NOT cover refresh), infra/wiki (`620f64a` + the
+  `useAuthApi` error-body passthrough fix).
 - [ ] Verify first-party login/refresh still works (OP still enveloped; RPs read both) — no change yet.
 - [ ] **Notify third parties** (see §12.3) and confirm none depend on the envelope.
 - [ ] Set **`KUN_OIDC_STANDARD_WIRE=true`** on oauth; redeploy oauth.
@@ -407,7 +431,11 @@ Both flags are independently reversible: set back to `false` + redeploy oauth.
   breakage**. **Third parties on standard would break on rollback** — coordinate before reverting.
 
 ### 12.5 Push order
-The committed changes are all **additive / behavior-neutral while the flags are off**, so the repos
-can be **pushed in any order**: infra (`04ad0d9` request compliance + `620f64a` wiki tolerant + OP
-error mapping), forum (`d9a8c7b6`), moyu (`4b7f3387`). What is order-sensitive is the *rollout*:
+⚠️ **One hard precondition before ANY infra push: run the §12.0 migration** — the infra build
+writes `authorization_codes.nonce` on every consent regardless of the flags, so an unmigrated
+prod DB breaks all SSO logins the moment CI redeploys oauth.
+After that, the changes are **behavior-neutral while the flags are off** and the repos can be
+**pushed in any order**: infra (Phases 0–3 + request compliance + wiki tolerant reader + review
+fixes), forum (tolerant reader incl. `unauthorized_client` mapping), moyu (tolerant reader incl.
+the refresh-path fix in `middleware/auth.go`). What is order-sensitive is the *rollout*:
 **deploy all RP tolerant builds → then flip `STANDARD_WIRE`** (§12.2), never the reverse.
