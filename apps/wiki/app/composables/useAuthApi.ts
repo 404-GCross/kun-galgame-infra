@@ -11,8 +11,12 @@ interface ApiResponse<T> {
 }
 
 interface ApiError {
-  code: number
-  message: string
+  code?: number
+  message?: string
+  // Standard-wire OAuth errors (RFC 6749 §5.2) carry these instead of the
+  // envelope's code/message.
+  error?: string
+  error_description?: string
 }
 
 // useAuthApi targets the oauth backend (port 9277, prefix /api/v1).
@@ -52,9 +56,13 @@ export const useAuthApi = () => {
       return response
     } catch (error: unknown) {
       const fetchError = error as { statusCode?: number; data?: ApiError }
+      const body = fetchError.data
       return {
-        code: fetchError.data?.code ?? fetchError.statusCode ?? -1,
-        message: fetchError.data?.message ?? 'Request failed',
+        code: body?.code ?? fetchError.statusCode ?? -1,
+        // Surface the real reason from either wire shape — the legacy
+        // envelope's message or the standard error_description/error.
+        message:
+          body?.error_description ?? body?.message ?? body?.error ?? 'Request failed',
         data: null as T
       }
     }

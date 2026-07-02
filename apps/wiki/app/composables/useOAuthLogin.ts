@@ -127,13 +127,9 @@ export const useOAuthLogin = () => {
       ? response.data
       : (response as unknown as { access_token?: string; refresh_token?: string })
     if (!tok?.access_token) {
-      return {
-        ok: false,
-        error:
-          response.message ||
-          (response as unknown as { error_description?: string }).error_description ||
-          '换取 token 失败'
-      }
+      // useAuthApi already folds a standard-wire error_description into
+      // `message`, so this covers both wire shapes.
+      return { ok: false, error: response.message || '换取 token 失败' }
     }
 
     accessToken.value = tok.access_token
