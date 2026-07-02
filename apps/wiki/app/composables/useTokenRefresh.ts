@@ -40,13 +40,18 @@ const doRefresh = async (): Promise<string | null> => {
       client_id: config.public.oauthClientID as string
     }
   )
-  if (response.code === 0 && response.data?.access_token) {
+  // Tolerant reader (OAuth server's standard-wire cutover): the token payload is
+  // either the legacy envelope's `data` or the standard top-level body.
+  const tok = (response.data as { access_token?: string })?.access_token
+    ? response.data
+    : (response as unknown as { access_token?: string; refresh_token?: string })
+  if (tok?.access_token) {
     // The server rotates the refresh_token; persist the new one so the next
     // refresh presents it (and the old one falls into the server's grace window).
-    if (response.data.refresh_token) {
-      refreshToken.value = response.data.refresh_token
+    if (tok.refresh_token) {
+      refreshToken.value = tok.refresh_token
     }
-    return response.data.access_token
+    return tok.access_token
   }
   return null
 }

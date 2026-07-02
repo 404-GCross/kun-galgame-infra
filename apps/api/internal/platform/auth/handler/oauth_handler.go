@@ -95,7 +95,11 @@ func oauthErrString(appCode int) string {
 	switch appCode {
 	case errors.ErrOAuthInvalidClient, errors.ErrOAuthInvalidClientSecret:
 		return "invalid_client"
-	case errors.ErrOAuthInvalidCode, errors.ErrOAuthInvalidCodeVerifier, errors.ErrOAuthInvalidRedirectURI:
+	case errors.ErrOAuthInvalidCode, errors.ErrOAuthInvalidCodeVerifier, errors.ErrOAuthInvalidRedirectURI,
+		// Auth-session-dead errors on the refresh path map to invalid_grant so
+		// RPs treat them as "refresh dead → re-login" (not a retryable request).
+		// A banned user is re-blocked at the login they're bounced to.
+		errors.ErrAuthUserBanned, errors.ErrAuthTokenExpired, errors.ErrAuthInvalidToken:
 		return "invalid_grant"
 	case errors.ErrOAuthInvalidScope:
 		return "invalid_scope"

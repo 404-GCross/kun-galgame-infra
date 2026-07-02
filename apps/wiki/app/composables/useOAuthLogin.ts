@@ -121,16 +121,24 @@ export const useOAuthLogin = () => {
       code_verifier: savedVerifier
     })
 
-    if (response.code !== 0 || !response.data?.access_token) {
+    // Tolerant reader (OAuth server's standard-wire cutover): the token payload
+    // is either the legacy envelope's `data` or the standard top-level body.
+    const tok = (response.data as { access_token?: string })?.access_token
+      ? response.data
+      : (response as unknown as { access_token?: string; refresh_token?: string })
+    if (!tok?.access_token) {
       return {
         ok: false,
-        error: response.message || '换取 token 失败'
+        error:
+          response.message ||
+          (response as unknown as { error_description?: string }).error_description ||
+          '换取 token 失败'
       }
     }
 
-    accessToken.value = response.data.access_token
-    if (response.data.refresh_token) {
-      refreshToken.value = response.data.refresh_token
+    accessToken.value = tok.access_token
+    if (tok.refresh_token) {
+      refreshToken.value = tok.refresh_token
     }
 
     // The OAuth access_token is the same JWT used by the regular login flow
