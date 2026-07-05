@@ -32,6 +32,13 @@
 > `authorization_codes.nonce` column → needs `cmd/migrate` **BEFORE deploy** — the column
 > is written on every consent, flag-independent); `end_session_endpoint` now GET+POST with
 > the RP-Initiated Logout params (`post_logout_redirect_uri`, `state`, `id_token_hint`).
+> **Phase 2 done** — minimal `id_token` (**RS256** — the OIDC registration default
+> `id_token_signed_response_alg`, so standard RP libraries verify it with zero per-client
+> config; iss/sub/aud/exp/iat + nonce) issued on the `openid` scope for the code grant;
+> `nonce` captured at `/authorize`→consent page→code→id_token (new
+> `authorization_codes.nonce` column → needs `cmd/migrate` **BEFORE deploy** — the column
+> is written on every consent, flag-independent); `end_session_endpoint` now GET+POST with
+> the RP-Initiated Logout params (`post_logout_redirect_uri`, `state`, `id_token_hint`).
 > **Phase 3 producer-side done** — flag `KUN_OIDC_STANDARD_WIRE` (default off): when on,
 > `/oauth/token`·`/oauth/userinfo`·`/oauth/revoke` emit spec-compliant top-level JSON +
 > RFC 6749 error objects instead of the `{code,message,data}` envelope (discovery/jwks were
@@ -177,9 +184,22 @@ option if/when the threat model warrants it.)
   omitted for clients not bound to a site), `client_id` (the requesting client), `exp`
   (15 min), `iat`, `jti`, plus `scope`, `roles`, `site_id`. The resource servers keep
   checking `site_id` (no lockstep change); `aud` serves standard validators.
+- Header: `typ: at+jwt` (stamped on BOTH the HS256 and ES256 paths — the flag flips only
+  the signature), `alg: ES256` (post-flip; `kid` set), HS256 pre-flip.
+- Claims (per RFC 9068 §2.2): `iss` (the OP issuer URL), `sub` (user UUID), `aud` = the
+  client's **site domain** (the resource-server identifier, resolved from the client's Site;
+  omitted for clients not bound to a site), `client_id` (the requesting client), `exp`
+  (15 min), `iat`, `jti`, plus `scope`, `roles`, `site_id`. The resource servers keep
+  checking `site_id` (no lockstep change); `aud` serves standard validators.
 - Verified by the four infra sites (§3) via the `active`/`retired` public keys.
 
 ### 5.2 id_token (minimal)
+- Header: `typ: JWT`, `alg: RS256`, `kid`. **RS256, not ES256**: it is the OIDC
+  registration default for `id_token_signed_response_alg`, and this OP has no per-client
+  alg registration — standard RP libraries (openid-client etc.) verify against their
+  configured alg, which defaults to RS256, so RS256 is the only choice that makes
+  "point a standard library at discovery, zero extra config" true. (Also OIDC Core §15.1
+  mandatory-to-implement.) ES256 stays the access-token algorithm.
 - Header: `typ: JWT`, `alg: RS256`, `kid`. **RS256, not ES256**: it is the OIDC
   registration default for `id_token_signed_response_alg`, and this OP has no per-client
   alg registration — standard RP libraries (openid-client etc.) verify against their
@@ -201,6 +221,7 @@ option if/when the threat model warrants it.)
 ### 5.4 New / changed endpoints
 | Endpoint | Change |
 |---|---|
+| `GET /.well-known/openid-configuration` | **new** — discovery (issuer, endpoints, `jwks_uri`, `id_token_signing_alg_values_supported: [RS256]` (what the OP actually signs id_tokens with — see §5.2), `response_types_supported: [code]`, `grant_types_supported: [authorization_code, refresh_token]`, `scopes_supported`, `subject_types_supported: [public]`, `code_challenge_methods_supported: [S256]`, `end_session_endpoint`) |
 | `GET /.well-known/openid-configuration` | **new** — discovery (issuer, endpoints, `jwks_uri`, `id_token_signing_alg_values_supported: [RS256]` (what the OP actually signs id_tokens with — see §5.2), `response_types_supported: [code]`, `grant_types_supported: [authorization_code, refresh_token]`, `scopes_supported`, `subject_types_supported: [public]`, `code_challenge_methods_supported: [S256]`, `end_session_endpoint`) |
 | `GET /.well-known/oauth-authorization-server` | **new** — RFC 8414 body (same content) |
 | `GET /oauth/jwks` | **new** — JWK Set of all `pending`/`active`/`retired` public keys |
@@ -260,6 +281,10 @@ is the right call here precisely because the fleet is mono-owned.
   can't be replayed against kungal's API. (RFC 9700 §2.3) — `aud`/`client_id`/`iss`/`typ:at+jwt`
   are stamped on every access token; the enforcing check in the resource servers remains
   `site_id` (equivalent restriction, no lockstep change).
+- [x] **Audience-restrict** access tokens (`aud` = the client's site domain) so a moyu token
+  can't be replayed against kungal's API. (RFC 9700 §2.3) — `aud`/`client_id`/`iss`/`typ:at+jwt`
+  are stamped on every access token; the enforcing check in the resource servers remains
+  `site_id` (equivalent restriction, no lockstep change).
 - [ ] **`id_token` minimal** — no `roles`/authz data; validate `nonce` when present. (OIDC Core)
 - [ ] **Private keys encrypted at rest**, KEK never logged, never in the JWKS.
 - [ ] **Discovery leaks nothing** beyond endpoints/capabilities (no secrets, no internal hosts).
@@ -309,6 +334,11 @@ Each phase is independently deployable; earlier phases are additive.
    RP-Initiated Logout params (`post_logout_redirect_uri` + `state` echo + `id_token_hint`,
    whose `aud` substitutes a missing `client_id`). ⚠️ needs `cmd/migrate` (new `nonce`
    column) **before deploy** — see §12.0. Deferred: id_token on refresh, `at_hash`.
+   **RS256** (§5.2), `nonce` captured at `/authorize` → consent page → `authorization_codes.nonce`
+   → id_token; the `end_session_endpoint` (`/oauth/logout`) accepts GET+POST with the
+   RP-Initiated Logout params (`post_logout_redirect_uri` + `state` echo + `id_token_hint`,
+   whose `aud` substitutes a missing `client_id`). ⚠️ needs `cmd/migrate` (new `nonce`
+   column) **before deploy** — see §12.0. Deferred: id_token on refresh, `at_hash`.
 3. **Wire-format cutover.** ✅ **PRODUCER DONE** (flag `KUN_OIDC_STANDARD_WIRE`, default off →
    `/oauth/{token,userinfo,revoke}` emit standard top-level JSON + RFC 6749 error objects).
    Remaining = the cross-repo expand→contract: tolerant RP readers → flip the flag → remove
@@ -340,6 +370,11 @@ discovery/JWKS pages. Update the **source** docs in this repo in the same PR, th
 - **KEK provisioning & rotation** (`KUN_OIDC_KEY_ENC_KEY`): where it lives, how it's rotated
   without re-encrypting all private keys at once (envelope-encrypt each private key under a
   per-key DEK wrapped by the KEK).
+- ~~**Exact `aud` values**~~ **RESOLVED**: access token `aud` = the client's **site domain**
+  (from the client's Site; omitted when unbound), `client_id` claim = the requesting client;
+  id_token `aud` = client_id. The access token **keeps** its `site_id` claim (§5.1), so
+  galgame/image/artifact need **no lockstep logic change** — migrating those checks from
+  `site_id` to `aud` is optional and can happen later.
 - ~~**Exact `aud` values**~~ **RESOLVED**: access token `aud` = the client's **site domain**
   (from the client's Site; omitted when unbound), `client_id` claim = the requesting client;
   id_token `aud` = client_id. The access token **keeps** its `site_id` claim (§5.1), so
@@ -400,6 +435,10 @@ libraries (the third parties) can parse them.
   `unauthorized_client` mapping fix), moyu (`4b7f3387` + the refresh-path tolerant fix in
   `middleware/auth.go` — 4b7f3387 alone does NOT cover refresh), infra/wiki (`620f64a` + the
   `useAuthApi` error-body passthrough fix).
+  envelope and standard shapes, so they survive the flip: forum (`d9a8c7b6` + the
+  `unauthorized_client` mapping fix), moyu (`4b7f3387` + the refresh-path tolerant fix in
+  `middleware/auth.go` — 4b7f3387 alone does NOT cover refresh), infra/wiki (`620f64a` + the
+  `useAuthApi` error-body passthrough fix).
 - [ ] Verify first-party login/refresh still works (OP still enveloped; RPs read both) — no change yet.
 - [ ] **Notify third parties** (see §12.3) and confirm none depend on the envelope.
 - [ ] Set **`KUN_OIDC_STANDARD_WIRE=true`** on oauth; redeploy oauth.
@@ -431,6 +470,13 @@ Both flags are independently reversible: set back to `false` + redeploy oauth.
   breakage**. **Third parties on standard would break on rollback** — coordinate before reverting.
 
 ### 12.5 Push order
+⚠️ **One hard precondition before ANY infra push: run the §12.0 migration** — the infra build
+writes `authorization_codes.nonce` on every consent regardless of the flags, so an unmigrated
+prod DB breaks all SSO logins the moment CI redeploys oauth.
+After that, the changes are **behavior-neutral while the flags are off** and the repos can be
+**pushed in any order**: infra (Phases 0–3 + request compliance + wiki tolerant reader + review
+fixes), forum (tolerant reader incl. `unauthorized_client` mapping), moyu (tolerant reader incl.
+the refresh-path fix in `middleware/auth.go`). What is order-sensitive is the *rollout*:
 ⚠️ **One hard precondition before ANY infra push: run the §12.0 migration** — the infra build
 writes `authorization_codes.nonce` on every consent regardless of the flags, so an unmigrated
 prod DB breaks all SSO logins the moment CI redeploys oauth.
