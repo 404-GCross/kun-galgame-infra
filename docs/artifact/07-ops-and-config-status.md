@@ -73,7 +73,9 @@ B2 凭证已写入 `apps/api/.env`（bucket `kungal-artifact-v1` @ `us-east-005`
 
 **已完成的收尾**（2026-07-04 确认）：① `dl.imoe.uk` 已加 response-header 规则剥 `x-bz-*`（保持**无静态 `Content-Disposition`** — 会覆盖每文件原名）。③ 早期共享 B2 key 已轮换为专用 prod key。④ 对外契约已登记进 `../kungal-docs`（Tier-A family `artifact`，整目录镜像）。⑤ forum 已接入（2026-06-24）。
 
-**仍剩余（非阻塞）**：② 启用 `artifact-gc` —— **prod compose 的 oauth 服务 env 尚未带 `KUN_ARTIFACTS_PG_DATABASE` + `KUN_ARTIFACT_S3_*`（含 cleanup key）**（这些目前只在 artifact 服务的 environment 块里），GC 在 oauth 进程里仍按空配置保护静默跳过 → 上传中孤儿/软删过期对象无人回收，admin「立即回收」也 503。⑥ 自托管 UGC 文件的审核/合规决策（[09 §18.2](./09-download-domain-and-worker.md)，产品侧）。
+② **启用 `artifact-gc`**：compose 已修（2026-07-04）—— `KUN_ARTIFACTS_PG_DATABASE` + `KUN_ARTIFACT_S3_*` 从 artifact 服务块上移到 `&infra-env` 共享锚点，oauth 进程随之获得凭证，GC 与 admin「立即回收」生效。**待 push + Dokploy redeploy oauth 后落地**（注意 no-pull gap；部署后看 oauth 日志应出现 artifact-gc 的 summary 而非 `skipped`）。`KUN_ARTIFACT_S3_CLEANUP_*` 以可选形式接入（空 → 回退 presigner key）——在 B2 建好 delete-only key 后填进 Dokploy 即拆分完成。
+
+**仍剩余（非阻塞）**：⑥ 自托管 UGC 文件的审核/合规决策（[09 §18.2](./09-download-domain-and-worker.md)，产品侧）。
 
 环境变量全表见 [05 §环境变量](./05-engineering-plan.md#环境变量)。
 

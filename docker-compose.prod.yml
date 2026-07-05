@@ -66,6 +66,23 @@ x-infra-env: &infra-env
   KUN_IMAGE_S3_FORCE_PATH_STYLE: ${KUN_IMAGE_S3_FORCE_PATH_STYLE:-false}
   KUN_IMAGE_PUBLIC_BASE_URL: https://image.kungal.iloveren.link
   KUN_IMAGE_CLIENT_BASE_URL: http://image:9278
+  # artifact service B2 storage + dedicated metadata DB (host/user/pass fall back
+  # to KUN_PG_* above). In the SHARED anchor — not just the artifact service —
+  # because the OAUTH process needs them too: the daily artifact-gc job and the
+  # admin「立即回收」(reclaim) run inside oauth, and both no-op/503 while
+  # KUN_ARTIFACT_S3_ACCESS_KEY is empty (RunArtifactGC's unconfigured guard).
+  KUN_ARTIFACTS_PG_DATABASE: kun_artifacts
+  KUN_ARTIFACT_S3_ENDPOINT: https://s3.us-east-005.backblazeb2.com
+  KUN_ARTIFACT_S3_REGION: us-east-005
+  KUN_ARTIFACT_S3_BUCKET: kungal-artifact-v1
+  KUN_ARTIFACT_S3_ACCESS_KEY: ${KUN_ARTIFACT_S3_ACCESS_KEY:?set KUN_ARTIFACT_S3_ACCESS_KEY in Dokploy (kun-artifact-prod keyID)}
+  KUN_ARTIFACT_S3_SECRET_KEY: ${KUN_ARTIFACT_S3_SECRET_KEY:?set KUN_ARTIFACT_S3_SECRET_KEY in Dokploy (kun-artifact-prod appKey)}
+  KUN_ARTIFACT_S3_FORCE_PATH_STYLE: "false"
+  # Optional least-privilege delete-only B2 key for GC/reclaim (docs/artifact 决策 6).
+  # Empty → code falls back to the presigner key above; create the scoped key in
+  # B2 and set the two vars in Dokploy when convenient.
+  KUN_ARTIFACT_S3_CLEANUP_ACCESS_KEY: ${KUN_ARTIFACT_S3_CLEANUP_ACCESS_KEY:-}
+  KUN_ARTIFACT_S3_CLEANUP_SECRET_KEY: ${KUN_ARTIFACT_S3_CLEANUP_SECRET_KEY:-}
   # Meilisearch — galgame uses; key MUST == meili MEILI_MASTER_KEY (same ${VAR})
   KUN_MEILISEARCH_HOST: http://meili:7700
   KUN_MEILISEARCH_API_KEY: ${MEILI_MASTER_KEY:?set MEILI_MASTER_KEY in Dokploy Environment}
@@ -240,19 +257,11 @@ services:
     pull_policy: always
     environment:
       <<: *infra-env
+      # The artifacts DB + B2 creds (KUN_ARTIFACTS_PG_DATABASE / KUN_ARTIFACT_S3_*)
+      # come from *infra-env — shared with the oauth process (artifact-gc/reclaim).
       KUN_ARTIFACT_HOST: 0.0.0.0
       KUN_ARTIFACT_PORT: "9279"
       KUN_ARTIFACT_UPLOAD_ENABLED: "true"
-      # Dedicated artifacts DB on the same PG server (host/user/pass from *infra-env).
-      KUN_ARTIFACTS_PG_DATABASE: kun_artifacts
-      # B2 object storage — shared bucket kungal-artifact-v1. The service key needs
-      # read+write+delete; set the two keys in the Dokploy Environment panel.
-      KUN_ARTIFACT_S3_ENDPOINT: https://s3.us-east-005.backblazeb2.com
-      KUN_ARTIFACT_S3_REGION: us-east-005
-      KUN_ARTIFACT_S3_BUCKET: kungal-artifact-v1
-      KUN_ARTIFACT_S3_ACCESS_KEY: ${KUN_ARTIFACT_S3_ACCESS_KEY:?set KUN_ARTIFACT_S3_ACCESS_KEY in Dokploy (kun-artifact-prod keyID)}
-      KUN_ARTIFACT_S3_SECRET_KEY: ${KUN_ARTIFACT_S3_SECRET_KEY:?set KUN_ARTIFACT_S3_SECRET_KEY in Dokploy (kun-artifact-prod appKey)}
-      KUN_ARTIFACT_S3_FORCE_PATH_STYLE: "false"
     # Internal only — moyu/forum backends reach it at http://artifact:9279 over
     # dokploy-network (browsers PUT straight to B2; no public domain needed).
     expose: ["9279"]
