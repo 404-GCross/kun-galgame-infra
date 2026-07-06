@@ -26,8 +26,55 @@ import (
 //go:embed data/roles.gen.yaml data/bangumi_role_map.gen.yaml
 var dataFS embed.FS
 
-// bangumiSourceID must match the catalog_source seed row below.
-const bangumiSourceID int16 = 3
+// Source ids referenced by the seed maps (must match the catalog_source rows).
+const (
+	bangumiSourceID int16 = 3
+	egSourceID      int16 = 5
+)
+
+// Role ids used by hand-added roles + the EG map. Hand-added roles live in the
+// reserved 1-99 id band (the generated bangumi vocabulary starts at 100), so
+// they never collide with a regenerated artifact and the drift test is
+// unaffected.
+const (
+	roleVoiceActor int64 = 1 // 声優 — Bangumi models VA as a character relation,
+	// NOT a staff position, so the 246-position vocabulary has no VA role; both
+	// Bangumi person_character and EG appearance_actors/shubetu=5 need one.
+	roleOtherStaff int64 = 2 // その他 — the wide bucket for EG shubetu=7.
+
+	// EG shubetu → existing catalog_role ids (kun-erogamespace-api docs/07:
+	// 1原画 2シナリオ 3音楽 4キャラデザ 5声優 6歌手 7その他).
+	roleIllustration    int64 = 184
+	roleScenario        int64 = 247
+	roleMusic           int64 = 209
+	roleCharacterDesign int64 = 145
+	roleVocal           int64 = 286
+)
+
+// handRoles are hand-pinned roles the import needs that the generated Bangumi
+// staff-position vocabulary lacks (see the reserved-band note above).
+func handRoles() []model.CatalogRole {
+	return []model.CatalogRole{
+		{ID: roleVoiceActor, Key: "voice-actor", Category: "cast", NameCN: "声优", NameJA: "声優", NameEN: "Voice Actor"},
+		{ID: roleOtherStaff, Key: "other-staff", Category: "other", NameCN: "其他", NameJA: "その他", NameEN: "Other Staff"},
+	}
+}
+
+// egRoleMap pins the erogamespace shubetu → catalog_role mapping (source_role =
+// the shubetu integer as text). Many-to-one and deliberately broad where the
+// EG category is coarser than the vocabulary (原画→illustration, 歌手→vocal);
+// その他 goes to the wide other-staff bucket rather than being dropped.
+func egRoleMap() []model.CatalogSourceRoleMap {
+	m := map[string]int64{
+		"1": roleIllustration, "2": roleScenario, "3": roleMusic, "4": roleCharacterDesign,
+		"5": roleVoiceActor, "6": roleVocal, "7": roleOtherStaff,
+	}
+	out := make([]model.CatalogSourceRoleMap, 0, len(m))
+	for sr, rid := range m {
+		out = append(out, model.CatalogSourceRoleMap{SourceID: egSourceID, SourceRole: sr, RoleID: rid})
+	}
+	return out
+}
 
 // media rows — ids/keys pinned by refs/proj/02 T3(a).
 func media() []model.CatalogMedium {
@@ -135,6 +182,10 @@ func Run(db *gorm.DB) error {
 	if err != nil {
 		return err
 	}
+	// Hand-pinned roles (reserved band) + the EG shubetu map join the generated
+	// vocabulary in the same idempotent upserts.
+	roles = append(roles, handRoles()...)
+	roleMap = append(roleMap, egRoleMap()...)
 
 	if err := upsert(db, "catalog_medium", media(), []string{"id"}, []string{"name_cn"}); err != nil {
 		return err
