@@ -69,6 +69,10 @@ func main() {
 		//   - kungal/moyu cron via /messages/feed
 		// Read state is owned by each consumer, NOT this table.
 		&model.GalgameMessage{},
+
+		// Bangumi score/rank narrow table (bid-anchored enrichment, kept out
+		// of the main galgame table; refreshed by cmd/enrich-bangumi).
+		&model.GalgameBangumiMeta{},
 	); err != nil {
 		slog.Error("migration failed", "error", err)
 		os.Exit(1)
