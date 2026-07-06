@@ -1,0 +1,210 @@
+// llm-suggest is the local-LLM SUGGESTION pipeline driver (doc 17 §4): the
+// model proposes, never asserts. Three tasks write graded suggestions into the
+// src_llm staging schema; nothing here writes Gold, mutates Silver's
+// infobox_parsed, touches wiki data, or re-grades a ref.
+//
+//	# reproduce the calibration gold set from the local dumps
+//	go run ./cmd/llm-suggest --build-goldset
+//
+//	# calibrate against the gold set (dry samples first, then write)
+//	go run ./cmd/llm-suggest --task goldset --limit 5
+//	go run ./cmd/llm-suggest --task goldset --apply
+//	go run ./cmd/llm-suggest --calibrate
+//
+//	# application A + B
+//	go run ./cmd/llm-suggest --task residue --apply
+//	go run ./cmd/llm-suggest --task bid-audit --apply
+//
+// The local vLLM (default http://127.0.0.1:8002/v1) must be reachable; an
+// unreachable server is a BLOCKED precondition, not a crash.
+package main
+
+import (
+	"context"
+	"flag"
+	"fmt"
+	"log/slog"
+	"os"
+
+	"api/internal/infrastructure/database"
+	"api/internal/platform/catalog/llmsuggest"
+	"api/pkg/config"
+	"api/pkg/logger"
+
+	"github.com/joho/godotenv"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
+	gormlogger "gorm.io/gorm/logger"
+)
+
+const defaultGoldSet = "internal/platform/catalog/llmsuggest/testdata/goldset.jsonl"
+
+func main() {
+	task := flag.String("task", "", "goldset | residue | bid-audit")
+	apply := flag.Bool("apply", false, "write suggestions (default: dry run — sample + print)")
+	limit := flag.Int("limit", 0, "cap items processed (0 = all); dry-run sample size")
+	conc := flag.Int("concurrency", 4, "parallel LLM calls (<=4)")
+	llmBase := flag.String("llm-base", "http://127.0.0.1:8002/v1", "vLLM OpenAI base URL")
+	model := flag.String("model", "qwen3-14b", "served model id")
+	goldPath := flag.String("goldset", defaultGoldSet, "gold set JSONL path")
+	egDSN := flag.String("eg-dsn", "", "erogamespace staging DSN (build-goldset; default: erogamespace on the catalog server)")
+	buildGold := flag.Bool("build-goldset", false, "regenerate the gold set JSONL from local dumps, then exit")
+	calibrate := flag.Bool("calibrate", false, "print calibration metrics from persisted goldset verdicts, then exit")
+	batch := flag.Bool("batch", false, "goldset: judge in batches (throughput comparison; prompt_version v1-batch)")
+	flag.Parse()
+
+	promptVersion := llmsuggest.PromptNamePairV1
+	if *batch {
+		promptVersion = llmsuggest.PromptNamePairV1B
+	}
+
+	_ = godotenv.Load("apps/api/.env")
+	cfg, err := config.Load()
+	if err != nil {
+		slog.Error("load config", "error", err)
+		os.Exit(1)
+	}
+	logger.Init(cfg.Server.Env)
+
+	catalogDB, err := database.NewPostgresDB(cfg.CatalogDatabase)
+	if err != nil {
+		slog.Error("catalog db connect", "error", err)
+		os.Exit(1)
+	}
+	defer catalogDB.Close()
+	if err := llmsuggest.EnsureSchema(catalogDB.DB()); err != nil {
+		slog.Error("ensure src_llm schema", "error", err)
+		os.Exit(1)
+	}
+
+	if *conc > 4 {
+		*conc = 4 // T0.4 cap
+	}
+	ctx := context.Background()
+
+	// --- build-goldset: no LLM needed ---
+	if *buildGold {
+		egDB := openEG(cfg, *egDSN)
+		stats, err := llmsuggest.BuildGoldSet(catalogDB.DB(), egDB, *goldPath)
+		if err != nil {
+			slog.Error("build gold set", "error", err)
+			os.Exit(1)
+		}
+		fmt.Printf("gold set written: %s\n", *goldPath)
+		fmt.Printf("total=%d positive=%d negative=%d\n", stats.Total, stats.Positive, stats.Negative)
+		fmt.Printf("layers: %v\n", stats.Layers)
+		fmt.Printf("paren filtered: role=%d circle=%d persona=%d\n",
+			stats.ParenFilteredRole, stats.ParenFilteredCircle, stats.ParenFilteredPersona)
+		return
+	}
+
+	// --- calibrate: reads persisted verdicts, no LLM ---
+	if *calibrate {
+		metrics, err := llmsuggest.Calibrate(catalogDB.DB(), *model, promptVersion)
+		if err != nil {
+			slog.Error("calibrate", "error", err)
+			os.Exit(1)
+		}
+		printCalibration(metrics)
+		return
+	}
+
+	if *task == "" {
+		slog.Error("no --task given (goldset | residue | bid-audit), or use --build-goldset / --calibrate")
+		os.Exit(2)
+	}
+
+	// LLM tasks: the vLLM server is a hard precondition.
+	client := llmsuggest.NewClient(*llmBase, *model)
+	models, err := client.Ping(ctx)
+	if err != nil {
+		fmt.Printf("BLOCKED: local vLLM unreachable at %s (%v).\n"+
+			"Start kungal-llm-infra and retry — this is a designed precondition, not a failure.\n", *llmBase, err)
+		os.Exit(3)
+	}
+	slog.Info("vLLM reachable", "base", *llmBase, "models", models)
+
+	opts := llmsuggest.Options{Model: *model, Concurrency: *conc, Limit: *limit, DryRun: !*apply, GoldSetPath: *goldPath, Batch: *batch}
+
+	switch *task {
+	case "goldset":
+		judged, errs, err := llmsuggest.RunGoldset(ctx, catalogDB.DB(), client, opts)
+		fail(err)
+		if *apply {
+			slog.Info("goldset done", "batch", *batch, "judged", judged, "errors", errs)
+			metrics, err := llmsuggest.Calibrate(catalogDB.DB(), *model, promptVersion)
+			fail(err)
+			printCalibration(metrics)
+		}
+	case "residue":
+		done, errs, err := llmsuggest.RunResidue(ctx, catalogDB.DB(), client, opts)
+		fail(err)
+		if *apply {
+			slog.Info("residue done", "extracted", done, "errors", errs)
+		}
+	case "sanity":
+		mean, sampled, err := llmsuggest.RunSanity(ctx, catalogDB.DB(), client, *limit)
+		fail(err)
+		fmt.Printf("sanity: extraction↔parser key overlap = %.3f over %d parse-OK infoboxes\n", mean, sampled)
+		return
+	case "bid-audit":
+		wikiDB, err := database.NewPostgresDB(cfg.GalgameDatabase)
+		fail(err)
+		defer wikiDB.Close()
+		layers, errs, err := llmsuggest.RunBidAudit(ctx, wikiDB.DB(), catalogDB.DB(), client, opts)
+		fail(err)
+		if *apply {
+			slog.Info("bid-audit done", "pass", layers.Pass, "boundary", layers.Boundary, "suspect", layers.Suspect, "errors", errs)
+			layer, verdict, found := llmsuggest.CanaryVerdict(catalogDB.DB(), 2308, 13, *model)
+			fmt.Printf("CANARY galgame=2308 bid=13 (atled×CLANNAD): found=%v layer=%s verdict=%s → %s\n",
+				found, layer, verdict, canaryVerdictStatus(layer, verdict))
+		}
+	default:
+		slog.Error("unknown task", "task", *task)
+		os.Exit(2)
+	}
+	if !*apply {
+		fmt.Println("[dry run] nothing written — re-run with --apply")
+	}
+}
+
+// openEG opens the erogamespace staging DB (flag DSN or derived from the
+// catalog server config — staging DSN never enters config).
+func openEG(cfg *config.Config, dsn string) *gorm.DB {
+	if dsn == "" {
+		egCfg := cfg.CatalogDatabase
+		egCfg.DBName = "erogamespace"
+		dsn = egCfg.DSN()
+	}
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: gormlogger.Default.LogMode(gormlogger.Silent)})
+	if err != nil {
+		slog.Error("erogamespace connect", "error", err)
+		os.Exit(1)
+	}
+	return db
+}
+
+// canaryVerdictStatus: the pair is CAUGHT when it is flagged for human review —
+// either the deterministic layer marks it suspect, or the model says different.
+func canaryVerdictStatus(layer, verdict string) string {
+	if layer == "suspect" || verdict == llmsuggest.VerdictDifferent {
+		return "CAUGHT (flagged: suspect layer or different verdict)"
+	}
+	return "*** MISSED — pipeline problem, investigate ***"
+}
+
+func printCalibration(metrics []llmsuggest.LayerMetrics) {
+	fmt.Printf("\n%-26s %5s %4s %4s %4s %4s %6s %6s %6s %8s\n",
+		"layer", "n", "TP", "FP", "FN", "TN", "unsure", "prec", "recall", "acc(-uns)")
+	for _, m := range metrics {
+		fmt.Printf("%-26s %5d %4d %4d %4d %4d %6d %6.3f %6.3f %8.3f\n",
+			m.Layer, m.N, m.TP, m.FP, m.FN, m.TN, m.Unsure, m.Precision, m.Recall, m.AccuracyExclUnsure)
+	}
+}
+
+func fail(err error) {
+	if err != nil {
+		slog.Error("task failed", "error", err)
+		os.Exit(1)
+	}
+}
