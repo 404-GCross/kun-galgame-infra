@@ -82,3 +82,85 @@ const (
 	RevisionActionRedirect     int16 = 6
 	RevisionActionReverted     int16 = 7
 )
+
+// Work content ratings (doc 14 three tiers; per-source mappings in doc 17 §6:
+// e.g. Bangumi nsfw=true → r18, nsfw=false → NOT written — all_ages must
+// never be inferred).
+const (
+	ContentRatingAllAges   int16 = 0
+	ContentRatingSensitive int16 = 1
+	ContentRatingR18       int16 = 2
+)
+
+// Work status (doc 17 R2). Stub = unclaimed AND below the metadata bar (no
+// external anchor, or title+medium+date incomplete) — excluded from public
+// aggregation until it graduates.
+const (
+	WorkStatusLive   int16 = 0
+	WorkStatusStub   int16 = 1
+	WorkStatusMerged int16 = 2 // merged away via redirect
+)
+
+// Work title kinds (doc 17 R2). Search hints are findability-only, never
+// displayed.
+const (
+	WorkTitleKindOfficial     int16 = 0
+	WorkTitleKindAlias        int16 = 1
+	WorkTitleKindAbbreviation int16 = 2
+	WorkTitleKindSearchHint   int16 = 3
+)
+
+// Release kinds (doc 17 R3). Constants for now; promote to a registry table
+// if the set ever starts growing uncontrolled.
+const (
+	ReleaseKindDefault  int16 = 0
+	ReleaseKindDigital  int16 = 1
+	ReleaseKindPhysical int16 = 2
+	ReleaseKindTrial    int16 = 3
+	ReleaseKindPatch    int16 = 4
+)
+
+// External-ref link kinds (doc 17 R7, doc 10 invariant 5 as revised by R8).
+//
+//   - exact: identity assertion. Globally unique per (source, external_id,
+//     entity_type) via a partial unique index — the anti-squatting line.
+//     Write policy is three-layered (R8, service side): auto-exact only for
+//     trust_tier=0 self-referential structural data with matched_by set;
+//     community cross-references start probable; human confirmation promotes.
+//   - probable: system-suggested identity, pending human confirmation.
+//   - related: NON-IDENTITY link (official site, derived/reference page).
+//     Related rows must NEVER participate in identity resolution,
+//     aggregation, or dedup — enforce with assertions in every consumer.
+const (
+	LinkKindExact    int16 = 0
+	LinkKindProbable int16 = 1
+	LinkKindRelated  int16 = 2
+)
+
+// Match-candidate reasons (doc 10 §8 + doc 17 §4): how the pair was proposed.
+const (
+	CandidateReasonSharedExternalID int16 = 0 // same (source, external_id) on both entities — strong
+	CandidateReasonNameNormEqual    int16 = 1 // NFKC/kana-folded names equal — medium
+	CandidateReasonNameFuzzy        int16 = 2 // edit-distance/phonetic similarity — weak, conservative thresholds
+	CandidateReasonImporterSuggest  int16 = 3 // ingestion pipeline heuristic
+	CandidateReasonLLMSuggest       int16 = 4 // LLM suggestion (never auto-accepted, doc 17 §4)
+)
+
+// Match-candidate status. Rejected rows are kept FOREVER — deleting them
+// would let the same pair resurface on every import run.
+const (
+	CandidateStatusPending  int16 = 0
+	CandidateStatusAccepted int16 = 1 // graduated into a merge proposal
+	CandidateStatusRejected int16 = 2
+	CandidateStatusDeferred int16 = 3
+)
+
+// Merge-proposal status (doc 10 §6.1). approved starts the cooling-off
+// window; execution is a job once execute_after passes.
+const (
+	ProposalStatusOpen      int16 = 0
+	ProposalStatusApproved  int16 = 1
+	ProposalStatusExecuted  int16 = 2
+	ProposalStatusRejected  int16 = 3
+	ProposalStatusWithdrawn int16 = 4
+)

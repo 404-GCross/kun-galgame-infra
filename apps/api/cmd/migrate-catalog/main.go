@@ -9,6 +9,8 @@ import (
 	"api/internal/platform/catalog/seed"
 	"api/pkg/config"
 	"api/pkg/logger"
+
+	"gorm.io/gorm"
 )
 
 func main() {
@@ -56,6 +58,20 @@ func main() {
 		&model.CatalogRedirect{},
 		&model.CatalogEntityUsage{},
 		&model.CatalogRevision{},
+
+		// Work graph (step 04): registry work/title/release, then edges.
+		&model.CatalogWork{},
+		&model.CatalogWorkTitle{},
+		&model.CatalogRelease{},
+		&model.CatalogWorkRelation{},
+		&model.CatalogEntityRelation{},
+
+		// Reconciliation family (step 04).
+		&model.CatalogExternalRef{},
+		&model.CatalogMatchRejection{},
+		&model.CatalogMatchCandidate{},
+		&model.CatalogMergeProposal{},
+		&model.CatalogSurvivorshipRule{},
 	); err != nil {
 		slog.Error("migration failed", "error", err)
 		os.Exit(1)
@@ -77,6 +93,7 @@ func main() {
 		{"catalog_org", "display_name"},
 		{"catalog_label", "display_name"},
 		{"catalog_character", "display_name"},
+		{"catalog_work_title", "title"},
 	} {
 		stmt := `ALTER TABLE ` + tc.table + ` ADD COLUMN IF NOT EXISTS ` + tc.column + `_norm text
 			GENERATED ALWAYS AS (lower(normalize(` + tc.column + `, NFKC))) STORED`
@@ -119,6 +136,43 @@ func main() {
 		os.Exit(1)
 	}
 
+	// (4) Table-layer CHECK constraints AutoMigrate cannot express. Each is
+	// added once (pg_constraint-guarded); ADD CONSTRAINT validates existing
+	// rows, which is instant on these empty/small tables.
+	for _, cc := range []struct{ table, name, expr string }{
+		// extra jsonb governance (doc 17 R9): object-only + 64KB cap — the
+		// stock-PG stand-in for a pg_jsonschema key whitelist.
+		{"catalog_work", "chk_catalog_work_extra_object", `jsonb_typeof(extra) = 'object'`},
+		{"catalog_work", "chk_catalog_work_extra_size", `pg_column_size(extra) <= 65536`},
+		{"catalog_release", "chk_catalog_release_extra_object", `jsonb_typeof(extra) = 'object'`},
+		{"catalog_release", "chk_catalog_release_extra_size", `pg_column_size(extra) <= 65536`},
+		// Relation edges never point at themselves.
+		{"catalog_work_relation", "chk_catalog_work_relation_distinct", `a_work_id <> b_work_id`},
+		{"catalog_entity_relation", "chk_catalog_entity_relation_distinct", `a_id <> b_id`},
+		// Candidate pairs are normalized a<b — pinned at the table layer.
+		{"catalog_match_candidate", "chk_catalog_match_candidate_order", `a_id < b_id`},
+		// A rejection without a reason is useless: the row exists to tell
+		// future importers and reviewers why the pairing is wrong.
+		{"catalog_match_rejection", "chk_catalog_match_rejection_reason", `reason <> ''`},
+	} {
+		if err := ensureCheckConstraint(db.DB(), cc.table, cc.name, cc.expr); err != nil {
+			slog.Error("add check constraint failed", "table", cc.table, "constraint", cc.name, "error", err)
+			os.Exit(1)
+		}
+	}
+
+	// (5) The exact-tier anti-squatting line (doc 10 invariant 5): one
+	// external identity can be exact-linked to at most one entity per
+	// entity_type. Partial — probable/related tiers coexist freely.
+	if err := db.DB().Exec(`
+		CREATE UNIQUE INDEX IF NOT EXISTS uq_catalog_external_ref_exact
+		    ON catalog_external_ref(source_id, external_id, entity_type)
+		    WHERE link_kind = 0
+	`).Error; err != nil {
+		slog.Error("create external_ref exact partial unique failed", "error", err)
+		os.Exit(1)
+	}
+
 	// Seeds run on every migrate (idempotent upserts): registry vocabularies
 	// are data, and this is their single write path outside manual curation.
 	slog.Info("seeding catalog registries...")
@@ -128,4 +182,20 @@ func main() {
 	}
 
 	slog.Info("catalog migration completed successfully")
+}
+
+// ensureCheckConstraint adds a named CHECK once; re-runs are no-ops
+// (ADD CONSTRAINT has no IF NOT EXISTS, so existence is checked first).
+func ensureCheckConstraint(db *gorm.DB, table, name, expr string) error {
+	var exists bool
+	if err := db.Raw(
+		`SELECT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = ? AND conrelid = ?::regclass)`,
+		name, table,
+	).Scan(&exists).Error; err != nil {
+		return err
+	}
+	if exists {
+		return nil
+	}
+	return db.Exec(`ALTER TABLE ` + table + ` ADD CONSTRAINT ` + name + ` CHECK (` + expr + `)`).Error
 }

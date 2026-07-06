@@ -32,6 +32,29 @@ func TestConstantGroupsHaveUniqueValues(t *testing.T) {
 			RevisionActionRedirect, RevisionActionReverted,
 		},
 		"relation_domain": {RelationDomainWork, RelationDomainEntity},
+		"content_rating":  {ContentRatingAllAges, ContentRatingSensitive, ContentRatingR18},
+		"work_status":     {WorkStatusLive, WorkStatusStub, WorkStatusMerged},
+		"work_title_kind": {
+			WorkTitleKindOfficial, WorkTitleKindAlias,
+			WorkTitleKindAbbreviation, WorkTitleKindSearchHint,
+		},
+		"release_kind": {
+			ReleaseKindDefault, ReleaseKindDigital, ReleaseKindPhysical,
+			ReleaseKindTrial, ReleaseKindPatch,
+		},
+		"link_kind": {LinkKindExact, LinkKindProbable, LinkKindRelated},
+		"candidate_reason": {
+			CandidateReasonSharedExternalID, CandidateReasonNameNormEqual,
+			CandidateReasonNameFuzzy, CandidateReasonImporterSuggest, CandidateReasonLLMSuggest,
+		},
+		"candidate_status": {
+			CandidateStatusPending, CandidateStatusAccepted,
+			CandidateStatusRejected, CandidateStatusDeferred,
+		},
+		"proposal_status": {
+			ProposalStatusOpen, ProposalStatusApproved, ProposalStatusExecuted,
+			ProposalStatusRejected, ProposalStatusWithdrawn,
+		},
 	}
 	for name, values := range groups {
 		seen := make(map[int16]bool, len(values))
