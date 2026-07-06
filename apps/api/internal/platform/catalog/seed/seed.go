@@ -29,6 +29,7 @@ var dataFS embed.FS
 // Source ids referenced by the seed maps (must match the catalog_source rows).
 const (
 	bangumiSourceID int16 = 3
+	dlsiteSourceID  int16 = 4
 	egSourceID      int16 = 5
 )
 
@@ -72,6 +73,21 @@ func egRoleMap() []model.CatalogSourceRoleMap {
 	out := make([]model.CatalogSourceRoleMap, 0, len(m))
 	for sr, rid := range m {
 		out = append(out, model.CatalogSourceRoleMap{SourceID: egSourceID, SourceRole: sr, RoleID: rid})
+	}
+	return out
+}
+
+// dlsiteRoleMap pins the DLsite creaters[].classification → catalog_role mapping
+// (source_role = the raw classification string; the voice/ASMR subset uses
+// exactly these six, created_by being DLsite's catch-all → other-staff).
+func dlsiteRoleMap() []model.CatalogSourceRoleMap {
+	m := map[string]int64{
+		"voice_by": roleVoiceActor, "illust_by": roleIllustration, "scenario_by": roleScenario,
+		"music_by": roleMusic, "created_by": roleOtherStaff, "キャラデザ": roleCharacterDesign,
+	}
+	out := make([]model.CatalogSourceRoleMap, 0, len(m))
+	for sr, rid := range m {
+		out = append(out, model.CatalogSourceRoleMap{SourceID: dlsiteSourceID, SourceRole: sr, RoleID: rid})
 	}
 	return out
 }
@@ -186,6 +202,7 @@ func Run(db *gorm.DB) error {
 	// vocabulary in the same idempotent upserts.
 	roles = append(roles, handRoles()...)
 	roleMap = append(roleMap, egRoleMap()...)
+	roleMap = append(roleMap, dlsiteRoleMap()...)
 
 	if err := upsert(db, "catalog_medium", media(), []string{"id"}, []string{"name_cn"}); err != nil {
 		return err

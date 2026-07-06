@@ -43,6 +43,7 @@ func TestMain(m *testing.M) {
 		`CREATE TABLE IF NOT EXISTS staff (game bigint, creater_id bigint, shubetu int)`,
 		`CREATE TABLE IF NOT EXISTS appearances (game bigint, character_id bigint)`,
 		`CREATE TABLE IF NOT EXISTS appearance_actors (game bigint, character_id bigint, actor_id bigint)`,
+		`CREATE TABLE IF NOT EXISTS works (workno text, work_name text, work_name_kana text, maker_id text, maker_name text, age_category text, work_type_string text, status text, regist_date timestamptz, product_json jsonb)`,
 	}
 	for _, s := range stmts {
 		if err := db.Exec(s).Error; err != nil {
@@ -61,7 +62,8 @@ func clean(t *testing.T) {
 		"catalog_credit_name", "catalog_label", "catalog_character", "catalog_work",
 		"src_bangumi.subject_person", "src_bangumi.subject_character", "src_bangumi.person_character",
 		"src_bangumi.person", "src_bangumi.character",
-		"src_llm.bid_identity_verdict", "creaters", "characters", "staff", "appearances", "appearance_actors",
+		"catalog_release", "catalog_work_title",
+		"src_llm.bid_identity_verdict", "creaters", "characters", "staff", "appearances", "appearance_actors", "works",
 	}
 	for _, tb := range tables {
 		require.NoError(t, testDB.Exec("TRUNCATE "+tb+" RESTART IDENTITY CASCADE").Error)
@@ -207,4 +209,56 @@ func TestEGWaveAndCandidates(t *testing.T) {
 	testDB.Raw(`SELECT count(*) FROM catalog_match_candidate WHERE entity_type=1 AND reason=0`).Scan(&cands)
 	assert.Equal(t, int64(1), cands, "one shared-handle candidate")
 	assert.GreaterOrEqual(t, cs.Twitter, 1)
+}
+
+func TestDLsiteWave(t *testing.T) {
+	clean(t)
+	// A: r18 voice work with kana + 2 creaters, RG circle.
+	testDB.Exec(`INSERT INTO works (workno, work_name, work_name_kana, maker_id, maker_name, age_category, work_type_string, status, regist_date, product_json)
+		VALUES ('RJ001','作品A','サクヒンエー','RG100','サークルX','3','ボイス・ASMR','fetched','2020-05-10',
+		'{"creaters":{"voice_by":[{"id":"9001","name":"声優花","classification":"voice_by"}],"illust_by":[{"id":"9002","name":"絵師","classification":"illust_by"}]}}'::jsonb)`)
+	// B: all_ages, no kana, BG publisher, no creaters.
+	testDB.Exec(`INSERT INTO works (workno, work_name, work_name_kana, maker_id, maker_name, age_category, work_type_string, status, product_json)
+		VALUES ('RJ002','作品B','','BG200','会社Y','1','ボイス・ASMR','fetched','{"creaters":{}}'::jsonb)`)
+	// non-voice + must be excluded.
+	testDB.Exec(`INSERT INTO works (workno, work_name, work_type_string, status, maker_id, age_category, product_json) VALUES ('RJ003','漫画','マンガ','fetched','RG100','3','{}'::jsonb)`)
+
+	st, err := New(testDB, nil, Options{}).RunDLsite(testDB)
+	require.NoError(t, err)
+	assert.Equal(t, 2, st.WorksCreated)
+	assert.Equal(t, 2, st.ReleasesCreated)
+	assert.Equal(t, 3, st.TitlesCreated) // A official+kana, B official
+	assert.Equal(t, 2, st.LabelsCreated)
+	assert.Equal(t, 2, st.NamesCreated)
+	assert.Equal(t, 2, st.CreditsWritten)
+	assert.Zero(t, st.Stubs)
+
+	// Unclaimed (site NULL), medium=asmr.
+	assert.Equal(t, int64(2), scalarInt(t, `SELECT count(*) FROM catalog_work WHERE medium_id=5 AND site IS NULL`))
+	// workno anchors the RELEASE (entity_type=6); the work carries NO dlsite anchor.
+	assert.Equal(t, int64(2), scalarInt(t, `SELECT count(*) FROM catalog_external_ref WHERE entity_type=6 AND source_id=4 AND link_kind=0 AND matched_by='rule:dlsite-work-import'`))
+	assert.Zero(t, scalarInt(t, `SELECT count(*) FROM catalog_external_ref WHERE entity_type=5 AND source_id=4`))
+	// content_rating direct map: RJ001(age3)→r18=2.
+	assert.Equal(t, int64(1), scalarInt(t, `SELECT count(*) FROM catalog_work w JOIN catalog_release rel ON rel.work_id=w.id
+		JOIN catalog_external_ref r ON r.entity_type=6 AND r.entity_id=rel.id AND r.external_id='RJ001' WHERE w.content_rating=2`))
+	// kana → search_hint (kind=3).
+	assert.Equal(t, int64(1), scalarInt(t, `SELECT count(*) FROM catalog_work_title WHERE kind=3 AND title='サクヒンエー'`))
+	// label kinds: RG→doujin_circle(4), BG→publisher(2).
+	assert.Equal(t, int64(1), scalarInt(t, `SELECT count(*) FROM catalog_label l JOIN catalog_external_ref r ON r.entity_type=3 AND r.entity_id=l.id AND r.external_id='RG100' WHERE l.kind=4`))
+	assert.Equal(t, int64(1), scalarInt(t, `SELECT count(*) FROM catalog_label l JOIN catalog_external_ref r ON r.entity_type=3 AND r.entity_id=l.id AND r.external_id='BG200' WHERE l.kind=2`))
+	// creater orphan credit_name + tier-0 exact anchor.
+	assert.Equal(t, int64(2), scalarInt(t, `SELECT count(*) FROM catalog_credit_name cn JOIN catalog_external_ref r ON r.entity_type=1 AND r.entity_id=cn.id AND r.source_id=4 AND r.link_kind=0 AND r.matched_by='rule:dlsite-creater-import' WHERE cn.person_id IS NULL`))
+
+	// Idempotency.
+	st2, err := New(testDB, nil, Options{}).RunDLsite(testDB)
+	require.NoError(t, err)
+	assert.Zero(t, st2.WorksCreated)
+	assert.Equal(t, 2, st2.Already)
+}
+
+func scalarInt(t *testing.T, q string) int64 {
+	t.Helper()
+	var n int64
+	require.NoError(t, testDB.Raw(q).Scan(&n).Error)
+	return n
 }

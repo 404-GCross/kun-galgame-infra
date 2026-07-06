@@ -32,14 +32,19 @@ import (
 
 const (
 	bangumiSource int16 = 3
+	dlsiteSource  int16 = 4
 	egSource      int16 = 5
 
 	ruleBangumiPerson = "rule:bangumi-person-import"
 	ruleBangumiChar   = "rule:bangumi-character-import"
 	ruleEGCreater     = "rule:eg-creater-import"
 	ruleEGChar        = "rule:eg-character-import"
+	ruleDLsiteWork    = "rule:dlsite-work-import"
+	ruleDLsiteMaker   = "rule:dlsite-maker-import"
+	ruleDLsiteCreater = "rule:dlsite-creater-import"
 
 	roleVoiceActor int64 = 1 // hand-pinned in seed (声優)
+	mediumASMR     int16 = 5 // catalog_medium key=asmr
 )
 
 // Options configures an import run.
@@ -160,7 +165,7 @@ func (im *Importer) loadAnchors(entityType int16) (map[string]int64, error) {
 	}
 	if err := im.catalog.Raw(
 		`SELECT source_id, external_id, entity_id FROM catalog_external_ref
-		 WHERE entity_type = ? AND source_id IN (?, ?)`, entityType, bangumiSource, egSource,
+		 WHERE entity_type = ? AND source_id IN (?, ?, ?)`, entityType, bangumiSource, dlsiteSource, egSource,
 	).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
