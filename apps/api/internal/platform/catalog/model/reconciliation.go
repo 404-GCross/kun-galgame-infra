@@ -48,10 +48,10 @@ func (CatalogExternalRef) TableName() string { return "catalog_external_ref" }
 // pairing never resurrects. Reason is mandatory (CHECK in the raw-SQL
 // section) — the row exists to tell future importers and reviewers WHY not.
 type CatalogMatchRejection struct {
-	EntityType int16     `gorm:"primaryKey;autoIncrement:false" json:"entity_type"`
-	EntityID   int64     `gorm:"primaryKey;autoIncrement:false" json:"entity_id"`
-	SourceID   int16     `gorm:"primaryKey;autoIncrement:false" json:"source_id"`
-	ExternalID string    `gorm:"primaryKey" json:"external_id"`
+	EntityType int16  `gorm:"primaryKey;autoIncrement:false" json:"entity_type"`
+	EntityID   int64  `gorm:"primaryKey;autoIncrement:false" json:"entity_id"`
+	SourceID   int16  `gorm:"primaryKey;autoIncrement:false" json:"source_id"`
+	ExternalID string `gorm:"primaryKey" json:"external_id"`
 	Reason     string `gorm:"not null" json:"reason"`
 	RejectedBy *int64 `json:"rejected_by"`
 	// DB-side DEFAULT now() (doc 17 R7 sketch): unlike the meaningful-zero

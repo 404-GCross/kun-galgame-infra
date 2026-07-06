@@ -55,6 +55,7 @@ func TestConstantGroupsHaveUniqueValues(t *testing.T) {
 			ProposalStatusOpen, ProposalStatusApproved, ProposalStatusExecuted,
 			ProposalStatusRejected, ProposalStatusWithdrawn,
 		},
+		"spoiler": {SpoilerNone, SpoilerMild, SpoilerSevere},
 	}
 	for name, values := range groups {
 		seen := make(map[int16]bool, len(values))
