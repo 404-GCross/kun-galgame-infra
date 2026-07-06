@@ -8,6 +8,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.15
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.100.0
 	github.com/aws/smithy-go v1.25.1
+	github.com/bangumi/wiki-parser-go v0.0.2
 	github.com/danielgtaylor/huma/v2 v2.38.0
 	github.com/gabriel-vasile/mimetype v1.4.13
 	github.com/gen2brain/avif v0.4.4

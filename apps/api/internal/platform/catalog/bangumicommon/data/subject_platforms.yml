@@ -1,0 +1,473 @@
+defaults:
+  1:
+    sort_keys:
+    - 发售日
+    wiki_tpl: Book
+  2:
+    sort_keys: &id001
+    - 放送开始
+    - 发售日
+    - 发售日期
+    - 上映年度
+    - 上映日
+    wiki_tpl: Anime
+  3:
+    sort_keys:
+    - 发售日期
+    wiki_tpl: Album
+  4:
+    sort_keys:
+    - 发行日期
+    wiki_tpl: Game
+  6:
+    sort_keys:
+    - 上映日
+    - 开始
+    wiki_tpl: TV
+platforms:
+  1:
+    0:
+      alias: misc
+      id: 0
+      order: 6
+      type: other
+      type_cn: 其他
+      wiki_tpl: Book
+    1001:
+      alias: comic
+      enable_header: true
+      id: 1001
+      order: 0
+      type: Comic
+      type_cn: 漫画
+      wiki_tpl: Manga
+    1002:
+      alias: novel
+      enable_header: true
+      id: 1002
+      order: 1
+      type: Novel
+      type_cn: 小说
+      wiki_tpl: Novel
+    1003:
+      alias: illustration
+      enable_header: true
+      id: 1003
+      order: 2
+      type: Illustration
+      type_cn: 画集
+      wiki_tpl: Book
+    1004:
+      alias: picture
+      enable_header: true
+      id: 1004
+      order: 3
+      type: Picture
+      type_cn: 绘本
+      wiki_tpl: Book
+    1005:
+      alias: photo
+      enable_header: true
+      id: 1005
+      order: 5
+      type: Photo
+      type_cn: 写真
+      wiki_tpl: PhotoBook
+    1006:
+      alias: official
+      enable_header: true
+      id: 1006
+      order: 4
+      type: Official
+      type_cn: 公式书
+      wiki_tpl: Book
+  2:
+    0:
+      alias: misc
+      id: 0
+      order: 5
+      sort_keys: *id001
+      type: other
+      type_cn: 其他
+      wiki_tpl: Anime
+    1:
+      alias: tv
+      enable_header: true
+      id: 1
+      order: 0
+      sort_keys: *id001
+      type: TV
+      type_cn: TV
+      wiki_tpl: TVAnime
+    2:
+      alias: ova
+      enable_header: true
+      id: 2
+      order: 2
+      sort_keys: *id001
+      type: OVA
+      type_cn: OVA
+      wiki_tpl: OVA
+    3:
+      alias: movie
+      enable_header: true
+      id: 3
+      order: 3
+      sort_keys: *id001
+      type: movie
+      type_cn: 剧场版
+      wiki_tpl: Movie
+    5:
+      alias: web
+      enable_header: true
+      id: 5
+      order: 1
+      sort_keys: *id001
+      type: web
+      type_cn: WEB
+      wiki_tpl: TVAnime
+    2006:
+      alias: anime_comic
+      enable_header: true
+      id: 2006
+      order: 4
+      type: anime_comic
+      type_cn: 动态漫画
+      wiki_tpl: TVAnime
+  6:
+    0:
+      alias: misc
+      id: 0
+      order: 7
+      type: other
+      type_cn: 其他
+      wiki_tpl: TV
+    1:
+      alias: jp
+      enable_header: true
+      id: 1
+      order: 0
+      type: jp
+      type_cn: 日剧
+      wiki_tpl: TV
+    2:
+      alias: en
+      enable_header: true
+      id: 2
+      order: 1
+      type: en
+      type_cn: 欧美剧
+      wiki_tpl: TV
+    3:
+      alias: cn
+      enable_header: true
+      id: 3
+      order: 2
+      type: cn
+      type_cn: 华语剧
+      wiki_tpl: TV
+    6001:
+      alias: tv
+      enable_header: true
+      id: 6001
+      order: 3
+      type: tv
+      type_cn: 电视剧
+      wiki_tpl: TV
+    6002:
+      alias: movie
+      enable_header: true
+      id: 6002
+      order: 4
+      type: movie
+      type_cn: 电影
+      wiki_tpl: realMovie
+    6003:
+      alias: live
+      enable_header: true
+      id: 6003
+      order: 5
+      type: live
+      type_cn: 演出
+      wiki_tpl: TV
+    6004:
+      alias: show
+      enable_header: true
+      id: 6004
+      order: 6
+      type: show
+      type_cn: 综艺
+      wiki_tpl: TV
+  4:
+    0:
+      alias: misc
+      id: 0
+      order: 4
+      type: other
+      type_cn: 其他
+    4001:
+      alias: games
+      enable_header: true
+      id: 4001
+      order: 0
+      type: games
+      type_cn: 游戏
+    4002:
+      alias: software
+      enable_header: true
+      id: 4002
+      order: 2
+      type: software
+      type_cn: 软件
+    4003:
+      alias: dlc
+      enable_header: true
+      id: 4003
+      order: 1
+      type: dlc
+      type_cn: 扩展包
+    4005:
+      alias: tabletop
+      enable_header: true
+      id: 4005
+      order: 3
+      type: tabletop
+      type_cn: 桌游
+  book_series:
+    0:
+      alias: offprint
+      id: 0
+      order: 1
+      type: offprint
+      type_cn: 单行本
+    1:
+      alias: series
+      id: 1
+      order: 0
+      type: series
+      type_cn: 系列
+  game_platforms:
+    4:
+      alias: pc
+      id: 4
+      order: 0
+      search_string: pc|windows
+      type: PC
+      type_cn: PC
+    5:
+      alias: nds
+      id: 5
+      order: 16
+      search_string: nds
+      type: NDS
+      type_cn: NDS
+    6:
+      alias: psp
+      id: 6
+      order: 17
+      search_string: psp
+      type: PSP
+      type_cn: PSP
+    7:
+      alias: ps2
+      id: 7
+      order: 18
+      search_string: PS2
+      type: PS2
+      type_cn: PS2
+    8:
+      alias: ps3
+      id: 8
+      order: 8
+      search_string: PS3|PlayStation 3
+      type: PS3
+      type_cn: PS3
+    9:
+      alias: xbox360
+      id: 9
+      order: 9
+      search_string: xbox360
+      type: Xbox360
+      type_cn: Xbox360
+    10:
+      alias: wii
+      id: 10
+      order: 10
+      search_string: Wii
+      type: Wii
+      type_cn: Wii
+    11:
+      alias: iphone
+      id: 11
+      order: 13
+      search_string: iphone|ipad|ios
+      type: iOS
+      type_cn: iOS
+    12:
+      alias: arc
+      id: 12
+      order: 15
+      search_string: ARC|街机
+      type: ARC
+      type_cn: 街机
+    15:
+      alias: xbox
+      id: 15
+      order: 19
+      search_string: XBOX
+      type: XBOX
+      type_cn: XBOX
+    17:
+      alias: gamecube
+      id: 17
+      order: 20
+      search_string: GameCube|ngc
+      type: GameCube
+      type_cn: GameCube
+    18:
+      alias: ngp
+      id: 18
+      order: 28
+      search_string: ngp
+      type: NEOGEO Pocket Color
+      type_cn: NEOGEO Pocket Color
+    19:
+      alias: sfc
+      id: 19
+      order: 24
+      search_string: SFC
+      type: SFC
+      type_cn: SFC
+    20:
+      alias: fc
+      id: 20
+      order: 25
+      search_string: FC
+      type: FC
+      type_cn: FC
+    21:
+      alias: n64
+      id: 21
+      order: 22
+      search_string: n64
+      type: Nintendo 64
+      type_cn: Nintendo 64
+    22:
+      alias: GBA
+      id: 22
+      order: 29
+      search_string: GBA
+      type: GBA
+      type_cn: GBA
+    23:
+      alias: GB
+      id: 23
+      order: 30
+      search_string: GB
+      type: GB
+      type_cn: GB
+    25:
+      alias: vb
+      id: 25
+      order: 31
+      search_string: Virtual Boy
+      type: Virtual Boy
+      type_cn: Virtual Boy
+    26:
+      alias: wsc
+      id: 26
+      order: 27
+      search_string: wsc
+      type: WonderSwan Color
+      type_cn: WonderSwan Color
+    27:
+      alias: dreamcast
+      id: 27
+      order: 21
+      search_string: dc
+      type: Dreamcast
+      type_cn: Dreamcast
+    28:
+      alias: ps
+      id: 28
+      order: 23
+      search_string: ps
+      type: PlayStation
+      type_cn: PlayStation
+    29:
+      alias: ws
+      id: 29
+      order: 26
+      search_string: ws
+      type: WonderSwan
+      type_cn: WonderSwan
+    30:
+      alias: psv
+      id: 30
+      order: 11
+      search_string: psv|vita
+      type: PSVita
+      type_cn: PS Vita
+    31:
+      alias: 3ds
+      id: 31
+      order: 12
+      search_string: 3ds
+      type: 3DS
+      type_cn: 3DS
+    32:
+      alias: android
+      id: 32
+      order: 14
+      search_string: android
+      type: Android
+      type_cn: Android
+    33:
+      alias: mac
+      id: 33
+      order: 1
+      search_string: mac
+      type: Mac OS
+      type_cn: Mac OS
+    34:
+      alias: ps4
+      id: 34
+      order: 4
+      search_string: PS4
+      type: PS4
+      type_cn: PS4
+    35:
+      alias: xbox_one
+      id: 35
+      order: 5
+      search_string: Xbox One
+      type: Xbox One
+      type_cn: Xbox One
+    36:
+      alias: wii_u
+      id: 36
+      order: 7
+      search_string: Wii U|WiiU
+      type: Wii U
+      type_cn: Wii U
+    37:
+      alias: ns
+      id: 37
+      order: 6
+      search_string: Switch|NS
+      type: Nintendo Switch
+      type_cn: Nintendo Switch
+    38:
+      alias: ps5
+      id: 38
+      order: 2
+      search_string: PS5
+      type: PS5
+      type_cn: PS5
+    39:
+      alias: xbox_series_xs
+      id: 39
+      order: 3
+      search_string: XSX|XSS|Xbox Series X|Xbox Series S
+      type: Xbox Series X/S
+      type_cn: Xbox Series X/S
