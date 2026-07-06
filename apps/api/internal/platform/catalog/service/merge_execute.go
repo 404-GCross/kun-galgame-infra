@@ -42,6 +42,15 @@ func (s *MergeService) ExecuteMerge(ctx context.Context, proposalID int64, execu
 		}
 		et, src, dst := p.EntityType, p.SourceEntityID, p.TargetEntityID
 
+		// Both endpoints must still be live at execution time — an entity
+		// deleted or merged away during the cooling-off window invalidates
+		// the proposal.
+		for _, id := range []int64{src, dst} {
+			if err := assertEntityAlive(tx, et, id); err != nil {
+				return err
+			}
+		}
+
 		// Lock both entity rows in deterministic order (deadlock avoidance);
 		// this also serializes revision numbering per entity.
 		first, second := src, dst

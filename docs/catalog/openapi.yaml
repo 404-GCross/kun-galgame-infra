@@ -1,0 +1,344 @@
+components:
+  schemas:
+    ClaimAnchor:
+      additionalProperties: false
+      properties:
+        external_id:
+          minLength: 1
+          type: string
+        source_id:
+          description: catalog_source registry id (e.g. 2=vndb 3=bangumi 4=dlsite)
+          format: int32
+          type: integer
+      required:
+        - source_id
+        - external_id
+      type: object
+    ClaimWorkRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/ClaimWorkRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        anchors:
+          description: External identity anchors; matched exact refs claim the existing registry row
+          items:
+            $ref: "#/components/schemas/ClaimAnchor"
+          maxItems: 16
+          type:
+            - array
+            - "null"
+        content_rating:
+          description: 0=all_ages 1=sensitive 2=r18
+          format: int32
+          maximum: 2
+          minimum: 0
+          type: integer
+        display_name:
+          minLength: 1
+          type: string
+        medium_id:
+          description: catalog_medium registry id (1=galgame ...)
+          format: int32
+          type: integer
+        olang:
+          description: Original language (BCP-47); defaults to ja
+          type: string
+        product_work_id:
+          description: The work's id inside the product database
+          format: int64
+          type: integer
+        site:
+          description: Claiming site key (e.g. galgame_wiki)
+          minLength: 1
+          type: string
+      required:
+        - medium_id
+        - site
+        - product_work_id
+        - display_name
+      type: object
+    ClaimWorkResponse:
+      additionalProperties: false
+      properties:
+        created:
+          description: true when a new registry row was minted (no anchor matched)
+          type: boolean
+        work_id:
+          format: int64
+          type: integer
+      required:
+        - work_id
+        - created
+      type: object
+    EnvelopeClaimWorkResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EnvelopeClaimWorkResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/ClaimWorkResponse"
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
+    EnvelopeRedirectFeedResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EnvelopeRedirectFeedResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/RedirectFeedResponse"
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
+    EnvelopeResolveResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EnvelopeResolveResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/ResolveResponse"
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
+    HouseError:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/HouseError.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
+    RedirectFeedResponse:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: "#/components/schemas/RedirectItem"
+          type:
+            - array
+            - "null"
+        next_cursor:
+          description: Opaque cursor for the next page; empty when this page is not full
+          type: string
+      required:
+        - items
+      type: object
+    RedirectItem:
+      additionalProperties: false
+      properties:
+        current_id:
+          format: int64
+          type: integer
+        entity_type:
+          format: int32
+          type: integer
+        merged_at:
+          format: date-time
+          type: string
+        old_id:
+          format: int64
+          type: integer
+      required:
+        - entity_type
+        - old_id
+        - current_id
+        - merged_at
+      type: object
+    ResolveRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/ResolveRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        entity_type:
+          description: Entity type constant (0=person 1=credit_name 2=org 3=label 4=character 5=work 6=release)
+          format: int32
+          maximum: 6
+          minimum: 0
+          type: integer
+        ids:
+          description: Entity ids to resolve
+          items:
+            format: int64
+            type: integer
+          maxItems: 1000
+          minItems: 1
+          type:
+            - array
+            - "null"
+      required:
+        - entity_type
+        - ids
+      type: object
+    ResolveResponse:
+      additionalProperties: false
+      properties:
+        mappings:
+          additionalProperties:
+            format: int64
+            type: integer
+          description: old id (as string key) → canonical id; unredirected ids map to themselves
+          type: object
+        redirected:
+          description: The subset of requested ids that had a redirect
+          items:
+            format: int64
+            type: integer
+          type:
+            - array
+            - "null"
+      required:
+        - mappings
+      type: object
+info:
+  title: KUN Catalog Service
+  version: 1.0.0
+openapi: 3.1.0
+paths:
+  /api/v1/catalog/redirects:
+    get:
+      operationId: listCatalogRedirects
+      parameters:
+        - description: Filter to one entity type; -1 = all
+          explode: false
+          in: query
+          name: entity_type
+          schema:
+            default: -1
+            description: Filter to one entity type; -1 = all
+            format: int32
+            type: integer
+        - description: Opaque cursor from the previous page's next_cursor
+          explode: false
+          in: query
+          name: cursor
+          schema:
+            description: Opaque cursor from the previous page's next_cursor
+            type: string
+        - description: Page size (max 1000)
+          explode: false
+          in: query
+          name: limit
+          schema:
+            description: Page size (max 1000)
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeRedirectFeedResponse"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: Keyset feed of redirects for product-site id cleanup crons
+      tags:
+        - catalog-s2s
+  /api/v1/catalog/resolve:
+    post:
+      operationId: resolveCatalogIDs
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResolveRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeResolveResponse"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: Resolve entity ids to their canonical ids (redirect following, batch)
+      tags:
+        - catalog-s2s
+  /api/v1/catalog/works/claim:
+    post:
+      operationId: claimCatalogWork
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClaimWorkRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeClaimWorkResponse"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: Claim (or register) the catalog work for a product-side work
+      tags:
+        - catalog-s2s

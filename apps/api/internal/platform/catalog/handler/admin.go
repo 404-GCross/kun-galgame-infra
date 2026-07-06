@@ -1,0 +1,342 @@
+package handler
+
+import (
+	"context"
+	stderrors "errors"
+	"log/slog"
+	"net/http"
+	"time"
+
+	"api/internal/platform/catalog/dto"
+	"api/internal/platform/catalog/service"
+	"api/pkg/errors"
+
+	"github.com/danielgtaylor/huma/v2"
+	"github.com/danielgtaylor/huma/v2/adapters/humafiber"
+	"github.com/gofiber/fiber/v3"
+)
+
+// AdminServer holds the dependencies of the review-queue operations.
+type AdminServer struct {
+	queues *service.AdminQueueService
+	merge  *service.MergeService
+}
+
+// SetupAdmin builds the admin review-queue Huma API (doc 17 §5 buckets:
+// candidates / proposals / probable refs). Auth is applied by the caller as
+// path-scoped Fiber middleware (middleware.JWTAuth + RequireRole("admin"))
+// on the /api/v1/admin/catalog prefix BEFORE this — Huma registers on the
+// app, so the group middleware does not cover these routes. Callable with
+// nil services for spec export.
+func SetupAdmin(app *fiber.App, queues *service.AdminQueueService, merge *service.MergeService) huma.API {
+	InstallErrorEnvelope()
+
+	cfg := huma.DefaultConfig("KUN Catalog Admin API", "1.0.0")
+	cfg.OpenAPIPath = ""
+	cfg.DocsPath = ""
+	cfg.SchemasPath = ""
+
+	api := humafiber.New(app, cfg)
+	api.UseMiddleware(AdminBridge)
+
+	s := &AdminServer{queues: queues, merge: merge}
+	s.register(api)
+	return api
+}
+
+func (s *AdminServer) register(api huma.API) {
+	tags := []string{"catalog-admin"}
+	huma.Register(api, huma.Operation{
+		OperationID: "listCatalogCandidates", Method: http.MethodGet, Path: "/api/v1/admin/catalog/candidates",
+		Summary: "List match candidates (the ambiguity bucket)", Tags: tags,
+	}, s.listCandidates)
+	huma.Register(api, huma.Operation{
+		OperationID: "decideCatalogCandidate", Method: http.MethodPost, Path: "/api/v1/admin/catalog/candidates/decide",
+		Summary: "Decide a match candidate: accept (opens a merge proposal), reject (kept forever) or defer", Tags: tags,
+	}, s.decideCandidate)
+	huma.Register(api, huma.Operation{
+		OperationID: "listCatalogProposals", Method: http.MethodGet, Path: "/api/v1/admin/catalog/proposals",
+		Summary: "List merge proposals", Tags: tags,
+	}, s.listProposals)
+	huma.Register(api, huma.Operation{
+		OperationID: "actOnCatalogProposal", Method: http.MethodPost, Path: "/api/v1/admin/catalog/proposals/{id}/{action}",
+		Summary: "Approve / reject / withdraw / execute a merge proposal (execute enforces the 48h cooling-off)", Tags: tags,
+	}, s.actOnProposal)
+	huma.Register(api, huma.Operation{
+		OperationID: "listCatalogProbableRefs", Method: http.MethodGet, Path: "/api/v1/admin/catalog/refs/probable",
+		Summary: "List unconfirmed probable external refs (the confirmation bucket; includes merge-demoted exacts)", Tags: tags,
+	}, s.listProbableRefs)
+	huma.Register(api, huma.Operation{
+		OperationID: "confirmCatalogRef", Method: http.MethodPost, Path: "/api/v1/admin/catalog/refs/confirm",
+		Summary: "Promote a probable external ref to exact (409 when the exact slot is taken)", Tags: tags,
+	}, s.confirmRef)
+	huma.Register(api, huma.Operation{
+		OperationID: "rejectCatalogRef", Method: http.MethodPost, Path: "/api/v1/admin/catalog/refs/reject",
+		Summary: "Reject a wrong external ref: deletes it and records first-class negative knowledge (reason required)", Tags: tags,
+	}, s.rejectRef)
+}
+
+// ---- candidates ----
+
+type candidatesInput struct {
+	// -1 = no filter (Huma cannot express optional scalars as pointers).
+	Status     int16 `query:"status" default:"-1" doc:"0=pending 1=accepted 2=rejected 3=deferred; -1 = all"`
+	EntityType int16 `query:"entity_type" default:"-1" doc:"-1 = all"`
+	Reason     int16 `query:"reason" default:"-1" doc:"0=shared_external_id 1=name_norm_equal 2=name_fuzzy 3=importer_suggest 4=llm_suggest; -1 = all"`
+	Page       int   `query:"page" doc:"1-based page number"`
+	Limit      int   `query:"limit" doc:"Items per page (max 200)"`
+}
+
+type candidatesOutput struct {
+	Body Envelope[dto.Page[service.CandidateItem]]
+}
+
+func (s *AdminServer) listCandidates(ctx context.Context, in *candidatesInput) (*candidatesOutput, error) {
+	items, total, err := s.queues.ListCandidates(ctx, service.CandidateFilters{
+		Status: optionalFilter(in.Status), EntityType: optionalFilter(in.EntityType),
+		Reason: optionalFilter(in.Reason), Page: in.Page, Limit: in.Limit,
+	})
+	if err != nil {
+		slog.Error("catalog admin list candidates", "err", err)
+		return nil, apiErr(http.StatusInternalServerError, errors.ErrInternalServer)
+	}
+	return &candidatesOutput{Body: okEnvelope(dto.Page[service.CandidateItem]{Items: items, Total: total})}, nil
+}
+
+type decideCandidateInput struct {
+	Body struct {
+		EntityType int16  `json:"entity_type"`
+		AID        int64  `json:"a_id"`
+		BID        int64  `json:"b_id"`
+		Action     string `json:"action" enum:"accept,reject,defer"`
+		SourceID   int64  `json:"source_id,omitempty" doc:"accept only: the entity absorbed by the merge (must be a_id or b_id)"`
+		TargetID   int64  `json:"target_id,omitempty" doc:"accept only: the surviving entity"`
+		Note       string `json:"note,omitempty" doc:"accept only: carried onto the opened proposal"`
+	}
+}
+
+type decideCandidateData struct {
+	Decided    bool   `json:"decided"`
+	ProposalID *int64 `json:"proposal_id,omitempty" doc:"Set when action=accept: the opened merge proposal"`
+}
+
+type decideCandidateOutput struct {
+	Body Envelope[decideCandidateData]
+}
+
+func (s *AdminServer) decideCandidate(ctx context.Context, in *decideCandidateInput) (*decideCandidateOutput, error) {
+	proposal, err := s.queues.DecideCandidate(ctx, service.CandidateDecision{
+		EntityType: in.Body.EntityType, AID: in.Body.AID, BID: in.Body.BID,
+		Action: in.Body.Action, SourceID: in.Body.SourceID, TargetID: in.Body.TargetID,
+		Note: in.Body.Note, DecidedBy: adminIDFromCtx(ctx),
+	})
+	if err != nil {
+		switch {
+		case stderrors.Is(err, service.ErrNotFound):
+			return nil, apiErr(http.StatusNotFound, errors.ErrNotFound)
+		case stderrors.Is(err, service.ErrDuplicateOpenProposal),
+			stderrors.Is(err, service.ErrSameEntity),
+			stderrors.Is(err, service.ErrEntityNotLive),
+			stderrors.Is(err, service.ErrProposalState):
+			return nil, apiErrMsg(http.StatusConflict, errors.ErrOperationFailed, err.Error())
+		}
+		slog.Error("catalog admin decide candidate", "err", err)
+		return nil, apiErr(http.StatusInternalServerError, errors.ErrInternalServer)
+	}
+	data := decideCandidateData{Decided: true}
+	if proposal != nil {
+		data.ProposalID = &proposal.ID
+	}
+	return &decideCandidateOutput{Body: okEnvelope(data)}, nil
+}
+
+// ---- proposals ----
+
+type proposalsInput struct {
+	Status     int16 `query:"status" default:"-1" doc:"0=open 1=approved 2=executed 3=rejected 4=withdrawn; -1 = all"`
+	EntityType int16 `query:"entity_type" default:"-1" doc:"-1 = all"`
+	Page       int   `query:"page"`
+	Limit      int   `query:"limit"`
+}
+
+type proposalsOutput struct {
+	Body Envelope[dto.Page[service.ProposalItem]]
+}
+
+func (s *AdminServer) listProposals(ctx context.Context, in *proposalsInput) (*proposalsOutput, error) {
+	items, total, err := s.queues.ListProposals(ctx, service.ProposalFilters{
+		Status: optionalFilter(in.Status), EntityType: optionalFilter(in.EntityType),
+		Page: in.Page, Limit: in.Limit,
+	})
+	if err != nil {
+		slog.Error("catalog admin list proposals", "err", err)
+		return nil, apiErr(http.StatusInternalServerError, errors.ErrInternalServer)
+	}
+	return &proposalsOutput{Body: okEnvelope(dto.Page[service.ProposalItem]{Items: items, Total: total})}, nil
+}
+
+type proposalActionInput struct {
+	ID     int64  `path:"id"`
+	Action string `path:"action" enum:"approve,reject,withdraw,execute"`
+	Body   struct {
+		Reason string `json:"reason,omitempty" doc:"reject only"`
+	}
+}
+
+type proposalActionData struct {
+	ID     int64  `json:"id"`
+	Action string `json:"action"`
+	// ExecuteAfter is returned on a premature execute (422) and after
+	// approve, so the operator sees when the proposal unlocks.
+	ExecuteAfter *time.Time `json:"execute_after,omitempty"`
+}
+
+type proposalActionOutput struct {
+	Body Envelope[proposalActionData]
+}
+
+func (s *AdminServer) actOnProposal(ctx context.Context, in *proposalActionInput) (*proposalActionOutput, error) {
+	actor := adminIDFromCtx(ctx)
+	var err error
+	switch in.Action {
+	case "approve":
+		err = s.merge.ApproveMerge(ctx, in.ID, actor)
+	case "reject":
+		err = s.merge.RejectMerge(ctx, in.ID, actor, in.Body.Reason)
+	case "withdraw":
+		err = s.merge.WithdrawMerge(ctx, in.ID, actor)
+	case "execute":
+		err = s.merge.ExecuteMerge(ctx, in.ID, &actor)
+	}
+	if err != nil {
+		switch {
+		case stderrors.Is(err, service.ErrNotFound):
+			return nil, apiErr(http.StatusNotFound, errors.ErrNotFound)
+		case stderrors.Is(err, service.ErrCoolingOff):
+			// 422: the request is well-formed but the cooling-off window has
+			// not elapsed. execute_after rides along in the message so the
+			// operator knows when to retry (admins are not exempt —
+			// doc 10 invariant 4).
+			if p, perr := s.queues.GetProposal(ctx, in.ID); perr == nil && p != nil {
+				return nil, apiErrMsg(http.StatusUnprocessableEntity, errors.ErrOperationFailed,
+					coolingOffMessage(p.ExecuteAfter))
+			}
+			return nil, apiErrMsg(http.StatusUnprocessableEntity, errors.ErrOperationFailed, err.Error())
+		case stderrors.Is(err, service.ErrProposalState), stderrors.Is(err, service.ErrEntityNotLive):
+			return nil, apiErrMsg(http.StatusConflict, errors.ErrOperationFailed, err.Error())
+		}
+		slog.Error("catalog admin proposal action", "action", in.Action, "id", in.ID, "err", err)
+		return nil, apiErr(http.StatusInternalServerError, errors.ErrInternalServer)
+	}
+	data := proposalActionData{ID: in.ID, Action: in.Action}
+	if in.Action == "approve" {
+		if p, perr := s.queues.GetProposal(ctx, in.ID); perr == nil && p != nil {
+			data.ExecuteAfter = p.ExecuteAfter
+		}
+	}
+	return &proposalActionOutput{Body: okEnvelope(data)}, nil
+}
+
+// optionalFilter maps the -1 wire sentinel to "no filter".
+func optionalFilter(v int16) *int16 {
+	if v < 0 {
+		return nil
+	}
+	return &v
+}
+
+func coolingOffMessage(after *time.Time) string {
+	if after == nil {
+		return "cooling-off window has not elapsed"
+	}
+	return "cooling-off window has not elapsed; executable after " + after.Format(time.RFC3339)
+}
+
+// ---- probable refs ----
+
+type probableRefsInput struct {
+	SourceID   int16 `query:"source_id" default:"-1" doc:"-1 = all"`
+	EntityType int16 `query:"entity_type" default:"-1" doc:"-1 = all"`
+	Page       int   `query:"page"`
+	Limit      int   `query:"limit"`
+}
+
+type probableRefsOutput struct {
+	Body Envelope[dto.Page[service.ProbableRefItem]]
+}
+
+func (s *AdminServer) listProbableRefs(ctx context.Context, in *probableRefsInput) (*probableRefsOutput, error) {
+	items, total, err := s.queues.ListProbableRefs(ctx, service.RefFilters{
+		SourceID: optionalFilter(in.SourceID), EntityType: optionalFilter(in.EntityType),
+		Page: in.Page, Limit: in.Limit,
+	})
+	if err != nil {
+		slog.Error("catalog admin list probable refs", "err", err)
+		return nil, apiErr(http.StatusInternalServerError, errors.ErrInternalServer)
+	}
+	return &probableRefsOutput{Body: okEnvelope(dto.Page[service.ProbableRefItem]{Items: items, Total: total})}, nil
+}
+
+type refKeyBody struct {
+	EntityType int16  `json:"entity_type"`
+	EntityID   int64  `json:"entity_id"`
+	SourceID   int16  `json:"source_id"`
+	ExternalID string `json:"external_id" minLength:"1"`
+}
+
+type confirmRefInput struct {
+	Body refKeyBody
+}
+
+type refActionData struct {
+	Done bool `json:"done"`
+}
+
+type refActionOutput struct {
+	Body Envelope[refActionData]
+}
+
+func (s *AdminServer) confirmRef(ctx context.Context, in *confirmRefInput) (*refActionOutput, error) {
+	err := s.queues.ConfirmRef(ctx, service.RefKey{
+		EntityType: in.Body.EntityType, EntityID: in.Body.EntityID,
+		SourceID: in.Body.SourceID, ExternalID: in.Body.ExternalID,
+	}, adminIDFromCtx(ctx))
+	if err != nil {
+		switch {
+		case stderrors.Is(err, service.ErrNotFound):
+			return nil, apiErr(http.StatusNotFound, errors.ErrNotFound)
+		case stderrors.Is(err, service.ErrExactTaken):
+			return nil, apiErrMsg(http.StatusConflict, errors.ErrOperationFailed, err.Error())
+		case stderrors.Is(err, service.ErrProposalState):
+			return nil, apiErrMsg(http.StatusConflict, errors.ErrOperationFailed, err.Error())
+		}
+		slog.Error("catalog admin confirm ref", "err", err)
+		return nil, apiErr(http.StatusInternalServerError, errors.ErrInternalServer)
+	}
+	return &refActionOutput{Body: okEnvelope(refActionData{Done: true})}, nil
+}
+
+type rejectRefInput struct {
+	Body struct {
+		refKeyBody
+		Reason string `json:"reason" minLength:"1" doc:"Why the pairing is wrong — recorded as permanent negative knowledge"`
+	}
+}
+
+func (s *AdminServer) rejectRef(ctx context.Context, in *rejectRefInput) (*refActionOutput, error) {
+	err := s.queues.RejectRef(ctx, service.RefKey{
+		EntityType: in.Body.EntityType, EntityID: in.Body.EntityID,
+		SourceID: in.Body.SourceID, ExternalID: in.Body.ExternalID,
+	}, in.Body.Reason, adminIDFromCtx(ctx))
+	if err != nil {
+		switch {
+		case stderrors.Is(err, service.ErrNotFound):
+			return nil, apiErr(http.StatusNotFound, errors.ErrNotFound)
+		case stderrors.Is(err, service.ErrProposalState):
+			return nil, apiErrMsg(http.StatusBadRequest, errors.ErrValidationFailed, err.Error())
+		}
+		slog.Error("catalog admin reject ref", "err", err)
+		return nil, apiErr(http.StatusInternalServerError, errors.ErrInternalServer)
+	}
+	return &refActionOutput{Body: okEnvelope(refActionData{Done: true})}, nil
+}

@@ -29,6 +29,7 @@ var (
 	testMerge   *MergeService
 	testWork    *WorkService
 	testGuard   *GuardService
+	testQueues  *AdminQueueService
 )
 
 func TestMain(m *testing.M) {
@@ -60,6 +61,7 @@ func TestMain(m *testing.M) {
 	testMerge = NewMergeService(db, testResolve, repository.NewProposalRepository(db), repository.NewRevisionRepository(db))
 	testWork = NewWorkService(db, testResolve)
 	testGuard = NewGuardService(db)
+	testQueues = NewAdminQueueService(db, testMerge)
 
 	os.Exit(m.Run())
 }

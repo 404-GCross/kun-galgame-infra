@@ -27,9 +27,10 @@ func TestClaimWork(t *testing.T) {
 		DisplayName: "先に登録された作品", OLang: "ja",
 		Anchors: []ExternalAnchor{{SourceID: 3, ExternalID: "subj-42", MatchedBy: "import:test"}},
 	}
-	id, err := testWork.ClaimWork(ctx, params)
+	id, created, err := testWork.ClaimWork(ctx, params)
 	require.NoError(t, err)
 	assert.Equal(t, unclaimed.ID, id, "claim must adopt the existing identity, never mint a second one")
+	assert.False(t, created, "adopting an existing row is not a creation")
 
 	var claimed model.CatalogWork
 	require.NoError(t, testDB.First(&claimed, id).Error)
@@ -40,15 +41,16 @@ func TestClaimWork(t *testing.T) {
 	assert.Equal(t, model.WorkStatusLive, claimed.Status, "claiming graduates a stub to live")
 
 	// Idempotency: the same product work returns the same id.
-	again, err := testWork.ClaimWork(ctx, params)
+	again, againCreated, err := testWork.ClaimWork(ctx, params)
 	require.NoError(t, err)
 	assert.Equal(t, id, again)
+	assert.False(t, againCreated)
 
 	// Conflict: a different product work claiming the same anchor.
 	conflicting := params
 	conflicting.Site = "letmoe"
 	conflicting.ProductWorkID = 7
-	_, err = testWork.ClaimWork(ctx, conflicting)
+	_, _, err = testWork.ClaimWork(ctx, conflicting)
 	require.ErrorIs(t, err, ErrClaimConflict)
 
 	// Anchorless claim creates a new work with refs + created revision.
@@ -57,9 +59,10 @@ func TestClaimWork(t *testing.T) {
 		DisplayName: "新規作品",
 		Anchors:     []ExternalAnchor{{SourceID: 2, ExternalID: "v999", MatchedBy: "import:test"}},
 	}
-	freshID, err := testWork.ClaimWork(ctx, fresh)
+	freshID, freshCreated, err := testWork.ClaimWork(ctx, fresh)
 	require.NoError(t, err)
 	assert.NotEqual(t, id, freshID)
+	assert.True(t, freshCreated, "anchorless claim mints a new registry row")
 	var refCount, revCount int64
 	testDB.Model(&model.CatalogExternalRef{}).
 		Where("entity_type = ? AND entity_id = ? AND link_kind = ?", model.EntityTypeWork, freshID, model.LinkKindExact).
@@ -85,13 +88,13 @@ func TestClaimWork(t *testing.T) {
 	require.NotNil(t, afterMerge.Site)
 	assert.Equal(t, int64(5000), *afterMerge.ProductWorkID, "the claim followed the merge onto the survivor")
 
-	reclaimedID, err := testWork.ClaimWork(ctx, fresh) // same product work (5000)
+	reclaimedID, _, err := testWork.ClaimWork(ctx, fresh) // same product work (5000)
 	require.NoError(t, err)
 	assert.Equal(t, survivor.ID, reclaimedID, "the claiming product resolves to the canonical work after the merge")
 
 	other := fresh
 	other.ProductWorkID = 5001
-	_, err = testWork.ClaimWork(ctx, other)
+	_, _, err = testWork.ClaimWork(ctx, other)
 	require.ErrorIs(t, err, ErrClaimConflict, "a different product work cannot steal the transferred claim")
 }
 

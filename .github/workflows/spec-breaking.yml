@@ -21,6 +21,8 @@ on:
       - "docs/galgame_wiki/calendar-openapi.yaml"
       - "docs/artifact/openapi.yaml"
       - "docs/artifact/admin-openapi.yaml"
+      - "docs/catalog/openapi.yaml"
+      - "docs/catalog/admin-openapi.yaml"
       - ".github/workflows/spec-breaking.yml"
   pull_request:
     paths: *specs
@@ -74,6 +76,8 @@ jobs:
             docs/galgame_wiki/calendar-openapi.yaml
             docs/artifact/openapi.yaml
             docs/artifact/admin-openapi.yaml
+            docs/catalog/openapi.yaml
+            docs/catalog/admin-openapi.yaml
           "
           rc=0
           for spec in $specs; do

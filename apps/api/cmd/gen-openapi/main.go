@@ -7,6 +7,8 @@
 //	go run ./cmd/gen-openapi -admin -o ../../docs/artifact/admin-openapi.yaml    # oauth admin API (3.1)
 //	go run ./cmd/gen-openapi -galgame-calendar -o ../../docs/galgame_wiki/calendar-openapi.yaml  # wiki release calendar (3.1)
 //	go run ./cmd/gen-openapi -galgame-read -o ../../docs/galgame_wiki/read-openapi.yaml          # wiki read endpoints (3.1)
+//	go run ./cmd/gen-openapi -catalog -o ../../docs/catalog/openapi.yaml                # catalog S2S face (3.1)
+//	go run ./cmd/gen-openapi -catalog-admin -o ../../docs/catalog/admin-openapi.yaml    # catalog review queues (3.1)
 package main
 
 import (
@@ -16,6 +18,7 @@ import (
 
 	artHandler "api/internal/platform/artifact/handler"
 	"api/internal/platform/artifact/service"
+	catHandler "api/internal/platform/catalog/handler"
 	galgameHandler "api/internal/platform/galgame/handler"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -28,6 +31,8 @@ func main() {
 	admin := flag.Bool("admin", false, "emit the oauth-hosted admin API spec (/api/v1/admin/artifact/*) instead of the artifact service spec")
 	galgameCalendar := flag.Bool("galgame-calendar", false, "emit the galgame-wiki release-calendar spec (/api/galgame/calendar*)")
 	galgameRead := flag.Bool("galgame-read", false, "emit the galgame-wiki read-endpoint spec (/api/galgame/batch, …)")
+	catalog := flag.Bool("catalog", false, "emit the catalog S2S spec (/api/v1/catalog/*)")
+	catalogAdmin := flag.Bool("catalog-admin", false, "emit the catalog admin review-queue spec (/api/v1/admin/catalog/*)")
 	flag.Parse()
 
 	// Build the API to derive the spec; the deps are nil / stub because Setup
@@ -39,6 +44,10 @@ func main() {
 		api = galgameHandler.SetupGalgameReadSpec(app)
 	case *galgameCalendar:
 		api = galgameHandler.SetupCalendarSpec(app)
+	case *catalog:
+		api = catHandler.Setup(app, nil, nil)
+	case *catalogAdmin:
+		api = catHandler.SetupAdmin(app, nil, nil)
 	case *admin:
 		api = artHandler.SetupAdmin(app, artHandler.NewAdmin(nil, nil, nil, 0))
 	default:

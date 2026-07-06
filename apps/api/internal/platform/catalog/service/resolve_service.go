@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"time"
 
 	"api/internal/platform/catalog/repository"
 )
@@ -91,8 +92,10 @@ func (s *ResolveService) ResolveBatch(ctx context.Context, entityType int16, ids
 }
 
 // RedirectsSince exposes the keyset redirect feed for product-site cleanup
-// crons; the HTTP face arrives with the handler step.
-func (s *ResolveService) RedirectsSince(ctx context.Context, entityType *int16, cursor repository.RedirectCursor, limit int) ([]redirectFeedItem, repository.RedirectCursor, error) {
+// crons. The feed keys on merged_at, which the merge path always sets —
+// manually inserted redirect rows (not a supported path) would break the
+// cursor's monotonicity assumption.
+func (s *ResolveService) RedirectsSince(ctx context.Context, entityType *int16, cursor repository.RedirectCursor, limit int) ([]RedirectFeedItem, repository.RedirectCursor, error) {
 	if limit <= 0 || limit > 1000 {
 		limit = 1000
 	}
@@ -100,23 +103,26 @@ func (s *ResolveService) RedirectsSince(ctx context.Context, entityType *int16, 
 	if err != nil {
 		return nil, cursor, err
 	}
-	items := make([]redirectFeedItem, len(rows))
+	items := make([]RedirectFeedItem, len(rows))
 	next := cursor
 	for i, row := range rows {
-		items[i] = redirectFeedItem{
+		items[i] = RedirectFeedItem{
 			EntityType: row.EntityType,
 			OldID:      row.OldID,
 			CurrentID:  row.CurrentID,
 		}
 		if row.MergedAt != nil {
+			items[i].MergedAt = *row.MergedAt
 			next = repository.RedirectCursor{MergedAt: *row.MergedAt, EntityType: row.EntityType, OldID: row.OldID}
 		}
 	}
 	return items, next, nil
 }
 
-type redirectFeedItem struct {
-	EntityType int16 `json:"entity_type"`
-	OldID      int64 `json:"old_id"`
-	CurrentID  int64 `json:"current_id"`
+// RedirectFeedItem is one redirect edge as served by the feed.
+type RedirectFeedItem struct {
+	EntityType int16     `json:"entity_type"`
+	OldID      int64     `json:"old_id"`
+	CurrentID  int64     `json:"current_id"`
+	MergedAt   time.Time `json:"merged_at"`
 }

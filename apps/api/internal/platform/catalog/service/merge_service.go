@@ -47,6 +47,14 @@ func (s *MergeService) ProposeMerge(ctx context.Context, entityType int16, sourc
 	if src == dst {
 		return nil, ErrSameEntity
 	}
+	// Merge endpoints must be live entities: proposing against a
+	// soft-deleted (or nonexistent) row is a caller error, not a state to
+	// silently carry to execution time.
+	for _, id := range []int64{src, dst} {
+		if err := assertEntityAlive(s.db.WithContext(ctx), entityType, id); err != nil {
+			return nil, err
+		}
+	}
 	p := &model.CatalogMergeProposal{
 		EntityType:      entityType,
 		SourceEntityID:  src,
@@ -128,4 +136,48 @@ func appendNote(existing, entry string) string {
 // the named index/constraint.
 func isUniqueViolation(err error, name string) bool {
 	return err != nil && strings.Contains(err.Error(), name)
+}
+
+// ErrEntityNotLive rejects merge endpoints that are soft-deleted or missing.
+var ErrEntityNotLive = fmt.Errorf("catalog: entity is deleted or does not exist")
+
+// assertEntityAlive verifies the entity row exists and is not soft-deleted.
+// credit_name has no soft delete, so bare existence is the whole check there.
+func assertEntityAlive(db *gorm.DB, entityType int16, id int64) error {
+	table, ok := entityTableName(entityType)
+	if !ok {
+		return fmt.Errorf("catalog: unsupported entity type %d", entityType)
+	}
+	q := `SELECT count(*) FROM ` + table + ` WHERE id = ?`
+	if entityType != model.EntityTypeCreditName {
+		q += ` AND deleted_at IS NULL`
+	}
+	var count int64
+	if err := db.Raw(q, id).Scan(&count).Error; err != nil {
+		return err
+	}
+	if count == 0 {
+		return fmt.Errorf("%w: entity type %d id %d", ErrEntityNotLive, entityType, id)
+	}
+	return nil
+}
+
+// entityTableName maps entity type constants to base tables (the service-side
+// twin of the repository lookup, kept here to avoid exporting it).
+func entityTableName(entityType int16) (string, bool) {
+	switch entityType {
+	case model.EntityTypePerson:
+		return "catalog_person", true
+	case model.EntityTypeCreditName:
+		return "catalog_credit_name", true
+	case model.EntityTypeOrg:
+		return "catalog_org", true
+	case model.EntityTypeLabel:
+		return "catalog_label", true
+	case model.EntityTypeCharacter:
+		return "catalog_character", true
+	case model.EntityTypeWork:
+		return "catalog_work", true
+	}
+	return "", false
 }

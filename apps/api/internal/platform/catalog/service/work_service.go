@@ -49,11 +49,12 @@ type ClaimWorkParams struct {
 // existing registry row by external anchors FIRST and claim it — a claim
 // must never mint a second identity. Idempotent: the same (medium, site,
 // product_work_id) always returns the same work.
-func (s *WorkService) ClaimWork(ctx context.Context, params ClaimWorkParams) (int64, error) {
+func (s *WorkService) ClaimWork(ctx context.Context, params ClaimWorkParams) (int64, bool, error) {
 	if params.OLang == "" {
 		params.OLang = "ja"
 	}
 	var workID int64
+	var created bool
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// (1) Idempotency: this product work already claimed a row.
 		existing, err := repository.FindClaimed(tx, params.MediumID, params.Site, params.ProductWorkID)
@@ -143,7 +144,8 @@ func (s *WorkService) ClaimWork(ctx context.Context, params ClaimWorkParams) (in
 			return err
 		}
 		workID = w.ID
+		created = true
 		return nil
 	})
-	return workID, err
+	return workID, created, err
 }

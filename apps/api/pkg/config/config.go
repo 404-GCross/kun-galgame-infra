@@ -38,6 +38,16 @@ type Config struct {
 	ArtifactsDatabase DatabaseConfig
 	ArtifactS3        S3Config
 	ArtifactService   ArtifactServiceConfig
+
+	CatalogService CatalogServiceConfig
+}
+
+// CatalogServiceConfig holds catalog-service bind configuration. The catalog
+// service (cmd/catalog) serves the S2S resolve/redirects/claim face and the
+// admin review queues; see docs in refs/docs/nextmoe-draft/17.
+type CatalogServiceConfig struct {
+	Host string // Bind address
+	Port int    // Bind port
 }
 
 // ArtifactServiceConfig holds artifact-service-specific configuration. See
@@ -427,6 +437,14 @@ func Load() (*Config, error) {
 		ReclaimMinIdle:     time.Duration(getEnvInt64("KUN_ARTIFACT_RECLAIM_MIN_IDLE_SECONDS", 3600)) * time.Second,
 		CleanupAccessKey:   getEnv("KUN_ARTIFACT_S3_CLEANUP_ACCESS_KEY", ""),
 		CleanupSecretKey:   getEnv("KUN_ARTIFACT_S3_CLEANUP_SECRET_KEY", ""),
+	}
+
+	// Catalog service config. Port 9281 = next free slot after oauth 9277 /
+	// image 9278 / artifact 9279 / galgame 9280.
+	catalogPort, _ := strconv.Atoi(getEnv("KUN_CATALOG_PORT", "9281"))
+	cfg.CatalogService = CatalogServiceConfig{
+		Host: getEnv("KUN_CATALOG_HOST", "127.0.0.1"),
+		Port: catalogPort,
 	}
 
 	// Validate required fields
