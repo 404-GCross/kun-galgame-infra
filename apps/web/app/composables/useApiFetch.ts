@@ -1,4 +1,5 @@
 import type { UseFetchOptions } from '#app'
+import { resolveApiBase, type ApiService } from './useApi'
 
 // SSR-safe data fetching, mirroring kungal's useKunFetch pattern but for the
 // admin's Bearer-token auth. Use it for GET reads that should render on first
@@ -25,16 +26,11 @@ interface ApiResponse<T> {
 
 export const useApiFetch = <T>(
   url: string | (() => string),
-  options: UseFetchOptions<ApiResponse<T>, T | null> = {}
+  options: UseFetchOptions<ApiResponse<T>, T | null> = {},
+  service: ApiService = 'oauth'
 ) => {
-  const config = useRuntimeConfig()
-  // Dual base: SSR (in-container) uses the docker service URL; browser uses
-  // the host-port public URL. apiBaseSsr is empty outside docker → falls back.
-  const baseURL =
-    (import.meta.server && config.apiBaseSsr
-      ? (config.apiBaseSsr as string)
-      : (config.public.apiBase as string)) ||
-    'http://127.0.0.1:9277/api/v1'
+  // Dual base per service (oauth default / catalog) — see resolveApiBase.
+  const baseURL = resolveApiBase(service)
   const accessToken = useCookie('access_token')
 
   return useFetch(url, {

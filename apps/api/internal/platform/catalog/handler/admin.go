@@ -316,10 +316,17 @@ func (s *AdminServer) confirmRef(ctx context.Context, in *confirmRefInput) (*ref
 	return &refActionOutput{Body: okEnvelope(refActionData{Done: true})}, nil
 }
 
+// Fields spelled out (not an embedded refKeyBody): Huma's schema reflection
+// does not flatten anonymous embedded structs, which silently produced a
+// body schema with ONLY `reason` and rejected every key field as an
+// unexpected property (caught live in the step-07 smoke).
 type rejectRefInput struct {
 	Body struct {
-		refKeyBody
-		Reason string `json:"reason" minLength:"1" doc:"Why the pairing is wrong — recorded as permanent negative knowledge"`
+		EntityType int16  `json:"entity_type"`
+		EntityID   int64  `json:"entity_id"`
+		SourceID   int16  `json:"source_id"`
+		ExternalID string `json:"external_id" minLength:"1"`
+		Reason     string `json:"reason" minLength:"1" doc:"Why the pairing is wrong — recorded as permanent negative knowledge"`
 	}
 }
 

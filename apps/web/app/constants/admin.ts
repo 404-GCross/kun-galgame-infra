@@ -29,6 +29,16 @@ export const SIDEBAR_MENU: SidebarItem[] = [
       { icon: 'lucide:sliders-horizontal', label: '存储配置', to: '/artifacts/config', renOnly: true },
     ],
   },
+  {
+    icon: 'lucide:library',
+    label: '目录人审',
+    adminOnly: true,
+    children: [
+      { icon: 'lucide:git-compare', label: '候选', to: '/catalog/candidates', adminOnly: true },
+      { icon: 'lucide:git-merge', label: '合并提案', to: '/catalog/proposals', adminOnly: true },
+      { icon: 'lucide:link', label: '外链确认', to: '/catalog/refs', adminOnly: true },
+    ],
+  },
   { icon: 'lucide:user', label: '个人信息', to: '/profile' },
 ]
 

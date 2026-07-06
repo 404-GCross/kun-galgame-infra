@@ -67,10 +67,18 @@ export default defineNuxtConfig({
     // Set NUXT_API_BASE_SSR=http://oauth:9277/api/v1 in docker; empty in local
     // dev (the dual-base reader falls back to public.apiBase).
     apiBaseSsr: process.env.NUXT_API_BASE_SSR || '',
+    // Same dual-base split for the catalog service (a separate binary on its
+    // own port). Set NUXT_CATALOG_API_BASE_SSR=http://catalog:9281/api/v1 in
+    // docker; empty in local dev.
+    catalogApiBaseSsr: process.env.NUXT_CATALOG_API_BASE_SSR || '',
     public: {
       apiBase:
         process.env.KUN_VISUAL_NOVEL_NUXT_PUBLIC_API_BASE ||
         'http://127.0.0.1:9277/api/v1',
+      // catalog service base (review queues live on cmd/catalog, port 9281).
+      catalogApiBase:
+        process.env.KUN_VISUAL_NOVEL_NUXT_PUBLIC_CATALOG_API_BASE ||
+        'http://127.0.0.1:9281/api/v1',
       // image_service public CDN base; override via env in prod.
       imageCdnBase:
         process.env.KUN_VISUAL_NOVEL_NUXT_PUBLIC_IMAGE_CDN_BASE ||

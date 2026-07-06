@@ -1,6 +1,7 @@
 package service
 
 import (
+	"fmt"
 	"testing"
 
 	"api/internal/platform/catalog/model"
@@ -146,11 +147,14 @@ func TestConfirmAndRejectRefs(t *testing.T) {
 	addExternalRef(t, model.EntityTypePerson, contender.ID, 3, "bgm-9", model.LinkKindProbable)
 	addExternalRef(t, model.EntityTypePerson, contender.ID, 2, "s77", model.LinkKindProbable)
 
-	// Confirming the contender's probable for an already-exact identity → conflict.
+	// Confirming the contender's probable for an already-exact identity →
+	// conflict, and the error NAMES the holder (the lookup must run outside
+	// the aborted transaction — regression guard for the holder=0 bug).
 	err := testQueues.ConfirmRef(ctx, RefKey{
 		EntityType: model.EntityTypePerson, EntityID: contender.ID, SourceID: 3, ExternalID: "bgm-9",
 	}, 9)
 	require.ErrorIs(t, err, ErrExactTaken)
+	assert.Contains(t, err.Error(), fmt.Sprintf("held by entity %d", holder.ID))
 
 	// A free identity promotes cleanly with verifier bookkeeping.
 	require.NoError(t, testQueues.ConfirmRef(ctx, RefKey{

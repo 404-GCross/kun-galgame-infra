@@ -300,7 +300,7 @@ type RefKey struct {
 // only path up — doc 17 R8). Losing to the exact partial unique returns
 // ErrExactTaken with the current holder attached.
 func (s *AdminQueueService) ConfirmRef(ctx context.Context, key RefKey, verifiedBy int64) error {
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var ref model.CatalogExternalRef
 		err := tx.Raw(`SELECT * FROM catalog_external_ref
 		                WHERE entity_type = ? AND entity_id = ? AND source_id = ? AND external_id = ? FOR UPDATE`,
@@ -315,22 +315,22 @@ func (s *AdminQueueService) ConfirmRef(ctx context.Context, key RefKey, verified
 			return fmt.Errorf("%w: ref is not probable (kind %d)", ErrProposalState, ref.LinkKind)
 		}
 		now := time.Now()
-		err = tx.Model(&model.CatalogExternalRef{}).
+		return tx.Model(&model.CatalogExternalRef{}).
 			Where("entity_type = ? AND entity_id = ? AND source_id = ? AND external_id = ?",
 				key.EntityType, key.EntityID, key.SourceID, key.ExternalID).
 			Updates(map[string]any{"link_kind": model.LinkKindExact, "verified_by": verifiedBy, "verified_at": now}).Error
-		if err != nil {
-			if isUniqueViolation(err, "uq_catalog_external_ref_exact") {
-				var holder int64
-				_ = tx.Raw(`SELECT entity_id FROM catalog_external_ref
-				             WHERE source_id = ? AND external_id = ? AND entity_type = ? AND link_kind = ?`,
-					key.SourceID, key.ExternalID, key.EntityType, model.LinkKindExact).Scan(&holder).Error
-				return fmt.Errorf("%w: held by entity %d", ErrExactTaken, holder)
-			}
-			return err
-		}
-		return nil
 	})
+	if isUniqueViolation(err, "uq_catalog_external_ref_exact") {
+		// The holder lookup must run OUTSIDE the failed transaction — after
+		// a unique violation Postgres aborts the tx and ignores every
+		// further command in it (caught live: the holder read back as 0).
+		var holder int64
+		_ = s.db.WithContext(ctx).Raw(`SELECT entity_id FROM catalog_external_ref
+		     WHERE source_id = ? AND external_id = ? AND entity_type = ? AND link_kind = ?`,
+			key.SourceID, key.ExternalID, key.EntityType, model.LinkKindExact).Scan(&holder).Error
+		return fmt.Errorf("%w: held by entity %d", ErrExactTaken, holder)
+	}
+	return err
 }
 
 // RejectRef removes a wrong assertion and records it as first-class negative

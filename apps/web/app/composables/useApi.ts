@@ -21,14 +21,33 @@ interface ApiError {
   message: string
 }
 
-export const useApi = () => {
+// Which backend a composable call targets: the OAuth/admin API (default) or
+// the catalog service (a separate binary on its own port). Both share the
+// Bearer session and the house envelope.
+export type ApiService = 'oauth' | 'catalog'
+
+export const resolveApiBase = (service: ApiService = 'oauth'): string => {
   const config = useRuntimeConfig()
   // Dual base: SSR (in-container) uses the docker service URL; browser uses
-  // the host-port public URL. apiBaseSsr is empty outside docker → falls back.
-  const baseUrl =
+  // the host-port public URL. The Ssr entries are empty outside docker →
+  // fall back to the public base.
+  if (service === 'catalog') {
+    return (
+      (import.meta.server && config.catalogApiBaseSsr
+        ? (config.catalogApiBaseSsr as string)
+        : (config.public.catalogApiBase as string)) ||
+      'http://127.0.0.1:9281/api/v1'
+    )
+  }
+  return (
     (import.meta.server && config.apiBaseSsr
       ? (config.apiBaseSsr as string)
-      : config.public.apiBase) || 'http://127.0.0.1:9277/api/v1'
+      : (config.public.apiBase as string)) || 'http://127.0.0.1:9277/api/v1'
+  )
+}
+
+export const useApi = (service: ApiService = 'oauth') => {
+  const baseUrl = resolveApiBase(service)
   const accessToken = useCookie('access_token')
 
   const getAuthHeaders = (): Record<string, string> => {

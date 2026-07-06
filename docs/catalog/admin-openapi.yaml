@@ -520,11 +520,27 @@ components:
           format: uri
           readOnly: true
           type: string
+        entity_id:
+          format: int64
+          type: integer
+        entity_type:
+          format: int32
+          type: integer
+        external_id:
+          minLength: 1
+          type: string
         reason:
           description: Why the pairing is wrong — recorded as permanent negative knowledge
           minLength: 1
           type: string
+        source_id:
+          format: int32
+          type: integer
       required:
+        - entity_type
+        - entity_id
+        - source_id
+        - external_id
         - reason
       type: object
 info:

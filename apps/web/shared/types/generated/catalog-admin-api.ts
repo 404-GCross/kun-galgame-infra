@@ -384,8 +384,15 @@ export interface components {
              * @example https://example.com/RejectRefInputBody.json
              */
             readonly $schema?: string;
+            /** Format: int64 */
+            entity_id: number;
+            /** Format: int32 */
+            entity_type: number;
+            external_id: string;
             /** @description Why the pairing is wrong — recorded as permanent negative knowledge */
             reason: string;
+            /** Format: int32 */
+            source_id: number;
         };
     };
     responses: never;
