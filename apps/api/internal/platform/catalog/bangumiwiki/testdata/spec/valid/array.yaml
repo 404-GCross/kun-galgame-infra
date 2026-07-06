@@ -1,0 +1,7 @@
+type: ""
+data:
+  - key: A
+    array: true
+    values:
+      - { v: "a" }
+      - { v: "b" }

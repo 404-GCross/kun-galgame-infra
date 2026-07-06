@@ -1,0 +1,4 @@
+{{Infobox
+|a=b
+|d=E
+}}

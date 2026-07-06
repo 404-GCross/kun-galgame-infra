@@ -1,16 +1,18 @@
 // Package bangumiwiki is the single entry point for parsing Bangumi wiki
-// infobox text. Ingest pipelines import this package rather than the upstream
-// github.com/bangumi/wiki-parser-go, so the upstream dependency (and any
-// future swap of it) stays contained here.
+// infobox text. The parser is an IN-HOUSE implementation (parse.go), written
+// black-box from bangumi/wiki-syntax-spec and verified bug-for-bug compatible
+// with the reference github.com/bangumi/wiki-parser-go v0.0.2 by full-dump
+// differential testing (2026-06-30 dump, zero divergence). Behavior is
+// permanently pinned by two regression suites: the wiki-syntax-spec snapshot
+// (testdata/spec) and dump-sampled golden cases (testdata/golden).
+//
+// The former AGPL dependency is gone as of step 08 — this package may be
+// imported by cmd/* binaries.
 package bangumiwiki
 
-import (
-	"fmt"
+import "fmt"
 
-	wiki "github.com/bangumi/wiki-parser-go"
-)
-
-// Infobox is a parsed "{{Infobox ...}}" block. It mirrors the upstream
+// Infobox is a parsed "{{Infobox ...}}" block. It mirrors the reference
 // parser's output one-to-one.
 type Infobox struct {
 	// Type is the template name following "{{Infobox", e.g. "Game".
@@ -36,11 +38,10 @@ type Item struct {
 }
 
 // Parse parses infobox source text. It never panics: malformed input comes
-// back as an error. Following the upstream parser, empty and whitespace-only
-// input is not an error — it yields a zero Infobox.
+// back as an error. Following the reference parser, empty and
+// whitespace-only input is not an error — it yields a zero Infobox.
 func Parse(infobox string) (box Infobox, err error) {
-	// The upstream parser is trusted not to panic on well-formed grammar, but
-	// it processes arbitrary user-authored wiki text; a panic here must
+	// The parser handles arbitrary user-authored wiki text; a panic must
 	// surface as parse_error data, never crash an ingest batch.
 	defer func() {
 		if r := recover(); r != nil {
@@ -49,29 +50,9 @@ func Parse(infobox string) (box Infobox, err error) {
 		}
 	}()
 
-	w, perr := wiki.Parse(infobox)
+	box, perr := parseInfobox(infobox)
 	if perr != nil {
 		return Infobox{}, fmt.Errorf("bangumiwiki: %w", perr)
 	}
-	return fromUpstream(w), nil
-}
-
-// fromUpstream copies the upstream result into this package's types so the
-// upstream library never leaks into caller signatures.
-func fromUpstream(w wiki.Wiki) Infobox {
-	box := Infobox{Type: w.Type}
-	if len(w.Fields) > 0 {
-		box.Fields = make([]Field, 0, len(w.Fields))
-	}
-	for _, f := range w.Fields {
-		field := Field{Key: f.Key, Value: f.Value, Array: f.Array, Null: f.Null}
-		if len(f.Values) > 0 {
-			field.Items = make([]Item, 0, len(f.Values))
-			for _, item := range f.Values {
-				field.Items = append(field.Items, Item{Key: item.Key, Value: item.Value})
-			}
-		}
-		box.Fields = append(box.Fields, field)
-	}
-	return box
+	return box, nil
 }

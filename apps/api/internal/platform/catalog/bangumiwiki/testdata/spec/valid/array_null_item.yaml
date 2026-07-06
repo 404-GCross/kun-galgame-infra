@@ -1,0 +1,9 @@
+type: ""
+data:
+  - { key: A, value: "" }
+  - { key: b, value: "" }
+  - key: d
+    array: true
+    values:
+      - { v: "1" }
+      - { v: "" }

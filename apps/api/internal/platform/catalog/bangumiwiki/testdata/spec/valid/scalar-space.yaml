@@ -1,0 +1,4 @@
+type: ""
+data:
+  - { key: "A", value: "b" }
+  - { key: "d", value: "E" }
