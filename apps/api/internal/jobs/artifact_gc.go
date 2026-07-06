@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"api/internal/infrastructure/database"
+	"api/internal/platform/artifact/model"
 	"api/internal/platform/artifact/repository"
 	"api/internal/platform/artifact/storage"
 	"api/pkg/config"
@@ -121,6 +122,16 @@ func RunArtifactGC(ctx context.Context, cfg *config.Config, opts ArtifactGCOpts)
 		if opts.DryRun {
 			softDeleted++
 			continue
+		}
+		// A soft-deleted row still in `uploading` (e.g. a downstream aborted an
+		// upload mid-flight — letmoe's Abort soft-deletes the artifact) still owns
+		// an open B2 multipart upload whose already-stored parts keep accruing
+		// storage cost. Abort it before dropping the object, mirroring phase 1's
+		// orphan handling. warn-only: the object delete + row drop proceed anyway.
+		if a.UploadID != "" && a.Status == model.StatusUploading {
+			if err := store.AbortMultipart(ctx, a.FileKey, a.UploadID); err != nil {
+				slog.Warn("artifact-gc: abort multipart (soft-deleted)", "uuid", a.UUID, "err", err)
+			}
 		}
 		if err := store.Delete(ctx, a.FileKey); err != nil {
 			slog.Warn("artifact-gc: delete soft-deleted object", "uuid", a.UUID, "err", err)
