@@ -1,0 +1,258 @@
+package seed
+
+import (
+	"fmt"
+	"sort"
+	"strings"
+	"unicode"
+
+	"api/internal/platform/catalog/bangumicommon"
+
+	"gopkg.in/yaml.v3"
+)
+
+// This file is the DETERMINISTIC generation logic behind the checked-in role
+// vocabulary artifacts (data/roles.gen.yaml + data/bangumi_role_map.gen.yaml).
+// It is executed only by seed/gen (to regenerate the artifacts) and by the
+// drift test (to assert the artifacts match this logic); the migrate path
+// reads the checked-in artifacts and never re-deduplicates at runtime, so
+// role IDs are frozen once generated. Refreshing the vocabulary = re-run the
+// generator, review the diff, keep changes additive.
+
+// RoleSeed is one row of roles.gen.yaml.
+type RoleSeed struct {
+	ID       int64  `yaml:"id"`
+	Key      string `yaml:"key"`
+	Category string `yaml:"category"`
+	NameEN   string `yaml:"name_en"`
+	NameCN   string `yaml:"name_cn"`
+	NameJA   string `yaml:"name_ja"`
+}
+
+// RoleMapSeed is one row of bangumi_role_map.gen.yaml. SourceRole is
+// "<subject_type>:<position_id>" (e.g. "4:1001"); Note keeps the original
+// Bangumi cn name of that position.
+type RoleMapSeed struct {
+	SourceRole string `yaml:"source_role"`
+	RoleID     int64  `yaml:"role_id"`
+	Note       string `yaml:"note"`
+}
+
+// GeneratedRoles bundles the two artifacts' content.
+type GeneratedRoles struct {
+	Roles    []RoleSeed
+	Mappings []RoleMapSeed
+}
+
+// roleIDBase is where generated role IDs start; 1-99 are reserved for future
+// hand-curated entries.
+const roleIDBase = 100
+
+// GenerateBangumiRoles derives the unified role vocabulary from the embedded
+// bangumi/common staff-position snapshot:
+//
+//   - the 246 (subject_type, position) entries are deduplicated by the
+//     normalized (EN, CN) name pair, merging same-named cross-media positions
+//     into one role;
+//   - key = deterministic slug of EN (of CN when EN is empty — 39 book/anime
+//     positions have no EN name); slug collisions (same EN, different CN) get
+//     -2/-3 suffixes in normalized-name order;
+//   - category / name_en / name_cn / name_ja = first NON-EMPTY value in walk
+//     order (subject_type asc, position asc) — plain first-occurrence would
+//     drop real data (e.g. "producer" first occurs in music with no category
+//     and no jp name, while the game occurrence carries both);
+//   - IDs are assigned from 100 in key order;
+//   - every (subject_type, position) gets a mapping row: 246-row coverage.
+//
+// Everything is order-stable, so the output is byte-reproducible.
+func GenerateBangumiRoles() (GeneratedRoles, error) {
+	staffs, err := bangumicommon.LoadStaffPositions()
+	if err != nil {
+		return GeneratedRoles{}, err
+	}
+
+	type nameKey struct{ en, cn string }
+	type occurrence struct {
+		subjectType, position int
+		pos                   bangumicommon.StaffPosition
+	}
+	type roleGroup struct {
+		key         nameKey
+		occurrences []occurrence
+	}
+
+	// Walk in (subject_type asc, position asc) order — the deterministic
+	// "first occurrence" order every merge rule below refers to.
+	groups := make(map[nameKey]*roleGroup)
+	var groupOrder []*roleGroup
+	var walk []occurrence
+	for _, st := range sortedKeys(staffs) {
+		for _, pid := range sortedKeys(staffs[st]) {
+			occ := occurrence{subjectType: st, position: pid, pos: staffs[st][pid]}
+			walk = append(walk, occ)
+			k := nameKey{en: normalizeName(occ.pos.EN), cn: normalizeName(occ.pos.CN)}
+			g, ok := groups[k]
+			if !ok {
+				g = &roleGroup{key: k}
+				groups[k] = g
+				groupOrder = append(groupOrder, g)
+			}
+			g.occurrences = append(g.occurrences, occ)
+		}
+	}
+
+	// Merge each group into one role (ID assigned later).
+	firstNonEmpty := func(g *roleGroup, get func(bangumicommon.StaffPosition) string) string {
+		for _, occ := range g.occurrences {
+			if v := strings.TrimSpace(get(occ.pos)); v != "" {
+				return v
+			}
+		}
+		return ""
+	}
+	roleByGroup := make(map[*roleGroup]*RoleSeed)
+	var roles []*RoleSeed
+	for _, g := range groupOrder {
+		r := &RoleSeed{
+			NameEN: firstNonEmpty(g, func(p bangumicommon.StaffPosition) string { return p.EN }),
+			NameCN: firstNonEmpty(g, func(p bangumicommon.StaffPosition) string { return p.CN }),
+			NameJA: firstNonEmpty(g, func(p bangumicommon.StaffPosition) string { return p.JP }),
+			Category: firstNonEmpty(g, func(p bangumicommon.StaffPosition) string {
+				if len(p.Categories) == 0 {
+					return ""
+				}
+				return p.Categories[0].EN
+			}),
+		}
+		roleByGroup[g] = r
+		roles = append(roles, r)
+	}
+
+	// Keys: slug of EN, falling back to CN; disambiguate same-slug groups
+	// with -2/-3 suffixes in normalized (EN, CN) order.
+	bySlug := make(map[string][]*roleGroup)
+	for _, g := range groupOrder {
+		src := g.key.en
+		if src == "" {
+			src = g.key.cn
+		}
+		s := slugify(src)
+		if s == "" {
+			return GeneratedRoles{}, fmt.Errorf("catalog seed: empty slug for role group en=%q cn=%q", g.key.en, g.key.cn)
+		}
+		bySlug[s] = append(bySlug[s], g)
+	}
+	for s, gs := range bySlug {
+		sort.Slice(gs, func(i, j int) bool {
+			if gs[i].key.en != gs[j].key.en {
+				return gs[i].key.en < gs[j].key.en
+			}
+			return gs[i].key.cn < gs[j].key.cn
+		})
+		for i, g := range gs {
+			if i == 0 {
+				roleByGroup[g].Key = s
+			} else {
+				roleByGroup[g].Key = fmt.Sprintf("%s-%d", s, i+1)
+			}
+		}
+	}
+	seen := make(map[string]bool, len(roles))
+	for _, r := range roles {
+		if seen[r.Key] {
+			return GeneratedRoles{}, fmt.Errorf("catalog seed: duplicate role key %q after disambiguation", r.Key)
+		}
+		seen[r.Key] = true
+	}
+
+	// IDs: key order, from roleIDBase.
+	sort.Slice(roles, func(i, j int) bool { return roles[i].Key < roles[j].Key })
+	for i, r := range roles {
+		r.ID = roleIDBase + int64(i)
+	}
+
+	// Mappings: one row per (subject_type, position) in walk order.
+	mappings := make([]RoleMapSeed, 0, len(walk))
+	for _, occ := range walk {
+		k := nameKey{en: normalizeName(occ.pos.EN), cn: normalizeName(occ.pos.CN)}
+		mappings = append(mappings, RoleMapSeed{
+			SourceRole: fmt.Sprintf("%d:%d", occ.subjectType, occ.position),
+			RoleID:     roleByGroup[groups[k]].ID,
+			Note:       occ.pos.CN,
+		})
+	}
+
+	out := GeneratedRoles{Roles: make([]RoleSeed, len(roles)), Mappings: mappings}
+	for i, r := range roles {
+		out.Roles[i] = *r
+	}
+	return out, nil
+}
+
+// normalizeName is the dedup normalization: trim + lower. The design asks for
+// NFKC + lower + trim; a stdlib NFKC does not exist and importing x/text
+// would change go.mod, so NFKC is elided after verifying it is an identity
+// transform on every EN/CN value of the frozen snapshot (the single
+// NFKC-unstable value in the data is a JP name, which never enters the dedup
+// key). Revisit if a snapshot refresh introduces width-variant EN/CN names —
+// the drift test will flag any refresh loudly.
+func normalizeName(s string) string {
+	return strings.ToLower(strings.TrimSpace(s))
+}
+
+// slugify lowercases and keeps letters/digits (Latin and CJK alike), turning
+// every other run (spaces, '/', '・', '.', ...) into a single hyphen.
+func slugify(s string) string {
+	var b strings.Builder
+	pendingHyphen := false
+	for _, r := range strings.ToLower(strings.TrimSpace(s)) {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			if pendingHyphen && b.Len() > 0 {
+				b.WriteByte('-')
+			}
+			pendingHyphen = false
+			b.WriteRune(r)
+		} else {
+			pendingHyphen = true
+		}
+	}
+	return b.String()
+}
+
+func sortedKeys[V any](m map[int]V) []int {
+	keys := make([]int, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Ints(keys)
+	return keys
+}
+
+const genHeader = `# Code generated by internal/platform/catalog/seed/gen from the embedded
+# bangumicommon snapshot. DO NOT EDIT.
+# Role IDs are frozen once generated: refresh = re-run the generator, review
+# the diff, keep changes additive (see seed/rolegen.go).
+`
+
+// RenderRolesYAML renders roles.gen.yaml byte-exactly (shared by the
+// generator and the drift test).
+func RenderRolesYAML(roles []RoleSeed) ([]byte, error) {
+	return renderYAML(struct {
+		Roles []RoleSeed `yaml:"roles"`
+	}{roles})
+}
+
+// RenderRoleMapYAML renders bangumi_role_map.gen.yaml byte-exactly.
+func RenderRoleMapYAML(mappings []RoleMapSeed) ([]byte, error) {
+	return renderYAML(struct {
+		Mappings []RoleMapSeed `yaml:"mappings"`
+	}{mappings})
+}
+
+func renderYAML(doc any) ([]byte, error) {
+	body, err := yaml.Marshal(doc)
+	if err != nil {
+		return nil, fmt.Errorf("catalog seed: render yaml: %w", err)
+	}
+	return append([]byte(genHeader), body...), nil
+}

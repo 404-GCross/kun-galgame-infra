@@ -14,6 +14,7 @@ type Config struct {
 	Server          ServerConfig
 	Database        DatabaseConfig
 	GalgameDatabase DatabaseConfig
+	CatalogDatabase DatabaseConfig
 	ImagesDatabase  DatabaseConfig
 	Redis           RedisConfig
 	JWT             JWTConfig
@@ -262,6 +263,17 @@ func Load() (*Config, error) {
 		DBName:   getEnv("KUN_GALGAME_PG_DATABASE", "kun_galgame_wiki"),
 		SSLMode:  getEnv("KUN_GALGAME_PG_SSLMODE", cfg.Database.SSLMode),
 		Timezone: getEnv("KUN_GALGAME_PG_TIMEZONE", cfg.Database.Timezone),
+	}
+
+	// Catalog database config (defaults to same server, different db name)
+	cfg.CatalogDatabase = DatabaseConfig{
+		Host:     getEnv("KUN_CATALOG_PG_HOST", cfg.Database.Host),
+		Port:     getEnv("KUN_CATALOG_PG_PORT", cfg.Database.Port),
+		User:     getEnv("KUN_CATALOG_PG_USER", cfg.Database.User),
+		Password: getEnv("KUN_CATALOG_PG_PASSWORD", cfg.Database.Password),
+		DBName:   getEnv("KUN_CATALOG_PG_DATABASE", "kun_catalog"),
+		SSLMode:  getEnv("KUN_CATALOG_PG_SSLMODE", cfg.Database.SSLMode),
+		Timezone: getEnv("KUN_CATALOG_PG_TIMEZONE", cfg.Database.Timezone),
 	}
 
 	// Redis config
