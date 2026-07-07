@@ -31,13 +31,16 @@ export const resolveApiBase = (service: ApiService = 'oauth'): string => {
   // Dual base: SSR (in-container) uses the docker service URL; browser uses
   // the host-port public URL. The Ssr entries are empty outside docker →
   // fall back to the public base.
+  // Catalog uses ONE base on both sides: the same-origin /catalog-proxy
+  // server route. SSR resolves the relative URL through Nitro's internal
+  // fetch (no network hop) and the route forwards to catalogApiBaseSsr, so
+  // the docker/dev target stays server-side while useFetch derives an
+  // IDENTICAL auto-key on server and client — a split base (docker URL on
+  // SSR, proxy path in the browser) made the keys differ, so the client
+  // couldn't adopt the SSR payload and hydrated from an empty default
+  // ("共 0 条候选" hydration mismatch).
   if (service === 'catalog') {
-    return (
-      (import.meta.server && config.catalogApiBaseSsr
-        ? (config.catalogApiBaseSsr as string)
-        : (config.public.catalogApiBase as string)) ||
-      'http://127.0.0.1:9281/api/v1'
-    )
+    return (config.public.catalogApiBase as string) || '/catalog-proxy'
   }
   return (
     (import.meta.server && config.apiBaseSsr
