@@ -46,11 +46,13 @@ type ReleaseBrief struct {
 	Anchors   []AnchorRef `json:"anchors"`
 }
 
-// AnchorRef is one external identity anchor.
+// AnchorRef is one external identity anchor. MatchedBy is the rule string that
+// asserted it, surfaced verbatim for provenance.
 type AnchorRef struct {
 	Source     string `json:"source"`
 	ExternalID string `json:"external_id"`
 	LinkKind   int16  `json:"link_kind" doc:"0=exact 1=probable 2=related"`
+	MatchedBy  string `json:"matched_by,omitempty"`
 }
 
 // WorkLabel is one attribution edge (organizational responsibility, distinct

@@ -33,11 +33,14 @@ type ReleaseDetail struct {
 	Anchors []AnchorDetail
 }
 
-// AnchorDetail is one external anchor with the source key resolved.
+// AnchorDetail is one external anchor with the source key resolved. MatchedBy
+// is the rule string that asserted it — the provenance the internal browser
+// surfaces verbatim.
 type AnchorDetail struct {
 	Source     string
 	ExternalID string
 	LinkKind   int16
+	MatchedBy  string
 }
 
 // LabelAttribution is one work↔label edge with the label denormalized.
@@ -83,7 +86,19 @@ func (s *ReadService) WorkByAnchor(ctx context.Context, sourceKey, externalID st
 			return nil, err
 		}
 	}
+	return s.loadWorkDetail(ctx, workID)
+}
 
+// WorkByID loads the same bundle as WorkByAnchor, addressed by catalog work id
+// (the internal browser's drill-down entry). 404 semantics identical.
+func (s *ReadService) WorkByID(ctx context.Context, workID int64) (*WorkDetail, error) {
+	return s.loadWorkDetail(ctx, workID)
+}
+
+// loadWorkDetail assembles a work's titles, releases (with anchors) and label
+// attributions. Returns ErrWorkNotFound if the work does not exist.
+func (s *ReadService) loadWorkDetail(ctx context.Context, workID int64) (*WorkDetail, error) {
+	db := s.db.WithContext(ctx)
 	var work model.CatalogWork
 	if err := db.First(&work, workID).Error; err != nil {
 		if stderrors.Is(err, gorm.ErrRecordNotFound) {
@@ -112,8 +127,9 @@ func (s *ReadService) WorkByAnchor(ctx context.Context, sourceKey, externalID st
 			Source     string
 			ExternalID string
 			LinkKind   int16
+			MatchedBy  string
 		}
-		if err := db.Raw(`SELECT r.entity_id, s.key AS source, r.external_id, r.link_kind
+		if err := db.Raw(`SELECT r.entity_id, s.key AS source, r.external_id, r.link_kind, r.matched_by
 			FROM catalog_external_ref r JOIN catalog_source s ON s.id = r.source_id
 			WHERE r.entity_type = ? AND r.entity_id IN ?
 			ORDER BY r.link_kind, s.key`, model.EntityTypeRelease, relIDs).Scan(&arows).Error; err != nil {
@@ -121,7 +137,7 @@ func (s *ReadService) WorkByAnchor(ctx context.Context, sourceKey, externalID st
 		}
 		for _, a := range arows {
 			anchorsByRelease[a.EntityID] = append(anchorsByRelease[a.EntityID],
-				AnchorDetail{Source: a.Source, ExternalID: a.ExternalID, LinkKind: a.LinkKind})
+				AnchorDetail{Source: a.Source, ExternalID: a.ExternalID, LinkKind: a.LinkKind, MatchedBy: a.MatchedBy})
 		}
 	}
 	for _, r := range releases {
@@ -134,6 +150,45 @@ func (s *ReadService) WorkByAnchor(ctx context.Context, sourceKey, externalID st
 		return nil, err
 	}
 	return detail, nil
+}
+
+// LabelWork is one work attributed to a label (circle→works reverse lookup).
+type LabelWork struct {
+	WorkID        int64  `gorm:"column:work_id"`
+	DisplayName   string `gorm:"column:display_name"`
+	MediumID      int16  `gorm:"column:medium_id"`
+	ContentRating int16  `gorm:"column:content_rating"`
+	Status        int16  `gorm:"column:status"`
+	Kind          int16  `gorm:"column:kind"` // attribution edge kind
+}
+
+// LabelHead is a label's own identity (returned alongside its works so the
+// reverse-lookup page is self-sufficient on direct navigation).
+type LabelHead struct {
+	ID          int64  `gorm:"column:id"`
+	DisplayName string `gorm:"column:display_name"`
+	Kind        int16  `gorm:"column:kind"`
+}
+
+// LabelWorks returns a label's own identity plus the works attributed to it
+// (via the attribution edge), offset-paginated. head is nil if the label does
+// not exist; total is the full count for the label.
+func (s *ReadService) LabelWorks(ctx context.Context, labelID int64, limit, offset int) (head *LabelHead, items []LabelWork, total int64, err error) {
+	db := s.db.WithContext(ctx)
+	var h LabelHead
+	if err = db.Raw(`SELECT id, display_name, kind FROM catalog_label WHERE id = ?`, labelID).Scan(&h).Error; err != nil {
+		return nil, nil, 0, err
+	}
+	if h.ID != 0 {
+		head = &h
+	}
+	if err = db.Raw(`SELECT count(*) FROM catalog_work_label WHERE label_id = ?`, labelID).Scan(&total).Error; err != nil {
+		return nil, nil, 0, err
+	}
+	err = db.Raw(`SELECT w.id AS work_id, w.display_name, w.medium_id, w.content_rating, w.status, wl.kind
+		FROM catalog_work_label wl JOIN catalog_work w ON w.id = wl.work_id
+		WHERE wl.label_id = ? ORDER BY w.id LIMIT ? OFFSET ?`, labelID, limit, offset).Scan(&items).Error
+	return head, items, total, err
 }
 
 // CreditRow is one credit joined with its role, name, character and source.

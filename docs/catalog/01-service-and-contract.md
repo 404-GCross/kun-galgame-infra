@@ -16,7 +16,7 @@ catalog **不存**产品展示体:简介、封面/截图字节、评分、点赞
 
 ## 2. S2S 端点(Basic client 认证,前缀 `/api/v1/catalog`)
 
-写/运维面:resolve(2.1)· redirects feed(2.2)· claim(2.3,带 site 绑定)。读面(D-01,2.4-2.6):by-anchor · credits · entity search。
+写/运维面:resolve(2.1)· redirects feed(2.2)· claim(2.3,带 site 绑定)。读面(D-01,2.4-2.6):by-anchor · credits · entity search。内部浏览器(D-02,2.7):stats · works/{id} · labels/{id}/works。
 
 ### 2.1 `POST /catalog/resolve` — 批量 id 规范化(只读)
 
@@ -61,7 +61,15 @@ catalog **不存**产品展示体:简介、封面/截图字节、评分、点赞
 - `limit` cap 20;空 `q` → 按 popularity 返回热门。
 - 响应条目:id(前缀 n/c/b)· entity_type · name(分桶取非空)· latin · sources · popularity · kind(label)· person_id(名义,缺省=孤儿)。
 
-> **读面无 site 绑定**(16 语义:绑定只作用于写端点 claim);三读端点仍走 Basic S2S(无凭据 401)。
+### 2.7 内部浏览器三端点(D-02,同 Basic S2S 读面)
+
+供**内部数据浏览器**(wiki 前端 staff 专用,经 galgame 后端代理)用;仍是 Basic S2S 读面。
+
+- `GET /catalog/stats`:仪表盘全部计数**单端点单往返**——works 矩阵(medium × 认领态 × status)、实体计数(**孤儿名义单列**,person=0 如实)、credits 按 source、归属边 by kind、**refs source × tier 交叉表**(身份质量一张表)、队列水位(candidates/proposals by status、probable refs、rejections)、**src_llm bid 判定**(same/different/unsure/deterministic;src_llm 缺表则该段空)、**新鲜度 = 各 source 锚 max(created_at)**(诚实近似,不加簿记)。
+- `GET /catalog/works/{id}`:与 2.4 by-anchor 同 bundle,入口换 catalog id;404 同义。
+- `GET /catalog/labels/{id}/works`:厂牌反查(经归属边),返回 label 自身信息(`label`:id/名/kind)+ offset 分页作品列表(cap 50)+ total,页面直达即自足。
+
+> **读面无 site 绑定**(16 语义:绑定只作用于写端点 claim);读端点仍走 Basic S2S(无凭据 401)。
 
 ## 3. Admin 三桶(Bearer JWT + admin 角色,前缀 `/api/v1/admin/catalog`)
 

@@ -30,6 +30,18 @@ func (s *S2SServer) registerRead(api huma.API) {
 		OperationID: "searchCatalogEntities", Method: http.MethodGet, Path: "/api/v1/catalog/search/entities",
 		Summary: "Search catalog entities (credit names / characters / labels)", Tags: tags,
 	}, s.searchEntities)
+	huma.Register(api, huma.Operation{
+		OperationID: "getCatalogStats", Method: http.MethodGet, Path: "/api/v1/catalog/stats",
+		Summary: "Dashboard counts for the internal data browser (one round-trip)", Tags: tags,
+	}, s.getStats)
+	huma.Register(api, huma.Operation{
+		OperationID: "getCatalogWorkByID", Method: http.MethodGet, Path: "/api/v1/catalog/works/{id}",
+		Summary: "Read a work by catalog id (same bundle as by-anchor)", Tags: tags,
+	}, s.workByID)
+	huma.Register(api, huma.Operation{
+		OperationID: "getCatalogLabelWorks", Method: http.MethodGet, Path: "/api/v1/catalog/labels/{id}/works",
+		Summary: "Works attributed to a label (circle→works reverse, paginated)", Tags: tags,
+	}, s.labelWorks)
 }
 
 // ---- by-anchor ----
@@ -46,12 +58,35 @@ type byAnchorOutput struct {
 func (s *S2SServer) workByAnchor(ctx context.Context, in *byAnchorInput) (*byAnchorOutput, error) {
 	detail, err := s.read.WorkByAnchor(ctx, in.Source, in.ExternalID)
 	if err != nil {
-		if stderrors.Is(err, service.ErrWorkNotFound) {
-			return nil, apiErr(http.StatusNotFound, errors.ErrNotFound)
-		}
-		return nil, apiErr(http.StatusInternalServerError, errors.ErrInternalServer)
+		return nil, workDetailErr(err)
 	}
+	return &byAnchorOutput{Body: okEnvelope(buildWorkResponse(detail))}, nil
+}
 
+// ---- work by id (internal browser drill-down; same bundle) ----
+
+type workByIDInput struct {
+	ID int64 `path:"id" doc:"Catalog work id"`
+}
+
+func (s *S2SServer) workByID(ctx context.Context, in *workByIDInput) (*byAnchorOutput, error) {
+	detail, err := s.read.WorkByID(ctx, in.ID)
+	if err != nil {
+		return nil, workDetailErr(err)
+	}
+	return &byAnchorOutput{Body: okEnvelope(buildWorkResponse(detail))}, nil
+}
+
+func workDetailErr(err error) error {
+	if stderrors.Is(err, service.ErrWorkNotFound) {
+		return apiErr(http.StatusNotFound, errors.ErrNotFound)
+	}
+	return apiErr(http.StatusInternalServerError, errors.ErrInternalServer)
+}
+
+// buildWorkResponse maps a service WorkDetail to the wire DTO (shared by the
+// by-anchor and by-id read-throughs).
+func buildWorkResponse(detail *service.WorkDetail) dto.WorkByAnchorResponse {
 	resp := dto.WorkByAnchorResponse{
 		Work: dto.WorkCore{
 			ID: detail.Work.ID, MediumID: detail.Work.MediumID, DisplayName: detail.Work.DisplayName,
@@ -75,7 +110,7 @@ func (s *S2SServer) workByAnchor(ctx context.Context, in *byAnchorInput) (*byAnc
 		rb := dto.ReleaseBrief{ID: rd.Release.ID, Kind: rd.Release.Kind}
 		rb.ReleasedY, rb.ReleasedM, rb.ReleasedD = derefI16(rd.Release.ReleasedY), derefI16(rd.Release.ReleasedM), derefI16(rd.Release.ReleasedD)
 		for _, a := range rd.Anchors {
-			rb.Anchors = append(rb.Anchors, dto.AnchorRef{Source: a.Source, ExternalID: a.ExternalID, LinkKind: a.LinkKind})
+			rb.Anchors = append(rb.Anchors, dto.AnchorRef{Source: a.Source, ExternalID: a.ExternalID, LinkKind: a.LinkKind, MatchedBy: a.MatchedBy})
 		}
 		resp.Releases = append(resp.Releases, rb)
 	}
@@ -84,7 +119,7 @@ func (s *S2SServer) workByAnchor(ctx context.Context, in *byAnchorInput) (*byAnc
 			LabelID: l.LabelID, DisplayName: l.DisplayName, LabelKind: l.LabelKind, Kind: l.Kind,
 		})
 	}
-	return &byAnchorOutput{Body: okEnvelope(resp)}, nil
+	return resp
 }
 
 // ---- credits ----
@@ -164,6 +199,91 @@ func (s *S2SServer) searchEntities(ctx context.Context, in *searchInput) (*searc
 		})
 	}
 	return &searchOutput{Body: okEnvelope(resp)}, nil
+}
+
+// ---- stats (dashboard) ----
+
+type statsOutput struct {
+	Body Envelope[dto.CatalogStats]
+}
+
+func (s *S2SServer) getStats(ctx context.Context, _ *struct{}) (*statsOutput, error) {
+	o, err := s.stats.Overview(ctx)
+	if err != nil {
+		return nil, apiErr(http.StatusInternalServerError, errors.ErrInternalServer)
+	}
+	st := dto.CatalogStats{
+		Works: dto.WorksMatrix{Total: o.WorksTotal},
+		Entities: dto.EntityCounts{
+			Persons: o.Entities.Persons, CreditNames: o.Entities.CreditNames,
+			OrphanCreditNames: o.Entities.OrphanNames, Orgs: o.Entities.Orgs,
+			Labels: o.Entities.Labels, Characters: o.Entities.Characters,
+		},
+		Queues: dto.QueueLevels{ProbableRefs: o.ProbableRefs, Rejections: o.Rejections},
+	}
+	for _, c := range o.WorksCells {
+		st.Works.Cells = append(st.Works.Cells, dto.WorksCell{MediumID: c.MediumID, Claimed: c.Claimed, Status: c.Status, Count: c.Count})
+	}
+	for _, c := range o.Credits {
+		st.CreditsBySource = append(st.CreditsBySource, dto.KeyCount{Key: c.Key, Count: c.Count})
+	}
+	for _, c := range o.Attributions {
+		st.AttributionsByKind = append(st.AttributionsByKind, dto.KindCount{Kind: c.Kind, Count: c.Count})
+	}
+	for _, c := range o.Anchors {
+		st.AnchorsBySourceTier = append(st.AnchorsBySourceTier, dto.AnchorTierCell{Source: c.Source, LinkKind: c.LinkKind, Count: c.Count})
+	}
+	for _, c := range o.Candidates {
+		st.Queues.CandidatesByStatus = append(st.Queues.CandidatesByStatus, dto.StatusCount{Status: c.Status, Count: c.Count})
+	}
+	for _, c := range o.Proposals {
+		st.Queues.ProposalsByStatus = append(st.Queues.ProposalsByStatus, dto.StatusCount{Status: c.Status, Count: c.Count})
+	}
+	for _, c := range o.LLMBid {
+		st.LLMBidVerdicts = append(st.LLMBidVerdicts, dto.KeyCount{Key: c.Key, Count: c.Count})
+	}
+	for _, f := range o.Freshness {
+		st.SourceFreshness = append(st.SourceFreshness, dto.SourceFreshness{Source: f.Source, LatestRef: f.LatestRef})
+	}
+	return &statsOutput{Body: okEnvelope(st)}, nil
+}
+
+// ---- label → works (attribution reverse) ----
+
+type labelWorksInput struct {
+	ID     int64 `path:"id" doc:"Catalog label id"`
+	Limit  int   `query:"limit" default:"50" doc:"Page size (capped at 50)"`
+	Offset int   `query:"offset" doc:"Rows to skip"`
+}
+
+type labelWorksOutput struct {
+	Body Envelope[dto.LabelWorksResponse]
+}
+
+func (s *S2SServer) labelWorks(ctx context.Context, in *labelWorksInput) (*labelWorksOutput, error) {
+	limit := in.Limit
+	if limit <= 0 || limit > 50 {
+		limit = 50
+	}
+	offset := in.Offset
+	if offset < 0 {
+		offset = 0
+	}
+	head, items, total, err := s.read.LabelWorks(ctx, in.ID, limit, offset)
+	if err != nil {
+		return nil, apiErr(http.StatusInternalServerError, errors.ErrInternalServer)
+	}
+	resp := dto.LabelWorksResponse{Total: total}
+	if head != nil {
+		resp.Label = &dto.LabelHead{ID: head.ID, DisplayName: head.DisplayName, Kind: head.Kind}
+	}
+	for _, w := range items {
+		resp.Items = append(resp.Items, dto.LabelWorkRow{
+			WorkID: w.WorkID, DisplayName: w.DisplayName, MediumID: w.MediumID,
+			ContentRating: w.ContentRating, Status: w.Status, Kind: w.Kind,
+		})
+	}
+	return &labelWorksOutput{Body: okEnvelope(resp)}, nil
 }
 
 // --- small helpers ---

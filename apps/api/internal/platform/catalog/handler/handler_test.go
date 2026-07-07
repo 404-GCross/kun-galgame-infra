@@ -25,7 +25,7 @@ import (
 // TestSetup_RegistersS2SOperations: spec smoke — all three S2S operations
 // register with nil services (what cmd/gen-openapi -catalog exports).
 func TestSetup_RegistersS2SOperations(t *testing.T) {
-	api := Setup(fiber.New(), nil, nil, nil, nil)
+	api := Setup(fiber.New(), nil, nil, nil, nil, nil)
 	paths := api.OpenAPI().Paths
 	for _, p := range []string{
 		"/api/v1/catalog/resolve",
@@ -60,7 +60,7 @@ func TestSetupAdmin_RegistersQueueOperations(t *testing.T) {
 func TestS2SAuth_Unauthenticated401(t *testing.T) {
 	app := fiber.New()
 	app.Use("/api/v1/catalog", S2SAuth(nil))
-	Setup(app, nil, nil, nil, nil)
+	Setup(app, nil, nil, nil, nil, nil)
 
 	for _, header := range []string{"", "Bearer whatever", "Basic not-base64!"} {
 		req := httptest.NewRequest("POST", "/api/v1/catalog/resolve", nil)
@@ -115,7 +115,7 @@ func claimApp(client *siteModel.OAuthClient, work *service.WorkService) *fiber.A
 		}
 		return c.Next()
 	})
-	Setup(app, nil, work, nil, nil)
+	Setup(app, nil, work, nil, nil, nil)
 	return app
 }
 

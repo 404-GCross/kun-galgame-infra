@@ -28,6 +28,7 @@ type S2SServer struct {
 	work    *service.WorkService
 	read    *service.ReadService
 	search  *catsearch.Indexer
+	stats   *service.StatsService
 }
 
 // Setup builds the S2S Huma API (resolve / redirect feed / work claim + the
@@ -36,7 +37,7 @@ type S2SServer struct {
 // this — Huma registers on the app, so the caller must gate the
 // /api/v1/catalog prefix. Callable with nil services for spec export (handlers
 // are never invoked then).
-func Setup(app *fiber.App, resolve *service.ResolveService, work *service.WorkService, read *service.ReadService, searcher *catsearch.Indexer) huma.API {
+func Setup(app *fiber.App, resolve *service.ResolveService, work *service.WorkService, read *service.ReadService, searcher *catsearch.Indexer, stats *service.StatsService) huma.API {
 	InstallErrorEnvelope()
 
 	cfg := huma.DefaultConfig("KUN Catalog Service", "1.0.0")
@@ -47,7 +48,7 @@ func Setup(app *fiber.App, resolve *service.ResolveService, work *service.WorkSe
 	api := humafiber.New(app, cfg)
 	api.UseMiddleware(S2SBridge)
 
-	s := &S2SServer{resolve: resolve, work: work, read: read, search: searcher}
+	s := &S2SServer{resolve: resolve, work: work, read: read, search: searcher, stats: stats}
 	s.register(api)
 	s.registerRead(api)
 	return api

@@ -24,7 +24,7 @@ import (
 // TestReadEndpoints_401).
 func readApp(readSvc *service.ReadService, searcher *catsearch.Indexer) *fiber.App {
 	app := fiber.New()
-	Setup(app, nil, nil, readSvc, searcher)
+	Setup(app, nil, nil, readSvc, searcher, nil)
 	return app
 }
 
@@ -167,12 +167,64 @@ func TestEntitySearch(t *testing.T) {
 	assert.Equal(t, 422, code)
 }
 
+// TestWorkByIDAndLabelWorks covers the internal-browser drill-downs: work-by-id
+// (same bundle as by-anchor, 404 on miss) and label→works reverse (paginated).
+func TestWorkByIDAndLabelWorks(t *testing.T) {
+	db := openCatalogTestDB(t)
+	db.Raw("SELECT id FROM catalog_role WHERE key='scenario'").Scan(&roleScenario)
+	workID := seedReadFixture(t, db)
+	read := service.NewReadService(db)
+	app := fiber.New()
+	Setup(app, nil, nil, read, nil, nil)
+
+	code, body := getJSON(t, app, "/api/v1/catalog/works/"+itoa(workID))
+	require.Equal(t, 200, code)
+	assert.EqualValues(t, workID, body["data"].(map[string]any)["work"].(map[string]any)["id"])
+	code, _ = getJSON(t, app, "/api/v1/catalog/works/99999999")
+	assert.Equal(t, 404, code)
+
+	// label → works reverse: the fixture's circle label has exactly this work.
+	var labelID int64
+	db.Raw("SELECT id FROM catalog_label LIMIT 1").Scan(&labelID)
+	code, body = getJSON(t, app, "/api/v1/catalog/labels/"+itoa(labelID)+"/works")
+	require.Equal(t, 200, code)
+	data := body["data"].(map[string]any)
+	assert.EqualValues(t, 1, data["total"])
+	assert.EqualValues(t, workID, data["items"].([]any)[0].(map[string]any)["work_id"])
+}
+
+// TestStats asserts the dashboard aggregate against the seeded fixture.
+func TestStats(t *testing.T) {
+	db := openCatalogTestDB(t)
+	db.Raw("SELECT id FROM catalog_role WHERE key='scenario'").Scan(&roleScenario)
+	seedReadFixture(t, db)
+	app := fiber.New()
+	Setup(app, nil, nil, nil, nil, service.NewStatsService(db))
+
+	code, body := getJSON(t, app, "/api/v1/catalog/stats")
+	require.Equal(t, 200, code)
+	data := body["data"].(map[string]any)
+	assert.EqualValues(t, 1, data["works"].(map[string]any)["total"])
+	ents := data["entities"].(map[string]any)
+	assert.EqualValues(t, 2, ents["credit_names"])
+	assert.EqualValues(t, 2, ents["orphan_credit_names"], "no person layer → all names orphan (doctrine)")
+	assert.EqualValues(t, 0, ents["persons"], "person=0 surfaced honestly")
+	// anchor source×tier: the fixture has one dlsite exact anchor.
+	anchors := data["anchors_by_source_tier"].([]any)
+	require.Len(t, anchors, 1)
+	assert.Equal(t, "dlsite", anchors[0].(map[string]any)["source"])
+	// one circle attribution edge.
+	attrs := data["attributions_by_kind"].([]any)
+	require.Len(t, attrs, 1)
+	assert.EqualValues(t, model.WorkLabelKindCircle, attrs[0].(map[string]any)["kind"])
+}
+
 // TestReadEndpoints_401: the read surface sits under /api/v1/catalog and is
 // therefore gated by S2SAuth — no credentials → 401 before any handler.
 func TestReadEndpoints_401(t *testing.T) {
 	app := fiber.New()
 	app.Use("/api/v1/catalog", S2SAuth(nil))
-	Setup(app, nil, nil, nil, nil)
+	Setup(app, nil, nil, nil, nil, nil)
 	for _, url := range []string{
 		"/api/v1/catalog/works/by-anchor?source=dlsite&external_id=RJTEST",
 		"/api/v1/catalog/works/1/credits",

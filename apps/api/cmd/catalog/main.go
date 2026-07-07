@@ -77,6 +77,7 @@ func main() {
 	// entity search over Meilisearch. NewClient makes no network call — a Meili
 	// outage only fails the search endpoint at query time, not startup.
 	readSvc := service.NewReadService(catalogDB.DB())
+	statsSvc := service.NewStatsService(catalogDB.DB())
 	searchClient, err := searchInfra.NewClient(cfg.Meilisearch)
 	if err != nil {
 		slog.Error("meilisearch client", "error", err)
@@ -103,7 +104,7 @@ func main() {
 	application.Fiber.Use("/api/v1/admin/catalog",
 		middleware.JWTAuth(tokenVerifier), middleware.RequireRole("admin"))
 
-	s2sAPI := catHandler.Setup(application.Fiber, resolveSvc, workSvc, readSvc, searcher)
+	s2sAPI := catHandler.Setup(application.Fiber, resolveSvc, workSvc, readSvc, searcher, statsSvc)
 	catHandler.SetupAdmin(application.Fiber, queueSvc, mergeSvc)
 
 	// Serve the S2S OpenAPI 3.1 spec unauthenticated at the app root (the
