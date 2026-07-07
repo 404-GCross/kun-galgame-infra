@@ -129,14 +129,14 @@ func TestBatchLinksMechanicalOnly(t *testing.T) {
 	mkCandidate(t, c, d)
 
 	// Dry: classifies but writes nothing.
-	st, err := run(ctx, testDB, io.Discard, 7, false)
+	st, err := run(ctx, testDB, io.Discard, 7, false, ruleSetShared)
 	require.NoError(t, err)
 	assert.Equal(t, 1, st.A1Hits)
 	assert.Equal(t, 1, st.Unmatched)
 	assert.Nil(t, personIDOf(t, a), "dry writes nothing")
 
 	// Apply: the A1 pair links, the unmatched pair stays pending & orphan.
-	st, err = run(ctx, testDB, io.Discard, 7, true)
+	st, err = run(ctx, testDB, io.Discard, 7, true, ruleSetShared)
 	require.NoError(t, err)
 	assert.Equal(t, 1, st.LinkedCreated)
 	pa, pb := personIDOf(t, a), personIDOf(t, b)
@@ -150,7 +150,7 @@ func TestBatchLinksMechanicalOnly(t *testing.T) {
 
 	// Idempotent: a second --run sees only the still-pending unmatched pair
 	// (the accepted candidate is filtered out at load), so it links nothing new.
-	st, err = run(ctx, testDB, io.Discard, 7, true)
+	st, err = run(ctx, testDB, io.Discard, 7, true, ruleSetShared)
 	require.NoError(t, err)
 	assert.Zero(t, st.A1Hits+st.A2Hits+st.LinkedCreated+st.Errors, "re-run links nothing new")
 	assert.Equal(t, 1, st.Unmatched)
@@ -187,7 +187,7 @@ func TestBatchNeedsManual(t *testing.T) {
 	require.NoError(t, testDB.Model(&model.CatalogCreditName{}).Where("id=?", b).Update("person_id", p2.ID).Error)
 	mkCandidate(t, a, b)
 
-	st, err := run(ctx, testDB, io.Discard, 7, true)
+	st, err := run(ctx, testDB, io.Discard, 7, true, ruleSetShared)
 	require.NoError(t, err)
 	assert.Equal(t, 1, st.A2Hits)
 	assert.Equal(t, 1, st.NeedsManual)

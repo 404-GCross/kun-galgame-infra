@@ -29,6 +29,16 @@ import (
 const (
 	ruleA1 = "A1"
 	ruleA2 = "A2"
+	// A3/A4 clear the alias_declared candidates (step 25) under a second,
+	// independent line of evidence beyond the alias declaration itself:
+	//   - A3: the two names are co-credited on the SAME work (they collaborated).
+	//   - A4: the declaration is bidirectional — each side's ingested aliases
+	//     (catalog_name_alias, step 25) name the other whole.
+	ruleA3 = "A3"
+	ruleA4 = "A4"
+
+	ruleSetShared = "shared" // A1/A2 over shared-handle candidates (default)
+	ruleSetAlias  = "alias"  // A3/A4 over alias_declared candidates
 )
 
 // candidateRow is one pending shared-handle credit_name candidate with both
@@ -43,9 +53,10 @@ type candidateRow struct {
 	BPerson *int64 `gorm:"column:bp"`
 }
 
-// loadCandidates reads the pending shared-handle candidates in a deterministic
-// order, with each name normalized by the exact Silver expression.
-func loadCandidates(db *gorm.DB) ([]candidateRow, error) {
+// loadCandidates reads the pending credit_name candidates of one reason in a
+// deterministic order, with each name normalized by the exact Silver
+// expression.
+func loadCandidates(db *gorm.DB, reason int16) ([]candidateRow, error) {
 	var rows []candidateRow
 	err := db.Raw(`
 		SELECT c.a_id, c.b_id,
@@ -56,9 +67,17 @@ func loadCandidates(db *gorm.DB) ([]candidateRow, error) {
 		JOIN catalog_credit_name b ON b.id = c.b_id
 		WHERE c.entity_type = ? AND c.reason = ? AND c.status = ?
 		ORDER BY c.a_id, c.b_id`,
-		model.EntityTypeCreditName, model.CandidateReasonSharedExternalID, model.CandidateStatusPending,
+		model.EntityTypeCreditName, reason, model.CandidateStatusPending,
 	).Scan(&rows).Error
 	return rows, err
+}
+
+// reasonForRuleSet maps a rule set to the candidate reason it clears.
+func reasonForRuleSet(rs string) int16 {
+	if rs == ruleSetAlias {
+		return model.CandidateReasonAliasDeclared
+	}
+	return model.CandidateReasonSharedExternalID
 }
 
 // classify returns the rule that makes the pair auto-linkable ("" = neither).
@@ -156,23 +175,40 @@ func parenAliases(nfkc string) []string {
 
 // batchStats is the four-way outcome tally (plus the rule split and misses).
 type batchStats struct {
-	A1Hits, A2Hits int
-	LinkedCreated  int
-	LinkedAttached int
-	NeedsManual    int
-	Already        int
-	Errors         int
-	Unmatched      int
+	A1Hits, A2Hits, A3Hits, A4Hits int
+	LinkedCreated                  int
+	LinkedAttached                 int
+	NeedsManual                    int
+	Already                        int
+	Errors                         int
+	Unmatched                      int
 }
 
-// run classifies every pending shared-handle candidate and, for the A1/A2
-// hits, links it through the SAME path the admin bucket uses
-// (DecideCandidate accept → step-22 three-state person link + candidate flip,
-// one transaction). Unmatched candidates are left untouched — they are the
-// admin UI's human-review backlog. Dry-run predicts the outcome without
-// writing.
-func run(ctx context.Context, db *gorm.DB, w io.Writer, actor int64, apply bool) (batchStats, error) {
-	rows, err := loadCandidates(db)
+func (st *batchStats) hit(rule string) {
+	switch rule {
+	case ruleA1:
+		st.A1Hits++
+	case ruleA2:
+		st.A2Hits++
+	case ruleA3:
+		st.A3Hits++
+	case ruleA4:
+		st.A4Hits++
+	}
+}
+
+// run classifies every pending candidate of the rule set's reason and, for the
+// mechanically-decidable hits, links it through the SAME path the admin bucket
+// uses (DecideCandidate accept → step-22 three-state person link + candidate
+// flip, one transaction). Unmatched candidates are left untouched — they are
+// the human-review backlog (--export drafts a worklist for them). Dry-run
+// predicts the outcome without writing.
+func run(ctx context.Context, db *gorm.DB, w io.Writer, actor int64, apply bool, ruleSet string) (batchStats, error) {
+	rows, err := loadCandidates(db, reasonForRuleSet(ruleSet))
+	if err != nil {
+		return batchStats{}, err
+	}
+	classify, err := buildClassifier(db, ruleSet, rows)
 	if err != nil {
 		return batchStats{}, err
 	}
@@ -180,16 +216,12 @@ func run(ctx context.Context, db *gorm.DB, w io.Writer, actor int64, apply bool)
 
 	var st batchStats
 	for _, r := range rows {
-		rule := classify(r.AName, r.BName)
+		rule := classify(r)
 		if rule == "" {
 			st.Unmatched++
 			continue
 		}
-		if rule == ruleA1 {
-			st.A1Hits++
-		} else {
-			st.A2Hits++
-		}
+		st.hit(rule)
 
 		if !apply {
 			action := predictOutcome(r.APerson, r.BPerson)
@@ -221,10 +253,20 @@ func run(ctx context.Context, db *gorm.DB, w io.Writer, actor int64, apply bool)
 	if apply {
 		mode = "APPLIED"
 	}
-	fmt.Fprintf(w, "%s — A1=%d A2=%d | created=%d attached=%d needs_manual=%d already=%d errors=%d | unmatched=%d of %d\n",
-		mode, st.A1Hits, st.A2Hits, st.LinkedCreated, st.LinkedAttached, st.NeedsManual, st.Already, st.Errors,
+	fmt.Fprintf(w, "%s [%s] — A1=%d A2=%d A3=%d A4=%d | created=%d attached=%d needs_manual=%d already=%d errors=%d | unmatched=%d of %d\n",
+		mode, ruleSet, st.A1Hits, st.A2Hits, st.A3Hits, st.A4Hits, st.LinkedCreated, st.LinkedAttached, st.NeedsManual, st.Already, st.Errors,
 		st.Unmatched, len(rows))
 	return st, nil
+}
+
+// buildClassifier returns the rule classifier for the rule set. The shared set
+// judges the two names purely (A1/A2); the alias set consults the DB for a
+// second line of evidence (A3 co-credit, A4 bidirectional declaration).
+func buildClassifier(db *gorm.DB, ruleSet string, rows []candidateRow) (func(candidateRow) string, error) {
+	if ruleSet != ruleSetAlias {
+		return func(r candidateRow) string { return classify(r.AName, r.BName) }, nil
+	}
+	return aliasClassifier(db, rows)
 }
 
 // predictOutcome mirrors the three-state rule for the dry preview, from the
