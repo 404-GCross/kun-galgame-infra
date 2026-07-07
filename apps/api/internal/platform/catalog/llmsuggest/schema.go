@@ -107,6 +107,13 @@ type BidIdentityVerdict struct {
 	Confidence    float64 `gorm:"not null;default:0" json:"confidence"`
 	Error         string  `gorm:"not null;default:''" json:"error"`
 	CreatedAt     time.Time
+	// Human-review resolution (step 20 B-track worklist). The deterministic +
+	// LLM layers only DETECT; a human decides here. Resolution is the decision
+	// keyword (ok / wrong / wrong:<bid> / smear); a resolved row is excluded
+	// from the next --export and skipped by a re-run --apply (idempotency).
+	Resolution     string     `gorm:"not null;default:''" json:"resolution"`
+	ResolutionNote string     `gorm:"not null;default:''" json:"resolution_note"`
+	ResolvedAt     *time.Time `json:"resolved_at"`
 }
 
 func (BidIdentityVerdict) TableName() string { return "src_llm.bid_identity_verdict" }
