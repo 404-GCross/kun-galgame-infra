@@ -13,6 +13,7 @@ import (
 
 	"api/internal/platform/catalog/dto"
 	"api/internal/platform/catalog/repository"
+	catsearch "api/internal/platform/catalog/search"
 	"api/internal/platform/catalog/service"
 	"api/pkg/errors"
 
@@ -25,14 +26,17 @@ import (
 type S2SServer struct {
 	resolve *service.ResolveService
 	work    *service.WorkService
+	read    *service.ReadService
+	search  *catsearch.Indexer
 }
 
-// Setup builds the S2S Huma API (resolve / redirect feed / work claim) over
-// the Fiber app. Auth (S2SAuth) is applied by the caller as path-scoped Fiber
-// middleware BEFORE this — Huma registers on the app, so the caller must
-// gate the /api/v1/catalog prefix. Callable with nil services for spec
-// export (handlers are never invoked then).
-func Setup(app *fiber.App, resolve *service.ResolveService, work *service.WorkService) huma.API {
+// Setup builds the S2S Huma API (resolve / redirect feed / work claim + the
+// read surface: by-anchor / credits / entity search) over the Fiber app. Auth
+// (S2SAuth) is applied by the caller as path-scoped Fiber middleware BEFORE
+// this — Huma registers on the app, so the caller must gate the
+// /api/v1/catalog prefix. Callable with nil services for spec export (handlers
+// are never invoked then).
+func Setup(app *fiber.App, resolve *service.ResolveService, work *service.WorkService, read *service.ReadService, searcher *catsearch.Indexer) huma.API {
 	InstallErrorEnvelope()
 
 	cfg := huma.DefaultConfig("KUN Catalog Service", "1.0.0")
@@ -43,8 +47,9 @@ func Setup(app *fiber.App, resolve *service.ResolveService, work *service.WorkSe
 	api := humafiber.New(app, cfg)
 	api.UseMiddleware(S2SBridge)
 
-	s := &S2SServer{resolve: resolve, work: work}
+	s := &S2SServer{resolve: resolve, work: work, read: read, search: searcher}
 	s.register(api)
+	s.registerRead(api)
 	return api
 }
 

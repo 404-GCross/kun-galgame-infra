@@ -10,9 +10,10 @@ import (
 
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
-// DLsiteStats is the ten-item DLsite-wave tally.
+// DLsiteStats is the DLsite-wave tally.
 type DLsiteStats struct {
 	WorksCreated        int
 	ReleasesCreated     int
@@ -25,6 +26,10 @@ type DLsiteStats struct {
 	SkippedUnmappedRole int
 	Already             int
 	Errors              int
+	// EdgesConsidered (dry) = works carrying a maker; EdgesWritten (apply) =
+	// work↔label attribution edges actually inserted (ON CONFLICT DO NOTHING).
+	EdgesConsidered int
+	EdgesWritten    int
 }
 
 const dlChunk = 2000
@@ -151,6 +156,11 @@ func (im *Importer) RunDLsite(dlsiteDB *gorm.DB) (DLsiteStats, error) {
 			}
 			st.CreditsWritten += len(w.credits)
 		}
+		for _, w := range works {
+			if w.makerExt != "" {
+				st.EdgesConsidered++
+			}
+		}
 		return st, nil
 	}
 
@@ -198,7 +208,73 @@ func (im *Importer) RunDLsite(dlsiteDB *gorm.DB) (DLsiteStats, error) {
 			return st, err
 		}
 	}
+
+	// Attribution edges for EVERY work (new + already) — see emitDLWorkLabels.
+	if err := im.emitDLWorkLabels(works, labelAnchor, makerKind, &st); err != nil {
+		return st, err
+	}
 	return st, nil
+}
+
+// emitDLWorkLabels asserts the work↔label attribution edge for every parsed
+// work (new + already-imported), keyed by resolving workno → work via the
+// release SKU anchor. Idempotent (composite PK ON CONFLICT DO NOTHING). This is
+// what makes a plain `--apply` re-run BACKFILL edges onto works imported before
+// the edge existed (step 14 → 18): already-imported works skip the work-
+// creation path, so the edge cannot ride there.
+func (im *Importer) emitDLWorkLabels(works []dlWork, labelAnchor map[string]int64, makerKind map[string]int16, st *DLsiteStats) error {
+	var rows []struct {
+		Workno string `gorm:"column:external_id"`
+		WorkID int64  `gorm:"column:work_id"`
+	}
+	if err := im.catalog.Raw(`SELECT r.external_id, rel.work_id
+		FROM catalog_external_ref r JOIN catalog_release rel ON rel.id = r.entity_id
+		WHERE r.entity_type = ? AND r.source_id = ?`, model.EntityTypeRelease, dlsiteSource).Scan(&rows).Error; err != nil {
+		return err
+	}
+	worknoToWork := make(map[string]int64, len(rows))
+	for _, r := range rows {
+		worknoToWork[r.Workno] = r.WorkID
+	}
+
+	src := dlsiteSource
+	var edges []model.CatalogWorkLabel
+	for _, w := range works {
+		if w.makerExt == "" {
+			continue
+		}
+		wid, ok := worknoToWork[w.workno]
+		if !ok {
+			continue
+		}
+		lid := labelAnchor[anchorKey(dlsiteSource, w.makerExt)]
+		if lid == 0 {
+			continue
+		}
+		edges = append(edges, model.CatalogWorkLabel{
+			WorkID: wid, LabelID: lid, Kind: dlEdgeKind(makerKind[w.makerExt]), SourceID: &src,
+		})
+	}
+	if len(edges) == 0 {
+		return nil
+	}
+	res := im.catalog.Clauses(clause.OnConflict{DoNothing: true}).CreateInBatches(&edges, 1000)
+	if res.Error != nil {
+		return res.Error
+	}
+	st.EdgesWritten = int(res.RowsAffected)
+	return nil
+}
+
+// dlEdgeKind maps a label kind to the attribution-edge kind: a publisher label
+// yields a publisher attribution, everything else (doujin circles) a circle
+// attribution. DLsite's voice subset is all circles today; deriving from the
+// label kind (rather than hardcoding circle) keeps the rare BG=publisher right.
+func dlEdgeKind(labelKind int16) int16 {
+	if labelKind == model.LabelKindPublisher {
+		return model.WorkLabelKindPublisher
+	}
+	return model.WorkLabelKindCircle
 }
 
 // createDLWorkChunk creates one batch of works (+ titles + releases + anchors +

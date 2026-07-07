@@ -50,6 +50,7 @@ func Run(db *gorm.DB) error {
 		&model.CatalogRelease{},
 		&model.CatalogWorkRelation{},
 		&model.CatalogEntityRelation{},
+		&model.CatalogWorkLabel{}, // work↔label attribution edge (step 18)
 
 		// Reconciliation family (step 04).
 		&model.CatalogExternalRef{},

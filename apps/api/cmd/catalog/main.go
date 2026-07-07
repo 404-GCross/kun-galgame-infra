@@ -25,9 +25,11 @@ import (
 
 	"api/internal/app"
 	"api/internal/infrastructure/database"
+	searchInfra "api/internal/infrastructure/search"
 	"api/internal/middleware"
 	catHandler "api/internal/platform/catalog/handler"
 	"api/internal/platform/catalog/repository"
+	catalogSearch "api/internal/platform/catalog/search"
 	"api/internal/platform/catalog/service"
 	siteRepo "api/internal/platform/site/repository"
 	"api/pkg/config"
@@ -71,6 +73,17 @@ func main() {
 	workSvc := service.NewWorkService(catalogDB.DB(), resolveSvc)
 	queueSvc := service.NewAdminQueueService(catalogDB.DB(), mergeSvc)
 
+	// Read surface (step 18): anchor read-through + credits over the catalog DB,
+	// entity search over Meilisearch. NewClient makes no network call — a Meili
+	// outage only fails the search endpoint at query time, not startup.
+	readSvc := service.NewReadService(catalogDB.DB())
+	searchClient, err := searchInfra.NewClient(cfg.Meilisearch)
+	if err != nil {
+		slog.Error("meilisearch client", "error", err)
+		os.Exit(1)
+	}
+	searcher := catalogSearch.NewIndexer(searchClient)
+
 	application.Fiber.Use(middleware.RequestID())
 	application.Fiber.Use(middleware.Logger())
 	application.Fiber.Get("/healthz", func(c fiber.Ctx) error {
@@ -90,7 +103,7 @@ func main() {
 	application.Fiber.Use("/api/v1/admin/catalog",
 		middleware.JWTAuth(tokenVerifier), middleware.RequireRole("admin"))
 
-	s2sAPI := catHandler.Setup(application.Fiber, resolveSvc, workSvc)
+	s2sAPI := catHandler.Setup(application.Fiber, resolveSvc, workSvc, readSvc, searcher)
 	catHandler.SetupAdmin(application.Fiber, queueSvc, mergeSvc)
 
 	// Serve the S2S OpenAPI 3.1 spec unauthenticated at the app root (the

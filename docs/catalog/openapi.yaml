@@ -1,5 +1,21 @@
 components:
   schemas:
+    AnchorRef:
+      additionalProperties: false
+      properties:
+        external_id:
+          type: string
+        link_kind:
+          description: 0=exact 1=probable 2=related
+          format: int32
+          type: integer
+        source:
+          type: string
+      required:
+        - source
+        - external_id
+        - link_kind
+      type: object
     ClaimAnchor:
       additionalProperties: false
       properties:
@@ -75,6 +91,106 @@ components:
         - work_id
         - created
       type: object
+    CreditGroup:
+      additionalProperties: false
+      properties:
+        credits:
+          items:
+            $ref: "#/components/schemas/CreditItem"
+          type:
+            - array
+            - "null"
+        role_id:
+          format: int64
+          type: integer
+        role_key:
+          type: string
+        role_name:
+          type: string
+      required:
+        - role_id
+        - role_key
+        - role_name
+        - credits
+      type: object
+    CreditItem:
+      additionalProperties: false
+      properties:
+        character:
+          type: string
+        character_id:
+          format: int64
+          type: integer
+        credit_name_id:
+          format: int64
+          type: integer
+        lang:
+          type: string
+        latin:
+          type: string
+        name:
+          type: string
+        note:
+          type: string
+        source:
+          type: string
+      required:
+        - credit_name_id
+        - name
+        - lang
+      type: object
+    EntitySearchHit:
+      additionalProperties: false
+      properties:
+        entity_type:
+          type: string
+        id:
+          description: "prefixed: n{id} / c{id} / b{id}"
+          type: string
+        kind:
+          description: label kind (labels only)
+          format: int32
+          type: integer
+        latin:
+          type: string
+        name:
+          type: string
+        person_id:
+          description: credit-name → person link (names only; absent = orphan)
+          format: int64
+          type: integer
+        popularity:
+          format: double
+          type: number
+        sources:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+      required:
+        - id
+        - entity_type
+        - name
+        - sources
+        - popularity
+      type: object
+    EntitySearchResponse:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: "#/components/schemas/EntitySearchHit"
+          type:
+            - array
+            - "null"
+        total:
+          format: int64
+          type: integer
+      required:
+        - items
+        - total
+      type: object
     EnvelopeClaimWorkResponse:
       additionalProperties: false
       properties:
@@ -90,6 +206,27 @@ components:
           type: integer
         data:
           $ref: "#/components/schemas/ClaimWorkResponse"
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
+    EnvelopeEntitySearchResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EnvelopeEntitySearchResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/EntitySearchResponse"
         message:
           type: string
       required:
@@ -132,6 +269,48 @@ components:
           type: integer
         data:
           $ref: "#/components/schemas/ResolveResponse"
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
+    EnvelopeWorkByAnchorResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EnvelopeWorkByAnchorResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/WorkByAnchorResponse"
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
+    EnvelopeWorkCreditsResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EnvelopeWorkCreditsResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/WorkCreditsResponse"
         message:
           type: string
       required:
@@ -193,6 +372,36 @@ components:
         - current_id
         - merged_at
       type: object
+    ReleaseBrief:
+      additionalProperties: false
+      properties:
+        anchors:
+          items:
+            $ref: "#/components/schemas/AnchorRef"
+          type:
+            - array
+            - "null"
+        id:
+          format: int64
+          type: integer
+        kind:
+          description: 0=default 1=digital 2=physical 3=trial 4=patch
+          format: int32
+          type: integer
+        released_d:
+          format: int32
+          type: integer
+        released_m:
+          format: int32
+          type: integer
+        released_y:
+          format: int32
+          type: integer
+      required:
+        - id
+        - kind
+        - anchors
+      type: object
     ResolveRequest:
       additionalProperties: false
       properties:
@@ -242,6 +451,125 @@ components:
             - "null"
       required:
         - mappings
+      type: object
+    WorkByAnchorResponse:
+      additionalProperties: false
+      properties:
+        labels:
+          items:
+            $ref: "#/components/schemas/WorkLabel"
+          type:
+            - array
+            - "null"
+        releases:
+          items:
+            $ref: "#/components/schemas/ReleaseBrief"
+          type:
+            - array
+            - "null"
+        titles:
+          items:
+            $ref: "#/components/schemas/WorkTitle"
+          type:
+            - array
+            - "null"
+        work:
+          $ref: "#/components/schemas/WorkCore"
+      required:
+        - work
+        - titles
+        - releases
+        - labels
+      type: object
+    WorkCore:
+      additionalProperties: false
+      properties:
+        content_rating:
+          description: 0=all_ages 1=sensitive 2=r18
+          format: int32
+          type: integer
+        display_name:
+          type: string
+        id:
+          format: int64
+          type: integer
+        medium_id:
+          format: int32
+          type: integer
+        olang:
+          type: string
+        product_work_id:
+          format: int64
+          type: integer
+        site:
+          type: string
+        status:
+          description: 0=live 1=stub 2=merged
+          format: int32
+          type: integer
+      required:
+        - id
+        - medium_id
+        - display_name
+        - olang
+        - content_rating
+        - status
+      type: object
+    WorkCreditsResponse:
+      additionalProperties: false
+      properties:
+        groups:
+          items:
+            $ref: "#/components/schemas/CreditGroup"
+          type:
+            - array
+            - "null"
+        work_id:
+          format: int64
+          type: integer
+      required:
+        - work_id
+        - groups
+      type: object
+    WorkLabel:
+      additionalProperties: false
+      properties:
+        display_name:
+          type: string
+        kind:
+          description: "attribution nature: 0=circle 1=publisher 2=developer 3=brand"
+          format: int32
+          type: integer
+        label_id:
+          format: int64
+          type: integer
+        label_kind:
+          description: the label's own kind (0=game_brand … 4=doujin_circle …)
+          format: int32
+          type: integer
+      required:
+        - label_id
+        - display_name
+        - label_kind
+        - kind
+      type: object
+    WorkTitle:
+      additionalProperties: false
+      properties:
+        kind:
+          description: 0=official 1=alias 2=abbreviation 3=search_hint
+          format: int32
+          type: integer
+        lang:
+          type: string
+        latin:
+          type: string
+        title:
+          type: string
+      required:
+        - lang
+        - title
+        - kind
       type: object
 info:
   title: KUN Catalog Service
@@ -317,6 +645,100 @@ paths:
       summary: Resolve entity ids to their canonical ids (redirect following, batch)
       tags:
         - catalog-s2s
+  /api/v1/catalog/search/entities:
+    get:
+      operationId: searchCatalogEntities
+      parameters:
+        - description: Search text; empty returns the most-credited entities
+          explode: false
+          in: query
+          name: q
+          schema:
+            description: Search text; empty returns the most-credited entities
+            type: string
+        - description: Which entity index to search
+          explode: false
+          in: query
+          name: type
+          schema:
+            description: Which entity index to search
+            enum:
+              - names
+              - characters
+              - labels
+            type: string
+        - description: UI locale; the server pins the query language (client-supplied Meili locales are never accepted)
+          explode: false
+          in: query
+          name: locale
+          schema:
+            description: UI locale; the server pins the query language (client-supplied Meili locales are never accepted)
+            enum:
+              - zh
+              - ja
+              - en
+            type: string
+        - description: Max hits (capped at 20)
+          explode: false
+          in: query
+          name: limit
+          schema:
+            default: 20
+            description: Max hits (capped at 20)
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeEntitySearchResponse"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: Search catalog entities (credit names / characters / labels)
+      tags:
+        - catalog-s2s
+  /api/v1/catalog/works/by-anchor:
+    get:
+      operationId: getCatalogWorkByAnchor
+      parameters:
+        - description: Source key (dlsite/vndb/bangumi/erogamespace/…), validated against the source registry
+          explode: false
+          in: query
+          name: source
+          schema:
+            description: Source key (dlsite/vndb/bangumi/erogamespace/…), validated against the source registry
+            minLength: 1
+            type: string
+        - description: The id within that source (e.g. a DLsite RJ number, a VNDB v-id)
+          explode: false
+          in: query
+          name: external_id
+          schema:
+            description: The id within that source (e.g. a DLsite RJ number, a VNDB v-id)
+            minLength: 1
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeWorkByAnchorResponse"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: Read a work through one of its external anchors (work- or release-level)
+      tags:
+        - catalog-s2s
   /api/v1/catalog/works/claim:
     post:
       operationId: claimCatalogWork
@@ -340,5 +762,33 @@ paths:
                 $ref: "#/components/schemas/HouseError"
           description: Error
       summary: Claim (or register) the catalog work for a product-side work
+      tags:
+        - catalog-s2s
+  /api/v1/catalog/works/{id}/credits:
+    get:
+      operationId: getCatalogWorkCredits
+      parameters:
+        - description: Catalog work id
+          in: path
+          name: id
+          required: true
+          schema:
+            description: Catalog work id
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeWorkCreditsResponse"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: List a work's credits grouped by role
       tags:
         - catalog-s2s

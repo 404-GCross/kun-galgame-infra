@@ -70,6 +70,19 @@ const (
 	LabelKindGroup        int16 = 5 // group/unit (组合, e.g. Bangumi person type 3)
 )
 
+// WorkLabelKind — the attribution nature of a catalog_work_label edge:
+// organizational responsibility for a work (who published/made it), which is
+// DISTINCT from an authorship credit (catalog_credit, "who performed a role").
+// Step 14 registered maker labels but deferred this edge for want of a real
+// consumer; step 18's read surface is that consumer. 0/1 are in use; 2/3 are
+// reserved for when developer/brand attributions gain a source.
+const (
+	WorkLabelKindCircle    int16 = 0 // doujin circle (同人サークル)
+	WorkLabelKindPublisher int16 = 1 // publisher / label
+	WorkLabelKindDeveloper int16 = 2 // reserved: the studio that made it
+	WorkLabelKindBrand     int16 = 3 // reserved: the brand it shipped under
+)
+
 // Revision actions (doc 10 §9). merged_source/merged_target: a merge writes a
 // revision on BOTH sides so neither history dangles (invariant 7).
 const (

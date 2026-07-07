@@ -72,6 +72,7 @@ func main() {
 		"labels", st.LabelsCreated, "names", st.NamesCreated, "credits", st.CreditsWritten,
 		"stubs", st.Stubs, "skipped_info_only", st.SkippedInfoOnly,
 		"skipped_unmapped_role", st.SkippedUnmappedRole, "already", st.Already, "errors", st.Errors,
+		"edges_considered", st.EdgesConsidered, "edges_written", st.EdgesWritten,
 	)
 	if !*apply {
 		slog.Info("DRY RUN — nothing written; re-run with --apply")

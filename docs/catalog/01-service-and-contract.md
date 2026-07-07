@@ -8,13 +8,15 @@ catalog **只管身份、关系、来源锚**:
 
 - **实体**:`work`(作品)/`release`(发行/SKU)/`credit_name`(署名名义,孤儿合法)/`person`(人)/`character`(角色)/`org`/`label`(厂牌/社团)。实体类型常量 `0=person 1=credit_name 2=org 3=label 4=character 5=work 6=release`。
 - **来源锚** `catalog_external_ref`:把实体锚到外部来源的 id,按 `link_kind` 分级 `exact(0)` / `probable(1)` / `related(2)`;exact 有唯一约束(一个来源的一个外部 id 只精确锚一个同类实体)。
-- **关系**:credit(署名边:work ↔ credit_name/label)、redirect(合并后的旧→新 id)、alias(名义别名)。
+- **关系**:credit(**署名边**:work ↔ credit_name/label,"谁演了什么角色/担任什么职务")、**work_label 归属边**(work ↔ label,"哪个社团/发行方对作品负责";`kind`:0=circle/1=publisher/2=developer/3=brand)、redirect(合并后的旧→新 id)、alias(名义别名)。**署名 ≠ 归属**:credit 是个人署名,work_label 是组织责任,两者并存不互斥。
 
 catalog **不存**产品展示体:简介、封面/截图字节、评分、点赞、收藏、NSFW 过滤——这些是**产品站(body 层)**各自持有的。产品站保留自己的富行,只把「这是**哪一个**作品/人物」的身份问题委托给 catalog。这条分界是硬约束:catalog 加展示字段 = 越界。
 
 来源注册表(节选):`source` `2=vndb 3=bangumi 4=dlsite 5=erogamespace 1=user`;`medium` `1=galgame 5=asmr`;`content_rating` `0=all_ages 1=sensitive 2=r18`。完整注册表由 `cmd/migrate-catalog` 的 seed 落库。
 
-## 2. S2S 三端点(Basic client 认证,前缀 `/api/v1/catalog`)
+## 2. S2S 端点(Basic client 认证,前缀 `/api/v1/catalog`)
+
+写/运维面:resolve(2.1)· redirects feed(2.2)· claim(2.3,带 site 绑定)。读面(D-01,2.4-2.6):by-anchor · credits · entity search。
 
 ### 2.1 `POST /catalog/resolve` — 批量 id 规范化(只读)
 
@@ -40,6 +42,26 @@ catalog **不存**产品展示体:简介、封面/截图字节、评分、点赞
 - **幂等**:同一 (锚 / product_work_id) 重复 claim 收敛到同一 `work_id`。
 - **冲突 409**:当认领会违反身份唯一性(例如两个不同产品行争抢同一锚)时返回 409 problem(house 信封,`code`/`message`)。
 - ⚠️ **site 绑定要求(写端点独有)**:见 §4。
+
+### 2.4 `GET /catalog/works/by-anchor?source=&external_id=` — 锚反查读穿(只读)
+
+产品站拿一个外源 id 读穿到 catalog 作品。`source` 对 `catalog_source` 注册表校验(即白名单:dlsite/vndb/bangumi/erogamespace/…);命中 **work 级或 release 级锚**均可(release 锚回溯其 work;`exact` 优先、work 级优先破平);未命中 **404**。
+
+- 响应 `data`:`work`(id/medium/display_name/olang/content_rating/status/**site 认领态**)+ `titles`(official/alias/abbreviation/search_hint)+ `releases`(每个含 kind/模糊日期/各自 `anchors`)+ **`labels`(经 work_label 归属边,含 label 自身 kind + 归属 kind)**。
+- 用途:letmoe 音声读穿页(镜像其 wiki 读穿),社团归属由此获得。
+
+### 2.5 `GET /catalog/works/{id}/credits` — 作品署名(只读)
+
+按 role 分组的署名列表。每组 = role(id/key/name)+ 条目;条目 = 名义(id + lang 分桶名 + latin)+ 可选 character(id+名,VA 用)+ note + source key。**孤儿名义原样出**(person 层未建,如实);排序 role_id 权重 + 源 + 名义 id。
+
+### 2.6 `GET /catalog/search/entities?q=&type=&locale=&limit=` — 实体搜索(只读)
+
+- `type` ∈ `names|characters|labels`(单选;非法 → Huma enum 校验 422);
+- **`locale` ∈ `zh|ja|en` → 服务端映射 Meili 查询语言**(`zh→cmn`/`ja→jpn`/`en→默认管线`;不变量 2:消费者只传粗粒度 UI locale,**服务端钉查询语言,绝不透传任意 Meili 参数**);
+- `limit` cap 20;空 `q` → 按 popularity 返回热门。
+- 响应条目:id(前缀 n/c/b)· entity_type · name(分桶取非空)· latin · sources · popularity · kind(label)· person_id(名义,缺省=孤儿)。
+
+> **读面无 site 绑定**(16 语义:绑定只作用于写端点 claim);三读端点仍走 Basic S2S(无凭据 401)。
 
 ## 3. Admin 三桶(Bearer JWT + admin 角色,前缀 `/api/v1/admin/catalog`)
 

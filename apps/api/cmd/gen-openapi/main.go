@@ -45,7 +45,7 @@ func main() {
 	case *galgameCalendar:
 		api = galgameHandler.SetupCalendarSpec(app)
 	case *catalog:
-		api = catHandler.Setup(app, nil, nil)
+		api = catHandler.Setup(app, nil, nil, nil, nil)
 	case *catalogAdmin:
 		api = catHandler.SetupAdmin(app, nil, nil)
 	case *admin:

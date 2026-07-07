@@ -45,3 +45,33 @@ type CatalogEntityRelation struct {
 }
 
 func (CatalogEntityRelation) TableName() string { return "catalog_entity_relation" }
+
+// CatalogWorkLabel is a work↔label ATTRIBUTION edge — "this label
+// (circle/publisher/…) is organizationally responsible for this work". It is
+// deliberately DISTINCT from a credit (catalog_credit): a credit is an
+// authorship signature (a person/name performed a role); an attribution is a
+// publishing/making responsibility. Step 14's analysis ("归属≠署名") stands —
+// what changed is only WHEN the edge is built: the read surface (step 18,
+// letmoe audio pages) is the first consumer that needs it, so the edge lands
+// now (consumption-pulled capability).
+//
+// Stored as ONE row per (work, label, kind) — the composite PK IS the
+// uniqueness (same shape as CatalogWorkRelation). Kind is part of the key so a
+// label may relate to a work under more than one capacity. No revision: like a
+// relation edge, this is relational bookkeeping, not a versioned entity.
+type CatalogWorkLabel struct {
+	WorkID  int64 `gorm:"primaryKey;autoIncrement:false" json:"work_id"`
+	LabelID int64 `gorm:"primaryKey;autoIncrement:false;index" json:"label_id"` // reverse: label→works
+	// Kind is a WorkLabelKind* constant. In the PK, no default tag — 0 (circle)
+	// is a meaningful value the importer sets explicitly (default-tag zero-value
+	// trap avoided).
+	Kind int16 `gorm:"primaryKey;autoIncrement:false" json:"kind"`
+	// SourceID records which import asserted the attribution; NULL = user.
+	SourceID  *int16    `json:"source_id"`
+	CreatedAt time.Time `json:"created_at"`
+
+	Work  *CatalogWork  `gorm:"foreignKey:WorkID" json:"work,omitempty"`
+	Label *CatalogLabel `gorm:"foreignKey:LabelID" json:"label,omitempty"`
+}
+
+func (CatalogWorkLabel) TableName() string { return "catalog_work_label" }
