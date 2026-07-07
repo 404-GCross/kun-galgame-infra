@@ -75,10 +75,14 @@ export default defineNuxtConfig({
       apiBase:
         process.env.KUN_VISUAL_NOVEL_NUXT_PUBLIC_API_BASE ||
         'http://127.0.0.1:9277/api/v1',
-      // catalog service base (review queues live on cmd/catalog, port 9281).
+      // catalog service base for the BROWSER. The catalog service has no
+      // public domain (docker-network only), so the default is the
+      // same-origin /catalog-proxy server route, which relays admin calls to
+      // catalogApiBaseSsr. Works unchanged in local dev (the relay falls back
+      // to 127.0.0.1:9281).
       catalogApiBase:
         process.env.KUN_VISUAL_NOVEL_NUXT_PUBLIC_CATALOG_API_BASE ||
-        'http://127.0.0.1:9281/api/v1',
+        '/catalog-proxy',
       // image_service public CDN base; override via env in prod.
       imageCdnBase:
         process.env.KUN_VISUAL_NOVEL_NUXT_PUBLIC_IMAGE_CDN_BASE ||
