@@ -25,6 +25,7 @@ type Config struct {
 	ImageService    ImageServiceConfig
 	ImageS3         S3Config
 	ImageClient     ImageClientConfig
+	CatalogClient   CatalogClientConfig
 	// GalgameImageClient is a SECOND image client identity, used only by the
 	// galgame-image-refping job. The job runs in the oauth container (central
 	// scheduler), where ImageClient is the *account* client — but galgame
@@ -101,6 +102,15 @@ type ImageClientConfig struct {
 	BaseURL      string // e.g. http://127.0.0.1:9278 (image_service URL from this caller's perspective)
 	ClientID     string // OAuth client id this caller authenticates as
 	ClientSecret string // OAuth client secret
+}
+
+// CatalogClientConfig is caller-side configuration for the galgame backend's
+// proxy to the catalog S2S read face (the internal data browser). Empty
+// ClientID/Secret → the proxy soft-503s ("catalog browsing not configured").
+type CatalogClientConfig struct {
+	BaseURL      string
+	ClientID     string
+	ClientSecret string
 }
 
 // ImageServiceConfig holds image-service-specific configuration
@@ -385,6 +395,13 @@ func Load() (*Config, error) {
 		BaseURL:      getEnv("KUN_IMAGE_CLIENT_BASE_URL", defaultBase),
 		ClientID:     getEnv("KUN_IMAGE_CLIENT_ID", ""),
 		ClientSecret: getEnv("KUN_IMAGE_CLIENT_SECRET", ""),
+	}
+
+	// Catalog client for the galgame backend's internal-browser proxy (step 19).
+	cfg.CatalogClient = CatalogClientConfig{
+		BaseURL:      getEnv("KUN_CATALOG_CLIENT_BASE_URL", "http://catalog:9281"),
+		ClientID:     getEnv("KUN_CATALOG_CLIENT_ID", ""),
+		ClientSecret: getEnv("KUN_CATALOG_CLIENT_SECRET", ""),
 	}
 
 	// Second image identity for galgame-image-refping (see Config.GalgameImageClient).

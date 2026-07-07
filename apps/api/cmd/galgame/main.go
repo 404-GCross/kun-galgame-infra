@@ -19,6 +19,7 @@ import (
 	galgameSearch "api/internal/platform/galgame/search"
 	galgameService "api/internal/platform/galgame/service"
 	siteRepo "api/internal/platform/site/repository"
+	"api/pkg/catalogclient"
 	"api/pkg/imageclient"
 
 	"github.com/gofiber/fiber/v3"
@@ -167,6 +168,17 @@ func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB, se
 		slog.Warn("image client not configured; multipart banner uploads in galgame Create/Update/PR will be rejected; Revert will skip image-existence probe")
 	}
 
+	// Catalog client for the internal data browser proxy (step 19). Nil when
+	// unconfigured → the staff browser routes soft-503.
+	catalogCli := catalogclient.New(catalogclient.Config{
+		BaseURL:      cfg.CatalogClient.BaseURL,
+		ClientID:     cfg.CatalogClient.ClientID,
+		ClientSecret: cfg.CatalogClient.ClientSecret,
+	})
+	if catalogCli != nil {
+		slog.Info("catalog client configured", "base_url", cfg.CatalogClient.BaseURL)
+	}
+
 	// Handlers
 	galgameH := galgameHandler.NewGalgameHandler(galgameSvc, searchHook, imgCli)
 	revisionH := galgameHandler.NewRevisionHandler(galgameSvc, imgCli)
@@ -281,6 +293,18 @@ func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB, se
 		middleware.OAuthClientBasicAuth(oauthClientRepo),
 		taxRevH.RecentFeed,
 	)
+
+	// Internal catalog data browser (step 19): staff-only (admin/moderator)
+	// read-only proxy to the catalog S2S read face — the Basic credentials stay
+	// server-side. A non-empty prefix means this group does NOT trip the
+	// empty-prefix fence gotcha above; it carries its own jwtAuth + role gate.
+	catalogProxy := galgameHandler.NewCatalogProxyHandler(catalogCli)
+	catBrowse := galgame.Group("/catalog", jwtAuth, middleware.RequireRole("admin", "moderator"))
+	catBrowse.Get("/stats", catalogProxy.Stats)
+	catBrowse.Get("/search/entities", catalogProxy.Search)
+	catBrowse.Get("/works/:id", catalogProxy.Work)
+	catBrowse.Get("/works/:id/credits", catalogProxy.Credits)
+	catBrowse.Get("/labels/:id/works", catalogProxy.LabelWorks)
 
 	// ─── Bearer JWT fence — every route below this point inherits jwtAuth ───
 	galgameAuth := galgame.Group("", jwtAuth)

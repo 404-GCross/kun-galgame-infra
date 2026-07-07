@@ -242,6 +242,13 @@ services:
       # Environment to the same image-upload OAuth client the kungal forum API uses.
       KUN_IMAGE_CLIENT_ID: ${KUN_IMAGE_CLIENT_ID:-}
       KUN_IMAGE_CLIENT_SECRET: ${KUN_IMAGE_CLIENT_SECRET:-}
+      # Catalog S2S client for the staff-only internal data browser (step 19).
+      # Reuses the galgame_wiki client (= the image client creds) by default —
+      # the catalog READ face imposes no site binding, so no new secret needed;
+      # set dedicated KUN_CATALOG_CLIENT_* in Dokploy only to override. Base URL
+      # defaults to http://catalog:9281 (dokploy-network service name).
+      KUN_CATALOG_CLIENT_ID: ${KUN_CATALOG_CLIENT_ID:-${KUN_IMAGE_CLIENT_ID:-}}
+      KUN_CATALOG_CLIENT_SECRET: ${KUN_CATALOG_CLIENT_SECRET:-${KUN_IMAGE_CLIENT_SECRET:-}}
     expose: ["9280"]
     depends_on:
       postgres: { condition: service_healthy }
