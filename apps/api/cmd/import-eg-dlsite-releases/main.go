@@ -1,0 +1,98 @@
+// import-eg-dlsite-releases lands the EG×DLsite rosetta wave (step 28): for
+// every EG.dlsite_id that resolves to a real DLsite work, attach the DLsite
+// release to the already-claimed wiki work when the EG game is reconciled
+// (rule:eg-vndb-rosetta), else mint an unclaimed galgame work (EG-known
+// erogame) with a probable EG work-ref. Parse first, then mint — no duplicate
+// works. Reuses the step-14 DLsite importer machinery; medium=galgame.
+//
+//	go run ./cmd/import-eg-dlsite-releases                    # dry-run (default)
+//	go run ./cmd/import-eg-dlsite-releases --run              # write (×2 = idempotent)
+//
+// The EG staging DSN enters via --eg-dsn (default: erogamespace db on the
+// catalog server), the DLsite staging via --dlsite-dsn (default: dlsite db),
+// mirroring steps 11/14.
+package main
+
+import (
+	"flag"
+	"log/slog"
+	"os"
+
+	"api/internal/infrastructure/database"
+	"api/internal/platform/catalog/importer"
+	"api/pkg/config"
+	"api/pkg/logger"
+
+	"github.com/joho/godotenv"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
+	gormlogger "gorm.io/gorm/logger"
+)
+
+func openStaging(base config.DatabaseConfig, override, dbName string) (*gorm.DB, error) {
+	dsn := override
+	if dsn == "" {
+		cfg := base
+		cfg.DBName = dbName
+		dsn = cfg.DSN()
+	}
+	return gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: gormlogger.Default.LogMode(gormlogger.Silent)})
+}
+
+func main() {
+	apply := flag.Bool("run", false, "write (default: dry run — plan counts only)")
+	limit := flag.Int("limit", 0, "cap works processed (0 = all)")
+	egDSN := flag.String("eg-dsn", "", "erogamespace staging DSN (default: erogamespace db on the catalog server)")
+	dlsiteDSN := flag.String("dlsite-dsn", "", "DLsite staging DSN (default: dlsite db on the catalog server)")
+	flag.Parse()
+
+	_ = godotenv.Load("apps/api/.env")
+	cfg, err := config.Load()
+	if err != nil {
+		slog.Error("load config", "error", err)
+		os.Exit(1)
+	}
+	logger.Init(cfg.Server.Env)
+
+	catalogDB, err := database.NewPostgresDB(cfg.CatalogDatabase)
+	if err != nil {
+		slog.Error("catalog db connect", "error", err)
+		os.Exit(1)
+	}
+	defer catalogDB.Close()
+
+	egDB, err := openStaging(cfg.CatalogDatabase, *egDSN, "erogamespace")
+	if err != nil {
+		slog.Error("erogamespace db connect", "error", err)
+		os.Exit(1)
+	}
+	if s, err := egDB.DB(); err == nil {
+		defer s.Close()
+	}
+	dlsiteDB, err := openStaging(cfg.CatalogDatabase, *dlsiteDSN, "dlsite")
+	if err != nil {
+		slog.Error("dlsite db connect", "error", err)
+		os.Exit(1)
+	}
+	if s, err := dlsiteDB.DB(); err == nil {
+		defer s.Close()
+	}
+
+	im := importer.New(catalogDB.DB(), egDB, importer.Options{DryRun: !*apply, Limit: *limit})
+	st, err := im.RunEGDLsite(dlsiteDB)
+	if err != nil {
+		slog.Error("eg-dlsite wave failed", "error", err)
+		os.Exit(1)
+	}
+	slog.Info("eg-dlsite wave summary",
+		"attached", st.Attached, "minted", st.Minted, "already", st.Already,
+		"ambiguous", st.Ambiguous, "missing", st.Missing,
+		"releases", st.ReleasesCreated, "titles", st.TitlesCreated, "labels", st.LabelsCreated,
+		"names", st.NamesCreated, "credits", st.CreditsWritten, "edges", st.EdgesWritten,
+		"eg_refs", st.EGRefsWritten, "stubs", st.Stubs, "skipped_unmapped_role", st.SkippedUnmappedRole,
+		"errors", st.Errors,
+	)
+	if !*apply {
+		slog.Info("DRY RUN — nothing written; re-run with --run")
+	}
+}

@@ -44,6 +44,9 @@ func TestMain(m *testing.M) {
 		`CREATE TABLE IF NOT EXISTS appearances (game bigint, character_id bigint)`,
 		`CREATE TABLE IF NOT EXISTS appearance_actors (game bigint, character_id bigint, actor_id bigint)`,
 		`CREATE TABLE IF NOT EXISTS works (workno text, work_name text, work_name_kana text, maker_id text, maker_name text, age_category text, work_type_string text, status text, regist_date timestamptz, product_json jsonb)`,
+		`CREATE TABLE IF NOT EXISTS games (id bigint, vndb text, dlsite_id text)`,
+		`ALTER TABLE games ADD COLUMN IF NOT EXISTS dlsite_id text`,
+		`ALTER TABLE games ADD COLUMN IF NOT EXISTS vndb text`,
 	}
 	for _, s := range stmts {
 		if err := db.Exec(s).Error; err != nil {
@@ -62,8 +65,8 @@ func clean(t *testing.T) {
 		"catalog_credit_name", "catalog_label", "catalog_character", "catalog_work",
 		"src_bangumi.subject_person", "src_bangumi.subject_character", "src_bangumi.person_character",
 		"src_bangumi.person", "src_bangumi.character",
-		"catalog_release", "catalog_work_title",
-		"src_llm.bid_identity_verdict", "creaters", "characters", "staff", "appearances", "appearance_actors", "works",
+		"catalog_release", "catalog_work_title", "catalog_work_label",
+		"src_llm.bid_identity_verdict", "creaters", "characters", "staff", "appearances", "appearance_actors", "works", "games",
 	}
 	for _, tb := range tables {
 		require.NoError(t, testDB.Exec("TRUNCATE "+tb+" RESTART IDENTITY CASCADE").Error)
