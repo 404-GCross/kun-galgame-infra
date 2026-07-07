@@ -4,6 +4,7 @@ import (
 	"strconv"
 	"strings"
 
+	"api/internal/platform/galgame/perm"
 	"api/internal/platform/galgame/search"
 	"api/pkg/errors"
 	"api/pkg/response"
@@ -89,7 +90,7 @@ func (h *SearchHandler) Galgame(c fiber.Ctx) error {
 	//     "all states" (the service applies no status filter), so a wiki search
 	//     surfaces every game.
 	roles, _ := c.Locals("user_roles").([]string)
-	if !hasRole(roles, "admin", "moderator") {
+	if !perm.Resolver.Can(roles, perm.SearchAllStates) {
 		filtered := statuses[:0]
 		for _, st := range statuses {
 			if st == 0 || st == 2 { // published OR claimable VNDB draft

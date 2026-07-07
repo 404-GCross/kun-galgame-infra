@@ -7,6 +7,7 @@ import (
 
 	"api/internal/platform/galgame/dto"
 	"api/internal/platform/galgame/model"
+	"api/internal/platform/galgame/perm"
 	"api/internal/platform/galgame/repository"
 	"api/pkg/errors"
 
@@ -54,7 +55,7 @@ func (s *SubmissionService) Submit(ctx context.Context, userID int, roles []stri
 	// else creates a pending(3) draft. Empty vndb_id is allowed for all here, so
 	// a trusted publisher can publish a doujin/indie title with no VNDB entry.
 	// See docs/auth/01-creator-role-design.md.
-	publishDirect := hasRole(roles, "creator", "moderator", "admin", "super_admin")
+	publishDirect := perm.Resolver.Can(roles, perm.PublishDirect)
 
 	if !publishDirect {
 		// Quota: count today's submissions for this user (status IN 3,4 —

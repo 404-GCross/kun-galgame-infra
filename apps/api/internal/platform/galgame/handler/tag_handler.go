@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"api/internal/platform/galgame/dto"
+	"api/internal/platform/galgame/perm"
 	"api/internal/platform/galgame/repository"
 	"api/internal/platform/galgame/search"
 	"api/internal/platform/galgame/service"
@@ -179,7 +180,7 @@ func (h *TagHandler) Update(c fiber.Ctx) error {
 		return response.Unauthorized(c, errors.ErrAuthUnauthorized)
 	}
 	roles, _ := c.Locals("user_roles").([]string)
-	if !hasRole(roles, "admin", "moderator") {
+	if !perm.Resolver.Can(roles, perm.TaxonomyEditAny) {
 		return response.Forbidden(c, errors.ErrForbidden)
 	}
 
@@ -238,7 +239,7 @@ func (h *TagHandler) Delete(c fiber.Ctx) error {
 		return response.Unauthorized(c, errors.ErrAuthUnauthorized)
 	}
 	roles, _ := c.Locals("user_roles").([]string)
-	if !hasRole(roles, "admin", "moderator") {
+	if !perm.Resolver.Can(roles, perm.TaxonomyEditAny) {
 		return response.Forbidden(c, errors.ErrForbidden)
 	}
 
@@ -270,16 +271,4 @@ func (h *TagHandler) Delete(c fiber.Ctx) error {
 		"purged_aliases":       aliases,
 		"affected_galgame_ids": affected,
 	})
-}
-
-// hasRole checks if the user has any of the specified roles
-func hasRole(roles []string, allowed ...string) bool {
-	for _, r := range roles {
-		for _, a := range allowed {
-			if r == a {
-				return true
-			}
-		}
-	}
-	return false
 }

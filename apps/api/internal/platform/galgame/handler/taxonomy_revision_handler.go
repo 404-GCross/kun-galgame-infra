@@ -6,6 +6,7 @@ import (
 
 	"api/internal/platform/galgame/dto"
 	"api/internal/platform/galgame/model"
+	"api/internal/platform/galgame/perm"
 	"api/internal/platform/galgame/service"
 	apperr "api/pkg/errors"
 	"api/pkg/response"
@@ -92,7 +93,7 @@ func (h *TaxonomyRevisionHandler) revert(c fiber.Ctx, entity string) error {
 		return response.Unauthorized(c, apperr.ErrAuthUnauthorized)
 	}
 	roles, _ := c.Locals("user_roles").([]string)
-	if !hasRole(roles, "admin", "moderator") {
+	if !perm.Resolver.Can(roles, perm.TaxonomyReview) {
 		return response.Forbidden(c, apperr.ErrForbidden)
 	}
 	id, err := strconv.Atoi(c.Params("id"))

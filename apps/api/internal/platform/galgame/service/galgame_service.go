@@ -7,6 +7,7 @@ import (
 
 	"api/internal/platform/galgame/dto"
 	"api/internal/platform/galgame/model"
+	"api/internal/platform/galgame/perm"
 	"api/internal/platform/galgame/repository"
 	"api/pkg/errors"
 	"api/pkg/utils"
@@ -126,7 +127,7 @@ func (s *GalgameService) GetByID(ctx context.Context, id int) (*model.Galgame, m
 // GetByIDWithViewer is the viewer-aware detail fetch. Visibility:
 //   - status=0                       → visible to anyone
 //   - status ∈ {3,4}                 → visible to the submitter, AND to a
-//     reviewer (admin/super_admin/moderator)
+//     reviewer (holder of galgame.review: moderator/admin/ren)
 //     so the review queue's "查看" can
 //     preview a pending/declined submission
 //   - status=1 (banned) / status=2 (VNDB draft) / other → NotFound
@@ -146,10 +147,10 @@ func (s *GalgameService) GetByIDWithViewer(ctx context.Context, id, viewerUserID
 		return nil, nil, err
 	}
 
-	// reviewer = the roles that staff the review queue (admin/super_admin/
-	// moderator — the same set RequireRole guards /admin/galgame/* with).
-	// Matches the role set Update() already accepts for any-status edits.
-	reviewer := hasRole(viewerRoles, "admin", "super_admin", "moderator")
+	// reviewer = holds galgame.review (moderator/admin/ren) — the review-queue
+	// staff, the same capability that gates /admin/galgame/* and any-status
+	// edits (Update below).
+	reviewer := perm.Resolver.Can(viewerRoles, perm.Review)
 
 	switch {
 	case galgame.Status == 0:
@@ -430,21 +431,18 @@ func (s *GalgameService) Update(ctx context.Context, userID, galgameID int, role
 		return nil, err
 	}
 
-	// Editable by the creator OR any elevated role. Accept admin / super_admin /
-	// moderator — NOT just the literal "admin". kungal's RoleFromOAuthRoles maps
-	// admin+super_admin to the same top tier, and the galgame create/status gates
-	// already allow admin+moderator; checking only "admin" here spuriously 403'd
-	// every super_admin- or moderator-tier admin who didn't carry the exact
-	// "admin" string.
-	if galgame.UserID != userID && !hasRole(roles, "admin", "super_admin", "moderator") {
+	// Editable by the creator OR any holder of galgame.edit_any
+	// (moderator/admin/ren) — the content-moderation edit power, matching the
+	// role set the create/status gates already allow.
+	if galgame.UserID != userID && !perm.Resolver.Can(roles, perm.EditAny) {
 		return nil, errors.NewWithCode(errors.ErrGalgameForbidden)
 	}
 
 	// PUT is "direct edit of a PUBLISHED entry" (docs 06/07). A submitter's
 	// own pending(3)/declined(4) draft must go through PATCH/PatchDraft, which
-	// flips declined→pending and emits the review-queue message. Admins keep
-	// direct-edit on any status (e.g. fixing a VNDB draft).
-	if galgame.Status != model.GalgameStatusPublished && !hasRole(roles, "admin", "super_admin", "moderator") {
+	// flips declined→pending and emits the review-queue message. edit_any
+	// holders keep direct-edit on any status (e.g. fixing a VNDB draft).
+	if galgame.Status != model.GalgameStatusPublished && !perm.Resolver.Can(roles, perm.EditAny) {
 		return nil, errors.NewWithCode(errors.ErrGalgameDraftStatusInvalid)
 	}
 
@@ -979,19 +977,4 @@ func strToPtr(s string) *string {
 		return nil
 	}
 	return &s
-}
-
-// hasRole reports whether the caller's OAuth roles include ANY of targets.
-// Variadic so callers can accept several elevated roles in one check (the
-// galgame edit allows admin/super_admin/moderator); single-arg callers are
-// unchanged.
-func hasRole(roles []string, targets ...string) bool {
-	for _, r := range roles {
-		for _, t := range targets {
-			if r == t {
-				return true
-			}
-		}
-	}
-	return false
 }

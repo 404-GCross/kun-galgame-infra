@@ -6,6 +6,7 @@ import (
 
 	"api/internal/platform/galgame/dto"
 	"api/internal/platform/galgame/model"
+	"api/internal/platform/galgame/perm"
 	"api/internal/platform/galgame/repository"
 	"api/internal/platform/galgame/service"
 	"api/pkg/errors"
@@ -87,7 +88,7 @@ func (h *SeriesHandler) Create(c fiber.Ctx) error {
 	// Creating a series re-homes arbitrary galgames (writes their series_id +
 	// a galgame_revision), so it must be staff-only — same gate as series
 	// Update/Delete/Revert and the sibling tag/official/engine mutations.
-	if !hasRole(roles, "admin", "moderator") {
+	if !perm.Resolver.Can(roles, perm.TaxonomyEditAny) {
 		return response.Forbidden(c, errors.ErrForbidden)
 	}
 
@@ -118,7 +119,7 @@ func (h *SeriesHandler) Update(c fiber.Ctx) error {
 	// Mirror Delete/Revert and the sibling tag/official/engine Update gates:
 	// editing a series renames it and can re-home arbitrary galgames, so it
 	// must be staff-only (the route only attaches jwtAuth, not RequireRole).
-	if !hasRole(roles, "admin", "moderator") {
+	if !perm.Resolver.Can(roles, perm.TaxonomyEditAny) {
 		return response.Forbidden(c, errors.ErrForbidden)
 	}
 
@@ -151,7 +152,7 @@ func (h *SeriesHandler) Delete(c fiber.Ctx) error {
 		return response.Unauthorized(c, errors.ErrAuthUnauthorized)
 	}
 	roles, _ := c.Locals("user_roles").([]string)
-	if !hasRole(roles, "admin", "moderator") {
+	if !perm.Resolver.Can(roles, perm.TaxonomyEditAny) {
 		return response.Forbidden(c, errors.ErrForbidden)
 	}
 

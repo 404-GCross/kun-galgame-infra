@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"api/internal/platform/galgame/dto"
+	"api/internal/platform/galgame/perm"
 	"api/internal/platform/galgame/repository"
 	"api/internal/platform/galgame/search"
 	"api/internal/platform/galgame/service"
@@ -137,7 +138,7 @@ func (h *OfficialHandler) Update(c fiber.Ctx) error {
 		return response.Unauthorized(c, errors.ErrAuthUnauthorized)
 	}
 	roles, _ := c.Locals("user_roles").([]string)
-	if !hasRole(roles, "admin", "moderator") {
+	if !perm.Resolver.Can(roles, perm.TaxonomyEditAny) {
 		return response.Forbidden(c, errors.ErrForbidden)
 	}
 
@@ -192,7 +193,7 @@ func (h *OfficialHandler) Delete(c fiber.Ctx) error {
 		return response.Unauthorized(c, errors.ErrAuthUnauthorized)
 	}
 	roles, _ := c.Locals("user_roles").([]string)
-	if !hasRole(roles, "admin", "moderator") {
+	if !perm.Resolver.Can(roles, perm.TaxonomyEditAny) {
 		return response.Forbidden(c, errors.ErrForbidden)
 	}
 

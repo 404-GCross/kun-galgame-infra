@@ -5,6 +5,7 @@ import (
 
 	"api/internal/platform/galgame/dto"
 	"api/internal/platform/galgame/model"
+	"api/internal/platform/galgame/perm"
 	"api/internal/platform/galgame/repository"
 	"api/internal/platform/galgame/service"
 	"api/pkg/errors"
@@ -41,7 +42,7 @@ func (h *LinkHandler) authorizeGalgameEdit(c fiber.Ctx, gid int, userID uint) er
 		}
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
-	if g.UserID != int(userID) && !hasRole(roles, "admin") {
+	if g.UserID != int(userID) && !perm.Resolver.Can(roles, perm.OwnerOverride) {
 		return response.Forbidden(c, errors.ErrGalgameForbidden)
 	}
 	return nil

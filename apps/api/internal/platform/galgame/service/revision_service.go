@@ -6,6 +6,7 @@ import (
 
 	"api/internal/platform/galgame/dto"
 	"api/internal/platform/galgame/model"
+	"api/internal/platform/galgame/perm"
 	"api/internal/platform/galgame/repository"
 	"api/pkg/errors"
 
@@ -205,7 +206,7 @@ func (s *GalgameService) Revert(ctx context.Context, userID, galgameID, targetRe
 	if err != nil {
 		return errors.NewWithCode(errors.ErrGalgameNotFound)
 	}
-	if galgame.UserID != userID && !hasRole(roles, "admin") {
+	if galgame.UserID != userID && !perm.Resolver.Can(roles, perm.OwnerOverride) {
 		return errors.NewWithCode(errors.ErrGalgameForbidden)
 	}
 
@@ -394,7 +395,7 @@ func (s *GalgameService) MergePR(ctx context.Context, userID, galgameID, prID in
 	if err != nil {
 		return errors.NewWithCode(errors.ErrGalgameNotFound)
 	}
-	if galgame.UserID != userID && !hasRole(roles, "admin") {
+	if galgame.UserID != userID && !perm.Resolver.Can(roles, perm.OwnerOverride) {
 		return errors.NewWithCode(errors.ErrGalgameForbidden)
 	}
 
@@ -561,7 +562,7 @@ func (s *GalgameService) DeclinePR(ctx context.Context, userID, galgameID, prID 
 	if err != nil {
 		return errors.NewWithCode(errors.ErrGalgameNotFound)
 	}
-	if galgame.UserID != userID && !hasRole(roles, "admin") {
+	if galgame.UserID != userID && !perm.Resolver.Can(roles, perm.OwnerOverride) {
 		return errors.NewWithCode(errors.ErrGalgameForbidden)
 	}
 

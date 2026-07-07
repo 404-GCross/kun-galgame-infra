@@ -15,6 +15,7 @@ import (
 	"api/pkg/oidctoken"
 
 	galgameHandler "api/internal/platform/galgame/handler"
+	galgamePerm "api/internal/platform/galgame/perm"
 	galgameRepo "api/internal/platform/galgame/repository"
 	galgameSearch "api/internal/platform/galgame/search"
 	galgameService "api/internal/platform/galgame/service"
@@ -311,8 +312,9 @@ func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB, se
 	// POST /galgame is the admin direct-publish bypass: it creates a
 	// status=0 entry immediately, skipping the user submission queue. Regular
 	// users must go through POST /galgame/submit (creates status=3, awaits
-	// review). Locked to admin/moderator so non-staff can't bypass review.
-	galgameAuth.Post("/", middleware.RequireRole("admin", "moderator"), galgameH.Create)
+	// review). Locked to galgame.create (moderator/admin/ren) so non-staff
+	// can't bypass review.
+	galgameAuth.Post("/", middleware.RequirePermission(galgamePerm.Resolver, galgamePerm.Create), galgameH.Create)
 	galgameAuth.Put("/:gid", galgameH.Update)
 	// Canonical galgame image upload (cover + screenshot). Any logged-in user —
 	// incl. forum/moyu proxying their users via their wiki client — POSTs
@@ -348,10 +350,10 @@ func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB, se
 	galgameAuth.Get("/messages/mine", messageH.ListMine)
 
 	// ── Admin ──
-	// Admin endpoints require both JWT validity AND admin/moderator role —
-	// without the role check anyone with a valid OAuth access_token could
-	// modify galgame status.
-	admin := api.Group("/admin", jwtAuth, middleware.RequireRole("admin", "moderator"))
+	// Admin endpoints require both JWT validity AND galgame.admin_access
+	// (moderator/admin/ren) — without the permission check anyone with a valid
+	// OAuth access_token could modify galgame status.
+	admin := api.Group("/admin", jwtAuth, middleware.RequirePermission(galgamePerm.Resolver, galgamePerm.AdminAccess))
 	admin.Get("/stats", adminH.Stats)
 	admin.Get("/galgame", adminH.ListGalgames)
 	admin.Get("/galgame/messages", messageH.ListAdminQueue)

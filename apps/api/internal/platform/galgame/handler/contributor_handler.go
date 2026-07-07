@@ -5,6 +5,7 @@ import (
 
 	"api/internal/platform/galgame/dto"
 	"api/internal/platform/galgame/model"
+	"api/internal/platform/galgame/perm"
 	"api/internal/platform/galgame/repository"
 	"api/pkg/errors"
 	"api/pkg/response"
@@ -85,7 +86,7 @@ func (h *ContributorHandler) Delete(c fiber.Ctx) error {
 	if err := h.galgameRepo.DB().Select("user_id").First(&galgame, gid).Error; err != nil {
 		return response.NotFound(c, errors.ErrGalgameNotFound)
 	}
-	if galgame.UserID != int(userID) && !hasRole(roles, "admin") {
+	if galgame.UserID != int(userID) && !perm.Resolver.Can(roles, perm.OwnerOverride) {
 		return response.Forbidden(c, errors.ErrGalgameForbidden)
 	}
 
