@@ -71,7 +71,7 @@ catalog **不存**产品展示体:简介、封面/截图字节、评分、点赞
 
 > **读面无 site 绑定**(16 语义:绑定只作用于写端点 claim);读端点仍走 Basic S2S(无凭据 401)。
 
-## 3. Admin 三桶(Bearer JWT + admin 角色,前缀 `/api/v1/admin/catalog`)
+## 3. Admin 三桶(Bearer JWT + **ren 超管角色**,前缀 `/api/v1/admin/catalog`)
 
 人审治理面,把「机器不敢自动终判」的三类东西交给人:
 
@@ -81,13 +81,13 @@ catalog **不存**产品展示体:简介、封面/截图字节、评分、点赞
 | **proposals** | `GET /proposals` · `POST /proposals/{id}/{action}` | 合并提案(把两个实体判为同一个)——approve/reject |
 | **refs** | `GET /refs/probable` · `POST /refs/confirm` · `POST /refs/reject` | probable(1)级来源锚——升为 exact 或驳回 |
 
-admin 面走 oauth 的共享 JWT 中间件 + `RequireRole("admin")`,与 galgame admin 面同构;**不经 site 绑定列**(它是运营人审,不是产品 S2S)。
+admin 面走 oauth 的共享 JWT 中间件 + `RequireRole("ren")`(**超管专属**——目录人审是高权限运营面,普通 admin 不放行);**不经 site 绑定列**(它是运营人审,不是产品 S2S)。
 
 ## 4. 鉴权形态
 
 - **S2S face(`/api/v1/catalog/*`)**:`Authorization: Basic <b64(client_id:client_secret)>`,对 `oauth_clients` 注册表校验。任何有效一等 client 可**认证**;但——
 - **写路径 per-client site 绑定**:`oauth_clients.catalog_site`(可空 text,size 64,无唯一约束——一站可多 client)。`POST /catalog/works/claim` 要求认证 client 的 `catalog_site` **非空**且 **== 请求体 `site`**,否则 **403**(未绑定或站点不匹配的信息写在 message)。未绑定的 client 根本不能 claim。**只读端点(resolve / redirects)不受此限。** 绑定值写法:直接 SQL 设 `oauth_clients.catalog_site`(无管理 UI,后续小步补 oauth admin 编辑面)。
-- **admin face(`/api/v1/admin/catalog/*`)**:Bearer JWT(accept-both verifier)+ admin 角色,与 site 绑定列无关。
+- **admin face(`/api/v1/admin/catalog/*`)**:Bearer JWT(accept-both verifier)+ **ren 角色(超管专属)**,与 site 绑定列无关。
 - `GET /openapi.json`(S2S spec)、`GET /healthz` 无鉴权。
 
 ## 5. 生成 spec

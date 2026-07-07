@@ -102,7 +102,7 @@ func main() {
 	// auth never intercepts admin calls.
 	tokenVerifier := oidctoken.NewVerifierWithJWKS(cfg.JWT.Secret, cfg.OIDC.JWKSURL)
 	application.Fiber.Use("/api/v1/admin/catalog",
-		middleware.JWTAuth(tokenVerifier), middleware.RequireRole("admin"))
+		middleware.JWTAuth(tokenVerifier), middleware.RequireRole("ren"))
 
 	s2sAPI := catHandler.Setup(application.Fiber, resolveSvc, workSvc, readSvc, searcher, statsSvc)
 	catHandler.SetupAdmin(application.Fiber, queueSvc, mergeSvc)

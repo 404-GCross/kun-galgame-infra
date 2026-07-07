@@ -30,7 +30,7 @@ import (
 // Read faces (resolve / redirect feed) impose no binding.
 //
 // Admin face: the shared middleware.JWTAuth (accept-both verifier) +
-// middleware.RequireRole("admin") gate the /admin prefix at the Fiber layer,
+// middleware.RequireRole("ren") gate the /admin prefix at the Fiber layer,
 // exactly like the galgame admin surface; AdminBridge lifts the user id and
 // roles for handlers that record the operator.
 

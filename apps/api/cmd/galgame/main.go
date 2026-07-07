@@ -299,7 +299,7 @@ func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB, se
 	// server-side. A non-empty prefix means this group does NOT trip the
 	// empty-prefix fence gotcha above; it carries its own jwtAuth + role gate.
 	catalogProxy := galgameHandler.NewCatalogProxyHandler(catalogCli)
-	catBrowse := galgame.Group("/catalog", jwtAuth, middleware.RequireRole("admin", "moderator"))
+	catBrowse := galgame.Group("/catalog", jwtAuth, middleware.RequireRole("ren"))
 	catBrowse.Get("/stats", catalogProxy.Stats)
 	catBrowse.Get("/search/entities", catalogProxy.Search)
 	catBrowse.Get("/works/:id", catalogProxy.Work)

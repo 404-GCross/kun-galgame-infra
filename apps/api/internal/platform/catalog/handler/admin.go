@@ -24,7 +24,7 @@ type AdminServer struct {
 
 // SetupAdmin builds the admin review-queue Huma API (doc 17 §5 buckets:
 // candidates / proposals / probable refs). Auth is applied by the caller as
-// path-scoped Fiber middleware (middleware.JWTAuth + RequireRole("admin"))
+// path-scoped Fiber middleware (middleware.JWTAuth + RequireRole("ren"))
 // on the /api/v1/admin/catalog prefix BEFORE this — Huma registers on the
 // app, so the group middleware does not cover these routes. Callable with
 // nil services for spec export.

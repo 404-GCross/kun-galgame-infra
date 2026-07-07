@@ -10,7 +10,7 @@ import (
 
 // CatalogProxyHandler relays the internal data browser's read-only requests to
 // the catalog S2S read face, keeping the Basic credentials server-side (the
-// wiki frontend never sees them). The routes are staff-gated (admin/moderator)
+// wiki frontend never sees them). The routes are ren-gated (superadmin only)
 // by the caller; this handler adds no logic beyond forwarding.
 type CatalogProxyHandler struct{ cli *catalogclient.Client }
 

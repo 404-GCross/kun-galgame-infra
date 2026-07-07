@@ -74,22 +74,24 @@ func TestS2SAuth_Unauthenticated401(t *testing.T) {
 	}
 }
 
-// TestAdminGate_403WithoutRole: the admin prefix is gated by RequireRole at
-// the Fiber layer — a request that passed JWT parsing but carries no admin
-// role must 403 before any catalog handler runs.
+// TestAdminGate_403WithoutRole: the admin prefix is gated by RequireRole("ren")
+// at the Fiber layer — the catalog review surface is superadmin-only, so even
+// an ordinary admin must 403 before any catalog handler runs.
 func TestAdminGate_403WithoutRole(t *testing.T) {
-	app := fiber.New()
-	// Stand-in for JWTAuth that authenticates a non-admin user.
-	app.Use("/api/v1/admin/catalog", func(c fiber.Ctx) error {
-		c.Locals("user_id", uint(42))
-		c.Locals("user_roles", []string{"user"})
-		return c.Next()
-	}, middleware.RequireRole("admin"))
-	SetupAdmin(app, nil, nil)
+	for _, roles := range [][]string{{"user"}, {"admin", "moderator"}} {
+		app := fiber.New()
+		// Stand-in for JWTAuth that authenticates a non-ren user.
+		app.Use("/api/v1/admin/catalog", func(c fiber.Ctx) error {
+			c.Locals("user_id", uint(42))
+			c.Locals("user_roles", roles)
+			return c.Next()
+		}, middleware.RequireRole("ren"))
+		SetupAdmin(app, nil, nil)
 
-	resp, err := app.Test(httptest.NewRequest("GET", "/api/v1/admin/catalog/candidates", nil))
-	require.NoError(t, err)
-	assert.Equal(t, fiber.StatusForbidden, resp.StatusCode)
+		resp, err := app.Test(httptest.NewRequest("GET", "/api/v1/admin/catalog/candidates", nil))
+		require.NoError(t, err)
+		assert.Equal(t, fiber.StatusForbidden, resp.StatusCode, "roles %v must not pass", roles)
+	}
 }
 
 // TestEnforceSiteBinding covers the three binding states as pure logic
