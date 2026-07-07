@@ -1,11 +1,14 @@
 <script setup lang="ts">
 // The ambiguity bucket (doc 10 §8): rule-generated "same entity?" pairs.
-// v1 shape: filters + list + a two-column compare panel per row + one-shot
-// decisions. Accepting REQUIRES an explicit source→target direction choice
-// (never preselected) and opens a merge proposal.
+// Two accept semantics, by entity type:
+//   - credit_name (step 22): accept = establish the "same person" fact — create
+//     or attach a person, both names survive. Symmetric, no merge direction.
+//   - anything else: accept opens a merge proposal, which REQUIRES an explicit
+//     source→target direction choice (never preselected).
 import {
   CATALOG_FILTER_ALL,
   CATALOG_ENTITY_TYPES,
+  CATALOG_SOURCE_LABELS,
   CANDIDATE_STATUS,
   CANDIDATE_STATUS_LABELS,
   CANDIDATE_STATUS_COLORS,
@@ -14,8 +17,12 @@ import {
 import type {
   CatalogCandidateItem,
   CatalogCandidatePage,
-  CatalogDecideCandidateData
+  CatalogDecideCandidateData,
+  CatalogDetachNameData
 } from '~~/shared/types/catalog'
+
+// credit_name candidates (entity_type === 1) are the person-linking lane.
+const isPersonLink = (c: CatalogCandidateItem) => c.entity_type === 1
 
 const api = useApi('catalog')
 
@@ -75,7 +82,8 @@ const decide = async (
   c: CatalogCandidateItem,
   action: 'accept' | 'reject' | 'defer'
 ) => {
-  if (action === 'accept' && !direction.value) {
+  // Merge accepts need a direction; person-link accepts are symmetric.
+  if (action === 'accept' && !isPersonLink(c) && !direction.value) {
     useKunMessage('请先显式选择合并方向', 'warn')
     return
   }
@@ -88,7 +96,7 @@ const decide = async (
       action,
       note: note.value || undefined
     }
-    if (action === 'accept') {
+    if (action === 'accept' && !isPersonLink(c)) {
       body.source_id = direction.value === 'ab' ? c.a_id : c.b_id
       body.target_id = direction.value === 'ab' ? c.b_id : c.a_id
     }
@@ -97,7 +105,18 @@ const decide = async (
       body
     )
     if (res.code === 0) {
-      if (action === 'accept') {
+      if (action === 'accept' && isPersonLink(c)) {
+        if (res.data?.needs_manual) {
+          useKunMessage('双方已属不同 person，已标记待人工处理', 'warn')
+        } else {
+          useKunMessage(
+            res.data?.person_created
+              ? `已新建 person #${res.data?.person_id ?? ''}`
+              : `已并入 person #${res.data?.person_id ?? ''}`,
+            'success'
+          )
+        }
+      } else if (action === 'accept') {
         useKunMessage(
           `已建合并提案 #${res.data?.proposal_id ?? ''}，请到提案桶审批`,
           'success'
@@ -114,6 +133,32 @@ const decide = async (
     deciding.value = false
   }
 }
+
+// Reversibility (step 22): undo a person link by detaching both names of the
+// pair; an emptied auto-linked person is removed server-side.
+const detachLink = async (c: CatalogCandidateItem) => {
+  deciding.value = true
+  try {
+    for (const id of [c.a_id, c.b_id]) {
+      const res = await api.post<CatalogDetachNameData>(
+        '/admin/catalog/names/detach',
+        { credit_name_id: id }
+      )
+      if (res.code !== 0) {
+        useKunMessage(res.message || '撤销失败', 'error')
+        return
+      }
+    }
+    useKunMessage('已撤销关联（双方名义已摘离）', 'success')
+    expandedKey.value = ''
+    await refresh()
+  } finally {
+    deciding.value = false
+  }
+}
+
+const sourceLabel = (id: number | null | undefined) =>
+  id == null ? '' : (CATALOG_SOURCE_LABELS[id] ?? `源${id}`)
 </script>
 
 <template>
@@ -200,7 +245,9 @@ const decide = async (
         </button>
 
         <div v-if="expandedKey === keyOf(c)" class="space-y-3">
-          <!-- Two-column compare: all the summary data the API carries. -->
+          <!-- Two-column compare: all the summary data the API carries. For a
+               person-link candidate, source + credit count are the reviewer's
+               "same person?" context. -->
           <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div
               v-for="side in [
@@ -221,11 +268,61 @@ const decide = async (
               >
                 {{ side.s.display_name || '（无显示名）' }}
               </p>
+              <div
+                v-if="isPersonLink(c)"
+                class="mt-1 flex flex-wrap items-center gap-1.5"
+              >
+                <KunChip
+                  v-if="side.s.source_id != null"
+                  color="info"
+                  variant="flat"
+                  size="xs"
+                >
+                  {{ sourceLabel(side.s.source_id) }}
+                </KunChip>
+                <span class="text-default-400 text-xs">
+                  {{ side.s.credit_count ?? 0 }} 条署名
+                </span>
+              </div>
             </div>
           </div>
 
-          <template v-if="c.status === 0 || c.status === 3">
-            <!-- Explicit, never-preselected merge direction. -->
+          <!-- Person-link accept: symmetric, no merge direction. -->
+          <template v-if="isPersonLink(c) && (c.status === 0 || c.status === 3)">
+            <div class="flex flex-wrap gap-2">
+              <KunButton
+                color="success"
+                :disabled="deciding"
+                @click="decide(c, 'accept')"
+              >
+                <KunIcon
+                  v-if="deciding"
+                  name="lucide:loader-circle"
+                  class="mr-1 size-4 animate-spin"
+                />
+                确认为同一人
+              </KunButton>
+              <KunButton
+                color="danger"
+                variant="flat"
+                :disabled="deciding"
+                @click="decide(c, 'reject')"
+              >
+                拒绝（永久保留）
+              </KunButton>
+              <KunButton
+                color="default"
+                variant="flat"
+                :disabled="deciding"
+                @click="decide(c, 'defer')"
+              >
+                搁置
+              </KunButton>
+            </div>
+          </template>
+
+          <!-- Merge accept (non-person entities): explicit direction. -->
+          <template v-else-if="c.status === 0 || c.status === 3">
             <div class="flex flex-wrap items-center gap-2">
               <span class="text-default-500 text-sm">合并方向：</span>
               <KunButton
@@ -277,12 +374,26 @@ const decide = async (
               </KunButton>
             </div>
           </template>
-          <p v-else class="text-default-400 text-sm">
-            该候选已决策（{{ CANDIDATE_STATUS_LABELS[c.status] }}
-            <template v-if="c.decided_by !== null">
-              · 操作者 {{ c.decided_by }}</template
-            >）
-          </p>
+
+          <!-- Decided: show the verdict, and offer to undo a person link. -->
+          <div v-else class="flex flex-wrap items-center gap-2">
+            <p class="text-default-400 text-sm">
+              该候选已决策（{{ CANDIDATE_STATUS_LABELS[c.status] }}
+              <template v-if="c.decided_by !== null">
+                · 操作者 {{ c.decided_by }}</template
+              >）
+            </p>
+            <KunButton
+              v-if="isPersonLink(c) && c.status === CANDIDATE_STATUS.accepted"
+              color="default"
+              variant="flat"
+              size="sm"
+              :disabled="deciding"
+              @click="detachLink(c)"
+            >
+              撤销关联（摘离双方名义）
+            </KunButton>
+          </div>
         </div>
       </KunCard>
 

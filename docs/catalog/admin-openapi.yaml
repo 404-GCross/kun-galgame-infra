@@ -85,8 +85,15 @@ components:
       properties:
         decided:
           type: boolean
+        needs_manual:
+          type: boolean
+        person_created:
+          type: boolean
+        person_id:
+          format: int64
+          type: integer
         proposal_id:
-          description: "Set when action=accept: the opened merge proposal"
+          description: Set when a merge-candidate accept opened a proposal
           format: int64
           type: integer
       required:
@@ -118,14 +125,14 @@ components:
           format: int32
           type: integer
         note:
-          description: "accept only: carried onto the opened proposal"
+          description: "merge accept only: carried onto the opened proposal"
           type: string
         source_id:
-          description: "accept only: the entity absorbed by the merge (must be a_id or b_id)"
+          description: "merge accept only (non-credit_name): the entity absorbed by the merge (must be a_id or b_id)"
           format: int64
           type: integer
         target_id:
-          description: "accept only: the surviving entity"
+          description: "merge accept only (non-credit_name): the surviving entity"
           format: int64
           type: integer
       required:
@@ -134,13 +141,45 @@ components:
         - b_id
         - action
       type: object
+    DetachNameData:
+      additionalProperties: false
+      properties:
+        detached:
+          type: boolean
+      required:
+        - detached
+      type: object
+    DetachNameInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/DetachNameInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        credit_name_id:
+          description: The credit name to detach from its person (person_id → NULL); an emptied auto-linked person is removed
+          format: int64
+          minimum: 1
+          type: integer
+      required:
+        - credit_name_id
+      type: object
     EntitySummary:
       additionalProperties: false
       properties:
+        credit_count:
+          format: int64
+          type: integer
         display_name:
           type: string
         id:
           format: int64
+          type: integer
+        source_id:
+          format: int32
           type: integer
       required:
         - id
@@ -161,6 +200,27 @@ components:
           type: integer
         data:
           $ref: "#/components/schemas/DecideCandidateData"
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
+    EnvelopeDetachNameData:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EnvelopeDetachNameData.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/DetachNameData"
         message:
           type: string
       required:
@@ -633,7 +693,32 @@ paths:
               schema:
                 $ref: "#/components/schemas/HouseError"
           description: Error
-      summary: "Decide a match candidate: accept (opens a merge proposal), reject (kept forever) or defer"
+      summary: "Decide a match candidate: accept (credit_name → link a person; else opens a merge proposal), reject (kept forever) or defer"
+      tags:
+        - catalog-admin
+  /api/v1/admin/catalog/names/detach:
+    post:
+      operationId: detachCatalogName
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DetachNameInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeDetachNameData"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: Detach a credit name from its person (reverses a person link; removes the person if it empties)
       tags:
         - catalog-admin
   /api/v1/admin/catalog/proposals:

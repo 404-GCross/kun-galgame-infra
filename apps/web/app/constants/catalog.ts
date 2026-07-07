@@ -20,14 +20,16 @@ export const CANDIDATE_STATUS = {
   pending: 0,
   accepted: 1,
   rejected: 2,
-  deferred: 3
+  deferred: 3,
+  needsManual: 4
 } as const
 
 export const CANDIDATE_STATUS_LABELS: Record<number, string> = {
   0: '待处理',
   1: '已接受',
   2: '已拒绝',
-  3: '已搁置'
+  3: '已搁置',
+  4: '待人工'
 }
 
 export const CANDIDATE_REASON_LABELS: Record<number, string> = {
@@ -69,7 +71,8 @@ export const CANDIDATE_STATUS_COLORS: Record<number, CatalogChipColor> = {
   0: 'warning',
   1: 'success',
   2: 'danger',
-  3: 'default'
+  3: 'default',
+  4: 'secondary'
 }
 
 export const PROPOSAL_STATUS_COLORS: Record<number, CatalogChipColor> = {

@@ -52,8 +52,12 @@ func (s *AdminServer) register(api huma.API) {
 	}, s.listCandidates)
 	huma.Register(api, huma.Operation{
 		OperationID: "decideCatalogCandidate", Method: http.MethodPost, Path: "/api/v1/admin/catalog/candidates/decide",
-		Summary: "Decide a match candidate: accept (opens a merge proposal), reject (kept forever) or defer", Tags: tags,
+		Summary: "Decide a match candidate: accept (credit_name → link a person; else opens a merge proposal), reject (kept forever) or defer", Tags: tags,
 	}, s.decideCandidate)
+	huma.Register(api, huma.Operation{
+		OperationID: "detachCatalogName", Method: http.MethodPost, Path: "/api/v1/admin/catalog/names/detach",
+		Summary: "Detach a credit name from its person (reverses a person link; removes the person if it empties)", Tags: tags,
+	}, s.detachName)
 	huma.Register(api, huma.Operation{
 		OperationID: "listCatalogProposals", Method: http.MethodGet, Path: "/api/v1/admin/catalog/proposals",
 		Summary: "List merge proposals", Tags: tags,
@@ -109,15 +113,23 @@ type decideCandidateInput struct {
 		AID        int64  `json:"a_id"`
 		BID        int64  `json:"b_id"`
 		Action     string `json:"action" enum:"accept,reject,defer"`
-		SourceID   int64  `json:"source_id,omitempty" doc:"accept only: the entity absorbed by the merge (must be a_id or b_id)"`
-		TargetID   int64  `json:"target_id,omitempty" doc:"accept only: the surviving entity"`
-		Note       string `json:"note,omitempty" doc:"accept only: carried onto the opened proposal"`
+		SourceID   int64  `json:"source_id,omitempty" doc:"merge accept only (non-credit_name): the entity absorbed by the merge (must be a_id or b_id)"`
+		TargetID   int64  `json:"target_id,omitempty" doc:"merge accept only (non-credit_name): the surviving entity"`
+		Note       string `json:"note,omitempty" doc:"merge accept only: carried onto the opened proposal"`
 	}
 }
 
 type decideCandidateData struct {
-	Decided    bool   `json:"decided"`
-	ProposalID *int64 `json:"proposal_id,omitempty" doc:"Set when action=accept: the opened merge proposal"`
+	Decided bool `json:"decided"`
+	// ProposalID is set when a non-credit_name accept opened a merge proposal.
+	ProposalID *int64 `json:"proposal_id,omitempty" doc:"Set when a merge-candidate accept opened a proposal"`
+	// PersonID / PersonCreated / NeedsManual describe a credit_name accept's
+	// person link (step 22): the person the two names now share, whether it was
+	// freshly created, and whether the pair was flagged for manual handling
+	// (both names already belonged to different persons — not auto-merged).
+	PersonID      *int64 `json:"person_id,omitempty"`
+	PersonCreated bool   `json:"person_created,omitempty"`
+	NeedsManual   bool   `json:"needs_manual,omitempty"`
 }
 
 type decideCandidateOutput struct {
@@ -125,7 +137,7 @@ type decideCandidateOutput struct {
 }
 
 func (s *AdminServer) decideCandidate(ctx context.Context, in *decideCandidateInput) (*decideCandidateOutput, error) {
-	proposal, err := s.queues.DecideCandidate(ctx, service.CandidateDecision{
+	outcome, err := s.queues.DecideCandidate(ctx, service.CandidateDecision{
 		EntityType: in.Body.EntityType, AID: in.Body.AID, BID: in.Body.BID,
 		Action: in.Body.Action, SourceID: in.Body.SourceID, TargetID: in.Body.TargetID,
 		Note: in.Body.Note, DecidedBy: adminIDFromCtx(ctx),
@@ -144,10 +156,47 @@ func (s *AdminServer) decideCandidate(ctx context.Context, in *decideCandidateIn
 		return nil, apiErr(http.StatusInternalServerError, errors.ErrInternalServer)
 	}
 	data := decideCandidateData{Decided: true}
-	if proposal != nil {
-		data.ProposalID = &proposal.ID
+	if outcome.Proposal != nil {
+		data.ProposalID = &outcome.Proposal.ID
+	}
+	if outcome.Link != nil {
+		data.NeedsManual = outcome.Link.NeedsManual
+		data.PersonCreated = outcome.Link.Created
+		if !outcome.Link.NeedsManual {
+			data.PersonID = &outcome.Link.PersonID
+		}
 	}
 	return &decideCandidateOutput{Body: okEnvelope(data)}, nil
+}
+
+type detachNameInput struct {
+	Body struct {
+		CreditNameID int64 `json:"credit_name_id" minimum:"1" doc:"The credit name to detach from its person (person_id → NULL); an emptied auto-linked person is removed"`
+	}
+}
+
+type detachNameData struct {
+	Detached bool `json:"detached"`
+}
+
+type detachNameOutput struct {
+	Body Envelope[detachNameData]
+}
+
+func (s *AdminServer) detachName(ctx context.Context, in *detachNameInput) (*detachNameOutput, error) {
+	actor := adminIDFromCtx(ctx)
+	err := s.queues.DetachName(ctx, in.Body.CreditNameID, &actor)
+	if err != nil {
+		switch {
+		case stderrors.Is(err, service.ErrNotFound):
+			return nil, apiErr(http.StatusNotFound, errors.ErrNotFound)
+		case stderrors.Is(err, service.ErrProposalState):
+			return nil, apiErrMsg(http.StatusConflict, errors.ErrOperationFailed, err.Error())
+		}
+		slog.Error("catalog admin detach name", "err", err)
+		return nil, apiErr(http.StatusInternalServerError, errors.ErrInternalServer)
+	}
+	return &detachNameOutput{Body: okEnvelope(detachNameData{Detached: true})}, nil
 }
 
 // ---- proposals ----

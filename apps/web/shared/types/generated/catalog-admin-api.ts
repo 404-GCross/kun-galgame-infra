@@ -30,8 +30,25 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Decide a match candidate: accept (opens a merge proposal), reject (kept forever) or defer */
+        /** Decide a match candidate: accept (credit_name → link a person; else opens a merge proposal), reject (kept forever) or defer */
         post: operations["decideCatalogCandidate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/catalog/names/detach": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Detach a credit name from its person (reverses a person link; removes the person if it empties) */
+        post: operations["detachCatalogName"];
         delete?: never;
         options?: never;
         head?: never;
@@ -161,9 +178,13 @@ export interface components {
         };
         DecideCandidateData: {
             decided: boolean;
+            needs_manual?: boolean;
+            person_created?: boolean;
+            /** Format: int64 */
+            person_id?: number;
             /**
              * Format: int64
-             * @description Set when action=accept: the opened merge proposal
+             * @description Set when a merge-candidate accept opened a proposal
              */
             proposal_id?: number;
         };
@@ -182,23 +203,43 @@ export interface components {
             b_id: number;
             /** Format: int32 */
             entity_type: number;
-            /** @description accept only: carried onto the opened proposal */
+            /** @description merge accept only: carried onto the opened proposal */
             note?: string;
             /**
              * Format: int64
-             * @description accept only: the entity absorbed by the merge (must be a_id or b_id)
+             * @description merge accept only (non-credit_name): the entity absorbed by the merge (must be a_id or b_id)
              */
             source_id?: number;
             /**
              * Format: int64
-             * @description accept only: the surviving entity
+             * @description merge accept only (non-credit_name): the surviving entity
              */
             target_id?: number;
         };
+        DetachNameData: {
+            detached: boolean;
+        };
+        DetachNameInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/DetachNameInputBody.json
+             */
+            readonly $schema?: string;
+            /**
+             * Format: int64
+             * @description The credit name to detach from its person (person_id → NULL); an emptied auto-linked person is removed
+             */
+            credit_name_id: number;
+        };
         EntitySummary: {
+            /** Format: int64 */
+            credit_count?: number;
             display_name: string;
             /** Format: int64 */
             id: number;
+            /** Format: int32 */
+            source_id?: number;
         };
         EnvelopeDecideCandidateData: {
             /**
@@ -210,6 +251,18 @@ export interface components {
             /** Format: int64 */
             code: number;
             data?: components["schemas"]["DecideCandidateData"];
+            message: string;
+        };
+        EnvelopeDetachNameData: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/EnvelopeDetachNameData.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            code: number;
+            data?: components["schemas"]["DetachNameData"];
             message: string;
         };
         EnvelopePageCandidateItem: {
@@ -463,6 +516,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EnvelopeDecideCandidateData"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HouseError"];
+                };
+            };
+        };
+    };
+    detachCatalogName: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DetachNameInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeDetachNameData"];
                 };
             };
             /** @description Error */

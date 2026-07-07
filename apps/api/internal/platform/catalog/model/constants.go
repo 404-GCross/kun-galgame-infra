@@ -94,6 +94,11 @@ const (
 	RevisionActionImported     int16 = 5
 	RevisionActionRedirect     int16 = 6
 	RevisionActionReverted     int16 = 7
+	// Deleted: the entity row was removed. Used by step 22 to tombstone an
+	// auto-linked person that a detach emptied. catalog_revision has no FK to
+	// the entity, so the revision (and its final snapshot) survives the row's
+	// deletion as the history of record.
+	RevisionActionDeleted int16 = 8
 )
 
 // Work content ratings (doc 14 three tiers; per-source mappings in doc 17 §6:
@@ -163,9 +168,14 @@ const (
 // would let the same pair resurface on every import run.
 const (
 	CandidateStatusPending  int16 = 0
-	CandidateStatusAccepted int16 = 1 // graduated into a merge proposal
+	CandidateStatusAccepted int16 = 1 // acted on: a merge proposal, or a person link (credit_name, step 22)
 	CandidateStatusRejected int16 = 2
 	CandidateStatusDeferred int16 = 3
+	// NeedsManual: an accepted person-link candidate whose two names already
+	// belong to DIFFERENT persons (step 22). Person merge is future work, so
+	// the pair is flagged for manual handling rather than auto-merged. Counted
+	// by the same GROUP BY status aggregate the step-19 dashboard already runs.
+	CandidateStatusNeedsManual int16 = 4
 )
 
 // Merge-proposal status (doc 10 §6.1). approved starts the cooling-off

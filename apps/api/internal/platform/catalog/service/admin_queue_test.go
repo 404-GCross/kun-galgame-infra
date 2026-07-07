@@ -84,14 +84,14 @@ func TestDecideCandidatePaths(t *testing.T) {
 	mk(p5.ID, p6.ID)
 
 	// accept → candidate accepted + proposal opened with the given direction.
-	proposal, err := testQueues.DecideCandidate(ctx, CandidateDecision{
+	outcome, err := testQueues.DecideCandidate(ctx, CandidateDecision{
 		EntityType: model.EntityTypePerson, AID: p1.ID, BID: p2.ID,
 		Action: "accept", SourceID: p2.ID, TargetID: p1.ID, Note: "same person", DecidedBy: 9,
 	})
 	require.NoError(t, err)
-	require.NotNil(t, proposal)
-	assert.Equal(t, p2.ID, proposal.SourceEntityID)
-	assert.Equal(t, p1.ID, proposal.TargetEntityID)
+	require.NotNil(t, outcome.Proposal)
+	assert.Equal(t, p2.ID, outcome.Proposal.SourceEntityID)
+	assert.Equal(t, p1.ID, outcome.Proposal.TargetEntityID)
 	var cand model.CatalogMatchCandidate
 	require.NoError(t, testDB.Where("a_id = ? AND b_id = ?", p1.ID, p2.ID).First(&cand).Error)
 	assert.Equal(t, model.CandidateStatusAccepted, cand.Status)

@@ -17,10 +17,18 @@ import (
 type AdminQueueService struct {
 	db    *gorm.DB
 	merge *MergeService
+	link  *LinkService
 }
 
 func NewAdminQueueService(db *gorm.DB, merge *MergeService) *AdminQueueService {
-	return &AdminQueueService{db: db, merge: merge}
+	return &AdminQueueService{db: db, merge: merge, link: NewLinkService(db)}
+}
+
+// DetachName reverses one credit_name→person link (step 22 reversibility); it
+// delegates to the link service. Exposed here so the admin handler reaches it
+// through the queue service without changing the composition root's wiring.
+func (s *AdminQueueService) DetachName(ctx context.Context, creditNameID int64, actorID *int64) error {
+	return s.link.DetachName(ctx, creditNameID, actorID)
 }
 
 // ErrExactTaken reports a probable→exact promotion losing to the
@@ -33,6 +41,12 @@ var ErrExactTaken = fmt.Errorf("catalog: external identity is exact-linked to an
 type EntitySummary struct {
 	ID          int64  `json:"id"`
 	DisplayName string `json:"display_name"`
+	// CreditCount and SourceID give a person-link reviewer the context to
+	// judge "same person?" (step 22): how established the name is and which
+	// source it came from. Populated only for credit_name candidate sides;
+	// nil everywhere else.
+	CreditCount *int64 `json:"credit_count,omitempty"`
+	SourceID    *int16 `json:"source_id,omitempty"`
 }
 
 // entitySummary looks up an entity's display name (credit_name uses name).
@@ -98,7 +112,64 @@ func (s *AdminQueueService) ListCandidates(ctx context.Context, f CandidateFilte
 			B:                     entitySummary(s.db.WithContext(ctx).Unscoped(), row.EntityType, row.BID),
 		}
 	}
+	s.enrichCreditNameContext(ctx, items)
 	return items, total, nil
+}
+
+// enrichCreditNameContext fills the credit-count and source of every
+// credit_name candidate side in one pair of batched queries (step 22 review
+// context). Other entity types are left untouched.
+func (s *AdminQueueService) enrichCreditNameContext(ctx context.Context, items []CandidateItem) {
+	var ids []int64
+	for _, it := range items {
+		if it.EntityType == model.EntityTypeCreditName {
+			ids = append(ids, it.AID, it.BID)
+		}
+	}
+	if len(ids) == 0 {
+		return
+	}
+	db := s.db.WithContext(ctx)
+
+	credits := map[int64]int64{}
+	var creditRows []struct {
+		ID    int64 `gorm:"column:credit_name_id"`
+		Count int64 `gorm:"column:count"`
+	}
+	if err := db.Raw(`SELECT credit_name_id, count(*) AS count FROM catalog_credit
+		WHERE credit_name_id IN ? GROUP BY credit_name_id`, ids).Scan(&creditRows).Error; err == nil {
+		for _, r := range creditRows {
+			credits[r.ID] = r.Count
+		}
+	}
+
+	sources := map[int64]int16{}
+	var sourceRows []struct {
+		ID     int64 `gorm:"column:entity_id"`
+		Source int16 `gorm:"column:source_id"`
+	}
+	// The self-identity exact ref (one per imported name) carries its source.
+	if err := db.Raw(`SELECT entity_id, min(source_id) AS source_id FROM catalog_external_ref
+		WHERE entity_type = ? AND link_kind = ? AND entity_id IN ? GROUP BY entity_id`,
+		model.EntityTypeCreditName, model.LinkKindExact, ids).Scan(&sourceRows).Error; err == nil {
+		for _, r := range sourceRows {
+			sources[r.ID] = r.Source
+		}
+	}
+
+	fill := func(sum *EntitySummary) {
+		c := credits[sum.ID]
+		sum.CreditCount = &c
+		if src, ok := sources[sum.ID]; ok {
+			sum.SourceID = &src
+		}
+	}
+	for i := range items {
+		if items[i].EntityType == model.EntityTypeCreditName {
+			fill(&items[i].A)
+			fill(&items[i].B)
+		}
+	}
 }
 
 // CandidateDecision is one reviewer verdict on a candidate pair.
@@ -114,21 +185,28 @@ type CandidateDecision struct {
 	DecidedBy          int64
 }
 
-// DecideCandidate applies a reviewer verdict. accept additionally opens a
-// merge proposal for the pair (the candidate graduates into the proposal
-// bucket). Rejected candidates keep their row forever — that permanence is
-// what stops the same pair from resurfacing on every import; it is
-// deliberately NOT a catalog_match_rejection row (that table is negative
-// knowledge about external-ref assertions only — the two must never mix).
-func (s *AdminQueueService) DecideCandidate(ctx context.Context, d CandidateDecision) (*model.CatalogMergeProposal, error) {
-	var status int16
+// CandidateOutcome carries whichever side effect an accept produced: a merge
+// proposal (generic same-entity candidates) or a person link (credit_name
+// shared-handle candidates — step 22). Both are nil for reject/defer.
+type CandidateOutcome struct {
+	Proposal *model.CatalogMergeProposal
+	Link     *PersonLinkResult
+}
+
+// DecideCandidate applies a reviewer verdict. accept's side effect depends on
+// the candidate's entity type:
+//   - credit_name → establishes the "same person" fact (create/attach a person,
+//     step 22): the two names are grouped, never merged, so both survive.
+//   - anything else → opens a merge proposal (the candidate graduates into the
+//     proposal bucket).
+//
+// Rejected candidates keep their row forever — that permanence is what stops
+// the same pair from resurfacing on every import; it is deliberately NOT a
+// catalog_match_rejection row (that table is negative knowledge about
+// external-ref assertions only — the two must never mix).
+func (s *AdminQueueService) DecideCandidate(ctx context.Context, d CandidateDecision) (*CandidateOutcome, error) {
 	switch d.Action {
-	case "accept":
-		status = model.CandidateStatusAccepted
-	case "reject":
-		status = model.CandidateStatusRejected
-	case "defer":
-		status = model.CandidateStatusDeferred
+	case "accept", "reject", "defer":
 	default:
 		return nil, fmt.Errorf("%w: unknown action %q", ErrProposalState, d.Action)
 	}
@@ -148,11 +226,18 @@ func (s *AdminQueueService) DecideCandidate(ctx context.Context, d CandidateDeci
 		return nil, fmt.Errorf("%w: candidate already decided (status %d)", ErrProposalState, cand.Status)
 	}
 
+	if d.Action == "accept" && d.EntityType == model.EntityTypeCreditName {
+		return s.acceptAsPersonLink(ctx, d)
+	}
+
 	// Accept opens the proposal BEFORE the status flips: a propose failure
 	// (duplicate open proposal, dead endpoint, ...) must leave the candidate
 	// still pending, never "accepted with no proposal".
+	status := model.CandidateStatusRejected
 	var proposal *model.CatalogMergeProposal
-	if d.Action == "accept" {
+	switch d.Action {
+	case "accept":
+		status = model.CandidateStatusAccepted
 		// The merge direction comes from the reviewer; both ids must belong
 		// to the pair.
 		if !(d.SourceID == d.AID && d.TargetID == d.BID) && !(d.SourceID == d.BID && d.TargetID == d.AID) {
@@ -162,22 +247,63 @@ func (s *AdminQueueService) DecideCandidate(ctx context.Context, d CandidateDeci
 		if err != nil {
 			return nil, err
 		}
+	case "defer":
+		status = model.CandidateStatusDeferred
 	}
 
-	res := s.db.WithContext(ctx).Model(&model.CatalogMatchCandidate{}).
+	rows, err := s.flipCandidate(s.db.WithContext(ctx), d, status)
+	if err != nil {
+		return nil, err
+	}
+	if rows == 0 {
+		// Raced with another reviewer after the proposal was opened — the
+		// proposal stays (withdrawable), the other verdict wins the row.
+		return &CandidateOutcome{Proposal: proposal}, fmt.Errorf("%w: candidate decided concurrently", ErrProposalState)
+	}
+	return &CandidateOutcome{Proposal: proposal}, nil
+}
+
+// acceptAsPersonLink runs the three-state person-linking rule and flips the
+// candidate atomically: linking and the status change either both land or
+// neither does. A pair whose names already belong to different persons is
+// flagged needs_manual instead of accepted (person merge is future work).
+func (s *AdminQueueService) acceptAsPersonLink(ctx context.Context, d CandidateDecision) (*CandidateOutcome, error) {
+	var link PersonLinkResult
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		r, err := s.link.linkCreditsTx(tx, d.AID, d.BID, &d.DecidedBy)
+		if err != nil {
+			return err
+		}
+		link = r
+		status := model.CandidateStatusAccepted
+		if r.NeedsManual {
+			status = model.CandidateStatusNeedsManual
+		}
+		rows, err := s.flipCandidate(tx, d, status)
+		if err != nil {
+			return err
+		}
+		if rows == 0 {
+			return fmt.Errorf("%w: candidate decided concurrently", ErrProposalState)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &CandidateOutcome{Link: &link}, nil
+}
+
+// flipCandidate transitions a still-open candidate to status, recording the
+// decider. Returns the affected row count so callers can detect a concurrent
+// verdict (0 rows).
+func (s *AdminQueueService) flipCandidate(db *gorm.DB, d CandidateDecision, status int16) (int64, error) {
+	res := db.Model(&model.CatalogMatchCandidate{}).
 		Where("entity_type = ? AND a_id = ? AND b_id = ? AND status IN ?",
 			d.EntityType, d.AID, d.BID,
 			[]int16{model.CandidateStatusPending, model.CandidateStatusDeferred}).
 		Updates(map[string]any{"status": status, "decided_by": d.DecidedBy, "decided_at": time.Now()})
-	if res.Error != nil {
-		return nil, res.Error
-	}
-	if res.RowsAffected == 0 {
-		// Raced with another reviewer after the proposal was opened — the
-		// proposal stays (withdrawable), the other verdict wins the row.
-		return proposal, fmt.Errorf("%w: candidate decided concurrently", ErrProposalState)
-	}
-	return proposal, nil
+	return res.RowsAffected, res.Error
 }
 
 // --- proposal bucket ---
