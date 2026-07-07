@@ -211,11 +211,15 @@ func SetupGalgameReadSpec(app *fiber.App) huma.API {
 	huma.Register(api, huma.Operation{
 		OperationID: "listUserGalgames", Method: http.MethodGet, Path: "/api/galgame/user/{id}/galgames",
 		Summary: "A user's published galgames (briefs, paginated) — profile 已发布 tab", Tags: tags,
-	}, func(context.Context, *userGalgamesInput) (*userGalgamesOutput, error) { return &userGalgamesOutput{}, nil })
+	}, func(context.Context, *userGalgamesInput) (*userGalgamesOutput, error) {
+		return &userGalgamesOutput{}, nil
+	})
 	huma.Register(api, huma.Operation{
 		OperationID: "listUserContributedGalgames", Method: http.MethodGet, Path: "/api/galgame/user/{id}/contributed",
 		Summary: "Galgames a user contributed to (briefs, paginated) — profile 参与编辑 tab", Tags: tags,
-	}, func(context.Context, *userGalgamesInput) (*userGalgamesOutput, error) { return &userGalgamesOutput{}, nil })
+	}, func(context.Context, *userGalgamesInput) (*userGalgamesOutput, error) {
+		return &userGalgamesOutput{}, nil
+	})
 	huma.Register(api, huma.Operation{
 		OperationID: "getUserGalgameStats", Method: http.MethodGet, Path: "/api/galgame/user/{id}/stats",
 		Summary: "A user's aggregate galgame contribution stats", Tags: tags,
@@ -259,11 +263,15 @@ func SetupGalgameReadSpec(app *fiber.App) huma.API {
 	huma.Register(api, huma.Operation{
 		OperationID: "getRecentGalgameRevisions", Method: http.MethodGet, Path: "/api/galgame/revisions/recent",
 		Summary: "Recent merged galgame edit (revision) events — S2S activity feed", Tags: tags,
-	}, func(context.Context, *recentRevisionsInput) (*recentRevisionsOutput, error) { return &recentRevisionsOutput{}, nil })
+	}, func(context.Context, *recentRevisionsInput) (*recentRevisionsOutput, error) {
+		return &recentRevisionsOutput{}, nil
+	})
 	huma.Register(api, huma.Operation{
 		OperationID: "getRecentTaxonomyRevisions", Method: http.MethodGet, Path: "/api/galgame/taxonomy/recent",
 		Summary: "Recent taxonomy (tag/official/engine/series) change events — S2S activity feed", Tags: tags,
-	}, func(context.Context, *recentTaxonomyInput) (*recentTaxonomyOutput, error) { return &recentTaxonomyOutput{}, nil })
+	}, func(context.Context, *recentTaxonomyInput) (*recentTaxonomyOutput, error) {
+		return &recentTaxonomyOutput{}, nil
+	})
 	huma.Register(api, huma.Operation{
 		OperationID: "getMyGalgameSubmissions", Method: http.MethodGet, Path: "/api/galgame/mine",
 		Summary: "The viewer's own galgame submissions (all statuses)", Tags: tags,
@@ -271,11 +279,15 @@ func SetupGalgameReadSpec(app *fiber.App) huma.API {
 	huma.Register(api, huma.Operation{
 		OperationID: "getGalgameMessagesFeed", Method: http.MethodGet, Path: "/api/galgame/messages/feed",
 		Summary: "Galgame notification feed (S2S; kungal/moyu cron pulls these)", Tags: tags,
-	}, func(context.Context, *messagesFeedInput) (*messagesFeedOutput, error) { return &messagesFeedOutput{}, nil })
+	}, func(context.Context, *messagesFeedInput) (*messagesFeedOutput, error) {
+		return &messagesFeedOutput{}, nil
+	})
 	huma.Register(api, huma.Operation{
 		OperationID: "getMyGalgameMessages", Method: http.MethodGet, Path: "/api/galgame/messages/mine",
 		Summary: "The viewer's own galgame notifications", Tags: tags,
-	}, func(context.Context, *messagesMineInput) (*messagesMineOutput, error) { return &messagesMineOutput{}, nil })
+	}, func(context.Context, *messagesMineInput) (*messagesMineOutput, error) {
+		return &messagesMineOutput{}, nil
+	})
 	registerGalgameSearchOps(api, tags)
 	return api
 }

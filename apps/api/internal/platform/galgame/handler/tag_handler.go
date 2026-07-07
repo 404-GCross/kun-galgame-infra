@@ -264,10 +264,10 @@ func (h *TagHandler) Delete(c fiber.Ctx) error {
 
 	h.searchHook.TagDelete(id)
 	return response.Success(c, fiber.Map{
-		"deleted":          true,
-		"forced":           force && rel > 0,
-		"purged_relations": relations,
-		"purged_aliases":   aliases,
+		"deleted":              true,
+		"forced":               force && rel > 0,
+		"purged_relations":     relations,
+		"purged_aliases":       aliases,
 		"affected_galgame_ids": affected,
 	})
 }

@@ -72,5 +72,7 @@ func registerGalgameSearchOps(api huma.API, tags []string) {
 	huma.Register(api, huma.Operation{
 		OperationID: "searchGalgames", Method: http.MethodGet, Path: "/api/galgame/search",
 		Summary: "Full-text galgame search (Meilisearch): filters, facets, highlights, projection", Tags: tags,
-	}, func(context.Context, *galgameSearchInput) (*galgameSearchOutput, error) { return &galgameSearchOutput{}, nil })
+	}, func(context.Context, *galgameSearchInput) (*galgameSearchOutput, error) {
+		return &galgameSearchOutput{}, nil
+	})
 }

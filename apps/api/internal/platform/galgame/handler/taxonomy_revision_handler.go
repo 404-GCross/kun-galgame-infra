@@ -217,4 +217,3 @@ func mapAppErrOrInternal(c fiber.Ctx, err error) error {
 	}
 	return response.InternalError(c, apperr.ErrOperationFailed)
 }
-
