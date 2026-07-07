@@ -162,6 +162,12 @@ const (
 	CandidateReasonNameFuzzy        int16 = 2 // edit-distance/phonetic similarity — weak, conservative thresholds
 	CandidateReasonImporterSuggest  int16 = 3 // ingestion pipeline heuristic
 	CandidateReasonLLMSuggest       int16 = 4 // LLM suggestion (never auto-accepted, doc 17 §4)
+	// AliasDeclared: one source-side entity's alias folds to another source's
+	// credit_name whole name (step 25 leg B). Weaker than a shared handle — the
+	// declaration is community data with no cross-source structural anchor — so
+	// these are NEVER auto-linked; they seed the human-review / future-batch
+	// queue only.
+	CandidateReasonAliasDeclared int16 = 5
 )
 
 // Match-candidate status. Rejected rows are kept FOREVER — deleting them
