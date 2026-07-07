@@ -43,6 +43,15 @@ type ClaimWorkParams struct {
 	ContentRating int16
 	Anchors       []ExternalAnchor
 	ActorID       *int64
+	// RejectedAnchor, when set, is consulted with the RESOLVED work id before an
+	// anchor is written or adopted through: a true result means the pairing is
+	// recorded negative knowledge (catalog_match_rejection) and the anchor is
+	// dropped. It gates CROSS-SOURCE identity claims (a curated bid/vndb anchor);
+	// a work born fresh here can carry no prior rejection, so this only ever
+	// fires on the adopt path (an existing work a human has since rejected). nil
+	// disables the check — the default for importers writing self-identity
+	// anchors, whose existence IS the identity and is never rejectable.
+	RejectedAnchor func(workID int64, sourceID int16, externalID string) bool
 }
 
 // ClaimWork implements the claim semantics pinned on catalog_work: find an
@@ -67,8 +76,12 @@ func (s *WorkService) ClaimWork(ctx context.Context, params ClaimWorkParams) (in
 		}
 
 		// (2) Anchor lookup: an exact ref hit (followed through redirects)
-		// is the existing identity to claim.
-		for _, anchor := range params.Anchors {
+		// is the existing identity to claim. An anchor that resolves to a work
+		// a human has rejected for that pairing is recorded so step (3) never
+		// re-writes it onto a fresh work (which would resurrect the identity or
+		// collide with the surviving exact ref).
+		rejectedInAdopt := make(map[int]bool)
+		for ai, anchor := range params.Anchors {
 			id, found, err := repository.FindWorkIDByExactRef(tx, anchor.SourceID, anchor.ExternalID)
 			if err != nil {
 				return err
@@ -83,6 +96,10 @@ func (s *WorkService) ClaimWork(ctx context.Context, params ClaimWorkParams) (in
 			var w model.CatalogWork
 			if err := tx.First(&w, canonical).Error; err != nil {
 				return err
+			}
+			if params.RejectedAnchor != nil && params.RejectedAnchor(w.ID, anchor.SourceID, anchor.ExternalID) {
+				rejectedInAdopt[ai] = true
+				continue // never adopt a work through a human-rejected anchor
 			}
 			if w.Site != nil {
 				if *w.Site == params.Site && w.ProductWorkID != nil && *w.ProductWorkID == params.ProductWorkID {
@@ -125,7 +142,10 @@ func (s *WorkService) ClaimWork(ctx context.Context, params ClaimWorkParams) (in
 		if err := tx.Create(&w).Error; err != nil {
 			return err
 		}
-		for _, anchor := range params.Anchors {
+		for ai, anchor := range params.Anchors {
+			if rejectedInAdopt[ai] {
+				continue // an anchor rejected in (2) is never re-written here
+			}
 			ref := model.CatalogExternalRef{
 				EntityType: model.EntityTypeWork,
 				EntityID:   w.ID,

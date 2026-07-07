@@ -103,6 +103,7 @@ func main() {
 			"vndb_exact", stats.Claim.VNDBExact,
 			"bid_exact", stats.Claim.BIDExact,
 			"bid_skipped_bad", stats.Claim.BIDSkippedBad,
+			"skipped_rejected", stats.Claim.SkippedRejected,
 		)
 	}
 	if *phase == catalogsync.PhaseEG || *phase == catalogsync.PhaseAll {
@@ -112,6 +113,7 @@ func main() {
 			"refs_written", stats.EG.RefsWritten,
 			"already", stats.EG.Already,
 			"unclaimed", stats.EG.Unclaimed,
+			"skipped_rejected", stats.EG.SkippedRejected,
 		)
 	}
 	if *phase == catalogsync.PhaseBangumi || *phase == catalogsync.PhaseAll {
@@ -121,6 +123,7 @@ func main() {
 			"rejected_ambiguous", stats.Bangumi.RejectedAmbiguous,
 			"refs_written", stats.Bangumi.RefsWritten,
 			"already", stats.Bangumi.Already,
+			"skipped_rejected", stats.Bangumi.SkippedRejected,
 		)
 	}
 	if !*apply {

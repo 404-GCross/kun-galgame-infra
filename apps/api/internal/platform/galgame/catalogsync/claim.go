@@ -4,6 +4,7 @@ import (
 	"context"
 	"strconv"
 
+	"api/internal/platform/catalog/model"
 	"api/internal/platform/catalog/repository"
 	"api/internal/platform/catalog/service"
 )
@@ -28,6 +29,18 @@ func (r *Reconciler) runClaim(ctx context.Context) (ClaimStats, error) {
 		return stats, err
 	}
 	type4 := r.type4IDs()
+
+	// Negative-knowledge gate for the exact anchors: an anchor a human has
+	// rejected for the resolved work is dropped and counted. Fires only on the
+	// adopt path (a fresh work carries no prior rejection); an already-claimed
+	// game never reaches ClaimWork, so this is counted in apply only.
+	rejectedAnchor := func(workID int64, sourceID int16, externalID string) bool {
+		if r.rejected.Has(model.EntityTypeWork, workID, sourceID, externalID) {
+			stats.SkippedRejected++
+			return true
+		}
+		return false
+	}
 
 	for i := range r.games {
 		g := &r.games[i]
@@ -62,13 +75,14 @@ func (r *Reconciler) runClaim(ctx context.Context) (ClaimStats, error) {
 		}
 
 		_, created, err := r.works.ClaimWork(ctx, service.ClaimWorkParams{
-			MediumID:      mediumGalgame,
-			Site:          siteGalgame,
-			ProductWorkID: g.ID,
-			DisplayName:   displayName(g),
-			OLang:         "ja",
-			ContentRating: 0, // all_ages is never inferred (doc 17 §6); wiki has no rating we map here
-			Anchors:       anchors,
+			MediumID:       mediumGalgame,
+			Site:           siteGalgame,
+			ProductWorkID:  g.ID,
+			DisplayName:    displayName(g),
+			OLang:          "ja",
+			ContentRating:  0, // all_ages is never inferred (doc 17 §6); wiki has no rating we map here
+			Anchors:        anchors,
+			RejectedAnchor: rejectedAnchor,
 		})
 		if err != nil {
 			return stats, err

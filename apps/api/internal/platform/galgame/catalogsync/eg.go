@@ -73,6 +73,11 @@ func (r *Reconciler) runEG() (EGStats, error) {
 			stats.Unclaimed++ // run --phase claim first
 			continue
 		}
+		egExternalID := strconv.FormatInt(egIDs[0], 10)
+		if r.rejected.Has(model.EntityTypeWork, workID, sourceEG, egExternalID) {
+			stats.SkippedRejected++ // negative knowledge: never re-assert
+			continue
+		}
 		stats.Matched++
 		if r.dryRun {
 			stats.RefsWritten++ // would write (clean-slate assumption)
@@ -82,7 +87,7 @@ func (r *Reconciler) runEG() (EGStats, error) {
 			EntityType: model.EntityTypeWork,
 			EntityID:   workID,
 			SourceID:   sourceEG,
-			ExternalID: strconv.FormatInt(egIDs[0], 10),
+			ExternalID: egExternalID,
 			LinkKind:   model.LinkKindProbable,
 			MatchedBy:  ruleEGRosetta,
 		})

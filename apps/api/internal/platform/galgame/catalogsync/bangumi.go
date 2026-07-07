@@ -123,6 +123,11 @@ func (r *Reconciler) runBangumi() (BangumiStats, error) {
 			stats.RejectedAmbiguous++
 			continue
 		}
+		bangumiExternalID := strconv.FormatInt(c.subs[0], 10)
+		if r.rejected.Has(model.EntityTypeWork, c.workID, sourceBangumi, bangumiExternalID) {
+			stats.SkippedRejected++ // negative knowledge: never re-assert
+			continue
+		}
 		stats.MatchedUnique++
 		if r.dryRun {
 			stats.RefsWritten++
@@ -132,7 +137,7 @@ func (r *Reconciler) runBangumi() (BangumiStats, error) {
 			EntityType: model.EntityTypeWork,
 			EntityID:   c.workID,
 			SourceID:   sourceBangumi,
-			ExternalID: strconv.FormatInt(c.subs[0], 10),
+			ExternalID: bangumiExternalID,
 			LinkKind:   model.LinkKindProbable,
 			MatchedBy:  ruleTitleYear,
 		})

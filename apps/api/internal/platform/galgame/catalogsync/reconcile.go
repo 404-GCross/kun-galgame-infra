@@ -77,6 +77,10 @@ type ClaimStats struct {
 	VNDBExact      int
 	BIDExact       int
 	BIDSkippedBad  int
+	// SkippedRejected counts anchors dropped because their (work, source,
+	// external_id) is recorded negative knowledge. Counted in apply only:
+	// dry-run does not resolve work ids for the claim phase.
+	SkippedRejected int
 }
 
 // EGStats reports the erogamespace rosetta phase.
@@ -86,6 +90,7 @@ type EGStats struct {
 	RefsWritten      int
 	Already          int
 	Unclaimed        int // game not yet claimed a work (skipped)
+	SkippedRejected  int // pairing recorded as negative knowledge
 }
 
 // BangumiStats reports the strict title-match phase.
@@ -95,6 +100,7 @@ type BangumiStats struct {
 	RejectedAmbiguous int
 	RefsWritten       int
 	Already           int
+	SkippedRejected   int // pairing recorded as negative knowledge
 }
 
 // Stats aggregates every phase that ran.
@@ -119,6 +125,9 @@ type Reconciler struct {
 	games []wikiGame // preloaded once, reused across phases
 	// type4 subject ids (bid audit-ok gate) + the RHS rows for title match.
 	type4 []subjectRow
+	// rejected is the negative-knowledge index, preloaded once and consulted
+	// by every ref-writing phase (doc 17 R7).
+	rejected rejectionSet
 }
 
 // wikiGame is one preloaded galgame row with the two fields normalized by the
@@ -173,6 +182,11 @@ func (r *Reconciler) Run(ctx context.Context, phase string) (Stats, error) {
 	if err := r.loadType4Subjects(); err != nil {
 		return stats, fmt.Errorf("load type=4 subjects: %w", err)
 	}
+	rejected, err := loadRejections(r.catalog)
+	if err != nil {
+		return stats, fmt.Errorf("load match rejections: %w", err)
+	}
+	r.rejected = rejected
 
 	if phase == PhaseClaim || phase == PhaseAll {
 		cs, err := r.runClaim(ctx)
