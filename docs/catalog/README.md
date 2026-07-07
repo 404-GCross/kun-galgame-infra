@@ -1,0 +1,33 @@
+# Catalog 服务 契约文档
+
+这里是 **kun-galgame-infra** 的**跨媒介身份/图谱注册层**（`catalog`）的对外契约文档。服务把多来源(VNDB / Bangumi / DLsite / erogamespace / 用户)的作品、发行、人物、署名、厂牌收敛成一套**带来源锚(external_ref)与分级信任**的规范身份,供各产品站(galgame wiki / kungal / moyu / letmoe / 未来 NextMoe 聚合)通过 S2S 接入。
+
+它与 [`image_service`](../image_service/README.md)、[`artifact`](../artifact/README.md) 并列为跨服务契约:图床管图片字节、artifact 管大文件字节,**catalog 管「身份与关系」**——谁是谁、哪个作品对应哪些外部 id、哪些名义指向同一个人。三者共享 OAuth Client 租户模型,但数据库/职责独立。
+
+> **Tier-A 契约源**:本目录(`docs/catalog`)是该契约的**唯一源**;forum/patch 等下游仓的 `docs/catalog` 是 kungal-docs `pnpm docs:sync` 生成的横幅镜像,**不可手改**。改契约只改这里 →`../kungal-docs` 跑 `pnpm docs:sync --write` + `pnpm docs:audit`。见 [ownership](../../CLAUDE.md)。
+
+## 文档索引
+
+| # | 文件 | 内容 | 状态 |
+|---|------|------|------|
+| 01 | [service-and-contract.md](./01-service-and-contract.md) | 服务定位、registry/body 分界、S2S 三端点(resolve/redirects/claim)语义与 site 绑定、admin 三桶概述、鉴权形态、生成 spec、运维注记 | 已完成 |
+| — | [openapi.yaml](./openapi.yaml) | S2S face 的 OpenAPI 3.1(`gen-openapi -catalog` 生成) | 生成物 |
+| — | [admin-openapi.yaml](./admin-openapi.yaml) | admin review 队列的 OpenAPI 3.1(`gen-openapi -catalog-admin` 生成) | 生成物 |
+
+## 一句话总结
+
+> **catalog 只管「规范身份 + 外部锚 + 关系」。产品站保有自己的富展示行(intro/封面/评分…),只把「这是哪一个作品/人物」的身份问题委托给 catalog:批量 resolve 规范 id、按 redirect feed 清理被合并的旧 id、通过 claim 把产品行认领到一个 catalog work。写路径按 per-client site 绑定授权。**
+
+## 关键设计速查
+
+- **注册层 vs 展示体分界** —— catalog 存**身份/关系/来源锚**(work/release/credit_name/character/label/external_ref);**不存** intro、封面、评分、点赞——那些是产品站(body)的。
+- **分级来源锚** —— `catalog_external_ref` 按 `link_kind` 分 exact(0)/probable(1)/related(2);exact 唯一约束保证「一个来源的一个外部 id 只锚一个实体」。
+- **未认领注册行(R2)** —— 导入的作品可先以 `site=NULL` 存在(某产品尚未拥有它);`claim` 到来时按锚**认领已存在的身份,绝不铸第二个**。
+- **S2S per-client site 绑定** —— 写端点 `claim` 要求认证 client 的 `oauth_clients.catalog_site` 非空**且** == 请求 site,否则 403;读端点不受限。
+- **迁移不随服务跑** —— `cmd/migrate-catalog` 是唯一 schema 入口(随部署自动跑);**导入类 cmd(reconcile/import/reindex)不随部署自动跑**,需手动执行。
+
+## 非目标
+
+- 不存产品展示字段(intro/封面/点赞/收藏——产品站各自持有)。
+- 不做面向匿名用户的公开端点(仅服务已注册的一等 OAuth Client)。
+- 不做自动跨源合并的「终判」——probable 锚与合并提案进 admin 三桶等人审。

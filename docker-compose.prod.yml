@@ -43,6 +43,7 @@ x-infra-env: &infra-env
   KUN_PG_TIMEZONE: Asia/Shanghai
   KUN_GALGAME_PG_DATABASE: kun_galgame_wiki
   KUN_IMAGES_PG_DATABASE: kun_images
+  KUN_CATALOG_PG_DATABASE: kun_catalog
   # Redis
   REDIS_ENABLED: "true"
   REDIS_HOST: redis
@@ -274,6 +275,28 @@ services:
       <<: *svc-health
     restart: unless-stopped
 
+  catalog:
+    image: ghcr.io/kunmoe/infra-catalog:latest
+    pull_policy: always
+    environment:
+      <<: *infra-env
+      # kun_catalog DB name comes from *infra-env (KUN_CATALOG_PG_DATABASE);
+      # host/user/pass fall back to KUN_PG_*. The service reads oauth_clients
+      # from kun_galgame_infra for S2S Basic auth + admin JWT identities.
+      KUN_CATALOG_HOST: 0.0.0.0
+      KUN_CATALOG_PORT: "9281"
+    # Internal only — product backends (wiki/forum/moyu) reach it at
+    # http://catalog:9281 over dokploy-network.
+    expose: ["9281"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }         # reads oauth_clients from kun_galgame_infra
+      migrate-catalog: { condition: service_completed_successfully } # kun_catalog schema
+    healthcheck:
+      test: ["CMD", "/app", "healthcheck"]
+      <<: *svc-health
+    restart: unless-stopped
+
   # ───────────────────────────── Nuxt frontends ──────────────────────────────
   # Public (browser) config is BAKED into the image at CI build time (build-args in
   # .github/workflows/build.yml). Only the SSR base (service name) is injected here.
@@ -282,6 +305,7 @@ services:
     pull_policy: always
     environment:
       NUXT_API_BASE_SSR: http://oauth:9277/api/v1
+      NUXT_CATALOG_API_BASE_SSR: http://catalog:9281/api/v1
     expose: ["3000"]
     depends_on:
       oauth: { condition: service_started }
@@ -354,6 +378,16 @@ services:
   # + guarded drop-then-recreate of constraints/indexes (all IF NOT EXISTS).
   migrate-galgame:
     image: ghcr.io/kunmoe/infra-migrate-galgame:latest
+    pull_policy: always
+    environment: { <<: *infra-env }
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: "no"
+
+  # Auto-applied on every deploy (catalog waits for it). Idempotent: AutoMigrate
+  # + guarded raw-SQL (generated columns, FKs — all IF NOT EXISTS) + seed upserts.
+  migrate-catalog:
+    image: ghcr.io/kunmoe/infra-migrate-catalog:latest
     pull_policy: always
     environment: { <<: *infra-env }
     depends_on:

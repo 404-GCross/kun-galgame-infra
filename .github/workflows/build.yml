@@ -5,7 +5,7 @@
 # rebuilding every image on each push burned billed minutes even fully cached.
 # This workflow builds ONLY the images whose inputs changed (path-filtered
 # dynamic matrix):
-#   - go images (oauth/image/galgame/artifact/migrate/migrate-galgame)  ← apps/api/** + Dockerfiles
+#   - go images (oauth/image/galgame/artifact/catalog/migrate/migrate-galgame/migrate-catalog)  ← apps/api/** + Dockerfiles
 #   - web                                          ← apps/web/** + root manifests + nuxt.Dockerfile
 #   - wiki                                         ← apps/wiki/** + root manifests + nuxt.Dockerfile
 #   - tools                                        ← on-demand only (Run workflow → scope)
@@ -90,6 +90,8 @@ jobs:
             {"name":"infra-artifact","file":"docker/go.Dockerfile","args":"CMD=artifact","group":"go"},
             {"name":"infra-migrate","file":"docker/go.Dockerfile","args":"CMD=migrate","group":"go"},
             {"name":"infra-migrate-galgame","file":"docker/go.Dockerfile","args":"CMD=migrate-galgame","group":"go"},
+            {"name":"infra-catalog","file":"docker/go.Dockerfile","args":"CMD=catalog","group":"go"},
+            {"name":"infra-migrate-catalog","file":"docker/go.Dockerfile","args":"CMD=migrate-catalog","group":"go"},
             {"name":"infra-web","file":"docker/nuxt.Dockerfile","args":"APP=web\nPUBLIC_API_BASE=https://oauth.kungal.com/api/v1\nPUBLIC_IMAGE_CDN_BASE=https://image.kungal.iloveren.link","group":"web"},
             {"name":"infra-wiki","file":"docker/nuxt.Dockerfile","args":"APP=wiki\nPUBLIC_API_BASE=https://wiki.kungal.com/api\nPUBLIC_AUTH_API_BASE=https://oauth.kungal.com/api/v1\nPUBLIC_OAUTH_AUTHORIZE_BASE=https://oauth.kungal.com/api/v1\nPUBLIC_OAUTH_CLIENT_ID=galgame-wiki-admin\nPUBLIC_OAUTH_REDIRECT_URI=https://wiki.kungal.com/auth/callback\nPUBLIC_IMAGE_CDN_BASE=https://image.kungal.iloveren.link","group":"wiki"}
           ]'

@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/base64"
 	stderrors "errors"
+	"fmt"
+	"net/http"
 	"strings"
 
 	siteModel "api/internal/platform/site/model"
@@ -22,9 +24,10 @@ import (
 //
 // S2S face: Basic client credentials only (backend-to-backend — the catalog
 // has no browser-facing S2S path, so no Bearer/JWT branch here). Any valid
-// first-party OAuth client may call it; there is no per-client catalog
-// enable flag yet (that would be a main-DB column, deliberately deferred
-// until a real need).
+// first-party OAuth client may authenticate; the WRITE path additionally
+// requires a per-client site binding (oauth_clients.catalog_site, enforced by
+// enforceSiteBinding) so a client can only claim works for the product it owns.
+// Read faces (resolve / redirect feed) impose no binding.
 //
 // Admin face: the shared middleware.JWTAuth (accept-both verifier) +
 // middleware.RequireRole("admin") gate the /admin prefix at the Fiber layer,
@@ -92,6 +95,22 @@ func S2SBridge(ctx huma.Context, next func(huma.Context)) {
 func clientFromCtx(ctx context.Context) *siteModel.OAuthClient {
 	c, _ := ctx.Value(ctxKeyClient).(*siteModel.OAuthClient)
 	return c
+}
+
+// enforceSiteBinding gates the claim write path: the authenticated client must
+// be bound to a catalog site (oauth_clients.catalog_site) AND that binding must
+// equal the site it is claiming for. Unbound (empty) or mismatched → 403. Read
+// faces never call this. Returns nil when the claim is authorized.
+func enforceSiteBinding(client *siteModel.OAuthClient, site string) *houseError {
+	if client == nil || client.CatalogSite == "" {
+		return apiErrMsg(http.StatusForbidden, errors.ErrForbidden,
+			"client is not bound to a catalog site; it cannot claim works")
+	}
+	if client.CatalogSite != site {
+		return apiErrMsg(http.StatusForbidden, errors.ErrForbidden,
+			fmt.Sprintf("client is bound to site %q and cannot claim for site %q", client.CatalogSite, site))
+	}
+	return nil
 }
 
 // AdminBridge lifts the operator's user id (set by middleware.JWTAuth from

@@ -176,6 +176,17 @@ type OAuthClient struct {
 	ArtifactMaxFileSize     int64          `gorm:"default:21474836480" json:"artifact_max_file_size"`
 	ArtifactAllowedMime     datatypes.JSON `gorm:"type:jsonb" json:"artifact_allowed_mime,omitempty"`
 
+	// --- Catalog service extension field ---
+	// CatalogSite binds this client to a single catalog tenant/site key (the
+	// ecosystem tenant key written into catalog_work.site — e.g. galgame_wiki
+	// / kungal / moyu). It authorizes the S2S write path only: POST
+	// /catalog/works/claim requires this to be non-empty AND equal to the
+	// request's site, so a client can only claim works for the product it owns
+	// (an unbound client cannot claim at all). Read faces (resolve, redirect
+	// feed) are unaffected, as is the admin Bearer face. Nullable, NOT unique —
+	// one site may have several clients. See docs/catalog.
+	CatalogSite string `gorm:"size:64" json:"catalog_site,omitempty"`
+
 	// Relations
 	Site *Site `gorm:"foreignKey:SiteID" json:"site,omitempty"`
 }

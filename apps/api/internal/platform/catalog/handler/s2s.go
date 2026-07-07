@@ -172,12 +172,12 @@ type claimOutput struct {
 }
 
 func (s *S2SServer) claim(ctx context.Context, in *claimInput) (*claimOutput, error) {
-	anchors := make([]service.ExternalAnchor, len(in.Body.Anchors))
 	client := clientFromCtx(ctx)
-	matchedBy := "import:claim"
-	if client != nil {
-		matchedBy = "import:claim:" + client.ID
+	if he := enforceSiteBinding(client, in.Body.Site); he != nil {
+		return nil, he
 	}
+	anchors := make([]service.ExternalAnchor, len(in.Body.Anchors))
+	matchedBy := "import:claim:" + client.ID
 	for i, a := range in.Body.Anchors {
 		anchors[i] = service.ExternalAnchor{SourceID: a.SourceID, ExternalID: a.ExternalID, MatchedBy: matchedBy}
 	}
