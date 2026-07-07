@@ -89,7 +89,10 @@ func (s *WorkService) ClaimWork(ctx context.Context, params ClaimWorkParams) (in
 					workID = w.ID // already ours (raced sibling call)
 					return nil
 				}
-				return fmt.Errorf("%w: work %d is claimed by %s/%v", ErrClaimConflict, w.ID, *w.Site, w.ProductWorkID)
+				if w.ProductWorkID != nil {
+				return fmt.Errorf("%w: work %d is claimed by %s/%d", ErrClaimConflict, w.ID, *w.Site, *w.ProductWorkID)
+			}
+			return fmt.Errorf("%w: work %d is claimed by %s", ErrClaimConflict, w.ID, *w.Site)
 			}
 			updates := map[string]any{
 				"site":            params.Site,
