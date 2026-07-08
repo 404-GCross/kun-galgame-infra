@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"log/slog"
 	"os"
 
@@ -66,6 +67,15 @@ func main() {
 
 	slog.Info("Migrations completed successfully")
 
+	// Retire the dead authz structures the permission-first migration left
+	// behind (zombie permissions/role_permissions tables + user_site_data.role
+	// column). Runs after AutoMigrate so it isn't undone by a recreate;
+	// idempotent, so re-running migrate is a safe no-op.
+	if err := dropRetiredAuthzStructures(gormDB); err != nil {
+		slog.Error("failed to drop retired authz structures", "error", err)
+		os.Exit(1)
+	}
+
 	// At most one PENDING creator application per user (GORM can't express a
 	// partial unique index). Backstops the service-layer "one pending" guard.
 	if err := gormDB.Exec(`
@@ -117,7 +127,6 @@ func getAllModels() []any {
 		&siteModel.Site{},
 		&siteModel.OAuthClient{},
 		&siteModel.Role{},
-		&siteModel.Permission{},
 
 		// NOTE: artifact models (Artifact/Manifest) moved to the dedicated
 		// kun_artifacts DB — migrated by cmd/artifact's AutoMigrate, not here.
@@ -142,12 +151,44 @@ func dropAllTables(db *gorm.DB) error {
 			slog.Debug("drop table skipped", "error", err)
 		}
 	}
-	// Also drop the join tables
+	// Also drop the live user_roles join table (not a model, so not in the
+	// loop above). The retired role_permissions join table dies with its
+	// permissions model — dropRetiredAuthzStructures handles it on the normal
+	// migrate path.
 	if err := db.Migrator().DropTable("user_roles"); err != nil {
 		slog.Debug("drop user_roles skipped", "error", err)
 	}
-	if err := db.Migrator().DropTable("role_permissions"); err != nil {
-		slog.Debug("drop role_permissions skipped", "error", err)
+	return nil
+}
+
+// dropRetiredAuthzStructures removes the dead structures left by the
+// permission-first authorization migration (refs step 03): the zombie
+// permissions / role_permissions tables (authorization is now permission-first,
+// bundled in the per-domain perm packages — no permissions table) and the dead
+// per-site user_site_data.role numeric column (never read by any live
+// enforcement). Idempotent — each drop is guarded, so a re-run is a no-op.
+func dropRetiredAuthzStructures(db *gorm.DB) error {
+	m := db.Migrator()
+	// Order matters: drop the join table before the main table it references.
+	if m.HasTable("role_permissions") {
+		if err := m.DropTable("role_permissions"); err != nil {
+			return fmt.Errorf("drop role_permissions: %w", err)
+		}
+		slog.Info("dropped retired table role_permissions")
+	}
+	if m.HasTable("permissions") {
+		if err := m.DropTable("permissions"); err != nil {
+			return fmt.Errorf("drop permissions: %w", err)
+		}
+		slog.Info("dropped retired table permissions")
+	}
+	// The dead per-site numeric role column (pass the DB column name — the
+	// struct field is gone).
+	if m.HasColumn(&authModel.UserSiteData{}, "role") {
+		if err := m.DropColumn(&authModel.UserSiteData{}, "role"); err != nil {
+			return fmt.Errorf("drop user_site_data.role: %w", err)
+		}
+		slog.Info("dropped retired column user_site_data.role")
 	}
 	return nil
 }

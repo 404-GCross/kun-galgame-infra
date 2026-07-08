@@ -78,7 +78,7 @@ its own root `/healthz` and exits 0/1. Frontends use a Node TCP liveness probe.
   both happen in linux-x64 containers, so they match. Don't copy host-built
   `.output` into the image.
 - **Migrations** are one-off jobs (profile `jobs`), never auto-run on boot. The
-  full cross-repo migration pipeline (migrate-users, migrate-galgame-data, …)
+  full cross-repo migration pipeline (migrate-galgame-data, migrate-moyu-galgame, …)
   is a separate ordered runbook — containerize each step the same way.
 
 ## Three-repo orchestration

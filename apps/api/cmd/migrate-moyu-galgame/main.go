@@ -251,9 +251,9 @@ func run(srcDB, tdb *gorm.DB, dryRun bool) error {
 	// ── Step 3: Classify patches and build patch_id → galgame_id mapping ──
 	slog.Info("Step 3: Classifying patches...")
 	patchToGalgameID := make(map[int]int, len(patches))
-	var newPatches []MoyuPatch       // vndb_id not in wiki → create new galgame
-	var mergePatches []MoyuPatch     // vndb_id in wiki → only update bid/released
-	var noVNDBPatches []MoyuPatch    // no vndb_id → create new galgame
+	var newPatches []MoyuPatch    // vndb_id not in wiki → create new galgame
+	var mergePatches []MoyuPatch  // vndb_id in wiki → only update bid/released
+	var noVNDBPatches []MoyuPatch // no vndb_id → create new galgame
 	nextID := maxWikiID + 1
 
 	for _, p := range patches {
@@ -625,7 +625,6 @@ func run(srcDB, tdb *gorm.DB, dryRun bool) error {
 	srcDB.Table("patch").Select("MAX(id)").Scan(&maxID)
 	slog.Info("moyu patch_id remap complete", "new_min_id", minID, "new_max_id", maxID)
 
-
 	// ── Summary ──
 	fmt.Println()
 	fmt.Println("==================================================")
@@ -654,20 +653,22 @@ func run(srcDB, tdb *gorm.DB, dryRun bool) error {
 // remapMoyuPatchIDs rewrites moyu's `patch.id` and every FK column that
 // references it, mapping old (moyu) ids to new (wiki galgame) ids.
 //
-// Algorithm and shape mirror migrate-users' remapUserIDsGeneric:
+// Algorithm and shape mirror the retired cmd/migrate-users'
+// remapUserIDsGeneric (removed in the permission-first hygiene wave; see git
+// history):
 //
-//   1. Single transaction over the whole remap. Any failure → full rollback;
-//      the moyu DB never lands in a half-shifted state.
-//   2. ALTER TABLE … DISABLE TRIGGER ALL on every affected table — needed
-//      because patch.id and child patch_id columns are linked by FK
-//      constraints whose triggers would block intermediate values.
-//      Trigger state is transactional, so a rollback restores it
-//      automatically; the deferred ENABLE handles the commit path.
-//   3. CREATE TEMP TABLE _patch_id_map ON COMMIT DROP — temp table goes
-//      away with the transaction either way.
-//   4. Two-pass offset (+10_000_000) avoids PK collisions when the
-//      old-id and new-id ranges overlap.
-//   5. Reset patch.id sequence so subsequent INSERTs don't collide.
+//  1. Single transaction over the whole remap. Any failure → full rollback;
+//     the moyu DB never lands in a half-shifted state.
+//  2. ALTER TABLE … DISABLE TRIGGER ALL on every affected table — needed
+//     because patch.id and child patch_id columns are linked by FK
+//     constraints whose triggers would block intermediate values.
+//     Trigger state is transactional, so a rollback restores it
+//     automatically; the deferred ENABLE handles the commit path.
+//  3. CREATE TEMP TABLE _patch_id_map ON COMMIT DROP — temp table goes
+//     away with the transaction either way.
+//  4. Two-pass offset (+10_000_000) avoids PK collisions when the
+//     old-id and new-id ranges overlap.
+//  5. Reset patch.id sequence so subsequent INSERTs don't collide.
 //
 // All 13 FK columns referencing patch.id (per prisma/moyu schema audit)
 // are listed in fkTables — patch_alias, patch_link, patch_cover,

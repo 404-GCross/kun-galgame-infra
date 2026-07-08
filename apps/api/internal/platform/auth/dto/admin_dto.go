@@ -54,9 +54,9 @@ type AssignRoleRequest struct {
 // UserDetailResponse represents detailed user info for admin
 type UserDetailResponse struct {
 	UserResponse
-	IP            string `json:"ip"`
-	SessionCount  int    `json:"session_count"`
-	OAuthAccounts int    `json:"oauth_accounts"`
+	IP            string                 `json:"ip"`
+	SessionCount  int                    `json:"session_count"`
+	OAuthAccounts int                    `json:"oauth_accounts"`
 	SiteData      []UserSiteDataResponse `json:"site_data"`
 }
 
@@ -64,6 +64,5 @@ type UserDetailResponse struct {
 type UserSiteDataResponse struct {
 	SiteID   uint   `json:"site_id"`
 	SiteName string `json:"site_name"`
-	Role     int    `json:"role"`
 	Status   int    `json:"status"`
 }

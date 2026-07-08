@@ -11,7 +11,6 @@ type UserSiteData struct {
 	ID              uint           `gorm:"primaryKey" json:"id"`
 	UserID          uint           `gorm:"not null;index" json:"user_id"`
 	SiteID          uint           `gorm:"not null;index" json:"site_id"`
-	Role            int            `gorm:"default:1" json:"role"`
 	Status          int            `gorm:"default:0" json:"status"`
 	DailyCheckIn    int            `gorm:"default:0" json:"daily_check_in"`
 	DailyImageCount int            `gorm:"default:0" json:"daily_image_count"`

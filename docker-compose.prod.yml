@@ -402,7 +402,7 @@ services:
     restart: "no"
 
   # All cmd/* binaries (data cutover). Run a job by name (see 16-data-cutover.md):
-  #   docker compose -f docker-compose.prod.yml --profile jobs run --rm tools migrate-users --kungal-dsn=... --moyu-dsn=...
+  #   docker compose -f docker-compose.prod.yml --profile jobs run --rm tools migrate-galgame-data --wiki-dsn=... --moyu-dsn=...
   #   docker compose -f docker-compose.prod.yml --profile jobs run --rm tools sync-vndb -tagmap docs/tagMap.ts
   tools:
     image: ghcr.io/kunmoe/infra-tools:latest

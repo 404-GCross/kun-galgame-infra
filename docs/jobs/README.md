@@ -18,7 +18,7 @@
 | **真·周期任务** | `sync-vndb`(日增量)、`galgame-image-refping`(日)、`image-gc`(日 TTL GC) | 是（本文核心对象） |
 | **按需/偶发**（适合 admin 手动触发，不自动） | `reindex-search`、`sync-vndb-relations` | 否（手动为主） |
 | **常驻 worker**（不是 cron，是服务） | `image-moderation-worker`、`worker` | 否（独立常驻进程） |
-| **一次性运维/迁移**（绝不能自动跑） | `migrate`、`migrate-galgame`、`migrate-galgame-data`、`migrate-moyu-galgame`、`migrate-users`、`migrate-galgame-banners-to-image-service`、`seed`、`image-setup`、`cleanup-bogus-vndb-id`、`dedup-galgame-alias` | 否（永远手动） |
+| **一次性运维/迁移**（绝不能自动跑） | `migrate`、`migrate-galgame`、`migrate-galgame-data`、`migrate-moyu-galgame`、`migrate-galgame-banners-to-image-service`、`seed`、`image-setup`、`cleanup-bogus-vndb-id`、`dedup-galgame-alias` | 否（永远手动） |
 | **HTTP 服务** | `galgame`、`image`、`oauth`、`artifact`、`moderation` | 否 |
 
 **关键事实**：真正"要定时 + 想可手动"的核心集合只有 **3 个日任务 + 2 个按需任务**，规模小且稳定。
@@ -104,7 +104,7 @@
 
 ### 证据 2：`DailyCheckIn` / `DailyImageCount` 是旧单体 reset-cron 的遗留
 
-`auth/model.UserSiteData` 有 `DailyCheckIn int default 0`、`DailyImageCount int default 0`，但 OAuth 侧 handler/service **零引用**——只出现在 model 定义和 `cmd/migrate-users`（从 kungal/moyu 旧用户表迁入）。这俩 int 计数列正是旧单体"夜里 cron 清零"那套模式的产物。
+`auth/model.UserSiteData` 有 `DailyCheckIn int default 0`、`DailyImageCount int default 0`，但 OAuth 侧 handler/service **零引用**——现只出现在 model 定义（其唯一历史写入方 `cmd/migrate-users` 已随 permission-first 卫生波退役，见 git history）。这俩 int 计数列正是旧单体"夜里 cron 清零"那套模式的产物，属下一批可清理的死列。
 
 ### 正确设计（把 cron 设计掉）
 
