@@ -4,6 +4,23 @@
  */
 
 export interface paths {
+    "/api/v1/catalog/labels/{id}/works": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Works attributed to a label (circle→works reverse, paginated) */
+        get: operations["getCatalogLabelWorks"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/catalog/redirects": {
         parameters: {
             query?: never;
@@ -38,6 +55,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/catalog/search/entities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Search catalog entities (credit names / characters / labels) */
+        get: operations["searchCatalogEntities"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/catalog/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Dashboard counts for the internal data browser (one round-trip) */
+        get: operations["getCatalogStats"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/catalog/works/by-anchor": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read a work through one of its external anchors (work- or release-level) */
+        get: operations["getCatalogWorkByAnchor"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/catalog/works/claim": {
         parameters: {
             query?: never;
@@ -55,12 +123,81 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/catalog/works/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read a work by catalog id (same bundle as by-anchor) */
+        get: operations["getCatalogWorkByID"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/catalog/works/{id}/credits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List a work's credits grouped by role */
+        get: operations["getCatalogWorkCredits"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        AnchorRef: {
+            external_id: string;
+            /**
+             * Format: int32
+             * @description 0=exact 1=probable 2=related
+             */
+            link_kind: number;
+            matched_by?: string;
+            source: string;
+        };
+        AnchorTierCell: {
+            /** Format: int64 */
+            count: number;
+            /**
+             * Format: int32
+             * @description 0=exact 1=probable 2=related
+             */
+            link_kind: number;
+            source: string;
+        };
+        CatalogStats: {
+            anchors_by_source_tier: components["schemas"]["AnchorTierCell"][] | null;
+            attributions_by_kind: components["schemas"]["KindCount"][] | null;
+            credits_by_source: components["schemas"]["KeyCount"][] | null;
+            entities: components["schemas"]["EntityCounts"];
+            llm_bid_verdicts: components["schemas"]["KeyCount"][] | null;
+            queues: components["schemas"]["QueueLevels"];
+            source_freshness: components["schemas"]["SourceFreshness"][] | null;
+            works: components["schemas"]["WorksMatrix"];
+        };
         ClaimAnchor: {
             external_id: string;
+            /**
+             * @description Anchor grain; defaults to work
+             * @enum {string}
+             */
+            level?: "work" | "release";
             /**
              * Format: int32
              * @description catalog_source registry id (e.g. 2=vndb 3=bangumi 4=dlsite)
@@ -103,6 +240,79 @@ export interface components {
             /** Format: int64 */
             work_id: number;
         };
+        CreditGroup: {
+            credits: components["schemas"]["CreditItem"][] | null;
+            /** Format: int64 */
+            role_id: number;
+            role_key: string;
+            role_name: string;
+        };
+        CreditItem: {
+            character?: string;
+            /** Format: int64 */
+            character_id?: number;
+            /** Format: int64 */
+            credit_name_id: number;
+            lang: string;
+            latin?: string;
+            name: string;
+            note?: string;
+            source?: string;
+        };
+        EntityCounts: {
+            /** Format: int64 */
+            characters: number;
+            /** Format: int64 */
+            credit_names: number;
+            /** Format: int64 */
+            labels: number;
+            /** Format: int64 */
+            orgs: number;
+            /**
+             * Format: int64
+             * @description credit_name.person_id IS NULL
+             */
+            orphan_credit_names: number;
+            /** Format: int64 */
+            persons: number;
+        };
+        EntitySearchHit: {
+            entity_type: string;
+            /** @description prefixed: n{id} / c{id} / b{id} */
+            id: string;
+            /**
+             * Format: int32
+             * @description label kind (labels only)
+             */
+            kind?: number;
+            latin?: string;
+            name: string;
+            /**
+             * Format: int64
+             * @description credit-name → person link (names only; absent = orphan)
+             */
+            person_id?: number;
+            /** Format: double */
+            popularity: number;
+            sources: string[] | null;
+        };
+        EntitySearchResponse: {
+            items: components["schemas"]["EntitySearchHit"][] | null;
+            /** Format: int64 */
+            total: number;
+        };
+        EnvelopeCatalogStats: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/EnvelopeCatalogStats.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            code: number;
+            data?: components["schemas"]["CatalogStats"];
+            message: string;
+        };
         EnvelopeClaimWorkResponse: {
             /**
              * Format: uri
@@ -113,6 +323,30 @@ export interface components {
             /** Format: int64 */
             code: number;
             data?: components["schemas"]["ClaimWorkResponse"];
+            message: string;
+        };
+        EnvelopeEntitySearchResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/EnvelopeEntitySearchResponse.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            code: number;
+            data?: components["schemas"]["EntitySearchResponse"];
+            message: string;
+        };
+        EnvelopeLabelWorksResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/EnvelopeLabelWorksResponse.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            code: number;
+            data?: components["schemas"]["LabelWorksResponse"];
             message: string;
         };
         EnvelopeRedirectFeedResponse: {
@@ -139,6 +373,30 @@ export interface components {
             data?: components["schemas"]["ResolveResponse"];
             message: string;
         };
+        EnvelopeWorkByAnchorResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/EnvelopeWorkByAnchorResponse.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            code: number;
+            data?: components["schemas"]["WorkByAnchorResponse"];
+            message: string;
+        };
+        EnvelopeWorkCreditsResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/EnvelopeWorkCreditsResponse.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            code: number;
+            data?: components["schemas"]["WorkCreditsResponse"];
+            message: string;
+        };
         HouseError: {
             /**
              * Format: uri
@@ -148,7 +406,59 @@ export interface components {
             readonly $schema?: string;
             /** Format: int64 */
             code: number;
+            data?: unknown;
             message: string;
+        };
+        KeyCount: {
+            /** Format: int64 */
+            count: number;
+            key: string;
+        };
+        KindCount: {
+            /** Format: int64 */
+            count: number;
+            /** Format: int32 */
+            kind: number;
+        };
+        LabelHead: {
+            display_name: string;
+            /** Format: int64 */
+            id: number;
+            /**
+             * Format: int32
+             * @description label kind (0=game_brand … 4=doujin_circle …)
+             */
+            kind: number;
+        };
+        LabelWorkRow: {
+            /** Format: int32 */
+            content_rating: number;
+            display_name: string;
+            /**
+             * Format: int32
+             * @description attribution edge kind
+             */
+            kind: number;
+            /** Format: int32 */
+            medium_id: number;
+            /** Format: int32 */
+            status: number;
+            /** Format: int64 */
+            work_id: number;
+        };
+        LabelWorksResponse: {
+            items: components["schemas"]["LabelWorkRow"][] | null;
+            label: components["schemas"]["LabelHead"];
+            /** Format: int64 */
+            total: number;
+        };
+        QueueLevels: {
+            candidates_by_status: components["schemas"]["StatusCount"][] | null;
+            /** Format: int64 */
+            probable_refs: number;
+            proposals_by_status: components["schemas"]["StatusCount"][] | null;
+            /** Format: int64 */
+            rejections: number;
         };
         RedirectFeedResponse: {
             items: components["schemas"]["RedirectItem"][] | null;
@@ -164,6 +474,22 @@ export interface components {
             merged_at: string;
             /** Format: int64 */
             old_id: number;
+        };
+        ReleaseBrief: {
+            anchors: components["schemas"]["AnchorRef"][] | null;
+            /** Format: int64 */
+            id: number;
+            /**
+             * Format: int32
+             * @description 0=default 1=digital 2=physical 3=trial 4=patch
+             */
+            kind: number;
+            /** Format: int32 */
+            released_d?: number;
+            /** Format: int32 */
+            released_m?: number;
+            /** Format: int32 */
+            released_y?: number;
         };
         ResolveRequest: {
             /**
@@ -188,6 +514,103 @@ export interface components {
             /** @description The subset of requested ids that had a redirect */
             redirected?: number[] | null;
         };
+        SourceFreshness: {
+            /** @description RFC3339 max(created_at) of that source's anchors */
+            latest_ref?: string;
+            source: string;
+        };
+        StatusCount: {
+            /** Format: int64 */
+            count: number;
+            /** Format: int32 */
+            status: number;
+        };
+        WorkByAnchorResponse: {
+            labels: components["schemas"]["WorkLabel"][] | null;
+            refs: components["schemas"]["WorkRef"][] | null;
+            releases: components["schemas"]["ReleaseBrief"][] | null;
+            titles: components["schemas"]["WorkTitle"][] | null;
+            work: components["schemas"]["WorkCore"];
+        };
+        WorkCore: {
+            /**
+             * Format: int32
+             * @description 0=all_ages 1=sensitive 2=r18
+             */
+            content_rating: number;
+            display_name: string;
+            /** Format: int64 */
+            id: number;
+            /** Format: int32 */
+            medium_id: number;
+            olang: string;
+            /** Format: int64 */
+            product_work_id?: number;
+            site?: string;
+            /**
+             * Format: int32
+             * @description 0=live 1=stub 2=merged
+             */
+            status: number;
+        };
+        WorkCreditsResponse: {
+            groups: components["schemas"]["CreditGroup"][] | null;
+            /** Format: int64 */
+            work_id: number;
+        };
+        WorkLabel: {
+            display_name: string;
+            /**
+             * Format: int32
+             * @description attribution nature: 0=circle 1=publisher 2=developer 3=brand
+             */
+            kind: number;
+            /** Format: int64 */
+            label_id: number;
+            /**
+             * Format: int32
+             * @description the label's own kind (0=game_brand … 4=doujin_circle …)
+             */
+            label_kind: number;
+        };
+        WorkRef: {
+            external_id: string;
+            /** @description work | release */
+            level: string;
+            /**
+             * Format: int64
+             * @description present when level=release
+             */
+            release_id?: number;
+            source: string;
+        };
+        WorkTitle: {
+            /**
+             * Format: int32
+             * @description 0=official 1=alias 2=abbreviation 3=search_hint
+             */
+            kind: number;
+            lang: string;
+            latin?: string;
+            title: string;
+        };
+        WorksCell: {
+            claimed: boolean;
+            /** Format: int64 */
+            count: number;
+            /** Format: int32 */
+            medium_id: number;
+            /**
+             * Format: int32
+             * @description 0=live 1=stub 2=merged
+             */
+            status: number;
+        };
+        WorksMatrix: {
+            cells: components["schemas"]["WorksCell"][] | null;
+            /** Format: int64 */
+            total: number;
+        };
     };
     responses: never;
     parameters: never;
@@ -197,6 +620,43 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    getCatalogLabelWorks: {
+        parameters: {
+            query?: {
+                /** @description Page size (capped at 50) */
+                limit?: number;
+                /** @description Rows to skip */
+                offset?: number;
+            };
+            header?: never;
+            path: {
+                /** @description Catalog label id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeLabelWorksResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HouseError"];
+                };
+            };
+        };
+    };
     listCatalogRedirects: {
         parameters: {
             query?: {
@@ -266,6 +726,107 @@ export interface operations {
             };
         };
     };
+    searchCatalogEntities: {
+        parameters: {
+            query?: {
+                /** @description Search text; empty returns the most-credited entities */
+                q?: string;
+                /** @description Which entity index to search */
+                type?: "names" | "characters" | "labels";
+                /** @description UI locale; the server pins the query language (client-supplied Meili locales are never accepted) */
+                locale?: "zh" | "ja" | "en";
+                /** @description Max hits (capped at 20) */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeEntitySearchResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HouseError"];
+                };
+            };
+        };
+    };
+    getCatalogStats: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeCatalogStats"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HouseError"];
+                };
+            };
+        };
+    };
+    getCatalogWorkByAnchor: {
+        parameters: {
+            query?: {
+                /** @description Source key (dlsite/vndb/bangumi/erogamespace/…), validated against the source registry */
+                source?: string;
+                /** @description The id within that source (e.g. a DLsite RJ number, a VNDB v-id) */
+                external_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeWorkByAnchorResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HouseError"];
+                };
+            };
+        };
+    };
     claimCatalogWork: {
         parameters: {
             query?: never;
@@ -286,6 +847,70 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EnvelopeClaimWorkResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HouseError"];
+                };
+            };
+        };
+    };
+    getCatalogWorkByID: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Catalog work id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeWorkByAnchorResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HouseError"];
+                };
+            };
+        };
+    };
+    getCatalogWorkCredits: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Catalog work id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeWorkCreditsResponse"];
                 };
             };
             /** @description Error */
