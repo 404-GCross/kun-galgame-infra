@@ -64,8 +64,8 @@ func clean(t *testing.T) {
 		"catalog_credit", "catalog_match_candidate", "catalog_external_ref", "catalog_revision",
 		"catalog_credit_name", "catalog_label", "catalog_character", "catalog_work",
 		"src_bangumi.subject_person", "src_bangumi.subject_character", "src_bangumi.person_character",
-		"src_bangumi.person", "src_bangumi.character",
-		"catalog_release", "catalog_work_title", "catalog_work_label",
+		"src_bangumi.person", "src_bangumi.character", "src_bangumi.subject_relation",
+		"catalog_release", "catalog_work_title", "catalog_work_label", "catalog_work_relation",
 		"src_llm.bid_identity_verdict", "creaters", "characters", "staff", "appearances", "appearance_actors", "works", "games",
 	}
 	for _, tb := range tables {

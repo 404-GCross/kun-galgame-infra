@@ -95,7 +95,9 @@ func findMapping(mappings []RoleMapSeed, sourceRole string) (RoleMapSeed, bool) 
 func TestHandSeedsIntegrity(t *testing.T) {
 	assert.Len(t, media(), 7)
 	assert.Len(t, sources(), 11)
-	assert.Len(t, relationTypes(), 13)
+	// 13 pinned by refs/proj/02 + 3 symmetric character/setting-variation keys
+	// added in step 30 (shares_character / alternative_setting / alternative_version).
+	assert.Len(t, relationTypes(), 16)
 
 	// The generated role map hard-codes the bangumi source id — keep them in sync.
 	var bangumiOK bool

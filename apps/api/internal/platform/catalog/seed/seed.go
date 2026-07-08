@@ -136,6 +136,14 @@ func relationTypes() []model.CatalogRelationType {
 		{ID: 7, Key: "same_series", Domain: model.RelationDomainWork, ForwardPhrase: "同系列", ReversePhrase: "同系列", IsSymmetric: true},
 		{ID: 8, Key: "same_setting", Domain: model.RelationDomainWork, ForwardPhrase: "同世界观", ReversePhrase: "同世界观", IsSymmetric: true},
 		{ID: 9, Key: "crossover_with", Domain: model.RelationDomainWork, ForwardPhrase: "联动", ReversePhrase: "联动", IsSymmetric: true},
+		// Symmetric character/setting-variation family (step 30, mapped from
+		// Bangumi game-domain relations 4007/4009/4010). same_setting (8) already
+		// covers "same world, different characters"; these complete the family
+		// with the three variations Bangumi distinguishes but our step-02
+		// vocabulary had not needed until the relation import surfaced them.
+		{ID: 10, Key: "shares_character", Domain: model.RelationDomainWork, ForwardPhrase: "角色出演", ReversePhrase: "角色出演", IsSymmetric: true},
+		{ID: 11, Key: "alternative_setting", Domain: model.RelationDomainWork, ForwardPhrase: "不同世界观", ReversePhrase: "不同世界观", IsSymmetric: true},
+		{ID: 12, Key: "alternative_version", Domain: model.RelationDomainWork, ForwardPhrase: "不同演绎", ReversePhrase: "不同演绎", IsSymmetric: true},
 
 		{ID: 20, Key: "imprint_of", Domain: model.RelationDomainEntity, ForwardPhrase: "是…旗下的厂牌/文库", ReversePhrase: "拥有厂牌/文库"},
 		{ID: 21, Key: "renamed_from", Domain: model.RelationDomainEntity, ForwardPhrase: "前身为", ReversePhrase: "后改名为"},
