@@ -3,8 +3,8 @@ package perm_test
 import (
 	"testing"
 
-	"api/internal/platform/authz"
 	"api/internal/platform/artifact/perm"
+	"api/internal/platform/authz"
 )
 
 // goldenGrants is derived from the pre-migration in-handler ren gate. Any drift
