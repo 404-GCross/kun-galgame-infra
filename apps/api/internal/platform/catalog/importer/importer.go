@@ -42,6 +42,7 @@ const (
 	ruleDLsiteWork    = "rule:dlsite-work-import"
 	ruleDLsiteMaker   = "rule:dlsite-maker-import"
 	ruleDLsiteCreater = "rule:dlsite-creater-import"
+	ruleBangumiXmedia = "rule:bangumi-xmedia-import"
 
 	roleVoiceActor int64 = 1 // hand-pinned in seed (声優)
 	mediumASMR     int16 = 5 // catalog_medium key=asmr

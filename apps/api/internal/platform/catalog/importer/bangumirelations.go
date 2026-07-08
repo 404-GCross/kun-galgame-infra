@@ -19,8 +19,10 @@ import (
 // mirror row.
 
 // Catalog work relation type ids (seed, step 02 + step 30 additions). The
-// cross-media adaptation_of (1) is intentionally not imported here (see below).
+// cross-media adaptation_of (1) is not imported by the game-domain relation wave
+// (see below); step 31's cross-media wave uses it.
 const (
+	relAdaptationOf       int64 = 1
 	relSequelOf           int64 = 2
 	relSideStoryOf        int64 = 3
 	relCollects           int64 = 5
