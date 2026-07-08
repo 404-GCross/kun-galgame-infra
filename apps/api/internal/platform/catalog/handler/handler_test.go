@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -9,6 +10,7 @@ import (
 
 	"api/internal/middleware"
 	"api/internal/platform/catalog/migrate"
+	"api/internal/platform/catalog/model"
 	"api/internal/platform/catalog/perm"
 	"api/internal/platform/catalog/repository"
 	"api/internal/platform/catalog/seed"
@@ -166,6 +168,53 @@ func TestClaimSiteBinding_Allowed(t *testing.T) {
 
 	body := `{"medium_id":1,"site":"galgame_wiki","product_work_id":990016,"display_name":"バインドテスト","olang":"ja"}`
 	assert.Equal(t, fiber.StatusOK, postClaim(t, app, body), "bound client claims for its own site → 200")
+}
+
+// TestClaimConflict_StructuredBody: a 409 claim conflict returns the owning
+// identity in the house envelope's data field (work_id + owning_site +
+// owning_product_work_id) so the caller records the link instead of retrying.
+// It also exercises the release-anchor adopt path end-to-end over HTTP.
+func TestClaimConflict_StructuredBody(t *testing.T) {
+	db := openCatalogTestDB(t)
+	for _, tbl := range []string{"catalog_external_ref", "catalog_release", "catalog_work"} {
+		require.NoError(t, db.Exec("TRUNCATE "+tbl+" RESTART IDENTITY CASCADE").Error)
+	}
+	work := &model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "同人音声", Status: model.WorkStatusStub}
+	require.NoError(t, db.Create(work).Error)
+	rel := &model.CatalogRelease{WorkID: work.ID, Kind: model.ReleaseKindDigital}
+	require.NoError(t, db.Create(rel).Error)
+	require.NoError(t, db.Create(&model.CatalogExternalRef{
+		EntityType: model.EntityTypeRelease, EntityID: rel.ID, SourceID: 4, ExternalID: "RJWIRE",
+		LinkKind: model.LinkKindExact, MatchedBy: "rule:test",
+	}).Error)
+
+	svc := service.NewWorkService(db, service.NewResolveService(repository.NewRedirectRepository(db)))
+	app := claimApp(&siteModel.OAuthClient{ID: "letmoe-client", CatalogSite: "letmoe"}, svc)
+
+	// First claim adopts the work through its release anchor.
+	assert.Equal(t, fiber.StatusOK, postClaim(t, app,
+		`{"medium_id":1,"site":"letmoe","product_work_id":9001,"display_name":"同人音声","anchors":[{"source_id":4,"external_id":"RJWIRE","level":"release"}]}`))
+
+	// A different product work claiming the same anchor conflicts with structure.
+	req := httptest.NewRequest("POST", "/api/v1/catalog/works/claim", strings.NewReader(
+		`{"medium_id":1,"site":"letmoe","product_work_id":9002,"display_name":"別行","anchors":[{"source_id":4,"external_id":"RJWIRE","level":"release"}]}`))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := app.Test(req)
+	require.NoError(t, err)
+	require.Equal(t, fiber.StatusConflict, resp.StatusCode)
+
+	var envelope struct {
+		Code int `json:"code"`
+		Data struct {
+			WorkID              int64  `json:"work_id"`
+			OwningSite          string `json:"owning_site"`
+			OwningProductWorkID int64  `json:"owning_product_work_id"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&envelope))
+	assert.Equal(t, work.ID, envelope.Data.WorkID, "conflict carries the owning catalog work id")
+	assert.Equal(t, "letmoe", envelope.Data.OwningSite)
+	assert.Equal(t, int64(9001), envelope.Data.OwningProductWorkID)
 }
 
 func openCatalogTestDB(t *testing.T) *gorm.DB {

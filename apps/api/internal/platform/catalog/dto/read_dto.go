@@ -13,6 +13,22 @@ type WorkByAnchorResponse struct {
 	Titles   []WorkTitle    `json:"titles"`
 	Releases []ReleaseBrief `json:"releases"`
 	Labels   []WorkLabel    `json:"labels"`
+	// Refs is the flat cross-source identity projection: every EXACT external
+	// ref of this work, work-level and release-level in one list, for rendering
+	// external links (DLsite/EG/…) and the cross-source identity chain.
+	// probable/related tiers are deliberately excluded — they are review-lane
+	// internal state and never cross the S2S face.
+	Refs []WorkRef `json:"refs"`
+}
+
+// WorkRef is one exact external anchor of a work, flattened across the
+// work/release levels. release-level refs carry the owning release id so a
+// consumer can tie the identity to a specific SKU.
+type WorkRef struct {
+	Source     string `json:"source"`
+	ExternalID string `json:"external_id"`
+	Level      string `json:"level" doc:"work | release"`
+	ReleaseID  int64  `json:"release_id,omitempty" doc:"present when level=release"`
 }
 
 // WorkCore is the work's identity + claim state.

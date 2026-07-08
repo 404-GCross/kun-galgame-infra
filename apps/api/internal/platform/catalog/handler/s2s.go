@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"api/internal/platform/catalog/dto"
+	"api/internal/platform/catalog/model"
 	"api/internal/platform/catalog/repository"
 	catsearch "api/internal/platform/catalog/search"
 	"api/internal/platform/catalog/service"
@@ -185,7 +186,11 @@ func (s *S2SServer) claim(ctx context.Context, in *claimInput) (*claimOutput, er
 	anchors := make([]service.ExternalAnchor, len(in.Body.Anchors))
 	matchedBy := "import:claim:" + client.ID
 	for i, a := range in.Body.Anchors {
-		anchors[i] = service.ExternalAnchor{SourceID: a.SourceID, ExternalID: a.ExternalID, MatchedBy: matchedBy}
+		entityType := model.EntityTypeWork
+		if a.Level == "release" {
+			entityType = model.EntityTypeRelease
+		}
+		anchors[i] = service.ExternalAnchor{SourceID: a.SourceID, ExternalID: a.ExternalID, MatchedBy: matchedBy, EntityType: entityType}
 	}
 	workID, created, err := s.work.ClaimWork(ctx, service.ClaimWorkParams{
 		MediumID:      in.Body.MediumID,
@@ -197,8 +202,13 @@ func (s *S2SServer) claim(ctx context.Context, in *claimInput) (*claimOutput, er
 		Anchors:       anchors,
 	})
 	if err != nil {
-		if stderrors.Is(err, service.ErrClaimConflict) {
-			return nil, apiErrMsg(http.StatusConflict, errors.ErrOperationFailed, err.Error())
+		var conflict *service.ConflictError
+		if stderrors.As(err, &conflict) {
+			info := dto.ClaimConflictInfo{WorkID: conflict.WorkID, OwningSite: conflict.OwningSite}
+			if conflict.OwningProductWorkID != nil {
+				info.OwningProductWorkID = *conflict.OwningProductWorkID
+			}
+			return nil, apiErrData(http.StatusConflict, errors.ErrOperationFailed, conflict.Error(), info)
 		}
 		slog.Error("catalog claim", "err", err)
 		return nil, apiErr(http.StatusInternalServerError, errors.ErrInternalServer)

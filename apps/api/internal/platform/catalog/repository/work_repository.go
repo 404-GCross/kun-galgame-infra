@@ -45,20 +45,34 @@ func FindClaimed(tx *gorm.DB, mediumID int16, site string, productWorkID int64) 
 	return &row, nil
 }
 
-// FindWorkIDByExactRef returns the work exact-anchored to (sourceID,
-// externalID), if any. The exact tier is unique per (source, external_id,
-// entity_type), so at most one row can match.
-func FindWorkIDByExactRef(tx *gorm.DB, sourceID int16, externalID string) (int64, bool, error) {
-	var ref model.CatalogExternalRef
-	err := tx.Where(
-		"entity_type = ? AND source_id = ? AND external_id = ? AND link_kind = ?",
-		model.EntityTypeWork, sourceID, externalID, model.LinkKindExact,
-	).First(&ref).Error
-	if err == gorm.ErrRecordNotFound {
+// FindWorkIDByAnchor resolves an EXACT external anchor at the work OR release
+// level to its owning work id — release anchors (DLsite workno et al., which
+// hang off the SKU per R3/R5) trace through catalog_release.work_id. This
+// mirrors the read face's by-anchor resolution but is scoped to the exact
+// tier: a claim adopts only exact identities. On a work↔release tie the
+// work-level anchor wins (entity_type ASC), matching the read face. The
+// returned work id is NOT yet redirect-resolved — the caller follows redirects.
+// Returns (0, false, nil) when no exact anchor matches.
+func FindWorkIDByAnchor(tx *gorm.DB, sourceID int16, externalID string) (int64, bool, error) {
+	var ref struct {
+		EntityType int16
+		EntityID   int64
+	}
+	if err := tx.Raw(`SELECT entity_type, entity_id FROM catalog_external_ref
+		WHERE source_id = ? AND external_id = ? AND link_kind = ? AND entity_type IN (?, ?)
+		ORDER BY entity_type ASC LIMIT 1`,
+		sourceID, externalID, model.LinkKindExact, model.EntityTypeWork, model.EntityTypeRelease).Scan(&ref).Error; err != nil {
+		return 0, false, err
+	}
+	if ref.EntityID == 0 {
 		return 0, false, nil
 	}
-	if err != nil {
-		return 0, false, err
+	if ref.EntityType == model.EntityTypeRelease {
+		var workID int64
+		if err := tx.Raw(`SELECT work_id FROM catalog_release WHERE id = ?`, ref.EntityID).Scan(&workID).Error; err != nil {
+			return 0, false, err
+		}
+		return workID, workID != 0, nil
 	}
 	return ref.EntityID, true, nil
 }

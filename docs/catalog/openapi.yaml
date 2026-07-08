@@ -90,6 +90,12 @@ components:
         external_id:
           minLength: 1
           type: string
+        level:
+          description: Anchor grain; defaults to work
+          enum:
+            - work
+            - release
+          type: string
         source_id:
           description: catalog_source registry id (e.g. 2=vndb 3=bangumi 4=dlsite)
           format: int32
@@ -470,6 +476,7 @@ components:
         code:
           format: int64
           type: integer
+        data: {}
         message:
           type: string
       required:
@@ -742,6 +749,12 @@ components:
           type:
             - array
             - "null"
+        refs:
+          items:
+            $ref: "#/components/schemas/WorkRef"
+          type:
+            - array
+            - "null"
         releases:
           items:
             $ref: "#/components/schemas/ReleaseBrief"
@@ -761,6 +774,7 @@ components:
         - titles
         - releases
         - labels
+        - refs
       type: object
     WorkCore:
       additionalProperties: false
@@ -833,6 +847,25 @@ components:
         - display_name
         - label_kind
         - kind
+      type: object
+    WorkRef:
+      additionalProperties: false
+      properties:
+        external_id:
+          type: string
+        level:
+          description: work | release
+          type: string
+        release_id:
+          description: present when level=release
+          format: int64
+          type: integer
+        source:
+          type: string
+      required:
+        - source
+        - external_id
+        - level
       type: object
     WorkTitle:
       additionalProperties: false

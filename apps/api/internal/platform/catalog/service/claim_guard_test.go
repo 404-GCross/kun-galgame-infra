@@ -1,6 +1,7 @@
 package service
 
 import (
+	stderrors "errors"
 	"testing"
 	"time"
 
@@ -96,6 +97,108 @@ func TestClaimWork(t *testing.T) {
 	other.ProductWorkID = 5001
 	_, _, err = testWork.ClaimWork(ctx, other)
 	require.ErrorIs(t, err, ErrClaimConflict, "a different product work cannot steal the transferred claim")
+}
+
+// TestClaimWork_ReleaseAnchor covers the doujin claim path: a DLsite workno is
+// a RELEASE-level anchor (R3/R5), so claiming by workno must (1) adopt the
+// owning work through its release, inheriting its assets, (2) conflict with the
+// structured owner when the work is already claimed, and (3) on a fresh mint
+// hang the anchor on a new release — never the work.
+func TestClaimWork_ReleaseAnchor(t *testing.T) {
+	cleanTables(t)
+	ctx := t.Context()
+	const dlsite int16 = 4
+
+	// (1) ADOPT — an unclaimed rosetta-style work: a release carries the exact
+	// DLsite anchor, plus a label asset that must survive the claim.
+	unclaimed := createWork(t, "同人音声")
+	require.NoError(t, testDB.Exec(`UPDATE catalog_work SET status = ? WHERE id = ?`, model.WorkStatusStub, unclaimed.ID).Error)
+	rel := &model.CatalogRelease{WorkID: unclaimed.ID, Kind: model.ReleaseKindDigital}
+	require.NoError(t, testDB.Create(rel).Error)
+	addExternalRef(t, model.EntityTypeRelease, rel.ID, dlsite, "RJADOPT", model.LinkKindExact)
+	label := &model.CatalogLabel{DisplayName: "既存サークル", Kind: model.LabelKindDoujinCircle, Lang: "ja"}
+	require.NoError(t, testDB.Create(label).Error)
+	require.NoError(t, testDB.Create(&model.CatalogWorkLabel{WorkID: unclaimed.ID, LabelID: label.ID, Kind: model.WorkLabelKindCircle}).Error)
+
+	releaseAnchor := ExternalAnchor{SourceID: dlsite, ExternalID: "RJADOPT", MatchedBy: "import:test", EntityType: model.EntityTypeRelease}
+	adoptParams := ClaimWorkParams{
+		MediumID: 1, Site: "letmoe", ProductWorkID: 8001, DisplayName: "同人音声", OLang: "ja",
+		Anchors: []ExternalAnchor{releaseAnchor},
+	}
+	id, created, err := testWork.ClaimWork(ctx, adoptParams)
+	require.NoError(t, err)
+	assert.Equal(t, unclaimed.ID, id, "the release anchor resolves to the owning work — no second identity")
+	assert.False(t, created, "adopting an existing identity is not a mint")
+
+	var claimed model.CatalogWork
+	require.NoError(t, testDB.First(&claimed, id).Error)
+	require.NotNil(t, claimed.Site)
+	assert.Equal(t, "letmoe", *claimed.Site)
+	assert.Equal(t, model.WorkStatusLive, claimed.Status, "claiming graduates the stub")
+	var labelCount int64
+	testDB.Model(&model.CatalogWorkLabel{}).Where("work_id = ?", id).Count(&labelCount)
+	assert.Equal(t, int64(1), labelCount, "the work's existing assets are inherited by the claim")
+
+	// Idempotency on the release-anchor path: same product work → same id.
+	again, _, err := testWork.ClaimWork(ctx, adoptParams)
+	require.NoError(t, err)
+	assert.Equal(t, id, again)
+
+	// (2) CONFLICT — a different product work claiming the same anchor gets the
+	// structured owner (site + product work id), not just a sentinel.
+	conflicting := adoptParams
+	conflicting.ProductWorkID = 8002
+	_, _, err = testWork.ClaimWork(ctx, conflicting)
+	require.ErrorIs(t, err, ErrClaimConflict)
+	var ce *ConflictError
+	require.True(t, stderrors.As(err, &ce), "conflict must be a *ConflictError")
+	assert.Equal(t, id, ce.WorkID)
+	assert.Equal(t, "letmoe", ce.OwningSite)
+	require.NotNil(t, ce.OwningProductWorkID)
+	assert.Equal(t, int64(8001), *ce.OwningProductWorkID)
+
+	// (3) MINT — a workno with no existing anchor mints a new work whose DLsite
+	// anchor lands on a fresh RELEASE, not the work (collision-safe with a later
+	// release-keyed import).
+	mintParams := ClaimWorkParams{
+		MediumID: 1, Site: "letmoe", ProductWorkID: 8003, DisplayName: "新規同人音声", OLang: "ja",
+		Anchors: []ExternalAnchor{{SourceID: dlsite, ExternalID: "RJMINT", MatchedBy: "import:test", EntityType: model.EntityTypeRelease}},
+	}
+	mintID, mintCreated, err := testWork.ClaimWork(ctx, mintParams)
+	require.NoError(t, err)
+	assert.True(t, mintCreated, "an unmatched anchor mints a new work")
+
+	var workLevelRefs int64
+	testDB.Model(&model.CatalogExternalRef{}).
+		Where("entity_type = ? AND source_id = ? AND external_id = ?", model.EntityTypeWork, dlsite, "RJMINT").
+		Count(&workLevelRefs)
+	assert.Equal(t, int64(0), workLevelRefs, "a SKU anchor must NOT be written at the work level")
+
+	var mintRelID int64
+	require.NoError(t, testDB.Raw(`SELECT id FROM catalog_release WHERE work_id = ?`, mintID).Scan(&mintRelID).Error)
+	require.NotZero(t, mintRelID, "the mint created a release to carry the SKU anchor")
+	var releaseLevelRefs int64
+	testDB.Model(&model.CatalogExternalRef{}).
+		Where("entity_type = ? AND entity_id = ? AND source_id = ? AND external_id = ? AND link_kind = ?",
+			model.EntityTypeRelease, mintRelID, dlsite, "RJMINT", model.LinkKindExact).
+		Count(&releaseLevelRefs)
+	assert.Equal(t, int64(1), releaseLevelRefs, "the SKU anchor is an exact ref on the new release")
+
+	// A work-natured anchor on a fresh mint stays on the work (no stray release).
+	workAnchorParams := ClaimWorkParams{
+		MediumID: 1, Site: "letmoe", ProductWorkID: 8004, DisplayName: "作品アンカー", OLang: "ja",
+		Anchors: []ExternalAnchor{{SourceID: 3, ExternalID: "subj-77", MatchedBy: "import:test"}}, // no EntityType → work-level
+	}
+	waID, _, err := testWork.ClaimWork(ctx, workAnchorParams)
+	require.NoError(t, err)
+	var waReleases int64
+	testDB.Model(&model.CatalogRelease{}).Where("work_id = ?", waID).Count(&waReleases)
+	assert.Equal(t, int64(0), waReleases, "a work-level anchor adds no empty release")
+	var waWorkRef int64
+	testDB.Model(&model.CatalogExternalRef{}).
+		Where("entity_type = ? AND entity_id = ? AND source_id = ? AND external_id = ?", model.EntityTypeWork, waID, 3, "subj-77").
+		Count(&waWorkRef)
+	assert.Equal(t, int64(1), waWorkRef, "the work-natured anchor stays on the work")
 }
 
 // T8-⑦: the usage delete-guard (doc 10 invariant 8).

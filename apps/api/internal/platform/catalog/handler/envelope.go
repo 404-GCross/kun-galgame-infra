@@ -29,11 +29,15 @@ func okEnvelope[T any](data T) Envelope[T] {
 }
 
 // houseError is a huma.StatusError that marshals to the house {code,message}
-// envelope as application/json (not RFC7807 problem+json).
+// envelope as application/json (not RFC7807 problem+json). Data is optional —
+// set only where an error carries a structured payload (e.g. the owning
+// identity of a claim conflict); it is omitted for the ordinary code+message
+// errors.
 type houseError struct {
 	status  int
 	Code    int    `json:"code"`
 	Message string `json:"message"`
+	Data    any    `json:"data,omitempty"`
 }
 
 func (e *houseError) Error() string { return e.Message }
@@ -53,6 +57,12 @@ func apiErr(status, code int) *houseError {
 // apiErrMsg is apiErr with an explicit message for dynamic detail.
 func apiErrMsg(status, code int, msg string) *houseError {
 	return &houseError{status: status, Code: code, Message: msg}
+}
+
+// apiErrData is apiErrMsg with a structured payload carried in the envelope's
+// data field (used by the claim-conflict 409 to return the owning identity).
+func apiErrData(status, code int, msg string, data any) *houseError {
+	return &houseError{status: status, Code: code, Message: msg, Data: data}
 }
 
 // InstallErrorEnvelope overrides huma.NewError so Huma-internal errors

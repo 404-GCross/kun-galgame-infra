@@ -25,6 +25,18 @@ type WorkDetail struct {
 	Titles   []model.CatalogWorkTitle
 	Releases []ReleaseDetail
 	Labels   []LabelAttribution
+	// Refs is the flat exact-only external-ref projection (work- and
+	// release-level in one list) — the cross-source identity chain.
+	Refs []RefDetail
+}
+
+// RefDetail is one exact external anchor of a work, with its level. ReleaseID
+// is set (non-zero) only for release-level refs.
+type RefDetail struct {
+	Source     string
+	ExternalID string
+	EntityType int16 // model.EntityTypeWork or model.EntityTypeRelease
+	ReleaseID  int64
 }
 
 // ReleaseDetail is a release plus its anchors.
@@ -148,6 +160,34 @@ func (s *ReadService) loadWorkDetail(ctx context.Context, workID int64) (*WorkDe
 		FROM catalog_work_label wl JOIN catalog_label l ON l.id = wl.label_id
 		WHERE wl.work_id = ? ORDER BY wl.kind, l.display_name`, workID).Scan(&detail.Labels).Error; err != nil {
 		return nil, err
+	}
+
+	// Refs block: EXACT-only cross-source identity, work-level + release-level
+	// flattened into one list. Work-level refs come from a dedicated query;
+	// release-level refs are the exact subset of the anchors already loaded
+	// above (no second scan of the ref table).
+	var workRefs []struct {
+		Source     string
+		ExternalID string
+	}
+	if err := db.Raw(`SELECT s.key AS source, r.external_id
+		FROM catalog_external_ref r JOIN catalog_source s ON s.id = r.source_id
+		WHERE r.entity_type = ? AND r.entity_id = ? AND r.link_kind = ?
+		ORDER BY s.key`, model.EntityTypeWork, workID, model.LinkKindExact).Scan(&workRefs).Error; err != nil {
+		return nil, err
+	}
+	for _, wr := range workRefs {
+		detail.Refs = append(detail.Refs, RefDetail{Source: wr.Source, ExternalID: wr.ExternalID, EntityType: model.EntityTypeWork})
+	}
+	for _, rd := range detail.Releases {
+		for _, a := range rd.Anchors {
+			if a.LinkKind == model.LinkKindExact {
+				detail.Refs = append(detail.Refs, RefDetail{
+					Source: a.Source, ExternalID: a.ExternalID,
+					EntityType: model.EntityTypeRelease, ReleaseID: rd.Release.ID,
+				})
+			}
+		}
 	}
 	return detail, nil
 }

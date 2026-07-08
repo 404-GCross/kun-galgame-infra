@@ -44,6 +44,13 @@ type RedirectFeedResponse struct {
 type ClaimAnchor struct {
 	SourceID   int16  `json:"source_id" doc:"catalog_source registry id (e.g. 2=vndb 3=bangumi 4=dlsite)"`
 	ExternalID string `json:"external_id" minLength:"1"`
+	// Level is the anchor's grain. "release" for a SKU-natured id (a DLsite
+	// workno, a VNDB release — R3/R5); "work" (the default) for a work-natured
+	// id (a Bangumi subject, a VNDB vn). It only steers where a FRESH mint
+	// writes the ref — the adopt lookup already matches both levels — but a
+	// consumer minting SKU ids MUST set "release" so a later catalog import
+	// keyed on release anchors finds this identity instead of splitting it.
+	Level string `json:"level,omitempty" enum:"work,release" doc:"Anchor grain; defaults to work"`
 }
 
 // ClaimWorkRequest registers/claims a work for a product-side row.
@@ -61,6 +68,16 @@ type ClaimWorkRequest struct {
 type ClaimWorkResponse struct {
 	WorkID  int64 `json:"work_id"`
 	Created bool  `json:"created" doc:"true when a new registry row was minted (no anchor matched)"`
+}
+
+// ClaimConflictInfo is the structured body of a 409 claim conflict: the
+// anchor already resolves to a work another product owns. The caller records
+// this link (work_id ↔ its own row) rather than retrying — claims never
+// preempt another site's identity.
+type ClaimConflictInfo struct {
+	WorkID              int64  `json:"work_id" doc:"The catalog work the anchor already resolves to"`
+	OwningSite          string `json:"owning_site" doc:"The site key that holds the claim"`
+	OwningProductWorkID int64  `json:"owning_product_work_id,omitempty" doc:"The owner's product-side work id, when known"`
 }
 
 // --- admin: shared page envelope ---

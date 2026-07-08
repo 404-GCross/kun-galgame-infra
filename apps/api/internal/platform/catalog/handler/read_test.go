@@ -110,6 +110,55 @@ func TestWorkByAnchor(t *testing.T) {
 	assert.Equal(t, 404, code)
 }
 
+// TestWorkRefsBlock pins the flat refs projection: EXACT-only, work- and
+// release-level flattened into one list, release refs carrying their release
+// id; probable refs never cross the S2S face.
+func TestWorkRefsBlock(t *testing.T) {
+	db := openCatalogTestDB(t)
+	db.Raw("SELECT id FROM catalog_role WHERE key='scenario'").Scan(&roleScenario)
+	workID := seedReadFixture(t, db) // release dlsite RJTEST exact anchor
+	var relID int64
+	require.NoError(t, db.Raw("SELECT id FROM catalog_release LIMIT 1").Scan(&relID).Error)
+
+	// A work-level EXACT vndb anchor (must appear), plus two PROBABLE anchors —
+	// one work-level, one release-level — that must NOT.
+	require.NoError(t, db.Create(&model.CatalogExternalRef{
+		EntityType: model.EntityTypeWork, EntityID: workID, SourceID: 2, ExternalID: "v100",
+		LinkKind: model.LinkKindExact, MatchedBy: "rule:test",
+	}).Error)
+	require.NoError(t, db.Create(&model.CatalogExternalRef{
+		EntityType: model.EntityTypeWork, EntityID: workID, SourceID: 5, ExternalID: "eg-work",
+		LinkKind: model.LinkKindProbable, MatchedBy: "rule:test",
+	}).Error)
+	require.NoError(t, db.Create(&model.CatalogExternalRef{
+		EntityType: model.EntityTypeRelease, EntityID: relID, SourceID: 5, ExternalID: "eg-rel",
+		LinkKind: model.LinkKindProbable, MatchedBy: "rule:test",
+	}).Error)
+
+	app := readApp(service.NewReadService(db), nil)
+	code, body := getJSON(t, app, "/api/v1/catalog/works/"+itoa(workID))
+	require.Equal(t, 200, code)
+	refs := body["data"].(map[string]any)["refs"].([]any)
+
+	type key struct {
+		source, ext, level string
+		relID              int64
+	}
+	got := map[key]bool{}
+	for _, r := range refs {
+		m := r.(map[string]any)
+		k := key{source: m["source"].(string), ext: m["external_id"].(string), level: m["level"].(string)}
+		if rid, ok := m["release_id"]; ok {
+			k.relID = int64(rid.(float64))
+		}
+		got[k] = true
+	}
+	assert.Len(t, refs, 2, "only the two exact refs; both probable refs excluded")
+	assert.True(t, got[key{source: "vndb", ext: "v100", level: "work"}], "work-level exact ref present")
+	assert.True(t, got[key{source: "dlsite", ext: "RJTEST", level: "release", relID: relID}], "release-level exact ref carries its release id")
+	assert.False(t, got[key{source: "erogamespace", ext: "eg-work", level: "work"}], "probable work ref excluded")
+}
+
 func TestWorkCredits(t *testing.T) {
 	db := openCatalogTestDB(t)
 	db.Raw("SELECT id FROM catalog_role WHERE key='scenario'").Scan(&roleScenario)

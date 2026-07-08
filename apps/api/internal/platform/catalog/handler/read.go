@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"api/internal/platform/catalog/dto"
+	"api/internal/platform/catalog/model"
 	catsearch "api/internal/platform/catalog/search"
 	"api/internal/platform/catalog/service"
 	"api/pkg/errors"
@@ -118,6 +119,13 @@ func buildWorkResponse(detail *service.WorkDetail) dto.WorkByAnchorResponse {
 		resp.Labels = append(resp.Labels, dto.WorkLabel{
 			LabelID: l.LabelID, DisplayName: l.DisplayName, LabelKind: l.LabelKind, Kind: l.Kind,
 		})
+	}
+	for _, rf := range detail.Refs {
+		wr := dto.WorkRef{Source: rf.Source, ExternalID: rf.ExternalID, Level: "work"}
+		if rf.EntityType == model.EntityTypeRelease {
+			wr.Level, wr.ReleaseID = "release", rf.ReleaseID
+		}
+		resp.Refs = append(resp.Refs, wr)
 	}
 	return resp
 }
