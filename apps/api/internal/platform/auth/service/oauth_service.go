@@ -393,9 +393,9 @@ func (s *OAuthService) ExchangeCode(ctx context.Context, req *dto.TokenRequest) 
 	// resource servers actually check), `client_id` = the requesting client.
 	accessToken, err := s.signAccessToken(
 		utils.TokenClaims{
-			UserUUID: user.UUID,
-			ID:       user.ID,
-			Email:    user.Email,
+			UserUUID:  user.UUID,
+			ID:        user.ID,
+			Email:     user.Email,
 			Name:      user.Name,
 			Roles:     user.RoleNames(),
 			SiteRoles: s.siteRoles(ctx, user.ID, siteID),

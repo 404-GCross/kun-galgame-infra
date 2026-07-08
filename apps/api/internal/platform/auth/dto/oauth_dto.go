@@ -70,12 +70,12 @@ type TokenResponse struct {
 // role set. Not gated by scope: it's the same data already in the JWT
 // that authenticated this request.
 type UserInfoResponse struct {
-	ID        uint     `json:"id"`
-	Sub       string   `json:"sub"`
-	Name      string   `json:"name,omitempty"`
-	Email     string   `json:"email,omitempty"`
-	Picture   string   `json:"picture,omitempty"`
-	Roles     []string `json:"roles"`
+	ID      uint     `json:"id"`
+	Sub     string   `json:"sub"`
+	Name    string   `json:"name,omitempty"`
+	Email   string   `json:"email,omitempty"`
+	Picture string   `json:"picture,omitempty"`
+	Roles   []string `json:"roles"`
 	// SiteRoles are the caller's site-scoped roles for the requesting client's
 	// site (docs/integration/oauth/12-site-roles.md). Omitted when the user has
 	// no grants on this site or the token isn't site-bound.
