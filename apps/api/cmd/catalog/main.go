@@ -28,6 +28,7 @@ import (
 	searchInfra "api/internal/infrastructure/search"
 	"api/internal/middleware"
 	catHandler "api/internal/platform/catalog/handler"
+	catalogPerm "api/internal/platform/catalog/perm"
 	"api/internal/platform/catalog/repository"
 	catalogSearch "api/internal/platform/catalog/search"
 	"api/internal/platform/catalog/service"
@@ -96,13 +97,13 @@ func main() {
 	clientRepo := siteRepo.NewOAuthClientRepository(application.DB.DB())
 	application.Fiber.Use("/api/v1/catalog", catHandler.S2SAuth(clientRepo))
 
-	// Admin face: shared JWT middleware (accept-both verifier) + admin role,
-	// exactly like the galgame admin surface. The /api/v1/admin/catalog
-	// prefix is deliberately disjoint from /api/v1/catalog so the S2S Basic
-	// auth never intercepts admin calls.
+	// Admin face: shared JWT middleware (accept-both verifier) + catalog.review
+	// permission (ren), exactly like the galgame admin surface. The
+	// /api/v1/admin/catalog prefix is deliberately disjoint from /api/v1/catalog
+	// so the S2S Basic auth never intercepts admin calls.
 	tokenVerifier := oidctoken.NewVerifierWithJWKS(cfg.JWT.Secret, cfg.OIDC.JWKSURL)
 	application.Fiber.Use("/api/v1/admin/catalog",
-		middleware.JWTAuth(tokenVerifier), middleware.RequireRole("ren"))
+		middleware.JWTAuth(tokenVerifier), middleware.RequirePermission(catalogPerm.Resolver, catalogPerm.Review))
 
 	s2sAPI := catHandler.Setup(application.Fiber, resolveSvc, workSvc, readSvc, searcher, statsSvc)
 	catHandler.SetupAdmin(application.Fiber, queueSvc, mergeSvc)

@@ -11,6 +11,7 @@ import (
 	"api/pkg/oidctoken"
 
 	moderationHandler "api/internal/platform/moderation/handler"
+	moderationPerm "api/internal/platform/moderation/perm"
 	moderationRepo "api/internal/platform/moderation/repository"
 	moderationService "api/internal/platform/moderation/service"
 
@@ -69,11 +70,12 @@ func setupRoutes(a *app.App, cfg *config.Config) {
 		return c.JSON(fiber.Map{"status": "ok"})
 	})
 
-	// Moderation routes (JWT auth + admin/moderator role). Accept-both verifier
-	// (ES256/RS256 via JWKS + legacy HS256); HS256-only when KUN_OIDC_JWKS_URL unset.
+	// Moderation routes (JWT auth + moderation.queue_access = moderator/admin/ren).
+	// Accept-both verifier (ES256/RS256 via JWKS + legacy HS256); HS256-only when
+	// KUN_OIDC_JWKS_URL unset.
 	moderation := v1.Group("/moderation",
 		middleware.JWTAuth(oidctoken.NewVerifierWithJWKS(cfg.JWT.Secret, cfg.OIDC.JWKSURL)),
-		middleware.RequireRole("admin", "moderator"),
+		middleware.RequirePermission(moderationPerm.Resolver, moderationPerm.QueueAccess),
 	)
 	moderation.Get("/jobs", moderationH.ListJobs)
 	moderation.Get("/jobs/:id", moderationH.GetJob)

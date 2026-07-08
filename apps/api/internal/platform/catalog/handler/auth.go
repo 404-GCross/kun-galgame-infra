@@ -29,8 +29,8 @@ import (
 // enforceSiteBinding) so a client can only claim works for the product it owns.
 // Read faces (resolve / redirect feed) impose no binding.
 //
-// Admin face: the shared middleware.JWTAuth (accept-both verifier) +
-// middleware.RequireRole("ren") gate the /admin prefix at the Fiber layer,
+// Admin face: the shared middleware.JWTAuth (accept-both verifier) + the
+// catalog.review (ren) permission gate the /admin prefix at the Fiber layer,
 // exactly like the galgame admin surface; AdminBridge lifts the user id and
 // roles for handlers that record the operator.
 

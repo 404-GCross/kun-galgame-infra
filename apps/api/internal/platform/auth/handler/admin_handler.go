@@ -3,9 +3,9 @@ package handler
 import (
 	"slices"
 
-	"api/internal/middleware"
 	"api/internal/platform/auth/dto"
 	"api/internal/platform/auth/service"
+	sitePerm "api/internal/platform/site/perm"
 	"api/pkg/errors"
 	"api/pkg/response"
 	"api/pkg/utils"
@@ -19,23 +19,30 @@ import (
 var manageableRoles = []string{"user", "creator", "moderator", "admin"}
 
 // callerCanManageRole reports whether the authenticated caller may grant or
-// revoke `role` on another user:
-//   - ren   → any manageable role (user / creator / moderator / admin)
-//   - admin → moderator or creator (both below admin)
+// revoke `role` on another user. The target-side guard (manageableRoles: `ren`
+// is never API-manageable) is unchanged; the caller-side ability is now
+// permission-first:
+//   - moderator / creator targets → oauth.roles.grant_basic (admin ∪ ren)
+//   - admin target, and the implicit `user` base → oauth.roles.grant_admin (ren)
 //
-// `ren` is never manageable via the API regardless of caller (not in
-// manageableRoles), so it can be neither granted nor revoked here.
+// This preserves the prior matrix exactly (ren manages all manageable roles;
+// admin manages only moderator/creator).
 func callerCanManageRole(c fiber.Ctx, role string) bool {
 	if !slices.Contains(manageableRoles, role) {
 		return false
 	}
-	if middleware.HasRole(c, "ren") {
-		return true
+	roles := callerRoles(c)
+	if role == "admin" || role == "user" {
+		return sitePerm.Resolver.Can(roles, sitePerm.RolesGrantAdmin)
 	}
-	if middleware.HasRole(c, "admin") {
-		return role == "moderator" || role == "creator"
-	}
-	return false
+	return sitePerm.Resolver.Can(roles, sitePerm.RolesGrantBasic)
+}
+
+// callerRoles reads the authenticated caller's OAuth roles from the Fiber
+// locals populated by middleware.Auth.
+func callerRoles(c fiber.Ctx) []string {
+	roles, _ := c.Locals("user_roles").([]string)
+	return roles
 }
 
 // AdminHandler handles admin requests
@@ -61,7 +68,7 @@ func (h *AdminHandler) ListUsers(c fiber.Ctx) error {
 		return response.BadRequestMsg(c, errors.ErrValidationFailed, err.Error())
 	}
 
-	result, err := h.adminService.ListUsers(c.Context(), &req, middleware.HasRole(c, "ren"))
+	result, err := h.adminService.ListUsers(c.Context(), &req, sitePerm.Resolver.Can(callerRoles(c), sitePerm.UsersPIIView))
 	if err != nil {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
@@ -116,7 +123,7 @@ func (h *AdminHandler) GetUser(c fiber.Ctx) error {
 		return response.BadRequest(c, errors.ErrMissingParam)
 	}
 
-	user, err := h.adminService.GetUser(c.Context(), uuid, middleware.HasRole(c, "ren"))
+	user, err := h.adminService.GetUser(c.Context(), uuid, sitePerm.Resolver.Can(callerRoles(c), sitePerm.UsersPIIView))
 	if err != nil {
 		if appErr, ok := err.(*errors.AppError); ok {
 			if appErr.Code == errors.ErrForbidden {

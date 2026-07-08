@@ -210,8 +210,8 @@ func seedInitialData(db *gorm.DB) error {
 		//   - granting the image:upload scope to a client
 		//   - flipping a client to auto_consent (silent first-party authorize)
 		//   - seeing user email / IP in the admin user list & detail
-		// Enforcement lives at the handlers (site_handler, admin_handler);
-		// see middleware.HasRole.
+		// Enforcement lives at the handlers (site_handler, admin_handler) via
+		// the site/perm permission bundles (oauth.* capabilities).
 		{Name: "ren", Description: "莲 — elevated operator above admin"},
 	}
 

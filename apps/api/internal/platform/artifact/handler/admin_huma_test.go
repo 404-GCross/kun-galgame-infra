@@ -36,13 +36,15 @@ func TestAdminHuma_RenGate_Forbidden(t *testing.T) {
 	assert403("reclaim", err)
 }
 
-// TestAdminHasRole covers the ctx role lookup that AdminAuthBridge feeds.
-func TestAdminHasRole(t *testing.T) {
-	ctx := context.WithValue(context.Background(), ctxKeyAdminRoles, []string{"admin", "ren"})
-	assert.True(t, adminHasRole(ctx, "ren"))
-	assert.True(t, adminHasRole(ctx, "admin"))
-	assert.False(t, adminHasRole(ctx, "moderator"))
-	assert.False(t, adminHasRole(context.Background(), "ren"), "no roles in ctx → no role")
+// TestRequireRen covers the ctx role lookup (fed by AdminAuthBridge) → the
+// artifact.files.manage permission check that gates browsing/mutating ops.
+func TestRequireRen(t *testing.T) {
+	s := &AdminHumaServer{}
+	ren := context.WithValue(context.Background(), ctxKeyAdminRoles, []string{"admin", "ren"})
+	assert.NoError(t, s.requireRen(ren), "ren caller passes")
+	admin := context.WithValue(context.Background(), ctxKeyAdminRoles, []string{"admin"})
+	assert.Error(t, s.requireRen(admin), "admin without ren is refused")
+	assert.Error(t, s.requireRen(context.Background()), "no roles in ctx → refused")
 }
 
 // TestSetupAdmin_RegistersOperations is a smoke test that all four admin

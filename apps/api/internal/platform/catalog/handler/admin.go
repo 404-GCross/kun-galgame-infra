@@ -24,8 +24,8 @@ type AdminServer struct {
 
 // SetupAdmin builds the admin review-queue Huma API (doc 17 §5 buckets:
 // candidates / proposals / probable refs). Auth is applied by the caller as
-// path-scoped Fiber middleware (middleware.JWTAuth + RequireRole("ren"))
-// on the /api/v1/admin/catalog prefix BEFORE this — Huma registers on the
+// path-scoped Fiber middleware (middleware.JWTAuth + the catalog.review
+// permission, ren) on the /api/v1/admin/catalog prefix BEFORE this — Huma registers on the
 // app, so the group middleware does not cover these routes. Callable with
 // nil services for spec export.
 func SetupAdmin(app *fiber.App, queues *service.AdminQueueService, merge *service.MergeService) huma.API {

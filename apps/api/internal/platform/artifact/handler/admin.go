@@ -17,7 +17,7 @@ import (
 
 // AdminHandler holds the dependencies for the admin-only artifact operations
 // (served over Huma by SetupAdmin, mounted in the OAuth service behind
-// Auth + RequireRole("admin") — see cmd/oauth). Its methods are transport-free
+// Auth + the oauth.admin_access gate — see cmd/oauth). Its methods are transport-free
 // (context in, typed data / sentinel errors out); the Huma layer in
 // admin_huma.go maps them to the house envelope.
 //

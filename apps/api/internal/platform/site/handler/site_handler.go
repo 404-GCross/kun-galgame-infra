@@ -5,9 +5,9 @@ import (
 	"slices"
 	"strconv"
 
-	"api/internal/middleware"
 	"api/internal/platform/site/dto"
 	siteModel "api/internal/platform/site/model"
+	"api/internal/platform/site/perm"
 	"api/internal/platform/site/service"
 	"api/pkg/errors"
 	"api/pkg/response"
@@ -22,7 +22,7 @@ import (
 // the image service — both are default-off and ordinary admins cannot add
 // them, like enabling auto_consent. Keep in sync with the frontend
 // REN_ONLY_SCOPES (apps/web shared/types/oauth-client.ts). See the ren-gate in
-// CreateClient / UpdateClient and middleware.HasRole.
+// CreateClient / UpdateClient (oauth.clients.privileged_config / storage_config).
 var renOnlyScopes = []string{"image:upload", "artifact:upload"}
 
 // addsRenOnlyScope reports whether the requested scope set contains any
@@ -60,6 +60,14 @@ type SiteHandler struct {
 // NewSiteHandler creates a new SiteHandler
 func NewSiteHandler(siteService *service.SiteService) *SiteHandler {
 	return &SiteHandler{siteService: siteService}
+}
+
+// callerRoles returns the authenticated caller's OAuth roles from the Fiber
+// locals populated by middleware.Auth — the input to the client-config
+// permission checks below.
+func callerRoles(c fiber.Ctx) []string {
+	roles, _ := c.Locals("user_roles").([]string)
+	return roles
 }
 
 // List lists all sites
@@ -257,21 +265,23 @@ func (h *SiteHandler) CreateClient(c fiber.Ctx) error {
 		return response.BadRequestMsg(c, errors.ErrValidationFailed, err.Error())
 	}
 
-	// ren-gate: only ren（莲）may grant a ren-only scope (image:upload /
-	// artifact:upload) or enable auto_consent. All are default-off, so an
-	// ordinary admin simply creates a normal login client; a non-ren who
-	// explicitly asks for any is refused. (Backstops the frontend, which hides
-	// these controls for non-ren.)
-	if !middleware.HasRole(c, "ren") &&
+	// privileged-config gate (ren): only ren（莲）may grant a ren-only scope
+	// (image:upload / artifact:upload) or enable auto_consent. All are
+	// default-off, so an ordinary admin simply creates a normal login client; a
+	// caller without the permission who explicitly asks for any is refused.
+	// (Backstops the frontend, which hides these controls for non-ren.)
+	roles := callerRoles(c)
+	if !perm.Resolver.Can(roles, perm.ClientsPrivilegedConfig) &&
 		(addsRenOnlyScope(req.AllowedScopes) || req.AutoConsent) {
 		return response.ForbiddenMsg(c, errors.ErrForbidden, renSensitiveFieldMsg)
 	}
 
 	// display_order is ren-only: it controls the cross-site ordering of the
 	// public app directory (a central decision), unlike the per-client display
-	// fields (listed/logo/tagline) any admin may set. Silently pin a non-ren's
-	// value to the default so their save still succeeds (the frontend hides it).
-	if !middleware.HasRole(c, "ren") {
+	// fields (listed/logo/tagline) any admin may set. Silently pin the value to
+	// the default for a caller without the permission so their save still
+	// succeeds (the frontend hides it).
+	if !perm.Resolver.Can(roles, perm.ClientsPrivilegedConfig) {
 		req.DisplayOrder = 0
 	}
 
@@ -343,12 +353,13 @@ func (h *SiteHandler) UpdateClient(c fiber.Ctx) error {
 		return response.BadRequestMsg(c, errors.ErrValidationFailed, err.Error())
 	}
 
-	// ren-gate (no-escalation): a non-ren admin may edit a client, but may not
-	// ADD a ren-only scope (image:upload / artifact:upload) or turn ON
-	// auto_consent. Leaving a ren-provisioned client's existing sensitive fields
-	// untouched (the form re-submits them) and de-escalating are both fine —
-	// only escalation is blocked, compared against the current row.
-	if !middleware.HasRole(c, "ren") {
+	// privileged-config gate (no-escalation): a caller without
+	// oauth.clients.privileged_config may edit a client, but may not ADD a
+	// ren-only scope (image:upload / artifact:upload) or turn ON auto_consent.
+	// Leaving a ren-provisioned client's existing sensitive fields untouched
+	// (the form re-submits them) and de-escalating are both fine — only
+	// escalation is blocked, compared against the current row.
+	if !perm.Resolver.Can(callerRoles(c), perm.ClientsPrivilegedConfig) {
 		cur, err := h.siteService.GetOAuthClient(c.Context(), clientID)
 		if err != nil {
 			return response.NotFound(c, errors.ErrOperationFailed)
@@ -402,7 +413,7 @@ func (h *SiteHandler) UpdateClientStorage(c fiber.Ctx) error {
 		return response.BadRequestMsg(c, errors.ErrValidationFailed, err.Error())
 	}
 
-	if !middleware.HasRole(c, "ren") {
+	if !perm.Resolver.Can(callerRoles(c), perm.ClientsStorageConfig) {
 		cur, err := h.siteService.GetOAuthClient(c.Context(), clientID)
 		if err != nil {
 			return response.NotFound(c, errors.ErrOperationFailed)

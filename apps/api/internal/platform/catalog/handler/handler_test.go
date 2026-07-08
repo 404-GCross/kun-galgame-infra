@@ -9,6 +9,7 @@ import (
 
 	"api/internal/middleware"
 	"api/internal/platform/catalog/migrate"
+	"api/internal/platform/catalog/perm"
 	"api/internal/platform/catalog/repository"
 	"api/internal/platform/catalog/seed"
 	"api/internal/platform/catalog/service"
@@ -74,9 +75,9 @@ func TestS2SAuth_Unauthenticated401(t *testing.T) {
 	}
 }
 
-// TestAdminGate_403WithoutRole: the admin prefix is gated by RequireRole("ren")
-// at the Fiber layer — the catalog review surface is superadmin-only, so even
-// an ordinary admin must 403 before any catalog handler runs.
+// TestAdminGate_403WithoutRole: the admin prefix is gated by catalog.review
+// (ren) at the Fiber layer — the catalog review surface is ren-only, so even an
+// ordinary admin must 403 before any catalog handler runs.
 func TestAdminGate_403WithoutRole(t *testing.T) {
 	for _, roles := range [][]string{{"user"}, {"admin", "moderator"}} {
 		app := fiber.New()
@@ -85,7 +86,7 @@ func TestAdminGate_403WithoutRole(t *testing.T) {
 			c.Locals("user_id", uint(42))
 			c.Locals("user_roles", roles)
 			return c.Next()
-		}, middleware.RequireRole("ren"))
+		}, middleware.RequirePermission(perm.Resolver, perm.Review))
 		SetupAdmin(app, nil, nil)
 
 		resp, err := app.Test(httptest.NewRequest("GET", "/api/v1/admin/catalog/candidates", nil))

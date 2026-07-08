@@ -18,7 +18,7 @@ import (
 )
 
 // AdminHandler bundles admin-only image service endpoints.
-// Mounted behind middleware.Auth + middleware.RequireRole("admin") in
+// Mounted behind middleware.Auth + the oauth.admin_access permission gate in
 // the OAuth admin service (not cmd/image itself).
 type AdminHandler struct {
 	db        *gorm.DB
@@ -119,20 +119,20 @@ func (h *AdminHandler) toAdminRow(r *model.Image) map[string]any {
 		variantURLs[v] = h.svc.VariantURL(r.Hash, v, r.Ext)
 	}
 	return map[string]any{
-		"hash":                 r.Hash,
-		"url":                  h.svc.MainURL(r.Hash, r.Ext),
-		"variant_urls":         variantURLs,
-		"width":                r.Width,
-		"height":               r.Height,
-		"size_bytes":           r.SizeBytes,
-		"mime":                 r.MIME,
-		"review_status":        reviewStatusLabel(r.ReviewStatus),
-		"review_labels":        decodeReviewLabels(r.ReviewLabels),
-		"first_uploader_sub":   r.FirstUploaderSub,
+		"hash":                  r.Hash,
+		"url":                   h.svc.MainURL(r.Hash, r.Ext),
+		"variant_urls":          variantURLs,
+		"width":                 r.Width,
+		"height":                r.Height,
+		"size_bytes":            r.SizeBytes,
+		"mime":                  r.MIME,
+		"review_status":         reviewStatusLabel(r.ReviewStatus),
+		"review_labels":         decodeReviewLabels(r.ReviewLabels),
+		"first_uploader_sub":    r.FirstUploaderSub,
 		"first_uploader_client": r.FirstUploaderClient,
-		"created_at":           r.CreatedAt,
-		"last_referenced_at":   r.LastReferencedAt,
-		"deleted_at":           r.DeletedAt,
+		"created_at":            r.CreatedAt,
+		"last_referenced_at":    r.LastReferencedAt,
+		"deleted_at":            r.DeletedAt,
 	}
 }
 

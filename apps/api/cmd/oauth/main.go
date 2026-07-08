@@ -33,6 +33,7 @@ import (
 	imgStorage "api/internal/platform/image/storage"
 
 	siteHandler "api/internal/platform/site/handler"
+	sitePerm "api/internal/platform/site/perm"
 	siteRepo "api/internal/platform/site/repository"
 	siteService "api/internal/platform/site/service"
 
@@ -306,8 +307,8 @@ func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 	creator.Post("/applications", creatorAppH.Apply)
 	creator.Get("/applications/me", creatorAppH.MyApplication)
 
-	// Admin routes (admin only)
-	admin := v1.Group("/admin", middleware.Auth(authSvc), middleware.RequireRole("admin"))
+	// Admin routes (oauth.admin_access = admin/ren)
+	admin := v1.Group("/admin", middleware.Auth(authSvc), middleware.RequirePermission(sitePerm.Resolver, sitePerm.AdminAccess))
 	admin.Get("/users", adminH.ListUsers)
 	admin.Get("/users/:uuid", adminH.GetUser)
 	admin.Patch("/users/:uuid", adminH.UpdateUser)
@@ -315,9 +316,10 @@ func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 	admin.Post("/users/:uuid/unban", adminH.UnbanUser)
 	admin.Post("/users/:uuid/anonymize", adminH.AnonymizeUser)
 	admin.Delete("/users/:uuid/sessions", adminH.DeleteUserSessions)
-	// Role management. Group is RequireRole("admin") so admin + ren both pass;
-	// the per-role matrix (admin→moderator only, ren→all except ren) is enforced
-	// in the handler (callerCanManageRole). `ren` is never grantable via API.
+	// Role management. Group requires oauth.admin_access so admin + ren both
+	// pass; the per-role matrix (admin→moderator/creator only, ren→all except
+	// ren) is enforced in the handler (callerCanManageRole). `ren` is never
+	// grantable via API.
 	admin.Post("/users/:uuid/roles", adminH.AssignRole)
 	admin.Delete("/users/:uuid/roles/:role", adminH.RevokeRole)
 	// Creator application review queue.
@@ -334,8 +336,8 @@ func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 		admin.Post("/users/:uuid/avatar", avatarUploadH.Upload)
 	}
 
-	// Site routes (admin only)
-	sites := v1.Group("/sites", middleware.Auth(authSvc), middleware.RequireRole("admin"))
+	// Site routes (oauth.admin_access = admin/ren)
+	sites := v1.Group("/sites", middleware.Auth(authSvc), middleware.RequirePermission(sitePerm.Resolver, sitePerm.AdminAccess))
 	sites.Get("/", siteH.List)
 	sites.Post("/", siteH.Create)
 	sites.Get("/:id", siteH.Get)
@@ -343,8 +345,8 @@ func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 	sites.Delete("/:id", siteH.Delete)
 	sites.Get("/:id/clients", siteH.GetSiteClients)
 
-	// OAuth client routes (admin only)
-	oauthClients := v1.Group("/oauth/clients", middleware.Auth(authSvc), middleware.RequireRole("admin"))
+	// OAuth client routes (oauth.admin_access = admin/ren)
+	oauthClients := v1.Group("/oauth/clients", middleware.Auth(authSvc), middleware.RequirePermission(sitePerm.Resolver, sitePerm.AdminAccess))
 	oauthClients.Get("/", siteH.ListClients)
 	oauthClients.Post("/", siteH.CreateClient)
 	// Admin app-directory logo upload → image_service, returns {hash,url}; the
@@ -354,7 +356,7 @@ func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 		oauthClients.Post("/logo", avatarUploadH.UploadClientLogo)
 	}
 	oauthClients.Put("/:id", siteH.UpdateClient)
-	oauthClients.Put("/:id/storage", middleware.RequireRole("ren"), siteH.UpdateClientStorage)
+	oauthClients.Put("/:id/storage", middleware.RequirePermission(sitePerm.Resolver, sitePerm.ClientsStorageConfig), siteH.UpdateClientStorage)
 	oauthClients.Delete("/:id", siteH.DeleteClient)
 
 	// Image admin routes — best-effort; if images DB or S3 are unreachable
@@ -494,12 +496,12 @@ func registerArtifactAdmin(a *app.App, cfg *config.Config, authSvc *authService.
 	adminH := artifactHandler.NewAdmin(artifactsDB.DB(), statsRepo, store, cfg.ArtifactService.ReclaimMinIdle)
 
 	// These endpoints are served by Huma (code-first OpenAPI — see docs/artifact/10
-	// §4.3). Huma registers on the app, so the /admin group's Auth+RequireRole("admin")
-	// does NOT cover them: gate the exact prefix here with path-scoped Fiber
+	// §4.3). Huma registers on the app, so the /admin group's Auth+admin-access
+	// gate does NOT cover them: gate the exact prefix here with path-scoped Fiber
 	// middleware, registered BEFORE SetupAdmin's routes so it precedes them in the
 	// stack. stats is admin-visible; list/delete/reclaim additionally require the
-	// ren(莲) role, enforced in-handler (admin_huma.go).
-	a.Fiber.Use("/api/v1/admin/artifact", middleware.Auth(authSvc), middleware.RequireRole("admin"))
+	// artifact.files.manage (ren) permission, enforced in-handler (admin_huma.go).
+	a.Fiber.Use("/api/v1/admin/artifact", middleware.Auth(authSvc), middleware.RequirePermission(sitePerm.Resolver, sitePerm.AdminAccess))
 	artifactHandler.SetupAdmin(a.Fiber, adminH)
 
 	slog.Info("artifact admin endpoints (Huma) registered under /api/v1/admin/artifact/*")

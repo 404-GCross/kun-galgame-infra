@@ -14,6 +14,7 @@ import (
 	"api/pkg/logger"
 	"api/pkg/oidctoken"
 
+	catalogPerm "api/internal/platform/catalog/perm"
 	galgameHandler "api/internal/platform/galgame/handler"
 	galgamePerm "api/internal/platform/galgame/perm"
 	galgameRepo "api/internal/platform/galgame/repository"
@@ -295,12 +296,12 @@ func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB, se
 		taxRevH.RecentFeed,
 	)
 
-	// Internal catalog data browser (step 19): staff-only (admin/moderator)
+	// Internal catalog data browser (step 19): staff-only (catalog.review = ren)
 	// read-only proxy to the catalog S2S read face — the Basic credentials stay
 	// server-side. A non-empty prefix means this group does NOT trip the
-	// empty-prefix fence gotcha above; it carries its own jwtAuth + role gate.
+	// empty-prefix fence gotcha above; it carries its own jwtAuth + permission gate.
 	catalogProxy := galgameHandler.NewCatalogProxyHandler(catalogCli)
-	catBrowse := galgame.Group("/catalog", jwtAuth, middleware.RequireRole("ren"))
+	catBrowse := galgame.Group("/catalog", jwtAuth, middleware.RequirePermission(catalogPerm.Resolver, catalogPerm.Review))
 	catBrowse.Get("/stats", catalogProxy.Stats)
 	catBrowse.Get("/search/entities", catalogProxy.Search)
 	catBrowse.Get("/works/:id", catalogProxy.Work)

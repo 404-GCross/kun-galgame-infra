@@ -118,7 +118,8 @@ func (h *SeriesHandler) Update(c fiber.Ctx) error {
 	roles, _ := c.Locals("user_roles").([]string)
 	// Mirror Delete/Revert and the sibling tag/official/engine Update gates:
 	// editing a series renames it and can re-home arbitrary galgames, so it
-	// must be staff-only (the route only attaches jwtAuth, not RequireRole).
+	// must be staff-only (the route only attaches jwtAuth, not a route-level
+	// permission gate).
 	if !perm.Resolver.Can(roles, perm.TaxonomyEditAny) {
 		return response.Forbidden(c, errors.ErrForbidden)
 	}
