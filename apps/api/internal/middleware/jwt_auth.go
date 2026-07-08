@@ -55,11 +55,45 @@ func JWTAuth(verifier *oidctoken.Verifier) fiber.Handler {
 
 		c.Locals("user_uuid", claims.UserUUID)
 		c.Locals("user_id", claims.ID)
-		c.Locals("user_roles", claims.Roles)
+		c.Locals("user_roles", unionRoles(claims.Roles, claims.SiteRoles))
 		c.Locals("user_scope", claims.Scope)
+		c.Locals("user_site", claims.SiteID)
 
 		return c.Next()
 	}
+}
+
+// unionRoles merges the caller's global `roles` claim with its `site_roles`
+// claim (already scoped by the JWT signer to the token's client site) into one
+// effective role set for permission resolution — this is the whole of the
+// site-scoped-roles wiring on the infra consumer side, so no call site changes.
+//
+// Safety: site_roles can NEVER contain user/admin/ren (the grant API rejects
+// those names), so this union only ever ADDS site-local moderator/creator/
+// custom-bundle names. It can never let a site grant reach an admin/ren-only
+// permission — the catalog / oauth-console / artifact bundles key only on
+// admin/ren, which site_roles structurally cannot carry. A site "moderator"
+// thus gains moderator capabilities, but only via a token issued to that site's
+// client. See docs/integration/oauth/12-site-roles.md.
+func unionRoles(global, site []string) []string {
+	if len(site) == 0 {
+		return global
+	}
+	seen := make(map[string]struct{}, len(global)+len(site))
+	out := make([]string, 0, len(global)+len(site))
+	for _, r := range global {
+		if _, ok := seen[r]; !ok {
+			seen[r] = struct{}{}
+			out = append(out, r)
+		}
+	}
+	for _, r := range site {
+		if _, ok := seen[r]; !ok {
+			seen[r] = struct{}{}
+			out = append(out, r)
+		}
+	}
+	return out
 }
 
 // OptionalJWT is like JWTAuth but never blocks the request: when the
@@ -92,8 +126,9 @@ func OptionalJWT(verifier *oidctoken.Verifier) fiber.Handler {
 		}
 		c.Locals("user_uuid", claims.UserUUID)
 		c.Locals("user_id", claims.ID)
-		c.Locals("user_roles", claims.Roles)
+		c.Locals("user_roles", unionRoles(claims.Roles, claims.SiteRoles))
 		c.Locals("user_scope", claims.Scope)
+		c.Locals("user_site", claims.SiteID)
 		return c.Next()
 	}
 }

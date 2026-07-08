@@ -321,8 +321,12 @@ func (h *OAuthHandler) Token(c fiber.Ctx) error {
 func (h *OAuthHandler) UserInfo(c fiber.Ctx) error {
 	userUUID := c.Locals("user_uuid").(string)
 	scope, _ := c.Locals("user_scope").(string)
+	// site_roles in the userinfo response are scoped to the requesting client's
+	// site — the same SiteID the access token carries (set into locals by the
+	// JWT middleware).
+	siteID, _ := c.Locals("user_site").(uint)
 
-	info, err := h.oauthService.GetUserInfo(c.Context(), userUUID, scope)
+	info, err := h.oauthService.GetUserInfo(c.Context(), userUUID, scope, siteID)
 	if err != nil {
 		if appErr, ok := err.(*errors.AppError); ok {
 			return h.protoErr(c, appErr.Code, func() error { return response.NotFound(c, appErr.Code) })

@@ -19,6 +19,10 @@ const (
 	UsersPIIView authz.Permission = "oauth.users.pii_view"
 	// RolesGrantBasic: grant/revoke the below-admin roles (moderator, creator).
 	RolesGrantBasic authz.Permission = "oauth.roles.grant_basic"
+	// RolesGrantSite: grant/revoke site-scoped roles (docs/integration/oauth/
+	// 12-site-roles.md). Site roles are always below the global moderator, so an
+	// admin may grant them.
+	RolesGrantSite authz.Permission = "oauth.roles.grant_site"
 	// RolesGrantAdmin: grant/revoke the admin-tier targets (admin, and the
 	// implicit user base) — the ren-only half of the role-grant matrix.
 	RolesGrantAdmin authz.Permission = "oauth.roles.grant_admin"
@@ -36,6 +40,7 @@ const (
 var adminPerms = []authz.Permission{
 	AdminAccess,
 	RolesGrantBasic,
+	RolesGrantSite,
 }
 
 // renPerms is admin's bundle plus the PII / admin-grant / privileged-client

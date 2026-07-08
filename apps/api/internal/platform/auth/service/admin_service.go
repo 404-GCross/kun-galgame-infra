@@ -10,6 +10,7 @@ import (
 	"api/internal/platform/auth/dto"
 	"api/internal/platform/auth/model"
 	"api/internal/platform/auth/repository"
+	siterepo "api/internal/platform/site/repository"
 	"api/pkg/errors"
 	"api/pkg/imageclient"
 )
@@ -47,8 +48,10 @@ func origEmailForAdmin(canSeePII bool, v *string) string {
 
 // AdminService handles admin operations
 type AdminService struct {
-	userRepo    *repository.UserRepository
-	sessionRepo *repository.SessionRepository
+	userRepo     *repository.UserRepository
+	sessionRepo  *repository.SessionRepository
+	siteRoleRepo *repository.UserSiteRoleRepository
+	siteRepo     *siterepo.SiteRepository
 	// imgClient GCs a user's image_service avatar on anonymize. nil when the
 	// image client is unconfigured — anonymize then just nulls the reference
 	// and lets image_service's own GC reclaim the binary.
@@ -59,12 +62,16 @@ type AdminService struct {
 func NewAdminService(
 	userRepo *repository.UserRepository,
 	sessionRepo *repository.SessionRepository,
+	siteRoleRepo *repository.UserSiteRoleRepository,
+	siteRepo *siterepo.SiteRepository,
 	imgClient *imageclient.Client,
 ) *AdminService {
 	return &AdminService{
-		userRepo:    userRepo,
-		sessionRepo: sessionRepo,
-		imgClient:   imgClient,
+		userRepo:     userRepo,
+		sessionRepo:  sessionRepo,
+		siteRoleRepo: siteRoleRepo,
+		siteRepo:     siteRepo,
+		imgClient:    imgClient,
 	}
 }
 
@@ -128,6 +135,9 @@ func (s *AdminService) GetUser(ctx context.Context, uuid string, canSeePII bool)
 	// Get session count
 	sessionCount, _ := s.sessionRepo.CountByUserID(ctx, user.ID)
 
+	// Site-scoped role grants (best-effort — a lookup error just omits them).
+	siteRoles, _ := s.listSiteRoles(ctx, user.ID)
+
 	return &dto.UserDetailResponse{
 		UserResponse: dto.UserResponse{
 			UUID:            user.UUID,
@@ -145,6 +155,7 @@ func (s *AdminService) GetUser(ctx context.Context, uuid string, canSeePII bool)
 		},
 		IP:           piiOrRedacted(canSeePII, user.IP),
 		SessionCount: int(sessionCount),
+		SiteRoles:    siteRoles,
 	}, nil
 }
 

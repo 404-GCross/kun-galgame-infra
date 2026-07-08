@@ -138,6 +138,14 @@ const handleRoles = (user: { uuid: string; name: string; roles: string[] }) => {
   roleTarget.value = user
   roleOpen.value = true
 }
+
+const siteRoleOpen = ref(false)
+const siteRoleTarget = ref<{ uuid: string; name: string } | null>(null)
+
+const handleSiteRoles = (user: { uuid: string; name: string }) => {
+  siteRoleTarget.value = user
+  siteRoleOpen.value = true
+}
 </script>
 
 <template>
@@ -180,6 +188,7 @@ const handleRoles = (user: { uuid: string; name: string; roles: string[] }) => {
         @upload-avatar="handleUploadAvatar"
         @moemoepoint="handleMoemoepoint"
         @roles="handleRoles"
+        @site-roles="handleSiteRoles"
       />
 
       <div v-if="totalPages > 1" class="flex justify-center">
@@ -206,6 +215,12 @@ const handleRoles = (user: { uuid: string; name: string; roles: string[] }) => {
     <UsersRoleModal
       v-model:open="roleOpen"
       :user="roleTarget"
+      @success="refresh"
+    />
+
+    <UsersSiteRoleModal
+      v-model:open="siteRoleOpen"
+      :user="siteRoleTarget"
       @success="refresh"
     />
 

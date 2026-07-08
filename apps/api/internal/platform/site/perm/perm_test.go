@@ -15,6 +15,7 @@ import (
 var goldenGrants = map[authz.Permission][]string{
 	perm.AdminAccess:             {"admin", "ren"},
 	perm.RolesGrantBasic:         {"admin", "ren"},
+	perm.RolesGrantSite:          {"admin", "ren"},
 	perm.UsersPIIView:            {"ren"},
 	perm.RolesGrantAdmin:         {"ren"},
 	perm.ClientsStorageConfig:    {"ren"},

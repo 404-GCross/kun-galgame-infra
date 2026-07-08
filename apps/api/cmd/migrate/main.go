@@ -116,6 +116,7 @@ func getAllModels() []any {
 		&authModel.OAuthAccount{},
 		&authModel.UserFollow{},
 		&authModel.UserSiteData{},
+		&authModel.UserSiteRole{},
 		&authModel.UserMigration{},
 		&authModel.PasswordReset{},
 		&authModel.AuthorizationCode{},

@@ -124,7 +124,9 @@ func (s *CreatorApplicationService) List(ctx context.Context, status string, pag
 	}
 	briefByID := make(map[uint]*dto.UserBrief, len(ids))
 	if len(ids) > 0 {
-		res, err := s.userBatchSvc.GetBriefs(ctx, ids)
+		// siteID 0: this is the internal creator-application admin view, not a
+		// site-bound client — no site_roles are needed on these briefs.
+		res, err := s.userBatchSvc.GetBriefs(ctx, ids, 0)
 		if err != nil {
 			return nil, 0, err
 		}

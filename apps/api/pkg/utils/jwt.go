@@ -26,6 +26,13 @@ type TokenClaims struct {
 	SiteID   uint     `json:"site_id,omitempty"`
 	Role     int      `json:"role,omitempty"`
 	Roles    []string `json:"roles,omitempty"`
+	// SiteRoles are the caller's site-scoped roles for the issuing client's
+	// site only (docs/integration/oauth/12-site-roles.md). A flat string array,
+	// never containing user/admin/ren. Consumers union it with Roles before
+	// checking capabilities. Omitted when the user has no grants on this site.
+	// Carried identically on the HS256 and ES256 wire (the signer serializes
+	// this whole struct), so no per-mode handling is needed.
+	SiteRoles []string `json:"site_roles,omitempty"`
 	// ClientID is the OAuth client the token was issued to (RFC 9068 §2.2).
 	// Empty for first-party /auth/login tokens, which have no client.
 	ClientID string `json:"client_id,omitempty"`

@@ -1,5 +1,28 @@
 package dto
 
+import "time"
+
+// AssignSiteRoleRequest is the body of POST /admin/users/:uuid/site-roles.
+// RoleName is policy-validated in the service (never user/admin/ren; must match
+// the site-name pattern). ExpiresAt nil = permanent grant.
+type AssignSiteRoleRequest struct {
+	SiteID    uint       `json:"site_id" validate:"required"`
+	RoleName  string     `json:"role_name" validate:"required"`
+	Note      string     `json:"note"`
+	ExpiresAt *time.Time `json:"expires_at"`
+}
+
+// SiteRoleResponse is one site-scoped grant shown in the admin user detail.
+type SiteRoleResponse struct {
+	SiteID    uint       `json:"site_id"`
+	SiteName  string     `json:"site_name"`
+	RoleName  string     `json:"role_name"`
+	GrantedBy uint       `json:"granted_by"`
+	GrantedAt time.Time  `json:"granted_at"`
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+	Note      string     `json:"note,omitempty"`
+}
+
 // UserListRequest represents a user list request.
 //
 // Page/Limit are `omitempty` so an absent value (binds to 0) passes
@@ -58,6 +81,7 @@ type UserDetailResponse struct {
 	SessionCount  int                    `json:"session_count"`
 	OAuthAccounts int                    `json:"oauth_accounts"`
 	SiteData      []UserSiteDataResponse `json:"site_data"`
+	SiteRoles     []SiteRoleResponse     `json:"site_roles"`
 }
 
 // UserSiteDataResponse represents user site data

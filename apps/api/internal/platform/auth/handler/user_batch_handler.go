@@ -6,6 +6,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"api/internal/middleware"
 	"api/internal/platform/auth/service"
 	"api/pkg/errors"
 	"api/pkg/response"
@@ -40,7 +41,13 @@ func (h *UserBatchHandler) Get(c fiber.Ctx) error {
 		return response.BadRequestMsg(c, errors.ErrInvalidParam, "ids: max 100 per request")
 	}
 
-	resp, err := h.svc.GetBriefs(c.Context(), ids)
+	// site_roles in each brief are scoped to the REQUESTING client's site.
+	var siteID uint
+	if client := middleware.OAuthClientFromCtx(c); client != nil && client.SiteID != nil {
+		siteID = *client.SiteID
+	}
+
+	resp, err := h.svc.GetBriefs(c.Context(), ids, siteID)
 	if err != nil {
 		slog.Error("users batch query", "ids_len", len(ids), "err", err)
 		return response.InternalError(c, errors.ErrInternalServer)

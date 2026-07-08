@@ -23,6 +23,10 @@ type UserBrief struct {
 	Bio             string   `json:"bio"`
 	Status          int      `json:"status"`
 	Roles           []string `json:"roles"`
+	// SiteRoles are the user's site-scoped roles for the REQUESTING client's
+	// site (docs/integration/oauth/12-site-roles.md). Omitted when the user has
+	// none there or the requesting client isn't site-bound.
+	SiteRoles []string `json:"site_roles,omitempty"`
 	// CreatedAt is the user's OAuth registration time as UTC RFC3339
 	// ("2006-01-02T15:04:05Z"), matching UserResponse.CreatedAt's format.
 	CreatedAt string `json:"created_at"`

@@ -81,6 +81,7 @@ func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 	sessionRepo := authRepo.NewSessionRepository(db)
 	passwordResetRepo := authRepo.NewPasswordResetRepository(db)
 	authCodeRepo := authRepo.NewAuthorizationCodeRepository(db)
+	siteRoleRepo := authRepo.NewUserSiteRoleRepository(db)
 	oauthClientRepo := siteRepo.NewOAuthClientRepository(db)
 	siteRepository := siteRepo.NewSiteRepository(db)
 	signingKeyRepo := authRepo.NewSigningKeyRepository(db)
@@ -110,9 +111,9 @@ func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 	}
 
 	authSvc := authService.NewAuthServiceFull(userRepo, sessionRepo, passwordResetRepo, mailer, a.Cache, cfg)
-	oauthSvc := authService.NewOAuthService(userRepo, authCodeRepo, sessionRepo, oauthClientRepo, cfg)
-	adminSvc := authService.NewAdminService(userRepo, sessionRepo, imgCli)
-	userBatchSvc := authService.NewUserBatchService(userRepo)
+	oauthSvc := authService.NewOAuthService(userRepo, authCodeRepo, sessionRepo, oauthClientRepo, siteRoleRepo, cfg)
+	adminSvc := authService.NewAdminService(userRepo, sessionRepo, siteRoleRepo, siteRepository, imgCli)
+	userBatchSvc := authService.NewUserBatchService(userRepo, siteRoleRepo)
 	creatorAppSvc := authService.NewCreatorApplicationService(authRepo.NewCreatorApplicationRepository(db), userRepo, userBatchSvc)
 	moemoepointSvc := authService.NewMoemoepointService(a.DB.DB(), userRepo)
 	// Registration grants a welcome gift via the moemoepoint ledger.
@@ -322,6 +323,13 @@ func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 	// grantable via API.
 	admin.Post("/users/:uuid/roles", adminH.AssignRole)
 	admin.Delete("/users/:uuid/roles/:role", adminH.RevokeRole)
+	// Site-scoped role grants (docs/integration/oauth/12-site-roles.md). Gated
+	// by oauth.roles.grant_site (admin/ren) — site roles sit below the global
+	// moderator, so an admin may grant them.
+	admin.Post("/users/:uuid/site-roles",
+		middleware.RequirePermission(sitePerm.Resolver, sitePerm.RolesGrantSite), adminH.AssignSiteRole)
+	admin.Delete("/users/:uuid/site-roles",
+		middleware.RequirePermission(sitePerm.Resolver, sitePerm.RolesGrantSite), adminH.RevokeSiteRole)
 	// Creator application review queue.
 	admin.Get("/creator/applications", creatorAppH.AdminList)
 	admin.Post("/creator/applications/:id/approve", creatorAppH.AdminApprove)

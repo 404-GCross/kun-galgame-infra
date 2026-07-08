@@ -11,6 +11,7 @@ const emit = defineEmits<{
   uploadAvatar: [user: { uuid: string; name: string }]
   moemoepoint: [user: { uuid: string; name: string; moemoepoint: number }]
   roles: [user: { uuid: string; name: string; roles: string[] }]
+  siteRoles: [user: { uuid: string; name: string }]
 }>()
 
 const cdnBase = useRuntimeConfig().public.imageCdnBase as string
@@ -173,6 +174,14 @@ const _ = props // keep TS happy if `props` is never read elsewhere
                 >
                   <KunIcon name="lucide:shield" class="size-4" />
                   管理角色
+                </button>
+                <button
+                  v-if="!user.is_anonymized"
+                  class="flex w-full items-center gap-2 px-3 py-2 text-sm text-default-500 hover:bg-default-100 hover:text-foreground"
+                  @click="emit('siteRoles', { uuid: user.uuid, name: user.name })"
+                >
+                  <KunIcon name="lucide:map-pin" class="size-4" />
+                  站点角色
                 </button>
                 <button
                   v-if="!isAdmin(user)"

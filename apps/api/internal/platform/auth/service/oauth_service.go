@@ -34,6 +34,7 @@ type OAuthService struct {
 	authCodeRepo *authrepo.AuthorizationCodeRepository
 	sessionRepo  *authrepo.SessionRepository
 	clientRepo   *siterepo.OAuthClientRepository
+	siteRoleRepo *authrepo.UserSiteRoleRepository
 	cfg          *config.Config
 	// signer mints access tokens. When nil, falls back to the legacy HS256
 	// path (cfg.JWT.Secret). Injected via WithTokenSigner (Phase 1).
@@ -66,12 +67,31 @@ func (s *OAuthService) signAccessToken(claims utils.TokenClaims, ttl time.Durati
 	return utils.GenerateAccessToken(s.cfg.JWT.Secret, claims, ttl)
 }
 
+// siteRoles returns the user's UNEXPIRED site-role names for siteID — the
+// site_roles claim, scoped to the issuing client's site. Returns nil when the
+// client isn't site-bound (siteID==0). Best-effort: a lookup error is logged
+// and treated as "no site roles" so a transient DB blip degrades the token to
+// the user's global roles rather than failing the whole mint.
+func (s *OAuthService) siteRoles(ctx context.Context, userID, siteID uint) []string {
+	if siteID == 0 || s.siteRoleRepo == nil {
+		return nil
+	}
+	names, err := s.siteRoleRepo.ActiveRoleNames(ctx, userID, siteID)
+	if err != nil {
+		slog.Warn("site_roles lookup failed; issuing token without them",
+			"user_id", userID, "site_id", siteID, "err", err)
+		return nil
+	}
+	return names
+}
+
 // NewOAuthService creates a new OAuthService
 func NewOAuthService(
 	userRepo *authrepo.UserRepository,
 	authCodeRepo *authrepo.AuthorizationCodeRepository,
 	sessionRepo *authrepo.SessionRepository,
 	clientRepo *siterepo.OAuthClientRepository,
+	siteRoleRepo *authrepo.UserSiteRoleRepository,
 	cfg *config.Config,
 ) *OAuthService {
 	return &OAuthService{
@@ -79,6 +99,7 @@ func NewOAuthService(
 		authCodeRepo: authCodeRepo,
 		sessionRepo:  sessionRepo,
 		clientRepo:   clientRepo,
+		siteRoleRepo: siteRoleRepo,
 		cfg:          cfg,
 	}
 }
@@ -375,11 +396,12 @@ func (s *OAuthService) ExchangeCode(ctx context.Context, req *dto.TokenRequest) 
 			UserUUID: user.UUID,
 			ID:       user.ID,
 			Email:    user.Email,
-			Name:     user.Name,
-			Roles:    user.RoleNames(),
-			Scope:    authCode.Scope,
-			SiteID:   siteID,
-			ClientID: req.ClientID,
+			Name:      user.Name,
+			Roles:     user.RoleNames(),
+			SiteRoles: s.siteRoles(ctx, user.ID, siteID),
+			Scope:     authCode.Scope,
+			SiteID:    siteID,
+			ClientID:  req.ClientID,
 			RegisteredClaims: jwt.RegisteredClaims{
 				Audience: clientAudience(client),
 			},
@@ -451,7 +473,7 @@ func (s *OAuthService) ExchangeCode(ctx context.Context, req *dto.TokenRequest) 
 // representation of the same identity as `sub`, and `roles` is already
 // embedded in the JWT this caller is using to authenticate. Withholding
 // them on a /userinfo call would be theatre — the caller already has them.
-func (s *OAuthService) GetUserInfo(ctx context.Context, userUUID, scope string) (*dto.UserInfoResponse, error) {
+func (s *OAuthService) GetUserInfo(ctx context.Context, userUUID, scope string, siteID uint) (*dto.UserInfoResponse, error) {
 	user, err := s.userRepo.FindByUUIDWithRoles(ctx, userUUID)
 	if err != nil {
 		return nil, errors.NewWithCode(errors.ErrAuthUserNotFound)
@@ -466,6 +488,7 @@ func (s *OAuthService) GetUserInfo(ctx context.Context, userUUID, scope string) 
 		ID:        user.ID,
 		Sub:       user.UUID,
 		Roles:     roles,
+		SiteRoles: s.siteRoles(ctx, user.ID, siteID),
 		UpdatedAt: user.UpdatedAt.Unix(), // documented Unix-timestamp contract
 	}
 
@@ -665,14 +688,15 @@ func (s *OAuthService) RefreshWithClient(ctx context.Context, refreshToken, clie
 	freshAccess := func() (string, error) {
 		return s.signAccessToken(
 			utils.TokenClaims{
-				UserUUID: user.UUID,
-				ID:       user.ID,
-				Email:    user.Email,
-				Name:     user.Name,
-				Roles:    user.RoleNames(),
-				Scope:    session.Scope,
-				SiteID:   siteID,
-				ClientID: clientID,
+				UserUUID:  user.UUID,
+				ID:        user.ID,
+				Email:     user.Email,
+				Name:      user.Name,
+				Roles:     user.RoleNames(),
+				SiteRoles: s.siteRoles(ctx, user.ID, siteID),
+				Scope:     session.Scope,
+				SiteID:    siteID,
+				ClientID:  clientID,
 				RegisteredClaims: jwt.RegisteredClaims{
 					Audience: clientAudience(client),
 				},

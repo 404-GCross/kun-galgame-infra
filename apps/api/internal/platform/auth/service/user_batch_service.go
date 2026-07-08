@@ -12,16 +12,19 @@ import (
 // kungal / moyu / galgame_wiki to fetch a batch of user briefs in one
 // round-trip (vs N RPCs for N users).
 type UserBatchService struct {
-	userRepo *repository.UserRepository
+	userRepo     *repository.UserRepository
+	siteRoleRepo *repository.UserSiteRoleRepository
 }
 
-func NewUserBatchService(userRepo *repository.UserRepository) *UserBatchService {
-	return &UserBatchService{userRepo: userRepo}
+func NewUserBatchService(userRepo *repository.UserRepository, siteRoleRepo *repository.UserSiteRoleRepository) *UserBatchService {
+	return &UserBatchService{userRepo: userRepo, siteRoleRepo: siteRoleRepo}
 }
 
 // GetBriefs returns a UserBrief for each found ID; not-found IDs are listed
-// in the second return for the caller to surface to consumers.
-func (s *UserBatchService) GetBriefs(ctx context.Context, ids []uint) (*dto.BatchGetUsersResponse, error) {
+// in the second return for the caller to surface to consumers. When siteID is
+// non-zero (the requesting client is site-bound), each brief carries the user's
+// site-scoped roles for that site.
+func (s *UserBatchService) GetBriefs(ctx context.Context, ids []uint, siteID uint) (*dto.BatchGetUsersResponse, error) {
 	users, err := s.userRepo.FindByIDsWithRoles(ctx, ids)
 	if err != nil {
 		return nil, err
@@ -32,6 +35,16 @@ func (s *UserBatchService) GetBriefs(ctx context.Context, ids []uint) (*dto.Batc
 	for _, u := range users {
 		found[u.ID] = struct{}{}
 		briefs = append(briefs, toBrief(&u))
+	}
+
+	// Attach site_roles scoped to the requesting client's site. Best-effort:
+	// a lookup error degrades to no site_roles rather than failing the batch.
+	if siteID != 0 && s.siteRoleRepo != nil {
+		if byUser, err := s.siteRoleRepo.ActiveRoleNamesForUsers(ctx, ids, siteID); err == nil {
+			for i := range briefs {
+				briefs[i].SiteRoles = byUser[briefs[i].ID]
+			}
+		}
 	}
 
 	notFound := make([]uint, 0)

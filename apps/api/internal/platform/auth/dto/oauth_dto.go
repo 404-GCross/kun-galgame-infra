@@ -76,6 +76,10 @@ type UserInfoResponse struct {
 	Email     string   `json:"email,omitempty"`
 	Picture   string   `json:"picture,omitempty"`
 	Roles     []string `json:"roles"`
+	// SiteRoles are the caller's site-scoped roles for the requesting client's
+	// site (docs/integration/oauth/12-site-roles.md). Omitted when the user has
+	// no grants on this site or the token isn't site-bound.
+	SiteRoles []string `json:"site_roles,omitempty"`
 	UpdatedAt int64    `json:"updated_at,omitempty"`
 }
 
