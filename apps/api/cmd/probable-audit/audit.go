@@ -22,6 +22,7 @@ const (
 
 	ruleRosetta   = "rule:eg-vndb-rosetta"
 	ruleTitleYear = "rule:title-year-strict"
+	ruleEGDLsite  = "rule:eg-dlsite-rosetta" // step-28 mint EG work-refs (unclaimed, ext-only)
 
 	wikiGalgameBase = "https://www.kungal.com/galgame/"
 	bangumiBase     = "https://bgm.tv/subject/"
@@ -73,6 +74,8 @@ func (r probableRef) stratum() string {
 	switch {
 	case r.Corrob == corrobContradict:
 		return "contradiction"
+	case r.Rule == ruleEGDLsite:
+		return "eg-dlsite" // step-28 mint EG refs — the work is unclaimed (ext-only)
 	case r.Rule == ruleRosetta:
 		return "rosetta"
 	case r.AlsoRosetta:

@@ -212,7 +212,7 @@ func (a *auditor) runReport(w io.Writer, path string) error {
 	// Per-stratum tallies from the receipt.
 	type tally struct{ n, ok, wrong, unsure int }
 	tallies := map[string]*tally{}
-	order := []string{"rosetta", "ts-rosetta-corrob", "ts-bangumi-only", "contradiction"}
+	order := []string{"rosetta", "ts-rosetta-corrob", "ts-bangumi-only", "eg-dlsite", "contradiction"}
 	for _, s := range order {
 		tallies[s] = &tally{}
 	}
@@ -253,6 +253,7 @@ func (a *auditor) runReport(w io.Writer, path string) error {
 	fmt.Fprintf(w, "  promote ALL rosetta                → +%d exact\n", pop["rosetta"])
 	fmt.Fprintf(w, "  promote title-strict (also-rosetta) → +%d exact\n", pop["ts-rosetta-corrob"])
 	fmt.Fprintf(w, "  promote title-strict (bangumi-only) → +%d exact\n", pop["ts-bangumi-only"])
+	fmt.Fprintf(w, "  promote ALL eg-dlsite (mint refs)    → +%d exact\n", pop["eg-dlsite"])
 	fmt.Fprintf(w, "  reject ALL contradictions           → -%d refs, +%d rejections\n",
 		pop["contradiction"], pop["contradiction"])
 	fmt.Fprintln(w, "  (apply a promotion only after its stratum's measured precision clears your bar.)")

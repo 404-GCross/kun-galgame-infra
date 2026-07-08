@@ -38,8 +38,13 @@ type EGDLsiteStats struct {
 	Attached  int // releases attached to an existing claimed work
 	Minted    int // new unclaimed galgame works
 	Already   int // workno already has a release anchor
-	Ambiguous int // dlsite_id claimed by >1 EG game (skipped)
+	Ambiguous int // dlsite_id claimed by >1 EG game (skipped; 0 when resolving)
 	Missing   int // EG dlsite_id not found in the local DLsite staging
+
+	// Step-29 ambiguity resolution (only when ResolveAmbiguous):
+	AmbB1        int // exactly one claimant is wiki-matched → attached
+	AmbB2        int // no claimant is wiki-matched → minted without an EG ref
+	AmbConflicts int // several claimants map to different wiki works → exported
 
 	ReleasesCreated     int
 	TitlesCreated       int
@@ -60,6 +65,7 @@ type egdlItem struct {
 	workID   int64 // attach target; 0 = mint
 	attach   bool
 	nameFold string
+	noEGRef  bool // B2: minted without an EG probable ref (unattributable)
 }
 
 // dlRow mirrors the DLsite staging columns plus the SQL-computed name fold.
@@ -109,12 +115,16 @@ func (im *Importer) RunEGDLsite(dlsiteDB *gorm.DB) (EGDLsiteStats, error) {
 		return st, err
 	}
 	candidates := make([]string, 0, len(dlsiteToEG))
+	var ambiguousIDs []string
 	for did, games := range dlsiteToEG {
 		if len(games) > 1 {
-			st.Ambiguous++ // one dlsite_id, several EG games → human review
+			ambiguousIDs = append(ambiguousIDs, did)
 			continue
 		}
 		candidates = append(candidates, did)
+	}
+	if !im.resolveAmbiguous {
+		st.Ambiguous = len(ambiguousIDs) // one dlsite_id, several EG games → human review
 	}
 
 	// The DLsite hit set among the candidate worknos.
@@ -137,18 +147,22 @@ func (im *Importer) RunEGDLsite(dlsiteDB *gorm.DB) (EGDLsiteStats, error) {
 	makerKind := map[string]int16{}
 	creaters := map[string]dlNamed{}
 	var attach, mint []egdlItem
+	collectMaker := func(id, name string) {
+		if id == "" {
+			return
+		}
+		if _, ok := makers[id]; !ok {
+			makers[id] = dlNamed{ext: id, name: firstNonEmptyStr(name, id)}
+			makerKind[id] = egdlLabelKind(id)
+		}
+	}
 	for _, r := range rows {
 		if relAnchor[anchorKey(dlsiteSource, r.Workno)] != 0 {
 			st.Already++
 			continue
 		}
 		dw := parseDLRow(r, roleMap, creaters, &st)
-		if r.MakerID != "" {
-			if _, ok := makers[r.MakerID]; !ok {
-				makers[r.MakerID] = dlNamed{ext: r.MakerID, name: firstNonEmptyStr(r.MakerName, r.MakerID)}
-				makerKind[r.MakerID] = egdlLabelKind(r.MakerID)
-			}
-		}
+		collectMaker(r.MakerID, r.MakerName)
 		eg := dlsiteToEG[r.Workno][0]
 		item := egdlItem{dw: dw, egGame: eg, nameFold: r.NameFold}
 		if wid, ok := egWork[eg]; ok {
@@ -158,11 +172,28 @@ func (im *Importer) RunEGDLsite(dlsiteDB *gorm.DB) (EGDLsiteStats, error) {
 			mint = append(mint, item)
 		}
 	}
+
+	// Step-29: resolve the ambiguous groups into B1 (attach) / B2 (mint without
+	// EG ref) / B3 (conflict export).
+	var conflicts []conflictRow
+	if im.resolveAmbiguous {
+		if err := im.resolveAmbiguousGroups(dlsiteDB, ambiguousIDs, dlsiteToEG, egWork, relAnchor,
+			roleMap, collectMaker, creaters, &attach, &mint, &conflicts, &st); err != nil {
+			return st, err
+		}
+	}
+
 	st.Attached = len(attach)
 	st.Minted = len(mint)
 
 	newLabels := filterNew(makers, labelAnchor, dlsiteSource)
 	newNames := filterNew(creaters, cnAnchor, dlsiteSource)
+
+	if im.conflictsOut != "" {
+		if err := im.exportConflicts(conflicts, im.conflictsOut); err != nil {
+			return st, err
+		}
+	}
 
 	if im.dryRun {
 		st.LabelsCreated = len(newLabels)
@@ -173,7 +204,9 @@ func (im *Importer) RunEGDLsite(dlsiteDB *gorm.DB) (EGDLsiteStats, error) {
 				st.Stubs++
 			}
 			st.TitlesCreated++ // official
-			st.EGRefsWritten++
+			if !it.noEGRef {
+				st.EGRefsWritten++
+			}
 			st.CreditsWritten += len(it.dw.credits)
 		}
 		for _, it := range attach {

@@ -52,6 +52,12 @@ type Options struct {
 	Source string // "bangumi" | "eg" | "all"
 	DryRun bool
 	Limit  int // cap works processed per wave (0 = all)
+	// ResolveAmbiguous turns on the step-29 three-layer handling of dlsite_ids
+	// claimed by several EG games (default off = skip them, step-28 behavior).
+	ResolveAmbiguous bool
+	// ConflictsOut, when set, writes the B3 conflict worklist (a dlsite_id whose
+	// claimants resolve to several different wiki works) to this TSV path.
+	ConflictsOut string
 }
 
 // Stats is the eight-item per-wave tally.
@@ -79,14 +85,19 @@ func (s *Stats) add(o Stats) {
 
 // Importer holds the catalog + eg handles and the preloaded anchor maps.
 type Importer struct {
-	catalog *gorm.DB
-	eg      *gorm.DB
-	dryRun  bool
-	limit   int
+	catalog          *gorm.DB
+	eg               *gorm.DB
+	dryRun           bool
+	limit            int
+	resolveAmbiguous bool
+	conflictsOut     string
 }
 
 func New(catalog, eg *gorm.DB, opts Options) *Importer {
-	return &Importer{catalog: catalog, eg: eg, dryRun: opts.DryRun, limit: opts.Limit}
+	return &Importer{
+		catalog: catalog, eg: eg, dryRun: opts.DryRun, limit: opts.Limit,
+		resolveAmbiguous: opts.ResolveAmbiguous, conflictsOut: opts.ConflictsOut,
+	}
 }
 
 // Run dispatches the requested wave(s).

@@ -84,6 +84,9 @@ func TestStratumClassification(t *testing.T) {
 		{probableRef{Rule: ruleTitleYear, Corrob: corrobExtNoVNDB, AlsoRosetta: true}, "ts-rosetta-corrob"},
 		{probableRef{Rule: ruleTitleYear, Corrob: corrobExtNoVNDB, AlsoRosetta: false}, "ts-bangumi-only"},
 		{probableRef{Rule: ruleTitleYear, Corrob: corrobContradict, AlsoRosetta: true}, "contradiction"},
+		// step-29: eg-dlsite mint refs — the work is unclaimed (work-no-vndb),
+		// so it is its own stratum, never the title-strict fallback.
+		{probableRef{Rule: ruleEGDLsite, Corrob: corrobWorkNoVNDB}, "eg-dlsite"},
 	}
 	for _, c := range cases {
 		assert.Equal(t, c.want, c.ref.stratum())

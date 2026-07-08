@@ -18,6 +18,7 @@ const (
 	sampleRosetta      = 150
 	sampleTSRosetta    = 150 // title-strict work that also has an eg-rosetta ref
 	sampleTSBangumi    = 150 // title-strict, bangumi-only
+	sampleEGDLsite     = 150 // step-28 eg-dlsite mint refs (unclaimed works)
 	defaultSamplesName = "probable-audit-samples.tsv"
 )
 
@@ -47,7 +48,7 @@ func (a *auditor) runExport(out string) error {
 		return err
 	}
 
-	var rosetta, tsRosetta, tsBangumi, contradictions []probableRef
+	var rosetta, tsRosetta, tsBangumi, egDLsite, contradictions []probableRef
 	for _, r := range a.refs {
 		switch r.stratum() {
 		case "contradiction":
@@ -58,6 +59,8 @@ func (a *auditor) runExport(out string) error {
 			tsRosetta = append(tsRosetta, r)
 		case "ts-bangumi-only":
 			tsBangumi = append(tsBangumi, r)
+		case "eg-dlsite":
+			egDLsite = append(egDLsite, r)
 		}
 	}
 
@@ -65,6 +68,7 @@ func (a *auditor) runExport(out string) error {
 	sample = append(sample, deterministicSample(rosetta, sampleRosetta)...)
 	sample = append(sample, deterministicSample(tsRosetta, sampleTSRosetta)...)
 	sample = append(sample, deterministicSample(tsBangumi, sampleTSBangumi)...)
+	sample = append(sample, deterministicSample(egDLsite, sampleEGDLsite)...)
 	sample = append(sample, contradictions...) // census, never sampled
 	sort.Slice(sample, func(i, j int) bool { return sample[i].key() < sample[j].key() })
 
@@ -84,11 +88,12 @@ func (a *auditor) runExport(out string) error {
 	}
 
 	fmt.Fprintf(os.Stderr,
-		"wrote %s: %d sample rows (rosetta %d/%d, ts-rosetta %d/%d, ts-bangumi %d/%d, contradictions %d census)\n",
+		"wrote %s: %d sample rows (rosetta %d/%d, ts-rosetta %d/%d, ts-bangumi %d/%d, eg-dlsite %d/%d, contradictions %d census)\n",
 		path, len(sample),
 		min(sampleRosetta, len(rosetta)), len(rosetta),
 		min(sampleTSRosetta, len(tsRosetta)), len(tsRosetta),
 		min(sampleTSBangumi, len(tsBangumi)), len(tsBangumi),
+		min(sampleEGDLsite, len(egDLsite)), len(egDLsite),
 		len(contradictions))
 	return nil
 }

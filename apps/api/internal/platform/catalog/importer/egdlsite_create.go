@@ -141,15 +141,17 @@ func (im *Importer) createMintChunk(tx *gorm.DB, chunk []egdlItem, cnResolve fun
 	for i, it := range chunk {
 		wid := works[i].ID
 		rel := releases[i]
-		// SKU release anchor (exact, self-identity via the rosetta path) + the
-		// EG↔work identity as community data (probable).
-		refs = append(refs,
-			selfRef(model.EntityTypeRelease, rel.ID, dl, it.dw.workno, ruleEGDLsite),
-			model.CatalogExternalRef{
+		// SKU release anchor (exact, self-identity via the rosetta path).
+		refs = append(refs, selfRef(model.EntityTypeRelease, rel.ID, dl, it.dw.workno, ruleEGDLsite))
+		// The EG↔work identity as community data (probable) — omitted for B2
+		// (a dlsite_id claimed by several EG games: unattributable, SKU stands).
+		if !it.noEGRef {
+			refs = append(refs, model.CatalogExternalRef{
 				EntityType: model.EntityTypeWork, EntityID: wid, SourceID: eg,
 				ExternalID: fmt.Sprint(it.egGame), LinkKind: model.LinkKindProbable, MatchedBy: ruleEGDLsite,
 			})
-		st.EGRefsWritten++
+			st.EGRefsWritten++
+		}
 		revs = append(revs,
 			importedRev(model.EntityTypeWork, wid, releaseSnapshotJSON(rel)),
 			importedRev(model.EntityTypeRelease, rel.ID, releaseSnapshotJSON(rel)),

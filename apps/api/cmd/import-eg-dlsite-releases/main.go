@@ -44,6 +44,8 @@ func main() {
 	limit := flag.Int("limit", 0, "cap works processed (0 = all)")
 	egDSN := flag.String("eg-dsn", "", "erogamespace staging DSN (default: erogamespace db on the catalog server)")
 	dlsiteDSN := flag.String("dlsite-dsn", "", "DLsite staging DSN (default: dlsite db on the catalog server)")
+	resolveAmbiguous := flag.Bool("resolve-ambiguous", false, "step-29 three-layer handling of dlsite_ids claimed by several EG games (default: skip them)")
+	conflicts := flag.String("export-conflicts", "", "write the B3 conflict worklist (SKU → several wiki works) to this TSV path")
 	flag.Parse()
 
 	_ = godotenv.Load("apps/api/.env")
@@ -78,7 +80,9 @@ func main() {
 		defer s.Close()
 	}
 
-	im := importer.New(catalogDB.DB(), egDB, importer.Options{DryRun: !*apply, Limit: *limit})
+	im := importer.New(catalogDB.DB(), egDB, importer.Options{
+		DryRun: !*apply, Limit: *limit, ResolveAmbiguous: *resolveAmbiguous, ConflictsOut: *conflicts,
+	})
 	st, err := im.RunEGDLsite(dlsiteDB)
 	if err != nil {
 		slog.Error("eg-dlsite wave failed", "error", err)
@@ -87,6 +91,7 @@ func main() {
 	slog.Info("eg-dlsite wave summary",
 		"attached", st.Attached, "minted", st.Minted, "already", st.Already,
 		"ambiguous", st.Ambiguous, "missing", st.Missing,
+		"amb_b1_attach", st.AmbB1, "amb_b2_mint", st.AmbB2, "amb_b3_conflict", st.AmbConflicts,
 		"releases", st.ReleasesCreated, "titles", st.TitlesCreated, "labels", st.LabelsCreated,
 		"names", st.NamesCreated, "credits", st.CreditsWritten, "edges", st.EdgesWritten,
 		"eg_refs", st.EGRefsWritten, "stubs", st.Stubs, "skipped_unmapped_role", st.SkippedUnmappedRole,
