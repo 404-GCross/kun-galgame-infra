@@ -11,21 +11,22 @@ import (
 
 // Config holds all configuration for the application
 type Config struct {
-	Server          ServerConfig
-	Database        DatabaseConfig
-	GalgameDatabase DatabaseConfig
-	CatalogDatabase DatabaseConfig
-	ImagesDatabase  DatabaseConfig
-	Redis           RedisConfig
-	JWT             JWTConfig
-	Auth            AuthConfig
-	OIDC            OIDCConfig
-	Mail            MailConfig
-	Meilisearch     MeilisearchConfig
-	ImageService    ImageServiceConfig
-	ImageS3         S3Config
-	ImageClient     ImageClientConfig
-	CatalogClient   CatalogClientConfig
+	Server            ServerConfig
+	Database          DatabaseConfig
+	GalgameDatabase   DatabaseConfig
+	CatalogDatabase   DatabaseConfig
+	CommunityDatabase DatabaseConfig
+	ImagesDatabase    DatabaseConfig
+	Redis             RedisConfig
+	JWT               JWTConfig
+	Auth              AuthConfig
+	OIDC              OIDCConfig
+	Mail              MailConfig
+	Meilisearch       MeilisearchConfig
+	ImageService      ImageServiceConfig
+	ImageS3           S3Config
+	ImageClient       ImageClientConfig
+	CatalogClient     CatalogClientConfig
 	// GalgameImageClient is a SECOND image client identity, used only by the
 	// galgame-image-refping job. The job runs in the oauth container (central
 	// scheduler), where ImageClient is the *account* client — but galgame
@@ -294,6 +295,19 @@ func Load() (*Config, error) {
 		DBName:   getEnv("KUN_CATALOG_PG_DATABASE", "kun_catalog"),
 		SSLMode:  getEnv("KUN_CATALOG_PG_SSLMODE", cfg.Database.SSLMode),
 		Timezone: getEnv("KUN_CATALOG_PG_TIMEZONE", cfg.Database.Timezone),
+	}
+
+	// Community database config (defaults to same server, different db name).
+	// The community primitive (cmd/community) owns kun_community; see
+	// refs/docs/nextmoe-draft/11-community-primitive-design.md.
+	cfg.CommunityDatabase = DatabaseConfig{
+		Host:     getEnv("KUN_COMMUNITY_PG_HOST", cfg.Database.Host),
+		Port:     getEnv("KUN_COMMUNITY_PG_PORT", cfg.Database.Port),
+		User:     getEnv("KUN_COMMUNITY_PG_USER", cfg.Database.User),
+		Password: getEnv("KUN_COMMUNITY_PG_PASSWORD", cfg.Database.Password),
+		DBName:   getEnv("KUN_COMMUNITY_PG_DATABASE", "kun_community"),
+		SSLMode:  getEnv("KUN_COMMUNITY_PG_SSLMODE", cfg.Database.SSLMode),
+		Timezone: getEnv("KUN_COMMUNITY_PG_TIMEZONE", cfg.Database.Timezone),
 	}
 
 	// Redis config
