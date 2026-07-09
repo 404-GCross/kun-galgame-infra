@@ -7,6 +7,7 @@ import (
 	"sync"
 	"testing"
 
+	"api/internal/platform/community/dbtest"
 	"api/internal/platform/community/migrate"
 	"api/internal/platform/community/model"
 
@@ -33,12 +34,20 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "SKIP: cannot connect to test database: %v\n", err)
 		os.Exit(0)
 	}
+	// Serialize against the sibling community test packages (migrate/handler)
+	// that share this database — otherwise parallel `go test` TRUNCATEs race.
+	sqlDB, _ := db.DB()
+	release := dbtest.AcquireSuiteLock(sqlDB)
+
 	if err := migrate.Run(db); err != nil {
+		release()
 		fmt.Fprintf(os.Stderr, "SKIP: community migration failed: %v\n", err)
 		os.Exit(0)
 	}
 	testDB = db
-	os.Exit(m.Run())
+	code := m.Run()
+	release()
+	os.Exit(code)
 }
 
 func cleanTables(t *testing.T) {

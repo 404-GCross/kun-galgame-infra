@@ -1,0 +1,932 @@
+components:
+  schemas:
+    CommentsResolveRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/CommentsResolveRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        anchor_id:
+          type: string
+        anchor_kind:
+          description: 0=board 1=site_game 2=site_resource 3=catalog_work 4=catalog_person
+          format: int32
+          type: integer
+        content_rating:
+          description: 0=all 1=r15 2=r18 (inherited from the anchor)
+          format: int32
+          type: integer
+      required:
+        - anchor_kind
+        - anchor_id
+        - content_rating
+      type: object
+    EnvelopeOKResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EnvelopeOKResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/OKResponse"
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
+    EnvelopePostListResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EnvelopePostListResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/PostListResponse"
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
+    EnvelopePostResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EnvelopePostResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/PostResponse"
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
+    EnvelopeReactionToggleResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EnvelopeReactionToggleResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/ReactionToggleResponse"
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
+    EnvelopeThreadListResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EnvelopeThreadListResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/ThreadListResponse"
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
+    EnvelopeThreadResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EnvelopeThreadResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/ThreadResponse"
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
+    EnvelopeThreadWithPosts:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EnvelopeThreadWithPosts.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/ThreadWithPosts"
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
+    FeedbackMergeRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/FeedbackMergeRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        into_id:
+          format: int64
+          type: integer
+      required:
+        - into_id
+      type: object
+    FeedbackStatusRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/FeedbackStatusRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        fb_status:
+          format: int32
+          type: integer
+        responder_id:
+          format: int64
+          type: integer
+        response:
+          type: string
+      required:
+        - fb_status
+        - responder_id
+      type: object
+    FlagRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/FlagRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        flagger_id:
+          format: int64
+          type: integer
+        note:
+          type: string
+        reason:
+          format: int32
+          type: integer
+      required:
+        - flagger_id
+      type: object
+    HouseError:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/HouseError.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
+    OKResponse:
+      additionalProperties: false
+      properties:
+        ok:
+          type: boolean
+      required:
+        - ok
+      type: object
+    OpenFeedbackRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/OpenFeedbackRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        anchor_id:
+          type: string
+        anchor_kind:
+          format: int32
+          type: integer
+        author_id:
+          format: int64
+          type: integer
+        body:
+          type: string
+        content_rating:
+          format: int32
+          type: integer
+        title:
+          type: string
+      required:
+        - author_id
+        - anchor_kind
+        - anchor_id
+        - title
+        - content_rating
+        - body
+      type: object
+    OpenTopicRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/OpenTopicRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        anchor_id:
+          description: board id
+          type: string
+        author_id:
+          format: int64
+          type: integer
+        body:
+          description: markdown source of the opening post
+          type: string
+        content_rating:
+          format: int32
+          type: integer
+        header_image_hashes:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+        title:
+          type: string
+      required:
+        - author_id
+        - anchor_id
+        - title
+        - content_rating
+        - body
+      type: object
+    PostListResponse:
+      additionalProperties: false
+      properties:
+        next_cursor:
+          type: string
+        posts:
+          items:
+            $ref: "#/components/schemas/PostView"
+          type:
+            - array
+            - "null"
+      required:
+        - posts
+      type: object
+    PostResponse:
+      additionalProperties: false
+      properties:
+        post:
+          $ref: "#/components/schemas/PostView"
+      required:
+        - post
+      type: object
+    PostView:
+      additionalProperties: false
+      properties:
+        author_id:
+          format: int64
+          type: integer
+        content_html:
+          type: string
+        content_rating:
+          format: int32
+          type: integer
+        content_raw:
+          type: string
+        created_at:
+          format: date-time
+          type: string
+        edited_at:
+          format: date-time
+          type: string
+        id:
+          format: int64
+          type: integer
+        post_number:
+          format: int32
+          type: integer
+        reply_to_post_id:
+          format: int64
+          type: integer
+        root_post_id:
+          format: int64
+          type: integer
+        status:
+          format: int32
+          type: integer
+        target_user_id:
+          format: int64
+          type: integer
+        thread_id:
+          format: int64
+          type: integer
+      required:
+        - id
+        - thread_id
+        - post_number
+        - author_id
+        - content_raw
+        - content_html
+        - content_rating
+        - status
+        - created_at
+      type: object
+    ReactionToggleRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/ReactionToggleRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        kind:
+          description: reaction kind (0=like)
+          format: int32
+          type: integer
+        user_id:
+          format: int64
+          type: integer
+      required:
+        - user_id
+        - kind
+      type: object
+    ReactionToggleResponse:
+      additionalProperties: false
+      properties:
+        added:
+          type: boolean
+      required:
+        - added
+      type: object
+    ReplyRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/ReplyRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        author_id:
+          format: int64
+          type: integer
+        body:
+          type: string
+        reply_to_post_id:
+          format: int64
+          type: integer
+        root_post_id:
+          format: int64
+          type: integer
+        target_user_id:
+          format: int64
+          type: integer
+      required:
+        - author_id
+        - body
+      type: object
+    ThreadListResponse:
+      additionalProperties: false
+      properties:
+        next_cursor:
+          type: string
+        threads:
+          items:
+            $ref: "#/components/schemas/ThreadView"
+          type:
+            - array
+            - "null"
+      required:
+        - threads
+      type: object
+    ThreadResponse:
+      additionalProperties: false
+      properties:
+        post:
+          $ref: "#/components/schemas/PostView"
+          description: the opening post, for open-topic/feedback
+        thread:
+          $ref: "#/components/schemas/ThreadView"
+      required:
+        - thread
+      type: object
+    ThreadView:
+      additionalProperties: false
+      properties:
+        anchor_id:
+          type: string
+        anchor_kind:
+          format: int32
+          type: integer
+        answer_post_id:
+          format: int64
+          type: integer
+        content_rating:
+          format: int32
+          type: integer
+        created_at:
+          format: date-time
+          type: string
+        created_by:
+          format: int64
+          type: integer
+        fb_response:
+          type: string
+        fb_status:
+          format: int32
+          type: integer
+        highest_post_number:
+          format: int32
+          type: integer
+        id:
+          format: int64
+          type: integer
+        kind:
+          format: int32
+          type: integer
+        last_posted_at:
+          format: date-time
+          type: string
+        merged_into_id:
+          format: int64
+          type: integer
+        participants_count:
+          format: int32
+          type: integer
+        posts_count:
+          format: int32
+          type: integer
+        site:
+          type: string
+        status:
+          format: int32
+          type: integer
+        title:
+          type: string
+      required:
+        - id
+        - site
+        - kind
+        - anchor_kind
+        - anchor_id
+        - content_rating
+        - status
+        - posts_count
+        - participants_count
+        - highest_post_number
+        - created_by
+        - created_at
+      type: object
+    ThreadWithPosts:
+      additionalProperties: false
+      properties:
+        next_cursor:
+          description: post_number to pass as after for the next page; empty = last page
+          type: string
+        posts:
+          items:
+            $ref: "#/components/schemas/PostView"
+          type:
+            - array
+            - "null"
+        thread:
+          $ref: "#/components/schemas/ThreadView"
+      required:
+        - thread
+        - posts
+      type: object
+info:
+  title: KUN Community Service
+  version: 1.0.0
+openapi: 3.1.0
+paths:
+  /api/v1/community/comments/resolve:
+    post:
+      operationId: resolveComments
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommentsResolveRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeThreadWithPosts"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: Get-or-create the comments thread for an anchor and return its first page of posts
+      tags:
+        - community-read
+  /api/v1/community/feedback:
+    post:
+      operationId: openFeedback
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OpenFeedbackRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeThreadResponse"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: Open a feedback thread with its opening post
+      tags:
+        - community-write
+  /api/v1/community/feedback/{id}/merge:
+    post:
+      operationId: mergeFeedback
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FeedbackMergeRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeOKResponse"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: Merge a duplicate feedback thread into another (reversible)
+      tags:
+        - community-write
+  /api/v1/community/feedback/{id}/status:
+    post:
+      operationId: setFeedbackStatus
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FeedbackStatusRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeOKResponse"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: Set a feedback thread's status and official response
+      tags:
+        - community-write
+  /api/v1/community/posts/{id}/flag:
+    post:
+      operationId: submitFlag
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FlagRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeOKResponse"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: Report a post
+      tags:
+        - community-write
+  /api/v1/community/posts/{id}/reaction:
+    post:
+      operationId: toggleReaction
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReactionToggleRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeReactionToggleResponse"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: Toggle a reaction on a post
+      tags:
+        - community-write
+  /api/v1/community/threads:
+    get:
+      operationId: listThreads
+      parameters:
+        - description: 0=topic 1=comments 2=feedback
+          explode: false
+          in: query
+          name: kind
+          schema:
+            description: 0=topic 1=comments 2=feedback
+            format: int32
+            type: integer
+        - description: opaque cursor from the previous page
+          explode: false
+          in: query
+          name: cursor
+          schema:
+            description: opaque cursor from the previous page
+            type: string
+        - description: page size (max 100, default 50)
+          explode: false
+          in: query
+          name: limit
+          schema:
+            description: page size (max 100, default 50)
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeThreadListResponse"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: List a site's threads of a kind (keyset, newest activity first)
+      tags:
+        - community-read
+  /api/v1/community/threads/{id}:
+    get:
+      operationId: getThread
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            format: int64
+            type: integer
+        - description: post_number to read after (0 = from the top)
+          explode: false
+          in: query
+          name: after
+          schema:
+            description: post_number to read after (0 = from the top)
+            format: int32
+            type: integer
+        - explode: false
+          in: query
+          name: limit
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeThreadWithPosts"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: Get a thread with a page of posts
+      tags:
+        - community-read
+  /api/v1/community/threads/{id}/posts:
+    get:
+      operationId: listPosts
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            format: int64
+            type: integer
+        - description: post_number to read after (0 = from the top)
+          explode: false
+          in: query
+          name: after
+          schema:
+            description: post_number to read after (0 = from the top)
+            format: int32
+            type: integer
+        - explode: false
+          in: query
+          name: limit
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopePostListResponse"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: List a thread's posts (keyset by post_number)
+      tags:
+        - community-read
+    post:
+      operationId: reply
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReplyRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopePostResponse"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: Reply to a thread
+      tags:
+        - community-write
+  /api/v1/community/topics:
+    post:
+      operationId: openTopic
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OpenTopicRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeThreadResponse"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: Open a board topic with its opening post
+      tags:
+        - community-write

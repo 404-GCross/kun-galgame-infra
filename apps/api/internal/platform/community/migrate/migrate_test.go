@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"api/internal/platform/community/dbtest"
 	"api/internal/platform/community/model"
 
 	"gorm.io/driver/postgres"
@@ -36,20 +37,29 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "SKIP: cannot connect to test database: %v\n", err)
 		os.Exit(0)
 	}
+	// Serialize against the sibling community test packages (service/handler)
+	// that share this database — otherwise parallel `go test` TRUNCATEs race.
+	sqlDB, _ := db.DB()
+	release := dbtest.AcquireSuiteLock(sqlDB)
+
 	// First migration provisions the schema; running it again here is the
 	// idempotency probe (a second AutoMigrate + IF NOT EXISTS raw section must
 	// be a no-op).
 	if err := Run(db); err != nil {
+		release()
 		fmt.Fprintf(os.Stderr, "SKIP: community migration failed: %v\n", err)
 		os.Exit(0)
 	}
 	if err := Run(db); err != nil {
+		release()
 		fmt.Fprintf(os.Stderr, "community migration is NOT idempotent: %v\n", err)
 		os.Exit(1)
 	}
 
 	testDB = db
-	os.Exit(m.Run())
+	code := m.Run()
+	release()
+	os.Exit(code)
 }
 
 // cleanTables truncates every table so ordering-independent probes start fresh.

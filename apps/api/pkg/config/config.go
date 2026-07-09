@@ -41,7 +41,16 @@ type Config struct {
 	ArtifactS3        S3Config
 	ArtifactService   ArtifactServiceConfig
 
-	CatalogService CatalogServiceConfig
+	CatalogService   CatalogServiceConfig
+	CommunityService CommunityServiceConfig
+}
+
+// CommunityServiceConfig holds community-service bind configuration. The
+// community service (cmd/community) serves the S2S embed face (thread/post/
+// reaction/feedback); see refs/docs/nextmoe-draft/11-community-primitive-design.md.
+type CommunityServiceConfig struct {
+	Host string // Bind address
+	Port int    // Bind port
 }
 
 // CatalogServiceConfig holds catalog-service bind configuration. The catalog
@@ -476,6 +485,14 @@ func Load() (*Config, error) {
 	cfg.CatalogService = CatalogServiceConfig{
 		Host: getEnv("KUN_CATALOG_HOST", "127.0.0.1"),
 		Port: catalogPort,
+	}
+
+	// Community service config. Port 9282 = next free slot after oauth 9277 /
+	// image 9278 / artifact 9279 / galgame 9280 / catalog 9281.
+	communityPort, _ := strconv.Atoi(getEnv("KUN_COMMUNITY_PORT", "9282"))
+	cfg.CommunityService = CommunityServiceConfig{
+		Host: getEnv("KUN_COMMUNITY_HOST", "127.0.0.1"),
+		Port: communityPort,
 	}
 
 	// Validate required fields

@@ -9,6 +9,7 @@
 //	go run ./cmd/gen-openapi -galgame-read -o ../../docs/galgame_wiki/read-openapi.yaml          # wiki read endpoints (3.1)
 //	go run ./cmd/gen-openapi -catalog -o ../../docs/catalog/openapi.yaml                # catalog S2S face (3.1)
 //	go run ./cmd/gen-openapi -catalog-admin -o ../../docs/catalog/admin-openapi.yaml    # catalog review queues (3.1)
+//	go run ./cmd/gen-openapi -community -o ../../docs/community/openapi.yaml             # community S2S embed face (3.1)
 package main
 
 import (
@@ -19,6 +20,7 @@ import (
 	artHandler "api/internal/platform/artifact/handler"
 	"api/internal/platform/artifact/service"
 	catHandler "api/internal/platform/catalog/handler"
+	commHandler "api/internal/platform/community/handler"
 	galgameHandler "api/internal/platform/galgame/handler"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -33,6 +35,7 @@ func main() {
 	galgameRead := flag.Bool("galgame-read", false, "emit the galgame-wiki read-endpoint spec (/api/galgame/batch, …)")
 	catalog := flag.Bool("catalog", false, "emit the catalog S2S spec (/api/v1/catalog/*)")
 	catalogAdmin := flag.Bool("catalog-admin", false, "emit the catalog admin review-queue spec (/api/v1/admin/catalog/*)")
+	community := flag.Bool("community", false, "emit the community S2S embed spec (/api/v1/community/*)")
 	flag.Parse()
 
 	// Build the API to derive the spec; the deps are nil / stub because Setup
@@ -48,6 +51,8 @@ func main() {
 		api = catHandler.Setup(app, nil, nil, nil, nil, nil)
 	case *catalogAdmin:
 		api = catHandler.SetupAdmin(app, nil, nil)
+	case *community:
+		api = commHandler.Setup(app, nil, nil, nil, nil, nil)
 	case *admin:
 		api = artHandler.SetupAdmin(app, artHandler.NewAdmin(nil, nil, nil, 0))
 	default:

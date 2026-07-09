@@ -165,6 +165,11 @@ func (s *ThreadService) GetOrCreateCommentsThread(ctx context.Context, p Comment
 	return nil, err
 }
 
+// Get returns a thread by id, or nil when absent.
+func (s *ThreadService) Get(id int64) (*model.CommunityThread, error) {
+	return s.threads.GetByID(id)
+}
+
 // ListBySite / ListByAnchor expose the two invariant-7 read dimensions.
 func (s *ThreadService) ListBySite(site string, kind int16, cursor repository.ThreadCursor, limit int) ([]model.CommunityThread, error) {
 	return s.threads.ListBySite(site, kind, cursor, clampLimit(limit))

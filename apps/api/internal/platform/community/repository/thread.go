@@ -29,6 +29,11 @@ type ThreadRepository struct{ db *gorm.DB }
 
 func NewThreadRepository(db *gorm.DB) *ThreadRepository { return &ThreadRepository{db: db} }
 
+// GetByID returns the thread or nil when absent.
+func (r *ThreadRepository) GetByID(id int64) (*model.CommunityThread, error) {
+	return getThread(r.db, id)
+}
+
 func getThread(db *gorm.DB, id int64) (*model.CommunityThread, error) {
 	var t model.CommunityThread
 	err := db.First(&t, id).Error

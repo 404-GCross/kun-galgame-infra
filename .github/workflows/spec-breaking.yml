@@ -23,6 +23,7 @@ on:
       - "docs/artifact/admin-openapi.yaml"
       - "docs/catalog/openapi.yaml"
       - "docs/catalog/admin-openapi.yaml"
+      - "docs/community/openapi.yaml"
       - ".github/workflows/spec-breaking.yml"
   pull_request:
     paths: *specs
@@ -78,6 +79,7 @@ jobs:
             docs/artifact/admin-openapi.yaml
             docs/catalog/openapi.yaml
             docs/catalog/admin-openapi.yaml
+            docs/community/openapi.yaml
           "
           rc=0
           for spec in $specs; do

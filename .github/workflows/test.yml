@@ -63,7 +63,8 @@ jobs:
           go run ./cmd/gen-openapi -galgame-read -o ../../docs/galgame_wiki/read-openapi.yaml
           go run ./cmd/gen-openapi -catalog -o ../../docs/catalog/openapi.yaml
           go run ./cmd/gen-openapi -catalog-admin -o ../../docs/catalog/admin-openapi.yaml
-          git diff --exit-code -- ../../docs/artifact/ ../../docs/galgame_wiki/calendar-openapi.yaml ../../docs/galgame_wiki/read-openapi.yaml ../../docs/catalog/
+          go run ./cmd/gen-openapi -community -o ../../docs/community/openapi.yaml
+          git diff --exit-code -- ../../docs/artifact/ ../../docs/galgame_wiki/calendar-openapi.yaml ../../docs/galgame_wiki/read-openapi.yaml ../../docs/catalog/ ../../docs/community/
 
   integration:
     name: integration (postgres + meilisearch)
