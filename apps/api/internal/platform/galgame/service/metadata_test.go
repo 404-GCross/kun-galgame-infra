@@ -694,7 +694,9 @@ func TestGalgame_Create_AliasesWithWhitespace(t *testing.T) {
 	require.NoError(t, err)
 
 	var aliases []model.GalgameAlias
-	testDB.Where("galgame_id = ?", g.ID).Find(&aliases)
+	// Order by name: an unordered SELECT is not guaranteed to return insertion
+	// order, and alias order is not semantic — this assertion is about the set.
+	testDB.Where("galgame_id = ?", g.ID).Order("name").Find(&aliases)
 	assert.Len(t, aliases, 2)
 	assert.Equal(t, "name1", aliases[0].Name)
 	assert.Equal(t, "name2", aliases[1].Name)
