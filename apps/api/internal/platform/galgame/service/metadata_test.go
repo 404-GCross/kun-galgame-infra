@@ -867,8 +867,8 @@ func TestUserStats_ContributedVsCreated(t *testing.T) {
 	stats, err := testSvc.GetUserStats(ctx, 2)
 	require.NoError(t, err)
 	assert.Equal(t, 0, stats.GalgameCreated)     // user 2 didn't create any
-	assert.Equal(t, 1, stats.GalgameContributed)  // but contributed to 1
-	assert.Equal(t, 1, stats.RevisionCount)       // 1 "updated" revision
+	assert.Equal(t, 1, stats.GalgameContributed) // but contributed to 1
+	assert.Equal(t, 1, stats.RevisionCount)      // 1 "updated" revision
 }
 
 func TestUserStats_PRCounts(t *testing.T) {
@@ -950,9 +950,37 @@ func TestAdminStats_Totals(t *testing.T) {
 	assert.Equal(t, 1, stats.Totals.GalgameOfficial)
 	assert.Equal(t, 1, stats.Totals.GalgameEngine)
 	assert.Equal(t, 1, stats.Totals.GalgameSeries)
-	assert.Equal(t, 1, stats.Totals.GalgameLink)     // auto VNDB link
+	assert.Equal(t, 1, stats.Totals.GalgameLink) // auto VNDB link
 	assert.Equal(t, 0, stats.Totals.GalgamePR)
-	assert.Equal(t, 1, stats.Totals.GalgameRevision)  // "created" revision
+	assert.Equal(t, 1, stats.Totals.GalgameRevision) // "created" revision
+}
+
+// dbToday returns the date string the SQL side buckets "now" into. The daily
+// buckets come from date_trunc('day', …) in the PG SESSION timezone, which is
+// not necessarily pgSessionLocation()'s zone when the test DSN carries no
+// TimeZone (CI: UTC session vs Asia/Shanghai default → the last series entry is
+// not the bucket rows land in during the UTC 16:00-24:00 window). This covers
+// the harness shape where the Go zone runs AHEAD of the session zone (the
+// series then still contains the session's today, days >= 2); a Go zone BEHIND
+// the session violates the product's env-mirrors-DSN convention and is out of
+// scope.
+func dbToday(t *testing.T) string {
+	t.Helper()
+	var d string
+	require.NoError(t, testDB.Raw("SELECT date_trunc('day', now())::date::text").Scan(&d).Error)
+	return d
+}
+
+// dailyEntry finds the series entry for the given date; fails the test if absent.
+func dailyEntry(t *testing.T, daily []dto.AdminStatsDaily, date string) dto.AdminStatsDaily {
+	t.Helper()
+	for _, e := range daily {
+		if e.Date == date {
+			return e
+		}
+	}
+	t.Fatalf("no daily entry for %s (series spans %s..%s)", date, daily[0].Date, daily[len(daily)-1].Date)
+	return dto.AdminStatsDaily{}
 }
 
 func TestAdminStats_DailyCountsToday(t *testing.T) {
@@ -965,14 +993,16 @@ func TestAdminStats_DailyCountsToday(t *testing.T) {
 	createTestOfficial(t, "DevA", "company")
 	testSvc.Create(ctx, 1, &dto.CreateGalgameRequest{VNDBID: "v80010"})
 
-	stats, err := testAdminRepo.GetStats(ctx, 1)
+	// Two days so the series covers the SQL bucket even when the session TZ and
+	// pgSessionLocation() disagree on what "today" is (±1 day skew).
+	stats, err := testAdminRepo.GetStats(ctx, 2)
 	require.NoError(t, err)
 
 	// All created today → should appear in daily
 	require.GreaterOrEqual(t, len(stats.Daily), 1)
 
-	// Find today's entry
-	today := stats.Daily[len(stats.Daily)-1]
+	// Find the entry for the day the DB actually bucketed the rows into.
+	today := dailyEntry(t, stats.Daily, dbToday(t))
 	assert.Equal(t, 2, today.GalgameTag)
 	assert.Equal(t, 1, today.GalgameOfficial)
 	assert.Equal(t, 1, today.GalgameLink)
@@ -1017,8 +1047,9 @@ func TestAdminStats_PRIncluded(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 1, stats.Totals.GalgamePR)
 
-	// Daily should have PR count
+	// Daily should have PR count (entry looked up by the DB's own bucket date —
+	// see dbToday).
 	require.GreaterOrEqual(t, len(stats.Daily), 1)
-	today := stats.Daily[len(stats.Daily)-1]
+	today := dailyEntry(t, stats.Daily, dbToday(t))
 	assert.Equal(t, 1, today.GalgamePR)
 }
