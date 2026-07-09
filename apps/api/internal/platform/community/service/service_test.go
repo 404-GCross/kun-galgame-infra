@@ -112,6 +112,38 @@ func getThread(t *testing.T, id int64) *model.CommunityThread {
 	return &th
 }
 
+// getTrust reloads a trust row for assertions.
+func getTrust(t *testing.T, userID int64) *model.CommunityTrust {
+	t.Helper()
+	var tr model.CommunityTrust
+	if err := testDB.Where("user_id = ?", userID).First(&tr).Error; err != nil {
+		t.Fatalf("get trust %d: %v", userID, err)
+	}
+	return &tr
+}
+
+// setLikes forces a user's like counters (which normally flow from the reaction
+// path) so promotion tests can isolate the metering thresholds.
+func setLikes(t *testing.T, userID int64, given, received int32) {
+	t.Helper()
+	if err := testDB.Exec(
+		`UPDATE community_trust SET likes_given = ?, likes_received = ? WHERE user_id = ?`,
+		given, received, userID,
+	).Error; err != nil {
+		t.Fatalf("set likes: %v", err)
+	}
+}
+
+// getPost reloads a post for assertions.
+func getPost(t *testing.T, id int64) *model.CommunityPost {
+	t.Helper()
+	var p model.CommunityPost
+	if err := testDB.First(&p, id).Error; err != nil {
+		t.Fatalf("reload post %d: %v", id, err)
+	}
+	return &p
+}
+
 // openTopic opens a topic by an established (TL1, no holds) author so the flow
 // under test is not perturbed by the sandbox.
 func openTopic(t *testing.T, ts *ThreadService, site string, author int64, anchorID, body string) *model.CommunityThread {

@@ -62,7 +62,7 @@ func cleanTables(t *testing.T) {
 // must produce a valid OpenAPI document with the embed face operations. This is
 // exactly what cmd/gen-openapi -community serializes.
 func TestSpecExport(t *testing.T) {
-	api := Setup(fiber.New(), nil, nil, nil, nil, nil)
+	api := Setup(fiber.New(), nil, nil, nil, nil, nil, nil, nil)
 	b, err := api.OpenAPI().YAML()
 	if err != nil {
 		t.Fatalf("marshal spec: %v", err)
@@ -72,8 +72,12 @@ func TestSpecExport(t *testing.T) {
 		"/api/v1/community/comments/resolve",
 		"/api/v1/community/threads",
 		"/api/v1/community/topics",
+		"/api/v1/community/trust/activity",
+		"/api/v1/community/review",
 		"operationId: reply",
 		"operationId: submitFlag",
+		"operationId: recordActivity",
+		"operationId: approveReview",
 	} {
 		if !strings.Contains(spec, want) {
 			t.Errorf("spec missing %q", want)
@@ -98,7 +102,9 @@ func TestHandlerFlow(t *testing.T) {
 		posts:     service.NewPostService(testDB, sink),
 		reactions: service.NewReactionService(testDB),
 		feedback:  service.NewFeedbackService(testDB, sink),
-		flags:     service.NewFlagService(testDB),
+		flags:     service.NewFlagService(testDB, sink),
+		trust:     service.NewTrustService(testDB),
+		review:    service.NewReviewService(testDB),
 	}
 	ctx := clientCtx("letmoe")
 

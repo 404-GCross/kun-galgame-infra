@@ -48,6 +48,34 @@ func toThreadViews(threads []model.CommunityThread) []dto.ThreadView {
 	return out
 }
 
+func toTrustView(t *model.CommunityTrust) dto.TrustView {
+	return dto.TrustView{
+		UserID: t.UserID, Level: t.Level,
+		TopicsEntered: t.TopicsEntered, PostsRead: t.PostsRead, ReadTimeS: t.ReadTimeS, DaysVisited: t.DaysVisited,
+		LikesGiven: t.LikesGiven, LikesReceived: t.LikesReceived,
+		FlagsAgreed: t.FlagsAgreed, FlagsDisagreed: t.FlagsDisagreed,
+		FirstPostsHeldRemaining: t.FirstPostsHeldRemaining, GrantedBoost: t.GrantedBoost,
+	}
+}
+
+func toReviewItemView(it *model.CommunityReviewItem) dto.ReviewItemView {
+	v := dto.ReviewItemView{
+		ID: it.ID, PostID: it.PostID, Source: it.Source, Status: it.Status, DecidedBy: it.DecidedBy,
+	}
+	if it.Site != nil {
+		v.Site = *it.Site
+	}
+	return v
+}
+
+func toReviewItemViews(items []model.CommunityReviewItem) []dto.ReviewItemView {
+	out := make([]dto.ReviewItemView, len(items))
+	for i := range items {
+		out[i] = toReviewItemView(&items[i])
+	}
+	return out
+}
+
 // --- thread-list keyset cursor (opaque base64 of the sort tuple) -----------
 // Wire format: base64("<lastPostedUnixNano | 'n'>:<id>"); 'n' marks the NULL
 // activity tail. Produced and parsed only here.

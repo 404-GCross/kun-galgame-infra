@@ -85,7 +85,12 @@ func (s *PostService) Reply(ctx context.Context, p ReplyParams) (*model.Communit
 		if err != nil {
 			return err
 		}
-		number := thread.HighestPostNumber + 1
+		// Atomically allocate the next post_number (row-locked) BEFORE inserting
+		// the post, so concurrent replies never collide on the number.
+		number, err := repository.AllocateReplyTx(tx, p.ThreadID, now, !posted)
+		if err != nil {
+			return err
+		}
 		post = model.CommunityPost{
 			ThreadID: p.ThreadID, PostNumber: number,
 			RootPostID: p.RootPostID, ReplyToPostID: p.ReplyToPostID, TargetUserID: p.TargetUserID,
@@ -100,10 +105,12 @@ func (s *PostService) Reply(ctx context.Context, p ReplyParams) (*model.Communit
 		if err := repository.CreatePostTx(tx, &post); err != nil {
 			return err
 		}
-		if err := repository.BumpThreadCountersTx(tx, p.ThreadID, number, now, !posted); err != nil {
-			return err
-		}
 		if held {
+			// A held newcomer post enters the review queue (doc 11 §6 layer 5);
+			// releasing it is a queue approve (step 03's ReviewService).
+			if _, err := repository.EnqueueReviewIfAbsentTx(tx, thread.Site, post.ID, model.ReviewSourceFirstPostHold); err != nil {
+				return err
+			}
 			return repository.DecrementHoldTx(tx, p.AuthorID)
 		}
 		return nil

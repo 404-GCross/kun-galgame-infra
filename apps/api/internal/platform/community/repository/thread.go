@@ -133,19 +133,28 @@ func CreateThreadTx(tx *gorm.DB, t *model.CommunityThread, bornEmpty bool) error
 	return nil
 }
 
-// BumpThreadCountersTx applies one new post's effect on the denormalized
-// counters in the same tx (doc 11 §4.3: application-maintained, no triggers).
-// newParticipant increments participants_count only when the author had not
-// posted in this thread before.
-func BumpThreadCountersTx(tx *gorm.DB, threadID int64, postNumber int32, at time.Time, newParticipant bool) error {
-	updates := map[string]any{
-		"posts_count":         gorm.Expr("posts_count + 1"),
-		"highest_post_number": postNumber,
-		"last_posted_at":      at,
-		"updated_at":          at,
-	}
+// AllocateReplyTx atomically bumps a thread's denormalized counters for one new
+// reply and RETURNS the allocated post_number (doc 11 §4.3: app-maintained, no
+// triggers). The single UPDATE takes a row lock, so concurrent replies serialize
+// and never collide on a post_number — the numbering stays gap-free and
+// dup-free without an advisory retry loop. newParticipant increments
+// participants_count only when the author had not posted in the thread before.
+func AllocateReplyTx(tx *gorm.DB, threadID int64, at time.Time, newParticipant bool) (int32, error) {
+	incParticipant := 0
 	if newParticipant {
-		updates["participants_count"] = gorm.Expr("participants_count + 1")
+		incParticipant = 1
 	}
-	return tx.Model(&model.CommunityThread{}).Where("id = ?", threadID).Updates(updates).Error
+	var number int32
+	err := tx.Raw(`
+		UPDATE community_thread
+		   SET posts_count         = posts_count + 1,
+		       highest_post_number = highest_post_number + 1,
+		       participants_count  = participants_count + ?,
+		       last_posted_at      = ?,
+		       updated_at          = ?
+		 WHERE id = ?
+		RETURNING highest_post_number`,
+		incParticipant, at, at, threadID,
+	).Scan(&number).Error
+	return number, err
 }

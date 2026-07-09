@@ -1,0 +1,123 @@
+# Community Service — S2S contract
+
+> The community primitive (`cmd/community`, database `kun_community`) is a
+> multi-tenant discussion service whose only unit is a **thread**; an anchor
+> decides the three shapes (board topic / entity-resource comments / feedback
+> with a status flow). Design truth: `refs/docs/nextmoe-draft/11-community-primitive-design.md`.
+> The machine-readable contract is `openapi.yaml` (code-first, exported by
+> `cmd/gen-openapi -community`); this page is the human companion — authentication,
+> tenancy, user context, and the trust/moderation semantics the spec cannot state.
+
+## 1. Surface & transport
+
+- Code-first OpenAPI 3.1 via Huma on Fiber v3. House envelope on every response:
+  `{ "code": 0, "message": "成功", "data": … }`; errors use the same envelope
+  with a non-zero `code` and the appropriate HTTP status.
+- Base path `/api/v1/community`. Bind port **9282** (`KUN_COMMUNITY_PORT`).
+- `GET /openapi.json` (unauthenticated) serves the live spec; `GET /healthz`.
+- Migrations are NOT run at startup — `cmd/migrate-community` is the single entry
+  point against `kun_community`.
+
+## 2. Authentication & tenancy
+
+- **S2S Basic auth**: `Authorization: Basic base64(client_id:client_secret)`
+  against the OAuth client registry. Any valid first-party client authenticates;
+  the caller is a site BFF, not a browser.
+- **Tenant `site` is derived, never on the wire.** It comes from the
+  authenticated client's binding `oauth_clients.catalog_site` (the shared
+  per-client site key, reused as the community tenant). A client with no binding
+  is refused on every write and on the site-scoped reads (`403`). This makes a
+  client unable to act outside its own site.
+- **User context is BFF-supplied.** Per-user identities (`author_id`, `user_id`,
+  `flagger_id`, `responder_id`, `decided_by`) travel in the request body: the BFF
+  has already authenticated the user against the shared session (OIDC), and
+  community trusts that assertion. Community never reverse-connects to the main
+  DB or the IdP.
+
+## 3. Read faces (embed-first)
+
+- `POST /comments/resolve` — get-or-create the single comments thread for an
+  anchor and return its first page of posts (the embed read-first-screen; Coral
+  story model). Idempotent per anchor (invariant 4).
+- `GET /threads` — the site's threads of a `kind`, newest-activity first, keyset
+  (`cursor` opaque). `GET /threads/{id}` and `GET /threads/{id}/posts` — a thread
+  with a page of posts, keyset by `post_number` (`after`). Cooked HTML is served
+  for display; the raw markdown is included for the editor.
+
+## 4. Write faces (embed capability set, invariant 11)
+
+`POST /topics`, `POST /feedback` (each opens a thread with its opening post),
+`POST /threads/{id}/posts` (reply), `POST /posts/{id}/reaction` (toggle),
+`POST /posts/{id}/flag` (report), `POST /feedback/{id}/status`,
+`POST /feedback/{id}/merge`. Capabilities are read/post/reply/react/report/
+feedback — NOT a shrunken forum (edit history, advanced search, mod tooling live
+on the full surface).
+
+### Write-time content pipeline (invariant 6)
+
+Every post body is Markdown. On write it is rendered (goldmark, GFM, raw HTML
+escaped) then sanitized against a shared whitelist (bluemonday UGC: scripts /
+event handlers / dangerous schemes stripped, links `rel=nofollow`). Both the raw
+markdown (`content_raw`) and the cooked HTML (`content_html`) are stored with the
+`sanitizer_version` that produced them; a version bump re-cooks stale posts.
+
+### TL0 sandbox (day-1, doc 11 §6 layer 2)
+
+A TL0 newcomer is limited to ≤2 links / 1 image / 2 mentions per post, ≤3 topics
+and ≤10 replies per rolling 24h, and their first 2 posts are **held** (created
+hidden + enqueued for review). TL≥1 is exempt from the content and daily caps.
+Exceeding a cap returns `429`.
+
+## 5. Trust engine (doc 11 §6)
+
+- **Metering** — `POST /trust/activity` is the site BFF's batch receipt of a
+  user's reading behavior (deltas: topics entered / posts read / read seconds /
+  days visited). Likes are counted in place by the reaction flow, not here. A
+  trust row is lazily created (TL0) on first contact.
+- **Promotion** (Discourse-derived numbers, centralized & tunable):
+  TL0→1 = 5 topics / 30 posts / 10 min; TL1→2 = 15 days / gave+received a like /
+  100 posts. TL2→3 uses a **rolling-100-day** activity gate that community does
+  not store: the receipt carries `window_active_days` (site-computed "active days
+  in the last 100"), and ≥50 promotes to TL3. TL3 is the only demotable level — a
+  later receipt whose window falls below the bar drops the user to their earned
+  cumulative level. TL4 is human-granted only. Evaluation is in place after each
+  receipt (no cron at single-site scale); the level layer is idempotent (a stale
+  receipt never over-promotes).
+- **Starter boost** — `POST /trust/boost` records a declaration made **at the
+  consuming site** (which holds the IdP claims: account age / creator / staff).
+  Community only records `granted_boost` and applies it as a floor:
+  veteran/creator → TL1, staff → TL3. A boost never demotes; the staff floor also
+  shields TL3 from a rolling-window demotion.
+
+## 6. Reputation-weighted reporting & the review queue (doc 11 §6 layers 4-5)
+
+- A report's **weight** = the reporter's per-TL base (TL0 1.0 … TL4 2.5) × their
+  historical accuracy `agreed/(agreed+disagreed)` (1.0 with no history). A post
+  whose accumulated **pending** weight reaches the threshold (≈3 ordinary reports)
+  auto-hides, is enqueued (`source=flags`), and emits `flag.threshold`. A **TL3+**
+  reporter against a **TL0** author hides on a single vote. Reporting an
+  already-hidden/tombstoned post records the flag but never re-enqueues.
+- **Centralized queue** — `GET /review` lists the site's pending items (optional
+  `source` filter; the cross-site super-view is a future NextMoe concern). A
+  decision is about the CONTENT: `approve` keeps it (post restored to visible),
+  `reject` removes it (post tombstoned). A decision on a flags item **backfills
+  every reporter's accuracy** (approve → the reports were wrong → `flags_disagreed`;
+  reject → right → `flags_agreed`), which feeds their future weight — the
+  reputation loop. Releasing a `first_post_hold` item does not refund the hold
+  counter (one-way consumption).
+- **No automatic bans** (invariant 9): cross-site signals only soft-hold into the
+  queue; hard bans come only from humans and IdP-level suspension.
+
+## 7. Events (doc 11 §7)
+
+The service only EMITS domain events (`post.created`, `reply.to_you`, `mention`,
+`feedback.status_changed`, `flag.threshold`); delivery and aggregation belong to
+the notification layer. v0 delivery is a no-op sink.
+
+## 8. Not yet on the wire (deferred, with triggers)
+
+Pre-moderation switch (per-thread/site, opened on a malicious event), Akismet /
+external moderation callback (the `external` review source is reserved),
+unread/subscription reads and board management (read-surface deepening /
+letmoe cut-over), aggregate hot-ranking and materialized jobs (scale-trigger),
+and any web/TS type generation (no in-repo consumer — letmoe reaches over S2S).

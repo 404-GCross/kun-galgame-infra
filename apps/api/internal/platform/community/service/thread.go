@@ -113,6 +113,10 @@ func (s *ThreadService) openWithFirstPost(ctx context.Context, kind int16, p Ope
 			return err
 		}
 		if held {
+			// A held opening post by a newcomer enters the review queue too.
+			if _, err := repository.EnqueueReviewIfAbsentTx(tx, thread.Site, post.ID, model.ReviewSourceFirstPostHold); err != nil {
+				return err
+			}
 			return repository.DecrementHoldTx(tx, p.AuthorID)
 		}
 		return nil

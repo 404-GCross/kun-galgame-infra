@@ -52,7 +52,7 @@ func main() {
 	case *catalogAdmin:
 		api = catHandler.SetupAdmin(app, nil, nil)
 	case *community:
-		api = commHandler.Setup(app, nil, nil, nil, nil, nil)
+		api = commHandler.Setup(app, nil, nil, nil, nil, nil, nil, nil)
 	case *admin:
 		api = artHandler.SetupAdmin(app, artHandler.NewAdmin(nil, nil, nil, 0))
 	default:

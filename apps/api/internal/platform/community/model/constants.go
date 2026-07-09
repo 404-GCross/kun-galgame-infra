@@ -131,13 +131,18 @@ const (
 	GrantedBoostStaff   int16 = 3
 )
 
-// Flag reason (community_flag.reason; NULL = unspecified). Small provisional
-// starter set — the reason vocabulary is finalized with the reporting UI (03).
+// Flag reason (community_flag.reason; NULL = unspecified) — finalized (step 03).
+// Values 0-3 are kept from the step-02 provisional set (never renumber a
+// persisted value); nsfw_mislabel is appended. Slot 1 is renamed Offensive→
+// Abuse (same meaning, sharper word). The maintenance-community bias: mislabeled
+// content rating (nsfw_mislabel) is its own reason because a resource site's
+// primary report is "this is tagged wrong", not "this is abuse".
 const (
-	FlagReasonSpam      int16 = 0
-	FlagReasonOffensive int16 = 1
-	FlagReasonOffTopic  int16 = 2
-	FlagReasonOther     int16 = 3
+	FlagReasonSpam         int16 = 0
+	FlagReasonAbuse        int16 = 1
+	FlagReasonOffTopic     int16 = 2
+	FlagReasonOther        int16 = 3
+	FlagReasonNsfwMislabel int16 = 4
 )
 
 // Flag status (community_flag.status) — the reviewer's disposition, feeding the

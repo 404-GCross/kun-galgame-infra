@@ -17,6 +17,11 @@ var (
 	// ErrNotFeedback is returned when a feedback operation targets a
 	// non-feedback thread.
 	ErrNotFeedback = errors.New("community: thread is not a feedback thread")
+	// ErrPostNotFound is returned when a target post id does not exist.
+	ErrPostNotFound = errors.New("community: post not found")
+	// ErrReviewNotFound is returned when a target review-queue item does not
+	// exist (or is not actionable).
+	ErrReviewNotFound = errors.New("community: review item not found")
 )
 
 // SandboxError is returned when a TL0 newcomer trips a sandbox limit (doc 11

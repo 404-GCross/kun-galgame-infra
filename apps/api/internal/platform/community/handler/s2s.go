@@ -27,12 +27,14 @@ type Server struct {
 	reactions *service.ReactionService
 	feedback  *service.FeedbackService
 	flags     *service.FlagService
+	trust     *service.TrustService
+	review    *service.ReviewService
 }
 
 // Setup builds the community S2S Huma API over the Fiber app. S2SAuth is applied
 // by the caller as path-scoped Fiber middleware BEFORE this. Callable with nil
 // services for spec export (handlers are never invoked then).
-func Setup(app *fiber.App, threads *service.ThreadService, posts *service.PostService, reactions *service.ReactionService, feedback *service.FeedbackService, flags *service.FlagService) huma.API {
+func Setup(app *fiber.App, threads *service.ThreadService, posts *service.PostService, reactions *service.ReactionService, feedback *service.FeedbackService, flags *service.FlagService, trust *service.TrustService, review *service.ReviewService) huma.API {
 	InstallErrorEnvelope()
 
 	cfg := huma.DefaultConfig("KUN Community Service", "1.0.0")
@@ -43,7 +45,7 @@ func Setup(app *fiber.App, threads *service.ThreadService, posts *service.PostSe
 	api := humafiber.New(app, cfg)
 	api.UseMiddleware(S2SBridge)
 
-	s := &Server{threads: threads, posts: posts, reactions: reactions, feedback: feedback, flags: flags}
+	s := &Server{threads: threads, posts: posts, reactions: reactions, feedback: feedback, flags: flags, trust: trust, review: review}
 	s.register(api)
 	return api
 }
@@ -75,6 +77,19 @@ func (s *Server) register(api huma.API) {
 		Summary: "Set a feedback thread's status and official response", Tags: write}, s.setFeedbackStatus)
 	huma.Register(api, huma.Operation{OperationID: "mergeFeedback", Method: http.MethodPost, Path: "/api/v1/community/feedback/{id}/merge",
 		Summary: "Merge a duplicate feedback thread into another (reversible)", Tags: write}, s.mergeFeedback)
+
+	trust := []string{"community-trust"}
+	review := []string{"community-review"}
+	huma.Register(api, huma.Operation{OperationID: "recordActivity", Method: http.MethodPost, Path: "/api/v1/community/trust/activity",
+		Summary: "Report a user's reading-behavior activity (metering + promotion)", Tags: trust}, s.recordActivity)
+	huma.Register(api, huma.Operation{OperationID: "setBoost", Method: http.MethodPost, Path: "/api/v1/community/trust/boost",
+		Summary: "Declare a starter boost (veteran/creator/staff) for a user", Tags: trust}, s.setBoost)
+	huma.Register(api, huma.Operation{OperationID: "listReview", Method: http.MethodGet, Path: "/api/v1/community/review",
+		Summary: "List the site's pending moderation-queue items", Tags: review}, s.listReview)
+	huma.Register(api, huma.Operation{OperationID: "approveReview", Method: http.MethodPost, Path: "/api/v1/community/review/{id}/approve",
+		Summary: "Approve a queue item (keep the content; restore the post)", Tags: review}, s.approveReview)
+	huma.Register(api, huma.Operation{OperationID: "rejectReview", Method: http.MethodPost, Path: "/api/v1/community/review/{id}/reject",
+		Summary: "Reject a queue item (remove the content; tombstone the post)", Tags: review}, s.rejectReview)
 }
 
 // --- read ------------------------------------------------------------------
@@ -291,6 +306,85 @@ func (s *Server) mergeFeedback(ctx context.Context, in *feedbackMergeInput) (*ok
 	return &okOutput{Body: okEnvelope(dto.OKResponse{OK: true})}, nil
 }
 
+// --- trust / moderation ----------------------------------------------------
+
+type recordActivityInput struct{ Body dto.ActivityReceiptRequest }
+type trustOutput struct {
+	Body Envelope[dto.TrustView]
+}
+
+func (s *Server) recordActivity(ctx context.Context, in *recordActivityInput) (*trustOutput, error) {
+	if _, he := siteBinding(ctx); he != nil {
+		return nil, he
+	}
+	trust, err := s.trust.RecordActivity(ctx, service.ActivityReceipt{
+		UserID: in.Body.UserID, TopicsEntered: in.Body.TopicsEntered, PostsRead: in.Body.PostsRead,
+		ReadTimeS: in.Body.ReadTimeS, DaysVisited: in.Body.DaysVisited, WindowActiveDays: in.Body.WindowActiveDays,
+	})
+	if err != nil {
+		return nil, mapErr("record activity", err)
+	}
+	return &trustOutput{Body: okEnvelope(toTrustView(trust))}, nil
+}
+
+type setBoostInput struct{ Body dto.SetBoostRequest }
+
+func (s *Server) setBoost(ctx context.Context, in *setBoostInput) (*trustOutput, error) {
+	if _, he := siteBinding(ctx); he != nil {
+		return nil, he
+	}
+	trust, err := s.trust.SetBoost(ctx, in.Body.UserID, in.Body.Boost)
+	if err != nil {
+		return nil, mapErr("set boost", err)
+	}
+	return &trustOutput{Body: okEnvelope(toTrustView(trust))}, nil
+}
+
+type listReviewInput struct {
+	Source int16 `query:"source" default:"-1" doc:"filter to one source; -1 = all"`
+	Limit  int   `query:"limit"`
+}
+type reviewListOutput struct {
+	Body Envelope[dto.ReviewListResponse]
+}
+
+func (s *Server) listReview(ctx context.Context, in *listReviewInput) (*reviewListOutput, error) {
+	site, he := siteBinding(ctx)
+	if he != nil {
+		return nil, he
+	}
+	items, err := s.review.List(site, in.Source, clampLimit(in.Limit))
+	if err != nil {
+		return nil, mapErr("list review", err)
+	}
+	return &reviewListOutput{Body: okEnvelope(dto.ReviewListResponse{Items: toReviewItemViews(items)})}, nil
+}
+
+type reviewDecisionInput struct {
+	ID   int64 `path:"id"`
+	Body dto.ReviewDecisionRequest
+}
+
+func (s *Server) approveReview(ctx context.Context, in *reviewDecisionInput) (*okOutput, error) {
+	if _, he := siteBinding(ctx); he != nil {
+		return nil, he
+	}
+	if err := s.review.Approve(ctx, in.ID, in.Body.DecidedBy); err != nil {
+		return nil, mapErr("approve review", err)
+	}
+	return &okOutput{Body: okEnvelope(dto.OKResponse{OK: true})}, nil
+}
+
+func (s *Server) rejectReview(ctx context.Context, in *reviewDecisionInput) (*okOutput, error) {
+	if _, he := siteBinding(ctx); he != nil {
+		return nil, he
+	}
+	if err := s.review.Reject(ctx, in.ID, in.Body.DecidedBy); err != nil {
+		return nil, mapErr("reject review", err)
+	}
+	return &okOutput{Body: okEnvelope(dto.OKResponse{OK: true})}, nil
+}
+
 // --- helpers ---------------------------------------------------------------
 
 func clampLimit(limit int) int {
@@ -317,7 +411,9 @@ func mapErr(op string, err error) *houseError {
 	switch {
 	case stderrors.As(err, &sandbox):
 		return apiErrMsg(http.StatusTooManyRequests, errors.ErrOperationFailed, "sandbox limit: "+sandbox.Reason)
-	case stderrors.Is(err, service.ErrThreadNotFound):
+	case stderrors.Is(err, service.ErrThreadNotFound),
+		stderrors.Is(err, service.ErrPostNotFound),
+		stderrors.Is(err, service.ErrReviewNotFound):
 		return apiErr(http.StatusNotFound, errors.ErrNotFound)
 	case stderrors.Is(err, service.ErrThreadNotOpen):
 		return apiErrMsg(http.StatusConflict, errors.ErrOperationFailed, "thread is not open")

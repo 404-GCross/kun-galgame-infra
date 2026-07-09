@@ -151,3 +151,61 @@ type ReactionToggleResponse struct {
 type OKResponse struct {
 	OK bool `json:"ok"`
 }
+
+// --- trust / moderation ----------------------------------------------------
+
+// ActivityReceiptRequest is one batch of a user's reading-behavior activity a
+// site BFF reports (deltas; likes are counted by the reaction flow, not here).
+type ActivityReceiptRequest struct {
+	UserID        int64 `json:"user_id"`
+	TopicsEntered int32 `json:"topics_entered"`
+	PostsRead     int32 `json:"posts_read"`
+	ReadTimeS     int32 `json:"read_time_s"`
+	DaysVisited   int32 `json:"days_visited"`
+	// WindowActiveDays is the site-computed "days active in the last 100"; when
+	// present it drives the TL3 promote/demote decision.
+	WindowActiveDays *int32 `json:"window_active_days,omitempty"`
+}
+
+// SetBoostRequest declares a starter boost decided at the consuming site (it
+// holds the IdP claims: account age / creator / staff).
+type SetBoostRequest struct {
+	UserID int64 `json:"user_id"`
+	Boost  int16 `json:"boost" doc:"0=none 1=veteran 2=creator 3=staff"`
+}
+
+// TrustView is a user's trust state.
+type TrustView struct {
+	UserID                  int64  `json:"user_id"`
+	Level                   int16  `json:"level"`
+	TopicsEntered           *int32 `json:"topics_entered,omitempty"`
+	PostsRead               *int32 `json:"posts_read,omitempty"`
+	ReadTimeS               *int32 `json:"read_time_s,omitempty"`
+	DaysVisited             *int32 `json:"days_visited,omitempty"`
+	LikesGiven              *int32 `json:"likes_given,omitempty"`
+	LikesReceived           *int32 `json:"likes_received,omitempty"`
+	FlagsAgreed             *int32 `json:"flags_agreed,omitempty"`
+	FlagsDisagreed          *int32 `json:"flags_disagreed,omitempty"`
+	FirstPostsHeldRemaining int32  `json:"first_posts_held_remaining"`
+	GrantedBoost            *int16 `json:"granted_boost,omitempty"`
+}
+
+// ReviewItemView is a moderation-queue item.
+type ReviewItemView struct {
+	ID        int64  `json:"id"`
+	Site      string `json:"site,omitempty"`
+	PostID    *int64 `json:"post_id,omitempty"`
+	Source    *int16 `json:"source,omitempty" doc:"0=flags 1=first_post_hold 2=suspect_words 3=external"`
+	Status    int16  `json:"status" doc:"0=pending 1=approved 2=rejected"`
+	DecidedBy *int64 `json:"decided_by,omitempty"`
+}
+
+// ReviewListResponse is a page of pending queue items.
+type ReviewListResponse struct {
+	Items []ReviewItemView `json:"items"`
+}
+
+// ReviewDecisionRequest carries the operator id of an approve/reject.
+type ReviewDecisionRequest struct {
+	DecidedBy int64 `json:"decided_by"`
+}

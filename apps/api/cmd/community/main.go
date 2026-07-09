@@ -72,7 +72,9 @@ func main() {
 	postSvc := service.NewPostService(communityDB.DB(), sink)
 	reactionSvc := service.NewReactionService(communityDB.DB())
 	feedbackSvc := service.NewFeedbackService(communityDB.DB(), sink)
-	flagSvc := service.NewFlagService(communityDB.DB())
+	flagSvc := service.NewFlagService(communityDB.DB(), sink)
+	trustSvc := service.NewTrustService(communityDB.DB())
+	reviewSvc := service.NewReviewService(communityDB.DB())
 
 	application.Fiber.Use(middleware.RequestID())
 	application.Fiber.Use(middleware.Logger())
@@ -85,7 +87,7 @@ func main() {
 	clientRepo := siteRepo.NewOAuthClientRepository(application.DB.DB())
 	application.Fiber.Use("/api/v1/community", commHandler.S2SAuth(clientRepo))
 
-	api := commHandler.Setup(application.Fiber, threadSvc, postSvc, reactionSvc, feedbackSvc, flagSvc)
+	api := commHandler.Setup(application.Fiber, threadSvc, postSvc, reactionSvc, feedbackSvc, flagSvc, trustSvc, reviewSvc)
 
 	// Serve the S2S OpenAPI 3.1 spec unauthenticated at the app root.
 	application.Fiber.Get("/openapi.json", func(c fiber.Ctx) error {

@@ -7,6 +7,10 @@ const (
 	EventReplyToYou            = "reply.to_you"
 	EventMention               = "mention"
 	EventFeedbackStatusChanged = "feedback.status_changed"
+	// EventFlagThreshold fires when a post's accumulated report weight crosses
+	// the auto-hide threshold (doc 11 §7) — the notification layer surfaces it
+	// to moderators.
+	EventFlagThreshold = "flag.threshold"
 )
 
 // Event is a domain event.

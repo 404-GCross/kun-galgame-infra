@@ -55,3 +55,10 @@ func AuthorHasPostedTx(tx *gorm.DB, threadID, authorID int64) (bool, error) {
 	}
 	return n > 0, nil
 }
+
+// SetPostStatusTx sets a post's status (flag auto-hide, queue approve/reject
+// tombstone — invariant 13: status, not gorm.DeletedAt).
+func SetPostStatusTx(tx *gorm.DB, postID int64, status int16) error {
+	return tx.Model(&model.CommunityPost{}).Where("id = ?", postID).
+		Update("status", status).Error
+}
