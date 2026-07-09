@@ -45,7 +45,15 @@
   feedback-wall read path. It is generic across kinds (a per-anchor comments or
   topic listing benefits too), site-scoped, and keyset-paginated like the
   unfiltered listing. A real anchor id is never empty, so an empty `anchor_id` is
-  the "no filter, whole site" sentinel. `GET /threads/{id}` and
+  the "no filter, whole site" sentinel. Each listed thread also carries its
+  **opening post's** `opening_status` + `opening_author_id` (the post_number=1
+  status/author; absent for an empty comments thread) so an embed can hide an
+  opening post that must not leak its title — a **held** (TL0 first-post) opening
+  post is visible only to its author, a **self-deleted** (tombstoned) one is
+  gone. The thread's own `status` stays `open` in both cases (the moderation
+  state lives on the post), so the list cannot filter on `status` alone; the
+  fields are populated only on this list read, not on a thread detail (which
+  already carries the opening post in its posts page). `GET /threads/{id}` and
   `GET /threads/{id}/posts` — a thread with a page of posts, keyset by
   `post_number` (`after`). Cooked HTML is served for display; the raw markdown is
   included for the editor.

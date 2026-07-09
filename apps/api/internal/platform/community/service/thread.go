@@ -185,6 +185,14 @@ func (s *ThreadService) ListByAnchor(anchorKind int16, anchorID string, kind int
 	return s.threads.ListByAnchor(anchorKind, anchorID, kind)
 }
 
+// OpeningPostMeta returns the opening-post (post_number=1) status + author for
+// the given threads — the per-site list projection that lets an embed hide a
+// held/deleted opening post without a per-thread fetch (finding: a held/deleted
+// opening post must not leak its title into the thread list).
+func (s *ThreadService) OpeningPostMeta(threadIDs []int64) (map[int64]repository.OpeningPostMeta, error) {
+	return s.threads.OpeningPostMetaByThreadIDs(threadIDs)
+}
+
 func postStatus(held bool) int16 {
 	if held {
 		return model.PostStatusHidden

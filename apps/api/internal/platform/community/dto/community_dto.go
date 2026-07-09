@@ -27,6 +27,15 @@ type ThreadView struct {
 	LastPostedAt      *time.Time `json:"last_posted_at,omitempty"`
 	CreatedBy         int64      `json:"created_by"`
 	CreatedAt         time.Time  `json:"created_at"`
+	// OpeningStatus / OpeningAuthorID project the opening post (post_number=1)
+	// into the per-site thread LIST so an embed can hide an opening post that
+	// must not leak its title: a held (TL0 first-post) opening post is visible
+	// only to its author, a self-deleted (tombstoned) one is gone. The thread's
+	// own status stays open in both cases, so the list cannot filter on it.
+	// Populated only on the list read; nil elsewhere (a thread detail already
+	// carries the opening post in its posts page). PostStatus* constants.
+	OpeningStatus   *int16 `json:"opening_status,omitempty"`
+	OpeningAuthorID *int64 `json:"opening_author_id,omitempty"`
 }
 
 // PostView is a post as returned to embeds. Both the raw markdown (for the

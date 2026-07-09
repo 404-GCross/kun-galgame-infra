@@ -65,6 +65,24 @@ func toThreadViews(threads []model.CommunityThread) []dto.ThreadView {
 	return out
 }
 
+// toThreadViewsWithOpening builds the per-site thread-list views and projects
+// each thread's opening-post status + author (from metas) so an embed can hide
+// a held/deleted opening post (see dto.ThreadView.OpeningStatus). A thread
+// absent from metas (an empty comments thread) leaves the fields nil.
+func toThreadViewsWithOpening(threads []model.CommunityThread, metas map[int64]repository.OpeningPostMeta) []dto.ThreadView {
+	out := make([]dto.ThreadView, len(threads))
+	for i := range threads {
+		v := toThreadView(&threads[i])
+		if m, ok := metas[threads[i].ID]; ok {
+			status, author := m.Status, m.AuthorID
+			v.OpeningStatus = &status
+			v.OpeningAuthorID = &author
+		}
+		out[i] = v
+	}
+	return out
+}
+
 func toTrustView(t *model.CommunityTrust) dto.TrustView {
 	return dto.TrustView{
 		UserID: t.UserID, Level: t.Level,

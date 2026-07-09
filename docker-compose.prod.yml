@@ -44,6 +44,7 @@ x-infra-env: &infra-env
   KUN_GALGAME_PG_DATABASE: kun_galgame_wiki
   KUN_IMAGES_PG_DATABASE: kun_images
   KUN_CATALOG_PG_DATABASE: kun_catalog
+  KUN_COMMUNITY_PG_DATABASE: kun_community
   # Redis
   REDIS_ENABLED: "true"
   REDIS_HOST: redis
@@ -304,6 +305,30 @@ services:
       <<: *svc-health
     restart: unless-stopped
 
+  # Community primitive (kun_community). The multi-tenant discussion service the
+  # product backends (letmoe first) reach over S2S; it reads oauth_clients from
+  # kun_galgame_infra for S2S Basic auth + the per-client `catalog_site` tenant.
+  community:
+    image: ghcr.io/kunmoe/infra-community:latest
+    pull_policy: always
+    environment:
+      <<: *infra-env
+      # kun_community DB name comes from *infra-env (KUN_COMMUNITY_PG_DATABASE);
+      # host/user/pass fall back to KUN_PG_*.
+      KUN_COMMUNITY_HOST: 0.0.0.0
+      KUN_COMMUNITY_PORT: "9282"
+    # Internal only — product backends (letmoe/...) reach it at
+    # http://community:9282 over dokploy-network.
+    expose: ["9282"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }           # reads oauth_clients from kun_galgame_infra
+      migrate-community: { condition: service_completed_successfully }  # kun_community schema
+    healthcheck:
+      test: ["CMD", "/app", "healthcheck"]
+      <<: *svc-health
+    restart: unless-stopped
+
   # ───────────────────────────── Nuxt frontends ──────────────────────────────
   # Public (browser) config is BAKED into the image at CI build time (build-args in
   # .github/workflows/build.yml). Only the SSR base (service name) is injected here.
@@ -395,6 +420,17 @@ services:
   # + guarded raw-SQL (generated columns, FKs — all IF NOT EXISTS) + seed upserts.
   migrate-catalog:
     image: ghcr.io/kunmoe/infra-migrate-catalog:latest
+    pull_policy: always
+    environment: { <<: *infra-env }
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: "no"
+
+  # Auto-applied on every deploy (community waits for it). cmd/migrate-community
+  # is the single migration entry point against kun_community (the service itself
+  # never migrates on startup).
+  migrate-community:
+    image: ghcr.io/kunmoe/infra-migrate-community:latest
     pull_policy: always
     environment: { <<: *infra-env }
     depends_on:

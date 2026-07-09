@@ -109,6 +109,41 @@ func (r *ThreadRepository) ListBySite(site string, kind int16, anchorKind int16,
 	return rows, err
 }
 
+// OpeningPostMeta is the opening post (post_number=1) status + author of a
+// thread — the projection the per-site topic/feedback list needs to hide an
+// opening post that must not leak its title: a held (TL0 first-post) opening
+// post is author-only, a self-deleted (tombstoned) one is gone. The thread's
+// own status stays open in both cases (the moderation state lives on the post),
+// so the list cannot filter on community_thread.status alone.
+type OpeningPostMeta struct {
+	ThreadID int64 `gorm:"column:thread_id"`
+	Status   int16 `gorm:"column:status"`
+	AuthorID int64 `gorm:"column:author_id"`
+}
+
+// OpeningPostMetaByThreadIDs returns the opening post (post_number=1) status +
+// author for each of threadIDs, keyed by thread id. A thread with no opening
+// post yet (an empty comments thread) is simply absent from the map. One batch
+// query — the caller merges it into the thread-list view.
+func (r *ThreadRepository) OpeningPostMetaByThreadIDs(threadIDs []int64) (map[int64]OpeningPostMeta, error) {
+	out := make(map[int64]OpeningPostMeta, len(threadIDs))
+	if len(threadIDs) == 0 {
+		return out, nil
+	}
+	var rows []OpeningPostMeta
+	err := r.db.Model(&model.CommunityPost{}).
+		Select("thread_id, status, author_id").
+		Where("thread_id IN ? AND post_number = 1", threadIDs).
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	for _, m := range rows {
+		out[m.ThreadID] = m
+	}
+	return out, nil
+}
+
 // ListByAnchor returns every thread for an anchor of a kind — the cross-site
 // aggregation dimension of invariant 7 (NextMoe read).
 func (r *ThreadRepository) ListByAnchor(anchorKind int16, anchorID string, kind int16) ([]model.CommunityThread, error) {

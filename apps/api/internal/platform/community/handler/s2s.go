@@ -150,8 +150,20 @@ func (s *Server) listThreads(ctx context.Context, in *listThreadsInput) (*thread
 	if err != nil {
 		return nil, mapErr("list threads", err)
 	}
+	// Project each thread's opening-post status + author so an embed can hide an
+	// opening post that must not leak its title (a held one is author-only, a
+	// self-deleted one is gone). The thread's own status stays open in both
+	// cases, so the list cannot filter on community_thread.status alone.
+	ids := make([]int64, len(threads))
+	for i := range threads {
+		ids[i] = threads[i].ID
+	}
+	metas, err := s.threads.OpeningPostMeta(ids)
+	if err != nil {
+		return nil, mapErr("list threads openings", err)
+	}
 	return &threadListOutput{Body: okEnvelope(dto.ThreadListResponse{
-		Threads: toThreadViews(threads), NextCursor: threadsPageCursor(threads, limit),
+		Threads: toThreadViewsWithOpening(threads, metas), NextCursor: threadsPageCursor(threads, limit),
 	})}, nil
 }
 

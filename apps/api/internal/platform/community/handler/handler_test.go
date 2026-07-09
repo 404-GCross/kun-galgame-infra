@@ -10,6 +10,7 @@ import (
 	"api/internal/platform/community/dbtest"
 	"api/internal/platform/community/dto"
 	"api/internal/platform/community/migrate"
+	"api/internal/platform/community/model"
 	"api/internal/platform/community/service"
 	siteModel "api/internal/platform/site/model"
 
@@ -240,4 +241,77 @@ func TestHandlerGapfill(t *testing.T) {
 	if len(miss.Body.Data.Threads) != 0 {
 		t.Fatalf("a non-existent anchor should be empty, got %d", len(miss.Body.Data.Threads))
 	}
+}
+
+// TestListThreads_OpeningStatusProjected verifies the finding-fix wire: the
+// per-site thread list projects each thread's opening-post status + author so
+// an embed can hide a held/deleted opening post that must not leak its title.
+func TestListThreads_OpeningStatusProjected(t *testing.T) {
+	cleanTables(t)
+	sink := service.NoopSink{}
+	s := &Server{
+		threads: service.NewThreadService(testDB, sink),
+		posts:   service.NewPostService(testDB, sink),
+		trust:   service.NewTrustService(testDB),
+	}
+	ctx := clientCtx("letmoe")
+
+	// Establish TL1 authors (no hold budget) so their opening posts are visible —
+	// a fresh author's first post is held.
+	if err := testDB.Exec(
+		`INSERT INTO community_trust (user_id, level, first_posts_held_remaining) VALUES (100,1,0),(300,1,0)
+		 ON CONFLICT (user_id) DO UPDATE SET level = 1, first_posts_held_remaining = 0`,
+	).Error; err != nil {
+		t.Fatalf("seed trust: %v", err)
+	}
+
+	visOut, err := s.openTopic(ctx, &openTopicInput{Body: dto.OpenTopicRequest{AuthorID: 100, AnchorID: "b1", Title: "vis", Body: "x"}})
+	if err != nil {
+		t.Fatalf("openTopic vis: %v", err)
+	}
+	visID := visOut.Body.Data.Thread.ID
+
+	// A fresh newcomer's opening post is held (first-post hold).
+	heldOut, err := s.openTopic(ctx, &openTopicInput{Body: dto.OpenTopicRequest{AuthorID: 700, AnchorID: "b1", Title: "held", Body: "y"}})
+	if err != nil {
+		t.Fatalf("openTopic held: %v", err)
+	}
+	heldID := heldOut.Body.Data.Thread.ID
+	if heldOut.Body.Data.Post.Status != model.PostStatusHidden {
+		t.Fatalf("newcomer opening should be held: %d", heldOut.Body.Data.Post.Status)
+	}
+
+	// A TL1 author opens then self-deletes the opening post → tombstone.
+	delOut, err := s.openTopic(ctx, &openTopicInput{Body: dto.OpenTopicRequest{AuthorID: 300, AnchorID: "b1", Title: "del", Body: "z"}})
+	if err != nil {
+		t.Fatalf("openTopic del: %v", err)
+	}
+	delID := delOut.Body.Data.Thread.ID
+	if _, err := s.deletePost(ctx, &deletePostInput{ID: delOut.Body.Data.Post.ID, AuthorID: 300}); err != nil {
+		t.Fatalf("deletePost: %v", err)
+	}
+
+	list, err := s.listThreads(ctx, &listThreadsInput{Kind: 0})
+	if err != nil {
+		t.Fatalf("listThreads: %v", err)
+	}
+	got := map[int64]dto.ThreadView{}
+	for _, th := range list.Body.Data.Threads {
+		got[th.ID] = th
+	}
+	assertOpening := func(id int64, status int16, author int64) {
+		th, ok := got[id]
+		if !ok {
+			t.Fatalf("thread %d missing from the list", id)
+		}
+		if th.OpeningStatus == nil || *th.OpeningStatus != status {
+			t.Fatalf("thread %d opening_status: want %d, got %v", id, status, th.OpeningStatus)
+		}
+		if th.OpeningAuthorID == nil || *th.OpeningAuthorID != author {
+			t.Fatalf("thread %d opening_author_id: want %d, got %v", id, author, th.OpeningAuthorID)
+		}
+	}
+	assertOpening(visID, model.PostStatusVisible, 100)
+	assertOpening(heldID, model.PostStatusHidden, 700)
+	assertOpening(delID, model.PostStatusDeleted, 300)
 }

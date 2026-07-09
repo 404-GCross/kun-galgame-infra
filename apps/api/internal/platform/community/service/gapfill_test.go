@@ -231,6 +231,76 @@ func TestDeletePost_CoexistsWithModReject(t *testing.T) {
 	}
 }
 
+// TestOpeningPostMeta covers the per-site list projection (finding: a held or
+// self-deleted opening post must not leak its title into the thread list). The
+// thread's own status stays open in all three cases, so the list must read the
+// opening POST's status.
+func TestOpeningPostMeta(t *testing.T) {
+	cleanTables(t)
+	ts := NewThreadService(testDB, NoopSink{})
+	ps := NewPostService(testDB, NoopSink{})
+	ctx := context.Background()
+
+	// A visible opening post (established TL1 author).
+	visible := openTopic(t, ts, "letmoe", 100, "b1", "visible opening")
+
+	// A held opening post: a TL0 newcomer's first topic is held (first-post hold).
+	seedTrust(t, 700, model.TrustLevelNew, 2)
+	heldThread, heldPost, err := ts.OpenTopic(ctx, OpenThreadParams{
+		Site: "letmoe", AuthorID: 700, AnchorKind: model.AnchorKindBoard, AnchorID: "b1",
+		Title: "held", ContentRating: model.ContentRatingAll, BodyRaw: "held opening",
+	})
+	if err != nil {
+		t.Fatalf("open held topic: %v", err)
+	}
+	if heldPost.Status != model.PostStatusHidden {
+		t.Fatalf("a newcomer's first opening post should be held: %d", heldPost.Status)
+	}
+
+	// A self-deleted (tombstoned) opening post.
+	seedTrust(t, 300, model.TrustLevelBasic, 0)
+	delThread, delPost, err := ts.OpenTopic(ctx, OpenThreadParams{
+		Site: "letmoe", AuthorID: 300, AnchorKind: model.AnchorKindBoard, AnchorID: "b1",
+		Title: "to delete", ContentRating: model.ContentRatingAll, BodyRaw: "to delete",
+	})
+	if err != nil {
+		t.Fatalf("open topic to delete: %v", err)
+	}
+	if err := ps.Delete(ctx, delPost.ID, 300); err != nil {
+		t.Fatalf("self-delete opening: %v", err)
+	}
+
+	metas, err := ts.OpeningPostMeta([]int64{visible.ID, heldThread.ID, delThread.ID})
+	if err != nil {
+		t.Fatalf("opening post meta: %v", err)
+	}
+	if m := metas[visible.ID]; m.Status != model.PostStatusVisible || m.AuthorID != 100 {
+		t.Fatalf("visible opening: want {status=0 author=100}, got %+v", m)
+	}
+	if m := metas[heldThread.ID]; m.Status != model.PostStatusHidden || m.AuthorID != 700 {
+		t.Fatalf("held opening: want {status=1 author=700}, got %+v", m)
+	}
+	if m := metas[delThread.ID]; m.Status != model.PostStatusDeleted || m.AuthorID != 300 {
+		t.Fatalf("deleted opening: want {status=2 author=300}, got %+v", m)
+	}
+
+	// An empty comments thread has no opening post → absent from the map (so the
+	// list leaves its opening_* fields nil).
+	empty, err := ts.GetOrCreateCommentsThread(ctx, CommentsThreadParams{
+		Site: "letmoe", AnchorKind: model.AnchorKindSiteGame, AnchorID: "g1", ContentRating: model.ContentRatingAll, ActorID: 1,
+	})
+	if err != nil {
+		t.Fatalf("resolve comments: %v", err)
+	}
+	metas2, err := ts.OpeningPostMeta([]int64{empty.ID})
+	if err != nil {
+		t.Fatalf("opening post meta (empty): %v", err)
+	}
+	if _, ok := metas2[empty.ID]; ok {
+		t.Fatal("an empty comments thread must have no opening-post meta")
+	}
+}
+
 func TestListThreads_AnchorFilter(t *testing.T) {
 	cleanTables(t)
 	ts := NewThreadService(testDB, NoopSink{})

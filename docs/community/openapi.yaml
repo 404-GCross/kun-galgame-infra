@@ -702,6 +702,12 @@ components:
         merged_into_id:
           format: int64
           type: integer
+        opening_author_id:
+          format: int64
+          type: integer
+        opening_status:
+          format: int32
+          type: integer
         participants_count:
           format: int32
           type: integer
