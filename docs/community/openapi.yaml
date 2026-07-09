@@ -680,6 +680,13 @@ components:
         fb_status:
           format: int32
           type: integer
+        header_image_hashes:
+          description: Header image hashes as accepted at topic creation; empty for none
+          items:
+            type: string
+          type:
+            - array
+            - "null"
         highest_post_number:
           format: int32
           type: integer

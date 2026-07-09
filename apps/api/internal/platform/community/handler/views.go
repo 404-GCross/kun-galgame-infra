@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	stderrors "errors"
 	"fmt"
 	"strconv"
@@ -11,16 +12,32 @@ import (
 	"api/internal/platform/community/dto"
 	"api/internal/platform/community/model"
 	"api/internal/platform/community/repository"
+
+	"gorm.io/datatypes"
 )
 
 func toThreadView(t *model.CommunityThread) dto.ThreadView {
 	return dto.ThreadView{
 		ID: t.ID, Site: t.Site, Kind: t.Kind, AnchorKind: t.AnchorKind, AnchorID: t.AnchorID,
-		Title: t.Title, ContentRating: t.ContentRating, Status: t.Status,
+		Title: t.Title, HeaderImageHashes: headerImageHashes(t.HeaderImageHashes),
+		ContentRating: t.ContentRating, Status: t.Status,
 		FbStatus: t.FbStatus, FbResponse: t.FbResponse, AnswerPostID: t.AnswerPostID, MergedIntoID: t.MergedIntoID,
 		PostsCount: t.PostsCount, ParticipantsCount: t.ParticipantsCount, HighestPostNumber: t.HighestPostNumber,
 		LastPostedAt: t.LastPostedAt, CreatedBy: t.CreatedBy, CreatedAt: t.CreatedAt,
 	}
+}
+
+// headerImageHashes is the read-side inverse of hashesJSON: nil / malformed
+// stored JSON projects as an absent list rather than an error (display data).
+func headerImageHashes(raw datatypes.JSON) []string {
+	if len(raw) == 0 {
+		return nil
+	}
+	var hashes []string
+	if err := json.Unmarshal(raw, &hashes); err != nil {
+		return nil
+	}
+	return hashes
 }
 
 func toPostView(p *model.CommunityPost) dto.PostView {

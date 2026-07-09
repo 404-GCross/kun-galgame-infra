@@ -14,6 +14,7 @@ type ThreadView struct {
 	AnchorKind        int16      `json:"anchor_kind"`
 	AnchorID          string     `json:"anchor_id"`
 	Title             *string    `json:"title,omitempty"`
+	HeaderImageHashes []string   `json:"header_image_hashes,omitempty" doc:"Header image hashes as accepted at topic creation; empty for none"`
 	ContentRating     int16      `json:"content_rating"`
 	Status            int16      `json:"status"`
 	FbStatus          *int16     `json:"fb_status,omitempty"`
