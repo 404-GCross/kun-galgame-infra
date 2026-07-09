@@ -334,6 +334,7 @@ export interface components {
             readonly $schema?: string;
             /** Format: int64 */
             code: number;
+            data?: unknown;
             message: string;
         };
         PageCandidateItem: {

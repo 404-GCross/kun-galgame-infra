@@ -345,6 +345,7 @@ components:
         code:
           format: int64
           type: integer
+        data: {}
         message:
           type: string
       required:
