@@ -22,6 +22,13 @@ var (
 	// ErrReviewNotFound is returned when a target review-queue item does not
 	// exist (or is not actionable).
 	ErrReviewNotFound = errors.New("community: review item not found")
+	// ErrNotAuthor is returned when a user tries to edit or self-delete a post
+	// they do not own (both are author-only operations).
+	ErrNotAuthor = errors.New("community: not the post author")
+	// ErrPostNotEditable is returned when editing a post that is not in an
+	// editable state: a hidden/held or tombstoned post is not an editable surface
+	// (editing is content-only; a removed post stays removed — invariant 13).
+	ErrPostNotEditable = errors.New("community: post not editable")
 )
 
 // SandboxError is returned when a TL0 newcomer trips a sandbox limit (doc 11

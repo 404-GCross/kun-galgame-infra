@@ -25,7 +25,7 @@ func TestKeyset_ThreadList(t *testing.T) {
 	seen := map[int64]bool{}
 	cursor := repository.ThreadCursor{}
 	for {
-		page, err := ts.ListBySite("letmoe", model.ThreadKindTopic, cursor, 2)
+		page, err := ts.ListBySite("letmoe", model.ThreadKindTopic, 0, "", cursor, 2)
 		if err != nil {
 			t.Fatalf("list: %v", err)
 		}

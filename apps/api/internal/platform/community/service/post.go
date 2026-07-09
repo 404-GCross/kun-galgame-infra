@@ -129,3 +129,91 @@ func (s *PostService) Reply(ctx context.Context, p ReplyParams) (*model.Communit
 func (s *PostService) ListPosts(threadID int64, afterNumber int32, limit int) ([]model.CommunityPost, error) {
 	return s.posts.ListByThread(threadID, afterNumber, clampLimit(limit))
 }
+
+// EditParams describes an author editing their own post's body.
+type EditParams struct {
+	PostID   int64
+	AuthorID int64 // the acting user; must equal the post's author
+	BodyRaw  string
+}
+
+// Edit rewrites an author's own post (invariant 6: re-cook raw→cooked at the
+// current sanitizer version and stamp edited_at). Author-only — author_id must
+// match the post's author — and only a VISIBLE post is editable: a held/hidden
+// or tombstoned post is not an editable surface. The TL0 sandbox per-post
+// content caps (links/images/@mentions) apply to the edited body too, so editing
+// is not an escape hatch out of the newcomer sandbox. The daily create-rate caps
+// do NOT apply — an edit is not a new post — so the sandbox day-window count is
+// left untouched.
+func (s *PostService) Edit(ctx context.Context, p EditParams) (*model.CommunityPost, error) {
+	cooked := sanitize.Cook(p.BodyRaw)
+	level, err := trustLevel(s.trusts, p.AuthorID)
+	if err != nil {
+		return nil, err
+	}
+	if err := checkContentSandbox(level, cooked); err != nil {
+		return nil, err
+	}
+
+	now := time.Now()
+	var post model.CommunityPost
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		existing, err := repository.GetPostTx(tx, p.PostID)
+		if err != nil {
+			return err
+		}
+		if existing == nil {
+			return ErrPostNotFound
+		}
+		if existing.AuthorID != p.AuthorID {
+			return ErrNotAuthor
+		}
+		if existing.Status != model.PostStatusVisible {
+			return ErrPostNotEditable
+		}
+		if err := repository.UpdatePostContentTx(tx, p.PostID, p.BodyRaw, cooked.HTML, int32(cooked.Version), now); err != nil {
+			return err
+		}
+		// Reflect the write in the returned view (post_number/status/author are
+		// unchanged; the DB round-trip is unnecessary).
+		existing.ContentRaw = p.BodyRaw
+		existing.ContentHTML = cooked.HTML
+		existing.SanitizerVersion = int32(cooked.Version)
+		existing.EditedAt = &now
+		post = *existing
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &post, nil
+}
+
+// Delete tombstones an author's own post (self-delete): status → deleted while
+// the post_number is PRESERVED, so the thread numbering never collapses
+// (invariant 13). This is the SAME terminal state a moderator reject produces
+// (ReviewService.Reject) — the only difference is the actor (the author here vs a
+// moderator there); both leave a numbered placeholder instead of removing the
+// row, and the two paths coexist (a post already tombstoned by one is an
+// idempotent no-op for the other). posts_count is NOT decremented: the tombstone
+// still occupies its post_number, so the counter (which tracks numbers allocated,
+// not live posts) stays consistent with highest_post_number — matching the
+// mod-reject path, which likewise leaves the count untouched.
+func (s *PostService) Delete(ctx context.Context, postID, authorID int64) error {
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		existing, err := repository.GetPostTx(tx, postID)
+		if err != nil {
+			return err
+		}
+		if existing == nil {
+			return ErrPostNotFound
+		}
+		if existing.AuthorID != authorID {
+			return ErrNotAuthor
+		}
+		if existing.Status == model.PostStatusDeleted {
+			return nil // already tombstoned → idempotent no-op
+		}
+		return repository.SetPostStatusTx(tx, postID, model.PostStatusDeleted)
+	})
+}

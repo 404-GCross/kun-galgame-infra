@@ -75,9 +75,12 @@ func TestSpecExport(t *testing.T) {
 		"/api/v1/community/trust/activity",
 		"/api/v1/community/review",
 		"operationId: reply",
+		"operationId: editPost",
+		"operationId: deletePost",
 		"operationId: submitFlag",
 		"operationId: recordActivity",
 		"operationId: approveReview",
+		"name: anchor_id",
 	} {
 		if !strings.Contains(spec, want) {
 			t.Errorf("spec missing %q", want)
@@ -158,5 +161,83 @@ func TestHandlerFlow(t *testing.T) {
 	// A client with no site binding is refused on a write.
 	if _, err := s.openTopic(context.Background(), &openTopicInput{Body: dto.OpenTopicRequest{AuthorID: 1, AnchorID: "1", Body: "x"}}); err == nil {
 		t.Fatal("unbound client should be refused")
+	}
+}
+
+// TestHandlerGapfill exercises the step-05c ops through the handler → service →
+// DB path: author edit, author self-delete, and the feedback anchor-filter read.
+func TestHandlerGapfill(t *testing.T) {
+	cleanTables(t)
+	sink := service.NoopSink{}
+	s := &Server{
+		threads:  service.NewThreadService(testDB, sink),
+		posts:    service.NewPostService(testDB, sink),
+		feedback: service.NewFeedbackService(testDB, sink),
+		trust:    service.NewTrustService(testDB),
+	}
+	ctx := clientCtx("letmoe")
+
+	// Open a topic, reply as an established author.
+	topicOut, err := s.openTopic(ctx, &openTopicInput{Body: dto.OpenTopicRequest{AuthorID: 100, AnchorID: "1", Title: "t", Body: "opening"}})
+	if err != nil {
+		t.Fatalf("openTopic: %v", err)
+	}
+	threadID := topicOut.Body.Data.Thread.ID
+	// Establish the reply author (TL1, no holds) so the reply is visible and thus
+	// editable — a fresh author's first posts are held (default hold budget 2).
+	if err := testDB.Exec(
+		`INSERT INTO community_trust (user_id, level, first_posts_held_remaining) VALUES (200, 1, 0)
+		 ON CONFLICT (user_id) DO UPDATE SET level = 1, first_posts_held_remaining = 0`,
+	).Error; err != nil {
+		t.Fatalf("seed trust: %v", err)
+	}
+	replyOut, err := s.reply(ctx, &replyInput{ID: threadID, Body: dto.ReplyRequest{AuthorID: 200, Body: "first"}})
+	if err != nil {
+		t.Fatalf("reply: %v", err)
+	}
+	postID := replyOut.Body.Data.Post.ID
+
+	// Author edits it → cooked HTML updated, edited_at present.
+	editOut, err := s.editPost(ctx, &editPostInput{ID: postID, Body: dto.EditPostRequest{AuthorID: 200, Body: "edited **body**"}})
+	if err != nil {
+		t.Fatalf("editPost: %v", err)
+	}
+	if editOut.Body.Data.Post.EditedAt == nil || !strings.Contains(editOut.Body.Data.Post.ContentHTML, "<strong>body</strong>") {
+		t.Fatalf("edit not applied: %+v", editOut.Body.Data.Post)
+	}
+
+	// A non-author edit is refused (envelope error).
+	if _, err := s.editPost(ctx, &editPostInput{ID: postID, Body: dto.EditPostRequest{AuthorID: 999, Body: "hijack"}}); err == nil {
+		t.Fatal("a non-author edit should be refused")
+	}
+
+	// Author self-deletes it via the query-param actor.
+	if _, err := s.deletePost(ctx, &deletePostInput{ID: postID, AuthorID: 200}); err != nil {
+		t.Fatalf("deletePost: %v", err)
+	}
+	detail, _ := s.getThread(ctx, &threadPostsInput{ID: threadID})
+	// Both posts still listed (tombstone preserved, no collapse); the reply is now
+	// tombstoned.
+	if detail.Body.Data.Thread.PostsCount != 2 {
+		t.Fatalf("posts_count must not decrement on self-delete: %d", detail.Body.Data.Thread.PostsCount)
+	}
+
+	// Feedback anchor-filter read: two anchors, filter returns only the match.
+	if _, err := s.openFeedback(ctx, &openFeedbackInput{Body: dto.OpenFeedbackRequest{AuthorID: 100, AnchorKind: 2, AnchorID: "r1", Title: "fb1", Body: "x"}}); err != nil {
+		t.Fatalf("openFeedback r1: %v", err)
+	}
+	if _, err := s.openFeedback(ctx, &openFeedbackInput{Body: dto.OpenFeedbackRequest{AuthorID: 100, AnchorKind: 2, AnchorID: "r2", Title: "fb2", Body: "y"}}); err != nil {
+		t.Fatalf("openFeedback r2: %v", err)
+	}
+	hit, err := s.listThreads(ctx, &listThreadsInput{Kind: 2, AnchorKind: 2, AnchorID: "r1"})
+	if err != nil {
+		t.Fatalf("listThreads anchor: %v", err)
+	}
+	if len(hit.Body.Data.Threads) != 1 || hit.Body.Data.Threads[0].AnchorID != "r1" {
+		t.Fatalf("anchor filter should return only r1, got %+v", hit.Body.Data.Threads)
+	}
+	miss, _ := s.listThreads(ctx, &listThreadsInput{Kind: 2, AnchorKind: 2, AnchorID: "r404"})
+	if len(miss.Body.Data.Threads) != 0 {
+		t.Fatalf("a non-existent anchor should be empty, got %d", len(miss.Body.Data.Threads))
 	}
 }

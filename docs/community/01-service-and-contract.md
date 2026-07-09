@@ -40,18 +40,49 @@
   anchor and return its first page of posts (the embed read-first-screen; Coral
   story model). Idempotent per anchor (invariant 4).
 - `GET /threads` — the site's threads of a `kind`, newest-activity first, keyset
-  (`cursor` opaque). `GET /threads/{id}` and `GET /threads/{id}/posts` — a thread
-  with a page of posts, keyset by `post_number` (`after`). Cooked HTML is served
-  for display; the raw markdown is included for the editor.
+  (`cursor` opaque). An **optional anchor filter** (`anchor_kind` + `anchor_id`)
+  narrows the page to a single anchor within the tenant — the resource-detail
+  feedback-wall read path. It is generic across kinds (a per-anchor comments or
+  topic listing benefits too), site-scoped, and keyset-paginated like the
+  unfiltered listing. A real anchor id is never empty, so an empty `anchor_id` is
+  the "no filter, whole site" sentinel. `GET /threads/{id}` and
+  `GET /threads/{id}/posts` — a thread with a page of posts, keyset by
+  `post_number` (`after`). Cooked HTML is served for display; the raw markdown is
+  included for the editor.
 
 ## 4. Write faces (embed capability set, invariant 11)
 
 `POST /topics`, `POST /feedback` (each opens a thread with its opening post),
-`POST /threads/{id}/posts` (reply), `POST /posts/{id}/reaction` (toggle),
+`POST /threads/{id}/posts` (reply), `PATCH /posts/{id}` (author edit),
+`DELETE /posts/{id}` (author self-delete), `POST /posts/{id}/reaction` (toggle),
 `POST /posts/{id}/flag` (report), `POST /feedback/{id}/status`,
-`POST /feedback/{id}/merge`. Capabilities are read/post/reply/react/report/
-feedback — NOT a shrunken forum (edit history, advanced search, mod tooling live
-on the full surface).
+`POST /feedback/{id}/merge`. Capabilities are read/post/reply/edit/delete/react/
+report/feedback — NOT a shrunken forum (edit **history** / the version surface,
+advanced search, and mod tooling live on the full surface, not here).
+
+#### Author edit — `PATCH /posts/{id}`
+
+Author-only: `author_id` (in the body) must match the post's author, else `403`.
+The body is re-cooked + re-sanitized at the current `sanitizer_version` and
+`edited_at` is stamped; `post_number`, `status`, and `author_id` never move. Only
+a **visible** post is editable — a held/hidden or tombstoned post returns `409`
+(a removed post stays removed; a held post is not an editable surface). The TL0
+sandbox **per-post content caps apply to the edited body too** (editing is not an
+escape hatch out of the newcomer sandbox); the daily create-rate caps do not (an
+edit is not a new post).
+
+#### Author self-delete — `DELETE /posts/{id}`
+
+Author-only self-delete (`author_id` is a **query param** — the request stays
+body-free, matching the artifact service's `DELETE`; it is a non-secret scalar
+the BFF already holds). The post is **tombstoned** (`status=deleted`) with its
+`post_number` PRESERVED, so the thread numbering never collapses (invariant 13).
+This is the **same terminal state** a moderator `reject` produces — the only
+difference is the actor (the author vs a moderator) — and the two coexist: a post
+already tombstoned by one is an idempotent no-op for the other. `posts_count` is
+**not** decremented: the tombstone still occupies its number, so the counter
+(numbers allocated, not live posts) stays consistent with `highest_post_number`,
+matching the mod-reject path.
 
 ### Write-time content pipeline (invariant 6)
 

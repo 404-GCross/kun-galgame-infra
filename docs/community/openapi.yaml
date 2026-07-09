@@ -60,6 +60,26 @@ components:
         - anchor_id
         - content_rating
       type: object
+    EditPostRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EditPostRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        author_id:
+          format: int64
+          type: integer
+        body:
+          description: new markdown source; re-cooked + sanitized on write
+          type: string
+      required:
+        - author_id
+        - body
+      type: object
     EnvelopeOKResponse:
       additionalProperties: false
       properties:
@@ -883,6 +903,71 @@ paths:
       summary: Set a feedback thread's status and official response
       tags:
         - community-write
+  /api/v1/community/posts/{id}:
+    delete:
+      operationId: deletePost
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            format: int64
+            type: integer
+        - description: the acting user; must be the post's author
+          explode: false
+          in: query
+          name: author_id
+          schema:
+            description: the acting user; must be the post's author
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeOKResponse"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: Delete a post (author self-delete; tombstone, post_number preserved)
+      tags:
+        - community-write
+    patch:
+      operationId: editPost
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EditPostRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopePostResponse"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: Edit a post (author only; re-sanitized, stamps edited_at)
+      tags:
+        - community-write
   /api/v1/community/posts/{id}/flag:
     post:
       operationId: submitFlag
@@ -1058,6 +1143,21 @@ paths:
             description: 0=topic 1=comments 2=feedback
             format: int32
             type: integer
+        - description: anchor kind for the optional anchor filter (only used when anchor_id is set)
+          explode: false
+          in: query
+          name: anchor_kind
+          schema:
+            description: anchor kind for the optional anchor filter (only used when anchor_id is set)
+            format: int32
+            type: integer
+        - description: "optional: narrow to a single anchor (e.g. a resource's feedback wall); empty = the whole site"
+          explode: false
+          in: query
+          name: anchor_id
+          schema:
+            description: "optional: narrow to a single anchor (e.g. a resource's feedback wall); empty = the whole site"
+            type: string
         - description: opaque cursor from the previous page
           explode: false
           in: query

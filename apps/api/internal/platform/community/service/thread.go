@@ -175,8 +175,10 @@ func (s *ThreadService) Get(id int64) (*model.CommunityThread, error) {
 }
 
 // ListBySite / ListByAnchor expose the two invariant-7 read dimensions.
-func (s *ThreadService) ListBySite(site string, kind int16, cursor repository.ThreadCursor, limit int) ([]model.CommunityThread, error) {
-	return s.threads.ListBySite(site, kind, cursor, clampLimit(limit))
+// anchorID != "" additionally narrows the per-site page to a single anchor (the
+// resource-detail feedback-wall read path); "" lists the whole site.
+func (s *ThreadService) ListBySite(site string, kind int16, anchorKind int16, anchorID string, cursor repository.ThreadCursor, limit int) ([]model.CommunityThread, error) {
+	return s.threads.ListBySite(site, kind, anchorKind, anchorID, cursor, clampLimit(limit))
 }
 
 func (s *ThreadService) ListByAnchor(anchorKind int16, anchorID string, kind int16) ([]model.CommunityThread, error) {

@@ -85,6 +85,14 @@ type ReplyRequest struct {
 	TargetUserID  *int64 `json:"target_user_id,omitempty"`
 }
 
+// EditPostRequest edits a post's body (author only). author_id is the acting
+// user and must match the post's author; the body is re-sanitized on write and
+// edited_at is stamped.
+type EditPostRequest struct {
+	AuthorID int64  `json:"author_id"`
+	Body     string `json:"body" doc:"new markdown source; re-cooked + sanitized on write"`
+}
+
 // ReactionToggleRequest flips a user's reaction on a post.
 type ReactionToggleRequest struct {
 	UserID int64 `json:"user_id"`

@@ -69,6 +69,10 @@ func (s *Server) register(api huma.API) {
 		Summary: "Open a feedback thread with its opening post", Tags: write}, s.openFeedback)
 	huma.Register(api, huma.Operation{OperationID: "reply", Method: http.MethodPost, Path: "/api/v1/community/threads/{id}/posts",
 		Summary: "Reply to a thread", Tags: write}, s.reply)
+	huma.Register(api, huma.Operation{OperationID: "editPost", Method: http.MethodPatch, Path: "/api/v1/community/posts/{id}",
+		Summary: "Edit a post (author only; re-sanitized, stamps edited_at)", Tags: write}, s.editPost)
+	huma.Register(api, huma.Operation{OperationID: "deletePost", Method: http.MethodDelete, Path: "/api/v1/community/posts/{id}",
+		Summary: "Delete a post (author self-delete; tombstone, post_number preserved)", Tags: write}, s.deletePost)
 	huma.Register(api, huma.Operation{OperationID: "toggleReaction", Method: http.MethodPost, Path: "/api/v1/community/posts/{id}/reaction",
 		Summary: "Toggle a reaction on a post", Tags: write}, s.toggleReaction)
 	huma.Register(api, huma.Operation{OperationID: "submitFlag", Method: http.MethodPost, Path: "/api/v1/community/posts/{id}/flag",
@@ -122,9 +126,11 @@ func (s *Server) resolveComments(ctx context.Context, in *resolveCommentsInput) 
 }
 
 type listThreadsInput struct {
-	Kind   int16  `query:"kind" doc:"0=topic 1=comments 2=feedback"`
-	Cursor string `query:"cursor" doc:"opaque cursor from the previous page"`
-	Limit  int    `query:"limit" doc:"page size (max 100, default 50)"`
+	Kind       int16  `query:"kind" doc:"0=topic 1=comments 2=feedback"`
+	AnchorKind int16  `query:"anchor_kind" doc:"anchor kind for the optional anchor filter (only used when anchor_id is set)"`
+	AnchorID   string `query:"anchor_id" doc:"optional: narrow to a single anchor (e.g. a resource's feedback wall); empty = the whole site"`
+	Cursor     string `query:"cursor" doc:"opaque cursor from the previous page"`
+	Limit      int    `query:"limit" doc:"page size (max 100, default 50)"`
 }
 type threadListOutput struct {
 	Body Envelope[dto.ThreadListResponse]
@@ -140,7 +146,7 @@ func (s *Server) listThreads(ctx context.Context, in *listThreadsInput) (*thread
 		return nil, apiErrMsg(http.StatusBadRequest, errors.ErrInvalidParam, "malformed cursor")
 	}
 	limit := clampLimit(in.Limit)
-	threads, err := s.threads.ListBySite(site, in.Kind, cursor, limit)
+	threads, err := s.threads.ListBySite(site, in.Kind, in.AnchorKind, in.AnchorID, cursor, limit)
 	if err != nil {
 		return nil, mapErr("list threads", err)
 	}
@@ -249,6 +255,36 @@ func (s *Server) reply(ctx context.Context, in *replyInput) (*postOutput, error)
 		return nil, mapErr("reply", err)
 	}
 	return &postOutput{Body: okEnvelope(dto.PostResponse{Post: toPostView(post)})}, nil
+}
+
+type editPostInput struct {
+	ID   int64 `path:"id"`
+	Body dto.EditPostRequest
+}
+
+func (s *Server) editPost(ctx context.Context, in *editPostInput) (*postOutput, error) {
+	post, err := s.posts.Edit(ctx, service.EditParams{
+		PostID: in.ID, AuthorID: in.Body.AuthorID, BodyRaw: in.Body.Body,
+	})
+	if err != nil {
+		return nil, mapErr("edit post", err)
+	}
+	return &postOutput{Body: okEnvelope(dto.PostResponse{Post: toPostView(post)})}, nil
+}
+
+// deletePost carries the acting author in a query param (not a body): DELETE
+// stays body-free — matching the codebase's only other DELETE (deleteArtifact) —
+// and author_id is a non-secret scalar the calling BFF already holds.
+type deletePostInput struct {
+	ID       int64 `path:"id"`
+	AuthorID int64 `query:"author_id" doc:"the acting user; must be the post's author"`
+}
+
+func (s *Server) deletePost(ctx context.Context, in *deletePostInput) (*okOutput, error) {
+	if err := s.posts.Delete(ctx, in.ID, in.AuthorID); err != nil {
+		return nil, mapErr("delete post", err)
+	}
+	return &okOutput{Body: okEnvelope(dto.OKResponse{OK: true})}, nil
 }
 
 type toggleReactionInput struct {
@@ -419,6 +455,10 @@ func mapErr(op string, err error) *houseError {
 		return apiErrMsg(http.StatusConflict, errors.ErrOperationFailed, "thread is not open")
 	case stderrors.Is(err, service.ErrNotFeedback):
 		return apiErrMsg(http.StatusBadRequest, errors.ErrInvalidParam, "thread is not a feedback thread")
+	case stderrors.Is(err, service.ErrNotAuthor):
+		return apiErrMsg(http.StatusForbidden, errors.ErrForbidden, "not the post author")
+	case stderrors.Is(err, service.ErrPostNotEditable):
+		return apiErrMsg(http.StatusConflict, errors.ErrOperationFailed, "post is not editable")
 	default:
 		slog.Error("community "+op, "err", err)
 		return apiErr(http.StatusInternalServerError, errors.ErrInternalServer)

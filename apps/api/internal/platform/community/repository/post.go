@@ -44,6 +44,34 @@ func CreatePostTx(tx *gorm.DB, p *model.CommunityPost) error {
 	return tx.Create(p).Error
 }
 
+// GetPostTx reads a post inside the caller's transaction (nil when absent) — the
+// author-authorization read for edit/self-delete.
+func GetPostTx(tx *gorm.DB, id int64) (*model.CommunityPost, error) {
+	var p model.CommunityPost
+	err := tx.First(&p, id).Error
+	if err == gorm.ErrRecordNotFound {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &p, nil
+}
+
+// UpdatePostContentTx rewrites a post's body on an author edit: the re-cooked
+// HTML + raw source + the sanitizer version that produced it + edited_at. A map
+// update so an (unlikely) empty body is written rather than omitted;
+// post_number / status / author_id are untouched (invariant 13: the number never
+// moves).
+func UpdatePostContentTx(tx *gorm.DB, postID int64, raw, html string, version int32, editedAt time.Time) error {
+	return tx.Model(&model.CommunityPost{}).Where("id = ?", postID).Updates(map[string]any{
+		"content_raw":       raw,
+		"content_html":      html,
+		"sanitizer_version": version,
+		"edited_at":         editedAt,
+	}).Error
+}
+
 // AuthorHasPostedTx reports whether the author already has a post in the thread
 // — drives the participants_count increment decision.
 func AuthorHasPostedTx(tx *gorm.DB, threadID, authorID int64) (bool, error) {

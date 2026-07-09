@@ -84,8 +84,15 @@ type ThreadCursor struct {
 // ListBySite returns up to limit threads of a kind for a site, newest activity
 // first, after the cursor (invariant 7 tenant-first index). NULL last_posted_at
 // (activity-less threads) sort last, then by id — the keyset handles both zones.
-func (r *ThreadRepository) ListBySite(site string, kind int16, cursor ThreadCursor, limit int) ([]model.CommunityThread, error) {
+// An optional anchor filter (anchorID != "") narrows the page to a single anchor
+// within the tenant — the resource-detail feedback wall / per-anchor read path;
+// it is generic across kinds (a comments/topic anchor listing benefits too). A
+// real anchor id is never empty, so "" is a safe "no filter" sentinel.
+func (r *ThreadRepository) ListBySite(site string, kind int16, anchorKind int16, anchorID string, cursor ThreadCursor, limit int) ([]model.CommunityThread, error) {
 	q := r.db.Where("site = ? AND kind = ?", site, kind)
+	if anchorID != "" {
+		q = q.Where("anchor_kind = ? AND anchor_id = ?", anchorKind, anchorID)
+	}
 	if cursor != (ThreadCursor{}) {
 		if cursor.LastPostedNull {
 			// Already in the NULL tail: only later NULL rows remain.
