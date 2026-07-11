@@ -174,7 +174,7 @@ type subjectKindOutput struct {
 
 func (s *AdminServer) createSubjectKind(ctx context.Context, in *createSubjectKindInput) (*subjectKindOutput, error) {
 	kind, err := s.registry.CreateSubjectKind(ctx, adminIDFromCtx(ctx),
-		in.Body.Site, in.Body.Key, in.Body.CallbackURL, in.Body.CallbackSecret)
+		in.Body.Site, in.Body.Key, in.Body.CallbackURL, in.Body.CallbackSecret, boolOr(in.Body.NotifyOnDismiss, false))
 	if err != nil {
 		return nil, mapAdminErr("create subject kind", err)
 	}
@@ -188,7 +188,8 @@ type patchSubjectKindInput struct {
 
 func (s *AdminServer) patchSubjectKind(ctx context.Context, in *patchSubjectKindInput) (*subjectKindOutput, error) {
 	kind, err := s.registry.PatchSubjectKind(ctx, adminIDFromCtx(ctx), in.ID, service.SubjectKindPatch{
-		CallbackURL: in.Body.CallbackURL, CallbackSecret: in.Body.CallbackSecret, IsDeprecated: in.Body.IsDeprecated,
+		CallbackURL: in.Body.CallbackURL, CallbackSecret: in.Body.CallbackSecret,
+		IsDeprecated: in.Body.IsDeprecated, NotifyOnDismiss: in.Body.NotifyOnDismiss,
 	})
 	if err != nil {
 		return nil, mapAdminErr("patch subject kind", err)
@@ -282,6 +283,14 @@ func optionalFilter(v int16) *int16 {
 		return nil
 	}
 	return &v
+}
+
+// boolOr dereferences an optional bool with a default.
+func boolOr(p *bool, def bool) bool {
+	if p != nil {
+		return *p
+	}
+	return def
 }
 
 func mapAdminErr(op string, err error) *houseError {

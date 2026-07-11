@@ -286,7 +286,7 @@ func TestColumnAudit(t *testing.T) {
 		},
 		"community_review_item": {
 			"id", "site", "post_id", "source", "status", "decided_by",
-			"decided_at", "created_at",
+			"decided_at", "created_at", "trust_review_item_id", "forward_attempts",
 		},
 	}
 	for table, cols := range want {

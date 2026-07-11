@@ -199,7 +199,7 @@ func TestDeletePost_CoexistsWithModReject(t *testing.T) {
 	ts := NewThreadService(testDB, NoopSink{})
 	ps := NewPostService(testDB, NoopSink{})
 	fs := NewFlagService(testDB, &recordingSink{})
-	rs := NewReviewService(testDB)
+	rs := NewReviewService(testDB, NoopSink{})
 	th := openTopic(t, ts, "letmoe", 100, "b1", "opening")
 	ctx := context.Background()
 

@@ -74,6 +74,16 @@ func main() {
 	dispositionSvc := service.NewDispositionService(trustDB.DB())
 	worker := service.NewCallbackWorker(trustDB.DB())
 
+	// community→trust forward face (step 03). The allowlist is the counterweight
+	// to forward carrying `site` in its body; an empty allowlist (default) makes
+	// forward/resolve 403 for every client (fail-closed, ruling 3).
+	forwarders := make(map[string]bool, len(cfg.TrustForwarderClientIDs))
+	for _, id := range cfg.TrustForwarderClientIDs {
+		forwarders[id] = true
+	}
+	forwardSvc := service.NewForwardService(trustDB.DB(), forwarders)
+	slog.Info("trust forward face", "allowed_forwarders", len(forwarders))
+
 	application.Fiber.Use(middleware.RequestID())
 	application.Fiber.Use(middleware.Logger())
 	application.Fiber.Get("/healthz", func(c fiber.Ctx) error {
@@ -94,7 +104,7 @@ func main() {
 	application.Fiber.Use("/api/v1/admin/trust",
 		middleware.JWTAuth(tokenVerifier), middleware.RequirePermission(trustPerm.Resolver, trustPerm.QueueAccess))
 
-	s2sAPI := trustHandler.Setup(application.Fiber, reportSvc, registrySvc)
+	s2sAPI := trustHandler.Setup(application.Fiber, reportSvc, registrySvc, forwardSvc)
 	trustHandler.SetupAdmin(application.Fiber, reviewSvc, registrySvc, dispositionSvc)
 
 	// Serve the S2S OpenAPI 3.1 spec unauthenticated at the app root.

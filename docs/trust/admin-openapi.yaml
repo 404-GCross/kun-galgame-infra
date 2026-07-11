@@ -40,6 +40,9 @@ components:
           type: string
         key:
           type: string
+        notify_on_dismiss:
+          description: emit an action:0 callback on a dismissed decision (release holds); default false
+          type: boolean
         site:
           description: tenant site the kind belongs to
           type: string
@@ -422,6 +425,8 @@ components:
           type: string
         is_deprecated:
           type: boolean
+        notify_on_dismiss:
+          type: boolean
       type: object
     ReasonView:
       additionalProperties: false
@@ -520,6 +525,9 @@ components:
         classifier_score:
           format: float
           type: number
+        context_note:
+          description: non-report evidence excerpt (community forward / ai_text)
+          type: string
         created_at:
           format: date-time
           type: string
@@ -582,6 +590,8 @@ components:
           type: boolean
         key:
           type: string
+        notify_on_dismiss:
+          type: boolean
         site:
           type: string
       required:
@@ -590,6 +600,7 @@ components:
         - key
         - has_secret
         - is_deprecated
+        - notify_on_dismiss
         - created_at
       type: object
 info:

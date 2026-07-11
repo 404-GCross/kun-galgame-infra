@@ -133,6 +133,13 @@ const submit = async () => {
       <span v-if="item.claimed_by">认领人:{{ item.claimed_by }}</span>
     </div>
 
+    <div v-if="item.context_note" class="bg-content2 rounded-lg p-2 text-sm">
+      <p class="text-default-400 mb-1 text-xs">来源上下文</p>
+      <p class="text-default-500 break-words whitespace-pre-line">
+        {{ item.context_note }}
+      </p>
+    </div>
+
     <div class="space-y-2">
       <p class="text-foreground text-sm font-medium">
         关联举报({{ reports.length }})

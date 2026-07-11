@@ -1,5 +1,47 @@
 components:
   schemas:
+    EnvelopeForwardResolveResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EnvelopeForwardResolveResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/ForwardResolveResponse"
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
+    EnvelopeForwardResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EnvelopeForwardResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/ForwardResponse"
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
     EnvelopeReportResponse:
       additionalProperties: false
       properties:
@@ -41,6 +83,90 @@ components:
       required:
         - code
         - message
+      type: object
+    ForwardRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/ForwardRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        context_note:
+          description: reviewer-facing evidence excerpt
+          type: string
+        forwarder_ref:
+          description: caller-side trace ref (informational)
+          type: string
+        severity:
+          format: int32
+          type: integer
+        site:
+          description: tenant site the subject belongs to (allowlist-gated, not from the client binding)
+          type: string
+        subject_id:
+          type: string
+        subject_kind:
+          description: registered subject kind (e.g. community_post)
+          type: string
+        weight_sum:
+          description: accumulated signal weight (idempotent update takes the max)
+          format: float
+          type: number
+      required:
+        - site
+        - subject_kind
+        - subject_id
+      type: object
+    ForwardResolveRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/ForwardResolveRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        actor_ref:
+          description: site-side actor ref (recorded in the audit policy_ref)
+          type: string
+        outcome:
+          description: approved→dismissed, rejected→actioned
+          enum:
+            - approved
+            - rejected
+          type: string
+        review_item_id:
+          format: int64
+          type: integer
+      required:
+        - review_item_id
+        - outcome
+      type: object
+    ForwardResolveResponse:
+      additionalProperties: false
+      properties:
+        closed:
+          description: false = the item was already terminal (tolerated race)
+          type: boolean
+      required:
+        - closed
+      type: object
+    ForwardResponse:
+      additionalProperties: false
+      properties:
+        created:
+          description: false = an open item already existed and its signals were updated
+          type: boolean
+        review_item_id:
+          format: int64
+          type: integer
+      required:
+        - review_item_id
+        - created
       type: object
     HouseError:
       additionalProperties: false
@@ -125,6 +251,8 @@ components:
           type: boolean
         key:
           type: string
+        notify_on_dismiss:
+          type: boolean
         site:
           type: string
       required:
@@ -133,6 +261,7 @@ components:
         - key
         - has_secret
         - is_deprecated
+        - notify_on_dismiss
         - created_at
       type: object
     SubjectKindsResponse:
@@ -152,6 +281,56 @@ info:
   version: 1.0.0
 openapi: 3.1.0
 paths:
+  /api/v1/trust/forward:
+    post:
+      operationId: forwardReviewItem
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ForwardRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeForwardResponse"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: Forward a product's local review signal into the unified inbox (allowlist-gated)
+      tags:
+        - trust-forward
+  /api/v1/trust/forward/resolve:
+    post:
+      operationId: resolveForwardedItem
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ForwardResolveRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeForwardResolveResponse"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: Close a forwarded item after a site's local decision (no disposition, no callback)
+      tags:
+        - trust-forward
   /api/v1/trust/reports:
     post:
       operationId: submitReport

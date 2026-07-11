@@ -65,6 +65,7 @@ func (s *PostService) Reply(ctx context.Context, p ReplyParams) (*model.Communit
 
 	now := time.Now()
 	var post model.CommunityPost
+	var enqueuedItemID int64
 	// The BFF passes only reply_to_post_id; the primitive completes the two blood
 	// pointers from the parent row — root_post_id (the sub-thread's top ancestor)
 	// and target_user_id (the parent's author) — so nested replies render indented
@@ -136,8 +137,12 @@ func (s *PostService) Reply(ctx context.Context, p ReplyParams) (*model.Communit
 		if held {
 			// A held newcomer post enters the review queue (doc 11 §6 layer 5);
 			// releasing it is a queue approve (step 03's ReviewService).
-			if _, err := repository.EnqueueReviewIfAbsentTx(tx, thread.Site, post.ID, model.ReviewSourceFirstPostHold); err != nil {
+			itemID, created, err := repository.EnqueueReviewIfAbsentTx(tx, thread.Site, post.ID, model.ReviewSourceFirstPostHold)
+			if err != nil {
 				return err
+			}
+			if created {
+				enqueuedItemID = itemID
 			}
 			return repository.DecrementHoldTx(tx, p.AuthorID)
 		}
@@ -147,6 +152,11 @@ func (s *PostService) Reply(ctx context.Context, p ReplyParams) (*model.Communit
 		return nil, err
 	}
 	s.sink.Emit(Event{Kind: EventPostCreated, ThreadID: p.ThreadID, PostID: post.ID, ActorID: p.AuthorID})
+	// Best-effort forward a held-post review item to the trust inbox after commit
+	// (step 03 outbox).
+	if enqueuedItemID != 0 {
+		s.sink.Emit(Event{Kind: EventReviewEnqueued, ThreadID: p.ThreadID, PostID: post.ID, ReviewItemID: enqueuedItemID})
+	}
 	if targetUserID != nil && *targetUserID != p.AuthorID {
 		s.sink.Emit(Event{Kind: EventReplyToYou, ThreadID: p.ThreadID, PostID: post.ID, ActorID: p.AuthorID, TargetID: *targetUserID})
 	}

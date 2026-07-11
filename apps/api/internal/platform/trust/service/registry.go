@@ -36,8 +36,8 @@ func (s *RegistryService) ListSubjectKinds(ctx context.Context, site string, inc
 
 // CreateSubjectKind registers a new (site, key). A duplicate → ErrSubjectKindExists
 // (re-open a deprecated one via PatchSubjectKind, never re-insert).
-func (s *RegistryService) CreateSubjectKind(ctx context.Context, actorID int64, site, key string, callbackURL, callbackSecret *string) (*model.TrustSubjectKind, error) {
-	kind := model.TrustSubjectKind{Site: site, Key: key, CallbackURL: callbackURL, CallbackSecret: callbackSecret, IsDeprecated: false}
+func (s *RegistryService) CreateSubjectKind(ctx context.Context, actorID int64, site, key string, callbackURL, callbackSecret *string, notifyOnDismiss bool) (*model.TrustSubjectKind, error) {
+	kind := model.TrustSubjectKind{Site: site, Key: key, CallbackURL: callbackURL, CallbackSecret: callbackSecret, IsDeprecated: false, NotifyOnDismiss: notifyOnDismiss}
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		res := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&kind)
 		if res.Error != nil {
@@ -59,9 +59,10 @@ func (s *RegistryService) CreateSubjectKind(ctx context.Context, actorID int64, 
 
 // SubjectKindPatch is a partial update; only non-nil fields are applied.
 type SubjectKindPatch struct {
-	CallbackURL    *string
-	CallbackSecret *string
-	IsDeprecated   *bool
+	CallbackURL     *string
+	CallbackSecret  *string
+	IsDeprecated    *bool
+	NotifyOnDismiss *bool
 }
 
 // PatchSubjectKind updates a kind's callback config / deprecation.
@@ -84,6 +85,9 @@ func (s *RegistryService) PatchSubjectKind(ctx context.Context, actorID, id int6
 		}
 		if patch.IsDeprecated != nil {
 			updates["is_deprecated"] = *patch.IsDeprecated
+		}
+		if patch.NotifyOnDismiss != nil {
+			updates["notify_on_dismiss"] = *patch.NotifyOnDismiss
 		}
 		if len(updates) > 0 {
 			if err := tx.Model(&model.TrustSubjectKind{}).Where("id = ?", id).Updates(updates).Error; err != nil {

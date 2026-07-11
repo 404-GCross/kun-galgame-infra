@@ -76,6 +76,7 @@ func (s *ThreadService) openWithFirstPost(ctx context.Context, kind int16, p Ope
 	now := time.Now()
 	var thread model.CommunityThread
 	var post model.CommunityPost
+	var enqueuedItemID int64
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		trust, err := repository.GetOrCreateTrustTx(tx, p.AuthorID)
 		if err != nil {
@@ -114,8 +115,12 @@ func (s *ThreadService) openWithFirstPost(ctx context.Context, kind int16, p Ope
 		}
 		if held {
 			// A held opening post by a newcomer enters the review queue too.
-			if _, err := repository.EnqueueReviewIfAbsentTx(tx, thread.Site, post.ID, model.ReviewSourceFirstPostHold); err != nil {
+			itemID, created, err := repository.EnqueueReviewIfAbsentTx(tx, thread.Site, post.ID, model.ReviewSourceFirstPostHold)
+			if err != nil {
 				return err
+			}
+			if created {
+				enqueuedItemID = itemID
 			}
 			return repository.DecrementHoldTx(tx, p.AuthorID)
 		}
@@ -125,6 +130,11 @@ func (s *ThreadService) openWithFirstPost(ctx context.Context, kind int16, p Ope
 		return nil, nil, err
 	}
 	s.sink.Emit(Event{Kind: EventPostCreated, ThreadID: thread.ID, PostID: post.ID, ActorID: p.AuthorID})
+	// Best-effort forward a held opening-post review item to the trust inbox after
+	// commit (step 03 outbox).
+	if enqueuedItemID != 0 {
+		s.sink.Emit(Event{Kind: EventReviewEnqueued, ThreadID: thread.ID, PostID: post.ID, ReviewItemID: enqueuedItemID})
+	}
 	return &thread, &post, nil
 }
 

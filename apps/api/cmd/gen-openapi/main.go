@@ -59,7 +59,7 @@ func main() {
 	case *community:
 		api = commHandler.Setup(app, nil, nil, nil, nil, nil, nil, nil)
 	case *trust:
-		api = trustHandler.Setup(app, nil, nil)
+		api = trustHandler.Setup(app, nil, nil, nil)
 	case *trustAdmin:
 		api = trustHandler.SetupAdmin(app, nil, nil, nil)
 	case *admin:

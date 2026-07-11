@@ -61,6 +61,11 @@ type TrustReviewItem struct {
 	// Priority ≈ reach × severity ÷ cost, recomputable. Intent value written
 	// explicitly (章程 ruling 4 lists priority) → NO default tag.
 	Priority float32 `gorm:"type:real;not null;column:priority" json:"priority"`
+	// ContextNote is the reviewer-facing evidence a non-report source carries
+	// (step 03 ruling 5): a community forward fills it with "[source] post #<id>
+	// by user <id>: <excerpt>"; a future ai_text hit uses it for the matched
+	// span. Nullable — report-driven items leave it NULL.
+	ContextNote *string `gorm:"column:context_note" json:"context_note"`
 	// Status uses the ReviewStatus* constants; 0=pending is a meaningful zero
 	// → NO default tag.
 	Status    int16      `gorm:"not null;column:status" json:"status"`

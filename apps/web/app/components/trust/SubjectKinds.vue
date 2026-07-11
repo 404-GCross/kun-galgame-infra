@@ -21,7 +21,13 @@ const kinds = computed<TrustSubjectKind[]>(() => data.value ?? [])
 
 // Create
 const createOpen = ref(false)
-const form = reactive({ site: '', key: '', callback_url: '', callback_secret: '' })
+const form = reactive({
+  site: '',
+  key: '',
+  callback_url: '',
+  callback_secret: '',
+  notify_on_dismiss: false
+})
 const creating = ref(false)
 
 const openCreate = () => {
@@ -29,6 +35,7 @@ const openCreate = () => {
   form.key = ''
   form.callback_url = ''
   form.callback_secret = ''
+  form.notify_on_dismiss = false
   createOpen.value = true
 }
 
@@ -41,7 +48,8 @@ const create = async () => {
   try {
     const body: TrustCreateSubjectKindRequest = {
       site: form.site.trim(),
-      key: form.key.trim()
+      key: form.key.trim(),
+      notify_on_dismiss: form.notify_on_dismiss
     }
     if (form.callback_url.trim()) body.callback_url = form.callback_url.trim()
     if (form.callback_secret.trim())
@@ -62,13 +70,18 @@ const create = async () => {
 // Edit callback config
 const editOpen = ref(false)
 const editTarget = ref<TrustSubjectKind | null>(null)
-const editForm = reactive({ callback_url: '', callback_secret: '' })
+const editForm = reactive({
+  callback_url: '',
+  callback_secret: '',
+  notify_on_dismiss: false
+})
 const saving = ref(false)
 
 const openEdit = (k: TrustSubjectKind) => {
   editTarget.value = k
   editForm.callback_url = k.callback_url ?? ''
   editForm.callback_secret = ''
+  editForm.notify_on_dismiss = k.notify_on_dismiss ?? false
   editOpen.value = true
 }
 
@@ -90,7 +103,8 @@ const saveEdit = async () => {
   saving.value = true
   try {
     const body: TrustPatchSubjectKindRequest = {
-      callback_url: editForm.callback_url.trim()
+      callback_url: editForm.callback_url.trim(),
+      notify_on_dismiss: editForm.notify_on_dismiss
     }
     // A blank secret leaves the stored secret untouched (it is never shown).
     if (editForm.callback_secret.trim())
@@ -154,6 +168,9 @@ const toggleDeprecated = async (k: TrustSubjectKind) => {
                 <KunChip v-if="k.has_secret" color="success" variant="flat" size="xs">
                   密钥
                 </KunChip>
+                <KunChip v-if="k.notify_on_dismiss" color="info" variant="flat" size="xs">
+                  驳回回调
+                </KunChip>
               </div>
             </td>
             <td class="px-2 py-2">
@@ -210,6 +227,10 @@ const toggleDeprecated = async (k: TrustSubjectKind) => {
           label="回调密钥(可选)"
           placeholder="HMAC 密钥"
         />
+        <KunSwitch
+          v-model="form.notify_on_dismiss"
+          label="驳回时回调(释放持留/自动隐藏)"
+        />
         <div class="flex justify-end gap-3">
           <KunButton color="default" variant="flat" @click="createOpen = false">
             取消
@@ -235,6 +256,10 @@ const toggleDeprecated = async (k: TrustSubjectKind) => {
           v-model="editForm.callback_secret"
           label="回调密钥"
           placeholder="留空则保持不变"
+        />
+        <KunSwitch
+          v-model="editForm.notify_on_dismiss"
+          label="驳回时回调(释放持留/自动隐藏)"
         />
         <div class="flex justify-end gap-3">
           <KunButton color="default" variant="flat" @click="editOpen = false">

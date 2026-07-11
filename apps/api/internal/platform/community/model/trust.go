@@ -79,6 +79,15 @@ type CommunityReviewItem struct {
 	DecidedBy *int64     `gorm:"column:decided_by" json:"decided_by"`
 	DecidedAt *time.Time `gorm:"column:decided_at" json:"decided_at"`
 	CreatedAt time.Time  `json:"created_at"`
+
+	// TrustReviewItemID is the id of the item this row was forwarded to in the
+	// unified trust inbox (step 03 outbox). NULL = not yet forwarded — the sweep
+	// (FOR UPDATE SKIP LOCKED) picks up NULL rows and back-fills this on success.
+	TrustReviewItemID *int64 `gorm:"column:trust_review_item_id" json:"trust_review_item_id"`
+	// ForwardAttempts counts sweep delivery attempts (bookkeeping; creation value
+	// 0 is fixed → the DDL default stays). No dead-letter: a row stays retryable
+	// forever, the count only feeds an escalating error log.
+	ForwardAttempts int32 `gorm:"not null;default:0;column:forward_attempts" json:"forward_attempts"`
 }
 
 func (CommunityReviewItem) TableName() string { return "community_review_item" }

@@ -41,6 +41,7 @@ func NewFlagService(db *gorm.DB, sink EventSink) *FlagService {
 // the flag — it is never re-enqueued.
 func (s *FlagService) Submit(ctx context.Context, postID, flaggerID int64, reason *int16, note *string) error {
 	var crossed bool
+	var enqueuedItemID int64
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		pc, found, err := repository.PostContextTx(tx, postID)
 		if err != nil {
@@ -75,8 +76,12 @@ func (s *FlagService) Submit(ctx context.Context, postID, flaggerID int64, reaso
 		if err := repository.SetPostStatusTx(tx, postID, model.PostStatusHidden); err != nil {
 			return err
 		}
-		if _, err := repository.EnqueueReviewIfAbsentTx(tx, pc.Site, postID, model.ReviewSourceFlags); err != nil {
+		itemID, created, err := repository.EnqueueReviewIfAbsentTx(tx, pc.Site, postID, model.ReviewSourceFlags)
+		if err != nil {
 			return err
+		}
+		if created {
+			enqueuedItemID = itemID
 		}
 		crossed = true
 		return nil
@@ -86,6 +91,13 @@ func (s *FlagService) Submit(ctx context.Context, postID, flaggerID int64, reaso
 	}
 	if crossed {
 		s.sink.Emit(Event{Kind: EventFlagThreshold, PostID: postID})
+	}
+	// Best-effort forward the freshly-enqueued item to the trust inbox AFTER the
+	// transaction has committed (step 03 outbox — never HTTP inside the tx). The
+	// sink turns this into an off-request trust call when forwarding is wired; a
+	// no-op otherwise.
+	if enqueuedItemID != 0 {
+		s.sink.Emit(Event{Kind: EventReviewEnqueued, PostID: postID, ReviewItemID: enqueuedItemID})
 	}
 	return nil
 }

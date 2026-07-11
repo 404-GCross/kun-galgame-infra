@@ -1,0 +1,241 @@
+package service
+
+import (
+	"context"
+	"errors"
+	"strconv"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"api/internal/platform/community/model"
+	"api/pkg/trustclient"
+)
+
+// fakeForwarder records forward/resolve calls and signals each on a channel so
+// the async ForwardingSink goroutine can be awaited deterministically.
+type fakeForwarder struct {
+	mu          sync.Mutex
+	forwards    []trustclient.ForwardRequest
+	resolves    []fakeResolve
+	nextID      int64
+	failForward bool
+	calls       chan struct{}
+}
+
+type fakeResolve struct {
+	TrustID  int64
+	Outcome  string
+	ActorRef string
+}
+
+func newFakeForwarder() *fakeForwarder { return &fakeForwarder{calls: make(chan struct{}, 16)} }
+
+func (f *fakeForwarder) Forward(_ context.Context, req trustclient.ForwardRequest) (int64, bool, error) {
+	f.mu.Lock()
+	f.forwards = append(f.forwards, req)
+	fail := f.failForward
+	f.nextID++
+	id := f.nextID
+	f.mu.Unlock()
+	defer f.signal()
+	if fail {
+		return 0, false, errors.New("forward boom")
+	}
+	return id, true, nil
+}
+
+func (f *fakeForwarder) Resolve(_ context.Context, trustID int64, outcome, actorRef string) (bool, error) {
+	f.mu.Lock()
+	f.resolves = append(f.resolves, fakeResolve{trustID, outcome, actorRef})
+	f.mu.Unlock()
+	f.signal()
+	return true, nil
+}
+
+func (f *fakeForwarder) signal() {
+	select {
+	case f.calls <- struct{}{}:
+	default:
+	}
+}
+
+func (f *fakeForwarder) forwardCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.forwards)
+}
+
+// waitCall blocks until the fake records a call, or fails the test after 2s.
+func waitCall(t *testing.T, f *fakeForwarder) {
+	t.Helper()
+	select {
+	case <-f.calls:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for a forwarder call")
+	}
+}
+
+// heldReply creates a fresh-author (held) first post and returns its review item.
+func heldReply(t *testing.T, ps *PostService, threadID, author int64, body string) (*model.CommunityPost, *model.CommunityReviewItem) {
+	t.Helper()
+	p, err := ps.Reply(context.Background(), ReplyParams{ThreadID: threadID, AuthorID: author, BodyRaw: body})
+	if err != nil {
+		t.Fatalf("held reply: %v", err)
+	}
+	if p.Status != model.PostStatusHidden {
+		t.Fatalf("expected held post, got status %d", p.Status)
+	}
+	return p, pendingReviewForPost(t, p.ID)
+}
+
+// D⑧: the outbox sweep forwards un-forwarded items and back-fills trust ids; a
+// failing forward bumps forward_attempts without back-filling; disabled = no-op.
+func TestForwardSweep(t *testing.T) {
+	cleanTables(t)
+	ctx := context.Background()
+	ts := NewThreadService(testDB, NoopSink{})
+	ps := NewPostService(testDB, NoopSink{})
+	th := openTopic(t, ts, "letmoe", 100, "b1", "opening")
+	_, it1 := heldReply(t, ps, th.ID, 700, "hello one")
+	p2, it2 := heldReply(t, ps, th.ID, 701, "hello two")
+
+	// Disabled forwarder → sweep is a no-op.
+	if n, err := NewForwardService(testDB, nil).Sweep(ctx); err != nil || n != 0 {
+		t.Fatalf("disabled sweep: n=%d err=%v", n, err)
+	}
+
+	// A failing forwarder bumps forward_attempts, leaves trust id NULL.
+	failing := newFakeForwarder()
+	failing.failForward = true
+	fsvc := NewForwardService(testDB, failing)
+	if n, err := fsvc.Sweep(ctx); err != nil || n != 0 {
+		t.Fatalf("failing sweep forwarded %d (err %v), want 0", n, err)
+	}
+	got := reloadItem(t, it1.ID)
+	if got.TrustReviewItemID != nil {
+		t.Fatal("failed forward must not back-fill trust id")
+	}
+	if got.ForwardAttempts != 1 {
+		t.Fatalf("forward_attempts = %d, want 1 after one failed sweep", got.ForwardAttempts)
+	}
+
+	// A succeeding forwarder back-fills both rows and reports the count.
+	fake := newFakeForwarder()
+	svc := NewForwardService(testDB, fake)
+	n, err := svc.Sweep(ctx)
+	if err != nil || n != 2 {
+		t.Fatalf("sweep forwarded %d (err %v), want 2", n, err)
+	}
+	for _, id := range []int64{it1.ID, it2.ID} {
+		if reloadItem(t, id).TrustReviewItemID == nil {
+			t.Fatalf("item %d not back-filled after sweep", id)
+		}
+	}
+	// The context note carries the source label + post id + author + excerpt.
+	found := false
+	for _, req := range fake.forwards {
+		if req.SubjectKind != forwardSubjectKind {
+			t.Fatalf("subject_kind = %q, want %q", req.SubjectKind, forwardSubjectKind)
+		}
+		if req.SubjectID == strconv.FormatInt(p2.ID, 10) {
+			found = true
+			if req.ContextNote == nil || !strings.HasPrefix(*req.ContextNote, "[first_post_hold] post #"+strconv.FormatInt(p2.ID, 10)) {
+				t.Fatalf("context note = %v", req.ContextNote)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("no forward for post %d", p2.ID)
+	}
+}
+
+// D⑦: a threshold-crossing flag forwards the freshly-enqueued item AFTER the
+// creating transaction commits — proven because the immediate forward (via the
+// sink goroutine) can only load the row once it is committed.
+func TestForwardImmediateAfterCommit(t *testing.T) {
+	cleanTables(t)
+	ctx := context.Background()
+	fake := newFakeForwarder()
+	fwd := NewForwardService(testDB, fake)
+	sink := NewForwardingSink(NoopSink{}, fwd)
+	ts := NewThreadService(testDB, NoopSink{})
+	ps := NewPostService(testDB, NoopSink{})
+	fs := NewFlagService(testDB, sink)
+	th := openTopic(t, ts, "letmoe", 100, "b1", "opening")
+	post := visibleReply(t, ps, th.ID, 200)
+
+	for _, r := range []int64{300, 301, 302} {
+		if err := fs.Submit(ctx, post.ID, r, nil, nil); err != nil {
+			t.Fatalf("flag: %v", err)
+		}
+	}
+	waitCall(t, fake)
+	if fake.forwardCount() != 1 {
+		t.Fatalf("expected 1 immediate forward, got %d", fake.forwardCount())
+	}
+	req := fake.forwards[0]
+	if req.SubjectID != strconv.FormatInt(post.ID, 10) {
+		t.Fatalf("forward subject_id = %q, want %d", req.SubjectID, post.ID)
+	}
+	if req.ContextNote == nil || !strings.HasPrefix(*req.ContextNote, "[flags] post #") {
+		t.Fatalf("forward context note = %v", req.ContextNote)
+	}
+}
+
+// D⑨: a local approve/reject on a forwarded item best-effort resolves the trust
+// item with the matching outcome; an un-forwarded item resolves to nothing.
+func TestForwardResolveOnDecide(t *testing.T) {
+	cleanTables(t)
+	ctx := context.Background()
+	fake := newFakeForwarder()
+	fwd := NewForwardService(testDB, fake)
+	sink := NewForwardingSink(NoopSink{}, fwd)
+	ts := NewThreadService(testDB, NoopSink{})
+	ps := NewPostService(testDB, NoopSink{})
+	rs := NewReviewService(testDB, sink)
+	th := openTopic(t, ts, "letmoe", 100, "b1", "opening")
+
+	post, item := heldReply(t, ps, th.ID, 700, "held post")
+	// Mark it forwarded so the decision resolves the trust item.
+	if err := testDB.Model(&model.CommunityReviewItem{}).Where("id = ?", item.ID).
+		Update("trust_review_item_id", int64(555)).Error; err != nil {
+		t.Fatalf("mark forwarded: %v", err)
+	}
+	if err := rs.Approve(ctx, item.ID, 999); err != nil {
+		t.Fatalf("approve: %v", err)
+	}
+	waitCall(t, fake)
+	fake.mu.Lock()
+	resolves := append([]fakeResolve(nil), fake.resolves...)
+	fake.mu.Unlock()
+	if len(resolves) != 1 || resolves[0].TrustID != 555 || resolves[0].Outcome != outcomeApproved || resolves[0].ActorRef != "999" {
+		t.Fatalf("resolve calls = %+v, want one {555 approved 999}", resolves)
+	}
+	if getPost(t, post.ID).Status != model.PostStatusVisible {
+		t.Fatal("approve should still restore the post locally")
+	}
+
+	// An un-forwarded item → resolveItem is a no-op (no trust call).
+	_, item2 := heldReply(t, ps, th.ID, 701, "another held")
+	if err := fwd.resolveItem(ctx, item2.ID, outcomeRejected, 1); err != nil {
+		t.Fatalf("resolve un-forwarded: %v", err)
+	}
+	fake.mu.Lock()
+	extra := len(fake.resolves)
+	fake.mu.Unlock()
+	if extra != 1 {
+		t.Fatalf("un-forwarded item must not trigger a resolve; total resolves = %d", extra)
+	}
+}
+
+// reloadItem re-reads a community review item for assertions.
+func reloadItem(t *testing.T, id int64) *model.CommunityReviewItem {
+	t.Helper()
+	var it model.CommunityReviewItem
+	if err := testDB.First(&it, id).Error; err != nil {
+		t.Fatalf("reload item %d: %v", id, err)
+	}
+	return &it
+}

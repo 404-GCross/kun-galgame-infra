@@ -21,8 +21,16 @@ type TrustSubjectKind struct {
 	CallbackSecret *string `gorm:"column:callback_secret" json:"callback_secret,omitempty"`
 	// IsDeprecated retires the kind. Creation value is always false, so the DDL
 	// default stays (a bookkeeping flag, not a caller intent value).
-	IsDeprecated bool      `gorm:"not null;default:false;column:is_deprecated" json:"is_deprecated"`
-	CreatedAt    time.Time `json:"created_at"`
+	IsDeprecated bool `gorm:"not null;default:false;column:is_deprecated" json:"is_deprecated"`
+	// NotifyOnDismiss makes a DISMISSED decision on this kind emit a callback
+	// (doc 18 §7, step 03 ruling 4): a disposition{action:0 none,
+	// reason_code:"review_dismissed"} is created and delivered when the kind has a
+	// callback_url, so the product can release a hold / un-hide on "reviewed, no
+	// problem". Creation value is always false (a registry-flag like is_deprecated,
+	// not a caller intent value), so the DDL default stays. Ordinary report kinds
+	// leave it false → zero effect.
+	NotifyOnDismiss bool      `gorm:"not null;default:false;column:notify_on_dismiss" json:"notify_on_dismiss"`
+	CreatedAt       time.Time `json:"created_at"`
 }
 
 func (TrustSubjectKind) TableName() string { return "trust_subject_kind" }

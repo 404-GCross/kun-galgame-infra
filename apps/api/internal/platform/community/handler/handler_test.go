@@ -108,7 +108,7 @@ func TestHandlerFlow(t *testing.T) {
 		feedback:  service.NewFeedbackService(testDB, sink),
 		flags:     service.NewFlagService(testDB, sink),
 		trust:     service.NewTrustService(testDB),
-		review:    service.NewReviewService(testDB),
+		review:    service.NewReviewService(testDB, sink),
 	}
 	ctx := clientCtx("letmoe")
 

@@ -16,10 +16,11 @@ import (
 type ReviewService struct {
 	db      *gorm.DB
 	reviews *repository.ReviewRepository
+	sink    EventSink
 }
 
-func NewReviewService(db *gorm.DB) *ReviewService {
-	return &ReviewService{db: db, reviews: repository.NewReviewRepository(db)}
+func NewReviewService(db *gorm.DB, sink EventSink) *ReviewService {
+	return &ReviewService{db: db, reviews: repository.NewReviewRepository(db), sink: sink}
 }
 
 // List returns a site's pending queue items. source ≥ 0 filters to one source
@@ -43,7 +44,8 @@ func (s *ReviewService) Reject(ctx context.Context, id, decidedBy int64) error {
 }
 
 func (s *ReviewService) decide(ctx context.Context, id, decidedBy int64, approve bool) error {
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	var forwarded bool // the item was forwarded to trust → resolve it after commit
+	txErr := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		item, err := repository.GetReviewItemTx(tx, id)
 		if err != nil {
 			return err
@@ -69,12 +71,30 @@ func (s *ReviewService) decide(ctx context.Context, id, decidedBy int64, approve
 				}
 			}
 		}
+		forwarded = item.TrustReviewItemID != nil
 		status := model.ReviewStatusRejected
 		if approve {
 			status = model.ReviewStatusApproved
 		}
 		return repository.DecideReviewItemTx(tx, id, status, decidedBy)
 	})
+	if txErr != nil {
+		return txErr
+	}
+	// Two-master convergence (step 03 ruling 1): a local decision on a forwarded
+	// item best-effort resolves the trust item — WITHOUT a callback (no echo
+	// loop). If a platform operator already decided it on the trust side, the
+	// resolve lands on a terminal item and returns closed:false (a tolerated
+	// race). The sink turns this into an off-request trust call; a no-op
+	// otherwise.
+	if forwarded && s.sink != nil {
+		kind := EventReviewRejected
+		if approve {
+			kind = EventReviewApproved
+		}
+		s.sink.Emit(Event{Kind: kind, ReviewItemID: id, ActorID: decidedBy})
+	}
+	return nil
 }
 
 // backfillFlags resolves a post's pending flags and updates each reporter's

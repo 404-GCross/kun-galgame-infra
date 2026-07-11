@@ -54,7 +54,7 @@ export const REVIEW_SOURCE_LABELS: Record<number, string> = {
 // disposition.action: 0=none 1=hide 2=remove 3=warn_user 4=restrict
 // 5=escalate_idp
 export const ACTION_LABELS: Record<number, string> = {
-  0: '无',
+  0: '无操作(复核放行)',
   1: '隐藏',
   2: '移除',
   3: '警告用户',

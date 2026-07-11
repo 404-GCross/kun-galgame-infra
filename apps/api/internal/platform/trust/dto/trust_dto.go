@@ -40,13 +40,14 @@ type SubjectKindsResponse struct {
 // SubjectKindView is a subject-kind registry row. The secret is never serialized;
 // HasCallback reports whether a callback endpoint is configured.
 type SubjectKindView struct {
-	ID           int64     `json:"id"`
-	Site         string    `json:"site"`
-	Key          string    `json:"key"`
-	CallbackURL  *string   `json:"callback_url,omitempty"`
-	HasSecret    bool      `json:"has_secret"`
-	IsDeprecated bool      `json:"is_deprecated"`
-	CreatedAt    time.Time `json:"created_at"`
+	ID              int64     `json:"id"`
+	Site            string    `json:"site"`
+	Key             string    `json:"key"`
+	CallbackURL     *string   `json:"callback_url,omitempty"`
+	HasSecret       bool      `json:"has_secret"`
+	IsDeprecated    bool      `json:"is_deprecated"`
+	NotifyOnDismiss bool      `json:"notify_on_dismiss"`
+	CreatedAt       time.Time `json:"created_at"`
 }
 
 // ReasonView is a reason-taxonomy row.
@@ -70,6 +71,7 @@ type ReviewItemView struct {
 	ClassifierScore *float32   `json:"classifier_score,omitempty"`
 	ReportWeightSum *float32   `json:"report_weight_sum,omitempty"`
 	Priority        float32    `json:"priority"`
+	ContextNote     *string    `json:"context_note,omitempty" doc:"non-report evidence excerpt (community forward / ai_text)"`
 	Status          int16      `json:"status" doc:"0=pending 1=claimed 2=actioned 3=dismissed"`
 	ClaimedBy       *int64     `json:"claimed_by,omitempty"`
 	ClaimedAt       *time.Time `json:"claimed_at,omitempty"`
@@ -129,17 +131,54 @@ type DecideRequest struct {
 
 // CreateSubjectKindRequest registers a subject kind for a site.
 type CreateSubjectKindRequest struct {
-	Site           string  `json:"site" doc:"tenant site the kind belongs to"`
-	Key            string  `json:"key"`
-	CallbackURL    *string `json:"callback_url,omitempty"`
-	CallbackSecret *string `json:"callback_secret,omitempty"`
+	Site            string  `json:"site" doc:"tenant site the kind belongs to"`
+	Key             string  `json:"key"`
+	CallbackURL     *string `json:"callback_url,omitempty"`
+	CallbackSecret  *string `json:"callback_secret,omitempty"`
+	NotifyOnDismiss *bool   `json:"notify_on_dismiss,omitempty" doc:"emit an action:0 callback on a dismissed decision (release holds); default false"`
 }
 
 // PatchSubjectKindRequest updates a subject kind (only provided fields apply).
 type PatchSubjectKindRequest struct {
-	CallbackURL    *string `json:"callback_url,omitempty"`
-	CallbackSecret *string `json:"callback_secret,omitempty"`
-	IsDeprecated   *bool   `json:"is_deprecated,omitempty"`
+	CallbackURL     *string `json:"callback_url,omitempty"`
+	CallbackSecret  *string `json:"callback_secret,omitempty"`
+	IsDeprecated    *bool   `json:"is_deprecated,omitempty"`
+	NotifyOnDismiss *bool   `json:"notify_on_dismiss,omitempty"`
+}
+
+// --- S2S forward (community→trust convergence, step 03) --------------------
+
+// ForwardRequest opens/updates a community_forward review item. Unlike a report,
+// `site` is on the wire here (a forwarder acts for many community-backed sites
+// through one S2S identity); the KUN_TRUST_FORWARDER_CLIENT_IDS allowlist is the
+// counterweight.
+type ForwardRequest struct {
+	Site         string   `json:"site" doc:"tenant site the subject belongs to (allowlist-gated, not from the client binding)"`
+	SubjectKind  string   `json:"subject_kind" doc:"registered subject kind (e.g. community_post)"`
+	SubjectID    string   `json:"subject_id"`
+	Severity     *int16   `json:"severity,omitempty"`
+	WeightSum    *float32 `json:"weight_sum,omitempty" doc:"accumulated signal weight (idempotent update takes the max)"`
+	ContextNote  *string  `json:"context_note,omitempty" doc:"reviewer-facing evidence excerpt"`
+	ForwarderRef *string  `json:"forwarder_ref,omitempty" doc:"caller-side trace ref (informational)"`
+}
+
+// ForwardResponse is the forward outcome.
+type ForwardResponse struct {
+	ReviewItemID int64 `json:"review_item_id"`
+	Created      bool  `json:"created" doc:"false = an open item already existed and its signals were updated"`
+}
+
+// ForwardResolveRequest closes a forwarded item after a site moderator's local
+// decision (no disposition, no callback — the enforcement already happened).
+type ForwardResolveRequest struct {
+	ReviewItemID int64   `json:"review_item_id"`
+	Outcome      string  `json:"outcome" enum:"approved,rejected" doc:"approved→dismissed, rejected→actioned"`
+	ActorRef     *string `json:"actor_ref,omitempty" doc:"site-side actor ref (recorded in the audit policy_ref)"`
+}
+
+// ForwardResolveResponse reports whether an open item was actually closed.
+type ForwardResolveResponse struct {
+	Closed bool `json:"closed" doc:"false = the item was already terminal (tolerated race)"`
 }
 
 // CreateReasonRequest registers a reason (site null = global).

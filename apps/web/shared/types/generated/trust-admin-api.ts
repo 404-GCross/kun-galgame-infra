@@ -203,6 +203,8 @@ export interface components {
             callback_secret?: string;
             callback_url?: string;
             key: string;
+            /** @description emit an action:0 callback on a dismissed decision (release holds); default false */
+            notify_on_dismiss?: boolean;
             /** @description tenant site the kind belongs to */
             site: string;
         };
@@ -415,6 +417,7 @@ export interface components {
             callback_secret?: string;
             callback_url?: string;
             is_deprecated?: boolean;
+            notify_on_dismiss?: boolean;
         };
         ReasonView: {
             /** Format: int64 */
@@ -461,6 +464,8 @@ export interface components {
             claimed_by?: number;
             /** Format: float */
             classifier_score?: number;
+            /** @description non-report evidence excerpt (community forward / ai_text) */
+            context_note?: string;
             /** Format: date-time */
             created_at: string;
             /** Format: date-time */
@@ -498,6 +503,7 @@ export interface components {
             id: number;
             is_deprecated: boolean;
             key: string;
+            notify_on_dismiss: boolean;
             site: string;
         };
     };

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -28,6 +29,14 @@ type Config struct {
 	ImageS3           S3Config
 	ImageClient       ImageClientConfig
 	CatalogClient     CatalogClientConfig
+	// TrustClient is the community service's caller-side client to the trust
+	// forward face (step 03). Empty ClientID/Secret → forwarding is entirely off
+	// (the outbox ticker idles, one startup log). TrustCallbackSecret verifies the
+	// inbound enforcement callbacks; TrustForwarderClientIDs is the trust-side
+	// allowlist of client ids permitted to call forward/resolve (empty = 403).
+	TrustClient             TrustClientConfig
+	TrustCallbackSecret     string
+	TrustForwarderClientIDs []string
 	// GalgameImageClient is a SECOND image client identity, used only by the
 	// galgame-image-refping job. The job runs in the oauth container (central
 	// scheduler), where ImageClient is the *account* client — but galgame
@@ -128,6 +137,15 @@ type ImageClientConfig struct {
 // proxy to the catalog S2S read face (the internal data browser). Empty
 // ClientID/Secret → the proxy soft-503s ("catalog browsing not configured").
 type CatalogClientConfig struct {
+	BaseURL      string
+	ClientID     string
+	ClientSecret string
+}
+
+// TrustClientConfig is caller-side configuration for the community service's
+// forward client to the trust service (step 03). Empty ClientID/Secret →
+// forwarding disabled (fail-closed).
+type TrustClientConfig struct {
 	BaseURL      string
 	ClientID     string
 	ClientSecret string
@@ -450,6 +468,19 @@ func Load() (*Config, error) {
 		ClientSecret: getEnv("KUN_CATALOG_CLIENT_SECRET", ""),
 	}
 
+	// Trust wiring (step 03). The community service uses TrustClient to forward
+	// its local review signals; empty ClientID/Secret keeps forwarding off. The
+	// callback secret verifies inbound enforcement callbacks. The forwarder
+	// allowlist is trust-side: only these client ids may call forward/resolve
+	// (empty = the face is 403 for everyone — fail-closed).
+	cfg.TrustClient = TrustClientConfig{
+		BaseURL:      getEnv("KUN_TRUST_CLIENT_BASE_URL", "http://trust:9283"),
+		ClientID:     getEnv("KUN_TRUST_CLIENT_ID", ""),
+		ClientSecret: getEnv("KUN_TRUST_CLIENT_SECRET", ""),
+	}
+	cfg.TrustCallbackSecret = getEnv("KUN_TRUST_CALLBACK_SECRET", "")
+	cfg.TrustForwarderClientIDs = splitCSV(getEnv("KUN_TRUST_FORWARDER_CLIENT_IDS", ""))
+
 	// Second image identity for galgame-image-refping (see Config.GalgameImageClient).
 	// Set KUN_GALGAME_IMAGE_CLIENT_ID / _SECRET in the oauth container to the
 	// galgame_wiki client (= the galgame container's KUN_IMAGE_CLIENT_ID/SECRET).
@@ -596,4 +627,20 @@ func getEnv(key, defaultValue string) string {
 		return value
 	}
 	return defaultValue
+}
+
+// splitCSV parses a comma-separated env value into a trimmed, empty-dropped
+// slice. An empty input yields nil (an empty allowlist, not a one-element "").
+func splitCSV(s string) []string {
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if t := strings.TrimSpace(p); t != "" {
+			out = append(out, t)
+		}
+	}
+	return out
 }

@@ -9,7 +9,7 @@ func toSubjectKindView(k model.TrustSubjectKind) dto.SubjectKindView {
 	return dto.SubjectKindView{
 		ID: k.ID, Site: k.Site, Key: k.Key, CallbackURL: k.CallbackURL,
 		HasSecret:    k.CallbackSecret != nil && *k.CallbackSecret != "",
-		IsDeprecated: k.IsDeprecated, CreatedAt: k.CreatedAt,
+		IsDeprecated: k.IsDeprecated, NotifyOnDismiss: k.NotifyOnDismiss, CreatedAt: k.CreatedAt,
 	}
 }
 
@@ -40,7 +40,7 @@ func toReviewItemView(it model.TrustReviewItem) dto.ReviewItemView {
 	return dto.ReviewItemView{
 		ID: it.ID, Site: it.Site, SubjectKind: it.SubjectKind, SubjectID: it.SubjectID,
 		Source: it.Source, Severity: it.Severity, ClassifierScore: it.ClassifierScore,
-		ReportWeightSum: it.ReportWeightSum, Priority: it.Priority, Status: it.Status,
+		ReportWeightSum: it.ReportWeightSum, Priority: it.Priority, ContextNote: it.ContextNote, Status: it.Status,
 		ClaimedBy: it.ClaimedBy, ClaimedAt: it.ClaimedAt,
 		DecidedBy: it.DecidedBy, DecidedAt: it.DecidedAt, CreatedAt: it.CreatedAt,
 	}

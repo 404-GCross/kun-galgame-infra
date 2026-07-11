@@ -22,10 +22,12 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
+	"time"
 
 	"api/internal/app"
 	"api/internal/infrastructure/database"
@@ -36,9 +38,13 @@ import (
 	"api/pkg/config"
 	"api/pkg/health"
 	"api/pkg/logger"
+	"api/pkg/trustclient"
 
 	"github.com/gofiber/fiber/v3"
 )
+
+// outboxInterval is the trust-forward sweep cadence (step 03 ruling 2).
+const outboxInterval = 60 * time.Second
 
 func main() {
 	cfg, err := config.Load()
@@ -65,16 +71,35 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Domain services. Events go to a no-op sink until the notification layer
-	// lands (章程 ruling 2 / doc 11 §7).
-	sink := service.NoopSink{}
+	// Trust-forward client (step 03). Empty KUN_TRUST_CLIENT_* → a nil client →
+	// forwarding disabled (fail-closed): the outbox ticker idles and the sink is a
+	// plain no-op. Assigning through the interface only when non-nil avoids a
+	// typed-nil interface (which would report Enabled()==true then panic).
+	var forwarder service.Forwarder
+	if tc := trustclient.New(trustclient.Config{
+		BaseURL: cfg.TrustClient.BaseURL, ClientID: cfg.TrustClient.ClientID, ClientSecret: cfg.TrustClient.ClientSecret,
+	}); tc != nil {
+		forwarder = tc
+	}
+	forwardSvc := service.NewForwardService(communityDB.DB(), forwarder)
+	if forwardSvc.Enabled() {
+		slog.Info("community trust forwarding enabled", "base_url", cfg.TrustClient.BaseURL)
+	} else {
+		slog.Info("community trust forwarding disabled (KUN_TRUST_CLIENT_* unset)")
+	}
+
+	// Domain services. Notification events still go to a no-op sink (章程 ruling 2
+	// / doc 11 §7); the ForwardingSink decorates it to turn the step-03 review.*
+	// events into off-request trust forward/resolve calls.
+	sink := service.NewForwardingSink(service.NoopSink{}, forwardSvc)
 	threadSvc := service.NewThreadService(communityDB.DB(), sink)
 	postSvc := service.NewPostService(communityDB.DB(), sink)
 	reactionSvc := service.NewReactionService(communityDB.DB())
 	feedbackSvc := service.NewFeedbackService(communityDB.DB(), sink)
 	flagSvc := service.NewFlagService(communityDB.DB(), sink)
 	trustSvc := service.NewTrustService(communityDB.DB())
-	reviewSvc := service.NewReviewService(communityDB.DB())
+	reviewSvc := service.NewReviewService(communityDB.DB(), sink)
+	callbackSvc := service.NewCallbackService(communityDB.DB())
 
 	application.Fiber.Use(middleware.RequestID())
 	application.Fiber.Use(middleware.Logger())
@@ -83,11 +108,22 @@ func main() {
 	})
 	application.Fiber.Use(middleware.CORS(cfg.Server.CORSOrigin))
 
+	// Trust enforcement callback (step 03). OUTSIDE the /api/v1/community S2S
+	// Basic-auth prefix — it authenticates with the trust HMAC instead. Empty
+	// KUN_TRUST_CALLBACK_SECRET → every callback 401s (fail-closed).
+	application.Fiber.Post("/trust/callback", commHandler.TrustCallback(cfg.TrustCallbackSecret, callbackSvc))
+
 	// S2S face: Basic client credentials, path-scoped before the Huma routes.
 	clientRepo := siteRepo.NewOAuthClientRepository(application.DB.DB())
 	application.Fiber.Use("/api/v1/community", commHandler.S2SAuth(clientRepo))
 
 	api := commHandler.Setup(application.Fiber, threadSvc, postSvc, reactionSvc, feedbackSvc, flagSvc, trustSvc, reviewSvc)
+
+	// Outbox ticker: sweeps un-forwarded review items (step 03 ruling 2). Idles
+	// when forwarding is disabled (Sweep is a no-op then).
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go runOutboxTicker(ctx, forwardSvc)
 
 	// Serve the S2S OpenAPI 3.1 spec unauthenticated at the app root.
 	application.Fiber.Get("/openapi.json", func(c fiber.Ctx) error {
@@ -113,5 +149,24 @@ func main() {
 	if err := application.Run(cfg.CommunityService.Host, cfg.CommunityService.Port); err != nil {
 		slog.Error("run", "error", err)
 		os.Exit(1)
+	}
+}
+
+// runOutboxTicker sweeps un-forwarded review items on the outbox interval until
+// ctx is cancelled. Errors are logged, never fatal.
+func runOutboxTicker(ctx context.Context, fwd *service.ForwardService) {
+	t := time.NewTicker(outboxInterval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			if n, err := fwd.Sweep(ctx); err != nil {
+				slog.Error("community trust-forward sweep", "err", err)
+			} else if n > 0 {
+				slog.Info("community trust-forward sweep", "forwarded", n)
+			}
+		}
 	}
 }

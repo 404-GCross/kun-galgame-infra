@@ -318,6 +318,14 @@ services:
       # host/user/pass fall back to KUN_PG_*.
       KUN_COMMUNITY_HOST: 0.0.0.0
       KUN_COMMUNITY_PORT: "9282"
+      # Trust wiring (step 03). All default empty = forwarding OFF (the outbox
+      # ticker idles) and every inbound callback 401s — behaviour unchanged until
+      # the letmoe cut-over registers the community_post subject_kind and sets
+      # these in Dokploy (see RUNBOOK / the step-03 report). Base URL defaults to
+      # http://trust:9283 (dokploy-network service name).
+      KUN_TRUST_CLIENT_ID: ${KUN_TRUST_CLIENT_ID:-}
+      KUN_TRUST_CLIENT_SECRET: ${KUN_TRUST_CLIENT_SECRET:-}
+      KUN_TRUST_CALLBACK_SECRET: ${KUN_TRUST_CALLBACK_SECRET:-}
     # Internal only — product backends (letmoe/...) reach it at
     # http://community:9282 over dokploy-network.
     expose: ["9282"]
@@ -344,6 +352,11 @@ services:
       # host/user/pass fall back to KUN_PG_*.
       KUN_TRUST_HOST: 0.0.0.0
       KUN_TRUST_PORT: "9283"
+      # Forward-face allowlist (step 03 ruling 3): comma-separated client ids
+      # permitted to call POST /api/v1/trust/forward{,/resolve}. Default empty =
+      # the forward face is 403 for everyone (fail-closed); set to the community
+      # service's KUN_TRUST_CLIENT_ID in Dokploy at the letmoe cut-over.
+      KUN_TRUST_FORWARDER_CLIENT_IDS: ${KUN_TRUST_FORWARDER_CLIENT_IDS:-}
     # Internal only — product backends reach it at http://trust:9283 over
     # dokploy-network.
     expose: ["9283"]

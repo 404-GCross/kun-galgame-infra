@@ -42,4 +42,12 @@ var (
 	// ErrSubjectKindExists is returned when registering a (site, key) that
 	// already exists (registry rows are never deleted → re-open via PATCH).
 	ErrSubjectKindExists = errors.New("trust: subject kind already exists")
+	// ErrForwarderNotAllowed is returned when a client that is not on the
+	// KUN_TRUST_FORWARDER_CLIENT_IDS allowlist calls forward/resolve → 403 (step
+	// 03 ruling 3; the allowlist is the counterweight to forward carrying `site`
+	// in its body rather than deriving it from the client binding).
+	ErrForwarderNotAllowed = errors.New("trust: client is not an allowed forwarder")
+	// ErrInvalidOutcome is returned when a forward/resolve outcome is neither
+	// "approved" nor "rejected".
+	ErrInvalidOutcome = errors.New("trust: invalid resolve outcome")
 )

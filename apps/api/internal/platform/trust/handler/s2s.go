@@ -19,12 +19,13 @@ import (
 type Server struct {
 	reports  *service.ReportService
 	registry *service.RegistryService
+	forward  *service.ForwardService
 }
 
 // Setup builds the trust S2S Huma API over the Fiber app. S2SAuth is applied by
 // the caller as path-scoped Fiber middleware BEFORE this. Callable with nil
 // services for spec export (handlers are never invoked then).
-func Setup(app *fiber.App, reports *service.ReportService, registry *service.RegistryService) huma.API {
+func Setup(app *fiber.App, reports *service.ReportService, registry *service.RegistryService, forward *service.ForwardService) huma.API {
 	InstallErrorEnvelope()
 
 	cfg := huma.DefaultConfig("KUN Trust Service", "1.0.0")
@@ -35,7 +36,7 @@ func Setup(app *fiber.App, reports *service.ReportService, registry *service.Reg
 	api := humafiber.New(app, cfg)
 	api.UseMiddleware(S2SBridge)
 
-	s := &Server{reports: reports, registry: registry}
+	s := &Server{reports: reports, registry: registry, forward: forward}
 	s.register(api)
 	return api
 }
@@ -46,6 +47,78 @@ func (s *Server) register(api huma.API) {
 		Summary: "Submit a report on a subject (dedup / rate-limit / weight / aggregate)", Tags: intake}, s.submitReport)
 	huma.Register(api, huma.Operation{OperationID: "listSubjectKinds", Method: http.MethodGet, Path: "/api/v1/trust/subject-kinds",
 		Summary: "List the calling site's registered subject kinds", Tags: intake}, s.listSubjectKinds)
+
+	// community→trust convergence (step 03). These carry `site` in the body
+	// (unlike /reports, which derives it from the client binding) because a
+	// forwarder relays for many community-backed sites through one S2S identity;
+	// the KUN_TRUST_FORWARDER_CLIENT_IDS allowlist is the counterweight.
+	fwd := []string{"trust-forward"}
+	huma.Register(api, huma.Operation{OperationID: "forwardReviewItem", Method: http.MethodPost, Path: "/api/v1/trust/forward",
+		Summary: "Forward a product's local review signal into the unified inbox (allowlist-gated)", Tags: fwd}, s.forwardReviewItem)
+	huma.Register(api, huma.Operation{OperationID: "resolveForwardedItem", Method: http.MethodPost, Path: "/api/v1/trust/forward/resolve",
+		Summary: "Close a forwarded item after a site's local decision (no disposition, no callback)", Tags: fwd}, s.resolveForwardedItem)
+}
+
+type forwardInput struct{ Body dto.ForwardRequest }
+type forwardOutput struct {
+	Body Envelope[dto.ForwardResponse]
+}
+
+func (s *Server) forwardReviewItem(ctx context.Context, in *forwardInput) (*forwardOutput, error) {
+	res, err := s.forward.Forward(ctx, service.ForwardParams{
+		CallerClientID: callerClientID(ctx),
+		Site:           in.Body.Site, SubjectKind: in.Body.SubjectKind, SubjectID: in.Body.SubjectID,
+		Severity: in.Body.Severity, WeightSum: in.Body.WeightSum, ContextNote: in.Body.ContextNote,
+	})
+	if err != nil {
+		return nil, mapForwardErr("forward", err)
+	}
+	return &forwardOutput{Body: okEnvelope(dto.ForwardResponse{
+		ReviewItemID: res.ReviewItemID, Created: res.Created,
+	})}, nil
+}
+
+type resolveInput struct{ Body dto.ForwardResolveRequest }
+type resolveOutput struct {
+	Body Envelope[dto.ForwardResolveResponse]
+}
+
+func (s *Server) resolveForwardedItem(ctx context.Context, in *resolveInput) (*resolveOutput, error) {
+	res, err := s.forward.Resolve(ctx, service.ResolveParams{
+		CallerClientID: callerClientID(ctx),
+		ReviewItemID:   in.Body.ReviewItemID, Outcome: in.Body.Outcome, ActorRef: in.Body.ActorRef,
+	})
+	if err != nil {
+		return nil, mapForwardErr("resolve", err)
+	}
+	return &resolveOutput{Body: okEnvelope(dto.ForwardResolveResponse{Closed: res.Closed})}, nil
+}
+
+// callerClientID returns the authenticated S2S client id (empty when unbound).
+func callerClientID(ctx context.Context) string {
+	if c := clientFromCtx(ctx); c != nil {
+		return c.ID
+	}
+	return ""
+}
+
+// mapForwardErr translates a forward/resolve service error into the house envelope.
+func mapForwardErr(op string, err error) *houseError {
+	switch {
+	case stderrors.Is(err, service.ErrForwarderNotAllowed):
+		return apiErrMsg(http.StatusForbidden, errors.ErrForbidden,
+			"client is not an allowed trust forwarder")
+	case stderrors.Is(err, service.ErrSubjectKindNotRegistered):
+		return apiErrMsg(http.StatusUnprocessableEntity, errors.ErrValidationFailed,
+			"subject_kind is not registered for this site")
+	case stderrors.Is(err, service.ErrInvalidOutcome):
+		return apiErrMsg(http.StatusBadRequest, errors.ErrValidationFailed, "outcome must be approved or rejected")
+	case stderrors.Is(err, service.ErrReviewItemNotFound):
+		return apiErr(http.StatusNotFound, errors.ErrNotFound)
+	default:
+		slog.Error("trust "+op, "err", err)
+		return apiErr(http.StatusInternalServerError, errors.ErrInternalServer)
+	}
 }
 
 type submitReportInput struct{ Body dto.ReportRequest }

@@ -157,6 +157,27 @@ func (s *ReviewService) Decide(ctx context.Context, p DecideParams) (*int64, err
 				}).Error; err != nil {
 				return err
 			}
+			// notify_on_dismiss (ruling 4): a kind that asks for it AND has a
+			// callback endpoint gets an action:0 (none) disposition + pending
+			// callback, so the product releases a hold / un-hides on "reviewed,
+			// no problem". Ordinary report kinds leave notify_on_dismiss false →
+			// no disposition, exactly as before.
+			var kind model.TrustSubjectKind
+			kerr := tx.Where("site = ? AND key = ?", item.Site, item.SubjectKind).Take(&kind).Error
+			if kerr != nil && !errors.Is(kerr, gorm.ErrRecordNotFound) {
+				return kerr
+			}
+			if kind.NotifyOnDismiss && kind.CallbackURL != nil && *kind.CallbackURL != "" {
+				pending := model.CallbackStatusPending
+				disp := model.TrustDisposition{
+					ReviewItemID: item.ID, Action: model.ActionNone, ActedBy: p.DecidedBy,
+					ReasonCode: "review_dismissed", CallbackStatus: &pending, NextAttemptAt: &now,
+				}
+				if err := tx.Create(&disp).Error; err != nil {
+					return err
+				}
+				dispositionID = &disp.ID
+			}
 			return AppendAudit(tx, AuditEntry{
 				ActorID: &p.DecidedBy, Action: "review_dismissed",
 				Site: strptr(item.Site), SubjectKind: strptr(item.SubjectKind), SubjectID: strptr(item.SubjectID),

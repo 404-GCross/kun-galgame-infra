@@ -100,7 +100,7 @@ func TestReview_DecisionBackfill(t *testing.T) {
 	ts := NewThreadService(testDB, NoopSink{})
 	ps := NewPostService(testDB, NoopSink{})
 	fs := NewFlagService(testDB, &recordingSink{})
-	rs := NewReviewService(testDB)
+	rs := NewReviewService(testDB, NoopSink{})
 	th := openTopic(t, ts, "letmoe", 100, "b1", "opening")
 	ctx := context.Background()
 
@@ -146,7 +146,7 @@ func TestReview_HoldRelease(t *testing.T) {
 	cleanTables(t)
 	ts := NewThreadService(testDB, NoopSink{})
 	ps := NewPostService(testDB, NoopSink{})
-	rs := NewReviewService(testDB)
+	rs := NewReviewService(testDB, NoopSink{})
 	th := openTopic(t, ts, "letmoe", 100, "b1", "opening")
 
 	// A fresh TL0 author's first reply is held + enqueued (first_post_hold).
