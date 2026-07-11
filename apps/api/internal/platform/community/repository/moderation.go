@@ -107,11 +107,17 @@ func DecideReviewItemTx(tx *gorm.DB, id int64, status int16, decidedBy int64) er
 }
 
 // PostContext is a post's moderation context: its author, current status, and
-// the tenant site of its thread (for enqueuing site-scoped review items).
+// the tenant site of its thread (for enqueuing site-scoped review items), plus
+// the thread id and anchor — returned through the reaction toggle so a consuming
+// site can fan out its like notification (recipient + jump target) without a
+// second read (docs/proj/17).
 type PostContext struct {
-	AuthorID int64
-	Status   int16
-	Site     string
+	AuthorID   int64
+	Status     int16
+	Site       string
+	ThreadID   int64
+	AnchorKind int16
+	AnchorID   string
 }
 
 // PostContextTx joins post→thread to fetch the moderation context. Returns
@@ -119,7 +125,7 @@ type PostContext struct {
 func PostContextTx(tx *gorm.DB, postID int64) (PostContext, bool, error) {
 	var pc PostContext
 	err := tx.Table("community_post AS p").
-		Select("p.author_id AS author_id, p.status AS status, t.site AS site").
+		Select("p.author_id AS author_id, p.status AS status, t.site AS site, t.id AS thread_id, t.anchor_kind AS anchor_kind, t.anchor_id AS anchor_id").
 		Joins("JOIN community_thread AS t ON t.id = p.thread_id").
 		Where("p.id = ?", postID).
 		Take(&pc).Error

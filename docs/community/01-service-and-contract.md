@@ -68,29 +68,43 @@
 report/feedback — NOT a shrunken forum (edit **history** / the version surface,
 advanced search, and mod tooling live on the full surface, not here).
 
-#### Author edit — `PATCH /posts/{id}`
+#### Post edit — `PATCH /posts/{id}`
 
-Author-only: `author_id` (in the body) must match the post's author, else `403`.
-The body is re-cooked + re-sanitized at the current `sanitizer_version` and
-`edited_at` is stamped; `post_number`, `status`, and `author_id` never move. Only
-a **visible** post is editable — a held/hidden or tombstoned post returns `409`
-(a removed post stays removed; a held post is not an editable surface). The TL0
+Author-only by default: `author_id` (in the body) must match the post's author,
+else `403`. The **mod-actor variant** (`as_moderator: true`) skips the author
+match: the calling site declares that `author_id` is one of ITS moderators —
+community trusts the assertion like every other BFF-supplied identity (§2; the
+role tables live at the site) and leaves a structured **audit log** of the action
+(post/thread/author/moderator — the minimal audit surface, no table, matching the
+review queue's `decided_by` precedent). Either way the body is re-cooked +
+re-sanitized at the current `sanitizer_version` and `edited_at` is stamped;
+`post_number`, `status`, and `author_id` never move. Only a **visible** post is
+editable — a held/hidden or tombstoned post returns `409` (a removed post stays
+removed; a held post is released via the review queue, not an edit). The TL0
 sandbox **per-post content caps apply to the edited body too** (editing is not an
 escape hatch out of the newcomer sandbox); the daily create-rate caps do not (an
 edit is not a new post).
 
-#### Author self-delete — `DELETE /posts/{id}`
+#### Post delete — `DELETE /posts/{id}`
 
-Author-only self-delete (`author_id` is a **query param** — the request stays
-body-free, matching the artifact service's `DELETE`; it is a non-secret scalar
-the BFF already holds). The post is **tombstoned** (`status=deleted`) with its
-`post_number` PRESERVED, so the thread numbering never collapses (invariant 13).
-This is the **same terminal state** a moderator `reject` produces — the only
-difference is the actor (the author vs a moderator) — and the two coexist: a post
-already tombstoned by one is an idempotent no-op for the other. `posts_count` is
-**not** decremented: the tombstone still occupies its number, so the counter
-(numbers allocated, not live posts) stays consistent with `highest_post_number`,
-matching the mod-reject path.
+Author self-delete by default (`author_id` is a **query param** — the request
+stays body-free, matching the artifact service's `DELETE`; it is a non-secret
+scalar the BFF already holds); the **mod-actor variant** (`?as_moderator=true`)
+skips the author match with the same site-vouched semantics and audit log as the
+edit. The post is **tombstoned** (`status=deleted`) with its `post_number`
+PRESERVED, so the thread numbering never collapses (invariant 13). This is the
+**same terminal state** a moderator `reject` produces — only the actor differs —
+and the paths coexist: a post already tombstoned by one is an idempotent no-op
+for the others. `posts_count` is **not** decremented: the tombstone still
+occupies its number, so the counter (numbers allocated, not live posts) stays
+consistent with `highest_post_number`, matching the mod-reject path.
+
+#### Reaction toggle — `POST /posts/{id}/reaction`
+
+The response reports the new state (`added`) **plus the post's context** —
+`author_id` / `thread_id` / `anchor_kind` / `anchor_id` — which the reaction flow
+resolves anyway for the trust tallies. The context lets the consuming site fan
+out its like notification (recipient + jump target) without a second read.
 
 ### Write-time content pipeline (invariant 6)
 
@@ -126,7 +140,11 @@ Exceeding a cap returns `429`.
   consuming site** (which holds the IdP claims: account age / creator / staff).
   Community only records `granted_boost` and applies it as a floor:
   veteran/creator → TL1, staff → TL3. A boost never demotes; the staff floor also
-  shields TL3 from a rolling-window demotion.
+  shields TL3 from a rolling-window demotion. A **staff** boost additionally
+  **zeroes the first-post hold budget** (staff content is exempt from review
+  outright — the hold counter is spent per-account, not per-level, so the TL3
+  floor alone would not clear it); veteran/creator boosts leave the budget
+  untouched.
 
 ## 6. Reputation-weighted reporting & the review queue (doc 11 §6 layers 4-5)
 

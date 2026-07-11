@@ -88,3 +88,42 @@ func TestStarterBoost(t *testing.T) {
 		t.Fatalf("staff-boosted TL3 must not demote: level=%d", tr.Level)
 	}
 }
+
+func TestStaffBoost_ClearsFirstPostHolds(t *testing.T) {
+	cleanTables(t)
+	ts := NewTrustService(testDB)
+	ctx := context.Background()
+
+	// A fresh user's trust row is born with 2 holds; the staff boost zeroes the
+	// budget outright (docs/proj/17 decision 4: staff content is never held).
+	tr, err := ts.SetBoost(ctx, 20, model.GrantedBoostStaff)
+	if err != nil {
+		t.Fatalf("staff boost: %v", err)
+	}
+	if tr.FirstPostsHeldRemaining != 0 {
+		t.Fatalf("staff boost must zero the hold budget: got %d", tr.FirstPostsHeldRemaining)
+	}
+
+	// The freshly-boosted staffer's first post lands VISIBLE (not held) — the
+	// end-to-end effect the decision asks for.
+	threads := NewThreadService(testDB, NoopSink{})
+	_, opening, err := threads.OpenTopic(ctx, OpenThreadParams{
+		Site: "letmoe", AuthorID: 20, AnchorKind: model.AnchorKindBoard, AnchorID: "b1",
+		Title: "staff first topic", ContentRating: model.ContentRatingAll, BodyRaw: "hello",
+	})
+	if err != nil {
+		t.Fatalf("staff first topic: %v", err)
+	}
+	if opening.Status != model.PostStatusVisible {
+		t.Fatalf("a boosted staffer's first post must be visible, got status=%d", opening.Status)
+	}
+
+	// A creator boost does NOT touch the hold budget (only staff is review-exempt).
+	tr, err = ts.SetBoost(ctx, 21, model.GrantedBoostCreator)
+	if err != nil {
+		t.Fatalf("creator boost: %v", err)
+	}
+	if tr.FirstPostsHeldRemaining != 2 {
+		t.Fatalf("creator boost must keep the hold budget: got %d", tr.FirstPostsHeldRemaining)
+	}
+}

@@ -87,7 +87,7 @@ func TestEditPost_TombstonedAndHiddenRejected(t *testing.T) {
 
 	// A tombstoned post is not editable.
 	tomb := visibleReply(t, ps, th.ID, 200)
-	if err := ps.Delete(ctx, tomb.ID, 200); err != nil {
+	if err := ps.Delete(ctx, tomb.ID, 200, false); err != nil {
 		t.Fatalf("self-delete: %v", err)
 	}
 	if _, err := ps.Edit(ctx, EditParams{PostID: tomb.ID, AuthorID: 200, BodyRaw: "resurrect"}); err != ErrPostNotEditable {
@@ -154,7 +154,7 @@ func TestDeletePost_TombstonePreservesNumbering(t *testing.T) {
 	p3, _ := ps.Reply(ctx, ReplyParams{ThreadID: th.ID, AuthorID: 200, BodyRaw: "three"}) // #3
 
 	// Author self-deletes the middle post.
-	if err := ps.Delete(ctx, p2.ID, 200); err != nil {
+	if err := ps.Delete(ctx, p2.ID, 200, false); err != nil {
 		t.Fatalf("self-delete: %v", err)
 	}
 	gone := getPost(t, p2.ID)
@@ -175,7 +175,7 @@ func TestDeletePost_TombstonePreservesNumbering(t *testing.T) {
 	}
 
 	// Idempotent: deleting again is a no-op (no error, still tombstoned).
-	if err := ps.Delete(ctx, p2.ID, 200); err != nil {
+	if err := ps.Delete(ctx, p2.ID, 200, false); err != nil {
 		t.Fatalf("idempotent re-delete should be a no-op: %v", err)
 	}
 	if getPost(t, p2.ID).Status != model.PostStatusDeleted {
@@ -186,7 +186,7 @@ func TestDeletePost_TombstonePreservesNumbering(t *testing.T) {
 	// checked before the idempotent short-circuit).
 	seedTrust(t, 999, model.TrustLevelBasic, 0)
 	p4, _ := ps.Reply(ctx, ReplyParams{ThreadID: th.ID, AuthorID: 200, BodyRaw: "four"})
-	if err := ps.Delete(ctx, p4.ID, 999); err != ErrNotAuthor {
+	if err := ps.Delete(ctx, p4.ID, 999, false); err != ErrNotAuthor {
 		t.Fatalf("a non-author delete must return ErrNotAuthor, got %v", err)
 	}
 	if getPost(t, p4.ID).Status != model.PostStatusVisible {
@@ -222,7 +222,7 @@ func TestDeletePost_CoexistsWithModReject(t *testing.T) {
 	// The author's self-delete on the same (already mod-tombstoned) post is a
 	// harmless idempotent no-op — the two tombstone actors share one terminal
 	// state and coexist.
-	if err := ps.Delete(ctx, post.ID, 200); err != nil {
+	if err := ps.Delete(ctx, post.ID, 200, false); err != nil {
 		t.Fatalf("author delete over a mod tombstone must be a no-op: %v", err)
 	}
 	final := getPost(t, post.ID)
@@ -266,7 +266,7 @@ func TestOpeningPostMeta(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open topic to delete: %v", err)
 	}
-	if err := ps.Delete(ctx, delPost.ID, 300); err != nil {
+	if err := ps.Delete(ctx, delPost.ID, 300, false); err != nil {
 		t.Fatalf("self-delete opening: %v", err)
 	}
 

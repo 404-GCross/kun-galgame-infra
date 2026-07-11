@@ -89,7 +89,11 @@ func (s *TrustService) RecordActivity(ctx context.Context, r ActivityReceipt) (*
 // SetBoost records a starter-boost declaration from the consuming site and
 // floors the user's level accordingly (veteran/creator → TL1, staff → TL3). A
 // boost is a floor, never a demotion: a user already above the floor is
-// unaffected. boost must be a GrantedBoost* value.
+// unaffected. A STAFF boost additionally zeroes the first-post hold budget
+// (docs/proj/17 decision 4: staff content is exempt from review outright —
+// TL≥1 already exempts them from the sandbox caps, but the hold counter is
+// spent per-account, not per-level, so it must be cleared explicitly).
+// boost must be a GrantedBoost* value.
 func (s *TrustService) SetBoost(ctx context.Context, userID int64, boost int16) (*model.CommunityTrust, error) {
 	var out model.CommunityTrust
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -98,6 +102,11 @@ func (s *TrustService) SetBoost(ctx context.Context, userID int64, boost int16) 
 		}
 		if err := repository.SetBoostTx(tx, userID, boost); err != nil {
 			return err
+		}
+		if boost == model.GrantedBoostStaff {
+			if err := repository.ClearHoldsTx(tx, userID); err != nil {
+				return err
+			}
 		}
 		trust, err := repository.GetTrustTx(tx, userID)
 		if err != nil {

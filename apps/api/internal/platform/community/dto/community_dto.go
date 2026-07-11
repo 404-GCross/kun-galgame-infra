@@ -95,12 +95,15 @@ type ReplyRequest struct {
 	TargetUserID  *int64 `json:"target_user_id,omitempty"`
 }
 
-// EditPostRequest edits a post's body (author only). author_id is the acting
-// user and must match the post's author; the body is re-sanitized on write and
-// edited_at is stamped.
+// EditPostRequest edits a post's body. author_id is the acting user and must
+// match the post's author unless as_moderator is set — the mod-actor variant
+// (the calling site declares the actor is one of ITS moderators; community
+// trusts the assertion like every other BFF-supplied identity and audit-logs the
+// action). The body is re-sanitized on write and edited_at is stamped.
 type EditPostRequest struct {
-	AuthorID int64  `json:"author_id"`
-	Body     string `json:"body" doc:"new markdown source; re-cooked + sanitized on write"`
+	AuthorID    int64  `json:"author_id" doc:"the acting user (the post author, or the moderator when as_moderator)"`
+	Body        string `json:"body" doc:"new markdown source; re-cooked + sanitized on write"`
+	AsModerator bool   `json:"as_moderator,omitempty" doc:"mod-actor variant: skip the author match; the site vouches author_id is its moderator"`
 }
 
 // ReactionToggleRequest flips a user's reaction on a post.
@@ -160,9 +163,17 @@ type PostResponse struct {
 	Post PostView `json:"post"`
 }
 
-// ReactionToggleResponse reports the post-toggle state.
+// ReactionToggleResponse reports the post-toggle state plus the post's context
+// (author + thread/anchor), which the reaction flow resolves anyway for the
+// trust tallies. The context lets the consuming site fan out its like
+// notification — recipient (author_id) and jump target (thread/anchor) — without
+// a second round trip.
 type ReactionToggleResponse struct {
-	Added bool `json:"added"`
+	Added      bool   `json:"added"`
+	AuthorID   int64  `json:"author_id" doc:"the post's author (the like-notification recipient)"`
+	ThreadID   int64  `json:"thread_id"`
+	AnchorKind int16  `json:"anchor_kind"`
+	AnchorID   string `json:"anchor_id"`
 }
 
 // OKResponse is a bare acknowledgement for state-change endpoints.

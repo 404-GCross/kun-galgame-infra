@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"log/slog"
 	"time"
 
 	"api/internal/platform/community/model"
@@ -157,21 +158,29 @@ func (s *PostService) ListPosts(threadID int64, afterNumber int32, limit int) ([
 	return s.posts.ListByThread(threadID, afterNumber, clampLimit(limit))
 }
 
-// EditParams describes an author editing their own post's body.
+// EditParams describes an actor editing a post's body.
 type EditParams struct {
 	PostID   int64
-	AuthorID int64 // the acting user; must equal the post's author
+	AuthorID int64 // the acting user; must equal the post's author unless AsModerator
 	BodyRaw  string
+	// AsModerator is the mod-actor variant (docs/proj/17 decision 3): the calling
+	// site declares that AuthorID is one of ITS moderators (the site holds the role
+	// tables; community trusts the assertion like every other BFF-supplied identity,
+	// doc 01 §2). The author-match check is skipped and the action is audit-logged.
+	AsModerator bool
 }
 
-// Edit rewrites an author's own post (invariant 6: re-cook raw→cooked at the
-// current sanitizer version and stamp edited_at). Author-only — author_id must
-// match the post's author — and only a VISIBLE post is editable: a held/hidden
-// or tombstoned post is not an editable surface. The TL0 sandbox per-post
-// content caps (links/images/@mentions) apply to the edited body too, so editing
-// is not an escape hatch out of the newcomer sandbox. The daily create-rate caps
-// do NOT apply — an edit is not a new post — so the sandbox day-window count is
-// left untouched.
+// Edit rewrites a post (invariant 6: re-cook raw→cooked at the current sanitizer
+// version and stamp edited_at). Author-only — author_id must match the post's
+// author — unless the caller declares the mod-actor variant (AsModerator), which
+// edits any post and leaves a structured audit log (the minimal audit surface —
+// no table, matching the review queue's decided_by precedent). Only a VISIBLE
+// post is editable either way: a held/hidden or tombstoned post is not an
+// editable surface (a held post is released via the review queue, not an edit).
+// The TL0 sandbox per-post content caps (links/images/@mentions) apply to the
+// edited body too, so editing is not an escape hatch out of the newcomer
+// sandbox. The daily create-rate caps do NOT apply — an edit is not a new post —
+// so the sandbox day-window count is left untouched.
 func (s *PostService) Edit(ctx context.Context, p EditParams) (*model.CommunityPost, error) {
 	cooked := sanitize.Cook(p.BodyRaw)
 	level, err := trustLevel(s.trusts, p.AuthorID)
@@ -184,6 +193,7 @@ func (s *PostService) Edit(ctx context.Context, p EditParams) (*model.CommunityP
 
 	now := time.Now()
 	var post model.CommunityPost
+	modActed := false
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		existing, err := repository.GetPostTx(tx, p.PostID)
 		if err != nil {
@@ -193,7 +203,10 @@ func (s *PostService) Edit(ctx context.Context, p EditParams) (*model.CommunityP
 			return ErrPostNotFound
 		}
 		if existing.AuthorID != p.AuthorID {
-			return ErrNotAuthor
+			if !p.AsModerator {
+				return ErrNotAuthor
+			}
+			modActed = true
 		}
 		if existing.Status != model.PostStatusVisible {
 			return ErrPostNotEditable
@@ -213,21 +226,30 @@ func (s *PostService) Edit(ctx context.Context, p EditParams) (*model.CommunityP
 	if err != nil {
 		return nil, err
 	}
+	if modActed {
+		slog.Info("community mod edit", "post_id", post.ID, "thread_id", post.ThreadID,
+			"post_author_id", post.AuthorID, "moderator_id", p.AuthorID)
+	}
 	return &post, nil
 }
 
-// Delete tombstones an author's own post (self-delete): status → deleted while
-// the post_number is PRESERVED, so the thread numbering never collapses
-// (invariant 13). This is the SAME terminal state a moderator reject produces
-// (ReviewService.Reject) — the only difference is the actor (the author here vs a
-// moderator there); both leave a numbered placeholder instead of removing the
-// row, and the two paths coexist (a post already tombstoned by one is an
-// idempotent no-op for the other). posts_count is NOT decremented: the tombstone
-// still occupies its post_number, so the counter (which tracks numbers allocated,
-// not live posts) stays consistent with highest_post_number — matching the
-// mod-reject path, which likewise leaves the count untouched.
-func (s *PostService) Delete(ctx context.Context, postID, authorID int64) error {
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+// Delete tombstones a post: status → deleted while the post_number is
+// PRESERVED, so the thread numbering never collapses (invariant 13). Author
+// self-delete by default; asModerator is the mod-actor variant (docs/proj/17
+// decision 3) — the calling site declares actorID is one of its moderators, the
+// author-match check is skipped, and the action is audit-logged (minimal audit
+// surface, no table). Both produce the SAME terminal state a moderator reject
+// does (ReviewService.Reject) — only the actor differs; every path leaves a
+// numbered placeholder instead of removing the row, and they coexist (a post
+// already tombstoned by one is an idempotent no-op for the others). posts_count
+// is NOT decremented: the tombstone still occupies its post_number, so the
+// counter (which tracks numbers allocated, not live posts) stays consistent with
+// highest_post_number — matching the mod-reject path, which likewise leaves the
+// count untouched.
+func (s *PostService) Delete(ctx context.Context, postID, actorID int64, asModerator bool) error {
+	modActed := false
+	var threadID, authorID int64
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		existing, err := repository.GetPostTx(tx, postID)
 		if err != nil {
 			return err
@@ -235,12 +257,24 @@ func (s *PostService) Delete(ctx context.Context, postID, authorID int64) error 
 		if existing == nil {
 			return ErrPostNotFound
 		}
-		if existing.AuthorID != authorID {
-			return ErrNotAuthor
+		if existing.AuthorID != actorID {
+			if !asModerator {
+				return ErrNotAuthor
+			}
+			modActed = true
 		}
+		threadID, authorID = existing.ThreadID, existing.AuthorID
 		if existing.Status == model.PostStatusDeleted {
 			return nil // already tombstoned → idempotent no-op
 		}
 		return repository.SetPostStatusTx(tx, postID, model.PostStatusDeleted)
 	})
+	if err != nil {
+		return err
+	}
+	if modActed {
+		slog.Info("community mod delete", "post_id", postID, "thread_id", threadID,
+			"post_author_id", authorID, "moderator_id", actorID)
+	}
+	return nil
 }

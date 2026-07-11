@@ -70,7 +70,11 @@ components:
           format: uri
           readOnly: true
           type: string
+        as_moderator:
+          description: "mod-actor variant: skip the author match; the site vouches author_id is its moderator"
+          type: boolean
         author_id:
+          description: the acting user (the post author, or the moderator when as_moderator)
           format: int64
           type: integer
         body:
@@ -524,8 +528,24 @@ components:
       properties:
         added:
           type: boolean
+        anchor_id:
+          type: string
+        anchor_kind:
+          format: int32
+          type: integer
+        author_id:
+          description: the post's author (the like-notification recipient)
+          format: int64
+          type: integer
+        thread_id:
+          format: int64
+          type: integer
       required:
         - added
+        - author_id
+        - thread_id
+        - anchor_kind
+        - anchor_id
       type: object
     ReplyRequest:
       additionalProperties: false
@@ -926,14 +946,21 @@ paths:
           schema:
             format: int64
             type: integer
-        - description: the acting user; must be the post's author
+        - description: the acting user (the post author, or the moderator when as_moderator)
           explode: false
           in: query
           name: author_id
           schema:
-            description: the acting user; must be the post's author
+            description: the acting user (the post author, or the moderator when as_moderator)
             format: int64
             type: integer
+        - description: "mod-actor variant: skip the author match; the site vouches author_id is its moderator"
+          explode: false
+          in: query
+          name: as_moderator
+          schema:
+            description: "mod-actor variant: skip the author match; the site vouches author_id is its moderator"
+            type: boolean
       responses:
         "200":
           content:
@@ -947,7 +974,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/HouseError"
           description: Error
-      summary: Delete a post (author self-delete; tombstone, post_number preserved)
+      summary: Delete a post (author self-delete, or a site moderator via as_moderator; tombstone, post_number preserved)
       tags:
         - community-write
     patch:
@@ -978,7 +1005,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/HouseError"
           description: Error
-      summary: Edit a post (author only; re-sanitized, stamps edited_at)
+      summary: Edit a post (author, or a site moderator via as_moderator; re-sanitized, stamps edited_at)
       tags:
         - community-write
   /api/v1/community/posts/{id}/flag:

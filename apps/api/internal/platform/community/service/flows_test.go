@@ -162,16 +162,21 @@ func TestReactionToggle(t *testing.T) {
 	post, _ := ps.Reply(context.Background(), ReplyParams{ThreadID: th.ID, AuthorID: 200, BodyRaw: "hi"})
 
 	rs := NewReactionService(testDB)
-	added, err := rs.Toggle(context.Background(), post.ID, 300, model.ReactionKindLike)
+	added, pc, err := rs.Toggle(context.Background(), post.ID, 300, model.ReactionKindLike)
 	if err != nil || !added {
 		t.Fatalf("first toggle should add: added=%v err=%v", added, err)
+	}
+	// The toggle returns the post's context so a site can fan out its like
+	// notification (recipient + jump target) without a second read.
+	if pc.AuthorID != 200 || pc.ThreadID != th.ID || pc.AnchorKind != model.AnchorKindBoard || pc.AnchorID != "b1" {
+		t.Fatalf("post context: author=%d thread=%d anchor=%d/%q", pc.AuthorID, pc.ThreadID, pc.AnchorKind, pc.AnchorID)
 	}
 	var n int64
 	testDB.Model(&model.CommunityReaction{}).Where("post_id = ?", post.ID).Count(&n)
 	if n != 1 {
 		t.Fatalf("expected 1 reaction row, got %d", n)
 	}
-	added, err = rs.Toggle(context.Background(), post.ID, 300, model.ReactionKindLike)
+	added, _, err = rs.Toggle(context.Background(), post.ID, 300, model.ReactionKindLike)
 	if err != nil || added {
 		t.Fatalf("second toggle should remove: added=%v err=%v", added, err)
 	}

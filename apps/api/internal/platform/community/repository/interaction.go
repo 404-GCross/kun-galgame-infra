@@ -127,6 +127,14 @@ func DecrementHoldTx(tx *gorm.DB, userID int64) error {
 		UpdateColumn("first_posts_held_remaining", gorm.Expr("first_posts_held_remaining - 1")).Error
 }
 
+// ClearHoldsTx zeroes the first-post hold counter. Used by the staff starter
+// boost (docs/proj/17 decision 4): staff content is never held for review, so
+// their remaining holds are consumed outright when the boost lands.
+func ClearHoldsTx(tx *gorm.DB, userID int64) error {
+	return tx.Model(&model.CommunityTrust{}).Where("user_id = ?", userID).
+		UpdateColumn("first_posts_held_remaining", 0).Error
+}
+
 // ToggleReactionTx flips a reaction: inserts it when absent, deletes it when
 // present. Returns true when the reaction now exists (added), false when it was
 // removed. Idempotent per (post, user, kind).

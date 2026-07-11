@@ -70,9 +70,9 @@ func (s *Server) register(api huma.API) {
 	huma.Register(api, huma.Operation{OperationID: "reply", Method: http.MethodPost, Path: "/api/v1/community/threads/{id}/posts",
 		Summary: "Reply to a thread", Tags: write}, s.reply)
 	huma.Register(api, huma.Operation{OperationID: "editPost", Method: http.MethodPatch, Path: "/api/v1/community/posts/{id}",
-		Summary: "Edit a post (author only; re-sanitized, stamps edited_at)", Tags: write}, s.editPost)
+		Summary: "Edit a post (author, or a site moderator via as_moderator; re-sanitized, stamps edited_at)", Tags: write}, s.editPost)
 	huma.Register(api, huma.Operation{OperationID: "deletePost", Method: http.MethodDelete, Path: "/api/v1/community/posts/{id}",
-		Summary: "Delete a post (author self-delete; tombstone, post_number preserved)", Tags: write}, s.deletePost)
+		Summary: "Delete a post (author self-delete, or a site moderator via as_moderator; tombstone, post_number preserved)", Tags: write}, s.deletePost)
 	huma.Register(api, huma.Operation{OperationID: "toggleReaction", Method: http.MethodPost, Path: "/api/v1/community/posts/{id}/reaction",
 		Summary: "Toggle a reaction on a post", Tags: write}, s.toggleReaction)
 	huma.Register(api, huma.Operation{OperationID: "submitFlag", Method: http.MethodPost, Path: "/api/v1/community/posts/{id}/flag",
@@ -276,7 +276,7 @@ type editPostInput struct {
 
 func (s *Server) editPost(ctx context.Context, in *editPostInput) (*postOutput, error) {
 	post, err := s.posts.Edit(ctx, service.EditParams{
-		PostID: in.ID, AuthorID: in.Body.AuthorID, BodyRaw: in.Body.Body,
+		PostID: in.ID, AuthorID: in.Body.AuthorID, BodyRaw: in.Body.Body, AsModerator: in.Body.AsModerator,
 	})
 	if err != nil {
 		return nil, mapErr("edit post", err)
@@ -287,13 +287,15 @@ func (s *Server) editPost(ctx context.Context, in *editPostInput) (*postOutput, 
 // deletePost carries the acting author in a query param (not a body): DELETE
 // stays body-free — matching the codebase's only other DELETE (deleteArtifact) —
 // and author_id is a non-secret scalar the calling BFF already holds.
+// as_moderator is the mod-actor variant (mirrors EditPostRequest).
 type deletePostInput struct {
-	ID       int64 `path:"id"`
-	AuthorID int64 `query:"author_id" doc:"the acting user; must be the post's author"`
+	ID          int64 `path:"id"`
+	AuthorID    int64 `query:"author_id" doc:"the acting user (the post author, or the moderator when as_moderator)"`
+	AsModerator bool  `query:"as_moderator" doc:"mod-actor variant: skip the author match; the site vouches author_id is its moderator"`
 }
 
 func (s *Server) deletePost(ctx context.Context, in *deletePostInput) (*okOutput, error) {
-	if err := s.posts.Delete(ctx, in.ID, in.AuthorID); err != nil {
+	if err := s.posts.Delete(ctx, in.ID, in.AuthorID, in.AsModerator); err != nil {
 		return nil, mapErr("delete post", err)
 	}
 	return &okOutput{Body: okEnvelope(dto.OKResponse{OK: true})}, nil
@@ -308,11 +310,14 @@ type reactionOutput struct {
 }
 
 func (s *Server) toggleReaction(ctx context.Context, in *toggleReactionInput) (*reactionOutput, error) {
-	added, err := s.reactions.Toggle(ctx, in.ID, in.Body.UserID, in.Body.Kind)
+	added, pc, err := s.reactions.Toggle(ctx, in.ID, in.Body.UserID, in.Body.Kind)
 	if err != nil {
 		return nil, mapErr("toggle reaction", err)
 	}
-	return &reactionOutput{Body: okEnvelope(dto.ReactionToggleResponse{Added: added})}, nil
+	return &reactionOutput{Body: okEnvelope(dto.ReactionToggleResponse{
+		Added: added, AuthorID: pc.AuthorID, ThreadID: pc.ThreadID,
+		AnchorKind: pc.AnchorKind, AnchorID: pc.AnchorID,
+	})}, nil
 }
 
 type flagInput struct {
