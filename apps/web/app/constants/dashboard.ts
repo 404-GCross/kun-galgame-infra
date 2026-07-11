@@ -13,5 +13,5 @@ export const QUICK_ACTIONS = [
   { label: '用户管理', to: '/users', icon: 'lucide:user-plus', color: 'text-primary' },
   { label: '站点设置', to: '/sites', icon: 'lucide:settings', color: 'text-default' },
   { label: 'OAuth 客户端', to: '/oauth-clients', icon: 'lucide:key', color: 'text-warning' },
-  { label: '内容审核', to: '/moderation', icon: 'lucide:shield', color: 'text-success' },
+  { label: 'T&S 审核', to: '/trust', icon: 'lucide:shield', color: 'text-success' },
 ]

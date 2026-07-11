@@ -71,6 +71,10 @@ export default defineNuxtConfig({
     // own port). Set NUXT_CATALOG_API_BASE_SSR=http://catalog:9281/api/v1 in
     // docker; empty in local dev.
     catalogApiBaseSsr: process.env.NUXT_CATALOG_API_BASE_SSR || '',
+    // Same dual-base split for the Trust & Safety service (a separate binary on
+    // its own port). Set NUXT_TRUST_API_BASE_SSR=http://trust:9283/api/v1 in
+    // docker; empty in local dev.
+    trustApiBaseSsr: process.env.NUXT_TRUST_API_BASE_SSR || '',
     public: {
       apiBase:
         process.env.KUN_VISUAL_NOVEL_NUXT_PUBLIC_API_BASE ||
@@ -83,6 +87,14 @@ export default defineNuxtConfig({
       catalogApiBase:
         process.env.KUN_VISUAL_NOVEL_NUXT_PUBLIC_CATALOG_API_BASE ||
         '/catalog-proxy',
+      // trust service base for the BROWSER. The trust service has no public
+      // domain (docker-network only), so the default is the same-origin
+      // /trust-proxy server route, which relays admin calls to
+      // trustApiBaseSsr. Works unchanged in local dev (the relay falls back
+      // to 127.0.0.1:9283).
+      trustApiBase:
+        process.env.KUN_VISUAL_NOVEL_NUXT_PUBLIC_TRUST_API_BASE ||
+        '/trust-proxy',
       // image_service public CDN base; override via env in prod.
       imageCdnBase:
         process.env.KUN_VISUAL_NOVEL_NUXT_PUBLIC_IMAGE_CDN_BASE ||

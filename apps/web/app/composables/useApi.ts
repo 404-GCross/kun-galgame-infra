@@ -21,10 +21,10 @@ interface ApiError {
   message: string
 }
 
-// Which backend a composable call targets: the OAuth/admin API (default) or
-// the catalog service (a separate binary on its own port). Both share the
-// Bearer session and the house envelope.
-export type ApiService = 'oauth' | 'catalog'
+// Which backend a composable call targets: the OAuth/admin API (default), the
+// catalog service, or the Trust & Safety service (each a separate binary on
+// its own port). All share the Bearer session and the house envelope.
+export type ApiService = 'oauth' | 'catalog' | 'trust'
 
 export const resolveApiBase = (service: ApiService = 'oauth'): string => {
   const config = useRuntimeConfig()
@@ -41,6 +41,12 @@ export const resolveApiBase = (service: ApiService = 'oauth'): string => {
   // ("共 0 条候选" hydration mismatch).
   if (service === 'catalog') {
     return (config.public.catalogApiBase as string) || '/catalog-proxy'
+  }
+  // Trust mirrors catalog: ONE same-origin /trust-proxy base on both sides so
+  // useFetch derives an identical auto-key on server and client (no hydration
+  // mismatch); the relay forwards to trustApiBaseSsr server-side.
+  if (service === 'trust') {
+    return (config.public.trustApiBase as string) || '/trust-proxy'
   }
   return (
     (import.meta.server && config.apiBaseSsr

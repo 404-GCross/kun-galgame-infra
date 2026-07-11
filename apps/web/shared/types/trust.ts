@@ -1,0 +1,32 @@
+// Admin types for the Trust & Safety service (kun_trust), served by cmd/trust
+// under /api/v1/admin/trust/* (a SEPARATE backend base — see
+// runtimeConfig.public.trustApiBase and useApi('trust')).
+//
+// All API shapes are GENERATED from the OpenAPI spec
+// (docs/trust/admin-openapi.yaml, exported code-first from the Go Huma
+// handlers) — see shared/types/generated/trust-admin-api.ts and
+// `pnpm gen:types:trust-admin`. UI-only label/color maps live in
+// app/constants/trust.ts.
+import type { components } from './generated/trust-admin-api'
+
+type Schemas = components['schemas']
+
+// Review inbox
+export type TrustReviewItem = Schemas['ReviewItemView']
+export type TrustReviewItemPage = Schemas['PageReviewItemView']
+export type TrustReviewItemDetail = Schemas['ReviewItemDetail']
+export type TrustReport = Schemas['ReportView']
+export type TrustDecideRequest = Schemas['DecideRequest']
+export type TrustDecideData = Schemas['DecideData']
+
+// Registries
+export type TrustSubjectKind = Schemas['SubjectKindView']
+export type TrustReason = Schemas['ReasonView']
+export type TrustCreateSubjectKindRequest = Schemas['CreateSubjectKindRequest']
+export type TrustPatchSubjectKindRequest = Schemas['PatchSubjectKindRequest']
+export type TrustCreateReasonRequest = Schemas['CreateReasonRequest']
+export type TrustPatchReasonRequest = Schemas['PatchReasonRequest']
+
+// Dead-letter dispositions
+export type TrustDisposition = Schemas['DispositionView']
+export type TrustDispositionPage = Schemas['PageDispositionView']
