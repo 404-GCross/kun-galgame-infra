@@ -330,6 +330,253 @@ func (s *ReadService) SearchWorks(ctx context.Context, q string, mediumID int16,
 	return hits, nil
 }
 
+// WorkBriefRow is the lightweight work projection shared by the entity
+// reverse-lookups (name→works, character→works): identity + claim state.
+type WorkBriefRow struct {
+	WorkID        int64  `gorm:"column:work_id"`
+	DisplayName   string `gorm:"column:display_name"`
+	MediumID      int16  `gorm:"column:medium_id"`
+	ContentRating int16  `gorm:"column:content_rating"`
+	Status        int16  `gorm:"column:status"`
+	Site          string `gorm:"column:site"` // "" = unclaimed (COALESCEd)
+}
+
+// workBriefs loads the brief for a set of work ids, keyed by id. Raw SQL
+// bypasses GORM's soft-delete scope, so deleted_at is filtered explicitly (a
+// merged work is soft-deleted and its credits repointed to the survivor, so it
+// never reaches here in practice — this is belt-and-suspenders).
+func (s *ReadService) workBriefs(ctx context.Context, ids []int64) (map[int64]WorkBriefRow, error) {
+	var rows []WorkBriefRow
+	if err := s.db.WithContext(ctx).Raw(`
+		SELECT id AS work_id, display_name, medium_id, content_rating, status, COALESCE(site, '') AS site
+		FROM catalog_work WHERE id IN ? AND deleted_at IS NULL`, ids).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	m := make(map[int64]WorkBriefRow, len(rows))
+	for _, r := range rows {
+		m[r.WorkID] = r
+	}
+	return m, nil
+}
+
+// --- name → works (step 19: what a credited name worked on) ---
+
+// NameHeadRow is a credit name's own identity plus its (visibility-gated)
+// person link. LinkVisibility is used internally to gate exposure and is not
+// carried to the wire.
+type NameHeadRow struct {
+	ID             int64  `gorm:"column:id"`
+	Name           string `gorm:"column:name"`
+	Lang           string `gorm:"column:lang"`
+	Latin          *string
+	PersonID       *int64 `gorm:"column:person_id"`
+	LinkVisibility int16  `gorm:"column:link_visibility"`
+}
+
+// SiblingNameRow is another credit name of the same person.
+type SiblingNameRow struct {
+	ID    int64  `gorm:"column:id"`
+	Name  string `gorm:"column:name"`
+	Lang  string `gorm:"column:lang"`
+	Latin *string
+}
+
+// NameWorkRoleRow is one role a name holds on a work, with the voiced character
+// (set only for voice credits).
+type NameWorkRoleRow struct {
+	WorkID      int64   `gorm:"column:work_id"`
+	RoleID      int64   `gorm:"column:role_id"`
+	RoleKey     string  `gorm:"column:role_key"`
+	RoleNameCN  string  `gorm:"column:role_name_cn"`
+	RoleNameJA  string  `gorm:"column:role_name_ja"`
+	CharacterID *int64  `gorm:"column:character_id"`
+	CharacterNM *string `gorm:"column:character_nm"`
+}
+
+// NameWorkDetail is one work a name is credited on, with every role it holds.
+type NameWorkDetail struct {
+	Brief WorkBriefRow
+	Roles []NameWorkRoleRow
+}
+
+// NameWorksResult is the assembled name→works read.
+type NameWorksResult struct {
+	Head     *NameHeadRow
+	Siblings []SiblingNameRow
+	Works    []NameWorkDetail
+	Total    int64
+}
+
+// NameWorks loads a credit name's self-description (with its person's other
+// PUBLIC-linked names) plus the works it is credited on, offset-paginated by
+// work. Head is nil when the name does not exist. The reverse lookup rides
+// idx_catalog_credit_credit_name_id (no new index needed).
+//
+// Link-visibility doctrine (model.LinkVisibility, and the note in
+// search/doc.go that defers this filter to "person-page assembly"): a hidden
+// credit_name→person link never surfaces in same-person grouping. So when the
+// queried name's own link is hidden, its person id and siblings are withheld —
+// the name reads as an independent identity — and siblings are always filtered
+// to public-linked names.
+func (s *ReadService) NameWorks(ctx context.Context, nameID int64, limit, offset int) (*NameWorksResult, error) {
+	db := s.db.WithContext(ctx)
+
+	var head NameHeadRow
+	if err := db.Raw(`SELECT id, name, lang, latin, person_id, link_visibility
+		FROM catalog_credit_name WHERE id = ?`, nameID).Scan(&head).Error; err != nil {
+		return nil, err
+	}
+	if head.ID == 0 {
+		return &NameWorksResult{}, nil // caller maps head==nil to 404
+	}
+	res := &NameWorksResult{Head: &head}
+
+	if head.LinkVisibility != model.LinkVisibilityPublic {
+		head.PersonID = nil // hidden link: appear as an independent identity
+	} else if head.PersonID != nil {
+		if err := db.Raw(`SELECT id, name, lang, latin FROM catalog_credit_name
+			WHERE person_id = ? AND id <> ? AND link_visibility = ?
+			ORDER BY id`, *head.PersonID, nameID, model.LinkVisibilityPublic).Scan(&res.Siblings).Error; err != nil {
+			return nil, err
+		}
+	}
+
+	if err := db.Raw(`SELECT count(DISTINCT work_id) FROM catalog_credit WHERE credit_name_id = ?`,
+		nameID).Scan(&res.Total).Error; err != nil {
+		return nil, err
+	}
+	var workIDs []int64
+	if err := db.Raw(`SELECT DISTINCT work_id FROM catalog_credit WHERE credit_name_id = ?
+		ORDER BY work_id LIMIT ? OFFSET ?`, nameID, limit, offset).Scan(&workIDs).Error; err != nil {
+		return nil, err
+	}
+	if len(workIDs) == 0 {
+		return res, nil
+	}
+	briefs, err := s.workBriefs(ctx, workIDs)
+	if err != nil {
+		return nil, err
+	}
+	var roleRows []NameWorkRoleRow
+	if err := db.Raw(`SELECT c.work_id, c.role_id, ro.key AS role_key,
+		ro.name_cn AS role_name_cn, ro.name_ja AS role_name_ja,
+		c.character_id, ch.display_name AS character_nm
+		FROM catalog_credit c
+		JOIN catalog_role ro ON ro.id = c.role_id
+		LEFT JOIN catalog_character ch ON ch.id = c.character_id
+		WHERE c.credit_name_id = ? AND c.work_id IN ?
+		ORDER BY c.work_id, c.role_id, character_nm NULLS FIRST`, nameID, workIDs).Scan(&roleRows).Error; err != nil {
+		return nil, err
+	}
+	rolesByWork := make(map[int64][]NameWorkRoleRow, len(workIDs))
+	for _, r := range roleRows {
+		rolesByWork[r.WorkID] = append(rolesByWork[r.WorkID], r)
+	}
+	for _, wid := range workIDs {
+		b, ok := briefs[wid]
+		if !ok {
+			continue // soft-deleted work (see workBriefs) — keep total honest, drop the row
+		}
+		res.Works = append(res.Works, NameWorkDetail{Brief: b, Roles: rolesByWork[wid]})
+	}
+	return res, nil
+}
+
+// --- character → works (step 19: what a character appears in, and who voiced it) ---
+
+// CharacterHeadRow is a character's own identity.
+type CharacterHeadRow struct {
+	ID          int64  `gorm:"column:id"`
+	DisplayName string `gorm:"column:display_name"`
+	Lang        string `gorm:"column:lang"`
+	Latin       *string
+}
+
+// VoiceNameRow is one credited name that voiced a character on a work.
+type VoiceNameRow struct {
+	CreditNameID int64  `gorm:"column:credit_name_id"`
+	Name         string `gorm:"column:name"`
+	Lang         string `gorm:"column:lang"`
+	Latin        *string
+}
+
+// CharacterWorkDetail is one work a character appears in, with its voice names.
+type CharacterWorkDetail struct {
+	Brief  WorkBriefRow
+	Voices []VoiceNameRow
+}
+
+// CharacterWorksResult is the assembled character→works read.
+type CharacterWorksResult struct {
+	Head  *CharacterHeadRow
+	Works []CharacterWorkDetail
+	Total int64
+}
+
+// CharacterWorks loads a character's self-description plus the works it appears
+// in (via any credit carrying its character_id — in practice voice credits),
+// offset-paginated by work with the voicing name(s) per work. Head is nil when
+// the character does not exist. Rides idx_catalog_credit_character_id.
+func (s *ReadService) CharacterWorks(ctx context.Context, characterID int64, limit, offset int) (*CharacterWorksResult, error) {
+	db := s.db.WithContext(ctx)
+
+	var head CharacterHeadRow
+	if err := db.Raw(`SELECT id, display_name, lang, latin FROM catalog_character
+		WHERE id = ? AND deleted_at IS NULL`, characterID).Scan(&head).Error; err != nil {
+		return nil, err
+	}
+	if head.ID == 0 {
+		return &CharacterWorksResult{}, nil // caller maps head==nil to 404
+	}
+	res := &CharacterWorksResult{Head: &head}
+
+	if err := db.Raw(`SELECT count(DISTINCT work_id) FROM catalog_credit WHERE character_id = ?`,
+		characterID).Scan(&res.Total).Error; err != nil {
+		return nil, err
+	}
+	var workIDs []int64
+	if err := db.Raw(`SELECT DISTINCT work_id FROM catalog_credit WHERE character_id = ?
+		ORDER BY work_id LIMIT ? OFFSET ?`, characterID, limit, offset).Scan(&workIDs).Error; err != nil {
+		return nil, err
+	}
+	if len(workIDs) == 0 {
+		return res, nil
+	}
+	briefs, err := s.workBriefs(ctx, workIDs)
+	if err != nil {
+		return nil, err
+	}
+	// DISTINCT (work, name): the same name may hold several credit rows for one
+	// character on one work (e.g. per release) — collapse to one voice entry.
+	var voiceRows []struct {
+		WorkID       int64  `gorm:"column:work_id"`
+		CreditNameID int64  `gorm:"column:credit_name_id"`
+		Name         string `gorm:"column:name"`
+		Lang         string `gorm:"column:lang"`
+		Latin        *string
+	}
+	if err := db.Raw(`SELECT DISTINCT c.work_id, cn.id AS credit_name_id, cn.name, cn.lang, cn.latin
+		FROM catalog_credit c JOIN catalog_credit_name cn ON cn.id = c.credit_name_id
+		WHERE c.character_id = ? AND c.work_id IN ?
+		ORDER BY c.work_id, cn.id`, characterID, workIDs).Scan(&voiceRows).Error; err != nil {
+		return nil, err
+	}
+	voicesByWork := make(map[int64][]VoiceNameRow, len(workIDs))
+	for _, v := range voiceRows {
+		voicesByWork[v.WorkID] = append(voicesByWork[v.WorkID], VoiceNameRow{
+			CreditNameID: v.CreditNameID, Name: v.Name, Lang: v.Lang, Latin: v.Latin,
+		})
+	}
+	for _, wid := range workIDs {
+		b, ok := briefs[wid]
+		if !ok {
+			continue
+		}
+		res.Works = append(res.Works, CharacterWorkDetail{Brief: b, Voices: voicesByWork[wid]})
+	}
+	return res, nil
+}
+
 // CreditRow is one credit joined with its role, name, character and source.
 type CreditRow struct {
 	RoleID       int64

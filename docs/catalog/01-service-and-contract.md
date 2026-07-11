@@ -16,7 +16,7 @@ catalog **不存**产品展示体:简介、封面/截图字节、评分、点赞
 
 ## 2. S2S 端点(Basic client 认证,前缀 `/api/v1/catalog`)
 
-写/运维面:resolve(2.1)· redirects feed(2.2)· claim(2.3,带 site 绑定)。读面(D-01,2.4-2.6):by-anchor · credits · entity search。内部浏览器(D-02,2.7):stats · works/{id} · labels/{id}/works。产品建游面(2.8):works/search。
+写/运维面:resolve(2.1)· redirects feed(2.2)· claim(2.3,带 site 绑定)。读面(D-01,2.4-2.6):by-anchor · credits · entity search。内部浏览器(D-02,2.7):stats · works/{id} · labels/{id}/works。产品建游面(2.8):works/search。实体读面(2.9-2.10):names/{id}/works · characters/{id}/works。
 
 ### 2.1 `POST /catalog/resolve` — 批量 id 规范化(只读)
 
@@ -84,6 +84,23 @@ catalog **不存**产品展示体:简介、封面/截图字节、评分、点赞
 - `medium_id`:可选 medium 过滤(**-1 = 全部**,Huma 无法表达可空标量故用哨兵;letmoe 建游默认传 `1`=galgame 收窄结果);`limit` cap 50(默认 20)。
 - **v1 无 trgm 索引**:纯 `ILIKE` 扫 ~19 万 title 行,staff 低频可接受;调用量升再对 `title_norm` 加 `pg_trgm` GIN 索引(记录,量升触发)。
 - 响应 `items[]` = 轻 brief:`work_id` · `display_name` · `medium_id` · `content_rating` · `status` · **`site`(认领态,空=未认领)** · **`dlsite_id`(首个 DLsite workno 锚,无则缺省)**。`merged`(status=2)墓碑不出面。选中后产品站按需再走 §2.4 by-anchor / §2.7 works/{id} 取全量 bundle。
+
+### 2.9 `GET /catalog/names/{id}/works` — 名义反查(只读)
+
+名义(署名)反查:这个名义参与了哪些作品。用途 = letmoe 实体页(人物/名义页,step 20)的数据源之一——「这个制作方/声优/脚本还做了哪些」硬需求①,页面直达即自足。
+
+- **名义自述**(`name`):`id` + **lang 分桶名**(`ja`/`zh`/`other` 三桶,名义只落其一——search 不变量 1)+ `latin` + `person_id` + **`siblings`(同一 person 的其他名义,各 `id`/分桶名/latin)**。`person_id` 与 `siblings` 一并给,消费方的人物页免二次查其余名义。
+  - ⚠️ **link-visibility 铁则**(`model.LinkVisibility`,search/doc.go 把「人物页装配时过滤」明确指向此端点):credit_name→person 的**隐藏链接从不进入「同一人」聚合**。故 ①被查名义自身链接为隐藏时,`person_id` 与 `siblings` 一律不出(该名义呈现为独立身份);②`siblings` 恒只含**公开链接**的兄弟名义。
+- **作品列表**(`items`,offset 分页,cap 50):每条 = `work`(轻 brief:`work_id`/`display_name`/`medium_id`/`content_rating`/`status`/`site` 认领态)+ **`roles`**(该名义在此作担任的**全部** role,每条 `role_id`/`role_key`/`role_name` + 若配音则 `character_id`/`character` 具名)。`total` = 该名义参与的**去重作品数**。
+- 反查走 `idx_catalog_credit_credit_name_id`(既有索引,无需新建)。缺失 id → 404(与 by-anchor/works/{id} 同义)。
+
+### 2.10 `GET /catalog/characters/{id}/works` — 角色反查(只读)
+
+角色反查:这个角色出现在哪些作品、由谁配音。用途同 2.9(letmoe 角色页,step 20)。
+
+- **角色自述**(`character`):`id` + **lang 分桶名** + `latin`。
+- **作品列表**(`items`,offset 分页,cap 50):每条 = `work`(同 2.9 轻 brief)+ **`voices`**(经 credits 的 `character_id` 关联,在此作为该角色配音的名义,各 `credit_name_id`/`name`/`lang`/`latin`;同名义同作多条 credit 去重为一)。`total` = 该角色出现的**去重作品数**。
+- 反查走 `idx_catalog_credit_character_id`(既有索引,无需新建)。缺失 id → 404。
 
 > **读面无 site 绑定**(16 语义:绑定只作用于写端点 claim);读端点仍走 Basic S2S(无凭据 401)。
 

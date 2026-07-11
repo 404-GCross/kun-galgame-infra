@@ -151,3 +151,103 @@ type EntitySearchHit struct {
 	Kind       *int16   `json:"kind,omitempty" doc:"label kind (labels only)"`
 	PersonID   *int64   `json:"person_id,omitempty" doc:"credit-name → person link (names only; absent = orphan)"`
 }
+
+// --- entity reverse-lookups (step 19: names/{id}/works & characters/{id}/works) ---
+
+// NameBuckets holds a name in exactly ONE language bucket — a credit name or
+// character lives in a single language (search invariant 1: never mix zh/ja).
+// Only the matching bucket is populated; consumers pick by their UI locale.
+// Used for the entity SELF-DESCRIPTION heads (and sibling names); works-list
+// annotations stay flat (name+lang), mirroring the credits endpoint.
+type NameBuckets struct {
+	Ja    string `json:"ja,omitempty"`
+	Zh    string `json:"zh,omitempty"`
+	Other string `json:"other,omitempty"`
+}
+
+// WorkBrief is the lightweight work projection shared by the reverse-lookup
+// rows: identity + claim state, no body (the body lives in a product DB).
+type WorkBrief struct {
+	WorkID        int64  `json:"work_id"`
+	DisplayName   string `json:"display_name"`
+	MediumID      int16  `json:"medium_id"`
+	ContentRating int16  `json:"content_rating" doc:"0=all_ages 1=sensitive 2=r18"`
+	Status        int16  `json:"status" doc:"0=live 1=stub 2=merged"`
+	// Site is the claiming tenant key; empty = unclaimed (an R2 registry row).
+	Site string `json:"site,omitempty"`
+}
+
+// NameWorksResponse is a credit name's self-description plus the works it is
+// credited on, offset-paginated. Name is always present (404 on a missing id).
+type NameWorksResponse struct {
+	Name  NameHead      `json:"name"`
+	Items []NameWorkRow `json:"items"`
+	Total int64         `json:"total"`
+}
+
+// NameHead is a credit name's own identity, returned so the entity page is
+// self-sufficient on direct navigation. PersonID + Siblings expose the SAME
+// person's other names (so the consumer's person page needs no second query) —
+// but ONLY when this name's person link is public. A hidden link surfaces
+// neither (the name appears as an independent identity — the link-visibility
+// doctrine, model.LinkVisibility).
+type NameHead struct {
+	ID       int64         `json:"id"`
+	Name     NameBuckets   `json:"name"`
+	Latin    string        `json:"latin,omitempty"`
+	PersonID int64         `json:"person_id,omitempty" doc:"same-person group id (public links only; absent = orphan or hidden)"`
+	Siblings []SiblingName `json:"siblings" doc:"the same person's other public-linked names"`
+}
+
+// SiblingName is another credit name of the same person (public links only).
+type SiblingName struct {
+	ID    int64       `json:"id"`
+	Name  NameBuckets `json:"name"`
+	Latin string      `json:"latin,omitempty"`
+}
+
+// NameWorkRow is one work a name is credited on, with every role it holds there.
+type NameWorkRow struct {
+	Work  WorkBrief      `json:"work"`
+	Roles []NameWorkRole `json:"roles"`
+}
+
+// NameWorkRole is one role the name holds on a work; Character is set when the
+// credit is a voice credit tied to a character.
+type NameWorkRole struct {
+	RoleID      int64  `json:"role_id"`
+	RoleKey     string `json:"role_key"`
+	RoleName    string `json:"role_name"`
+	CharacterID int64  `json:"character_id,omitempty"`
+	Character   string `json:"character,omitempty"`
+}
+
+// CharacterWorksResponse is a character's self-description plus the works it
+// appears in, offset-paginated. Character is always present (404 on a miss).
+type CharacterWorksResponse struct {
+	Character CharacterHead      `json:"character"`
+	Items     []CharacterWorkRow `json:"items"`
+	Total     int64              `json:"total"`
+}
+
+// CharacterHead is a character's own identity (self-sufficient on direct nav).
+type CharacterHead struct {
+	ID    int64       `json:"id"`
+	Name  NameBuckets `json:"name"`
+	Latin string      `json:"latin,omitempty"`
+}
+
+// CharacterWorkRow is one work a character appears in, with the name(s) that
+// voiced it there (via the credits' character association).
+type CharacterWorkRow struct {
+	Work   WorkBrief   `json:"work"`
+	Voices []VoiceName `json:"voices"`
+}
+
+// VoiceName is one credited name that voiced a character on a work.
+type VoiceName struct {
+	CreditNameID int64  `json:"credit_name_id"`
+	Name         string `json:"name"`
+	Lang         string `json:"lang"`
+	Latin        string `json:"latin,omitempty"`
+}

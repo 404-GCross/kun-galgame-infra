@@ -84,6 +84,54 @@ components:
         - llm_bid_verdicts
         - source_freshness
       type: object
+    CharacterHead:
+      additionalProperties: false
+      properties:
+        id:
+          format: int64
+          type: integer
+        latin:
+          type: string
+        name:
+          $ref: "#/components/schemas/NameBuckets"
+      required:
+        - id
+        - name
+      type: object
+    CharacterWorkRow:
+      additionalProperties: false
+      properties:
+        voices:
+          items:
+            $ref: "#/components/schemas/VoiceName"
+          type:
+            - array
+            - "null"
+        work:
+          $ref: "#/components/schemas/WorkBrief"
+      required:
+        - work
+        - voices
+      type: object
+    CharacterWorksResponse:
+      additionalProperties: false
+      properties:
+        character:
+          $ref: "#/components/schemas/CharacterHead"
+        items:
+          items:
+            $ref: "#/components/schemas/CharacterWorkRow"
+          type:
+            - array
+            - "null"
+        total:
+          format: int64
+          type: integer
+      required:
+        - character
+        - items
+        - total
+      type: object
     ClaimAnchor:
       additionalProperties: false
       properties:
@@ -316,6 +364,27 @@ components:
         - code
         - message
       type: object
+    EnvelopeCharacterWorksResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EnvelopeCharacterWorksResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/CharacterWorksResponse"
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
     EnvelopeClaimWorkResponse:
       additionalProperties: false
       properties:
@@ -373,6 +442,27 @@ components:
           type: integer
         data:
           $ref: "#/components/schemas/LabelWorksResponse"
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
+    EnvelopeNameWorksResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EnvelopeNameWorksResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/NameWorksResponse"
         message:
           type: string
       required:
@@ -594,6 +684,96 @@ components:
         - total
         - items
       type: object
+    NameBuckets:
+      additionalProperties: false
+      properties:
+        ja:
+          type: string
+        other:
+          type: string
+        zh:
+          type: string
+      type: object
+    NameHead:
+      additionalProperties: false
+      properties:
+        id:
+          format: int64
+          type: integer
+        latin:
+          type: string
+        name:
+          $ref: "#/components/schemas/NameBuckets"
+        person_id:
+          description: same-person group id (public links only; absent = orphan or hidden)
+          format: int64
+          type: integer
+        siblings:
+          description: the same person's other public-linked names
+          items:
+            $ref: "#/components/schemas/SiblingName"
+          type:
+            - array
+            - "null"
+      required:
+        - id
+        - name
+        - siblings
+      type: object
+    NameWorkRole:
+      additionalProperties: false
+      properties:
+        character:
+          type: string
+        character_id:
+          format: int64
+          type: integer
+        role_id:
+          format: int64
+          type: integer
+        role_key:
+          type: string
+        role_name:
+          type: string
+      required:
+        - role_id
+        - role_key
+        - role_name
+      type: object
+    NameWorkRow:
+      additionalProperties: false
+      properties:
+        roles:
+          items:
+            $ref: "#/components/schemas/NameWorkRole"
+          type:
+            - array
+            - "null"
+        work:
+          $ref: "#/components/schemas/WorkBrief"
+      required:
+        - work
+        - roles
+      type: object
+    NameWorksResponse:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: "#/components/schemas/NameWorkRow"
+          type:
+            - array
+            - "null"
+        name:
+          $ref: "#/components/schemas/NameHead"
+        total:
+          format: int64
+          type: integer
+      required:
+        - name
+        - items
+        - total
+      type: object
     QueueLevels:
       additionalProperties: false
       properties:
@@ -737,6 +917,20 @@ components:
       required:
         - mappings
       type: object
+    SiblingName:
+      additionalProperties: false
+      properties:
+        id:
+          format: int64
+          type: integer
+        latin:
+          type: string
+        name:
+          $ref: "#/components/schemas/NameBuckets"
+      required:
+        - id
+        - name
+      type: object
     SourceFreshness:
       additionalProperties: false
       properties:
@@ -760,6 +954,51 @@ components:
       required:
         - status
         - count
+      type: object
+    VoiceName:
+      additionalProperties: false
+      properties:
+        credit_name_id:
+          format: int64
+          type: integer
+        lang:
+          type: string
+        latin:
+          type: string
+        name:
+          type: string
+      required:
+        - credit_name_id
+        - name
+        - lang
+      type: object
+    WorkBrief:
+      additionalProperties: false
+      properties:
+        content_rating:
+          description: 0=all_ages 1=sensitive 2=r18
+          format: int32
+          type: integer
+        display_name:
+          type: string
+        medium_id:
+          format: int32
+          type: integer
+        site:
+          type: string
+        status:
+          description: 0=live 1=stub 2=merged
+          format: int32
+          type: integer
+        work_id:
+          format: int64
+          type: integer
+      required:
+        - work_id
+        - display_name
+        - medium_id
+        - content_rating
+        - status
       type: object
     WorkByAnchorResponse:
       additionalProperties: false
@@ -990,6 +1229,51 @@ info:
   version: 1.0.0
 openapi: 3.1.0
 paths:
+  /api/v1/catalog/characters/{id}/works:
+    get:
+      operationId: getCatalogCharacterWorks
+      parameters:
+        - description: Catalog character id
+          in: path
+          name: id
+          required: true
+          schema:
+            description: Catalog character id
+            format: int64
+            type: integer
+        - description: Page size (capped at 50)
+          explode: false
+          in: query
+          name: limit
+          schema:
+            default: 50
+            description: Page size (capped at 50)
+            format: int64
+            type: integer
+        - description: Rows to skip
+          explode: false
+          in: query
+          name: offset
+          schema:
+            description: Rows to skip
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeCharacterWorksResponse"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: Works a character appears in with its voice names (character→works reverse)
+      tags:
+        - catalog-s2s
   /api/v1/catalog/labels/{id}/works:
     get:
       operationId: getCatalogLabelWorks
@@ -1033,6 +1317,51 @@ paths:
                 $ref: "#/components/schemas/HouseError"
           description: Error
       summary: Works attributed to a label (circle→works reverse, paginated)
+      tags:
+        - catalog-s2s
+  /api/v1/catalog/names/{id}/works:
+    get:
+      operationId: getCatalogNameWorks
+      parameters:
+        - description: Catalog credit-name id
+          in: path
+          name: id
+          required: true
+          schema:
+            description: Catalog credit-name id
+            format: int64
+            type: integer
+        - description: Page size (capped at 50)
+          explode: false
+          in: query
+          name: limit
+          schema:
+            default: 50
+            description: Page size (capped at 50)
+            format: int64
+            type: integer
+        - description: Rows to skip
+          explode: false
+          in: query
+          name: offset
+          schema:
+            description: Rows to skip
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeNameWorksResponse"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: Works a credited name worked on (name→works reverse; sibling names + roles)
       tags:
         - catalog-s2s
   /api/v1/catalog/redirects:

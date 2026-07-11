@@ -4,6 +4,7 @@ import (
 	"context"
 	stderrors "errors"
 	"net/http"
+	"strings"
 
 	"api/internal/platform/catalog/dto"
 	"api/internal/platform/catalog/model"
@@ -47,6 +48,14 @@ func (s *S2SServer) registerRead(api huma.API) {
 		OperationID: "getCatalogLabelWorks", Method: http.MethodGet, Path: "/api/v1/catalog/labels/{id}/works",
 		Summary: "Works attributed to a label (circle→works reverse, paginated)", Tags: tags,
 	}, s.labelWorks)
+	huma.Register(api, huma.Operation{
+		OperationID: "getCatalogNameWorks", Method: http.MethodGet, Path: "/api/v1/catalog/names/{id}/works",
+		Summary: "Works a credited name worked on (name→works reverse; sibling names + roles)", Tags: tags,
+	}, s.nameWorks)
+	huma.Register(api, huma.Operation{
+		OperationID: "getCatalogCharacterWorks", Method: http.MethodGet, Path: "/api/v1/catalog/characters/{id}/works",
+		Summary: "Works a character appears in with its voice names (character→works reverse)", Tags: tags,
+	}, s.characterWorks)
 }
 
 // ---- by-anchor ----
@@ -340,7 +349,148 @@ func (s *S2SServer) labelWorks(ctx context.Context, in *labelWorksInput) (*label
 	return &labelWorksOutput{Body: okEnvelope(resp)}, nil
 }
 
+// ---- name → works (entity reverse: what a credited name worked on) ----
+
+type nameWorksInput struct {
+	ID     int64 `path:"id" doc:"Catalog credit-name id"`
+	Limit  int   `query:"limit" default:"50" doc:"Page size (capped at 50)"`
+	Offset int   `query:"offset" doc:"Rows to skip"`
+}
+
+type nameWorksOutput struct {
+	Body Envelope[dto.NameWorksResponse]
+}
+
+func (s *S2SServer) nameWorks(ctx context.Context, in *nameWorksInput) (*nameWorksOutput, error) {
+	limit, offset := pageParams(in.Limit, in.Offset)
+	res, err := s.read.NameWorks(ctx, in.ID, limit, offset)
+	if err != nil {
+		return nil, apiErr(http.StatusInternalServerError, errors.ErrInternalServer)
+	}
+	if res.Head == nil {
+		return nil, apiErr(http.StatusNotFound, errors.ErrNotFound)
+	}
+	resp := dto.NameWorksResponse{
+		Name: dto.NameHead{
+			ID:    res.Head.ID,
+			Name:  langBuckets(res.Head.Lang, res.Head.Name),
+			Latin: derefStr(res.Head.Latin),
+			// Siblings pre-sized non-nil so no person / no siblings serializes
+			// `[]`, not `null` (docs/proj/16 #3).
+			Siblings: make([]dto.SiblingName, 0, len(res.Siblings)),
+		},
+		Items: make([]dto.NameWorkRow, 0, len(res.Works)),
+		Total: res.Total,
+	}
+	if res.Head.PersonID != nil {
+		resp.Name.PersonID = *res.Head.PersonID
+	}
+	for _, sib := range res.Siblings {
+		resp.Name.Siblings = append(resp.Name.Siblings, dto.SiblingName{
+			ID: sib.ID, Name: langBuckets(sib.Lang, sib.Name), Latin: derefStr(sib.Latin),
+		})
+	}
+	for _, w := range res.Works {
+		row := dto.NameWorkRow{Work: workBriefDTO(w.Brief), Roles: make([]dto.NameWorkRole, 0, len(w.Roles))}
+		for _, r := range w.Roles {
+			nr := dto.NameWorkRole{
+				RoleID: r.RoleID, RoleKey: r.RoleKey,
+				RoleName: firstNonEmpty(r.RoleNameCN, r.RoleNameJA, r.RoleKey),
+			}
+			if r.CharacterID != nil {
+				nr.CharacterID = *r.CharacterID
+			}
+			if r.CharacterNM != nil {
+				nr.Character = *r.CharacterNM
+			}
+			row.Roles = append(row.Roles, nr)
+		}
+		resp.Items = append(resp.Items, row)
+	}
+	return &nameWorksOutput{Body: okEnvelope(resp)}, nil
+}
+
+// ---- character → works (entity reverse: what a character appears in) ----
+
+type characterWorksInput struct {
+	ID     int64 `path:"id" doc:"Catalog character id"`
+	Limit  int   `query:"limit" default:"50" doc:"Page size (capped at 50)"`
+	Offset int   `query:"offset" doc:"Rows to skip"`
+}
+
+type characterWorksOutput struct {
+	Body Envelope[dto.CharacterWorksResponse]
+}
+
+func (s *S2SServer) characterWorks(ctx context.Context, in *characterWorksInput) (*characterWorksOutput, error) {
+	limit, offset := pageParams(in.Limit, in.Offset)
+	res, err := s.read.CharacterWorks(ctx, in.ID, limit, offset)
+	if err != nil {
+		return nil, apiErr(http.StatusInternalServerError, errors.ErrInternalServer)
+	}
+	if res.Head == nil {
+		return nil, apiErr(http.StatusNotFound, errors.ErrNotFound)
+	}
+	resp := dto.CharacterWorksResponse{
+		Character: dto.CharacterHead{
+			ID: res.Head.ID, Name: langBuckets(res.Head.Lang, res.Head.DisplayName), Latin: derefStr(res.Head.Latin),
+		},
+		Items: make([]dto.CharacterWorkRow, 0, len(res.Works)),
+		Total: res.Total,
+	}
+	for _, w := range res.Works {
+		row := dto.CharacterWorkRow{Work: workBriefDTO(w.Brief), Voices: make([]dto.VoiceName, 0, len(w.Voices))}
+		for _, v := range w.Voices {
+			row.Voices = append(row.Voices, dto.VoiceName{
+				CreditNameID: v.CreditNameID, Name: v.Name, Lang: v.Lang, Latin: derefStr(v.Latin),
+			})
+		}
+		resp.Items = append(resp.Items, row)
+	}
+	return &characterWorksOutput{Body: okEnvelope(resp)}, nil
+}
+
 // --- small helpers ---
+
+// pageParams clamps offset-pagination inputs to the §2.7 read-face convention
+// (cap 50, non-negative offset).
+func pageParams(limit, offset int) (int, int) {
+	if limit <= 0 || limit > 50 {
+		limit = 50
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	return limit, offset
+}
+
+// langBuckets places a name into its single language bucket by the row's lang
+// (mirrors the search index's invariant 1: a name lives in exactly one of
+// ja/zh/other; catalog imports default ” to Japanese).
+func langBuckets(lang, name string) dto.NameBuckets {
+	switch {
+	case strings.HasPrefix(lang, "zh"):
+		return dto.NameBuckets{Zh: name}
+	case strings.HasPrefix(lang, "ja"), lang == "":
+		return dto.NameBuckets{Ja: name}
+	default:
+		return dto.NameBuckets{Other: name}
+	}
+}
+
+func workBriefDTO(b service.WorkBriefRow) dto.WorkBrief {
+	return dto.WorkBrief{
+		WorkID: b.WorkID, DisplayName: b.DisplayName, MediumID: b.MediumID,
+		ContentRating: b.ContentRating, Status: b.Status, Site: b.Site,
+	}
+}
+
+func derefStr(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
+}
 
 func derefI16(p *int16) int16 {
 	if p == nil {

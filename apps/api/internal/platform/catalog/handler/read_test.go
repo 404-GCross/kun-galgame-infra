@@ -340,6 +340,172 @@ func TestReadEndpoints_401(t *testing.T) {
 	}
 }
 
+// reverseFixture holds the ids seeded for the entity reverse-lookup tests.
+type reverseFixture struct {
+	personP, personQ           int64
+	nameA, nameB, nameC, nameD int64 // A,B → person P (public); C public, D hidden → person Q
+	char1, char2               int64
+	work1, work2, work3        int64
+}
+
+// seedReverseFixture builds a graph exercising the name→works and
+// character→works reverse lookups: a person with two public names, a person
+// with one public + one HIDDEN name, two characters, three works, and credits
+// wiring a name to several works (multiple roles on one work, VA with a
+// character) plus two names voicing the same character on one work.
+func seedReverseFixture(t *testing.T, db *gorm.DB) reverseFixture {
+	t.Helper()
+	for _, tbl := range []string{
+		"catalog_credit", "catalog_work_label", "catalog_external_ref", "catalog_work_title",
+		"catalog_release", "catalog_work", "catalog_label", "catalog_credit_name",
+		"catalog_character", "catalog_person",
+	} {
+		require.NoError(t, db.Exec("TRUNCATE "+tbl+" RESTART IDENTITY CASCADE").Error)
+	}
+	mk := func(name string, status int16) int64 {
+		w := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: name, ContentRating: 0, Status: status}
+		require.NoError(t, db.Create(&w).Error)
+		return w.ID
+	}
+	var f reverseFixture
+	f.work1, f.work2, f.work3 = mk("作品1", model.WorkStatusLive), mk("作品2", model.WorkStatusLive), mk("作品3", model.WorkStatusLive)
+
+	p := model.CatalogPerson{DisplayName: "人物P"}
+	require.NoError(t, db.Create(&p).Error)
+	q := model.CatalogPerson{DisplayName: "人物Q"}
+	require.NoError(t, db.Create(&q).Error)
+	f.personP, f.personQ = p.ID, q.ID
+
+	name := func(n string, personID int64, vis int16) int64 {
+		cn := model.CatalogCreditName{Name: n, Lang: "ja", PersonID: &personID, LinkVisibility: vis}
+		require.NoError(t, db.Create(&cn).Error)
+		return cn.ID
+	}
+	f.nameA = name("名義A", p.ID, model.LinkVisibilityPublic)
+	f.nameB = name("名義B", p.ID, model.LinkVisibilityPublic)
+	f.nameC = name("名義C", q.ID, model.LinkVisibilityPublic)
+	f.nameD = name("名義D", q.ID, model.LinkVisibilityHidden)
+
+	c1 := model.CatalogCharacter{DisplayName: "キャラ1", Lang: "ja"}
+	require.NoError(t, db.Create(&c1).Error)
+	c2 := model.CatalogCharacter{DisplayName: "キャラ2", Lang: "ja"}
+	require.NoError(t, db.Create(&c2).Error)
+	f.char1, f.char2 = c1.ID, c2.ID
+
+	credit := func(workID, nameID, roleID int64, charID *int64) {
+		require.NoError(t, db.Create(&model.CatalogCredit{
+			WorkID: workID, CreditNameID: nameID, RoleID: roleID, CharacterID: charID,
+		}).Error)
+	}
+	credit(f.work1, f.nameA, roleVoiceActor, &f.char1) // A voices char1 on w1
+	credit(f.work1, f.nameA, roleScenario, nil)        // …and writes w1 (second role, same work)
+	credit(f.work2, f.nameA, roleVoiceActor, &f.char2) // A voices char2 on w2
+	credit(f.work3, f.nameB, roleScenario, nil)        // B writes w3
+	credit(f.work1, f.nameC, roleVoiceActor, &f.char1) // C also voices char1 on w1
+	credit(f.work2, f.nameD, roleVoiceActor, &f.char2) // D (hidden link) voices char2 on w2
+	return f
+}
+
+// TestNameWorks covers name→works: self-description with public sibling names,
+// per-work roles (multiple roles on one work + VA character), pagination, the
+// hidden-link doctrine, and 404 on a missing id.
+func TestNameWorks(t *testing.T) {
+	db := openCatalogTestDB(t)
+	db.Raw("SELECT id FROM catalog_role WHERE key='scenario'").Scan(&roleScenario)
+	f := seedReverseFixture(t, db)
+	app := readApp(service.NewReadService(db), nil)
+
+	// name A: bucketed name, person P, sibling = B (public); works w1 (two roles,
+	// VA carries char1) + w2 (VA char2).
+	code, body := getJSON(t, app, "/api/v1/catalog/names/"+itoa(f.nameA)+"/works")
+	require.Equal(t, 200, code)
+	data := body["data"].(map[string]any)
+	head := data["name"].(map[string]any)
+	assert.EqualValues(t, f.nameA, head["id"])
+	assert.Equal(t, "名義A", head["name"].(map[string]any)["ja"])
+	assert.EqualValues(t, f.personP, head["person_id"])
+	sibs := head["siblings"].([]any)
+	require.Len(t, sibs, 1, "person P's other public name only")
+	assert.EqualValues(t, f.nameB, sibs[0].(map[string]any)["id"])
+	assert.EqualValues(t, 2, data["total"])
+	items := data["items"].([]any)
+	require.Len(t, items, 2)
+	byWork := map[int64]map[string]any{}
+	for _, it := range items {
+		m := it.(map[string]any)
+		byWork[int64(m["work"].(map[string]any)["work_id"].(float64))] = m
+	}
+	w1 := byWork[f.work1]
+	require.NotNil(t, w1)
+	roles := w1["roles"].([]any)
+	assert.Len(t, roles, 2, "A holds two roles on w1")
+	var vaRole map[string]any
+	for _, r := range roles {
+		rm := r.(map[string]any)
+		if rm["role_key"] == "voice-actor" {
+			vaRole = rm
+		}
+	}
+	require.NotNil(t, vaRole)
+	assert.Equal(t, "キャラ1", vaRole["character"], "VA role carries the voiced character")
+
+	// pagination: limit 1 → one item, total still 2.
+	code, body = getJSON(t, app, "/api/v1/catalog/names/"+itoa(f.nameA)+"/works?limit=1")
+	require.Equal(t, 200, code)
+	assert.EqualValues(t, 2, body["data"].(map[string]any)["total"])
+	assert.Len(t, body["data"].(map[string]any)["items"].([]any), 1)
+
+	// name C (public) of person Q: its sibling D is HIDDEN → excluded.
+	code, body = getJSON(t, app, "/api/v1/catalog/names/"+itoa(f.nameC)+"/works")
+	require.Equal(t, 200, code)
+	assert.Empty(t, body["data"].(map[string]any)["name"].(map[string]any)["siblings"],
+		"a hidden-linked sibling never surfaces")
+
+	// name D itself is hidden-linked → appears independent: no person_id, no siblings.
+	code, body = getJSON(t, app, "/api/v1/catalog/names/"+itoa(f.nameD)+"/works")
+	require.Equal(t, 200, code)
+	dHead := body["data"].(map[string]any)["name"].(map[string]any)
+	_, hasPerson := dHead["person_id"]
+	assert.False(t, hasPerson, "hidden link → person_id withheld")
+	assert.Empty(t, dHead["siblings"])
+	assert.EqualValues(t, 1, body["data"].(map[string]any)["total"], "works are still listed")
+
+	// 404 on a missing name id.
+	code, _ = getJSON(t, app, "/api/v1/catalog/names/99999999/works")
+	assert.Equal(t, 404, code)
+}
+
+// TestCharacterWorks covers character→works: self-description + per-work voice
+// names (two names voicing one character on one work), and 404 on a miss.
+func TestCharacterWorks(t *testing.T) {
+	db := openCatalogTestDB(t)
+	db.Raw("SELECT id FROM catalog_role WHERE key='scenario'").Scan(&roleScenario)
+	f := seedReverseFixture(t, db)
+	app := readApp(service.NewReadService(db), nil)
+
+	code, body := getJSON(t, app, "/api/v1/catalog/characters/"+itoa(f.char1)+"/works")
+	require.Equal(t, 200, code)
+	data := body["data"].(map[string]any)
+	assert.EqualValues(t, f.char1, data["character"].(map[string]any)["id"])
+	assert.Equal(t, "キャラ1", data["character"].(map[string]any)["name"].(map[string]any)["ja"])
+	assert.EqualValues(t, 1, data["total"], "char1 appears in w1 only")
+	items := data["items"].([]any)
+	require.Len(t, items, 1)
+	w1 := items[0].(map[string]any)
+	assert.EqualValues(t, f.work1, w1["work"].(map[string]any)["work_id"])
+	voices := w1["voices"].([]any)
+	assert.Len(t, voices, 2, "both A and C voiced char1 on w1")
+	voiceNames := map[int64]bool{}
+	for _, v := range voices {
+		voiceNames[int64(v.(map[string]any)["credit_name_id"].(float64))] = true
+	}
+	assert.True(t, voiceNames[f.nameA] && voiceNames[f.nameC])
+
+	// 404 on a missing character id.
+	code, _ = getJSON(t, app, "/api/v1/catalog/characters/99999999/works")
+	assert.Equal(t, 404, code)
+}
+
 func ptrI16(v int16) *int16 { return &v }
 
 func ptrI64(v int64) *int64 { return &v }
