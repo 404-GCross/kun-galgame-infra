@@ -109,6 +109,50 @@ func TestReply_Sanitization(t *testing.T) {
 	}
 }
 
+func TestReply_DerivesRootAndTarget(t *testing.T) {
+	cleanTables(t)
+	ts := NewThreadService(testDB, NoopSink{})
+	ps := NewPostService(testDB, NoopSink{})
+	th := openTopic(t, ts, "letmoe", 100, "b1", "opening")
+
+	// A top-level reply (no reply_to) carries no root/target pointers.
+	seedTrust(t, 200, model.TrustLevelBasic, 0)
+	top, err := ps.Reply(context.Background(), ReplyParams{ThreadID: th.ID, AuthorID: 200, BodyRaw: "top"})
+	if err != nil {
+		t.Fatalf("top reply: %v", err)
+	}
+	if top.RootPostID != nil || top.TargetUserID != nil {
+		t.Fatalf("a top-level reply carries no root/target: root=%v target=%v", top.RootPostID, top.TargetUserID)
+	}
+
+	// A reply passing ONLY reply_to_post_id: the primitive derives root = the
+	// top-level ancestor and target = the parent's author (docs/proj/16 #8).
+	seedTrust(t, 300, model.TrustLevelBasic, 0)
+	child, err := ps.Reply(context.Background(), ReplyParams{ThreadID: th.ID, AuthorID: 300, BodyRaw: "child", ReplyToPostID: &top.ID})
+	if err != nil {
+		t.Fatalf("child reply: %v", err)
+	}
+	if child.RootPostID == nil || *child.RootPostID != top.ID {
+		t.Fatalf("child root_post_id: want %d, got %v", top.ID, child.RootPostID)
+	}
+	if child.TargetUserID == nil || *child.TargetUserID != 200 {
+		t.Fatalf("child target_user_id: want 200, got %v", child.TargetUserID)
+	}
+
+	// A reply to the nested reply inherits the SAME root and targets the middle author.
+	seedTrust(t, 400, model.TrustLevelBasic, 0)
+	grand, err := ps.Reply(context.Background(), ReplyParams{ThreadID: th.ID, AuthorID: 400, BodyRaw: "grand", ReplyToPostID: &child.ID})
+	if err != nil {
+		t.Fatalf("grandchild reply: %v", err)
+	}
+	if grand.RootPostID == nil || *grand.RootPostID != top.ID {
+		t.Fatalf("grandchild root inherits the top ancestor: want %d, got %v", top.ID, grand.RootPostID)
+	}
+	if grand.TargetUserID == nil || *grand.TargetUserID != 300 {
+		t.Fatalf("grandchild target: want 300, got %v", grand.TargetUserID)
+	}
+}
+
 func TestReactionToggle(t *testing.T) {
 	cleanTables(t)
 	ts := NewThreadService(testDB, NoopSink{})

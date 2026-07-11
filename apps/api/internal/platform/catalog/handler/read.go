@@ -93,6 +93,13 @@ func buildWorkResponse(detail *service.WorkDetail) dto.WorkByAnchorResponse {
 			ID: detail.Work.ID, MediumID: detail.Work.MediumID, DisplayName: detail.Work.DisplayName,
 			OLang: detail.Work.OLang, ContentRating: detail.Work.ContentRating, Status: detail.Work.Status,
 		},
+		// Pre-size to non-nil so an empty (bare / freshly-minted) work serializes
+		// `[]` rather than `null` — a consumer that does `titles.length` on the
+		// projection must never see a null slice (docs/proj/16 #3).
+		Titles:   make([]dto.WorkTitle, 0, len(detail.Titles)),
+		Releases: make([]dto.ReleaseBrief, 0, len(detail.Releases)),
+		Labels:   make([]dto.WorkLabel, 0, len(detail.Labels)),
+		Refs:     make([]dto.WorkRef, 0, len(detail.Refs)),
 	}
 	if detail.Work.Site != nil {
 		resp.Work.Site = *detail.Work.Site
@@ -145,7 +152,9 @@ func (s *S2SServer) workCredits(ctx context.Context, in *creditsInput) (*credits
 	if err != nil {
 		return nil, apiErr(http.StatusInternalServerError, errors.ErrInternalServer)
 	}
-	resp := dto.WorkCreditsResponse{WorkID: in.ID}
+	// Groups pre-sized to non-nil so a credit-less work serializes `[]`, not
+	// `null` (docs/proj/16 #3).
+	resp := dto.WorkCreditsResponse{WorkID: in.ID, Groups: make([]dto.CreditGroup, 0)}
 	// rows are ordered by role_id; group consecutive rows.
 	var cur *dto.CreditGroup
 	for _, r := range rows {

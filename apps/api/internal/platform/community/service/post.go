@@ -64,6 +64,12 @@ func (s *PostService) Reply(ctx context.Context, p ReplyParams) (*model.Communit
 
 	now := time.Now()
 	var post model.CommunityPost
+	// The BFF passes only reply_to_post_id; the primitive completes the two blood
+	// pointers from the parent row — root_post_id (the sub-thread's top ancestor)
+	// and target_user_id (the parent's author) — so nested replies render indented
+	// with a "▸ recipient" label and fire a reply-to-you event (docs/proj/16 #8).
+	// An explicit caller value always wins.
+	rootPostID, targetUserID := p.RootPostID, p.TargetUserID
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		thread, err := repository.GetThreadTx(tx, p.ThreadID)
 		if err != nil {
@@ -91,9 +97,30 @@ func (s *PostService) Reply(ctx context.Context, p ReplyParams) (*model.Communit
 		if err != nil {
 			return err
 		}
+		// Complete the reply's root/target from its parent post (same thread only).
+		if p.ReplyToPostID != nil && (rootPostID == nil || targetUserID == nil) {
+			parent, perr := repository.GetPostTx(tx, *p.ReplyToPostID)
+			if perr != nil {
+				return perr
+			}
+			if parent != nil && parent.ThreadID == p.ThreadID {
+				if targetUserID == nil {
+					author := parent.AuthorID
+					targetUserID = &author
+				}
+				if rootPostID == nil {
+					if parent.RootPostID != nil {
+						rootPostID = parent.RootPostID // inherit the parent's sub-thread root
+					} else {
+						top := parent.ID // parent is top-level → it is the root
+						rootPostID = &top
+					}
+				}
+			}
+		}
 		post = model.CommunityPost{
 			ThreadID: p.ThreadID, PostNumber: number,
-			RootPostID: p.RootPostID, ReplyToPostID: p.ReplyToPostID, TargetUserID: p.TargetUserID,
+			RootPostID: rootPostID, ReplyToPostID: p.ReplyToPostID, TargetUserID: targetUserID,
 			AuthorID:   p.AuthorID,
 			ContentRaw: p.BodyRaw, ContentHTML: cooked.HTML, SanitizerVersion: int32(cooked.Version),
 			// A reply inherits the thread's content rating by default (invariant
@@ -119,8 +146,8 @@ func (s *PostService) Reply(ctx context.Context, p ReplyParams) (*model.Communit
 		return nil, err
 	}
 	s.sink.Emit(Event{Kind: EventPostCreated, ThreadID: p.ThreadID, PostID: post.ID, ActorID: p.AuthorID})
-	if p.TargetUserID != nil && *p.TargetUserID != p.AuthorID {
-		s.sink.Emit(Event{Kind: EventReplyToYou, ThreadID: p.ThreadID, PostID: post.ID, ActorID: p.AuthorID, TargetID: *p.TargetUserID})
+	if targetUserID != nil && *targetUserID != p.AuthorID {
+		s.sink.Emit(Event{Kind: EventReplyToYou, ThreadID: p.ThreadID, PostID: post.ID, ActorID: p.AuthorID, TargetID: *targetUserID})
 	}
 	return &post, nil
 }
