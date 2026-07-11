@@ -9,9 +9,15 @@ type GalgameOfficial struct {
 	Category     string    `gorm:"not null" json:"category"` // company, individual, amateur
 	Lang         string    `gorm:"default:''" json:"lang"`
 	Description  string    `gorm:"default:''" json:"description"`
-	Created      Timestamp `gorm:"autoCreateTime" json:"created"`
-	Updated      Timestamp `gorm:"autoUpdateTime" json:"updated"`
-	GalgameCount int       `gorm:"column:cnt;->;-:migration" json:"galgame_count"`
+	// CatalogLabelID is the catalog Label this official was registered as
+	// (cmd/register-galgame-officials, doc 10 §11). Nullable + no default tag
+	// (GORM zero-value trap): NULL is the idempotency key — an official without
+	// a mapping is a mint candidate; a second registration pass writes nothing.
+	// Additive write-only column (the wiki read path never consults it).
+	CatalogLabelID *int64    `gorm:"column:catalog_label_id" json:"catalog_label_id,omitempty"`
+	Created        Timestamp `gorm:"autoCreateTime" json:"created"`
+	Updated        Timestamp `gorm:"autoUpdateTime" json:"updated"`
+	GalgameCount   int       `gorm:"column:cnt;->;-:migration" json:"galgame_count"`
 
 	Alias   []GalgameOfficialAlias    `gorm:"foreignKey:GalgameOfficialID" json:"alias,omitempty"`
 	Galgame []GalgameOfficialRelation `gorm:"foreignKey:OfficialID" json:"galgame,omitempty"`
