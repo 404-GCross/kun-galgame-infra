@@ -77,6 +77,16 @@ func main() {
 		// VNDB rating/votecount narrow table (vndb-anchored enrichment, kept
 		// out of the main galgame table; refreshed by cmd/sync-vndb-scores).
 		&model.GalgameVNDBMeta{},
+
+		// EG (ErogameScape) median/votecount narrow table (EG-anchored
+		// enrichment via the catalog exact work anchor; refreshed by
+		// cmd/enrich-eg-scores).
+		&model.GalgameEGMeta{},
+
+		// Cross-source statistics snapshot table (release-year / score-histogram
+		// / yearly-average / coverage aggregates; rebuilt by
+		// cmd/build-galgame-stats).
+		&model.GalgameStats{},
 	); err != nil {
 		slog.Error("migration failed", "error", err)
 		os.Exit(1)

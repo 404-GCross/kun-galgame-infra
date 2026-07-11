@@ -60,6 +60,15 @@ func RegisterAll(r *Registry) {
 	})
 
 	r.Register(Job{
+		Name:     "build-galgame-stats",
+		Desc:     "跨源统计物化（release_years/score 直方图/yearly_scores/coverage 快照落 galgame_stats）",
+		Schedule: Schedule{DailyAt: "05:45"}, // staggered: after sync-vndb-scores (05:15) has refreshed the narrow tables
+		Run: func(ctx context.Context, cfg *config.Config) (Summary, error) {
+			return RunBuildGalgameStats(ctx, cfg, DefaultBuildGalgameStatsOpts())
+		},
+	})
+
+	r.Register(Job{
 		Name:     "image-gc",
 		Desc:     "image_service TTL 生命周期（冷候选/软删/物删）",
 		Schedule: Schedule{DailyAt: "03:30"},
