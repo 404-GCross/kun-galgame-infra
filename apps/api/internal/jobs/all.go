@@ -51,6 +51,15 @@ func RegisterAll(r *Registry) {
 	})
 
 	r.Register(Job{
+		Name:     "sync-vndb-scores",
+		Desc:     "VNDB → galgame wiki 评分同步（rating+votecount 落窄表 galgame_vndb_meta）",
+		Schedule: Schedule{DailyAt: "05:15"}, // staggered: after sync-vndb-enrich (05:00), before artifact-gc (05:30)
+		Run: func(ctx context.Context, cfg *config.Config) (Summary, error) {
+			return RunSyncVNDBScores(ctx, cfg, DefaultSyncVNDBScoresOpts())
+		},
+	})
+
+	r.Register(Job{
 		Name:     "image-gc",
 		Desc:     "image_service TTL 生命周期（冷候选/软删/物删）",
 		Schedule: Schedule{DailyAt: "03:30"},

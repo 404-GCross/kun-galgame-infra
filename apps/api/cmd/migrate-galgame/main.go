@@ -73,6 +73,10 @@ func main() {
 		// Bangumi score/rank narrow table (bid-anchored enrichment, kept out
 		// of the main galgame table; refreshed by cmd/enrich-bangumi).
 		&model.GalgameBangumiMeta{},
+
+		// VNDB rating/votecount narrow table (vndb-anchored enrichment, kept
+		// out of the main galgame table; refreshed by cmd/sync-vndb-scores).
+		&model.GalgameVNDBMeta{},
 	); err != nil {
 		slog.Error("migration failed", "error", err)
 		os.Exit(1)

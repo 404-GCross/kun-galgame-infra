@@ -474,6 +474,55 @@ func (c *Client) FetchVNReleasedBatch(ctx context.Context, ids []string) (map[st
 	return out, nil
 }
 
+// VNScore is the per-VN rating payload from /vn. Rating is VNDB's native
+// 10-100 vote average (nil when the VN has no votes — VNDB returns
+// rating:null with votecount:0); VoteCount is the number of votes.
+type VNScore struct {
+	Rating    *float64
+	VoteCount int
+}
+
+// FetchVNScoresBatch fetches rating + votecount for up to 100 VNs in a single
+// /vn call, keyed by vndb id. A VN with no votes has Rating=nil (VNDB returns
+// rating:null when votecount is 0). A VN ABSENT from the result does not exist
+// on VNDB (deleted / merged / a fabricated id) — the caller skips it rather
+// than writing a row. Pass at most 100 ids per call; callers batch larger sets.
+func (c *Client) FetchVNScoresBatch(ctx context.Context, ids []string) (map[string]VNScore, error) {
+	want := make(map[string]bool, len(ids))
+	or := []any{"or"}
+	for _, id := range ids {
+		if id == "" || want[id] {
+			continue
+		}
+		want[id] = true
+		or = append(or, []any{"id", "=", id})
+	}
+	if len(want) == 0 {
+		return map[string]VNScore{}, nil
+	}
+
+	var resp struct {
+		Results []struct {
+			ID        string   `json:"id"`
+			Rating    *float64 `json:"rating"`
+			VoteCount int      `json:"votecount"`
+		} `json:"results"`
+	}
+	if err := c.post(ctx, "/vn", map[string]any{
+		"filters": or,
+		"fields":  "id, rating, votecount",
+		"results": 100,
+	}, &resp); err != nil {
+		return nil, fmt.Errorf("vn score batch: %w", err)
+	}
+
+	out := make(map[string]VNScore, len(resp.Results))
+	for _, r := range resp.Results {
+		out[r.ID] = VNScore{Rating: r.Rating, VoteCount: r.VoteCount}
+	}
+	return out, nil
+}
+
 // VNImage is the per-VN cover image from /vn. ID is the VNDB image id
 // (e.g. "cv12345", stored as galgame_cover.source_key); URL is the t.vndb.org
 // cover URL; Sexual/Violence are VNDB's 0-2 average flag votes (rounded to the
