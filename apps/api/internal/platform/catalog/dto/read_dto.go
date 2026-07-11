@@ -108,6 +108,30 @@ type CreditItem struct {
 	Source       string `json:"source,omitempty"`
 }
 
+// --- work title search (step 18: product-side upstream-first create flow) ---
+
+// WorkSearchResponse is a page of title-search hits (lightweight brief).
+type WorkSearchResponse struct {
+	Items []WorkSearchHit `json:"items"`
+}
+
+// WorkSearchHit is one work matched by title, projected for the product-side
+// create picker: identity + claim state + its first DLsite anchor (if any). It
+// is deliberately light — the picker only needs to identify + annotate a hit;
+// the full read-through bundle is fetched by-anchor/by-id on selection.
+type WorkSearchHit struct {
+	WorkID        int64  `json:"work_id"`
+	DisplayName   string `json:"display_name"`
+	MediumID      int16  `json:"medium_id"`
+	ContentRating int16  `json:"content_rating" doc:"0=all_ages 1=sensitive 2=r18"`
+	Status        int16  `json:"status" doc:"0=live 1=stub 2=merged"`
+	// Site is the claiming tenant key; empty = unclaimed (an R2 registry row).
+	Site string `json:"site,omitempty"`
+	// DlsiteID is the work's first DLsite workno anchor (empty when it has none) —
+	// the product side auto-fills its dlsite_id from this to seed reconciliation.
+	DlsiteID string `json:"dlsite_id,omitempty"`
+}
+
 // --- entity search ---
 
 // EntitySearchResponse is a page of entity hits.

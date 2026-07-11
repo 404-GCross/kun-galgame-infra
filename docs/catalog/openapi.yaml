@@ -463,6 +463,27 @@ components:
         - code
         - message
       type: object
+    EnvelopeWorkSearchResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EnvelopeWorkSearchResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/WorkSearchResponse"
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
     HouseError:
       additionalProperties: false
       properties:
@@ -867,6 +888,48 @@ components:
         - external_id
         - level
       type: object
+    WorkSearchHit:
+      additionalProperties: false
+      properties:
+        content_rating:
+          description: 0=all_ages 1=sensitive 2=r18
+          format: int32
+          type: integer
+        display_name:
+          type: string
+        dlsite_id:
+          type: string
+        medium_id:
+          format: int32
+          type: integer
+        site:
+          type: string
+        status:
+          description: 0=live 1=stub 2=merged
+          format: int32
+          type: integer
+        work_id:
+          format: int64
+          type: integer
+      required:
+        - work_id
+        - display_name
+        - medium_id
+        - content_rating
+        - status
+      type: object
+    WorkSearchResponse:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: "#/components/schemas/WorkSearchHit"
+          type:
+            - array
+            - "null"
+      required:
+        - items
+      type: object
     WorkTitle:
       additionalProperties: false
       properties:
@@ -1177,6 +1240,52 @@ paths:
                 $ref: "#/components/schemas/HouseError"
           description: Error
       summary: Claim (or register) the catalog work for a product-side work
+      tags:
+        - catalog-s2s
+  /api/v1/catalog/works/search:
+    get:
+      operationId: searchCatalogWorks
+      parameters:
+        - description: Title search text (NFKC-folded substring match)
+          explode: false
+          in: query
+          name: q
+          schema:
+            description: Title search text (NFKC-folded substring match)
+            minLength: 1
+            type: string
+        - description: Filter to one medium; -1 = all
+          explode: false
+          in: query
+          name: medium_id
+          schema:
+            default: -1
+            description: Filter to one medium; -1 = all
+            format: int32
+            type: integer
+        - description: Max hits (capped at 50)
+          explode: false
+          in: query
+          name: limit
+          schema:
+            default: 20
+            description: Max hits (capped at 50)
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeWorkSearchResponse"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: Search works by title (NFKC-folded substring) for the product-side create picker
       tags:
         - catalog-s2s
   /api/v1/catalog/works/{id}:

@@ -3,11 +3,16 @@ package service
 import (
 	"context"
 	stderrors "errors"
+	"strings"
 
 	"api/internal/platform/catalog/model"
 
 	"gorm.io/gorm"
 )
+
+// sourceKeyDlsite is the catalog_source registry key for DLsite anchors (the
+// product side keys its doujin rows on the DLsite workno).
+const sourceKeyDlsite = "dlsite"
 
 // ReadService backs the S2S read face (step 18, D-01): anchor read-through and
 // credits-by-work. Pure reads over the catalog DB; transport-agnostic (the
@@ -229,6 +234,100 @@ func (s *ReadService) LabelWorks(ctx context.Context, labelID int64, limit, offs
 		FROM catalog_work_label wl JOIN catalog_work w ON w.id = wl.work_id
 		WHERE wl.label_id = ? ORDER BY w.id LIMIT ? OFFSET ?`, labelID, limit, offset).Scan(&items).Error
 	return head, items, total, err
+}
+
+// WorkSearchHit is one title-search hit: work identity + claim state + its
+// first DLsite anchor (empty when it has none).
+type WorkSearchHit struct {
+	WorkID        int64  `gorm:"column:work_id"`
+	DisplayName   string `gorm:"column:display_name"`
+	MediumID      int16  `gorm:"column:medium_id"`
+	ContentRating int16  `gorm:"column:content_rating"`
+	Status        int16  `gorm:"column:status"`
+	Site          string `gorm:"column:site"` // "" = unclaimed (COALESCEd)
+	DlsiteID      string `gorm:"-"`           // filled by a second query, not the title scan
+}
+
+// SearchWorks finds works by a case/width-insensitive title SUBSTRING match,
+// optionally filtered to one medium, for the product-side upstream-first create
+// picker (step 18). The match reuses catalog_work_title.title_norm — the STORED
+// generated column lower(normalize(title, NFKC)) — so the fold is byte-identical
+// to the importer's, and folds the query the same way in-query. mediumID <= 0
+// means no medium filter. v1 has NO trigram index: this is a plain ILIKE over
+// ~190k title rows, acceptable for a low-frequency staff picker; add a pg_trgm
+// index on title_norm if the call volume grows (docs/proj/18). Each hit is
+// annotated with its first DLsite anchor (work- or release-level, exact first).
+func (s *ReadService) SearchWorks(ctx context.Context, q string, mediumID int16, limit int) ([]WorkSearchHit, error) {
+	q = strings.TrimSpace(q)
+	if q == "" {
+		return nil, nil
+	}
+	if limit <= 0 || limit > 50 {
+		limit = 20
+	}
+	db := s.db.WithContext(ctx)
+
+	// EXISTS keeps one row per work even when several of its titles match. The
+	// merged tombstones (status=2) never surface — their identity lives on a
+	// survivor. The bind param is NFKC-folded in-query to match title_norm.
+	var hits []WorkSearchHit
+	if err := db.Raw(`
+		SELECT w.id AS work_id, w.display_name, w.medium_id, w.content_rating,
+		       w.status, COALESCE(w.site, '') AS site
+		FROM catalog_work w
+		WHERE w.deleted_at IS NULL
+		  AND w.status <> ?
+		  AND (? <= 0 OR w.medium_id = ?)
+		  AND EXISTS (
+		      SELECT 1 FROM catalog_work_title t
+		      WHERE t.work_id = w.id
+		        AND t.title_norm LIKE '%' || lower(normalize(?, NFKC)) || '%'
+		  )
+		ORDER BY w.id
+		LIMIT ?`,
+		model.WorkStatusMerged, mediumID, mediumID, q, limit).Scan(&hits).Error; err != nil {
+		return nil, err
+	}
+	if len(hits) == 0 {
+		return hits, nil
+	}
+
+	// Annotate each hit with its first DLsite anchor in one batched query over
+	// the matched work ids (work-level refs, plus release-level refs traced back
+	// to their work). Lowest link_kind first → exact wins the "first" slot.
+	workIDs := make([]int64, len(hits))
+	for i := range hits {
+		workIDs[i] = hits[i].WorkID
+	}
+	var refs []struct {
+		WorkID     int64  `gorm:"column:work_id"`
+		ExternalID string `gorm:"column:external_id"`
+	}
+	if err := db.Raw(`
+		SELECT x.work_id, x.external_id FROM (
+			SELECT r.entity_id AS work_id, r.external_id, r.link_kind
+			FROM catalog_external_ref r JOIN catalog_source s ON s.id = r.source_id
+			WHERE s.key = ? AND r.entity_type = ? AND r.entity_id IN ?
+			UNION ALL
+			SELECT rel.work_id, r.external_id, r.link_kind
+			FROM catalog_external_ref r JOIN catalog_source s ON s.id = r.source_id
+			  JOIN catalog_release rel ON rel.id = r.entity_id
+			WHERE s.key = ? AND r.entity_type = ? AND rel.work_id IN ?
+		) x ORDER BY x.work_id, x.link_kind`,
+		sourceKeyDlsite, model.EntityTypeWork, workIDs,
+		sourceKeyDlsite, model.EntityTypeRelease, workIDs).Scan(&refs).Error; err != nil {
+		return nil, err
+	}
+	firstDlsite := make(map[int64]string, len(refs))
+	for _, r := range refs {
+		if _, ok := firstDlsite[r.WorkID]; !ok {
+			firstDlsite[r.WorkID] = r.ExternalID
+		}
+	}
+	for i := range hits {
+		hits[i].DlsiteID = firstDlsite[hits[i].WorkID]
+	}
+	return hits, nil
 }
 
 // CreditRow is one credit joined with its role, name, character and source.

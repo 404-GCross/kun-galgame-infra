@@ -184,6 +184,61 @@ func TestWorkCredits(t *testing.T) {
 	assert.Equal(t, "キャラテスト", vaCredit["character"])
 }
 
+// TestSearchWorks pins the title-search picker: NFKC-folded substring match over
+// title_norm, medium filter, and per-hit claim state + first DLsite anchor.
+func TestSearchWorks(t *testing.T) {
+	db := openCatalogTestDB(t)
+	db.Raw("SELECT id FROM catalog_role WHERE key='scenario'").Scan(&roleScenario)
+	workID := seedReadFixture(t, db) // medium=5 (asmr), unclaimed, title "テスト音声", release dlsite RJTEST
+
+	// A second work in a different medium (galgame=1), claimed by a site, sharing
+	// the search substring — to prove the medium filter + claim annotation.
+	other := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "音声ゲーム", ContentRating: 0, Status: 0,
+		Site: strptr("letmoe"), ProductWorkID: ptrI64(42)}
+	require.NoError(t, db.Create(&other).Error)
+	require.NoError(t, db.Create(&model.CatalogWorkTitle{WorkID: other.ID, Lang: "ja", Title: "音声ゲーム", Kind: model.WorkTitleKindOfficial}).Error)
+
+	app := readApp(service.NewReadService(db), nil)
+
+	// substring "音声" matches both works.
+	code, body := getJSON(t, app, "/api/v1/catalog/works/search?q=%E9%9F%B3%E5%A3%B0")
+	require.Equal(t, 200, code)
+	items := body["data"].(map[string]any)["items"].([]any)
+	require.Len(t, items, 2)
+	byID := map[int64]map[string]any{}
+	for _, it := range items {
+		m := it.(map[string]any)
+		byID[int64(m["work_id"].(float64))] = m
+	}
+	// the asmr fixture: unclaimed (no site key) + its dlsite anchor surfaced.
+	fx := byID[workID]
+	require.NotNil(t, fx)
+	assert.Equal(t, "RJTEST", fx["dlsite_id"])
+	_, hasSite := fx["site"] // omitempty → absent when unclaimed
+	assert.False(t, hasSite, "unclaimed work has no site key")
+	// the galgame work: claimed by letmoe, no dlsite anchor.
+	oth := byID[other.ID]
+	require.NotNil(t, oth)
+	assert.Equal(t, "letmoe", oth["site"])
+	_, hasDl := oth["dlsite_id"]
+	assert.False(t, hasDl, "no dlsite anchor → omitted")
+
+	// medium filter to galgame(1) → only the second work.
+	code, body = getJSON(t, app, "/api/v1/catalog/works/search?q=%E9%9F%B3%E5%A3%B0&medium_id=1")
+	require.Equal(t, 200, code)
+	items = body["data"].(map[string]any)["items"].([]any)
+	require.Len(t, items, 1)
+	assert.EqualValues(t, other.ID, items[0].(map[string]any)["work_id"])
+
+	// NFKC fold: a fullwidth-digit / mixed-width query still matches; no match → empty.
+	code, body = getJSON(t, app, "/api/v1/catalog/works/search?q=%E3%83%86%E3%82%B9%E3%83%88") // テスト
+	require.Equal(t, 200, code)
+	assert.Len(t, body["data"].(map[string]any)["items"].([]any), 1)
+	code, body = getJSON(t, app, "/api/v1/catalog/works/search?q=zzznomatch")
+	require.Equal(t, 200, code)
+	assert.Len(t, body["data"].(map[string]any)["items"].([]any), 0)
+}
+
 // TestEntitySearch hits the REAL local catalog_credit_names index (populated by
 // reindex-catalog, step 15). Skips if Meili is unreachable or the index is empty.
 func TestEntitySearch(t *testing.T) {
@@ -286,5 +341,9 @@ func TestReadEndpoints_401(t *testing.T) {
 }
 
 func ptrI16(v int16) *int16 { return &v }
+
+func ptrI64(v int64) *int64 { return &v }
+
+func strptr(s string) *string { return &s }
 
 func itoa(v int64) string { return strconv.FormatInt(v, 10) }

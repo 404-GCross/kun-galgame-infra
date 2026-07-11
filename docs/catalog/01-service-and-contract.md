@@ -16,7 +16,7 @@ catalog **不存**产品展示体:简介、封面/截图字节、评分、点赞
 
 ## 2. S2S 端点(Basic client 认证,前缀 `/api/v1/catalog`)
 
-写/运维面:resolve(2.1)· redirects feed(2.2)· claim(2.3,带 site 绑定)。读面(D-01,2.4-2.6):by-anchor · credits · entity search。内部浏览器(D-02,2.7):stats · works/{id} · labels/{id}/works。
+写/运维面:resolve(2.1)· redirects feed(2.2)· claim(2.3,带 site 绑定)。读面(D-01,2.4-2.6):by-anchor · credits · entity search。内部浏览器(D-02,2.7):stats · works/{id} · labels/{id}/works。产品建游面(2.8):works/search。
 
 ### 2.1 `POST /catalog/resolve` — 批量 id 规范化(只读)
 
@@ -75,6 +75,15 @@ catalog **不存**产品展示体:简介、封面/截图字节、评分、点赞
 - `GET /catalog/stats`:仪表盘全部计数**单端点单往返**——works 矩阵(medium × 认领态 × status)、实体计数(**孤儿名义单列**,person=0 如实)、credits 按 source、归属边 by kind、**refs source × tier 交叉表**(身份质量一张表)、队列水位(candidates/proposals by status、probable refs、rejections)、**src_llm bid 判定**(same/different/unsure/deterministic;src_llm 缺表则该段空)、**新鲜度 = 各 source 锚 max(created_at)**(诚实近似,不加簿记)。
 - `GET /catalog/works/{id}`:与 2.4 by-anchor 同 bundle,入口换 catalog id;404 同义。
 - `GET /catalog/labels/{id}/works`:厂牌反查(经归属边),返回 label 自身信息(`label`:id/名/kind)+ offset 分页作品列表(cap 50)+ total,页面直达即自足。
+
+### 2.8 `GET /catalog/works/search?q=&medium_id=&limit=` — 作品标题搜索(只读)
+
+产品站「上游优先建游」的选择器面(letmoe step 18):staff 在建游首屏一个输入框里搜上游是否已有此作品,搜到即一键读穿建行,无需填全量信息。
+
+- `q`:标题子串(**NFKC 折叠**——复用 `catalog_work_title.title_norm` 生成列 `lower(normalize(title, NFKC))`,与导入期折叠字节一致;查询侧同法折叠后 `LIKE '%…%'`;空 `q` → Huma minLength 422)。
+- `medium_id`:可选 medium 过滤(**-1 = 全部**,Huma 无法表达可空标量故用哨兵;letmoe 建游默认传 `1`=galgame 收窄结果);`limit` cap 50(默认 20)。
+- **v1 无 trgm 索引**:纯 `ILIKE` 扫 ~19 万 title 行,staff 低频可接受;调用量升再对 `title_norm` 加 `pg_trgm` GIN 索引(记录,量升触发)。
+- 响应 `items[]` = 轻 brief:`work_id` · `display_name` · `medium_id` · `content_rating` · `status` · **`site`(认领态,空=未认领)** · **`dlsite_id`(首个 DLsite workno 锚,无则缺省)**。`merged`(status=2)墓碑不出面。选中后产品站按需再走 §2.4 by-anchor / §2.7 works/{id} 取全量 bundle。
 
 > **读面无 site 绑定**(16 语义:绑定只作用于写端点 claim);读端点仍走 Basic S2S(无凭据 401)。
 

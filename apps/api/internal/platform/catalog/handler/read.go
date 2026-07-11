@@ -32,6 +32,10 @@ func (s *S2SServer) registerRead(api huma.API) {
 		Summary: "Search catalog entities (credit names / characters / labels)", Tags: tags,
 	}, s.searchEntities)
 	huma.Register(api, huma.Operation{
+		OperationID: "searchCatalogWorks", Method: http.MethodGet, Path: "/api/v1/catalog/works/search",
+		Summary: "Search works by title (NFKC-folded substring) for the product-side create picker", Tags: tags,
+	}, s.searchWorks)
+	huma.Register(api, huma.Operation{
 		OperationID: "getCatalogStats", Method: http.MethodGet, Path: "/api/v1/catalog/stats",
 		Summary: "Dashboard counts for the internal data browser (one round-trip)", Tags: tags,
 	}, s.getStats)
@@ -180,6 +184,39 @@ func (s *S2SServer) workCredits(ctx context.Context, in *creditsInput) (*credits
 		cur.Credits = append(cur.Credits, item)
 	}
 	return &creditsOutput{Body: okEnvelope(resp)}, nil
+}
+
+// ---- work title search (product-side create picker) ----
+
+type searchWorksInput struct {
+	Q string `query:"q" minLength:"1" doc:"Title search text (NFKC-folded substring match)"`
+	// -1 = no filter (Huma cannot express optional scalars as pointers).
+	MediumID int16 `query:"medium_id" default:"-1" doc:"Filter to one medium; -1 = all"`
+	Limit    int   `query:"limit" default:"20" doc:"Max hits (capped at 50)"`
+}
+
+type searchWorksOutput struct {
+	Body Envelope[dto.WorkSearchResponse]
+}
+
+func (s *S2SServer) searchWorks(ctx context.Context, in *searchWorksInput) (*searchWorksOutput, error) {
+	limit := in.Limit
+	if limit <= 0 || limit > 50 {
+		limit = 20
+	}
+	hits, err := s.read.SearchWorks(ctx, in.Q, in.MediumID, limit)
+	if err != nil {
+		return nil, apiErr(http.StatusInternalServerError, errors.ErrInternalServer)
+	}
+	// Pre-size non-nil so an empty result serializes `[]`, not `null`.
+	resp := dto.WorkSearchResponse{Items: make([]dto.WorkSearchHit, 0, len(hits))}
+	for _, h := range hits {
+		resp.Items = append(resp.Items, dto.WorkSearchHit{
+			WorkID: h.WorkID, DisplayName: h.DisplayName, MediumID: h.MediumID,
+			ContentRating: h.ContentRating, Status: h.Status, Site: h.Site, DlsiteID: h.DlsiteID,
+		})
+	}
+	return &searchWorksOutput{Body: okEnvelope(resp)}, nil
 }
 
 // ---- entity search ----
