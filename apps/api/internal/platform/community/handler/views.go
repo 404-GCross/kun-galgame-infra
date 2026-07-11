@@ -45,7 +45,8 @@ func toPostView(p *model.CommunityPost) dto.PostView {
 		ID: p.ID, ThreadID: p.ThreadID, PostNumber: p.PostNumber,
 		RootPostID: p.RootPostID, ReplyToPostID: p.ReplyToPostID, TargetUserID: p.TargetUserID,
 		AuthorID: p.AuthorID, ContentRaw: p.ContentRaw, ContentHTML: p.ContentHTML,
-		ContentRating: p.ContentRating, Status: p.Status, EditedAt: p.EditedAt, CreatedAt: p.CreatedAt,
+		ContentRating: p.ContentRating, Status: p.Status,
+		EditedAt: p.EditedAt, EditedByModerator: p.EditedByModerator, CreatedAt: p.CreatedAt,
 	}
 }
 
@@ -93,9 +94,10 @@ func toTrustView(t *model.CommunityTrust) dto.TrustView {
 	}
 }
 
-func toReviewItemView(it *model.CommunityReviewItem) dto.ReviewItemView {
+func toReviewItemView(it *repository.ReviewItemRow) dto.ReviewItemView {
 	v := dto.ReviewItemView{
-		ID: it.ID, PostID: it.PostID, Source: it.Source, Status: it.Status, DecidedBy: it.DecidedBy,
+		ID: it.ID, PostID: it.PostID, ThreadID: it.ThreadID, AuthorID: it.AuthorID,
+		Source: it.Source, Status: it.Status, DecidedBy: it.DecidedBy,
 	}
 	if it.Site != nil {
 		v.Site = *it.Site
@@ -103,7 +105,7 @@ func toReviewItemView(it *model.CommunityReviewItem) dto.ReviewItemView {
 	return v
 }
 
-func toReviewItemViews(items []model.CommunityReviewItem) []dto.ReviewItemView {
+func toReviewItemViews(items []repository.ReviewItemRow) []dto.ReviewItemView {
 	out := make([]dto.ReviewItemView, len(items))
 	for i := range items {
 		out[i] = toReviewItemView(&items[i])

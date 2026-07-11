@@ -94,7 +94,13 @@ type CommunityPost struct {
 	ContentRating int16      `gorm:"not null;column:content_rating" json:"content_rating"`
 	Status        int16      `gorm:"not null;column:status" json:"status"`
 	EditedAt      *time.Time `gorm:"column:edited_at" json:"edited_at"`
-	CreatedAt     time.Time  `json:"created_at"`
+	// EditedByModerator is edit-path bookkeeping: whether the LATEST edit was a
+	// mod-actor edit (docs/proj/17 decision 3), so a consuming site can label
+	// "edited (moderation)" distinctly from an author self-edit. Creation value
+	// is always false (not a caller choice) → the DDL default stays; only the
+	// edit path writes it (mod edit → true, author self-edit → back to false).
+	EditedByModerator bool      `gorm:"not null;default:false;column:edited_by_moderator" json:"edited_by_moderator"`
+	CreatedAt         time.Time `json:"created_at"`
 
 	// Thread is the association for ThreadID; GORM AutoMigrate creates the FK.
 	Thread *CommunityThread `gorm:"foreignKey:ThreadID" json:"thread,omitempty"`

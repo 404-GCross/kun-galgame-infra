@@ -78,7 +78,12 @@ role tables live at the site) and leaves a structured **audit log** of the actio
 (post/thread/author/moderator — the minimal audit surface, no table, matching the
 review queue's `decided_by` precedent). Either way the body is re-cooked +
 re-sanitized at the current `sanitizer_version` and `edited_at` is stamped;
-`post_number`, `status`, and `author_id` never move. Only a **visible** post is
+`post_number`, `status`, and `author_id` never move. The post additionally
+carries an **`edited_by_moderator`** bookkeeping bit describing the LATEST
+edit's actor — a cross-author mod-actor edit sets it, an author self-edit
+(including a moderator editing their own post) clears it — so a consuming site
+can label "edited (moderation)" distinctly from a plain author edit. Only a
+**visible** post is
 editable — a held/hidden or tombstoned post returns `409` (a removed post stays
 removed; a held post is released via the review queue, not an edit). The TL0
 sandbox **per-post content caps apply to the edited body too** (editing is not an
@@ -155,7 +160,10 @@ Exceeding a cap returns `429`.
   reporter against a **TL0** author hides on a single vote. Reporting an
   already-hidden/tombstoned post records the flag but never re-enqueues.
 - **Centralized queue** — `GET /review` lists the site's pending items (optional
-  `source` filter; the cross-site super-view is a future NextMoe concern). A
+  `source` filter; the cross-site super-view is a future NextMoe concern). Each
+  item is joined to its subject post's **`thread_id` + `author_id`** so the
+  consuming site's queue UI can deep-link the thread (where an S2S read serves
+  the held content) and resolve the author, without a per-item round trip. A
   decision is about the CONTENT: `approve` keeps it (post restored to visible),
   `reject` removes it (post tombstoned). A decision on a flags item **backfills
   every reporter's accuracy** (approve → the reports were wrong → `flags_disagreed`;

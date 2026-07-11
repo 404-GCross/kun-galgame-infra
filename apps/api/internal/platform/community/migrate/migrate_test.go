@@ -266,7 +266,7 @@ func TestColumnAudit(t *testing.T) {
 			"id", "thread_id", "post_number", "root_post_id", "reply_to_post_id",
 			"target_user_id", "author_id", "content_raw", "content_html",
 			"sanitizer_version", "content_rating", "status", "edited_at",
-			"created_at",
+			"edited_by_moderator", "created_at",
 		},
 		"community_reaction": {"post_id", "user_id", "kind", "created_at"},
 		"community_thread_user": {

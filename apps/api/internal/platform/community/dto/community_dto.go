@@ -53,7 +53,11 @@ type PostView struct {
 	ContentRating int16      `json:"content_rating"`
 	Status        int16      `json:"status"`
 	EditedAt      *time.Time `json:"edited_at,omitempty"`
-	CreatedAt     time.Time  `json:"created_at"`
+	// EditedByModerator reports whether the LATEST edit was a mod-actor edit
+	// (docs/proj/17 decision 3), so a site can label "edited (moderation)"
+	// distinctly from an author self-edit.
+	EditedByModerator bool      `json:"edited_by_moderator,omitempty" doc:"true when the latest edit was a mod-actor edit (as_moderator)"`
+	CreatedAt         time.Time `json:"created_at"`
 }
 
 // --- requests --------------------------------------------------------------
@@ -219,11 +223,16 @@ type TrustView struct {
 	GrantedBoost            *int16 `json:"granted_boost,omitempty"`
 }
 
-// ReviewItemView is a moderation-queue item.
+// ReviewItemView is a moderation-queue item. ThreadID / AuthorID are projected
+// from the subject post (list read) so the consuming site can deep-link the
+// thread and resolve the author without a per-item round trip; absent when the
+// item has no post.
 type ReviewItemView struct {
 	ID        int64  `json:"id"`
 	Site      string `json:"site,omitempty"`
 	PostID    *int64 `json:"post_id,omitempty"`
+	ThreadID  *int64 `json:"thread_id,omitempty" doc:"the subject post's thread (deep-link target)"`
+	AuthorID  *int64 `json:"author_id,omitempty" doc:"the subject post's author"`
 	Source    *int16 `json:"source,omitempty" doc:"0=flags 1=first_post_hold 2=suspect_words 3=external"`
 	Status    int16  `json:"status" doc:"0=pending 1=approved 2=rejected"`
 	DecidedBy *int64 `json:"decided_by,omitempty"`

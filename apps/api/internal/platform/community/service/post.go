@@ -221,7 +221,10 @@ func (s *PostService) Edit(ctx context.Context, p EditParams) (*model.CommunityP
 		if existing.Status != model.PostStatusVisible {
 			return ErrPostNotEditable
 		}
-		if err := repository.UpdatePostContentTx(tx, p.PostID, p.BodyRaw, cooked.HTML, int32(cooked.Version), now); err != nil {
+		// The edited_by_moderator bookkeeping bit tracks the LATEST edit's actor:
+		// a cross-author mod edit sets it, an author self-edit (including a mod
+		// editing their own post) clears it back to false.
+		if err := repository.UpdatePostContentTx(tx, p.PostID, p.BodyRaw, cooked.HTML, int32(cooked.Version), now, modActed); err != nil {
 			return err
 		}
 		// Reflect the write in the returned view (post_number/status/author are
@@ -230,6 +233,7 @@ func (s *PostService) Edit(ctx context.Context, p EditParams) (*model.CommunityP
 		existing.ContentHTML = cooked.HTML
 		existing.SanitizerVersion = int32(cooked.Version)
 		existing.EditedAt = &now
+		existing.EditedByModerator = modActed
 		post = *existing
 		return nil
 	})

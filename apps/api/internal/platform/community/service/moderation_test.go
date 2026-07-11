@@ -173,3 +173,53 @@ func TestReview_HoldRelease(t *testing.T) {
 		t.Fatalf("hold must not be refunded: remaining=%d", r)
 	}
 }
+
+// ListPending projects the subject post's thread + author onto each queue item
+// (docs/proj/21 #1): the consuming site deep-links the thread and resolves the
+// author from the list alone, without a per-item round trip.
+func TestReview_ListPendingJoinsPost(t *testing.T) {
+	cleanTables(t)
+	ts := NewThreadService(testDB, NoopSink{})
+	ps := NewPostService(testDB, NoopSink{})
+	rs := NewReviewService(testDB, NoopSink{})
+	th := openTopic(t, ts, "letmoe", 100, "b1", "opening")
+
+	// A fresh TL0 author's first reply is held + enqueued (first_post_hold).
+	post, err := ps.Reply(context.Background(), ReplyParams{ThreadID: th.ID, AuthorID: 600, BodyRaw: "hi"})
+	if err != nil {
+		t.Fatalf("reply: %v", err)
+	}
+	if post.Status != model.PostStatusHidden {
+		t.Fatalf("first post should be held: %d", post.Status)
+	}
+
+	rows, err := rs.List("letmoe", -1, 50)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("expected 1 pending item, got %d", len(rows))
+	}
+	row := rows[0]
+	if row.PostID == nil || *row.PostID != post.ID {
+		t.Fatalf("post_id mismatch: %+v", row)
+	}
+	if row.ThreadID == nil || *row.ThreadID != th.ID {
+		t.Fatalf("thread_id must be joined from the post: %+v", row)
+	}
+	if row.AuthorID == nil || *row.AuthorID != 600 {
+		t.Fatalf("author_id must be joined from the post: %+v", row)
+	}
+	if row.Source == nil || *row.Source != model.ReviewSourceFirstPostHold {
+		t.Fatalf("source mismatch: %+v", row)
+	}
+
+	// The source filter still applies on the joined read.
+	none, err := rs.List("letmoe", model.ReviewSourceFlags, 50)
+	if err != nil {
+		t.Fatalf("filtered list: %v", err)
+	}
+	if len(none) != 0 {
+		t.Fatalf("flags filter should exclude the hold item, got %d", len(none))
+	}
+}

@@ -94,3 +94,50 @@ func TestModActor_DeleteTombstonesLikeAuthorPath(t *testing.T) {
 		t.Fatalf("author delete of an already-tombstoned post must no-op, got %v", err)
 	}
 }
+
+// The edited_by_moderator bookkeeping bit (docs/proj/21 #6): a cross-author
+// mod-actor edit sets it (so a site can label "edited (moderation)"), and a
+// subsequent author self-edit clears it — the bit always describes the LATEST
+// edit's actor.
+func TestModActor_EditedByModeratorBookkeeping(t *testing.T) {
+	cleanTables(t)
+	ts := NewThreadService(testDB, NoopSink{})
+	ps := NewPostService(testDB, NoopSink{})
+	th := openTopic(t, ts, "letmoe", 100, "b1", "opening")
+
+	seedTrust(t, 200, model.TrustLevelBasic, 0)
+	post, err := ps.Reply(context.Background(), ReplyParams{ThreadID: th.ID, AuthorID: 200, BodyRaw: "original"})
+	if err != nil {
+		t.Fatalf("reply: %v", err)
+	}
+	if post.EditedByModerator {
+		t.Fatal("a fresh post must not carry the mod-edit bit")
+	}
+
+	// Author self-edit → bit stays false.
+	if _, err := ps.Edit(context.Background(), EditParams{PostID: post.ID, AuthorID: 200, BodyRaw: "self edit"}); err != nil {
+		t.Fatalf("self edit: %v", err)
+	}
+	if getPost(t, post.ID).EditedByModerator {
+		t.Fatal("author self-edit must not set edited_by_moderator")
+	}
+
+	// Cross-author mod edit → bit set, in the returned view AND the row.
+	seedTrust(t, 999, model.TrustLevelRegular, 0)
+	edited, err := ps.Edit(context.Background(), EditParams{PostID: post.ID, AuthorID: 999, BodyRaw: "mod edit", AsModerator: true})
+	if err != nil {
+		t.Fatalf("mod edit: %v", err)
+	}
+	if !edited.EditedByModerator || !getPost(t, post.ID).EditedByModerator {
+		t.Fatal("mod-actor edit must set edited_by_moderator")
+	}
+
+	// A mod editing their OWN post is an author edit → bit clears; likewise the
+	// original author re-editing after a mod edit clears it (last-edit-actor).
+	if _, err := ps.Edit(context.Background(), EditParams{PostID: post.ID, AuthorID: 200, BodyRaw: "author again"}); err != nil {
+		t.Fatalf("author re-edit: %v", err)
+	}
+	if getPost(t, post.ID).EditedByModerator {
+		t.Fatal("author re-edit must clear edited_by_moderator")
+	}
+}

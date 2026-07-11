@@ -58,17 +58,20 @@ func GetPostTx(tx *gorm.DB, id int64) (*model.CommunityPost, error) {
 	return &p, nil
 }
 
-// UpdatePostContentTx rewrites a post's body on an author edit: the re-cooked
-// HTML + raw source + the sanitizer version that produced it + edited_at. A map
-// update so an (unlikely) empty body is written rather than omitted;
-// post_number / status / author_id are untouched (invariant 13: the number never
-// moves).
-func UpdatePostContentTx(tx *gorm.DB, postID int64, raw, html string, version int32, editedAt time.Time) error {
+// UpdatePostContentTx rewrites a post's body on an edit: the re-cooked HTML +
+// raw source + the sanitizer version that produced it + edited_at. A map update
+// so an (unlikely) empty body is written rather than omitted; post_number /
+// status / author_id are untouched (invariant 13: the number never moves).
+// editedByModerator records the LATEST edit's actor kind (mod-actor edit →
+// true, author self-edit → false), written on every edit so the label always
+// describes the current content.
+func UpdatePostContentTx(tx *gorm.DB, postID int64, raw, html string, version int32, editedAt time.Time, editedByModerator bool) error {
 	return tx.Model(&model.CommunityPost{}).Where("id = ?", postID).Updates(map[string]any{
-		"content_raw":       raw,
-		"content_html":      html,
-		"sanitizer_version": version,
-		"edited_at":         editedAt,
+		"content_raw":         raw,
+		"content_html":        html,
+		"sanitizer_version":   version,
+		"edited_at":           editedAt,
+		"edited_by_moderator": editedByModerator,
 	}).Error
 }
 

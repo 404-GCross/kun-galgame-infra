@@ -157,15 +157,36 @@ type ReviewRepository struct{ db *gorm.DB }
 
 func NewReviewRepository(db *gorm.DB) *ReviewRepository { return &ReviewRepository{db: db} }
 
-// ListPending returns pending queue items for a site, newest first. source ≥ 0
-// filters to one source; source < 0 = all sources.
-func (r *ReviewRepository) ListPending(site string, source int16, limit int) ([]model.CommunityReviewItem, error) {
-	q := r.db.Where("site = ? AND status = ?", site, model.ReviewStatusPending)
+// ReviewItemRow is a pending queue item joined to its subject post's thread +
+// author, so a consuming site can deep-link the post (thread page) and resolve
+// the author without a per-item round trip. Flat ad-hoc projection with
+// explicit column tags (never rely on GORM name derivation for ad-hoc scans).
+type ReviewItemRow struct {
+	ID        int64   `gorm:"column:id"`
+	Site      *string `gorm:"column:site"`
+	PostID    *int64  `gorm:"column:post_id"`
+	Source    *int16  `gorm:"column:source"`
+	Status    int16   `gorm:"column:status"`
+	DecidedBy *int64  `gorm:"column:decided_by"`
+	// ThreadID / AuthorID come from the subject post (LEFT JOIN — nil when the
+	// item has no post or the post is gone).
+	ThreadID *int64 `gorm:"column:thread_id"`
+	AuthorID *int64 `gorm:"column:author_id"`
+}
+
+// ListPending returns pending queue items for a site (joined to their subject
+// post's thread + author), newest first. source ≥ 0 filters to one source;
+// source < 0 = all sources.
+func (r *ReviewRepository) ListPending(site string, source int16, limit int) ([]ReviewItemRow, error) {
+	q := r.db.Table("community_review_item AS ri").
+		Select("ri.id, ri.site, ri.post_id, ri.source, ri.status, ri.decided_by, p.thread_id, p.author_id").
+		Joins("LEFT JOIN community_post AS p ON p.id = ri.post_id").
+		Where("ri.site = ? AND ri.status = ?", site, model.ReviewStatusPending)
 	if source >= 0 {
-		q = q.Where("source = ?", source)
+		q = q.Where("ri.source = ?", source)
 	}
-	var items []model.CommunityReviewItem
-	err := q.Order("id DESC").Limit(limit).Find(&items).Error
+	var items []ReviewItemRow
+	err := q.Order("ri.id DESC").Limit(limit).Scan(&items).Error
 	return items, err
 }
 

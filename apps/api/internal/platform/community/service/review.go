@@ -23,9 +23,10 @@ func NewReviewService(db *gorm.DB, sink EventSink) *ReviewService {
 	return &ReviewService{db: db, reviews: repository.NewReviewRepository(db), sink: sink}
 }
 
-// List returns a site's pending queue items. source ≥ 0 filters to one source
-// (ReviewSource* constants); source < 0 = all sources.
-func (s *ReviewService) List(site string, source int16, limit int) ([]model.CommunityReviewItem, error) {
+// List returns a site's pending queue items, each joined to its subject post's
+// thread + author (the consuming site's deep-link + author resolve). source ≥ 0
+// filters to one source (ReviewSource* constants); source < 0 = all sources.
+func (s *ReviewService) List(site string, source int16, limit int) ([]repository.ReviewItemRow, error) {
 	return s.reviews.ListPending(site, source, clampLimit(limit))
 }
 
