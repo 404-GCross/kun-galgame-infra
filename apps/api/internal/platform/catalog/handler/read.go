@@ -336,10 +336,14 @@ func (s *S2SServer) labelWorks(ctx context.Context, in *labelWorksInput) (*label
 	if err != nil {
 		return nil, apiErr(http.StatusInternalServerError, errors.ErrInternalServer)
 	}
-	resp := dto.LabelWorksResponse{Total: total}
-	if head != nil {
-		resp.Label = &dto.LabelHead{ID: head.ID, DisplayName: head.DisplayName, Kind: head.Kind}
+	// 404 on a missing label id, aligning with names/{id}/works and
+	// characters/{id}/works (step 19 finding ②: this endpoint used to return
+	// 200 + label:null). The head being nil is the sole miss signal.
+	if head == nil {
+		return nil, apiErr(http.StatusNotFound, errors.ErrNotFound)
 	}
+	resp := dto.LabelWorksResponse{Total: total}
+	resp.Label = &dto.LabelHead{ID: head.ID, DisplayName: head.DisplayName, Kind: head.Kind}
 	for _, w := range items {
 		resp.Items = append(resp.Items, dto.LabelWorkRow{
 			WorkID: w.WorkID, DisplayName: w.DisplayName, MediumID: w.MediumID,

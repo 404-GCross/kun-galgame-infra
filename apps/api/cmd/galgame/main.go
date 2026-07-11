@@ -188,6 +188,9 @@ func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB, se
 	contributorH := galgameHandler.NewContributorHandler(galgameRepository, userReadRepo)
 	tagH := galgameHandler.NewTagHandler(tagRepo, taxSvc, searchHook)
 	officialH := galgameHandler.NewOfficialHandler(officialRepo, taxSvc, searchHook)
+	// Entity reverse-lookups (step 20): official/tag → self-description + galgame
+	// briefs, in the /galgame read namespace (part of read-openapi).
+	entityGalgamesH := galgameHandler.NewEntityGalgamesHandler(officialRepo, tagRepo, galgameSvc)
 	engineH := galgameHandler.NewEngineHandler(engineRepo, taxSvc)
 	seriesH := galgameHandler.NewSeriesHandler(seriesRepo, taxSvc)
 	// One handler covers ListRevisions / GetRevision / Revert for all
@@ -244,6 +247,11 @@ func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB, se
 	galgame.Get("/calendar", galgameH.Calendar)
 	galgame.Get("/calendar/pending", galgameH.CalendarPending)
 	galgame.Get("/calendar/tba", galgameH.CalendarTBA)
+	// Entity reverse-lookups (step 20). Static multi-segment paths, registered
+	// before the /:gid catch-all so ":gid" never binds "officials"/"tags".
+	// Public (SFW-gated via content_limit); powers downstream entity pages.
+	galgame.Get("/officials/:id/galgames", entityGalgamesH.OfficialGalgames)
+	galgame.Get("/tags/:id/galgames", entityGalgamesH.TagGalgames)
 	// GET /mine MUST be registered before the /:gid catch-all: both are
 	// GET and Fiber matches by registration order, so a /:gid registered
 	// first binds :gid="mine" and the handler ParseInt-fails with

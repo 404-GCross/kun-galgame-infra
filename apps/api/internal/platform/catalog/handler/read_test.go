@@ -295,6 +295,11 @@ func TestWorkByIDAndLabelWorks(t *testing.T) {
 	data := body["data"].(map[string]any)
 	assert.EqualValues(t, 1, data["total"])
 	assert.EqualValues(t, workID, data["items"].([]any)[0].(map[string]any)["work_id"])
+
+	// A missing label id now 404s (step 20: aligned with names/characters →works,
+	// step 19 finding ②; previously this returned 200 + label:null).
+	code, _ = getJSON(t, app, "/api/v1/catalog/labels/99999999/works")
+	assert.Equal(t, 404, code)
 }
 
 // TestStats asserts the dashboard aggregate against the seeded fixture.

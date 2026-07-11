@@ -106,6 +106,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/galgame/officials/{id}/galgames": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** An official's self-description (name/aliases/category) + a page of the galgames under it — the circle/brand reverse face (page-direct self-sufficient) */
+        get: operations["listOfficialGalgames"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/galgame/revisions/recent": {
         parameters: {
             query?: never;
@@ -132,6 +149,23 @@ export interface paths {
         };
         /** Full-text galgame search (Meilisearch): filters, facets, highlights, projection */
         get: operations["searchGalgames"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/galgame/tags/{id}/galgames": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** A tag's self-description (name/aliases/category) + a page of the galgames carrying it (page-direct self-sufficient) */
+        get: operations["listTagGalgames"];
         put?: never;
         post?: never;
         delete?: never;
@@ -497,6 +531,18 @@ export interface components {
             data: components["schemas"]["MineGalgameListData"];
             message: string;
         };
+        CalEnvelopeOfficialGalgamesResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/CalEnvelopeOfficialGalgamesResponse.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            code: number;
+            data: components["schemas"]["OfficialGalgamesResponse"];
+            message: string;
+        };
         CalEnvelopePRDetailData: {
             /**
              * Format: uri
@@ -567,6 +613,18 @@ export interface components {
             /** Format: int64 */
             code: number;
             data: components["schemas"]["RevisionResponse"];
+            message: string;
+        };
+        CalEnvelopeTagGalgamesResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/CalEnvelopeTagGalgamesResponse.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            code: number;
+            data: components["schemas"]["TagGalgamesResponse"];
             message: string;
         };
         CalEnvelopeTaxonomyFeedResponse: {
@@ -769,6 +827,13 @@ export interface components {
             /** Format: int64 */
             tag_id: number;
             updated: string | null;
+        };
+        EntityHead: {
+            aliases: string[] | null;
+            category: string;
+            /** Format: int64 */
+            id: number;
+            name: string;
         };
         ErrorDetail: {
             /** @description Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id' */
@@ -1063,6 +1128,12 @@ export interface components {
             /** Format: int64 */
             total: number;
         };
+        OfficialGalgamesResponse: {
+            galgames: components["schemas"]["GalgameBrief"][] | null;
+            official: components["schemas"]["EntityHead"];
+            /** Format: int64 */
+            total: number;
+        };
         PRDetailData: {
             changed_keys: {
                 [key: string]: boolean;
@@ -1220,6 +1291,12 @@ export interface components {
             source_key: string;
             /** Format: int32 */
             violence: number;
+        };
+        TagGalgamesResponse: {
+            galgames: components["schemas"]["GalgameBrief"][] | null;
+            tag: components["schemas"]["EntityHead"];
+            /** Format: int64 */
+            total: number;
         };
         TaxonomyFeedItem: {
             action: string;
@@ -1498,6 +1575,49 @@ export interface operations {
             };
         };
     };
+    listOfficialGalgames: {
+        parameters: {
+            query?: {
+                /** @description Page number (default 1) */
+                page?: number;
+                /** @description Items per page 1-50 (default 24) */
+                limit?: number;
+                /** @description Sort field (default resource_update_time) */
+                sort_field?: "created" | "resource_update_time" | "view";
+                /** @description Sort direction (default desc) */
+                sort_order?: "asc" | "desc";
+                /** @description sfw | nsfw | all (default sfw) */
+                content_limit?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Official / Tag ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalEnvelopeOfficialGalgamesResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
     getRecentGalgameRevisions: {
         parameters: {
             query?: {
@@ -1589,6 +1709,49 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CalEnvelopeGalgameSearchData"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    listTagGalgames: {
+        parameters: {
+            query?: {
+                /** @description Page number (default 1) */
+                page?: number;
+                /** @description Items per page 1-50 (default 24) */
+                limit?: number;
+                /** @description Sort field (default resource_update_time) */
+                sort_field?: "created" | "resource_update_time" | "view";
+                /** @description Sort direction (default desc) */
+                sort_order?: "asc" | "desc";
+                /** @description sfw | nsfw | all (default sfw) */
+                content_limit?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Official / Tag ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalEnvelopeTagGalgamesResponse"];
                 };
             };
             /** @description Error */

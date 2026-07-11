@@ -574,6 +574,20 @@ func (s *GalgameService) BatchGetWithViewer(ctx context.Context, ids []int, view
 	return items, nil
 }
 
+// EnrichBriefs maps an ALREADY-fetched, already-ordered page of galgames to
+// enriched briefs (pinned cover + intrinsic image meta), preserving the caller's
+// order. Unlike BatchGetWithViewer it does not re-query by id, so a relation page
+// (official/tag → galgames, step 20) keeps its sort. Empty input → empty slice.
+func (s *GalgameService) EnrichBriefs(ctx context.Context, galgames []model.Galgame) []dto.GalgameBrief {
+	pinned := s.pinnedCovers(ctx, galgames)
+	items := make([]dto.GalgameBrief, len(galgames))
+	for i := range galgames {
+		items[i] = briefFromModel(&galgames[i], pinned)
+	}
+	s.enrichBriefValues(ctx, items)
+	return items
+}
+
 // pinnedCovers batches the pinned-cover (sort_order=0) hash lookup for a set of
 // galgames into {id → image_hash}, avoiding O(N) per-row queries. Non-fatal on
 // error (returns empty → briefs fall back to the legacy Banner URL). Shared by

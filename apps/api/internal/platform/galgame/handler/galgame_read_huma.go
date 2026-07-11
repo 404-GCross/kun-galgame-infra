@@ -186,6 +186,23 @@ type mineOutput struct {
 	Body calEnvelope[dto.MineGalgameListData]
 }
 
+// entityGalgamesInput is the shared input for the taxonomy reverse-lookup reads
+// (official/tag → galgames) — offset-paginated, SFW-gated (step 20).
+type entityGalgamesInput struct {
+	ID           int    `path:"id" doc:"Official / Tag ID"`
+	Page         int    `query:"page" doc:"Page number (default 1)"`
+	Limit        int    `query:"limit" doc:"Items per page 1-50 (default 24)"`
+	SortField    string `query:"sort_field" enum:"created,resource_update_time,view" doc:"Sort field (default resource_update_time)"`
+	SortOrder    string `query:"sort_order" enum:"asc,desc" doc:"Sort direction (default desc)"`
+	ContentLimit string `query:"content_limit" doc:"sfw | nsfw | all (default sfw)"`
+}
+type officialGalgamesOutput struct {
+	Body calEnvelope[dto.OfficialGalgamesResponse]
+}
+type tagGalgamesOutput struct {
+	Body calEnvelope[dto.TagGalgamesResponse]
+}
+
 // SetupGalgameReadSpec registers the galgame-wiki read operations to derive their
 // spec. Handlers are stubs (never invoked — Fiber serves these paths).
 func SetupGalgameReadSpec(app *fiber.App) huma.API {
@@ -287,6 +304,18 @@ func SetupGalgameReadSpec(app *fiber.App) huma.API {
 		Summary: "The viewer's own galgame notifications", Tags: tags,
 	}, func(context.Context, *messagesMineInput) (*messagesMineOutput, error) {
 		return &messagesMineOutput{}, nil
+	})
+	huma.Register(api, huma.Operation{
+		OperationID: "listOfficialGalgames", Method: http.MethodGet, Path: "/api/galgame/officials/{id}/galgames",
+		Summary: "An official's self-description (name/aliases/category) + a page of the galgames under it — the circle/brand reverse face (page-direct self-sufficient)", Tags: tags,
+	}, func(context.Context, *entityGalgamesInput) (*officialGalgamesOutput, error) {
+		return &officialGalgamesOutput{}, nil
+	})
+	huma.Register(api, huma.Operation{
+		OperationID: "listTagGalgames", Method: http.MethodGet, Path: "/api/galgame/tags/{id}/galgames",
+		Summary: "A tag's self-description (name/aliases/category) + a page of the galgames carrying it (page-direct self-sufficient)", Tags: tags,
+	}, func(context.Context, *entityGalgamesInput) (*tagGalgamesOutput, error) {
+		return &tagGalgamesOutput{}, nil
 	})
 	registerGalgameSearchOps(api, tags)
 	return api

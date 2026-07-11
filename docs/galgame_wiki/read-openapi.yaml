@@ -258,6 +258,28 @@ components:
         - message
         - data
       type: object
+    CalEnvelopeOfficialGalgamesResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/CalEnvelopeOfficialGalgamesResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/OfficialGalgamesResponse"
+        message:
+          type: string
+      required:
+        - code
+        - message
+        - data
+      type: object
     CalEnvelopePRDetailData:
       additionalProperties: false
       properties:
@@ -383,6 +405,28 @@ components:
           type: integer
         data:
           $ref: "#/components/schemas/RevisionResponse"
+        message:
+          type: string
+      required:
+        - code
+        - message
+        - data
+      type: object
+    CalEnvelopeTagGalgamesResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/CalEnvelopeTagGalgamesResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/TagGalgamesResponse"
         message:
           type: string
       required:
@@ -900,6 +944,28 @@ components:
         - source
         - created
         - updated
+      type: object
+    EntityHead:
+      additionalProperties: false
+      properties:
+        aliases:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+        category:
+          type: string
+        id:
+          format: int64
+          type: integer
+        name:
+          type: string
+      required:
+        - id
+        - name
+        - category
+        - aliases
       type: object
     ErrorDetail:
       additionalProperties: false
@@ -1646,6 +1712,25 @@ components:
         - items
         - total
       type: object
+    OfficialGalgamesResponse:
+      additionalProperties: false
+      properties:
+        galgames:
+          items:
+            $ref: "#/components/schemas/GalgameBrief"
+          type:
+            - array
+            - "null"
+        official:
+          $ref: "#/components/schemas/EntityHead"
+        total:
+          format: int64
+          type: integer
+      required:
+        - official
+        - galgames
+        - total
+      type: object
     PRDetailData:
       additionalProperties: false
       properties:
@@ -2073,6 +2158,25 @@ components:
         - source
         - source_key
       type: object
+    TagGalgamesResponse:
+      additionalProperties: false
+      properties:
+        galgames:
+          items:
+            $ref: "#/components/schemas/GalgameBrief"
+          type:
+            - array
+            - "null"
+        tag:
+          $ref: "#/components/schemas/EntityHead"
+        total:
+          format: int64
+          type: integer
+      required:
+        - tag
+        - galgames
+        - total
+      type: object
     TaxonomyFeedItem:
       additionalProperties: false
       properties:
@@ -2476,6 +2580,78 @@ paths:
       summary: The viewer's own galgame submissions (all statuses)
       tags:
         - galgame-read
+  /api/galgame/officials/{id}/galgames:
+    get:
+      operationId: listOfficialGalgames
+      parameters:
+        - description: Official / Tag ID
+          in: path
+          name: id
+          required: true
+          schema:
+            description: Official / Tag ID
+            format: int64
+            type: integer
+        - description: Page number (default 1)
+          explode: false
+          in: query
+          name: page
+          schema:
+            description: Page number (default 1)
+            format: int64
+            type: integer
+        - description: Items per page 1-50 (default 24)
+          explode: false
+          in: query
+          name: limit
+          schema:
+            description: Items per page 1-50 (default 24)
+            format: int64
+            type: integer
+        - description: Sort field (default resource_update_time)
+          explode: false
+          in: query
+          name: sort_field
+          schema:
+            description: Sort field (default resource_update_time)
+            enum:
+              - created
+              - resource_update_time
+              - view
+            type: string
+        - description: Sort direction (default desc)
+          explode: false
+          in: query
+          name: sort_order
+          schema:
+            description: Sort direction (default desc)
+            enum:
+              - asc
+              - desc
+            type: string
+        - description: sfw | nsfw | all (default sfw)
+          explode: false
+          in: query
+          name: content_limit
+          schema:
+            description: sfw | nsfw | all (default sfw)
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CalEnvelopeOfficialGalgamesResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: An official's self-description (name/aliases/category) + a page of the galgames under it — the circle/brand reverse face (page-direct self-sufficient)
+      tags:
+        - galgame-read
   /api/galgame/revisions/recent:
     get:
       operationId: getRecentGalgameRevisions
@@ -2678,6 +2854,78 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: "Full-text galgame search (Meilisearch): filters, facets, highlights, projection"
+      tags:
+        - galgame-read
+  /api/galgame/tags/{id}/galgames:
+    get:
+      operationId: listTagGalgames
+      parameters:
+        - description: Official / Tag ID
+          in: path
+          name: id
+          required: true
+          schema:
+            description: Official / Tag ID
+            format: int64
+            type: integer
+        - description: Page number (default 1)
+          explode: false
+          in: query
+          name: page
+          schema:
+            description: Page number (default 1)
+            format: int64
+            type: integer
+        - description: Items per page 1-50 (default 24)
+          explode: false
+          in: query
+          name: limit
+          schema:
+            description: Items per page 1-50 (default 24)
+            format: int64
+            type: integer
+        - description: Sort field (default resource_update_time)
+          explode: false
+          in: query
+          name: sort_field
+          schema:
+            description: Sort field (default resource_update_time)
+            enum:
+              - created
+              - resource_update_time
+              - view
+            type: string
+        - description: Sort direction (default desc)
+          explode: false
+          in: query
+          name: sort_order
+          schema:
+            description: Sort direction (default desc)
+            enum:
+              - asc
+              - desc
+            type: string
+        - description: sfw | nsfw | all (default sfw)
+          explode: false
+          in: query
+          name: content_limit
+          schema:
+            description: sfw | nsfw | all (default sfw)
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CalEnvelopeTagGalgamesResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: A tag's self-description (name/aliases/category) + a page of the galgames carrying it (page-direct self-sufficient)
       tags:
         - galgame-read
   /api/galgame/taxonomy/recent:
