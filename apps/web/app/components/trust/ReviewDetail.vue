@@ -162,6 +162,15 @@ const submit = async () => {
         <p v-if="r.note" class="text-default-500 text-sm whitespace-pre-line">
           {{ r.note }}
         </p>
+        <div
+          v-if="r.subject_snapshot"
+          class="bg-content2 rounded-lg p-2 text-sm"
+        >
+          <p class="text-default-400 mb-1 text-xs">举报时点内容快照</p>
+          <p class="text-default-500 break-words whitespace-pre-line">
+            {{ r.subject_snapshot }}
+          </p>
+        </div>
       </div>
       <p v-if="!reports.length" class="text-default-400 text-sm">
         该审核项无关联举报(可能来自非举报来源)。

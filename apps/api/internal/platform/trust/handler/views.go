@@ -57,7 +57,8 @@ func toReviewItemViews(its []model.TrustReviewItem) []dto.ReviewItemView {
 func toReportView(r model.TrustReport) dto.ReportView {
 	return dto.ReportView{
 		ID: r.ID, Site: r.Site, SubjectKind: r.SubjectKind, SubjectID: r.SubjectID,
-		ReporterID: r.ReporterID, ReasonID: r.ReasonID, Note: r.Note, Weight: r.Weight,
+		ReporterID: r.ReporterID, ReasonID: r.ReasonID, Note: r.Note,
+		SubjectSnapshot: r.SubjectSnapshot, Weight: r.Weight,
 		ReviewItemID: r.ReviewItemID, Status: r.Status, CreatedAt: r.CreatedAt,
 	}
 }

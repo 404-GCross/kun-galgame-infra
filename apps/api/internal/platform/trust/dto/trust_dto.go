@@ -80,17 +80,20 @@ type ReviewItemView struct {
 
 // ReportView is a report row (admin detail).
 type ReportView struct {
-	ID           int64     `json:"id"`
-	Site         string    `json:"site"`
-	SubjectKind  string    `json:"subject_kind"`
-	SubjectID    string    `json:"subject_id"`
-	ReporterID   int64     `json:"reporter_id"`
-	ReasonID     int64     `json:"reason_id"`
-	Note         *string   `json:"note,omitempty"`
-	Weight       float32   `json:"weight"`
-	ReviewItemID *int64    `json:"review_item_id,omitempty"`
-	Status       int16     `json:"status" doc:"0=received 1=linked 2=folded"`
-	CreatedAt    time.Time `json:"created_at"`
+	ID          int64   `json:"id"`
+	Site        string  `json:"site"`
+	SubjectKind string  `json:"subject_kind"`
+	SubjectID   string  `json:"subject_id"`
+	ReporterID  int64   `json:"reporter_id"`
+	ReasonID    int64   `json:"reason_id"`
+	Note        *string `json:"note,omitempty"`
+	// SubjectSnapshot is the reporter-carried content snapshot at report time —
+	// the reviewer's evidence when the subject was edited or deleted afterwards.
+	SubjectSnapshot *string   `json:"subject_snapshot,omitempty"`
+	Weight          float32   `json:"weight"`
+	ReviewItemID    *int64    `json:"review_item_id,omitempty"`
+	Status          int16     `json:"status" doc:"0=received 1=linked 2=folded"`
+	CreatedAt       time.Time `json:"created_at"`
 }
 
 // ReviewItemDetail is an item plus its associated reports.

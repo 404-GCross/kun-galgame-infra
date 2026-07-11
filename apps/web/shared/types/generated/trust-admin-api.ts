@@ -446,6 +446,7 @@ export interface components {
             status: number;
             subject_id: string;
             subject_kind: string;
+            subject_snapshot?: string;
             /** Format: float */
             weight: number;
         };
