@@ -10,6 +10,12 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-'
 	CREATE DATABASE kun_artifacts;
 	-- Cross-media catalog registry (identity + graph + credits), see cmd/migrate-catalog.
 	CREATE DATABASE kun_catalog;
+	-- Community primitive (threads/posts), see cmd/migrate-community. Added late
+	-- (a historical gap): existing deployments already created it out of band, so
+	-- this only affects a fresh local init.
+	CREATE DATABASE kun_community;
+	-- Trust & Safety platform (reports + review inbox), see cmd/migrate-trust.
+	CREATE DATABASE kun_trust;
 	-- Downstream repos' databases live on this shared server too (the hub owns
 	-- the single Postgres). kungal → kungalgame, moyu → kungalgame_patch,
 	-- sticker → kungalgame_sticker.

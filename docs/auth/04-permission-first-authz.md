@@ -55,7 +55,7 @@ func (r *Resolver) Can(roles []string, p Permission) bool
 |---|---|---|
 | `internal/platform/galgame/perm` | galgame 产品域 | 产品 import 平台(authz),合法 |
 | `internal/platform/catalog/perm` | catalog 内部审核面 | 平台域,import authz |
-| `internal/platform/moderation/perm` | 图片审核队列 | 平台域,import authz |
+| `internal/platform/trust/perm` | T&S 统一审核收件箱队列 | 平台域,import authz |
 | `internal/platform/site/perm` | IdP 控制台(`oauth.*`,横跨 auth/site,单叶子包承载) | 只 import authz;auth handler import 它不扰动既有 auth→site 方向 |
 | `internal/platform/artifact/perm` | artifact 文件运维 | 平台域,import authz |
 
@@ -78,7 +78,7 @@ func (r *Resolver) Can(roles []string, p Permission) bool
 | `galgame.search.all_states` | moderator, admin, ren | 越过公开态钳制、跨全部状态搜索 |
 | `galgame.owner_override` | admin, ren | 越权处置(owner-or-admin 的 admin 支;**不含 moderator**) |
 | `catalog.review` | ren | catalog 内部审核/浏览面 |
-| `moderation.queue_access` | moderator, admin, ren | 图片审核队列 |
+| `trust.queue_access` | moderator, admin, ren | T&S 统一审核收件箱队列 |
 | `oauth.admin_access` | admin, ren | 控制台四组门(/admin、/sites、/oauth/clients、/admin/artifact) |
 | `oauth.users.pii_view` | ren | 看用户 PII(邮箱/IP) |
 | `oauth.roles.grant_basic` | admin, ren | 授予/撤销 moderator、creator |

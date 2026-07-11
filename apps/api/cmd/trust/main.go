@@ -1,0 +1,130 @@
+// Trust & Safety Service — the universal report-intake + unified review inbox
+// platform (kun_trust), doc 18 P0.
+//
+// The HTTP surface is code-first OpenAPI 3.1 via Huma layered on Fiber v3,
+// following the catalog/community shape (house {code,message,data} envelope,
+// path-scoped Fiber auth bridged into Huma).
+//
+// Faces (v0):
+//
+//	POST /api/v1/trust/reports          — S2S report intake (Basic client auth)
+//	GET  /api/v1/trust/subject-kinds    — S2S: the site's registered kinds
+//	GET  /api/v1/admin/trust/*          — admin review inbox (JWT + trust.queue_access)
+//	GET  /openapi.json                   — S2S OpenAPI 3.1 spec (no auth)
+//	GET  /healthz                        — no auth
+//
+// A background goroutine dispatches enforcement callbacks (HMAC-signed webhooks,
+// exponential backoff, dead-letter). The service does NOT run migrations:
+// cmd/migrate-trust is the single migration entry point; startup only connects.
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"log/slog"
+	"os"
+
+	"api/internal/app"
+	"api/internal/infrastructure/database"
+	"api/internal/middleware"
+	siteRepo "api/internal/platform/site/repository"
+	trustHandler "api/internal/platform/trust/handler"
+	trustPerm "api/internal/platform/trust/perm"
+	"api/internal/platform/trust/service"
+	"api/pkg/config"
+	"api/pkg/health"
+	"api/pkg/logger"
+	"api/pkg/oidctoken"
+
+	"github.com/gofiber/fiber/v3"
+)
+
+func main() {
+	cfg, err := config.Load()
+	if err != nil {
+		slog.Error("load config", "error", err)
+		os.Exit(1)
+	}
+
+	health.MaybeProbe(cfg.TrustService.Port, "/healthz")
+
+	logger.Init(cfg.Server.Env)
+
+	// app.New provides the main-DB connection (OAuth client registry for S2S
+	// auth + the reporter-weight users/roles lookup) and the Fiber app; no
+	// Redis needed (章程 ruling 6 — SQL window count, not Redis).
+	application, err := app.New(cfg, app.Options{Name: "kun-trust"})
+	if err != nil {
+		slog.Error("app init", "error", err)
+		os.Exit(1)
+	}
+
+	trustDB, err := database.NewPostgresDB(cfg.TrustDatabase)
+	if err != nil {
+		slog.Error("trust db connect", "error", err)
+		os.Exit(1)
+	}
+
+	// Domain services. The reporter weigher reads the main DB (users + roles).
+	weigher := service.NewDBWeigher(application.DB.DB())
+	reportSvc := service.NewReportService(trustDB.DB(), weigher)
+	reviewSvc := service.NewReviewService(trustDB.DB())
+	registrySvc := service.NewRegistryService(trustDB.DB())
+	dispositionSvc := service.NewDispositionService(trustDB.DB())
+	worker := service.NewCallbackWorker(trustDB.DB())
+
+	application.Fiber.Use(middleware.RequestID())
+	application.Fiber.Use(middleware.Logger())
+	application.Fiber.Get("/healthz", func(c fiber.Ctx) error {
+		return c.JSON(fiber.Map{"status": "ok"})
+	})
+	application.Fiber.Use(middleware.CORS(cfg.Server.CORSOrigin))
+
+	// S2S intake face: Basic client credentials, path-scoped before the Huma
+	// routes. The /api/v1/trust prefix is disjoint from /api/v1/admin/trust so
+	// the S2S Basic auth never intercepts admin calls.
+	clientRepo := siteRepo.NewOAuthClientRepository(application.DB.DB())
+	application.Fiber.Use("/api/v1/trust", trustHandler.S2SAuth(clientRepo))
+
+	// Admin face: shared JWT middleware (accept-both verifier) + the
+	// trust.queue_access permission (moderator/admin/ren), exactly like the
+	// catalog admin surface.
+	tokenVerifier := oidctoken.NewVerifierWithJWKS(cfg.JWT.Secret, cfg.OIDC.JWKSURL)
+	application.Fiber.Use("/api/v1/admin/trust",
+		middleware.JWTAuth(tokenVerifier), middleware.RequirePermission(trustPerm.Resolver, trustPerm.QueueAccess))
+
+	s2sAPI := trustHandler.Setup(application.Fiber, reportSvc, registrySvc)
+	trustHandler.SetupAdmin(application.Fiber, reviewSvc, registrySvc, dispositionSvc)
+
+	// Serve the S2S OpenAPI 3.1 spec unauthenticated at the app root.
+	application.Fiber.Get("/openapi.json", func(c fiber.Ctx) error {
+		b, err := json.Marshal(s2sAPI.OpenAPI())
+		if err != nil {
+			return err
+		}
+		c.Set("Content-Type", "application/json")
+		return c.Send(b)
+	})
+
+	// Enforcement-callback dispatch worker (章程 ruling 9).
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go worker.Run(ctx)
+
+	slog.Info("trust service starting",
+		"addr", fmt.Sprintf("%s:%d", cfg.TrustService.Host, cfg.TrustService.Port),
+		"dbname", cfg.TrustDatabase.DBName,
+	)
+
+	defer func() {
+		if err := trustDB.Close(); err != nil {
+			slog.Error("close trust db", "error", err)
+		}
+	}()
+
+	if err := application.Run(cfg.TrustService.Host, cfg.TrustService.Port); err != nil {
+		slog.Error("run", "error", err)
+		os.Exit(1)
+	}
+}

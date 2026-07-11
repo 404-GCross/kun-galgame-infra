@@ -94,6 +94,8 @@ jobs:
             {"name":"infra-migrate-catalog","file":"docker/go.Dockerfile","args":"CMD=migrate-catalog","group":"go"},
             {"name":"infra-community","file":"docker/go.Dockerfile","args":"CMD=community","group":"go"},
             {"name":"infra-migrate-community","file":"docker/go.Dockerfile","args":"CMD=migrate-community","group":"go"},
+            {"name":"infra-trust","file":"docker/go.Dockerfile","args":"CMD=trust","group":"go"},
+            {"name":"infra-migrate-trust","file":"docker/go.Dockerfile","args":"CMD=migrate-trust","group":"go"},
             {"name":"infra-web","file":"docker/nuxt.Dockerfile","args":"APP=web\nPUBLIC_API_BASE=https://oauth.kungal.com/api/v1\nPUBLIC_IMAGE_CDN_BASE=https://image.kungal.iloveren.link","group":"web"},
             {"name":"infra-wiki","file":"docker/nuxt.Dockerfile","args":"APP=wiki\nPUBLIC_API_BASE=https://wiki.kungal.com/api\nPUBLIC_AUTH_API_BASE=https://oauth.kungal.com/api/v1\nPUBLIC_OAUTH_AUTHORIZE_BASE=https://oauth.kungal.com/api/v1\nPUBLIC_OAUTH_CLIENT_ID=galgame-wiki-admin\nPUBLIC_OAUTH_REDIRECT_URI=https://wiki.kungal.com/auth/callback\nPUBLIC_IMAGE_CDN_BASE=https://image.kungal.iloveren.link","group":"wiki"}
           ]'

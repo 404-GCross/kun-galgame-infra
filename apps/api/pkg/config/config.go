@@ -16,6 +16,7 @@ type Config struct {
 	GalgameDatabase   DatabaseConfig
 	CatalogDatabase   DatabaseConfig
 	CommunityDatabase DatabaseConfig
+	TrustDatabase     DatabaseConfig
 	ImagesDatabase    DatabaseConfig
 	Redis             RedisConfig
 	JWT               JWTConfig
@@ -43,6 +44,15 @@ type Config struct {
 
 	CatalogService   CatalogServiceConfig
 	CommunityService CommunityServiceConfig
+	TrustService     TrustServiceConfig
+}
+
+// TrustServiceConfig holds trust-service bind configuration. The Trust & Safety
+// platform (cmd/trust) serves the S2S report-intake face and the admin review
+// inbox; see refs/docs/nextmoe-draft/18-trust-and-safety-design.md.
+type TrustServiceConfig struct {
+	Host string // Bind address
+	Port int    // Bind port
 }
 
 // CommunityServiceConfig holds community-service bind configuration. The
@@ -319,6 +329,19 @@ func Load() (*Config, error) {
 		Timezone: getEnv("KUN_COMMUNITY_PG_TIMEZONE", cfg.Database.Timezone),
 	}
 
+	// Trust database config (defaults to same server, different db name). The
+	// Trust & Safety platform (cmd/trust) owns kun_trust; see
+	// refs/docs/nextmoe-draft/18-trust-and-safety-design.md.
+	cfg.TrustDatabase = DatabaseConfig{
+		Host:     getEnv("KUN_TRUST_PG_HOST", cfg.Database.Host),
+		Port:     getEnv("KUN_TRUST_PG_PORT", cfg.Database.Port),
+		User:     getEnv("KUN_TRUST_PG_USER", cfg.Database.User),
+		Password: getEnv("KUN_TRUST_PG_PASSWORD", cfg.Database.Password),
+		DBName:   getEnv("KUN_TRUST_PG_DATABASE", "kun_trust"),
+		SSLMode:  getEnv("KUN_TRUST_PG_SSLMODE", cfg.Database.SSLMode),
+		Timezone: getEnv("KUN_TRUST_PG_TIMEZONE", cfg.Database.Timezone),
+	}
+
 	// Redis config
 	redisEnabled, _ := strconv.ParseBool(getEnv("REDIS_ENABLED", "false"))
 	redisPort, _ := strconv.Atoi(getEnv("REDIS_PORT", "6379"))
@@ -493,6 +516,14 @@ func Load() (*Config, error) {
 	cfg.CommunityService = CommunityServiceConfig{
 		Host: getEnv("KUN_COMMUNITY_HOST", "127.0.0.1"),
 		Port: communityPort,
+	}
+
+	// Trust service config. Port 9283 = next free slot after oauth 9277 /
+	// image 9278 / artifact 9279 / galgame 9280 / catalog 9281 / community 9282.
+	trustPort, _ := strconv.Atoi(getEnv("KUN_TRUST_PORT", "9283"))
+	cfg.TrustService = TrustServiceConfig{
+		Host: getEnv("KUN_TRUST_HOST", "127.0.0.1"),
+		Port: trustPort,
 	}
 
 	// Validate required fields

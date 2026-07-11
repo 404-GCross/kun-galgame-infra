@@ -1,0 +1,66 @@
+package perm_test
+
+import (
+	"testing"
+
+	"api/internal/platform/authz"
+	"api/internal/platform/trust/perm"
+)
+
+// goldenGrants is the authoritative role-set for every trust permission
+// (moderator/admin/ren reach the review inbox; the management axis contains
+// moderator ⊆ admin ⊆ ren). Any drift between the bundles and this table fails
+// the build.
+var goldenGrants = map[authz.Permission][]string{
+	perm.QueueAccess: {"moderator", "admin", "ren"},
+}
+
+var allRoles = []string{"user", "creator", "moderator", "admin", "ren"}
+
+func TestGoldenBundles(t *testing.T) {
+	for p, granted := range goldenGrants {
+		grantedSet := make(map[string]bool, len(granted))
+		for _, r := range granted {
+			grantedSet[r] = true
+		}
+		for _, role := range allRoles {
+			want := grantedSet[role]
+			if got := perm.Resolver.Can([]string{role}, p); got != want {
+				t.Errorf("Can([%q], %q) = %v, want %v", role, p, got, want)
+			}
+		}
+	}
+}
+
+// TestNonBundleRolesGrantNothing pins the fail-closed default: any role outside
+// the bundles grants nothing.
+func TestNonBundleRolesGrantNothing(t *testing.T) {
+	for _, role := range []string{"user", "", "legacy_top_tier_alias"} {
+		for p := range goldenGrants {
+			if perm.Resolver.Can([]string{role}, p) {
+				t.Errorf("non-bundle role %q must grant nothing, but grants %q", role, p)
+			}
+		}
+	}
+}
+
+// TestManagementAxisContainment pins moderator ⊆ admin ⊆ ren.
+func TestManagementAxisContainment(t *testing.T) {
+	for p := range goldenGrants {
+		if perm.Resolver.Can([]string{"moderator"}, p) && !perm.Resolver.Can([]string{"admin"}, p) {
+			t.Errorf("admin must grant everything moderator grants; missing %q", p)
+		}
+		if perm.Resolver.Can([]string{"admin"}, p) && !perm.Resolver.Can([]string{"ren"}, p) {
+			t.Errorf("ren must grant everything admin grants; missing %q", p)
+		}
+	}
+}
+
+// TestCreatorGrantsNothing pins that creator has no authority on this surface.
+func TestCreatorGrantsNothing(t *testing.T) {
+	for p := range goldenGrants {
+		if perm.Resolver.Can([]string{"creator"}, p) {
+			t.Errorf("creator must grant nothing on the trust surface, but grants %q", p)
+		}
+	}
+}

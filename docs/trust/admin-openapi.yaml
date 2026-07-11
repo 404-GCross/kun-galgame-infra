@@ -1,0 +1,975 @@
+components:
+  schemas:
+    CreateReasonRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/CreateReasonRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        key:
+          type: string
+        name_cn:
+          type: string
+        severity:
+          format: int32
+          type: integer
+        site:
+          type: string
+      required:
+        - key
+        - name_cn
+        - severity
+      type: object
+    CreateSubjectKindRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/CreateSubjectKindRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        callback_secret:
+          type: string
+        callback_url:
+          type: string
+        key:
+          type: string
+        site:
+          description: tenant site the kind belongs to
+          type: string
+      required:
+        - site
+        - key
+      type: object
+    DecideData:
+      additionalProperties: false
+      properties:
+        decided:
+          type: boolean
+        disposition_id:
+          description: set when an actioned decision wrote a disposition
+          format: int64
+          type: integer
+      required:
+        - decided
+      type: object
+    DecideRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/DecideRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        action:
+          description: "required for actioned: 0=none 1=hide 2=remove 3=warn_user 4=restrict 5=escalate_idp"
+          format: int32
+          type: integer
+        decision:
+          enum:
+            - dismissed
+            - actioned
+          type: string
+        reason_code:
+          description: required for actioned
+          type: string
+        statement:
+          description: Art.17 reason statement (optional in P0)
+          type: string
+      required:
+        - decision
+      type: object
+    DispositionView:
+      additionalProperties: false
+      properties:
+        acted_by:
+          format: int64
+          type: integer
+        action:
+          description: 0=none 1=hide 2=remove 3=warn_user 4=restrict 5=escalate_idp
+          format: int32
+          type: integer
+        callback_attempts:
+          format: int32
+          type: integer
+        callback_status:
+          description: 0=pending 1=delivered 2=dead_letter; null=no callback
+          format: int32
+          type: integer
+        created_at:
+          format: date-time
+          type: string
+        delivered_at:
+          format: date-time
+          type: string
+        id:
+          format: int64
+          type: integer
+        next_attempt_at:
+          format: date-time
+          type: string
+        reason_code:
+          type: string
+        review_item_id:
+          format: int64
+          type: integer
+        statement:
+          type: string
+      required:
+        - id
+        - review_item_id
+        - action
+        - acted_by
+        - reason_code
+        - callback_attempts
+        - created_at
+      type: object
+    EnvelopeDecideData:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EnvelopeDecideData.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/DecideData"
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
+    EnvelopeListReasonView:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EnvelopeListReasonView.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          items:
+            $ref: "#/components/schemas/ReasonView"
+          type:
+            - array
+            - "null"
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
+    EnvelopeListSubjectKindView:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EnvelopeListSubjectKindView.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          items:
+            $ref: "#/components/schemas/SubjectKindView"
+          type:
+            - array
+            - "null"
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
+    EnvelopeOKResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EnvelopeOKResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/OKResponse"
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
+    EnvelopePageDispositionView:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EnvelopePageDispositionView.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/PageDispositionView"
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
+    EnvelopePageReviewItemView:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EnvelopePageReviewItemView.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/PageReviewItemView"
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
+    EnvelopeReasonView:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EnvelopeReasonView.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/ReasonView"
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
+    EnvelopeReviewItemDetail:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EnvelopeReviewItemDetail.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/ReviewItemDetail"
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
+    EnvelopeSubjectKindView:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EnvelopeSubjectKindView.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/SubjectKindView"
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
+    HouseError:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/HouseError.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
+    OKResponse:
+      additionalProperties: false
+      properties:
+        ok:
+          type: boolean
+      required:
+        - ok
+      type: object
+    PageDispositionView:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: "#/components/schemas/DispositionView"
+          type:
+            - array
+            - "null"
+        total:
+          format: int64
+          type: integer
+      required:
+        - items
+        - total
+      type: object
+    PageReviewItemView:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: "#/components/schemas/ReviewItemView"
+          type:
+            - array
+            - "null"
+        total:
+          format: int64
+          type: integer
+      required:
+        - items
+        - total
+      type: object
+    PatchReasonRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/PatchReasonRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        is_deprecated:
+          type: boolean
+        name_cn:
+          type: string
+        severity:
+          format: int32
+          type: integer
+      type: object
+    PatchSubjectKindRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/PatchSubjectKindRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        callback_secret:
+          type: string
+        callback_url:
+          type: string
+        is_deprecated:
+          type: boolean
+      type: object
+    ReasonView:
+      additionalProperties: false
+      properties:
+        id:
+          format: int64
+          type: integer
+        is_deprecated:
+          type: boolean
+        key:
+          type: string
+        name_cn:
+          type: string
+        severity:
+          format: int32
+          type: integer
+        site:
+          type: string
+      required:
+        - id
+        - key
+        - name_cn
+        - severity
+        - is_deprecated
+      type: object
+    ReportView:
+      additionalProperties: false
+      properties:
+        created_at:
+          format: date-time
+          type: string
+        id:
+          format: int64
+          type: integer
+        note:
+          type: string
+        reason_id:
+          format: int64
+          type: integer
+        reporter_id:
+          format: int64
+          type: integer
+        review_item_id:
+          format: int64
+          type: integer
+        site:
+          type: string
+        status:
+          description: 0=received 1=linked 2=folded
+          format: int32
+          type: integer
+        subject_id:
+          type: string
+        subject_kind:
+          type: string
+        weight:
+          format: float
+          type: number
+      required:
+        - id
+        - site
+        - subject_kind
+        - subject_id
+        - reporter_id
+        - reason_id
+        - weight
+        - status
+        - created_at
+      type: object
+    ReviewItemDetail:
+      additionalProperties: false
+      properties:
+        item:
+          $ref: "#/components/schemas/ReviewItemView"
+        reports:
+          items:
+            $ref: "#/components/schemas/ReportView"
+          type:
+            - array
+            - "null"
+      required:
+        - item
+        - reports
+      type: object
+    ReviewItemView:
+      additionalProperties: false
+      properties:
+        claimed_at:
+          format: date-time
+          type: string
+        claimed_by:
+          format: int64
+          type: integer
+        classifier_score:
+          format: float
+          type: number
+        created_at:
+          format: date-time
+          type: string
+        decided_at:
+          format: date-time
+          type: string
+        decided_by:
+          format: int64
+          type: integer
+        id:
+          format: int64
+          type: integer
+        priority:
+          format: float
+          type: number
+        report_weight_sum:
+          format: float
+          type: number
+        severity:
+          format: int32
+          type: integer
+        site:
+          type: string
+        source:
+          description: 0=reports 1=ai_text 2=ai_image 3=community_forward 4=mislabel 5=manual
+          format: int32
+          type: integer
+        status:
+          description: 0=pending 1=claimed 2=actioned 3=dismissed
+          format: int32
+          type: integer
+        subject_id:
+          type: string
+        subject_kind:
+          type: string
+      required:
+        - id
+        - site
+        - subject_kind
+        - subject_id
+        - source
+        - priority
+        - status
+        - created_at
+      type: object
+    SubjectKindView:
+      additionalProperties: false
+      properties:
+        callback_url:
+          type: string
+        created_at:
+          format: date-time
+          type: string
+        has_secret:
+          type: boolean
+        id:
+          format: int64
+          type: integer
+        is_deprecated:
+          type: boolean
+        key:
+          type: string
+        site:
+          type: string
+      required:
+        - id
+        - site
+        - key
+        - has_secret
+        - is_deprecated
+        - created_at
+      type: object
+info:
+  title: KUN Trust Admin API
+  version: 1.0.0
+openapi: 3.1.0
+paths:
+  /api/v1/admin/trust/dispositions:
+    get:
+      operationId: listTrustDispositions
+      parameters:
+        - description: 0=pending 1=delivered 2=dead_letter; -1 = all
+          explode: false
+          in: query
+          name: callback_status
+          schema:
+            default: -1
+            description: 0=pending 1=delivered 2=dead_letter; -1 = all
+            format: int32
+            type: integer
+        - explode: false
+          in: query
+          name: page
+          schema:
+            format: int64
+            type: integer
+        - explode: false
+          in: query
+          name: limit
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopePageDispositionView"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: List dispositions by callback status (e.g. dead_letter)
+      tags:
+        - trust-admin
+  /api/v1/admin/trust/dispositions/{id}/redeliver:
+    post:
+      operationId: redeliverTrustDisposition
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeOKResponse"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: Replay a dead-lettered callback (reset to pending)
+      tags:
+        - trust-admin
+  /api/v1/admin/trust/report-reasons:
+    get:
+      operationId: listTrustReportReasons
+      parameters:
+        - description: include this site's extensions alongside the global base; empty = all
+          explode: false
+          in: query
+          name: site
+          schema:
+            description: include this site's extensions alongside the global base; empty = all
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeListReasonView"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: List the reason taxonomy (global base + per-site extensions)
+      tags:
+        - trust-admin
+    post:
+      operationId: createTrustReportReason
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateReasonRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeReasonView"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: Register a reason (global or per-site)
+      tags:
+        - trust-admin
+  /api/v1/admin/trust/report-reasons/{id}:
+    patch:
+      operationId: patchTrustReportReason
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PatchReasonRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeReasonView"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: Update a reason's label / severity / deprecation (never deleted)
+      tags:
+        - trust-admin
+  /api/v1/admin/trust/review-items:
+    get:
+      operationId: listTrustReviewItems
+      parameters:
+        - description: filter to one site; empty = all sites
+          explode: false
+          in: query
+          name: site
+          schema:
+            description: filter to one site; empty = all sites
+            type: string
+        - description: 0=pending 1=claimed 2=actioned 3=dismissed; -1 = all
+          explode: false
+          in: query
+          name: status
+          schema:
+            default: -1
+            description: 0=pending 1=claimed 2=actioned 3=dismissed; -1 = all
+            format: int32
+            type: integer
+        - description: 0=reports 1=ai_text 2=ai_image 3=community_forward 4=mislabel 5=manual; -1 = all
+          explode: false
+          in: query
+          name: source
+          schema:
+            default: -1
+            description: 0=reports 1=ai_text 2=ai_image 3=community_forward 4=mislabel 5=manual; -1 = all
+            format: int32
+            type: integer
+        - description: 1-based page number
+          explode: false
+          in: query
+          name: page
+          schema:
+            description: 1-based page number
+            format: int64
+            type: integer
+        - description: items per page (max 200)
+          explode: false
+          in: query
+          name: limit
+          schema:
+            description: items per page (max 200)
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopePageReviewItemView"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: List the review inbox (per-site view, priority-ordered)
+      tags:
+        - trust-admin
+  /api/v1/admin/trust/review-items/{id}:
+    get:
+      operationId: getTrustReviewItem
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeReviewItemDetail"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: Get a review item with its associated reports
+      tags:
+        - trust-admin
+  /api/v1/admin/trust/review-items/{id}/claim:
+    post:
+      operationId: claimTrustReviewItem
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeOKResponse"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: Claim a pending review item (FOR UPDATE SKIP LOCKED; 409 if taken)
+      tags:
+        - trust-admin
+  /api/v1/admin/trust/review-items/{id}/decide:
+    post:
+      operationId: decideTrustReviewItem
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DecideRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeDecideData"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: Decide a review item (dismissed / actioned; actioned writes a disposition)
+      tags:
+        - trust-admin
+  /api/v1/admin/trust/subject-kinds:
+    get:
+      operationId: listTrustSubjectKinds
+      parameters:
+        - description: filter to one site; empty = all sites
+          explode: false
+          in: query
+          name: site
+          schema:
+            description: filter to one site; empty = all sites
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeListSubjectKindView"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: List subject-kind registry rows (optionally per-site; includes deprecated)
+      tags:
+        - trust-admin
+    post:
+      operationId: createTrustSubjectKind
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSubjectKindRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeSubjectKindView"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: Register a subject kind for a site
+      tags:
+        - trust-admin
+  /api/v1/admin/trust/subject-kinds/{id}:
+    patch:
+      operationId: patchTrustSubjectKind
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PatchSubjectKindRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeSubjectKindView"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: Update a subject kind's callback config / deprecation (never deleted)
+      tags:
+        - trust-admin

@@ -24,6 +24,8 @@ on:
       - "docs/catalog/openapi.yaml"
       - "docs/catalog/admin-openapi.yaml"
       - "docs/community/openapi.yaml"
+      - "docs/trust/openapi.yaml"
+      - "docs/trust/admin-openapi.yaml"
       - ".github/workflows/spec-breaking.yml"
   pull_request:
     paths: *specs
@@ -80,6 +82,8 @@ jobs:
             docs/catalog/openapi.yaml
             docs/catalog/admin-openapi.yaml
             docs/community/openapi.yaml
+            docs/trust/openapi.yaml
+            docs/trust/admin-openapi.yaml
           "
           rc=0
           for spec in $specs; do

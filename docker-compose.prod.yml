@@ -45,6 +45,7 @@ x-infra-env: &infra-env
   KUN_IMAGES_PG_DATABASE: kun_images
   KUN_CATALOG_PG_DATABASE: kun_catalog
   KUN_COMMUNITY_PG_DATABASE: kun_community
+  KUN_TRUST_PG_DATABASE: kun_trust
   # Redis
   REDIS_ENABLED: "true"
   REDIS_HOST: redis
@@ -329,6 +330,32 @@ services:
       <<: *svc-health
     restart: unless-stopped
 
+  # Trust & Safety platform (kun_trust). Universal report intake + the unified
+  # review inbox; product backends (kungal first) reach it over S2S. It reads
+  # oauth_clients from kun_galgame_infra for S2S Basic auth + the per-client
+  # `catalog_site` tenant, and users/roles for the reporter-weight lookup. A
+  # background goroutine dispatches enforcement callbacks (HMAC + retry + dead-letter).
+  trust:
+    image: ghcr.io/kunmoe/infra-trust:latest
+    pull_policy: always
+    environment:
+      <<: *infra-env
+      # kun_trust DB name comes from *infra-env (KUN_TRUST_PG_DATABASE);
+      # host/user/pass fall back to KUN_PG_*.
+      KUN_TRUST_HOST: 0.0.0.0
+      KUN_TRUST_PORT: "9283"
+    # Internal only — product backends reach it at http://trust:9283 over
+    # dokploy-network.
+    expose: ["9283"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }        # reads oauth_clients from kun_galgame_infra
+      migrate-trust: { condition: service_completed_successfully }  # kun_trust schema
+    healthcheck:
+      test: ["CMD", "/app", "healthcheck"]
+      <<: *svc-health
+    restart: unless-stopped
+
   # ───────────────────────────── Nuxt frontends ──────────────────────────────
   # Public (browser) config is BAKED into the image at CI build time (build-args in
   # .github/workflows/build.yml). Only the SSR base (service name) is injected here.
@@ -431,6 +458,17 @@ services:
   # never migrates on startup).
   migrate-community:
     image: ghcr.io/kunmoe/infra-migrate-community:latest
+    pull_policy: always
+    environment: { <<: *infra-env }
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: "no"
+
+  # Auto-applied on every deploy (trust waits for it). cmd/migrate-trust is the
+  # single migration entry point against kun_trust (the service never migrates
+  # on startup); idempotent AutoMigrate + raw SQL + reason seed.
+  migrate-trust:
+    image: ghcr.io/kunmoe/infra-migrate-trust:latest
     pull_policy: always
     environment: { <<: *infra-env }
     depends_on:

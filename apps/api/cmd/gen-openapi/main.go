@@ -10,6 +10,8 @@
 //	go run ./cmd/gen-openapi -catalog -o ../../docs/catalog/openapi.yaml                # catalog S2S face (3.1)
 //	go run ./cmd/gen-openapi -catalog-admin -o ../../docs/catalog/admin-openapi.yaml    # catalog review queues (3.1)
 //	go run ./cmd/gen-openapi -community -o ../../docs/community/openapi.yaml             # community S2S embed face (3.1)
+//	go run ./cmd/gen-openapi -trust -o ../../docs/trust/openapi.yaml                    # trust S2S intake face (3.1)
+//	go run ./cmd/gen-openapi -trust-admin -o ../../docs/trust/admin-openapi.yaml        # trust admin review inbox (3.1)
 package main
 
 import (
@@ -22,6 +24,7 @@ import (
 	catHandler "api/internal/platform/catalog/handler"
 	commHandler "api/internal/platform/community/handler"
 	galgameHandler "api/internal/platform/galgame/handler"
+	trustHandler "api/internal/platform/trust/handler"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/gofiber/fiber/v3"
@@ -36,6 +39,8 @@ func main() {
 	catalog := flag.Bool("catalog", false, "emit the catalog S2S spec (/api/v1/catalog/*)")
 	catalogAdmin := flag.Bool("catalog-admin", false, "emit the catalog admin review-queue spec (/api/v1/admin/catalog/*)")
 	community := flag.Bool("community", false, "emit the community S2S embed spec (/api/v1/community/*)")
+	trust := flag.Bool("trust", false, "emit the trust S2S intake spec (/api/v1/trust/*)")
+	trustAdmin := flag.Bool("trust-admin", false, "emit the trust admin review-inbox spec (/api/v1/admin/trust/*)")
 	flag.Parse()
 
 	// Build the API to derive the spec; the deps are nil / stub because Setup
@@ -53,6 +58,10 @@ func main() {
 		api = catHandler.SetupAdmin(app, nil, nil)
 	case *community:
 		api = commHandler.Setup(app, nil, nil, nil, nil, nil, nil, nil)
+	case *trust:
+		api = trustHandler.Setup(app, nil, nil)
+	case *trustAdmin:
+		api = trustHandler.SetupAdmin(app, nil, nil, nil)
 	case *admin:
 		api = artHandler.SetupAdmin(app, artHandler.NewAdmin(nil, nil, nil, 0))
 	default:
