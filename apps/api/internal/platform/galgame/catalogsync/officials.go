@@ -305,10 +305,10 @@ func (r *OfficialRegistrar) writeBack(chunk []officialRow, labels []model.Catalo
 // aliasSpec is one deduped label alias to write.
 type aliasSpec struct{ name, lang, norm string }
 
-// aliasSpecsFor builds the catalog_label_alias specs for one official: its wiki
-// alias rows (lang unknown = '') plus its `original` native name (in the
-// official's own language), both excluding the display name. Deduped by
-// (name, lang) — the catalog_label_alias unique key.
+// aliasSpecsFor builds the catalog_label_alias specs for one official: its
+// wiki alias rows (lang unknown = the empty string) plus its `original`
+// native name (in the official's own language), both excluding the display
+// name. Deduped by (name, lang) — the catalog_label_alias unique key.
 func aliasSpecsFor(o officialRow, aliases []officialAliasRow) []aliasSpec {
 	seen := map[[2]string]bool{}
 	var out []aliasSpec

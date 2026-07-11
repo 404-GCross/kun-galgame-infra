@@ -99,11 +99,11 @@ func TestRegisterOfficials(t *testing.T) {
 	seedClaimedWork(t, 5)
 
 	// Officials to register.
-	seedOfficial(t, 101, "Key", "", "ja", "company")                  // display collides with lKey
-	seedOfficial(t, 102, "新しいブランド", "", "ja", "individual")    // no collision
-	seedOfficial(t, 103, "サークルＸ", "サークルx", "ja", "amateur")  // amateur→circle; original+alias; unclaimed edge
-	seedOfficial(t, 104, "エイリアス標的", "", "ja", "company")       // collides with lCircle via its alias
-	seedOfficial(t, 105, "別名テスト", "", "ja", "company")           // collides with lKey via its own alias
+	seedOfficial(t, 101, "Key", "", "ja", "company")        // display collides with lKey
+	seedOfficial(t, 102, "新しいブランド", "", "ja", "individual") // no collision
+	seedOfficial(t, 103, "サークルＸ", "サークルx", "ja", "amateur") // amateur→circle; original+alias; unclaimed edge
+	seedOfficial(t, 104, "エイリアス標的", "", "ja", "company")    // collides with lCircle via its alias
+	seedOfficial(t, 105, "別名テスト", "", "ja", "company")      // collides with lKey via its own alias
 	seedOfficialAlias(t, 103, "circle-x-alias")
 	seedOfficialAlias(t, 105, "Key")
 
