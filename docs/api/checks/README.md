@@ -2,7 +2,7 @@
 
 > 目的：逐服务记录全部 API 端点 + FE↔BE 字段对齐审计状态。
 >
-> 当前进度：**审计完成（2026-05-29）** —— 全部 147 端点（GET 75 / POST 42 / PUT 12 / DELETE 14 / PATCH 4）已逐项扫描。oauth / image / galgame 三服务**全部审计**：发现并修复 **46 项**问题（10 HIGH / 16 MEDIUM / 20 LOW，跨 51 个端点行标「已修」），其余标「已审计」（本轮未发现可处理问题）。moderation / artifact **已有独立服务与路由**（`cmd/moderation` / `cmd/artifact`），本轮字段对齐审计未覆盖（状态：待审计）——“未实现”的旧表述已不准确。详见下方 [审计结果](#审计结果2026-05-29)。
+> 当前进度：**审计完成（2026-05-29）** —— 全部 147 端点（GET 75 / POST 42 / PUT 12 / DELETE 14 / PATCH 4）已逐项扫描。oauth / image / galgame 三服务**全部审计**：发现并修复 **46 项**问题（10 HIGH / 16 MEDIUM / 20 LOW，跨 51 个端点行标「已修」），其余标「已审计」（本轮未发现可处理问题）。moderation 骨架已删除（doc 18 P0，T&S 平台改由 cmd/trust 承载）；artifact **有独立服务与路由**（`cmd/artifact`），本轮字段对齐审计未覆盖（状态：待审计）——“未实现”的旧表述已不准确。详见下方 [审计结果](#审计结果2026-05-29)。
 >
 > 审计后新增（标「新增」）：`GET /api/v1/auth/me/moemoepoint/log` —— 用户自助查自己的萌萌点流水，供 oauth web `/profile`「萌萌点记录」使用。oauth GET 端点 19 → **20**，总计 147 → **148**。
 
@@ -13,7 +13,7 @@
 | OAuth | `cmd/oauth` | `/api/v1` | [20](./oauth.get.md) | [21](./oauth.post.md) | [4](./oauth.put.md) | [3](./oauth.delete.md) | [2](./oauth.patch.md) | 50 |
 | Image | `cmd/image`（+管理端在 oauth 进程）| `/`、`/api/v1/admin/image` | [6](./image.get.md) | [2](./image.post.md) | — | [2](./image.delete.md) | [1](./image.patch.md) | 11 |
 | Galgame Wiki | `cmd/galgame` | `/api` | [42](./galgame.get.md) | [17](./galgame.post.md) | [8](./galgame.put.md) | [8](./galgame.delete.md) | [1](./galgame.patch.md) | 76 |
-| Moderation | `cmd/moderation` | `/api/v1` | [4](./moderation.get.md) | [1](./moderation.post.md) | — | — | — | 5 |
+| Moderation（骨架已删除，doc 18 P0） | — | `/api/v1` | [4](./moderation.get.md) | [1](./moderation.post.md) | — | — | — | 5 |
 | Artifact | `cmd/artifact` | `/api/v1` | [4](./artifact.get.md) | [1](./artifact.post.md) | — | [1](./artifact.delete.md) | — | 6 |
 | **合计** | | | **76** | **42** | **12** | **14** | **4** | **148** |
 
@@ -21,7 +21,7 @@
 
 ## 审计结果（2026-05-29）
 
-> 范围：逐个审计 oauth / image / galgame 三服务的全部端点（字段对齐 / 越权 / SQL 注入 / 静默失败 / 预期外副作用）。moderation / artifact 有独立服务与路由（`cmd/moderation` / `cmd/artifact`），本轮字段审计未覆盖（按要求跳过）。
+> 范围：逐个审计 oauth / image / galgame 三服务的全部端点（字段对齐 / 越权 / SQL 注入 / 静默失败 / 预期外副作用）。moderation 骨架已删除（doc 18 P0）；artifact 有独立服务与路由（`cmd/artifact`），本轮字段审计未覆盖（按要求跳过）。
 >
 > 方法：20 切片并行审计 + 逐项对抗式复核 → **46 项确认**（另有 5 项被复核驳回，见末尾）。全部已修复。
 

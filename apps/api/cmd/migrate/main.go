@@ -13,7 +13,6 @@ import (
 	// Import all models
 	jobsModel "api/internal/jobs/model"
 	authModel "api/internal/platform/auth/model"
-	moderationModel "api/internal/platform/moderation/model"
 	siteModel "api/internal/platform/site/model"
 
 	"gorm.io/gorm"
@@ -76,6 +75,14 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Retire the dead moderation-skeleton tables (the moderation skeleton
+	// service was removed; Trust & Safety is the dedicated kun_trust DB).
+	// Idempotent DROP IF EXISTS, so a re-run is a no-op.
+	if err := dropRetiredModerationTables(gormDB); err != nil {
+		slog.Error("failed to drop retired moderation tables", "error", err)
+		os.Exit(1)
+	}
+
 	// At most one PENDING creator application per user (GORM can't express a
 	// partial unique index). Backstops the service-layer "one pending" guard.
 	if err := gormDB.Exec(`
@@ -133,9 +140,11 @@ func getAllModels() []any {
 		// kun_artifacts DB — migrated by cmd/artifact's AutoMigrate, not here.
 		// See docs/artifact/02-storage-and-schema.md.
 
-		// Moderation models
-		&moderationModel.Job{},
-		&moderationModel.Result{},
+		// NOTE: the moderation skeleton (moderation_jobs / moderation_results)
+		// was retired with the moderation skeleton service; the dead tables
+		// are dropped by
+		// dropRetiredModerationTables below. Trust & Safety lives in the
+		// dedicated kun_trust DB (cmd/migrate-trust).
 
 		// Job registry observability
 		&jobsModel.JobRun{},
@@ -190,6 +199,23 @@ func dropRetiredAuthzStructures(db *gorm.DB) error {
 			return fmt.Errorf("drop user_site_data.role: %w", err)
 		}
 		slog.Info("dropped retired column user_site_data.role")
+	}
+	return nil
+}
+
+// dropRetiredModerationTables removes the dead moderation-skeleton tables left
+// behind by the retired moderation skeleton service (the stub provider stack, doc 02
+// §8 / doc 18 P0). Trust & Safety now owns its own kun_trust database
+// (cmd/migrate-trust). The two tables carried no data worth keeping (the stub
+// always returned approved). Order: moderation_results references
+// moderation_jobs, so drop the child first. Idempotent — guarded DROP IF
+// EXISTS, so a re-run is a no-op.
+func dropRetiredModerationTables(db *gorm.DB) error {
+	if err := db.Exec(`DROP TABLE IF EXISTS moderation_results`).Error; err != nil {
+		return fmt.Errorf("drop moderation_results: %w", err)
+	}
+	if err := db.Exec(`DROP TABLE IF EXISTS moderation_jobs`).Error; err != nil {
+		return fmt.Errorf("drop moderation_jobs: %w", err)
 	}
 	return nil
 }

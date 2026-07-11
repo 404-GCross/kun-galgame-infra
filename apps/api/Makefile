@@ -11,7 +11,7 @@ GOFLAGS=-v
 build:
 	$(GO) build $(GOFLAGS) -o $(BUILD_DIR)/oauth ./cmd/oauth
 	$(GO) build $(GOFLAGS) -o $(BUILD_DIR)/artifact ./cmd/artifact
-	$(GO) build $(GOFLAGS) -o $(BUILD_DIR)/moderation ./cmd/moderation
+	$(GO) build $(GOFLAGS) -o $(BUILD_DIR)/trust ./cmd/trust
 	$(GO) build $(GOFLAGS) -o $(BUILD_DIR)/worker ./cmd/worker
 	$(GO) build $(GOFLAGS) -o $(BUILD_DIR)/migrate ./cmd/migrate
 
@@ -22,8 +22,8 @@ run-oauth:
 run-artifact:
 	$(GO) run ./cmd/artifact
 
-run-moderation:
-	$(GO) run ./cmd/moderation
+run-trust:
+	$(GO) run ./cmd/trust
 
 run-worker:
 	$(GO) run ./cmd/worker
@@ -73,7 +73,7 @@ help:
 	@echo "  build              - Build all service binaries"
 	@echo "  run-oauth          - Run the OAuth service"
 	@echo "  run-artifact       - Run the Artifact service"
-	@echo "  run-moderation     - Run the Moderation service"
+	@echo "  run-trust          - Run the Trust & Safety service"
 	@echo "  run-worker         - Run the worker"
 	@echo "  migrate            - Run database migrations"
 	@echo "  migrate-drop       - Drop all tables and run migrations (DANGEROUS)"

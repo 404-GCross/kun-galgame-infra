@@ -60,18 +60,18 @@ printf '\n'
 printf '%boauth%b      :9277\n'    "$BLUE"    "$NC"
 printf '%bgalgame%b    :9280\n'    "$GREEN"   "$NC"
 printf '%bartifact%b   :9279\n'    "$YELLOW"  "$NC"
-printf '%bmoderation%b :9281\n'    "$MAGENTA" "$NC"
+printf '%btrust%b      :9283\n'    "$MAGENTA" "$NC"
 printf '%bimage%b      :9278\n'    "$CYAN"    "$NC"
 printf '\n'
 
 start "$BLUE"    "oauth     " ./tmp/oauth      core || { cleanup; exit 1; }
 start "$GREEN"   "galgame   " ./tmp/galgame    core || { cleanup; exit 1; }
-start "$MAGENTA" "moderation" ./tmp/moderation core || { cleanup; exit 1; }
+start "$MAGENTA" "trust     " ./tmp/trust      core || { cleanup; exit 1; }
 start "$CYAN"    "image     " ./tmp/image      core || { cleanup; exit 1; }
 
 # artifact is OPTIONAL in local dev: it needs B2/S3 (KUN_ARTIFACT_S3_*). Start it
 # only when configured, and never as "core" — so an unconfigured or broken B2
-# never tears down oauth/galgame/moderation/image. (cmd/artifact still fail-fasts
+# never tears down oauth/galgame/trust/image. (cmd/artifact still fail-fasts
 # in prod, where it runs as its own service.)
 if grep -qE '^[[:space:]]*KUN_ARTIFACT_S3_ACCESS_KEY=[^[:space:]#]' .env 2>/dev/null; then
     start "$YELLOW" "artifact  " ./tmp/artifact \

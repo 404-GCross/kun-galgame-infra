@@ -1,15 +1,15 @@
 # Moderation 服务 — GET API 清单
 
-> **更正（2026-06）**：moderation / artifact **已有独立服务与路由**（`cmd/moderation` / `cmd/artifact`）；下文「未实现」为旧表述，仅指本轮未做字段对齐审计。
+> **更正（2026-06）**：moderation 骨架已删除（doc 18 P0，T&S 平台改由 cmd/trust 承载）；artifact **有独立服务与路由**（`cmd/artifact`）；下文「未实现」为旧表述。
 
 
-> 服务: **moderation**（`apps/api/cmd/moderation`） · Base URL: `/api/v1`
+> 服务: **moderation**（骨架已删除，doc 18 P0） · Base URL: `/api/v1`
 >
-> 路由源: `apps/api/cmd/moderation/main.go`
+> 路由源: 骨架已删除（doc 18 P0）
 >
 > 配套: [oauth.get.md](./oauth.get.md) · [image.get.md](./image.get.md) · [galgame.get.md](./galgame.get.md) · [artifact.get.md](./artifact.get.md)
 >
-> **未审计** —— 该服务已有独立 cmd（`cmd/moderation` / `cmd/artifact`，未接入 oauth 主进程），本轮字段审计未覆盖，状态 待审计。
+> **未审计** —— artifact 有独立 cmd（`cmd/artifact`，未接入 oauth 主进程），本轮字段审计未覆盖，状态 待审计；moderation 骨架已删除（doc 18 P0）。
 
 ## 图例 — 审计状态
 

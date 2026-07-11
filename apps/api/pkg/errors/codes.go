@@ -103,10 +103,11 @@ const (
 	ErrArtifactForbidden        = 50016
 	ErrArtifactMIMEDenied       = 50017
 
-	// Moderation (60000-69999)
+	// Moderation (60000-69999). Pending/Rejected are the image content-moderation
+	// pair (still used by internal/platform/image). ErrModerationNotFound was
+	// retired with the moderation skeleton service (doc 18 P0).
 	ErrModerationPending  = 60001
 	ErrModerationRejected = 60002
-	ErrModerationNotFound = 60003
 
 	// Site (70000-79999)
 	ErrSiteNotFound      = 70001
@@ -168,10 +169,10 @@ var codeMessages = map[int]string{
 	ErrCreatorAppNotFound:   "申请不存在",
 	ErrCreatorAppNotPending: "该申请已被处理",
 
-	ErrOAuthInvalidClient:       "无效的客户端",
-	ErrOAuthInvalidRedirectURI:  "无效的回调地址",
-	ErrOAuthInvalidCode:         "无效的授权码",
-	ErrOAuthInvalidCodeVerifier: "无效的代码验证器",
+	ErrOAuthInvalidClient:        "无效的客户端",
+	ErrOAuthInvalidRedirectURI:   "无效的回调地址",
+	ErrOAuthInvalidCode:          "无效的授权码",
+	ErrOAuthInvalidCodeVerifier:  "无效的代码验证器",
 	ErrOAuthInvalidGrant:         "客户端未被授权使用该授权类型",
 	ErrOAuthInvalidScope:         "无效的权限范围",
 	ErrOAuthAccessDenied:         "访问被拒绝",
@@ -216,7 +217,6 @@ var codeMessages = map[int]string{
 
 	ErrModerationPending:  "内容待审核",
 	ErrModerationRejected: "内容审核未通过",
-	ErrModerationNotFound: "审核任务不存在",
 
 	ErrSiteNotFound:      "站点不存在",
 	ErrSiteAlreadyExists: "站点已存在",
