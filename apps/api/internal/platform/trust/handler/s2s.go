@@ -47,6 +47,8 @@ func (s *Server) register(api huma.API) {
 		Summary: "Submit a report on a subject (dedup / rate-limit / weight / aggregate)", Tags: intake}, s.submitReport)
 	huma.Register(api, huma.Operation{OperationID: "listSubjectKinds", Method: http.MethodGet, Path: "/api/v1/trust/subject-kinds",
 		Summary: "List the calling site's registered subject kinds", Tags: intake}, s.listSubjectKinds)
+	huma.Register(api, huma.Operation{OperationID: "listReportReasons", Method: http.MethodGet, Path: "/api/v1/trust/report-reasons",
+		Summary: "List the calling site's usable report reasons (global base + own extensions, non-deprecated)", Tags: intake}, s.listReportReasons)
 
 	// community→trust convergence (step 03). These carry `site` in the body
 	// (unlike /reports, which derives it from the client binding) because a
@@ -159,6 +161,24 @@ func (s *Server) listSubjectKinds(ctx context.Context, _ *struct{}) (*listSubjec
 	}
 	return &listSubjectKindsOutput{Body: okEnvelope(dto.SubjectKindsResponse{
 		Kinds: toSubjectKindViews(kinds),
+	})}, nil
+}
+
+type listReportReasonsOutput struct {
+	Body Envelope[dto.ReportReasonsResponse]
+}
+
+func (s *Server) listReportReasons(ctx context.Context, _ *struct{}) (*listReportReasonsOutput, error) {
+	site, he := siteBinding(ctx)
+	if he != nil {
+		return nil, he
+	}
+	reasons, err := s.registry.ListUsableReasons(ctx, site)
+	if err != nil {
+		return nil, mapIntakeErr("list report reasons", err)
+	}
+	return &listReportReasonsOutput{Body: okEnvelope(dto.ReportReasonsResponse{
+		Reasons: toReasonViews(reasons),
 	})}, nil
 }
 

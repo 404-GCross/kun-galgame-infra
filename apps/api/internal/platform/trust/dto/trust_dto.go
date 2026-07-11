@@ -35,6 +35,13 @@ type SubjectKindsResponse struct {
 	Kinds []SubjectKindView `json:"kinds"`
 }
 
+// ReportReasonsResponse lists the reasons a site's report UI may offer (global
+// base + the site's own extensions, non-deprecated) — the S2S feed that keeps
+// product dropdowns in sync with the live taxonomy.
+type ReportReasonsResponse struct {
+	Reasons []ReasonView `json:"reasons"`
+}
+
 // --- views -----------------------------------------------------------------
 
 // SubjectKindView is a subject-kind registry row. The secret is never serialized;

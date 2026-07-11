@@ -122,6 +122,18 @@ func (s *RegistryService) ListReasons(ctx context.Context, site string) ([]model
 	return reasons, err
 }
 
+// ListUsableReasons returns the reasons a site's report UI may offer: the
+// global base plus the site's own extensions, non-deprecated only. This backs
+// the S2S face so product BFFs serve the live taxonomy instead of hardcoding
+// the seed set (which silently drifts once admins add or deprecate reasons).
+func (s *RegistryService) ListUsableReasons(ctx context.Context, site string) ([]model.TrustReportReason, error) {
+	var reasons []model.TrustReportReason
+	err := s.db.WithContext(ctx).Model(&model.TrustReportReason{}).
+		Where("(site IS NULL OR site = ?) AND is_deprecated = false", site).
+		Order("site NULLS FIRST").Order("key ASC").Find(&reasons).Error
+	return reasons, err
+}
+
 // CreateReason registers a reason. site nil = a global reason; non-nil = a
 // per-site extension. severity is written explicitly (no default-tag trap).
 func (s *RegistryService) CreateReason(ctx context.Context, actorID int64, key, nameCN string, site *string, severity int16) (*model.TrustReportReason, error) {

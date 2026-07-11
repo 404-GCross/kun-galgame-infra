@@ -42,6 +42,27 @@ components:
         - code
         - message
       type: object
+    EnvelopeReportReasonsResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EnvelopeReportReasonsResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/ReportReasonsResponse"
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
     EnvelopeReportResponse:
       additionalProperties: false
       properties:
@@ -187,6 +208,42 @@ components:
         - code
         - message
       type: object
+    ReasonView:
+      additionalProperties: false
+      properties:
+        id:
+          format: int64
+          type: integer
+        is_deprecated:
+          type: boolean
+        key:
+          type: string
+        name_cn:
+          type: string
+        severity:
+          format: int32
+          type: integer
+        site:
+          type: string
+      required:
+        - id
+        - key
+        - name_cn
+        - severity
+        - is_deprecated
+      type: object
+    ReportReasonsResponse:
+      additionalProperties: false
+      properties:
+        reasons:
+          items:
+            $ref: "#/components/schemas/ReasonView"
+          type:
+            - array
+            - "null"
+      required:
+        - reasons
+      type: object
     ReportRequest:
       additionalProperties: false
       properties:
@@ -331,6 +388,25 @@ paths:
       summary: Close a forwarded item after a site's local decision (no disposition, no callback)
       tags:
         - trust-forward
+  /api/v1/trust/report-reasons:
+    get:
+      operationId: listReportReasons
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeReportReasonsResponse"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: List the calling site's usable report reasons (global base + own extensions, non-deprecated)
+      tags:
+        - trust-intake
   /api/v1/trust/reports:
     post:
       operationId: submitReport
