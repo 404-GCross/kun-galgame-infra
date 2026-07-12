@@ -105,7 +105,9 @@ func main() {
 		middleware.JWTAuth(tokenVerifier), middleware.RequirePermission(trustPerm.Resolver, trustPerm.QueueAccess))
 
 	s2sAPI := trustHandler.Setup(application.Fiber, reportSvc, registrySvc, forwardSvc)
-	trustHandler.SetupAdmin(application.Fiber, reviewSvc, registrySvc, dispositionSvc)
+	// clientRepo (main DB) resolves a site-scoped moderator's token client to its
+	// catalog_site for admin-face site scoping (step 04).
+	trustHandler.SetupAdmin(application.Fiber, reviewSvc, registrySvc, dispositionSvc, clientRepo)
 
 	// Serve the S2S OpenAPI 3.1 spec unauthenticated at the app root.
 	application.Fiber.Get("/openapi.json", func(c fiber.Ctx) error {

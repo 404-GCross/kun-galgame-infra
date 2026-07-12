@@ -610,6 +610,7 @@ openapi: 3.1.0
 paths:
   /api/v1/admin/trust/dispositions:
     get:
+      description: "Platform-staff only: a site-scoped moderator receives 403 (the registries and dead-letter surfaces are platform-ops)."
       operationId: listTrustDispositions
       parameters:
         - description: 0=pending 1=delivered 2=dead_letter; -1 = all
@@ -651,6 +652,7 @@ paths:
         - trust-admin
   /api/v1/admin/trust/dispositions/{id}/redeliver:
     post:
+      description: "Platform-staff only: a site-scoped moderator receives 403 (the registries and dead-letter surfaces are platform-ops)."
       operationId: redeliverTrustDisposition
       parameters:
         - in: path
@@ -677,6 +679,7 @@ paths:
         - trust-admin
   /api/v1/admin/trust/report-reasons:
     get:
+      description: "Platform-staff only: a site-scoped moderator receives 403 (the registries and dead-letter surfaces are platform-ops)."
       operationId: listTrustReportReasons
       parameters:
         - description: include this site's extensions alongside the global base; empty = all
@@ -703,6 +706,7 @@ paths:
       tags:
         - trust-admin
     post:
+      description: "Platform-staff only: a site-scoped moderator receives 403 (the registries and dead-letter surfaces are platform-ops)."
       operationId: createTrustReportReason
       requestBody:
         content:
@@ -728,6 +732,7 @@ paths:
         - trust-admin
   /api/v1/admin/trust/report-reasons/{id}:
     patch:
+      description: "Platform-staff only: a site-scoped moderator receives 403 (the registries and dead-letter surfaces are platform-ops)."
       operationId: patchTrustReportReason
       parameters:
         - in: path
@@ -760,6 +765,7 @@ paths:
         - trust-admin
   /api/v1/admin/trust/review-items:
     get:
+      description: "Site-scoped: platform staff act across all sites; a site-granted moderator is confined to their own site. For a site-scoped caller the site filter is forced to their own site, overriding any requested `site`."
       operationId: listTrustReviewItems
       parameters:
         - description: filter to one site; empty = all sites
@@ -821,6 +827,7 @@ paths:
         - trust-admin
   /api/v1/admin/trust/review-items/{id}:
     get:
+      description: "Site-scoped: platform staff act across all sites; a site-granted moderator is confined to their own site. A site-scoped moderator acting on another site's item receives 404 (existence is not leaked)."
       operationId: getTrustReviewItem
       parameters:
         - in: path
@@ -847,6 +854,7 @@ paths:
         - trust-admin
   /api/v1/admin/trust/review-items/{id}/claim:
     post:
+      description: "Site-scoped: platform staff act across all sites; a site-granted moderator is confined to their own site. A site-scoped moderator acting on another site's item receives 404 (existence is not leaked)."
       operationId: claimTrustReviewItem
       parameters:
         - in: path
@@ -873,6 +881,7 @@ paths:
         - trust-admin
   /api/v1/admin/trust/review-items/{id}/decide:
     post:
+      description: "Site-scoped: platform staff act across all sites; a site-granted moderator is confined to their own site. A site-scoped moderator acting on another site's item receives 404 (existence is not leaked)."
       operationId: decideTrustReviewItem
       parameters:
         - in: path
@@ -905,6 +914,7 @@ paths:
         - trust-admin
   /api/v1/admin/trust/subject-kinds:
     get:
+      description: "Platform-staff only: a site-scoped moderator receives 403 (the registries and dead-letter surfaces are platform-ops)."
       operationId: listTrustSubjectKinds
       parameters:
         - description: filter to one site; empty = all sites
@@ -931,6 +941,7 @@ paths:
       tags:
         - trust-admin
     post:
+      description: "Platform-staff only: a site-scoped moderator receives 403 (the registries and dead-letter surfaces are platform-ops)."
       operationId: createTrustSubjectKind
       requestBody:
         content:
@@ -956,6 +967,7 @@ paths:
         - trust-admin
   /api/v1/admin/trust/subject-kinds/{id}:
     patch:
+      description: "Platform-staff only: a site-scoped moderator receives 403 (the registries and dead-letter surfaces are platform-ops)."
       operationId: patchTrustSubjectKind
       parameters:
         - in: path

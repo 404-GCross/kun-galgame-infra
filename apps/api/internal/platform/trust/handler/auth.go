@@ -36,9 +36,19 @@ const localClient = "trust:oauth_client"
 type ctxKey string
 
 const (
-	ctxKeyClient  ctxKey = "trust:oauth_client"
-	ctxKeyAdminID ctxKey = "trust:admin_user_id"
+	ctxKeyClient      ctxKey = "trust:oauth_client"
+	ctxKeyAdminID     ctxKey = "trust:admin_user_id"
+	ctxKeyGlobalRoles ctxKey = "trust:user_global_roles"
+	ctxKeyClientID    ctxKey = "trust:token_client_id"
 )
+
+// clientSiteLookup resolves an OAuth client id to its record, so the admin face
+// can derive a site-scoped caller's catalog_site. *siteRepo.OAuthClientRepository
+// satisfies it; a one-method seam keeps the admin scope logic unit-testable
+// without a main-DB oauth_clients fixture.
+type clientSiteLookup interface {
+	FindByClientID(ctx context.Context, clientID string) (*siteModel.OAuthClient, error)
+}
 
 // S2SAuth authenticates backend callers via "Basic <b64(client_id:secret)>".
 func S2SAuth(clients *siteRepo.OAuthClientRepository) fiber.Handler {
@@ -101,18 +111,40 @@ func siteBinding(ctx context.Context) (string, *houseError) {
 	return client.CatalogSite, nil
 }
 
-// AdminBridge lifts the operator's user id (set by middleware.JWTAuth from
-// TokenClaims.ID, a uint) into the Huma context so decision endpoints can
-// record who acted. The Fiber layer has already rejected non-staff.
+// AdminBridge lifts the authenticated operator's identity (set by
+// middleware.JWTAuth) into the Huma context: the user id (from TokenClaims.ID)
+// so decision endpoints can record who acted, plus the GLOBAL roles and token
+// client id the scope resolver uses to split platform staff from a site-scoped
+// moderator. The Fiber layer has already rejected non-staff (trust.queue_access).
 func AdminBridge(ctx huma.Context, next func(huma.Context)) {
 	fc := humafiber.Unwrap(ctx)
 	if id, ok := fc.Locals("user_id").(uint); ok {
 		ctx = huma.WithValue(ctx, ctxKeyAdminID, int64(id))
+	}
+	if roles, ok := fc.Locals("user_global_roles").([]string); ok {
+		ctx = huma.WithValue(ctx, ctxKeyGlobalRoles, roles)
+	}
+	if cid, ok := fc.Locals("token_client_id").(string); ok {
+		ctx = huma.WithValue(ctx, ctxKeyClientID, cid)
 	}
 	next(ctx)
 }
 
 func adminIDFromCtx(ctx context.Context) int64 {
 	id, _ := ctx.Value(ctxKeyAdminID).(int64)
+	return id
+}
+
+// globalRolesFromCtx returns the caller's GLOBAL roles (never the site union) —
+// the discriminator for the platform-staff vs site-scoped tier.
+func globalRolesFromCtx(ctx context.Context) []string {
+	roles, _ := ctx.Value(ctxKeyGlobalRoles).([]string)
+	return roles
+}
+
+// tokenClientIDFromCtx returns the OAuth client id the token was issued to
+// (empty for first-party tokens).
+func tokenClientIDFromCtx(ctx context.Context) string {
+	id, _ := ctx.Value(ctxKeyClientID).(string)
 	return id
 }

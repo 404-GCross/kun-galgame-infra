@@ -58,10 +58,16 @@ func (s *ReviewService) List(ctx context.Context, f ReviewFilters) ([]model.Trus
 	return items, total, nil
 }
 
-// Get returns an item plus its associated reports (detail view).
-func (s *ReviewService) Get(ctx context.Context, id int64) (*model.TrustReviewItem, []model.TrustReport, error) {
+// Get returns an item plus its associated reports (detail view). siteScope, when
+// non-empty, confines the lookup to that site: a foreign-site item reads as
+// ErrReviewItemNotFound, so a site-scoped caller cannot even learn it exists.
+func (s *ReviewService) Get(ctx context.Context, id int64, siteScope string) (*model.TrustReviewItem, []model.TrustReport, error) {
 	var item model.TrustReviewItem
-	err := s.db.WithContext(ctx).Take(&item, id).Error
+	q := s.db.WithContext(ctx)
+	if siteScope != "" {
+		q = q.Where("site = ?", siteScope)
+	}
+	err := q.Take(&item, id).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil, ErrReviewItemNotFound
 	}
@@ -78,18 +84,28 @@ func (s *ReviewService) Get(ctx context.Context, id int64) (*model.TrustReviewIt
 
 // Claim assigns a pending item to an operator using FOR UPDATE SKIP LOCKED, so
 // two concurrent claimers cannot both win — the loser gets 409 (章程 ruling: E6
-// probe). A non-pending or absent item is distinguished for 404 vs 409.
-func (s *ReviewService) Claim(ctx context.Context, id, claimedBy int64) error {
+// probe). A non-pending or absent item is distinguished for 404 vs 409. siteScope,
+// when non-empty, confines the claim to that site: a foreign-site item reads as
+// ErrReviewItemNotFound (404), never ErrAlreadyClaimed, so existence never leaks.
+func (s *ReviewService) Claim(ctx context.Context, id, claimedBy int64, siteScope string) error {
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var item model.TrustReviewItem
-		err := tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
-			Where("id = ? AND status = ?", id, model.ReviewStatusPending).
-			Take(&item).Error
+		lockQ := tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
+			Where("id = ? AND status = ?", id, model.ReviewStatusPending)
+		if siteScope != "" {
+			lockQ = lockQ.Where("site = ?", siteScope)
+		}
+		err := lockQ.Take(&item).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			// Either the row is gone (404), or it is not pending / locked by a
-			// concurrent claimer (409).
+			// Either the row is gone / out of scope (404), or it is not pending /
+			// locked by a concurrent claimer (409). The existence probe is scoped
+			// too, so a foreign-site item counts as absent (404), not a conflict.
+			existsQ := tx.Model(&model.TrustReviewItem{}).Where("id = ?", id)
+			if siteScope != "" {
+				existsQ = existsQ.Where("site = ?", siteScope)
+			}
 			var exists int64
-			if cerr := tx.Model(&model.TrustReviewItem{}).Where("id = ?", id).Count(&exists).Error; cerr != nil {
+			if cerr := existsQ.Count(&exists).Error; cerr != nil {
 				return cerr
 			}
 			if exists == 0 {
@@ -111,7 +127,9 @@ func (s *ReviewService) Claim(ctx context.Context, id, claimedBy int64) error {
 }
 
 // DecideParams carries a decision. Decision is "dismissed" or "actioned";
-// Action + ReasonCode are required for "actioned".
+// Action + ReasonCode are required for "actioned". SiteScope, when non-empty,
+// confines the decision to that site: a foreign-site item reads as
+// ErrReviewItemNotFound (404), so a site-scoped caller cannot decide it.
 type DecideParams struct {
 	ID         int64
 	DecidedBy  int64
@@ -119,6 +137,7 @@ type DecideParams struct {
 	Action     *int16
 	ReasonCode string
 	Statement  *string
+	SiteScope  string
 }
 
 // Decide runs the terminal state machine. On "actioned" it writes a disposition
@@ -136,7 +155,11 @@ func (s *ReviewService) Decide(ctx context.Context, p DecideParams) (*int64, err
 	var dispositionID *int64
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var item model.TrustReviewItem
-		lerr := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Take(&item, p.ID).Error
+		lockQ := tx.Clauses(clause.Locking{Strength: "UPDATE"})
+		if p.SiteScope != "" {
+			lockQ = lockQ.Where("site = ?", p.SiteScope)
+		}
+		lerr := lockQ.Take(&item, p.ID).Error
 		if errors.Is(lerr, gorm.ErrRecordNotFound) {
 			return ErrReviewItemNotFound
 		}

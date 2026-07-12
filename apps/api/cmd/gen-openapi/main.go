@@ -61,7 +61,7 @@ func main() {
 	case *trust:
 		api = trustHandler.Setup(app, nil, nil, nil)
 	case *trustAdmin:
-		api = trustHandler.SetupAdmin(app, nil, nil, nil)
+		api = trustHandler.SetupAdmin(app, nil, nil, nil, nil)
 	case *admin:
 		api = artHandler.SetupAdmin(app, artHandler.NewAdmin(nil, nil, nil, 0))
 	default:

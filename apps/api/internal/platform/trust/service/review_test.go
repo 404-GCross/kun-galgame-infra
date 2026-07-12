@@ -23,6 +23,75 @@ func mkOpenItem(t *testing.T, subject string) int64 {
 	return it.ID
 }
 
+// mkOpenItemInSite inserts a fresh pending item for an arbitrary site.
+func mkOpenItemInSite(t *testing.T, site, subject string) int64 {
+	t.Helper()
+	it := model.TrustReviewItem{
+		Site: site, SubjectKind: tKind, SubjectID: subject,
+		Source: model.ReviewSourceReports, Priority: 2, Status: model.ReviewStatusPending,
+	}
+	if err := testDB.Create(&it).Error; err != nil {
+		t.Fatalf("insert open item in %s: %v", site, err)
+	}
+	return it.ID
+}
+
+// Step 04: the site-scope primitive on Get/Claim/Decide/List. A non-empty
+// siteScope confines the op to that site; a foreign-site item reads as
+// ErrReviewItemNotFound (never AlreadyClaimed), so existence never leaks. An
+// empty scope (platform staff) is unrestricted.
+func TestReviewSiteScopeEnforcement(t *testing.T) {
+	cleanTables(t)
+	svc := NewReviewService(testDB)
+	ownID := mkOpenItemInSite(t, "kungal", "own1")
+	foreignID := mkOpenItemInSite(t, "otokun", "for1")
+
+	// Get: own-site scope and unrestricted both see the item; foreign scope 404.
+	if _, _, err := svc.Get(context.Background(), ownID, "kungal"); err != nil {
+		t.Fatalf("get own-site scoped: %v", err)
+	}
+	if _, _, err := svc.Get(context.Background(), foreignID, ""); err != nil {
+		t.Fatalf("get foreign item unrestricted: %v", err)
+	}
+	if _, _, err := svc.Get(context.Background(), foreignID, "kungal"); !errors.Is(err, ErrReviewItemNotFound) {
+		t.Fatalf("get foreign-site scoped: want ErrReviewItemNotFound, got %v", err)
+	}
+
+	// Claim: a foreign-site item is NotFound (404), not AlreadyClaimed (409).
+	if err := svc.Claim(context.Background(), foreignID, 1, "kungal"); !errors.Is(err, ErrReviewItemNotFound) {
+		t.Fatalf("claim foreign-site scoped: want ErrReviewItemNotFound, got %v", err)
+	}
+	if err := svc.Claim(context.Background(), ownID, 1, "kungal"); err != nil {
+		t.Fatalf("claim own-site scoped: %v", err)
+	}
+
+	// Decide: foreign-site item is NotFound; own-site (now claimed) decides fine.
+	if _, err := svc.Decide(context.Background(), DecideParams{
+		ID: foreignID, DecidedBy: 1, Decision: "dismissed", SiteScope: "kungal",
+	}); !errors.Is(err, ErrReviewItemNotFound) {
+		t.Fatalf("decide foreign-site scoped: want ErrReviewItemNotFound, got %v", err)
+	}
+	if _, err := svc.Decide(context.Background(), DecideParams{
+		ID: ownID, DecidedBy: 1, Decision: "dismissed", SiteScope: "kungal",
+	}); err != nil {
+		t.Fatalf("decide own-site scoped: %v", err)
+	}
+
+	// List with a site filter returns only that site's items.
+	items, _, err := svc.List(context.Background(), ReviewFilters{Site: "otokun"})
+	if err != nil {
+		t.Fatalf("list otokun: %v", err)
+	}
+	if len(items) == 0 {
+		t.Fatal("list otokun returned nothing")
+	}
+	for _, it := range items {
+		if it.Site != "otokun" {
+			t.Fatalf("site filter leaked site %q", it.Site)
+		}
+	}
+}
+
 // E6: two claimers race one pending item → exactly one wins (SKIP LOCKED).
 func TestClaimConcurrency(t *testing.T) {
 	cleanTables(t)
@@ -35,7 +104,7 @@ func TestClaimConcurrency(t *testing.T) {
 		wg.Add(1)
 		go func(idx int, by int64) {
 			defer wg.Done()
-			errs[idx] = svc.Claim(context.Background(), id, by)
+			errs[idx] = svc.Claim(context.Background(), id, by, "")
 		}(i, claimer)
 	}
 	wg.Wait()
@@ -61,7 +130,7 @@ func TestClaimConcurrency(t *testing.T) {
 
 func TestClaimNotFound(t *testing.T) {
 	cleanTables(t)
-	if err := NewReviewService(testDB).Claim(context.Background(), 999999, 1); !errors.Is(err, ErrReviewItemNotFound) {
+	if err := NewReviewService(testDB).Claim(context.Background(), 999999, 1, ""); !errors.Is(err, ErrReviewItemNotFound) {
 		t.Fatalf("claim absent item: want ErrReviewItemNotFound, got %v", err)
 	}
 }

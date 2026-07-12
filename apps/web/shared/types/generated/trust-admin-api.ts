@@ -11,7 +11,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List dispositions by callback status (e.g. dead_letter) */
+        /**
+         * List dispositions by callback status (e.g. dead_letter)
+         * @description Platform-staff only: a site-scoped moderator receives 403 (the registries and dead-letter surfaces are platform-ops).
+         */
         get: operations["listTrustDispositions"];
         put?: never;
         post?: never;
@@ -30,7 +33,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Replay a dead-lettered callback (reset to pending) */
+        /**
+         * Replay a dead-lettered callback (reset to pending)
+         * @description Platform-staff only: a site-scoped moderator receives 403 (the registries and dead-letter surfaces are platform-ops).
+         */
         post: operations["redeliverTrustDisposition"];
         delete?: never;
         options?: never;
@@ -45,10 +51,16 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List the reason taxonomy (global base + per-site extensions) */
+        /**
+         * List the reason taxonomy (global base + per-site extensions)
+         * @description Platform-staff only: a site-scoped moderator receives 403 (the registries and dead-letter surfaces are platform-ops).
+         */
         get: operations["listTrustReportReasons"];
         put?: never;
-        /** Register a reason (global or per-site) */
+        /**
+         * Register a reason (global or per-site)
+         * @description Platform-staff only: a site-scoped moderator receives 403 (the registries and dead-letter surfaces are platform-ops).
+         */
         post: operations["createTrustReportReason"];
         delete?: never;
         options?: never;
@@ -69,7 +81,10 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        /** Update a reason's label / severity / deprecation (never deleted) */
+        /**
+         * Update a reason's label / severity / deprecation (never deleted)
+         * @description Platform-staff only: a site-scoped moderator receives 403 (the registries and dead-letter surfaces are platform-ops).
+         */
         patch: operations["patchTrustReportReason"];
         trace?: never;
     };
@@ -80,7 +95,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List the review inbox (per-site view, priority-ordered) */
+        /**
+         * List the review inbox (per-site view, priority-ordered)
+         * @description Site-scoped: platform staff act across all sites; a site-granted moderator is confined to their own site. For a site-scoped caller the site filter is forced to their own site, overriding any requested `site`.
+         */
         get: operations["listTrustReviewItems"];
         put?: never;
         post?: never;
@@ -97,7 +115,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get a review item with its associated reports */
+        /**
+         * Get a review item with its associated reports
+         * @description Site-scoped: platform staff act across all sites; a site-granted moderator is confined to their own site. A site-scoped moderator acting on another site's item receives 404 (existence is not leaked).
+         */
         get: operations["getTrustReviewItem"];
         put?: never;
         post?: never;
@@ -116,7 +137,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Claim a pending review item (FOR UPDATE SKIP LOCKED; 409 if taken) */
+        /**
+         * Claim a pending review item (FOR UPDATE SKIP LOCKED; 409 if taken)
+         * @description Site-scoped: platform staff act across all sites; a site-granted moderator is confined to their own site. A site-scoped moderator acting on another site's item receives 404 (existence is not leaked).
+         */
         post: operations["claimTrustReviewItem"];
         delete?: never;
         options?: never;
@@ -133,7 +157,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Decide a review item (dismissed / actioned; actioned writes a disposition) */
+        /**
+         * Decide a review item (dismissed / actioned; actioned writes a disposition)
+         * @description Site-scoped: platform staff act across all sites; a site-granted moderator is confined to their own site. A site-scoped moderator acting on another site's item receives 404 (existence is not leaked).
+         */
         post: operations["decideTrustReviewItem"];
         delete?: never;
         options?: never;
@@ -148,10 +175,16 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List subject-kind registry rows (optionally per-site; includes deprecated) */
+        /**
+         * List subject-kind registry rows (optionally per-site; includes deprecated)
+         * @description Platform-staff only: a site-scoped moderator receives 403 (the registries and dead-letter surfaces are platform-ops).
+         */
         get: operations["listTrustSubjectKinds"];
         put?: never;
-        /** Register a subject kind for a site */
+        /**
+         * Register a subject kind for a site
+         * @description Platform-staff only: a site-scoped moderator receives 403 (the registries and dead-letter surfaces are platform-ops).
+         */
         post: operations["createTrustSubjectKind"];
         delete?: never;
         options?: never;
@@ -172,7 +205,10 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        /** Update a subject kind's callback config / deprecation (never deleted) */
+        /**
+         * Update a subject kind's callback config / deprecation (never deleted)
+         * @description Platform-staff only: a site-scoped moderator receives 403 (the registries and dead-letter surfaces are platform-ops).
+         */
         patch: operations["patchTrustSubjectKind"];
         trace?: never;
     };

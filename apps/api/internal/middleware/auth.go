@@ -71,13 +71,10 @@ func Auth(authSvc *authService.AuthService) fiber.Handler {
 			})
 		}
 
-		// Set user info in context. user_roles unions the global roles with the
-		// token's site_roles (site-scoped by the signer) — see unionRoles.
-		c.Locals("user_uuid", claims.UserUUID)
-		c.Locals("user_id", claims.ID)
-		c.Locals("user_roles", unionRoles(claims.Roles, claims.SiteRoles))
-		c.Locals("user_scope", claims.Scope)
-		c.Locals("user_site", claims.SiteID)
+		// Set user info in context (same local set as the JWTAuth fill sites):
+		// user_roles unions the global roles with the token's site_roles, plus the
+		// additive user_global_roles / token_client_id — see setIdentityLocals.
+		setIdentityLocals(c, claims)
 
 		return c.Next()
 	}

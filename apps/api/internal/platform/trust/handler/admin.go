@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"api/internal/platform/trust/dto"
+	trustPerm "api/internal/platform/trust/perm"
 	"api/internal/platform/trust/service"
 	"api/pkg/errors"
 
@@ -20,13 +21,17 @@ type AdminServer struct {
 	review       *service.ReviewService
 	registry     *service.RegistryService
 	dispositions *service.DispositionService
+	// clients resolves a site-scoped caller's token client to its catalog_site.
+	// Per-request main-DB lookup, no cache (章程 04 ruling 3 — admin volume).
+	clients clientSiteLookup
 }
 
 // SetupAdmin builds the admin review-inbox Huma API. Auth is applied by the
 // caller as path-scoped Fiber middleware (middleware.JWTAuth + trust.queue_access)
-// on the /api/v1/admin/trust prefix BEFORE this. Callable with nil services for
-// spec export.
-func SetupAdmin(app *fiber.App, review *service.ReviewService, registry *service.RegistryService, dispositions *service.DispositionService) huma.API {
+// on the /api/v1/admin/trust prefix BEFORE this. clients supplies the
+// catalog_site binding for site-scoped callers. Callable with nil deps for spec
+// export (handlers are never invoked then).
+func SetupAdmin(app *fiber.App, review *service.ReviewService, registry *service.RegistryService, dispositions *service.DispositionService, clients clientSiteLookup) huma.API {
 	InstallErrorEnvelope()
 
 	cfg := huma.DefaultConfig("KUN Trust Admin API", "1.0.0")
@@ -37,40 +42,110 @@ func SetupAdmin(app *fiber.App, review *service.ReviewService, registry *service
 	api := humafiber.New(app, cfg)
 	api.UseMiddleware(AdminBridge)
 
-	s := &AdminServer{review: review, registry: registry, dispositions: dispositions}
+	s := &AdminServer{review: review, registry: registry, dispositions: dispositions, clients: clients}
 	s.register(api)
 	return api
 }
 
 func (s *AdminServer) register(api huma.API) {
 	tags := []string{"trust-admin"}
+
+	// Site-scoping note (docs/auth/04): callers are one of two tiers. Platform
+	// staff (whose GLOBAL roles pass trust.queue_access) are UNRESTRICTED. A
+	// site-granted moderator (who reached this face only via the site-role union)
+	// is SITE-SCOPED to their token client's catalog_site.
+	const reviewScopeNote = "Site-scoped: platform staff act across all sites; a site-granted moderator is confined to their own site."
+	const foreignNotFound = " A site-scoped moderator acting on another site's item receives 404 (existence is not leaked)."
+	const platformOnly = "Platform-staff only: a site-scoped moderator receives 403 (the registries and dead-letter surfaces are platform-ops)."
+
 	huma.Register(api, huma.Operation{OperationID: "listTrustReviewItems", Method: http.MethodGet, Path: "/api/v1/admin/trust/review-items",
-		Summary: "List the review inbox (per-site view, priority-ordered)", Tags: tags}, s.listReviewItems)
+		Summary: "List the review inbox (per-site view, priority-ordered)", Tags: tags,
+		Description: reviewScopeNote + " For a site-scoped caller the site filter is forced to their own site, overriding any requested `site`."}, s.listReviewItems)
 	huma.Register(api, huma.Operation{OperationID: "getTrustReviewItem", Method: http.MethodGet, Path: "/api/v1/admin/trust/review-items/{id}",
-		Summary: "Get a review item with its associated reports", Tags: tags}, s.getReviewItem)
+		Summary: "Get a review item with its associated reports", Tags: tags,
+		Description: reviewScopeNote + foreignNotFound}, s.getReviewItem)
 	huma.Register(api, huma.Operation{OperationID: "claimTrustReviewItem", Method: http.MethodPost, Path: "/api/v1/admin/trust/review-items/{id}/claim",
-		Summary: "Claim a pending review item (FOR UPDATE SKIP LOCKED; 409 if taken)", Tags: tags}, s.claimReviewItem)
+		Summary: "Claim a pending review item (FOR UPDATE SKIP LOCKED; 409 if taken)", Tags: tags,
+		Description: reviewScopeNote + foreignNotFound}, s.claimReviewItem)
 	huma.Register(api, huma.Operation{OperationID: "decideTrustReviewItem", Method: http.MethodPost, Path: "/api/v1/admin/trust/review-items/{id}/decide",
-		Summary: "Decide a review item (dismissed / actioned; actioned writes a disposition)", Tags: tags}, s.decideReviewItem)
+		Summary: "Decide a review item (dismissed / actioned; actioned writes a disposition)", Tags: tags,
+		Description: reviewScopeNote + foreignNotFound}, s.decideReviewItem)
 
 	huma.Register(api, huma.Operation{OperationID: "listTrustSubjectKinds", Method: http.MethodGet, Path: "/api/v1/admin/trust/subject-kinds",
-		Summary: "List subject-kind registry rows (optionally per-site; includes deprecated)", Tags: tags}, s.listSubjectKinds)
+		Summary: "List subject-kind registry rows (optionally per-site; includes deprecated)", Tags: tags,
+		Description: platformOnly}, s.listSubjectKinds)
 	huma.Register(api, huma.Operation{OperationID: "createTrustSubjectKind", Method: http.MethodPost, Path: "/api/v1/admin/trust/subject-kinds",
-		Summary: "Register a subject kind for a site", Tags: tags}, s.createSubjectKind)
+		Summary: "Register a subject kind for a site", Tags: tags,
+		Description: platformOnly}, s.createSubjectKind)
 	huma.Register(api, huma.Operation{OperationID: "patchTrustSubjectKind", Method: http.MethodPatch, Path: "/api/v1/admin/trust/subject-kinds/{id}",
-		Summary: "Update a subject kind's callback config / deprecation (never deleted)", Tags: tags}, s.patchSubjectKind)
+		Summary: "Update a subject kind's callback config / deprecation (never deleted)", Tags: tags,
+		Description: platformOnly}, s.patchSubjectKind)
 
 	huma.Register(api, huma.Operation{OperationID: "listTrustReportReasons", Method: http.MethodGet, Path: "/api/v1/admin/trust/report-reasons",
-		Summary: "List the reason taxonomy (global base + per-site extensions)", Tags: tags}, s.listReasons)
+		Summary: "List the reason taxonomy (global base + per-site extensions)", Tags: tags,
+		Description: platformOnly}, s.listReasons)
 	huma.Register(api, huma.Operation{OperationID: "createTrustReportReason", Method: http.MethodPost, Path: "/api/v1/admin/trust/report-reasons",
-		Summary: "Register a reason (global or per-site)", Tags: tags}, s.createReason)
+		Summary: "Register a reason (global or per-site)", Tags: tags,
+		Description: platformOnly}, s.createReason)
 	huma.Register(api, huma.Operation{OperationID: "patchTrustReportReason", Method: http.MethodPatch, Path: "/api/v1/admin/trust/report-reasons/{id}",
-		Summary: "Update a reason's label / severity / deprecation (never deleted)", Tags: tags}, s.patchReason)
+		Summary: "Update a reason's label / severity / deprecation (never deleted)", Tags: tags,
+		Description: platformOnly}, s.patchReason)
 
 	huma.Register(api, huma.Operation{OperationID: "listTrustDispositions", Method: http.MethodGet, Path: "/api/v1/admin/trust/dispositions",
-		Summary: "List dispositions by callback status (e.g. dead_letter)", Tags: tags}, s.listDispositions)
+		Summary: "List dispositions by callback status (e.g. dead_letter)", Tags: tags,
+		Description: platformOnly}, s.listDispositions)
 	huma.Register(api, huma.Operation{OperationID: "redeliverTrustDisposition", Method: http.MethodPost, Path: "/api/v1/admin/trust/dispositions/{id}/redeliver",
-		Summary: "Replay a dead-lettered callback (reset to pending)", Tags: tags}, s.redeliverDisposition)
+		Summary: "Replay a dead-lettered callback (reset to pending)", Tags: tags,
+		Description: platformOnly}, s.redeliverDisposition)
+}
+
+// ---- scope resolution ----
+
+// adminScope is a resolved caller tier. site == "" means UNRESTRICTED (platform
+// staff, whose GLOBAL roles alone pass trust.queue_access); a non-empty site
+// means SITE-SCOPED (a site-granted moderator confined to that catalog_site).
+type adminScope struct{ site string }
+
+func (sc adminScope) siteScoped() bool { return sc.site != "" }
+
+// resolveScope classifies the caller. The Fiber gate already admitted anyone
+// holding trust.queue_access — but that includes a site "moderator" whose token
+// only passed via the site-role UNION (docs/auth/04). We split the two tiers
+// here: if the GLOBAL roles alone pass the resolver the caller is platform staff
+// (unrestricted); otherwise they only reached us through a site-role union, so
+// we confine them to their token client's catalog_site. A site-scoped caller
+// whose token carries no client, or whose client has no catalog_site binding, is
+// rejected fail-closed (403).
+func (s *AdminServer) resolveScope(ctx context.Context) (adminScope, *houseError) {
+	if trustPerm.Resolver.Can(globalRolesFromCtx(ctx), trustPerm.QueueAccess) {
+		return adminScope{}, nil
+	}
+	clientID := tokenClientIDFromCtx(ctx)
+	if clientID == "" {
+		return adminScope{}, apiErrMsg(http.StatusForbidden, errors.ErrForbidden,
+			"site-scoped moderator token is not bound to a client")
+	}
+	client, err := s.clients.FindByClientID(ctx, clientID)
+	if err != nil || client == nil || client.CatalogSite == "" {
+		return adminScope{}, apiErrMsg(http.StatusForbidden, errors.ErrForbidden,
+			"site-scoped moderator's client is not bound to a site")
+	}
+	return adminScope{site: client.CatalogSite}, nil
+}
+
+// requireUnrestricted resolves the scope and rejects site-scoped callers with a
+// 403 — the platform-ops guard for the registries and dead-letter surfaces,
+// which a site moderator has no business touching.
+func (s *AdminServer) requireUnrestricted(ctx context.Context) *houseError {
+	scope, he := s.resolveScope(ctx)
+	if he != nil {
+		return he
+	}
+	if scope.siteScoped() {
+		return apiErrMsg(http.StatusForbidden, errors.ErrForbidden,
+			"this surface is restricted to platform staff")
+	}
+	return nil
 }
 
 // ---- review items ----
@@ -87,8 +162,18 @@ type reviewItemsOutput struct {
 }
 
 func (s *AdminServer) listReviewItems(ctx context.Context, in *listReviewItemsInput) (*reviewItemsOutput, error) {
+	scope, he := s.resolveScope(ctx)
+	if he != nil {
+		return nil, he
+	}
+	// A site-scoped caller sees only their own site — the requested site filter
+	// is FORCED, overriding whatever `site` param they passed.
+	site := in.Site
+	if scope.siteScoped() {
+		site = scope.site
+	}
 	items, total, err := s.review.List(ctx, service.ReviewFilters{
-		Site: in.Site, Status: optionalFilter(in.Status), Source: optionalFilter(in.Source),
+		Site: site, Status: optionalFilter(in.Status), Source: optionalFilter(in.Source),
 		Page: in.Page, Limit: in.Limit,
 	})
 	if err != nil {
@@ -107,7 +192,13 @@ type reviewItemDetailOutput struct {
 }
 
 func (s *AdminServer) getReviewItem(ctx context.Context, in *reviewItemIDInput) (*reviewItemDetailOutput, error) {
-	item, reports, err := s.review.Get(ctx, in.ID)
+	scope, he := s.resolveScope(ctx)
+	if he != nil {
+		return nil, he
+	}
+	// scope.site "" for platform staff (no restriction); a foreign-site item
+	// reads as not-found (404), never leaking that it exists.
+	item, reports, err := s.review.Get(ctx, in.ID, scope.site)
 	if err != nil {
 		return nil, mapAdminErr("get review item", err)
 	}
@@ -121,7 +212,11 @@ type okOutput struct {
 }
 
 func (s *AdminServer) claimReviewItem(ctx context.Context, in *reviewItemIDInput) (*okOutput, error) {
-	if err := s.review.Claim(ctx, in.ID, adminIDFromCtx(ctx)); err != nil {
+	scope, he := s.resolveScope(ctx)
+	if he != nil {
+		return nil, he
+	}
+	if err := s.review.Claim(ctx, in.ID, adminIDFromCtx(ctx), scope.site); err != nil {
 		return nil, mapAdminErr("claim review item", err)
 	}
 	return &okOutput{Body: okEnvelope(dto.OKResponse{OK: true})}, nil
@@ -140,9 +235,14 @@ type decideData struct {
 }
 
 func (s *AdminServer) decideReviewItem(ctx context.Context, in *decideInput) (*decideOutput, error) {
+	scope, he := s.resolveScope(ctx)
+	if he != nil {
+		return nil, he
+	}
 	dispID, err := s.review.Decide(ctx, service.DecideParams{
 		ID: in.ID, DecidedBy: adminIDFromCtx(ctx), Decision: in.Body.Decision,
 		Action: in.Body.Action, ReasonCode: in.Body.ReasonCode, Statement: in.Body.Statement,
+		SiteScope: scope.site,
 	})
 	if err != nil {
 		return nil, mapAdminErr("decide review item", err)
@@ -160,6 +260,9 @@ type subjectKindsOutput struct {
 }
 
 func (s *AdminServer) listSubjectKinds(ctx context.Context, in *listSubjectKindsAdminInput) (*subjectKindsOutput, error) {
+	if he := s.requireUnrestricted(ctx); he != nil {
+		return nil, he
+	}
 	kinds, err := s.registry.ListSubjectKinds(ctx, in.Site, true)
 	if err != nil {
 		return nil, mapAdminErr("list subject kinds", err)
@@ -173,6 +276,9 @@ type subjectKindOutput struct {
 }
 
 func (s *AdminServer) createSubjectKind(ctx context.Context, in *createSubjectKindInput) (*subjectKindOutput, error) {
+	if he := s.requireUnrestricted(ctx); he != nil {
+		return nil, he
+	}
 	kind, err := s.registry.CreateSubjectKind(ctx, adminIDFromCtx(ctx),
 		in.Body.Site, in.Body.Key, in.Body.CallbackURL, in.Body.CallbackSecret, boolOr(in.Body.NotifyOnDismiss, false))
 	if err != nil {
@@ -187,6 +293,9 @@ type patchSubjectKindInput struct {
 }
 
 func (s *AdminServer) patchSubjectKind(ctx context.Context, in *patchSubjectKindInput) (*subjectKindOutput, error) {
+	if he := s.requireUnrestricted(ctx); he != nil {
+		return nil, he
+	}
 	kind, err := s.registry.PatchSubjectKind(ctx, adminIDFromCtx(ctx), in.ID, service.SubjectKindPatch{
 		CallbackURL: in.Body.CallbackURL, CallbackSecret: in.Body.CallbackSecret,
 		IsDeprecated: in.Body.IsDeprecated, NotifyOnDismiss: in.Body.NotifyOnDismiss,
@@ -207,6 +316,9 @@ type reasonsOutput struct {
 }
 
 func (s *AdminServer) listReasons(ctx context.Context, in *listReasonsInput) (*reasonsOutput, error) {
+	if he := s.requireUnrestricted(ctx); he != nil {
+		return nil, he
+	}
 	reasons, err := s.registry.ListReasons(ctx, in.Site)
 	if err != nil {
 		return nil, mapAdminErr("list reasons", err)
@@ -220,6 +332,9 @@ type reasonOutput struct {
 }
 
 func (s *AdminServer) createReason(ctx context.Context, in *createReasonInput) (*reasonOutput, error) {
+	if he := s.requireUnrestricted(ctx); he != nil {
+		return nil, he
+	}
 	reason, err := s.registry.CreateReason(ctx, adminIDFromCtx(ctx),
 		in.Body.Key, in.Body.NameCN, in.Body.Site, in.Body.Severity)
 	if err != nil {
@@ -234,6 +349,9 @@ type patchReasonInput struct {
 }
 
 func (s *AdminServer) patchReason(ctx context.Context, in *patchReasonInput) (*reasonOutput, error) {
+	if he := s.requireUnrestricted(ctx); he != nil {
+		return nil, he
+	}
 	reason, err := s.registry.PatchReason(ctx, adminIDFromCtx(ctx), in.ID, service.ReasonPatch{
 		NameCN: in.Body.NameCN, Severity: in.Body.Severity, IsDeprecated: in.Body.IsDeprecated,
 	})
@@ -255,6 +373,9 @@ type dispositionsOutput struct {
 }
 
 func (s *AdminServer) listDispositions(ctx context.Context, in *listDispositionsInput) (*dispositionsOutput, error) {
+	if he := s.requireUnrestricted(ctx); he != nil {
+		return nil, he
+	}
 	items, total, err := s.dispositions.List(ctx, optionalFilter(in.CallbackStatus), in.Page, in.Limit)
 	if err != nil {
 		return nil, mapAdminErr("list dispositions", err)
@@ -269,6 +390,9 @@ type dispositionIDInput struct {
 }
 
 func (s *AdminServer) redeliverDisposition(ctx context.Context, in *dispositionIDInput) (*okOutput, error) {
+	if he := s.requireUnrestricted(ctx); he != nil {
+		return nil, he
+	}
 	if err := s.dispositions.Redeliver(ctx, adminIDFromCtx(ctx), in.ID); err != nil {
 		return nil, mapAdminErr("redeliver disposition", err)
 	}

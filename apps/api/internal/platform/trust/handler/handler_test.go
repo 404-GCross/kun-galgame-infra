@@ -34,7 +34,7 @@ func TestSpecExport(t *testing.T) {
 
 // TestAdminSpecExport is the admin spec smoke.
 func TestAdminSpecExport(t *testing.T) {
-	api := SetupAdmin(fiber.New(), nil, nil, nil)
+	api := SetupAdmin(fiber.New(), nil, nil, nil, nil)
 	b, err := api.OpenAPI().YAML()
 	if err != nil {
 		t.Fatalf("marshal admin spec: %v", err)

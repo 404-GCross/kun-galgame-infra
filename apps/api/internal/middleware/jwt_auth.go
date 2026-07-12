@@ -6,6 +6,7 @@ import (
 
 	"api/pkg/errors"
 	"api/pkg/oidctoken"
+	"api/pkg/utils"
 
 	"github.com/gofiber/fiber/v3"
 )
@@ -53,14 +54,31 @@ func JWTAuth(verifier *oidctoken.Verifier) fiber.Handler {
 			})
 		}
 
-		c.Locals("user_uuid", claims.UserUUID)
-		c.Locals("user_id", claims.ID)
-		c.Locals("user_roles", unionRoles(claims.Roles, claims.SiteRoles))
-		c.Locals("user_scope", claims.Scope)
-		c.Locals("user_site", claims.SiteID)
+		setIdentityLocals(c, claims)
 
 		return c.Next()
 	}
+}
+
+// setIdentityLocals populates the request-scoped identity locals from verified
+// token claims. All three JWT fill sites (JWTAuth, OptionalJWT, Auth) route
+// through it, so the local set they publish stays identical.
+//
+// user_roles keeps its established meaning — the union of the global `roles`
+// claim with the token's `site_roles` (see unionRoles) — the value every
+// existing consumer reads; it is untouched. user_global_roles and
+// token_client_id are ADDITIVE locals for the trust admin face, which must tell
+// platform staff from a site-granted moderator: the GLOBAL roles alone (never
+// unioned) discriminate the tier, and the client id derives the site scope.
+// Nothing that reads user_roles is affected.
+func setIdentityLocals(c fiber.Ctx, claims *utils.TokenClaims) {
+	c.Locals("user_uuid", claims.UserUUID)
+	c.Locals("user_id", claims.ID)
+	c.Locals("user_roles", unionRoles(claims.Roles, claims.SiteRoles))
+	c.Locals("user_scope", claims.Scope)
+	c.Locals("user_site", claims.SiteID)
+	c.Locals("user_global_roles", claims.Roles)
+	c.Locals("token_client_id", claims.ClientID)
 }
 
 // unionRoles merges the caller's global `roles` claim with its `site_roles`
@@ -124,11 +142,7 @@ func OptionalJWT(verifier *oidctoken.Verifier) fiber.Handler {
 			}
 			return c.Next()
 		}
-		c.Locals("user_uuid", claims.UserUUID)
-		c.Locals("user_id", claims.ID)
-		c.Locals("user_roles", unionRoles(claims.Roles, claims.SiteRoles))
-		c.Locals("user_scope", claims.Scope)
-		c.Locals("user_site", claims.SiteID)
+		setIdentityLocals(c, claims)
 		return c.Next()
 	}
 }
