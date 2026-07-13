@@ -218,6 +218,20 @@ services:
       KUN_OIDC_KEY_ENC_KEY: ${KUN_OIDC_KEY_ENC_KEY:-}
       KUN_OIDC_SIGN_ASYMMETRIC: ${KUN_OIDC_SIGN_ASYMMETRIC:-false}
     expose: ["9277"]
+    labels:
+      # Public OIDC metadata router. The OP's discovery + JWKS live at the HOST
+      # ROOT (iss = https://oauth.kungal.com — issuer, discovery URL, and
+      # jwks_uri must share that base), but the Dokploy domain rule only routes
+      # the /api/v1 prefix to this service; the host catch-all belongs to the
+      # account-center web. This dedicated router exposes exactly the two
+      # world-readable metadata paths — nothing else at the root leaves web.
+      # Coexists with the Dokploy-injected routers (distinct router names).
+      traefik.enable: "true"
+      traefik.http.routers.infra-oauth-oidc-meta.rule: Host(`oauth.kungal.com`) && (Path(`/oauth/jwks`) || Path(`/.well-known/openid-configuration`))
+      traefik.http.routers.infra-oauth-oidc-meta.priority: "30"
+      traefik.http.routers.infra-oauth-oidc-meta.entrypoints: websecure
+      traefik.http.routers.infra-oauth-oidc-meta.tls.certresolver: letsencrypt
+      traefik.http.services.infra-oauth-oidc-meta.loadbalancer.server.port: "9277"
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
