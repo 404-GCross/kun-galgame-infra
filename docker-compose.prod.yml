@@ -52,6 +52,13 @@ x-infra-env: &infra-env
   REDIS_PORT: "6379"
   # JWT — oauth signs access_token (HS256), image/galgame verify locally. Same secret.
   JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in Dokploy Environment (shared by oauth/image/galgame)}
+  # OIDC asymmetric verification (docs/auth/03 Phase 1). The five resource-side
+  # verifiers (galgame/image/artifact/catalog/trust) fetch the OP's JWK Set from
+  # this INTERNAL url to accept ES256/RS256 tokens alongside legacy HS256.
+  # Warm-up is async + failure-tolerant: before the OP has signing keys (KEK
+  # unset) they just log a degraded warm-up and stay HS256-only — safe to wire
+  # unconditionally. oauth itself ignores it (verifies from its local key set).
+  KUN_OIDC_JWKS_URL: http://oauth:9277/oauth/jwks
   # CORS — real https web origins
   KUN_FRONTEND_CORS_ORIGIN: https://oauth.kungal.com,https://www.kungal.com,https://kungal.com,https://wiki.kungal.com,https://www.moyu.moe,https://moyu.moe
   # oauth identity URLs
@@ -202,6 +209,14 @@ services:
       # banners frozen → GC soft-deletes them ~365d later.
       KUN_GALGAME_IMAGE_CLIENT_ID: ${KUN_IMAGE_CLIENT_ID:-}
       KUN_GALGAME_IMAGE_CLIENT_SECRET: ${KUN_IMAGE_CLIENT_SECRET:-}
+      # OIDC OP signing keys (docs/auth/03 §4/§5.4). KEK encrypts the ES256/
+      # RS256 private keys at rest; first boot with a KEK bootstraps the key
+      # pair and turns on /oauth/jwks + discovery. Unset => bootstrap skipped,
+      # endpoints absent (today's behavior). SIGN_ASYMMETRIC flips access-token
+      # signing HS256 -> ES256; flip ONLY after /oauth/jwks returns 200 and all
+      # five verifiers run with KUN_OIDC_JWKS_URL wired (else new tokens 401).
+      KUN_OIDC_KEY_ENC_KEY: ${KUN_OIDC_KEY_ENC_KEY:-}
+      KUN_OIDC_SIGN_ASYMMETRIC: ${KUN_OIDC_SIGN_ASYMMETRIC:-false}
     expose: ["9277"]
     depends_on:
       postgres: { condition: service_healthy }
