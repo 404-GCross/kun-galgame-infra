@@ -23,6 +23,12 @@ type TrustReport struct {
 	// at report time (content may be edited afterwards). Both nullable.
 	Note            *string `gorm:"column:note" json:"note"`
 	SubjectSnapshot *string `gorm:"column:subject_snapshot" json:"subject_snapshot"`
+	// SubjectURL is the submitter-carried deep link to the reported content in
+	// its product context (e.g. /topic/{id}?reply={floor}). Sub-entity subjects
+	// (replies/comments) have no page derivable from subject_id alone, so the
+	// reporting surface carries the link — invariant 2: trust never dereferences
+	// product storage. Validated http(s) at intake.
+	SubjectURL *string `gorm:"column:subject_url" json:"subject_url"`
 	// Weight is the reporter-reputation-weighted vote (§5.3). PG real; written
 	// explicitly by the service → NO default tag (a bare float maps to numeric,
 	// so the type is pinned).

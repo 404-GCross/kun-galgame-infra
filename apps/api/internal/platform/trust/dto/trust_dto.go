@@ -21,6 +21,7 @@ type ReportRequest struct {
 	ReasonKey   string  `json:"reason_key" doc:"a global or per-site reason key (abuse/spam/…)"`
 	Note        *string `json:"note,omitempty"`
 	Snapshot    *string `json:"snapshot,omitempty" doc:"reporter-carried content snapshot at report time"`
+	SubjectURL  *string `json:"subject_url,omitempty" doc:"deep link to the reported content in its product context (http/https, ≤512 chars); carried by the submitter because sub-entity subjects have no page derivable from subject_id alone"`
 	ReporterID  int64   `json:"reporter_id" doc:"the reporting user's global id (P0 requires login)"`
 }
 
@@ -99,6 +100,7 @@ type ReportView struct {
 	// SubjectSnapshot is the reporter-carried content snapshot at report time —
 	// the reviewer's evidence when the subject was edited or deleted afterwards.
 	SubjectSnapshot *string   `json:"subject_snapshot,omitempty"`
+	SubjectURL      *string   `json:"subject_url,omitempty" doc:"submitter-carried deep link to the content in its product context"`
 	Weight          float32   `json:"weight"`
 	ReviewItemID    *int64    `json:"review_item_id,omitempty"`
 	Status          int16     `json:"status" doc:"0=received 1=linked 2=folded"`

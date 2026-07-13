@@ -169,6 +169,16 @@ const submit = async () => {
         <p v-if="r.note" class="text-default-500 text-sm whitespace-pre-line">
           {{ r.note }}
         </p>
+        <a
+          v-if="r.subject_url"
+          :href="r.subject_url"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="text-primary-600 inline-flex items-center gap-1 text-sm hover:underline"
+        >
+          <KunIcon name="lucide:external-link" class="size-3.5" />
+          查看原始内容(举报时所在页面)
+        </a>
         <div
           v-if="r.subject_snapshot"
           class="bg-content2 rounded-lg p-2 text-sm"

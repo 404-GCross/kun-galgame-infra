@@ -272,6 +272,9 @@ components:
         subject_kind:
           description: registered subject kind for this site (e.g. forum_topic)
           type: string
+        subject_url:
+          description: deep link to the reported content in its product context (http/https, ≤512 chars); carried by the submitter because sub-entity subjects have no page derivable from subject_id alone
+          type: string
       required:
         - subject_kind
         - subject_id

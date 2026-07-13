@@ -58,7 +58,7 @@ func toReportView(r model.TrustReport) dto.ReportView {
 	return dto.ReportView{
 		ID: r.ID, Site: r.Site, SubjectKind: r.SubjectKind, SubjectID: r.SubjectID,
 		ReporterID: r.ReporterID, ReasonID: r.ReasonID, Note: r.Note,
-		SubjectSnapshot: r.SubjectSnapshot, Weight: r.Weight,
+		SubjectSnapshot: r.SubjectSnapshot, SubjectURL: r.SubjectURL, Weight: r.Weight,
 		ReviewItemID: r.ReviewItemID, Status: r.Status, CreatedAt: r.CreatedAt,
 	}
 }

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"net/url"
 	"time"
 
 	"api/internal/platform/trust/model"
@@ -33,6 +34,7 @@ type ReportParams struct {
 	ReasonKey   string
 	Note        *string
 	Snapshot    *string
+	SubjectURL  *string
 	ReporterID  int64
 }
 
@@ -47,6 +49,10 @@ type ReportResult struct {
 // codes at the handler; the happy path returns the report id and any linked
 // review item.
 func (s *ReportService) Submit(ctx context.Context, p ReportParams) (ReportResult, error) {
+	if err := validateSubjectURL(p.SubjectURL); err != nil {
+		return ReportResult{}, err
+	}
+
 	// Tenant fail-loud: the subject_kind must be registered (non-deprecated)
 	// for the caller's site (invariant 11).
 	var kindCount int64
@@ -95,7 +101,7 @@ func (s *ReportService) Submit(ctx context.Context, p ReportParams) (ReportResul
 		report := model.TrustReport{
 			Site: p.Site, SubjectKind: p.SubjectKind, SubjectID: p.SubjectID,
 			ReporterID: p.ReporterID, ReasonID: reason.ID, Note: p.Note,
-			SubjectSnapshot: p.Snapshot, Weight: weight.Weight,
+			SubjectSnapshot: p.Snapshot, SubjectURL: p.SubjectURL, Weight: weight.Weight,
 			Status: model.ReportStatusReceived,
 		}
 		res := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&report)
@@ -208,6 +214,23 @@ func (s *ReportService) aggregate(tx *gorm.DB, p ReportParams, reportID int64, w
 		return nil, err
 	}
 	return &item.ID, nil
+}
+
+// validateSubjectURL accepts an absent link, and otherwise requires a plausible
+// absolute http(s) URL of bounded length. BFFs construct the link (it is not
+// raw user input), so a violation is a programming error → fail-loud (422).
+func validateSubjectURL(raw *string) error {
+	if raw == nil || *raw == "" {
+		return nil
+	}
+	if len(*raw) > 512 {
+		return ErrInvalidSubjectURL
+	}
+	u, err := url.Parse(*raw)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return ErrInvalidSubjectURL
+	}
+	return nil
 }
 
 // linkReport attaches a single report to a review item (status → linked).

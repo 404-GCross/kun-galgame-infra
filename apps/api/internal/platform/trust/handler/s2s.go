@@ -136,6 +136,7 @@ func (s *Server) submitReport(ctx context.Context, in *submitReportInput) (*subm
 	res, err := s.reports.Submit(ctx, service.ReportParams{
 		Site: site, SubjectKind: in.Body.SubjectKind, SubjectID: in.Body.SubjectID,
 		ReasonKey: in.Body.ReasonKey, Note: in.Body.Note, Snapshot: in.Body.Snapshot,
+		SubjectURL: in.Body.SubjectURL,
 		ReporterID: in.Body.ReporterID,
 	})
 	if err != nil {
@@ -188,6 +189,9 @@ func mapIntakeErr(op string, err error) *houseError {
 	case stderrors.Is(err, service.ErrSubjectKindNotRegistered):
 		return apiErrMsg(http.StatusUnprocessableEntity, errors.ErrValidationFailed,
 			"subject_kind is not registered for this site")
+	case stderrors.Is(err, service.ErrInvalidSubjectURL):
+		return apiErrMsg(http.StatusUnprocessableEntity, errors.ErrValidationFailed,
+			"subject_url must be an absolute http(s) link of at most 512 chars")
 	case stderrors.Is(err, service.ErrReasonUnknown):
 		return apiErrMsg(http.StatusUnprocessableEntity, errors.ErrValidationFailed,
 			"unknown report reason for this site")

@@ -484,6 +484,9 @@ components:
           type: string
         subject_snapshot:
           type: string
+        subject_url:
+          description: submitter-carried deep link to the content in its product context
+          type: string
         weight:
           format: float
           type: number

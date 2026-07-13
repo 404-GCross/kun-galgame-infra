@@ -486,6 +486,8 @@ export interface components {
             subject_id: string;
             subject_kind: string;
             subject_snapshot?: string;
+            /** @description submitter-carried deep link to the content in its product context */
+            subject_url?: string;
             /** Format: float */
             weight: number;
         };

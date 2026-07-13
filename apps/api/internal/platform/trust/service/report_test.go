@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 
@@ -219,5 +220,50 @@ func TestRateLimit(t *testing.T) {
 	})
 	if !errors.Is(err, ErrRateLimited) {
 		t.Fatalf("report %d should be rate-limited, got %v", rateLimitMax+1, err)
+	}
+}
+
+// TestSubjectURL pins the evidence deep link: a valid http(s) link persists on
+// the report row; a non-http scheme or an overlong value fails loud (422 at the
+// handler) instead of silently dropping the link.
+func TestSubjectURL(t *testing.T) {
+	if testDB == nil {
+		t.Skip("TEST_DATABASE_DSN not set")
+	}
+	cleanTables(t)
+	registerKind(t, "site-a", "thing", nil, nil)
+	svc := NewReportService(testDB, newWeigher())
+	ctx := context.Background()
+
+	link := "https://www.kungal.com/topic/123?reply=45"
+	res, err := svc.Submit(ctx, ReportParams{
+		Site: "site-a", SubjectKind: "thing", SubjectID: "1",
+		ReasonKey: "abuse", ReporterID: 42, SubjectURL: &link,
+	})
+	if err != nil {
+		t.Fatalf("submit with url: %v", err)
+	}
+	var got model.TrustReport
+	if err := testDB.Take(&got, res.ReportID).Error; err != nil {
+		t.Fatalf("read report: %v", err)
+	}
+	if got.SubjectURL == nil || *got.SubjectURL != link {
+		t.Fatalf("subject_url not persisted: %v", got.SubjectURL)
+	}
+
+	bad := "javascript:alert(1)"
+	if _, err := svc.Submit(ctx, ReportParams{
+		Site: "site-a", SubjectKind: "thing", SubjectID: "2",
+		ReasonKey: "abuse", ReporterID: 42, SubjectURL: &bad,
+	}); !errors.Is(err, ErrInvalidSubjectURL) {
+		t.Fatalf("non-http scheme must fail loud, got %v", err)
+	}
+
+	long := "https://www.kungal.com/topic/1?x=" + strings.Repeat("a", 512)
+	if _, err := svc.Submit(ctx, ReportParams{
+		Site: "site-a", SubjectKind: "thing", SubjectID: "3",
+		ReasonKey: "abuse", ReporterID: 42, SubjectURL: &long,
+	}); !errors.Is(err, ErrInvalidSubjectURL) {
+		t.Fatalf("overlong url must fail loud, got %v", err)
 	}
 }

@@ -17,6 +17,10 @@ var (
 	// ErrRateLimited is returned when a reporter exceeds the per-hour window
 	// (章程 ruling 6) → structured 429.
 	ErrRateLimited = errors.New("trust: reporter rate limit exceeded")
+	// ErrInvalidSubjectURL is returned when a report's subject_url is not a
+	// plausible http(s) link (BFFs construct it, so a bad value is a programming
+	// error — fail-loud 422 rather than silently dropping the evidence link).
+	ErrInvalidSubjectURL = errors.New("trust: subject_url must be http(s) and at most 512 chars")
 	// ErrReviewItemNotFound is returned when a target review item does not
 	// exist.
 	ErrReviewItemNotFound = errors.New("trust: review item not found")
