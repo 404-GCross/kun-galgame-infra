@@ -523,6 +523,53 @@ func (c *Client) FetchVNScoresBatch(ctx context.Context, ids []string) (map[stri
 	return out, nil
 }
 
+// FetchVNDescriptionsBatch fetches the VN-level description — VNDB's canonical
+// English synopsis, in BBCode — for up to 100 VNs in a single /vn call, keyed by
+// vndb id. A VN present with a null/empty description maps to "" (it exists but
+// has no synopsis); a VN ABSENT from the result does not exist on VNDB (deleted
+// / merged / a fabricated id). The caller relies on that distinction: absent =
+// api_missing, present-but-"" = no_description. The raw BBCode must be run
+// through intronorm before it lands as wiki Markdown. Pass at most 100 ids per
+// call; callers batch larger sets.
+func (c *Client) FetchVNDescriptionsBatch(ctx context.Context, ids []string) (map[string]string, error) {
+	want := make(map[string]bool, len(ids))
+	or := []any{"or"}
+	for _, id := range ids {
+		if id == "" || want[id] {
+			continue
+		}
+		want[id] = true
+		or = append(or, []any{"id", "=", id})
+	}
+	if len(want) == 0 {
+		return map[string]string{}, nil
+	}
+
+	var resp struct {
+		Results []struct {
+			ID          string  `json:"id"`
+			Description *string `json:"description"`
+		} `json:"results"`
+	}
+	if err := c.post(ctx, "/vn", map[string]any{
+		"filters": or,
+		"fields":  "id, description",
+		"results": 100,
+	}, &resp); err != nil {
+		return nil, fmt.Errorf("vn description batch: %w", err)
+	}
+
+	out := make(map[string]string, len(resp.Results))
+	for _, r := range resp.Results {
+		if r.Description != nil {
+			out[r.ID] = *r.Description
+		} else {
+			out[r.ID] = ""
+		}
+	}
+	return out, nil
+}
+
 // VNImage is the per-VN cover image from /vn. ID is the VNDB image id
 // (e.g. "cv12345", stored as galgame_cover.source_key); URL is the t.vndb.org
 // cover URL; Sexual/Violence are VNDB's 0-2 average flag votes (rounded to the
