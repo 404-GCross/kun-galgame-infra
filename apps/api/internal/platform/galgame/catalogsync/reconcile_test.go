@@ -234,6 +234,51 @@ func TestReconcileScenarios(t *testing.T) {
 	assert.Equal(t, int64(7), count(t, "catalog_revision"), "second pass mints no revision")
 }
 
+// TestReconcileWritesBackCatalogWorkID pins the step-34 T1 cross-face pointer:
+// claiming a work backfills wiki galgame.catalog_work_id, idempotently, and a
+// re-run repairs a NULLed / stale cell (the up-front already-claimed backfill).
+func TestReconcileWritesBackCatalogWorkID(t *testing.T) {
+	clean(t)
+	seedGame(t, 1, "v100", nil, "ゲーム1", "", 2020)
+	seedGame(t, 2, "v200", nil, "ゲーム2", "", 2021)
+	ctx := context.Background()
+
+	catalogWorkID := func(gid int64) *int64 {
+		t.Helper()
+		var cwid *int64
+		require.NoError(t, testDB.Raw(`SELECT catalog_work_id FROM galgame WHERE id=?`, gid).Scan(&cwid).Error)
+		return cwid
+	}
+
+	// apply run 1: both works claimed → both pointers backfilled.
+	rc := New(testDB, testDB, testDB, Options{})
+	s1, err := rc.Run(ctx, PhaseClaim)
+	require.NoError(t, err)
+	assert.Equal(t, 2, s1.Claim.ClaimedNew)
+	assert.Equal(t, 2, s1.Claim.WorkIDBackfilled, "both new claims backfilled")
+	for _, gid := range []int64{1, 2} {
+		got := catalogWorkID(gid)
+		require.NotNil(t, got, "galgame %d catalog_work_id set", gid)
+		assert.Equal(t, workOf(t, gid), *got, "galgame %d points at its work", gid)
+	}
+
+	// apply run 2: converged — the backfill writes nothing.
+	s2, err := rc.Run(ctx, PhaseClaim)
+	require.NoError(t, err)
+	assert.Zero(t, s2.Claim.WorkIDBackfilled, "second pass backfills nothing")
+	assert.Equal(t, 2, s2.Claim.WorkIDCovered, "both already-claimed works covered")
+
+	// robustness: NULL one cell → the up-front pass repairs exactly it, even
+	// though no new claim happens (the pointer's only writer is reconcile).
+	require.NoError(t, testDB.Exec(`UPDATE galgame SET catalog_work_id=NULL WHERE id=1`).Error)
+	s3, err := rc.Run(ctx, PhaseClaim)
+	require.NoError(t, err)
+	assert.Equal(t, 1, s3.Claim.WorkIDBackfilled, "only the reset cell is repaired")
+	got := catalogWorkID(1)
+	require.NotNil(t, got)
+	assert.Equal(t, workOf(t, 1), *got)
+}
+
 // --- helpers ---------------------------------------------------------------
 
 func count(t *testing.T, table string) int64 {

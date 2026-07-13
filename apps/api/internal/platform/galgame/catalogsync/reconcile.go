@@ -81,6 +81,12 @@ type ClaimStats struct {
 	// external_id) is recorded negative knowledge. Counted in apply only:
 	// dry-run does not resolve work ids for the claim phase.
 	SkippedRejected int
+	// WorkIDBackfilled reports how many wiki galgame.catalog_work_id cells this
+	// run actually wrote (NULL→id or changed id). Covered is how many claimed
+	// works had an id available to write back (the coverage denominator). In
+	// dry-run WorkIDBackfilled is the count that WOULD change (no write).
+	WorkIDBackfilled int
+	WorkIDCovered    int
 }
 
 // EGStats reports the erogamespace rosetta phase.

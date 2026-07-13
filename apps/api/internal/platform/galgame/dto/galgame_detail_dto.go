@@ -153,32 +153,35 @@ type DetailSeries struct {
 
 // GalgameDetail is the full detail graph.
 type GalgameDetail struct {
-	ID                  int      `json:"id"`
-	VNDBID              string   `json:"vndb_id"`
-	BangumiID           *int     `json:"bid,omitempty"`
-	ReleaseDate         *string  `json:"release_date"`
-	ReleaseDateTBA      bool     `json:"release_date_tba"`
-	ReleasePrecision    string   `json:"release_precision"`
-	NameEnUS            string   `json:"name_en_us"`
-	NameJaJP            string   `json:"name_ja_jp"`
-	NameZhCN            string   `json:"name_zh_cn"`
-	NameZhTW            string   `json:"name_zh_tw"`
-	Banner              string   `json:"banner"`
-	IntroEnUS           string   `json:"intro_en_us"`
-	IntroJaJP           string   `json:"intro_ja_jp"`
-	IntroZhCN           string   `json:"intro_zh_cn"`
-	IntroZhTW           string   `json:"intro_zh_tw"`
-	ContentLimit        string   `json:"content_limit"`
-	Status              int      `json:"status"`
-	View                int      `json:"view"`
-	ResourceUpdateTime  *string  `json:"resource_update_time"`
-	OriginalLanguage    string   `json:"original_language"`
-	AgeLimit            string   `json:"age_limit"`
-	UserID              int      `json:"user_id"`
-	SeriesID            *int     `json:"series_id"`
-	Created             *string  `json:"created"`
-	Updated             *string  `json:"updated"`
-	EffectiveBannerHash *string  `json:"effective_banner_hash,omitempty"`
+	ID                  int     `json:"id"`
+	VNDBID              string  `json:"vndb_id"`
+	BangumiID           *int    `json:"bid,omitempty"`
+	ReleaseDate         *string `json:"release_date"`
+	ReleaseDateTBA      bool    `json:"release_date_tba"`
+	ReleasePrecision    string  `json:"release_precision"`
+	NameEnUS            string  `json:"name_en_us"`
+	NameJaJP            string  `json:"name_ja_jp"`
+	NameZhCN            string  `json:"name_zh_cn"`
+	NameZhTW            string  `json:"name_zh_tw"`
+	Banner              string  `json:"banner"`
+	IntroEnUS           string  `json:"intro_en_us"`
+	IntroJaJP           string  `json:"intro_ja_jp"`
+	IntroZhCN           string  `json:"intro_zh_cn"`
+	IntroZhTW           string  `json:"intro_zh_tw"`
+	ContentLimit        string  `json:"content_limit"`
+	Status              int     `json:"status"`
+	View                int     `json:"view"`
+	ResourceUpdateTime  *string `json:"resource_update_time"`
+	OriginalLanguage    string  `json:"original_language"`
+	AgeLimit            string  `json:"age_limit"`
+	UserID              int     `json:"user_id"`
+	SeriesID            *int    `json:"series_id"`
+	Created             *string `json:"created"`
+	Updated             *string `json:"updated"`
+	EffectiveBannerHash *string `json:"effective_banner_hash,omitempty"`
+	// CatalogWorkID mirrors model.Galgame.CatalogWorkID — the cross-face pointer
+	// to the catalog_work identity (NULL until the work is claimed + reconciled).
+	CatalogWorkID *int64 `json:"catalog_work_id,omitempty"`
 
 	Series      *DetailSeries            `json:"series,omitempty"`
 	Alias       []DetailAlias            `json:"alias,omitempty"`
@@ -220,6 +223,7 @@ func NewGalgameDetail(g *model.Galgame) GalgameDetail {
 		Created:             fmtTS(g.Created),
 		Updated:             fmtTS(g.Updated),
 		EffectiveBannerHash: g.EffectiveBannerHash,
+		CatalogWorkID:       g.CatalogWorkID,
 	}
 
 	if g.Series != nil {

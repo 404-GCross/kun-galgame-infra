@@ -1,5 +1,27 @@
 components:
   schemas:
+    BangumiScore:
+      additionalProperties: false
+      properties:
+        rank:
+          format: int64
+          type: integer
+        score:
+          format: double
+          type:
+            - number
+            - "null"
+        total:
+          format: int64
+          type: integer
+        url:
+          type: string
+      required:
+        - score
+        - rank
+        - total
+        - url
+      type: object
     CalEnvelopeCheckVNDBResult:
       additionalProperties: false
       properties:
@@ -66,6 +88,28 @@ components:
         - message
         - data
       type: object
+    CalEnvelopeGalgameScores:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/CalEnvelopeGalgameScores.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/GalgameScores"
+        message:
+          type: string
+      required:
+        - code
+        - message
+        - data
+      type: object
     CalEnvelopeGalgameSearchData:
       additionalProperties: false
       properties:
@@ -81,6 +125,28 @@ components:
           type: integer
         data:
           $ref: "#/components/schemas/GalgameSearchData"
+        message:
+          type: string
+      required:
+        - code
+        - message
+        - data
+      type: object
+    CalEnvelopeGalgameStatsData:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/CalEnvelopeGalgameStatsData.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/GalgameStatsData"
         message:
           type: string
       required:
@@ -945,6 +1011,24 @@ components:
         - created
         - updated
       type: object
+    EGScore:
+      additionalProperties: false
+      properties:
+        median:
+          format: int64
+          type:
+            - integer
+            - "null"
+        url:
+          type: string
+        vote_count:
+          format: int64
+          type: integer
+      required:
+        - median
+        - vote_count
+        - url
+      type: object
     EntityHead:
       additionalProperties: false
       properties:
@@ -1128,6 +1212,9 @@ components:
         bid:
           format: int64
           type: integer
+        catalog_work_id:
+          format: int64
+          type: integer
         content_limit:
           type: string
         contributor:
@@ -1266,6 +1353,9 @@ components:
           type: string
         banner:
           type: string
+        catalog_work_id:
+          format: int64
+          type: integer
         content_limit:
           type: string
         effective_banner_hash:
@@ -1369,6 +1459,25 @@ components:
       required:
         - items
         - total
+      type: object
+    GalgameScores:
+      additionalProperties: false
+      properties:
+        bangumi:
+          $ref: "#/components/schemas/BangumiScore"
+        eg:
+          $ref: "#/components/schemas/EGScore"
+        synced_at:
+          type:
+            - string
+            - "null"
+        vndb:
+          $ref: "#/components/schemas/VNDBScore"
+      required:
+        - vndb
+        - bangumi
+        - eg
+        - synced_at
       type: object
     GalgameSearchData:
       additionalProperties: false
@@ -1550,6 +1659,42 @@ components:
         - release_date_tba
         - updated_ts
         - created_ts
+      type: object
+    GalgameStatsData:
+      additionalProperties: false
+      properties:
+        built_at:
+          type: string
+        coverage:
+          $ref: "#/components/schemas/GalgameStatsEntry"
+        release_years:
+          $ref: "#/components/schemas/GalgameStatsEntry"
+        score_histogram_bangumi:
+          $ref: "#/components/schemas/GalgameStatsEntry"
+        score_histogram_eg:
+          $ref: "#/components/schemas/GalgameStatsEntry"
+        score_histogram_vndb:
+          $ref: "#/components/schemas/GalgameStatsEntry"
+        yearly_scores:
+          $ref: "#/components/schemas/GalgameStatsEntry"
+      required:
+        - release_years
+        - score_histogram_vndb
+        - score_histogram_bangumi
+        - score_histogram_eg
+        - yearly_scores
+        - coverage
+        - built_at
+      type: object
+    GalgameStatsEntry:
+      additionalProperties: false
+      properties:
+        built_at:
+          type: string
+        payload: {}
+      required:
+        - payload
+        - built_at
       type: object
     MessageFeedResponse:
       additionalProperties: false
@@ -2295,6 +2440,24 @@ components:
         - pr_declined
         - pr_pending
       type: object
+    VNDBScore:
+      additionalProperties: false
+      properties:
+        rating:
+          format: double
+          type:
+            - number
+            - "null"
+        url:
+          type: string
+        vote_count:
+          format: int64
+          type: integer
+      required:
+        - rating
+        - vote_count
+        - url
+      type: object
 info:
   title: KUN Galgame Wiki — Reads
   version: 1.0.0
@@ -2854,6 +3017,25 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: "Full-text galgame search (Meilisearch): filters, facets, highlights, projection"
+      tags:
+        - galgame-read
+  /api/galgame/stats:
+    get:
+      operationId: getGalgameStats
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CalEnvelopeGalgameStatsData"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Cross-source galgame statistics overview (release-year distribution / per-source score histograms / yearly averages / coverage) — verbatim snapshot payloads, ETag-cached
       tags:
         - galgame-read
   /api/galgame/tags/{id}/galgames:
@@ -3438,5 +3620,33 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: A revision's diff vs its predecessor (changed keys + old/new snapshot + entity names)
+      tags:
+        - galgame-read
+  /api/galgame/{gid}/scores:
+    get:
+      operationId: getGalgameScores
+      parameters:
+        - description: Galgame ID
+          in: path
+          name: gid
+          required: true
+          schema:
+            description: Galgame ID
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CalEnvelopeGalgameScores"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Three-source (VNDB / Bangumi / EG) rating snapshot for one galgame — each source carries a backend-composed attribution URL; a missing source is null
       tags:
         - galgame-read

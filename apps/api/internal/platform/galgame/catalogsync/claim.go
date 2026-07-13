@@ -2,7 +2,9 @@ package catalogsync
 
 import (
 	"context"
+	"fmt"
 	"strconv"
+	"strings"
 
 	"api/internal/platform/catalog/model"
 	"api/internal/platform/catalog/repository"
@@ -29,6 +31,20 @@ func (r *Reconciler) runClaim(ctx context.Context) (ClaimStats, error) {
 		return stats, err
 	}
 	type4 := r.type4IDs()
+
+	// Backfill the wiki cross-face pointer (galgame.catalog_work_id, step 34 T1)
+	// for the already-claimed set FIRST — before the claim loop that may mint new
+	// works. A claim conflict aborts the loop, but the already-claimed pointers
+	// (the bulk) must still land: the claims are maintained here, not on the
+	// galgame write path, so this reconcile is their only writer. Idempotent —
+	// a converged re-run changes nothing. Newly-minted works are backfilled
+	// individually as each ClaimWork succeeds below.
+	stats.WorkIDCovered = len(claimed)
+	backfilled, err := r.writeBackWorkIDs(claimed)
+	if err != nil {
+		return stats, fmt.Errorf("write back catalog_work_id: %w", err)
+	}
+	stats.WorkIDBackfilled = backfilled
 
 	// Negative-knowledge gate for the exact anchors: an anchor a human has
 	// rejected for the resolved work is dropped and counted. Fires only on the
@@ -74,7 +90,7 @@ func (r *Reconciler) runClaim(ctx context.Context) (ClaimStats, error) {
 			continue
 		}
 
-		_, created, err := r.works.ClaimWork(ctx, service.ClaimWorkParams{
+		workID, created, err := r.works.ClaimWork(ctx, service.ClaimWorkParams{
 			MediumID:       mediumGalgame,
 			Site:           siteGalgame,
 			ProductWorkID:  g.ID,
@@ -87,13 +103,82 @@ func (r *Reconciler) runClaim(ctx context.Context) (ClaimStats, error) {
 		if err != nil {
 			return stats, err
 		}
+		// Backfill this freshly-minted work's pointer immediately (cheap — only
+		// the handful of newly-claimed games reach here; the bulk was done above).
+		n, err := r.writeBackWorkIDs(map[int64]int64{g.ID: workID})
+		if err != nil {
+			return stats, fmt.Errorf("write back catalog_work_id: %w", err)
+		}
+		stats.WorkIDBackfilled += n
+		stats.WorkIDCovered++
 		if created {
 			stats.ClaimedNew++
 		} else {
 			stats.AlreadyClaimed++
 		}
 	}
+
 	return stats, nil
+}
+
+// writeBackWorkIDs sets wiki galgame.catalog_work_id from the given galgame_id →
+// catalog_work id pairs, touching only cells that are NULL or differ (so a
+// re-run writes nothing once converged). Returns rows actually changed; in
+// dry-run it counts the rows that WOULD change without writing. Chunked so the
+// VALUES list stays bounded on the full ~62k-work backfill. The claims this
+// mirrors are owned by reconcile-galgame-works, so this is the wiki's single
+// source for the cross-face pointer (there is no live catalog claim on the
+// galgame write path).
+func (r *Reconciler) writeBackWorkIDs(pairs map[int64]int64) (int, error) {
+	if len(pairs) == 0 {
+		return 0, nil
+	}
+	ids := make([]int64, 0, len(pairs))
+	for id := range pairs {
+		ids = append(ids, id)
+	}
+	const chunk = 1000
+	changed := 0
+	for start := 0; start < len(ids); start += chunk {
+		end := min(start+chunk, len(ids))
+		batch := ids[start:end]
+		// Build a VALUES list of (galgame_id, work_id) pairs; the first tuple is
+		// cast so Postgres infers bigint for the derived columns.
+		var sb strings.Builder
+		args := make([]any, 0, len(batch)*2)
+		for i, id := range batch {
+			if i > 0 {
+				sb.WriteString(",")
+			}
+			if i == 0 {
+				sb.WriteString("(?::bigint,?::bigint)")
+			} else {
+				sb.WriteString("(?,?)")
+			}
+			args = append(args, id, pairs[id])
+		}
+		values := sb.String()
+		if r.dryRun {
+			var n int64
+			q := `SELECT count(*) FROM galgame AS g
+			      JOIN (VALUES ` + values + `) AS v(gid, wid) ON g.id = v.gid
+			      WHERE g.catalog_work_id IS NULL OR g.catalog_work_id <> v.wid`
+			if err := r.wiki.Raw(q, args...).Scan(&n).Error; err != nil {
+				return changed, err
+			}
+			changed += int(n)
+			continue
+		}
+		q := `UPDATE galgame AS g SET catalog_work_id = v.wid
+		      FROM (VALUES ` + values + `) AS v(gid, wid)
+		      WHERE g.id = v.gid AND (g.catalog_work_id IS NULL OR g.catalog_work_id <> v.wid)`
+		res := r.wiki.Exec(q, args...)
+		if res.Error != nil {
+			return changed, res.Error
+		}
+		changed += int(res.RowsAffected)
+	}
+	return changed, nil
 }
 
 // displayName picks the wiki main name for olang=ja: Japanese first, then the

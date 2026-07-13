@@ -197,7 +197,7 @@ const briefColumns = "id, vndb_id, name_en_us, name_ja_jp, name_zh_cn, name_zh_t
 	"banner, content_limit, status, user_id, resource_update_time, original_language, age_limit"
 
 const detailColumns = briefColumns +
-	", intro_en_us, intro_ja_jp, intro_zh_cn, intro_zh_tw, release_date, release_date_tba"
+	", intro_en_us, intro_ja_jp, intro_zh_cn, intro_zh_tw, release_date, release_date_tba, catalog_work_id"
 
 // galgameVisibilityScope is the shared row-visibility filter for the brief /
 // detail batch queries: published (status=0) plus, when a viewer is given, that

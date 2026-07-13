@@ -247,6 +247,9 @@ func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB, se
 	galgame.Get("/calendar", galgameH.Calendar)
 	galgame.Get("/calendar/pending", galgameH.CalendarPending)
 	galgame.Get("/calendar/tba", galgameH.CalendarTBA)
+	// Cross-source stats overview (step 34). Static path → before the /:gid
+	// catch-all. Public; ETag-cached like the calendar.
+	galgame.Get("/stats", galgameH.Stats)
 	// Entity reverse-lookups (step 20). Static multi-segment paths, registered
 	// before the /:gid catch-all so ":gid" never binds "officials"/"tags".
 	// Public (SFW-gated via content_limit); powers downstream entity pages.
@@ -272,6 +275,8 @@ func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB, se
 	galgame.Get("/:gid/links", linkH.ListLinks)
 	galgame.Get("/:gid/aliases", linkH.ListAliases)
 	galgame.Get("/:gid/contributors", contributorH.List)
+	// Three-source score snapshot (step 34). Public; display-only (no gate).
+	galgame.Get("/:gid/scores", galgameH.Scores)
 
 	// ── Cross-service endpoints (OAuth Client Basic Auth) ──
 	//

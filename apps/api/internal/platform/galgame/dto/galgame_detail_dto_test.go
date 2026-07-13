@@ -22,12 +22,13 @@ func TestGalgameDetail_WireIdenticalToModel(t *testing.T) {
 	rd := model.Date(time.Date(2026, 7, 9, 0, 0, 0, 0, time.UTC))
 	bid := 555
 	sid := 7
+	cwid := int64(80123)
 	g := &model.Galgame{
-		ID: 1, VNDBID: "v54934", BangumiID: &bid,
+		ID: 1, VNDBID: "v54934", BangumiID: &bid, CatalogWorkID: &cwid,
 		ReleaseDate: &rd, ReleaseDateTBA: false, ReleasePrecision: "day",
 		NameEnUS: "Name", NameJaJP: "名前", NameZhCN: "名字", NameZhTW: "名字",
-		Banner:       "https://t.vndb.org/cv/00/1.jpg",
-		IntroEnUS:    "intro-en", IntroJaJP: "intro-ja", IntroZhCN: "intro-zh", IntroZhTW: "intro-tw",
+		Banner:    "https://t.vndb.org/cv/00/1.jpg",
+		IntroEnUS: "intro-en", IntroJaJP: "intro-ja", IntroZhCN: "intro-zh", IntroZhTW: "intro-tw",
 		ContentLimit: "sfw", Status: 0, View: 100,
 		ResourceUpdateTime: ts, OriginalLanguage: "ja-jp", AgeLimit: "r18",
 		UserID: 1, SeriesID: &sid, Created: ts, Updated: ts,

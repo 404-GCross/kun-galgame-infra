@@ -231,6 +231,9 @@ type GalgameDetailBrief struct {
 	IntroZhCN      string   `json:"intro_zh_cn"`
 	IntroZhTW      string   `json:"intro_zh_tw"`
 	Officials      []string `json:"officials"`
+	// CatalogWorkID is the cross-face pointer to catalog_work (NULL until the
+	// work is claimed + reconciled). Additive; mirrors GalgameDetail's field.
+	CatalogWorkID *int64 `json:"catalog_work_id,omitempty"`
 }
 
 // CheckVNDBRequest represents a VNDB existence check

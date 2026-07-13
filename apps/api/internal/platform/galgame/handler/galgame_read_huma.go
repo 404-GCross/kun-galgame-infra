@@ -203,6 +203,17 @@ type tagGalgamesOutput struct {
 	Body calEnvelope[dto.TagGalgamesResponse]
 }
 
+// scores / stats — the cross-source read face (step 34). Served by the Fiber
+// handlers in scores_handler.go; spec-only here so the OpenAPI derives from the
+// same dto.* types.
+type scoresOutput struct {
+	Body calEnvelope[dto.GalgameScores]
+}
+type statsInput struct{}
+type statsOutput struct {
+	Body calEnvelope[dto.GalgameStatsData]
+}
+
 // SetupGalgameReadSpec registers the galgame-wiki read operations to derive their
 // spec. Handlers are stubs (never invoked — Fiber serves these paths).
 func SetupGalgameReadSpec(app *fiber.App) huma.API {
@@ -317,6 +328,14 @@ func SetupGalgameReadSpec(app *fiber.App) huma.API {
 	}, func(context.Context, *entityGalgamesInput) (*tagGalgamesOutput, error) {
 		return &tagGalgamesOutput{}, nil
 	})
+	huma.Register(api, huma.Operation{
+		OperationID: "getGalgameScores", Method: http.MethodGet, Path: "/api/galgame/{gid}/scores",
+		Summary: "Three-source (VNDB / Bangumi / EG) rating snapshot for one galgame — each source carries a backend-composed attribution URL; a missing source is null", Tags: tags,
+	}, func(context.Context, *gidInput) (*scoresOutput, error) { return &scoresOutput{}, nil })
+	huma.Register(api, huma.Operation{
+		OperationID: "getGalgameStats", Method: http.MethodGet, Path: "/api/galgame/stats",
+		Summary: "Cross-source galgame statistics overview (release-year distribution / per-source score histograms / yearly averages / coverage) — verbatim snapshot payloads, ETag-cached", Tags: tags,
+	}, func(context.Context, *statsInput) (*statsOutput, error) { return &statsOutput{}, nil })
 	registerGalgameSearchOps(api, tags)
 	return api
 }

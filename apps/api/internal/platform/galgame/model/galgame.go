@@ -26,8 +26,8 @@ type Galgame struct {
 	// serializes as "YYYY-MM-DD" (the documented + validated contract),
 	// not RFC3339 "2019-08-16T00:00:00Z". Date's Scanner/Valuer + the
 	// gorm `type:date` tag keep it a date-only PG column.
-	ReleaseDate    *Date  `gorm:"column:release_date;type:date;index" json:"release_date"`
-	ReleaseDateTBA bool   `gorm:"column:release_date_tba;not null;default:false" json:"release_date_tba"`
+	ReleaseDate    *Date `gorm:"column:release_date;type:date;index" json:"release_date"`
+	ReleaseDateTBA bool  `gorm:"column:release_date_tba;not null;default:false" json:"release_date_tba"`
 	// ReleasePrecision records how precise ReleaseDate is (day/month/year/tba/
 	// unknown) — the single source of truth for date precision. ReleaseDate is
 	// normalized (day-unknown → 1st of month, month-unknown → Jan 1), so a
@@ -37,10 +37,10 @@ type Galgame struct {
 	// scheduled to be retired once all readers move to ReleasePrecision.
 	// See docs/galgame_wiki/06-release-calendar-design.md §2.
 	ReleasePrecision string `gorm:"column:release_precision;size:10;not null;default:'unknown'" json:"release_precision"`
-	NameEnUS       string `gorm:"column:name_en_us;size:1000;default:''" json:"name_en_us"`
-	NameJaJP       string `gorm:"column:name_ja_jp;size:1000;default:''" json:"name_ja_jp"`
-	NameZhCN       string `gorm:"column:name_zh_cn;size:1000;default:''" json:"name_zh_cn"`
-	NameZhTW       string `gorm:"column:name_zh_tw;size:1000;default:''" json:"name_zh_tw"`
+	NameEnUS         string `gorm:"column:name_en_us;size:1000;default:''" json:"name_en_us"`
+	NameJaJP         string `gorm:"column:name_ja_jp;size:1000;default:''" json:"name_ja_jp"`
+	NameZhCN         string `gorm:"column:name_zh_cn;size:1000;default:''" json:"name_zh_cn"`
+	NameZhTW         string `gorm:"column:name_zh_tw;size:1000;default:''" json:"name_zh_tw"`
 	// Banner is the legacy URL string. Kept as permanent fallback during
 	// migration period and as the original record for old galgames. The
 	// migration cmd `migrate-galgame-banners-to-image-service` reads from
@@ -72,6 +72,15 @@ type Galgame struct {
 	SeriesID           *int      `gorm:"column:series_id;index" json:"series_id"`
 	Created            Timestamp `gorm:"autoCreateTime" json:"created"`
 	Updated            Timestamp `gorm:"autoUpdateTime" json:"updated"`
+
+	// CatalogWorkID is the cross-face pointer to this galgame's catalog_work id
+	// (the platform-domain registry identity). Nullable, no default: NULL until
+	// the work has been claimed. It is NOT maintained on the write/create path
+	// (the wiki has no live catalog claim) — reconcile-galgame-works writes it
+	// back when it registers/reconciles the claim, so a stale-but-eventually-
+	// consistent pointer is the contract. Consumers (kungal step 36/37) use it
+	// to reach catalog credits/people for this title.
+	CatalogWorkID *int64 `gorm:"column:catalog_work_id" json:"catalog_work_id,omitempty"`
 
 	// Relations (galgame service owns these)
 	Series      *GalgameSeries            `gorm:"foreignKey:SeriesID" json:"series,omitempty"`

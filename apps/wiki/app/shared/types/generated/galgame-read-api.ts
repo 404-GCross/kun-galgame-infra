@@ -157,6 +157,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/galgame/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Cross-source galgame statistics overview (release-year distribution / per-source score histograms / yearly averages / coverage) — verbatim snapshot payloads, ETag-cached */
+        get: operations["getGalgameStats"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/galgame/tags/{id}/galgames": {
         parameters: {
             query?: never;
@@ -395,10 +412,36 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/galgame/{gid}/scores": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Three-source (VNDB / Bangumi / EG) rating snapshot for one galgame — each source carries a backend-composed attribution URL; a missing source is null */
+        get: operations["getGalgameScores"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        BangumiScore: {
+            /** Format: int64 */
+            rank: number;
+            /** Format: double */
+            score: number | null;
+            /** Format: int64 */
+            total: number;
+            url: string;
+        };
         CalEnvelopeCheckVNDBResult: {
             /**
              * Format: uri
@@ -435,6 +478,18 @@ export interface components {
             data: components["schemas"]["GalgameListData"];
             message: string;
         };
+        CalEnvelopeGalgameScores: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/CalEnvelopeGalgameScores.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            code: number;
+            data: components["schemas"]["GalgameScores"];
+            message: string;
+        };
         CalEnvelopeGalgameSearchData: {
             /**
              * Format: uri
@@ -445,6 +500,18 @@ export interface components {
             /** Format: int64 */
             code: number;
             data: components["schemas"]["GalgameSearchData"];
+            message: string;
+        };
+        CalEnvelopeGalgameStatsData: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/CalEnvelopeGalgameStatsData.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            code: number;
+            data: components["schemas"]["GalgameStatsData"];
             message: string;
         };
         CalEnvelopeListDetailAlias: {
@@ -828,6 +895,13 @@ export interface components {
             tag_id: number;
             updated: string | null;
         };
+        EGScore: {
+            /** Format: int64 */
+            median: number | null;
+            url: string;
+            /** Format: int64 */
+            vote_count: number;
+        };
         EntityHead: {
             aliases: string[] | null;
             category: string;
@@ -923,6 +997,8 @@ export interface components {
             banner: string;
             /** Format: int64 */
             bid?: number;
+            /** Format: int64 */
+            catalog_work_id?: number;
             content_limit: string;
             contributor?: components["schemas"]["DetailContributor"][] | null;
             covers?: components["schemas"]["CalendarCover"][] | null;
@@ -963,6 +1039,8 @@ export interface components {
         GalgameDetailBrief: {
             age_limit: string;
             banner: string;
+            /** Format: int64 */
+            catalog_work_id?: number;
             content_limit: string;
             effective_banner_hash?: string;
             /** Format: int64 */
@@ -1001,6 +1079,12 @@ export interface components {
             items: components["schemas"]["GalgameDetail"][] | null;
             /** Format: int64 */
             total: number;
+        };
+        GalgameScores: {
+            bangumi: components["schemas"]["BangumiScore"];
+            eg: components["schemas"]["EGScore"];
+            synced_at: string | null;
+            vndb: components["schemas"]["VNDBScore"];
         };
         GalgameSearchData: {
             /** @description facet → value → count (facets=true) */
@@ -1065,6 +1149,19 @@ export interface components {
             /** Format: int64 */
             view: number;
             vndb_id: string;
+        };
+        GalgameStatsData: {
+            built_at: string;
+            coverage: components["schemas"]["GalgameStatsEntry"];
+            release_years: components["schemas"]["GalgameStatsEntry"];
+            score_histogram_bangumi: components["schemas"]["GalgameStatsEntry"];
+            score_histogram_eg: components["schemas"]["GalgameStatsEntry"];
+            score_histogram_vndb: components["schemas"]["GalgameStatsEntry"];
+            yearly_scores: components["schemas"]["GalgameStatsEntry"];
+        };
+        GalgameStatsEntry: {
+            built_at: string;
+            payload: unknown;
         };
         MessageFeedResponse: {
             has_more: boolean;
@@ -1345,6 +1442,13 @@ export interface components {
             pr_submitted: number;
             /** Format: int64 */
             revision_count: number;
+        };
+        VNDBScore: {
+            /** Format: double */
+            rating: number | null;
+            url: string;
+            /** Format: int64 */
+            vote_count: number;
         };
     };
     responses: never;
@@ -1709,6 +1813,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CalEnvelopeGalgameSearchData"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    getGalgameStats: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalEnvelopeGalgameStatsData"];
                 };
             };
             /** @description Error */
@@ -2209,6 +2342,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CalEnvelopeRevisionDiffData"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    getGalgameScores: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Galgame ID */
+                gid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalEnvelopeGalgameScores"];
                 };
             };
             /** @description Error */

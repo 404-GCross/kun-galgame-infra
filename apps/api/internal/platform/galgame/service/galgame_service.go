@@ -670,6 +670,7 @@ func (s *GalgameService) BatchDetailWithViewer(ctx context.Context, ids []int, v
 			IntroZhCN:      g.IntroZhCN,
 			IntroZhTW:      g.IntroZhTW,
 			Officials:      names,
+			CatalogWorkID:  g.CatalogWorkID,
 		}
 	}
 	// Enrich the embedded briefs' banner metadata in one batched lookup.
