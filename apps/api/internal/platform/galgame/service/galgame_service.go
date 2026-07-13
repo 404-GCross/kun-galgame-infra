@@ -640,6 +640,7 @@ func (s *GalgameService) BatchDetailWithViewer(ctx context.Context, ids []int, v
 		return nil, err
 	}
 	pinned := s.pinnedCovers(ctx, galgames)
+	portraits := s.pinnedPortraits(ctx, galgames)
 
 	resultIDs := make([]int, 0, len(galgames))
 	for i := range galgames {
@@ -661,7 +662,7 @@ func (s *GalgameService) BatchDetailWithViewer(ctx context.Context, ids []int, v
 		if names == nil {
 			names = []string{}
 		}
-		items[i] = dto.GalgameDetailBrief{
+		item := dto.GalgameDetailBrief{
 			GalgameBrief:   briefFromModel(g, pinned),
 			ReleaseDate:    releaseDate,
 			ReleaseDateTBA: g.ReleaseDateTBA,
@@ -672,6 +673,10 @@ func (s *GalgameService) BatchDetailWithViewer(ctx context.Context, ids []int, v
 			Officials:      names,
 			CatalogWorkID:  g.CatalogWorkID,
 		}
+		if h, ok := portraits[g.ID]; ok {
+			item.EffectivePortraitHash = &h
+		}
+		items[i] = item
 	}
 	// Enrich the embedded briefs' banner metadata in one batched lookup.
 	ptrs := make([]*dto.GalgameBrief, len(items))
@@ -679,7 +684,54 @@ func (s *GalgameService) BatchDetailWithViewer(ctx context.Context, ids []int, v
 		ptrs[i] = &items[i].GalgameBrief
 	}
 	s.enrichBriefBanners(ctx, ptrs)
+	// Enrich the portrait pins' metadata in a second batched lookup so a
+	// vertical card reserves the right aspect ratio with no layout shift.
+	s.enrichDetailBriefPortraits(ctx, items)
 	return items, nil
+}
+
+// pinnedPortraits batches the pinned-portrait (portrait_pinned) hash lookup for
+// a set of galgames into {id → image_hash}. Non-fatal on error (empty map →
+// briefs simply carry no portrait). Sibling of pinnedCovers.
+func (s *GalgameService) pinnedPortraits(ctx context.Context, galgames []model.Galgame) map[int]string {
+	ids := make([]int, 0, len(galgames))
+	for i := range galgames {
+		ids = append(ids, galgames[i].ID)
+	}
+	portraits, err := s.galgameRepo.PinnedPortraitHashes(ctx, ids)
+	if err != nil {
+		return map[int]string{}
+	}
+	return portraits
+}
+
+// enrichDetailBriefPortraits fills EffectivePortrait{Width,Height,Thumbhash} on
+// the detail briefs from image_service in one batched lookup. No-op when
+// enrichment is unwired or no brief carries a portrait pin.
+func (s *GalgameService) enrichDetailBriefPortraits(ctx context.Context, items []dto.GalgameDetailBrief) {
+	if s.imageMeta == nil || len(items) == 0 {
+		return
+	}
+	hashes := make([]string, 0, len(items))
+	for i := range items {
+		if items[i].EffectivePortraitHash != nil {
+			hashes = append(hashes, *items[i].EffectivePortraitHash)
+		}
+	}
+	metas := s.resolveImageMeta(ctx, hashes)
+	if len(metas) == 0 {
+		return
+	}
+	for i := range items {
+		if items[i].EffectivePortraitHash == nil {
+			continue
+		}
+		if m, ok := metas[*items[i].EffectivePortraitHash]; ok {
+			items[i].EffectivePortraitWidth = m.Width
+			items[i].EffectivePortraitHeight = m.Height
+			items[i].EffectivePortraitThumbhash = m.Thumbhash
+		}
+	}
 }
 
 // CheckVNDB checks if a VNDB ID already exists

@@ -1004,6 +1004,7 @@ export interface components {
             covers?: components["schemas"]["CalendarCover"][] | null;
             created: string | null;
             effective_banner_hash?: string;
+            effective_portrait_hash?: string;
             engine?: components["schemas"]["DetailEngineRelation"][] | null;
             /** Format: int64 */
             id: number;
@@ -1048,6 +1049,12 @@ export interface components {
             effective_banner_thumbhash?: string;
             /** Format: int64 */
             effective_banner_width?: number;
+            effective_portrait_hash?: string;
+            /** Format: int64 */
+            effective_portrait_height?: number;
+            effective_portrait_thumbhash?: string;
+            /** Format: int64 */
+            effective_portrait_width?: number;
             /** Format: int64 */
             id: number;
             intro_en_us: string;

@@ -36,6 +36,7 @@ func main() {
 	bgmGap := flag.Duration("bgm-gap", 700*time.Millisecond, "min delay between Bangumi API calls")
 	bgmFallback := flag.Bool("bgm-fallback", true, "try Bangumi for candidates VNDB cannot cover")
 	imageBaseURL := flag.String("image-base-url", "", "image_service base override (point at the LOCAL compose service, e.g. http://127.0.0.1:15006)")
+	catalogDSN := flag.String("catalog-dsn", "", "catalog DSN for the bangumi bid anchor source — ALWAYS the rehearsal copy (kun_catalog_rehearsal), never live kun_catalog; empty disables the BGM fallback")
 	flag.Parse()
 
 	cfg, err := config.Load()
@@ -45,6 +46,8 @@ func main() {
 	}
 	logger.Init(cfg.Server.Env)
 
+	// KUN_BANGUMI_TOKEN (loaded from .env by config.Load) → Bearer auth so the
+	// BGM API reveals R18 subjects. Never logged.
 	sum, err := portraitfill.Run(context.Background(), cfg, portraitfill.Opts{
 		Apply:        *apply,
 		Limit:        *limit,
@@ -54,6 +57,8 @@ func main() {
 		BGMGap:       *bgmGap,
 		BGMFallback:  *bgmFallback,
 		ImageBaseURL: *imageBaseURL,
+		CatalogDSN:   *catalogDSN,
+		BangumiToken: os.Getenv("KUN_BANGUMI_TOKEN"),
 	})
 	if sum != nil {
 		slog.Info("fill-portrait-covers summary", "summary", sum)

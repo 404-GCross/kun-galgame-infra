@@ -73,6 +73,8 @@ func (r *GalgameRepository) FindByID(ctx context.Context, id int) (*model.Galgam
 	// so List / ListMine / FindByID share one implementation of the
 	// "pinned cover" rule.
 	model.PopulateEffectiveBanner(&galgame)
+	// Portrait pin (vertical banner) — same loaded Cover list, distinct flag.
+	model.PopulateEffectivePortrait(&galgame)
 	return &galgame, nil
 }
 
@@ -331,6 +333,34 @@ func (r *GalgameRepository) PinnedCoverHashes(ctx context.Context, ids []int) (m
 		Model(&model.GalgameCover{}).
 		Select("galgame_id, image_hash").
 		Where("galgame_id IN ? AND sort_order = 0", ids).
+		Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, r := range rows {
+		out[r.GalgameID] = r.ImageHash
+	}
+	return out, nil
+}
+
+// PinnedPortraitHashes returns the {galgame_id → image_hash} mapping of the
+// pinned PORTRAIT cover (portrait_pinned = true) for each id. Galgames with no
+// pinned portrait are absent from the map. The batch/view=detail sibling of
+// PinnedCoverHashes; populates GalgameDetailBrief.EffectivePortraitHash without
+// preloading the whole cover set. Safe for empty input.
+func (r *GalgameRepository) PinnedPortraitHashes(ctx context.Context, ids []int) (map[int]string, error) {
+	out := make(map[int]string, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	type row struct {
+		GalgameID int
+		ImageHash string
+	}
+	var rows []row
+	if err := r.db.WithContext(ctx).
+		Model(&model.GalgameCover{}).
+		Select("galgame_id, image_hash").
+		Where("galgame_id IN ? AND portrait_pinned", ids).
 		Find(&rows).Error; err != nil {
 		return nil, err
 	}

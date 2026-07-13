@@ -179,6 +179,12 @@ type GalgameDetail struct {
 	Created             *string `json:"created"`
 	Updated             *string `json:"updated"`
 	EffectiveBannerHash *string `json:"effective_banner_hash,omitempty"`
+	// EffectivePortraitHash is the pinned PORTRAIT cover's image_hash (the
+	// vertical companion to effective_banner_hash) — nil/omitted when the
+	// galgame has no pinned portrait. Its intrinsic dims live on the matching
+	// covers[] entry (all covers are dims-enriched on the detail path), so no
+	// separate width/height is carried here (symmetric with effective_banner).
+	EffectivePortraitHash *string `json:"effective_portrait_hash,omitempty"`
 	// CatalogWorkID mirrors model.Galgame.CatalogWorkID — the cross-face pointer
 	// to the catalog_work identity (NULL until the work is claimed + reconciled).
 	CatalogWorkID *int64 `json:"catalog_work_id,omitempty"`
@@ -197,33 +203,34 @@ type GalgameDetail struct {
 // NewGalgameDetail maps a FindByID-preloaded model.Galgame to the typed detail.
 func NewGalgameDetail(g *model.Galgame) GalgameDetail {
 	d := GalgameDetail{
-		ID:                  g.ID,
-		VNDBID:              g.VNDBID,
-		BangumiID:           g.BangumiID,
-		ReleaseDate:         fmtDate(g.ReleaseDate),
-		ReleaseDateTBA:      g.ReleaseDateTBA,
-		ReleasePrecision:    g.ReleasePrecision,
-		NameEnUS:            g.NameEnUS,
-		NameJaJP:            g.NameJaJP,
-		NameZhCN:            g.NameZhCN,
-		NameZhTW:            g.NameZhTW,
-		Banner:              g.Banner,
-		IntroEnUS:           g.IntroEnUS,
-		IntroJaJP:           g.IntroJaJP,
-		IntroZhCN:           g.IntroZhCN,
-		IntroZhTW:           g.IntroZhTW,
-		ContentLimit:        g.ContentLimit,
-		Status:              g.Status,
-		View:                g.View,
-		ResourceUpdateTime:  fmtTS(g.ResourceUpdateTime),
-		OriginalLanguage:    g.OriginalLanguage,
-		AgeLimit:            g.AgeLimit,
-		UserID:              g.UserID,
-		SeriesID:            g.SeriesID,
-		Created:             fmtTS(g.Created),
-		Updated:             fmtTS(g.Updated),
-		EffectiveBannerHash: g.EffectiveBannerHash,
-		CatalogWorkID:       g.CatalogWorkID,
+		ID:                    g.ID,
+		VNDBID:                g.VNDBID,
+		BangumiID:             g.BangumiID,
+		ReleaseDate:           fmtDate(g.ReleaseDate),
+		ReleaseDateTBA:        g.ReleaseDateTBA,
+		ReleasePrecision:      g.ReleasePrecision,
+		NameEnUS:              g.NameEnUS,
+		NameJaJP:              g.NameJaJP,
+		NameZhCN:              g.NameZhCN,
+		NameZhTW:              g.NameZhTW,
+		Banner:                g.Banner,
+		IntroEnUS:             g.IntroEnUS,
+		IntroJaJP:             g.IntroJaJP,
+		IntroZhCN:             g.IntroZhCN,
+		IntroZhTW:             g.IntroZhTW,
+		ContentLimit:          g.ContentLimit,
+		Status:                g.Status,
+		View:                  g.View,
+		ResourceUpdateTime:    fmtTS(g.ResourceUpdateTime),
+		OriginalLanguage:      g.OriginalLanguage,
+		AgeLimit:              g.AgeLimit,
+		UserID:                g.UserID,
+		SeriesID:              g.SeriesID,
+		Created:               fmtTS(g.Created),
+		Updated:               fmtTS(g.Updated),
+		EffectiveBannerHash:   g.EffectiveBannerHash,
+		EffectivePortraitHash: g.EffectivePortraitHash,
+		CatalogWorkID:         g.CatalogWorkID,
 	}
 
 	if g.Series != nil {

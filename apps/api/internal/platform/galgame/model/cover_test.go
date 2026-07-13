@@ -54,3 +54,47 @@ func TestPopulateEffectiveBanner(t *testing.T) {
 		PopulateEffectiveBanner(nil) // must not panic
 	})
 }
+
+func TestPopulateEffectivePortrait(t *testing.T) {
+	hashOf := func(g *Galgame) string {
+		if g.EffectivePortraitHash == nil {
+			return ""
+		}
+		return *g.EffectivePortraitHash
+	}
+
+	t.Run("picks the portrait_pinned row regardless of sort_order / position", func(t *testing.T) {
+		g := &Galgame{Cover: []GalgameCover{
+			{ImageHash: "land", SortOrder: 0}, // landscape pin — not the portrait
+			{ImageHash: "port", SortOrder: 3, PortraitPinned: true},
+			{ImageHash: "other", SortOrder: 1},
+		}}
+		PopulateEffectivePortrait(g)
+		if got := hashOf(g); got != "port" {
+			t.Fatalf("want portrait_pinned port, got %q", got)
+		}
+	})
+
+	t.Run("no fallback: no portrait pin leaves nil even with covers present", func(t *testing.T) {
+		g := &Galgame{Cover: []GalgameCover{
+			{ImageHash: "h0", SortOrder: 0},
+			{ImageHash: "h1", SortOrder: 1},
+		}}
+		PopulateEffectivePortrait(g)
+		if g.EffectivePortraitHash != nil {
+			t.Fatalf("want nil (no landscape fallback), got %q", *g.EffectivePortraitHash)
+		}
+	})
+
+	t.Run("zero covers leaves nil", func(t *testing.T) {
+		g := &Galgame{}
+		PopulateEffectivePortrait(g)
+		if g.EffectivePortraitHash != nil {
+			t.Fatalf("want nil for zero covers, got %q", *g.EffectivePortraitHash)
+		}
+	})
+
+	t.Run("nil galgame is a no-op", func(t *testing.T) {
+		PopulateEffectivePortrait(nil) // must not panic
+	})
+}

@@ -40,7 +40,9 @@ import (
 	"api/pkg/config"
 	"api/pkg/imageclient"
 
+	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	gormlogger "gorm.io/gorm/logger"
 )
 
 const (
@@ -60,6 +62,8 @@ type Opts struct {
 	BGMGap       time.Duration // min delay between Bangumi API calls (default 700ms)
 	BGMFallback  bool          // try Bangumi for candidates VNDB cannot cover (default true)
 	ImageBaseURL string        // image_service base override (point at the LOCAL compose service, e.g. http://127.0.0.1:15006)
+	CatalogDSN   string        // catalog DSN (bangumi bid anchor source); ALWAYS the rehearsal copy, never live kun_catalog
+	BangumiToken string        // KUN_BANGUMI_TOKEN — Bearer auth so R18 subjects are visible; "" = anonymous (65% R18 404)
 }
 
 // candidate is a game needing a portrait cover: a published/VNDB-draft game
@@ -124,7 +128,28 @@ func Run(ctx context.Context, cfg *config.Config, opts Opts) (map[string]any, er
 	}
 	slog.Info("portrait-fill dims loaded", "images_with_dims", len(dims))
 
-	cands, err := candidates(ctx, wikiDB.DB(), dims, opts)
+	// Bangumi bid source = catalog bangumi EXACT anchors (T2). Requires an
+	// explicit --catalog-dsn (the rehearsal copy) — without it the BGM fallback
+	// has no bids and is skipped.
+	var bidByWork map[int64]int
+	if opts.CatalogDSN != "" {
+		catalogDB, cerr := gorm.Open(postgres.Open(opts.CatalogDSN), &gorm.Config{Logger: gormlogger.Default.LogMode(gormlogger.Silent)})
+		if cerr != nil {
+			return nil, fmt.Errorf("connect catalog db: %w", cerr)
+		}
+		if sqlDB, e := catalogDB.DB(); e == nil {
+			defer sqlDB.Close()
+		}
+		bidByWork, err = loadBangumiAnchors(ctx, catalogDB)
+		if err != nil {
+			return nil, fmt.Errorf("load bangumi anchors: %w", err)
+		}
+		slog.Info("portrait-fill bangumi anchors loaded", "work_anchors", len(bidByWork), "bgm_authenticated", opts.BangumiToken != "")
+	} else if opts.BGMFallback {
+		slog.Warn("portrait-fill: no --catalog-dsn given; Bangumi fallback disabled (bid source is the catalog exact anchor)")
+	}
+
+	cands, err := candidates(ctx, wikiDB.DB(), dims, bidByWork, opts)
 	if err != nil {
 		return nil, fmt.Errorf("resolve candidates: %w", err)
 	}
@@ -206,7 +231,7 @@ func Run(ctx context.Context, cfg *config.Config, opts Opts) (map[string]any, er
 
 	bgm := bgmZero()
 	if !quota && opts.BGMFallback {
-		bgm = r.bgmPass(ctx, cands, portrait, meta, opts.BGMGap)
+		bgm = r.bgmPass(ctx, cands, portrait, meta, opts.BGMGap, opts.BangumiToken)
 	}
 
 	// Keep freshly-uploaded covers alive immediately.
@@ -277,8 +302,8 @@ func (r *runner) fillCover(ctx context.Context, gid int, source, kind, sourceKey
 
 // bgmPass is the fallback: for candidates without a VNDB portrait that carry a
 // bid, try the Bangumi subject cover; fill only when it is actually portrait.
-func (r *runner) bgmPass(ctx context.Context, cands []candidate, portrait map[int]vndb.VNImage, meta map[string]vndb.VNImage, gap time.Duration) map[string]any {
-	bc := newBGMClient(gap)
+func (r *runner) bgmPass(ctx context.Context, cands []candidate, portrait map[int]vndb.VNImage, meta map[string]vndb.VNImage, gap time.Duration, token string) map[string]any {
+	bc := newBGMClient(gap, token)
 	var considered, fetched, portraitCount, written, dup, failed int
 	before := struct{ dl, up, rows, skip, fail int }{r.downloaded, r.uploaded, r.rowsWritten, r.skippedDup, r.failed}
 	for _, c := range cands {
@@ -331,12 +356,13 @@ func (r *runner) bgmPass(ctx context.Context, cands []candidate, portrait map[in
 		"portrait", portraitCount, "written", written, "dup", dup, "failed", failed,
 		"net_new_downloads", r.downloaded-before.dl)
 	return map[string]any{
-		"bgm_considered":   considered,
-		"bgm_fetched":      fetched,
-		"bgm_portrait":     portraitCount,
-		"bgm_rows_written": written,
-		"bgm_skipped_dup":  dup,
-		"bgm_failed":       failed,
+		"bgm_considered":    considered,
+		"bgm_fetched":       fetched,
+		"bgm_portrait":      portraitCount,
+		"bgm_rows_written":  written,
+		"bgm_skipped_dup":   dup,
+		"bgm_failed":        failed,
+		"bgm_authenticated": token != "",
 	}
 }
 
@@ -392,7 +418,7 @@ func r0() map[string]int {
 }
 
 func bgmZero() map[string]any {
-	return map[string]any{"bgm_considered": 0, "bgm_fetched": 0, "bgm_portrait": 0, "bgm_rows_written": 0, "bgm_skipped_dup": 0, "bgm_failed": 0}
+	return map[string]any{"bgm_considered": 0, "bgm_fetched": 0, "bgm_portrait": 0, "bgm_rows_written": 0, "bgm_skipped_dup": 0, "bgm_failed": 0, "bgm_authenticated": false}
 }
 
 // loadExisting returns the max sort_order and the set of source_keys already on

@@ -188,6 +188,23 @@ func main() {
 		os.Exit(1)
 	}
 
+	// (3b) galgame_cover portrait-pin partial unique index. The vertical
+	// companion to idx_galgame_cover_pinned: enforces "at most one pinned
+	// PORTRAIT cover (portrait_pinned = true) per galgame". The portrait_pinned
+	// column itself is added by AutoMigrate (bool NOT NULL DEFAULT false — the
+	// DB default backfills existing rows and keeps the out-of-band raw cover
+	// inserts, which omit this column, valid). The pin tool
+	// (cmd/pin-portrait-covers) demotes the existing portrait_pinned row in the
+	// same transaction before promoting the new one, exactly like the
+	// sort_order=0 pin flow.
+	if err := db.DB().Exec(`
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_galgame_cover_portrait_pinned
+		    ON galgame_cover(galgame_id) WHERE portrait_pinned
+	`).Error; err != nil {
+		slog.Error("create idx_galgame_cover_portrait_pinned failed", "error", err)
+		os.Exit(1)
+	}
+
 	// (4) Performance indexes for the wiki tag-listing + tag-count queries.
 	// Without them the tag detail page (galgames-by-tag, ORDER BY
 	// resource_update_time DESC) parallel-seq-scans + disk-sorts every published

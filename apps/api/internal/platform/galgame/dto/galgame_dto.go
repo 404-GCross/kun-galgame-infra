@@ -231,6 +231,19 @@ type GalgameDetailBrief struct {
 	IntroZhCN      string   `json:"intro_zh_cn"`
 	IntroZhTW      string   `json:"intro_zh_tw"`
 	Officials      []string `json:"officials"`
+	// EffectivePortraitHash is the pinned PORTRAIT cover's image_hash — the
+	// vertical companion to the embedded GalgameBrief.EffectiveBannerHash, for a
+	// portrait-first list card. nil/omitted when there is no pinned portrait
+	// (the frontend applies its own fallback). EffectivePortrait{Width,Height,
+	// Thumbhash} are the pinned portrait's intrinsic image_service metadata,
+	// filled at read time so a vertical card reserves the right aspect ratio +
+	// shows a blur-up placeholder with no layout shift (batch briefs don't carry
+	// the covers[] array, so the dims ride here). Only view=detail carries these;
+	// the lightweight brief stays unchanged.
+	EffectivePortraitHash      *string `json:"effective_portrait_hash,omitempty"`
+	EffectivePortraitWidth     int     `json:"effective_portrait_width,omitempty"`
+	EffectivePortraitHeight    int     `json:"effective_portrait_height,omitempty"`
+	EffectivePortraitThumbhash string  `json:"effective_portrait_thumbhash,omitempty"`
 	// CatalogWorkID is the cross-face pointer to catalog_work (NULL until the
 	// work is claimed + reconciled). Additive; mirrors GalgameDetail's field.
 	CatalogWorkID *int64 `json:"catalog_work_id,omitempty"`

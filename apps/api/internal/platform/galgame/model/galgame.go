@@ -100,6 +100,13 @@ type Galgame struct {
 	// the service layer after preload. Zero-value (nil pointer) when no
 	// cover exists. Not stored — `gorm:"-"` keeps it out of writes.
 	EffectiveBannerHash *string `gorm:"-" json:"effective_banner_hash,omitempty"`
+
+	// EffectivePortraitHash is the derived, read-only image_hash of the pinned
+	// PORTRAIT cover (the row flagged portrait_pinned) — the vertical companion
+	// to EffectiveBannerHash for the portrait-first UI. nil when the galgame has
+	// no pinned portrait (no landscape fallback; the frontend handles that).
+	// Populated by PopulateEffectivePortrait after preload. `gorm:"-"` = derived.
+	EffectivePortraitHash *string `gorm:"-" json:"effective_portrait_hash,omitempty"`
 }
 
 func (Galgame) TableName() string { return "galgame" }

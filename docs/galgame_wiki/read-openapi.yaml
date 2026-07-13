@@ -1235,6 +1235,8 @@ components:
             - "null"
         effective_banner_hash:
           type: string
+        effective_portrait_hash:
+          type: string
         engine:
           items:
             $ref: "#/components/schemas/DetailEngineRelation"
@@ -1366,6 +1368,16 @@ components:
         effective_banner_thumbhash:
           type: string
         effective_banner_width:
+          format: int64
+          type: integer
+        effective_portrait_hash:
+          type: string
+        effective_portrait_height:
+          format: int64
+          type: integer
+        effective_portrait_thumbhash:
+          type: string
+        effective_portrait_width:
           format: int64
           type: integer
         id:

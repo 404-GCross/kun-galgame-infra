@@ -63,14 +63,17 @@ func TestGroupNoPortrait(t *testing.T) {
 		"L": {800, 600},
 		"P": {600, 800},
 	}
+	// bid comes from the catalog exact anchor keyed by catalog_work_id.
+	w1, w3 := int64(1001), int64(1003)
+	bidByWork := map[int64]int{w1: 10, w3: 33}
 	rows := []coverRow{
-		{ID: 1, VndbID: "v1", Bid: 10, ImageHash: "L"}, // game 1: only landscape -> candidate
-		{ID: 2, VndbID: "v2", Bid: 0, ImageHash: "L"},  // game 2: landscape + portrait -> NOT candidate
-		{ID: 2, VndbID: "v2", Bid: 0, ImageHash: "P"},
-		{ID: 3, VndbID: "v3", Bid: 0, ImageHash: "U"}, // game 3: unknown dims treated as non-portrait -> candidate
-		{ID: 4, VndbID: "v4", Bid: 7, ImageHash: "P"}, // game 4: portrait -> NOT candidate
+		{ID: 1, VndbID: "v1", CatalogWorkID: &w1, ImageHash: "L"}, // game 1: only landscape -> candidate (bid 10)
+		{ID: 2, VndbID: "v2", ImageHash: "L"},                     // game 2: landscape + portrait -> NOT candidate
+		{ID: 2, VndbID: "v2", ImageHash: "P"},
+		{ID: 3, VndbID: "v3", CatalogWorkID: &w3, ImageHash: "U"}, // game 3: unknown dims -> candidate (bid 33)
+		{ID: 4, VndbID: "v4", ImageHash: "P"},                     // game 4: portrait -> NOT candidate
 	}
-	got := groupNoPortrait(rows, dims)
+	got := groupNoPortrait(rows, dims, bidByWork)
 	want := []int{1, 3}
 	if len(got) != len(want) {
 		t.Fatalf("got %d candidates %+v, want ids %v", len(got), got, want)
@@ -80,8 +83,11 @@ func TestGroupNoPortrait(t *testing.T) {
 			t.Errorf("candidate[%d].ID=%d want %d", i, c.ID, want[i])
 		}
 	}
-	// carried fields survive grouping
+	// carried fields survive grouping; bid resolved from the anchor map
 	if got[0].VNDBID != "v1" || got[0].BID != 10 {
 		t.Errorf("candidate 1 fields = %+v", got[0])
+	}
+	if got[1].BID != 33 {
+		t.Errorf("candidate 3 bid = %d, want 33 (from anchor)", got[1].BID)
 	}
 }

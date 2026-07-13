@@ -27,14 +27,17 @@ type bgmImage struct {
 	Height int
 }
 
-// bgmClient is a tiny rate-limited Bangumi API reader.
+// bgmClient is a tiny rate-limited Bangumi API reader. When token is non-empty
+// it sends `Authorization: Bearer <token>` so R18 subjects (which the API hides
+// with a 404 for anonymous callers — the 40-wave finding) become visible.
 type bgmClient struct {
-	http *http.Client
-	lim  *limiter
+	http  *http.Client
+	lim   *limiter
+	token string
 }
 
-func newBGMClient(gap time.Duration) *bgmClient {
-	return &bgmClient{http: &http.Client{Timeout: 30 * time.Second}, lim: newLimiter(gap)}
+func newBGMClient(gap time.Duration, token string) *bgmClient {
+	return &bgmClient{http: &http.Client{Timeout: 30 * time.Second}, lim: newLimiter(gap), token: token}
 }
 
 // FetchSubjectImage returns the subject's large cover URL + nsfw flag, or
@@ -49,6 +52,9 @@ func (b *bgmClient) FetchSubjectImage(ctx context.Context, bid int) (*bgmImage, 
 	}
 	req.Header.Set("User-Agent", "kun-galgame-wiki/portrait-fill (https://www.kungal.com)")
 	req.Header.Set("Accept", "application/json")
+	if b.token != "" {
+		req.Header.Set("Authorization", "Bearer "+b.token)
+	}
 	resp, err := b.http.Do(req)
 	if err != nil {
 		return nil, err

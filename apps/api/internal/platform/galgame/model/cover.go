@@ -34,6 +34,23 @@ type GalgameCover struct {
 	Kind      string    `gorm:"column:kind;size:16;default:''" json:"kind"`
 	Created   Timestamp `gorm:"column:created;autoCreateTime" json:"created"`
 
+	// PortraitPinned marks this cover as the galgame's pinned PORTRAIT banner —
+	// the second, vertical pin that runs ALONGSIDE the landscape sort_order=0 pin
+	// (the portrait-first UI toggles between them). A partial unique index
+	// `idx_galgame_cover_portrait_pinned` (galgame_id) WHERE portrait_pinned —
+	// created by migrate-galgame — enforces "at most one pinned portrait per
+	// galgame". Independent of sort_order (a portrait pin never touches
+	// sort_order, so the landscape pin is untouched).
+	//
+	// json:"-": this flag is an internal derivation input, not part of the wire —
+	// the read surface exposes the resolved `effective_portrait_hash` instead
+	// (mirroring how per-cover state stays internal and effective_banner_hash is
+	// the exposed landscape pin). Not migrated by AutoMigrate's default handling
+	// beyond adding the column; the DB default (false) is intentional so the
+	// out-of-band raw cover inserts (sync-vndb-covers / refping / portraitfill,
+	// which omit this column) stay valid.
+	PortraitPinned bool `gorm:"column:portrait_pinned;not null;default:false" json:"-"`
+
 	// Width/Height/Thumbhash are NOT columns here — image bytes + intrinsic
 	// metadata live in image_service (the single source of truth, keyed by
 	// ImageHash). They are filled at READ time by the galgame service from a
@@ -106,5 +123,26 @@ func PopulateEffectiveBanner(g *Galgame) {
 	if best >= 0 {
 		h := g.Cover[best].ImageHash
 		g.EffectiveBannerHash = &h
+	}
+}
+
+// PopulateEffectivePortrait fills g.EffectivePortraitHash from the loaded Cover
+// list: the image_hash of the row flagged PortraitPinned. Unlike the landscape
+// banner, there is NO fallback — a galgame with no pinned portrait leaves the
+// field nil (the frontend applies its own fallback for landscape-only games,
+// step 37). The partial unique index keeps the portrait_pinned row unique per
+// galgame, so the pinned case is unambiguous.
+//
+// Idempotent; nil-receiver safe; zero-portrait leaves EffectivePortraitHash nil.
+func PopulateEffectivePortrait(g *Galgame) {
+	if g == nil {
+		return
+	}
+	for i := range g.Cover {
+		if g.Cover[i].PortraitPinned {
+			h := g.Cover[i].ImageHash
+			g.EffectivePortraitHash = &h
+			return
+		}
 	}
 }

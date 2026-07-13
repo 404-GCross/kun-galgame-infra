@@ -68,12 +68,16 @@ func TestMain(m *testing.M) {
 	//     (multiple status=3 submissions can share vndb_id='').
 	//   - idx_galgame_cover_pinned:    at most one cover per galgame may
 	//     hold sort_order=0 (= the pinned banner).
+	//   - idx_galgame_cover_portrait_pinned: at most one cover per galgame may
+	//     hold portrait_pinned=true (= the pinned vertical banner).
 	_ = db.Exec(`DROP INDEX IF EXISTS idx_galgame_vndb_id`).Error
 	_ = db.Exec(`DROP INDEX IF EXISTS uni_galgame_vndb_id`).Error
 	_ = db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS uq_galgame_vndb_id_nonempty
 		ON galgame(vndb_id) WHERE vndb_id <> ''`).Error
 	_ = db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_galgame_cover_pinned
 		ON galgame_cover(galgame_id) WHERE sort_order = 0`).Error
+	_ = db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_galgame_cover_portrait_pinned
+		ON galgame_cover(galgame_id) WHERE portrait_pinned`).Error
 
 	testDB = db
 
