@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"api/pkg/config"
@@ -35,31 +37,60 @@ func runExport(ctx context.Context, cfg *config.Config, sels []selection, dir st
 		return err
 	}
 	cdnBase := cfg.ImageService.CDNBase
-	httpClient := &http.Client{Timeout: defaultTimeout}
-	var exported, failed int
+	// Collect the list first so the fetches can fan out: a serial loop against
+	// the edge-cached CDN means hours of idle latency gaps at the ~21k scale.
+	// Existing non-empty files are skipped, so an interrupted export resumes.
+	type target struct {
+		gid  int
+		hash string
+	}
+	var targets []target
 	for _, s := range sels {
 		if s.State != stateNeedUpscale || s.HasUpscale {
 			continue // only un-upscaled <1080 best portraits
 		}
-		if limit > 0 && exported >= limit {
+		if limit > 0 && len(targets) >= limit {
 			break
 		}
-		url := imageclient.MainURL(cdnBase, s.Best.Hash, "webp")
-		body, err := httpGet(httpClient, url)
-		if err != nil {
-			failed++
-			slog.Warn("export download", "gid", s.GameID, "hash", s.Best.Hash, "err", err)
-			continue
-		}
-		out := filepath.Join(dir, fmt.Sprintf("%d%s%s.webp", s.GameID, stemSep, s.Best.Hash))
-		if err := os.WriteFile(out, body, 0o644); err != nil {
-			failed++
-			slog.Warn("export write", "file", out, "err", err)
-			continue
-		}
-		exported++
+		targets = append(targets, target{s.GameID, s.Best.Hash})
 	}
-	slog.Info("export done", "exported", exported, "dir", dir, "failed", failed)
+	const workers = 10
+	var exported, failed, skipped atomic.Int64
+	jobs := make(chan target)
+	var wg sync.WaitGroup
+	for range workers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			httpClient := &http.Client{Timeout: defaultTimeout}
+			for t := range jobs {
+				out := filepath.Join(dir, fmt.Sprintf("%d%s%s.webp", t.gid, stemSep, t.hash))
+				if st, err := os.Stat(out); err == nil && st.Size() > 0 {
+					skipped.Add(1)
+					continue
+				}
+				url := imageclient.MainURL(cdnBase, t.hash, "webp")
+				body, err := httpGet(httpClient, url)
+				if err != nil {
+					failed.Add(1)
+					slog.Warn("export download", "gid", t.gid, "hash", t.hash, "err", err)
+					continue
+				}
+				if err := os.WriteFile(out, body, 0o644); err != nil {
+					failed.Add(1)
+					slog.Warn("export write", "file", out, "err", err)
+					continue
+				}
+				exported.Add(1)
+			}
+		}()
+	}
+	for _, t := range targets {
+		jobs <- t
+	}
+	close(jobs)
+	wg.Wait()
+	slog.Info("export done", "exported", exported.Load(), "skipped_existing", skipped.Load(), "dir", dir, "failed", failed.Load())
 	return nil
 }
 
