@@ -187,6 +187,11 @@ func rehangEntity(tx *gorm.DB, entityType int16, src, dst int64) error {
 			    AND NOT EXISTS (SELECT 1 FROM catalog_label_alias b
 			                     WHERE b.label_id = ? AND b.name = a.name AND b.lang = a.lang)`, []any{dst, src, dst}},
 			{`DELETE FROM catalog_label_alias WHERE label_id = ?`, []any{src}},
+			// brand edges, deduped against the (work, label, kind) PK
+			{`UPDATE catalog_work_label e SET label_id = ? WHERE e.label_id = ?
+			    AND NOT EXISTS (SELECT 1 FROM catalog_work_label x
+			                     WHERE x.work_id = e.work_id AND x.label_id = ? AND x.kind = e.kind)`, []any{dst, src, dst}},
+			{`DELETE FROM catalog_work_label WHERE label_id = ?`, []any{src}},
 		}
 		return execAll(tx, stmts)
 

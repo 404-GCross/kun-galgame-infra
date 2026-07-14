@@ -388,3 +388,40 @@ func TestMergeSurvivorshipUserProtection(t *testing.T) {
 		"user-owned field must not be overwritten by an import-owned value")
 	assert.Equal(t, "user", firstProvSource(merged.FieldProvenance, "description"))
 }
+
+// Label merge must rehang catalog_work_label brand edges (a table added after
+// the original hook list — step 44 regression): duplicate edges against the
+// (work, label, kind) PK are dropped, source-only edges move to the target.
+func TestMergeLabelWorkEdgeDedup(t *testing.T) {
+	cleanTables(t)
+	ctx := t.Context()
+
+	target := &model.CatalogLabel{DisplayName: "Brand", Kind: model.LabelKindGameBrand}
+	require.NoError(t, testDB.Create(target).Error)
+	source := &model.CatalogLabel{DisplayName: "brand", Kind: model.LabelKindDoujinCircle, Note: "rule:galgame-official-import"}
+	require.NoError(t, testDB.Create(source).Error)
+
+	w1, w2 := createWork(t, "work-1"), createWork(t, "work-2")
+	for _, e := range []model.CatalogWorkLabel{
+		{WorkID: w1.ID, LabelID: target.ID, Kind: model.WorkLabelKindCircle},
+		{WorkID: w1.ID, LabelID: source.ID, Kind: model.WorkLabelKindCircle}, // duplicate after repoint → dropped
+		{WorkID: w2.ID, LabelID: source.ID, Kind: model.WorkLabelKindCircle}, // moves
+	} {
+		require.NoError(t, testDB.Create(&e).Error)
+	}
+
+	p, err := testMerge.ProposeMerge(ctx, model.EntityTypeLabel, source.ID, target.ID, 7, "same brand")
+	require.NoError(t, err)
+	approveAndForceExecutable(t, p.ID)
+	require.NoError(t, testMerge.ExecuteMerge(ctx, p.ID, nil))
+
+	var edges []model.CatalogWorkLabel
+	require.NoError(t, testDB.Where("label_id = ?", target.ID).Order("work_id").Find(&edges).Error)
+	require.Len(t, edges, 2)
+	assert.Equal(t, w1.ID, edges[0].WorkID)
+	assert.Equal(t, w2.ID, edges[1].WorkID)
+
+	var stranded int64
+	testDB.Raw(`SELECT count(*) FROM catalog_work_label WHERE label_id = ?`, source.ID).Scan(&stranded)
+	assert.Zero(t, stranded, "no brand edge may stay on the merged source")
+}
