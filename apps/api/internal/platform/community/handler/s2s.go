@@ -174,11 +174,18 @@ type threadPostsInput struct {
 }
 
 func (s *Server) getThread(ctx context.Context, in *threadPostsInput) (*threadWithPostsOutput, error) {
+	site, he := siteBinding(ctx)
+	if he != nil {
+		return nil, he
+	}
 	thread, err := s.threads.Get(in.ID)
 	if err != nil {
 		return nil, mapErr("get thread", err)
 	}
-	if thread == nil {
+	// A missing thread AND a cross-tenant site-local thread both answer 404, so a
+	// caller cannot tell "belongs to another site" from "does not exist" (ruling
+	// 4). Catalog-anchored threads are shared cross-site and pass the guard.
+	if thread == nil || service.CrossTenant(site, thread.Site, thread.AnchorKind) {
 		return nil, apiErr(http.StatusNotFound, errors.ErrNotFound)
 	}
 	limit := clampLimit(in.Limit)
@@ -197,6 +204,20 @@ type postListOutput struct {
 }
 
 func (s *Server) listPosts(ctx context.Context, in *threadPostsInput) (*postListOutput, error) {
+	site, he := siteBinding(ctx)
+	if he != nil {
+		return nil, he
+	}
+	// listPosts is thread-addressed but loads only posts, so resolve the thread
+	// once to enforce the tenant guard (ruling 4): a cross-tenant / missing thread
+	// answers 404 rather than an empty page.
+	thread, err := s.threads.Get(in.ID)
+	if err != nil {
+		return nil, mapErr("get thread", err)
+	}
+	if thread == nil || service.CrossTenant(site, thread.Site, thread.AnchorKind) {
+		return nil, apiErr(http.StatusNotFound, errors.ErrNotFound)
+	}
 	limit := clampLimit(in.Limit)
 	posts, err := s.posts.ListPosts(in.ID, in.After, limit)
 	if err != nil {
@@ -259,6 +280,11 @@ type postOutput struct {
 }
 
 func (s *Server) reply(ctx context.Context, in *replyInput) (*postOutput, error) {
+	site, he := siteBinding(ctx)
+	if he != nil {
+		return nil, he
+	}
+	ctx = service.WithCallerSite(ctx, site)
 	post, err := s.posts.Reply(ctx, service.ReplyParams{
 		ThreadID: in.ID, AuthorID: in.Body.AuthorID, BodyRaw: in.Body.Body,
 		RootPostID: in.Body.RootPostID, ReplyToPostID: in.Body.ReplyToPostID, TargetUserID: in.Body.TargetUserID,
@@ -275,6 +301,11 @@ type editPostInput struct {
 }
 
 func (s *Server) editPost(ctx context.Context, in *editPostInput) (*postOutput, error) {
+	site, he := siteBinding(ctx)
+	if he != nil {
+		return nil, he
+	}
+	ctx = service.WithCallerSite(ctx, site)
 	post, err := s.posts.Edit(ctx, service.EditParams{
 		PostID: in.ID, AuthorID: in.Body.AuthorID, BodyRaw: in.Body.Body, AsModerator: in.Body.AsModerator,
 	})
@@ -295,6 +326,11 @@ type deletePostInput struct {
 }
 
 func (s *Server) deletePost(ctx context.Context, in *deletePostInput) (*okOutput, error) {
+	site, he := siteBinding(ctx)
+	if he != nil {
+		return nil, he
+	}
+	ctx = service.WithCallerSite(ctx, site)
 	if err := s.posts.Delete(ctx, in.ID, in.AuthorID, in.AsModerator); err != nil {
 		return nil, mapErr("delete post", err)
 	}
@@ -310,6 +346,11 @@ type reactionOutput struct {
 }
 
 func (s *Server) toggleReaction(ctx context.Context, in *toggleReactionInput) (*reactionOutput, error) {
+	site, he := siteBinding(ctx)
+	if he != nil {
+		return nil, he
+	}
+	ctx = service.WithCallerSite(ctx, site)
 	added, pc, err := s.reactions.Toggle(ctx, in.ID, in.Body.UserID, in.Body.Kind)
 	if err != nil {
 		return nil, mapErr("toggle reaction", err)
@@ -329,6 +370,11 @@ type okOutput struct {
 }
 
 func (s *Server) submitFlag(ctx context.Context, in *flagInput) (*okOutput, error) {
+	site, he := siteBinding(ctx)
+	if he != nil {
+		return nil, he
+	}
+	ctx = service.WithCallerSite(ctx, site)
 	if err := s.flags.Submit(ctx, in.ID, in.Body.FlaggerID, in.Body.Reason, in.Body.Note); err != nil {
 		return nil, mapErr("submit flag", err)
 	}
@@ -341,6 +387,11 @@ type feedbackStatusInput struct {
 }
 
 func (s *Server) setFeedbackStatus(ctx context.Context, in *feedbackStatusInput) (*okOutput, error) {
+	site, he := siteBinding(ctx)
+	if he != nil {
+		return nil, he
+	}
+	ctx = service.WithCallerSite(ctx, site)
 	if err := s.feedback.SetStatus(ctx, in.ID, in.Body.FbStatus, in.Body.ResponderID, in.Body.Response); err != nil {
 		return nil, mapErr("set feedback status", err)
 	}
@@ -353,6 +404,11 @@ type feedbackMergeInput struct {
 }
 
 func (s *Server) mergeFeedback(ctx context.Context, in *feedbackMergeInput) (*okOutput, error) {
+	site, he := siteBinding(ctx)
+	if he != nil {
+		return nil, he
+	}
+	ctx = service.WithCallerSite(ctx, site)
 	if err := s.feedback.Merge(ctx, in.ID, in.Body.IntoID); err != nil {
 		return nil, mapErr("merge feedback", err)
 	}
@@ -419,9 +475,11 @@ type reviewDecisionInput struct {
 }
 
 func (s *Server) approveReview(ctx context.Context, in *reviewDecisionInput) (*okOutput, error) {
-	if _, he := siteBinding(ctx); he != nil {
+	site, he := siteBinding(ctx)
+	if he != nil {
 		return nil, he
 	}
+	ctx = service.WithCallerSite(ctx, site)
 	if err := s.review.Approve(ctx, in.ID, in.Body.DecidedBy); err != nil {
 		return nil, mapErr("approve review", err)
 	}
@@ -429,9 +487,11 @@ func (s *Server) approveReview(ctx context.Context, in *reviewDecisionInput) (*o
 }
 
 func (s *Server) rejectReview(ctx context.Context, in *reviewDecisionInput) (*okOutput, error) {
-	if _, he := siteBinding(ctx); he != nil {
+	site, he := siteBinding(ctx)
+	if he != nil {
 		return nil, he
 	}
+	ctx = service.WithCallerSite(ctx, site)
 	if err := s.review.Reject(ctx, in.ID, in.Body.DecidedBy); err != nil {
 		return nil, mapErr("reject review", err)
 	}

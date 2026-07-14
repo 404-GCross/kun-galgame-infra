@@ -80,6 +80,12 @@ func (s *PostService) Reply(ctx context.Context, p ReplyParams) (*model.Communit
 		if thread == nil {
 			return ErrThreadNotFound
 		}
+		// Tenant guard on the already-loaded thread (ruling 4): a cross-tenant
+		// caller is answered as "not found", indistinguishable from a bad id, and
+		// BEFORE the open-status check so it cannot probe the thread's state.
+		if crossTenantCtx(ctx, thread.Site, thread.AnchorKind) {
+			return ErrThreadNotFound
+		}
 		if thread.Status != model.ThreadStatusOpen {
 			return ErrThreadNotOpen
 		}
@@ -212,6 +218,17 @@ func (s *PostService) Edit(ctx context.Context, p EditParams) (*model.CommunityP
 		if existing == nil {
 			return ErrPostNotFound
 		}
+		// Tenant guard: a post is addressed by its global id, so confirm its thread
+		// belongs to the caller before any author/state check leaks. Edit loads
+		// only the post, so this is the sanctioned single join to the thread; a
+		// cross-tenant hit is answered as "post not found".
+		thread, err := repository.GetThreadTx(tx, existing.ThreadID)
+		if err != nil {
+			return err
+		}
+		if thread == nil || crossTenantCtx(ctx, thread.Site, thread.AnchorKind) {
+			return ErrPostNotFound
+		}
 		if existing.AuthorID != p.AuthorID {
 			if !p.AsModerator {
 				return ErrNotAuthor
@@ -269,6 +286,16 @@ func (s *PostService) Delete(ctx context.Context, postID, actorID int64, asModer
 			return err
 		}
 		if existing == nil {
+			return ErrPostNotFound
+		}
+		// Tenant guard: the sanctioned single join to the post's thread (Delete
+		// otherwise loads only the post) — a cross-tenant caller is answered as
+		// "post not found" before the author check.
+		thread, err := repository.GetThreadTx(tx, existing.ThreadID)
+		if err != nil {
+			return err
+		}
+		if thread == nil || crossTenantCtx(ctx, thread.Site, thread.AnchorKind) {
 			return ErrPostNotFound
 		}
 		if existing.AuthorID != actorID {

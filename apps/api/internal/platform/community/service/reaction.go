@@ -28,19 +28,27 @@ func (s *ReactionService) Toggle(ctx context.Context, postID, userID int64, kind
 	var added bool
 	var pc repository.PostContext
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		a, err := repository.ToggleReactionTx(tx, postID, userID, kind)
-		if err != nil {
-			return err
-		}
-		added = a
-		var found bool
-		pc, found, err = repository.PostContextTx(tx, postID)
+		// Load the post context (author/site/anchor) FIRST so the tenant guard runs
+		// before any mutation: a cross-tenant caller is answered as "post not
+		// found" and never toggles a reaction on another site's post (ruling 4).
+		// The context is invariant under a reaction toggle, so loading it up front
+		// is equivalent to the previous post-toggle read — no extra query.
+		loaded, found, err := repository.PostContextTx(tx, postID)
 		if err != nil {
 			return err
 		}
 		if !found {
 			return ErrPostNotFound
 		}
+		if crossTenantCtx(ctx, loaded.Site, loaded.AnchorKind) {
+			return ErrPostNotFound
+		}
+		pc = loaded
+		a, err := repository.ToggleReactionTx(tx, postID, userID, kind)
+		if err != nil {
+			return err
+		}
+		added = a
 		// Only "like" reactions feed the trust like counters.
 		if kind != model.ReactionKindLike {
 			return nil

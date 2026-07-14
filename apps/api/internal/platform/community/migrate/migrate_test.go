@@ -123,6 +123,81 @@ func TestInvariant4_CommentsAnchorUnique(t *testing.T) {
 	mustThread(t, model.ThreadKindTopic, model.AnchorKindBoard, "1", model.ThreadStatusOpen)
 }
 
+// --- second tenant: site-scoped vs global comments anchor uniqueness --------
+
+// TestSecondTenant_CommentsAnchorSiteScoped proves the split partial uniques at
+// the storage layer: a SITE-LOCAL anchor id is unique only WITHIN a site (two
+// tenants share the same local game id → two distinct threads), while a CATALOG
+// anchor id is unique NETWORK-WIDE (one shared cross-site thread).
+func TestSecondTenant_CommentsAnchorSiteScoped(t *testing.T) {
+	cleanTables(t)
+
+	comments := func(site string, anchorKind int16, anchorID string) error {
+		return testDB.Create(&model.CommunityThread{
+			Site: site, Kind: model.ThreadKindComments, AnchorKind: anchorKind, AnchorID: anchorID,
+			ContentRating: model.ContentRatingAll, Status: model.ThreadStatusOpen, CreatedBy: 1,
+		}).Error
+	}
+
+	// Site-local anchor (site_game "123"): letmoe and kungal each get their own
+	// thread — the collision the hardening fixes.
+	if err := comments("letmoe", model.AnchorKindSiteGame, "123"); err != nil {
+		t.Fatalf("letmoe site_game 123: %v", err)
+	}
+	if err := comments("kungal", model.AnchorKindSiteGame, "123"); err != nil {
+		t.Fatalf("kungal must be able to open its own site_game 123 thread: %v", err)
+	}
+	// But a SECOND live thread for the same (site, anchor) still violates.
+	if err := comments("letmoe", model.AnchorKindSiteGame, "123"); !isDuplicate(err) {
+		t.Fatalf("second live thread for (letmoe, site_game 123) must violate the site unique, got: %v", err)
+	}
+
+	// Catalog anchor (catalog_work "w9"): network-global — the first site wins the
+	// single shared thread, a second site cannot open a duplicate.
+	if err := comments("letmoe", model.AnchorKindCatalogWork, "w9"); err != nil {
+		t.Fatalf("letmoe catalog_work w9: %v", err)
+	}
+	if err := comments("kungal", model.AnchorKindCatalogWork, "w9"); !isDuplicate(err) {
+		t.Fatalf("catalog_work w9 is shared cross-site — a second site's thread must violate the global unique, got: %v", err)
+	}
+}
+
+// TestSecondTenant_LegacyIndexDroppedOnUpgrade simulates the PROD upgrade path:
+// the pre-second-tenant global unique already exists, and a migration run must
+// DROP it (a CREATE IF NOT EXISTS on the split pair alone would leave it in
+// place, ruling 5). Re-running Run is a no-op — the whole section stays
+// idempotent.
+func TestSecondTenant_LegacyIndexDroppedOnUpgrade(t *testing.T) {
+	// Start clean: sibling probes leave two tenants sharing a site-local anchor id,
+	// which the legacy GLOBAL unique cannot tolerate at CREATE time (that is the
+	// very collision this migration fixes).
+	cleanTables(t)
+	// Recreate the legacy index by hand, as it exists on the live database today.
+	if err := testDB.Exec(`
+		CREATE UNIQUE INDEX IF NOT EXISTS uq_community_thread_anchor_comments
+		    ON community_thread(anchor_kind, anchor_id)
+		    WHERE kind = 1 AND status <> 3`).Error; err != nil {
+		t.Fatalf("recreate legacy index: %v", err)
+	}
+	if rawIndexDef(t, "uq_community_thread_anchor_comments") == "" {
+		t.Fatal("legacy index should exist after manual recreate")
+	}
+	// A migration run drops it and (re)creates the split pair; a second run is a
+	// no-op.
+	for i := 0; i < 2; i++ {
+		if err := Run(testDB); err != nil {
+			t.Fatalf("migrate run %d: %v", i, err)
+		}
+	}
+	if def := rawIndexDef(t, "uq_community_thread_anchor_comments"); def != "" {
+		t.Fatalf("legacy index must be dropped by the migration, still present:\n  %s", def)
+	}
+	if rawIndexDef(t, "uq_community_thread_anchor_comments_site") == "" ||
+		rawIndexDef(t, "uq_community_thread_anchor_comments_global") == "" {
+		t.Fatal("both split partial uniques must exist after the migration")
+	}
+}
+
 // --- invariant 13: tombstone drops out of the comments unique (rebuild) ----
 
 func TestInvariant4_TombstoneRebuild(t *testing.T) {
@@ -227,25 +302,75 @@ func TestIndexColumnOrder(t *testing.T) {
 		}
 	}
 
-	// The comments partial unique carries both the columns and the predicate.
-	partial := indexDef(t, "uq_community_thread_anchor_comments")
-	for _, frag := range []string{"(anchor_kind, anchor_id)", "kind = 1", "status <> 3"} {
-		if !strings.Contains(partial, frag) {
-			t.Errorf("partial unique missing %q in\n  %s", frag, partial)
+	// The two comments partial uniques carry their columns AND predicate: the
+	// site-scoped one leads with site and filters to the site-local anchor kinds;
+	// the global one omits site and filters to the catalog anchor kinds.
+	site := indexDef(t, "uq_community_thread_anchor_comments_site")
+	for _, frag := range []string{"(site, anchor_kind, anchor_id)", "kind = 1", "status <> 3", "anchor_kind = ANY (ARRAY[1, 2])"} {
+		if !strings.Contains(site, frag) {
+			t.Errorf("site partial unique missing %q in\n  %s", frag, site)
+		}
+	}
+	global := indexDef(t, "uq_community_thread_anchor_comments_global")
+	for _, frag := range []string{"(anchor_kind, anchor_id)", "kind = 1", "status <> 3", "anchor_kind = ANY (ARRAY[3, 4])"} {
+		if !strings.Contains(global, frag) {
+			t.Errorf("global partial unique missing %q in\n  %s", frag, global)
+		}
+	}
+}
+
+// TestSecondTenant_CommentsAnchorIndexSplit is the migration-state probe of the
+// second-tenant hardening (step 01 deliverable A / probe 5): the pre-second-tenant
+// single-keyspace unique is GONE and exactly the two split partial uniques exist.
+// The old index staying alive would keep clamping site-local anchors globally
+// (two tenants sharing a local id would collide), so its absence is load-bearing.
+func TestSecondTenant_CommentsAnchorIndexSplit(t *testing.T) {
+	if def := rawIndexDef(t, "uq_community_thread_anchor_comments"); def != "" {
+		t.Errorf("legacy global comments anchor unique must be dropped, still present:\n  %s", def)
+	}
+	// The site-scoped unique: (site, anchor_kind, anchor_id), site-local kinds only.
+	site := indexDef(t, "uq_community_thread_anchor_comments_site")
+	if !strings.Contains(site, "UNIQUE INDEX") {
+		t.Errorf("site index is not unique:\n  %s", site)
+	}
+	for _, frag := range []string{"(site, anchor_kind, anchor_id)", "WHERE", "kind = 1", "status <> 3", "anchor_kind = ANY (ARRAY[1, 2])"} {
+		if !strings.Contains(site, frag) {
+			t.Errorf("site index indexdef missing %q in\n  %s", frag, site)
+		}
+	}
+	// The global unique: (anchor_kind, anchor_id) with NO site, catalog kinds only.
+	global := indexDef(t, "uq_community_thread_anchor_comments_global")
+	if !strings.Contains(global, "UNIQUE INDEX") {
+		t.Errorf("global index is not unique:\n  %s", global)
+	}
+	if strings.Contains(global, "(site,") {
+		t.Errorf("global index must NOT lead with site (catalog anchors are network-global):\n  %s", global)
+	}
+	for _, frag := range []string{"(anchor_kind, anchor_id)", "WHERE", "kind = 1", "status <> 3", "anchor_kind = ANY (ARRAY[3, 4])"} {
+		if !strings.Contains(global, frag) {
+			t.Errorf("global index indexdef missing %q in\n  %s", frag, global)
 		}
 	}
 }
 
 func indexDef(t *testing.T, name string) string {
 	t.Helper()
+	def := rawIndexDef(t, name)
+	if def == "" {
+		t.Fatalf("index %s does not exist", name)
+	}
+	return def
+}
+
+// rawIndexDef returns an index's definition, or "" when the index does not exist
+// — the non-fatal form used to assert an index was DROPPED.
+func rawIndexDef(t *testing.T, name string) string {
+	t.Helper()
 	var def string
 	if err := testDB.Raw(
 		`SELECT indexdef FROM pg_indexes WHERE schemaname = 'public' AND indexname = ?`, name,
 	).Scan(&def).Error; err != nil {
 		t.Fatalf("read indexdef %s: %v", name, err)
-	}
-	if def == "" {
-		t.Fatalf("index %s does not exist", name)
 	}
 	return def
 }

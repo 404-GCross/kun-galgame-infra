@@ -48,6 +48,21 @@ const (
 	AnchorKindCatalogPerson int16 = 4 // catalog person entity
 )
 
+// AnchorIsSiteLocal reports whether an anchor kind addresses a SITE-LOCAL id — a
+// board / game / resource id that is only unique WITHIN its tenant. Two tenants
+// can mint the SAME local id, so every anchor lookup and every id-addressed
+// tenant guard on a site-local anchor must be scoped by site (the collision the
+// second-tenant hardening closes). Catalog anchors (work/person) carry a
+// network-global id instead and are shared cross-site by design (invariant 1),
+// so they are never site-scoped. The two comments-anchor partial uniques encode
+// exactly this split: (site, anchor_kind, anchor_id) for kinds 1/2, a global
+// (anchor_kind, anchor_id) for kinds 3/4.
+func AnchorIsSiteLocal(anchorKind int16) bool {
+	return anchorKind == AnchorKindBoard ||
+		anchorKind == AnchorKindSiteGame ||
+		anchorKind == AnchorKindSiteResource
+}
+
 // Content rating (community_thread.content_rating + community_post.content_rating)
 // — day-1 field (invariant 12), default inherited from the anchor by the
 // service layer. NextMoe's R18 wall depends on this being present from the

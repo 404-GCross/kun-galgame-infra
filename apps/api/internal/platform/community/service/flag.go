@@ -50,6 +50,11 @@ func (s *FlagService) Submit(ctx context.Context, postID, flaggerID int64, reaso
 		if !found {
 			return ErrPostNotFound
 		}
+		// Tenant guard on the already-loaded post context (ruling 4): a report on
+		// another site's post is answered as "post not found", recording nothing.
+		if crossTenantCtx(ctx, pc.Site, pc.AnchorKind) {
+			return ErrPostNotFound
+		}
 		reporter, err := repository.GetOrCreateTrustTx(tx, flaggerID)
 		if err != nil {
 			return err

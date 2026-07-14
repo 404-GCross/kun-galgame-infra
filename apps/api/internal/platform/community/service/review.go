@@ -54,6 +54,14 @@ func (s *ReviewService) decide(ctx context.Context, id, decidedBy int64, approve
 		if item == nil {
 			return ErrReviewNotFound
 		}
+		// Tenant guard on the already-loaded item (ruling 4): a review item carries
+		// its own site column and is always site-local, so a caller may only decide
+		// its OWN site's queue. A cross-tenant (or site-less) item is answered as
+		// "review item not found" — indistinguishable from a bad id. An internal
+		// caller ("") skips the guard.
+		if cs := callerSite(ctx); cs != "" && (item.Site == nil || *item.Site != cs) {
+			return ErrReviewNotFound
+		}
 		if item.Status != model.ReviewStatusPending {
 			return nil // already decided → idempotent no-op
 		}

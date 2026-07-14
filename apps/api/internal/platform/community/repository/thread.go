@@ -52,17 +52,25 @@ func GetThreadTx(tx *gorm.DB, id int64) (*model.CommunityThread, error) {
 }
 
 // GetLiveCommentsThread returns the single live (status<>deleted) comments
-// thread for an anchor, or nil — the read side of invariant 4.
-func (r *ThreadRepository) GetLiveCommentsThread(anchorKind int16, anchorID string) (*model.CommunityThread, error) {
-	return getLiveCommentsThread(r.db, anchorKind, anchorID)
+// thread for an anchor, or nil — the read side of invariant 4. site scopes the
+// lookup for a SITE-LOCAL anchor (kinds 1/2: a tenant-local id two tenants can
+// share); a catalog anchor (kinds 3/4) carries a network-global id and resolves
+// to one cross-site thread, so site is ignored for it. This branch mirrors the
+// split partial unique.
+func (r *ThreadRepository) GetLiveCommentsThread(site string, anchorKind int16, anchorID string) (*model.CommunityThread, error) {
+	return getLiveCommentsThread(r.db, site, anchorKind, anchorID)
 }
 
-func getLiveCommentsThread(db *gorm.DB, anchorKind int16, anchorID string) (*model.CommunityThread, error) {
-	var t model.CommunityThread
-	err := db.Where(
+func getLiveCommentsThread(db *gorm.DB, site string, anchorKind int16, anchorID string) (*model.CommunityThread, error) {
+	q := db.Where(
 		"anchor_kind = ? AND anchor_id = ? AND kind = ? AND status <> ?",
 		anchorKind, anchorID, model.ThreadKindComments, model.ThreadStatusDeleted,
-	).First(&t).Error
+	)
+	if model.AnchorIsSiteLocal(anchorKind) {
+		q = q.Where("site = ?", site)
+	}
+	var t model.CommunityThread
+	err := q.First(&t).Error
 	if err == gorm.ErrRecordNotFound {
 		return nil, nil
 	}
@@ -144,14 +152,21 @@ func (r *ThreadRepository) OpeningPostMetaByThreadIDs(threadIDs []int64) (map[in
 	return out, nil
 }
 
-// ListByAnchor returns every thread for an anchor of a kind — the cross-site
-// aggregation dimension of invariant 7 (NextMoe read).
-func (r *ThreadRepository) ListByAnchor(anchorKind int16, anchorID string, kind int16) ([]model.CommunityThread, error) {
+// ListByAnchor returns every thread for an anchor of a kind. For a CATALOG
+// anchor (kinds 3/4, network-global id) this is the cross-site aggregation
+// dimension of invariant 7 (the NextMoe read: every site's threads for one
+// entity) and site is ignored. For a SITE-LOCAL anchor (kinds 1/2, a tenant-local
+// id two tenants can share) the same branch as the comments lookup applies —
+// the read MUST be scoped by site, or one tenant's anchor id would drag in
+// another's threads. A caller passes its own site; it is ignored for catalog
+// anchors.
+func (r *ThreadRepository) ListByAnchor(site string, anchorKind int16, anchorID string, kind int16) ([]model.CommunityThread, error) {
+	q := r.db.Where("anchor_kind = ? AND anchor_id = ? AND kind = ?", anchorKind, anchorID, kind)
+	if model.AnchorIsSiteLocal(anchorKind) {
+		q = q.Where("site = ?", site)
+	}
 	var rows []model.CommunityThread
-	err := r.db.
-		Where("anchor_kind = ? AND anchor_id = ? AND kind = ?", anchorKind, anchorID, kind).
-		Order("last_posted_at DESC NULLS LAST, id DESC").
-		Find(&rows).Error
+	err := q.Order("last_posted_at DESC NULLS LAST, id DESC").Find(&rows).Error
 	return rows, err
 }
 

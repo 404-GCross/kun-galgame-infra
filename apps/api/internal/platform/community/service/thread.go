@@ -152,7 +152,7 @@ type CommentsThreadParams struct {
 // anchor, creating an empty one when none exists (invariant 4). Idempotent and
 // race-safe: a concurrent create loses the partial-unique and re-reads.
 func (s *ThreadService) GetOrCreateCommentsThread(ctx context.Context, p CommentsThreadParams) (*model.CommunityThread, error) {
-	if t, err := s.threads.GetLiveCommentsThread(p.AnchorKind, p.AnchorID); err != nil {
+	if t, err := s.threads.GetLiveCommentsThread(p.Site, p.AnchorKind, p.AnchorID); err != nil {
 		return nil, err
 	} else if t != nil {
 		return t, nil
@@ -171,8 +171,9 @@ func (s *ThreadService) GetOrCreateCommentsThread(ctx context.Context, p Comment
 		return &thread, nil
 	}
 	if isDuplicate(err) {
-		// A sibling call created it first — return the winner.
-		if t, e := s.threads.GetLiveCommentsThread(p.AnchorKind, p.AnchorID); e == nil && t != nil {
+		// A sibling call created it first — return the winner (same site scope as
+		// the initial lookup, so a site-local anchor re-reads within its tenant).
+		if t, e := s.threads.GetLiveCommentsThread(p.Site, p.AnchorKind, p.AnchorID); e == nil && t != nil {
 			return t, nil
 		}
 	}
@@ -191,8 +192,8 @@ func (s *ThreadService) ListBySite(site string, kind int16, anchorKind int16, an
 	return s.threads.ListBySite(site, kind, anchorKind, anchorID, cursor, clampLimit(limit))
 }
 
-func (s *ThreadService) ListByAnchor(anchorKind int16, anchorID string, kind int16) ([]model.CommunityThread, error) {
-	return s.threads.ListByAnchor(anchorKind, anchorID, kind)
+func (s *ThreadService) ListByAnchor(site string, anchorKind int16, anchorID string, kind int16) ([]model.CommunityThread, error) {
+	return s.threads.ListByAnchor(site, anchorKind, anchorID, kind)
 }
 
 // OpeningPostMeta returns the opening-post (post_number=1) status + author for
