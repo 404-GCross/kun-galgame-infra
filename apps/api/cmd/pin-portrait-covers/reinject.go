@@ -132,72 +132,93 @@ func runReinject(ctx context.Context, cfg *config.Config, db *gorm.DB, dir, imag
 		return fmt.Errorf("image_service unreachable at %s: %w", imageBaseURL, err)
 	}
 
-	var written, skipDup, pinned, failed int
+	// Fan the per-game work out: upload latency (image_service → R2 put)
+	// dominates, and every file is an independent game, so a serial loop means
+	// hours of idle round-trips at the ~21k scale. gorm's *DB is pool-backed
+	// and safe for concurrent use; the pinged list is the only shared state.
+	const workers = 8
+	var written, skipDup, pinned, failed atomic.Int64
+	var pingedMu sync.Mutex
 	var pinged []string
-	for _, f := range files {
-		gid, origHash, ok := parseStem(f)
-		if !ok {
-			failed++
-			slog.Warn("reinject: unparseable filename", "file", f)
-			continue
-		}
-		// Idempotent dedup: this upscale already reinjected?
-		var cnt int64
-		if err := db.WithContext(ctx).Table("galgame_cover").
-			Where("galgame_id = ? AND source = 'upscale' AND source_key = ?", gid, origHash).
-			Count(&cnt).Error; err != nil {
-			failed++
-			slog.Warn("reinject dedup query", "gid", gid, "err", err)
-			continue
-		}
-		if cnt > 0 {
-			skipDup++
-			continue
-		}
-		orig, maxSort, err := loadOrigCover(ctx, db, gid, origHash)
-		if err != nil {
-			failed++
-			slog.Warn("reinject load orig", "gid", gid, "hash", origHash, "err", err)
-			continue
-		}
-		body, err := os.ReadFile(f)
-		if err != nil {
-			failed++
-			slog.Warn("reinject read", "file", f, "err", err)
-			continue
-		}
-		res, err := cli.Upload(ctx, bytes.NewReader(body), origHash+".webp", coverPreset)
-		if err != nil {
-			failed++
-			slog.Warn("reinject upload", "gid", gid, "err", err)
-			continue
-		}
-		if err := db.WithContext(ctx).Exec(
-			`INSERT INTO galgame_cover (galgame_id, image_hash, sort_order, sexual, violence, source, source_key, kind, portrait_pinned, created)
-			 VALUES (?, ?, ?, ?, ?, 'upscale', ?, ?, false, NOW())
-			 ON CONFLICT (galgame_id, image_hash) DO UPDATE
-			   SET source = EXCLUDED.source, source_key = EXCLUDED.source_key, kind = EXCLUDED.kind`,
-			gid, res.Hash, maxSort+1, orig.Sexual, orig.Violence, origHash, orig.Kind,
-		).Error; err != nil {
-			failed++
-			slog.Warn("reinject insert", "gid", gid, "err", err)
-			continue
-		}
-		written++
-		pinged = append(pinged, res.Hash)
-		if err := pinPortrait(ctx, db, gid, res.Hash); err != nil {
-			failed++
-			slog.Warn("reinject pin", "gid", gid, "err", err)
-			continue
-		}
-		pinned++
+	jobs := make(chan string)
+	var wg sync.WaitGroup
+	for range workers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for f := range jobs {
+				gid, origHash, ok := parseStem(f)
+				if !ok {
+					failed.Add(1)
+					slog.Warn("reinject: unparseable filename", "file", f)
+					continue
+				}
+				// Idempotent dedup: this upscale already reinjected?
+				var cnt int64
+				if err := db.WithContext(ctx).Table("galgame_cover").
+					Where("galgame_id = ? AND source = 'upscale' AND source_key = ?", gid, origHash).
+					Count(&cnt).Error; err != nil {
+					failed.Add(1)
+					slog.Warn("reinject dedup query", "gid", gid, "err", err)
+					continue
+				}
+				if cnt > 0 {
+					skipDup.Add(1)
+					continue
+				}
+				orig, maxSort, err := loadOrigCover(ctx, db, gid, origHash)
+				if err != nil {
+					failed.Add(1)
+					slog.Warn("reinject load orig", "gid", gid, "hash", origHash, "err", err)
+					continue
+				}
+				body, err := os.ReadFile(f)
+				if err != nil {
+					failed.Add(1)
+					slog.Warn("reinject read", "file", f, "err", err)
+					continue
+				}
+				res, err := cli.Upload(ctx, bytes.NewReader(body), origHash+".webp", coverPreset)
+				if err != nil {
+					failed.Add(1)
+					slog.Warn("reinject upload", "gid", gid, "err", err)
+					continue
+				}
+				if err := db.WithContext(ctx).Exec(
+					`INSERT INTO galgame_cover (galgame_id, image_hash, sort_order, sexual, violence, source, source_key, kind, portrait_pinned, created)
+					 VALUES (?, ?, ?, ?, ?, 'upscale', ?, ?, false, NOW())
+					 ON CONFLICT (galgame_id, image_hash) DO UPDATE
+					   SET source = EXCLUDED.source, source_key = EXCLUDED.source_key, kind = EXCLUDED.kind`,
+					gid, res.Hash, maxSort+1, orig.Sexual, orig.Violence, origHash, orig.Kind,
+				).Error; err != nil {
+					failed.Add(1)
+					slog.Warn("reinject insert", "gid", gid, "err", err)
+					continue
+				}
+				written.Add(1)
+				pingedMu.Lock()
+				pinged = append(pinged, res.Hash)
+				pingedMu.Unlock()
+				if err := pinPortrait(ctx, db, gid, res.Hash); err != nil {
+					failed.Add(1)
+					slog.Warn("reinject pin", "gid", gid, "err", err)
+					continue
+				}
+				pinned.Add(1)
+			}
+		}()
 	}
+	for _, f := range files {
+		jobs <- f
+	}
+	close(jobs)
+	wg.Wait()
 	if len(pinged) > 0 {
 		if _, err := cli.ReferencePing(ctx, pinged); err != nil {
 			slog.Warn("reference-ping", "err", err)
 		}
 	}
-	slog.Info("reinject done", "rows_written", written, "skipped_dup", skipDup, "pinned", pinned, "failed", failed)
+	slog.Info("reinject done", "rows_written", written.Load(), "skipped_dup", skipDup.Load(), "pinned", pinned.Load(), "failed", failed.Load())
 	return nil
 }
 
