@@ -184,7 +184,7 @@ func TestSecondTenant_LegacyIndexDroppedOnUpgrade(t *testing.T) {
 	}
 	// A migration run drops it and (re)creates the split pair; a second run is a
 	// no-op.
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		if err := Run(testDB); err != nil {
 			t.Fatalf("migrate run %d: %v", i, err)
 		}
