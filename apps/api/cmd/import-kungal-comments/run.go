@@ -3,7 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -68,7 +68,7 @@ func run(src, tgt *gorm.DB, site string, apply bool) (*Report, error) {
 	for gid := range byGame {
 		gameIDs = append(gameIDs, gid)
 	}
-	sort.Ints(gameIDs)
+	slices.Sort(gameIDs)
 	rep.GamesTotal = len(gameIDs)
 
 	authors := make(map[int64]bool) // distinct comment authors -> trust seed set
@@ -233,7 +233,11 @@ func processGame(tgt, src *gorm.DB, site string, plan ThreadPlan, likesByComment
 				if res.Error != nil {
 					return fmt.Errorf("create reaction: %w", res.Error)
 				}
-				rep.ReactionsToInsert += int(res.RowsAffected)
+				if res.RowsAffected == 0 {
+					rep.ReactionsExisting++
+				} else {
+					rep.ReactionsToInsert++
+				}
 			}
 		}
 
@@ -285,12 +289,15 @@ func dryRunGame(tgt *gorm.DB, site, anchorID string, plan ThreadPlan,
 		return fmt.Errorf("dry-run find thread: %w", findErr)
 	}
 
+	// Likes classify exactly the way an apply would: a like on a post this run
+	// will create always inserts; a like on an already-imported post inserts only
+	// when its (post, user) reaction row is missing — mirror the apply-side
+	// ON CONFLICT skip so a resumed dry run reports the truth, not an upper bound.
+	type likePair struct{ post, user int64 }
+	var onImported []likePair
 	for i := range plan.Posts {
 		old := plan.Posts[i].OldID
-		imported := false
-		if _, ok := existingMap[old]; ok {
-			imported = true
-		}
+		postID, imported := existingMap[old]
 		if imported {
 			rep.PostsExisting++
 		} else {
@@ -298,11 +305,38 @@ func dryRunGame(tgt *gorm.DB, site, anchorID string, plan ThreadPlan,
 			rep.MapRowsToWrite++
 		}
 		for _, lk := range likesByComment[old] {
-			_ = lk
-			// A like becomes a reaction unless already imported would dedupe it;
-			// in dry-run we count each like as a would-insert (target is empty on a
-			// fresh run; resume re-count is harmless — it never writes).
-			rep.ReactionsToInsert++
+			if imported {
+				onImported = append(onImported, likePair{postID, int64(lk.UserID)})
+			} else {
+				rep.ReactionsToInsert++
+			}
+		}
+	}
+	if len(onImported) > 0 {
+		postIDs := make([]int64, 0, len(onImported))
+		seen := make(map[int64]bool, len(onImported))
+		for _, p := range onImported {
+			if !seen[p.post] {
+				seen[p.post] = true
+				postIDs = append(postIDs, p.post)
+			}
+		}
+		var have []model.CommunityReaction
+		if err := tgt.Select("post_id", "user_id").
+			Where("post_id IN ? AND kind = ?", postIDs, model.ReactionKindLike).
+			Find(&have).Error; err != nil {
+			return fmt.Errorf("dry-run probe reactions: %w", err)
+		}
+		existing := make(map[likePair]bool, len(have))
+		for _, r := range have {
+			existing[likePair{r.PostID, r.UserID}] = true
+		}
+		for _, p := range onImported {
+			if existing[p] {
+				rep.ReactionsExisting++
+			} else {
+				rep.ReactionsToInsert++
+			}
 		}
 	}
 	return nil
@@ -342,14 +376,11 @@ func seedTrust(tgt *gorm.DB, authors map[int64]bool, apply bool, rep *Report) er
 	for id := range authors {
 		ids = append(ids, id)
 	}
-	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	slices.Sort(ids)
 
 	present := make(map[int64]bool)
 	for start := 0; start < len(ids); start += trustBatch {
-		end := start + trustBatch
-		if end > len(ids) {
-			end = len(ids)
-		}
+		end := min(start+trustBatch, len(ids))
 		var have []int64
 		if err := tgt.Model(&model.CommunityTrust{}).
 			Where("user_id IN ?", ids[start:end]).Pluck("user_id", &have).Error; err != nil {
@@ -380,10 +411,7 @@ func seedTrust(tgt *gorm.DB, authors map[int64]bool, apply bool, rep *Report) er
 	now := time.Now()
 	const cols = "(user_id, level, first_posts_held_remaining, updated_at)"
 	for start := 0; start < len(absent); start += trustBatch {
-		end := start + trustBatch
-		if end > len(absent) {
-			end = len(absent)
-		}
+		end := min(start+trustBatch, len(absent))
 		chunk := absent[start:end]
 		placeholders := make([]string, 0, len(chunk))
 		args := make([]any, 0, len(chunk)*4)

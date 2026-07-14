@@ -16,6 +16,7 @@ type Report struct {
 	PostsExisting   int // already mapped (or reconciled from a crashed run)
 
 	ReactionsToInsert int
+	ReactionsExisting int // (post, user) reaction already present -> conflict-skipped
 	ReactionsSkipped  int // like whose target post is absent (should be 0)
 
 	TrustSeedAbsent  int // authors with no community_trust row -> inserted
@@ -39,7 +40,7 @@ func (r *Report) print(w io.Writer, apply bool) {
 	fmt.Fprintf(w, "games (distinct galgame_id with >=1 comment) : %d\n", r.GamesTotal)
 	fmt.Fprintf(w, "threads   to create / already present        : %d / %d\n", r.ThreadsToCreate, r.ThreadsExisting)
 	fmt.Fprintf(w, "posts     to insert / already present        : %d / %d\n", r.PostsToInsert, r.PostsExisting)
-	fmt.Fprintf(w, "reactions to insert / skipped (orphan)       : %d / %d\n", r.ReactionsToInsert, r.ReactionsSkipped)
+	fmt.Fprintf(w, "reactions to insert / present / orphan       : %d / %d / %d\n", r.ReactionsToInsert, r.ReactionsExisting, r.ReactionsSkipped)
 	fmt.Fprintf(w, "trust     to seed (absent) / already present : %d / %d\n", r.TrustSeedAbsent, r.TrustSeedPresent)
 	fmt.Fprintf(w, "map rows  to write                           : %d\n", r.MapRowsToWrite)
 	fmt.Fprintf(w, "-------------------- anomalies --------------------\n")
