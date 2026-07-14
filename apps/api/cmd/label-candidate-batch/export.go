@@ -119,10 +119,12 @@ func loadSide(db *gorm.DB, id int64) (labelSide, error) {
 		return s, err
 	}
 	err := db.Raw(`SELECT
-			coalesce((SELECT title FROM catalog_work_title wt WHERE wt.work_id = wl.work_id ORDER BY wt.id LIMIT 1), '(untitled)') AS title,
+			coalesce((SELECT title FROM catalog_work_title wt WHERE wt.work_id = wl.work_id ORDER BY wt.id LIMIT 1), w.display_name) AS title,
 			coalesce((SELECT min(released_y) FROM catalog_release rel WHERE rel.work_id = wl.work_id AND rel.released_y IS NOT NULL), 0) AS year,
 			coalesce(src.key, '') AS src
-		FROM catalog_work_label wl LEFT JOIN catalog_source src ON src.id = wl.source_id
+		FROM catalog_work_label wl
+		JOIN catalog_work w ON w.id = wl.work_id
+		LEFT JOIN catalog_source src ON src.id = wl.source_id
 		WHERE wl.label_id = ? ORDER BY wl.work_id LIMIT 10`, id).Scan(&s.Works).Error
 	return s, err
 }
