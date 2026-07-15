@@ -124,7 +124,7 @@
 | `GET /v1/catalog/works/{id}` | `catalog:read` | 注册行:display_name / titles / medium / 分级 / 外部锚(来源白名单过滤,§11)/ **认领指针**(→ 内容面路由,见 3.3) |
 | `GET /v1/catalog/works/{id}/credits` | `catalog:read` | 该作品的 credits(名义/角色/role) |
 | `GET /v1/catalog/works/{id}/relations` | `catalog:read` | 跨媒介关系(改编/续作/同世界观…,单行双向渲染) |
-| `GET /v1/catalog/persons/{id}`(+ `…/credits`) | `catalog:read` | 人物聚合;**hidden 名义链接不出现在公开聚合**(既有可见性政策) |
+| `GET /v1/catalog/names/{id}`(+ `…/credits`) | `catalog:read` | 名义(credited identity;{id}=credit_name id,携 person_id+公开 sibling 名义)——**hidden 名义链接不出现在公开聚合**(既有可见性政策)。v2.1 实施时由 persons/{id} 更名:实体层 credits 指向名义而非 person,公开词表与 resolve/redirects 的 "name" 键统一 |
 | `GET /v1/catalog/characters/{id}` | `catalog:read` | 角色(含出演,spoiler 级字段) |
 | `GET /v1/catalog/labels/{id}`(+ `…/works`) | `catalog:read` | 厂牌/文库/社团 |
 | `GET /v1/catalog/search` | `catalog:read` | 实体搜索(persons/characters/labels,复用三索引) |
@@ -154,7 +154,7 @@
 
 - 已发布字段不删不改语义;只做**向后兼容**的新增。
 - 公开 `content_limit` 语义统一(见 §11);各端点默认 = `sfw`。
-- catalog 面的实体 ID(`w`/`p`/`n`/`b`/`c` 前缀)全局稳定,合并只产生 redirect,永不复用。
+- catalog 面的实体 ID 全局稳定,合并只产生 redirect,永不复用。~~`w`/`p`/`n`/`b`/`c` 前缀~~(superseded,2026-07-15 步骤 03 裁定 2:公开 id = 纯数字——与 galgame 面已冻结的 `catalog_work_id` 数字形态一致,路径已按实体类型分命名空间)。公开线源键 = 站点真拼写(`erogamescape`;内部注册表键 `erogamespace` 在投影层映射,lookup 双拼容错)。
 
 ---
 
