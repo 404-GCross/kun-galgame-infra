@@ -27,6 +27,9 @@ import (
 	artifactRepo "api/internal/platform/artifact/repository"
 	artifactStorage "api/internal/platform/artifact/storage"
 
+	"api/internal/platform/devapi"
+	devapiPerm "api/internal/platform/devapi/perm"
+
 	imgHandler "api/internal/platform/image/handler"
 	imgRepoPkg "api/internal/platform/image/repository"
 	imgService "api/internal/platform/image/service"
@@ -366,6 +369,15 @@ func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 	oauthClients.Put("/:id", siteH.UpdateClient)
 	oauthClients.Put("/:id/storage", middleware.RequirePermission(sitePerm.Resolver, sitePerm.ClientsStorageConfig), siteH.UpdateClientStorage)
 	oauthClients.Delete("/:id", siteH.DeleteClient)
+
+	// Developer-platform (NextMoe open API) management. Mounted under the admin
+	// console, additionally gated on devapi.manage (admin/ren). Enables apps for
+	// the open API, sets tier/quota, and mints/rotates/revokes API keys. The
+	// public read faces are NOT here — they ship with 02/03.
+	// See docs/developer-platform/01-design.md §5-7.
+	devAdminH := devapi.NewAdminHandler(devapi.NewAdminService(devapi.NewRepository(db), devapi.NewRedisStore(a.Cache)))
+	devGroup := admin.Group("/devapi", middleware.RequirePermission(devapiPerm.Resolver, devapiPerm.Manage))
+	devAdminH.Register(devGroup)
 
 	// Image admin routes — best-effort; if images DB or S3 are unreachable
 	// in dev, skip registration rather than failing the whole oauth service.

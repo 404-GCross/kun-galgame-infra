@@ -13,6 +13,7 @@ import (
 	// Import all models
 	jobsModel "api/internal/jobs/model"
 	authModel "api/internal/platform/auth/model"
+	"api/internal/platform/devapi"
 	siteModel "api/internal/platform/site/model"
 
 	"gorm.io/gorm"
@@ -55,6 +56,15 @@ func main() {
 
 	// Run migrations
 	slog.Info("Running migrations...")
+
+	// Developer-platform columns on the EXISTING oauth_clients table must be
+	// added via raw SQL (NOT NULL backfilled + DROP DEFAULT) BEFORE AutoMigrate,
+	// so AutoMigrate never tries to add a NOT NULL column to a populated table.
+	// Idempotent. See devapi.AddOAuthClientDevColumns / 裁定 8.
+	if err := devapi.AddOAuthClientDevColumns(gormDB); err != nil {
+		slog.Error("failed to add developer-platform columns", "error", err)
+		os.Exit(1)
+	}
 
 	// Get all models to migrate
 	models := getAllModels()
@@ -135,6 +145,12 @@ func getAllModels() []any {
 		&siteModel.Site{},
 		&siteModel.OAuthClient{},
 		&siteModel.Role{},
+
+		// Developer platform (NextMoe open API): API keys + usage rollup.
+		// The oauth_clients dev_* columns are handled by
+		// devapi.AddOAuthClientDevColumns above (raw SQL, pre-AutoMigrate).
+		&devapi.DeveloperAPIKey{},
+		&devapi.DeveloperAPIUsage{},
 
 		// NOTE: artifact models (Artifact/Manifest) moved to the dedicated
 		// kun_artifacts DB — migrated by cmd/artifact's AutoMigrate, not here.

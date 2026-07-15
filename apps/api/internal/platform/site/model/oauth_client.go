@@ -176,6 +176,28 @@ type OAuthClient struct {
 	ArtifactMaxFileSize     int64          `gorm:"default:21474836480" json:"artifact_max_file_size"`
 	ArtifactAllowedMime     datatypes.JSON `gorm:"type:jsonb" json:"artifact_allowed_mime,omitempty"`
 
+	// --- Developer platform / NextMoe open API extension fields ---
+	// An application enrolled in the NextMoe open API is an oauth_clients row
+	// with these platform-level fields (tier/quota apply to the whole open API,
+	// not per-media — per-face access is expressed via scopes). Managed by the
+	// developer-platform admin surface (cmd/oauth /admin/devapi). The columns
+	// are added to the existing table by devapi.AddOAuthClientDevColumns (raw
+	// SQL: NOT NULL backfilled then DROP DEFAULT), so the GORM tags below carry
+	// NO `default:` — the zero value is written explicitly (intent-column
+	// discipline, avoiding the GORM zero-value INSERT trap). See
+	// docs/developer-platform/01-design.md §5.1.
+	//
+	// OwnerUserID owns a third-party developer application (ecosystem account);
+	// NULL for first-party site clients (they belong via SiteID). Indexed for
+	// the portal "my apps" list and management auth.
+	OwnerUserID    *uint  `gorm:"index" json:"owner_user_id,omitempty"`
+	DevEnabled     bool   `gorm:"not null" json:"dev_enabled"`      // admitted to the open API
+	DevTier        string `gorm:"size:20;not null" json:"dev_tier"` // free|trusted|internal
+	DevNSFWAllowed bool   `gorm:"not null" json:"dev_nsfw_allowed"`
+	// Rate/quota overrides — 0 means "use the tier default" (see devapi §7).
+	DevRatePerMin int `gorm:"not null" json:"dev_rate_per_min"`
+	DevQuotaDaily int `gorm:"not null" json:"dev_quota_daily"`
+
 	// --- Catalog service extension field ---
 	// CatalogSite binds this client to a single catalog tenant/site key (the
 	// ecosystem tenant key written into catalog_work.site — e.g. galgame_wiki

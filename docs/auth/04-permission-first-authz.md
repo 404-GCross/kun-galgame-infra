@@ -49,7 +49,7 @@ func (r *Resolver) Can(roles []string, p Permission) bool
   `RequireRole` 同形(读 `c.Locals("user_roles")`,fail-closed 403)。in-handler 判定:
   `perm.Resolver.Can(roles, perm.Xxx)`。
 
-### 2.2 五个词汇包(各域自持,import 引擎)
+### 2.2 六个词汇包(各域自持,import 引擎)
 
 | 包 | 面向 | 依赖方向 |
 |---|---|---|
@@ -58,6 +58,7 @@ func (r *Resolver) Can(roles []string, p Permission) bool
 | `internal/platform/trust/perm` | T&S 统一审核收件箱队列 | 平台域,import authz |
 | `internal/platform/site/perm` | IdP 控制台(`oauth.*`,横跨 auth/site,单叶子包承载) | 只 import authz;auth handler import 它不扰动既有 auth→site 方向 |
 | `internal/platform/artifact/perm` | artifact 文件运维 | 平台域,import authz |
+| `internal/platform/devapi/perm` | 开发者平台(NextMoe 开放 API)管理面 | 平台域,import authz |
 
 每包 = 权限常量 + `var Bundles authz.Bundles`(role→捆,层级由 `moderatorPerms ⊆ adminPerms ⊆ renPerms`
 组合保证)+ `var Resolver = authz.NewResolver(Bundles)`(包级单例)。
@@ -86,6 +87,7 @@ func (r *Resolver) Can(roles []string, p Permission) bool
 | `oauth.clients.storage_config` | ren | 开客户端存储能力(artifact/image) |
 | `oauth.clients.privileged_config` | ren | 敏感客户端字段(ren-only scope / auto_consent / display_order) |
 | `artifact.files.manage` | ren | artifact 文件浏览/删除/回收 |
+| `devapi.manage` | admin, ren | 开发者平台管理面(启用应用 / tier / 铸·轮换·吊销 key) |
 
 ### 2.4 命名约定
 
