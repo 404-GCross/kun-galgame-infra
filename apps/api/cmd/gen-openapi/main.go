@@ -7,6 +7,7 @@
 //	go run ./cmd/gen-openapi -admin -o ../../docs/artifact/admin-openapi.yaml    # oauth admin API (3.1)
 //	go run ./cmd/gen-openapi -galgame-calendar -o ../../docs/galgame_wiki/calendar-openapi.yaml  # wiki release calendar (3.1)
 //	go run ./cmd/gen-openapi -galgame-read -o ../../docs/galgame_wiki/read-openapi.yaml          # wiki read endpoints (3.1)
+//	go run ./cmd/gen-openapi -galgame-public -o ../../docs/galgame_wiki/public-openapi.yaml      # NextMoe open-API galgame public projection (3.1)
 //	go run ./cmd/gen-openapi -catalog -o ../../docs/catalog/openapi.yaml                # catalog S2S face (3.1)
 //	go run ./cmd/gen-openapi -catalog-admin -o ../../docs/catalog/admin-openapi.yaml    # catalog review queues (3.1)
 //	go run ./cmd/gen-openapi -community -o ../../docs/community/openapi.yaml             # community S2S embed face (3.1)
@@ -36,6 +37,7 @@ func main() {
 	admin := flag.Bool("admin", false, "emit the oauth-hosted admin API spec (/api/v1/admin/artifact/*) instead of the artifact service spec")
 	galgameCalendar := flag.Bool("galgame-calendar", false, "emit the galgame-wiki release-calendar spec (/api/galgame/calendar*)")
 	galgameRead := flag.Bool("galgame-read", false, "emit the galgame-wiki read-endpoint spec (/api/galgame/batch, …)")
+	galgamePublic := flag.Bool("galgame-public", false, "emit the NextMoe open-API galgame public projection spec (/v1/galgame/*)")
 	catalog := flag.Bool("catalog", false, "emit the catalog S2S spec (/api/v1/catalog/*)")
 	catalogAdmin := flag.Bool("catalog-admin", false, "emit the catalog admin review-queue spec (/api/v1/admin/catalog/*)")
 	community := flag.Bool("community", false, "emit the community S2S embed spec (/api/v1/community/*)")
@@ -50,6 +52,8 @@ func main() {
 	switch {
 	case *galgameRead:
 		api = galgameHandler.SetupGalgameReadSpec(app)
+	case *galgamePublic:
+		api = galgameHandler.SetupGalgamePublicSpec(app)
 	case *galgameCalendar:
 		api = galgameHandler.SetupCalendarSpec(app)
 	case *catalog:

@@ -46,6 +46,13 @@ type GalgameService struct {
 	// content-addressed hash. See image_meta.go.
 	imageMeta ImageMetaFunc
 	metaCache *imageMetaCache
+
+	// cdnBase is the image-service CDN URL prefix used by the open-API public
+	// projection to emit complete image URLs instead of bare hashes. Empty
+	// disables URL composition (the public face then omits images). Wired via
+	// WithCDNBase in cmd/galgame; irrelevant to every internal read path (they
+	// return the bare hash and let the frontend resolve the URL).
+	cdnBase string
 }
 
 // NewGalgameService creates a new GalgameService
@@ -71,6 +78,15 @@ func NewGalgameService(
 // without this call).
 func (s *GalgameService) WithImageProbe(p ImageProbeFunc) *GalgameService {
 	s.probeImages = p
+	return s
+}
+
+// WithCDNBase wires the image-service CDN base URL used by the open-API public
+// projection to compose complete image URLs. Returns the service for fluent
+// chaining. Empty base = the public face omits images (bare hashes are never
+// leaked on the public wire).
+func (s *GalgameService) WithCDNBase(base string) *GalgameService {
+	s.cdnBase = base
 	return s
 }
 

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"api/internal/platform/galgame/dto"
+	"api/internal/platform/galgame/repository"
 )
 
 // Cross-source read face (step 34): three-source per-game scores and the
@@ -33,7 +34,14 @@ func (s *GalgameService) GetScores(ctx context.Context, gid int) (dto.GalgameSco
 	if err != nil {
 		return dto.GalgameScores{}, err
 	}
+	return buildGalgameScores(sm), nil
+}
 
+// buildGalgameScores maps a loaded ScoreMeta to the frozen GalgameScores shape
+// (each source null when unanchored, present-with-null-value when anchored but
+// unrated). Shared by GET /galgame/:gid/scores and the open-API public detail's
+// embedded scores block so the two never drift.
+func buildGalgameScores(sm repository.ScoreMeta) dto.GalgameScores {
 	var scores dto.GalgameScores
 	var latest time.Time
 
@@ -80,7 +88,7 @@ func (s *GalgameService) GetScores(ctx context.Context, gid int) (dto.GalgameSco
 		scores.SyncedAt = &syncedAt
 	}
 
-	return scores, nil
+	return scores
 }
 
 // statsKeys maps each galgame_stats key (the frozen v1 contract) to the

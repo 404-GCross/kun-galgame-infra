@@ -311,5 +311,19 @@ func main() {
 		os.Exit(1)
 	}
 
+	// (7) galgame (updated, id) index — the changes-stream keyset for the NextMoe
+	// open-API public face (GET /v1/galgame/changes, step 02). Serves
+	// "ORDER BY updated ASC, id ASC" + the (updated, id) > (?, ?) keyset as an
+	// index-ordered scan, so an incremental-sync consumer never triggers a full
+	// scan + sort. IF NOT EXISTS = idempotent; not partial (the changes feed
+	// filters status/content_limit at read time, both cheap post-index rechecks).
+	if err := db.DB().Exec(`
+		CREATE INDEX IF NOT EXISTS idx_galgame_updated_id
+		    ON galgame(updated, id)
+	`).Error; err != nil {
+		slog.Error("create idx_galgame_updated_id failed", "error", err)
+		os.Exit(1)
+	}
+
 	slog.Info("galgame wiki migration completed successfully")
 }

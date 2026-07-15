@@ -19,6 +19,7 @@ on:
     paths: &specs
       - "docs/galgame_wiki/read-openapi.yaml"
       - "docs/galgame_wiki/calendar-openapi.yaml"
+      - "docs/galgame_wiki/public-openapi.yaml"
       - "docs/artifact/openapi.yaml"
       - "docs/artifact/admin-openapi.yaml"
       - "docs/catalog/openapi.yaml"
@@ -77,6 +78,7 @@ jobs:
           specs="
             docs/galgame_wiki/read-openapi.yaml
             docs/galgame_wiki/calendar-openapi.yaml
+            docs/galgame_wiki/public-openapi.yaml
             docs/artifact/openapi.yaml
             docs/artifact/admin-openapi.yaml
             docs/catalog/openapi.yaml
