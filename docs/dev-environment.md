@@ -157,6 +157,93 @@ artifact simply misses locally (upload a fresh one to exercise the flow).
 - Realistic data comes from **step 02** (`refresh-dev-db`); a bare bring-up gives
   you empty (freshly migrated) databases.
 
+## Refreshing the databases (step 02 — `refresh-dev-db`)
+
+`docker-compose.dev.yml` gives you empty, freshly-migrated databases. To fill
+them with **desensitised, real-shaped production data**, use one command:
+
+```sh
+./scripts/refresh-dev-db.sh                    # all core DBs, latest artifact
+./scripts/refresh-dev-db.sh --fresh            # rebuild the artifact on the server first
+./scripts/refresh-dev-db.sh --db kun_community # just one core DB
+./scripts/refresh-dev-db.sh --group sources    # stream the raw scrape DBs (dlsite/erogamespace)
+```
+
+Desensitisation happens **at the source** (裁定 1a): the prod host produces
+already-clean artifacts; **raw production PII never reaches your dev box.** The
+local script only downloads + restores (and deletes the download afterwards).
+
+### Groups
+
+| Group | Databases | How |
+| --- | --- | --- |
+| `core` (default) | kun_galgame_infra, kun_galgame_wiki, kungalgame, kungalgame_patch, kun_community, kun_catalog, kun_images, kun_artifacts | download desensitised `*.dump`, `terminate → drop → create → pg_restore -j4` |
+| `sources` | dlsite, erogamespace | raw `pg_dump -Fc | pg_restore` stream — **zero PII, zero desensitisation**, no artifact |
+| — | **kun_trust** | *not in any group.* Local trust = `go run ./cmd/migrate-trust` (re-seed). |
+| — | **letmoe (any `*letmoe*`)** | **hard-refused** by the script — letmoe runs its own seed system. |
+
+After a restore the script runs **PII assertions** (no real emails, empty
+sessions, every OAuth secret = the dev derivation, …) and exits non-zero if any
+fail — the pipeline proves it desensitised. Re-check any time without restoring:
+`./scripts/refresh-dev-db.sh --assert-only --db kun_galgame_infra`.
+
+### Desensitisation contract (what changes)
+
+Server-side pipeline: `scripts/dev-snapshot/build-snapshot.sh` +
+`scripts/dev-snapshot/scrub/<db>.sql` (one auditable SQL file per scrubbed DB).
+It copies each prod DB **read-only** into a throwaway `dev_snapshot_scratch_<db>`
+on the server, scrubs *that*, dumps it, and drops it — production is never
+mutated.
+
+| Data | Becomes |
+| --- | --- |
+| `users.email` / `original_email`, `user_migrations.source_email` | `user<id>@dev.local` |
+| `users.password` / `kungal_password` / `moyu_password` | bcrypt of **`kungal-dev`** (one constant — log in as any user with password `kungal-dev`) |
+| `users.ip`, `kungalgame_patch."user".ip`, `images.first_uploader_ip` | emptied |
+| `oauth_clients.secret` | `sha256:` + hex(sha256(**`dev-secret-<client_id>`**)) — a client presenting the plaintext `dev-secret-<client_id>` authenticates |
+| `oauth_clients.redirect_uris` | first-party localhost dev callbacks ensured present (forum :2333, patch :6969, wiki :9421) |
+| `sessions`, `authorization_codes`, `password_resets`, `signing_keys`, `oauth_accounts` tokens | emptied (signing_keys: dev runs HS256 / self-bootstraps a fresh KEK) |
+| private chat + DM content (`chat_message`, `message`, `user_message`, edit history) | `[dev-scrubbed] …` synthetic text |
+| `kun_community` **held** posts (`status=1`) body + `community_flag.note` | `[dev-scrubbed] …` synthetic text |
+| public content (topics, replies, comments, resources, catalog, wiki, images) | **preserved verbatim** |
+
+The dev credentials above are **public by design** (裁定 3) — hard-code them in
+each product repo's `.env.example` (step 03 consumes this).
+
+### trust: re-seed, don't restore
+
+`kun_trust` is never in a snapshot. Bring it up locally with the migration:
+
+```sh
+cd apps/api && go run ./cmd/migrate-trust      # creates + seeds kun_trust
+```
+
+If you need a dev subject-kind registration (a **dev** callback secret, unrelated
+to the prod registry), insert one by hand — e.g.:
+
+```sql
+-- kun_trust: register a dev subject kind for local S2S callbacks
+INSERT INTO trust_subject_kind (site, key, callback_url, callback_secret, is_deprecated, notify_on_dismiss, created_at)
+VALUES ('kungalgame', 'forum_topic', 'http://127.0.0.1:9282/internal/trust/callback', 'dev-trust-callback-secret', false, false, now())
+ON CONFLICT DO NOTHING;
+```
+
+### ⚠️ Schema truth lives in the migrations, never in a snapshot (裁定 1c)
+
+A snapshot carries whatever schema production had **when it was taken**. If your
+local code has a newer migration than the snapshot, **run that repo's migration**
+— do not wait for the next snapshot and do not hand-patch columns:
+
+```sh
+cd apps/api
+go run ./cmd/migrate           # kun_galgame_infra (oauth + site models)
+go run ./cmd/migrate-galgame   # kun_galgame_wiki
+# cmd/image, cmd/artifact AutoMigrate on boot
+```
+
+The snapshot is a **data** fixture and at most a drift *detector* — the
+migrations are the single source of truth for structure.
+
 ## Tear down
 
 ```sh
