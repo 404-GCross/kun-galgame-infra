@@ -447,7 +447,7 @@ func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB, se
 	// by the shared devapi middleware chain (API key → per-minute rate limit →
 	// daily quota → galgame:read scope) and metered per response. NSFW is inert
 	// in Phase 1 (no key carries galgame:nsfw), so the projection is sfw-only.
-	setupPublicGalgame(a, cfg, galgameSvc, searchSvc, galgameH, tagH, officialH, engineH, seriesH, entityGalgamesH)
+	setupPublicGalgame(a, cfg, galgameSvc, searchSvc, galgameH, entityGalgamesH)
 }
 
 // setupPublicGalgame mounts the /v1/galgame public projection group behind the
@@ -462,10 +462,6 @@ func setupPublicGalgame(
 	galgameSvc *galgameService.GalgameService,
 	searchSvc *galgameSearch.Service,
 	galgameH *galgameHandler.GalgameHandler,
-	tagH *galgameHandler.TagHandler,
-	officialH *galgameHandler.OfficialHandler,
-	engineH *galgameHandler.EngineHandler,
-	seriesH *galgameHandler.SeriesHandler,
 	entityGalgamesH *galgameHandler.EntityGalgamesHandler,
 ) {
 	oauthDB := a.DB.DB() // kun_galgame_infra — the developer-platform tables
@@ -525,11 +521,11 @@ func setupPublicGalgame(
 	v1.Get("/calendar", sfwGate, galgameH.Calendar)
 	v1.Get("/calendar/pending", sfwGate, galgameH.CalendarPending)
 	v1.Get("/calendar/tba", sfwGate, galgameH.CalendarTBA)
-	// Taxonomy list whitelist (no content — safe passthrough).
-	v1.Get("/tags", tagH.List)
-	v1.Get("/officials", officialH.List)
-	v1.Get("/engines", engineH.List)
-	v1.Get("/series", seriesH.List)
+	// Taxonomy bare lists are deliberately NOT mounted (reviewer ruling, step 02):
+	// they would serve the internal recursive model shape outside the published
+	// spec, and anything reachable on the frozen /v1 face becomes de-facto
+	// contract (the same reasoning that made search a projection instead of a
+	// raw passthrough). Curated taxonomy projections come as a follow-up.
 	// Entity → galgames reverse-lookups (carry galgames → sfw-forced).
 	v1.Get("/tags/:id/galgames", sfwGate, entityGalgamesH.TagGalgames)
 	v1.Get("/officials/:id/galgames", sfwGate, entityGalgamesH.OfficialGalgames)
