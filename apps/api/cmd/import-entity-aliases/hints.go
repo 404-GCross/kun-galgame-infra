@@ -69,7 +69,7 @@ func runHints(db *gorm.DB, w io.Writer, apply bool) (hintStats, error) {
 			       normalize(e.%s, NFKC) AS main,
 			       normalize(it->>'Value', NFKC) AS alias
 			FROM catalog_external_ref r
-			JOIN src_bangumi.%s s ON s.id = r.external_id::bigint
+			JOIN src_bangumi.%s s ON s.id = CASE WHEN r.external_id ~ '^[0-9]+$' THEN r.external_id::bigint END
 			JOIN %s e ON e.id = r.entity_id
 			CROSS JOIN LATERAL jsonb_array_elements(s.infobox_parsed->'Fields') f
 			CROSS JOIN LATERAL jsonb_array_elements(f->'Items') it

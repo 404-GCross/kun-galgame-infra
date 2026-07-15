@@ -184,9 +184,12 @@ func loadAliasDecls(db *gorm.DB) ([]aliasDecl, map[int64]map[string]bool, error)
 		Alias string `gorm:"column:alias"`
 		Raw   string `gorm:"column:raw"`
 	}
+	// The cast is CASE-guarded: external_id is text and the table holds
+	// non-numeric ids from other sources; a bare ::bigint in the JOIN blows
+	// up whenever the planner evaluates it before the WHERE filter.
 	if err := db.Raw(`SELECT r.entity_id AS owner, normalize(it->>'Value', NFKC) AS alias, it->>'Value' AS raw
 		FROM catalog_external_ref r
-		JOIN src_bangumi.person p ON p.id = r.external_id::bigint
+		JOIN src_bangumi.person p ON p.id = CASE WHEN r.external_id ~ '^[0-9]+$' THEN r.external_id::bigint END
 		CROSS JOIN LATERAL jsonb_array_elements(p.infobox_parsed->'Fields') f
 		CROSS JOIN LATERAL jsonb_array_elements(f->'Items') it
 		WHERE r.entity_type = ? AND r.source_id = ? AND r.matched_by = 'rule:bangumi-person-import'
