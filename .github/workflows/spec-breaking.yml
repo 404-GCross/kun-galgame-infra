@@ -24,6 +24,7 @@ on:
       - "docs/artifact/admin-openapi.yaml"
       - "docs/catalog/openapi.yaml"
       - "docs/catalog/admin-openapi.yaml"
+      - "docs/catalog/public-openapi.yaml"
       - "docs/community/openapi.yaml"
       - "docs/trust/openapi.yaml"
       - "docs/trust/admin-openapi.yaml"
@@ -83,6 +84,7 @@ jobs:
             docs/artifact/admin-openapi.yaml
             docs/catalog/openapi.yaml
             docs/catalog/admin-openapi.yaml
+            docs/catalog/public-openapi.yaml
             docs/community/openapi.yaml
             docs/trust/openapi.yaml
             docs/trust/admin-openapi.yaml

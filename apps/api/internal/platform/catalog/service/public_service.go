@@ -1,0 +1,708 @@
+package service
+
+import (
+	"context"
+	stderrors "errors"
+	"fmt"
+	"strings"
+
+	"api/internal/platform/catalog/dto"
+	"api/internal/platform/catalog/model"
+
+	"gorm.io/gorm"
+)
+
+// NextMoe open-API public projection (step 03). These methods map the internal
+// catalog graph to the FROZEN public DTOs (dto.PublicCatalog*), reusing the S2S
+// read + resolve services — the S2S/admin face is untouched. Two invariants ride
+// on every projection: probable/related anchors NEVER surface (exact-only,
+// 硬红线) and content_rating=r18 works are fully hidden in Phase 1 (裁定 6). The
+// public fetchable set (裁定 1) is galgame non-stub works: only those are
+// independently GET-able; cross-media ends still appear as briefs.
+type PublicService struct {
+	db      *gorm.DB
+	read    *ReadService
+	resolve *ResolveService
+	mediums map[int16]string // medium id → key (seeded, tiny, loaded once)
+}
+
+// NewPublicService builds the public projection over the catalog DB, reusing the
+// already-constructed read + resolve services.
+func NewPublicService(db *gorm.DB, read *ReadService, resolve *ResolveService) *PublicService {
+	s := &PublicService{db: db, read: read, resolve: resolve, mediums: map[int16]string{}}
+	// Mediums are a tiny seeded vocabulary; load once at construction. A failure
+	// leaves the map empty (briefs carry an empty medium) rather than blocking the
+	// service — the rows are always seeded in practice.
+	var rows []struct {
+		ID  int16
+		Key string
+	}
+	if err := db.Raw(`SELECT id, key FROM catalog_medium`).Scan(&rows).Error; err == nil {
+		for _, r := range rows {
+			s.mediums[r.ID] = r.Key
+		}
+	}
+	return s
+}
+
+// galgameMediumID is the medium the Phase-1 fetchable set is scoped to (裁定 1).
+const galgameMediumID int16 = 1
+
+// PublicInclude selects the optional (heavy) blocks of a work/entity record.
+type PublicInclude struct {
+	Relations bool
+	Credits   bool
+	Works     bool
+}
+
+// ParsePublicInclude resolves the comma-separated include token set. Unknown
+// tokens are ignored.
+func ParsePublicInclude(raw string) PublicInclude {
+	var inc PublicInclude
+	for _, tok := range strings.Split(raw, ",") {
+		switch strings.TrimSpace(tok) {
+		case "relations":
+			inc.Relations = true
+		case "credits":
+			inc.Credits = true
+		case "works":
+			inc.Works = true
+		}
+	}
+	return inc
+}
+
+// ─────────────────────────── lookup (killer) ───────────────────────────
+
+// Lookup resolves an external id to its catalog work via an EXACT anchor only
+// (probable is an unverified hypothesis and never crosses the public face).
+// found=false → 404 when the source is unknown, no exact anchor exists, or the
+// resolved work is r18 (hidden). external_id is normalized per source (裁定 3).
+func (s *PublicService) Lookup(ctx context.Context, source, externalID string) (dto.PublicLookupData, bool, error) {
+	brief, err := s.lookupBrief(ctx, source, externalID)
+	if err != nil {
+		return dto.PublicLookupData{}, false, err
+	}
+	if brief == nil {
+		return dto.PublicLookupData{}, false, nil
+	}
+	return dto.PublicLookupData{Work: brief, ClaimedBy: brief.ClaimedBy}, true, nil
+}
+
+// LookupBatch resolves up to len(pairs) external ids, preserving order; a miss /
+// hidden work yields a null work in its slot (裁定 3). The caller caps the count.
+func (s *PublicService) LookupBatch(ctx context.Context, pairs []dto.PublicLookupPair) ([]dto.PublicLookupBatchItem, error) {
+	out := make([]dto.PublicLookupBatchItem, 0, len(pairs))
+	for _, p := range pairs {
+		item := dto.PublicLookupBatchItem{Source: p.Source, ExternalID: p.ExternalID}
+		brief, err := s.lookupBrief(ctx, p.Source, p.ExternalID)
+		if err != nil {
+			return nil, err
+		}
+		if brief != nil {
+			item.Work = brief
+			item.ClaimedBy = brief.ClaimedBy
+		}
+		out = append(out, item)
+	}
+	return out, nil
+}
+
+// lookupBrief is the shared exact-anchor resolver: source key → source id →
+// exact ref (work- or release-level) → owning work → public brief (nil on any
+// miss or an r18 work).
+func (s *PublicService) lookupBrief(ctx context.Context, source, externalID string) (*dto.PublicWorkBrief, error) {
+	db := s.db.WithContext(ctx)
+
+	var srcID int16
+	if err := db.Raw(`SELECT id FROM catalog_source WHERE key = ?`, source).Scan(&srcID).Error; err != nil {
+		return nil, err
+	}
+	if srcID == 0 {
+		return nil, nil // unknown source key
+	}
+	ext := normalizeExternalID(source, externalID)
+	if ext == "" {
+		return nil, nil
+	}
+
+	var ref struct {
+		EntityType int16
+		EntityID   int64
+	}
+	// EXACT tier only (link_kind = 0). Work-level anchor wins a tie over a
+	// release-level one (entity_type ASC).
+	if err := db.Raw(`SELECT entity_type, entity_id FROM catalog_external_ref
+		WHERE source_id = ? AND external_id = ? AND link_kind = ? AND entity_type IN (?, ?)
+		ORDER BY entity_type ASC LIMIT 1`,
+		srcID, ext, model.LinkKindExact, model.EntityTypeWork, model.EntityTypeRelease).Scan(&ref).Error; err != nil {
+		return nil, err
+	}
+	if ref.EntityID == 0 {
+		return nil, nil
+	}
+	workID := ref.EntityID
+	if ref.EntityType == model.EntityTypeRelease {
+		if err := db.Raw(`SELECT work_id FROM catalog_release WHERE id = ?`, ref.EntityID).Scan(&workID).Error; err != nil {
+			return nil, err
+		}
+	}
+	briefs, err := s.loadWorkBriefs(ctx, []int64{workID})
+	if err != nil {
+		return nil, err
+	}
+	return briefs[workID], nil // nil when r18 / not found (loadWorkBriefs drops r18)
+}
+
+// ─────────────────────────── work detail ───────────────────────────
+
+// WorkDetail projects one work to the frozen v1 record. found=false → 404 when
+// the id is unknown OR outside the Phase-1 fetchable set (galgame, live,
+// non-r18). relations / credits are attached only when included.
+func (s *PublicService) WorkDetail(ctx context.Context, id int64, inc PublicInclude) (dto.PublicCatalogWork, bool, error) {
+	detail, err := s.read.WorkByID(ctx, id)
+	if err != nil {
+		if stderrors.Is(err, ErrWorkNotFound) {
+			return dto.PublicCatalogWork{}, false, nil
+		}
+		return dto.PublicCatalogWork{}, false, err
+	}
+	w := detail.Work
+	// Fetchable set (裁定 1) + r18 gate (裁定 6): only a live, non-r18 galgame is
+	// independently GET-able. A merged tombstone / stub / cross-medium / r18 row
+	// is a 404 (its identity is still reachable via lookup/relations as a brief).
+	if w.MediumID != galgameMediumID || w.Status != model.WorkStatusLive || isR18(w.ContentRating) {
+		return dto.PublicCatalogWork{}, false, nil
+	}
+
+	rec := dto.PublicCatalogWork{
+		ID:            w.ID,
+		Medium:        s.mediumKey(w.MediumID),
+		DisplayName:   w.DisplayName,
+		OLang:         w.OLang,
+		ContentRating: contentRatingKey(w.ContentRating),
+		ReleaseDate:   earliestReleaseDate(detail.Releases),
+		Titles:        publicTitles(detail.Titles),
+		Refs:          publicRefs(detail.Refs),
+		ClaimedBy:     claimedBy(w.Site, w.ProductWorkID),
+	}
+	if inc.Relations {
+		rels, err := s.workRelations(ctx, id)
+		if err != nil {
+			return dto.PublicCatalogWork{}, false, err
+		}
+		rec.Relations = rels
+	}
+	if inc.Credits {
+		groups, err := s.workCredits(ctx, id)
+		if err != nil {
+			return dto.PublicCatalogWork{}, false, err
+		}
+		rec.Credits = groups
+	}
+	return rec, true, nil
+}
+
+// workRelations renders a work's cross-media relations single-directionally from
+// its own perspective, dropping r18 ends. Reuses no S2S query (there is none);
+// the read is a public-face concern.
+func (s *PublicService) workRelations(ctx context.Context, workID int64) ([]dto.PublicRelation, error) {
+	var rows []struct {
+		Key     string
+		Phrase  string
+		OtherID int64
+	}
+	// Outgoing (a=W) renders the forward phrase; incoming (b=W) renders the
+	// reverse phrase (forward for symmetric types, whose endpoints are stored a<b).
+	if err := s.db.WithContext(ctx).Raw(`
+		SELECT rt.key, rt.forward_phrase AS phrase, r.b_work_id AS other_id
+		FROM catalog_work_relation r JOIN catalog_relation_type rt ON rt.id = r.relation_type_id
+		WHERE r.a_work_id = ?
+		UNION ALL
+		SELECT rt.key,
+		       CASE WHEN rt.is_symmetric THEN rt.forward_phrase ELSE rt.reverse_phrase END AS phrase,
+		       r.a_work_id AS other_id
+		FROM catalog_work_relation r JOIN catalog_relation_type rt ON rt.id = r.relation_type_id
+		WHERE r.b_work_id = ?
+		ORDER BY key, other_id`, workID, workID).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	if len(rows) == 0 {
+		return []dto.PublicRelation{}, nil
+	}
+	ids := make([]int64, 0, len(rows))
+	for _, r := range rows {
+		ids = append(ids, r.OtherID)
+	}
+	briefs, err := s.loadWorkBriefs(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]dto.PublicRelation, 0, len(rows))
+	for _, r := range rows {
+		b := briefs[r.OtherID]
+		if b == nil {
+			continue // r18 end or deleted — drop
+		}
+		out = append(out, dto.PublicRelation{RelationType: r.Key, Phrase: r.Phrase, Work: *b})
+	}
+	return out, nil
+}
+
+// workCredits projects a work's credits (reusing the S2S read query), grouping
+// consecutive rows by role and whitelisting fields (note / provenance / source
+// stripped, 裁定 7).
+func (s *PublicService) workCredits(ctx context.Context, workID int64) ([]dto.PublicCreditGroup, error) {
+	rows, err := s.read.WorkCredits(ctx, workID)
+	if err != nil {
+		return nil, err
+	}
+	groups := make([]dto.PublicCreditGroup, 0)
+	var cur *dto.PublicCreditGroup
+	for _, r := range rows {
+		if cur == nil || cur.RoleKey != r.RoleKey {
+			groups = append(groups, dto.PublicCreditGroup{
+				RoleKey:  r.RoleKey,
+				RoleName: firstNonEmptyPub(r.RoleNameCN, r.RoleNameJA, r.RoleKey),
+			})
+			cur = &groups[len(groups)-1]
+		}
+		item := dto.PublicCreditItem{ID: r.CreditNameID, Name: r.Name, Lang: r.Lang}
+		if r.Latin != nil {
+			item.Latin = *r.Latin
+		}
+		if r.CharacterID != nil {
+			item.CharacterID = *r.CharacterID
+		}
+		if r.CharacterNM != nil {
+			item.Character = *r.CharacterNM
+		}
+		cur.Credits = append(cur.Credits, item)
+	}
+	return groups, nil
+}
+
+// ─────────────────────────── persons / characters / labels ───────────────────────────
+
+// Person projects a credited identity (GET /v1/catalog/persons/{id}; {id} is a
+// credit-name id) reusing ReadService.NameWorks — which implements the hidden
+// credit_name→person link doctrine (裁定 6). found=false → 404. credits (works +
+// roles) are attached only when included; r18 works are dropped and offset
+// paging is over the unfiltered query so nothing is skipped.
+func (s *PublicService) Person(ctx context.Context, id int64, withCredits bool, limit, offset int) (dto.PublicPerson, bool, error) {
+	res, err := s.read.NameWorks(ctx, id, limit, offset)
+	if err != nil {
+		return dto.PublicPerson{}, false, err
+	}
+	if res.Head == nil {
+		return dto.PublicPerson{}, false, nil
+	}
+	p := dto.PublicPerson{
+		ID:       res.Head.ID,
+		Name:     nameBuckets(res.Head.Lang, res.Head.Name),
+		Latin:    derefStrPub(res.Head.Latin),
+		Siblings: make([]dto.PublicSiblingName, 0, len(res.Siblings)),
+	}
+	if res.Head.PersonID != nil {
+		p.PersonID = *res.Head.PersonID
+	}
+	for _, sib := range res.Siblings {
+		p.Siblings = append(p.Siblings, dto.PublicSiblingName{
+			ID: sib.ID, Name: nameBuckets(sib.Lang, sib.Name), Latin: derefStrPub(sib.Latin),
+		})
+	}
+	if withCredits {
+		briefs, err := s.claimEnrich(ctx, res.Works)
+		if err != nil {
+			return dto.PublicPerson{}, false, err
+		}
+		p.Credits = make([]dto.PublicPersonCredit, 0, len(res.Works))
+		for _, w := range res.Works {
+			b := s.briefFromRow(w.Brief, briefs[w.Brief.WorkID])
+			if b == nil {
+				continue // r18 work — drop
+			}
+			row := dto.PublicPersonCredit{Work: *b, Roles: make([]dto.PublicPersonRole, 0, len(w.Roles))}
+			for _, r := range w.Roles {
+				pr := dto.PublicPersonRole{RoleKey: r.RoleKey, RoleName: firstNonEmptyPub(r.RoleNameCN, r.RoleNameJA, r.RoleKey)}
+				if r.CharacterID != nil {
+					pr.CharacterID = *r.CharacterID
+				}
+				if r.CharacterNM != nil {
+					pr.Character = *r.CharacterNM
+				}
+				row.Roles = append(row.Roles, pr)
+			}
+			p.Credits = append(p.Credits, row)
+		}
+		p.NextOffset = nextOffset(len(res.Works), limit, offset)
+	}
+	return p, true, nil
+}
+
+// Character projects a character (GET /v1/catalog/characters/{id}) reusing
+// ReadService.CharacterWorks. works (appears-in + voices) are include-gated.
+func (s *PublicService) Character(ctx context.Context, id int64, withWorks bool, limit, offset int) (dto.PublicCharacter, bool, error) {
+	res, err := s.read.CharacterWorks(ctx, id, limit, offset)
+	if err != nil {
+		return dto.PublicCharacter{}, false, err
+	}
+	if res.Head == nil {
+		return dto.PublicCharacter{}, false, nil
+	}
+	ch := dto.PublicCharacter{
+		ID:    res.Head.ID,
+		Name:  nameBuckets(res.Head.Lang, res.Head.DisplayName),
+		Latin: derefStrPub(res.Head.Latin),
+	}
+	if withWorks {
+		briefs, err := s.claimEnrichCharacter(ctx, res.Works)
+		if err != nil {
+			return dto.PublicCharacter{}, false, err
+		}
+		ch.Works = make([]dto.PublicCharacterWork, 0, len(res.Works))
+		for _, w := range res.Works {
+			b := s.briefFromRow(w.Brief, briefs[w.Brief.WorkID])
+			if b == nil {
+				continue
+			}
+			row := dto.PublicCharacterWork{Work: *b, Voices: make([]dto.PublicVoiceName, 0, len(w.Voices))}
+			for _, v := range w.Voices {
+				row.Voices = append(row.Voices, dto.PublicVoiceName{
+					ID: v.CreditNameID, Name: v.Name, Lang: v.Lang, Latin: derefStrPub(v.Latin),
+				})
+			}
+			ch.Works = append(ch.Works, row)
+		}
+		ch.NextOffset = nextOffset(len(res.Works), limit, offset)
+	}
+	return ch, true, nil
+}
+
+// Label projects a label (GET /v1/catalog/labels/{id}) reusing
+// ReadService.LabelWorks. works (attributed) are include-gated.
+func (s *PublicService) Label(ctx context.Context, id int64, withWorks bool, limit, offset int) (dto.PublicLabel, bool, error) {
+	head, items, _, err := s.read.LabelWorks(ctx, id, limit, offset)
+	if err != nil {
+		return dto.PublicLabel{}, false, err
+	}
+	if head == nil {
+		return dto.PublicLabel{}, false, nil
+	}
+	l := dto.PublicLabel{ID: head.ID, DisplayName: head.DisplayName, Kind: labelKindKey(head.Kind)}
+	if withWorks {
+		ids := make([]int64, 0, len(items))
+		for _, w := range items {
+			ids = append(ids, w.WorkID)
+		}
+		claims, err := s.claimedByFor(ctx, ids)
+		if err != nil {
+			return dto.PublicLabel{}, false, err
+		}
+		l.Works = make([]dto.PublicLabelWork, 0, len(items))
+		for _, w := range items {
+			if isR18(w.ContentRating) {
+				continue
+			}
+			l.Works = append(l.Works, dto.PublicLabelWork{
+				Work: dto.PublicWorkBrief{
+					ID: w.WorkID, Medium: s.mediumKey(w.MediumID), DisplayName: w.DisplayName,
+					ContentRating: contentRatingKey(w.ContentRating), ClaimedBy: claims[w.WorkID],
+				},
+				Kind: workLabelKindKey(w.Kind),
+			})
+		}
+		l.NextOffset = nextOffset(len(items), limit, offset)
+	}
+	return l, true, nil
+}
+
+// ─────────────────────────── shared brief helpers ───────────────────────────
+
+type workBriefRow struct {
+	ID            int64
+	MediumID      int16
+	DisplayName   string
+	ContentRating int16
+	Status        int16
+	Site          *string
+	ProductWorkID *int64
+}
+
+// loadWorkBriefs loads public briefs for a set of work ids, keyed by id. r18
+// works are OMITTED from the map (they must never surface, 裁定 6). Raw SQL
+// bypasses GORM soft-delete, so deleted_at is filtered explicitly.
+func (s *PublicService) loadWorkBriefs(ctx context.Context, ids []int64) (map[int64]*dto.PublicWorkBrief, error) {
+	if len(ids) == 0 {
+		return map[int64]*dto.PublicWorkBrief{}, nil
+	}
+	var rows []workBriefRow
+	if err := s.db.WithContext(ctx).Raw(`
+		SELECT id, medium_id, display_name, content_rating, status, site, product_work_id
+		FROM catalog_work WHERE id IN ? AND deleted_at IS NULL`, ids).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	out := make(map[int64]*dto.PublicWorkBrief, len(rows))
+	for _, r := range rows {
+		if isR18(r.ContentRating) {
+			continue
+		}
+		out[r.ID] = &dto.PublicWorkBrief{
+			ID: r.ID, Medium: s.mediumKey(r.MediumID), DisplayName: r.DisplayName,
+			ContentRating: contentRatingKey(r.ContentRating), ClaimedBy: claimedBy(r.Site, r.ProductWorkID),
+		}
+	}
+	return out, nil
+}
+
+// claimEnrich loads claimed_by pointers for the works in a name→works result.
+func (s *PublicService) claimEnrich(ctx context.Context, works []NameWorkDetail) (map[int64]*dto.PublicClaimedBy, error) {
+	ids := make([]int64, 0, len(works))
+	for _, w := range works {
+		ids = append(ids, w.Brief.WorkID)
+	}
+	return s.claimedByFor(ctx, ids)
+}
+
+// claimEnrichCharacter loads claimed_by pointers for the works in a
+// character→works result.
+func (s *PublicService) claimEnrichCharacter(ctx context.Context, works []CharacterWorkDetail) (map[int64]*dto.PublicClaimedBy, error) {
+	ids := make([]int64, 0, len(works))
+	for _, w := range works {
+		ids = append(ids, w.Brief.WorkID)
+	}
+	return s.claimedByFor(ctx, ids)
+}
+
+// briefFromRow builds a public brief from an S2S WorkBriefRow (which lacks
+// product_work_id) plus a supplementary claimed_by. Returns nil for an r18 work.
+func (s *PublicService) briefFromRow(b WorkBriefRow, claim *dto.PublicClaimedBy) *dto.PublicWorkBrief {
+	if isR18(b.ContentRating) {
+		return nil
+	}
+	return &dto.PublicWorkBrief{
+		ID: b.WorkID, Medium: s.mediumKey(b.MediumID), DisplayName: b.DisplayName,
+		ContentRating: contentRatingKey(b.ContentRating), ClaimedBy: claim,
+	}
+}
+
+// claimedByFor batch-loads the claim pointers for a set of work ids (only claimed
+// rows are returned).
+func (s *PublicService) claimedByFor(ctx context.Context, ids []int64) (map[int64]*dto.PublicClaimedBy, error) {
+	if len(ids) == 0 {
+		return map[int64]*dto.PublicClaimedBy{}, nil
+	}
+	var rows []struct {
+		ID            int64
+		Site          string
+		ProductWorkID int64
+	}
+	if err := s.db.WithContext(ctx).Raw(`
+		SELECT id, site, product_work_id FROM catalog_work
+		WHERE id IN ? AND site IS NOT NULL AND product_work_id IS NOT NULL AND deleted_at IS NULL`, ids).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	out := make(map[int64]*dto.PublicClaimedBy, len(rows))
+	for _, r := range rows {
+		out[r.ID] = &dto.PublicClaimedBy{Site: r.Site, WorkID: r.ProductWorkID}
+	}
+	return out, nil
+}
+
+func (s *PublicService) mediumKey(id int16) string { return s.mediums[id] }
+
+// ─────────────────────────── mappers ───────────────────────────
+
+func isR18(r int16) bool { return r == model.ContentRatingR18 }
+
+func contentRatingKey(r int16) string {
+	switch r {
+	case model.ContentRatingAllAges:
+		return "all_ages"
+	case model.ContentRatingSensitive:
+		return "sensitive"
+	case model.ContentRatingR18:
+		return "r18"
+	default:
+		return "all_ages"
+	}
+}
+
+// titleKindKey maps a title kind to its public string; ok=false for search_hint
+// (findability-only, never displayed — dropped from the public face).
+func titleKindKey(k int16) (string, bool) {
+	switch k {
+	case model.WorkTitleKindOfficial:
+		return "official", true
+	case model.WorkTitleKindAlias:
+		return "alias", true
+	case model.WorkTitleKindAbbreviation:
+		return "abbreviation", true
+	default:
+		return "", false
+	}
+}
+
+func labelKindKey(k int16) string {
+	switch k {
+	case model.LabelKindGameBrand:
+		return "game_brand"
+	case model.LabelKindBunko:
+		return "bunko"
+	case model.LabelKindPublisher:
+		return "publisher"
+	case model.LabelKindAnimeStudio:
+		return "anime_studio"
+	case model.LabelKindDoujinCircle:
+		return "doujin_circle"
+	case model.LabelKindGroup:
+		return "group"
+	default:
+		return "other"
+	}
+}
+
+func workLabelKindKey(k int16) string {
+	switch k {
+	case model.WorkLabelKindCircle:
+		return "circle"
+	case model.WorkLabelKindPublisher:
+		return "publisher"
+	case model.WorkLabelKindDeveloper:
+		return "developer"
+	case model.WorkLabelKindBrand:
+		return "brand"
+	default:
+		return "other"
+	}
+}
+
+// publicTitles projects the S2S title rows, dropping search_hint titles.
+func publicTitles(titles []model.CatalogWorkTitle) []dto.PublicCatalogTitle {
+	out := make([]dto.PublicCatalogTitle, 0, len(titles))
+	for _, t := range titles {
+		kind, ok := titleKindKey(t.Kind)
+		if !ok {
+			continue
+		}
+		pt := dto.PublicCatalogTitle{Lang: t.Lang, Title: t.Title, Kind: kind}
+		if t.Latin != nil {
+			pt.Latin = *t.Latin
+		}
+		out = append(out, pt)
+	}
+	return out
+}
+
+// publicRefs projects the exact-only ref list, deduplicating (source, external_id)
+// across the work/release levels.
+func publicRefs(refs []RefDetail) []dto.PublicCatalogRef {
+	out := make([]dto.PublicCatalogRef, 0, len(refs))
+	seen := make(map[string]struct{}, len(refs))
+	for _, r := range refs {
+		key := r.Source + "\x00" + r.ExternalID
+		if _, dup := seen[key]; dup {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, dto.PublicCatalogRef{Source: r.Source, ExternalID: r.ExternalID})
+	}
+	return out
+}
+
+// claimedBy builds the cross-face pointer from a work's site + product_work_id
+// (both set = claimed).
+func claimedBy(site *string, productWorkID *int64) *dto.PublicClaimedBy {
+	if site == nil || *site == "" || productWorkID == nil {
+		return nil
+	}
+	return &dto.PublicClaimedBy{Site: *site, WorkID: *productWorkID}
+}
+
+// nameBuckets places a name into its single language bucket by the row's lang
+// (catalog imports default ” to Japanese).
+func nameBuckets(lang, name string) dto.PublicNameBuckets {
+	switch {
+	case strings.HasPrefix(lang, "zh"):
+		return dto.PublicNameBuckets{Zh: name}
+	case strings.HasPrefix(lang, "ja"), lang == "":
+		return dto.PublicNameBuckets{Ja: name}
+	default:
+		return dto.PublicNameBuckets{Other: name}
+	}
+}
+
+// earliestReleaseDate renders the earliest release's fuzzy date as a partial ISO
+// string (YYYY / YYYY-MM / YYYY-MM-DD); nil when no release carries a year.
+func earliestReleaseDate(releases []ReleaseDetail) *string {
+	var bestY, bestM, bestD int16
+	found := false
+	for _, rd := range releases {
+		r := rd.Release
+		if r.ReleasedY == nil {
+			continue
+		}
+		y := *r.ReleasedY
+		m := derefI16Pub(r.ReleasedM)
+		d := derefI16Pub(r.ReleasedD)
+		if !found || y < bestY || (y == bestY && m < bestM) || (y == bestY && m == bestM && d < bestD) {
+			bestY, bestM, bestD, found = y, m, d, true
+		}
+	}
+	if !found {
+		return nil
+	}
+	s := fmt.Sprintf("%04d", bestY)
+	if bestM > 0 {
+		s = fmt.Sprintf("%s-%02d", s, bestM)
+		if bestD > 0 {
+			s = fmt.Sprintf("%s-%02d", s, bestD)
+		}
+	}
+	return &s
+}
+
+// nextOffset returns the next page offset when the underlying (unfiltered) query
+// returned a full page, else nil. Paging over the unfiltered query means the r18
+// display-filter never skips or duplicates a row.
+func nextOffset(returned, limit, offset int) *int {
+	if limit > 0 && returned == limit {
+		n := offset + limit
+		return &n
+	}
+	return nil
+}
+
+// normalizeExternalID canonicalizes an external id to its stored form. vndb ids
+// are stored with the leading 'v' (galgame.vndb_id, `^v[0-9]+$`); accept input
+// with or without it (裁定 3). Other sources pass through trimmed.
+func normalizeExternalID(source, id string) string {
+	id = strings.TrimSpace(id)
+	if source == "vndb" && id != "" && !strings.HasPrefix(id, "v") {
+		return "v" + id
+	}
+	return id
+}
+
+func derefStrPub(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
+}
+
+func derefI16Pub(p *int16) int16 {
+	if p == nil {
+		return 0
+	}
+	return *p
+}
+
+func firstNonEmptyPub(vals ...string) string {
+	for _, v := range vals {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
+}

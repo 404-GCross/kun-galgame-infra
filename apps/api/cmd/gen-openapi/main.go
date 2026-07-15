@@ -10,6 +10,7 @@
 //	go run ./cmd/gen-openapi -galgame-public -o ../../docs/galgame_wiki/public-openapi.yaml      # NextMoe open-API galgame public projection (3.1)
 //	go run ./cmd/gen-openapi -catalog -o ../../docs/catalog/openapi.yaml                # catalog S2S face (3.1)
 //	go run ./cmd/gen-openapi -catalog-admin -o ../../docs/catalog/admin-openapi.yaml    # catalog review queues (3.1)
+//	go run ./cmd/gen-openapi -catalog-public -o ../../docs/catalog/public-openapi.yaml  # NextMoe open-API catalog public projection (3.1)
 //	go run ./cmd/gen-openapi -community -o ../../docs/community/openapi.yaml             # community S2S embed face (3.1)
 //	go run ./cmd/gen-openapi -trust -o ../../docs/trust/openapi.yaml                    # trust S2S intake face (3.1)
 //	go run ./cmd/gen-openapi -trust-admin -o ../../docs/trust/admin-openapi.yaml        # trust admin review inbox (3.1)
@@ -40,6 +41,7 @@ func main() {
 	galgamePublic := flag.Bool("galgame-public", false, "emit the NextMoe open-API galgame public projection spec (/v1/galgame/*)")
 	catalog := flag.Bool("catalog", false, "emit the catalog S2S spec (/api/v1/catalog/*)")
 	catalogAdmin := flag.Bool("catalog-admin", false, "emit the catalog admin review-queue spec (/api/v1/admin/catalog/*)")
+	catalogPublic := flag.Bool("catalog-public", false, "emit the NextMoe open-API catalog public projection spec (/v1/catalog/*)")
 	community := flag.Bool("community", false, "emit the community S2S embed spec (/api/v1/community/*)")
 	trust := flag.Bool("trust", false, "emit the trust S2S intake spec (/api/v1/trust/*)")
 	trustAdmin := flag.Bool("trust-admin", false, "emit the trust admin review-inbox spec (/api/v1/admin/trust/*)")
@@ -60,6 +62,8 @@ func main() {
 		api = catHandler.Setup(app, nil, nil, nil, nil, nil)
 	case *catalogAdmin:
 		api = catHandler.SetupAdmin(app, nil, nil)
+	case *catalogPublic:
+		api = catHandler.SetupCatalogPublicSpec(app)
 	case *community:
 		api = commHandler.Setup(app, nil, nil, nil, nil, nil, nil, nil)
 	case *trust:
