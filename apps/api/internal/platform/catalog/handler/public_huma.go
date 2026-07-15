@@ -33,7 +33,7 @@ type publicWorkOutput struct {
 }
 
 type publicLookupInput struct {
-	Source     string `query:"source" doc:"Upstream source registry key: vndb | bangumi | dlsite | erogamespace"`
+	Source     string `query:"source" doc:"Upstream source key: vndb | bangumi | dlsite | erogamescape (the internal registry spelling erogamespace is accepted too)"`
 	ExternalID string `query:"external_id" doc:"The id within that source (vndb accepts v19658 or 19658; dlsite RJ/VJ numbers)"`
 }
 type publicLookupOutput struct {
@@ -70,7 +70,7 @@ type publicPersonInput struct {
 	Offset  int    `query:"offset" doc:"Rows to skip"`
 }
 type publicPersonOutput struct {
-	Body Envelope[dto.PublicPerson]
+	Body Envelope[dto.PublicName]
 }
 
 type publicCharacterInput struct {
@@ -94,7 +94,7 @@ type publicLabelOutput struct {
 }
 
 type publicEntitySearchInput struct {
-	Type   string `query:"type" enum:"persons,characters,labels" doc:"Which entity index to search"`
+	Type   string `query:"type" enum:"names,characters,labels" doc:"Which entity index to search"`
 	Q      string `query:"q" doc:"Search text; empty returns the most-credited entities"`
 	Locale string `query:"locale" enum:"zh,ja,en" doc:"UI locale; the server pins the query language"`
 	Limit  int    `query:"limit" doc:"Max hits (capped at 20)"`
@@ -143,7 +143,7 @@ func SetupCatalogPublicSpec(app *fiber.App) huma.API {
 		return &publicRedirectsOutput{}, nil
 	})
 	huma.Register(api, huma.Operation{
-		OperationID: "getCatalogPersonPublic", Method: http.MethodGet, Path: "/v1/catalog/persons/{id}",
+		OperationID: "getCatalogNamePublic", Method: http.MethodGet, Path: "/v1/catalog/names/{id}",
 		Summary: "Credited identity (same-person grouping via public links); include=credits attaches works + roles", Tags: tags,
 	}, func(context.Context, *publicPersonInput) (*publicPersonOutput, error) {
 		return &publicPersonOutput{}, nil
@@ -160,7 +160,7 @@ func SetupCatalogPublicSpec(app *fiber.App) huma.API {
 	}, func(context.Context, *publicLabelInput) (*publicLabelOutput, error) { return &publicLabelOutput{}, nil })
 	huma.Register(api, huma.Operation{
 		OperationID: "searchCatalogEntitiesPublic", Method: http.MethodGet, Path: "/v1/catalog/search",
-		Summary: "Entity relevance search over persons / characters / labels, projected to public briefs", Tags: tags,
+		Summary: "Entity relevance search over names / characters / labels, projected to public briefs", Tags: tags,
 	}, func(context.Context, *publicEntitySearchInput) (*publicEntitySearchOutput, error) {
 		return &publicEntitySearchOutput{}, nil
 	})

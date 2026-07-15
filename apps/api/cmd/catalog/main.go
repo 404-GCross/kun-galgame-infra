@@ -208,7 +208,7 @@ func setupPublicCatalog(
 	v1.Get("/redirects", publicH.Redirects)
 	v1.Get("/search", publicH.Search)
 	v1.Get("/works/:id", publicH.WorkDetail)
-	v1.Get("/persons/:id", publicH.Person)
+	v1.Get("/names/:id", publicH.Name)
 	v1.Get("/characters/:id", publicH.Character)
 	v1.Get("/labels/:id", publicH.Label)
 

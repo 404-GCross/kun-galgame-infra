@@ -115,7 +115,7 @@ func (s *PublicService) lookupBrief(ctx context.Context, source, externalID stri
 	db := s.db.WithContext(ctx)
 
 	var srcID int16
-	if err := db.Raw(`SELECT id FROM catalog_source WHERE key = ?`, source).Scan(&srcID).Error; err != nil {
+	if err := db.Raw(`SELECT id FROM catalog_source WHERE key = ?`, registrySourceKey(source)).Scan(&srcID).Error; err != nil {
 		return nil, err
 	}
 	if srcID == 0 {
@@ -282,22 +282,22 @@ func (s *PublicService) workCredits(ctx context.Context, workID int64) ([]dto.Pu
 	return groups, nil
 }
 
-// ─────────────────────────── persons / characters / labels ───────────────────────────
+// ─────────────────────────── names / characters / labels ───────────────────────────
 
-// Person projects a credited identity (GET /v1/catalog/persons/{id}; {id} is a
+// Name projects a credited identity (GET /v1/catalog/names/{id}; {id} is a
 // credit-name id) reusing ReadService.NameWorks — which implements the hidden
 // credit_name→person link doctrine (裁定 6). found=false → 404. credits (works +
 // roles) are attached only when included; r18 works are dropped and offset
 // paging is over the unfiltered query so nothing is skipped.
-func (s *PublicService) Person(ctx context.Context, id int64, withCredits bool, limit, offset int) (dto.PublicPerson, bool, error) {
+func (s *PublicService) Name(ctx context.Context, id int64, withCredits bool, limit, offset int) (dto.PublicName, bool, error) {
 	res, err := s.read.NameWorks(ctx, id, limit, offset)
 	if err != nil {
-		return dto.PublicPerson{}, false, err
+		return dto.PublicName{}, false, err
 	}
 	if res.Head == nil {
-		return dto.PublicPerson{}, false, nil
+		return dto.PublicName{}, false, nil
 	}
-	p := dto.PublicPerson{
+	p := dto.PublicName{
 		ID:       res.Head.ID,
 		Name:     nameBuckets(res.Head.Lang, res.Head.Name),
 		Latin:    derefStrPub(res.Head.Latin),
@@ -314,17 +314,17 @@ func (s *PublicService) Person(ctx context.Context, id int64, withCredits bool, 
 	if withCredits {
 		briefs, err := s.claimEnrich(ctx, res.Works)
 		if err != nil {
-			return dto.PublicPerson{}, false, err
+			return dto.PublicName{}, false, err
 		}
-		p.Credits = make([]dto.PublicPersonCredit, 0, len(res.Works))
+		p.Credits = make([]dto.PublicNameCredit, 0, len(res.Works))
 		for _, w := range res.Works {
 			b := s.briefFromRow(w.Brief, briefs[w.Brief.WorkID])
 			if b == nil {
 				continue // r18 work — drop
 			}
-			row := dto.PublicPersonCredit{Work: *b, Roles: make([]dto.PublicPersonRole, 0, len(w.Roles))}
+			row := dto.PublicNameCredit{Work: *b, Roles: make([]dto.PublicNameRole, 0, len(w.Roles))}
 			for _, r := range w.Roles {
-				pr := dto.PublicPersonRole{RoleKey: r.RoleKey, RoleName: firstNonEmptyPub(r.RoleNameCN, r.RoleNameJA, r.RoleKey)}
+				pr := dto.PublicNameRole{RoleKey: r.RoleKey, RoleName: firstNonEmptyPub(r.RoleNameCN, r.RoleNameJA, r.RoleKey)}
 				if r.CharacterID != nil {
 					pr.CharacterID = *r.CharacterID
 				}
@@ -594,6 +594,26 @@ func publicTitles(titles []model.CatalogWorkTitle) []dto.PublicCatalogTitle {
 	return out
 }
 
+// publicSourceKey maps a registry source key to its public wire key. The
+// registry (and the wider codebase) spells the ErogameScape source
+// "erogamespace" — a frozen internal key; the PUBLIC contract uses the site's
+// real spelling, matching the galgame face's refs/attribution keys.
+func publicSourceKey(registry string) string {
+	if registry == "erogamespace" {
+		return "erogamescape"
+	}
+	return registry
+}
+
+// registrySourceKey is the inverse for inbound lookup params: both spellings
+// are accepted, the registry form is what the DB query needs.
+func registrySourceKey(public string) string {
+	if public == "erogamescape" {
+		return "erogamespace"
+	}
+	return public
+}
+
 // publicRefs projects the exact-only ref list, deduplicating (source, external_id)
 // across the work/release levels.
 func publicRefs(refs []RefDetail) []dto.PublicCatalogRef {
@@ -605,7 +625,7 @@ func publicRefs(refs []RefDetail) []dto.PublicCatalogRef {
 			continue
 		}
 		seen[key] = struct{}{}
-		out = append(out, dto.PublicCatalogRef{Source: r.Source, ExternalID: r.ExternalID})
+		out = append(out, dto.PublicCatalogRef{Source: publicSourceKey(r.Source), ExternalID: r.ExternalID})
 	}
 	return out
 }

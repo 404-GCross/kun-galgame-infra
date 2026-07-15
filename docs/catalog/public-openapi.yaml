@@ -126,13 +126,13 @@ components:
         - code
         - message
       type: object
-    EnvelopePublicPerson:
+    EnvelopePublicName:
       additionalProperties: false
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
           examples:
-            - https://example.com/EnvelopePublicPerson.json
+            - https://example.com/EnvelopePublicName.json
           format: uri
           readOnly: true
           type: string
@@ -140,7 +140,7 @@ components:
           format: int64
           type: integer
         data:
-          $ref: "#/components/schemas/PublicPerson"
+          $ref: "#/components/schemas/PublicName"
         message:
           type: string
       required:
@@ -565,22 +565,12 @@ components:
         - source
         - external_id
       type: object
-    PublicNameBuckets:
-      additionalProperties: false
-      properties:
-        ja:
-          type: string
-        other:
-          type: string
-        zh:
-          type: string
-      type: object
-    PublicPerson:
+    PublicName:
       additionalProperties: false
       properties:
         credits:
           items:
-            $ref: "#/components/schemas/PublicPersonCredit"
+            $ref: "#/components/schemas/PublicNameCredit"
           type:
             - array
             - "null"
@@ -608,12 +598,22 @@ components:
         - name
         - siblings
       type: object
-    PublicPersonCredit:
+    PublicNameBuckets:
+      additionalProperties: false
+      properties:
+        ja:
+          type: string
+        other:
+          type: string
+        zh:
+          type: string
+      type: object
+    PublicNameCredit:
       additionalProperties: false
       properties:
         roles:
           items:
-            $ref: "#/components/schemas/PublicPersonRole"
+            $ref: "#/components/schemas/PublicNameRole"
           type:
             - array
             - "null"
@@ -623,7 +623,7 @@ components:
         - work
         - roles
       type: object
-    PublicPersonRole:
+    PublicNameRole:
       additionalProperties: false
       properties:
         character:
@@ -895,12 +895,12 @@ paths:
     get:
       operationId: lookupCatalogPublic
       parameters:
-        - description: "Upstream source registry key: vndb | bangumi | dlsite | erogamespace"
+        - description: "Upstream source key: vndb | bangumi | dlsite | erogamescape (the internal registry spelling erogamespace is accepted too)"
           explode: false
           in: query
           name: source
           schema:
-            description: "Upstream source registry key: vndb | bangumi | dlsite | erogamespace"
+            description: "Upstream source key: vndb | bangumi | dlsite | erogamescape (the internal registry spelling erogamespace is accepted too)"
             type: string
         - description: The id within that source (vndb accepts v19658 or 19658; dlsite RJ/VJ numbers)
           explode: false
@@ -950,9 +950,9 @@ paths:
       summary: Batch external-id reverse-lookup (≤100 pairs); misses return a null work in order
       tags:
         - catalog-public
-  /v1/catalog/persons/{id}:
+  /v1/catalog/names/{id}:
     get:
-      operationId: getCatalogPersonPublic
+      operationId: getCatalogNamePublic
       parameters:
         - description: Credit-name id (the addressable credited identity)
           in: path
@@ -990,7 +990,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/EnvelopePublicPerson"
+                $ref: "#/components/schemas/EnvelopePublicName"
           description: OK
         default:
           content:
@@ -1079,7 +1079,7 @@ paths:
           schema:
             description: Which entity index to search
             enum:
-              - persons
+              - names
               - characters
               - labels
             type: string
@@ -1122,7 +1122,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Entity relevance search over persons / characters / labels, projected to public briefs
+      summary: Entity relevance search over names / characters / labels, projected to public briefs
       tags:
         - catalog-public
   /v1/catalog/works/{id}:

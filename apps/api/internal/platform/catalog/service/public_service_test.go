@@ -14,8 +14,9 @@ import (
 // everywhere, and the hidden credit-name→person link doctrine.
 
 const (
-	srcVNDB   int16 = 2
-	srcDlsite int16 = 4
+	srcVNDB         int16 = 2
+	srcErogamespace int16 = 5
+	srcDlsite       int16 = 4
 )
 
 func newPublicSvc() *PublicService {
@@ -106,6 +107,25 @@ func TestPublicLookupExactOnly(t *testing.T) {
 	}
 	if _, found, _ := svc.Lookup(ctx, "nosuchsource", "x"); found {
 		t.Fatal("unknown source key must 404")
+	}
+
+	// ErogameScape spelling contract: the public canonical "erogamescape" AND
+	// the internal registry key "erogamespace" both resolve; the projected
+	// refs always carry the public spelling.
+	addExternalRef(t, model.EntityTypeWork, w.ID, srcErogamespace, "23956", model.LinkKindExact)
+	for _, src := range []string{"erogamescape", "erogamespace"} {
+		if _, found, err := svc.Lookup(ctx, src, "23956"); err != nil || !found {
+			t.Fatalf("lookup via %q: found=%v err=%v", src, found, err)
+		}
+	}
+	detail, found, err := svc.WorkDetail(ctx, w.ID, PublicInclude{})
+	if err != nil || !found {
+		t.Fatalf("work detail: found=%v err=%v", found, err)
+	}
+	for _, r := range detail.Refs {
+		if r.Source == "erogamespace" {
+			t.Fatal("public refs must carry the public spelling erogamescape, never the registry key")
+		}
 	}
 }
 
@@ -244,7 +264,7 @@ func TestPublicWorkCreditsInclude(t *testing.T) {
 	}
 }
 
-func TestPublicPersonHiddenLinkAndR18Drop(t *testing.T) {
+func TestPublicNameHiddenLinkAndR18Drop(t *testing.T) {
 	cleanTables(t)
 	svc := newPublicSvc()
 	ctx := t.Context()
@@ -268,7 +288,7 @@ func TestPublicPersonHiddenLinkAndR18Drop(t *testing.T) {
 
 	// Public-linked name: person grouping surfaces, but the hidden sibling never
 	// does; r18 credits are dropped.
-	got, found, err := svc.Person(ctx, nPublic.ID, true, 50, 0)
+	got, found, err := svc.Name(ctx, nPublic.ID, true, 50, 0)
 	if err != nil || !found {
 		t.Fatalf("person: found=%v err=%v", found, err)
 	}
@@ -283,7 +303,7 @@ func TestPublicPersonHiddenLinkAndR18Drop(t *testing.T) {
 	}
 
 	// Hidden-linked name: appears as an independent identity (no person_id).
-	h, found, err := svc.Person(ctx, nHidden.ID, false, 50, 0)
+	h, found, err := svc.Name(ctx, nHidden.ID, false, 50, 0)
 	if err != nil || !found {
 		t.Fatalf("hidden person: found=%v err=%v", found, err)
 	}

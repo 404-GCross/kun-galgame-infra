@@ -164,15 +164,15 @@ func (h *PublicHandler) Redirects(c fiber.Ctx) error {
 	return response.Success(c, out)
 }
 
-// Person serves GET /v1/catalog/persons/{id} — a credited identity ({id} is a
+// Name serves GET /v1/catalog/names/{id} — a credited identity ({id} is a
 // credit-name id). include=credits attaches its works + roles.
-func (h *PublicHandler) Person(c fiber.Ctx) error {
+func (h *PublicHandler) Name(c fiber.Ctx) error {
 	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
 	if err != nil {
 		return response.BadRequest(c, errors.ErrInvalidID)
 	}
 	limit, offset := pagePub(c)
-	rec, found, err := h.svc.Person(c.Context(), id, service.ParsePublicInclude(c.Query("include")).Credits, limit, offset)
+	rec, found, err := h.svc.Name(c.Context(), id, service.ParsePublicInclude(c.Query("include")).Credits, limit, offset)
 	if err != nil {
 		return response.InternalError(c, errors.ErrInternalServer)
 	}
@@ -222,12 +222,12 @@ func (h *PublicHandler) Label(c fiber.Ctx) error {
 }
 
 // Search serves GET /v1/catalog/search — entity relevance search over the three
-// indexes (persons / characters / labels), projected to public briefs (never the
+// indexes (names / characters / labels), projected to public briefs (never the
 // internal document shape, 裁定 9).
 func (h *PublicHandler) Search(c fiber.Ctx) error {
 	uid, entityType, ok := publicSearchIndex(c.Query("type"))
 	if !ok {
-		return response.BadRequestMsg(c, errors.ErrInvalidParam, "type must be one of persons|characters|labels")
+		return response.BadRequestMsg(c, errors.ErrInvalidParam, "type must be one of names|characters|labels")
 	}
 	limit := atoiOrPub(c.Query("limit"), 20)
 	if limit <= 0 || limit > 20 {
@@ -299,12 +299,13 @@ func entityTypeFromKey(k string) (int16, bool) {
 }
 
 // publicSearchIndex maps a public search type to its Meili index uid + the
-// entity_type string surfaced on hits. persons → the credit-names index.
+// entity_type string surfaced on hits. names → the credit-names index (the
+// same "name" key resolve/redirects use for credit_name — one public vocabulary).
 func publicSearchIndex(t string) (uid, entityType string, ok bool) {
 	switch t {
-	case "persons":
+	case "names":
 		uid, ok = catsearch.IndexForType("names")
-		return uid, "person", ok
+		return uid, "name", ok
 	case "characters":
 		uid, ok = catsearch.IndexForType("characters")
 		return uid, "character", ok

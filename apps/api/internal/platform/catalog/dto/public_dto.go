@@ -61,7 +61,7 @@ type PublicRelation struct {
 }
 
 // PublicCreditItem is one credited name under a role. id is the credit-name id
-// (addressable via /v1/catalog/persons/{id}). note / provenance / source are
+// (addressable via /v1/catalog/names/{id}). note / provenance / source are
 // stripped (裁定 7 whitelist).
 type PublicCreditItem struct {
 	ID          int64  `json:"id"`
@@ -176,33 +176,33 @@ type PublicSiblingName struct {
 	Latin string            `json:"latin,omitempty"`
 }
 
-// PublicPersonRole is one role a credited name holds on a work (with the voiced
+// PublicNameRole is one role a credited name holds on a work (with the voiced
 // character for voice credits).
-type PublicPersonRole struct {
+type PublicNameRole struct {
 	RoleKey     string `json:"role_key"`
 	RoleName    string `json:"role_name"`
 	CharacterID int64  `json:"character_id,omitempty"`
 	Character   string `json:"character,omitempty"`
 }
 
-// PublicPersonCredit is one work a credited name is credited on, with its roles.
-type PublicPersonCredit struct {
-	Work  PublicWorkBrief    `json:"work"`
-	Roles []PublicPersonRole `json:"roles"`
+// PublicNameCredit is one work a credited name is credited on, with its roles.
+type PublicNameCredit struct {
+	Work  PublicWorkBrief  `json:"work"`
+	Roles []PublicNameRole `json:"roles"`
 }
 
-// PublicPerson is the frozen v1 credited-identity record (GET
-// /v1/catalog/persons/{id}; {id} is a credit-name id). It carries the same-person
+// PublicName is the frozen v1 credited-identity record (GET
+// /v1/catalog/names/{id}; {id} is a credit-name id). It carries the same-person
 // grouping (person_id + public siblings) via the existing link-visibility
 // doctrine. credits are include-gated + keyset-less offset paginated.
-type PublicPerson struct {
-	ID         int64                `json:"id"`
-	Name       PublicNameBuckets    `json:"name"`
-	Latin      string               `json:"latin,omitempty"`
-	PersonID   int64                `json:"person_id,omitempty"`
-	Siblings   []PublicSiblingName  `json:"siblings"`
-	Credits    []PublicPersonCredit `json:"credits,omitempty"`
-	NextOffset *int                 `json:"next_offset,omitempty"`
+type PublicName struct {
+	ID         int64               `json:"id"`
+	Name       PublicNameBuckets   `json:"name"`
+	Latin      string              `json:"latin,omitempty"`
+	PersonID   int64               `json:"person_id,omitempty"`
+	Siblings   []PublicSiblingName `json:"siblings"`
+	Credits    []PublicNameCredit  `json:"credits,omitempty"`
+	NextOffset *int                `json:"next_offset,omitempty"`
 }
 
 // PublicVoiceName is one credited name that voiced a character on a work.
