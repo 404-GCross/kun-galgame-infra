@@ -244,6 +244,33 @@ go run ./cmd/migrate-galgame   # kun_galgame_wiki
 The snapshot is a **data** fixture and at most a drift *detector* — the
 migrations are the single source of truth for structure.
 
+## Wiring a product repo (per-repo quickstart index)
+
+Once the stack is up (and optionally refreshed), each product repo needs only its
+own `.env` copied from the checked-in `.env.example` — every example already points
+at the ports above and carries the **public dev OAuth credentials** (裁定 3). The
+universal three steps:
+
+1. `docker compose -f docker-compose.dev.yml up -d` (this repo) — the platform.
+2. `./scripts/refresh-dev-db.sh` (optional) — real-shaped, desensitised data.
+3. In the product repo: `cp apps/api/.env.example apps/api/.env` (+ the web one),
+   then `pnpm dev`.
+
+| Repo | api / web dev ports | env example(s) | OAuth client_id | dev callback |
+| --- | --- | --- | --- | --- |
+| kun-galgame-forum (kungal) | 2334 / 2333 | `apps/api`, `apps/web` | `4ed9bc99ec0a789a4796b83e22bd84c5` | `http://127.0.0.1:2333/auth/callback` |
+| kun-galgame-patch (moyu) | 5214 / 6969 | `apps/api`, `apps/web` | `df3ff6008d740bfacbe46aa8cf483cf2` | `http://127.0.0.1:6969/auth/callback` |
+| infra `apps/web` (account center) | — / 9420 | `apps/web` | session-based (n/a) | — |
+| infra `apps/wiki` (galgame wiki) | — / 9421 | `apps/wiki` | `53e9b5ea70bfc4e4d0700a9f7b8818e8` (public/PKCE) | `http://127.0.0.1:9421/auth/callback` |
+| kun-letmoe-community | 7001 / 5364 | `apps/api`, `apps/web` | own seed system | seed-defined |
+
+Confidential clients (forum / moyu) present the plaintext `dev-secret-<client_id>`;
+the wiki is a public client (PKCE, no secret). **letmoe does NOT take the snapshot**
+— it provisions its own OAuth client + data through its seed system, so its
+`.env.example` carries only the platform-URL wiring and leaves
+`KUN_OAUTH_CLIENT_ID/SECRET` blank for the seed to fill. Each product repo's README
+repeats these three steps and links back to this file.
+
 ## Tear down
 
 ```sh
