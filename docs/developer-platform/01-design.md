@@ -2,7 +2,8 @@
 
 > 一句话定位:把 **NextMoe 开放 API**(生态作品数据的只读能力,按媒介/域分"面")安全、自助地开放给**第三方开发者**;配套 **NextMoe 开发者平台**(开发者门户)负责注册应用、领取凭证、查看用量、阅读文档。**不引入重型 API 网关**,而是复用我们已有的 OAuth2 IdP + Fiber + Redis + Cloudflare + Nuxt,把"开发者平台"那薄薄一层做进现有体系。
 
-> 状态:设计稿 v2(待评审)。v1(「鲲 Galgame 开发者平台」)于 2026-07-11 按产品负责人方向修订:
+> 状态:设计稿 v2.1(可实施)。v2.1(2026-07-14)按 `refs/docs/nextmoe-draft/19`(开放 API 计划与 galgame-wiki 退役)拍板落地:D1 公开投影=聚合记录、D2 tier 与 IdP 五角色集成、D4 MCP 提级 Phase 2、外部 id 反查(lookup)与变更流提入 Phase 1、wiki 真源加日落条款、VNDB 评分缺口已清(galgame_vndb_meta 在产)。战略上位与 W0-W5 退役波次见 doc 19。
+> 状态历史:v2(2026-07-11)——v1(「鲲 Galgame 开发者平台」)按产品负责人方向修订:
 > ① **品牌与域名升级为 NextMoe**(`nextmoe.dev` 族)——对第三方,base URL 是最贵的契约,品牌迁移必须发生在第一个外部消费者出现之前(暗建期品牌预埋,`refs/docs/nextmoe-draft/08` §5.1);
 > ② 拓扑从"单一 galgame API"升级为"**统一平台 + 按面挂载**":v1 只亮 **galgame 面 + catalog 图谱面**,manga / novel / anime 面随各产品上线挂载,host / token / 门户 / 配额不变——加面不重做;
 > ③ 吸收 catalog 生产化后的新事实(catalog 服务已在产、galgame 读面已 Huma 出谱),修正 v1 的过时前提。
@@ -26,7 +27,7 @@
 ### 1.1 现状(2026-07-11 修订)
 
 - **两个真相源,各司其职**:
-  - **galgame 内容真源 = wiki**(`cmd/galgame` / `kun_galgame_wiki`):多语名称/简介、封面/截图、tag、会社、发售、revision——所有 galgame 内容读操作走 wiki API(API-first),不向下游复制目录数据。
+  - **galgame 内容真源 = wiki**(`cmd/galgame` / `kun_galgame_wiki`):多语名称/简介、封面/截图、tag、会社、发售、revision——所有 galgame 内容读操作走 wiki API(API-first),不向下游复制目录数据。**日落条款(2026-07-14,doc 19)**:wiki 按 W0-W5 波次整体退役,W2 后 galgame 内容真源 = catalog 侧内容体;`/v1/galgame/*` 契约与 gid 全程不变,后端换血对外零感知。
   - **跨媒介身份/图谱真源 = catalog**(`cmd/catalog` / `kun_catalog`,生产在线):全媒介作品注册行(21 万+,含 anime/manga/novel/asmr)、人物名义/角色/厂牌实体族、credits(63 万级)、跨媒介关系、外部溯源锚(VNDB / Bangumi / DLsite / ErogameScape exact 锚)、redirect/resolve、三索引实体搜索。
 - **契约基础比 v1 设计时更好**:galgame 读面(list / detail / batch / search / calendar / 官方·标签·引擎·系列 / revisions)已 Huma 出谱并入契约三门(spec→TS drift / code→spec / oasdiff);catalog 服务自带 `openapi.json`;calendar 已有 ETag/缓存样板。
 - **缺口**:① 面向第三方的注册 / 凭证 / 配额 / 用量 / 门户;② 公开 `/v1` 投影(两个面的白名单子集,与内部 spec 解耦);③ 缓存铺开(calendar 之外的热路径);④ 源数据再分发的授权姿态(§15,拍板项)。
@@ -57,7 +58,7 @@
 
 | 角色 | 域名 | 后端 | 库 |
 |---|---|---|---|
-| NextMoe 开放 API(对外只读) | `api.nextmoe.dev` | Traefik 按路径分发:`/v1/catalog/*` → catalog 服务(`cmd/catalog`);`/v1/galgame/*` → galgame 服务(`cmd/galgame`) | `kun_catalog` / `kun_galgame_wiki` |
+| NextMoe 开放 API(对外只读) | `api.nextmoe.dev` | Traefik 按路径分发:`/v1/catalog/*` → catalog 服务(`cmd/catalog`);`/v1/galgame/*` → galgame 服务(`cmd/galgame`;doc 19 W2 起改指 catalog 侧内容体,契约不变) | `kun_catalog` / `kun_galgame_wiki` |
 | 开发者门户 | `developer.nextmoe.dev` | 门户前端(Nuxt)+ 平台后端(扩展 account/IdP 侧) | `kun_galgame_infra` |
 | IdP(已存在) | 现有 oauth 域名 | `cmd/oauth` | `kun_galgame_infra` |
 
@@ -113,6 +114,7 @@
 | `GET /v1/galgame/officials` `…/{id}` `…/{id}/galgames` | official List/Get/members | `galgame:read` | 会社目录 + 成员 |
 | `GET /v1/galgame/tags` `…/{id}` `…/{id}/galgames` | tag | `galgame:read` | |
 | `GET /v1/galgame/engines` / `GET /v1/galgame/series` … | engine/series | `galgame:read` | |
+| `GET /v1/galgame/changes` | (新增,updated 时间戳 keyset) | `galgame:read` | **变更流**(doc 19 D5,Phase 1):增量同步游标,管理器免全量重爬 |
 | (Phase 3)`POST /v1/galgame/{id}/submit` 等 | 投稿/PR | `galgame:submit` | 需 OAuth2 用户授权 |
 
 **catalog 面**(后端 = `cmd/catalog`,跨媒介身份/图谱真源):
@@ -127,6 +129,8 @@
 | `GET /v1/catalog/labels/{id}`(+ `…/works`) | `catalog:read` | 厂牌/文库/社团 |
 | `GET /v1/catalog/search` | `catalog:read` | 实体搜索(persons/characters/labels,复用三索引) |
 | `POST /v1/catalog/resolve` | `catalog:read` | 批量旧 ID → canonical(redirect 压平语义与内部一致) |
+| `GET /v1/catalog/lookup` + `POST …/lookup/batch` | `catalog:read` | **外部 id 反查(killer,doc 19 §3.1,Phase 1)**:`?source=vndb&external_id=v19658` → work + `claimed_by` 指针;批量 ≤100。背书 = 四源 exact 锚(在产) |
+| `GET /v1/catalog/redirects` | `catalog:read` | id 收敛事件 keyset 流(内部 S2S 面公开化,doc 19 §3.3) |
 
 > 不进入公开路由:`/admin/*`、人审队列、merge/claim 等 S2S 写面、`/:gid/revert`、消息队列、site 管理等。
 > catalog 面范围备注:`stub`(无锚且元数据不达标的未认领行)不进公开聚合——既有不变量,公开面直接继承;asmr/同人未认领波是否进 v1 投影,并入 §15 再分发授权一起拍板(倾向:v1 先只放 galgame 可达闭包 + 跨媒介关系可达行,letmoe 上线时再扩)。
@@ -144,7 +148,7 @@
 ### 3.4 面的挂载模型(未来)
 
 - **新媒介内容面**:nextmanga / lolinovel / ani.today 上线时各挂 `/v1/manga/*` 等——新 Traefik 路由 + 该产品服务的公开投影,token/门户/SDK 不变。catalog 面从第一天就含全媒介注册行与关系图谱,所以"anime 改编自这部 galgame"这类边在 v1 就查得到,内容面后到。
-- **统计面(Phase 2.5,前置拍板)**:跨源评分/发布时间分布/生态变迁(VNDB × Bangumi × ErogameScape × DLsite)。数据地基已在(`galgame_bangumi_meta` 窄表在产、EG/DLsite 镜像库在产、四源 exact 锚在产);形态 = 内部物化 job(S2S 读 staging,遵守「staging 永不服务公网」不变量)→ 派生统计表 → `GET /v1/galgame/stats/*`。**前置**:源数据再分发/归源标注拍板(§15)+ VNDB 评分摄入(唯一缺口)。
+- **统计面(Phase 2.5,前置已全清)**:跨源评分/发布时间分布/生态变迁。数据地基已在且**比 v2 设计时更好**:三源评分 meta 全在产(`galgame_vndb_meta` 62k / `galgame_bangumi_meta` 12.8k / `galgame_eg_meta` 15.6k,2026-07 三期落地)+ `galgame_stats` 6 键日更 + 站内读面(`GET /galgame/:gid/scores`、`GET /galgame/stats`)已上线——公开投影是薄封装。再分发姿态已拍板(D1,§11)。
 
 ### 3.5 稳定性承诺
 
@@ -215,7 +219,7 @@ POST /oauth/apikey/introspect          (s2s, 仅内网/带 s2s 凭证)
 OwnerUserID    *uint  `gorm:"index" json:"owner_user_id,omitempty"`
 
 DevEnabled     bool   `gorm:"not null;default:false" json:"dev_enabled"`      // 准入 NextMoe 开放 API
-DevTier        string `gorm:"size:20;not null;default:'free'" json:"dev_tier"` // free|partner|internal
+DevTier        string `gorm:"size:20;not null;default:'free'" json:"dev_tier"` // free|trusted|internal(D2:tier 授予由平台内部完成;身份/角色沿 IdP 五全局角色,不铸新全局角色)
 DevNSFWAllowed bool   `gorm:"not null;default:false" json:"dev_nsfw_allowed"`
 // 限流/配额(0 = 用 tier 默认值,见 §7)
 DevRatePerMin  int    `gorm:"not null;default:0" json:"dev_rate_per_min"`
@@ -305,8 +309,10 @@ func OpenAPIAuth(c fiber.Ctx) error {
 | tier | rate/min | quota/day | NSFW | 适用 |
 |---|---|---|---|---|
 | `free` | 60 | 50,000 | 否 | 默认,自助注册即得 |
-| `partner` | 600 | 1,000,000 | 可申请 | 审批的合作方 |
-| `internal` | 不限 | 不限 | 是 | 一方应用(forum/moyu/wiki/letmoe) |
+| `trusted` | 600 | 1,000,000 | 可申请 | 邀请/审批的合作开发者(doc 19 D2:首批 = 友好 galgame 管理器项目) |
+| `internal` | 不限 | 不限 | 是 | 一方应用(forum/moyu/letmoe;doc 19 W3 起 kungal/moyu 以此 tier 真实消费) |
+
+> **tier 治理(D2 拍板)**:开发者身份与角色 = IdP 五全局角色(`docs/integration/oauth/11-roles.md`,冻结,不新增);tier / scope / NSFW / 配额等**细粒度授权 = 开发者平台内部数据**(`oauth_clients.dev_*` + key 行),由平台管理面授予——与 permission-first 教义同构(角色只是权限捆的入口,代码只查权限)。
 
 - Redis 实现:限流用滑动窗口(`ratelimit:{key}:{minute}`),配额用当日计数(`quota:{key}:{YYYY-MM-DD}`,TTL 到次日)。
 - 响应头:`X-RateLimit-Limit/Remaining/Reset`、`Retry-After`、`X-Quota-Limit/Remaining`。门户实时显示剩余配额。
@@ -360,7 +366,7 @@ v1 设计时"galgame 无 spec"的前提已过时——现状是**两个面都有
 
 - **HTTPS 强制**(Cloudflare);key 只走 header,**不进 URL、不进日志**(日志只留 `key_prefix`)。
 - **NSFW**:默认 `sfw`;放开需 `galgame:nsfw` scope + `nsfw_allowed` tier,并审计——NSFW 闸控是**合规问题**(ToS / 法律),不只是整洁问题。catalog 面同理:`content_rating=r18` 的作品行默认过滤,同一 scope 闸控。
-- **来源投影(再分发授权的执行机制)**:catalog/galgame 聚合了 VNDB / Bangumi / DLsite / ErogameScape 数据;公开投影按 **per-field provenance 做来源白名单**——只放行拍板允许的来源字段,并按来源要求附归源标注(`source` 字段/文档页署名)。哪些来源进白名单 = §15 拍板项;机制上 provenance 体系已支持。
+- **来源投影(再分发授权,D1 已拍板 2026-07-14)**:公开投影 = **聚合记录**——一个 Galgame 的每个字段是多源归并的结果(名称可能来自 wiki 策展、简介来自 Bangumi、日期来自 VNDB),**不做任何逐源原始字段的批量再分发**;评分以逐源数值 + 归源链接形态出现(P-★ 窄片同款),响应携带 `attribution` 块。归并结果与自产字段(中文简介/tag 本地化/竖图/stats)是投影本体;per-field provenance 机制用于执行该姿态。
 - **CORS**:`api.nextmoe.dev` 对浏览器直连**不开放任意 origin 携带 API key**(key 是机密,仅服务端);浏览器场景走 OAuth2 public client + PKCE。
 - **ToS / 滥用**:服务条款 + 异常用量告警 + 一键吊销 key/应用。
 - **审计**:key 创建/轮换/吊销、tier 变更、异常 4xx/5xx 速率,写审计日志。
@@ -378,12 +384,11 @@ v1 设计时"galgame 无 spec"的前提已过时——现状是**两个面都有
 
 | 阶段 | 内容 | 状态 |
 |---|---|---|
-| **Phase 1 地基** | 两面公开只读投影(`/v1/galgame/*` 白名单 + 游标分页;`/v1/catalog/*` 白名单)+ 公开 OpenAPI ×2 + Scalar 文档 + **API Key**(hash/show-once/轮换/吊销)+ Redis 限流 + **热路径缓存 + Cloudflare** + `api.nextmoe.dev` / `developer.nextmoe.dev` 域名 | ⬜ 待实施 |
-| **Phase 2** | 配额/分层 + 用量面板 + 门户打磨 + **OAuth2 client_credentials** + scope 词表 | ⬜ |
-| **Phase 2.5 统计面** | 跨源评分/发布分布派生层(物化 job → `/v1/galgame/stats/*`);**前置 = 再分发授权拍板 + VNDB 评分摄入**(§3.4) | ⬜ 前置未清 |
+| **Phase 1 地基** | 两面公开只读投影(`/v1/galgame/*` 白名单 + 游标分页 + **聚合记录 DTO(D1)** + **变更流**;`/v1/catalog/*` 白名单 + **lookup 外部 id 反查** + redirects 流)+ 公开 OpenAPI ×2 + Scalar 文档 + **API Key**(hash/show-once/轮换/吊销)+ Redis 限流 + **热路径缓存 + Cloudflare** + `api.nextmoe.dev` / `developer.nextmoe.dev` 域名 + **trusted tier 首批邀请 key** | 🚧 执行中(refs/plans/05-open-api) |
+| **Phase 2** | 配额/分层打磨 + 用量面板 + 门户打磨 + **OAuth2 client_credentials** + scope 词表 + **MCP server(D4 提级:公开只读 API 同时暴露为 MCP,AI 助手/agent 直接查生态目录)** | ⬜ |
+| **Phase 2.5 统计面** | 跨源评分/发布分布派生层(→ `/v1/galgame/stats/*`);**前置已全清**(D1 拍板 + 三源评分 meta 在产,§3.4) | ⬜ 可随 Phase 2 实施 |
 | **Phase 3** | `authorization_code`+PKCE **代表用户**(投稿/写)+ `galgame:nsfw` tier 闸 + 审批流 | ⬜ |
-| **Phase 4(可选·现代)** | 把公开只读 API 同时暴露成 **MCP server**,让 AI 助手/agent 直接查生态目录 | ⬜ 留位 |
-| **事件驱动(非阶段)** | manga / novel / anime 内容面随各产品上线挂载(§3.4);letmoe 相关的同人/asmr 注册行投影随其上线评估 | — |
+| **事件驱动(非阶段)** | manga / novel / anime 内容面随各产品上线挂载(§3.4);letmoe 相关的同人/asmr 注册行投影随其上线评估;**wiki 退役 W1-W5(doc 19)在 Phase 1 之后独立推进** | — |
 
 > 依赖关系:Phase 1 里**缓存 + 公开 spec 是前置地基**(不是优化项)——没有缓存,"所有读走 API"会把回源服务打成瓶颈;没有公开 spec,门户文档/SDK 无从谈起。
 
@@ -407,6 +412,6 @@ v1 设计时"galgame 无 spec"的前提已过时——现状是**两个面都有
 4. **公开列表分页**:offset → 游标(推荐,配合缓存与大目录)。
 5. **用量计量粒度**:仅按 (key, day),还是加 face/端点维度(成本 vs 洞察)。
 6. **NSFW 开放策略**:是否对外开放、以何 tier/审批门槛(合规决定;catalog 面 r18 行同一策略)。
-7. **★ 源数据再分发授权(新增,Phase 1 前必拍)**:公开投影放行哪些来源的字段(VNDB / Bangumi / DLsite / ErogameScape 逐源裁决)、是否强制归源标注;DLsite 销量类商业数据是否可公开;asmr/同人未认领注册行是否进 v1 投影。机制上 per-field provenance 已支持按来源白名单投影(§11)。
-8. **VNDB 评分摄入**(统计面前置,新增):wiki 目前只存 vndb_id 不存评分——从 VNDB dump 补 votes/rating 摄入(同族小活,归统计面 Phase 2.5)。
-9. **一方站点是否迁移到开放 API 面**:kungal/moyu/letmoe 继续走内部 S2S(倾向,internal tier 仅作兜底标记),开放 API 专注第三方——避免把一方流量卷进公开配额/缓存策略。
+7. ~~★ 源数据再分发授权~~ **已拍板(2026-07-14,doc 19 D1)**:公开投影 = 聚合记录(逐字段多源归并 + attribution 块),不做逐源原始字段批量再分发;评分 = 逐源数值 + 归源链接;asmr/同人未认领行仍倾向 v1 先只放 galgame 可达闭包(letmoe 上线时扩)。
+8. ~~VNDB 评分摄入~~ **已清(2026-07,三期)**:`galgame_vndb_meta` 62k 行在产 + 05:15 日更;统计面数据前置全清。
+9. ~~一方站点是否迁移到开放 API 面~~ **方向已定(2026-07-14,doc 19)**:kungal/moyu 终态**直接消费开放 API**(internal tier,W3 切换),wiki 整体退役;开放 API 的公开配额/缓存策略与 internal tier 隔离(internal 走内网 base,不占公开配额)。
