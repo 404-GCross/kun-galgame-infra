@@ -339,3 +339,24 @@ func (h *GalgameHandler) CheckVNDB(c fiber.Ctx) error {
 
 	return response.Success(c, data)
 }
+
+// Drafts lists the unclaimed VNDB drafts (status = 2), newest first — the
+// claim-funnel browser behind kungal's 「未发布的游戏」 modal. Same envelope as
+// List so the shared GalgameCard renders items unchanged (status=2 cards
+// already route to the publish wizard).
+func (h *GalgameHandler) Drafts(c fiber.Ctx) error {
+	var req dto.ListGalgameRequest
+	if err := c.Bind().Query(&req); err != nil {
+		return response.BadRequest(c, errors.ErrBadRequest)
+	}
+
+	items, total, err := h.galgameService.ListDrafts(c.Context(), req.Page, req.Limit, req.ContentLimit)
+	if err != nil {
+		return response.InternalError(c, errors.ErrOperationFailed)
+	}
+
+	return response.Success(c, dto.GalgameListData{
+		Items: dto.NewGalgameDetails(items),
+		Total: total,
+	})
+}

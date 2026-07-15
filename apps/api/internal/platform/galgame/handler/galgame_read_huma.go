@@ -40,6 +40,12 @@ type listOutput struct {
 	Body calEnvelope[dto.GalgameListData]
 }
 
+type draftsInput struct {
+	Page         int    `query:"page" doc:"Page number (default 1)"`
+	Limit        int    `query:"limit" doc:"Items per page 1-50 (default 24)"`
+	ContentLimit string `query:"content_limit" doc:"sfw | nsfw | all (default sfw)"`
+}
+
 type batchInput struct {
 	IDs          string `query:"ids" doc:"Comma-separated galgame IDs (1-100)"`
 	ContentLimit string `query:"content_limit" doc:"sfw | nsfw | all (default sfw)"`
@@ -232,6 +238,10 @@ func SetupGalgameReadSpec(app *fiber.App) huma.API {
 		OperationID: "batchGetGalgames", Method: http.MethodGet, Path: "/api/galgame/batch",
 		Summary: "Batch galgame briefs (view=brief default; view=detail adds intro/officials/release)", Tags: tags,
 	}, func(context.Context, *batchInput) (*batchOutput, error) { return &batchOutput{}, nil })
+	huma.Register(api, huma.Operation{
+		OperationID: "listGalgameDrafts", Method: http.MethodGet, Path: "/api/galgame/drafts",
+		Summary: "Paginated unclaimed VNDB drafts (status=2), newest first — the claim-funnel browser; same envelope as the list", Tags: tags,
+	}, func(context.Context, *draftsInput) (*listOutput, error) { return &listOutput{}, nil })
 	huma.Register(api, huma.Operation{
 		OperationID: "getGalgameDetail", Method: http.MethodGet, Path: "/api/galgame/{gid}",
 		Summary: "Full galgame detail (all relations) + owner/contributor user briefs", Tags: tags,

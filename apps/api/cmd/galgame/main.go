@@ -242,6 +242,7 @@ func setupRoutes(a *app.App, cfg *config.Config, wikiDB *database.PostgresDB, se
 	// for search; automatic for batch).
 	galgame.Get("/search", optionalJWT, searchH.Galgame)
 	galgame.Get("/batch", optionalJWT, galgameH.BatchGet)
+	galgame.Get("/drafts", galgameH.Drafts)
 	galgame.Get("/check", galgameH.CheckVNDB)
 	galgame.Get("/user/:id/stats", galgameH.UserStats)
 	galgame.Get("/user/:id/galgames", galgameH.UserGalgames)

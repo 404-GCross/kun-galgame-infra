@@ -1061,3 +1061,19 @@ func strToPtr(s string) *string {
 	}
 	return &s
 }
+
+// ListDrafts pages the unclaimed VNDB drafts (status = 2) for the claim-funnel
+// browser. Same clamps and content gate as List; sorted newest-first so fresh
+// VNDB imports surface at the top of the modal.
+func (s *GalgameService) ListDrafts(ctx context.Context, page, limit int, contentLimit string) ([]model.Galgame, int64, error) {
+	if page <= 0 {
+		page = 1
+	}
+	if limit <= 0 {
+		limit = 24
+	}
+	if limit > 50 {
+		limit = 50
+	}
+	return s.galgameRepo.ListDrafts(ctx, page, limit, utils.ParseContentLimit(contentLimit, "sfw"))
+}

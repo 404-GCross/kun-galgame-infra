@@ -564,3 +564,31 @@ func (r *GalgameRepository) ListContributedByUser(ctx context.Context, userID, p
 		Find(&items).Error
 	return items, total, err
 }
+
+// ListDrafts pages the unclaimed VNDB drafts (status = 2), newest first — the
+// claim-funnel browser's data source (the drafts modal on kungal). Only the
+// cover preload is carried (the card needs the effective banner/portrait, not
+// taxonomy); content_limit filters the same way List does.
+func (r *GalgameRepository) ListDrafts(ctx context.Context, page, limit int, contentLimit string) (items []model.Galgame, total int64, err error) {
+	defer func() {
+		for i := range items {
+			model.PopulateEffectiveBanner(&items[i])
+		}
+	}()
+
+	query := r.db.WithContext(ctx).Model(&model.Galgame{}).Where("status = 2")
+	if contentLimit != "" {
+		query = query.Where("content_limit = ?", contentLimit)
+	}
+	query.Count(&total)
+
+	err = query.
+		Order("created DESC, id DESC").
+		Offset((page-1)*limit).
+		Limit(limit).
+		Preload("Cover", func(db *gorm.DB) *gorm.DB {
+			return db.Order("sort_order ASC, created ASC")
+		}).
+		Find(&items).Error
+	return items, total, err
+}
