@@ -1,0 +1,375 @@
+# kun-galgame-infra — LOCAL DEV compose (one-command platform for every repo).
+#
+# Motivation: any product repo's `pnpm dev` / `air` should depend on ONE fact —
+# "localhost has a platform". This file brings up the seven platform services
+# from prebuilt GHCR images plus all local infrastructure, with ZERO cloud
+# credentials on the dev box (docs/dev-environment.md).
+#
+# Differs from docker-compose.prod.yml (Dokploy) and docker-compose.yml (local build):
+#   1. `image: ghcr.io/kunmoe/infra-*:${INFRA_IMAGE_TAG:-latest}` — prebuilt, PULLED
+#      (not built here). Pin a digest via INFRA_IMAGE_TAG when collaborating.
+#   2. `network_mode: host` — every service shares 127.0.0.1, so inter-service
+#      URLs are 127.0.0.1:<prod-port> and the ports match prod (9277-9283). This
+#      is what makes the "stop a container, `go run ./cmd/<svc>` in its place"
+#      replacement workflow seamless (docs/dev-environment.md → Replace mode).
+#   3. All config is inline `environment:` and LITERAL — dev constants, no secrets,
+#      no ${SECRET} panel references, no R2/B2 endpoints or keys.
+#   4. Postgres is NOT a service here: the dev box's own Postgres at 127.0.0.1:5432
+#      (user postgres / password 191007) is the source of truth (see MEMORY:
+#      local-dev-truth-5432). Create the databases with docker/initdb.d if fresh.
+#   5. Out-of-band jobs (image-gc / refping / cron / tools) and the web/wiki
+#      frontends are deliberately NOT included — frontends run their own pnpm dev.
+#
+#   docker compose -f docker-compose.dev.yml pull      # refresh GHCR images
+#   docker compose -f docker-compose.dev.yml up -d      # migrate-* gate the services
+#   docker compose -f docker-compose.dev.yml ps         # health
+#
+# Ports occupied on the box are NOT auto-skipped — check first (ss -tlnp) and NEVER
+# kill a running process; stop the matching compose service instead.
+name: kun-galgame-infra-dev
+
+x-svc-health: &svc-health
+  interval: 10s
+  timeout: 5s
+  retries: 5
+  start_period: 15s
+
+# ── shared backend env (union; services ignore keys they don't read) ──────────
+# Every value is a LITERAL dev constant. No secrets, no panel ${VAR}, no cloud
+# endpoints. In host network mode all peers are reachable at 127.0.0.1:<port>.
+x-dev-env: &dev-env
+  KUN_ENV: development # flips Secure cookies OFF so login works over plain HTTP
+  # Postgres — the dev box's OWN server (NOT a compose service). One server, N DBs.
+  KUN_PG_HOST: 127.0.0.1
+  KUN_PG_PORT: "5432"
+  KUN_PG_USER: postgres
+  KUN_PG_PASSWORD: "191007"
+  KUN_PG_DATABASE: kun_galgame_infra
+  KUN_PG_SSLMODE: disable
+  KUN_PG_TIMEZONE: Asia/Shanghai
+  KUN_GALGAME_PG_DATABASE: kun_galgame_wiki
+  KUN_IMAGES_PG_DATABASE: kun_images
+  KUN_CATALOG_PG_DATABASE: kun_catalog
+  KUN_COMMUNITY_PG_DATABASE: kun_community
+  KUN_TRUST_PG_DATABASE: kun_trust
+  KUN_ARTIFACTS_PG_DATABASE: kun_artifacts
+  # Redis (local container below, or the box's own Redis on 6379 if it clashes)
+  REDIS_ENABLED: "true"
+  REDIS_HOST: 127.0.0.1
+  REDIS_PORT: "6379"
+  # JWT — oauth signs access_token (HS256), the resource services verify locally.
+  # One shared dev constant; it need not be secret on a local box.
+  JWT_SECRET: kun-dev-jwt-secret-local-only-not-a-secret
+  # OIDC asymmetric verify warm-up (docs/auth/03). Points at the local oauth OP.
+  # Failure-tolerant: with no signing keys (KUN_OIDC_KEY_ENC_KEY unset) every
+  # service stays HS256-only, so this is safe to wire unconditionally.
+  KUN_OIDC_JWKS_URL: http://127.0.0.1:9277/oauth/jwks
+  # CORS — local product frontends (their pnpm dev ports). Extend as repos join.
+  KUN_FRONTEND_CORS_ORIGIN: http://localhost:3000,http://127.0.0.1:3000,http://localhost:3001,http://127.0.0.1:3001,http://localhost:15008,http://127.0.0.1:15008,http://localhost:15009,http://127.0.0.1:15009,http://localhost:15011,http://127.0.0.1:15011,http://localhost:15013,http://127.0.0.1:15013
+  # oauth identity URLs — the local oauth service
+  KUN_SITE_URL: http://127.0.0.1:9277
+  KUN_FRONTEND_URL: http://127.0.0.1:9277
+  # image_service S3 → local MinIO (path-style). Dev key = the MinIO root user.
+  # The image service os.Exit(1)s on empty key/secret/bucket, so these are set.
+  KUN_IMAGE_S3_ENDPOINT: http://127.0.0.1:9000
+  KUN_IMAGE_S3_REGION: us-east-1
+  KUN_IMAGE_S3_ACCESS_KEY: minioadmin
+  KUN_IMAGE_S3_SECRET_KEY: minioadmin
+  KUN_IMAGE_S3_BUCKET: kun-images
+  KUN_IMAGE_S3_FORCE_PATH_STYLE: "true"
+  # Public/CDN base → the read-through Caddy proxy below. It serves the CDN URL
+  # shape from the local bucket first and falls back to the prod public CDN on a
+  # miss, so unseeded images still render (docs/dev-environment.md → image reads).
+  KUN_IMAGE_PUBLIC_BASE_URL: http://127.0.0.1:9290
+  KUN_IMAGE_CLIENT_BASE_URL: http://127.0.0.1:9278
+  # artifact S3 → local MinIO too. Dev accepts a MISS for prod artifacts (no
+  # read-through proxy for artifact by design); local uploads land in this bucket.
+  KUN_ARTIFACT_S3_ENDPOINT: http://127.0.0.1:9000
+  KUN_ARTIFACT_S3_REGION: us-east-1
+  KUN_ARTIFACT_S3_BUCKET: kun-artifacts
+  KUN_ARTIFACT_S3_ACCESS_KEY: minioadmin
+  KUN_ARTIFACT_S3_SECRET_KEY: minioadmin
+  KUN_ARTIFACT_S3_FORCE_PATH_STYLE: "true"
+  KUN_ARTIFACT_S3_CLEANUP_ACCESS_KEY: ""
+  KUN_ARTIFACT_S3_CLEANUP_SECRET_KEY: ""
+  # Meilisearch — galgame uses; key MUST match the meili MEILI_MASTER_KEY below.
+  KUN_MEILISEARCH_HOST: http://127.0.0.1:7700
+  KUN_MEILISEARCH_API_KEY: kun-dev-meili-master-key-local-only
+  # Mail → Mailpit (SMTP black hole + web UI on :8025). No auth, no password.
+  KUN_VISUAL_NOVEL_EMAIL_FROM: 鲲 Galgame OAuth (dev)
+  KUN_VISUAL_NOVEL_EMAIL_HOST: 127.0.0.1
+  KUN_VISUAL_NOVEL_EMAIL_PORT: "1025"
+  KUN_VISUAL_NOVEL_EMAIL_ACCOUNT: dev@dev.local
+  KUN_VISUAL_NOVEL_EMAIL_PASSWORD: ""
+
+services:
+  # ───────────────────────── local infrastructure ────────────────────────────
+  # These come from PUBLIC Docker Hub images (no GHCR auth needed). On a box that
+  # already runs one of these ports (e.g. a native Redis on 6379), skip that one
+  # service — the shared env points at 127.0.0.1 either way.
+  redis:
+    image: redis:8-alpine
+    network_mode: host
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes: ["redis:/data"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  minio:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    network_mode: host
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes: ["minio:/data"]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:9000/minio/health/live"]
+      <<: *svc-health
+    restart: unless-stopped
+    # S3 API on :9000, console (browser) on http://127.0.0.1:9001 (minioadmin).
+
+  # One-shot: create the buckets the image/artifact services write to, and make
+  # kun-images anonymous-download so the read-through Caddy proxy can GET objects
+  # without S3 signing. Idempotent (mb --ignore-existing) — reruns are no-ops.
+  minio-setup:
+    image: minio/mc:latest
+    network_mode: host
+    depends_on:
+      minio: { condition: service_healthy }
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        mc alias set local http://127.0.0.1:9000 minioadmin minioadmin &&
+        mc mb --ignore-existing local/kun-images &&
+        mc mb --ignore-existing local/kun-artifacts &&
+        mc anonymous set download local/kun-images
+    restart: "no"
+
+  # Read-through image CDN proxy (docs/dev-environment.md → image reads). Serves
+  # the CDN URL shape from local MinIO first, falls back to the prod public CDN.
+  image-cdn-proxy:
+    image: caddy:2-alpine
+    network_mode: host
+    volumes:
+      - ./docker/dev/Caddyfile:/etc/caddy/Caddyfile:ro
+    depends_on:
+      minio: { condition: service_healthy }
+    restart: unless-stopped
+    # Listens on http://127.0.0.1:9290 (KUN_IMAGE_PUBLIC_BASE_URL points here).
+
+  mailpit:
+    image: axllent/mailpit:latest
+    network_mode: host
+    environment:
+      # Defaults already bind :1025 (SMTP) and :8025 (UI); pinned for clarity.
+      MP_SMTP_BIND_ADDR: 0.0.0.0:1025
+      MP_UI_BIND_ADDR: 0.0.0.0:8025
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      <<: *svc-health
+    restart: unless-stopped
+    # SMTP sink on :1025 (all outbound mail is captured, never delivered);
+    # inspect messages at http://127.0.0.1:8025.
+
+  meili:
+    image: getmeili/meilisearch:v1.45
+    network_mode: host
+    environment:
+      MEILI_MASTER_KEY: kun-dev-meili-master-key-local-only # == KUN_MEILISEARCH_API_KEY
+      MEILI_ENV: development
+      MEILI_NO_ANALYTICS: "true"
+    volumes: ["meili:/meili_data"]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:7700/health"]
+      <<: *svc-health
+    restart: unless-stopped
+    # Search API on :7700 (galgame connects at KUN_MEILISEARCH_HOST).
+
+  # ───── schema migrations (gate the services, like prod) ─────────────────────
+  # migrate-* run FIRST and the services depend on them completing. All are
+  # idempotent + additive against the box's live DBs (AutoMigrate, CREATE INDEX
+  # IF NOT EXISTS, guarded seeds), so a re-run on every `up` is a fast no-op.
+  migrate:
+    image: ghcr.io/kunmoe/infra-migrate:${INFRA_IMAGE_TAG:-latest}
+    network_mode: host
+    environment: { <<: *dev-env }
+    restart: "no"
+
+  migrate-galgame:
+    image: ghcr.io/kunmoe/infra-migrate-galgame:${INFRA_IMAGE_TAG:-latest}
+    network_mode: host
+    environment: { <<: *dev-env }
+    restart: "no"
+
+  migrate-catalog:
+    image: ghcr.io/kunmoe/infra-migrate-catalog:${INFRA_IMAGE_TAG:-latest}
+    network_mode: host
+    environment: { <<: *dev-env }
+    restart: "no"
+
+  migrate-community:
+    image: ghcr.io/kunmoe/infra-migrate-community:${INFRA_IMAGE_TAG:-latest}
+    network_mode: host
+    environment: { <<: *dev-env }
+    restart: "no"
+
+  migrate-trust:
+    image: ghcr.io/kunmoe/infra-migrate-trust:${INFRA_IMAGE_TAG:-latest}
+    network_mode: host
+    environment: { <<: *dev-env }
+    restart: "no"
+
+  # ───────────────────────────── platform services ───────────────────────────
+  # oauth + image are cgo (libwebp) → binary at /app/app. The rest are distroless
+  # → binary at /app. Ports match prod (9277-9283); host network binds them on the
+  # box directly, so `go run ./cmd/<svc>` on the same port replaces a stopped one.
+  oauth:
+    image: ghcr.io/kunmoe/infra-oauth:${INFRA_IMAGE_TAG:-latest}
+    network_mode: host
+    environment:
+      <<: *dev-env
+      KUN_FIBER_SERVER_HOST: 0.0.0.0
+      KUN_FIBER_SERVER_PORT: "9277"
+      # Image-service client for AVATAR uploads. Empty in dev → the avatar route
+      # is not registered (POST /auth/me/avatar 404s). Wiring real dev client
+      # creds is the product repo's job (workflow ruling 3); the platform starts
+      # without them. Set both here only if you exercise avatar upload locally.
+      KUN_IMAGE_CLIENT_ID: ""
+      KUN_IMAGE_CLIENT_SECRET: ""
+      KUN_GALGAME_IMAGE_CLIENT_ID: ""
+      KUN_GALGAME_IMAGE_CLIENT_SECRET: ""
+      # OIDC OP signing keys — unset in dev → bootstrap skipped, /oauth/jwks
+      # absent, access tokens stay HS256 (today's default). Fine for local work.
+      KUN_OIDC_KEY_ENC_KEY: ""
+      KUN_OIDC_SIGN_ASYMMETRIC: "false"
+    depends_on:
+      redis: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+    healthcheck:
+      test: ["CMD", "/app/app", "healthcheck"]
+      <<: *svc-health
+    restart: unless-stopped
+
+  image:
+    image: ghcr.io/kunmoe/infra-image:${INFRA_IMAGE_TAG:-latest}
+    network_mode: host
+    environment:
+      <<: *dev-env
+      KUN_IMAGE_SERVICE_HOST: 0.0.0.0
+      KUN_IMAGE_SERVICE_PORT: "9278"
+      KUN_IMAGE_UPLOAD_ENABLED: "true"
+    depends_on:
+      redis: { condition: service_healthy }
+      minio: { condition: service_healthy }
+      minio-setup: { condition: service_completed_successfully }
+      migrate: { condition: service_completed_successfully }
+    healthcheck:
+      test: ["CMD", "/app/app", "healthcheck"]
+      <<: *svc-health
+    restart: unless-stopped
+
+  galgame:
+    image: ghcr.io/kunmoe/infra-galgame:${INFRA_IMAGE_TAG:-latest}
+    network_mode: host
+    environment:
+      <<: *dev-env
+      KUN_FIBER_SERVER_HOST: 0.0.0.0
+      KUN_GALGAME_PORT: "9280"
+      # Image client creds for banner uploads (multipart Create/Update/PR). Empty
+      # in dev → banner file uploads are rejected (400); banner-less edits work.
+      KUN_IMAGE_CLIENT_ID: ""
+      KUN_IMAGE_CLIENT_SECRET: ""
+      # Catalog S2S client for the staff data browser. Empty in dev → that panel
+      # is inert; the wiki itself runs fine. Base URL defaults to 127.0.0.1:9281.
+      KUN_CATALOG_CLIENT_ID: ""
+      KUN_CATALOG_CLIENT_SECRET: ""
+    depends_on:
+      meili: { condition: service_healthy }
+      migrate-galgame: { condition: service_completed_successfully }
+      migrate: { condition: service_completed_successfully } # reads users from kun_galgame_infra
+    healthcheck:
+      test: ["CMD", "/app", "healthcheck"]
+      <<: *svc-health
+    restart: unless-stopped
+
+  artifact:
+    image: ghcr.io/kunmoe/infra-artifact:${INFRA_IMAGE_TAG:-latest}
+    network_mode: host
+    environment:
+      <<: *dev-env
+      KUN_ARTIFACT_HOST: 0.0.0.0
+      KUN_ARTIFACT_PORT: "9279"
+      KUN_ARTIFACT_UPLOAD_ENABLED: "true"
+    depends_on:
+      redis: { condition: service_healthy }
+      minio: { condition: service_healthy }
+      minio-setup: { condition: service_completed_successfully }
+      migrate: { condition: service_completed_successfully }
+    healthcheck:
+      test: ["CMD", "/app", "healthcheck"]
+      <<: *svc-health
+    restart: unless-stopped
+
+  catalog:
+    image: ghcr.io/kunmoe/infra-catalog:${INFRA_IMAGE_TAG:-latest}
+    network_mode: host
+    environment:
+      <<: *dev-env
+      KUN_CATALOG_HOST: 0.0.0.0
+      KUN_CATALOG_PORT: "9281"
+    depends_on:
+      migrate: { condition: service_completed_successfully }         # reads oauth_clients
+      migrate-catalog: { condition: service_completed_successfully }  # kun_catalog schema
+    healthcheck:
+      test: ["CMD", "/app", "healthcheck"]
+      <<: *svc-health
+    restart: unless-stopped
+
+  community:
+    image: ghcr.io/kunmoe/infra-community:${INFRA_IMAGE_TAG:-latest}
+    network_mode: host
+    environment:
+      <<: *dev-env
+      KUN_COMMUNITY_HOST: 0.0.0.0
+      KUN_COMMUNITY_PORT: "9282"
+      # Trust forwarding — all empty = forwarding OFF (outbox idles, inbound
+      # callbacks 401). Fail-closed dev default, same as prod until wired.
+      KUN_TRUST_CLIENT_ID: ""
+      KUN_TRUST_CLIENT_SECRET: ""
+      KUN_TRUST_CALLBACK_SECRET: ""
+    depends_on:
+      migrate: { condition: service_completed_successfully }            # reads oauth_clients
+      migrate-community: { condition: service_completed_successfully }  # kun_community schema
+    healthcheck:
+      test: ["CMD", "/app", "healthcheck"]
+      <<: *svc-health
+    restart: unless-stopped
+
+  trust:
+    image: ghcr.io/kunmoe/infra-trust:${INFRA_IMAGE_TAG:-latest}
+    network_mode: host
+    environment:
+      <<: *dev-env
+      KUN_TRUST_HOST: 0.0.0.0
+      KUN_TRUST_PORT: "9283"
+      # Forward-face allowlist — empty = the forward face 403s for everyone
+      # (fail-closed). Set to community's KUN_TRUST_CLIENT_ID when wiring locally.
+      KUN_TRUST_FORWARDER_CLIENT_IDS: ""
+    depends_on:
+      migrate: { condition: service_completed_successfully }        # reads oauth_clients
+      migrate-trust: { condition: service_completed_successfully }  # kun_trust schema
+    healthcheck:
+      test: ["CMD", "/app", "healthcheck"]
+      <<: *svc-health
+    restart: unless-stopped
+
+volumes:
+  redis:
+  minio:
+  meili:

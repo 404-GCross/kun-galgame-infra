@@ -1,0 +1,37 @@
+# Read-through image CDN proxy for local dev (docker-compose.dev.yml).
+#
+# The image service emits content-addressed CDN URLs of the shape
+#   /<hash[:2]>/<hash[2:4]>/<hash>.<ext>        (== the S3 object key, path-style)
+# This proxy serves that URL shape from the LOCAL MinIO bucket first, and on a
+# miss transparently falls back to the PROD public CDN so images that were never
+# seeded into the local bucket still resolve. The dev image service's
+# KUN_IMAGE_PUBLIC_BASE_URL points here (http://127.0.0.1:9290) — see the compose.
+#
+# host network mode: this proxy, MinIO (:9000) and the caller all share 127.0.0.1.
+
+{
+	admin off        # static config; no admin API / config reloads needed
+	auto_https off   # plain HTTP on a fixed local port
+}
+
+:9290 {
+	# Attempt 1 — local MinIO. Path-style access prepends the bucket name to the
+	# object key. The kun-images bucket is set anonymous-download by the
+	# minio-setup one-shot, so a plain GET needs no S3 signature.
+	reverse_proxy http://127.0.0.1:9000 {
+		rewrite /kun-images{uri}
+		header_up Host 127.0.0.1:9000
+
+		# Attempt 2 — on a local miss (MinIO answers 404 NoSuchKey, or 403 if the
+		# bucket policy is not yet applied) re-issue the ORIGINAL request path
+		# against the prod public CDN. orig_uri is captured before the rewrite
+		# above, so the bucket prefix is not carried upstream.
+		@miss status 403 404
+		handle_response @miss {
+			rewrite * {http.request.orig_uri}
+			reverse_proxy https://image.kungal.iloveren.link {
+				header_up Host image.kungal.iloveren.link
+			}
+		}
+	}
+}
