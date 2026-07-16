@@ -36,7 +36,7 @@ type GalgameSearchRequest struct {
 	TagIDs            []int    // AND — every galgame must have all
 	OfficialIDs       []int    // AND
 	EngineIDs         []int    // AND
-	SeriesID *int // nil = no filter
+	SeriesID          *int     // nil = no filter
 	// ReleasedFromTS / ReleasedToTS are Unix-second boundaries on the
 	// galgame's release date (inclusive on both ends). Handler accepts
 	// either YYYY or YYYY-MM in the query string and converts via

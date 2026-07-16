@@ -91,13 +91,13 @@ func TestMergePR_Direct(t *testing.T) {
 
 	// Submit PR
 	proposed := &model.Snapshot{
-		VNDBID:   "v20002",
-		NameZhCN: "PR修改",
-		Aliases:  []string{},
-		TagIDs:   []int{},
+		VNDBID:      "v20002",
+		NameZhCN:    "PR修改",
+		Aliases:     []string{},
+		TagIDs:      []int{},
 		OfficialIDs: []int{},
-		EngineIDs: []int{},
-		Links:    []model.SnapshotLink{},
+		EngineIDs:   []int{},
+		Links:       []model.SnapshotLink{},
 	}
 	pr, err := testSvc.SubmitPR(ctx, 2, g.ID, proposed, "test", "")
 	require.NoError(t, err)
@@ -132,13 +132,13 @@ func TestMergePR_AutoRebase(t *testing.T) {
 
 	// Submit PR that changes name_zh_cn (based on revision 1)
 	proposed := &model.Snapshot{
-		VNDBID:   "v20003",
-		NameZhCN: "PR的名字",
-		Aliases:  []string{},
-		TagIDs:   []int{},
+		VNDBID:      "v20003",
+		NameZhCN:    "PR的名字",
+		Aliases:     []string{},
+		TagIDs:      []int{},
 		OfficialIDs: []int{},
-		EngineIDs: []int{},
-		Links:    []model.SnapshotLink{},
+		EngineIDs:   []int{},
+		Links:       []model.SnapshotLink{},
 	}
 	pr, err := testSvc.SubmitPR(ctx, 2, g.ID, proposed, "改名字", "")
 	require.NoError(t, err)
@@ -154,7 +154,7 @@ func TestMergePR_AutoRebase(t *testing.T) {
 	// Verify both changes are applied
 	var galgame model.Galgame
 	testDB.First(&galgame, g.ID)
-	assert.Equal(t, "PR的名字", galgame.NameZhCN)   // from PR
+	assert.Equal(t, "PR的名字", galgame.NameZhCN)        // from PR
 	assert.Equal(t, "English Name", galgame.NameEnUS) // from direct edit, preserved by rebase
 }
 
@@ -166,13 +166,13 @@ func TestMergePR_Conflict(t *testing.T) {
 
 	// Submit PR that changes name_zh_cn
 	proposed := &model.Snapshot{
-		VNDBID:   "v20004",
-		NameZhCN: "PR的名字",
-		Aliases:  []string{},
-		TagIDs:   []int{},
+		VNDBID:      "v20004",
+		NameZhCN:    "PR的名字",
+		Aliases:     []string{},
+		TagIDs:      []int{},
 		OfficialIDs: []int{},
-		EngineIDs: []int{},
-		Links:    []model.SnapshotLink{},
+		EngineIDs:   []int{},
+		Links:       []model.SnapshotLink{},
 	}
 	pr, err := testSvc.SubmitPR(ctx, 2, g.ID, proposed, "改名字", "")
 	require.NoError(t, err)
@@ -194,13 +194,13 @@ func TestMergePR_AlreadyProcessed(t *testing.T) {
 	g := createTestGalgame(t, "v20005", "test")
 
 	proposed := &model.Snapshot{
-		VNDBID:   "v20005",
-		NameZhCN: "changed",
-		Aliases:  []string{},
-		TagIDs:   []int{},
+		VNDBID:      "v20005",
+		NameZhCN:    "changed",
+		Aliases:     []string{},
+		TagIDs:      []int{},
 		OfficialIDs: []int{},
-		EngineIDs: []int{},
-		Links:    []model.SnapshotLink{},
+		EngineIDs:   []int{},
+		Links:       []model.SnapshotLink{},
 	}
 	pr, _ := testSvc.SubmitPR(ctx, 2, g.ID, proposed, "test", "")
 

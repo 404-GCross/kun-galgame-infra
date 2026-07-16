@@ -16,8 +16,8 @@ type Snapshot struct {
 	// nil = unknown. ReleaseDateTBA = "announced but exact date pending".
 	// The two are independent — a scheduled game can have (date=2026-03-01,
 	// tba=true) meaning "approximate target".
-	ReleaseDate      *string              `json:"release_date"`
-	ReleaseDateTBA   bool                 `json:"release_date_tba"`
+	ReleaseDate    *string `json:"release_date"`
+	ReleaseDateTBA bool    `json:"release_date_tba"`
 	// ReleasePrecision is the granularity of ReleaseDate (day/month/year/tba/
 	// unknown), carried through revisions so a diff/revert preserves it and an
 	// unrelated edit can't downgrade a VNDB-provided month/year date to day.

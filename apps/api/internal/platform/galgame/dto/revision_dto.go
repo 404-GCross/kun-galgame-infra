@@ -47,39 +47,39 @@ type RevertRequest struct {
 
 // SubmitPRRequest represents a PR submission
 type SubmitPRRequest struct {
-	VNDBID           *string              `json:"vndb_id"`
-	NameEnUS         *string              `json:"name_en_us"`
-	NameJaJP         *string              `json:"name_ja_jp"`
-	NameZhCN         *string              `json:"name_zh_cn"`
-	NameZhTW         *string              `json:"name_zh_tw"`
-	Banner           *string              `json:"banner"`
+	VNDBID   *string `json:"vndb_id"`
+	NameEnUS *string `json:"name_en_us"`
+	NameJaJP *string `json:"name_ja_jp"`
+	NameZhCN *string `json:"name_zh_cn"`
+	NameZhTW *string `json:"name_zh_tw"`
+	Banner   *string `json:"banner"`
 	// PromoteCoverHash — see CreateGalgameRequest.PromoteCoverHash.
 	// PR submit handler sets this from a multipart-uploaded banner file.
-	PromoteCoverHash string               `json:"-"`
-	IntroEnUS        *string              `json:"intro_en_us"`
-	IntroJaJP        *string              `json:"intro_ja_jp"`
-	IntroZhCN        *string              `json:"intro_zh_cn"`
-	IntroZhTW        *string              `json:"intro_zh_tw"`
-	ContentLimit     *string              `json:"content_limit"`
-	OriginalLanguage *string              `json:"original_language"`
-	AgeLimit         *string              `json:"age_limit"`
+	PromoteCoverHash string  `json:"-"`
+	IntroEnUS        *string `json:"intro_en_us"`
+	IntroJaJP        *string `json:"intro_ja_jp"`
+	IntroZhCN        *string `json:"intro_zh_cn"`
+	IntroZhTW        *string `json:"intro_zh_tw"`
+	ContentLimit     *string `json:"content_limit"`
+	OriginalLanguage *string `json:"original_language"`
+	AgeLimit         *string `json:"age_limit"`
 	// ReleaseDate / ReleaseDateTBA: pointer-presence like other scalars.
 	// nil = field omitted = inherit base; non-nil overwrites in the PR.
-	ReleaseDate      *string              `json:"release_date" validate:"omitempty,date_or_empty"`
-	ReleaseDateTBA   *bool                `json:"release_date_tba"`
-	SeriesID         *int                 `json:"series_id"`
-	Aliases          []string             `json:"aliases"`
-	TagIDs           []int                `json:"tag_ids"`
-	OfficialIDs     []int                `json:"official_ids"`
-	EngineIDs        []int                `json:"engine_ids"`
-	Links            []model.SnapshotLink `json:"links"`
-	Covers           []model.SnapshotCover      `json:"covers"`
-	Screenshots      []model.SnapshotScreenshot `json:"screenshots"`
+	ReleaseDate    *string                    `json:"release_date" validate:"omitempty,date_or_empty"`
+	ReleaseDateTBA *bool                      `json:"release_date_tba"`
+	SeriesID       *int                       `json:"series_id"`
+	Aliases        []string                   `json:"aliases"`
+	TagIDs         []int                      `json:"tag_ids"`
+	OfficialIDs    []int                      `json:"official_ids"`
+	EngineIDs      []int                      `json:"engine_ids"`
+	Links          []model.SnapshotLink       `json:"links"`
+	Covers         []model.SnapshotCover      `json:"covers"`
+	Screenshots    []model.SnapshotScreenshot `json:"screenshots"`
 	// PR description: the wiki UI presents two inputs ("PR 标题" + "变更说明")
 	// and reads pr.title / pr.message. The legacy single `note` field had no
 	// binding target so the user's text was silently dropped.
-	Title            string               `json:"title"`
-	Message          string               `json:"message"`
+	Title   string `json:"title"`
+	Message string `json:"message"`
 }
 
 // ApplyToSnapshot applies PR changes to a base snapshot, returning the proposed snapshot

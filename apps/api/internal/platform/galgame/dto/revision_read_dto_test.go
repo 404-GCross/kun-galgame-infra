@@ -22,8 +22,8 @@ func snapshotJSON(t *testing.T) datatypes.JSON {
 		VNDBID: "v54934", ReleaseDate: &rd, ReleasePrecision: "day",
 		NameZhCN: "名字", ContentLimit: "sfw", OriginalLanguage: "ja-jp", AgeLimit: "r18",
 		Aliases: []string{"a"}, TagIDs: []int{1, 2}, OfficialIDs: []int{144}, EngineIDs: []int{},
-		Links:   []model.SnapshotLink{{Name: "官网", Link: "https://x"}},
-		Covers:  []model.SnapshotCover{{ImageHash: "h0", SortOrder: 0, Kind: "main"}},
+		Links:       []model.SnapshotLink{{Name: "官网", Link: "https://x"}},
+		Covers:      []model.SnapshotCover{{ImageHash: "h0", SortOrder: 0, Kind: "main"}},
 		Screenshots: []model.SnapshotScreenshot{},
 	})
 	require.NoError(t, err)

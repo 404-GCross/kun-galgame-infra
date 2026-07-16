@@ -104,4 +104,3 @@ func TestTimestampScanValue(t *testing.T) {
 		t.Fatalf("zero Value should be nil, got %v", vz)
 	}
 }
-

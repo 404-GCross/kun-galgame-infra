@@ -156,11 +156,11 @@ func TestMergeUserAndVndbLinks(t *testing.T) {
 		{Name: "DLsite", Link: "https://www.dlsite.com/x", Source: "vndb", SourceKey: "dlsite"},
 	}
 	user := []model.SnapshotLink{
-		{Name: "官网", Link: "https://x.example"},                            // genuine user link → kept
-		{Name: "官网", Link: "https://x.example"},                            // exact-duplicate URL → collapsed
-		{Name: "Steam", Link: "https://store.steampowered.com/app/1/"},        // echoed managed host → dropped
-		{Name: "Wikipedia", Link: "https://en.wikipedia.org/wiki/X"},          // info host → dropped
-		{Name: "stale vndb", Link: "https://old", Source: "vndb"},             // source=vndb among user → ignored
+		{Name: "官网", Link: "https://x.example"},                        // genuine user link → kept
+		{Name: "官网", Link: "https://x.example"},                        // exact-duplicate URL → collapsed
+		{Name: "Steam", Link: "https://store.steampowered.com/app/1/"}, // echoed managed host → dropped
+		{Name: "Wikipedia", Link: "https://en.wikipedia.org/wiki/X"},   // info host → dropped
+		{Name: "stale vndb", Link: "https://old", Source: "vndb"},      // source=vndb among user → ignored
 	}
 	got := mergeUserAndVndbLinks(user, vndbLinks)
 
@@ -295,7 +295,7 @@ func TestEditableSnapshotFieldsAllReachable(t *testing.T) {
 	want := &model.Snapshot{
 		VNDBID: "v777", ReleaseDate: &releaseDate, ReleaseDateTBA: true,
 		NameEnUS: "EN", NameJaJP: "JA", NameZhCN: "ZH", NameZhTW: "TW",
-		Banner: "https://b.example/x.webp",
+		Banner:    "https://b.example/x.webp",
 		IntroEnUS: "ie", IntroJaJP: "ij", IntroZhCN: "iz", IntroZhTW: "it",
 		ContentLimit: "nsfw", OriginalLanguage: "en-us", AgeLimit: "r18",
 		Aliases: []string{"a1"}, TagIDs: []int{tg}, OfficialIDs: []int{of},
@@ -311,7 +311,7 @@ func TestEditableSnapshotFieldsAllReachable(t *testing.T) {
 	_, err := testSvc.Update(ctx, 1, gid, nil, &dto.UpdateGalgameRequest{
 		VNDBID: s("v777"), ReleaseDate: s("2020-01-01"), ReleaseDateTBA: b(true),
 		NameEnUS: s("EN"), NameJaJP: s("JA"), NameZhCN: s("ZH"), NameZhTW: s("TW"),
-		Banner: s("https://b.example/x.webp"),
+		Banner:    s("https://b.example/x.webp"),
 		IntroEnUS: s("ie"), IntroJaJP: s("ij"), IntroZhCN: s("iz"), IntroZhTW: s("it"),
 		ContentLimit: s("nsfw"), OriginalLanguage: s("en-us"), AgeLimit: s("r18"),
 		Aliases: &al, Links: &li, TagIDs: &ti, OfficialIDs: &oi, EngineIDs: &ei,

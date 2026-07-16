@@ -105,9 +105,9 @@ func (r *RevisionRepository) FindLatest(ctx context.Context, galgameID int) (*mo
 func ApplySnapshot(tx *gorm.DB, galgameID, userID int, snapshot *model.Snapshot) error {
 	// 1. Update galgame scalar fields
 	updates := map[string]any{
-		"vndb_id":           snapshot.VNDBID,
-		"bid":               snapshot.BangumiID,
-		"release_date":      model.ParseSnapshotReleaseDate(snapshot.ReleaseDate),
+		"vndb_id":          snapshot.VNDBID,
+		"bid":              snapshot.BangumiID,
+		"release_date":     model.ParseSnapshotReleaseDate(snapshot.ReleaseDate),
 		"release_date_tba": snapshot.ReleaseDateTBA,
 		// ResolveReleasePrecision supplies a safe value for pre-P3 snapshots
 		// (empty field) so a revert never writes "" and trips the CHECK.

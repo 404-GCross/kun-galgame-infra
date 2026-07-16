@@ -12,7 +12,7 @@ func TestDeriveInputPrecision(t *testing.T) {
 		{"2026", false, PrecisionYear},
 		{"2026-06", false, PrecisionMonth},
 		{"2026-06-15", false, PrecisionDay},
-		{"2026-06-15", true, PrecisionTBA},  // tba wins over a set date
+		{"2026-06-15", true, PrecisionTBA}, // tba wins over a set date
 		{"", true, PrecisionTBA},
 	}
 	for _, c := range cases {

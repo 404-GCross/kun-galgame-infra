@@ -39,33 +39,33 @@ type GalgameDoc struct {
 	IntroEnUS string `json:"intro_en_us"`
 	IntroZhTW string `json:"intro_zh_tw"`
 
-	Banner           string `json:"banner"`
+	Banner string `json:"banner"`
 	// EffectiveBannerHash is the image_hash of the pinned cover
 	// (galgame_cover where sort_order=0) — the same derived field the
 	// REST responses expose. Indexed here so list cards rendered from
 	// search results can pull from image_service without a second
 	// /galgame/:gid round-trip. Empty string when no cover is pinned.
 	EffectiveBannerHash string `json:"effective_banner_hash"`
-	ContentLimit     string `json:"content_limit"`
-	AgeLimit         string `json:"age_limit"`
-	OriginalLanguage string `json:"original_language"`
-	Status           int    `json:"status"`
+	ContentLimit        string `json:"content_limit"`
+	AgeLimit            string `json:"age_limit"`
+	OriginalLanguage    string `json:"original_language"`
+	Status              int    `json:"status"`
 	// UserID — owner / submitter. Filterable so the search service can
 	// return a user's own pending/declined drafts via include_pending=true.
-	UserID           int    `json:"user_id"`
-	View             int    `json:"view"`
+	UserID int `json:"user_id"`
+	View   int `json:"view"`
 	// ReleaseDate is the date column rendered as "YYYY-MM-DD" (empty when
 	// unknown). ReleaseDateTBA marks "announced, exact date pending".
 	// ReleasedYear / ReleasedMonth / ReleasedTS are derived for cheap
 	// filter/sort — they stay nil when ReleaseDate is empty. ReleasedMonth
 	// (1-12) backs the discontinuous-month filter (released_months).
-	ReleaseDate      string `json:"release_date"`
-	ReleaseDateTBA   bool   `json:"release_date_tba"`
-	ReleasedYear     *int   `json:"released_year,omitempty"`
-	ReleasedMonth    *int   `json:"released_month,omitempty"`
-	ReleasedTS       *int64 `json:"released_ts,omitempty"`
-	UpdatedTS        int64  `json:"updated_ts"`
-	CreatedTS        int64  `json:"created_ts"`
+	ReleaseDate    string `json:"release_date"`
+	ReleaseDateTBA bool   `json:"release_date_tba"`
+	ReleasedYear   *int   `json:"released_year,omitempty"`
+	ReleasedMonth  *int   `json:"released_month,omitempty"`
+	ReleasedTS     *int64 `json:"released_ts,omitempty"`
+	UpdatedTS      int64  `json:"updated_ts"`
+	CreatedTS      int64  `json:"created_ts"`
 }
 
 // TagDoc is the Meilisearch document for a galgame tag.

@@ -7,12 +7,12 @@ package dto
 // Daily quota enforced separately.
 type SubmitGalgameRequest struct {
 	// Optional. Empty allowed. When non-empty, must match `v\d+` and be globally unique.
-	VNDBID           string `json:"vndb_id" validate:"omitempty,max=10"`
-	NameEnUS         string `json:"name_en_us" validate:"max=1000"`
-	NameJaJP         string `json:"name_ja_jp" validate:"max=1000"`
-	NameZhCN         string `json:"name_zh_cn" validate:"max=1000"`
-	NameZhTW         string `json:"name_zh_tw" validate:"max=1000"`
-	Banner           string `json:"banner"`
+	VNDBID   string `json:"vndb_id" validate:"omitempty,max=10"`
+	NameEnUS string `json:"name_en_us" validate:"max=1000"`
+	NameJaJP string `json:"name_ja_jp" validate:"max=1000"`
+	NameZhCN string `json:"name_zh_cn" validate:"max=1000"`
+	NameZhTW string `json:"name_zh_tw" validate:"max=1000"`
+	Banner   string `json:"banner"`
 	// PromoteCoverHash — see CreateGalgameRequest.PromoteCoverHash.
 	PromoteCoverHash string `json:"-"`
 	IntroEnUS        string `json:"intro_en_us"`
@@ -25,15 +25,15 @@ type SubmitGalgameRequest struct {
 	// ReleaseDate is "YYYY-MM-DD" / "YYYY-MM" / "YYYY" / "" (= unknown). Partial
 	// dates are normalized + a release_precision derived (same as create/edit/PR).
 	// Independent of ReleaseDateTBA.
-	ReleaseDate      string `json:"release_date" validate:"omitempty,date_or_empty"`
-	ReleaseDateTBA   bool   `json:"release_date_tba"`
-	SeriesID         *int   `json:"series_id"`
-	Aliases          string `json:"aliases"`
-	TagIDs           []int  `json:"tag_ids"`
-	OfficialIDs      []int  `json:"official_ids"`
-	EngineIDs        []int  `json:"engine_ids"`
-	Covers           []GalgameCoverInput      `json:"covers"`
-	Screenshots      []GalgameScreenshotInput `json:"screenshots"`
+	ReleaseDate    string                   `json:"release_date" validate:"omitempty,date_or_empty"`
+	ReleaseDateTBA bool                     `json:"release_date_tba"`
+	SeriesID       *int                     `json:"series_id"`
+	Aliases        string                   `json:"aliases"`
+	TagIDs         []int                    `json:"tag_ids"`
+	OfficialIDs    []int                    `json:"official_ids"`
+	EngineIDs      []int                    `json:"engine_ids"`
+	Covers         []GalgameCoverInput      `json:"covers"`
+	Screenshots    []GalgameScreenshotInput `json:"screenshots"`
 }
 
 // ListMineRequest is the query of GET /galgame/mine.
@@ -54,13 +54,13 @@ type ListMineRequest struct {
 // would mix the model's `tag`/`alias`/etc relations (always nil here) into
 // the response. Pick the explicit fields the consumer cares about.
 type MineGalgame struct {
-	ID                  int     `json:"id"`
-	VNDBID              string  `json:"vndb_id"`
-	NameEnUS            string  `json:"name_en_us"`
-	NameJaJP            string  `json:"name_ja_jp"`
-	NameZhCN            string  `json:"name_zh_cn"`
-	NameZhTW            string  `json:"name_zh_tw"`
-	Banner              string  `json:"banner"`
+	ID       int    `json:"id"`
+	VNDBID   string `json:"vndb_id"`
+	NameEnUS string `json:"name_en_us"`
+	NameJaJP string `json:"name_ja_jp"`
+	NameZhCN string `json:"name_zh_cn"`
+	NameZhTW string `json:"name_zh_tw"`
+	Banner   string `json:"banner"`
 	// EffectiveBannerHash is the pinned cover (sort_order=0) hash.
 	// Frontends should render thumbnails from this via resolveBannerUrl.
 	// The legacy banner_image_hash column was retired by PR5.

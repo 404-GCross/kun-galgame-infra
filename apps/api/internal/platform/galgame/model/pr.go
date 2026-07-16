@@ -8,10 +8,10 @@ import (
 
 // GalgamePR represents a pull request (edit request) for a galgame
 type GalgamePR struct {
-	ID            int            `gorm:"primaryKey;autoIncrement" json:"id"`
-	GalgameID     int            `gorm:"column:galgame_id;not null;index" json:"galgame_id"`
-	UserID        int            `gorm:"column:user_id;not null;index" json:"user_id"`
-	Status        int            `gorm:"default:0;check:status IN (0,1,2)" json:"status"` // 0=pending, 1=merged, 2=declined
+	ID        int `gorm:"primaryKey;autoIncrement" json:"id"`
+	GalgameID int `gorm:"column:galgame_id;not null;index" json:"galgame_id"`
+	UserID    int `gorm:"column:user_id;not null;index" json:"user_id"`
+	Status    int `gorm:"default:0;check:status IN (0,1,2)" json:"status"` // 0=pending, 1=merged, 2=declined
 	// Title + Message are the PR's human description (the wiki UI shows two
 	// inputs "PR 标题" + "变更说明" and renders pr.title / pr.message). The
 	// retired single `note` column is left in the DB for historical rows; new

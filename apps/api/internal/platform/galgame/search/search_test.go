@@ -118,8 +118,8 @@ func TestParseReleased(t *testing.T) {
 		{"tba", 0, false},
 		{"", 0, false},
 		{"not-a-date", 0, false},
-		{"1800", 0, false},      // too early
-		{"2200", 0, false},      // too late
+		{"1800", 0, false},         // too early
+		{"2200", 0, false},         // too late
 		{"2020-13-40", 2020, true}, // invalid month/day still returns year with defaults
 	}
 	for _, tt := range tests {
@@ -139,13 +139,13 @@ func TestSanitizeQuery(t *testing.T) {
 	cases := map[string]string{
 		// the reported bug: dash-delimited subtitle must not negate
 		"CRAZY CHA!N -エルピスの鎖-": "CRAZY CHA!N  エルピスの鎖",
-		"-エルピス":                 "エルピス", // bare leading-dash negation neutralized
-		`"CLANNAD"`:              "CLANNAD", // phrase quotes stripped
-		"Steins-Gate":           "Steins Gate", // internal dash → space (tokenizer splits it anyway)
+		"-エルピス":                "エルピス",        // bare leading-dash negation neutralized
+		`"CLANNAD"`:            "CLANNAD",     // phrase quotes stripped
+		"Steins-Gate":          "Steins Gate", // internal dash → space (tokenizer splits it anyway)
 		// untouched cases
-		"CLANNAD":  "CLANNAD",
-		"ファントム":    "ファントム",
-		"":         "",
+		"CLANNAD":    "CLANNAD",
+		"ファントム":      "ファントム",
+		"":           "",
 		"  spaced  ": "spaced",
 		// Japanese long-vowel mark (U+30FC) is a letter, NOT ASCII '-' — keep it
 		"ソードアート": "ソードアート",

@@ -2,13 +2,13 @@ package model
 
 // GalgameOfficial represents a developer/publisher
 type GalgameOfficial struct {
-	ID           int       `gorm:"primaryKey;autoIncrement" json:"id"`
-	Name         string    `gorm:"uniqueIndex;not null" json:"name"`
-	Original     string    `gorm:"default:''" json:"original"`
-	Link         string    `gorm:"default:''" json:"link"`
-	Category     string    `gorm:"not null" json:"category"` // company, individual, amateur
-	Lang         string    `gorm:"default:''" json:"lang"`
-	Description  string    `gorm:"default:''" json:"description"`
+	ID          int    `gorm:"primaryKey;autoIncrement" json:"id"`
+	Name        string `gorm:"uniqueIndex;not null" json:"name"`
+	Original    string `gorm:"default:''" json:"original"`
+	Link        string `gorm:"default:''" json:"link"`
+	Category    string `gorm:"not null" json:"category"` // company, individual, amateur
+	Lang        string `gorm:"default:''" json:"lang"`
+	Description string `gorm:"default:''" json:"description"`
 	// CatalogLabelID is the catalog Label this official was registered as
 	// (cmd/register-galgame-officials, doc 10 §11). Nullable + no default tag
 	// (GORM zero-value trap): NULL is the idempotency key — an official without

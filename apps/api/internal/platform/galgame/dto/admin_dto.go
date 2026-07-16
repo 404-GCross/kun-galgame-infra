@@ -37,8 +37,8 @@ type AdminStatsResponse struct {
 // AdminListGalgamesRequest represents an admin galgame list query
 // (unlike the public list which hardcodes status=0, admin can filter any status)
 type AdminListGalgamesRequest struct {
-	Page   int    `query:"page" validate:"min=1"`
-	Limit  int    `query:"limit" validate:"min=1,max=100"`
+	Page  int `query:"page" validate:"min=1"`
+	Limit int `query:"limit" validate:"min=1,max=100"`
 	// Status 0=published, 1=banned, 2=vndb-draft, 3=pending-review, 4=declined.
 	// Admin can filter on any single status.
 	Status *int   `query:"status" validate:"omitempty,oneof=0 1 2 3 4"`
@@ -48,9 +48,11 @@ type AdminListGalgamesRequest struct {
 // AdminUpdateGalgameStatusRequest represents a status change request.
 //
 // Target status values (allowed):
-//   0 — publish (typically from source status=3 → approved)
-//   1 — ban (any source)
-//   4 — decline (only allowed from source status=3)
+//
+//	0 — publish (typically from source status=3 → approved)
+//	1 — ban (any source)
+//	4 — decline (only allowed from source status=3)
+//
 // status=2 (VNDB draft) is NOT a valid target — that domain belongs to sync-vndb.
 // status=3 (pending) is NOT a valid target — pending is produced by user submission only.
 type AdminUpdateGalgameStatusRequest struct {
