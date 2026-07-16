@@ -175,6 +175,13 @@ func (r *Repository) ListDevApps(ctx context.Context) ([]siteModel.OAuthClient, 
 // zero values (disable, override 0) are written explicitly — a struct Updates
 // would silently skip them.
 func (r *Repository) UpdateAppDevConfig(ctx context.Context, clientID string, fields map[string]any) error {
+	return r.UpdateAppFields(ctx, clientID, fields)
+}
+
+// UpdateAppFields is the generic column updater for an oauth_clients row (id +
+// arbitrary field map). Both the admin dev-config PATCH and the self-service
+// name/description PATCH route through it; an empty map is a no-op.
+func (r *Repository) UpdateAppFields(ctx context.Context, clientID string, fields map[string]any) error {
 	if len(fields) == 0 {
 		return nil
 	}
@@ -182,6 +189,89 @@ func (r *Repository) UpdateAppDevConfig(ctx context.Context, clientID string, fi
 		Model(&siteModel.OAuthClient{}).
 		Where("id = ?", clientID).
 		Updates(fields).Error
+}
+
+// --- Self-service (owner-scoped) data access ---
+
+// CreateApp inserts a new developer application (oauth_clients row). The caller
+// (SelfServiceService) sets the id/secret/owner/dev_* fields explicitly.
+func (r *Repository) CreateApp(ctx context.Context, app *siteModel.OAuthClient) error {
+	return r.db.WithContext(ctx).Create(app).Error
+}
+
+// ListAppsByOwner returns every application owned by ownerUserID, newest first.
+// First-party site clients (owner_user_id NULL) are structurally excluded, so a
+// developer only ever sees their own apps.
+func (r *Repository) ListAppsByOwner(ctx context.Context, ownerUserID uint) ([]siteModel.OAuthClient, error) {
+	var apps []siteModel.OAuthClient
+	err := r.db.WithContext(ctx).
+		Where("owner_user_id = ?", ownerUserID).
+		Order("created_at DESC").
+		Find(&apps).Error
+	return apps, err
+}
+
+// GetAppByOwner loads an application only when it is owned by ownerUserID. A
+// row that doesn't exist OR isn't owned by the caller returns
+// gorm.ErrRecordNotFound identically — the owner guard: a non-owner cannot tell
+// a foreign app apart from a nonexistent one (404, no existence leak).
+func (r *Repository) GetAppByOwner(ctx context.Context, clientID string, ownerUserID uint) (*siteModel.OAuthClient, error) {
+	var app siteModel.OAuthClient
+	if err := r.db.WithContext(ctx).
+		Where("id = ? AND owner_user_id = ?", clientID, ownerUserID).
+		First(&app).Error; err != nil {
+		return nil, err
+	}
+	return &app, nil
+}
+
+// CountAppsByOwner counts a user's applications (the per-user app cap).
+func (r *Repository) CountAppsByOwner(ctx context.Context, ownerUserID uint) (int64, error) {
+	var n int64
+	err := r.db.WithContext(ctx).
+		Model(&siteModel.OAuthClient{}).
+		Where("owner_user_id = ?", ownerUserID).
+		Count(&n).Error
+	return n, err
+}
+
+// CountActiveKeysByClient counts an app's currently-usable keys (not revoked and
+// not past expiry) — the per-app active-key cap. A key in a rotation grace
+// window (expires_at in the future) still counts; a fully-expired key frees its
+// slot.
+func (r *Repository) CountActiveKeysByClient(ctx context.Context, clientID string, now time.Time) (int64, error) {
+	var n int64
+	err := r.db.WithContext(ctx).
+		Model(&DeveloperAPIKey{}).
+		Where("client_id = ? AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > ?)", clientID, now).
+		Count(&n).Error
+	return n, err
+}
+
+// UsageDayFace is one aggregated usage row for the self-service usage panel:
+// a client's counters summed across all its keys, grouped by (day, face).
+type UsageDayFace struct {
+	Day       string `gorm:"column:day" json:"day"`
+	Face      string `gorm:"column:face" json:"face"`
+	Count     int64  `gorm:"column:count" json:"count"`
+	Status4xx int64  `gorm:"column:status_4xx" json:"status_4xx"`
+	Status5xx int64  `gorm:"column:status_5xx" json:"status_5xx"`
+}
+
+// AggregateUsageByClient sums a client's usage across all its keys, grouped by
+// (day, face), for days on/after sinceDay (YYYY-MM-DD, UTC). Newest day first.
+// The explicit status_4xx/status_5xx column aliases dodge GORM's acronym/digit
+// naming (Status4xx → status4xx) so the SUM columns bind to the struct fields.
+func (r *Repository) AggregateUsageByClient(ctx context.Context, clientID, sinceDay string) ([]UsageDayFace, error) {
+	var rows []UsageDayFace
+	err := r.db.WithContext(ctx).
+		Model(&DeveloperAPIUsage{}).
+		Select("day, face, SUM(count) AS count, SUM(status_4xx) AS status_4xx, SUM(status_5xx) AS status_5xx").
+		Where("client_id = ? AND day >= ?", clientID, sinceDay).
+		Group("day, face").
+		Order("day DESC, face ASC").
+		Scan(&rows).Error
+	return rows, err
 }
 
 // UpsertUsage accumulates a batch of usage rollups into developer_api_usage:

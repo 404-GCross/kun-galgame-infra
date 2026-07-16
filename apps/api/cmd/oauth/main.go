@@ -370,14 +370,28 @@ func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 	oauthClients.Put("/:id/storage", middleware.RequirePermission(sitePerm.Resolver, sitePerm.ClientsStorageConfig), siteH.UpdateClientStorage)
 	oauthClients.Delete("/:id", siteH.DeleteClient)
 
-	// Developer-platform (NextMoe open API) management. Mounted under the admin
-	// console, additionally gated on devapi.manage (admin/ren). Enables apps for
-	// the open API, sets tier/quota, and mints/rotates/revokes API keys. The
-	// public read faces are NOT here — they ship with 02/03.
-	// See docs/developer-platform/01-design.md §5-7.
-	devAdminH := devapi.NewAdminHandler(devapi.NewAdminService(devapi.NewRepository(db), devapi.NewRedisStore(a.Cache)))
+	// Developer-platform (NextMoe open API). One repository + one AdminService
+	// back BOTH the admin management face and the developer self-service face, so
+	// the API-key lifecycle (mint/rotate/revoke + resolve-cache busting) has a
+	// single implementation.
+	//   - Admin face (/admin/devapi/*): admin/ren, devapi.manage — enable apps,
+	//     set tier/quota, mint/rotate/revoke any app's keys.
+	//   - Self-service face (/dev/*): user JWT only, owner-guarded — a developer
+	//     builds + manages their OWN apps/keys.
+	// The public read faces are NOT here — they ship with 02/03.
+	// See docs/developer-platform/01-design.md §5-9.
+	devRepo := devapi.NewRepository(db)
+	devAdminSvc := devapi.NewAdminService(devRepo, devapi.NewRedisStore(a.Cache))
+	devAdminH := devapi.NewAdminHandler(devAdminSvc)
 	devGroup := admin.Group("/devapi", middleware.RequirePermission(devapiPerm.Resolver, devapiPerm.Manage))
 	devAdminH.Register(devGroup)
+
+	// Developer self-service face. User-JWT auth (no admin permission); every
+	// endpoint is owner-guarded in the service (non-owner → 404, no existence
+	// leak). App/key caps are constants (5 apps/user, 5 active keys/app).
+	devSelfH := devapi.NewSelfServiceHandler(devapi.NewSelfServiceService(devRepo, devAdminSvc))
+	devSelfGroup := v1.Group("/dev", middleware.Auth(authSvc))
+	devSelfH.Register(devSelfGroup)
 
 	// Image admin routes — best-effort; if images DB or S3 are unreachable
 	// in dev, skip registration rather than failing the whole oauth service.
