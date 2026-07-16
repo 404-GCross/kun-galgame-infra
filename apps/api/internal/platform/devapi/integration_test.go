@@ -334,6 +334,22 @@ func assertUsage(t *testing.T, clientID string, keyID uint, face string, count, 
 // Runs last (it drops + re-adds columns on the shared table, restoring them).
 func TestAddDevColumnsBackfillsExisting(t *testing.T) {
 	cleanup(t)
+	// This test runs DDL (drop + re-add columns) on the shared oauth_clients
+	// table. Pooled connections hold prepared-statement plans against the OLD
+	// row type, and the next `SELECT *` on any of them fails with "cached plan
+	// must not change result type" (SQLSTATE 0A000) — in THIS test and in every
+	// test that runs after it (file order puts integration_test before
+	// selfservice_test, so "runs last" never held). Flush the pool's idle
+	// connections around each DDL phase so no stale plan survives.
+	flushPool := func() {
+		sqlDB, err := testDB.DB()
+		if err != nil {
+			t.Fatalf("flush pool: %v", err)
+		}
+		sqlDB.SetMaxIdleConns(0) // closes idle conns and their statement caches
+		sqlDB.SetMaxIdleConns(2)
+	}
+	defer flushPool()
 	// Simulate a pre-migration table: strip the dev columns, then insert a
 	// legacy client that predates them.
 	for _, col := range []string{"dev_enabled", "dev_tier", "dev_nsfw_allowed", "dev_rate_per_min", "dev_quota_daily", "owner_user_id"} {
@@ -353,6 +369,7 @@ func TestAddDevColumnsBackfillsExisting(t *testing.T) {
 	if err := AddOAuthClientDevColumns(testDB); err != nil {
 		t.Fatalf("add columns not idempotent: %v", err)
 	}
+	flushPool() // row type just changed twice — drop stale cached plans
 
 	// The legacy row backfilled to the zero values.
 	var app siteModel.OAuthClient
