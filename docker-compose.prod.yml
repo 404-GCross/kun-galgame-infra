@@ -401,6 +401,22 @@ services:
       traefik.http.routers.infra-galgame-pub-http.entrypoints: web
       traefik.http.routers.infra-galgame-pub-http.middlewares: redirect-to-https@file
       traefik.http.routers.infra-galgame-pub-http.service: infra-catalog-pub
+      # wiki.kungal.com/api — the apps/wiki BROWSER-side same-origin API route
+      # (SSR uses NUXT_API_BASE_SSR; the client hits its own host's /api). This
+      # was a Dokploy PANEL domain on the galgame service — the one panel-injected
+      # route the W3 compose/env scans missed (labels only exist on the running
+      # container). Compose-owned here now (the standing ruling: ALL routing lives
+      # in compose); the panel entry on the galgame service must be deleted in
+      # the Dokploy UI at retirement. While both routers exist the two backends
+      # serve byte-identical responses (W2 replay), so the overlap is harmless.
+      traefik.http.routers.infra-wiki-api.rule: Host(`wiki.kungal.com`) && PathPrefix(`/api`)
+      traefik.http.routers.infra-wiki-api.entrypoints: websecure
+      traefik.http.routers.infra-wiki-api.tls.certresolver: letsencrypt
+      traefik.http.routers.infra-wiki-api.service: infra-catalog-pub
+      traefik.http.routers.infra-wiki-api-http.rule: Host(`wiki.kungal.com`) && PathPrefix(`/api`)
+      traefik.http.routers.infra-wiki-api-http.entrypoints: web
+      traefik.http.routers.infra-wiki-api-http.middlewares: redirect-to-https@file
+      traefik.http.routers.infra-wiki-api-http.service: infra-catalog-pub
       traefik.http.services.infra-catalog-pub.loadbalancer.server.port: "9281"
     depends_on:
       postgres: { condition: service_healthy }
