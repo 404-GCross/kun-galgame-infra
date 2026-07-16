@@ -6,23 +6,35 @@
 // drives the SAME service path as an admin click (ProposeMerge → ApproveMerge →
 // [48h cooling] → ExecuteMerge). No schema, no bypass of the cooling window.
 //
-// Two dedup classes, each detected with a deliberately narrow, safe signal:
+// Dedup classes, each detected with a deliberately narrow, safe signal:
 //
-//	character    same WORK (roster edge or voice credit) + whitespace-folded
-//	             same name + NO import source that split ≥2 of the bucket's
-//	             characters. Cross-work same-name and same-source collisions
-//	             (15 "Student" rows a source itself distinguished) are excluded.
-//	credit_name  same non-null PERSON + whitespace-folded same name. Orphan
-//	             names (no person anchor) are never name-merged.
+//	character        (step 49) same WORK (roster edge or voice credit) +
+//	                 whitespace-folded same name + NO import source that split
+//	                 ≥2 of the bucket's characters. Cross-work same-name and
+//	                 same-source collisions (15 "Student" rows a source itself
+//	                 distinguished) are excluded.
+//	credit_name      (step 49) same non-null PERSON + whitespace-folded same
+//	                 name.
+//	orphan-creditname (step 50) same WORK (voice credit) + whitespace-folded
+//	                 same name among ORPHAN names (person_id NULL), with the
+//	                 same source-distinctness guard. This is what step 49's
+//	                 person-anchored credit_name class deliberately left alone.
 //
 // Merge direction is fixed by a deterministic survivor rule (portrait-bearing /
 // richest first), so the id live consumers keep is stable.
 //
-//	go run ./cmd/catalog-dedup-batch -actor 1                                  # dry: counts + samples
-//	go run ./cmd/catalog-dedup-batch -actor 1 -mode propose -class both -run   # propose+approve (48h clock)
-//	go run ./cmd/catalog-dedup-batch -actor 1 -mode propose -class character -limit 200 -run  # canary
-//	go run ./cmd/catalog-dedup-batch -actor 1 -mode execute -limit 1 -run      # execute one cooled (canary)
-//	go run ./cmd/catalog-dedup-batch -actor 1 -mode execute -run               # execute all cooled
+// A fourth mode, -mode cleanup (step 50 class B), is NOT a merge: it DELETEs the
+// redundant empty-role voice credits (same work+name+role holding both a
+// character-bearing and a character-null credit — EG's staff 声優 + appearance
+// 出演 double list). Run it AFTER the orphan merges execute.
+//
+//	go run ./cmd/catalog-dedup-batch -actor 1                                             # dry: counts + samples (all classes)
+//	go run ./cmd/catalog-dedup-batch -actor 1 -mode propose -class both -run              # step 49 propose+approve (48h clock)
+//	go run ./cmd/catalog-dedup-batch -actor 1 -mode propose -class orphan-creditname -run # step 50 orphan propose+approve
+//	go run ./cmd/catalog-dedup-batch -actor 1 -mode execute -class orphan-creditname -limit 1 -run  # execute one cooled (canary)
+//	go run ./cmd/catalog-dedup-batch -actor 1 -mode execute -class orphan-creditname -run # execute all cooled step-50
+//	go run ./cmd/catalog-dedup-batch -actor 1 -mode cleanup                               # class B dry: count + samples
+//	go run ./cmd/catalog-dedup-batch -actor 1 -mode cleanup -run                          # class B delete
 package main
 
 import (
@@ -42,14 +54,29 @@ import (
 	"gorm.io/gorm"
 )
 
-// noteTag marks every proposal this batch writes, so -mode execute (and any
-// later audit) addresses exactly this wave and nothing else.
-const noteTag = "rule:catalog-dedup step-49"
+// Each proposal is tagged with its wave so -mode execute (and any later audit)
+// addresses exactly one wave. Step 49's classes (character + person-anchored
+// credit_name) carry the step-49 tag; step 50's orphan voice-name class carries
+// step-50. "step-49" is not a substring of "step-50", so the LIKE filters never
+// cross.
+const (
+	waveTag49 = "rule:catalog-dedup step-49"
+	waveTag50 = "rule:catalog-dedup step-50"
+)
+
+// noteTagFor returns the wave note tag for a class (used on both the write side,
+// per group, and the execute side, derived from -class).
+func noteTagFor(class string) string {
+	if class == classOrphanCreditName {
+		return waveTag50
+	}
+	return waveTag49
+}
 
 func main() {
 	actor := flag.Int64("actor", 0, "operator user id recorded as proposer/approver/executor (required)")
-	mode := flag.String("mode", "detect", "detect | propose | execute")
-	class := flag.String("class", "both", "propose scope: character | credit_name | both")
+	mode := flag.String("mode", "detect", "detect | propose | execute | cleanup")
+	class := flag.String("class", "both", "propose/execute scope: character | credit_name | both (step 49) | orphan-creditname (step 50)")
 	run := flag.Bool("run", false, "write (default: dry-run preview)")
 	limit := flag.Int("limit", 0, "propose: max GROUPS this run; execute: max proposals this run (0 = all)")
 	flag.Parse()
@@ -82,9 +109,11 @@ func main() {
 	case "detect":
 		err = runDetect(db, os.Stdout)
 	case "propose":
-		err = runPropose(ctx, db, os.Stdout, merge, *actor, noteTag, *class, *limit, *run)
+		err = runPropose(ctx, db, os.Stdout, merge, *actor, *class, *limit, *run)
 	case "execute":
-		err = runExecute(ctx, db, os.Stdout, merge, *actor, noteTag, *limit, *run)
+		err = runExecute(ctx, db, os.Stdout, merge, *actor, noteTagFor(*class), *limit, *run)
+	case "cleanup":
+		err = runCleanup(db, os.Stdout, *run)
 	default:
 		fmt.Fprintf(os.Stderr, "unknown mode %q\n", *mode)
 		os.Exit(2)

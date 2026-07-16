@@ -12,6 +12,13 @@ import (
 const (
 	classCharacter  = "character"
 	classCreditName = "credit_name"
+	// classOrphanCreditName (step 50) merges cross-source ORPHAN voice-actor
+	// names (person_id NULL) that co-occur on the same work under the same
+	// folded name. Step 49's credit_name class only merged names under a
+	// shared person anchor; orphans have none, so same-work co-occurrence of a
+	// voice credit is the structural "same person" signal here (the twin of
+	// step 49's same-work character rule).
+	classOrphanCreditName = "orphan-creditname"
 )
 
 // mergeGroup is one resolved dedup group: a survivor entity that absorbs its
@@ -33,6 +40,12 @@ type detectStats struct {
 	charBridged  int // components skipped: cross-bucket bridging reintroduced a shared source
 	creditGroups int
 	creditPairs  int
+	// orphan* mirror the character counters for the step-50 orphan voice-name
+	// class (same source-distinctness guard + union-find).
+	orphanGroups   int
+	orphanPairs    int
+	orphanDirtyBkt int
+	orphanBridged  int
 }
 
 // charRow is one bucket-member character with its survivor-ordering signal and
@@ -99,6 +112,7 @@ func detectCharacters(db *gorm.DB) ([]mergeGroup, detectStats, error) {
 			meta[r.CharacterID] = charMeta{hasImage: r.HasImage, naliases: r.Naliases, sources: parseSources(r.Sources), fold: r.Fold}
 		}
 	}
+	srcOf := func(id int64) map[int16]bool { return meta[id].sources }
 
 	uf := newUnionFind()
 	var st detectStats
@@ -111,7 +125,7 @@ func detectCharacters(db *gorm.DB) ([]mergeGroup, detectStats, error) {
 		}
 		bucket := rows[i:j]
 		i = j
-		if sourceCollision(bucket, meta) {
+		if hasSourceCollision(idsOf(bucket), srcOf) {
 			st.charDirtyBkt++
 			continue
 		}
@@ -135,7 +149,7 @@ func detectCharacters(db *gorm.DB) ([]mergeGroup, detectStats, error) {
 		if len(ids) < 2 {
 			continue
 		}
-		if componentSourceCollision(ids, meta) {
+		if hasSourceCollision(ids, srcOf) {
 			st.charBridged++
 			continue
 		}
@@ -151,16 +165,15 @@ func detectCharacters(db *gorm.DB) ([]mergeGroup, detectStats, error) {
 	return groups, st, nil
 }
 
-// sourceCollision reports whether any single source id asserts two or more of
-// the bucket's characters (the "15 Students, all VNDB" false-positive guard).
-func sourceCollision(bucket []charRow, meta map[int64]charMeta) bool {
-	return componentSourceCollision(idsOf(bucket), meta)
-}
-
-func componentSourceCollision(ids []int64, meta map[int64]charMeta) bool {
+// hasSourceCollision reports whether any single import source asserts two or
+// more of the given ids — the "one source split ≥2 same-name entities, so it
+// already decided they differ" guard (the "15 Students, all VNDB" false
+// positive). Shared by the character and orphan voice-name detectors; sourcesOf
+// yields a member's external_ref source set.
+func hasSourceCollision(ids []int64, sourcesOf func(int64) map[int16]bool) bool {
 	seen := map[int16]bool{}
 	for _, id := range ids {
-		for s := range meta[id].sources {
+		for s := range sourcesOf(id) {
 			if seen[s] {
 				return true
 			}
@@ -252,6 +265,143 @@ func detectCreditNames(db *gorm.DB) ([]mergeGroup, detectStats, error) {
 		})
 	}
 	return groups, st, nil
+}
+
+// orphanRow is one bucket-member orphan credit name with its survivor-ordering
+// signal and the set of import sources that assert it.
+type orphanRow struct {
+	WorkID       int64  `gorm:"column:work_id"`
+	Fold         string `gorm:"column:fold"`
+	CreditNameID int64  `gorm:"column:credit_name_id"`
+	Ncredits     int    `gorm:"column:ncredits"`
+	Naliases     int    `gorm:"column:naliases"`
+	Sources      string `gorm:"column:sources"` // comma-joined external_ref source ids
+}
+
+type orphanMeta struct {
+	ncredits int
+	naliases int
+	sources  map[int16]bool
+	fold     string
+}
+
+// detectOrphanCreditNames finds cross-source ORPHAN voice-actor names
+// (person_id NULL) that co-occur on the SAME work via a voice credit AND fold
+// to the same name — the step-50 twin of the character detector. Fold =
+// lower(NFKC(name)) with every Unicode space stripped, so EG's 藤咲ウサ and
+// DLsite's 藤咲ウサ collide even across width/space variants. Step 49's
+// credit_name class merged names under a shared person anchor; orphans have no
+// anchor, so same-work co-occurrence of a voice credit IS the "same person"
+// evidence — and once judged the same, the merge repoints ALL of the source's
+// credits globally (a voice actor is one person, not per-work).
+//
+// Same safety as the character detector: a (work, fold) bucket is only merged
+// when no single import source (external_ref) contributed two or more of its
+// names — a source that voiced a work under two rows of the same name already
+// decided they are two names. Bridged components are dropped whole.
+func detectOrphanCreditNames(db *gorm.DB) ([]mergeGroup, detectStats, error) {
+	var rows []orphanRow
+	if err := db.Raw(`
+		WITH cn_work AS (
+		  SELECT DISTINCT c.credit_name_id, c.work_id
+		  FROM catalog_credit c
+		  JOIN catalog_credit_name cn ON cn.id = c.credit_name_id AND cn.person_id IS NULL
+		  WHERE c.role_id = (SELECT id FROM catalog_role WHERE key = 'voice-actor')),
+		folded AS (
+		  SELECT cw.credit_name_id, cw.work_id,
+		         regexp_replace(cn.name_norm, '\s', '', 'g') AS fold
+		  FROM cn_work cw
+		  JOIN catalog_credit_name cn ON cn.id = cw.credit_name_id),
+		bn AS (
+		  SELECT work_id, fold FROM folded
+		  GROUP BY work_id, fold HAVING count(DISTINCT credit_name_id) > 1)
+		SELECT f.work_id, f.fold, f.credit_name_id,
+		       (SELECT count(*) FROM catalog_credit c WHERE c.credit_name_id = f.credit_name_id) AS ncredits,
+		       (SELECT count(*) FROM catalog_name_alias a WHERE a.credit_name_id = f.credit_name_id) AS naliases,
+		       COALESCE((SELECT string_agg(DISTINCT r.source_id::text, ',' ORDER BY r.source_id::text)
+		                   FROM catalog_external_ref r
+		                  WHERE r.entity_type = 1 AND r.entity_id = f.credit_name_id), '') AS sources
+		FROM folded f
+		JOIN bn USING (work_id, fold)
+		ORDER BY f.work_id, f.fold, f.credit_name_id`).Scan(&rows).Error; err != nil {
+		return nil, detectStats{}, err
+	}
+
+	meta := make(map[int64]orphanMeta, len(rows))
+	for _, r := range rows {
+		if _, ok := meta[r.CreditNameID]; !ok {
+			meta[r.CreditNameID] = orphanMeta{ncredits: r.Ncredits, naliases: r.Naliases, sources: parseSources(r.Sources), fold: r.Fold}
+		}
+	}
+	srcOf := func(id int64) map[int16]bool { return meta[id].sources }
+
+	uf := newUnionFind()
+	var st detectStats
+	inClean := map[int64]bool{}
+	for i := 0; i < len(rows); {
+		j := i
+		for j < len(rows) && rows[j].WorkID == rows[i].WorkID && rows[j].Fold == rows[i].Fold {
+			j++
+		}
+		bucket := rows[i:j]
+		i = j
+		ids := make([]int64, len(bucket))
+		for k, r := range bucket {
+			ids[k] = r.CreditNameID
+		}
+		if hasSourceCollision(ids, srcOf) {
+			st.orphanDirtyBkt++
+			continue
+		}
+		for k := 1; k < len(ids); k++ {
+			uf.union(ids[0], ids[k])
+		}
+		for _, id := range ids {
+			inClean[id] = true
+		}
+	}
+
+	comps := map[int64][]int64{}
+	for id := range inClean {
+		root := uf.find(id)
+		comps[root] = append(comps[root], id)
+	}
+	var groups []mergeGroup
+	for _, ids := range comps {
+		if len(ids) < 2 {
+			continue
+		}
+		if hasSourceCollision(ids, srcOf) {
+			st.orphanBridged++
+			continue
+		}
+		survivor, sources := pickOrphanSurvivor(ids, meta)
+		st.orphanGroups++
+		st.orphanPairs += len(sources)
+		groups = append(groups, mergeGroup{
+			class: classOrphanCreditName, survivor: survivor, sources: sources,
+			sample: "'" + meta[survivor].fold + "' survivor=" + itoa(survivor) + " sources=" + joinIDs(sources),
+		})
+	}
+	sort.Slice(groups, func(a, b int) bool { return groups[a].survivor < groups[b].survivor })
+	return groups, st, nil
+}
+
+// pickOrphanSurvivor keeps the richest name: most credits, then most aliases,
+// then the lowest id (stable). The survivor absorbs the others' credits.
+func pickOrphanSurvivor(ids []int64, meta map[int64]orphanMeta) (survivor int64, sources []int64) {
+	ordered := append([]int64(nil), ids...)
+	sort.Slice(ordered, func(a, b int) bool {
+		ma, mb := meta[ordered[a]], meta[ordered[b]]
+		if ma.ncredits != mb.ncredits {
+			return ma.ncredits > mb.ncredits
+		}
+		if ma.naliases != mb.naliases {
+			return ma.naliases > mb.naliases
+		}
+		return ordered[a] < ordered[b]
+	})
+	return ordered[0], ordered[1:]
 }
 
 // --- small helpers ----------------------------------------------------------
