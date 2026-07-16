@@ -26,6 +26,14 @@ func (g *fakeGateway) Moderate(_ context.Context, _ string, _ *int64) (GatewayVe
 	return g.verdict, g.err
 }
 
+// stubTier0 is a deterministic Tier0Matcher for the worker tests that do not
+// exercise the word list: it always reports "evaluated, no match" ([]).
+type stubTier0 struct{}
+
+func (stubTier0) Tier0Matches(_ context.Context, _, _ string) ([]string, error) {
+	return []string{}, nil
+}
+
 // seedPending inserts a pending scan row directly (the worker does not consult
 // the registry, so no kind registration is needed).
 func seedPending(t *testing.T, subject, text string) int64 {
@@ -61,7 +69,7 @@ func TestScanWorkerScoredAndShadow(t *testing.T) {
 	g := &fakeGateway{configured: true, verdict: GatewayVerdict{
 		Flagged: true, Score: f32(0.92), Categories: []string{"harassment", "abuse"}, Channel: "qwen3guard",
 	}}
-	w := NewScanWorker(testDB, g)
+	w := NewScanWorker(testDB, g, stubTier0{})
 
 	// Review-inbox baseline BEFORE scoring (must not change).
 	var reviewBefore int64
@@ -116,7 +124,7 @@ func TestScanWorkerScoredNotFlagged(t *testing.T) {
 	cleanTables(t)
 	id := seedPending(t, "s-clean", "hello")
 	g := &fakeGateway{configured: true, verdict: GatewayVerdict{Flagged: false, Channel: "qwen3guard"}}
-	w := NewScanWorker(testDB, g)
+	w := NewScanWorker(testDB, g, stubTier0{})
 	if _, err := w.ScorePending(context.Background()); err != nil {
 		t.Fatalf("score: %v", err)
 	}
@@ -143,7 +151,7 @@ func TestScanWorkerGatewayDegraded(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			cleanTables(t)
 			id := seedPending(t, "s-deg", "text")
-			w := NewScanWorker(testDB, c.g)
+			w := NewScanWorker(testDB, c.g, stubTier0{})
 			if _, err := w.ScorePending(context.Background()); err != nil {
 				t.Fatalf("score: %v", err)
 			}
@@ -168,7 +176,7 @@ func TestScanWorkerEnvEmpty(t *testing.T) {
 	cleanTables(t)
 	id := seedPending(t, "s-env", "text")
 	g := &fakeGateway{configured: false}
-	w := NewScanWorker(testDB, g)
+	w := NewScanWorker(testDB, g, stubTier0{})
 	if _, err := w.ScorePending(context.Background()); err != nil {
 		t.Fatalf("score: %v", err)
 	}
@@ -189,7 +197,7 @@ func TestScanWorkerDrainsNoBacklog(t *testing.T) {
 		seedPending(t, subjID(i), "text")
 	}
 	g := &fakeGateway{configured: false} // env-empty → all drain to degraded
-	w := NewScanWorker(testDB, g)
+	w := NewScanWorker(testDB, g, stubTier0{})
 	n, err := w.ScorePending(context.Background())
 	if err != nil {
 		t.Fatalf("score: %v", err)
@@ -229,7 +237,7 @@ func TestScanWorkerSkipLockedNoDoubleScore(t *testing.T) {
 	id := seedPending(t, "s-lock", "text")
 
 	blocking := &blockingGateway{entered: make(chan struct{}, 1), release: make(chan struct{})}
-	wA := NewScanWorker(testDB, blocking)
+	wA := NewScanWorker(testDB, blocking, stubTier0{})
 
 	doneA := make(chan int, 1)
 	errA := make(chan error, 1)
@@ -244,7 +252,7 @@ func TestScanWorkerSkipLockedNoDoubleScore(t *testing.T) {
 
 	// B runs while A holds the lock: SKIP LOCKED must make B claim nothing.
 	gB := &fakeGateway{configured: true, verdict: GatewayVerdict{Flagged: false, Channel: "b"}}
-	wB := NewScanWorker(testDB, gB)
+	wB := NewScanWorker(testDB, gB, stubTier0{})
 	nB, err := wB.ScorePending(context.Background())
 	if err != nil {
 		t.Fatalf("worker B score: %v", err)
@@ -275,4 +283,112 @@ func TestScanWorkerSkipLockedNoDoubleScore(t *testing.T) {
 // subjID builds a distinct subject id for the drain fan-out.
 func subjID(i int) string {
 	return "drain-" + string(rune('a'+i%26)) + string(rune('0'+i/26))
+}
+
+// --- step 05: Tier0 recording on the scan worker ---------------------------
+
+// seedTerm inserts one active Tier0 term via the service so the shared match
+// cache is invalidated; returns nothing (the test only needs the row present).
+func seedTerm(t *testing.T, svc *TermService, site *string, raw string, kind int16) {
+	t.Helper()
+	if _, err := svc.Create(context.Background(), CreateTermParams{Site: site, Term: raw, Kind: kind}); err != nil {
+		t.Fatalf("seed term %q: %v", raw, err)
+	}
+}
+
+// tier0Of reloads a scan row and decodes its tier0_matched jsonb.
+func tier0Of(t *testing.T, id int64) (raw []byte, matched []string) {
+	t.Helper()
+	row := getScan(t, id)
+	if len(row.Tier0Matched) == 0 {
+		return nil, nil
+	}
+	if err := json.Unmarshal(row.Tier0Matched, &matched); err != nil {
+		t.Fatalf("tier0_matched not a JSON array: %v (%s)", err, row.Tier0Matched)
+	}
+	return row.Tier0Matched, matched
+}
+
+// TestScanWorkerTier0RecordedOnScored: a scored row records the matched Tier0
+// terms as a JSON array — AND the shadow invariant still holds (zero review
+// items). tier0 recording never changes status semantics.
+func TestScanWorkerTier0RecordedOnScored(t *testing.T) {
+	cleanTables(t)
+	svc := NewTermService(testDB, nil)
+	seedTerm(t, svc, nil, "坏词", model.TermKindBanned) // global banned term
+
+	id := seedPending(t, "s-t0-hit", "这是一段含有坏词的文本")
+	g := &fakeGateway{configured: true, verdict: GatewayVerdict{Flagged: false, Channel: "qwen3guard"}}
+	w := NewScanWorker(testDB, g, svc)
+
+	var reviewBefore int64
+	testDB.Model(&model.TrustReviewItem{}).Count(&reviewBefore)
+
+	if _, err := w.ScorePending(context.Background()); err != nil {
+		t.Fatalf("score: %v", err)
+	}
+
+	row := getScan(t, id)
+	if row.Status != model.ScanStatusScored {
+		t.Fatalf("status = %d, want scored — tier0 must not change status", row.Status)
+	}
+	_, matched := tier0Of(t, id)
+	if len(matched) != 1 || matched[0] != "坏词" {
+		t.Fatalf("tier0_matched = %v, want [坏词]", matched)
+	}
+
+	// Shadow invariant: tier0 recording created no review item.
+	var reviewAfter int64
+	testDB.Model(&model.TrustReviewItem{}).Count(&reviewAfter)
+	if reviewAfter != reviewBefore {
+		t.Fatalf("tier0 recording must enqueue nothing: before=%d after=%d", reviewBefore, reviewAfter)
+	}
+}
+
+// TestScanWorkerTier0EmptyArrayOnNoMatch: a scored row with no Tier0 hit records
+// an empty JSON array (evaluated, no match) — NOT null (not-evaluated).
+func TestScanWorkerTier0EmptyArrayOnNoMatch(t *testing.T) {
+	cleanTables(t)
+	svc := NewTermService(testDB, nil)
+	seedTerm(t, svc, nil, "坏词", model.TermKindBanned)
+
+	id := seedPending(t, "s-t0-clean", "totally fine text")
+	g := &fakeGateway{configured: true, verdict: GatewayVerdict{Flagged: false, Channel: "qwen3guard"}}
+	w := NewScanWorker(testDB, g, svc)
+	if _, err := w.ScorePending(context.Background()); err != nil {
+		t.Fatalf("score: %v", err)
+	}
+	raw, matched := tier0Of(t, id)
+	if string(raw) != "[]" {
+		t.Fatalf("tier0_matched raw = %q, want []", string(raw))
+	}
+	if len(matched) != 0 {
+		t.Fatalf("tier0_matched = %v, want empty", matched)
+	}
+}
+
+// TestScanWorkerTier0RecordedOnEnvEmptyDegraded: even the env-empty degraded
+// drain records Tier0 (the calibration sample lands regardless of the gateway).
+func TestScanWorkerTier0RecordedOnEnvEmptyDegraded(t *testing.T) {
+	cleanTables(t)
+	svc := NewTermService(testDB, nil)
+	seedTerm(t, svc, nil, "坏词", model.TermKindSuspect)
+
+	id := seedPending(t, "s-t0-deg", "含坏词的降级文本")
+	g := &fakeGateway{configured: false} // env empty → degraded drain, no dial
+	w := NewScanWorker(testDB, g, svc)
+	if _, err := w.ScorePending(context.Background()); err != nil {
+		t.Fatalf("score: %v", err)
+	}
+	if g.calls.Load() != 0 {
+		t.Fatalf("unconfigured gateway must not be dialed, got %d", g.calls.Load())
+	}
+	row := getScan(t, id)
+	if row.Status != model.ScanStatusDegraded {
+		t.Fatalf("status = %d, want degraded", row.Status)
+	}
+	_, matched := tier0Of(t, id)
+	if len(matched) != 1 || matched[0] != "坏词" {
+		t.Fatalf("env-empty degraded row tier0_matched = %v, want [坏词]", matched)
+	}
 }

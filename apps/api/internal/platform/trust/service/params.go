@@ -50,3 +50,10 @@ const (
 	// scanInterval is the scoring worker tick (doc 18 §6 low-volume shadow cadence).
 	scanInterval = 60 * time.Second
 )
+
+// termCacheTTL is how long the Tier0 matcher serves its in-memory snapshot of
+// active terms before reloading from the DB (step 05). Admin create/deprecate
+// invalidates the snapshot in-process immediately; across instances staleness
+// is bounded by this TTL (accepted — doc 18 §6). The hot check path never
+// touches the DB except on a refresh.
+const termCacheTTL = 60 * time.Second

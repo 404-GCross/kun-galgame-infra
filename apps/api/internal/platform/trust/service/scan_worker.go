@@ -29,19 +29,35 @@ import (
 // SHADOW MODE (mode=0, hardcoded this step): the worker records a verdict and
 // NOTHING else. It NEVER creates a review item, NEVER emits a callback, NEVER
 // enforces. Feeding the inbox (enqueue/live) is P2.
+//
+// TIER0 (step 05): before the gateway call the worker runs the deterministic
+// word-list matcher over content_text and records the match list into
+// tier0_matched. This is PURE RECORDING — it never changes status semantics
+// (scored/degraded stays gateway-driven) and never enqueues (the shadow
+// invariant is untouched). It runs even on the env-empty degraded drain.
 type ScanWorker struct {
 	db        *gorm.DB
 	gateway   ScanGateway
+	tier0     Tier0Matcher
 	batchSize int
 	interval  time.Duration
 	now       func() time.Time
 }
 
-// NewScanWorker builds the worker with production defaults.
-func NewScanWorker(db *gorm.DB, gateway ScanGateway) *ScanWorker {
+// Tier0Matcher is the scan worker's SOLE contact with the Tier0 word list: given
+// a resolved site and text it returns the matched normalized terms (never nil;
+// [] = evaluated, no match). *TermService satisfies it; tests fake it.
+type Tier0Matcher interface {
+	Tier0Matches(ctx context.Context, site, text string) ([]string, error)
+}
+
+// NewScanWorker builds the worker with production defaults. tier0 may be nil
+// (then tier0_matched is left NULL = not evaluated).
+func NewScanWorker(db *gorm.DB, gateway ScanGateway, tier0 Tier0Matcher) *ScanWorker {
 	return &ScanWorker{
 		db:        db,
 		gateway:   gateway,
+		tier0:     tier0,
 		batchSize: scanBatchSize,
 		interval:  scanInterval,
 		now:       time.Now,
@@ -95,32 +111,61 @@ func (w *ScanWorker) ScorePending(ctx context.Context) (int, error) {
 // Shadow mode: the ONLY side effect is an UPDATE to this row's own scan result —
 // never a review item, callback, or enforcement action.
 func (w *ScanWorker) scoreOne(ctx context.Context, tx *gorm.DB, r *model.TrustScanResult) error {
+	// Tier0 is recorded FIRST, on every path (scored + degraded), so even the
+	// env-empty drain lands a calibration sample. Pure recording — it never
+	// influences the status decision below.
+	tier0 := w.tier0Matched(ctx, r)
+
 	// Env empty → drain without a network call (fail-closed: no unbounded backlog).
 	if !w.gateway.Configured() {
-		return w.markDegraded(tx, r)
+		return w.markDegraded(tx, r, tier0)
 	}
 	verdict, err := w.gateway.Moderate(ctx, r.ContentText, r.AuthorID)
 	if err != nil {
 		slog.Warn("trust scan gateway call failed; draining to degraded", "scan_id", r.ID, "err", err)
-		return w.markDegraded(tx, r)
+		return w.markDegraded(tx, r, tier0)
 	}
 	if verdict.Degraded {
 		// The gateway reported its own fail-open path (upstream down / over budget).
-		return w.markDegraded(tx, r)
+		return w.markDegraded(tx, r, tier0)
 	}
-	return w.markScored(tx, r, verdict)
+	return w.markScored(tx, r, verdict, tier0)
+}
+
+// tier0Matched runs the word-list matcher and marshals the result to jsonb: an
+// array (possibly []) on success, or nil (leaving the column NULL = "not
+// evaluated") when there is no matcher or the match errored. Never blocks the
+// row's terminal transition — a matcher failure just yields no Tier0 record.
+func (w *ScanWorker) tier0Matched(ctx context.Context, r *model.TrustScanResult) datatypes.JSON {
+	if w.tier0 == nil {
+		return nil
+	}
+	matched, err := w.tier0.Tier0Matches(ctx, r.Site, r.ContentText)
+	if err != nil {
+		slog.Warn("trust tier0 match failed; recording no tier0", "scan_id", r.ID, "err", err)
+		return nil
+	}
+	b, err := json.Marshal(matched) // non-nil [] marshals to "[]", not "null"
+	if err != nil {
+		slog.Warn("trust tier0 marshal failed; recording no tier0", "scan_id", r.ID, "err", err)
+		return nil
+	}
+	return datatypes.JSON(b)
 }
 
 // markScored records a gateway verdict: status=scored plus the verdict fields.
 // Uses a map update so a false `flagged` is written explicitly (a scored,
 // not-flagged row is flagged=false, distinct from a pending/degraded NULL). A
 // flagged verdict logs one info line — a shadow-period observation surface.
-func (w *ScanWorker) markScored(tx *gorm.DB, r *model.TrustScanResult, v GatewayVerdict) error {
+func (w *ScanWorker) markScored(tx *gorm.DB, r *model.TrustScanResult, v GatewayVerdict, tier0 datatypes.JSON) error {
 	updates := map[string]any{
 		"status":    model.ScanStatusScored,
 		"flagged":   v.Flagged,
 		"channel":   v.Channel,
 		"scored_at": w.now(),
+	}
+	if tier0 != nil {
+		updates["tier0_matched"] = tier0
 	}
 	if v.Score != nil {
 		updates["score"] = *v.Score
@@ -140,12 +185,15 @@ func (w *ScanWorker) markScored(tx *gorm.DB, r *model.TrustScanResult, v Gateway
 	return tx.Model(&model.TrustScanResult{}).Where("id = ?", r.ID).Updates(updates).Error
 }
 
-// markDegraded records a drain: only status flips to degraded. The verdict fields
-// stay at their pending values (flagged/score/categories/scored_at NULL, channel
-// ”), so a degraded row reads as "processed, no verdict". Terminal — the worker
-// never re-claims it (env-ready powers on for NEW rows, not a re-scan of drained
-// ones, this step).
-func (w *ScanWorker) markDegraded(tx *gorm.DB, r *model.TrustScanResult) error {
-	return tx.Model(&model.TrustScanResult{}).Where("id = ?", r.ID).
-		Update("status", model.ScanStatusDegraded).Error
+// markDegraded records a drain: status flips to degraded (plus the Tier0 record,
+// which is gathered on every path). The verdict fields stay at their pending
+// values (flagged/score/categories/scored_at NULL, channel ”), so a degraded row
+// reads as "processed, no verdict". Terminal — the worker never re-claims it
+// (env-ready powers on for NEW rows, not a re-scan of drained ones, this step).
+func (w *ScanWorker) markDegraded(tx *gorm.DB, r *model.TrustScanResult, tier0 datatypes.JSON) error {
+	updates := map[string]any{"status": model.ScanStatusDegraded}
+	if tier0 != nil {
+		updates["tier0_matched"] = tier0
+	}
+	return tx.Model(&model.TrustScanResult{}).Where("id = ?", r.ID).Updates(updates).Error
 }

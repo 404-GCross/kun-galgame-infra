@@ -54,4 +54,16 @@ var (
 	// ErrInvalidOutcome is returned when a forward/resolve outcome is neither
 	// "approved" nor "rejected".
 	ErrInvalidOutcome = errors.New("trust: invalid resolve outcome")
+	// ErrTermEmpty is returned when a submitted Tier0 term normalizes to the
+	// empty string (whitespace/format-only) — an empty norm would substring-match
+	// every text, so it is rejected fail-loud (step 05).
+	ErrTermEmpty = errors.New("trust: term is empty after normalization")
+	// ErrTermInvalidKind is returned when a Tier0 term kind is neither suspect(0)
+	// nor banned(1).
+	ErrTermInvalidKind = errors.New("trust: term kind must be suspect(0) or banned(1)")
+	// ErrTermExists is returned when creating a Tier0 term whose (site-or-global,
+	// norm) already has an ACTIVE row (deprecate + re-create, never duplicate).
+	ErrTermExists = errors.New("trust: an active term with this norm already exists for the site")
+	// ErrTermNotFound is returned when deprecating an absent Tier0 term.
+	ErrTermNotFound = errors.New("trust: term not found")
 )

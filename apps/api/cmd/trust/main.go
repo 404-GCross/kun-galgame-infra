@@ -78,14 +78,6 @@ func main() {
 	dispositionSvc := service.NewDispositionService(trustDB.DB())
 	worker := service.NewCallbackWorker(trustDB.DB())
 
-	// AI shadow-scoring pipeline (step 03). The scan worker scores pending rows
-	// via the AI gateway's moderate-text route (S2S Basic). Empty KUN_AI_CLIENT_*
-	// → the gateway client is not Configured() → the worker drains rows to
-	// degraded WITHOUT dialing (fail-closed; the queue never backs up).
-	aiGateway := service.NewAIGatewayClient(cfg.AIClient.BaseURL, cfg.AIClient.ClientID, cfg.AIClient.ClientSecret)
-	scanWorker := service.NewScanWorker(trustDB.DB(), aiGateway)
-	slog.Info("trust scan worker", "gateway_configured", aiGateway.Configured())
-
 	// community→trust forward face (step 03). The allowlist is the counterweight
 	// to forward carrying `site` in its body; an empty allowlist (default) makes
 	// forward/resolve 403 for every client (fail-closed, ruling 3).
@@ -99,6 +91,23 @@ func main() {
 	// derived path is always open.
 	scanSvc := service.NewScanService(trustDB.DB(), forwarders)
 	slog.Info("trust forward face", "allowed_forwarders", len(forwarders))
+
+	// Tier0 word list (step 05). One TermService instance is shared across the
+	// sync /trust/check face, the admin CRUD face, and the scan worker's
+	// tier0_matched recording — so an admin mutation invalidates the in-process
+	// match cache for all three at once. It reuses the forwarder allowlist as the
+	// counterweight to a wire-supplied `site` on /trust/check.
+	termSvc := service.NewTermService(trustDB.DB(), forwarders)
+
+	// AI shadow-scoring pipeline (step 03). The scan worker scores pending rows
+	// via the AI gateway's moderate-text route (S2S Basic). Empty KUN_AI_CLIENT_*
+	// → the gateway client is not Configured() → the worker drains rows to
+	// degraded WITHOUT dialing (fail-closed; the queue never backs up). It also
+	// records Tier0 word-list matches into tier0_matched before each gateway call
+	// (step 05; pure recording, never changes status).
+	aiGateway := service.NewAIGatewayClient(cfg.AIClient.BaseURL, cfg.AIClient.ClientID, cfg.AIClient.ClientSecret)
+	scanWorker := service.NewScanWorker(trustDB.DB(), aiGateway, termSvc)
+	slog.Info("trust scan worker", "gateway_configured", aiGateway.Configured())
 
 	application.Fiber.Use(middleware.RequestID())
 	application.Fiber.Use(middleware.Logger())
@@ -120,10 +129,11 @@ func main() {
 	application.Fiber.Use("/api/v1/admin/trust",
 		middleware.JWTAuth(tokenVerifier), middleware.RequirePermission(trustPerm.Resolver, trustPerm.QueueAccess))
 
-	s2sAPI := trustHandler.Setup(application.Fiber, reportSvc, registrySvc, forwardSvc, scanSvc)
+	s2sAPI := trustHandler.Setup(application.Fiber, reportSvc, registrySvc, forwardSvc, scanSvc, termSvc)
 	// clientRepo (main DB) resolves a site-scoped moderator's token client to its
-	// catalog_site for admin-face site scoping (step 04).
-	trustHandler.SetupAdmin(application.Fiber, reviewSvc, registrySvc, dispositionSvc, clientRepo)
+	// catalog_site for admin-face site scoping (step 04). termSvc backs the Tier0
+	// admin CRUD surface (step 05).
+	trustHandler.SetupAdmin(application.Fiber, reviewSvc, registrySvc, dispositionSvc, termSvc, clientRepo)
 
 	// Serve the S2S OpenAPI 3.1 spec unauthenticated at the app root.
 	application.Fiber.Get("/openapi.json", func(c fiber.Ctx) error {

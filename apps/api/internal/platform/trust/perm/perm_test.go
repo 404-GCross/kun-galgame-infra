@@ -8,11 +8,13 @@ import (
 )
 
 // goldenGrants is the authoritative role-set for every trust permission
-// (moderator/admin/ren reach the review inbox; the management axis contains
-// moderator ⊆ admin ⊆ ren). Any drift between the bundles and this table fails
-// the build.
+// (moderator/admin/ren reach the review inbox; term_manage is the narrower
+// admin/ren-only site-domain ban power — moderator is EXCLUDED; the management
+// axis contains moderator ⊆ admin ⊆ ren). Any drift between the bundles and this
+// table fails the build.
 var goldenGrants = map[authz.Permission][]string{
 	perm.QueueAccess: {"moderator", "admin", "ren"},
+	perm.TermManage:  {"admin", "ren"},
 }
 
 var allRoles = []string{"user", "creator", "moderator", "admin", "ren"}
@@ -62,5 +64,17 @@ func TestCreatorGrantsNothing(t *testing.T) {
 		if perm.Resolver.Can([]string{"creator"}, p) {
 			t.Errorf("creator must grant nothing on the trust surface, but grants %q", p)
 		}
+	}
+}
+
+// TestModeratorExcludedFromTermManage pins the deliberate narrowing: a content
+// moderator reaches the review inbox (queue_access) but MUST NOT manage the
+// Tier0 word list (term_manage is a site-domain ban power).
+func TestModeratorExcludedFromTermManage(t *testing.T) {
+	if !perm.Resolver.Can([]string{"moderator"}, perm.QueueAccess) {
+		t.Fatal("moderator must still hold queue_access")
+	}
+	if perm.Resolver.Can([]string{"moderator"}, perm.TermManage) {
+		t.Error("moderator must NOT hold trust.term_manage")
 	}
 }

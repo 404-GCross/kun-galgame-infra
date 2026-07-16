@@ -81,6 +81,7 @@ func (r *Resolver) Can(roles []string, p Permission) bool
 | `galgame.owner_override` | admin, ren | 越权处置(owner-or-admin 的 admin 支;**不含 moderator**) |
 | `catalog.review` | ren | catalog 内部审核/浏览面 |
 | `trust.queue_access` | moderator, admin, ren | T&S 统一审核收件箱队列 |
+| `trust.term_manage` | admin, ren | Tier0 词表增改/退役(站域封禁权,比 queue_access 敏感;**不含 moderator**) |
 | `ai.usage_view` | admin, ren | AI 网关用量/成本/预算看板(**不含 moderator**——运营面) |
 | `oauth.admin_access` | admin, ren | 控制台四组门(/admin、/sites、/oauth/clients、/admin/artifact) |
 | `oauth.users.pii_view` | ren | 看用户 PII(邮箱/IP) |

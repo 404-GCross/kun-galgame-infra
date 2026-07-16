@@ -101,3 +101,13 @@ const (
 const (
 	ScanModeShadow int16 = 0
 )
+
+// Tier0 term kind (trust_term.kind) — the deterministic word-list enforcement
+// intent (step 05; doc 18 §6). suspect = a hold signal (the sync check returns
+// "hold" → the caller routes to review, content still flows); banned = a deny
+// signal (the sync check returns "deny" → the caller blocks). An INTENT column:
+// the zero (suspect) is meaningful, so the model carries NO default tag.
+const (
+	TermKindSuspect int16 = 0
+	TermKindBanned  int16 = 1
+)

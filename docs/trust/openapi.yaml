@@ -1,5 +1,70 @@
 components:
   schemas:
+    CheckRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/CheckRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        author_id:
+          description: optional content author's global id (accepted, not used in v0)
+          format: int64
+          type: integer
+        site:
+          description: optional tenant site (allowlist-gated relay path); omitted = derived from the client binding
+          type: string
+        text:
+          description: the UGC text to check against the Tier0 word list
+          type: string
+      required:
+        - text
+      type: object
+    CheckResponse:
+      additionalProperties: false
+      properties:
+        decision:
+          description: allow=no match; hold=only suspect terms matched (route to review); deny=a banned term matched (block)
+          enum:
+            - allow
+            - deny
+            - hold
+          type: string
+        matched:
+          description: the matched normalized terms ([] when none)
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+      required:
+        - decision
+        - matched
+      type: object
+    EnvelopeCheckResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EnvelopeCheckResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/CheckResponse"
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
     EnvelopeForwardResolveResponse:
       additionalProperties: false
       properties:
@@ -406,6 +471,31 @@ info:
   version: 1.0.0
 openapi: 3.1.0
 paths:
+  /api/v1/trust/check:
+    post:
+      operationId: checkText
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CheckRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeCheckResponse"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: Synchronous Tier0 word-list check (deterministic; allow/deny/hold; no state written)
+      tags:
+        - trust-check
   /api/v1/trust/forward:
     post:
       operationId: forwardReviewItem

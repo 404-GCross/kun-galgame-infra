@@ -21,6 +21,7 @@ type AdminServer struct {
 	review       *service.ReviewService
 	registry     *service.RegistryService
 	dispositions *service.DispositionService
+	terms        *service.TermService
 	// clients resolves a site-scoped caller's token client to its catalog_site.
 	// Per-request main-DB lookup, no cache (章程 04 ruling 3 — admin volume).
 	clients clientSiteLookup
@@ -28,10 +29,12 @@ type AdminServer struct {
 
 // SetupAdmin builds the admin review-inbox Huma API. Auth is applied by the
 // caller as path-scoped Fiber middleware (middleware.JWTAuth + trust.queue_access)
-// on the /api/v1/admin/trust prefix BEFORE this. clients supplies the
+// on the /api/v1/admin/trust prefix BEFORE this. The Tier0 terms sub-surface
+// additionally requires trust.term_manage, enforced in-handler (moderator is
+// admitted by the prefix gate but rejected there). clients supplies the
 // catalog_site binding for site-scoped callers. Callable with nil deps for spec
 // export (handlers are never invoked then).
-func SetupAdmin(app *fiber.App, review *service.ReviewService, registry *service.RegistryService, dispositions *service.DispositionService, clients clientSiteLookup) huma.API {
+func SetupAdmin(app *fiber.App, review *service.ReviewService, registry *service.RegistryService, dispositions *service.DispositionService, terms *service.TermService, clients clientSiteLookup) huma.API {
 	InstallErrorEnvelope()
 
 	cfg := huma.DefaultConfig("KUN Trust Admin API", "1.0.0")
@@ -42,7 +45,7 @@ func SetupAdmin(app *fiber.App, review *service.ReviewService, registry *service
 	api := humafiber.New(app, cfg)
 	api.UseMiddleware(AdminBridge)
 
-	s := &AdminServer{review: review, registry: registry, dispositions: dispositions, clients: clients}
+	s := &AdminServer{review: review, registry: registry, dispositions: dispositions, terms: terms, clients: clients}
 	s.register(api)
 	return api
 }
@@ -97,6 +100,8 @@ func (s *AdminServer) register(api huma.API) {
 	huma.Register(api, huma.Operation{OperationID: "redeliverTrustDisposition", Method: http.MethodPost, Path: "/api/v1/admin/trust/dispositions/{id}/redeliver",
 		Summary: "Replay a dead-lettered callback (reset to pending)", Tags: tags,
 		Description: platformOnly}, s.redeliverDisposition)
+
+	s.registerTerms(api)
 }
 
 // ---- scope resolution ----
@@ -146,6 +151,19 @@ func (s *AdminServer) requireUnrestricted(ctx context.Context) *houseError {
 			"this surface is restricted to platform staff")
 	}
 	return nil
+}
+
+// requireTermManage gates the Tier0 word-list surface on trust.term_manage. The
+// prefix Fiber gate already admitted anyone with trust.queue_access (moderators
+// included) — but a term is a site-domain ban power, so we re-check the caller's
+// GLOBAL roles against the narrower term_manage (admin/ren only). A moderator, or
+// any site-scoped caller, is rejected 403 here.
+func (s *AdminServer) requireTermManage(ctx context.Context) *houseError {
+	if trustPerm.Resolver.Can(globalRolesFromCtx(ctx), trustPerm.TermManage) {
+		return nil
+	}
+	return apiErrMsg(http.StatusForbidden, errors.ErrForbidden,
+		"managing Tier0 terms requires trust.term_manage (admin/ren)")
 }
 
 // ---- review items ----
@@ -422,14 +440,18 @@ func mapAdminErr(op string, err error) *houseError {
 	case stderrors.Is(err, service.ErrReviewItemNotFound),
 		stderrors.Is(err, service.ErrSubjectKindNotFound),
 		stderrors.Is(err, service.ErrReasonNotFound),
+		stderrors.Is(err, service.ErrTermNotFound),
 		stderrors.Is(err, service.ErrDispositionNotFound):
 		return apiErr(http.StatusNotFound, errors.ErrNotFound)
 	case stderrors.Is(err, service.ErrAlreadyClaimed),
 		stderrors.Is(err, service.ErrIllegalTransition),
 		stderrors.Is(err, service.ErrSubjectKindExists),
+		stderrors.Is(err, service.ErrTermExists),
 		stderrors.Is(err, service.ErrNotDeadLetter):
 		return apiErrMsg(http.StatusConflict, errors.ErrOperationFailed, err.Error())
-	case stderrors.Is(err, service.ErrInvalidDecision):
+	case stderrors.Is(err, service.ErrInvalidDecision),
+		stderrors.Is(err, service.ErrTermEmpty),
+		stderrors.Is(err, service.ErrTermInvalidKind):
 		return apiErrMsg(http.StatusBadRequest, errors.ErrValidationFailed, err.Error())
 	default:
 		slog.Error("trust admin "+op, "err", err)

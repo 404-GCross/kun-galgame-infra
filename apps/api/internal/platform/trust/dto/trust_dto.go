@@ -56,6 +56,25 @@ type ScanResponse struct {
 	Truncated bool  `json:"truncated" doc:"true = the text exceeded the cap and was truncated before storage"`
 }
 
+// CheckRequest is a synchronous Tier0 word-list check (step 05; doc 18 §6). The
+// caller has content it is about to accept and asks whether the text trips the
+// deterministic word list. Site (like ScanRequest) is normally OMITTED and
+// derived from the client binding; a non-empty `site` is the allowlist-gated
+// forwarder relay path. AuthorID is accepted for future repeat-offender
+// weighting but is NOT consulted in v0.
+type CheckRequest struct {
+	Site     string `json:"site,omitempty" doc:"optional tenant site (allowlist-gated relay path); omitted = derived from the client binding"`
+	Text     string `json:"text" doc:"the UGC text to check against the Tier0 word list"`
+	AuthorID *int64 `json:"author_id,omitempty" doc:"optional content author's global id (accepted, not used in v0)"`
+}
+
+// CheckResponse is the Tier0 verdict: a decision (deny wins over hold) plus the
+// matched normalized terms (safe to relay to the S2S caller).
+type CheckResponse struct {
+	Decision string   `json:"decision" enum:"allow,deny,hold" doc:"allow=no match; hold=only suspect terms matched (route to review); deny=a banned term matched (block)"`
+	Matched  []string `json:"matched" doc:"the matched normalized terms ([] when none)"`
+}
+
 // SubjectKindsResponse lists a site's registered kinds (S2S sanity check).
 type SubjectKindsResponse struct {
 	Kinds []SubjectKindView `json:"kinds"`
@@ -213,6 +232,34 @@ type ForwardResolveRequest struct {
 // ForwardResolveResponse reports whether an open item was actually closed.
 type ForwardResolveResponse struct {
 	Closed bool `json:"closed" doc:"false = the item was already terminal (tolerated race)"`
+}
+
+// --- Tier0 terms (admin; step 05) ------------------------------------------
+
+// TermView is a Tier0 word-list registry row. term_norm is the stored
+// normalized form (the raw admin input is never persisted).
+type TermView struct {
+	ID           int64     `json:"id"`
+	Site         *string   `json:"site,omitempty" doc:"null = global (applies to every site)"`
+	TermNorm     string    `json:"term_norm"`
+	Kind         int16     `json:"kind" doc:"0=suspect (hold) 1=banned (deny)"`
+	Note         *string   `json:"note,omitempty"`
+	IsDeprecated bool      `json:"is_deprecated"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
+// TermsResponse lists Tier0 terms (admin).
+type TermsResponse struct {
+	Terms []TermView `json:"terms"`
+}
+
+// CreateTermRequest registers a Tier0 term. `term` is the RAW word; the service
+// normalizes it before storage. Site null = a global term.
+type CreateTermRequest struct {
+	Site *string `json:"site,omitempty" doc:"tenant site; null = global (applies to every site)"`
+	Term string  `json:"term" doc:"the raw term (normalized server-side before storage)"`
+	Kind int16   `json:"kind" doc:"0=suspect (hold — enqueue, don't block) 1=banned (deny — the sync check rejects)"`
+	Note *string `json:"note,omitempty" doc:"optional operator memo"`
 }
 
 // CreateReasonRequest registers a reason (site null = global).

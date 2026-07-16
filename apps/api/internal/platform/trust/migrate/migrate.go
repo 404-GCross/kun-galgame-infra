@@ -27,8 +27,12 @@ func Run(db *gorm.DB) error {
 		&model.TrustDisposition{},
 		&model.TrustAuditLog{},
 		// AI shadow-scoring pipeline (step 03); no FK — subject is referenced by
-		// (site, subject_kind, subject_id) like every other trust table.
+		// (site, subject_kind, subject_id) like every other trust table. Step 05
+		// adds the nullable tier0_matched jsonb column (AutoMigrate adds it).
 		&model.TrustScanResult{},
+		// Tier0 deterministic word list (step 05); no FK — a per-site (or global)
+		// registry of normalized substrings.
+		&model.TrustTerm{},
 	); err != nil {
 		return fmt.Errorf("trust automigrate: %w", err)
 	}
@@ -90,6 +94,14 @@ func rawSQL(db *gorm.DB) error {
 		{"idx_trust_scan_result_site_kind_created", `
 			CREATE INDEX IF NOT EXISTS idx_trust_scan_result_site_kind_created
 			    ON trust_scan_result(site, subject_kind, created_at)`},
+		// Tier0 de-dup (step 05): one ACTIVE term per (site-or-global, norm).
+		// COALESCE(site,'') folds the NULL (global) and non-NULL (per-site) cases
+		// into one keyspace; the partial predicate lets a deprecated row keep the
+		// same norm, so a retired term can be re-created (registry discipline).
+		{"uq_trust_term_active", `
+			CREATE UNIQUE INDEX IF NOT EXISTS uq_trust_term_active
+			    ON trust_term(COALESCE(site, ''), term_norm)
+			    WHERE is_deprecated = false`},
 	} {
 		if err := db.Exec(ix.stmt).Error; err != nil {
 			return fmt.Errorf("create index %s: %w", ix.name, err)

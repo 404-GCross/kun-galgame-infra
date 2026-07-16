@@ -57,6 +57,13 @@ type TrustScanResult struct {
 	// scored path only (NULL on pending / degraded).
 	CreatedAt time.Time  `gorm:"not null;default:now();column:created_at" json:"created_at"`
 	ScoredAt  *time.Time `gorm:"column:scored_at" json:"scored_at"`
+	// Tier0Matched is the deterministic word-list match result the scan worker
+	// records BEFORE the gateway call (step 05): NULL = not evaluated (legacy
+	// rows, or a matcher error); []=evaluated, no match; ["…","…"]=the matched
+	// normalized terms. It NEVER changes status semantics (scored/degraded is
+	// still gateway-driven) — it is the calibration-sample landing spot (doc 18
+	// P1). Nullable jsonb, explicit column tag.
+	Tier0Matched datatypes.JSON `gorm:"type:jsonb;column:tier0_matched" json:"tier0_matched,omitempty"`
 }
 
 func (TrustScanResult) TableName() string { return "trust_scan_result" }

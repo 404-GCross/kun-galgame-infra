@@ -10,7 +10,7 @@ import (
 // TestSpecExport is the S2S spec smoke: Setup with nil deps (the gen-openapi
 // path) must produce a valid OpenAPI document with the intake operations.
 func TestSpecExport(t *testing.T) {
-	api := Setup(fiber.New(), nil, nil, nil, nil)
+	api := Setup(fiber.New(), nil, nil, nil, nil, nil)
 	b, err := api.OpenAPI().YAML()
 	if err != nil {
 		t.Fatalf("marshal spec: %v", err)
@@ -22,9 +22,11 @@ func TestSpecExport(t *testing.T) {
 		"/api/v1/trust/forward",
 		"/api/v1/trust/forward/resolve",
 		"/api/v1/trust/scan",
+		"/api/v1/trust/check",
 		"operationId: submitReport",
 		"operationId: forwardReviewItem",
 		"operationId: submitScan",
+		"operationId: checkText",
 		"subject_kind",
 		"reason_key",
 	} {
@@ -36,7 +38,7 @@ func TestSpecExport(t *testing.T) {
 
 // TestAdminSpecExport is the admin spec smoke.
 func TestAdminSpecExport(t *testing.T) {
-	api := SetupAdmin(fiber.New(), nil, nil, nil, nil)
+	api := SetupAdmin(fiber.New(), nil, nil, nil, nil, nil)
 	b, err := api.OpenAPI().YAML()
 	if err != nil {
 		t.Fatalf("marshal admin spec: %v", err)
@@ -49,7 +51,11 @@ func TestAdminSpecExport(t *testing.T) {
 		"/api/v1/admin/trust/subject-kinds",
 		"/api/v1/admin/trust/report-reasons",
 		"/api/v1/admin/trust/dispositions",
+		"/api/v1/admin/trust/terms",
+		"/api/v1/admin/trust/terms/{id}/deprecate",
 		"operationId: decideTrustReviewItem",
+		"operationId: createTrustTerm",
+		"operationId: deprecateTrustTerm",
 	} {
 		if !strings.Contains(spec, want) {
 			t.Errorf("admin spec missing %q", want)

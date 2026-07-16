@@ -21,12 +21,13 @@ type Server struct {
 	registry *service.RegistryService
 	forward  *service.ForwardService
 	scan     *service.ScanService
+	terms    *service.TermService
 }
 
 // Setup builds the trust S2S Huma API over the Fiber app. S2SAuth is applied by
 // the caller as path-scoped Fiber middleware BEFORE this. Callable with nil
 // services for spec export (handlers are never invoked then).
-func Setup(app *fiber.App, reports *service.ReportService, registry *service.RegistryService, forward *service.ForwardService, scan *service.ScanService) huma.API {
+func Setup(app *fiber.App, reports *service.ReportService, registry *service.RegistryService, forward *service.ForwardService, scan *service.ScanService, terms *service.TermService) huma.API {
 	InstallErrorEnvelope()
 
 	cfg := huma.DefaultConfig("KUN Trust Service", "1.0.0")
@@ -37,7 +38,7 @@ func Setup(app *fiber.App, reports *service.ReportService, registry *service.Reg
 	api := humafiber.New(app, cfg)
 	api.UseMiddleware(S2SBridge)
 
-	s := &Server{reports: reports, registry: registry, forward: forward, scan: scan}
+	s := &Server{reports: reports, registry: registry, forward: forward, scan: scan, terms: terms}
 	s.register(api)
 	return api
 }
@@ -52,6 +53,13 @@ func (s *Server) register(api huma.API) {
 		Summary: "List the calling site's usable report reasons (global base + own extensions, non-deprecated)", Tags: intake}, s.listReportReasons)
 	huma.Register(api, huma.Operation{OperationID: "submitScan", Method: http.MethodPost, Path: "/api/v1/trust/scan",
 		Summary: "Submit a content-scan event for async AI shadow-scoring (accept-type; site derived from the client binding)", Tags: intake}, s.submitScan)
+
+	// Tier0 sync word-list check (step 05). Stateless, deterministic, channel-
+	// independent (no AI gateway): the caller asks whether text trips the word
+	// list and gets allow/deny/hold back. Site three-state mirrors scan/forward.
+	check := []string{"trust-check"}
+	huma.Register(api, huma.Operation{OperationID: "checkText", Method: http.MethodPost, Path: "/api/v1/trust/check",
+		Summary: "Synchronous Tier0 word-list check (deterministic; allow/deny/hold; no state written)", Tags: check}, s.checkText)
 
 	// community→trust convergence (step 03). These carry `site` in the body
 	// (unlike /reports, which derives it from the client binding) because a
@@ -181,6 +189,37 @@ func (s *Server) submitScan(ctx context.Context, in *submitScanInput) (*submitSc
 	}
 	return &submitScanOutput{Body: okEnvelope(dto.ScanResponse{
 		ScanID: res.ScanID, Truncated: res.Truncated,
+	})}, nil
+}
+
+type checkInput struct{ Body dto.CheckRequest }
+type checkOutput struct {
+	Body Envelope[dto.CheckResponse]
+}
+
+func (s *Server) checkText(ctx context.Context, in *checkInput) (*checkOutput, error) {
+	// Site three-state (mirrors submitScan): an empty wire `site` derives from the
+	// client binding; a non-empty wire `site` is the allowlist-gated relay path
+	// (checked in the service). Only the default path needs a bound site.
+	boundSite := ""
+	if in.Body.Site == "" {
+		site, he := siteBinding(ctx)
+		if he != nil {
+			return nil, he
+		}
+		boundSite = site
+	}
+	res, err := s.terms.Check(ctx, service.CheckParams{
+		CallerClientID: callerClientID(ctx),
+		Site:           boundSite, WireSite: in.Body.Site,
+		Text: in.Body.Text, AuthorID: in.Body.AuthorID,
+	})
+	if err != nil {
+		// mapForwardErr covers the allowlist 403; a snapshot DB error is a 500.
+		return nil, mapForwardErr("check", err)
+	}
+	return &checkOutput{Body: okEnvelope(dto.CheckResponse{
+		Decision: res.Decision, Matched: res.Matched,
 	})}, nil
 }
 
