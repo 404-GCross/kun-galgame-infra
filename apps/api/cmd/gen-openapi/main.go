@@ -14,6 +14,7 @@
 //	go run ./cmd/gen-openapi -community -o ../../docs/community/openapi.yaml             # community S2S embed face (3.1)
 //	go run ./cmd/gen-openapi -trust -o ../../docs/trust/openapi.yaml                    # trust S2S intake face (3.1)
 //	go run ./cmd/gen-openapi -trust-admin -o ../../docs/trust/admin-openapi.yaml        # trust admin review inbox (3.1)
+//	go run ./cmd/gen-openapi -ai -o ../../docs/ai/openapi.yaml                          # AI-gateway S2S face (3.1)
 package main
 
 import (
@@ -21,6 +22,7 @@ import (
 	"fmt"
 	"os"
 
+	aiHandler "api/internal/platform/ai/handler"
 	artHandler "api/internal/platform/artifact/handler"
 	"api/internal/platform/artifact/service"
 	catHandler "api/internal/platform/catalog/handler"
@@ -45,6 +47,7 @@ func main() {
 	community := flag.Bool("community", false, "emit the community S2S embed spec (/api/v1/community/*)")
 	trust := flag.Bool("trust", false, "emit the trust S2S intake spec (/api/v1/trust/*)")
 	trustAdmin := flag.Bool("trust-admin", false, "emit the trust admin review-inbox spec (/api/v1/admin/trust/*)")
+	ai := flag.Bool("ai", false, "emit the AI-gateway S2S spec (/api/v1/ai/*)")
 	flag.Parse()
 
 	// Build the API to derive the spec; the deps are nil / stub because Setup
@@ -70,6 +73,8 @@ func main() {
 		api = trustHandler.Setup(app, nil, nil, nil)
 	case *trustAdmin:
 		api = trustHandler.SetupAdmin(app, nil, nil, nil, nil)
+	case *ai:
+		api = aiHandler.Setup(app, nil)
 	case *admin:
 		api = artHandler.SetupAdmin(app, artHandler.NewAdmin(nil, nil, nil, 0))
 	default:

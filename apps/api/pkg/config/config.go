@@ -18,6 +18,7 @@ type Config struct {
 	CatalogDatabase   DatabaseConfig
 	CommunityDatabase DatabaseConfig
 	TrustDatabase     DatabaseConfig
+	AIDatabase        DatabaseConfig
 	ImagesDatabase    DatabaseConfig
 	Redis             RedisConfig
 	JWT               JWTConfig
@@ -54,6 +55,32 @@ type Config struct {
 	CatalogService   CatalogServiceConfig
 	CommunityService CommunityServiceConfig
 	TrustService     TrustServiceConfig
+
+	// AIService is the AI-gateway semantic layer (cmd/ai, kun_ai). AIUpstream is
+	// its ONLY knowledge of the channel layer — an OpenAI-compatible base URL +
+	// token (doc 20 §9). Empty BaseURL/Token = degraded mode: moderate-text
+	// returns fail-open (degraded:true, flagged:false) without dialing upstream,
+	// and startup is never blocked. See refs/docs/nextmoe-draft/20.
+	AIService  AIServiceConfig
+	AIUpstream AIUpstreamConfig
+}
+
+// AIServiceConfig holds AI-gateway bind configuration. The semantic layer
+// (cmd/ai) fronts all ecosystem AI calls behind named routes; v0 ships only the
+// moderate-text route. See refs/docs/nextmoe-draft/20-ai-gateway-and-capability-platform.md.
+type AIServiceConfig struct {
+	Host string // Bind address
+	Port int    // Bind port
+}
+
+// AIUpstreamConfig is the semantic layer's entire view of the channel layer:
+// one OpenAI-compatible base URL + one bearer token, plus the model id the v0
+// moderate-text route maps to (a code/config constant now; per-route
+// configuration is trigger-based). BaseURL/Token empty → degraded mode.
+type AIUpstreamConfig struct {
+	BaseURL string // e.g. http://one-api:3000/v1 — empty = degraded (no upstream)
+	Token   string // upstream bearer token — empty = degraded
+	Model   string // model id for the moderate-text route (v0 single-route mapping)
 }
 
 // TrustServiceConfig holds trust-service bind configuration. The Trust & Safety
@@ -360,6 +387,19 @@ func Load() (*Config, error) {
 		Timezone: getEnv("KUN_TRUST_PG_TIMEZONE", cfg.Database.Timezone),
 	}
 
+	// AI-gateway database config (defaults to same server, different db name).
+	// The AI semantic layer (cmd/ai) owns kun_ai; see
+	// refs/docs/nextmoe-draft/20-ai-gateway-and-capability-platform.md.
+	cfg.AIDatabase = DatabaseConfig{
+		Host:     getEnv("KUN_AI_PG_HOST", cfg.Database.Host),
+		Port:     getEnv("KUN_AI_PG_PORT", cfg.Database.Port),
+		User:     getEnv("KUN_AI_PG_USER", cfg.Database.User),
+		Password: getEnv("KUN_AI_PG_PASSWORD", cfg.Database.Password),
+		DBName:   getEnv("KUN_AI_PG_DATABASE", "kun_ai"),
+		SSLMode:  getEnv("KUN_AI_PG_SSLMODE", cfg.Database.SSLMode),
+		Timezone: getEnv("KUN_AI_PG_TIMEZONE", cfg.Database.Timezone),
+	}
+
 	// Redis config
 	redisEnabled, _ := strconv.ParseBool(getEnv("REDIS_ENABLED", "false"))
 	redisPort, _ := strconv.Atoi(getEnv("REDIS_PORT", "6379"))
@@ -555,6 +595,22 @@ func Load() (*Config, error) {
 	cfg.TrustService = TrustServiceConfig{
 		Host: getEnv("KUN_TRUST_HOST", "127.0.0.1"),
 		Port: trustPort,
+	}
+
+	// AI-gateway service config. Port 9284 = next free slot after trust 9283.
+	// KUN_AI_UPSTREAM_BASE_URL / _TOKEN default empty → degraded mode (fail-open,
+	// no upstream dialled); this is the intended default until the channel layer
+	// is provisioned (doc 20 §9). KUN_AI_UPSTREAM_MODEL is the v0 moderate-text
+	// route→model mapping, unused while degraded.
+	aiPort, _ := strconv.Atoi(getEnv("KUN_AI_PORT", "9284"))
+	cfg.AIService = AIServiceConfig{
+		Host: getEnv("KUN_AI_HOST", "127.0.0.1"),
+		Port: aiPort,
+	}
+	cfg.AIUpstream = AIUpstreamConfig{
+		BaseURL: getEnv("KUN_AI_UPSTREAM_BASE_URL", ""),
+		Token:   getEnv("KUN_AI_UPSTREAM_TOKEN", ""),
+		Model:   getEnv("KUN_AI_UPSTREAM_MODEL", "deepseek-chat"),
 	}
 
 	// Validate required fields

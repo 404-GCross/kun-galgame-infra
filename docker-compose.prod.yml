@@ -46,6 +46,7 @@ x-infra-env: &infra-env
   KUN_CATALOG_PG_DATABASE: kun_catalog
   KUN_COMMUNITY_PG_DATABASE: kun_community
   KUN_TRUST_PG_DATABASE: kun_trust
+  KUN_AI_PG_DATABASE: kun_ai
   # Redis
   REDIS_ENABLED: "true"
   REDIS_HOST: redis
@@ -458,6 +459,40 @@ services:
       <<: *svc-health
     restart: unless-stopped
 
+  # AI-gateway semantic layer (kun_ai). Fronts all ecosystem AI calls behind
+  # named routes (v0: moderate-text), holds the upstream credential single-point,
+  # meters per tenant×route usage, and enforces per-route daily budget fuses. It
+  # reads oauth_clients from kun_galgame_infra for S2S Basic auth + the per-client
+  # `catalog_site` tenant. Its ONLY view of the channel layer is the two upstream
+  # envs below; empty (the default) = degraded mode: moderate-text is fail-open
+  # (never blocks) and the service starts fine WITHOUT a channel layer (doc 20 §9).
+  ai:
+    image: ghcr.io/kunmoe/infra-ai:latest
+    pull_policy: always
+    environment:
+      <<: *infra-env
+      # kun_ai DB name comes from *infra-env (KUN_AI_PG_DATABASE); host/user/pass
+      # fall back to KUN_PG_*.
+      KUN_AI_HOST: 0.0.0.0
+      KUN_AI_PORT: "9284"
+      # Channel layer (one-api/new-api). Default empty = degraded mode (fail-open,
+      # no upstream dialled). Set both in Dokploy when the channel layer is ready;
+      # KUN_AI_UPSTREAM_MODEL is the moderate-text route→model mapping.
+      KUN_AI_UPSTREAM_BASE_URL: ${KUN_AI_UPSTREAM_BASE_URL:-}
+      KUN_AI_UPSTREAM_TOKEN: ${KUN_AI_UPSTREAM_TOKEN:-}
+      KUN_AI_UPSTREAM_MODEL: ${KUN_AI_UPSTREAM_MODEL:-deepseek-chat}
+    # Internal only — product/platform backends reach it at http://ai:9284 over
+    # dokploy-network.
+    expose: ["9284"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }     # reads oauth_clients from kun_galgame_infra
+      migrate-ai: { condition: service_completed_successfully }  # kun_ai schema
+    healthcheck:
+      test: ["CMD", "/app", "healthcheck"]
+      <<: *svc-health
+    restart: unless-stopped
+
   # ───────────────────────────── Nuxt frontends ──────────────────────────────
   # Public (browser) config is BAKED into the image at CI build time (build-args in
   # .github/workflows/build.yml). Only the SSR base (service name) is injected here.
@@ -572,6 +607,17 @@ services:
   # on startup); idempotent AutoMigrate + raw SQL + reason seed.
   migrate-trust:
     image: ghcr.io/kunmoe/infra-migrate-trust:latest
+    pull_policy: always
+    environment: { <<: *infra-env }
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: "no"
+
+  # Auto-applied on every deploy (ai waits for it). cmd/migrate-ai is the single
+  # migration entry point against kun_ai (the service never migrates on startup);
+  # idempotent AutoMigrate + CREATE INDEX IF NOT EXISTS, no seed.
+  migrate-ai:
+    image: ghcr.io/kunmoe/infra-migrate-ai:latest
     pull_policy: always
     environment: { <<: *infra-env }
     depends_on:

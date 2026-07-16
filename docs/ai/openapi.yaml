@@ -1,0 +1,124 @@
+components:
+  schemas:
+    EnvelopeModerateTextResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EnvelopeModerateTextResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/ModerateTextResponse"
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
+    HouseError:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/HouseError.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
+    ModerateTextRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/ModerateTextRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        author_id:
+          description: optional author global id (attribution/repeat-offender signal); NOT the tenant — the tenant is derived from the client binding
+          format: int64
+          type: integer
+        text:
+          description: the UGC text to scan
+          type: string
+      required:
+        - text
+      type: object
+    ModerateTextResponse:
+      additionalProperties: false
+      properties:
+        categories:
+          description: upstream category labels when flagged
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+        channel:
+          description: the upstream channel/model that scored; '' when degraded
+          type: string
+        degraded:
+          description: true = upstream unavailable / over budget / env empty; result is fail-open (flagged:false)
+          type: boolean
+        flagged:
+          description: true = upstream flagged the text; always false on a degraded (fail-open) path
+          type: boolean
+        route:
+          description: "the semantic route served (v0: moderate-text)"
+          type: string
+        score:
+          description: upstream confidence in [0,1] when provided
+          format: float
+          type: number
+      required:
+        - route
+        - flagged
+        - channel
+        - degraded
+      type: object
+info:
+  title: KUN AI Gateway
+  version: 1.0.0
+openapi: 3.1.0
+paths:
+  /api/v1/ai/moderate-text:
+    post:
+      operationId: moderateText
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ModerateTextRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeModerateTextResponse"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: Scan a text for policy violations (async, fail-open; tenant derived from the client binding)
+      tags:
+        - ai
