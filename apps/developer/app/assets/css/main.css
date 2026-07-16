@@ -1,0 +1,37 @@
+@import 'tailwindcss';
+@import '@kungal/ui-tokens'; /* design tokens (colors, rounded-kun-*, dark variant) + base layer */
+@import '@kungal/ui-vue/style.css'; /* scoped component styles (modal/drawer transitions, toasts) */
+
+/*
+ * Tailwind v4 ignores node_modules by default, so it must be told to scan the
+ * compiled KunUI packages or the components render unstyled. Paths are relative
+ * to THIS file (app/assets/css/main.css → 3 levels up = the app's node_modules,
+ * where pnpm symlinks this app's direct deps).
+ */
+@source '../../../node_modules/@kungal/ui-vue';
+@source '../../../node_modules/@kungal/ui-core';
+
+/*
+ * Reserve the scrollbar gutter globally so the document width is constant across
+ * routes — otherwise navigating from a scrolling page (landing) to a height-
+ * locked one (login) removes the classic scrollbar's ~15px and the centered
+ * layout shifts sideways. Single-edge `stable` (both-edges is buggy in Chrome);
+ * harmless no-op under overlay scrollbars.
+ */
+html {
+  scrollbar-gutter: stable;
+}
+@supports not (scrollbar-gutter: stable) {
+  html {
+    overflow-y: scroll;
+  }
+}
+
+/*
+ * Opaque modal panels. KunUI's .kun-modal-panel is `bg-content1/85` (translucent)
+ * — too see-through here. Force solid content1 (adapts light/dark via --content1).
+ * Unlayered → wins over the Tailwind utilities layer.
+ */
+.kun-modal-panel {
+  background-color: oklch(var(--content1));
+}

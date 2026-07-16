@@ -73,6 +73,12 @@ jobs:
               - 'package.json'
               - 'docker/nuxt.Dockerfile'
               - '.github/workflows/build.yml'
+            developer:
+              - 'apps/developer/**'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
+              - 'package.json'
+              - '.github/workflows/build.yml'
       - id: set
         env:
           EVENT: ${{ github.event_name }}
@@ -80,6 +86,7 @@ jobs:
           GO: ${{ steps.filter.outputs.go }}
           WEB: ${{ steps.filter.outputs.web }}
           WIKI: ${{ steps.filter.outputs.wiki }}
+          DEV: ${{ steps.filter.outputs.developer }}
         run: |
           set -euo pipefail
           # Auto-built on push (path-filtered). web/wiki args are baked at build.
@@ -99,7 +106,8 @@ jobs:
             {"name":"infra-ai","file":"docker/go.Dockerfile","args":"CMD=ai","group":"go"},
             {"name":"infra-migrate-ai","file":"docker/go.Dockerfile","args":"CMD=migrate-ai","group":"go"},
             {"name":"infra-web","file":"docker/nuxt.Dockerfile","args":"APP=web\nPUBLIC_API_BASE=https://oauth.kungal.com/api/v1\nPUBLIC_IMAGE_CDN_BASE=https://image.kungal.iloveren.link","group":"web"},
-            {"name":"infra-wiki","file":"docker/nuxt.Dockerfile","args":"APP=wiki\nPUBLIC_API_BASE=https://wiki.kungal.com/api\nPUBLIC_AUTH_API_BASE=https://oauth.kungal.com/api/v1\nPUBLIC_OAUTH_AUTHORIZE_BASE=https://oauth.kungal.com/api/v1\nPUBLIC_OAUTH_CLIENT_ID=galgame-wiki-admin\nPUBLIC_OAUTH_REDIRECT_URI=https://wiki.kungal.com/auth/callback\nPUBLIC_IMAGE_CDN_BASE=https://image.kungal.iloveren.link","group":"wiki"}
+            {"name":"infra-wiki","file":"docker/nuxt.Dockerfile","args":"APP=wiki\nPUBLIC_API_BASE=https://wiki.kungal.com/api\nPUBLIC_AUTH_API_BASE=https://oauth.kungal.com/api/v1\nPUBLIC_OAUTH_AUTHORIZE_BASE=https://oauth.kungal.com/api/v1\nPUBLIC_OAUTH_CLIENT_ID=galgame-wiki-admin\nPUBLIC_OAUTH_REDIRECT_URI=https://wiki.kungal.com/auth/callback\nPUBLIC_IMAGE_CDN_BASE=https://image.kungal.iloveren.link","group":"wiki"},
+            {"name":"infra-developer","file":"apps/developer/Dockerfile","args":"","group":"developer"}
           ]'
           # On-demand only (workflow_dispatch). Run before a prod migration.
           ondemand_catalog='[
@@ -112,8 +120,8 @@ jobs:
               sel=$(jq -cn --argjson a "$push_catalog" --argjson b "$ondemand_catalog" '$a + $b')
             fi
           else
-            sel=$(jq -cn --argjson c "$push_catalog" --arg go "$GO" --arg web "$WEB" --arg wiki "$WIKI" \
-              '([{g:"go",v:$go},{g:"web",v:$web},{g:"wiki",v:$wiki}] | map(select(.v=="true") | .g)) as $grp
+            sel=$(jq -cn --argjson c "$push_catalog" --arg go "$GO" --arg web "$WEB" --arg wiki "$WIKI" --arg dev "$DEV" \
+              '([{g:"go",v:$go},{g:"web",v:$web},{g:"wiki",v:$wiki},{g:"developer",v:$dev}] | map(select(.v=="true") | .g)) as $grp
                | $c | map(select(.group as $x | $grp | index($x)))')
           fi
           n=$(jq -n --argjson s "$sel" '$s | length')
