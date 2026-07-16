@@ -44,6 +44,9 @@ type draftsInput struct {
 	Page         int    `query:"page" doc:"Page number (default 1)"`
 	Limit        int    `query:"limit" doc:"Items per page 1-50 (default 24)"`
 	ContentLimit string `query:"content_limit" doc:"sfw | nsfw | all (default sfw)"`
+	OfficialID   int    `query:"official_id" doc:"Scope to one official's drafts (0/absent = global). Drafts carry VNDB-synced official edges."`
+	TagID        int    `query:"tag_id" doc:"Scope to one tag's drafts (0/absent = global). Drafts carry VNDB-synced tag edges."`
+	EngineID     int    `query:"engine_id" doc:"Scope to one engine's drafts (0/absent = global). Empty by data today: engine edges are human-curated and drafts are untouched VNDB imports."`
 }
 
 type batchInput struct {

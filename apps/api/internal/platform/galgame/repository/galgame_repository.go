@@ -565,11 +565,23 @@ func (r *GalgameRepository) ListContributedByUser(ctx context.Context, userID, p
 	return items, total, err
 }
 
+// DraftFilters scopes the drafts list to one taxonomy entity — the
+// claim-funnel modal lives on the official / tag / engine detail pages and
+// shows only THAT entity's unclaimed drafts. Zero values = no filter (global
+// list). Engine-scoped lists are empty by data today (engine edges are
+// human-curated and drafts are untouched VNDB imports) — the parameter is
+// uniform anyway so the face doesn't change if that ever changes.
+type DraftFilters struct {
+	OfficialID int
+	TagID      int
+	EngineID   int
+}
+
 // ListDrafts pages the unclaimed VNDB drafts (status = 2), newest first — the
-// claim-funnel browser's data source (the drafts modal on kungal). Only the
-// cover preload is carried (the card needs the effective banner/portrait, not
-// taxonomy); content_limit filters the same way List does.
-func (r *GalgameRepository) ListDrafts(ctx context.Context, page, limit int, contentLimit string) (items []model.Galgame, total int64, err error) {
+// claim-funnel browser's data source (the drafts modal on kungal's entity
+// pages). Only the cover preload is carried (the card needs the effective
+// banner/portrait, not taxonomy); content_limit filters the same way List does.
+func (r *GalgameRepository) ListDrafts(ctx context.Context, page, limit int, contentLimit string, f DraftFilters) (items []model.Galgame, total int64, err error) {
 	defer func() {
 		for i := range items {
 			model.PopulateEffectiveBanner(&items[i])
@@ -579,6 +591,15 @@ func (r *GalgameRepository) ListDrafts(ctx context.Context, page, limit int, con
 	query := r.db.WithContext(ctx).Model(&model.Galgame{}).Where("status = 2")
 	if contentLimit != "" {
 		query = query.Where("content_limit = ?", contentLimit)
+	}
+	if f.OfficialID > 0 {
+		query = query.Where("EXISTS (SELECT 1 FROM galgame_official_relation r WHERE r.galgame_id = galgame.id AND r.official_id = ?)", f.OfficialID)
+	}
+	if f.TagID > 0 {
+		query = query.Where("EXISTS (SELECT 1 FROM galgame_tag_relation r WHERE r.galgame_id = galgame.id AND r.tag_id = ?)", f.TagID)
+	}
+	if f.EngineID > 0 {
+		query = query.Where("EXISTS (SELECT 1 FROM galgame_engine_relation r WHERE r.galgame_id = galgame.id AND r.engine_id = ?)", f.EngineID)
 	}
 	query.Count(&total)
 

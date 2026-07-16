@@ -4,6 +4,7 @@ import (
 	"strconv"
 
 	"api/internal/platform/galgame/dto"
+	"api/internal/platform/galgame/repository"
 	"api/internal/platform/galgame/search"
 	"api/internal/platform/galgame/service"
 	"api/pkg/errors"
@@ -350,7 +351,12 @@ func (h *GalgameHandler) Drafts(c fiber.Ctx) error {
 		return response.BadRequest(c, errors.ErrBadRequest)
 	}
 
-	items, total, err := h.galgameService.ListDrafts(c.Context(), req.Page, req.Limit, req.ContentLimit)
+	filters := repository.DraftFilters{
+		OfficialID: fiber.Query(c, "official_id", 0),
+		TagID:      fiber.Query(c, "tag_id", 0),
+		EngineID:   fiber.Query(c, "engine_id", 0),
+	}
+	items, total, err := h.galgameService.ListDrafts(c.Context(), req.Page, req.Limit, req.ContentLimit, filters)
 	if err != nil {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}

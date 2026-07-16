@@ -1608,6 +1608,12 @@ export interface operations {
                 limit?: number;
                 /** @description sfw | nsfw | all (default sfw) */
                 content_limit?: string;
+                /** @description Scope to one official's drafts (0/absent = global). Drafts carry VNDB-synced official edges. */
+                official_id?: number;
+                /** @description Scope to one tag's drafts (0/absent = global). Drafts carry VNDB-synced tag edges. */
+                tag_id?: number;
+                /** @description Scope to one engine's drafts (0/absent = global). Empty by data today: engine edges are human-curated and drafts are untouched VNDB imports. */
+                engine_id?: number;
             };
             header?: never;
             path?: never;
