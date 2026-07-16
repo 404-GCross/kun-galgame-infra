@@ -87,6 +87,9 @@ func (r *TagRepository) GalgameIDsByTagID(ctx context.Context, tagID int) ([]int
 		Table("galgame_tag_relation r").
 		Joins("JOIN galgame g ON g.id = r.galgame_id AND g.status = 0").
 		Where("r.tag_id = ?", tagID).
+		// Deterministic order: without it the bare-ids body leaks heap order,
+		// which flaps per query under concurrent scans (prod W2 replay caught it).
+		Order("r.galgame_id ASC").
 		Pluck("r.galgame_id", &ids).Error
 	return ids, err
 }

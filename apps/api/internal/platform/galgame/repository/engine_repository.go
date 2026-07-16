@@ -58,6 +58,7 @@ func (r *EngineRepository) GalgameIDsByEngineID(ctx context.Context, engineID in
 		Table("galgame_engine_relation r").
 		Joins("JOIN galgame g ON g.id = r.galgame_id AND g.status = 0").
 		Where("r.engine_id = ?", engineID).
+		Order("r.galgame_id ASC"). // deterministic order (see GalgameIDsByTagID)
 		Pluck("r.galgame_id", &ids).Error
 	return ids, err
 }

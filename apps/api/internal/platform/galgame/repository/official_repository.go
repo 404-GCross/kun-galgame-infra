@@ -67,6 +67,7 @@ func (r *OfficialRepository) GalgameIDsByOfficialID(ctx context.Context, officia
 		Table("galgame_official_relation r").
 		Joins("JOIN galgame g ON g.id = r.galgame_id AND g.status = 0").
 		Where("r.official_id = ?", officialID).
+		Order("r.galgame_id ASC"). // deterministic order (see GalgameIDsByTagID)
 		Pluck("r.galgame_id", &ids).Error
 	return ids, err
 }
