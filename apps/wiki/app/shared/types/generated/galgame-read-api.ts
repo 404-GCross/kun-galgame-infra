@@ -55,6 +55,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/galgame/drafts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Paginated unclaimed VNDB drafts (status=2), newest first — the claim-funnel browser; same envelope as the list */
+        get: operations["listGalgameDrafts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/galgame/messages/feed": {
         parameters: {
             query?: never;
@@ -1569,6 +1586,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CalEnvelopeCheckVNDBResult"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    listGalgameDrafts: {
+        parameters: {
+            query?: {
+                /** @description Page number (default 1) */
+                page?: number;
+                /** @description Items per page 1-50 (default 24) */
+                limit?: number;
+                /** @description sfw | nsfw | all (default sfw) */
+                content_limit?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalEnvelopeGalgameListData"];
                 };
             };
             /** @description Error */
