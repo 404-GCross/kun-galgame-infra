@@ -80,12 +80,14 @@ type Config struct {
 	TrustService     TrustServiceConfig
 
 	// AIService is the AI-gateway semantic layer (cmd/ai, kun_ai). AIUpstream is
-	// its ONLY knowledge of the channel layer — an OpenAI-compatible base URL +
-	// token (doc 20 §9). Empty BaseURL/Token = degraded mode: moderate-text
-	// returns fail-open (degraded:true, flagged:false) without dialing upstream,
-	// and startup is never blocked. See refs/docs/nextmoe-draft/20.
+	// the Tier2 LLM upstream — an OpenAI-compatible chat base URL + token (doc 20
+	// §9). AIOmni is the Tier1 omni-moderation coarse pass (spec 09). Empty
+	// BaseURL/Token on either = that tier off: moderate-text stays fail-open
+	// (degraded:true, flagged:false) without dialing, and startup is never
+	// blocked. See refs/docs/nextmoe-draft/20.
 	AIService  AIServiceConfig
 	AIUpstream AIUpstreamConfig
+	AIOmni     AIOmniConfig
 
 	// AIClient is the trust service's caller-side client to the AI gateway's
 	// moderate-text route (step 03 shadow scoring). Empty ClientID/Secret (or
@@ -113,14 +115,29 @@ type AIServiceConfig struct {
 	Port int    // Bind port
 }
 
-// AIUpstreamConfig is the semantic layer's entire view of the channel layer:
-// one OpenAI-compatible base URL + one bearer token, plus the model id the v0
-// moderate-text route maps to (a code/config constant now; per-route
-// configuration is trigger-based). BaseURL/Token empty → degraded mode.
+// AIUpstreamConfig is the Tier2 LLM upstream: one OpenAI-compatible chat base
+// URL + one bearer token, plus the model id the moderate-text route maps to (a
+// code/config constant now; per-route configuration is trigger-based).
+// BaseURL/Token empty → the LLM tier is off.
 type AIUpstreamConfig struct {
 	BaseURL string // e.g. http://one-api:3000/v1 — empty = degraded (no upstream)
 	Token   string // upstream bearer token — empty = degraded
 	Model   string // model id for the moderate-text route (v0 single-route mapping)
+}
+
+// AIOmniConfig is the Tier1 omni-moderation upstream (POST {BaseURL}/v1/moderations)
+// plus the Tier1→Tier2 cascade tuning (spec 09). Token empty = Tier1 off:
+// moderate-text runs the Tier2 LLM path exactly as before. EscalateThreshold and
+// NegativeSampleRate govern when a coarse omni verdict is handed to the LLM for
+// final adjudication (relevantScore ≥ threshold), and what fraction of
+// below-threshold verdicts are negative-sampled into the LLM for shadow
+// calibration.
+type AIOmniConfig struct {
+	BaseURL            string  // default https://api.openai.com — empty = Tier1 off
+	Token              string  // omni bearer token — empty = Tier1 off
+	Model              string  // default omni-moderation-latest
+	EscalateThreshold  float32 // relevantScore ≥ this → LLM final adjudication; default 0.4
+	NegativeSampleRate float64 // below-threshold LLM sampling probability; default 0.05
 }
 
 // TrustServiceConfig holds trust-service bind configuration. The Trust & Safety
@@ -663,6 +680,27 @@ func Load() (*Config, error) {
 		BaseURL: getEnv("KUN_AI_UPSTREAM_BASE_URL", ""),
 		Token:   getEnv("KUN_AI_UPSTREAM_TOKEN", ""),
 		Model:   getEnv("KUN_AI_UPSTREAM_MODEL", "deepseek-chat"),
+	}
+
+	// Tier1 omni-moderation coarse pass + cascade tuning (spec 09). KUN_AI_OMNI_TOKEN
+	// empty (the default) → Tier1 off: moderate-text runs the Tier2 LLM path only.
+	// The two cascade knobs floor at sensible defaults; a malformed value falls back
+	// to the default (getEnv returns the default only on an EMPTY var, so parse
+	// errors keep the zero and we clamp below).
+	omniEscalate, err := strconv.ParseFloat(getEnv("KUN_AI_ESCALATE_THRESHOLD", "0.4"), 32)
+	if err != nil {
+		omniEscalate = 0.4
+	}
+	omniSampleRate, err := strconv.ParseFloat(getEnv("KUN_AI_NEGATIVE_SAMPLE_RATE", "0.05"), 64)
+	if err != nil {
+		omniSampleRate = 0.05
+	}
+	cfg.AIOmni = AIOmniConfig{
+		BaseURL:            getEnv("KUN_AI_OMNI_BASE_URL", "https://api.openai.com"),
+		Token:              getEnv("KUN_AI_OMNI_TOKEN", ""),
+		Model:              getEnv("KUN_AI_OMNI_MODEL", "omni-moderation-latest"),
+		EscalateThreshold:  float32(omniEscalate),
+		NegativeSampleRate: omniSampleRate,
 	}
 
 	// AI gateway caller (step 03: trust scan worker). BaseURL defaults to the

@@ -509,12 +509,25 @@ services:
       # fall back to KUN_PG_*.
       KUN_AI_HOST: 0.0.0.0
       KUN_AI_PORT: "9284"
-      # Channel layer (one-api/new-api). Default empty = degraded mode (fail-open,
-      # no upstream dialled). Set both in Dokploy when the channel layer is ready;
-      # KUN_AI_UPSTREAM_MODEL is the moderate-text route→model mapping.
+      # Tier2 LLM upstream (one-api/new-api or a direct dpsk/mimo key). Default
+      # empty = that tier off (fail-open, no upstream dialled). Set both in Dokploy
+      # when the LLM tier is ready; KUN_AI_UPSTREAM_MODEL is the moderate-text
+      # route→model mapping.
       KUN_AI_UPSTREAM_BASE_URL: ${KUN_AI_UPSTREAM_BASE_URL:-}
       KUN_AI_UPSTREAM_TOKEN: ${KUN_AI_UPSTREAM_TOKEN:-}
       KUN_AI_UPSTREAM_MODEL: ${KUN_AI_UPSTREAM_MODEL:-deepseek-chat}
+      # Tier1 omni-moderation coarse pass (spec 09). KUN_AI_OMNI_TOKEN empty (the
+      # default) = Tier1 off: moderate-text runs the Tier2 LLM path only. Fill the
+      # token in Dokploy (plaintext staged at kungal-neo:/root/openai-omni-api-key.txt)
+      # to light Tier1 up; base URL / model default to OpenAI's public API.
+      KUN_AI_OMNI_BASE_URL: ${KUN_AI_OMNI_BASE_URL:-https://api.openai.com}
+      KUN_AI_OMNI_TOKEN: ${KUN_AI_OMNI_TOKEN:-}
+      KUN_AI_OMNI_MODEL: ${KUN_AI_OMNI_MODEL:-omni-moderation-latest}
+      # Tier1→Tier2 cascade tuning (spec 09 ruling 3). relevantScore ≥ threshold
+      # → LLM final adjudication; below-threshold verdicts are LLM-sampled at the
+      # negative rate for shadow calibration (only when the LLM tier is configured).
+      KUN_AI_ESCALATE_THRESHOLD: ${KUN_AI_ESCALATE_THRESHOLD:-0.4}
+      KUN_AI_NEGATIVE_SAMPLE_RATE: ${KUN_AI_NEGATIVE_SAMPLE_RATE:-0.05}
     # Internal only — product/platform backends reach it at http://ai:9284 over
     # dokploy-network.
     expose: ["9284"]

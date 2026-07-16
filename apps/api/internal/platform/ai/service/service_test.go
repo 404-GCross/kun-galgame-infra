@@ -77,6 +77,34 @@ func (f *fakeUpstream) ChatJSON(_ context.Context, _, _ string, _ int) (upstream
 	return f.result, nil
 }
 
+// fakeOmni is a deterministic omniClient (Tier1): it records dial count so the
+// "omni off" / "LLM final" / conviction paths can assert whether the coarse pass
+// ran. An unconfigured fakeOmni ({}) drives the today's-behavior LLM-only path.
+type fakeOmni struct {
+	configured bool
+	model      string
+	result     upstream.OmniResult
+	err        error
+	calls      int
+}
+
+func (f *fakeOmni) Configured() bool { return f.configured }
+func (f *fakeOmni) Model() string    { return f.model }
+func (f *fakeOmni) Moderate(_ context.Context, _ string) (upstream.OmniResult, error) {
+	f.calls++
+	if f.err != nil {
+		return upstream.OmniResult{}, f.err
+	}
+	return f.result, nil
+}
+
+// newLLMOnly builds a service with Tier1 (omni) OFF — the today's-behavior path
+// the six-state regression exercises. The cascade knobs are irrelevant when omni
+// is off (they are never reached).
+func newLLMOnly(llm upstreamClient) *ModerationService {
+	return NewModerationService(testDB, &fakeOmni{}, llm, ModerationOptions{})
+}
+
 // insertBudget writes a budget row (cap nil = an explicit no-cap override row).
 func insertBudget(t *testing.T, route, site string, cap *int64) {
 	t.Helper()

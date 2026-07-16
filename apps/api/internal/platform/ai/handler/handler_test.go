@@ -114,7 +114,7 @@ func buildApp() *fiber.App {
 	app := fiber.New()
 	repo := siteRepo.NewOAuthClientRepository(testDB)
 	app.Use("/api/v1/ai", S2SAuth(repo))
-	svc := service.NewModerationService(testDB, upstream.NewClient("", "", ""))
+	svc := service.NewModerationService(testDB, upstream.NewOmniClient("", "", ""), upstream.NewClient("", "", ""), service.ModerationOptions{})
 	Setup(app, svc)
 	return app
 }

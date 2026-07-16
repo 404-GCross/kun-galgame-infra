@@ -4,12 +4,19 @@
 // over budget, or env empty → allow (flagged:false) + warn, never block, never
 // error. The LLM is only ever on the async scan path — this service serves
 // callers that have already decided the content is live.
+//
+// moderate-text is a Tier1→Tier2 cascade (spec 09): omni-moderation (Tier1,
+// coarse) escalates to the LLM (Tier2, fine) only for verdicts whose adopted
+// relevantScore meets the escalation threshold, plus a small negative-sampling
+// fraction of below-threshold verdicts for shadow calibration. Each upstream
+// call meters its own ai_usage row, so a single cascade can produce two rows.
 package service
 
 import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"math/rand/v2"
 	"strings"
 	"time"
 
@@ -20,26 +27,62 @@ import (
 	"gorm.io/gorm"
 )
 
-// upstreamClient is the seam the moderation service dials (satisfied by
-// *upstream.Client; a fake in tests). Keeping it an interface lets the service
-// tests drive the three moderate-text states without a live channel layer.
+// upstreamClient is the Tier2 LLM seam (satisfied by *upstream.Client; a fake in
+// tests). Keeping it an interface lets the service tests drive the cascade
+// without a live channel layer.
 type upstreamClient interface {
 	Configured() bool
 	Model() string
 	ChatJSON(ctx context.Context, system, user string, maxTokens int) (upstream.ChatResult, error)
 }
 
-// ModerationService serves the moderate-text route.
-type ModerationService struct {
-	db       *gorm.DB
-	upstream upstreamClient
+// omniClient is the Tier1 coarse-pass seam (satisfied by *upstream.OmniClient; a
+// fake in tests). Empty env → not configured, and the cascade runs the Tier2 LLM
+// path exactly as before.
+type omniClient interface {
+	Configured() bool
+	Model() string
+	Moderate(ctx context.Context, input string) (upstream.OmniResult, error)
 }
 
-// NewModerationService wires the service to the kun_ai DB and the upstream
-// client. up may be an unconfigured client (empty env) — that is the degraded
-// mode, not an error.
-func NewModerationService(db *gorm.DB, up upstreamClient) *ModerationService {
-	return &ModerationService{db: db, upstream: up}
+// ModerationService serves the moderate-text route as the Tier1→Tier2 cascade.
+type ModerationService struct {
+	db   *gorm.DB
+	omni omniClient
+	llm  upstreamClient
+
+	escalateThreshold  float32
+	negativeSampleRate float64
+	// rand is the injectable random source for the negative-sampling seam
+	// (test determinism); it returns a value in [0,1). nil in options →
+	// math/rand/v2.Float64.
+	rand func() float64
+}
+
+// ModerationOptions carries the cascade tuning (spec 09 ruling 3). Rand is the
+// injectable random source for negative sampling; nil → math/rand/v2.
+type ModerationOptions struct {
+	EscalateThreshold  float32
+	NegativeSampleRate float64
+	Rand               func() float64
+}
+
+// NewModerationService wires the service to the kun_ai DB, the Tier1 (omni) and
+// Tier2 (llm) clients, and the cascade tuning. Either client may be unconfigured
+// (empty env) — that is a valid tier-off state, not an error.
+func NewModerationService(db *gorm.DB, omni omniClient, llm upstreamClient, opts ModerationOptions) *ModerationService {
+	r := opts.Rand
+	if r == nil {
+		r = rand.Float64
+	}
+	return &ModerationService{
+		db:                 db,
+		omni:               omni,
+		llm:                llm,
+		escalateThreshold:  opts.EscalateThreshold,
+		negativeSampleRate: opts.NegativeSampleRate,
+		rand:               r,
+	}
 }
 
 // ModerateParams is one moderate-text call. Site is DERIVED from the S2S client
@@ -72,18 +115,27 @@ Respond with ONLY a JSON object, no prose, of the form:
 
 const moderateMaxTokens = 256
 
-// Moderate runs the moderate-text route: budget fuse → degraded check → upstream
-// call → parse, metering one ai_usage row on every path. It ALWAYS returns a
-// result with a nil error (fail-open); internal metering/budget errors are
-// swallowed with a warn.
+// Moderate runs the moderate-text cascade: budget fuse → Tier1 (omni) coarse
+// pass → Tier2 (LLM) fine adjudication, metering one ai_usage row per upstream
+// call. It ALWAYS returns a result with a nil error (fail-open); internal
+// metering/budget errors are swallowed with a warn.
+//
+// Cascade (spec 09 ruling 3):
+//   - omni unconfigured → the Tier2 LLM path unchanged (today's behavior).
+//   - omni error → meter status=upstream_error, then fall through to the LLM
+//     path (LLM also unavailable → degraded there).
+//   - relevantScore ≥ threshold → the LLM adjudicates as final; if the LLM is
+//     unconfigured, omni convicts alone (a real verdict, NOT degraded).
+//   - below threshold → clean omni verdict, unless negative sampling (only when
+//     the LLM is configured) escalates it for shadow calibration.
 func (s *ModerationService) Moderate(ctx context.Context, p ModerateParams) (ModerateResult, error) {
 	routeName := model.RouteModerateText
 	spec, _ := route.Lookup(routeName)
-	start := time.Now()
 
 	// 1. Budget fuse (record-don't-block). A set cap whose current-day spend is
 	// exceeded → fail-open allow, status=budget_denied. A NULL/absent cap never
 	// blocks (the v0 default).
+	start := time.Now()
 	if s.overBudget(ctx, routeName, p.Site) {
 		slog.Warn("ai moderate-text over budget — fail-open allow", "site", p.Site, "route", routeName)
 		s.meter(ctx, model.AIUsage{
@@ -93,8 +145,65 @@ func (s *ModerationService) Moderate(ctx context.Context, p ModerateParams) (Mod
 		return failOpen(routeName, "", spec), nil
 	}
 
-	// 2. Degraded: channel layer not wired (empty env). Never dial, never error.
-	if !s.upstream.Configured() {
+	// 2. Tier1 unconfigured → run the Tier2 LLM path exactly as before.
+	if !s.omni.Configured() {
+		return s.moderateViaLLM(ctx, p, routeName, spec)
+	}
+
+	// 3. Tier1 coarse pass. Meter one row for the omni call (tokens 0 — the
+	// moderations endpoint reports no usage; latency is the real omni round-trip).
+	// A dial failure falls through to the Tier2 LLM path.
+	omniStart := time.Now()
+	ores, oerr := s.omni.Moderate(ctx, p.Text)
+	if oerr != nil {
+		slog.Warn("ai moderate-text omni error — falling through to LLM", "site", p.Site, "err", oerr)
+		s.meter(ctx, model.AIUsage{
+			Site: p.Site, Route: routeName, Status: model.StatusUpstreamError,
+			Channel: s.omni.Model(), LatencyMs: msSince(omniStart),
+		})
+		return s.moderateViaLLM(ctx, p, routeName, spec)
+	}
+	s.meter(ctx, model.AIUsage{
+		Site: p.Site, Route: routeName, Status: model.StatusOK,
+		Channel: ores.Channel, LatencyMs: msSince(omniStart),
+	})
+
+	rel := relevantScore(ores.CategoryScores)
+
+	// 4a. At/above threshold → LLM adjudicates as final; LLM unconfigured (and
+	// NOT degraded — the coarse pass succeeded) → omni convicts alone.
+	if rel >= s.escalateThreshold {
+		if s.llm.Configured() {
+			return s.moderateViaLLM(ctx, p, routeName, spec)
+		}
+		score := rel
+		return ModerateResult{
+			Route: routeName, Flagged: true, Categories: adoptedTrueCategories(ores.Categories),
+			Score: &score, Channel: ores.Channel, Degraded: false,
+		}, nil
+	}
+
+	// 4b. Below threshold → clean omni verdict, unless negative sampling (only
+	// meaningful when the LLM is configured) escalates it for shadow calibration.
+	if s.llm.Configured() && s.sampleHit() {
+		return s.moderateViaLLM(ctx, p, routeName, spec)
+	}
+	score := rel
+	return ModerateResult{
+		Route: routeName, Flagged: false, Categories: nil,
+		Score: &score, Channel: ores.Channel, Degraded: false,
+	}, nil
+}
+
+// moderateViaLLM is the Tier2 path (today's moderate-text behavior): an
+// unconfigured LLM degrades WITHOUT dialing; otherwise it dials, tolerantly
+// parses, and any transport/parse failure fails open. It meters exactly one
+// ai_usage row for the LLM call (or the degraded no-call).
+func (s *ModerationService) moderateViaLLM(ctx context.Context, p ModerateParams, routeName string, spec route.Spec) (ModerateResult, error) {
+	start := time.Now()
+
+	// Degraded: the LLM tier is not wired. Never dial, never error.
+	if !s.llm.Configured() {
 		s.meter(ctx, model.AIUsage{
 			Site: p.Site, Route: routeName, Status: model.StatusDegraded,
 			LatencyMs: msSince(start),
@@ -102,13 +211,12 @@ func (s *ModerationService) Moderate(ctx context.Context, p ModerateParams) (Mod
 		return failOpen(routeName, "", spec), nil
 	}
 
-	// 3. Call upstream. Any transport/HTTP/parse failure → fail-open degraded.
-	res, err := s.upstream.ChatJSON(ctx, moderateSystemPrompt, p.Text, moderateMaxTokens)
+	res, err := s.llm.ChatJSON(ctx, moderateSystemPrompt, p.Text, moderateMaxTokens)
 	if err != nil {
 		slog.Warn("ai moderate-text upstream error — fail-open allow", "site", p.Site, "err", err)
 		s.meter(ctx, model.AIUsage{
 			Site: p.Site, Route: routeName, Status: model.StatusUpstreamError,
-			Channel: s.upstream.Model(), LatencyMs: msSince(start),
+			Channel: s.llm.Model(), LatencyMs: msSince(start),
 		})
 		return failOpen(routeName, "", spec), nil
 	}
@@ -123,7 +231,7 @@ func (s *ModerationService) Moderate(ctx context.Context, p ModerateParams) (Mod
 		return failOpen(routeName, res.Channel, spec), nil
 	}
 
-	// 4. Normal scored path.
+	// Normal scored path.
 	s.meter(ctx, model.AIUsage{
 		Site: p.Site, Route: routeName, Status: model.StatusOK,
 		Channel: res.Channel, PromptTokens: res.PromptTokens, CompletionTokens: res.CompletionTokens,
@@ -133,6 +241,15 @@ func (s *ModerationService) Moderate(ctx context.Context, p ModerateParams) (Mod
 		Route: routeName, Flagged: v.Flagged, Categories: v.Categories, Score: v.Score,
 		Channel: res.Channel, Degraded: false,
 	}, nil
+}
+
+// sampleHit reports whether a below-threshold verdict is negative-sampled into
+// the LLM (shadow calibration). A rate ≤ 0 never samples; rand returns [0,1).
+func (s *ModerationService) sampleHit() bool {
+	if s.negativeSampleRate <= 0 {
+		return false
+	}
+	return s.rand() < s.negativeSampleRate
 }
 
 // failOpen is the allow-and-warn result shared by all degraded paths. spec is

@@ -22,7 +22,7 @@ func TestModerateNormal(t *testing.T) {
 			CompletionTokens: 8,
 		},
 	}
-	s := NewModerationService(testDB, up)
+	s := newLLMOnly(up)
 
 	res, err := s.Moderate(context.Background(), ModerateParams{Site: "letmoe", Text: "you idiot"})
 	if err != nil {
@@ -60,7 +60,7 @@ func TestModerateNormal(t *testing.T) {
 func TestModerateUpstreamErrorFailOpen(t *testing.T) {
 	cleanTables(t)
 	up := &fakeUpstream{configured: true, model: "deepseek-chat", err: context.DeadlineExceeded}
-	s := NewModerationService(testDB, up)
+	s := newLLMOnly(up)
 
 	res, err := s.Moderate(context.Background(), ModerateParams{Site: "letmoe", Text: "hello"})
 	if err != nil {
@@ -84,7 +84,7 @@ func TestModerateUpstreamErrorFailOpen(t *testing.T) {
 func TestModerateDegradedEnvEmpty(t *testing.T) {
 	cleanTables(t)
 	up := &fakeUpstream{configured: false}
-	s := NewModerationService(testDB, up)
+	s := newLLMOnly(up)
 
 	res, err := s.Moderate(context.Background(), ModerateParams{Site: "letmoe", Text: "anything"})
 	if err != nil {
@@ -115,7 +115,7 @@ func TestBudgetOverCapFailOpen(t *testing.T) {
 
 	up := &fakeUpstream{configured: true, model: "deepseek-chat",
 		result: upstream.ChatResult{Content: `{"flagged": true}`, Channel: "deepseek-chat"}}
-	s := NewModerationService(testDB, up)
+	s := newLLMOnly(up)
 
 	res, err := s.Moderate(context.Background(), ModerateParams{Site: "letmoe", Text: "spend"})
 	if err != nil {
@@ -148,7 +148,7 @@ func TestBudgetUnderCapAllows(t *testing.T) {
 
 	up := &fakeUpstream{configured: true, model: "deepseek-chat",
 		result: upstream.ChatResult{Content: `{"flagged": false}`, Channel: "deepseek-chat"}}
-	s := NewModerationService(testDB, up)
+	s := newLLMOnly(up)
 
 	res, err := s.Moderate(context.Background(), ModerateParams{Site: "letmoe", Text: "fine"})
 	if err != nil {
@@ -171,7 +171,7 @@ func TestBudgetNullCapNoBlock(t *testing.T) {
 
 	up := &fakeUpstream{configured: true, model: "deepseek-chat",
 		result: upstream.ChatResult{Content: `{"flagged": false}`, Channel: "deepseek-chat"}}
-	s := NewModerationService(testDB, up)
+	s := newLLMOnly(up)
 
 	res, err := s.Moderate(context.Background(), ModerateParams{Site: "letmoe", Text: "fine"})
 	if err != nil {
@@ -191,7 +191,7 @@ func TestBudgetRouteDefaultOverride(t *testing.T) {
 
 	up := &fakeUpstream{configured: true, model: "deepseek-chat",
 		result: upstream.ChatResult{Content: `{"flagged": false}`, Channel: "deepseek-chat"}}
-	s := NewModerationService(testDB, up)
+	s := newLLMOnly(up)
 
 	res, err := s.Moderate(context.Background(), ModerateParams{Site: "letmoe", Text: "spend"})
 	if err != nil {

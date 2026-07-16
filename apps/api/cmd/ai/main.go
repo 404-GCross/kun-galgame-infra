@@ -71,16 +71,30 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Upstream client. Empty base URL/token = degraded mode — a valid state, not
-	// an error: the service returns fail-open without dialling. Never blocks
-	// startup (doc 20 §9).
+	// Tier2 LLM upstream client. Empty base URL/token = that tier off — a valid
+	// state, not an error: the service returns fail-open without dialling. Never
+	// blocks startup (doc 20 §9).
 	up := upstream.NewClient(cfg.AIUpstream.BaseURL, cfg.AIUpstream.Token, cfg.AIUpstream.Model)
 	if up.Configured() {
-		slog.Info("ai upstream configured", "base_url", cfg.AIUpstream.BaseURL, "model", cfg.AIUpstream.Model)
+		slog.Info("ai llm (tier2) configured", "base_url", cfg.AIUpstream.BaseURL, "model", cfg.AIUpstream.Model)
 	} else {
-		slog.Warn("ai upstream NOT configured — degraded mode (moderate-text fail-open, no upstream dialled)")
+		slog.Warn("ai llm (tier2) NOT configured — moderate-text runs Tier1 alone / degraded")
 	}
-	moderationSvc := service.NewModerationService(aiDB.DB(), up)
+
+	// Tier1 omni-moderation coarse pass (spec 09). Empty token = Tier1 off:
+	// moderate-text runs the Tier2 LLM path only. Also never blocks startup.
+	omni := upstream.NewOmniClient(cfg.AIOmni.BaseURL, cfg.AIOmni.Token, cfg.AIOmni.Model)
+	if omni.Configured() {
+		slog.Info("ai omni (tier1) configured", "base_url", cfg.AIOmni.BaseURL, "model", cfg.AIOmni.Model,
+			"escalate_threshold", cfg.AIOmni.EscalateThreshold, "negative_sample_rate", cfg.AIOmni.NegativeSampleRate)
+	} else {
+		slog.Warn("ai omni (tier1) NOT configured — moderate-text runs the Tier2 LLM path only")
+	}
+
+	moderationSvc := service.NewModerationService(aiDB.DB(), omni, up, service.ModerationOptions{
+		EscalateThreshold:  cfg.AIOmni.EscalateThreshold,
+		NegativeSampleRate: cfg.AIOmni.NegativeSampleRate,
+	})
 	statsSvc := service.NewStatsService(aiDB.DB())
 	budgetSvc := service.NewBudgetService(aiDB.DB())
 
