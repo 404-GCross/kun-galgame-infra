@@ -9,7 +9,8 @@
 #   1. `image: ghcr.io/kunmoe/infra-*:${INFRA_IMAGE_TAG:-latest}` — prebuilt, PULLED
 #      (not built here). Pin a digest via INFRA_IMAGE_TAG when collaborating.
 #   2. `network_mode: host` — every service shares 127.0.0.1, so inter-service
-#      URLs are 127.0.0.1:<prod-port> and the ports match prod (9277-9283). This
+#      URLs are 127.0.0.1:<prod-port> and the ports match prod (9277-9284;
+#      9280 retired with the standalone galgame service, W3/W5). This
 #      is what makes the "stop a container, `go run ./cmd/<svc>` in its place"
 #      replacement workflow seamless (docs/dev-environment.md → Replace mode).
 #   3. All config is inline `environment:` and LITERAL — dev constants, no secrets,
@@ -96,7 +97,8 @@ x-dev-env: &dev-env
   KUN_ARTIFACT_S3_FORCE_PATH_STYLE: "true"
   KUN_ARTIFACT_S3_CLEANUP_ACCESS_KEY: ""
   KUN_ARTIFACT_S3_CLEANUP_SECRET_KEY: ""
-  # Meilisearch — galgame uses; key MUST match the meili MEILI_MASTER_KEY below.
+  # Meilisearch — the galgame surface (catalog) uses; key MUST match the meili
+  # MEILI_MASTER_KEY below.
   KUN_MEILISEARCH_HOST: http://127.0.0.1:7700
   KUN_MEILISEARCH_API_KEY: kun-dev-meili-master-key-local-only
   # Mail → Mailpit (SMTP black hole + web UI on :8025). No auth, no password.
@@ -193,7 +195,7 @@ services:
       test: ["CMD", "curl", "-fsS", "http://localhost:7700/health"]
       <<: *svc-health
     restart: unless-stopped
-    # Search API on :7700 (galgame connects at KUN_MEILISEARCH_HOST).
+    # Search API on :7700 (the galgame surface connects at KUN_MEILISEARCH_HOST).
 
   # ───── schema migrations (gate the services, like prod) ─────────────────────
   # migrate-* run FIRST and the services depend on them completing. All are
@@ -205,12 +207,9 @@ services:
     environment: { <<: *dev-env }
     restart: "no"
 
-  migrate-galgame:
-    image: ghcr.io/kunmoe/infra-migrate-galgame:${INFRA_IMAGE_TAG:-latest}
-    network_mode: host
-    environment: { <<: *dev-env }
-    restart: "no"
-
+  # Single entry point for BOTH content families since W5: galgame (wiki-family)
+  # models → KUN_GALGAME_PG_DATABASE (kun_galgame_wiki here — dev keeps the
+  # split-DB posture) and catalog models → KUN_CATALOG_PG_DATABASE (kun_catalog).
   migrate-catalog:
     image: ghcr.io/kunmoe/infra-migrate-catalog:${INFRA_IMAGE_TAG:-latest}
     network_mode: host
@@ -237,16 +236,16 @@ services:
 
   # ───────────────────────────── platform services ───────────────────────────
   # oauth + image are cgo (libwebp) → binary at /app/app. The rest are distroless
-  # → binary at /app. Ports match prod (9277-9283); host network binds them on the
+  # → binary at /app. Ports match prod (9277-9284); host network binds them on the
   # box directly, so `go run ./cmd/<svc>` on the same port replaces a stopped one.
   oauth:
     image: ghcr.io/kunmoe/infra-oauth:${INFRA_IMAGE_TAG:-latest}
-    # The five frequently-edited Go services (oauth/image/galgame/artifact/trust)
+    # The five frequently-edited Go services (oauth/catalog/image/artifact/trust)
     # sit behind the `full` profile so a bare `up` starts the platform WITHOUT
     # them — leaving their host ports free for `air` to hot-reload from source
     # (see scripts/dev.sh / `pnpm dev`). Product-repo developers who want the
-    # whole platform from prebuilt images run `--profile full`. catalog/community/
-    # ai carry no profile: they are always image-served (edited rarely).
+    # whole platform from prebuilt images run `--profile full`. community/ai
+    # carry no profile: they are always image-served (edited rarely).
     profiles: ["full"]
     network_mode: host
     environment:
@@ -296,31 +295,6 @@ services:
       <<: *svc-health
     restart: unless-stopped
 
-  galgame:
-    image: ghcr.io/kunmoe/infra-galgame:${INFRA_IMAGE_TAG:-latest}
-    profiles: ["full"]
-    network_mode: host
-    environment:
-      <<: *dev-env
-      KUN_FIBER_SERVER_HOST: 0.0.0.0
-      KUN_GALGAME_PORT: "9280"
-      # Image client creds for banner uploads (multipart Create/Update/PR). Empty
-      # in dev → banner file uploads are rejected (400); banner-less edits work.
-      KUN_IMAGE_CLIENT_ID: ""
-      KUN_IMAGE_CLIENT_SECRET: ""
-      # Catalog S2S client for the staff data browser. Empty in dev → that panel
-      # is inert; the wiki itself runs fine. Base URL defaults to 127.0.0.1:9281.
-      KUN_CATALOG_CLIENT_ID: ""
-      KUN_CATALOG_CLIENT_SECRET: ""
-    depends_on:
-      meili: { condition: service_healthy }
-      migrate-galgame: { condition: service_completed_successfully }
-      migrate: { condition: service_completed_successfully } # reads users from kun_galgame_infra
-    healthcheck:
-      test: ["CMD", "/app", "healthcheck"]
-      <<: *svc-health
-    restart: unless-stopped
-
   artifact:
     image: ghcr.io/kunmoe/infra-artifact:${INFRA_IMAGE_TAG:-latest}
     profiles: ["full"]
@@ -342,16 +316,34 @@ services:
       <<: *svc-health
     restart: unless-stopped
 
+  # catalog hosts the FULL galgame surface too (galgameapp.Mount — wiki
+  # retirement W2/W3): the wiki-family content DB stays split in dev
+  # (KUN_GALGAME_PG_DATABASE=kun_galgame_wiki) while the registry reads
+  # kun_catalog. In the `full` profile since W5 — it went from "rarely edited"
+  # to the most-edited service, so infra's `pnpm dev` runs it from source via
+  # air (:9281) and only `dev:full` serves it from the image.
   catalog:
     image: ghcr.io/kunmoe/infra-catalog:${INFRA_IMAGE_TAG:-latest}
+    profiles: ["full"]
     network_mode: host
     environment:
       <<: *dev-env
       KUN_CATALOG_HOST: 0.0.0.0
       KUN_CATALOG_PORT: "9281"
+      # Image client creds for galgame banner uploads (multipart Create/Update/
+      # PR). Empty in dev → banner file uploads are rejected (400); banner-less
+      # edits work.
+      KUN_IMAGE_CLIENT_ID: ""
+      KUN_IMAGE_CLIENT_SECRET: ""
+      # Catalog S2S client for the galgame staff data browser (the co-hosted
+      # surface dials its own S2S face). Empty in dev → that panel is inert;
+      # the wiki itself runs fine. Base URL defaults to 127.0.0.1:9281.
+      KUN_CATALOG_CLIENT_ID: ""
+      KUN_CATALOG_CLIENT_SECRET: ""
     depends_on:
-      migrate: { condition: service_completed_successfully }         # reads oauth_clients
-      migrate-catalog: { condition: service_completed_successfully }  # kun_catalog schema
+      meili: { condition: service_healthy } # the galgame face self-heals its indexes at start
+      migrate: { condition: service_completed_successfully }         # reads oauth_clients + users
+      migrate-catalog: { condition: service_completed_successfully }  # kun_galgame_wiki + kun_catalog schemas
     healthcheck:
       test: ["CMD", "/app", "healthcheck"]
       <<: *svc-health

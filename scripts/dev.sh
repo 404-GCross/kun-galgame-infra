@@ -3,15 +3,15 @@
 #
 #   1. PLATFORM BASE (docker-compose.dev.yml, default profile) — redis / minio /
 #      meili / mailpit / the read-through image proxy / all migrations / and the
-#      three rarely-edited platform services (catalog / community / ai) from
-#      prebuilt GHCR images. Brought up once, then LEFT RUNNING.
+#      two rarely-edited platform services (community / ai) from prebuilt GHCR
+#      images. Brought up once, then LEFT RUNNING.
 #   2. HOT-RELOAD STACK — `air` rebuilds the five frequently-edited Go services
-#      (oauth / galgame / image / artifact / trust) from source on every save,
+#      (oauth / catalog / image / artifact / trust) from source on every save,
 #      plus the Nuxt frontends (web / wiki / developer) via their own dev servers.
 #
 # The base and the hot stack never collide: the five hot services carry the
 # `full` compose profile, so the default `up` below deliberately does NOT start
-# them — their host ports (9277-9283) stay free for air.
+# them — their host ports (9277-9279, 9281, 9283) stay free for air.
 #
 # Ctrl-C stops ONLY the hot stack; the base keeps running (that's the point —
 # "localhost has a platform"). Tear the base down with `pnpm dev:down`.
@@ -49,7 +49,7 @@ done
 # exits as a failure. So start everything first, then wait only on the
 # long-running services below (there the run-once jobs are depends_on
 # `service_completed_successfully`, which --wait handles correctly).
-echo "▶ platform base: catalog/community/ai + storage + migrations…"
+echo "▶ platform base: community/ai + storage + migrations…"
 "${COMPOSE[@]}" "${PROFILE_ARGS[@]}" up -d "${SCALE_ARGS[@]}"
 
 # Phase 2 — block until every long-running service (restart != "no") is healthy,
@@ -75,6 +75,6 @@ if ((FULL)); then
   exit 0
 fi
 
-echo "▶ hot-reload stack: air (oauth/galgame/image/artifact/trust) + frontends."
+echo "▶ hot-reload stack: air (oauth/catalog/image/artifact/trust) + frontends."
 echo "  Ctrl-C stops these; the base above stays up (pnpm dev:down to stop it)."
 exec pnpm -F "./apps/**" --parallel --stream run dev

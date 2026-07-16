@@ -16,7 +16,8 @@ interface ApiError {
   message: string
 }
 
-// useApi targets the wiki backend (port 9280, prefix /api).
+// useApi targets the wiki backend (the galgame surface on the catalog
+// service, port 9281, prefix /api).
 // For auth operations (login/refresh/etc) use useAuthApi() which targets oauth backend.
 export const useApi = () => {
   const config = useRuntimeConfig()

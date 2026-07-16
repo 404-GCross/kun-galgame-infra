@@ -2,7 +2,7 @@
 
 `docker-compose.dev.yml` (infra repo root) brings up the **whole nextmoe platform**
 on your dev box with one command, so any product repo's `pnpm dev` / `air` can
-depend on a single fact: **localhost has a platform**. Eight platform services
+depend on a single fact: **localhost has a platform**. Seven platform services
 (from prebuilt GHCR images) + all local infrastructure, **zero cloud credentials**.
 
 > This is the dev-environment track's step 01. Step 02 (`refresh-dev-db`) fills the
@@ -16,8 +16,7 @@ depend on a single fact: **localhost has a platform**. Eight platform services
 | oauth | 9277 | `ghcr.io/kunmoe/infra-oauth` | — |
 | image | 9278 | `ghcr.io/kunmoe/infra-image` | — |
 | artifact | 9279 | `ghcr.io/kunmoe/infra-artifact` | — |
-| galgame | 9280 | `ghcr.io/kunmoe/infra-galgame` | — |
-| catalog | 9281 | `ghcr.io/kunmoe/infra-catalog` | — |
+| catalog (hosts the galgame surface; :9280 retired) | 9281 | `ghcr.io/kunmoe/infra-catalog` | — |
 | community | 9282 | `ghcr.io/kunmoe/infra-community` | — |
 | trust | 9283 | `ghcr.io/kunmoe/infra-trust` | — |
 | ai | 9284 | `ghcr.io/kunmoe/infra-ai` | — |
@@ -34,16 +33,16 @@ frontends run their own `pnpm dev`, jobs run on demand.
 
 ## Two ways to run it — hybrid vs all-from-images
 
-Five of the eight platform services — **oauth / image / galgame / artifact /
+Five of the seven platform services — **oauth / catalog / image / artifact /
 trust** — carry the compose `full` profile. A plain `docker compose … up`
 therefore starts everything **except** those five, leaving their host ports free.
 This gives two modes:
 
 - **Developing infra itself** → from the infra repo, `pnpm dev` (one command).
-  It runs the default compose up (base + catalog/community/ai from images) and
-  then `air`, which rebuilds those five hot services from source on every save,
-  plus the Nuxt frontends. `catalog / community / ai` stay image-served because
-  they change rarely; to hot-reload one of them too, stop its container and
+  It runs the default compose up (base + community/ai from images) and then
+  `air`, which rebuilds those five hot services from source on every save,
+  plus the Nuxt frontends. `community / ai` stay image-served because they
+  change rarely; to hot-reload one of them too, stop its container and
   `go run ./cmd/<svc>` in its place (Replace mode, below). Ctrl-C stops the hot
   stack; the base keeps running. `pnpm dev:down` stops the base.
 - **Developing a product repo** (letmoe / forum / moyu / …) → you want the WHOLE
@@ -93,7 +92,7 @@ Every service uses `network_mode: host`, so:
 ```sh
 # 1. Check nothing you care about already holds these ports — and NEVER kill a
 #    process that does; stop the matching compose service instead (see below).
-ss -tlnp | grep -E ':(9277|9278|9279|9280|9281|9282|9283|9284|9000|9001|7700|1025|8025|9290|6379)\b'
+ss -tlnp | grep -E ':(9277|9278|9279|9281|9282|9283|9284|9000|9001|7700|1025|8025|9290|6379)\b'
 
 # 2. Pull + start the WHOLE platform (--profile full includes the five hot
 #    services; drop it for the hybrid `pnpm dev` mode). migrate-* run first and
@@ -116,7 +115,7 @@ INFRA_IMAGE_TAG=sha-abc1234 docker compose -f docker-compose.dev.yml up -d
 
 `docker compose up` does **not** skip a busy port — it fails to bind. If a port is
 held by *your own* native process (e.g. you already run `air` in `apps/api`, which
-binds 9277-9283), that is the intended Replace-mode situation: just don't start
+binds 9277-9279 / 9281 / 9283), that is the intended Replace-mode situation: just don't start
 that container. Start a subset explicitly, e.g. only the infra + the two services
 you need:
 
@@ -129,7 +128,7 @@ docker compose -f docker-compose.dev.yml up -d minio minio-setup mailpit meili i
 Every platform service answers `GET /healthz` → `{"status":"ok"}`:
 
 ```sh
-for p in 9277 9278 9279 9280 9281 9282 9283; do
+for p in 9277 9278 9279 9281 9282 9283 9284; do
   printf '%s ' "$p"; curl -fsS "http://127.0.0.1:$p/healthz" && echo || echo DOWN
 done
 curl -fsS http://127.0.0.1:9000/minio/health/live && echo minio-ok   # MinIO
@@ -147,18 +146,18 @@ Because host mode binds the prod port on the box, you can develop one service
 against the live containerised rest of the platform:
 
 ```sh
-docker compose -f docker-compose.dev.yml stop galgame     # free port 9280
-cd apps/api && go run ./cmd/galgame                        # your code now IS the platform's galgame
+docker compose -f docker-compose.dev.yml stop catalog      # free port 9281
+cd apps/api && go run ./cmd/catalog                        # your code now IS the platform's catalog
 ```
 
 Your local process reads the same host Postgres / MinIO / Meili as the containers,
 so the rest of the stack talks to it transparently. Restart the container when done:
 
 ```sh
-docker compose -f docker-compose.dev.yml start galgame
+docker compose -f docker-compose.dev.yml start catalog
 ```
 
-The same works for any of oauth / image / artifact / catalog / community / trust —
+The same works for any of oauth / image / artifact / community / trust / ai —
 each is `go run ./cmd/<svc>` (see `apps/api/dev.sh` for the env each expects; the
 container env in `docker-compose.dev.yml` is the canonical list).
 
@@ -269,7 +268,7 @@ local code has a newer migration than the snapshot, **run that repo's migration*
 ```sh
 cd apps/api
 go run ./cmd/migrate           # kun_galgame_infra (oauth + site models)
-go run ./cmd/migrate-galgame   # kun_galgame_wiki
+go run ./cmd/migrate-catalog   # kun_galgame_wiki (galgame models) + kun_catalog — one entry point, two pools (W5)
 # cmd/image, cmd/artifact AutoMigrate on boot
 ```
 
@@ -285,7 +284,7 @@ universal three steps:
 
 1. `docker compose -f docker-compose.dev.yml --profile full up -d` (this repo, or
    `pnpm dev:full`) — the **whole** platform from images. `--profile full` matters:
-   a bare `up` omits the five hot services (oauth/galgame/image/artifact/trust),
+   a bare `up` omits the five hot services (oauth/catalog/image/artifact/trust),
    which is what infra's own `pnpm dev` wants (it runs those from source via air).
    A product repo is NOT running air, so it needs them from images → `--profile full`.
 2. `./scripts/refresh-dev-db.sh` (optional) — real-shaped, desensitised data.
