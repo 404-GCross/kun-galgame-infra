@@ -28,11 +28,17 @@ import (
 )
 
 // ─────────────── input types (query/path params for the public spec) ───────────────
+//
+// The step-07 query-flexibility params (include=officials,scores + fields=) are
+// optional and add-only over the frozen step-02 contract: omitting them yields
+// the byte-identical default response (the oasdiff gate enforces this).
 
 type publicListInput struct {
 	Sort         string `query:"sort" enum:"id,release_date" doc:"Sort key: id (default, ascending) or release_date (newest first, undated last)"`
 	Cursor       string `query:"cursor" doc:"Opaque keyset cursor from a prior response's next_cursor; omit for the first page"`
 	Limit        int    `query:"limit" doc:"Items per page 1-100 (default 20)"`
+	Include      string `query:"include" doc:"Comma-separated blocks to expand on each item: officials,scores (default: none). Unknown names are ignored."`
+	Fields       string `query:"fields" doc:"Comma-separated top-level response keys to return (sparse fieldset); id is always included and unknown names are ignored (never a 400). Write keys in alphabetical order to maximize CDN cache hits."`
 	ContentLimit string `query:"content_limit" doc:"Reserved; Phase 1 is always sfw"`
 }
 type publicListOutput struct {
@@ -42,6 +48,7 @@ type publicListOutput struct {
 type publicDetailInput struct {
 	ID           int    `path:"id" doc:"Galgame ID"`
 	Include      string `query:"include" doc:"Comma-separated heavy blocks to include: intro,scores,covers,taxonomy (default: none)"`
+	Fields       string `query:"fields" doc:"Comma-separated top-level response keys to return (sparse fieldset); id is always included and unknown names are ignored (never a 400). Write keys in alphabetical order to maximize CDN cache hits."`
 	ContentLimit string `query:"content_limit" doc:"Reserved; Phase 1 is always sfw"`
 }
 type publicDetailOutput struct {
@@ -51,6 +58,8 @@ type publicDetailOutput struct {
 type publicBatchInput struct {
 	IDs          string `query:"ids" doc:"Comma-separated galgame IDs (1-100)"`
 	View         string `query:"view" enum:"brief,detail" doc:"brief (default) = thin items; detail = full aggregate records (no include)"`
+	Include      string `query:"include" doc:"Comma-separated blocks to expand on each item (brief view only): officials,scores (default: none). Unknown names are ignored."`
+	Fields       string `query:"fields" doc:"Comma-separated top-level response keys to return (sparse fieldset); id is always included and unknown names are ignored (never a 400). Write keys in alphabetical order to maximize CDN cache hits."`
 	ContentLimit string `query:"content_limit" doc:"Reserved; Phase 1 is always sfw"`
 }
 type publicBatchOutput struct {
@@ -62,6 +71,8 @@ type publicSearchInput struct {
 	Sort             string `query:"sort" doc:"relevance (default) / released_desc / released_asc / view / updated"`
 	Page             int    `query:"page" doc:"Page number (default 1)"`
 	Limit            int    `query:"limit" doc:"Items per page (default 24)"`
+	Include          string `query:"include" doc:"Comma-separated blocks to expand on each item: officials,scores (default: none). Unknown names are ignored."`
+	Fields           string `query:"fields" doc:"Comma-separated top-level response keys to return (sparse fieldset); id is always included and unknown names are ignored (never a 400). Write keys in alphabetical order to maximize CDN cache hits."`
 	AgeLimit         string `query:"age_limit" doc:"all | r18"`
 	OriginalLanguage string `query:"original_language" doc:"CSV of BCP-47 language tags"`
 	TagIDs           string `query:"tag_ids" doc:"CSV of tag ids (AND)"`

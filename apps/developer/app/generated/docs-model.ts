@@ -53,6 +53,20 @@ export const docsModel: DocsModel = {
                   "doc": "Items per page 1-100 (default 20)"
                 },
                 {
+                  "name": "include",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "Comma-separated blocks to expand on each item: officials,scores (default: none). Unknown names are ignored."
+                },
+                {
+                  "name": "fields",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "Comma-separated top-level response keys to return (sparse fieldset); id is always included and unknown names are ignored (never a 400). Write keys in alphabetical order to maximize CDN cache hits."
+                },
+                {
                   "name": "content_limit",
                   "in": "query",
                   "required": false,
@@ -162,6 +176,26 @@ export const docsModel: DocsModel = {
                                   ]
                                 },
                                 {
+                                  "name": "officials",
+                                  "type": "array",
+                                  "itemsOf": {
+                                    "type": "object",
+                                    "children": [
+                                      {
+                                        "name": "id",
+                                        "required": true,
+                                        "format": "int64",
+                                        "type": "integer"
+                                      },
+                                      {
+                                        "name": "name",
+                                        "required": true,
+                                        "type": "string"
+                                      }
+                                    ]
+                                  }
+                                },
+                                {
                                   "name": "portrait",
                                   "required": true,
                                   "type": "object",
@@ -199,6 +233,99 @@ export const docsModel: DocsModel = {
                                   "required": true,
                                   "nullable": true,
                                   "type": "string"
+                                },
+                                {
+                                  "name": "scores",
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "bangumi",
+                                      "required": true,
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "rank",
+                                          "required": true,
+                                          "format": "int64",
+                                          "type": "integer"
+                                        },
+                                        {
+                                          "name": "score",
+                                          "required": true,
+                                          "nullable": true,
+                                          "format": "double",
+                                          "type": "number"
+                                        },
+                                        {
+                                          "name": "total",
+                                          "required": true,
+                                          "format": "int64",
+                                          "type": "integer"
+                                        },
+                                        {
+                                          "name": "url",
+                                          "required": true,
+                                          "type": "string"
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "name": "eg",
+                                      "required": true,
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "median",
+                                          "required": true,
+                                          "nullable": true,
+                                          "format": "int64",
+                                          "type": "integer"
+                                        },
+                                        {
+                                          "name": "url",
+                                          "required": true,
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "vote_count",
+                                          "required": true,
+                                          "format": "int64",
+                                          "type": "integer"
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "name": "synced_at",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "vndb",
+                                      "required": true,
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "rating",
+                                          "required": true,
+                                          "nullable": true,
+                                          "format": "double",
+                                          "type": "number"
+                                        },
+                                        {
+                                          "name": "url",
+                                          "required": true,
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "vote_count",
+                                          "required": true,
+                                          "format": "int64",
+                                          "type": "integer"
+                                        }
+                                      ]
+                                    }
+                                  ]
                                 },
                                 {
                                   "name": "updated",
@@ -311,6 +438,13 @@ export const docsModel: DocsModel = {
                   "required": false,
                   "type": "string",
                   "doc": "Comma-separated heavy blocks to include: intro,scores,covers,taxonomy (default: none)"
+                },
+                {
+                  "name": "fields",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "Comma-separated top-level response keys to return (sparse fieldset); id is always included and unknown names are ignored (never a 400). Write keys in alphabetical order to maximize CDN cache hits."
                 },
                 {
                   "name": "content_limit",
@@ -853,6 +987,20 @@ export const docsModel: DocsModel = {
                   ]
                 },
                 {
+                  "name": "include",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "Comma-separated blocks to expand on each item (brief view only): officials,scores (default: none). Unknown names are ignored."
+                },
+                {
+                  "name": "fields",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "Comma-separated top-level response keys to return (sparse fieldset); id is always included and unknown names are ignored (never a 400). Write keys in alphabetical order to maximize CDN cache hits."
+                },
+                {
                   "name": "content_limit",
                   "in": "query",
                   "required": false,
@@ -962,6 +1110,26 @@ export const docsModel: DocsModel = {
                                   ]
                                 },
                                 {
+                                  "name": "officials",
+                                  "type": "array",
+                                  "itemsOf": {
+                                    "type": "object",
+                                    "children": [
+                                      {
+                                        "name": "id",
+                                        "required": true,
+                                        "format": "int64",
+                                        "type": "integer"
+                                      },
+                                      {
+                                        "name": "name",
+                                        "required": true,
+                                        "type": "string"
+                                      }
+                                    ]
+                                  }
+                                },
+                                {
                                   "name": "portrait",
                                   "required": true,
                                   "type": "object",
@@ -999,6 +1167,99 @@ export const docsModel: DocsModel = {
                                   "required": true,
                                   "nullable": true,
                                   "type": "string"
+                                },
+                                {
+                                  "name": "scores",
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "bangumi",
+                                      "required": true,
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "rank",
+                                          "required": true,
+                                          "format": "int64",
+                                          "type": "integer"
+                                        },
+                                        {
+                                          "name": "score",
+                                          "required": true,
+                                          "nullable": true,
+                                          "format": "double",
+                                          "type": "number"
+                                        },
+                                        {
+                                          "name": "total",
+                                          "required": true,
+                                          "format": "int64",
+                                          "type": "integer"
+                                        },
+                                        {
+                                          "name": "url",
+                                          "required": true,
+                                          "type": "string"
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "name": "eg",
+                                      "required": true,
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "median",
+                                          "required": true,
+                                          "nullable": true,
+                                          "format": "int64",
+                                          "type": "integer"
+                                        },
+                                        {
+                                          "name": "url",
+                                          "required": true,
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "vote_count",
+                                          "required": true,
+                                          "format": "int64",
+                                          "type": "integer"
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "name": "synced_at",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "vndb",
+                                      "required": true,
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "rating",
+                                          "required": true,
+                                          "nullable": true,
+                                          "format": "double",
+                                          "type": "number"
+                                        },
+                                        {
+                                          "name": "url",
+                                          "required": true,
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "vote_count",
+                                          "required": true,
+                                          "format": "int64",
+                                          "type": "integer"
+                                        }
+                                      ]
+                                    }
+                                  ]
                                 },
                                 {
                                   "name": "updated",
@@ -2974,6 +3235,20 @@ export const docsModel: DocsModel = {
                   "doc": "Items per page (default 24)"
                 },
                 {
+                  "name": "include",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "Comma-separated blocks to expand on each item: officials,scores (default: none). Unknown names are ignored."
+                },
+                {
+                  "name": "fields",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "Comma-separated top-level response keys to return (sparse fieldset); id is always included and unknown names are ignored (never a 400). Write keys in alphabetical order to maximize CDN cache hits."
+                },
+                {
                   "name": "age_limit",
                   "in": "query",
                   "required": false,
@@ -3140,6 +3415,26 @@ export const docsModel: DocsModel = {
                                   ]
                                 },
                                 {
+                                  "name": "officials",
+                                  "type": "array",
+                                  "itemsOf": {
+                                    "type": "object",
+                                    "children": [
+                                      {
+                                        "name": "id",
+                                        "required": true,
+                                        "format": "int64",
+                                        "type": "integer"
+                                      },
+                                      {
+                                        "name": "name",
+                                        "required": true,
+                                        "type": "string"
+                                      }
+                                    ]
+                                  }
+                                },
+                                {
                                   "name": "portrait",
                                   "required": true,
                                   "type": "object",
@@ -3177,6 +3472,99 @@ export const docsModel: DocsModel = {
                                   "required": true,
                                   "nullable": true,
                                   "type": "string"
+                                },
+                                {
+                                  "name": "scores",
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "bangumi",
+                                      "required": true,
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "rank",
+                                          "required": true,
+                                          "format": "int64",
+                                          "type": "integer"
+                                        },
+                                        {
+                                          "name": "score",
+                                          "required": true,
+                                          "nullable": true,
+                                          "format": "double",
+                                          "type": "number"
+                                        },
+                                        {
+                                          "name": "total",
+                                          "required": true,
+                                          "format": "int64",
+                                          "type": "integer"
+                                        },
+                                        {
+                                          "name": "url",
+                                          "required": true,
+                                          "type": "string"
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "name": "eg",
+                                      "required": true,
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "median",
+                                          "required": true,
+                                          "nullable": true,
+                                          "format": "int64",
+                                          "type": "integer"
+                                        },
+                                        {
+                                          "name": "url",
+                                          "required": true,
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "vote_count",
+                                          "required": true,
+                                          "format": "int64",
+                                          "type": "integer"
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "name": "synced_at",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "vndb",
+                                      "required": true,
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "rating",
+                                          "required": true,
+                                          "nullable": true,
+                                          "format": "double",
+                                          "type": "number"
+                                        },
+                                        {
+                                          "name": "url",
+                                          "required": true,
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "vote_count",
+                                          "required": true,
+                                          "format": "int64",
+                                          "type": "integer"
+                                        }
+                                      ]
+                                    }
+                                  ]
                                 },
                                 {
                                   "name": "updated",

@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"api/internal/platform/galgame/dto"
 	"api/internal/platform/galgame/model"
 
 	"gorm.io/gorm"
@@ -94,6 +95,36 @@ func (r *GalgameRepository) PublicChanges(ctx context.Context, hasCursor bool, b
 	var rows []PublicChange
 	err := q.Order("updated ASC, id ASC").Limit(limit).Scan(&rows).Error
 	return rows, err
+}
+
+// PublicOfficials returns {galgame_id → [maker {id,name}]} for a whole page of
+// ids in ONE relation→officials join — the batch loader behind the open-API
+// list/search include=officials expansion (step 07 裁定 2: never one query per
+// item). Ordered by (galgame_id, name) for a stable list. Safe for empty input.
+func (r *GalgameRepository) PublicOfficials(ctx context.Context, ids []int) (map[int][]dto.PublicOfficial, error) {
+	out := make(map[int][]dto.PublicOfficial, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	type row struct {
+		GalgameID  int
+		OfficialID int
+		Name       string
+	}
+	var rows []row
+	if err := r.db.WithContext(ctx).
+		Table("galgame_official_relation AS rel").
+		Select("rel.galgame_id AS galgame_id, o.id AS official_id, o.name AS name").
+		Joins("JOIN galgame_official AS o ON o.id = rel.official_id").
+		Where("rel.galgame_id IN ?", ids).
+		Order("rel.galgame_id, o.name").
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, rw := range rows {
+		out[rw.GalgameID] = append(out[rw.GalgameID], dto.PublicOfficial{ID: rw.OfficialID, Name: rw.Name})
+	}
+	return out, nil
 }
 
 // PublicPinnedImage is a pinned cover/portrait row carrying the per-image content

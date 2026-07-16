@@ -108,9 +108,12 @@ type PublicGalgame struct {
 }
 
 // PublicGalgameItem is the thin list / batch / search item — a fixed subset of
-// the aggregate record (design D1). It never carries include-gated blocks; a
-// consumer that needs the full record fetches /v1/galgame/{id} (or batch
-// ?view=detail).
+// the aggregate record (design D1). The seven scalar/image keys are the frozen
+// thin shape; Officials / Scores are the OPTIONAL list-level include expansions
+// (step 07, add-only). Both are omitted entirely unless the caller asked for
+// them via include=officials / include=scores, so the default thin item is
+// byte-for-byte the frozen contract. A consumer that needs the full record still
+// fetches /v1/galgame/{id} (or batch ?view=detail).
 type PublicGalgameItem struct {
 	ID          int          `json:"id"`
 	Names       PublicNames  `json:"names"`
@@ -119,6 +122,14 @@ type PublicGalgameItem struct {
 	Portrait    *PublicImage `json:"portrait"`
 	Banner      *PublicImage `json:"banner"`
 	Updated     string       `json:"updated"`
+	// Officials is present (a possibly-empty array) only under include=officials;
+	// the pointer distinguishes "not requested" (nil → key absent) from
+	// "requested, none" ([] → key present). Same {id,name} shape as the detail
+	// taxonomy block (05 frozen).
+	Officials *[]PublicOfficial `json:"officials,omitempty"`
+	// Scores is present only under include=scores — the same GalgameScores shape
+	// (per-source values + attribution url) the detail scores block carries.
+	Scores *GalgameScores `json:"scores,omitempty"`
 }
 
 // PublicListData is the cursor-paginated list envelope (GET /v1/galgame).

@@ -284,7 +284,7 @@ func TestPublicListCursorTwoPages(t *testing.T) {
 	}
 	ctx := context.Background()
 
-	page1, err := testSvc.PublicList(ctx, "id", "", 2, "sfw")
+	page1, err := testSvc.PublicList(ctx, "id", "", 2, "sfw", PublicItemInclude{})
 	if err != nil {
 		t.Fatalf("page1: %v", err)
 	}
@@ -295,7 +295,7 @@ func TestPublicListCursorTwoPages(t *testing.T) {
 		t.Fatalf("page1 next_cursor must be set")
 	}
 
-	page2, err := testSvc.PublicList(ctx, "id", *page1.NextCursor, 2, "sfw")
+	page2, err := testSvc.PublicList(ctx, "id", *page1.NextCursor, 2, "sfw", PublicItemInclude{})
 	if err != nil {
 		t.Fatalf("page2: %v", err)
 	}
@@ -303,7 +303,7 @@ func TestPublicListCursorTwoPages(t *testing.T) {
 		t.Fatalf("page2 ids = %v (want [3 4])", ids)
 	}
 
-	page3, err := testSvc.PublicList(ctx, "id", *page2.NextCursor, 2, "sfw")
+	page3, err := testSvc.PublicList(ctx, "id", *page2.NextCursor, 2, "sfw", PublicItemInclude{})
 	if err != nil {
 		t.Fatalf("page3: %v", err)
 	}
@@ -365,7 +365,7 @@ func TestPublicNSFWHiddenAndDetail404(t *testing.T) {
 	insertPublicGalgame(t, 2, "nsfw-game", "nsfw", now)
 	ctx := context.Background()
 
-	list, err := testSvc.PublicList(ctx, "id", "", 20, "sfw")
+	list, err := testSvc.PublicList(ctx, "id", "", 20, "sfw", PublicItemInclude{})
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}

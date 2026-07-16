@@ -46,16 +46,37 @@ const (
 	cacheChanges = "public, max-age=0, s-maxage=30, stale-while-revalidate=30"
 )
 
+// applyItemFields projects each item of a page to the sparse fieldset (fields=)
+// when active, returning a []any of trimmed maps; when inactive it returns the
+// typed slice UNCHANGED so the caller's default envelope is byte-identical. The
+// caller wraps the result in its endpoint's envelope (items + next_cursor/total).
+func applyItemFields[T any](items []T, f service.PublicFields) any {
+	if !f.Active() {
+		return items
+	}
+	out := make([]any, len(items))
+	for i := range items {
+		out[i] = service.ApplyPublicFields(items[i], f)
+	}
+	return out
+}
+
 // List serves GET /v1/galgame — a keyset (cursor) page of thin aggregate items.
 // sort = id (default) | release_date; cursor/limit are opaque + clamped in the
-// service. No offset (design §8).
+// service. No offset (design §8). include=officials,scores expands each item;
+// fields= trims the returned keys (step 07, both optional + additive).
 func (h *PublicHandler) List(c fiber.Ctx) error {
-	data, err := h.svc.PublicList(c.Context(), c.Query("sort"), c.Query("cursor"), atoiOr(c.Query("limit"), 0), h.contentLimit(c))
+	inc := service.ParsePublicItemInclude(c.Query("include"))
+	data, err := h.svc.PublicList(c.Context(), c.Query("sort"), c.Query("cursor"), atoiOr(c.Query("limit"), 0), h.contentLimit(c), inc)
 	if err != nil {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
 	c.Set("Cache-Control", cacheList)
-	return response.Success(c, data)
+	f := service.ParsePublicFields(c.Query("fields"))
+	if !f.Active() {
+		return response.Success(c, data) // byte-identical default
+	}
+	return response.Success(c, fiber.Map{"items": applyItemFields(data.Items, f), "next_cursor": data.NextCursor})
 }
 
 // Detail serves GET /v1/galgame/{id} — the full aggregate record. include gates
@@ -79,7 +100,10 @@ func (h *PublicHandler) Detail(c fiber.Ctx) error {
 	if c.Get("If-None-Match") == etag {
 		return c.SendStatus(fiber.StatusNotModified)
 	}
-	return response.Success(c, rec)
+	// fields= trims top-level keys before serialization; inactive → rec unchanged
+	// (the ETag folds id+updated only, same as include — the full URL is the
+	// cache key, so different field selections never collide, mirroring step 02).
+	return response.Success(c, service.ApplyPublicFields(rec, service.ParsePublicFields(c.Query("fields"))))
 }
 
 // Batch serves GET /v1/galgame/batch?ids=1,2,3 — thin items by default,
@@ -94,11 +118,14 @@ func (h *PublicHandler) Batch(c fiber.Ctx) error {
 		ids = ids[:100]
 	}
 	cl := h.contentLimit(c)
+	f := service.ParsePublicFields(c.Query("fields"))
 
-	var body any
+	var itemsBody any
 	var maxUpdated string
 	var count int
 	if c.Query("view") == "detail" {
+		// view=detail is full aggregate records (no list-level include); fields=
+		// still trims them.
 		recs, err := h.svc.PublicBatchDetail(c.Context(), ids, cl)
 		if err != nil {
 			return response.InternalError(c, errors.ErrOperationFailed)
@@ -109,9 +136,9 @@ func (h *PublicHandler) Batch(c fiber.Ctx) error {
 			}
 		}
 		count = len(recs)
-		body = fiber.Map{"items": recs}
+		itemsBody = applyItemFields(recs, f)
 	} else {
-		items, err := h.svc.PublicBatchThin(c.Context(), ids, cl)
+		items, err := h.svc.PublicBatchThin(c.Context(), ids, cl, service.ParsePublicItemInclude(c.Query("include")))
 		if err != nil {
 			return response.InternalError(c, errors.ErrOperationFailed)
 		}
@@ -121,7 +148,7 @@ func (h *PublicHandler) Batch(c fiber.Ctx) error {
 			}
 		}
 		count = len(items)
-		body = fiber.Map{"items": items}
+		itemsBody = applyItemFields(items, f)
 	}
 
 	// RFC3339 UTC strings sort lexicographically = chronologically, so the max
@@ -132,7 +159,7 @@ func (h *PublicHandler) Batch(c fiber.Ctx) error {
 	if c.Get("If-None-Match") == etag {
 		return c.SendStatus(fiber.StatusNotModified)
 	}
-	return response.Success(c, body)
+	return response.Success(c, fiber.Map{"items": itemsBody})
 }
 
 // Search serves GET /v1/galgame/search — Meilisearch relevance over published +
@@ -183,12 +210,16 @@ func (h *PublicHandler) Search(c fiber.Ctx) error {
 	}
 
 	ids := hitIDs(resp.Items)
-	items, err := h.svc.PublicBatchThin(c.Context(), ids, req.ContentLimit)
+	items, err := h.svc.PublicBatchThin(c.Context(), ids, req.ContentLimit, service.ParsePublicItemInclude(c.Query("include")))
 	if err != nil {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
 	c.Set("Cache-Control", cacheList)
-	return response.Success(c, dto.PublicSearchData{Items: items, Total: resp.Total})
+	f := service.ParsePublicFields(c.Query("fields"))
+	if !f.Active() {
+		return response.Success(c, dto.PublicSearchData{Items: items, Total: resp.Total}) // byte-identical default
+	}
+	return response.Success(c, fiber.Map{"items": applyItemFields(items, f), "total": resp.Total})
 }
 
 // Changes serves GET /v1/galgame/changes — the incremental-sync keyset stream of

@@ -896,12 +896,18 @@ components:
           type: integer
         names:
           $ref: "#/components/schemas/PublicNames"
+        officials:
+          items:
+            $ref: "#/components/schemas/PublicOfficial"
+          type: array
         portrait:
           $ref: "#/components/schemas/PublicImage"
         release_date:
           type:
             - string
             - "null"
+        scores:
+          $ref: "#/components/schemas/GalgameScores"
         updated:
           type: string
       required:
@@ -1169,6 +1175,20 @@ paths:
             description: Items per page 1-100 (default 20)
             format: int64
             type: integer
+        - description: "Comma-separated blocks to expand on each item: officials,scores (default: none). Unknown names are ignored."
+          explode: false
+          in: query
+          name: include
+          schema:
+            description: "Comma-separated blocks to expand on each item: officials,scores (default: none). Unknown names are ignored."
+            type: string
+        - description: Comma-separated top-level response keys to return (sparse fieldset); id is always included and unknown names are ignored (never a 400). Write keys in alphabetical order to maximize CDN cache hits.
+          explode: false
+          in: query
+          name: fields
+          schema:
+            description: Comma-separated top-level response keys to return (sparse fieldset); id is always included and unknown names are ignored (never a 400). Write keys in alphabetical order to maximize CDN cache hits.
+            type: string
         - description: Reserved; Phase 1 is always sfw
           explode: false
           in: query
@@ -1212,6 +1232,20 @@ paths:
             enum:
               - brief
               - detail
+            type: string
+        - description: "Comma-separated blocks to expand on each item (brief view only): officials,scores (default: none). Unknown names are ignored."
+          explode: false
+          in: query
+          name: include
+          schema:
+            description: "Comma-separated blocks to expand on each item (brief view only): officials,scores (default: none). Unknown names are ignored."
+            type: string
+        - description: Comma-separated top-level response keys to return (sparse fieldset); id is always included and unknown names are ignored (never a 400). Write keys in alphabetical order to maximize CDN cache hits.
+          explode: false
+          in: query
+          name: fields
+          schema:
+            description: Comma-separated top-level response keys to return (sparse fieldset); id is always included and unknown names are ignored (never a 400). Write keys in alphabetical order to maximize CDN cache hits.
             type: string
         - description: Reserved; Phase 1 is always sfw
           explode: false
@@ -1472,6 +1506,20 @@ paths:
             description: Items per page (default 24)
             format: int64
             type: integer
+        - description: "Comma-separated blocks to expand on each item: officials,scores (default: none). Unknown names are ignored."
+          explode: false
+          in: query
+          name: include
+          schema:
+            description: "Comma-separated blocks to expand on each item: officials,scores (default: none). Unknown names are ignored."
+            type: string
+        - description: Comma-separated top-level response keys to return (sparse fieldset); id is always included and unknown names are ignored (never a 400). Write keys in alphabetical order to maximize CDN cache hits.
+          explode: false
+          in: query
+          name: fields
+          schema:
+            description: Comma-separated top-level response keys to return (sparse fieldset); id is always included and unknown names are ignored (never a 400). Write keys in alphabetical order to maximize CDN cache hits.
+            type: string
         - description: all | r18
           explode: false
           in: query
@@ -1635,6 +1683,13 @@ paths:
           name: include
           schema:
             description: "Comma-separated heavy blocks to include: intro,scores,covers,taxonomy (default: none)"
+            type: string
+        - description: Comma-separated top-level response keys to return (sparse fieldset); id is always included and unknown names are ignored (never a 400). Write keys in alphabetical order to maximize CDN cache hits.
+          explode: false
+          in: query
+          name: fields
+          schema:
+            description: Comma-separated top-level response keys to return (sparse fieldset); id is always included and unknown names are ignored (never a 400). Write keys in alphabetical order to maximize CDN cache hits.
             type: string
         - description: Reserved; Phase 1 is always sfw
           explode: false

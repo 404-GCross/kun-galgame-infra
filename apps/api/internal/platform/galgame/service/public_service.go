@@ -170,7 +170,7 @@ func (s *GalgameService) detailImages(g *model.Galgame, withCovers, dropNSFW boo
 // PublicList returns a keyset-paginated page of thin items. sort is "id"
 // (default, id ASC) or "release_date" (release_date DESC NULLS LAST, id DESC).
 // An invalid/mismatched cursor is treated as the first page.
-func (s *GalgameService) PublicList(ctx context.Context, sort, cursor string, limit int, contentLimit string) (dto.PublicListData, error) {
+func (s *GalgameService) PublicList(ctx context.Context, sort, cursor string, limit int, contentLimit string, inc PublicItemInclude) (dto.PublicListData, error) {
 	limit = publicClampLimit(limit, 20, 100)
 	fetch := limit + 1 // one extra row probes "is there a next page?"
 
@@ -200,18 +200,19 @@ func (s *GalgameService) PublicList(ctx context.Context, sort, cursor string, li
 		next = &nc
 	}
 
-	items := s.thinItems(ctx, rows, contentLimit)
+	items := s.thinItems(ctx, rows, contentLimit, inc)
 	return dto.PublicListData{Items: items, NextCursor: next}, nil
 }
 
 // PublicBatchThin returns thin items for the given ids (published + gated),
-// preserving the caller's id order (the search / favorites use case).
-func (s *GalgameService) PublicBatchThin(ctx context.Context, ids []int, contentLimit string) ([]dto.PublicGalgameItem, error) {
+// preserving the caller's id order (the search / favorites use case). inc drives
+// the optional officials/scores expansion (batched over the whole set).
+func (s *GalgameService) PublicBatchThin(ctx context.Context, ids []int, contentLimit string, inc PublicItemInclude) ([]dto.PublicGalgameItem, error) {
 	rows, err := s.galgameRepo.FindByIDs(ctx, ids, contentLimit)
 	if err != nil {
 		return nil, err
 	}
-	items := s.thinItems(ctx, rows, contentLimit)
+	items := s.thinItems(ctx, rows, contentLimit, inc)
 	return orderItemsByIDs(items, ids), nil
 }
 
@@ -261,8 +262,10 @@ func (s *GalgameService) PublicChanges(ctx context.Context, cursor string, limit
 }
 
 // thinItems maps galgame rows to thin public items, filling the banner/portrait
-// pins (dims-enriched) and dropping NSFW-rated pins on the sfw face.
-func (s *GalgameService) thinItems(ctx context.Context, rows []model.Galgame, contentLimit string) []dto.PublicGalgameItem {
+// pins (dims-enriched) and dropping NSFW-rated pins on the sfw face. When inc
+// requests officials/scores (step 07 list-level include), each block is loaded
+// with ONE batched query across the whole page (裁定 2: no per-item queries).
+func (s *GalgameService) thinItems(ctx context.Context, rows []model.Galgame, contentLimit string, inc PublicItemInclude) []dto.PublicGalgameItem {
 	if len(rows) == 0 {
 		return []dto.PublicGalgameItem{}
 	}
@@ -274,6 +277,17 @@ func (s *GalgameService) thinItems(ctx context.Context, rows []model.Galgame, co
 	}
 	covers, _ := s.galgameRepo.PublicPinnedCovers(ctx, ids)
 	portraits, _ := s.galgameRepo.PublicPinnedPortraits(ctx, ids)
+
+	// Batched include expansions: one query per requested block for the entire
+	// page (a full-page IN, never N+1). Skipped when the block is not requested.
+	var officialsByID map[int][]dto.PublicOfficial
+	var scoresByID map[int]repository.ScoreMeta
+	if inc.Officials {
+		officialsByID, _ = s.galgameRepo.PublicOfficials(ctx, ids)
+	}
+	if inc.Scores {
+		scoresByID, _ = s.galgameRepo.LoadScoreMetaBatch(ctx, ids)
+	}
 
 	usable := func(m map[int]repository.PublicPinnedImage, id int) (string, bool) {
 		p, ok := m[id]
@@ -310,6 +324,21 @@ func (s *GalgameService) thinItems(ctx context.Context, rows []model.Galgame, co
 		}
 		if h, ok := usable(portraits, g.ID); ok {
 			item.Portrait = s.publicImage(h, metas[h], "")
+		}
+		if inc.Officials {
+			// Present (possibly empty) whenever requested, so the key never
+			// vanishes on a maker-less game — nil map entry → [].
+			offs := officialsByID[g.ID]
+			if offs == nil {
+				offs = []dto.PublicOfficial{}
+			}
+			item.Officials = &offs
+		}
+		if inc.Scores {
+			// Zero-value ScoreMeta (no anchored source) → all-null scores block,
+			// same shape as GET /galgame/:gid/scores for an unanchored game.
+			sc := buildGalgameScores(scoresByID[g.ID])
+			item.Scores = &sc
 		}
 		items[i] = item
 	}
