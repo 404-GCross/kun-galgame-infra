@@ -13,7 +13,7 @@ package model
 //	            WHERE galgame_id = ? AND sort_order = 0
 //
 // A partial unique index `idx_galgame_cover_pinned`
-// (galgame_id) WHERE sort_order = 0 — created by migrate-galgame —
+// (galgame_id) WHERE sort_order = 0 — created by migrate-catalog —
 // enforces "at most one pinned cover per galgame". Admins re-pinning
 // must demote the old (sort_order=0 → 1) before promoting the new
 // (sort_order=N → 0), inside the same transaction.
@@ -38,7 +38,7 @@ type GalgameCover struct {
 	// the second, vertical pin that runs ALONGSIDE the landscape sort_order=0 pin
 	// (the portrait-first UI toggles between them). A partial unique index
 	// `idx_galgame_cover_portrait_pinned` (galgame_id) WHERE portrait_pinned —
-	// created by migrate-galgame — enforces "at most one pinned portrait per
+	// created by migrate-catalog — enforces "at most one pinned portrait per
 	// galgame". Independent of sort_order (a portrait pin never touches
 	// sort_order, so the landscape pin is untouched).
 	//

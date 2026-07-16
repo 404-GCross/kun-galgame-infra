@@ -6,27 +6,15 @@ import (
 
 	"api/internal/infrastructure/database"
 	"api/internal/platform/galgame/model"
-	"api/pkg/config"
-	"api/pkg/logger"
 )
 
-func main() {
-	cfg, err := config.Load()
-	if err != nil {
-		slog.Error("failed to load config", "error", err)
-		os.Exit(1)
-	}
-
-	logger.Init(cfg.Server.Env)
-	slog.Info("connecting to galgame wiki database", "dbname", cfg.GalgameDatabase.DBName)
-
-	db, err := database.NewPostgresDB(cfg.GalgameDatabase)
-	if err != nil {
-		slog.Error("failed to connect to database", "error", err)
-		os.Exit(1)
-	}
-	defer db.Close()
-
+// migrateGalgame applies the galgame (wiki-family) schema. This is the FULL
+// migration body of the retired cmd/migrate-galgame (wiki-retirement W5,
+// charter ruling 6 — single migration entry point), preserved verbatim:
+// AutoMigrate + the guarded raw-SQL section below are idempotent, so the
+// per-deploy re-run is a fast no-op. Failure style matches the rest of this
+// binary: log + os.Exit(1) (a migration must never half-succeed silently).
+func migrateGalgame(db *database.PostgresDB) {
 	slog.Info("running galgame wiki migrations...")
 
 	if err := db.AutoMigrate(
@@ -219,7 +207,7 @@ func main() {
 	//     resource_update_time DESC" as an index-ordered scan → no disk sort.
 	//
 	// IF NOT EXISTS = idempotent. CONCURRENTLY is intentionally NOT used here:
-	// migrate-galgame is a one-off job (not against live traffic), so a brief lock
+	// migrate-catalog is a one-off job (not against live traffic), so a brief lock
 	// on these small tables is fine. On an already-live DB, add them manually with
 	// CREATE INDEX CONCURRENTLY to avoid locking.
 	for _, stmt := range []string{

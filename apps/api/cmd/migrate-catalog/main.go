@@ -1,3 +1,19 @@
+// cmd/migrate-catalog — the SINGLE migration entry point for the content hub
+// (wiki-retirement W5, charter ruling 6). It migrates TWO model families over
+// two independent connection pools:
+//
+//   - galgame (wiki-family) models → cfg.GalgameDatabase (KUN_GALGAME_PG_DATABASE)
+//   - catalog models + seeds       → cfg.CatalogDatabase (KUN_CATALOG_PG_DATABASE)
+//
+// In production both env vars point at kun_catalog (one database, two disjoint
+// table families — W1 verified zero collision); in local dev they stay split
+// (kun_galgame_wiki / kun_catalog). Both postures are correct by construction
+// because each family only ever touches its own pool.
+//
+// Order: galgame first, catalog second. The families share no DDL objects, so
+// the order is convention, not dependency — galgame-first keeps the catalog
+// registry seeds as the very last step, exactly like the pre-W5 flow where
+// the retired cmd/migrate-galgame and this binary ran independently.
 package main
 
 import (
@@ -19,8 +35,21 @@ func main() {
 	}
 
 	logger.Init(cfg.Server.Env)
-	slog.Info("connecting to catalog database", "dbname", cfg.CatalogDatabase.DBName)
 
+	// ── pool 1: galgame (wiki-family) schema ────────────────────────────────
+	slog.Info("connecting to galgame content database", "dbname", cfg.GalgameDatabase.DBName)
+	galgameDB, err := database.NewPostgresDB(cfg.GalgameDatabase)
+	if err != nil {
+		slog.Error("failed to connect to galgame content database", "error", err)
+		os.Exit(1)
+	}
+	migrateGalgame(galgameDB) // exits the process on failure
+	if err := galgameDB.Close(); err != nil {
+		slog.Error("failed to close galgame content database", "error", err)
+	}
+
+	// ── pool 2: catalog schema + registry seeds ─────────────────────────────
+	slog.Info("connecting to catalog database", "dbname", cfg.CatalogDatabase.DBName)
 	db, err := database.NewPostgresDB(cfg.CatalogDatabase)
 	if err != nil {
 		slog.Error("failed to connect to database", "error", err)

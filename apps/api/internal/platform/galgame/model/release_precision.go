@@ -23,7 +23,7 @@ const (
 )
 
 // ReleasePrecisionValues is the closed set of valid values, mirrored by the
-// chk_galgame_release_precision CHECK constraint in cmd/migrate-galgame.
+// chk_galgame_release_precision CHECK constraint in cmd/migrate-catalog.
 var ReleasePrecisionValues = []ReleasePrecision{
 	PrecisionDay, PrecisionMonth, PrecisionYear, PrecisionTBA, PrecisionUnknown,
 }

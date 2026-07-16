@@ -5,11 +5,11 @@ type Galgame struct {
 	ID int `gorm:"primaryKey;autoIncrement" json:"id"`
 	// vndb_id is optional — user-submitted originals (no VNDB entry) may
 	// leave this empty. Uniqueness is enforced by a partial unique index
-	// created in migrate-galgame: UNIQUE on vndb_id WHERE vndb_id <> ''.
+	// created in migrate-catalog: UNIQUE on vndb_id WHERE vndb_id <> ''.
 	// (GORM AutoMigrate cannot express partial unique, so raw SQL.)
 	//
 	// Format is constrained at the DB level (chk_galgame_vndb_id_format in
-	// migrate-galgame): vndb_id must be '' or a canonical VNDB visual-novel
+	// migrate-catalog): vndb_id must be '' or a canonical VNDB visual-novel
 	// id (`^v[0-9]+$`). This is the path-independent backstop behind the
 	// service-layer vndbIDRegex check — a *release* id (`r123`) or a
 	// slash-prefixed id (`/v123`) is a different value to the exact-match

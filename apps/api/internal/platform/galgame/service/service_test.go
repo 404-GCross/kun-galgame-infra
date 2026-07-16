@@ -55,14 +55,14 @@ func TestMain(m *testing.M) {
 		&model.GalgameContributor{},
 		&model.GalgameMessage{},
 		// Legacy table, still wiped by DeleteDraft — test DB must mirror the
-		// production schema (migrate-galgame) or DeleteDraft 42P01s.
+		// production schema (migrate-catalog) or DeleteDraft 42P01s.
 		&model.GalgameHistory{},
 	); err != nil {
 		fmt.Fprintf(os.Stderr, "SKIP: migration failed: %v\n", err)
 		os.Exit(0)
 	}
 
-	// Replicate the partial unique indexes that migrate-galgame creates in
+	// Replicate the partial unique indexes that migrate-catalog creates in
 	// production:
 	//   - uq_galgame_vndb_id_nonempty: vndb_id unique only when non-empty
 	//     (multiple status=3 submissions can share vndb_id='').

@@ -39,7 +39,7 @@ type GalgameRevision struct {
 	// Full action set produced by the galgame services. NOTE: GORM's
 	// AutoMigrate only CREATES this CHECK on a fresh table — it never
 	// ALTERs an existing one. When you add an action here you MUST also
-	// bump the explicit DROP/ADD in cmd/migrate-galgame/main.go, or
+	// bump the explicit DROP/ADD in cmd/migrate-catalog/galgame.go, or
 	// existing wiki DBs keep the stale constraint and INSERTs 23514.
 	// created/updated/merged/reverted/declined: revision_service,
 	// galgame_service. claimed/edited_pending: submission_service.

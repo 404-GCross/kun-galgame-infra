@@ -2,11 +2,12 @@
 # Emits a sorted, stable fingerprint of every DDL object in a DB's public schema
 # (tables, indexes, sequences, constraints). Diffing the fingerprint before/after
 # an operation shows exactly which objects it created/dropped/changed — the proof
-# for 章程裁定 6 (migrate-galgame and migrate-catalog coexist in one DB and never
-# touch each other's tables). Filter by prefix to isolate a family, e.g.:
+# for 章程裁定 6 (the galgame and catalog migration bodies coexist in one DB and
+# never touch each other's tables — both live inside cmd/migrate-catalog since
+# W5). Filter by prefix to isolate a family, e.g.:
 #
 #   scripts/wiki-retirement/object-fingerprint.sh kun_catalog_w1 | grep -E ' (catalog|src)_' > before.catalog
-#   ... run migrate-galgame against kun_catalog_w1 ...
+#   ... run the galgame migration body against kun_catalog_w1 ...
 #   scripts/wiki-retirement/object-fingerprint.sh kun_catalog_w1 | grep -E ' (catalog|src)_' > after.catalog
 #   diff before.catalog after.catalog   # must be empty
 set -euo pipefail

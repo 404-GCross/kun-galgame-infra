@@ -117,7 +117,7 @@ func TestRefping_IncludesCurrentCoverAndScreenshotHashes(t *testing.T) {
 	db := openTestDB(t)
 	ctx := context.Background()
 
-	// Production migrate-galgame creates the pinned-cover partial unique
+	// Production migrate-catalog creates the pinned-cover partial unique
 	// index; replicate it so the test environment matches.
 	require.NoError(t, db.Exec(`
 		CREATE UNIQUE INDEX IF NOT EXISTS idx_galgame_cover_pinned
