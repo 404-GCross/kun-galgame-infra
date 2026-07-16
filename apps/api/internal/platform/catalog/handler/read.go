@@ -54,8 +54,12 @@ func (s *S2SServer) registerRead(api huma.API) {
 	}, s.nameWorks)
 	huma.Register(api, huma.Operation{
 		OperationID: "getCatalogCharacterWorks", Method: http.MethodGet, Path: "/api/v1/catalog/characters/{id}/works",
-		Summary: "Works a character appears in with its voice names (character→works reverse)", Tags: tags,
+		Summary: "Works a character appears in (roster edges ∪ voice credits) with kind + voice names", Tags: tags,
 	}, s.characterWorks)
+	huma.Register(api, huma.Operation{
+		OperationID: "getCatalogCharacterByID", Method: http.MethodGet, Path: "/api/v1/catalog/characters/{id}",
+		Summary: "Read a character's identity + aliases by catalog id", Tags: tags,
+	}, s.characterByID)
 }
 
 // ---- by-anchor ----
@@ -109,10 +113,11 @@ func buildWorkResponse(detail *service.WorkDetail) dto.WorkByAnchorResponse {
 		// Pre-size to non-nil so an empty (bare / freshly-minted) work serializes
 		// `[]` rather than `null` — a consumer that does `titles.length` on the
 		// projection must never see a null slice (docs/proj/16 #3).
-		Titles:   make([]dto.WorkTitle, 0, len(detail.Titles)),
-		Releases: make([]dto.ReleaseBrief, 0, len(detail.Releases)),
-		Labels:   make([]dto.WorkLabel, 0, len(detail.Labels)),
-		Refs:     make([]dto.WorkRef, 0, len(detail.Refs)),
+		Titles:     make([]dto.WorkTitle, 0, len(detail.Titles)),
+		Releases:   make([]dto.ReleaseBrief, 0, len(detail.Releases)),
+		Labels:     make([]dto.WorkLabel, 0, len(detail.Labels)),
+		Refs:       make([]dto.WorkRef, 0, len(detail.Refs)),
+		Characters: make([]dto.WorkCharacter, 0, len(detail.Characters)),
 	}
 	if detail.Work.Site != nil {
 		resp.Work.Site = *detail.Work.Site
@@ -146,6 +151,19 @@ func buildWorkResponse(detail *service.WorkDetail) dto.WorkByAnchorResponse {
 			wr.Level, wr.ReleaseID = "release", rf.ReleaseID
 		}
 		resp.Refs = append(resp.Refs, wr)
+	}
+	for _, c := range detail.Characters {
+		wc := dto.WorkCharacter{
+			CharacterID: c.CharacterID, DisplayName: c.DisplayName, Latin: derefStr(c.Latin),
+			Gender: derefI16(c.Gender), Kind: c.Kind, ImageHash: derefStr(c.ImageHash),
+			// va pre-sized non-nil so a roster-only character (no VA) serializes
+			// `[]`, not `null` (docs/proj/16 #3).
+			Va: make([]dto.WorkCharacterVA, 0, len(c.Va)),
+		}
+		for _, v := range c.Va {
+			wc.Va = append(wc.Va, dto.WorkCharacterVA{CreditNameID: v.CreditNameID, Name: v.Name})
+		}
+		resp.Characters = append(resp.Characters, wc)
 	}
 	return resp
 }
@@ -443,7 +461,10 @@ func (s *S2SServer) characterWorks(ctx context.Context, in *characterWorksInput)
 		Total: res.Total,
 	}
 	for _, w := range res.Works {
-		row := dto.CharacterWorkRow{Work: workBriefDTO(w.Brief), Voices: make([]dto.VoiceName, 0, len(w.Voices))}
+		row := dto.CharacterWorkRow{
+			Work: workBriefDTO(w.Brief), Kind: w.Kind, Voiced: w.Voiced,
+			Voices: make([]dto.VoiceName, 0, len(w.Voices)),
+		}
 		for _, v := range w.Voices {
 			row.Voices = append(row.Voices, dto.VoiceName{
 				CreditNameID: v.CreditNameID, Name: v.Name, Lang: v.Lang, Latin: derefStr(v.Latin),
@@ -452,6 +473,43 @@ func (s *S2SServer) characterWorks(ctx context.Context, in *characterWorksInput)
 		resp.Items = append(resp.Items, row)
 	}
 	return &characterWorksOutput{Body: okEnvelope(resp)}, nil
+}
+
+// ---- character by id (entity detail: identity + aliases) ----
+
+type characterByIDInput struct {
+	ID int64 `path:"id" doc:"Catalog character id"`
+}
+
+type characterByIDOutput struct {
+	Body Envelope[dto.CharacterDetailResponse]
+}
+
+func (s *S2SServer) characterByID(ctx context.Context, in *characterByIDInput) (*characterByIDOutput, error) {
+	detail, err := s.read.CharacterByID(ctx, in.ID)
+	if err != nil {
+		return nil, apiErr(http.StatusInternalServerError, errors.ErrInternalServer)
+	}
+	// 404 on a missing id, aligning with labels/{id} and the entity reverse
+	// reads (step 20, 85f7f08); a nil detail is the sole miss signal.
+	if detail == nil {
+		return nil, apiErr(http.StatusNotFound, errors.ErrNotFound)
+	}
+	resp := dto.CharacterDetailResponse{
+		ID: detail.ID, DisplayName: detail.DisplayName, Latin: derefStr(detail.Latin),
+		Lang: detail.Lang, Gender: derefI16(detail.Gender), Description: detail.Description,
+		InstanceOf: derefI64(detail.InstanceOf), ImageHash: derefStr(detail.ImageHash),
+		// Aliases pre-sized non-nil so a character with no aliases serializes
+		// `[]`, not `null` (docs/proj/16 #3).
+		Aliases: make([]dto.CharacterAlias, 0, len(detail.Aliases)),
+	}
+	for _, a := range detail.Aliases {
+		resp.Aliases = append(resp.Aliases, dto.CharacterAlias{
+			ID: a.ID, Name: a.Name, Latin: derefStr(a.Latin), Lang: a.Lang,
+			Kind: a.Kind, IsPrimaryForLocale: a.IsPrimaryForLocale,
+		})
+	}
+	return &characterByIDOutput{Body: okEnvelope(resp)}, nil
 }
 
 // --- small helpers ---
@@ -497,6 +555,13 @@ func derefStr(p *string) string {
 }
 
 func derefI16(p *int16) int16 {
+	if p == nil {
+		return 0
+	}
+	return *p
+}
+
+func derefI64(p *int64) int64 {
 	if p == nil {
 		return 0
 	}

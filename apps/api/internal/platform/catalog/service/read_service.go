@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	stderrors "errors"
+	"sort"
 	"strings"
 
 	"api/internal/platform/catalog/model"
@@ -33,6 +34,28 @@ type WorkDetail struct {
 	// Refs is the flat exact-only external-ref projection (work- and
 	// release-level in one list) — the cross-source identity chain.
 	Refs []RefDetail
+	// Characters is the merged roster (step 46): roster edges UNIONed with
+	// voice-credited characters. Loaded by loadWorkDetail so the by-anchor /
+	// by-id read-through bundles it.
+	Characters []WorkCharacterRow
+}
+
+// WorkCharacterRow is one character on a work's roster, merging the roster edge
+// (kind) with the voice credits that name it (va).
+type WorkCharacterRow struct {
+	CharacterID int64
+	DisplayName string
+	Latin       *string
+	Gender      *int16
+	Kind        int16
+	ImageHash   *string
+	Va          []WorkCharacterVARow
+}
+
+// WorkCharacterVARow is one credited name that voiced a character on a work.
+type WorkCharacterVARow struct {
+	CreditNameID int64
+	Name         string
 }
 
 // RefDetail is one exact external anchor of a work, with its level. ReleaseID
@@ -194,7 +217,117 @@ func (s *ReadService) loadWorkDetail(ctx context.Context, workID int64) (*WorkDe
 			}
 		}
 	}
+
+	chars, err := s.loadWorkCharacters(ctx, workID)
+	if err != nil {
+		return nil, err
+	}
+	detail.Characters = chars
 	return detail, nil
+}
+
+// loadWorkCharacters assembles a work's roster (step 46) as the UNION of the
+// roster edge table (catalog_work_character, which carries the appearance kind)
+// and the voice credits (catalog_credit.character_id, which carry the voicing
+// name). A character with a roster edge takes its kind from the edge; a
+// credit-only character (voiced but with no edge — e.g. VNDB-only VA credits)
+// still surfaces with kind=0 (unknown appearance strength). The two tables are
+// deliberately independent (step 45): this read is the one place they merge.
+// Only the credit NAME is exposed per va entry — no person expansion (the
+// link-visibility doctrine gates person aggregation, never the nominal).
+func (s *ReadService) loadWorkCharacters(ctx context.Context, workID int64) ([]WorkCharacterRow, error) {
+	db := s.db.WithContext(ctx)
+
+	// Roster edges: the appearance fact + its kind.
+	var edges []struct {
+		CharacterID int64   `gorm:"column:character_id"`
+		DisplayName string  `gorm:"column:display_name"`
+		Latin       *string `gorm:"column:latin"`
+		Gender      *int16  `gorm:"column:gender"`
+		ImageHash   *string `gorm:"column:image_hash"`
+		Kind        int16   `gorm:"column:kind"`
+	}
+	if err := db.Raw(`SELECT wc.character_id, ch.display_name, ch.latin, ch.gender, ch.image_hash, wc.kind
+		FROM catalog_work_character wc JOIN catalog_character ch ON ch.id = wc.character_id
+		WHERE wc.work_id = ? AND ch.deleted_at IS NULL`, workID).Scan(&edges).Error; err != nil {
+		return nil, err
+	}
+
+	// Voice credits: who voiced whom. DISTINCT collapses per-release duplicate
+	// credit rows to one (name, character) pair.
+	var creds []struct {
+		CharacterID  int64   `gorm:"column:character_id"`
+		DisplayName  string  `gorm:"column:display_name"`
+		Latin        *string `gorm:"column:latin"`
+		Gender       *int16  `gorm:"column:gender"`
+		ImageHash    *string `gorm:"column:image_hash"`
+		CreditNameID int64   `gorm:"column:credit_name_id"`
+		Name         string  `gorm:"column:name"`
+	}
+	if err := db.Raw(`SELECT DISTINCT c.character_id, ch.display_name, ch.latin, ch.gender, ch.image_hash,
+		cn.id AS credit_name_id, cn.name
+		FROM catalog_credit c
+		JOIN catalog_character ch ON ch.id = c.character_id
+		JOIN catalog_credit_name cn ON cn.id = c.credit_name_id
+		WHERE c.work_id = ? AND c.character_id IS NOT NULL AND ch.deleted_at IS NULL`, workID).Scan(&creds).Error; err != nil {
+		return nil, err
+	}
+
+	byID := make(map[int64]*WorkCharacterRow, len(edges)+len(creds))
+	for _, e := range edges {
+		byID[e.CharacterID] = &WorkCharacterRow{
+			CharacterID: e.CharacterID, DisplayName: e.DisplayName, Latin: e.Latin,
+			Gender: e.Gender, Kind: e.Kind, ImageHash: e.ImageHash,
+		}
+	}
+	for _, c := range creds {
+		row, ok := byID[c.CharacterID]
+		if !ok {
+			row = &WorkCharacterRow{
+				CharacterID: c.CharacterID, DisplayName: c.DisplayName, Latin: c.Latin,
+				Gender: c.Gender, Kind: model.WorkCharacterKindUnknown, ImageHash: c.ImageHash,
+			}
+			byID[c.CharacterID] = row
+		}
+		row.Va = append(row.Va, WorkCharacterVARow{CreditNameID: c.CreditNameID, Name: c.Name})
+	}
+
+	out := make([]WorkCharacterRow, 0, len(byID))
+	for _, r := range byID {
+		va := r.Va
+		sort.Slice(va, func(i, j int) bool {
+			if va[i].Name != va[j].Name {
+				return va[i].Name < va[j].Name
+			}
+			return va[i].CreditNameID < va[j].CreditNameID
+		})
+		out = append(out, *r)
+	}
+	// Sort main-first (task §1: "kind 升序(main 先)"): the meaningful kinds
+	// 1/2/3 lead in order, then unknown(0) last — a credit-only / EG-unclassified
+	// character sorts after the classified cast rather than jumping to the top of
+	// the roster. Ties broken by display name, then character id (determinism).
+	sort.Slice(out, func(i, j int) bool {
+		ri, rj := kindRank(out[i].Kind), kindRank(out[j].Kind)
+		if ri != rj {
+			return ri < rj
+		}
+		if out[i].DisplayName != out[j].DisplayName {
+			return out[i].DisplayName < out[j].DisplayName
+		}
+		return out[i].CharacterID < out[j].CharacterID
+	})
+	return out, nil
+}
+
+// kindRank orders roster kinds for display: main(1) → secondary(2) → appears(3)
+// → unknown(0). Unknown is a meaningful value (EG has no main/supporting split;
+// credit-only characters have no edge) but belongs after the classified cast.
+func kindRank(k int16) int16 {
+	if k == model.WorkCharacterKindUnknown {
+		return 99
+	}
+	return k
 }
 
 // LabelWork is one work attributed to a label (circle→works reverse lookup).
@@ -500,9 +633,13 @@ type VoiceNameRow struct {
 	Latin        *string
 }
 
-// CharacterWorkDetail is one work a character appears in, with its voice names.
+// CharacterWorkDetail is one work a character appears in (roster edge or voice
+// credit, step 46), with the roster kind, whether it was voiced, and its voice
+// names.
 type CharacterWorkDetail struct {
 	Brief  WorkBriefRow
+	Kind   int16 // roster edge appearance strength; 0 when reached only via a credit
+	Voiced bool  // a voice credit names the character on this work
 	Voices []VoiceNameRow
 }
 
@@ -514,9 +651,12 @@ type CharacterWorksResult struct {
 }
 
 // CharacterWorks loads a character's self-description plus the works it appears
-// in (via any credit carrying its character_id — in practice voice credits),
-// offset-paginated by work with the voicing name(s) per work. Head is nil when
-// the character does not exist. Rides idx_catalog_credit_character_id.
+// in — the UNION (step 46) of the roster edge table (catalog_work_character,
+// the appearance fact + kind) and the voice credits (catalog_credit.character_id,
+// who voiced it). Each work carries its roster kind (0 when reached only via a
+// credit), a voiced flag, and the voicing name(s). Offset-paginated by work.
+// Head is nil when the character does not exist. Rides
+// uq_catalog_work_character (character_id member) + idx_catalog_credit_character_id.
 func (s *ReadService) CharacterWorks(ctx context.Context, characterID int64, limit, offset int) (*CharacterWorksResult, error) {
 	db := s.db.WithContext(ctx)
 
@@ -530,13 +670,16 @@ func (s *ReadService) CharacterWorks(ctx context.Context, characterID int64, lim
 	}
 	res := &CharacterWorksResult{Head: &head}
 
-	if err := db.Raw(`SELECT count(DISTINCT work_id) FROM catalog_credit WHERE character_id = ?`,
-		characterID).Scan(&res.Total).Error; err != nil {
+	// The work set is the union of roster-edge works and voice-credit works.
+	const unionWorks = `SELECT work_id FROM catalog_work_character WHERE character_id = ?
+		UNION SELECT work_id FROM catalog_credit WHERE character_id = ?`
+	if err := db.Raw(`SELECT count(*) FROM (`+unionWorks+`) u`,
+		characterID, characterID).Scan(&res.Total).Error; err != nil {
 		return nil, err
 	}
 	var workIDs []int64
-	if err := db.Raw(`SELECT DISTINCT work_id FROM catalog_credit WHERE character_id = ?
-		ORDER BY work_id LIMIT ? OFFSET ?`, characterID, limit, offset).Scan(&workIDs).Error; err != nil {
+	if err := db.Raw(`SELECT work_id FROM (`+unionWorks+`) u ORDER BY work_id LIMIT ? OFFSET ?`,
+		characterID, characterID, limit, offset).Scan(&workIDs).Error; err != nil {
 		return nil, err
 	}
 	if len(workIDs) == 0 {
@@ -546,6 +689,21 @@ func (s *ReadService) CharacterWorks(ctx context.Context, characterID int64, lim
 	if err != nil {
 		return nil, err
 	}
+
+	// Roster kind per work (edge present only for the roster subset).
+	var kindRows []struct {
+		WorkID int64 `gorm:"column:work_id"`
+		Kind   int16 `gorm:"column:kind"`
+	}
+	if err := db.Raw(`SELECT work_id, kind FROM catalog_work_character
+		WHERE character_id = ? AND work_id IN ?`, characterID, workIDs).Scan(&kindRows).Error; err != nil {
+		return nil, err
+	}
+	kindByWork := make(map[int64]int16, len(kindRows))
+	for _, k := range kindRows {
+		kindByWork[k.WorkID] = k.Kind
+	}
+
 	// DISTINCT (work, name): the same name may hold several credit rows for one
 	// character on one work (e.g. per release) — collapse to one voice entry.
 	var voiceRows []struct {
@@ -572,9 +730,70 @@ func (s *ReadService) CharacterWorks(ctx context.Context, characterID int64, lim
 		if !ok {
 			continue
 		}
-		res.Works = append(res.Works, CharacterWorkDetail{Brief: b, Voices: voicesByWork[wid]})
+		voices := voicesByWork[wid]
+		res.Works = append(res.Works, CharacterWorkDetail{
+			Brief: b, Kind: kindByWork[wid], Voiced: len(voices) > 0, Voices: voices,
+		})
 	}
 	return res, nil
+}
+
+// CharacterDetail is a character's full self-description (step 46): identity
+// fields + aliases.
+type CharacterDetail struct {
+	ID          int64
+	DisplayName string
+	Latin       *string
+	Lang        string
+	Gender      *int16
+	Description string
+	InstanceOf  *int64
+	ImageHash   *string
+	Aliases     []CharacterAliasRow
+}
+
+// CharacterAliasRow is one writing-variant of a character's name.
+type CharacterAliasRow struct {
+	ID                 int64   `gorm:"column:id"`
+	Name               string  `gorm:"column:name"`
+	Latin              *string `gorm:"column:latin"`
+	Lang               string  `gorm:"column:lang"`
+	Kind               int16   `gorm:"column:kind"`
+	IsPrimaryForLocale bool    `gorm:"column:is_primary_for_locale"`
+}
+
+// CharacterByID loads a character's identity fields plus its aliases. Returns
+// (nil, nil) when the character does not exist (caller maps to 404), aligning
+// with the labels/{id} miss semantics (step 20, 85f7f08).
+func (s *ReadService) CharacterByID(ctx context.Context, characterID int64) (*CharacterDetail, error) {
+	db := s.db.WithContext(ctx)
+
+	var head struct {
+		ID          int64   `gorm:"column:id"`
+		DisplayName string  `gorm:"column:display_name"`
+		Latin       *string `gorm:"column:latin"`
+		Lang        string  `gorm:"column:lang"`
+		Gender      *int16  `gorm:"column:gender"`
+		Description string  `gorm:"column:description"`
+		InstanceOf  *int64  `gorm:"column:instance_of"`
+		ImageHash   *string `gorm:"column:image_hash"`
+	}
+	if err := db.Raw(`SELECT id, display_name, latin, lang, gender, description, instance_of, image_hash
+		FROM catalog_character WHERE id = ? AND deleted_at IS NULL`, characterID).Scan(&head).Error; err != nil {
+		return nil, err
+	}
+	if head.ID == 0 {
+		return nil, nil // caller maps nil to 404
+	}
+	detail := &CharacterDetail{
+		ID: head.ID, DisplayName: head.DisplayName, Latin: head.Latin, Lang: head.Lang,
+		Gender: head.Gender, Description: head.Description, InstanceOf: head.InstanceOf, ImageHash: head.ImageHash,
+	}
+	if err := db.Raw(`SELECT id, name, latin, lang, kind, is_primary_for_locale
+		FROM catalog_character_alias WHERE character_id = ? ORDER BY id`, characterID).Scan(&detail.Aliases).Error; err != nil {
+		return nil, err
+	}
+	return detail, nil
 }
 
 // CreditRow is one credit joined with its role, name, character and source.

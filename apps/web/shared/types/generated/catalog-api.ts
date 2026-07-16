@@ -4,6 +4,23 @@
  */
 
 export interface paths {
+    "/api/v1/catalog/characters/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read a character's identity + aliases by catalog id */
+        get: operations["getCatalogCharacterByID"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/catalog/characters/{id}/works": {
         parameters: {
             query?: never;
@@ -11,7 +28,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Works a character appears in with its voice names (character→works reverse) */
+        /** Works a character appears in (roster edges ∪ voice credits) with kind + voice names */
         get: operations["getCatalogCharacterWorks"];
         put?: never;
         post?: never;
@@ -242,6 +259,33 @@ export interface components {
             source_freshness: components["schemas"]["SourceFreshness"][] | null;
             works: components["schemas"]["WorksMatrix"];
         };
+        CharacterAlias: {
+            /** Format: int64 */
+            id: number;
+            is_primary_for_locale: boolean;
+            /**
+             * Format: int32
+             * @description 0=translation 1=spelling_variant 2=search_hint
+             */
+            kind: number;
+            lang: string;
+            latin?: string;
+            name: string;
+        };
+        CharacterDetailResponse: {
+            aliases: components["schemas"]["CharacterAlias"][] | null;
+            description?: string;
+            display_name: string;
+            /** Format: int32 */
+            gender?: number;
+            /** Format: int64 */
+            id: number;
+            image_hash?: string;
+            /** Format: int64 */
+            instance_of?: number;
+            lang: string;
+            latin?: string;
+        };
         CharacterHead: {
             /** Format: int64 */
             id: number;
@@ -249,6 +293,13 @@ export interface components {
             name: components["schemas"]["NameBuckets"];
         };
         CharacterWorkRow: {
+            /**
+             * Format: int32
+             * @description roster appearance strength: 0=unknown 1=main 2=secondary 3=appears (0 also when reached only via a voice credit)
+             */
+            kind: number;
+            /** @description true when a voice credit names this character on this work */
+            voiced: boolean;
             voices: components["schemas"]["VoiceName"][] | null;
             work: components["schemas"]["WorkBrief"];
         };
@@ -378,6 +429,18 @@ export interface components {
             /** Format: int64 */
             code: number;
             data?: components["schemas"]["CatalogStats"];
+            message: string;
+        };
+        EnvelopeCharacterDetailResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/EnvelopeCharacterDetailResponse.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            code: number;
+            data?: components["schemas"]["CharacterDetailResponse"];
             message: string;
         };
         EnvelopeCharacterWorksResponse: {
@@ -697,11 +760,32 @@ export interface components {
             work_id: number;
         };
         WorkByAnchorResponse: {
+            characters: components["schemas"]["WorkCharacter"][] | null;
             labels: components["schemas"]["WorkLabel"][] | null;
             refs: components["schemas"]["WorkRef"][] | null;
             releases: components["schemas"]["ReleaseBrief"][] | null;
             titles: components["schemas"]["WorkTitle"][] | null;
             work: components["schemas"]["WorkCore"];
+        };
+        WorkCharacter: {
+            /** Format: int64 */
+            character_id: number;
+            display_name: string;
+            /** Format: int32 */
+            gender?: number;
+            image_hash?: string;
+            /**
+             * Format: int32
+             * @description appearance strength: 0=unknown 1=main 2=secondary 3=appears
+             */
+            kind: number;
+            latin?: string;
+            va: components["schemas"]["WorkCharacterVA"][] | null;
+        };
+        WorkCharacterVA: {
+            /** Format: int64 */
+            credit_name_id: number;
+            name: string;
         };
         WorkCore: {
             /**
@@ -813,6 +897,38 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    getCatalogCharacterByID: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Catalog character id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeCharacterDetailResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HouseError"];
+                };
+            };
+        };
+    };
     getCatalogCharacterWorks: {
         parameters: {
             query?: {

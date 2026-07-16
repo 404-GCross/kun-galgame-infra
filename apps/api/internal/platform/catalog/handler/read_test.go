@@ -44,7 +44,7 @@ func getJSON(t *testing.T, app *fiber.App, url string) (int, map[string]any) {
 func seedReadFixture(t *testing.T, db *gorm.DB) int64 {
 	t.Helper()
 	for _, tbl := range []string{
-		"catalog_credit", "catalog_work_label", "catalog_external_ref", "catalog_work_title",
+		"catalog_credit", "catalog_work_character", "catalog_work_label", "catalog_external_ref", "catalog_work_title",
 		"catalog_release", "catalog_work", "catalog_label", "catalog_credit_name", "catalog_character",
 	} {
 		require.NoError(t, db.Exec("TRUNCATE "+tbl+" RESTART IDENTITY CASCADE").Error)
@@ -361,7 +361,7 @@ type reverseFixture struct {
 func seedReverseFixture(t *testing.T, db *gorm.DB) reverseFixture {
 	t.Helper()
 	for _, tbl := range []string{
-		"catalog_credit", "catalog_work_label", "catalog_external_ref", "catalog_work_title",
+		"catalog_credit", "catalog_work_character", "catalog_work_label", "catalog_external_ref", "catalog_work_title",
 		"catalog_release", "catalog_work", "catalog_label", "catalog_credit_name",
 		"catalog_character", "catalog_person",
 	} {
@@ -480,12 +480,19 @@ func TestNameWorks(t *testing.T) {
 	assert.Equal(t, 404, code)
 }
 
-// TestCharacterWorks covers character→works: self-description + per-work voice
-// names (two names voicing one character on one work), and 404 on a miss.
+// TestCharacterWorks covers character→works as the step-46 UNION: a voiced work
+// (kind from the roster edge + voiced=true + voice names) and an appearance-only
+// work (roster edge, no credit → voiced=false, empty voices), plus 404 on a miss.
 func TestCharacterWorks(t *testing.T) {
 	db := openCatalogTestDB(t)
 	db.Raw("SELECT id FROM catalog_role WHERE key='scenario'").Scan(&roleScenario)
 	f := seedReverseFixture(t, db)
+	// Roster edges: char1 is main on w1 (already voiced by A and C via credits)
+	// and merely appears on w3 (no credit — appearance-only).
+	require.NoError(t, db.Create(&model.CatalogWorkCharacter{
+		WorkID: f.work1, CharacterID: f.char1, Kind: model.WorkCharacterKindMain, MatchedBy: "import:test"}).Error)
+	require.NoError(t, db.Create(&model.CatalogWorkCharacter{
+		WorkID: f.work3, CharacterID: f.char1, Kind: model.WorkCharacterKindAppears, MatchedBy: "import:test"}).Error)
 	app := readApp(service.NewReadService(db), nil)
 
 	code, body := getJSON(t, app, "/api/v1/catalog/characters/"+itoa(f.char1)+"/works")
@@ -493,11 +500,19 @@ func TestCharacterWorks(t *testing.T) {
 	data := body["data"].(map[string]any)
 	assert.EqualValues(t, f.char1, data["character"].(map[string]any)["id"])
 	assert.Equal(t, "キャラ1", data["character"].(map[string]any)["name"].(map[string]any)["ja"])
-	assert.EqualValues(t, 1, data["total"], "char1 appears in w1 only")
+	assert.EqualValues(t, 2, data["total"], "union: w1 (voiced) + w3 (appearance-only)")
 	items := data["items"].([]any)
-	require.Len(t, items, 1)
-	w1 := items[0].(map[string]any)
-	assert.EqualValues(t, f.work1, w1["work"].(map[string]any)["work_id"])
+	require.Len(t, items, 2)
+	byWork := map[int64]map[string]any{}
+	for _, it := range items {
+		m := it.(map[string]any)
+		byWork[int64(m["work"].(map[string]any)["work_id"].(float64))] = m
+	}
+	// w1: main roster edge + voiced by both A and C.
+	w1 := byWork[f.work1]
+	require.NotNil(t, w1)
+	assert.EqualValues(t, model.WorkCharacterKindMain, w1["kind"])
+	assert.Equal(t, true, w1["voiced"])
 	voices := w1["voices"].([]any)
 	assert.Len(t, voices, 2, "both A and C voiced char1 on w1")
 	voiceNames := map[int64]bool{}
@@ -505,9 +520,139 @@ func TestCharacterWorks(t *testing.T) {
 		voiceNames[int64(v.(map[string]any)["credit_name_id"].(float64))] = true
 	}
 	assert.True(t, voiceNames[f.nameA] && voiceNames[f.nameC])
+	// w3: appearance-only — kind=appears, not voiced, empty (non-null) voices.
+	w3 := byWork[f.work3]
+	require.NotNil(t, w3)
+	assert.EqualValues(t, model.WorkCharacterKindAppears, w3["kind"])
+	assert.Equal(t, false, w3["voiced"])
+	assert.Empty(t, w3["voices"].([]any))
 
 	// 404 on a missing character id.
 	code, _ = getJSON(t, app, "/api/v1/catalog/characters/99999999/works")
+	assert.Equal(t, 404, code)
+}
+
+// TestWorkCharacters pins the step-46 roster projection on the work read-through:
+// the roster edge ∪ voice credit merge (main-first ordering, kind from the edge,
+// credit-only characters kind=0, multi-VA per character), a roster-only character
+// with empty (non-null) va, and an empty roster serialized as [].
+func TestWorkCharacters(t *testing.T) {
+	db := openCatalogTestDB(t)
+	db.Raw("SELECT id FROM catalog_role WHERE key='scenario'").Scan(&roleScenario)
+	for _, tbl := range []string{
+		"catalog_credit", "catalog_work_character", "catalog_work", "catalog_credit_name", "catalog_character",
+	} {
+		require.NoError(t, db.Exec("TRUNCATE "+tbl+" RESTART IDENTITY CASCADE").Error)
+	}
+	mkWork := func(name string) int64 {
+		w := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: name, ContentRating: 0, Status: 0}
+		require.NoError(t, db.Create(&w).Error)
+		return w.ID
+	}
+	work := mkWork("花名册テスト")
+	empty := mkWork("空作品")
+
+	female := model.GenderFemale
+	hash := "abc123hash"
+	// chMain: main roster edge + two VAs (multi-VA), gender + image_hash set.
+	chMain := model.CatalogCharacter{DisplayName: "主人公", Lang: "ja", Gender: &female, ImageHash: &hash}
+	require.NoError(t, db.Create(&chMain).Error)
+	// chAppears: roster edge only (no VA) — roster-only, empty va.
+	chAppears := model.CatalogCharacter{DisplayName: "脇役", Lang: "ja"}
+	require.NoError(t, db.Create(&chAppears).Error)
+	// chCredit: voice credit only, NO roster edge → kind must default to 0.
+	chCredit := model.CatalogCharacter{DisplayName: "客演", Lang: "ja"}
+	require.NoError(t, db.Create(&chCredit).Error)
+
+	va1 := model.CatalogCreditName{Name: "AAA声優", Lang: "ja"}
+	va2 := model.CatalogCreditName{Name: "ZZZ声優", Lang: "ja"}
+	va3 := model.CatalogCreditName{Name: "客演声優", Lang: "ja"}
+	require.NoError(t, db.Create(&va1).Error)
+	require.NoError(t, db.Create(&va2).Error)
+	require.NoError(t, db.Create(&va3).Error)
+
+	edge := func(charID int64, kind int16) {
+		require.NoError(t, db.Create(&model.CatalogWorkCharacter{
+			WorkID: work, CharacterID: charID, Kind: kind, MatchedBy: "import:test"}).Error)
+	}
+	edge(chMain.ID, model.WorkCharacterKindMain)
+	edge(chAppears.ID, model.WorkCharacterKindAppears)
+	vcredit := func(charID, nameID int64) {
+		require.NoError(t, db.Create(&model.CatalogCredit{
+			WorkID: work, CreditNameID: nameID, RoleID: roleVoiceActor, CharacterID: &charID}).Error)
+	}
+	vcredit(chMain.ID, va1.ID) // chMain voiced by two names (multi-VA)
+	vcredit(chMain.ID, va2.ID)
+	vcredit(chCredit.ID, va3.ID) // credit-only character (no edge)
+
+	app := readApp(service.NewReadService(db), nil)
+
+	code, body := getJSON(t, app, "/api/v1/catalog/works/"+itoa(work))
+	require.Equal(t, 200, code)
+	chars := body["data"].(map[string]any)["characters"].([]any)
+	require.Len(t, chars, 3, "union: 2 roster edges + 1 credit-only")
+
+	// Ordering is main-first: chMain(1) → chAppears(3) → chCredit(0=unknown, last).
+	c0 := chars[0].(map[string]any)
+	assert.EqualValues(t, chMain.ID, c0["character_id"])
+	assert.EqualValues(t, model.WorkCharacterKindMain, c0["kind"])
+	assert.EqualValues(t, model.GenderFemale, c0["gender"])
+	assert.Equal(t, "abc123hash", c0["image_hash"])
+	c0va := c0["va"].([]any)
+	require.Len(t, c0va, 2, "chMain has two VAs")
+	assert.Equal(t, "AAA声優", c0va[0].(map[string]any)["name"], "va sorted by name")
+	assert.Equal(t, "ZZZ声優", c0va[1].(map[string]any)["name"])
+
+	c1 := chars[1].(map[string]any)
+	assert.EqualValues(t, chAppears.ID, c1["character_id"])
+	assert.EqualValues(t, model.WorkCharacterKindAppears, c1["kind"])
+	assert.Empty(t, c1["va"].([]any), "roster-only character → empty (non-null) va")
+	_, hasGender := c1["gender"]
+	assert.False(t, hasGender, "unknown gender omitted")
+
+	c2 := chars[2].(map[string]any)
+	assert.EqualValues(t, chCredit.ID, c2["character_id"])
+	assert.EqualValues(t, model.WorkCharacterKindUnknown, c2["kind"], "credit-only → kind 0")
+	assert.Len(t, c2["va"].([]any), 1)
+
+	// An empty roster serializes [] (not null).
+	code, body = getJSON(t, app, "/api/v1/catalog/works/"+itoa(empty))
+	require.Equal(t, 200, code)
+	assert.Empty(t, body["data"].(map[string]any)["characters"].([]any))
+}
+
+// TestCharacterDetail covers GET /characters/{id}: identity fields + aliases,
+// and 404 on a missing id.
+func TestCharacterDetail(t *testing.T) {
+	db := openCatalogTestDB(t)
+	for _, tbl := range []string{"catalog_character_alias", "catalog_character"} {
+		require.NoError(t, db.Exec("TRUNCATE "+tbl+" RESTART IDENTITY CASCADE").Error)
+	}
+	male := model.GenderMale
+	latin := "Shujinkou"
+	ch := model.CatalogCharacter{DisplayName: "主人公", Lang: "ja", Latin: &latin, Gender: &male, Description: "テスト説明"}
+	require.NoError(t, db.Create(&ch).Error)
+	require.NoError(t, db.Create(&model.CatalogCharacterAlias{
+		CharacterID: ch.ID, Name: "しゅじんこう", Lang: "ja", Kind: model.AliasKindSpellingVariant}).Error)
+
+	app := readApp(service.NewReadService(db), nil)
+
+	code, body := getJSON(t, app, "/api/v1/catalog/characters/"+itoa(ch.ID))
+	require.Equal(t, 200, code)
+	data := body["data"].(map[string]any)
+	assert.EqualValues(t, ch.ID, data["id"])
+	assert.Equal(t, "主人公", data["display_name"])
+	assert.Equal(t, "Shujinkou", data["latin"])
+	assert.Equal(t, "ja", data["lang"])
+	assert.EqualValues(t, model.GenderMale, data["gender"])
+	assert.Equal(t, "テスト説明", data["description"])
+	aliases := data["aliases"].([]any)
+	require.Len(t, aliases, 1)
+	assert.Equal(t, "しゅじんこう", aliases[0].(map[string]any)["name"])
+	assert.EqualValues(t, model.AliasKindSpellingVariant, aliases[0].(map[string]any)["kind"])
+
+	// 404 on a missing character id.
+	code, _ = getJSON(t, app, "/api/v1/catalog/characters/99999999")
 	assert.Equal(t, 404, code)
 }
 

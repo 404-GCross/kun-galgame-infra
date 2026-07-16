@@ -8,7 +8,7 @@ catalog **只管身份、关系、来源锚**:
 
 - **实体**:`work`(作品)/`release`(发行/SKU)/`credit_name`(署名名义,孤儿合法)/`person`(人)/`character`(角色)/`org`/`label`(厂牌/社团)。实体类型常量 `0=person 1=credit_name 2=org 3=label 4=character 5=work 6=release`。
 - **来源锚** `catalog_external_ref`:把实体锚到外部来源的 id,按 `link_kind` 分级 `exact(0)` / `probable(1)` / `related(2)`;exact 有唯一约束(一个来源的一个外部 id 只精确锚一个同类实体)。
-- **关系**:credit(**署名边**:work ↔ credit_name/label,"谁演了什么角色/担任什么职务")、**work_label 归属边**(work ↔ label,"哪个社团/发行方对作品负责";`kind`:0=circle/1=publisher/2=developer/3=brand)、redirect(合并后的旧→新 id)、alias(名义别名)。**署名 ≠ 归属**:credit 是个人署名,work_label 是组织责任,两者并存不互斥。
+- **关系**:credit(**署名边**:work ↔ credit_name/label,"谁演了什么角色/担任什么职务")、**work_label 归属边**(work ↔ label,"哪个社团/发行方对作品负责";`kind`:0=circle/1=publisher/2=developer/3=brand)、**work_character 花名册边**(work ↔ character,"哪个角色出现在作品里";`kind`:0=unknown/1=main/2=secondary/3=appears,**0=unknown 是有意义值**——EG 无主配分型、Bangumi 低频尾型归此)、redirect(合并后的旧→新 id)、alias(名义别名)。**署名 ≠ 归属 ≠ 出演**:credit 是个人署名,work_label 是组织责任,work_character 是出演事实(有配音的角色会同时在 credit 与 work_character 两表,语义不同);读面(§2.4/§2.10)负责合并展示,三者并存不互斥。
 
 catalog **不存**产品展示体:简介、封面/截图字节、评分、点赞、收藏、NSFW 过滤——这些是**产品站(body 层)**各自持有的。产品站保留自己的富行,只把「这是**哪一个**作品/人物」的身份问题委托给 catalog。这条分界是硬约束:catalog 加展示字段 = 越界。
 
@@ -16,7 +16,7 @@ catalog **不存**产品展示体:简介、封面/截图字节、评分、点赞
 
 ## 2. S2S 端点(Basic client 认证,前缀 `/api/v1/catalog`)
 
-写/运维面:resolve(2.1)· redirects feed(2.2)· claim(2.3,带 site 绑定)。读面(D-01,2.4-2.6):by-anchor · credits · entity search。内部浏览器(D-02,2.7):stats · works/{id} · labels/{id}/works。产品建游面(2.8):works/search。实体读面(2.9-2.10):names/{id}/works · characters/{id}/works。
+写/运维面:resolve(2.1)· redirects feed(2.2)· claim(2.3,带 site 绑定)。读面(D-01,2.4-2.6):by-anchor · credits · entity search。内部浏览器(D-02,2.7):stats · works/{id} · labels/{id}/works。产品建游面(2.8):works/search。实体读面(2.9-2.11):names/{id}/works · characters/{id}/works · characters/{id}。
 
 ### 2.1 `POST /catalog/resolve` — 批量 id 规范化(只读)
 
@@ -52,8 +52,9 @@ catalog **不存**产品展示体:简介、封面/截图字节、评分、点赞
 
 产品站拿一个外源 id 读穿到 catalog 作品。`source` 对 `catalog_source` 注册表校验(即白名单:dlsite/vndb/bangumi/erogamespace/…);命中 **work 级或 release 级锚**均可(release 锚回溯其 work;`exact` 优先、work 级优先破平);未命中 **404**。
 
-- 响应 `data`:`work`(id/medium/display_name/olang/content_rating/status/**site 认领态**)+ `titles`(official/alias/abbreviation/search_hint)+ `releases`(每个含 kind/模糊日期/各自 `anchors`)+ **`labels`(经 work_label 归属边,含 label 自身 kind + 归属 kind)**+ **`refs`**。
+- 响应 `data`:`work`(id/medium/display_name/olang/content_rating/status/**site 认领态**)+ `titles`(official/alias/abbreviation/search_hint)+ `releases`(每个含 kind/模糊日期/各自 `anchors`)+ **`labels`(经 work_label 归属边,含 label 自身 kind + 归属 kind)**+ **`refs`**+ **`characters`(花名册投影)**。
 - **`refs` 块(消费面)**:把本作品**全部 exact 锚**(work 级 + release 级)拍平成一张表,每条 `{ source, external_id, level(work|release), release_id? }`(`release_id` 仅 release 级)。用途:渲染 DLsite/EG 外链、展示跨源身份链。**只出 exact 档**——`probable` 是审核泳道内部态、`related` 是非身份链接,均不入 `refs`(`relations`(work↔work 关系边)v1 亦不出面,随消费再加)。
+- **`characters` 块(花名册,step 46)**:`work_character` 出演边 **∪** VA credit(`catalog_credit.character_id`)的**并集**——每条 `{ character_id, display_name, latin, gender, kind, image_hash, va[{credit_name_id, name}] }`。合并语义:有出演边者 `kind` 从边取;**credit-only 角色**(仅有 VA credit、无出演边,如 VNDB 路 credits)也出,`kind=0`;`va` 列出为该角色配音的**全部**名义(同名义多 credit 去重)。排序:主角优先(kind 有序 main→secondary→appears→unknown)后按 display_name;`va` 内按 name。**链接可见性铁则**:`va` 只暴露 credit_name 名义本身(名义永远可见),**不做任何 person 展开**(person 聚合才受政策辖制)。空花名册序列化 `[]`;角色 `image_hash` 在 step 47 VNDB 立绘波前恒为空(缺省)。
 - **`refs` 与 `releases[].anchors` 的分工**(两视图并存,面向不同消费者):`refs` = **消费级摘要**(exact-only,产品站直接渲染,无需理解档位);`releases[].anchors` = **质检全景**(逐 release 的全部锚,**显式携带 `link_kind` 与 `matched_by`**,供内部数据浏览器等按档自筛)。产品站消费一律用 `refs`;`anchors` 中出现非 exact 档位时消费端**必须**按 `link_kind` 自筛,不得当身份使用。
 - 用途:letmoe 音声读穿页(镜像其 wiki 读穿),社团归属由此获得。`GET /catalog/works/{id}`(§2.7)返回**同一 bundle**(含 `refs`)。
 
@@ -96,11 +97,18 @@ catalog **不存**产品展示体:简介、封面/截图字节、评分、点赞
 
 ### 2.10 `GET /catalog/characters/{id}/works` — 角色反查(只读)
 
-角色反查:这个角色出现在哪些作品、由谁配音。用途同 2.9(letmoe 角色页,step 20)。
+角色反查:这个角色出现在哪些作品、由谁配音。用途同 2.9(letmoe 角色页,step 20)。step 46 起为**并集**:出演边(`catalog_work_character`)∪ 配音(`catalog_credit`)。
 
 - **角色自述**(`character`):`id` + **lang 分桶名** + `latin`。
-- **作品列表**(`items`,offset 分页,cap 50):每条 = `work`(同 2.9 轻 brief)+ **`voices`**(经 credits 的 `character_id` 关联,在此作为该角色配音的名义,各 `credit_name_id`/`name`/`lang`/`latin`;同名义同作多条 credit 去重为一)。`total` = 该角色出现的**去重作品数**。
-- 反查走 `idx_catalog_credit_character_id`(既有索引,无需新建)。缺失 id → 404。
+- **作品列表**(`items`,offset 分页,cap 50):每条 = `work`(同 2.9 轻 brief)+ **`kind`**(出演边强度:0=unknown/1=main/2=secondary/3=appears;**仅经 credit 命中而无出演边时为 0**)+ **`voiced`**(bool,该角色在此作是否有 VA credit——即使 `kind=0` 也能区分「纯出演」与「有配音」)+ **`voices`**(经 credits 的 `character_id` 关联,为该角色配音的名义,各 `credit_name_id`/`name`/`lang`/`latin`;同名义同作多条 credit 去重为一;纯出演作序列化 `[]`)。`total` = 该角色出现的**去重作品数(并集)**。
+- 反查走 `uq_catalog_work_character`(character_id 成员)+ `idx_catalog_credit_character_id`(既有索引,无需新建)。缺失 id → 404。
+
+### 2.11 `GET /catalog/characters/{id}` — 角色详情(只读,step 46)
+
+角色实体自述,letmoe/kungal 角色页直达即自足(§2.4 的 `characters` 投影给的是 work 内花名册摘要,本端点给的是角色本体)。
+
+- 响应 `data`:`id` · `display_name` · `latin` · `lang` · **`gender`**(1=male/2=female/3=other;缺省=unknown,无 0 值)· `description` · **`instance_of`**(跨宇宙变体的基底角色 id,VNDB instance_of;非变体则缺省)· **`image_hash`**(立绘内容哈希,step 47 VNDB 波前恒缺省)· **`aliases`**(书写变体,各 `id`/`name`/`latin`/`lang`/`kind`(0=translation/1=spelling_variant/2=search_hint)/`is_primary_for_locale`;无别名序列化 `[]`)。
+- 缺失 id → 404(与 labels/{id}/works、by-anchor 同义)。
 
 > **读面无 site 绑定**(16 语义:绑定只作用于写端点 claim);读端点仍走 Basic S2S(无凭据 401)。
 

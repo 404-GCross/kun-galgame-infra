@@ -19,6 +19,41 @@ type WorkByAnchorResponse struct {
 	// probable/related tiers are deliberately excluded — they are review-lane
 	// internal state and never cross the S2S face.
 	Refs []WorkRef `json:"refs"`
+	// Characters is the work's roster (step 46): the roster-edge appearance set
+	// (catalog_work_character) UNIONed with any voice-credited characters. A
+	// credit-only character (voiced but with no roster edge — e.g. VNDB-only VA
+	// credits) still surfaces with kind=0. Sorted main-first then display name.
+	Characters []WorkCharacter `json:"characters"`
+}
+
+// WorkCharacter is one character on a work's roster, merging the appearance
+// edge (catalog_work_character, which carries kind) with any voice credits
+// (catalog_credit.character_id, which carry the voicing name). kind is 0 for a
+// credit-only character that has no roster edge. va lists every credited name
+// that voiced it — the CREDIT NAME nominal only; the link-visibility doctrine
+// gates person aggregation, never the nominal itself, and no person is expanded
+// here (link-visibility 铁则, step 19).
+type WorkCharacter struct {
+	CharacterID int64  `json:"character_id"`
+	DisplayName string `json:"display_name"`
+	Latin       string `json:"latin,omitempty"`
+	// Gender: 1=male 2=female 3=other; absent = unknown (there is no 0 value).
+	Gender int16 `json:"gender,omitempty"`
+	// Kind is the appearance strength from the roster edge: 0=unknown 1=main
+	// 2=secondary 3=appears (0 also when the character is reached only via a
+	// voice credit and thus has no roster edge).
+	Kind int16 `json:"kind" doc:"appearance strength: 0=unknown 1=main 2=secondary 3=appears"`
+	// ImageHash is the portrait content hash in the image service; absent until
+	// the step-47 VNDB portrait wave backfills it.
+	ImageHash string            `json:"image_hash,omitempty"`
+	Va        []WorkCharacterVA `json:"va"`
+}
+
+// WorkCharacterVA is one credited name that voiced a character on this work
+// (the nominal only — no person expansion).
+type WorkCharacterVA struct {
+	CreditNameID int64  `json:"credit_name_id"`
+	Name         string `json:"name"`
 }
 
 // WorkRef is one exact external anchor of a work, flattened across the
@@ -237,11 +272,50 @@ type CharacterHead struct {
 	Latin string      `json:"latin,omitempty"`
 }
 
-// CharacterWorkRow is one work a character appears in, with the name(s) that
-// voiced it there (via the credits' character association).
+// CharacterWorkRow is one work a character appears in — the UNION of the roster
+// edge (appearance) and voice credits (step 46). Kind is the roster edge's
+// appearance strength (0 when the work is reached only via a voice credit and
+// thus has no edge); Voiced marks whether a voice credit names the character
+// here (so a consumer can tell an appearance-only row from a voiced one even
+// when kind is 0). Voices lists the voicing name(s).
 type CharacterWorkRow struct {
 	Work   WorkBrief   `json:"work"`
+	Kind   int16       `json:"kind" doc:"roster appearance strength: 0=unknown 1=main 2=secondary 3=appears (0 also when reached only via a voice credit)"`
+	Voiced bool        `json:"voiced" doc:"true when a voice credit names this character on this work"`
 	Voices []VoiceName `json:"voices"`
+}
+
+// --- character detail (step 46: GET /catalog/characters/{id}) ---
+
+// CharacterDetailResponse is a character's full self-description: identity
+// fields + aliases. The roster/voice reverse (which works it appears in) lives
+// at characters/{id}/works.
+type CharacterDetailResponse struct {
+	ID          int64  `json:"id"`
+	DisplayName string `json:"display_name"`
+	Latin       string `json:"latin,omitempty"`
+	Lang        string `json:"lang"`
+	// Gender: 1=male 2=female 3=other; absent = unknown (there is no 0 value).
+	Gender      int16  `json:"gender,omitempty"`
+	Description string `json:"description,omitempty"`
+	// InstanceOf is the base character id for a cross-universe variant (VNDB
+	// instance_of); absent when the character is not a variant.
+	InstanceOf int64 `json:"instance_of,omitempty"`
+	// ImageHash is the portrait content hash in the image service; absent until
+	// the step-47 VNDB portrait wave backfills it.
+	ImageHash string           `json:"image_hash,omitempty"`
+	Aliases   []CharacterAlias `json:"aliases"`
+}
+
+// CharacterAlias is one writing-variant of a character's name (not a new
+// identity — mirrors the credit-name alias shape).
+type CharacterAlias struct {
+	ID                 int64  `json:"id"`
+	Name               string `json:"name"`
+	Latin              string `json:"latin,omitempty"`
+	Lang               string `json:"lang"`
+	Kind               int16  `json:"kind" doc:"0=translation 1=spelling_variant 2=search_hint"`
+	IsPrimaryForLocale bool   `json:"is_primary_for_locale"`
 }
 
 // VoiceName is one credited name that voiced a character on a work.
