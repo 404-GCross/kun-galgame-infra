@@ -10,7 +10,7 @@ import (
 // TestSpecExport is the S2S spec smoke: Setup with nil deps (the gen-openapi
 // path) must produce a valid OpenAPI document with the intake operations.
 func TestSpecExport(t *testing.T) {
-	api := Setup(fiber.New(), nil, nil, nil)
+	api := Setup(fiber.New(), nil, nil, nil, nil)
 	b, err := api.OpenAPI().YAML()
 	if err != nil {
 		t.Fatalf("marshal spec: %v", err)
@@ -21,8 +21,10 @@ func TestSpecExport(t *testing.T) {
 		"/api/v1/trust/subject-kinds",
 		"/api/v1/trust/forward",
 		"/api/v1/trust/forward/resolve",
+		"/api/v1/trust/scan",
 		"operationId: submitReport",
 		"operationId: forwardReviewItem",
+		"operationId: submitScan",
 		"subject_kind",
 		"reason_key",
 	} {

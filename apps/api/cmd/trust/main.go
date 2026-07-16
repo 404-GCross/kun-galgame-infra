@@ -8,14 +8,18 @@
 // Faces (v0):
 //
 //	POST /api/v1/trust/reports          — S2S report intake (Basic client auth)
+//	POST /api/v1/trust/scan             — S2S content-scan intake (AI shadow-scoring)
 //	GET  /api/v1/trust/subject-kinds    — S2S: the site's registered kinds
 //	GET  /api/v1/admin/trust/*          — admin review inbox (JWT + trust.queue_access)
 //	GET  /openapi.json                   — S2S OpenAPI 3.1 spec (no auth)
 //	GET  /healthz                        — no auth
 //
-// A background goroutine dispatches enforcement callbacks (HMAC-signed webhooks,
-// exponential backoff, dead-letter). The service does NOT run migrations:
-// cmd/migrate-trust is the single migration entry point; startup only connects.
+// Two background goroutines run: the enforcement-callback dispatcher (HMAC-signed
+// webhooks, exponential backoff, dead-letter) and the AI shadow-scoring pipeline
+// (drains pending scan rows via the AI gateway's moderate-text route; env-empty =
+// degraded drain, never a review item — shadow only). The service does NOT run
+// migrations: cmd/migrate-trust is the single migration entry point; startup only
+// connects.
 package main
 
 import (
@@ -72,7 +76,16 @@ func main() {
 	reviewSvc := service.NewReviewService(trustDB.DB())
 	registrySvc := service.NewRegistryService(trustDB.DB())
 	dispositionSvc := service.NewDispositionService(trustDB.DB())
+	scanSvc := service.NewScanService(trustDB.DB())
 	worker := service.NewCallbackWorker(trustDB.DB())
+
+	// AI shadow-scoring pipeline (step 03). The scan worker scores pending rows
+	// via the AI gateway's moderate-text route (S2S Basic). Empty KUN_AI_CLIENT_*
+	// → the gateway client is not Configured() → the worker drains rows to
+	// degraded WITHOUT dialing (fail-closed; the queue never backs up).
+	aiGateway := service.NewAIGatewayClient(cfg.AIClient.BaseURL, cfg.AIClient.ClientID, cfg.AIClient.ClientSecret)
+	scanWorker := service.NewScanWorker(trustDB.DB(), aiGateway)
+	slog.Info("trust scan worker", "gateway_configured", aiGateway.Configured())
 
 	// community→trust forward face (step 03). The allowlist is the counterweight
 	// to forward carrying `site` in its body; an empty allowlist (default) makes
@@ -104,7 +117,7 @@ func main() {
 	application.Fiber.Use("/api/v1/admin/trust",
 		middleware.JWTAuth(tokenVerifier), middleware.RequirePermission(trustPerm.Resolver, trustPerm.QueueAccess))
 
-	s2sAPI := trustHandler.Setup(application.Fiber, reportSvc, registrySvc, forwardSvc)
+	s2sAPI := trustHandler.Setup(application.Fiber, reportSvc, registrySvc, forwardSvc, scanSvc)
 	// clientRepo (main DB) resolves a site-scoped moderator's token client to its
 	// catalog_site for admin-face site scoping (step 04).
 	trustHandler.SetupAdmin(application.Fiber, reviewSvc, registrySvc, dispositionSvc, clientRepo)
@@ -119,10 +132,12 @@ func main() {
 		return c.Send(b)
 	})
 
-	// Enforcement-callback dispatch worker (章程 ruling 9).
+	// Background workers: the enforcement-callback dispatch worker (章程 ruling 9)
+	// and the AI shadow-scoring pipeline (step 03).
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go worker.Run(ctx)
+	go scanWorker.Run(ctx)
 
 	slog.Info("trust service starting",
 		"addr", fmt.Sprintf("%s:%d", cfg.TrustService.Host, cfg.TrustService.Port),

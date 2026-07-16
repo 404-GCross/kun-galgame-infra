@@ -20,12 +20,13 @@ type Server struct {
 	reports  *service.ReportService
 	registry *service.RegistryService
 	forward  *service.ForwardService
+	scan     *service.ScanService
 }
 
 // Setup builds the trust S2S Huma API over the Fiber app. S2SAuth is applied by
 // the caller as path-scoped Fiber middleware BEFORE this. Callable with nil
 // services for spec export (handlers are never invoked then).
-func Setup(app *fiber.App, reports *service.ReportService, registry *service.RegistryService, forward *service.ForwardService) huma.API {
+func Setup(app *fiber.App, reports *service.ReportService, registry *service.RegistryService, forward *service.ForwardService, scan *service.ScanService) huma.API {
 	InstallErrorEnvelope()
 
 	cfg := huma.DefaultConfig("KUN Trust Service", "1.0.0")
@@ -36,7 +37,7 @@ func Setup(app *fiber.App, reports *service.ReportService, registry *service.Reg
 	api := humafiber.New(app, cfg)
 	api.UseMiddleware(S2SBridge)
 
-	s := &Server{reports: reports, registry: registry, forward: forward}
+	s := &Server{reports: reports, registry: registry, forward: forward, scan: scan}
 	s.register(api)
 	return api
 }
@@ -49,6 +50,8 @@ func (s *Server) register(api huma.API) {
 		Summary: "List the calling site's registered subject kinds", Tags: intake}, s.listSubjectKinds)
 	huma.Register(api, huma.Operation{OperationID: "listReportReasons", Method: http.MethodGet, Path: "/api/v1/trust/report-reasons",
 		Summary: "List the calling site's usable report reasons (global base + own extensions, non-deprecated)", Tags: intake}, s.listReportReasons)
+	huma.Register(api, huma.Operation{OperationID: "submitScan", Method: http.MethodPost, Path: "/api/v1/trust/scan",
+		Summary: "Submit a content-scan event for async AI shadow-scoring (accept-type; site derived from the client binding)", Tags: intake}, s.submitScan)
 
 	// community→trust convergence (step 03). These carry `site` in the body
 	// (unlike /reports, which derives it from the client binding) because a
@@ -144,6 +147,28 @@ func (s *Server) submitReport(ctx context.Context, in *submitReportInput) (*subm
 	}
 	return &submitReportOutput{Body: okEnvelope(dto.ReportResponse{
 		ReportID: res.ReportID, ReviewItemID: res.ReviewItemID,
+	})}, nil
+}
+
+type submitScanInput struct{ Body dto.ScanRequest }
+type submitScanOutput struct {
+	Body Envelope[dto.ScanResponse]
+}
+
+func (s *Server) submitScan(ctx context.Context, in *submitScanInput) (*submitScanOutput, error) {
+	site, he := siteBinding(ctx)
+	if he != nil {
+		return nil, he
+	}
+	res, err := s.scan.Ingest(ctx, service.ScanParams{
+		Site: site, SubjectKind: in.Body.SubjectKind, SubjectID: in.Body.SubjectID,
+		Text: in.Body.Text, AuthorID: in.Body.AuthorID,
+	})
+	if err != nil {
+		return nil, mapIntakeErr("submit scan", err)
+	}
+	return &submitScanOutput{Body: okEnvelope(dto.ScanResponse{
+		ScanID: res.ScanID, Truncated: res.Truncated,
 	})}, nil
 }
 

@@ -26,6 +26,9 @@ func Run(db *gorm.DB) error {
 		&model.TrustReport{},
 		&model.TrustDisposition{},
 		&model.TrustAuditLog{},
+		// AI shadow-scoring pipeline (step 03); no FK — subject is referenced by
+		// (site, subject_kind, subject_id) like every other trust table.
+		&model.TrustScanResult{},
 	); err != nil {
 		return fmt.Errorf("trust automigrate: %w", err)
 	}
@@ -77,6 +80,16 @@ func rawSQL(db *gorm.DB) error {
 		{"idx_trust_disposition_callback", `
 			CREATE INDEX IF NOT EXISTS idx_trust_disposition_callback
 			    ON trust_disposition(callback_status, next_attempt_at)`},
+		// Scan scoring worker claim (step 03): pending rows, oldest first. The
+		// (status, id) shape backs the FOR UPDATE SKIP LOCKED batch pick.
+		{"idx_trust_scan_result_status_id", `
+			CREATE INDEX IF NOT EXISTS idx_trust_scan_result_status_id
+			    ON trust_scan_result(status, id)`},
+		// Scan observation / calibration queries (step 03): per-site, per-kind,
+		// newest first.
+		{"idx_trust_scan_result_site_kind_created", `
+			CREATE INDEX IF NOT EXISTS idx_trust_scan_result_site_kind_created
+			    ON trust_scan_result(site, subject_kind, created_at)`},
 	} {
 		if err := db.Exec(ix.stmt).Error; err != nil {
 			return fmt.Errorf("create index %s: %w", ix.name, err)

@@ -31,6 +31,24 @@ type ReportResponse struct {
 	ReviewItemID *int64 `json:"review_item_id,omitempty" doc:"set when the report opened/linked/folded a review item"`
 }
 
+// ScanRequest is an async content-scan submission (site derived from the client
+// binding). The product has ALREADY published the content; scan never gates a
+// sync path (doc 18 §6). The subject is referenced by (subject_kind, subject_id);
+// text carries the UGC body to score (capped at intake with truncation recorded).
+type ScanRequest struct {
+	SubjectKind string `json:"subject_kind" doc:"registered subject kind for this site (e.g. community_post)"`
+	SubjectID   string `json:"subject_id" doc:"the subject's stable id in the product"`
+	Text        string `json:"text" doc:"the UGC text to scan (capped at ~8000 runes; excess is truncated and recorded)"`
+	AuthorID    *int64 `json:"author_id,omitempty" doc:"optional content author's global id (attribution/repeat-offender signal); not the tenant"`
+}
+
+// ScanResponse is the intake outcome (an accept-type endpoint: the row lands
+// status=pending and is returned immediately, before any scoring).
+type ScanResponse struct {
+	ScanID    int64 `json:"scan_id"`
+	Truncated bool  `json:"truncated" doc:"true = the text exceeded the cap and was truncated before storage"`
+}
+
 // SubjectKindsResponse lists a site's registered kinds (S2S sanity check).
 type SubjectKindsResponse struct {
 	Kinds []SubjectKindView `json:"kinds"`

@@ -36,3 +36,17 @@ var callbackBackoff = []time.Duration{
 }
 
 const callbackMaxAttempts = 5
+
+// Scan pipeline tunables (step 03). The scoring worker mirrors the callback
+// worker's ticker + FOR UPDATE SKIP LOCKED shape.
+const (
+	// maxScanTextRunes caps the stored/scanned text (anti-abuse). Excess is
+	// truncated at intake and the truncation is recorded on the response.
+	// Counted in runes (not bytes) so multibyte CJK text is not cut mid-glyph.
+	maxScanTextRunes = 8000
+
+	// scanBatchSize is how many pending rows one scoring pass claims.
+	scanBatchSize = 20
+	// scanInterval is the scoring worker tick (doc 18 §6 low-volume shadow cadence).
+	scanInterval = 60 * time.Second
+)

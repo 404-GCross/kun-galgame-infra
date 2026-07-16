@@ -447,6 +447,16 @@ services:
       # the forward face is 403 for everyone (fail-closed); set to the community
       # service's KUN_TRUST_CLIENT_ID in Dokploy at the letmoe cut-over.
       KUN_TRUST_FORWARDER_CLIENT_IDS: ${KUN_TRUST_FORWARDER_CLIENT_IDS:-}
+      # AI shadow-scoring pipeline (step 03): the scan worker scores pending
+      # trust_scan_result rows via the AI gateway's moderate-text route over S2S
+      # Basic. All three default empty = the worker drains rows to degraded WITHOUT
+      # dialing (fail-closed; the queue never backs up while unprovisioned). Power
+      # on at the shadow cut-over by setting all three in Dokploy: BASE_URL to the
+      # gateway (http://ai:9284), ID/SECRET to an OAuth client bound to the calling
+      # site (the forwarder client ac2b8856… may be reused, or mint a fresh one).
+      KUN_AI_CLIENT_BASE_URL: ${KUN_AI_CLIENT_BASE_URL:-}
+      KUN_AI_CLIENT_ID: ${KUN_AI_CLIENT_ID:-}
+      KUN_AI_CLIENT_SECRET: ${KUN_AI_CLIENT_SECRET:-}
     # Internal only — product backends reach it at http://trust:9283 over
     # dokploy-network.
     expose: ["9283"]

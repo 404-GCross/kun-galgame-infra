@@ -63,6 +63,23 @@ type Config struct {
 	// and startup is never blocked. See refs/docs/nextmoe-draft/20.
 	AIService  AIServiceConfig
 	AIUpstream AIUpstreamConfig
+
+	// AIClient is the trust service's caller-side client to the AI gateway's
+	// moderate-text route (step 03 shadow scoring). Empty ClientID/Secret (or
+	// BaseURL) → the scan worker drains rows to degraded WITHOUT dialing (the
+	// queue never backs up while the channel layer is unprovisioned). Which OAuth
+	// client fills these is an ops decision (a forwarder client can be reused, or
+	// a fresh one minted); the default is empty = fail-closed shadow drain.
+	AIClient AIClientConfig
+}
+
+// AIClientConfig is caller-side configuration for backends that call the AI
+// gateway over S2S (step 03: trust's scan worker → moderate-text). Empty
+// ClientID/Secret/BaseURL → degraded (Configured() false, no dial).
+type AIClientConfig struct {
+	BaseURL      string
+	ClientID     string
+	ClientSecret string
 }
 
 // AIServiceConfig holds AI-gateway bind configuration. The semantic layer
@@ -611,6 +628,16 @@ func Load() (*Config, error) {
 		BaseURL: getEnv("KUN_AI_UPSTREAM_BASE_URL", ""),
 		Token:   getEnv("KUN_AI_UPSTREAM_TOKEN", ""),
 		Model:   getEnv("KUN_AI_UPSTREAM_MODEL", "deepseek-chat"),
+	}
+
+	// AI gateway caller (step 03: trust scan worker). BaseURL defaults to the
+	// host-side gateway address; the container compose overrides it to the
+	// dokploy-network service name (http://ai:9284). ClientID/Secret default empty
+	// = the scan worker drains to degraded without dialing (fail-closed shadow).
+	cfg.AIClient = AIClientConfig{
+		BaseURL:      getEnv("KUN_AI_CLIENT_BASE_URL", "http://127.0.0.1:9284"),
+		ClientID:     getEnv("KUN_AI_CLIENT_ID", ""),
+		ClientSecret: getEnv("KUN_AI_CLIENT_SECRET", ""),
 	}
 
 	// Validate required fields

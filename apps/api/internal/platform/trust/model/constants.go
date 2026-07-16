@@ -82,3 +82,22 @@ const (
 	CallbackStatusDelivered  int16 = 1
 	CallbackStatusDeadLetter int16 = 2
 )
+
+// Scan status (trust_scan_result.status) — the AI shadow-scoring pipeline (step
+// 03). pending is the fresh intake; the scoring worker drives it to a TERMINAL
+// state: scored (the gateway returned a verdict) or degraded (the gateway is
+// unconfigured / degraded / failed). degraded is terminal — the worker only ever
+// claims pending, so the queue always DRAINS and never backs up unbounded.
+const (
+	ScanStatusPending  int16 = 0
+	ScanStatusScored   int16 = 1
+	ScanStatusDegraded int16 = 2
+)
+
+// Scan mode (trust_scan_result.mode) — 0=shadow is the ONLY mode this step
+// ships and is hardcoded at intake. Shadow means the pipeline records a verdict
+// and NOTHING else: no review item, no callback, no enforcement. live/enqueue
+// modes (feeding the inbox) are P2 (doc 18 §6; step 03 explicitly out of scope).
+const (
+	ScanModeShadow int16 = 0
+)

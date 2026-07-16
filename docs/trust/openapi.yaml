@@ -84,6 +84,27 @@ components:
         - code
         - message
       type: object
+    EnvelopeScanResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EnvelopeScanResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/ScanResponse"
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
     EnvelopeSubjectKindsResponse:
       additionalProperties: false
       properties:
@@ -294,6 +315,47 @@ components:
       required:
         - report_id
       type: object
+    ScanRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/ScanRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        author_id:
+          description: optional content author's global id (attribution/repeat-offender signal); not the tenant
+          format: int64
+          type: integer
+        subject_id:
+          description: the subject's stable id in the product
+          type: string
+        subject_kind:
+          description: registered subject kind for this site (e.g. community_post)
+          type: string
+        text:
+          description: the UGC text to scan (capped at ~8000 runes; excess is truncated and recorded)
+          type: string
+      required:
+        - subject_kind
+        - subject_id
+        - text
+      type: object
+    ScanResponse:
+      additionalProperties: false
+      properties:
+        scan_id:
+          format: int64
+          type: integer
+        truncated:
+          description: true = the text exceeded the cap and was truncated before storage
+          type: boolean
+      required:
+        - scan_id
+        - truncated
+      type: object
     SubjectKindView:
       additionalProperties: false
       properties:
@@ -433,6 +495,31 @@ paths:
                 $ref: "#/components/schemas/HouseError"
           description: Error
       summary: Submit a report on a subject (dedup / rate-limit / weight / aggregate)
+      tags:
+        - trust-intake
+  /api/v1/trust/scan:
+    post:
+      operationId: submitScan
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScanRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeScanResponse"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: Submit a content-scan event for async AI shadow-scoring (accept-type; site derived from the client binding)
       tags:
         - trust-intake
   /api/v1/trust/subject-kinds:

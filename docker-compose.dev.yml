@@ -371,6 +371,15 @@ services:
       # Forward-face allowlist — empty = the forward face 403s for everyone
       # (fail-closed). Set to community's KUN_TRUST_CLIENT_ID when wiring locally.
       KUN_TRUST_FORWARDER_CLIENT_IDS: ""
+      # AI shadow-scoring pipeline (step 03). BASE_URL points at the local ai
+      # gateway (host network); ID/SECRET stay EMPTY so the scan worker drains scan
+      # rows to degraded WITHOUT dialing — the dev stack's oauth_clients rows are
+      # the user's live data, so do NOT hardcode a dev client here. To exercise
+      # real scoring locally, set ID/SECRET to a dev-secret client (a dev row whose
+      # secret is `dev-secret-<id>`) bound to a site.
+      KUN_AI_CLIENT_BASE_URL: http://127.0.0.1:9284
+      KUN_AI_CLIENT_ID: ""
+      KUN_AI_CLIENT_SECRET: ""
     depends_on:
       migrate: { condition: service_completed_successfully }        # reads oauth_clients
       migrate-trust: { condition: service_completed_successfully }  # kun_trust schema

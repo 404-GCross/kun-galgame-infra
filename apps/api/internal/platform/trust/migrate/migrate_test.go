@@ -89,6 +89,9 @@ func TestPartialUniqueIndexes(t *testing.T) {
 		{"uq_trust_report_reason_key_global", []string{"(key)", "site IS NULL"}},
 		{"uq_trust_report_reason_key_site", []string{"(key, site)", "site IS NOT NULL"}},
 		{"idx_trust_review_item_site_status_priority", []string{"(site, status, priority DESC)"}},
+		// Scan worker claim + observation indexes (step 03).
+		{"idx_trust_scan_result_status_id", []string{"(status, id)"}},
+		{"idx_trust_scan_result_site_kind_created", []string{"(site, subject_kind, created_at)"}},
 	}
 	for _, c := range cases {
 		def := indexDef(t, c.name)
@@ -121,6 +124,9 @@ func TestColumnDiscipline(t *testing.T) {
 		{"trust_report", "weight"}, {"trust_report", "status"},
 		{"trust_review_item", "priority"}, {"trust_review_item", "source"}, {"trust_review_item", "status"},
 		{"trust_report_reason", "severity"}, {"trust_disposition", "action"},
+		// Scan intent columns (step 03): status/mode zeros are meaningful.
+		{"trust_scan_result", "status"}, {"trust_scan_result", "mode"},
+		{"trust_scan_result", "site"}, {"trust_scan_result", "content_text"},
 	}
 	for _, c := range noDefault {
 		if def := columnDefault(t, c.table, c.column); def != "" {
@@ -130,6 +136,9 @@ func TestColumnDiscipline(t *testing.T) {
 	withDefault := []struct{ table, column, want string }{
 		{"trust_disposition", "callback_attempts", "0"},
 		{"trust_report_reason", "is_deprecated", "false"},
+		// Scan bookkeeping columns (step 03): channel '' and created_at now().
+		{"trust_scan_result", "channel", "''"},
+		{"trust_scan_result", "created_at", "now()"},
 	}
 	for _, c := range withDefault {
 		if def := columnDefault(t, c.table, c.column); !strings.Contains(def, c.want) {
