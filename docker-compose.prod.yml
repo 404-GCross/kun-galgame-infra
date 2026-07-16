@@ -591,11 +591,14 @@ services:
     image: ghcr.io/kunmoe/infra-wiki:latest
     pull_policy: always
     environment:
-      NUXT_API_BASE_SSR: http://galgame:9280/api
+      # W3 (wiki retirement): the galgame surface is co-hosted by the catalog
+      # service (galgameapp.Mount, W2) — same /api paths, same bytes (prod
+      # replay 80/80). cmd/galgame:9280 retires at the end of W3.
+      NUXT_API_BASE_SSR: http://catalog:9281/api
       NUXT_AUTH_API_BASE_SSR: http://oauth:9277/api/v1
     expose: ["3000"]
     depends_on:
-      galgame: { condition: service_started }
+      catalog: { condition: service_started }
     healthcheck:
       test:
         [
