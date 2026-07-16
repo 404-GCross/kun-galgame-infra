@@ -29,6 +29,10 @@ var (
 	// editable state: a hidden/held or tombstoned post is not an editable surface
 	// (editing is content-only; a removed post stays removed — invariant 13).
 	ErrPostNotEditable = errors.New("community: post not editable")
+	// ErrContentBlocked is returned when the synchronous Tier0 word-list gate
+	// denies content (a banned term matched, step 06). The HTTP face maps it to
+	// 422 and nothing is persisted — the create/edit transaction never opens.
+	ErrContentBlocked = errors.New("community: content blocked by word list")
 )
 
 // SandboxError is returned when a TL0 newcomer trips a sandbox limit (doc 11

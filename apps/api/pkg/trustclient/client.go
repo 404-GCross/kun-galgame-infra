@@ -110,6 +110,35 @@ func (c *Client) Scan(ctx context.Context, req ScanRequest) (scanID int64, trunc
 	return env.Data.ScanID, env.Data.Truncated, nil
 }
 
+// CheckRequest mirrors the trust CheckRequest DTO (step 05): a synchronous
+// Tier0 word-list gate. Site is the relay path (a community forwarder relays for
+// many sites through one S2S identity, so it carries the tenant site on the
+// wire, allowlist-gated trust-side); an empty Site derives from the client
+// binding. Text is the RAW body to check. AuthorID is accepted for future
+// repeat-offender weighting (not consulted in v0).
+type CheckRequest struct {
+	Site     string `json:"site,omitempty"`
+	Text     string `json:"text"`
+	AuthorID *int64 `json:"author_id,omitempty"`
+}
+
+type checkData struct {
+	Decision string   `json:"decision"`
+	Matched  []string `json:"matched"`
+}
+
+// Check runs a synchronous word-list check. Returns the decision
+// (allow|deny|hold — deny wins over hold) and the matched normalized terms ([]
+// when none). The caller (community service) owns the timeout and the fail-open
+// posture; this method just answers or errors.
+func (c *Client) Check(ctx context.Context, req CheckRequest) (decision string, matched []string, err error) {
+	var env envelope[checkData]
+	if err := c.post(ctx, "/api/v1/trust/check", req, &env); err != nil {
+		return "", nil, err
+	}
+	return env.Data.Decision, env.Data.Matched, nil
+}
+
 type resolveRequest struct {
 	ReviewItemID int64   `json:"review_item_id"`
 	Outcome      string  `json:"outcome"`

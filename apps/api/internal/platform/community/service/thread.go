@@ -19,15 +19,29 @@ type ThreadService struct {
 	threads *repository.ThreadRepository
 	trusts  *repository.TrustRepository
 	sink    EventSink
+	check   *CheckService // nil = the pre-write word-list gate is off (default)
 }
 
-func NewThreadService(db *gorm.DB, sink EventSink) *ThreadService {
-	return &ThreadService{
+// ThreadOption configures optional ThreadService collaborators (step 06: the
+// synchronous pre-write word-list gate). Existing callers pass none.
+type ThreadOption func(*ThreadService)
+
+// WithThreadChecker installs the synchronous Tier0 word-list gate.
+func WithThreadChecker(c *CheckService) ThreadOption {
+	return func(s *ThreadService) { s.check = c }
+}
+
+func NewThreadService(db *gorm.DB, sink EventSink, opts ...ThreadOption) *ThreadService {
+	s := &ThreadService{
 		db:      db,
 		threads: repository.NewThreadRepository(db),
 		trusts:  repository.NewTrustRepository(db),
 		sink:    sink,
 	}
+	for _, o := range opts {
+		o(s)
+	}
+	return s
 }
 
 // OpenThreadParams describes a topic/feedback thread being opened with its
@@ -71,6 +85,21 @@ func (s *ThreadService) openWithFirstPost(ctx context.Context, kind int16, p Ope
 		if n >= tl0MaxTopicsPerDay {
 			return nil, nil, &SandboxError{Reason: "daily topic limit"}
 		}
+	}
+
+	// Synchronous Tier0 word-list gate (step 06), strictly BEFORE the tx. The
+	// first-post check text mirrors scan: `title + "\n\n" + raw` (the title only
+	// when present). deny blocks the create; hold publishes normally + enqueues.
+	checkText := p.BodyRaw
+	if p.Title != "" {
+		checkText = p.Title + "\n\n" + p.BodyRaw
+	}
+	suspectHold := false
+	switch s.check.Decision(ctx, p.Site, checkText, &p.AuthorID) {
+	case checkDeny:
+		return nil, nil, ErrContentBlocked
+	case checkHold:
+		suspectHold = true
 	}
 
 	now := time.Now()
@@ -123,6 +152,18 @@ func (s *ThreadService) openWithFirstPost(ctx context.Context, kind int16, p Ope
 				enqueuedItemID = itemID
 			}
 			return repository.DecrementHoldTx(tx, p.AuthorID)
+		}
+		if suspectHold {
+			// hold (suspect-only): the opening post stays visible but enters the
+			// review queue (source=suspect_words). IfAbsent converges with the
+			// first-post hold above to a single item.
+			itemID, created, err := repository.EnqueueReviewIfAbsentTx(tx, thread.Site, post.ID, model.ReviewSourceSuspectWords)
+			if err != nil {
+				return err
+			}
+			if created {
+				enqueuedItemID = itemID
+			}
 		}
 		return nil
 	})

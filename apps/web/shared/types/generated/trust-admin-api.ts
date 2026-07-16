@@ -212,6 +212,50 @@ export interface paths {
         patch: operations["patchTrustSubjectKind"];
         trace?: never;
     };
+    "/api/v1/admin/trust/terms": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Tier0 word-list terms (filter by site/kind; optionally include deprecated)
+         * @description Requires trust.term_manage (admin/ren); a moderator is rejected 403. Terms are never hard-deleted — deprecate retires them.
+         */
+        get: operations["listTrustTerms"];
+        put?: never;
+        /**
+         * Register a Tier0 term (raw word is normalized server-side before storage)
+         * @description Requires trust.term_manage (admin/ren); a moderator is rejected 403. Terms are never hard-deleted — deprecate retires them.
+         */
+        post: operations["createTrustTerm"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/trust/terms/{id}/deprecate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Deprecate (retire) a Tier0 term — never a hard delete
+         * @description Requires trust.term_manage (admin/ren); a moderator is rejected 403. Terms are never hard-deleted — deprecate retires them.
+         */
+        post: operations["deprecateTrustTerm"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -243,6 +287,25 @@ export interface components {
             notify_on_dismiss?: boolean;
             /** @description tenant site the kind belongs to */
             site: string;
+        };
+        CreateTermRequest: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/CreateTermRequest.json
+             */
+            readonly $schema?: string;
+            /**
+             * Format: int32
+             * @description 0=suspect (hold — enqueue, don't block) 1=banned (deny — the sync check rejects)
+             */
+            kind: number;
+            /** @description optional operator memo */
+            note?: string;
+            /** @description tenant site; null = global (applies to every site) */
+            site?: string;
+            /** @description the raw term (normalized server-side before storage) */
+            term: string;
         };
         DecideData: {
             decided: boolean;
@@ -407,6 +470,30 @@ export interface components {
             data?: components["schemas"]["SubjectKindView"];
             message: string;
         };
+        EnvelopeTermView: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/EnvelopeTermView.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            code: number;
+            data?: components["schemas"]["TermView"];
+            message: string;
+        };
+        EnvelopeTermsResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/EnvelopeTermsResponse.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            code: number;
+            data?: components["schemas"]["TermsResponse"];
+            message: string;
+        };
         HouseError: {
             /**
              * Format: uri
@@ -543,6 +630,25 @@ export interface components {
             key: string;
             notify_on_dismiss: boolean;
             site: string;
+        };
+        TermView: {
+            /** Format: date-time */
+            created_at: string;
+            /** Format: int64 */
+            id: number;
+            is_deprecated: boolean;
+            /**
+             * Format: int32
+             * @description 0=suspect (hold) 1=banned (deny)
+             */
+            kind: number;
+            note?: string;
+            /** @description null = global (applies to every site) */
+            site?: string;
+            term_norm: string;
+        };
+        TermsResponse: {
+            terms: components["schemas"]["TermView"][] | null;
         };
     };
     responses: never;
@@ -942,6 +1048,106 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EnvelopeSubjectKindView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HouseError"];
+                };
+            };
+        };
+    };
+    listTrustTerms: {
+        parameters: {
+            query?: {
+                /** @description filter to one site; empty = all (global + every site) */
+                site?: string;
+                /** @description 0=suspect 1=banned; -1 = all */
+                kind?: number;
+                /** @description include retired terms */
+                include_deprecated?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeTermsResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HouseError"];
+                };
+            };
+        };
+    };
+    createTrustTerm: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateTermRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeTermView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HouseError"];
+                };
+            };
+        };
+    };
+    deprecateTrustTerm: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeTermView"];
                 };
             };
             /** @description Error */

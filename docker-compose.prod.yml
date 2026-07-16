@@ -423,6 +423,15 @@ services:
       # KUN_TRUST_FORWARDER_CLIENT_IDS). Explicit "false" so the power-on checklist
       # can grep it.
       KUN_TRUST_SCAN_ENABLED: "false"
+      # Synchronous pre-write word-list gate (step 06) — INDEPENDENT of the
+      # forward/scan wiring above. Default off: even once KUN_TRUST_CLIENT_* is
+      # set, the sync check stays dark until this is flipped to "true" in Dokploy
+      # (same prerequisites as scanning: the site's (site, community_post)
+      # subject_kind registered + this client in KUN_TRUST_FORWARDER_CLIENT_IDS).
+      # deny blocks the write (422), hold enqueues a suspect review item; any
+      # check error/timeout fails OPEN. Explicit "false" so the power-on checklist
+      # can grep it.
+      KUN_TRUST_CHECK_ENABLED: "false"
     # Internal only — product backends (letmoe/...) reach it at
     # http://community:9282 over dokploy-network.
     expose: ["9282"]

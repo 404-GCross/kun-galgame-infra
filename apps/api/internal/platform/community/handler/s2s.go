@@ -536,6 +536,8 @@ func mapErr(op string, err error) *houseError {
 		return apiErrMsg(http.StatusForbidden, errors.ErrForbidden, "not the post author")
 	case stderrors.Is(err, service.ErrPostNotEditable):
 		return apiErrMsg(http.StatusConflict, errors.ErrOperationFailed, "post is not editable")
+	case stderrors.Is(err, service.ErrContentBlocked):
+		return apiErrMsg(http.StatusUnprocessableEntity, errors.ErrValidationFailed, "content blocked by word list")
 	default:
 		slog.Error("community "+op, "err", err)
 		return apiErr(http.StatusInternalServerError, errors.ErrInternalServer)

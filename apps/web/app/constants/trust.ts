@@ -97,3 +97,21 @@ export const CALLBACK_STATUS_COLORS: Record<number, TrustChipColor> = {
   1: 'success',
   2: 'danger'
 }
+
+// trust_term.kind: 0=suspect (hold — enqueue, don't block) 1=banned (deny — the
+// synchronous check rejects the write). Mirrors
+// apps/api/internal/platform/trust/model/constants.go (persisted — never renumber).
+export const TERM_KIND = {
+  suspect: 0,
+  banned: 1
+} as const
+
+export const TERM_KIND_LABELS: Record<number, string> = {
+  0: '疑似(入队复核)',
+  1: '禁用(直接拦截)'
+}
+
+export const TERM_KIND_COLORS: Record<number, TrustChipColor> = {
+  0: 'warning',
+  1: 'danger'
+}

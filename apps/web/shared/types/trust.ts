@@ -27,6 +27,11 @@ export type TrustPatchSubjectKindRequest = Schemas['PatchSubjectKindRequest']
 export type TrustCreateReasonRequest = Schemas['CreateReasonRequest']
 export type TrustPatchReasonRequest = Schemas['PatchReasonRequest']
 
+// Tier0 word list (step 05/06)
+export type TrustTerm = Schemas['TermView']
+export type TrustTermsResponse = Schemas['TermsResponse']
+export type TrustCreateTermRequest = Schemas['CreateTermRequest']
+
 // Dead-letter dispositions
 export type TrustDisposition = Schemas['DispositionView']
 export type TrustDispositionPage = Schemas['PageDispositionView']

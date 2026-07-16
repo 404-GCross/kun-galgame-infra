@@ -44,6 +44,13 @@ type Config struct {
 	// client would auto-enable it on deploy (violating "default off"). The sink is
 	// composed only when this is true AND the trust client is wired.
 	TrustScanEnabled bool
+	// TrustCheckEnabled gates the community SYNCHRONOUS pre-write word-list gate
+	// (step 06). Default false and INDEPENDENT of TrustClient being configured
+	// (same principle as TrustScanEnabled) — a forwarding-configured production
+	// community does not auto-enable the sync check on deploy. The gate is wired
+	// only when this is true AND the trust client is configured; any check
+	// error/timeout fails OPEN (posting is never blocked).
+	TrustCheckEnabled bool
 	// GalgameImageClient is a SECOND image client identity, used only by the
 	// galgame-image-refping job. The job runs in the oauth container (central
 	// scheduler), where ImageClient is the *account* client — but galgame
@@ -544,6 +551,7 @@ func Load() (*Config, error) {
 	cfg.TrustCallbackSecret = getEnv("KUN_TRUST_CALLBACK_SECRET", "")
 	cfg.TrustForwarderClientIDs = splitCSV(getEnv("KUN_TRUST_FORWARDER_CLIENT_IDS", ""))
 	cfg.TrustScanEnabled, _ = strconv.ParseBool(getEnv("KUN_TRUST_SCAN_ENABLED", "false"))
+	cfg.TrustCheckEnabled, _ = strconv.ParseBool(getEnv("KUN_TRUST_CHECK_ENABLED", "false"))
 
 	// Second image identity for galgame-image-refping (see Config.GalgameImageClient).
 	// Set KUN_GALGAME_IMAGE_CLIENT_ID / _SECRET in the oauth container to the

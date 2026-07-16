@@ -105,14 +105,30 @@ func main() {
 		slog.Info("community trust scanning disabled (KUN_TRUST_SCAN_ENABLED off or KUN_TRUST_CLIENT_* unset)")
 	}
 
+	// Trust check gate (step 06). Gated by the INDEPENDENT KUN_TRUST_CHECK_ENABLED
+	// switch (default false) AND the trust client being wired — same principle as
+	// scanning. This runs SYNCHRONOUSLY before a write commits (deny blocks, hold
+	// enqueues) but fails OPEN on any error/timeout, so a down trust service never
+	// blocks posting.
+	var checker service.Checker
+	if cfg.TrustCheckEnabled && trustCli != nil {
+		checker = trustCli
+	}
+	checkSvc := service.NewCheckService(checker)
+	if checkSvc.Enabled() {
+		slog.Info("community trust check enabled (synchronous word-list gate)", "base_url", cfg.TrustClient.BaseURL)
+	} else {
+		slog.Info("community trust check disabled (KUN_TRUST_CHECK_ENABLED off or KUN_TRUST_CLIENT_* unset)")
+	}
+
 	// Domain services. Notification events still go to a no-op sink (章程 ruling 2
 	// / doc 11 §7); the ForwardingSink turns the step-03 review.* events into
 	// off-request trust forward/resolve calls, and the ScanningSink turns
 	// post.created / post.edited into step-04 shadow-scan calls. The two decorators
 	// consume disjoint events and nest in any order.
 	sink := service.NewScanningSink(service.NewForwardingSink(service.NoopSink{}, forwardSvc), scanSvc)
-	threadSvc := service.NewThreadService(communityDB.DB(), sink)
-	postSvc := service.NewPostService(communityDB.DB(), sink)
+	threadSvc := service.NewThreadService(communityDB.DB(), sink, service.WithThreadChecker(checkSvc))
+	postSvc := service.NewPostService(communityDB.DB(), sink, service.WithPostChecker(checkSvc))
 	reactionSvc := service.NewReactionService(communityDB.DB())
 	feedbackSvc := service.NewFeedbackService(communityDB.DB(), sink)
 	flagSvc := service.NewFlagService(communityDB.DB(), sink)

@@ -18,15 +18,30 @@ type PostService struct {
 	posts  *repository.PostRepository
 	trusts *repository.TrustRepository
 	sink   EventSink
+	check  *CheckService // nil = the pre-write word-list gate is off (default)
 }
 
-func NewPostService(db *gorm.DB, sink EventSink) *PostService {
-	return &PostService{
+// PostOption configures optional PostService collaborators (step 06: the
+// synchronous pre-write word-list gate). Existing callers pass none — the gate
+// is off, so behaviour is unchanged (default-safe).
+type PostOption func(*PostService)
+
+// WithPostChecker installs the synchronous Tier0 word-list gate.
+func WithPostChecker(c *CheckService) PostOption {
+	return func(s *PostService) { s.check = c }
+}
+
+func NewPostService(db *gorm.DB, sink EventSink, opts ...PostOption) *PostService {
+	s := &PostService{
 		db:     db,
 		posts:  repository.NewPostRepository(db),
 		trusts: repository.NewTrustRepository(db),
 		sink:   sink,
 	}
+	for _, o := range opts {
+		o(s)
+	}
+	return s
 }
 
 // ReplyParams describes a reply to an existing thread.
@@ -61,6 +76,18 @@ func (s *PostService) Reply(ctx context.Context, p ReplyParams) (*model.Communit
 		if n >= tl0MaxRepliesPerDay {
 			return nil, &SandboxError{Reason: "daily reply limit"}
 		}
+	}
+
+	// Synchronous Tier0 word-list gate (step 06), strictly BEFORE the tx — the
+	// HTTP check never runs inside a transaction (charter community ruling). deny
+	// blocks the write outright; hold publishes normally but enqueues a review
+	// item inside the tx below. A disabled gate / any checker failure is allow.
+	suspectHold := false
+	switch s.check.Decision(ctx, callerSite(ctx), p.BodyRaw, &p.AuthorID) {
+	case checkDeny:
+		return nil, ErrContentBlocked
+	case checkHold:
+		suspectHold = true
 	}
 
 	now := time.Now()
@@ -152,6 +179,19 @@ func (s *PostService) Reply(ctx context.Context, p ReplyParams) (*model.Communit
 			}
 			return repository.DecrementHoldTx(tx, p.AuthorID)
 		}
+		if suspectHold {
+			// hold (suspect-only): the post stays visible but enters the review
+			// queue (source=suspect_words) — "enqueue, don't block" (doc 18). NOT
+			// the TL0 held/hidden status. IfAbsent converges with a concurrent
+			// first-post hold to a single item.
+			itemID, created, err := repository.EnqueueReviewIfAbsentTx(tx, thread.Site, post.ID, model.ReviewSourceSuspectWords)
+			if err != nil {
+				return err
+			}
+			if created {
+				enqueuedItemID = itemID
+			}
+		}
 		return nil
 	})
 	if err != nil {
@@ -207,8 +247,21 @@ func (s *PostService) Edit(ctx context.Context, p EditParams) (*model.CommunityP
 		return nil, err
 	}
 
+	// Synchronous Tier0 word-list gate (step 06), strictly BEFORE the tx. deny
+	// blocks the edit (nothing persisted); hold lets the edit through but enqueues
+	// a suspect review item inside the tx (IfAbsent → editing twice never
+	// duplicates). Fail-open on any checker failure.
+	suspectHold := false
+	switch s.check.Decision(ctx, callerSite(ctx), p.BodyRaw, &p.AuthorID) {
+	case checkDeny:
+		return nil, ErrContentBlocked
+	case checkHold:
+		suspectHold = true
+	}
+
 	now := time.Now()
 	var post model.CommunityPost
+	var enqueuedItemID int64
 	modActed := false
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		existing, err := repository.GetPostTx(tx, p.PostID)
@@ -251,6 +304,18 @@ func (s *PostService) Edit(ctx context.Context, p EditParams) (*model.CommunityP
 		existing.SanitizerVersion = int32(cooked.Version)
 		existing.EditedAt = &now
 		existing.EditedByModerator = modActed
+		if suspectHold {
+			// hold (suspect-only) on an edit: enqueue on the thread's tenant site;
+			// the post stays visible. IfAbsent is idempotent — a second edit that
+			// still trips suspect never adds a duplicate item.
+			itemID, created, eqErr := repository.EnqueueReviewIfAbsentTx(tx, thread.Site, existing.ID, model.ReviewSourceSuspectWords)
+			if eqErr != nil {
+				return eqErr
+			}
+			if created {
+				enqueuedItemID = itemID
+			}
+		}
 		post = *existing
 		return nil
 	})
@@ -264,6 +329,11 @@ func (s *PostService) Edit(ctx context.Context, p EditParams) (*model.CommunityP
 	// A successful edit re-emits the content event so the step-04 scanning sink
 	// re-scans the new raw body (a no-op under NoopSink / the forwarding sink).
 	s.sink.Emit(Event{Kind: EventPostEdited, ThreadID: post.ThreadID, PostID: post.ID, ActorID: p.AuthorID})
+	// A freshly-enqueued suspect item forwards to the trust inbox after commit
+	// (step 03 outbox), same as the create path.
+	if enqueuedItemID != 0 {
+		s.sink.Emit(Event{Kind: EventReviewEnqueued, ThreadID: post.ThreadID, PostID: post.ID, ReviewItemID: enqueuedItemID})
+	}
 	return &post, nil
 }
 
