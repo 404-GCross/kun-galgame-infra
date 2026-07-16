@@ -70,8 +70,8 @@ git push        # → GitHub Actions 自动 build 并推 ghcr.io/kunmoe/*(:lates
 1. **先部署 infra**,等 `postgres`/`redis`/`minio`/`meili` healthy。
 2. 在 infra 应用的 **Terminal** 跑首启迁移:
    ```bash
-   docker compose -f docker-compose.prod.yml --profile jobs run --rm migrate           # kun_galgame_infra:表 + 站点/角色种子
-   docker compose -f docker-compose.prod.yml --profile jobs run --rm migrate-galgame   # kun_galgame_wiki:表 + 约束
+   docker compose -f docker-compose.prod.yml run --rm migrate           # kun_galgame_infra:表 + 站点/角色种子
+   docker compose -f docker-compose.prod.yml run --rm migrate-catalog   # wiki 两族 + catalog:表 + 约束(W5 单一入口;部署也自动跑)
    ```
 3. **注册 OAuth client**(否则前端登录走不通,不在任何 migrate 种子里):登录 infra 管理端建 **论坛 / 补丁 / wiki** 三个 client(`redirect_uri` 填各自 https 回调),把生成的 **secret 写回** kungal/moyu 应用的 **Environment 面板**(`OAUTH_CLIENT_SECRET`)。见 [03-bootstrap §A.5](./03-bootstrap.md) + [12-dokploy §12.3](./12-dokploy.md)。
 4. **再部署 kungal、moyu**;各自 Terminal 跑 `docker compose -f docker-compose.prod.yml --profile jobs run --rm migrate`(清理型迁移,空库打印「无迁移」即正常)。
@@ -88,7 +88,7 @@ git push        # → GitHub Actions 自动 build 并推 ghcr.io/kunmoe/*(:lates
 |---|---|---|---|
 | `oauth.kungal.com` | `/api/v1` | infra | `oauth:9277` |
 | `oauth.kungal.com` | `/` | infra | `web:3000`(管理端) |
-| `wiki.kungal.com` | `/api` | infra | `galgame:9280` |
+| `wiki.kungal.com` | `/api` | infra | `catalog:9281`(W3 起;路由现收敛在 compose labels,见 12-dokploy) |
 | `wiki.kungal.com` | `/` | infra | `wiki:3000` |
 | `kungal.com` + `www.kungal.com` | `/api` | kungal | `kungal-api:2334` |
 | `kungal.com` + `www.kungal.com` | `/` | kungal | `web:7777` |

@@ -89,13 +89,12 @@ docker run --rm -v kun-galgame-infra_minio:/data -v "$PWD:/b" alpine \
 
 ## 迁移 / 一次性任务
 
-都是 `profiles: ["jobs"]` 的一次性容器,`up` 不会拉起:
+`migrate*` 随每次 `up`/部署自动跑并把服务 gate 在其后;也可手动 run(`tools` 仍是 jobs profile):
 ```bash
-docker compose run --rm migrate              # infra oauth schema
-docker compose run --rm migrate-galgame      # infra wiki schema
-# 其它工具用 build-arg 出镜像后 run:
-docker build -f docker/go.Dockerfile --build-arg CMD=sync-vndb -t kun-galgame-infra/sync-vndb .
-docker run --rm --network kun-galgame-infra_default --env-file docker/galgame.env kun-galgame-infra/sync-vndb
+docker compose -f docker-compose.prod.yml run --rm migrate              # infra oauth schema
+docker compose -f docker-compose.prod.yml run --rm migrate-catalog      # wiki 两族 + catalog schema(W5 单一入口)
+# 其它一次性工具走全量 tools 镜像(见 13-registry-ci):
+docker compose -f docker-compose.prod.yml --profile jobs run --rm tools sync-vndb -tagmap docs/tagMap.ts
 ```
 跨仓数据迁移的**顺序**见 [03-bootstrap.md](./03-bootstrap.md) B 节——`migrate-users` 是分水岭。
 

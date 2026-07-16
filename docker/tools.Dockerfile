@@ -5,11 +5,12 @@
 # reindex-search, sync-vndb, migrate-moemoepoint (see docs/deploy/03-bootstrap.md §B).
 #
 # The per-service Dockerfiles build ONE binary (ARG CMD) so you can't override
-# the entrypoint of infra-galgame to run reindex-search — that binary isn't in it.
-# This image bundles them all and invokes a job by name:
+# the entrypoint of infra-catalog to run reindex-search — that binary isn't in it.
+# This image bundles them all and invokes a job by name (env-file = a dump of
+# the target service container's .Config.Env, see docs/deploy/16-data-cutover.md):
 #
-#   docker run --rm --network kun-galgame-infra_default \
-#     --env-file docker/galgame.env ghcr.io/kunmoe/infra-tools reindex-search
+#   docker run --rm --network dokploy-network \
+#     --env-file /root/infra.env ghcr.io/kunmoe/infra-tools reindex-search
 #
 # Built CGO_ENABLED=1 + libwebp so the cgo cmds (image*, oauth) compile too; the
 # rest are pure Go. Build context MUST be the repo root.

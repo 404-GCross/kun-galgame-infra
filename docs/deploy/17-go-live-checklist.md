@@ -80,12 +80,12 @@ POSTGRES_USER=postgres                 # 默认 postgres,一般不改
 
 ## Phase 2 · 数据 / Schema + OAuth client
 
-> 一次性 job 都用 prod compose 的 jobs profile 跑(已内联 environment,无需 env 文件):
-> `docker compose -f docker-compose.prod.yml --profile jobs run --rm <migrate|migrate-galgame|tools> …`
+> 一次性 job 已内联 environment,无需 env 文件(`tools` 在 jobs profile;`migrate*` 部署时自动跑,也可手动 run):
+> `docker compose -f docker-compose.prod.yml [--profile jobs] run --rm <migrate|migrate-catalog|tools> …`
 
 ### 2A · 空库(先验证管线)
-- [ ] `docker compose -f docker-compose.prod.yml --profile jobs run --rm migrate`(infra schema + 种子)
-- [ ] `docker compose -f docker-compose.prod.yml --profile jobs run --rm migrate-galgame`(wiki schema)→ [03-bootstrap §A](./03-bootstrap.md)
+- [ ] `docker compose -f docker-compose.prod.yml run --rm migrate`(infra schema + 种子)
+- [ ] `docker compose -f docker-compose.prod.yml run --rm migrate-catalog`(wiki 两族 + catalog schema,W5 单一入口)→ [03-bootstrap §A](./03-bootstrap.md)
 
 ### 2B · 带生产数据(正式上线)—— 实际放到 Phase 3/3′ 之后做
 > 16 的流水线**交错跑 infra + kungal + moyu 三家工具**,需要 kungal/moyu **已部署**(`$FORUM`/`$PATCH` 目录 + `.env` 存在)才能跑 `$KUNGAL`/`$MOYU` 那几步。
@@ -139,7 +139,7 @@ KUN_VISUAL_NOVEL_S3_STORAGE_SECRET_ACCESS_KEY=<B2 secret> # 必填
 
 ### 4.1 Dokploy Domains(每个应用对外服务加「域名+路径→服务:端口」,`/api*` 与 `/` 各一条)→ [12-dokploy §12.1](./12-dokploy.md)
 - [ ] infra:`oauth.kungal.com` `/api/v1`→`oauth:9277`、`/`→`web:3000`
-- [ ] infra:`wiki.kungal.com` `/api`→`galgame:9280`、`/`→`wiki:3000`
+- [ ] infra:`wiki.kungal.com` `/api`→`catalog:9281`、`/`→`wiki:3000`(W3 起两条路由都收敛在 compose labels,不再用面板 Domains)
 - [ ] kungal:`kungal.com`+`www` `/api`→`kungal-api:2334`、`/`→`web:7777`
 - [ ] moyu:`moyu.moe`+`www` `/api/v1`→`moyu-api:5214`、`/`→`web:3000`
 > 服务名是 **`kungal-api` / `moyu-api`**(不是 `api`)——Dokploy 不应用 compose 的 `networks.aliases`,只注册服务名;两仓都叫 `api` 会 DNS 冲突,导致 SSR(刷新页面)拉不到数据。所以服务名直接用唯一名。

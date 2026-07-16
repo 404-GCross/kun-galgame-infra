@@ -40,7 +40,7 @@
 
 2. **本项目三仓:线上(prod compose)不受此坑影响,dev compose 受**
    - **prod `docker-compose.prod.yml`(线上用)**:oauth/image/galgame/web/wiki/api 全用 **`expose:`**;postgres/redis/minio/meili 连 expose 都没有 → **没有任何应用端口映射到宿主、不暴露公网**。生产唯一对外的是 Dokploy 的 Traefik(80/443)+ 面板 3000 → 需要「绕 ufw」处理的**只有 3000**(见三.4,用 `--publish-rm` 关最干净)。
-   - **dev `docker-compose.yml`(本地/测试用)用 `ports: 15xxx`** → 发布宿主端口、会绕过 ufw。**绝不要在公网服务器上跑 dev compose**,否则 `15000(pg)` / `15001(redis)` / `15002(minio)` … 一串会直接暴露公网且 ufw 拦不住。线上只用 prod compose。
+   - **dev compose 绝不上公网服务器**:旧的本地 build `docker-compose.yml`(`ports: 15xxx`,已于 wiki 退役 W5 移除)和现行 `docker-compose.dev.yml`(`network_mode: host`,把 9277-9284/5432 级端口直接绑在宿主上)都会**绕过 ufw / 直接暴露端口**。线上只用 prod compose。
 
 3. **入站只需要 SSH / 80 / 443**(+ 初装临时的 3000)
    其余 postgres / redis / oauth / galgame / image / meili / minio 线上全是容器内网(`expose`),无需任何入站规则。临时从笔记本连库走 **SSH 隧道** `ssh -L`,别长期开端口。

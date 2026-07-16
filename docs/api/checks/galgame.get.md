@@ -1,8 +1,8 @@
 # Galgame Wiki 服务 — GET API 清单
 
-> 服务: **galgame**（`apps/api/cmd/galgame`） · Base URL: `/api`
+> 服务: **galgame 面**（宿主 `cmd/catalog`,装配 `apps/api/internal/galgameapp`;独立 `galgame` 二进制已于 wiki 退役 W5 移除） · Base URL: `/api`
 >
-> 路由源: `apps/api/cmd/galgame/main.go`
+> 路由源: `apps/api/internal/galgameapp/mount.go`
 >
 > 配套: [oauth.get.md](./oauth.get.md) · [image.get.md](./image.get.md) · [moderation.get.md](./moderation.get.md) · [artifact.get.md](./artifact.get.md)
 >

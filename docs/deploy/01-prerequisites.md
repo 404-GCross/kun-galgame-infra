@@ -42,7 +42,8 @@ website/
 ```
 
 - infra 额外有 `docker/initdb.d/`(Postgres 建库脚本)和 `docker/cgo.Dockerfile`。
-- kungal / moyu 的 `docker-compose.yml` **同构**:base 都自带 `external: kun-galgame-infra_default` 网络、不定义 pg/redis(连 infra),靠 `restart` 重连;生产各自用 `docker-compose.prod.yml`(GHCR 镜像)。见 [04-run.md](./04-run.md)。
+- **infra 的本地 build `docker-compose.yml` 已于 wiki 退役 W5 移除**:本地开发用仓根 `docker-compose.dev.yml`(GHCR 预构建镜像,见 `docs/dev-environment.md`),生产用 `docker-compose.prod.yml`。
+- kungal / moyu 的 `docker-compose.yml` **同构**:base 都自带 `external` 共享网络、不定义 pg/redis(连 infra),靠 `restart` 重连;生产各自用 `docker-compose.prod.yml`(GHCR 镜像)。见 [04-run.md](./04-run.md)。
 
 ## 密钥占位
 

@@ -2,7 +2,7 @@
 
 ## 背景 & 目标
 
-wiki 后端（cmd/galgame，:9280）目前对 galgame 只有极简的 `?search=xxx` —— 对 4 个 `name_*` 列做 `ILIKE`，不支持 vndb_id / 别名 / tag / official 命中，不排序、不高亮、不支持 facet。tag / official 有 `/search` 但只会 LIKE 本表字段。
+wiki 后端（galgame 面,现由 cmd/catalog 承载于 :9281;撰文时为独立 :9280 服务）目前对 galgame 只有极简的 `?search=xxx` —— 对 4 个 `name_*` 列做 `ILIKE`，不支持 vndb_id / 别名 / tag / official 命中，不排序、不高亮、不支持 facet。tag / official 有 `/search` 但只会 LIKE 本表字段。
 
 本设计为三个实体引入基于 Meilisearch 的搜索：
 

@@ -15,7 +15,7 @@
 
 > 本设计建立在本仓既有能力之上:
 > 自建 OAuth2 IdP(`oauth_clients` 表,`internal/platform/site/model/oauth_client.go`,主库 `kun_galgame_infra`)、
-> galgame 服务(`cmd/galgame`,库 `kun_galgame_wiki`,读面已 Huma 出谱)、
+> galgame 面(撰文时为独立 `cmd/galgame`/库 `kun_galgame_wiki`;wiki 退役 W1-W5 后由 `cmd/catalog` 承载、库 `kun_catalog`,契约不变。读面已 Huma 出谱)、
 > catalog 服务(`cmd/catalog`,库 `kun_catalog`,生产在线,自带 Huma spec)、
 > artifact 的 Huma/OpenAPI 样板(`cmd/gen-openapi`)、
 > calendar 的 ETag/缓存样板(`internal/platform/galgame/handler/calendar_handler.go`)。
@@ -58,7 +58,7 @@
 
 | 角色 | 域名 | 后端 | 库 |
 |---|---|---|---|
-| NextMoe 开放 API(对外只读) | `api.nextmoe.dev` | Traefik 按路径分发:`/v1/catalog/*` → catalog 服务(`cmd/catalog`);`/v1/galgame/*` → galgame 服务(`cmd/galgame`;doc 19 W2 起改指 catalog 侧内容体,契约不变) | `kun_catalog` / `kun_galgame_wiki` |
+| NextMoe 开放 API(对外只读) | `api.nextmoe.dev` | Traefik 按路径分发:`/v1/catalog/*` 与 `/v1/galgame/*` 均 → catalog 服务(`cmd/catalog`;galgame 面自 W3 起由它独家承载,契约不变) | `kun_catalog` |
 | 开发者门户 | `developer.nextmoe.dev` | 门户前端(Nuxt)+ 平台后端(扩展 account/IdP 侧) | `kun_galgame_infra` |
 | IdP(已存在) | 现有 oauth 域名 | `cmd/oauth` | `kun_galgame_infra` |
 
@@ -102,7 +102,7 @@
 
 ### 3.2 v1 端点清单(草案)
 
-**galgame 面**(后端 = `cmd/galgame`,内容真源):
+**galgame 面**(后端 = `cmd/catalog` 承载的 galgame 面(W3 起;撰文时为 `cmd/galgame`),内容真源):
 
 | 公开端点(`/v1`) | 映射内部 | scope | 说明 |
 |---|---|---|---|

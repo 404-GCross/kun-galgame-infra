@@ -155,7 +155,7 @@ CREATE INDEX idx_galgame_message_id
 
 ## 5. 接口设计
 
-所有路径前缀 `/api`（galgame service `:9280`）。
+所有路径前缀 `/api`（galgame 面,现由 catalog service `:9281` 承载;撰文时为独立 `:9280` 服务）。
 
 ### 5.1 用户提交（新）
 

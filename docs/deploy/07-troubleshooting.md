@@ -67,7 +67,7 @@
 - **解法**:容器内必须绑 `0.0.0.0`(`KUN_FIBER_SERVER_HOST=0.0.0.0` / `KUN_IMAGE_SERVICE_HOST=0.0.0.0` / Nuxt `HOST=0.0.0.0`,均已在 env/Dockerfile 设好)。
 
 ### I7 · host 端口冲突
-- **原因**:本机 `air` 开发服务占了 9277/9280 等。
+- **原因**:本机 `air` 开发服务占了 9277/9281 等。
 - **解法**:整套 host 端口用 `1xxxx` 段(见 [00-architecture.md](./00-architecture.md) 端口表),与 dev 共存。
 
 ### I8 · 浏览器拿到的图 / API 地址是 `127.0.0.1:9277`(连不上)

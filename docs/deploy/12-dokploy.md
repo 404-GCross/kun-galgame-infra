@@ -15,9 +15,9 @@
                                           全部容器接入共享网络  dokploy-network
    ┌──────────────── infra compose app ─────────────────┐  ┌── kungal app ──┐  ┌── moyu app ──┐
    │ postgres redis minio meili(基础设施,仅内部)      │  │ api  web       │  │ api  web      │
-   │ oauth  image  galgame  web(admin)  wiki           │  └────────────────┘  └───────────────┘
+   │ oauth  image  catalog  web(admin)  wiki  …        │  └────────────────┘  └───────────────┘
    └───────────────────────────────────────────────────┘   下游按服务名连枢纽:postgres / redis /
-                                                            oauth:9277 / galgame:9280 / image:9278
+                                                            oauth:9277 / catalog:9281 / image:9278
 ```
 
 - **3 个独立 Dokploy "Compose" 应用**(各对应一个 Git 仓库,Dokploy 克隆 + `build`):`kun-galgame-infra`(infra)、`kun-galgame-forum`(kungal)、`kun-galgame-patch`(moyu)。
@@ -33,7 +33,7 @@ DNS 把下列域名的 A/AAAA 记录指向**服务器公网 IP**;Traefik 自动�
 |---|---|---|---|
 | `oauth.kungal.com` | `/api/v1` | infra | `oauth:9277` |
 | `oauth.kungal.com` | `/`(默认) | infra | `web:3000`(admin 前端) |
-| `wiki.kungal.com` | `/api` | infra | `galgame:9280` |
+| `wiki.kungal.com` | `/api` | infra | `catalog:9281`(W3 起;此域两条路由已收敛为 compose labels,不再走面板 Domains) |
 | `wiki.kungal.com` | `/`(默认) | infra | `wiki:3000` |
 | `kungal.com` + `www.kungal.com` | `/api` | kungal | `kungal-api:2334` |
 | `kungal.com` + `www.kungal.com` | `/`(默认) | kungal | `web:7777` |
@@ -77,7 +77,7 @@ DNS 把下列域名的 A/AAAA 记录指向**服务器公网 IP**;Traefik 自动�
 - moyu `docker/api.env` `CORS_ALLOW_ORIGINS=https://www.moyu.moe,https://moyu.moe`
 
 **E. 后端→后端 / 图床 base(env,用服务名,不变或确认)**
-- 下游 api.env 的 `OAUTH_SERVER_URL=http://oauth:9277/api/v1`、`*GALGAME_WIKI_BASE_URL=http://galgame:9280/api`、`KUN_IMAGE_*CLIENT_BASE_URL=http://image:9278`(s2s 走服务名,**保持容器内部地址**)。
+- 下游 api.env 的 `OAUTH_SERVER_URL=http://oauth:9277/api/v1`、`*GALGAME_WIKI_BASE_URL=http://catalog:9281/api`(W3 起指 catalog)、`KUN_IMAGE_*CLIENT_BASE_URL=http://image:9278`(s2s 走服务名,**保持容器内部地址**)。
 - 各服务的 `KUN_IMAGE_PUBLIC_BASE_URL=https://image.kungal.iloveren.link`(后端生成给前端的图片 URL,用公网 CDN 域)。
 
 **F. 转发头**:Traefik 默认带 `X-Forwarded-Proto/Host`,SSR 绝对 URL、OAuth 跳转、`Secure` cookie 正确,无需手动配置。
@@ -106,7 +106,7 @@ OAuth client 的 `redirect_uris` 存在枢纽 `kun_galgame_infra.oauth_clients` 
 
 ## 12.5 双 base 与 SSR
 
-前端已实现**双 base**(见 `docs`/各仓 nuxt.config):**SSR 在容器内用服务名**(`http://kungal-api:2334`、`http://oauth:9277/api/v1`、`http://galgame:9280/api`),**浏览器用 12.1 的公网域名**。Dokploy 下这套**正好需要**——没有宿主端口,SSR 必须走内部服务名,浏览器走 Traefik 域名。所以 12.2-C 只改"浏览器侧"URL,SSR 的 `NUXT_API_BASE_SSR` / `NUXT_AUTH_API_BASE_SSR` / kungal 的 `NUXT_API_BASE_URL` 维持容器内部地址不变。
+前端已实现**双 base**(见 `docs`/各仓 nuxt.config):**SSR 在容器内用服务名**(`http://kungal-api:2334`、`http://oauth:9277/api/v1`、`http://catalog:9281/api`),**浏览器用 12.1 的公网域名**。Dokploy 下这套**正好需要**——没有宿主端口,SSR 必须走内部服务名,浏览器走 Traefik 域名。所以 12.2-C 只改"浏览器侧"URL,SSR 的 `NUXT_API_BASE_SSR` / `NUXT_AUTH_API_BASE_SSR` / kungal 的 `NUXT_API_BASE_URL` 维持容器内部地址不变。
 
 ## 12.6 数据迁移(首次切换)
 

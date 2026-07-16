@@ -1,6 +1,6 @@
 # Galgame Wiki 服务 — PATCH API 清单
 
-> 服务: **galgame**（`apps/api/cmd/galgame`） · Base URL: `/api` · 路由源: `cmd/galgame/main.go`
+> 服务: **galgame 面**（宿主 `cmd/catalog`,装配 `apps/api/internal/galgameapp`;独立 `galgame` 二进制已于 wiki 退役 W5 移除） · Base URL: `/api` · 路由源: `internal/galgameapp/mount.go`
 >
 > 图例见 [README](./README.md)。配套: [galgame.get.md](./galgame.get.md) · [galgame.post.md](./galgame.post.md) · [galgame.put.md](./galgame.put.md) · [galgame.delete.md](./galgame.delete.md)
 >

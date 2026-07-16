@@ -12,7 +12,7 @@
 |---|---|---|---|---|---|---|---|---|
 | OAuth | `cmd/oauth` | `/api/v1` | [20](./oauth.get.md) | [21](./oauth.post.md) | [4](./oauth.put.md) | [3](./oauth.delete.md) | [2](./oauth.patch.md) | 50 |
 | Image | `cmd/image`（+管理端在 oauth 进程）| `/`、`/api/v1/admin/image` | [6](./image.get.md) | [2](./image.post.md) | — | [2](./image.delete.md) | [1](./image.patch.md) | 11 |
-| Galgame Wiki | `cmd/galgame` | `/api` | [42](./galgame.get.md) | [17](./galgame.post.md) | [8](./galgame.put.md) | [8](./galgame.delete.md) | [1](./galgame.patch.md) | 76 |
+| Galgame Wiki | `internal/galgameapp`(宿主 `cmd/catalog`) | `/api` | [42](./galgame.get.md) | [17](./galgame.post.md) | [8](./galgame.put.md) | [8](./galgame.delete.md) | [1](./galgame.patch.md) | 76 |
 | Moderation（骨架已删除，doc 18 P0） | — | `/api/v1` | [4](./moderation.get.md) | [1](./moderation.post.md) | — | — | — | 5 |
 | Artifact | `cmd/artifact` | `/api/v1` | [4](./artifact.get.md) | [1](./artifact.post.md) | — | [1](./artifact.delete.md) | — | 6 |
 | **合计** | | | **76** | **42** | **12** | **14** | **4** | **148** |

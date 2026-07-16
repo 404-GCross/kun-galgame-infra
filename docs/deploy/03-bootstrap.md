@@ -40,8 +40,8 @@ docker exec kun-galgame-infra-postgres-1 psql -U postgres -tAc \
 
 ```bash
 cd kun-galgame-infra
-docker compose run --rm migrate            # kun_galgame_infra:表 + 站点/角色种子
-docker compose run --rm migrate-galgame    # kun_galgame_wiki:表 + 约束
+docker compose -f docker-compose.prod.yml run --rm migrate            # kun_galgame_infra:表 + 站点/角色种子
+docker compose -f docker-compose.prod.yml run --rm migrate-catalog   # wiki 两族 + catalog:表 + 约束(W5 单一入口)
 ```
 
 - `image` 服务启动时会对 `kun_images` 做 **AutoMigrate**,无需单独 job。

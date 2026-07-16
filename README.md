@@ -21,7 +21,7 @@
 | [kun-galgame-forum](https://github.com/KunMoe/kun-galgame-forum) | kungal | 论坛主站 |
 | [kun-galgame-patch](https://github.com/KunMoe/kun-galgame-patch) | moyu | 补丁站 |
 
-下游(kungal / moyu)在运行时通过容器**服务名**调用枢纽:`oauth:9277`、`galgame:9280`、`image:9278`,并共用枢纽的 Postgres / Redis / MinIO / Meili。
+下游(kungal / moyu)在运行时通过容器**服务名**调用枢纽:`oauth:9277`、`catalog:9281`(galgame-wiki 面自 W3 起由 catalog 服务承载)、`image:9278`,并共用枢纽的 Postgres / Redis / MinIO / Meili。
 
 ## 架构
 
@@ -31,9 +31,14 @@
 |---|---|---|
 | `oauth` | 9277 | OAuth 授权服务器 + 用户 / moemoepoint(cgo:内嵌图床 admin) |
 | `image` | 9278 | 图床服务(cgo + libwebp) |
-| `galgame` | 9280 | galgame-wiki API(纯 Go) |
+| `artifact` | 9279 | 大文件(补丁)服务(纯 Go) |
+| `catalog` | 9281 | 跨媒介目录 + **galgame-wiki API**(纯 Go;:9280 独立 galgame 服务已于 wiki 退役 W3/W5 退休) |
+| `community` | 9282 | 社区原语服务(纯 Go) |
+| `trust` | 9283 | Trust & Safety 平台(纯 Go) |
+| `ai` | 9284 | AI 网关语义层(纯 Go) |
 | `web` | 3000 | 管理端前端(Nuxt 4) |
 | `wiki` | 3000 | galgame-wiki 前端(Nuxt 4) |
+| `developer` | 3000 | NextMoe 开发者门户(Nuxt 4) |
 
 **共享基础设施**(本仓 compose 定义一次):Postgres、Redis、MinIO、Meilisearch。
 
@@ -51,7 +56,7 @@
 ```
 apps/
   api/              Go Fiber 后端(多二进制)
-    cmd/            入口与工具:oauth / image / galgame + migrate-* / sync-vndb* / reindex-search …
+    cmd/            入口与工具:oauth / image / catalog / artifact / trust … + migrate-* / sync-vndb* / reindex-search …
     internal/       app(装配)· platform(领域)· infrastructure(db/redis/s3 客户端)· jobs · middleware
   web/              管理端前端(Nuxt 4,extends @kun/ui)
   wiki/             galgame-wiki 前端(Nuxt 4,extends @kun/ui)
@@ -65,24 +70,20 @@ scripts/            运维脚本(reset_all.sh)+ 源库 dump
 
 ## 快速开始
 
-### Docker
-
-```bash
-docker compose up -d postgres redis minio meili     # 起共享基础设施(首次自动建 5 库)
-docker compose run --rm migrate                     # oauth schema + 站点/角色种子
-docker compose run --rm migrate-galgame             # galgame-wiki schema
-docker compose up -d oauth image galgame web wiki   # 起枢纽服务
-```
-宿主端口映射、首启迁移顺序、OAuth client 注册见 [docs/deploy](./docs/deploy)。
-
-### 本地开发
+### 本地开发(一条命令)
 
 ```bash
 pnpm install
-docker compose up -d postgres redis minio meili     # 仅起依赖
-pnpm dev                                            # 前端 web + wiki(并行)
-cd apps/api && go run ./cmd/oauth                   # 后端各二进制(或用 air);image / galgame 同理
+pnpm dev        # 平台底座(docker-compose.dev.yml:redis/minio/meili/mailpit/迁移/community/ai)
+                # + air 热重载五个常改 Go 服务(oauth/catalog/image/artifact/trust)+ Nuxt 前端
 ```
+
+完整模型(镜像拉取、Replace 模式、数据脱敏快照)见 [docs/dev-environment.md](./docs/dev-environment.md);
+`pnpm dev:full` = 全平台纯镜像(开发下游产品仓时用),`pnpm dev:down` 停底座。
+
+### 生产
+
+生产用 `docker-compose.prod.yml`(Dokploy + GHCR 预构建镜像;迁移 job 随每次部署自动跑)。
 
 ## 部署
 

@@ -29,9 +29,9 @@
 
 要点同上,外加:`KUN_IMAGE_SERVICE_HOST=0.0.0.0`、`KUN_IMAGE_UPLOAD_ENABLED=true`、`KUN_IMAGES_PG_DATABASE=kun_images`、`KUN_IMAGE_S3_FORCE_PATH_STYLE=true`(MinIO 必须)。`KUN_IMAGE_PRESETS_PATH` 已在镜像内固定为 `/app/configs/image_presets.yaml`,勿覆盖。
 
-## infra · galgame(`docker/galgame.env`)
+## infra · galgame 面(由 catalog 服务承载,W3/W5)
 
-`KUN_GALGAME_PORT=9280`、`KUN_GALGAME_PG_DATABASE=kun_galgame_wiki`、`KUN_MEILISEARCH_HOST=http://meili:7700`、`KUN_MEILISEARCH_API_KEY=`(共享 master key)。
+`KUN_CATALOG_PORT=9281`、`KUN_GALGAME_PG_DATABASE`(生产 `kun_catalog`,本地 dev `kun_galgame_wiki`)、`KUN_MEILISEARCH_HOST=http://meili:7700`、`KUN_MEILISEARCH_API_KEY=`(共享 master key)。独立 galgame 服务(:9280)已退休。
 
 ## moyu · api(`kun-galgame-patch/docker/api.env`)
 
@@ -40,7 +40,7 @@
 | `KUN_DATABASE_URL` | `postgresql://postgres:191007@postgres:5432/kungalgame_patch?sslmode=disable` |
 | `OAUTH_SERVER_URL` | `http://oauth:9277/api/v1` |
 | `OAUTH_CLIENT_ID` / `_SECRET` | `df3ff6008d740bfacbe46aa8cf483cf2` / (注册时的明文) |
-| `KUN_GALGAME_WIKI_BASE_URL` | `http://galgame:9280/api` |
+| `KUN_GALGAME_WIKI_BASE_URL` | `http://catalog:9281/api`(W3 起指 catalog) |
 | `KUN_IMAGE_SERVICE_BASE_URL` / `KUN_IMAGE_CDN_BASE` | `http://image:9278` / `http://localhost:15002/kun-images`(CDN 在 prod 模式**必填**) |
 | `KUN_VISUAL_NOVEL_S3_*` | B2(补丁文件,**非**图床)— 测试机为 `__SET_ME__`,补丁下载需填真值 |
 

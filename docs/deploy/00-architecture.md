@@ -29,19 +29,19 @@
 
 下游(moyu/kungal)的 api 在运行时通过**服务名**调用枢纽:
 - `http://oauth:9277/api/v1` —— OAuth 令牌、用户信息、moemoepoint 账本(s2s Basic Auth)
-- `http://galgame:9280/api` —— galgame-wiki 数据
+- `http://catalog:9281/api` —— galgame-wiki 数据(W3 起由 catalog 服务承载;独立 galgame 服务/9280 已退休)
 - `http://image:9278` —— 图床上传 / 引用
 - `postgres:5432` / `redis:6379` / `meilisearch:7700` / `minio:9000`
 
 ## 端口表(host : 容器)
 
-> host 端口统一 `1xxxx` 段,避免和本机 `air`(9277/9280/…)冲突。容器间互访用容器端口 + 服务名,与 host 映射无关。所有 Go HTTP 服务的健康端点已**统一为根路径 `/healthz`**(无鉴权、不过 CORS/限流),容器 HEALTHCHECK 用二进制自带的 `healthcheck` 子命令自探它。
+> host 端口统一 `1xxxx` 段,避免和本机 `air`(9277/9281/…)冲突。容器间互访用容器端口 + 服务名,与 host 映射无关。所有 Go HTTP 服务的健康端点已**统一为根路径 `/healthz`**(无鉴权、不过 CORS/限流),容器 HEALTHCHECK 用二进制自带的 `healthcheck` 子命令自探它。
 
 | 服务 | 容器端口 | host 端口 | 健康端点 |
 |---|---|---|---|
 | infra oauth | 9277 | **15005** | `/healthz` |
 | infra image | 9278 | **15006** | `/healthz` |
-| infra galgame | 9280 | **15007** | `/healthz` |
+| infra catalog(含 galgame-wiki 面;独立 galgame/9280 已退休) | 9281 | **15281** | `/healthz` |
 | infra web(admin) | 3000 | **15008** | `/`(302→`/auth/login`) |
 | infra wiki(galgame-wiki) | 3000 | **15009** | `/` |
 | infra postgres | 5432 | **15000** | `pg_isready` |
@@ -60,7 +60,7 @@
 | 库名 | 属主 | 由谁建 schema |
 |---|---|---|
 | `kun_galgame_infra` | infra oauth | `migrate`(infra) |
-| `kun_galgame_wiki` | infra galgame | `migrate-galgame`(infra) |
+| `kun_galgame_wiki` → 生产已并入 `kun_catalog`(W1) | infra catalog(galgame 面) | `migrate-catalog`(infra,W5 单一入口) |
 | `kun_images` | infra image | image 服务启动时 AutoMigrate |
 | `kungalgame` | kungal | dump 恢复 + kungal `migrate` + 跨仓迁移 |
 | `kungalgame_patch` | moyu | dump 恢复 + moyu `migrate` + 跨仓迁移 |

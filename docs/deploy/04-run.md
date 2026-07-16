@@ -66,12 +66,15 @@ docker compose down -v              # 仅在 infra 目录会删 pg/redis/minio/m
 
 > **数据卷只在 infra**(`pg`/`redis`/`minio`/`meili`)。moyu/kungal 无自己的卷(无状态),`down -v` 对它们无影响;但在 **infra** 目录 `down -v` 会清空全生态数据。
 
-## 伞状编排(生产建议)
+## 伞状编排(历史方案)
+
+> 现生产为 **Dokploy 三应用共享 `dokploy-network`**([12-dokploy](./12-dokploy.md));infra 的本地 build
+> `docker-compose.yml` 已于 wiki 退役 W5 移除,本节仅留作历史参考。
 
 在 `website/` 放一个 `compose.yaml`:
 ```yaml
 include:
-  - kun-galgame-infra/docker-compose.yml
+  - kun-galgame-infra/docker-compose.yml   # (已移除,历史)
   - kun-galgame-patch/docker-compose.yml
   - kun-galgame-forum/docker-compose.yml
 # 注意:include 各子 compose 的 `name:` 与 moyu/kungal 的 external network 块在伞状下需调整

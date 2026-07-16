@@ -1,16 +1,22 @@
-# Docker deployment — kun-galgame-infra
+# Docker build assets — kun-galgame-infra
 
-This repo is the ecosystem **hub** (identity / image / galgame-wiki). Its
-compose file owns the shared backing services (Postgres / Redis / MinIO /
-Meilisearch); kungal + moyu connect to these.
+This repo is the ecosystem **hub** (identity / image / content catalog). This
+directory holds the **Dockerfiles + init assets** the images are built from.
+The compose files live at the repo root: `docker-compose.dev.yml` (local dev
+platform, prebuilt GHCR images — see `docs/dev-environment.md`) and
+`docker-compose.prod.yml` (Dokploy production). The old root
+`docker-compose.yml` (local-build 15xxx stack) was retired in wiki-retirement
+W5.
 
 ## Layout
 
 | File | Builds | Base image | Why |
 |---|---|---|---|
-| `docker/go.Dockerfile` | galgame + every `migrate-*` / worker (pure Go) | `distroless/static` (~25–45 MB) | `CGO_ENABLED=0` static binary |
+| `docker/go.Dockerfile` | catalog / artifact / trust / community / ai + every `migrate-*` / worker (pure Go) | `distroless/static` (~25–45 MB) | `CGO_ENABLED=0` static binary |
 | `docker/cgo.Dockerfile` | **oauth + image** | `debian:trixie-slim` (~180 MB) | both transitively import `kolesa-team/go-webp` → cgo → **libwebp** at build + runtime |
 | `docker/nuxt.Dockerfile` | web + wiki (Nitro `node-server`) | `node:24-trixie-slim` (~390 MB) | self-contained `.output`; sharp comes via `@kungal/ui-nuxt`'s `@nuxt/image` |
+| `docker/tools.Dockerfile` | every `cmd/*` binary in ONE image (`infra-tools`) | `debian:trixie-slim` | one-off migration / maintenance jobs |
+| `docker/initdb.d/` | — | — | `CREATE DATABASE` bootstrap for a fresh Postgres |
 
 Both Go Dockerfiles and the Nuxt one are **parametric** (`--build-arg CMD=…` /
 `APP=…`) and require the **repo root** as build context (the pnpm workspace
@@ -20,39 +26,23 @@ install needs the lockfile + every workspace manifest).
 > `image/service` imports the WebP `processor`. Extract that (or swap go-webp
 > for a pure-Go encoder) and oauth could return to distroless.
 
-## Quick start (single host)
+## Quick start
 
-```bash
-docker compose build
-docker compose up -d postgres redis minio meili   # shared infra
-docker compose run --rm migrate                    # oauth schema + seed (sites/roles)
-docker compose run --rm migrate-galgame            # galgame wiki schema
-docker compose up -d oauth image galgame web wiki
-```
-
-Then (browser-facing, host ports are the **consecutive 15000–15013** range so
-the stack coexists with a running `air` dev server; all Go services share a
-root `/healthz`):
-
-| Service | URL |
-|---|---|
-| oauth API | http://localhost:15005/healthz |
-| image API | http://localhost:15006/healthz |
-| galgame API | http://localhost:15007/healthz |
-| web (admin) | http://localhost:15008 |
-| wiki (galgame-wiki) | http://localhost:15009 |
-| MinIO console | http://localhost:15003 |
-
-Service-to-service traffic uses container ports via service names
-(`postgres:5432`, `minio:9000`, `http://oauth:9277`, …) regardless of the host
-mapping.
+- **Local dev**: `pnpm dev` from the repo root — brings up the platform base
+  from `docker-compose.dev.yml` (prebuilt GHCR images, host networking,
+  prod-matching ports 9277-9284) and hot-reloads the five frequently-edited Go
+  services via `air`. Full model: [docs/dev-environment.md](../docs/dev-environment.md).
+- **Production**: `docker-compose.prod.yml` via Dokploy (CI builds the images —
+  [docs/deploy/13-registry-ci.md](../docs/deploy/13-registry-ci.md)).
+- **Build one image locally** (repo root as context):
+  `docker build -f docker/go.Dockerfile --build-arg CMD=catalog -t infra-catalog .`
 
 ## Configuration
 
-- Backend: 12-factor env via `docker/*.env` (loaded with `env_file`). **TEST
-  secrets** — rotate `JWT_SECRET`, `POSTGRES_PASSWORD`, MinIO + Meili keys for a
-  real deploy. `config.validate()` requires `KUN_PG_PASSWORD` + `JWT_SECRET` on
-  every service.
+- Backend: 12-factor environment variables. The dev compose inlines literal
+  dev constants; prod inlines non-secrets + `${VAR}` from Dokploy's panel.
+  `config.validate()` requires `KUN_PG_PASSWORD` + `JWT_SECRET` on every
+  service.
 - Frontends: public config (`apiBase`, oauth client, image CDN) is **baked at
   build** from the `PUBLIC_*` build args (mapped to the `KUN_*_NUXT_PUBLIC_*`
   names `nuxt.config.ts` reads). To build once and configure at runtime
@@ -77,16 +67,19 @@ its own root `/healthz` and exits 0/1. Frontends use a Node TCP liveness probe.
 - **sharp arch**: the Nuxt build bundles `sharp` for `linux-x64`; build + run
   both happen in linux-x64 containers, so they match. Don't copy host-built
   `.output` into the image.
-- **Migrations** are one-off jobs (profile `jobs`), never auto-run on boot. The
-  full cross-repo migration pipeline (migrate-galgame-data, migrate-moyu-galgame, …)
-  is a separate ordered runbook — containerize each step the same way.
+- **Migrations**: the `migrate` / `migrate-catalog` / `migrate-*` jobs run on
+  every `up` in the dev + prod composes and gate the services
+  (`service_completed_successfully`). The one-off cross-repo data-cutover
+  pipeline (migrate-galgame-data, migrate-moyu-galgame, …) ships in the
+  `infra-tools` image instead (see `tools.Dockerfile`).
 
 ## Three-repo orchestration
 
-Put an umbrella `website/compose.yaml` one level up that `include:`s each repo's
-compose, but define `postgres`/`redis`/`minio`/`meili` **only here** (the hub).
-kungal + moyu services then connect to `postgres:5432`, `http://oauth:9277`,
-`http://galgame:9280`, etc. Front the lot with Caddy/Traefik by domain.
+In production every repo's compose joins the shared external `dokploy-network`;
+the backing services (`postgres`/`redis`/`minio`/`meili`) are defined **only
+here** (the hub). kungal + moyu services connect to `postgres:5432`,
+`http://oauth:9277`, `http://catalog:9281`, etc.; Traefik fronts the lot by
+domain (routes are compose-owned labels).
 
 ## Production hardening (not done here)
 

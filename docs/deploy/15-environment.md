@@ -149,15 +149,18 @@
 
 > `KUN_IMAGE_PRESETS_PATH` 已在镜像内固定为 `/app/configs/image_presets.yaml`(cgo.Dockerfile 的 `ENV`),**勿覆盖**。
 
-### 15.4.4 infra · galgame(`docker/galgame.env`)
+### 15.4.4 infra · galgame 面(由 catalog 服务承载)
+
+> wiki 退役 W3/W5:独立 galgame 服务(:9280)已退休,galgame HTTP 面由 **catalog 服务(:9281)** 承载
+> (`galgameapp.Mount`),下列变量现由 catalog 容器读取。
 
 | 变量 | 测试值 | 必填 | 作用 |
 |---|---|---|---|
-| `KUN_ENV` / `KUN_FIBER_SERVER_HOST` | `production` / `0.0.0.0` | | |
-| `KUN_GALGAME_PORT` | `9280` | | 端口 |
+| `KUN_ENV` / `KUN_CATALOG_HOST` | `production` / `0.0.0.0` | | |
+| `KUN_CATALOG_PORT` | `9281` | | 端口 |
 | `KUN_FRONTEND_CORS_ORIGIN` | (同 oauth) | | CORS |
 | `KUN_PG_*`(host/port/user/password/sslmode/timezone) | `postgres`…`191007`… | `PASSWORD` 必填 | 连主库(身份) |
-| `KUN_GALGAME_PG_DATABASE` | `kun_galgame_wiki` | | wiki 业务库(`migrate-galgame` 建 schema) |
+| `KUN_GALGAME_PG_DATABASE` | 生产 `kun_catalog`(本地 dev `kun_galgame_wiki`) | | wiki 业务库(`migrate-catalog` 建 schema,W5 单一迁移入口) |
 | `JWT_SECRET` | (同 oauth) | 是 | 本地验下游令牌;= oauth/image |
 | `KUN_MEILISEARCH_HOST` | `http://meili:7700` | | 搜索引擎 |
 | `KUN_MEILISEARCH_API_KEY` | `kun_docker_test_meili_master_key_change_me` | | = `MEILI_MASTER_KEY`(否则 403;`EnsureIndexes` 非致命) |
@@ -169,7 +172,7 @@
 | 服务 | 运行期 environment | 构建期 build args(dev compose / CI 见 [§15.7](#157-github-actions-ci-变量与-secrets)) |
 |---|---|---|
 | **web**(admin) | `NUXT_API_BASE_SSR=http://oauth:9277/api/v1` | `APP=web`、`PUBLIC_API_BASE`、`PUBLIC_IMAGE_CDN_BASE` |
-| **wiki** | `NUXT_API_BASE_SSR=http://galgame:9280/api`、`NUXT_AUTH_API_BASE_SSR=http://oauth:9277/api/v1` | `APP=wiki`、`PUBLIC_API_BASE`、`PUBLIC_AUTH_API_BASE`、`PUBLIC_OAUTH_AUTHORIZE_BASE`、`PUBLIC_OAUTH_CLIENT_ID`(=`galgame-wiki-admin`)、`PUBLIC_OAUTH_REDIRECT_URI`、`PUBLIC_IMAGE_CDN_BASE` |
+| **wiki** | `NUXT_API_BASE_SSR=http://catalog:9281/api`、`NUXT_AUTH_API_BASE_SSR=http://oauth:9277/api/v1` | `APP=wiki`、`PUBLIC_API_BASE`、`PUBLIC_AUTH_API_BASE`、`PUBLIC_OAUTH_AUTHORIZE_BASE`、`PUBLIC_OAUTH_CLIENT_ID`(=`galgame-wiki-admin`)、`PUBLIC_OAUTH_REDIRECT_URI`、`PUBLIC_IMAGE_CDN_BASE` |
 
 ### 15.4.6 kungal · api(`docker/api.env`)
 
@@ -186,7 +189,7 @@
 | `OAUTH_REDIRECT_URI` | `http://localhost:15013/auth/callback` | 是 | 回调,= 注册的 redirect → 生产 `https://www.kungal.com/auth/callback` |
 | `JWT_SECRET` | `kun-docker-test-...` | | **签 kungal 自己的会话 cookie**(仅 kungal 内部自洽;生产换强随机) |
 | `MEILISEARCH_URL` / `MEILISEARCH_KEY` | `http://meilisearch:7700` / `kun_docker_test_meili_master_key_change_me` | | 搜索;key = `MEILI_MASTER_KEY`(否则 403) |
-| `GALGAME_WIKI_BASE_URL` | `http://galgame:9280/api` | | 调 wiki(s2s) |
+| `GALGAME_WIKI_BASE_URL` | `http://catalog:9281/api` | | 调 wiki(s2s;W3 起指 catalog) |
 | `KUN_IMAGE_PUBLIC_BASE_URL` | `https://image.kungal.com` | | 生成图片 URL 的公网前缀(应与 infra 一致 → `https://image.kungal.iloveren.link`) |
 | `KUN_IMAGE_CLIENT_BASE_URL` | `http://image:9278` | | 直传封面到 image 服务(s2s) |
 | `KUN_IMAGE_CLIENT_ID` / `KUN_IMAGE_CLIENT_SECRET` | / | (密钥) | image s2s 上传的 OAuth client;空则禁用上传 |
@@ -220,7 +223,7 @@
 | `OAUTH_CLIENT_ID` | `df3ff6008d740bfacbe46aa8cf483cf2`(补丁 client) | | OAuth 客户端 |
 | `OAUTH_CLIENT_SECRET` | (密钥) | 是 | OAuth Basic Auth |
 | `OAUTH_REDIRECT_URI` | `http://localhost:15011/auth/callback` | | 回调 → `https://www.moyu.moe/auth/callback` |
-| `KUN_GALGAME_WIKI_BASE_URL` | `http://galgame:9280/api` | | 调 wiki(s2s) |
+| `KUN_GALGAME_WIKI_BASE_URL` | `http://catalog:9281/api` | | 调 wiki(s2s;W3 起指 catalog) |
 | `KUN_IMAGE_SERVICE_BASE_URL` | `http://image:9278` | **prod 必填** | image 服务源(`getEnvProd` fail-fast) |
 | `KUN_IMAGE_CDN_BASE` | `http://localhost:15002/kun-images` | **prod 必填** | 图片公网域 → `https://image.kungal.iloveren.link`(`getEnvProd` fail-fast) |
 | `KUN_IMAGE_OAUTH_CLIENT_ID` / `KUN_IMAGE_OAUTH_CLIENT_SECRET` | / | | image s2s client;空则回落到 `OAUTH_CLIENT_ID/SECRET` |
@@ -269,7 +272,7 @@
 
 | 仓 | Dockerfile | `ARG` | 默认 | 作用 |
 |---|---|---|---|---|
-| infra | `go.Dockerfile` | `GO_VERSION` / `CMD` | `1.25` / `oauth` | Go 版本 / 选哪个 `cmd/`(galgame、migrate、migrate-galgame…) |
+| infra | `go.Dockerfile` | `GO_VERSION` / `CMD` | `1.25` / `oauth` | Go 版本 / 选哪个 `cmd/`(catalog、migrate、migrate-catalog…) |
 | infra | `cgo.Dockerfile` | `GO_VERSION` / `CMD` | `1.25` / `image` | cgo(libwebp);`CMD=oauth` 或 `image` |
 | infra | `nuxt.Dockerfile` | `NODE_VERSION` / `APP` / `PUBLIC_*`×6 | `24` / `web` / 空 | Node 版本 / `web`\|`wiki` / 前端 public(见 [§15.5](#155-前端-public-配置infra-烤镜像-vs-下游运行期)) |
 | kungal | `go.Dockerfile` | `GO_VERSION` / `CMD` | `1.26` / `server` | `server` 或 `migrate` |
@@ -302,7 +305,7 @@
 | 镜像 | CI build-args |
 |---|---|
 | `infra-oauth` / `infra-image` | `CMD=oauth` / `CMD=image` |
-| `infra-galgame` / `infra-migrate` / `infra-migrate-galgame` | `CMD=galgame` / `migrate` / `migrate-galgame` |
+| `infra-catalog` / `infra-migrate` / `infra-migrate-catalog` | `CMD=catalog` / `migrate` / `migrate-catalog` |
 | **`infra-web`** | `APP=web`、`PUBLIC_API_BASE=https://oauth.kungal.com/api/v1`、`PUBLIC_IMAGE_CDN_BASE=https://image.kungal.iloveren.link` |
 | **`infra-wiki`** | `APP=wiki`、`PUBLIC_API_BASE=https://wiki.kungal.com/api`、`PUBLIC_AUTH_API_BASE=https://oauth.kungal.com/api/v1`、`PUBLIC_OAUTH_AUTHORIZE_BASE=https://oauth.kungal.com/api/v1`、`PUBLIC_OAUTH_CLIENT_ID=galgame-wiki-admin`、`PUBLIC_OAUTH_REDIRECT_URI=https://wiki.kungal.com/auth/callback`、`PUBLIC_IMAGE_CDN_BASE=https://image.kungal.iloveren.link` |
 | `kungal-api` / `kungal-migrate` / `kungal-web` | `CMD=server` / `CMD=migrate` / (web 无,public 走运行期) |
@@ -364,7 +367,7 @@ KUN_VISUAL_NOVEL_S3_STORAGE_SECRET_ACCESS_KEY=<B2 secret>
 schema 迁移与数据 cutover 的工具也都内联了 environment,用 compose 的 jobs profile 跑(无需 env 文件):
 ```bash
 docker compose -f docker-compose.prod.yml --profile jobs run --rm migrate            # infra schema
-docker compose -f docker-compose.prod.yml --profile jobs run --rm migrate-galgame     # wiki schema
+docker compose -f docker-compose.prod.yml run --rm migrate-catalog                    # wiki + catalog schema(W5 单一入口;非 jobs profile,部署也自动跑)
 docker compose -f docker-compose.prod.yml --profile jobs run --rm tools migrate-users --kungal-dsn=… --moyu-dsn=…
 ```
 完整带数据上线见 [16-data-cutover.md](./16-data-cutover.md)。
@@ -378,10 +381,10 @@ docker compose -f docker-compose.prod.yml --profile jobs run --rm tools migrate-
 > 若远端历史里还有这些文件,把里面出现过的密钥(邮箱密码、JWT、S3 等)**视为已泄露并轮换**。
 > (dev 本地仍用 `docker/*.env`;只是 **prod compose 不再读它们**。)
 
-> **完整数据 cutover 需要更多 job 镜像**:`migrate` / `migrate-galgame` 只够「空库起服务」。
+> **完整数据 cutover 需要更多 job 镜像**:`migrate` / `migrate-catalog` 只够「空库起服务」。
 > 带数据上线([03-bootstrap §B](./03-bootstrap.md))还要 `migrate-users`、`migrate-galgame-data`、
 > `migrate-moyu-galgame`、`dedup-galgame-alias`、`reindex-search` 等——这些是**独立的 `cmd/` 二进制**,
-> 而 Dockerfile 一镜像只编一个 `CMD`,**不能**用 `infra-galgame` 镜像 `--entrypoint migrate-users`。
+> 而 Dockerfile 一镜像只编一个 `CMD`,**不能**用 `infra-catalog` 镜像 `--entrypoint migrate-users`。
 > CI 现已额外发布 **`infra-tools` / `kungal-tools` / `moyu-tools`** 全量工具镜像([13-registry-ci.md](./13-registry-ci.md)),
 > 用 `docker run ... ghcr.io/kunmoe/infra-tools <job-name>` 跑这些一次性迁移,**不依赖生产机临时 build / go run**。
 

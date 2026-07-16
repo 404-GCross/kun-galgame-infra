@@ -8,23 +8,18 @@ Infra 有 3 个 Dockerfile,因为它的二进制分两类:
 
 | Dockerfile | 构建对象 | CGO | 基镜 |
 |---|---|---|---|
-| `docker/go.Dockerfile` | `galgame` + 所有 `migrate-*`/worker | 0 | distroless |
+| `docker/go.Dockerfile` | `catalog` 等纯 Go 服务 + 所有 `migrate-*`/worker | 0 | distroless |
 | `docker/cgo.Dockerfile` | **`oauth` + `image`** | 1 | debian-slim + libwebp |
 | `docker/nuxt.Dockerfile` | `web` + `wiki` | — | node-slim |
 
-> **为什么 oauth 也要 cgo**:`oauth` 内嵌图床 admin 端点,其 `image/service` import 了 WebP `processor`(`kolesa-team/go-webp` → libwebp 的 cgo 绑定)。用 `go list -deps ./cmd/oauth | grep go-webp` 可验证。`galgame` 和迁移工具不碰 processor,故纯 Go。
+> **为什么 oauth 也要 cgo**:`oauth` 内嵌图床 admin 端点,其 `image/service` import 了 WebP `processor`(`kolesa-team/go-webp` → libwebp 的 cgo 绑定)。用 `go list -deps ./cmd/oauth | grep go-webp` 可验证。`catalog` 等纯 Go 服务与迁移工具不碰 processor,故纯 Go。
 
-一键构建:
-
-```bash
-cd kun-galgame-infra
-docker compose build          # oauth image galgame web wiki + migrate jobs
-```
+> infra 的「一键 `docker compose build`」本地栈已于 wiki 退役 W5 移除——镜像统一由 CI 构建推 GHCR([13-registry-ci](./13-registry-ci.md)),本地开发拉预构建镜像(`docs/dev-environment.md`)。需要手工构建单个镜像时用下面的参数化命令。
 
 参数化单独构建(go/cgo 用 `CMD`,nuxt 用 `APP`):
 
 ```bash
-docker build -f docker/go.Dockerfile  --build-arg CMD=galgame -t kun-galgame-infra/galgame .
+docker build -f docker/go.Dockerfile  --build-arg CMD=catalog -t kun-galgame-infra/catalog .
 docker build -f docker/cgo.Dockerfile --build-arg CMD=oauth   -t kun-galgame-infra/oauth .
 docker build -f docker/nuxt.Dockerfile --build-arg APP=wiki   -t kun-galgame-infra/wiki .
 ```
