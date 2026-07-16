@@ -587,6 +587,23 @@ services:
       NUXT_API_BASE_SSR: http://catalog:9281/api
       NUXT_AUTH_API_BASE_SSR: http://oauth:9277/api/v1
     expose: ["3000"]
+    labels:
+      # wiki.kungal.com frontend — COMPOSE-OWNED since W3. This host used to be a
+      # Dokploy panel domain; when the panel entries were deleted at galgame
+      # retirement the recreated container lost the injected labels and the
+      # frontend 404'd — routing now lives here (the standing ruling: ALL routes
+      # in compose). The /api path of the same host is routed on the catalog
+      # block (longer PathPrefix rule wins), everything else lands on this Nuxt app.
+      traefik.enable: "true"
+      traefik.http.routers.infra-wiki.rule: Host(`wiki.kungal.com`)
+      traefik.http.routers.infra-wiki.entrypoints: websecure
+      traefik.http.routers.infra-wiki.tls.certresolver: letsencrypt
+      traefik.http.routers.infra-wiki.service: infra-wiki
+      traefik.http.routers.infra-wiki-http.rule: Host(`wiki.kungal.com`)
+      traefik.http.routers.infra-wiki-http.entrypoints: web
+      traefik.http.routers.infra-wiki-http.middlewares: redirect-to-https@file
+      traefik.http.routers.infra-wiki-http.service: infra-wiki
+      traefik.http.services.infra-wiki.loadbalancer.server.port: "3000"
     depends_on:
       catalog: { condition: service_started }
     healthcheck:
