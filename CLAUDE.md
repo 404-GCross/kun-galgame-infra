@@ -24,6 +24,25 @@
 11. A Nuxt page — and any component used as a page/route root — must have a **single real root element**: never `display: contents` (generates no box, so the transition can't attach) and never a leading comment / whitespace / sibling at the template root (a comment is itself a root node). Either trips Nuxt's "does not have a single root node" warning and drops the page-transition enter animation (the page appears without animating). Keep explanatory comments *inside* the root element.
 12. Reserve the scrollbar gutter globally — `html { scrollbar-gutter: stable }`, with an `overflow-y: scroll` `@supports` fallback — so the document width is constant across routes. Otherwise navigating from a scrolling page to a height-locked one (no scrollbar) removes the classic scrollbar's ~15px and the centered layout shifts sideways: a "teleport" at the tail of the page transition. This is a browser layout fact, not a transition bug. Use single-edge `stable` (`both-edges` is buggy in Chrome); it's a harmless no-op under overlay scrollbars (macOS/iOS).
 
+## Local development (one command)
+
+`pnpm dev` starts **everything**: it brings up the platform base from
+`docker-compose.dev.yml` (redis / minio / meili / mailpit / all migrations +
+the three rarely-edited platform services **catalog / community / ai** from
+prebuilt GHCR images) and then runs `air` for the five frequently-edited Go
+services (**oauth / galgame / image / artifact / trust**, hot-reloaded from
+source) plus the Nuxt frontends. Ctrl-C stops only the hot stack; the base
+stays up. So a bare `pnpm dev` is enough — you do **not** need to start catalog
+/ community / ai yourself (a past mistake: assuming catalog isn't running).
+
+- Editing catalog / community / ai? They run from images by default. Add that
+  service to the `full` profile stop-list and run it via `air` / `go run`, or
+  just `docker compose -f docker-compose.dev.yml restart <svc>` after a rebuild.
+- `pnpm dev:full` = the whole platform from images with no source build (for
+  developing a **product** repo, not infra). `pnpm dev:down` tears the base down.
+- Ports match prod (9277-9284); Postgres is the box's own `127.0.0.1:5432`, not
+  a compose service. Full model: `docs/dev-environment.md`.
+
 ## Frontend Conventions (apps/web)
 
 ### UI Components

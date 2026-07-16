@@ -8,7 +8,10 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "pnpm -F \"./apps/**\" --parallel --stream run dev",
+    "dev": "bash scripts/dev.sh",
+    "dev:apps": "pnpm -F \"./apps/**\" --parallel --stream run dev",
+    "dev:full": "docker compose -f docker-compose.dev.yml --profile full up -d --wait",
+    "dev:down": "docker compose -f docker-compose.dev.yml --profile full down",
     "build": "pnpm -F \"./apps/**\" --parallel run build",
     "format": "pnpm -F \"./apps/**\" --parallel run format",
     "lint": "pnpm -F \"./apps/web\" run lint",

@@ -2,7 +2,7 @@
 
 `docker-compose.dev.yml` (infra repo root) brings up the **whole nextmoe platform**
 on your dev box with one command, so any product repo's `pnpm dev` / `air` can
-depend on a single fact: **localhost has a platform**. Seven platform services
+depend on a single fact: **localhost has a platform**. Eight platform services
 (from prebuilt GHCR images) + all local infrastructure, **zero cloud credentials**.
 
 > This is the dev-environment track's step 01. Step 02 (`refresh-dev-db`) fills the
@@ -20,6 +20,7 @@ depend on a single fact: **localhost has a platform**. Seven platform services
 | catalog | 9281 | `ghcr.io/kunmoe/infra-catalog` | — |
 | community | 9282 | `ghcr.io/kunmoe/infra-community` | — |
 | trust | 9283 | `ghcr.io/kunmoe/infra-trust` | — |
+| ai | 9284 | `ghcr.io/kunmoe/infra-ai` | — |
 | image-cdn-proxy (Caddy) | 9290 | `caddy:2-alpine` | — |
 | MinIO (S3) | 9000 / 9001 | `minio/minio` | http://127.0.0.1:9001 (minioadmin/minioadmin) |
 | Mailpit | 1025 / 8025 | `axllent/mailpit` | http://127.0.0.1:8025 |
@@ -30,6 +31,28 @@ depend on a single fact: **localhost has a platform**. Seven platform services
 The ports match production. Frontends (web/wiki/forum/moyu/letmoe) and out-of-band
 jobs (image-gc, refping, cron, data-cutover tools) are **deliberately not here** —
 frontends run their own `pnpm dev`, jobs run on demand.
+
+## Two ways to run it — hybrid vs all-from-images
+
+Five of the eight platform services — **oauth / image / galgame / artifact /
+trust** — carry the compose `full` profile. A plain `docker compose … up`
+therefore starts everything **except** those five, leaving their host ports free.
+This gives two modes:
+
+- **Developing infra itself** → from the infra repo, `pnpm dev` (one command).
+  It runs the default compose up (base + catalog/community/ai from images) and
+  then `air`, which rebuilds those five hot services from source on every save,
+  plus the Nuxt frontends. `catalog / community / ai` stay image-served because
+  they change rarely; to hot-reload one of them too, stop its container and
+  `go run ./cmd/<svc>` in its place (Replace mode, below). Ctrl-C stops the hot
+  stack; the base keeps running. `pnpm dev:down` stops the base.
+- **Developing a product repo** (letmoe / forum / moyu / …) → you want the WHOLE
+  platform from images, no source build. Use `--profile full`:
+  `docker compose -f docker-compose.dev.yml --profile full up -d` (or, from the
+  infra repo, `pnpm dev:full`). Then run the product repo's own `pnpm dev`.
+
+Everything below (`docker compose … up -d`) is written for the all-from-images
+mode; add `--profile full` to include the five hot services.
 
 ### Network mode: `host`
 
@@ -63,11 +86,13 @@ Every service uses `network_mode: host`, so:
 ```sh
 # 1. Check nothing you care about already holds these ports — and NEVER kill a
 #    process that does; stop the matching compose service instead (see below).
-ss -tlnp | grep -E ':(9277|9278|9279|9280|9281|9282|9283|9000|9001|7700|1025|8025|9290|6379)\b'
+ss -tlnp | grep -E ':(9277|9278|9279|9280|9281|9282|9283|9284|9000|9001|7700|1025|8025|9290|6379)\b'
 
-# 2. Pull + start. migrate-* run first and gate the services.
-docker compose -f docker-compose.dev.yml pull
-docker compose -f docker-compose.dev.yml up -d
+# 2. Pull + start the WHOLE platform (--profile full includes the five hot
+#    services; drop it for the hybrid `pnpm dev` mode). migrate-* run first and
+#    gate the services.
+docker compose -f docker-compose.dev.yml --profile full pull
+docker compose -f docker-compose.dev.yml --profile full up -d
 
 # 3. Watch health.
 docker compose -f docker-compose.dev.yml ps

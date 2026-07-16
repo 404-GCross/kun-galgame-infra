@@ -241,6 +241,13 @@ services:
   # box directly, so `go run ./cmd/<svc>` on the same port replaces a stopped one.
   oauth:
     image: ghcr.io/kunmoe/infra-oauth:${INFRA_IMAGE_TAG:-latest}
+    # The five frequently-edited Go services (oauth/image/galgame/artifact/trust)
+    # sit behind the `full` profile so a bare `up` starts the platform WITHOUT
+    # them — leaving their host ports free for `air` to hot-reload from source
+    # (see scripts/dev.sh / `pnpm dev`). Product-repo developers who want the
+    # whole platform from prebuilt images run `--profile full`. catalog/community/
+    # ai carry no profile: they are always image-served (edited rarely).
+    profiles: ["full"]
     network_mode: host
     environment:
       <<: *dev-env
@@ -268,6 +275,7 @@ services:
 
   image:
     image: ghcr.io/kunmoe/infra-image:${INFRA_IMAGE_TAG:-latest}
+    profiles: ["full"]
     network_mode: host
     environment:
       <<: *dev-env
@@ -286,6 +294,7 @@ services:
 
   galgame:
     image: ghcr.io/kunmoe/infra-galgame:${INFRA_IMAGE_TAG:-latest}
+    profiles: ["full"]
     network_mode: host
     environment:
       <<: *dev-env
@@ -310,6 +319,7 @@ services:
 
   artifact:
     image: ghcr.io/kunmoe/infra-artifact:${INFRA_IMAGE_TAG:-latest}
+    profiles: ["full"]
     network_mode: host
     environment:
       <<: *dev-env
@@ -370,6 +380,7 @@ services:
 
   trust:
     image: ghcr.io/kunmoe/infra-trust:${INFRA_IMAGE_TAG:-latest}
+    profiles: ["full"]
     network_mode: host
     environment:
       <<: *dev-env
