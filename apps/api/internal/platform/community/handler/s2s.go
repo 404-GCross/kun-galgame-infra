@@ -62,6 +62,10 @@ func (s *Server) register(api huma.API) {
 		Summary: "Get a thread with a page of posts", Tags: read}, s.getThread)
 	huma.Register(api, huma.Operation{OperationID: "listPosts", Method: http.MethodGet, Path: "/api/v1/community/threads/{id}/posts",
 		Summary: "List a thread's posts (keyset by post_number)", Tags: read}, s.listPosts)
+	huma.Register(api, huma.Operation{OperationID: "listAuthorPosts", Method: http.MethodGet, Path: "/api/v1/community/authors/{id}/posts",
+		Summary: "List a site author's visible posts across threads (keyset by post id, newest first) with thread context", Tags: read}, s.listAuthorPosts)
+	huma.Register(api, huma.Operation{OperationID: "authorStats", Method: http.MethodGet, Path: "/api/v1/community/authors/stats",
+		Summary: "Batch visible-post counts for a site's authors", Tags: read}, s.authorStats)
 
 	huma.Register(api, huma.Operation{OperationID: "openTopic", Method: http.MethodPost, Path: "/api/v1/community/topics",
 		Summary: "Open a board topic with its opening post", Tags: write}, s.openTopic)
@@ -81,6 +85,8 @@ func (s *Server) register(api huma.API) {
 		Summary: "Set a feedback thread's status and official response", Tags: write}, s.setFeedbackStatus)
 	huma.Register(api, huma.Operation{OperationID: "mergeFeedback", Method: http.MethodPost, Path: "/api/v1/community/feedback/{id}/merge",
 		Summary: "Merge a duplicate feedback thread into another (reversible)", Tags: write}, s.mergeFeedback)
+	huma.Register(api, huma.Operation{OperationID: "purgeAuthor", Method: http.MethodPost, Path: "/api/v1/community/authors/{id}/purge",
+		Summary: "Compliance purge: tombstone + scrub all of a site author's posts and delete their reactions (idempotent)", Tags: write}, s.purgeAuthor)
 
 	trust := []string{"community-trust"}
 	review := []string{"community-review"}

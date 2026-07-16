@@ -162,6 +162,50 @@ type ThreadResponse struct {
 	Post   *PostView  `json:"post,omitempty" doc:"the opening post, for open-topic/feedback"`
 }
 
+// PostThreadContext is the minimal render context of a post's thread, projected
+// into the cross-thread by-author list so the consuming site can render a jump
+// link (title for the label, anchor for the URL) without a per-post round trip.
+// thread_id is the same value as the embedded post's, repeated for convenience.
+type PostThreadContext struct {
+	ThreadID   int64   `json:"thread_id"`
+	Title      *string `json:"title,omitempty" doc:"thread title (NULL for a comments thread)"`
+	AnchorKind int16   `json:"anchor_kind" doc:"0=board 1=site_game 2=site_resource 3=catalog_work 4=catalog_person"`
+	AnchorID   string  `json:"anchor_id"`
+}
+
+// AuthorPostView is one of an author's posts plus its thread render context — the
+// unit of the by-author profile list. The existing PostView is reused verbatim
+// (nested under post); no new field semantics are invented.
+type AuthorPostView struct {
+	Post   PostView          `json:"post"`
+	Thread PostThreadContext `json:"thread"`
+}
+
+// AuthorPostsResponse is a keyset page of an author's visible posts.
+type AuthorPostsResponse struct {
+	Posts      []AuthorPostView `json:"posts"`
+	NextCursor string           `json:"next_cursor,omitempty" doc:"post id to pass as after for the next (older) page; empty = last page"`
+}
+
+// AuthorStat is one author's visible-post count.
+type AuthorStat struct {
+	AuthorID     int64 `json:"author_id"`
+	VisiblePosts int64 `json:"visible_posts"`
+}
+
+// AuthorStatsResponse is the batch visible-post count. There is exactly one entry
+// per requested id (unknown ids report 0), in request order.
+type AuthorStatsResponse struct {
+	Stats []AuthorStat `json:"stats"`
+}
+
+// PurgeResponse reports the effect of a compliance purge. A second purge of the
+// same author on the same site reports zero for both (idempotent).
+type PurgeResponse struct {
+	PostsPurged      int64 `json:"posts_purged" doc:"posts tombstoned + content-scrubbed this run"`
+	ReactionsDeleted int64 `json:"reactions_deleted" doc:"reaction rows the author left that were deleted this run"`
+}
+
 // PostResponse wraps a single created post (reply).
 type PostResponse struct {
 	Post PostView `json:"post"`

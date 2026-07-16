@@ -1,0 +1,167 @@
+package handler
+
+import (
+	"context"
+	"net/http"
+	"strconv"
+	"strings"
+
+	"api/internal/platform/community/dto"
+	"api/internal/platform/community/repository"
+	"api/pkg/errors"
+)
+
+// Author read + purge face (step 10). Every handler derives the tenant from the
+// client's site binding and forwards to PostService, which enforces the
+// site-scope at the repository layer — so a client bound to site A cannot read or
+// purge site B's authors (the by-author reads answer an empty page/zero counts, a
+// purge affects zero rows).
+
+// authorPostsInput is the by-author list request. after is a post-id keyset
+// (descending), so 0 reads the newest page. anchor_kind defaults to -1 (all
+// kinds) — a plain int16 sentinel, never a pointer query param (Huma trap).
+type authorPostsInput struct {
+	ID         int64 `path:"id"`
+	After      int64 `query:"after" doc:"post id to read after (descending; 0 = newest first)"`
+	AnchorKind int16 `query:"anchor_kind" default:"-1" doc:"optional anchor-kind filter (0-4); -1 = all kinds"`
+	Limit      int   `query:"limit" doc:"page size (default 20, max 100)"`
+}
+type authorPostsOutput struct {
+	Body Envelope[dto.AuthorPostsResponse]
+}
+
+func (s *Server) listAuthorPosts(ctx context.Context, in *authorPostsInput) (*authorPostsOutput, error) {
+	site, he := siteBinding(ctx)
+	if he != nil {
+		return nil, he
+	}
+	limit := clampAuthorLimit(in.Limit)
+	rows, err := s.posts.ListAuthorPosts(site, in.ID, in.After, in.AnchorKind, limit)
+	if err != nil {
+		return nil, mapErr("list author posts", err)
+	}
+	return &authorPostsOutput{Body: okEnvelope(dto.AuthorPostsResponse{
+		Posts: toAuthorPostViews(rows), NextCursor: authorPostsCursor(rows, limit),
+	})}, nil
+}
+
+type authorStatsInput struct {
+	IDs string `query:"ids" doc:"comma-separated author ids (max 100)"`
+}
+type authorStatsOutput struct {
+	Body Envelope[dto.AuthorStatsResponse]
+}
+
+func (s *Server) authorStats(ctx context.Context, in *authorStatsInput) (*authorStatsOutput, error) {
+	site, he := siteBinding(ctx)
+	if he != nil {
+		return nil, he
+	}
+	ids, he := parseAuthorIDs(in.IDs)
+	if he != nil {
+		return nil, he
+	}
+	counts, err := s.posts.AuthorStats(site, ids)
+	if err != nil {
+		return nil, mapErr("author stats", err)
+	}
+	// One entry per requested id, in request order; an unknown id reports 0.
+	stats := make([]dto.AuthorStat, 0, len(ids))
+	for _, id := range ids {
+		stats = append(stats, dto.AuthorStat{AuthorID: id, VisiblePosts: counts[id]})
+	}
+	return &authorStatsOutput{Body: okEnvelope(dto.AuthorStatsResponse{Stats: stats})}, nil
+}
+
+type authorPurgeInput struct {
+	ID int64 `path:"id"`
+}
+type authorPurgeOutput struct {
+	Body Envelope[dto.PurgeResponse]
+}
+
+func (s *Server) purgeAuthor(ctx context.Context, in *authorPurgeInput) (*authorPurgeOutput, error) {
+	site, he := siteBinding(ctx)
+	if he != nil {
+		return nil, he
+	}
+	res, err := s.posts.PurgeAuthor(ctx, site, in.ID)
+	if err != nil {
+		return nil, mapErr("purge author", err)
+	}
+	return &authorPurgeOutput{Body: okEnvelope(dto.PurgeResponse{
+		PostsPurged: res.PostsPurged, ReactionsDeleted: res.ReactionsDeleted,
+	})}, nil
+}
+
+// --- helpers ---------------------------------------------------------------
+
+// clampAuthorLimit applies the by-author page defaults: 20 by default, 100 max.
+func clampAuthorLimit(limit int) int {
+	if limit <= 0 {
+		return 20
+	}
+	if limit > 100 {
+		return 100
+	}
+	return limit
+}
+
+// authorPostsCursor returns the "after post id" cursor for the next (older) page,
+// or "" when the page was not full (last page). The last row's id IS the cursor
+// (the list is descending by post id).
+func authorPostsCursor(rows []repository.AuthorPostRow, limit int) string {
+	if len(rows) < limit || len(rows) == 0 {
+		return ""
+	}
+	return strconv.FormatInt(rows[len(rows)-1].ID, 10)
+}
+
+func toAuthorPostViews(rows []repository.AuthorPostRow) []dto.AuthorPostView {
+	out := make([]dto.AuthorPostView, len(rows))
+	for i := range rows {
+		out[i] = dto.AuthorPostView{
+			Post: toPostView(&rows[i].CommunityPost),
+			Thread: dto.PostThreadContext{
+				ThreadID:   rows[i].ThreadID,
+				Title:      rows[i].ThreadTitle,
+				AnchorKind: rows[i].ThreadAnchorKind,
+				AnchorID:   rows[i].ThreadAnchorID,
+			},
+		}
+	}
+	return out
+}
+
+// parseAuthorIDs parses the comma-separated ids query: a malformed id is a 400,
+// more than 100 ids is a 422 (the batch cap), and empty is an empty list (a
+// no-op stats call). Ids are de-duplicated preserving first-seen order.
+func parseAuthorIDs(raw string) ([]int64, *houseError) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+	parts := strings.Split(raw, ",")
+	seen := make(map[int64]bool, len(parts))
+	ids := make([]int64, 0, len(parts))
+	total := 0
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		id, err := strconv.ParseInt(p, 10, 64)
+		if err != nil {
+			return nil, apiErrMsg(http.StatusBadRequest, errors.ErrInvalidParam, "malformed author id: "+p)
+		}
+		total++
+		if !seen[id] {
+			seen[id] = true
+			ids = append(ids, id)
+		}
+	}
+	if total > 100 {
+		return nil, apiErrMsg(http.StatusUnprocessableEntity, errors.ErrValidationFailed, "too many ids (max 100)")
+	}
+	return ids, nil
+}
