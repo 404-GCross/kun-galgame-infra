@@ -75,11 +75,18 @@ Every service uses `network_mode: host`, so:
    (`kun_galgame_infra`, `kun_galgame_wiki`, `kun_images`, `kun_artifacts`,
    `kun_catalog`, `kun_community`, `kun_trust`.)
 
-2. **GHCR access for the platform images** (they are private):
+2. **GHCR access for the platform images** (they are private). The default `gh`
+   token does **not** carry `read:packages`, so `docker login` with it fails
+   `unauthorized` — add the scope once, then log in:
 
    ```sh
+   gh auth refresh -h github.com -s read:packages   # interactive (device code); one time
    gh auth token | docker login ghcr.io -u <your-gh-user> --password-stdin
    ```
+
+   `docker login` must print `Login Succeeded`; the credential persists in
+   `~/.docker/config.json` (no need to repeat it). Alternatively use a classic
+   PAT scoped to `read:packages` if you'd rather not widen the `gh` token.
 
 ## Bring up
 

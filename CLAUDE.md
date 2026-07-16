@@ -42,6 +42,10 @@ stays up. So a bare `pnpm dev` is enough — you do **not** need to start catalo
   developing a **product** repo, not infra). `pnpm dev:down` tears the base down.
 - Ports match prod (9277-9284); Postgres is the box's own `127.0.0.1:5432`, not
   a compose service. Full model: `docs/dev-environment.md`.
+- First run needs GHCR auth (images are private) — a bare `gh auth token` lacks
+  `read:packages` and pulls fail `unauthorized`. One-time:
+  `gh auth refresh -h github.com -s read:packages` then
+  `gh auth token | docker login ghcr.io -u <gh-user> --password-stdin`.
 
 ## Frontend Conventions (apps/web)
 
