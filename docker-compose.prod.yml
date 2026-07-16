@@ -210,6 +210,14 @@ services:
       # banners frozen → GC soft-deletes them ~365d later.
       KUN_GALGAME_IMAGE_CLIENT_ID: ${KUN_IMAGE_CLIENT_ID:-}
       KUN_GALGAME_IMAGE_CLIENT_SECRET: ${KUN_IMAGE_CLIENT_SECRET:-}
+      # catalog-image-refping (daily 04:15, step 48) keeps character-portrait
+      # references alive so image GC never freezes them (the 66k-freeze lesson:
+      # reference-ping is site-scoped, so this MUST be the catalog image client
+      # — site_key='catalog' — never the avatar/galgame ones above). Empty →
+      # the job soft-skips until the client is provisioned.
+      KUN_CATALOG_IMAGE_CLIENT_ID: ${KUN_CATALOG_IMAGE_CLIENT_ID:-}
+      KUN_CATALOG_IMAGE_CLIENT_SECRET: ${KUN_CATALOG_IMAGE_CLIENT_SECRET:-}
+      KUN_CATALOG_IMAGE_CLIENT_BASE_URL: http://image:9278
       # OIDC OP signing keys (docs/auth/03 §4/§5.4). KEK encrypts the ES256/
       # RS256 private keys at rest; first boot with a KEK bootstraps the key
       # pair and turns on /oauth/jwks + discovery. Unset => bootstrap skipped,
