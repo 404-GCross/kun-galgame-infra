@@ -471,15 +471,17 @@ services:
       # power-on) to the community service's client id — the same value as the
       # community block's KUN_TRUST_CLIENT_ID.
       KUN_TRUST_FORWARDER_CLIENT_IDS: "ac2b8856594baed9c9ee6792eec082e3"
-      # AI shadow-scoring pipeline (step 03): the scan worker scores pending
-      # trust_scan_result rows via the AI gateway's moderate-text route over S2S
-      # Basic. All three default empty = the worker drains rows to degraded WITHOUT
-      # dialing (fail-closed; the queue never backs up while unprovisioned). Power
-      # on at the shadow cut-over by setting all three in Dokploy: BASE_URL to the
-      # gateway (http://ai:9284), ID/SECRET to an OAuth client bound to the calling
-      # site (the forwarder client ac2b8856… may be reused, or mint a fresh one).
-      KUN_AI_CLIENT_BASE_URL: ${KUN_AI_CLIENT_BASE_URL:-}
-      KUN_AI_CLIENT_ID: ${KUN_AI_CLIENT_ID:-}
+      # AI shadow-scoring pipeline (step 03; wired 2026-07-16 AI-tier power-on):
+      # the scan worker scores pending trust_scan_result rows via the AI gateway's
+      # moderate-text route over S2S Basic. The client is the purpose-built
+      # "AI Gateway - Trust Scan Worker" oauth_clients row (catalog_site=trust —
+      # the gateway 403s clients without a site binding, so the community forwarder
+      # client can NOT be reused here). Its secret lives ONLY in Dokploy env
+      # (plaintext staged in /root/trust-ai-client-secret.txt on the host, hash in
+      # the DB). SECRET empty → the worker keeps draining rows to degraded without
+      # dialing (fail-closed) — tier0_matched still records.
+      KUN_AI_CLIENT_BASE_URL: http://ai:9284
+      KUN_AI_CLIENT_ID: "ba21dfba94274c134e01ede5eaa7c391"
       KUN_AI_CLIENT_SECRET: ${KUN_AI_CLIENT_SECRET:-}
     # Internal only — product backends reach it at http://trust:9283 over
     # dokploy-network.
