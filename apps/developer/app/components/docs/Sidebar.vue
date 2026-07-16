@@ -1,0 +1,143 @@
+<script setup lang="ts">
+import { cn } from '@kungal/ui-core'
+import type { DocsOperation } from '~~/shared/types/docs'
+
+// Persistent classification nav for the docs section. Held by the docs LAYOUT
+// (not a page) so it never remounts while navigating within /docs — only the
+// content column transitions. Three layers: face switch → tag group → operation.
+// Sticky + independently scrollable on desktop; a disclosure panel on mobile.
+const route = useRoute()
+const { faces } = useDocs()
+
+const query = ref('')
+const mobileOpen = ref(false)
+
+const activeFaceKey = computed(
+  () => (route.params.face as string) || faces[0]!.key
+)
+const activeFace = computed(
+  () => faces.find((f) => f.key === activeFaceKey.value) ?? faces[0]!
+)
+const activeOpId = computed(() => route.params.operationId as string | undefined)
+
+const matches = (op: DocsOperation): boolean => {
+  const q = query.value.trim().toLowerCase()
+  if (!q) return true
+  return (
+    op.path.toLowerCase().includes(q) ||
+    op.id.toLowerCase().includes(q) ||
+    op.summary.toLowerCase().includes(q)
+  )
+}
+
+const visibleGroups = computed(() =>
+  activeFace.value.groups
+    .map((g) => ({ ...g, operations: g.operations.filter(matches) }))
+    .filter((g) => g.operations.length > 0)
+)
+const showGroupHeaders = computed(() => activeFace.value.groups.length > 1)
+const hasResults = computed(() => visibleGroups.value.length > 0)
+
+// Close the mobile panel after any in-section navigation.
+watch(
+  () => route.fullPath,
+  () => {
+    mobileOpen.value = false
+  }
+)
+</script>
+
+<template>
+  <aside
+    class="lg:sticky lg:top-16 lg:h-[calc(100vh-4rem)] lg:w-64 lg:shrink-0 lg:overflow-y-auto lg:border-r lg:border-default-200"
+  >
+    <!-- Mobile disclosure toggle -->
+    <button
+      type="button"
+      class="flex w-full items-center justify-between gap-2 border-b border-default-200 py-3 text-sm font-semibold text-foreground lg:hidden"
+      :aria-expanded="mobileOpen"
+      @click="mobileOpen = !mobileOpen"
+    >
+      <span class="flex items-center gap-2">
+        <KunIcon name="lucide:list" class="size-4 text-default-400" />
+        API 目录
+      </span>
+      <KunIcon
+        :name="mobileOpen ? 'lucide:chevron-up' : 'lucide:chevron-down'"
+        class="size-4 text-default-400"
+      />
+    </button>
+
+    <div
+      :class="cn('space-y-4 py-4 lg:pr-3', mobileOpen ? 'block' : 'hidden lg:block')"
+    >
+      <!-- Layer 1 — face switch -->
+      <div class="grid grid-cols-2 gap-1 rounded-lg bg-default-100 p-1">
+        <NuxtLink
+          v-for="f in faces"
+          :key="f.key"
+          :to="`/docs/${f.key}`"
+          :class="
+            cn(
+              'rounded-md px-3 py-1.5 text-center text-sm font-medium transition-colors',
+              f.key === activeFaceKey
+                ? 'bg-content1 text-foreground shadow-sm'
+                : 'text-default-500 hover:text-foreground'
+            )
+          "
+        >
+          {{ f.label }}
+        </NuxtLink>
+      </div>
+
+      <!-- Filter -->
+      <div class="relative">
+        <KunIcon
+          name="lucide:search"
+          class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-default-300"
+        />
+        <input
+          v-model="query"
+          type="text"
+          aria-label="过滤端点"
+          placeholder="过滤端点…"
+          class="w-full rounded-lg border border-default-200 bg-content1 py-2 pr-3 pl-9 text-sm text-foreground placeholder:text-default-300 focus:border-primary focus:outline-none"
+        />
+      </div>
+
+      <!-- Layers 2 + 3 — groups → operations -->
+      <nav v-if="hasResults" class="space-y-4">
+        <div v-for="group in visibleGroups" :key="group.tag" class="space-y-1">
+          <p
+            v-if="showGroupHeaders"
+            class="px-2 text-xs font-semibold uppercase tracking-wider text-default-400"
+          >
+            {{ group.title }}
+          </p>
+          <ul class="space-y-0.5">
+            <li v-for="op in group.operations" :key="op.id">
+              <NuxtLink
+                :to="`/docs/${activeFace.key}/${op.id}`"
+                :class="
+                  cn(
+                    'flex items-center gap-2 rounded-lg px-2 py-1.5 transition-colors',
+                    activeOpId === op.id
+                      ? 'bg-primary-50 text-primary'
+                      : 'text-default-500 hover:bg-default-100 hover:text-foreground'
+                  )
+                "
+              >
+                <DocsMethodBadge :method="op.method" size="sm" />
+                <code class="truncate font-mono text-xs">{{ op.path }}</code>
+              </NuxtLink>
+            </li>
+          </ul>
+        </div>
+      </nav>
+
+      <p v-else class="px-2 text-sm text-default-400">
+        没有匹配「{{ query }}」的端点
+      </p>
+    </div>
+  </aside>
+</template>

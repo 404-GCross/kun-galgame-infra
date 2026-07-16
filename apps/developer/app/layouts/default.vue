@@ -16,7 +16,7 @@ await callOnce('auth:user', async () => {
   <div class="flex min-h-screen flex-col bg-background">
     <LayoutHeader />
 
-    <!-- min-w-0 lets wide children (tables, Scalar) scroll inside instead of
+    <!-- min-w-0 lets wide children (tables) scroll inside instead of
          stretching this flex column past the viewport. -->
     <main class="mx-auto w-full min-w-0 max-w-6xl flex-1 px-4 py-8 md:px-6">
       <slot />

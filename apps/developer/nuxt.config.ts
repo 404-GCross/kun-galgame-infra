@@ -8,6 +8,14 @@ export default defineNuxtConfig({
 
   extends: ['@kungal/ui-nuxt'],
 
+  // Subtle global fade for route changes. In the /docs section the sidebar is
+  // held by the layout, so only the content column (the page) runs this — the
+  // nav stays put. `out-in` avoids overlap; the CSS lives in main.css.
+  app: {
+    pageTransition: { name: 'page', mode: 'out-in' },
+    layoutTransition: { name: 'layout', mode: 'out-in' }
+  },
+
   // This app owns its Tailwind entry. @kungal/ui-nuxt deliberately does not
   // inject tailwindcss.css (INTEGRATION §5), so the imports + @source scan live
   // in app/assets/css/main.css.
