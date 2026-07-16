@@ -36,6 +36,15 @@ func (s *PostService) AuthorStats(site string, authorIDs []int64) (map[int64]int
 	return s.posts.CountAuthorVisiblePosts(site, authorIDs)
 }
 
+// ResolvePosts returns the VISIBLE posts among the requested ids on a site, each
+// with its thread render context — the batch by-id hydration read (step 11: the
+// forum like-tab cutover). Site-scoped at the repository layer; the handler owns the
+// dedupe and request-order re-projection. Absent = hidden/deleted/cross-site/
+// unknown (no existence leak).
+func (s *PostService) ResolvePosts(site string, ids []int64) ([]repository.AuthorPostRow, error) {
+	return s.posts.ResolveVisiblePosts(site, ids)
+}
+
 // PurgeAuthor is the compliance purge: in one transaction it tombstones + scrubs
 // every post the author has on the site (any status, post_number preserved —
 // invariant 13) and deletes every reaction the author left on the site. It emits

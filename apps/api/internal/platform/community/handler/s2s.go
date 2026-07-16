@@ -66,6 +66,8 @@ func (s *Server) register(api huma.API) {
 		Summary: "List a site author's visible posts across threads (keyset by post id, newest first) with thread context", Tags: read}, s.listAuthorPosts)
 	huma.Register(api, huma.Operation{OperationID: "authorStats", Method: http.MethodGet, Path: "/api/v1/community/authors/stats",
 		Summary: "Batch visible-post counts for a site's authors", Tags: read}, s.authorStats)
+	huma.Register(api, huma.Operation{OperationID: "resolvePosts", Method: http.MethodPost, Path: "/api/v1/community/posts/resolve",
+		Summary: "Resolve a batch of posts by id (visible only, request order, deduped) with thread context", Tags: read}, s.resolvePosts)
 
 	huma.Register(api, huma.Operation{OperationID: "openTopic", Method: http.MethodPost, Path: "/api/v1/community/topics",
 		Summary: "Open a board topic with its opening post", Tags: write}, s.openTopic)

@@ -117,18 +117,24 @@ func authorPostsCursor(rows []repository.AuthorPostRow, limit int) string {
 	return strconv.FormatInt(rows[len(rows)-1].ID, 10)
 }
 
+// authorPostView projects one joined row into the by-author view: the reused
+// PostView nested under post, plus the thread render context for the jump link.
+func authorPostView(row *repository.AuthorPostRow) dto.AuthorPostView {
+	return dto.AuthorPostView{
+		Post: toPostView(&row.CommunityPost),
+		Thread: dto.PostThreadContext{
+			ThreadID:   row.ThreadID,
+			Title:      row.ThreadTitle,
+			AnchorKind: row.ThreadAnchorKind,
+			AnchorID:   row.ThreadAnchorID,
+		},
+	}
+}
+
 func toAuthorPostViews(rows []repository.AuthorPostRow) []dto.AuthorPostView {
 	out := make([]dto.AuthorPostView, len(rows))
 	for i := range rows {
-		out[i] = dto.AuthorPostView{
-			Post: toPostView(&rows[i].CommunityPost),
-			Thread: dto.PostThreadContext{
-				ThreadID:   rows[i].ThreadID,
-				Title:      rows[i].ThreadTitle,
-				AnchorKind: rows[i].ThreadAnchorKind,
-				AnchorID:   rows[i].ThreadAnchorID,
-			},
-		}
+		out[i] = authorPostView(&rows[i])
 	}
 	return out
 }

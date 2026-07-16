@@ -70,6 +70,13 @@ type CommentsResolveRequest struct {
 	ContentRating int16  `json:"content_rating" doc:"0=all 1=r15 2=r18 (inherited from the anchor)"`
 }
 
+// PostsResolveRequest hydrates a batch of posts by id — the forum like-tab read
+// (it stores only community post ids and needs their content back). ids is capped
+// at 100 (422 over) and de-duplicated preserving first-seen order.
+type PostsResolveRequest struct {
+	IDs []int64 `json:"ids" doc:"post ids to hydrate (max 100; deduped; only visible posts return)"`
+}
+
 // OpenTopicRequest opens a board topic (kind=0) with its opening post.
 type OpenTopicRequest struct {
 	AuthorID          int64    `json:"author_id"`
@@ -185,6 +192,16 @@ type AuthorPostView struct {
 type AuthorPostsResponse struct {
 	Posts      []AuthorPostView `json:"posts"`
 	NextCursor string           `json:"next_cursor,omitempty" doc:"post id to pass as after for the next (older) page; empty = last page"`
+}
+
+// PostsResolveResponse is the batch by-id hydration result: the VISIBLE posts
+// among the requested ids, each with its thread render context, in REQUEST ORDER
+// (post-dedupe). Hidden/deleted/cross-site/unknown ids are silently absent — the
+// caller diffs the request set against the returned set to render placeholders
+// (no per-id status is leaked). The view is the same AuthorPostView reused by the
+// by-author list; no new field semantics are invented.
+type PostsResolveResponse struct {
+	Posts []AuthorPostView `json:"posts"`
 }
 
 // AuthorStat is one author's visible-post count.

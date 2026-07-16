@@ -41,6 +41,27 @@ func (r *PostRepository) ListAuthorVisiblePosts(site string, authorID, after int
 	return rows, err
 }
 
+// ResolveVisiblePosts returns the VISIBLE posts among the requested ids on a
+// site, each joined with its thread's render context (title + anchor) — the
+// batch by-id hydration read. The result is UNORDERED (the handler re-orders it
+// into request order); a post that is hidden/deleted, belongs to another site,
+// or does not exist is simply absent (no existence leak). SITE-SCOPED through the
+// thread join, so a caller only ever resolves posts in its own tenant.
+func (r *PostRepository) ResolveVisiblePosts(site string, ids []int64) ([]AuthorPostRow, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	var rows []AuthorPostRow
+	err := r.db.Model(&model.CommunityPost{}).
+		Select("community_post.*, community_thread.title AS thread_title, "+
+			"community_thread.anchor_kind AS thread_anchor_kind, community_thread.anchor_id AS thread_anchor_id").
+		Joins("JOIN community_thread ON community_thread.id = community_post.thread_id").
+		Where("community_post.id IN ? AND community_thread.site = ? AND community_post.status = ?",
+			ids, site, model.PostStatusVisible).
+		Scan(&rows).Error
+	return rows, err
+}
+
 // CountAuthorVisiblePosts returns, for each requested author, the number of
 // VISIBLE posts they have on a site — the batch profile-stats read. Authors with
 // no visible posts (or unknown to the site) are simply absent from the map; the

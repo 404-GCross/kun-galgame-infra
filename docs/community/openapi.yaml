@@ -240,6 +240,27 @@ components:
         - code
         - message
       type: object
+    EnvelopePostsResolveResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EnvelopePostsResolveResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/PostsResolveResponse"
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
     EnvelopePurgeResponse:
       additionalProperties: false
       properties:
@@ -638,6 +659,39 @@ components:
         - content_rating
         - status
         - created_at
+      type: object
+    PostsResolveRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/PostsResolveRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        ids:
+          description: post ids to hydrate (max 100; deduped; only visible posts return)
+          items:
+            format: int64
+            type: integer
+          type:
+            - array
+            - "null"
+      required:
+        - ids
+      type: object
+    PostsResolveResponse:
+      additionalProperties: false
+      properties:
+        posts:
+          items:
+            $ref: "#/components/schemas/AuthorPostView"
+          type:
+            - array
+            - "null"
+      required:
+        - posts
       type: object
     PurgeResponse:
       additionalProperties: false
@@ -1200,6 +1254,31 @@ paths:
       summary: Set a feedback thread's status and official response
       tags:
         - community-write
+  /api/v1/community/posts/resolve:
+    post:
+      operationId: resolvePosts
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PostsResolveRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopePostsResolveResponse"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: Resolve a batch of posts by id (visible only, request order, deduped) with thread context
+      tags:
+        - community-read
   /api/v1/community/posts/{id}:
     delete:
       operationId: deletePost
