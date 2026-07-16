@@ -210,6 +210,26 @@ func rehangEntity(tx *gorm.DB, entityType int16, src, dst int64) error {
 			    AND NOT EXISTS (SELECT 1 FROM catalog_character_alias b
 			                     WHERE b.character_id = ? AND b.name = a.name AND b.lang = a.lang)`, []any{dst, src, dst}},
 			{`DELETE FROM catalog_character_alias WHERE character_id = ?`, []any{src}},
+			// roster edges (catalog_work_character, step 45 — added AFTER the
+			// original hook list; step 49 regression fix). When both sides carry
+			// an edge on the same work, the surviving edge folds in the loser's
+			// stronger signal before the loser row is dropped: kind upgrades from
+			// unknown (0) to the loser's typed value (doc 10 §6.2 — the more
+			// specific value wins; two typed values keep the survivor's,
+			// first-source-wins per step 45), and spoiler takes the higher of the
+			// two so a source that flags a severe spoiler is never silently
+			// downgraded. Then non-conflicting loser edges move, deduped against
+			// uq_catalog_work_character (work_id, character_id), and the rest drop.
+			{`UPDATE catalog_work_character d
+			    SET kind = CASE WHEN d.kind = 0 THEN s.kind ELSE d.kind END,
+			        spoiler = GREATEST(d.spoiler, s.spoiler),
+			        updated_at = now()
+			    FROM catalog_work_character s
+			    WHERE d.character_id = ? AND s.character_id = ? AND s.work_id = d.work_id`, []any{dst, src}},
+			{`UPDATE catalog_work_character e SET character_id = ?, updated_at = now() WHERE e.character_id = ?
+			    AND NOT EXISTS (SELECT 1 FROM catalog_work_character x
+			                     WHERE x.work_id = e.work_id AND x.character_id = ?)`, []any{dst, src, dst}},
+			{`DELETE FROM catalog_work_character WHERE character_id = ?`, []any{src}},
 			// variant pointers follow the base character
 			{`UPDATE catalog_character SET instance_of = ? WHERE instance_of = ?`, []any{dst, src}},
 		}

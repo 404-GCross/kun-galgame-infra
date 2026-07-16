@@ -134,6 +134,39 @@ func createWork(t *testing.T, displayName string) *model.CatalogWork {
 	return w
 }
 
+func createCharacter(t *testing.T, displayName string) *model.CatalogCharacter {
+	t.Helper()
+	c := &model.CatalogCharacter{DisplayName: displayName}
+	if err := testDB.Create(c).Error; err != nil {
+		t.Fatalf("create character: %v", err)
+	}
+	return c
+}
+
+func createWorkCharacter(t *testing.T, workID, characterID int64, kind, spoiler int16) *model.CatalogWorkCharacter {
+	t.Helper()
+	e := &model.CatalogWorkCharacter{
+		WorkID: workID, CharacterID: characterID, Kind: kind, Spoiler: spoiler,
+		MatchedBy: "import:test",
+	}
+	if err := testDB.Create(e).Error; err != nil {
+		t.Fatalf("create work_character: %v", err)
+	}
+	return e
+}
+
+func createCharacterAlias(t *testing.T, characterID int64, name, lang string) *model.CatalogCharacterAlias {
+	t.Helper()
+	a := &model.CatalogCharacterAlias{
+		CharacterID: characterID, Name: name, Lang: lang,
+		Kind: model.AliasKindSpellingVariant,
+	}
+	if err := testDB.Create(a).Error; err != nil {
+		t.Fatalf("create character alias: %v", err)
+	}
+	return a
+}
+
 func createCredit(t *testing.T, workID, creditNameID, roleID int64, characterID *int64) *model.CatalogCredit {
 	t.Helper()
 	c := &model.CatalogCredit{

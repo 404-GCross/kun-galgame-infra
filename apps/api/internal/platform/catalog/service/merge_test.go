@@ -214,6 +214,92 @@ func TestMergeCreditNameDedup(t *testing.T) {
 	assert.Equal(t, target.ID, canonical)
 }
 
+// Character merge must rehang catalog_work_character roster edges (step 45
+// table, added after the original hook list — step 49 regression): a duplicate
+// edge on a shared work folds kind/spoiler survivorship onto the surviving edge
+// and drops the loser's, a source-only edge moves, and an empty survivor adopts
+// the source's portrait. Without the fix the loser's roster edge would dangle
+// and the source hard-delete would fail on the FK.
+func TestMergeCharacterRosterRehang(t *testing.T) {
+	cleanTables(t)
+	ctx := t.Context()
+
+	target := createCharacter(t, "冬月十夜")
+	source := createCharacter(t, "冬月 十夜")
+	// Survivor has no portrait; the source does — survivorship must keep it.
+	require.NoError(t, testDB.Model(&model.CatalogCharacter{}).Where("id = ?", source.ID).
+		Update("image_hash", "portrait-hash").Error)
+
+	w1, w2, w3 := createWork(t, "work-1"), createWork(t, "work-2"), createWork(t, "work-3")
+	// w1: survivor edge unknown/none, loser edge secondary/severe → both fields
+	// upgrade on the surviving edge (0→typed kind, higher spoiler).
+	createWorkCharacter(t, w1.ID, target.ID, model.WorkCharacterKindUnknown, model.SpoilerNone)
+	createWorkCharacter(t, w1.ID, source.ID, model.WorkCharacterKindSecondary, model.SpoilerSevere)
+	// w3: survivor edge already typed (main/severe), loser typed (secondary/none)
+	// → survivor's kind wins (first-source), spoiler stays severe (GREATEST).
+	createWorkCharacter(t, w3.ID, target.ID, model.WorkCharacterKindMain, model.SpoilerSevere)
+	createWorkCharacter(t, w3.ID, source.ID, model.WorkCharacterKindSecondary, model.SpoilerNone)
+	// w2: source-only edge moves intact.
+	createWorkCharacter(t, w2.ID, source.ID, model.WorkCharacterKindMain, model.SpoilerNone)
+
+	// Aliases: one duplicate ("A"/ja), one new ("B"/en).
+	createCharacterAlias(t, target.ID, "A", "ja")
+	createCharacterAlias(t, source.ID, "A", "ja")
+	createCharacterAlias(t, source.ID, "B", "en")
+
+	// A voice credit on the source that duplicates a target credit → dropped.
+	role := seededRoleID(t)
+	person := createPerson(t, "VA")
+	cn := createCreditName(t, &person.ID, "声優")
+	createCredit(t, w1.ID, cn.ID, role, &target.ID)
+	createCredit(t, w1.ID, cn.ID, role, &source.ID) // duplicate after repoint → dropped
+
+	p, err := testMerge.ProposeMerge(ctx, model.EntityTypeCharacter, source.ID, target.ID, 7, "same character")
+	require.NoError(t, err)
+	approveAndForceExecutable(t, p.ID)
+	require.NoError(t, testMerge.ExecuteMerge(ctx, p.ID, nil))
+
+	// Roster edges deduped: w1 (upgraded), w2 (moved), w3 (survivor kept).
+	var edges []model.CatalogWorkCharacter
+	require.NoError(t, testDB.Where("character_id = ?", target.ID).Order("work_id").Find(&edges).Error)
+	require.Len(t, edges, 3)
+	assert.Equal(t, w1.ID, edges[0].WorkID)
+	assert.Equal(t, model.WorkCharacterKindSecondary, edges[0].Kind, "unknown kind upgrades to the loser's typed value")
+	assert.Equal(t, model.SpoilerSevere, edges[0].Spoiler, "spoiler takes the higher of the two edges")
+	assert.Equal(t, w2.ID, edges[1].WorkID)
+	assert.Equal(t, model.WorkCharacterKindMain, edges[1].Kind, "source-only edge moves intact")
+	assert.Equal(t, w3.ID, edges[2].WorkID)
+	assert.Equal(t, model.WorkCharacterKindMain, edges[2].Kind, "two typed kinds keep the survivor's, first-source-wins")
+	assert.Equal(t, model.SpoilerSevere, edges[2].Spoiler)
+
+	// No roster edge stranded on the merged source (the FK-dangling bug).
+	var stranded int64
+	testDB.Raw(`SELECT count(*) FROM catalog_work_character WHERE character_id = ?`, source.ID).Scan(&stranded)
+	assert.Zero(t, stranded, "no roster edge may stay on the merged source")
+
+	// Portrait survivorship: empty survivor adopts the source's hash.
+	var merged model.CatalogCharacter
+	require.NoError(t, testDB.First(&merged, target.ID).Error)
+	require.NotNil(t, merged.ImageHash)
+	assert.Equal(t, "portrait-hash", *merged.ImageHash)
+
+	// Aliases deduped to A/ja + B/en.
+	var aliases []model.CatalogCharacterAlias
+	require.NoError(t, testDB.Where("character_id = ?", target.ID).Order("name").Find(&aliases).Error)
+	require.Len(t, aliases, 2)
+
+	// Voice credit deduped: exactly one credit points at the survivor.
+	var credits int64
+	testDB.Raw(`SELECT count(*) FROM catalog_credit WHERE character_id = ?`, target.ID).Scan(&credits)
+	assert.Equal(t, int64(1), credits)
+
+	// Source retired; its id resolves to the survivor in one hop.
+	canonical, redirected, err := testResolve.Resolve(ctx, model.EntityTypeCharacter, source.ID)
+	require.NoError(t, err)
+	assert.True(t, redirected)
+	assert.Equal(t, target.ID, canonical)
+}
+
 // T8-③: merge→unmerge drill (doc 10 invariant 11) — zero data loss,
 // field-by-field and child-by-child.
 func TestMergeUnmergeDrill(t *testing.T) {

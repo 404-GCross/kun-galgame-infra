@@ -226,6 +226,12 @@ func applySurvivorship(tx *gorm.DB, entityType int16, src, dst int64, resolution
 		mergerPtr(m, "gender", "gender", d.Gender, s.Gender)
 		m.str("description", "description", d.Description, s.Description)
 		mergerPtr(m, "instance_of", "instance_of", d.InstanceOf, s.InstanceOf)
+		// A portrait is expensive signal — never drop it in a merge. The
+		// fill-if-empty default keeps the survivor's own hash when it has one
+		// and adopts the source's when the survivor is bare (step 49; the
+		// dedup batch also prefers a portrait-bearing survivor, so this is the
+		// belt-and-suspenders that also covers hand-driven merges).
+		mergerPtr(m, "image_hash", "image_hash", d.ImageHash, s.ImageHash)
 		return m.changed, m.apply(tx, "catalog_character", dst)
 
 	case model.EntityTypeWork:
