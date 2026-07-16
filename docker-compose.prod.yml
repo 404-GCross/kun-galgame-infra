@@ -416,30 +416,29 @@ services:
       # host/user/pass fall back to KUN_PG_*.
       KUN_COMMUNITY_HOST: 0.0.0.0
       KUN_COMMUNITY_PORT: "9282"
-      # Trust wiring (step 03). All default empty = forwarding OFF (the outbox
-      # ticker idles) and every inbound callback 401s — behaviour unchanged until
-      # the letmoe cut-over registers the community_post subject_kind and sets
-      # these in Dokploy (see RUNBOOK / the step-03 report). Base URL defaults to
+      # Trust wiring (step 03; POWERED ON 2026-07-16 Tier0 runbook). The client id
+      # is the purpose-built "Community Trust Forwarder (S2S)" oauth_clients row;
+      # its secret lives ONLY in Dokploy env (KUN_TRUST_CLIENT_SECRET — plaintext
+      # staged in /root/community-trust-client-secret.txt on the host, hash already
+      # in the DB). Callback secret stays empty until enforcement callbacks are
+      # provisioned (inbound callbacks 401 = fail-closed). Base URL defaults to
       # http://trust:9283 (dokploy-network service name).
-      KUN_TRUST_CLIENT_ID: ${KUN_TRUST_CLIENT_ID:-}
+      KUN_TRUST_CLIENT_ID: "ac2b8856594baed9c9ee6792eec082e3"
       KUN_TRUST_CLIENT_SECRET: ${KUN_TRUST_CLIENT_SECRET:-}
       KUN_TRUST_CALLBACK_SECRET: ${KUN_TRUST_CALLBACK_SECRET:-}
-      # Shadow-scan sink (step 04) — INDEPENDENT of the forward wiring above.
-      # Default off: even once KUN_TRUST_CLIENT_* is set for forwarding, scanning
-      # stays dark until this is flipped to "true" in Dokploy (needs the site's
-      # (site, community_post) subject_kind registered + this client in
-      # KUN_TRUST_FORWARDER_CLIENT_IDS). Explicit "false" so the power-on checklist
-      # can grep it.
-      KUN_TRUST_SCAN_ENABLED: "false"
-      # Synchronous pre-write word-list gate (step 06) — INDEPENDENT of the
-      # forward/scan wiring above. Default off: even once KUN_TRUST_CLIENT_* is
-      # set, the sync check stays dark until this is flipped to "true" in Dokploy
-      # (same prerequisites as scanning: the site's (site, community_post)
-      # subject_kind registered + this client in KUN_TRUST_FORWARDER_CLIENT_IDS).
-      # deny blocks the write (422), hold enqueues a suspect review item; any
-      # check error/timeout fails OPEN. Explicit "false" so the power-on checklist
-      # can grep it.
-      KUN_TRUST_CHECK_ENABLED: "false"
+      # Shadow-scan sink (step 04) — INDEPENDENT switch. ON since 2026-07-16
+      # (Tier0 power-on): every post create/edit feeds /trust/scan; rows drain to
+      # degraded while the AI gateway is unprovisioned, with tier0_matched still
+      # recorded (calibration corpus). Prereqs in place: kungal/community_post
+      # registered + the client id above in KUN_TRUST_FORWARDER_CLIENT_IDS.
+      KUN_TRUST_SCAN_ENABLED: "true"
+      # Synchronous pre-write word-list gate (step 06) — INDEPENDENT switch. ON
+      # since 2026-07-16 (Tier0 power-on): deny (banned term) blocks the write
+      # with 422, hold (suspect term) publishes + enqueues a review item; any
+      # check error/timeout fails OPEN (a down trust never blocks posting). With
+      # an empty banned list this gate allows everything — risk is carried by the
+      # term list, which is curated in the /trust/terms admin UI.
+      KUN_TRUST_CHECK_ENABLED: "true"
     # Internal only — product backends (letmoe/...) reach it at
     # http://community:9282 over dokploy-network.
     expose: ["9282"]
@@ -467,10 +466,11 @@ services:
       KUN_TRUST_HOST: 0.0.0.0
       KUN_TRUST_PORT: "9283"
       # Forward-face allowlist (step 03 ruling 3): comma-separated client ids
-      # permitted to call POST /api/v1/trust/forward{,/resolve}. Default empty =
-      # the forward face is 403 for everyone (fail-closed); set to the community
-      # service's KUN_TRUST_CLIENT_ID in Dokploy at the letmoe cut-over.
-      KUN_TRUST_FORWARDER_CLIENT_IDS: ${KUN_TRUST_FORWARDER_CLIENT_IDS:-}
+      # permitted to relay for other sites on the forward/scan/check faces (wire
+      # `site` + this allowlist as the counterweight). Set 2026-07-16 (Tier0
+      # power-on) to the community service's client id — the same value as the
+      # community block's KUN_TRUST_CLIENT_ID.
+      KUN_TRUST_FORWARDER_CLIENT_IDS: "ac2b8856594baed9c9ee6792eec082e3"
       # AI shadow-scoring pipeline (step 03): the scan worker scores pending
       # trust_scan_result rows via the AI gateway's moderate-text route over S2S
       # Basic. All three default empty = the worker drains rows to degraded WITHOUT
