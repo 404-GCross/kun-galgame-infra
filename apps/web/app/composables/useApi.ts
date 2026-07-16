@@ -22,9 +22,10 @@ interface ApiError {
 }
 
 // Which backend a composable call targets: the OAuth/admin API (default), the
-// catalog service, or the Trust & Safety service (each a separate binary on
-// its own port). All share the Bearer session and the house envelope.
-export type ApiService = 'oauth' | 'catalog' | 'trust'
+// catalog service, the Trust & Safety service, or the AI-gateway (each a
+// separate binary on its own port). All share the Bearer session and the house
+// envelope.
+export type ApiService = 'oauth' | 'catalog' | 'trust' | 'ai'
 
 export const resolveApiBase = (service: ApiService = 'oauth'): string => {
   const config = useRuntimeConfig()
@@ -47,6 +48,12 @@ export const resolveApiBase = (service: ApiService = 'oauth'): string => {
   // mismatch); the relay forwards to trustApiBaseSsr server-side.
   if (service === 'trust') {
     return (config.public.trustApiBase as string) || '/trust-proxy'
+  }
+  // AI-gateway mirrors trust/catalog: ONE same-origin /ai-proxy base on both
+  // sides so useFetch derives an identical auto-key on server and client (no
+  // hydration mismatch); the relay forwards to aiApiBaseSsr server-side.
+  if (service === 'ai') {
+    return (config.public.aiApiBase as string) || '/ai-proxy'
   }
   return (
     (import.meta.server && config.apiBaseSsr

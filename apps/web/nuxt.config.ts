@@ -75,6 +75,10 @@ export default defineNuxtConfig({
     // its own port). Set NUXT_TRUST_API_BASE_SSR=http://trust:9283/api/v1 in
     // docker; empty in local dev.
     trustApiBaseSsr: process.env.NUXT_TRUST_API_BASE_SSR || '',
+    // Same dual-base split for the AI-gateway (a separate binary on its own
+    // port). Set NUXT_AI_API_BASE_SSR=http://ai:9284/api/v1 in docker; empty in
+    // local dev.
+    aiApiBaseSsr: process.env.NUXT_AI_API_BASE_SSR || '',
     public: {
       apiBase:
         process.env.KUN_VISUAL_NOVEL_NUXT_PUBLIC_API_BASE ||
@@ -95,6 +99,12 @@ export default defineNuxtConfig({
       trustApiBase:
         process.env.KUN_VISUAL_NOVEL_NUXT_PUBLIC_TRUST_API_BASE ||
         '/trust-proxy',
+      // AI-gateway base for the BROWSER. The AI service has no public domain
+      // (docker-network only), so the default is the same-origin /ai-proxy
+      // server route, which relays admin calls to aiApiBaseSsr. Works unchanged
+      // in local dev (the relay falls back to 127.0.0.1:9284).
+      aiApiBase:
+        process.env.KUN_VISUAL_NOVEL_NUXT_PUBLIC_AI_API_BASE || '/ai-proxy',
       // image_service public CDN base; override via env in prod.
       imageCdnBase:
         process.env.KUN_VISUAL_NOVEL_NUXT_PUBLIC_IMAGE_CDN_BASE ||

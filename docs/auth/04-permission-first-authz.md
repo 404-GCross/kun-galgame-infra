@@ -49,7 +49,7 @@ func (r *Resolver) Can(roles []string, p Permission) bool
   `RequireRole` 同形(读 `c.Locals("user_roles")`,fail-closed 403)。in-handler 判定:
   `perm.Resolver.Can(roles, perm.Xxx)`。
 
-### 2.2 六个词汇包(各域自持,import 引擎)
+### 2.2 七个词汇包(各域自持,import 引擎)
 
 | 包 | 面向 | 依赖方向 |
 |---|---|---|
@@ -59,6 +59,7 @@ func (r *Resolver) Can(roles []string, p Permission) bool
 | `internal/platform/site/perm` | IdP 控制台(`oauth.*`,横跨 auth/site,单叶子包承载) | 只 import authz;auth handler import 它不扰动既有 auth→site 方向 |
 | `internal/platform/artifact/perm` | artifact 文件运维 | 平台域,import authz |
 | `internal/platform/devapi/perm` | 开发者平台(NextMoe 开放 API)管理面 | 平台域,import authz |
+| `internal/platform/ai/perm` | AI 网关用量看板(运营面) | 平台域,import authz |
 
 每包 = 权限常量 + `var Bundles authz.Bundles`(role→捆,层级由 `moderatorPerms ⊆ adminPerms ⊆ renPerms`
 组合保证)+ `var Resolver = authz.NewResolver(Bundles)`(包级单例)。
@@ -80,6 +81,7 @@ func (r *Resolver) Can(roles []string, p Permission) bool
 | `galgame.owner_override` | admin, ren | 越权处置(owner-or-admin 的 admin 支;**不含 moderator**) |
 | `catalog.review` | ren | catalog 内部审核/浏览面 |
 | `trust.queue_access` | moderator, admin, ren | T&S 统一审核收件箱队列 |
+| `ai.usage_view` | admin, ren | AI 网关用量/成本/预算看板(**不含 moderator**——运营面) |
 | `oauth.admin_access` | admin, ren | 控制台四组门(/admin、/sites、/oauth/clients、/admin/artifact) |
 | `oauth.users.pii_view` | ren | 看用户 PII(邮箱/IP) |
 | `oauth.roles.grant_basic` | admin, ren | 授予/撤销 moderator、creator |

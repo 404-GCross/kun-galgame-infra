@@ -15,6 +15,7 @@
 //	go run ./cmd/gen-openapi -trust -o ../../docs/trust/openapi.yaml                    # trust S2S intake face (3.1)
 //	go run ./cmd/gen-openapi -trust-admin -o ../../docs/trust/admin-openapi.yaml        # trust admin review inbox (3.1)
 //	go run ./cmd/gen-openapi -ai -o ../../docs/ai/openapi.yaml                          # AI-gateway S2S face (3.1)
+//	go run ./cmd/gen-openapi -ai-admin -o ../../docs/ai/admin-openapi.yaml              # AI-gateway usage dashboard (3.1)
 package main
 
 import (
@@ -48,6 +49,7 @@ func main() {
 	trust := flag.Bool("trust", false, "emit the trust S2S intake spec (/api/v1/trust/*)")
 	trustAdmin := flag.Bool("trust-admin", false, "emit the trust admin review-inbox spec (/api/v1/admin/trust/*)")
 	ai := flag.Bool("ai", false, "emit the AI-gateway S2S spec (/api/v1/ai/*)")
+	aiAdmin := flag.Bool("ai-admin", false, "emit the AI-gateway usage-dashboard spec (/api/v1/admin/ai/*)")
 	flag.Parse()
 
 	// Build the API to derive the spec; the deps are nil / stub because Setup
@@ -75,6 +77,8 @@ func main() {
 		api = trustHandler.SetupAdmin(app, nil, nil, nil, nil)
 	case *ai:
 		api = aiHandler.Setup(app, nil)
+	case *aiAdmin:
+		api = aiHandler.SetupAdmin(app, nil, nil)
 	case *admin:
 		api = artHandler.SetupAdmin(app, artHandler.NewAdmin(nil, nil, nil, 0))
 	default:

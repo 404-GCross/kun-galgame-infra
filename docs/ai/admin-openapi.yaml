@@ -1,0 +1,404 @@
+components:
+  schemas:
+    BudgetView:
+      additionalProperties: false
+      properties:
+        daily_cost_cap_micro:
+          format: int64
+          type:
+            - integer
+            - "null"
+        route:
+          type: string
+        site:
+          type: string
+        updated_at:
+          type: string
+      required:
+        - route
+        - site
+        - daily_cost_cap_micro
+        - updated_at
+      type: object
+    DailyPoint:
+      additionalProperties: false
+      properties:
+        calls:
+          format: int64
+          type: integer
+        cost_micro:
+          format: int64
+          type: integer
+        day:
+          type: string
+        route:
+          type: string
+      required:
+        - day
+        - route
+        - calls
+        - cost_micro
+      type: object
+    DailySeries:
+      additionalProperties: false
+      properties:
+        days:
+          format: int64
+          type: integer
+        points:
+          items:
+            $ref: "#/components/schemas/DailyPoint"
+          type:
+            - array
+            - "null"
+      required:
+        - days
+        - points
+      type: object
+    EnvelopeBudgetView:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EnvelopeBudgetView.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/BudgetView"
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
+    EnvelopeDailySeries:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EnvelopeDailySeries.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/DailySeries"
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
+    EnvelopeListBudgetView:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EnvelopeListBudgetView.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          items:
+            $ref: "#/components/schemas/BudgetView"
+          type:
+            - array
+            - "null"
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
+    EnvelopeUsageSummary:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EnvelopeUsageSummary.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/UsageSummary"
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
+    HouseError:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/HouseError.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
+    SummaryRow:
+      additionalProperties: false
+      properties:
+        budget_denied:
+          format: int64
+          type: integer
+        calls:
+          format: int64
+          type: integer
+        channel:
+          type: string
+        completion_tokens:
+          format: int64
+          type: integer
+        cost_micro:
+          format: int64
+          type: integer
+        degraded:
+          format: int64
+          type: integer
+        ok:
+          format: int64
+          type: integer
+        prompt_tokens:
+          format: int64
+          type: integer
+        route:
+          type: string
+        site:
+          type: string
+        upstream_error:
+          format: int64
+          type: integer
+      required:
+        - site
+        - route
+        - channel
+        - calls
+        - prompt_tokens
+        - completion_tokens
+        - cost_micro
+        - ok
+        - upstream_error
+        - budget_denied
+        - degraded
+      type: object
+    UpsertBudgetRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/UpsertBudgetRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        daily_cost_cap_micro:
+          description: per-day micro-currency cap; null/absent = clear (no block)
+          format: int64
+          type: integer
+        route:
+          description: "semantic route name (v0: moderate-text)"
+          type: string
+        site:
+          description: tenant site; '' = the route-wide default scope
+          type: string
+      required:
+        - route
+        - site
+      type: object
+    UsageOverview:
+      additionalProperties: false
+      properties:
+        budget_denied:
+          format: int64
+          type: integer
+        calls:
+          format: int64
+          type: integer
+        completion_tokens:
+          format: int64
+          type: integer
+        cost_micro:
+          format: int64
+          type: integer
+        degraded:
+          format: int64
+          type: integer
+        error_rate:
+          format: double
+          type: number
+        ok:
+          format: int64
+          type: integer
+        prompt_tokens:
+          format: int64
+          type: integer
+        upstream_error:
+          format: int64
+          type: integer
+      required:
+        - calls
+        - prompt_tokens
+        - completion_tokens
+        - cost_micro
+        - ok
+        - upstream_error
+        - budget_denied
+        - degraded
+        - error_rate
+      type: object
+    UsageSummary:
+      additionalProperties: false
+      properties:
+        overview:
+          $ref: "#/components/schemas/UsageOverview"
+        rows:
+          items:
+            $ref: "#/components/schemas/SummaryRow"
+          type:
+            - array
+            - "null"
+        window:
+          type: string
+      required:
+        - window
+        - overview
+        - rows
+      type: object
+info:
+  title: KUN AI Admin API
+  version: 1.0.0
+openapi: 3.1.0
+paths:
+  /api/v1/admin/ai/budgets:
+    get:
+      operationId: listAIBudgets
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeListBudgetView"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: List the per-route (optionally per-site) daily budget-fuse config
+      tags:
+        - ai-admin
+    put:
+      operationId: upsertAIBudget
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpsertBudgetRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeBudgetView"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: Set or clear a per-route (optionally per-site) daily cost cap (null cap = clear)
+      tags:
+        - ai-admin
+  /api/v1/admin/ai/usage/daily:
+    get:
+      operationId: getAIUsageDaily
+      parameters:
+        - description: number of calendar days (inclusive of today)
+          explode: false
+          in: query
+          name: days
+          schema:
+            default: 14
+            description: number of calendar days (inclusive of today)
+            format: int64
+            maximum: 90
+            minimum: 1
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeDailySeries"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: Day×route calls/cost trend series
+      tags:
+        - ai-admin
+  /api/v1/admin/ai/usage/summary:
+    get:
+      operationId: getAIUsageSummary
+      parameters:
+        - description: aggregation window
+          explode: false
+          in: query
+          name: window
+          schema:
+            default: 24h
+            description: aggregation window
+            enum:
+              - 24h
+              - 7d
+              - 30d
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeUsageSummary"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: Usage summary aggregated by site×route×channel (with a totalled overview + status distribution)
+      tags:
+        - ai-admin

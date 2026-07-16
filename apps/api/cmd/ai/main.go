@@ -11,6 +11,7 @@
 // Faces (v0):
 //
 //	POST /api/v1/ai/moderate-text   — S2S text scan (Basic client auth; fail-open)
+//	GET  /api/v1/admin/ai/*         — usage dashboard (JWT + ai.usage_view; admin/ren)
 //	GET  /openapi.json              — S2S OpenAPI 3.1 spec (no auth)
 //	GET  /healthz                   — no auth
 //
@@ -31,12 +32,14 @@ import (
 	"api/internal/infrastructure/database"
 	"api/internal/middleware"
 	aiHandler "api/internal/platform/ai/handler"
+	aiPerm "api/internal/platform/ai/perm"
 	"api/internal/platform/ai/service"
 	"api/internal/platform/ai/upstream"
 	siteRepo "api/internal/platform/site/repository"
 	"api/pkg/config"
 	"api/pkg/health"
 	"api/pkg/logger"
+	"api/pkg/oidctoken"
 
 	"github.com/gofiber/fiber/v3"
 )
@@ -78,6 +81,8 @@ func main() {
 		slog.Warn("ai upstream NOT configured — degraded mode (moderate-text fail-open, no upstream dialled)")
 	}
 	moderationSvc := service.NewModerationService(aiDB.DB(), up)
+	statsSvc := service.NewStatsService(aiDB.DB())
+	budgetSvc := service.NewBudgetService(aiDB.DB())
 
 	application.Fiber.Use(middleware.RequestID())
 	application.Fiber.Use(middleware.Logger())
@@ -87,10 +92,20 @@ func main() {
 	application.Fiber.Use(middleware.CORS(cfg.Server.CORSOrigin))
 
 	// S2S face: Basic client credentials, path-scoped before the Huma routes.
+	// The /api/v1/ai prefix is disjoint from /api/v1/admin/ai so the S2S Basic
+	// auth never intercepts admin calls.
 	clientRepo := siteRepo.NewOAuthClientRepository(application.DB.DB())
 	application.Fiber.Use("/api/v1/ai", aiHandler.S2SAuth(clientRepo))
 
+	// Admin face: shared JWT middleware (accept-both verifier) + the
+	// ai.usage_view permission (admin/ren; NOT moderator — usage cost is ops),
+	// exactly like the trust admin surface but with no per-site scoping.
+	tokenVerifier := oidctoken.NewVerifierWithJWKS(cfg.JWT.Secret, cfg.OIDC.JWKSURL)
+	application.Fiber.Use("/api/v1/admin/ai",
+		middleware.JWTAuth(tokenVerifier), middleware.RequirePermission(aiPerm.Resolver, aiPerm.UsageView))
+
 	s2sAPI := aiHandler.Setup(application.Fiber, moderationSvc)
+	aiHandler.SetupAdmin(application.Fiber, statsSvc, budgetSvc)
 
 	// Serve the S2S OpenAPI 3.1 spec unauthenticated at the app root.
 	application.Fiber.Get("/openapi.json", func(c fiber.Ctx) error {
