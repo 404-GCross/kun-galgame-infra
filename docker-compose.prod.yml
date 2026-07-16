@@ -308,28 +308,11 @@ services:
       KUN_CATALOG_CLIENT_ID: ${KUN_CATALOG_CLIENT_ID:-${KUN_IMAGE_CLIENT_ID:-}}
       KUN_CATALOG_CLIENT_SECRET: ${KUN_CATALOG_CLIENT_SECRET:-${KUN_IMAGE_CLIENT_SECRET:-}}
     expose: ["9280"]
-    labels:
-      # Traefik routing for the NextMoe OPEN-API PUBLIC FACE on api.nextmoe.dev —
-      # OWNED HERE, not in the Dokploy domain panel. Compose-level labels REPLACE
-      # Dokploy's injected domain labels on a service (oauth learned this the hard
-      # way: adding one router silently dropped the panel's routing → 404). This
-      # service used to be internal-only (zero labels), so there is nothing to
-      # preserve — but from now on every route it serves must live in this block.
-      # ONLY PathPrefix(`/v1/galgame`) is routed here; the host's other paths do
-      # NOT reach this service, and the internal read face / S2S never touch the
-      # api.nextmoe.dev domain (they stay on http://galgame:9280 / dokploy-network).
-      traefik.enable: "true"
-      # /v1/galgame — the open-API galgame public projection (websecure + LE),
-      # with the same http→https redirect twin the oauth block carries.
-      traefik.http.routers.infra-galgame-pub.rule: Host(`api.nextmoe.dev`) && PathPrefix(`/v1/galgame`)
-      traefik.http.routers.infra-galgame-pub.entrypoints: websecure
-      traefik.http.routers.infra-galgame-pub.tls.certresolver: letsencrypt
-      traefik.http.routers.infra-galgame-pub.service: infra-galgame-pub
-      traefik.http.routers.infra-galgame-pub-http.rule: Host(`api.nextmoe.dev`) && PathPrefix(`/v1/galgame`)
-      traefik.http.routers.infra-galgame-pub-http.entrypoints: web
-      traefik.http.routers.infra-galgame-pub-http.middlewares: redirect-to-https@file
-      traefik.http.routers.infra-galgame-pub-http.service: infra-galgame-pub
-      traefik.http.services.infra-galgame-pub.loadbalancer.server.port: "9280"
+    # W3 (wiki retirement): the /v1/galgame public routers moved to the catalog
+    # block below — the catalog process co-hosts the full galgame surface
+    # (galgameapp.Mount, W2). This service is internal-only again, carries zero
+    # traffic (all consumers flipped to catalog:9281), and retires at the end
+    # of W3 after the soak window.
     depends_on:
       postgres: { condition: service_healthy }
       meili: { condition: service_healthy }
@@ -406,6 +389,18 @@ services:
       traefik.http.routers.infra-catalog-pub-http.entrypoints: web
       traefik.http.routers.infra-catalog-pub-http.middlewares: redirect-to-https@file
       traefik.http.routers.infra-catalog-pub-http.service: infra-catalog-pub
+      # /v1/galgame — moved here from the galgame block (W3): the open-API
+      # galgame projection is served by THIS process (galgameapp.Mount, W2).
+      # Same router names as before, now targeting the shared infra-catalog-pub
+      # loadbalancer (:9281) — two routers, one service.
+      traefik.http.routers.infra-galgame-pub.rule: Host(`api.nextmoe.dev`) && PathPrefix(`/v1/galgame`)
+      traefik.http.routers.infra-galgame-pub.entrypoints: websecure
+      traefik.http.routers.infra-galgame-pub.tls.certresolver: letsencrypt
+      traefik.http.routers.infra-galgame-pub.service: infra-catalog-pub
+      traefik.http.routers.infra-galgame-pub-http.rule: Host(`api.nextmoe.dev`) && PathPrefix(`/v1/galgame`)
+      traefik.http.routers.infra-galgame-pub-http.entrypoints: web
+      traefik.http.routers.infra-galgame-pub-http.middlewares: redirect-to-https@file
+      traefik.http.routers.infra-galgame-pub-http.service: infra-catalog-pub
       traefik.http.services.infra-catalog-pub.loadbalancer.server.port: "9281"
     depends_on:
       postgres: { condition: service_healthy }
