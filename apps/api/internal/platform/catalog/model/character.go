@@ -22,7 +22,11 @@ type CatalogCharacter struct {
 	// InstanceOf is the cross-universe variant escape hatch (doc 17 R6, VNDB
 	// instance_of): a variant character points at its base character instead
 	// of forcing duplicated rows or an over-merged one. Nullable self FK.
-	InstanceOf      *int64         `gorm:"index;type:bigint" json:"instance_of"`
+	InstanceOf *int64 `gorm:"index;type:bigint" json:"instance_of"`
+	// ImageHash is the character portrait's content-addressed hash in the image
+	// service (same shape as the galgame/work image columns); NULL until the
+	// step-47 VNDB portrait wave backfills it. This step only lands the column.
+	ImageHash       *string        `json:"image_hash"`
 	FieldProvenance datatypes.JSON `gorm:"type:jsonb;not null;default:'{}'" json:"field_provenance"`
 	CreatedAt       time.Time      `json:"created_at"`
 	UpdatedAt       time.Time      `json:"updated_at"`

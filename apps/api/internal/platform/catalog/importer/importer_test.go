@@ -61,7 +61,7 @@ func TestMain(m *testing.M) {
 func clean(t *testing.T) {
 	t.Helper()
 	tables := []string{
-		"catalog_credit", "catalog_match_candidate", "catalog_external_ref", "catalog_revision",
+		"catalog_credit", "catalog_work_character", "catalog_match_candidate", "catalog_external_ref", "catalog_revision",
 		"catalog_credit_name", "catalog_label", "catalog_character", "catalog_work",
 		"src_bangumi.subject_person", "src_bangumi.subject_character", "src_bangumi.person_character",
 		"src_bangumi.person", "src_bangumi.character", "src_bangumi.subject_relation", "src_bangumi.subject",

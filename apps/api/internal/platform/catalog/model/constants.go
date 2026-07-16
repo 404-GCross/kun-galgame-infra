@@ -83,6 +83,20 @@ const (
 	WorkLabelKindBrand     int16 = 3 // reserved: the brand it shipped under
 )
 
+// WorkCharacterKind — the appearance strength of a catalog_work_character
+// roster edge ("this character appears in this work"). 0 (unknown) is a
+// MEANINGFUL value, never "unset": erogamespace has no main/supporting
+// distinction on appearances, so every EG roster edge is genuinely unknown,
+// and Bangumi's undocumented low-volume type tails (mob/narration/background)
+// map here rather than being guessed. NOT NULL, no default (default-tag
+// zero-value trap avoided).
+const (
+	WorkCharacterKindUnknown   int16 = 0
+	WorkCharacterKindMain      int16 = 1 // Bangumi 主角
+	WorkCharacterKindSecondary int16 = 2 // Bangumi 配角
+	WorkCharacterKindAppears   int16 = 3 // Bangumi 客串 (guest/cameo)
+)
+
 // Revision actions (doc 10 §9). merged_source/merged_target: a merge writes a
 // revision on BOTH sides so neither history dangles (invariant 7).
 const (
