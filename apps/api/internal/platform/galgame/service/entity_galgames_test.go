@@ -22,9 +22,12 @@ func TestEntityGalgames_ReverseLookup(t *testing.T) {
 
 	oID := createTestOfficial(t, "K-JOYNT", "amateur")
 	// Two SFW games + one NSFW game under the same official.
-	g1, _ := testSvc.Create(ctx, 1, &dto.CreateGalgameRequest{VNDBID: "v81001", NameZhCN: "作品甲", ContentLimit: "sfw", OfficialIDs: []int{oID}})
-	g2, _ := testSvc.Create(ctx, 1, &dto.CreateGalgameRequest{VNDBID: "v81002", NameZhCN: "作品乙", ContentLimit: "sfw", OfficialIDs: []int{oID}})
-	g3, _ := testSvc.Create(ctx, 1, &dto.CreateGalgameRequest{VNDBID: "v81003", NameZhCN: "作品丙", ContentLimit: "nsfw", OfficialIDs: []int{oID}})
+	g1, errg1 := testSvc.Create(ctx, 1, &dto.CreateGalgameRequest{VNDBID: "v81001", NameZhCN: "作品甲", ContentLimit: "sfw", OfficialIDs: []int{oID}})
+	require.NoError(t, errg1)
+	g2, errg2 := testSvc.Create(ctx, 1, &dto.CreateGalgameRequest{VNDBID: "v81002", NameZhCN: "作品乙", ContentLimit: "sfw", OfficialIDs: []int{oID}})
+	require.NoError(t, errg2)
+	g3, errg3 := testSvc.Create(ctx, 1, &dto.CreateGalgameRequest{VNDBID: "v81003", NameZhCN: "作品丙", ContentLimit: "nsfw", OfficialIDs: []int{oID}})
+	require.NoError(t, errg3)
 
 	// --- head (self-description) with aliases ---
 	require.NoError(t, testOfficialRepo.Update(ctx, oID, nil, []string{"KJ", "ケージョイント"}))
