@@ -61,6 +61,16 @@ type Config struct {
 	// where ImageClient already == galgame_wiki, needs no extra env).
 	GalgameImageClient ImageClientConfig
 
+	// CatalogImageClient is the image identity for the catalog SITE (site_key
+	// "catalog"): character portraits uploaded by the step-48 backfill live
+	// under this site, and reference-ping is site-scoped, so the catalog
+	// portrait refping job MUST authenticate as this client (pinging as any
+	// other site 404s every hash → portraits rot after the TTL). Distinct from
+	// GalgameImageClient (galgame_wiki banners/covers) — catalog is its own
+	// tenant. Empty ClientID/Secret → the refping job soft-skips (not yet
+	// provisioned) and the backfill refuses to --apply.
+	CatalogImageClient ImageClientConfig
+
 	ArtifactsDatabase DatabaseConfig
 	ArtifactS3        S3Config
 	ArtifactService   ArtifactServiceConfig
@@ -561,6 +571,16 @@ func Load() (*Config, error) {
 		BaseURL:      getEnv("KUN_GALGAME_IMAGE_CLIENT_BASE_URL", cfg.ImageClient.BaseURL),
 		ClientID:     getEnv("KUN_GALGAME_IMAGE_CLIENT_ID", ""),
 		ClientSecret: getEnv("KUN_GALGAME_IMAGE_CLIENT_SECRET", ""),
+	}
+
+	// Image identity for the catalog site (character portraits — step 48). Set
+	// KUN_CATALOG_IMAGE_CLIENT_ID / _SECRET to the catalog image client (site_key
+	// "catalog"). Empty ClientID → the portrait refping job soft-skips and the
+	// backfill refuses to --apply. BaseURL defaults to the shared image client base.
+	cfg.CatalogImageClient = ImageClientConfig{
+		BaseURL:      getEnv("KUN_CATALOG_IMAGE_CLIENT_BASE_URL", cfg.ImageClient.BaseURL),
+		ClientID:     getEnv("KUN_CATALOG_IMAGE_CLIENT_ID", ""),
+		ClientSecret: getEnv("KUN_CATALOG_IMAGE_CLIENT_SECRET", ""),
 	}
 
 	// Artifacts database config (defaults to same server, different db name)

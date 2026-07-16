@@ -70,6 +70,24 @@ presets:
       - image/webp
       - image/gif
 
+  # Catalog character portraits (the shared cross-media entity layer). VNDB
+  # character images are small, vertical head/bust shots; the `mini` variant is
+  # a portrait-oriented thumbnail for character cards / roster grids (the same
+  # "one mini variant" shape as the galgame cover presets, just portrait rather
+  # than landscape). Uploaded under site_key "catalog" by the step-48 backfill.
+  character:
+    variants:
+      - name: "mini"
+        width: 256
+        height: 360
+        fit: cover
+        format: webp
+        quality: 77
+    allowed_mime:
+      - image/jpeg
+      - image/png
+      - image/webp
+
   # Topic / inline post images. Main image only; no extra variants.
   topic:
     variants: []

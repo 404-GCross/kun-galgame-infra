@@ -87,6 +87,15 @@ func RegisterAll(r *Registry) {
 	})
 
 	r.Register(Job{
+		Name:     "catalog-image-refping",
+		Desc:     "catalog 角色立绘 reference-ping，防 image_service TTL 回收（site=catalog）",
+		Schedule: Schedule{DailyAt: "04:15"}, // between galgame-image-refping (04:00) and user-avatar-refping (04:30)
+		Run: func(ctx context.Context, cfg *config.Config) (Summary, error) {
+			return RunCatalogImageRefping(ctx, cfg, DefaultCatalogImageRefpingOpts())
+		},
+	})
+
+	r.Register(Job{
 		Name:     "user-avatar-refping",
 		Desc:     "用户头像 reference-ping，防 image_service TTL 回收",
 		Schedule: Schedule{DailyAt: "04:30"},

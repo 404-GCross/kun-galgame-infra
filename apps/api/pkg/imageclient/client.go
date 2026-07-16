@@ -156,6 +156,14 @@ func classifyError(e *Error) error {
 // Upload uploads a file and waits for processing. filename is used only in
 // the multipart content-disposition (does not influence storage key).
 func (c *Client) Upload(ctx context.Context, r io.Reader, filename, presetName string) (*UploadResult, error) {
+	return c.UploadWithSub(ctx, r, filename, presetName, "")
+}
+
+// UploadWithSub is Upload with an explicit uploader_sub for the image's audit
+// trail (first_uploader_sub). For backend/batch callers (Basic auth, no JWT
+// user) this stamps a machine identity — e.g. a one-shot backfill — onto the
+// row so it is traceable. Empty uploaderSub is identical to Upload.
+func (c *Client) UploadWithSub(ctx context.Context, r io.Reader, filename, presetName, uploaderSub string) (*UploadResult, error) {
 	body := &bytes.Buffer{}
 	mw := multipart.NewWriter(body)
 
@@ -168,6 +176,11 @@ func (c *Client) Upload(ctx context.Context, r io.Reader, filename, presetName s
 	}
 	if err := mw.WriteField("preset", presetName); err != nil {
 		return nil, err
+	}
+	if uploaderSub != "" {
+		if err := mw.WriteField("uploader_sub", uploaderSub); err != nil {
+			return nil, err
+		}
 	}
 	if err := mw.Close(); err != nil {
 		return nil, err
