@@ -185,7 +185,7 @@ func TestScanWorkerEnvEmpty(t *testing.T) {
 func TestScanWorkerDrainsNoBacklog(t *testing.T) {
 	cleanTables(t)
 	const total = scanBatchSize // one full batch
-	for i := 0; i < total; i++ {
+	for i := range total {
 		seedPending(t, subjID(i), "text")
 	}
 	g := &fakeGateway{configured: false} // env-empty → all drain to degraded
