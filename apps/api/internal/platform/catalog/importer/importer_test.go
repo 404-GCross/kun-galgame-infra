@@ -10,6 +10,7 @@ import (
 	"api/internal/platform/catalog/model"
 	"api/internal/platform/catalog/seed"
 	srcb "api/internal/platform/catalog/srcbangumi"
+	srcv "api/internal/platform/catalog/srcvndb"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -30,7 +31,7 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "SKIP: no test db: %v\n", err)
 		os.Exit(0)
 	}
-	for _, step := range []func(*gorm.DB) error{migrate.Run, seed.Run, srcb.EnsureSchema, llmsuggest.EnsureSchema} {
+	for _, step := range []func(*gorm.DB) error{migrate.Run, seed.Run, srcb.EnsureSchema, srcv.EnsureSchema, llmsuggest.EnsureSchema} {
 		if err := step(db); err != nil {
 			fmt.Fprintf(os.Stderr, "SKIP: setup: %v\n", err)
 			os.Exit(0)
@@ -62,9 +63,10 @@ func clean(t *testing.T) {
 	t.Helper()
 	tables := []string{
 		"catalog_credit", "catalog_work_character", "catalog_match_candidate", "catalog_external_ref", "catalog_revision",
-		"catalog_credit_name", "catalog_label", "catalog_character", "catalog_work",
+		"catalog_credit_name", "catalog_label", "catalog_character_alias", "catalog_character", "catalog_work",
 		"src_bangumi.subject_person", "src_bangumi.subject_character", "src_bangumi.person_character",
 		"src_bangumi.person", "src_bangumi.character", "src_bangumi.subject_relation", "src_bangumi.subject",
+		"src_vndb.chars", "src_vndb.chars_names", "src_vndb.chars_vns", "src_vndb.images", "src_vndb.portrait_backfill",
 		"catalog_release", "catalog_work_title", "catalog_work_label", "catalog_work_relation",
 		"src_llm.bid_identity_verdict", "creaters", "characters", "staff", "appearances", "appearance_actors", "works", "games",
 	}

@@ -155,7 +155,7 @@ func buildWorkResponse(detail *service.WorkDetail) dto.WorkByAnchorResponse {
 	for _, c := range detail.Characters {
 		wc := dto.WorkCharacter{
 			CharacterID: c.CharacterID, DisplayName: c.DisplayName, Latin: derefStr(c.Latin),
-			Gender: derefI16(c.Gender), Kind: c.Kind, ImageHash: derefStr(c.ImageHash),
+			Gender: derefI16(c.Gender), Kind: c.Kind, Spoiler: c.Spoiler, ImageHash: derefStr(c.ImageHash),
 			// va pre-sized non-nil so a roster-only character (no VA) serializes
 			// `[]`, not `null` (docs/proj/16 #3).
 			Va: make([]dto.WorkCharacterVA, 0, len(c.Va)),
@@ -462,7 +462,7 @@ func (s *S2SServer) characterWorks(ctx context.Context, in *characterWorksInput)
 	}
 	for _, w := range res.Works {
 		row := dto.CharacterWorkRow{
-			Work: workBriefDTO(w.Brief), Kind: w.Kind, Voiced: w.Voiced,
+			Work: workBriefDTO(w.Brief), Kind: w.Kind, Spoiler: w.Spoiler, Voiced: w.Voiced,
 			Voices: make([]dto.VoiceName, 0, len(w.Voices)),
 		}
 		for _, v := range w.Voices {

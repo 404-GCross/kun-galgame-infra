@@ -17,6 +17,9 @@ import (
 // to run on every deploy and repeatedly against the same database. Seeds are
 // NOT part of schema migration — call seed.Run separately.
 func Run(db *gorm.DB) error {
+	if err := preMigrate(db); err != nil {
+		return err
+	}
 	if err := db.AutoMigrate(
 		// Registry (vocabulary) tables, doc 17 R1. catalog_role before
 		// catalog_source_role_map so the role_id FK can be created.
@@ -66,6 +69,31 @@ func Run(db *gorm.DB) error {
 		return fmt.Errorf("catalog automigrate: %w", err)
 	}
 	return rawSQL(db)
+}
+
+// preMigrate runs BEFORE AutoMigrate: it adds NOT-NULL-without-default columns
+// to already-populated tables (which AutoMigrate cannot — `ADD COLUMN … NOT
+// NULL` with no default rejects a table with rows). Each block is guarded on
+// the table already existing (a fresh DB has AutoMigrate create the table with
+// the column NOT NULL from the model, no backfill needed) and is idempotent.
+func preMigrate(db *gorm.DB) error {
+	// catalog_work_character.spoiler (step 47): 0 (none) is a meaningful value,
+	// so the column is NOT NULL with no default. On a table that already holds
+	// step-45 roster edges, add it nullable → backfill 0 (existing Bangumi/EG
+	// edges carry no spoiler) → set NOT NULL. Idempotent; skipped on a fresh DB
+	// where the table does not exist yet (AutoMigrate creates it NOT NULL).
+	if err := db.Exec(`
+		DO $$
+		BEGIN
+			IF to_regclass('catalog_work_character') IS NOT NULL THEN
+				ALTER TABLE catalog_work_character ADD COLUMN IF NOT EXISTS spoiler smallint;
+				UPDATE catalog_work_character SET spoiler = 0 WHERE spoiler IS NULL;
+				ALTER TABLE catalog_work_character ALTER COLUMN spoiler SET NOT NULL;
+			END IF;
+		END $$`).Error; err != nil {
+		return fmt.Errorf("premigrate catalog_work_character.spoiler: %w", err)
+	}
+	return nil
 }
 
 // rawSQL is the post-AutoMigrate section — everything AutoMigrate cannot

@@ -32,6 +32,7 @@ import (
 const (
 	ruleRosterBangumi = "import:character-roster-bangumi"
 	ruleRosterEG      = "import:character-roster-eg"
+	ruleRosterVNDB    = "import:character-roster-vndb"
 )
 
 // RosterStats is the per-wave tally for the roster import.
@@ -42,6 +43,10 @@ type RosterStats struct {
 	SkippedNoWorkAnchor int // roster row whose work has no exact anchor (out of gate)
 	SkippedNoName       int // staging character carries no usable name — cannot build the entity
 	Errors              int // materialize drops (character unresolved) — expected 0
+	// VNDB wave (step 47) only: the same-work same-name attach split.
+	AttachedExisting   int // VNDB char attached to an existing entity (no new row)
+	AliasesCreated     int // spelling_variant romaji aliases added (new + attached)
+	PortraitCandidates int // in-gate chars with a threshold-passing portrait (48's backfill set)
 }
 
 func (s *RosterStats) add(o RosterStats) {
@@ -51,6 +56,9 @@ func (s *RosterStats) add(o RosterStats) {
 	s.SkippedNoWorkAnchor += o.SkippedNoWorkAnchor
 	s.SkippedNoName += o.SkippedNoName
 	s.Errors += o.Errors
+	s.AttachedExisting += o.AttachedExisting
+	s.AliasesCreated += o.AliasesCreated
+	s.PortraitCandidates += o.PortraitCandidates
 }
 
 // RunRoster dispatches the requested roster wave(s).
@@ -73,6 +81,13 @@ func (im *Importer) RunRoster(source string) (RosterStats, error) {
 		}
 		total.add(s)
 	}
+	if source == "vndb" || source == "all" {
+		s, err := im.runRosterVNDB()
+		if err != nil {
+			return total, fmt.Errorf("vndb roster wave: %w", err)
+		}
+		total.add(s)
+	}
 	return total, nil
 }
 
@@ -82,6 +97,7 @@ type rosterPlan struct {
 	workID    int64
 	charExtID string
 	kind      int16
+	spoiler   int16 // per-edge spoiler level (VNDB chars_vns.spoil; 0 for Bangumi/EG)
 }
 
 // loadExactWorkMap returns numeric external_id → work id for one source's EXACT
@@ -301,7 +317,7 @@ func materializeRoster(plans []rosterPlan, char func(string) (int64, bool), matc
 			continue
 		}
 		out = append(out, model.CatalogWorkCharacter{
-			WorkID: p.workID, CharacterID: chID, Kind: p.kind, MatchedBy: matchedBy,
+			WorkID: p.workID, CharacterID: chID, Kind: p.kind, Spoiler: p.spoiler, MatchedBy: matchedBy,
 		})
 	}
 	return out, dropped
@@ -316,15 +332,15 @@ func insertRosterEdges(tx *gorm.DB, edges []model.CatalogWorkCharacter) (int, er
 	for start := 0; start < len(edges); start += batch {
 		end := min(start+batch, len(edges))
 		var sb strings.Builder
-		sb.WriteString(`INSERT INTO catalog_work_character (work_id, character_id, kind, matched_by, created_at, updated_at) VALUES `)
-		args := make([]any, 0, (end-start)*4)
+		sb.WriteString(`INSERT INTO catalog_work_character (work_id, character_id, kind, spoiler, matched_by, created_at, updated_at) VALUES `)
+		args := make([]any, 0, (end-start)*5)
 		for i := start; i < end; i++ {
 			e := edges[i]
 			if i > start {
 				sb.WriteString(",")
 			}
-			sb.WriteString("(?,?,?,?,now(),now())")
-			args = append(args, e.WorkID, e.CharacterID, e.Kind, e.MatchedBy)
+			sb.WriteString("(?,?,?,?,?,now(),now())")
+			args = append(args, e.WorkID, e.CharacterID, e.Kind, e.Spoiler, e.MatchedBy)
 		}
 		sb.WriteString(` ON CONFLICT (work_id, character_id) DO NOTHING`)
 		res := tx.Exec(sb.String(), args...)

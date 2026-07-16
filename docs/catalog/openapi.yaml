@@ -164,6 +164,10 @@ components:
           description: "roster appearance strength: 0=unknown 1=main 2=secondary 3=appears (0 also when reached only via a voice credit)"
           format: int32
           type: integer
+        spoiler:
+          description: "roster appearance spoiler level: 0=none 1=minor 2=major (0 also when reached only via a voice credit)"
+          format: int32
+          type: integer
         voiced:
           description: true when a voice credit names this character on this work
           type: boolean
@@ -178,6 +182,7 @@ components:
       required:
         - work
         - kind
+        - spoiler
         - voiced
         - voices
       type: object
@@ -1151,6 +1156,10 @@ components:
           type: integer
         latin:
           type: string
+        spoiler:
+          description: "appearance spoiler level: 0=none 1=minor 2=major"
+          format: int32
+          type: integer
         va:
           items:
             $ref: "#/components/schemas/WorkCharacterVA"
@@ -1161,6 +1170,7 @@ components:
         - character_id
         - display_name
         - kind
+        - spoiler
         - va
       type: object
     WorkCharacterVA:

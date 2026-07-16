@@ -43,6 +43,10 @@ type WorkCharacter struct {
 	// 2=secondary 3=appears (0 also when the character is reached only via a
 	// voice credit and thus has no roster edge).
 	Kind int16 `json:"kind" doc:"appearance strength: 0=unknown 1=main 2=secondary 3=appears"`
+	// Spoiler is the roster edge's per-appearance spoiler level: 0=none 1=minor
+	// 2=major (VNDB source; 0 for Bangumi/EG edges and for a credit-only
+	// character with no roster edge).
+	Spoiler int16 `json:"spoiler" doc:"appearance spoiler level: 0=none 1=minor 2=major"`
 	// ImageHash is the portrait content hash in the image service; absent until
 	// the step-47 VNDB portrait wave backfills it.
 	ImageHash string            `json:"image_hash,omitempty"`
@@ -279,10 +283,11 @@ type CharacterHead struct {
 // here (so a consumer can tell an appearance-only row from a voiced one even
 // when kind is 0). Voices lists the voicing name(s).
 type CharacterWorkRow struct {
-	Work   WorkBrief   `json:"work"`
-	Kind   int16       `json:"kind" doc:"roster appearance strength: 0=unknown 1=main 2=secondary 3=appears (0 also when reached only via a voice credit)"`
-	Voiced bool        `json:"voiced" doc:"true when a voice credit names this character on this work"`
-	Voices []VoiceName `json:"voices"`
+	Work    WorkBrief   `json:"work"`
+	Kind    int16       `json:"kind" doc:"roster appearance strength: 0=unknown 1=main 2=secondary 3=appears (0 also when reached only via a voice credit)"`
+	Spoiler int16       `json:"spoiler" doc:"roster appearance spoiler level: 0=none 1=minor 2=major (0 also when reached only via a voice credit)"`
+	Voiced  bool        `json:"voiced" doc:"true when a voice credit names this character on this work"`
+	Voices  []VoiceName `json:"voices"`
 }
 
 // --- character detail (step 46: GET /catalog/characters/{id}) ---

@@ -490,7 +490,7 @@ func TestCharacterWorks(t *testing.T) {
 	// Roster edges: char1 is main on w1 (already voiced by A and C via credits)
 	// and merely appears on w3 (no credit — appearance-only).
 	require.NoError(t, db.Create(&model.CatalogWorkCharacter{
-		WorkID: f.work1, CharacterID: f.char1, Kind: model.WorkCharacterKindMain, MatchedBy: "import:test"}).Error)
+		WorkID: f.work1, CharacterID: f.char1, Kind: model.WorkCharacterKindMain, Spoiler: model.SpoilerMild, MatchedBy: "import:test"}).Error)
 	require.NoError(t, db.Create(&model.CatalogWorkCharacter{
 		WorkID: f.work3, CharacterID: f.char1, Kind: model.WorkCharacterKindAppears, MatchedBy: "import:test"}).Error)
 	app := readApp(service.NewReadService(db), nil)
@@ -512,6 +512,7 @@ func TestCharacterWorks(t *testing.T) {
 	w1 := byWork[f.work1]
 	require.NotNil(t, w1)
 	assert.EqualValues(t, model.WorkCharacterKindMain, w1["kind"])
+	assert.EqualValues(t, model.SpoilerMild, w1["spoiler"], "roster edge spoiler surfaces on character→works")
 	assert.Equal(t, true, w1["voiced"])
 	voices := w1["voices"].([]any)
 	assert.Len(t, voices, 2, "both A and C voiced char1 on w1")
@@ -571,12 +572,12 @@ func TestWorkCharacters(t *testing.T) {
 	require.NoError(t, db.Create(&va2).Error)
 	require.NoError(t, db.Create(&va3).Error)
 
-	edge := func(charID int64, kind int16) {
+	edge := func(charID int64, kind, spoiler int16) {
 		require.NoError(t, db.Create(&model.CatalogWorkCharacter{
-			WorkID: work, CharacterID: charID, Kind: kind, MatchedBy: "import:test"}).Error)
+			WorkID: work, CharacterID: charID, Kind: kind, Spoiler: spoiler, MatchedBy: "import:test"}).Error)
 	}
-	edge(chMain.ID, model.WorkCharacterKindMain)
-	edge(chAppears.ID, model.WorkCharacterKindAppears)
+	edge(chMain.ID, model.WorkCharacterKindMain, model.SpoilerSevere) // spoiler surfaces on the projection
+	edge(chAppears.ID, model.WorkCharacterKindAppears, model.SpoilerNone)
 	vcredit := func(charID, nameID int64) {
 		require.NoError(t, db.Create(&model.CatalogCredit{
 			WorkID: work, CreditNameID: nameID, RoleID: roleVoiceActor, CharacterID: &charID}).Error)
@@ -596,6 +597,7 @@ func TestWorkCharacters(t *testing.T) {
 	c0 := chars[0].(map[string]any)
 	assert.EqualValues(t, chMain.ID, c0["character_id"])
 	assert.EqualValues(t, model.WorkCharacterKindMain, c0["kind"])
+	assert.EqualValues(t, model.SpoilerSevere, c0["spoiler"], "roster edge spoiler surfaces")
 	assert.EqualValues(t, model.GenderFemale, c0["gender"])
 	assert.Equal(t, "abc123hash", c0["image_hash"])
 	c0va := c0["va"].([]any)
@@ -613,6 +615,7 @@ func TestWorkCharacters(t *testing.T) {
 	c2 := chars[2].(map[string]any)
 	assert.EqualValues(t, chCredit.ID, c2["character_id"])
 	assert.EqualValues(t, model.WorkCharacterKindUnknown, c2["kind"], "credit-only → kind 0")
+	assert.EqualValues(t, model.SpoilerNone, c2["spoiler"], "credit-only → spoiler 0")
 	assert.Len(t, c2["va"].([]any), 1)
 
 	// An empty roster serializes [] (not null).

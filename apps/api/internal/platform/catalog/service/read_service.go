@@ -48,6 +48,7 @@ type WorkCharacterRow struct {
 	Latin       *string
 	Gender      *int16
 	Kind        int16
+	Spoiler     int16 // per-edge spoiler level (0 for a credit-only character with no roster edge)
 	ImageHash   *string
 	Va          []WorkCharacterVARow
 }
@@ -246,8 +247,9 @@ func (s *ReadService) loadWorkCharacters(ctx context.Context, workID int64) ([]W
 		Gender      *int16  `gorm:"column:gender"`
 		ImageHash   *string `gorm:"column:image_hash"`
 		Kind        int16   `gorm:"column:kind"`
+		Spoiler     int16   `gorm:"column:spoiler"`
 	}
-	if err := db.Raw(`SELECT wc.character_id, ch.display_name, ch.latin, ch.gender, ch.image_hash, wc.kind
+	if err := db.Raw(`SELECT wc.character_id, ch.display_name, ch.latin, ch.gender, ch.image_hash, wc.kind, wc.spoiler
 		FROM catalog_work_character wc JOIN catalog_character ch ON ch.id = wc.character_id
 		WHERE wc.work_id = ? AND ch.deleted_at IS NULL`, workID).Scan(&edges).Error; err != nil {
 		return nil, err
@@ -277,7 +279,7 @@ func (s *ReadService) loadWorkCharacters(ctx context.Context, workID int64) ([]W
 	for _, e := range edges {
 		byID[e.CharacterID] = &WorkCharacterRow{
 			CharacterID: e.CharacterID, DisplayName: e.DisplayName, Latin: e.Latin,
-			Gender: e.Gender, Kind: e.Kind, ImageHash: e.ImageHash,
+			Gender: e.Gender, Kind: e.Kind, Spoiler: e.Spoiler, ImageHash: e.ImageHash,
 		}
 	}
 	for _, c := range creds {
@@ -637,10 +639,11 @@ type VoiceNameRow struct {
 // credit, step 46), with the roster kind, whether it was voiced, and its voice
 // names.
 type CharacterWorkDetail struct {
-	Brief  WorkBriefRow
-	Kind   int16 // roster edge appearance strength; 0 when reached only via a credit
-	Voiced bool  // a voice credit names the character on this work
-	Voices []VoiceNameRow
+	Brief   WorkBriefRow
+	Kind    int16 // roster edge appearance strength; 0 when reached only via a credit
+	Spoiler int16 // roster edge spoiler level; 0 when reached only via a credit
+	Voiced  bool  // a voice credit names the character on this work
+	Voices  []VoiceNameRow
 }
 
 // CharacterWorksResult is the assembled character→works read.
@@ -690,18 +693,21 @@ func (s *ReadService) CharacterWorks(ctx context.Context, characterID int64, lim
 		return nil, err
 	}
 
-	// Roster kind per work (edge present only for the roster subset).
+	// Roster kind + spoiler per work (edge present only for the roster subset).
 	var kindRows []struct {
-		WorkID int64 `gorm:"column:work_id"`
-		Kind   int16 `gorm:"column:kind"`
+		WorkID  int64 `gorm:"column:work_id"`
+		Kind    int16 `gorm:"column:kind"`
+		Spoiler int16 `gorm:"column:spoiler"`
 	}
-	if err := db.Raw(`SELECT work_id, kind FROM catalog_work_character
+	if err := db.Raw(`SELECT work_id, kind, spoiler FROM catalog_work_character
 		WHERE character_id = ? AND work_id IN ?`, characterID, workIDs).Scan(&kindRows).Error; err != nil {
 		return nil, err
 	}
 	kindByWork := make(map[int64]int16, len(kindRows))
+	spoilerByWork := make(map[int64]int16, len(kindRows))
 	for _, k := range kindRows {
 		kindByWork[k.WorkID] = k.Kind
+		spoilerByWork[k.WorkID] = k.Spoiler
 	}
 
 	// DISTINCT (work, name): the same name may hold several credit rows for one
@@ -732,7 +738,7 @@ func (s *ReadService) CharacterWorks(ctx context.Context, characterID int64, lim
 		}
 		voices := voicesByWork[wid]
 		res.Works = append(res.Works, CharacterWorkDetail{
-			Brief: b, Kind: kindByWork[wid], Voiced: len(voices) > 0, Voices: voices,
+			Brief: b, Kind: kindByWork[wid], Spoiler: spoilerByWork[wid], Voiced: len(voices) > 0, Voices: voices,
 		})
 	}
 	return res, nil

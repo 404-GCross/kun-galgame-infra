@@ -298,6 +298,11 @@ export interface components {
              * @description roster appearance strength: 0=unknown 1=main 2=secondary 3=appears (0 also when reached only via a voice credit)
              */
             kind: number;
+            /**
+             * Format: int32
+             * @description roster appearance spoiler level: 0=none 1=minor 2=major (0 also when reached only via a voice credit)
+             */
+            spoiler: number;
             /** @description true when a voice credit names this character on this work */
             voiced: boolean;
             voices: components["schemas"]["VoiceName"][] | null;
@@ -780,6 +785,11 @@ export interface components {
              */
             kind: number;
             latin?: string;
+            /**
+             * Format: int32
+             * @description appearance spoiler level: 0=none 1=minor 2=major
+             */
+            spoiler: number;
             va: components["schemas"]["WorkCharacterVA"][] | null;
         };
         WorkCharacterVA: {

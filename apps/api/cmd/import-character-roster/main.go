@@ -1,14 +1,19 @@
 // import-character-roster lands the work↔character花名册 edges (step 45) that
 // the credit wave (step 13) left out. It imports catalog_work_character from
-// Bangumi (src_bangumi.subject_character) and erogamespace (appearances),
-// gated only by an EXACT work anchor (identity is settled, so no second
-// audit gate). Missing characters are created as orphan entities with self
-// exact anchors (rule:<source>-character-import, the step-13 rule); no persons.
-// Roster edges are INDEPENDENT of credits — credit rows are never touched.
+// Bangumi (src_bangumi.subject_character), erogamespace (appearances) and VNDB
+// (src_vndb.chars_vns, step 47 — with the per-appearance spoiler level and the
+// same-work same-name attach), gated only by an EXACT work anchor (identity is
+// settled, so no second audit gate). Missing characters are created as orphan
+// entities with self exact anchors (rule:<source>-character-import, the step-13
+// rule); no persons. Roster edges are INDEPENDENT of credits — credit rows are
+// never touched.
 //
-//	go run ./cmd/migrate-catalog                                # land the schema
-//	go run ./cmd/import-character-roster --source all           # dry-run
-//	go run ./cmd/import-character-roster --source all --apply   # write (×2 = idempotent)
+// VNDB staging (src_vndb) lives in the catalog DB — load it first with
+// cmd/ingest-vndb. Bangumi/EG staging are their own tools.
+//
+//	go run ./cmd/migrate-catalog                                 # land the schema (spoiler column)
+//	go run ./cmd/import-character-roster --source vndb           # dry-run (or all)
+//	go run ./cmd/import-character-roster --source vndb --apply   # write (×2 = idempotent)
 package main
 
 import (
@@ -28,7 +33,7 @@ import (
 )
 
 func main() {
-	source := flag.String("source", "all", "bangumi | eg | all")
+	source := flag.String("source", "all", "bangumi | eg | vndb | all")
 	apply := flag.Bool("apply", false, "write (default: dry run — plan counts only)")
 	limit := flag.Int("limit", 0, "cap works processed per wave (0 = all)")
 	egDSN := flag.String("eg-dsn", "", "erogamespace staging DSN (default: erogamespace on the catalog server)")
@@ -63,10 +68,13 @@ func main() {
 	slog.Info("roster import summary",
 		"source", *source,
 		"characters_created", stats.CharactersCreated,
+		"attached_existing", stats.AttachedExisting,
+		"aliases_created", stats.AliasesCreated,
 		"edges_written", stats.EdgesWritten,
 		"already", stats.Already,
 		"skipped_no_work_anchor", stats.SkippedNoWorkAnchor,
 		"skipped_no_name", stats.SkippedNoName,
+		"portrait_candidates", stats.PortraitCandidates,
 		"errors", stats.Errors,
 	)
 

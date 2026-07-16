@@ -97,6 +97,13 @@ type CatalogWorkCharacter struct {
 	// is a meaningful value the importer sets explicitly (default-tag zero-value
 	// trap avoided).
 	Kind int16 `gorm:"not null" json:"kind"`
+	// Spoiler is a Spoiler* constant (0=none 1=mild/minor 2=severe/major) — the
+	// per-edge spoiler level of the character's appearance in this work (VNDB
+	// chars_vns.spoil shape, step 47). NOT NULL, no default — 0 (none) is a
+	// meaningful value (every Bangumi/EG edge is genuinely 0, VNDB carries the
+	// real level), so it is set explicitly and the migration backfills existing
+	// rows to 0 via guarded raw SQL (default-tag zero-value trap avoided).
+	Spoiler int16 `gorm:"not null" json:"spoiler"`
 	// MatchedBy is 'import:<job>' provenance; first source wins on conflict.
 	MatchedBy string    `gorm:"not null" json:"matched_by"`
 	CreatedAt time.Time `json:"created_at"`
