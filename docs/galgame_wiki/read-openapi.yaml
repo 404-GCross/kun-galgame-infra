@@ -2691,6 +2691,13 @@ paths:
             description: "Scope to one engine's drafts (0/absent = global). Empty by data today: engine edges are human-curated and drafts are untouched VNDB imports."
             format: int64
             type: integer
+        - description: CSV of original-language codes to include (e.g. ja-jp,zh-cn,zh-tw); absent = all languages. Max 8 values.
+          explode: false
+          in: query
+          name: original_language
+          schema:
+            description: CSV of original-language codes to include (e.g. ja-jp,zh-cn,zh-tw); absent = all languages. Max 8 values.
+            type: string
       responses:
         "200":
           content:

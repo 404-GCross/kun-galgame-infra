@@ -67,4 +67,17 @@ func TestListDrafts(t *testing.T) {
 	_, emptyTotal, err := testSvc.ListDrafts(ctx, 1, 24, "", repository.DraftFilters{OfficialID: other})
 	require.NoError(t, err)
 	assert.Zero(t, emptyTotal)
+
+	// Original-language filter: mark d1 ja-jp and d2 en-us → the ja/zh set
+	// keeps only d1; an unmatched set returns none.
+	require.NoError(t, testDB.Exec(`UPDATE galgame SET original_language='ja-jp' WHERE id=?`, d1.ID).Error)
+	require.NoError(t, testDB.Exec(`UPDATE galgame SET original_language='en-us' WHERE id=?`, d2.ID).Error)
+	jaZh, jaZhTotal, err := testSvc.ListDrafts(ctx, 1, 24, "", repository.DraftFilters{OriginalLanguages: []string{"ja-jp", "zh-cn", "zh-tw"}})
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), jaZhTotal)
+	require.Len(t, jaZh, 1)
+	assert.Equal(t, d1.ID, jaZh[0].ID)
+	_, noneTotal, err := testSvc.ListDrafts(ctx, 1, 24, "", repository.DraftFilters{OriginalLanguages: []string{"ko-kr"}})
+	require.NoError(t, err)
+	assert.Zero(t, noneTotal)
 }

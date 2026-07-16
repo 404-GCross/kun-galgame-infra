@@ -1614,6 +1614,8 @@ export interface operations {
                 tag_id?: number;
                 /** @description Scope to one engine's drafts (0/absent = global). Empty by data today: engine edges are human-curated and drafts are untouched VNDB imports. */
                 engine_id?: number;
+                /** @description CSV of original-language codes to include (e.g. ja-jp,zh-cn,zh-tw); absent = all languages. Max 8 values. */
+                original_language?: string;
             };
             header?: never;
             path?: never;

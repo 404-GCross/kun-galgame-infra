@@ -2,6 +2,7 @@ package handler
 
 import (
 	"strconv"
+	"strings"
 
 	"api/internal/platform/galgame/dto"
 	"api/internal/platform/galgame/repository"
@@ -352,9 +353,10 @@ func (h *GalgameHandler) Drafts(c fiber.Ctx) error {
 	}
 
 	filters := repository.DraftFilters{
-		OfficialID: fiber.Query(c, "official_id", 0),
-		TagID:      fiber.Query(c, "tag_id", 0),
-		EngineID:   fiber.Query(c, "engine_id", 0),
+		OfficialID:        fiber.Query(c, "official_id", 0),
+		TagID:             fiber.Query(c, "tag_id", 0),
+		EngineID:          fiber.Query(c, "engine_id", 0),
+		OriginalLanguages: parseCSVParam(c.Query("original_language"), 8),
 	}
 	items, total, err := h.galgameService.ListDrafts(c.Context(), req.Page, req.Limit, req.ContentLimit, filters)
 	if err != nil {
@@ -365,4 +367,24 @@ func (h *GalgameHandler) Drafts(c fiber.Ctx) error {
 		Items: dto.NewGalgameDetails(items),
 		Total: total,
 	})
+}
+
+// parseCSVParam splits a comma-separated query value into at most maxN
+// trimmed non-empty items (nil when the param is absent/empty).
+func parseCSVParam(raw string, maxN int) []string {
+	if raw == "" {
+		return nil
+	}
+	var out []string
+	for part := range strings.SplitSeq(raw, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		out = append(out, part)
+		if len(out) >= maxN {
+			break
+		}
+	}
+	return out
 }

@@ -575,6 +575,11 @@ type DraftFilters struct {
 	OfficialID int
 	TagID      int
 	EngineID   int
+	// OriginalLanguages narrows drafts to games whose original_language is in
+	// the set (exact codes, e.g. ja-jp / zh-cn / zh-tw). Empty = no filter.
+	// The 52k VNDB draft pool is ~37% English/Russian/... originals the
+	// claim funnel doesn't want to surface.
+	OriginalLanguages []string
 }
 
 // ListDrafts pages the unclaimed VNDB drafts (status = 2), newest first — the
@@ -600,6 +605,9 @@ func (r *GalgameRepository) ListDrafts(ctx context.Context, page, limit int, con
 	}
 	if f.EngineID > 0 {
 		query = query.Where("EXISTS (SELECT 1 FROM galgame_engine_relation r WHERE r.galgame_id = galgame.id AND r.engine_id = ?)", f.EngineID)
+	}
+	if len(f.OriginalLanguages) > 0 {
+		query = query.Where("original_language IN ?", f.OriginalLanguages)
 	}
 	query.Count(&total)
 
