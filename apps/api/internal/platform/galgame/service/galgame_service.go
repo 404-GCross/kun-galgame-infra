@@ -35,13 +35,13 @@ type GalgameService struct {
 	userRepo     *repository.UserReadonlyRepository
 
 	// probeImages is optional; when nil, Revert skips the dead-image
-	// pre-check. Production wires this via WithImageProbe in cmd/galgame.
+	// pre-check. Production wires this via WithImageProbe in galgameapp.Mount.
 	probeImages ImageProbeFunc
 
 	// imageMeta fetches intrinsic image metadata (width/height/thumbhash) from
 	// image_service to enrich covers / screenshots / banners at READ time; nil
 	// disables enrichment (images still render, just without dimensions or a
-	// blur-up placeholder). Wired via WithImageMeta in cmd/galgame. metaCache
+	// blur-up placeholder). Wired via WithImageMeta in galgameapp.Mount. metaCache
 	// memoizes results — safe forever because metadata is immutable per
 	// content-addressed hash. See image_meta.go.
 	imageMeta ImageMetaFunc
@@ -50,7 +50,7 @@ type GalgameService struct {
 	// cdnBase is the image-service CDN URL prefix used by the open-API public
 	// projection to emit complete image URLs instead of bare hashes. Empty
 	// disables URL composition (the public face then omits images). Wired via
-	// WithCDNBase in cmd/galgame; irrelevant to every internal read path (they
+	// WithCDNBase in galgameapp.Mount; irrelevant to every internal read path (they
 	// return the bare hash and let the frontend resolve the URL).
 	cdnBase string
 }

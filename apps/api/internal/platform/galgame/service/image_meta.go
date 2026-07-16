@@ -21,7 +21,7 @@ type ImageMeta struct {
 
 // ImageMetaFunc fetches intrinsic image metadata for a batch of hashes from
 // image_service, keyed by hash. Hashes the service doesn't know are simply
-// absent from the result. Wired in cmd/galgame to imageclient.MetaBatch; nil
+// absent from the result. Wired in galgameapp.Mount to imageclient.MetaBatch; nil
 // on the service disables enrichment (images still render — just without
 // dimensions / placeholder, so the frontend falls back to a skeleton).
 type ImageMetaFunc func(ctx context.Context, hashes []string) (map[string]ImageMeta, error)

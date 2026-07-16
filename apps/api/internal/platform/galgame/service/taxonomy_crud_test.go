@@ -17,7 +17,8 @@ import (
 // (real Postgres test DB, cleanTables + getRepos). Handler-level auth
 // (any-logged-in-user create / admin-only delete) and the
 // ExistsByName-driven dup check are thin glue and were verified e2e by
-// live curl against :9280; this codebase has no Fiber handler harness.
+// live curl against the galgame surface (now hosted by catalog, :9281);
+// this codebase has no Fiber handler harness.
 
 func makeGalgame(t *testing.T) int {
 	t.Helper()

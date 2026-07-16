@@ -5,13 +5,13 @@
 # rebuilding every image on each push burned billed minutes even fully cached.
 # This workflow builds ONLY the images whose inputs changed (path-filtered
 # dynamic matrix):
-#   - go images (oauth/image/galgame/artifact/catalog/migrate/migrate-galgame/migrate-catalog)  ← apps/api/** + Dockerfiles
+#   - go images (oauth/image/artifact/catalog/community/trust/ai + migrate-*)  ← apps/api/** + Dockerfiles
 #   - web                                          ← apps/web/** + root manifests + nuxt.Dockerfile
 #   - wiki                                         ← apps/wiki/** + root manifests + nuxt.Dockerfile
 #   - tools                                        ← on-demand only (Run workflow → scope)
 # A docs-only push therefore builds nothing and costs ~1 min (the `changes` job).
 #
-# migrate / migrate-galgame build in LOCKSTEP with the go services (same apps/api
+# The migrate-* images build in LOCKSTEP with the go services (same apps/api
 # source + sha) — REQUIRED because prod now auto-applies migrations on deploy
 # (compose `depends_on: migrate`), so the migrate image must never lag the code.
 # Only `tools` (data-cutover one-offs) is on-demand: Actions → Run workflow → scope.
@@ -25,7 +25,7 @@ on:
   workflow_dispatch:
     inputs:
       scope:
-        description: 'What to build (all = every image incl. migrate/tools; ondemand = only migrate/migrate-galgame/tools)'
+        description: 'What to build (all = every image incl. migrate/tools; ondemand = only tools)'
         type: choice
         options: [all, ondemand]
         default: all
@@ -93,10 +93,8 @@ jobs:
           push_catalog='[
             {"name":"infra-oauth","file":"docker/cgo.Dockerfile","args":"CMD=oauth","group":"go"},
             {"name":"infra-image","file":"docker/cgo.Dockerfile","args":"CMD=image","group":"go"},
-            {"name":"infra-galgame","file":"docker/go.Dockerfile","args":"CMD=galgame","group":"go"},
             {"name":"infra-artifact","file":"docker/go.Dockerfile","args":"CMD=artifact","group":"go"},
             {"name":"infra-migrate","file":"docker/go.Dockerfile","args":"CMD=migrate","group":"go"},
-            {"name":"infra-migrate-galgame","file":"docker/go.Dockerfile","args":"CMD=migrate-galgame","group":"go"},
             {"name":"infra-catalog","file":"docker/go.Dockerfile","args":"CMD=catalog","group":"go"},
             {"name":"infra-migrate-catalog","file":"docker/go.Dockerfile","args":"CMD=migrate-catalog","group":"go"},
             {"name":"infra-community","file":"docker/go.Dockerfile","args":"CMD=community","group":"go"},

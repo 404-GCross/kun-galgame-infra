@@ -1,11 +1,12 @@
 // Package galgameapp is the galgame service's HTTP-surface assembly, extracted
 // so it can be mounted into more than one binary. Before the wiki-retirement W2
-// merge, the galgame routes lived inline in cmd/galgame/main.go; now cmd/galgame
-// is a thin shell around Mount, and cmd/catalog calls Mount too so the merged
-// catalog process serves the galgame surface from the same kun_catalog database.
+// merge, the galgame routes lived inline in the standalone galgame service
+// binary (:9280, retired at W3/W5); since W2, cmd/catalog calls Mount so the
+// merged catalog process serves the galgame surface from the same kun_catalog
+// database — and since W5 it is the surface's only host.
 //
 // The extraction is behavior-preserving: Mount registers exactly the routes,
-// middleware, and lifecycle hooks that cmd/galgame's old setupRoutes +
+// middleware, and lifecycle hooks that the old standalone binary's setupRoutes +
 // setupPublicGalgame did. The one thing Mount does NOT own is the shared global
 // middleware (RequestID / Logger / CORS) and the root /healthz probe — those are
 // per-process concerns the caller registers once, so co-hosting galgame inside
@@ -35,8 +36,7 @@ import (
 )
 
 // Deps are the pre-built infrastructure handles the galgame surface mounts onto.
-// The caller (cmd/galgame or cmd/catalog) owns their lifecycle; Mount only reads
-// from them.
+// The caller (cmd/catalog) owns their lifecycle; Mount only reads from them.
 type Deps struct {
 	// OAuthDB is the kun_galgame_infra connection: read-only user lookups, the
 	// OAuth client registry (Basic-Auth cron callers), and the developer-platform

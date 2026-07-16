@@ -75,7 +75,8 @@ func main() {
 	// surface co-hosted here after the wiki-retirement W2 merge. cfg.GalgameDatabase
 	// (KUN_GALGAME_PG_DATABASE) points at kun_catalog too post-W1, so this is a
 	// distinct pool onto the same database the S2S catalog face reads. Kept separate
-	// (not catalogDB) so the galgame wiring stays byte-identical to cmd/galgame.
+	// (not catalogDB) so the galgame wiring stays byte-identical to the retired
+	// standalone galgame service (W2 replay-verified).
 	galgameDB, err := database.NewPostgresDB(cfg.GalgameDatabase)
 	if err != nil {
 		slog.Error("galgame db connect", "error", err)
@@ -135,14 +136,13 @@ func main() {
 	// (disjoint prefixes). Probable anchors and r18 works never surface.
 	setupPublicCatalog(application, cfg, catalogDB, readSvc, resolveSvc, searcher)
 
-	// Co-host the full galgame HTTP surface (wiki-retirement W2). The same
-	// galgameapp.Mount cmd/galgame calls — internal /api/galgame|tag|official|
-	// engine|series + admin + S2S cron feeds + the /v1/galgame public projection —
-	// registered on this process, reading galgameDB (kun_catalog). Disjoint route
-	// prefixes from the catalog faces (/api/v1/catalog, /api/v1/admin/catalog,
-	// /v1/catalog); the shared global middleware + /healthz were already installed
-	// above, so Mount does not re-register them. Traffic still hits cmd/galgame:9280
-	// until W3 flips the routers — this double-run proves the surface works here.
+	// Host the full galgame HTTP surface (wiki-retirement W2; SOLE host since
+	// the standalone galgame service retired at W3) — internal /api/galgame|tag|
+	// official|engine|series + admin + S2S cron feeds + the /v1/galgame public
+	// projection — registered on this process, reading galgameDB (kun_catalog).
+	// Disjoint route prefixes from the catalog faces (/api/v1/catalog,
+	// /api/v1/admin/catalog, /v1/catalog); the shared global middleware +
+	// /healthz were already installed above, so Mount does not re-register them.
 	galgameapp.Mount(application, cfg, galgameapp.Deps{
 		OAuthDB:   application.DB.DB(),
 		GalgameDB: galgameDB.DB(),

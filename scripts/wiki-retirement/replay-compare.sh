@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # W1 · byte-compat replay (章程裁定 3). Replays the hot read-face routes against
-# two cmd/galgame instances and diffs the responses. In the rehearsal the two
+# two galgame-surface instances (historically the standalone galgame binary,
+# retired W5; the surface now lives in cmd/catalog) and diffs the responses.
+# In the rehearsal the two
 # instances differ only in KUN_GALGAME_PG_DATABASE (baseline wiki DB vs merged
 # kun_catalog_w1); in production it is the same binary before/after the DSN
 # flip. Any non-empty diff (beyond the pinned dynamic-field strip list) fails.

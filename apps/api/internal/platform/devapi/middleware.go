@@ -28,9 +28,9 @@ const (
 	credCacheNeg    = byte('-') // one-byte negative marker (a JSON Credential is longer)
 )
 
-// Middleware carries the collaborators the open-API request chain needs. Faces
-// (cmd/galgame, cmd/catalog) wire it in 02/03; this package only delivers +
-// tests the handlers.
+// Middleware carries the collaborators the open-API request chain needs. The
+// host process (cmd/catalog — both the galgame and catalog public faces) wires
+// it in 02/03; this package only delivers + tests the handlers.
 type Middleware struct {
 	repo  *Repository
 	store Store

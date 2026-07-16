@@ -17,8 +17,8 @@
 #
 #   docker compose -f docker-compose.prod.yml pull
 #   docker compose -f docker-compose.prod.yml up -d
-#     ↳ migrate + migrate-galgame auto-run FIRST; oauth/image/galgame/artifact gate on
-#       them (depends_on: service_completed_successfully) — no manual migrate step.
+#     ↳ the migrate-* jobs auto-run FIRST; the services gate on them
+#       (depends_on: service_completed_successfully) — no manual migrate step.
 #   # full data cutover (16-data-cutover.md): docker compose ... --profile jobs run --rm tools <job> ...
 name: kun-galgame-infra
 
@@ -120,7 +120,8 @@ services:
     #                            of host RAM, leaves plenty for OS cache + the
     #                            capped web containers. (restart-only)
     #   work_mem 64MB          — per-sort/-hash; kills the wiki tag-list disk sorts
-    #                            (default 4MB spilled GBs of temp). See migrate-galgame indexes.
+    #                            (default 4MB spilled GBs of temp). See the wiki
+    #                            perf indexes in cmd/migrate-catalog/galgame.go.
     #   effective_cache_size 12GB — planner hint (no allocation); favors index scans.
     #   maintenance_work_mem 512MB — faster VACUUM / CREATE INDEX.
     command:
@@ -288,12 +289,12 @@ services:
     restart: unless-stopped
 
   # (W3, wiki retirement) The standalone galgame service (:9280) RETIRED here on
-  # 2026-07-16: the catalog service below co-hosts the full galgame surface
+  # 2026-07-16: the catalog service below hosts the full galgame surface
   # (galgameapp.Mount, W2 — prod replay 80/80 byte-identical) and every consumer
   # was flipped to catalog:9281 and verified before removal. The `galgame` DNS
   # name is gone from dokploy-network on purpose — any straggler dialing it fails
-  # loudly instead of silently misrouting. cmd/galgame code + the CI image target
-  # are W5 cleanup.
+  # loudly instead of silently misrouting. The galgame binary, its CI image
+  # target, and the separate migrate-galgame entry point were removed in W5.
 
   artifact:
     image: ghcr.io/kunmoe/infra-artifact:latest
@@ -394,13 +395,11 @@ services:
       postgres: { condition: service_healthy }
       meili: { condition: service_healthy } # the co-hosted galgame face self-heals its indexes at start
       migrate: { condition: service_completed_successfully }         # reads oauth_clients from kun_galgame_infra
-      migrate-catalog: { condition: service_completed_successfully } # kun_catalog schema
-      # galgame (wiki-family) schema in kun_catalog. This dependency moved here
-      # from the retired galgame service (W3) — without it migrate-galgame has no
-      # dependent and NEVER RUNS on deploy (deploy-migration-gap: live code would
-      # read columns that don't exist, GORM reads them as zero values, silent
-      # failure). Single-entrypoint consolidation into migrate-catalog is W5.
-      migrate-galgame: { condition: service_completed_successfully }
+      # migrate-catalog (W5 single entry point) covers BOTH schema families this
+      # process serves: the catalog tables and the galgame (wiki-family) tables
+      # in kun_catalog. This gate is what keeps the deploy-migration-gap closed —
+      # without it the migration job has no dependent and never runs on deploy.
+      migrate-catalog: { condition: service_completed_successfully }
     healthcheck:
       test: ["CMD", "/app", "healthcheck"]
       <<: *svc-health
@@ -581,9 +580,9 @@ services:
     image: ghcr.io/kunmoe/infra-wiki:latest
     pull_policy: always
     environment:
-      # W3 (wiki retirement): the galgame surface is co-hosted by the catalog
+      # W3 (wiki retirement): the galgame surface is hosted by the catalog
       # service (galgameapp.Mount, W2) — same /api paths, same bytes (prod
-      # replay 80/80). cmd/galgame:9280 retires at the end of W3.
+      # replay 80/80). The standalone galgame service (:9280) retired at W3.
       NUXT_API_BASE_SSR: http://catalog:9281/api
       NUXT_AUTH_API_BASE_SSR: http://oauth:9277/api/v1
     expose: ["3000"]
@@ -675,7 +674,7 @@ services:
           memory: 1g
 
   # ─── schema migrations (auto-run on deploy) + one-off jobs (profile: jobs) ───
-  # migrate / migrate-galgame below are NOT in the jobs profile — they run on every
+  # The migrate-* jobs below are NOT in the jobs profile — they run on every
   # `up` and gate the services. Only `tools` (data cutover) stays manual.
   # Auto-applied on every deploy: dependent services wait for this to complete
   # (depends_on: service_completed_successfully) so no service ever serves an
@@ -693,19 +692,12 @@ services:
       postgres: { condition: service_healthy }
     restart: "no"
 
-  # Auto-applied on every deploy (catalog waits for it — it co-hosts the galgame
-  # surface since W2/W3). Idempotent: AutoMigrate + guarded drop-then-recreate of
-  # constraints/indexes (all IF NOT EXISTS).
-  migrate-galgame:
-    image: ghcr.io/kunmoe/infra-migrate-galgame:latest
-    pull_policy: always
-    environment: { <<: *infra-env }
-    depends_on:
-      postgres: { condition: service_healthy }
-    restart: "no"
-
-  # Auto-applied on every deploy (catalog waits for it). Idempotent: AutoMigrate
-  # + guarded raw-SQL (generated columns, FKs — all IF NOT EXISTS) + seed upserts.
+  # Auto-applied on every deploy (catalog waits for it). The single migration
+  # entry point for BOTH content families since W5 (absorbed migrate-galgame):
+  # galgame (wiki-family) models via KUN_GALGAME_PG_DATABASE + catalog models
+  # via KUN_CATALOG_PG_DATABASE — both kun_catalog here. Idempotent: AutoMigrate
+  # + guarded raw-SQL (constraints, indexes, generated columns, FKs — all
+  # IF NOT EXISTS / drop-then-add) + seed upserts.
   migrate-catalog:
     image: ghcr.io/kunmoe/infra-migrate-catalog:latest
     pull_policy: always

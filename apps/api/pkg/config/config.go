@@ -209,8 +209,8 @@ type ArtifactServiceConfig struct {
 	CleanupSecretKey string
 }
 
-// ImageClientConfig is caller-side configuration for processes (cmd/galgame,
-// cmd/oauth, migration scripts, etc) that talk to image_service.
+// ImageClientConfig is caller-side configuration for processes (cmd/catalog's
+// galgame surface, cmd/oauth, migration scripts, etc) that talk to image_service.
 type ImageClientConfig struct {
 	BaseURL      string // e.g. http://127.0.0.1:9278 (image_service URL from this caller's perspective)
 	ClientID     string // OAuth client id this caller authenticates as
@@ -550,7 +550,7 @@ func Load() (*Config, error) {
 		UsePathStyle:    s3UsePathStyle,
 	}
 
-	// Image client config (caller-side: cmd/galgame, cmd/oauth, migration scripts)
+	// Image client config (caller-side: cmd/catalog galgame surface, cmd/oauth, migration scripts)
 	defaultBase := fmt.Sprintf("http://%s:%d", cfg.ImageService.Host, cfg.ImageService.Port)
 	cfg.ImageClient = ImageClientConfig{
 		BaseURL:      getEnv("KUN_IMAGE_CLIENT_BASE_URL", defaultBase),
