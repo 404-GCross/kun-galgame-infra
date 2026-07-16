@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"api/internal/app"
+	"api/internal/galgameapp"
 	"api/internal/infrastructure/cache"
 	"api/internal/infrastructure/database"
 	searchInfra "api/internal/infrastructure/search"
@@ -69,6 +70,22 @@ func main() {
 		slog.Error("catalog db connect", "error", err)
 		os.Exit(1)
 	}
+
+	// galgame content DB — a SECOND, independent connection pool for the galgame
+	// surface co-hosted here after the wiki-retirement W2 merge. cfg.GalgameDatabase
+	// (KUN_GALGAME_PG_DATABASE) points at kun_catalog too post-W1, so this is a
+	// distinct pool onto the same database the S2S catalog face reads. Kept separate
+	// (not catalogDB) so the galgame wiring stays byte-identical to cmd/galgame.
+	galgameDB, err := database.NewPostgresDB(cfg.GalgameDatabase)
+	if err != nil {
+		slog.Error("galgame db connect", "error", err)
+		os.Exit(1)
+	}
+	defer func() {
+		if err := galgameDB.Close(); err != nil {
+			slog.Error("close galgame db", "error", err)
+		}
+	}()
 
 	// Domain services (step 05 core).
 	redirects := repository.NewRedirectRepository(catalogDB.DB())
@@ -117,6 +134,20 @@ func main() {
 	// S2S (/api/v1/catalog) and admin (/api/v1/admin/catalog) faces are untouched
 	// (disjoint prefixes). Probable anchors and r18 works never surface.
 	setupPublicCatalog(application, cfg, catalogDB, readSvc, resolveSvc, searcher)
+
+	// Co-host the full galgame HTTP surface (wiki-retirement W2). The same
+	// galgameapp.Mount cmd/galgame calls — internal /api/galgame|tag|official|
+	// engine|series + admin + S2S cron feeds + the /v1/galgame public projection —
+	// registered on this process, reading galgameDB (kun_catalog). Disjoint route
+	// prefixes from the catalog faces (/api/v1/catalog, /api/v1/admin/catalog,
+	// /v1/catalog); the shared global middleware + /healthz were already installed
+	// above, so Mount does not re-register them. Traffic still hits cmd/galgame:9280
+	// until W3 flips the routers — this double-run proves the surface works here.
+	galgameapp.Mount(application, cfg, galgameapp.Deps{
+		OAuthDB:   application.DB.DB(),
+		GalgameDB: galgameDB.DB(),
+		Search:    searchClient,
+	})
 
 	// Serve the S2S OpenAPI 3.1 spec unauthenticated at the app root (the
 	// auto doc routes are disabled in Setup so they don't land under the
