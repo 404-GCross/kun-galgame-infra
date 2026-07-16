@@ -283,7 +283,11 @@ own `.env` copied from the checked-in `.env.example` — every example already p
 at the ports above and carries the **public dev OAuth credentials** (裁定 3). The
 universal three steps:
 
-1. `docker compose -f docker-compose.dev.yml up -d` (this repo) — the platform.
+1. `docker compose -f docker-compose.dev.yml --profile full up -d` (this repo, or
+   `pnpm dev:full`) — the **whole** platform from images. `--profile full` matters:
+   a bare `up` omits the five hot services (oauth/galgame/image/artifact/trust),
+   which is what infra's own `pnpm dev` wants (it runs those from source via air).
+   A product repo is NOT running air, so it needs them from images → `--profile full`.
 2. `./scripts/refresh-dev-db.sh` (optional) — real-shaped, desensitised data.
 3. In the product repo: `cp apps/api/.env.example apps/api/.env` (+ the web one),
    then `pnpm dev`.
@@ -294,14 +298,41 @@ universal three steps:
 | kun-galgame-patch (moyu) | 5214 / 6969 | `apps/api`, `apps/web` | `df3ff6008d740bfacbe46aa8cf483cf2` | `http://127.0.0.1:6969/auth/callback` |
 | infra `apps/web` (account center) | — / 9420 | `apps/web` | session-based (n/a) | — |
 | infra `apps/wiki` (galgame wiki) | — / 9421 | `apps/wiki` | `53e9b5ea70bfc4e4d0700a9f7b8818e8` (public/PKCE) | `http://127.0.0.1:9421/auth/callback` |
-| kun-letmoe-community | 7001 / 5364 | `apps/api`, `apps/web` | own seed system | seed-defined |
+| kun-letmoe-community | 7001 / 5364 | `apps/api`, `apps/web` | `letmoe-dev` (seed once, below) | `http://127.0.0.1:5364/auth/callback` |
 
 Confidential clients (forum / moyu) present the plaintext `dev-secret-<client_id>`;
 the wiki is a public client (PKCE, no secret). **letmoe does NOT take the snapshot**
-— it provisions its own OAuth client + data through its seed system, so its
-`.env.example` carries only the platform-URL wiring and leaves
-`KUN_OAUTH_CLIENT_ID/SECRET` blank for the seed to fill. Each product repo's README
-repeats these three steps and links back to this file.
+— its own databases (`kun_letmoe`) are built by its own migrations + seeds, not a
+prod snapshot. But its **OAuth client is an infra row** (`oauth_clients` lives in
+`kun_galgame_infra`), which a letmoe seed cannot create — so seed it once here,
+after `cmd/migrate` has built the table. `letmoe`'s `.env.example` carries the
+matching public dev credentials (`letmoe-dev` / `dev-secret-letmoe-dev`):
+
+```sh
+# infra: kun_galgame_infra, AFTER `cd apps/api && go run ./cmd/migrate`
+HASH=$(printf %s 'dev-secret-letmoe-dev' | sha256sum | cut -d' ' -f1)
+psql -h 127.0.0.1 -U postgres -d kun_galgame_infra <<SQL
+INSERT INTO oauth_clients
+  (id, name, secret, redirect_uris, grants, is_public, auto_consent,
+   refresh_token_ttl_seconds, allowed_scopes,
+   image_enabled, image_site_key, image_allowed_presets, catalog_site,
+   dev_enabled, dev_tier, dev_nsfw_allowed, dev_rate_per_min, dev_quota_daily)
+VALUES
+  ('letmoe-dev', '一起萌 letmoe (dev)', 'sha256:$HASH',
+   '["http://127.0.0.1:5364/auth/callback"]', '["authorization_code","refresh_token"]',
+   false, false, 7776000, '["openid","profile","email"]',
+   true, 'letmoe', '["topic"]', 'letmoe',
+   false, '', false, 0, 0)
+ON CONFLICT (id) DO UPDATE SET secret=EXCLUDED.secret,
+  redirect_uris=EXCLUDED.redirect_uris, image_enabled=EXCLUDED.image_enabled,
+  image_site_key=EXCLUDED.image_site_key, image_allowed_presets=EXCLUDED.image_allowed_presets,
+  catalog_site=EXCLUDED.catalog_site, allowed_scopes=EXCLUDED.allowed_scopes;
+SQL
+```
+
+`catalog_site='letmoe'` scopes both its community tenant and its catalog reads to
+the local `letmoe` site. Each product repo's README repeats the three steps above
+and links back to this file.
 
 ## Tear down
 

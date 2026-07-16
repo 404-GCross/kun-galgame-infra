@@ -20,8 +20,9 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-'
 	CREATE DATABASE kun_ai;
 	-- Downstream repos' databases live on this shared server too (the hub owns
 	-- the single Postgres). kungal → kungalgame, moyu → kungalgame_patch,
-	-- sticker → kungalgame_sticker.
+	-- sticker → kungalgame_sticker, letmoe → kun_letmoe.
 	CREATE DATABASE kungalgame;
 	CREATE DATABASE kungalgame_patch;
 	CREATE DATABASE kungalgame_sticker;
+	CREATE DATABASE kun_letmoe;
 EOSQL
