@@ -176,6 +176,13 @@ func (r *GalgameRepository) List(ctx context.Context, page, limit int, sortField
 	if sortField == "release_date" {
 		order += " NULLS LAST"
 	}
+	// Unique tiebreaker: append the primary key as the final sort column so rows
+	// that tie on the chosen sort field keep a deterministic order. Without it,
+	// tied rows fall back to physical heap order, which a DB restore / VACUUM
+	// FULL / pg_repack reshuffles — the exact tie-order noise the wiki-retirement
+	// DB move (kun_galgame_wiki → kun_catalog) exposed. id follows sortOrder for
+	// an intuitive secondary sort (same direction as the primary).
+	order += ", id " + sortOrder
 
 	err = query.
 		Order(order).
@@ -228,6 +235,11 @@ func (r *GalgameRepository) FindByIDs(ctx context.Context, ids []int, contentLim
 		Select(briefColumns).
 		Where("id IN ?", ids).
 		Scopes(galgameVisibilityScope(0, contentLimit)).
+		// Deterministic id order: the batch endpoints re-key by id on the caller
+		// side (they never promised input-id order), but an explicit ORDER BY id
+		// keeps the response byte-stable instead of leaking physical heap order —
+		// which a DB restore reshuffles (wiki-retirement tie-order fix).
+		Order("id ASC").
 		Find(&galgames).Error
 	return galgames, err
 }
@@ -244,6 +256,7 @@ func (r *GalgameRepository) FindByIDsAny(ctx context.Context, ids []int) ([]mode
 	err := r.db.WithContext(ctx).
 		Select(briefColumns).
 		Where("id IN ?", ids).
+		Order("id ASC"). // deterministic order (see FindByIDs)
 		Find(&galgames).Error
 	return galgames, err
 }
@@ -265,6 +278,7 @@ func (r *GalgameRepository) FindByIDsWithViewer(ctx context.Context, ids []int, 
 		Select(briefColumns).
 		Where("id IN ?", ids).
 		Scopes(galgameVisibilityScope(viewerUserID, contentLimit)).
+		Order("id ASC"). // deterministic order (see FindByIDs)
 		Find(&galgames).Error
 	return galgames, err
 }
@@ -281,6 +295,7 @@ func (r *GalgameRepository) FindDetailByIDs(ctx context.Context, ids []int, view
 		Select(detailColumns).
 		Where("id IN ?", ids).
 		Scopes(galgameVisibilityScope(viewerUserID, contentLimit)).
+		Order("id ASC"). // deterministic order (see FindByIDs)
 		Find(&galgames).Error
 	return galgames, err
 }
@@ -385,10 +400,10 @@ func (r *GalgameRepository) ListMine(ctx context.Context, userID int, statuses [
 
 	q.Count(&total)
 
-	err = q.Order("updated DESC").
-		Offset((page-1)*limit).
-		Limit(limit).
-		Preload("Cover", func(db *gorm.DB) *gorm.DB {
+	err = q.Order("updated DESC, id DESC"). // id tiebreaker → deterministic ties
+						Offset((page-1)*limit).
+						Limit(limit).
+						Preload("Cover", func(db *gorm.DB) *gorm.DB {
 			return db.Order("sort_order ASC, created ASC")
 		}).
 		Find(&items).Error
@@ -521,7 +536,7 @@ func (r *GalgameRepository) ListPublishedByUser(ctx context.Context, userID, pag
 
 	err = q.
 		Select("id, vndb_id, name_en_us, name_ja_jp, name_zh_cn, name_zh_tw, banner, content_limit, status, user_id, resource_update_time, original_language, age_limit").
-		Order("created DESC").
+		Order("created DESC, id DESC"). // id tiebreaker → deterministic ties
 		Offset((page - 1) * limit).
 		Limit(limit).
 		Find(&items).Error
@@ -558,7 +573,8 @@ func (r *GalgameRepository) ListContributedByUser(ctx context.Context, userID, p
 		Select("galgame.id, galgame.vndb_id, galgame.name_en_us, galgame.name_ja_jp, galgame.name_zh_cn, galgame.name_zh_tw, galgame.banner, galgame.content_limit, galgame.status, galgame.user_id, galgame.resource_update_time, galgame.original_language, galgame.age_limit").
 		// newest contribution first: the contributor row's `created` when the
 		// user edited it, else the galgame's own `created` (created-only).
-		Order("COALESCE(gc.created, galgame.created) DESC").
+		// galgame.id tiebreaker → deterministic order for equal timestamps.
+		Order("COALESCE(gc.created, galgame.created) DESC, galgame.id DESC").
 		Offset((page - 1) * limit).
 		Limit(limit).
 		Find(&items).Error
