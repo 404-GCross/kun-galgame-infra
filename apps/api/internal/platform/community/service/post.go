@@ -261,6 +261,9 @@ func (s *PostService) Edit(ctx context.Context, p EditParams) (*model.CommunityP
 		slog.Info("community mod edit", "post_id", post.ID, "thread_id", post.ThreadID,
 			"post_author_id", post.AuthorID, "moderator_id", p.AuthorID)
 	}
+	// A successful edit re-emits the content event so the step-04 scanning sink
+	// re-scans the new raw body (a no-op under NoopSink / the forwarding sink).
+	s.sink.Emit(Event{Kind: EventPostEdited, ThreadID: post.ThreadID, PostID: post.ID, ActorID: p.AuthorID})
 	return &post, nil
 }
 

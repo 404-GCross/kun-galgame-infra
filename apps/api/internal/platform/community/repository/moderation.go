@@ -101,6 +101,51 @@ func LoadForwardTargetTx(tx *gorm.DB, itemID int64) (*ForwardTarget, bool, error
 	return &ft, true, nil
 }
 
+// ScanTarget carries the columns the trust-scan payload needs: a post joined to
+// its thread for the tenant site and (first-post-only) the thread title prefix.
+type ScanTarget struct {
+	PostID     int64
+	Site       string
+	AuthorID   int64
+	ContentRaw string
+	PostNumber int32
+	Title      string // "" when the thread has no title (a comments thread)
+}
+
+// LoadScanTargetTx joins a post to its thread for the scan payload. found=false
+// when the post is absent (community never hard-deletes, so a tombstoned post
+// still resolves — held/sandbox posts are scanned too, ruling 6).
+func LoadScanTargetTx(tx *gorm.DB, postID int64) (*ScanTarget, bool, error) {
+	var row struct {
+		PostID     int64
+		Site       string
+		AuthorID   int64
+		ContentRaw string
+		PostNumber int32
+		Title      *string
+	}
+	err := tx.Table("community_post AS p").
+		Select("p.id AS post_id, t.site AS site, p.author_id AS author_id, "+
+			"p.content_raw AS content_raw, p.post_number AS post_number, t.title AS title").
+		Joins("JOIN community_thread AS t ON t.id = p.thread_id").
+		Where("p.id = ?", postID).
+		Take(&row).Error
+	if err == gorm.ErrRecordNotFound {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	title := ""
+	if row.Title != nil {
+		title = *row.Title
+	}
+	return &ScanTarget{
+		PostID: row.PostID, Site: row.Site, AuthorID: row.AuthorID,
+		ContentRaw: row.ContentRaw, PostNumber: row.PostNumber, Title: title,
+	}, true, nil
+}
+
 // LockUnforwardedTx claims a batch of not-yet-forwarded review items with FOR
 // UPDATE SKIP LOCKED so concurrent sweeps never process the same rows.
 func LockUnforwardedTx(tx *gorm.DB, limit int) ([]model.CommunityReviewItem, error) {

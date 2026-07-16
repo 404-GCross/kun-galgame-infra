@@ -71,15 +71,17 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Trust-forward client (step 03). Empty KUN_TRUST_CLIENT_* → a nil client →
-	// forwarding disabled (fail-closed): the outbox ticker idles and the sink is a
-	// plain no-op. Assigning through the interface only when non-nil avoids a
-	// typed-nil interface (which would report Enabled()==true then panic).
-	var forwarder service.Forwarder
-	if tc := trustclient.New(trustclient.Config{
+	// Trust S2S client (steps 03/04). Built once; forwarding and scanning both ride
+	// it but each has its own switch. Empty KUN_TRUST_CLIENT_* → a nil client →
+	// both disabled (fail-closed). Assigning through an interface only when non-nil
+	// avoids a typed-nil interface (which would report Enabled()==true then panic).
+	trustCli := trustclient.New(trustclient.Config{
 		BaseURL: cfg.TrustClient.BaseURL, ClientID: cfg.TrustClient.ClientID, ClientSecret: cfg.TrustClient.ClientSecret,
-	}); tc != nil {
-		forwarder = tc
+	})
+
+	var forwarder service.Forwarder
+	if trustCli != nil {
+		forwarder = trustCli
 	}
 	forwardSvc := service.NewForwardService(communityDB.DB(), forwarder)
 	if forwardSvc.Enabled() {
@@ -88,10 +90,27 @@ func main() {
 		slog.Info("community trust forwarding disabled (KUN_TRUST_CLIENT_* unset)")
 	}
 
+	// Trust scan sink (step 04). Gated by the INDEPENDENT KUN_TRUST_SCAN_ENABLED
+	// switch (default false) AND the trust client being wired — never keyed off the
+	// client alone, so a forwarding-configured production community does not
+	// auto-enable scanning on deploy (ruling 2).
+	var scanner service.Scanner
+	if cfg.TrustScanEnabled && trustCli != nil {
+		scanner = trustCli
+	}
+	scanSvc := service.NewScanService(communityDB.DB(), scanner)
+	if scanSvc.Enabled() {
+		slog.Info("community trust scanning enabled", "base_url", cfg.TrustClient.BaseURL)
+	} else {
+		slog.Info("community trust scanning disabled (KUN_TRUST_SCAN_ENABLED off or KUN_TRUST_CLIENT_* unset)")
+	}
+
 	// Domain services. Notification events still go to a no-op sink (章程 ruling 2
-	// / doc 11 §7); the ForwardingSink decorates it to turn the step-03 review.*
-	// events into off-request trust forward/resolve calls.
-	sink := service.NewForwardingSink(service.NoopSink{}, forwardSvc)
+	// / doc 11 §7); the ForwardingSink turns the step-03 review.* events into
+	// off-request trust forward/resolve calls, and the ScanningSink turns
+	// post.created / post.edited into step-04 shadow-scan calls. The two decorators
+	// consume disjoint events and nest in any order.
+	sink := service.NewScanningSink(service.NewForwardingSink(service.NoopSink{}, forwardSvc), scanSvc)
 	threadSvc := service.NewThreadService(communityDB.DB(), sink)
 	postSvc := service.NewPostService(communityDB.DB(), sink)
 	reactionSvc := service.NewReactionService(communityDB.DB())

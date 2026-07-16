@@ -31,11 +31,18 @@ type ReportResponse struct {
 	ReviewItemID *int64 `json:"review_item_id,omitempty" doc:"set when the report opened/linked/folded a review item"`
 }
 
-// ScanRequest is an async content-scan submission (site derived from the client
-// binding). The product has ALREADY published the content; scan never gates a
-// sync path (doc 18 §6). The subject is referenced by (subject_kind, subject_id);
-// text carries the UGC body to score (capped at intake with truncation recorded).
+// ScanRequest is an async content-scan submission. The product has ALREADY
+// published the content; scan never gates a sync path (doc 18 §6). The subject is
+// referenced by (subject_kind, subject_id); text carries the UGC body to score
+// (capped at intake with truncation recorded).
+//
+// Site (step 04) is normally OMITTED — it is then derived from the client
+// binding, exactly like report intake. A non-empty `site` is the forwarder relay
+// path (a caller relaying for many community-backed sites through one S2S
+// identity): it is allowlist-gated (KUN_TRUST_FORWARDER_CLIENT_IDS), mirroring
+// the forward face, and wins over the bound site.
 type ScanRequest struct {
+	Site        string `json:"site,omitempty" doc:"optional tenant site (allowlist-gated relay path); omitted = derived from the client binding"`
 	SubjectKind string `json:"subject_kind" doc:"registered subject kind for this site (e.g. community_post)"`
 	SubjectID   string `json:"subject_id" doc:"the subject's stable id in the product"`
 	Text        string `json:"text" doc:"the UGC text to scan (capped at ~8000 runes; excess is truncated and recorded)"`

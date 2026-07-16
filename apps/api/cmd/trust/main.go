@@ -76,7 +76,6 @@ func main() {
 	reviewSvc := service.NewReviewService(trustDB.DB())
 	registrySvc := service.NewRegistryService(trustDB.DB())
 	dispositionSvc := service.NewDispositionService(trustDB.DB())
-	scanSvc := service.NewScanService(trustDB.DB())
 	worker := service.NewCallbackWorker(trustDB.DB())
 
 	// AI shadow-scoring pipeline (step 03). The scan worker scores pending rows
@@ -95,6 +94,10 @@ func main() {
 		forwarders[id] = true
 	}
 	forwardSvc := service.NewForwardService(trustDB.DB(), forwarders)
+	// The scan face shares the same allowlist: a wire-supplied `site` (relay path,
+	// step 04) is allow-listed exactly like a forward, while the default bind-
+	// derived path is always open.
+	scanSvc := service.NewScanService(trustDB.DB(), forwarders)
 	slog.Info("trust forward face", "allowed_forwarders", len(forwarders))
 
 	application.Fiber.Use(middleware.RequestID())

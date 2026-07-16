@@ -329,6 +329,9 @@ components:
           description: optional content author's global id (attribution/repeat-offender signal); not the tenant
           format: int64
           type: integer
+        site:
+          description: optional tenant site (allowlist-gated relay path); omitted = derived from the client binding
+          type: string
         subject_id:
           description: the subject's stable id in the product
           type: string

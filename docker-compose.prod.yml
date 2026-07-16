@@ -416,6 +416,13 @@ services:
       KUN_TRUST_CLIENT_ID: ${KUN_TRUST_CLIENT_ID:-}
       KUN_TRUST_CLIENT_SECRET: ${KUN_TRUST_CLIENT_SECRET:-}
       KUN_TRUST_CALLBACK_SECRET: ${KUN_TRUST_CALLBACK_SECRET:-}
+      # Shadow-scan sink (step 04) — INDEPENDENT of the forward wiring above.
+      # Default off: even once KUN_TRUST_CLIENT_* is set for forwarding, scanning
+      # stays dark until this is flipped to "true" in Dokploy (needs the site's
+      # (site, community_post) subject_kind registered + this client in
+      # KUN_TRUST_FORWARDER_CLIENT_IDS). Explicit "false" so the power-on checklist
+      # can grep it.
+      KUN_TRUST_SCAN_ENABLED: "false"
     # Internal only — product backends (letmoe/...) reach it at
     # http://community:9282 over dokploy-network.
     expose: ["9282"]

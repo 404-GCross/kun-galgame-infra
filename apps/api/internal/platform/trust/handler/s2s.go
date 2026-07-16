@@ -156,16 +156,28 @@ type submitScanOutput struct {
 }
 
 func (s *Server) submitScan(ctx context.Context, in *submitScanInput) (*submitScanOutput, error) {
-	site, he := siteBinding(ctx)
-	if he != nil {
-		return nil, he
+	// Site three-state (step 04): an empty wire `site` derives from the client
+	// binding (the accept-type default); a non-empty wire `site` is the forwarder
+	// relay path, allowlist-gated in the service (mirrors the forward face). Only
+	// the default path needs a bound site, so siteBinding is consulted only then.
+	boundSite := ""
+	if in.Body.Site == "" {
+		site, he := siteBinding(ctx)
+		if he != nil {
+			return nil, he
+		}
+		boundSite = site
 	}
 	res, err := s.scan.Ingest(ctx, service.ScanParams{
-		Site: site, SubjectKind: in.Body.SubjectKind, SubjectID: in.Body.SubjectID,
+		CallerClientID: callerClientID(ctx),
+		Site:           boundSite, WireSite: in.Body.Site,
+		SubjectKind: in.Body.SubjectKind, SubjectID: in.Body.SubjectID,
 		Text: in.Body.Text, AuthorID: in.Body.AuthorID,
 	})
 	if err != nil {
-		return nil, mapIntakeErr("submit scan", err)
+		// mapForwardErr covers both the allowlist 403 and the registry 422 the scan
+		// face now shares with the forward face.
+		return nil, mapForwardErr("submit scan", err)
 	}
 	return &submitScanOutput{Body: okEnvelope(dto.ScanResponse{
 		ScanID: res.ScanID, Truncated: res.Truncated,

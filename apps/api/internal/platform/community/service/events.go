@@ -3,7 +3,12 @@ package service
 // Event kinds emitted at flow transitions (doc 11 §7). The service only EMITS;
 // delivery + aggregation ("N people replied") is the notification layer's job.
 const (
-	EventPostCreated           = "post.created"
+	EventPostCreated = "post.created"
+	// EventPostEdited fires after a post's body is successfully rewritten
+	// (PostService.Edit). It carries the same fields as post.created
+	// (ThreadID/PostID/ActorID). The step-04 scanning sink consumes it to re-scan
+	// the edited raw body; it is a no-op under NoopSink / the forwarding sink.
+	EventPostEdited            = "post.edited"
 	EventReplyToYou            = "reply.to_you"
 	EventMention               = "mention"
 	EventFeedbackStatusChanged = "feedback.status_changed"

@@ -83,6 +83,33 @@ func (c *Client) Forward(ctx context.Context, req ForwardRequest) (trustItemID i
 	return env.Data.ReviewItemID, env.Data.Created, nil
 }
 
+// ScanRequest mirrors the trust ScanRequest DTO (step 04). Site is the relay
+// path: a community forwarder relays for many sites through one S2S identity, so
+// it carries the tenant site on the wire (allowlist-gated trust-side). Text is
+// the author's RAW body (capped/truncated at intake, never client-side).
+type ScanRequest struct {
+	Site        string `json:"site,omitempty"`
+	SubjectKind string `json:"subject_kind"`
+	SubjectID   string `json:"subject_id"`
+	Text        string `json:"text"`
+	AuthorID    *int64 `json:"author_id,omitempty"`
+}
+
+type scanData struct {
+	ScanID    int64 `json:"scan_id"`
+	Truncated bool  `json:"truncated"`
+}
+
+// Scan submits a content-scan event for async AI shadow-scoring. Returns the
+// scan-row id and whether the text was truncated at intake.
+func (c *Client) Scan(ctx context.Context, req ScanRequest) (scanID int64, truncated bool, err error) {
+	var env envelope[scanData]
+	if err := c.post(ctx, "/api/v1/trust/scan", req, &env); err != nil {
+		return 0, false, err
+	}
+	return env.Data.ScanID, env.Data.Truncated, nil
+}
+
 type resolveRequest struct {
 	ReviewItemID int64   `json:"review_item_id"`
 	Outcome      string  `json:"outcome"`

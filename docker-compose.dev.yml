@@ -353,6 +353,9 @@ services:
       KUN_TRUST_CLIENT_ID: ""
       KUN_TRUST_CLIENT_SECRET: ""
       KUN_TRUST_CALLBACK_SECRET: ""
+      # Shadow-scan sink (step 04) — independent switch, off by default (same as
+      # prod until wired locally). Explicit "false" for the power-on grep.
+      KUN_TRUST_SCAN_ENABLED: "false"
     depends_on:
       migrate: { condition: service_completed_successfully }            # reads oauth_clients
       migrate-community: { condition: service_completed_successfully }  # kun_community schema
