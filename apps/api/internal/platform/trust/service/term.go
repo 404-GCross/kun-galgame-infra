@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"api/internal/platform/trust/actrie"
 	"api/internal/platform/trust/model"
 	"api/internal/platform/trust/norm"
 
@@ -29,11 +30,13 @@ const (
 // independent (no AI gateway).
 //
 // The matcher is a substring-containment scan (CJK has no word boundaries, so a
-// substring is the v0 reality). Both stored terms and the checked text pass
-// through the single norm.Normalize choke point, so folding stays consistent.
-// The active-term set is cached in-process (termCacheTTL) — the hot path never
-// hits the DB except on a refresh — and invalidated immediately on an in-process
-// admin mutation; multi-instance staleness is bounded by the TTL (accepted).
+// substring is the v0 reality) compiled into a byte-level Aho-Corasick automaton
+// so it stays flat under tens of thousands of terms. Both stored terms and the
+// checked text pass through the single norm.Normalize choke point, so folding
+// stays consistent. The active-term set — and the automaton built from it — is
+// cached in-process (termCacheTTL); the hot path never hits the DB except on a
+// refresh, and is invalidated immediately on an in-process admin mutation.
+// Multi-instance staleness is bounded by the TTL (accepted).
 type TermService struct {
 	db        *gorm.DB
 	allowlist map[string]bool
@@ -41,7 +44,7 @@ type TermService struct {
 	now       func() time.Time
 
 	mu       sync.Mutex
-	cache    []activeTerm
+	cache    *termSnapshot
 	loaded   bool
 	loadedAt time.Time
 }
@@ -52,6 +55,28 @@ type activeTerm struct {
 	norm   string
 	site   string
 	banned bool
+}
+
+// termSnapshot is the compiled active-term set: the term table plus the Aho-
+// Corasick automaton built over the term norms (payload = index into terms).
+// Immutable once built and shared read-only across concurrent checks; rebuilt
+// only on a snapshot reload. The old []activeTerm cache became this struct so the
+// automaton is built once per reload rather than per check (spec step 07 §3); the
+// change is entirely internal — Check/Tier0Matches are unaffected.
+type termSnapshot struct {
+	terms   []activeTerm
+	matcher *actrie.Matcher
+}
+
+// buildSnapshot compiles the projected terms into an automaton. Empty norms are
+// left in terms (index alignment with the payloads) but Build never inserts them,
+// so they never match — the same defensive skip the linear scan applied.
+func buildSnapshot(terms []activeTerm) *termSnapshot {
+	patterns := make([][]byte, len(terms))
+	for i, t := range terms {
+		patterns[i] = []byte(t.norm)
+	}
+	return &termSnapshot{terms: terms, matcher: actrie.Build(patterns)}
 }
 
 // NewTermService builds the service over the trust DB. allowlist is the shared
@@ -98,11 +123,11 @@ func (s *TermService) Check(ctx context.Context, p CheckParams) (CheckResult, er
 		}
 		site = p.WireSite
 	}
-	terms, err := s.snapshot(ctx)
+	snap, err := s.snapshot(ctx)
 	if err != nil {
 		return CheckResult{}, err
 	}
-	decision, matched := matchTerms(terms, site, norm.Normalize(p.Text))
+	decision, matched := snap.match(site, norm.Normalize(p.Text))
 	return CheckResult{Decision: decision, Matched: matched}, nil
 }
 
@@ -110,34 +135,33 @@ func (s *TermService) Check(ctx context.Context, p CheckParams) (CheckResult, er
 // the scan worker's landing input (site already comes from the stored row, so
 // there is no three-state resolution here). Never nil: a no-match is [].
 func (s *TermService) Tier0Matches(ctx context.Context, site, text string) ([]string, error) {
-	terms, err := s.snapshot(ctx)
+	snap, err := s.snapshot(ctx)
 	if err != nil {
 		return nil, err
 	}
-	_, matched := matchTerms(terms, site, norm.Normalize(text))
+	_, matched := snap.match(site, norm.Normalize(text))
 	return matched, nil
 }
 
-// matchTerms scans the active set for the given site against the already-
-// normalized text. A global term (site "") applies to every site; a per-site
-// term applies only to its own site. deny wins over hold.
-func matchTerms(terms []activeTerm, site, normText string) (string, []string) {
+// match runs the already-normalized text through the automaton and applies the
+// scoping + decision rules. The automaton reports the distinct hit term indexes
+// in ascending (insertion) order; for each we apply site scoping — a global term
+// (site "") fires for every site, a per-site term only for its own — then dedupe
+// is inherent (one payload per term) and matched is built in that order. deny
+// wins over hold. Byte-for-byte identical to the old linear strings.Contains scan.
+func (snap *termSnapshot) match(site, normText string) (string, []string) {
 	matched := []string{}
 	deny, hold := false, false
-	for _, t := range terms {
-		if t.norm == "" { // defensive: an empty norm would match everything
-			continue
-		}
+	for _, i := range snap.matcher.Match([]byte(normText)) {
+		t := snap.terms[i]
 		if t.site != "" && t.site != site {
 			continue
 		}
-		if strings.Contains(normText, t.norm) {
-			matched = append(matched, t.norm)
-			if t.banned {
-				deny = true
-			} else {
-				hold = true
-			}
+		matched = append(matched, t.norm)
+		if t.banned {
+			deny = true
+		} else {
+			hold = true
 		}
 	}
 	switch {
@@ -150,10 +174,12 @@ func matchTerms(terms []activeTerm, site, normText string) (string, []string) {
 	}
 }
 
-// snapshot returns the cached active-term set, reloading from the DB when the
-// TTL has elapsed or the cache was invalidated. Holds a mutex across the reload
-// (a once-per-TTL cost; v0 volume makes the brief serialization a non-issue).
-func (s *TermService) snapshot(ctx context.Context) ([]activeTerm, error) {
+// snapshot returns the cached compiled snapshot (terms + automaton), reloading
+// from the DB and rebuilding the automaton when the TTL has elapsed or the cache
+// was invalidated. Holds a mutex across the reload + build (a once-per-TTL cost;
+// building over tens of thousands of terms is a sub-second one-off, so the brief
+// serialization stays a non-issue).
+func (s *TermService) snapshot(ctx context.Context) (*termSnapshot, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.loaded && s.now().Sub(s.loadedAt) < s.ttl {
@@ -163,14 +189,15 @@ func (s *TermService) snapshot(ctx context.Context) ([]activeTerm, error) {
 	if err := s.db.WithContext(ctx).Where("is_deprecated = false").Find(&rows).Error; err != nil {
 		return nil, err
 	}
-	snap := make([]activeTerm, 0, len(rows))
+	terms := make([]activeTerm, 0, len(rows))
 	for _, r := range rows {
 		site := ""
 		if r.Site != nil {
 			site = *r.Site
 		}
-		snap = append(snap, activeTerm{norm: r.TermNorm, site: site, banned: r.Kind == model.TermKindBanned})
+		terms = append(terms, activeTerm{norm: r.TermNorm, site: site, banned: r.Kind == model.TermKindBanned})
 	}
+	snap := buildSnapshot(terms)
 	s.cache = snap
 	s.loaded = true
 	s.loadedAt = s.now()
