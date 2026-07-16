@@ -1,0 +1,48 @@
+<script setup lang="ts">
+// Show-once plaintext reveal (安全关键). The plaintext lives ONLY in the
+// `minted` prop held by the parent's component-local ref; it is never written
+// to store/localStorage/URL/logs. Closing the modal clears the parent state.
+defineProps<{ minted: DevKeyMinted; rotated?: boolean }>()
+const emit = defineEmits<{ close: [] }>()
+
+const show = ref(true)
+
+watch(show, (val) => {
+  if (!val) emit('close')
+})
+</script>
+
+<template>
+  <KunModal v-model="show" :is-dismissable="false">
+    <div class="space-y-4">
+      <div class="flex items-center gap-3">
+        <div class="flex size-10 items-center justify-center rounded-full bg-success-100">
+          <KunIcon name="lucide:key-round" class="size-5 text-success" />
+        </div>
+        <h2 class="text-xl font-bold text-foreground">
+          {{ rotated ? '密钥已轮换' : '密钥已生成' }}
+        </h2>
+      </div>
+
+      <div class="rounded-lg bg-warning-50 p-3 text-sm text-warning">
+        <KunIcon name="lucide:triangle-alert" class="mr-1 inline size-4" />
+        请立即复制并妥善保存以下密钥，<strong>关闭后将无法再次查看</strong>。
+        <template v-if="rotated">旧密钥将在 72 小时宽限后失效。</template>
+      </div>
+
+      <div class="rounded-lg bg-default-50 p-3">
+        <div class="flex items-center justify-between">
+          <p class="text-xs text-default-400">API Key（{{ minted.name }}）</p>
+          <KunCopy :text="minted.key" size="sm" />
+        </div>
+        <p class="mt-1 break-all font-mono text-sm text-foreground">{{ minted.key }}</p>
+      </div>
+
+      <div class="flex justify-end">
+        <KunButton color="primary" @click="show = false">
+          我已保存，关闭
+        </KunButton>
+      </div>
+    </div>
+  </KunModal>
+</template>

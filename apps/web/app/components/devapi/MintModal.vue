@@ -1,0 +1,116 @@
+<script setup lang="ts">
+import { DEV_MINTABLE_SCOPES } from '~/constants/devapi'
+import type { DevKeyMinted } from '~~/shared/types/devapi'
+
+// Mint a new API key for an app. Phase 1 offers only the two public-read
+// scopes (裁定 5, default all selected); galgame:nsfw is never surfaced. The
+// minted plaintext is handed straight to the parent (which reveals it once and
+// clears it) — this modal never persists it.
+const props = defineProps<{ clientId: string }>()
+const emit = defineEmits<{ close: []; minted: [DevKeyMinted] }>()
+
+const api = useApi()
+const show = ref(true)
+
+const name = ref('')
+const test = ref(false)
+const scopes = ref<string[]>([...DEV_MINTABLE_SCOPES])
+const error = ref('')
+const isLoading = ref(false)
+
+watch(show, (val) => {
+  if (!val) emit('close')
+})
+
+const toggleScope = (s: string) => {
+  const i = scopes.value.indexOf(s)
+  if (i >= 0) scopes.value.splice(i, 1)
+  else scopes.value.push(s)
+}
+
+const handleSubmit = async () => {
+  error.value = ''
+  if (!name.value.trim()) {
+    error.value = '请填写密钥名称'
+    return
+  }
+  if (scopes.value.length === 0) {
+    error.value = '请至少选择一个 scope'
+    return
+  }
+  isLoading.value = true
+  try {
+    // Wire body mirrors handler.go mintKeyRequest (field-for-field).
+    const body: Record<string, unknown> = {
+      name: name.value.trim(),
+      test: test.value,
+      scopes: scopes.value,
+    }
+    const res = await api.post<DevKeyMinted>(
+      `/admin/devapi/apps/${props.clientId}/keys`,
+      body
+    )
+    if (res.code === 0 && res.data) {
+      emit('minted', res.data)
+    } else {
+      error.value = res.message || '生成失败'
+    }
+  } finally {
+    isLoading.value = false
+  }
+}
+</script>
+
+<template>
+  <KunModal v-model="show" size="md">
+    <div class="space-y-4">
+      <h2 class="text-xl font-bold text-foreground">生成新密钥</h2>
+
+      <KunInput
+        v-model="name"
+        label="密钥名称"
+        placeholder="例如：生产环境 / CI 流水线"
+        required
+      />
+
+      <div>
+        <span class="mb-1 block text-sm font-medium text-default-500">
+          Scope（权限范围）
+          <span class="text-xs text-default-400">— 默认全选公开只读 scope</span>
+        </span>
+        <div class="flex flex-wrap gap-2">
+          <KunCheckBox
+            v-for="s in DEV_MINTABLE_SCOPES"
+            :key="s"
+            :model-value="scopes.includes(s)"
+            :label="s"
+            color="primary"
+            class-name="rounded-lg border border-default-200 bg-content1 px-3 py-1.5 hover:border-primary"
+            @update:model-value="toggleScope(s)"
+          />
+        </div>
+      </div>
+
+      <div class="rounded-lg border border-default-200 p-3">
+        <KunSwitch v-model="test" label="测试密钥（nm_test_ 前缀）" />
+        <p class="mt-1 text-xs text-default-400">
+          — 测试密钥用于开发/联调；正式接入请使用生产密钥（nm_live_）。
+        </p>
+      </div>
+
+      <div v-if="error" class="rounded-lg bg-danger-50 p-3 text-sm text-danger">
+        {{ error }}
+      </div>
+
+      <div class="flex justify-end gap-3">
+        <KunButton color="default" variant="flat" @click="show = false">
+          取消
+        </KunButton>
+        <KunButton color="primary" :disabled="isLoading" @click="handleSubmit">
+          <KunIcon v-if="isLoading" name="lucide:loader-circle" class="mr-2 size-4 animate-spin" />
+          生成密钥
+        </KunButton>
+      </div>
+    </div>
+  </KunModal>
+</template>
