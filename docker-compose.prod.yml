@@ -372,6 +372,15 @@ services:
       # from kun_galgame_infra for S2S Basic auth + admin JWT identities.
       KUN_CATALOG_HOST: 0.0.0.0
       KUN_CATALOG_PORT: "9281"
+      # W2 (wiki retirement): this process also co-hosts the full galgame HTTP
+      # surface via galgameapp.Mount, so it needs the SAME image-service +
+      # catalog S2S client credentials the galgame service above gets — without
+      # them the co-hosted face logs "image client not configured" and rejects
+      # multipart banner uploads. Same Dokploy vars, same fallback chain.
+      KUN_IMAGE_CLIENT_ID: ${KUN_IMAGE_CLIENT_ID:-}
+      KUN_IMAGE_CLIENT_SECRET: ${KUN_IMAGE_CLIENT_SECRET:-}
+      KUN_CATALOG_CLIENT_ID: ${KUN_CATALOG_CLIENT_ID:-${KUN_IMAGE_CLIENT_ID:-}}
+      KUN_CATALOG_CLIENT_SECRET: ${KUN_CATALOG_CLIENT_SECRET:-${KUN_IMAGE_CLIENT_SECRET:-}}
     # S2S read/admin face stays internal — product backends (wiki/forum/moyu)
     # reach it at http://catalog:9281 over dokploy-network. The ONLY public path
     # is the open-API /v1/catalog projection routed by the labels block below.
