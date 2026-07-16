@@ -287,41 +287,13 @@ services:
       <<: *svc-health
     restart: unless-stopped
 
-  galgame:
-    image: ghcr.io/kunmoe/infra-galgame:latest
-    pull_policy: always
-    environment:
-      <<: *infra-env
-      KUN_FIBER_SERVER_HOST: 0.0.0.0
-      KUN_GALGAME_PORT: "9280"
-      # Image-service client credentials — REQUIRED for multipart banner uploads in
-      # galgame Create/Update/PR. Without them the wiki logs "image client not
-      # configured" and rejects banner files (400). Set BOTH in the Dokploy
-      # Environment to the same image-upload OAuth client the kungal forum API uses.
-      KUN_IMAGE_CLIENT_ID: ${KUN_IMAGE_CLIENT_ID:-}
-      KUN_IMAGE_CLIENT_SECRET: ${KUN_IMAGE_CLIENT_SECRET:-}
-      # Catalog S2S client for the staff-only internal data browser (step 19).
-      # Reuses the galgame_wiki client (= the image client creds) by default —
-      # the catalog READ face imposes no site binding, so no new secret needed;
-      # set dedicated KUN_CATALOG_CLIENT_* in Dokploy only to override. Base URL
-      # defaults to http://catalog:9281 (dokploy-network service name).
-      KUN_CATALOG_CLIENT_ID: ${KUN_CATALOG_CLIENT_ID:-${KUN_IMAGE_CLIENT_ID:-}}
-      KUN_CATALOG_CLIENT_SECRET: ${KUN_CATALOG_CLIENT_SECRET:-${KUN_IMAGE_CLIENT_SECRET:-}}
-    expose: ["9280"]
-    # W3 (wiki retirement): the /v1/galgame public routers moved to the catalog
-    # block below — the catalog process co-hosts the full galgame surface
-    # (galgameapp.Mount, W2). This service is internal-only again, carries zero
-    # traffic (all consumers flipped to catalog:9281), and retires at the end
-    # of W3 after the soak window.
-    depends_on:
-      postgres: { condition: service_healthy }
-      meili: { condition: service_healthy }
-      migrate-galgame: { condition: service_completed_successfully }
-      migrate: { condition: service_completed_successfully } # reads users from kun_galgame_infra
-    healthcheck:
-      test: ["CMD", "/app", "healthcheck"]
-      <<: *svc-health
-    restart: unless-stopped
+  # (W3, wiki retirement) The standalone galgame service (:9280) RETIRED here on
+  # 2026-07-16: the catalog service below co-hosts the full galgame surface
+  # (galgameapp.Mount, W2 — prod replay 80/80 byte-identical) and every consumer
+  # was flipped to catalog:9281 and verified before removal. The `galgame` DNS
+  # name is gone from dokploy-network on purpose — any straggler dialing it fails
+  # loudly instead of silently misrouting. cmd/galgame code + the CI image target
+  # are W5 cleanup.
 
   artifact:
     image: ghcr.io/kunmoe/infra-artifact:latest
@@ -420,8 +392,15 @@ services:
       traefik.http.services.infra-catalog-pub.loadbalancer.server.port: "9281"
     depends_on:
       postgres: { condition: service_healthy }
+      meili: { condition: service_healthy } # the co-hosted galgame face self-heals its indexes at start
       migrate: { condition: service_completed_successfully }         # reads oauth_clients from kun_galgame_infra
       migrate-catalog: { condition: service_completed_successfully } # kun_catalog schema
+      # galgame (wiki-family) schema in kun_catalog. This dependency moved here
+      # from the retired galgame service (W3) — without it migrate-galgame has no
+      # dependent and NEVER RUNS on deploy (deploy-migration-gap: live code would
+      # read columns that don't exist, GORM reads them as zero values, silent
+      # failure). Single-entrypoint consolidation into migrate-catalog is W5.
+      migrate-galgame: { condition: service_completed_successfully }
     healthcheck:
       test: ["CMD", "/app", "healthcheck"]
       <<: *svc-health
@@ -697,8 +676,9 @@ services:
       postgres: { condition: service_healthy }
     restart: "no"
 
-  # Auto-applied on every deploy (galgame waits for it). Idempotent: AutoMigrate
-  # + guarded drop-then-recreate of constraints/indexes (all IF NOT EXISTS).
+  # Auto-applied on every deploy (catalog waits for it — it co-hosts the galgame
+  # surface since W2/W3). Idempotent: AutoMigrate + guarded drop-then-recreate of
+  # constraints/indexes (all IF NOT EXISTS).
   migrate-galgame:
     image: ghcr.io/kunmoe/infra-migrate-galgame:latest
     pull_policy: always
