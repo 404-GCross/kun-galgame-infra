@@ -44,6 +44,28 @@ const (
 	// revert/merge/decline). Narrower than EditAny: admin/ren only, NOT
 	// moderator, matching the pre-migration "owner or admin" checks.
 	OwnerOverride authz.Permission = "galgame.owner_override"
+
+	// Editing-engine field-policy keys (E2a, docs/auth/04 §2.5 — new keys, no
+	// new roles). These are the galgame.game entity's review/propose gates in
+	// the unified editing engine; the strangler adapter also grants them
+	// situationally (e.g. the entity creator merging a PR on their own galgame,
+	// a submitter fixing vndb_id on their own draft) — the bundles below are
+	// only the ROLE-carried grants.
+
+	// EditGameReview: adjudicate galgame.game proposals (merge / decline /
+	// amend / revert) — the engine-era successor of the owner-or-admin
+	// override on PR merge/decline/revert, so it follows the OwnerOverride
+	// axis (admin/ren, not moderator).
+	EditGameReview authz.Permission = "edit.galgame.game.review"
+	// EditGameStatus: direct-edit the galgame.game.status management field
+	// (approve / decline / ban / unban transitions land as engine direct
+	// edits). Follows the AdminAccess axis (moderator+).
+	EditGameStatus authz.Permission = "edit.galgame.game.status"
+	// EditGameVNDBID: change galgame.game.vndb_id. The squatting lesson makes
+	// this staff-only on published entries (EditAny axis, moderator+); a
+	// submitter fixing their own unpublished draft gets it granted by the
+	// adapter, not by role.
+	EditGameVNDBID authz.Permission = "edit.galgame.game.vndb_id"
 )
 
 // moderatorPerms is everything content-moderation staff can do in the galgame
@@ -60,10 +82,13 @@ var moderatorPerms = []authz.Permission{
 	TaxonomyEditAny,
 	TaxonomyReview,
 	SearchAllStates,
+	EditGameStatus,
+	EditGameVNDBID,
 }
 
-// adminPerms adds the owner-or-admin override on top of the moderator bundle.
-var adminPerms = append(append([]authz.Permission{}, moderatorPerms...), OwnerOverride)
+// adminPerms adds the owner-or-admin override — and its editing-engine
+// successor, the galgame.game review key — on top of the moderator bundle.
+var adminPerms = append(append([]authz.Permission{}, moderatorPerms...), OwnerOverride, EditGameReview)
 
 // Bundles is the galgame domain's role→permission table. Only the four
 // grantable roles appear; `user` is implicit (login, handled by JWTAuth) and

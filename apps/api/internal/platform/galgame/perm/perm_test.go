@@ -23,6 +23,11 @@ var goldenGrants = map[authz.Permission][]string{
 	perm.TaxonomyReview:  {"moderator", "admin", "ren"},
 	perm.SearchAllStates: {"moderator", "admin", "ren"},
 	perm.OwnerOverride:   {"admin", "ren"},
+	// Editing-engine keys (E2a): review follows the OwnerOverride axis,
+	// status/vndb_id follow the management (moderator+) axis.
+	perm.EditGameReview: {"admin", "ren"},
+	perm.EditGameStatus: {"moderator", "admin", "ren"},
+	perm.EditGameVNDBID: {"moderator", "admin", "ren"},
 }
 
 // allRoles is every role name the golden table is asserted against. It includes

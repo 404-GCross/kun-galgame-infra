@@ -140,90 +140,33 @@ func ApplySnapshot(tx *gorm.DB, galgameID, userID int, snapshot *model.Snapshot)
 	// bulk edits. Still a complete authoritative write (§1.5 #2). See
 	// reconcileSet. Links / covers / screenshots below intentionally keep the
 	// clear-and-rebuild path (order-significant / mutable per-row payload).
-	if err := reconcileSet(tx, "galgame_id", galgameID, "name", snapshot.Aliases,
-		func(name string) model.GalgameAlias {
-			return model.GalgameAlias{GalgameID: galgameID, Name: name}
-		}); err != nil {
+	// Each relation write is an exported per-field helper (apply_fields.go)
+	// shared with the editing engine's galgame.game Apply closures (E2a).
+	if err := ReconcileAliases(tx, galgameID, snapshot.Aliases); err != nil {
 		return err
 	}
-	if err := reconcileSet(tx, "galgame_id", galgameID, "tag_id", snapshot.TagIDs,
-		func(id int) model.GalgameTagRelation {
-			return model.GalgameTagRelation{GalgameID: galgameID, TagID: id}
-		}); err != nil {
+	if err := ReconcileTagIDs(tx, galgameID, snapshot.TagIDs); err != nil {
 		return err
 	}
-	if err := reconcileSet(tx, "galgame_id", galgameID, "official_id", snapshot.OfficialIDs,
-		func(id int) model.GalgameOfficialRelation {
-			return model.GalgameOfficialRelation{GalgameID: galgameID, OfficialID: id}
-		}); err != nil {
+	if err := ReconcileOfficialIDs(tx, galgameID, snapshot.OfficialIDs); err != nil {
 		return err
 	}
-	if err := reconcileSet(tx, "galgame_id", galgameID, "engine_id", snapshot.EngineIDs,
-		func(id int) model.GalgameEngineRelation {
-			return model.GalgameEngineRelation{GalgameID: galgameID, EngineID: id}
-		}); err != nil {
+	if err := ReconcileEngineIDs(tx, galgameID, snapshot.EngineIDs); err != nil {
 		return err
 	}
 
-	// 6. Rebuild links (use the current user as link owner)
-	if err := tx.Where("galgame_id = ?", galgameID).Delete(&model.GalgameLink{}).Error; err != nil {
+	// 6. Rebuild links (use the current user as link owner).
+	if err := RebuildLinks(tx, galgameID, userID, snapshot.Links); err != nil {
 		return err
-	}
-	for _, link := range snapshot.Links {
-		if err := tx.Create(&model.GalgameLink{
-			GalgameID: galgameID,
-			UserID:    userID,
-			Name:      link.Name,
-			Link:      link.Link,
-			Source:    link.Source,
-			SourceKey: link.SourceKey,
-		}).Error; err != nil {
-			return err
-		}
 	}
 
-	// 7. Rebuild cover candidate set. Same clear-and-rebuild discipline as
-	// the other relations — `galgame_cover` is a fully editable Snapshot
-	// field, not a derived index. Partial unique index
-	// `idx_galgame_cover_pinned` (galgame_id) WHERE sort_order=0 is
-	// enforced by Postgres: the snapshot must contain at most one row
-	// with SortOrder=0 per galgame, or this Create fails.
-	if err := tx.Where("galgame_id = ?", galgameID).Delete(&model.GalgameCover{}).Error; err != nil {
+	// 7. Rebuild the cover candidate set (`galgame_cover` is a fully editable
+	// Snapshot field, not a derived index; the pinned partial unique index is
+	// enforced by Postgres — see RebuildCovers).
+	if err := RebuildCovers(tx, galgameID, snapshot.Covers); err != nil {
 		return err
-	}
-	for _, c := range snapshot.Covers {
-		if err := tx.Create(&model.GalgameCover{
-			GalgameID: galgameID,
-			ImageHash: c.ImageHash,
-			SortOrder: c.SortOrder,
-			Sexual:    c.Sexual,
-			Violence:  c.Violence,
-			Source:    c.Source,
-			SourceKey: c.SourceKey,
-			Kind:      c.Kind,
-		}).Error; err != nil {
-			return err
-		}
 	}
 
 	// 8. Rebuild gallery / screenshots.
-	if err := tx.Where("galgame_id = ?", galgameID).Delete(&model.GalgameScreenshot{}).Error; err != nil {
-		return err
-	}
-	for _, sh := range snapshot.Screenshots {
-		if err := tx.Create(&model.GalgameScreenshot{
-			GalgameID: galgameID,
-			ImageHash: sh.ImageHash,
-			SortOrder: sh.SortOrder,
-			Caption:   sh.Caption,
-			Sexual:    sh.Sexual,
-			Violence:  sh.Violence,
-			Source:    sh.Source,
-			SourceKey: sh.SourceKey,
-		}).Error; err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return RebuildScreenshots(tx, galgameID, snapshot.Screenshots)
 }
