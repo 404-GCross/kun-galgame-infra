@@ -760,6 +760,147 @@ func TestWorkIntro(t *testing.T) {
 	assert.Empty(t, body["data"].(map[string]any)["intro"].([]any), "strict XOR: no fallback to native rows")
 }
 
+// galgameCoverStubIDs are the fixture galgame body ids used by the claimed
+// cover bridge (kept distinct from galgameStubIDs so the two media tests never
+// collide on shared galgame ids).
+var galgameCoverStubIDs = []int64{6001, 6002}
+
+// ensureGalgameCoverStub provisions the galgame_cover table the claimed-cover
+// bridge joins against. In prod/rehearsal galgame_cover lives in kun_catalog
+// alongside catalog; the catalog test DB has no such table, so this creates a
+// stub (image_hash text — short test hashes — rather than the real char(64);
+// the bridge's TrimSpace makes both equivalent). CREATE ... IF NOT EXISTS is a
+// no-op against a real table; cleanup is a targeted DELETE. Idempotent.
+func ensureGalgameCoverStub(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	require.NoError(t, db.Exec(`CREATE TABLE IF NOT EXISTS galgame_cover (
+		galgame_id bigint NOT NULL,
+		image_hash text NOT NULL,
+		sort_order int NOT NULL DEFAULT 0,
+		kind text NOT NULL DEFAULT '',
+		portrait_pinned boolean NOT NULL DEFAULT false,
+		sexual smallint NOT NULL DEFAULT 0,
+		violence smallint NOT NULL DEFAULT 0,
+		source text NOT NULL DEFAULT '',
+		PRIMARY KEY (galgame_id, image_hash)
+	)`).Error)
+	require.NoError(t, db.Exec(`DELETE FROM galgame_cover WHERE galgame_id IN ?`, galgameCoverStubIDs).Error)
+}
+
+// insertGalgameCover inserts one fixture galgame_cover row.
+func insertGalgameCover(t *testing.T, db *gorm.DB, galgameID int64, hash string, sortOrder int, kind string, portrait bool, sexual, violence int16, source string) {
+	t.Helper()
+	require.NoError(t, db.Exec(`INSERT INTO galgame_cover
+		(galgame_id, image_hash, sort_order, kind, portrait_pinned, sexual, violence, source)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		galgameID, hash, sortOrder, kind, portrait, sexual, violence, source).Error)
+}
+
+// TestWorkCover pins the step-53 media-aggregation cover read face: the CLAIMED
+// bridge (galgame_cover mapped to the unified shape, with the PORTRAIT pin and
+// per-row source mapping ""→galgame_wiki / vndb→vndb / upscale→upscale), the
+// BODYLESS native read (catalog_work_cover), strict XOR (a claimed work with no
+// galgame cover yields [] and never falls back to a shadow native row), and
+// []-not-null serialization. Sorted by (sort_order, image_hash).
+func TestWorkCover(t *testing.T) {
+	db := openCatalogTestDB(t)
+	ensureGalgameStub(t, db)      // the intro bridge (also run by loadWorkDetail) needs galgame
+	ensureGalgameCoverStub(t, db) // the cover bridge needs galgame_cover (clears covers for 6001/6002)
+	// galgame_cover carries an FK to galgame(id) in the shared test DB, so the
+	// bridge galgame ids need a parent body row. Covers cleared above → safe to
+	// reset the parents. Empty intros keep the co-loaded intro bridge a no-op.
+	require.NoError(t, db.Exec(`DELETE FROM galgame WHERE id IN ?`, galgameCoverStubIDs).Error)
+	insertGalgameBody(t, db, 6001, 0, "", "", "", "")
+	insertGalgameBody(t, db, 6002, 0, "", "", "", "")
+	for _, tbl := range []string{"catalog_work_cover", "catalog_work"} {
+		require.NoError(t, db.Exec("TRUNCATE "+tbl+" RESTART IDENTITY CASCADE").Error)
+	}
+	// Source ids from the seed: galgame_wiki=12, vndb=2, upscale=13, user=1.
+	var srcGalgameWiki, srcVNDB, srcUpscale, srcUser int16
+	db.Raw("SELECT id FROM catalog_source WHERE key='galgame_wiki'").Scan(&srcGalgameWiki)
+	db.Raw("SELECT id FROM catalog_source WHERE key='vndb'").Scan(&srcVNDB)
+	db.Raw("SELECT id FROM catalog_source WHERE key='upscale'").Scan(&srcUpscale)
+	db.Raw("SELECT id FROM catalog_source WHERE key='user'").Scan(&srcUser)
+	require.NotZero(t, srcUpscale, "upscale source must be seeded (step 53)")
+
+	// --- CLAIMED work: covers bridged from galgame_cover (galgame_id 6001).
+	//   sort_order 0: a landscape vndb cover (source=vndb → vndb)
+	//   sort_order 1: the PORTRAIT-pinned upscale cover (source=upscale → upscale)
+	//   sort_order 2: a user upload (source='' → galgame_wiki)
+	claimed := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "主張作品", ContentRating: 0, Status: 0,
+		Site: strptr("galgame_wiki"), ProductWorkID: ptrI64(6001)}
+	require.NoError(t, db.Create(&claimed).Error)
+	insertGalgameCover(t, db, 6001, "hash_vndb_landscape", 0, "main", false, 1, 0, "vndb")
+	insertGalgameCover(t, db, 6001, "hash_upscale_portrait", 1, "", true, 0, 0, "upscale")
+	insertGalgameCover(t, db, 6001, "hash_user_extra", 2, "", false, 0, 0, "")
+
+	// --- BODYLESS work: native catalog_work_cover rows.
+	bodyless := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "無体作品", ContentRating: 0, Status: 0}
+	require.NoError(t, db.Create(&bodyless).Error)
+	require.NoError(t, db.Create(&model.CatalogWorkCover{
+		WorkID: bodyless.ID, ImageHash: "hash_bodyless_pin", SortOrder: 0, Kind: "pkgfront",
+		PortraitPinned: true, Sexual: 2, Violence: 0, SourceID: srcVNDB}).Error)
+	require.NoError(t, db.Create(&model.CatalogWorkCover{
+		WorkID: bodyless.ID, ImageHash: "hash_bodyless_extra", SortOrder: 1, SourceID: srcUser}).Error)
+
+	// --- XOR work: claimed (galgame_id 6002) but galgame_cover empty; a SHADOW
+	// native catalog_work_cover row exists (a prior bodyless state) and must NEVER
+	// surface.
+	xor := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "空主張", ContentRating: 0, Status: 0,
+		Site: strptr("galgame_wiki"), ProductWorkID: ptrI64(6002)}
+	require.NoError(t, db.Create(&xor).Error)
+	require.NoError(t, db.Create(&model.CatalogWorkCover{
+		WorkID: xor.ID, ImageHash: "hash_shadow_must_not_appear", SortOrder: 0, SourceID: srcVNDB}).Error)
+
+	// --- EMPTY work: bodyless, no covers → [].
+	empty := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "空作品", ContentRating: 0, Status: 0}
+	require.NoError(t, db.Create(&empty).Error)
+
+	app := readApp(service.NewReadService(db), nil)
+
+	// CLAIMED: three covers, sorted by (sort_order, image_hash); source mapped.
+	code, body := getJSON(t, app, "/api/v1/catalog/works/"+itoa(claimed.ID))
+	require.Equal(t, 200, code)
+	covers := body["data"].(map[string]any)["covers"].([]any)
+	require.Len(t, covers, 3, "three galgame_cover rows bridged")
+	c0 := covers[0].(map[string]any)
+	assert.Equal(t, "hash_vndb_landscape", c0["image_hash"])
+	assert.EqualValues(t, 0, c0["sort_order"])
+	assert.Equal(t, false, c0["portrait_pinned"])
+	assert.EqualValues(t, srcVNDB, c0["source_id"], "vndb source mapped")
+	assert.EqualValues(t, 1, c0["sexual"])
+	c1 := covers[1].(map[string]any)
+	assert.Equal(t, "hash_upscale_portrait", c1["image_hash"])
+	assert.Equal(t, true, c1["portrait_pinned"], "the portrait pin surfaces")
+	assert.EqualValues(t, srcUpscale, c1["source_id"], "upscale source mapped to new seed 13")
+	c2 := covers[2].(map[string]any)
+	assert.Equal(t, "hash_user_extra", c2["image_hash"])
+	assert.EqualValues(t, srcGalgameWiki, c2["source_id"], "empty galgame_cover.source → galgame_wiki")
+
+	// BODYLESS: native rows, sorted; a portrait pin + a plain cover.
+	code, body = getJSON(t, app, "/api/v1/catalog/works/"+itoa(bodyless.ID))
+	require.Equal(t, 200, code)
+	covers = body["data"].(map[string]any)["covers"].([]any)
+	require.Len(t, covers, 2)
+	b0 := covers[0].(map[string]any)
+	assert.Equal(t, "hash_bodyless_pin", b0["image_hash"])
+	assert.Equal(t, true, b0["portrait_pinned"])
+	assert.Equal(t, "pkgfront", b0["kind"])
+	assert.EqualValues(t, 2, b0["sexual"])
+	assert.EqualValues(t, srcVNDB, b0["source_id"])
+	assert.EqualValues(t, srcUser, covers[1].(map[string]any)["source_id"])
+
+	// XOR: claimed + empty galgame_cover → [] (the shadow native row is invisible).
+	code, body = getJSON(t, app, "/api/v1/catalog/works/"+itoa(xor.ID))
+	require.Equal(t, 200, code)
+	assert.Empty(t, body["data"].(map[string]any)["covers"].([]any), "strict XOR: no fallback to native rows")
+
+	// EMPTY: [] not null.
+	code, body = getJSON(t, app, "/api/v1/catalog/works/"+itoa(empty.ID))
+	require.Equal(t, 200, code)
+	assert.Empty(t, body["data"].(map[string]any)["covers"].([]any))
+}
+
 func ptrI16(v int16) *int16 { return &v }
 
 func ptrI64(v int64) *int64 { return &v }

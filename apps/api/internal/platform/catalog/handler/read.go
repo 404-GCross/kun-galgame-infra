@@ -121,6 +121,9 @@ func buildWorkResponse(detail *service.WorkDetail) dto.WorkByAnchorResponse {
 		// Intro pre-sized non-nil so a work with no intro (or a claimed work whose
 		// galgame body has none — strict XOR) serializes `[]`, not `null`.
 		Intro: make([]dto.WorkIntro, 0, len(detail.Intros)),
+		// Covers pre-sized non-nil so a work with no cover (or a claimed work whose
+		// galgame body has none — strict XOR) serializes `[]`, not `null`.
+		Covers: make([]dto.WorkCover, 0, len(detail.Covers)),
 	}
 	if detail.Work.Site != nil {
 		resp.Work.Site = *detail.Work.Site
@@ -170,6 +173,12 @@ func buildWorkResponse(detail *service.WorkDetail) dto.WorkByAnchorResponse {
 	}
 	for _, in := range detail.Intros {
 		resp.Intro = append(resp.Intro, dto.WorkIntro{Lang: in.Lang, Intro: in.Intro, SourceID: in.SourceID})
+	}
+	for _, cv := range detail.Covers {
+		resp.Covers = append(resp.Covers, dto.WorkCover{
+			ImageHash: cv.ImageHash, Kind: cv.Kind, PortraitPinned: cv.PortraitPinned,
+			SortOrder: cv.SortOrder, Sexual: cv.Sexual, Violence: cv.Violence, SourceID: cv.SourceID,
+		})
 	}
 	return resp
 }

@@ -126,6 +126,12 @@ func sources() []model.CatalogSource {
 		// galgame.intro_* and attributed to this source (step 52, refs/proj/51
 		// §8.C). First-party product → trust_tier 0.
 		{ID: 12, Key: "galgame_wiki", TrustTier: 0, Note: "first-party galgame wiki product (bridged media provenance)"},
+		// upscale is the first-party DERIVED cover source: galgame_cover rows whose
+		// source='upscale' are AI-upscaled portrait covers produced inside the
+		// galgame wiki. The cover bridge (step 53, refs/proj/51 §8.C) maps that
+		// source text to this catalog_source id so a bridged upscaled cover carries
+		// honest provenance. First-party derivation → trust_tier 0.
+		{ID: 13, Key: "upscale", TrustTier: 0, Note: "first-party AI-upscaled cover derivation (galgame_cover.source='upscale')"},
 	}
 }
 

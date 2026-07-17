@@ -25,16 +25,23 @@ func DefaultCatalogImageRefpingOpts() CatalogImageRefpingOpts {
 	return CatalogImageRefpingOpts{Batch: 1000, Timeout: 30 * time.Minute}
 }
 
-// RunCatalogImageRefping keeps catalog CHARACTER portraits alive in the image
-// service (TTL: >365d unreferenced → soft-deleted, +30d → physical delete).
-// Portraits are set-once (step-48 backfill), so without this daily ping they
-// only ever get the single upload-time TTL touch and vanish ~13 months later —
-// the exact "refping site-scope GC fuse" failure that froze 66k galgame images.
+// RunCatalogImageRefping keeps catalog-scope images alive in the image service
+// (TTL: >365d unreferenced → soft-deleted, +30d → physical delete). These
+// images are set-once, so without this daily ping they only ever get the single
+// upload-time TTL touch and vanish ~13 months later — the exact "refping
+// site-scope GC fuse" failure that froze 66k galgame images.
 //
-// The hash universe is simply the current catalog_character.image_hash set (a
-// portrait is referenced iff a live character still points at it). Reference-ping
-// is SITE-SCOPED, so this MUST authenticate as the catalog image client (site_key
-// "catalog"); any other identity 404s every hash and the portraits rot.
+// The catalog-scope hash universe is two sources (step 53, refs/proj/51 §4):
+//  1. catalog_character.image_hash — VNDB portrait wave (step 48).
+//  2. catalog_work_cover.image_hash — bodyless cover backfill (step 53), ALL
+//     rows INCLUDING those shadowed by a later claim (§8.B shadow-never-delete):
+//     a shadowed cover's bytes stay in catalog scope until an explicit handoff,
+//     so a missed shadowed row = GC eats a live image. (Claimed works' bridged
+//     covers live in the galgame_wiki scope and are pinged by the SEPARATE
+//     galgame-image-refping, not here — byte discipline §4.)
+//
+// Reference-ping is SITE-SCOPED, so this MUST authenticate as the catalog image
+// client (site_key "catalog"); any other identity 404s every hash and the images rot.
 //
 // Not-yet-provisioned tolerance: until the catalog image client + env are wired,
 // CatalogImageClient is empty. Rather than fail the scheduled run daily (alert
@@ -65,9 +72,9 @@ func RunCatalogImageRefping(ctx context.Context, cfg *config.Config, opts Catalo
 
 	hashes, err := collectCatalogRefpingHashes(ctx, db.DB())
 	if err != nil {
-		return nil, fmt.Errorf("collect catalog portrait hashes: %w", err)
+		return nil, fmt.Errorf("collect catalog image hashes: %w", err)
 	}
-	slog.Info("catalog-image-refping: collected portrait hashes", "count", len(hashes))
+	slog.Info("catalog-image-refping: collected catalog-scope hashes", "count", len(hashes))
 	if len(hashes) == 0 {
 		return Summary{"distinct_hashes": 0, "note": "nothing to ping"}, nil
 	}
@@ -130,15 +137,27 @@ func RunCatalogImageRefping(ctx context.Context, cfg *config.Config, opts Catalo
 }
 
 // collectCatalogRefpingHashes returns the deduped set of every non-empty
-// image_hash on a LIVE catalog character. Soft-deleted characters are excluded
-// (their portrait may legitimately age out). This is the whole referenced-hash
-// universe for the catalog site — portraits have exactly one source (the
-// character row), unlike galgame images which also live in revision/PR snapshots.
+// catalog-scope image_hash: LIVE character portraits UNIONed with EVERY
+// catalog_work_cover row (step 53).
+//
+//   - Soft-deleted characters are excluded (their portrait may legitimately age
+//     out) — a portrait is referenced iff a live character still points at it.
+//   - catalog_work_cover is taken in FULL — no claim/shadow filter (§8.B
+//     shadow-never-delete): a bodyless cover row that a later claim shadowed
+//     still owns bytes in the catalog scope, so it MUST keep being pinged.
+//     Missing it = GC eats a live image (the 66k-frozen failure class).
+//
+// Unlike galgame images (which also live in revision/PR snapshots), catalog
+// media has exactly one home row each, so this is the whole referenced universe.
 func collectCatalogRefpingHashes(ctx context.Context, db *gorm.DB) ([]string, error) {
 	const q = `
-SELECT DISTINCT image_hash
-FROM catalog_character
-WHERE image_hash IS NOT NULL AND image_hash <> '' AND deleted_at IS NULL
+SELECT DISTINCT hash FROM (
+    SELECT image_hash AS hash FROM catalog_character
+    WHERE image_hash IS NOT NULL AND image_hash <> '' AND deleted_at IS NULL
+    UNION
+    SELECT image_hash FROM catalog_work_cover
+    WHERE image_hash IS NOT NULL AND image_hash <> ''
+) u
 `
 	var hashes []string
 	if err := db.WithContext(ctx).Raw(q).Scan(&hashes).Error; err != nil {

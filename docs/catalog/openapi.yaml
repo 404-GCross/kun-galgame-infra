@@ -1738,6 +1738,12 @@ components:
           type:
             - array
             - "null"
+        covers:
+          items:
+            $ref: "#/components/schemas/WorkCover"
+          type:
+            - array
+            - "null"
         intro:
           items:
             $ref: "#/components/schemas/WorkIntro"
@@ -1778,6 +1784,7 @@ components:
         - refs
         - characters
         - intro
+        - covers
       type: object
     WorkCharacter:
       additionalProperties: false
@@ -1860,6 +1867,41 @@ components:
         - olang
         - content_rating
         - status
+      type: object
+    WorkCover:
+      additionalProperties: false
+      properties:
+        image_hash:
+          type: string
+        kind:
+          type: string
+        portrait_pinned:
+          description: true = the vertical portrait pin (portrait-first UI)
+          type: boolean
+        sexual:
+          description: "content flag: 0=safe 1=suggestive 2=explicit"
+          format: int32
+          type: integer
+        sort_order:
+          description: gallery/pin position; 0 = pinned landscape banner
+          format: int64
+          type: integer
+        source_id:
+          description: "catalog_source id (provenance): galgame_wiki/vndb/bangumi/upscale for a bridged claimed cover, the backfill source for a bodyless cover"
+          format: int32
+          type: integer
+        violence:
+          description: "content flag: 0=safe 1=suggestive 2=explicit"
+          format: int32
+          type: integer
+      required:
+        - image_hash
+        - kind
+        - portrait_pinned
+        - sort_order
+        - sexual
+        - violence
+        - source_id
       type: object
     WorkCreditsResponse:
       additionalProperties: false

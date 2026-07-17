@@ -1252,6 +1252,7 @@ export interface components {
         };
         WorkByAnchorResponse: {
             characters: components["schemas"]["WorkCharacter"][] | null;
+            covers: components["schemas"]["WorkCover"][] | null;
             intro: components["schemas"]["WorkIntro"][] | null;
             labels: components["schemas"]["WorkLabel"][] | null;
             refs: components["schemas"]["WorkRef"][] | null;
@@ -1304,6 +1305,32 @@ export interface components {
              * @description 0=live 1=stub 2=merged
              */
             status: number;
+        };
+        WorkCover: {
+            image_hash: string;
+            kind: string;
+            /** @description true = the vertical portrait pin (portrait-first UI) */
+            portrait_pinned: boolean;
+            /**
+             * Format: int32
+             * @description content flag: 0=safe 1=suggestive 2=explicit
+             */
+            sexual: number;
+            /**
+             * Format: int64
+             * @description gallery/pin position; 0 = pinned landscape banner
+             */
+            sort_order: number;
+            /**
+             * Format: int32
+             * @description catalog_source id (provenance): galgame_wiki/vndb/bangumi/upscale for a bridged claimed cover, the backfill source for a bodyless cover
+             */
+            source_id: number;
+            /**
+             * Format: int32
+             * @description content flag: 0=safe 1=suggestive 2=explicit
+             */
+            violence: number;
         };
         WorkCreditsResponse: {
             groups: components["schemas"]["CreditGroup"][] | null;

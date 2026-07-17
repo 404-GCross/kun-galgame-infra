@@ -20,6 +20,30 @@ const sourceKeyDlsite = "dlsite"
 // product whose body the intro is read from.
 const sourceKeyGalgameWiki = "galgame_wiki"
 
+// Cover-bridge provenance keys (step 53, §8.C): galgame_cover carries a `source`
+// TEXT column, so — unlike the intro bridge which has no per-source column and
+// attributes everything to galgame_wiki — the cover bridge preserves the finer
+// upstream provenance the wiki already records.
+const (
+	sourceKeyVNDB    = "vndb"
+	sourceKeyBangumi = "bangumi"
+	sourceKeyUpscale = "upscale"
+)
+
+// coverSourceKeyByGalgame maps a galgame_cover.source text value to the
+// catalog_source key its bridged cover is attributed to. Empty source (a wiki
+// user upload) is first-party galgame_wiki, consistent with the intro bridge;
+// vndb/bangumi keep their upstream provenance; upscale is the first-party
+// DERIVED source seeded for this wave. An UNRECOGNIZED value falls back to
+// galgame_wiki (a claimed cover is always part of the wiki body — never
+// dropped, never mis-attributed to a wrong upstream).
+var coverSourceKeyByGalgame = map[string]string{
+	"":               sourceKeyGalgameWiki,
+	sourceKeyVNDB:    sourceKeyVNDB,
+	sourceKeyBangumi: sourceKeyBangumi,
+	sourceKeyUpscale: sourceKeyUpscale,
+}
+
 // siteGalgameWiki is the catalog_work.site of a galgame-wiki-claimed work — the
 // claim key whose media the read face bridges rather than copies (§2).
 const siteGalgameWiki = "galgame_wiki"
@@ -64,6 +88,13 @@ type WorkDetail struct {
 	// Strict XOR (§8.D): a claimed work reads ONLY the bridge — no fallback to
 	// native rows — so galgame intros all-empty means an empty slice.
 	Intros []WorkIntroRow
+	// Covers is the merged cover set (step 53 media-aggregation wave II): for a
+	// CLAIMED work, bridged from galgame_cover (kind/portrait_pinned/sexual/
+	// violence as-is, source mapped from galgame_cover.source); for a BODYLESS
+	// work, its catalog_work_cover rows. Same strict XOR as Intros. The PORTRAIT
+	// covers (portrait_pinned=true) are the value kungal/moyu read for the
+	// portrait-first UI.
+	Covers []WorkCoverRow
 }
 
 // WorkIntroRow is one language's intro on a work's read face, carrying its
@@ -72,6 +103,20 @@ type WorkIntroRow struct {
 	Lang     string
 	Intro    string
 	SourceID int16
+}
+
+// WorkCoverRow is one cover on a work's read face — the unified shape the
+// claimed bridge (galgame_cover) and the bodyless native table
+// (catalog_work_cover) both project into. PortraitPinned flags the vertical
+// portrait pin; SourceID is the provenance (§8.C).
+type WorkCoverRow struct {
+	ImageHash      string
+	Kind           string
+	PortraitPinned bool
+	SortOrder      int
+	Sexual         int16
+	Violence       int16
+	SourceID       int16
 }
 
 // WorkCharacterRow is one character on a work's roster, merging the roster edge
@@ -259,20 +304,29 @@ func (s *ReadService) loadWorkDetail(ctx context.Context, workID int64) (*WorkDe
 	}
 	detail.Characters = chars
 
-	// Intro: bridged (claimed) XOR native (bodyless). loadWorkIntros is batched
-	// by construction (claimed pivot in one query, bodyless in one) so this same
-	// path serves a future multi-work list read with no N+1.
-	intros, err := s.loadWorkIntros(ctx, []introSubject{{WorkID: work.ID, Site: work.Site, ProductWorkID: work.ProductWorkID}})
+	// Intro + covers: bridged (claimed) XOR native (bodyless). Both loaders are
+	// batched by construction (claimed pivot/bridge in one query, bodyless in one)
+	// so this same path serves a future multi-work list read with no N+1.
+	subj := claimSubject{WorkID: work.ID, Site: work.Site, ProductWorkID: work.ProductWorkID}
+	intros, err := s.loadWorkIntros(ctx, []claimSubject{subj})
 	if err != nil {
 		return nil, err
 	}
 	detail.Intros = intros[work.ID]
+
+	covers, err := s.loadWorkCovers(ctx, []claimSubject{subj})
+	if err != nil {
+		return nil, err
+	}
+	detail.Covers = covers[work.ID]
 	return detail, nil
 }
 
-// introSubject identifies a work for the intro merge: its id plus the claim
-// state that decides which source (bridge vs native) it reads from.
-type introSubject struct {
+// claimSubject identifies a work for the media merge (intro / covers): its id
+// plus the claim state that decides which source (bridge vs native) it reads
+// from. Shared by loadWorkIntros and loadWorkCovers — the claimed/bodyless
+// partition is identical for every media type.
+type claimSubject struct {
 	WorkID        int64
 	Site          *string
 	ProductWorkID *int64
@@ -292,7 +346,7 @@ type introSubject struct {
 // Batched (§9.1): claimed works pivot in one galgame query, bodyless works read
 // in one catalog_work_intro query — never per-work. Returns a map keyed by work
 // id; a work with no intro is simply absent (the caller renders []).
-func (s *ReadService) loadWorkIntros(ctx context.Context, subjects []introSubject) (map[int64][]WorkIntroRow, error) {
+func (s *ReadService) loadWorkIntros(ctx context.Context, subjects []claimSubject) (map[int64][]WorkIntroRow, error) {
 	out := make(map[int64][]WorkIntroRow, len(subjects))
 
 	// Partition by claim state. Claimed works carry the galgame body id in
@@ -406,6 +460,146 @@ func (s *ReadService) nativeWorkIntros(ctx context.Context, workIDs []int64, out
 // sortIntros orders intro elements by language for a deterministic read face.
 func sortIntros(intros []WorkIntroRow) {
 	sort.Slice(intros, func(i, j int) bool { return intros[i].Lang < intros[j].Lang })
+}
+
+// loadWorkCovers assembles the cover set for a set of works, honoring the same
+// media-aggregation contract as loadWorkIntros (refs/proj/51, step 53):
+//
+//   - CLAIMED (site='galgame_wiki'): bridge from galgame_cover — kind /
+//     portrait_pinned / sexual / violence as-is, source mapped from
+//     galgame_cover.source (coverSourceKeyByGalgame). Bridge-not-copy (§2):
+//     galgame_cover rows are never materialized into catalog_work_cover, and the
+//     bridged bytes are never re-uploaded (they stay in the galgame_wiki scope).
+//   - BODYLESS (site=”/NULL): the work's catalog_work_cover rows (bytes in the
+//     catalog image scope).
+//   - Strict XOR (§8.D): a claimed work reads ONLY the bridge; it never falls
+//     back to native rows even if it still has shadowed ones (shadow-never-delete).
+//
+// Batched (§9.1): claimed works bridge in one galgame_cover query, bodyless works
+// read in one catalog_work_cover query — never per-work. Each work's covers are
+// ordered by (sort_order, image_hash). Returns a map keyed by work id; a work
+// with no cover is absent (the caller renders []).
+func (s *ReadService) loadWorkCovers(ctx context.Context, subjects []claimSubject) (map[int64][]WorkCoverRow, error) {
+	out := make(map[int64][]WorkCoverRow, len(subjects))
+
+	var bodylessIDs []int64
+	galgameToWork := make(map[int64]int64) // galgame.id → catalog_work.id
+	var galgameIDs []int64
+	for _, sub := range subjects {
+		if sub.Site != nil && *sub.Site == siteGalgameWiki {
+			if sub.ProductWorkID != nil { // claimed rows always fill product_work_id
+				galgameToWork[*sub.ProductWorkID] = sub.WorkID
+				galgameIDs = append(galgameIDs, *sub.ProductWorkID)
+			}
+			continue // strict XOR: claimed works never read native rows
+		}
+		bodylessIDs = append(bodylessIDs, sub.WorkID)
+	}
+
+	if len(galgameIDs) > 0 {
+		if err := s.bridgeGalgameCovers(ctx, galgameIDs, galgameToWork, out); err != nil {
+			return nil, err
+		}
+	}
+	if len(bodylessIDs) > 0 {
+		if err := s.nativeWorkCovers(ctx, bodylessIDs, out); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
+// bridgeGalgameCovers reads the claimed works' galgame_cover rows in ONE query
+// and maps each to the unified cover shape, resolving galgame_cover.source →
+// catalog_source id (coverSourceKeyByGalgame). Rows come back ordered so each
+// work's covers are already (sort_order, image_hash)-sorted on append.
+func (s *ReadService) bridgeGalgameCovers(ctx context.Context, galgameIDs []int64, galgameToWork map[int64]int64, out map[int64][]WorkCoverRow) error {
+	db := s.db.WithContext(ctx)
+
+	// Resolve every catalog_source key the source map can produce, in one query.
+	srcIDByKey, err := s.sourceIDsByKey(ctx, []string{sourceKeyGalgameWiki, sourceKeyVNDB, sourceKeyBangumi, sourceKeyUpscale})
+	if err != nil {
+		return err
+	}
+	fallbackSrc := srcIDByKey[sourceKeyGalgameWiki]
+
+	var rows []struct {
+		GalgameID      int64  `gorm:"column:galgame_id"`
+		ImageHash      string `gorm:"column:image_hash"`
+		SortOrder      int    `gorm:"column:sort_order"`
+		Kind           string `gorm:"column:kind"`
+		PortraitPinned bool   `gorm:"column:portrait_pinned"`
+		Sexual         int16  `gorm:"column:sexual"`
+		Violence       int16  `gorm:"column:violence"`
+		Source         string `gorm:"column:source"`
+	}
+	if err := db.Raw(`SELECT galgame_id, image_hash, sort_order, kind, portrait_pinned, sexual, violence, source
+		FROM galgame_cover WHERE galgame_id IN ?
+		ORDER BY galgame_id, sort_order, image_hash`, galgameIDs).Scan(&rows).Error; err != nil {
+		return err
+	}
+	for _, r := range rows {
+		workID, ok := galgameToWork[r.GalgameID]
+		if !ok {
+			continue
+		}
+		srcID := fallbackSrc
+		if key, known := coverSourceKeyByGalgame[r.Source]; known {
+			srcID = srcIDByKey[key]
+		}
+		out[workID] = append(out[workID], WorkCoverRow{
+			// image_hash is char(64) upstream (exactly filled by a sha-256, so no
+			// pad) — TrimSpace is a defensive no-op guarding a bad row.
+			ImageHash: strings.TrimSpace(r.ImageHash), Kind: r.Kind, PortraitPinned: r.PortraitPinned,
+			SortOrder: r.SortOrder, Sexual: r.Sexual, Violence: r.Violence, SourceID: srcID,
+		})
+	}
+	return nil
+}
+
+// nativeWorkCovers reads the bodyless works' catalog_work_cover rows in ONE
+// query, ordered so each work's covers are (sort_order, image_hash)-sorted.
+func (s *ReadService) nativeWorkCovers(ctx context.Context, workIDs []int64, out map[int64][]WorkCoverRow) error {
+	db := s.db.WithContext(ctx)
+	var rows []struct {
+		WorkID         int64  `gorm:"column:work_id"`
+		ImageHash      string `gorm:"column:image_hash"`
+		SortOrder      int    `gorm:"column:sort_order"`
+		Kind           string `gorm:"column:kind"`
+		PortraitPinned bool   `gorm:"column:portrait_pinned"`
+		Sexual         int16  `gorm:"column:sexual"`
+		Violence       int16  `gorm:"column:violence"`
+		SourceID       int16  `gorm:"column:source_id"`
+	}
+	if err := db.Raw(`SELECT work_id, image_hash, sort_order, kind, portrait_pinned, sexual, violence, source_id
+		FROM catalog_work_cover WHERE work_id IN ?
+		ORDER BY work_id, sort_order, image_hash`, workIDs).Scan(&rows).Error; err != nil {
+		return err
+	}
+	for _, r := range rows {
+		out[r.WorkID] = append(out[r.WorkID], WorkCoverRow{
+			ImageHash: r.ImageHash, Kind: r.Kind, PortraitPinned: r.PortraitPinned,
+			SortOrder: r.SortOrder, Sexual: r.Sexual, Violence: r.Violence, SourceID: r.SourceID,
+		})
+	}
+	return nil
+}
+
+// sourceIDsByKey resolves a set of catalog_source keys to their ids in one
+// query, returning a key→id map (absent keys are simply omitted).
+func (s *ReadService) sourceIDsByKey(ctx context.Context, keys []string) (map[string]int16, error) {
+	var rows []struct {
+		Key string `gorm:"column:key"`
+		ID  int16  `gorm:"column:id"`
+	}
+	if err := s.db.WithContext(ctx).Raw(`SELECT key, id FROM catalog_source WHERE key IN ?`, keys).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	m := make(map[string]int16, len(rows))
+	for _, r := range rows {
+		m[r.Key] = r.ID
+	}
+	return m, nil
 }
 
 // loadWorkCharacters assembles a work's roster (step 46) as the UNION of the

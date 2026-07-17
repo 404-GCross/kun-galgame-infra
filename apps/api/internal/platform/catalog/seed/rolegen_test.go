@@ -94,9 +94,9 @@ func findMapping(mappings []RoleMapSeed, sourceRole string) (RoleMapSeed, bool) 
 // seeds (the values themselves are pinned by refs/proj/02 and reviewed there).
 func TestHandSeedsIntegrity(t *testing.T) {
 	assert.Len(t, media(), 7)
-	// 11 pinned by refs/proj/02 + galgame_wiki (id 12) added in step 52 as the
-	// bridged-media provenance source for claimed works.
-	assert.Len(t, sources(), 12)
+	// 11 pinned by refs/proj/02 + galgame_wiki (id 12, step 52 bridged-media
+	// provenance) + upscale (id 13, step 53 derived-cover provenance).
+	assert.Len(t, sources(), 13)
 	// 13 pinned by refs/proj/02 + 3 symmetric character/setting-variation keys
 	// added in step 30 (shares_character / alternative_setting / alternative_version).
 	assert.Len(t, relationTypes(), 16)

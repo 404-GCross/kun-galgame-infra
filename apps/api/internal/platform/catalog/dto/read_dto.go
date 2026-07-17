@@ -30,6 +30,33 @@ type WorkByAnchorResponse struct {
 	// BODYLESS work's from its catalog_work_intro rows. Strict XOR: a claimed
 	// work with no galgame intro yields [] (never a fallback to native rows).
 	Intro []WorkIntro `json:"intro"`
+	// Covers is the work's cover set (step 53 media-aggregation wave II), one
+	// element per cover in a single shape regardless of source. A CLAIMED work's
+	// covers are bridged from galgame_cover; a BODYLESS work's from its
+	// catalog_work_cover rows. Strict XOR: a claimed work with no galgame cover
+	// yields [] (never a fallback to native rows). The PORTRAIT covers
+	// (portrait_pinned=true) are what kungal/moyu read for the portrait-first UI.
+	Covers []WorkCover `json:"covers"`
+}
+
+// WorkCover is one cover image on a work, in the unified media-aggregation
+// shape. image_hash keys the bytes in the image service (a claimed work's
+// bytes live in the galgame_wiki scope; a bodyless work's in the catalog
+// scope). portrait_pinned marks the vertical portrait pin. source_id
+// references the catalog_source registry (§8.C): a bridged claimed cover
+// carries its galgame_cover.source provenance (galgame_wiki / vndd / bangumi /
+// upscale), a bodyless cover its backfill source.
+type WorkCover struct {
+	ImageHash string `json:"image_hash"`
+	// Kind labels the cover type (main / pkgfront / dig / …); empty string =
+	// unknown / user upload (galgame_cover semantics).
+	Kind           string `json:"kind"`
+	PortraitPinned bool   `json:"portrait_pinned" doc:"true = the vertical portrait pin (portrait-first UI)"`
+	SortOrder      int    `json:"sort_order" doc:"gallery/pin position; 0 = pinned landscape banner"`
+	// Sexual/Violence are per-image content-rating flags: 0=safe 1=suggestive 2=explicit.
+	Sexual   int16 `json:"sexual" doc:"content flag: 0=safe 1=suggestive 2=explicit"`
+	Violence int16 `json:"violence" doc:"content flag: 0=safe 1=suggestive 2=explicit"`
+	SourceID int16 `json:"source_id" doc:"catalog_source id (provenance): galgame_wiki/vndb/bangumi/upscale for a bridged claimed cover, the backfill source for a bodyless cover"`
 }
 
 // WorkIntro is one language's intro on a work, with its provenance. source_id
