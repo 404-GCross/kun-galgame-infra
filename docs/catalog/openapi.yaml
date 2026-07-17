@@ -334,6 +334,452 @@ components:
         - name
         - lang
       type: object
+    EditActor:
+      additionalProperties: false
+      properties:
+        roles:
+          description: The user's roles as the product's JWT asserts them
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+        trust_tier:
+          description: Trust tier TL0-TL4 (doc 18)
+          format: int32
+          maximum: 4
+          minimum: 0
+          type: integer
+        user_id:
+          description: Product-side user id (the shared identity space)
+          format: int64
+          minimum: 1
+          type: integer
+      required:
+        - user_id
+      type: object
+    EditAmendRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EditAmendRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        actor:
+          $ref: "#/components/schemas/EditActor"
+        note:
+          maxLength: 2000
+          type: string
+        set:
+          additionalProperties: {}
+          description: Field-key → corrected value (change or add)
+          type: object
+        unset:
+          description: Field keys to reject from the patch
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+      required:
+        - actor
+      type: object
+    EditAmendmentView:
+      additionalProperties: false
+      properties:
+        amender_uid:
+          format: int64
+          type: integer
+        created_at:
+          format: date-time
+          type: string
+        id:
+          format: int64
+          type: integer
+        note:
+          type: string
+        seq:
+          format: int64
+          type: integer
+        set:
+          additionalProperties: {}
+          type: object
+        unset:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+      required:
+        - id
+        - seq
+        - amender_uid
+        - note
+        - created_at
+      type: object
+    EditDecisionRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EditDecisionRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        actor:
+          $ref: "#/components/schemas/EditActor"
+        note:
+          description: Merge note / decline reason (kept on the proposal)
+          maxLength: 2000
+          type: string
+      required:
+        - actor
+      type: object
+    EditDiffResponse:
+      additionalProperties: false
+      properties:
+        fields:
+          items:
+            $ref: "#/components/schemas/EditFieldDiffView"
+          type:
+            - array
+            - "null"
+        from_seq:
+          format: int64
+          type: integer
+        to_seq:
+          format: int64
+          type: integer
+      required:
+        - from_seq
+        - to_seq
+        - fields
+      type: object
+    EditFieldDiffView:
+      additionalProperties: false
+      properties:
+        diff_hint:
+          type: string
+        from: {}
+        key:
+          type: string
+        kind:
+          type: string
+        to: {}
+      required:
+        - key
+        - from
+        - to
+      type: object
+    EditProposalCreateRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EditProposalCreateRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        actor:
+          $ref: "#/components/schemas/EditActor"
+        entity_id:
+          format: int64
+          minimum: 1
+          type: integer
+        entity_type:
+          description: Registered entity type, e.g. catalog.work
+          minLength: 1
+          type: string
+        note:
+          maxLength: 2000
+          type: string
+        patch:
+          additionalProperties: {}
+          description: Field-key → new-value document (registered keys only)
+          type: object
+        site:
+          description: Filing tenant; must equal the client's catalog_site binding
+          minLength: 1
+          type: string
+      required:
+        - entity_type
+        - entity_id
+        - site
+        - patch
+        - actor
+      type: object
+    EditProposalCreateResponse:
+      additionalProperties: false
+      properties:
+        merged:
+          description: true when the direct-edit sugar landed the patch immediately
+          type: boolean
+        proposal:
+          $ref: "#/components/schemas/EditProposalView"
+        revision:
+          $ref: "#/components/schemas/EditRevisionView"
+          description: The produced revision when merged
+      required:
+        - proposal
+        - merged
+      type: object
+    EditProposalListResponse:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: "#/components/schemas/EditProposalView"
+          type:
+            - array
+            - "null"
+      required:
+        - items
+      type: object
+    EditProposalView:
+      additionalProperties: false
+      properties:
+        amendments:
+          description: Seq-ordered (detail endpoint only)
+          items:
+            $ref: "#/components/schemas/EditAmendmentView"
+          type:
+            - array
+            - "null"
+        base_revision_seq:
+          format: int64
+          type: integer
+        created_at:
+          format: date-time
+          type: string
+        decided_at:
+          format: date-time
+          type: string
+        decided_by_uid:
+          format: int64
+          type: integer
+        decision_note:
+          type: string
+        effective_patch:
+          additionalProperties: {}
+          description: patch ⊕ amendments (detail endpoint only)
+          type: object
+        entity_family:
+          type: string
+        entity_id:
+          format: int64
+          type: integer
+        entity_type:
+          type: string
+        id:
+          format: int64
+          type: integer
+        note:
+          type: string
+        patch:
+          additionalProperties: {}
+          type: object
+        proposer_uid:
+          format: int64
+          type: integer
+        site:
+          type: string
+        status:
+          type: string
+        updated_at:
+          format: date-time
+          type: string
+      required:
+        - id
+        - entity_family
+        - entity_type
+        - entity_id
+        - base_revision_seq
+        - patch
+        - proposer_uid
+        - note
+        - site
+        - status
+        - created_at
+        - updated_at
+      type: object
+    EditRevertRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EditRevertRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        actor:
+          $ref: "#/components/schemas/EditActor"
+        entity_id:
+          format: int64
+          minimum: 1
+          type: integer
+        entity_type:
+          minLength: 1
+          type: string
+        note:
+          maxLength: 2000
+          type: string
+        site:
+          minLength: 1
+          type: string
+        to_seq:
+          description: Target revision seq to restore
+          format: int64
+          minimum: 1
+          type: integer
+      required:
+        - entity_type
+        - entity_id
+        - to_seq
+        - site
+        - actor
+      type: object
+    EditRevertResponse:
+      additionalProperties: false
+      properties:
+        proposal:
+          $ref: "#/components/schemas/EditProposalView"
+        revision:
+          $ref: "#/components/schemas/EditRevisionView"
+      required:
+        - proposal
+        - revision
+      type: object
+    EditRevisionListResponse:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: "#/components/schemas/EditRevisionView"
+          type:
+            - array
+            - "null"
+      required:
+        - items
+      type: object
+    EditRevisionView:
+      additionalProperties: false
+      properties:
+        action:
+          type: string
+        actor_uid:
+          format: int64
+          type: integer
+        amender_uid:
+          format: int64
+          type: integer
+        changed_fields:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+        created_at:
+          format: date-time
+          type: string
+        entity_family:
+          type: string
+        entity_id:
+          format: int64
+          type: integer
+        entity_type:
+          type: string
+        id:
+          format: int64
+          type: integer
+        proposal_id:
+          format: int64
+          type: integer
+        seq:
+          format: int64
+          type: integer
+        site:
+          type: string
+        snapshot:
+          additionalProperties: {}
+          type: object
+      required:
+        - id
+        - entity_family
+        - entity_type
+        - entity_id
+        - seq
+        - action
+        - changed_fields
+        - snapshot
+        - actor_uid
+        - site
+        - created_at
+      type: object
+    EditSchemaFieldView:
+      additionalProperties: false
+      properties:
+        can_propose:
+          type: boolean
+        can_review:
+          type: boolean
+        deprecated:
+          type: boolean
+        diff_hint:
+          type: string
+        key:
+          type: string
+        kind:
+          type: string
+        locked:
+          type: boolean
+        would_automerge:
+          description: A proposal by this caller would merge instantly
+          type: boolean
+      required:
+        - key
+        - kind
+        - diff_hint
+        - locked
+        - can_propose
+        - can_review
+        - would_automerge
+      type: object
+    EditSchemaResponse:
+      additionalProperties: false
+      properties:
+        entity_type:
+          type: string
+        fields:
+          items:
+            $ref: "#/components/schemas/EditSchemaFieldView"
+          type:
+            - array
+            - "null"
+      required:
+        - entity_type
+        - fields
+      type: object
+    EditWithdrawRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EditWithdrawRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        actor:
+          $ref: "#/components/schemas/EditActor"
+      required:
+        - actor
+      type: object
     EntityCounts:
       additionalProperties: false
       properties:
@@ -494,6 +940,195 @@ components:
           type: integer
         data:
           $ref: "#/components/schemas/ClaimWorkResponse"
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
+    EnvelopeEditAmendmentView:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EnvelopeEditAmendmentView.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/EditAmendmentView"
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
+    EnvelopeEditDiffResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EnvelopeEditDiffResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/EditDiffResponse"
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
+    EnvelopeEditProposalCreateResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EnvelopeEditProposalCreateResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/EditProposalCreateResponse"
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
+    EnvelopeEditProposalListResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EnvelopeEditProposalListResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/EditProposalListResponse"
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
+    EnvelopeEditProposalView:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EnvelopeEditProposalView.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/EditProposalView"
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
+    EnvelopeEditRevertResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EnvelopeEditRevertResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/EditRevertResponse"
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
+    EnvelopeEditRevisionListResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EnvelopeEditRevisionListResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/EditRevisionListResponse"
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
+    EnvelopeEditRevisionView:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EnvelopeEditRevisionView.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/EditRevisionView"
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
+    EnvelopeEditSchemaResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EnvelopeEditSchemaResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/EditSchemaResponse"
         message:
           type: string
       required:
@@ -1451,6 +2086,421 @@ paths:
       summary: Works a character appears in (roster edges ∪ voice credits) with kind + voice names
       tags:
         - catalog-s2s
+  /api/v1/catalog/edit/diff:
+    get:
+      operationId: diffEditRevisions
+      parameters:
+        - explode: false
+          in: query
+          name: entity_type
+          schema:
+            minLength: 1
+            type: string
+        - explode: false
+          in: query
+          name: entity_id
+          schema:
+            format: int64
+            minimum: 1
+            type: integer
+        - explode: false
+          in: query
+          name: from_seq
+          schema:
+            format: int64
+            minimum: 1
+            type: integer
+        - explode: false
+          in: query
+          name: to_seq
+          schema:
+            format: int64
+            minimum: 1
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeEditDiffResponse"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: Field-level diff between any two revisions
+      tags:
+        - catalog-edit
+  /api/v1/catalog/edit/proposals:
+    get:
+      operationId: listEditProposals
+      parameters:
+        - description: Filter to one entity type
+          explode: false
+          in: query
+          name: entity_type
+          schema:
+            description: Filter to one entity type
+            type: string
+        - description: Filter to one entity (requires entity_type)
+          explode: false
+          in: query
+          name: entity_id
+          schema:
+            description: Filter to one entity (requires entity_type)
+            format: int64
+            type: integer
+        - description: Filter to one tenant
+          explode: false
+          in: query
+          name: site
+          schema:
+            description: Filter to one tenant
+            type: string
+        - description: Filter by status; empty = all
+          explode: false
+          in: query
+          name: status
+          schema:
+            description: Filter by status; empty = all
+            enum:
+              - ""
+              - open
+              - merged
+              - declined
+              - withdrawn
+            type: string
+        - description: Page size (max 200, default 50)
+          explode: false
+          in: query
+          name: limit
+          schema:
+            description: Page size (max 200, default 50)
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeEditProposalListResponse"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: List edit proposals (review queue)
+      tags:
+        - catalog-edit
+    post:
+      operationId: createEditProposal
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EditProposalCreateRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeEditProposalCreateResponse"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: File an edit proposal (automerges into a direct edit when policy allows)
+      tags:
+        - catalog-edit
+  /api/v1/catalog/edit/proposals/{id}:
+    get:
+      operationId: getEditProposal
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeEditProposalView"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: Read one proposal with amendments and the effective patch
+      tags:
+        - catalog-edit
+  /api/v1/catalog/edit/proposals/{id}/amendments:
+    post:
+      operationId: amendEditProposal
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EditAmendRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeEditAmendmentView"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: Amend an open proposal (set/unset fields; requires the review rule)
+      tags:
+        - catalog-edit
+  /api/v1/catalog/edit/proposals/{id}/decline:
+    post:
+      operationId: declineEditProposal
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EditDecisionRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeEditProposalView"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: Decline an open proposal with a reason
+      tags:
+        - catalog-edit
+  /api/v1/catalog/edit/proposals/{id}/merge:
+    post:
+      operationId: mergeEditProposal
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EditDecisionRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeEditRevisionView"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: Merge an open proposal (per-field rebase; 409 lists conflicts)
+      tags:
+        - catalog-edit
+  /api/v1/catalog/edit/proposals/{id}/withdraw:
+    post:
+      operationId: withdrawEditProposal
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EditWithdrawRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeEditProposalView"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: Withdraw one's own open proposal
+      tags:
+        - catalog-edit
+  /api/v1/catalog/edit/revert:
+    post:
+      operationId: revertEditEntity
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EditRevertRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeEditRevertResponse"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: Restore an entity to a historical revision (a new revision; history kept)
+      tags:
+        - catalog-edit
+  /api/v1/catalog/edit/revisions:
+    get:
+      operationId: listEditRevisions
+      parameters:
+        - description: Registered entity type, e.g. catalog.work
+          explode: false
+          in: query
+          name: entity_type
+          schema:
+            description: Registered entity type, e.g. catalog.work
+            minLength: 1
+            type: string
+        - explode: false
+          in: query
+          name: entity_id
+          schema:
+            format: int64
+            minimum: 1
+            type: integer
+        - description: Page size (max 200, default 50)
+          explode: false
+          in: query
+          name: limit
+          schema:
+            description: Page size (max 200, default 50)
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeEditRevisionListResponse"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: An entity's revision log, newest-first
+      tags:
+        - catalog-edit
+  /api/v1/catalog/edit/schema/{entity_type}:
+    get:
+      operationId: getEditSchema
+      parameters:
+        - description: Registered entity type, e.g. catalog.work
+          in: path
+          name: entity_type
+          required: true
+          schema:
+            description: Registered entity type, e.g. catalog.work
+            type: string
+        - description: Tenant whose policy overlay applies
+          explode: false
+          in: query
+          name: site
+          schema:
+            description: Tenant whose policy overlay applies
+            type: string
+        - description: Asserted end-user id (0 = anonymous projection)
+          explode: false
+          in: query
+          name: user_id
+          schema:
+            description: Asserted end-user id (0 = anonymous projection)
+            format: int64
+            type: integer
+        - description: Comma-separated asserted roles
+          explode: false
+          in: query
+          name: roles
+          schema:
+            description: Comma-separated asserted roles
+            type: string
+        - description: Asserted trust tier
+          explode: false
+          in: query
+          name: trust_tier
+          schema:
+            description: Asserted trust tier
+            format: int32
+            maximum: 4
+            minimum: 0
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeEditSchemaResponse"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: Field schema + the caller's evaluated field-level capabilities
+      tags:
+        - catalog-edit
   /api/v1/catalog/labels/{id}/works:
     get:
       operationId: getCatalogLabelWorks
