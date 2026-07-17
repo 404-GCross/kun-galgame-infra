@@ -44,6 +44,73 @@ components:
         - decision
         - matched
       type: object
+    EnsureSubjectKindItem:
+      additionalProperties: false
+      properties:
+        callback_secret:
+          description: per-kind HMAC signing secret; omit to leave unchanged
+          type: string
+        callback_url:
+          description: enforcement callback endpoint; omit to leave unchanged / unset
+          type: string
+        key:
+          description: stable subject-kind key (e.g. forum_topic)
+          type: string
+        notify_on_dismiss:
+          description: emit an action:0 callback on a dismissed decision; omit to leave unchanged (false on create)
+          type: boolean
+      required:
+        - key
+      type: object
+    EnsureSubjectKindResultView:
+      additionalProperties: false
+      properties:
+        key:
+          type: string
+        result:
+          description: per-kind convergence outcome
+          enum:
+            - created
+            - updated
+            - unchanged
+            - deprecated_skipped
+          type: string
+      required:
+        - key
+        - result
+      type: object
+    EnsureSubjectKindsRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EnsureSubjectKindsRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        kinds:
+          description: declared subject kinds (≤50); converged per-kind, deprecated kinds are never revived
+          items:
+            $ref: "#/components/schemas/EnsureSubjectKindItem"
+          type:
+            - array
+            - "null"
+      required:
+        - kinds
+      type: object
+    EnsureSubjectKindsResponse:
+      additionalProperties: false
+      properties:
+        results:
+          items:
+            $ref: "#/components/schemas/EnsureSubjectKindResultView"
+          type:
+            - array
+            - "null"
+      required:
+        - results
+      type: object
     EnvelopeCheckResponse:
       additionalProperties: false
       properties:
@@ -59,6 +126,27 @@ components:
           type: integer
         data:
           $ref: "#/components/schemas/CheckResponse"
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
+    EnvelopeEnsureSubjectKindsResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EnvelopeEnsureSubjectKindsResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/EnsureSubjectKindsResponse"
         message:
           type: string
       required:
@@ -632,5 +720,30 @@ paths:
                 $ref: "#/components/schemas/HouseError"
           description: Error
       summary: List the calling site's registered subject kinds
+      tags:
+        - trust-intake
+  /api/v1/trust/subject-kinds/ensure:
+    post:
+      operationId: ensureSubjectKinds
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EnsureSubjectKindsRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeEnsureSubjectKindsResponse"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: Declaratively ensure the calling site's subject kinds (idempotent; site from the client binding; never revives deprecated)
       tags:
         - trust-intake

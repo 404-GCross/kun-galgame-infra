@@ -199,6 +199,47 @@ type PatchSubjectKindRequest struct {
 	NotifyOnDismiss *bool   `json:"notify_on_dismiss,omitempty"`
 }
 
+// --- declarative subject-kind ensure (step 06) -----------------------------
+
+// EnsureSubjectKindItem declares one subject kind in a convergence batch. The
+// callback/notify fields are SPARSE: an omitted field is left as-is on an
+// existing kind (never clobbering an admin-set value) and takes its create
+// default (unset callback / notify_on_dismiss=false) on a new kind.
+type EnsureSubjectKindItem struct {
+	Key             string  `json:"key" doc:"stable subject-kind key (e.g. forum_topic)"`
+	CallbackURL     *string `json:"callback_url,omitempty" doc:"enforcement callback endpoint; omit to leave unchanged / unset"`
+	CallbackSecret  *string `json:"callback_secret,omitempty" doc:"per-kind HMAC signing secret; omit to leave unchanged"`
+	NotifyOnDismiss *bool   `json:"notify_on_dismiss,omitempty" doc:"emit an action:0 callback on a dismissed decision; omit to leave unchanged (false on create)"`
+}
+
+// EnsureSubjectKindsRequest is the S2S declarative registration: the caller
+// declares the kinds it wants and trust converges the registry to match. The
+// tenant `site` is derived from the client binding (never on the wire); at most
+// 50 kinds per call.
+type EnsureSubjectKindsRequest struct {
+	Kinds []EnsureSubjectKindItem `json:"kinds" doc:"declared subject kinds (≤50); converged per-kind, deprecated kinds are never revived"`
+}
+
+// BatchSubjectKindsRequest is the admin batch registration — the same
+// convergence as the S2S ensure, but with an explicit `site` (a platform
+// operator acts for any site) and gated by the registry admin permission.
+type BatchSubjectKindsRequest struct {
+	Site  string                  `json:"site" doc:"tenant site the kinds belong to"`
+	Kinds []EnsureSubjectKindItem `json:"kinds" doc:"declared subject kinds (≤50); converged per-kind, deprecated kinds are never revived"`
+}
+
+// EnsureSubjectKindResultView is one kind's convergence verdict.
+type EnsureSubjectKindResultView struct {
+	Key    string `json:"key"`
+	Result string `json:"result" enum:"created,updated,unchanged,deprecated_skipped" doc:"per-kind convergence outcome"`
+}
+
+// EnsureSubjectKindsResponse is the per-kind convergence outcome in request
+// order (duplicated keys included).
+type EnsureSubjectKindsResponse struct {
+	Results []EnsureSubjectKindResultView `json:"results"`
+}
+
 // --- S2S forward (community→trust convergence, step 03) --------------------
 
 // ForwardRequest opens/updates a community_forward review item. Unlike a report,

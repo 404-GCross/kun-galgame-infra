@@ -107,7 +107,27 @@ Response: { "report_id": ..., "review_item_id": ... }        # review_item_id �
 ## 5. 接入 checklist(新站/新内容类型,照做即可)
 
 1. **S2S client**:找 infra 在 `oauth_clients` 铸一行(id + sha256 secret + `catalog_site=<你的 site>`)。秘钥经 Dokploy 面板 env 注入你的服务,永不进 git。**你不需要 forwarder allowlist**(那是中继专用)。
-2. **注册 subject kinds**:每种要 scan/report 的内容一行 `(site, kind)`——管理端 `/trust` 注册表页可加,或 infra 跑 SQL。kind 命名用内容类型的稳定蛇形名(`forum_topic`);将来要接执法回调就同时填 `callback_url`。
+2. **注册 subject kinds(声明式 ensure,首选)**:kind 清单本就是你站的属性——把它写成你仓里的一个常量数组,**在服务启动路径(或一次性脚本)里调一次 ensure**,trust 逐 kind 收敛即止,幂等可重复跑。kind 命名用内容类型的稳定蛇形名(`forum_topic`)。
+
+   ```
+   POST /api/v1/trust/subject-kinds/ensure          # Basic 认证;site 从凭证派生,只作用于自站
+   Request:  { "kinds": [
+                 { "key": "forum_topic" },
+                 { "key": "forum_reply",
+                   "callback_url": "http://forum:9200/internal/trust/callback",
+                   "callback_secret": "<HMAC 密钥>",
+                   "notify_on_dismiss": false }
+             ] }                                     # ≤50 个;超限 422
+   Response: { "results": [
+                 { "key": "forum_topic", "result": "created" },
+                 { "key": "forum_reply", "result": "unchanged" }
+             ] }                                     # result ∈ created | updated | unchanged | deprecated_skipped
+   ```
+
+   - **收敛语义(逐 kind)**:不存在 → `created`;已存在且活跃 → 你提供的字段有变更则 `updated`、全同则 `unchanged`;**已弃用 → `deprecated_skipped`**(见 §6 红线)。以相同数组二次跑必然全 `unchanged`,所以放进启动路径完全安全。
+   - **字段是稀疏的**:省略某个回调字段 = 不声明它,已有值保持不动(不会被清空)。要接执法回调就带上 `callback_url`(+ `callback_secret`);将来改配置 = 改数组重跑。
+   - **建议 best-effort 调用**(失败打 warn 不阻塞启动)。这样"注册 kinds"从"找 infra 跑 SQL / 点 UI"变成"改你仓里的常量数组"。
+   - **兜底:管理端批量添加**。没有 ensure 接线、或临时补一批时,管理端 `/trust` 注册表页「批量添加」= 一行一个 key + 共享回调/驳回字段,走同一套收敛逻辑(需显式选站)。单条注册 / 改配置 / 弃用仍在同页。
 3. **接 check(可选)**:写路径事务前 + 500ms 超时 + fail-open;deny 拒绝、hold 发布并进你的本地审核视野。
 4. **接 scan(推荐全量)**:发布/编辑成功后 off-request 发送;别进事务、别重试。
 5. **接举报(有 UI 就接)**:reason 列表动态拉取,带 snapshot。
@@ -122,6 +142,7 @@ Response: { "report_id": ..., "review_item_id": ... }        # review_item_id �
 3. **影子期零执法**:不要根据 scan 结果在你的站做任何自动处置;执法只走收件箱人工裁决 + 回调。
 4. **site 不上线缆**(普通调用方);**secret 不进 git**;**注册表 fail-loud 不要绕**(422 说明你打错了站或忘了注册,不是让你重试)。
 5. 文本发 **raw 原文**(不是渲染后 HTML)。
+6. **ensure 不复活退役 kind**:声明式 ensure / 批量添加对 `is_deprecated=true` 的 kind 一律 `deprecated_skipped`——绝不复活、也不改它的配置。复活退役 kind 是管理员的明确决定(管理端单条「启用」),不是接入方数组能触发的副作用。
 
 ## 7. FAQ
 

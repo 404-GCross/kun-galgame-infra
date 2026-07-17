@@ -80,6 +80,9 @@ func (s *AdminServer) register(api huma.API) {
 	huma.Register(api, huma.Operation{OperationID: "createTrustSubjectKind", Method: http.MethodPost, Path: "/api/v1/admin/trust/subject-kinds",
 		Summary: "Register a subject kind for a site", Tags: tags,
 		Description: platformOnly}, s.createSubjectKind)
+	huma.Register(api, huma.Operation{OperationID: "batchTrustSubjectKinds", Method: http.MethodPost, Path: "/api/v1/admin/trust/subject-kinds/batch",
+		Summary: "Batch-register subject kinds for a site (declarative convergence; never revives deprecated)", Tags: tags,
+		Description: platformOnly}, s.batchSubjectKinds)
 	huma.Register(api, huma.Operation{OperationID: "patchTrustSubjectKind", Method: http.MethodPatch, Path: "/api/v1/admin/trust/subject-kinds/{id}",
 		Summary: "Update a subject kind's callback config / deprecation (never deleted)", Tags: tags,
 		Description: platformOnly}, s.patchSubjectKind)
@@ -303,6 +306,37 @@ func (s *AdminServer) createSubjectKind(ctx context.Context, in *createSubjectKi
 		return nil, mapAdminErr("create subject kind", err)
 	}
 	return &subjectKindOutput{Body: okEnvelope(toSubjectKindView(*kind))}, nil
+}
+
+type batchSubjectKindsInput struct{ Body dto.BatchSubjectKindsRequest }
+type batchSubjectKindsOutput struct {
+	Body Envelope[dto.EnsureSubjectKindsResponse]
+}
+
+// batchSubjectKinds is the human-ops counterpart of the S2S ensure: same
+// per-kind convergence, but the platform operator names the `site` explicitly
+// (they act for any site) and the registry admin gate (requireUnrestricted)
+// stands in for the client binding. Deprecated kinds are never revived.
+func (s *AdminServer) batchSubjectKinds(ctx context.Context, in *batchSubjectKindsInput) (*batchSubjectKindsOutput, error) {
+	if he := s.requireUnrestricted(ctx); he != nil {
+		return nil, he
+	}
+	if in.Body.Site == "" {
+		return nil, apiErrMsg(http.StatusUnprocessableEntity, errors.ErrValidationFailed,
+			"site is required")
+	}
+	if len(in.Body.Kinds) > maxEnsureKinds {
+		return nil, apiErrMsg(http.StatusUnprocessableEntity, errors.ErrValidationFailed,
+			"at most 50 kinds per batch")
+	}
+	actorID := adminIDFromCtx(ctx)
+	results, err := s.registry.EnsureSubjectKinds(ctx, &actorID, in.Body.Site, toEnsureItems(in.Body.Kinds))
+	if err != nil {
+		return nil, mapAdminErr("batch subject kinds", err)
+	}
+	return &batchSubjectKindsOutput{Body: okEnvelope(dto.EnsureSubjectKindsResponse{
+		Results: toEnsureResultViews(results),
+	})}, nil
 }
 
 type patchSubjectKindInput struct {

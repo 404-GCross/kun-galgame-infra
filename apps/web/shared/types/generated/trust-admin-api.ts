@@ -192,6 +192,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/trust/subject-kinds/batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Batch-register subject kinds for a site (declarative convergence; never revives deprecated)
+         * @description Platform-staff only: a site-scoped moderator receives 403 (the registries and dead-letter surfaces are platform-ops).
+         */
+        post: operations["batchTrustSubjectKinds"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/trust/subject-kinds/{id}": {
         parameters: {
             query?: never;
@@ -260,6 +280,18 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        BatchSubjectKindsRequest: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/BatchSubjectKindsRequest.json
+             */
+            readonly $schema?: string;
+            /** @description declared subject kinds (≤50); converged per-kind, deprecated kinds are never revived */
+            kinds: components["schemas"]["EnsureSubjectKindItem"][] | null;
+            /** @description tenant site the kinds belong to */
+            site: string;
+        };
         CreateReasonRequest: {
             /**
              * Format: uri
@@ -362,6 +394,27 @@ export interface components {
             review_item_id: number;
             statement?: string;
         };
+        EnsureSubjectKindItem: {
+            /** @description per-kind HMAC signing secret; omit to leave unchanged */
+            callback_secret?: string;
+            /** @description enforcement callback endpoint; omit to leave unchanged / unset */
+            callback_url?: string;
+            /** @description stable subject-kind key (e.g. forum_topic) */
+            key: string;
+            /** @description emit an action:0 callback on a dismissed decision; omit to leave unchanged (false on create) */
+            notify_on_dismiss?: boolean;
+        };
+        EnsureSubjectKindResultView: {
+            key: string;
+            /**
+             * @description per-kind convergence outcome
+             * @enum {string}
+             */
+            result: "created" | "updated" | "unchanged" | "deprecated_skipped";
+        };
+        EnsureSubjectKindsResponse: {
+            results: components["schemas"]["EnsureSubjectKindResultView"][] | null;
+        };
         EnvelopeDecideData: {
             /**
              * Format: uri
@@ -372,6 +425,18 @@ export interface components {
             /** Format: int64 */
             code: number;
             data?: components["schemas"]["DecideData"];
+            message: string;
+        };
+        EnvelopeEnsureSubjectKindsResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/EnvelopeEnsureSubjectKindsResponse.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            code: number;
+            data?: components["schemas"]["EnsureSubjectKindsResponse"];
             message: string;
         };
         EnvelopeListReasonView: {
@@ -1013,6 +1078,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EnvelopeSubjectKindView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HouseError"];
+                };
+            };
+        };
+    };
+    batchTrustSubjectKinds: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BatchSubjectKindsRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeEnsureSubjectKindsResponse"];
                 };
             };
             /** @description Error */

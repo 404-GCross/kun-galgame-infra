@@ -49,6 +49,8 @@ func (s *Server) register(api huma.API) {
 		Summary: "Submit a report on a subject (dedup / rate-limit / weight / aggregate)", Tags: intake}, s.submitReport)
 	huma.Register(api, huma.Operation{OperationID: "listSubjectKinds", Method: http.MethodGet, Path: "/api/v1/trust/subject-kinds",
 		Summary: "List the calling site's registered subject kinds", Tags: intake}, s.listSubjectKinds)
+	huma.Register(api, huma.Operation{OperationID: "ensureSubjectKinds", Method: http.MethodPost, Path: "/api/v1/trust/subject-kinds/ensure",
+		Summary: "Declaratively ensure the calling site's subject kinds (idempotent; site from the client binding; never revives deprecated)", Tags: intake}, s.ensureSubjectKinds)
 	huma.Register(api, huma.Operation{OperationID: "listReportReasons", Method: http.MethodGet, Path: "/api/v1/trust/report-reasons",
 		Summary: "List the calling site's usable report reasons (global base + own extensions, non-deprecated)", Tags: intake}, s.listReportReasons)
 	huma.Register(api, huma.Operation{OperationID: "submitScan", Method: http.MethodPost, Path: "/api/v1/trust/scan",
@@ -238,6 +240,34 @@ func (s *Server) listSubjectKinds(ctx context.Context, _ *struct{}) (*listSubjec
 	}
 	return &listSubjectKindsOutput{Body: okEnvelope(dto.SubjectKindsResponse{
 		Kinds: toSubjectKindViews(kinds),
+	})}, nil
+}
+
+type ensureSubjectKindsInput struct{ Body dto.EnsureSubjectKindsRequest }
+type ensureSubjectKindsOutput struct {
+	Body Envelope[dto.EnsureSubjectKindsResponse]
+}
+
+// ensureSubjectKinds converges the calling site's subject-kind registry to the
+// declared list. The tenant `site` is STRICTLY the client binding (self-site
+// only — a relay-tenant ensure is a triggered follow-up, not v1). Empty list →
+// empty result; over the 50-kind cap → 422. Deprecated kinds are never revived
+// (that is an admin decision).
+func (s *Server) ensureSubjectKinds(ctx context.Context, in *ensureSubjectKindsInput) (*ensureSubjectKindsOutput, error) {
+	site, he := siteBinding(ctx)
+	if he != nil {
+		return nil, he
+	}
+	if len(in.Body.Kinds) > maxEnsureKinds {
+		return nil, apiErrMsg(http.StatusUnprocessableEntity, errors.ErrValidationFailed,
+			"at most 50 kinds per ensure call")
+	}
+	results, err := s.registry.EnsureSubjectKinds(ctx, nil, site, toEnsureItems(in.Body.Kinds))
+	if err != nil {
+		return nil, mapIntakeErr("ensure subject kinds", err)
+	}
+	return &ensureSubjectKindsOutput{Body: okEnvelope(dto.EnsureSubjectKindsResponse{
+		Results: toEnsureResultViews(results),
 	})}, nil
 }
 

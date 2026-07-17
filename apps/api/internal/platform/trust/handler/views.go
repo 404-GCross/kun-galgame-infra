@@ -3,7 +3,34 @@ package handler
 import (
 	"api/internal/platform/trust/dto"
 	"api/internal/platform/trust/model"
+	"api/internal/platform/trust/service"
 )
+
+// maxEnsureKinds caps a declarative ensure / admin batch (step 06 contract:
+// ≤50 kinds per call; over-cap → 422).
+const maxEnsureKinds = 50
+
+// toEnsureItems maps the wire declaration onto the service convergence input.
+func toEnsureItems(items []dto.EnsureSubjectKindItem) []service.EnsureSubjectKindItem {
+	out := make([]service.EnsureSubjectKindItem, len(items))
+	for i, it := range items {
+		out[i] = service.EnsureSubjectKindItem{
+			Key: it.Key, CallbackURL: it.CallbackURL,
+			CallbackSecret: it.CallbackSecret, NotifyOnDismiss: it.NotifyOnDismiss,
+		}
+	}
+	return out
+}
+
+// toEnsureResultViews maps the per-kind convergence outcomes back onto the wire
+// (request order preserved by the service).
+func toEnsureResultViews(rs []service.EnsureSubjectKindResult) []dto.EnsureSubjectKindResultView {
+	out := make([]dto.EnsureSubjectKindResultView, len(rs))
+	for i, r := range rs {
+		out[i] = dto.EnsureSubjectKindResultView{Key: r.Key, Result: string(r.Outcome)}
+	}
+	return out
+}
 
 func toSubjectKindView(k model.TrustSubjectKind) dto.SubjectKindView {
 	return dto.SubjectKindView{

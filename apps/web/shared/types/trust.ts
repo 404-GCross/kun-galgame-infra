@@ -24,6 +24,14 @@ export type TrustSubjectKind = Schemas['SubjectKindView']
 export type TrustReason = Schemas['ReasonView']
 export type TrustCreateSubjectKindRequest = Schemas['CreateSubjectKindRequest']
 export type TrustPatchSubjectKindRequest = Schemas['PatchSubjectKindRequest']
+// Batch subject-kind registration (step 06): declarative convergence, shared by
+// the admin batch endpoint and the S2S ensure face.
+export type TrustEnsureSubjectKindItem = Schemas['EnsureSubjectKindItem']
+export type TrustBatchSubjectKindsRequest = Schemas['BatchSubjectKindsRequest']
+export type TrustEnsureSubjectKindsResponse =
+  Schemas['EnsureSubjectKindsResponse']
+export type TrustEnsureSubjectKindResult =
+  Schemas['EnsureSubjectKindResultView']
 export type TrustCreateReasonRequest = Schemas['CreateReasonRequest']
 export type TrustPatchReasonRequest = Schemas['PatchReasonRequest']
 

@@ -6,7 +6,11 @@
 import type {
   TrustSubjectKind,
   TrustCreateSubjectKindRequest,
-  TrustPatchSubjectKindRequest
+  TrustPatchSubjectKindRequest,
+  TrustEnsureSubjectKindItem,
+  TrustBatchSubjectKindsRequest,
+  TrustEnsureSubjectKindsResponse,
+  TrustEnsureSubjectKindResult
 } from '~~/shared/types/trust'
 
 const api = useApi('trust')
@@ -123,6 +127,78 @@ const toggleDeprecated = async (k: TrustSubjectKind) => {
     useKunMessage(k.is_deprecated ? '已启用' : '已弃用', 'success')
   }
 }
+
+// Batch add — the human-ops counterpart of the S2S declarative ensure: one key
+// per line + shared callback/notify fields, converged per-kind by the backend.
+// Deprecated kinds are never revived (that stays a manual decision above).
+const batchOpen = ref(false)
+const batchForm = reactive({
+  site: '',
+  keysText: '',
+  callback_url: '',
+  callback_secret: '',
+  notify_on_dismiss: false
+})
+const batching = ref(false)
+
+const openBatch = () => {
+  batchForm.site = site.value || ''
+  batchForm.keysText = ''
+  batchForm.callback_url = ''
+  batchForm.callback_secret = ''
+  batchForm.notify_on_dismiss = false
+  batchOpen.value = true
+}
+
+const summarizeBatch = (results: TrustEnsureSubjectKindResult[]): string => {
+  const counts = { created: 0, updated: 0, unchanged: 0, deprecated_skipped: 0 }
+  for (const r of results) counts[r.result] += 1
+  return `已收敛:新建 ${counts.created} · 更新 ${counts.updated} · 未变 ${counts.unchanged} · 跳过(已弃用) ${counts.deprecated_skipped}`
+}
+
+const runBatch = async () => {
+  const batchSite = batchForm.site.trim()
+  const keys = batchForm.keysText
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+  if (!batchSite || !keys.length) {
+    useKunMessage('站点与至少一个 key 必填', 'warn')
+    return
+  }
+  if (keys.length > 50) {
+    useKunMessage('单次最多 50 个 key', 'warn')
+    return
+  }
+  const cbURL = batchForm.callback_url.trim()
+  const cbSecret = batchForm.callback_secret.trim()
+  const kinds: TrustEnsureSubjectKindItem[] = keys.map((key) => {
+    const item: TrustEnsureSubjectKindItem = { key }
+    if (cbURL) item.callback_url = cbURL
+    if (cbSecret) item.callback_secret = cbSecret
+    // Sparse: only declare notify_on_dismiss when toggled on, so an off switch
+    // never flips an existing kind's flag.
+    if (batchForm.notify_on_dismiss) item.notify_on_dismiss = true
+    return item
+  })
+  const body: TrustBatchSubjectKindsRequest = { site: batchSite, kinds }
+  batching.value = true
+  try {
+    const res = await api.post<TrustEnsureSubjectKindsResponse>(
+      '/admin/trust/subject-kinds/batch',
+      body
+    )
+    if (res.code === 0) {
+      useKunMessage(summarizeBatch(res.data.results ?? []), 'success')
+      batchOpen.value = false
+      await refresh()
+    } else {
+      useKunMessage(res.message || '批量添加失败', 'error')
+    }
+  } finally {
+    batching.value = false
+  }
+}
 </script>
 
 <template>
@@ -134,10 +210,21 @@ const toggleDeprecated = async (k: TrustSubjectKind) => {
         placeholder="按站点过滤"
         class="w-40"
       />
-      <KunButton color="primary" size="sm" class="ml-auto" @click="openCreate">
-        <KunIcon name="lucide:plus" class="mr-1 size-4" />
-        新建
-      </KunButton>
+      <div class="ml-auto flex gap-2">
+        <KunButton
+          color="default"
+          variant="flat"
+          size="sm"
+          @click="openBatch"
+        >
+          <KunIcon name="lucide:list-plus" class="mr-1 size-4" />
+          批量添加
+        </KunButton>
+        <KunButton color="primary" size="sm" @click="openCreate">
+          <KunIcon name="lucide:plus" class="mr-1 size-4" />
+          新建
+        </KunButton>
+      </div>
     </div>
 
     <div class="overflow-x-auto">
@@ -237,6 +324,48 @@ const toggleDeprecated = async (k: TrustSubjectKind) => {
           </KunButton>
           <KunButton color="primary" :loading="creating" @click="create">
             注册
+          </KunButton>
+        </div>
+      </div>
+    </KunModal>
+
+    <KunModal v-model="batchOpen">
+      <div class="space-y-4">
+        <h2 class="text-foreground text-xl font-bold">批量添加主体类型</h2>
+        <p class="text-default-500 text-sm">
+          一行一个 key,共享下方的回调 / 驳回配置,后端逐 key
+          收敛:不存在则新建、已存在则按提供字段更新、相同则不动;<span
+            class="text-foreground font-semibold"
+            >已弃用的 key 不会被复活</span
+          >。
+        </p>
+        <KunInput v-model="batchForm.site" label="站点" placeholder="如 kungal" />
+        <KunTextarea
+          v-model="batchForm.keysText"
+          :rows="6"
+          label="keys(每行一个,单次最多 50)"
+          placeholder="forum_topic&#10;forum_reply&#10;resource_post"
+        />
+        <KunInput
+          v-model="batchForm.callback_url"
+          label="共享回调 URL(可选)"
+          placeholder="https://…"
+        />
+        <KunInput
+          v-model="batchForm.callback_secret"
+          label="共享回调密钥(可选)"
+          placeholder="HMAC 密钥"
+        />
+        <KunSwitch
+          v-model="batchForm.notify_on_dismiss"
+          label="驳回时回调(释放持留/自动隐藏)"
+        />
+        <div class="flex justify-end gap-3">
+          <KunButton color="default" variant="flat" @click="batchOpen = false">
+            取消
+          </KunButton>
+          <KunButton color="primary" :loading="batching" @click="runBatch">
+            提交
           </KunButton>
         </div>
       </div>

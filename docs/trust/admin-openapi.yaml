@@ -1,5 +1,29 @@
 components:
   schemas:
+    BatchSubjectKindsRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/BatchSubjectKindsRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        kinds:
+          description: declared subject kinds (≤50); converged per-kind, deprecated kinds are never revived
+          items:
+            $ref: "#/components/schemas/EnsureSubjectKindItem"
+          type:
+            - array
+            - "null"
+        site:
+          description: tenant site the kinds belong to
+          type: string
+      required:
+        - site
+        - kinds
+      type: object
     CreateReasonRequest:
       additionalProperties: false
       properties:
@@ -162,6 +186,53 @@ components:
         - callback_attempts
         - created_at
       type: object
+    EnsureSubjectKindItem:
+      additionalProperties: false
+      properties:
+        callback_secret:
+          description: per-kind HMAC signing secret; omit to leave unchanged
+          type: string
+        callback_url:
+          description: enforcement callback endpoint; omit to leave unchanged / unset
+          type: string
+        key:
+          description: stable subject-kind key (e.g. forum_topic)
+          type: string
+        notify_on_dismiss:
+          description: emit an action:0 callback on a dismissed decision; omit to leave unchanged (false on create)
+          type: boolean
+      required:
+        - key
+      type: object
+    EnsureSubjectKindResultView:
+      additionalProperties: false
+      properties:
+        key:
+          type: string
+        result:
+          description: per-kind convergence outcome
+          enum:
+            - created
+            - updated
+            - unchanged
+            - deprecated_skipped
+          type: string
+      required:
+        - key
+        - result
+      type: object
+    EnsureSubjectKindsResponse:
+      additionalProperties: false
+      properties:
+        results:
+          items:
+            $ref: "#/components/schemas/EnsureSubjectKindResultView"
+          type:
+            - array
+            - "null"
+      required:
+        - results
+      type: object
     EnvelopeDecideData:
       additionalProperties: false
       properties:
@@ -177,6 +248,27 @@ components:
           type: integer
         data:
           $ref: "#/components/schemas/DecideData"
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
+    EnvelopeEnsureSubjectKindsResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EnvelopeEnsureSubjectKindsResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/EnsureSubjectKindsResponse"
         message:
           type: string
       required:
@@ -1076,6 +1168,32 @@ paths:
                 $ref: "#/components/schemas/HouseError"
           description: Error
       summary: Register a subject kind for a site
+      tags:
+        - trust-admin
+  /api/v1/admin/trust/subject-kinds/batch:
+    post:
+      description: "Platform-staff only: a site-scoped moderator receives 403 (the registries and dead-letter surfaces are platform-ops)."
+      operationId: batchTrustSubjectKinds
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BatchSubjectKindsRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeEnsureSubjectKindsResponse"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: Batch-register subject kinds for a site (declarative convergence; never revives deprecated)
       tags:
         - trust-admin
   /api/v1/admin/trust/subject-kinds/{id}:

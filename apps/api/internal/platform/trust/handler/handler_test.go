@@ -19,6 +19,7 @@ func TestSpecExport(t *testing.T) {
 	for _, want := range []string{
 		"/api/v1/trust/reports",
 		"/api/v1/trust/subject-kinds",
+		"/api/v1/trust/subject-kinds/ensure",
 		"/api/v1/trust/forward",
 		"/api/v1/trust/forward/resolve",
 		"/api/v1/trust/scan",
@@ -27,6 +28,7 @@ func TestSpecExport(t *testing.T) {
 		"operationId: forwardReviewItem",
 		"operationId: submitScan",
 		"operationId: checkText",
+		"operationId: ensureSubjectKinds",
 		"subject_kind",
 		"reason_key",
 	} {
@@ -49,11 +51,13 @@ func TestAdminSpecExport(t *testing.T) {
 		"/api/v1/admin/trust/review-items/{id}/claim",
 		"/api/v1/admin/trust/review-items/{id}/decide",
 		"/api/v1/admin/trust/subject-kinds",
+		"/api/v1/admin/trust/subject-kinds/batch",
 		"/api/v1/admin/trust/report-reasons",
 		"/api/v1/admin/trust/dispositions",
 		"/api/v1/admin/trust/terms",
 		"/api/v1/admin/trust/terms/{id}/deprecate",
 		"operationId: decideTrustReviewItem",
+		"operationId: batchTrustSubjectKinds",
 		"operationId: createTrustTerm",
 		"operationId: deprecateTrustTerm",
 	} {
