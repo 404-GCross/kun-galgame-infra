@@ -31,14 +31,16 @@ func DefaultCatalogImageRefpingOpts() CatalogImageRefpingOpts {
 // upload-time TTL touch and vanish ~13 months later — the exact "refping
 // site-scope GC fuse" failure that froze 66k galgame images.
 //
-// The catalog-scope hash universe is two sources (step 53, refs/proj/51 §4):
+// The catalog-scope hash universe is three sources (step 54, refs/proj/51 §4):
 //  1. catalog_character.image_hash — VNDB portrait wave (step 48).
-//  2. catalog_work_cover.image_hash — bodyless cover backfill (step 53), ALL
-//     rows INCLUDING those shadowed by a later claim (§8.B shadow-never-delete):
-//     a shadowed cover's bytes stay in catalog scope until an explicit handoff,
-//     so a missed shadowed row = GC eats a live image. (Claimed works' bridged
-//     covers live in the galgame_wiki scope and are pinged by the SEPARATE
-//     galgame-image-refping, not here — byte discipline §4.)
+//  2. catalog_work_cover.image_hash — bodyless cover backfill (step 53).
+//  3. catalog_work_screenshot.image_hash — bodyless screenshot backfill (step 54).
+//
+// For (2) and (3) ALL rows count, INCLUDING those shadowed by a later claim
+// (§8.B shadow-never-delete): a shadowed media row's bytes stay in catalog scope
+// until an explicit handoff, so a missed shadowed row = GC eats a live image.
+// (Claimed works' bridged covers/screenshots live in the galgame_wiki scope and
+// are pinged by the SEPARATE galgame-image-refping, not here — byte discipline §4.)
 //
 // Reference-ping is SITE-SCOPED, so this MUST authenticate as the catalog image
 // client (site_key "catalog"); any other identity 404s every hash and the images rot.
@@ -138,14 +140,14 @@ func RunCatalogImageRefping(ctx context.Context, cfg *config.Config, opts Catalo
 
 // collectCatalogRefpingHashes returns the deduped set of every non-empty
 // catalog-scope image_hash: LIVE character portraits UNIONed with EVERY
-// catalog_work_cover row (step 53).
+// catalog_work_cover row (step 53) and EVERY catalog_work_screenshot row (step 54).
 //
 //   - Soft-deleted characters are excluded (their portrait may legitimately age
 //     out) — a portrait is referenced iff a live character still points at it.
-//   - catalog_work_cover is taken in FULL — no claim/shadow filter (§8.B
-//     shadow-never-delete): a bodyless cover row that a later claim shadowed
-//     still owns bytes in the catalog scope, so it MUST keep being pinged.
-//     Missing it = GC eats a live image (the 66k-frozen failure class).
+//   - catalog_work_cover / catalog_work_screenshot are taken in FULL — no
+//     claim/shadow filter (§8.B shadow-never-delete): a bodyless media row that a
+//     later claim shadowed still owns bytes in the catalog scope, so it MUST keep
+//     being pinged. Missing it = GC eats a live image (the 66k-frozen class).
 //
 // Unlike galgame images (which also live in revision/PR snapshots), catalog
 // media has exactly one home row each, so this is the whole referenced universe.
@@ -156,6 +158,9 @@ SELECT DISTINCT hash FROM (
     WHERE image_hash IS NOT NULL AND image_hash <> '' AND deleted_at IS NULL
     UNION
     SELECT image_hash FROM catalog_work_cover
+    WHERE image_hash IS NOT NULL AND image_hash <> ''
+    UNION
+    SELECT image_hash FROM catalog_work_screenshot
     WHERE image_hash IS NOT NULL AND image_hash <> ''
 ) u
 `

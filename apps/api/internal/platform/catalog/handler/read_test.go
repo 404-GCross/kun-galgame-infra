@@ -901,6 +901,142 @@ func TestWorkCover(t *testing.T) {
 	assert.Empty(t, body["data"].(map[string]any)["covers"].([]any))
 }
 
+// galgameScreenshotStubIDs are the fixture galgame body ids used by the claimed
+// screenshot bridge (kept distinct from the intro/cover stub ids so the media
+// tests never collide on shared galgame ids).
+var galgameScreenshotStubIDs = []int64{7001, 7002}
+
+// ensureGalgameScreenshotStub provisions the galgame_screenshot table the
+// claimed-screenshot bridge joins against. In prod/rehearsal galgame_screenshot
+// lives in kun_catalog alongside catalog; the catalog test DB has no such table,
+// so this creates a stub (image_hash text — short test hashes — rather than the
+// real char(64); the bridge's TrimSpace makes both equivalent). CREATE ... IF
+// NOT EXISTS is a no-op against a real table; cleanup is a targeted DELETE.
+// Idempotent.
+func ensureGalgameScreenshotStub(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	require.NoError(t, db.Exec(`CREATE TABLE IF NOT EXISTS galgame_screenshot (
+		galgame_id bigint NOT NULL,
+		image_hash text NOT NULL,
+		sort_order bigint NOT NULL DEFAULT 0,
+		caption text NOT NULL DEFAULT '',
+		sexual smallint NOT NULL DEFAULT 0,
+		violence smallint NOT NULL DEFAULT 0,
+		source text NOT NULL DEFAULT '',
+		PRIMARY KEY (galgame_id, image_hash)
+	)`).Error)
+	require.NoError(t, db.Exec(`DELETE FROM galgame_screenshot WHERE galgame_id IN ?`, galgameScreenshotStubIDs).Error)
+}
+
+// insertGalgameScreenshot inserts one fixture galgame_screenshot row.
+func insertGalgameScreenshot(t *testing.T, db *gorm.DB, galgameID int64, hash string, sortOrder int, caption string, sexual, violence int16, source string) {
+	t.Helper()
+	require.NoError(t, db.Exec(`INSERT INTO galgame_screenshot
+		(galgame_id, image_hash, sort_order, caption, sexual, violence, source)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		galgameID, hash, sortOrder, caption, sexual, violence, source).Error)
+}
+
+// TestWorkScreenshot pins the step-54 media-aggregation screenshot read face: the
+// CLAIMED bridge (galgame_screenshot mapped to the unified shape, with caption
+// and per-row source mapping ""→galgame_wiki / vndb→vndb), the BODYLESS native
+// read (catalog_work_screenshot), strict XOR (a claimed work with no galgame
+// screenshot yields [] and never falls back to a shadow native row), and
+// []-not-null serialization. Sorted by (sort_order, image_hash).
+func TestWorkScreenshot(t *testing.T) {
+	db := openCatalogTestDB(t)
+	ensureGalgameStub(t, db)           // the intro bridge (also run by loadWorkDetail) needs galgame
+	ensureGalgameCoverStub(t, db)      // the cover bridge (also co-loaded) needs galgame_cover
+	ensureGalgameScreenshotStub(t, db) // the screenshot bridge needs galgame_screenshot (clears 7001/7002)
+	// galgame_screenshot carries an FK to galgame(id) in the shared test DB, so the
+	// bridge galgame ids need a parent body row. Screenshots cleared above → safe to
+	// reset the parents. Empty intros keep the co-loaded intro bridge a no-op; no
+	// galgame_cover rows for 7001/7002 keep the co-loaded cover bridge a no-op.
+	require.NoError(t, db.Exec(`DELETE FROM galgame WHERE id IN ?`, galgameScreenshotStubIDs).Error)
+	insertGalgameBody(t, db, 7001, 0, "", "", "", "")
+	insertGalgameBody(t, db, 7002, 0, "", "", "", "")
+	for _, tbl := range []string{"catalog_work_screenshot", "catalog_work"} {
+		require.NoError(t, db.Exec("TRUNCATE "+tbl+" RESTART IDENTITY CASCADE").Error)
+	}
+	// Source ids from the seed: galgame_wiki=12, vndb=2, user=1.
+	var srcGalgameWiki, srcVNDB, srcUser int16
+	db.Raw("SELECT id FROM catalog_source WHERE key='galgame_wiki'").Scan(&srcGalgameWiki)
+	db.Raw("SELECT id FROM catalog_source WHERE key='vndb'").Scan(&srcVNDB)
+	db.Raw("SELECT id FROM catalog_source WHERE key='user'").Scan(&srcUser)
+	require.NotZero(t, srcGalgameWiki, "galgame_wiki source must be seeded")
+
+	// --- CLAIMED work: screenshots bridged from galgame_screenshot (galgame_id 7001).
+	//   sort_order 0: a captioned vndb screenshot (source=vndb → vndb, sexual=1)
+	//   sort_order 1: an uncaptioned user upload (source='' → galgame_wiki)
+	claimed := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "主張作品", ContentRating: 0, Status: 0,
+		Site: strptr("galgame_wiki"), ProductWorkID: ptrI64(7001)}
+	require.NoError(t, db.Create(&claimed).Error)
+	insertGalgameScreenshot(t, db, 7001, "hash_vndb_shot", 0, "オープニング", 1, 0, "vndb")
+	insertGalgameScreenshot(t, db, 7001, "hash_user_shot", 1, "", 0, 0, "")
+
+	// --- BODYLESS work: native catalog_work_screenshot rows.
+	bodyless := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "無体作品", ContentRating: 0, Status: 0}
+	require.NoError(t, db.Create(&bodyless).Error)
+	require.NoError(t, db.Create(&model.CatalogWorkScreenshot{
+		WorkID: bodyless.ID, ImageHash: "hash_bodyless_shot", SortOrder: 0, Caption: "本体截图",
+		Sexual: 2, Violence: 0, SourceID: srcVNDB}).Error)
+	require.NoError(t, db.Create(&model.CatalogWorkScreenshot{
+		WorkID: bodyless.ID, ImageHash: "hash_bodyless_extra", SortOrder: 1, SourceID: srcUser}).Error)
+
+	// --- XOR work: claimed (galgame_id 7002) but galgame_screenshot empty; a SHADOW
+	// native catalog_work_screenshot row exists (a prior bodyless state) and must
+	// NEVER surface.
+	xor := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "空主張", ContentRating: 0, Status: 0,
+		Site: strptr("galgame_wiki"), ProductWorkID: ptrI64(7002)}
+	require.NoError(t, db.Create(&xor).Error)
+	require.NoError(t, db.Create(&model.CatalogWorkScreenshot{
+		WorkID: xor.ID, ImageHash: "hash_shadow_must_not_appear", SortOrder: 0, SourceID: srcVNDB}).Error)
+
+	// --- EMPTY work: bodyless, no screenshots → [].
+	empty := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "空作品", ContentRating: 0, Status: 0}
+	require.NoError(t, db.Create(&empty).Error)
+
+	app := readApp(service.NewReadService(db), nil)
+
+	// CLAIMED: two screenshots, sorted by (sort_order, image_hash); source mapped; caption carried.
+	code, body := getJSON(t, app, "/api/v1/catalog/works/"+itoa(claimed.ID))
+	require.Equal(t, 200, code)
+	shots := body["data"].(map[string]any)["screenshots"].([]any)
+	require.Len(t, shots, 2, "two galgame_screenshot rows bridged")
+	s0 := shots[0].(map[string]any)
+	assert.Equal(t, "hash_vndb_shot", s0["image_hash"])
+	assert.EqualValues(t, 0, s0["sort_order"])
+	assert.Equal(t, "オープニング", s0["caption"], "caption bridged")
+	assert.EqualValues(t, srcVNDB, s0["source_id"], "vndb source mapped")
+	assert.EqualValues(t, 1, s0["sexual"])
+	s1 := shots[1].(map[string]any)
+	assert.Equal(t, "hash_user_shot", s1["image_hash"])
+	assert.Equal(t, "", s1["caption"], "empty caption preserved")
+	assert.EqualValues(t, srcGalgameWiki, s1["source_id"], "empty galgame_screenshot.source → galgame_wiki")
+
+	// BODYLESS: native rows, sorted; captioned + plain.
+	code, body = getJSON(t, app, "/api/v1/catalog/works/"+itoa(bodyless.ID))
+	require.Equal(t, 200, code)
+	shots = body["data"].(map[string]any)["screenshots"].([]any)
+	require.Len(t, shots, 2)
+	b0 := shots[0].(map[string]any)
+	assert.Equal(t, "hash_bodyless_shot", b0["image_hash"])
+	assert.Equal(t, "本体截图", b0["caption"])
+	assert.EqualValues(t, 2, b0["sexual"])
+	assert.EqualValues(t, srcVNDB, b0["source_id"])
+	assert.EqualValues(t, srcUser, shots[1].(map[string]any)["source_id"])
+
+	// XOR: claimed + empty galgame_screenshot → [] (the shadow native row is invisible).
+	code, body = getJSON(t, app, "/api/v1/catalog/works/"+itoa(xor.ID))
+	require.Equal(t, 200, code)
+	assert.Empty(t, body["data"].(map[string]any)["screenshots"].([]any), "strict XOR: no fallback to native rows")
+
+	// EMPTY: [] not null.
+	code, body = getJSON(t, app, "/api/v1/catalog/works/"+itoa(empty.ID))
+	require.Equal(t, 200, code)
+	assert.Empty(t, body["data"].(map[string]any)["screenshots"].([]any))
+}
+
 func ptrI16(v int16) *int16 { return &v }
 
 func ptrI64(v int64) *int64 { return &v }

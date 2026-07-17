@@ -37,6 +37,30 @@ type WorkByAnchorResponse struct {
 	// yields [] (never a fallback to native rows). The PORTRAIT covers
 	// (portrait_pinned=true) are what kungal/moyu read for the portrait-first UI.
 	Covers []WorkCover `json:"covers"`
+	// Screenshots is the work's screenshot set (step 54 media-aggregation wave
+	// III, the closing read-face wave), one element per screenshot in a single
+	// shape regardless of source. A CLAIMED work's screenshots are bridged from
+	// galgame_screenshot; a BODYLESS work's from its catalog_work_screenshot rows.
+	// Strict XOR: a claimed work with no galgame screenshot yields [] (never a
+	// fallback to native rows).
+	Screenshots []WorkScreenshot `json:"screenshots"`
+}
+
+// WorkScreenshot is one screenshot image on a work, in the unified
+// media-aggregation shape. image_hash keys the bytes in the image service (a
+// claimed work's bytes live in the galgame_wiki scope; a bodyless work's in the
+// catalog scope). Unlike WorkCover it carries a caption and has no kind /
+// portrait_pinned. source_id references the catalog_source registry (§8.C): a
+// bridged claimed screenshot carries its galgame_screenshot.source provenance
+// (galgame_wiki / vndb), a bodyless screenshot its backfill source.
+type WorkScreenshot struct {
+	ImageHash string `json:"image_hash"`
+	Caption   string `json:"caption"`
+	SortOrder int    `json:"sort_order" doc:"gallery position"`
+	// Sexual/Violence are per-image content-rating flags: 0=safe 1=suggestive 2=explicit.
+	Sexual   int16 `json:"sexual" doc:"content flag: 0=safe 1=suggestive 2=explicit"`
+	Violence int16 `json:"violence" doc:"content flag: 0=safe 1=suggestive 2=explicit"`
+	SourceID int16 `json:"source_id" doc:"catalog_source id (provenance): galgame_wiki/vndb for a bridged claimed screenshot, the backfill source for a bodyless screenshot"`
 }
 
 // WorkCover is one cover image on a work, in the unified media-aggregation

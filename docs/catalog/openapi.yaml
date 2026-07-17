@@ -1768,6 +1768,12 @@ components:
           type:
             - array
             - "null"
+        screenshots:
+          items:
+            $ref: "#/components/schemas/WorkScreenshot"
+          type:
+            - array
+            - "null"
         titles:
           items:
             $ref: "#/components/schemas/WorkTitle"
@@ -1785,6 +1791,7 @@ components:
         - characters
         - intro
         - covers
+        - screenshots
       type: object
     WorkCharacter:
       additionalProperties: false
@@ -1975,6 +1982,37 @@ components:
         - source
         - external_id
         - level
+      type: object
+    WorkScreenshot:
+      additionalProperties: false
+      properties:
+        caption:
+          type: string
+        image_hash:
+          type: string
+        sexual:
+          description: "content flag: 0=safe 1=suggestive 2=explicit"
+          format: int32
+          type: integer
+        sort_order:
+          description: gallery position
+          format: int64
+          type: integer
+        source_id:
+          description: "catalog_source id (provenance): galgame_wiki/vndb for a bridged claimed screenshot, the backfill source for a bodyless screenshot"
+          format: int32
+          type: integer
+        violence:
+          description: "content flag: 0=safe 1=suggestive 2=explicit"
+          format: int32
+          type: integer
+      required:
+        - image_hash
+        - caption
+        - sort_order
+        - sexual
+        - violence
+        - source_id
       type: object
     WorkSearchHit:
       additionalProperties: false

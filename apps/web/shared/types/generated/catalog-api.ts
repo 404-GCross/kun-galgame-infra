@@ -1257,6 +1257,7 @@ export interface components {
             labels: components["schemas"]["WorkLabel"][] | null;
             refs: components["schemas"]["WorkRef"][] | null;
             releases: components["schemas"]["ReleaseBrief"][] | null;
+            screenshots: components["schemas"]["WorkScreenshot"][] | null;
             titles: components["schemas"]["WorkTitle"][] | null;
             work: components["schemas"]["WorkCore"];
         };
@@ -1371,6 +1372,30 @@ export interface components {
              */
             release_id?: number;
             source: string;
+        };
+        WorkScreenshot: {
+            caption: string;
+            image_hash: string;
+            /**
+             * Format: int32
+             * @description content flag: 0=safe 1=suggestive 2=explicit
+             */
+            sexual: number;
+            /**
+             * Format: int64
+             * @description gallery position
+             */
+            sort_order: number;
+            /**
+             * Format: int32
+             * @description catalog_source id (provenance): galgame_wiki/vndb for a bridged claimed screenshot, the backfill source for a bodyless screenshot
+             */
+            source_id: number;
+            /**
+             * Format: int32
+             * @description content flag: 0=safe 1=suggestive 2=explicit
+             */
+            violence: number;
         };
         WorkSearchHit: {
             /**

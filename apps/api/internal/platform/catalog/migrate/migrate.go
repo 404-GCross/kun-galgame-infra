@@ -51,8 +51,9 @@ func Run(db *gorm.DB) error {
 		// Work graph (step 04): registry work/title/release, then edges.
 		&model.CatalogWork{},
 		&model.CatalogWorkTitle{},
-		&model.CatalogWorkIntro{}, // bodyless multilingual intro (step 52 media-aggregation pilot)
-		&model.CatalogWorkCover{}, // bodyless cover images (step 53 media-aggregation wave II)
+		&model.CatalogWorkIntro{},      // bodyless multilingual intro (step 52 media-aggregation pilot)
+		&model.CatalogWorkCover{},      // bodyless cover images (step 53 media-aggregation wave II)
+		&model.CatalogWorkScreenshot{}, // bodyless screenshot images (step 54 media-aggregation wave III)
 		&model.CatalogRelease{},
 		&model.CatalogWorkRelation{},
 		&model.CatalogEntityRelation{},
