@@ -79,7 +79,51 @@ func Run(db *gorm.DB) error {
 	if err := editing.AutoMigrate(db); err != nil {
 		return fmt.Errorf("editing automigrate: %w", err)
 	}
+	if err := EditLegacyColumns(db); err != nil {
+		return err
+	}
 	return rawSQL(db)
+}
+
+// EditLegacyColumns adds the strangler-migration bookkeeping columns to the
+// engine tables (E2a, 03 号裁定 3/5). They are populated ONLY by the one-shot
+// legacy transform (cmd/migrate-galgame-editing) — the engine and every new
+// write path never set them:
+//
+//   - edit_revision.legacy_action:  the original galgame_revision action string
+//     (created/updated/claimed/...) — honest provenance for migrated rows; the
+//     engine action column keeps the 4-value vocabulary.
+//   - edit_revision.legacy_id / edit_proposal.legacy_pr_id: the source-row PK.
+//     Keys the transform's idempotent upsert AND keeps old wire ids stable
+//     (revision feed cursors, PR permalinks) via COALESCE(legacy_id, id).
+//   - legacy_meta (both): old-wire-only baggage the engine does not model
+//     (revision note/is_minor/reverted_to/null-changed_fields marker; PR
+//     title/message/original snapshot/base_revision).
+//   - idx_edit_revision_wire_id: expression index over the wire id the
+//     old-wire adapter (galgame/editbridge) orders and cursors by.
+//
+// Exported so the editbridge tests can provision the exact production schema.
+// Kept in this package: the columns live on catalog-pool tables and ride the
+// single migration entry point (charter ruling 9).
+func EditLegacyColumns(db *gorm.DB) error {
+	for _, stmt := range []string{
+		`ALTER TABLE edit_revision ADD COLUMN IF NOT EXISTS legacy_action text`,
+		`ALTER TABLE edit_revision ADD COLUMN IF NOT EXISTS legacy_id bigint`,
+		`ALTER TABLE edit_revision ADD COLUMN IF NOT EXISTS legacy_meta jsonb`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS uq_edit_revision_legacy_id
+		    ON edit_revision(legacy_id) WHERE legacy_id IS NOT NULL`,
+		`CREATE INDEX IF NOT EXISTS idx_edit_revision_wire_id
+		    ON edit_revision ((COALESCE(legacy_id, id)))`,
+		`ALTER TABLE edit_proposal ADD COLUMN IF NOT EXISTS legacy_pr_id bigint`,
+		`ALTER TABLE edit_proposal ADD COLUMN IF NOT EXISTS legacy_meta jsonb`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS uq_edit_proposal_legacy_pr_id
+		    ON edit_proposal(legacy_pr_id) WHERE legacy_pr_id IS NOT NULL`,
+	} {
+		if err := db.Exec(stmt).Error; err != nil {
+			return fmt.Errorf("edit legacy columns: %w", err)
+		}
+	}
+	return nil
 }
 
 // preMigrate runs BEFORE AutoMigrate: it adds NOT-NULL-without-default columns
