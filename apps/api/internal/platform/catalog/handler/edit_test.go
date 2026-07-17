@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -8,14 +9,17 @@ import (
 	"strings"
 	"testing"
 
+	"api/internal/platform/authz"
 	"api/internal/platform/catalog/editspec"
 	"api/internal/platform/catalog/model"
+	"api/internal/platform/catalog/perm"
 	"api/internal/platform/editing"
 	siteModel "api/internal/platform/site/model"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
 
 // TestSetupEdit_RegistersOperations: spec smoke — the whole edit face
@@ -23,7 +27,7 @@ import (
 // run during spec export).
 func TestSetupEdit_RegistersOperations(t *testing.T) {
 	api := Setup(fiber.New(), nil, nil, nil, nil, nil)
-	SetupEdit(api, nil)
+	SetupEdit(api, nil, nil)
 	paths := api.OpenAPI().Paths
 	for _, p := range []string{
 		"/api/v1/catalog/edit/proposals",
@@ -36,6 +40,7 @@ func TestSetupEdit_RegistersOperations(t *testing.T) {
 		"/api/v1/catalog/edit/diff",
 		"/api/v1/catalog/edit/revert",
 		"/api/v1/catalog/edit/schema/{entity_type}",
+		"/api/v1/catalog/edit/snapshot",
 	} {
 		assert.NotNilf(t, paths[p], "operation %s must be registered", p)
 	}
@@ -43,8 +48,13 @@ func TestSetupEdit_RegistersOperations(t *testing.T) {
 
 // editApp mirrors claimApp for the edit face: the /api/v1/catalog prefix
 // injects the given client (standing in for S2SAuth), and the edit face is
-// registered over the supplied engine.
+// registered over the supplied engine with the catalog family's resolver
+// (the E0/E1 posture; multi-family routing has its own test below).
 func editApp(client *siteModel.OAuthClient, engine *editing.Engine) *fiber.App {
+	return editAppWithPerms(client, engine, PermResolvers{"catalog": perm.Resolver})
+}
+
+func editAppWithPerms(client *siteModel.OAuthClient, engine *editing.Engine, perms PermResolvers) *fiber.App {
 	app := fiber.New()
 	app.Use("/api/v1/catalog", func(c fiber.Ctx) error {
 		if client != nil {
@@ -53,7 +63,7 @@ func editApp(client *siteModel.OAuthClient, engine *editing.Engine) *fiber.App {
 		return c.Next()
 	})
 	api := Setup(app, nil, nil, nil, nil, nil)
-	SetupEdit(api, engine)
+	SetupEdit(api, engine, perms)
 	return app
 }
 
@@ -309,4 +319,127 @@ func TestEditFaceLetmoeTenant(t *testing.T) {
 	}
 	assert.True(t, wouldAutomerge(owned.ID))
 	assert.False(t, wouldAutomerge(public.ID))
+}
+
+// fakeFamilySpec registers a minimal entity type for the family-routing
+// tests: a fixed snapshot, a pass-through Txn (Apply is a no-op), and one
+// perm-gated field so every policy decision goes through HasPerm.
+func fakeFamilySpec(family string) editing.EntityTypeSpec {
+	typ := family + ".thing"
+	return editing.EntityTypeSpec{
+		Family: family,
+		Type:   typ,
+		LoadSnapshot: func(ctx context.Context, entityID int64) (map[string]any, error) {
+			return map[string]any{typ + ".name": "current"}, nil
+		},
+		Txn: func(ctx context.Context, fn func(tx *gorm.DB) error) error { return fn(nil) },
+		DefaultPolicy: editing.Policy{
+			Propose:   editing.ProposePerm(family + ".edit"),
+			Review:    editing.ReviewPerm(family + ".review"),
+			Automerge: editing.AutomergeNever,
+		},
+		Fields: []editing.FieldSpec{{
+			Key: typ + ".name", Kind: editing.KindText, DiffHint: editing.DiffHintInline,
+			Validate: func(any) error { return nil },
+			Apply:    func(context.Context, *gorm.DB, int64, any) error { return nil },
+		}},
+	}
+}
+
+// TestEditFamilyResolver pins E3a ruling 1: the face routes an asserted
+// actor's roles through the vocabulary of the entity's OWN family — no
+// hardcoded family name, and a family absent from the resolver map fails
+// closed even for a role that exists in another family's bundles. The
+// proposal-directed leg (merge) proves the stored entity_family routes too.
+func TestEditFamilyResolver(t *testing.T) {
+	db := openCatalogTestDB(t)
+	for _, tbl := range []string{"edit_proposal_amendment", "edit_proposal", "edit_revision"} {
+		require.NoError(t, db.Exec("TRUNCATE "+tbl+" RESTART IDENTITY CASCADE").Error)
+	}
+
+	reg := editing.NewRegistry()
+	require.NoError(t, reg.Register(fakeFamilySpec("widget")))
+	require.NoError(t, reg.Register(fakeFamilySpec("gizmo")))
+	require.NoError(t, reg.Register(fakeFamilySpec("orphan"))) // NOT in the resolver map
+	engine := editing.NewEngine(db, reg)
+
+	app := editAppWithPerms(&siteModel.OAuthClient{ID: "c", CatalogSite: "site-a"}, engine, PermResolvers{
+		"widget": authz.NewResolver(authz.Bundles{"editor": {"widget.edit", "widget.review"}}),
+		"gizmo":  authz.NewResolver(authz.Bundles{"boss": {"gizmo.edit"}}),
+	})
+
+	propose := func(family string, roles string) (int, []byte) {
+		t.Helper()
+		return editPost(t, app, "/api/v1/catalog/edit/proposals", fmt.Sprintf(
+			`{"entity_type":"%s.thing","entity_id":1,"site":"site-a",
+			  "patch":{"%s.thing.name":"new"},"actor":{"user_id":5,"roles":[%s]}}`,
+			family, family, roles))
+	}
+
+	// The widget vocabulary grants "editor"; the gizmo vocabulary does not —
+	// the SAME role set must pass one family and fail the other.
+	status, raw := propose("widget", `"editor"`)
+	require.Equal(t, fiber.StatusOK, status, string(raw))
+	status, _ = propose("gizmo", `"editor"`)
+	assert.Equal(t, fiber.StatusForbidden, status, "gizmo must not honor widget's role")
+	status, _ = propose("gizmo", `"boss"`)
+	assert.Equal(t, fiber.StatusOK, status)
+	status, _ = propose("widget", `"boss"`)
+	assert.Equal(t, fiber.StatusForbidden, status, "widget must not honor gizmo's role")
+
+	// Unmapped family: fail closed no matter the roles.
+	status, _ = propose("orphan", `"editor","boss"`)
+	assert.Equal(t, fiber.StatusForbidden, status, "a family with no resolver fails closed")
+
+	// Proposal-directed ops route through the STORED entity_family: the
+	// widget proposal (id 1) merges under widget.review.
+	var created struct {
+		Data struct {
+			Proposal struct {
+				ID int64 `json:"id"`
+			} `json:"proposal"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &created))
+	status, _ = editPost(t, app,
+		fmt.Sprintf("/api/v1/catalog/edit/proposals/%d/merge", created.Data.Proposal.ID),
+		`{"actor":{"user_id":6,"roles":["boss"]}}`)
+	assert.Equal(t, fiber.StatusForbidden, status, "gizmo's role must not review a widget proposal")
+	status, raw = editPost(t, app,
+		fmt.Sprintf("/api/v1/catalog/edit/proposals/%d/merge", created.Data.Proposal.ID),
+		`{"actor":{"user_id":6,"roles":["editor"]}}`)
+	assert.Equal(t, fiber.StatusOK, status, string(raw))
+}
+
+// TestEditSnapshot pins the bootstrap read: the entity's CURRENT registered
+// field values through the spec's LoadSnapshot (not a stored revision).
+func TestEditSnapshot(t *testing.T) {
+	db := openCatalogTestDB(t)
+	reg := editing.NewRegistry()
+	require.NoError(t, reg.Register(fakeFamilySpec("widget")))
+	app := editAppWithPerms(nil, editing.NewEngine(db, reg), nil)
+
+	req := httptest.NewRequest("GET", "/api/v1/catalog/edit/snapshot?entity_type=widget.thing&entity_id=1", nil)
+	resp, err := app.Test(req)
+	require.NoError(t, err)
+	require.Equal(t, fiber.StatusOK, resp.StatusCode)
+	raw, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	var out struct {
+		Data struct {
+			EntityType string         `json:"entity_type"`
+			EntityID   int64          `json:"entity_id"`
+			Values     map[string]any `json:"values"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &out))
+	assert.Equal(t, "widget.thing", out.Data.EntityType)
+	assert.Equal(t, int64(1), out.Data.EntityID)
+	assert.Equal(t, map[string]any{"widget.thing.name": "current"}, out.Data.Values)
+
+	// Unknown entity type → 404.
+	req = httptest.NewRequest("GET", "/api/v1/catalog/edit/snapshot?entity_type=ghost.thing&entity_id=1", nil)
+	resp, err = app.Test(req)
+	require.NoError(t, err)
+	assert.Equal(t, fiber.StatusNotFound, resp.StatusCode)
 }

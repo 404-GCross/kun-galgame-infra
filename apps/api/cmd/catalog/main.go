@@ -40,6 +40,7 @@ import (
 	"api/internal/platform/devapi"
 	"api/internal/platform/editing"
 	galgameEditspec "api/internal/platform/galgame/editspec"
+	galgamePerm "api/internal/platform/galgame/perm"
 	siteRepo "api/internal/platform/site/repository"
 	"api/pkg/config"
 	"api/pkg/health"
@@ -153,7 +154,14 @@ func main() {
 		os.Exit(1)
 	}
 	editEngine := editing.NewEngine(catalogDB.DB(), editRegistry)
-	catHandler.SetupEdit(s2sAPI, editEngine)
+	// Per-family perm resolvers (E3a ruling 1): the generic edit face routes
+	// an asserted actor's roles through the vocabulary of the entity's own
+	// family — registered here alongside the EntityTypeSpecs, so the face
+	// hardcodes no family name and the engine stays family-agnostic.
+	catHandler.SetupEdit(s2sAPI, editEngine, catHandler.PermResolvers{
+		"catalog": catalogPerm.Resolver,
+		"galgame": galgamePerm.Resolver,
+	})
 
 	// NextMoe open API: catalog public projection (/v1/catalog/*). A NEW public
 	// read-only bypass (step 03) behind the shared devapi middleware chain; the

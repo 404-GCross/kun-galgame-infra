@@ -68,7 +68,7 @@ func main() {
 		// The editing-engine face (/api/v1/catalog/edit/*, E0) registers on the
 		// same S2S huma.API in cmd/catalog — mirror it so the exported spec
 		// matches the runtime surface (nil engine is fine for spec emission).
-		catHandler.SetupEdit(api, nil)
+		catHandler.SetupEdit(api, nil, nil)
 	case *catalogAdmin:
 		api = catHandler.SetupAdmin(app, nil, nil)
 	case *catalogPublic:

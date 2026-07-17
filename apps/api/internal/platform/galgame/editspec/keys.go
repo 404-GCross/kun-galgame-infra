@@ -48,6 +48,15 @@ const (
 // image-service site scope already used for galgame bytes).
 const SiteGalgameWiki = "galgame_wiki"
 
+// SiteKungal is the kungal forum's tenant key (E3a — the galgame family's
+// full-featured edit home; matches the forum OAuth client's catalog_site
+// binding). Its overlay in RegisterGame sends every default-policy field
+// through the kungal review queue: propose stays open (mirroring the old
+// wiki SubmitPR = any logged-in user), nothing automerges (direct-edit
+// powers open later per need). The special keys (bid locked, vndb_id,
+// status) keep their E2a field policies — no overlay entries.
+const SiteKungal = "kungal"
+
 // OldToNew maps a historical snapshot / changed_fields key to its eternal
 // field key. The status column was never a snapshot key — it has no entry.
 var OldToNew = map[string]string{

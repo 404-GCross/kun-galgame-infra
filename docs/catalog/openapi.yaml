@@ -765,6 +765,22 @@ components:
         - entity_type
         - fields
       type: object
+    EditSnapshotResponse:
+      additionalProperties: false
+      properties:
+        entity_id:
+          format: int64
+          type: integer
+        entity_type:
+          type: string
+        values:
+          additionalProperties: {}
+          type: object
+      required:
+        - entity_type
+        - entity_id
+        - values
+      type: object
     EditWithdrawRequest:
       additionalProperties: false
       properties:
@@ -1129,6 +1145,27 @@ components:
           type: integer
         data:
           $ref: "#/components/schemas/EditSchemaResponse"
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
+    EnvelopeEditSnapshotResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EnvelopeEditSnapshotResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/EditSnapshotResponse"
         message:
           type: string
       required:
@@ -2618,6 +2655,41 @@ paths:
                 $ref: "#/components/schemas/HouseError"
           description: Error
       summary: Field schema + the caller's evaluated field-level capabilities
+      tags:
+        - catalog-edit
+  /api/v1/catalog/edit/snapshot:
+    get:
+      operationId: getEditSnapshot
+      parameters:
+        - description: Registered entity type, e.g. galgame.game
+          explode: false
+          in: query
+          name: entity_type
+          schema:
+            description: Registered entity type, e.g. galgame.game
+            minLength: 1
+            type: string
+        - explode: false
+          in: query
+          name: entity_id
+          schema:
+            format: int64
+            minimum: 1
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeEditSnapshotResponse"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: The entity's current registered-field values (the BFF editor's bootstrap read)
       tags:
         - catalog-edit
   /api/v1/catalog/labels/{id}/works:

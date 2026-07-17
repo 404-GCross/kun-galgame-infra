@@ -10,7 +10,6 @@ import (
 
 	"api/internal/platform/authz"
 	"api/internal/platform/catalog/dto"
-	"api/internal/platform/catalog/perm"
 	"api/internal/platform/editing"
 	"api/pkg/errors"
 
@@ -42,18 +41,28 @@ func decodeStrings(raw datatypes.JSON) []string {
 // /v1 face exposes NONE of this (E4 decides that separately).
 //
 // The actor (end user) is ASSERTED by the product backend in the request
-// body (the community S2S convention): roles evaluate through the catalog
-// perm resolver, trust_tier feeds the trusted policy rules.
+// body (the community S2S convention): roles evaluate through the entity
+// FAMILY's own perm vocabulary (E3a ruling 1 — the resolver map below),
+// trust_tier feeds the trusted policy rules.
+
+// PermResolvers routes an entity family to the permission vocabulary its
+// asserted roles evaluate through (E3a ruling 1). The face hardcodes no
+// family name — assembly points register whatever families they serve,
+// exactly like the EntityTypeSpec registrations; a family absent from the
+// map fails closed (every perm-gated rule denies).
+type PermResolvers map[string]*authz.Resolver
 
 // EditServer holds the editing operations' dependencies.
 type EditServer struct {
 	engine *editing.Engine
+	perms  PermResolvers
 }
 
 // SetupEdit registers the editing operations on the S2S Huma API built by
-// Setup. Callable with a nil engine for spec export (handlers never run).
-func SetupEdit(api huma.API, engine *editing.Engine) {
-	s := &EditServer{engine: engine}
+// Setup. Callable with a nil engine/resolver map for spec export (handlers
+// never run).
+func SetupEdit(api huma.API, engine *editing.Engine, perms PermResolvers) {
+	s := &EditServer{engine: engine, perms: perms}
 	tags := []string{"catalog-edit"}
 
 	huma.Register(api, huma.Operation{
@@ -100,16 +109,34 @@ func SetupEdit(api huma.API, engine *editing.Engine) {
 		OperationID: "getEditSchema", Method: http.MethodGet, Path: "/api/v1/catalog/edit/schema/{entity_type}",
 		Summary: "Field schema + the caller's evaluated field-level capabilities", Tags: tags,
 	}, s.schema)
+	huma.Register(api, huma.Operation{
+		OperationID: "getEditSnapshot", Method: http.MethodGet, Path: "/api/v1/catalog/edit/snapshot",
+		Summary: "The entity's current registered-field values (the BFF editor's bootstrap read)", Tags: tags,
+	}, s.snapshot)
+}
+
+// familyOf derives the entity family from a registered entity type — its
+// first dotted segment (the wire carries no family; E0 deviation 8). An
+// unknown type resolves to a family absent from the resolver map, which
+// fails closed.
+func familyOf(entityType string) string {
+	family, _, _ := strings.Cut(entityType, ".")
+	return family
 }
 
 // policyCtx builds the engine policy context from an asserted actor: roles
-// resolve through the catalog perm bundles, trust tier passes through.
-func policyCtx(actor dto.EditActor, site string) editing.PolicyContext {
+// resolve through the FAMILY's perm vocabulary (fail-closed when the family
+// registered no resolver), trust tier passes through.
+func (s *EditServer) policyCtx(actor dto.EditActor, site, family string) editing.PolicyContext {
 	roles := actor.Roles
+	resolver := s.perms[family]
 	return editing.PolicyContext{
 		UserID: actor.UserID, Site: site, TrustTier: actor.TrustTier,
 		HasPerm: func(key string) bool {
-			return perm.Resolver.Can(roles, authz.Permission(key))
+			if resolver == nil {
+				return false
+			}
+			return resolver.Can(roles, authz.Permission(key))
 		},
 	}
 }
@@ -204,7 +231,7 @@ func (s *EditServer) create(ctx context.Context, in *editCreateInput) (*editCrea
 	prop, rev, err := s.engine.CreateProposal(ctx, editing.CreateProposalInput{
 		EntityType: in.Body.EntityType, EntityID: in.Body.EntityID,
 		Patch: in.Body.Patch, Note: in.Body.Note,
-		Actor: policyCtx(in.Body.Actor, in.Body.Site),
+		Actor: s.policyCtx(in.Body.Actor, in.Body.Site, familyOf(in.Body.EntityType)),
 	})
 	if err != nil {
 		return nil, editErr(err)
@@ -293,7 +320,7 @@ func (s *EditServer) amend(ctx context.Context, in *editAmendInput) (*editAmendO
 	}
 	amendment, err := s.engine.AmendProposal(ctx, in.ID, editing.AmendInput{
 		Set: in.Body.Set, Unset: in.Body.Unset, Note: in.Body.Note,
-		Actor: policyCtx(in.Body.Actor, prop.Site),
+		Actor: s.policyCtx(in.Body.Actor, prop.Site, prop.EntityFamily),
 	})
 	if err != nil {
 		return nil, editErr(err)
@@ -316,7 +343,7 @@ func (s *EditServer) merge(ctx context.Context, in *editDecisionInput) (*editMer
 	if err != nil {
 		return nil, err
 	}
-	rev, err := s.engine.MergeProposal(ctx, in.ID, policyCtx(in.Body.Actor, prop.Site), in.Body.Note)
+	rev, err := s.engine.MergeProposal(ctx, in.ID, s.policyCtx(in.Body.Actor, prop.Site, prop.EntityFamily), in.Body.Note)
 	if err != nil {
 		return nil, editErr(err)
 	}
@@ -332,7 +359,7 @@ func (s *EditServer) decline(ctx context.Context, in *editDecisionInput) (*editC
 	if err != nil {
 		return nil, err
 	}
-	if err := s.engine.DeclineProposal(ctx, in.ID, policyCtx(in.Body.Actor, prop.Site), in.Body.Note); err != nil {
+	if err := s.engine.DeclineProposal(ctx, in.ID, s.policyCtx(in.Body.Actor, prop.Site, prop.EntityFamily), in.Body.Note); err != nil {
 		return nil, editErr(err)
 	}
 	return s.closedView(ctx, in.ID)
@@ -348,7 +375,7 @@ func (s *EditServer) withdraw(ctx context.Context, in *editWithdrawInput) (*edit
 	if err != nil {
 		return nil, err
 	}
-	if err := s.engine.WithdrawProposal(ctx, in.ID, policyCtx(in.Body.Actor, prop.Site)); err != nil {
+	if err := s.engine.WithdrawProposal(ctx, in.ID, s.policyCtx(in.Body.Actor, prop.Site, prop.EntityFamily)); err != nil {
 		return nil, editErr(err)
 	}
 	return s.closedView(ctx, in.ID)
@@ -439,13 +466,32 @@ func (s *EditServer) revert(ctx context.Context, in *editRevertInput) (*editReve
 	}
 	prop, rev, err := s.engine.Revert(ctx, editing.RevertInput{
 		EntityType: in.Body.EntityType, EntityID: in.Body.EntityID, ToSeq: in.Body.ToSeq,
-		Note: in.Body.Note, Actor: policyCtx(in.Body.Actor, in.Body.Site),
+		Note: in.Body.Note, Actor: s.policyCtx(in.Body.Actor, in.Body.Site, familyOf(in.Body.EntityType)),
 	})
 	if err != nil {
 		return nil, editErr(err)
 	}
 	return &editRevertOutput{Body: okEnvelope(dto.EditRevertResponse{
 		Proposal: proposalView(prop), Revision: revisionView(rev),
+	})}, nil
+}
+
+type editSnapshotInput struct {
+	EntityType string `query:"entity_type" minLength:"1" doc:"Registered entity type, e.g. galgame.game"`
+	EntityID   int64  `query:"entity_id" minimum:"1"`
+}
+
+type editSnapshotOutput struct {
+	Body Envelope[dto.EditSnapshotResponse]
+}
+
+func (s *EditServer) snapshot(ctx context.Context, in *editSnapshotInput) (*editSnapshotOutput, error) {
+	values, err := s.engine.CurrentSnapshot(ctx, in.EntityType, in.EntityID)
+	if err != nil {
+		return nil, editErr(err)
+	}
+	return &editSnapshotOutput{Body: okEnvelope(dto.EditSnapshotResponse{
+		EntityType: in.EntityType, EntityID: in.EntityID, Values: values,
 	})}, nil
 }
 
@@ -467,7 +513,7 @@ func (s *EditServer) schema(ctx context.Context, in *editSchemaInput) (*editSche
 	if in.Roles != "" {
 		actor.Roles = strings.Split(in.Roles, ",")
 	}
-	fields, err := s.engine.SchemaProjection(ctx, in.EntityType, in.EntityID, policyCtx(actor, in.Site))
+	fields, err := s.engine.SchemaProjection(ctx, in.EntityType, in.EntityID, s.policyCtx(actor, in.Site, familyOf(in.EntityType)))
 	if err != nil {
 		return nil, editErr(err)
 	}

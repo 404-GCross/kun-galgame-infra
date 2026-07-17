@@ -143,6 +143,15 @@ type EditDiffResponse struct {
 	Fields  []EditFieldDiffView `json:"fields"`
 }
 
+// EditSnapshotResponse is the entity's CURRENT registered-field values —
+// the registry's LoadSnapshot view, keyed by eternal field keys (the BFF
+// editor's bootstrap read; E3a).
+type EditSnapshotResponse struct {
+	EntityType string         `json:"entity_type"`
+	EntityID   int64          `json:"entity_id"`
+	Values     map[string]any `json:"values"`
+}
+
 // EditSchemaFieldView is one field of the edit-schema projection: shape +
 // the CALLER's evaluated capabilities (the UI holds zero policy logic).
 type EditSchemaFieldView struct {

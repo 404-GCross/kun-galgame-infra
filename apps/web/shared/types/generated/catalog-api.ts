@@ -209,6 +209,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/catalog/edit/snapshot": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The entity's current registered-field values (the BFF editor's bootstrap read) */
+        get: operations["getEditSnapshot"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/catalog/labels/{id}/works": {
         parameters: {
             query?: never;
@@ -751,6 +768,14 @@ export interface components {
             entity_type: string;
             fields: components["schemas"]["EditSchemaFieldView"][] | null;
         };
+        EditSnapshotResponse: {
+            /** Format: int64 */
+            entity_id: number;
+            entity_type: string;
+            values: {
+                [key: string]: unknown;
+            };
+        };
         EditWithdrawRequest: {
             /**
              * Format: uri
@@ -956,6 +981,18 @@ export interface components {
             /** Format: int64 */
             code: number;
             data?: components["schemas"]["EditSchemaResponse"];
+            message: string;
+        };
+        EnvelopeEditSnapshotResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/EnvelopeEditSnapshotResponse.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            code: number;
+            data?: components["schemas"]["EditSnapshotResponse"];
             message: string;
         };
         EnvelopeEntitySearchResponse: {
@@ -1902,6 +1939,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EnvelopeEditSchemaResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HouseError"];
+                };
+            };
+        };
+    };
+    getEditSnapshot: {
+        parameters: {
+            query?: {
+                /** @description Registered entity type, e.g. galgame.game */
+                entity_type?: string;
+                entity_id?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeEditSnapshotResponse"];
                 };
             };
             /** @description Error */

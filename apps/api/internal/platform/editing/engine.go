@@ -47,6 +47,20 @@ func (e *Engine) ownerSite(ctx context.Context, spec *EntityTypeSpec, entityID i
 
 // ---- reads ----------------------------------------------------------------
 
+// CurrentSnapshot reads the entity's CURRENT registered-field state through
+// the spec's LoadSnapshot closure — the same view merge rebases against and
+// revert restores from (E3a: the BFF bootstrap's "current values" source; a
+// latest-revision snapshot would go stale under system writes that bypass
+// the engine, doc 21 §2.6). Read-only, no policy evaluation — the S2S face
+// gates access.
+func (e *Engine) CurrentSnapshot(ctx context.Context, entityType string, entityID int64) (map[string]any, error) {
+	spec, err := e.resolveSpec(entityType)
+	if err != nil {
+		return nil, err
+	}
+	return spec.LoadSnapshot(ctx, entityID)
+}
+
 // GetProposal loads a proposal, its amendments (seq order), and the computed
 // effective patch.
 func (e *Engine) GetProposal(ctx context.Context, id int64) (*Proposal, []ProposalAmendment, map[string]any, error) {
