@@ -21,7 +21,7 @@ import (
 // way a real family would at its assembly point (charter ruling 1).
 
 var (
-	testDB *gorm.DB
+	testDB  *gorm.DB
 	testCtx = context.Background()
 )
 

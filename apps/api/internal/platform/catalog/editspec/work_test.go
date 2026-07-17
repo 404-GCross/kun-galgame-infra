@@ -214,14 +214,14 @@ func TestWorkValidators(t *testing.T) {
 
 	var valErr *editing.ValidationError
 	cases := []map[string]any{
-		{editspec.FieldWorkDisplayName: ""},                    // empty
-		{editspec.FieldWorkDisplayName: "   "},                 // whitespace
-		{editspec.FieldWorkDisplayName: 42.0},                  // not a string
-		{editspec.FieldWorkOLang: "xx"},                        // not whitelisted
-		{editspec.FieldWorkOLang: "JA"},                        // case-sensitive
-		{editspec.FieldWorkContentRating: float64(3)},          // out of range
-		{editspec.FieldWorkContentRating: 1.5},                 // not an integer
-		{editspec.FieldWorkContentRating: "r18"},               // not a number
+		{editspec.FieldWorkDisplayName: ""},           // empty
+		{editspec.FieldWorkDisplayName: "   "},        // whitespace
+		{editspec.FieldWorkDisplayName: 42.0},         // not a string
+		{editspec.FieldWorkOLang: "xx"},               // not whitelisted
+		{editspec.FieldWorkOLang: "JA"},               // case-sensitive
+		{editspec.FieldWorkContentRating: float64(3)}, // out of range
+		{editspec.FieldWorkContentRating: 1.5},        // not an integer
+		{editspec.FieldWorkContentRating: "r18"},      // not a number
 	}
 	for i, patch := range cases {
 		if _, _, err := e.CreateProposal(testCtx, editing.CreateProposalInput{

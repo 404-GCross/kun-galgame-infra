@@ -17,7 +17,7 @@ func TestPolicyEvaluationMatrix(t *testing.T) {
 	reviewer := reviewerActor(4)
 
 	proposeCases := []struct {
-		rule string
+		rule                            string
 		anon, trusted, editor, reviewer bool
 	}{
 		{editing.ProposeOpen, true, true, true, true},
@@ -37,7 +37,7 @@ func TestPolicyEvaluationMatrix(t *testing.T) {
 	}
 
 	automergeCases := []struct {
-		rule string
+		rule          string
 		anon, trusted bool
 	}{
 		{editing.AutomergeNever, false, false},

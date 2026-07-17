@@ -94,10 +94,10 @@ type Revision struct {
 	Snapshot datatypes.JSON `gorm:"type:jsonb;not null" json:"snapshot"`
 	// Double signature (doc 21 §2.3): actor = proposer; amender = the last
 	// amender when the merged patch carried amendments (NULL otherwise).
-	ActorUID   int64  `gorm:"column:actor_uid;not null" json:"actor_uid"`
-	AmenderUID *int64 `gorm:"column:amender_uid" json:"amender_uid"`
-	ProposalID *int64 `gorm:"index" json:"proposal_id"`
-	Site       string `gorm:"not null" json:"site"`
+	ActorUID   int64     `gorm:"column:actor_uid;not null" json:"actor_uid"`
+	AmenderUID *int64    `gorm:"column:amender_uid" json:"amender_uid"`
+	ProposalID *int64    `gorm:"index" json:"proposal_id"`
+	Site       string    `gorm:"not null" json:"site"`
 	CreatedAt  time.Time `json:"created_at"`
 }
 
