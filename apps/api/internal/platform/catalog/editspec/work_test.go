@@ -58,7 +58,8 @@ func TestMain(m *testing.M) {
 func newEngine(t *testing.T) *editing.Engine {
 	t.Helper()
 	for _, table := range []string{
-		"edit_proposal_amendment", "edit_proposal", "edit_revision", "catalog_work",
+		"edit_proposal_amendment", "edit_proposal", "edit_revision",
+		"catalog_work_title", "catalog_work",
 	} {
 		if err := testDB.Exec("TRUNCATE " + table + " RESTART IDENTITY CASCADE").Error; err != nil {
 			t.Fatalf("truncate %s: %v", table, err)

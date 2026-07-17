@@ -2159,6 +2159,14 @@ paths:
           schema:
             description: Filter to one tenant
             type: string
+        - description: Filter to one proposer (the BFF 'my proposals' face); 0 = all
+          explode: false
+          in: query
+          name: proposer_uid
+          schema:
+            description: Filter to one proposer (the BFF 'my proposals' face); 0 = all
+            format: int64
+            type: integer
         - description: Filter by status; empty = all
           explode: false
           in: query
@@ -2453,6 +2461,14 @@ paths:
           schema:
             description: Registered entity type, e.g. catalog.work
             type: string
+        - description: "Entity-aware projection: owner automerge evaluates against this entity (0 = type-level, owner projects false)"
+          explode: false
+          in: query
+          name: entity_id
+          schema:
+            description: "Entity-aware projection: owner automerge evaluates against this entity (0 = type-level, owner projects false)"
+            format: int64
+            type: integer
         - description: Tenant whose policy overlay applies
           explode: false
           in: query

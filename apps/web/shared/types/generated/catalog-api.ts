@@ -1505,6 +1505,8 @@ export interface operations {
                 entity_id?: number;
                 /** @description Filter to one tenant */
                 site?: string;
+                /** @description Filter to one proposer (the BFF 'my proposals' face); 0 = all */
+                proposer_uid?: number;
                 /** @description Filter by status; empty = all */
                 status?: "" | "open" | "merged" | "declined" | "withdrawn";
                 /** @description Page size (max 200, default 50) */
@@ -1811,6 +1813,8 @@ export interface operations {
     getEditSchema: {
         parameters: {
             query?: {
+                /** @description Entity-aware projection: owner automerge evaluates against this entity (0 = type-level, owner projects false) */
+                entity_id?: number;
                 /** @description Tenant whose policy overlay applies */
                 site?: string;
                 /** @description Asserted end-user id (0 = anonymous projection) */

@@ -218,11 +218,12 @@ func (s *EditServer) create(ctx context.Context, in *editCreateInput) (*editCrea
 }
 
 type editListInput struct {
-	EntityType string `query:"entity_type" doc:"Filter to one entity type"`
-	EntityID   int64  `query:"entity_id" doc:"Filter to one entity (requires entity_type)"`
-	Site       string `query:"site" doc:"Filter to one tenant"`
-	Status     string `query:"status" enum:",open,merged,declined,withdrawn" doc:"Filter by status; empty = all"`
-	Limit      int    `query:"limit" doc:"Page size (max 200, default 50)"`
+	EntityType  string `query:"entity_type" doc:"Filter to one entity type"`
+	EntityID    int64  `query:"entity_id" doc:"Filter to one entity (requires entity_type)"`
+	Site        string `query:"site" doc:"Filter to one tenant"`
+	ProposerUID int64  `query:"proposer_uid" doc:"Filter to one proposer (the BFF 'my proposals' face); 0 = all"`
+	Status      string `query:"status" enum:",open,merged,declined,withdrawn" doc:"Filter by status; empty = all"`
+	Limit       int    `query:"limit" doc:"Page size (max 200, default 50)"`
 }
 
 type editListOutput struct {
@@ -245,7 +246,7 @@ func (s *EditServer) list(ctx context.Context, in *editListInput) (*editListOutp
 	}
 	items, err := s.engine.ListProposals(ctx, editing.ProposalFilter{
 		EntityType: in.EntityType, EntityID: in.EntityID, Site: in.Site,
-		Status: status, Limit: in.Limit,
+		ProposerUID: in.ProposerUID, Status: status, Limit: in.Limit,
 	})
 	if err != nil {
 		return nil, editErr(err)
@@ -450,6 +451,7 @@ func (s *EditServer) revert(ctx context.Context, in *editRevertInput) (*editReve
 
 type editSchemaInput struct {
 	EntityType string `path:"entity_type" doc:"Registered entity type, e.g. catalog.work"`
+	EntityID   int64  `query:"entity_id" doc:"Entity-aware projection: owner automerge evaluates against this entity (0 = type-level, owner projects false)"`
 	Site       string `query:"site" doc:"Tenant whose policy overlay applies"`
 	UserID     int64  `query:"user_id" doc:"Asserted end-user id (0 = anonymous projection)"`
 	Roles      string `query:"roles" doc:"Comma-separated asserted roles"`
@@ -465,7 +467,7 @@ func (s *EditServer) schema(ctx context.Context, in *editSchemaInput) (*editSche
 	if in.Roles != "" {
 		actor.Roles = strings.Split(in.Roles, ",")
 	}
-	fields, err := s.engine.SchemaProjection(in.EntityType, policyCtx(actor, in.Site))
+	fields, err := s.engine.SchemaProjection(ctx, in.EntityType, in.EntityID, policyCtx(actor, in.Site))
 	if err != nil {
 		return nil, editErr(err)
 	}

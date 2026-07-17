@@ -18,17 +18,22 @@ import (
 	"gorm.io/gorm"
 )
 
-// Eternal field keys of the catalog.work pilot (§2.2b — never renamed,
-// never reused). E0 keeps the set deliberately small: three scalar columns.
-// List/relation fields (titles, credits) follow in E1/E2 with their own
-// diff/apply semantics.
+// Eternal field keys of catalog.work (§2.2b — never renamed, never reused).
+// E0 shipped the three scalar columns; E1 adds titles (the list field, see
+// work_titles.go). Credits/relations follow in later waves.
 const (
 	TypeWork = "catalog.work"
 
 	FieldWorkDisplayName   = "catalog.work.display_name"
 	FieldWorkOLang         = "catalog.work.olang"
 	FieldWorkContentRating = "catalog.work.content_rating"
+	FieldWorkTitles        = "catalog.work.titles"
 )
+
+// letmoeSites are the letmoe tenant keys sharing one overlay policy (02 号
+// 裁定 4): prod `letmoe`, staging `letmoe-staging`, and `letmoe-dev` (a
+// harmless superset — whichever catalog_site binding is in play is covered).
+var letmoeSites = []string{"letmoe", "letmoe-staging", "letmoe-dev"}
 
 // olangAllowed is the BCP-47 whitelist for catalog.work.olang — the VNDB
 // original-language vocabulary (the dominant upstream) plus the zh scripts.
@@ -52,6 +57,25 @@ func init() {
 // db is the CATALOG pool — the closures are the only key→column translation
 // layer for this family.
 func RegisterWork(reg *editing.Registry, db *gorm.DB) error {
+	// letmoe overlay (E1, 02 号裁定 4): trusted proposals, owner automerge —
+	// a letmoe actor editing a work letmoe claimed lands directly (single
+	// revision, still logged); everyone else's proposal enters the review
+	// queue (existing edit.catalog.work.review authority).
+	letmoePolicy := editing.Policy{
+		Propose:   editing.ProposeTrusted,
+		Review:    editing.ReviewPerm(string(perm.EditWorkReview)),
+		Automerge: editing.AutomergeOwner,
+	}
+	fieldKeys := []string{FieldWorkDisplayName, FieldWorkOLang, FieldWorkContentRating, FieldWorkTitles}
+	overlays := make(map[string]map[string]editing.Policy, len(letmoeSites))
+	for _, site := range letmoeSites {
+		overlay := make(map[string]editing.Policy, len(fieldKeys))
+		for _, key := range fieldKeys {
+			overlay[key] = letmoePolicy
+		}
+		overlays[site] = overlay
+	}
+
 	return reg.Register(editing.EntityTypeSpec{
 		Family: "catalog",
 		Type:   TypeWork,
@@ -66,24 +90,41 @@ func RegisterWork(reg *editing.Registry, db *gorm.DB) error {
 			if err != nil {
 				return nil, err
 			}
+			titles, err := loadTitles(ctx, db, entityID)
+			if err != nil {
+				return nil, err
+			}
 			return map[string]any{
 				FieldWorkDisplayName:   w.DisplayName,
 				FieldWorkOLang:         w.OLang,
 				FieldWorkContentRating: int64(w.ContentRating),
+				FieldWorkTitles:        titles,
 			}, nil
 		},
 		Txn: func(ctx context.Context, fn func(tx *gorm.DB) error) error {
 			return db.WithContext(ctx).Transaction(fn)
 		},
-		// E0 default policy: perm-gated proposals, perm-gated review, no
-		// automerge. Site overlays (letmoe direct-editing its own mints,
-		// doc 21 §2.5) arrive with E1 — the mechanism is live, the tuning
-		// is a tenant decision.
+		// OwnerSite = the claiming site (work.Site; nil = unclaimed) — what
+		// the owner automerge rule compares the proposal's site against.
+		OwnerSite: func(ctx context.Context, entityID int64) (*string, error) {
+			var w catmodel.CatalogWork
+			err := db.WithContext(ctx).Select("id", "site").First(&w, entityID).Error
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, editing.ErrEntityNotFound
+			}
+			if err != nil {
+				return nil, err
+			}
+			return w.Site, nil
+		},
+		// Default policy (E0): perm-gated proposals, perm-gated review, no
+		// automerge. The letmoe site overlay above is the E1 tenant tuning.
 		DefaultPolicy: editing.Policy{
 			Propose:   editing.ProposePerm(string(perm.EditWork)),
 			Review:    editing.ReviewPerm(string(perm.EditWorkReview)),
 			Automerge: editing.AutomergeNever,
 		},
+		SiteOverlays: overlays,
 		Fields: []editing.FieldSpec{
 			{
 				Key: FieldWorkDisplayName, Kind: editing.KindText, DiffHint: editing.DiffHintInline,
@@ -99,6 +140,11 @@ func RegisterWork(reg *editing.Registry, db *gorm.DB) error {
 				Key: FieldWorkContentRating, Kind: editing.KindEnum, DiffHint: editing.DiffHintInline,
 				Validate: validateContentRating,
 				Apply:    applyWorkColumn("content_rating", asContentRating),
+			},
+			{
+				Key: FieldWorkTitles, Kind: editing.KindList, DiffHint: editing.DiffHintItems,
+				Validate: validateTitles,
+				Apply:    applyTitles,
 			},
 		},
 	})
