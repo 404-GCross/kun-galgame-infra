@@ -104,10 +104,13 @@ type ModerateResult struct {
 	Degraded   bool
 }
 
-// moderateSystemPrompt instructs the upstream to emit a compact JSON verdict.
+// ModerateSystemPrompt instructs the upstream to emit a compact JSON verdict.
 // Parsing is tolerant (extractJSON), and any failure degrades to allow — so the
-// exact wording is not load-bearing for safety, only for quality.
-const moderateSystemPrompt = `You are a content-safety classifier for a community platform.
+// exact wording is not load-bearing for safety, only for quality. It is EXPORTED
+// so the offline batch scorer (cmd/scan-backlog, spec 10) scores with the exact
+// same instruction, keeping its calibration set comparable to production
+// moderate-text output.
+const ModerateSystemPrompt = `You are a content-safety classifier for a community platform.
 Judge the user message for policy violations (abuse/harassment, spam, illegal content, sexual content involving minors, or other clearly harmful content).
 Respond with ONLY a JSON object, no prose, of the form:
 {"flagged": <bool>, "categories": [<string>, ...], "score": <number between 0 and 1>}
@@ -211,7 +214,7 @@ func (s *ModerationService) moderateViaLLM(ctx context.Context, p ModerateParams
 		return failOpen(routeName, "", spec), nil
 	}
 
-	res, err := s.llm.ChatJSON(ctx, moderateSystemPrompt, p.Text, moderateMaxTokens)
+	res, err := s.llm.ChatJSON(ctx, ModerateSystemPrompt, p.Text, moderateMaxTokens)
 	if err != nil {
 		slog.Warn("ai moderate-text upstream error — fail-open allow", "site", p.Site, "err", err)
 		s.meter(ctx, model.AIUsage{
