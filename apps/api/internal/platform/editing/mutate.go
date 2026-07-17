@@ -407,7 +407,9 @@ func (e *Engine) mergeLocked(
 	prop.DecidedAt = &now
 	prop.DecisionNote = decisionNote
 	// Family-pool transaction LAST: its failure rolls the engine tx back.
-	err = spec.Txn(ctx, func(atx *gorm.DB) error {
+	// The proposer's uid rides the context so Apply closures can attribute
+	// apply-level side rows (see ActorFromContext).
+	err = spec.Txn(withActor(ctx, prop.ProposerUID), func(atx *gorm.DB) error {
 		for _, key := range changed {
 			f, _ := spec.Field(key)
 			if err := f.Apply(ctx, atx, prop.EntityID, eff[key]); err != nil {
