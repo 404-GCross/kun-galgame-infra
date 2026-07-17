@@ -744,6 +744,12 @@ export interface components {
             entity_type: string;
             /** Format: int64 */
             id: number;
+            /** @description Original pre-engine action word (migrated rows only) */
+            legacy_action?: string;
+            /** @description Old-wire minor-edit flag (migrated rows only) */
+            legacy_minor?: boolean;
+            /** @description Old-wire revision note (migrated rows only) */
+            legacy_note?: string;
             /** Format: int64 */
             proposal_id?: number;
             /** Format: int64 */

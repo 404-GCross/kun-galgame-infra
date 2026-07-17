@@ -99,6 +99,16 @@ type Revision struct {
 	ProposalID *int64    `gorm:"index" json:"proposal_id"`
 	Site       string    `gorm:"not null" json:"site"`
 	CreatedAt  time.Time `json:"created_at"`
+
+	// Legacy transform bookkeeping (E2a; columns created by migrate-catalog's
+	// EditLegacyColumns, populated ONLY by the one-shot cmd/migrate-galgame-
+	// editing). SELECT-ONLY here (gorm "->": the engine's write paths cannot
+	// set them by construction) so the read faces can render migrated rows
+	// honestly — the E3a history page's legacy_action badge and the old
+	// note/is_minor baggage. The engine still interprets NEITHER: legacy_meta
+	// stays raw JSON for the consumer to decode.
+	LegacyAction *string        `gorm:"->;column:legacy_action;type:text" json:"legacy_action,omitempty"`
+	LegacyMeta   datatypes.JSON `gorm:"->;column:legacy_meta;type:jsonb" json:"legacy_meta,omitempty"`
 }
 
 func (Revision) TableName() string { return "edit_revision" }

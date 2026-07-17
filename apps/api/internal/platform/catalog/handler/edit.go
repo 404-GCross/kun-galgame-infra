@@ -197,6 +197,22 @@ func revisionView(r *editing.Revision) dto.EditRevisionView {
 	}
 	v.Snapshot, _ = decodeMap(r.Snapshot)
 	v.ChangedFields = decodeStrings(r.ChangedFields)
+	// Migrated rows (E2) carry honest provenance: the original action word
+	// and the old-wire note/minor flag out of legacy_meta. New-era rows have
+	// neither — the engine never writes these columns.
+	if r.LegacyAction != nil {
+		v.LegacyAction = *r.LegacyAction
+	}
+	if len(r.LegacyMeta) > 0 {
+		var meta struct {
+			Note    string `json:"note"`
+			IsMinor bool   `json:"is_minor"`
+		}
+		if json.Unmarshal(r.LegacyMeta, &meta) == nil {
+			v.LegacyNote = meta.Note
+			v.LegacyMinor = meta.IsMinor
+		}
+	}
 	return v
 }
 

@@ -443,3 +443,69 @@ func TestEditSnapshot(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, fiber.StatusNotFound, resp.StatusCode)
 }
+
+// TestEditRevisionLegacyView: migrated rows' provenance (legacy_action +
+// legacy_meta note/minor) reaches the wire; new-era rows carry none of it.
+// The legacy columns are select-only on the engine model, so the test plants
+// them with a raw UPDATE — exactly what the one-shot transform did.
+func TestEditRevisionLegacyView(t *testing.T) {
+	db := openCatalogTestDB(t)
+	for _, tbl := range []string{"edit_proposal_amendment", "edit_proposal", "edit_revision"} {
+		require.NoError(t, db.Exec("TRUNCATE "+tbl+" RESTART IDENTITY CASCADE").Error)
+	}
+	reg := editing.NewRegistry()
+	require.NoError(t, reg.Register(fakeFamilySpec("widget")))
+	engine := editing.NewEngine(db, reg)
+	app := editAppWithPerms(&siteModel.OAuthClient{ID: "c", CatalogSite: "site-a"}, engine, PermResolvers{
+		"widget": authz.NewResolver(authz.Bundles{"editor": {"widget.edit", "widget.review"}}),
+	})
+
+	// Two merged revisions on entity 1: seq 1 will be dressed up as a
+	// migrated row, seq 2 stays new-era.
+	for i := 0; i < 2; i++ {
+		status, raw := editPost(t, app, "/api/v1/catalog/edit/proposals", fmt.Sprintf(
+			`{"entity_type":"widget.thing","entity_id":1,"site":"site-a",
+			  "patch":{"widget.thing.name":"v%d"},"actor":{"user_id":5,"roles":["editor"]}}`, i))
+		require.Equal(t, fiber.StatusOK, status, string(raw))
+		var created struct {
+			Data struct {
+				Proposal struct {
+					ID int64 `json:"id"`
+				} `json:"proposal"`
+			} `json:"data"`
+		}
+		require.NoError(t, json.Unmarshal(raw, &created))
+		status, raw = editPost(t, app,
+			fmt.Sprintf("/api/v1/catalog/edit/proposals/%d/merge", created.Data.Proposal.ID),
+			`{"actor":{"user_id":6,"roles":["editor"]}}`)
+		require.Equal(t, fiber.StatusOK, status, string(raw))
+	}
+	require.NoError(t, db.Exec(`UPDATE edit_revision
+		SET legacy_action = 'claimed', legacy_meta = '{"note":"旧备注","is_minor":true}'
+		WHERE entity_type = 'widget.thing' AND seq = 1`).Error)
+
+	req := httptest.NewRequest("GET", "/api/v1/catalog/edit/revisions?entity_type=widget.thing&entity_id=1", nil)
+	resp, err := app.Test(req)
+	require.NoError(t, err)
+	require.Equal(t, fiber.StatusOK, resp.StatusCode)
+	raw, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	var out struct {
+		Data struct {
+			Items []struct {
+				Seq          int    `json:"seq"`
+				LegacyAction string `json:"legacy_action"`
+				LegacyNote   string `json:"legacy_note"`
+				LegacyMinor  bool   `json:"legacy_minor"`
+			} `json:"items"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &out))
+	require.Len(t, out.Data.Items, 2) // newest first: seq 2, then seq 1
+	assert.Empty(t, out.Data.Items[0].LegacyAction)
+	assert.Empty(t, out.Data.Items[0].LegacyNote)
+	assert.False(t, out.Data.Items[0].LegacyMinor)
+	assert.Equal(t, "claimed", out.Data.Items[1].LegacyAction)
+	assert.Equal(t, "旧备注", out.Data.Items[1].LegacyNote)
+	assert.True(t, out.Data.Items[1].LegacyMinor)
+}

@@ -116,6 +116,12 @@ type EditRevisionView struct {
 	ProposalID    *int64         `json:"proposal_id,omitempty"`
 	Site          string         `json:"site"`
 	CreatedAt     time.Time      `json:"created_at"`
+
+	// Migrated-history provenance (E2 transform; empty on new-era rows):
+	// the original action word, the old-wire note, and the minor-edit flag.
+	LegacyAction string `json:"legacy_action,omitempty" doc:"Original pre-engine action word (migrated rows only)"`
+	LegacyNote   string `json:"legacy_note,omitempty" doc:"Old-wire revision note (migrated rows only)"`
+	LegacyMinor  bool   `json:"legacy_minor,omitempty" doc:"Old-wire minor-edit flag (migrated rows only)"`
 }
 
 type EditRevisionListResponse struct {

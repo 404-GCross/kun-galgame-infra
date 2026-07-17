@@ -697,6 +697,15 @@ components:
         id:
           format: int64
           type: integer
+        legacy_action:
+          description: Original pre-engine action word (migrated rows only)
+          type: string
+        legacy_minor:
+          description: Old-wire minor-edit flag (migrated rows only)
+          type: boolean
+        legacy_note:
+          description: Old-wire revision note (migrated rows only)
+          type: string
         proposal_id:
           format: int64
           type: integer
