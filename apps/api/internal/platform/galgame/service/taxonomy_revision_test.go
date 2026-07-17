@@ -91,13 +91,15 @@ func TestTaxonomyTag_Update_ChangedFieldsContainsOnlyDiffedKeys(t *testing.T) {
 		"updated → only changed fields per §6.5 (no '*' sentinel)")
 }
 
-func TestTaxonomyTag_Delete_RecordsRefCountAndAffectedAndGalgameRevisions(t *testing.T) {
+func TestTaxonomyTag_Delete_RecordsRefCountAndAffected(t *testing.T) {
 	cleanTables(t)
 	getRepos()
 	ctx := context.Background()
 
-	// Make two galgames that reference the tag, so force-delete must
-	// produce two galgame_revision rows with changed_fields=['tag_ids'].
+	// Two galgames reference the tag. E2a: the per-galgame ripple revisions
+	// are gone — a taxonomy delete's galgame side-effects are system cascades
+	// (doc 21 §2.6 posture); the audit lives in taxonomy_revision
+	// (ref_count + affected_galgame_ids).
 	tag, err := testTaxSvc.CreateTag(ctx, 1, 3, &dto.CreateTagRequest{Name: "force-tag", Category: "content"})
 	require.NoError(t, err)
 	g1 := makeGalgame(t)
@@ -127,9 +129,9 @@ func TestTaxonomyTag_Delete_RecordsRefCountAndAffectedAndGalgameRevisions(t *tes
 	assert.ElementsMatch(t, []int{g1, g2}, del.AffectedGalgameIDList(),
 		"affected_galgame_ids persisted so undo-delete UI can offer recovery")
 
-	// Each affected galgame got a new revision documenting the tag_ids change.
-	assert.Greater(t, latestRevisionID(t, g1), g1RevBefore, "g1 has a new galgame_revision")
-	assert.Greater(t, latestRevisionID(t, g2), g2RevBefore, "g2 has a new galgame_revision")
+	// E2a: NO per-galgame revision is minted for the cascade.
+	assert.Equal(t, g1RevBefore, latestRevisionID(t, g1), "no ripple revision on g1 (system cascade)")
+	assert.Equal(t, g2RevBefore, latestRevisionID(t, g2), "no ripple revision on g2 (system cascade)")
 }
 
 func TestTaxonomyTag_Revert_FromDeleted_ResurrectsButNoRelationRestore(t *testing.T) {
@@ -381,9 +383,10 @@ func TestTaxonomySeries_Update_NameOnlyProducesTaxonomyRevisionOnly(t *testing.T
 	sr, err := testTaxSvc.CreateSeries(ctx, 1, 3,
 		&dto.CreateSeriesRequest{Name: "s1"}, []int{g1})
 	require.NoError(t, err)
+	// E2a: membership writes are system cascades — no per-galgame revision.
 	g1RevAfterCreate := latestRevisionID(t, g1)
-	assert.Greater(t, g1RevAfterCreate, g1RevBefore,
-		"initial membership produces a galgame_revision per gid")
+	assert.Equal(t, g1RevAfterCreate, g1RevBefore,
+		"membership no longer mints galgame revisions (audit = taxonomy_revision)")
 
 	// Now change ONLY the Name. Membership untouched → no galgame revisions.
 	newName := "s1-renamed"
@@ -397,7 +400,7 @@ func TestTaxonomySeries_Update_NameOnlyProducesTaxonomyRevisionOnly(t *testing.T
 	assert.Equal(t, int64(2), taxTotal, "series got created + updated taxonomy revisions")
 }
 
-func TestTaxonomySeries_Update_GalgameIDsProducesGalgameRevisionsNotTaxonomy(t *testing.T) {
+func TestTaxonomySeries_Update_GalgameIDsProducesNoTaxonomyRevision(t *testing.T) {
 	cleanTables(t)
 	getRepos()
 	ctx := context.Background()
@@ -422,6 +425,15 @@ func TestTaxonomySeries_Update_GalgameIDsProducesGalgameRevisionsNotTaxonomy(t *
 	_, taxAfter, _ := testTaxSvc.ListRevisions(ctx, model.TaxonomyEntitySeries, sr.ID, 1, 20)
 	assert.Equal(t, taxBefore, taxAfter,
 		"membership-only update must NOT add a series taxonomy_revision")
-	assert.Greater(t, latestRevisionID(t, g1), g1RevBefore, "g1 lost its series_id → galgame_revision")
-	assert.Greater(t, latestRevisionID(t, g2), g2RevBefore, "g2 gained series_id → galgame_revision")
+	// E2a: the membership column flips are system cascades — no galgame
+	// revisions either. The series_id column itself is verified below.
+	assert.Equal(t, g1RevBefore, latestRevisionID(t, g1), "no ripple revision on g1")
+	assert.Equal(t, g2RevBefore, latestRevisionID(t, g2), "no ripple revision on g2")
+
+	var s1, s2 *int
+	require.NoError(t, testDB.Model(&model.Galgame{}).Where("id = ?", g1).Select("series_id").Scan(&s1).Error)
+	require.NoError(t, testDB.Model(&model.Galgame{}).Where("id = ?", g2).Select("series_id").Scan(&s2).Error)
+	assert.Nil(t, s1, "g1 dropped from the series")
+	require.NotNil(t, s2)
+	assert.Equal(t, sr.ID, *s2, "g2 joined the series")
 }

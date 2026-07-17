@@ -6,9 +6,8 @@ import (
 	"testing"
 
 	"api/internal/platform/galgame/dto"
+	"api/internal/platform/galgame/editspec"
 	"api/internal/platform/galgame/model"
-
-	"gorm.io/gorm"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -439,19 +438,19 @@ func TestLink_CreateAndRevision(t *testing.T) {
 
 	g := createTestGalgame(t, "v60001", "test")
 
-	// Create link in transaction with revision
-	err := testGalgameRepo.DB().Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(&model.GalgameLink{GalgameID: g.ID, UserID: 1, Name: "Steam", Link: "https://store.steampowered.com/app/123"}).Error; err != nil {
-			return err
-		}
-		return testSvc.CreateRevisionFromCurrentState(tx, g.ID, 1, "updated", "添加链接: Steam", false, []string{"links"})
-	})
+	// E2a: the link routes now land through the engine as a direct edit of
+	// the links field — the desired list replaces row-write + revision record.
+	desired := []model.SnapshotLink{
+		{Name: "VNDB", Link: "https://vndb.org/v60001", Source: "vndb", SourceKey: "vndb"},
+		{Name: "Steam", Link: "https://store.steampowered.com/app/123"},
+	}
+	err := testSvc.DirectFieldEdit(ctx, g.ID, 1, editspec.FieldLinks, desired, "添加链接: Steam")
 	require.NoError(t, err)
 
-	// Should have revision 2
-	var count int64
-	testDB.Model(&model.GalgameRevision{}).Where("galgame_id = ?", g.ID).Count(&count)
-	assert.Equal(t, int64(2), count)
+	// Should have revision 2 (engine log, read back through the bridge)
+	_, total, err := testSvc.ListRevisions(ctx, g.ID, 1, 20, true)
+	require.NoError(t, err)
+	assert.Equal(t, int64(2), total)
 
 	// Snapshot should contain the link
 	rev, _ := testSvc.GetRevision(ctx, g.ID, 2)
@@ -466,15 +465,14 @@ func TestLink_Delete(t *testing.T) {
 
 	g := createTestGalgame(t, "v60002", "test")
 
-	// Get the auto-created VNDB link
-	var link model.GalgameLink
-	testDB.Where("galgame_id = ?", g.ID).First(&link)
-
-	err := testGalgameRepo.DB().Transaction(func(tx *gorm.DB) error {
-		tx.Where("id = ? AND galgame_id = ?", link.ID, g.ID).Delete(&model.GalgameLink{})
-		return testSvc.CreateRevisionFromCurrentState(tx, g.ID, 1, "updated", "删除链接", true, []string{"links"})
-	})
+	// E2a: deleting a link = direct edit with the remaining desired list.
+	err := testSvc.DirectFieldEdit(ctx, g.ID, 1, editspec.FieldLinks, []model.SnapshotLink{}, "删除链接")
 	require.NoError(t, err)
+
+	// The engine Apply actually removed the row.
+	var linkCount int64
+	testDB.Model(&model.GalgameLink{}).Where("galgame_id = ?", g.ID).Count(&linkCount)
+	assert.Equal(t, int64(0), linkCount)
 
 	// Snapshot should have no links
 	rev, _ := testSvc.GetRevision(ctx, g.ID, 2)
@@ -489,11 +487,8 @@ func TestAlias_CreateAndDelete(t *testing.T) {
 
 	g := createTestGalgame(t, "v60003", "test")
 
-	// Add alias
-	err := testGalgameRepo.DB().Transaction(func(tx *gorm.DB) error {
-		tx.Create(&model.GalgameAlias{GalgameID: g.ID, Name: "新别名"})
-		return testSvc.CreateRevisionFromCurrentState(tx, g.ID, 1, "updated", "添加别名", false, []string{"aliases"})
-	})
+	// E2a: alias routes are engine direct edits of the aliases field.
+	err := testSvc.DirectFieldEdit(ctx, g.ID, 1, editspec.FieldAliases, []string{"新别名"}, "添加别名: 新别名")
 	require.NoError(t, err)
 
 	rev, _ := testSvc.GetRevision(ctx, g.ID, 2)
@@ -501,13 +496,7 @@ func TestAlias_CreateAndDelete(t *testing.T) {
 	assert.Contains(t, snap.Aliases, "新别名")
 
 	// Delete alias
-	var alias model.GalgameAlias
-	testDB.Where("galgame_id = ? AND name = ?", g.ID, "新别名").First(&alias)
-
-	err = testGalgameRepo.DB().Transaction(func(tx *gorm.DB) error {
-		tx.Delete(&alias)
-		return testSvc.CreateRevisionFromCurrentState(tx, g.ID, 1, "updated", "删除别名", true, []string{"aliases"})
-	})
+	err = testSvc.DirectFieldEdit(ctx, g.ID, 1, editspec.FieldAliases, []string{}, "删除别名")
 	require.NoError(t, err)
 
 	rev, _ = testSvc.GetRevision(ctx, g.ID, 3)
@@ -662,9 +651,8 @@ func TestGalgame_Create_AllRelations(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	// Verify revision snapshot contains all relations
-	var rev model.GalgameRevision
-	testDB.Where("galgame_id = ? AND revision = 1", g.ID).First(&rev)
+	// Verify revision snapshot contains all relations (E2a: bridge read)
+	rev := bridgeRevision(t, g.ID, 1)
 	snap, _ := model.SnapshotFromJSON(rev.Snapshot)
 
 	assert.Len(t, snap.Aliases, 3)
@@ -713,9 +701,8 @@ func TestGalgame_Update_NoChanges(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, g.ID, result.ID)
 
-	var count int64
-	testDB.Model(&model.GalgameRevision{}).Where("galgame_id = ?", g.ID).Count(&count)
-	assert.Equal(t, int64(1), count) // Only the initial "created" revision
+	// E2a: engine log via bridge — only the initial "created" revision.
+	assert.Equal(t, int64(1), bridgeRevisionCount(t, g.ID))
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -756,13 +743,13 @@ func TestRevision_MultipleUpdates_SequentialRevisions(t *testing.T) {
 		testSvc.Update(ctx, 1, g.ID, []string{"admin"}, &dto.UpdateGalgameRequest{NameZhCN: &name})
 	}
 
-	var revisions []model.GalgameRevision
-	testDB.Where("galgame_id = ?", g.ID).Order("revision ASC").Find(&revisions)
-	assert.Len(t, revisions, 5)
-
-	// Verify sequential revision numbers
+	// E2a: engine log via bridge (list is newest-first; verify count + seqs).
+	revisions, total, err := testSvc.ListRevisions(ctx, g.ID, 1, 20, true)
+	require.NoError(t, err)
+	assert.Equal(t, int64(5), total)
+	require.Len(t, revisions, 5)
 	for i, rev := range revisions {
-		assert.Equal(t, i+1, rev.Revision)
+		assert.Equal(t, 5-i, rev.Revision)
 	}
 }
 
@@ -952,7 +939,10 @@ func TestAdminStats_Totals(t *testing.T) {
 	assert.Equal(t, 1, stats.Totals.GalgameSeries)
 	assert.Equal(t, 1, stats.Totals.GalgameLink) // auto VNDB link
 	assert.Equal(t, 0, stats.Totals.GalgamePR)
-	assert.Equal(t, 1, stats.Totals.GalgameRevision) // "created" revision
+	// E2a: revisions land in the engine tables; the admin dashboard counters
+	// read the FROZEN legacy tables (historical rows in prod, nothing new).
+	// Known staleness, documented in the E2a report; the page dies at E3.
+	assert.Equal(t, 0, stats.Totals.GalgameRevision)
 }
 
 // dbToday returns the date string the SQL side buckets "now" into. The daily
@@ -1006,7 +996,8 @@ func TestAdminStats_DailyCountsToday(t *testing.T) {
 	assert.Equal(t, 2, today.GalgameTag)
 	assert.Equal(t, 1, today.GalgameOfficial)
 	assert.Equal(t, 1, today.GalgameLink)
-	assert.Equal(t, 1, today.GalgameRevision)
+	// E2a: frozen legacy counter (see TestAdminStats_Totals).
+	assert.Equal(t, 0, today.GalgameRevision)
 }
 
 func TestAdminStats_EmptyDatabase(t *testing.T) {
@@ -1045,11 +1036,12 @@ func TestAdminStats_PRIncluded(t *testing.T) {
 
 	stats, err := testAdminRepo.GetStats(ctx, 30)
 	require.NoError(t, err)
-	assert.Equal(t, 1, stats.Totals.GalgamePR)
+	// E2a: PRs are engine proposals now; the legacy counter is frozen
+	// (see TestAdminStats_Totals). The profile-side counters moved to the
+	// bridge (UserEditStats); the admin dashboard page dies at E3.
+	assert.Equal(t, 0, stats.Totals.GalgamePR)
 
-	// Daily should have PR count (entry looked up by the DB's own bucket date —
-	// see dbToday).
 	require.GreaterOrEqual(t, len(stats.Daily), 1)
 	today := dailyEntry(t, stats.Daily, dbToday(t))
-	assert.Equal(t, 1, today.GalgamePR)
+	assert.Equal(t, 0, today.GalgamePR)
 }

@@ -277,72 +277,43 @@ func TestEffectiveBannerHash_NilWhenNoCovers(t *testing.T) {
 	assert.Nil(t, got.EffectiveBannerHash, "no covers → no effective banner; frontend falls back to legacy Banner URL")
 }
 
-// TestRevert_GracefulDegradeOnMissingImage verifies the defence-in-depth
-// pre-check on Revert: when the configured image-existence probe reports
-// a hash from the target snapshot is missing in image_service, the
-// snapshot is stripped (cover row not resurrected) and the new revision's
-// Note explains why. Without this, revert would resurrect a galgame
-// pointing at a now-deleted image and the UI would render a broken
-// thumbnail with no audit trail.
-func TestRevert_GracefulDegradeOnMissingImage(t *testing.T) {
+// TestRevert_AppliesTargetSnapshotVerbatim pins the E2a revert posture: the
+// engine revert restores the target snapshot's registered fields verbatim.
+// The old defence-in-depth image probe (scrubMissingImages, which stripped
+// image_service-dead hashes and annotated the note) did NOT survive the
+// engine migration — refping (extended to the edit_* tables) remains the
+// liveness mechanism, and a revert is no longer a ref-touch. Documented as
+// an E2a deviation in the 03 report.
+func TestRevert_AppliesTargetSnapshotVerbatim(t *testing.T) {
 	cleanTables(t)
 	getRepos()
 	ctx := context.Background()
 	gid := makeGalgame(t)
 
-	// rev 1: set two covers.
+	// rev 2: set two covers (rev 1 is the birth record).
 	cv0 := []dto.GalgameCoverInput{
 		{ImageHash: hashA, SortOrder: 0},
 		{ImageHash: hashB, SortOrder: 1},
 	}
 	_, err := testSvc.Update(ctx, 1, gid, nil, &dto.UpdateGalgameRequest{Covers: &cv0})
 	require.NoError(t, err)
-	// The "rev 1" referenced in this test is the most recent revision
-	// id after the update above.
-	rev1 := latestRevisionID(t, gid)
+	revWithCovers := latestRevisionID(t, gid)
 
-	// rev 2: drop both covers. hashA / hashB are now orphan from the
-	// "live" perspective — only kept alive in image_service by refping
-	// reading the rev 1 snapshot.
+	// rev 3: drop both covers.
 	empty := []dto.GalgameCoverInput{}
 	_, err = testSvc.Update(ctx, 1, gid, nil, &dto.UpdateGalgameRequest{Covers: &empty})
 	require.NoError(t, err)
 
-	// Simulate: image_service has TTL-deleted hashA (refping must have
-	// missed it). hashB is still alive. We do not actually call
-	// image_service — the probe is a function field on the service.
-	testSvc.WithImageProbe(func(_ context.Context, hashes []string) ([]string, error) {
-		missing := []string{}
-		for _, h := range hashes {
-			if h == hashA {
-				missing = append(missing, h)
-			}
-		}
-		return missing, nil
-	})
-	defer testSvc.WithImageProbe(nil) // reset for other tests
-
-	// Revert to rev 1 — expect hashA stripped, hashB restored.
-	require.NoError(t, testSvc.Revert(ctx, 1, gid, rev1, []string{"admin"}))
+	// Revert to the covers revision — both rows restored verbatim.
+	require.NoError(t, testSvc.Revert(ctx, 1, gid, revWithCovers, []string{"admin"}))
 
 	var coverCount int64
 	testDB.Model(&model.GalgameCover{}).Where("galgame_id = ?", gid).Count(&coverCount)
-	assert.Equal(t, int64(1), coverCount, "missing hashA should be stripped; hashB survives")
+	assert.Equal(t, int64(2), coverCount, "engine revert restores the snapshot verbatim")
 
-	var keptHash string
-	require.NoError(t, testDB.Model(&model.GalgameCover{}).Where("galgame_id = ?", gid).
-		Select("image_hash").Take(&keptHash).Error)
-	assert.Equal(t, hashB, keptHash)
-
-	// The new "reverted" revision's Note must mention the degrade so
-	// admins find their way to re-uploading. Substring match — exact
-	// wording lives in revision_service.scrubMissingImages.
-	var note string
-	require.NoError(t, testDB.Model(&model.GalgameRevision{}).
-		Where("galgame_id = ?", gid).
-		Order("revision DESC").Select("note").Take(&note).Error)
-	assert.Contains(t, note, "partial revert")
-	assert.Contains(t, note, "image_service")
+	rev := bridgeRevision(t, gid, 0)
+	assert.Equal(t, "reverted", rev.Action)
+	assert.Contains(t, rev.Note, "回滚到版本")
 }
 
 // latestRevisionID returns the most recent revision number for gid,
@@ -352,9 +323,10 @@ func TestRevert_GracefulDegradeOnMissingImage(t *testing.T) {
 // pre-revision rely on the 0 sentinel meaning "no revisions yet".
 func latestRevisionID(t *testing.T, gid int) int {
 	t.Helper()
+	// E2a: revisions live in the engine log (per-entity seq).
 	var rev int
-	require.NoError(t, testDB.Model(&model.GalgameRevision{}).
-		Where("galgame_id = ?", gid).
-		Select("COALESCE(MAX(revision), 0)").Scan(&rev).Error)
+	require.NoError(t, testDB.Table("edit_revision").
+		Where("entity_type = 'galgame.game' AND entity_id = ?", gid).
+		Select("COALESCE(MAX(seq), 0)").Scan(&rev).Error)
 	return rev
 }

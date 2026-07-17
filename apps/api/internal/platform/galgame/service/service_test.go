@@ -1,10 +1,15 @@
 package service
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"testing"
 
+	catalogMigrate "api/internal/platform/catalog/migrate"
+	"api/internal/platform/editing"
+	"api/internal/platform/galgame/editbridge"
+	"api/internal/platform/galgame/editspec"
 	"api/internal/platform/galgame/model"
 	"api/internal/platform/galgame/repository"
 
@@ -14,8 +19,10 @@ import (
 )
 
 var (
-	testDB  *gorm.DB
-	testSvc *GalgameService
+	testDB     *gorm.DB
+	testSvc    *GalgameService
+	testEngine *editing.Engine
+	testBridge *editbridge.Bridge
 )
 
 func TestMain(m *testing.M) {
@@ -81,13 +88,35 @@ func TestMain(m *testing.M) {
 
 	testDB = db
 
+	// E2a: the engine tables + strangler legacy columns live on the catalog
+	// pool in production; in tests both pools are this one test DB.
+	if err := editing.AutoMigrate(db); err != nil {
+		fmt.Fprintf(os.Stderr, "SKIP: editing migration failed: %v\n", err)
+		os.Exit(0)
+	}
+	if err := catalogMigrate.EditLegacyColumns(db); err != nil {
+		fmt.Fprintf(os.Stderr, "SKIP: legacy columns failed: %v\n", err)
+		os.Exit(0)
+	}
+
 	galgameRepo := repository.NewGalgameRepository(db)
 	revisionRepo := repository.NewRevisionRepository(db)
 	prRepo := repository.NewPRRepository(db)
 	// No OAuth DB for tests — user lookups will return empty
 	userRepo := repository.NewUserReadonlyRepository(db)
 
-	testSvc = NewGalgameService(galgameRepo, revisionRepo, prRepo, userRepo)
+	// E2a: register galgame.game and wire the engine + wire bridge exactly
+	// like the cmd/catalog assembly point does.
+	reg := editing.NewRegistry()
+	if err := editspec.RegisterGame(reg, db); err != nil {
+		fmt.Fprintf(os.Stderr, "SKIP: RegisterGame failed: %v\n", err)
+		os.Exit(0)
+	}
+	testEngine = editing.NewEngine(db, reg)
+	testBridge = editbridge.New(db, testEngine)
+
+	testSvc = NewGalgameService(galgameRepo, revisionRepo, prRepo, userRepo).
+		WithEditing(testEngine, testBridge)
 
 	code := m.Run()
 	os.Exit(code)
@@ -98,6 +127,8 @@ func cleanTables(t *testing.T) {
 	tables := []string{
 		"galgame_message",
 		"taxonomy_revision",
+		// E2a: writes land in the engine tables now (old tables are frozen).
+		"edit_proposal_amendment", "edit_revision", "edit_proposal",
 		"galgame_revision", "galgame_pr", "galgame_contributor",
 		"galgame_link", "galgame_alias",
 		"galgame_cover", "galgame_screenshot",
@@ -113,6 +144,29 @@ func cleanTables(t *testing.T) {
 }
 
 // Test helpers
+
+// bridgeRevision reads one revision back through the wire adapter — the E2a
+// equivalent of the old direct galgame_revision query (writes land in the
+// engine tables now; the bridge reproduces the old row shape).
+func bridgeRevision(t *testing.T, gid, rev int) *model.GalgameRevision {
+	t.Helper()
+	r, err := testSvc.GetRevision(context.Background(), gid, rev)
+	if err != nil {
+		t.Fatalf("bridgeRevision(%d, %d): %v", gid, rev, err)
+	}
+	return r
+}
+
+// bridgeRevisionCount counts an entity's revisions through the wire adapter
+// (include_minor=true so nothing is filtered).
+func bridgeRevisionCount(t *testing.T, gid int) int64 {
+	t.Helper()
+	_, total, err := testSvc.ListRevisions(context.Background(), gid, 1, 1, true)
+	if err != nil {
+		t.Fatalf("bridgeRevisionCount(%d): %v", gid, err)
+	}
+	return total
+}
 
 func createTestTag(t *testing.T, name, category string) int {
 	t.Helper()
@@ -179,8 +233,8 @@ func getRepos() {
 		testAdminRepo = repository.NewAdminRepository(testDB)
 		testMessageRepo = repository.NewMessageRepository(testDB)
 		testTaxRevRepo = repository.NewTaxonomyRevisionRepository(testDB)
-		testSubmissionSvc = NewSubmissionService(testGalgameRepo, testMessageRepo)
-		testAdminSvc = NewAdminService(testGalgameRepo, testMessageRepo)
+		testSubmissionSvc = NewSubmissionService(testGalgameRepo, testMessageRepo).WithEditing(testEngine)
+		testAdminSvc = NewAdminService(testGalgameRepo, testMessageRepo).WithEditing(testEngine)
 		testTaxSvc = NewTaxonomyService(testTagRepo, testOfficialRepo, testEngineRepo, testSeriesRepo, testTaxRevRepo, testGalgameRepo)
 	}
 }

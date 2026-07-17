@@ -25,10 +25,8 @@ func TestCreate_WithRevision(t *testing.T) {
 	require.NotNil(t, galgame)
 	assert.Equal(t, "v12345", galgame.VNDBID)
 
-	// Verify revision 1 was created
-	var rev model.GalgameRevision
-	err = testDB.Where("galgame_id = ? AND revision = 1", galgame.ID).First(&rev).Error
-	require.NoError(t, err)
+	// Verify revision 1 was created (E2a: engine log, read via the bridge)
+	rev := bridgeRevision(t, galgame.ID, 1)
 	assert.Equal(t, "created", rev.Action)
 	assert.Equal(t, 1, rev.UserID)
 
@@ -95,9 +93,8 @@ func TestCreate_WithTags(t *testing.T) {
 	err = testDB.Where("galgame_id = ? AND tag_id = ?", galgame.ID, tagID).First(&rel).Error
 	require.NoError(t, err)
 
-	// Verify snapshot includes the tag
-	var rev model.GalgameRevision
-	testDB.Where("galgame_id = ? AND revision = 1", galgame.ID).First(&rev)
+	// Verify snapshot includes the tag (E2a: bridge read)
+	rev := bridgeRevision(t, galgame.ID, 1)
 	snapshot, _ := model.SnapshotFromJSON(rev.Snapshot)
 	assert.Contains(t, snapshot.TagIDs, tagID)
 }
@@ -118,10 +115,8 @@ func TestUpdate_CreatesRevision(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	// Should have revision 2
-	var rev model.GalgameRevision
-	err = testDB.Where("galgame_id = ? AND revision = 2", galgame.ID).First(&rev).Error
-	require.NoError(t, err)
+	// Should have revision 2 (E2a: engine direct edit reads back as "updated")
+	rev := bridgeRevision(t, galgame.ID, 2)
 	assert.Equal(t, "updated", rev.Action)
 
 	snapshot, _ := model.SnapshotFromJSON(rev.Snapshot)

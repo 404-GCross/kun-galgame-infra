@@ -41,17 +41,16 @@ func TestRevert(t *testing.T) {
 	testDB.First(&galgame, g.ID)
 	assert.Equal(t, "版本1的名字", galgame.NameZhCN)
 
-	// Should have 3 revisions: created, updated, reverted
-	var count int64
-	testDB.Model(&model.GalgameRevision{}).Where("galgame_id = ?", g.ID).Count(&count)
-	assert.Equal(t, int64(3), count)
+	// Should have 3 revisions: created, updated, reverted (E2a: bridge read)
+	assert.Equal(t, int64(3), bridgeRevisionCount(t, g.ID))
 
-	// Revision 3 should be a revert pointing to revision 1
-	var rev model.GalgameRevision
-	testDB.Where("galgame_id = ? AND revision = 3", g.ID).First(&rev)
+	// Revision 3 should be a revert. E2a: reverted_to has no engine slot for
+	// new writes (legacy rows keep it via legacy_meta); the target survives in
+	// the note the engine proposal carries.
+	rev := bridgeRevision(t, g.ID, 3)
 	assert.Equal(t, "reverted", rev.Action)
-	require.NotNil(t, rev.RevertedTo)
-	assert.Equal(t, 1, *rev.RevertedTo)
+	assert.Nil(t, rev.RevertedTo)
+	assert.Equal(t, "回滚到版本 1", rev.Note)
 }
 
 func TestRevert_ForbiddenForOthers(t *testing.T) {
@@ -111,15 +110,14 @@ func TestMergePR_Direct(t *testing.T) {
 	testDB.First(&galgame, g.ID)
 	assert.Equal(t, "PR修改", galgame.NameZhCN)
 
-	// Verify PR status
-	var updatedPR model.GalgamePR
-	testDB.First(&updatedPR, pr.ID)
+	// Verify PR status (E2a: proposal read back through the bridge)
+	updatedPR, err := testSvc.GetPR(ctx, g.ID, pr.ID)
+	require.NoError(t, err)
 	assert.Equal(t, 1, updatedPR.Status) // merged
 	assert.NotNil(t, updatedPR.RevisionID)
 
 	// Verify revision created
-	var rev model.GalgameRevision
-	testDB.Where("galgame_id = ? AND revision = 2", g.ID).First(&rev)
+	rev := bridgeRevision(t, g.ID, 2)
 	assert.Equal(t, "merged", rev.Action)
 	assert.Equal(t, 2, rev.UserID) // PR author, not merger
 }
@@ -226,8 +224,8 @@ func TestDeclinePR(t *testing.T) {
 	err := testSvc.DeclinePR(ctx, 1, pr.GalgameID, pr.ID, []string{})
 	require.NoError(t, err)
 
-	var updatedPR model.GalgamePR
-	testDB.First(&updatedPR, pr.ID)
+	updatedPR, err := testSvc.GetPR(ctx, g.ID, pr.ID)
+	require.NoError(t, err)
 	assert.Equal(t, 2, updatedPR.Status) // declined
 }
 
@@ -251,11 +249,16 @@ func TestListRevisions(t *testing.T) {
 	assert.Equal(t, int64(3), total)
 	assert.Len(t, items, 3)
 
-	// List excluding minor (2 revisions)
+	// E2a: is_minor is dropped for NEW writes (no engine slot; only migrated
+	// rows keep it via legacy_meta), so the include_minor=false filter no
+	// longer hides the third revision — it filters legacy minors only.
 	items, total, err = testSvc.ListRevisions(ctx, g.ID, 1, 50, false)
 	require.NoError(t, err)
-	assert.Equal(t, int64(2), total)
-	assert.Len(t, items, 2)
+	assert.Equal(t, int64(3), total)
+	assert.Len(t, items, 3)
+	for _, it := range items {
+		assert.False(t, it.IsMinor)
+	}
 }
 
 func TestGetRevisionDiff(t *testing.T) {

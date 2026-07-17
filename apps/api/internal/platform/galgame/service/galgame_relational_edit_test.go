@@ -51,11 +51,11 @@ func officialRelations(t *testing.T, gid int) map[int]string {
 	return out
 }
 
+// latestRevSnapshot reads the newest revision snapshot through the bridge
+// (E2a: writes land in the engine tables; 0 = latest).
 func latestRevSnapshot(t *testing.T, gid int) *model.Snapshot {
 	t.Helper()
-	var rev model.GalgameRevision
-	require.NoError(t, testDB.Where("galgame_id = ?", gid).
-		Order("revision DESC").First(&rev).Error)
+	rev := bridgeRevision(t, gid, 0)
 	snap, err := model.SnapshotFromJSON(rev.Snapshot)
 	require.NoError(t, err)
 	return snap
@@ -63,9 +63,7 @@ func latestRevSnapshot(t *testing.T, gid int) *model.Snapshot {
 
 func revCount(t *testing.T, gid int) int64 {
 	t.Helper()
-	var n int64
-	testDB.Model(&model.GalgameRevision{}).Where("galgame_id = ?", gid).Count(&n)
-	return n
+	return bridgeRevisionCount(t, gid)
 }
 
 func TestUpdate_RelationOverlaySemantics(t *testing.T) {
@@ -308,7 +306,9 @@ func TestEditableSnapshotFieldsAllReachable(t *testing.T) {
 	ti, oi, ei := want.TagIDs, want.OfficialIDs, want.EngineIDs
 	cv := []dto.GalgameCoverInput{{ImageHash: coverHash, SortOrder: 0, Sexual: 1, Source: "user"}}
 	sh := []dto.GalgameScreenshotInput{{ImageHash: shotHash, SortOrder: 0, Caption: "CG 01", Sexual: 2}}
-	_, err := testSvc.Update(ctx, 1, gid, nil, &dto.UpdateGalgameRequest{
+	// E2a: a vndb_id change now requires galgame.edit_any (squatting lesson) —
+	// the reachability sweep runs with staff roles so every field stays covered.
+	_, err := testSvc.Update(ctx, 1, gid, []string{"admin"}, &dto.UpdateGalgameRequest{
 		VNDBID: s("v777"), ReleaseDate: s("2020-01-01"), ReleaseDateTBA: b(true),
 		NameEnUS: s("EN"), NameJaJP: s("JA"), NameZhCN: s("ZH"), NameZhTW: s("TW"),
 		Banner:    s("https://b.example/x.webp"),
@@ -366,8 +366,7 @@ func TestCreate_ThroughApplySnapshot(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, g)
 
-	var rev model.GalgameRevision
-	require.NoError(t, testDB.Where("galgame_id = ? AND revision = 1", g.ID).First(&rev).Error)
+	rev := bridgeRevision(t, g.ID, 1) // E2a: bridge read
 	snap, err := model.SnapshotFromJSON(rev.Snapshot)
 	require.NoError(t, err)
 	assert.Equal(t, "v424242", snap.VNDBID)

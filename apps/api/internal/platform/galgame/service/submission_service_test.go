@@ -33,9 +33,8 @@ func TestSubmit_WithVNDB(t *testing.T) {
 	assert.Equal(t, 42, g.UserID)
 	assert.Equal(t, "v999", g.VNDBID)
 
-	// Revision 1, action=created
-	var rev model.GalgameRevision
-	require.NoError(t, testDB.Where("galgame_id = ?", g.ID).First(&rev).Error)
+	// Revision 1, action=created (E2a: engine log via bridge)
+	rev := bridgeRevision(t, g.ID, 1)
 	assert.Equal(t, 1, rev.Revision)
 	assert.Equal(t, "created", rev.Action)
 
@@ -76,9 +75,8 @@ func TestSubmit_CreatorPublishesDirectly(t *testing.T) {
 	assert.Equal(t, model.GalgameStatusPublished, g.Status, "creator submit publishes directly")
 	assert.Equal(t, "", g.VNDBID, "VNDB-less publish allowed for creator")
 
-	// revision 1 recorded as created
-	var rev model.GalgameRevision
-	require.NoError(t, testDB.Where("galgame_id = ?", g.ID).First(&rev).Error)
+	// revision 1 recorded as created (E2a: bridge read)
+	rev := bridgeRevision(t, g.ID, 1)
 	assert.Equal(t, "created", rev.Action)
 
 	// NO submitted message (it did not enter the review queue)
@@ -330,10 +328,12 @@ func TestAdmin_Approve_WritesApprovedMessage(t *testing.T) {
 	require.NotNil(t, msg.TargetUserID)
 	assert.Equal(t, 11, *msg.TargetUserID, "target must be the submitter, not the admin")
 
-	// Revision action=approved with note
-	var rev model.GalgameRevision
-	require.NoError(t, testDB.Where("galgame_id = ? AND action = ?", g.ID, "approved").
-		First(&rev).Error)
+	// E2a: status transitions are engine direct edits — the old wire reads
+	// action "updated" with changed_fields ["status"]; the reason lands as
+	// the revision note (via the automerged proposal).
+	rev := bridgeRevision(t, g.ID, 0)
+	assert.Equal(t, "updated", rev.Action)
+	assert.Equal(t, []string{"status"}, rev.ChangedFieldsList())
 	assert.Equal(t, "looks good", rev.Note)
 }
 
@@ -484,8 +484,13 @@ func TestDeleteDraft_RemovesGalgameAndRelations(t *testing.T) {
 	// Relations gone
 	testDB.Model(&model.GalgameAlias{}).Where("galgame_id = ?", g.ID).Count(&cnt)
 	assert.Equal(t, int64(0), cnt)
+	// E2a: the engine revision log is append-only — a deleted draft leaves
+	// orphaned edit_revision rows behind by design (the gid is unreachable,
+	// ids are never reused). The frozen legacy table stays empty.
 	testDB.Model(&model.GalgameRevision{}).Where("galgame_id = ?", g.ID).Count(&cnt)
 	assert.Equal(t, int64(0), cnt)
+	testDB.Table("edit_revision").Where("entity_type = 'galgame.game' AND entity_id = ?", g.ID).Count(&cnt)
+	assert.GreaterOrEqual(t, cnt, int64(1), "orphaned engine revisions persist (append-only log)")
 	testDB.Model(&model.GalgameTagRelation{}).Where("galgame_id = ?", g.ID).Count(&cnt)
 	assert.Equal(t, int64(0), cnt)
 
