@@ -204,6 +204,7 @@ func revisionView(r *editing.Revision) dto.EditRevisionView {
 	if r.LegacyAction != nil {
 		v.LegacyAction = *r.LegacyAction
 	}
+	v.LegacyID = r.LegacyID
 	if len(r.LegacyMeta) > 0 {
 		var meta struct {
 			Note    string `json:"note"`

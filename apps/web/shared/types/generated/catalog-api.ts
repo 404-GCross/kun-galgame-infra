@@ -748,6 +748,11 @@ export interface components {
             id: number;
             /** @description Original pre-engine action word (migrated rows only) */
             legacy_action?: string;
+            /**
+             * Format: int64
+             * @description Source pre-engine revision row id (migrated rows only)
+             */
+            legacy_id?: number;
             /** @description Old-wire minor-edit flag (migrated rows only) */
             legacy_minor?: boolean;
             /** @description Old-wire revision note (migrated rows only) */

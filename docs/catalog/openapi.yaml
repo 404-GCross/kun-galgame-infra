@@ -703,6 +703,10 @@ components:
         legacy_action:
           description: Original pre-engine action word (migrated rows only)
           type: string
+        legacy_id:
+          description: Source pre-engine revision row id (migrated rows only)
+          format: int64
+          type: integer
         legacy_minor:
           description: Old-wire minor-edit flag (migrated rows only)
           type: boolean

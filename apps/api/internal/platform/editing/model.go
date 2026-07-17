@@ -109,6 +109,11 @@ type Revision struct {
 	// stays raw JSON for the consumer to decode.
 	LegacyAction *string        `gorm:"->;column:legacy_action;type:text" json:"legacy_action,omitempty"`
 	LegacyMeta   datatypes.JSON `gorm:"->;column:legacy_meta;type:jsonb" json:"legacy_meta,omitempty"`
+	// LegacyID is the migrated row's source galgame_revision id — the OLD
+	// wire's revision row id (wire id = COALESCE(legacy_id, id)). Read-only
+	// like its siblings; surfaced so downstream consumers holding pre-engine
+	// revision-row ids (e.g. kungal's activity rows) can resolve them.
+	LegacyID *int64 `gorm:"->;column:legacy_id" json:"legacy_id,omitempty"`
 }
 
 func (Revision) TableName() string { return "edit_revision" }

@@ -127,6 +127,10 @@ type EditRevisionView struct {
 	LegacyAction string `json:"legacy_action,omitempty" doc:"Original pre-engine action word (migrated rows only)"`
 	LegacyNote   string `json:"legacy_note,omitempty" doc:"Old-wire revision note (migrated rows only)"`
 	LegacyMinor  bool   `json:"legacy_minor,omitempty" doc:"Old-wire minor-edit flag (migrated rows only)"`
+	// LegacyID is the migrated row's source galgame_revision id (the old
+	// wire's row id; wire id = COALESCE(legacy_id, id)) — lets consumers
+	// holding pre-engine revision-row ids resolve them to seqs (E3b).
+	LegacyID *int64 `json:"legacy_id,omitempty" doc:"Source pre-engine revision row id (migrated rows only)"`
 }
 
 type EditRevisionListResponse struct {
