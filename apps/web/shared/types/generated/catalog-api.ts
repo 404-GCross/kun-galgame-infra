@@ -38,6 +38,177 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/catalog/edit/diff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Field-level diff between any two revisions */
+        get: operations["diffEditRevisions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/catalog/edit/proposals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List edit proposals (review queue) */
+        get: operations["listEditProposals"];
+        put?: never;
+        /** File an edit proposal (automerges into a direct edit when policy allows) */
+        post: operations["createEditProposal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/catalog/edit/proposals/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read one proposal with amendments and the effective patch */
+        get: operations["getEditProposal"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/catalog/edit/proposals/{id}/amendments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Amend an open proposal (set/unset fields; requires the review rule) */
+        post: operations["amendEditProposal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/catalog/edit/proposals/{id}/decline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Decline an open proposal with a reason */
+        post: operations["declineEditProposal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/catalog/edit/proposals/{id}/merge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Merge an open proposal (per-field rebase; 409 lists conflicts) */
+        post: operations["mergeEditProposal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/catalog/edit/proposals/{id}/withdraw": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Withdraw one's own open proposal */
+        post: operations["withdrawEditProposal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/catalog/edit/revert": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Restore an entity to a historical revision (a new revision; history kept) */
+        post: operations["revertEditEntity"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/catalog/edit/revisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** An entity's revision log, newest-first */
+        get: operations["listEditRevisions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/catalog/edit/schema/{entity_type}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Field schema + the caller's evaluated field-level capabilities */
+        get: operations["getEditSchema"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/catalog/labels/{id}/works": {
         parameters: {
             query?: never;
@@ -382,6 +553,213 @@ export interface components {
             note?: string;
             source?: string;
         };
+        EditActor: {
+            /** @description The user's roles as the product's JWT asserts them */
+            roles?: string[] | null;
+            /**
+             * Format: int32
+             * @description Trust tier TL0-TL4 (doc 18)
+             */
+            trust_tier?: number;
+            /**
+             * Format: int64
+             * @description Product-side user id (the shared identity space)
+             */
+            user_id: number;
+        };
+        EditAmendRequest: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/EditAmendRequest.json
+             */
+            readonly $schema?: string;
+            actor: components["schemas"]["EditActor"];
+            note?: string;
+            /** @description Field-key → corrected value (change or add) */
+            set?: {
+                [key: string]: unknown;
+            };
+            /** @description Field keys to reject from the patch */
+            unset?: string[] | null;
+        };
+        EditAmendmentView: {
+            /** Format: int64 */
+            amender_uid: number;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: int64 */
+            id: number;
+            note: string;
+            /** Format: int64 */
+            seq: number;
+            set?: {
+                [key: string]: unknown;
+            };
+            unset?: string[] | null;
+        };
+        EditDecisionRequest: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/EditDecisionRequest.json
+             */
+            readonly $schema?: string;
+            actor: components["schemas"]["EditActor"];
+            /** @description Merge note / decline reason (kept on the proposal) */
+            note?: string;
+        };
+        EditDiffResponse: {
+            fields: components["schemas"]["EditFieldDiffView"][] | null;
+            /** Format: int64 */
+            from_seq: number;
+            /** Format: int64 */
+            to_seq: number;
+        };
+        EditFieldDiffView: {
+            diff_hint?: string;
+            from: unknown;
+            key: string;
+            kind?: string;
+            to: unknown;
+        };
+        EditProposalCreateRequest: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/EditProposalCreateRequest.json
+             */
+            readonly $schema?: string;
+            actor: components["schemas"]["EditActor"];
+            /** Format: int64 */
+            entity_id: number;
+            /** @description Registered entity type, e.g. catalog.work */
+            entity_type: string;
+            note?: string;
+            /** @description Field-key → new-value document (registered keys only) */
+            patch: {
+                [key: string]: unknown;
+            };
+            /** @description Filing tenant; must equal the client's catalog_site binding */
+            site: string;
+        };
+        EditProposalCreateResponse: {
+            /** @description true when the direct-edit sugar landed the patch immediately */
+            merged: boolean;
+            proposal: components["schemas"]["EditProposalView"];
+            /** @description The produced revision when merged */
+            revision?: components["schemas"]["EditRevisionView"];
+        };
+        EditProposalListResponse: {
+            items: components["schemas"]["EditProposalView"][] | null;
+        };
+        EditProposalView: {
+            /** @description Seq-ordered (detail endpoint only) */
+            amendments?: components["schemas"]["EditAmendmentView"][] | null;
+            /** Format: int64 */
+            base_revision_seq: number;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            decided_at?: string;
+            /** Format: int64 */
+            decided_by_uid?: number;
+            decision_note?: string;
+            /** @description patch ⊕ amendments (detail endpoint only) */
+            effective_patch?: {
+                [key: string]: unknown;
+            };
+            entity_family: string;
+            /** Format: int64 */
+            entity_id: number;
+            entity_type: string;
+            /** Format: int64 */
+            id: number;
+            note: string;
+            patch: {
+                [key: string]: unknown;
+            };
+            /** Format: int64 */
+            proposer_uid: number;
+            site: string;
+            status: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        EditRevertRequest: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/EditRevertRequest.json
+             */
+            readonly $schema?: string;
+            actor: components["schemas"]["EditActor"];
+            /** Format: int64 */
+            entity_id: number;
+            entity_type: string;
+            note?: string;
+            site: string;
+            /**
+             * Format: int64
+             * @description Target revision seq to restore
+             */
+            to_seq: number;
+        };
+        EditRevertResponse: {
+            proposal: components["schemas"]["EditProposalView"];
+            revision: components["schemas"]["EditRevisionView"];
+        };
+        EditRevisionListResponse: {
+            items: components["schemas"]["EditRevisionView"][] | null;
+        };
+        EditRevisionView: {
+            action: string;
+            /** Format: int64 */
+            actor_uid: number;
+            /** Format: int64 */
+            amender_uid?: number;
+            changed_fields: string[] | null;
+            /** Format: date-time */
+            created_at: string;
+            entity_family: string;
+            /** Format: int64 */
+            entity_id: number;
+            entity_type: string;
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            proposal_id?: number;
+            /** Format: int64 */
+            seq: number;
+            site: string;
+            snapshot: {
+                [key: string]: unknown;
+            };
+        };
+        EditSchemaFieldView: {
+            can_propose: boolean;
+            can_review: boolean;
+            deprecated?: boolean;
+            diff_hint: string;
+            key: string;
+            kind: string;
+            locked: boolean;
+            /** @description A proposal by this caller would merge instantly */
+            would_automerge: boolean;
+        };
+        EditSchemaResponse: {
+            entity_type: string;
+            fields: components["schemas"]["EditSchemaFieldView"][] | null;
+        };
+        EditWithdrawRequest: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/EditWithdrawRequest.json
+             */
+            readonly $schema?: string;
+            actor: components["schemas"]["EditActor"];
+        };
         EntityCounts: {
             /** Format: int64 */
             characters: number;
@@ -470,6 +848,114 @@ export interface components {
             /** Format: int64 */
             code: number;
             data?: components["schemas"]["ClaimWorkResponse"];
+            message: string;
+        };
+        EnvelopeEditAmendmentView: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/EnvelopeEditAmendmentView.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            code: number;
+            data?: components["schemas"]["EditAmendmentView"];
+            message: string;
+        };
+        EnvelopeEditDiffResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/EnvelopeEditDiffResponse.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            code: number;
+            data?: components["schemas"]["EditDiffResponse"];
+            message: string;
+        };
+        EnvelopeEditProposalCreateResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/EnvelopeEditProposalCreateResponse.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            code: number;
+            data?: components["schemas"]["EditProposalCreateResponse"];
+            message: string;
+        };
+        EnvelopeEditProposalListResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/EnvelopeEditProposalListResponse.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            code: number;
+            data?: components["schemas"]["EditProposalListResponse"];
+            message: string;
+        };
+        EnvelopeEditProposalView: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/EnvelopeEditProposalView.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            code: number;
+            data?: components["schemas"]["EditProposalView"];
+            message: string;
+        };
+        EnvelopeEditRevertResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/EnvelopeEditRevertResponse.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            code: number;
+            data?: components["schemas"]["EditRevertResponse"];
+            message: string;
+        };
+        EnvelopeEditRevisionListResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/EnvelopeEditRevisionListResponse.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            code: number;
+            data?: components["schemas"]["EditRevisionListResponse"];
+            message: string;
+        };
+        EnvelopeEditRevisionView: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/EnvelopeEditRevisionView.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            code: number;
+            data?: components["schemas"]["EditRevisionView"];
+            message: string;
+        };
+        EnvelopeEditSchemaResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/EnvelopeEditSchemaResponse.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            code: number;
+            data?: components["schemas"]["EditSchemaResponse"];
             message: string;
         };
         EnvelopeEntitySearchResponse: {
@@ -963,6 +1449,393 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EnvelopeCharacterWorksResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HouseError"];
+                };
+            };
+        };
+    };
+    diffEditRevisions: {
+        parameters: {
+            query?: {
+                entity_type?: string;
+                entity_id?: number;
+                from_seq?: number;
+                to_seq?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeEditDiffResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HouseError"];
+                };
+            };
+        };
+    };
+    listEditProposals: {
+        parameters: {
+            query?: {
+                /** @description Filter to one entity type */
+                entity_type?: string;
+                /** @description Filter to one entity (requires entity_type) */
+                entity_id?: number;
+                /** @description Filter to one tenant */
+                site?: string;
+                /** @description Filter by status; empty = all */
+                status?: "" | "open" | "merged" | "declined" | "withdrawn";
+                /** @description Page size (max 200, default 50) */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeEditProposalListResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HouseError"];
+                };
+            };
+        };
+    };
+    createEditProposal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EditProposalCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeEditProposalCreateResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HouseError"];
+                };
+            };
+        };
+    };
+    getEditProposal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeEditProposalView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HouseError"];
+                };
+            };
+        };
+    };
+    amendEditProposal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EditAmendRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeEditAmendmentView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HouseError"];
+                };
+            };
+        };
+    };
+    declineEditProposal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EditDecisionRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeEditProposalView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HouseError"];
+                };
+            };
+        };
+    };
+    mergeEditProposal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EditDecisionRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeEditRevisionView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HouseError"];
+                };
+            };
+        };
+    };
+    withdrawEditProposal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EditWithdrawRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeEditProposalView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HouseError"];
+                };
+            };
+        };
+    };
+    revertEditEntity: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EditRevertRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeEditRevertResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HouseError"];
+                };
+            };
+        };
+    };
+    listEditRevisions: {
+        parameters: {
+            query?: {
+                /** @description Registered entity type, e.g. catalog.work */
+                entity_type?: string;
+                entity_id?: number;
+                /** @description Page size (max 200, default 50) */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeEditRevisionListResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HouseError"];
+                };
+            };
+        };
+    };
+    getEditSchema: {
+        parameters: {
+            query?: {
+                /** @description Tenant whose policy overlay applies */
+                site?: string;
+                /** @description Asserted end-user id (0 = anonymous projection) */
+                user_id?: number;
+                /** @description Comma-separated asserted roles */
+                roles?: string;
+                /** @description Asserted trust tier */
+                trust_tier?: number;
+            };
+            header?: never;
+            path: {
+                /** @description Registered entity type, e.g. catalog.work */
+                entity_type: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeEditSchemaResponse"];
                 };
             };
             /** @description Error */
