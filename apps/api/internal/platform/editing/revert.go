@@ -72,6 +72,9 @@ func (e *Engine) Revert(ctx context.Context, in RevertInput) (*Proposal, *Revisi
 	}
 	var rev *Revision
 	err = e.db.WithContext(ctx).Transaction(func(etx *gorm.DB) error {
+		if err := lockEntity(etx, prop.EntityType, prop.EntityID); err != nil {
+			return err
+		}
 		if err := etx.Create(prop).Error; err != nil {
 			return err
 		}

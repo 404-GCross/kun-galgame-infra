@@ -64,6 +64,9 @@ func (e *Engine) RecordCreated(ctx context.Context, entityType string, entityID 
 	}
 	var rev *Revision
 	err = e.db.WithContext(ctx).Transaction(func(etx *gorm.DB) error {
+		if err := lockEntity(etx, entityType, entityID); err != nil {
+			return err
+		}
 		seq, err := maxRevisionSeq(etx, spec, entityID)
 		if err != nil {
 			return err

@@ -3,6 +3,7 @@ package editing
 import (
 	"context"
 	"errors"
+	"strconv"
 	"time"
 
 	"gorm.io/gorm"
@@ -30,6 +31,31 @@ type CreateProposalInput struct {
 	Patch      map[string]any
 	Note       string
 	Actor      PolicyContext
+}
+
+// editAdvisoryClassID is the int4 classid of the engine's per-entity advisory
+// lock space ("edit" in ASCII). Advisory locks share ONE keyspace across the
+// whole cluster (session and xact variants alike; see the trust "trst"/"trua"
+// lesson) — trust's keys live in the single-arg int64 space (0x747273xx),
+// while the two-arg form used here maps to (classid<<32 | objid), so the
+// resulting 64-bit keys (0x65646974_xxxxxxxx) cannot collide with them.
+const editAdvisoryClassID = 0x65646974
+
+// lockEntity serializes entity mutation: every revision writer (direct edit,
+// proposal merge, revert, birth record) takes a transaction-scoped advisory
+// lock on (entity_type, entity_id) BEFORE reading the current snapshot or
+// allocating the next revision seq. Without it two concurrent merges can both
+// pass the read-then-check no-op/rebase guards: the loser's snapshot read can
+// land after the winner's commit, so it allocates the NEXT seq and "succeeds"
+// as a duplicate write (CI caught exactly this interleaving in the claim
+// arbitration test; locally the unique-index path always won the race).
+func lockEntity(etx *gorm.DB, entityType string, entityID int64) error {
+	// The id is stringified Go-side: with a `?::text` cast pgx infers the
+	// param as TEXT and has no encode plan for an int64 bound to it.
+	return etx.Exec(
+		`SELECT pg_advisory_xact_lock(?::int4, hashtext(?))`,
+		editAdvisoryClassID, entityType+":"+strconv.FormatInt(entityID, 10),
+	).Error
 }
 
 // CreateProposal validates and files a proposal. When every patched field's
@@ -106,6 +132,9 @@ func (e *Engine) CreateProposal(ctx context.Context, in CreateProposalInput) (*P
 	}
 	var rev *Revision
 	err = e.db.WithContext(ctx).Transaction(func(etx *gorm.DB) error {
+		if err := lockEntity(etx, prop.EntityType, prop.EntityID); err != nil {
+			return err
+		}
 		if err := etx.Create(prop).Error; err != nil {
 			return err
 		}
@@ -225,6 +254,12 @@ func (e *Engine) MergeProposal(ctx context.Context, proposalID int64, actor Poli
 		}
 		if prop.Status != StatusOpen {
 			return ErrNotOpen
+		}
+		// Lock order is globally proposal→entity (amend takes only the
+		// proposal lock, direct/revert take only the entity lock), so no
+		// deadlock cycle exists.
+		if err := lockEntity(etx, prop.EntityType, prop.EntityID); err != nil {
+			return err
 		}
 		spec, err := e.resolveSpec(prop.EntityType)
 		if err != nil {
