@@ -74,6 +74,27 @@ type CharVN struct {
 
 func (CharVN) TableName() string { return "src_vndb.chars_vns" }
 
+// VN mirrors the identity-relevant columns of one db/vn row — a visual novel.
+// Ids keep the VNDB "v" prefix verbatim ("v1"), so vn.id joins
+// catalog_external_ref.external_id (source=vndb) with no transform. Only the
+// subset the media-aggregation waves need is staged: `description` (the English
+// blurb, BBCode-ish — VNDB writes descriptions in English regardless of the
+// VN's own original language) and `olang` (the VN's ORIGINAL language, NOT the
+// blurb's — kept for future use, never the intro's language). `image`/`c_image`
+// (the cover ids "cv123") are staged now for the step-53 cover wave.
+type VN struct {
+	// No default tags on any loaded column (the default-tag zero-value trap in
+	// this batch-insert path): every column is plain not-null, verbatim.
+	ID          string    `gorm:"primaryKey" json:"id"`                   // "v1"
+	OLang       string    `gorm:"column:olang;not null" json:"olang"`     // VN original language ("ja")
+	Image       string    `gorm:"not null" json:"image"`                  // cover image id "cv20339" or ""
+	CImage      string    `gorm:"column:c_image;not null" json:"c_image"` // reversible-flag cover "cv77859" or ""
+	Description string    `gorm:"not null" json:"description"`            // English blurb, BBCode-ish
+	IngestedAt  time.Time `gorm:"not null" json:"ingested_at"`
+}
+
+func (VN) TableName() string { return "src_vndb.vn" }
+
 // Image mirrors one db/images row — ONLY the "ch" (character portrait) rows are
 // staged (the loader drops sf/cv). c_sexual_avg / c_violence_avg are the
 // moderation flags on a 0-200 scale (average vote * 100; 0=safe, 100=avg 1.0,

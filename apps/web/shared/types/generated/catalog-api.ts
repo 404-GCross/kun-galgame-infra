@@ -1252,6 +1252,7 @@ export interface components {
         };
         WorkByAnchorResponse: {
             characters: components["schemas"]["WorkCharacter"][] | null;
+            intro: components["schemas"]["WorkIntro"][] | null;
             labels: components["schemas"]["WorkLabel"][] | null;
             refs: components["schemas"]["WorkRef"][] | null;
             releases: components["schemas"]["ReleaseBrief"][] | null;
@@ -1308,6 +1309,15 @@ export interface components {
             groups: components["schemas"]["CreditGroup"][] | null;
             /** Format: int64 */
             work_id: number;
+        };
+        WorkIntro: {
+            intro: string;
+            lang: string;
+            /**
+             * Format: int32
+             * @description catalog_source id (provenance): e.g. galgame_wiki for a bridged claimed work, vndb for a bodyless backfill
+             */
+            source_id: number;
         };
         WorkLabel: {
             display_name: string;

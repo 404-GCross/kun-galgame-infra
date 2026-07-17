@@ -1,0 +1,130 @@
+package introimport
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"testing"
+	"time"
+
+	"api/internal/platform/catalog/migrate"
+	"api/internal/platform/catalog/model"
+	"api/internal/platform/catalog/seed"
+	"api/internal/platform/catalog/srcvndb"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
+)
+
+var testDB *gorm.DB
+
+func TestMain(m *testing.M) {
+	dsn := os.Getenv("TEST_DATABASE_DSN")
+	if dsn == "" {
+		dsn = "host=localhost port=5432 user=postgres password=postgres dbname=kun_catalog_test sslmode=disable"
+	}
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "SKIP: cannot connect to test database: %v\n", err)
+		os.Exit(0)
+	}
+	if err := migrate.Run(db); err != nil {
+		fmt.Fprintf(os.Stderr, "SKIP: catalog migrate failed: %v\n", err)
+		os.Exit(0)
+	}
+	if err := seed.Run(db); err != nil {
+		fmt.Fprintf(os.Stderr, "SKIP: catalog seed failed: %v\n", err)
+		os.Exit(0)
+	}
+	if err := srcvndb.EnsureSchema(db); err != nil {
+		fmt.Fprintf(os.Stderr, "SKIP: src_vndb schema failed: %v\n", err)
+		os.Exit(0)
+	}
+	testDB = db
+	os.Exit(m.Run())
+}
+
+// TestBackfill exercises the full backfill: candidate classification (anchored
+// vs not, empty description), the dry→apply→re-run idempotency ladder, and the
+// discipline that CLAIMED works are never touched.
+func TestBackfill(t *testing.T) {
+	db := testDB
+	for _, tbl := range []string{"catalog_work_intro", "catalog_external_ref", "catalog_work"} {
+		require.NoError(t, db.Exec("TRUNCATE "+tbl+" RESTART IDENTITY CASCADE").Error)
+	}
+	require.NoError(t, db.Exec("TRUNCATE src_vndb.vn").Error)
+
+	var vndbID int16
+	db.Raw("SELECT id FROM catalog_source WHERE key='vndb'").Scan(&vndbID)
+	require.NotZero(t, vndbID)
+
+	mkWork := func(name string, site *string) int64 {
+		w := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: name, ContentRating: 0, Status: 0, Site: site}
+		require.NoError(t, db.Create(&w).Error)
+		return w.ID
+	}
+	anchor := func(workID int64, vid string) {
+		require.NoError(t, db.Create(&model.CatalogExternalRef{
+			EntityType: model.EntityTypeWork, EntityID: workID, SourceID: vndbID, ExternalID: vid,
+			LinkKind: model.LinkKindExact, MatchedBy: "rule:test",
+		}).Error)
+	}
+	vn := func(id, desc string) {
+		require.NoError(t, db.Create(&srcvndb.VN{ID: id, OLang: "ja", Description: desc, IngestedAt: time.Now()}).Error)
+	}
+
+	// W1: bodyless + vndb anchor + a real description → the one intro written.
+	w1 := mkWork("有描述", nil)
+	anchor(w1, "v1")
+	vn("v1", "A bodyless doujin blurb.")
+	// W2: bodyless + vndb anchor but NO vn row → skipped_empty_desc.
+	w2 := mkWork("锚无描述", nil)
+	anchor(w2, "v2")
+	// W3: bodyless, no vndb anchor → skipped_no_anchor.
+	mkWork("无锚", nil)
+	// W4: CLAIMED (galgame_wiki) + vndb anchor + description → must be IGNORED.
+	site := "galgame_wiki"
+	w4 := mkWork("已认领", &site)
+	anchor(w4, "v4")
+	vn("v4", "Claimed work — bridged, never copied.")
+
+	ctx := context.Background()
+
+	// --- dry run: classifies everything, writes nothing.
+	st, err := Run(ctx, db, Options{DryRun: true})
+	require.NoError(t, err)
+	assert.EqualValues(t, 3, st.TotalBodyless, "W1/W2/W3 (claimed W4 excluded)")
+	assert.EqualValues(t, 2, st.WithVNDBAnchor, "W1/W2")
+	assert.EqualValues(t, 1, st.SkippedNoAnchor, "W3")
+	assert.EqualValues(t, 1, st.SkippedEmptyDesc, "W2 (anchor, no vn row)")
+	assert.EqualValues(t, 0, st.Already)
+	assert.EqualValues(t, 1, st.IntrosWritten, "W1 only")
+	var n int64
+	require.NoError(t, db.Raw("SELECT count(*) FROM catalog_work_intro").Scan(&n).Error)
+	assert.EqualValues(t, 0, n, "dry run writes nothing")
+
+	// --- apply: writes W1's intro (en, vndb, verbatim).
+	st, err = Run(ctx, db, Options{DryRun: false})
+	require.NoError(t, err)
+	assert.EqualValues(t, 1, st.IntrosWritten)
+	assert.EqualValues(t, 1, st.WorksCovered)
+	var row model.CatalogWorkIntro
+	require.NoError(t, db.Where("work_id = ?", w1).First(&row).Error)
+	assert.Equal(t, "en", row.Lang)
+	assert.EqualValues(t, vndbID, row.SourceID)
+	assert.Equal(t, "A bodyless doujin blurb.", row.Intro)
+	// The claimed work got nothing (bridge-not-copy).
+	require.NoError(t, db.Raw("SELECT count(*) FROM catalog_work_intro WHERE work_id = ?", w4).Scan(&n).Error)
+	assert.EqualValues(t, 0, n, "claimed work is never materialized")
+
+	// --- second run: idempotent (already present → zero new writes).
+	st, err = Run(ctx, db, Options{DryRun: false})
+	require.NoError(t, err)
+	assert.EqualValues(t, 1, st.Already)
+	assert.EqualValues(t, 0, st.IntrosWritten, "second run writes nothing")
+	require.NoError(t, db.Raw("SELECT count(*) FROM catalog_work_intro").Scan(&n).Error)
+	assert.EqualValues(t, 1, n)
+}

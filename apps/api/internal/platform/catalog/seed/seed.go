@@ -120,6 +120,12 @@ func sources() []model.CatalogSource {
 		{ID: 9, Key: "official_site", TrustTier: 2},
 		{ID: 10, Key: "twitter", TrustTier: 2},
 		{ID: 11, Key: "pixiv", TrustTier: 2},
+		// galgame_wiki is the first-party KUN galgame product (site key
+		// 'galgame_wiki'). It backs the media-aggregation read face's
+		// provenance for CLAIMED works: a claimed work's intro is bridged from
+		// galgame.intro_* and attributed to this source (step 52, refs/proj/51
+		// §8.C). First-party product → trust_tier 0.
+		{ID: 12, Key: "galgame_wiki", TrustTier: 0, Note: "first-party galgame wiki product (bridged media provenance)"},
 	}
 }
 

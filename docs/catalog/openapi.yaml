@@ -1738,6 +1738,12 @@ components:
           type:
             - array
             - "null"
+        intro:
+          items:
+            $ref: "#/components/schemas/WorkIntro"
+          type:
+            - array
+            - "null"
         labels:
           items:
             $ref: "#/components/schemas/WorkLabel"
@@ -1771,6 +1777,7 @@ components:
         - labels
         - refs
         - characters
+        - intro
       type: object
     WorkCharacter:
       additionalProperties: false
@@ -1869,6 +1876,22 @@ components:
       required:
         - work_id
         - groups
+      type: object
+    WorkIntro:
+      additionalProperties: false
+      properties:
+        intro:
+          type: string
+        lang:
+          type: string
+        source_id:
+          description: "catalog_source id (provenance): e.g. galgame_wiki for a bridged claimed work, vndb for a bodyless backfill"
+          format: int32
+          type: integer
+      required:
+        - lang
+        - intro
+        - source_id
       type: object
     WorkLabel:
       additionalProperties: false

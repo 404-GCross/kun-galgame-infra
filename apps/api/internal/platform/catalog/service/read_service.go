@@ -15,6 +15,26 @@ import (
 // product side keys its doujin rows on the DLsite workno).
 const sourceKeyDlsite = "dlsite"
 
+// sourceKeyGalgameWiki is the catalog_source key attributed to a CLAIMED work's
+// bridged intro (step 52, refs/proj/51 §8.C) — the first-party galgame wiki
+// product whose body the intro is read from.
+const sourceKeyGalgameWiki = "galgame_wiki"
+
+// siteGalgameWiki is the catalog_work.site of a galgame-wiki-claimed work — the
+// claim key whose media the read face bridges rather than copies (§2).
+const siteGalgameWiki = "galgame_wiki"
+
+// galgameIntroPivot is the FIXED column→language mapping for the claimed bridge
+// (§8.E: galgame intro is four language columns; the merge layer hard-wires the
+// pivot). Languages are BCP-47, matching the bodyless native rows so the read
+// face is one shape regardless of source.
+var galgameIntroPivot = []struct{ Column, Lang string }{
+	{"intro_ja_jp", "ja"},
+	{"intro_en_us", "en"},
+	{"intro_zh_cn", "zh-Hans"},
+	{"intro_zh_tw", "zh-Hant"},
+}
+
 // ReadService backs the S2S read face (step 18, D-01): anchor read-through and
 // credits-by-work. Pure reads over the catalog DB; transport-agnostic (the
 // handler maps these to DTOs).
@@ -38,6 +58,20 @@ type WorkDetail struct {
 	// voice-credited characters. Loaded by loadWorkDetail so the by-anchor /
 	// by-id read-through bundles it.
 	Characters []WorkCharacterRow
+	// Intros is the merged multilingual intro (step 52 media-aggregation pilot):
+	// for a CLAIMED work, bridged from galgame.intro_* (column→row pivot); for a
+	// BODYLESS work, its catalog_work_intro rows (one element per language).
+	// Strict XOR (§8.D): a claimed work reads ONLY the bridge — no fallback to
+	// native rows — so galgame intros all-empty means an empty slice.
+	Intros []WorkIntroRow
+}
+
+// WorkIntroRow is one language's intro on a work's read face, carrying its
+// provenance (source_id, §8.C).
+type WorkIntroRow struct {
+	Lang     string
+	Intro    string
+	SourceID int16
 }
 
 // WorkCharacterRow is one character on a work's roster, merging the roster edge
@@ -224,7 +258,154 @@ func (s *ReadService) loadWorkDetail(ctx context.Context, workID int64) (*WorkDe
 		return nil, err
 	}
 	detail.Characters = chars
+
+	// Intro: bridged (claimed) XOR native (bodyless). loadWorkIntros is batched
+	// by construction (claimed pivot in one query, bodyless in one) so this same
+	// path serves a future multi-work list read with no N+1.
+	intros, err := s.loadWorkIntros(ctx, []introSubject{{WorkID: work.ID, Site: work.Site, ProductWorkID: work.ProductWorkID}})
+	if err != nil {
+		return nil, err
+	}
+	detail.Intros = intros[work.ID]
 	return detail, nil
+}
+
+// introSubject identifies a work for the intro merge: its id plus the claim
+// state that decides which source (bridge vs native) it reads from.
+type introSubject struct {
+	WorkID        int64
+	Site          *string
+	ProductWorkID *int64
+}
+
+// loadWorkIntros assembles the multilingual intro for a set of works, honoring
+// the media-aggregation contract (refs/proj/51, step 52):
+//
+//   - CLAIMED (site='galgame_wiki'): bridge from galgame.intro_* — a column→row
+//     pivot, source_id=galgame_wiki. Bridge-not-copy (§2): rows are never
+//     materialized into catalog_work_intro.
+//   - BODYLESS (site=”/NULL): the work's catalog_work_intro rows, merged to one
+//     element per language (lowest source_id wins when several sources coexist).
+//   - Strict XOR (§8.D): a claimed work reads ONLY the bridge; it never falls
+//     back to native rows even if it still has some (shadow-never-delete).
+//
+// Batched (§9.1): claimed works pivot in one galgame query, bodyless works read
+// in one catalog_work_intro query — never per-work. Returns a map keyed by work
+// id; a work with no intro is simply absent (the caller renders []).
+func (s *ReadService) loadWorkIntros(ctx context.Context, subjects []introSubject) (map[int64][]WorkIntroRow, error) {
+	out := make(map[int64][]WorkIntroRow, len(subjects))
+
+	// Partition by claim state. Claimed works carry the galgame body id in
+	// product_work_id; bodyless works read their native rows by work id.
+	var bodylessIDs []int64
+	galgameToWork := make(map[int64]int64) // galgame.id → catalog_work.id
+	var galgameIDs []int64
+	for _, sub := range subjects {
+		if sub.Site != nil && *sub.Site == siteGalgameWiki {
+			if sub.ProductWorkID != nil { // claimed rows always fill product_work_id
+				galgameToWork[*sub.ProductWorkID] = sub.WorkID
+				galgameIDs = append(galgameIDs, *sub.ProductWorkID)
+			}
+			continue // strict XOR: claimed works never read native rows
+		}
+		bodylessIDs = append(bodylessIDs, sub.WorkID)
+	}
+
+	if len(galgameIDs) > 0 {
+		if err := s.bridgeGalgameIntros(ctx, galgameIDs, galgameToWork, out); err != nil {
+			return nil, err
+		}
+	}
+	if len(bodylessIDs) > 0 {
+		if err := s.nativeWorkIntros(ctx, bodylessIDs, out); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
+// bridgeGalgameIntros reads the claimed works' galgame bodies in ONE query and
+// pivots the four fixed language columns into intro rows (source_id=galgame_wiki).
+func (s *ReadService) bridgeGalgameIntros(ctx context.Context, galgameIDs []int64, galgameToWork map[int64]int64, out map[int64][]WorkIntroRow) error {
+	db := s.db.WithContext(ctx)
+
+	var srcID int16
+	if err := db.Raw(`SELECT id FROM catalog_source WHERE key = ?`, sourceKeyGalgameWiki).Scan(&srcID).Error; err != nil {
+		return err
+	}
+
+	var rows []struct {
+		ID        int64  `gorm:"column:id"`
+		IntroJaJP string `gorm:"column:intro_ja_jp"`
+		IntroEnUS string `gorm:"column:intro_en_us"`
+		IntroZhCN string `gorm:"column:intro_zh_cn"`
+		IntroZhTW string `gorm:"column:intro_zh_tw"`
+	}
+	if err := db.Raw(`SELECT id, intro_ja_jp, intro_en_us, intro_zh_cn, intro_zh_tw
+		FROM galgame WHERE id IN ?`, galgameIDs).Scan(&rows).Error; err != nil {
+		return err
+	}
+	for _, r := range rows {
+		workID, ok := galgameToWork[r.ID]
+		if !ok {
+			continue
+		}
+		byCol := map[string]string{
+			"intro_ja_jp": r.IntroJaJP, "intro_en_us": r.IntroEnUS,
+			"intro_zh_cn": r.IntroZhCN, "intro_zh_tw": r.IntroZhTW,
+		}
+		var intros []WorkIntroRow
+		for _, p := range galgameIntroPivot {
+			if text := strings.TrimSpace(byCol[p.Column]); text != "" {
+				intros = append(intros, WorkIntroRow{Lang: p.Lang, Intro: byCol[p.Column], SourceID: srcID})
+			}
+		}
+		if len(intros) > 0 {
+			sortIntros(intros)
+			out[workID] = intros
+		}
+	}
+	return nil
+}
+
+// nativeWorkIntros reads the bodyless works' catalog_work_intro rows in ONE
+// query and merges to one element per language (lowest source_id wins).
+func (s *ReadService) nativeWorkIntros(ctx context.Context, workIDs []int64, out map[int64][]WorkIntroRow) error {
+	db := s.db.WithContext(ctx)
+	var rows []struct {
+		WorkID   int64  `gorm:"column:work_id"`
+		Lang     string `gorm:"column:lang"`
+		Intro    string `gorm:"column:intro"`
+		SourceID int16  `gorm:"column:source_id"`
+	}
+	// Ordered by (work, lang, source_id) so the FIRST row seen per (work, lang)
+	// is the winning source (ascending priority; user(1) > vndb(2) > …).
+	if err := db.Raw(`SELECT work_id, lang, intro, source_id FROM catalog_work_intro
+		WHERE work_id IN ? ORDER BY work_id, lang, source_id`, workIDs).Scan(&rows).Error; err != nil {
+		return err
+	}
+	seen := make(map[int64]map[string]bool)
+	for _, r := range rows {
+		langs := seen[r.WorkID]
+		if langs == nil {
+			langs = map[string]bool{}
+			seen[r.WorkID] = langs
+		}
+		if langs[r.Lang] {
+			continue // a higher-priority source already claimed this language
+		}
+		langs[r.Lang] = true
+		out[r.WorkID] = append(out[r.WorkID], WorkIntroRow{Lang: r.Lang, Intro: r.Intro, SourceID: r.SourceID})
+	}
+	for id := range seen {
+		sortIntros(out[id])
+	}
+	return nil
+}
+
+// sortIntros orders intro elements by language for a deterministic read face.
+func sortIntros(intros []WorkIntroRow) {
+	sort.Slice(intros, func(i, j int) bool { return intros[i].Lang < intros[j].Lang })
 }
 
 // loadWorkCharacters assembles a work's roster (step 46) as the UNION of the

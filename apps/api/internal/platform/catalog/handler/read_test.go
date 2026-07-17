@@ -659,6 +659,107 @@ func TestCharacterDetail(t *testing.T) {
 	assert.Equal(t, 404, code)
 }
 
+// galgameStubIDs are the fixture galgame body ids used by the claimed bridge.
+var galgameStubIDs = []int64{5001, 5002}
+
+// ensureGalgameStub provisions the galgame body table the claimed-intro bridge
+// joins against. In prod/rehearsal galgame + catalog are co-located in
+// kun_catalog; the catalog test DB may carry either a full galgame table (when a
+// galgame test migrated it) or none. CREATE ... IF NOT EXISTS is a no-op against
+// a real table, so the INSERTs always pass user_id (the one NOT-NULL column
+// without a default) and cleanup is a targeted DELETE (not a TRUNCATE — the real
+// galgame table has child FKs). Idempotent across reruns.
+func ensureGalgameStub(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	require.NoError(t, db.Exec(`CREATE TABLE IF NOT EXISTS galgame (
+		id bigint PRIMARY KEY,
+		catalog_work_id bigint,
+		user_id int NOT NULL DEFAULT 0,
+		intro_en_us text NOT NULL DEFAULT '',
+		intro_ja_jp text NOT NULL DEFAULT '',
+		intro_zh_cn text NOT NULL DEFAULT '',
+		intro_zh_tw text NOT NULL DEFAULT ''
+	)`).Error)
+	require.NoError(t, db.Exec(`DELETE FROM galgame WHERE id IN ?`, galgameStubIDs).Error)
+}
+
+// insertGalgameBody inserts one fixture galgame body (id + claim back-pointer +
+// the four intro columns), passing user_id explicitly for the real-schema case.
+func insertGalgameBody(t *testing.T, db *gorm.DB, id, catalogWorkID int64, en, ja, zhCN, zhTW string) {
+	t.Helper()
+	require.NoError(t, db.Exec(`INSERT INTO galgame (id, catalog_work_id, user_id, intro_en_us, intro_ja_jp, intro_zh_cn, intro_zh_tw)
+		VALUES (?, ?, 0, ?, ?, ?, ?)`, id, catalogWorkID, en, ja, zhCN, zhTW).Error)
+}
+
+// TestWorkIntro pins the step-52 media-aggregation read face: the CLAIMED bridge
+// (galgame.intro_* pivoted to language rows, source=galgame_wiki), the BODYLESS
+// native merge (catalog_work_intro, lowest source_id wins per language), strict
+// XOR (a claimed work with empty galgame intros yields [] and never falls back
+// to a shadow native row), and []-not-null serialization.
+func TestWorkIntro(t *testing.T) {
+	db := openCatalogTestDB(t)
+	ensureGalgameStub(t, db)
+	for _, tbl := range []string{"catalog_work_intro", "catalog_work"} {
+		require.NoError(t, db.Exec("TRUNCATE "+tbl+" RESTART IDENTITY CASCADE").Error)
+	}
+	// Source ids from the seed: galgame_wiki=12 (bridge provenance), vndb=2, user=1.
+	var srcGalgameWiki, srcVNDB, srcUser int16
+	db.Raw("SELECT id FROM catalog_source WHERE key='galgame_wiki'").Scan(&srcGalgameWiki)
+	db.Raw("SELECT id FROM catalog_source WHERE key='vndb'").Scan(&srcVNDB)
+	db.Raw("SELECT id FROM catalog_source WHERE key='user'").Scan(&srcUser)
+	require.NotZero(t, srcGalgameWiki, "galgame_wiki source must be seeded")
+
+	// --- CLAIMED work: intro bridged from its galgame body (en + ja set, zh empty).
+	claimed := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "主張作品", ContentRating: 0, Status: 0,
+		Site: strptr("galgame_wiki"), ProductWorkID: ptrI64(5001)}
+	require.NoError(t, db.Create(&claimed).Error)
+	insertGalgameBody(t, db, 5001, claimed.ID, "English intro.", "日本語の紹介。", "", "")
+
+	// --- BODYLESS work: native rows; en has TWO sources (user beats vndb), plus ja.
+	bodyless := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "無体作品", ContentRating: 0, Status: 0}
+	require.NoError(t, db.Create(&bodyless).Error)
+	require.NoError(t, db.Create(&model.CatalogWorkIntro{WorkID: bodyless.ID, Lang: "en", Intro: "VNDB english", SourceID: srcVNDB}).Error)
+	require.NoError(t, db.Create(&model.CatalogWorkIntro{WorkID: bodyless.ID, Lang: "en", Intro: "User english", SourceID: srcUser}).Error)
+	require.NoError(t, db.Create(&model.CatalogWorkIntro{WorkID: bodyless.ID, Lang: "ja", Intro: "VNDB日本語", SourceID: srcVNDB}).Error)
+
+	// --- XOR work: claimed but galgame intros all empty; a SHADOW native row exists
+	// (simulating a prior bodyless state) and must NEVER surface.
+	xor := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "空主張", ContentRating: 0, Status: 0,
+		Site: strptr("galgame_wiki"), ProductWorkID: ptrI64(5002)}
+	require.NoError(t, db.Create(&xor).Error)
+	insertGalgameBody(t, db, 5002, xor.ID, "", "", "", "")
+	require.NoError(t, db.Create(&model.CatalogWorkIntro{WorkID: xor.ID, Lang: "en", Intro: "shadow row must not appear", SourceID: srcVNDB}).Error)
+
+	app := readApp(service.NewReadService(db), nil)
+
+	// CLAIMED: two elements (en, ja), sorted by lang, source=galgame_wiki.
+	code, body := getJSON(t, app, "/api/v1/catalog/works/"+itoa(claimed.ID))
+	require.Equal(t, 200, code)
+	intro := body["data"].(map[string]any)["intro"].([]any)
+	require.Len(t, intro, 2, "en + ja bridged; empty zh columns dropped")
+	assert.Equal(t, "en", intro[0].(map[string]any)["lang"])
+	assert.Equal(t, "English intro.", intro[0].(map[string]any)["intro"])
+	assert.EqualValues(t, srcGalgameWiki, intro[0].(map[string]any)["source_id"], "bridge attributes galgame_wiki")
+	assert.Equal(t, "ja", intro[1].(map[string]any)["lang"])
+	assert.Equal(t, "日本語の紹介。", intro[1].(map[string]any)["intro"])
+
+	// BODYLESS: en resolves to the user source (lower id beats vndb); ja from vndb.
+	code, body = getJSON(t, app, "/api/v1/catalog/works/"+itoa(bodyless.ID))
+	require.Equal(t, 200, code)
+	intro = body["data"].(map[string]any)["intro"].([]any)
+	require.Len(t, intro, 2, "en (one winner) + ja")
+	en := intro[0].(map[string]any)
+	assert.Equal(t, "en", en["lang"])
+	assert.Equal(t, "User english", en["intro"], "lowest source_id wins the language")
+	assert.EqualValues(t, srcUser, en["source_id"])
+	assert.EqualValues(t, srcVNDB, intro[1].(map[string]any)["source_id"])
+
+	// XOR: claimed + empty galgame intros → [] (the shadow native row is invisible).
+	code, body = getJSON(t, app, "/api/v1/catalog/works/"+itoa(xor.ID))
+	require.Equal(t, 200, code)
+	assert.Empty(t, body["data"].(map[string]any)["intro"].([]any), "strict XOR: no fallback to native rows")
+}
+
 func ptrI16(v int16) *int16 { return &v }
 
 func ptrI64(v int64) *int64 { return &v }

@@ -56,6 +56,7 @@ func TestIngestFixtureAndIdempotency(t *testing.T) {
 	require.NoError(t, err)
 
 	// Read-row counts. images: 3 read, 1 non-ch (cv99) skipped → 2 loaded.
+	assert.Equal(t, int64(2), report.PerFile["vn"].Rows)
 	assert.Equal(t, int64(2), report.PerFile["chars"].Rows)
 	assert.Equal(t, int64(3), report.PerFile["chars_names"].Rows)
 	assert.Equal(t, int64(3), report.PerFile["chars_vns"].Rows)
@@ -67,8 +68,20 @@ func TestIngestFixtureAndIdempotency(t *testing.T) {
 		require.NoError(t, testDB.Table(table).Count(&n).Error)
 		return n
 	}
+	assert.Equal(t, int64(2), count("src_vndb.vn"))
 	assert.Equal(t, int64(2), count("src_vndb.chars"))
 	assert.Equal(t, int64(2), count("src_vndb.images"), "only ch rows loaded")
+
+	// vn: verbatim description, \N cover ids → empty, escaped newline decoded.
+	var v1 VN
+	require.NoError(t, testDB.First(&v1, "id = ?", "v1").Error)
+	assert.Equal(t, "ja", v1.OLang)
+	assert.Equal(t, "cv1", v1.Image)
+	assert.Equal(t, "A test blurb about a cat god.", v1.Description)
+	var v2 VN
+	require.NoError(t, testDB.First(&v2, "id = ?", "v2").Error)
+	assert.Equal(t, "", v2.Image, `\N cover id → empty`)
+	assert.Equal(t, "Second\nline description.", v2.Description, "escaped newline decoded")
 
 	// Numeric fields parse (the getInt16/present bug regression): c2.main_spoil=2,
 	// image ch2 sexual=150 violence=200; \N → empty/zero.

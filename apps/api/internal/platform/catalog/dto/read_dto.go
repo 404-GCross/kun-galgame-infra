@@ -24,6 +24,21 @@ type WorkByAnchorResponse struct {
 	// credit-only character (voiced but with no roster edge — e.g. VNDB-only VA
 	// credits) still surfaces with kind=0. Sorted main-first then display name.
 	Characters []WorkCharacter `json:"characters"`
+	// Intro is the work's multilingual intro (step 52 media-aggregation pilot):
+	// one element per language, merged to a single shape regardless of source. A
+	// CLAIMED work's intro is bridged from its galgame body (galgame.intro_*); a
+	// BODYLESS work's from its catalog_work_intro rows. Strict XOR: a claimed
+	// work with no galgame intro yields [] (never a fallback to native rows).
+	Intro []WorkIntro `json:"intro"`
+}
+
+// WorkIntro is one language's intro on a work, with its provenance. source_id
+// references the catalog_source registry (bridged claimed intros carry the
+// galgame_wiki source; bodyless intros carry the backfill source, e.g. vndb).
+type WorkIntro struct {
+	Lang     string `json:"lang"`
+	Intro    string `json:"intro"`
+	SourceID int16  `json:"source_id" doc:"catalog_source id (provenance): e.g. galgame_wiki for a bridged claimed work, vndb for a bodyless backfill"`
 }
 
 // WorkCharacter is one character on a work's roster, merging the appearance

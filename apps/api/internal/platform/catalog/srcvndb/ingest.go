@@ -19,14 +19,15 @@ func EnsureSchema(db *gorm.DB) error {
 	if err := db.Exec(`CREATE SCHEMA IF NOT EXISTS src_vndb`).Error; err != nil {
 		return fmt.Errorf("create schema: %w", err)
 	}
-	if err := db.AutoMigrate(&Char{}, &CharName{}, &CharVN{}, &Image{}, &PortraitBackfill{}, &IngestRun{}); err != nil {
+	if err := db.AutoMigrate(&VN{}, &Char{}, &CharName{}, &CharVN{}, &Image{}, &PortraitBackfill{}, &IngestRun{}); err != nil {
 		return fmt.Errorf("automigrate src_vndb: %w", err)
 	}
 	return nil
 }
 
-// Files lists the four staged dump tables, in load order.
-var Files = []string{"chars", "chars_names", "chars_vns", "images"}
+// Files lists the staged dump tables, in load order. vn (step 52) carries the
+// work-level media source (description/cover ids) the aggregation waves need.
+var Files = []string{"vn", "chars", "chars_names", "chars_vns", "images"}
 
 // FileReport is one file's ingestion outcome.
 type FileReport struct {
@@ -143,6 +144,7 @@ type ingester struct {
 	rows    int64
 	skipped int64
 
+	vns       []VN
 	chars     []Char
 	charNames []CharName
 	charVNs   []CharVN
@@ -169,6 +171,17 @@ func (g *ingester) add(line []byte) error {
 	}
 
 	switch g.name {
+	case "vn":
+		id, _ := get("id")
+		g.vns = append(g.vns, VN{
+			ID: id, OLang: getStr(get, "olang"), Image: getStr(get, "image"),
+			CImage: getStr(get, "c_image"), Description: getStr(get, "description"),
+			IngestedAt: g.now,
+		})
+		g.rows++
+		if len(g.vns) >= batchSize {
+			return g.flushVNs()
+		}
 	case "chars":
 		id, _ := get("id")
 		image, _ := get("image")
@@ -231,6 +244,9 @@ func (g *ingester) add(line []byte) error {
 }
 
 func (g *ingester) flush() error {
+	if err := g.flushVNs(); err != nil {
+		return err
+	}
 	if err := g.flushChars(); err != nil {
 		return err
 	}
@@ -243,6 +259,7 @@ func (g *ingester) flush() error {
 	return g.flushImages()
 }
 
+func (g *ingester) flushVNs() error       { return flushBatch(g.tx, &g.vns) }
 func (g *ingester) flushChars() error     { return flushBatch(g.tx, &g.chars) }
 func (g *ingester) flushCharNames() error { return flushBatch(g.tx, &g.charNames) }
 func (g *ingester) flushCharVNs() error   { return flushBatch(g.tx, &g.charVNs) }
