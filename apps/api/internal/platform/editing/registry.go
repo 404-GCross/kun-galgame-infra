@@ -69,6 +69,11 @@ type Policy struct {
 	Propose   string // open | trusted | locked | perm:<key>
 	Review    string // perm:<key>
 	Automerge string // never | trusted | always
+	// OwnerReview additionally grants the review rule to a caller the product
+	// backend asserted as the entity's owner (E3b: the old wire's owner-merge
+	// privilege lifted into an explicit overlay capability). The perm rule
+	// always also passes; false (the zero value) changes nothing.
+	OwnerReview bool
 }
 
 // AllowsPropose evaluates the propose rule for a caller. Locked always
@@ -87,8 +92,12 @@ func (p Policy) AllowsPropose(pc PolicyContext) bool {
 	}
 }
 
-// AllowsReview evaluates the review rule for a caller.
+// AllowsReview evaluates the review rule for a caller: the review perm, OR —
+// when the policy enables OwnerReview — the asserted entity ownership.
 func (p Policy) AllowsReview(pc PolicyContext) bool {
+	if p.OwnerReview && pc.IsEntityOwner {
+		return true
+	}
 	if !strings.HasPrefix(p.Review, permPrefix) {
 		return false // malformed — fail closed
 	}

@@ -9,11 +9,16 @@ import "time"
 // anonymous-embed trap).
 
 // EditActor is the asserted end-user identity a policy context is built
-// from: roles feed the permission resolver, trust_tier the trusted rules.
+// from: roles feed the permission resolver, trust_tier the trusted rules,
+// is_entity_owner the OwnerReview overlay capability (E3b).
 type EditActor struct {
 	UserID    int64    `json:"user_id" minimum:"1" doc:"Product-side user id (the shared identity space)"`
 	Roles     []string `json:"roles,omitempty" doc:"The user's roles as the product's JWT asserts them"`
 	TrustTier int16    `json:"trust_tier,omitempty" minimum:"0" maximum:"4" doc:"Trust tier TL0-TL4 (doc 18)"`
+	// IsEntityOwner asserts that this user owns the entity the operation
+	// targets (what ownership means is the product's business — e.g. the
+	// galgame row's creator uid). Feeds OwnerReview-enabled policies only.
+	IsEntityOwner bool `json:"is_entity_owner,omitempty" doc:"Product-asserted entity ownership (owner-review overlays)"`
 }
 
 // EditProposalCreateRequest files a proposal (or a direct edit — the engine

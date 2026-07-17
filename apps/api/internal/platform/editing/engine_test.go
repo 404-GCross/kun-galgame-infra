@@ -95,6 +95,9 @@ const (
 	permReview  = "edit.test.widget.review"
 
 	overlaySite = "overlay-site"
+	// ownerReviewSite overlays ONLY name with OwnerReview (E3b): the asserted
+	// entity owner passes the review rule there — and nowhere else.
+	ownerReviewSite = "owner-review-site"
 )
 
 type widgetRow struct {
@@ -190,6 +193,9 @@ func widgetSpec(db *gorm.DB) editing.EntityTypeSpec {
 			overlaySite: {
 				fOpen: {Propose: editing.ProposeLocked, Review: editing.ReviewPerm(permReview), Automerge: editing.AutomergeNever},
 				fName: {Propose: editing.ProposeOpen, Review: editing.ReviewPerm(permReview), Automerge: editing.AutomergeAlways},
+			},
+			ownerReviewSite: {
+				fName: {Propose: editing.ProposeOpen, Review: editing.ReviewPerm(permReview), Automerge: editing.AutomergeNever, OwnerReview: true},
 			},
 		},
 	}

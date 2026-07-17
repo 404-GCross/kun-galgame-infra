@@ -337,6 +337,9 @@ components:
     EditActor:
       additionalProperties: false
       properties:
+        is_entity_owner:
+          description: Product-asserted entity ownership (owner-review overlays)
+          type: boolean
         roles:
           description: The user's roles as the product's JWT asserts them
           items:
@@ -2650,6 +2653,13 @@ paths:
             maximum: 4
             minimum: 0
             type: integer
+        - description: Product-asserted ownership of entity_id (owner-review overlays project can_review)
+          explode: false
+          in: query
+          name: is_entity_owner
+          schema:
+            description: Product-asserted ownership of entity_id (owner-review overlays project can_review)
+            type: boolean
       responses:
         "200":
           content:

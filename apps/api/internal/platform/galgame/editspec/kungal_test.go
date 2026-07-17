@@ -137,3 +137,83 @@ func TestKungalSiteOverlay(t *testing.T) {
 		t.Fatal("the galgame_wiki default automerge=trusted must be unaffected by the kungal overlay")
 	}
 }
+
+// TestKungalOwnerReview pins the E3b ruling-2 posture over the real galgame
+// vocabulary: on kungal, the BFF-asserted entity owner (a plain user, no
+// roles) adjudicates the 23 default keys — amend + merge with double
+// attribution, the old wire's owner-merge privilege — but never the special
+// keys (status/vndb_id keep their field policies), and the galgame_wiki
+// tenant grants owners nothing.
+func TestKungalOwnerReview(t *testing.T) {
+	e := newGameEngine(t)
+	g := createGame(t, nil)
+
+	asOwner := func(pc editing.PolicyContext) editing.PolicyContext {
+		pc.IsEntityOwner = true
+		return pc
+	}
+	owner := asOwner(kungalActor(200, 0))
+
+	// 1. Owner (no perms) amends and merges another user's default-key
+	//    proposal on their own game.
+	prop, _, err := e.CreateProposal(testCtx, editing.CreateProposalInput{
+		EntityType: editspec.TypeGame, EntityID: int64(g.ID),
+		Patch: map[string]any{editspec.FieldIntroZhCN: "路人提案简介"},
+		Actor: kungalActor(101, 0),
+	})
+	if err != nil {
+		t.Fatalf("propose: %v", err)
+	}
+	if _, err := e.AmendProposal(testCtx, prop.ID, editing.AmendInput{
+		Set:   map[string]any{editspec.FieldIntroZhCN: "创建者修正后的简介"},
+		Note:  "owner fix",
+		Actor: owner,
+	}); err != nil {
+		t.Fatalf("owner amend: %v", err)
+	}
+	merged, err := e.MergeProposal(testCtx, prop.ID, owner, "")
+	if err != nil {
+		t.Fatalf("owner merge: %v", err)
+	}
+	if merged.ActorUID != 101 || merged.AmenderUID == nil || *merged.AmenderUID != 200 {
+		t.Fatalf("double signature: actor=%d amender=%v", merged.ActorUID, merged.AmenderUID)
+	}
+	var after model.Galgame
+	if err := testDB.First(&after, g.ID).Error; err != nil {
+		t.Fatalf("reload galgame: %v", err)
+	}
+	if after.IntroZhCN != "创建者修正后的简介" {
+		t.Fatalf("intro_zh_cn = %q, want the owner-amended value", after.IntroZhCN)
+	}
+
+	// 2. The special keys stay perm-gated: an open status proposal (a
+	//    moderator below trusted tier) is beyond the owner.
+	statusProp, rev, err := e.CreateProposal(testCtx, editing.CreateProposalInput{
+		EntityType: editspec.TypeGame, EntityID: int64(g.ID),
+		Patch: map[string]any{editspec.FieldStatus: 1},
+		Actor: kungalActor(103, 0, "moderator"),
+	})
+	if err != nil {
+		t.Fatalf("status propose: %v", err)
+	}
+	if rev != nil {
+		t.Fatal("tier-0 moderator status proposal must stay open")
+	}
+	var permErr *editing.PermissionError
+	if _, err := e.MergeProposal(testCtx, statusProp.ID, owner, ""); !errors.As(err, &permErr) {
+		t.Fatalf("owner on status: %v, want PermissionError", err)
+	}
+
+	// 3. The galgame_wiki tenant grants owners nothing (no overlay there).
+	wikiProp, _, err := e.CreateProposal(testCtx, editing.CreateProposalInput{
+		EntityType: editspec.TypeGame, EntityID: int64(g.ID),
+		Patch: map[string]any{editspec.FieldNameEnUS: "wiki proposal"},
+		Actor: gameActor(104, 0),
+	})
+	if err != nil {
+		t.Fatalf("wiki propose: %v", err)
+	}
+	if _, err := e.MergeProposal(testCtx, wikiProp.ID, asOwner(gameActor(200, 0)), ""); !errors.As(err, &permErr) {
+		t.Fatalf("owner on galgame_wiki: %v, want PermissionError", err)
+	}
+}

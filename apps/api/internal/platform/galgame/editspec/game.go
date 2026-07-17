@@ -106,13 +106,17 @@ func RegisterGame(reg *editing.Registry, db *gorm.DB) error {
 	// kungal overlay (E3a ruling 2): every DEFAULT-POLICY field files an
 	// open proposal into the kungal review queue — propose mirrors the old
 	// wiki SubmitPR (any logged-in user), review holds the galgame review
-	// perm, and nothing automerges. Fields carrying their own policy (bid
-	// locked, vndb_id, status) are deliberately NOT overlaid — the E2a
-	// posture stands on every site.
+	// perm, and nothing automerges. OwnerReview (E3b ruling 2) additionally
+	// lets the entity's asserted owner adjudicate these default keys — the
+	// old wire's owner-merge privilege, migrated as an explicit overlay
+	// capability. Fields carrying their own policy (bid locked, vndb_id,
+	// status) are deliberately NOT overlaid — the E2a posture stands on
+	// every site, and owners never adjudicate the special keys.
 	kungalPolicy := editing.Policy{
-		Propose:   editing.ProposeOpen,
-		Review:    reviewRule,
-		Automerge: editing.AutomergeNever,
+		Propose:     editing.ProposeOpen,
+		Review:      reviewRule,
+		Automerge:   editing.AutomergeNever,
+		OwnerReview: true,
 	}
 	kungalOverlay := make(map[string]editing.Policy, len(fields))
 	for _, f := range fields {

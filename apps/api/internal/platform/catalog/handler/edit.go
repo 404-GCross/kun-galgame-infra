@@ -132,6 +132,7 @@ func (s *EditServer) policyCtx(actor dto.EditActor, site, family string) editing
 	resolver := s.perms[family]
 	return editing.PolicyContext{
 		UserID: actor.UserID, Site: site, TrustTier: actor.TrustTier,
+		IsEntityOwner: actor.IsEntityOwner,
 		HasPerm: func(key string) bool {
 			if resolver == nil {
 				return false
@@ -512,12 +513,13 @@ func (s *EditServer) snapshot(ctx context.Context, in *editSnapshotInput) (*edit
 }
 
 type editSchemaInput struct {
-	EntityType string `path:"entity_type" doc:"Registered entity type, e.g. catalog.work"`
-	EntityID   int64  `query:"entity_id" doc:"Entity-aware projection: owner automerge evaluates against this entity (0 = type-level, owner projects false)"`
-	Site       string `query:"site" doc:"Tenant whose policy overlay applies"`
-	UserID     int64  `query:"user_id" doc:"Asserted end-user id (0 = anonymous projection)"`
-	Roles      string `query:"roles" doc:"Comma-separated asserted roles"`
-	TrustTier  int16  `query:"trust_tier" minimum:"0" maximum:"4" doc:"Asserted trust tier"`
+	EntityType    string `path:"entity_type" doc:"Registered entity type, e.g. catalog.work"`
+	EntityID      int64  `query:"entity_id" doc:"Entity-aware projection: owner automerge evaluates against this entity (0 = type-level, owner projects false)"`
+	Site          string `query:"site" doc:"Tenant whose policy overlay applies"`
+	UserID        int64  `query:"user_id" doc:"Asserted end-user id (0 = anonymous projection)"`
+	Roles         string `query:"roles" doc:"Comma-separated asserted roles"`
+	TrustTier     int16  `query:"trust_tier" minimum:"0" maximum:"4" doc:"Asserted trust tier"`
+	IsEntityOwner bool   `query:"is_entity_owner" doc:"Product-asserted ownership of entity_id (owner-review overlays project can_review)"`
 }
 
 type editSchemaOutput struct {
@@ -525,7 +527,7 @@ type editSchemaOutput struct {
 }
 
 func (s *EditServer) schema(ctx context.Context, in *editSchemaInput) (*editSchemaOutput, error) {
-	actor := dto.EditActor{UserID: in.UserID, TrustTier: in.TrustTier}
+	actor := dto.EditActor{UserID: in.UserID, TrustTier: in.TrustTier, IsEntityOwner: in.IsEntityOwner}
 	if in.Roles != "" {
 		actor.Roles = strings.Split(in.Roles, ",")
 	}

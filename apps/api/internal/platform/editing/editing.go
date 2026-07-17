@@ -102,6 +102,12 @@ type PolicyContext struct {
 	UserID    int64
 	Site      string
 	TrustTier int16
+	// IsEntityOwner is the product backend's assertion that this caller owns
+	// the entity under review (E3b owner-review; the same S2S trust model as
+	// Roles/TrustTier). What "owning an entity" means is the product's
+	// business — e.g. the kungal BFF compares the galgame row's creator uid —
+	// the engine only feeds it into OwnerReview-enabled policies.
+	IsEntityOwner bool
 	// HasPerm reports whether the caller holds a permission key (e.g.
 	// "edit.catalog.work"). A nil HasPerm grants nothing (fail-closed).
 	HasPerm func(key string) bool

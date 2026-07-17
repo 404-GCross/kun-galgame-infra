@@ -571,6 +571,8 @@ export interface components {
             source?: string;
         };
         EditActor: {
+            /** @description Product-asserted entity ownership (owner-review overlays) */
+            is_entity_owner?: boolean;
             /** @description The user's roles as the product's JWT asserts them */
             roles?: string[] | null;
             /**
@@ -1928,6 +1930,8 @@ export interface operations {
                 roles?: string;
                 /** @description Asserted trust tier */
                 trust_tier?: number;
+                /** @description Product-asserted ownership of entity_id (owner-review overlays project can_review) */
+                is_entity_owner?: boolean;
             };
             header?: never;
             path: {
