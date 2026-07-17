@@ -44,7 +44,8 @@ func (e *Engine) CreateProposal(ctx context.Context, in CreateProposalInput) (*P
 	if len(in.Patch) == 0 {
 		return nil, nil, ErrEmptyPatch
 	}
-	automerge := true
+	pols := make(map[string]Policy, len(in.Patch))
+	needOwner := false
 	for _, key := range sortedKeys(in.Patch) {
 		f, err := spec.fieldForWrite(key)
 		if err != nil {
@@ -60,8 +61,23 @@ func (e *Engine) CreateProposal(ctx context.Context, in CreateProposalInput) (*P
 		if err := f.Validate(in.Patch[key]); err != nil {
 			return nil, nil, &ValidationError{Key: key, Reason: err.Error()}
 		}
-		if !pol.AllowsAutomerge(in.Actor) {
+		pols[key] = pol
+		if pol.Automerge == AutomergeOwner {
+			needOwner = true
+		}
+	}
+	// The owner site is resolved AT MOST ONCE per create, and only when some
+	// patched field carries the owner rule. A hook error fails the create
+	// (never a silent downgrade to an open proposal — the caller retries).
+	owner, err := e.ownerSite(ctx, spec, in.EntityID, needOwner)
+	if err != nil {
+		return nil, nil, err
+	}
+	automerge := true
+	for _, pol := range pols {
+		if !pol.allowsAutomergeWithOwner(in.Actor, owner) {
 			automerge = false
+			break
 		}
 	}
 	// The entity must exist (and this read anchors nothing else — the merge

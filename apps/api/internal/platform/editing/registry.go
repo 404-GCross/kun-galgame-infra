@@ -43,11 +43,15 @@ const (
 
 // Automerge rules. "trusted" automerges when the PROPOSER's trust tier
 // reaches TrustedTier; "always" is the direct-edit tier (e.g. a site editing
-// works it minted itself — revisions are still recorded).
+// works it minted itself — revisions are still recorded); "owner" (E1)
+// automerges only when the proposal's site equals the entity's owner site
+// (the spec's OwnerSite hook) — everyone else falls back to an open
+// proposal. Registering an owner rule without the hook fails fast.
 const (
 	AutomergeNever   = "never"
 	AutomergeTrusted = "trusted"
 	AutomergeAlways  = "always"
+	AutomergeOwner   = "owner"
 )
 
 const permPrefix = "perm:"
@@ -91,13 +95,25 @@ func (p Policy) AllowsReview(pc PolicyContext) bool {
 	return pc.hasPerm(strings.TrimPrefix(p.Review, permPrefix))
 }
 
-// AllowsAutomerge evaluates the automerge rule for the PROPOSER.
+// AllowsAutomerge evaluates the STATIC automerge rules for the PROPOSER.
+// The "owner" rule needs the entity's owner site and is evaluated by the
+// engine (allowsAutomergeWithOwner); here it fails closed, so no caller can
+// accidentally grant owner-automerge without entity context.
 func (p Policy) AllowsAutomerge(pc PolicyContext) bool {
+	return p.allowsAutomergeWithOwner(pc, nil)
+}
+
+// allowsAutomergeWithOwner evaluates the full automerge rule set. owner is
+// the entity's owner site as the spec's OwnerSite hook reported it (nil =
+// unclaimed / unknown → owner rule fails closed).
+func (p Policy) allowsAutomergeWithOwner(pc PolicyContext, owner *string) bool {
 	switch p.Automerge {
 	case AutomergeAlways:
 		return true
 	case AutomergeTrusted:
 		return pc.TrustTier >= TrustedTier
+	case AutomergeOwner:
+		return owner != nil && *owner != "" && *owner == pc.Site
 	default:
 		return false
 	}
@@ -138,7 +154,13 @@ type EntityTypeSpec struct {
 	LoadSnapshot func(ctx context.Context, entityID int64) (map[string]any, error)
 	// Txn runs fn inside a transaction on the family's own DB pool; the
 	// engine passes that transaction into each field's Apply.
-	Txn           func(ctx context.Context, fn func(tx *gorm.DB) error) error
+	Txn func(ctx context.Context, fn func(tx *gorm.DB) error) error
+	// OwnerSite reports which site owns the entity (nil = unclaimed) for the
+	// "owner" automerge rule (E1). Optional — but registering any policy with
+	// automerge=owner without it fails fast at Register time. Media-agnostic:
+	// what "owner" means is the family's business (catalog: the claiming
+	// site), the engine only compares it to the proposal's site.
+	OwnerSite     func(ctx context.Context, entityID int64) (*string, error)
 	Fields        []FieldSpec
 	DefaultPolicy Policy
 	// SiteOverlays: site → field key → policy replacement (doc 21 §2.5).
@@ -214,6 +236,17 @@ func (r *Registry) Register(spec EntityTypeSpec) error {
 	if err := validatePolicy(spec.DefaultPolicy); err != nil {
 		return fmt.Errorf("editing: type %q default policy: %w", spec.Type, err)
 	}
+	// The owner automerge rule is meaningless without the hook — fail the
+	// boot loudly rather than silently never-automerging (charter: fail-fast).
+	requireOwnerHook := func(where string, p Policy) error {
+		if p.Automerge == AutomergeOwner && spec.OwnerSite == nil {
+			return fmt.Errorf("editing: type %q %s uses automerge=owner but registers no OwnerSite hook", spec.Type, where)
+		}
+		return nil
+	}
+	if err := requireOwnerHook("default policy", spec.DefaultPolicy); err != nil {
+		return err
+	}
 	spec.fields = make(map[string]*FieldSpec, len(spec.Fields))
 	for i := range spec.Fields {
 		f := &spec.Fields[i]
@@ -233,6 +266,9 @@ func (r *Registry) Register(spec EntityTypeSpec) error {
 			if err := validatePolicy(*f.Policy); err != nil {
 				return fmt.Errorf("editing: field %q policy: %w", f.Key, err)
 			}
+			if err := requireOwnerHook(fmt.Sprintf("field %q policy", f.Key), *f.Policy); err != nil {
+				return err
+			}
 		}
 		spec.fields[f.Key] = f
 	}
@@ -243,6 +279,9 @@ func (r *Registry) Register(spec EntityTypeSpec) error {
 			}
 			if err := validatePolicy(p); err != nil {
 				return fmt.Errorf("editing: site %q overlay for %q: %w", site, key, err)
+			}
+			if err := requireOwnerHook(fmt.Sprintf("site %q overlay for %q", site, key), p); err != nil {
+				return err
 			}
 		}
 	}
@@ -267,7 +306,7 @@ func validatePolicy(p Policy) error {
 		return fmt.Errorf("bad review rule %q (must be perm:<key>)", p.Review)
 	}
 	switch p.Automerge {
-	case AutomergeNever, AutomergeTrusted, AutomergeAlways:
+	case AutomergeNever, AutomergeTrusted, AutomergeAlways, AutomergeOwner:
 	default:
 		return fmt.Errorf("bad automerge rule %q", p.Automerge)
 	}

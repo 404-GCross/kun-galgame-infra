@@ -164,7 +164,7 @@ func TestSchemaProjection(t *testing.T) {
 		return editing.FieldProjection{}
 	}
 
-	anonProj, err := e.SchemaProjection("test.widget", anonActor(1))
+	anonProj, err := e.SchemaProjection(testCtx, "test.widget", 0, anonActor(1))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -184,7 +184,7 @@ func TestSchemaProjection(t *testing.T) {
 		t.Errorf("anon on legacy: %+v", p)
 	}
 
-	revProj, err := e.SchemaProjection("test.widget", reviewerActor(2))
+	revProj, err := e.SchemaProjection(testCtx, "test.widget", 0, reviewerActor(2))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -192,7 +192,7 @@ func TestSchemaProjection(t *testing.T) {
 		t.Errorf("reviewer on name: %+v", p)
 	}
 
-	trustedProj, err := e.SchemaProjection("test.widget", trustedActor(3))
+	trustedProj, err := e.SchemaProjection(testCtx, "test.widget", 0, trustedActor(3))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -203,7 +203,7 @@ func TestSchemaProjection(t *testing.T) {
 	// Site overlay flows through the projection.
 	overlayActor := anonActor(4)
 	overlayActor.Site = overlaySite
-	overlayProj, err := e.SchemaProjection("test.widget", overlayActor)
+	overlayProj, err := e.SchemaProjection(testCtx, "test.widget", 0, overlayActor)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -214,7 +214,7 @@ func TestSchemaProjection(t *testing.T) {
 		t.Errorf("overlay on name: %+v", p)
 	}
 
-	if _, err := e.SchemaProjection("test.ghost", anonActor(1)); !errors.Is(err, editing.ErrUnknownEntityType) {
+	if _, err := e.SchemaProjection(testCtx, "test.ghost", 0, anonActor(1)); !errors.Is(err, editing.ErrUnknownEntityType) {
 		t.Fatalf("unknown type: %v", err)
 	}
 }

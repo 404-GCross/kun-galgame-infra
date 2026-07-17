@@ -31,6 +31,20 @@ func (e *Engine) resolveSpec(entityType string) (*EntityTypeSpec, error) {
 	return spec, nil
 }
 
+// ownerSite resolves the entity's owner site through the spec's OwnerSite
+// hook when needed is true (some evaluated policy carries the owner rule).
+// Register guarantees the hook exists whenever an owner rule is registered.
+func (e *Engine) ownerSite(ctx context.Context, spec *EntityTypeSpec, entityID int64, needed bool) (*string, error) {
+	if !needed {
+		return nil, nil
+	}
+	owner, err := spec.OwnerSite(ctx, entityID)
+	if err != nil {
+		return nil, fmt.Errorf("editing: owner site for %s/%d: %w", spec.Type, entityID, err)
+	}
+	return owner, nil
+}
+
 // ---- reads ----------------------------------------------------------------
 
 // GetProposal loads a proposal, its amendments (seq order), and the computed
@@ -57,11 +71,12 @@ func (e *Engine) GetProposal(ctx context.Context, id int64) (*Proposal, []Propos
 // ProposalFilter narrows ListProposals. Zero values mean "no filter" except
 // Status, which uses -1 as its no-filter sentinel (0 = open is meaningful).
 type ProposalFilter struct {
-	EntityType string
-	EntityID   int64
-	Site       string
-	Status     int16 // -1 = all
-	Limit      int   // default 50, max 200
+	EntityType  string
+	EntityID    int64
+	Site        string
+	ProposerUID int64 // 0 = all proposers ("my proposals" BFF face, E1)
+	Status      int16 // -1 = all
+	Limit       int   // default 50, max 200
 }
 
 // ListProposals returns proposals newest-first.
@@ -75,6 +90,9 @@ func (e *Engine) ListProposals(ctx context.Context, f ProposalFilter) ([]Proposa
 	}
 	if f.Site != "" {
 		q = q.Where("site = ?", f.Site)
+	}
+	if f.ProposerUID != 0 {
+		q = q.Where("proposer_uid = ?", f.ProposerUID)
 	}
 	if f.Status >= 0 {
 		q = q.Where("status = ?", f.Status)
@@ -197,8 +215,24 @@ type FieldProjection struct {
 
 // SchemaProjection evaluates every registered field of an entity type
 // against the caller's policy context (site overlay included via pc.Site).
-func (e *Engine) SchemaProjection(entityType string, pc PolicyContext) ([]FieldProjection, error) {
+// entityID makes the projection entity-aware: the owner automerge rule is
+// evaluated against that entity's owner site (0 = type-level projection —
+// owner rules conservatively project WouldAutomerge=false).
+func (e *Engine) SchemaProjection(ctx context.Context, entityType string, entityID int64, pc PolicyContext) ([]FieldProjection, error) {
 	spec, err := e.resolveSpec(entityType)
+	if err != nil {
+		return nil, err
+	}
+	needOwner := false
+	if entityID != 0 {
+		for i := range spec.Fields {
+			if spec.EffectivePolicy(spec.Fields[i].Key, pc.Site).Automerge == AutomergeOwner {
+				needOwner = true
+				break
+			}
+		}
+	}
+	owner, err := e.ownerSite(ctx, spec, entityID, needOwner)
 	if err != nil {
 		return nil, err
 	}
@@ -213,7 +247,7 @@ func (e *Engine) SchemaProjection(entityType string, pc PolicyContext) ([]FieldP
 		}
 		if !f.Deprecated && !proj.Locked {
 			proj.CanPropose = pol.AllowsPropose(pc)
-			proj.WouldAutomerge = proj.CanPropose && pol.AllowsAutomerge(pc)
+			proj.WouldAutomerge = proj.CanPropose && pol.allowsAutomergeWithOwner(pc, owner)
 		}
 		out = append(out, proj)
 	}
