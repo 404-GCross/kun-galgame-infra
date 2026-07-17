@@ -1,0 +1,243 @@
+package editing
+
+import (
+	"context"
+	"errors"
+	"fmt"
+
+	"gorm.io/gorm"
+)
+
+// Engine is the editing state machine over the engine tables (edit_*) and
+// the injected registry. db is the engine pool (catalog DB, charter ruling
+// 2); entity bodies are reached only through each spec's own closures.
+type Engine struct {
+	db  *gorm.DB
+	reg *Registry
+}
+
+func NewEngine(db *gorm.DB, reg *Registry) *Engine {
+	return &Engine{db: db, reg: reg}
+}
+
+// Registry exposes the injected registry (schema endpoints project from it).
+func (e *Engine) Registry() *Registry { return e.reg }
+
+func (e *Engine) resolveSpec(entityType string) (*EntityTypeSpec, error) {
+	spec, ok := e.reg.Type(entityType)
+	if !ok {
+		return nil, ErrUnknownEntityType
+	}
+	return spec, nil
+}
+
+// ---- reads ----------------------------------------------------------------
+
+// GetProposal loads a proposal, its amendments (seq order), and the computed
+// effective patch.
+func (e *Engine) GetProposal(ctx context.Context, id int64) (*Proposal, []ProposalAmendment, map[string]any, error) {
+	var p Proposal
+	if err := e.db.WithContext(ctx).First(&p, id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil, nil, ErrProposalNotFound
+		}
+		return nil, nil, nil, err
+	}
+	amendments, err := loadAmendments(e.db.WithContext(ctx), id)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	eff, _, err := effectivePatch(&p, amendments)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return &p, amendments, eff, nil
+}
+
+// ProposalFilter narrows ListProposals. Zero values mean "no filter" except
+// Status, which uses -1 as its no-filter sentinel (0 = open is meaningful).
+type ProposalFilter struct {
+	EntityType string
+	EntityID   int64
+	Site       string
+	Status     int16 // -1 = all
+	Limit      int   // default 50, max 200
+}
+
+// ListProposals returns proposals newest-first.
+func (e *Engine) ListProposals(ctx context.Context, f ProposalFilter) ([]Proposal, error) {
+	q := e.db.WithContext(ctx).Model(&Proposal{})
+	if f.EntityType != "" {
+		q = q.Where("entity_type = ?", f.EntityType)
+	}
+	if f.EntityID != 0 {
+		q = q.Where("entity_id = ?", f.EntityID)
+	}
+	if f.Site != "" {
+		q = q.Where("site = ?", f.Site)
+	}
+	if f.Status >= 0 {
+		q = q.Where("status = ?", f.Status)
+	}
+	limit := f.Limit
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	var out []Proposal
+	if err := q.Order("id DESC").Limit(limit).Find(&out).Error; err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// ListRevisions returns an entity's revision log, newest-first.
+func (e *Engine) ListRevisions(ctx context.Context, entityType string, entityID int64, limit int) ([]Revision, error) {
+	spec, err := e.resolveSpec(entityType)
+	if err != nil {
+		return nil, err
+	}
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	var out []Revision
+	if err := e.db.WithContext(ctx).
+		Where("entity_family = ? AND entity_type = ? AND entity_id = ?", spec.Family, spec.Type, entityID).
+		Order("seq DESC").Limit(limit).Find(&out).Error; err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// FieldDiff is one field's difference between two revisions, with the
+// registry's rendering hints attached (empty for keys that are no longer
+// registered — historic snapshots still render, just generically).
+type FieldDiff struct {
+	Key      string
+	Kind     FieldKind
+	DiffHint string
+	From     any
+	To       any
+}
+
+// Diff compares any two of an entity's revisions field-by-field (parity
+// hard line: any-two-versions diff).
+func (e *Engine) Diff(ctx context.Context, entityType string, entityID int64, fromSeq, toSeq int) ([]FieldDiff, error) {
+	spec, err := e.resolveSpec(entityType)
+	if err != nil {
+		return nil, err
+	}
+	from, err := e.revisionAt(ctx, spec, entityID, fromSeq)
+	if err != nil {
+		return nil, err
+	}
+	to, err := e.revisionAt(ctx, spec, entityID, toSeq)
+	if err != nil {
+		return nil, err
+	}
+	fromSnap, err := decodeObject(from.Snapshot)
+	if err != nil {
+		return nil, err
+	}
+	toSnap, err := decodeObject(to.Snapshot)
+	if err != nil {
+		return nil, err
+	}
+	union := make(map[string]struct{}, len(fromSnap)+len(toSnap))
+	for k := range fromSnap {
+		union[k] = struct{}{}
+	}
+	for k := range toSnap {
+		union[k] = struct{}{}
+	}
+	var diffs []FieldDiff
+	for _, key := range sortedKeys(union) {
+		a, b := fromSnap[key], toSnap[key]
+		if jsonValueEqual(a, b) {
+			continue
+		}
+		d := FieldDiff{Key: key, From: a, To: b}
+		if f, ok := spec.Field(key); ok {
+			d.Kind, d.DiffHint = f.Kind, f.DiffHint
+		}
+		diffs = append(diffs, d)
+	}
+	return diffs, nil
+}
+
+func (e *Engine) revisionAt(ctx context.Context, spec *EntityTypeSpec, entityID int64, seq int) (*Revision, error) {
+	var rev Revision
+	err := e.db.WithContext(ctx).
+		Where("entity_family = ? AND entity_type = ? AND entity_id = ? AND seq = ?",
+			spec.Family, spec.Type, entityID, seq).
+		First(&rev).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrRevisionNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &rev, nil
+}
+
+// FieldProjection is one field of the edit-schema endpoint: the field's
+// shape plus the CALLER's evaluated capabilities — the UI renders exactly
+// this and holds zero policy logic (doc 21 §2.7).
+type FieldProjection struct {
+	Key        string
+	Kind       FieldKind
+	DiffHint   string
+	Deprecated bool
+	Locked     bool
+	CanPropose bool
+	CanReview  bool
+	// WouldAutomerge: a proposal by THIS caller would merge instantly (the
+	// direct-edit sugar); implies CanPropose.
+	WouldAutomerge bool
+}
+
+// SchemaProjection evaluates every registered field of an entity type
+// against the caller's policy context (site overlay included via pc.Site).
+func (e *Engine) SchemaProjection(entityType string, pc PolicyContext) ([]FieldProjection, error) {
+	spec, err := e.resolveSpec(entityType)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]FieldProjection, 0, len(spec.Fields))
+	for i := range spec.Fields {
+		f := &spec.Fields[i]
+		pol := spec.EffectivePolicy(f.Key, pc.Site)
+		proj := FieldProjection{
+			Key: f.Key, Kind: f.Kind, DiffHint: f.DiffHint, Deprecated: f.Deprecated,
+			Locked:    pol.Propose == ProposeLocked,
+			CanReview: pol.AllowsReview(pc),
+		}
+		if !f.Deprecated && !proj.Locked {
+			proj.CanPropose = pol.AllowsPropose(pc)
+			proj.WouldAutomerge = proj.CanPropose && pol.AllowsAutomerge(pc)
+		}
+		out = append(out, proj)
+	}
+	return out, nil
+}
+
+// ---- shared internals ------------------------------------------------------
+
+func loadAmendments(db *gorm.DB, proposalID int64) ([]ProposalAmendment, error) {
+	var out []ProposalAmendment
+	if err := db.Where("proposal_id = ?", proposalID).Order("seq ASC").Find(&out).Error; err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// maxRevisionSeq returns the entity's highest revision seq (0 = none).
+func maxRevisionSeq(db *gorm.DB, spec *EntityTypeSpec, entityID int64) (int, error) {
+	var seq int
+	err := db.Model(&Revision{}).
+		Where("entity_family = ? AND entity_type = ? AND entity_id = ?", spec.Family, spec.Type, entityID).
+		Select("COALESCE(MAX(seq), 0)").Scan(&seq).Error
+	if err != nil {
+		return 0, fmt.Errorf("editing: max revision seq: %w", err)
+	}
+	return seq, nil
+}
