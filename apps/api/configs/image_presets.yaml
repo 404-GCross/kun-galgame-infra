@@ -88,6 +88,44 @@ presets:
       - image/png
       - image/webp
 
+  # Catalog BODYLESS work covers (media-aggregation wave, step 55). DLsite store
+  # covers are LANDSCAPE package shots (~560x420); the main image is the global
+  # main_pipeline output (≤1920x1080 webp) and `mini` is a 460x259 landscape
+  # thumbnail matching galgame_banner (the cover thumbnail the grid renders).
+  # Uploaded under site_key "catalog"; the catalog client's image_allowed_presets
+  # MUST include it (ops/DB change on the image service) or every upload 403s.
+  catalog_cover:
+    variants:
+      - name: "mini"
+        width: 460
+        height: 259
+        fit: cover
+        format: webp
+        quality: 77
+    allowed_mime:
+      - image/jpeg
+      - image/png
+      - image/webp
+      - image/gif
+
+  # Catalog BODYLESS work screenshots (media-aggregation wave, step 55). DLsite
+  # sample images; the gallery grid renders a `mini` 460x259 thumbnail (matching
+  # galgame_screenshot) while the lightbox shows the main image. Uploaded under
+  # site_key "catalog"; the catalog client's image_allowed_presets MUST include it.
+  catalog_screenshot:
+    variants:
+      - name: "mini"
+        width: 460
+        height: 259
+        fit: cover
+        format: webp
+        quality: 77
+    allowed_mime:
+      - image/jpeg
+      - image/png
+      - image/webp
+      - image/gif
+
   # Topic / inline post images. Main image only; no extra variants.
   topic:
     variants: []
