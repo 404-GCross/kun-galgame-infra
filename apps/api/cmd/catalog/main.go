@@ -39,6 +39,7 @@ import (
 	"api/internal/platform/catalog/service"
 	"api/internal/platform/devapi"
 	"api/internal/platform/editing"
+	galgameEditspec "api/internal/platform/galgame/editspec"
 	siteRepo "api/internal/platform/site/repository"
 	"api/pkg/config"
 	"api/pkg/health"
@@ -143,7 +144,16 @@ func main() {
 		slog.Error("editing: register catalog.work", "error", err)
 		os.Exit(1)
 	}
-	catHandler.SetupEdit(s2sAPI, editing.NewEngine(catalogDB.DB(), editRegistry))
+	// galgame.game (E2a): the galgame family's registration carries the
+	// galgame pool in its closures; the engine tables stay on the catalog
+	// pool. The same engine instance serves the S2S edit face AND the
+	// galgame surface's strangler adapter (Mount below).
+	if err := galgameEditspec.RegisterGame(editRegistry, galgameDB.DB()); err != nil {
+		slog.Error("editing: register galgame.game", "error", err)
+		os.Exit(1)
+	}
+	editEngine := editing.NewEngine(catalogDB.DB(), editRegistry)
+	catHandler.SetupEdit(s2sAPI, editEngine)
 
 	// NextMoe open API: catalog public projection (/v1/catalog/*). A NEW public
 	// read-only bypass (step 03) behind the shared devapi middleware chain; the
@@ -162,6 +172,8 @@ func main() {
 		OAuthDB:   application.DB.DB(),
 		GalgameDB: galgameDB.DB(),
 		Search:    searchClient,
+		Edit:      editEngine,
+		EditDB:    catalogDB.DB(),
 	})
 
 	// Serve the S2S OpenAPI 3.1 spec unauthenticated at the app root (the

@@ -5,7 +5,11 @@ import (
 	"regexp"
 	"strings"
 
+	"api/internal/platform/authz"
+	"api/internal/platform/editing"
 	"api/internal/platform/galgame/dto"
+	"api/internal/platform/galgame/editbridge"
+	"api/internal/platform/galgame/editspec"
 	"api/internal/platform/galgame/model"
 	"api/internal/platform/galgame/perm"
 	"api/internal/platform/galgame/repository"
@@ -33,6 +37,13 @@ type GalgameService struct {
 	revisionRepo *repository.RevisionRepository
 	prRepo       *repository.PRRepository
 	userRepo     *repository.UserReadonlyRepository
+
+	// E2a strangler: revisions/PRs persist through the editing engine
+	// (edit_* on the catalog pool); bridge serves the old wire shapes back.
+	// The legacy galgame_revision / galgame_pr tables are frozen — no write
+	// path below this service touches them anymore.
+	edit   *editing.Engine
+	bridge *editbridge.Bridge
 
 	// probeImages is optional; when nil, Revert skips the dead-image
 	// pre-check. Production wires this via WithImageProbe in galgameapp.Mount.
@@ -69,6 +80,15 @@ func NewGalgameService(
 		userRepo:     userRepo,
 		metaCache:    newImageMetaCache(200000),
 	}
+}
+
+// WithEditing wires the editing engine + the old-wire bridge (E2a). Mount
+// always calls this; the revision/PR surface panics without it by design —
+// the legacy tables are frozen and there is no fallback write path.
+func (s *GalgameService) WithEditing(eng *editing.Engine, bridge *editbridge.Bridge) *GalgameService {
+	s.edit = eng
+	s.bridge = bridge
+	return s
 }
 
 // WithImageProbe wires the image_service existence probe used by Revert
@@ -247,6 +267,7 @@ func (s *GalgameService) Create(ctx context.Context, userID int, req *dto.Create
 	}
 
 	var newID int
+	var createdKeys []string
 	err = s.galgameRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// Bare insert: only system fields. Status defaults 0 (published —
 		// admin direct-create); vndb_id is set here so the partial-unique
@@ -268,25 +289,26 @@ func (s *GalgameService) Create(ctx context.Context, userID int, req *dto.Create
 		if err != nil {
 			return err
 		}
-		snap := model.TakeSnapshot(full)
-		snapshotJSON, err := snap.ToJSON()
-		if err != nil {
-			return err
-		}
 		newID = g.ID
-		rev := &model.GalgameRevision{
-			GalgameID: g.ID,
-			Revision:  1,
-			UserID:    userID,
-			Action:    "created",
-			Snapshot:  snapshotJSON,
-		}
-		// created → every populated field is "new" (delta vs empty).
-		rev.SetChangedFields(model.KeysOf(model.ChangedKeys(&model.Snapshot{}, snap)))
-		return tx.Create(rev).Error
+		// created → every populated field is "new" (delta vs empty); the
+		// engine birth record below stores the re-keyed set.
+		createdKeys = model.KeysOf(model.ChangedKeys(&model.Snapshot{}, model.TakeSnapshot(full)))
+		return nil
 	})
-
 	if err != nil {
+		return nil, err
+	}
+
+	// Engine birth record (seq=1, action=created) AFTER the product commit —
+	// RecordCreated's LoadSnapshot runs on its own pool and must see the
+	// committed rows. The residual window (galgame committed, birth record
+	// failed) mirrors the accepted cross-pool posture of charter ruling 2;
+	// the returned error surfaces so the operator retries/repairs.
+	newKeys, err := editbridge.RekeyKeysOldToNew(createdKeys)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := s.edit.RecordCreated(ctx, editspec.TypeGame, int64(newID), editActor(userID, 2), newKeys); err != nil {
 		return nil, err
 	}
 
@@ -466,6 +488,14 @@ func (s *GalgameService) Update(ctx context.Context, userID, galgameID int, role
 	// would otherwise persist a malformed id, and a duplicate would surface as
 	// a raw 500 (unique-index violation) instead of the actionable 20004.
 	if req.VNDBID != nil && *req.VNDBID != galgame.VNDBID {
+		// E2a posture (vndb_id squatting lesson): changing a published
+		// entry's vndb_id is a staff power now — creators keep it only on
+		// their own drafts (PatchDraft). The engine field is perm-gated;
+		// this early check gives the actionable 403 instead of a generic
+		// engine permission error.
+		if !perm.Resolver.Can(roles, perm.EditAny) {
+			return nil, errors.NewWithCode(errors.ErrGalgameForbidden)
+		}
 		if v := *req.VNDBID; v != "" {
 			if !vndbIDRegex.MatchString(v) {
 				return nil, errors.NewWithCode(errors.ErrGalgameInvalidVNDB)
@@ -497,65 +527,58 @@ func (s *GalgameService) Update(ctx context.Context, userID, galgameID int, role
 		return galgame, nil
 	}
 
-	err = s.galgameRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// Single canonical write path — same one revert / PR-merge use.
-		// Scalar fields updated + every relation table cleared+rebuilt
-		// from `next`, so tag/official/engine edits actually persist.
-		if err := repository.ApplySnapshot(tx, galgameID, userID, next); err != nil {
-			return err
-		}
-
-		nextRev, err := repository.NextRevision(tx, galgameID)
-		if err != nil {
-			return err
-		}
-
-		// Snapshot is re-taken from the just-written state so it is
-		// canonical and provably == DB == the edit's intent (the old
-		// code recorded a snapshot taken from un-mutated relations,
-		// corrupting history — that is fixed here).
-		fullAfter, err := loadGalgameWithRelations(tx, galgameID)
-		if err != nil {
-			return err
-		}
-		snapshotJSON, err := model.TakeSnapshot(fullAfter).ToJSON()
-		if err != nil {
-			return err
-		}
-
-		var count int64
-		if err := tx.Model(&model.GalgameContributor{}).
-			Where("galgame_id = ? AND user_id = ?", galgameID, userID).Count(&count).Error; err != nil {
-			return err
-		}
-		if count == 0 {
-			if err := tx.Create(&model.GalgameContributor{GalgameID: galgameID, UserID: userID}).Error; err != nil {
-				return err
-			}
-		}
-
-		isMinor := false
-		if req.IsMinor != nil {
-			isMinor = *req.IsMinor
-		}
-
-		rev := &model.GalgameRevision{
-			GalgameID: galgameID,
-			Revision:  nextRev,
-			UserID:    userID,
-			Action:    "updated",
-			Snapshot:  snapshotJSON,
-			IsMinor:   isMinor,
-		}
-		rev.SetChangedFields(model.KeysOf(changed))
-		return tx.Create(rev).Error
-	})
-
+	// Direct edit through the engine (proposal + automerge sugar): the
+	// engine validates per field, no-op-filters against a fresh snapshot,
+	// applies via the registered closures (the SAME per-field helpers
+	// ApplySnapshot composes), and appends the revision — one write path.
+	// The route's own authorization ran above, so the adapter asserts trust
+	// tier 2 (automerge=trusted fires) and grants the vndb permission key
+	// exactly when the staff check passed. req.IsMinor is dropped: the
+	// engine log has no minor-edit concept (not in the doc 21 parity set).
+	patch, err := rekeyedPatch(next, changed)
 	if err != nil {
+		return nil, err
+	}
+	var perms []authz.Permission
+	if changed["vndb_id"] {
+		perms = append(perms, perm.EditGameVNDBID)
+	}
+	if _, _, err := s.edit.CreateProposal(ctx, editing.CreateProposalInput{
+		EntityType: editspec.TypeGame,
+		EntityID:   int64(galgameID),
+		Patch:      patch,
+		Actor:      editActor(userID, 2, perms...),
+	}); err != nil {
+		// A concurrent identical edit can drain the patch between our
+		// ChangedKeys and the engine's own no-op filter — that is the old
+		// "nothing changed" success, not a failure.
+		if err == editing.ErrNoEffectiveChanges {
+			return s.galgameRepo.FindByID(ctx, galgameID)
+		}
+		return nil, mapEngineWriteError(err)
+	}
+
+	// Contributor upsert mirrors the old path (post-merge, own tx).
+	if err := s.ensureContributor(ctx, galgameID, userID); err != nil {
 		return nil, err
 	}
 
 	return s.galgameRepo.FindByID(ctx, galgameID)
+}
+
+// ensureContributor records userID as a contributor of galgameID (idempotent;
+// the table has no unique index, so check-then-insert like the old paths).
+func (s *GalgameService) ensureContributor(ctx context.Context, galgameID, userID int) error {
+	db := s.galgameRepo.DB().WithContext(ctx)
+	var count int64
+	if err := db.Model(&model.GalgameContributor{}).
+		Where("galgame_id = ? AND user_id = ?", galgameID, userID).Count(&count).Error; err != nil {
+		return err
+	}
+	if count == 0 {
+		return db.Create(&model.GalgameContributor{GalgameID: galgameID, UserID: userID}).Error
+	}
+	return nil
 }
 
 // BatchGet returns lightweight galgame info for a list of IDs (status=0 only).
@@ -757,7 +780,24 @@ func (s *GalgameService) CheckVNDB(ctx context.Context, vndbID string) (bool, in
 
 // GetUserStats returns aggregated galgame statistics for a user
 func (s *GalgameService) GetUserStats(ctx context.Context, userID int) (*dto.UserGalgameStats, error) {
-	return s.galgameRepo.GetUserStats(ctx, userID)
+	stats, err := s.galgameRepo.GetUserStats(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	// E2a: revision/PR activity lives in the engine tables now — the repo's
+	// counters read the frozen legacy tables (historical rows until the E2b
+	// migration, nothing after), so the edit-side counters are overridden
+	// from the bridge (contributor attribution is a parity hard line).
+	edits, err := s.bridge.UserEditStats(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	stats.RevisionCount = edits.RevisionCount
+	stats.PRSubmitted = edits.PRSubmitted
+	stats.PRMerged = edits.PRMerged
+	stats.PRDeclined = edits.PRDeclined
+	stats.PRPending = edits.PRPending
+	return stats, nil
 }
 
 // ListUserGalgames returns a user's PUBLISHED galgames as briefs (newest first,
@@ -1007,40 +1047,24 @@ func overlayUpdate(cur *model.Snapshot, req *dto.UpdateGalgameRequest, vndbTagID
 	return &n
 }
 
-// CreateRevisionFromCurrentState takes a snapshot of the current galgame state
-// and creates a new revision. Must be called inside a transaction.
-//
-// changedFields is the set of snapshot keys this operation actually changed —
-// the caller knows it explicitly (e.g. the link/alias handlers change exactly
-// "links" / "aliases"), which is more robust than re-deriving it here against a
-// possibly-stale adjacent snapshot. Pass an empty slice for "no field change".
-func (s *GalgameService) CreateRevisionFromCurrentState(tx *gorm.DB, galgameID, userID int, action, note string, isMinor bool, changedFields []string) error {
-	fullGalgame, err := loadGalgameWithRelations(tx, galgameID)
-	if err != nil {
-		return err
+// DirectFieldEdit lands a single-field direct edit through the engine on
+// behalf of an old-wire route whose own authorization already ran (the
+// link/alias handlers). newValue is the field's complete new value in
+// old-snapshot form (decoded-JSON `any`).
+func (s *GalgameService) DirectFieldEdit(ctx context.Context, galgameID, userID int, fieldKey string, newValue any, note string) error {
+	if _, _, err := s.edit.CreateProposal(ctx, editing.CreateProposalInput{
+		EntityType: editspec.TypeGame,
+		EntityID:   int64(galgameID),
+		Patch:      map[string]any{fieldKey: newValue},
+		Note:       note,
+		Actor:      editActor(userID, 2),
+	}); err != nil {
+		if err == editing.ErrNoEffectiveChanges {
+			return nil
+		}
+		return mapEngineWriteError(err)
 	}
-	snapshot := model.TakeSnapshot(fullGalgame)
-	snapshotJSON, err := snapshot.ToJSON()
-	if err != nil {
-		return err
-	}
-
-	nextRev, err := repository.NextRevision(tx, galgameID)
-	if err != nil {
-		return err
-	}
-
-	rev := &model.GalgameRevision{
-		GalgameID: galgameID,
-		Revision:  nextRev,
-		UserID:    userID,
-		Action:    action,
-		Note:      note,
-		Snapshot:  snapshotJSON,
-		IsMinor:   isMinor,
-	}
-	rev.SetChangedFields(changedFields)
-	return tx.Create(rev).Error
+	return nil
 }
 
 // optStr returns *p if non-nil, else "". Used to flatten optional string

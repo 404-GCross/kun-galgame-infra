@@ -4,14 +4,21 @@ import (
 	"context"
 	"fmt"
 
+	"api/internal/platform/authz"
+	"api/internal/platform/editing"
 	"api/internal/platform/galgame/dto"
+	"api/internal/platform/galgame/editbridge"
+	"api/internal/platform/galgame/editspec"
 	"api/internal/platform/galgame/model"
 	"api/internal/platform/galgame/perm"
-	"api/internal/platform/galgame/repository"
 	"api/pkg/errors"
 
 	"gorm.io/gorm"
 )
+
+// E2a strangler: every method here keeps its old wire contract (apps/wiki
+// consumes it unchanged until E3) but reads through editbridge and writes
+// through the editing engine. galgame_revision / galgame_pr are frozen.
 
 // LookupSnapshotNames resolves the IDs referenced in one or more
 // Snapshots (tag / official / engine / series) to display names.
@@ -101,7 +108,8 @@ func (s *GalgameService) LookupSnapshotNames(
 	return names
 }
 
-// ListRevisions returns revision history for a galgame
+// ListRevisions returns revision history for a galgame (edit_* via the
+// bridge, old row shape on the wire).
 func (s *GalgameService) ListRevisions(ctx context.Context, galgameID, page, limit int, includeMinor bool) ([]model.GalgameRevision, int64, error) {
 	if page <= 0 {
 		page = 1
@@ -109,13 +117,14 @@ func (s *GalgameService) ListRevisions(ctx context.Context, galgameID, page, lim
 	if limit <= 0 {
 		limit = 20
 	}
-	return s.revisionRepo.List(ctx, galgameID, page, limit, includeMinor)
+	return s.bridge.ListRevisions(ctx, galgameID, page, limit, includeMinor)
 }
 
 // ListRecentRevisions returns the merged-revision feed (edit-landed events) for
 // downstream activity timelines. Mirrors MessageService.ListFeed's cursor shape
-// (since_id + has_more). Maps to a minimal DTO — no snapshot/note (the timeline
-// only needs who / which / when).
+// (since_id + has_more). The cursor rides COALESCE(legacy_id, id), so consumer
+// cursors saved against the old table survive the migration (the transform
+// bumps the identity sequence above every legacy id).
 func (s *GalgameService) ListRecentRevisions(ctx context.Context, sinceID int64, limit int) (*dto.RevisionFeedResponse, error) {
 	if limit <= 0 {
 		limit = 1000
@@ -123,7 +132,7 @@ func (s *GalgameService) ListRecentRevisions(ctx context.Context, sinceID int64,
 	if limit > 5000 {
 		limit = 5000
 	}
-	items, err := s.revisionRepo.ListRecentMerged(ctx, sinceID, limit)
+	items, err := s.bridge.Feed(ctx, sinceID, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -144,9 +153,9 @@ func (s *GalgameService) ListRecentRevisions(ctx context.Context, sinceID int64,
 	}, nil
 }
 
-// GetRevision returns a specific revision
+// GetRevision returns a specific revision (revision 0 = latest, as before).
 func (s *GalgameService) GetRevision(ctx context.Context, galgameID, revision int) (*model.GalgameRevision, error) {
-	rev, err := s.revisionRepo.FindByRevision(ctx, galgameID, revision)
+	rev, err := s.bridge.GetRevision(ctx, galgameID, revision)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, errors.NewWithCode(errors.ErrNotFound)
@@ -159,14 +168,11 @@ func (s *GalgameService) GetRevision(ctx context.Context, galgameID, revision in
 // GetRevisionDiff computes the diff between a revision and its predecessor.
 //
 // changed_keys is authoritative when the revision recorded changed_fields at
-// write time (every revision minted after that feature shipped): it reflects
-// exactly what the editor touched, so an edit to one field shows one field —
-// even if the adjacent snapshot drifted because VNDB enrichment mutated the
-// live tables without minting a revision. Legacy revisions (changed_fields
-// NULL) fall back to the historical whole-snapshot comparison. The old/new
-// snapshots are always returned for value rendering.
+// write time; legacy revisions (migrated with the null_changed_fields marker —
+// surfaced by the bridge as an absent ChangedFields) fall back to the
+// historical whole-snapshot comparison. Same semantics as pre-E2a, over edit_*.
 func (s *GalgameService) GetRevisionDiff(ctx context.Context, galgameID, revision int) (map[string]bool, *model.Snapshot, *model.Snapshot, error) {
-	current, err := s.revisionRepo.FindByRevision(ctx, galgameID, revision)
+	current, err := s.bridge.GetRevision(ctx, galgameID, revision)
 	if err != nil {
 		return nil, nil, nil, errors.NewWithCode(errors.ErrNotFound)
 	}
@@ -180,7 +186,7 @@ func (s *GalgameService) GetRevisionDiff(ctx context.Context, galgameID, revisio
 	// predecessor is missing — only used for value rendering + legacy fallback).
 	prevSnapshot := &model.Snapshot{}
 	if revision > 1 {
-		if prev, err := s.revisionRepo.FindByRevision(ctx, galgameID, revision-1); err == nil {
+		if prev, err := s.bridge.GetRevision(ctx, galgameID, revision-1); err == nil {
 			if ps, err := model.SnapshotFromJSON(prev.Snapshot); err == nil {
 				prevSnapshot = ps
 			}
@@ -199,9 +205,19 @@ func (s *GalgameService) GetRevisionDiff(ctx context.Context, galgameID, revisio
 	return model.ChangedKeys(prevSnapshot, currentSnapshot), prevSnapshot, currentSnapshot, nil
 }
 
-// Revert rolls back a galgame to a specific revision
+// Revert rolls back a galgame to a specific revision through the engine
+// (reverse patch, action=reverted, history untouched).
+//
+// E2a posture changes vs the frozen implementation, both deliberate:
+//   - The dead-image scrub probe is gone — refping keeps every snapshot hash
+//     alive (the job also walks edit_* now), so the probe was a safety net;
+//     a lost hash degrades to a broken image, never a broken revert.
+//   - Crossing a status boundary (the target snapshot pins a different
+//     status than live) needs the status review authority — a creator can no
+//     longer un-ban/un-publish by reverting past an admin action. Migrated
+//     snapshots carry no status key, so reverts into pre-E2a history are
+//     unaffected.
 func (s *GalgameService) Revert(ctx context.Context, userID, galgameID, targetRevision int, roles []string) error {
-	// Check permission
 	galgame, err := s.galgameRepo.FindByID(ctx, galgameID)
 	if err != nil {
 		return errors.NewWithCode(errors.ErrGalgameNotFound)
@@ -210,188 +226,100 @@ func (s *GalgameService) Revert(ctx context.Context, userID, galgameID, targetRe
 		return errors.NewWithCode(errors.ErrGalgameForbidden)
 	}
 
-	// Load target revision's snapshot
-	targetRev, err := s.revisionRepo.FindByRevision(ctx, galgameID, targetRevision)
-	if err != nil {
+	perms := []authz.Permission{perm.EditGameReview}
+	if perm.Resolver.Can(roles, perm.AdminAccess) {
+		perms = append(perms, perm.EditGameStatus)
+	}
+
+	_, _, err = s.edit.Revert(ctx, editing.RevertInput{
+		EntityType: editspec.TypeGame,
+		EntityID:   int64(galgameID),
+		ToSeq:      targetRevision,
+		Note:       fmt.Sprintf("回滚到版本 %d", targetRevision),
+		Actor:      editActor(userID, 2, perms...),
+	})
+	switch {
+	case err == nil:
+		return nil
+	case err == editing.ErrNoEffectiveChanges:
+		// Live state already equals the target. The old machine wrote a
+		// no-op revision here; the engine's changed_fields precision makes
+		// this a clean success instead.
+		return nil
+	case err == editing.ErrRevisionNotFound:
 		return errors.NewWithCode(errors.ErrNotFound)
+	default:
+		return mapEngineWriteError(err)
 	}
-
-	snapshot, err := model.SnapshotFromJSON(targetRev.Snapshot)
-	if err != nil {
-		return err
-	}
-
-	// Defence-in-depth probe: refping is supposed to keep every revision-
-	// referenced hash alive in image_service, but if a hash slipped
-	// through (manual purge, image_service GC race, …) the snapshot can
-	// resurrect a galgame pointing at a now-deleted image. Strip those
-	// hashes here and record the loss on the new revision's Note so an
-	// admin can re-upload. When probeImages is unset (= tests), skip.
-	missing, noteSuffix := s.scrubMissingImages(ctx, snapshot)
-
-	return s.galgameRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// Capture the live state before the revert so changed_fields records
-		// exactly what rolling back to the target alters (live → target).
-		beforeFull, err := loadGalgameWithRelations(tx, galgameID)
-		if err != nil {
-			return err
-		}
-		revertChanged := model.KeysOf(model.ChangedKeys(model.TakeSnapshot(beforeFull), snapshot))
-
-		// Apply the old snapshot
-		if err := repository.ApplySnapshot(tx, galgameID, userID, snapshot); err != nil {
-			return err
-		}
-
-		// Get next revision number
-		nextRev, err := repository.NextRevision(tx, galgameID)
-		if err != nil {
-			return err
-		}
-
-		// Create revert revision (re-take is NOT done here because the
-		// snapshot we just applied IS the canonical state — same flow as
-		// the original Revert).
-		snapshotJSON, err := snapshot.ToJSON()
-		if err != nil {
-			return err
-		}
-
-		revertedTo := targetRevision
-		note := fmt.Sprintf("回滚到版本 %d", targetRevision)
-		if noteSuffix != "" {
-			note = note + "；" + noteSuffix
-		}
-		_ = missing // surfaced via Note; future API could echo the list to the response
-		rev := &model.GalgameRevision{
-			GalgameID:  galgameID,
-			Revision:   nextRev,
-			UserID:     userID,
-			Action:     "reverted",
-			Note:       note,
-			Snapshot:   snapshotJSON,
-			RevertedTo: &revertedTo,
-		}
-		rev.SetChangedFields(revertChanged)
-		return tx.Create(rev).Error
-	})
 }
 
-// scrubMissingImages mutates `snap` in place, removing any cover /
-// screenshot whose image_hash is missing from image_service. Returns
-// the list of stripped hashes (for the Note) and a Chinese note suffix
-// describing the degrade. When probeImages is unset OR returns an
-// error, the snapshot is left untouched — the assumption is that a
-// failing probe is worse than a possibly-broken revert (admin can re-
-// upload images afterwards; a hard-failed revert breaks the workflow).
-//
-// PR5 retired snap.BannerImageHash, so the only image references left
-// in a snapshot are Covers and Screenshots — handled below.
-func (s *GalgameService) scrubMissingImages(ctx context.Context, snap *model.Snapshot) (missing []string, noteSuffix string) {
-	if s.probeImages == nil || snap == nil {
-		return nil, ""
-	}
-	candidates := snapshotHashes(snap)
-	if len(candidates) == 0 {
-		return nil, ""
-	}
-	notFound, err := s.probeImages(ctx, candidates)
-	if err != nil || len(notFound) == 0 {
-		return nil, ""
-	}
-	missingSet := make(map[string]bool, len(notFound))
-	for _, h := range notFound {
-		missingSet[h] = true
-	}
-	snap.Covers = filterImageRows(snap.Covers, func(c model.SnapshotCover) bool {
-		return !missingSet[c.ImageHash]
-	})
-	snap.Screenshots = filterImageRows(snap.Screenshots, func(sh model.SnapshotScreenshot) bool {
-		return !missingSet[sh.ImageHash]
-	})
-	return notFound, fmt.Sprintf("partial revert：%d 张图片在 image_service 已不存在，已从快照剔除", len(notFound))
-}
-
-// snapshotHashes returns every image_hash referenced by `snap`, deduped.
-// Used as the input batch to the image-service existence probe.
-//
-// Covers + Screenshots are the only image references in a snapshot
-// since PR5 retired BannerImageHash; the canonical banner now lives in
-// covers[sort_order=0] and is included by the Covers loop below.
-func snapshotHashes(snap *model.Snapshot) []string {
-	seen := make(map[string]bool)
-	for _, c := range snap.Covers {
-		if c.ImageHash != "" {
-			seen[c.ImageHash] = true
-		}
-	}
-	for _, sh := range snap.Screenshots {
-		if sh.ImageHash != "" {
-			seen[sh.ImageHash] = true
-		}
-	}
-	out := make([]string, 0, len(seen))
-	for h := range seen {
-		out = append(out, h)
-	}
-	return out
-}
-
-// filterImageRows is a tiny generic helper: keep rows where `keep` is true,
-// preserving order. Used to strip missing-hash entries from cover/screenshot
-// slices without mutating other fields of the snapshot.
-func filterImageRows[T any](rows []T, keep func(T) bool) []T {
-	out := make([]T, 0, len(rows))
-	for _, r := range rows {
-		if keep(r) {
-			out = append(out, r)
-		}
-	}
-	return out
-}
-
-// SubmitPR creates a new pull request
+// SubmitPR files a pull request as an open engine proposal. The stored patch
+// is the field-level delta of the proposed snapshot against the latest
+// revision (exactly the delta the old GetPR diff surfaced); the title/message
+// pair rides the proposal note via the bijective EncodeNote packing.
 func (s *GalgameService) SubmitPR(ctx context.Context, userID, galgameID int, proposedSnapshot *model.Snapshot, title, message string) (*model.GalgamePR, error) {
-	// Get current latest revision
-	latestRev, err := s.revisionRepo.FindLatest(ctx, galgameID)
+	base, err := s.baseSnapshotForPR(ctx, galgameID)
+	if err != nil {
+		return nil, err
+	}
+
+	changed := model.ChangedKeys(base, proposedSnapshot)
+	if len(changed) == 0 {
+		// The old machine happily stored a no-change PR; the engine refuses
+		// an empty patch. Surface an actionable 400 instead.
+		return nil, errors.New(errors.ErrValidationFailed, "PR 未包含任何变更")
+	}
+	patch, err := rekeyedPatch(proposedSnapshot, changed)
+	if err != nil {
+		return nil, err
+	}
+
+	// Trust tier 0: the PR route is the review track — automerge=trusted
+	// must NOT fire regardless of who submits (the old wire has no
+	// "submit-and-land" semantics; direct edits go through Update).
+	prop, _, err := s.edit.CreateProposal(ctx, editing.CreateProposalInput{
+		EntityType: editspec.TypeGame,
+		EntityID:   int64(galgameID),
+		Patch:      patch,
+		Note:       editbridge.EncodeNote(title, message),
+		Actor:      editActor(userID, 0),
+	})
+	if err != nil {
+		return nil, mapEngineWriteError(err)
+	}
+
+	return s.bridge.GetPR(ctx, galgameID, int(prop.ID))
+}
+
+// baseSnapshotForPR resolves the snapshot a PR diffs against: the latest
+// engine revision, falling back to the live state for an entity without a
+// birth record (should not exist post-migration; defensive parity with the
+// old handler's fallback).
+func (s *GalgameService) baseSnapshotForPR(ctx context.Context, galgameID int) (*model.Snapshot, error) {
+	if latest, err := s.bridge.GetRevision(ctx, galgameID, 0); err == nil {
+		if snap, err := model.SnapshotFromJSON(latest.Snapshot); err == nil {
+			return snap, nil
+		}
+	}
+	full, err := loadGalgameWithRelations(s.galgameRepo.DB().WithContext(ctx), galgameID)
 	if err != nil {
 		return nil, errors.NewWithCode(errors.ErrGalgameNotFound)
 	}
-
-	snapshotJSON, err := proposedSnapshot.ToJSON()
-	if err != nil {
-		return nil, err
-	}
-
-	pr := &model.GalgamePR{
-		GalgameID:    galgameID,
-		UserID:       userID,
-		Title:        title,
-		Message:      message,
-		BaseRevision: latestRev.Revision,
-		Snapshot:     snapshotJSON,
-	}
-
-	if err := s.prRepo.Create(ctx, pr); err != nil {
-		return nil, err
-	}
-
-	return pr, nil
+	return model.TakeSnapshot(full), nil
 }
 
-// MergePR merges a pull request with automatic field-level rebase
+// MergePR merges a pull request through the engine. The engine's per-field
+// rebase replaces the old snapshot-level auto-rebase with identical
+// semantics: disjoint fields fast-forward, fields someone else changed since
+// the PR's base conflict instead of clobbering.
 func (s *GalgameService) MergePR(ctx context.Context, userID, galgameID, prID int, roles []string) error {
-	pr, err := s.prRepo.FindByID(ctx, prID)
+	pr, err := s.bridge.GetPR(ctx, galgameID, prID)
 	if err != nil {
-		return errors.NewWithCode(errors.ErrNotFound)
-	}
-	// Enforce the route contract: the PR must belong to :gid.
-	if pr.GalgameID != galgameID {
 		return errors.NewWithCode(errors.ErrNotFound)
 	}
 
 	// Check permission: galgame creator or admin
-	galgame, err := s.galgameRepo.FindByID(ctx, pr.GalgameID)
+	galgame, err := s.galgameRepo.FindByID(ctx, galgameID)
 	if err != nil {
 		return errors.NewWithCode(errors.ErrGalgameNotFound)
 	}
@@ -399,166 +327,42 @@ func (s *GalgameService) MergePR(ctx context.Context, userID, galgameID, prID in
 		return errors.NewWithCode(errors.ErrGalgameForbidden)
 	}
 
-	prSnapshot, err := model.SnapshotFromJSON(pr.Snapshot)
+	proposalID, err := s.bridge.ResolveProposalID(ctx, galgameID, prID)
 	if err != nil {
-		return err
+		return errors.NewWithCode(errors.ErrNotFound)
 	}
 
-	return s.galgameRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// Atomically check PR is still pending
-		result := tx.Model(&model.GalgamePR{}).
-			Where("id = ? AND status = 0", prID).
-			Update("status", 1)
-		if result.RowsAffected == 0 {
-			return fmt.Errorf("PR 已被处理")
-		}
+	if _, err := s.edit.MergeProposal(ctx, proposalID, editActor(userID, 2, perm.EditGameReview), ""); err != nil {
+		return mapMergeError(err)
+	}
 
-		// Get latest revision (with lock)
-		latestRev, err := repository.NextRevision(tx, pr.GalgameID)
-		if err != nil {
-			return err
-		}
-		currentRevNum := latestRev - 1
-
-		finalSnapshot := prSnapshot
-
-		// Auto-rebase if base_revision is not the latest
-		if pr.BaseRevision < currentRevNum {
-			// Load base and current snapshots
-			baseRev, err := findRevisionInTx(tx, pr.GalgameID, pr.BaseRevision)
-			if err != nil {
-				return err
-			}
-			currentRev, err := findRevisionInTx(tx, pr.GalgameID, currentRevNum)
-			if err != nil {
-				return err
-			}
-
-			baseSnapshot, err := model.SnapshotFromJSON(baseRev.Snapshot)
-			if err != nil {
-				return err
-			}
-			currentSnapshot, err := model.SnapshotFromJSON(currentRev.Snapshot)
-			if err != nil {
-				return err
-			}
-
-			// Check for field-level conflicts
-			prChangedKeys := model.ChangedKeys(baseSnapshot, prSnapshot)
-			otherChangedKeys := model.ChangedKeys(baseSnapshot, currentSnapshot)
-
-			for key := range prChangedKeys {
-				if otherChangedKeys[key] {
-					return fmt.Errorf("字段冲突: %s 已被其他编辑修改，请基于最新版本重新提交", key)
-				}
-			}
-
-			// No conflicts — rebase: apply PR changes onto current snapshot
-			rebased := *currentSnapshot
-			model.ApplyChanges(&rebased, prSnapshot, prChangedKeys)
-			finalSnapshot = &rebased
-		}
-
-		// Same dead-image safeguard as Revert: PRs may have been
-		// submitted long before merge, so their stored snapshot can
-		// reference a hash that image_service has TTL-deleted in the
-		// interim. Strip those hashes before ApplySnapshot so the merge
-		// doesn't resurrect a broken galgame; record the degrade on the
-		// merged revision's Note. Skipped when probeImages is unset.
-		_, mergeNoteSuffix := s.scrubMissingImages(ctx, finalSnapshot)
-
-		// Capture the live state before applying so changed_fields records the
-		// net effect of the merge (live → finalSnapshot), independent of how
-		// stale the PR's base revision was.
-		beforeFull, err := loadGalgameWithRelations(tx, pr.GalgameID)
-		if err != nil {
-			return err
-		}
-		// Pre-P3 base/current revision snapshots carry no release_precision, so a
-		// PR that didn't touch the date leaves finalSnapshot.ReleasePrecision="";
-		// ApplySnapshot's ResolveReleasePrecision would then downgrade a month/year
-		// date to day. A PR only carries a precision when it actually changed the
-		// date — so when empty, preserve the live model's precision. (Also keeps
-		// mergeChanged from recording a phantom release_precision change.)
-		if finalSnapshot.ReleasePrecision == "" {
-			finalSnapshot.ReleasePrecision = beforeFull.ReleasePrecision
-		}
-		mergeChanged := model.KeysOf(model.ChangedKeys(model.TakeSnapshot(beforeFull), finalSnapshot))
-
-		// Apply snapshot to galgame tables
-		if err := repository.ApplySnapshot(tx, pr.GalgameID, userID, finalSnapshot); err != nil {
-			return err
-		}
-
-		// Create revision
-		snapshotJSON, err := finalSnapshot.ToJSON()
-		if err != nil {
-			return err
-		}
-
-		mergedNote := prMergeNote(pr)
-		if mergeNoteSuffix != "" {
-			if mergedNote != "" {
-				mergedNote = mergedNote + "；" + mergeNoteSuffix
-			} else {
-				mergedNote = mergeNoteSuffix
-			}
-		}
-		rev := &model.GalgameRevision{
-			GalgameID: pr.GalgameID,
-			Revision:  latestRev,
-			UserID:    pr.UserID,
-			Action:    "merged",
-			Note:      mergedNote,
-			Snapshot:  snapshotJSON,
-		}
-		rev.SetChangedFields(mergeChanged)
-		if err := tx.Create(rev).Error; err != nil {
-			return err
-		}
-
-		// Update PR with completion info. completed_time = the actual merge
-		// time (NOW()), like DeclinePR — not the galgame's stale last-modified
-		// timestamp.
-		if err := tx.Model(&model.GalgamePR{}).Where("id = ?", prID).Updates(map[string]any{
-			"completed_by":   userID,
-			"completed_time": gorm.Expr("NOW()"),
-			"revision_id":    rev.ID,
-		}).Error; err != nil {
-			return err
-		}
-
-		// Ensure PR author is a contributor. Propagate the Count and Create
-		// errors (previously both were swallowed, so a failed insert silently
-		// dropped the contributor row — and the table has no unique index to
-		// fall back on).
-		var count int64
-		if err := tx.Model(&model.GalgameContributor{}).
-			Where("galgame_id = ? AND user_id = ?", pr.GalgameID, pr.UserID).
-			Count(&count).Error; err != nil {
-			return err
-		}
-		if count == 0 {
-			if err := tx.Create(&model.GalgameContributor{GalgameID: pr.GalgameID, UserID: pr.UserID}).Error; err != nil {
-				return err
-			}
-		}
-
-		return nil
-	})
+	// Ensure the PR author is a contributor (post-merge, mirrors the old tx).
+	return s.ensureContributor(ctx, galgameID, pr.UserID)
 }
 
-// DeclinePR declines a pull request
-func (s *GalgameService) DeclinePR(ctx context.Context, userID, galgameID, prID int, roles []string) error {
-	pr, err := s.prRepo.FindByID(ctx, prID)
-	if err != nil {
-		return errors.NewWithCode(errors.ErrNotFound)
+// mapMergeError keeps the old wire's merge failure texts: conflicts and
+// double-processing surface as plain-text 400s, exactly as before.
+func mapMergeError(err error) error {
+	if err == editing.ErrNotOpen {
+		return fmt.Errorf("PR 已被处理")
 	}
-	if pr.GalgameID != galgameID {
+	if conflict, ok := err.(*editing.ConflictError); ok && len(conflict.Keys) > 0 {
+		keys := editbridge.RekeyKeysNewToOld(conflict.Keys)
+		return fmt.Errorf("字段冲突: %s 已被其他编辑修改，请基于最新版本重新提交", keys[0])
+	}
+	if err == editing.ErrEmptyPatch || err == editing.ErrNoEffectiveChanges {
+		return fmt.Errorf("PR 未包含任何变更")
+	}
+	return mapEngineWriteError(err)
+}
+
+// DeclinePR declines a pull request.
+func (s *GalgameService) DeclinePR(ctx context.Context, userID, galgameID, prID int, roles []string) error {
+	if _, err := s.bridge.GetPR(ctx, galgameID, prID); err != nil {
 		return errors.NewWithCode(errors.ErrNotFound)
 	}
 
-	galgame, err := s.galgameRepo.FindByID(ctx, pr.GalgameID)
+	galgame, err := s.galgameRepo.FindByID(ctx, galgameID)
 	if err != nil {
 		return errors.NewWithCode(errors.ErrGalgameNotFound)
 	}
@@ -566,23 +370,21 @@ func (s *GalgameService) DeclinePR(ctx context.Context, userID, galgameID, prID 
 		return errors.NewWithCode(errors.ErrGalgameForbidden)
 	}
 
-	result := s.galgameRepo.DB().WithContext(ctx).
-		Model(&model.GalgamePR{}).
-		Where("id = ? AND status = 0", prID).
-		Updates(map[string]any{
-			"status":         2,
-			"completed_by":   userID,
-			"completed_time": gorm.Expr("NOW()"),
-		})
-
-	if result.RowsAffected == 0 {
-		return fmt.Errorf("PR 已被处理")
+	proposalID, err := s.bridge.ResolveProposalID(ctx, galgameID, prID)
+	if err != nil {
+		return errors.NewWithCode(errors.ErrNotFound)
 	}
 
+	if err := s.edit.DeclineProposal(ctx, proposalID, editActor(userID, 2, perm.EditGameReview), ""); err != nil {
+		if err == editing.ErrNotOpen {
+			return fmt.Errorf("PR 已被处理")
+		}
+		return mapEngineWriteError(err)
+	}
 	return nil
 }
 
-// ListPRs returns PRs for a galgame
+// ListPRs returns PRs for a galgame.
 func (s *GalgameService) ListPRs(ctx context.Context, galgameID, page, limit int) ([]model.GalgamePR, int64, error) {
 	if page <= 0 {
 		page = 1
@@ -590,32 +392,17 @@ func (s *GalgameService) ListPRs(ctx context.Context, galgameID, page, limit int
 	if limit <= 0 {
 		limit = 20
 	}
-	return s.prRepo.List(ctx, galgameID, page, limit)
+	return s.bridge.ListPRs(ctx, galgameID, page, limit)
 }
 
 // GetPR returns a PR by ID, scoped to its galgame (route contract: the PR
 // must belong to :gid, else 404).
 func (s *GalgameService) GetPR(ctx context.Context, galgameID, prID int) (*model.GalgamePR, error) {
-	pr, err := s.prRepo.FindByID(ctx, prID)
+	pr, err := s.bridge.GetPR(ctx, galgameID, prID)
 	if err != nil {
 		return nil, errors.NewWithCode(errors.ErrNotFound)
 	}
-	if pr.GalgameID != galgameID {
-		return nil, errors.NewWithCode(errors.ErrNotFound)
-	}
 	return pr, nil
-}
-
-// prMergeNote composes the merged-revision note from a PR's title/message.
-func prMergeNote(pr *model.GalgamePR) string {
-	switch {
-	case pr.Title != "" && pr.Message != "":
-		return pr.Title + "\n\n" + pr.Message
-	case pr.Title != "":
-		return pr.Title
-	default:
-		return pr.Message
-	}
 }
 
 // AssertGalgameVisible gates revision/PR read endpoints to the same status
@@ -637,10 +424,4 @@ func (s *GalgameService) AssertGalgameVisible(ctx context.Context, galgameID, vi
 	default:
 		return errors.NewWithCode(errors.ErrGalgameNotFound)
 	}
-}
-
-func findRevisionInTx(tx *gorm.DB, galgameID, revision int) (*model.GalgameRevision, error) {
-	var rev model.GalgameRevision
-	err := tx.Where("galgame_id = ? AND revision = ?", galgameID, revision).First(&rev).Error
-	return &rev, err
 }

@@ -5,7 +5,10 @@ import (
 	"encoding/json"
 	"log/slog"
 
+	"api/internal/platform/editing"
+	"api/internal/platform/galgame/editspec"
 	"api/internal/platform/galgame/model"
+	"api/internal/platform/galgame/perm"
 	"api/internal/platform/galgame/repository"
 	"api/pkg/errors"
 
@@ -25,6 +28,11 @@ import (
 type AdminService struct {
 	galgameRepo *repository.GalgameRepository
 	messageRepo *repository.MessageRepository
+	// E2a strangler: status transitions are engine direct edits of the
+	// perm-gated galgame.game.status field (action=direct, changed_fields
+	// says what moved — the old per-transition action vocabulary lives on
+	// only in migrated rows' legacy_action).
+	edit *editing.Engine
 }
 
 // NewAdminService creates an AdminService.
@@ -32,105 +40,85 @@ func NewAdminService(g *repository.GalgameRepository, m *repository.MessageRepos
 	return &AdminService{galgameRepo: g, messageRepo: m}
 }
 
-// UpdateStatus changes a galgame's status and writes the corresponding
-// revision + message in one transaction.
+// WithEditing wires the editing engine (always set by Mount).
+func (s *AdminService) WithEditing(eng *editing.Engine) *AdminService {
+	s.edit = eng
+	return s
+}
+
+// UpdateStatus changes a galgame's status through the engine and emits the
+// corresponding submitter message. The engine call owns the column write +
+// revision; the message follows only when the transition landed (the old
+// single-transaction atomicity narrows to that ordering — accepted, same
+// cross-pool posture as everywhere else in E2a).
 func (s *AdminService) UpdateStatus(ctx context.Context, adminUserID, gid, newStatus int, reason string) error {
+	g, err := s.galgameRepo.FindByID(ctx, gid)
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return errors.NewWithCode(errors.ErrGalgameNotFound)
+		}
+		return err
+	}
+
+	// decline (→4) is only valid from pending (3)
+	if newStatus == model.GalgameStatusDeclined && g.Status != model.GalgameStatusPending {
+		return errors.NewWithCode(errors.ErrGalgameDraftStatusInvalid)
+	}
+
+	if g.Status == newStatus {
+		// No-op transition. Skip both revision and message to keep the
+		// audit log meaningful.
+		return nil
+	}
+
+	// 1. Engine direct edit: status column + revision in one merge. A
+	// concurrent identical transition surfaces as ErrNoEffectiveChanges —
+	// the same "nothing to do" as the no-op skip above.
+	if _, _, err := s.edit.CreateProposal(ctx, editing.CreateProposalInput{
+		EntityType: editspec.TypeGame,
+		EntityID:   int64(gid),
+		Patch:      map[string]any{editspec.FieldStatus: float64(newStatus)},
+		Note:       reason,
+		Actor:      editActor(adminUserID, 2, perm.EditGameStatus),
+	}); err != nil {
+		if err == editing.ErrNoEffectiveChanges {
+			return nil
+		}
+		return mapEngineWriteError(err)
+	}
+
+	// 2. Pick the message type from the transition (the old revision action
+	// vocabulary reduced to its message half).
+	var msgType string
+	switch newStatus {
+	case model.GalgameStatusPublished:
+		if g.Status == model.GalgameStatusBanned {
+			msgType = model.MessageTypeUnbanned
+		} else {
+			// pending → approved; other transitions to 0 (e.g. declined →
+			// 0) are rare; treat as approved for the submitter's benefit.
+			msgType = model.MessageTypeApproved
+		}
+	case model.GalgameStatusBanned:
+		msgType = model.MessageTypeBanned
+	case model.GalgameStatusDeclined:
+		msgType = model.MessageTypeDeclined
+	default:
+		// Reachable only if DTO validation missed something; defensive —
+		// the transition landed, it just produces no message.
+	}
+	if msgType == "" {
+		return nil
+	}
+
+	// Every approve / decline / ban / unban message targets the current
+	// owner (galgame.user_id). This serves two purposes:
+	//   1. The owner gets a notification via /messages/mine
+	//   2. /messages/feed (filtered by target_user_id IS NOT NULL) ships
+	//      it to kungal/moyu cron so they can sync wiki_status_snapshot.
+	// Without a target, banned/unbanned would never reach the downstream
+	// cron — making local stats drift permanently out of date.
 	return s.galgameRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		g, err := s.galgameRepo.FindForUpdate(tx, gid)
-		if err != nil {
-			if err == gorm.ErrRecordNotFound {
-				return errors.NewWithCode(errors.ErrGalgameNotFound)
-			}
-			return err
-		}
-
-		// decline (→4) is only valid from pending (3)
-		if newStatus == model.GalgameStatusDeclined && g.Status != model.GalgameStatusPending {
-			return errors.NewWithCode(errors.ErrGalgameDraftStatusInvalid)
-		}
-
-		if g.Status == newStatus {
-			// No-op transition. Still allowed to write a message? Skip both
-			// to keep the audit log meaningful.
-			return nil
-		}
-
-		// 1. Update status
-		if err := tx.Model(&model.Galgame{}).Where("id = ?", gid).
-			Update("status", newStatus).Error; err != nil {
-			return err
-		}
-
-		// 2. Pick revision action + message type from the transition
-		var revAction, msgType string
-		switch newStatus {
-		case model.GalgameStatusPublished:
-			switch g.Status {
-			case model.GalgameStatusPending:
-				revAction = "approved"
-				msgType = model.MessageTypeApproved
-			case model.GalgameStatusBanned:
-				revAction = "unbanned"
-				msgType = model.MessageTypeUnbanned
-			default:
-				// Other transitions to 0 (e.g. from 4 declined → 0) are
-				// rare; treat as approved for the submitter's benefit.
-				revAction = "approved"
-				msgType = model.MessageTypeApproved
-			}
-		case model.GalgameStatusBanned:
-			revAction = "banned"
-			msgType = model.MessageTypeBanned
-		case model.GalgameStatusDeclined:
-			revAction = "declined"
-			msgType = model.MessageTypeDeclined
-		default:
-			// Reachable only if DTO validation missed something; defensive.
-			revAction = "status_changed"
-		}
-
-		// 3. Write revision (snapshot reflects post-update state)
-		nextRev, err := repository.NextRevision(tx, gid)
-		if err != nil {
-			return err
-		}
-		full, err := loadGalgameWithRelations(tx, gid)
-		if err != nil {
-			return err
-		}
-		snapshot := model.TakeSnapshot(full)
-		snapJSON, err := snapshot.ToJSON()
-		if err != nil {
-			return err
-		}
-		statusRev := &model.GalgameRevision{
-			GalgameID: gid,
-			Revision:  nextRev,
-			UserID:    adminUserID,
-			Action:    revAction,
-			Note:      reason,
-			Snapshot:  snapJSON,
-		}
-		// approve / ban / unban / decline change only status — not a snapshot
-		// field — so no editable field changed. Record [] (not legacy NULL).
-		statusRev.SetChangedFields([]string{})
-		if err := tx.Create(statusRev).Error; err != nil {
-			return err
-		}
-
-		// 4. Write message — only when msgType is set (transitions that
-		// produce a meaningful event for the audience).
-		if msgType == "" {
-			return nil
-		}
-
-		// Every approve / decline / ban / unban message targets the current
-		// owner (galgame.user_id). This serves two purposes:
-		//   1. The owner gets a notification via /messages/mine
-		//   2. /messages/feed (filtered by target_user_id IS NOT NULL) ships
-		//      it to kungal/moyu cron so they can sync wiki_status_snapshot.
-		// Without a target, banned/unbanned would never reach the downstream
-		// cron — making local stats drift permanently out of date.
 		owner := g.UserID
 		msg := &model.GalgameMessage{
 			Type:         msgType,

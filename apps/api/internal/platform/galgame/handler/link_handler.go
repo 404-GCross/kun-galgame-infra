@@ -4,6 +4,7 @@ import (
 	"strconv"
 
 	"api/internal/platform/galgame/dto"
+	"api/internal/platform/galgame/editspec"
 	"api/internal/platform/galgame/model"
 	"api/internal/platform/galgame/perm"
 	"api/internal/platform/galgame/repository"
@@ -86,26 +87,34 @@ func (h *LinkHandler) CreateLink(c fiber.Ctx) error {
 		return response.BadRequestMsg(c, errors.ErrValidationFailed, err.Error())
 	}
 
-	db := h.galgameRepo.DB()
-
-	err = db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(&model.GalgameLink{
-			GalgameID: gid,
-			UserID:    int(userID),
-			Name:      req.Name,
-			Link:      req.Link,
-		}).Error; err != nil {
-			return err
-		}
-
-		return h.svc.CreateRevisionFromCurrentState(tx, gid, int(userID), "updated", "添加链接: "+req.Name, false, []string{"links"})
-	})
-
+	// E2a: the desired links list goes through the engine as a direct edit
+	// ({links: current + new}); the registered Apply rebuilds the rows (the
+	// new row's owner = the acting user via the engine's actor context).
+	current, err := h.currentLinks(gid)
 	if err != nil {
+		return response.InternalError(c, errors.ErrOperationFailed)
+	}
+	desired := append(current, model.SnapshotLink{Name: req.Name, Link: req.Link})
+	if err := h.svc.DirectFieldEdit(c.Context(), gid, int(userID),
+		editspec.FieldLinks, desired, "添加链接: "+req.Name); err != nil {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
 
 	return response.Success(c, nil)
+}
+
+// currentLinks loads the live link rows in snapshot form (insertion order,
+// matching LoadSnapshot's ORDER BY id ASC).
+func (h *LinkHandler) currentLinks(gid int) ([]model.SnapshotLink, error) {
+	var rows []model.GalgameLink
+	if err := h.galgameRepo.DB().Where("galgame_id = ?", gid).Order("id ASC").Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	out := make([]model.SnapshotLink, 0, len(rows))
+	for _, l := range rows {
+		out = append(out, model.SnapshotLink{Name: l.Name, Link: l.Link, Source: l.Source, SourceKey: l.SourceKey})
+	}
+	return out, nil
 }
 
 // DeleteLink deletes a link and creates a revision
@@ -128,21 +137,29 @@ func (h *LinkHandler) DeleteLink(c fiber.Ctx) error {
 		return response.BadRequest(c, errors.ErrBadRequest)
 	}
 
-	db := h.galgameRepo.DB()
-
-	err = db.Transaction(func(tx *gorm.DB) error {
-		result := tx.Where("id = ? AND galgame_id = ?", req.ID, gid).Delete(&model.GalgameLink{})
-		if result.RowsAffected == 0 {
-			return gorm.ErrRecordNotFound
-		}
-
-		return h.svc.CreateRevisionFromCurrentState(tx, gid, int(userID), "updated", "删除链接", true, []string{"links"})
-	})
-
-	if err != nil {
+	// Resolve the target row first (404 contract preserved), then land the
+	// shrunken list through the engine.
+	var target model.GalgameLink
+	if err := h.galgameRepo.DB().Where("id = ? AND galgame_id = ?", req.ID, gid).
+		First(&target).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return response.NotFound(c, errors.ErrNotFound)
 		}
+		return response.InternalError(c, errors.ErrOperationFailed)
+	}
+	var rows []model.GalgameLink
+	if err := h.galgameRepo.DB().Where("galgame_id = ?", gid).Order("id ASC").Find(&rows).Error; err != nil {
+		return response.InternalError(c, errors.ErrOperationFailed)
+	}
+	desired := make([]model.SnapshotLink, 0, len(rows))
+	for _, l := range rows {
+		if l.ID == target.ID {
+			continue
+		}
+		desired = append(desired, model.SnapshotLink{Name: l.Name, Link: l.Link, Source: l.Source, SourceKey: l.SourceKey})
+	}
+	if err := h.svc.DirectFieldEdit(c.Context(), gid, int(userID),
+		editspec.FieldLinks, desired, "删除链接"); err != nil {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
 
@@ -187,24 +204,30 @@ func (h *LinkHandler) CreateAlias(c fiber.Ctx) error {
 		return response.BadRequestMsg(c, errors.ErrValidationFailed, err.Error())
 	}
 
-	db := h.galgameRepo.DB()
-
-	err = db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(&model.GalgameAlias{
-			GalgameID: gid,
-			Name:      req.Name,
-		}).Error; err != nil {
-			return err
-		}
-
-		return h.svc.CreateRevisionFromCurrentState(tx, gid, int(userID), "updated", "添加别名: "+req.Name, false, []string{"aliases"})
-	})
-
+	current, err := h.currentAliases(gid)
 	if err != nil {
+		return response.InternalError(c, errors.ErrOperationFailed)
+	}
+	desired := append(current, req.Name)
+	if err := h.svc.DirectFieldEdit(c.Context(), gid, int(userID),
+		editspec.FieldAliases, desired, "添加别名: "+req.Name); err != nil {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
 
 	return response.Success(c, nil)
+}
+
+// currentAliases loads the live alias names.
+func (h *LinkHandler) currentAliases(gid int) ([]string, error) {
+	var rows []model.GalgameAlias
+	if err := h.galgameRepo.DB().Where("galgame_id = ?", gid).Order("id ASC").Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(rows))
+	for _, a := range rows {
+		out = append(out, a.Name)
+	}
+	return out, nil
 }
 
 // DeleteAlias deletes an alias and creates a revision
@@ -227,21 +250,27 @@ func (h *LinkHandler) DeleteAlias(c fiber.Ctx) error {
 		return response.BadRequest(c, errors.ErrBadRequest)
 	}
 
-	db := h.galgameRepo.DB()
-
-	err = db.Transaction(func(tx *gorm.DB) error {
-		result := tx.Where("id = ? AND galgame_id = ?", req.ID, gid).Delete(&model.GalgameAlias{})
-		if result.RowsAffected == 0 {
-			return gorm.ErrRecordNotFound
-		}
-
-		return h.svc.CreateRevisionFromCurrentState(tx, gid, int(userID), "updated", "删除别名", true, []string{"aliases"})
-	})
-
-	if err != nil {
+	var target model.GalgameAlias
+	if err := h.galgameRepo.DB().Where("id = ? AND galgame_id = ?", req.ID, gid).
+		First(&target).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return response.NotFound(c, errors.ErrNotFound)
 		}
+		return response.InternalError(c, errors.ErrOperationFailed)
+	}
+	var rows []model.GalgameAlias
+	if err := h.galgameRepo.DB().Where("galgame_id = ?", gid).Order("id ASC").Find(&rows).Error; err != nil {
+		return response.InternalError(c, errors.ErrOperationFailed)
+	}
+	desired := make([]string, 0, len(rows))
+	for _, a := range rows {
+		if a.ID == target.ID {
+			continue
+		}
+		desired = append(desired, a.Name)
+	}
+	if err := h.svc.DirectFieldEdit(c.Context(), gid, int(userID),
+		editspec.FieldAliases, desired, "删除别名"); err != nil {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
 

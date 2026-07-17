@@ -5,7 +5,11 @@ import (
 	"encoding/json"
 	"strings"
 
+	"api/internal/platform/authz"
+	"api/internal/platform/editing"
 	"api/internal/platform/galgame/dto"
+	"api/internal/platform/galgame/editbridge"
+	"api/internal/platform/galgame/editspec"
 	"api/internal/platform/galgame/model"
 	"api/internal/platform/galgame/perm"
 	"api/internal/platform/galgame/repository"
@@ -26,11 +30,21 @@ const DailySubmissionQuota = 5
 type SubmissionService struct {
 	galgameRepo *repository.GalgameRepository
 	messageRepo *repository.MessageRepository
+	// E2a strangler: submission revisions land in the engine log; the
+	// legacy galgame_revision table is frozen.
+	edit *editing.Engine
 }
 
 // NewSubmissionService creates a SubmissionService.
 func NewSubmissionService(g *repository.GalgameRepository, m *repository.MessageRepository) *SubmissionService {
 	return &SubmissionService{galgameRepo: g, messageRepo: m}
+}
+
+// WithEditing wires the editing engine (always set by Mount; see
+// GalgameService.WithEditing for the posture).
+func (s *SubmissionService) WithEditing(eng *editing.Engine) *SubmissionService {
+	s.edit = eng
+	return s
 }
 
 // Submit creates a new galgame in status=3 (pending review). vndb_id may be
@@ -87,6 +101,7 @@ func (s *SubmissionService) Submit(ctx context.Context, userID int, roles []stri
 	}
 
 	var newID int
+	var createdKeys []string
 	err := s.galgameRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// Bare insert with system fields only. Every editable field is written
 		// by the SINGLE ApplySnapshot path — identical to admin Create; no
@@ -111,23 +126,9 @@ func (s *SubmissionService) Submit(ctx context.Context, userID int, roles []stri
 		if err != nil {
 			return err
 		}
-		snap := model.TakeSnapshot(full)
-		snapJSON, err := snap.ToJSON()
-		if err != nil {
-			return err
-		}
-		rev := &model.GalgameRevision{
-			GalgameID: g.ID,
-			Revision:  1,
-			UserID:    userID,
-			Action:    "created",
-			Snapshot:  snapJSON,
-		}
-		// created → every populated field is "new" (delta vs empty).
-		rev.SetChangedFields(model.KeysOf(model.ChangedKeys(&model.Snapshot{}, snap)))
-		if err := tx.Create(rev).Error; err != nil {
-			return err
-		}
+		// created → every populated field is "new" (delta vs empty); the
+		// engine birth record below stores the re-keyed set.
+		createdKeys = model.KeysOf(model.ChangedKeys(&model.Snapshot{}, model.TakeSnapshot(full)))
 
 		newID = g.ID
 		if publishDirect {
@@ -146,10 +147,20 @@ func (s *SubmissionService) Submit(ctx context.Context, userID int, roles []stri
 			Payload:      datatypes.JSON(payload),
 		})
 	})
-
 	if err != nil {
 		return nil, err
 	}
+
+	// Engine birth record after the product commit (same posture and
+	// residual-window note as GalgameService.Create).
+	newKeys, err := editbridge.RekeyKeysOldToNew(createdKeys)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := s.edit.RecordCreated(ctx, editspec.TypeGame, int64(newID), editActor(userID, 2), newKeys); err != nil {
+		return nil, err
+	}
+
 	return s.galgameRepo.FindByID(ctx, newID)
 }
 
@@ -191,31 +202,57 @@ func buildSubmitSnapshot(req *dto.SubmitGalgameRequest) *model.Snapshot {
 	return s
 }
 
-// Claim atomically converts a VNDB draft (status=2) into a published galgame
-// (status=0) owned by the claimer. Returns 20006 if target is not in status=2.
+// Claim converts a VNDB draft (status=2) into a published galgame (status=0)
+// owned by the claimer. Returns 20006 if target is not in status=2.
+//
+// E2a ordering (deliberately self-healing): the product transaction flips
+// OWNERSHIP + contributor first while the row is still a draft; the engine
+// direct edit then lands status 2→0 and mints the revision (action=direct,
+// changed_fields=[galgame.game.status] — the old machine wrote an empty
+// changed set with action=claimed). If the engine step fails the row stays
+// status=2 and a re-claim simply overwrites ownership again. The message is
+// emitted only after the status actually landed.
 func (s *SubmissionService) Claim(ctx context.Context, userID, gid int) (*model.Galgame, error) {
-	err := s.galgameRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		g, err := s.galgameRepo.FindForUpdate(tx, gid)
-		if err != nil {
-			if err == gorm.ErrRecordNotFound {
-				return errors.NewWithCode(errors.ErrGalgameNotFound)
-			}
-			return err
+	// Fast-path check for the honest error on non-drafts (unlocked read — the
+	// engine below is the real arbiter).
+	g, err := s.galgameRepo.FindByID(ctx, gid)
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, errors.NewWithCode(errors.ErrGalgameNotFound)
 		}
-		if g.Status != model.GalgameStatusVNDBDraft {
-			return errors.NewWithCode(errors.ErrGalgameClaimNotDraft)
-		}
+		return nil, err
+	}
+	if g.Status != model.GalgameStatusVNDBDraft {
+		return nil, errors.NewWithCode(errors.ErrGalgameClaimNotDraft)
+	}
 
-		// Flip status & ownership
+	// Engine direct edit FIRST: status 2→0 (writes the column + the revision)
+	// and doubles as the concurrency arbiter — of two racing claimers exactly
+	// one lands the status change. The loser surfaces either as "no effective
+	// changes" (status already 0) or as the (entity, seq) unique-index
+	// collision on the revision log; both mean "no longer a claimable draft".
+	if _, _, err := s.edit.CreateProposal(ctx, editing.CreateProposalInput{
+		EntityType: editspec.TypeGame,
+		EntityID:   int64(gid),
+		Patch:      map[string]any{editspec.FieldStatus: float64(model.GalgameStatusPublished)},
+		Actor:      editActor(userID, 2, perm.EditGameStatus),
+	}); err != nil {
+		if err == editing.ErrNoEffectiveChanges ||
+			strings.Contains(err.Error(), "duplicate key") || strings.Contains(err.Error(), "23505") {
+			return nil, errors.NewWithCode(errors.ErrGalgameClaimNotDraft)
+		}
+		return nil, mapEngineWriteError(err)
+	}
+
+	// Ownership + contributor for the WINNER only. Residual window: if this
+	// fails after the engine landed, the entry is published but unclaimed
+	// (owner stays the import identity) — narrow, and preferable to the old
+	// race where a losing claimer could overwrite the winner's ownership.
+	err = s.galgameRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&model.Galgame{}).Where("id = ?", gid).
-			Updates(map[string]any{
-				"status":  model.GalgameStatusPublished,
-				"user_id": userID,
-			}).Error; err != nil {
+			Update("user_id", userID).Error; err != nil {
 			return err
 		}
-
-		// Ensure claimer is a contributor (don't duplicate if already)
 		var cnt int64
 		if err := tx.Model(&model.GalgameContributor{}).
 			Where("galgame_id = ? AND user_id = ?", gid, userID).Count(&cnt).Error; err != nil {
@@ -226,36 +263,14 @@ func (s *SubmissionService) Claim(ctx context.Context, userID, gid int) (*model.
 				return err
 			}
 		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
 
-		// Revision: action=claimed
-		nextRev, err := repository.NextRevision(tx, gid)
-		if err != nil {
-			return err
-		}
-		full, err := loadGalgameWithRelations(tx, gid)
-		if err != nil {
-			return err
-		}
-		snapshot := model.TakeSnapshot(full)
-		snapJSON, err := snapshot.ToJSON()
-		if err != nil {
-			return err
-		}
-		claimRev := &model.GalgameRevision{
-			GalgameID: gid,
-			Revision:  nextRev,
-			UserID:    userID,
-			Action:    "claimed",
-			Snapshot:  snapJSON,
-		}
-		// claim flips status + ownership only — neither is a snapshot field,
-		// so no editable field changed. Record [] (not legacy NULL).
-		claimRev.SetChangedFields([]string{})
-		if err := tx.Create(claimRev).Error; err != nil {
-			return err
-		}
-
-		// Message: claimed
+	// Message: claimed
+	err = s.galgameRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		payload, _ := json.Marshal(map[string]any{"from_status": int(model.GalgameStatusVNDBDraft)})
 		uidVal := userID
 		return s.messageRepo.Create(ctx, tx, &model.GalgameMessage{
@@ -266,7 +281,6 @@ func (s *SubmissionService) Claim(ctx context.Context, userID, gid int) (*model.
 			Payload:      datatypes.JSON(payload),
 		})
 	})
-
 	if err != nil {
 		return nil, err
 	}
@@ -276,101 +290,81 @@ func (s *SubmissionService) Claim(ctx context.Context, userID, gid int) (*model.
 // PatchDraft updates a pending or declined galgame on behalf of its submitter.
 // If status was 4 (declined), flips back to 3 to re-enter the review queue.
 // Returns 20007/20008 for ownership/status violations.
+//
+// E2a: the content overlay and the declined→pending revive land as ONE engine
+// direct edit (the revive rides the patch as galgame.game.status=3), so the
+// revision records exactly what this edit did. The submitter may still fix
+// vndb_id on their own draft (pre-publication — the squatting lesson applies
+// to published entries), so the vndb permission key is granted here.
 func (s *SubmissionService) PatchDraft(ctx context.Context, userID, gid int, req *dto.UpdateGalgameRequest) (*model.Galgame, error) {
-	err := s.galgameRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		g, err := s.galgameRepo.FindForUpdate(tx, gid)
-		if err != nil {
-			if err == gorm.ErrRecordNotFound {
-				return errors.NewWithCode(errors.ErrGalgameNotFound)
-			}
-			return err
+	g, err := s.galgameRepo.FindByID(ctx, gid)
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, errors.NewWithCode(errors.ErrGalgameNotFound)
 		}
-		if g.UserID != userID {
-			return errors.NewWithCode(errors.ErrGalgameSubmitterOnly)
-		}
-		if g.Status != model.GalgameStatusPending && g.Status != model.GalgameStatusDeclined {
-			return errors.NewWithCode(errors.ErrGalgameDraftStatusInvalid)
-		}
+		return nil, err
+	}
+	if g.UserID != userID {
+		return nil, errors.NewWithCode(errors.ErrGalgameSubmitterOnly)
+	}
+	if g.Status != model.GalgameStatusPending && g.Status != model.GalgameStatusDeclined {
+		return nil, errors.NewWithCode(errors.ErrGalgameDraftStatusInvalid)
+	}
 
-		// Validate a vndb_id change the same way Submit/Create do — PatchDraft
-		// previously skipped both checks, so a malformed id persisted silently
-		// and a duplicate surfaced as a raw 500 instead of 20004. (The partial
-		// unique index backstops the TOCTOU between this check and commit.)
-		if req.VNDBID != nil {
-			if v := *req.VNDBID; v != "" {
-				if !vndbIDRegex.MatchString(v) {
-					return errors.NewWithCode(errors.ErrGalgameInvalidVNDB)
-				}
-				exists, existingID, err := s.galgameRepo.ExistsByVNDBID(ctx, v)
-				if err != nil {
-					return err
-				}
-				if exists && existingID != gid {
-					return errors.NewWithCode(errors.ErrGalgameVNDBExists)
-				}
+	// Validate a vndb_id change the same way Submit/Create do. (The partial
+	// unique index backstops the TOCTOU between this check and the apply.)
+	if req.VNDBID != nil {
+		if v := *req.VNDBID; v != "" {
+			if !vndbIDRegex.MatchString(v) {
+				return nil, errors.NewWithCode(errors.ErrGalgameInvalidVNDB)
+			}
+			exists, existingID, err := s.galgameRepo.ExistsByVNDBID(ctx, v)
+			if err != nil {
+				return nil, err
+			}
+			if exists && existingID != gid {
+				return nil, errors.NewWithCode(errors.ErrGalgameVNDBExists)
 			}
 		}
+	}
 
-		// Same snapshot-overlay model as the published-galgame Update:
-		// overlay onto the current canonical snapshot, write via the one
-		// ApplySnapshot path (so tag/official/engine edits persist and
-		// the recorded snapshot == DB == intent).
-		full, err := loadGalgameWithRelations(tx, gid)
-		if err != nil {
-			return err
-		}
-		cur := model.TakeSnapshot(full)
-		next := overlayUpdate(cur, req, vndbManagedTagIDs(full.Tag), vndbManagedOfficialIDs(full.Official))
-		changed := model.ChangedKeys(cur, next)
+	// Same snapshot-overlay model as the published-galgame Update.
+	full, err := loadGalgameWithRelations(s.galgameRepo.DB().WithContext(ctx), gid)
+	if err != nil {
+		return nil, err
+	}
+	cur := model.TakeSnapshot(full)
+	next := overlayUpdate(cur, req, vndbManagedTagIDs(full.Tag), vndbManagedOfficialIDs(full.Official))
+	changed := model.ChangedKeys(cur, next)
 
-		// A declined draft re-enters the review queue even if the
-		// content is byte-identical (re-submission intent). A pending
-		// draft with no change is a true no-op (commit empty tx).
-		reviving := g.Status == model.GalgameStatusDeclined
-		if len(changed) == 0 && !reviving {
-			return nil
-		}
+	// A declined draft re-enters the review queue even if the content is
+	// byte-identical (re-submission intent). A pending draft with no change
+	// is a true no-op.
+	reviving := g.Status == model.GalgameStatusDeclined
+	if len(changed) == 0 && !reviving {
+		return g, nil
+	}
 
-		if len(changed) > 0 {
-			if err := repository.ApplySnapshot(tx, gid, userID, next); err != nil {
-				return err
-			}
-		}
-		// status is not a snapshot field; flip declined→pending here.
-		if reviving {
-			if err := tx.Model(&model.Galgame{}).Where("id = ?", gid).
-				Update("status", model.GalgameStatusPending).Error; err != nil {
-				return err
-			}
-		}
+	patch, err := rekeyedPatch(next, changed)
+	if err != nil {
+		return nil, err
+	}
+	perms := []authz.Permission{perm.EditGameVNDBID}
+	if reviving {
+		patch[editspec.FieldStatus] = float64(model.GalgameStatusPending)
+		perms = append(perms, perm.EditGameStatus)
+	}
+	if _, _, err := s.edit.CreateProposal(ctx, editing.CreateProposalInput{
+		EntityType: editspec.TypeGame,
+		EntityID:   int64(gid),
+		Patch:      patch,
+		Actor:      editActor(userID, 2, perms...),
+	}); err != nil && err != editing.ErrNoEffectiveChanges {
+		return nil, mapEngineWriteError(err)
+	}
 
-		nextRev, err := repository.NextRevision(tx, gid)
-		if err != nil {
-			return err
-		}
-		fullAfter, err := loadGalgameWithRelations(tx, gid)
-		if err != nil {
-			return err
-		}
-		snapJSON, err := model.TakeSnapshot(fullAfter).ToJSON()
-		if err != nil {
-			return err
-		}
-		editRev := &model.GalgameRevision{
-			GalgameID: gid,
-			Revision:  nextRev,
-			UserID:    userID,
-			Action:    "edited_pending",
-			Snapshot:  snapJSON,
-		}
-		// `changed` (= ChangedKeys(cur, next)) is the genuine edit delta; a
-		// declined draft re-submitted unchanged records [] (revive intent only).
-		editRev.SetChangedFields(model.KeysOf(changed))
-		if err := tx.Create(editRev).Error; err != nil {
-			return err
-		}
-
-		// Message: edited_pending. Admin queue picks it up via JOIN on status=3.
+	// Message: edited_pending. Admin queue picks it up via JOIN on status=3.
+	err = s.galgameRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		payload, _ := json.Marshal(map[string]any{"field_count": len(changed)})
 		uidVal := userID
 		return s.messageRepo.Create(ctx, tx, &model.GalgameMessage{
@@ -381,7 +375,6 @@ func (s *SubmissionService) PatchDraft(ctx context.Context, userID, gid int, req
 			Payload:      datatypes.JSON(payload),
 		})
 	})
-
 	if err != nil {
 		return nil, err
 	}

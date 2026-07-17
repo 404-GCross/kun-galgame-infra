@@ -300,7 +300,7 @@ func (h *RevisionHandler) SubmitPR(c fiber.Ctx) error {
 		proposedSnapshot := req.ApplyToSnapshot(baseSnapshot)
 		pr, submitErr := h.svc.SubmitPR(c.Context(), int(userID), gid, proposedSnapshot, req.Title, req.Message)
 		if submitErr != nil {
-			return response.InternalError(c, errors.ErrOperationFailed)
+			return mapSubmitPRError(c, submitErr)
 		}
 		return response.Success(c, pr)
 	}
@@ -314,10 +314,27 @@ func (h *RevisionHandler) SubmitPR(c fiber.Ctx) error {
 
 	pr, err := h.svc.SubmitPR(c.Context(), int(userID), gid, proposedSnapshot, req.Title, req.Message)
 	if err != nil {
-		return response.InternalError(c, errors.ErrOperationFailed)
+		return mapSubmitPRError(c, err)
 	}
 
 	return response.Success(c, pr)
+}
+
+// mapSubmitPRError surfaces the E2a validation-class submit failures (empty
+// patch, per-field validation, a perm-gated field like vndb_id) as
+// actionable 400s; everything else keeps the old 500.
+func mapSubmitPRError(c fiber.Ctx, err error) error {
+	if appErr, ok := err.(*errors.AppError); ok {
+		switch appErr.Code {
+		case errors.ErrGalgameForbidden:
+			return response.Forbidden(c, appErr.Code)
+		case errors.ErrGalgameNotFound:
+			return response.NotFound(c, appErr.Code)
+		default:
+			return response.BadRequestMsg(c, appErr.Code, appErr.Message)
+		}
+	}
+	return response.InternalError(c, errors.ErrOperationFailed)
 }
 
 // MergePR merges a PR

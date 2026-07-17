@@ -48,6 +48,15 @@ func RunGalgameImageRefping(ctx context.Context, cfg *config.Config, opts Galgam
 	}
 	defer db.Close()
 
+	// E2a: new-era revision/PR snapshots live in edit_revision/edit_proposal
+	// on the CATALOG pool (same physical DB in prod, a separate one in dev),
+	// so the job opens a second pool for that scan.
+	editDB, err := database.NewPostgresDB(cfg.CatalogDatabase)
+	if err != nil {
+		return nil, fmt.Errorf("catalog db connect: %w", err)
+	}
+	defer editDB.Close()
+
 	// The hash universe we must keep alive in image_service:
 	//   1. current galgame_cover.image_hash (the authoritative cover set)
 	//   2. current galgame_screenshot.image_hash
@@ -56,6 +65,10 @@ func RunGalgameImageRefping(ctx context.Context, cfg *config.Config, opts Galgam
 	//      image_service has TTL-deleted
 	//   4. EVERY image_hash in a galgame_pr.snapshot — same reasoning for
 	//      pending PRs (admin may still merge them and trigger revert paths)
+	//   5. (E2a) the same universe on the engine tables: edit_revision
+	//      snapshots + edit_proposal patches / archived legacy snapshots for
+	//      galgame.game rows — the strangler write path appends there, and
+	//      the frozen legacy tables stop growing at the migration cutover.
 	//
 	// (The pre-PR5 banner_image_hash source was retired together with the
 	// column; pinned-cover via galgame_cover is now the sole banner ref.
@@ -63,12 +76,17 @@ func RunGalgameImageRefping(ctx context.Context, cfg *config.Config, opts Galgam
 	// were patched by migrate-drop-banner-image-hash to embed the value
 	// into covers[] before the column drop.)
 	//
-	// Implementation lives in collectRefpingHashes so it can be tested
-	// against a real DB without standing up an image_service mock.
+	// Implementation lives in collectRefpingHashes / collectEditRefpingHashes
+	// so they can be tested against a real DB without an image_service mock.
 	hashes, err := collectRefpingHashes(ctx, db.DB())
 	if err != nil {
 		return nil, fmt.Errorf("collect refping hashes: %w", err)
 	}
+	editHashes, err := collectEditRefpingHashes(ctx, editDB.DB())
+	if err != nil {
+		return nil, fmt.Errorf("collect edit_* refping hashes: %w", err)
+	}
+	hashes = mergeHashSets(hashes, editHashes)
 
 	slog.Info("refping: collected banner hashes", "count", len(hashes))
 	if len(hashes) == 0 {
@@ -205,4 +223,71 @@ WHERE hash IS NOT NULL AND hash <> ''
 		return nil, err
 	}
 	return hashes, nil
+}
+
+// collectEditRefpingHashes walks the editing-engine tables (catalog pool) for
+// galgame.game image references (E2a):
+//
+//  1. edit_revision.snapshot — 'galgame.game.covers' / 'galgame.game.screenshots'
+//  2. edit_proposal.patch — same keys (an open PR's proposed images must
+//     survive until it is decided)
+//  3. edit_proposal.legacy_meta->'snapshot' — the archived old-wire snapshot
+//     of migrated merged PRs (served verbatim by the read bridge)
+func collectEditRefpingHashes(ctx context.Context, db *gorm.DB) ([]string, error) {
+	const q = `
+WITH all_hashes AS (
+    SELECT (jsonb_array_elements(snapshot->'galgame.game.covers'))->>'image_hash' AS hash
+        FROM edit_revision
+        WHERE entity_type = 'galgame.game'
+          AND jsonb_typeof(snapshot->'galgame.game.covers') = 'array'
+    UNION
+    SELECT (jsonb_array_elements(snapshot->'galgame.game.screenshots'))->>'image_hash'
+        FROM edit_revision
+        WHERE entity_type = 'galgame.game'
+          AND jsonb_typeof(snapshot->'galgame.game.screenshots') = 'array'
+    UNION
+    SELECT (jsonb_array_elements(patch->'galgame.game.covers'))->>'image_hash'
+        FROM edit_proposal
+        WHERE entity_type = 'galgame.game'
+          AND jsonb_typeof(patch->'galgame.game.covers') = 'array'
+    UNION
+    SELECT (jsonb_array_elements(patch->'galgame.game.screenshots'))->>'image_hash'
+        FROM edit_proposal
+        WHERE entity_type = 'galgame.game'
+          AND jsonb_typeof(patch->'galgame.game.screenshots') = 'array'
+    UNION
+    SELECT (jsonb_array_elements(legacy_meta->'snapshot'->'covers'))->>'image_hash'
+        FROM edit_proposal
+        WHERE entity_type = 'galgame.game'
+          AND jsonb_typeof(legacy_meta->'snapshot'->'covers') = 'array'
+    UNION
+    SELECT (jsonb_array_elements(legacy_meta->'snapshot'->'screenshots'))->>'image_hash'
+        FROM edit_proposal
+        WHERE entity_type = 'galgame.game'
+          AND jsonb_typeof(legacy_meta->'snapshot'->'screenshots') = 'array'
+)
+SELECT DISTINCT hash FROM all_hashes
+WHERE hash IS NOT NULL AND hash <> ''
+`
+	var hashes []string
+	if err := db.WithContext(ctx).Raw(q).Scan(&hashes).Error; err != nil {
+		return nil, err
+	}
+	return hashes, nil
+}
+
+// mergeHashSets unions two hash slices, preserving dedup.
+func mergeHashSets(a, b []string) []string {
+	seen := make(map[string]struct{}, len(a)+len(b))
+	out := make([]string, 0, len(a)+len(b))
+	for _, list := range [][]string{a, b} {
+		for _, h := range list {
+			if _, dup := seen[h]; dup {
+				continue
+			}
+			seen[h] = struct{}{}
+			out = append(out, h)
+		}
+	}
+	return out
 }

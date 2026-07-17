@@ -21,6 +21,8 @@ import (
 	searchInfra "api/internal/infrastructure/search"
 	"api/internal/middleware"
 	catalogPerm "api/internal/platform/catalog/perm"
+	"api/internal/platform/editing"
+	"api/internal/platform/galgame/editbridge"
 	galgameHandler "api/internal/platform/galgame/handler"
 	galgamePerm "api/internal/platform/galgame/perm"
 	galgameRepo "api/internal/platform/galgame/repository"
@@ -49,6 +51,13 @@ type Deps struct {
 	// settings and builds the galgame indexer / write-through hook / search
 	// service from it.
 	Search *searchInfra.Client
+	// Edit is the editing engine with galgame.game registered (E2a strangler
+	// — every galgame revision/PR write flows through it); EditDB is the
+	// engine-table pool (catalog DB) the old-wire read bridge queries.
+	// Both are REQUIRED: the legacy revision tables are frozen and the
+	// surface cannot run without the engine.
+	Edit   *editing.Engine
+	EditDB *gorm.DB
 }
 
 // Mount wires the galgame domain (repositories, services, handlers) and registers
@@ -73,6 +82,13 @@ func Mount(a *app.App, cfg *config.Config, deps Deps) {
 	wiki := deps.GalgameDB  // galgame content DB — read-write
 	searchClient := deps.Search
 
+	// E2a: the editing engine is the galgame surface's single revision/PR
+	// write path — a missing engine means silent data loss, so fail the boot.
+	if deps.Edit == nil || deps.EditDB == nil {
+		panic("galgameapp: Deps.Edit and Deps.EditDB are required (editing-engine strangler)")
+	}
+	bridge := editbridge.New(deps.EditDB, deps.Edit)
+
 	// Repositories
 	galgameRepository := galgameRepo.NewGalgameRepository(wiki)
 	userReadRepo := galgameRepo.NewUserReadonlyRepository(oauthDB)
@@ -91,10 +107,13 @@ func Mount(a *app.App, cfg *config.Config, deps Deps) {
 
 	// Services
 	galgameSvc := galgameService.NewGalgameService(galgameRepository, revisionRepo, prRepo, userReadRepo).
-		WithCDNBase(cfg.ImageService.CDNBase)
-	submissionSvc := galgameService.NewSubmissionService(galgameRepository, messageRepo)
+		WithCDNBase(cfg.ImageService.CDNBase).
+		WithEditing(deps.Edit, bridge)
+	submissionSvc := galgameService.NewSubmissionService(galgameRepository, messageRepo).
+		WithEditing(deps.Edit)
 	messageSvc := galgameService.NewMessageService(messageRepo, galgameRepository, userReadRepo)
-	adminSvc := galgameService.NewAdminService(galgameRepository, messageRepo)
+	adminSvc := galgameService.NewAdminService(galgameRepository, messageRepo).
+		WithEditing(deps.Edit)
 	// TaxonomyService — orchestrates tag/official/engine/series CRUD via
 	// the polymorphic taxonomy_revision audit. Every mutating handler
 	// path below routes through it.

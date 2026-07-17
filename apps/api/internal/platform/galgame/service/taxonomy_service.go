@@ -270,11 +270,11 @@ func (s *TaxonomyService) DeleteTag(ctx context.Context, userID, userRole int, i
 			return e
 		}
 
-		// Galgame revisions: every previously-attached galgame had its
-		// tag_ids set shrink, so each gets a galgame_revision tagged
-		// changed_fields=['tag_ids']. Without these, the galgame's
-		// history shows the tag "disappearing" with no record of why.
-		return writeAffectedGalgameRevisions(tx, affected, userID, "tag_ids")
+		// E2a: the per-galgame ripple revisions are gone — taxonomy ops'
+		// galgame side-effects are system cascades outside the editing
+		// engine (doc 21 §2.6 posture); the audit is this taxonomy_revision
+		// row's affected_galgame_ids.
+		return nil
 	})
 	return
 }
@@ -464,7 +464,9 @@ func (s *TaxonomyService) DeleteOfficial(ctx context.Context, userID, userRole i
 		); e != nil {
 			return e
 		}
-		return writeAffectedGalgameRevisions(tx, affected, userID, "official_ids")
+		// E2a: no per-galgame ripple revisions (system cascade; audit =
+		// affected_galgame_ids above).
+		return nil
 	})
 	return
 }
@@ -623,7 +625,9 @@ func (s *TaxonomyService) DeleteEngine(ctx context.Context, userID, userRole int
 		); e != nil {
 			return e
 		}
-		return writeAffectedGalgameRevisions(tx, affected, userID, "engine_ids")
+		// E2a: no per-galgame ripple revisions (system cascade; audit =
+		// affected_galgame_ids above).
+		return nil
 	})
 	return
 }
@@ -721,15 +725,12 @@ func (s *TaxonomyService) CreateSeries(ctx context.Context, userID, userRole int
 		); err != nil {
 			return err
 		}
-		// Initial membership: each gid added gets its OWN galgame
-		// revision with changed_fields=['series_id'].
+		// Initial membership. E2a: the per-gid ripple revisions are gone
+		// (system cascade; the taxonomy_revision above records the ids).
 		if len(galgameIDs) > 0 {
 			if err := tx.Model(&model.Galgame{}).
 				Where("id IN ?", galgameIDs).
 				Update("series_id", sr.ID).Error; err != nil {
-				return err
-			}
-			if err := writeAffectedGalgameRevisions(tx, galgameIDs, userID, "series_id"); err != nil {
 				return err
 			}
 		}
@@ -825,7 +826,9 @@ func (s *TaxonomyService) DeleteSeries(ctx context.Context, userID, userRole int
 		); e != nil {
 			return e
 		}
-		return writeAffectedGalgameRevisions(tx, affected, userID, "series_id")
+		// E2a: no per-galgame ripple revisions (system cascade; audit =
+		// affected_galgame_ids above).
+		return nil
 	})
 	return
 }
@@ -997,57 +1000,13 @@ func marshalSnapshot(s any) (datatypes.JSON, error) {
 	return datatypes.JSON(b), nil
 }
 
-// writeAffectedGalgameRevisions iterates over a list of galgame ids
-// (typically the set whose relation row was just purged by a taxonomy
-// delete) and writes ONE galgame_revision row per gid with
-// action='updated' and changed_fields=['tag_ids' | 'official_ids' |
-// 'engine_ids' | 'series_id']. The snapshot stored is freshly re-taken
-// from the galgame's post-update state so the canonical
-// "revision.snapshot == DB == intent" invariant holds.
-//
-// changedKey identifies WHICH per-galgame field was effectively changed
-// by the taxonomy operation (e.g., a tag deletion → 'tag_ids').
-func writeAffectedGalgameRevisions(tx *gorm.DB, gids []int, userID int, changedKey string) error {
-	for _, gid := range gids {
-		full, err := loadGalgameWithRelations(tx, gid)
-		if err != nil {
-			// galgame may have been deleted in the same transaction
-			// (shouldn't happen for taxonomy delete, but defensive).
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				continue
-			}
-			return err
-		}
-		snap := model.TakeSnapshot(full)
-		snapJSON, err := snap.ToJSON()
-		if err != nil {
-			return err
-		}
-		nextRev, err := repository.NextRevision(tx, gid)
-		if err != nil {
-			return err
-		}
-		rippleRev := &model.GalgameRevision{
-			GalgameID: gid,
-			Revision:  nextRev,
-			UserID:    userID,
-			Action:    "updated",
-			Snapshot:  snapJSON,
-			Note:      fmt.Sprintf("taxonomy delete cascade: %s", changedKey),
-		}
-		// The taxonomy op changed exactly one per-galgame relation field.
-		rippleRev.SetChangedFields([]string{changedKey})
-		if err := tx.Create(rippleRev).Error; err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 // reconcileSeriesMembership diffs (currently in series N) vs (caller-
 // supplied set) and applies the difference via per-galgame UPDATE.
-// Each affected galgame gets a galgame_revision with
-// changed_fields=['series_id']. Matches §7.5.2.
+//
+// E2a: the per-galgame ripple revisions are gone — a taxonomy operation's
+// galgame side-effects are system cascades outside the editing engine
+// (doc 21 §2.6 posture; the engine only records edits IT executes). The
+// audit trail is the taxonomy_revision row (affected_galgame_ids).
 func reconcileSeriesMembership(tx *gorm.DB, seriesID int, want []int, userID int) error {
 	var cur []int
 	if err := tx.Model(&model.Galgame{}).
@@ -1063,7 +1022,6 @@ func reconcileSeriesMembership(tx *gorm.DB, seriesID int, want []int, userID int
 	for _, id := range want {
 		wantSet[id] = true
 	}
-	affected := make([]int, 0)
 	for _, id := range want {
 		if !curSet[id] {
 			if err := tx.Model(&model.Galgame{}).
@@ -1071,7 +1029,6 @@ func reconcileSeriesMembership(tx *gorm.DB, seriesID int, want []int, userID int
 				Update("series_id", seriesID).Error; err != nil {
 				return err
 			}
-			affected = append(affected, id)
 		}
 	}
 	for _, id := range cur {
@@ -1081,8 +1038,7 @@ func reconcileSeriesMembership(tx *gorm.DB, seriesID int, want []int, userID int
 				Update("series_id", nil).Error; err != nil {
 				return err
 			}
-			affected = append(affected, id)
 		}
 	}
-	return writeAffectedGalgameRevisions(tx, affected, userID, "series_id")
+	return nil
 }
