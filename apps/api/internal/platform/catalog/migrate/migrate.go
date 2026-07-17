@@ -9,6 +9,7 @@ import (
 	"fmt"
 
 	"api/internal/platform/catalog/model"
+	"api/internal/platform/editing"
 
 	"gorm.io/gorm"
 )
@@ -67,6 +68,13 @@ func Run(db *gorm.DB) error {
 		&model.CatalogCredit{},
 	); err != nil {
 		return fmt.Errorf("catalog automigrate: %w", err)
+	}
+	// Editing-engine tables (E0, charter ruling 2): the edit_* family lives
+	// on the catalog pool — single revision-log query surface — and rides
+	// the same single migration entry point. The editing package owns its
+	// DDL; catalog imports editing (platform-internal), never the reverse.
+	if err := editing.AutoMigrate(db); err != nil {
+		return fmt.Errorf("editing automigrate: %w", err)
 	}
 	return rawSQL(db)
 }
