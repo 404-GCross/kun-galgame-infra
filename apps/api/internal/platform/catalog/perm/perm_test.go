@@ -11,7 +11,9 @@ import (
 // derived from the pre-migration ren-only route gates. Any drift between the
 // bundles and this table fails the build.
 var goldenGrants = map[authz.Permission][]string{
-	perm.Review: {"ren"},
+	perm.Review:         {"ren"},
+	perm.EditWork:       {"admin", "ren"},
+	perm.EditWorkReview: {"admin", "ren"},
 }
 
 var allRoles = []string{"user", "creator", "moderator", "admin", "ren"}

@@ -31,12 +31,14 @@ import (
 	"api/internal/infrastructure/database"
 	searchInfra "api/internal/infrastructure/search"
 	"api/internal/middleware"
+	"api/internal/platform/catalog/editspec"
 	catHandler "api/internal/platform/catalog/handler"
 	catalogPerm "api/internal/platform/catalog/perm"
 	"api/internal/platform/catalog/repository"
 	catalogSearch "api/internal/platform/catalog/search"
 	"api/internal/platform/catalog/service"
 	"api/internal/platform/devapi"
+	"api/internal/platform/editing"
 	siteRepo "api/internal/platform/site/repository"
 	"api/pkg/config"
 	"api/pkg/health"
@@ -129,6 +131,19 @@ func main() {
 
 	s2sAPI := catHandler.Setup(application.Fiber, resolveSvc, workSvc, readSvc, searcher, statsSvc)
 	catHandler.SetupAdmin(application.Fiber, queueSvc, mergeSvc)
+
+	// Editing engine (E0): the media-agnostic edit_proposal primitive. This
+	// is the ASSEMBLY POINT (charter ruling 1) — the engine itself knows no
+	// entity family; each family registers its EntityTypeSpec here with
+	// closures over its own pool. Pilot: catalog.work (three scalar fields).
+	// The engine tables live on the catalog pool; the face registers under
+	// /api/v1/catalog/edit/* so the S2S Basic auth above already gates it.
+	editRegistry := editing.NewRegistry()
+	if err := editspec.RegisterWork(editRegistry, catalogDB.DB()); err != nil {
+		slog.Error("editing: register catalog.work", "error", err)
+		os.Exit(1)
+	}
+	catHandler.SetupEdit(s2sAPI, editing.NewEngine(catalogDB.DB(), editRegistry))
 
 	// NextMoe open API: catalog public projection (/v1/catalog/*). A NEW public
 	// read-only bypass (step 03) behind the shared devapi middleware chain; the
