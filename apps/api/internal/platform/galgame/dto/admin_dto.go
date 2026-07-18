@@ -12,8 +12,7 @@ type AdminStatsTotals struct {
 	GalgameEngine   int `json:"galgame_engine"`
 	GalgameSeries   int `json:"galgame_series"`
 	GalgameLink     int `json:"galgame_link"`
-	GalgamePR       int `json:"galgame_pr"`
-	GalgameRevision int `json:"galgame_revision"`
+	// galgame_pr / galgame_revision totals retired at E3b (frozen tables).
 }
 
 // AdminStatsDaily holds daily counts for a single date
@@ -24,8 +23,6 @@ type AdminStatsDaily struct {
 	GalgameEngine   int    `json:"galgame_engine"`
 	GalgameSeries   int    `json:"galgame_series"`
 	GalgameLink     int    `json:"galgame_link"`
-	GalgamePR       int    `json:"galgame_pr"`
-	GalgameRevision int    `json:"galgame_revision"`
 }
 
 // AdminStatsResponse is the full admin stats response

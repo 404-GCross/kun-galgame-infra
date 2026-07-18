@@ -12,17 +12,16 @@ import (
 	"api/pkg/errors"
 )
 
-// This file is the service-side glue of the E2a strangler: the old galgame
-// write paths keep their validation/side-effect logic but persist revisions
-// and proposals through the editing engine (single write path, doc 21 §1.6).
-// The old wire (apps/wiki) never sees engine vocabulary — editbridge maps it
-// back — and the adapter, being the product backend for that wire, asserts
-// the PolicyContext the route's own authorization already established:
-// trust tier 2 for direct-edit routes (automerge=trusted fires), tier 0 for
-// the PR route (proposal stays open), permission keys granted exactly where
-// the old checks passed.
+// This file is the service-side glue between the galgame write paths and the
+// editing engine (E2a strangler, doc 21 §1.6): create / update / submit /
+// patch-draft / admin status-change keep their validation + side-effect logic
+// but persist every revision through the engine (single write path). Each
+// caller asserts the PolicyContext its route authorization already established:
+// trust tier 2 for direct-edit routes (automerge=trusted fires), tier 0 for the
+// submission/proposal route, permission keys granted exactly where the checks
+// passed. (The old-wire PR/revision adapter this glue once fed retired at E3b.)
 
-// editActor builds the engine PolicyContext for an old-wire caller.
+// editActor builds the engine PolicyContext for a galgame write caller.
 func editActor(userID int, tier int16, perms ...authz.Permission) editing.PolicyContext {
 	set := make(map[string]bool, len(perms))
 	for _, p := range perms {

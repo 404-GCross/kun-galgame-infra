@@ -22,7 +22,7 @@ import (
 	"api/internal/middleware"
 	catalogPerm "api/internal/platform/catalog/perm"
 	"api/internal/platform/editing"
-	"api/internal/platform/galgame/editbridge"
+	"api/internal/platform/galgame/editquery"
 	galgameHandler "api/internal/platform/galgame/handler"
 	galgamePerm "api/internal/platform/galgame/perm"
 	galgameRepo "api/internal/platform/galgame/repository"
@@ -53,7 +53,8 @@ type Deps struct {
 	Search *searchInfra.Client
 	// Edit is the editing engine with galgame.game registered (E2a strangler
 	// — every galgame revision/PR write flows through it); EditDB is the
-	// engine-table pool (catalog DB) the old-wire read bridge queries.
+	// engine-table pool (catalog DB) the native edit-log reads (editquery:
+	// the merged-revision feed + profile counters) query.
 	// Both are REQUIRED: the legacy revision tables are frozen and the
 	// surface cannot run without the engine.
 	Edit   *editing.Engine
@@ -87,7 +88,7 @@ func Mount(a *app.App, cfg *config.Config, deps Deps) {
 	if deps.Edit == nil || deps.EditDB == nil {
 		panic("galgameapp: Deps.Edit and Deps.EditDB are required (editing-engine strangler)")
 	}
-	bridge := editbridge.New(deps.EditDB, deps.Edit)
+	editq := editquery.New(deps.EditDB)
 
 	// Repositories
 	galgameRepository := galgameRepo.NewGalgameRepository(wiki)
@@ -108,7 +109,7 @@ func Mount(a *app.App, cfg *config.Config, deps Deps) {
 	// Services
 	galgameSvc := galgameService.NewGalgameService(galgameRepository, revisionRepo, prRepo, userReadRepo).
 		WithCDNBase(cfg.ImageService.CDNBase).
-		WithEditing(deps.Edit, bridge)
+		WithEditing(deps.Edit, editq)
 	submissionSvc := galgameService.NewSubmissionService(galgameRepository, messageRepo).
 		WithEditing(deps.Edit)
 	messageSvc := galgameService.NewMessageService(messageRepo, galgameRepository, userReadRepo)
@@ -184,7 +185,7 @@ func Mount(a *app.App, cfg *config.Config, deps Deps) {
 
 	// Handlers
 	galgameH := galgameHandler.NewGalgameHandler(galgameSvc, searchHook, imgCli)
-	revisionH := galgameHandler.NewRevisionHandler(galgameSvc, imgCli)
+	revisionH := galgameHandler.NewRevisionHandler(galgameSvc)
 	linkH := galgameHandler.NewLinkHandler(galgameSvc, galgameRepository)
 	contributorH := galgameHandler.NewContributorHandler(galgameRepository, userReadRepo)
 	tagH := galgameHandler.NewTagHandler(tagRepo, taxSvc, searchHook)
@@ -254,14 +255,9 @@ func Mount(a *app.App, cfg *config.Config, deps Deps) {
 	// DELETE so they don't collide and stay in the auth group below.
 	galgame.Get("/mine", jwtAuth, submissionH.ListMine)
 	galgame.Get("/:gid", optionalJWT, galgameH.Get)
-	// optionalJWT so the visibility gate (AssertGalgameVisible) can let an
-	// authenticated submitter see their own pending/declined draft's history,
-	// while anonymous callers only ever see published galgames' revisions/PRs.
-	galgame.Get("/:gid/revisions", optionalJWT, revisionH.ListRevisions)
-	galgame.Get("/:gid/revisions/:rev", optionalJWT, revisionH.GetRevision)
-	galgame.Get("/:gid/revisions/:rev/diff", optionalJWT, revisionH.GetRevisionDiff)
-	galgame.Get("/:gid/prs", optionalJWT, revisionH.ListPRs)
-	galgame.Get("/:gid/prs/:id", optionalJWT, revisionH.GetPR)
+	// The old-wire revision/PR read routes (/:gid/revisions*, /:gid/prs*)
+	// retired with apps/wiki at E3b — history/PR reads now come from the
+	// engine edit face (kungal's /galgame/:gid/edit/* BFF).
 	galgame.Get("/:gid/links", linkH.ListLinks)
 	galgame.Get("/:gid/aliases", linkH.ListAliases)
 	galgame.Get("/:gid/contributors", contributorH.List)
@@ -328,10 +324,8 @@ func Mount(a *app.App, cfg *config.Config, deps Deps) {
 	// reference-ping covers everything. Single-segment static path, no collision
 	// with /:gid (which is GET-only here).
 	galgameAuth.Post("/image", galgameH.UploadImage)
-	galgameAuth.Post("/:gid/revert", revisionH.Revert)
-	galgameAuth.Post("/:gid/prs", revisionH.SubmitPR)
-	galgameAuth.Put("/:gid/prs/:id/merge", revisionH.MergePR)
-	galgameAuth.Put("/:gid/prs/:id/decline", revisionH.DeclinePR)
+	// Revert + PR submit/merge/decline retired with apps/wiki at E3b — user
+	// edits now flow through the engine (kungal's edit BFF → catalog edit face).
 	galgameAuth.Post("/:gid/links", linkH.CreateLink)
 	galgameAuth.Delete("/:gid/links", linkH.DeleteLink)
 	galgameAuth.Post("/:gid/aliases", linkH.CreateAlias)

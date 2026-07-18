@@ -1,14 +1,13 @@
 package service
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"testing"
 
 	catalogMigrate "api/internal/platform/catalog/migrate"
 	"api/internal/platform/editing"
-	"api/internal/platform/galgame/editbridge"
+	"api/internal/platform/galgame/editquery"
 	"api/internal/platform/galgame/editspec"
 	"api/internal/platform/galgame/model"
 	"api/internal/platform/galgame/repository"
@@ -22,7 +21,7 @@ var (
 	testDB     *gorm.DB
 	testSvc    *GalgameService
 	testEngine *editing.Engine
-	testBridge *editbridge.Bridge
+	testEditq  *editquery.Querier
 )
 
 func TestMain(m *testing.M) {
@@ -113,10 +112,10 @@ func TestMain(m *testing.M) {
 		os.Exit(0)
 	}
 	testEngine = editing.NewEngine(db, reg)
-	testBridge = editbridge.New(db, testEngine)
+	testEditq = editquery.New(db)
 
 	testSvc = NewGalgameService(galgameRepo, revisionRepo, prRepo, userRepo).
-		WithEditing(testEngine, testBridge)
+		WithEditing(testEngine, testEditq)
 
 	code := m.Run()
 	os.Exit(code)
@@ -144,29 +143,11 @@ func cleanTables(t *testing.T) {
 }
 
 // Test helpers
-
-// bridgeRevision reads one revision back through the wire adapter — the E2a
-// equivalent of the old direct galgame_revision query (writes land in the
-// engine tables now; the bridge reproduces the old row shape).
-func bridgeRevision(t *testing.T, gid, rev int) *model.GalgameRevision {
-	t.Helper()
-	r, err := testSvc.GetRevision(context.Background(), gid, rev)
-	if err != nil {
-		t.Fatalf("bridgeRevision(%d, %d): %v", gid, rev, err)
-	}
-	return r
-}
-
-// bridgeRevisionCount counts an entity's revisions through the wire adapter
-// (include_minor=true so nothing is filtered).
-func bridgeRevisionCount(t *testing.T, gid int) int64 {
-	t.Helper()
-	_, total, err := testSvc.ListRevisions(context.Background(), gid, 1, 1, true)
-	if err != nil {
-		t.Fatalf("bridgeRevisionCount(%d): %v", gid, err)
-	}
-	return total
-}
+//
+// bridgeRevision / bridgeRevisionCount (the old-wire revision readers the
+// surviving write-path tests assert against) live in
+// wire_revision_testutil_test.go — a test-only reconstruction of the shape the
+// production old-wire bridge served before it retired at E3b.
 
 func createTestTag(t *testing.T, name, category string) int {
 	t.Helper()

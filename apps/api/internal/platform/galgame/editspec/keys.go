@@ -6,12 +6,14 @@
 // mirroring internal/platform/catalog/editspec.
 package editspec
 
+import "fmt"
+
 // Eternal field keys of galgame.game (§2.2b — never renamed, never reused).
-// Every key is "galgame.game." + the historical snapshot key, so the legacy
-// transform (cmd/migrate-galgame-editing) and the strangler wire adapter
-// (galgame/editbridge) are a mechanical 1:1 rename. `gid` is not registered
-// (permanently immutable, SEO); `galgame.game.status` is the one key with no
-// old-snapshot counterpart (management direct-edit field, 03 号裁定 1).
+// Every key is "galgame.game." + the historical snapshot key, a mechanical 1:1
+// rename of the historical snapshot vocabulary (the E2b legacy transform and
+// the old-wire strangler adapter that consumed it retired at E3b). `gid` is not
+// registered (permanently immutable, SEO); `galgame.game.status` is the one key
+// with no old-snapshot counterpart (management direct-edit field, 03 号裁定 1).
 const (
 	TypeGame = "galgame.game"
 
@@ -98,3 +100,21 @@ var NewToOld = func() map[string]string {
 	m[FieldStatus] = "status"
 	return m
 }()
+
+// RekeyKeysOldToNew maps a changed_fields list from the historical snapshot
+// vocabulary to the eternal field keys, preserving order. The galgame
+// create/submit birth-record path uses it: model.KeysOf reports old-vocabulary
+// keys, and the engine's RecordCreated wants eternal keys. Unknown old keys
+// hard-fail — the surveyed corpus is exactly the registered vocabulary, so an
+// unknown key means the mapping table is incomplete.
+func RekeyKeysOldToNew(keys []string) ([]string, error) {
+	out := make([]string, 0, len(keys))
+	for _, k := range keys {
+		newKey, ok := OldToNew[k]
+		if !ok {
+			return nil, fmt.Errorf("editspec: changed_fields key %q has no eternal-key mapping", k)
+		}
+		out = append(out, newKey)
+	}
+	return out, nil
+}

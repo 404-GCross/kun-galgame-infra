@@ -100,11 +100,13 @@ func Run(db *gorm.DB) error {
 //     (revision note/is_minor/reverted_to/null-changed_fields marker; PR
 //     title/message/original snapshot/base_revision).
 //   - idx_edit_revision_wire_id: expression index over the wire id the
-//     old-wire adapter (galgame/editbridge) orders and cursors by.
+//     merged-revision feed (galgame/editquery) orders and cursors by.
 //
-// Exported so the editbridge tests can provision the exact production schema.
-// Kept in this package: the columns live on catalog-pool tables and ride the
-// single migration entry point (charter ruling 9).
+// legacy_action / legacy_id back the surviving merged-revision feed; the rest
+// (legacy_pr_id / legacy_meta) are frozen provenance the retired E3b old-wire
+// adapter read, kept until the legacy tables drop. Exported so tests + the
+// single migration entry point provision the exact production schema; the
+// columns live on catalog-pool tables (charter ruling 9).
 func EditLegacyColumns(db *gorm.DB) error {
 	for _, stmt := range []string{
 		`ALTER TABLE edit_revision ADD COLUMN IF NOT EXISTS legacy_action text`,

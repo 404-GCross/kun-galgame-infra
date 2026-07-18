@@ -217,27 +217,6 @@ func TestUpdate_RejectsDraftForNonAdmin(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// findings #07 + #40: SubmitPR persists title/message (not a dropped note) and
-// GetPR is scoped to its galgame (mismatched gid → 404).
-func TestGetPR_ScopedToGalgame_AndCarriesTitleMessage(t *testing.T) {
-	cleanTables(t)
-	ctx := context.Background()
-	g := createTestGalgame(t, "v60006", "原始")
-	proposed := &model.Snapshot{VNDBID: "v60006", NameZhCN: "PR改名",
-		Aliases: []string{}, TagIDs: []int{}, OfficialIDs: []int{}, EngineIDs: []int{}, Links: []model.SnapshotLink{}}
-	pr, err := testSvc.SubmitPR(ctx, 2, g.ID, proposed, "我的标题", "变更说明")
-	require.NoError(t, err)
-
-	got, err := testSvc.GetPR(ctx, g.ID, pr.ID)
-	require.NoError(t, err)
-	assert.Equal(t, "我的标题", got.Title)
-	assert.Equal(t, "变更说明", got.Message)
-
-	// Mismatched gid must not resolve the PR.
-	_, err = testSvc.GetPR(ctx, g.ID+99999, pr.ID)
-	require.Error(t, err)
-}
-
 func TestCheckVNDB(t *testing.T) {
 	cleanTables(t)
 	ctx := context.Background()

@@ -305,7 +305,7 @@ func TestRevert_AppliesTargetSnapshotVerbatim(t *testing.T) {
 	require.NoError(t, err)
 
 	// Revert to the covers revision — both rows restored verbatim.
-	require.NoError(t, testSvc.Revert(ctx, 1, gid, revWithCovers, []string{"admin"}))
+	revertGalgameForTest(t, 1, gid, revWithCovers)
 
 	var coverCount int64
 	testDB.Model(&model.GalgameCover{}).Where("galgame_id = ?", gid).Count(&coverCount)

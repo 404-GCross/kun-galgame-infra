@@ -70,12 +70,9 @@ func (r *AdminRepository) GetStats(ctx context.Context, days int) (*dto.AdminSta
 	if resp.Totals.GalgameLink, err = countAll(&model.GalgameLink{}); err != nil {
 		return nil, err
 	}
-	if resp.Totals.GalgamePR, err = countAll(&model.GalgamePR{}); err != nil {
-		return nil, err
-	}
-	if resp.Totals.GalgameRevision, err = countAll(&model.GalgameRevision{}); err != nil {
-		return nil, err
-	}
+	// galgame_pr / galgame_revision counts retired at E3b: those tables froze at
+	// the E2b engine migration (edits land in edit_* now), so their totals were
+	// stale. The per-user edit counters live in GetUserStats (via editquery).
 
 	// Daily counts. Compute day boundaries in the PG session timezone so they
 	// line up with date_trunc('day', created) below (host TZ != session TZ
@@ -125,14 +122,6 @@ func (r *AdminRepository) GetStats(ctx context.Context, days int) (*dto.AdminSta
 	if err != nil {
 		return nil, err
 	}
-	prDaily, err := queryDaily("galgame_pr")
-	if err != nil {
-		return nil, err
-	}
-	revisionDaily, err := queryDaily("galgame_revision")
-	if err != nil {
-		return nil, err
-	}
 
 	// Zero-fill the full [since .. today] range so the daily series is
 	// contiguous — days with no activity were previously absent, leaving the
@@ -150,8 +139,6 @@ func (r *AdminRepository) GetStats(ctx context.Context, days int) (*dto.AdminSta
 			GalgameEngine:   engineDaily[key],
 			GalgameSeries:   seriesDaily[key],
 			GalgameLink:     linkDaily[key],
-			GalgamePR:       prDaily[key],
-			GalgameRevision: revisionDaily[key],
 		})
 	}
 

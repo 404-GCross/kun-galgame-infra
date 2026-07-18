@@ -447,13 +447,11 @@ func TestLink_CreateAndRevision(t *testing.T) {
 	err := testSvc.DirectFieldEdit(ctx, g.ID, 1, editspec.FieldLinks, desired, "添加链接: Steam")
 	require.NoError(t, err)
 
-	// Should have revision 2 (engine log, read back through the bridge)
-	_, total, err := testSvc.ListRevisions(ctx, g.ID, 1, 20, true)
-	require.NoError(t, err)
-	assert.Equal(t, int64(2), total)
+	// Should have revision 2 (engine log)
+	assert.Equal(t, int64(2), bridgeRevisionCount(t, g.ID))
 
 	// Snapshot should contain the link
-	rev, _ := testSvc.GetRevision(ctx, g.ID, 2)
+	rev := bridgeRevision(t, g.ID, 2)
 	snap, _ := model.SnapshotFromJSON(rev.Snapshot)
 	assert.Len(t, snap.Links, 2) // VNDB link + Steam link
 }
@@ -475,7 +473,7 @@ func TestLink_Delete(t *testing.T) {
 	assert.Equal(t, int64(0), linkCount)
 
 	// Snapshot should have no links
-	rev, _ := testSvc.GetRevision(ctx, g.ID, 2)
+	rev := bridgeRevision(t, g.ID, 2)
 	snap, _ := model.SnapshotFromJSON(rev.Snapshot)
 	assert.Len(t, snap.Links, 0)
 }
@@ -491,7 +489,7 @@ func TestAlias_CreateAndDelete(t *testing.T) {
 	err := testSvc.DirectFieldEdit(ctx, g.ID, 1, editspec.FieldAliases, []string{"新别名"}, "添加别名: 新别名")
 	require.NoError(t, err)
 
-	rev, _ := testSvc.GetRevision(ctx, g.ID, 2)
+	rev := bridgeRevision(t, g.ID, 2)
 	snap, _ := model.SnapshotFromJSON(rev.Snapshot)
 	assert.Contains(t, snap.Aliases, "新别名")
 
@@ -499,7 +497,7 @@ func TestAlias_CreateAndDelete(t *testing.T) {
 	err = testSvc.DirectFieldEdit(ctx, g.ID, 1, editspec.FieldAliases, []string{}, "删除别名")
 	require.NoError(t, err)
 
-	rev, _ = testSvc.GetRevision(ctx, g.ID, 3)
+	rev = bridgeRevision(t, g.ID, 3)
 	snap, _ = model.SnapshotFromJSON(rev.Snapshot)
 	assert.NotContains(t, snap.Aliases, "新别名")
 }
@@ -533,22 +531,10 @@ func TestContributor_AddedOnUpdate(t *testing.T) {
 	assert.Equal(t, int64(1), count)
 }
 
-func TestContributor_AddedOnPRMerge(t *testing.T) {
-	cleanTables(t)
-	ctx := context.Background()
-
-	g := createTestGalgame(t, "v60012", "test")
-
-	proposed := &model.Snapshot{VNDBID: "v60012", NameZhCN: "PR edit",
-		Aliases: []string{}, TagIDs: []int{}, OfficialIDs: []int{}, EngineIDs: []int{}, Links: []model.SnapshotLink{}}
-	pr, _ := testSvc.SubmitPR(ctx, 3, g.ID, proposed, "test", "")
-	testSvc.MergePR(ctx, 1, pr.GalgameID, pr.ID, []string{})
-
-	// User 3 should be a contributor now
-	var count int64
-	testDB.Model(&model.GalgameContributor{}).Where("galgame_id = ? AND user_id = 3", g.ID).Count(&count)
-	assert.Equal(t, int64(1), count)
-}
+// TestContributor_AddedOnPRMerge retired at E3b: it tested the old-wire
+// MergePR's ensureContributor side effect. Merges now flow through the engine
+// edit face (kungal's edit BFF); contributor attribution on the new merge path
+// is that surface's concern, tested there.
 
 func TestContributor_Delete(t *testing.T) {
 	cleanTables(t)
@@ -709,28 +695,10 @@ func TestGalgame_Update_NoChanges(t *testing.T) {
 // Revision edge cases
 // ═══════════════════════════════════════════════════════════════════
 
-func TestRevision_DiffOfFirstRevision(t *testing.T) {
-	cleanTables(t)
-	ctx := context.Background()
-
-	g := createTestGalgame(t, "v60020", "测试名")
-
-	changedKeys, oldSnap, newSnap, err := testSvc.GetRevisionDiff(ctx, g.ID, 1)
-	require.NoError(t, err)
-	assert.True(t, changedKeys["vndb_id"])
-	assert.Equal(t, "", oldSnap.VNDBID)
-	assert.Equal(t, "v60020", newSnap.VNDBID)
-}
-
-func TestRevision_RevertToNonexistent(t *testing.T) {
-	cleanTables(t)
-	ctx := context.Background()
-
-	g := createTestGalgame(t, "v60021", "test")
-
-	err := testSvc.Revert(ctx, 1, g.ID, 999, []string{"admin"})
-	require.Error(t, err)
-}
+// TestRevision_DiffOfFirstRevision and TestRevision_RevertToNonexistent retired
+// at E3b: the old-wire /diff read and Revert wrapper are gone. Birth-revision
+// changed_fields and revert-to-missing (ErrRevisionNotFound) are engine
+// behaviors covered by internal/platform/editing.
 
 func TestRevision_MultipleUpdates_SequentialRevisions(t *testing.T) {
 	cleanTables(t)
@@ -743,13 +711,10 @@ func TestRevision_MultipleUpdates_SequentialRevisions(t *testing.T) {
 		testSvc.Update(ctx, 1, g.ID, []string{"admin"}, &dto.UpdateGalgameRequest{NameZhCN: &name})
 	}
 
-	// E2a: engine log via bridge (list is newest-first; verify count + seqs).
-	revisions, total, err := testSvc.ListRevisions(ctx, g.ID, 1, 20, true)
-	require.NoError(t, err)
-	assert.Equal(t, int64(5), total)
-	require.Len(t, revisions, 5)
-	for i, rev := range revisions {
-		assert.Equal(t, 5-i, rev.Revision)
+	// 5 sequential revisions (birth + 4 updates); the engine log keys by seq.
+	assert.Equal(t, int64(5), bridgeRevisionCount(t, g.ID))
+	for seq := 1; seq <= 5; seq++ {
+		assert.Equal(t, seq, bridgeRevision(t, g.ID, seq).Revision)
 	}
 }
 
@@ -864,16 +829,10 @@ func TestUserStats_PRCounts(t *testing.T) {
 
 	g := createTestGalgame(t, "v70020", "test")
 
-	// User 3 submits 2 PRs
-	proposed1 := &model.Snapshot{VNDBID: "v70020", NameZhCN: "PR1",
-		Aliases: []string{}, TagIDs: []int{}, OfficialIDs: []int{}, EngineIDs: []int{}, Links: []model.SnapshotLink{}}
-	proposed2 := &model.Snapshot{VNDBID: "v70020", NameZhCN: "PR2",
-		Aliases: []string{}, TagIDs: []int{}, OfficialIDs: []int{}, EngineIDs: []int{}, Links: []model.SnapshotLink{}}
-	pr1, _ := testSvc.SubmitPR(ctx, 3, g.ID, proposed1, "pr1", "")
-	testSvc.SubmitPR(ctx, 3, g.ID, proposed2, "pr2", "")
-
-	// Merge pr1
-	testSvc.MergePR(ctx, 1, pr1.GalgameID, pr1.ID, []string{})
+	// User 3 files 2 proposals (open, tier 0); one is merged.
+	prop1 := submitProposalForTest(t, 3, g.ID, map[string]any{editspec.FieldNameZhCN: "PR1"}, "pr1")
+	submitProposalForTest(t, 3, g.ID, map[string]any{editspec.FieldNameZhCN: "PR2"}, "pr2")
+	mergeProposalForTest(t, 1, prop1)
 
 	stats, err := testSvc.GetUserStats(ctx, 3)
 	require.NoError(t, err)
@@ -938,11 +897,7 @@ func TestAdminStats_Totals(t *testing.T) {
 	assert.Equal(t, 1, stats.Totals.GalgameEngine)
 	assert.Equal(t, 1, stats.Totals.GalgameSeries)
 	assert.Equal(t, 1, stats.Totals.GalgameLink) // auto VNDB link
-	assert.Equal(t, 0, stats.Totals.GalgamePR)
-	// E2a: revisions land in the engine tables; the admin dashboard counters
-	// read the FROZEN legacy tables (historical rows in prod, nothing new).
-	// Known staleness, documented in the E2a report; the page dies at E3.
-	assert.Equal(t, 0, stats.Totals.GalgameRevision)
+	// galgame_pr / galgame_revision totals retired at E3b (frozen-table counters).
 }
 
 // dbToday returns the date string the SQL side buckets "now" into. The daily
@@ -996,8 +951,6 @@ func TestAdminStats_DailyCountsToday(t *testing.T) {
 	assert.Equal(t, 2, today.GalgameTag)
 	assert.Equal(t, 1, today.GalgameOfficial)
 	assert.Equal(t, 1, today.GalgameLink)
-	// E2a: frozen legacy counter (see TestAdminStats_Totals).
-	assert.Equal(t, 0, today.GalgameRevision)
 }
 
 func TestAdminStats_EmptyDatabase(t *testing.T) {
@@ -1013,35 +966,13 @@ func TestAdminStats_EmptyDatabase(t *testing.T) {
 	assert.Equal(t, 0, stats.Totals.GalgameEngine)
 	assert.Equal(t, 0, stats.Totals.GalgameSeries)
 	assert.Equal(t, 0, stats.Totals.GalgameLink)
-	assert.Equal(t, 0, stats.Totals.GalgamePR)
-	assert.Equal(t, 0, stats.Totals.GalgameRevision)
 	// Daily is now zero-filled to a contiguous N-day series (was empty before).
 	assert.Len(t, stats.Daily, 30)
 	for _, d := range stats.Daily {
 		assert.Equal(t, 0, d.GalgameTag)
-		assert.Equal(t, 0, d.GalgameRevision)
 	}
 }
 
-func TestAdminStats_PRIncluded(t *testing.T) {
-	cleanTables(t)
-	getRepos()
-	ctx := context.Background()
-
-	g := createTestGalgame(t, "v80020", "test")
-
-	proposed := &model.Snapshot{VNDBID: "v80020", NameZhCN: "PR edit",
-		Aliases: []string{}, TagIDs: []int{}, OfficialIDs: []int{}, EngineIDs: []int{}, Links: []model.SnapshotLink{}}
-	testSvc.SubmitPR(ctx, 2, g.ID, proposed, "test pr", "")
-
-	stats, err := testAdminRepo.GetStats(ctx, 30)
-	require.NoError(t, err)
-	// E2a: PRs are engine proposals now; the legacy counter is frozen
-	// (see TestAdminStats_Totals). The profile-side counters moved to the
-	// bridge (UserEditStats); the admin dashboard page dies at E3.
-	assert.Equal(t, 0, stats.Totals.GalgamePR)
-
-	require.GreaterOrEqual(t, len(stats.Daily), 1)
-	today := dailyEntry(t, stats.Daily, dbToday(t))
-	assert.Equal(t, 0, today.GalgamePR)
-}
+// TestAdminStats_PRIncluded retired at E3b: the admin dashboard's galgame_pr /
+// galgame_revision totals (frozen-table counters) were removed with the wiki
+// dashboard. Per-user edit counters live in GetUserStats (TestUserStats_PRCounts).

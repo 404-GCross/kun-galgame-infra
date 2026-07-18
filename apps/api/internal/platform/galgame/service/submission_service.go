@@ -8,7 +8,6 @@ import (
 	"api/internal/platform/authz"
 	"api/internal/platform/editing"
 	"api/internal/platform/galgame/dto"
-	"api/internal/platform/galgame/editbridge"
 	"api/internal/platform/galgame/editspec"
 	"api/internal/platform/galgame/model"
 	"api/internal/platform/galgame/perm"
@@ -153,7 +152,7 @@ func (s *SubmissionService) Submit(ctx context.Context, userID int, roles []stri
 
 	// Engine birth record after the product commit (same posture and
 	// residual-window note as GalgameService.Create).
-	newKeys, err := editbridge.RekeyKeysOldToNew(createdKeys)
+	newKeys, err := editspec.RekeyKeysOldToNew(createdKeys)
 	if err != nil {
 		return nil, err
 	}

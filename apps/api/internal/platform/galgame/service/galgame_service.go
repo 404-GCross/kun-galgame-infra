@@ -8,7 +8,7 @@ import (
 	"api/internal/platform/authz"
 	"api/internal/platform/editing"
 	"api/internal/platform/galgame/dto"
-	"api/internal/platform/galgame/editbridge"
+	"api/internal/platform/galgame/editquery"
 	"api/internal/platform/galgame/editspec"
 	"api/internal/platform/galgame/model"
 	"api/internal/platform/galgame/perm"
@@ -39,11 +39,12 @@ type GalgameService struct {
 	userRepo     *repository.UserReadonlyRepository
 
 	// E2a strangler: revisions/PRs persist through the editing engine
-	// (edit_* on the catalog pool); bridge serves the old wire shapes back.
-	// The legacy galgame_revision / galgame_pr tables are frozen — no write
-	// path below this service touches them anymore.
-	edit   *editing.Engine
-	bridge *editbridge.Bridge
+	// (edit_* on the catalog pool). The legacy galgame_revision / galgame_pr
+	// tables are frozen — no write path below this service touches them.
+	// editq serves the surviving native engine-log reads (the profile edit
+	// counters); the old-wire read adapters retired with apps/wiki at E3b.
+	edit  *editing.Engine
+	editq *editquery.Querier
 
 	// probeImages is optional; when nil, Revert skips the dead-image
 	// pre-check. Production wires this via WithImageProbe in galgameapp.Mount.
@@ -82,12 +83,12 @@ func NewGalgameService(
 	}
 }
 
-// WithEditing wires the editing engine + the old-wire bridge (E2a). Mount
-// always calls this; the revision/PR surface panics without it by design —
-// the legacy tables are frozen and there is no fallback write path.
-func (s *GalgameService) WithEditing(eng *editing.Engine, bridge *editbridge.Bridge) *GalgameService {
+// WithEditing wires the editing engine + the native edit-log querier (E2a).
+// Mount always calls this; the revision-producing write paths panic without the
+// engine by design — the legacy tables are frozen and there is no fallback.
+func (s *GalgameService) WithEditing(eng *editing.Engine, editq *editquery.Querier) *GalgameService {
 	s.edit = eng
-	s.bridge = bridge
+	s.editq = editq
 	return s
 }
 
@@ -304,7 +305,7 @@ func (s *GalgameService) Create(ctx context.Context, userID int, req *dto.Create
 	// committed rows. The residual window (galgame committed, birth record
 	// failed) mirrors the accepted cross-pool posture of charter ruling 2;
 	// the returned error surfaces so the operator retries/repairs.
-	newKeys, err := editbridge.RekeyKeysOldToNew(createdKeys)
+	newKeys, err := editspec.RekeyKeysOldToNew(createdKeys)
 	if err != nil {
 		return nil, err
 	}
@@ -788,7 +789,7 @@ func (s *GalgameService) GetUserStats(ctx context.Context, userID int) (*dto.Use
 	// counters read the frozen legacy tables (historical rows until the E2b
 	// migration, nothing after), so the edit-side counters are overridden
 	// from the bridge (contributor attribution is a parity hard line).
-	edits, err := s.bridge.UserEditStats(ctx, userID)
+	edits, err := s.editq.UserEditStats(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
