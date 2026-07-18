@@ -43,6 +43,7 @@ func main() {
 	wikiDSN := flag.String("wiki-dsn", "", "REQUIRED explicit kun_galgame_wiki DSN")
 	file := flag.String("file", "", "REQUIRED corrections TSV (gid, work_id, cur_bid, correct_bid, ...)")
 	apply := flag.Bool("apply", false, "actually write (default: dry-run preview)")
+	demote := flag.Bool("demote", false, "DEMOTE mode: the file's bid is confirmed-wrong with no correct replacement — remove the ref + record rejection + null galgame.bid (correct_bid ignored)")
 	logPath := flag.String("log", "wrong-game-fix.log.tsv", "TSV change log path")
 	flag.Parse()
 	if *catDSN == "" || *wikiDSN == "" || *file == "" {
@@ -64,6 +65,10 @@ func main() {
 
 	var catDone, wikiDone, skipped int
 	for _, f := range fixes {
+		if *demote {
+			demoteOne(cat, wiki, f, *apply, logf, &catDone, &wikiDone, &skipped)
+			continue
+		}
 		// ---- catalog side ----
 		var curExt string
 		err := cat.Raw(`SELECT external_id FROM catalog_external_ref
@@ -138,6 +143,60 @@ func main() {
 	slog.Info("done", "mode", mode, "fixes", len(fixes), "catalog_repointed", catDone, "wiki_updated", wikiDone, "skipped", skipped, "log", *logPath)
 }
 
+// demoteOne removes a confirmed-wrong bid with no correct replacement: it records
+// the wrong (work, bid) as a match_rejection and deletes the catalog exact ref
+// (one tx), then nulls galgame.bid. Guarded on the current value; the game keeps
+// its other anchors (vndb_id). Idempotent: a missing ref / null bid is a no-op.
+func demoteOne(cat, wiki *gorm.DB, f fix, apply bool, logf *os.File, catDone, wikiDone, skipped *int) {
+	var curExt string
+	if err := cat.Raw(`SELECT external_id FROM catalog_external_ref
+		WHERE source_id=3 AND entity_type=5 AND link_kind=0 AND entity_id=?`, f.workID).Scan(&curExt).Error; err != nil {
+		slog.Error("catalog read", "gid", f.gid, "error", err)
+		os.Exit(1)
+	}
+	switch {
+	case curExt == "":
+		// no bangumi ref — already demoted / never had one
+	case curExt != strconv.FormatInt(f.curBid, 10):
+		*skipped++
+		fmt.Fprintf(logf, "%d\t%d\tcatalog\tSKIP(have=%s)\t%d\t0\n", f.gid, f.workID, curExt, f.curBid)
+	case apply:
+		if err := cat.Transaction(func(tx *gorm.DB) error {
+			reason := fmt.Sprintf("qa wrong-game bid demoted: work %d bangumi %d is a confirmed-wrong game and no correct subject was found (LLM+human verified)", f.workID, f.curBid)
+			if err := tx.Exec(`INSERT INTO catalog_match_rejection (entity_type,entity_id,source_id,external_id,reason,rejected_at)
+				VALUES (5,?,3,?,?,now()) ON CONFLICT DO NOTHING`, f.workID, strconv.FormatInt(f.curBid, 10), reason).Error; err != nil {
+				return err
+			}
+			return tx.Exec(`DELETE FROM catalog_external_ref
+				WHERE source_id=3 AND entity_type=5 AND link_kind=0 AND entity_id=? AND external_id=?`,
+				f.workID, strconv.FormatInt(f.curBid, 10)).Error
+		}); err != nil {
+			slog.Error("catalog demote", "gid", f.gid, "error", err)
+			os.Exit(1)
+		}
+		*catDone++
+		fmt.Fprintf(logf, "%d\t%d\tcatalog\tDEMOTE(reject+delete)\t%d\t0\n", f.gid, f.workID, f.curBid)
+	default:
+		fmt.Fprintf(logf, "%d\t%d\tcatalog\twould-demote\t%d\t0\n", f.gid, f.workID, f.curBid)
+	}
+	// wiki: null the bid (guarded)
+	if apply {
+		res := wiki.Exec(`UPDATE galgame SET bid=NULL WHERE id=? AND bid=?`, f.gid, f.curBid)
+		if res.Error != nil {
+			slog.Error("wiki demote", "gid", f.gid, "error", res.Error)
+			os.Exit(1)
+		}
+		if res.RowsAffected > 0 {
+			*wikiDone++
+			fmt.Fprintf(logf, "%d\t%d\twiki\tNULL_BID\t%d\t0\n", f.gid, f.workID, f.curBid)
+		} else {
+			fmt.Fprintf(logf, "%d\t%d\twiki\tno-op(bid!=%d)\t%d\t0\n", f.gid, f.workID, f.curBid, f.curBid)
+		}
+	} else {
+		fmt.Fprintf(logf, "%d\t%d\twiki\twould-null-bid\t%d\t0\n", f.gid, f.workID, f.curBid)
+	}
+}
+
 // repointCatalog runs the 3-step guarded catalog correction in one transaction:
 // record negative knowledge, delete the wrong ref, insert the correct ref.
 func repointCatalog(cat *gorm.DB, f fix) error {
@@ -179,7 +238,8 @@ func readFixes(path string) []fix {
 		w, _ := strconv.ParseInt(p[1], 10, 64)
 		c, _ := strconv.ParseInt(p[2], 10, 64)
 		cor, _ := strconv.ParseInt(p[3], 10, 64)
-		if g == 0 || w == 0 || c == 0 || cor == 0 {
+		// correct_bid (cor) may legitimately be 0 in --demote mode (no replacement).
+		if g == 0 || w == 0 || c == 0 {
 			continue
 		}
 		out = append(out, fix{g, w, c, cor})
