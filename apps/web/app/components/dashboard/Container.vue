@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { DASHBOARD_STAT_CARDS } from '~/constants/dashboard'
+import { jobStatusMeta } from '~/constants/jobs'
+import type { JobInfo } from '~~/shared/types/jobs'
 
 // Greeting only — user is populated client-side by the layout (auth.user is
 // not SSR'd; see profile/auth note).
@@ -17,6 +19,9 @@ const { data: usersData } = await useApiFetch<{ total: number }>(
 )
 const { data: sitesData } = await useApiFetch<Site[]>('/sites')
 const { data: clientsData } = await useApiFetch<OAuthClient[]>('/oauth/clients')
+// The dashboard's "recent activity" feed = the background-job registry's latest
+// runs (the one real activity backend). See components/jobs + /jobs.
+const { data: jobsData } = await useApiFetch<JobInfo[]>('/admin/jobs')
 
 const counts = computed<Record<string, number>>(() => ({
   users: usersData.value?.total ?? 0,
@@ -32,6 +37,20 @@ const stats = computed(() =>
     value: String(counts.value[c.key] ?? 0),
   }))
 )
+
+// Newest job runs across all jobs, most-recent first (top 6).
+const recentRuns = computed(() =>
+  (jobsData.value ?? [])
+    .filter((j) => j.latest_run)
+    .map((j) => ({ name: j.name, desc: j.desc || j.name, run: j.latest_run! }))
+    .sort(
+      (a, b) =>
+        new Date(b.run.started_at).getTime() -
+        new Date(a.run.started_at).getTime()
+    )
+    .slice(0, 6)
+)
+const fmtRun = (s: string) => new Date(s).toLocaleString('zh-CN')
 </script>
 
 <template>
@@ -56,10 +75,34 @@ const stats = computed(() =>
     <DashboardQuickActions />
 
     <KunCard content-class="justify-start gap-0" class-name="p-6">
-      <h2 class="mb-4 text-lg font-semibold text-foreground">
-        最近活动
-      </h2>
-      <div class="py-8 text-center text-default-400">
+      <div class="mb-4 flex items-center justify-between">
+        <h2 class="text-lg font-semibold text-foreground">最近后台任务</h2>
+        <NuxtLink to="/jobs" class="text-primary text-sm hover:underline">
+          查看全部
+        </NuxtLink>
+      </div>
+      <ul v-if="recentRuns.length" class="divide-default-200 divide-y">
+        <li
+          v-for="item in recentRuns"
+          :key="item.name"
+          class="flex items-center justify-between gap-3 py-2.5"
+        >
+          <div class="flex min-w-0 items-center gap-2">
+            <KunChip
+              :color="jobStatusMeta(item.run.status).color"
+              variant="flat"
+              size="xs"
+            >
+              {{ jobStatusMeta(item.run.status).label }}
+            </KunChip>
+            <span class="text-foreground truncate text-sm">{{ item.desc }}</span>
+          </div>
+          <span class="text-default-400 shrink-0 text-xs">
+            {{ fmtRun(item.run.started_at) }}
+          </span>
+        </li>
+      </ul>
+      <div v-else class="py-8 text-center text-default-400">
         <KunIcon name="lucide:inbox" class="mx-auto mb-2 size-12 opacity-50" />
         <p>暂无活动记录</p>
       </div>
