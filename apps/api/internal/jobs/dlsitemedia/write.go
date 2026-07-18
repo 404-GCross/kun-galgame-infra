@@ -36,6 +36,13 @@ const (
 	// uploaderSub stamps a machine identity onto first_uploader_sub so the
 	// backfilled image rows are traceable (there is no human uploader).
 	uploaderSub = "system:dlsite-media-backfill"
+
+	// uploadRetries is how many times upload() retries a TRANSIENT image-service
+	// failure (connection refused / timeout / 5xx). The infra stack redeploys
+	// mid-run and recreates the image container (~30-90s unreachable, breaking
+	// in-flight connections); without retry those uploads are permanently skipped
+	// for the pass. Quota/moderation are terminal and never retried.
+	uploadRetries = 6
 )
 
 // writeIntro writes one catalog_work_intro row for a bodyless work from the
@@ -198,10 +205,30 @@ func (r *runner) upload(ctx context.Context, path, filename, preset string) (*im
 	if len(body) == 0 {
 		return nil, os.ErrNotExist
 	}
-	if r.gap > 0 {
-		time.Sleep(r.gap)
+	// Retry transient failures across an image-container recreation. A fresh
+	// bytes.Reader per attempt (the previous one is consumed). Terminal errors
+	// (quota / moderation) return immediately.
+	var lastErr error
+	for attempt := 0; attempt < uploadRetries; attempt++ {
+		if r.gap > 0 {
+			time.Sleep(r.gap)
+		}
+		res, err := r.cli.UploadWithSub(ctx, bytes.NewReader(body), filename, preset, uploaderSub)
+		if err == nil {
+			return res, nil
+		}
+		if stderrors.Is(err, imageclient.ErrQuotaExceeded) || stderrors.Is(err, imageclient.ErrModerationRejected) {
+			return nil, err
+		}
+		lastErr = err
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		if attempt < uploadRetries-1 {
+			time.Sleep(time.Duration(min(5<<attempt, 30)) * time.Second)
+		}
 	}
-	return r.cli.UploadWithSub(ctx, bytes.NewReader(body), filename, preset, uploaderSub)
+	return nil, lastErr
 }
 
 // classifyUpload maps an upload error to a counter. Returns quota=true only for
