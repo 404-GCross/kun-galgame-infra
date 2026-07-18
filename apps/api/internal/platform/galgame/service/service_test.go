@@ -107,7 +107,7 @@ func TestMain(m *testing.M) {
 	// E2a: register galgame.game and wire the engine + wire bridge exactly
 	// like the cmd/catalog assembly point does.
 	reg := editing.NewRegistry()
-	if err := editspec.RegisterGame(reg, db); err != nil {
+	if err := editspec.RegisterGame(reg, db, nil); err != nil {
 		fmt.Fprintf(os.Stderr, "SKIP: RegisterGame failed: %v\n", err)
 		os.Exit(0)
 	}

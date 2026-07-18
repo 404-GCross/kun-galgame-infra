@@ -29,7 +29,11 @@ import (
 // lesson; the literal doc-21 "locked" would also break draft self-fixes,
 // see the E2a report), status is the perm-gated management direct-edit
 // field (approve/ban/unban/decline land as engine direct edits).
-func RegisterGame(reg *editing.Registry, db *gorm.DB) error {
+//
+// reindex is the Meilisearch write-through wired into the post-commit OnMerge
+// hook (search.Hook.Galgame at the assembly point; nil in tests / when search
+// is unconfigured — contributor recording still runs). See buildOnMerge.
+func RegisterGame(reg *editing.Registry, db *gorm.DB, reindex func(entityID int)) error {
 	reviewRule := editing.ReviewPerm(string(perm.EditGameReview))
 
 	lockedPolicy := &editing.Policy{
@@ -132,6 +136,9 @@ func RegisterGame(reg *editing.Registry, db *gorm.DB) error {
 		Txn: func(ctx context.Context, fn func(tx *gorm.DB) error) error {
 			return db.WithContext(ctx).Transaction(fn)
 		},
+		// Single-write-path side effects (contributor recording + search
+		// reindex) — the E3a/E3b parity gap the strangled per-handler paths left.
+		OnMerge: buildOnMerge(db, reindex),
 		DefaultPolicy: editing.Policy{
 			Propose:   editing.ProposeOpen,
 			Review:    reviewRule,

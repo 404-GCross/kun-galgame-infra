@@ -559,27 +559,13 @@ func (s *GalgameService) Update(ctx context.Context, userID, galgameID int, role
 		return nil, mapEngineWriteError(err)
 	}
 
-	// Contributor upsert mirrors the old path (post-merge, own tx).
-	if err := s.ensureContributor(ctx, galgameID, userID); err != nil {
-		return nil, err
-	}
-
+	// Contributor recording is no longer done here: the edit above lands
+	// through the engine's single write path, whose galgame.game OnMerge hook
+	// records the merge's contributor(s) for EVERY caller (this orphan Update
+	// route, the kungal BFF, a future /v1 writer). The old per-path
+	// ensureContributor was exactly the forget-prone side effect the BFF merge
+	// path dropped (the E3a/E3b parity gap); the single write path fixes it once.
 	return s.galgameRepo.FindByID(ctx, galgameID)
-}
-
-// ensureContributor records userID as a contributor of galgameID (idempotent;
-// the table has no unique index, so check-then-insert like the old paths).
-func (s *GalgameService) ensureContributor(ctx context.Context, galgameID, userID int) error {
-	db := s.galgameRepo.DB().WithContext(ctx)
-	var count int64
-	if err := db.Model(&model.GalgameContributor{}).
-		Where("galgame_id = ? AND user_id = ?", galgameID, userID).Count(&count).Error; err != nil {
-		return err
-	}
-	if count == 0 {
-		return db.Create(&model.GalgameContributor{GalgameID: galgameID, UserID: userID}).Error
-	}
-	return nil
 }
 
 // BatchGet returns lightweight galgame info for a list of IDs (status=0 only).

@@ -41,6 +41,7 @@ import (
 	"api/internal/platform/editing"
 	galgameEditspec "api/internal/platform/galgame/editspec"
 	galgamePerm "api/internal/platform/galgame/perm"
+	galgameSearch "api/internal/platform/galgame/search"
 	siteRepo "api/internal/platform/site/repository"
 	"api/pkg/config"
 	"api/pkg/health"
@@ -149,7 +150,15 @@ func main() {
 	// galgame pool in its closures; the engine tables stay on the catalog
 	// pool. The same engine instance serves the S2S edit face AND the
 	// galgame surface's strangler adapter (Mount below).
-	if err := galgameEditspec.RegisterGame(editRegistry, galgameDB.DB()); err != nil {
+	//
+	// OnMerge (E3b-tail) reindexes Meilisearch on the single write path so an
+	// engine-path edit (kungal BFF → catalog edit face → engine) is searchable
+	// immediately — the gap that let game 5794's DB name drift ahead of the
+	// index. The same hook the galgame handlers use (search.Hook.Galgame,
+	// fire-and-forget). Built here so RegisterGame carries it; Mount builds its
+	// own hook for the surviving Create/Update/taxonomy handlers.
+	galgameReindex := galgameSearch.NewHook(galgameDB.DB(), galgameSearch.NewIndexer(searchClient))
+	if err := galgameEditspec.RegisterGame(editRegistry, galgameDB.DB(), galgameReindex.Galgame); err != nil {
 		slog.Error("editing: register galgame.game", "error", err)
 		os.Exit(1)
 	}

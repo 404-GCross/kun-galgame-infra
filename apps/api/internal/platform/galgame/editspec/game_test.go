@@ -86,6 +86,13 @@ func TestMain(m *testing.M) {
 }
 
 func newGameEngine(t *testing.T) *editing.Engine {
+	return newGameEngineReindex(t, nil)
+}
+
+// newGameEngineReindex truncates and registers galgame.game with an injected
+// reindex spy (nil = no search write-through, contributor recording still runs)
+// so the OnMerge side effects can be asserted.
+func newGameEngineReindex(t *testing.T, reindex func(entityID int)) *editing.Engine {
 	t.Helper()
 	for _, table := range []string{
 		"edit_proposal_amendment", "edit_proposal", "edit_revision",
@@ -99,10 +106,92 @@ func newGameEngine(t *testing.T) *editing.Engine {
 		}
 	}
 	reg := editing.NewRegistry()
-	if err := editspec.RegisterGame(reg, testDB); err != nil {
+	if err := editspec.RegisterGame(reg, testDB, reindex); err != nil {
 		t.Fatalf("register galgame.game: %v", err)
 	}
 	return editing.NewEngine(testDB, reg)
+}
+
+// contributorUIDs returns the (sorted) user ids credited as contributors of gid.
+func contributorUIDs(t *testing.T, gid int) []int {
+	t.Helper()
+	var uids []int
+	if err := testDB.Model(&model.GalgameContributor{}).
+		Where("galgame_id = ?", gid).Order("user_id ASC").Pluck("user_id", &uids).Error; err != nil {
+		t.Fatalf("load contributors: %v", err)
+	}
+	return uids
+}
+
+// TestOnMergeSideEffects pins the E3b-tail parity fix: the single write path's
+// OnMerge hook records the merge's contributor(s) — proposer AND amender — and
+// fires the search reindex, on every merge path (direct edit, reviewer merge,
+// revert), so the kungal BFF / a future /v1 writer can never drop them.
+func TestOnMergeSideEffects(t *testing.T) {
+	var reindexed []int
+	e := newGameEngineReindex(t, func(id int) { reindexed = append(reindexed, id) })
+	g := createGame(t, nil)
+
+	// 1) Direct edit (automerge) by a trusted proposer → actor credited + reindex.
+	proposer := gameActor(101, editing.TrustedTier)
+	if _, _, err := e.CreateProposal(testCtx, editing.CreateProposalInput{
+		EntityType: editspec.TypeGame, EntityID: int64(g.ID),
+		Patch: map[string]any{editspec.FieldNameEnUS: "Direct Edit"}, Actor: proposer,
+	}); err != nil {
+		t.Fatalf("direct edit: %v", err)
+	}
+	if got := contributorUIDs(t, g.ID); len(got) != 1 || got[0] != 101 {
+		t.Fatalf("after direct edit want contributors [101], got %v", got)
+	}
+
+	// 2) Open proposal by an untrusted proposer, amended then merged by a
+	// reviewer → BOTH proposer and amender credited (the double signature).
+	untrusted := gameActor(202, 0)
+	prop, rev, err := e.CreateProposal(testCtx, editing.CreateProposalInput{
+		EntityType: editspec.TypeGame, EntityID: int64(g.ID),
+		Patch: map[string]any{editspec.FieldNameJaJP: "提案タイトル"}, Actor: untrusted,
+	})
+	if err != nil {
+		t.Fatalf("open proposal: %v", err)
+	}
+	if rev != nil {
+		t.Fatalf("untrusted proposal should stay open, got revision %d", rev.Seq)
+	}
+	reviewer := gameActor(303, editing.TrustedTier, "ren")
+	if _, err := e.AmendProposal(testCtx, prop.ID, editing.AmendInput{
+		Set: map[string]any{editspec.FieldNameJaJP: "修正タイトル"}, Actor: reviewer,
+	}); err != nil {
+		t.Fatalf("amend: %v", err)
+	}
+	if _, err := e.MergeProposal(testCtx, prop.ID, reviewer, ""); err != nil {
+		t.Fatalf("merge: %v", err)
+	}
+	// proposer 202 (actor) and reviewer 303 (amender) join 101 from step 1.
+	if got := contributorUIDs(t, g.ID); len(got) != 3 || got[0] != 101 || got[1] != 202 || got[2] != 303 {
+		t.Fatalf("after amended merge want contributors [101 202 303], got %v", got)
+	}
+
+	// 3) Idempotent: re-crediting an existing contributor adds no duplicate row.
+	if _, _, err := e.CreateProposal(testCtx, editing.CreateProposalInput{
+		EntityType: editspec.TypeGame, EntityID: int64(g.ID),
+		Patch: map[string]any{editspec.FieldNameEnUS: "Direct Edit 2"}, Actor: proposer,
+	}); err != nil {
+		t.Fatalf("second direct edit: %v", err)
+	}
+	if got := contributorUIDs(t, g.ID); len(got) != 3 {
+		t.Fatalf("idempotent re-credit changed the set: %v", got)
+	}
+
+	// Reindex fired once per landed merge (steps 1, 2, 3) — never on the open
+	// proposal in step 2.
+	if len(reindexed) != 3 {
+		t.Fatalf("want 3 reindex calls (each landed merge), got %d: %v", len(reindexed), reindexed)
+	}
+	for _, id := range reindexed {
+		if id != g.ID {
+			t.Fatalf("reindex called for %d, want %d", id, g.ID)
+		}
+	}
 }
 
 // gameActor resolves permissions through the REAL galgame perm bundles.
