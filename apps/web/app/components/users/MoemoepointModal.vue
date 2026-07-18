@@ -2,13 +2,17 @@
 // Admin moemoepoint panel: shows balance, grants/deducts via the unified
 // ledger endpoint (POST /admin/users/:uuid/moemoepoint), and lists recent
 // audit rows. Every change is idempotent + audited server-side.
-import { moemoepointReasonLabel } from '~/constants/moemoepoint'
+import {
+  moemoepointReasonLabel,
+  moemoepointSourceLabel
+} from '~/constants/moemoepoint'
 
 interface MoemoepointLogRow {
   id: number
   delta: number
   reason: string
   source_app: string
+  source_name?: string
   ref: string
   actor_user_id: number
   note: string
@@ -176,8 +180,8 @@ const adjust = async (sign: 1 | -1) => {
               >
                 {{ row.delta >= 0 ? '+' : '' }}{{ row.delta }}
               </span>
-              <span class="text-default-500 ml-2">{{ moemoepointReasonLabel(row.reason) }}</span>
-              <span class="text-default-300 ml-1 text-xs">{{ row.source_app }}</span>
+              <span class="text-default-500 ml-2">{{ moemoepointReasonLabel(row.reason, row.ref) }}</span>
+              <span class="text-default-300 ml-1 text-xs">来自 {{ row.source_name || moemoepointSourceLabel(row.source_app) }}</span>
               <p v-if="row.note" class="text-default-400 truncate text-xs">
                 {{ row.note }}
               </p>

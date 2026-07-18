@@ -2,7 +2,10 @@
 // The user's own moemoepoint ledger, fetched from the self-service endpoint
 // GET /auth/me/moemoepoint/log (reduced view — no admin note/actor). Keyset
 // pagination via before_id (the API's contract); "加载更多" appends.
-import { moemoepointReasonLabel } from '~/constants/moemoepoint'
+import {
+  moemoepointReasonLabel,
+  moemoepointSourceLabel
+} from '~/constants/moemoepoint'
 
 const api = useApi()
 
@@ -75,10 +78,10 @@ const formatDate = (s: string) =>
         <div class="min-w-0">
           <div class="flex items-center gap-2">
             <span class="text-sm text-foreground">
-              {{ moemoepointReasonLabel(row.reason) }}
+              {{ moemoepointReasonLabel(row.reason, row.ref) }}
             </span>
-            <span v-if="row.source_app" class="text-default-300 text-xs">
-              {{ row.source_app }}
+            <span v-if="row.source_app" class="text-default-400 text-xs">
+              来自 {{ row.source_name || moemoepointSourceLabel(row.source_app) }}
             </span>
           </div>
           <p v-if="row.ref" class="text-default-400 truncate text-xs">

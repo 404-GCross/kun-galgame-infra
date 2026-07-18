@@ -7,6 +7,9 @@ export interface MoemoepointLogItem {
   delta: number
   reason: string
   source_app: string
+  // Friendly name of the awarding site, enriched by the log endpoint from the
+  // OAuth client. Optional: absent until the backend populates it.
+  source_name?: string
   ref: string
   created_at: string
   actor_user_id?: number
