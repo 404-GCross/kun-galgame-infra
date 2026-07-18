@@ -39,9 +39,9 @@ const totalPages = computed(() => Math.max(1, Math.ceil(total.value / limit)))
 const isLoading = computed(() => fetchStatus.value === 'pending')
 
 const statusOptions = computed(() => [
-  { id: TRUST_FILTER_ALL, label: '全部' },
+  { value: TRUST_FILTER_ALL, label: '全部' },
   ...Object.entries(CALLBACK_STATUS_LABELS).map(([id, label]) => ({
-    id: Number(id),
+    value: Number(id),
     label
   }))
 ])
@@ -69,15 +69,12 @@ const redeliver = async (id: number) => {
     <TrustSubNav />
 
     <div class="flex flex-wrap items-center gap-2">
-      <select
-        v-model.number="callbackStatus"
+      <KunSelect
+        v-model="callbackStatus"
+        :options="statusOptions"
         aria-label="回调状态过滤"
-        class="border-default-200 bg-background text-foreground rounded-lg border px-2 py-1.5 text-sm"
-      >
-        <option v-for="opt in statusOptions" :key="opt.id" :value="opt.id">
-          {{ opt.label }}
-        </option>
-      </select>
+        class="w-40"
+      />
     </div>
     <p class="text-default-500 text-sm">共 {{ total }} 条</p>
 

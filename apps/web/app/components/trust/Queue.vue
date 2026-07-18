@@ -59,16 +59,16 @@ const { data: reasonsData } = await useApiFetch<TrustReason[]>(
 const reasons = computed<TrustReason[]>(() => reasonsData.value ?? [])
 
 const statusOptions = computed(() => [
-  { id: TRUST_FILTER_ALL, label: '全部状态' },
+  { value: TRUST_FILTER_ALL, label: '全部状态' },
   ...Object.entries(REVIEW_STATUS_LABELS).map(([id, label]) => ({
-    id: Number(id),
+    value: Number(id),
     label
   }))
 ])
 const sourceOptions = computed(() => [
-  { id: TRUST_FILTER_ALL, label: '全部来源' },
+  { value: TRUST_FILTER_ALL, label: '全部来源' },
   ...Object.entries(REVIEW_SOURCE_LABELS).map(([id, label]) => ({
-    id: Number(id),
+    value: Number(id),
     label
   }))
 ])
@@ -132,24 +132,18 @@ const onDecided = async () => {
         placeholder="按站点过滤（留空为全部）"
         class="w-56"
       />
-      <select
-        v-model.number="status"
+      <KunSelect
+        v-model="status"
+        :options="statusOptions"
         aria-label="状态过滤"
-        class="border-default-200 bg-background text-foreground rounded-lg border px-2 py-1.5 text-sm"
-      >
-        <option v-for="opt in statusOptions" :key="opt.id" :value="opt.id">
-          {{ opt.label }}
-        </option>
-      </select>
-      <select
-        v-model.number="source"
+        class="w-40"
+      />
+      <KunSelect
+        v-model="source"
+        :options="sourceOptions"
         aria-label="来源过滤"
-        class="border-default-200 bg-background text-foreground rounded-lg border px-2 py-1.5 text-sm"
-      >
-        <option v-for="opt in sourceOptions" :key="opt.id" :value="opt.id">
-          {{ opt.label }}
-        </option>
-      </select>
+        class="w-40"
+      />
     </div>
     <p class="text-default-500 text-sm">共 {{ total }} 条(按优先级降序)</p>
 

@@ -55,8 +55,18 @@ const reasonOptions = computed(() =>
   )
 )
 
+// KunSelect option lists for the decide form (placeholder replaces the old
+// disabled "选择…" first option).
+const actionOptions = computed(() =>
+  DECIDE_ACTIONS.map((a) => ({ value: a, label: ACTION_LABELS[a] ?? String(a) }))
+)
+const reasonCodeOptions = computed(() =>
+  reasonOptions.value.map((r) => ({ value: r.key, label: r.name_cn }))
+)
+
 const decision = ref<'dismissed' | 'actioned'>('actioned')
-const action = ref(0)
+// null = nothing chosen yet (KunSelect shows the placeholder); submit guards on it.
+const action = ref<number | null>(null)
 const reasonCode = ref('')
 const statement = ref('')
 const submitting = ref(false)
@@ -219,26 +229,20 @@ const submit = async () => {
 
         <template v-if="decision === 'actioned'">
           <div class="flex flex-wrap items-center gap-2">
-            <select
-              v-model.number="action"
+            <KunSelect
+              v-model="action"
+              :options="actionOptions"
+              placeholder="选择处置动作"
               aria-label="处置动作"
-              class="border-default-200 bg-background text-foreground rounded-lg border px-2 py-1.5 text-sm"
-            >
-              <option :value="0" disabled>选择处置动作</option>
-              <option v-for="a in DECIDE_ACTIONS" :key="a" :value="a">
-                {{ ACTION_LABELS[a] }}
-              </option>
-            </select>
-            <select
+              class="w-44"
+            />
+            <KunSelect
               v-model="reasonCode"
+              :options="reasonCodeOptions"
+              placeholder="选择理由分类"
               aria-label="理由分类"
-              class="border-default-200 bg-background text-foreground rounded-lg border px-2 py-1.5 text-sm"
-            >
-              <option value="" disabled>选择理由分类</option>
-              <option v-for="r in reasonOptions" :key="r.id" :value="r.key">
-                {{ r.name_cn }}
-              </option>
-            </select>
+              class="w-52"
+            />
           </div>
           <KunTextarea
             v-model="statement"

@@ -45,6 +45,22 @@ const total = computed(() => data.value?.total ?? 0)
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / limit)))
 const isLoading = computed(() => fetchStatus.value === 'pending')
 
+// Filter options for the KunSelects (FILTER_ALL + each source / entity type).
+const sourceOptions = computed(() => [
+  { value: CATALOG_FILTER_ALL, label: '全部来源' },
+  ...Object.entries(CATALOG_SOURCE_LABELS).map(([id, label]) => ({
+    value: Number(id),
+    label
+  }))
+])
+const entityTypeOptions = computed(() => [
+  { value: CATALOG_FILTER_ALL, label: '全部类型' },
+  ...Object.entries(CATALOG_ENTITY_TYPES).map(([id, label]) => ({
+    value: Number(id),
+    label
+  }))
+])
+
 const matchedByKind = (matchedBy: string) =>
   MATCHED_BY_KINDS.find((k) => matchedBy.startsWith(k.prefix))
 
@@ -117,34 +133,18 @@ const confirmReject = async () => {
     <CatalogSubNav />
 
     <div class="flex flex-wrap items-center gap-2">
-      <select
-        v-model.number="sourceID"
+      <KunSelect
+        v-model="sourceID"
+        :options="sourceOptions"
         aria-label="来源过滤"
-        class="border-default-200 bg-background text-foreground rounded-lg border px-2 py-1.5 text-sm"
-      >
-        <option :value="CATALOG_FILTER_ALL">全部来源</option>
-        <option
-          v-for="(label, id) in CATALOG_SOURCE_LABELS"
-          :key="id"
-          :value="Number(id)"
-        >
-          {{ label }}
-        </option>
-      </select>
-      <select
-        v-model.number="entityType"
+        class="w-40"
+      />
+      <KunSelect
+        v-model="entityType"
+        :options="entityTypeOptions"
         aria-label="实体类型过滤"
-        class="border-default-200 bg-background text-foreground rounded-lg border px-2 py-1.5 text-sm"
-      >
-        <option :value="CATALOG_FILTER_ALL">全部类型</option>
-        <option
-          v-for="(label, id) in CATALOG_ENTITY_TYPES"
-          :key="id"
-          :value="Number(id)"
-        >
-          {{ label }}
-        </option>
-      </select>
+        class="w-40"
+      />
     </div>
     <p class="text-default-500 text-sm">共 {{ total }} 条待确认</p>
     <p v-if="conflictHint" class="text-warning-600 text-sm">

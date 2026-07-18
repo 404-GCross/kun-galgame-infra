@@ -62,6 +62,22 @@ const statusTabs = computed(() => [
   }))
 ])
 
+// Filter options for the KunSelects (FILTER_ALL + each entity type / reason).
+const entityTypeOptions = computed(() => [
+  { value: CATALOG_FILTER_ALL, label: '全部类型' },
+  ...Object.entries(CATALOG_ENTITY_TYPES).map(([id, label]) => ({
+    value: Number(id),
+    label
+  }))
+])
+const reasonFilterOptions = computed(() => [
+  { value: CATALOG_FILTER_ALL, label: '全部来由' },
+  ...Object.entries(CANDIDATE_REASON_LABELS).map(([id, label]) => ({
+    value: Number(id),
+    label
+  }))
+])
+
 // Expanded compare panel + decision state, one candidate at a time.
 const expandedKey = ref('')
 const direction = ref<'ab' | 'ba' | ''>('')
@@ -177,34 +193,18 @@ const sourceLabel = (id: number | null | undefined) =>
       >
         {{ tab.label }}
       </KunButton>
-      <select
-        v-model.number="entityType"
+      <KunSelect
+        v-model="entityType"
+        :options="entityTypeOptions"
         aria-label="实体类型过滤"
-        class="border-default-200 bg-background text-foreground rounded-lg border px-2 py-1.5 text-sm"
-      >
-        <option :value="CATALOG_FILTER_ALL">全部类型</option>
-        <option
-          v-for="(label, id) in CATALOG_ENTITY_TYPES"
-          :key="id"
-          :value="Number(id)"
-        >
-          {{ label }}
-        </option>
-      </select>
-      <select
-        v-model.number="reason"
+        class="w-40"
+      />
+      <KunSelect
+        v-model="reason"
+        :options="reasonFilterOptions"
         aria-label="候选来由过滤"
-        class="border-default-200 bg-background text-foreground rounded-lg border px-2 py-1.5 text-sm"
-      >
-        <option :value="CATALOG_FILTER_ALL">全部来由</option>
-        <option
-          v-for="(label, id) in CANDIDATE_REASON_LABELS"
-          :key="id"
-          :value="Number(id)"
-        >
-          {{ label }}
-        </option>
-      </select>
+        class="w-40"
+      />
     </div>
     <p class="text-default-500 text-sm">共 {{ total }} 条候选</p>
 

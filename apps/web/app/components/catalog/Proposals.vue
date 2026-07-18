@@ -52,6 +52,15 @@ const statusTabs = computed(() => [
   }))
 ])
 
+// Entity-type filter options for the KunSelect (FILTER_ALL + each type).
+const entityTypeOptions = computed(() => [
+  { value: CATALOG_FILTER_ALL, label: '全部类型' },
+  ...Object.entries(CATALOG_ENTITY_TYPES).map(([id, label]) => ({
+    value: Number(id),
+    label
+  }))
+])
+
 // Ticking clock for the cooling-off countdown (display only — the server
 // re-checks on execute).
 const now = ref(Date.now())
@@ -143,20 +152,12 @@ const confirmReject = async () => {
       >
         {{ tab.label }}
       </KunButton>
-      <select
-        v-model.number="entityType"
+      <KunSelect
+        v-model="entityType"
+        :options="entityTypeOptions"
         aria-label="实体类型过滤"
-        class="border-default-200 bg-background text-foreground rounded-lg border px-2 py-1.5 text-sm"
-      >
-        <option :value="CATALOG_FILTER_ALL">全部类型</option>
-        <option
-          v-for="(label, id) in CATALOG_ENTITY_TYPES"
-          :key="id"
-          :value="Number(id)"
-        >
-          {{ label }}
-        </option>
-      </select>
+        class="w-40"
+      />
     </div>
     <p class="text-default-500 text-sm">共 {{ total }} 条提案</p>
 

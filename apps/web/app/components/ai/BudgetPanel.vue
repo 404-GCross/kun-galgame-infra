@@ -94,15 +94,15 @@ const clearRow = (b: AiBudget) => upsert(b.route, b.site, null)
         </div>
         <div class="flex flex-col gap-1">
           <span class="text-default-500 text-xs">每日成本上限 (µ · 留空=清帽)</span>
-          <input
+          <KunInput
             v-model="capStr"
             type="number"
             min="0"
             inputmode="numeric"
             placeholder="不设上限"
             aria-label="每日成本上限(微币,留空为清帽)"
-            class="border-default-200 bg-background text-foreground w-52 rounded-lg border px-3 py-2 text-sm"
-          >
+            class="w-52"
+          />
         </div>
         <KunButton
           color="primary"
