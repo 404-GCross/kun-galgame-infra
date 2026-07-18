@@ -121,18 +121,14 @@ export const useAuth = () => {
       if (!refreshed) return null
     }
 
-    try {
-      const response = await api.get<User>('/auth/me')
-      if (response.code === 0) {
-        userStore.setUser(response.data)
-        return response.data
-      }
-    } catch {
-      // Try to refresh token
-      const refreshed = await refreshAccessToken()
-      if (refreshed) {
-        return fetchUser()
-      }
+    // useApi.request never throws: it catches fetch errors internally (incl. a
+    // single-flighted refresh + one retry on 401) and always resolves to the
+    // house envelope, signalling failure via a non-zero `code`. There's no
+    // throw to catch and no second refresh path to run here.
+    const response = await api.get<User>('/auth/me')
+    if (response.code === 0) {
+      userStore.setUser(response.data)
+      return response.data
     }
     return null
   }

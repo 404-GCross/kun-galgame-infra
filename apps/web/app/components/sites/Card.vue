@@ -4,8 +4,6 @@ const emit = defineEmits<{
   edit: []
   delete: []
 }>()
-
-const showMenu = ref(false)
 </script>
 
 <template>
@@ -53,7 +51,7 @@ const showMenu = ref(false)
 
     <div class="mt-4 border-t border-default-200 pt-4">
       <span class="text-xs text-default-400">
-        创建于 {{ new Date(site.created_at).toLocaleDateString() }}
+        创建于 {{ new Date(site.created_at).toLocaleDateString('zh-CN') }}
       </span>
     </div>
   </KunCard>

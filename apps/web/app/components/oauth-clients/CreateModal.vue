@@ -256,12 +256,10 @@ const handleSubmit = async () => {
           refresh_token 有效期（天）
           <span class="text-xs text-default-400">— 默认 90 天；用户登录后无感续期的最长窗口</span>
         </span>
-        <KunInput
-          :model-value="refreshTokenTtlDays"
-          type="number"
-          min="1"
-          max="3650"
-          @update:model-value="refreshTokenTtlDays = Number($event)"
+        <KunNumberInput
+          v-model="refreshTokenTtlDays"
+          :min="1"
+          :max="3650"
         />
         <p class="mt-1 text-xs text-default-400">
           常见取值：1（高敏感后台）/ 7 / 30 / <strong>90（默认）</strong> / 365（长寿后台服务）

@@ -3,7 +3,6 @@ import { IMAGE_REVIEW_STATUS_MAP, IMAGE_VARIANT_DIMENSIONS } from '~/constants/a
 
 interface Props {
   items: ImageAdminRow[]
-  bytesHuman: (n: number) => string
 }
 
 const props = defineProps<Props>()
@@ -22,8 +21,6 @@ const statusColor = (s: string) =>
 const statusLabel = (s: string) => IMAGE_REVIEW_STATUS_MAP[s]?.label ?? s
 
 const shortHash = (h: string) => `${h.slice(0, 8)}…${h.slice(-4)}`
-
-const copy = (s: string) => navigator.clipboard.writeText(s)
 
 // Variant chip label: dims from constants if known, else just the name.
 // Falls back gracefully if a new YAML variant is deployed before this
@@ -89,17 +86,12 @@ const confirmReject = () => {
             </KunLightboxGalleryItem>
           </td>
           <td class="px-3 py-2">
-            <KunButton
-              variant="light"
-              size="xs"
-              :aria-label="`复制完整 hash ${item.hash}`"
-              class-name="font-mono"
-              @click="copy(item.hash)"
-            >
-              {{ shortHash(item.hash) }}
-            </KunButton>
+            <div class="flex items-center gap-1 font-mono">
+              <span>{{ shortHash(item.hash) }}</span>
+              <KunCopy :text="item.hash" size="xs" />
+            </div>
             <div class="mt-0.5 text-xs text-default-400">
-              {{ item.width }} × {{ item.height }} · {{ _props.bytesHuman(item.size_bytes) }}
+              {{ item.width }} × {{ item.height }} · {{ formatFileSize(item.size_bytes) }}
             </div>
             <div class="mt-0.5 text-xs text-default-400">
               {{ item.mime }}
@@ -154,7 +146,7 @@ const confirmReject = () => {
               sub: {{ item.first_uploader_sub.slice(0, 12) }}…
             </div>
             <div class="mt-0.5 whitespace-nowrap text-default-400">
-              {{ new Date(item.created_at).toLocaleString() }}
+              {{ new Date(item.created_at).toLocaleString('zh-CN') }}
             </div>
           </td>
           <td class="px-3 py-2 text-right">

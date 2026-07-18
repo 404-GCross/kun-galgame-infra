@@ -78,17 +78,6 @@ const confirmDelete = async () => {
   }
 }
 
-const bytesHuman = (n: number) => {
-  const units = ['B', 'KB', 'MB', 'GB', 'TB']
-  let v = n
-  let i = 0
-  while (v > 1024 && i < units.length - 1) {
-    v /= 1024
-    i++
-  }
-  return `${v.toFixed(1)} ${units[i]}`
-}
-
 </script>
 
 <template>
@@ -122,7 +111,7 @@ const bytesHuman = (n: number) => {
       <KunCard content-class="justify-start gap-0" class-name="p-4">
         <div class="text-sm text-default-500">存储用量</div>
         <div class="mt-1 text-2xl font-bold text-foreground">
-          {{ bytesHuman(stats.total_bytes) }}
+          {{ formatFileSize(stats.total_bytes) }}
         </div>
       </KunCard>
       <KunCard content-class="justify-start gap-0" class-name="p-4">
@@ -168,7 +157,6 @@ const bytesHuman = (n: number) => {
     <template v-else>
       <ImagesTable
         :items="items"
-        :bytes-human="bytesHuman"
         @review="onReview"
         @delete="onDelete"
       />

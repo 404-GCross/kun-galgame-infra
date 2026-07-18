@@ -1,75 +1,24 @@
-# Nuxt Minimal Starter
+# NextMoe Admin Console (`apps/web`)
 
-Look at the [Nuxt documentation](https://nuxt.com/docs/getting-started/introduction) to learn more.
+The internal **admin console** for the NextMoe platform — a Nuxt 4 + Vue 3 app
+built on the KunUI component library (`@kungal/ui-*`). It is the single operator
+UI in front of the platform's Go services, covering:
 
-## Setup
+- **Identity & users** — accounts, roles, moemoepoints, sessions, avatars
+- **Sites & OAuth clients** — site registry, OAuth client management, app directory
+- **Trust & Safety** — review queue, registries, Tier0 word list, dead letters
+- **Catalog** — cross-media identity registry review (candidates / proposals / refs)
+- **AI gateway** — model routing, tenant metering, moderation
+- **Artifacts & images** — large-file and image-hosting admin
+- **Dev API & jobs** — developer-platform apps/keys and background job status
 
-Make sure to install dependencies:
+## Scripts
 
-```bash
-# npm
-npm install
+- `pnpm dev` — dev server on **http://localhost:9420**
+- `pnpm build` — production build (`nuxt build`)
+- `pnpm typecheck` — type-check with `vue-tsc`
+- `pnpm lint` / `pnpm lint:fix` — ESLint
+- `pnpm gen:types:*` — regenerate `shared/types/generated/*` from the cross-service
+  OpenAPI specs in `../../docs/{artifact,catalog,trust,ai}` (never hand-edit the output)
 
-# pnpm
-pnpm install
-
-# yarn
-yarn install
-
-# bun
-bun install
-```
-
-## Development Server
-
-Start the development server on `http://localhost:3000`:
-
-```bash
-# npm
-npm run dev
-
-# pnpm
-pnpm dev
-
-# yarn
-yarn dev
-
-# bun
-bun run dev
-```
-
-## Production
-
-Build the application for production:
-
-```bash
-# npm
-npm run build
-
-# pnpm
-pnpm build
-
-# yarn
-yarn build
-
-# bun
-bun run build
-```
-
-Locally preview production build:
-
-```bash
-# npm
-npm run preview
-
-# pnpm
-pnpm preview
-
-# yarn
-yarn preview
-
-# bun
-bun run preview
-```
-
-Check out the [deployment documentation](https://nuxt.com/docs/getting-started/deployment) for more information.
+See the repo-root `CLAUDE.md` for platform-wide conventions.

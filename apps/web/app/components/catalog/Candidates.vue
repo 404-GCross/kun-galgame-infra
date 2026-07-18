@@ -8,6 +8,7 @@
 import {
   CATALOG_FILTER_ALL,
   CATALOG_ENTITY_TYPES,
+  CATALOG_ENTITY_TYPE,
   CATALOG_SOURCE_LABELS,
   CANDIDATE_STATUS,
   CANDIDATE_STATUS_LABELS,
@@ -21,8 +22,9 @@ import type {
   CatalogDetachNameData
 } from '~~/shared/types/catalog'
 
-// credit_name candidates (entity_type === 1) are the person-linking lane.
-const isPersonLink = (c: CatalogCandidateItem) => c.entity_type === 1
+// credit_name candidates are the person-linking lane.
+const isPersonLink = (c: CatalogCandidateItem) =>
+  c.entity_type === CATALOG_ENTITY_TYPE.creditName
 
 const api = useApi('catalog')
 

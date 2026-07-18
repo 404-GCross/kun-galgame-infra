@@ -249,12 +249,10 @@ const handleSubmit = async () => {
           refresh_token 有效期（天）
           <span class="text-xs text-default-400">— 改动仅影响后续新签发的 token；现有 session 仍按旧 TTL</span>
         </span>
-        <KunInput
-          :model-value="refreshTokenTtlDays"
-          type="number"
-          min="1"
-          max="3650"
-          @update:model-value="refreshTokenTtlDays = Number($event)"
+        <KunNumberInput
+          v-model="refreshTokenTtlDays"
+          :min="1"
+          :max="3650"
         />
       </div>
 

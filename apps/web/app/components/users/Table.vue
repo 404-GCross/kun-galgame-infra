@@ -26,8 +26,6 @@ const avatarSrc = (user: User) =>
 // those actions for admin targets so we don't offer buttons that always 403.
 // Unban / moemoepoint / avatar stay available (server allows them on admins).
 const isAdmin = (user: User) => !!user.roles?.includes('admin')
-
-const _ = props // keep TS happy if `props` is never read elsewhere
 </script>
 
 <template>
@@ -110,7 +108,7 @@ const _ = props // keep TS happy if `props` is never read elsewhere
             <UsersStatusBadge :status="user.status" :is-anonymized="user.is_anonymized" />
           </td>
           <td class="whitespace-nowrap px-6 py-4 text-default-400">
-            {{ new Date(user.created_at).toLocaleDateString() }}
+            {{ new Date(user.created_at).toLocaleDateString('zh-CN') }}
           </td>
           <td class="whitespace-nowrap px-6 py-4 text-right">
             <KunPopover position="bottom-end">

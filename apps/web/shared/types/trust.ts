@@ -15,8 +15,6 @@ type Schemas = components['schemas']
 export type TrustReviewItem = Schemas['ReviewItemView']
 export type TrustReviewItemPage = Schemas['PageReviewItemView']
 export type TrustReviewItemDetail = Schemas['ReviewItemDetail']
-export type TrustReport = Schemas['ReportView']
-export type TrustDecideRequest = Schemas['DecideRequest']
 export type TrustDecideData = Schemas['DecideData']
 
 // Registries
@@ -41,5 +39,4 @@ export type TrustTermsResponse = Schemas['TermsResponse']
 export type TrustCreateTermRequest = Schemas['CreateTermRequest']
 
 // Dead-letter dispositions
-export type TrustDisposition = Schemas['DispositionView']
 export type TrustDispositionPage = Schemas['PageDispositionView']

@@ -16,6 +16,13 @@ export const CATALOG_ENTITY_TYPES: Record<number, string> = {
   6: '版本'
 }
 
+// Named entity-type discriminants (mirrors model.EntityType* in
+// apps/api/internal/platform/catalog/model/constants.go). Only the values the
+// UI branches on are enumerated here; the full label set is CATALOG_ENTITY_TYPES.
+export const CATALOG_ENTITY_TYPE = {
+  creditName: 1
+} as const
+
 export const CANDIDATE_STATUS = {
   pending: 0,
   accepted: 1,
