@@ -72,7 +72,12 @@ const _ = props // keep TS happy if `props` is never read elsewhere
                 size="sm"
                 :is-navigation="false"
               />
-              <span class="font-medium text-foreground">{{ user.name }}</span>
+              <div class="flex items-baseline gap-1.5">
+                <span class="font-medium text-foreground">{{ user.name }}</span>
+                <span v-if="user.id" class="text-default-300 font-mono text-xs">
+                  #{{ user.id }}
+                </span>
+              </div>
             </div>
           </td>
           <td class="whitespace-nowrap px-6 py-4 text-default-400">

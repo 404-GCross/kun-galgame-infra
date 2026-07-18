@@ -1,4 +1,7 @@
 export interface User {
+  // Numeric user id. Present only on admin-surfaced users (the API omits it on
+  // self-facing /me + login payloads). uid is public in-ecosystem.
+  id?: number
   uuid: string
   name: string
   email: string

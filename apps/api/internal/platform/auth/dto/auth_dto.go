@@ -132,6 +132,11 @@ type TokenPair struct {
 
 // UserResponse represents a user in API responses
 type UserResponse struct {
+	// ID is the numeric user id. Populated ONLY by the admin list/detail
+	// constructors — omitempty hides it on self-facing /me + login payloads.
+	// uid is public in-ecosystem (forum profiles are /user/{id}); the admin
+	// user table surfaces it next to the username.
+	ID     uint   `json:"id,omitempty"`
 	UUID   string `json:"uuid"`
 	Name   string `json:"name"`
 	Email  string `json:"email"`

@@ -95,6 +95,7 @@ func (s *AdminService) ListUsers(ctx context.Context, req *dto.UserListRequest, 
 	userResponses := make([]dto.UserResponse, len(users))
 	for i, user := range users {
 		userResponses[i] = dto.UserResponse{
+			ID:              user.ID,
 			UUID:            user.UUID,
 			Name:            user.Name,
 			Email:           piiOrRedacted(canSeePII, user.Email),
@@ -140,6 +141,7 @@ func (s *AdminService) GetUser(ctx context.Context, uuid string, canSeePII bool)
 
 	return &dto.UserDetailResponse{
 		UserResponse: dto.UserResponse{
+			ID:              user.ID,
 			UUID:            user.UUID,
 			Name:            user.Name,
 			Email:           piiOrRedacted(canSeePII, user.Email),
