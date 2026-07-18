@@ -12,6 +12,29 @@ const clients = computed(() => clientsData.value ?? [])
 const sites = computed(() => sitesData.value ?? [])
 const isLoading = computed(() => status.value === 'pending')
 
+// Client-side search over the fully-loaded list. The page fetches every client
+// up front, so filtering here needs no server round-trip (matches name, client
+// id, the associated site name, and any redirect URI).
+const search = ref('')
+const siteNameById = computed(() => {
+  const m = new Map<number, string>()
+  for (const s of sites.value) m.set(s.id, s.name)
+  return m
+})
+const filteredClients = computed(() => {
+  const q = search.value.trim().toLowerCase()
+  if (!q) return clients.value
+  return clients.value.filter((c) => {
+    const site = c.site_id ? (siteNameById.value.get(c.site_id) ?? '') : ''
+    return (
+      c.name.toLowerCase().includes(q) ||
+      c.id.toLowerCase().includes(q) ||
+      site.toLowerCase().includes(q) ||
+      (c.redirect_uris ?? []).some((u) => u.toLowerCase().includes(q))
+    )
+  })
+})
+
 const showCreateModal = ref(false)
 const createdClient = ref<OAuthClientCreated | null>(null)
 const editingClient = ref<OAuthClient | null>(null)
@@ -61,16 +84,43 @@ const handleDelete = async (clientId: string) => {
       <p class="mt-1 text-sm text-default-300">创建客户端以启用 OAuth 认证</p>
     </div>
 
-    <div v-else class="space-y-4">
-      <OauthClientsClientCard
-        v-for="client in clients"
-        :key="client.id"
-        :client="client"
-        :sites="sites"
-        @edit="editingClient = client"
-        @delete="handleDelete(client.id)"
-      />
-    </div>
+    <template v-else>
+      <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <KunInput
+          v-model="search"
+          is-clearable
+          placeholder="搜索名称 / Client ID / 站点 / 回调地址"
+          class="sm:max-w-md"
+        >
+          <template #prefix>
+            <KunIcon name="lucide:search" class="size-4 text-default-400" />
+          </template>
+        </KunInput>
+        <p class="text-default-400 shrink-0 text-sm">
+          共 {{ clients.length }} 个客户端<template v-if="search.trim()">
+            · 匹配 {{ filteredClients.length }} 个</template
+          >
+        </p>
+      </div>
+
+      <div
+        v-if="filteredClients.length === 0"
+        class="rounded-xl bg-content1 py-12 text-center shadow-sm"
+      >
+        <KunIcon name="lucide:search-x" class="mx-auto mb-3 size-10 text-default-200" />
+        <p class="text-default-400">没有匹配的客户端</p>
+      </div>
+      <div v-else class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <OauthClientsClientCard
+          v-for="client in filteredClients"
+          :key="client.id"
+          :client="client"
+          :sites="sites"
+          @edit="editingClient = client"
+          @delete="handleDelete(client.id)"
+        />
+      </div>
+    </template>
 
     <OauthClientsCreateModal
       v-model="showCreateModal"
