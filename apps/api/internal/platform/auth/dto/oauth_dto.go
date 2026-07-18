@@ -30,6 +30,18 @@ type AuthorizeRequest struct {
 	Nonce string `query:"nonce" json:"nonce"`
 }
 
+// AuthorizeErrorRequest asks the OP to build a *validated* error redirect back
+// to the RP (RFC 6749 §4.1.2.1 / OIDC core §3.1.2.6): the user denied consent,
+// or a prompt=none request needs interaction. redirect_uri is validated against
+// the client's registered URIs server-side, so a crafted redirect_uri on the
+// public consent page can never open-redirect.
+type AuthorizeErrorRequest struct {
+	ClientID    string `json:"client_id" validate:"required"`
+	RedirectURI string `json:"redirect_uri" validate:"required,url"`
+	State       string `json:"state"`
+	Error       string `json:"error" validate:"required,oneof=access_denied login_required interaction_required consent_required account_selection_required"`
+}
+
 // TokenRequest represents an OAuth token request. Carries both `json` and
 // `form` tags: RFC 6749 §4.1.3 mandates application/x-www-form-urlencoded on
 // the token endpoint (what standard OAuth/OIDC libraries send), while the

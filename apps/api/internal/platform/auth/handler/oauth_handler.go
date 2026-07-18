@@ -67,6 +67,23 @@ func buildRedirectURL(baseURI, code, state string) (string, error) {
 	return u.String(), nil
 }
 
+// buildErrorRedirectURL appends an OAuth/OIDC error (RFC 6749 §4.1.2.1) to the
+// RP's redirect_uri — for user-denied consent and prompt=none interaction
+// errors. The caller MUST have validated redirect_uri against the client first.
+func buildErrorRedirectURL(baseURI, errCode, state string) (string, error) {
+	u, err := url.Parse(baseURI)
+	if err != nil {
+		return "", err
+	}
+	q := u.Query()
+	q.Set("error", errCode)
+	if state != "" {
+		q.Set("state", state)
+	}
+	u.RawQuery = q.Encode()
+	return u.String(), nil
+}
+
 // OAuthHandler handles OAuth 2.0 requests
 type OAuthHandler struct {
 	oauthService *service.OAuthService
@@ -254,6 +271,33 @@ func (h *OAuthHandler) Consent(c fiber.Ctx) error {
 	return response.Success(c, fiber.Map{
 		"redirect_url": redirectURL,
 	})
+}
+
+// AuthorizeError builds a validated error redirect back to the RP: the user
+// denied consent on the OP frontend page, or a prompt=none request needs
+// interaction. Public — deny / login_required can occur unauthenticated. The
+// redirect_uri is validated against the client's registered URIs here: the
+// public /oauth/authorize frontend page is directly reachable, so a crafted
+// redirect_uri must never be echoed back unvalidated (open redirect).
+func (h *OAuthHandler) AuthorizeError(c fiber.Ctx) error {
+	var req dto.AuthorizeErrorRequest
+	if err := c.Bind().JSON(&req); err != nil {
+		return response.BadRequest(c, errors.ErrBadRequest)
+	}
+	if err := utils.Validate(&req); err != nil {
+		return response.BadRequestMsg(c, errors.ErrValidationFailed, err.Error())
+	}
+	if _, err := h.oauthService.ValidateClient(c.Context(), req.ClientID, req.RedirectURI); err != nil {
+		if appErr, ok := err.(*errors.AppError); ok {
+			return response.BadRequest(c, appErr.Code)
+		}
+		return response.InternalError(c, errors.ErrOperationFailed)
+	}
+	redirectURL, err := buildErrorRedirectURL(req.RedirectURI, req.Error, req.State)
+	if err != nil {
+		return response.InternalError(c, errors.ErrOperationFailed)
+	}
+	return response.Success(c, fiber.Map{"redirect_url": redirectURL})
 }
 
 // Token handles the OAuth token exchange request.

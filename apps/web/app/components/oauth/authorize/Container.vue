@@ -56,6 +56,9 @@ const forceLogin = computed(() => route.query.prompt === 'login')
 // session exists. login_hint pre-selects a specific account from the bag
 // (match by sub or email). See docs/integration/oauth/09.
 const promptSelectAccount = computed(() => route.query.prompt === 'select_account')
+// prompt=none (OIDC silent flow): never render interactive UI — resolve to the
+// RP with the appropriate error via the server-validated error redirect.
+const promptNone = computed(() => route.query.prompt === 'none')
 const loginHint = computed(() => route.query.login_hint as string | undefined)
 // nonce (OIDC) must survive every round-trip on this page (login bounce,
 // account switch reload) and reach the consent POST — the backend binds it to
@@ -95,6 +98,29 @@ const scopeLabels: Record<string, string> = {
   openid: '身份标识',
   profile: '用户资料 (昵称、头像)',
   email: '邮箱地址',
+}
+
+// Build a server-VALIDATED error redirect and go there (deny + prompt=none).
+// The backend checks redirect_uri against the client's registered URIs, so a
+// crafted redirect_uri on this public page can't open-redirect; on a validation
+// failure we surface the error in-page instead of redirecting anywhere.
+const respondWithError = async (errCode: string): Promise<void> => {
+  const res = await api.post<{ redirect_url: string }>(
+    '/oauth/authorize/error',
+    {
+      client_id: clientId.value,
+      redirect_uri: redirectUri.value,
+      state: state.value,
+      error: errCode,
+    }
+  )
+  if (res.code === 0) {
+    window.location.href = res.data.redirect_url
+    return
+  }
+  autoConsenting.value = false
+  needsLogin.value = false
+  error.value = res.message || '回调地址未通过校验，未跳转'
 }
 
 // Check login state on mount + decide auto-consent.
@@ -149,6 +175,22 @@ onMounted(async () => {
     }
   } catch {
     clientInfo.value = null
+  }
+
+  // prompt=none (OIDC silent): never render interactive UI — resolve to the RP
+  // with the right error via the validated error redirect. Only a live session
+  // on an auto_consent (first-party) client proceeds silently to the code.
+  if (promptNone.value) {
+    if (needsLogin.value || !auth.isLoggedIn.value) {
+      await respondWithError('login_required')
+      return
+    }
+    if (!clientInfo.value?.auto_consent) {
+      await respondWithError('consent_required')
+      return
+    }
+    await maybeAutoConsent()
+    return
   }
 
   // Multi-account handling (prompt=select_account / login_hint), gated on a
@@ -338,13 +380,15 @@ const handleApprove = async () => {
   }
 }
 
-const handleDeny = () => {
-  // Redirect back to client with error
-  const url = new URL(redirectUri.value)
-  url.searchParams.set('error', 'access_denied')
-  url.searchParams.set('error_description', 'User denied the request')
-  if (state.value) url.searchParams.set('state', state.value)
-  window.location.href = url.toString()
+const handleDeny = async () => {
+  // Refuse via the server-validated error redirect — no client-side redirect_uri
+  // trust (see respondWithError). isLoading covers the round-trip.
+  isLoading.value = true
+  try {
+    await respondWithError('access_denied')
+  } finally {
+    isLoading.value = false
+  }
 }
 </script>
 

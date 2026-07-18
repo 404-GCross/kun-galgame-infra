@@ -262,6 +262,10 @@ func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 	// "你将授权访问 X" display. Returns only safe fields (name, auto_consent,
 	// site_domain). See ClientPublicInfo + docs/integration/oauth/05-registration.md.
 	oauth.Get("/client-info", oauthH.GetClientPublic)
+	// Public: build a VALIDATED error redirect for the consent page's deny path
+	// + prompt=none silent errors (redirect_uri is checked against the client
+	// here so a crafted one can't open-redirect). See oauth_handler.AuthorizeError.
+	oauth.Post("/authorize/error", oauthH.AuthorizeError)
 	// Public app directory: GET /oauth/ecosystem → the opt-in (listed) clients
 	// for the "one account → these sites" strip. See
 	// docs/integration/oauth/10-app-directory.md.
