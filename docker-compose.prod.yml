@@ -576,59 +576,21 @@ services:
         limits:
           memory: 1g
 
-  wiki:
-    image: ghcr.io/kunmoe/infra-wiki:latest
-    pull_policy: always
-    environment:
-      # W3 (wiki retirement): the galgame surface is hosted by the catalog
-      # service (galgameapp.Mount, W2) — same /api paths, same bytes (prod
-      # replay 80/80). The standalone galgame service (:9280) retired at W3.
-      NUXT_API_BASE_SSR: http://catalog:9281/api
-      NUXT_AUTH_API_BASE_SSR: http://oauth:9277/api/v1
-    expose: ["3000"]
-    labels:
-      # wiki.kungal.com frontend — COMPOSE-OWNED since W3. This host used to be a
-      # Dokploy panel domain; when the panel entries were deleted at galgame
-      # retirement the recreated container lost the injected labels and the
-      # frontend 404'd — routing now lives here (the standing ruling: ALL routes
-      # in compose). The /api path of the same host is routed on the catalog
-      # block (longer PathPrefix rule wins), everything else lands on this Nuxt app.
-      traefik.enable: "true"
-      traefik.http.routers.infra-wiki.rule: Host(`wiki.kungal.com`)
-      traefik.http.routers.infra-wiki.entrypoints: websecure
-      traefik.http.routers.infra-wiki.tls.certresolver: letsencrypt
-      traefik.http.routers.infra-wiki.service: infra-wiki
-      traefik.http.routers.infra-wiki-http.rule: Host(`wiki.kungal.com`)
-      traefik.http.routers.infra-wiki-http.entrypoints: web
-      traefik.http.routers.infra-wiki-http.middlewares: redirect-to-https@file
-      traefik.http.routers.infra-wiki-http.service: infra-wiki
-      traefik.http.services.infra-wiki.loadbalancer.server.port: "3000"
-    depends_on:
-      catalog: { condition: service_started }
-    healthcheck:
-      test:
-        [
-          "CMD",
-          "node",
-          "-e",
-          "require('net').connect(3000,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))",
-        ]
-      <<: *svc-health
-    restart: unless-stopped
-    # Safety cap for the upstream Nuxt 4.2.2 SSR leak (nuxt#34071). infra-wiki is
-    # low-traffic (~75 MiB working set); 1g is generous headroom and just OOM-
-    # recycles (restart: unless-stopped) if a leak ever grows unbounded.
-    deploy:
-      resources:
-        limits:
-          memory: 1g
+  # wiki (apps/wiki galgame-wiki frontend on wiki.kungal.com) RETIRED at E3b/W4
+  # — galgame wiki retirement 100%. The frontend, its infra-wiki image, and the
+  # infra-wiki / infra-wiki-http FRONT-END routers are gone; wiki.kungal.com
+  # front-end now 404s by design. The SAME host's /api path stays served: the
+  # infra-wiki-api router on the catalog block routes wiki.kungal.com/api →
+  # infra-catalog-pub (kungal's browser-side NUXT_PUBLIC_GALGAME_WIKI_URL, an
+  # ACTIVE consumer — do NOT remove it). The galgame-wiki-admin OAuth client is
+  # kept (image site-key identity rule); login use dies naturally.
+  # Recovery: git revert + ghcr.io/kunmoe/infra-wiki:latest still in GHCR.
 
   # NextMoe developer portal (developer.nextmoe.dev). A same-origin Nuxt shell:
   # the browser only ever talks to this host; Nitro's /api/** relay forwards to
   # the oauth service SERVER-side (NUXT_OAUTH_API_BASE), so there is ZERO CORS and
-  # no backend change. Unlike web/wiki (whose host routing is injected by the
-  # Dokploy domain panel), this is a NEW host, so its Traefik routing is OWNED
-  # HERE in a labels block.
+  # no backend change. Unlike the older web host, this is a NEW host, so its
+  # Traefik routing is OWNED HERE in a labels block.
   developer:
     image: ghcr.io/kunmoe/infra-developer:latest
     pull_policy: always

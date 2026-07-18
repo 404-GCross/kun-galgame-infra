@@ -1,7 +1,7 @@
 #
-# Parametric build for the two Nuxt 4 frontends (Nitro node-server preset):
-#   APP=web   → apps/web  (admin)
-#   APP=wiki  → apps/wiki (galgame-wiki)
+# Build for the apps/web Nuxt 4 frontend (Nitro node-server preset). Still
+# APP-parameterized (default APP=web) from when it also built apps/wiki, which
+# retired at E3b.
 #
 # Build context MUST be the repo root: the pnpm workspace install needs the
 # lockfile + every workspace manifest. (The apps now consume @kungal/ui-* from
@@ -21,7 +21,6 @@ WORKDIR /repo
 FROM base AS deps
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY apps/web/package.json   apps/web/package.json
-COPY apps/wiki/package.json  apps/wiki/package.json
 COPY apps/api/package.json   apps/api/package.json
 ARG APP=web
 # --ignore-scripts: the apps' `postinstall: nuxt prepare` can't run here (app
@@ -33,8 +32,7 @@ FROM deps AS build
 ARG APP=web
 # Frontend public config, baked at build. Empty args fall back to the
 # in-config defaults (`process.env.X || '<default>'`). web reads the
-# KUN_VISUAL_NOVEL_* names, wiki the KUN_GALGAME_WIKI_* names — setting both
-# from the same args is harmless (each app ignores the other's).
+# KUN_VISUAL_NOVEL_* names from these args.
 ARG PUBLIC_API_BASE=
 ARG PUBLIC_AUTH_API_BASE=
 ARG PUBLIC_OAUTH_AUTHORIZE_BASE=

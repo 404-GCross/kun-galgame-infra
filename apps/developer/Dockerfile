@@ -20,7 +20,6 @@ WORKDIR /repo
 FROM base AS deps
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY apps/web/package.json        apps/web/package.json
-COPY apps/wiki/package.json       apps/wiki/package.json
 COPY apps/api/package.json        apps/api/package.json
 COPY apps/developer/package.json  apps/developer/package.json
 # --ignore-scripts: the app's `postinstall: nuxt prepare` can't run here (app

@@ -7,7 +7,6 @@
 # dynamic matrix):
 #   - go images (oauth/image/artifact/catalog/community/trust/ai + migrate-*)  ← apps/api/** + Dockerfiles
 #   - web                                          ← apps/web/** + root manifests + nuxt.Dockerfile
-#   - wiki                                         ← apps/wiki/** + root manifests + nuxt.Dockerfile
 #   - tools                                        ← on-demand only (Run workflow → scope)
 # A docs-only push therefore builds nothing and costs ~1 min (the `changes` job).
 #
@@ -16,7 +15,7 @@
 # (compose `depends_on: migrate`), so the migrate image must never lag the code.
 # Only `tools` (data-cutover one-offs) is on-demand: Actions → Run workflow → scope.
 #
-# web/wiki BAKE their browser-facing public config from build-args here.
+# web BAKEs its browser-facing public config from build-args here.
 name: build-and-push
 
 on:
@@ -66,13 +65,6 @@ jobs:
               - 'package.json'
               - 'docker/nuxt.Dockerfile'
               - '.github/workflows/build.yml'
-            wiki:
-              - 'apps/wiki/**'
-              - 'pnpm-lock.yaml'
-              - 'pnpm-workspace.yaml'
-              - 'package.json'
-              - 'docker/nuxt.Dockerfile'
-              - '.github/workflows/build.yml'
             developer:
               - 'apps/developer/**'
               - 'pnpm-lock.yaml'
@@ -85,11 +77,10 @@ jobs:
           SCOPE: ${{ github.event.inputs.scope }}
           GO: ${{ steps.filter.outputs.go }}
           WEB: ${{ steps.filter.outputs.web }}
-          WIKI: ${{ steps.filter.outputs.wiki }}
           DEV: ${{ steps.filter.outputs.developer }}
         run: |
           set -euo pipefail
-          # Auto-built on push (path-filtered). web/wiki args are baked at build.
+          # Auto-built on push (path-filtered). web args are baked at build.
           push_catalog='[
             {"name":"infra-oauth","file":"docker/cgo.Dockerfile","args":"CMD=oauth","group":"go"},
             {"name":"infra-image","file":"docker/cgo.Dockerfile","args":"CMD=image","group":"go"},
@@ -104,7 +95,6 @@ jobs:
             {"name":"infra-ai","file":"docker/go.Dockerfile","args":"CMD=ai","group":"go"},
             {"name":"infra-migrate-ai","file":"docker/go.Dockerfile","args":"CMD=migrate-ai","group":"go"},
             {"name":"infra-web","file":"docker/nuxt.Dockerfile","args":"APP=web\nPUBLIC_API_BASE=https://oauth.kungal.com/api/v1\nPUBLIC_IMAGE_CDN_BASE=https://image.kungal.iloveren.link","group":"web"},
-            {"name":"infra-wiki","file":"docker/nuxt.Dockerfile","args":"APP=wiki\nPUBLIC_API_BASE=https://wiki.kungal.com/api\nPUBLIC_AUTH_API_BASE=https://oauth.kungal.com/api/v1\nPUBLIC_OAUTH_AUTHORIZE_BASE=https://oauth.kungal.com/api/v1\nPUBLIC_OAUTH_CLIENT_ID=galgame-wiki-admin\nPUBLIC_OAUTH_REDIRECT_URI=https://wiki.kungal.com/auth/callback\nPUBLIC_IMAGE_CDN_BASE=https://image.kungal.iloveren.link","group":"wiki"},
             {"name":"infra-developer","file":"apps/developer/Dockerfile","args":"","group":"developer"}
           ]'
           # On-demand only (workflow_dispatch). Run before a prod migration.
@@ -118,8 +108,8 @@ jobs:
               sel=$(jq -cn --argjson a "$push_catalog" --argjson b "$ondemand_catalog" '$a + $b')
             fi
           else
-            sel=$(jq -cn --argjson c "$push_catalog" --arg go "$GO" --arg web "$WEB" --arg wiki "$WIKI" --arg dev "$DEV" \
-              '([{g:"go",v:$go},{g:"web",v:$web},{g:"wiki",v:$wiki},{g:"developer",v:$dev}] | map(select(.v=="true") | .g)) as $grp
+            sel=$(jq -cn --argjson c "$push_catalog" --arg go "$GO" --arg web "$WEB" --arg dev "$DEV" \
+              '([{g:"go",v:$go},{g:"web",v:$web},{g:"developer",v:$dev}] | map(select(.v=="true") | .g)) as $grp
                | $c | map(select(.group as $x | $grp | index($x)))')
           fi
           n=$(jq -n --argjson s "$sel" '$s | length')

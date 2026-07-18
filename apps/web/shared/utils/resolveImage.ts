@@ -72,7 +72,7 @@ const legacyAvatarVariant = (url: string, variant?: string): string => {
 /**
  * Resolve a galgame's banner URL.
  *
- * Preference order (matches the wiki backend's effective-banner derivation):
+ * Preference order (matches the galgame backend's effective-banner derivation):
  *   1. effective_banner_hash — image_hash of the pinned cover
  *      (galgame_cover.sort_order=0), computed server-side. PR5 retired
  *      the legacy banner_image_hash column; this is now the SOLE
@@ -80,9 +80,9 @@ const legacyAvatarVariant = (url: string, variant?: string): string => {
  *   2. banner — original VNDB / user-provided URL (oldest fallback,
  *      used when the galgame has no covers yet).
  *
- * Kept in sync with apps/wiki/app/shared/utils/resolveImage.ts. This
- * apps/web copy is currently unused (admin web has no galgame UI), but
- * exported for any future cross-app consumer.
+ * This apps/web copy is currently unused (admin web has no galgame UI) but
+ * exported for any future cross-app consumer; the apps/wiki copy it once
+ * mirrored retired at E3b.
  */
 export const resolveBannerUrl = (
   galgame:
