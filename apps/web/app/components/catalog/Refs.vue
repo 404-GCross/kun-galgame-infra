@@ -71,11 +71,17 @@ const keyBody = (r: CatalogProbableRefItem) => ({
   external_id: r.external_id
 })
 
+// Full row identity — external_id alone isn't unique (two entities can share one
+// external id), so the in-flight `acting` key must be the whole tuple, else
+// confirming one row disables the button on every sibling row.
+const refKey = (r: CatalogProbableRefItem) =>
+  `${r.entity_type}:${r.entity_id}:${r.source_id}:${r.external_id}`
+
 const acting = ref('')
 const conflictHint = ref('')
 
 const confirmRef = async (r: CatalogProbableRefItem) => {
-  acting.value = r.external_id
+  acting.value = refKey(r)
   conflictHint.value = ''
   try {
     const res = await api.post<CatalogRefActionData>(
@@ -108,21 +114,26 @@ const askReject = (r: CatalogProbableRefItem) => {
 
 const confirmReject = async () => {
   const r = rejectTarget.value
-  if (!r) return
+  if (!r || acting.value) return
   if (!rejectReason.value.trim()) {
     useKunMessage('拒绝必须填写理由（它会成为永久负知识）', 'warn')
     return
   }
-  const res = await api.post<CatalogRefActionData>('/admin/catalog/refs/reject', {
-    ...keyBody(r),
-    reason: rejectReason.value.trim()
-  })
-  if (res.code === 0) {
-    useKunMessage('已拒绝并记录负知识', 'success')
-    rejectOpen.value = false
-    await refresh()
-  } else {
-    useKunMessage(res.message || '拒绝失败', 'error')
+  acting.value = refKey(r)
+  try {
+    const res = await api.post<CatalogRefActionData>('/admin/catalog/refs/reject', {
+      ...keyBody(r),
+      reason: rejectReason.value.trim()
+    })
+    if (res.code === 0) {
+      useKunMessage('已拒绝并记录负知识', 'success')
+      rejectOpen.value = false
+      await refresh()
+    } else {
+      useKunMessage(res.message || '拒绝失败', 'error')
+    }
+  } finally {
+    acting.value = ''
   }
 }
 </script>
@@ -201,7 +212,7 @@ const confirmReject = async () => {
                   color="success"
                   variant="flat"
                   size="sm"
-                  :disabled="acting === r.external_id"
+                  :disabled="acting === refKey(r)"
                   @click="confirmRef(r)"
                 >
                   确认 exact
@@ -254,7 +265,7 @@ const confirmReject = async () => {
           </KunButton>
           <KunButton
             color="danger"
-            :disabled="!rejectReason.trim()"
+            :disabled="!rejectReason.trim() || acting !== ''"
             @click="confirmReject"
           >
             确认拒绝

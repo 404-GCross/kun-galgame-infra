@@ -47,13 +47,25 @@ onUnmounted(() => {
 
 const redirectUrl = computed(() => route.query.redirect as string | undefined)
 
+// Only follow a same-origin redirect: a relative path (but not a
+// protocol-relative "//evil.com") or a same-origin absolute URL. Otherwise fall
+// back to the default landing — blocks open-redirect via ?redirect= (mirrors
+// LoginForm.isSafeRedirect; a freshly-registered user is a prime phishing mark).
+const isSafeRedirect = (url: string): boolean => {
+  if (url.startsWith('//')) return false
+  if (url.startsWith('/')) return true
+  try {
+    return new URL(url).origin === window.location.origin
+  } catch {
+    return false
+  }
+}
+
 const navigateAfterRegister = () => {
-  if (redirectUrl.value) {
-    if (redirectUrl.value.startsWith('/')) {
-      router.push(redirectUrl.value)
-    } else {
-      window.location.href = redirectUrl.value
-    }
+  const r = redirectUrl.value
+  if (r && isSafeRedirect(r)) {
+    if (r.startsWith('/')) router.push(r)
+    else window.location.href = r
   } else {
     router.push('/profile')
   }
@@ -190,7 +202,7 @@ const handleRegister = async () => {
           v-model="name"
           label="用户名"
           type="text"
-          placeholder="2 到 17 字符"
+          placeholder="1 到 17 字符"
           required
           autofocus
           :disabled="codeSent"

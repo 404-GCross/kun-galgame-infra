@@ -37,7 +37,8 @@ export const CANDIDATE_REASON_LABELS: Record<number, string> = {
   1: '规范化同名',
   2: '名称近似',
   3: '导入器建议',
-  4: 'LLM 建议'
+  4: 'LLM 建议',
+  5: '别名声明'
 }
 
 export const PROPOSAL_STATUS = {

@@ -132,15 +132,13 @@ const confirmReject = () => {
             </div>
           </td>
           <td class="px-3 py-2">
-            <span
-              :class="[
-                'inline-block rounded-full px-2 py-0.5 text-xs',
-                `bg-${statusColor(item.review_status)}-100`,
-                `text-${statusColor(item.review_status)}-700`,
-              ]"
+            <KunChip
+              :color="statusColor(item.review_status)"
+              variant="flat"
+              size="xs"
             >
               {{ statusLabel(item.review_status) }}
-            </span>
+            </KunChip>
             <div
               v-if="item.deleted_at"
               class="mt-0.5 text-xs text-danger-500"

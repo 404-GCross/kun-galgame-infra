@@ -35,6 +35,13 @@ export const useApiFetch = <T>(
 
   return useFetch(url, {
     baseURL,
+    // A stale-but-present access token 401s on first paint; refresh once (via
+    // the shared single-flight helper) and retry so an expired session renders
+    // data instead of silently falling back to the caller's empty default.
+    // Client-only — SSR has no refresh cookie to spend, so there a 401 falls
+    // through to `default` and the client re-fetches. Mirrors useApi.request.
+    retry: 1,
+    retryStatusCodes: [401],
     onRequest({ options: requestOptions }) {
       if (accessToken.value) {
         const headers = new Headers(
@@ -42,6 +49,12 @@ export const useApiFetch = <T>(
         )
         headers.set('Authorization', `Bearer ${accessToken.value}`)
         requestOptions.headers = headers
+      }
+    },
+    async onResponseError({ response }) {
+      if (import.meta.client && response.status === 401) {
+        const token = await requestTokenRefresh()
+        if (token) accessToken.value = token
       }
     },
     transform: (resp: ApiResponse<T>) =>

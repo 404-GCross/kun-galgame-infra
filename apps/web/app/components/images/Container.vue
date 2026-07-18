@@ -29,6 +29,13 @@ const stats = computed(() => statsData.value)
 const isLoading = computed(() => listStatus.value === 'pending')
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / limit)))
 
+// Reset to page 1 when the site filter changes, so narrowing the result set
+// never leaves currentPage on an out-of-range offset (→ backend returns nothing
+// → false "无数据" despite matches). Mirrors the review-tab / 刷新 resets.
+watch(site, () => {
+  currentPage.value = 1
+})
+
 const onReview = async (hash: string, status: string, reason?: string) => {
   const res = await api.patch(`/admin/image/${hash}/review`, { status, reason })
   if (res.code === 0) {
@@ -174,9 +181,8 @@ const bytesHuman = (n: number) => {
         />
       </div>
     </template>
-  </div>
 
-  <KunModal v-model="delOpen">
+    <KunModal v-model="delOpen">
     <div class="space-y-4">
       <h2 class="text-xl font-bold text-foreground">
         {{ delForce ? '硬删除图片' : '软删除图片' }}
@@ -218,5 +224,6 @@ const bytesHuman = (n: number) => {
         </KunButton>
       </div>
     </div>
-  </KunModal>
+    </KunModal>
+  </div>
 </template>

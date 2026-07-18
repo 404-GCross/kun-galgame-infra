@@ -83,6 +83,19 @@ const coolingRemaining = (p: CatalogProposalItem): string | null => {
   return `${h} 小时 ${m} 分`
 }
 
+// field_resolution is datatypes.JSON on the wire (a JSON object), though the
+// generated type mislabels it `string` (Huma reflects []byte). Render it only
+// when it actually carries keys, stringified — otherwise the raw object prints
+// "[object Object]" and the old `!== '{}'` guard (string compare) never fired.
+const fieldResolutionText = (p: CatalogProposalItem): string => {
+  const fr = p.field_resolution as unknown
+  if (typeof fr === 'string') return fr && fr !== '{}' ? fr : ''
+  if (fr && typeof fr === 'object') {
+    return Object.keys(fr).length ? JSON.stringify(fr) : ''
+  }
+  return ''
+}
+
 const rejectOpen = ref(false)
 const rejectTarget = ref<CatalogProposalItem | null>(null)
 const rejectReason = ref('')
@@ -196,10 +209,10 @@ const confirmReject = async () => {
           {{ p.note }}
         </p>
         <p
-          v-if="p.field_resolution && p.field_resolution !== '{}'"
+          v-if="fieldResolutionText(p)"
           class="text-default-400 font-mono text-xs"
         >
-          field_resolution: {{ p.field_resolution }}
+          field_resolution: {{ fieldResolutionText(p) }}
         </p>
 
         <div v-if="p.status === PROPOSAL_STATUS.open" class="flex flex-wrap gap-2">

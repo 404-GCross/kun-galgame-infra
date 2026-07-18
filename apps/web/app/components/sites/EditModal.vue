@@ -21,6 +21,10 @@ watch(open, (v) => {
 const handleSubmit = async () => {
   const site = props.site
   if (!site) return
+  if (!name.value.trim()) {
+    error.value = '请填写站点名称'
+    return
+  }
   error.value = ''
   isLoading.value = true
   try {
