@@ -52,6 +52,14 @@ const (
 	AutomergeTrusted = "trusted"
 	AutomergeAlways  = "always"
 	AutomergeOwner   = "owner"
+	// AutomergeReview automerges when the PROPOSER could REVIEW the field —
+	// i.e. holds the review perm (staff), OR is the product-asserted entity
+	// owner on an OwnerReview field. It reuses AllowsReview and keys purely on
+	// the proposer's context, so — unlike AutomergeOwner — it needs no OwnerSite
+	// hook. Lets a site grant its reviewers/owners direct edit (kungal:
+	// admin/ren + the game's creator) while everyone else still files an open
+	// proposal into the review queue.
+	AutomergeReview = "review"
 )
 
 const permPrefix = "perm:"
@@ -121,6 +129,10 @@ func (p Policy) allowsAutomergeWithOwner(pc PolicyContext, owner *string) bool {
 		return true
 	case AutomergeTrusted:
 		return pc.TrustTier >= TrustedTier
+	case AutomergeReview:
+		// Reviewers (perm) + asserted owners (OwnerReview) direct-edit. Keys on
+		// the proposer's context only, so owner is irrelevant here — no hook.
+		return p.AllowsReview(pc)
 	case AutomergeOwner:
 		return owner != nil && *owner != "" && *owner == pc.Site
 	default:
@@ -337,7 +349,7 @@ func validatePolicy(p Policy) error {
 		return fmt.Errorf("bad review rule %q (must be perm:<key>)", p.Review)
 	}
 	switch p.Automerge {
-	case AutomergeNever, AutomergeTrusted, AutomergeAlways, AutomergeOwner:
+	case AutomergeNever, AutomergeTrusted, AutomergeAlways, AutomergeOwner, AutomergeReview:
 	default:
 		return fmt.Errorf("bad automerge rule %q", p.Automerge)
 	}

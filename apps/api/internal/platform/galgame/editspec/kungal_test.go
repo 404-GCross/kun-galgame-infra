@@ -23,12 +23,13 @@ func kungalActor(uid int64, tier int16, roles ...string) editing.PolicyContext {
 	}
 }
 
-// TestKungalSiteOverlay pins the E3a ruling-2 posture end to end over the
-// real galgame vocabulary: any logged-in user proposes (open), nothing
-// automerges on kungal — not even staff — and admin/ren adjudicate via
-// edit.galgame.game.review (amend + merge = the double-attribution crown);
-// the special keys (vndb_id here) keep their E2a field policies, and the
-// galgame_wiki tenant is untouched by the overlay.
+// TestKungalSiteOverlay pins the kungal posture end to end over the real
+// galgame vocabulary: any logged-in user proposes (open); a reviewer's own
+// edit direct-merges (automerge=review) — admin/ren via edit.galgame.game.
+// review, while a moderator (staff, no review perm) still queues — and
+// admin/ren adjudicate OTHERS' proposals via amend + merge (the double-
+// attribution crown); the special keys (vndb_id here) keep their E2a field
+// policies, and the galgame_wiki tenant is untouched by the overlay.
 func TestKungalSiteOverlay(t *testing.T) {
 	e := newGameEngine(t)
 	g := createGame(t, nil)
@@ -50,20 +51,37 @@ func TestKungalSiteOverlay(t *testing.T) {
 		t.Fatalf("status = %d, want open", prop.Status)
 	}
 
-	// 2. Even staff at trusted tier stays open (automerge=never on kungal).
-	adminProp, rev, err := e.CreateProposal(testCtx, editing.CreateProposalInput{
+	// 2. Direct edit keys on REVIEW capability (automerge=review). Admin holds
+	//    edit.galgame.game.review, so their own edit applies immediately — a
+	//    single-signature direct revision, no proposal to adjudicate.
+	_, rev, err = e.CreateProposal(testCtx, editing.CreateProposalInput{
 		EntityType: editspec.TypeGame, EntityID: int64(g.ID),
-		Patch: map[string]any{editspec.FieldIntroZhCN: "管理员改简介"},
+		Patch: map[string]any{editspec.FieldIntroZhCN: "管理员直接改简介"},
 		Actor: kungalActor(102, 3, "admin"),
 	})
 	if err != nil {
-		t.Fatalf("admin propose: %v", err)
+		t.Fatalf("admin direct edit: %v", err)
+	}
+	if rev == nil || rev.Action != editing.ActionDirect {
+		t.Fatalf("admin (review perm) must direct-edit on kungal: %+v", rev)
+	}
+	//    A moderator is staff (tier 3) but holds NO review perm on the default
+	//    keys, so their edit still files an open proposal — proving automerge
+	//    keys on the review perm, not merely on staff standing.
+	modProp, rev, err := e.CreateProposal(testCtx, editing.CreateProposalInput{
+		EntityType: editspec.TypeGame, EntityID: int64(g.ID),
+		Patch: map[string]any{editspec.FieldNameJaJP: "モデレーター改題"},
+		Actor: kungalActor(103, 3, "moderator"),
+	})
+	if err != nil {
+		t.Fatalf("moderator propose: %v", err)
 	}
 	if rev != nil {
-		t.Fatal("kungal must not automerge even for staff")
+		t.Fatal("moderator (no review perm) must not automerge on kungal")
 	}
-	// Clean it up so the merge below rebases against a quiet entity.
-	if err := e.DeclineProposal(testCtx, adminProp.ID, kungalActor(102, 3, "admin"), "dup"); err != nil {
+	// Clean up the moderator proposal so the merge below rebases against a
+	// quiet entity.
+	if err := e.DeclineProposal(testCtx, modProp.ID, kungalActor(102, 3, "admin"), "dup"); err != nil {
 		t.Fatalf("decline: %v", err)
 	}
 
@@ -184,6 +202,25 @@ func TestKungalOwnerReview(t *testing.T) {
 	}
 	if after.IntroZhCN != "创建者修正后的简介" {
 		t.Fatalf("intro_zh_cn = %q, want the owner-amended value", after.IntroZhCN)
+	}
+
+	// 1b. The owner's OWN edit of a default key direct-merges (automerge=review
+	//     via OwnerReview): the creator edits their game without queuing a
+	//     proposal to adjudicate against themselves — a single-signature direct
+	//     revision attributed to the owner.
+	_, rev, err := e.CreateProposal(testCtx, editing.CreateProposalInput{
+		EntityType: editspec.TypeGame, EntityID: int64(g.ID),
+		Patch: map[string]any{editspec.FieldNameZhCN: "创建者直接改名"},
+		Actor: owner,
+	})
+	if err != nil {
+		t.Fatalf("owner direct edit: %v", err)
+	}
+	if rev == nil || rev.Action != editing.ActionDirect {
+		t.Fatalf("owner must direct-edit a default key on kungal: %+v", rev)
+	}
+	if rev.ActorUID != 200 {
+		t.Fatalf("owner direct-edit actor = %d, want the owner 200", rev.ActorUID)
 	}
 
 	// 2. The special keys stay perm-gated: an open status proposal (a

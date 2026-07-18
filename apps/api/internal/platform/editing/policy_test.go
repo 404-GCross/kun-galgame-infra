@@ -54,6 +54,27 @@ func TestPolicyEvaluationMatrix(t *testing.T) {
 		}
 	}
 
+	// AutomergeReview delegates to the review rule: whoever COULD review the
+	// field direct-edits it. A review-perm holder and an OwnerReview owner
+	// automerge; a plain user (even trusted) and a bare owner without
+	// OwnerReview do not.
+	reviewMerge := editing.Policy{Propose: editing.ProposeOpen, Review: editing.ReviewPerm(permReview), Automerge: editing.AutomergeReview}
+	if reviewMerge.AllowsAutomerge(anon) || reviewMerge.AllowsAutomerge(trusted) {
+		t.Error("automerge=review must reject a non-reviewer")
+	}
+	if !reviewMerge.AllowsAutomerge(reviewer) {
+		t.Error("automerge=review must accept a review-perm holder")
+	}
+	owner := anonActor(5)
+	owner.IsEntityOwner = true
+	if reviewMerge.AllowsAutomerge(owner) {
+		t.Error("automerge=review WITHOUT OwnerReview must reject a bare owner")
+	}
+	ownerMerge := editing.Policy{Propose: editing.ProposeOpen, Review: editing.ReviewPerm(permReview), Automerge: editing.AutomergeReview, OwnerReview: true}
+	if !ownerMerge.AllowsAutomerge(owner) {
+		t.Error("automerge=review + OwnerReview must accept the asserted owner")
+	}
+
 	rp := editing.Policy{Propose: editing.ProposeOpen, Review: editing.ReviewPerm(permReview), Automerge: editing.AutomergeNever}
 	if rp.AllowsReview(editor) {
 		t.Error("review must require the review perm")

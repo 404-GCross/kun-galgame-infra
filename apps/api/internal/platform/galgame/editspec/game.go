@@ -107,19 +107,22 @@ func RegisterGame(reg *editing.Registry, db *gorm.DB, reindex func(entityID int)
 			Policy: statusPolicy, Validate: validateStatus, Apply: applyGameColumn("status", convStatus)},
 	}
 
-	// kungal overlay (E3a ruling 2): every DEFAULT-POLICY field files an
-	// open proposal into the kungal review queue — propose mirrors the old
-	// wiki SubmitPR (any logged-in user), review holds the galgame review
-	// perm, and nothing automerges. OwnerReview (E3b ruling 2) additionally
-	// lets the entity's asserted owner adjudicate these default keys — the
-	// old wire's owner-merge privilege, migrated as an explicit overlay
-	// capability. Fields carrying their own policy (bid locked, vndb_id,
-	// status) are deliberately NOT overlaid — the E2a posture stands on
-	// every site, and owners never adjudicate the special keys.
+	// kungal overlay (E3a ruling 2 + E3b direct-edit): every DEFAULT-POLICY
+	// field files an open proposal into the kungal review queue — propose
+	// mirrors the old wiki SubmitPR (any logged-in user), review holds the
+	// galgame review perm. OwnerReview (E3b ruling 2) additionally lets the
+	// entity's asserted owner adjudicate these default keys — the old wire's
+	// owner-merge privilege. Automerge=review closes the loop: whoever COULD
+	// review a field (admin/ren via perm, or the game's owner via OwnerReview)
+	// direct-edits it instead of queuing a proposal to adjudicate against
+	// themselves; a moderator (no review perm) and every ordinary user still
+	// file an open proposal. Fields carrying their own policy (bid locked,
+	// vndb_id, status) are deliberately NOT overlaid — the E2a posture stands
+	// on every site, and owners never adjudicate the special keys.
 	kungalPolicy := editing.Policy{
 		Propose:     editing.ProposeOpen,
 		Review:      reviewRule,
-		Automerge:   editing.AutomergeNever,
+		Automerge:   editing.AutomergeReview,
 		OwnerReview: true,
 	}
 	kungalOverlay := make(map[string]editing.Policy, len(fields))
