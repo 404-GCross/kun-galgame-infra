@@ -17,8 +17,6 @@
 | 路径 | 鉴权 | Handler | 状态 | 备注 |
 |---|---|---|---|---|
 | `PUT /api/galgame/:gid` | 登录 | `galgameH.Update` | 已修 | 直接更新（写 revision）；#20 dive 校验(handler 加 Validate)；#21 vndb_id 格式/唯一校验；#38 草稿(3/4)非 admin 走 PATCH |
-| `PUT /api/galgame/:gid/prs/:id/merge` | 登录 | `revisionH.MergePR` | 已修 | 合并 PR（角色校验在 handler 内）；#39 completed_time=NOW()；#40 gid 作用域；#41 快照切片顺序无关比较(消除伪字段冲突) |
-| `PUT /api/galgame/:gid/prs/:id/decline` | 登录 | `revisionH.DeclinePR` | 已修 | 拒绝 PR；#40 gid 作用域 |
 
 ## 2. 管理（admin / moderator）
 

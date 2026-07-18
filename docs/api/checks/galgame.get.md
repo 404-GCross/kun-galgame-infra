@@ -52,11 +52,6 @@
 
 | 路径 | 鉴权 | Handler | 状态 | 备注 |
 |---|---|---|---|---|
-| `GET /api/galgame/:gid/revisions` | 公开 | `revisionH.ListRevisions` | 已修 | #22 可见性门(隐藏条目 404，附 optionalJWT) |
-| `GET /api/galgame/:gid/revisions/:rev` | 公开 | `revisionH.GetRevision` | 已修 | #22 可见性门 |
-| `GET /api/galgame/:gid/revisions/:rev/diff` | 公开 | `revisionH.GetRevisionDiff` | 已修 | 含 names 映射；#22 可见性门 |
-| `GET /api/galgame/:gid/prs` | 公开 | `revisionH.ListPRs` | 已修 | #22 可见性门 |
-| `GET /api/galgame/:gid/prs/:id` | 公开 | `revisionH.GetPR` | 已修 | 含 names 映射；#22 可见性门；#40 gid 作用域校验；#07 返回 title/message |
 | `GET /api/galgame/:gid/links` | 公开 | `linkH.ListLinks` | 已审计 | |
 | `GET /api/galgame/:gid/aliases` | 公开 | `linkH.ListAliases` | 已审计 | |
 | `GET /api/galgame/:gid/contributors` | 公开 | `contributorH.List` | 已审计 | |

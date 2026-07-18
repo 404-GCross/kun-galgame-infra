@@ -18,8 +18,6 @@
 | 路径 | 鉴权 | Handler | 状态 | 备注 |
 |---|---|---|---|---|
 | `POST /api/galgame` | admin/mod | `galgameH.Create` | 已修 | 管理员直发（绕过审核）；#20 covers/screenshots 元素校验(dive + hex hash) |
-| `POST /api/galgame/:gid/revert` | 登录 | `revisionH.Revert` | 已审计 | 回滚到某版本 |
-| `POST /api/galgame/:gid/prs` | 登录 | `revisionH.SubmitPR` | 已修 | 提交编辑 PR；#07 title/message 不再被丢弃(模型/DTO 拆分) |
 | `POST /api/galgame/:gid/links` | 登录 | `linkH.CreateLink` | 已修 | #08 owner/admin 越权门；#42 不存在 gid→404 |
 | `POST /api/galgame/:gid/aliases` | 登录 | `linkH.CreateAlias` | 已修 | #08 越权门；#42 不存在 gid→404 |
 | `POST /api/galgame/submit` | 登录 | `submissionH.Submit` | 已审计 | 用户投稿（status=3 待审）|

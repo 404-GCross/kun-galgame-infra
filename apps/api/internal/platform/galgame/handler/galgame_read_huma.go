@@ -282,26 +282,12 @@ func SetupGalgameReadSpec(app *fiber.App) huma.API {
 		OperationID: "checkGalgameVNDB", Method: http.MethodGet, Path: "/api/galgame/check",
 		Summary: "Whether a vndb_id already exists (and which galgame holds it)", Tags: tags,
 	}, func(context.Context, *checkVNDBInput) (*checkVNDBOutput, error) { return &checkVNDBOutput{}, nil })
-	huma.Register(api, huma.Operation{
-		OperationID: "listGalgameRevisions", Method: http.MethodGet, Path: "/api/galgame/{gid}/revisions",
-		Summary: "A galgame's edit history (revisions, paginated)", Tags: tags,
-	}, func(context.Context, *revisionsInput) (*revisionsOutput, error) { return &revisionsOutput{}, nil })
-	huma.Register(api, huma.Operation{
-		OperationID: "getGalgameRevision", Method: http.MethodGet, Path: "/api/galgame/{gid}/revisions/{rev}",
-		Summary: "One revision (with its full snapshot)", Tags: tags,
-	}, func(context.Context, *revisionInput) (*revisionOutput, error) { return &revisionOutput{}, nil })
-	huma.Register(api, huma.Operation{
-		OperationID: "getGalgameRevisionDiff", Method: http.MethodGet, Path: "/api/galgame/{gid}/revisions/{rev}/diff",
-		Summary: "A revision's diff vs its predecessor (changed keys + old/new snapshot + entity names)", Tags: tags,
-	}, func(context.Context, *revisionInput) (*revisionDiffOutput, error) { return &revisionDiffOutput{}, nil })
-	huma.Register(api, huma.Operation{
-		OperationID: "listGalgamePRs", Method: http.MethodGet, Path: "/api/galgame/{gid}/prs",
-		Summary: "A galgame's pull requests (edit proposals, paginated)", Tags: tags,
-	}, func(context.Context, *prsInput) (*prsOutput, error) { return &prsOutput{}, nil })
-	huma.Register(api, huma.Operation{
-		OperationID: "getGalgamePR", Method: http.MethodGet, Path: "/api/galgame/{gid}/prs/{id}",
-		Summary: "One PR with its diff vs the base revision", Tags: tags,
-	}, func(context.Context, *prInput) (*prOutput, error) { return &prOutput{}, nil })
+	// The per-gid revision-read + PR routes (listGalgameRevisions / getGalgameRevision
+	// / getGalgameRevisionDiff / listGalgamePRs / getGalgamePR) were RETIRED with the
+	// wiki-retirement E3b wave (2026-07-17): galgame editing/history now flows through
+	// the unified editing engine on the catalog service (/api/v1/catalog/edit/*). They
+	// are gone from the runtime mount and therefore dropped from this read spec too.
+	// The two S2S activity feeds below (revisions/recent, taxonomy/recent) survive.
 	huma.Register(api, huma.Operation{
 		OperationID: "getRecentGalgameRevisions", Method: http.MethodGet, Path: "/api/galgame/revisions/recent",
 		Summary: "Recent merged galgame edit (revision) events — S2S activity feed", Tags: tags,
