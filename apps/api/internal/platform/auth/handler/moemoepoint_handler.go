@@ -198,15 +198,27 @@ func (h *MoemoepointHandler) respondLog(c fiber.Ctx, userID uint, full bool) err
 	if err != nil {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
-	if full {
-		return response.Success(c, fiber.Map{"items": rows, "has_more": hasMore})
+	// Enrich each row with the awarding site's friendly name (source_app is an
+	// opaque OAuth client id; source_name resolves it to the client's name).
+	apps := make([]string, len(rows))
+	for i, r := range rows {
+		apps[i] = r.SourceApp
 	}
+	names := h.svc.SourceNames(c.Context(), apps)
 	items := make([]fiber.Map, len(rows))
 	for i, r := range rows {
-		items[i] = fiber.Map{
+		m := fiber.Map{
 			"id": r.ID, "delta": r.Delta, "reason": r.Reason,
-			"source_app": r.SourceApp, "ref": r.Ref, "created_at": r.CreatedAt,
+			"source_app": r.SourceApp, "source_name": names[r.SourceApp],
+			"ref": r.Ref, "created_at": r.CreatedAt,
 		}
+		// full (admin) view adds note + actor_user_id; the reduced (s2s /
+		// end-user) view omits them so moderation notes never leak downstream.
+		if full {
+			m["note"] = r.Note
+			m["actor_user_id"] = r.ActorUserID
+		}
+		items[i] = m
 	}
 	return response.Success(c, fiber.Map{"items": items, "has_more": hasMore})
 }

@@ -176,6 +176,41 @@ func (s *MoemoepointService) GetLog(ctx context.Context, userID uint, limit int,
 	return rows, hasMore, nil
 }
 
+// SourceNames maps each source_app (an OAuth client id) to that client's
+// display name, for enriching the ledger with the awarding site. "oauth"
+// (OAuth-internal grants) and unknown ids are absent — the caller falls back
+// to a label. Deduplicated; best-effort (a lookup error just yields no names).
+func (s *MoemoepointService) SourceNames(ctx context.Context, sourceApps []string) map[string]string {
+	seen := make(map[string]struct{}, len(sourceApps))
+	ids := make([]string, 0, len(sourceApps))
+	for _, a := range sourceApps {
+		if a == "" || a == "oauth" {
+			continue
+		}
+		if _, ok := seen[a]; ok {
+			continue
+		}
+		seen[a] = struct{}{}
+		ids = append(ids, a)
+	}
+	out := make(map[string]string, len(ids))
+	if len(ids) == 0 {
+		return out
+	}
+	var rows []struct {
+		ID   string
+		Name string
+	}
+	if err := s.db.WithContext(ctx).Table("oauth_clients").
+		Select("id, name").Where("id IN ?", ids).Scan(&rows).Error; err != nil {
+		return out
+	}
+	for _, r := range rows {
+		out[r.ID] = r.Name
+	}
+	return out
+}
+
 // UserIDByUUID resolves a UUID to the numeric user id (admin endpoints take
 // :uuid; the service works in numeric ids).
 func (s *MoemoepointService) UserIDByUUID(ctx context.Context, uuid string) (uint, error) {
