@@ -100,8 +100,16 @@ func main() {
 				fmt.Fprintf(logf, "%d\t%d\tcatalog\twould-repoint\t%d\t%d\n", f.gid, f.workID, f.curBid, f.correctBid)
 			}
 		}
-		// ---- wiki side ----
-		if *apply {
+		// ---- wiki side ---- galgame.bid carries a UNIQUE index, so guard against
+		// a collision (the correct bid already held by ANOTHER galgame) — skip +
+		// log rather than crashing; those are swap/rotation cases handled separately.
+		var wikiHolder int64
+		wiki.Raw(`SELECT id FROM galgame WHERE bid=? AND id<>? LIMIT 1`, f.correctBid, f.gid).Scan(&wikiHolder)
+		switch {
+		case wikiHolder != 0:
+			skipped++
+			fmt.Fprintf(logf, "%d\t%d\twiki\tSKIP(bid-held-by:%d)\t%d\t%d\n", f.gid, f.workID, wikiHolder, f.curBid, f.correctBid)
+		case *apply:
 			res := wiki.Exec(`UPDATE galgame SET bid=? WHERE id=? AND bid=?`, f.correctBid, f.gid, f.curBid)
 			if res.Error != nil {
 				slog.Error("wiki update", "gid", f.gid, "error", res.Error)
@@ -113,7 +121,7 @@ func main() {
 			} else {
 				fmt.Fprintf(logf, "%d\t%d\twiki\tno-op(bid!=%d)\t%d\t%d\n", f.gid, f.workID, f.curBid, f.curBid, f.correctBid)
 			}
-		} else {
+		default:
 			var wb int64
 			wiki.Raw(`SELECT bid FROM galgame WHERE id=?`, f.gid).Scan(&wb)
 			act := "would-update"
