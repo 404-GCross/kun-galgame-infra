@@ -19,6 +19,31 @@ export interface User {
   created_at: string
 }
 
+// Rich admin detail (GET /admin/users/:uuid) — extends the list User with the
+// non-list fields: last IP, active session count, linked OAuth account count,
+// and per-site data / role grants.
+export interface UserSiteData {
+  site_id: number
+  site_name: string
+  status: number
+}
+export interface UserSiteRole {
+  site_id: number
+  site_name: string
+  role_name: string
+  granted_by: number
+  granted_at: string
+  expires_at?: string | null
+  note?: string
+}
+export interface UserDetail extends User {
+  ip: string
+  session_count: number
+  oauth_accounts: number
+  site_data: UserSiteData[]
+  site_roles: UserSiteRole[]
+}
+
 export interface LoginResponse {
   user: User
   access_token: string

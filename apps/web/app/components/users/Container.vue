@@ -146,6 +146,13 @@ const handleSiteRoles = (user: { uuid: string; name: string }) => {
   siteRoleTarget.value = user
   siteRoleOpen.value = true
 }
+
+const detailOpen = ref(false)
+const detailTarget = ref<{ uuid: string; name: string } | null>(null)
+const handleDetail = (user: { uuid: string; name: string }) => {
+  detailTarget.value = user
+  detailOpen.value = true
+}
 </script>
 
 <template>
@@ -189,6 +196,7 @@ const handleSiteRoles = (user: { uuid: string; name: string }) => {
         @moemoepoint="handleMoemoepoint"
         @roles="handleRoles"
         @site-roles="handleSiteRoles"
+        @detail="handleDetail"
       />
 
       <div v-if="totalPages > 1" class="flex justify-center">
@@ -223,6 +231,8 @@ const handleSiteRoles = (user: { uuid: string; name: string }) => {
       :user="siteRoleTarget"
       @success="refresh"
     />
+
+    <UsersDetailDrawer v-model:open="detailOpen" :user="detailTarget" />
 
     <KunModal v-model="banOpen">
       <div class="space-y-4">

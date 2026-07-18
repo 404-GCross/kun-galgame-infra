@@ -12,6 +12,7 @@ const emit = defineEmits<{
   moemoepoint: [user: { uuid: string; name: string; moemoepoint: number }]
   roles: [user: { uuid: string; name: string; roles: string[] }]
   siteRoles: [user: { uuid: string; name: string }]
+  detail: [user: { uuid: string; name: string }]
 }>()
 
 const cdnBase = useRuntimeConfig().public.imageCdnBase as string
@@ -123,6 +124,13 @@ const isAdmin = (user: User) => !!user.roles?.includes('admin')
                 </KunButton>
               </template>
               <div class="w-44 py-1">
+                <button
+                  class="flex w-full items-center gap-2 px-3 py-2 text-sm text-default-500 hover:bg-default-100 hover:text-foreground"
+                  @click="emit('detail', { uuid: user.uuid, name: user.name })"
+                >
+                  <KunIcon name="lucide:eye" class="size-4" />
+                  查看详情
+                </button>
                 <!-- Anonymized users have status=1 too, so gate ban/unban on
                      !is_anonymized; anonymized is a terminal state. Ban is also
                      hidden for admins (server refuses it). -->
