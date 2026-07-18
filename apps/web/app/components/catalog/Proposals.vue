@@ -26,7 +26,7 @@ watch([status, entityType], () => {
   page.value = 1
 })
 
-const { data, status: fetchStatus, refresh } =
+const { data, status: fetchStatus, refresh, error } =
   await useApiFetch<CatalogProposalPage>(
     '/admin/catalog/proposals',
     {
@@ -174,6 +174,8 @@ const confirmReject = async () => {
     </div>
     <p class="text-default-500 text-sm">共 {{ total }} 条提案</p>
 
+    <CommonFetchError v-if="error" @retry="refresh" />
+
     <div class="space-y-2">
       <KunCard v-for="p in items" :key="p.id" content-class="space-y-3 p-4">
         <div class="flex flex-wrap items-center gap-2">
@@ -266,7 +268,7 @@ const confirmReject = async () => {
         </div>
       </KunCard>
 
-      <KunCard v-if="!items.length" content-class="p-10">
+      <KunCard v-if="!items.length && !error" content-class="p-10">
         <p class="text-default-400 text-center">
           {{ isLoading ? '加载中…' : '没有匹配的提案' }}
         </p>

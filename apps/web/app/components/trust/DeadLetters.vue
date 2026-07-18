@@ -21,7 +21,7 @@ watch(callbackStatus, () => {
   page.value = 1
 })
 
-const { data, status: fetchStatus, refresh } =
+const { data, status: fetchStatus, refresh, error } =
   await useApiFetch<TrustDispositionPage>(
     '/admin/trust/dispositions',
     {
@@ -78,6 +78,8 @@ const redeliver = async (id: number) => {
     </div>
     <p class="text-default-500 text-sm">共 {{ total }} 条</p>
 
+    <CommonFetchError v-if="error" @retry="refresh" />
+
     <div class="bg-content1 overflow-x-auto rounded-xl shadow-sm">
       <table class="w-full min-w-[56rem] text-sm">
         <thead class="bg-content2 text-default-500">
@@ -130,7 +132,7 @@ const redeliver = async (id: number) => {
               </KunButton>
             </td>
           </tr>
-          <tr v-if="!items.length">
+          <tr v-if="!items.length && !error">
             <td colspan="8" class="text-default-400 px-3 py-10 text-center">
               {{ isLoading ? '加载中…' : '没有匹配的处置' }}
             </td>

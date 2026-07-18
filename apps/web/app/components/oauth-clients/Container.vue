@@ -5,7 +5,7 @@ const api = useApi()
 // page paints with data; refreshClients() re-fetches after a mutation. Sites
 // are only needed for the create/edit dropdowns and don't change here, so no
 // refresh wiring for them.
-const { data: clientsData, status, refresh: refreshClients } =
+const { data: clientsData, status, refresh: refreshClients, error } =
   await useApiFetch<OAuthClient[]>('/oauth/clients')
 const { data: sitesData } = await useApiFetch<Site[]>('/sites')
 const clients = computed(() => clientsData.value ?? [])
@@ -82,7 +82,9 @@ const handleDelete = async (clientId: string) => {
       </KunButton>
     </div>
 
-    <div v-if="isLoading" class="flex items-center justify-center py-12">
+    <CommonFetchError v-if="error" @retry="refreshClients" />
+
+    <div v-else-if="isLoading" class="flex items-center justify-center py-12">
       <KunIcon name="lucide:loader-circle" class="size-8 animate-spin text-primary" />
     </div>
 

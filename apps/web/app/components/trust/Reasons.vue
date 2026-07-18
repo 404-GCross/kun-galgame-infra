@@ -12,7 +12,7 @@ import type {
 const api = useApi('trust')
 
 const site = ref('')
-const { data, refresh } = await useApiFetch<TrustReason[]>(
+const { data, refresh, error } = await useApiFetch<TrustReason[]>(
   '/admin/trust/report-reasons',
   { query: computed(() => ({ site: site.value || undefined })) },
   'trust'
@@ -116,6 +116,8 @@ const toggleDeprecated = async (r: TrustReason) => {
       </KunButton>
     </div>
 
+    <CommonFetchError v-if="error" @retry="refresh" />
+
     <div class="overflow-x-auto">
       <table class="w-full min-w-[36rem] text-sm">
         <thead class="text-default-500">
@@ -176,7 +178,7 @@ const toggleDeprecated = async (r: TrustReason) => {
               </div>
             </td>
           </tr>
-          <tr v-if="!reasons.length">
+          <tr v-if="!reasons.length && !error">
             <td colspan="6" class="text-default-400 px-2 py-8 text-center">
               暂无理由
             </td>

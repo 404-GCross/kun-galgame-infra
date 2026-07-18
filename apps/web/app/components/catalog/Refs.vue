@@ -27,7 +27,7 @@ watch([sourceID, entityType], () => {
   page.value = 1
 })
 
-const { data, status: fetchStatus, refresh } =
+const { data, status: fetchStatus, refresh, error } =
   await useApiFetch<CatalogProbableRefPage>(
     '/admin/catalog/refs/probable',
     {
@@ -162,6 +162,8 @@ const confirmReject = async () => {
       {{ conflictHint }}
     </p>
 
+    <CommonFetchError v-if="error" @retry="refresh" />
+
     <div class="bg-content1 overflow-x-auto rounded-xl shadow-sm">
       <table class="w-full min-w-[56rem] text-sm">
         <thead class="bg-content2 text-default-500">
@@ -228,7 +230,7 @@ const confirmReject = async () => {
               </div>
             </td>
           </tr>
-          <tr v-if="!items.length">
+          <tr v-if="!items.length && !error">
             <td colspan="5" class="text-default-400 px-3 py-10 text-center">
               {{ isLoading ? '加载中…' : '没有待确认的外部链接' }}
             </td>

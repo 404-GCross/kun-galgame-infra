@@ -25,7 +25,7 @@ const site = ref('')
 const kind = ref<number>(TRUST_FILTER_ALL)
 const includeDeprecated = ref(false)
 
-const { data, refresh } = await useApiFetch<TrustTermsResponse>(
+const { data, refresh, error } = await useApiFetch<TrustTermsResponse>(
   '/admin/trust/terms',
   {
     query: computed(() => ({
@@ -145,6 +145,8 @@ const confirmDeprecate = async () => {
         </KunButton>
       </div>
 
+      <CommonFetchError v-if="error" @retry="refresh" />
+
       <div class="overflow-x-auto">
         <table class="w-full min-w-[40rem] text-sm">
           <thead class="text-default-500">
@@ -208,7 +210,7 @@ const confirmDeprecate = async () => {
                 <span v-else class="text-default-300">—</span>
               </td>
             </tr>
-            <tr v-if="!terms.length">
+            <tr v-if="!terms.length && !error">
               <td colspan="6" class="text-default-400 px-2 py-8 text-center">
                 暂无词条
               </td>

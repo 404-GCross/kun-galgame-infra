@@ -16,7 +16,7 @@ import type {
 const api = useApi('trust')
 
 const site = ref('')
-const { data, refresh } = await useApiFetch<TrustSubjectKind[]>(
+const { data, refresh, error } = await useApiFetch<TrustSubjectKind[]>(
   '/admin/trust/subject-kinds',
   { query: computed(() => ({ site: site.value || undefined })) },
   'trust'
@@ -227,6 +227,8 @@ const runBatch = async () => {
       </div>
     </div>
 
+    <CommonFetchError v-if="error" @retry="refresh" />
+
     <div class="overflow-x-auto">
       <table class="w-full min-w-[36rem] text-sm">
         <thead class="text-default-500">
@@ -290,7 +292,7 @@ const runBatch = async () => {
               </div>
             </td>
           </tr>
-          <tr v-if="!kinds.length">
+          <tr v-if="!kinds.length && !error">
             <td colspan="5" class="text-default-400 px-2 py-8 text-center">
               暂无主体类型
             </td>

@@ -29,7 +29,7 @@ watch([site, status, source], () => {
   page.value = 1
 })
 
-const { data, status: fetchStatus, refresh } =
+const { data, status: fetchStatus, refresh, error } =
   await useApiFetch<TrustReviewItemPage>(
     '/admin/trust/review-items',
     {
@@ -147,6 +147,8 @@ const onDecided = async () => {
     </div>
     <p class="text-default-500 text-sm">共 {{ total }} 条(按优先级降序)</p>
 
+    <CommonFetchError v-if="error" @retry="refresh" />
+
     <div class="bg-content1 overflow-x-auto rounded-xl shadow-sm">
       <table class="w-full min-w-[64rem] text-sm">
         <thead class="bg-content2 text-default-500">
@@ -216,7 +218,7 @@ const onDecided = async () => {
               </div>
             </td>
           </tr>
-          <tr v-if="!items.length">
+          <tr v-if="!items.length && !error">
             <td colspan="8" class="text-default-400 px-3 py-10 text-center">
               {{ isLoading ? '加载中…' : '没有匹配的审核项' }}
             </td>

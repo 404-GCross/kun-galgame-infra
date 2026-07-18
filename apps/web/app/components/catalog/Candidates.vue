@@ -35,7 +35,7 @@ watch([status, entityType, reason], () => {
   page.value = 1
 })
 
-const { data, status: fetchStatus, refresh } =
+const { data, status: fetchStatus, refresh, error } =
   await useApiFetch<CatalogCandidatePage>(
     '/admin/catalog/candidates',
     {
@@ -207,6 +207,8 @@ const sourceLabel = (id: number | null | undefined) =>
       />
     </div>
     <p class="text-default-500 text-sm">共 {{ total }} 条候选</p>
+
+    <CommonFetchError v-if="error" @retry="refresh" />
 
     <div class="space-y-2">
       <KunCard
@@ -397,7 +399,7 @@ const sourceLabel = (id: number | null | undefined) =>
         </div>
       </KunCard>
 
-      <KunCard v-if="!items.length" content-class="p-10">
+      <KunCard v-if="!items.length && !error" content-class="p-10">
         <p class="text-default-400 text-center">
           {{ isLoading ? '加载中…' : '没有匹配的候选' }}
         </p>
