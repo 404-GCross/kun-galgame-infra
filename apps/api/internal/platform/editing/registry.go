@@ -151,6 +151,17 @@ type FieldSpec struct {
 	Apply    ApplyFunc
 }
 
+// MergeEvent describes a merge the single write path just committed, handed to
+// a spec's OnMerge hook. AmenderUID is set only when the merged patch carried
+// an amendment (the double signature's second signer, nil otherwise); Action
+// is the revision action (merged / direct / reverted).
+type MergeEvent struct {
+	EntityID   int64
+	ActorUID   int64
+	AmenderUID *int64
+	Action     int16
+}
+
 // EntityTypeSpec is one entity type's registration: field table, policies,
 // and the load/apply closures carrying the family's own DB pool (dependency
 // injection — the engine never imports a family package).
@@ -169,7 +180,18 @@ type EntityTypeSpec struct {
 	// automerge=owner without it fails fast at Register time. Media-agnostic:
 	// what "owner" means is the family's business (catalog: the claiming
 	// site), the engine only compares it to the proposal's site.
-	OwnerSite     func(ctx context.Context, entityID int64) (*string, error)
+	OwnerSite func(ctx context.Context, entityID int64) (*string, error)
+	// OnMerge fires AFTER a merge commits (lifetime pillar 1: the single write
+	// path — direct edit, reviewer merge, and revert all flow through it), the
+	// media-agnostic seam for post-merge side effects. galgame.game reindexes
+	// Meilisearch and records the revision's contributors here, so EVERY write
+	// path (the kungal BFF, a future /v1 writer) gets them for free and none can
+	// be forgotten. Optional (nil = no side effect, e.g. catalog.work).
+	// Best-effort by contract: the engine fires it OUTSIDE the merge transaction
+	// and only warns on error — a stale index or a missed contributor is
+	// recoverable (reindex-search / a contributor reconcile), whereas pushing
+	// to Meili inside the tx would leave a phantom on rollback.
+	OnMerge       func(ctx context.Context, ev MergeEvent) error
 	Fields        []FieldSpec
 	DefaultPolicy Policy
 	// SiteOverlays: site → field key → policy replacement (doc 21 §2.5).

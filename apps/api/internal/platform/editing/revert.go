@@ -88,5 +88,8 @@ func (e *Engine) Revert(ctx context.Context, in RevertInput) (*Proposal, *Revisi
 	if err != nil {
 		return nil, nil, err
 	}
+	// Post-commit, best-effort: a revert is a merge too, so it fires the same
+	// OnMerge side effects (search reindex + contributor recording).
+	e.afterMerge(ctx, rev)
 	return prop, rev, nil
 }

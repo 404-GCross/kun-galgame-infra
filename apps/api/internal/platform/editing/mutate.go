@@ -148,6 +148,10 @@ func (e *Engine) CreateProposal(ctx context.Context, in CreateProposalInput) (*P
 	if err != nil {
 		return nil, nil, err
 	}
+	// Post-commit, best-effort: fire the spec's OnMerge side effects (search
+	// reindex + contributor recording for galgame.game). rev is non-nil here
+	// only on the automerge path; an open proposal changed nothing to react to.
+	e.afterMerge(ctx, rev)
 	return prop, rev, nil
 }
 
@@ -316,6 +320,9 @@ func (e *Engine) MergeProposal(ctx context.Context, proposalID int64, actor Poli
 	if err != nil {
 		return nil, err
 	}
+	// Post-commit, best-effort: the spec's OnMerge side effects (search reindex
+	// + contributor recording for galgame.game) read the just-committed state.
+	e.afterMerge(ctx, rev)
 	return rev, nil
 }
 

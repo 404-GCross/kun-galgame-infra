@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 
 	"gorm.io/gorm"
 )
@@ -29,6 +30,35 @@ func (e *Engine) resolveSpec(entityType string) (*EntityTypeSpec, error) {
 		return nil, ErrUnknownEntityType
 	}
 	return spec, nil
+}
+
+// afterMerge fires a spec's post-commit OnMerge hook (registry.go) for a
+// revision the single write path just committed. Best-effort by construction:
+// it runs OUTSIDE the merge transaction, never propagates an error to the
+// caller (a failed reindex or contributor write must not undo a landed merge —
+// both are recoverable), and recovers from a misbehaving closure so a family
+// hook can never crash the request. rev is nil when no merge happened (an open
+// proposal that did not automerge), in which case this no-ops.
+func (e *Engine) afterMerge(ctx context.Context, rev *Revision) {
+	if rev == nil {
+		return
+	}
+	spec, ok := e.reg.Type(rev.EntityType)
+	if !ok || spec.OnMerge == nil {
+		return
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Error("editing: OnMerge hook panicked",
+				"entity_type", rev.EntityType, "entity_id", rev.EntityID, "panic", r)
+		}
+	}()
+	if err := spec.OnMerge(ctx, MergeEvent{
+		EntityID: rev.EntityID, ActorUID: rev.ActorUID, AmenderUID: rev.AmenderUID, Action: rev.Action,
+	}); err != nil {
+		slog.Warn("editing: OnMerge hook failed",
+			"entity_type", rev.EntityType, "entity_id", rev.EntityID, "err", err)
+	}
 }
 
 // ownerSite resolves the entity's owner site through the spec's OwnerSite
