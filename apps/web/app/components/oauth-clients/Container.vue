@@ -37,16 +37,24 @@ const filteredClients = computed(() => {
 
 const showCreateModal = ref(false)
 const createdClient = ref<OAuthClientCreated | null>(null)
+const secretOpen = ref(false)
 const editingClient = ref<OAuthClient | null>(null)
+const editOpen = ref(false)
+
+const openEdit = (client: OAuthClient) => {
+  editingClient.value = client
+  editOpen.value = true
+}
 
 const handleCreated = (client: OAuthClientCreated) => {
   showCreateModal.value = false
   createdClient.value = client
+  secretOpen.value = true
   refreshClients()
 }
 
 const handleUpdated = () => {
-  editingClient.value = null
+  editOpen.value = false
   refreshClients()
 }
 
@@ -116,7 +124,7 @@ const handleDelete = async (clientId: string) => {
           :key="client.id"
           :client="client"
           :sites="sites"
-          @edit="editingClient = client"
+          @edit="openEdit(client)"
           @delete="handleDelete(client.id)"
         />
       </div>
@@ -129,16 +137,11 @@ const handleDelete = async (clientId: string) => {
     />
 
     <OauthClientsEditModal
-      v-if="editingClient"
+      v-model:open="editOpen"
       :client="editingClient"
-      @close="editingClient = null"
       @updated="handleUpdated"
     />
 
-    <OauthClientsSecretModal
-      v-if="createdClient"
-      :client="createdClient"
-      @close="createdClient = null"
-    />
+    <OauthClientsSecretModal v-model:open="secretOpen" :client="createdClient" />
   </div>
 </template>

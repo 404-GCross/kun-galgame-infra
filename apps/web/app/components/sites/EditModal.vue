@@ -1,24 +1,30 @@
 <script setup lang="ts">
-const props = defineProps<{ site: Site }>()
-const emit = defineEmits<{ close: []; updated: [] }>()
+const props = defineProps<{ site: Site | null }>()
+const emit = defineEmits<{ updated: [] }>()
 
+const open = defineModel<boolean>('open', { required: true })
 const api = useApi()
-const show = ref(true)
 
-const name = ref(props.site.name)
-const description = ref(props.site.description)
+const name = ref('')
+const description = ref('')
 const error = ref('')
 const isLoading = ref(false)
 
-watch(show, (val) => {
-  if (!val) emit('close')
+// Kept mounted (v-model); (re)load the form from the site each time it opens.
+watch(open, (v) => {
+  if (!v || !props.site) return
+  name.value = props.site.name
+  description.value = props.site.description
+  error.value = ''
 })
 
 const handleSubmit = async () => {
+  const site = props.site
+  if (!site) return
   error.value = ''
   isLoading.value = true
   try {
-    const response = await api.put(`/sites/${props.site.id}`, {
+    const response = await api.put(`/sites/${site.id}`, {
       name: name.value,
       description: description.value,
     })
@@ -34,7 +40,7 @@ const handleSubmit = async () => {
 </script>
 
 <template>
-  <KunModal v-model="show">
+  <KunModal v-model="open">
     <div class="w-96 space-y-4 p-6">
       <h2 class="text-xl font-bold text-foreground">编辑站点</h2>
 
@@ -48,7 +54,7 @@ const handleSubmit = async () => {
       <div>
         <p class="mb-1 text-sm font-medium text-default-500">域名</p>
         <p class="rounded-lg bg-default-100 px-3 py-2 text-sm text-default-400">
-          {{ site.domain }}
+          {{ site?.domain }}
         </p>
       </div>
 
@@ -64,7 +70,7 @@ const handleSubmit = async () => {
       </div>
 
       <div class="flex justify-end gap-3">
-        <KunButton color="default" variant="flat" @click="show = false">
+        <KunButton color="default" variant="flat" @click="open = false">
           取消
         </KunButton>
         <KunButton color="primary" :disabled="isLoading" @click="handleSubmit">

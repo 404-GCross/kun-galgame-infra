@@ -1,16 +1,11 @@
 <script setup lang="ts">
-defineProps<{ client: OAuthClientCreated }>()
-const emit = defineEmits<{ close: [] }>()
+defineProps<{ client: OAuthClientCreated | null }>()
 
-const show = ref(true)
-
-watch(show, (val) => {
-  if (!val) emit('close')
-})
+const open = defineModel<boolean>('open', { required: true })
 </script>
 
 <template>
-  <KunModal v-model="show" :is-dismissable="false">
+  <KunModal v-model="open" :is-dismissable="false">
     <div class="space-y-4">
       <div class="flex items-center gap-3">
         <div class="flex size-10 items-center justify-center rounded-full bg-success-100">
@@ -28,22 +23,22 @@ watch(show, (val) => {
         <div class="rounded-lg bg-default-50 p-3">
           <div class="flex items-center justify-between">
             <p class="text-xs text-default-400">Client ID</p>
-            <KunCopy :text="client.id" size="sm" />
+            <KunCopy :text="client?.id ?? ''" size="sm" />
           </div>
-          <p class="mt-1 break-all font-mono text-sm text-foreground">{{ client.id }}</p>
+          <p class="mt-1 break-all font-mono text-sm text-foreground">{{ client?.id }}</p>
         </div>
 
         <div class="rounded-lg bg-default-50 p-3">
           <div class="flex items-center justify-between">
             <p class="text-xs text-default-400">Client Secret</p>
-            <KunCopy :text="client.secret" size="sm" />
+            <KunCopy :text="client?.secret ?? ''" size="sm" />
           </div>
-          <p class="mt-1 break-all font-mono text-sm text-foreground">{{ client.secret }}</p>
+          <p class="mt-1 break-all font-mono text-sm text-foreground">{{ client?.secret }}</p>
         </div>
       </div>
 
       <div class="flex justify-end">
-        <KunButton color="primary" @click="show = false">
+        <KunButton color="primary" @click="open = false">
           我已保存，关闭
         </KunButton>
       </div>

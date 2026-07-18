@@ -5,9 +5,15 @@ const { data: clients, status, refresh } =
   await useApiFetch<OAuthClient[]>('/oauth/clients')
 
 const editing = ref<OAuthClient | null>(null)
+const configOpen = ref(false)
+
+const openConfig = (c: OAuthClient) => {
+  editing.value = c
+  configOpen.value = true
+}
 
 const onUpdated = async () => {
-  editing.value = null
+  configOpen.value = false
   await refresh()
   useKunMessage('存储配置已更新', 'success')
 }
@@ -76,7 +82,7 @@ const onUpdated = async () => {
             variant="flat"
             size="sm"
             class-name="shrink-0"
-            @click="editing = c"
+            @click="openConfig(c)"
           >
             <KunIcon name="lucide:sliders-horizontal" class="mr-1 size-4" />
             配置
@@ -86,9 +92,8 @@ const onUpdated = async () => {
     </div>
 
     <ArtifactsConfigModal
-      v-if="editing"
+      v-model:open="configOpen"
       :client="editing"
-      @close="editing = null"
       @updated="onUpdated"
     />
   </div>

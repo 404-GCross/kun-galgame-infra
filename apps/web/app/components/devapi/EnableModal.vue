@@ -10,10 +10,10 @@ import {
 // candidate list is the OAuth-client management data source (`/oauth/clients`)
 // minus the already-enabled apps, supplied by the parent.
 const props = defineProps<{ candidates: OAuthClient[] }>()
-const emit = defineEmits<{ close: []; enabled: [] }>()
+const emit = defineEmits<{ enabled: [] }>()
 
+const open = defineModel<boolean>('open', { required: true })
 const api = useApi()
-const show = ref(true)
 
 const clientId = ref<string>('')
 const tier = ref<DevTier>('free')
@@ -24,8 +24,12 @@ const clientOptions = computed(() =>
   props.candidates.map((c) => ({ value: c.id, label: `${c.name}（${c.id}）` }))
 )
 
-watch(show, (val) => {
-  if (!val) emit('close')
+// Kept mounted (v-model), so reset the form each time it opens.
+watch(open, (v) => {
+  if (!v) return
+  clientId.value = ''
+  tier.value = 'free'
+  error.value = ''
 })
 
 const handleSubmit = async () => {
@@ -51,7 +55,7 @@ const handleSubmit = async () => {
 </script>
 
 <template>
-  <KunModal v-model="show" size="md">
+  <KunModal v-model="open" size="md">
     <div class="space-y-4">
       <h2 class="text-xl font-bold text-foreground">启用新应用</h2>
       <p class="text-sm text-default-500">
@@ -84,7 +88,7 @@ const handleSubmit = async () => {
       </div>
 
       <div class="flex justify-end gap-3">
-        <KunButton color="default" variant="flat" @click="show = false">
+        <KunButton color="default" variant="flat" @click="open = false">
           取消
         </KunButton>
         <KunButton

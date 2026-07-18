@@ -1,35 +1,51 @@
 <script setup lang="ts">
 import type { OAuthClient } from '~~/shared/types/oauth-client'
 
-const props = defineProps<{ client: OAuthClient }>()
-const emit = defineEmits<{ close: []; updated: [] }>()
+const props = defineProps<{ client: OAuthClient | null }>()
+const emit = defineEmits<{ updated: [] }>()
 
+const open = defineModel<boolean>('open', { required: true })
 const api = useApi()
-const show = ref(true)
-watch(show, (v) => {
-  if (!v) emit('close')
-})
 
-const s = props.client.storage
+const artifactEnabled = ref(false)
+const artifactSiteKey = ref('')
+const artifactCdnBase = ref('')
+const artifactMime = ref('')
+const artifactMaxFileSize = ref(0)
+const artifactQuotaDaily = ref(0)
+const artifactQuotaBytesDaily = ref(0)
 
-const artifactEnabled = ref(s?.artifact_enabled ?? false)
-const artifactSiteKey = ref(s?.artifact_site_key ?? '')
-const artifactCdnBase = ref(s?.artifact_cdn_base ?? '')
-const artifactMime = ref((s?.artifact_allowed_mime ?? []).join(', '))
-const artifactMaxFileSize = ref(s?.artifact_max_file_size ?? 0)
-const artifactQuotaDaily = ref(s?.artifact_quota_daily ?? 0)
-const artifactQuotaBytesDaily = ref(s?.artifact_quota_bytes_daily ?? 0)
-
-const imageEnabled = ref(s?.image_enabled ?? false)
-const imageSiteKey = ref(s?.image_site_key ?? '')
-const imageCdnBase = ref(s?.image_cdn_base ?? '')
-const imagePresets = ref((s?.image_allowed_presets ?? []).join(', '))
-const imageMaxFileSize = ref(s?.image_max_file_size ?? 0)
-const imageQuotaDaily = ref(s?.image_quota_daily ?? 0)
-const imageQuotaBytesDaily = ref(s?.image_quota_bytes_daily ?? 0)
+const imageEnabled = ref(false)
+const imageSiteKey = ref('')
+const imageCdnBase = ref('')
+const imagePresets = ref('')
+const imageMaxFileSize = ref(0)
+const imageQuotaDaily = ref(0)
+const imageQuotaBytesDaily = ref(0)
 
 const isLoading = ref(false)
 const error = ref('')
+
+// Kept mounted (v-model); (re)load the form from the client's storage each open.
+watch(open, (v) => {
+  if (!v || !props.client) return
+  const s = props.client.storage
+  artifactEnabled.value = s?.artifact_enabled ?? false
+  artifactSiteKey.value = s?.artifact_site_key ?? ''
+  artifactCdnBase.value = s?.artifact_cdn_base ?? ''
+  artifactMime.value = (s?.artifact_allowed_mime ?? []).join(', ')
+  artifactMaxFileSize.value = s?.artifact_max_file_size ?? 0
+  artifactQuotaDaily.value = s?.artifact_quota_daily ?? 0
+  artifactQuotaBytesDaily.value = s?.artifact_quota_bytes_daily ?? 0
+  imageEnabled.value = s?.image_enabled ?? false
+  imageSiteKey.value = s?.image_site_key ?? ''
+  imageCdnBase.value = s?.image_cdn_base ?? ''
+  imagePresets.value = (s?.image_allowed_presets ?? []).join(', ')
+  imageMaxFileSize.value = s?.image_max_file_size ?? 0
+  imageQuotaDaily.value = s?.image_quota_daily ?? 0
+  imageQuotaBytesDaily.value = s?.image_quota_bytes_daily ?? 0
+  error.value = ''
+})
 
 const splitList = (v: string) =>
   v
@@ -38,10 +54,12 @@ const splitList = (v: string) =>
     .filter(Boolean)
 
 const handleSubmit = async () => {
+  const client = props.client
+  if (!client) return
   error.value = ''
   isLoading.value = true
   try {
-    const res = await api.put(`/oauth/clients/${props.client.id}/storage`, {
+    const res = await api.put(`/oauth/clients/${client.id}/storage`, {
       artifact_enabled: artifactEnabled.value,
       artifact_site_key: artifactSiteKey.value,
       artifact_cdn_base: artifactCdnBase.value,
@@ -69,10 +87,10 @@ const handleSubmit = async () => {
 </script>
 
 <template>
-  <KunModal v-model="show" size="lg">
+  <KunModal v-model="open" size="lg">
     <div class="space-y-4">
       <h2 class="text-foreground text-xl font-bold">
-        存储配置 — {{ client.name }}
+        存储配置 — {{ client?.name }}
       </h2>
 
       <!-- Artifact -->
@@ -180,7 +198,7 @@ const handleSubmit = async () => {
       <p v-if="error" class="text-danger text-sm">{{ error }}</p>
 
       <div class="flex justify-end gap-3">
-        <KunButton color="default" variant="flat" @click="show = false">
+        <KunButton color="default" variant="flat" @click="open = false">
           取消
         </KunButton>
         <KunButton color="primary" :disabled="isLoading" @click="handleSubmit">

@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { ALL_GRANTS, KNOWN_SCOPES, REN_ONLY_SCOPES, DEFAULT_REFRESH_TOKEN_TTL_SECONDS } from '~~/shared/types/oauth-client'
 
-const props = defineProps<{ client: OAuthClient }>()
-const emit = defineEmits<{ close: []; updated: [] }>()
+const props = defineProps<{ client: OAuthClient | null }>()
+const emit = defineEmits<{ updated: [] }>()
 
+const open = defineModel<boolean>('open', { required: true })
 const api = useApi()
-const show = ref(true)
 
 // Ren-only scopes (image:upload / artifact:upload) + auto_consent are ren（莲）-
 // only (server-enforced). For a non-ren editor we hide the controls; any
@@ -16,32 +16,43 @@ const scopeOptions = computed(() =>
   isRen.value ? KNOWN_SCOPES : KNOWN_SCOPES.filter((s) => !REN_ONLY_SCOPES.includes(s))
 )
 
-const name = ref(props.client.name)
-const redirectUris = ref([...props.client.redirect_uris])
-const grants = ref<string[]>([...(props.client.grants ?? [])])
-const allowedScopes = ref<string[]>([...(props.client.allowed_scopes ?? [])])
-const refreshTokenTtlDays = ref(
-  Math.round(
-    (props.client.refresh_token_ttl_seconds ?? DEFAULT_REFRESH_TOKEN_TTL_SECONDS) / 86400
-  )
-)
+const name = ref('')
+const redirectUris = ref<string[]>([])
+const grants = ref<string[]>([])
+const allowedScopes = ref<string[]>([])
+const refreshTokenTtlDays = ref(DEFAULT_REFRESH_TOKEN_TTL_SECONDS / 86400)
 // is_public is set at create time; toggling it post-hoc is dangerous
 // (changes the auth model). We surface it read-only here — if someone
 // really needs to flip it, they should recreate the client.
-const isPublicReadonly = computed(() => props.client.is_public ?? false)
+const isPublicReadonly = computed(() => props.client?.is_public ?? false)
 // auto_consent IS editable post-hoc — it only affects consent-screen
-// rendering, no token semantics change. Toggling on/off takes effect
-// on the next /oauth/authorize visit for this client.
-const autoConsent = ref(props.client.auto_consent ?? false)
+// rendering, no token semantics change.
+const autoConsent = ref(false)
 // App-directory (生态一键登录) display fields. listed/logo/tagline are
-// admin-settable; display_order is ren-only (the API leaves it unchanged for
-// non-ren, so re-sending the current value on save is harmless).
-const listed = ref(props.client.listed ?? false)
-const logoUrl = ref(props.client.logo_url ?? '')
-const tagline = ref(props.client.tagline ?? '')
-const displayOrder = ref<number | null>(props.client.display_order ?? 0)
+// admin-settable; display_order is ren-only.
+const listed = ref(false)
+const logoUrl = ref('')
+const tagline = ref('')
+const displayOrder = ref<number | null>(0)
 const error = ref('')
 const isLoading = ref(false)
+
+// Kept mounted (v-model); (re)load the form from the client each time it opens.
+const initForm = (c: OAuthClient) => {
+  name.value = c.name
+  redirectUris.value = [...c.redirect_uris]
+  grants.value = [...(c.grants ?? [])]
+  allowedScopes.value = [...(c.allowed_scopes ?? [])]
+  refreshTokenTtlDays.value = Math.round(
+    (c.refresh_token_ttl_seconds ?? DEFAULT_REFRESH_TOKEN_TTL_SECONDS) / 86400
+  )
+  autoConsent.value = c.auto_consent ?? false
+  listed.value = c.listed ?? false
+  logoUrl.value = c.logo_url ?? ''
+  tagline.value = c.tagline ?? ''
+  displayOrder.value = c.display_order ?? 0
+  error.value = ''
+}
 
 // Logo upload — POSTs a cropped square Blob to image_service and fills logoUrl
 // with the returned CDN URL. The logoUrl KunInput stays as a paste fallback.
@@ -58,8 +69,8 @@ const onLogoPicked = async (blob: Blob) => {
   }
 }
 
-watch(show, (val) => {
-  if (!val) emit('close')
+watch(open, (v) => {
+  if (v && props.client) initForm(props.client)
 })
 
 const addUri = () => {
@@ -91,6 +102,8 @@ const toggleScope = (s: string) => {
 }
 
 const handleSubmit = async () => {
+  const client = props.client
+  if (!client) return
   error.value = ''
 
   if (!name.value) {
@@ -116,7 +129,7 @@ const handleSubmit = async () => {
 
   isLoading.value = true
   try {
-    const response = await api.put(`/oauth/clients/${props.client.id}`, {
+    const response = await api.put(`/oauth/clients/${client.id}`, {
       name: name.value,
       redirect_uris: uris,
       grants: grants.value,
@@ -140,13 +153,13 @@ const handleSubmit = async () => {
 </script>
 
 <template>
-  <KunModal v-model="show" size="lg">
+  <KunModal v-model="open" size="lg">
     <div class="space-y-4">
       <h2 class="text-xl font-bold text-foreground">编辑客户端</h2>
 
       <div class="rounded-lg bg-default-50 p-3">
         <p class="text-xs text-default-400">Client ID</p>
-        <p class="mt-1 truncate font-mono text-sm text-foreground">{{ client.id }}</p>
+        <p class="mt-1 truncate font-mono text-sm text-foreground">{{ client?.id }}</p>
         <p class="mt-2 text-xs text-default-400">
           类型：{{ isPublicReadonly ? '公共客户端 (SPA / native)' : '机密客户端 (confidential)' }}
           <span class="text-default-300">— 创建后不可修改</span>
@@ -308,7 +321,7 @@ const handleSubmit = async () => {
       </div>
 
       <div class="flex justify-end gap-3">
-        <KunButton color="default" variant="flat" @click="show = false">
+        <KunButton color="default" variant="flat" @click="open = false">
           取消
         </KunButton>
         <KunButton color="primary" :disabled="isLoading" @click="handleSubmit">

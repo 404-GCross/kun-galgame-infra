@@ -7,10 +7,10 @@ import type { DevKeyMinted } from '~~/shared/types/devapi'
 // minted plaintext is handed straight to the parent (which reveals it once and
 // clears it) — this modal never persists it.
 const props = defineProps<{ clientId: string }>()
-const emit = defineEmits<{ close: []; minted: [DevKeyMinted] }>()
+const emit = defineEmits<{ minted: [DevKeyMinted] }>()
 
+const open = defineModel<boolean>('open', { required: true })
 const api = useApi()
-const show = ref(true)
 
 const name = ref('')
 const test = ref(false)
@@ -18,8 +18,13 @@ const scopes = ref<string[]>([...DEV_MINTABLE_SCOPES])
 const error = ref('')
 const isLoading = ref(false)
 
-watch(show, (val) => {
-  if (!val) emit('close')
+// Kept mounted (v-model), so reset the form each time it opens.
+watch(open, (v) => {
+  if (!v) return
+  name.value = ''
+  test.value = false
+  scopes.value = [...DEV_MINTABLE_SCOPES]
+  error.value = ''
 })
 
 const toggleScope = (s: string) => {
@@ -62,7 +67,7 @@ const handleSubmit = async () => {
 </script>
 
 <template>
-  <KunModal v-model="show" size="md">
+  <KunModal v-model="open" size="md">
     <div class="space-y-4">
       <h2 class="text-xl font-bold text-foreground">生成新密钥</h2>
 
@@ -103,7 +108,7 @@ const handleSubmit = async () => {
       </div>
 
       <div class="flex justify-end gap-3">
-        <KunButton color="default" variant="flat" @click="show = false">
+        <KunButton color="default" variant="flat" @click="open = false">
           取消
         </KunButton>
         <KunButton color="primary" :disabled="isLoading" @click="handleSubmit">

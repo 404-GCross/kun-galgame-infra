@@ -10,24 +10,32 @@ import type { DevApp } from '~~/shared/types/devapi'
 // owner). Shared by the list row edit and the detail page. Phase 1 forbids
 // granting NSFW (裁定 6) so the nsfw switch is surfaced read-off with a note —
 // the field/wire path exists but stays off.
-const props = defineProps<{ app: DevApp }>()
-const emit = defineEmits<{ close: []; updated: [] }>()
+const props = defineProps<{ app: DevApp | null }>()
+const emit = defineEmits<{ updated: [] }>()
 
+const open = defineModel<boolean>('open', { required: true })
 const api = useApi()
-const show = ref(true)
 
-const tier = ref<DevTier>((props.app.dev_tier as DevTier) ?? 'free')
-const ratePerMin = ref<number | null>(props.app.dev_rate_per_min)
-const quotaDaily = ref<number | null>(props.app.dev_quota_daily)
-const ownerUserId = ref<number | null>(props.app.owner_user_id ?? null)
+const tier = ref<DevTier>('free')
+const ratePerMin = ref<number | null>(null)
+const quotaDaily = ref<number | null>(null)
+const ownerUserId = ref<number | null>(null)
 const error = ref('')
 const isLoading = ref(false)
 
-watch(show, (val) => {
-  if (!val) emit('close')
+// Kept mounted (v-model); (re)load the form from the app each time it opens.
+watch(open, (v) => {
+  if (!v || !props.app) return
+  tier.value = (props.app.dev_tier as DevTier) ?? 'free'
+  ratePerMin.value = props.app.dev_rate_per_min
+  quotaDaily.value = props.app.dev_quota_daily
+  ownerUserId.value = props.app.owner_user_id ?? null
+  error.value = ''
 })
 
 const handleSubmit = async () => {
+  const app = props.app
+  if (!app) return
   error.value = ''
   isLoading.value = true
   try {
@@ -38,7 +46,7 @@ const handleSubmit = async () => {
       dev_quota_daily: quotaDaily.value ?? 0,
       owner_user_id: ownerUserId.value ?? 0,
     }
-    const res = await api.patch(`/admin/devapi/apps/${props.app.client_id}`, body)
+    const res = await api.patch(`/admin/devapi/apps/${app.client_id}`, body)
     if (res.code === 0) {
       useKunMessage('配置已更新', 'success')
       emit('updated')
@@ -52,13 +60,13 @@ const handleSubmit = async () => {
 </script>
 
 <template>
-  <KunModal v-model="show" size="md">
+  <KunModal v-model="open" size="md">
     <div class="space-y-4">
       <h2 class="text-xl font-bold text-foreground">应用配置</h2>
 
       <div class="rounded-lg bg-default-50 p-3">
-        <p class="text-xs text-default-400">{{ app.name }}</p>
-        <p class="mt-1 truncate font-mono text-sm text-foreground">{{ app.client_id }}</p>
+        <p class="text-xs text-default-400">{{ app?.name }}</p>
+        <p class="mt-1 truncate font-mono text-sm text-foreground">{{ app?.client_id }}</p>
       </div>
 
       <KunSelect
@@ -104,7 +112,7 @@ const handleSubmit = async () => {
       </div>
 
       <div class="flex justify-end gap-3">
-        <KunButton color="default" variant="flat" @click="show = false">
+        <KunButton color="default" variant="flat" @click="open = false">
           取消
         </KunButton>
         <KunButton color="primary" :disabled="isLoading" @click="handleSubmit">

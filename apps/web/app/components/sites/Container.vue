@@ -10,6 +10,12 @@ const isLoading = computed(() => status.value === 'pending')
 
 const showCreateModal = ref(false)
 const editingSite = ref<Site | null>(null)
+const editOpen = ref(false)
+
+const openEdit = (site: Site) => {
+  editingSite.value = site
+  editOpen.value = true
+}
 
 const handleCreated = () => {
   showCreateModal.value = false
@@ -17,7 +23,7 @@ const handleCreated = () => {
 }
 
 const handleUpdated = () => {
-  editingSite.value = null
+  editOpen.value = false
   refresh()
 }
 
@@ -59,7 +65,7 @@ const handleDelete = async (id: number) => {
         v-for="site in sites"
         :key="site.id"
         :site="site"
-        @edit="editingSite = site"
+        @edit="openEdit(site)"
         @delete="handleDelete(site.id)"
       />
     </div>
@@ -70,9 +76,8 @@ const handleDelete = async (id: number) => {
     />
 
     <SitesEditModal
-      v-if="editingSite"
+      v-model:open="editOpen"
       :site="editingSite"
-      @close="editingSite = null"
       @updated="handleUpdated"
     />
   </div>

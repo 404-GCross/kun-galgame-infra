@@ -30,6 +30,7 @@ const showMintModal = ref(false)
 // modal and cleared on close — never store/localStorage/URL/logs.
 const mintedKey = ref<DevKeyMinted | null>(null)
 const revealRotated = ref(false)
+const revealOpen = ref(false)
 
 // Single reusable confirm dialog. `run` is the async action to execute on 确认.
 const confirmDialog = ref<{
@@ -38,6 +39,7 @@ const confirmDialog = ref<{
   danger?: boolean
   run: () => Promise<void>
 } | null>(null)
+const confirmOpen = ref(false)
 
 const runConfirm = async () => {
   if (!confirmDialog.value) return
@@ -46,7 +48,7 @@ const runConfirm = async () => {
     await confirmDialog.value.run()
   } finally {
     busy.value = false
-    confirmDialog.value = null
+    confirmOpen.value = false
   }
 }
 
@@ -54,14 +56,12 @@ const handleMinted = (minted: DevKeyMinted) => {
   showMintModal.value = false
   revealRotated.value = false
   mintedKey.value = minted
+  revealOpen.value = true
   refreshKeys()
 }
 
-const closeReveal = () => {
-  mintedKey.value = null
-}
-
 const askRotate = (key: DevKey) => {
+  confirmOpen.value = true
   confirmDialog.value = {
     title: '轮换密钥',
     body: `将为「${key.name}」生成一枚新密钥，旧密钥进入 72 小时宽限后失效。请确保有机会保存新密钥。`,
@@ -72,6 +72,7 @@ const askRotate = (key: DevKey) => {
       if (res.code === 0 && res.data) {
         revealRotated.value = true
         mintedKey.value = res.data
+        revealOpen.value = true
         refreshKeys()
       } else {
         useKunMessage(res.message || '轮换失败', 'error')
@@ -81,6 +82,7 @@ const askRotate = (key: DevKey) => {
 }
 
 const askRevoke = (key: DevKey) => {
+  confirmOpen.value = true
   confirmDialog.value = {
     title: '吊销密钥',
     body: `吊销「${key.name}」后立即生效且不可撤销，使用该密钥的所有请求将被拒绝。确认继续？`,
@@ -100,6 +102,7 @@ const askRevoke = (key: DevKey) => {
 }
 
 const askDisable = () => {
+  confirmOpen.value = true
   confirmDialog.value = {
     title: '停用应用',
     body: '停用后该应用退出开放 API 平台，其所有密钥将立即失效。可随时重新启用。确认继续？',
@@ -206,40 +209,32 @@ const handleConfigUpdated = () => {
     </template>
 
     <DevapiConfigModal
-      v-if="showConfigModal && app"
+      v-model:open="showConfigModal"
       :app="app"
-      @close="showConfigModal = false"
       @updated="handleConfigUpdated"
     />
 
     <DevapiMintModal
-      v-if="showMintModal"
+      v-model:open="showMintModal"
       :client-id="clientId"
-      @close="showMintModal = false"
       @minted="handleMinted"
     />
 
     <DevapiKeyRevealModal
-      v-if="mintedKey"
+      v-model:open="revealOpen"
       :minted="mintedKey"
       :rotated="revealRotated"
-      @close="closeReveal"
     />
 
-    <KunModal
-      v-if="confirmDialog"
-      :model-value="true"
-      role="alertdialog"
-      @update:model-value="confirmDialog = null"
-    >
+    <KunModal v-model="confirmOpen" role="alertdialog">
       <div class="space-y-4">
-        <h2 class="text-xl font-bold text-foreground">{{ confirmDialog.title }}</h2>
-        <p class="text-sm text-default-500">{{ confirmDialog.body }}</p>
+        <h2 class="text-xl font-bold text-foreground">{{ confirmDialog?.title }}</h2>
+        <p class="text-sm text-default-500">{{ confirmDialog?.body }}</p>
         <div class="flex justify-end gap-3">
-          <KunButton color="default" variant="flat" :disabled="busy" @click="confirmDialog = null">
+          <KunButton color="default" variant="flat" :disabled="busy" @click="confirmOpen = false">
             取消
           </KunButton>
-          <KunButton :color="confirmDialog.danger ? 'danger' : 'primary'" :disabled="busy" @click="runConfirm">
+          <KunButton :color="confirmDialog?.danger ? 'danger' : 'primary'" :disabled="busy" @click="runConfirm">
             <KunIcon v-if="busy" name="lucide:loader-circle" class="mr-2 size-4 animate-spin" />
             确认
           </KunButton>

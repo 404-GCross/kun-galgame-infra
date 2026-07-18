@@ -23,6 +23,12 @@ const candidates = computed(() =>
 
 const showEnableModal = ref(false)
 const editingApp = ref<DevApp | null>(null)
+const configOpen = ref(false)
+
+const openConfig = (app: DevApp) => {
+  editingApp.value = app
+  configOpen.value = true
+}
 
 const refreshAll = () => {
   refresh()
@@ -35,7 +41,7 @@ const handleEnabled = () => {
 }
 
 const handleUpdated = () => {
-  editingApp.value = null
+  configOpen.value = false
   refreshAll()
 }
 
@@ -91,7 +97,7 @@ const overrideLabel = (app: DevApp) => {
             <p class="mt-1 truncate font-mono text-sm text-default-400">{{ app.client_id }}</p>
           </div>
           <div class="flex shrink-0 gap-1">
-            <KunButton variant="flat" size="sm" @click="editingApp = app">
+            <KunButton variant="flat" size="sm" @click="openConfig(app)">
               <KunIcon name="lucide:sliders-horizontal" class="mr-1 size-4" />
               配置
             </KunButton>
@@ -127,16 +133,14 @@ const overrideLabel = (app: DevApp) => {
     </div>
 
     <DevapiEnableModal
-      v-if="showEnableModal"
+      v-model:open="showEnableModal"
       :candidates="candidates"
-      @close="showEnableModal = false"
       @enabled="handleEnabled"
     />
 
     <DevapiConfigModal
-      v-if="editingApp"
+      v-model:open="configOpen"
       :app="editingApp"
-      @close="editingApp = null"
       @updated="handleUpdated"
     />
   </div>

@@ -2,18 +2,13 @@
 // Show-once plaintext reveal (安全关键). The plaintext lives ONLY in the
 // `minted` prop held by the parent's component-local ref; it is never written
 // to store/localStorage/URL/logs. Closing the modal clears the parent state.
-defineProps<{ minted: DevKeyMinted; rotated?: boolean }>()
-const emit = defineEmits<{ close: [] }>()
+defineProps<{ minted: DevKeyMinted | null; rotated?: boolean }>()
 
-const show = ref(true)
-
-watch(show, (val) => {
-  if (!val) emit('close')
-})
+const open = defineModel<boolean>('open', { required: true })
 </script>
 
 <template>
-  <KunModal v-model="show" :is-dismissable="false">
+  <KunModal v-model="open" :is-dismissable="false">
     <div class="space-y-4">
       <div class="flex items-center gap-3">
         <div class="flex size-10 items-center justify-center rounded-full bg-success-100">
@@ -32,14 +27,14 @@ watch(show, (val) => {
 
       <div class="rounded-lg bg-default-50 p-3">
         <div class="flex items-center justify-between">
-          <p class="text-xs text-default-400">API Key（{{ minted.name }}）</p>
-          <KunCopy :text="minted.key" size="sm" />
+          <p class="text-xs text-default-400">API Key（{{ minted?.name }}）</p>
+          <KunCopy :text="minted?.key ?? ''" size="sm" />
         </div>
-        <p class="mt-1 break-all font-mono text-sm text-foreground">{{ minted.key }}</p>
+        <p class="mt-1 break-all font-mono text-sm text-foreground">{{ minted?.key }}</p>
       </div>
 
       <div class="flex justify-end">
-        <KunButton color="primary" @click="show = false">
+        <KunButton color="primary" @click="open = false">
           我已保存，关闭
         </KunButton>
       </div>
