@@ -215,54 +215,40 @@ func Mount(a *app.App, cfg *config.Config, deps Deps) {
 	// ones additionally see their own pending/declined drafts.
 	optionalJWT := middleware.OptionalJWT(tokenVerifier)
 
+	// ── Read-route registrar (shared by the /api internal face and the
+	// devapi-gated /internal rich read face) ──
+	// The SAME handler/service instances back both faces; readRoutes.register
+	// owns the read-route registration order (static/multi-segment + /mine before
+	// the galgame /:gid catch-all; taxonomy /search before /:name; series /search
+	// before /:id) so it can never drift between the two faces.
+	reads := readRoutes{
+		galgameH:        galgameH,
+		searchH:         searchH,
+		entityGalgamesH: entityGalgamesH,
+		linkH:           linkH,
+		contributorH:    contributorH,
+		submissionH:     submissionH,
+		messageH:        messageH,
+		tagH:            tagH,
+		officialH:       officialH,
+		engineH:         engineH,
+		seriesH:         seriesH,
+		taxRevH:         taxRevH,
+		optionalJWT:     optionalJWT,
+		jwtAuth:         jwtAuth,
+	}
+
 	// API routes
 	api := a.Fiber.Group("/api")
+	// Reads first: every GET read route across galgame/tag/official/engine/
+	// series. Registering them here — before the write/feed/proxy routes and
+	// their empty-prefix jwtAuth fences below — preserves the original ordering,
+	// because a Fiber empty-prefix fence only covers routes registered AFTER it;
+	// the reads registered here stay outside every write fence.
+	reads.register(api)
 
-	// ── Galgame ──
+	// ── Galgame writes / S2S feeds / catalog proxy ──
 	galgame := api.Group("/galgame")
-
-	// Public GET routes (must be registered before auth group)
-	galgame.Get("/", galgameH.List)
-	// search & batch accept an optional Bearer JWT so authenticated callers
-	// can also see their own pending/declined drafts (include_pending=true
-	// for search; automatic for batch).
-	galgame.Get("/search", optionalJWT, searchH.Galgame)
-	galgame.Get("/batch", optionalJWT, galgameH.BatchGet)
-	galgame.Get("/drafts", galgameH.Drafts)
-	galgame.Get("/check", galgameH.CheckVNDB)
-	galgame.Get("/user/:id/stats", galgameH.UserStats)
-	galgame.Get("/user/:id/galgames", galgameH.UserGalgames)
-	galgame.Get("/user/:id/contributed", galgameH.UserContributedGalgames)
-	// Release calendar (static paths → before the /:gid catch-all). Public,
-	// content_limit via query param so the URL fully keys the cache.
-	galgame.Get("/calendar", galgameH.Calendar)
-	galgame.Get("/calendar/pending", galgameH.CalendarPending)
-	galgame.Get("/calendar/tba", galgameH.CalendarTBA)
-	// Cross-source stats overview (step 34). Static path → before the /:gid
-	// catch-all. Public; ETag-cached like the calendar.
-	galgame.Get("/stats", galgameH.Stats)
-	// Entity reverse-lookups (step 20). Static multi-segment paths, registered
-	// before the /:gid catch-all so ":gid" never binds "officials"/"tags".
-	// Public (SFW-gated via content_limit); powers downstream entity pages.
-	galgame.Get("/officials/:id/galgames", entityGalgamesH.OfficialGalgames)
-	galgame.Get("/tags/:id/galgames", entityGalgamesH.TagGalgames)
-	// GET /mine MUST be registered before the /:gid catch-all: both are
-	// GET and Fiber matches by registration order, so a /:gid registered
-	// first binds :gid="mine" and the handler ParseInt-fails with
-	// {"code":2,"无效的 ID"}. It needs auth, so attach jwtAuth inline
-	// (same middleware the galgameAuth group uses) rather than relying on
-	// the later group. submit/claim/patch/delete on /:gid are POST/PATCH/
-	// DELETE so they don't collide and stay in the auth group below.
-	galgame.Get("/mine", jwtAuth, submissionH.ListMine)
-	galgame.Get("/:gid", optionalJWT, galgameH.Get)
-	// The old-wire revision/PR read routes (/:gid/revisions*, /:gid/prs*)
-	// retired with apps/wiki at E3b — history/PR reads now come from the
-	// engine edit face (kungal's /galgame/:gid/edit/* BFF).
-	galgame.Get("/:gid/links", linkH.ListLinks)
-	galgame.Get("/:gid/aliases", linkH.ListAliases)
-	galgame.Get("/:gid/contributors", contributorH.List)
-	// Three-source score snapshot (step 34). Public; display-only (no gate).
-	galgame.Get("/:gid/scores", galgameH.Scores)
 
 	// ── Cross-service endpoints (OAuth Client Basic Auth) ──
 	//
@@ -343,9 +329,9 @@ func Mount(a *app.App, cfg *config.Config, deps Deps) {
 	galgameAuth.Delete("/:gid", submissionH.DeleteDraft)
 
 	// ── Messages ──
-	// /messages/mine — end-user JWT.
-	// /messages/feed is registered ABOVE the jwtAuth fence; see comment there.
-	galgameAuth.Get("/messages/mine", messageH.ListMine)
+	// GET /messages/mine (end-user JWT) is a read route, registered via
+	// reads.register above — before the /:gid catch-all and this fence.
+	// /messages/feed is Basic-Auth, registered ABOVE the fence; see there.
 
 	// ── Admin ──
 	// Admin endpoints require both JWT validity AND galgame.admin_access
@@ -361,58 +347,32 @@ func Mount(a *app.App, cfg *config.Config, deps Deps) {
 	// content-side companion to the OAuth anonymize action).
 	admin.Post("/galgame/ban-by-user/:userId", adminH.BanGalgamesByUser)
 
-	// ── Tag ──
-	// Create: any logged-in user (introduce a tag for original/doujin
-	// works missing from VNDB). Update/Delete: admin/moderator (role
-	// checked inside the handler, same as series).
+	// ── Tag writes ── (GET reads registered via reads.register above)
+	// Create: any logged-in user (introduce a tag for original/doujin works
+	// missing from VNDB). Update/Delete/revert: admin/moderator (role checked
+	// inside the handler, same as series).
 	tag := api.Group("/tag")
-	tag.Get("/", tagH.List)
-	tag.Get("/search", searchH.Tag) // Meilisearch-backed (replaces DB LIKE search)
-	tag.Get("/multi", tagH.Multi)
-	tag.Get("/:name", tagH.GetByName)
-	// Member galgame ids → the forum intersects with local + filters there.
-	tag.Get("/:id/galgame-ids", tagH.GalgameIDs)
 	tag.Post("/", jwtAuth, tagH.Create)
 	tag.Put("/", jwtAuth, tagH.Update)
 	tag.Delete("/:id", jwtAuth, tagH.Delete)
-	// Tag revision/revert (admin/moderator) — same surface for each of
-	// the four taxonomy entities; see TaxonomyRevisionHandler.
-	tag.Get("/:id/revisions", taxRevH.TagListRevisions)
-	tag.Get("/:id/revisions/:rev", taxRevH.TagGetRevision)
 	tag.Post("/:id/revert", jwtAuth, taxRevH.TagRevert)
 
-	// ── Official ──
+	// ── Official writes ── (GET reads registered via reads.register above)
 	official := api.Group("/official")
-	official.Get("/", officialH.List)
-	official.Get("/search", searchH.Official) // Meilisearch-backed
-	official.Get("/:name", officialH.GetByName)
-	official.Get("/:id/galgame-ids", officialH.GalgameIDs)
 	official.Post("/", jwtAuth, officialH.Create)
 	official.Put("/", jwtAuth, officialH.Update)
 	official.Delete("/:id", jwtAuth, officialH.Delete)
-	official.Get("/:id/revisions", taxRevH.OfficialListRevisions)
-	official.Get("/:id/revisions/:rev", taxRevH.OfficialGetRevision)
 	official.Post("/:id/revert", jwtAuth, taxRevH.OfficialRevert)
 
-	// ── Engine ──
+	// ── Engine writes ── (GET reads registered via reads.register above)
 	engine := api.Group("/engine")
-	engine.Get("/", engineH.List)
-	engine.Get("/:name", engineH.GetByName)
-	engine.Get("/:id/galgame-ids", engineH.GalgameIDs)
 	engine.Post("/", jwtAuth, engineH.Create)
 	engine.Put("/", jwtAuth, engineH.Update)
 	engine.Delete("/:id", jwtAuth, engineH.Delete)
-	engine.Get("/:id/revisions", taxRevH.EngineListRevisions)
-	engine.Get("/:id/revisions/:rev", taxRevH.EngineGetRevision)
 	engine.Post("/:id/revert", jwtAuth, taxRevH.EngineRevert)
 
-	// ── Series ──
+	// ── Series writes ── (GET reads registered via reads.register above)
 	series := api.Group("/series")
-	series.Get("/", seriesH.List)
-	series.Get("/search", seriesH.Search)
-	series.Get("/:id", seriesH.Get)
-	series.Get("/:id/revisions", taxRevH.SeriesListRevisions)
-	series.Get("/:id/revisions/:rev", taxRevH.SeriesGetRevision)
 	seriesAuth := series.Group("", jwtAuth)
 	seriesAuth.Post("/", seriesH.Create)
 	seriesAuth.Post("/modal", seriesH.Modal)
@@ -420,12 +380,17 @@ func Mount(a *app.App, cfg *config.Config, deps Deps) {
 	seriesAuth.Delete("/:id", seriesH.Delete)
 	seriesAuth.Post("/:id/revert", taxRevH.SeriesRevert)
 
-	// ─── NextMoe open API: galgame public projection (/v1/galgame/*) ───
+	// ─── Shared devapi infra (built ONCE) + the two gated read faces ───
 	//
-	// A NEW public read-only bypass (step 02) — the internal /api/galgame read
-	// face above is untouched (routes + shapes unchanged). Every route is gated
-	// by the shared devapi middleware chain (API key → per-minute rate limit →
-	// daily quota → galgame:read scope) and metered per response. NSFW is inert
-	// in Phase 1 (no key carries galgame:nsfw), so the projection is sfw-only.
-	mountPublic(a, cfg, galgameSvc, searchSvc, galgameH, entityGalgamesH)
+	// newDevapiFace builds the middleware chain + usage recorder + flush
+	// lifecycle a SINGLE time; both faces register against it — no second flush
+	// ticker, no second OnPreShutdown Redis Close.
+	//   /internal   = the internal-tier rich read face: the 44 read routes
+	//     registered above, byte-identical, gated by RequireTier(internal); NO
+	//     sfwGate (content_limit passes through untouched). Downstream kungal/
+	//     moyu/letmoe S2S consumers (09-open-api-phase2).
+	//   /v1/galgame = the public third-party projection (frozen contract).
+	face := newDevapiFace(a, cfg)
+	mountInternal(a, face, reads)
+	mountPublic(a, face, galgameSvc, searchSvc, galgameH, entityGalgamesH)
 }
