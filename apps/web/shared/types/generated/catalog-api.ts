@@ -1309,6 +1309,7 @@ export interface components {
             refs: components["schemas"]["WorkRef"][] | null;
             releases: components["schemas"]["ReleaseBrief"][] | null;
             screenshots: components["schemas"]["WorkScreenshot"][] | null;
+            tags: components["schemas"]["WorkTag"][] | null;
             titles: components["schemas"]["WorkTitle"][] | null;
             work: components["schemas"]["WorkCore"];
         };
@@ -1491,6 +1492,20 @@ export interface components {
         };
         WorkSearchResponse: {
             items: components["schemas"]["WorkSearchHit"][] | null;
+        };
+        WorkTag: {
+            /**
+             * Format: int64
+             * @description source vote count backing the tag; absent when the source has no votes (bridged galgame wiki tags)
+             */
+            count?: number;
+            /** @description tag text, verbatim from the source (no vocabulary mapping) */
+            name: string;
+            /**
+             * Format: int32
+             * @description catalog_source id (provenance): galgame_wiki/vndb for a bridged claimed tag, the backfill source (bangumi) for a bodyless tag
+             */
+            source_id: number;
         };
         WorkTitle: {
             /**

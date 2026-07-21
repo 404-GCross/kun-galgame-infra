@@ -1833,6 +1833,12 @@ components:
           type:
             - array
             - "null"
+        tags:
+          items:
+            $ref: "#/components/schemas/WorkTag"
+          type:
+            - array
+            - "null"
         titles:
           items:
             $ref: "#/components/schemas/WorkTitle"
@@ -1852,6 +1858,7 @@ components:
         - covers
         - screenshots
         - ratings
+        - tags
       type: object
     WorkCharacter:
       additionalProperties: false
@@ -2139,6 +2146,24 @@ components:
             - "null"
       required:
         - items
+      type: object
+    WorkTag:
+      additionalProperties: false
+      properties:
+        count:
+          description: source vote count backing the tag; absent when the source has no votes (bridged galgame wiki tags)
+          format: int64
+          type: integer
+        name:
+          description: tag text, verbatim from the source (no vocabulary mapping)
+          type: string
+        source_id:
+          description: "catalog_source id (provenance): galgame_wiki/vndb for a bridged claimed tag, the backfill source (bangumi) for a bodyless tag"
+          format: int32
+          type: integer
+      required:
+        - name
+        - source_id
       type: object
     WorkTitle:
       additionalProperties: false

@@ -113,6 +113,12 @@ type WorkDetail struct {
 	// column mapping); for a BODYLESS work, its catalog_work_rating rows. Same
 	// strict XOR as Screenshots.
 	Ratings []WorkRatingRow
+	// Tags is the merged tag set (step 58b media-aggregation tags facet): for a
+	// CLAIMED work, bridged from galgame_tag_relation ⋈ galgame_tag (non-spoiler
+	// only, localized display names — see read_tags.go for the mapping); for a
+	// BODYLESS work, its catalog_work_tag rows (verbatim Bangumi folksonomy).
+	// Same strict XOR as Ratings.
+	Tags []WorkTagRow
 }
 
 // WorkIntroRow is one language's intro on a work's read face, carrying its
@@ -362,6 +368,12 @@ func (s *ReadService) loadWorkDetail(ctx context.Context, workID int64) (*WorkDe
 		return nil, err
 	}
 	detail.Ratings = ratings[work.ID]
+
+	tags, err := s.loadWorkTags(ctx, []claimSubject{subj})
+	if err != nil {
+		return nil, err
+	}
+	detail.Tags = tags[work.ID]
 	return detail, nil
 }
 

@@ -1199,6 +1199,182 @@ func TestWorkRating(t *testing.T) {
 	assert.Empty(t, body["data"].(map[string]any)["ratings"].([]any))
 }
 
+// galgameTagStubGalgameIDs are the fixture galgame body ids used by the claimed
+// tag bridge; galgameTagStubTagIDs the fixture galgame_tag ids (both kept
+// distinct from the other media stubs' ids so the tests never collide).
+var (
+	galgameTagStubGalgameIDs = []int64{9001, 9002}
+	galgameTagStubTagIDs     = []int64{9101, 9102, 9103}
+)
+
+// ensureGalgameTagStub provisions the two tag-layer tables the claimed-tag
+// bridge (step 58b) joins against: galgame_tag and galgame_tag_relation. In
+// prod/rehearsal both live in kun_catalog alongside catalog; the catalog test
+// DB has no such tables, so this creates stubs mirroring the real shapes
+// (surveyed live: tag name text UNIQUE / category NOT NULL; relation
+// (galgame_id, tag_id) PK with nullable spoiler_level + source defaults).
+// CREATE ... IF NOT EXISTS is a no-op against a real table; the INSERT helpers
+// always pass category (the real schema's defaultless NOT NULL) and the
+// fixture tag names are 58b-suffixed so the real UNIQUE(name) can never
+// collide; cleanup is a targeted DELETE (relations first — the real relation
+// FKs both parents). Idempotent.
+func ensureGalgameTagStub(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	require.NoError(t, db.Exec(`CREATE TABLE IF NOT EXISTS galgame_tag (
+		id bigint PRIMARY KEY,
+		name text NOT NULL UNIQUE,
+		category text NOT NULL,
+		description text DEFAULT ''
+	)`).Error)
+	require.NoError(t, db.Exec(`CREATE TABLE IF NOT EXISTS galgame_tag_relation (
+		galgame_id bigint NOT NULL,
+		tag_id bigint NOT NULL,
+		spoiler_level bigint DEFAULT 0,
+		source varchar(16) DEFAULT '',
+		PRIMARY KEY (galgame_id, tag_id)
+	)`).Error)
+	require.NoError(t, db.Exec(`DELETE FROM galgame_tag_relation WHERE galgame_id IN ?`, galgameTagStubGalgameIDs).Error)
+	require.NoError(t, db.Exec(`DELETE FROM galgame_tag WHERE id IN ?`, galgameTagStubTagIDs).Error)
+}
+
+// insertGalgameTag inserts one fixture galgame_tag definition (category passed
+// for the real-schema defaultless NOT NULL).
+func insertGalgameTag(t *testing.T, db *gorm.DB, id int64, name string) {
+	t.Helper()
+	require.NoError(t, db.Exec(`INSERT INTO galgame_tag (id, name, category) VALUES (?, ?, 'content')`, id, name).Error)
+}
+
+// insertGalgameTagRelation attaches a tag to a galgame body with the given
+// spoiler level and provenance source (”=user-curated, 'vndb'=synced).
+func insertGalgameTagRelation(t *testing.T, db *gorm.DB, galgameID, tagID int64, spoiler int, source string) {
+	t.Helper()
+	require.NoError(t, db.Exec(`INSERT INTO galgame_tag_relation (galgame_id, tag_id, spoiler_level, source)
+		VALUES (?, ?, ?, ?)`, galgameID, tagID, spoiler, source).Error)
+}
+
+// TestWorkTag pins the step-58b media-aggregation tag read face: the CLAIMED
+// bridge (galgame_tag_relation ⋈ galgame_tag — localized display names,
+// NON-SPOILER only, count omitted because the galgame layer has no votes,
+// source mapped from relation.source), the BODYLESS native read
+// (catalog_work_tag, count DESC then name), strict XOR (a claimed work with no
+// bridgeable tag yields [] and never falls back to a shadow native row), and
+// []-not-null serialization.
+func TestWorkTag(t *testing.T) {
+	db := openCatalogTestDB(t)
+	ensureGalgameStub(t, db)           // the intro bridge (also run by loadWorkDetail) needs galgame
+	ensureGalgameCoverStub(t, db)      // the co-loaded cover bridge needs galgame_cover
+	ensureGalgameScreenshotStub(t, db) // the co-loaded screenshot bridge needs galgame_screenshot
+	ensureGalgameRatingStub(t, db)     // the co-loaded rating bridge needs the two meta tables
+	ensureGalgameTagStub(t, db)        // the tag bridge needs the tag layer (clears 9001/9002 + fixture tags)
+	// The relation FKs galgame(id) in the real-schema case, so the bridge
+	// galgame ids need a parent body row. Relations cleared above → safe to
+	// reset the parents. Empty intros / no other media rows keep the co-loaded
+	// sibling bridges no-ops.
+	require.NoError(t, db.Exec(`DELETE FROM galgame WHERE id IN ?`, galgameTagStubGalgameIDs).Error)
+	insertGalgameBody(t, db, 9001, 0, "", "", "", "")
+	insertGalgameBody(t, db, 9002, 0, "", "", "", "")
+	for _, tbl := range []string{"catalog_work_tag", "catalog_work"} {
+		require.NoError(t, db.Exec("TRUNCATE "+tbl+" RESTART IDENTITY CASCADE").Error)
+	}
+	// Source ids from the seed: galgame_wiki=12 (bridge fallback), vndb=2, bangumi=3.
+	var srcGalgameWiki, srcVNDB, srcBangumi int16
+	db.Raw("SELECT id FROM catalog_source WHERE key='galgame_wiki'").Scan(&srcGalgameWiki)
+	db.Raw("SELECT id FROM catalog_source WHERE key='vndb'").Scan(&srcVNDB)
+	db.Raw("SELECT id FROM catalog_source WHERE key='bangumi'").Scan(&srcBangumi)
+	require.NotZero(t, srcGalgameWiki, "galgame_wiki source must be seeded")
+	require.NotZero(t, srcVNDB, "vndb source must be seeded")
+	require.NotZero(t, srcBangumi, "bangumi source must be seeded")
+
+	// Fixture tag layer: a user-curated tag, a vndb-synced tag, and a severe-
+	// spoiler tag that must NEVER cross the bridge (the unified shape carries no
+	// spoiler flag, so only the non-spoiler subset is honest).
+	insertGalgameTag(t, db, 9101, "恋愛(58b)")
+	insertGalgameTag(t, db, 9102, "泣きゲー(58b)")
+	insertGalgameTag(t, db, 9103, "ネタバレ(58b)")
+
+	// --- CLAIMED work (galgame_id 9001): two bridgeable tags + one spoiler tag.
+	claimed := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "主張作品", ContentRating: 0, Status: 0,
+		Site: strptr("galgame_wiki"), ProductWorkID: ptrI64(9001)}
+	require.NoError(t, db.Create(&claimed).Error)
+	insertGalgameTagRelation(t, db, 9001, 9101, 0, "")     // user-curated → galgame_wiki
+	insertGalgameTagRelation(t, db, 9001, 9102, 0, "vndb") // synced → vndb
+	insertGalgameTagRelation(t, db, 9001, 9103, 2, "vndb") // severe spoiler → filtered
+
+	// --- BODYLESS work: native folksonomy rows (count DESC, name tie-break).
+	bodyless := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "無体作品", ContentRating: 0, Status: 0}
+	require.NoError(t, db.Create(&bodyless).Error)
+	for _, row := range []model.CatalogWorkTag{
+		{WorkID: bodyless.ID, Name: "拔作", Count: 1, SourceID: srcBangumi},
+		{WorkID: bodyless.ID, Name: "PC", Count: 5, SourceID: srcBangumi},
+		{WorkID: bodyless.ID, Name: "百合", Count: 30, SourceID: srcBangumi},
+		{WorkID: bodyless.ID, Name: "ADV", Count: 5, SourceID: srcBangumi},
+	} {
+		require.NoError(t, db.Create(&row).Error)
+	}
+
+	// --- XOR work: claimed (galgame_id 9002) whose ONLY galgame tag is a
+	// spoiler (filtered → bridge empty), plus a SHADOW native row (a prior
+	// bodyless state) that must NEVER surface.
+	xor := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "空主張", ContentRating: 0, Status: 0,
+		Site: strptr("galgame_wiki"), ProductWorkID: ptrI64(9002)}
+	require.NoError(t, db.Create(&xor).Error)
+	insertGalgameTagRelation(t, db, 9002, 9103, 2, "vndb")
+	require.NoError(t, db.Create(&model.CatalogWorkTag{
+		WorkID: xor.ID, Name: "百合", Count: 99, SourceID: srcBangumi}).Error)
+
+	// --- EMPTY work: bodyless, no tags → [].
+	empty := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "空作品", ContentRating: 0, Status: 0}
+	require.NoError(t, db.Create(&empty).Error)
+
+	app := readApp(service.NewReadService(db), nil)
+
+	// CLAIMED: two bridged localized names, spoiler tag absent, count omitted
+	// (the galgame layer has no votes), per-relation source attribution.
+	// Matched by name (not position) — CJK name order is collation-dependent.
+	code, body := getJSON(t, app, "/api/v1/catalog/works/"+itoa(claimed.ID))
+	require.Equal(t, 200, code)
+	tags := body["data"].(map[string]any)["tags"].([]any)
+	require.Len(t, tags, 2, "non-spoiler tags bridged, spoiler tag filtered")
+	byName := map[string]map[string]any{}
+	for _, raw := range tags {
+		tg := raw.(map[string]any)
+		byName[tg["name"].(string)] = tg
+		_, hasCount := tg["count"]
+		assert.False(t, hasCount, "no votes in the galgame layer → count omitted")
+	}
+	require.Contains(t, byName, "恋愛(58b)")
+	assert.EqualValues(t, srcGalgameWiki, byName["恋愛(58b)"]["source_id"], "user-curated relation → galgame_wiki")
+	require.Contains(t, byName, "泣きゲー(58b)")
+	assert.EqualValues(t, srcVNDB, byName["泣きゲー(58b)"]["source_id"], "vndb-synced relation → vndb")
+	assert.NotContains(t, byName, "ネタバレ(58b)", "spoiler tag never crosses the bridge")
+
+	// BODYLESS: native rows, (count DESC, name) — high-vote first, ASCII tie
+	// broken by name; counts present.
+	code, body = getJSON(t, app, "/api/v1/catalog/works/"+itoa(bodyless.ID))
+	require.Equal(t, 200, code)
+	tags = body["data"].(map[string]any)["tags"].([]any)
+	require.Len(t, tags, 4)
+	b0 := tags[0].(map[string]any)
+	assert.Equal(t, "百合", b0["name"])
+	assert.EqualValues(t, 30, b0["count"], "folksonomy vote count surfaces")
+	assert.EqualValues(t, srcBangumi, b0["source_id"])
+	assert.Equal(t, "ADV", tags[1].(map[string]any)["name"], "count tie broken by name")
+	assert.Equal(t, "PC", tags[2].(map[string]any)["name"])
+	b3 := tags[3].(map[string]any)
+	assert.Equal(t, "拔作", b3["name"])
+	assert.EqualValues(t, 1, b3["count"], "count=1 rows stored and served (store-all)")
+
+	// XOR: claimed + only a spoiler tag → [] (the shadow native row is invisible).
+	code, body = getJSON(t, app, "/api/v1/catalog/works/"+itoa(xor.ID))
+	require.Equal(t, 200, code)
+	assert.Empty(t, body["data"].(map[string]any)["tags"].([]any), "strict XOR: no fallback to native rows")
+
+	// EMPTY: [] not null.
+	code, body = getJSON(t, app, "/api/v1/catalog/works/"+itoa(empty.ID))
+	require.Equal(t, 200, code)
+	assert.Empty(t, body["data"].(map[string]any)["tags"].([]any))
+}
+
 func ptrI16(v int16) *int16 { return &v }
 
 func ptrI64(v int64) *int64 { return &v }

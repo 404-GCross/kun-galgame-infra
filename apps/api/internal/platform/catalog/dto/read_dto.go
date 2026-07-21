@@ -52,6 +52,27 @@ type WorkByAnchorResponse struct {
 	// BODYLESS work's from its catalog_work_rating rows. Strict XOR: a claimed
 	// work with no scored meta yields [] (never a fallback to native rows).
 	Ratings []WorkRating `json:"ratings"`
+	// Tags is the work's content-tag set (step 58b media-aggregation tags
+	// facet), one element per tag name per source, in a single shape regardless
+	// of source. Names are VERBATIM (no vocabulary mapping): a CLAIMED work's
+	// tags are bridged from the galgame wiki tag layer (localized display names,
+	// non-spoiler only); a BODYLESS work's from its catalog_work_tag rows
+	// (Bangumi folksonomy as-is). Ordered (count DESC, name). Strict XOR: a
+	// claimed work with no galgame tag yields [] (never a fallback to native
+	// rows). Distinct from labels — labels are the attribution vocabulary
+	// (organizational responsibility), tags are content description.
+	Tags []WorkTag `json:"tags"`
+}
+
+// WorkTag is one content tag on a work, in the unified media-aggregation shape.
+// name is verbatim source text: the galgame wiki display name (zh-localized
+// where the VNDB tagMap covers it) for a bridged claimed tag, the raw Bangumi
+// folksonomy name for a bodyless tag. count is the source's vote count, absent
+// when the source has no votes (the whole galgame tag layer carries none).
+type WorkTag struct {
+	Name     string `json:"name" doc:"tag text, verbatim from the source (no vocabulary mapping)"`
+	Count    int    `json:"count,omitempty" doc:"source vote count backing the tag; absent when the source has no votes (bridged galgame wiki tags)"`
+	SourceID int16  `json:"source_id" doc:"catalog_source id (provenance): galgame_wiki/vndb for a bridged claimed tag, the backfill source (bangumi) for a bodyless tag"`
 }
 
 // WorkRating is one source's rating on a work, in the unified media-aggregation
