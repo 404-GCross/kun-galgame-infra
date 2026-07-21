@@ -547,15 +547,19 @@ func (s *S2SServer) characterByID(ctx context.Context, in *characterByIDInput) (
 		ID: detail.ID, DisplayName: detail.DisplayName, Latin: derefStr(detail.Latin),
 		Lang: detail.Lang, Gender: derefI16(detail.Gender), Description: detail.Description,
 		InstanceOf: derefI64(detail.InstanceOf), ImageHash: derefStr(detail.ImageHash),
-		// Aliases pre-sized non-nil so a character with no aliases serializes
-		// `[]`, not `null` (docs/proj/16 #3).
+		// Aliases/Intros pre-sized non-nil so a character with no aliases or no
+		// intro serializes `[]`, not `null` (docs/proj/16 #3).
 		Aliases: make([]dto.CharacterAlias, 0, len(detail.Aliases)),
+		Intros:  make([]dto.WorkIntro, 0, len(detail.Intros)),
 	}
 	for _, a := range detail.Aliases {
 		resp.Aliases = append(resp.Aliases, dto.CharacterAlias{
 			ID: a.ID, Name: a.Name, Latin: derefStr(a.Latin), Lang: a.Lang,
 			Kind: a.Kind, IsPrimaryForLocale: a.IsPrimaryForLocale,
 		})
+	}
+	for _, in := range detail.Intros {
+		resp.Intros = append(resp.Intros, dto.WorkIntro{Lang: in.Lang, Intro: in.Intro, SourceID: in.SourceID})
 	}
 	return &characterByIDOutput{Body: okEnvelope(resp)}, nil
 }

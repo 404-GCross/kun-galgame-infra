@@ -624,11 +624,12 @@ func TestWorkCharacters(t *testing.T) {
 	assert.Empty(t, body["data"].(map[string]any)["characters"].([]any))
 }
 
-// TestCharacterDetail covers GET /characters/{id}: identity fields + aliases,
-// and 404 on a missing id.
+// TestCharacterDetail covers GET /characters/{id}: identity fields + aliases +
+// intros (step 65: per-language merge, lowest source_id wins), and 404 on a
+// missing id.
 func TestCharacterDetail(t *testing.T) {
 	db := openCatalogTestDB(t)
-	for _, tbl := range []string{"catalog_character_alias", "catalog_character"} {
+	for _, tbl := range []string{"catalog_character_intro", "catalog_character_alias", "catalog_character"} {
 		require.NoError(t, db.Exec("TRUNCATE "+tbl+" RESTART IDENTITY CASCADE").Error)
 	}
 	male := model.GenderMale
@@ -637,6 +638,21 @@ func TestCharacterDetail(t *testing.T) {
 	require.NoError(t, db.Create(&ch).Error)
 	require.NoError(t, db.Create(&model.CatalogCharacterAlias{
 		CharacterID: ch.ID, Name: "しゅじんこう", Lang: "ja", Kind: model.AliasKindSpellingVariant}).Error)
+	var vndbSrc, bangumiSrc, dlsiteSrc int16
+	require.NoError(t, db.Raw(`SELECT id FROM catalog_source WHERE key = 'vndb'`).Scan(&vndbSrc).Error)
+	require.NoError(t, db.Raw(`SELECT id FROM catalog_source WHERE key = 'bangumi'`).Scan(&bangumiSrc).Error)
+	require.NoError(t, db.Raw(`SELECT id FROM catalog_source WHERE key = 'dlsite'`).Scan(&dlsiteSrc).Error)
+	require.NotZero(t, vndbSrc)
+	for _, in := range []model.CatalogCharacterIntro{
+		{CharacterID: ch.ID, Lang: "en", Intro: "An English intro.", SourceID: vndbSrc},
+		{CharacterID: ch.ID, Lang: "ja", Intro: "日本語の紹介。", SourceID: bangumiSrc},
+		// Same lang, higher source id → merged away (lowest source wins).
+		{CharacterID: ch.ID, Lang: "ja", Intro: "負けるほうの紹介。", SourceID: dlsiteSrc},
+	} {
+		require.NoError(t, db.Create(&in).Error)
+	}
+	chBare := model.CatalogCharacter{DisplayName: "紹介なし"}
+	require.NoError(t, db.Create(&chBare).Error)
 
 	app := readApp(service.NewReadService(db), nil)
 
@@ -653,6 +669,25 @@ func TestCharacterDetail(t *testing.T) {
 	require.Len(t, aliases, 1)
 	assert.Equal(t, "しゅじんこう", aliases[0].(map[string]any)["name"])
 	assert.EqualValues(t, model.AliasKindSpellingVariant, aliases[0].(map[string]any)["kind"])
+
+	intros := data["intros"].([]any)
+	require.Len(t, intros, 2, "one element per language after the source merge")
+	i0 := intros[0].(map[string]any)
+	assert.Equal(t, "en", i0["lang"], "sorted by lang")
+	assert.Equal(t, "An English intro.", i0["intro"])
+	assert.EqualValues(t, vndbSrc, i0["source_id"])
+	i1 := intros[1].(map[string]any)
+	assert.Equal(t, "ja", i1["lang"])
+	assert.Equal(t, "日本語の紹介。", i1["intro"], "lowest source_id wins the language")
+	assert.EqualValues(t, bangumiSrc, i1["source_id"])
+
+	// A character with no intro rows serializes intros [] (not null).
+	code, body = getJSON(t, app, "/api/v1/catalog/characters/"+itoa(chBare.ID))
+	require.Equal(t, 200, code)
+	bare := body["data"].(map[string]any)
+	introsBare, ok := bare["intros"].([]any)
+	require.True(t, ok, "intros present and non-null")
+	assert.Empty(t, introsBare)
 
 	// 404 on a missing character id.
 	code, _ = getJSON(t, app, "/api/v1/catalog/characters/99999999")

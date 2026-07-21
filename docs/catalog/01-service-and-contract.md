@@ -113,7 +113,7 @@ catalog **不存**产品展示体:简介、封面/截图字节、评分、点赞
 
 角色实体自述,letmoe/kungal 角色页直达即自足(§2.4 的 `characters` 投影给的是 work 内花名册摘要,本端点给的是角色本体)。
 
-- 响应 `data`:`id` · `display_name` · `latin` · `lang` · **`gender`**(1=male/2=female/3=other;缺省=unknown,无 0 值)· `description` · **`instance_of`**(跨宇宙变体的基底角色 id,VNDB instance_of;非变体则缺省)· **`image_hash`**(立绘内容哈希,step 47 VNDB 波前恒缺省)· **`aliases`**(书写变体,各 `id`/`name`/`latin`/`lang`/`kind`(0=translation/1=spelling_variant/2=search_hint)/`is_primary_for_locale`;无别名序列化 `[]`)。
+- 响应 `data`:`id` · `display_name` · `latin` · `lang` · **`gender`**(1=male/2=female/3=other;缺省=unknown,无 0 值)· `description` · **`instance_of`**(跨宇宙变体的基底角色 id,VNDB instance_of;非变体则缺省)· **`image_hash`**(立绘内容哈希,step 47 VNDB 波前恒缺省)· **`aliases`**(书写变体,各 `id`/`name`/`latin`/`lang`/`kind`(0=translation/1=spelling_variant/2=search_hint)/`is_primary_for_locale`;无别名序列化 `[]`)· **`intros`**(多语言角色简介,step 65 字段 PR C1:统一形状 `[{ lang, intro, source_id }]`,与 §2.4 work `intro` 块同形;一语言一元素,同语言多源按 `source_id` 升序取一;**角色是 catalog 原生实体,无 claimed/bodyless 之分、无桥接**——恒读 `catalog_character_intro` 原生行;源料 = Bangumi 角色 summary(假名启发式 ja/zh-Hans)+ VNDB 角色 description(en,`[spoiler]` 段**整段剔除**后落库);无简介序列化 `[]`)。
 - 缺失 id → 404(与 labels/{id}/works、by-anchor 同义)。
 
 > **读面无 site 绑定**(16 语义:绑定只作用于写端点 claim);读端点仍走 Basic S2S(无凭据 401)。

@@ -471,6 +471,7 @@ export interface components {
             image_hash?: string;
             /** Format: int64 */
             instance_of?: number;
+            intros: components["schemas"]["WorkIntro"][] | null;
             lang: string;
             latin?: string;
         };

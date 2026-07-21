@@ -42,6 +42,8 @@ func Run(db *gorm.DB) error {
 		&model.CatalogLabelAlias{},
 		&model.CatalogCharacter{},
 		&model.CatalogCharacterAlias{},
+		&model.CatalogCharacterIntro{}, // multilingual character intros (step 65 field PR C1)
+		&model.CatalogPersonIntro{},    // multilingual person intros (step 65 field PR C1)
 
 		// Polymorphic infrastructure (no FKs by design).
 		&model.CatalogRedirect{},

@@ -1289,7 +1289,7 @@ func (s *ReadService) CharacterWorks(ctx context.Context, characterID int64, lim
 }
 
 // CharacterDetail is a character's full self-description (step 46): identity
-// fields + aliases.
+// fields + aliases + multilingual intros (step 65).
 type CharacterDetail struct {
 	ID          int64
 	DisplayName string
@@ -1300,6 +1300,12 @@ type CharacterDetail struct {
 	InstanceOf  *int64
 	ImageHash   *string
 	Aliases     []CharacterAliasRow
+	// Intros are the catalog_character_intro rows merged to one element per
+	// language (lowest source_id wins), the same contract as the work read
+	// face. Characters are catalog-native, so there is no claimed bridge —
+	// native rows are the only source. Reuses WorkIntroRow: the shape
+	// ({lang, intro, source_id}) is identical by design (step 65).
+	Intros []WorkIntroRow
 }
 
 // CharacterAliasRow is one writing-variant of a character's name.
@@ -1343,6 +1349,27 @@ func (s *ReadService) CharacterByID(ctx context.Context, characterID int64) (*Ch
 		FROM catalog_character_alias WHERE character_id = ? ORDER BY id`, characterID).Scan(&detail.Aliases).Error; err != nil {
 		return nil, err
 	}
+	// Intros: one element per language, lowest source_id wins — the same merge
+	// as nativeWorkIntros (ordered so the first row seen per lang is the
+	// winning source).
+	var introRows []struct {
+		Lang     string `gorm:"column:lang"`
+		Intro    string `gorm:"column:intro"`
+		SourceID int16  `gorm:"column:source_id"`
+	}
+	if err := db.Raw(`SELECT lang, intro, source_id FROM catalog_character_intro
+		WHERE character_id = ? ORDER BY lang, source_id`, characterID).Scan(&introRows).Error; err != nil {
+		return nil, err
+	}
+	seenLang := map[string]bool{}
+	for _, r := range introRows {
+		if seenLang[r.Lang] {
+			continue // a higher-priority source already claimed this language
+		}
+		seenLang[r.Lang] = true
+		detail.Intros = append(detail.Intros, WorkIntroRow{Lang: r.Lang, Intro: r.Intro, SourceID: r.SourceID})
+	}
+	sortIntros(detail.Intros)
 	return detail, nil
 }
 

@@ -441,6 +441,11 @@ type CharacterDetailResponse struct {
 	// the step-47 VNDB portrait wave backfills it.
 	ImageHash string           `json:"image_hash,omitempty"`
 	Aliases   []CharacterAlias `json:"aliases"`
+	// Intros is the multilingual intro set (step 65): one element per language
+	// (lowest source_id wins), the WorkIntro shape. Characters are
+	// catalog-native, so these are always native catalog_character_intro rows
+	// (no claimed bridge).
+	Intros []WorkIntro `json:"intros"`
 }
 
 // CharacterAlias is one writing-variant of a character's name (not a new

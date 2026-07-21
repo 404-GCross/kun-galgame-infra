@@ -133,6 +133,12 @@ components:
         instance_of:
           format: int64
           type: integer
+        intros:
+          items:
+            $ref: "#/components/schemas/WorkIntro"
+          type:
+            - array
+            - "null"
         lang:
           type: string
         latin:
@@ -142,6 +148,7 @@ components:
         - display_name
         - lang
         - aliases
+        - intros
       type: object
     CharacterHead:
       additionalProperties: false
