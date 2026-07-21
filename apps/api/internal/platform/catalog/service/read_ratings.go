@@ -7,12 +7,19 @@ import (
 // Ratings read face (step 58a, refs/proj/58 Facet A) — the fourth media-
 // aggregation facet, structurally identical to intros/covers/screenshots:
 // CLAIMED works bridge, BODYLESS works read native rows, strict XOR, source_id
-// on every row. Unlike the byte-bearing facets the claimed bridge reads TWO
-// narrow meta tables (galgame_bangumi_meta + galgame_eg_meta — the step-10/42
-// products co-located in kun_catalog), each contributing at most one row.
+// on every row. Unlike the byte-bearing facets the claimed bridge reads THREE
+// narrow meta tables (galgame_vndb_meta + galgame_bangumi_meta +
+// galgame_eg_meta — the step-10/42/60 products co-located in kun_catalog),
+// each contributing at most one row.
 //
 // Bridge column mapping (surveyed live, 2026-07-21):
 //
+//	galgame_vndb_meta: galgame_id | vndb_id | rating numeric NULLABLE
+//	  (kana-API wire scale 10-100 = VNDB's displayed 1-10 score × 10;
+//	  NULL = VNDB publishes no rating: zero votes, or below the public-
+//	  rating vote threshold — the vndbscores sync NEVER stores a fake 0,
+//	  and 0 is impossible on the wire scale anyway) | vote_count | synced_at
+//	  → {source: vndb, score: rating / 10, vote_count, rank: NULL}
 //	galgame_bangumi_meta: galgame_id | bid | score numeric (0-10 mean) |
 //	  rank bigint (0 = unranked) | total bigint (vote count = summed
 //	  score_details buckets) | nsfw | synced_at
@@ -21,12 +28,15 @@ import (
 //	  (0-100 median; NULL = EG has no median) | vote_count | synced_at
 //	  → {source: erogamespace, score: median, vote_count, rank: NULL}
 //
-// Scores stay SOURCE-NATIVE (58 拍板): 0-10 vs 0-100 are different semantics
-// (mean vs median) — normalizing would fake precision; consumers render per
-// source. Rows without a real score never surface: a bangumi meta row with
-// score<=0 (an unrated subject) and an EG meta row with NULL median are both
-// skipped — a claimed work whose metas are all unscored reads [] and, per the
-// strict XOR, never falls back to native rows.
+// Scores stay SOURCE-NATIVE (58 拍板): 1-10 mean vs 0-10 mean vs 0-100 median
+// are different semantics — normalizing would fake precision; consumers render
+// per source. The vndb ÷10 is NOT normalization: it decodes the kana wire
+// encoding (82.34) to the scale VNDB itself displays (8.23) — same source, its
+// own native presentation. Rows without a real score never surface: a vndb
+// meta row with NULL rating, a bangumi meta row with score<=0 (an unrated
+// subject) and an EG meta row with NULL median are all skipped — a claimed
+// work whose metas are all unscored reads [] and, per the strict XOR, never
+// falls back to native rows.
 
 // WorkRatingRow is one source's rating on a work's read face — the unified
 // shape the claimed bridge (galgame_bangumi_meta ∪ galgame_eg_meta) and the
@@ -42,18 +52,19 @@ type WorkRatingRow struct {
 // loadWorkRatings assembles the rating set for a set of works, honoring the
 // media-aggregation contract (refs/proj/51 §2/§3/§8, step 58a):
 //
-//   - CLAIMED (site='galgame_wiki'): bridge from galgame_bangumi_meta and
-//     galgame_eg_meta (see the file doc for the column mapping). Bridge-not-copy
-//     (§2): meta rows are never materialized into catalog_work_rating.
+//   - CLAIMED (site='galgame_wiki'): bridge from galgame_vndb_meta,
+//     galgame_bangumi_meta and galgame_eg_meta (see the file doc for the column
+//     mapping). Bridge-not-copy (§2): meta rows are never materialized into
+//     catalog_work_rating.
 //   - BODYLESS (site=”/NULL): the work's catalog_work_rating rows.
 //   - Strict XOR (§8.D): a claimed work reads ONLY the bridge; it never falls
 //     back to native rows even if it still has shadowed ones (shadow-never-delete).
 //
 // Batched (§9.1): claimed works bridge in one query per meta table, bodyless
 // works read in one catalog_work_rating query — never per-work. Each work's
-// ratings are ordered by source_id ascending (bangumi=3 before erogamespace=5).
-// Returns a map keyed by work id; a work with no rating is absent (the caller
-// renders []).
+// ratings are ordered by source_id ascending (vndb=2 before bangumi=3 before
+// erogamespace=5). Returns a map keyed by work id; a work with no rating is
+// absent (the caller renders []).
 func (s *ReadService) loadWorkRatings(ctx context.Context, subjects []claimSubject) (map[int64][]WorkRatingRow, error) {
 	out := make(map[int64][]WorkRatingRow, len(subjects))
 	galgameIDs, galgameToWork, bodylessIDs := partitionClaimSubjects(subjects)
@@ -70,16 +81,41 @@ func (s *ReadService) loadWorkRatings(ctx context.Context, subjects []claimSubje
 	return out, nil
 }
 
-// bridgeGalgameRatings reads the claimed works' two rating meta tables in ONE
-// query each and maps them to the unified shape. The bangumi row appends before
-// the eg row per work (bangumi source id 3 < erogamespace 5 in the seed), so
-// the per-work slice is source_id-ascending without a sort.
+// bridgeGalgameRatings reads the claimed works' three rating meta tables in ONE
+// query each and maps them to the unified shape. Lanes append in seed order —
+// vndb (source id 2) before bangumi (3) before erogamespace (5) — so the
+// per-work slice is source_id-ascending without a sort.
 func (s *ReadService) bridgeGalgameRatings(ctx context.Context, galgameIDs []int64, galgameToWork map[int64]int64, out map[int64][]WorkRatingRow) error {
 	db := s.db.WithContext(ctx)
 
-	srcIDByKey, err := s.sourceIDsByKey(ctx, []string{sourceKeyBangumi, sourceKeyErogamespace})
+	srcIDByKey, err := s.sourceIDsByKey(ctx, []string{sourceKeyVNDB, sourceKeyBangumi, sourceKeyErogamespace})
 	if err != nil {
 		return err
+	}
+
+	// VNDB lane (step 60 V1): rating IS NOT NULL filters VNs without a public
+	// rating (surveyed live: the vndbscores sync stores NULL — never a fake 0 —
+	// for zero-vote and below-threshold VNs; 0 of 62,327 rows carry rating=0,
+	// so the NULL filter is the EG-median style, not bangumi's score>0). The
+	// stored value is the kana wire scale (10-100); ÷10 projects VNDB's own
+	// displayed 1-10 scale. Rank is always nil (the meta table carries none).
+	var vndbRows []struct {
+		GalgameID int64   `gorm:"column:galgame_id"`
+		Rating    float64 `gorm:"column:rating"`
+		VoteCount int     `gorm:"column:vote_count"`
+	}
+	if err := db.Raw(`SELECT galgame_id, rating, vote_count FROM galgame_vndb_meta
+		WHERE galgame_id IN ? AND rating IS NOT NULL ORDER BY galgame_id`, galgameIDs).Scan(&vndbRows).Error; err != nil {
+		return err
+	}
+	for _, r := range vndbRows {
+		workID, ok := galgameToWork[r.GalgameID]
+		if !ok {
+			continue
+		}
+		out[workID] = append(out[workID], WorkRatingRow{
+			SourceID: srcIDByKey[sourceKeyVNDB], Score: r.Rating / 10, VoteCount: r.VoteCount,
+		})
 	}
 
 	// Bangumi lane: score>0 filters unrated subjects (Bangumi's mean is >0 as

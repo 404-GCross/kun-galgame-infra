@@ -7,9 +7,13 @@
 //
 // Discipline (§8.B shadow-never-delete + idempotency): writes are INSERT-only
 // with ON CONFLICT (work_id, lang, source_id) DO NOTHING, so a second run is a
-// no-op. CLAIMED works are never touched (their intro is bridged at read time,
-// never materialized — bridge-not-copy, §2). Description is stored VERBATIM;
-// cleaning/translation is explicitly out of scope for the pilot (§5).
+// no-op. Fill-missing-language (step-57 discipline, aligned by step 60): a work
+// that already has an intro row in the target language from ANY source is
+// skipped — one intro per (work, lang); the unique key stays per-source and the
+// ON CONFLICT remains a same-source backstop. CLAIMED works are never touched
+// (their intro is bridged at read time, never materialized — bridge-not-copy,
+// §2). Description is stored VERBATIM; cleaning/translation is explicitly out
+// of scope for the pilot (§5).
 package introimport
 
 import (
@@ -41,7 +45,7 @@ type Stats struct {
 	WithVNDBAnchor   int64 // …that hold an exact VNDB work anchor
 	SkippedNoAnchor  int64 // …that do NOT (this wave's only source is VNDB)
 	SkippedEmptyDesc int64 // anchored but VNDB has no/empty description
-	Already          int64 // (work, en, vndb) row already present
+	Already          int64 // (work, en) row already present from ANY source (fill-missing-language)
 	IntrosWritten    int64 // new rows written (or would-be, in a dry run)
 	WorksCovered     int64 // distinct works that got an intro
 }
@@ -101,7 +105,10 @@ func Run(ctx context.Context, db *gorm.DB, opts Options) (Stats, error) {
 	st.WithVNDBAnchor = int64(len(cands))
 	st.SkippedNoAnchor = st.TotalBodyless - st.WithVNDBAnchor
 
-	// Which candidate works already carry the (en, vndb) row.
+	// Which candidate works already carry an 'en' intro from ANY source — the
+	// step-57 fill-missing-language discipline: one intro per (work, lang), so
+	// an existing row from another source (e.g. a bangumi summary detected as
+	// en) blocks the vndb fill rather than stacking a second en row.
 	workIDs := make([]int64, 0, len(cands))
 	for _, c := range cands {
 		workIDs = append(workIDs, c.WorkID)
@@ -110,7 +117,7 @@ func Run(ctx context.Context, db *gorm.DB, opts Options) (Stats, error) {
 	if len(workIDs) > 0 {
 		var existing []int64
 		if err := db.Raw(`SELECT work_id FROM catalog_work_intro
-			WHERE lang = ? AND source_id = ? AND work_id IN ?`, introLang, vndbSourceID, workIDs).Scan(&existing).Error; err != nil {
+			WHERE lang = ? AND work_id IN ?`, introLang, workIDs).Scan(&existing).Error; err != nil {
 			return st, fmt.Errorf("load existing: %w", err)
 		}
 		for _, id := range existing {

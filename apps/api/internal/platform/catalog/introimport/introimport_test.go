@@ -48,8 +48,10 @@ func TestMain(m *testing.M) {
 }
 
 // TestBackfill exercises the full backfill: candidate classification (anchored
-// vs not, empty description), the dry→apply→re-run idempotency ladder, and the
-// discipline that CLAIMED works are never touched.
+// vs not, empty description), the dry→apply→re-run idempotency ladder, the
+// step-57 fill-missing-language discipline (an existing en row from ANOTHER
+// source blocks the vndb fill), and the discipline that CLAIMED works are
+// never touched.
 func TestBackfill(t *testing.T) {
 	db := testDB
 	for _, tbl := range []string{"catalog_work_intro", "catalog_external_ref", "catalog_work"} {
@@ -57,9 +59,11 @@ func TestBackfill(t *testing.T) {
 	}
 	require.NoError(t, db.Exec("TRUNCATE src_vndb.vn").Error)
 
-	var vndbID int16
+	var vndbID, bangumiID int16
 	db.Raw("SELECT id FROM catalog_source WHERE key='vndb'").Scan(&vndbID)
+	db.Raw("SELECT id FROM catalog_source WHERE key='bangumi'").Scan(&bangumiID)
 	require.NotZero(t, vndbID)
+	require.NotZero(t, bangumiID)
 
 	mkWork := func(name string, site *string) int64 {
 		w := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: name, ContentRating: 0, Status: 0, Site: site}
@@ -90,21 +94,29 @@ func TestBackfill(t *testing.T) {
 	w4 := mkWork("已认领", &site)
 	anchor(w4, "v4")
 	vn("v4", "Claimed work — bridged, never copied.")
+	// W5: bodyless + vndb anchor + description BUT an en intro already exists
+	// from ANOTHER source → fill-missing-language (step 57) skips it.
+	w5 := mkWork("他源已有", nil)
+	anchor(w5, "v5")
+	vn("v5", "Would-be vndb blurb — must NOT stack a second en row.")
+	require.NoError(t, db.Create(&model.CatalogWorkIntro{
+		WorkID: w5, Lang: "en", Intro: "An earlier bangumi-sourced English summary.", SourceID: bangumiID,
+	}).Error)
 
 	ctx := context.Background()
 
 	// --- dry run: classifies everything, writes nothing.
 	st, err := Run(ctx, db, Options{DryRun: true})
 	require.NoError(t, err)
-	assert.EqualValues(t, 3, st.TotalBodyless, "W1/W2/W3 (claimed W4 excluded)")
-	assert.EqualValues(t, 2, st.WithVNDBAnchor, "W1/W2")
+	assert.EqualValues(t, 4, st.TotalBodyless, "W1/W2/W3/W5 (claimed W4 excluded)")
+	assert.EqualValues(t, 3, st.WithVNDBAnchor, "W1/W2/W5")
 	assert.EqualValues(t, 1, st.SkippedNoAnchor, "W3")
 	assert.EqualValues(t, 1, st.SkippedEmptyDesc, "W2 (anchor, no vn row)")
-	assert.EqualValues(t, 0, st.Already)
+	assert.EqualValues(t, 1, st.Already, "W5 (en row from another source)")
 	assert.EqualValues(t, 1, st.IntrosWritten, "W1 only")
 	var n int64
 	require.NoError(t, db.Raw("SELECT count(*) FROM catalog_work_intro").Scan(&n).Error)
-	assert.EqualValues(t, 0, n, "dry run writes nothing")
+	assert.EqualValues(t, 1, n, "dry run writes nothing (W5's pre-existing row only)")
 
 	// --- apply: writes W1's intro (en, vndb, verbatim).
 	st, err = Run(ctx, db, Options{DryRun: false})
@@ -119,12 +131,15 @@ func TestBackfill(t *testing.T) {
 	// The claimed work got nothing (bridge-not-copy).
 	require.NoError(t, db.Raw("SELECT count(*) FROM catalog_work_intro WHERE work_id = ?", w4).Scan(&n).Error)
 	assert.EqualValues(t, 0, n, "claimed work is never materialized")
+	// W5 kept exactly its pre-existing other-source row (fill-missing-language).
+	require.NoError(t, db.Raw("SELECT count(*) FROM catalog_work_intro WHERE work_id = ?", w5).Scan(&n).Error)
+	assert.EqualValues(t, 1, n, "no second en row stacked onto W5")
 
 	// --- second run: idempotent (already present → zero new writes).
 	st, err = Run(ctx, db, Options{DryRun: false})
 	require.NoError(t, err)
-	assert.EqualValues(t, 1, st.Already)
+	assert.EqualValues(t, 2, st.Already, "W1 (own row) + W5 (other-source row)")
 	assert.EqualValues(t, 0, st.IntrosWritten, "second run writes nothing")
 	require.NoError(t, db.Raw("SELECT count(*) FROM catalog_work_intro").Scan(&n).Error)
-	assert.EqualValues(t, 1, n)
+	assert.EqualValues(t, 2, n)
 }

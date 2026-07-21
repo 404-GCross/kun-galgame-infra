@@ -1042,17 +1042,25 @@ func TestWorkScreenshot(t *testing.T) {
 // media tests never collide on shared galgame ids).
 var galgameRatingStubIDs = []int64{8001, 8002}
 
-// ensureGalgameRatingStub provisions the two rating meta tables the claimed-
-// rating bridge (step 58a) joins against: galgame_bangumi_meta and
-// galgame_eg_meta. In prod/rehearsal both live in kun_catalog alongside
-// catalog; the catalog test DB has no such tables, so this creates stubs
-// mirroring the real shapes (surveyed live: score numeric / rank+total bigint;
-// eg median bigint NULLABLE). CREATE ... IF NOT EXISTS is a no-op against a
-// real table; the INSERT helpers always pass every NOT-NULL column (bid /
-// eg_game_id / nsfw / synced_at) so they also work against the real schema;
-// cleanup is a targeted DELETE. Idempotent.
+// ensureGalgameRatingStub provisions the three rating meta tables the claimed-
+// rating bridge (steps 58a + 60) joins against: galgame_vndb_meta,
+// galgame_bangumi_meta and galgame_eg_meta. In prod/rehearsal all live in
+// kun_catalog alongside catalog; the catalog test DB has no such tables, so
+// this creates stubs mirroring the real shapes (surveyed live: score numeric /
+// rank+total bigint; eg median bigint NULLABLE; vndb rating numeric NULLABLE).
+// CREATE ... IF NOT EXISTS is a no-op against a real table; the INSERT helpers
+// always pass every NOT-NULL column (bid / eg_game_id / vndb_id / nsfw /
+// synced_at) so they also work against the real schema; cleanup is a targeted
+// DELETE. Idempotent.
 func ensureGalgameRatingStub(t *testing.T, db *gorm.DB) {
 	t.Helper()
+	require.NoError(t, db.Exec(`CREATE TABLE IF NOT EXISTS galgame_vndb_meta (
+		galgame_id bigint PRIMARY KEY,
+		vndb_id text NOT NULL,
+		rating numeric,
+		vote_count bigint NOT NULL,
+		synced_at timestamptz NOT NULL
+	)`).Error)
 	require.NoError(t, db.Exec(`CREATE TABLE IF NOT EXISTS galgame_bangumi_meta (
 		galgame_id bigint PRIMARY KEY,
 		bid bigint NOT NULL,
@@ -1069,8 +1077,19 @@ func ensureGalgameRatingStub(t *testing.T, db *gorm.DB) {
 		vote_count bigint NOT NULL,
 		synced_at timestamptz NOT NULL
 	)`).Error)
+	require.NoError(t, db.Exec(`DELETE FROM galgame_vndb_meta WHERE galgame_id IN ?`, galgameRatingStubIDs).Error)
 	require.NoError(t, db.Exec(`DELETE FROM galgame_bangumi_meta WHERE galgame_id IN ?`, galgameRatingStubIDs).Error)
 	require.NoError(t, db.Exec(`DELETE FROM galgame_eg_meta WHERE galgame_id IN ?`, galgameRatingStubIDs).Error)
+}
+
+// insertVNDBMeta inserts one fixture galgame_vndb_meta row (rating nil = VNDB
+// publishes no rating — zero/below-threshold votes; the value is on the kana
+// wire scale, 10-100).
+func insertVNDBMeta(t *testing.T, db *gorm.DB, galgameID int64, rating *float64, voteCount int) {
+	t.Helper()
+	require.NoError(t, db.Exec(`INSERT INTO galgame_vndb_meta
+		(galgame_id, vndb_id, rating, vote_count, synced_at)
+		VALUES (?, 'v1', ?, ?, now())`, galgameID, rating, voteCount).Error)
 }
 
 // insertBangumiMeta inserts one fixture galgame_bangumi_meta row (bid/nsfw are
@@ -1091,13 +1110,15 @@ func insertEGMeta(t *testing.T, db *gorm.DB, galgameID int64, median *int, voteC
 		VALUES (?, 0, ?, ?, now())`, galgameID, median, voteCount).Error)
 }
 
-// TestWorkRating pins the step-58a media-aggregation rating read face: the
-// CLAIMED bridge (galgame_bangumi_meta ∪ galgame_eg_meta mapped to the unified
-// shape on SOURCE-NATIVE scales — bangumi 0-10 mean with rank, erogamespace
-// 0-100 median without), the BODYLESS native read (catalog_work_rating), strict
-// XOR (a claimed work with only unscored metas — bangumi score 0 / EG NULL
-// median — yields [] and never falls back to a shadow native row), and
-// []-not-null serialization. Ordered by source_id ascending.
+// TestWorkRating pins the step-58a/60 media-aggregation rating read face: the
+// CLAIMED bridge (galgame_vndb_meta ∪ galgame_bangumi_meta ∪ galgame_eg_meta
+// mapped to the unified shape on SOURCE-NATIVE scales — vndb 1-10 mean without
+// rank and the kana 10-100 wire value decoded ÷10, bangumi 0-10 mean with
+// rank, erogamespace 0-100 median without), the BODYLESS native read
+// (catalog_work_rating), strict XOR (a claimed work with only unscored metas —
+// vndb NULL rating / bangumi score 0 / EG NULL median — yields [] and never
+// falls back to a shadow native row), and []-not-null serialization. Ordered
+// by source_id ascending.
 func TestWorkRating(t *testing.T) {
 	db := openCatalogTestDB(t)
 	ensureGalgameStub(t, db)           // the intro bridge (also run by loadWorkDetail) needs galgame
@@ -1114,17 +1135,22 @@ func TestWorkRating(t *testing.T) {
 	for _, tbl := range []string{"catalog_work_rating", "catalog_work"} {
 		require.NoError(t, db.Exec("TRUNCATE "+tbl+" RESTART IDENTITY CASCADE").Error)
 	}
-	// Source ids from the seed: bangumi=3, erogamespace=5.
-	var srcBangumi, srcEG int16
+	// Source ids from the seed: vndb=2, bangumi=3, erogamespace=5.
+	var srcVNDB, srcBangumi, srcEG int16
+	db.Raw("SELECT id FROM catalog_source WHERE key='vndb'").Scan(&srcVNDB)
 	db.Raw("SELECT id FROM catalog_source WHERE key='bangumi'").Scan(&srcBangumi)
 	db.Raw("SELECT id FROM catalog_source WHERE key='erogamespace'").Scan(&srcEG)
+	require.NotZero(t, srcVNDB, "vndb source must be seeded")
 	require.NotZero(t, srcBangumi, "bangumi source must be seeded")
 	require.NotZero(t, srcEG, "erogamespace source must be seeded")
 
-	// --- CLAIMED work: both metas scored (galgame_id 8001) → two bridged rows.
+	// --- CLAIMED work: all three metas scored (galgame_id 8001) → three bridged
+	// rows. The vndb fixture stores the kana wire value 84.5 (displayed 8.45).
 	claimed := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "主張作品", ContentRating: 0, Status: 0,
 		Site: strptr("galgame_wiki"), ProductWorkID: ptrI64(8001)}
 	require.NoError(t, db.Create(&claimed).Error)
+	wire := 84.5
+	insertVNDBMeta(t, db, 8001, &wire, 456)
 	insertBangumiMeta(t, db, 8001, 7.6, 1234, 890)
 	median := 78
 	insertEGMeta(t, db, 8001, &median, 321)
@@ -1138,12 +1164,14 @@ func TestWorkRating(t *testing.T) {
 	require.NoError(t, db.Create(&model.CatalogWorkRating{
 		WorkID: bodyless.ID, SourceID: srcEG, Score: 82, VoteCount: 40}).Error)
 
-	// --- XOR work: claimed (galgame_id 8002) with only UNSCORED metas (bangumi
-	// score 0 = unrated, EG median NULL) — both filtered — plus a SHADOW native
-	// row (a prior bodyless state) that must NEVER surface.
+	// --- XOR work: claimed (galgame_id 8002) with only UNSCORED metas (vndb
+	// rating NULL = no public rating, bangumi score 0 = unrated, EG median NULL)
+	// — all filtered — plus a SHADOW native row (a prior bodyless state) that
+	// must NEVER surface.
 	xor := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "空主張", ContentRating: 0, Status: 0,
 		Site: strptr("galgame_wiki"), ProductWorkID: ptrI64(8002)}
 	require.NoError(t, db.Create(&xor).Error)
+	insertVNDBMeta(t, db, 8002, nil, 3)
 	insertBangumiMeta(t, db, 8002, 0, 0, 0)
 	insertEGMeta(t, db, 8002, nil, 3)
 	require.NoError(t, db.Create(&model.CatalogWorkRating{
@@ -1155,21 +1183,27 @@ func TestWorkRating(t *testing.T) {
 
 	app := readApp(service.NewReadService(db), nil)
 
-	// CLAIMED: two ratings, source_id ascending, native scales, rank bgm-only.
+	// CLAIMED: three ratings, source_id ascending, native scales, rank bgm-only.
 	code, body := getJSON(t, app, "/api/v1/catalog/works/"+itoa(claimed.ID))
 	require.Equal(t, 200, code)
 	ratings := body["data"].(map[string]any)["ratings"].([]any)
-	require.Len(t, ratings, 2, "both metas bridged")
-	r0 := ratings[0].(map[string]any)
-	assert.EqualValues(t, srcBangumi, r0["source_id"], "bangumi row first (source_id ascending)")
+	require.Len(t, ratings, 3, "all three metas bridged")
+	rv := ratings[0].(map[string]any)
+	assert.EqualValues(t, srcVNDB, rv["source_id"], "vndb row first (source_id ascending)")
+	assert.EqualValues(t, 8.45, rv["score"], "vndb wire 84.5 decoded to its displayed 1-10 scale")
+	assert.EqualValues(t, 456, rv["vote_count"])
+	_, hasRank := rv["rank"]
+	assert.False(t, hasRank, "vndb meta has no rank → omitted")
+	r0 := ratings[1].(map[string]any)
+	assert.EqualValues(t, srcBangumi, r0["source_id"], "bangumi row second")
 	assert.EqualValues(t, 7.6, r0["score"], "bangumi score on its native 0-10 scale")
 	assert.EqualValues(t, 890, r0["vote_count"], "vote_count = meta total")
 	assert.EqualValues(t, 1234, r0["rank"], "bangumi rank surfaces")
-	r1 := ratings[1].(map[string]any)
+	r1 := ratings[2].(map[string]any)
 	assert.EqualValues(t, srcEG, r1["source_id"])
 	assert.EqualValues(t, 78, r1["score"], "EG median on its native 0-100 scale")
 	assert.EqualValues(t, 321, r1["vote_count"])
-	_, hasRank := r1["rank"]
+	_, hasRank = r1["rank"]
 	assert.False(t, hasRank, "EG has no rank → omitted")
 
 	// BODYLESS: native rows, source_id ascending; rank present only where set.
