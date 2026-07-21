@@ -56,6 +56,7 @@ func Run(db *gorm.DB) error {
 		&model.CatalogWorkScreenshot{}, // bodyless screenshot images (step 54 media-aggregation wave III)
 		&model.CatalogWorkRating{},     // bodyless source-native ratings (step 58a media-aggregation facet A)
 		&model.CatalogWorkTag{},        // bodyless verbatim folksonomy tags (step 58b media-aggregation facet B)
+		&model.CatalogWorkPopularity{}, // bodyless per-metric popularity counters (step 62 popularity facet)
 		&model.CatalogRelease{},
 		&model.CatalogWorkRelation{},
 		&model.CatalogEntityRelation{},

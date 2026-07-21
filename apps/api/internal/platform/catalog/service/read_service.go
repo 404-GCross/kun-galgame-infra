@@ -119,6 +119,11 @@ type WorkDetail struct {
 	// BODYLESS work, its catalog_work_tag rows (verbatim Bangumi folksonomy).
 	// Same strict XOR as Ratings.
 	Tags []WorkTagRow
+	// Popularity is the merged per-metric popularity counter set (step 62):
+	// for a CLAIMED work, bridged from galgame_dlsite_meta (the three counter
+	// columns pivot to metric rows — see read_popularity.go); for a BODYLESS
+	// work, its catalog_work_popularity rows. Same strict XOR as Ratings.
+	Popularity []WorkPopularityRow
 }
 
 // WorkIntroRow is one language's intro on a work's read face, carrying its
@@ -374,6 +379,12 @@ func (s *ReadService) loadWorkDetail(ctx context.Context, workID int64) (*WorkDe
 		return nil, err
 	}
 	detail.Tags = tags[work.ID]
+
+	popularity, err := s.loadWorkPopularity(ctx, []claimSubject{subj})
+	if err != nil {
+		return nil, err
+	}
+	detail.Popularity = popularity[work.ID]
 	return detail, nil
 }
 

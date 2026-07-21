@@ -699,6 +699,7 @@ func insertGalgameBody(t *testing.T, db *gorm.DB, id, catalogWorkID int64, en, j
 func TestWorkIntro(t *testing.T) {
 	db := openCatalogTestDB(t)
 	ensureGalgameStub(t, db)
+	ensureGalgameRatingStub(t, db) // the co-loaded rating/popularity bridges need the meta tables (fresh-DB file order)
 	for _, tbl := range []string{"catalog_work_intro", "catalog_work"} {
 		require.NoError(t, db.Exec("TRUNCATE "+tbl+" RESTART IDENTITY CASCADE").Error)
 	}
@@ -804,8 +805,9 @@ func insertGalgameCover(t *testing.T, db *gorm.DB, galgameID int64, hash string,
 // []-not-null serialization. Sorted by (sort_order, image_hash).
 func TestWorkCover(t *testing.T) {
 	db := openCatalogTestDB(t)
-	ensureGalgameStub(t, db)      // the intro bridge (also run by loadWorkDetail) needs galgame
-	ensureGalgameCoverStub(t, db) // the cover bridge needs galgame_cover (clears covers for 6001/6002)
+	ensureGalgameStub(t, db)       // the intro bridge (also run by loadWorkDetail) needs galgame
+	ensureGalgameCoverStub(t, db)  // the cover bridge needs galgame_cover (clears covers for 6001/6002)
+	ensureGalgameRatingStub(t, db) // the co-loaded rating/popularity bridges need the meta tables (fresh-DB file order)
 	// galgame_cover carries an FK to galgame(id) in the shared test DB, so the
 	// bridge galgame ids need a parent body row. Covers cleared above → safe to
 	// reset the parents. Empty intros keep the co-loaded intro bridge a no-op.
@@ -948,6 +950,7 @@ func TestWorkScreenshot(t *testing.T) {
 	ensureGalgameStub(t, db)           // the intro bridge (also run by loadWorkDetail) needs galgame
 	ensureGalgameCoverStub(t, db)      // the cover bridge (also co-loaded) needs galgame_cover
 	ensureGalgameScreenshotStub(t, db) // the screenshot bridge needs galgame_screenshot (clears 7001/7002)
+	ensureGalgameRatingStub(t, db)     // the co-loaded rating/popularity bridges need the meta tables (fresh-DB file order)
 	// galgame_screenshot carries an FK to galgame(id) in the shared test DB, so the
 	// bridge galgame ids need a parent body row. Screenshots cleared above → safe to
 	// reset the parents. Empty intros keep the co-loaded intro bridge a no-op; no
@@ -1042,16 +1045,17 @@ func TestWorkScreenshot(t *testing.T) {
 // media tests never collide on shared galgame ids).
 var galgameRatingStubIDs = []int64{8001, 8002}
 
-// ensureGalgameRatingStub provisions the three rating meta tables the claimed-
-// rating bridge (steps 58a + 60) joins against: galgame_vndb_meta,
-// galgame_bangumi_meta and galgame_eg_meta. In prod/rehearsal all live in
-// kun_catalog alongside catalog; the catalog test DB has no such tables, so
-// this creates stubs mirroring the real shapes (surveyed live: score numeric /
-// rank+total bigint; eg median bigint NULLABLE; vndb rating numeric NULLABLE).
-// CREATE ... IF NOT EXISTS is a no-op against a real table; the INSERT helpers
-// always pass every NOT-NULL column (bid / eg_game_id / vndb_id / nsfw /
-// synced_at) so they also work against the real schema; cleanup is a targeted
-// DELETE. Idempotent.
+// ensureGalgameRatingStub provisions the four rating/popularity meta tables
+// the claimed bridges (steps 58a + 60 + 62) join against: galgame_vndb_meta,
+// galgame_bangumi_meta, galgame_dlsite_meta and galgame_eg_meta. In
+// prod/rehearsal all live in kun_catalog alongside catalog; the catalog test
+// DB has no such tables, so this creates stubs mirroring the real shapes
+// (surveyed live: score numeric / rank+total bigint; eg median bigint
+// NULLABLE; vndb rating numeric NULLABLE; dlsite star numeric + counters all
+// NULLABLE). CREATE ... IF NOT EXISTS is a no-op against a real table; the
+// INSERT helpers always pass every NOT-NULL column (bid / eg_game_id /
+// vndb_id / workno / nsfw / synced_at) so they also work against the real
+// schema; cleanup is a targeted DELETE. Idempotent.
 func ensureGalgameRatingStub(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	require.NoError(t, db.Exec(`CREATE TABLE IF NOT EXISTS galgame_vndb_meta (
@@ -1077,9 +1081,29 @@ func ensureGalgameRatingStub(t *testing.T, db *gorm.DB) {
 		vote_count bigint NOT NULL,
 		synced_at timestamptz NOT NULL
 	)`).Error)
+	require.NoError(t, db.Exec(`CREATE TABLE IF NOT EXISTS galgame_dlsite_meta (
+		galgame_id bigint PRIMARY KEY,
+		workno text NOT NULL,
+		rate_average_star numeric,
+		rate_count bigint,
+		dl_count bigint,
+		wishlist_count bigint,
+		review_count bigint,
+		synced_at timestamptz NOT NULL
+	)`).Error)
 	require.NoError(t, db.Exec(`DELETE FROM galgame_vndb_meta WHERE galgame_id IN ?`, galgameRatingStubIDs).Error)
 	require.NoError(t, db.Exec(`DELETE FROM galgame_bangumi_meta WHERE galgame_id IN ?`, galgameRatingStubIDs).Error)
 	require.NoError(t, db.Exec(`DELETE FROM galgame_eg_meta WHERE galgame_id IN ?`, galgameRatingStubIDs).Error)
+	require.NoError(t, db.Exec(`DELETE FROM galgame_dlsite_meta WHERE galgame_id IN ?`, galgameRatingStubIDs).Error)
+}
+
+// insertDlsiteMeta inserts one fixture galgame_dlsite_meta row. Nil star/rate
+// pair = DLsite publishes no rating; nil counters = unpublished (absent ≠ 0).
+func insertDlsiteMeta(t *testing.T, db *gorm.DB, galgameID int64, star *float64, rateCount *int, dl, wl *int64, rv *int) {
+	t.Helper()
+	require.NoError(t, db.Exec(`INSERT INTO galgame_dlsite_meta
+		(galgame_id, workno, rate_average_star, rate_count, dl_count, wishlist_count, review_count, synced_at)
+		VALUES (?, 'RJ62TEST', ?, ?, ?, ?, ?, now())`, galgameID, star, rateCount, dl, wl, rv).Error)
 }
 
 // insertVNDBMeta inserts one fixture galgame_vndb_meta row (rating nil = VNDB
@@ -1135,23 +1159,31 @@ func TestWorkRating(t *testing.T) {
 	for _, tbl := range []string{"catalog_work_rating", "catalog_work"} {
 		require.NoError(t, db.Exec("TRUNCATE "+tbl+" RESTART IDENTITY CASCADE").Error)
 	}
-	// Source ids from the seed: vndb=2, bangumi=3, erogamespace=5.
-	var srcVNDB, srcBangumi, srcEG int16
+	// Source ids from the seed: vndb=2, bangumi=3, dlsite=4, erogamespace=5.
+	var srcVNDB, srcBangumi, srcDlsite, srcEG int16
 	db.Raw("SELECT id FROM catalog_source WHERE key='vndb'").Scan(&srcVNDB)
 	db.Raw("SELECT id FROM catalog_source WHERE key='bangumi'").Scan(&srcBangumi)
+	db.Raw("SELECT id FROM catalog_source WHERE key='dlsite'").Scan(&srcDlsite)
 	db.Raw("SELECT id FROM catalog_source WHERE key='erogamespace'").Scan(&srcEG)
 	require.NotZero(t, srcVNDB, "vndb source must be seeded")
 	require.NotZero(t, srcBangumi, "bangumi source must be seeded")
+	require.NotZero(t, srcDlsite, "dlsite source must be seeded")
 	require.NotZero(t, srcEG, "erogamespace source must be seeded")
 
-	// --- CLAIMED work: all three metas scored (galgame_id 8001) → three bridged
-	// rows. The vndb fixture stores the kana wire value 84.5 (displayed 8.45).
+	// --- CLAIMED work: all four metas scored (galgame_id 8001) → four bridged
+	// rows. The vndb fixture stores the kana wire value 84.5 (displayed 8.45);
+	// the dlsite fixture the displayed 0-5 star average (4.36).
 	claimed := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "主張作品", ContentRating: 0, Status: 0,
 		Site: strptr("galgame_wiki"), ProductWorkID: ptrI64(8001)}
 	require.NoError(t, db.Create(&claimed).Error)
 	wire := 84.5
 	insertVNDBMeta(t, db, 8001, &wire, 456)
 	insertBangumiMeta(t, db, 8001, 7.6, 1234, 890)
+	star := 4.36
+	rc := 120
+	dl64, wl64 := int64(2000), int64(300)
+	rv := 12
+	insertDlsiteMeta(t, db, 8001, &star, &rc, &dl64, &wl64, &rv)
 	median := 78
 	insertEGMeta(t, db, 8001, &median, 321)
 
@@ -1165,14 +1197,16 @@ func TestWorkRating(t *testing.T) {
 		WorkID: bodyless.ID, SourceID: srcEG, Score: 82, VoteCount: 40}).Error)
 
 	// --- XOR work: claimed (galgame_id 8002) with only UNSCORED metas (vndb
-	// rating NULL = no public rating, bangumi score 0 = unrated, EG median NULL)
-	// — all filtered — plus a SHADOW native row (a prior bodyless state) that
-	// must NEVER surface.
+	// rating NULL = no public rating, bangumi score 0 = unrated, dlsite star
+	// NULL = below the rating threshold, EG median NULL) — all filtered — plus
+	// a SHADOW native row (a prior bodyless state) that must NEVER surface.
 	xor := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "空主張", ContentRating: 0, Status: 0,
 		Site: strptr("galgame_wiki"), ProductWorkID: ptrI64(8002)}
 	require.NoError(t, db.Create(&xor).Error)
 	insertVNDBMeta(t, db, 8002, nil, 3)
 	insertBangumiMeta(t, db, 8002, 0, 0, 0)
+	xorWl := int64(9)
+	insertDlsiteMeta(t, db, 8002, nil, nil, nil, &xorWl, nil)
 	insertEGMeta(t, db, 8002, nil, 3)
 	require.NoError(t, db.Create(&model.CatalogWorkRating{
 		WorkID: xor.ID, SourceID: srcBangumi, Score: 9.9, VoteCount: 1}).Error)
@@ -1183,23 +1217,29 @@ func TestWorkRating(t *testing.T) {
 
 	app := readApp(service.NewReadService(db), nil)
 
-	// CLAIMED: three ratings, source_id ascending, native scales, rank bgm-only.
+	// CLAIMED: four ratings, source_id ascending, native scales, rank bgm-only.
 	code, body := getJSON(t, app, "/api/v1/catalog/works/"+itoa(claimed.ID))
 	require.Equal(t, 200, code)
 	ratings := body["data"].(map[string]any)["ratings"].([]any)
-	require.Len(t, ratings, 3, "all three metas bridged")
-	rv := ratings[0].(map[string]any)
-	assert.EqualValues(t, srcVNDB, rv["source_id"], "vndb row first (source_id ascending)")
-	assert.EqualValues(t, 8.45, rv["score"], "vndb wire 84.5 decoded to its displayed 1-10 scale")
-	assert.EqualValues(t, 456, rv["vote_count"])
-	_, hasRank := rv["rank"]
+	require.Len(t, ratings, 4, "all four metas bridged")
+	rVndb := ratings[0].(map[string]any)
+	assert.EqualValues(t, srcVNDB, rVndb["source_id"], "vndb row first (source_id ascending)")
+	assert.EqualValues(t, 8.45, rVndb["score"], "vndb wire 84.5 decoded to its displayed 1-10 scale")
+	assert.EqualValues(t, 456, rVndb["vote_count"])
+	_, hasRank := rVndb["rank"]
 	assert.False(t, hasRank, "vndb meta has no rank → omitted")
 	r0 := ratings[1].(map[string]any)
 	assert.EqualValues(t, srcBangumi, r0["source_id"], "bangumi row second")
 	assert.EqualValues(t, 7.6, r0["score"], "bangumi score on its native 0-10 scale")
 	assert.EqualValues(t, 890, r0["vote_count"], "vote_count = meta total")
 	assert.EqualValues(t, 1234, r0["rank"], "bangumi rank surfaces")
-	r1 := ratings[2].(map[string]any)
+	rDl := ratings[2].(map[string]any)
+	assert.EqualValues(t, srcDlsite, rDl["source_id"], "dlsite row third")
+	assert.EqualValues(t, 4.36, rDl["score"], "dlsite star average on its native 0-5 scale")
+	assert.EqualValues(t, 120, rDl["vote_count"], "vote_count = rate_count")
+	_, hasRank = rDl["rank"]
+	assert.False(t, hasRank, "dlsite has no rank → omitted")
+	r1 := ratings[3].(map[string]any)
 	assert.EqualValues(t, srcEG, r1["source_id"])
 	assert.EqualValues(t, 78, r1["score"], "EG median on its native 0-100 scale")
 	assert.EqualValues(t, 321, r1["vote_count"])
@@ -1231,6 +1271,99 @@ func TestWorkRating(t *testing.T) {
 	code, body = getJSON(t, app, "/api/v1/catalog/works/"+itoa(empty.ID))
 	require.Equal(t, 200, code)
 	assert.Empty(t, body["data"].(map[string]any)["ratings"].([]any))
+}
+
+// TestWorkPopularity pins the step-62 popularity read face: the CLAIMED bridge
+// (galgame_dlsite_meta counter columns pivoted to metric rows — a NULL counter
+// contributes NO row, a published 0 does), the BODYLESS native read
+// (catalog_work_popularity, (source_id, metric) ascending), strict XOR (a
+// claimed work with no published counter yields [] and never falls back to a
+// shadow native row), and []-not-null serialization.
+func TestWorkPopularity(t *testing.T) {
+	db := openCatalogTestDB(t)
+	ensureGalgameStub(t, db)           // the co-loaded intro bridge needs galgame
+	ensureGalgameCoverStub(t, db)      // the co-loaded cover bridge needs galgame_cover
+	ensureGalgameScreenshotStub(t, db) // the co-loaded screenshot bridge needs galgame_screenshot
+	ensureGalgameRatingStub(t, db)     // the popularity bridge needs galgame_dlsite_meta (clears 8001/8002)
+	// The meta tables carry FKs to galgame(id) in the shared test DB, so the
+	// bridge galgame ids need a parent body row. Metas cleared above → safe to
+	// reset the parents. Empty sibling bridges stay no-ops.
+	require.NoError(t, db.Exec(`DELETE FROM galgame WHERE id IN ?`, galgameRatingStubIDs).Error)
+	insertGalgameBody(t, db, 8001, 0, "", "", "", "")
+	insertGalgameBody(t, db, 8002, 0, "", "", "", "")
+	for _, tbl := range []string{"catalog_work_popularity", "catalog_work"} {
+		require.NoError(t, db.Exec("TRUNCATE "+tbl+" RESTART IDENTITY CASCADE").Error)
+	}
+	var srcDlsite int16
+	db.Raw("SELECT id FROM catalog_source WHERE key='dlsite'").Scan(&srcDlsite)
+	require.NotZero(t, srcDlsite, "dlsite source must be seeded")
+
+	// --- CLAIMED work (galgame_id 8001): full counter trio published (dl 2000 /
+	// wishlist 300 / reviews 0 — a published 0 IS a row) → three bridged rows.
+	claimed := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "主張作品", ContentRating: 0, Status: 0,
+		Site: strptr("galgame_wiki"), ProductWorkID: ptrI64(8001)}
+	require.NoError(t, db.Create(&claimed).Error)
+	dl64, wl64 := int64(2000), int64(300)
+	rv0 := 0
+	insertDlsiteMeta(t, db, 8001, nil, nil, &dl64, &wl64, &rv0)
+
+	// --- BODYLESS work: native catalog_work_popularity rows.
+	bodyless := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "無体作品", ContentRating: 0, Status: 0}
+	require.NoError(t, db.Create(&bodyless).Error)
+	require.NoError(t, db.Create(&model.CatalogWorkPopularity{
+		WorkID: bodyless.ID, SourceID: srcDlsite, Metric: model.PopularityMetricReviews, Value: 7}).Error)
+	require.NoError(t, db.Create(&model.CatalogWorkPopularity{
+		WorkID: bodyless.ID, SourceID: srcDlsite, Metric: model.PopularityMetricDownloads, Value: 4500}).Error)
+
+	// --- XOR work: claimed (galgame_id 8002) with NO dlsite meta at all, plus a
+	// SHADOW native row (a prior bodyless state) that must NEVER surface.
+	xor := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "空主張", ContentRating: 0, Status: 0,
+		Site: strptr("galgame_wiki"), ProductWorkID: ptrI64(8002)}
+	require.NoError(t, db.Create(&xor).Error)
+	require.NoError(t, db.Create(&model.CatalogWorkPopularity{
+		WorkID: xor.ID, SourceID: srcDlsite, Metric: model.PopularityMetricDownloads, Value: 99}).Error)
+
+	// --- EMPTY work: bodyless, no counters → [].
+	empty := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "空作品", ContentRating: 0, Status: 0}
+	require.NoError(t, db.Create(&empty).Error)
+
+	app := readApp(service.NewReadService(db), nil)
+
+	// CLAIMED: three bridged rows, metric ascending, dlsite provenance.
+	code, body := getJSON(t, app, "/api/v1/catalog/works/"+itoa(claimed.ID))
+	require.Equal(t, 200, code)
+	pop := body["data"].(map[string]any)["popularity"].([]any)
+	require.Len(t, pop, 3, "all three published counters bridged")
+	p0 := pop[0].(map[string]any)
+	assert.EqualValues(t, srcDlsite, p0["source_id"])
+	assert.EqualValues(t, 0, p0["metric"], "downloads first (metric ascending)")
+	assert.EqualValues(t, 2000, p0["value"])
+	p1 := pop[1].(map[string]any)
+	assert.EqualValues(t, 1, p1["metric"])
+	assert.EqualValues(t, 300, p1["value"])
+	p2 := pop[2].(map[string]any)
+	assert.EqualValues(t, 2, p2["metric"])
+	assert.EqualValues(t, 0, p2["value"], "a published 0 is a real row")
+
+	// BODYLESS: native rows, (source_id, metric) ascending.
+	code, body = getJSON(t, app, "/api/v1/catalog/works/"+itoa(bodyless.ID))
+	require.Equal(t, 200, code)
+	pop = body["data"].(map[string]any)["popularity"].([]any)
+	require.Len(t, pop, 2)
+	assert.EqualValues(t, 0, pop[0].(map[string]any)["metric"], "downloads before reviews")
+	assert.EqualValues(t, 4500, pop[0].(map[string]any)["value"])
+	assert.EqualValues(t, 2, pop[1].(map[string]any)["metric"])
+	assert.EqualValues(t, 7, pop[1].(map[string]any)["value"])
+
+	// XOR: claimed without meta → [] (the shadow native row is invisible).
+	code, body = getJSON(t, app, "/api/v1/catalog/works/"+itoa(xor.ID))
+	require.Equal(t, 200, code)
+	assert.Empty(t, body["data"].(map[string]any)["popularity"].([]any), "strict XOR: no fallback to native rows")
+
+	// EMPTY: [] not null.
+	code, body = getJSON(t, app, "/api/v1/catalog/works/"+itoa(empty.ID))
+	require.Equal(t, 200, code)
+	assert.Empty(t, body["data"].(map[string]any)["popularity"].([]any))
 }
 
 // galgameTagStubGalgameIDs are the fixture galgame body ids used by the claimed

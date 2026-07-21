@@ -71,6 +71,11 @@ func migrateGalgame(db *database.PostgresDB) {
 		// cmd/enrich-eg-scores).
 		&model.GalgameEGMeta{},
 
+		// DLsite rating + popularity narrow table (DLsite-anchored enrichment
+		// via the catalog exact RELEASE anchor; refreshed by
+		// cmd/enrich-dlsite-meta).
+		&model.GalgameDlsiteMeta{},
+
 		// Cross-source statistics snapshot table (release-year / score-histogram
 		// / yearly-average / coverage aggregates; rebuilt by
 		// cmd/build-galgame-stats).

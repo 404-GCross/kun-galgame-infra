@@ -133,6 +133,9 @@ func buildWorkResponse(detail *service.WorkDetail) dto.WorkByAnchorResponse {
 		// Tags pre-sized non-nil so a work with no tag (or a claimed work whose
 		// galgame body has none — strict XOR) serializes `[]`, not `null`.
 		Tags: make([]dto.WorkTag, 0, len(detail.Tags)),
+		// Popularity pre-sized non-nil so a work with no counter (or a claimed
+		// work whose meta publishes none — strict XOR) serializes `[]`, not `null`.
+		Popularity: make([]dto.WorkPopularity, 0, len(detail.Popularity)),
 	}
 	if detail.Work.Site != nil {
 		resp.Work.Site = *detail.Work.Site
@@ -203,6 +206,11 @@ func buildWorkResponse(detail *service.WorkDetail) dto.WorkByAnchorResponse {
 	for _, tg := range detail.Tags {
 		resp.Tags = append(resp.Tags, dto.WorkTag{
 			Name: tg.Name, Count: tg.Count, SourceID: tg.SourceID,
+		})
+	}
+	for _, pp := range detail.Popularity {
+		resp.Popularity = append(resp.Popularity, dto.WorkPopularity{
+			SourceID: pp.SourceID, Metric: pp.Metric, Value: pp.Value,
 		})
 	}
 	return resp

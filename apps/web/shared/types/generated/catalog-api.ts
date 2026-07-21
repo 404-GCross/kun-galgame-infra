@@ -1305,6 +1305,7 @@ export interface components {
             covers: components["schemas"]["WorkCover"][] | null;
             intro: components["schemas"]["WorkIntro"][] | null;
             labels: components["schemas"]["WorkLabel"][] | null;
+            popularity: components["schemas"]["WorkPopularity"][] | null;
             ratings: components["schemas"]["WorkRating"][] | null;
             refs: components["schemas"]["WorkRef"][] | null;
             releases: components["schemas"]["ReleaseBrief"][] | null;
@@ -1414,6 +1415,23 @@ export interface components {
              */
             label_kind: number;
         };
+        WorkPopularity: {
+            /**
+             * Format: int32
+             * @description popularity metric: 0=downloads 1=wishlist 2=reviews (extensible vocabulary)
+             */
+            metric: number;
+            /**
+             * Format: int32
+             * @description catalog_source id (provenance + unit selector): counters are source-relative and never summed across sources
+             */
+            source_id: number;
+            /**
+             * Format: int64
+             * @description raw counter verbatim from the source; a published 0 is a real value, an unpublished counter has no element
+             */
+            value: number;
+        };
         WorkRating: {
             /**
              * Format: int64
@@ -1427,7 +1445,7 @@ export interface components {
             score: number;
             /**
              * Format: int32
-             * @description catalog_source id (provenance + scale selector): bangumi = 0-10 mean, erogamespace = 0-100 median
+             * @description catalog_source id (provenance + scale selector): vndb = 1-10 mean, bangumi = 0-10 mean, dlsite = 0-5 star mean, erogamespace = 0-100 median
              */
             source_id: number;
             /**

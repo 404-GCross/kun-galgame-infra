@@ -169,6 +169,19 @@ const (
 	LinkKindRelated  int16 = 2
 )
 
+// Popularity metrics (refs/proj/62): what a catalog_work_popularity.value
+// counts. An EXTENSIBLE vocabulary — new counting facets append new constants
+// (never renumber): e.g. a future Bangumi wave adds favorite-bucket metrics
+// (wish/collect/doing/on_hold/dropped) with fresh numbers. The unit is
+// source-relative — metric 0 on DLsite counts sales, and a hypothetical
+// metric 0 on another store would count that store's downloads — so consumers
+// always render per (source_id, metric), never sum across sources.
+const (
+	PopularityMetricDownloads int16 = 0 // purchase/download counter (DLsite dl_count)
+	PopularityMetricWishlist  int16 = 1 // wishlist/favorite counter (DLsite wishlist_count)
+	PopularityMetricReviews   int16 = 2 // written-review counter (DLsite review_count)
+)
+
 // Match-candidate reasons (doc 10 §8 + doc 17 §4): how the pair was proposed.
 const (
 	CandidateReasonSharedExternalID int16 = 0 // same (source, external_id) on both entities — strong

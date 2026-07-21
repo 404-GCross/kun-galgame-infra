@@ -10,8 +10,12 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// writer applies planned rating rows with the write-time XOR guard and the
-// ON CONFLICT idempotency backstop (serial, plain ints).
+// writer applies planned rating/popularity rows with the write-time XOR guard
+// and the CHANGE-DETECTED upsert (step 62 upsert unification): ON CONFLICT
+// DO UPDATE fires only when a value actually differs (row-wise IS DISTINCT
+// FROM handles the NULLs), so RowsAffected cleanly separates effective writes
+// (insert or value-update → *written) from refresh no-ops (→ *unchanged) and a
+// re-run against unchanged staging performs zero updates.
 type writer struct {
 	db    *gorm.DB
 	stats *Stats
@@ -28,9 +32,9 @@ type plannedRow struct {
 	Rank      *int
 }
 
-// write enforces the XOR guard, then (apply only) inserts the row. written /
-// conflict point at the owning lane's counters so both lanes share one path.
-func (w *writer) write(ctx context.Context, p plannedRow, apply bool, written, conflict *int) {
+// write enforces the XOR guard, then (apply only) upserts the row. written /
+// unchanged point at the owning lane's counters so all lanes share one path.
+func (w *writer) write(ctx context.Context, p plannedRow, apply bool, written, unchanged *int) {
 	if !isBodyless(p.Site) { // XOR guard (§8.D) — never materialise a claimed work
 		w.stats.Refused++
 		return
@@ -40,7 +44,10 @@ func (w *writer) write(ctx context.Context, p plannedRow, apply bool, written, c
 	}
 	res := w.db.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "work_id"}, {Name: "source_id"}},
-		DoNothing: true,
+		DoUpdates: clause.AssignmentColumns([]string{"score", "vote_count", "rank", "updated_at"}),
+		Where: clause.Where{Exprs: []clause.Expression{gorm.Expr(
+			`(catalog_work_rating.score, catalog_work_rating.vote_count, catalog_work_rating.rank)
+			 IS DISTINCT FROM (excluded.score, excluded.vote_count, excluded.rank)`)}},
 	}).Create(&model.CatalogWorkRating{
 		WorkID: p.WorkID, SourceID: p.SourceID, Score: p.Score, VoteCount: p.VoteCount, Rank: p.Rank,
 	})
@@ -49,11 +56,50 @@ func (w *writer) write(ctx context.Context, p plannedRow, apply bool, written, c
 		slog.Warn("write rating", "work", p.WorkID, "source", p.SourceID, "err", res.Error)
 		return
 	}
-	if res.RowsAffected == 0 { // row already there (second pass / concurrent writer)
-		*conflict++
+	if res.RowsAffected == 0 { // row already current (refresh no-op)
+		*unchanged++
 		return
 	}
 	*written++
+}
+
+// popPlannedRow is one decided catalog_work_popularity write.
+type popPlannedRow struct {
+	WorkID   int64
+	Site     *string
+	SourceID int16
+	Metric   int16
+	Value    int64
+}
+
+// writePopularity is the popularity twin of write: XOR guard + change-detected
+// upsert on the (work_id, source_id, metric) key.
+func (w *writer) writePopularity(ctx context.Context, p popPlannedRow, apply bool) {
+	if !isBodyless(p.Site) { // XOR guard (§8.D)
+		w.stats.Refused++
+		return
+	}
+	if !apply {
+		return
+	}
+	res := w.db.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "work_id"}, {Name: "source_id"}, {Name: "metric"}},
+		DoUpdates: clause.AssignmentColumns([]string{"value", "updated_at"}),
+		Where: clause.Where{Exprs: []clause.Expression{gorm.Expr(
+			`catalog_work_popularity.value IS DISTINCT FROM excluded.value`)}},
+	}).Create(&model.CatalogWorkPopularity{
+		WorkID: p.WorkID, SourceID: p.SourceID, Metric: p.Metric, Value: p.Value,
+	})
+	if res.Error != nil {
+		w.stats.Errors++
+		slog.Warn("write popularity", "work", p.WorkID, "source", p.SourceID, "metric", p.Metric, "err", res.Error)
+		return
+	}
+	if res.RowsAffected == 0 { // row already current (refresh no-op)
+		w.stats.PopUnchanged++
+		return
+	}
+	w.stats.PopWritten++
 }
 
 // isBodyless reports whether a catalog_work is bodyless (site NULL or ”) —

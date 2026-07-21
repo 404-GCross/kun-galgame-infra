@@ -62,6 +62,28 @@ type WorkByAnchorResponse struct {
 	// rows). Distinct from labels — labels are the attribution vocabulary
 	// (organizational responsibility), tags are content description.
 	Tags []WorkTag `json:"tags"`
+	// Popularity is the work's per-metric popularity counter set (step 62), at
+	// most one element per (source, metric), in a single shape regardless of
+	// source. Values are VERBATIM source counters — a DLsite sale and a future
+	// Bangumi favorite are different units, so consumers render per
+	// (source_id, metric) and never sum across sources. A CLAIMED work's
+	// counters are bridged from galgame_dlsite_meta (downloads / wishlist /
+	// reviews); a BODYLESS work's from its catalog_work_popularity rows.
+	// Strict XOR: a claimed work with no published counter yields [] (never a
+	// fallback to native rows).
+	Popularity []WorkPopularity `json:"popularity"`
+}
+
+// WorkPopularity is one (source, metric) popularity counter on a work, in the
+// unified media-aggregation shape. metric is the PopularityMetric* vocabulary
+// (0=downloads 1=wishlist 2=reviews; extensible — new counting facets append
+// constants). value is the raw counter verbatim from the source; an
+// unpublished counter has NO element (absent ≠ 0), while a source-published 0
+// does.
+type WorkPopularity struct {
+	SourceID int16 `json:"source_id" doc:"catalog_source id (provenance + unit selector): counters are source-relative and never summed across sources"`
+	Metric   int16 `json:"metric" doc:"popularity metric: 0=downloads 1=wishlist 2=reviews (extensible vocabulary)"`
+	Value    int64 `json:"value" doc:"raw counter verbatim from the source; a published 0 is a real value, an unpublished counter has no element"`
 }
 
 // WorkTag is one content tag on a work, in the unified media-aggregation shape.
@@ -76,13 +98,14 @@ type WorkTag struct {
 }
 
 // WorkRating is one source's rating on a work, in the unified media-aggregation
-// shape. score is on the SOURCE-NATIVE scale — bangumi (source key `bangumi`)
-// is a 0-10 mean, erogamespace (key `erogamespace`) a 0-100 median — so a
-// consumer must branch on source_id to render it. rank is the source-internal
-// rank, absent when the source has none (EG) or the work is unranked there
-// (bangumi rank 0).
+// shape. score is on the SOURCE-NATIVE scale — vndb (source key `vndb`) is a
+// 1-10 mean, bangumi (key `bangumi`) a 0-10 mean, dlsite (key `dlsite`) a 0-5
+// star mean, erogamespace (key `erogamespace`) a 0-100 median — so a consumer
+// must branch on source_id to render it. rank is the source-internal rank,
+// absent when the source has none (vndb meta / dlsite / EG) or the work is
+// unranked there (bangumi rank 0).
 type WorkRating struct {
-	SourceID  int16   `json:"source_id" doc:"catalog_source id (provenance + scale selector): bangumi = 0-10 mean, erogamespace = 0-100 median"`
+	SourceID  int16   `json:"source_id" doc:"catalog_source id (provenance + scale selector): vndb = 1-10 mean, bangumi = 0-10 mean, dlsite = 0-5 star mean, erogamespace = 0-100 median"`
 	Score     float64 `json:"score" doc:"rating on the source-native scale (never normalized across sources)"`
 	VoteCount int     `json:"vote_count" doc:"number of ratings backing the score"`
 	Rank      *int    `json:"rank,omitempty" doc:"source-internal rank; absent when the source has no rank or the work is unranked"`

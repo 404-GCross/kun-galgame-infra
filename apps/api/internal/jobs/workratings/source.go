@@ -19,6 +19,7 @@ type registry struct {
 	galgameMedium int16
 	bangumiSource int16
 	egSource      int16
+	dlsiteSource  int16
 }
 
 func resolveRegistry(ctx context.Context, db *gorm.DB) (registry, error) {
@@ -32,9 +33,12 @@ func resolveRegistry(ctx context.Context, db *gorm.DB) (registry, error) {
 	if err := db.WithContext(ctx).Raw(`SELECT id FROM catalog_source WHERE key = 'erogamespace'`).Scan(&r.egSource).Error; err != nil {
 		return r, fmt.Errorf("resolve erogamespace source: %w", err)
 	}
-	if r.galgameMedium == 0 || r.bangumiSource == 0 || r.egSource == 0 {
-		return r, fmt.Errorf("registry not seeded (galgame medium=%d, bangumi source=%d, erogamespace source=%d)",
-			r.galgameMedium, r.bangumiSource, r.egSource)
+	if err := db.WithContext(ctx).Raw(`SELECT id FROM catalog_source WHERE key = 'dlsite'`).Scan(&r.dlsiteSource).Error; err != nil {
+		return r, fmt.Errorf("resolve dlsite source: %w", err)
+	}
+	if r.galgameMedium == 0 || r.bangumiSource == 0 || r.egSource == 0 || r.dlsiteSource == 0 {
+		return r, fmt.Errorf("registry not seeded (galgame medium=%d, bangumi source=%d, erogamespace source=%d, dlsite source=%d)",
+			r.galgameMedium, r.bangumiSource, r.egSource, r.dlsiteSource)
 	}
 	return r, nil
 }

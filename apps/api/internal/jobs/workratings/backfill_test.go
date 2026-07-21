@@ -20,16 +20,18 @@ import (
 )
 
 // Integration test against a real Postgres: the catalog Gold schema
-// (migrate.Run + registry seeds), the src_bangumi Silver schema, and a minimal
-// EG mirror `games` table ALL co-located in ONE database. The EG fixture lives
-// in its OWN schema (workratings_eg) reached via a search_path DSN — the
-// shared test DB's public.games belongs to importer_test.go (a different
-// shape) and must not be clobbered. Run drives the DSNs itself, so we capture
-// them (not just the handle) to exercise the real entry point.
+// (migrate.Run + registry seeds), the src_bangumi Silver schema, and minimal
+// EG + DLsite mirror fixtures ALL co-located in ONE database. Each mirror
+// fixture lives in its OWN schema (workratings_eg / workratings_dl) reached
+// via a search_path DSN — the shared test DB's public.games belongs to
+// importer_test.go (a different shape) and must not be clobbered. Run drives
+// the DSNs itself, so we capture them (not just the handle) to exercise the
+// real entry point.
 var (
 	testDB    *gorm.DB
 	testDSN   string
 	egTestDSN string
+	dlTestDSN string
 )
 
 func TestMain(m *testing.M) {
@@ -54,19 +56,23 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "SKIP: src_bangumi schema failed: %v\n", err)
 		os.Exit(0)
 	}
-	// Minimal EG mirror shape (only the columns loadEGMirror touches), in a
+	// Minimal mirror shapes (only the columns the loaders touch), each in a
 	// DEDICATED schema so the shared test DB's public.games (importer_test.go's
-	// fixture, a different shape) is never clobbered. egTestDSN resolves
-	// unqualified `games` there via search_path.
-	if err := db.Exec(`CREATE SCHEMA IF NOT EXISTS workratings_eg`).Error; err != nil {
-		fmt.Fprintf(os.Stderr, "SKIP: eg fixture schema failed: %v\n", err)
-		os.Exit(0)
-	}
-	if err := db.Exec(`CREATE TABLE IF NOT EXISTS workratings_eg.games (id int PRIMARY KEY, median int, count2 int)`).Error; err != nil {
-		fmt.Fprintf(os.Stderr, "SKIP: games fixture failed: %v\n", err)
-		os.Exit(0)
+	// fixture, a different shape) is never clobbered. The search_path DSNs
+	// resolve the unqualified table names there.
+	for _, ddl := range []string{
+		`CREATE SCHEMA IF NOT EXISTS workratings_eg`,
+		`CREATE TABLE IF NOT EXISTS workratings_eg.games (id int PRIMARY KEY, median int, count2 int)`,
+		`CREATE SCHEMA IF NOT EXISTS workratings_dl`,
+		`CREATE TABLE IF NOT EXISTS workratings_dl.works (workno text PRIMARY KEY, info_json jsonb)`,
+	} {
+		if err := db.Exec(ddl).Error; err != nil {
+			fmt.Fprintf(os.Stderr, "SKIP: mirror fixture failed: %v\n", err)
+			os.Exit(0)
+		}
 	}
 	egTestDSN = testDSN + " options='-csearch_path=workratings_eg'"
+	dlTestDSN = testDSN + " options='-csearch_path=workratings_dl'"
 	testDB = db
 	os.Exit(m.Run())
 }
@@ -74,7 +80,8 @@ func TestMain(m *testing.M) {
 func clean(t *testing.T) {
 	t.Helper()
 	for _, table := range []string{
-		"catalog_work_rating", "catalog_external_ref", "catalog_work", "src_bangumi.subject", "workratings_eg.games",
+		"catalog_work_rating", "catalog_work_popularity", "catalog_external_ref", "catalog_release",
+		"catalog_work", "src_bangumi.subject", "workratings_eg.games", "workratings_dl.works",
 	} {
 		require.NoError(t, testDB.Exec("TRUNCATE "+table+" RESTART IDENTITY CASCADE").Error)
 	}
@@ -92,6 +99,18 @@ func mkAnchor(t *testing.T, workID int64, externalID string, source, kind int16,
 	require.NoError(t, testDB.Create(&model.CatalogExternalRef{
 		EntityType: model.EntityTypeWork, EntityID: workID, SourceID: source,
 		ExternalID: externalID, LinkKind: kind, MatchedBy: matchedBy,
+	}).Error)
+}
+
+// mkReleaseAnchor attaches a RELEASE-level external ref (the DLsite anchor
+// shape — worknos are SKU-natured and hang off catalog_release).
+func mkReleaseAnchor(t *testing.T, workID int64, externalID string, source, kind int16) {
+	t.Helper()
+	rel := model.CatalogRelease{WorkID: workID, Kind: model.ReleaseKindDigital}
+	require.NoError(t, testDB.Create(&rel).Error)
+	require.NoError(t, testDB.Create(&model.CatalogExternalRef{
+		EntityType: model.EntityTypeRelease, EntityID: rel.ID, SourceID: source,
+		ExternalID: externalID, LinkKind: kind, MatchedBy: "rule:test",
 	}).Error)
 }
 
@@ -114,6 +133,17 @@ func mkEGGame(t *testing.T, id int, median *int, count2 int) {
 	require.NoError(t, testDB.Exec(`INSERT INTO workratings_eg.games (id, median, count2) VALUES (?, ?, ?)`, id, median, count2).Error)
 }
 
+// mkDlsiteWork writes one DLsite mirror row; nil pointers leave the key out of
+// info_json entirely (the real mirror's "not published" shape).
+func mkDlsiteWork(t *testing.T, workno string, star *float64, rc *int, dl, wl *int64, rv *int) {
+	t.Helper()
+	require.NoError(t, testDB.Exec(`INSERT INTO workratings_dl.works (workno, info_json)
+		VALUES (?, jsonb_strip_nulls(jsonb_build_object(
+			'rate_average_2dp', ?::float8, 'rate_count', ?::int,
+			'dl_count', ?::bigint, 'wishlist_count', ?::bigint, 'review_count', ?::int)))`,
+		workno, star, rc, dl, wl, rv).Error)
+}
+
 func ratingCount(t *testing.T, where string, args ...any) int64 {
 	t.Helper()
 	var n int64
@@ -121,13 +151,29 @@ func ratingCount(t *testing.T, where string, args ...any) int64 {
 	return n
 }
 
-func p(v int) *int { return &v }
+func popCount(t *testing.T, where string, args ...any) int64 {
+	t.Helper()
+	var n int64
+	require.NoError(t, testDB.Raw("SELECT count(*) FROM catalog_work_popularity "+where, args...).Scan(&n).Error)
+	return n
+}
+
+func p(v int) *int          { return &v }
+func pf(v float64) *float64 { return &v }
+func pl(v int64) *int64     { return &v }
+
+// runOpts returns the three-DSN Opts for a test run.
+func runOpts(apply bool) Opts {
+	return Opts{DSN: testDSN, EGDSN: egTestDSN, DlsiteDSN: dlTestDSN, Apply: apply}
+}
 
 // TestBackfillWorkRatings exercises the whole pipeline through the real Run
 // entry point: per-lane candidate selection (exact anchors only, bodyless
-// only), the score>0 / NULL-median filters, vote_count derivation from
-// score_details, rank NULL semantics, EG multi-anchor collapse, dry-run
-// zero-write, apply value fidelity, and second-pass idempotency.
+// only, dlsite release-level + galgame-medium only), the score>0 / NULL-median
+// / no-rating filters, vote_count derivation from score_details, rank NULL
+// semantics, EG multi-anchor collapse, popularity row planning, dry-run
+// zero-write, apply value fidelity, second-pass change-detected no-op, and the
+// refresh loop (mutate a mirror value → re-run → row updated).
 func TestBackfillWorkRatings(t *testing.T) {
 	clean(t)
 	ctx := context.Background()
@@ -176,8 +222,27 @@ func TestBackfillWorkRatings(t *testing.T) {
 	mkEGGame(t, 1006, p(70), 7)
 	mkAnchor(t, wBgm, "1006", reg.egSource, model.LinkKindExact, "rule:test")
 
+	// --- dlsite lane fixtures (release-level anchors) ---
+	wDl := mkWork(t, reg.galgameMedium, "dl-full", nil) // rated + all counters → rating + 3 pop rows
+	mkReleaseAnchor(t, wDl, "RJ100001", reg.dlsiteSource, model.LinkKindExact)
+	mkDlsiteWork(t, "RJ100001", pf(4.36), p(120), pl(2000), pl(300), p(12))
+	wDlNoRating := mkWork(t, reg.galgameMedium, "dl-norating", nil) // no rating, partial counters → 2 pop rows only
+	mkReleaseAnchor(t, wDlNoRating, "RJ100002", reg.dlsiteSource, model.LinkKindExact)
+	mkDlsiteWork(t, "RJ100002", nil, nil, nil, pl(7), p(0))
+	wDlMissing := mkWork(t, reg.galgameMedium, "dl-missing", nil) // absent from mirror
+	mkReleaseAnchor(t, wDlMissing, "RJ100003", reg.dlsiteSource, model.LinkKindExact)
+	wDlClaimed := mkWork(t, reg.galgameMedium, "dl-claimed", &claimed) // claimed → excluded by SQL
+	mkReleaseAnchor(t, wDlClaimed, "RJ100004", reg.dlsiteSource, model.LinkKindExact)
+	mkDlsiteWork(t, "RJ100004", pf(4.9), p(999), pl(1), pl(1), p(1))
+	wDlAsmr := mkWork(t, 5 /* asmr medium */, "dl-asmr", nil) // wrong medium → excluded (game-domain ruling)
+	mkReleaseAnchor(t, wDlAsmr, "RJ100005", reg.dlsiteSource, model.LinkKindExact)
+	mkDlsiteWork(t, "RJ100005", pf(4.9), p(999), pl(1), pl(1), p(1))
+	wDlProbable := mkWork(t, reg.galgameMedium, "dl-probable", nil) // probable tier → excluded
+	mkReleaseAnchor(t, wDlProbable, "RJ100006", reg.dlsiteSource, model.LinkKindProbable)
+	mkDlsiteWork(t, "RJ100006", pf(4.0), p(10), pl(1), pl(1), p(1))
+
 	// --- dry run: decides, writes nothing.
-	st, err := Run(ctx, Opts{DSN: testDSN, EGDSN: egTestDSN})
+	st, err := Run(ctx, runOpts(false))
 	require.NoError(t, err)
 	assert.Equal(t, 3, st.BgmCandidates, "claimed + probable excluded in SQL")
 	assert.Equal(t, 1, st.BgmNoScore)
@@ -187,20 +252,32 @@ func TestBackfillWorkRatings(t *testing.T) {
 	assert.Equal(t, 1, st.EgMissingMirror)
 	assert.Equal(t, 1, st.EgNoMedian)
 	assert.Equal(t, 3, st.EgPlanned, "wEg + wEgMulti + wBgm")
+	assert.Equal(t, 3, st.DlCandidates, "claimed / probable / asmr excluded in SQL")
+	assert.Equal(t, 1, st.DlMissingMirror)
+	assert.Equal(t, 1, st.DlNoRating, "wDlNoRating publishes no rating")
+	assert.Equal(t, 1, st.DlRatingPlanned, "wDl")
+	assert.Equal(t, 5, st.PopPlanned, "wDl's 3 counters + wDlNoRating's wishlist+reviews")
 	assert.Equal(t, 0, st.Refused, "no claimed work reaches the write path")
-	assert.Zero(t, st.BgmWritten+st.EgWritten+st.BgmConflict+st.EgConflict+st.Errors)
+	assert.Zero(t, st.BgmWritten+st.EgWritten+st.DlRatingWritten+st.PopWritten+
+		st.BgmUnchanged+st.EgUnchanged+st.DlRatingUnchanged+st.PopUnchanged+st.Errors)
 	assert.EqualValues(t, 0, ratingCount(t, ""), "dry run writes nothing")
+	assert.EqualValues(t, 0, popCount(t, ""), "dry run writes nothing")
 	require.NotEmpty(t, st.BgmSamples)
 	assert.Equal(t, wBgm, st.BgmSamples[0].WorkID)
 	assert.Equal(t, 42, st.BgmSamples[0].VoteCount, "vote_count = summed score_details buckets")
+	require.NotEmpty(t, st.DlSamples)
+	assert.Equal(t, "RJ100001", st.DlSamples[0].Workno)
 
 	// --- apply: writes the decided plan exactly.
-	st, err = Run(ctx, Opts{DSN: testDSN, EGDSN: egTestDSN, Apply: true})
+	st, err = Run(ctx, runOpts(true))
 	require.NoError(t, err)
 	assert.Equal(t, 2, st.BgmWritten)
 	assert.Equal(t, 3, st.EgWritten)
-	assert.Zero(t, st.BgmConflict+st.EgConflict+st.Errors)
-	assert.EqualValues(t, 5, ratingCount(t, ""))
+	assert.Equal(t, 1, st.DlRatingWritten)
+	assert.Equal(t, 5, st.PopWritten)
+	assert.Zero(t, st.BgmUnchanged+st.EgUnchanged+st.DlRatingUnchanged+st.PopUnchanged+st.Errors)
+	assert.EqualValues(t, 6, ratingCount(t, ""))
+	assert.EqualValues(t, 5, popCount(t, ""))
 
 	// Value fidelity: the bangumi row (native 0-10, rank, derived votes).
 	var rBgm model.CatalogWorkRating
@@ -228,18 +305,69 @@ func TestBackfillWorkRatings(t *testing.T) {
 	assert.InDelta(t, 90, rMulti.Score, 1e-9)
 	assert.Equal(t, 99, rMulti.VoteCount)
 
+	// The dlsite rating row (native 0-5 star average, rank always NULL).
+	var rDl model.CatalogWorkRating
+	require.NoError(t, testDB.Where("work_id = ? AND source_id = ?", wDl, reg.dlsiteSource).First(&rDl).Error)
+	assert.InDelta(t, 4.36, rDl.Score, 1e-9)
+	assert.Equal(t, 120, rDl.VoteCount)
+	assert.Nil(t, rDl.Rank)
+
+	// The popularity rows: full trio on wDl…
+	var pops []model.CatalogWorkPopularity
+	require.NoError(t, testDB.Where("work_id = ?", wDl).Order("metric").Find(&pops).Error)
+	require.Len(t, pops, 3)
+	assert.Equal(t, model.PopularityMetricDownloads, pops[0].Metric)
+	assert.EqualValues(t, 2000, pops[0].Value)
+	assert.Equal(t, model.PopularityMetricWishlist, pops[1].Metric)
+	assert.EqualValues(t, 300, pops[1].Value)
+	assert.Equal(t, model.PopularityMetricReviews, pops[2].Metric)
+	assert.EqualValues(t, 12, pops[2].Value)
+	assert.Equal(t, reg.dlsiteSource, pops[0].SourceID)
+	// …and only the PUBLISHED counters on wDlNoRating (absent dl_count → no
+	// row; published review_count 0 → a real 0-valued row).
+	require.NoError(t, testDB.Where("work_id = ?", wDlNoRating).Order("metric").Find(&pops).Error)
+	require.Len(t, pops, 2)
+	assert.Equal(t, model.PopularityMetricWishlist, pops[0].Metric)
+	assert.EqualValues(t, 7, pops[0].Value)
+	assert.Equal(t, model.PopularityMetricReviews, pops[1].Metric)
+	assert.EqualValues(t, 0, pops[1].Value)
+
 	// Both lanes on one work → two rows, one per source.
 	assert.EqualValues(t, 2, ratingCount(t, "WHERE work_id = ?", wBgm))
-	assert.EqualValues(t, 0, ratingCount(t, "WHERE work_id IN (?, ?)", wBgmClaimed, wEgClaimed),
+	assert.EqualValues(t, 0, ratingCount(t, "WHERE work_id IN (?, ?, ?)", wBgmClaimed, wEgClaimed, wDlClaimed),
 		"claimed works never materialise")
+	assert.EqualValues(t, 0, popCount(t, "WHERE work_id IN (?, ?)", wDlClaimed, wDlAsmr),
+		"claimed/off-domain works never materialise")
 
-	// --- second apply: idempotent — zero writes, every planned row conflicts.
-	st, err = Run(ctx, Opts{DSN: testDSN, EGDSN: egTestDSN, Apply: true})
+	// --- second apply: change-detected no-op — zero effective writes, every
+	// planned row unchanged, no row growth.
+	st, err = Run(ctx, runOpts(true))
 	require.NoError(t, err)
-	assert.Zero(t, st.BgmWritten+st.EgWritten+st.Errors, "second pass writes zero")
-	assert.Equal(t, 2, st.BgmConflict)
-	assert.Equal(t, 3, st.EgConflict)
-	assert.EqualValues(t, 5, ratingCount(t, ""), "row count unchanged")
+	assert.Zero(t, st.BgmWritten+st.EgWritten+st.DlRatingWritten+st.PopWritten+st.Errors, "second pass writes zero")
+	assert.Equal(t, 2, st.BgmUnchanged)
+	assert.Equal(t, 3, st.EgUnchanged)
+	assert.Equal(t, 1, st.DlRatingUnchanged)
+	assert.Equal(t, 5, st.PopUnchanged)
+	assert.EqualValues(t, 6, ratingCount(t, ""), "row count unchanged")
+	assert.EqualValues(t, 5, popCount(t, ""), "row count unchanged")
+
+	// --- refresh loop (step 62 ⑤): mutate mirror values → third apply updates
+	// exactly those rows in place.
+	require.NoError(t, testDB.Exec(
+		`UPDATE workratings_dl.works SET info_json = info_json || '{"wishlist_count": 301, "rate_count": 121}' WHERE workno = 'RJ100001'`).Error)
+	st, err = Run(ctx, runOpts(true))
+	require.NoError(t, err)
+	assert.Equal(t, 1, st.DlRatingWritten, "rate_count change updates the rating row")
+	assert.Equal(t, 1, st.PopWritten, "exactly the mutated wishlist row updates")
+	assert.Equal(t, 4, st.PopUnchanged)
+	assert.Zero(t, st.BgmWritten+st.EgWritten, "untouched lanes stay no-op")
+	assert.EqualValues(t, 6, ratingCount(t, ""), "update in place — no row growth")
+	assert.EqualValues(t, 5, popCount(t, ""))
+	require.NoError(t, testDB.Where("work_id = ? AND source_id = ?", wDl, reg.dlsiteSource).First(&rDl).Error)
+	assert.Equal(t, 121, rDl.VoteCount, "refreshed vote_count lands")
+	var wl model.CatalogWorkPopularity
+	require.NoError(t, testDB.Where("work_id = ? AND metric = ?", wDl, model.PopularityMetricWishlist).First(&wl).Error)
+	assert.EqualValues(t, 301, wl.Value, "refreshed wishlist lands")
 }
 
 // TestXORGuardAndDSNRequired covers the write-time XOR guard (the SQL filter
@@ -255,25 +383,49 @@ func TestXORGuardAndDSNRequired(t *testing.T) {
 	wClaimed := mkWork(t, reg.galgameMedium, "claimed-direct", &claimed)
 	wBody := mkWork(t, reg.galgameMedium, "bodyless-direct", nil)
 
-	// XOR: a claimed row is refused before any write.
+	// XOR: a claimed row is refused before any write (both facets).
 	w := &writer{db: testDB, stats: &Stats{}}
-	var written, conflict int
-	w.write(ctx, plannedRow{WorkID: wClaimed, Site: &claimed, SourceID: reg.bangumiSource, Score: 7.0}, true, &written, &conflict)
-	assert.Equal(t, 1, w.stats.Refused)
-	assert.Zero(t, written+conflict)
+	var written, unchanged int
+	w.write(ctx, plannedRow{WorkID: wClaimed, Site: &claimed, SourceID: reg.bangumiSource, Score: 7.0}, true, &written, &unchanged)
+	w.writePopularity(ctx, popPlannedRow{WorkID: wClaimed, Site: &claimed, SourceID: reg.dlsiteSource,
+		Metric: model.PopularityMetricDownloads, Value: 5}, true)
+	assert.Equal(t, 2, w.stats.Refused)
+	assert.Zero(t, written+unchanged+w.stats.PopWritten+w.stats.PopUnchanged)
 	assert.EqualValues(t, 0, ratingCount(t, ""))
+	assert.EqualValues(t, 0, popCount(t, ""))
 
-	// A bodyless row writes; a retry conflicts (the UNIQUE backstop) instead of
-	// duplicating.
-	w.write(ctx, plannedRow{WorkID: wBody, Site: nil, SourceID: reg.bangumiSource, Score: 7.0, VoteCount: 3}, true, &written, &conflict)
+	// A bodyless row writes; a same-value retry is a change-detected no-op; a
+	// changed-value retry UPDATEs in place (the step-62 upsert unification).
+	w.write(ctx, plannedRow{WorkID: wBody, Site: nil, SourceID: reg.bangumiSource, Score: 7.0, VoteCount: 3}, true, &written, &unchanged)
 	assert.Equal(t, 1, written)
-	w.write(ctx, plannedRow{WorkID: wBody, Site: nil, SourceID: reg.bangumiSource, Score: 7.0, VoteCount: 3}, true, &written, &conflict)
-	assert.Equal(t, 1, conflict, "ON CONFLICT refuses the duplicate")
+	w.write(ctx, plannedRow{WorkID: wBody, Site: nil, SourceID: reg.bangumiSource, Score: 7.0, VoteCount: 3}, true, &written, &unchanged)
+	assert.Equal(t, 1, unchanged, "unchanged values → no-op")
+	w.write(ctx, plannedRow{WorkID: wBody, Site: nil, SourceID: reg.bangumiSource, Score: 7.2, VoteCount: 4}, true, &written, &unchanged)
+	assert.Equal(t, 2, written, "changed values → in-place update")
 	assert.EqualValues(t, 1, ratingCount(t, ""), "still exactly one row")
+	var r model.CatalogWorkRating
+	require.NoError(t, testDB.Where("work_id = ?", wBody).First(&r).Error)
+	assert.InDelta(t, 7.2, r.Score, 1e-9)
 
-	// DSN discipline: both DSNs are required, never guessed.
-	_, err = Run(ctx, Opts{EGDSN: testDSN})
+	// Same trio for popularity.
+	w.writePopularity(ctx, popPlannedRow{WorkID: wBody, Site: nil, SourceID: reg.dlsiteSource,
+		Metric: model.PopularityMetricWishlist, Value: 10}, true)
+	w.writePopularity(ctx, popPlannedRow{WorkID: wBody, Site: nil, SourceID: reg.dlsiteSource,
+		Metric: model.PopularityMetricWishlist, Value: 10}, true)
+	w.writePopularity(ctx, popPlannedRow{WorkID: wBody, Site: nil, SourceID: reg.dlsiteSource,
+		Metric: model.PopularityMetricWishlist, Value: 11}, true)
+	assert.Equal(t, 2, w.stats.PopWritten)
+	assert.Equal(t, 1, w.stats.PopUnchanged)
+	assert.EqualValues(t, 1, popCount(t, ""), "still exactly one row")
+	var pop model.CatalogWorkPopularity
+	require.NoError(t, testDB.Where("work_id = ?", wBody).First(&pop).Error)
+	assert.EqualValues(t, 11, pop.Value)
+
+	// DSN discipline: all three DSNs are required, never guessed.
+	_, err = Run(ctx, Opts{EGDSN: testDSN, DlsiteDSN: testDSN})
 	require.Error(t, err)
-	_, err = Run(ctx, Opts{DSN: testDSN})
+	_, err = Run(ctx, Opts{DSN: testDSN, DlsiteDSN: testDSN})
+	require.Error(t, err)
+	_, err = Run(ctx, Opts{DSN: testDSN, EGDSN: testDSN})
 	require.Error(t, err)
 }
