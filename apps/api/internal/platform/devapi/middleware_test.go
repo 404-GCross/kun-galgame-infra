@@ -134,6 +134,55 @@ func TestRequireScope(t *testing.T) {
 	}
 }
 
+// TestExtractKeyQuadrants pins the dual-credential transport rule (裁定 6): the
+// key is taken from Authorization: Bearer ONLY when it carries our nm_ prefix,
+// otherwise the request falls through to X-API-Key. Covers all four credential
+// quadrants (key only / JWT only / both / neither) plus the bearer-key-wins
+// precedence — proving existing single-credential behavior is unchanged and the
+// only new path is the dual-credential one.
+func TestExtractKeyQuadrants(t *testing.T) {
+	const key = "nm_live_ABC123def456"
+	// A representative non-key Bearer value (a user JWT). No nm_ prefix.
+	const jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.sig"
+
+	cases := []struct {
+		name string
+		auth string // Authorization header value ("" = unset)
+		xkey string // X-API-Key header value ("" = unset)
+		want string
+	}{
+		{"key in bearer only (legacy)", "Bearer " + key, "", key},
+		{"key in x-api-key only (legacy)", "", key, key},
+		{"jwt in bearer only → no key", "Bearer " + jwt, "", ""},
+		{"dual: key in x-api-key + jwt in bearer", "Bearer " + jwt, key, key},
+		{"neither", "", "", ""},
+		{"bearer key wins over x-api-key", "Bearer " + key, "nm_live_other", key},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			app := fiber.New()
+			var got string
+			app.Get("/", func(c fiber.Ctx) error {
+				got = extractKey(c)
+				return c.SendStatus(fiber.StatusOK)
+			})
+			req := httptest.NewRequest("GET", "/", nil)
+			if tc.auth != "" {
+				req.Header.Set("Authorization", tc.auth)
+			}
+			if tc.xkey != "" {
+				req.Header.Set("X-API-Key", tc.xkey)
+			}
+			if _, err := app.Test(req); err != nil {
+				t.Fatalf("app.Test: %v", err)
+			}
+			if got != tc.want {
+				t.Errorf("extractKey = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 // TestContentLimitGate: nsfw requires both the scope and the nsfw_allowed flag;
 // anything short downgrades to sfw (Phase 1 has no nsfw key, so this is the
 // inert-but-wired default-safe path).

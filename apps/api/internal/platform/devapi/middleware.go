@@ -226,12 +226,34 @@ func ResolveContentLimit(c fiber.Ctx, requested string) string {
 	return "sfw"
 }
 
-// extractKey pulls the raw key from Authorization: Bearer … (preferred) or the
-// X-API-Key header (compat).
+// extractKey pulls the raw API key from the request. Preference order:
+//
+//  1. Authorization: Bearer <value> — but ONLY when <value> carries one of our
+//     key prefixes (nm_live_/nm_test_). This is the legacy single-credential
+//     transport (a key in the Bearer slot).
+//  2. X-API-Key header — the dual-credential transport: the key rides here so
+//     Authorization is free for an OPTIONAL end-user JWT (the internal rich
+//     face's personalized reads: /mine, /messages/mine, and the optionalJWT
+//     routes). See 09-open-api-phase2 01 裁定 6.
+//
+// The prefix guard on (1) is a strict widening, not a behavior change for any
+// pre-existing single-credential request:
+//   - Bearer nm_… only        → matched by (1), returned unchanged.
+//   - X-API-Key only           → (1) misses, falls through to X-API-Key.
+//   - Bearer <non-key JWT> only → (1) misses (no key prefix), X-API-Key is
+//     empty, so "" is returned ⇒ ResolveCredential 401 — the SAME 401 the old
+//     code produced (it returned the JWT, which then failed HasKeyPrefix).
+//   - neither                   → "".
+//
+// The only newly-reachable path is BOTH present (key in X-API-Key + a JWT in
+// Authorization): the old code returned the JWT and 401'd; now it returns the
+// real key from X-API-Key.
 func extractKey(c fiber.Ctx) string {
 	if h := c.Get("Authorization"); h != "" {
 		if v, ok := strings.CutPrefix(h, "Bearer "); ok {
-			return strings.TrimSpace(v)
+			if v = strings.TrimSpace(v); HasKeyPrefix(v) {
+				return v
+			}
 		}
 	}
 	return strings.TrimSpace(c.Get("X-API-Key"))
