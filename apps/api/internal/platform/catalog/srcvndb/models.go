@@ -14,10 +14,15 @@
 // SCHEMA NOTE (survey finding, step 47): the current VNDB dump (the multi-
 // language rewrite) does NOT carry character names on the chars table. Names
 // live in a separate per-language table (chars_names: id, lang, name, latin) —
-// `name` is the native/script form, `latin` the romanization. Only the
-// identity-relevant subset of chars is staged (the body-measurement trivia is
-// dropped); the loader maps columns by NAME from each file's .header, so a
-// column reorder in a future dump does not break the load.
+// `name` is the native/script form, `latin` the romanization. The loader maps
+// columns by NAME from each file's .header, so a column reorder in a future
+// dump does not break the load.
+//
+// NULL DISCIPLINE (step 72): text columns flatten the COPY \N sentinel to ""
+// and numerics to 0 (the package's original convention) EXCEPT where the dump
+// distinguishes NULL from a meaningful zero value — those columns are staged
+// as nullable pointers (e.g. releases.minage: 0 = all-ages rating, NULL =
+// unknown; vn_staff.eid: edition 0 exists, NULL = base edition).
 //
 // The schema is FULLY REBUILDABLE staging: the ingest tool owns it (CREATE
 // SCHEMA + AutoMigrate at startup, whole-table replacement per run) and it is
@@ -26,20 +31,34 @@ package srcvndb
 
 import "time"
 
-// Char mirrors the identity-relevant columns of one db/chars row. Ids keep the
-// VNDB "c" prefix verbatim. Names are NOT here (see the package doc) — they are
-// in CharName. `Main` is the VNDB instance_of base character id (variant escape
-// hatch); it is staged for a future wave and unused by step 47.
+// Char mirrors ALL columns of one db/chars row (full re-stage, step 72 — the
+// body/birthday columns feed the C2 character-attribute wave). Ids keep the
+// VNDB "c" prefix verbatim. Names are NOT here (see the package doc) — they
+// are in CharName. `Main` is the VNDB instance_of base character id (variant
+// escape hatch). Weight/Age are pointers: the dump distinguishes NULL
+// (unknown) from a stated 0 there, while the s_* measurements, birthday and
+// height use 0 = unset in the dump itself.
 type Char struct {
 	// No default tags on any loaded column: the GORM default tag drops the Go
 	// value in this batch-insert path (the default-tag zero-value trap), so
 	// every column is plain not-null and the loader writes the value verbatim.
 	ID          string    `gorm:"primaryKey" json:"id"`  // "c1"
 	Image       string    `gorm:"not null" json:"image"` // "ch175652" or "" (no portrait)
-	Sex         string    `gorm:"not null" json:"sex"`   // m/f/b/n/"" (apparent sex)
+	BloodT      string    `gorm:"column:bloodt;not null" json:"bloodt"`      // a/b/ab/o/unknown
+	CupSize     string    `gorm:"column:cup_size;not null" json:"cup_size"`  // ""/aaa/.../z
+	Sex         string    `gorm:"not null" json:"sex"`                       // m/f/b/n/"" (apparent sex)
+	SpoilSex    string    `gorm:"column:spoil_sex;not null" json:"spoil_sex"` // real sex (spoiler) or ""
 	Gender      string    `gorm:"not null" json:"gender"`
+	SpoilGender string    `gorm:"column:spoil_gender;not null" json:"spoil_gender"`
 	Main        string    `gorm:"not null" json:"main"` // instance_of base char id ("c16") or ""
 	MainSpoil   int16     `gorm:"not null" json:"main_spoil"`
+	SBust       int16     `gorm:"column:s_bust;not null" json:"s_bust"`   // cm, 0 = unset
+	SWaist      int16     `gorm:"column:s_waist;not null" json:"s_waist"` // cm, 0 = unset
+	SHip        int16     `gorm:"column:s_hip;not null" json:"s_hip"`     // cm, 0 = unset
+	Birthday    int16     `gorm:"not null" json:"birthday"`               // mmdd (920 = Sep 20), 0 = unset
+	Height      int16     `gorm:"not null" json:"height"`                 // cm, 0 = unset
+	Weight      *int16    `gorm:"column:weight" json:"weight"`            // kg, NULL = unknown
+	Age         *int16    `gorm:"column:age" json:"age"`                  // years, NULL = unknown
 	Description string    `gorm:"not null" json:"description"`
 	IngestedAt  time.Time `gorm:"not null" json:"ingested_at"`
 }
@@ -94,6 +113,19 @@ type VN struct {
 }
 
 func (VN) TableName() string { return "src_vndb.vn" }
+
+// VNRelation mirrors one db/vn_relations row — a directed vn↔vn relation edge
+// (REL1 feedstock). `Relation` is the VNDB relation kind (seq/preq/set/alt/
+// char/side/par/ser/fan/orig); `Official` marks officially-recognized
+// relations. (id, vid) is the dump's natural key.
+type VNRelation struct {
+	ID       string `gorm:"primaryKey;column:id" json:"id"`   // "v1"
+	VID      string `gorm:"primaryKey;column:vid" json:"vid"` // related vn "v9650"
+	Relation string `gorm:"not null" json:"relation"`
+	Official bool   `gorm:"not null" json:"official"`
+}
+
+func (VNRelation) TableName() string { return "src_vndb.vn_relations" }
 
 // Image mirrors one db/images row — ONLY the "ch" (character portrait) rows are
 // staged (the loader drops sf/cv). c_sexual_avg / c_violence_avg are the

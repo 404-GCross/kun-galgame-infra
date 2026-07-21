@@ -1,2 +1,2 @@
-c1	ch1	a		f	\N	\N	\N	\N	0	0	0	0	\N	\N	\N	\N	Line1\nLine2
-c2	\N			m	\N	\N	\N	c1	2	0	0	0	\N	\N	\N	\N	
+c1	ch1	a		f	\N	f	\N	\N	0	88	56	84	920	156	\N	17	Line1\nLine2
+c2	\N	unknown	d	m	f	\N	\N	c1	2	0	0	0	0	0	43	\N	

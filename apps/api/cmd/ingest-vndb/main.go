@@ -1,9 +1,13 @@
 // Command ingest-vndb loads a VNDB database dump (vndb.org/d14, PostgreSQL
 // COPY format) into the src_vndb schema of kun_catalog (Silver),
-// deterministically and re-runnably (whole-table replacement per file). Staged:
-// the work-level vn table (step 52: description + cover ids for the media-
-// aggregation waves) and the character tables chars, chars_names, chars_vns,
-// images (character "ch" portraits only). See the srcvndb package doc.
+// deterministically and re-runnably (whole-table replacement per file). Staged
+// (see srcvndb.Files for the full set): the work tables (vn, vn_relations),
+// the character tables (chars — full columns since step 72 — chars_names,
+// chars_vns, images with character "ch" portraits only, chars_traits), the
+// staff family (staff, staff_alias, vn_staff, vn_seiyuu), the vocabularies
+// (traits, tags + their parent edges, tags_vn votes), producers, and the
+// releases family (releases + vn/producers/platforms/titles child tables).
+// See the srcvndb package doc.
 //
 //	# extract the dump's db/ directory somewhere first:
 //	#   zstd -dc vndb-db-latest.tar.zst | tar -x
@@ -27,8 +31,8 @@ import (
 )
 
 func main() {
-	dumpDir := flag.String("dump-dir", "refs/vndb-dump/db", "directory containing the extracted VNDB dump db/ files (chars, chars_names, chars_vns, images + *.header)")
-	only := flag.String("only", "", "ingest a single file (vn | chars | chars_names | chars_vns | images)")
+	dumpDir := flag.String("dump-dir", "refs/vndb-dump/db", "directory containing the extracted VNDB dump db/ files (data files + *.header)")
+	only := flag.String("only", "", "ingest a single file (any name in srcvndb.Files, e.g. vn | chars | staff | releases | tags_vn)")
 	flag.Parse()
 
 	_ = godotenv.Load("apps/api/.env")

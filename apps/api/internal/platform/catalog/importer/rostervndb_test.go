@@ -30,8 +30,10 @@ func seedVNDBWork(t *testing.T, vid string) int64 {
 
 func seedVNDBChar(t *testing.T, id, native, romaji, image string) {
 	t.Helper()
-	require.NoError(t, testDB.Exec(`INSERT INTO src_vndb.chars (id, image, sex, gender, main, main_spoil, description, ingested_at)
-		VALUES (?,?,'','','',0,'',now())`, id, image).Error)
+	// The full step-72 chars column set: every non-pointer column is NOT NULL
+	// (weight/age stay NULL here).
+	require.NoError(t, testDB.Exec(`INSERT INTO src_vndb.chars (id, image, bloodt, cup_size, sex, spoil_sex, gender, spoil_gender, main, main_spoil, s_bust, s_waist, s_hip, birthday, height, description, ingested_at)
+		VALUES (?,?,'','','','','','','',0,0,0,0,0,0,'',now())`, id, image).Error)
 	require.NoError(t, testDB.Exec(`INSERT INTO src_vndb.chars_names (id, lang, name, latin) VALUES (?, 'ja', ?, ?)`, id, native, romaji).Error)
 }
 
