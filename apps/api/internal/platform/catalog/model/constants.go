@@ -171,8 +171,8 @@ const (
 
 // Popularity metrics (refs/proj/62): what a catalog_work_popularity.value
 // counts. An EXTENSIBLE vocabulary — new counting facets append new constants
-// (never renumber): e.g. a future Bangumi wave adds favorite-bucket metrics
-// (wish/collect/doing/on_hold/dropped) with fresh numbers. The unit is
+// (never renumber): the Bangumi favorite-shelf wave (refs/proj/71) did exactly
+// that, appending 10-14 below. The unit is
 // source-relative — metric 0 on DLsite counts sales, and a hypothetical
 // metric 0 on another store would count that store's downloads — so consumers
 // always render per (source_id, metric), never sum across sources.
@@ -180,6 +180,19 @@ const (
 	PopularityMetricDownloads int16 = 0 // purchase/download counter (DLsite dl_count)
 	PopularityMetricWishlist  int16 = 1 // wishlist/favorite counter (DLsite wishlist_count)
 	PopularityMetricReviews   int16 = 2 // written-review counter (DLsite review_count)
+
+	// Bangumi favorite shelves (refs/proj/71): how many Bangumi users placed
+	// the subject on each of the five collection shelves — the first extension
+	// of this vocabulary, per the design note above. Values come verbatim from
+	// src_bangumi.subject.favorite; a present 0 is a real row, an absent shelf
+	// is no row. NOTE: the Archive dump serializes Bangumi's "collect" shelf
+	// (completed/collected) under the key "done" — the constant keeps the
+	// canonical Bangumi shelf name.
+	PopularityMetricBgmWish    int16 = 10 // wish shelf — users planning to play
+	PopularityMetricBgmCollect int16 = 11 // collect shelf — users who completed it (dump key "done")
+	PopularityMetricBgmDoing   int16 = 12 // doing shelf — users currently playing
+	PopularityMetricBgmOnHold  int16 = 13 // on-hold shelf — users who paused it
+	PopularityMetricBgmDropped int16 = 14 // dropped shelf — users who abandoned it
 )
 
 // Match-candidate reasons (doc 10 §8 + doc 17 §4): how the pair was proposed.
