@@ -1305,6 +1305,7 @@ export interface components {
             covers: components["schemas"]["WorkCover"][] | null;
             intro: components["schemas"]["WorkIntro"][] | null;
             labels: components["schemas"]["WorkLabel"][] | null;
+            ratings: components["schemas"]["WorkRating"][] | null;
             refs: components["schemas"]["WorkRef"][] | null;
             releases: components["schemas"]["ReleaseBrief"][] | null;
             screenshots: components["schemas"]["WorkScreenshot"][] | null;
@@ -1411,6 +1412,28 @@ export interface components {
              * @description the label's own kind (0=game_brand … 4=doujin_circle …)
              */
             label_kind: number;
+        };
+        WorkRating: {
+            /**
+             * Format: int64
+             * @description source-internal rank; absent when the source has no rank or the work is unranked
+             */
+            rank?: number;
+            /**
+             * Format: double
+             * @description rating on the source-native scale (never normalized across sources)
+             */
+            score: number;
+            /**
+             * Format: int32
+             * @description catalog_source id (provenance + scale selector): bangumi = 0-10 mean, erogamespace = 0-100 median
+             */
+            source_id: number;
+            /**
+             * Format: int64
+             * @description number of ratings backing the score
+             */
+            vote_count: number;
         };
         WorkRef: {
             external_id: string;

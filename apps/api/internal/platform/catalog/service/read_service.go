@@ -31,6 +31,10 @@ const (
 	sourceKeyUpscale = "upscale"
 )
 
+// sourceKeyErogamespace is the catalog_source key the ratings bridge (step 58a)
+// attributes a galgame_eg_meta row to — the EG (ErogameScape) rating source.
+const sourceKeyErogamespace = "erogamespace"
+
 // galgameMediaSourceKey maps a galgame_cover/galgame_screenshot.source text
 // value to the catalog_source key its bridged media row is attributed to. Empty
 // source (a wiki user upload) is first-party galgame_wiki, consistent with the
@@ -103,6 +107,12 @@ type WorkDetail struct {
 	// from galgame_screenshot.source); for a BODYLESS work, its
 	// catalog_work_screenshot rows. Same strict XOR as Covers.
 	Screenshots []WorkScreenshotRow
+	// Ratings is the merged rating set (step 58a media-aggregation ratings
+	// facet): for a CLAIMED work, bridged from galgame_bangumi_meta ∪
+	// galgame_eg_meta (source-native scales — see read_ratings.go for the
+	// column mapping); for a BODYLESS work, its catalog_work_rating rows. Same
+	// strict XOR as Screenshots.
+	Ratings []WorkRatingRow
 }
 
 // WorkIntroRow is one language's intro on a work's read face, carrying its
@@ -346,6 +356,12 @@ func (s *ReadService) loadWorkDetail(ctx context.Context, workID int64) (*WorkDe
 		return nil, err
 	}
 	detail.Screenshots = shots[work.ID]
+
+	ratings, err := s.loadWorkRatings(ctx, []claimSubject{subj})
+	if err != nil {
+		return nil, err
+	}
+	detail.Ratings = ratings[work.ID]
 	return detail, nil
 }
 

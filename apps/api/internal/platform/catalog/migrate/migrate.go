@@ -54,6 +54,7 @@ func Run(db *gorm.DB) error {
 		&model.CatalogWorkIntro{},      // bodyless multilingual intro (step 52 media-aggregation pilot)
 		&model.CatalogWorkCover{},      // bodyless cover images (step 53 media-aggregation wave II)
 		&model.CatalogWorkScreenshot{}, // bodyless screenshot images (step 54 media-aggregation wave III)
+		&model.CatalogWorkRating{},     // bodyless source-native ratings (step 58a media-aggregation facet A)
 		&model.CatalogRelease{},
 		&model.CatalogWorkRelation{},
 		&model.CatalogEntityRelation{},

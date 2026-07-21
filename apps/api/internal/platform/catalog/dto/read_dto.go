@@ -44,6 +44,27 @@ type WorkByAnchorResponse struct {
 	// Strict XOR: a claimed work with no galgame screenshot yields [] (never a
 	// fallback to native rows).
 	Screenshots []WorkScreenshot `json:"screenshots"`
+	// Ratings is the work's rating set (step 58a media-aggregation ratings
+	// facet), at most one element per source, in a single shape regardless of
+	// source. Scores are SOURCE-NATIVE (bangumi 0-10 mean, erogamespace 0-100
+	// median) — consumers render per source_id, never mix scales. A CLAIMED
+	// work's ratings are bridged from galgame_bangumi_meta ∪ galgame_eg_meta; a
+	// BODYLESS work's from its catalog_work_rating rows. Strict XOR: a claimed
+	// work with no scored meta yields [] (never a fallback to native rows).
+	Ratings []WorkRating `json:"ratings"`
+}
+
+// WorkRating is one source's rating on a work, in the unified media-aggregation
+// shape. score is on the SOURCE-NATIVE scale — bangumi (source key `bangumi`)
+// is a 0-10 mean, erogamespace (key `erogamespace`) a 0-100 median — so a
+// consumer must branch on source_id to render it. rank is the source-internal
+// rank, absent when the source has none (EG) or the work is unranked there
+// (bangumi rank 0).
+type WorkRating struct {
+	SourceID  int16   `json:"source_id" doc:"catalog_source id (provenance + scale selector): bangumi = 0-10 mean, erogamespace = 0-100 median"`
+	Score     float64 `json:"score" doc:"rating on the source-native scale (never normalized across sources)"`
+	VoteCount int     `json:"vote_count" doc:"number of ratings backing the score"`
+	Rank      *int    `json:"rank,omitempty" doc:"source-internal rank; absent when the source has no rank or the work is unranked"`
 }
 
 // WorkScreenshot is one screenshot image on a work, in the unified
