@@ -183,6 +183,38 @@ func TestExtractKeyQuadrants(t *testing.T) {
 	}
 }
 
+// TestRequireTier: a missing credential is 401, a wrong tier is 403, a matching
+// tier passes (mirrors RequireScope). Fences the /internal face to internal tier.
+func TestRequireTier(t *testing.T) {
+	build := func(setCred func(c fiber.Ctx)) *fiber.App {
+		app := fiber.New()
+		app.Get("/", func(c fiber.Ctx) error {
+			setCred(c)
+			return c.Next()
+		}, RequireTier(TierInternal), func(c fiber.Ctx) error {
+			return c.SendStatus(fiber.StatusOK)
+		})
+		return app
+	}
+
+	resp, _ := build(func(c fiber.Ctx) {}).Test(httptest.NewRequest("GET", "/", nil))
+	if resp.StatusCode != fiber.StatusUnauthorized {
+		t.Errorf("no credential status = %d, want 401", resp.StatusCode)
+	}
+	for _, tier := range []string{TierFree, TierTrusted} {
+		resp, _ = build(func(c fiber.Ctx) { c.Locals(credLocalsKey, &Credential{Tier: tier}) }).
+			Test(httptest.NewRequest("GET", "/", nil))
+		if resp.StatusCode != fiber.StatusForbidden {
+			t.Errorf("%s tier status = %d, want 403", tier, resp.StatusCode)
+		}
+	}
+	resp, _ = build(func(c fiber.Ctx) { c.Locals(credLocalsKey, &Credential{Tier: TierInternal}) }).
+		Test(httptest.NewRequest("GET", "/", nil))
+	if resp.StatusCode != fiber.StatusOK {
+		t.Errorf("internal tier status = %d, want 200", resp.StatusCode)
+	}
+}
+
 // TestContentLimitGate: nsfw requires both the scope and the nsfw_allowed flag;
 // anything short downgrades to sfw (Phase 1 has no nsfw key, so this is the
 // inert-but-wired default-safe path).

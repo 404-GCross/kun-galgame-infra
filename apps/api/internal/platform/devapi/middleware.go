@@ -210,6 +210,24 @@ func RequireScope(scope string) fiber.Handler {
 	}
 }
 
+// RequireTier gates a route on the credential's tier matching `tier` exactly.
+// A missing credential is 401 (mirrors RequireScope — a preceding
+// ResolveCredential should already have rejected it); a present credential of
+// the wrong tier is 403. It fences the /internal rich read face to internal-tier
+// keys only (free/trusted → 403). ResolveCredential must run before it.
+func RequireTier(tier string) fiber.Handler {
+	return func(c fiber.Ctx) error {
+		cred := CredentialFrom(c)
+		if cred == nil {
+			return resp401(c)
+		}
+		if cred.Tier != tier {
+			return response.ForbiddenMsg(c, errors.ErrForbidden, "requires "+tier+" tier")
+		}
+		return c.Next()
+	}
+}
+
 // ResolveContentLimit computes the effective content_limit for a request. The
 // nsfw path requires BOTH the galgame:nsfw scope and the credential's effective
 // nsfw_allowed flag; anything short of that downgrades to sfw (default-safe
