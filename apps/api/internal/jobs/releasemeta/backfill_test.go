@@ -1,0 +1,487 @@
+package releasemeta
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"testing"
+	"time"
+
+	"api/internal/platform/catalog/migrate"
+	"api/internal/platform/catalog/model"
+	"api/internal/platform/catalog/seed"
+	srcb "api/internal/platform/catalog/srcbangumi"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
+)
+
+// Integration test against a real Postgres: the catalog Gold schema
+// (migrate.Run + registry seeds), the src_bangumi Silver schema, and minimal
+// DLsite / EG / wiki fixtures each in a DEDICATED schema
+// (releasemeta_dl / releasemeta_eg / releasemeta_wiki) reached via search_path
+// DSNs — the workratings discipline: the shared test DB's public tables belong
+// to other suites and must not be clobbered.
+var (
+	testDB      *gorm.DB
+	testDSN     string
+	dlTestDSN   string
+	egTestDSN   string
+	wikiTestDSN string
+)
+
+func TestMain(m *testing.M) {
+	testDSN = os.Getenv("TEST_DATABASE_DSN")
+	if testDSN == "" {
+		testDSN = "host=localhost port=5432 user=postgres password=postgres dbname=kun_catalog_test sslmode=disable"
+	}
+	db, err := gorm.Open(postgres.Open(testDSN), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "SKIP: cannot connect to test database: %v\n", err)
+		os.Exit(0)
+	}
+	if err := migrate.Run(db); err != nil {
+		fmt.Fprintf(os.Stderr, "SKIP: catalog migrate failed: %v\n", err)
+		os.Exit(0)
+	}
+	if err := seed.Run(db); err != nil {
+		fmt.Fprintf(os.Stderr, "SKIP: catalog seed failed: %v\n", err)
+		os.Exit(0)
+	}
+	if err := srcb.EnsureSchema(db); err != nil {
+		fmt.Fprintf(os.Stderr, "SKIP: src_bangumi schema failed: %v\n", err)
+		os.Exit(0)
+	}
+	for _, ddl := range []string{
+		`CREATE SCHEMA IF NOT EXISTS releasemeta_dl`,
+		`CREATE TABLE IF NOT EXISTS releasemeta_dl.works (workno text PRIMARY KEY, regist_date timestamptz, age_category text)`,
+		`CREATE SCHEMA IF NOT EXISTS releasemeta_eg`,
+		`CREATE TABLE IF NOT EXISTS releasemeta_eg.games (id int PRIMARY KEY, sellday text)`,
+		`CREATE SCHEMA IF NOT EXISTS releasemeta_wiki`,
+		`CREATE TABLE IF NOT EXISTS releasemeta_wiki.galgame (id int PRIMARY KEY, age_limit text)`,
+	} {
+		if err := db.Exec(ddl).Error; err != nil {
+			fmt.Fprintf(os.Stderr, "SKIP: fixture schema failed: %v\n", err)
+			os.Exit(0)
+		}
+	}
+	dlTestDSN = testDSN + " options='-csearch_path=releasemeta_dl'"
+	egTestDSN = testDSN + " options='-csearch_path=releasemeta_eg'"
+	wikiTestDSN = testDSN + " options='-csearch_path=releasemeta_wiki'"
+	testDB = db
+	os.Exit(m.Run())
+}
+
+func clean(t *testing.T) {
+	t.Helper()
+	for _, table := range []string{
+		"catalog_external_ref", "catalog_release", "catalog_work", "src_bangumi.subject",
+		"releasemeta_dl.works", "releasemeta_eg.games", "releasemeta_wiki.galgame",
+	} {
+		require.NoError(t, testDB.Exec("TRUNCATE "+table+" RESTART IDENTITY CASCADE").Error)
+	}
+}
+
+func galgameMedium(t *testing.T) int16 {
+	t.Helper()
+	var id int16
+	require.NoError(t, testDB.Raw(`SELECT id FROM catalog_medium WHERE key = 'galgame'`).Scan(&id).Error)
+	return id
+}
+
+func mkWork(t *testing.T, medium int16, name string, site *string, productID *int64, rating int16) int64 {
+	t.Helper()
+	w := model.CatalogWork{MediumID: medium, OLang: "ja", DisplayName: name,
+		Site: site, ProductWorkID: productID, ContentRating: rating}
+	require.NoError(t, testDB.Create(&w).Error)
+	return w.ID
+}
+
+// mkRelease creates one release; y=0 leaves the date trio NULL (empty).
+func mkRelease(t *testing.T, workID int64, y, m, d int16) int64 {
+	t.Helper()
+	rel := model.CatalogRelease{WorkID: workID, Kind: model.ReleaseKindDigital}
+	if y != 0 {
+		rel.ReleasedY, rel.ReleasedM, rel.ReleasedD = &y, &m, &d
+	}
+	require.NoError(t, testDB.Create(&rel).Error)
+	return rel.ID
+}
+
+func mkWorkAnchor(t *testing.T, workID int64, externalID string, source, kind int16) {
+	t.Helper()
+	require.NoError(t, testDB.Create(&model.CatalogExternalRef{
+		EntityType: model.EntityTypeWork, EntityID: workID, SourceID: source,
+		ExternalID: externalID, LinkKind: kind, MatchedBy: "rule:test",
+	}).Error)
+}
+
+func mkReleaseAnchor(t *testing.T, releaseID int64, workno string, source int16) {
+	t.Helper()
+	require.NoError(t, testDB.Create(&model.CatalogExternalRef{
+		EntityType: model.EntityTypeRelease, EntityID: releaseID, SourceID: source,
+		ExternalID: workno, LinkKind: model.LinkKindExact, MatchedBy: "rule:test",
+	}).Error)
+}
+
+func mkSubject(t *testing.T, id int64, date string, nsfw bool) {
+	t.Helper()
+	require.NoError(t, testDB.Create(&srcb.Subject{
+		ID: id, Type: 4, Name: fmt.Sprintf("subject-%d", id),
+		Date: date, NSFW: nsfw,
+		ParserVersion: srcb.ParserVersion, IngestedAt: time.Now(),
+	}).Error)
+}
+
+// mkDlWork writes one DLsite mirror row; regist "" = NULL regist_date, age ""
+// = NULL age_category.
+func mkDlWork(t *testing.T, workno, regist, age string) {
+	t.Helper()
+	require.NoError(t, testDB.Exec(
+		`INSERT INTO releasemeta_dl.works (workno, regist_date, age_category)
+		 VALUES (?, NULLIF(?, '')::timestamptz, NULLIF(?, ''))`, workno, regist, age).Error)
+}
+
+func mkEgGame(t *testing.T, id int64, sellday string) {
+	t.Helper()
+	require.NoError(t, testDB.Exec(`INSERT INTO releasemeta_eg.games (id, sellday) VALUES (?, ?)`, id, sellday).Error)
+}
+
+func mkWikiGalgame(t *testing.T, id int64, ageLimit string) {
+	t.Helper()
+	require.NoError(t, testDB.Exec(`INSERT INTO releasemeta_wiki.galgame (id, age_limit) VALUES (?, ?)`, id, ageLimit).Error)
+}
+
+func relDate(t *testing.T, id int64) (y, m, d *int16) {
+	t.Helper()
+	var rel model.CatalogRelease
+	require.NoError(t, testDB.First(&rel, id).Error)
+	return rel.ReleasedY, rel.ReleasedM, rel.ReleasedD
+}
+
+func workRating(t *testing.T, id int64) int16 {
+	t.Helper()
+	var w model.CatalogWork
+	require.NoError(t, testDB.First(&w, id).Error)
+	return w.ContentRating
+}
+
+func assertDate(t *testing.T, relID int64, y, m, d int16) {
+	t.Helper()
+	gy, gm, gd := relDate(t, relID)
+	require.NotNil(t, gy)
+	assert.Equal(t, y, *gy)
+	if m == 0 {
+		assert.Nil(t, gm, "month should stay NULL")
+	} else {
+		require.NotNil(t, gm)
+		assert.Equal(t, m, *gm)
+	}
+	if d == 0 {
+		assert.Nil(t, gd, "day should stay NULL")
+	} else {
+		require.NotNil(t, gd)
+		assert.Equal(t, d, *gd)
+	}
+}
+
+func runOpts(apply bool) Opts {
+	return Opts{Apply: apply, DSN: testDSN, DlsiteDSN: dlTestDSN, EGDSN: egTestDSN, WikiDSN: wikiTestDSN}
+}
+
+func str(s string) *string { return &s }
+func i64(v int64) *int64   { return &v }
+
+// TestBackfillReleaseMeta exercises the whole pipeline through the real Run
+// entry point: per-lane candidate selection, the dlsite>eg>bgm value-level
+// precedence, partial/garbage date parsing, the ①②③ rating priority chain with
+// explicit all-ages suppression, dry-run zero-write, apply value fidelity, and
+// second-pass idempotency (fill-empty leaves nothing to write).
+func TestBackfillReleaseMeta(t *testing.T) {
+	clean(t)
+	ctx := context.Background()
+	medium := galgameMedium(t)
+	reg, err := resolveRegistry(ctx, testDB)
+	require.NoError(t, err)
+	wiki := "galgame_wiki"
+
+	// --- date/dlsite lane fixtures ---
+	wDl := mkWork(t, medium, "dl-date", nil, nil, 0)
+	relDl := mkRelease(t, wDl, 0, 0, 0)
+	mkReleaseAnchor(t, relDl, "RJ000001", reg.dlsiteSource)
+	mkDlWork(t, "RJ000001", "2020-05-01 00:00:00+08", "")
+
+	wDlNull := mkWork(t, medium, "dl-null-regist", nil, nil, 0)
+	relDlNull := mkRelease(t, wDlNull, 0, 0, 0)
+	mkReleaseAnchor(t, relDlNull, "RJ000002", reg.dlsiteSource)
+	mkDlWork(t, "RJ000002", "", "")
+
+	wDlMissing := mkWork(t, medium, "dl-missing", nil, nil, 0)
+	relDlMissing := mkRelease(t, wDlMissing, 0, 0, 0)
+	mkReleaseAnchor(t, relDlMissing, "RJ000003", reg.dlsiteSource)
+
+	wDlFuture := mkWork(t, medium, "dl-placeholder", nil, nil, 0)
+	relDlFuture := mkRelease(t, wDlFuture, 0, 0, 0)
+	mkReleaseAnchor(t, relDlFuture, "RJ000004", reg.dlsiteSource)
+	mkDlWork(t, "RJ000004", "2099-12-31 00:00:00+08", "")
+
+	// Fill-empty: a dated release is never a candidate, whatever the mirror says.
+	wDlNonEmpty := mkWork(t, medium, "dl-non-empty", nil, nil, 0)
+	relDlNonEmpty := mkRelease(t, wDlNonEmpty, 1999, 12, 24)
+	mkReleaseAnchor(t, relDlNonEmpty, "RJ000005", reg.dlsiteSource)
+	mkDlWork(t, "RJ000005", "2020-01-01 00:00:00+08", "")
+
+	// DLsite beats EG when BOTH can fill the same stub release.
+	wBoth := mkWork(t, medium, "dl-beats-eg", nil, nil, 0)
+	relBoth := mkRelease(t, wBoth, 0, 0, 0)
+	mkReleaseAnchor(t, relBoth, "RJ000006", reg.dlsiteSource)
+	mkDlWork(t, "RJ000006", "2021-07-15 00:00:00+08", "")
+	mkWorkAnchor(t, wBoth, "601", reg.egSource, model.LinkKindExact)
+	mkEgGame(t, 601, "2022-01-01")
+
+	// --- date/eg lane fixtures ---
+	wEg := mkWork(t, medium, "eg-date", nil, nil, 0)
+	relEg := mkRelease(t, wEg, 0, 0, 0)
+	mkWorkAnchor(t, wEg, "602", reg.egSource, model.LinkKindExact)
+	mkEgGame(t, 602, "2004-05-28")
+
+	// DLsite anchored but mirror has NO regist_date → EG may fill (value-level
+	// precedence, not anchor-level ownership).
+	wEgDlNull := mkWork(t, medium, "eg-fills-dl-null", nil, nil, 0)
+	relEgDlNull := mkRelease(t, wEgDlNull, 0, 0, 0)
+	mkReleaseAnchor(t, relEgDlNull, "RJ000007", reg.dlsiteSource)
+	mkDlWork(t, "RJ000007", "", "")
+	mkWorkAnchor(t, wEgDlNull, "603", reg.egSource, model.LinkKindExact)
+	mkEgGame(t, 603, "2010-10-10")
+
+	wEgTwoRel := mkWork(t, medium, "eg-two-releases", nil, nil, 0) // not 1:1 → excluded
+	mkRelease(t, wEgTwoRel, 0, 0, 0)
+	mkRelease(t, wEgTwoRel, 0, 0, 0)
+	mkWorkAnchor(t, wEgTwoRel, "604", reg.egSource, model.LinkKindExact)
+	mkEgGame(t, 604, "2003-03-03")
+
+	wEgClaimed := mkWork(t, medium, "eg-claimed", str(wiki), i64(9101), 0) // claimed → excluded from EG lane
+	mkRelease(t, wEgClaimed, 0, 0, 0)
+	mkWorkAnchor(t, wEgClaimed, "605", reg.egSource, model.LinkKindExact)
+	mkEgGame(t, 605, "2005-05-05")
+
+	wEgBad := mkWork(t, medium, "eg-placeholder", nil, nil, 0)
+	relEgBad := mkRelease(t, wEgBad, 0, 0, 0)
+	mkWorkAnchor(t, wEgBad, "606", reg.egSource, model.LinkKindExact)
+	mkEgGame(t, 606, "2050-01-01") // TBA placeholder → gated
+
+	wEgMissing := mkWork(t, medium, "eg-missing", nil, nil, 0)
+	mkRelease(t, wEgMissing, 0, 0, 0)
+	mkWorkAnchor(t, wEgMissing, "607", reg.egSource, model.LinkKindExact)
+
+	wEgMulti := mkWork(t, medium, "eg-multi-anchor", nil, nil, 0)
+	relEgMulti := mkRelease(t, wEgMulti, 0, 0, 0)
+	mkWorkAnchor(t, wEgMulti, "608", reg.egSource, model.LinkKindExact) // absent from mirror
+	mkWorkAnchor(t, wEgMulti, "609", reg.egSource, model.LinkKindExact)
+	mkEgGame(t, 609, "2015-03-03") // lowest mirror-present id wins
+
+	// --- date/bgm lane fixtures ---
+	wBgmClaimed := mkWork(t, medium, "bgm-claimed", str(wiki), i64(9102), 0) // claimed is legal for dates
+	relBgmClaimed := mkRelease(t, wBgmClaimed, 0, 0, 0)
+	mkWorkAnchor(t, wBgmClaimed, "701", reg.bangumiSource, model.LinkKindExact)
+	mkSubject(t, 701, "2010-04-30", false)
+
+	wBgmPartial := mkWork(t, medium, "bgm-partial", nil, nil, 0)
+	relBgmPartial := mkRelease(t, wBgmPartial, 0, 0, 0)
+	mkWorkAnchor(t, wBgmPartial, "702", reg.bangumiSource, model.LinkKindExact)
+	mkSubject(t, 702, "2015", false) // bare year — legal partial
+
+	wBgmEmpty := mkWork(t, medium, "bgm-empty-date", nil, nil, 0)
+	mkRelease(t, wBgmEmpty, 0, 0, 0)
+	mkWorkAnchor(t, wBgmEmpty, "703", reg.bangumiSource, model.LinkKindExact)
+	mkSubject(t, 703, "", false)
+
+	wBgmGarbage := mkWork(t, medium, "bgm-garbage", nil, nil, 0)
+	mkRelease(t, wBgmGarbage, 0, 0, 0)
+	mkWorkAnchor(t, wBgmGarbage, "704", reg.bangumiSource, model.LinkKindExact)
+	mkSubject(t, 704, "TBA?", false)
+
+	// EG beats bgm on the same stub release.
+	wBgmCovered := mkWork(t, medium, "eg-beats-bgm", nil, nil, 0)
+	relBgmCovered := mkRelease(t, wBgmCovered, 0, 0, 0)
+	mkWorkAnchor(t, wBgmCovered, "610", reg.egSource, model.LinkKindExact)
+	mkEgGame(t, 610, "2001-02-03")
+	mkWorkAnchor(t, wBgmCovered, "705", reg.bangumiSource, model.LinkKindExact)
+	mkSubject(t, 705, "2002-03-04", false)
+
+	wBgmProbable := mkWork(t, medium, "bgm-probable", nil, nil, 0) // probable tier → excluded everywhere
+	mkRelease(t, wBgmProbable, 0, 0, 0)
+	mkWorkAnchor(t, wBgmProbable, "706", reg.bangumiSource, model.LinkKindProbable)
+	mkSubject(t, 706, "2011-11-11", true)
+
+	// --- age-rating lane fixtures (releases pre-dated → out of the date lanes) ---
+	rDlAdult := mkWork(t, medium, "rating-dl-adult", nil, nil, 0)
+	relRDlAdult := mkRelease(t, rDlAdult, 2000, 1, 1)
+	mkReleaseAnchor(t, relRDlAdult, "RJ000101", reg.dlsiteSource)
+	mkDlWork(t, "RJ000101", "", "3")
+
+	rDlR15 := mkWork(t, medium, "rating-dl-r15", nil, nil, 0)
+	relRDlR15 := mkRelease(t, rDlR15, 2000, 1, 1)
+	mkReleaseAnchor(t, relRDlR15, "RJ000102", reg.dlsiteSource)
+	mkDlWork(t, "RJ000102", "", "2")
+
+	// Priority ① beats ②: DLsite says all-ages, the wiki says r18 → stays 0.
+	rDlAll := mkWork(t, medium, "rating-dl-all-vs-wiki", str(wiki), i64(9103), 0)
+	relRDlAll := mkRelease(t, rDlAll, 2000, 1, 1)
+	mkReleaseAnchor(t, relRDlAll, "RJ000103", reg.dlsiteSource)
+	mkDlWork(t, "RJ000103", "", "1")
+	mkWikiGalgame(t, 9103, "r18")
+
+	rWiki := mkWork(t, medium, "rating-wiki-r18", str(wiki), i64(9104), 0)
+	mkWikiGalgame(t, 9104, "r18")
+
+	// Priority ② beats ③: wiki says all, bangumi says nsfw → stays 0.
+	rWikiAll := mkWork(t, medium, "rating-wiki-all-vs-bgm", str(wiki), i64(9105), 0)
+	mkWikiGalgame(t, 9105, "all")
+	mkWorkAnchor(t, rWikiAll, "707", reg.bangumiSource, model.LinkKindExact)
+	mkSubject(t, 707, "", true)
+
+	rBgm := mkWork(t, medium, "rating-bgm-nsfw", nil, nil, 0)
+	mkWorkAnchor(t, rBgm, "708", reg.bangumiSource, model.LinkKindExact)
+	mkSubject(t, 708, "", true)
+
+	rBgmFalse := mkWork(t, medium, "rating-bgm-sfw", nil, nil, 0) // nsfw=false is NOT a verdict
+	mkWorkAnchor(t, rBgmFalse, "709", reg.bangumiSource, model.LinkKindExact)
+	mkSubject(t, 709, "", false)
+
+	rWikiUnmapped := mkWork(t, medium, "rating-wiki-unmapped", str(wiki), i64(9106), 0)
+	mkWikiGalgame(t, 9106, "weird")
+
+	// Fill-empty: an already-rated work is never a candidate.
+	rRated := mkWork(t, medium, "rating-already-rated", nil, nil, model.ContentRatingR18)
+	relRRated := mkRelease(t, rRated, 2000, 1, 1)
+	mkReleaseAnchor(t, relRRated, "RJ000104", reg.dlsiteSource)
+	mkDlWork(t, "RJ000104", "", "2")
+
+	// --- dry run: decides, writes nothing.
+	st, err := Run(ctx, runOpts(false))
+	require.NoError(t, err)
+	assert.Equal(t, 6, st.DlDateCandidates)
+	assert.Equal(t, 2, st.DlDateNoRegist, "RJ000002 + RJ000007")
+	assert.Equal(t, 1, st.DlDateMissingMirror)
+	assert.Equal(t, 1, st.DlDateOutOfRange, "2099 placeholder gated")
+	assert.Equal(t, 2, st.DlDatePlanned, "relDl + relBoth")
+	assert.Equal(t, 7, st.EgDateCandidates, "two-release + claimed excluded in SQL")
+	assert.Equal(t, 1, st.EgDateCovered, "relBoth belongs to the dlsite lane")
+	assert.Equal(t, 1, st.EgDateMultiAnchor)
+	assert.Equal(t, 1, st.EgDateMissingMirror)
+	assert.Equal(t, 1, st.EgDateBadDate, "2050 placeholder gated")
+	assert.Equal(t, 4, st.EgDatePlanned, "wEg + wEgDlNull + wEgMulti + wBgmCovered")
+	assert.Equal(t, 5, st.BgmDateCandidates, "probable + release-less excluded in SQL")
+	assert.Equal(t, 1, st.BgmDateCovered, "relBgmCovered belongs to the eg lane")
+	assert.Equal(t, 1, st.BgmDateNoDate)
+	assert.Equal(t, 1, st.BgmDateBadDate)
+	assert.Equal(t, 1, st.BgmDatePartial)
+	assert.Equal(t, 2, st.BgmDatePlanned, "wBgmClaimed + wBgmPartial")
+	assert.Equal(t, 27, st.RatingCandidates, "every rating-0 work; rRated excluded")
+	assert.Equal(t, 1, st.RatingDlR18)
+	assert.Equal(t, 1, st.RatingDlSensitive)
+	assert.Equal(t, 1, st.RatingDlAllAges, "explicit all-ages verdict — suppresses the wiki r18")
+	assert.Equal(t, 1, st.RatingWikiR18)
+	assert.Equal(t, 1, st.RatingWikiAllAges, "explicit all verdict — suppresses the bgm nsfw")
+	assert.Equal(t, 1, st.RatingWikiUnmapped)
+	assert.Equal(t, 1, st.RatingBgmR18)
+	assert.Equal(t, 21, st.RatingNoVerdict)
+	assert.Equal(t, 4, st.RatingPlanned, "rDlAdult + rDlR15 + rWiki + rBgm")
+	assert.Zero(t, st.DlDateFilled+st.EgDateFilled+st.BgmDateFilled+st.RatingFilled+
+		st.DlDateSkippedNonEmpty+st.EgDateSkippedNonEmpty+st.BgmDateSkippedNonEmpty+
+		st.RatingSkippedNonEmpty+st.Errors)
+	y, _, _ := relDate(t, relDl)
+	assert.Nil(t, y, "dry run writes nothing")
+	assert.Equal(t, int16(0), workRating(t, rDlAdult), "dry run writes nothing")
+
+	// --- apply: fills the decided plan exactly.
+	st, err = Run(ctx, runOpts(true))
+	require.NoError(t, err)
+	assert.Equal(t, 2, st.DlDateFilled)
+	assert.Equal(t, 4, st.EgDateFilled)
+	assert.Equal(t, 2, st.BgmDateFilled)
+	assert.Equal(t, 4, st.RatingFilled)
+	assert.Zero(t, st.DlDateSkippedNonEmpty+st.EgDateSkippedNonEmpty+st.BgmDateSkippedNonEmpty+
+		st.RatingSkippedNonEmpty+st.Errors)
+
+	assertDate(t, relDl, 2020, 5, 1)
+	assertDate(t, relBoth, 2021, 7, 15) // DLsite value, NOT EG's 2022-01-01
+	assertDate(t, relEg, 2004, 5, 28)
+	assertDate(t, relEgDlNull, 2010, 10, 10) // EG filled what DLsite could not
+	assertDate(t, relEgMulti, 2015, 3, 3)
+	assertDate(t, relBgmCovered, 2001, 2, 3) // EG value, NOT bgm's 2002-03-04
+	assertDate(t, relBgmClaimed, 2010, 4, 30)
+	assertDate(t, relBgmPartial, 2015, 0, 0)   // year-only partial: m/d stay NULL
+	assertDate(t, relDlNonEmpty, 1999, 12, 24) // pre-existing date untouched
+	yBad, _, _ := relDate(t, relEgBad)
+	assert.Nil(t, yBad, "gated placeholder never lands")
+	yFut, _, _ := relDate(t, relDlFuture)
+	assert.Nil(t, yFut)
+
+	assert.Equal(t, model.ContentRatingR18, workRating(t, rDlAdult))
+	assert.Equal(t, model.ContentRatingSensitive, workRating(t, rDlR15))
+	assert.Equal(t, int16(0), workRating(t, rDlAll), "① all-ages verdict wins over ② r18 — ownership, not strictest")
+	assert.Equal(t, model.ContentRatingR18, workRating(t, rWiki))
+	assert.Equal(t, int16(0), workRating(t, rWikiAll), "② all verdict wins over ③ nsfw")
+	assert.Equal(t, model.ContentRatingR18, workRating(t, rBgm))
+	assert.Equal(t, int16(0), workRating(t, rBgmFalse), "nsfw=false never infers a rating")
+	assert.Equal(t, int16(0), workRating(t, rWikiUnmapped), "unmapped wiki value yields no verdict")
+	assert.Equal(t, model.ContentRatingR18, workRating(t, rRated), "non-zero rating untouched")
+
+	// --- second apply: fill-empty idempotency — filled rows left the candidate
+	// sets, the rest still has nothing to write.
+	st, err = Run(ctx, runOpts(true))
+	require.NoError(t, err)
+	assert.Equal(t, 3, st.DlDateCandidates, "only the unfillable three remain")
+	assert.Equal(t, 2, st.EgDateCandidates, "bad-date + missing-mirror remain")
+	assert.Equal(t, 2, st.BgmDateCandidates, "no-date + garbage remain")
+	assert.Equal(t, 23, st.RatingCandidates, "the four filled works left the set")
+	assert.Zero(t, st.DlDatePlanned+st.EgDatePlanned+st.BgmDatePlanned+st.RatingPlanned,
+		"second pass plans zero")
+	assert.Zero(t, st.DlDateFilled+st.EgDateFilled+st.BgmDateFilled+st.RatingFilled+st.Errors,
+		"second pass writes zero")
+	assert.Equal(t, 1, st.RatingDlAllAges, "all-ages verdicts persist as counted no-ops")
+	assert.Equal(t, 1, st.RatingWikiAllAges)
+}
+
+// TestFillEmptyGuardAndDSNRequired covers the writer's last-moment fill-empty
+// guard (candidate queries already exclude non-empty rows, so the guard is
+// only reachable by driving the writer directly) and the refuse-to-guess DSN
+// discipline.
+func TestFillEmptyGuardAndDSNRequired(t *testing.T) {
+	clean(t)
+	ctx := context.Background()
+	medium := galgameMedium(t)
+
+	wDated := mkWork(t, medium, "guard-dated", nil, nil, 0)
+	relDated := mkRelease(t, wDated, 2001, 2, 3)
+	wRated := mkWork(t, medium, "guard-rated", nil, nil, model.ContentRatingSensitive)
+
+	w := &writer{db: testDB, stats: &Stats{}}
+	var filled, skipped int
+	m, d := int16(6), int16(7)
+	w.fillDate(ctx, relDated, 2020, &m, &d, true, &filled, &skipped)
+	assert.Zero(t, filled)
+	assert.Equal(t, 1, skipped, "non-empty date refused at write time")
+	assertDate(t, relDated, 2001, 2, 3)
+
+	w.fillRating(ctx, wRated, model.ContentRatingR18, true)
+	assert.Zero(t, w.stats.RatingFilled)
+	assert.Equal(t, 1, w.stats.RatingSkippedNonEmpty, "non-zero rating refused at write time")
+	assert.Equal(t, model.ContentRatingSensitive, workRating(t, wRated))
+
+	// DSN discipline: all four DSNs are required, never guessed.
+	for _, opts := range []Opts{
+		{DlsiteDSN: testDSN, EGDSN: testDSN, WikiDSN: testDSN},
+		{DSN: testDSN, EGDSN: testDSN, WikiDSN: testDSN},
+		{DSN: testDSN, DlsiteDSN: testDSN, WikiDSN: testDSN},
+		{DSN: testDSN, DlsiteDSN: testDSN, EGDSN: testDSN},
+	} {
+		_, err := Run(context.Background(), opts)
+		require.Error(t, err)
+	}
+}
