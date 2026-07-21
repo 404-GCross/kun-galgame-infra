@@ -17,9 +17,9 @@ func TestBangumiRelations(t *testing.T) {
 	clean(t)
 
 	// Three anchored works (bid == bangumi subject id via the exact ref).
-	w100 := seedGatedWork(t, 100, "pass")
-	w200 := seedGatedWork(t, 200, "pass")
-	w300 := seedGatedWork(t, 300, "pass")
+	w100 := seedAnchoredWork(t, 100)
+	w200 := seedAnchoredWork(t, 200)
+	w300 := seedAnchoredWork(t, 300)
 
 	require.NoError(t, testDB.Exec(`INSERT INTO src_bangumi.subject_relation (subject_id, relation_type, related_subject_id, item_order) VALUES
 		(100, 4003, 200, 0),   -- 200 is the sequel of 100 → w200 sequel_of w100

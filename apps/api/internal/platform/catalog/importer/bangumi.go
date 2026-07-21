@@ -34,7 +34,10 @@ type creditPlan struct {
 
 func (im *Importer) runBangumi() (Stats, error) {
 	var st Stats
-	workMap, err := im.loadPassWorkMap()
+	// Identity gate (step 69): every EXACT Bangumi work anchor. All four exact
+	// anchor rules are identity assertions, so matched_by is unrestricted —
+	// the earlier bid-audit pass-layer gate (step 12) is retired.
+	workMap, err := im.loadExactWorkMap(bangumiSource)
 	if err != nil {
 		return st, err
 	}

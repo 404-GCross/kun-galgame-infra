@@ -8,8 +8,9 @@
 //     name→person links are never written — that is a human-review step under
 //     the §10 visibility policy. (Cross-source "same person" only ever becomes
 //     a probable match_candidate, never an automatic merge.)
-//   - Identity-gated (step 12): the Bangumi wave imports only the bid-audit
-//     pass-layer works; the EG wave only the eg-vndb-rosetta works.
+//   - Identity-gated: the Bangumi wave imports every work with an EXACT
+//     Bangumi anchor (step 69 widened it from the step-12 bid-audit pass
+//     layer); the EG wave only the eg-vndb-rosetta works.
 //   - Whole-source rollback: every credit carries source_id, so an entire
 //     source's import can be reverted cheaply.
 //
@@ -122,27 +123,6 @@ func (im *Importer) Run(source string) (Stats, error) {
 		total.add(s)
 	}
 	return total, nil
-}
-
-// loadPassWorkMap returns bid → catalog work id for the bid-audit pass layer
-// (the Bangumi identity gate).
-func (im *Importer) loadPassWorkMap() (map[int64]int64, error) {
-	var rows []struct {
-		BID    int64 `gorm:"column:bid"`
-		WorkID int64 `gorm:"column:work_id"`
-	}
-	if err := im.catalog.Raw(`
-		SELECT v.bid, r.entity_id AS work_id
-		FROM src_llm.bid_identity_verdict v
-		JOIN catalog_external_ref r ON r.source_id = ? AND r.link_kind = 0 AND r.external_id = v.bid::text
-		WHERE v.layer = 'pass'`, bangumiSource).Scan(&rows).Error; err != nil {
-		return nil, err
-	}
-	m := make(map[int64]int64, len(rows))
-	for _, r := range rows {
-		m[r.BID] = r.WorkID
-	}
-	return m, nil
 }
 
 // loadEGRosettaWorkMap returns EG game id → catalog work id for the

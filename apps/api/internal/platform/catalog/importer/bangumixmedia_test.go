@@ -26,7 +26,7 @@ func TestBangumiXmedia(t *testing.T) {
 	}
 	clean(t)
 
-	w100 := seedGatedWork(t, 100, "pass") // an anchored galgame
+	w100 := seedAnchoredWork(t, 100) // an anchored galgame
 
 	insertSubject(t, 200, 2, 0, "アニメ200", "动画200")     // anime
 	insertSubject(t, 201, 1, 1001, "漫画201", "漫画201cn") // book platform 漫画 → manga

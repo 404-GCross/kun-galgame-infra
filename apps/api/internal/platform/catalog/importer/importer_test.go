@@ -75,30 +75,40 @@ func clean(t *testing.T) {
 	}
 }
 
-// seedGatedWork creates a claimed work + its bid-exact ref + a pass verdict, so
-// the Bangumi gate resolves bid → work.
-func seedGatedWork(t *testing.T, bid int64, layer string) int64 {
+// seedAnchoredWork creates a claimed work + its bid-exact ref, so the Bangumi
+// gate (step 69: every exact anchor, matched_by unrestricted) resolves
+// bid → work.
+func seedAnchoredWork(t *testing.T, bid int64) int64 {
 	t.Helper()
 	var workID int64
 	require.NoError(t, testDB.Raw(`INSERT INTO catalog_work (medium_id, site, product_work_id, olang, display_name, content_rating, status, extra, field_provenance)
 		VALUES (1,'galgame_wiki',?, 'ja','w',0,0,'{}','{}') RETURNING id`, bid).Scan(&workID).Error)
 	require.NoError(t, testDB.Exec(`INSERT INTO catalog_external_ref (entity_type, entity_id, source_id, external_id, link_kind, matched_by)
 		VALUES (5, ?, 3, ?, 0, 'rule:wiki-bid-typed')`, workID, fmt.Sprint(bid)).Error)
-	require.NoError(t, testDB.Exec(`INSERT INTO src_llm.bid_identity_verdict (work_id, galgame_id, bid, layer, input_hash, model, prompt_version)
-		VALUES (?, ?, ?, ?, ?, 'm', 'p')`, workID, bid, bid, layer, fmt.Sprintf("h%d", bid)).Error)
 	return workID
 }
 
 func TestBangumiWave(t *testing.T) {
 	clean(t)
-	passWork := seedGatedWork(t, 100, "pass")
-	seedGatedWork(t, 200, "suspect") // gated OUT
+	anchoredWork := seedAnchoredWork(t, 100)
+	// A suspect bid-audit verdict no longer gates OUT: the exact anchor alone
+	// admits the work (step 69).
+	suspectWork := seedAnchoredWork(t, 200)
+	require.NoError(t, testDB.Exec(`INSERT INTO src_llm.bid_identity_verdict (work_id, galgame_id, bid, layer, input_hash, model, prompt_version)
+		VALUES (?, 200, 200, 'suspect', 'h200', 'm', 'p')`, suspectWork).Error)
+	// A work with only a PROBABLE bangumi ref stays gated out.
+	var probableWork int64
+	require.NoError(t, testDB.Raw(`INSERT INTO catalog_work (medium_id, site, product_work_id, olang, display_name, content_rating, status, extra, field_provenance)
+		VALUES (1,'galgame_wiki',300,'ja','w',0,0,'{}','{}') RETURNING id`).Scan(&probableWork).Error)
+	require.NoError(t, testDB.Exec(`INSERT INTO catalog_external_ref (entity_type, entity_id, source_id, external_id, link_kind, matched_by)
+		VALUES (5, ?, 3, '300', 1, 'rule:probable-guess')`, probableWork).Error)
 
 	// persons: 1 individual (writer), 1 company (developer), + a VA.
 	testDB.Exec(`INSERT INTO src_bangumi.person (id, type, name, career, infobox_raw, parse_error, summary, comments, collects, parser_version, ingested_at)
 		VALUES (10,1,'麻枝准','[]','',' ','',0,0,'v',now()), (20,2,'Key','[]','','','',0,0,'v',now()), (30,1,'VA太郎','[]','','','',0,0,'v',now())`)
-	// subject_person: person 10 as position 1001 on subject 100 + the same on the gated-out subject 200.
-	testDB.Exec(`INSERT INTO src_bangumi.subject_person (person_id, subject_id, position, appear_eps) VALUES (10,100,1001,''),(20,100,1001,''),(10,200,1001,'')`)
+	// subject_person: person 10 as position 1001 on subjects 100 + 200 (both
+	// exact-anchored → both in) and on the probable-only subject 300 (out).
+	testDB.Exec(`INSERT INTO src_bangumi.subject_person (person_id, subject_id, position, appear_eps) VALUES (10,100,1001,''),(20,100,1001,''),(10,200,1001,''),(10,300,1001,'')`)
 	// a character + its VA link.
 	testDB.Exec(`INSERT INTO src_bangumi.character (id, role, name, infobox_raw, parse_error, summary, comments, collects, parser_version, ingested_at) VALUES (50,1,'渚','','','',0,0,'v',now())`)
 	testDB.Exec(`INSERT INTO src_bangumi.subject_character (character_id, subject_id, type, item_order) VALUES (50,100,1,0)`)
@@ -113,8 +123,10 @@ func TestBangumiWave(t *testing.T) {
 	assert.Equal(t, 3, st.NamesCreated, "3 credit_names: writer, company, VA")
 	assert.Equal(t, 1, st.LabelsCreated, "company → label")
 	assert.Equal(t, 1, st.CharactersCreated)
-	// credits: person10 staff + company20 staff + VA on subject 100 (the 200 links are gated out).
-	assert.Equal(t, 3, st.CreditsWritten)
+	// credits: person10 staff + company20 staff + VA on subject 100, plus
+	// person10 staff on the suspect-verdict subject 200 (widened IN); the
+	// probable-only subject 300 stays out.
+	assert.Equal(t, 4, st.CreditsWritten)
 
 	// Orphan invariant: every credit_name has person_id NULL.
 	var orphaned int64
@@ -134,10 +146,16 @@ func TestBangumiWave(t *testing.T) {
 	testDB.Raw(`SELECT count(*) FROM catalog_credit c JOIN catalog_external_ref r ON r.entity_type=1 AND r.entity_id=c.credit_name_id AND r.source_id=3 AND r.external_id='20' WHERE c.label_id IS NOT NULL`).Scan(&companyLabels)
 	assert.Equal(t, int64(1), companyLabels)
 
-	// Gate: no credit on the suspect work.
-	var suspectCredits int64
-	testDB.Raw(`SELECT count(*) FROM catalog_credit WHERE work_id <> ?`, passWork).Scan(&suspectCredits)
-	assert.Zero(t, suspectCredits, "gated-out work has no credits")
+	// Widened gate: the suspect-verdict work now HAS its credit; the
+	// probable-only work has none.
+	var suspectCredits, probableCredits int64
+	testDB.Raw(`SELECT count(*) FROM catalog_credit WHERE work_id = ?`, suspectWork).Scan(&suspectCredits)
+	assert.Equal(t, int64(1), suspectCredits, "suspect-verdict work gets credits under the exact-anchor gate")
+	testDB.Raw(`SELECT count(*) FROM catalog_credit WHERE work_id = ?`, probableWork).Scan(&probableCredits)
+	assert.Zero(t, probableCredits, "probable-only work stays gated out")
+	var anchoredCredits int64
+	testDB.Raw(`SELECT count(*) FROM catalog_credit WHERE work_id = ?`, anchoredWork).Scan(&anchoredCredits)
+	assert.Equal(t, int64(3), anchoredCredits)
 
 	// VA credit has character_id + voice-actor role + the 主角 note.
 	var vaNote string
@@ -155,12 +173,12 @@ func TestBangumiWave(t *testing.T) {
 	assert.Zero(t, st2.NamesCreated)
 	assert.Zero(t, st2.CharactersCreated)
 	assert.Zero(t, st2.CreditsWritten)
-	assert.Equal(t, 3, st2.Already, "all 3 credits already present")
+	assert.Equal(t, 4, st2.Already, "all 4 credits already present")
 }
 
 func TestUnmappedRoleSkipped(t *testing.T) {
 	clean(t)
-	seedGatedWork(t, 100, "pass")
+	seedAnchoredWork(t, 100)
 	testDB.Exec(`INSERT INTO src_bangumi.person (id, type, name, career, infobox_raw, parse_error, summary, comments, collects, parser_version, ingested_at) VALUES (10,1,'X','[]','','','',0,0,'v',now())`)
 	// position 999999 is not in the role map.
 	testDB.Exec(`INSERT INTO src_bangumi.subject_person (person_id, subject_id, position, appear_eps) VALUES (10,100,999999,'')`)
@@ -186,7 +204,7 @@ func TestEGWaveAndCandidates(t *testing.T) {
 	testDB.Exec(`INSERT INTO appearance_actors (game, character_id, actor_id) VALUES (7,800,501)`)
 
 	// A Bangumi person sharing the twitter handle (for the candidate).
-	seedGatedWork(t, 100, "pass")
+	seedAnchoredWork(t, 100)
 	testDB.Exec(`INSERT INTO src_bangumi.person (id, type, name, career, infobox_raw, infobox_parsed, parse_error, summary, comments, collects, parser_version, ingested_at)
 		VALUES (10,1,'絵師B','[]','', '{"Type":"Crt","Fields":[{"Key":"Twitter","Value":"@SharedHandle","Items":null,"Array":false,"Null":false}]}'::jsonb, '','',0,0,'v',now())`)
 	testDB.Exec(`INSERT INTO src_bangumi.subject_person (person_id, subject_id, position, appear_eps) VALUES (10,100,1001,'')`)

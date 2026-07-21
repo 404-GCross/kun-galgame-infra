@@ -1,7 +1,8 @@
 // import-galgame-credits lands the first entity-layer data — persons (as
 // orphan credit names), characters and credit edges — from Bangumi and
-// erogamespace into the catalog Gold tables, identity-gated by step 12
-// (Bangumi = bid-audit pass layer; EG = eg-vndb-rosetta). Orphan-name-first,
+// erogamespace into the catalog Gold tables, identity-gated
+// (Bangumi = every exact Bangumi work anchor, step-69 widened from the
+// step-12 bid-audit pass layer; EG = eg-vndb-rosetta). Orphan-name-first,
 // self-anchored, whole-source-rollbackable; no person rows, no auto-merge.
 //
 //	go run ./cmd/migrate-catalog                              # land the EG role map
