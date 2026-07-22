@@ -13,10 +13,17 @@ const (
 
 // Public-read scopes. galgame:nsfw is defined for the content_limit gate but is
 // not granted to any Phase 1 key (裁定 6 — NSFW scope not issued yet).
+//
+// ScopeGalgameWrite (galgame:write) gates the /internal user-write face
+// (09-open-api-phase2 06a doc 23 D3). It is deliberately NOT in the
+// selfServiceScopes allow-list: a write scope is minted only by the admin
+// console / SQL, never self-service, until the proposal face + trust tiers
+// (06b) are ready to gate third-party writers.
 const (
-	ScopeCatalogRead = "catalog:read"
-	ScopeGalgameRead = "galgame:read"
-	ScopeGalgameNSFW = "galgame:nsfw"
+	ScopeCatalogRead  = "catalog:read"
+	ScopeGalgameRead  = "galgame:read"
+	ScopeGalgameNSFW  = "galgame:nsfw"
+	ScopeGalgameWrite = "galgame:write"
 )
 
 // TierLimits returns a tier's default per-minute rate and daily quota.

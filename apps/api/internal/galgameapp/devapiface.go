@@ -114,6 +114,42 @@ func (f devapiFace) recordUsage(surface string) fiber.Handler {
 // — that helper is the read projection, and the S2S feeds are not part of it.
 // /taxonomy/recent is NOT mounted: the post-mortem (V2) confirmed it a dead
 // route, so A2 dropped it outright rather than migrating it.
+// mountInternalWrites mounts the /internal user-write face: the 12 jwtAuth-gated
+// write routes (galgame Create/Update/UploadImage, links/aliases ×4, contributor
+// delete, submission Submit/Claim/PatchDraft/DeleteDraft) that the legacy /api
+// Bearer group serves. Since 09-open-api-phase2 wave 06a W1 they are ALSO
+// reachable on this devapi-gated face with the dual-credential convention
+// (X-API-Key = client identity; Authorization: Bearer = the end-user JWT).
+//
+// The chain is the /internal read chain's write variant: same ResolveCredential
+// → RateLimit → Quota shape, but metered under a distinct face
+// (galgame_internal_write, D4 — write traffic must be independently observable),
+// gated on ScopeGalgameWrite instead of ScopeGalgameRead, and terminating in the
+// SAME jwtAuth the /api write face uses (the user identity model is unchanged —
+// D5). There is no sfwGate (writes carry no content_limit).
+//
+// CRITICAL ordering: this MUST be called BEFORE mountInternal. mountInternal
+// installs Group("/internal", readChain...), which in Fiber is a prefix Use that
+// blankets every /internal/* route registered after it. Registering the writes
+// (with their chain attached PER ROUTE — see writeRoutes.register) first keeps
+// the read chain from blanketing them, while the route-level write handlers
+// blanket nothing themselves. The two faces never collide on method (reads are
+// GET; writes POST/PUT/PATCH/DELETE).
+func mountInternalWrites(a *app.App, face devapiFace, writes writeRoutes, jwtAuth fiber.Handler) {
+	chain := []fiber.Handler{
+		face.mw.ResolveCredential,
+		face.recordUsage("galgame_internal_write"),
+		devapi.RequireTier(devapi.TierInternal),
+		face.mw.RateLimit,
+		face.mw.Quota,
+		devapi.RequireScope(devapi.ScopeGalgameWrite),
+		jwtAuth,
+	}
+	// The parent is a PLAIN group (no group middleware) — the chain rides each
+	// route so it never becomes a blanket /internal Use.
+	writes.register(a.Fiber.Group("/internal"), chain)
+}
+
 func mountInternal(a *app.App, face devapiFace, reads readRoutes, messageH *galgameHandler.MessageHandler, revisionH *galgameHandler.RevisionHandler) {
 	internal := a.Fiber.Group("/internal",
 		face.mw.ResolveCredential,

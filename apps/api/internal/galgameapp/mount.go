@@ -366,8 +366,20 @@ func Mount(a *app.App, cfg *config.Config, deps Deps) {
 	//     ALSO carries the two S2S cron feeds (/galgame/messages/feed +
 	//     /galgame/revisions/recent) on the same devapi chain. Downstream
 	//     kungal/moyu/letmoe S2S consumers.
+	//   /internal (writes) = the user-write face (09-open-api-phase2 06a W1):
+	//     the same 12 jwtAuth-gated write handlers the /api Bearer group serves,
+	//     behind the devapi write chain (scope galgame:write, metered under
+	//     galgame_internal_write). Registered BEFORE mountInternal so the read
+	//     face's Group Use does not blanket it (see mountInternalWrites).
 	//   /v1/galgame = the public third-party projection (frozen contract).
 	face := newDevapiFace(a, cfg)
+	writes := writeRoutes{
+		galgameH:     galgameH,
+		linkH:        linkH,
+		contributorH: contributorH,
+		submissionH:  submissionH,
+	}
+	mountInternalWrites(a, face, writes, jwtAuth)
 	mountInternal(a, face, reads, messageH, revisionH)
 	mountPublic(a, face, galgameSvc, searchSvc, galgameH, entityGalgamesH)
 }

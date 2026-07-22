@@ -108,6 +108,11 @@ func TestSelfServiceKeyCapAndScope(t *testing.T) {
 	if _, _, err := svc.MintKey(ctx, owner, app.ID, MintKeyInput{Name: "bad", Scopes: []string{ScopeGalgameNSFW}}); err != ErrScopeNotAllowed {
 		t.Fatalf("nsfw scope err = %v, want ErrScopeNotAllowed", err)
 	}
+	// The write scope is likewise never self-service-grantable (06a D3): MintKey
+	// must reject it through the same allow-list gate.
+	if _, _, err := svc.MintKey(ctx, owner, app.ID, MintKeyInput{Name: "bad-write", Scopes: []string{ScopeGalgameWrite}}); err != ErrScopeNotAllowed {
+		t.Fatalf("write scope err = %v, want ErrScopeNotAllowed", err)
+	}
 
 	// Mint up to the cap.
 	for i := 0; i < MaxActiveKeysPerApp; i++ {

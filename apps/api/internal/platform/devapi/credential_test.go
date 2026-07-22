@@ -1,6 +1,34 @@
 package devapi
 
-import "testing"
+import (
+	"slices"
+	"testing"
+)
+
+// TestScopeGalgameWriteSelfServiceExcluded pins the 06a D3 invariant: the write
+// scope exists as a constant but is NEVER self-service-grantable — MintKey's
+// checkSelfServiceScopes gate must reject it (a write scope is minted only by
+// the admin console / SQL until the 06b proposal face + trust tiers are ready).
+func TestScopeGalgameWriteSelfServiceExcluded(t *testing.T) {
+	if ScopeGalgameWrite != "galgame:write" {
+		t.Errorf("ScopeGalgameWrite = %q, want %q", ScopeGalgameWrite, "galgame:write")
+	}
+	// The allow-list is the two public reads only — the write scope is absent.
+	if slices.Contains(selfServiceScopes, ScopeGalgameWrite) {
+		t.Errorf("selfServiceScopes must NOT contain %q (D3: write is never self-service)", ScopeGalgameWrite)
+	}
+	// The MintKey validation path (checkSelfServiceScopes) rejects a write scope,
+	// alone or mixed with an allowed read scope, and accepts the two reads.
+	if err := checkSelfServiceScopes([]string{ScopeGalgameWrite}); err != ErrScopeNotAllowed {
+		t.Errorf("checkSelfServiceScopes([write]) = %v, want ErrScopeNotAllowed", err)
+	}
+	if err := checkSelfServiceScopes([]string{ScopeGalgameRead, ScopeGalgameWrite}); err != ErrScopeNotAllowed {
+		t.Errorf("checkSelfServiceScopes([read,write]) = %v, want ErrScopeNotAllowed", err)
+	}
+	if err := checkSelfServiceScopes([]string{ScopeCatalogRead, ScopeGalgameRead}); err != nil {
+		t.Errorf("checkSelfServiceScopes([catalog:read,galgame:read]) = %v, want nil", err)
+	}
+}
 
 func TestTierLimits(t *testing.T) {
 	cases := []struct {
