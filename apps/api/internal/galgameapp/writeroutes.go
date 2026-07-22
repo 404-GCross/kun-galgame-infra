@@ -9,12 +9,11 @@ import (
 )
 
 // writeRoutes carries the handler references for the galgame user-write surface
-// — the 12 jwtAuth-gated write routes the legacy /api face registers under its
-// Bearer fence (galgameAuth group). Since 09-open-api-phase2 wave 06a W1 this
-// same handler set is ALSO mounted on the devapi-gated /internal write face (see
-// mountInternalWrites); the two faces share the SAME handler instances Mount
-// builds — no handler logic is duplicated. The legacy /api registrations are
-// untouched here (they retire in W3).
+// — the 12 jwtAuth-gated write routes mounted on the devapi-gated /internal write
+// face (see mountInternalWrites). Since 09-open-api-phase2 wave 06a W3 retired the
+// legacy /api Bearer registrations (the old galgameAuth group), this /internal
+// face is the SOLE host of these writes. The handler instances are the same ones
+// Mount builds for the read face — no handler logic is duplicated.
 type writeRoutes struct {
 	galgameH     *galgameHandler.GalgameHandler
 	linkH        *galgameHandler.LinkHandler
@@ -38,10 +37,9 @@ type writeRoutes struct {
 // disjoint (the reads are GET-only, the writes POST/PUT/PATCH/DELETE, so they
 // never collide on method either).
 //
-// Registration order mirrors the /api Bearer group: the static segments
-// (/, /image, /submit) are registered before the /:gid parameter segment so
-// ":gid" never binds "submit"/"image"; registration order is app-stack-wide in
-// Fiber.
+// Registration order keeps the static segments (/, /image, /submit) ahead of the
+// /:gid parameter segment so ":gid" never binds "submit"/"image"; registration
+// order is app-stack-wide in Fiber.
 func (w writeRoutes) register(parent fiber.Router, chain []fiber.Handler) {
 	galgame := parent.Group("/galgame")
 

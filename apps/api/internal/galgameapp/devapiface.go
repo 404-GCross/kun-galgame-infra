@@ -116,17 +116,17 @@ func (f devapiFace) recordUsage(surface string) fiber.Handler {
 // route, so A2 dropped it outright rather than migrating it.
 // mountInternalWrites mounts the /internal user-write face: the 12 jwtAuth-gated
 // write routes (galgame Create/Update/UploadImage, links/aliases ×4, contributor
-// delete, submission Submit/Claim/PatchDraft/DeleteDraft) that the legacy /api
-// Bearer group serves. Since 09-open-api-phase2 wave 06a W1 they are ALSO
-// reachable on this devapi-gated face with the dual-credential convention
+// delete, submission Submit/Claim/PatchDraft/DeleteDraft). Since 09-open-api-phase2
+// wave 06a W3 retired the legacy /api Bearer group, this devapi-gated face is the
+// SOLE host of these writes, reached with the dual-credential convention
 // (X-API-Key = client identity; Authorization: Bearer = the end-user JWT).
 //
 // The chain is the /internal read chain's write variant: same ResolveCredential
 // → RateLimit → Quota shape, but metered under a distinct face
 // (galgame_internal_write, D4 — write traffic must be independently observable),
 // gated on ScopeGalgameWrite instead of ScopeGalgameRead, and terminating in the
-// SAME jwtAuth the /api write face uses (the user identity model is unchanged —
-// D5). There is no sfwGate (writes carry no content_limit).
+// SAME jwtAuth Mount builds (the user identity model is unchanged — D5). There is
+// no sfwGate (writes carry no content_limit).
 //
 // CRITICAL ordering: this MUST be called BEFORE mountInternal. mountInternal
 // installs Group("/internal", readChain...), which in Fiber is a prefix Use that

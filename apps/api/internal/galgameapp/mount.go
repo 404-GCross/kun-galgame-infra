@@ -61,9 +61,11 @@ type Deps struct {
 }
 
 // Mount wires the galgame domain (repositories, services, handlers) and registers
-// its full HTTP surface — the internal /api/galgame|tag|official|engine|series
-// read+write routes, the admin routes, the S2S cron feeds, the catalog data
-// browser proxy, and the NextMoe /v1/galgame public projection — onto a.Fiber.
+// its full HTTP surface — the /api staff face (admin/ban + the taxonomy
+// tag/official/engine/series CRUD+revert family + the staff catalog-browser
+// proxy), the devapi-gated /internal face carrying ALL user reads (galgame:read)
+// and user writes (galgame:write), the S2S cron feeds, and the NextMoe
+// /v1/galgame public projection — onto a.Fiber.
 //
 // Global middleware and /healthz are the caller's responsibility (see the package
 // doc); Mount assumes CORS + request-id + logging are already installed.
@@ -236,25 +238,23 @@ func Mount(a *app.App, cfg *config.Config, deps Deps) {
 		jwtAuth:         jwtAuth,
 	}
 
-	// API routes. Since 09-open-api-phase2 wave 05 A2 the /api face is
-	// WRITE + STAFF only: the 44 GET reads and the three S2S cron feeds it used
-	// to carry were retired here. The reads moved to the devapi-gated /internal
-	// rich read face (reads.register(internal) in mountInternal); the two live
-	// feeds (messages/feed + revisions/recent) ride that same /internal chain,
-	// and taxonomy/recent was a confirmed dead route (dropped, not migrated).
-	// Until the 06 wave decides the write-face story, /api carries only writes,
-	// the user submission flow, admin/staff routes, image upload, the edit face
-	// and the staff catalog-browser proxy.
+	// API routes. Since 09-open-api-phase2 wave 06a W3 the /api face is
+	// STAFF-ONLY: the admin/ban routes, the taxonomy CRUD+revert family
+	// (tag/official/engine + series), and the staff catalog-browser proxy. The
+	// 44 GET reads + S2S feeds moved to the /internal read face back in wave 05
+	// A2; W3 then retired the 12 user-write registrations this group used to
+	// carry, so ALL user reads AND writes now live on the devapi-gated /internal
+	// face — reads under scope galgame:read (mountInternal), writes under scope
+	// galgame:write (mountInternalWrites). The proposal face is 06b.
 	api := a.Fiber.Group("/api")
 
-	// ── Galgame writes / catalog proxy / staff ──
+	// ── Staff catalog-browser proxy (under /api/galgame/catalog) ──
 	galgame := api.Group("/galgame")
 
 	// Internal catalog data browser (step 19): staff-only (catalog.review = ren)
 	// read-only proxy to the catalog S2S read face — the Basic credentials stay
-	// server-side. Registered ABOVE the empty-prefix Bearer fence below (which
-	// would otherwise blanket every /galgame/* route); it carries its own jwtAuth
-	// + permission gate. A non-empty prefix keeps it clear of that fence gotcha.
+	// server-side. It carries its own jwtAuth + permission gate on a non-empty
+	// /catalog prefix, distinct from the taxonomy/admin staff groups below.
 	catalogProxy := galgameHandler.NewCatalogProxyHandler(catalogCli)
 	catBrowse := galgame.Group("/catalog", jwtAuth, middleware.RequirePermission(catalogPerm.Resolver, catalogPerm.Review))
 	catBrowse.Get("/stats", catalogProxy.Stats)
@@ -263,49 +263,16 @@ func Mount(a *app.App, cfg *config.Config, deps Deps) {
 	catBrowse.Get("/works/:id/credits", catalogProxy.Credits)
 	catBrowse.Get("/labels/:id/works", catalogProxy.LabelWorks)
 
-	// ─── Bearer JWT fence — every /galgame route below inherits jwtAuth ───
-	// Fiber v3's Group("", jwtAuth) with an EMPTY prefix is equivalent to
-	// app.Use("/galgame", jwtAuth): it matches every /galgame/* route registered
-	// AFTER it, including ones on the parent `galgame` group. Anything that must
-	// NOT be blanketed by jwtAuth (or needs its own gate, like the catalog proxy
-	// above) therefore has to be registered ABOVE this line.
-	galgameAuth := galgame.Group("", jwtAuth)
-	// POST /galgame is the admin direct-publish bypass: it creates a
-	// status=0 entry immediately, skipping the user submission queue. Regular
-	// users must go through POST /galgame/submit (creates status=3, awaits
-	// review). Locked to galgame.create (moderator/admin/ren) so non-staff
-	// can't bypass review.
-	galgameAuth.Post("/", middleware.RequirePermission(galgamePerm.Resolver, galgamePerm.Create), galgameH.Create)
-	galgameAuth.Put("/:gid", galgameH.Update)
-	// Canonical galgame image upload (cover + screenshot). Any logged-in user —
-	// incl. forum/moyu proxying their users via their wiki client — POSTs
-	// multipart {file, preset}; uploads under the wiki image client
-	// (site=galgame_wiki) and returns the hash. Centralizing here makes the
-	// wiki the single owner of galgame image bytes, so the site-scoped galgame
-	// reference-ping covers everything. Single-segment static path, no collision
-	// with /:gid (which is GET-only here).
-	galgameAuth.Post("/image", galgameH.UploadImage)
-	// Revert + PR submit/merge/decline retired with apps/wiki at E3b — user
-	// edits now flow through the engine (kungal's edit BFF → catalog edit face).
-	galgameAuth.Post("/:gid/links", linkH.CreateLink)
-	galgameAuth.Delete("/:gid/links", linkH.DeleteLink)
-	galgameAuth.Post("/:gid/aliases", linkH.CreateAlias)
-	galgameAuth.Delete("/:gid/aliases", linkH.DeleteAlias)
-	galgameAuth.Delete("/:gid/contributors/:id", contributorH.Delete)
-
-	// ── User submission flow ──
-	// The read companion GET /mine now lives on the /internal read face (its /api
-	// registration retired in A2). submit/claim are POST and patch/delete are
-	// PATCH/DELETE, so none collide on /:gid and they stay here in the auth group.
-	galgameAuth.Post("/submit", submissionH.Submit)
-	galgameAuth.Post("/:gid/claim", submissionH.Claim)
-	galgameAuth.Patch("/:gid", submissionH.PatchDraft)
-	galgameAuth.Delete("/:gid", submissionH.DeleteDraft)
-
-	// ── Messages ──
-	// GET /messages/mine and the S2S GET /messages/feed are read routes; since A2
-	// both live on the /internal read face (feed via mountInternal, /messages/mine
-	// via reads.register). Neither is registered on this /api write face anymore.
+	// ── User writes retired (09-open-api-phase2 06a W3) ──
+	// The 12 jwtAuth-gated user-write routes that used to live here (the
+	// galgameAuth Bearer group: Create/Update/UploadImage, links/aliases ×4,
+	// contributor delete, and the submission flow Submit/Claim/PatchDraft/
+	// DeleteDraft) were retired in W3. Their sole host is now the devapi-gated
+	// /internal user-write face (mountInternalWrites), which pairs the client key
+	// (scope galgame:write) with the same jwtAuth user identity. The empty-prefix
+	// Bearer fence is gone with them; the catalog proxy above keeps its own gate.
+	// GET /messages/mine and the S2S GET /messages/feed had already moved to the
+	// /internal read face in wave 05 A2.
 
 	// ── Admin ──
 	// Admin endpoints require both JWT validity AND galgame.admin_access
@@ -366,11 +333,14 @@ func Mount(a *app.App, cfg *config.Config, deps Deps) {
 	//     ALSO carries the two S2S cron feeds (/galgame/messages/feed +
 	//     /galgame/revisions/recent) on the same devapi chain. Downstream
 	//     kungal/moyu/letmoe S2S consumers.
-	//   /internal (writes) = the user-write face (09-open-api-phase2 06a W1):
-	//     the same 12 jwtAuth-gated write handlers the /api Bearer group serves,
-	//     behind the devapi write chain (scope galgame:write, metered under
-	//     galgame_internal_write). Registered BEFORE mountInternal so the read
-	//     face's Group Use does not blanket it (see mountInternalWrites).
+	//   /internal (writes) = the SOLE user-write face (09-open-api-phase2 06a):
+	//     the 12 jwtAuth-gated write handlers (Create/Update/UploadImage,
+	//     links/aliases ×4, contributor delete, submission Submit/Claim/
+	//     PatchDraft/DeleteDraft), behind the devapi write chain (scope
+	//     galgame:write, metered under galgame_internal_write). W3 retired the
+	//     legacy /api Bearer registrations, so this face is now their only host.
+	//     Registered BEFORE mountInternal so the read face's Group Use does not
+	//     blanket it (see mountInternalWrites).
 	//   /v1/galgame = the public third-party projection (frozen contract).
 	face := newDevapiFace(a, cfg)
 	writes := writeRoutes{

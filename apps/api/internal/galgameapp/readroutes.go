@@ -11,7 +11,8 @@ import (
 // face, its register method backs the devapi-gated /internal rich read face
 // only. It is assembled once in Mount and its register method is called on that
 // face's parent group. (The handler/service instances are the same ones the
-// /api write + staff face uses — no handler logic is duplicated.)
+// /internal write face and the /api staff face use — no handler logic is
+// duplicated.)
 type readRoutes struct {
 	galgameH        *galgameHandler.GalgameHandler
 	searchH         *galgameHandler.SearchHandler
@@ -26,7 +27,7 @@ type readRoutes struct {
 	seriesH         *galgameHandler.SeriesHandler
 	taxRevH         *galgameHandler.TaxonomyRevisionHandler
 	// optionalJWT populates user_id when a valid Bearer JWT is present but never
-	// blocks; jwtAuth requires one. Same instances the /api write face uses.
+	// blocks; jwtAuth requires one. Same instances the /internal write face uses.
 	optionalJWT fiber.Handler
 	jwtAuth     fiber.Handler
 }
