@@ -134,6 +134,13 @@ services:
       - effective_cache_size=12GB
       - -c
       - maintenance_work_mem=512MB
+    # Parallel-query dynamic shared memory lives in /dev/shm, and docker's
+    # default cap is 64MB — one parallel hash join at work_mem=64MB exhausts it
+    # (SQLSTATE 53100 "could not resize shared memory segment", hit 2026-07-22
+    # by a catalog batch job). 1GB matches the parallel budget; costs nothing
+    # when idle (tmpfs pages allocate on use). Applying requires the postgres
+    # container to be RECREATED (brief DB outage) — deploy in a quiet window.
+    shm_size: 1gb
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in Dokploy (must match the app KUN_PG_PASSWORD / DATABASE_URL)}
