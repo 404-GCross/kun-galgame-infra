@@ -91,7 +91,7 @@ OAuth client 的 `redirect_uris` 存在枢纽 `kun_galgame_infra.oauth_clients` 
 | 补丁 `df3ff60…` | `https://www.moyu.moe/auth/callback`、`https://moyu.moe/auth/callback` |
 | ~~wiki 前端 PKCE client~~ | **已退役(W5)**:wiki 前端 + `wiki.kungal.com` 域退役,不再需要该 redirect_uri |
 
-> **wiki 前端已退役(开放 API Phase 2 · W5)**,其 `PUBLIC_OAUTH_CLIENT_ID` build arg 与 `wiki.kungal.com/auth/callback` redirect 均不再使用。两个同名「鲲 Galgame Wiki」OAuth client(`galgame-wiki-admin` 与 `53e9b5ea…`)的存废清理属 **C4(待用户裁)**;⚠️ **铁律:承载图片上传身份的 client 必须保留,禁止按名字模糊删**(以 client_id 精确匹配)。改完各站 redirect_uris 后,OAuth 的 `KUN_SITE_URL`/`KUN_FRONTEND_URL`(oauth.env)也改成 `https://oauth.kungal.com` / `https://oauth.kungal.com`。
+> **wiki 前端已退役(开放 API Phase 2 · W5)**,其 PKCE client(`53e9b5ea…`)已于 2026-07-22 从生产删除(U2 清账:零外键、零凭证使用、唯一陈年 session 一并删;image GC 纯由 refping 驱动,与 oauth client 行无关)。⚠️ **铁律:`galgame-wiki-admin`(图片上传身份)与其锚定的 sites 行 4(wiki.kungal.com)有意保留**——那是 ~16 万图字节的存储身份链,永不删。改完各站 redirect_uris 后,OAuth 的 `KUN_SITE_URL`/`KUN_FRONTEND_URL`(oauth.env)也改成 `https://oauth.kungal.com` / `https://oauth.kungal.com`。
 
 ## 12.4 部署步骤(Dokploy)
 
