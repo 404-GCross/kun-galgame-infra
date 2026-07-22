@@ -29,6 +29,18 @@ const (
 	GenderOther  int16 = 3
 )
 
+// Blood types for a character (refs/proj/81 field PR C2). The column is
+// nullable: NULL = unknown/unset — there is deliberately no 0 constant, exactly
+// as with Gender. Sources: VNDB chars.bloodt (a/b/ab/o) and Bangumi 血型
+// (A型/O型/…). Fictional blood types (X型/F型 etc.) are NOT in this vocabulary —
+// they are not written to the column (the raw string is preserved in extra).
+const (
+	BloodTypeA  int16 = 1
+	BloodTypeB  int16 = 2
+	BloodTypeAB int16 = 3
+	BloodTypeO  int16 = 4
+)
+
 // CreditName kinds — how this credited identity relates to the person.
 const (
 	CreditNameKindMain            int16 = 0 // the person's primary credited name

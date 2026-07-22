@@ -26,7 +26,34 @@ type CatalogCharacter struct {
 	// ImageHash is the character portrait's content-addressed hash in the image
 	// service (same shape as the galgame/work image columns); NULL until the
 	// step-47 VNDB portrait wave backfills it. This step only lands the column.
-	ImageHash       *string        `json:"image_hash"`
+	ImageHash *string `json:"image_hash"`
+	// --- typical-set physical attributes (refs/proj/81 field PR C2) ---
+	// The display-core attribute set that most sources carry, promoted to real
+	// typed columns (the long tail lives in Extra). Every column is a nullable
+	// pointer: NULL = unknown/unset (no meaningful zero, no default tag). Written
+	// by internal/jobs/charattrs from the VNDB typed columns (survivorship: vndb
+	// preferred) and the Bangumi infobox (bgm fills gaps). BirthdayMonth/Day are
+	// month+day only — the year is not a real column (kept in Extra when a source
+	// supplies one).
+	BirthdayMonth *int16 `json:"birthday_month"`
+	BirthdayDay   *int16 `json:"birthday_day"`
+	// BloodType uses the BloodType* constants (1=A 2=B 3=AB 4=O); NULL = unknown.
+	BloodType *int16 `json:"blood_type"`
+	// HeightCm/WeightKg are the character's canonical height/weight; BustCm/
+	// WaistCm/HipCm are the three-size measurements; all in cm/kg. Cup is the
+	// bra-cup letter (verbatim source token, upper-cased: A/B/…/AAA).
+	HeightCm *int16  `json:"height_cm"`
+	WeightKg *int16  `json:"weight_kg"`
+	BustCm   *int16  `json:"bust_cm"`
+	WaistCm  *int16  `json:"waist_cm"`
+	HipCm    *int16  `json:"hip_cm"`
+	Cup      *string `json:"cup"`
+	// Extra is the governed long-tail escape hatch (doc 17 R9 shape, cloned from
+	// catalog_work): object-only jsonb, source-namespaced. charattrs writes the
+	// Bangumi infobox long-tail under the "bgm" key ({"bgm": {"星座": "…", …}});
+	// the namespace is replaced wholesale each run (idempotent). datatypes.JSON's
+	// zero value is nil, so the default '{}' fires with no zero-value trap.
+	Extra           datatypes.JSON `gorm:"type:jsonb;not null;default:'{}'" json:"extra"`
 	FieldProvenance datatypes.JSON `gorm:"type:jsonb;not null;default:'{}'" json:"field_provenance"`
 	CreatedAt       time.Time      `json:"created_at"`
 	UpdatedAt       time.Time      `json:"updated_at"`

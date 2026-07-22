@@ -462,10 +462,32 @@ export interface components {
         };
         CharacterDetailResponse: {
             aliases: components["schemas"]["CharacterAlias"][] | null;
+            attr_sources?: {
+                [key: string]: string;
+            };
+            /** Format: int32 */
+            birthday_day?: number;
+            /** Format: int32 */
+            birthday_month?: number;
+            /**
+             * Format: int32
+             * @description 1=A 2=B 3=AB 4=O; absent = unknown
+             */
+            blood_type?: number;
+            /** Format: int32 */
+            bust_cm?: number;
+            cup?: string;
             description?: string;
             display_name: string;
+            extra?: {
+                [key: string]: unknown;
+            };
             /** Format: int32 */
             gender?: number;
+            /** Format: int32 */
+            height_cm?: number;
+            /** Format: int32 */
+            hip_cm?: number;
             /** Format: int64 */
             id: number;
             image_hash?: string;
@@ -474,6 +496,10 @@ export interface components {
             intros: components["schemas"]["WorkIntro"][] | null;
             lang: string;
             latin?: string;
+            /** Format: int32 */
+            waist_cm?: number;
+            /** Format: int32 */
+            weight_kg?: number;
         };
         CharacterHead: {
             /** Format: int64 */

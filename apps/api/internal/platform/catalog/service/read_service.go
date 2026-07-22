@@ -2,14 +2,62 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	stderrors "errors"
 	"sort"
 	"strings"
 
 	"api/internal/platform/catalog/model"
 
+	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
+
+// charAttrColumns are the typed attribute columns whose source attribution is
+// surfaced (step 81): AttrSources maps each populated one to its latest
+// field_provenance writer.
+var charAttrColumns = []string{
+	"birthday_month", "birthday_day", "blood_type", "height_cm", "weight_kg",
+	"bust_cm", "waist_cm", "hip_cm", "cup", "gender",
+}
+
+// decodeCharExtra unmarshals the character extra jsonb into a generic map for
+// the read face; an empty/absent object yields nil (serializes as absent).
+func decodeCharExtra(raw datatypes.JSON) map[string]any {
+	if len(raw) == 0 {
+		return nil
+	}
+	var m map[string]any
+	if json.Unmarshal(raw, &m) != nil || len(m) == 0 {
+		return nil
+	}
+	return m
+}
+
+// attrSources reads field_provenance (R8 array, latest first) and returns the
+// {column → latest source key} map for the populated attribute columns; nil
+// when none carry provenance.
+func attrSources(raw datatypes.JSON) map[string]string {
+	if len(raw) == 0 {
+		return nil
+	}
+	var doc map[string][]struct {
+		Source string `json:"source"`
+	}
+	if json.Unmarshal(raw, &doc) != nil {
+		return nil
+	}
+	out := map[string]string{}
+	for _, col := range charAttrColumns {
+		if entries := doc[col]; len(entries) > 0 && entries[0].Source != "" {
+			out[col] = entries[0].Source
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
 
 // sourceKeyDlsite is the catalog_source registry key for DLsite anchors (the
 // product side keys its doujin rows on the DLsite workno).
@@ -1308,7 +1356,21 @@ type CharacterDetail struct {
 	Description string
 	InstanceOf  *int64
 	ImageHash   *string
-	Aliases     []CharacterAliasRow
+	// Typical-set physical attributes (step 81 field PR C2): nullable typed
+	// columns, plus the long-tail Extra and the per-column source attribution
+	// derived from field_provenance.
+	BirthdayMonth *int16
+	BirthdayDay   *int16
+	BloodType     *int16
+	HeightCm      *int16
+	WeightKg      *int16
+	BustCm        *int16
+	WaistCm       *int16
+	HipCm         *int16
+	Cup           *string
+	Extra         map[string]any
+	AttrSources   map[string]string
+	Aliases       []CharacterAliasRow
 	// Intros are the catalog_character_intro rows merged to one element per
 	// language (lowest source_id wins), the same contract as the work read
 	// face. Characters are catalog-native, so there is no claimed bridge —
@@ -1334,16 +1396,29 @@ func (s *ReadService) CharacterByID(ctx context.Context, characterID int64) (*Ch
 	db := s.db.WithContext(ctx)
 
 	var head struct {
-		ID          int64   `gorm:"column:id"`
-		DisplayName string  `gorm:"column:display_name"`
-		Latin       *string `gorm:"column:latin"`
-		Lang        string  `gorm:"column:lang"`
-		Gender      *int16  `gorm:"column:gender"`
-		Description string  `gorm:"column:description"`
-		InstanceOf  *int64  `gorm:"column:instance_of"`
-		ImageHash   *string `gorm:"column:image_hash"`
+		ID              int64          `gorm:"column:id"`
+		DisplayName     string         `gorm:"column:display_name"`
+		Latin           *string        `gorm:"column:latin"`
+		Lang            string         `gorm:"column:lang"`
+		Gender          *int16         `gorm:"column:gender"`
+		Description     string         `gorm:"column:description"`
+		InstanceOf      *int64         `gorm:"column:instance_of"`
+		ImageHash       *string        `gorm:"column:image_hash"`
+		BirthdayMonth   *int16         `gorm:"column:birthday_month"`
+		BirthdayDay     *int16         `gorm:"column:birthday_day"`
+		BloodType       *int16         `gorm:"column:blood_type"`
+		HeightCm        *int16         `gorm:"column:height_cm"`
+		WeightKg        *int16         `gorm:"column:weight_kg"`
+		BustCm          *int16         `gorm:"column:bust_cm"`
+		WaistCm         *int16         `gorm:"column:waist_cm"`
+		HipCm           *int16         `gorm:"column:hip_cm"`
+		Cup             *string        `gorm:"column:cup"`
+		Extra           datatypes.JSON `gorm:"column:extra"`
+		FieldProvenance datatypes.JSON `gorm:"column:field_provenance"`
 	}
-	if err := db.Raw(`SELECT id, display_name, latin, lang, gender, description, instance_of, image_hash
+	if err := db.Raw(`SELECT id, display_name, latin, lang, gender, description, instance_of, image_hash,
+		birthday_month, birthday_day, blood_type, height_cm, weight_kg, bust_cm, waist_cm, hip_cm, cup,
+		extra, field_provenance
 		FROM catalog_character WHERE id = ? AND deleted_at IS NULL`, characterID).Scan(&head).Error; err != nil {
 		return nil, err
 	}
@@ -1353,6 +1428,11 @@ func (s *ReadService) CharacterByID(ctx context.Context, characterID int64) (*Ch
 	detail := &CharacterDetail{
 		ID: head.ID, DisplayName: head.DisplayName, Latin: head.Latin, Lang: head.Lang,
 		Gender: head.Gender, Description: head.Description, InstanceOf: head.InstanceOf, ImageHash: head.ImageHash,
+		BirthdayMonth: head.BirthdayMonth, BirthdayDay: head.BirthdayDay, BloodType: head.BloodType,
+		HeightCm: head.HeightCm, WeightKg: head.WeightKg, BustCm: head.BustCm, WaistCm: head.WaistCm,
+		HipCm: head.HipCm, Cup: head.Cup,
+		Extra:       decodeCharExtra(head.Extra),
+		AttrSources: attrSources(head.FieldProvenance),
 	}
 	if err := db.Raw(`SELECT id, name, latin, lang, kind, is_primary_for_locale
 		FROM catalog_character_alias WHERE character_id = ? ORDER BY id`, characterID).Scan(&detail.Aliases).Error; err != nil {

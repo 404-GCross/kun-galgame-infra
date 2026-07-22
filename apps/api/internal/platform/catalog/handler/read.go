@@ -549,6 +549,13 @@ func (s *S2SServer) characterByID(ctx context.Context, in *characterByIDInput) (
 		ID: detail.ID, DisplayName: detail.DisplayName, Latin: derefStr(detail.Latin),
 		Lang: detail.Lang, Gender: derefI16(detail.Gender), Description: detail.Description,
 		InstanceOf: derefI64(detail.InstanceOf), ImageHash: derefStr(detail.ImageHash),
+		// Typed attribute columns flattened (step 81); a nil pointer maps to the
+		// zero value, which the omitempty tags drop.
+		BirthdayMonth: derefI16(detail.BirthdayMonth), BirthdayDay: derefI16(detail.BirthdayDay),
+		BloodType: derefI16(detail.BloodType), HeightCm: derefI16(detail.HeightCm),
+		WeightKg: derefI16(detail.WeightKg), BustCm: derefI16(detail.BustCm),
+		WaistCm: derefI16(detail.WaistCm), HipCm: derefI16(detail.HipCm), Cup: derefStr(detail.Cup),
+		Extra: detail.Extra, AttrSources: detail.AttrSources,
 		// Aliases/Intros pre-sized non-nil so a character with no aliases or no
 		// intro serializes `[]`, not `null` (docs/proj/16 #3).
 		Aliases: make([]dto.CharacterAlias, 0, len(detail.Aliases)),

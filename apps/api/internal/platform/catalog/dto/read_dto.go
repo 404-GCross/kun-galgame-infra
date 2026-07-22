@@ -456,8 +456,33 @@ type CharacterDetailResponse struct {
 	InstanceOf int64 `json:"instance_of,omitempty"`
 	// ImageHash is the portrait content hash in the image service; absent until
 	// the step-47 VNDB portrait wave backfills it.
-	ImageHash string           `json:"image_hash,omitempty"`
-	Aliases   []CharacterAlias `json:"aliases"`
+	ImageHash string `json:"image_hash,omitempty"`
+	// --- typical-set physical attributes (step 81 field PR C2) ---
+	// The display-core attribute set, flattened from the real typed columns;
+	// each is absent when unknown (there is no meaningful zero). BirthdayMonth/
+	// Day are month+day only (a source-supplied year lives in Extra["bgm"]).
+	// BloodType is 1=A 2=B 3=AB 4=O. Cup is the verbatim upper-cased cup token.
+	BirthdayMonth int16  `json:"birthday_month,omitempty"`
+	BirthdayDay   int16  `json:"birthday_day,omitempty"`
+	BloodType     int16  `json:"blood_type,omitempty" doc:"1=A 2=B 3=AB 4=O; absent = unknown"`
+	HeightCm      int16  `json:"height_cm,omitempty"`
+	WeightKg      int16  `json:"weight_kg,omitempty"`
+	BustCm        int16  `json:"bust_cm,omitempty"`
+	WaistCm       int16  `json:"waist_cm,omitempty"`
+	HipCm         int16  `json:"hip_cm,omitempty"`
+	Cup           string `json:"cup,omitempty"`
+	// Extra is the governed long-tail, source-namespaced ({"bgm": {…}}) — the
+	// Bangumi infobox fields that did not promote to a typed column (星座/年龄/
+	// 属性/趣味 …, plus a birthday year or an out-of-range measurement preserved
+	// verbatim). Absent when the character has no long-tail. Values are strings
+	// or string arrays.
+	Extra map[string]any `json:"extra,omitempty"`
+	// AttrSources is the source attribution for the typed attribute columns:
+	// {column → source key} (e.g. {"gender":"vndb","blood_type":"bangumi"}) taken
+	// from the latest field_provenance writer of each populated attribute. Absent
+	// when no attribute is populated.
+	AttrSources map[string]string `json:"attr_sources,omitempty"`
+	Aliases     []CharacterAlias  `json:"aliases"`
 	// Intros is the multilingual intro set (step 65): one element per language
 	// (lowest source_id wins), the WorkIntro shape. Characters are
 	// catalog-native, so these are always native catalog_character_intro rows

@@ -118,11 +118,39 @@ components:
           type:
             - array
             - "null"
+        attr_sources:
+          additionalProperties:
+            type: string
+          type: object
+        birthday_day:
+          format: int32
+          type: integer
+        birthday_month:
+          format: int32
+          type: integer
+        blood_type:
+          description: 1=A 2=B 3=AB 4=O; absent = unknown
+          format: int32
+          type: integer
+        bust_cm:
+          format: int32
+          type: integer
+        cup:
+          type: string
         description:
           type: string
         display_name:
           type: string
+        extra:
+          additionalProperties: {}
+          type: object
         gender:
+          format: int32
+          type: integer
+        height_cm:
+          format: int32
+          type: integer
+        hip_cm:
           format: int32
           type: integer
         id:
@@ -143,6 +171,12 @@ components:
           type: string
         latin:
           type: string
+        waist_cm:
+          format: int32
+          type: integer
+        weight_kg:
+          format: int32
+          type: integer
       required:
         - id
         - display_name
