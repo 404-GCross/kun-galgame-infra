@@ -116,7 +116,7 @@ func (h *PublicTaxonomyHandler) TagSearch(c fiber.Ctx) error {
 // carrying ALL given tag ids, projected to thin /v1 items. content_limit-gated.
 func (h *PublicTaxonomyHandler) TagMulti(c fiber.Ctx) error {
 	page, limit := taxPageLimit(c, 24, 50)
-	data, err := h.svc.TagMulti(c.Context(), parseIntList(c.Query("ids")), page, limit, taxContentLimit(c))
+	data, err := h.svc.TagMulti(c.Context(), parseIntList(c.Query("ids")), page, limit, taxContentLimit(c), service.ParsePublicItemInclude(c.Query("include")))
 	if err != nil {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
@@ -270,7 +270,7 @@ func (h *PublicTaxonomyHandler) EngineGalgameIDs(c fiber.Ctx) error {
 // each with a content_limit-gated member preview (thin items, batch-hydrated).
 func (h *PublicTaxonomyHandler) SeriesList(c fiber.Ctx) error {
 	page, limit := taxPageLimit(c, 24, 50)
-	data, err := h.svc.SeriesList(c.Context(), page, limit, taxContentLimit(c))
+	data, err := h.svc.SeriesList(c.Context(), page, limit, taxContentLimit(c), service.ParsePublicItemInclude(c.Query("include")))
 	if err != nil {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
@@ -284,7 +284,7 @@ func (h *PublicTaxonomyHandler) Series(c fiber.Ctx) error {
 	if !ok {
 		return nil
 	}
-	data, found, err := h.svc.Series(c.Context(), id, taxContentLimit(c))
+	data, found, err := h.svc.Series(c.Context(), id, taxContentLimit(c), service.ParsePublicItemInclude(c.Query("include")))
 	if err != nil {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}

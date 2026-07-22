@@ -40,14 +40,19 @@ func w1aGalgame() *model.Galgame {
 		{ImageHash: "shotN", SortOrder: 1, Width: 1280, Height: 720, Thumbhash: "sN", Sexual: 3},
 	}
 	g.Tag = []model.GalgameTagRelation{
-		{SpoilerLevel: 2, Tag: &model.GalgameTag{ID: 5, Name: "tag-a", Category: "content"}},
+		{SpoilerLevel: 2, Tag: &model.GalgameTag{ID: 5, Name: "tag-a", Category: "content", GalgameCount: 15}},
 	}
 	g.Official = []model.GalgameOfficialRelation{
-		{Official: &model.GalgameOfficial{ID: 7, Name: "maker-x", Category: "company", Lang: "ja-jp"}},
+		{Official: &model.GalgameOfficial{
+			ID: 7, Name: "maker-x", Category: "company", Lang: "ja-jp",
+			Link: "https://maker.example/", GalgameCount: 8,
+			Alias: []model.GalgameOfficialAlias{{Name: "maker-alias"}},
+		}},
 	}
 	g.Engine = []model.GalgameEngineRelation{
-		{Engine: &model.GalgameEngine{ID: 9, Name: "engine-y"}},
+		{Engine: &model.GalgameEngine{ID: 9, Name: "engine-y", GalgameCount: 3}},
 	}
+	g.Contributor = []model.GalgameContributor{{UserID: 88}, {UserID: 99}}
 	return g
 }
 
@@ -75,19 +80,20 @@ func TestProjectDetailW1aIncludeGating(t *testing.T) {
 	rec := svc.projectDetail(w1aGalgame(), sampleScoreMeta(), inc, "sfw", 12, false)
 	m := toMap(t, rec)
 
-	// links: curated {id,name,link,source}, source_key/user_id NOT surfaced.
+	// links: curated {id,name,link,source,user_id} (W1d added user_id for the
+	// downstream banned-author filter); source_key must still NOT surface.
 	links, ok := m["links"].([]any)
 	if !ok || len(links) != 2 {
 		t.Fatalf("links must be a 2-element array, got %v", m["links"])
 	}
 	l0 := links[0].(map[string]any)
-	wantLinkKeys := map[string]bool{"id": true, "name": true, "link": true, "source": true}
+	wantLinkKeys := map[string]bool{"id": true, "name": true, "link": true, "source": true, "user_id": true}
 	if len(l0) != len(wantLinkKeys) {
 		t.Errorf("link keys = %v, want exactly %v", keysOf(l0), wantLinkKeys)
 	}
 	for k := range l0 {
 		if !wantLinkKeys[k] {
-			t.Errorf("link carries unexpected key %q (source_key/user_id must not leak)", k)
+			t.Errorf("link carries unexpected key %q (source_key must not leak)", k)
 		}
 	}
 

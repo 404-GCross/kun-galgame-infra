@@ -43,6 +43,7 @@ type PublicInclude struct {
 	TagRefs      bool
 	OfficialRefs bool
 	EngineRefs   bool
+	Contributors bool
 }
 
 // ParsePublicInclude resolves the comma-separated `include` query token set.
@@ -73,6 +74,8 @@ func ParsePublicInclude(raw string) PublicInclude {
 			inc.OfficialRefs = true
 		case "engine_refs":
 			inc.EngineRefs = true
+		case "contributors":
+			inc.Contributors = true
 		}
 	}
 	return inc
@@ -190,7 +193,22 @@ func (s *GalgameService) projectDetail(g *model.Galgame, sm repository.ScoreMeta
 		m := buildPublicMeta(g)
 		rec.Meta = &m
 	}
+	if inc.Contributors {
+		c := publicContributors(g)
+		rec.Contributors = &c
+	}
 	return rec
+}
+
+// publicContributors projects the preloaded contributor relation to the curated
+// public shape ({user_id}). Always non-nil so include=contributors on a
+// contributor-less game emits [] rather than null. Order is the preloaded order.
+func publicContributors(g *model.Galgame) []dto.PublicContributor {
+	out := make([]dto.PublicContributor, 0, len(g.Contributor))
+	for i := range g.Contributor {
+		out = append(out, dto.PublicContributor{UserID: g.Contributor[i].UserID})
+	}
+	return out
 }
 
 // detailImages builds the images block from a galgame whose Cover / Screenshot
@@ -402,6 +420,7 @@ func (s *GalgameService) thinItems(ctx context.Context, rows []model.Galgame, co
 	var officialsByID map[int][]dto.PublicOfficial
 	var scoresByID map[int]repository.ScoreMeta
 	var metaByID map[int]model.Galgame
+	var introByID map[int]model.Galgame
 	if inc.Officials {
 		officialsByID, _ = s.galgameRepo.PublicOfficials(ctx, ids)
 	}
@@ -410,6 +429,9 @@ func (s *GalgameService) thinItems(ctx context.Context, rows []model.Galgame, co
 	}
 	if inc.Meta {
 		metaByID, _ = s.galgameRepo.PublicMetaBatch(ctx, ids)
+	}
+	if inc.Intro {
+		introByID, _ = s.galgameRepo.PublicIntroBatch(ctx, ids)
 	}
 
 	usable := func(m map[int]repository.PublicPinnedImage, id int) (string, bool) {
@@ -473,6 +495,21 @@ func (s *GalgameService) thinItems(ctx context.Context, rows []model.Galgame, co
 			}
 			m := buildPublicMeta(mg)
 			item.Meta = &m
+		}
+		if inc.Intro {
+			// Same batched-row fallback discipline as meta: a missing id (should
+			// not happen — same page) falls back to the list row's own intro cols.
+			ig := g
+			if row, ok := introByID[g.ID]; ok {
+				ig = &row
+			}
+			intro := dto.PublicIntro{
+				ZhCN: nullIfEmptyPub(ig.IntroZhCN),
+				EnUS: nullIfEmptyPub(ig.IntroEnUS),
+				JaJP: nullIfEmptyPub(ig.IntroJaJP),
+				ZhTW: nullIfEmptyPub(ig.IntroZhTW),
+			}
+			item.Intro = &intro
 		}
 		items[i] = item
 	}
@@ -585,6 +622,7 @@ func publicTagRefs(g *model.Galgame) []dto.PublicTagRef {
 				Name:         t.Name,
 				Category:     t.Category,
 				SpoilerLevel: g.Tag[i].SpoilerLevel,
+				GalgameCount: t.GalgameCount,
 			})
 		}
 	}
@@ -597,7 +635,15 @@ func publicOfficialRefs(g *model.Galgame) []dto.PublicOfficialRef {
 	refs := make([]dto.PublicOfficialRef, 0, len(g.Official))
 	for i := range g.Official {
 		if o := g.Official[i].Official; o != nil {
-			refs = append(refs, dto.PublicOfficialRef{ID: o.ID, Name: o.Name, Category: o.Category, Lang: o.Lang})
+			refs = append(refs, dto.PublicOfficialRef{
+				ID:           o.ID,
+				Name:         o.Name,
+				Category:     o.Category,
+				Lang:         o.Lang,
+				Link:         o.Link,
+				Aliases:      officialAliasNames(o.Alias),
+				GalgameCount: o.GalgameCount,
+			})
 		}
 	}
 	return refs
@@ -609,20 +655,21 @@ func publicEngineRefs(g *model.Galgame) []dto.PublicEngineRef {
 	refs := make([]dto.PublicEngineRef, 0, len(g.Engine))
 	for i := range g.Engine {
 		if e := g.Engine[i].Engine; e != nil {
-			refs = append(refs, dto.PublicEngineRef{ID: e.ID, Name: e.Name})
+			refs = append(refs, dto.PublicEngineRef{ID: e.ID, Name: e.Name, GalgameCount: e.GalgameCount})
 		}
 	}
 	return refs
 }
 
 // publicLinks projects the loaded links to the curated public shape
-// ({id,name,link,source}), dropping the internal source_key / user_id
-// bookkeeping. Order is the preloaded order (id ASC).
+// ({id,name,link,source,user_id}), dropping only the internal source_key
+// bookkeeping (user_id serves a downstream banned-author filter, W1d). Order is
+// the preloaded order (id ASC).
 func publicLinks(g *model.Galgame) []dto.PublicLink {
 	links := make([]dto.PublicLink, 0, len(g.Link))
 	for i := range g.Link {
 		l := &g.Link[i]
-		links = append(links, dto.PublicLink{ID: l.ID, Name: l.Name, Link: l.Link, Source: l.Source})
+		links = append(links, dto.PublicLink{ID: l.ID, Name: l.Name, Link: l.Link, Source: l.Source, UserID: l.UserID})
 	}
 	return links
 }

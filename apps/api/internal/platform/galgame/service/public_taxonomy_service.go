@@ -97,7 +97,7 @@ func (s *PublicTaxonomyService) TagGalgameIDs(ctx context.Context, id int) ([]in
 // TagMulti returns the published galgames carrying ALL given tag ids, projected
 // to thin /v1 items + the filtered total. contentLimit gates the rows (and drops
 // NSFW pins on the sfw face). Empty ids → empty page.
-func (s *PublicTaxonomyService) TagMulti(ctx context.Context, ids []int, page, limit int, contentLimit string) (dto.PublicItemListData, error) {
+func (s *PublicTaxonomyService) TagMulti(ctx context.Context, ids []int, page, limit int, contentLimit string, inc PublicItemInclude) (dto.PublicItemListData, error) {
 	if len(ids) == 0 {
 		return dto.PublicItemListData{Items: []dto.PublicGalgameItem{}, Total: 0}, nil
 	}
@@ -105,7 +105,7 @@ func (s *PublicTaxonomyService) TagMulti(ctx context.Context, ids []int, page, l
 	if err != nil {
 		return dto.PublicItemListData{}, err
 	}
-	items := s.galgame.PublicThinItemsFromRows(ctx, rows, contentLimit, PublicItemInclude{})
+	items := s.galgame.PublicThinItemsFromRows(ctx, rows, contentLimit, inc)
 	return dto.PublicItemListData{Items: items, Total: total}, nil
 }
 
@@ -193,7 +193,7 @@ func (s *PublicTaxonomyService) EngineGalgameIDs(ctx context.Context, id int) ([
 // embeds a member preview (thin items, capped by the repo) hydrated in ONE
 // batched pass across the whole page (non-N+1). galgame_count and the preview are
 // both content_limit-gated (they stay in sync, mirroring the bridge).
-func (s *PublicTaxonomyService) SeriesList(ctx context.Context, page, limit int, contentLimit string) (dto.PublicSeriesListData, error) {
+func (s *PublicTaxonomyService) SeriesList(ctx context.Context, page, limit int, contentLimit string, inc PublicItemInclude) (dto.PublicSeriesListData, error) {
 	rows, total, err := s.seriesRepo.List(ctx, page, limit, contentLimit)
 	if err != nil {
 		return dto.PublicSeriesListData{}, err
@@ -207,7 +207,7 @@ func (s *PublicTaxonomyService) SeriesList(ctx context.Context, page, limit int,
 		counts[i] = len(rows[i].Galgame)
 		combined = append(combined, rows[i].Galgame...)
 	}
-	previews := s.galgame.PublicThinItemsFromRows(ctx, combined, contentLimit, PublicItemInclude{})
+	previews := s.galgame.PublicThinItemsFromRows(ctx, combined, contentLimit, inc)
 
 	items := make([]dto.PublicSeriesEntity, len(rows))
 	off := 0
@@ -219,6 +219,8 @@ func (s *PublicTaxonomyService) SeriesList(ctx context.Context, page, limit int,
 			Description:  rows[i].Description,
 			GalgameCount: rows[i].GalgameCount,
 			Galgames:     sliceItems(previews, off, n),
+			Created:      fmtPublicTS(rows[i].Created),
+			Updated:      fmtPublicTS(rows[i].Updated),
 		}
 		off += n
 	}
@@ -229,7 +231,7 @@ func (s *PublicTaxonomyService) SeriesList(ctx context.Context, page, limit int,
 // set projected to thin items. galgame_count is the gated member count (the
 // detail returns every gated member, so len == the content_limit-filtered count,
 // matching the list's count semantics).
-func (s *PublicTaxonomyService) Series(ctx context.Context, id int, contentLimit string) (dto.PublicSeriesEntity, bool, error) {
+func (s *PublicTaxonomyService) Series(ctx context.Context, id int, contentLimit string, inc PublicItemInclude) (dto.PublicSeriesEntity, bool, error) {
 	series, err := s.seriesRepo.FindByID(ctx, id, contentLimit)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -237,13 +239,15 @@ func (s *PublicTaxonomyService) Series(ctx context.Context, id int, contentLimit
 		}
 		return dto.PublicSeriesEntity{}, false, err
 	}
-	previews := s.galgame.PublicThinItemsFromRows(ctx, series.Galgame, contentLimit, PublicItemInclude{})
+	previews := s.galgame.PublicThinItemsFromRows(ctx, series.Galgame, contentLimit, inc)
 	return dto.PublicSeriesEntity{
 		ID:           series.ID,
 		Name:         series.Name,
 		Description:  series.Description,
 		GalgameCount: len(previews),
 		Galgames:     previews,
+		Created:      fmtPublicTS(series.Created),
+		Updated:      fmtPublicTS(series.Updated),
 	}, true, nil
 }
 

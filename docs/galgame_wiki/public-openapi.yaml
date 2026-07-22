@@ -644,6 +644,15 @@ components:
         - items
         - next_cursor
       type: object
+    PublicContributor:
+      additionalProperties: false
+      properties:
+        user_id:
+          format: int64
+          type: integer
+      required:
+        - user_id
+      type: object
     PublicEngineEntity:
       additionalProperties: false
       properties:
@@ -689,6 +698,9 @@ components:
     PublicEngineRef:
       additionalProperties: false
       properties:
+        galgame_count:
+          format: int64
+          type: integer
         id:
           format: int64
           type: integer
@@ -697,6 +709,7 @@ components:
       required:
         - id
         - name
+        - galgame_count
       type: object
     PublicEnvelopeCalendarMonthData:
       additionalProperties: false
@@ -1244,6 +1257,10 @@ components:
           type:
             - integer
             - "null"
+        contributors:
+          items:
+            $ref: "#/components/schemas/PublicContributor"
+          type: array
         id:
           format: int64
           type: integer
@@ -1300,6 +1317,8 @@ components:
         id:
           format: int64
           type: integer
+        intro:
+          $ref: "#/components/schemas/PublicIntro"
         meta:
           $ref: "#/components/schemas/PublicMeta"
         names:
@@ -1445,11 +1464,15 @@ components:
           type: string
         source:
           type: string
+        user_id:
+          format: int64
+          type: integer
       required:
         - id
         - name
         - link
         - source
+        - user_id
       type: object
     PublicListData:
       additionalProperties: false
@@ -1624,12 +1647,23 @@ components:
     PublicOfficialRef:
       additionalProperties: false
       properties:
+        aliases:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
         category:
           type: string
+        galgame_count:
+          format: int64
+          type: integer
         id:
           format: int64
           type: integer
         lang:
+          type: string
+        link:
           type: string
         name:
           type: string
@@ -1638,6 +1672,9 @@ components:
         - name
         - category
         - lang
+        - link
+        - aliases
+        - galgame_count
       type: object
     PublicOfficialSearchData:
       additionalProperties: false
@@ -1757,6 +1794,8 @@ components:
     PublicSeriesEntity:
       additionalProperties: false
       properties:
+        created:
+          type: string
         description:
           type: string
         galgame_count:
@@ -1773,12 +1812,16 @@ components:
           type: integer
         name:
           type: string
+        updated:
+          type: string
       required:
         - id
         - name
         - description
         - galgame_count
         - galgames
+        - created
+        - updated
       type: object
     PublicSeriesListData:
       additionalProperties: false
@@ -1868,6 +1911,9 @@ components:
       properties:
         category:
           type: string
+        galgame_count:
+          format: int64
+          type: integer
         id:
           format: int64
           type: integer
@@ -1881,6 +1927,7 @@ components:
         - name
         - category
         - spoiler_level
+        - galgame_count
       type: object
     PublicTagSearchData:
       additionalProperties: false
@@ -2043,12 +2090,12 @@ paths:
             description: Items per page 1-100 (default 20)
             format: int64
             type: integer
-        - description: "Comma-separated blocks to expand on each item: officials,scores,meta (default: none). Unknown names are ignored."
+        - description: "Comma-separated blocks to expand on each item: officials,scores,meta,intro (default: none). Unknown names are ignored."
           explode: false
           in: query
           name: include
           schema:
-            description: "Comma-separated blocks to expand on each item: officials,scores,meta (default: none). Unknown names are ignored."
+            description: "Comma-separated blocks to expand on each item: officials,scores,meta,intro (default: none). Unknown names are ignored."
             type: string
         - description: Comma-separated top-level response keys to return (sparse fieldset); id is always included and unknown names are ignored (never a 400). Write keys in alphabetical order to maximize CDN cache hits.
           explode: false
@@ -2101,12 +2148,12 @@ paths:
               - brief
               - detail
             type: string
-        - description: "Comma-separated blocks to expand on each item (brief view only): officials,scores,meta (default: none). Unknown names are ignored."
+        - description: "Comma-separated blocks to expand on each item (brief view only): officials,scores,meta,intro (default: none). Unknown names are ignored."
           explode: false
           in: query
           name: include
           schema:
-            description: "Comma-separated blocks to expand on each item (brief view only): officials,scores,meta (default: none). Unknown names are ignored."
+            description: "Comma-separated blocks to expand on each item (brief view only): officials,scores,meta,intro (default: none). Unknown names are ignored."
             type: string
         - description: Comma-separated top-level response keys to return (sparse fieldset); id is always included and unknown names are ignored (never a 400). Write keys in alphabetical order to maximize CDN cache hits.
           explode: false
@@ -2635,12 +2682,12 @@ paths:
             description: Items per page (default 24)
             format: int64
             type: integer
-        - description: "Comma-separated blocks to expand on each item: officials,scores,meta (default: none). Unknown names are ignored."
+        - description: "Comma-separated blocks to expand on each item: officials,scores,meta,intro (default: none). Unknown names are ignored."
           explode: false
           in: query
           name: include
           schema:
-            description: "Comma-separated blocks to expand on each item: officials,scores,meta (default: none). Unknown names are ignored."
+            description: "Comma-separated blocks to expand on each item: officials,scores,meta,intro (default: none). Unknown names are ignored."
             type: string
         - description: Comma-separated top-level response keys to return (sparse fieldset); id is always included and unknown names are ignored (never a 400). Write keys in alphabetical order to maximize CDN cache hits.
           explode: false
@@ -2784,6 +2831,13 @@ paths:
           schema:
             description: "Content filter: sfw (default) | nsfw | all. Gates each series' member preview + galgame_count. nsfw/all require the galgame:nsfw scope; otherwise silently coerced to sfw."
             type: string
+        - description: "Comma-separated blocks to expand on the embedded member previews: officials,scores,meta,intro (default: none). Unknown names are ignored."
+          explode: false
+          in: query
+          name: include
+          schema:
+            description: "Comma-separated blocks to expand on the embedded member previews: officials,scores,meta,intro (default: none). Unknown names are ignored."
+            type: string
       responses:
         "200":
           content:
@@ -2804,6 +2858,13 @@ paths:
     get:
       operationId: getSeriesPublic
       parameters:
+        - description: "Comma-separated blocks to expand on the embedded member set: officials,scores,meta,intro (default: none). Unknown names are ignored."
+          explode: false
+          in: query
+          name: include
+          schema:
+            description: "Comma-separated blocks to expand on the embedded member set: officials,scores,meta,intro (default: none). Unknown names are ignored."
+            type: string
         - description: Series id
           in: path
           name: id
@@ -2930,6 +2991,13 @@ paths:
           name: content_limit
           schema:
             description: "Content filter: sfw (default) | nsfw | all. nsfw/all require the galgame:nsfw scope; otherwise silently coerced to sfw."
+            type: string
+        - description: "Comma-separated blocks to expand on each item: officials,scores,meta,intro (default: none). Unknown names are ignored."
+          explode: false
+          in: query
+          name: include
+          schema:
+            description: "Comma-separated blocks to expand on each item: officials,scores,meta,intro (default: none). Unknown names are ignored."
             type: string
       responses:
         "200":
@@ -3122,12 +3190,12 @@ paths:
             description: Galgame ID
             format: int64
             type: integer
-        - description: "Comma-separated heavy blocks to include: intro,scores,covers,taxonomy,links,screenshots,series,meta (default: none). tag_refs,official_refs,engine_refs enrich the taxonomy block and are meaningful only together with taxonomy. Unknown names are ignored."
+        - description: "Comma-separated heavy blocks to include: intro,scores,covers,taxonomy,links,screenshots,series,meta,contributors (default: none). tag_refs,official_refs,engine_refs enrich the taxonomy block and are meaningful only together with taxonomy. Unknown names are ignored."
           explode: false
           in: query
           name: include
           schema:
-            description: "Comma-separated heavy blocks to include: intro,scores,covers,taxonomy,links,screenshots,series,meta (default: none). tag_refs,official_refs,engine_refs enrich the taxonomy block and are meaningful only together with taxonomy. Unknown names are ignored."
+            description: "Comma-separated heavy blocks to include: intro,scores,covers,taxonomy,links,screenshots,series,meta,contributors (default: none). tag_refs,official_refs,engine_refs enrich the taxonomy block and are meaningful only together with taxonomy. Unknown names are ignored."
             type: string
         - description: Comma-separated top-level response keys to return (sparse fieldset); id is always included and unknown names are ignored (never a 400). Write keys in alphabetical order to maximize CDN cache hits.
           explode: false
