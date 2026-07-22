@@ -153,6 +153,30 @@ func (r *GalgameRepository) PublicMetaBatch(ctx context.Context, ids []int) (map
 	return out, nil
 }
 
+// PublicIntroBatch returns {galgame_id → row} carrying the four localized intro
+// columns (the open-API list/batch/search include=intro expansion, W1d) for a
+// whole page of ids in ONE IN query — the batch loader behind the item-level
+// intro block (never one query per item). A HEAVY block (the intro_* columns are
+// full markdown), opted in only when the caller asks. Safe for empty input.
+func (r *GalgameRepository) PublicIntroBatch(ctx context.Context, ids []int) (map[int]model.Galgame, error) {
+	out := make(map[int]model.Galgame, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	var rows []model.Galgame
+	if err := r.db.WithContext(ctx).
+		Model(&model.Galgame{}).
+		Select("id, intro_en_us, intro_ja_jp, intro_zh_cn, intro_zh_tw").
+		Where("id IN ?", ids).
+		Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	for i := range rows {
+		out[rows[i].ID] = rows[i]
+	}
+	return out, nil
+}
+
 // SeriesGalgameCount returns the number of PUBLISHED (status=0) galgames in a
 // series — the galgame_count for the open-API detail include=series block. It
 // counts status=0 regardless of content_limit, matching the tag/official/engine

@@ -34,6 +34,7 @@ type publicSeriesListInput struct {
 	Page         int    `query:"page" doc:"Page number (default 1)"`
 	Limit        int    `query:"limit" doc:"Items per page 1-50 (default 24)"`
 	ContentLimit string `query:"content_limit" doc:"Content filter: sfw (default) | nsfw | all. Gates each series' member preview + galgame_count. nsfw/all require the galgame:nsfw scope; otherwise silently coerced to sfw."`
+	Include      string `query:"include" doc:"Comma-separated blocks to expand on the embedded member previews: officials,scores,meta,intro (default: none). Unknown names are ignored."`
 }
 
 type publicTagMultiInput struct {
@@ -41,6 +42,7 @@ type publicTagMultiInput struct {
 	Page         int    `query:"page" doc:"Page number (default 1)"`
 	Limit        int    `query:"limit" doc:"Items per page 1-50 (default 24)"`
 	ContentLimit string `query:"content_limit" doc:"Content filter: sfw (default) | nsfw | all. nsfw/all require the galgame:nsfw scope; otherwise silently coerced to sfw."`
+	Include      string `query:"include" doc:"Comma-separated blocks to expand on each item: officials,scores,meta,intro (default: none). Unknown names are ignored."`
 }
 
 type publicTagSearchInput struct {
@@ -60,7 +62,9 @@ type publicTaxEntityInput struct {
 	ID int `path:"id" doc:"Entity id"`
 }
 
+// Include documents the member-preview expansion for the series detail (W1d).
 type publicSeriesDetailInput struct {
+	Include      string `query:"include" doc:"Comma-separated blocks to expand on the embedded member set: officials,scores,meta,intro (default: none). Unknown names are ignored."`
 	ID           int    `path:"id" doc:"Series id"`
 	ContentLimit string `query:"content_limit" doc:"Content filter: sfw (default) | nsfw | all. Gates the embedded member set + galgame_count. nsfw/all require the galgame:nsfw scope; otherwise silently coerced to sfw."`
 }

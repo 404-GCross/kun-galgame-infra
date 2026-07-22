@@ -23,6 +23,11 @@ type PublicItemInclude struct {
 	// catalog_work_id, user_id, resource_update_time, view, created) —
 	// batch-loaded across the page (裁定 2).
 	Meta bool
+	// Intro is the W1d localized-introduction block (the four intro_* markdown
+	// columns) — a HEAVY block, batch-loaded across the page in one IN. Opted in
+	// only for the rare list/batch consumer that needs per-item introductions
+	// (kungal's activity-feed detail cards).
+	Intro bool
 }
 
 // ParsePublicItemInclude resolves the comma-separated list-level `include` token
@@ -38,6 +43,8 @@ func ParsePublicItemInclude(raw string) PublicItemInclude {
 			inc.Scores = true
 		case "meta":
 			inc.Meta = true
+		case "intro":
+			inc.Intro = true
 		}
 	}
 	return inc
@@ -45,7 +52,7 @@ func ParsePublicItemInclude(raw string) PublicItemInclude {
 
 // Any reports whether at least one block was requested (skip the batch loaders
 // entirely otherwise).
-func (i PublicItemInclude) Any() bool { return i.Officials || i.Scores || i.Meta }
+func (i PublicItemInclude) Any() bool { return i.Officials || i.Scores || i.Meta || i.Intro }
 
 // PublicFields is the parsed sparse-fieldset selector (fields=). Inactive (the
 // parameter absent/empty) means "return the full frozen shape". A present set

@@ -57,7 +57,7 @@ export const docsModel: DocsModel = {
                   "in": "query",
                   "required": false,
                   "type": "string",
-                  "doc": "Comma-separated blocks to expand on each item: officials,scores,meta (default: none). Unknown names are ignored."
+                  "doc": "Comma-separated blocks to expand on each item: officials,scores,meta,intro (default: none). Unknown names are ignored."
                 },
                 {
                   "name": "fields",
@@ -157,6 +157,36 @@ export const docsModel: DocsModel = {
                                   "required": true,
                                   "format": "int64",
                                   "type": "integer"
+                                },
+                                {
+                                  "name": "intro",
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "en-us",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "ja-jp",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "zh-cn",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "zh-tw",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "string"
+                                    }
+                                  ]
                                 },
                                 {
                                   "name": "meta",
@@ -535,7 +565,7 @@ export const docsModel: DocsModel = {
                   "in": "query",
                   "required": false,
                   "type": "string",
-                  "doc": "Comma-separated heavy blocks to include: intro,scores,covers,taxonomy,links,screenshots,series,meta (default: none). tag_refs,official_refs,engine_refs enrich the taxonomy block and are meaningful only together with taxonomy. Unknown names are ignored."
+                  "doc": "Comma-separated heavy blocks to include: intro,scores,covers,taxonomy,links,screenshots,series,meta,contributors (default: none). tag_refs,official_refs,engine_refs enrich the taxonomy block and are meaningful only together with taxonomy. Unknown names are ignored."
                 },
                 {
                   "name": "fields",
@@ -621,6 +651,21 @@ export const docsModel: DocsModel = {
                             "nullable": true,
                             "format": "int64",
                             "type": "integer"
+                          },
+                          {
+                            "name": "contributors",
+                            "type": "array",
+                            "itemsOf": {
+                              "type": "object",
+                              "children": [
+                                {
+                                  "name": "user_id",
+                                  "required": true,
+                                  "format": "int64",
+                                  "type": "integer"
+                                }
+                              ]
+                            }
                           },
                           {
                             "name": "id",
@@ -885,6 +930,12 @@ export const docsModel: DocsModel = {
                                   "name": "source",
                                   "required": true,
                                   "type": "string"
+                                },
+                                {
+                                  "name": "user_id",
+                                  "required": true,
+                                  "format": "int64",
+                                  "type": "integer"
                                 }
                               ]
                             }
@@ -1158,6 +1209,12 @@ export const docsModel: DocsModel = {
                                   "type": "object",
                                   "children": [
                                     {
+                                      "name": "galgame_count",
+                                      "required": true,
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
                                       "name": "id",
                                       "required": true,
                                       "format": "int64",
@@ -1187,9 +1244,24 @@ export const docsModel: DocsModel = {
                                   "type": "object",
                                   "children": [
                                     {
+                                      "name": "aliases",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "array",
+                                      "itemsOf": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    {
                                       "name": "category",
                                       "required": true,
                                       "type": "string"
+                                    },
+                                    {
+                                      "name": "galgame_count",
+                                      "required": true,
+                                      "format": "int64",
+                                      "type": "integer"
                                     },
                                     {
                                       "name": "id",
@@ -1199,6 +1271,11 @@ export const docsModel: DocsModel = {
                                     },
                                     {
                                       "name": "lang",
+                                      "required": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "link",
                                       "required": true,
                                       "type": "string"
                                     },
@@ -1249,6 +1326,12 @@ export const docsModel: DocsModel = {
                                       "name": "category",
                                       "required": true,
                                       "type": "string"
+                                    },
+                                    {
+                                      "name": "galgame_count",
+                                      "required": true,
+                                      "format": "int64",
+                                      "type": "integer"
                                     },
                                     {
                                       "name": "id",
@@ -1392,7 +1475,7 @@ export const docsModel: DocsModel = {
                   "in": "query",
                   "required": false,
                   "type": "string",
-                  "doc": "Comma-separated blocks to expand on each item (brief view only): officials,scores,meta (default: none). Unknown names are ignored."
+                  "doc": "Comma-separated blocks to expand on each item (brief view only): officials,scores,meta,intro (default: none). Unknown names are ignored."
                 },
                 {
                   "name": "fields",
@@ -1492,6 +1575,36 @@ export const docsModel: DocsModel = {
                                   "required": true,
                                   "format": "int64",
                                   "type": "integer"
+                                },
+                                {
+                                  "name": "intro",
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "en-us",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "ja-jp",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "zh-cn",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "zh-tw",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "string"
+                                    }
+                                  ]
                                 },
                                 {
                                   "name": "meta",
@@ -4946,7 +5059,7 @@ export const docsModel: DocsModel = {
                   "in": "query",
                   "required": false,
                   "type": "string",
-                  "doc": "Comma-separated blocks to expand on each item: officials,scores,meta (default: none). Unknown names are ignored."
+                  "doc": "Comma-separated blocks to expand on each item: officials,scores,meta,intro (default: none). Unknown names are ignored."
                 },
                 {
                   "name": "fields",
@@ -5188,6 +5301,36 @@ export const docsModel: DocsModel = {
                                   "required": true,
                                   "format": "int64",
                                   "type": "integer"
+                                },
+                                {
+                                  "name": "intro",
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "en-us",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "ja-jp",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "zh-cn",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "zh-tw",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "string"
+                                    }
+                                  ]
                                 },
                                 {
                                   "name": "meta",
@@ -5527,6 +5670,36 @@ export const docsModel: DocsModel = {
                                   "required": true,
                                   "format": "int64",
                                   "type": "integer"
+                                },
+                                {
+                                  "name": "intro",
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "en-us",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "ja-jp",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "zh-cn",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "zh-tw",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "string"
+                                    }
+                                  ]
                                 },
                                 {
                                   "name": "meta",
@@ -5914,6 +6087,13 @@ export const docsModel: DocsModel = {
                   "required": false,
                   "type": "string",
                   "doc": "Content filter: sfw (default) | nsfw | all. Gates each series' member preview + galgame_count. nsfw/all require the galgame:nsfw scope; otherwise silently coerced to sfw."
+                },
+                {
+                  "name": "include",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "Comma-separated blocks to expand on the embedded member previews: officials,scores,meta,intro (default: none). Unknown names are ignored."
                 }
               ],
               "responses": [
@@ -5942,6 +6122,11 @@ export const docsModel: DocsModel = {
                             "itemsOf": {
                               "type": "object",
                               "children": [
+                                {
+                                  "name": "created",
+                                  "required": true,
+                                  "type": "string"
+                                },
                                 {
                                   "name": "description",
                                   "required": true,
@@ -6018,6 +6203,36 @@ export const docsModel: DocsModel = {
                                         "required": true,
                                         "format": "int64",
                                         "type": "integer"
+                                      },
+                                      {
+                                        "name": "intro",
+                                        "type": "object",
+                                        "children": [
+                                          {
+                                            "name": "en-us",
+                                            "required": true,
+                                            "nullable": true,
+                                            "type": "string"
+                                          },
+                                          {
+                                            "name": "ja-jp",
+                                            "required": true,
+                                            "nullable": true,
+                                            "type": "string"
+                                          },
+                                          {
+                                            "name": "zh-cn",
+                                            "required": true,
+                                            "nullable": true,
+                                            "type": "string"
+                                          },
+                                          {
+                                            "name": "zh-tw",
+                                            "required": true,
+                                            "nullable": true,
+                                            "type": "string"
+                                          }
+                                        ]
                                       },
                                       {
                                         "name": "meta",
@@ -6304,6 +6519,11 @@ export const docsModel: DocsModel = {
                                   "name": "name",
                                   "required": true,
                                   "type": "string"
+                                },
+                                {
+                                  "name": "updated",
+                                  "required": true,
+                                  "type": "string"
                                 }
                               ]
                             }
@@ -6406,6 +6626,13 @@ export const docsModel: DocsModel = {
                   "doc": "Series id"
                 },
                 {
+                  "name": "include",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "Comma-separated blocks to expand on the embedded member set: officials,scores,meta,intro (default: none). Unknown names are ignored."
+                },
+                {
                   "name": "content_limit",
                   "in": "query",
                   "required": false,
@@ -6431,6 +6658,11 @@ export const docsModel: DocsModel = {
                         "required": true,
                         "type": "object",
                         "children": [
+                          {
+                            "name": "created",
+                            "required": true,
+                            "type": "string"
+                          },
                           {
                             "name": "description",
                             "required": true,
@@ -6507,6 +6739,36 @@ export const docsModel: DocsModel = {
                                   "required": true,
                                   "format": "int64",
                                   "type": "integer"
+                                },
+                                {
+                                  "name": "intro",
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "en-us",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "ja-jp",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "zh-cn",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "zh-tw",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "string"
+                                    }
+                                  ]
                                 },
                                 {
                                   "name": "meta",
@@ -6791,6 +7053,11 @@ export const docsModel: DocsModel = {
                           },
                           {
                             "name": "name",
+                            "required": true,
+                            "type": "string"
+                          },
+                          {
+                            "name": "updated",
                             "required": true,
                             "type": "string"
                           }
@@ -7862,6 +8129,13 @@ export const docsModel: DocsModel = {
                   "required": false,
                   "type": "string",
                   "doc": "Content filter: sfw (default) | nsfw | all. nsfw/all require the galgame:nsfw scope; otherwise silently coerced to sfw."
+                },
+                {
+                  "name": "include",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "Comma-separated blocks to expand on each item: officials,scores,meta,intro (default: none). Unknown names are ignored."
                 }
               ],
               "responses": [
@@ -7947,6 +8221,36 @@ export const docsModel: DocsModel = {
                                   "required": true,
                                   "format": "int64",
                                   "type": "integer"
+                                },
+                                {
+                                  "name": "intro",
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "en-us",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "ja-jp",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "zh-cn",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "zh-tw",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "string"
+                                    }
+                                  ]
                                 },
                                 {
                                   "name": "meta",

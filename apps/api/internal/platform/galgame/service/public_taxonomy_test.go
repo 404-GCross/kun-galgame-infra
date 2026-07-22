@@ -138,14 +138,14 @@ func TestPublicTagMultiIntersection(t *testing.T) {
 	require.NoError(t, testDB.Create(&model.GalgameTagRelation{GalgameID: both, TagID: t2}).Error)
 	require.NoError(t, testDB.Create(&model.GalgameTagRelation{GalgameID: onlyOne, TagID: t1}).Error)
 
-	res, err := svc.TagMulti(ctx, []int{t1, t2}, 1, 24, "sfw")
+	res, err := svc.TagMulti(ctx, []int{t1, t2}, 1, 24, "sfw", PublicItemInclude{})
 	require.NoError(t, err)
 	require.Equal(t, int64(1), res.Total)
 	require.Len(t, res.Items, 1)
 	require.Equal(t, both, res.Items[0].ID)
 
 	// Empty ids → empty (non-nil) page.
-	res, err = svc.TagMulti(ctx, nil, 1, 24, "sfw")
+	res, err = svc.TagMulti(ctx, nil, 1, 24, "sfw", PublicItemInclude{})
 	require.NoError(t, err)
 	require.Equal(t, int64(0), res.Total)
 	require.NotNil(t, res.Items)
@@ -222,7 +222,7 @@ func TestPublicSeriesPreviewSfwGate(t *testing.T) {
 	seedTaxGalgame(t, 840002, &sID, "nsfw")
 
 	// Detail sfw: only the sfw member; count in sync.
-	sfw, found, err := svc.Series(ctx, sID, "sfw")
+	sfw, found, err := svc.Series(ctx, sID, "sfw", PublicItemInclude{})
 	require.NoError(t, err)
 	require.True(t, found)
 	require.Len(t, sfw.Galgames, 1, "sfw series detail must drop the nsfw member")
@@ -230,14 +230,14 @@ func TestPublicSeriesPreviewSfwGate(t *testing.T) {
 	require.Equal(t, 1, sfw.GalgameCount)
 
 	// Detail all: both members.
-	all, found, err := svc.Series(ctx, sID, "")
+	all, found, err := svc.Series(ctx, sID, "", PublicItemInclude{})
 	require.NoError(t, err)
 	require.True(t, found)
 	require.Len(t, all.Galgames, 2)
 	require.Equal(t, 2, all.GalgameCount)
 
 	// List sfw: the series' cnt reflects the gated set.
-	list, err := svc.SeriesList(ctx, 1, 24, "sfw")
+	list, err := svc.SeriesList(ctx, 1, 24, "sfw", PublicItemInclude{})
 	require.NoError(t, err)
 	var got *int
 	for i := range list.Items {
@@ -250,7 +250,7 @@ func TestPublicSeriesPreviewSfwGate(t *testing.T) {
 	require.Equal(t, 1, *got, "sfw list count must reflect the gated member set")
 
 	// Missing id → not found.
-	_, found, _ = svc.Series(ctx, 999999, "sfw")
+	_, found, _ = svc.Series(ctx, 999999, "sfw", PublicItemInclude{})
 	require.False(t, found)
 }
 
@@ -280,7 +280,7 @@ func TestPublicSeriesListNonN1(t *testing.T) {
 		tsvc := NewPublicTaxonomyService(
 			repository.NewTagRepository(sess), repository.NewOfficialRepository(sess),
 			repository.NewEngineRepository(sess), repository.NewSeriesRepository(sess), gsvc)
-		data, err := tsvc.SeriesList(ctx, 1, limit, "sfw")
+		data, err := tsvc.SeriesList(ctx, 1, limit, "sfw", PublicItemInclude{})
 		require.NoError(t, err)
 		require.NotEmpty(t, data.Items)
 		return atomic.LoadInt64(&n)

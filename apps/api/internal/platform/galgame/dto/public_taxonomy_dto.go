@@ -86,6 +86,11 @@ type PublicSeriesEntity struct {
 	Description  string              `json:"description"`
 	GalgameCount int                 `json:"galgame_count"`
 	Galgames     []PublicGalgameItem `json:"galgames"`
+	// Created / Updated (W1d) — the series' timestamps, carried on the loaded
+	// row (this is a W1b-new surface with zero legacy consumers, so adding the
+	// keys is byte-safe for existing callers).
+	Created string `json:"created"`
+	Updated string `json:"updated"`
 }
 
 // PublicSeriesListData is the series list envelope (GET /v1/galgame/series).

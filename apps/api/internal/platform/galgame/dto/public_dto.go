@@ -109,6 +109,10 @@ type PublicTagRef struct {
 	Name         string `json:"name"`
 	Category     string `json:"category"`
 	SpoilerLevel int    `json:"spoiler_level"`
+	// GalgameCount is the tag's published-galgame count (W1d) — the same
+	// cnt-join the detail FindByID preload already computes, projected here so a
+	// downstream can render the "+N" chip without an entity follow-up.
+	GalgameCount int `json:"galgame_count"`
 }
 
 // PublicOfficialRef is a rich maker reference in the taxonomy block's
@@ -119,6 +123,14 @@ type PublicOfficialRef struct {
 	Name     string `json:"name"`
 	Category string `json:"category"`
 	Lang     string `json:"lang"`
+	// Link + Aliases + GalgameCount (W1d) — the maker's website, curated alias
+	// names, and published-galgame count, all already preloaded on the detail
+	// FindByID (Official.Official + its Alias + the cnt-join), projected here so
+	// a downstream renders the full maker chip in one round-trip. Curated: no
+	// raw alias rows, no CatalogLabelID.
+	Link         string   `json:"link"`
+	Aliases      []string `json:"aliases"`
+	GalgameCount int      `json:"galgame_count"`
 }
 
 // PublicEngineRef is a rich engine reference in the taxonomy block's engine_refs
@@ -126,16 +138,21 @@ type PublicOfficialRef struct {
 type PublicEngineRef struct {
 	ID   int    `json:"id"`
 	Name string `json:"name"`
+	// GalgameCount is the engine's published-galgame count (W1d) — the cnt-join
+	// the detail preload already computes, projected for the downstream "+N" chip.
+	GalgameCount int `json:"galgame_count"`
 }
 
 // PublicLink is one curated external link (include=links): id + display name +
-// url + provenance source ("" = user-added, "vndb" = auto-synced). The internal
-// source_key / user_id bookkeeping is intentionally not surfaced.
+// url + provenance source ("" = user-added, "vndb" = auto-synced) + the adding
+// user's id (W1d — serves a downstream banned-author T&S filter server-side; the
+// internal source_key bookkeeping stays unsurfaced).
 type PublicLink struct {
 	ID     int    `json:"id"`
 	Name   string `json:"name"`
 	Link   string `json:"link"`
 	Source string `json:"source"`
+	UserID int    `json:"user_id"`
 }
 
 // PublicSeriesRef is the series reference block (include=series): the series id,
@@ -222,8 +239,20 @@ type PublicGalgame struct {
 	Links  *[]PublicLink    `json:"links,omitempty"`
 	Series *PublicSeriesRef `json:"series,omitempty"`
 	Meta   *PublicMeta      `json:"meta,omitempty"`
+	// Contributors is the W1d detail-only include (include=contributors): the
+	// curated list of user ids who created / edited this galgame, projected from
+	// the already-preloaded Contributor relation. Only the user_id is surfaced —
+	// a downstream resolves the user brief with its own OAuth client. Pointer
+	// slice so include=contributors on a contributor-less game still emits [].
+	Contributors *[]PublicContributor `json:"contributors,omitempty"`
 	// (include=screenshots lands under images.screenshots, mirroring how
 	// include=covers lands under images.covers.)
+}
+
+// PublicContributor is one entry in the detail's include=contributors block: the
+// contributing user's id (the downstream hydrates name/avatar itself).
+type PublicContributor struct {
+	UserID int `json:"user_id"`
 }
 
 // PublicGalgameItem is the thin list / batch / search item — a fixed subset of
@@ -252,6 +281,10 @@ type PublicGalgameItem struct {
 	// Meta is the flat operational-metadata block, present only under
 	// include=meta (W1a). Batch-loaded across the whole page (no N+1).
 	Meta *PublicMeta `json:"meta,omitempty"`
+	// Intro is the localized-introduction block, present only under include=intro
+	// (W1d). A HEAVY block (four full markdown columns) — batch-loaded across the
+	// whole page in one IN (no N+1); key absent unless requested.
+	Intro *PublicIntro `json:"intro,omitempty"`
 }
 
 // PublicListData is the cursor-paginated list envelope (GET /v1/galgame).
