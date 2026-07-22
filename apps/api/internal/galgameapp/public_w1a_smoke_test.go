@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -181,9 +182,17 @@ func TestPublicW1aSmoke(t *testing.T) {
 	t.Cleanup(func() { w1aCleanup(t) })
 	w1aSeed(t)
 
-	// Meilisearch (skips search sub-cases if unreachable).
-	msHost := "http://127.0.0.1:7700"
-	msClient, msErr := searchInfra.NewClient(config.MeilisearchConfig{Host: msHost, IndexPrefix: w1aIdxPrefix})
+	// Meilisearch (skips search sub-cases if unreachable). Host and key follow
+	// the search suite's env convention — CI's instance requires the master key.
+	msHost := os.Getenv("MEILISEARCH_TEST_HOST")
+	if msHost == "" {
+		msHost = "http://127.0.0.1:7700"
+	}
+	msClient, msErr := searchInfra.NewClient(config.MeilisearchConfig{
+		Host:        msHost,
+		APIKey:      os.Getenv("MEILISEARCH_TEST_API_KEY"),
+		IndexPrefix: w1aIdxPrefix,
+	})
 	msUp := msErr == nil && msClient.Health() == nil
 	if msUp {
 		require.NoError(t, galgameSearch.EnsureIndexes(msClient))
