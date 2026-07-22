@@ -44,6 +44,17 @@ const (
 	// Bangumi person_character and EG appearance_actors/shubetu=5 need one.
 	roleOtherStaff int64 = 2 // その他 — the wide bucket for EG shubetu=7.
 
+	// Reserved-band slots for the three VNDB staff roles the generated Bangumi
+	// (anime) vocabulary has no faithful position for. refs/proj/80 拍板: give
+	// them pinned reserved-band ids and absorb the ~10,950 previously-skipped
+	// credits, rather than force-fit or drop them.
+	roleTranslator int64 = 3 // 翻译 / 翻訳 / Translator (VNDB `translator`).
+	roleEditor     int64 = 4 // 编辑 / 編集 / Editor (VNDB `editor`). Its Key is
+	// "text-editor", NOT "editor": the generated vocabulary already pins key
+	// "editor" (id 177, 剪辑 = film cutting) and catalog_role.key is UNIQUE, so
+	// the reserved slot takes a distinct key while keeping the 编辑 display names.
+	roleQA int64 = 5 // QA / QA / QA (VNDB `qa`).
+
 	// EG shubetu → existing catalog_role ids (kun-erogamespace-api docs/07:
 	// 1原画 2シナリオ 3音楽 4キャラデザ 5声優 6歌手 7その他).
 	roleIllustration    int64 = 184
@@ -64,6 +75,9 @@ func handRoles() []model.CatalogRole {
 	return []model.CatalogRole{
 		{ID: roleVoiceActor, Key: "voice-actor", Category: "cast", NameCN: "声优", NameJA: "声優", NameEN: "Voice Actor"},
 		{ID: roleOtherStaff, Key: "other-staff", Category: "other", NameCN: "其他", NameJA: "その他", NameEN: "Other Staff"},
+		{ID: roleTranslator, Key: "translator", Category: "other", NameCN: "翻译", NameJA: "翻訳", NameEN: "Translator"},
+		{ID: roleEditor, Key: "text-editor", Category: "other", NameCN: "编辑", NameJA: "編集", NameEN: "Editor"},
+		{ID: roleQA, Key: "qa", Category: "other", NameCN: "QA", NameJA: "QA", NameEN: "QA"},
 	}
 }
 
@@ -99,13 +113,13 @@ func dlsiteRoleMap() []model.CatalogSourceRoleMap {
 }
 
 // vndbRoleMap pins the VNDB vn_staff.role → catalog_role mapping (source_role =
-// the raw role string; refs/proj/73). Seven of the ten VNDB staff roles have a
-// good-fit slot in the generated vocabulary (art→原画, songs→声乐 vocals, staff→
-// the wide その他 bucket); the remaining three — translator / editor / qa — have
-// NO faithful slot in the 246-position Bangumi (anime) vocabulary (its "editor"
-// is 剪辑, film cutting, a different craft) and are deliberately left UNMAPPED
-// rather than force-fit: a vn_staff row in one of them is skipped (counted as
-// unmapped) until the vocabulary gains those positions. See doc 73 拍板.
+// the raw role string; refs/proj/73 + 80). All ten VNDB staff roles map: seven
+// onto generated-vocabulary slots (art→原画, songs→声乐 vocals, staff→the wide
+// その他 bucket, ...). translator / editor / qa historically had NO faithful
+// slot in the 246-position Bangumi (anime) vocabulary (its "editor" is 剪辑,
+// film cutting, a different craft) and were left UNMAPPED — they are now carried
+// by the reserved-band roles 3 / 4 / 5 (refs/proj/80 拍板: absorb the ~10,950
+// credits rather than drop them).
 func vndbRoleMap() []model.CatalogSourceRoleMap {
 	m := map[string]int64{
 		"scenario":   roleScenario,        // 247 シナリオ
@@ -115,6 +129,9 @@ func vndbRoleMap() []model.CatalogSourceRoleMap {
 		"songs":      roleVocal,           // 286 声乐 (vocals / theme-song performers)
 		"director":   roleDirector,        // 173 監督
 		"staff":      roleOtherStaff,      // 2   その他 (VNDB's miscellaneous bucket)
+		"translator": roleTranslator,      // 3   翻译 (reserved-band slot, refs/proj/80)
+		"editor":     roleEditor,          // 4   编辑
+		"qa":         roleQA,              // 5   QA
 	}
 	out := make([]model.CatalogSourceRoleMap, 0, len(m))
 	for sr, rid := range m {

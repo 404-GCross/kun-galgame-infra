@@ -125,4 +125,52 @@ func TestHandSeedsIntegrity(t *testing.T) {
 	for _, m := range roleMap {
 		assert.Equal(t, bangumiSourceID, m.SourceID)
 	}
+
+	// Reserved-band roles (1-99) must never collide with the generated
+	// vocabulary (100+) on id OR key — catalog_role.key is UNIQUE, so a hand
+	// role reusing a generated key (e.g. "editor", id 177) would break the seed
+	// upsert. This guard would have caught exactly that (refs/proj/80).
+	roleIDs := make(map[int64]bool, len(roles))
+	roleKeys := make(map[string]bool, len(roles))
+	for _, r := range roles {
+		roleIDs[r.ID] = true
+		roleKeys[r.Key] = true
+	}
+	for _, h := range handRoles() {
+		assert.Less(t, h.ID, int64(roleIDBase), "hand role %q must stay in the reserved band", h.Key)
+		assert.False(t, roleIDs[h.ID], "hand role id %d collides with a generated role", h.ID)
+		assert.False(t, roleKeys[h.Key], "hand role key %q collides with a generated role", h.Key)
+		roleIDs[h.ID] = true
+		roleKeys[h.Key] = true
+	}
+
+	// The three step-80 reserved slots are pinned by id + key + category.
+	want := map[int64]struct{ key, cat string }{
+		roleTranslator: {"translator", "other"},
+		roleEditor:     {"text-editor", "other"}, // key deviates: "editor" is taken (id 177)
+		roleQA:         {"qa", "other"},
+	}
+	for id, w := range want {
+		var found bool
+		for _, h := range handRoles() {
+			if h.ID == id {
+				found = true
+				assert.Equal(t, w.key, h.Key)
+				assert.Equal(t, w.cat, h.Category)
+			}
+		}
+		assert.True(t, found, "reserved role id %d missing from handRoles", id)
+	}
+
+	// Every VNDB role now maps, each onto a known role id (translator/editor/qa
+	// onto the reserved slots — no more unmapped VNDB roles).
+	vm := make(map[string]int64)
+	for _, m := range vndbRoleMap() {
+		assert.Equal(t, vndbSourceID, m.SourceID)
+		assert.True(t, roleIDs[m.RoleID], "vndb map %q → unknown role %d", m.SourceRole, m.RoleID)
+		vm[m.SourceRole] = m.RoleID
+	}
+	assert.Equal(t, roleTranslator, vm["translator"])
+	assert.Equal(t, roleEditor, vm["editor"])
+	assert.Equal(t, roleQA, vm["qa"])
 }

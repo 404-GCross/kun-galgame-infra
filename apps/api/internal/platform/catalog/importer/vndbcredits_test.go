@@ -62,18 +62,21 @@ func TestVNDBCreditsWave(t *testing.T) {
 	seedVNDBAlias(t, 10, "s1", "織田薫", "Oda Kaoru")
 	seedVNDBAlias(t, 20, "s2", "OdaKaoru", "")
 
-	seedVNStaff(t, "v100", 10, "scenario", "")     // → role 247
-	seedVNStaff(t, "v100", 10, "director", "")     // → role 173 (same alias, 2nd credit)
+	seedVNStaff(t, "v100", 10, "scenario", "")       // → role 247
+	seedVNStaff(t, "v100", 10, "director", "")       // → role 173 (same alias, 2nd credit)
 	seedVNStaffEid(t, "v100", 10, "scenario", 5, "") // duplicate work-level credit (eid ignored) → collapses
-	seedVNStaff(t, "v100", 20, "translator", "")   // UNMAPPED → skip
-	seedVNStaff(t, "v999", 10, "music", "")        // out of gate → not loaded
+	// A role with no map row → skip. Every real VNDB role now maps (step 80 gave
+	// translator/editor/qa reserved-band slots 3/4/5), so this stands in for a
+	// hypothetical future role, still exercising the unmapped-skip path.
+	seedVNStaff(t, "v100", 20, "future-role", "") // UNMAPPED → skip
+	seedVNStaff(t, "v999", 10, "music", "")       // out of gate → not loaded
 
-	c50 := seedVNDBCharAnchor(t, "c50") // anchored char → VA resolves
-	seedVNSeiyuu(t, "v100", "c50", 20, "主演")        // VA credit (alias 20, note passthrough)
-	seedVNSeiyuu(t, "v100", "c999", 10, "")          // c999 has no anchor → skip
+	c50 := seedVNDBCharAnchor(t, "c50")      // anchored char → VA resolves
+	seedVNSeiyuu(t, "v100", "c50", 20, "主演") // VA credit (alias 20, note passthrough)
+	seedVNSeiyuu(t, "v100", "c999", 10, "")  // c999 has no anchor → skip
 
-	// Dry run: plan counts (scenario×2 + director + VA = 4 plans; translator
-	// unmapped; c999 VA skipped). 2 credit names to create (aid 10 + 20).
+	// Dry run: plan counts (scenario×2 + director + VA = 4 plans; the future-role
+	// row unmapped; c999 VA skipped). 2 credit names to create (aid 10 + 20).
 	dry, err := New(testDB, nil, Options{Source: "vndb", DryRun: true}).Run("vndb")
 	require.NoError(t, err)
 	assert.Equal(t, 2, dry.NamesCreated)

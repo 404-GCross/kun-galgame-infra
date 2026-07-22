@@ -17,8 +17,9 @@ import (
 //     name is staff_alias.name — VNDB's ONE id space without a letter prefix, and
 //     the credited-name granularity (one staff member credited under two pen
 //     names is two credit names). vn_staff.role → catalog_role via the seeded
-//     source-2 role map; an unmapped role (translator/editor/qa — no faithful
-//     slot in the vocabulary, doc 73 拍板) skips the credit.
+//     source-2 role map; a role with no map row skips the credit (all ten VNDB
+//     staff roles map today — translator/editor/qa via the reserved-band roles
+//     3/4/5, refs/proj/80).
 //   - vn_seiyuu → VA credits, resolved to the character voiced (cid → the
 //     source-2 character anchor the roster wave, step 47, already minted). A VA
 //     whose character was never imported (no name / out of the roster gate) is
