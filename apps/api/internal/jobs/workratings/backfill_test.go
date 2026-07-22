@@ -429,3 +429,29 @@ func TestXORGuardAndDSNRequired(t *testing.T) {
 	_, err = Run(ctx, Opts{DSN: testDSN, EGDSN: testDSN})
 	require.Error(t, err)
 }
+
+// TestNonTitleYearExactAnchorEntersBgmCandidates pins the step-79 fix: an EXACT
+// Bangumi work anchor whose matched_by is NOT rule:bgm-title-year (here the
+// wave-78 rule:bgm-type4-gated tier) now enters the bangumi-lane candidate set.
+// Before the fix the hard-coded matched_by filter left the 11,465 new anchors
+// invisible. The exact gate is unchanged: a probable anchor still stays out.
+func TestNonTitleYearExactAnchorEntersBgmCandidates(t *testing.T) {
+	clean(t)
+	ctx := context.Background()
+	reg, err := resolveRegistry(ctx, testDB)
+	require.NoError(t, err)
+
+	wGated := mkWork(t, reg.galgameMedium, "bgm-gated", nil)
+	mkSubject(t, 601, 7.4, 321, `{"7":20,"10":12}`) // votes 32, score>0 → a rating row
+	mkAnchor(t, wGated, "601", reg.bangumiSource, model.LinkKindExact, "rule:bgm-type4-gated")
+
+	wProbable := mkWork(t, reg.galgameMedium, "bgm-probable", nil)
+	mkSubject(t, 602, 8.0, 1, `{"10":5}`)
+	mkAnchor(t, wProbable, "602", reg.bangumiSource, model.LinkKindProbable, "rule:bgm-title-only")
+
+	st, err := Run(ctx, runOpts(true))
+	require.NoError(t, err)
+	assert.Equal(t, 1, st.BgmCandidates, "the gated-rule exact anchor is now a bgm candidate; probable stays out")
+	assert.EqualValues(t, 1, ratingCount(t, "WHERE work_id = ? AND source_id = ?", wGated, reg.bangumiSource))
+	assert.EqualValues(t, 0, ratingCount(t, "WHERE work_id = ?", wProbable))
+}

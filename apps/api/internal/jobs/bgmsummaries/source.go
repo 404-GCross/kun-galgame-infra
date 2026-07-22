@@ -45,29 +45,30 @@ type candidate struct {
 	Summary   string  `gorm:"column:summary"`
 }
 
-// loadCandidates resolves bodyless galgame works carrying an EXACT step-56a
-// Bangumi anchor, joined to the anchored subject's summary:
+// loadCandidates resolves bodyless galgame works carrying an EXACT Bangumi work
+// anchor — matched_by UNRESTRICTED (every exact tier asserts identity, the
+// 66/69/71 ruling; the bgmworkmeta precedent) — joined to the anchored
+// subject's summary:
 //
 //	catalog_work(bodyless galgame)
-//	  → catalog_external_ref(entity_type=work, source=bangumi, link_kind=exact,
-//	                         matched_by='rule:bgm-title-year')
+//	  → catalog_external_ref(entity_type=work, source=bangumi, link_kind=exact)
 //	  → src_bangumi.subject (same DB — src_bangumi is a schema, single DSN)
 //
-// The matched_by filter pins the candidate set to the 56a exact tier; probable
-// anchors (rule:bgm-title-only) never appear. The external_id→bigint cast is
-// safe under that filter (56a writes numeric subject ids only). DISTINCT ON
-// keeps ONE anchor per work (the lowest external_id), same as dlsitemedia.
+// Probable anchors (link_kind=probable) never appear (the exact gate excludes
+// them). The external_id→bigint cast is safe (surveyed: zero non-numeric exact
+// bgm work anchors — the 69 verification). DISTINCT ON keeps ONE anchor per
+// work (the lowest external_id), same as dlsitemedia.
 func loadCandidates(ctx context.Context, db *gorm.DB, reg registry, limit, offset int) ([]candidate, error) {
 	q := db.WithContext(ctx).
 		Raw(`SELECT DISTINCT ON (w.id) w.id AS work_id, r.external_id::bigint AS subject_id,
 				w.site AS site, sub.summary AS summary
 			FROM catalog_work w
 			JOIN catalog_external_ref r ON r.entity_type = ? AND r.entity_id = w.id
-				AND r.source_id = ? AND r.link_kind = ? AND r.matched_by = ?
+				AND r.source_id = ? AND r.link_kind = ?
 			JOIN src_bangumi.subject sub ON sub.id = r.external_id::bigint
 			WHERE w.medium_id = ? AND (w.site IS NULL OR w.site = '') AND w.deleted_at IS NULL
 			ORDER BY w.id, r.external_id`,
-			model.EntityTypeWork, reg.bangumiSource, model.LinkKindExact, ruleTitleYear, reg.galgameMedium)
+			model.EntityTypeWork, reg.bangumiSource, model.LinkKindExact, reg.galgameMedium)
 	var out []candidate
 	if err := q.Scan(&out).Error; err != nil {
 		return nil, err

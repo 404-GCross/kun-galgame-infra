@@ -201,6 +201,32 @@ func TestBackfillWorkTags(t *testing.T) {
 	assert.EqualValues(t, 4, tagCount(t, ""), "row count unchanged")
 }
 
+// TestNonTitleYearExactAnchorEntersCandidates pins the step-79 fix: an EXACT
+// Bangumi work anchor whose matched_by is NOT rule:bgm-title-year (here the
+// wave-78 rule:bgm-type4-gated tier) now enters the candidate set. Before the
+// fix the hard-coded matched_by filter left the 11,465 new anchors invisible.
+// The exact gate is unchanged: a probable anchor still stays out.
+func TestNonTitleYearExactAnchorEntersCandidates(t *testing.T) {
+	clean(t)
+	ctx := context.Background()
+	reg, err := resolveRegistry(ctx, testDB)
+	require.NoError(t, err)
+
+	wGated := mkWork(t, reg.galgameMedium, "tags-gated", nil)
+	mkSubject(t, 501, `[{"name":"純愛","count":12}]`)
+	mkAnchor(t, wGated, "501", reg.bangumiSource, model.LinkKindExact, "rule:bgm-type4-gated")
+
+	wProbable := mkWork(t, reg.galgameMedium, "tags-probable", nil)
+	mkSubject(t, 502, `[{"name":"純愛","count":9}]`)
+	mkAnchor(t, wProbable, "502", reg.bangumiSource, model.LinkKindProbable, "rule:bgm-title-only")
+
+	st, err := Run(ctx, Opts{DSN: testDSN, Apply: true})
+	require.NoError(t, err)
+	assert.Equal(t, 1, st.Candidates, "the gated-rule exact anchor is now a candidate; probable stays out")
+	assert.EqualValues(t, 1, tagCount(t, "WHERE work_id = ?", wGated))
+	assert.EqualValues(t, 0, tagCount(t, "WHERE work_id = ?", wProbable))
+}
+
 // TestXORGuardAndDSNRequired covers the write-time XOR guard (the SQL filter
 // excludes claimed works from candidates, so the guard is only reachable by
 // driving the writer directly) and the refuse-to-guess DSN discipline.

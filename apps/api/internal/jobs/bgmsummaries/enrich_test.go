@@ -191,6 +191,41 @@ func TestFillMissingLanguage(t *testing.T) {
 	assert.EqualValues(t, 4, introCount(t, ""), "row count unchanged")
 }
 
+// TestNonTitleYearExactAnchorEntersCandidates pins the step-79 fix: an EXACT
+// Bangumi work anchor whose matched_by is NOT rule:bgm-title-year (here the
+// wave-78 rule:bgm-type4-gated tier) now enters the candidate set. Before the
+// fix the hard-coded matched_by filter left the 11,465 new anchors invisible
+// (candidates stuck at ~1,875). The exact gate is unchanged: a probable anchor
+// still stays out.
+func TestNonTitleYearExactAnchorEntersCandidates(t *testing.T) {
+	clean(t)
+	ctx := context.Background()
+	reg, err := resolveRegistry(ctx, testDB)
+	require.NoError(t, err)
+
+	wGated := mkWork(t, reg.galgameMedium, "gated-anchor", nil)
+	mkSubject(t, 3001, "ゲートされたあらすじ。")
+	mkAnchor(t, wGated, 3001, reg.bangumiSource, model.LinkKindExact, "rule:bgm-type4-gated")
+
+	// A different exact tier (the xmedia importer's rule) is also admitted.
+	wXmedia := mkWork(t, reg.galgameMedium, "xmedia-anchor", nil)
+	mkSubject(t, 3002, "クロスメディアのあらすじ。")
+	mkAnchor(t, wXmedia, 3002, reg.bangumiSource, model.LinkKindExact, "rule:bangumi-xmedia-import")
+
+	// A probable anchor stays excluded — only matched_by was loosened, the exact
+	// gate is intact.
+	wProbable := mkWork(t, reg.galgameMedium, "probable-anchor", nil)
+	mkSubject(t, 3003, "確度の低いあらすじ。")
+	mkAnchor(t, wProbable, 3003, reg.bangumiSource, model.LinkKindProbable, "rule:bgm-title-only")
+
+	st, err := Run(ctx, Opts{DSN: testDSN, Apply: true})
+	require.NoError(t, err)
+	assert.Equal(t, 2, st.Candidates, "both non-title-year exact anchors are candidates; probable stays out")
+	assert.EqualValues(t, 1, introCount(t, "WHERE work_id = ?", wGated), "gated-rule work gets its intro")
+	assert.EqualValues(t, 1, introCount(t, "WHERE work_id = ?", wXmedia), "xmedia-rule work gets its intro")
+	assert.EqualValues(t, 0, introCount(t, "WHERE work_id = ?", wProbable), "probable work stays out")
+}
+
 // TestXORAndConflictBackstop drives the write path directly (the SQL filter
 // excludes claimed works from candidates, so the guard is only reachable
 // here): a claimed candidate is refused, and a STALE exist map still cannot

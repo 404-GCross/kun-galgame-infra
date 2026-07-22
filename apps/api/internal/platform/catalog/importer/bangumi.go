@@ -64,13 +64,25 @@ func (im *Importer) runBangumi() (Stats, error) {
 	}
 
 	// --- load the gated links + entity attributes ---
+	// Every subject_id IN-list is chunked under Postgres's 65,535 bind-parameter
+	// cap (step 79): the exact work-anchor count crossed ~76k, so a single
+	// IN-list of all bids overran the wire protocol. Cross-chunk duplicate
+	// person/character rows are harmless — personByID, the Pass-A seen* maps and
+	// the Pass-B keying all dedup downstream.
 	type spRow struct {
 		PersonID  int64 `gorm:"column:person_id"`
 		SubjectID int64 `gorm:"column:subject_id"`
 		Position  int   `gorm:"column:position"`
 	}
 	var sps []spRow
-	if err := im.catalog.Raw(`SELECT person_id, subject_id, position FROM src_bangumi.subject_person WHERE subject_id IN ?`, bids).Scan(&sps).Error; err != nil {
+	if err := chunkBids(bids, func(chunk []int64) error {
+		var batch []spRow
+		if err := im.catalog.Raw(`SELECT person_id, subject_id, position FROM src_bangumi.subject_person WHERE subject_id IN ?`, chunk).Scan(&batch).Error; err != nil {
+			return err
+		}
+		sps = append(sps, batch...)
+		return nil
+	}); err != nil {
 		return st, err
 	}
 	type personRow struct {
@@ -79,9 +91,16 @@ func (im *Importer) runBangumi() (Stats, error) {
 		Name string `gorm:"column:name"`
 	}
 	var persons []personRow
-	if err := im.catalog.Raw(`SELECT id, type, name FROM src_bangumi.person WHERE id IN (
-		SELECT person_id FROM src_bangumi.subject_person WHERE subject_id IN ?
-		UNION SELECT person_id FROM src_bangumi.person_character WHERE subject_id IN ?)`, bids, bids).Scan(&persons).Error; err != nil {
+	if err := chunkBids(bids, func(chunk []int64) error {
+		var batch []personRow
+		if err := im.catalog.Raw(`SELECT id, type, name FROM src_bangumi.person WHERE id IN (
+			SELECT person_id FROM src_bangumi.subject_person WHERE subject_id IN ?
+			UNION SELECT person_id FROM src_bangumi.person_character WHERE subject_id IN ?)`, chunk, chunk).Scan(&batch).Error; err != nil {
+			return err
+		}
+		persons = append(persons, batch...)
+		return nil
+	}); err != nil {
 		return st, err
 	}
 	personByID := map[int64]personRow{}
@@ -94,7 +113,14 @@ func (im *Importer) runBangumi() (Stats, error) {
 		Type        int   `gorm:"column:type"`
 	}
 	var scs []scRow
-	if err := im.catalog.Raw(`SELECT character_id, subject_id, type FROM src_bangumi.subject_character WHERE subject_id IN ?`, bids).Scan(&scs).Error; err != nil {
+	if err := chunkBids(bids, func(chunk []int64) error {
+		var batch []scRow
+		if err := im.catalog.Raw(`SELECT character_id, subject_id, type FROM src_bangumi.subject_character WHERE subject_id IN ?`, chunk).Scan(&batch).Error; err != nil {
+			return err
+		}
+		scs = append(scs, batch...)
+		return nil
+	}); err != nil {
 		return st, err
 	}
 	charRoleNote := map[string]string{} // subject|character → 主角/配角/客串
@@ -106,9 +132,16 @@ func (im *Importer) runBangumi() (Stats, error) {
 		Name string `gorm:"column:name"`
 	}
 	var chars []charRow
-	if err := im.catalog.Raw(`SELECT id, name FROM src_bangumi.character WHERE id IN (
-		SELECT character_id FROM src_bangumi.subject_character WHERE subject_id IN ?
-		UNION SELECT character_id FROM src_bangumi.person_character WHERE subject_id IN ?)`, bids, bids).Scan(&chars).Error; err != nil {
+	if err := chunkBids(bids, func(chunk []int64) error {
+		var batch []charRow
+		if err := im.catalog.Raw(`SELECT id, name FROM src_bangumi.character WHERE id IN (
+			SELECT character_id FROM src_bangumi.subject_character WHERE subject_id IN ?
+			UNION SELECT character_id FROM src_bangumi.person_character WHERE subject_id IN ?)`, chunk, chunk).Scan(&batch).Error; err != nil {
+			return err
+		}
+		chars = append(chars, batch...)
+		return nil
+	}); err != nil {
 		return st, err
 	}
 	type pcRow struct {
@@ -117,7 +150,14 @@ func (im *Importer) runBangumi() (Stats, error) {
 		CharacterID int64 `gorm:"column:character_id"`
 	}
 	var pcs []pcRow
-	if err := im.catalog.Raw(`SELECT person_id, subject_id, character_id FROM src_bangumi.person_character WHERE subject_id IN ?`, bids).Scan(&pcs).Error; err != nil {
+	if err := chunkBids(bids, func(chunk []int64) error {
+		var batch []pcRow
+		if err := im.catalog.Raw(`SELECT person_id, subject_id, character_id FROM src_bangumi.person_character WHERE subject_id IN ?`, chunk).Scan(&batch).Error; err != nil {
+			return err
+		}
+		pcs = append(pcs, batch...)
+		return nil
+	}); err != nil {
 		return st, err
 	}
 
@@ -241,4 +281,24 @@ func labelKind(personType int) int16 {
 		return model.LabelKindGroup
 	}
 	return model.LabelKindPublisher
+}
+
+// bidChunkSize caps each subject_id IN-list under Postgres's 65,535
+// bind-parameter cap. The bangumi credits lane crossed it once the exact
+// work-anchor count passed ~76k (step 79 — the entityintros 10k-slice recipe).
+// A var, not a const, so tests can shrink it to exercise the multi-chunk load.
+var bidChunkSize = 10000
+
+// chunkBids runs fn once per ≤bidChunkSize slice of bids, keeping every
+// subject_id IN-list under the wire protocol's bind-parameter cap. An empty
+// bids runs fn zero times — the callers' result slices stay empty, matching the
+// pre-chunk single-query behaviour.
+func chunkBids(bids []int64, fn func(chunk []int64) error) error {
+	for start := 0; start < len(bids); start += bidChunkSize {
+		end := min(start+bidChunkSize, len(bids))
+		if err := fn(bids[start:end]); err != nil {
+			return err
+		}
+	}
+	return nil
 }

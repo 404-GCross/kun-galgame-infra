@@ -1,10 +1,11 @@
 // Package worktags backfills catalog_work_tag rows for BODYLESS galgame works
 // from the Bangumi folksonomy (refs/proj/58b, doc 51 §9.3 multi-media
-// template): the step-56a EXACT anchors (rule:bgm-title-year) join each
-// bodyless work to a src_bangumi.subject (a schema INSIDE the catalog DB —
-// single --dsn); the subject's `tags` jsonb array ([{name, count}]) lands one
-// row per tag, VERBATIM (58 拍板): no vocabulary mapping, no threshold —
-// count=1 rows are stored too (store-all; consumers filter when rendering).
+// template): EVERY EXACT Bangumi work anchor (matched_by unrestricted — the
+// 66/69/71 ruling) joins each bodyless work to a src_bangumi.subject (a schema
+// INSIDE the catalog DB — single --dsn); the subject's `tags` jsonb array
+// ([{name, count}]) lands one row per tag, VERBATIM (58 拍板): no vocabulary
+// mapping, no threshold — count=1 rows are stored too (store-all; consumers
+// filter when rendering).
 // Content tags NEVER touch catalog_label (the attribution-vocabulary red
 // line).
 //
@@ -39,9 +40,9 @@ import (
 	gormlogger "gorm.io/gorm/logger"
 )
 
-// ruleTitleYear is the matched_by tag of the step-56a EXACT Bangumi anchors —
-// the only anchor tier this backfill reads (probable stays in the confirm
-// bucket).
+// ruleTitleYear is the matched_by tag of the step-56a EXACT Bangumi anchors.
+// The candidate query no longer filters on it (every exact tier is admitted);
+// it remains a representative exact-anchor rule the tests seed with.
 const ruleTitleYear = "rule:bgm-title-year"
 
 // maxSamples caps how many example rows a run collects for logging / test

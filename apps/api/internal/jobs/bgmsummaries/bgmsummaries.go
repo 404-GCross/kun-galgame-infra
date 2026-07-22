@@ -1,14 +1,14 @@
 // Package bgmsummaries enriches BODYLESS galgame-doujin catalog works with
-// Bangumi summaries (BGM enrichment wave, refs/proj/57). Step 56a anchored
-// 1,871 doujin works to Bangumi type=4 subjects (rule:bgm-title-year, exact);
-// src_bangumi.subject.summary is already in the catalog DB (dump-ingested — no
-// API, no token, no bytes). This step lands those summaries as
-// catalog_work_intro rows under source=bangumi. Zero schema, zero openapi —
-// pure DB, the step-55 intro path.
+// Bangumi summaries (BGM enrichment wave, refs/proj/57). Step 56a/56c anchored
+// doujin works to Bangumi type=4 subjects (exact); src_bangumi.subject.summary
+// is already in the catalog DB (dump-ingested — no API, no token, no bytes).
+// This step lands those summaries as catalog_work_intro rows under
+// source=bangumi. Zero schema, zero openapi — pure DB, the step-55 intro path.
 //
 // Discipline (spec-pinned):
-//   - Only EXACT anchors (matched_by='rule:bgm-title-year'); the 469 probable
-//     anchors sit in the confirm bucket and are never touched.
+//   - EVERY EXACT anchor (matched_by UNRESTRICTED — the 66/69/71 ruling that
+//     each exact tier asserts identity); probable anchors sit in the confirm
+//     bucket and are never touched.
 //   - Lang detection: a summary containing hiragana/katakana ([ぁ-んァ-ヶ]) is
 //     'ja', anything else 'zh-Hans'. The vocabulary MUST match the read face's
 //     galgameIntroPivot (ja/en/zh-Hans/zh-Hant) — the 55/56 lesson.
@@ -37,8 +37,9 @@ import (
 	gormlogger "gorm.io/gorm/logger"
 )
 
-// ruleTitleYear is the matched_by tag of the step-56a EXACT anchors — the only
-// anchor tier this enrichment reads.
+// ruleTitleYear is the matched_by tag of the step-56a EXACT anchors. The
+// candidate query no longer filters on it (every exact tier is admitted); it
+// remains a representative exact-anchor rule the tests seed with.
 const ruleTitleYear = "rule:bgm-title-year"
 
 // maxSamples caps how many per-category example rows a run collects for

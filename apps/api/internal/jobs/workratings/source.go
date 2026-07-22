@@ -55,13 +55,15 @@ type bgmCandidate struct {
 	ScoreDetails []byte  `gorm:"column:score_details"`
 }
 
-// loadBgmCandidates resolves bodyless galgame works carrying an EXACT step-56a
-// Bangumi anchor, joined to the anchored subject's score/rank/score_details —
-// the same join shape as bgmsummaries.loadCandidates (src_bangumi is a schema
-// inside the catalog DB, single DSN). DISTINCT ON keeps ONE anchor per work
-// (the lowest external_id); the external_id→bigint cast is safe under the
-// matched_by filter (56a writes numeric subject ids only). Limit/Offset window
-// the distinct-work list in Go (the dlsitemedia chunking discipline).
+// loadBgmCandidates resolves bodyless galgame works carrying an EXACT Bangumi
+// work anchor — matched_by UNRESTRICTED (every exact tier asserts identity, the
+// 66/69/71 ruling; the bgmworkmeta precedent) — joined to the anchored
+// subject's score/rank/score_details, the same join shape as
+// bgmsummaries.loadCandidates (src_bangumi is a schema inside the catalog DB,
+// single DSN). DISTINCT ON keeps ONE anchor per work (the lowest external_id);
+// the external_id→bigint cast is safe (surveyed: zero non-numeric exact bgm
+// work anchors — the 69 verification). Limit/Offset window the distinct-work
+// list in Go (the dlsitemedia chunking discipline).
 func loadBgmCandidates(ctx context.Context, db *gorm.DB, reg registry, limit, offset int) ([]bgmCandidate, error) {
 	var out []bgmCandidate
 	if err := db.WithContext(ctx).
@@ -69,11 +71,11 @@ func loadBgmCandidates(ctx context.Context, db *gorm.DB, reg registry, limit, of
 				w.site AS site, sub.score AS score, sub.rank AS rank, sub.score_details AS score_details
 			FROM catalog_work w
 			JOIN catalog_external_ref r ON r.entity_type = ? AND r.entity_id = w.id
-				AND r.source_id = ? AND r.link_kind = ? AND r.matched_by = ?
+				AND r.source_id = ? AND r.link_kind = ?
 			JOIN src_bangumi.subject sub ON sub.id = r.external_id::bigint
 			WHERE w.medium_id = ? AND (w.site IS NULL OR w.site = '') AND w.deleted_at IS NULL
 			ORDER BY w.id, r.external_id`,
-			model.EntityTypeWork, reg.bangumiSource, model.LinkKindExact, ruleTitleYear, reg.galgameMedium).
+			model.EntityTypeWork, reg.bangumiSource, model.LinkKindExact, reg.galgameMedium).
 		Scan(&out).Error; err != nil {
 		return nil, err
 	}

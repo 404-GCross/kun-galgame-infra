@@ -3,13 +3,14 @@
 // sources of the ratings facet (refs/proj/58a + 62, doc 51 §9.3 multi-media
 // template):
 //
-//   - bangumi lane: the step-56a EXACT anchors (rule:bgm-title-year) join each
-//     bodyless work to a src_bangumi.subject (a schema INSIDE the catalog DB —
-//     single --dsn); subjects with score>0 land as a bangumi row: score on the
-//     native 0-10 scale, rank (NULL when Bangumi's rank is 0 = unranked), and
-//     vote_count = the SUM of the score_details buckets — the dump carries NO
-//     total field (surveyed; the same derivation galgame_bangumi_meta.total
-//     uses via bangumienrich.ratingTotal).
+//   - bangumi lane: EVERY EXACT Bangumi work anchor (matched_by unrestricted —
+//     the 66/69/71 ruling) joins each bodyless work to a src_bangumi.subject (a
+//     schema INSIDE the catalog DB — single --dsn); subjects with score>0 land
+//     as a bangumi row: score on the native 0-10 scale, rank (NULL when
+//     Bangumi's rank is 0 = unranked), and vote_count = the SUM of the
+//     score_details buckets — the dump carries NO total field (surveyed; the
+//     same derivation galgame_bangumi_meta.total uses via
+//     bangumienrich.ratingTotal).
 //   - erogamespace lane: EG EXACT work anchors on bodyless works (the
 //     cmd/enrich-eg-scores anchor query with its claimed-only filter INVERTED
 //     to bodyless-only) join the EG mirror's games (--eg-dsn, a separate
@@ -54,10 +55,10 @@ import (
 	gormlogger "gorm.io/gorm/logger"
 )
 
-// ruleTitleYear is the matched_by tag of the step-56a EXACT Bangumi anchors —
-// the only anchor tier the bangumi lane reads (probable stays in the confirm
-// bucket). The EG/DLsite lanes filter by link_kind=exact only (their anchors
-// carry no single backfill rule tag).
+// ruleTitleYear is the matched_by tag of the step-56a EXACT Bangumi anchors.
+// The bangumi lane no longer filters on it (every exact tier is admitted, like
+// the EG/DLsite lanes which filter by link_kind=exact only); it remains a
+// representative exact-anchor rule the tests seed with.
 const ruleTitleYear = "rule:bgm-title-year"
 
 // maxSamples caps how many per-lane example rows a run collects for logging /

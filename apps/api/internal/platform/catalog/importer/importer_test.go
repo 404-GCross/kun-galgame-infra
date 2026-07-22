@@ -177,6 +177,40 @@ func TestBangumiWave(t *testing.T) {
 	assert.Equal(t, 4, st2.Already, "all 4 credits already present")
 }
 
+// TestBangumiChunkedLoad pins the step-79 credits fix: the src_bangumi loads
+// chunk their subject_id IN-lists under Postgres's 65,535 bind-parameter cap.
+// bidChunkSize is shrunk to 1 so three gated subjects span THREE chunks — a
+// broken chunker (loading only the first slice) would miss subjects 200/300.
+// The shared person 10 (credited on subjects 100 AND 300, i.e. in two separate
+// chunks) also proves cross-chunk dedup: one credit_name, two credits.
+func TestBangumiChunkedLoad(t *testing.T) {
+	clean(t)
+	restore := bidChunkSize
+	bidChunkSize = 1 // force a fresh chunk per bid (injected small size — recorded)
+	defer func() { bidChunkSize = restore }()
+
+	seedAnchoredWork(t, 100)
+	seedAnchoredWork(t, 200)
+	seedAnchoredWork(t, 300)
+	// person 10 credited on subjects 100 and 300 (chunks 1 and 3); person 20 on
+	// subject 200 (chunk 2).
+	testDB.Exec(`INSERT INTO src_bangumi.person (id, type, name, career, infobox_raw, parse_error, summary, comments, collects, parser_version, ingested_at)
+		VALUES (10,1,'共有作家','[]','','','',0,0,'v',now()), (20,1,'別作家','[]','','','',0,0,'v',now())`)
+	testDB.Exec(`INSERT INTO src_bangumi.subject_person (person_id, subject_id, position, appear_eps) VALUES (10,100,1001,''),(20,200,1001,''),(10,300,1001,'')`)
+	var roleID int64
+	require.NoError(t, testDB.Raw(`SELECT role_id FROM catalog_source_role_map WHERE source_id=3 LIMIT 1`).Scan(&roleID).Error)
+	testDB.Exec(`INSERT INTO catalog_source_role_map (source_id, source_role, role_id, note) VALUES (3, '4:1001', ?, '') ON CONFLICT DO NOTHING`, roleID)
+
+	st, err := New(testDB, nil, Options{Source: "bangumi"}).Run("bangumi")
+	require.NoError(t, err)
+	assert.Equal(t, 2, st.NamesCreated, "person 10 deduped across chunks 1 and 3 → 2 names")
+	assert.Equal(t, 3, st.CreditsWritten, "all three subjects across three chunks contribute a credit")
+
+	var total int64
+	testDB.Raw(`SELECT count(*) FROM catalog_credit`).Scan(&total)
+	assert.EqualValues(t, 3, total)
+}
+
 func TestUnmappedRoleSkipped(t *testing.T) {
 	clean(t)
 	seedAnchoredWork(t, 100)
