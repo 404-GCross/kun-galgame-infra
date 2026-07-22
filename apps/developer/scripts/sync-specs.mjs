@@ -42,7 +42,8 @@ const FACES = [
 
 // Total operations across both frozen specs — a coverage guard so a spec edit
 // that adds/drops an endpoint without a model rebuild fails loudly.
-const EXPECTED_OPERATION_COUNT = 19
+// galgame 12 (W1a added /stats + /lookup) + catalog 9 = 21.
+const EXPECTED_OPERATION_COUNT = 21
 
 const refName = (ref) => ref.split('/').pop()
 

@@ -127,6 +127,45 @@ func (r *GalgameRepository) PublicOfficials(ctx context.Context, ids []int) (map
 	return out, nil
 }
 
+// PublicMetaBatch returns {galgame_id → row} carrying the operational-metadata
+// scalars (the open-API list/search include=meta expansion, W1a) for a whole
+// page of ids in ONE IN query — the batch loader behind the item-level meta
+// block (裁定 2: never one query per item). Only the meta columns are selected;
+// every id is present (no status/content_limit scope — the caller has already
+// scoped the page). Safe for empty input.
+func (r *GalgameRepository) PublicMetaBatch(ctx context.Context, ids []int) (map[int]model.Galgame, error) {
+	out := make(map[int]model.Galgame, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	var rows []model.Galgame
+	if err := r.db.WithContext(ctx).
+		Model(&model.Galgame{}).
+		Select("id, original_language, vndb_id, status, content_limit, release_precision, "+
+			"series_id, catalog_work_id, user_id, resource_update_time, view, created").
+		Where("id IN ?", ids).
+		Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	for i := range rows {
+		out[rows[i].ID] = rows[i]
+	}
+	return out, nil
+}
+
+// SeriesGalgameCount returns the number of PUBLISHED (status=0) galgames in a
+// series — the galgame_count for the open-API detail include=series block. It
+// counts status=0 regardless of content_limit, matching the tag/official/engine
+// count semantics the detail taxonomy block already exposes.
+func (r *GalgameRepository) SeriesGalgameCount(ctx context.Context, seriesID int) (int64, error) {
+	var n int64
+	err := r.db.WithContext(ctx).
+		Model(&model.Galgame{}).
+		Where("series_id = ? AND status = 0", seriesID).
+		Count(&n).Error
+	return n, err
+}
+
 // PublicPinnedImage is a pinned cover/portrait row carrying the per-image content
 // rating so the sfw face can drop an NSFW-rated pin (裁定 2).
 type PublicPinnedImage struct {

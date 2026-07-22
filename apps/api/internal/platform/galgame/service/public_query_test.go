@@ -32,7 +32,7 @@ func keysOf(m map[string]any) []string {
 func TestApplyPublicFieldsInactiveByteIdentical(t *testing.T) {
 	svc := &GalgameService{cdnBase: "https://cdn.example.com/img"}
 	rec := svc.projectDetail(sampleGalgame(), sampleScoreMeta(),
-		PublicInclude{Intro: true, Scores: true, Covers: true, Taxonomy: true}, "sfw")
+		PublicInclude{Intro: true, Scores: true, Covers: true, Taxonomy: true}, "sfw", 0)
 
 	// An absent/empty selector must return the value untouched → the default
 	// response is byte-for-byte the frozen contract.
@@ -49,7 +49,7 @@ func TestApplyPublicFieldsInactiveByteIdentical(t *testing.T) {
 func TestApplyPublicFieldsSemantics(t *testing.T) {
 	svc := &GalgameService{cdnBase: "https://cdn.example.com/img"}
 	rec := svc.projectDetail(sampleGalgame(), sampleScoreMeta(),
-		PublicInclude{Intro: true, Scores: true, Taxonomy: true}, "sfw")
+		PublicInclude{Intro: true, Scores: true, Taxonomy: true}, "sfw", 0)
 	full := toMap(t, rec)
 
 	// id is always retained, even when not named; only the named key joins it.

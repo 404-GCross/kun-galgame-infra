@@ -360,5 +360,5 @@ func Mount(a *app.App, cfg *config.Config, deps Deps) {
 	mountInternalWrites(a, face, writes, jwtAuth)
 	mountInternalPropose(a, face, proposeH, jwtAuth)
 	mountInternal(a, face, reads, messageH, revisionH)
-	mountPublic(a, face, galgameSvc, searchSvc, galgameH, entityGalgamesH)
+	mountPublic(a, face, galgameSvc, searchSvc, galgameH, entityGalgamesH, optionalJWT)
 }

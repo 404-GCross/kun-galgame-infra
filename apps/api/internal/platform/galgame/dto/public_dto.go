@@ -51,11 +51,14 @@ type PublicImage struct {
 
 // PublicImages is the images block. banner / portrait are the single effective
 // pins (null when the galgame has none); covers is the full set, present only
-// under include=covers. All entries are NSFW-filtered on the sfw face (裁定 2).
+// under include=covers; screenshots is the gallery set, present only under
+// include=screenshots (W1a, same NSFW-stripping discipline as covers). All
+// entries are NSFW-filtered on the sfw face (裁定 2).
 type PublicImages struct {
-	Banner   *PublicImage  `json:"banner"`
-	Portrait *PublicImage  `json:"portrait"`
-	Covers   []PublicImage `json:"covers,omitempty"`
+	Banner      *PublicImage  `json:"banner"`
+	Portrait    *PublicImage  `json:"portrait"`
+	Covers      []PublicImage `json:"covers,omitempty"`
+	Screenshots []PublicImage `json:"screenshots,omitempty"`
 }
 
 // PublicOfficial is a lightweight maker reference (id + name) in the taxonomy
@@ -68,11 +71,107 @@ type PublicOfficial struct {
 // PublicTaxonomy is the name-level taxonomy block (include=taxonomy): tag names,
 // maker references, engine names, and the series id. Deep detail is served by
 // the whitelisted /v1/galgame/{tags,officials,engines,series} endpoints.
+//
+// TagRefs / OfficialRefs / EngineRefs are the OPTIONAL rich-reference sub-keys
+// (W1a, add-only): each is present only when its own include token
+// (tag_refs / official_refs / engine_refs) is requested ALONGSIDE
+// include=taxonomy — so include=taxonomy alone stays byte-identical (the four
+// frozen name-level keys). They carry the id + curated attributes a consumer
+// needs to render a taxonomy chip without an entity follow-up. The pointer
+// distinguishes "not requested" (nil → key absent) from "requested, none"
+// ([] → key present).
 type PublicTaxonomy struct {
-	Tags      []string         `json:"tags"`
-	Officials []PublicOfficial `json:"officials"`
-	Engines   []string         `json:"engines"`
-	SeriesID  *int             `json:"series_id"`
+	Tags         []string             `json:"tags"`
+	Officials    []PublicOfficial     `json:"officials"`
+	Engines      []string             `json:"engines"`
+	SeriesID     *int                 `json:"series_id"`
+	TagRefs      *[]PublicTagRef      `json:"tag_refs,omitempty"`
+	OfficialRefs *[]PublicOfficialRef `json:"official_refs,omitempty"`
+	EngineRefs   *[]PublicEngineRef   `json:"engine_refs,omitempty"`
+}
+
+// PublicTagRef is a rich tag reference in the taxonomy block's tag_refs sub-key:
+// the tag id + name + category (content/sexual/technical) + this galgame's
+// spoiler_level for the tag (0=none, 1=mild, 2=severe).
+type PublicTagRef struct {
+	ID           int    `json:"id"`
+	Name         string `json:"name"`
+	Category     string `json:"category"`
+	SpoilerLevel int    `json:"spoiler_level"`
+}
+
+// PublicOfficialRef is a rich maker reference in the taxonomy block's
+// official_refs sub-key: the maker id + name + category (company/individual/
+// amateur) + primary language.
+type PublicOfficialRef struct {
+	ID       int    `json:"id"`
+	Name     string `json:"name"`
+	Category string `json:"category"`
+	Lang     string `json:"lang"`
+}
+
+// PublicEngineRef is a rich engine reference in the taxonomy block's engine_refs
+// sub-key: the engine id + name.
+type PublicEngineRef struct {
+	ID   int    `json:"id"`
+	Name string `json:"name"`
+}
+
+// PublicLink is one curated external link (include=links): id + display name +
+// url + provenance source ("" = user-added, "vndb" = auto-synced). The internal
+// source_key / user_id bookkeeping is intentionally not surfaced.
+type PublicLink struct {
+	ID     int    `json:"id"`
+	Name   string `json:"name"`
+	Link   string `json:"link"`
+	Source string `json:"source"`
+}
+
+// PublicSeriesRef is the series reference block (include=series): the series id,
+// name, and its published-galgame count.
+type PublicSeriesRef struct {
+	ID           int    `json:"id"`
+	Name         string `json:"name"`
+	GalgameCount int    `json:"galgame_count"`
+}
+
+// PublicMeta is the flat operational-metadata block (include=meta on both the
+// thin item and the detail record, W1a). Its scalars MIRROR the internal bridge
+// face's values for the same row (the migration-parity contract): vndb_id is the
+// raw stored id ("" for an original with no VNDB entry — NOT the empty→null
+// discipline the curated refs block uses), timestamps are UTC RFC3339 (null on
+// zero, like the internal Timestamp), series_id / catalog_work_id are null when
+// unset.
+type PublicMeta struct {
+	OriginalLanguage   string  `json:"original_language"`
+	VNDBID             string  `json:"vndb_id"`
+	Status             int     `json:"status"`
+	ContentLimit       string  `json:"content_limit"`
+	ReleasePrecision   string  `json:"release_precision"`
+	SeriesID           *int    `json:"series_id"`
+	CatalogWorkID      *int64  `json:"catalog_work_id"`
+	UserID             int     `json:"user_id"`
+	ResourceUpdateTime *string `json:"resource_update_time"`
+	View               int     `json:"view"`
+	Created            *string `json:"created"`
+}
+
+// PublicSearchHighlight is one search-highlight entry (search?highlight=1): the
+// hit id + its localized names with the matched terms wrapped in <mark>…</mark>.
+// Returned as a parallel top-level array keyed by id so the frozen thin-item
+// shape is untouched; a consumer joins it to items by id.
+type PublicSearchHighlight struct {
+	ID    int         `json:"id"`
+	Names PublicNames `json:"names"`
+}
+
+// PublicLookupData is the body of GET /v1/galgame/lookup?vndb_id= (W1a): whether
+// a galgame with that vndb_id exists, and its id when it does. Mirrors the
+// internal /galgame/check, but the id key is `id` (public DTO convention), not
+// the internal `galgame_id`.
+type PublicLookupData struct {
+	Exists bool `json:"exists"`
+	ID     *int `json:"id,omitempty"`
 }
 
 // PublicAttribution is the per-source attribution-URL block (detail always
@@ -105,6 +204,15 @@ type PublicGalgame struct {
 	CatalogWorkID    *int64             `json:"catalog_work_id"`
 	Updated          string             `json:"updated"`
 	Attribution      *PublicAttribution `json:"attribution,omitempty"`
+	// Links / Series / Meta are the W1a detail-level include expansions
+	// (add-only): each is omitted entirely unless its include token
+	// (links / series / meta) is requested. Links uses a pointer slice so
+	// include=links on a link-less game still emits `links: []`.
+	Links  *[]PublicLink    `json:"links,omitempty"`
+	Series *PublicSeriesRef `json:"series,omitempty"`
+	Meta   *PublicMeta      `json:"meta,omitempty"`
+	// (include=screenshots lands under images.screenshots, mirroring how
+	// include=covers lands under images.covers.)
 }
 
 // PublicGalgameItem is the thin list / batch / search item — a fixed subset of
@@ -130,6 +238,9 @@ type PublicGalgameItem struct {
 	// Scores is present only under include=scores — the same GalgameScores shape
 	// (per-source values + attribution url) the detail scores block carries.
 	Scores *GalgameScores `json:"scores,omitempty"`
+	// Meta is the flat operational-metadata block, present only under
+	// include=meta (W1a). Batch-loaded across the whole page (no N+1).
+	Meta *PublicMeta `json:"meta,omitempty"`
 }
 
 // PublicListData is the cursor-paginated list envelope (GET /v1/galgame).
@@ -144,9 +255,20 @@ type PublicListData struct {
 // PublicSearchData is the search envelope (GET /v1/galgame/search): thin items
 // in relevance order + the Meilisearch total. Page/limit, not cursor — search
 // relevance ranking is not stable for keyset paging.
+//
+// Facets / Highlight / Pending are the W1a add-only optional envelope keys, each
+// present only when its parameter is requested (facets=1 / highlight=1 /
+// include_pending=1 with a valid user JWT) — so the default response is
+// byte-identical. Facets is the Meilisearch facet distribution
+// (attribute → value → count); Highlight is a parallel <mark>-wrapped-names
+// array keyed by item id; Pending is the authenticated caller's own
+// pending/declined (status 3/4) drafts as thin items.
 type PublicSearchData struct {
-	Items []PublicGalgameItem `json:"items"`
-	Total int64               `json:"total"`
+	Items     []PublicGalgameItem        `json:"items"`
+	Total     int64                      `json:"total"`
+	Facets    *map[string]map[string]int `json:"facets,omitempty"`
+	Highlight *[]PublicSearchHighlight   `json:"highlight,omitempty"`
+	Pending   *[]PublicGalgameItem       `json:"pending,omitempty"`
 }
 
 // PublicBatchData is the batch envelope (GET /v1/galgame/batch, default): thin

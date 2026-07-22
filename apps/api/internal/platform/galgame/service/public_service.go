@@ -24,11 +24,25 @@ import (
 
 // PublicInclude selects the optional (heavy) blocks of the detail record. The
 // default is all-false → the thin, cache-friendly aggregate.
+//
+// W1a add-only tokens: links / screenshots / series / meta gate the new detail
+// blocks; tag_refs / official_refs / engine_refs enrich the taxonomy block's
+// rich-reference sub-keys and are meaningful ONLY together with taxonomy (a ref
+// token without taxonomy is a silent no-op, so include=taxonomy alone stays
+// byte-identical).
 type PublicInclude struct {
 	Intro    bool
 	Scores   bool
 	Covers   bool
 	Taxonomy bool
+
+	Links        bool
+	Screenshots  bool
+	Series       bool
+	Meta         bool
+	TagRefs      bool
+	OfficialRefs bool
+	EngineRefs   bool
 }
 
 // ParsePublicInclude resolves the comma-separated `include` query token set.
@@ -45,6 +59,20 @@ func ParsePublicInclude(raw string) PublicInclude {
 			inc.Covers = true
 		case "taxonomy":
 			inc.Taxonomy = true
+		case "links":
+			inc.Links = true
+		case "screenshots":
+			inc.Screenshots = true
+		case "series":
+			inc.Series = true
+		case "meta":
+			inc.Meta = true
+		case "tag_refs":
+			inc.TagRefs = true
+		case "official_refs":
+			inc.OfficialRefs = true
+		case "engine_refs":
+			inc.EngineRefs = true
 		}
 	}
 	return inc
@@ -87,12 +115,21 @@ func (s *GalgameService) PublicDetail(ctx context.Context, id int, inc PublicInc
 	if err != nil {
 		return dto.PublicGalgame{}, false, time.Time{}, err
 	}
-	return s.projectDetail(g, sm, inc, contentLimit), true, g.Updated.Time(), nil
+	// include=series needs the series' published-galgame count (one extra count
+	// query, detail-only — never a per-item list cost).
+	var seriesCount int
+	if inc.Series && g.Series != nil && g.SeriesID != nil {
+		if n, cErr := s.galgameRepo.SeriesGalgameCount(ctx, *g.SeriesID); cErr == nil {
+			seriesCount = int(n)
+		}
+	}
+	return s.projectDetail(g, sm, inc, contentLimit, seriesCount), true, g.Updated.Time(), nil
 }
 
 // projectDetail assembles the aggregate record from a fully-loaded galgame + its
 // score meta. include-gated blocks are attached only when requested.
-func (s *GalgameService) projectDetail(g *model.Galgame, sm repository.ScoreMeta, inc PublicInclude, contentLimit string) dto.PublicGalgame {
+// seriesCount is the resolved series member count (0 unless include=series).
+func (s *GalgameService) projectDetail(g *model.Galgame, sm repository.ScoreMeta, inc PublicInclude, contentLimit string, seriesCount int) dto.PublicGalgame {
 	dropNSFW := contentLimit == "sfw"
 
 	rec := dto.PublicGalgame{
@@ -104,7 +141,7 @@ func (s *GalgameService) projectDetail(g *model.Galgame, sm repository.ScoreMeta
 		OriginalLanguage: g.OriginalLanguage,
 		AgeLimit:         g.AgeLimit,
 		Refs:             publicRefs(g, sm),
-		Images:           s.detailImages(g, inc.Covers, dropNSFW),
+		Images:           s.detailImages(g, inc.Covers, inc.Screenshots, dropNSFW),
 		CatalogWorkID:    g.CatalogWorkID,
 		Updated:          fmtPublicTS(g.Updated),
 		Attribution:      publicAttribution(g, sm),
@@ -123,16 +160,44 @@ func (s *GalgameService) projectDetail(g *model.Galgame, sm repository.ScoreMeta
 		rec.Scores = &sc
 	}
 	if inc.Taxonomy {
-		rec.Taxonomy = publicTaxonomy(g)
+		tax := publicTaxonomy(g)
+		// Rich-reference sub-keys are add-only inside the taxonomy block: each
+		// appears only when its own token is also requested, so include=taxonomy
+		// alone stays byte-identical.
+		if inc.TagRefs {
+			refs := publicTagRefs(g)
+			tax.TagRefs = &refs
+		}
+		if inc.OfficialRefs {
+			refs := publicOfficialRefs(g)
+			tax.OfficialRefs = &refs
+		}
+		if inc.EngineRefs {
+			refs := publicEngineRefs(g)
+			tax.EngineRefs = &refs
+		}
+		rec.Taxonomy = tax
+	}
+	if inc.Links {
+		links := publicLinks(g)
+		rec.Links = &links
+	}
+	if inc.Series && g.Series != nil {
+		rec.Series = &dto.PublicSeriesRef{ID: g.Series.ID, Name: g.Series.Name, GalgameCount: seriesCount}
+	}
+	if inc.Meta {
+		m := buildPublicMeta(g)
+		rec.Meta = &m
 	}
 	return rec
 }
 
-// detailImages builds the images block from a galgame whose Cover list is loaded
-// and dims-enriched. banner/portrait are the effective pins; covers[] is the
-// full set (only under include=covers). On the sfw face every NSFW-rated image
-// (sexual>0 OR violence>0) is dropped.
-func (s *GalgameService) detailImages(g *model.Galgame, withCovers, dropNSFW bool) dto.PublicImages {
+// detailImages builds the images block from a galgame whose Cover / Screenshot
+// lists are loaded and dims-enriched. banner/portrait are the effective pins;
+// covers[] is the full set (only under include=covers); screenshots[] is the
+// gallery set (only under include=screenshots). On the sfw face every NSFW-rated
+// image (sexual>0 OR violence>0) is dropped from every set.
+func (s *GalgameService) detailImages(g *model.Galgame, withCovers, withScreenshots, dropNSFW bool) dto.PublicImages {
 	byHash := make(map[string]*model.GalgameCover, len(g.Cover))
 	for i := range g.Cover {
 		byHash[g.Cover[i].ImageHash] = &g.Cover[i]
@@ -163,6 +228,19 @@ func (s *GalgameService) detailImages(g *model.Galgame, withCovers, dropNSFW boo
 			}
 		}
 		imgs.Covers = covers
+	}
+	if withScreenshots {
+		shots := make([]dto.PublicImage, 0, len(g.Screenshot))
+		for i := range g.Screenshot {
+			sc := &g.Screenshot[i]
+			if dropNSFW && (sc.Sexual > 0 || sc.Violence > 0) {
+				continue
+			}
+			if img := s.publicImage(sc.ImageHash, ImageMeta{Width: sc.Width, Height: sc.Height, Thumbhash: sc.Thumbhash}, ""); img != nil {
+				shots = append(shots, *img)
+			}
+		}
+		imgs.Screenshots = shots
 	}
 	return imgs
 }
@@ -214,6 +292,30 @@ func (s *GalgameService) PublicBatchThin(ctx context.Context, ids []int, content
 	}
 	items := s.thinItems(ctx, rows, contentLimit, inc)
 	return orderItemsByIDs(items, ids), nil
+}
+
+// PublicBatchThinViewer is PublicBatchThin with viewer visibility: it also
+// resolves the viewer's own pending/declined (status 3/4) rows. Used only by the
+// search include_pending path to hydrate the authenticated caller's own drafts
+// (which FindByIDs, published-only, would drop). contentLimit is passed through
+// as-is (the caller decides whether to gate the viewer's own drafts).
+func (s *GalgameService) PublicBatchThinViewer(ctx context.Context, ids []int, viewerUID int, contentLimit string, inc PublicItemInclude) ([]dto.PublicGalgameItem, error) {
+	rows, err := s.galgameRepo.FindByIDsWithViewer(ctx, ids, viewerUID, contentLimit)
+	if err != nil {
+		return nil, err
+	}
+	items := s.thinItems(ctx, rows, contentLimit, inc)
+	return orderItemsByIDs(items, ids), nil
+}
+
+// PublicTrackView bumps the view counter for one galgame — the /v1 detail
+// track_view path (P6, gated to internal-tier callers by the handler). Fire-and-
+// forget, mirroring the internal detail view bump (public traffic must not block
+// on a counter write).
+func (s *GalgameService) PublicTrackView(id int) {
+	go func() {
+		_ = s.galgameRepo.IncrementView(context.Background(), id)
+	}()
 }
 
 // PublicBatchDetail returns full aggregate records (no include blocks) for the
@@ -282,11 +384,15 @@ func (s *GalgameService) thinItems(ctx context.Context, rows []model.Galgame, co
 	// page (a full-page IN, never N+1). Skipped when the block is not requested.
 	var officialsByID map[int][]dto.PublicOfficial
 	var scoresByID map[int]repository.ScoreMeta
+	var metaByID map[int]model.Galgame
 	if inc.Officials {
 		officialsByID, _ = s.galgameRepo.PublicOfficials(ctx, ids)
 	}
 	if inc.Scores {
 		scoresByID, _ = s.galgameRepo.LoadScoreMetaBatch(ctx, ids)
+	}
+	if inc.Meta {
+		metaByID, _ = s.galgameRepo.PublicMetaBatch(ctx, ids)
 	}
 
 	usable := func(m map[int]repository.PublicPinnedImage, id int) (string, bool) {
@@ -339,6 +445,17 @@ func (s *GalgameService) thinItems(ctx context.Context, rows []model.Galgame, co
 			// same shape as GET /galgame/:gid/scores for an unanchored game.
 			sc := buildGalgameScores(scoresByID[g.ID])
 			item.Scores = &sc
+		}
+		if inc.Meta {
+			// The batched meta row carries the operational scalars; a missing id
+			// (should not happen — same page) falls back to the list row's own
+			// fields so the key is never dropped.
+			mg := g
+			if row, ok := metaByID[g.ID]; ok {
+				mg = &row
+			}
+			m := buildPublicMeta(mg)
+			item.Meta = &m
 		}
 		items[i] = item
 	}
@@ -440,6 +557,79 @@ func publicTaxonomy(g *model.Galgame) *dto.PublicTaxonomy {
 	return tax
 }
 
+// publicTagRefs projects the loaded tag relations to rich references (id + name
+// + category + this galgame's spoiler_level for the tag).
+func publicTagRefs(g *model.Galgame) []dto.PublicTagRef {
+	refs := make([]dto.PublicTagRef, 0, len(g.Tag))
+	for i := range g.Tag {
+		if t := g.Tag[i].Tag; t != nil {
+			refs = append(refs, dto.PublicTagRef{
+				ID:           t.ID,
+				Name:         t.Name,
+				Category:     t.Category,
+				SpoilerLevel: g.Tag[i].SpoilerLevel,
+			})
+		}
+	}
+	return refs
+}
+
+// publicOfficialRefs projects the loaded maker relations to rich references
+// (id + name + category + primary language).
+func publicOfficialRefs(g *model.Galgame) []dto.PublicOfficialRef {
+	refs := make([]dto.PublicOfficialRef, 0, len(g.Official))
+	for i := range g.Official {
+		if o := g.Official[i].Official; o != nil {
+			refs = append(refs, dto.PublicOfficialRef{ID: o.ID, Name: o.Name, Category: o.Category, Lang: o.Lang})
+		}
+	}
+	return refs
+}
+
+// publicEngineRefs projects the loaded engine relations to rich references
+// (id + name).
+func publicEngineRefs(g *model.Galgame) []dto.PublicEngineRef {
+	refs := make([]dto.PublicEngineRef, 0, len(g.Engine))
+	for i := range g.Engine {
+		if e := g.Engine[i].Engine; e != nil {
+			refs = append(refs, dto.PublicEngineRef{ID: e.ID, Name: e.Name})
+		}
+	}
+	return refs
+}
+
+// publicLinks projects the loaded links to the curated public shape
+// ({id,name,link,source}), dropping the internal source_key / user_id
+// bookkeeping. Order is the preloaded order (id ASC).
+func publicLinks(g *model.Galgame) []dto.PublicLink {
+	links := make([]dto.PublicLink, 0, len(g.Link))
+	for i := range g.Link {
+		l := &g.Link[i]
+		links = append(links, dto.PublicLink{ID: l.ID, Name: l.Name, Link: l.Link, Source: l.Source})
+	}
+	return links
+}
+
+// buildPublicMeta maps a galgame row's operational scalars to the flat meta
+// block (include=meta). Values mirror the internal bridge face for the same row
+// (migration parity): vndb_id is the raw stored id, timestamps are UTC RFC3339
+// (null on zero), series_id / catalog_work_id null when unset.
+func buildPublicMeta(g *model.Galgame) dto.PublicMeta {
+	return dto.PublicMeta{
+		OriginalLanguage:   g.OriginalLanguage,
+		VNDBID:             g.VNDBID,
+		Status:             g.Status,
+		ContentLimit:       g.ContentLimit,
+		ReleasePrecision:   g.ReleasePrecision,
+		SeriesID:           g.SeriesID,
+		CatalogWorkID:      g.CatalogWorkID,
+		UserID:             g.UserID,
+		ResourceUpdateTime: fmtPublicTSPtr(g.ResourceUpdateTime),
+		View:               g.View,
+		Created:            fmtPublicTSPtr(g.Created),
+	}
+}
+
 // ─────────────────────────── formatting ───────────────────────────
 
 const (
@@ -465,6 +655,18 @@ func fmtPublicTS(ts model.Timestamp) string {
 		return ""
 	}
 	return t.UTC().Format(publicTSLayout)
+}
+
+// fmtPublicTSPtr formats a timestamp as UTC RFC3339, returning nil on the zero
+// value — matching the internal model.Timestamp JSON discipline (null on zero)
+// for the meta block's resource_update_time / created keys.
+func fmtPublicTSPtr(ts model.Timestamp) *string {
+	t := ts.Time()
+	if t.IsZero() {
+		return nil
+	}
+	s := t.UTC().Format(publicTSLayout)
+	return &s
 }
 
 // nullIfEmptyPub mirrors dto.nullIfEmpty for the service layer.

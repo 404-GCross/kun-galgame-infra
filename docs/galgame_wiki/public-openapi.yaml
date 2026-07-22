@@ -528,6 +528,42 @@ components:
         - eg
         - synced_at
       type: object
+    GalgameStatsData:
+      additionalProperties: false
+      properties:
+        built_at:
+          type: string
+        coverage:
+          $ref: "#/components/schemas/GalgameStatsEntry"
+        release_years:
+          $ref: "#/components/schemas/GalgameStatsEntry"
+        score_histogram_bangumi:
+          $ref: "#/components/schemas/GalgameStatsEntry"
+        score_histogram_eg:
+          $ref: "#/components/schemas/GalgameStatsEntry"
+        score_histogram_vndb:
+          $ref: "#/components/schemas/GalgameStatsEntry"
+        yearly_scores:
+          $ref: "#/components/schemas/GalgameStatsEntry"
+      required:
+        - release_years
+        - score_histogram_vndb
+        - score_histogram_bangumi
+        - score_histogram_eg
+        - yearly_scores
+        - coverage
+        - built_at
+      type: object
+    GalgameStatsEntry:
+      additionalProperties: false
+      properties:
+        built_at:
+          type: string
+        payload: {}
+      required:
+        - payload
+        - built_at
+      type: object
     OfficialGalgamesResponse:
       additionalProperties: false
       properties:
@@ -608,6 +644,18 @@ components:
         - items
         - next_cursor
       type: object
+    PublicEngineRef:
+      additionalProperties: false
+      properties:
+        id:
+          format: int64
+          type: integer
+        name:
+          type: string
+      required:
+        - id
+        - name
+      type: object
     PublicEnvelopeCalendarMonthData:
       additionalProperties: false
       properties:
@@ -667,6 +715,28 @@ components:
           type: integer
         data:
           $ref: "#/components/schemas/CalendarTBAData"
+        message:
+          type: string
+      required:
+        - code
+        - message
+        - data
+      type: object
+    PublicEnvelopeGalgameStatsData:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/PublicEnvelopeGalgameStatsData.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/GalgameStatsData"
         message:
           type: string
       required:
@@ -784,6 +854,28 @@ components:
         - message
         - data
       type: object
+    PublicEnvelopePublicLookupData:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/PublicEnvelopePublicLookupData.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/PublicLookupData"
+        message:
+          type: string
+      required:
+        - code
+        - message
+        - data
+      type: object
     PublicEnvelopePublicSearchData:
       additionalProperties: false
       properties:
@@ -853,6 +945,12 @@ components:
           $ref: "#/components/schemas/PublicImages"
         intro:
           $ref: "#/components/schemas/PublicIntro"
+        links:
+          items:
+            $ref: "#/components/schemas/PublicLink"
+          type: array
+        meta:
+          $ref: "#/components/schemas/PublicMeta"
         names:
           $ref: "#/components/schemas/PublicNames"
         original_language:
@@ -867,6 +965,8 @@ components:
           type: boolean
         scores:
           $ref: "#/components/schemas/GalgameScores"
+        series:
+          $ref: "#/components/schemas/PublicSeriesRef"
         taxonomy:
           $ref: "#/components/schemas/PublicTaxonomy"
         updated:
@@ -894,6 +994,8 @@ components:
         id:
           format: int64
           type: integer
+        meta:
+          $ref: "#/components/schemas/PublicMeta"
         names:
           $ref: "#/components/schemas/PublicNames"
         officials:
@@ -953,6 +1055,12 @@ components:
             - "null"
         portrait:
           $ref: "#/components/schemas/PublicImage"
+        screenshots:
+          items:
+            $ref: "#/components/schemas/PublicImage"
+          type:
+            - array
+            - "null"
       required:
         - banner
         - portrait
@@ -982,6 +1090,24 @@ components:
         - ja-jp
         - zh-tw
       type: object
+    PublicLink:
+      additionalProperties: false
+      properties:
+        id:
+          format: int64
+          type: integer
+        link:
+          type: string
+        name:
+          type: string
+        source:
+          type: string
+      required:
+        - id
+        - name
+        - link
+        - source
+      type: object
     PublicListData:
       additionalProperties: false
       properties:
@@ -998,6 +1124,68 @@ components:
       required:
         - items
         - next_cursor
+      type: object
+    PublicLookupData:
+      additionalProperties: false
+      properties:
+        exists:
+          type: boolean
+        id:
+          format: int64
+          type: integer
+      required:
+        - exists
+      type: object
+    PublicMeta:
+      additionalProperties: false
+      properties:
+        catalog_work_id:
+          format: int64
+          type:
+            - integer
+            - "null"
+        content_limit:
+          type: string
+        created:
+          type:
+            - string
+            - "null"
+        original_language:
+          type: string
+        release_precision:
+          type: string
+        resource_update_time:
+          type:
+            - string
+            - "null"
+        series_id:
+          format: int64
+          type:
+            - integer
+            - "null"
+        status:
+          format: int64
+          type: integer
+        user_id:
+          format: int64
+          type: integer
+        view:
+          format: int64
+          type: integer
+        vndb_id:
+          type: string
+      required:
+        - original_language
+        - vndb_id
+        - status
+        - content_limit
+        - release_precision
+        - series_id
+        - catalog_work_id
+        - user_id
+        - resource_update_time
+        - view
+        - created
       type: object
     PublicNames:
       additionalProperties: false
@@ -1036,6 +1224,24 @@ components:
         - id
         - name
       type: object
+    PublicOfficialRef:
+      additionalProperties: false
+      properties:
+        category:
+          type: string
+        id:
+          format: int64
+          type: integer
+        lang:
+          type: string
+        name:
+          type: string
+      required:
+        - id
+        - name
+        - category
+        - lang
+      type: object
     PublicRefs:
       additionalProperties: false
       properties:
@@ -1059,12 +1265,27 @@ components:
     PublicSearchData:
       additionalProperties: false
       properties:
+        facets:
+          additionalProperties:
+            additionalProperties:
+              format: int64
+              type: integer
+            type: object
+          type: object
+        highlight:
+          items:
+            $ref: "#/components/schemas/PublicSearchHighlight"
+          type: array
         items:
           items:
             $ref: "#/components/schemas/PublicGalgameItem"
           type:
             - array
             - "null"
+        pending:
+          items:
+            $ref: "#/components/schemas/PublicGalgameItem"
+          type: array
         total:
           format: int64
           type: integer
@@ -1072,15 +1293,70 @@ components:
         - items
         - total
       type: object
+    PublicSearchHighlight:
+      additionalProperties: false
+      properties:
+        id:
+          format: int64
+          type: integer
+        names:
+          $ref: "#/components/schemas/PublicNames"
+      required:
+        - id
+        - names
+      type: object
+    PublicSeriesRef:
+      additionalProperties: false
+      properties:
+        galgame_count:
+          format: int64
+          type: integer
+        id:
+          format: int64
+          type: integer
+        name:
+          type: string
+      required:
+        - id
+        - name
+        - galgame_count
+      type: object
+    PublicTagRef:
+      additionalProperties: false
+      properties:
+        category:
+          type: string
+        id:
+          format: int64
+          type: integer
+        name:
+          type: string
+        spoiler_level:
+          format: int64
+          type: integer
+      required:
+        - id
+        - name
+        - category
+        - spoiler_level
+      type: object
     PublicTaxonomy:
       additionalProperties: false
       properties:
+        engine_refs:
+          items:
+            $ref: "#/components/schemas/PublicEngineRef"
+          type: array
         engines:
           items:
             type: string
           type:
             - array
             - "null"
+        official_refs:
+          items:
+            $ref: "#/components/schemas/PublicOfficialRef"
+          type: array
         officials:
           items:
             $ref: "#/components/schemas/PublicOfficial"
@@ -1092,6 +1368,10 @@ components:
           type:
             - integer
             - "null"
+        tag_refs:
+          items:
+            $ref: "#/components/schemas/PublicTagRef"
+          type: array
         tags:
           items:
             type: string
@@ -1175,12 +1455,12 @@ paths:
             description: Items per page 1-100 (default 20)
             format: int64
             type: integer
-        - description: "Comma-separated blocks to expand on each item: officials,scores (default: none). Unknown names are ignored."
+        - description: "Comma-separated blocks to expand on each item: officials,scores,meta (default: none). Unknown names are ignored."
           explode: false
           in: query
           name: include
           schema:
-            description: "Comma-separated blocks to expand on each item: officials,scores (default: none). Unknown names are ignored."
+            description: "Comma-separated blocks to expand on each item: officials,scores,meta (default: none). Unknown names are ignored."
             type: string
         - description: Comma-separated top-level response keys to return (sparse fieldset); id is always included and unknown names are ignored (never a 400). Write keys in alphabetical order to maximize CDN cache hits.
           explode: false
@@ -1189,12 +1469,12 @@ paths:
           schema:
             description: Comma-separated top-level response keys to return (sparse fieldset); id is always included and unknown names are ignored (never a 400). Write keys in alphabetical order to maximize CDN cache hits.
             type: string
-        - description: Reserved; Phase 1 is always sfw
+        - description: "Content filter: sfw (default) | nsfw | all. nsfw/all require a key with the galgame:nsfw scope; otherwise silently coerced to sfw."
           explode: false
           in: query
           name: content_limit
           schema:
-            description: Reserved; Phase 1 is always sfw
+            description: "Content filter: sfw (default) | nsfw | all. nsfw/all require a key with the galgame:nsfw scope; otherwise silently coerced to sfw."
             type: string
       responses:
         "200":
@@ -1233,12 +1513,12 @@ paths:
               - brief
               - detail
             type: string
-        - description: "Comma-separated blocks to expand on each item (brief view only): officials,scores (default: none). Unknown names are ignored."
+        - description: "Comma-separated blocks to expand on each item (brief view only): officials,scores,meta (default: none). Unknown names are ignored."
           explode: false
           in: query
           name: include
           schema:
-            description: "Comma-separated blocks to expand on each item (brief view only): officials,scores (default: none). Unknown names are ignored."
+            description: "Comma-separated blocks to expand on each item (brief view only): officials,scores,meta (default: none). Unknown names are ignored."
             type: string
         - description: Comma-separated top-level response keys to return (sparse fieldset); id is always included and unknown names are ignored (never a 400). Write keys in alphabetical order to maximize CDN cache hits.
           explode: false
@@ -1247,12 +1527,12 @@ paths:
           schema:
             description: Comma-separated top-level response keys to return (sparse fieldset); id is always included and unknown names are ignored (never a 400). Write keys in alphabetical order to maximize CDN cache hits.
             type: string
-        - description: Reserved; Phase 1 is always sfw
+        - description: "Content filter: sfw (default) | nsfw | all. nsfw/all require a key with the galgame:nsfw scope; otherwise silently coerced to sfw."
           explode: false
           in: query
           name: content_limit
           schema:
-            description: Reserved; Phase 1 is always sfw
+            description: "Content filter: sfw (default) | nsfw | all. nsfw/all require a key with the galgame:nsfw scope; otherwise silently coerced to sfw."
             type: string
       responses:
         "200":
@@ -1407,6 +1687,34 @@ paths:
       summary: Incremental-sync keyset stream of {id, updated} ascending by (updated, id); take the ids and hydrate via batch
       tags:
         - galgame-public
+  /v1/galgame/lookup:
+    get:
+      operationId: lookupGalgamePublic
+      parameters:
+        - description: VNDB visual-novel id (e.g. v17). Required.
+          explode: false
+          in: query
+          name: vndb_id
+          required: true
+          schema:
+            description: VNDB visual-novel id (e.g. v17). Required.
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublicEnvelopePublicLookupData"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: "Resolve a vndb_id to its galgame id: {exists, id?}"
+      tags:
+        - galgame-public
   /v1/galgame/officials/{id}/galgames:
     get:
       operationId: listOfficialGalgamesPublic
@@ -1506,12 +1814,12 @@ paths:
             description: Items per page (default 24)
             format: int64
             type: integer
-        - description: "Comma-separated blocks to expand on each item: officials,scores (default: none). Unknown names are ignored."
+        - description: "Comma-separated blocks to expand on each item: officials,scores,meta (default: none). Unknown names are ignored."
           explode: false
           in: query
           name: include
           schema:
-            description: "Comma-separated blocks to expand on each item: officials,scores (default: none). Unknown names are ignored."
+            description: "Comma-separated blocks to expand on each item: officials,scores,meta (default: none). Unknown names are ignored."
             type: string
         - description: Comma-separated top-level response keys to return (sparse fieldset); id is always included and unknown names are ignored (never a 400). Write keys in alphabetical order to maximize CDN cache hits.
           explode: false
@@ -1520,6 +1828,34 @@ paths:
           schema:
             description: Comma-separated top-level response keys to return (sparse fieldset); id is always included and unknown names are ignored (never a 400). Write keys in alphabetical order to maximize CDN cache hits.
             type: string
+        - description: "Content filter: sfw (default) | nsfw | all. nsfw/all require a key with the galgame:nsfw scope; otherwise silently coerced to sfw."
+          explode: false
+          in: query
+          name: content_limit
+          schema:
+            description: "Content filter: sfw (default) | nsfw | all. nsfw/all require a key with the galgame:nsfw scope; otherwise silently coerced to sfw."
+            type: string
+        - description: facets=1 adds the Meilisearch facet distribution (age_limit, original_language) as a top-level facets object.
+          explode: false
+          in: query
+          name: facets
+          schema:
+            description: facets=1 adds the Meilisearch facet distribution (age_limit, original_language) as a top-level facets object.
+            type: boolean
+        - description: "highlight=1 adds a top-level highlight array: each item's localized names with matched terms wrapped in <mark>…</mark>, keyed by id."
+          explode: false
+          in: query
+          name: highlight
+          schema:
+            description: "highlight=1 adds a top-level highlight array: each item's localized names with matched terms wrapped in <mark>…</mark>, keyed by id."
+            type: boolean
+        - description: "include_pending=1 adds the authenticated caller's own pending/declined drafts as a top-level pending array. Dual-credential: the key rides in X-API-Key, the end-user JWT in Authorization: Bearer. Silently dropped without a valid JWT."
+          explode: false
+          in: query
+          name: include_pending
+          schema:
+            description: "include_pending=1 adds the authenticated caller's own pending/declined drafts as a top-level pending array. Dual-credential: the key rides in X-API-Key, the end-user JWT in Authorization: Bearer. Silently dropped without a valid JWT."
+            type: boolean
         - description: all | r18
           explode: false
           in: query
@@ -1600,6 +1936,25 @@ paths:
       summary: Meilisearch relevance over published + sfw galgames, projected to thin aggregate items (page/limit)
       tags:
         - galgame-public
+  /v1/galgame/stats:
+    get:
+      operationId: getGalgameStatsPublic
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublicEnvelopeGalgameStatsData"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Site-wide cross-source statistics overview (six daily snapshots + built_at); weak ETag / 304
+      tags:
+        - galgame-public
   /v1/galgame/tags/{id}/galgames:
     get:
       operationId: listTagGalgamesPublic
@@ -1677,12 +2032,12 @@ paths:
             description: Galgame ID
             format: int64
             type: integer
-        - description: "Comma-separated heavy blocks to include: intro,scores,covers,taxonomy (default: none)"
+        - description: "Comma-separated heavy blocks to include: intro,scores,covers,taxonomy,links,screenshots,series,meta (default: none). tag_refs,official_refs,engine_refs enrich the taxonomy block and are meaningful only together with taxonomy. Unknown names are ignored."
           explode: false
           in: query
           name: include
           schema:
-            description: "Comma-separated heavy blocks to include: intro,scores,covers,taxonomy (default: none)"
+            description: "Comma-separated heavy blocks to include: intro,scores,covers,taxonomy,links,screenshots,series,meta (default: none). tag_refs,official_refs,engine_refs enrich the taxonomy block and are meaningful only together with taxonomy. Unknown names are ignored."
             type: string
         - description: Comma-separated top-level response keys to return (sparse fieldset); id is always included and unknown names are ignored (never a 400). Write keys in alphabetical order to maximize CDN cache hits.
           explode: false
@@ -1691,13 +2046,20 @@ paths:
           schema:
             description: Comma-separated top-level response keys to return (sparse fieldset); id is always included and unknown names are ignored (never a 400). Write keys in alphabetical order to maximize CDN cache hits.
             type: string
-        - description: Reserved; Phase 1 is always sfw
+        - description: "Content filter: sfw (default) | nsfw | all. nsfw/all require a key with the galgame:nsfw scope; otherwise silently coerced to sfw. A detail 404s only when the resolved filter cannot cover the row's rating (all never 404s on rating)."
           explode: false
           in: query
           name: content_limit
           schema:
-            description: Reserved; Phase 1 is always sfw
+            description: "Content filter: sfw (default) | nsfw | all. nsfw/all require a key with the galgame:nsfw scope; otherwise silently coerced to sfw. A detail 404s only when the resolved filter cannot cover the row's rating (all never 404s on rating)."
             type: string
+        - description: "Internal-tier only: track_view=1 bumps the view counter (mirrors the internal detail view bump). Other tiers silently ignore it."
+          explode: false
+          in: query
+          name: track_view
+          schema:
+            description: "Internal-tier only: track_view=1 bumps the view counter (mirrors the internal detail view bump). Other tiers silently ignore it."
+            type: boolean
       responses:
         "200":
           content:

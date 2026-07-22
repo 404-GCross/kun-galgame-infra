@@ -78,7 +78,7 @@ func toMap(t *testing.T, v any) map[string]any {
 func TestProjectDetailFrozenShape(t *testing.T) {
 	svc := &GalgameService{cdnBase: "https://cdn.example.com/img"}
 	rec := svc.projectDetail(sampleGalgame(), sampleScoreMeta(),
-		PublicInclude{Intro: true, Scores: true, Covers: true, Taxonomy: true}, "sfw")
+		PublicInclude{Intro: true, Scores: true, Covers: true, Taxonomy: true}, "sfw", 0)
 	m := toMap(t, rec)
 
 	// names: keys always present, BCP-47, empty→null.
@@ -173,7 +173,7 @@ func TestProjectDetailFrozenShape(t *testing.T) {
 
 func TestProjectDetailIncludeGating(t *testing.T) {
 	svc := &GalgameService{cdnBase: "https://cdn.example.com/img"}
-	rec := svc.projectDetail(sampleGalgame(), sampleScoreMeta(), PublicInclude{}, "sfw")
+	rec := svc.projectDetail(sampleGalgame(), sampleScoreMeta(), PublicInclude{}, "sfw", 0)
 	m := toMap(t, rec)
 
 	for _, k := range []string{"intro", "scores", "taxonomy"} {
@@ -207,7 +207,7 @@ func TestPublicImageURLAndNSFWDrop(t *testing.T) {
 	g := sampleGalgame()
 	g.Cover[0].Sexual = 3 // the banner cover is now NSFW-rated
 	svc := &GalgameService{cdnBase: "https://cdn.example.com/img"}
-	imgs := svc.detailImages(g, false, true)
+	imgs := svc.detailImages(g, false, false, true)
 	if imgs.Banner != nil {
 		t.Errorf("NSFW-rated banner must be dropped on the sfw face, got %v", imgs.Banner)
 	}
