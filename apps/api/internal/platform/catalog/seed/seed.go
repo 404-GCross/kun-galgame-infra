@@ -28,6 +28,7 @@ var dataFS embed.FS
 
 // Source ids referenced by the seed maps (must match the catalog_source rows).
 const (
+	vndbSourceID    int16 = 2
 	bangumiSourceID int16 = 3
 	dlsiteSourceID  int16 = 4
 	egSourceID      int16 = 5
@@ -50,6 +51,11 @@ const (
 	roleMusic           int64 = 209
 	roleCharacterDesign int64 = 145
 	roleVocal           int64 = 286
+
+	// roleDirector is the generated-vocabulary "director" position (key
+	// "director", 导演 / Director), the best-fit slot for VNDB's `director`
+	// staff role.
+	roleDirector int64 = 173
 )
 
 // handRoles are hand-pinned roles the import needs that the generated Bangumi
@@ -88,6 +94,31 @@ func dlsiteRoleMap() []model.CatalogSourceRoleMap {
 	out := make([]model.CatalogSourceRoleMap, 0, len(m))
 	for sr, rid := range m {
 		out = append(out, model.CatalogSourceRoleMap{SourceID: dlsiteSourceID, SourceRole: sr, RoleID: rid})
+	}
+	return out
+}
+
+// vndbRoleMap pins the VNDB vn_staff.role → catalog_role mapping (source_role =
+// the raw role string; refs/proj/73). Seven of the ten VNDB staff roles have a
+// good-fit slot in the generated vocabulary (art→原画, songs→声乐 vocals, staff→
+// the wide その他 bucket); the remaining three — translator / editor / qa — have
+// NO faithful slot in the 246-position Bangumi (anime) vocabulary (its "editor"
+// is 剪辑, film cutting, a different craft) and are deliberately left UNMAPPED
+// rather than force-fit: a vn_staff row in one of them is skipped (counted as
+// unmapped) until the vocabulary gains those positions. See doc 73 拍板.
+func vndbRoleMap() []model.CatalogSourceRoleMap {
+	m := map[string]int64{
+		"scenario":   roleScenario,        // 247 シナリオ
+		"art":        roleIllustration,    // 184 原画 / イラスト
+		"chardesign": roleCharacterDesign, // 145 キャラクターデザイン
+		"music":      roleMusic,           // 209 音楽
+		"songs":      roleVocal,           // 286 声乐 (vocals / theme-song performers)
+		"director":   roleDirector,        // 173 監督
+		"staff":      roleOtherStaff,      // 2   その他 (VNDB's miscellaneous bucket)
+	}
+	out := make([]model.CatalogSourceRoleMap, 0, len(m))
+	for sr, rid := range m {
+		out = append(out, model.CatalogSourceRoleMap{SourceID: vndbSourceID, SourceRole: sr, RoleID: rid})
 	}
 	return out
 }
@@ -223,6 +254,7 @@ func Run(db *gorm.DB) error {
 	roles = append(roles, handRoles()...)
 	roleMap = append(roleMap, egRoleMap()...)
 	roleMap = append(roleMap, dlsiteRoleMap()...)
+	roleMap = append(roleMap, vndbRoleMap()...)
 
 	if err := upsert(db, "catalog_medium", media(), []string{"id"}, []string{"name_cn"}); err != nil {
 		return err

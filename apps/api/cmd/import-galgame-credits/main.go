@@ -1,11 +1,13 @@
 // import-galgame-credits lands the first entity-layer data — persons (as
-// orphan credit names), characters and credit edges — from Bangumi and
-// erogamespace into the catalog Gold tables, identity-gated
+// orphan credit names), characters and credit edges — from Bangumi,
+// erogamespace and VNDB into the catalog Gold tables, identity-gated
 // (Bangumi = every exact Bangumi work anchor, step-69 widened from the
-// step-12 bid-audit pass layer; EG = eg-vndb-rosetta). Orphan-name-first,
+// step-12 bid-audit pass layer; EG = eg-vndb-rosetta; VNDB = every exact VNDB
+// work anchor, step 73 — vn_staff non-VA credits + vn_seiyuu VA credits routed
+// through the step-47 roster character anchors). Orphan-name-first,
 // self-anchored, whole-source-rollbackable; no person rows, no auto-merge.
 //
-//	go run ./cmd/migrate-catalog                              # land the EG role map
+//	go run ./cmd/migrate-catalog                              # land the EG + VNDB role maps
 //	go run ./cmd/import-galgame-credits --source all          # dry-run
 //	go run ./cmd/import-galgame-credits --source all --apply  # write (×2 = idempotent)
 package main
@@ -27,7 +29,7 @@ import (
 )
 
 func main() {
-	source := flag.String("source", "all", "bangumi | eg | all")
+	source := flag.String("source", "all", "bangumi | eg | vndb | all")
 	apply := flag.Bool("apply", false, "write (default: dry run — plan counts only)")
 	limit := flag.Int("limit", 0, "cap works processed per wave (0 = all)")
 	egDSN := flag.String("eg-dsn", "", "erogamespace staging DSN (default: erogamespace on the catalog server)")

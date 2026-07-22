@@ -122,6 +122,13 @@ func (im *Importer) Run(source string) (Stats, error) {
 		}
 		total.add(s)
 	}
+	if source == "vndb" || source == "all" {
+		s, err := im.runVNDBCredits()
+		if err != nil {
+			return total, fmt.Errorf("vndb credits wave: %w", err)
+		}
+		total.add(s)
+	}
 	return total, nil
 }
 
