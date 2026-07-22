@@ -53,7 +53,7 @@ Microsoft 365 的「九宫格」），各家都是**私有实现 + 每个 app �
 
 **CORS（下游跨域读取必看）**：该端点是公开 GET，但下游浏览器跨域 `fetch` 时，**消费方的
 origin 必须在 OP 的 CORS 白名单内**（`internal/middleware/cors.go`：目前含 `kungal.com`、
-`moyu.moe` + 开发 origin）。接入子域（`www.kungal.com` / `wiki.kungal.com`）时需把其 origin
+`moyu.moe` + 开发 origin）。接入子域（如 `www.kungal.com`）时需把其 origin
 加进白名单，否则被 CORS 拦截。
 
 **UX 建议**：logo + 名称、官方站点（`auto_consent`）显示 primary「官方」chip 并排在前、缓存

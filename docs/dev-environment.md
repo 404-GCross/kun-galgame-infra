@@ -296,7 +296,6 @@ universal three steps:
 | kun-galgame-forum (kungal) | 2334 / 2333 | `apps/api`, `apps/web` | `4ed9bc99ec0a789a4796b83e22bd84c5` | `http://127.0.0.1:2333/auth/callback` |
 | kun-galgame-patch (moyu) | 5214 / 6969 | `apps/api`, `apps/web` | `df3ff6008d740bfacbe46aa8cf483cf2` | `http://127.0.0.1:6969/auth/callback` |
 | infra `apps/web` (account center) | — / 9420 | `apps/web` | session-based (n/a) | — |
-| infra `apps/wiki` (galgame wiki) | — / 9421 | `apps/wiki` | `53e9b5ea70bfc4e4d0700a9f7b8818e8` (public/PKCE) | `http://127.0.0.1:9421/auth/callback` |
 | kun-letmoe-community | 7001 / 5364 | `apps/api`, `apps/web` | `letmoe-dev` (seed once, below) | `http://127.0.0.1:5364/auth/callback` |
 
 Confidential clients (forum / moyu) present the plaintext `dev-secret-<client_id>`;

@@ -258,7 +258,6 @@ func seedInitialData(db *gorm.DB) error {
 		{Name: "鲲 Galgame OAuth", Domain: "oauth.kungal.com", Description: "鲲 Galgame OAuth"},
 		{Name: "鲲 Galgame 论坛", Domain: "www.kungal.com", Description: "鲲 Galgame 论坛"},
 		{Name: "鲲 Galgame 补丁", Domain: "www.moyu.moe", Description: "鲲 Galgame 补丁"},
-		{Name: "鲲 Galgame Wiki", Domain: "wiki.kungal.com", Description: "Galgame Wiki"},
 		{Name: "鲲 Galgame AI", Domain: "ai.kungal.com", Description: "鲲 Galgame AI"},
 		{Name: "鲲 Galgame 表情包", Domain: "sticker.kungal.com", Description: "鲲 Galgame 表情包"},
 	}
@@ -354,7 +353,6 @@ func seedInitialData(db *gorm.DB) error {
 	firstPartyDomains := []string{
 		"www.kungal.com",
 		"www.moyu.moe",
-		"wiki.kungal.com",
 		"ai.kungal.com",
 		"sticker.kungal.com",
 	}

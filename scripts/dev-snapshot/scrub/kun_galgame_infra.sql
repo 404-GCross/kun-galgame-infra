@@ -84,11 +84,5 @@ UPDATE oauth_clients c SET redirect_uris = (
   ) t
 ) WHERE c.id = 'df3ff6008d740bfacbe46aa8cf483cf2';
 
-UPDATE oauth_clients c SET redirect_uris = (
-  SELECT jsonb_agg(DISTINCT e) FROM (
-    SELECT jsonb_array_elements_text(c.redirect_uris) AS e
-    UNION SELECT 'http://127.0.0.1:9421/auth/callback'
-  ) t
-) WHERE c.id = '53e9b5ea70bfc4e4d0700a9f7b8818e8';
 
 COMMIT;
