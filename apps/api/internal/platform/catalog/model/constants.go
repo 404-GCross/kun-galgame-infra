@@ -32,8 +32,9 @@ const (
 // Blood types for a character (refs/proj/81 field PR C2). The column is
 // nullable: NULL = unknown/unset — there is deliberately no 0 constant, exactly
 // as with Gender. Sources: VNDB chars.bloodt (a/b/ab/o) and Bangumi 血型
-// (A型/O型/…). Fictional blood types (X型/F型 etc.) are NOT in this vocabulary —
-// they are not written to the column (the raw string is preserved in extra).
+// (A型/O型/…). Values outside this vocabulary — sentinels (不明/未知/？) and
+// fictional types (X型/F型 etc.) — are dropped entirely, not preserved in extra
+// (refs/proj/81 D1: the tail is a few hundred rows, mostly unknown-markers).
 const (
 	BloodTypeA  int16 = 1
 	BloodTypeB  int16 = 2
