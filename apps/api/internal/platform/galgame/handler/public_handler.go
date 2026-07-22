@@ -31,11 +31,14 @@ func NewPublicHandler(svc *service.GalgameService, searchSvc *search.Service) *P
 	return &PublicHandler{svc: svc, search: searchSvc}
 }
 
-// contentLimit resolves the effective content_limit for a public request. Phase
-// 1 keys never carry galgame:nsfw, so this is always "sfw" — the gate is wired
-// but inert (裁定 2/6).
+// contentLimit resolves the effective content_limit filter for a public request:
+// the three-state gate (sfw|nsfw|all) is resolved by devapi against the key's
+// scope, then mapped to the repository filter value ("all" → "" = no filter;
+// sfw/nsfw pass through). A no-scope key silently resolves to "sfw" regardless
+// of the requested value (P5). Phase 1 keys never carry galgame:nsfw, so this is
+// still always "sfw" today — the gate is wired but inert.
 func (h *PublicHandler) contentLimit(c fiber.Ctx) string {
-	return devapi.ResolveContentLimit(c, c.Query("content_limit"))
+	return utils.ParseContentLimit(devapi.ResolveContentLimit(c, c.Query("content_limit")), "sfw")
 }
 
 const (
@@ -44,6 +47,9 @@ const (
 	cacheDetail  = "public, max-age=0, s-maxage=300, stale-while-revalidate=60"
 	cacheList    = "public, max-age=0, s-maxage=60, stale-while-revalidate=60"
 	cacheChanges = "public, max-age=0, s-maxage=30, stale-while-revalidate=30"
+	// cacheStats mirrors the internal /galgame/stats window: the stats rebuild
+	// daily, so a long shared-cache window + cheap weak-ETag revalidation.
+	cacheStats = "public, max-age=0, s-maxage=3600, stale-while-revalidate=300"
 )
 
 // applyItemFields projects each item of a page to the sparse fieldset (fields=)
@@ -93,6 +99,16 @@ func (h *PublicHandler) Detail(c fiber.Ctx) error {
 	}
 	if !found {
 		return response.NotFound(c, errors.ErrGalgameNotFound)
+	}
+	// track_view=1 bumps the view counter — but ONLY for an internal-tier caller
+	// (P6): the bridge Get bumped view, so an internal consumer migrating to /v1
+	// keeps that behavior; every other tier silently ignores the param (public
+	// traffic must not mutate wiki state). The row is published (PublicDetail only
+	// returns found for status=0), so the counter is always the public-view count.
+	if parseBool(c.Query("track_view")) {
+		if cred := devapi.CredentialFrom(c); cred != nil && cred.Tier == devapi.TierInternal {
+			h.svc.PublicTrackView(id)
+		}
 	}
 	etag := fmt.Sprintf(`W/"g%d-%d"`, id, updated.Unix())
 	c.Set("ETag", etag)
@@ -162,9 +178,23 @@ func (h *PublicHandler) Batch(c fiber.Ctx) error {
 	return response.Success(c, fiber.Map{"items": itemsBody})
 }
 
-// Search serves GET /v1/galgame/search — Meilisearch relevance over published +
-// sfw galgames, projected to thin aggregate items in relevance order. Page/limit
+// highlightFields is the Meilisearch attribute set retrieved when highlight=1:
+// id (to key the highlight entry) + the four localized names (so their
+// <mark>-wrapped `_formatted` variants come back). It is used ONLY for the
+// highlight projection; the response items are still re-hydrated from the DB.
+var highlightFields = []string{"id", "name_zh_cn", "name_ja_jp", "name_en_us", "name_zh_tw"}
+
+// Search serves GET /v1/galgame/search — Meilisearch relevance over published
+// galgames, projected to thin aggregate items in relevance order. Page/limit
 // (not cursor): relevance ranking is not stable for keyset paging.
+//
+// W1a add-only params: facets=1 adds the Meilisearch facet distribution;
+// highlight=1 adds a parallel <mark>-wrapped names array keyed by id;
+// include_pending=1 (dual-credential — key in X-API-Key, an OPTIONAL end-user
+// JWT in Authorization: Bearer, populated by optionalJWT) adds the caller's own
+// pending/declined drafts. Without a valid JWT, include_pending is silently
+// dropped (no pending key). Each block is omitted entirely when not requested,
+// so the default response is byte-identical.
 func (h *PublicHandler) Search(c fiber.Ctx) error {
 	fromTime, err := utils.ParseReleaseLowerBound(c.Query("released_from"))
 	if err != nil {
@@ -186,6 +216,20 @@ func (h *PublicHandler) Search(c fiber.Ctx) error {
 		toTS = toTime.Unix()
 	}
 
+	wantFacets := parseBool(c.Query("facets"))
+	wantHighlight := parseBool(c.Query("highlight"))
+	// include_pending is dual-credential: honored only when the OPTIONAL end-user
+	// JWT (Authorization: Bearer, parsed by optionalJWT) is present and valid.
+	viewerUID, _ := c.Locals("user_id").(uint)
+	wantPending := parseBool(c.Query("include_pending")) && viewerUID > 0
+
+	// Only need ids to re-hydrate from the DB; widen to the name fields when
+	// highlight is requested so Meili returns their `_formatted` variants.
+	fields := []string{"id"}
+	if wantHighlight {
+		fields = highlightFields
+	}
+
 	req := &search.GalgameSearchRequest{
 		Query:             c.Query("q"),
 		Statuses:          []int{0}, // public: published only
@@ -202,24 +246,125 @@ func (h *PublicHandler) Search(c fiber.Ctx) error {
 		Sort:              c.Query("sort"),
 		Page:              atoiOr(c.Query("page"), 1),
 		Limit:             atoiOr(c.Query("limit"), 24),
-		Fields:            []string{"id"}, // only need ids; re-hydrate from DB
+		Fields:            fields,
+		WantFacets:        wantFacets,
+		WantHighlight:     wantHighlight,
+		IncludePending:    wantPending,
+		ViewerUID:         int(viewerUID),
 	}
 	resp, err := h.search.SearchGalgames(c.Context(), req)
 	if err != nil {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
 
+	inc := service.ParsePublicItemInclude(c.Query("include"))
 	ids := hitIDs(resp.Items)
-	items, err := h.svc.PublicBatchThin(c.Context(), ids, req.ContentLimit, service.ParsePublicItemInclude(c.Query("include")))
+	items, err := h.svc.PublicBatchThin(c.Context(), ids, req.ContentLimit, inc)
 	if err != nil {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
+
+	// Optional add-only blocks. Each stays nil (→ omitempty → key absent) unless
+	// requested, so the default response is byte-identical.
+	var facets *map[string]map[string]int
+	if wantFacets && len(resp.Facets) > 0 {
+		facets = &resp.Facets
+	}
+	var highlight *[]dto.PublicSearchHighlight
+	if wantHighlight {
+		hl := highlightFromHits(resp.Items)
+		highlight = &hl
+	}
+	var pending *[]dto.PublicGalgameItem
+	if wantPending && len(resp.Pending) > 0 {
+		// The viewer's own drafts are re-hydrated with viewer visibility (status
+		// 3/4 for this uid). content_limit is NOT applied to the caller's own
+		// drafts — mirrors the internal search pending sub-query.
+		pendItems, pErr := h.svc.PublicBatchThinViewer(c.Context(), hitIDs(resp.Pending), int(viewerUID), "", inc)
+		if pErr != nil {
+			return response.InternalError(c, errors.ErrOperationFailed)
+		}
+		pending = &pendItems
+	}
+
 	c.Set("Cache-Control", cacheList)
 	f := service.ParsePublicFields(c.Query("fields"))
 	if !f.Active() {
-		return response.Success(c, dto.PublicSearchData{Items: items, Total: resp.Total}) // byte-identical default
+		// omitempty pointers keep the no-optional default byte-identical.
+		return response.Success(c, dto.PublicSearchData{
+			Items: items, Total: resp.Total,
+			Facets: facets, Highlight: highlight, Pending: pending,
+		})
 	}
-	return response.Success(c, fiber.Map{"items": applyItemFields(items, f), "total": resp.Total})
+	// fields= trims the item keys (envelope keys facets/highlight/pending are not
+	// item-level and are unaffected). Build the map, adding optional keys present.
+	out := fiber.Map{"items": applyItemFields(items, f), "total": resp.Total}
+	if facets != nil {
+		out["facets"] = facets
+	}
+	if highlight != nil {
+		out["highlight"] = highlight
+	}
+	if pending != nil {
+		out["pending"] = applyItemFields(*pending, f)
+	}
+	return response.Success(c, out)
+}
+
+// highlightFromHits builds the parallel highlight array from Meilisearch hits:
+// each entry is the hit id + its localized names taken from the hit's
+// `_formatted` object (the <mark>-wrapped variants), applying the empty→null
+// discipline of PublicNames. A hit without `_formatted` yields all-null names.
+func highlightFromHits(hits []map[string]any) []dto.PublicSearchHighlight {
+	out := make([]dto.PublicSearchHighlight, 0, len(hits))
+	for _, hit := range hits {
+		id, ok := intFromAny(hit["id"])
+		if !ok {
+			continue
+		}
+		formatted, _ := hit["_formatted"].(map[string]any)
+		out = append(out, dto.PublicSearchHighlight{
+			ID: id,
+			Names: dto.PublicNames{
+				JaJP: formattedName(formatted, "name_ja_jp"),
+				ZhCN: formattedName(formatted, "name_zh_cn"),
+				ZhTW: formattedName(formatted, "name_zh_tw"),
+				EnUS: formattedName(formatted, "name_en_us"),
+			},
+		})
+	}
+	return out
+}
+
+// formattedName reads one localized name from a Meili `_formatted` object,
+// mapping ""/absent → nil (the PublicNames empty→null discipline).
+func formattedName(formatted map[string]any, key string) *string {
+	if formatted == nil {
+		return nil
+	}
+	s, ok := formatted[key].(string)
+	if !ok || s == "" {
+		return nil
+	}
+	return &s
+}
+
+// intFromAny coerces a Meili hit id (JSON number → float64, or int/int64/string)
+// to an int.
+func intFromAny(v any) (int, bool) {
+	switch n := v.(type) {
+	case float64:
+		return int(n), true
+	case int:
+		return n, true
+	case int64:
+		return int(n), true
+	case string:
+		if i, err := strconv.Atoi(strings.TrimSpace(n)); err == nil {
+			return i, true
+		}
+	}
+	return 0, false
 }
 
 // Changes serves GET /v1/galgame/changes — the incremental-sync keyset stream of
@@ -230,6 +375,44 @@ func (h *PublicHandler) Changes(c fiber.Ctx) error {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
 	c.Set("Cache-Control", cacheChanges)
+	return response.Success(c, data)
+}
+
+// Stats serves GET /v1/galgame/stats — the site-wide cross-source statistics
+// overview (the six frozen galgame_stats snapshots, payloads verbatim). Mirrors
+// the internal /galgame/stats: weak ETag folded from max(built_at) with a
+// matching If-None-Match → 304, and the daily-rebuild Cache-Control window.
+func (h *PublicHandler) Stats(c fiber.Ctx) error {
+	data, maxBuilt, err := h.svc.GetStats(c.Context())
+	if err != nil {
+		return response.InternalError(c, errors.ErrOperationFailed)
+	}
+	etag := fmt.Sprintf(`W/"gstats-%d"`, maxBuilt.Unix())
+	c.Set("ETag", etag)
+	c.Set("Cache-Control", cacheStats)
+	if c.Get("If-None-Match") == etag {
+		return c.SendStatus(fiber.StatusNotModified)
+	}
+	return response.Success(c, data)
+}
+
+// Lookup serves GET /v1/galgame/lookup?vndb_id= — whether a galgame with that
+// vndb_id exists, and its id when it does. Mirrors the internal /galgame/check,
+// but the id key is `id` (public DTO convention), not the internal `galgame_id`.
+func (h *PublicHandler) Lookup(c fiber.Ctx) error {
+	vndbID := strings.TrimSpace(c.Query("vndb_id"))
+	if vndbID == "" {
+		return response.BadRequestMsg(c, errors.ErrValidationFailed, "vndb_id is required")
+	}
+	exists, galgameID, err := h.svc.CheckVNDB(c.Context(), vndbID)
+	if err != nil {
+		return response.InternalError(c, errors.ErrOperationFailed)
+	}
+	data := dto.PublicLookupData{Exists: exists}
+	if exists {
+		id := galgameID
+		data.ID = &id
+	}
 	return response.Success(c, data)
 }
 

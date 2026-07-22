@@ -37,9 +37,9 @@ type publicListInput struct {
 	Sort         string `query:"sort" enum:"id,release_date" doc:"Sort key: id (default, ascending) or release_date (newest first, undated last)"`
 	Cursor       string `query:"cursor" doc:"Opaque keyset cursor from a prior response's next_cursor; omit for the first page"`
 	Limit        int    `query:"limit" doc:"Items per page 1-100 (default 20)"`
-	Include      string `query:"include" doc:"Comma-separated blocks to expand on each item: officials,scores (default: none). Unknown names are ignored."`
+	Include      string `query:"include" doc:"Comma-separated blocks to expand on each item: officials,scores,meta (default: none). Unknown names are ignored."`
 	Fields       string `query:"fields" doc:"Comma-separated top-level response keys to return (sparse fieldset); id is always included and unknown names are ignored (never a 400). Write keys in alphabetical order to maximize CDN cache hits."`
-	ContentLimit string `query:"content_limit" doc:"Reserved; Phase 1 is always sfw"`
+	ContentLimit string `query:"content_limit" doc:"Content filter: sfw (default) | nsfw | all. nsfw/all require a key with the galgame:nsfw scope; otherwise silently coerced to sfw."`
 }
 type publicListOutput struct {
 	Body publicEnvelope[dto.PublicListData]
@@ -47,9 +47,10 @@ type publicListOutput struct {
 
 type publicDetailInput struct {
 	ID           int    `path:"id" doc:"Galgame ID"`
-	Include      string `query:"include" doc:"Comma-separated heavy blocks to include: intro,scores,covers,taxonomy (default: none)"`
+	Include      string `query:"include" doc:"Comma-separated heavy blocks to include: intro,scores,covers,taxonomy,links,screenshots,series,meta (default: none). tag_refs,official_refs,engine_refs enrich the taxonomy block and are meaningful only together with taxonomy. Unknown names are ignored."`
 	Fields       string `query:"fields" doc:"Comma-separated top-level response keys to return (sparse fieldset); id is always included and unknown names are ignored (never a 400). Write keys in alphabetical order to maximize CDN cache hits."`
-	ContentLimit string `query:"content_limit" doc:"Reserved; Phase 1 is always sfw"`
+	ContentLimit string `query:"content_limit" doc:"Content filter: sfw (default) | nsfw | all. nsfw/all require a key with the galgame:nsfw scope; otherwise silently coerced to sfw. A detail 404s only when the resolved filter cannot cover the row's rating (all never 404s on rating)."`
+	TrackView    bool   `query:"track_view" doc:"Internal-tier only: track_view=1 bumps the view counter (mirrors the internal detail view bump). Other tiers silently ignore it."`
 }
 type publicDetailOutput struct {
 	Body publicEnvelope[dto.PublicGalgame]
@@ -58,9 +59,9 @@ type publicDetailOutput struct {
 type publicBatchInput struct {
 	IDs          string `query:"ids" doc:"Comma-separated galgame IDs (1-100)"`
 	View         string `query:"view" enum:"brief,detail" doc:"brief (default) = thin items; detail = full aggregate records (no include)"`
-	Include      string `query:"include" doc:"Comma-separated blocks to expand on each item (brief view only): officials,scores (default: none). Unknown names are ignored."`
+	Include      string `query:"include" doc:"Comma-separated blocks to expand on each item (brief view only): officials,scores,meta (default: none). Unknown names are ignored."`
 	Fields       string `query:"fields" doc:"Comma-separated top-level response keys to return (sparse fieldset); id is always included and unknown names are ignored (never a 400). Write keys in alphabetical order to maximize CDN cache hits."`
-	ContentLimit string `query:"content_limit" doc:"Reserved; Phase 1 is always sfw"`
+	ContentLimit string `query:"content_limit" doc:"Content filter: sfw (default) | nsfw | all. nsfw/all require a key with the galgame:nsfw scope; otherwise silently coerced to sfw."`
 }
 type publicBatchOutput struct {
 	Body publicEnvelope[dto.PublicBatchData]
@@ -71,8 +72,12 @@ type publicSearchInput struct {
 	Sort             string `query:"sort" doc:"relevance (default) / released_desc / released_asc / view / updated"`
 	Page             int    `query:"page" doc:"Page number (default 1)"`
 	Limit            int    `query:"limit" doc:"Items per page (default 24)"`
-	Include          string `query:"include" doc:"Comma-separated blocks to expand on each item: officials,scores (default: none). Unknown names are ignored."`
+	Include          string `query:"include" doc:"Comma-separated blocks to expand on each item: officials,scores,meta (default: none). Unknown names are ignored."`
 	Fields           string `query:"fields" doc:"Comma-separated top-level response keys to return (sparse fieldset); id is always included and unknown names are ignored (never a 400). Write keys in alphabetical order to maximize CDN cache hits."`
+	ContentLimit     string `query:"content_limit" doc:"Content filter: sfw (default) | nsfw | all. nsfw/all require a key with the galgame:nsfw scope; otherwise silently coerced to sfw."`
+	Facets           bool   `query:"facets" doc:"facets=1 adds the Meilisearch facet distribution (age_limit, original_language) as a top-level facets object."`
+	Highlight        bool   `query:"highlight" doc:"highlight=1 adds a top-level highlight array: each item's localized names with matched terms wrapped in <mark>…</mark>, keyed by id."`
+	IncludePending   bool   `query:"include_pending" doc:"include_pending=1 adds the authenticated caller's own pending/declined drafts as a top-level pending array. Dual-credential: the key rides in X-API-Key, the end-user JWT in Authorization: Bearer. Silently dropped without a valid JWT."`
 	AgeLimit         string `query:"age_limit" doc:"all | r18"`
 	OriginalLanguage string `query:"original_language" doc:"CSV of BCP-47 language tags"`
 	TagIDs           string `query:"tag_ids" doc:"CSV of tag ids (AND)"`
@@ -94,6 +99,18 @@ type publicChangesInput struct {
 }
 type publicChangesOutput struct {
 	Body publicEnvelope[dto.PublicChangesData]
+}
+
+type publicStatsInput struct{}
+type publicStatsOutput struct {
+	Body publicEnvelope[dto.GalgameStatsData]
+}
+
+type publicLookupInput struct {
+	VNDBID string `query:"vndb_id" doc:"VNDB visual-novel id (e.g. v17). Required." required:"true"`
+}
+type publicLookupOutput struct {
+	Body publicEnvelope[dto.PublicLookupData]
 }
 
 // passthrough inputs/outputs (whitelisted; existing DTOs).
@@ -176,6 +193,18 @@ func SetupGalgamePublicSpec(app *fiber.App) huma.API {
 		Summary: "Incremental-sync keyset stream of {id, updated} ascending by (updated, id); take the ids and hydrate via batch", Tags: tags,
 	}, func(context.Context, *publicChangesInput) (*publicChangesOutput, error) {
 		return &publicChangesOutput{}, nil
+	})
+	huma.Register(api, huma.Operation{
+		OperationID: "getGalgameStatsPublic", Method: http.MethodGet, Path: "/v1/galgame/stats",
+		Summary: "Site-wide cross-source statistics overview (six daily snapshots + built_at); weak ETag / 304", Tags: tags,
+	}, func(context.Context, *publicStatsInput) (*publicStatsOutput, error) {
+		return &publicStatsOutput{}, nil
+	})
+	huma.Register(api, huma.Operation{
+		OperationID: "lookupGalgamePublic", Method: http.MethodGet, Path: "/v1/galgame/lookup",
+		Summary: "Resolve a vndb_id to its galgame id: {exists, id?}", Tags: tags,
+	}, func(context.Context, *publicLookupInput) (*publicLookupOutput, error) {
+		return &publicLookupOutput{}, nil
 	})
 
 	// Whitelisted passthroughs (existing published DTOs).

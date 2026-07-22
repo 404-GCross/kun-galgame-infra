@@ -57,7 +57,7 @@ export const docsModel: DocsModel = {
                   "in": "query",
                   "required": false,
                   "type": "string",
-                  "doc": "Comma-separated blocks to expand on each item: officials,scores (default: none). Unknown names are ignored."
+                  "doc": "Comma-separated blocks to expand on each item: officials,scores,meta (default: none). Unknown names are ignored."
                 },
                 {
                   "name": "fields",
@@ -71,7 +71,7 @@ export const docsModel: DocsModel = {
                   "in": "query",
                   "required": false,
                   "type": "string",
-                  "doc": "Reserved; Phase 1 is always sfw"
+                  "doc": "Content filter: sfw (default) | nsfw | all. nsfw/all require a key with the galgame:nsfw scope; otherwise silently coerced to sfw."
                 }
               ],
               "responses": [
@@ -143,6 +143,76 @@ export const docsModel: DocsModel = {
                                   "required": true,
                                   "format": "int64",
                                   "type": "integer"
+                                },
+                                {
+                                  "name": "meta",
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "catalog_work_id",
+                                      "required": true,
+                                      "nullable": true,
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "name": "content_limit",
+                                      "required": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "created",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "original_language",
+                                      "required": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "release_precision",
+                                      "required": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "resource_update_time",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "series_id",
+                                      "required": true,
+                                      "nullable": true,
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "name": "status",
+                                      "required": true,
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "name": "user_id",
+                                      "required": true,
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "name": "view",
+                                      "required": true,
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "name": "vndb_id",
+                                      "required": true,
+                                      "type": "string"
+                                    }
+                                  ]
                                 },
                                 {
                                   "name": "names",
@@ -437,7 +507,7 @@ export const docsModel: DocsModel = {
                   "in": "query",
                   "required": false,
                   "type": "string",
-                  "doc": "Comma-separated heavy blocks to include: intro,scores,covers,taxonomy (default: none)"
+                  "doc": "Comma-separated heavy blocks to include: intro,scores,covers,taxonomy,links,screenshots,series,meta (default: none). tag_refs,official_refs,engine_refs enrich the taxonomy block and are meaningful only together with taxonomy. Unknown names are ignored."
                 },
                 {
                   "name": "fields",
@@ -451,7 +521,14 @@ export const docsModel: DocsModel = {
                   "in": "query",
                   "required": false,
                   "type": "string",
-                  "doc": "Reserved; Phase 1 is always sfw"
+                  "doc": "Content filter: sfw (default) | nsfw | all. nsfw/all require a key with the galgame:nsfw scope; otherwise silently coerced to sfw. A detail 404s only when the resolved filter cannot cover the row's rating (all never 404s on rating)."
+                },
+                {
+                  "name": "track_view",
+                  "in": "query",
+                  "required": false,
+                  "type": "boolean",
+                  "doc": "Internal-tier only: track_view=1 bumps the view counter (mirrors the internal detail view bump). Other tiers silently ignore it."
                 }
               ],
               "responses": [
@@ -629,6 +706,42 @@ export const docsModel: DocsModel = {
                                     "type": "integer"
                                   }
                                 ]
+                              },
+                              {
+                                "name": "screenshots",
+                                "nullable": true,
+                                "type": "array",
+                                "itemsOf": {
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "height",
+                                      "required": true,
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "name": "kind",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "thumbhash",
+                                      "required": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "url",
+                                      "required": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "width",
+                                      "required": true,
+                                      "format": "int64",
+                                      "type": "integer"
+                                    }
+                                  ]
+                                }
                               }
                             ]
                           },
@@ -658,6 +771,106 @@ export const docsModel: DocsModel = {
                                 "name": "zh-tw",
                                 "required": true,
                                 "nullable": true,
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          {
+                            "name": "links",
+                            "type": "array",
+                            "itemsOf": {
+                              "type": "object",
+                              "children": [
+                                {
+                                  "name": "id",
+                                  "required": true,
+                                  "format": "int64",
+                                  "type": "integer"
+                                },
+                                {
+                                  "name": "link",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "name",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "source",
+                                  "required": true,
+                                  "type": "string"
+                                }
+                              ]
+                            }
+                          },
+                          {
+                            "name": "meta",
+                            "type": "object",
+                            "children": [
+                              {
+                                "name": "catalog_work_id",
+                                "required": true,
+                                "nullable": true,
+                                "format": "int64",
+                                "type": "integer"
+                              },
+                              {
+                                "name": "content_limit",
+                                "required": true,
+                                "type": "string"
+                              },
+                              {
+                                "name": "created",
+                                "required": true,
+                                "nullable": true,
+                                "type": "string"
+                              },
+                              {
+                                "name": "original_language",
+                                "required": true,
+                                "type": "string"
+                              },
+                              {
+                                "name": "release_precision",
+                                "required": true,
+                                "type": "string"
+                              },
+                              {
+                                "name": "resource_update_time",
+                                "required": true,
+                                "nullable": true,
+                                "type": "string"
+                              },
+                              {
+                                "name": "series_id",
+                                "required": true,
+                                "nullable": true,
+                                "format": "int64",
+                                "type": "integer"
+                              },
+                              {
+                                "name": "status",
+                                "required": true,
+                                "format": "int64",
+                                "type": "integer"
+                              },
+                              {
+                                "name": "user_id",
+                                "required": true,
+                                "format": "int64",
+                                "type": "integer"
+                              },
+                              {
+                                "name": "view",
+                                "required": true,
+                                "format": "int64",
+                                "type": "integer"
+                              },
+                              {
+                                "name": "vndb_id",
+                                "required": true,
                                 "type": "string"
                               }
                             ]
@@ -828,9 +1041,52 @@ export const docsModel: DocsModel = {
                             ]
                           },
                           {
+                            "name": "series",
+                            "type": "object",
+                            "children": [
+                              {
+                                "name": "galgame_count",
+                                "required": true,
+                                "format": "int64",
+                                "type": "integer"
+                              },
+                              {
+                                "name": "id",
+                                "required": true,
+                                "format": "int64",
+                                "type": "integer"
+                              },
+                              {
+                                "name": "name",
+                                "required": true,
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          {
                             "name": "taxonomy",
                             "type": "object",
                             "children": [
+                              {
+                                "name": "engine_refs",
+                                "type": "array",
+                                "itemsOf": {
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "id",
+                                      "required": true,
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "name": "name",
+                                      "required": true,
+                                      "type": "string"
+                                    }
+                                  ]
+                                }
+                              },
                               {
                                 "name": "engines",
                                 "required": true,
@@ -838,6 +1094,36 @@ export const docsModel: DocsModel = {
                                 "type": "array",
                                 "itemsOf": {
                                   "type": "string"
+                                }
+                              },
+                              {
+                                "name": "official_refs",
+                                "type": "array",
+                                "itemsOf": {
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "category",
+                                      "required": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "id",
+                                      "required": true,
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "name": "lang",
+                                      "required": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "name",
+                                      "required": true,
+                                      "type": "string"
+                                    }
+                                  ]
                                 }
                               },
                               {
@@ -868,6 +1154,37 @@ export const docsModel: DocsModel = {
                                 "nullable": true,
                                 "format": "int64",
                                 "type": "integer"
+                              },
+                              {
+                                "name": "tag_refs",
+                                "type": "array",
+                                "itemsOf": {
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "category",
+                                      "required": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "id",
+                                      "required": true,
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "name": "name",
+                                      "required": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "spoiler_level",
+                                      "required": true,
+                                      "format": "int64",
+                                      "type": "integer"
+                                    }
+                                  ]
+                                }
                               },
                               {
                                 "name": "tags",
@@ -991,7 +1308,7 @@ export const docsModel: DocsModel = {
                   "in": "query",
                   "required": false,
                   "type": "string",
-                  "doc": "Comma-separated blocks to expand on each item (brief view only): officials,scores (default: none). Unknown names are ignored."
+                  "doc": "Comma-separated blocks to expand on each item (brief view only): officials,scores,meta (default: none). Unknown names are ignored."
                 },
                 {
                   "name": "fields",
@@ -1005,7 +1322,7 @@ export const docsModel: DocsModel = {
                   "in": "query",
                   "required": false,
                   "type": "string",
-                  "doc": "Reserved; Phase 1 is always sfw"
+                  "doc": "Content filter: sfw (default) | nsfw | all. nsfw/all require a key with the galgame:nsfw scope; otherwise silently coerced to sfw."
                 }
               ],
               "responses": [
@@ -1077,6 +1394,76 @@ export const docsModel: DocsModel = {
                                   "required": true,
                                   "format": "int64",
                                   "type": "integer"
+                                },
+                                {
+                                  "name": "meta",
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "catalog_work_id",
+                                      "required": true,
+                                      "nullable": true,
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "name": "content_limit",
+                                      "required": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "created",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "original_language",
+                                      "required": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "release_precision",
+                                      "required": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "resource_update_time",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "series_id",
+                                      "required": true,
+                                      "nullable": true,
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "name": "status",
+                                      "required": true,
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "name": "user_id",
+                                      "required": true,
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "name": "view",
+                                      "required": true,
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "name": "vndb_id",
+                                      "required": true,
+                                      "type": "string"
+                                    }
+                                  ]
                                 },
                                 {
                                   "name": "names",
@@ -2914,6 +3301,125 @@ export const docsModel: DocsModel = {
               "curl": "curl \"https://api.nextmoe.dev/v1/galgame/changes\" \\\n  -H \"Authorization: Bearer nm_live_<YOUR_KEY>\""
             },
             {
+              "id": "lookupGalgamePublic",
+              "method": "get",
+              "path": "/v1/galgame/lookup",
+              "summary": "Resolve a vndb_id to its galgame id: {exists, id?}",
+              "scope": "galgame:read",
+              "params": [
+                {
+                  "name": "vndb_id",
+                  "in": "query",
+                  "required": true,
+                  "type": "string",
+                  "doc": "VNDB visual-novel id (e.g. v17). Required."
+                }
+              ],
+              "responses": [
+                {
+                  "status": "200",
+                  "description": "OK",
+                  "schema": {
+                    "type": "object",
+                    "children": [
+                      {
+                        "name": "code",
+                        "required": true,
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      {
+                        "name": "data",
+                        "required": true,
+                        "type": "object",
+                        "children": [
+                          {
+                            "name": "exists",
+                            "required": true,
+                            "type": "boolean"
+                          },
+                          {
+                            "name": "id",
+                            "format": "int64",
+                            "type": "integer"
+                          }
+                        ]
+                      },
+                      {
+                        "name": "message",
+                        "required": true,
+                        "type": "string"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "status": "default",
+                  "description": "Error",
+                  "schema": {
+                    "type": "object",
+                    "children": [
+                      {
+                        "name": "detail",
+                        "doc": "A human-readable explanation specific to this occurrence of the problem.",
+                        "type": "string"
+                      },
+                      {
+                        "name": "errors",
+                        "nullable": true,
+                        "doc": "Optional list of individual error details",
+                        "type": "array",
+                        "itemsOf": {
+                          "type": "object",
+                          "children": [
+                            {
+                              "name": "location",
+                              "doc": "Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'",
+                              "type": "string"
+                            },
+                            {
+                              "name": "message",
+                              "doc": "Error message text",
+                              "type": "string"
+                            },
+                            {
+                              "name": "value",
+                              "doc": "The value at the given location",
+                              "type": "object"
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "name": "instance",
+                        "doc": "A URI reference that identifies the specific occurrence of the problem.",
+                        "format": "uri",
+                        "type": "string"
+                      },
+                      {
+                        "name": "status",
+                        "doc": "HTTP status code",
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      {
+                        "name": "title",
+                        "doc": "A short, human-readable summary of the problem type. This value should not change between occurrences of the error.",
+                        "type": "string"
+                      },
+                      {
+                        "name": "type",
+                        "doc": "A URI reference to human-readable documentation for the error.",
+                        "format": "uri",
+                        "type": "string"
+                      }
+                    ]
+                  }
+                }
+              ],
+              "curl": "curl \"https://api.nextmoe.dev/v1/galgame/lookup\" \\\n  -H \"Authorization: Bearer nm_live_<YOUR_KEY>\""
+            },
+            {
               "id": "listOfficialGalgamesPublic",
               "method": "get",
               "path": "/v1/galgame/officials/{id}/galgames",
@@ -3239,7 +3745,7 @@ export const docsModel: DocsModel = {
                   "in": "query",
                   "required": false,
                   "type": "string",
-                  "doc": "Comma-separated blocks to expand on each item: officials,scores (default: none). Unknown names are ignored."
+                  "doc": "Comma-separated blocks to expand on each item: officials,scores,meta (default: none). Unknown names are ignored."
                 },
                 {
                   "name": "fields",
@@ -3247,6 +3753,34 @@ export const docsModel: DocsModel = {
                   "required": false,
                   "type": "string",
                   "doc": "Comma-separated top-level response keys to return (sparse fieldset); id is always included and unknown names are ignored (never a 400). Write keys in alphabetical order to maximize CDN cache hits."
+                },
+                {
+                  "name": "content_limit",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "Content filter: sfw (default) | nsfw | all. nsfw/all require a key with the galgame:nsfw scope; otherwise silently coerced to sfw."
+                },
+                {
+                  "name": "facets",
+                  "in": "query",
+                  "required": false,
+                  "type": "boolean",
+                  "doc": "facets=1 adds the Meilisearch facet distribution (age_limit, original_language) as a top-level facets object."
+                },
+                {
+                  "name": "highlight",
+                  "in": "query",
+                  "required": false,
+                  "type": "boolean",
+                  "doc": "highlight=1 adds a top-level highlight array: each item's localized names with matched terms wrapped in <mark>…</mark>, keyed by id."
+                },
+                {
+                  "name": "include_pending",
+                  "in": "query",
+                  "required": false,
+                  "type": "boolean",
+                  "doc": "include_pending=1 adds the authenticated caller's own pending/declined drafts as a top-level pending array. Dual-credential: the key rides in X-API-Key, the end-user JWT in Authorization: Bearer. Silently dropped without a valid JWT."
                 },
                 {
                   "name": "age_limit",
@@ -3332,6 +3866,63 @@ export const docsModel: DocsModel = {
                         "type": "object",
                         "children": [
                           {
+                            "name": "facets",
+                            "type": "map",
+                            "itemsOf": {
+                              "type": "map",
+                              "itemsOf": {
+                                "format": "int64",
+                                "type": "integer"
+                              }
+                            }
+                          },
+                          {
+                            "name": "highlight",
+                            "type": "array",
+                            "itemsOf": {
+                              "type": "object",
+                              "children": [
+                                {
+                                  "name": "id",
+                                  "required": true,
+                                  "format": "int64",
+                                  "type": "integer"
+                                },
+                                {
+                                  "name": "names",
+                                  "required": true,
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "en-us",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "ja-jp",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "zh-cn",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "zh-tw",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "string"
+                                    }
+                                  ]
+                                }
+                              ]
+                            }
+                          },
+                          {
                             "name": "items",
                             "required": true,
                             "nullable": true,
@@ -3382,6 +3973,387 @@ export const docsModel: DocsModel = {
                                   "required": true,
                                   "format": "int64",
                                   "type": "integer"
+                                },
+                                {
+                                  "name": "meta",
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "catalog_work_id",
+                                      "required": true,
+                                      "nullable": true,
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "name": "content_limit",
+                                      "required": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "created",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "original_language",
+                                      "required": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "release_precision",
+                                      "required": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "resource_update_time",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "series_id",
+                                      "required": true,
+                                      "nullable": true,
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "name": "status",
+                                      "required": true,
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "name": "user_id",
+                                      "required": true,
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "name": "view",
+                                      "required": true,
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "name": "vndb_id",
+                                      "required": true,
+                                      "type": "string"
+                                    }
+                                  ]
+                                },
+                                {
+                                  "name": "names",
+                                  "required": true,
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "en-us",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "ja-jp",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "zh-cn",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "zh-tw",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "string"
+                                    }
+                                  ]
+                                },
+                                {
+                                  "name": "officials",
+                                  "type": "array",
+                                  "itemsOf": {
+                                    "type": "object",
+                                    "children": [
+                                      {
+                                        "name": "id",
+                                        "required": true,
+                                        "format": "int64",
+                                        "type": "integer"
+                                      },
+                                      {
+                                        "name": "name",
+                                        "required": true,
+                                        "type": "string"
+                                      }
+                                    ]
+                                  }
+                                },
+                                {
+                                  "name": "portrait",
+                                  "required": true,
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "height",
+                                      "required": true,
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "name": "kind",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "thumbhash",
+                                      "required": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "url",
+                                      "required": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "width",
+                                      "required": true,
+                                      "format": "int64",
+                                      "type": "integer"
+                                    }
+                                  ]
+                                },
+                                {
+                                  "name": "release_date",
+                                  "required": true,
+                                  "nullable": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "scores",
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "bangumi",
+                                      "required": true,
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "rank",
+                                          "required": true,
+                                          "format": "int64",
+                                          "type": "integer"
+                                        },
+                                        {
+                                          "name": "score",
+                                          "required": true,
+                                          "nullable": true,
+                                          "format": "double",
+                                          "type": "number"
+                                        },
+                                        {
+                                          "name": "total",
+                                          "required": true,
+                                          "format": "int64",
+                                          "type": "integer"
+                                        },
+                                        {
+                                          "name": "url",
+                                          "required": true,
+                                          "type": "string"
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "name": "eg",
+                                      "required": true,
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "median",
+                                          "required": true,
+                                          "nullable": true,
+                                          "format": "int64",
+                                          "type": "integer"
+                                        },
+                                        {
+                                          "name": "url",
+                                          "required": true,
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "vote_count",
+                                          "required": true,
+                                          "format": "int64",
+                                          "type": "integer"
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "name": "synced_at",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "vndb",
+                                      "required": true,
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "rating",
+                                          "required": true,
+                                          "nullable": true,
+                                          "format": "double",
+                                          "type": "number"
+                                        },
+                                        {
+                                          "name": "url",
+                                          "required": true,
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "vote_count",
+                                          "required": true,
+                                          "format": "int64",
+                                          "type": "integer"
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                },
+                                {
+                                  "name": "updated",
+                                  "required": true,
+                                  "type": "string"
+                                }
+                              ]
+                            }
+                          },
+                          {
+                            "name": "pending",
+                            "type": "array",
+                            "itemsOf": {
+                              "type": "object",
+                              "children": [
+                                {
+                                  "name": "age_limit",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "banner",
+                                  "required": true,
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "height",
+                                      "required": true,
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "name": "kind",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "thumbhash",
+                                      "required": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "url",
+                                      "required": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "width",
+                                      "required": true,
+                                      "format": "int64",
+                                      "type": "integer"
+                                    }
+                                  ]
+                                },
+                                {
+                                  "name": "id",
+                                  "required": true,
+                                  "format": "int64",
+                                  "type": "integer"
+                                },
+                                {
+                                  "name": "meta",
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "catalog_work_id",
+                                      "required": true,
+                                      "nullable": true,
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "name": "content_limit",
+                                      "required": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "created",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "original_language",
+                                      "required": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "release_precision",
+                                      "required": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "resource_update_time",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "series_id",
+                                      "required": true,
+                                      "nullable": true,
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "name": "status",
+                                      "required": true,
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "name": "user_id",
+                                      "required": true,
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "name": "view",
+                                      "required": true,
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "name": "vndb_id",
+                                      "required": true,
+                                      "type": "string"
+                                    }
+                                  ]
                                 },
                                 {
                                   "name": "names",
@@ -3655,6 +4627,214 @@ export const docsModel: DocsModel = {
                 }
               ],
               "curl": "curl \"https://api.nextmoe.dev/v1/galgame/search\" \\\n  -H \"Authorization: Bearer nm_live_<YOUR_KEY>\""
+            },
+            {
+              "id": "getGalgameStatsPublic",
+              "method": "get",
+              "path": "/v1/galgame/stats",
+              "summary": "Site-wide cross-source statistics overview (six daily snapshots + built_at); weak ETag / 304",
+              "scope": "galgame:read",
+              "params": [],
+              "responses": [
+                {
+                  "status": "200",
+                  "description": "OK",
+                  "schema": {
+                    "type": "object",
+                    "children": [
+                      {
+                        "name": "code",
+                        "required": true,
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      {
+                        "name": "data",
+                        "required": true,
+                        "type": "object",
+                        "children": [
+                          {
+                            "name": "built_at",
+                            "required": true,
+                            "type": "string"
+                          },
+                          {
+                            "name": "coverage",
+                            "required": true,
+                            "type": "object",
+                            "children": [
+                              {
+                                "name": "built_at",
+                                "required": true,
+                                "type": "string"
+                              },
+                              {
+                                "name": "payload",
+                                "required": true,
+                                "type": "object"
+                              }
+                            ]
+                          },
+                          {
+                            "name": "release_years",
+                            "required": true,
+                            "type": "object",
+                            "children": [
+                              {
+                                "name": "built_at",
+                                "required": true,
+                                "type": "string"
+                              },
+                              {
+                                "name": "payload",
+                                "required": true,
+                                "type": "object"
+                              }
+                            ]
+                          },
+                          {
+                            "name": "score_histogram_bangumi",
+                            "required": true,
+                            "type": "object",
+                            "children": [
+                              {
+                                "name": "built_at",
+                                "required": true,
+                                "type": "string"
+                              },
+                              {
+                                "name": "payload",
+                                "required": true,
+                                "type": "object"
+                              }
+                            ]
+                          },
+                          {
+                            "name": "score_histogram_eg",
+                            "required": true,
+                            "type": "object",
+                            "children": [
+                              {
+                                "name": "built_at",
+                                "required": true,
+                                "type": "string"
+                              },
+                              {
+                                "name": "payload",
+                                "required": true,
+                                "type": "object"
+                              }
+                            ]
+                          },
+                          {
+                            "name": "score_histogram_vndb",
+                            "required": true,
+                            "type": "object",
+                            "children": [
+                              {
+                                "name": "built_at",
+                                "required": true,
+                                "type": "string"
+                              },
+                              {
+                                "name": "payload",
+                                "required": true,
+                                "type": "object"
+                              }
+                            ]
+                          },
+                          {
+                            "name": "yearly_scores",
+                            "required": true,
+                            "type": "object",
+                            "children": [
+                              {
+                                "name": "built_at",
+                                "required": true,
+                                "type": "string"
+                              },
+                              {
+                                "name": "payload",
+                                "required": true,
+                                "type": "object"
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "name": "message",
+                        "required": true,
+                        "type": "string"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "status": "default",
+                  "description": "Error",
+                  "schema": {
+                    "type": "object",
+                    "children": [
+                      {
+                        "name": "detail",
+                        "doc": "A human-readable explanation specific to this occurrence of the problem.",
+                        "type": "string"
+                      },
+                      {
+                        "name": "errors",
+                        "nullable": true,
+                        "doc": "Optional list of individual error details",
+                        "type": "array",
+                        "itemsOf": {
+                          "type": "object",
+                          "children": [
+                            {
+                              "name": "location",
+                              "doc": "Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'",
+                              "type": "string"
+                            },
+                            {
+                              "name": "message",
+                              "doc": "Error message text",
+                              "type": "string"
+                            },
+                            {
+                              "name": "value",
+                              "doc": "The value at the given location",
+                              "type": "object"
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "name": "instance",
+                        "doc": "A URI reference that identifies the specific occurrence of the problem.",
+                        "format": "uri",
+                        "type": "string"
+                      },
+                      {
+                        "name": "status",
+                        "doc": "HTTP status code",
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      {
+                        "name": "title",
+                        "doc": "A short, human-readable summary of the problem type. This value should not change between occurrences of the error.",
+                        "type": "string"
+                      },
+                      {
+                        "name": "type",
+                        "doc": "A URI reference to human-readable documentation for the error.",
+                        "format": "uri",
+                        "type": "string"
+                      }
+                    ]
+                  }
+                }
+              ],
+              "curl": "curl \"https://api.nextmoe.dev/v1/galgame/stats\" \\\n  -H \"Authorization: Bearer nm_live_<YOUR_KEY>\""
             },
             {
               "id": "listTagGalgamesPublic",

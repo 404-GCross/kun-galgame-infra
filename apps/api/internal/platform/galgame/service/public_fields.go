@@ -18,6 +18,11 @@ import (
 type PublicItemInclude struct {
 	Officials bool
 	Scores    bool
+	// Meta is the W1a flat operational-metadata block (original_language,
+	// vndb_id, status, content_limit, release_precision, series_id,
+	// catalog_work_id, user_id, resource_update_time, view, created) —
+	// batch-loaded across the page (裁定 2).
+	Meta bool
 }
 
 // ParsePublicItemInclude resolves the comma-separated list-level `include` token
@@ -31,6 +36,8 @@ func ParsePublicItemInclude(raw string) PublicItemInclude {
 			inc.Officials = true
 		case "scores":
 			inc.Scores = true
+		case "meta":
+			inc.Meta = true
 		}
 	}
 	return inc
@@ -38,7 +45,7 @@ func ParsePublicItemInclude(raw string) PublicItemInclude {
 
 // Any reports whether at least one block was requested (skip the batch loaders
 // entirely otherwise).
-func (i PublicItemInclude) Any() bool { return i.Officials || i.Scores }
+func (i PublicItemInclude) Any() bool { return i.Officials || i.Scores || i.Meta }
 
 // PublicFields is the parsed sparse-fieldset selector (fields=). Inactive (the
 // parameter absent/empty) means "return the full frozen shape". A present set

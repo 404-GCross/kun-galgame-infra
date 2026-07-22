@@ -243,6 +243,23 @@ func TestContentLimitGate(t *testing.T) {
 	if cl := run(&Credential{NSFWAllowed: true, Scopes: []string{ScopeGalgameNSFW}}, "sfw"); cl != "sfw" {
 		t.Errorf("requested sfw: content_limit = %q, want sfw", cl)
 	}
+
+	// W1a three-state (P5): `all` is gated identically to `nsfw`.
+	authorized := &Credential{NSFWAllowed: true, Scopes: []string{ScopeGalgameNSFW}}
+	if cl := run(authorized, "all"); cl != "all" {
+		t.Errorf("scope+flag requesting all: content_limit = %q, want all", cl)
+	}
+	// A no-scope key must resolve to sfw for EVERY requested value — so its
+	// projection is byte-identical across sfw/nsfw/all (G3 no-scope invariant).
+	for _, req := range []string{"sfw", "nsfw", "all", ""} {
+		if cl := run(&Credential{}, req); cl != "sfw" {
+			t.Errorf("no-scope key requesting %q: content_limit = %q, want sfw", req, cl)
+		}
+	}
+	// flag-but-no-scope requesting all → still sfw.
+	if cl := run(&Credential{NSFWAllowed: true}, "all"); cl != "sfw" {
+		t.Errorf("flag but no scope requesting all: content_limit = %q, want sfw", cl)
+	}
 }
 
 // TestResolveCacheHit: a positive cache entry short-circuits the DB (repo nil).

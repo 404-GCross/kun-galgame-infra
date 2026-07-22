@@ -24,6 +24,7 @@ func mountPublic(
 	searchSvc *galgameSearch.Service,
 	galgameH *galgameHandler.GalgameHandler,
 	entityGalgamesH *galgameHandler.EntityGalgamesHandler,
+	optionalJWT fiber.Handler,
 ) {
 	publicH := galgameHandler.NewPublicHandler(galgameSvc, searchSvc)
 
@@ -46,11 +47,19 @@ func mountPublic(
 	)
 
 	// Static paths first; the /:id detail catch-all is registered LAST so it never
-	// binds "search" / "batch" / "changes" / "calendar" / "tags" / … .
+	// binds "search" / "batch" / "changes" / "stats" / "lookup" / "calendar" / … .
 	v1.Get("/", publicH.List)
-	v1.Get("/search", publicH.Search)
+	// search takes the OPTIONAL end-user JWT (dual-credential): the key rides in
+	// X-API-Key, so Authorization is free for the Bearer JWT that unlocks
+	// include_pending (P7). optionalJWT never blocks — anonymous callers just get
+	// no pending[] key.
+	v1.Get("/search", optionalJWT, publicH.Search)
 	v1.Get("/batch", publicH.Batch)
 	v1.Get("/changes", publicH.Changes)
+	// Cross-source stats (W1a) + vndb_id existence lookup (W1a). Static paths, so
+	// they are registered ahead of the /:id catch-all.
+	v1.Get("/stats", publicH.Stats)
+	v1.Get("/lookup", publicH.Lookup)
 	// Calendar passthrough (already ETag/cache'd) — sfw-forced.
 	v1.Get("/calendar", sfwGate, galgameH.Calendar)
 	v1.Get("/calendar/pending", sfwGate, galgameH.CalendarPending)

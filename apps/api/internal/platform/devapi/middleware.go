@@ -228,18 +228,25 @@ func RequireTier(tier string) fiber.Handler {
 	}
 }
 
-// ResolveContentLimit computes the effective content_limit for a request. The
-// nsfw path requires BOTH the galgame:nsfw scope and the credential's effective
-// nsfw_allowed flag; anything short of that downgrades to sfw (default-safe
-// projection, not a hard 403). Phase 1 issues no key carrying galgame:nsfw, so
-// this always returns "sfw" today — the gate is wired but inert (裁定 6).
+// ResolveContentLimit computes the effective content_limit TOKEN for a request:
+// the three-state gate sfw (default) | nsfw | all (W1a, P5). Both nsfw and all
+// require BOTH the galgame:nsfw scope and the credential's effective nsfw_allowed
+// flag; anything short of that silently downgrades to sfw (default-safe
+// projection, not a hard 403 — so a no-scope key is byte-identical across the
+// three requested values). The returned token is a WIRE token: callers that feed
+// a repository filter must map "all" → "" (no filter) via utils.ParseContentLimit
+// (sfwGate passthrough routes already do this downstream).
+//
+// No Phase 1 key carries galgame:nsfw, so this still returns "sfw" for every
+// key issued today — the gate is wired but inert until a key is granted the
+// scope (裁定 6 / P5).
 func ResolveContentLimit(c fiber.Ctx, requested string) string {
-	if requested != "nsfw" {
+	if requested != "nsfw" && requested != "all" {
 		return "sfw"
 	}
 	cred := CredentialFrom(c)
 	if cred != nil && cred.NSFWAllowed && cred.HasScope(ScopeGalgameNSFW) {
-		return "nsfw"
+		return requested
 	}
 	return "sfw"
 }
