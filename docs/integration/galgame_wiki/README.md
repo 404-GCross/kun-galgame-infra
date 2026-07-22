@@ -1,84 +1,60 @@
-# Galgame Wiki API 参考
+# galgame 读面 · 过渡面参考
 
-基础路径：`/api`
+> **⚠️ 这是一个过渡面（transitional face），不是长期契约。**
+>
+> galgame 富读面现由 **catalog 服务的 internal tier 读面**（`/internal/*`，devapi `nm_` key）承载。
+> 它是**开放 API Phase 2 路线 B** 的过渡桥:
+> **终态 = `/v1` 富化(05-open-api step 07)后,下游读迁 `/v1` 同形契约、本 internal 富面退役。**
+> (路线 B,2026-07-21 用户裁定。)
+>
+> 因此**不要**为这个面投入长期集成/文档工程——只把它当作"迁到 `/v1` 之前的临时读源"。
+> 字段级形状的真值在**代码**与**机器可读 OpenAPI spec**里(见下「路由集指针」),本文只给指针与承诺。
 
-| 环境 | Base URL |
-|------|----------|
-| 开发 | `http://127.0.0.1:9281/api` |
-| 生产 | `https://wiki.kungal.com/api` |
-
-> wiki 退役 W3(2026-07-16)起,galgame API 由 **catalog 服务(:9281)** 承载(容器内 s2s 地址
-> `http://catalog:9281/api`);独立 galgame 服务(:9280)已退休。路径与响应字节不变。
-
-## 文档索引
-
-| # | 文件 | 内容 |
-|---|------|------|
-| 00 | [handbook-for-downstream.md](./00-handbook-for-downstream.md) | **kungal / moyu 接入手册** — 端到端流程 + 决策回顾 + 工作量估算 + checklist |
-| 01 | [galgame.md](./01-galgame.md) | Galgame 核心 CRUD（含 banner 文件上传） |
-| 02 | [revisions-and-prs.md](./02-revisions-and-prs.md) | 版本历史 + PR 编辑请求流程 |
-| 03 | [relations.md](./03-relations.md) | 链接 / 别名 / 贡献者子资源 |
-| 04 | [taxonomy.md](./04-taxonomy.md) | Tag / Official / Engine / Series 分类轴 CRUD |
-| 05 | [search.md](./05-search.md) | Meilisearch 驱动的搜索接口 |
-| 06 | [admin.md](./06-admin.md) | 管理统计与状态变更 |
-| 07 | [submission.md](./07-submission.md) | 用户投稿与审核流程（submit / claim / patch-draft） |
-| 08 | [messages.md](./08-messages.md) | 消息系统（投稿事件流，wiki 单一来源） |
-| 09 | [openapi-specs.md](./09-openapi-specs.md) | **机器可读 OpenAPI 契约**（门户发布）+ 生成式客户端 + 消费方防漂移 |
-| 10 | [cross-source-scores-and-stats.md](./10-cross-source-scores-and-stats.md) | 跨源评分与统计读面（`catalog_work_id` 贯通 + `GET /galgame/:gid/scores` + `GET /galgame/stats`） |
-| 99 | [appendix.md](./99-appendix.md) | 错误码、端点总览、Meilisearch 运维 |
-
-> **强制范围变更**：galgame 的编辑面（PR、修订历史、关系、分类轴增删改）**不再是 wiki-only**——kungal 与 moyu **各自必须完整实现一份**（后端代理 + 前端 UI，与 wiki 对齐）。权威清单见 [00-handbook §15](./00-handbook-for-downstream.md#15-kungal--moyu-必须各自完整实现的-galgame-编辑面强制全覆盖)。
-
-> **2026-Q2 升级摘要（PR1–PR5，已上线）**：
-> - **PR1**：`released` 字符串拆为 `release_date` (`YYYY-MM-DD` 或 `""`) + `release_date_tba` (bool)。两者均参与 revision/PR diff。详见 [01-galgame.md PUT 端点](./01-galgame.md#put-galgamegid)。
-> - **PR2 / PR5**：新增 `galgame_cover` / `galgame_screenshot` 关联表（hash 化的 image_service 资源）；`banner_image_hash` **字段已退役**，banner 由 `covers[sort_order=0]` 唯一表达；响应里有派生只读字段 `effective_banner_hash`。详见 [03-relations.md 封面/截图段](./03-relations.md#封面--截图pr2-新增) 与 [00-handbook §15 PR5 BREAKING](./00-handbook-for-downstream.md#15-kungal--moyu-必须各自完整实现的-galgame-编辑面强制全覆盖)。
-> - **PR4**：tag / official / engine / series 4 种 taxonomy 实体获得**完整版本历史 + 回滚**，端点形态与 galgame 修订完全对齐（`GET /tag/:id/revisions`, `POST /tag/:id/revert` 等共 12 个新端点）。详见 [04-taxonomy.md §修订与回滚](./04-taxonomy.md#修订与回滚-pr4-新增4-实体同款)。
-> - **K-PR（2026-05-22，非破坏性）**：`GET /galgame/:gid` 详情响应里嵌入的每个 `tag.tag`、`official.official` 和 `engine.engine` **新增 `galgame_count` 字段**（已发布作品数，口径与独立的 `GET /tag` / `GET /official` / `GET /engine` 列表一致）。下游可直接在 galgame 详情页面渲染"标签 +N / 会社 +N / 引擎 +N" badge，**不再需要为每个嵌入实体单独发 `GET /tag/:name` / `GET /official/:name` 请求**。详见 [01-galgame.md GET /galgame/:gid](./01-galgame.md#get-galgamegid) 与 [04-taxonomy.md GET /official](./04-taxonomy.md#get-official)。
-> - **K-PR（2026-05-22）**：~~`GET /galgame/:gid/revisions/:rev/diff` 与 `GET /galgame/:gid/prs/:id` 的 `names` 字段~~ —— **这两个端点已于 2026-07-17（wiki 退役 E3b）退役**,galgame 修订/PR 编辑迁至统一编辑引擎(catalog `/api/v1/catalog/edit/*`);diff 的实体名映射由引擎读面提供。详见 [02-revisions-and-prs.md](./02-revisions-and-prs.md)。
-> - **K-PR（2026-05-28，非破坏性）**：发售日期筛选。`GET /galgame` 与 `GET /galgame/search` 的 `released_from` / `released_to` 升级为 **`YYYY` 或 `YYYY-MM`**（年/月精度，纯年仍向后兼容）；`GET /galgame` 的 `sort_field` 新增 `release_date`。详见 [00-handbook §17](./00-handbook-for-downstream.md#17-发售日期-release_date-筛选协议)。
-> - **K-PR（2026-05-28，非破坏性）**：新增 `released_months`（逗号分隔 1–12）—— 在连续年份区间上叠加**不连续月份**过滤（如"历年三月发售"`released_months=3`、"2020–2024 的 3/7 月"`released_from=2020&released_to=2024&released_months=3,7`），两端点同款。搜索端需跑一次 `reindex-search` 回填 `released_month`。详见 [00-handbook §17.10](./00-handbook-for-downstream.md#1710-不连续月份筛选released_months2026-05-28-新增)。
-> - **K-PR（2026-05-28，bug fix）**：`release_date` 响应序列化从 RFC3339 `"2019-08-16T00:00:00Z"` 修正为文档承诺的纯日期 **`"2019-08-16"`**（消除 date-only 值的幻影时区，避免下游 off-by-one-day）。REST live / snapshot / search 三条路径现统一。详见 [00-handbook §17.7](./00-handbook-for-downstream.md#177-响应里-release_date-的格式yyyy-mm-dd不是-rfc3339)。并澄清 **`GET /galgame/batch` 轻量 DTO 不含 `release_date`**（要发售日期走详情/列表/搜索端点，§17.8）。
-> - **K-PR（2026-05-28，bug fix）**：所有 **timestamp 字段统一 UTC RFC3339**（`created` / `updated` / `resource_update_time` / `created_at` / `completed_time` 等）。修复前 raw-model 端点吐带本地 offset 的串（`...-07:00`，随机器时区漂移）、DTO 端点的硬编码 `Z` 实为本地钟面（差一个偏移量）。用自定义 `Timestamp` 类型（强制 `.UTC()`）统一为 `"2026-05-10T16:24:28Z"`。详见 [00-handbook §17.9](./00-handbook-for-downstream.md#179-所有-timestamp-字段统一-utc-rfc3339z)。
-> - **K-PR（2026-06-10，bug fix）**：**编辑/PR 无发售日期的 galgame 不再被拦**。`PUT /galgame/:gid` 与 PR/submit 入参的 `release_date: ""`（契约一直承诺的"清空为未知"）此前被输入校验误拒——`*string` 字段上 `omitempty` 看的是指针非空（`!IsNil`），非空指向 `""` 不会跳过，旧的 `datetime` 校验便对 `""` parse 失败。约 9% 的条目（无发售日期）因此无法保存。校验改用 `date_or_empty`（接受 `""` 或 `YYYY-MM-DD`），契约与行为现一致。**非破坏性、下游无需改动**（下游本就按契约发 `""`）。
-> - **K-PR（2026-06-10，非破坏性·新增）**：新增 **`GET /galgame/user/:id/contributed`** —— 列出用户**贡献过**（创建 _或_ 编辑，galgame_contributor 关系）的 galgame，按贡献时间倒序、分页，响应结构同 `/user/:id/galgames`。是 `/user/:id/galgames`（仅创建）的**超集**：纯编辑者（`galgame_created=0` 却贡献数百条）只能从这里看到。个人主页「贡献的 Galgame」标签数据源；公开、默认 sfw。详见 [01-galgame.md GET /galgame/user/:id/contributed](./01-galgame.md#get-galgameuseridcontributed)。
-> - **K-PR（2026-06-12，bug fix）**：**`GET /galgame/:gid` 详情现对审核者开放待审 / 被拒草稿**。此前非 0 状态只对**提交者本人**可见，admin/moderator 点审核队列的「查看」打开他人的 `status=3` 待审稿会拿到 404 —— 与 [00-handbook §2 状态表](./00-handbook-for-downstream.md#2-status-状态机5-档)「admin + 提交者本人可见」的承诺不一致。现详情端点会解 JWT 里的 `roles`，**admin / moderator 可查看任意 `status=3/4` 提交**（并对草稿绕过其自身 `content_limit`，以便审核 NSFW 待审稿）；`status=1`（封禁）/ `status=2`（VNDB 草稿）仍不走此端点。**非破坏性**（仅放宽可见性，下游无需改动；审核队列现有的「查看」直接生效）。详见 [01-galgame.md GET /galgame/:gid 可见性](./01-galgame.md#get-galgamegid)。
-> - **K-PR（2026-06-12，非破坏性·新增）**：消息内嵌的 **`MessageGalgameBrief` 新增 `vndb_id`**。`name_*` 全空（VNDB 占位提交）时,消费端可兜底显示「VNDB v4136」而非裸 `#id`,**所有消息类型一致生效**（此前只有 `submitted` 的 `payload.vndb_id` 有,审核队列的 `edited_pending` 与通知中心其它类型拿不到）。口径与 `GalgameBrief.vndb_id` 一致。详见 [08-messages.md](./08-messages.md)。
-> - **K-PR（2026-06-12，bug fix）**：**`GET /galgame/user/:id/contributed` 现按「创建 ∪ 贡献」计**，不再只 JOIN `galgame_contributor`。约 35% 的已发布条目（早期迁移 / VNDB 同步）创建者只有 `galgame.user_id`、无对应 contributor 行，旧实现会把这些用户**自己创建的**条目漏掉——**只创建过、没编辑过别人条目的用户因此看到空列表**（有用户反馈）。改为 `galgame.user_id ∪ galgame_contributor`（`status=0`），排序退化为 `COALESCE(contributor.created, galgame.created)`；`/stats` 的 `galgame_contributed` 统计同口径修正（徽标数与列表一致）。**纯代码、无需迁移**（仅放宽查询，对 `galgame_contributor` 的历史空洞鲁棒）。详见 [01-galgame.md GET /galgame/user/:id/contributed](./01-galgame.md#get-galgameuseridcontributed)。
-> - **K-PR（2026-07-12，非破坏性·新增）**：**跨源评分与统计读面**。① `GET /galgame/:gid` 与 `GET /galgame/batch?view=detail` 详情响应新增可空 `catalog_work_id`（catalog 身份指针，认领+对账后回写）；② 新增 `GET /galgame/:gid/scores`——VNDB / Bangumi / EG 三源评分 + 归源链接（缺源=null、缺分值=分值字段 null）；③ 新增 `GET /galgame/stats`——六 key 跨源统计总览（载荷原样透传 + ETag/304 缓存）。全加性、下游无需改动。详见 [10-cross-source-scores-and-stats.md](./10-cross-source-scores-and-stats.md)。
-> - **K-PR（2026-06-12，bug fix）**：**撤回提交（`DELETE /galgame/:gid`）对带封面的草稿不再失败**。`DeleteDraft` 删 galgame 前要手动清各张外键子表(都是 `ON DELETE NO ACTION`),但清单**漏了 `galgame_cover` / `galgame_screenshot` / `galgame_history` / `galgame_pr`**;而绝大多数提交都传了封面,导致最后 `DELETE galgame` 撞 `fk_galgame_cover` → 事务回滚 → 前端"操作失败"(线上 8 个草稿里 7 个有封面,故几乎必现)。已把这四张表补进清理清单。**纯服务端修复,下游无需改动**;契约不变(撤回本就该能用)。
+本目录曾是「Galgame Wiki API」的整套人读契约手册。**wiki 前端 / `wiki.kungal.com` 域 / 独立 galgame 服务 / legacy `/api` 读面 / Basic-auth feeds / `*_WIKI_BASE_URL` env 名**均已在**开放 API Phase 2 · W5(2026-07-21)**退役,故整套手册已失真,收容为本页过渡参考。
 
 ---
 
-## 响应格式
+## 面与基址
+
+| 项 | 值 |
+|---|---|
+| 服务 | catalog(container `catalog`,端口 `9281`) |
+| 基址 env | `KUN_NEXTMOE_API_BASE`(prod `http://catalog:9281`,dev 默认 `http://127.0.0.1:19281`) |
+| 富读面前缀 | `/internal`(客户端在基址之后拼 `/internal/...`) |
+| S2S feeds | `GET /internal/galgame/messages/feed`、`GET /internal/galgame/revisions/recent`(W5 由 legacy `/api` + Basic 迁入本面) |
+
+> legacy `/api` 前缀的 galgame **读**路由已在 W5 退役(A2);`/api` 现只承载**写 / 投稿 / staff / 图片上传**面(06 波领地,永久 S2S,不进本参考)。
+
+## 鉴权(硬依赖 key,无回退)
+
+- 头:`X-API-Key: nm_...`
+- key 需 **internal tier** + scope **`galgame:read`**;流量计量于 `galgame_internal`。
+- **无** OAuth-client Basic、**无** 匿名读:key 即身份。无效 / 缺失 key → `401`;tier 不足 → `403`。
+
+> **回退阀已死。** 配了 `KUN_NEXTMOE_API_BASE` 却把 `KUN_NEXTMOE_API_KEY` 留空 = **启动 fail-fast**(下游 forum/patch/letmoe 均已改为硬依赖),**不是**静默回落到旧的无鉴权 legacy `/api`。旧 env 名 `GALGAME_WIKI_BASE_URL` / `KUN_GALGAME_WIKI_BASE_URL` / `KUN_WIKI_API_BASE` 已全部退役。
+
+## 响应格式与字节兼容承诺
+
+统一信封,分页 `data` 为 `{ items, total }`:
 
 ```json
-{
-  "code": 0,
-  "message": "成功",
-  "data": { ... }
-}
+{ "code": 0, "message": "成功", "data": { "items": [], "total": 0 } }
 ```
 
-分页响应的 `data` 结构：
+**字节兼容承诺**:`/internal/*` 的读响应与 W5 退役前的 legacy `/api` **逐字节一致**(同一批 handler、同一信封)——下游只需切基址(`/api`→`/internal`)+ 换鉴权(Basic→`X-API-Key`),既有解析代码无需改。W5 迁移前已用双态字节回放(`jq -S` 0 差异)证明。
 
-```json
-{
-  "items": [...],
-  "total": 42
-}
-```
+## 路由集指针(真值在代码 + spec,本文不重复形状)
 
-## 认证
+读面 = **44 条 galgame 读路由 + 2 条 S2S feed**,全部挂在 `/internal/galgame/...`。字段级形状请取:
 
-- **读操作（GET）**：无需认证
-- **写操作（POST/PUT/DELETE）**：需要 OAuth Bearer Token
+- **机器可读 OpenAPI**(门户发布,code-first 从 Huma 导出,永不漂移):
+  - 读 API:`https://docs-kungal.nextmoe.dev/specs/galgame-wiki.openapi.yaml`(列表 / 详情 / batch / 搜索 / 用户主页 / 关系 / check / 活动流 / mine / 消息 / 修订与 PR)
+  - 发售月历:`https://docs-kungal.nextmoe.dev/specs/galgame-wiki-calendar.openapi.yaml`
+  - 生成客户端:`pnpm dlx openapi-typescript@7 <spec-url> -o galgame.ts`
+- **代码**(单一真源):infra `apps/api/internal/galgameapp/`(`readroutes.go` = 44 读的注册序;`devapiface.go` = internal 面 devapi 链 + feeds 挂载)。
 
-```
-Authorization: Bearer <access_token>
-```
+> 注:spec 路径以 `/galgame/...` 描述端点**形状**;实际调用时前缀为 internal 面的 `/internal/galgame/...`。两个面注册的是同一套 `reads.register`,形状相同、仅前缀 + 鉴权不同。
 
-access_token 由 鲲 Galgame OAuth 系统签发，JWT claims 中包含 `uid`（integer user ID）和 `roles`。
+## 终态(路线 B)
 
----
-
-下一节：[01 — Galgame 核心 CRUD](./01-galgame.md)
+`/v1` 富化(05-open-api step 07)落地后,下游读迁 `/v1` 的**同形**公开契约,本 internal 富面随之退役,平台展示的 API = 全部真实 `/v1` API。在那之前,本面是下游 galgame 读的唯一来源。
