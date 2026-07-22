@@ -8,6 +8,7 @@ import (
 	"api/internal/app"
 	"api/internal/infrastructure/cache"
 	"api/internal/platform/devapi"
+	galgameHandler "api/internal/platform/galgame/handler"
 	"api/pkg/config"
 
 	"github.com/gofiber/fiber/v3"
@@ -101,8 +102,20 @@ func (f devapiFace) recordUsage(surface string) fiber.Handler {
 //
 // RateLimit/Quota are kept on the chain for uniformity even though the internal
 // tier is unlimited (TierLimits → no-op). This face is READ-ONLY: writes,
-// admin, S2S feeds and the catalog proxy are NOT exposed here (out of scope).
-func mountInternal(a *app.App, face devapiFace, reads readRoutes) {
+// admin and the catalog proxy are NOT exposed here (out of scope).
+//
+// It ALSO mounts the two S2S cron feeds — /galgame/messages/feed and
+// /galgame/revisions/recent — which on the legacy /api face carry
+// OAuthClientBasicAuth (see mount.go). Here they ride the SAME devapi chain as
+// the reads (nm_ key IS the identity — no Basic auth): scope galgame:read,
+// internal tier, metered under galgame_internal. This is 09-open-api-phase2
+// wave 05 A1 (feeds收编), a pure-addition move — the legacy /api registrations
+// stay byte-for-byte untouched (their retirement is A2). They are registered
+// ONLY here and deliberately NOT through reads.register: that helper backs BOTH
+// faces, so a feed added there would double-register on /api and collide with
+// the existing Basic-auth registration. /taxonomy/recent is NOT mounted — it is
+// a suspected dead route under post-mortem (V2), retired outright by A2 if so.
+func mountInternal(a *app.App, face devapiFace, reads readRoutes, messageH *galgameHandler.MessageHandler, revisionH *galgameHandler.RevisionHandler) {
 	internal := a.Fiber.Group("/internal",
 		face.mw.ResolveCredential,
 		face.recordUsage("galgame_internal"),
@@ -111,5 +124,16 @@ func mountInternal(a *app.App, face devapiFace, reads readRoutes) {
 		face.mw.Quota,
 		devapi.RequireScope(devapi.ScopeGalgameRead),
 	)
+	// Feeds first: /galgame/messages/feed + /galgame/revisions/recent are static
+	// multi-segment paths that MUST be registered ahead of the /galgame/:gid
+	// catch-all reads.register installs — the same fence discipline the /api face
+	// keeps for /messages/mine (see readroutes.go) and the Basic-auth feeds (see
+	// mount.go's empty-prefix fence note). Registration order is app-stack-wide in
+	// Fiber, so ordering these before reads.register(internal) is what guarantees
+	// they win.
+	ifeeds := internal.Group("/galgame")
+	ifeeds.Get("/messages/feed", messageH.ListFeed)
+	ifeeds.Get("/revisions/recent", revisionH.RecentRevisions)
+
 	reads.register(internal)
 }

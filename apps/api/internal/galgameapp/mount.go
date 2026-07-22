@@ -387,10 +387,13 @@ func Mount(a *app.App, cfg *config.Config, deps Deps) {
 	// ticker, no second OnPreShutdown Redis Close.
 	//   /internal   = the internal-tier rich read face: the 44 read routes
 	//     registered above, byte-identical, gated by RequireTier(internal); NO
-	//     sfwGate (content_limit passes through untouched). Downstream kungal/
-	//     moyu/letmoe S2S consumers (09-open-api-phase2).
+	//     sfwGate (content_limit passes through untouched). Since 09-open-api-
+	//     phase2 wave 05 A1 it ALSO carries the two S2S cron feeds
+	//     (/galgame/messages/feed + /galgame/revisions/recent) on the same devapi
+	//     chain — the legacy /api Basic-auth feed registrations above are left
+	//     untouched (A2 retires them). Downstream kungal/moyu/letmoe S2S consumers.
 	//   /v1/galgame = the public third-party projection (frozen contract).
 	face := newDevapiFace(a, cfg)
-	mountInternal(a, face, reads)
+	mountInternal(a, face, reads, messageH, revisionH)
 	mountPublic(a, face, galgameSvc, searchSvc, galgameH, entityGalgamesH)
 }
