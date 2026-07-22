@@ -9,7 +9,9 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"api/internal/platform/catalog/migrate"
 	"api/internal/platform/catalog/model"
@@ -278,6 +280,12 @@ func TestHTTPTranslator(t *testing.T) {
 // TestHTTPTranslatorErrors: a 5xx and an empty-choices reply both surface as
 // errors (the runner records them and continues — never writes a bad row).
 func TestHTTPTranslatorErrors(t *testing.T) {
+	// Shrink the retry backoff for the whole test — the 502 case below burns
+	// the full real schedule (40s) otherwise.
+	origSchedule := retrySchedule
+	retrySchedule = []time.Duration{time.Millisecond}
+	defer func() { retrySchedule = origSchedule }()
+
 	bad := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusBadGateway)
 		_, _ = io.WriteString(w, "boom")
@@ -286,6 +294,23 @@ func TestHTTPTranslatorErrors(t *testing.T) {
 	tr := NewHTTPTranslator(bad.URL, "t", "m", 64)
 	_, _, err := tr.Translate(context.Background(), "x")
 	assert.Error(t, err)
+
+	// 429 then 200: the retry valve rides out a rate-limit burst instead of
+	// recording an error (worker-pool safety).
+	var hits int
+	limited := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits++
+		if hits == 1 {
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		_, _ = io.WriteString(w, `{"model":"m","choices":[{"message":{"role":"assistant","content":"译"},"finish_reason":"stop"}]}`)
+	}))
+	defer limited.Close()
+	zh, _, err := NewHTTPTranslator(limited.URL, "t", "m", 64).Translate(context.Background(), "x")
+	require.NoError(t, err, "429 retried to success")
+	assert.Equal(t, "译", zh)
+	assert.Equal(t, 2, hits)
 
 	// finish_reason=length: a reasoning model squeezed by max_tokens emits a
 	// non-empty PARTIAL — must error, never be returned as a translation.
@@ -298,6 +323,52 @@ func TestHTTPTranslatorErrors(t *testing.T) {
 
 	assert.False(t, NewHTTPTranslator("", "t", "m", 64).Configured(), "no base → not configured")
 	assert.False(t, NewHTTPTranslator("http://x/v1", "", "m", 64).Configured(), "no token → not configured")
+}
+
+// TestConcurrentApply: the worker pool writes every candidate exactly once
+// with consistent stats — same outcome as serial, only faster. The fake
+// translator sleeps a hair so workers genuinely overlap (race detector food).
+func TestConcurrentApply(t *testing.T) {
+	clean(t)
+	ctx := context.Background()
+	medium, dlsite, bangumi := reg(t)
+
+	const n = 40
+	for i := range n {
+		w := mkWork(t, medium, fmt.Sprintf("conc-%d", i), nil)
+		mkIntro(t, w, "ja", fmt.Sprintf("あらすじ %d。", i), bangumi)
+		mkPop(t, w, dlsite, model.PopularityMetricDownloads, int64(1000-i))
+	}
+
+	tr := &slowFakeTranslator{model: "conc-mt"}
+	st, err := Run(ctx, tr, Opts{DSN: testDSN, Apply: true, Workers: 8})
+	require.NoError(t, err)
+	assert.Equal(t, n, st.Candidates)
+	assert.Equal(t, n, st.Inserted)
+	assert.Zero(t, st.Errors)
+	assert.Zero(t, st.Refused)
+	assert.EqualValues(t, n, introCount(t, "WHERE provenance = 1"))
+	assert.EqualValues(t, n, tr.calls.Load(), "one gateway call per candidate")
+
+	// Second concurrent pass: pure idempotent skip, no LLM calls.
+	st, err = Run(ctx, tr, Opts{DSN: testDSN, Apply: true, Workers: 8})
+	require.NoError(t, err)
+	assert.Equal(t, n, st.SkipUnchanged)
+	assert.Zero(t, st.Inserted)
+	assert.EqualValues(t, n, tr.calls.Load(), "skips never dial the gateway")
+}
+
+// slowFakeTranslator is a thread-safe fake with a tiny latency so the pool
+// actually overlaps.
+type slowFakeTranslator struct {
+	model string
+	calls atomic.Int64
+}
+
+func (f *slowFakeTranslator) Translate(_ context.Context, ja string) (string, string, error) {
+	f.calls.Add(1)
+	time.Sleep(2 * time.Millisecond)
+	return "[译] " + ja, f.model, nil
 }
 
 // TestMockTranslatorDeterminism: the rehearsal mock is a pure function of the

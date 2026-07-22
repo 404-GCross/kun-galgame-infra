@@ -47,7 +47,12 @@ type Opts struct {
 	Top   int
 	Limit int
 	// Delay rate-limits real gateway calls between apply writes (mock = 0).
+	// With Workers > 1 it paces each worker independently.
 	Delay time.Duration
+	// Workers sizes the apply-mode pool (<=1 = serial, the default). The
+	// upstream's per-request latency dominates wall time — 8 workers is still
+	// ~10 req/min against Workers AI's 300 req/min class limits.
+	Workers int
 }
 
 // Sample is one example decision for the report. Ja/Zh carry the FULL text in
@@ -106,7 +111,7 @@ func Run(ctx context.Context, tr Translator, opts Opts) (*Stats, error) {
 	slog.Info("intro-mt candidates", "candidates", len(cands), "apply", opts.Apply, "top", opts.Top, "limit", opts.Limit)
 
 	r := &runner{db: db, tr: tr, stats: &Stats{Candidates: len(cands)}}
-	r.process(ctx, cands, opts.Apply, opts.Delay)
+	r.process(ctx, cands, opts.Apply, opts.Delay, opts.Workers)
 
 	st := r.stats
 	slog.Info("intro-mt done", "apply", opts.Apply,
@@ -117,23 +122,30 @@ func Run(ctx context.Context, tr Translator, opts Opts) (*Stats, error) {
 	return st, nil
 }
 
-// beginSample starts a capped Sample (ja text captured now; zh filled on apply).
-func (r *runner) beginSample(c candidate, dec decision) *Sample {
+// beginSample starts a capped Sample (ja text captured now; zh filled on
+// apply). Returns the sample's INDEX, -1 when the cap is reached — an index
+// stays valid across append reallocations, which a slice-element pointer would
+// not under the concurrent pool.
+func (r *runner) beginSample(c candidate, dec decision) int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	if len(r.stats.Samples) >= maxSamples {
-		return nil
+		return -1
 	}
 	r.stats.Samples = append(r.stats.Samples, Sample{
 		WorkID: c.WorkID, Decision: decisionName(dec), Ja: c.JaText,
 	})
-	return &r.stats.Samples[len(r.stats.Samples)-1]
+	return len(r.stats.Samples) - 1
 }
 
-func (r *runner) finishSample(s *Sample, zh, mtModel string) {
-	if s == nil {
+func (r *runner) finishSample(i int, zh, mtModel string) {
+	if i < 0 {
 		return
 	}
-	s.Zh = zh
-	s.MTModel = mtModel
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.stats.Samples[i].Zh = zh
+	r.stats.Samples[i].MTModel = mtModel
 }
 
 func decisionName(d decision) string {

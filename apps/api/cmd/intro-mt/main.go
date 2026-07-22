@@ -43,6 +43,7 @@ func main() {
 	maxTokens := flag.Int("max-tokens", 4096, "translation max_tokens (ja intros run up to ~4.5k chars)")
 	delayMS := flag.Int("delay-ms", 0, "rate-limit delay between real gateway calls (ms)")
 	mock := flag.Bool("mock", false, "REHEARSAL ONLY: offline deterministic mock translator (no network; obvious marker output)")
+	workers := flag.Int("workers", 1, "apply-mode concurrency (per-request latency dominates; 8 ≈ 10 req/min, far under gateway rate limits)")
 	flag.Parse()
 
 	logger.Init("development")
@@ -71,7 +72,8 @@ func main() {
 
 	st, err := intromt.Run(context.Background(), tr, intromt.Opts{
 		DSN: *dsn, Apply: *apply, Top: *top, Limit: *limit,
-		Delay: time.Duration(*delayMS) * time.Millisecond,
+		Delay:   time.Duration(*delayMS) * time.Millisecond,
+		Workers: *workers,
 	})
 	if err != nil {
 		slog.Error("run failed", "error", err)

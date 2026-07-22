@@ -89,6 +89,11 @@ type chatResponse struct {
 	} `json:"error"`
 }
 
+// retrySchedule paces retries on 429/5xx/transport errors — the safety valve
+// that lets a worker pool ride out rate-limit bursts instead of bleeding
+// errors. A var so the test can shrink it.
+var retrySchedule = []time.Duration{2 * time.Second, 8 * time.Second, 30 * time.Second}
+
 // Translate runs one plain-text chat completion (temperature 0 for a faithful,
 // deterministic rendering). The reply content IS the translation.
 func (t *HTTPTranslator) Translate(ctx context.Context, jaText string) (string, string, error) {
@@ -105,24 +110,9 @@ func (t *HTTPTranslator) Translate(ctx context.Context, jaText string) (string, 
 	if err != nil {
 		return "", "", err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, t.baseURL+"/chat/completions", bytes.NewReader(raw))
+	data, err := t.post(ctx, raw)
 	if err != nil {
 		return "", "", err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+t.token)
-
-	resp, err := t.http.Do(req)
-	if err != nil {
-		return "", "", err
-	}
-	defer resp.Body.Close()
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", "", err
-	}
-	if resp.StatusCode != http.StatusOK {
-		return "", "", fmt.Errorf("gateway http %d: %s", resp.StatusCode, truncate(string(data), 300))
 	}
 	var cr chatResponse
 	if err := json.Unmarshal(data, &cr); err != nil {
@@ -147,6 +137,54 @@ func (t *HTTPTranslator) Translate(ctx context.Context, jaText string) (string, 
 		model = t.model
 	}
 	return strings.TrimSpace(cr.Choices[0].Message.Content), model, nil
+}
+
+// post sends the request, retrying 429/5xx/transport failures per
+// retrySchedule (other 4xx fail immediately — they never heal on retry).
+// Returns the 200 body.
+func (t *HTTPTranslator) post(ctx context.Context, raw []byte) ([]byte, error) {
+	var lastErr error
+	for attempt := 0; ; attempt++ {
+		data, retryable, err := t.postOnce(ctx, raw)
+		if err == nil {
+			return data, nil
+		}
+		lastErr = err
+		if !retryable || attempt >= len(retrySchedule) {
+			return nil, lastErr
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(retrySchedule[attempt]):
+		}
+	}
+}
+
+func (t *HTTPTranslator) postOnce(ctx context.Context, raw []byte) (body []byte, retryable bool, err error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, t.baseURL+"/chat/completions", bytes.NewReader(raw))
+	if err != nil {
+		return nil, false, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+t.token)
+
+	resp, err := t.http.Do(req)
+	if err != nil {
+		return nil, ctx.Err() == nil, err // transport error: retryable unless we were cancelled
+	}
+	defer resp.Body.Close()
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, true, err
+	}
+	if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
+		return nil, true, fmt.Errorf("gateway http %d: %s", resp.StatusCode, truncate(string(data), 300))
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, false, fmt.Errorf("gateway http %d: %s", resp.StatusCode, truncate(string(data), 300))
+	}
+	return data, false, nil
 }
 
 // MockTranslator is a deterministic, offline stand-in used ONLY by the
