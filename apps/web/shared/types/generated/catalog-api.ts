@@ -1515,9 +1515,19 @@ export interface components {
         WorkTag: {
             /**
              * Format: int64
+             * @description catalog_tag id when this (source_id, name) is mapped into the canonical vocabulary; absent otherwise
+             */
+            canonical_id?: number;
+            /**
+             * Format: int64
              * @description source vote count backing the tag; absent when the source has no votes (bridged galgame wiki tags)
              */
             count?: number;
+            /**
+             * Format: int32
+             * @description canonical kind (0=content 1=meta/platform-attribute); absent when unmapped
+             */
+            kind?: number;
             /** @description tag text, verbatim from the source (no vocabulary mapping) */
             name: string;
             /**
@@ -1525,6 +1535,11 @@ export interface components {
              * @description catalog_source id (provenance): galgame_wiki/vndb for a bridged claimed tag, the backfill source (bangumi) for a bodyless tag
              */
             source_id: number;
+            /**
+             * Format: int32
+             * @description canonical display tier (0=core 1=longtail 2=hidden); absent when unmapped
+             */
+            tier?: number;
         };
         WorkTitle: {
             /**

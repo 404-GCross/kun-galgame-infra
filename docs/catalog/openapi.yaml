@@ -2184,15 +2184,27 @@ components:
     WorkTag:
       additionalProperties: false
       properties:
+        canonical_id:
+          description: catalog_tag id when this (source_id, name) is mapped into the canonical vocabulary; absent otherwise
+          format: int64
+          type: integer
         count:
           description: source vote count backing the tag; absent when the source has no votes (bridged galgame wiki tags)
           format: int64
+          type: integer
+        kind:
+          description: canonical kind (0=content 1=meta/platform-attribute); absent when unmapped
+          format: int32
           type: integer
         name:
           description: tag text, verbatim from the source (no vocabulary mapping)
           type: string
         source_id:
           description: "catalog_source id (provenance): galgame_wiki/vndb for a bridged claimed tag, the backfill source (bangumi) for a bodyless tag"
+          format: int32
+          type: integer
+        tier:
+          description: canonical display tier (0=core 1=longtail 2=hidden); absent when unmapped
           format: int32
           type: integer
       required:

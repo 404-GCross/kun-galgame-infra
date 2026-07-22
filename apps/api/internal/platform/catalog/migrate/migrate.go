@@ -65,6 +65,12 @@ func Run(db *gorm.DB) error {
 		&model.CatalogWorkLabel{},     // work↔label attribution edge (step 18)
 		&model.CatalogWorkCharacter{}, // work↔character roster edge (step 45)
 
+		// Tag canonical layer (step 74, doc 70a): the cross-source convergence
+		// vocabulary ABOVE the original tag layers. catalog_tag before
+		// catalog_tag_source_map so the tag_id FK can be created.
+		&model.CatalogTag{},
+		&model.CatalogTagSourceMap{},
+
 		// Reconciliation family (step 04).
 		&model.CatalogExternalRef{},
 		&model.CatalogMatchRejection{},

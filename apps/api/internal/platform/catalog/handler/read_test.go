@@ -1577,6 +1577,97 @@ func TestWorkTag(t *testing.T) {
 	assert.Empty(t, body["data"].(map[string]any)["tags"].([]any))
 }
 
+// TestWorkTagCanonicalOverlay pins the step-74 additive canonical overlay on
+// the tag read face: a tag whose (source_id, name) is mapped into
+// catalog_tag_source_map carries canonical_id/tier/kind; an UNMAPPED tag omits
+// all three. It covers BOTH lanes — the claimed vndb bridge (source_id=vndb,
+// name=galgame_tag.name hits the same map key a bodyless vndb tag would) and the
+// bodyless native lane — and asserts the overlay never mutates name/source_id.
+func TestWorkTagCanonicalOverlay(t *testing.T) {
+	db := openCatalogTestDB(t)
+	ensureGalgameStub(t, db)
+	ensureGalgameCoverStub(t, db)
+	ensureGalgameScreenshotStub(t, db)
+	ensureGalgameRatingStub(t, db)
+	ensureGalgameTagStub(t, db)
+	require.NoError(t, db.Exec(`DELETE FROM galgame WHERE id IN ?`, galgameTagStubGalgameIDs).Error)
+	insertGalgameBody(t, db, 9001, 0, "", "", "", "")
+	for _, tbl := range []string{"catalog_tag_source_map", "catalog_tag", "catalog_work_tag", "catalog_work"} {
+		require.NoError(t, db.Exec("TRUNCATE "+tbl+" RESTART IDENTITY CASCADE").Error)
+	}
+	var srcVNDB, srcDlsite, srcGalgameWiki int16
+	db.Raw("SELECT id FROM catalog_source WHERE key='vndb'").Scan(&srcVNDB)
+	db.Raw("SELECT id FROM catalog_source WHERE key='dlsite'").Scan(&srcDlsite)
+	db.Raw("SELECT id FROM catalog_source WHERE key='galgame_wiki'").Scan(&srcGalgameWiki)
+
+	// Canonical vocabulary: one mapped vndb name (content) + one mapped dlsite
+	// name (meta). Their map keys are exactly (source_id, source_name).
+	tContent := model.CatalogTag{Name: "泣きゲー(74)", Tier: model.TagTierCore, Kind: model.TagKindContent}
+	require.NoError(t, db.Create(&tContent).Error)
+	tMeta := model.CatalogTag{Name: "像素(74)", Tier: model.TagTierCore, Kind: model.TagKindMeta}
+	require.NoError(t, db.Create(&tMeta).Error)
+	require.NoError(t, db.Create(&model.CatalogTagSourceMap{SourceID: srcVNDB, SourceName: "泣きゲー(74)", TagID: tContent.ID}).Error)
+	require.NoError(t, db.Create(&model.CatalogTagSourceMap{SourceID: srcDlsite, SourceName: "像素(74)", TagID: tMeta.ID}).Error)
+
+	// CLAIMED work: a vndb-synced tag that IS mapped + a user tag (galgame_wiki
+	// source) that is NOT (no source-12 key exists).
+	insertGalgameTag(t, db, 9101, "泣きゲー(74)")
+	insertGalgameTag(t, db, 9102, "未映射(74)")
+	claimed := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "主張", Site: strptr("galgame_wiki"), ProductWorkID: ptrI64(9001)}
+	require.NoError(t, db.Create(&claimed).Error)
+	insertGalgameTagRelation(t, db, 9001, 9101, 0, "vndb") // mapped (source_id=vndb)
+	insertGalgameTagRelation(t, db, 9001, 9102, 0, "")     // galgame_wiki → unmapped
+
+	// BODYLESS work: a mapped dlsite tag + an unmapped dlsite tag.
+	bodyless := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "無体"}
+	require.NoError(t, db.Create(&bodyless).Error)
+	require.NoError(t, db.Create(&model.CatalogWorkTag{WorkID: bodyless.ID, Name: "像素(74)", Count: 3, SourceID: srcDlsite}).Error)
+	require.NoError(t, db.Create(&model.CatalogWorkTag{WorkID: bodyless.ID, Name: "独有(74)", Count: 2, SourceID: srcDlsite}).Error)
+
+	app := readApp(service.NewReadService(db), nil)
+
+	// CLAIMED: the vndb-mapped tag carries the overlay; the wiki user tag omits it.
+	code, body := getJSON(t, app, "/api/v1/catalog/works/"+itoa(claimed.ID))
+	require.Equal(t, 200, code)
+	byName := tagsByName(body)
+	require.Contains(t, byName, "泣きゲー(74)")
+	assert.EqualValues(t, tContent.ID, byName["泣きゲー(74)"]["canonical_id"], "mapped vndb tag carries canonical_id")
+	assert.EqualValues(t, 0, byName["泣きゲー(74)"]["tier"], "core tier surfaces")
+	assert.EqualValues(t, 0, byName["泣きゲー(74)"]["kind"], "content kind surfaces")
+	assert.EqualValues(t, srcVNDB, byName["泣きゲー(74)"]["source_id"], "overlay never mutates source_id")
+	require.Contains(t, byName, "未映射(74)")
+	assertNoOverlay(t, byName["未映射(74)"])
+
+	// BODYLESS: the mapped dlsite tag carries the overlay (kind=meta), unmapped omits.
+	code, body = getJSON(t, app, "/api/v1/catalog/works/"+itoa(bodyless.ID))
+	require.Equal(t, 200, code)
+	byName = tagsByName(body)
+	require.Contains(t, byName, "像素(74)")
+	assert.EqualValues(t, tMeta.ID, byName["像素(74)"]["canonical_id"])
+	assert.EqualValues(t, 1, byName["像素(74)"]["kind"], "meta kind surfaces")
+	require.Contains(t, byName, "独有(74)")
+	assertNoOverlay(t, byName["独有(74)"])
+}
+
+// tagsByName indexes a work read-through's tags[] by name.
+func tagsByName(body map[string]any) map[string]map[string]any {
+	out := map[string]map[string]any{}
+	for _, raw := range body["data"].(map[string]any)["tags"].([]any) {
+		tg := raw.(map[string]any)
+		out[tg["name"].(string)] = tg
+	}
+	return out
+}
+
+// assertNoOverlay asserts an unmapped tag omits all three overlay fields.
+func assertNoOverlay(t *testing.T, tg map[string]any) {
+	t.Helper()
+	for _, k := range []string{"canonical_id", "tier", "kind"} {
+		_, has := tg[k]
+		assert.Falsef(t, has, "unmapped tag omits %s", k)
+	}
+}
+
 func ptrI16(v int16) *int16 { return &v }
 
 func ptrI64(v int64) *int64 { return &v }

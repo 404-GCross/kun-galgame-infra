@@ -206,6 +206,8 @@ func buildWorkResponse(detail *service.WorkDetail) dto.WorkByAnchorResponse {
 	for _, tg := range detail.Tags {
 		resp.Tags = append(resp.Tags, dto.WorkTag{
 			Name: tg.Name, Count: tg.Count, SourceID: tg.SourceID,
+			// Additive canonical overlay (step 74); nil when the tag is unmapped.
+			CanonicalID: tg.CanonicalID, Tier: tg.Tier, Kind: tg.Kind,
 		})
 	}
 	for _, pp := range detail.Popularity {

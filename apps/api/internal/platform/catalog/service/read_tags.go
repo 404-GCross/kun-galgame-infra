@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"strings"
 )
 
 // Tags read face (step 58b, refs/proj/58 Facet B) — the fifth media-aggregation
@@ -42,10 +43,22 @@ import (
 // bridge (galgame_tag_relation ⋈ galgame_tag) and the bodyless native table
 // (catalog_work_tag) both project into. Count is the source's vote count; 0 =
 // the source has no votes (the whole galgame layer) and the DTO omits it.
+//
+// Canonical layer (step 74, additive): when this tag's (source_id, name) is
+// mapped into the cross-source canonical vocabulary (catalog_tag_source_map),
+// CanonicalID/Tier/Kind carry the canonical row's identity + display tier +
+// content/meta kind; an UNMAPPED tag leaves them nil (fields omitted). The
+// original name/count/source_id are never mutated — the canonical layer is a
+// pure overlay, never a replacement.
 type WorkTagRow struct {
 	Name     string
 	Count    int
 	SourceID int16
+	// Canonical overlay — nil when the tag is not (yet) in the canonical
+	// vocabulary. Tier: 0=core 1=longtail 2=hidden; Kind: 0=content 1=meta.
+	CanonicalID *int64
+	Tier        *int16
+	Kind        *int16
 }
 
 // loadWorkTags assembles the tag set for a set of works, honoring the
@@ -78,7 +91,86 @@ func (s *ReadService) loadWorkTags(ctx context.Context, subjects []claimSubject)
 			return nil, err
 		}
 	}
+	// Canonical overlay (step 74): stamp canonical_id/tier/kind onto every
+	// mapped tag, across BOTH lanes — the map is keyed (source_id, name), which
+	// a bridged claimed vndb tag (source_id=vndb, name=galgame_tag.name) hits
+	// exactly like a bodyless bangumi/dlsite tag does. Additive: unmapped tags
+	// keep nil overlay fields.
+	if err := s.enrichCanonicalTags(ctx, out); err != nil {
+		return nil, err
+	}
 	return out, nil
+}
+
+// enrichCanonicalTags batch-resolves the canonical overlay for every tag in out.
+// It collects the distinct (source_id, name) pairs, looks them up in ONE query
+// against catalog_tag_source_map ⋈ catalog_tag, and stamps CanonicalID/Tier/Kind
+// on the matching rows. A tag with no map row is left untouched (nil overlay).
+func (s *ReadService) enrichCanonicalTags(ctx context.Context, out map[int64][]WorkTagRow) error {
+	// Distinct (source_id, name) pairs across all works — the lookup keys.
+	type key struct {
+		src  int16
+		name string
+	}
+	seen := map[key]struct{}{}
+	args := make([]any, 0)
+	var placeholders strings.Builder
+	for _, rows := range out {
+		for _, r := range rows {
+			k := key{src: r.SourceID, name: r.Name}
+			if _, ok := seen[k]; ok {
+				continue
+			}
+			seen[k] = struct{}{}
+			if placeholders.Len() > 0 {
+				placeholders.WriteByte(',')
+			}
+			placeholders.WriteString("(?,?)")
+			args = append(args, r.SourceID, r.Name)
+		}
+	}
+	if len(args) == 0 {
+		return nil
+	}
+	var mapped []struct {
+		SourceID int16  `gorm:"column:source_id"`
+		Name     string `gorm:"column:source_name"`
+		TagID    int64  `gorm:"column:id"`
+		Tier     int16  `gorm:"column:tier"`
+		Kind     int16  `gorm:"column:kind"`
+	}
+	sql := `SELECT m.source_id, m.source_name, t.id, t.tier, t.kind
+		FROM catalog_tag_source_map m
+		JOIN catalog_tag t ON t.id = m.tag_id
+		WHERE (m.source_id, m.source_name) IN (` + placeholders.String() + `)`
+	if err := s.db.WithContext(ctx).Raw(sql, args...).Scan(&mapped).Error; err != nil {
+		return err
+	}
+	if len(mapped) == 0 {
+		return nil
+	}
+	byKey := make(map[key]struct {
+		id         int64
+		tier, kind int16
+	}, len(mapped))
+	for _, m := range mapped {
+		byKey[key{src: m.SourceID, name: m.Name}] = struct {
+			id         int64
+			tier, kind int16
+		}{id: m.TagID, tier: m.Tier, kind: m.Kind}
+	}
+	for workID, rows := range out {
+		for i := range rows {
+			if c, ok := byKey[key{src: rows[i].SourceID, name: rows[i].Name}]; ok {
+				id, tier, kind := c.id, c.tier, c.kind
+				rows[i].CanonicalID = &id
+				rows[i].Tier = &tier
+				rows[i].Kind = &kind
+			}
+		}
+		out[workID] = rows
+	}
+	return nil
 }
 
 // bridgeGalgameTags reads the claimed works' tag layer in ONE join query and

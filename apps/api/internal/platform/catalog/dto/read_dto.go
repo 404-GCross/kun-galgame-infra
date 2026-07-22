@@ -91,10 +91,23 @@ type WorkPopularity struct {
 // where the VNDB tagMap covers it) for a bridged claimed tag, the raw Bangumi
 // folksonomy name for a bodyless tag. count is the source's vote count, absent
 // when the source has no votes (the whole galgame tag layer carries none).
+//
+// Canonical overlay (step 74, additive & optional): when this tag's
+// (source_id, name) is mapped into the cross-source canonical vocabulary,
+// canonical_id/tier/kind carry the canonical row's identity + display tier +
+// content/meta kind — a consumer filters/renders by them ("取精华": show tier=0,
+// fold longer tiers; route kind=meta to an attribute filter instead of the tag
+// cloud). An UNMAPPED tag omits all three, and the verbatim name/count/source_id
+// are never altered (the overlay never masks the original per-source data).
 type WorkTag struct {
 	Name     string `json:"name" doc:"tag text, verbatim from the source (no vocabulary mapping)"`
 	Count    int    `json:"count,omitempty" doc:"source vote count backing the tag; absent when the source has no votes (bridged galgame wiki tags)"`
 	SourceID int16  `json:"source_id" doc:"catalog_source id (provenance): galgame_wiki/vndb for a bridged claimed tag, the backfill source (bangumi) for a bodyless tag"`
+	// CanonicalID/Tier/Kind are the additive canonical overlay (step 74); absent
+	// when the tag is not in the canonical vocabulary.
+	CanonicalID *int64 `json:"canonical_id,omitempty" doc:"catalog_tag id when this (source_id, name) is mapped into the canonical vocabulary; absent otherwise"`
+	Tier        *int16 `json:"tier,omitempty" doc:"canonical display tier (0=core 1=longtail 2=hidden); absent when unmapped"`
+	Kind        *int16 `json:"kind,omitempty" doc:"canonical kind (0=content 1=meta/platform-attribute); absent when unmapped"`
 }
 
 // WorkRating is one source's rating on a work, in the unified media-aggregation
