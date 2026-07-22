@@ -135,6 +135,7 @@ admin 面走 oauth 的共享 JWT 中间件 + `RequireRole("ren")`(**超管专属
   - galgame wiki(第一消费站):`UPDATE oauth_clients SET catalog_site='galgame_wiki' WHERE image_site_key='galgame_wiki' AND id <> 'galgame-wiki-admin';`
   - **letmoe(第二消费站,同人为主)**:`UPDATE oauth_clients SET catalog_site='letmoe' WHERE <letmoe client 定位>;`(dev = 本地主库执行即可复现;**prod = 用户 ops**,随 letmoe 上线 runbook 同批,核验 `SELECT id,catalog_site FROM oauth_clients WHERE catalog_site='letmoe'` 命中 letmoe 机密 client)。
 - **admin face(`/api/v1/admin/catalog/*`)**:Bearer JWT(accept-both verifier)+ **ren 角色(超管专属)**,与 site 绑定列无关。
+- **编辑引擎提案桥面（过渡参考，09-open-api-phase2 06b）**：catalog 进程另托一个 galgame-family 的**平台提案面** `/internal/edit/*`（create / mine / get-own / withdraw + schema/snapshot 只读投影），走 devapi 双凭证链——scope **`galgame:propose`**、计量 face **`galgame_internal_propose`**；actor 取自已验用户 JWT（plain：trust 0 / roles ∅ / 非 owner），租户由 key 的 `oauth_clients.catalog_site` 反查（请求**不收** site/actor 断言）。它是**纯 Fiber、不进本目录 spec**（`openapi.yaml` 仅含 S2S face）；编辑引擎的 S2S 面（`/api/v1/catalog/edit/*`，断言式 actor + 审核三件套）不变。**桥面不立独立契约文档**，第三方实际开放另议。
 - `GET /openapi.json`(S2S spec)、`GET /healthz` 无鉴权。
 
 ## 5. 生成 spec

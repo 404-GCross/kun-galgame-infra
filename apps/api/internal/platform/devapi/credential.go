@@ -19,11 +19,18 @@ const (
 // selfServiceScopes allow-list: a write scope is minted only by the admin
 // console / SQL, never self-service, until the proposal face + trust tiers
 // (06b) are ready to gate third-party writers.
+//
+// ScopeGalgamePropose (galgame:propose) gates the /internal/edit/* platform
+// proposal face (09-open-api-phase2 06b doc 23 §5 — the dogfood bridge). Like
+// the write scope it is NOT self-service-grantable (opening it to third parties
+// is a user-level decision gated on review-capacity + consent copy); until then
+// it is minted only by admin console / SQL onto the trusted first-party keys.
 const (
-	ScopeCatalogRead  = "catalog:read"
-	ScopeGalgameRead  = "galgame:read"
-	ScopeGalgameNSFW  = "galgame:nsfw"
-	ScopeGalgameWrite = "galgame:write"
+	ScopeCatalogRead    = "catalog:read"
+	ScopeGalgameRead    = "galgame:read"
+	ScopeGalgameNSFW    = "galgame:nsfw"
+	ScopeGalgameWrite   = "galgame:write"
+	ScopeGalgamePropose = "galgame:propose"
 )
 
 // TierLimits returns a tier's default per-minute rate and daily quota.

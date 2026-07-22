@@ -28,6 +28,7 @@ import (
 	galgameRepo "api/internal/platform/galgame/repository"
 	galgameSearch "api/internal/platform/galgame/search"
 	galgameService "api/internal/platform/galgame/service"
+	siteRepo "api/internal/platform/site/repository"
 	"api/pkg/catalogclient"
 	"api/pkg/config"
 	"api/pkg/imageclient"
@@ -349,7 +350,15 @@ func Mount(a *app.App, cfg *config.Config, deps Deps) {
 		contributorH: contributorH,
 		submissionH:  submissionH,
 	}
+	// The /internal/edit/* platform proposal face (09-open-api-phase2 06b): the
+	// editing engine's user-proposal subset, actor derived from the verified JWT,
+	// filing tenant reverse-looked-up from the key's client binding
+	// (oauth_clients.catalog_site, read from the OAuth DB). Registered BETWEEN the
+	// write face and the read face's Group Use so its per-route chain is not
+	// blanketed (same ordering rule as mountInternalWrites).
+	proposeH := newProposeHandler(deps.Edit, siteRepo.NewOAuthClientRepository(oauthDB))
 	mountInternalWrites(a, face, writes, jwtAuth)
+	mountInternalPropose(a, face, proposeH, jwtAuth)
 	mountInternal(a, face, reads, messageH, revisionH)
 	mountPublic(a, face, galgameSvc, searchSvc, galgameH, entityGalgamesH)
 }
