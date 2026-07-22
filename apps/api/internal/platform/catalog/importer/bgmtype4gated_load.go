@@ -71,28 +71,31 @@ func (im *Importer) loadExistingWorkTitleNorms() (map[string]wtNorm, error) {
 // titles, and VNDB Japanese release titles (+ their romaji). All norms are
 // computed IN-SQL with the identical lower(normalize(col,NFKC)) fold, so equality
 // with the Bangumi name_norm generated column is byte-isomorphic.
-func (im *Importer) loadCrossSourceNorms(dlsiteDB *gorm.DB) (map[string]bool, error) {
-	set := make(map[string]bool, 300000)
-	collect := func(db *gorm.DB, query string, args ...any) error {
+// The returned map keys each norm to the OR of the corpus bits (corpus*) that
+// contain it — so the X-only pure-ASCII tightening (RunBgmType4Gated) can count
+// how many DISTINCT corpora a norm hits.
+func (im *Importer) loadCrossSourceNorms(dlsiteDB *gorm.DB) (map[string]uint8, error) {
+	set := make(map[string]uint8, 300000)
+	collect := func(bit uint8, db *gorm.DB, query string, args ...any) error {
 		var norms []string
 		if err := db.Raw(query, args...).Scan(&norms).Error; err != nil {
 			return err
 		}
 		for _, n := range norms {
 			if runeLen(n) >= bgmGatedMinLen {
-				set[n] = true
+				set[n] |= bit
 			}
 		}
 		return nil
 	}
 	// erogamespace: pure Japanese PC eroge corpus.
-	if err := collect(im.eg,
+	if err := collect(corpusEG, im.eg,
 		`SELECT DISTINCT lower(normalize(gamename, NFKC)) FROM games WHERE gamename IS NOT NULL AND gamename <> ''`,
 	); err != nil {
 		return nil, fmt.Errorf("eg corpus: %w", err)
 	}
 	// DLsite: GAME work types only (excludes manga/CG/voice/etc).
-	if err := collect(dlsiteDB,
+	if err := collect(corpusDLsite, dlsiteDB,
 		`SELECT DISTINCT lower(normalize(work_name, NFKC)) FROM works
 			WHERE status = 'fetched' AND work_name IS NOT NULL AND work_type_string = ANY(`+sqlDLsiteGameTypes()+`)`,
 	); err != nil {
@@ -100,7 +103,7 @@ func (im *Importer) loadCrossSourceNorms(dlsiteDB *gorm.DB) (map[string]bool, er
 	}
 	// VNDB: Japanese-original release titles + their romaji (drops en/ru/etc,
 	// whose generic titles collide with non-galgame subjects).
-	if err := collect(im.catalog,
+	if err := collect(corpusVNDB, im.catalog,
 		`SELECT DISTINCT lower(normalize(title, NFKC)) FROM src_vndb.releases_titles WHERE lang = 'ja' AND title IS NOT NULL
 			UNION SELECT DISTINCT lower(normalize(latin, NFKC)) FROM src_vndb.releases_titles WHERE lang = 'ja' AND latin IS NOT NULL AND latin <> ''`,
 	); err != nil {

@@ -119,6 +119,68 @@ func TestBgmType4GatedWave(t *testing.T) {
 	assert.Equal(t, 6, dry.ToCreate) // dry snapshot unchanged
 }
 
+// TestBgmType4GatedASCIITightening covers the reviewer's X-only pure-non-CJK
+// single-corpus drop: a pure-ASCII X-only candidate is admitted ONLY if it hits
+// ≥2 corpora; CJK titles and anything with P/T support are unaffected.
+func TestBgmType4GatedASCIITightening(t *testing.T) {
+	clean(t)
+	require.NoError(t, testDB.Exec(`ALTER TABLE games ADD COLUMN IF NOT EXISTS gamename text`).Error)
+	require.NoError(t, testDB.Exec(`TRUNCATE src_vndb.releases_titles`).Error)
+
+	// A1: pure-ASCII, X-only, ONE corpus (dlsite) → DROPPED.
+	seedSubject(t, 2001, "Manhunt Generic Title", "", `["PC","游戏"]`, "", false)
+	seedDLsiteGame(t, "Manhunt Generic Title")
+	// A2: pure-ASCII, X-only, TWO corpora (eg + vndb) → SURVIVOR (created).
+	seedSubject(t, 2002, "Ascii Multi Corpus Game", "", `["PC","游戏"]`, "", false)
+	seedEGGame(t, 9002, "Ascii Multi Corpus Game")
+	seedVNDBTitle(t, "r2", "Ascii Multi Corpus Game")
+	// A3: CJK title, X-only, ONE corpus → unaffected (created).
+	seedSubject(t, 2003, "日本語限定タイトル作品", "", `["PC","游戏"]`, "", false)
+	seedDLsiteGame(t, "日本語限定タイトル作品")
+	// A4: pure-ASCII, ONE corpus, but P support → unaffected (created).
+	seedSubject(t, 2004, "Ascii With P Support", "", `["PC","VN","游戏"]`, "", false)
+	seedDLsiteGame(t, "Ascii With P Support")
+	// A5: pure-ASCII, ONE corpus, but T support → unaffected (created).
+	seedSubject(t, 2005, "Ascii With T Support", "", `["Galgame","PC","游戏"]`, "", false)
+	seedDLsiteGame(t, "Ascii With T Support")
+
+	dry, err := New(testDB, testDB, Options{DryRun: true}).RunBgmType4Gated(testDB)
+	require.NoError(t, err)
+	assert.Equal(t, 5, dry.EligiblePool)
+	assert.Equal(t, 1, dry.SkippedASCIIXOnly, "A1 dropped")
+	assert.Equal(t, 4, dry.SigX, "A2,A3,A4,A5 keep effective X; A1 dropped")
+	assert.Equal(t, 4, dry.GatedTotal, "A2,A3,A4,A5")
+	assert.Equal(t, 4, dry.ToCreate)
+	require.Len(t, dry.ASCIIDroppedSamples, 1)
+	assert.Equal(t, int64(2001), dry.ASCIIDroppedSamples[0].SubjectID)
+	require.Len(t, dry.ASCIISurvivorSamples, 1)
+	assert.Equal(t, int64(2002), dry.ASCIISurvivorSamples[0].SubjectID)
+
+	st, err := New(testDB, testDB, Options{}).RunBgmType4Gated(testDB)
+	require.NoError(t, err)
+	assert.Equal(t, 4, st.WorksCreated)
+	// A1 (2001) NOT created; A2/A3/A4/A5 created.
+	assert.Zero(t, scalarInt(t, `SELECT count(*) FROM catalog_external_ref WHERE matched_by='rule:bgm-type4-gated' AND external_id='2001'`))
+	assert.Equal(t, int64(4), scalarInt(t, `SELECT count(*) FROM catalog_external_ref WHERE matched_by='rule:bgm-type4-gated' AND external_id IN ('2002','2003','2004','2005')`))
+}
+
+func seedDLsiteGame(t *testing.T, name string) {
+	t.Helper()
+	require.NoError(t, testDB.Exec(`INSERT INTO works (workno, work_name, work_type_string, status)
+		VALUES (?, ?, 'アドベンチャー', 'fetched')`, "RJ"+name, name).Error)
+}
+
+func seedEGGame(t *testing.T, id int64, name string) {
+	t.Helper()
+	require.NoError(t, testDB.Exec(`INSERT INTO games (id, gamename) VALUES (?, ?)`, id, name).Error)
+}
+
+func seedVNDBTitle(t *testing.T, id, title string) {
+	t.Helper()
+	require.NoError(t, testDB.Exec(`INSERT INTO src_vndb.releases_titles (id, lang, mtl, title, latin)
+		VALUES (?, 'ja', false, ?, '')`, id, title).Error)
+}
+
 // seedExistingWork creates a minimal bodyless work carrying one official title,
 // so the gate's collision safety rope finds an existing title to skip against.
 func seedExistingWork(t *testing.T, title string) {

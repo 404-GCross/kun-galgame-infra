@@ -74,6 +74,7 @@ func main() {
 	slog.Info("bgm-type4-gated summary",
 		"pool_total", st.PoolTotal, "excluded_console_mobile", st.ExcludedConsoleMobile, "eligible_pool", st.EligiblePool,
 		"sig_p", st.SigP, "sig_t", st.SigT, "sig_x", st.SigX, "gated_total", st.GatedTotal,
+		"skipped_ascii_xonly", st.SkippedASCIIXOnly,
 		"skipped_title_collision", st.SkippedTitleCollision, "skipped_intra_collision", st.SkippedIntraCollision,
 		"to_create", st.ToCreate, "works_created", st.WorksCreated, "titles_created", st.TitlesCreated,
 		"anchors_created", st.AnchorsCreated, "revisions_created", st.RevisionsCreated)
@@ -129,7 +130,23 @@ func writeSamples(dir string, st *importer.BgmGatedStats) error {
 	for _, c := range st.CollisionSamples {
 		fmt.Fprintf(&cb, "%d\t%s\t%s\t%s\t%d\t%s\n", c.SubjectID, tsv(c.Name), tsv(c.NameCN), tsv(c.CollidedNorm), c.WorkID, tsv(c.WorkTitle))
 	}
-	return os.WriteFile(filepath.Join(dir, "collisions.tsv"), []byte(cb.String()), 0o644)
+	if err := os.WriteFile(filepath.Join(dir, "collisions.tsv"), []byte(cb.String()), 0o644); err != nil {
+		return err
+	}
+	if err := writeSampleTSV(filepath.Join(dir, "ascii_dropped.tsv"), st.ASCIIDroppedSamples); err != nil {
+		return err
+	}
+	return writeSampleTSV(filepath.Join(dir, "ascii_survivors.tsv"), st.ASCIISurvivorSamples)
+}
+
+// writeSampleTSV writes an id|name|name_cn|signals sample list.
+func writeSampleTSV(path string, samples []importer.BgmGatedSample) error {
+	var b strings.Builder
+	b.WriteString("subject_id\tname\tname_cn\tsignals\n")
+	for _, s := range samples {
+		fmt.Fprintf(&b, "%d\t%s\t%s\t%s\n", s.SubjectID, tsv(s.Name), tsv(s.NameCN), s.Signals)
+	}
+	return os.WriteFile(path, []byte(b.String()), 0o644)
 }
 
 // tsv strips tab/newline so a title never breaks the TSV row.

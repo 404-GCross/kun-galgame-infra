@@ -43,7 +43,6 @@ package importer
 import (
 	"fmt"
 	"log/slog"
-	"math/rand"
 	"strconv"
 
 	"api/internal/platform/catalog/model"
@@ -59,6 +58,15 @@ const (
 	bgmGatedSampleSeed = 78   // deterministic random-100 (the reviewer's approval artifact)
 	bgmGatedSampleN    = 100
 	bgmCollisionSample = 20
+	bgmASCIISample     = 30 // cap for the ascii-drop / ascii-survivor evidence lists
+)
+
+// Cross-source corpus bits — a norm's value in the corpus map is the OR of the
+// corpora that contain it, so the X-only tightening can count DISTINCT corpora.
+const (
+	corpusEG     uint8 = 1 << 0 // erogamespace
+	corpusDLsite uint8 = 1 << 1 // dlsite (game work-types)
+	corpusVNDB   uint8 = 1 << 2 // VNDB ja release titles
 )
 
 // SQL array literals for the meta_tags gate predicates. Kept as inline literals
@@ -97,7 +105,8 @@ type BgmGatedStats struct {
 	PT, PX, TX, All3    int // intersections
 	POnly, TOnly, XOnly int // each-only
 
-	GatedTotal            int // eligible AND (P|T|X)
+	GatedTotal            int // eligible AND (P|T|X), after the X-only tightening
+	SkippedASCIIXOnly     int // X-only + all-hits-non-CJK + single-corpus → dropped (reviewer rule)
 	SkippedTitleCollision int // gated but title collides with an existing work
 	SkippedIntraCollision int // two gated survivors share a normalized title
 	ToCreate              int // works to create (= GatedTotal - the two skip counts)
@@ -109,6 +118,9 @@ type BgmGatedStats struct {
 
 	RandomSample     []BgmGatedSample    // deterministic random-100 of ToCreate
 	CollisionSamples []BgmGatedCollision // up to 20 existing-work collisions
+
+	ASCIIDroppedSamples  []BgmGatedSample // up to 30 dropped by the X-only tightening
+	ASCIISurvivorSamples []BgmGatedSample // up to 30 pure-non-CJK X-only ≥2-corpus survivors
 }
 
 // BgmGatedSample is one to-create subject for the reviewer's random-100 list.
@@ -187,10 +199,48 @@ func (im *Importer) RunBgmType4Gated(dlsiteDB *gorm.DB) (BgmGatedStats, error) {
 			continue
 		}
 		st.EligiblePool++
-		x := (runeLen(r.NameNorm) >= bgmGatedMinLen && xsrc[r.NameNorm]) ||
-			(runeLen(r.NameCNNorm) >= bgmGatedMinLen && xsrc[r.NameCNNorm])
 		p, t := r.SigP, r.SigT
+
+		// Which corpora each normalized title hits (0 = no hit / too short).
+		var nMask, cnMask uint8
+		if runeLen(r.NameNorm) >= bgmGatedMinLen {
+			nMask = xsrc[r.NameNorm]
+		}
+		if runeLen(r.NameCNNorm) >= bgmGatedMinLen {
+			cnMask = xsrc[r.NameCNNorm]
+		}
+		combined := nMask | cnMask
+		xRaw := combined != 0
+
+		// --- X-only pure-non-CJK single-corpus tightening (reviewer rule,
+		// precision-first 错收难删) ---
+		// An X-ONLY candidate (no P, no T) whose EVERY corpus-hitting normalized
+		// title contains no CJK (kana/kanji/hanzi) — the reviewer's "pure ASCII"
+		// discriminator — is the generic-title-collision failure mode
+		// (Manhunt/Monster/Maria). It is admitted only if it hits ≥2 DISTINCT
+		// corpora; a single-corpus pure-ASCII hit is dropped. CJK-bearing titles
+		// and anything with P/T support are unaffected.
+		asciiDrop, asciiSurvivor := false, false
+		if xRaw && !p && !t && pureASCIIHits(r, nMask, cnMask) {
+			if corpusCount(combined) >= 2 {
+				asciiSurvivor = true
+			} else {
+				asciiDrop = true
+			}
+		}
+		x := xRaw && !asciiDrop
 		tallySignals(&st, p, t, x)
+
+		if asciiDrop {
+			st.SkippedASCIIXOnly++
+			if len(st.ASCIIDroppedSamples) < bgmASCIISample {
+				st.ASCIIDroppedSamples = append(st.ASCIIDroppedSamples, bgmSampleOf(r, "X"))
+			}
+			continue // no longer gated
+		}
+		if asciiSurvivor && len(st.ASCIISurvivorSamples) < bgmASCIISample {
+			st.ASCIISurvivorSamples = append(st.ASCIISurvivorSamples, bgmSampleOf(r, "X"))
+		}
 		if !(p || t || x) {
 			continue
 		}
@@ -224,108 +274,6 @@ func (im *Importer) RunBgmType4Gated(dlsiteDB *gorm.DB) (BgmGatedStats, error) {
 	}
 	logBgmGated(&st, false)
 	return st, nil
-}
-
-// tallySignals accumulates the per-signal + overlap matrix over the eligible pool.
-func tallySignals(st *BgmGatedStats, p, t, x bool) {
-	if p {
-		st.SigP++
-	}
-	if t {
-		st.SigT++
-	}
-	if x {
-		st.SigX++
-	}
-	switch {
-	case p && t && x:
-		st.All3++
-	}
-	if p && t {
-		st.PT++
-	}
-	if p && x {
-		st.PX++
-	}
-	if t && x {
-		st.TX++
-	}
-	if p && !t && !x {
-		st.POnly++
-	}
-	if t && !p && !x {
-		st.TOnly++
-	}
-	if x && !p && !t {
-		st.XOnly++
-	}
-}
-
-// collide reports whether either normalized title (≥4) already exists on a work.
-func collide(r poolRow, wt map[string]wtNorm) (BgmGatedCollision, bool) {
-	for _, n := range []string{r.NameNorm, r.NameCNNorm} {
-		if runeLen(n) < bgmGatedMinLen {
-			continue
-		}
-		if w, ok := wt[n]; ok {
-			return BgmGatedCollision{
-				SubjectID: r.ID, Name: r.Name, NameCN: r.NameCN,
-				CollidedNorm: n, WorkID: w.workID, WorkTitle: w.title,
-			}, true
-		}
-	}
-	return BgmGatedCollision{}, false
-}
-
-// dropIntraCollisions removes every survivor that shares a normalized title with
-// ANOTHER survivor (the bidirectional-uniqueness guard within the wave: two
-// same-title subjects are ambiguous, so neither is minted — they stay reconcile
-// candidates, 漏收可补).
-func dropIntraCollisions(cands []candidate, st *BgmGatedStats) []candidate {
-	subjectsPerNorm := make(map[string]map[int64]struct{})
-	note := func(norm string, id int64) {
-		if runeLen(norm) < bgmGatedMinLen {
-			return
-		}
-		if subjectsPerNorm[norm] == nil {
-			subjectsPerNorm[norm] = make(map[int64]struct{})
-		}
-		subjectsPerNorm[norm][id] = struct{}{}
-	}
-	for _, c := range cands {
-		note(c.row.NameNorm, c.row.ID)
-		note(c.row.NameCNNorm, c.row.ID)
-	}
-	dupNorm := func(norm string) bool {
-		return runeLen(norm) >= bgmGatedMinLen && len(subjectsPerNorm[norm]) > 1
-	}
-	out := cands[:0]
-	for _, c := range cands {
-		if dupNorm(c.row.NameNorm) || dupNorm(c.row.NameCNNorm) {
-			st.SkippedIntraCollision++
-			continue
-		}
-		out = append(out, c)
-	}
-	return out
-}
-
-// pickRandomSample returns a deterministic (seeded) random sample of ≤100
-// to-create subjects — the reviewer's approval artifact.
-func pickRandomSample(cands []candidate) []BgmGatedSample {
-	idx := make([]int, len(cands))
-	for i := range idx {
-		idx[i] = i
-	}
-	rng := rand.New(rand.NewSource(bgmGatedSampleSeed))
-	rng.Shuffle(len(idx), func(i, j int) { idx[i], idx[j] = idx[j], idx[i] })
-	n := min(bgmGatedSampleN, len(idx))
-	out := make([]BgmGatedSample, 0, n)
-	for _, i := range idx[:n] {
-		c := cands[i]
-		out = append(out, BgmGatedSample{SubjectID: c.row.ID, Name: c.row.Name, NameCN: c.row.NameCN, Signals: c.signals})
-	}
-	return out
 }
 
 // createGatedWorks mints the bodyless works + titles + exact anchors + imported
@@ -404,44 +352,14 @@ func (im *Importer) createGatedChunk(tx *gorm.DB, chunk []candidate, st *BgmGate
 	return nil
 }
 
-func signalString(p, t, x bool) string {
-	var parts []string
-	if p {
-		parts = append(parts, "P")
-	}
-	if t {
-		parts = append(parts, "T")
-	}
-	if x {
-		parts = append(parts, "X")
-	}
-	out := ""
-	for i, s := range parts {
-		if i > 0 {
-			out += "+"
-		}
-		out += s
-	}
-	return out
-}
-
 func logBgmGated(st *BgmGatedStats, dry bool) {
 	slog.Info("bgm-type4-gated survey",
 		"dry", dry, "pool_total", st.PoolTotal, "excluded_console_mobile", st.ExcludedConsoleMobile,
 		"eligible_pool", st.EligiblePool, "sig_p", st.SigP, "sig_t", st.SigT, "sig_x", st.SigX,
 		"gated_total", st.GatedTotal, "p_and_t", st.PT, "p_and_x", st.PX, "t_and_x", st.TX, "all_three", st.All3,
 		"p_only", st.POnly, "t_only", st.TOnly, "x_only", st.XOnly,
+		"skipped_ascii_xonly", st.SkippedASCIIXOnly,
 		"skipped_title_collision", st.SkippedTitleCollision, "skipped_intra_collision", st.SkippedIntraCollision,
 		"to_create", st.ToCreate, "works_created", st.WorksCreated, "titles_created", st.TitlesCreated,
 		"anchors_created", st.AnchorsCreated, "revisions_created", st.RevisionsCreated)
-}
-
-// runeLen is the character length of s (Postgres length() semantics), the
-// isomorphic counterpart to the SQL-side `length(norm) >= 4` floors.
-func runeLen(s string) int {
-	n := 0
-	for range s {
-		n++
-	}
-	return n
 }
