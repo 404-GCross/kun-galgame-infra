@@ -54,6 +54,9 @@ func w1aMigrate(t *testing.T) {
 		&model.Galgame{}, &model.GalgameAlias{}, &model.GalgameTagRelation{},
 		&model.GalgameOfficialRelation{}, &model.GalgameEngineRelation{},
 		&model.GalgameLink{}, &model.GalgameCover{}, &model.GalgameScreenshot{},
+		// Contributor is preloaded by FindByID — a fresh CI database needs the
+		// table even though the smoke never seeds rows into it.
+		&model.GalgameContributor{},
 		&model.GalgameVNDBMeta{}, &model.GalgameBangumiMeta{}, &model.GalgameEGMeta{},
 		&model.GalgameStats{},
 	))
