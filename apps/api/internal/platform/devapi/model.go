@@ -56,10 +56,16 @@ func (k *DeveloperAPIKey) Active(now time.Time) bool {
 type DeveloperAPIUsage struct {
 	ID       uint   `gorm:"primaryKey" json:"id"`
 	ClientID string `gorm:"size:50;not null;uniqueIndex:idx_usage_day,priority:1" json:"client_id"`
-	KeyID    uint   `gorm:"not null;uniqueIndex:idx_usage_day,priority:2" json:"key_id"`       // 0 = app aggregate
-	Face     string `gorm:"size:20;not null;uniqueIndex:idx_usage_day,priority:3" json:"face"` // catalog / galgame
-	Day      string `gorm:"size:10;not null;uniqueIndex:idx_usage_day,priority:4" json:"day"`  // YYYY-MM-DD (UTC)
-	Count    int64  `gorm:"not null" json:"count"`
+	KeyID    uint   `gorm:"not null;uniqueIndex:idx_usage_day,priority:2" json:"key_id"` // 0 = app aggregate
+	// Face names grew past the original varchar(20) — galgame_internal_write (22)
+	// and galgame_internal_propose (24) overflowed it, and because UpsertUsage is
+	// one batched INSERT and Flush re-merges on error, a single long face poisoned
+	// EVERY subsequent flush on that process (silent metering stall, 06a→06b W1).
+	// 40 gives every current face headroom; prod was widened by hand in the 06b W1
+	// deploy, cmd/migrate realigns any other environment.
+	Face  string `gorm:"size:40;not null;uniqueIndex:idx_usage_day,priority:3" json:"face"` // catalog / galgame / galgame_internal[_write|_propose]
+	Day   string `gorm:"size:10;not null;uniqueIndex:idx_usage_day,priority:4" json:"day"`  // YYYY-MM-DD (UTC)
+	Count int64  `gorm:"not null" json:"count"`
 	// Explicit column tags: GORM's naming strategy renders Status4xx as
 	// "status4xx" (no underscore before a digit — the acronym/digit trap), but
 	// the upsert SQL and readers use status_4xx / status_5xx.
