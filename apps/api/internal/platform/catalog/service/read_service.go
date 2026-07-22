@@ -127,11 +127,14 @@ type WorkDetail struct {
 }
 
 // WorkIntroRow is one language's intro on a work's read face, carrying its
-// provenance (source_id, §8.C).
+// provenance (source_id, §8.C). Machine flags an LLM machine-translated row
+// (step 75): true only when the surfaced row is a machine translation, i.e. the
+// language has no source row (a source row always wins the per-language merge).
 type WorkIntroRow struct {
 	Lang     string
 	Intro    string
 	SourceID int16
+	Machine  bool
 }
 
 // WorkCoverRow is one cover on a work's read face — the unified shape the
@@ -500,15 +503,19 @@ func (s *ReadService) bridgeGalgameIntros(ctx context.Context, galgameIDs []int6
 func (s *ReadService) nativeWorkIntros(ctx context.Context, workIDs []int64, out map[int64][]WorkIntroRow) error {
 	db := s.db.WithContext(ctx)
 	var rows []struct {
-		WorkID   int64  `gorm:"column:work_id"`
-		Lang     string `gorm:"column:lang"`
-		Intro    string `gorm:"column:intro"`
-		SourceID int16  `gorm:"column:source_id"`
+		WorkID     int64  `gorm:"column:work_id"`
+		Lang       string `gorm:"column:lang"`
+		Intro      string `gorm:"column:intro"`
+		SourceID   int16  `gorm:"column:source_id"`
+		Provenance int16  `gorm:"column:provenance"`
 	}
-	// Ordered by (work, lang, source_id) so the FIRST row seen per (work, lang)
-	// is the winning source (ascending priority; user(1) > vndb(2) > …).
-	if err := db.Raw(`SELECT work_id, lang, intro, source_id FROM catalog_work_intro
-		WHERE work_id IN ? ORDER BY work_id, lang, source_id`, workIDs).Scan(&rows).Error; err != nil {
+	// Ordered by (work, lang, provenance, source_id) so the FIRST row seen per
+	// (work, lang) is the winning one: provenance ASC puts SOURCE rows (0) ahead
+	// of MACHINE rows (1) — a machine translation NEVER masquerades as source
+	// data and loses the merge whenever any source row for that language exists
+	// (step 75) — then source_id ASC is the usual priority (user(1) > vndb(2) > …).
+	if err := db.Raw(`SELECT work_id, lang, intro, source_id, provenance FROM catalog_work_intro
+		WHERE work_id IN ? ORDER BY work_id, lang, provenance, source_id`, workIDs).Scan(&rows).Error; err != nil {
 		return err
 	}
 	seen := make(map[int64]map[string]bool)
@@ -519,10 +526,12 @@ func (s *ReadService) nativeWorkIntros(ctx context.Context, workIDs []int64, out
 			seen[r.WorkID] = langs
 		}
 		if langs[r.Lang] {
-			continue // a higher-priority source already claimed this language
+			continue // a higher-priority row already claimed this language
 		}
 		langs[r.Lang] = true
-		out[r.WorkID] = append(out[r.WorkID], WorkIntroRow{Lang: r.Lang, Intro: r.Intro, SourceID: r.SourceID})
+		out[r.WorkID] = append(out[r.WorkID], WorkIntroRow{
+			Lang: r.Lang, Intro: r.Intro, SourceID: r.SourceID, Machine: r.Provenance == 1,
+		})
 	}
 	for id := range seen {
 		sortIntros(out[id])

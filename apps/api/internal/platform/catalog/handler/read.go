@@ -184,7 +184,7 @@ func buildWorkResponse(detail *service.WorkDetail) dto.WorkByAnchorResponse {
 		resp.Characters = append(resp.Characters, wc)
 	}
 	for _, in := range detail.Intros {
-		resp.Intro = append(resp.Intro, dto.WorkIntro{Lang: in.Lang, Intro: in.Intro, SourceID: in.SourceID})
+		resp.Intro = append(resp.Intro, dto.WorkIntro{Lang: in.Lang, Intro: in.Intro, SourceID: in.SourceID, Machine: in.Machine})
 	}
 	for _, cv := range detail.Covers {
 		resp.Covers = append(resp.Covers, dto.WorkCover{
@@ -561,7 +561,9 @@ func (s *S2SServer) characterByID(ctx context.Context, in *characterByIDInput) (
 		})
 	}
 	for _, in := range detail.Intros {
-		resp.Intros = append(resp.Intros, dto.WorkIntro{Lang: in.Lang, Intro: in.Intro, SourceID: in.SourceID})
+		// Character intros are catalog-native source rows (no MT pilot) — Machine
+		// is always false here, mapped for shape consistency.
+		resp.Intros = append(resp.Intros, dto.WorkIntro{Lang: in.Lang, Intro: in.Intro, SourceID: in.SourceID, Machine: in.Machine})
 	}
 	return &characterByIDOutput{Body: okEnvelope(resp)}, nil
 }

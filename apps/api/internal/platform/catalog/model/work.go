@@ -97,7 +97,27 @@ type CatalogWorkIntro struct {
 	// cleaning; §5). NOT NULL, no default: content is always supplied.
 	Intro string `gorm:"type:text;not null" json:"intro"`
 	// SourceID is the provenance FK (see the type doc). Part of the unique key.
-	SourceID  int16     `gorm:"not null;uniqueIndex:uq_catalog_work_intro" json:"source_id"`
+	// A MACHINE-translated row (Provenance=1, step 75) carries the SOURCE row's
+	// source_id — attribution is "translated from that source" — and is told
+	// apart from the source row purely by Provenance, NOT by a distinct
+	// source_id (so it never widens the unique key).
+	SourceID int16 `gorm:"not null;uniqueIndex:uq_catalog_work_intro" json:"source_id"`
+	// Provenance is 0=source (upstream original text) / 1=machine (LLM machine
+	// translation — the step-75 ja→zh-Hans pilot). A meaningful zero value, so
+	// the column is NOT NULL with NO default tag (the default-tag zero-value
+	// trap): a source row records 0 EXPLICITLY on INSERT, never has the DB
+	// default it. Machine rows NEVER masquerade as source data — the read face
+	// prefers the source row for a language whenever both coexist.
+	Provenance int16 `gorm:"not null" json:"provenance"`
+	// SrcHash is sha256(source ja text) for a machine row — the re-translate
+	// trigger: when the source text changes, its hash changes and the machine
+	// row is re-translated (upsert). Empty on source rows. NOT NULL DEFAULT ''
+	// (the lang/alias pattern: '' is the genuine not-applicable value here, safe
+	// to default — unlike Provenance's meaningful 0).
+	SrcHash string `gorm:"not null;default:''" json:"src_hash"`
+	// MTModel is the model id that produced a machine row (accountability +
+	// re-translate audit); empty on source rows. NOT NULL DEFAULT ''.
+	MTModel   string    `gorm:"not null;default:''" json:"mt_model"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 

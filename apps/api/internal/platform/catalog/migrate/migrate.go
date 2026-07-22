@@ -161,6 +161,26 @@ func preMigrate(db *gorm.DB) error {
 		END $$`).Error; err != nil {
 		return fmt.Errorf("premigrate catalog_work_character.spoiler: %w", err)
 	}
+
+	// catalog_work_intro.provenance (step 75, MT pilot): 0=source / 1=machine is
+	// a meaningful zero value, so the column is NOT NULL with no default. On a
+	// table that already holds source-only intro rows (steps 52/55/57), add it
+	// nullable → backfill 0 (every existing row IS upstream source text) → set
+	// NOT NULL. Idempotent; skipped on a fresh DB where the table does not exist
+	// yet (AutoMigrate then creates it NOT NULL from the model). The sibling
+	// columns src_hash / mt_model carry a DEFAULT '' so AutoMigrate adds THEM to
+	// the populated table directly — only the no-default provenance needs this.
+	if err := db.Exec(`
+		DO $$
+		BEGIN
+			IF to_regclass('catalog_work_intro') IS NOT NULL THEN
+				ALTER TABLE catalog_work_intro ADD COLUMN IF NOT EXISTS provenance smallint;
+				UPDATE catalog_work_intro SET provenance = 0 WHERE provenance IS NULL;
+				ALTER TABLE catalog_work_intro ALTER COLUMN provenance SET NOT NULL;
+			END IF;
+		END $$`).Error; err != nil {
+		return fmt.Errorf("premigrate catalog_work_intro.provenance: %w", err)
+	}
 	return nil
 }
 

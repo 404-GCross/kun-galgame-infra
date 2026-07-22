@@ -168,6 +168,10 @@ type WorkIntro struct {
 	Lang     string `json:"lang"`
 	Intro    string `json:"intro"`
 	SourceID int16  `json:"source_id" doc:"catalog_source id (provenance): e.g. galgame_wiki for a bridged claimed work, vndb for a bodyless backfill"`
+	// Machine flags an LLM machine-translated intro (step 75). Present+true only
+	// when the surfaced row is a machine translation (the language has no source
+	// row); omitted for source/bridged rows so consumers can render an "MT" badge.
+	Machine bool `json:"machine,omitempty" doc:"true if this intro is an LLM machine translation (no source text for this language); omitted for source/bridged rows"`
 }
 
 // WorkCharacter is one character on a work's roster, merging the appearance

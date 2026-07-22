@@ -1395,6 +1395,8 @@ export interface components {
         WorkIntro: {
             intro: string;
             lang: string;
+            /** @description true if this intro is an LLM machine translation (no source text for this language); omitted for source/bridged rows */
+            machine?: boolean;
             /**
              * Format: int32
              * @description catalog_source id (provenance): e.g. galgame_wiki for a bridged claimed work, vndb for a bodyless backfill
