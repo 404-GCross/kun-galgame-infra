@@ -92,7 +92,9 @@ type chatResponse struct {
 // retrySchedule paces retries on 429/5xx/transport errors — the safety valve
 // that lets a worker pool ride out rate-limit bursts instead of bleeding
 // errors. A var so the test can shrink it.
-var retrySchedule = []time.Duration{2 * time.Second, 8 * time.Second, 30 * time.Second}
+// The 60s tail matters: Workers AI enforces a PER-MINUTE model rate, so a
+// pool that hits it needs to sit out the rest of the window, not just blink.
+var retrySchedule = []time.Duration{2 * time.Second, 8 * time.Second, 30 * time.Second, 60 * time.Second}
 
 // Translate runs one plain-text chat completion (temperature 0 for a faithful,
 // deterministic rendering). The reply content IS the translation.
@@ -178,7 +180,8 @@ func (t *HTTPTranslator) postOnce(ctx context.Context, raw []byte) (body []byte,
 	if err != nil {
 		return nil, true, err
 	}
-	if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
+	// 408 (Workers AI "AiError: Request timeout") is as transient as a 5xx.
+	if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == http.StatusRequestTimeout || resp.StatusCode >= 500 {
 		return nil, true, fmt.Errorf("gateway http %d: %s", resp.StatusCode, truncate(string(data), 300))
 	}
 	if resp.StatusCode != http.StatusOK {
