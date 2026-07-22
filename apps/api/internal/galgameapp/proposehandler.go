@@ -3,6 +3,7 @@ package galgameapp
 import (
 	"context"
 	stderrors "errors"
+	"log/slog"
 	"strconv"
 	"strings"
 	"sync"
@@ -350,6 +351,9 @@ func mapEditErr(c fiber.Ctx, err error) error {
 	case stderrors.As(err, &conflict), stderrors.Is(err, editing.ErrNotOpen):
 		return response.Error(c, fiber.StatusConflict, errors.ErrOperationFailed, err.Error())
 	}
+	// Unexpected engine failure — log it like the S2S face's editErr does, so the
+	// platform face never swallows a genuine error into a bare 500.
+	slog.Error("platform propose face", "err", err)
 	return response.Error(c, fiber.StatusInternalServerError, errors.ErrInternalServer, errors.GetMessage(errors.ErrInternalServer))
 }
 

@@ -2,6 +2,7 @@ package editing_test
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"os"
 	"testing"
@@ -25,6 +26,33 @@ var (
 	testCtx = context.Background()
 )
 
+// editSuiteLockKey ("edts") serializes the suites that TRUNCATE or write the
+// shared edit_* tables — this package, catalog/handler, and the galgameapp
+// propose suite — whenever they run against one database (unified
+// TEST_DATABASE_DSN). Distinct from every other suite key and from the
+// engine's business classid 0x65646974 (which uses the two-int4 lock form)
+// per the single-keyspace advisory-lock rule.
+const editSuiteLockKey int64 = 0x65647473
+
+func acquireEditSuiteLock(db *sql.DB) func() {
+	if db == nil {
+		return func() {}
+	}
+	ctx := context.Background()
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return func() {}
+	}
+	if _, err := conn.ExecContext(ctx, "SELECT pg_advisory_lock($1)", editSuiteLockKey); err != nil {
+		_ = conn.Close()
+		return func() {}
+	}
+	return func() {
+		_, _ = conn.ExecContext(ctx, "SELECT pg_advisory_unlock($1)", editSuiteLockKey)
+		_ = conn.Close()
+	}
+}
+
 func TestMain(m *testing.M) {
 	dsn := os.Getenv("TEST_DATABASE_DSN")
 	if dsn == "" {
@@ -37,6 +65,10 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "SKIP: cannot connect to test database: %v\n", err)
 		os.Exit(0)
 	}
+	// The SKIP paths below os.Exit without releasing: process death closes the
+	// session and Postgres drops its advisory locks, so that is safe.
+	sqlDB, _ := db.DB()
+	release := acquireEditSuiteLock(sqlDB)
 	if err := editing.AutoMigrate(db); err != nil {
 		fmt.Fprintf(os.Stderr, "SKIP: editing migration failed: %v\n", err)
 		os.Exit(0)
@@ -55,7 +87,9 @@ func TestMain(m *testing.M) {
 		os.Exit(0)
 	}
 	testDB = db
-	os.Exit(m.Run())
+	code := m.Run()
+	release()
+	os.Exit(code)
 }
 
 func cleanTables(t *testing.T) {

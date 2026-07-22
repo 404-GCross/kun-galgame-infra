@@ -2,6 +2,7 @@ package galgameapp
 
 import (
 	"context"
+	"database/sql"
 	stderrors "errors"
 	"fmt"
 	"io"
@@ -39,13 +40,47 @@ import (
 //
 // SUITE DISCIPLINE: this suite writes edit_* rows scoped to the synthetic entity
 // type "galgame.testthing" and cleans only those; it never TRUNCATEs the shared
-// edit_* tables. Its clients/keys use the "proposetest_" prefix. Run the Go
-// suites that share the CI database with `-p 1` (pinned in test.yml) — a bare
-// `go test ./...` may race the devapi suite's key truncation.
+// edit_* tables. Its clients/keys use the "proposetest_" prefix. TestMain holds
+// two advisory suite locks for the whole run, so parallel `go test ./...` is
+// safe even when every suite targets one database (unified TEST_DATABASE_DSN,
+// or the shared local default): "dvap" (the devapi suite TRUNCATEs the
+// developer-key tables this suite mints into) and "edts" (the edit_* tables,
+// shared with the editing and catalog/handler suites). Acquire order is
+// dvap → edts everywhere, so the pair can never deadlock; both values are
+// distinct from every other suite key and from the editing engine's business
+// classid 0x65646974 (which besides uses the two-int4 lock form).
 
 const testJWTSecret = "propose-face-test-secret"
 
+const (
+	devapiSuiteLockKey int64 = 0x64766170 // "dvap" — must match the devapi suite
+	editSuiteLockKey   int64 = 0x65647473 // "edts" — shared by the edit-table suites
+)
+
 var testDB *gorm.DB
+
+func acquireSuiteLocks(db *sql.DB, keys ...int64) func() {
+	if db == nil {
+		return func() {}
+	}
+	ctx := context.Background()
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return func() {}
+	}
+	for _, key := range keys {
+		if _, err := conn.ExecContext(ctx, "SELECT pg_advisory_lock($1)", key); err != nil {
+			_ = conn.Close() // closing the session releases any lock already held
+			return func() {}
+		}
+	}
+	return func() {
+		for i := len(keys) - 1; i >= 0; i-- {
+			_, _ = conn.ExecContext(ctx, "SELECT pg_advisory_unlock($1)", keys[i])
+		}
+		_ = conn.Close()
+	}
+}
 
 func TestMain(m *testing.M) {
 	dsn := os.Getenv("TEST_DATABASE_DSN")
@@ -57,12 +92,17 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "SKIP: cannot connect to test database: %v\n", err)
 		os.Exit(0)
 	}
+	sqlDB, _ := db.DB()
+	release := acquireSuiteLocks(sqlDB, devapiSuiteLockKey, editSuiteLockKey)
 	if err := provisionProposeSchema(db); err != nil {
+		release()
 		fmt.Fprintf(os.Stderr, "SKIP: propose-face schema provisioning failed: %v\n", err)
 		os.Exit(0)
 	}
 	testDB = db
-	os.Exit(m.Run())
+	code := m.Run()
+	release()
+	os.Exit(code)
 }
 
 func provisionProposeSchema(db *gorm.DB) error {
