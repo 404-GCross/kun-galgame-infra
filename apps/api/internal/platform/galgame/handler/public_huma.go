@@ -238,5 +238,9 @@ func SetupGalgamePublicSpec(app *fiber.App) huma.API {
 	}, func(context.Context, *publicEntityGalgamesInput) (*publicTagGalgamesOutput, error) {
 		return &publicTagGalgamesOutput{}, nil
 	})
+
+	// Curated taxonomy four-family public faces (W1b): tags 5 / officials 4 /
+	// engines 3 / series 2 = 14 by-id operations (public_taxonomy_huma.go).
+	registerGalgameTaxonomyPublicOps(api, tags)
 	return api
 }

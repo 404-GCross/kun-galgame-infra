@@ -3301,6 +3301,433 @@ export const docsModel: DocsModel = {
               "curl": "curl \"https://api.nextmoe.dev/v1/galgame/changes\" \\\n  -H \"Authorization: Bearer nm_live_<YOUR_KEY>\""
             },
             {
+              "id": "listEnginesPublic",
+              "method": "get",
+              "path": "/v1/galgame/engines",
+              "summary": "Curated engine list (page/limit)",
+              "scope": "galgame:read",
+              "params": [
+                {
+                  "name": "page",
+                  "in": "query",
+                  "required": false,
+                  "type": "integer",
+                  "format": "int64",
+                  "doc": "Page number (default 1)"
+                },
+                {
+                  "name": "limit",
+                  "in": "query",
+                  "required": false,
+                  "type": "integer",
+                  "format": "int64",
+                  "doc": "Items per page 1-100 (default 50)"
+                }
+              ],
+              "responses": [
+                {
+                  "status": "200",
+                  "description": "OK",
+                  "schema": {
+                    "type": "object",
+                    "children": [
+                      {
+                        "name": "code",
+                        "required": true,
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      {
+                        "name": "data",
+                        "required": true,
+                        "type": "object",
+                        "children": [
+                          {
+                            "name": "items",
+                            "required": true,
+                            "nullable": true,
+                            "type": "array",
+                            "itemsOf": {
+                              "type": "object",
+                              "children": [
+                                {
+                                  "name": "alias",
+                                  "required": true,
+                                  "nullable": true,
+                                  "type": "array",
+                                  "itemsOf": {
+                                    "type": "string"
+                                  }
+                                },
+                                {
+                                  "name": "description",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "galgame_count",
+                                  "required": true,
+                                  "format": "int64",
+                                  "type": "integer"
+                                },
+                                {
+                                  "name": "id",
+                                  "required": true,
+                                  "format": "int64",
+                                  "type": "integer"
+                                },
+                                {
+                                  "name": "name",
+                                  "required": true,
+                                  "type": "string"
+                                }
+                              ]
+                            }
+                          },
+                          {
+                            "name": "total",
+                            "required": true,
+                            "format": "int64",
+                            "type": "integer"
+                          }
+                        ]
+                      },
+                      {
+                        "name": "message",
+                        "required": true,
+                        "type": "string"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "status": "default",
+                  "description": "Error",
+                  "schema": {
+                    "type": "object",
+                    "children": [
+                      {
+                        "name": "detail",
+                        "doc": "A human-readable explanation specific to this occurrence of the problem.",
+                        "type": "string"
+                      },
+                      {
+                        "name": "errors",
+                        "nullable": true,
+                        "doc": "Optional list of individual error details",
+                        "type": "array",
+                        "itemsOf": {
+                          "type": "object",
+                          "children": [
+                            {
+                              "name": "location",
+                              "doc": "Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'",
+                              "type": "string"
+                            },
+                            {
+                              "name": "message",
+                              "doc": "Error message text",
+                              "type": "string"
+                            },
+                            {
+                              "name": "value",
+                              "doc": "The value at the given location",
+                              "type": "object"
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "name": "instance",
+                        "doc": "A URI reference that identifies the specific occurrence of the problem.",
+                        "format": "uri",
+                        "type": "string"
+                      },
+                      {
+                        "name": "status",
+                        "doc": "HTTP status code",
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      {
+                        "name": "title",
+                        "doc": "A short, human-readable summary of the problem type. This value should not change between occurrences of the error.",
+                        "type": "string"
+                      },
+                      {
+                        "name": "type",
+                        "doc": "A URI reference to human-readable documentation for the error.",
+                        "format": "uri",
+                        "type": "string"
+                      }
+                    ]
+                  }
+                }
+              ],
+              "curl": "curl \"https://api.nextmoe.dev/v1/galgame/engines\" \\\n  -H \"Authorization: Bearer nm_live_<YOUR_KEY>\""
+            },
+            {
+              "id": "getEnginePublic",
+              "method": "get",
+              "path": "/v1/galgame/engines/{id}",
+              "summary": "One engine's curated record (description, alias, galgame_count)",
+              "scope": "galgame:read",
+              "params": [
+                {
+                  "name": "id",
+                  "in": "path",
+                  "required": true,
+                  "type": "integer",
+                  "format": "int64",
+                  "doc": "Entity id"
+                }
+              ],
+              "responses": [
+                {
+                  "status": "200",
+                  "description": "OK",
+                  "schema": {
+                    "type": "object",
+                    "children": [
+                      {
+                        "name": "code",
+                        "required": true,
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      {
+                        "name": "data",
+                        "required": true,
+                        "type": "object",
+                        "children": [
+                          {
+                            "name": "alias",
+                            "required": true,
+                            "nullable": true,
+                            "type": "array",
+                            "itemsOf": {
+                              "type": "string"
+                            }
+                          },
+                          {
+                            "name": "description",
+                            "required": true,
+                            "type": "string"
+                          },
+                          {
+                            "name": "galgame_count",
+                            "required": true,
+                            "format": "int64",
+                            "type": "integer"
+                          },
+                          {
+                            "name": "id",
+                            "required": true,
+                            "format": "int64",
+                            "type": "integer"
+                          },
+                          {
+                            "name": "name",
+                            "required": true,
+                            "type": "string"
+                          }
+                        ]
+                      },
+                      {
+                        "name": "message",
+                        "required": true,
+                        "type": "string"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "status": "default",
+                  "description": "Error",
+                  "schema": {
+                    "type": "object",
+                    "children": [
+                      {
+                        "name": "detail",
+                        "doc": "A human-readable explanation specific to this occurrence of the problem.",
+                        "type": "string"
+                      },
+                      {
+                        "name": "errors",
+                        "nullable": true,
+                        "doc": "Optional list of individual error details",
+                        "type": "array",
+                        "itemsOf": {
+                          "type": "object",
+                          "children": [
+                            {
+                              "name": "location",
+                              "doc": "Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'",
+                              "type": "string"
+                            },
+                            {
+                              "name": "message",
+                              "doc": "Error message text",
+                              "type": "string"
+                            },
+                            {
+                              "name": "value",
+                              "doc": "The value at the given location",
+                              "type": "object"
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "name": "instance",
+                        "doc": "A URI reference that identifies the specific occurrence of the problem.",
+                        "format": "uri",
+                        "type": "string"
+                      },
+                      {
+                        "name": "status",
+                        "doc": "HTTP status code",
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      {
+                        "name": "title",
+                        "doc": "A short, human-readable summary of the problem type. This value should not change between occurrences of the error.",
+                        "type": "string"
+                      },
+                      {
+                        "name": "type",
+                        "doc": "A URI reference to human-readable documentation for the error.",
+                        "format": "uri",
+                        "type": "string"
+                      }
+                    ]
+                  }
+                }
+              ],
+              "curl": "curl \"https://api.nextmoe.dev/v1/galgame/engines/1\" \\\n  -H \"Authorization: Bearer nm_live_<YOUR_KEY>\""
+            },
+            {
+              "id": "listEngineGalgameIDsPublic",
+              "method": "get",
+              "path": "/v1/galgame/engines/{id}/galgame-ids",
+              "summary": "Ids of every published galgame on this engine ({ids:[]int})",
+              "scope": "galgame:read",
+              "params": [
+                {
+                  "name": "id",
+                  "in": "path",
+                  "required": true,
+                  "type": "integer",
+                  "format": "int64",
+                  "doc": "Entity id"
+                }
+              ],
+              "responses": [
+                {
+                  "status": "200",
+                  "description": "OK",
+                  "schema": {
+                    "type": "object",
+                    "children": [
+                      {
+                        "name": "code",
+                        "required": true,
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      {
+                        "name": "data",
+                        "required": true,
+                        "type": "object",
+                        "children": [
+                          {
+                            "name": "ids",
+                            "required": true,
+                            "nullable": true,
+                            "type": "array",
+                            "itemsOf": {
+                              "format": "int64",
+                              "type": "integer"
+                            }
+                          }
+                        ]
+                      },
+                      {
+                        "name": "message",
+                        "required": true,
+                        "type": "string"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "status": "default",
+                  "description": "Error",
+                  "schema": {
+                    "type": "object",
+                    "children": [
+                      {
+                        "name": "detail",
+                        "doc": "A human-readable explanation specific to this occurrence of the problem.",
+                        "type": "string"
+                      },
+                      {
+                        "name": "errors",
+                        "nullable": true,
+                        "doc": "Optional list of individual error details",
+                        "type": "array",
+                        "itemsOf": {
+                          "type": "object",
+                          "children": [
+                            {
+                              "name": "location",
+                              "doc": "Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'",
+                              "type": "string"
+                            },
+                            {
+                              "name": "message",
+                              "doc": "Error message text",
+                              "type": "string"
+                            },
+                            {
+                              "name": "value",
+                              "doc": "The value at the given location",
+                              "type": "object"
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "name": "instance",
+                        "doc": "A URI reference that identifies the specific occurrence of the problem.",
+                        "format": "uri",
+                        "type": "string"
+                      },
+                      {
+                        "name": "status",
+                        "doc": "HTTP status code",
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      {
+                        "name": "title",
+                        "doc": "A short, human-readable summary of the problem type. This value should not change between occurrences of the error.",
+                        "type": "string"
+                      },
+                      {
+                        "name": "type",
+                        "doc": "A URI reference to human-readable documentation for the error.",
+                        "format": "uri",
+                        "type": "string"
+                      }
+                    ]
+                  }
+                }
+              ],
+              "curl": "curl \"https://api.nextmoe.dev/v1/galgame/engines/1/galgame-ids\" \\\n  -H \"Authorization: Bearer nm_live_<YOUR_KEY>\""
+            },
+            {
               "id": "lookupGalgamePublic",
               "method": "get",
               "path": "/v1/galgame/lookup",
@@ -3418,6 +3845,473 @@ export const docsModel: DocsModel = {
                 }
               ],
               "curl": "curl \"https://api.nextmoe.dev/v1/galgame/lookup\" \\\n  -H \"Authorization: Bearer nm_live_<YOUR_KEY>\""
+            },
+            {
+              "id": "listOfficialsPublic",
+              "method": "get",
+              "path": "/v1/galgame/officials",
+              "summary": "Curated maker list (page/limit)",
+              "scope": "galgame:read",
+              "params": [
+                {
+                  "name": "page",
+                  "in": "query",
+                  "required": false,
+                  "type": "integer",
+                  "format": "int64",
+                  "doc": "Page number (default 1)"
+                },
+                {
+                  "name": "limit",
+                  "in": "query",
+                  "required": false,
+                  "type": "integer",
+                  "format": "int64",
+                  "doc": "Items per page 1-100 (default 50)"
+                }
+              ],
+              "responses": [
+                {
+                  "status": "200",
+                  "description": "OK",
+                  "schema": {
+                    "type": "object",
+                    "children": [
+                      {
+                        "name": "code",
+                        "required": true,
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      {
+                        "name": "data",
+                        "required": true,
+                        "type": "object",
+                        "children": [
+                          {
+                            "name": "items",
+                            "required": true,
+                            "nullable": true,
+                            "type": "array",
+                            "itemsOf": {
+                              "type": "object",
+                              "children": [
+                                {
+                                  "name": "aliases",
+                                  "required": true,
+                                  "nullable": true,
+                                  "type": "array",
+                                  "itemsOf": {
+                                    "type": "string"
+                                  }
+                                },
+                                {
+                                  "name": "category",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "description",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "galgame_count",
+                                  "required": true,
+                                  "format": "int64",
+                                  "type": "integer"
+                                },
+                                {
+                                  "name": "id",
+                                  "required": true,
+                                  "format": "int64",
+                                  "type": "integer"
+                                },
+                                {
+                                  "name": "lang",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "link",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "name",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "original",
+                                  "required": true,
+                                  "type": "string"
+                                }
+                              ]
+                            }
+                          },
+                          {
+                            "name": "total",
+                            "required": true,
+                            "format": "int64",
+                            "type": "integer"
+                          }
+                        ]
+                      },
+                      {
+                        "name": "message",
+                        "required": true,
+                        "type": "string"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "status": "default",
+                  "description": "Error",
+                  "schema": {
+                    "type": "object",
+                    "children": [
+                      {
+                        "name": "detail",
+                        "doc": "A human-readable explanation specific to this occurrence of the problem.",
+                        "type": "string"
+                      },
+                      {
+                        "name": "errors",
+                        "nullable": true,
+                        "doc": "Optional list of individual error details",
+                        "type": "array",
+                        "itemsOf": {
+                          "type": "object",
+                          "children": [
+                            {
+                              "name": "location",
+                              "doc": "Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'",
+                              "type": "string"
+                            },
+                            {
+                              "name": "message",
+                              "doc": "Error message text",
+                              "type": "string"
+                            },
+                            {
+                              "name": "value",
+                              "doc": "The value at the given location",
+                              "type": "object"
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "name": "instance",
+                        "doc": "A URI reference that identifies the specific occurrence of the problem.",
+                        "format": "uri",
+                        "type": "string"
+                      },
+                      {
+                        "name": "status",
+                        "doc": "HTTP status code",
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      {
+                        "name": "title",
+                        "doc": "A short, human-readable summary of the problem type. This value should not change between occurrences of the error.",
+                        "type": "string"
+                      },
+                      {
+                        "name": "type",
+                        "doc": "A URI reference to human-readable documentation for the error.",
+                        "format": "uri",
+                        "type": "string"
+                      }
+                    ]
+                  }
+                }
+              ],
+              "curl": "curl \"https://api.nextmoe.dev/v1/galgame/officials\" \\\n  -H \"Authorization: Bearer nm_live_<YOUR_KEY>\""
+            },
+            {
+              "id": "getOfficialPublic",
+              "method": "get",
+              "path": "/v1/galgame/officials/{id}",
+              "summary": "One maker's curated record (original, link, lang, description, galgame_count, aliases)",
+              "scope": "galgame:read",
+              "params": [
+                {
+                  "name": "id",
+                  "in": "path",
+                  "required": true,
+                  "type": "integer",
+                  "format": "int64",
+                  "doc": "Entity id"
+                }
+              ],
+              "responses": [
+                {
+                  "status": "200",
+                  "description": "OK",
+                  "schema": {
+                    "type": "object",
+                    "children": [
+                      {
+                        "name": "code",
+                        "required": true,
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      {
+                        "name": "data",
+                        "required": true,
+                        "type": "object",
+                        "children": [
+                          {
+                            "name": "aliases",
+                            "required": true,
+                            "nullable": true,
+                            "type": "array",
+                            "itemsOf": {
+                              "type": "string"
+                            }
+                          },
+                          {
+                            "name": "category",
+                            "required": true,
+                            "type": "string"
+                          },
+                          {
+                            "name": "description",
+                            "required": true,
+                            "type": "string"
+                          },
+                          {
+                            "name": "galgame_count",
+                            "required": true,
+                            "format": "int64",
+                            "type": "integer"
+                          },
+                          {
+                            "name": "id",
+                            "required": true,
+                            "format": "int64",
+                            "type": "integer"
+                          },
+                          {
+                            "name": "lang",
+                            "required": true,
+                            "type": "string"
+                          },
+                          {
+                            "name": "link",
+                            "required": true,
+                            "type": "string"
+                          },
+                          {
+                            "name": "name",
+                            "required": true,
+                            "type": "string"
+                          },
+                          {
+                            "name": "original",
+                            "required": true,
+                            "type": "string"
+                          }
+                        ]
+                      },
+                      {
+                        "name": "message",
+                        "required": true,
+                        "type": "string"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "status": "default",
+                  "description": "Error",
+                  "schema": {
+                    "type": "object",
+                    "children": [
+                      {
+                        "name": "detail",
+                        "doc": "A human-readable explanation specific to this occurrence of the problem.",
+                        "type": "string"
+                      },
+                      {
+                        "name": "errors",
+                        "nullable": true,
+                        "doc": "Optional list of individual error details",
+                        "type": "array",
+                        "itemsOf": {
+                          "type": "object",
+                          "children": [
+                            {
+                              "name": "location",
+                              "doc": "Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'",
+                              "type": "string"
+                            },
+                            {
+                              "name": "message",
+                              "doc": "Error message text",
+                              "type": "string"
+                            },
+                            {
+                              "name": "value",
+                              "doc": "The value at the given location",
+                              "type": "object"
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "name": "instance",
+                        "doc": "A URI reference that identifies the specific occurrence of the problem.",
+                        "format": "uri",
+                        "type": "string"
+                      },
+                      {
+                        "name": "status",
+                        "doc": "HTTP status code",
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      {
+                        "name": "title",
+                        "doc": "A short, human-readable summary of the problem type. This value should not change between occurrences of the error.",
+                        "type": "string"
+                      },
+                      {
+                        "name": "type",
+                        "doc": "A URI reference to human-readable documentation for the error.",
+                        "format": "uri",
+                        "type": "string"
+                      }
+                    ]
+                  }
+                }
+              ],
+              "curl": "curl \"https://api.nextmoe.dev/v1/galgame/officials/1\" \\\n  -H \"Authorization: Bearer nm_live_<YOUR_KEY>\""
+            },
+            {
+              "id": "listOfficialGalgameIDsPublic",
+              "method": "get",
+              "path": "/v1/galgame/officials/{id}/galgame-ids",
+              "summary": "Ids of every published galgame under this maker ({ids:[]int})",
+              "scope": "galgame:read",
+              "params": [
+                {
+                  "name": "id",
+                  "in": "path",
+                  "required": true,
+                  "type": "integer",
+                  "format": "int64",
+                  "doc": "Entity id"
+                }
+              ],
+              "responses": [
+                {
+                  "status": "200",
+                  "description": "OK",
+                  "schema": {
+                    "type": "object",
+                    "children": [
+                      {
+                        "name": "code",
+                        "required": true,
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      {
+                        "name": "data",
+                        "required": true,
+                        "type": "object",
+                        "children": [
+                          {
+                            "name": "ids",
+                            "required": true,
+                            "nullable": true,
+                            "type": "array",
+                            "itemsOf": {
+                              "format": "int64",
+                              "type": "integer"
+                            }
+                          }
+                        ]
+                      },
+                      {
+                        "name": "message",
+                        "required": true,
+                        "type": "string"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "status": "default",
+                  "description": "Error",
+                  "schema": {
+                    "type": "object",
+                    "children": [
+                      {
+                        "name": "detail",
+                        "doc": "A human-readable explanation specific to this occurrence of the problem.",
+                        "type": "string"
+                      },
+                      {
+                        "name": "errors",
+                        "nullable": true,
+                        "doc": "Optional list of individual error details",
+                        "type": "array",
+                        "itemsOf": {
+                          "type": "object",
+                          "children": [
+                            {
+                              "name": "location",
+                              "doc": "Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'",
+                              "type": "string"
+                            },
+                            {
+                              "name": "message",
+                              "doc": "Error message text",
+                              "type": "string"
+                            },
+                            {
+                              "name": "value",
+                              "doc": "The value at the given location",
+                              "type": "object"
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "name": "instance",
+                        "doc": "A URI reference that identifies the specific occurrence of the problem.",
+                        "format": "uri",
+                        "type": "string"
+                      },
+                      {
+                        "name": "status",
+                        "doc": "HTTP status code",
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      {
+                        "name": "title",
+                        "doc": "A short, human-readable summary of the problem type. This value should not change between occurrences of the error.",
+                        "type": "string"
+                      },
+                      {
+                        "name": "type",
+                        "doc": "A URI reference to human-readable documentation for the error.",
+                        "format": "uri",
+                        "type": "string"
+                      }
+                    ]
+                  }
+                }
+              ],
+              "curl": "curl \"https://api.nextmoe.dev/v1/galgame/officials/1/galgame-ids\" \\\n  -H \"Authorization: Bearer nm_live_<YOUR_KEY>\""
             },
             {
               "id": "listOfficialGalgamesPublic",
@@ -3702,6 +4596,201 @@ export const docsModel: DocsModel = {
                 }
               ],
               "curl": "curl \"https://api.nextmoe.dev/v1/galgame/officials/1/galgames\" \\\n  -H \"Authorization: Bearer nm_live_<YOUR_KEY>\""
+            },
+            {
+              "id": "searchOfficialsPublic",
+              "method": "get",
+              "path": "/v1/galgame/officials/search",
+              "summary": "Meilisearch relevance over makers (id, name, aliases, category, galgame_count, original, lang)",
+              "scope": "galgame:read",
+              "params": [
+                {
+                  "name": "q",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "Free-text query across maker names + aliases"
+                },
+                {
+                  "name": "category",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "Filter by maker category: company | individual | amateur"
+                },
+                {
+                  "name": "lang",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "Filter by maker primary language (BCP-47 tag)"
+                },
+                {
+                  "name": "limit",
+                  "in": "query",
+                  "required": false,
+                  "type": "integer",
+                  "format": "int64",
+                  "doc": "Max hits 1-100 (default 50)"
+                }
+              ],
+              "responses": [
+                {
+                  "status": "200",
+                  "description": "OK",
+                  "schema": {
+                    "type": "object",
+                    "children": [
+                      {
+                        "name": "code",
+                        "required": true,
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      {
+                        "name": "data",
+                        "required": true,
+                        "type": "object",
+                        "children": [
+                          {
+                            "name": "items",
+                            "required": true,
+                            "nullable": true,
+                            "type": "array",
+                            "itemsOf": {
+                              "type": "object",
+                              "children": [
+                                {
+                                  "name": "aliases",
+                                  "required": true,
+                                  "nullable": true,
+                                  "type": "array",
+                                  "itemsOf": {
+                                    "type": "string"
+                                  }
+                                },
+                                {
+                                  "name": "category",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "galgame_count",
+                                  "required": true,
+                                  "format": "int64",
+                                  "type": "integer"
+                                },
+                                {
+                                  "name": "id",
+                                  "required": true,
+                                  "format": "int64",
+                                  "type": "integer"
+                                },
+                                {
+                                  "name": "lang",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "name",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "original",
+                                  "required": true,
+                                  "type": "string"
+                                }
+                              ]
+                            }
+                          },
+                          {
+                            "name": "processing_time_ms",
+                            "required": true,
+                            "format": "int64",
+                            "type": "integer"
+                          },
+                          {
+                            "name": "total",
+                            "required": true,
+                            "format": "int64",
+                            "type": "integer"
+                          }
+                        ]
+                      },
+                      {
+                        "name": "message",
+                        "required": true,
+                        "type": "string"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "status": "default",
+                  "description": "Error",
+                  "schema": {
+                    "type": "object",
+                    "children": [
+                      {
+                        "name": "detail",
+                        "doc": "A human-readable explanation specific to this occurrence of the problem.",
+                        "type": "string"
+                      },
+                      {
+                        "name": "errors",
+                        "nullable": true,
+                        "doc": "Optional list of individual error details",
+                        "type": "array",
+                        "itemsOf": {
+                          "type": "object",
+                          "children": [
+                            {
+                              "name": "location",
+                              "doc": "Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'",
+                              "type": "string"
+                            },
+                            {
+                              "name": "message",
+                              "doc": "Error message text",
+                              "type": "string"
+                            },
+                            {
+                              "name": "value",
+                              "doc": "The value at the given location",
+                              "type": "object"
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "name": "instance",
+                        "doc": "A URI reference that identifies the specific occurrence of the problem.",
+                        "format": "uri",
+                        "type": "string"
+                      },
+                      {
+                        "name": "status",
+                        "doc": "HTTP status code",
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      {
+                        "name": "title",
+                        "doc": "A short, human-readable summary of the problem type. This value should not change between occurrences of the error.",
+                        "type": "string"
+                      },
+                      {
+                        "name": "type",
+                        "doc": "A URI reference to human-readable documentation for the error.",
+                        "format": "uri",
+                        "type": "string"
+                      }
+                    ]
+                  }
+                }
+              ],
+              "curl": "curl \"https://api.nextmoe.dev/v1/galgame/officials/search\" \\\n  -H \"Authorization: Bearer nm_live_<YOUR_KEY>\""
             },
             {
               "id": "searchGalgamesPublic",
@@ -4629,6 +5718,935 @@ export const docsModel: DocsModel = {
               "curl": "curl \"https://api.nextmoe.dev/v1/galgame/search\" \\\n  -H \"Authorization: Bearer nm_live_<YOUR_KEY>\""
             },
             {
+              "id": "listSeriesPublic",
+              "method": "get",
+              "path": "/v1/galgame/series",
+              "summary": "Curated series list (page/limit) with content_limit-gated member previews (thin items)",
+              "scope": "galgame:read",
+              "params": [
+                {
+                  "name": "page",
+                  "in": "query",
+                  "required": false,
+                  "type": "integer",
+                  "format": "int64",
+                  "doc": "Page number (default 1)"
+                },
+                {
+                  "name": "limit",
+                  "in": "query",
+                  "required": false,
+                  "type": "integer",
+                  "format": "int64",
+                  "doc": "Items per page 1-50 (default 24)"
+                },
+                {
+                  "name": "content_limit",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "Content filter: sfw (default) | nsfw | all. Gates each series' member preview + galgame_count. nsfw/all require the galgame:nsfw scope; otherwise silently coerced to sfw."
+                }
+              ],
+              "responses": [
+                {
+                  "status": "200",
+                  "description": "OK",
+                  "schema": {
+                    "type": "object",
+                    "children": [
+                      {
+                        "name": "code",
+                        "required": true,
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      {
+                        "name": "data",
+                        "required": true,
+                        "type": "object",
+                        "children": [
+                          {
+                            "name": "items",
+                            "required": true,
+                            "nullable": true,
+                            "type": "array",
+                            "itemsOf": {
+                              "type": "object",
+                              "children": [
+                                {
+                                  "name": "description",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "galgame_count",
+                                  "required": true,
+                                  "format": "int64",
+                                  "type": "integer"
+                                },
+                                {
+                                  "name": "galgames",
+                                  "required": true,
+                                  "nullable": true,
+                                  "type": "array",
+                                  "itemsOf": {
+                                    "type": "object",
+                                    "children": [
+                                      {
+                                        "name": "age_limit",
+                                        "required": true,
+                                        "type": "string"
+                                      },
+                                      {
+                                        "name": "banner",
+                                        "required": true,
+                                        "type": "object",
+                                        "children": [
+                                          {
+                                            "name": "height",
+                                            "required": true,
+                                            "format": "int64",
+                                            "type": "integer"
+                                          },
+                                          {
+                                            "name": "kind",
+                                            "type": "string"
+                                          },
+                                          {
+                                            "name": "thumbhash",
+                                            "required": true,
+                                            "type": "string"
+                                          },
+                                          {
+                                            "name": "url",
+                                            "required": true,
+                                            "type": "string"
+                                          },
+                                          {
+                                            "name": "width",
+                                            "required": true,
+                                            "format": "int64",
+                                            "type": "integer"
+                                          }
+                                        ]
+                                      },
+                                      {
+                                        "name": "id",
+                                        "required": true,
+                                        "format": "int64",
+                                        "type": "integer"
+                                      },
+                                      {
+                                        "name": "meta",
+                                        "type": "object",
+                                        "children": [
+                                          {
+                                            "name": "catalog_work_id",
+                                            "required": true,
+                                            "nullable": true,
+                                            "format": "int64",
+                                            "type": "integer"
+                                          },
+                                          {
+                                            "name": "content_limit",
+                                            "required": true,
+                                            "type": "string"
+                                          },
+                                          {
+                                            "name": "created",
+                                            "required": true,
+                                            "nullable": true,
+                                            "type": "string"
+                                          },
+                                          {
+                                            "name": "original_language",
+                                            "required": true,
+                                            "type": "string"
+                                          },
+                                          {
+                                            "name": "release_precision",
+                                            "required": true,
+                                            "type": "string"
+                                          },
+                                          {
+                                            "name": "resource_update_time",
+                                            "required": true,
+                                            "nullable": true,
+                                            "type": "string"
+                                          },
+                                          {
+                                            "name": "series_id",
+                                            "required": true,
+                                            "nullable": true,
+                                            "format": "int64",
+                                            "type": "integer"
+                                          },
+                                          {
+                                            "name": "status",
+                                            "required": true,
+                                            "format": "int64",
+                                            "type": "integer"
+                                          },
+                                          {
+                                            "name": "user_id",
+                                            "required": true,
+                                            "format": "int64",
+                                            "type": "integer"
+                                          },
+                                          {
+                                            "name": "view",
+                                            "required": true,
+                                            "format": "int64",
+                                            "type": "integer"
+                                          },
+                                          {
+                                            "name": "vndb_id",
+                                            "required": true,
+                                            "type": "string"
+                                          }
+                                        ]
+                                      },
+                                      {
+                                        "name": "names",
+                                        "required": true,
+                                        "type": "object",
+                                        "children": [
+                                          {
+                                            "name": "en-us",
+                                            "required": true,
+                                            "nullable": true,
+                                            "type": "string"
+                                          },
+                                          {
+                                            "name": "ja-jp",
+                                            "required": true,
+                                            "nullable": true,
+                                            "type": "string"
+                                          },
+                                          {
+                                            "name": "zh-cn",
+                                            "required": true,
+                                            "nullable": true,
+                                            "type": "string"
+                                          },
+                                          {
+                                            "name": "zh-tw",
+                                            "required": true,
+                                            "nullable": true,
+                                            "type": "string"
+                                          }
+                                        ]
+                                      },
+                                      {
+                                        "name": "officials",
+                                        "type": "array",
+                                        "itemsOf": {
+                                          "type": "object",
+                                          "children": [
+                                            {
+                                              "name": "id",
+                                              "required": true,
+                                              "format": "int64",
+                                              "type": "integer"
+                                            },
+                                            {
+                                              "name": "name",
+                                              "required": true,
+                                              "type": "string"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      {
+                                        "name": "portrait",
+                                        "required": true,
+                                        "type": "object",
+                                        "children": [
+                                          {
+                                            "name": "height",
+                                            "required": true,
+                                            "format": "int64",
+                                            "type": "integer"
+                                          },
+                                          {
+                                            "name": "kind",
+                                            "type": "string"
+                                          },
+                                          {
+                                            "name": "thumbhash",
+                                            "required": true,
+                                            "type": "string"
+                                          },
+                                          {
+                                            "name": "url",
+                                            "required": true,
+                                            "type": "string"
+                                          },
+                                          {
+                                            "name": "width",
+                                            "required": true,
+                                            "format": "int64",
+                                            "type": "integer"
+                                          }
+                                        ]
+                                      },
+                                      {
+                                        "name": "release_date",
+                                        "required": true,
+                                        "nullable": true,
+                                        "type": "string"
+                                      },
+                                      {
+                                        "name": "scores",
+                                        "type": "object",
+                                        "children": [
+                                          {
+                                            "name": "bangumi",
+                                            "required": true,
+                                            "type": "object",
+                                            "children": [
+                                              {
+                                                "name": "rank",
+                                                "required": true,
+                                                "format": "int64",
+                                                "type": "integer"
+                                              },
+                                              {
+                                                "name": "score",
+                                                "required": true,
+                                                "nullable": true,
+                                                "format": "double",
+                                                "type": "number"
+                                              },
+                                              {
+                                                "name": "total",
+                                                "required": true,
+                                                "format": "int64",
+                                                "type": "integer"
+                                              },
+                                              {
+                                                "name": "url",
+                                                "required": true,
+                                                "type": "string"
+                                              }
+                                            ]
+                                          },
+                                          {
+                                            "name": "eg",
+                                            "required": true,
+                                            "type": "object",
+                                            "children": [
+                                              {
+                                                "name": "median",
+                                                "required": true,
+                                                "nullable": true,
+                                                "format": "int64",
+                                                "type": "integer"
+                                              },
+                                              {
+                                                "name": "url",
+                                                "required": true,
+                                                "type": "string"
+                                              },
+                                              {
+                                                "name": "vote_count",
+                                                "required": true,
+                                                "format": "int64",
+                                                "type": "integer"
+                                              }
+                                            ]
+                                          },
+                                          {
+                                            "name": "synced_at",
+                                            "required": true,
+                                            "nullable": true,
+                                            "type": "string"
+                                          },
+                                          {
+                                            "name": "vndb",
+                                            "required": true,
+                                            "type": "object",
+                                            "children": [
+                                              {
+                                                "name": "rating",
+                                                "required": true,
+                                                "nullable": true,
+                                                "format": "double",
+                                                "type": "number"
+                                              },
+                                              {
+                                                "name": "url",
+                                                "required": true,
+                                                "type": "string"
+                                              },
+                                              {
+                                                "name": "vote_count",
+                                                "required": true,
+                                                "format": "int64",
+                                                "type": "integer"
+                                              }
+                                            ]
+                                          }
+                                        ]
+                                      },
+                                      {
+                                        "name": "updated",
+                                        "required": true,
+                                        "type": "string"
+                                      }
+                                    ]
+                                  }
+                                },
+                                {
+                                  "name": "id",
+                                  "required": true,
+                                  "format": "int64",
+                                  "type": "integer"
+                                },
+                                {
+                                  "name": "name",
+                                  "required": true,
+                                  "type": "string"
+                                }
+                              ]
+                            }
+                          },
+                          {
+                            "name": "total",
+                            "required": true,
+                            "format": "int64",
+                            "type": "integer"
+                          }
+                        ]
+                      },
+                      {
+                        "name": "message",
+                        "required": true,
+                        "type": "string"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "status": "default",
+                  "description": "Error",
+                  "schema": {
+                    "type": "object",
+                    "children": [
+                      {
+                        "name": "detail",
+                        "doc": "A human-readable explanation specific to this occurrence of the problem.",
+                        "type": "string"
+                      },
+                      {
+                        "name": "errors",
+                        "nullable": true,
+                        "doc": "Optional list of individual error details",
+                        "type": "array",
+                        "itemsOf": {
+                          "type": "object",
+                          "children": [
+                            {
+                              "name": "location",
+                              "doc": "Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'",
+                              "type": "string"
+                            },
+                            {
+                              "name": "message",
+                              "doc": "Error message text",
+                              "type": "string"
+                            },
+                            {
+                              "name": "value",
+                              "doc": "The value at the given location",
+                              "type": "object"
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "name": "instance",
+                        "doc": "A URI reference that identifies the specific occurrence of the problem.",
+                        "format": "uri",
+                        "type": "string"
+                      },
+                      {
+                        "name": "status",
+                        "doc": "HTTP status code",
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      {
+                        "name": "title",
+                        "doc": "A short, human-readable summary of the problem type. This value should not change between occurrences of the error.",
+                        "type": "string"
+                      },
+                      {
+                        "name": "type",
+                        "doc": "A URI reference to human-readable documentation for the error.",
+                        "format": "uri",
+                        "type": "string"
+                      }
+                    ]
+                  }
+                }
+              ],
+              "curl": "curl \"https://api.nextmoe.dev/v1/galgame/series\" \\\n  -H \"Authorization: Bearer nm_live_<YOUR_KEY>\""
+            },
+            {
+              "id": "getSeriesPublic",
+              "method": "get",
+              "path": "/v1/galgame/series/{id}",
+              "summary": "One series' curated record (description, galgame_count) + its member set as thin items",
+              "scope": "galgame:read",
+              "params": [
+                {
+                  "name": "id",
+                  "in": "path",
+                  "required": true,
+                  "type": "integer",
+                  "format": "int64",
+                  "doc": "Series id"
+                },
+                {
+                  "name": "content_limit",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "Content filter: sfw (default) | nsfw | all. Gates the embedded member set + galgame_count. nsfw/all require the galgame:nsfw scope; otherwise silently coerced to sfw."
+                }
+              ],
+              "responses": [
+                {
+                  "status": "200",
+                  "description": "OK",
+                  "schema": {
+                    "type": "object",
+                    "children": [
+                      {
+                        "name": "code",
+                        "required": true,
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      {
+                        "name": "data",
+                        "required": true,
+                        "type": "object",
+                        "children": [
+                          {
+                            "name": "description",
+                            "required": true,
+                            "type": "string"
+                          },
+                          {
+                            "name": "galgame_count",
+                            "required": true,
+                            "format": "int64",
+                            "type": "integer"
+                          },
+                          {
+                            "name": "galgames",
+                            "required": true,
+                            "nullable": true,
+                            "type": "array",
+                            "itemsOf": {
+                              "type": "object",
+                              "children": [
+                                {
+                                  "name": "age_limit",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "banner",
+                                  "required": true,
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "height",
+                                      "required": true,
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "name": "kind",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "thumbhash",
+                                      "required": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "url",
+                                      "required": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "width",
+                                      "required": true,
+                                      "format": "int64",
+                                      "type": "integer"
+                                    }
+                                  ]
+                                },
+                                {
+                                  "name": "id",
+                                  "required": true,
+                                  "format": "int64",
+                                  "type": "integer"
+                                },
+                                {
+                                  "name": "meta",
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "catalog_work_id",
+                                      "required": true,
+                                      "nullable": true,
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "name": "content_limit",
+                                      "required": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "created",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "original_language",
+                                      "required": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "release_precision",
+                                      "required": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "resource_update_time",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "series_id",
+                                      "required": true,
+                                      "nullable": true,
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "name": "status",
+                                      "required": true,
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "name": "user_id",
+                                      "required": true,
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "name": "view",
+                                      "required": true,
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "name": "vndb_id",
+                                      "required": true,
+                                      "type": "string"
+                                    }
+                                  ]
+                                },
+                                {
+                                  "name": "names",
+                                  "required": true,
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "en-us",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "ja-jp",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "zh-cn",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "zh-tw",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "string"
+                                    }
+                                  ]
+                                },
+                                {
+                                  "name": "officials",
+                                  "type": "array",
+                                  "itemsOf": {
+                                    "type": "object",
+                                    "children": [
+                                      {
+                                        "name": "id",
+                                        "required": true,
+                                        "format": "int64",
+                                        "type": "integer"
+                                      },
+                                      {
+                                        "name": "name",
+                                        "required": true,
+                                        "type": "string"
+                                      }
+                                    ]
+                                  }
+                                },
+                                {
+                                  "name": "portrait",
+                                  "required": true,
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "height",
+                                      "required": true,
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "name": "kind",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "thumbhash",
+                                      "required": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "url",
+                                      "required": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "width",
+                                      "required": true,
+                                      "format": "int64",
+                                      "type": "integer"
+                                    }
+                                  ]
+                                },
+                                {
+                                  "name": "release_date",
+                                  "required": true,
+                                  "nullable": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "scores",
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "bangumi",
+                                      "required": true,
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "rank",
+                                          "required": true,
+                                          "format": "int64",
+                                          "type": "integer"
+                                        },
+                                        {
+                                          "name": "score",
+                                          "required": true,
+                                          "nullable": true,
+                                          "format": "double",
+                                          "type": "number"
+                                        },
+                                        {
+                                          "name": "total",
+                                          "required": true,
+                                          "format": "int64",
+                                          "type": "integer"
+                                        },
+                                        {
+                                          "name": "url",
+                                          "required": true,
+                                          "type": "string"
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "name": "eg",
+                                      "required": true,
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "median",
+                                          "required": true,
+                                          "nullable": true,
+                                          "format": "int64",
+                                          "type": "integer"
+                                        },
+                                        {
+                                          "name": "url",
+                                          "required": true,
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "vote_count",
+                                          "required": true,
+                                          "format": "int64",
+                                          "type": "integer"
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "name": "synced_at",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "vndb",
+                                      "required": true,
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "rating",
+                                          "required": true,
+                                          "nullable": true,
+                                          "format": "double",
+                                          "type": "number"
+                                        },
+                                        {
+                                          "name": "url",
+                                          "required": true,
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "vote_count",
+                                          "required": true,
+                                          "format": "int64",
+                                          "type": "integer"
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                },
+                                {
+                                  "name": "updated",
+                                  "required": true,
+                                  "type": "string"
+                                }
+                              ]
+                            }
+                          },
+                          {
+                            "name": "id",
+                            "required": true,
+                            "format": "int64",
+                            "type": "integer"
+                          },
+                          {
+                            "name": "name",
+                            "required": true,
+                            "type": "string"
+                          }
+                        ]
+                      },
+                      {
+                        "name": "message",
+                        "required": true,
+                        "type": "string"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "status": "default",
+                  "description": "Error",
+                  "schema": {
+                    "type": "object",
+                    "children": [
+                      {
+                        "name": "detail",
+                        "doc": "A human-readable explanation specific to this occurrence of the problem.",
+                        "type": "string"
+                      },
+                      {
+                        "name": "errors",
+                        "nullable": true,
+                        "doc": "Optional list of individual error details",
+                        "type": "array",
+                        "itemsOf": {
+                          "type": "object",
+                          "children": [
+                            {
+                              "name": "location",
+                              "doc": "Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'",
+                              "type": "string"
+                            },
+                            {
+                              "name": "message",
+                              "doc": "Error message text",
+                              "type": "string"
+                            },
+                            {
+                              "name": "value",
+                              "doc": "The value at the given location",
+                              "type": "object"
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "name": "instance",
+                        "doc": "A URI reference that identifies the specific occurrence of the problem.",
+                        "format": "uri",
+                        "type": "string"
+                      },
+                      {
+                        "name": "status",
+                        "doc": "HTTP status code",
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      {
+                        "name": "title",
+                        "doc": "A short, human-readable summary of the problem type. This value should not change between occurrences of the error.",
+                        "type": "string"
+                      },
+                      {
+                        "name": "type",
+                        "doc": "A URI reference to human-readable documentation for the error.",
+                        "format": "uri",
+                        "type": "string"
+                      }
+                    ]
+                  }
+                }
+              ],
+              "curl": "curl \"https://api.nextmoe.dev/v1/galgame/series/1\" \\\n  -H \"Authorization: Bearer nm_live_<YOUR_KEY>\""
+            },
+            {
               "id": "getGalgameStatsPublic",
               "method": "get",
               "path": "/v1/galgame/stats",
@@ -4835,6 +6853,470 @@ export const docsModel: DocsModel = {
                 }
               ],
               "curl": "curl \"https://api.nextmoe.dev/v1/galgame/stats\" \\\n  -H \"Authorization: Bearer nm_live_<YOUR_KEY>\""
+            },
+            {
+              "id": "listTagsPublic",
+              "method": "get",
+              "path": "/v1/galgame/tags",
+              "summary": "Curated tag list (page/limit); sfw hides the sexual category",
+              "scope": "galgame:read",
+              "params": [
+                {
+                  "name": "page",
+                  "in": "query",
+                  "required": false,
+                  "type": "integer",
+                  "format": "int64",
+                  "doc": "Page number (default 1)"
+                },
+                {
+                  "name": "limit",
+                  "in": "query",
+                  "required": false,
+                  "type": "integer",
+                  "format": "int64",
+                  "doc": "Items per page 1-100 (default 50)"
+                },
+                {
+                  "name": "content_limit",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "Content filter: sfw (default) | nsfw | all. nsfw/all require a key with the galgame:nsfw scope (otherwise silently coerced to sfw). sfw hides the sexual tag category."
+                }
+              ],
+              "responses": [
+                {
+                  "status": "200",
+                  "description": "OK",
+                  "schema": {
+                    "type": "object",
+                    "children": [
+                      {
+                        "name": "code",
+                        "required": true,
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      {
+                        "name": "data",
+                        "required": true,
+                        "type": "object",
+                        "children": [
+                          {
+                            "name": "items",
+                            "required": true,
+                            "nullable": true,
+                            "type": "array",
+                            "itemsOf": {
+                              "type": "object",
+                              "children": [
+                                {
+                                  "name": "aliases",
+                                  "required": true,
+                                  "nullable": true,
+                                  "type": "array",
+                                  "itemsOf": {
+                                    "type": "string"
+                                  }
+                                },
+                                {
+                                  "name": "category",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "created",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "description",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "galgame_count",
+                                  "required": true,
+                                  "format": "int64",
+                                  "type": "integer"
+                                },
+                                {
+                                  "name": "id",
+                                  "required": true,
+                                  "format": "int64",
+                                  "type": "integer"
+                                },
+                                {
+                                  "name": "name",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "updated",
+                                  "required": true,
+                                  "type": "string"
+                                }
+                              ]
+                            }
+                          },
+                          {
+                            "name": "total",
+                            "required": true,
+                            "format": "int64",
+                            "type": "integer"
+                          }
+                        ]
+                      },
+                      {
+                        "name": "message",
+                        "required": true,
+                        "type": "string"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "status": "default",
+                  "description": "Error",
+                  "schema": {
+                    "type": "object",
+                    "children": [
+                      {
+                        "name": "detail",
+                        "doc": "A human-readable explanation specific to this occurrence of the problem.",
+                        "type": "string"
+                      },
+                      {
+                        "name": "errors",
+                        "nullable": true,
+                        "doc": "Optional list of individual error details",
+                        "type": "array",
+                        "itemsOf": {
+                          "type": "object",
+                          "children": [
+                            {
+                              "name": "location",
+                              "doc": "Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'",
+                              "type": "string"
+                            },
+                            {
+                              "name": "message",
+                              "doc": "Error message text",
+                              "type": "string"
+                            },
+                            {
+                              "name": "value",
+                              "doc": "The value at the given location",
+                              "type": "object"
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "name": "instance",
+                        "doc": "A URI reference that identifies the specific occurrence of the problem.",
+                        "format": "uri",
+                        "type": "string"
+                      },
+                      {
+                        "name": "status",
+                        "doc": "HTTP status code",
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      {
+                        "name": "title",
+                        "doc": "A short, human-readable summary of the problem type. This value should not change between occurrences of the error.",
+                        "type": "string"
+                      },
+                      {
+                        "name": "type",
+                        "doc": "A URI reference to human-readable documentation for the error.",
+                        "format": "uri",
+                        "type": "string"
+                      }
+                    ]
+                  }
+                }
+              ],
+              "curl": "curl \"https://api.nextmoe.dev/v1/galgame/tags\" \\\n  -H \"Authorization: Bearer nm_live_<YOUR_KEY>\""
+            },
+            {
+              "id": "getTagPublic",
+              "method": "get",
+              "path": "/v1/galgame/tags/{id}",
+              "summary": "One tag's curated record (description, galgame_count, aliases, created, updated)",
+              "scope": "galgame:read",
+              "params": [
+                {
+                  "name": "id",
+                  "in": "path",
+                  "required": true,
+                  "type": "integer",
+                  "format": "int64",
+                  "doc": "Entity id"
+                }
+              ],
+              "responses": [
+                {
+                  "status": "200",
+                  "description": "OK",
+                  "schema": {
+                    "type": "object",
+                    "children": [
+                      {
+                        "name": "code",
+                        "required": true,
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      {
+                        "name": "data",
+                        "required": true,
+                        "type": "object",
+                        "children": [
+                          {
+                            "name": "aliases",
+                            "required": true,
+                            "nullable": true,
+                            "type": "array",
+                            "itemsOf": {
+                              "type": "string"
+                            }
+                          },
+                          {
+                            "name": "category",
+                            "required": true,
+                            "type": "string"
+                          },
+                          {
+                            "name": "created",
+                            "required": true,
+                            "type": "string"
+                          },
+                          {
+                            "name": "description",
+                            "required": true,
+                            "type": "string"
+                          },
+                          {
+                            "name": "galgame_count",
+                            "required": true,
+                            "format": "int64",
+                            "type": "integer"
+                          },
+                          {
+                            "name": "id",
+                            "required": true,
+                            "format": "int64",
+                            "type": "integer"
+                          },
+                          {
+                            "name": "name",
+                            "required": true,
+                            "type": "string"
+                          },
+                          {
+                            "name": "updated",
+                            "required": true,
+                            "type": "string"
+                          }
+                        ]
+                      },
+                      {
+                        "name": "message",
+                        "required": true,
+                        "type": "string"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "status": "default",
+                  "description": "Error",
+                  "schema": {
+                    "type": "object",
+                    "children": [
+                      {
+                        "name": "detail",
+                        "doc": "A human-readable explanation specific to this occurrence of the problem.",
+                        "type": "string"
+                      },
+                      {
+                        "name": "errors",
+                        "nullable": true,
+                        "doc": "Optional list of individual error details",
+                        "type": "array",
+                        "itemsOf": {
+                          "type": "object",
+                          "children": [
+                            {
+                              "name": "location",
+                              "doc": "Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'",
+                              "type": "string"
+                            },
+                            {
+                              "name": "message",
+                              "doc": "Error message text",
+                              "type": "string"
+                            },
+                            {
+                              "name": "value",
+                              "doc": "The value at the given location",
+                              "type": "object"
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "name": "instance",
+                        "doc": "A URI reference that identifies the specific occurrence of the problem.",
+                        "format": "uri",
+                        "type": "string"
+                      },
+                      {
+                        "name": "status",
+                        "doc": "HTTP status code",
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      {
+                        "name": "title",
+                        "doc": "A short, human-readable summary of the problem type. This value should not change between occurrences of the error.",
+                        "type": "string"
+                      },
+                      {
+                        "name": "type",
+                        "doc": "A URI reference to human-readable documentation for the error.",
+                        "format": "uri",
+                        "type": "string"
+                      }
+                    ]
+                  }
+                }
+              ],
+              "curl": "curl \"https://api.nextmoe.dev/v1/galgame/tags/1\" \\\n  -H \"Authorization: Bearer nm_live_<YOUR_KEY>\""
+            },
+            {
+              "id": "listTagGalgameIDsPublic",
+              "method": "get",
+              "path": "/v1/galgame/tags/{id}/galgame-ids",
+              "summary": "Ids of every published galgame carrying this tag ({ids:[]int})",
+              "scope": "galgame:read",
+              "params": [
+                {
+                  "name": "id",
+                  "in": "path",
+                  "required": true,
+                  "type": "integer",
+                  "format": "int64",
+                  "doc": "Entity id"
+                }
+              ],
+              "responses": [
+                {
+                  "status": "200",
+                  "description": "OK",
+                  "schema": {
+                    "type": "object",
+                    "children": [
+                      {
+                        "name": "code",
+                        "required": true,
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      {
+                        "name": "data",
+                        "required": true,
+                        "type": "object",
+                        "children": [
+                          {
+                            "name": "ids",
+                            "required": true,
+                            "nullable": true,
+                            "type": "array",
+                            "itemsOf": {
+                              "format": "int64",
+                              "type": "integer"
+                            }
+                          }
+                        ]
+                      },
+                      {
+                        "name": "message",
+                        "required": true,
+                        "type": "string"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "status": "default",
+                  "description": "Error",
+                  "schema": {
+                    "type": "object",
+                    "children": [
+                      {
+                        "name": "detail",
+                        "doc": "A human-readable explanation specific to this occurrence of the problem.",
+                        "type": "string"
+                      },
+                      {
+                        "name": "errors",
+                        "nullable": true,
+                        "doc": "Optional list of individual error details",
+                        "type": "array",
+                        "itemsOf": {
+                          "type": "object",
+                          "children": [
+                            {
+                              "name": "location",
+                              "doc": "Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'",
+                              "type": "string"
+                            },
+                            {
+                              "name": "message",
+                              "doc": "Error message text",
+                              "type": "string"
+                            },
+                            {
+                              "name": "value",
+                              "doc": "The value at the given location",
+                              "type": "object"
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "name": "instance",
+                        "doc": "A URI reference that identifies the specific occurrence of the problem.",
+                        "format": "uri",
+                        "type": "string"
+                      },
+                      {
+                        "name": "status",
+                        "doc": "HTTP status code",
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      {
+                        "name": "title",
+                        "doc": "A short, human-readable summary of the problem type. This value should not change between occurrences of the error.",
+                        "type": "string"
+                      },
+                      {
+                        "name": "type",
+                        "doc": "A URI reference to human-readable documentation for the error.",
+                        "format": "uri",
+                        "type": "string"
+                      }
+                    ]
+                  }
+                }
+              ],
+              "curl": "curl \"https://api.nextmoe.dev/v1/galgame/tags/1/galgame-ids\" \\\n  -H \"Authorization: Bearer nm_live_<YOUR_KEY>\""
             },
             {
               "id": "listTagGalgamesPublic",
@@ -5119,6 +7601,635 @@ export const docsModel: DocsModel = {
                 }
               ],
               "curl": "curl \"https://api.nextmoe.dev/v1/galgame/tags/1/galgames\" \\\n  -H \"Authorization: Bearer nm_live_<YOUR_KEY>\""
+            },
+            {
+              "id": "multiTagsPublic",
+              "method": "get",
+              "path": "/v1/galgame/tags/multi",
+              "summary": "Published galgames carrying ALL given tag ids (AND intersection), as thin items",
+              "scope": "galgame:read",
+              "params": [
+                {
+                  "name": "ids",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "Comma-separated tag ids; returns the published galgames carrying ALL of them (AND intersection)"
+                },
+                {
+                  "name": "page",
+                  "in": "query",
+                  "required": false,
+                  "type": "integer",
+                  "format": "int64",
+                  "doc": "Page number (default 1)"
+                },
+                {
+                  "name": "limit",
+                  "in": "query",
+                  "required": false,
+                  "type": "integer",
+                  "format": "int64",
+                  "doc": "Items per page 1-50 (default 24)"
+                },
+                {
+                  "name": "content_limit",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "Content filter: sfw (default) | nsfw | all. nsfw/all require the galgame:nsfw scope; otherwise silently coerced to sfw."
+                }
+              ],
+              "responses": [
+                {
+                  "status": "200",
+                  "description": "OK",
+                  "schema": {
+                    "type": "object",
+                    "children": [
+                      {
+                        "name": "code",
+                        "required": true,
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      {
+                        "name": "data",
+                        "required": true,
+                        "type": "object",
+                        "children": [
+                          {
+                            "name": "items",
+                            "required": true,
+                            "nullable": true,
+                            "type": "array",
+                            "itemsOf": {
+                              "type": "object",
+                              "children": [
+                                {
+                                  "name": "age_limit",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "banner",
+                                  "required": true,
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "height",
+                                      "required": true,
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "name": "kind",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "thumbhash",
+                                      "required": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "url",
+                                      "required": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "width",
+                                      "required": true,
+                                      "format": "int64",
+                                      "type": "integer"
+                                    }
+                                  ]
+                                },
+                                {
+                                  "name": "id",
+                                  "required": true,
+                                  "format": "int64",
+                                  "type": "integer"
+                                },
+                                {
+                                  "name": "meta",
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "catalog_work_id",
+                                      "required": true,
+                                      "nullable": true,
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "name": "content_limit",
+                                      "required": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "created",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "original_language",
+                                      "required": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "release_precision",
+                                      "required": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "resource_update_time",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "series_id",
+                                      "required": true,
+                                      "nullable": true,
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "name": "status",
+                                      "required": true,
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "name": "user_id",
+                                      "required": true,
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "name": "view",
+                                      "required": true,
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "name": "vndb_id",
+                                      "required": true,
+                                      "type": "string"
+                                    }
+                                  ]
+                                },
+                                {
+                                  "name": "names",
+                                  "required": true,
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "en-us",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "ja-jp",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "zh-cn",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "zh-tw",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "string"
+                                    }
+                                  ]
+                                },
+                                {
+                                  "name": "officials",
+                                  "type": "array",
+                                  "itemsOf": {
+                                    "type": "object",
+                                    "children": [
+                                      {
+                                        "name": "id",
+                                        "required": true,
+                                        "format": "int64",
+                                        "type": "integer"
+                                      },
+                                      {
+                                        "name": "name",
+                                        "required": true,
+                                        "type": "string"
+                                      }
+                                    ]
+                                  }
+                                },
+                                {
+                                  "name": "portrait",
+                                  "required": true,
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "height",
+                                      "required": true,
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "name": "kind",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "thumbhash",
+                                      "required": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "url",
+                                      "required": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "width",
+                                      "required": true,
+                                      "format": "int64",
+                                      "type": "integer"
+                                    }
+                                  ]
+                                },
+                                {
+                                  "name": "release_date",
+                                  "required": true,
+                                  "nullable": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "scores",
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "bangumi",
+                                      "required": true,
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "rank",
+                                          "required": true,
+                                          "format": "int64",
+                                          "type": "integer"
+                                        },
+                                        {
+                                          "name": "score",
+                                          "required": true,
+                                          "nullable": true,
+                                          "format": "double",
+                                          "type": "number"
+                                        },
+                                        {
+                                          "name": "total",
+                                          "required": true,
+                                          "format": "int64",
+                                          "type": "integer"
+                                        },
+                                        {
+                                          "name": "url",
+                                          "required": true,
+                                          "type": "string"
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "name": "eg",
+                                      "required": true,
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "median",
+                                          "required": true,
+                                          "nullable": true,
+                                          "format": "int64",
+                                          "type": "integer"
+                                        },
+                                        {
+                                          "name": "url",
+                                          "required": true,
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "vote_count",
+                                          "required": true,
+                                          "format": "int64",
+                                          "type": "integer"
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "name": "synced_at",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "vndb",
+                                      "required": true,
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "rating",
+                                          "required": true,
+                                          "nullable": true,
+                                          "format": "double",
+                                          "type": "number"
+                                        },
+                                        {
+                                          "name": "url",
+                                          "required": true,
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "vote_count",
+                                          "required": true,
+                                          "format": "int64",
+                                          "type": "integer"
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                },
+                                {
+                                  "name": "updated",
+                                  "required": true,
+                                  "type": "string"
+                                }
+                              ]
+                            }
+                          },
+                          {
+                            "name": "total",
+                            "required": true,
+                            "format": "int64",
+                            "type": "integer"
+                          }
+                        ]
+                      },
+                      {
+                        "name": "message",
+                        "required": true,
+                        "type": "string"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "status": "default",
+                  "description": "Error",
+                  "schema": {
+                    "type": "object",
+                    "children": [
+                      {
+                        "name": "detail",
+                        "doc": "A human-readable explanation specific to this occurrence of the problem.",
+                        "type": "string"
+                      },
+                      {
+                        "name": "errors",
+                        "nullable": true,
+                        "doc": "Optional list of individual error details",
+                        "type": "array",
+                        "itemsOf": {
+                          "type": "object",
+                          "children": [
+                            {
+                              "name": "location",
+                              "doc": "Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'",
+                              "type": "string"
+                            },
+                            {
+                              "name": "message",
+                              "doc": "Error message text",
+                              "type": "string"
+                            },
+                            {
+                              "name": "value",
+                              "doc": "The value at the given location",
+                              "type": "object"
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "name": "instance",
+                        "doc": "A URI reference that identifies the specific occurrence of the problem.",
+                        "format": "uri",
+                        "type": "string"
+                      },
+                      {
+                        "name": "status",
+                        "doc": "HTTP status code",
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      {
+                        "name": "title",
+                        "doc": "A short, human-readable summary of the problem type. This value should not change between occurrences of the error.",
+                        "type": "string"
+                      },
+                      {
+                        "name": "type",
+                        "doc": "A URI reference to human-readable documentation for the error.",
+                        "format": "uri",
+                        "type": "string"
+                      }
+                    ]
+                  }
+                }
+              ],
+              "curl": "curl \"https://api.nextmoe.dev/v1/galgame/tags/multi\" \\\n  -H \"Authorization: Bearer nm_live_<YOUR_KEY>\""
+            },
+            {
+              "id": "searchTagsPublic",
+              "method": "get",
+              "path": "/v1/galgame/tags/search",
+              "summary": "Meilisearch relevance over tags (id, name, aliases, category, galgame_count)",
+              "scope": "galgame:read",
+              "params": [
+                {
+                  "name": "q",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "Free-text query across tag names + aliases"
+                },
+                {
+                  "name": "category",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "Filter by tag category: content | sexual | technical"
+                },
+                {
+                  "name": "limit",
+                  "in": "query",
+                  "required": false,
+                  "type": "integer",
+                  "format": "int64",
+                  "doc": "Max hits 1-100 (default 50)"
+                }
+              ],
+              "responses": [
+                {
+                  "status": "200",
+                  "description": "OK",
+                  "schema": {
+                    "type": "object",
+                    "children": [
+                      {
+                        "name": "code",
+                        "required": true,
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      {
+                        "name": "data",
+                        "required": true,
+                        "type": "object",
+                        "children": [
+                          {
+                            "name": "items",
+                            "required": true,
+                            "nullable": true,
+                            "type": "array",
+                            "itemsOf": {
+                              "type": "object",
+                              "children": [
+                                {
+                                  "name": "aliases",
+                                  "required": true,
+                                  "nullable": true,
+                                  "type": "array",
+                                  "itemsOf": {
+                                    "type": "string"
+                                  }
+                                },
+                                {
+                                  "name": "category",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "galgame_count",
+                                  "required": true,
+                                  "format": "int64",
+                                  "type": "integer"
+                                },
+                                {
+                                  "name": "id",
+                                  "required": true,
+                                  "format": "int64",
+                                  "type": "integer"
+                                },
+                                {
+                                  "name": "name",
+                                  "required": true,
+                                  "type": "string"
+                                }
+                              ]
+                            }
+                          },
+                          {
+                            "name": "processing_time_ms",
+                            "required": true,
+                            "format": "int64",
+                            "type": "integer"
+                          },
+                          {
+                            "name": "total",
+                            "required": true,
+                            "format": "int64",
+                            "type": "integer"
+                          }
+                        ]
+                      },
+                      {
+                        "name": "message",
+                        "required": true,
+                        "type": "string"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "status": "default",
+                  "description": "Error",
+                  "schema": {
+                    "type": "object",
+                    "children": [
+                      {
+                        "name": "detail",
+                        "doc": "A human-readable explanation specific to this occurrence of the problem.",
+                        "type": "string"
+                      },
+                      {
+                        "name": "errors",
+                        "nullable": true,
+                        "doc": "Optional list of individual error details",
+                        "type": "array",
+                        "itemsOf": {
+                          "type": "object",
+                          "children": [
+                            {
+                              "name": "location",
+                              "doc": "Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'",
+                              "type": "string"
+                            },
+                            {
+                              "name": "message",
+                              "doc": "Error message text",
+                              "type": "string"
+                            },
+                            {
+                              "name": "value",
+                              "doc": "The value at the given location",
+                              "type": "object"
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "name": "instance",
+                        "doc": "A URI reference that identifies the specific occurrence of the problem.",
+                        "format": "uri",
+                        "type": "string"
+                      },
+                      {
+                        "name": "status",
+                        "doc": "HTTP status code",
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      {
+                        "name": "title",
+                        "doc": "A short, human-readable summary of the problem type. This value should not change between occurrences of the error.",
+                        "type": "string"
+                      },
+                      {
+                        "name": "type",
+                        "doc": "A URI reference to human-readable documentation for the error.",
+                        "format": "uri",
+                        "type": "string"
+                      }
+                    ]
+                  }
+                }
+              ],
+              "curl": "curl \"https://api.nextmoe.dev/v1/galgame/tags/search\" \\\n  -H \"Authorization: Bearer nm_live_<YOUR_KEY>\""
             }
           ]
         }
