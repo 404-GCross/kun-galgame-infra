@@ -111,6 +111,10 @@ export const docsModel: DocsModel = {
                                   "type": "object",
                                   "children": [
                                     {
+                                      "name": "caption",
+                                      "type": "string"
+                                    },
+                                    {
                                       "name": "height",
                                       "required": true,
                                       "format": "int64",
@@ -121,6 +125,11 @@ export const docsModel: DocsModel = {
                                       "type": "string"
                                     },
                                     {
+                                      "name": "sexual",
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
                                       "name": "thumbhash",
                                       "required": true,
                                       "type": "string"
@@ -129,6 +138,11 @@ export const docsModel: DocsModel = {
                                       "name": "url",
                                       "required": true,
                                       "type": "string"
+                                    },
+                                    {
+                                      "name": "violence",
+                                      "format": "int64",
+                                      "type": "integer"
                                     },
                                     {
                                       "name": "width",
@@ -271,6 +285,10 @@ export const docsModel: DocsModel = {
                                   "type": "object",
                                   "children": [
                                     {
+                                      "name": "caption",
+                                      "type": "string"
+                                    },
+                                    {
                                       "name": "height",
                                       "required": true,
                                       "format": "int64",
@@ -281,6 +299,11 @@ export const docsModel: DocsModel = {
                                       "type": "string"
                                     },
                                     {
+                                      "name": "sexual",
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
                                       "name": "thumbhash",
                                       "required": true,
                                       "type": "string"
@@ -289,6 +312,11 @@ export const docsModel: DocsModel = {
                                       "name": "url",
                                       "required": true,
                                       "type": "string"
+                                    },
+                                    {
+                                      "name": "violence",
+                                      "format": "int64",
+                                      "type": "integer"
                                     },
                                     {
                                       "name": "width",
@@ -611,6 +639,10 @@ export const docsModel: DocsModel = {
                                 "type": "object",
                                 "children": [
                                   {
+                                    "name": "caption",
+                                    "type": "string"
+                                  },
+                                  {
                                     "name": "height",
                                     "required": true,
                                     "format": "int64",
@@ -621,6 +653,11 @@ export const docsModel: DocsModel = {
                                     "type": "string"
                                   },
                                   {
+                                    "name": "sexual",
+                                    "format": "int64",
+                                    "type": "integer"
+                                  },
+                                  {
                                     "name": "thumbhash",
                                     "required": true,
                                     "type": "string"
@@ -629,6 +666,11 @@ export const docsModel: DocsModel = {
                                     "name": "url",
                                     "required": true,
                                     "type": "string"
+                                  },
+                                  {
+                                    "name": "violence",
+                                    "format": "int64",
+                                    "type": "integer"
                                   },
                                   {
                                     "name": "width",
@@ -646,6 +688,10 @@ export const docsModel: DocsModel = {
                                   "type": "object",
                                   "children": [
                                     {
+                                      "name": "caption",
+                                      "type": "string"
+                                    },
+                                    {
                                       "name": "height",
                                       "required": true,
                                       "format": "int64",
@@ -656,6 +702,11 @@ export const docsModel: DocsModel = {
                                       "type": "string"
                                     },
                                     {
+                                      "name": "sexual",
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
                                       "name": "thumbhash",
                                       "required": true,
                                       "type": "string"
@@ -664,6 +715,11 @@ export const docsModel: DocsModel = {
                                       "name": "url",
                                       "required": true,
                                       "type": "string"
+                                    },
+                                    {
+                                      "name": "violence",
+                                      "format": "int64",
+                                      "type": "integer"
                                     },
                                     {
                                       "name": "width",
@@ -680,6 +736,10 @@ export const docsModel: DocsModel = {
                                 "type": "object",
                                 "children": [
                                   {
+                                    "name": "caption",
+                                    "type": "string"
+                                  },
+                                  {
                                     "name": "height",
                                     "required": true,
                                     "format": "int64",
@@ -690,6 +750,11 @@ export const docsModel: DocsModel = {
                                     "type": "string"
                                   },
                                   {
+                                    "name": "sexual",
+                                    "format": "int64",
+                                    "type": "integer"
+                                  },
+                                  {
                                     "name": "thumbhash",
                                     "required": true,
                                     "type": "string"
@@ -698,6 +763,11 @@ export const docsModel: DocsModel = {
                                     "name": "url",
                                     "required": true,
                                     "type": "string"
+                                  },
+                                  {
+                                    "name": "violence",
+                                    "format": "int64",
+                                    "type": "integer"
                                   },
                                   {
                                     "name": "width",
@@ -715,6 +785,10 @@ export const docsModel: DocsModel = {
                                   "type": "object",
                                   "children": [
                                     {
+                                      "name": "caption",
+                                      "type": "string"
+                                    },
+                                    {
                                       "name": "height",
                                       "required": true,
                                       "format": "int64",
@@ -725,6 +799,11 @@ export const docsModel: DocsModel = {
                                       "type": "string"
                                     },
                                     {
+                                      "name": "sexual",
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
                                       "name": "thumbhash",
                                       "required": true,
                                       "type": "string"
@@ -733,6 +812,11 @@ export const docsModel: DocsModel = {
                                       "name": "url",
                                       "required": true,
                                       "type": "string"
+                                    },
+                                    {
+                                      "name": "violence",
+                                      "format": "int64",
+                                      "type": "integer"
                                     },
                                     {
                                       "name": "width",
@@ -1362,6 +1446,10 @@ export const docsModel: DocsModel = {
                                   "type": "object",
                                   "children": [
                                     {
+                                      "name": "caption",
+                                      "type": "string"
+                                    },
+                                    {
                                       "name": "height",
                                       "required": true,
                                       "format": "int64",
@@ -1372,6 +1460,11 @@ export const docsModel: DocsModel = {
                                       "type": "string"
                                     },
                                     {
+                                      "name": "sexual",
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
                                       "name": "thumbhash",
                                       "required": true,
                                       "type": "string"
@@ -1380,6 +1473,11 @@ export const docsModel: DocsModel = {
                                       "name": "url",
                                       "required": true,
                                       "type": "string"
+                                    },
+                                    {
+                                      "name": "violence",
+                                      "format": "int64",
+                                      "type": "integer"
                                     },
                                     {
                                       "name": "width",
@@ -1522,6 +1620,10 @@ export const docsModel: DocsModel = {
                                   "type": "object",
                                   "children": [
                                     {
+                                      "name": "caption",
+                                      "type": "string"
+                                    },
+                                    {
                                       "name": "height",
                                       "required": true,
                                       "format": "int64",
@@ -1532,6 +1634,11 @@ export const docsModel: DocsModel = {
                                       "type": "string"
                                     },
                                     {
+                                      "name": "sexual",
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
                                       "name": "thumbhash",
                                       "required": true,
                                       "type": "string"
@@ -1540,6 +1647,11 @@ export const docsModel: DocsModel = {
                                       "name": "url",
                                       "required": true,
                                       "type": "string"
+                                    },
+                                    {
+                                      "name": "violence",
+                                      "format": "int64",
+                                      "type": "integer"
                                     },
                                     {
                                       "name": "width",
@@ -5030,6 +5142,10 @@ export const docsModel: DocsModel = {
                                   "type": "object",
                                   "children": [
                                     {
+                                      "name": "caption",
+                                      "type": "string"
+                                    },
+                                    {
                                       "name": "height",
                                       "required": true,
                                       "format": "int64",
@@ -5040,6 +5156,11 @@ export const docsModel: DocsModel = {
                                       "type": "string"
                                     },
                                     {
+                                      "name": "sexual",
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
                                       "name": "thumbhash",
                                       "required": true,
                                       "type": "string"
@@ -5048,6 +5169,11 @@ export const docsModel: DocsModel = {
                                       "name": "url",
                                       "required": true,
                                       "type": "string"
+                                    },
+                                    {
+                                      "name": "violence",
+                                      "format": "int64",
+                                      "type": "integer"
                                     },
                                     {
                                       "name": "width",
@@ -5190,6 +5316,10 @@ export const docsModel: DocsModel = {
                                   "type": "object",
                                   "children": [
                                     {
+                                      "name": "caption",
+                                      "type": "string"
+                                    },
+                                    {
                                       "name": "height",
                                       "required": true,
                                       "format": "int64",
@@ -5200,6 +5330,11 @@ export const docsModel: DocsModel = {
                                       "type": "string"
                                     },
                                     {
+                                      "name": "sexual",
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
                                       "name": "thumbhash",
                                       "required": true,
                                       "type": "string"
@@ -5208,6 +5343,11 @@ export const docsModel: DocsModel = {
                                       "name": "url",
                                       "required": true,
                                       "type": "string"
+                                    },
+                                    {
+                                      "name": "violence",
+                                      "format": "int64",
+                                      "type": "integer"
                                     },
                                     {
                                       "name": "width",
@@ -5341,6 +5481,10 @@ export const docsModel: DocsModel = {
                                   "type": "object",
                                   "children": [
                                     {
+                                      "name": "caption",
+                                      "type": "string"
+                                    },
+                                    {
                                       "name": "height",
                                       "required": true,
                                       "format": "int64",
@@ -5351,6 +5495,11 @@ export const docsModel: DocsModel = {
                                       "type": "string"
                                     },
                                     {
+                                      "name": "sexual",
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
                                       "name": "thumbhash",
                                       "required": true,
                                       "type": "string"
@@ -5359,6 +5508,11 @@ export const docsModel: DocsModel = {
                                       "name": "url",
                                       "required": true,
                                       "type": "string"
+                                    },
+                                    {
+                                      "name": "violence",
+                                      "format": "int64",
+                                      "type": "integer"
                                     },
                                     {
                                       "name": "width",
@@ -5501,6 +5655,10 @@ export const docsModel: DocsModel = {
                                   "type": "object",
                                   "children": [
                                     {
+                                      "name": "caption",
+                                      "type": "string"
+                                    },
+                                    {
                                       "name": "height",
                                       "required": true,
                                       "format": "int64",
@@ -5511,6 +5669,11 @@ export const docsModel: DocsModel = {
                                       "type": "string"
                                     },
                                     {
+                                      "name": "sexual",
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
                                       "name": "thumbhash",
                                       "required": true,
                                       "type": "string"
@@ -5519,6 +5682,11 @@ export const docsModel: DocsModel = {
                                       "name": "url",
                                       "required": true,
                                       "type": "string"
+                                    },
+                                    {
+                                      "name": "violence",
+                                      "format": "int64",
+                                      "type": "integer"
                                     },
                                     {
                                       "name": "width",
@@ -5804,6 +5972,10 @@ export const docsModel: DocsModel = {
                                         "type": "object",
                                         "children": [
                                           {
+                                            "name": "caption",
+                                            "type": "string"
+                                          },
+                                          {
                                             "name": "height",
                                             "required": true,
                                             "format": "int64",
@@ -5814,6 +5986,11 @@ export const docsModel: DocsModel = {
                                             "type": "string"
                                           },
                                           {
+                                            "name": "sexual",
+                                            "format": "int64",
+                                            "type": "integer"
+                                          },
+                                          {
                                             "name": "thumbhash",
                                             "required": true,
                                             "type": "string"
@@ -5822,6 +5999,11 @@ export const docsModel: DocsModel = {
                                             "name": "url",
                                             "required": true,
                                             "type": "string"
+                                          },
+                                          {
+                                            "name": "violence",
+                                            "format": "int64",
+                                            "type": "integer"
                                           },
                                           {
                                             "name": "width",
@@ -5964,6 +6146,10 @@ export const docsModel: DocsModel = {
                                         "type": "object",
                                         "children": [
                                           {
+                                            "name": "caption",
+                                            "type": "string"
+                                          },
+                                          {
                                             "name": "height",
                                             "required": true,
                                             "format": "int64",
@@ -5974,6 +6160,11 @@ export const docsModel: DocsModel = {
                                             "type": "string"
                                           },
                                           {
+                                            "name": "sexual",
+                                            "format": "int64",
+                                            "type": "integer"
+                                          },
+                                          {
                                             "name": "thumbhash",
                                             "required": true,
                                             "type": "string"
@@ -5982,6 +6173,11 @@ export const docsModel: DocsModel = {
                                             "name": "url",
                                             "required": true,
                                             "type": "string"
+                                          },
+                                          {
+                                            "name": "violence",
+                                            "format": "int64",
+                                            "type": "integer"
                                           },
                                           {
                                             "name": "width",
@@ -6265,6 +6461,10 @@ export const docsModel: DocsModel = {
                                   "type": "object",
                                   "children": [
                                     {
+                                      "name": "caption",
+                                      "type": "string"
+                                    },
+                                    {
                                       "name": "height",
                                       "required": true,
                                       "format": "int64",
@@ -6275,6 +6475,11 @@ export const docsModel: DocsModel = {
                                       "type": "string"
                                     },
                                     {
+                                      "name": "sexual",
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
                                       "name": "thumbhash",
                                       "required": true,
                                       "type": "string"
@@ -6283,6 +6488,11 @@ export const docsModel: DocsModel = {
                                       "name": "url",
                                       "required": true,
                                       "type": "string"
+                                    },
+                                    {
+                                      "name": "violence",
+                                      "format": "int64",
+                                      "type": "integer"
                                     },
                                     {
                                       "name": "width",
@@ -6425,6 +6635,10 @@ export const docsModel: DocsModel = {
                                   "type": "object",
                                   "children": [
                                     {
+                                      "name": "caption",
+                                      "type": "string"
+                                    },
+                                    {
                                       "name": "height",
                                       "required": true,
                                       "format": "int64",
@@ -6435,6 +6649,11 @@ export const docsModel: DocsModel = {
                                       "type": "string"
                                     },
                                     {
+                                      "name": "sexual",
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
                                       "name": "thumbhash",
                                       "required": true,
                                       "type": "string"
@@ -6443,6 +6662,11 @@ export const docsModel: DocsModel = {
                                       "name": "url",
                                       "required": true,
                                       "type": "string"
+                                    },
+                                    {
+                                      "name": "violence",
+                                      "format": "int64",
+                                      "type": "integer"
                                     },
                                     {
                                       "name": "width",
@@ -7677,6 +7901,10 @@ export const docsModel: DocsModel = {
                                   "type": "object",
                                   "children": [
                                     {
+                                      "name": "caption",
+                                      "type": "string"
+                                    },
+                                    {
                                       "name": "height",
                                       "required": true,
                                       "format": "int64",
@@ -7687,6 +7915,11 @@ export const docsModel: DocsModel = {
                                       "type": "string"
                                     },
                                     {
+                                      "name": "sexual",
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
                                       "name": "thumbhash",
                                       "required": true,
                                       "type": "string"
@@ -7695,6 +7928,11 @@ export const docsModel: DocsModel = {
                                       "name": "url",
                                       "required": true,
                                       "type": "string"
+                                    },
+                                    {
+                                      "name": "violence",
+                                      "format": "int64",
+                                      "type": "integer"
                                     },
                                     {
                                       "name": "width",
@@ -7837,6 +8075,10 @@ export const docsModel: DocsModel = {
                                   "type": "object",
                                   "children": [
                                     {
+                                      "name": "caption",
+                                      "type": "string"
+                                    },
+                                    {
                                       "name": "height",
                                       "required": true,
                                       "format": "int64",
@@ -7847,6 +8089,11 @@ export const docsModel: DocsModel = {
                                       "type": "string"
                                     },
                                     {
+                                      "name": "sexual",
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
                                       "name": "thumbhash",
                                       "required": true,
                                       "type": "string"
@@ -7855,6 +8102,11 @@ export const docsModel: DocsModel = {
                                       "name": "url",
                                       "required": true,
                                       "type": "string"
+                                    },
+                                    {
+                                      "name": "violence",
+                                      "format": "int64",
+                                      "type": "integer"
                                     },
                                     {
                                       "name": "width",

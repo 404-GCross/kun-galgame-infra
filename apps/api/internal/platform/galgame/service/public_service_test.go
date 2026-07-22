@@ -78,7 +78,7 @@ func toMap(t *testing.T, v any) map[string]any {
 func TestProjectDetailFrozenShape(t *testing.T) {
 	svc := &GalgameService{cdnBase: "https://cdn.example.com/img"}
 	rec := svc.projectDetail(sampleGalgame(), sampleScoreMeta(),
-		PublicInclude{Intro: true, Scores: true, Covers: true, Taxonomy: true}, "sfw", 0)
+		PublicInclude{Intro: true, Scores: true, Covers: true, Taxonomy: true}, "sfw", 0, false)
 	m := toMap(t, rec)
 
 	// names: keys always present, BCP-47, empty→null.
@@ -173,7 +173,7 @@ func TestProjectDetailFrozenShape(t *testing.T) {
 
 func TestProjectDetailIncludeGating(t *testing.T) {
 	svc := &GalgameService{cdnBase: "https://cdn.example.com/img"}
-	rec := svc.projectDetail(sampleGalgame(), sampleScoreMeta(), PublicInclude{}, "sfw", 0)
+	rec := svc.projectDetail(sampleGalgame(), sampleScoreMeta(), PublicInclude{}, "sfw", 0, false)
 	m := toMap(t, rec)
 
 	for _, k := range []string{"intro", "scores", "taxonomy"} {
@@ -207,7 +207,7 @@ func TestPublicImageURLAndNSFWDrop(t *testing.T) {
 	g := sampleGalgame()
 	g.Cover[0].Sexual = 3 // the banner cover is now NSFW-rated
 	svc := &GalgameService{cdnBase: "https://cdn.example.com/img"}
-	imgs := svc.detailImages(g, false, false, true)
+	imgs := svc.detailImages(g, false, false, true, false)
 	if imgs.Banner != nil {
 		t.Errorf("NSFW-rated banner must be dropped on the sfw face, got %v", imgs.Banner)
 	}
@@ -373,13 +373,13 @@ func TestPublicNSFWHiddenAndDetail404(t *testing.T) {
 		t.Fatalf("sfw list must hide the nsfw entry, got %v", ids)
 	}
 
-	if _, found, _, err := testSvc.PublicDetail(ctx, 2, PublicInclude{}, "sfw"); err != nil || found {
+	if _, found, _, err := testSvc.PublicDetail(ctx, 2, PublicInclude{}, "sfw", false); err != nil || found {
 		t.Errorf("nsfw detail on sfw face must be 404 (found=false), got found=%v err=%v", found, err)
 	}
-	if _, found, _, err := testSvc.PublicDetail(ctx, 1, PublicInclude{}, "sfw"); err != nil || !found {
+	if _, found, _, err := testSvc.PublicDetail(ctx, 1, PublicInclude{}, "sfw", false); err != nil || !found {
 		t.Errorf("sfw detail must be found, got found=%v err=%v", found, err)
 	}
-	if _, found, _, err := testSvc.PublicDetail(ctx, 999, PublicInclude{}, "sfw"); err != nil || found {
+	if _, found, _, err := testSvc.PublicDetail(ctx, 999, PublicInclude{}, "sfw", false); err != nil || found {
 		t.Errorf("unknown id must be 404 (found=false), got found=%v err=%v", found, err)
 	}
 }
