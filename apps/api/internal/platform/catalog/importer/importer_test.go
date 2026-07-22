@@ -67,7 +67,7 @@ func clean(t *testing.T) {
 		"src_bangumi.subject_person", "src_bangumi.subject_character", "src_bangumi.person_character",
 		"src_bangumi.person", "src_bangumi.character", "src_bangumi.subject_relation", "src_bangumi.subject",
 		"src_vndb.chars", "src_vndb.chars_names", "src_vndb.chars_vns", "src_vndb.images", "src_vndb.portrait_backfill",
-		"src_vndb.staff", "src_vndb.staff_alias", "src_vndb.vn_staff", "src_vndb.vn_seiyuu",
+		"src_vndb.staff", "src_vndb.staff_alias", "src_vndb.vn_staff", "src_vndb.vn_seiyuu", "src_vndb.vn_relations",
 		"catalog_release", "catalog_work_title", "catalog_work_label", "catalog_work_relation",
 		"src_llm.bid_identity_verdict", "creaters", "characters", "staff", "appearances", "appearance_actors", "works", "games",
 	}
