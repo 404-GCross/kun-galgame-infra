@@ -84,14 +84,15 @@ DEV_SECRET_PREFIX='dev-secret-'
 SCRUB_MARKER='[dev-scrubbed]'
 
 # First-party OAuth clients whose localhost dev callback must be present in
-# redirect_uris. "client_id=dev_callback_url". forum/patch/wiki already carry
-# these in prod; the append is idempotent (dedup) and future-proofs a prod
-# snapshot that ever lacks them. letmoe's dev client is not in prod at all — it
-# is provisioned by letmoe's own seed, see docs/dev-environment.md.
+# redirect_uris. "client_id=dev_callback_url". forum/patch already carry these
+# in prod; the append is idempotent (dedup) and future-proofs a prod snapshot
+# that ever lacks them. letmoe's dev client is not in prod at all — it is
+# provisioned by letmoe's own seed, see docs/dev-environment.md.
+# (The wiki front-end client 53e9b5ea… / :9421 was dropped in open-API Phase 2
+#  wave 05: the wiki front-end + wiki.kungal.com retired.)
 DEV_REDIRECT_URIS=(
   "4ed9bc99ec0a789a4796b83e22bd84c5=http://127.0.0.1:2333/auth/callback"   # forum  (www.kungal.com)
   "df3ff6008d740bfacbe46aa8cf483cf2=http://127.0.0.1:6969/auth/callback"   # patch  (www.moyu.moe)
-  "53e9b5ea70bfc4e4d0700a9f7b8818e8=http://127.0.0.1:9421/auth/callback"   # wiki   (wiki.kungal.com)
 )
 
 # --- local restore target ----------------------------------------------------
