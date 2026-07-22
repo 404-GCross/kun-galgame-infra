@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"log/slog"
+	"sync"
 	"time"
 
 	"gorm.io/gorm"
@@ -41,22 +42,57 @@ func hashSource(s string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// runner carries per-run dependencies + stats (serial, plain ints).
+// runner carries per-run dependencies + stats. mu guards stats/samples so the
+// concurrent apply path can share the same handle() as the serial one.
 type runner struct {
 	db    *gorm.DB
 	tr    Translator
 	stats *Stats
+	mu    sync.Mutex
+}
+
+func (r *runner) inc(n *int) {
+	r.mu.Lock()
+	*n++
+	r.mu.Unlock()
 }
 
 // process walks the candidates in popularity order and, per the decision,
-// forecasts (dry) or translates + writes (apply).
-func (r *runner) process(ctx context.Context, cands []candidate, apply bool, delay time.Duration) {
-	for i, c := range cands {
-		if ctx.Err() != nil {
-			return
+// forecasts (dry) or translates + writes (apply). With workers > 1 in apply
+// mode the queue is drained by a pool — per-item independence makes order
+// irrelevant; upstream throughput is the only reason to parallelize (the
+// gateway's per-request latency dominates, not our rate).
+func (r *runner) process(ctx context.Context, cands []candidate, apply bool, delay time.Duration, workers int) {
+	if !apply || workers <= 1 {
+		for i, c := range cands {
+			if ctx.Err() != nil {
+				return
+			}
+			r.handle(ctx, c, apply, delay, i)
 		}
-		r.handle(ctx, c, apply, delay, i)
+		return
 	}
+	ch := make(chan candidate)
+	var wg sync.WaitGroup
+	for range workers {
+		wg.Go(func() {
+			for c := range ch {
+				if ctx.Err() != nil {
+					continue // drain the queue without doing work
+				}
+				// idx=1 → the per-worker pacing delay applies before every call.
+				r.handle(ctx, c, apply, delay, 1)
+			}
+		})
+	}
+	for _, c := range cands {
+		if ctx.Err() != nil {
+			break
+		}
+		ch <- c
+	}
+	close(ch)
+	wg.Wait()
 }
 
 // handle resolves one candidate. In apply mode it calls the translator only for
@@ -65,12 +101,12 @@ func (r *runner) handle(ctx context.Context, c candidate, apply bool, delay time
 	dec, hash := decide(c)
 	switch dec {
 	case decSkipSame:
-		r.stats.SkipUnchanged++
+		r.inc(&r.stats.SkipUnchanged)
 		return
 	case decRetrans:
-		r.stats.WouldRetranslate++
+		r.inc(&r.stats.WouldRetranslate)
 	case decInsert:
-		r.stats.WouldInsert++
+		r.inc(&r.stats.WouldInsert)
 	}
 
 	sample := r.beginSample(c, dec)
@@ -91,19 +127,19 @@ func (r *runner) handle(ctx context.Context, c candidate, apply bool, delay time
 
 	zh, mtModel, err := r.tr.Translate(ctx, c.JaText)
 	if err != nil {
-		r.stats.Errors++
+		r.inc(&r.stats.Errors)
 		slog.Warn("translate failed", "work", c.WorkID, "err", err)
 		return
 	}
 	if zh == "" {
-		r.stats.Errors++
+		r.inc(&r.stats.Errors)
 		slog.Warn("translate returned empty — refusing to write an empty machine row", "work", c.WorkID)
 		return
 	}
 
 	rows, err := r.upsert(ctx, c, zh, hash, mtModel)
 	if err != nil {
-		r.stats.Errors++
+		r.inc(&r.stats.Errors)
 		slog.Warn("write machine intro", "work", c.WorkID, "err", err)
 		return
 	}
@@ -111,14 +147,14 @@ func (r *runner) handle(ctx context.Context, c candidate, apply bool, delay time
 		// The DO UPDATE guard fired: a source row (provenance=0) sits at the
 		// key. Should be impossible (candidate query excludes zh-source works),
 		// so it means a source row landed mid-run — NEVER overwrite it.
-		r.stats.Refused++
+		r.inc(&r.stats.Refused)
 		slog.Warn("refused to overwrite a source intro row", "work", c.WorkID, "source_id", c.JaSourceID)
 		return
 	}
 	if dec == decRetrans {
-		r.stats.Retranslated++
+		r.inc(&r.stats.Retranslated)
 	} else {
-		r.stats.Inserted++
+		r.inc(&r.stats.Inserted)
 	}
 	r.finishSample(sample, zh, mtModel)
 }
