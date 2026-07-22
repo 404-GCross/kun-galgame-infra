@@ -55,7 +55,10 @@ func NewHTTPTranslator(baseURL, token, model string, maxTokens int) *HTTPTransla
 		token:     token,
 		model:     model,
 		maxTokens: maxTokens,
-		http:      &http.Client{Timeout: 120 * time.Second},
+		// Reasoning upstreams (glm-5.2 on Workers AI) can spend minutes on a
+		// ~4k-char source before the first byte arrives — 120s killed the
+		// longest gate sample. Per-item wall ceiling, not a liveness knob.
+		http:      &http.Client{Timeout: 600 * time.Second},
 	}
 }
 
