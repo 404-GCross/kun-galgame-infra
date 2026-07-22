@@ -257,7 +257,7 @@ func TestHTTPTranslator(t *testing.T) {
 		gotPath = r.URL.Path
 		b, _ := io.ReadAll(r.Body)
 		_ = json.Unmarshal(b, &gotBody)
-		_, _ = io.WriteString(w, `{"model":"deepseek-chat","choices":[{"message":{"role":"assistant","content":"  这是译文。  "}}]}`)
+		_, _ = io.WriteString(w, `{"model":"deepseek-chat","choices":[{"message":{"role":"assistant","content":"  这是译文。  "},"finish_reason":"stop"}]}`)
 	}))
 	defer srv.Close()
 
@@ -286,6 +286,15 @@ func TestHTTPTranslatorErrors(t *testing.T) {
 	tr := NewHTTPTranslator(bad.URL, "t", "m", 64)
 	_, _, err := tr.Translate(context.Background(), "x")
 	assert.Error(t, err)
+
+	// finish_reason=length: a reasoning model squeezed by max_tokens emits a
+	// non-empty PARTIAL — must error, never be returned as a translation.
+	trunc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, `{"model":"m","choices":[{"message":{"role":"assistant","content":"残りは途中で"},"finish_reason":"length"}]}`)
+	}))
+	defer trunc.Close()
+	_, _, err = NewHTTPTranslator(trunc.URL, "t", "m", 64).Translate(context.Background(), "x")
+	assert.ErrorContains(t, err, "finish_reason", "partial output refused")
 
 	assert.False(t, NewHTTPTranslator("", "t", "m", 64).Configured(), "no base → not configured")
 	assert.False(t, NewHTTPTranslator("http://x/v1", "", "m", 64).Configured(), "no token → not configured")
