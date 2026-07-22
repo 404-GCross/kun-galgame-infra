@@ -41,12 +41,23 @@ type PublicRefs struct {
 // PublicImage is one rendered image: a COMPLETE CDN URL (never a bare hash) plus
 // its intrinsic dimensions and the ThumbHash blur-up placeholder. Kind is only
 // meaningful on covers[] entries (the VNDB cover type); it is omitted elsewhere.
+//
+// Sexual / Violence are the per-image content-rating levels (W1c, add-only) on
+// covers[] / screenshots[] entries — present ONLY when the resolved credential
+// is nsfw-capable (NSFWAllowed && galgame:nsfw scope), so a third-party (no
+// scope) response stays byte-frozen. Pointer ints so the meaningful 0 ("no
+// sexual/violence content") survives omitempty. Caption is the per-screenshot
+// gallery text (W1c, screenshots-only, ungated — covers have no caption; empty
+// emits no key). None appear on the banner/portrait pins.
 type PublicImage struct {
 	URL       string `json:"url"`
 	Width     int    `json:"width"`
 	Height    int    `json:"height"`
 	Thumbhash string `json:"thumbhash"`
 	Kind      string `json:"kind,omitempty"`
+	Sexual    *int   `json:"sexual,omitempty"`
+	Violence  *int   `json:"violence,omitempty"`
+	Caption   string `json:"caption,omitempty"`
 }
 
 // PublicImages is the images block. banner / portrait are the single effective

@@ -1343,15 +1343,23 @@ components:
     PublicImage:
       additionalProperties: false
       properties:
+        caption:
+          type: string
         height:
           format: int64
           type: integer
         kind:
           type: string
+        sexual:
+          format: int64
+          type: integer
         thumbhash:
           type: string
         url:
           type: string
+        violence:
+          format: int64
+          type: integer
         width:
           format: int64
           type: integer

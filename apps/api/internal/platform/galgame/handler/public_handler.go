@@ -93,7 +93,7 @@ func (h *PublicHandler) Detail(c fiber.Ctx) error {
 	if err != nil {
 		return response.BadRequest(c, errors.ErrInvalidID)
 	}
-	rec, found, updated, err := h.svc.PublicDetail(c.Context(), id, service.ParsePublicInclude(c.Query("include")), h.contentLimit(c))
+	rec, found, updated, err := h.svc.PublicDetail(c.Context(), id, service.ParsePublicInclude(c.Query("include")), h.contentLimit(c), devapi.NSFWCapable(c))
 	if err != nil {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}

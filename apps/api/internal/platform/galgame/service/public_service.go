@@ -94,7 +94,7 @@ func publicClampLimit(limit, def, max int) int {
 // content_limit gate. Also returns the galgame's updated timestamp for the ETag.
 // Read-only: unlike the internal detail path it does NOT increment the view
 // counter (public API traffic must not mutate wiki state).
-func (s *GalgameService) PublicDetail(ctx context.Context, id int, inc PublicInclude, contentLimit string) (dto.PublicGalgame, bool, time.Time, error) {
+func (s *GalgameService) PublicDetail(ctx context.Context, id int, inc PublicInclude, contentLimit string, withRatings bool) (dto.PublicGalgame, bool, time.Time, error) {
 	g, err := s.galgameRepo.FindByID(ctx, id)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -123,13 +123,14 @@ func (s *GalgameService) PublicDetail(ctx context.Context, id int, inc PublicInc
 			seriesCount = int(n)
 		}
 	}
-	return s.projectDetail(g, sm, inc, contentLimit, seriesCount), true, g.Updated.Time(), nil
+	return s.projectDetail(g, sm, inc, contentLimit, seriesCount, withRatings), true, g.Updated.Time(), nil
 }
 
 // projectDetail assembles the aggregate record from a fully-loaded galgame + its
 // score meta. include-gated blocks are attached only when requested.
 // seriesCount is the resolved series member count (0 unless include=series).
-func (s *GalgameService) projectDetail(g *model.Galgame, sm repository.ScoreMeta, inc PublicInclude, contentLimit string, seriesCount int) dto.PublicGalgame {
+// withRatings gates the per-image sexual/violence levels (W1c; see detailImages).
+func (s *GalgameService) projectDetail(g *model.Galgame, sm repository.ScoreMeta, inc PublicInclude, contentLimit string, seriesCount int, withRatings bool) dto.PublicGalgame {
 	dropNSFW := contentLimit == "sfw"
 
 	rec := dto.PublicGalgame{
@@ -141,7 +142,7 @@ func (s *GalgameService) projectDetail(g *model.Galgame, sm repository.ScoreMeta
 		OriginalLanguage: g.OriginalLanguage,
 		AgeLimit:         g.AgeLimit,
 		Refs:             publicRefs(g, sm),
-		Images:           s.detailImages(g, inc.Covers, inc.Screenshots, dropNSFW),
+		Images:           s.detailImages(g, inc.Covers, inc.Screenshots, dropNSFW, withRatings),
 		CatalogWorkID:    g.CatalogWorkID,
 		Updated:          fmtPublicTS(g.Updated),
 		Attribution:      publicAttribution(g, sm),
@@ -197,7 +198,12 @@ func (s *GalgameService) projectDetail(g *model.Galgame, sm repository.ScoreMeta
 // covers[] is the full set (only under include=covers); screenshots[] is the
 // gallery set (only under include=screenshots). On the sfw face every NSFW-rated
 // image (sexual>0 OR violence>0) is dropped from every set.
-func (s *GalgameService) detailImages(g *model.Galgame, withCovers, withScreenshots, dropNSFW bool) dto.PublicImages {
+// withRatings gates the per-image sexual/violence levels on covers[]/screenshots[]
+// (W1c): true only when the resolved credential is nsfw-capable (same gate as the
+// three-state content_limit), so a third-party (no scope) response stays
+// byte-frozen. The screenshot caption is ungated (always emitted when non-empty).
+// The banner/portrait pins never carry ratings/caption.
+func (s *GalgameService) detailImages(g *model.Galgame, withCovers, withScreenshots, dropNSFW, withRatings bool) dto.PublicImages {
 	byHash := make(map[string]*model.GalgameCover, len(g.Cover))
 	for i := range g.Cover {
 		byHash[g.Cover[i].ImageHash] = &g.Cover[i]
@@ -224,6 +230,10 @@ func (s *GalgameService) detailImages(g *model.Galgame, withCovers, withScreensh
 				continue
 			}
 			if img := s.publicImage(c.ImageHash, ImageMeta{Width: c.Width, Height: c.Height, Thumbhash: c.Thumbhash}, c.Kind); img != nil {
+				if withRatings {
+					sx, vl := int(c.Sexual), int(c.Violence)
+					img.Sexual, img.Violence = &sx, &vl
+				}
 				covers = append(covers, *img)
 			}
 		}
@@ -237,6 +247,11 @@ func (s *GalgameService) detailImages(g *model.Galgame, withCovers, withScreensh
 				continue
 			}
 			if img := s.publicImage(sc.ImageHash, ImageMeta{Width: sc.Width, Height: sc.Height, Thumbhash: sc.Thumbhash}, ""); img != nil {
+				img.Caption = sc.Caption // ungated; omitempty drops the empty string
+				if withRatings {
+					sx, vl := int(sc.Sexual), int(sc.Violence)
+					img.Sexual, img.Violence = &sx, &vl
+				}
 				shots = append(shots, *img)
 			}
 		}
@@ -324,7 +339,9 @@ func (s *GalgameService) PublicTrackView(id int) {
 func (s *GalgameService) PublicBatchDetail(ctx context.Context, ids []int, contentLimit string) ([]dto.PublicGalgame, error) {
 	out := make([]dto.PublicGalgame, 0, len(ids))
 	for _, id := range ids {
-		rec, found, _, err := s.PublicDetail(ctx, id, PublicInclude{}, contentLimit)
+		// view=detail carries no include=covers/screenshots, so no per-image
+		// ratings surface — pass withRatings=false (the block is never built).
+		rec, found, _, err := s.PublicDetail(ctx, id, PublicInclude{}, contentLimit, false)
 		if err != nil {
 			return nil, err
 		}

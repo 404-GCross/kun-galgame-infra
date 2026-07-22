@@ -55,7 +55,7 @@ func TestProjectDetailW1aIncludeGating(t *testing.T) {
 	svc := &GalgameService{cdnBase: "https://cdn.example.com/img"}
 
 	// Without any W1a token: none of the new keys appear.
-	plain := toMap(t, svc.projectDetail(w1aGalgame(), sampleScoreMeta(), PublicInclude{}, "sfw", 0))
+	plain := toMap(t, svc.projectDetail(w1aGalgame(), sampleScoreMeta(), PublicInclude{}, "sfw", 0, false))
 	for _, k := range []string{"links", "series", "meta"} {
 		if _, ok := plain[k]; ok {
 			t.Errorf("%q must be omitted without its include token", k)
@@ -72,7 +72,7 @@ func TestProjectDetailW1aIncludeGating(t *testing.T) {
 		Taxonomy: true, Links: true, Screenshots: true, Series: true, Meta: true,
 		TagRefs: true, OfficialRefs: true, EngineRefs: true,
 	}
-	rec := svc.projectDetail(w1aGalgame(), sampleScoreMeta(), inc, "sfw", 12)
+	rec := svc.projectDetail(w1aGalgame(), sampleScoreMeta(), inc, "sfw", 12, false)
 	m := toMap(t, rec)
 
 	// links: curated {id,name,link,source}, source_key/user_id NOT surfaced.
@@ -129,7 +129,7 @@ func TestProjectDetailW1aIncludeGating(t *testing.T) {
 func TestTaxonomyAloneByteIdentical(t *testing.T) {
 	svc := &GalgameService{cdnBase: "https://cdn.example.com/img"}
 
-	frozen := toMap(t, svc.projectDetail(w1aGalgame(), sampleScoreMeta(), PublicInclude{Taxonomy: true}, "sfw", 0))
+	frozen := toMap(t, svc.projectDetail(w1aGalgame(), sampleScoreMeta(), PublicInclude{Taxonomy: true}, "sfw", 0, false))
 	tax := frozen["taxonomy"].(map[string]any)
 	wantKeys := map[string]bool{"tags": true, "officials": true, "engines": true, "series_id": true}
 	if len(tax) != len(wantKeys) {
@@ -142,7 +142,7 @@ func TestTaxonomyAloneByteIdentical(t *testing.T) {
 	}
 
 	// tag_refs WITHOUT taxonomy → no taxonomy block at all (silent no-op).
-	noTax := toMap(t, svc.projectDetail(w1aGalgame(), sampleScoreMeta(), PublicInclude{TagRefs: true}, "sfw", 0))
+	noTax := toMap(t, svc.projectDetail(w1aGalgame(), sampleScoreMeta(), PublicInclude{TagRefs: true}, "sfw", 0, false))
 	if _, ok := noTax["taxonomy"]; ok {
 		t.Errorf("a ref token without include=taxonomy must not emit the taxonomy block")
 	}

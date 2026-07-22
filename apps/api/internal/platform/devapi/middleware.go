@@ -244,11 +244,22 @@ func ResolveContentLimit(c fiber.Ctx, requested string) string {
 	if requested != "nsfw" && requested != "all" {
 		return "sfw"
 	}
-	cred := CredentialFrom(c)
-	if cred != nil && cred.NSFWAllowed && cred.HasScope(ScopeGalgameNSFW) {
+	if NSFWCapable(c) {
 		return requested
 	}
 	return "sfw"
+}
+
+// NSFWCapable reports whether the request's resolved credential may see NSFW
+// content: it carries the galgame:nsfw scope AND its effective nsfw_allowed flag
+// is set (the same gate the three-state content_limit uses). Used to gate the
+// add-only per-image sexual/violence levels (W1c) independently of the request's
+// content_limit, so the sfw face stays byte-frozen for a scope-less third party
+// while an nsfw-capable consumer (moyu's internal key) sees the ratings on every
+// request, matching the internal bridge's always-present rating rows.
+func NSFWCapable(c fiber.Ctx) bool {
+	cred := CredentialFrom(c)
+	return cred != nil && cred.NSFWAllowed && cred.HasScope(ScopeGalgameNSFW)
 }
 
 // extractKey pulls the raw API key from the request. Preference order:
