@@ -33,8 +33,7 @@ DNS 把下列域名的 A/AAAA 记录指向**服务器公网 IP**;Traefik 自动�
 |---|---|---|---|
 | `oauth.kungal.com` | `/api/v1` | infra | `oauth:9277` |
 | `oauth.kungal.com` | `/`(默认) | infra | `web:3000`(admin 前端) |
-| `wiki.kungal.com` | `/api` | infra | `catalog:9281`(W3 起;此域两条路由已收敛为 compose labels,不再走面板 Domains) |
-| `wiki.kungal.com` | `/`(默认) | infra | `wiki:3000` |
+| ~~`wiki.kungal.com`~~ | — | infra | **已退役(开放 API Phase 2 · W5,2026-07)**:两组 compose labels(`infra-wiki-api` / `infra-wiki-api-http`)已删、域 404,DNS 解析记录待用户删。galgame 富读改走 catalog internal 面(s2s,`nm_` key)。 |
 | `kungal.com` + `www.kungal.com` | `/api` | kungal | `kungal-api:2334` |
 | `kungal.com` + `www.kungal.com` | `/`(默认) | kungal | `web:7777` |
 | `moyu.moe` + `www.moyu.moe` | `/api/v1` | moyu | `moyu-api:5214` |
@@ -67,17 +66,17 @@ DNS 把下列域名的 A/AAAA 记录指向**服务器公网 IP**;Traefik 自动�
 
 **C. 前端浏览器侧 URL → 真实域名**(构建期 build args / 运行期 env;SSR 内部 base 维持服务名不变,见 [双 base 说明](#125-双-base-与-ssr))
 - **infra web**(compose build args):`PUBLIC_API_BASE=https://oauth.kungal.com/api/v1`、`PUBLIC_IMAGE_CDN_BASE=https://image.kungal.iloveren.link`
-- **infra wiki**(build args):`PUBLIC_API_BASE=https://wiki.kungal.com/api`、`PUBLIC_AUTH_API_BASE=https://oauth.kungal.com/api/v1`、`PUBLIC_OAUTH_AUTHORIZE_BASE=https://oauth.kungal.com/api/v1`、`PUBLIC_OAUTH_REDIRECT_URI=https://wiki.kungal.com/auth/callback`、`PUBLIC_IMAGE_CDN_BASE=https://image.kungal.iloveren.link`(`PUBLIC_OAUTH_CLIENT_ID` 见 12.3)
-- **kungal web**(`docker/web.env`):`NUXT_PUBLIC_API_BASE_URL=https://www.kungal.com`、`NUXT_PUBLIC_OAUTH_SERVER_URL=https://oauth.kungal.com/api/v1`、`NUXT_PUBLIC_OAUTH_FRONTEND_URL=https://oauth.kungal.com`、`NUXT_PUBLIC_OAUTH_REDIRECT_URI=https://www.kungal.com/auth/callback`、`NUXT_PUBLIC_GALGAME_WIKI_URL=https://wiki.kungal.com/api`、`NUXT_PUBLIC_KUN_GALGAME_URL=https://www.kungal.com`
+- ~~**infra wiki**(build args)~~ — **已退役(开放 API Phase 2 · W5,2026-07)**:wiki 前端(`apps/wiki`)与 `wiki.kungal.com` 域退役,`infra-wiki` 镜像不再构建。
+- **kungal web**(`docker/web.env`):`NUXT_PUBLIC_API_BASE_URL=https://www.kungal.com`、`NUXT_PUBLIC_OAUTH_SERVER_URL=https://oauth.kungal.com/api/v1`、`NUXT_PUBLIC_OAUTH_FRONTEND_URL=https://oauth.kungal.com`、`NUXT_PUBLIC_OAUTH_REDIRECT_URI=https://www.kungal.com/auth/callback`、`NUXT_PUBLIC_KUN_GALGAME_URL=https://www.kungal.com`（死配置 `NUXT_PUBLIC_GALGAME_WIKI_URL` 已于 W5 删除）
 - **moyu web**(`docker/web.env`):`NUXT_PUBLIC_API_BASE=https://www.moyu.moe/api/v1`、`NUXT_PUBLIC_OAUTH_SERVER_URL=https://oauth.kungal.com/api/v1`、`NUXT_PUBLIC_OAUTH_WEB_URL=https://oauth.kungal.com`、`NUXT_PUBLIC_OAUTH_REDIRECT_URI=https://www.moyu.moe/auth/callback`
 
 **D. 后端 CORS 允许源 → 真实域名**
-- infra `docker/oauth.env`、`docker/galgame.env`、`docker/image.env` 的 `KUN_FRONTEND_CORS_ORIGIN`:列出 `https://oauth.kungal.com,https://www.kungal.com,https://kungal.com,https://wiki.kungal.com,https://www.moyu.moe,https://moyu.moe`
+- infra `docker/oauth.env`、`docker/galgame.env`、`docker/image.env` 的 `KUN_FRONTEND_CORS_ORIGIN`:列出 `https://oauth.kungal.com,https://www.kungal.com,https://kungal.com,https://www.moyu.moe,https://moyu.moe`(`https://wiki.kungal.com` 已于 W5 从 CORS 白名单移除)
 - kungal `docker/api.env` `CORS_ALLOW_ORIGINS=https://www.kungal.com,https://kungal.com`
 - moyu `docker/api.env` `CORS_ALLOW_ORIGINS=https://www.moyu.moe,https://moyu.moe`
 
 **E. 后端→后端 / 图床 base(env,用服务名,不变或确认)**
-- 下游 api.env 的 `OAUTH_SERVER_URL=http://oauth:9277/api/v1`、`*GALGAME_WIKI_BASE_URL=http://catalog:9281/api`(W3 起指 catalog)、`KUN_IMAGE_*CLIENT_BASE_URL=http://image:9278`(s2s 走服务名,**保持容器内部地址**)。
+- 下游 api.env 的 `OAUTH_SERVER_URL=http://oauth:9277/api/v1`、`KUN_NEXTMOE_API_BASE=http://catalog:9281` + `KUN_NEXTMOE_API_KEY=<nm_ internal-tier key>`(galgame 富读走 catalog internal 面,客户端拼 `/internal`;旧名 `*_GALGAME_WIKI_BASE_URL` + legacy `/api` 读面已于 W5 退役,key 硬依赖)、`KUN_IMAGE_*CLIENT_BASE_URL=http://image:9278`(s2s 走服务名,**保持容器内部地址**)。
 - 各服务的 `KUN_IMAGE_PUBLIC_BASE_URL=https://image.kungal.iloveren.link`(后端生成给前端的图片 URL,用公网 CDN 域)。
 
 **F. 转发头**:Traefik 默认带 `X-Forwarded-Proto/Host`,SSR 绝对 URL、OAuth 跳转、`Secure` cookie 正确,无需手动配置。
@@ -90,9 +89,9 @@ OAuth client 的 `redirect_uris` 存在枢纽 `kun_galgame_infra.oauth_clients` 
 |---|---|
 | 论坛 `4ed9bc99…` | `https://www.kungal.com/auth/callback`、`https://kungal.com/auth/callback` |
 | 补丁 `df3ff60…` | `https://www.moyu.moe/auth/callback`、`https://moyu.moe/auth/callback` |
-| `galgame-wiki-admin`(wiki 前端 PKCE 公共 client) | `https://wiki.kungal.com/auth/callback` |
+| ~~wiki 前端 PKCE client~~ | **已退役(W5)**:wiki 前端 + `wiki.kungal.com` 域退役,不再需要该 redirect_uri |
 
-> wiki 前端 build arg `PUBLIC_OAUTH_CLIENT_ID` 用 `galgame-wiki-admin`(已注册的公共 PKCE client)。image client(`53e9b5ea…`,`image_enabled=true`)给下游 s2s 上传用,无需 redirect。改完 redirect_uris 后,OAuth 的 `KUN_SITE_URL`/`KUN_FRONTEND_URL`(oauth.env)也改成 `https://oauth.kungal.com` / `https://oauth.kungal.com`。
+> **wiki 前端已退役(开放 API Phase 2 · W5)**,其 `PUBLIC_OAUTH_CLIENT_ID` build arg 与 `wiki.kungal.com/auth/callback` redirect 均不再使用。两个同名「鲲 Galgame Wiki」OAuth client(`galgame-wiki-admin` 与 `53e9b5ea…`)的存废清理属 **C4(待用户裁)**;⚠️ **铁律:承载图片上传身份的 client 必须保留,禁止按名字模糊删**(以 client_id 精确匹配)。改完各站 redirect_uris 后,OAuth 的 `KUN_SITE_URL`/`KUN_FRONTEND_URL`(oauth.env)也改成 `https://oauth.kungal.com` / `https://oauth.kungal.com`。
 
 ## 12.4 部署步骤(Dokploy)
 
@@ -102,7 +101,7 @@ OAuth client 的 `redirect_uris` 存在枢纽 `kun_galgame_infra.oauth_clients` 
 4. **填环境变量**:prod compose 已内联非密钥/域名;**只需在各应用 Dokploy Environment 面板填密钥**(逐个清单见 [15-environment §15.8](./15-environment.md) / [17-go-live-checklist.md](./17-go-live-checklist.md));**全部轮换测试值**(见 [05-configuration.md](./05-configuration.md))。
 5. **部署顺序**:先部署 **infra**(等 `postgres`/`redis`/`minio`/`meili` healthy)→ 在 Dokploy **Terminal/Run** 跑首启迁移(见 12.6)→ 再部署 **kungal**、**moyu**。
 6. **配域名**:每个应用的对外服务在 **Domains** 标签按 12.1 添加(含 `/api*` 与 `/` 两条),Dokploy 自动注入 Traefik labels + 签发证书。
-7. **验证**:`curl -I https://oauth.kungal.com`(302→登录,有效证书)、`https://www.moyu.moe`、`https://wiki.kungal.com`。
+7. **验证**:`curl -I https://oauth.kungal.com`(302→登录,有效证书)、`https://www.moyu.moe`、`https://www.kungal.com`。(`wiki.kungal.com` 已于 W5 退役,现返 404。)
 
 ## 12.5 双 base 与 SSR
 

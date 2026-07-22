@@ -41,7 +41,7 @@
 - [ ] **镜像上 GHCR**:三仓 push 到 main → CI build+push `ghcr.io/kunmoe/*`(含 `*-tools`)。→ [13-registry-ci](./13-registry-ci.md)
 - [ ] **GHCR 包设 Public**(或给 Dokploy 配 registry 凭证)。
 - [ ] **(可选)GitHub repo Secrets**:`DOKPLOY_WEBHOOK_INFRA` / `_KUNGAL` / `_MOYU`。
-- [ ] **DNS A 记录 → 服务器公网 IP**:`oauth.kungal.com`、`wiki.kungal.com`、`kungal.com`+`www`、`moyu.moe`+`www`。
+- [ ] **DNS A 记录 → 服务器公网 IP**:`oauth.kungal.com`、`kungal.com`+`www`、`moyu.moe`+`www`。(`wiki.kungal.com` 已于开放 API Phase 2 · W5 退役,解析记录待删。)
 - [ ] **DNS**:`image.kungal.iloveren.link` → **Cloudflare R2 自定义域**(不指服务器)。
 - [ ] **定方向**:空库验证(Phase 2A)/ 带生产数据(Phase 2B)。**建议先空库跑通,再做数据 cutover**。
 
@@ -97,7 +97,7 @@ POSTGRES_USER=postgres                 # 默认 postgres,一般不改
 ### 2.1 注册 3 个 OAuth client(**不做登录全废**)→ [12-dokploy §12.3](./12-dokploy.md) / [03-bootstrap §A.5](./03-bootstrap.md)
 - [ ] 论坛 client `4ed9bc99ec0a789a4796b83e22bd84c5` → redirect_uris 加 `https://www.kungal.com/auth/callback`、`https://kungal.com/auth/callback`
 - [ ] 补丁 client `df3ff6008d740bfacbe46aa8cf483cf2` → redirect_uris 加 `https://www.moyu.moe/auth/callback`、`https://moyu.moe/auth/callback`
-- [ ] wiki client `galgame-wiki-admin` → redirect_uri 加 `https://wiki.kungal.com/auth/callback`
+- [ ] ~~wiki client redirect_uri~~ — **已退役(W5)**:wiki 前端 + `wiki.kungal.com` 域退役,无需此 redirect_uri(⚠️ 铁律:承载图片上传身份的 client 保留;两同名「鲲 Galgame Wiki」client 的存废清理属 C4,待用户裁)
 - [ ] **记下每个生成的明文 secret** → 填到下游应用面板的 `OAUTH_CLIENT_SECRET`(Phase 3)。
 
 ---
@@ -139,7 +139,7 @@ KUN_VISUAL_NOVEL_S3_STORAGE_SECRET_ACCESS_KEY=<B2 secret> # 必填
 
 ### 4.1 Dokploy Domains(每个应用对外服务加「域名+路径→服务:端口」,`/api*` 与 `/` 各一条)→ [12-dokploy §12.1](./12-dokploy.md)
 - [ ] infra:`oauth.kungal.com` `/api/v1`→`oauth:9277`、`/`→`web:3000`
-- [ ] infra:`wiki.kungal.com` `/api`→`catalog:9281`、`/`→`wiki:3000`(W3 起两条路由都收敛在 compose labels,不再用面板 Domains)
+- [ ] ~~infra:`wiki.kungal.com`~~ — **已退役(W5)**:两组 compose labels 已删、域 404,DNS 待删;galgame 富读走 catalog internal 面(s2s,`nm_` key)
 - [ ] kungal:`kungal.com`+`www` `/api`→`kungal-api:2334`、`/`→`web:7777`
 - [ ] moyu:`moyu.moe`+`www` `/api/v1`→`moyu-api:5214`、`/`→`web:3000`
 > 服务名是 **`kungal-api` / `moyu-api`**(不是 `api`)——Dokploy 不应用 compose 的 `networks.aliases`,只注册服务名;两仓都叫 `api` 会 DNS 冲突,导致 SSR(刷新页面)拉不到数据。所以服务名直接用唯一名。
@@ -151,8 +151,8 @@ KUN_VISUAL_NOVEL_S3_STORAGE_SECRET_ACCESS_KEY=<B2 secret> # 必填
 - [ ] **不开 Cloudflare Tunnel**(高并发 Error 1033)
 
 ### 4.3 验收
-- [ ] `curl -I https://oauth.kungal.com https://wiki.kungal.com https://www.kungal.com https://www.moyu.moe`(有效证书 + 200/302)
-- [ ] 烟雾测试:注册/登录(OAuth 跳转回各站)、发帖/评论、传图(进 R2)、wiki 搜索出结果、补丁下载
+- [ ] `curl -I https://oauth.kungal.com https://www.kungal.com https://www.moyu.moe`(有效证书 + 200/302;`wiki.kungal.com` 已退役,现返 404)
+- [ ] 烟雾测试:注册/登录(OAuth 跳转回各站)、发帖/评论、传图(进 R2)、galgame 搜索出结果(forum/moyu)、补丁下载
 - [ ] `docker ps` 看各应用容器全 healthy
 
 ---

@@ -37,12 +37,9 @@ ingress:
   - hostname: oauth.kungal.com
     service: http://kun-galgame-infra-web-1:3000
 
-  # —— 枢纽 galgame-wiki ——
-  - hostname: wiki.kungal.com
-    path: ^/api/
-    service: http://kun-galgame-infra-galgame-1:9280
-  - hostname: wiki.kungal.com
-    service: http://kun-galgame-infra-wiki-1:3000
+  # —— 枢纽 galgame-wiki:已退役(开放 API Phase 2 · W5,2026-07)——
+  #   wiki.kungal.com 域 + 独立 galgame(:9280)+ wiki 前端均退役;galgame 富读
+  #   改走 catalog internal 面(s2s,nm_ key)。此 ingress 段不再需要。
 
   # —— kungal 论坛(/api + 将来的 /socket.io 自动支持 WS)——
   - hostname: www.kungal.com
@@ -94,7 +91,7 @@ docker compose logs -f cloudflared | grep -iE "registered tunnel connection|ERR"
 ## 11.5 DNS 路由
 让每个 hostname 指向隧道(给每个域名建一条 CNAME 到 `<TUNNEL_ID>.cfargotunnel.com`):
 ```bash
-for d in oauth.kungal.com wiki.kungal.com www.kungal.com www.moyu.moe image.kungal.com; do
+for d in oauth.kungal.com www.kungal.com www.moyu.moe image.kungal.com; do   # wiki.kungal.com 已于 W5 退役
   docker run --rm -v "$PWD/cf:/etc/cloudflared" cloudflare/cloudflared tunnel route dns kungal-eco "$d"
 done
 ```

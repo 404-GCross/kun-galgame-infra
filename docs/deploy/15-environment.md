@@ -189,7 +189,7 @@
 | `OAUTH_REDIRECT_URI` | `http://localhost:15013/auth/callback` | 是 | 回调,= 注册的 redirect → 生产 `https://www.kungal.com/auth/callback` |
 | `JWT_SECRET` | `kun-docker-test-...` | | **签 kungal 自己的会话 cookie**(仅 kungal 内部自洽;生产换强随机) |
 | `MEILISEARCH_URL` / `MEILISEARCH_KEY` | `http://meilisearch:7700` / `kun_docker_test_meili_master_key_change_me` | | 搜索;key = `MEILI_MASTER_KEY`(否则 403) |
-| `GALGAME_WIKI_BASE_URL` | `http://catalog:9281/api` | | 调 wiki(s2s;W3 起指 catalog) |
+| `KUN_NEXTMOE_API_BASE` / `KUN_NEXTMOE_API_KEY` | `http://catalog:9281` / (internal-tier `nm_` key) | key 必填 | galgame 富读走 catalog internal 面(客户端拼 `/internal`);W5 硬依赖 key,空则启动 fail-fast(旧名 `GALGAME_WIKI_BASE_URL` + legacy `/api` 读面已退役) |
 | `KUN_IMAGE_PUBLIC_BASE_URL` | `https://image.kungal.com` | | 生成图片 URL 的公网前缀(应与 infra 一致 → `https://image.kungal.iloveren.link`) |
 | `KUN_IMAGE_CLIENT_BASE_URL` | `http://image:9278` | | 直传封面到 image 服务(s2s) |
 | `KUN_IMAGE_CLIENT_ID` / `KUN_IMAGE_CLIENT_SECRET` | / | (密钥) | image s2s 上传的 OAuth client;空则禁用上传 |
@@ -208,7 +208,6 @@
 | `NUXT_PUBLIC_OAUTH_FRONTEND_URL` | `http://localhost:15008` | OAuth 账户中心跳转 → `https://oauth.kungal.com` |
 | `NUXT_PUBLIC_OAUTH_CLIENT_ID` | (论坛 client) | OAuth 客户端(浏览器) |
 | `NUXT_PUBLIC_OAUTH_REDIRECT_URI` | `http://localhost:15013/auth/callback` | 回调 → `https://www.kungal.com/auth/callback` |
-| `NUXT_PUBLIC_GALGAME_WIKI_URL` | `http://localhost:15007/api` | wiki API(浏览器)→ `https://wiki.kungal.com/api` |
 | `NUXT_PUBLIC_KUN_GALGAME_URL` | `http://localhost:15013` | 站点根 URL(SEO/sitemap)→ `https://www.kungal.com` |
 | `NUXT_PUBLIC_KUN_VISUAL_NOVEL_FORUM_YANDEX_VERIFICATION` | (注释掉) | Yandex 站点验证(可选) |
 
@@ -223,7 +222,7 @@
 | `OAUTH_CLIENT_ID` | `df3ff6008d740bfacbe46aa8cf483cf2`(补丁 client) | | OAuth 客户端 |
 | `OAUTH_CLIENT_SECRET` | (密钥) | 是 | OAuth Basic Auth |
 | `OAUTH_REDIRECT_URI` | `http://localhost:15011/auth/callback` | | 回调 → `https://www.moyu.moe/auth/callback` |
-| `KUN_GALGAME_WIKI_BASE_URL` | `http://catalog:9281/api` | | 调 wiki(s2s;W3 起指 catalog) |
+| `KUN_NEXTMOE_API_BASE` / `KUN_NEXTMOE_API_KEY` | `http://catalog:9281` / (internal-tier `nm_` key) | key 必填 | galgame 富读走 catalog internal 面(客户端拼 `/internal`);W5 硬依赖 key,空则启动 fail-fast(旧名 `KUN_GALGAME_WIKI_BASE_URL` + legacy `/api` 读面已退役) |
 | `KUN_IMAGE_SERVICE_BASE_URL` | `http://image:9278` | **prod 必填** | image 服务源(`getEnvProd` fail-fast) |
 | `KUN_IMAGE_CDN_BASE` | `http://localhost:15002/kun-images` | **prod 必填** | 图片公网域 → `https://image.kungal.iloveren.link`(`getEnvProd` fail-fast) |
 | `KUN_IMAGE_OAUTH_CLIENT_ID` / `KUN_IMAGE_OAUTH_CLIENT_SECRET` | / | | image s2s client;空则回落到 `OAUTH_CLIENT_ID/SECRET` |
@@ -307,7 +306,7 @@
 | `infra-oauth` / `infra-image` | `CMD=oauth` / `CMD=image` |
 | `infra-catalog` / `infra-migrate` / `infra-migrate-catalog` | `CMD=catalog` / `migrate` / `migrate-catalog` |
 | **`infra-web`** | `APP=web`、`PUBLIC_API_BASE=https://oauth.kungal.com/api/v1`、`PUBLIC_IMAGE_CDN_BASE=https://image.kungal.iloveren.link` |
-| **`infra-wiki`** | `APP=wiki`、`PUBLIC_API_BASE=https://wiki.kungal.com/api`、`PUBLIC_AUTH_API_BASE=https://oauth.kungal.com/api/v1`、`PUBLIC_OAUTH_AUTHORIZE_BASE=https://oauth.kungal.com/api/v1`、`PUBLIC_OAUTH_CLIENT_ID=galgame-wiki-admin`、`PUBLIC_OAUTH_REDIRECT_URI=https://wiki.kungal.com/auth/callback`、`PUBLIC_IMAGE_CDN_BASE=https://image.kungal.iloveren.link` |
+| ~~`infra-wiki`~~ | **已退役(开放 API Phase 2 · W5,2026-07)**:wiki 前端(`apps/wiki`)与 `wiki.kungal.com` 域已退役,`infra-wiki` 镜像不再构建。galgame 富读现由 catalog internal 面(s2s,`nm_` key)承载,无独立 wiki 前端。 |
 | `kungal-api` / `kungal-migrate` / `kungal-web` | `CMD=server` / `CMD=migrate` / (web 无,public 走运行期) |
 | `moyu-api` / `moyu-migrate` / `moyu-web` | `CMD=server` / `CMD=migrate` / `APP=web`(public 走运行期) |
 

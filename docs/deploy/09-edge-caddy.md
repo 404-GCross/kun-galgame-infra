@@ -6,15 +6,12 @@ Caddy 是这套自托管栈最优雅的默认选择([Caddy 官方](https://caddy
 
 1. **前端必须用真实域名重新构建**。当前镜像把 public 配置烘焙成了 `http://localhost:1xxxx`(见 [02-build.md](./02-build.md))——浏览器会去连 localhost。上线前用真实 https 域名重建各 web:
    ```bash
-   # 例:infra wiki
-   docker build -f docker/nuxt.Dockerfile --build-arg APP=wiki \
-     --build-arg PUBLIC_API_BASE=https://wiki.kungal.com/api \
-     --build-arg PUBLIC_AUTH_API_BASE=https://oauth.kungal.com/api/v1 \
-     --build-arg PUBLIC_OAUTH_AUTHORIZE_BASE=https://oauth.kungal.com/api/v1 \
-     --build-arg PUBLIC_OAUTH_CLIENT_ID=galgame-wiki-admin \
-     --build-arg PUBLIC_OAUTH_REDIRECT_URI=https://wiki.kungal.com/auth/callback \
+   # 例:infra web(admin 前端)
+   docker build -f docker/nuxt.Dockerfile --build-arg APP=web \
+     --build-arg PUBLIC_API_BASE=https://oauth.kungal.com/api/v1 \
      --build-arg PUBLIC_IMAGE_CDN_BASE=https://image.kungal.iloveren.link \
-     -t kun-galgame-infra/wiki .
+     -t kun-galgame-infra/web .
+   # (infra wiki 前端 + wiki.kungal.com 域已于开放 API Phase 2 · W5 退役,不再构建)
    ```
    moyu/kungal 同理(`PUBLIC_*` / `OAUTH_*` 改真实域名)。**OAuth client 的 redirect_uri 也要在枢纽里改成 https 域名**(见 [03-bootstrap.md](./03-bootstrap.md) A.5)。
 2. **拓扑**:反代作为**容器**加入 `kun-galgame-infra_default` 网络,按**唯一容器名**回源(生态里 `web`/`api` 这两个服务别名在三个项目间冲突,必须用容器名)。上线后可**不再发布** 1xxxx host 端口,仅反代暴露 80/443。
@@ -27,8 +24,7 @@ Caddy 是这套自托管栈最优雅的默认选择([Caddy 官方](https://caddy
 |---|---|---|
 | `oauth.kungal.com` | `/api/v1/*` | `kun-galgame-infra-oauth-1:9277` |
 | `oauth.kungal.com` | 其余 | `kun-galgame-infra-web-1:3000`(admin) |
-| `wiki.kungal.com` | `/api/*` | `kun-galgame-infra-galgame-1:9280` |
-| `wiki.kungal.com` | 其余 | `kun-galgame-infra-wiki-1:3000` |
+| ~~`wiki.kungal.com`~~ | — | **已退役(开放 API Phase 2 · W5)**:域 + 独立 galgame(:9280)+ wiki 前端退役;galgame 富读走 catalog internal 面(s2s) |
 | `www.kungal.com` | `/api/*`(+ `/socket.io/*` 若启用) | `kungal-api-1:2334` |
 | `www.kungal.com` | 其余 | `kungal-web-1:7777` |
 | `www.moyu.moe` | `/api/v1/*` | `moyu-api-1:5214` |
@@ -52,13 +48,9 @@ oauth.kungal.com {
 	reverse_proxy kun-galgame-infra-web-1:3000
 }
 
-# —— 枢纽:galgame-wiki ——
-wiki.kungal.com {
-	handle /api/* {
-		reverse_proxy kun-galgame-infra-galgame-1:9280
-	}
-	reverse_proxy kun-galgame-infra-wiki-1:3000
-}
+# —— 枢纽:galgame-wiki:已退役(开放 API Phase 2 · W5,2026-07)——
+#   wiki.kungal.com 域 + 独立 galgame(:9280)+ wiki 前端均退役;galgame 富读改走
+#   catalog internal 面(s2s,nm_ key)。此站点块不再需要。
 
 # —— kungal 论坛 ——
 www.kungal.com {

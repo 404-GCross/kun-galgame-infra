@@ -66,7 +66,7 @@ server {
     location /       { proxy_pass http://moyu-web-1:3000; }
 }
 ```
-其余域名(`wiki.kungal.com`→galgame/wiki、`www.kungal.com`→kungal、`image.kungal.com`→MinIO)照 [§9.1](./09-edge-caddy.md) 映射复制。`www.kungal.com` 若重启 Socket.IO,给 `location /socket.io/ { proxy_pass http://kungal-api-1:2334; }` 即可(公共片段里的 Upgrade 头会生效)。
+其余域名(`www.kungal.com`→kungal、`image.kungal.com`→MinIO)照 [§9.1](./09-edge-caddy.md) 映射复制(`wiki.kungal.com` 已于开放 API Phase 2 · W5 退役,galgame 富读走 catalog internal 面 s2s)。`www.kungal.com` 若重启 Socket.IO,给 `location /socket.io/ { proxy_pass http://kungal-api-1:2334; }` 即可(公共片段里的 Upgrade 头会生效)。
 
 > Docker DNS 是动态的,`proxy_pass` 直接写容器名有时需用变量 + resolver 才能在目标重启后自动重解析:
 > ```nginx
@@ -104,7 +104,7 @@ networks:
 ```bash
 cd edge-nginx
 docker compose up -d nginx
-for d in oauth.kungal.com wiki.kungal.com www.kungal.com www.moyu.moe image.kungal.com; do
+for d in oauth.kungal.com www.kungal.com www.moyu.moe image.kungal.com; do   # wiki.kungal.com 已于 W5 退役
   docker compose run --rm certbot certonly --webroot -w /var/www/certbot \
     -d "$d" --email admin@kungal.com --agree-tos --no-eff-email
 done

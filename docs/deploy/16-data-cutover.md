@@ -216,9 +216,11 @@ $INFRA_WIKI sync-vndb-relations -tagmap docs/tagMap.ts
 $INFRA_WIKI sync-vndb -tagmap docs/tagMap.ts        # 增量(以后做成 cron)
 ```
 
-## 16.11 步骤 8 · 发布日期回填 + 萌萌点 —— **需要 galgame(wiki)服务在跑**
+## 16.11 步骤 8 · 发布日期回填 + 萌萌点 —— **需要 galgame 服务在跑**
 
-`backfill-release-date` 通过 HTTP 调 wiki 服务(`KUN_GALGAME_WIKI_BASE_URL=http://galgame:9280/api`),所以先把它起来:
+> **历史记录(已退役)**:本节是一次性 cutover 时的操作快照。独立 galgame 服务(`:9280`)、`KUN_GALGAME_WIKI_BASE_URL` env、`wiki.kungal.com` 域均已在**开放 API Phase 2 · W5(2026-07)**退役。galgame 现由 catalog 服务(`:9281`)承载;若重跑此类工具,改用 `KUN_NEXTMOE_API_BASE=http://catalog:9281` + `KUN_NEXTMOE_API_KEY`(internal-tier `nm_` key)走 internal 面。
+
+`backfill-release-date` 通过 HTTP 调 galgame 服务(**历史值** `KUN_GALGAME_WIKI_BASE_URL=http://galgame:9280/api`),所以先把它起来:
 
 ```bash
 docker compose --env-file "$INFRA/.env" -f "$INFRA/docker-compose.prod.yml" up -d galgame
@@ -252,7 +254,7 @@ docker exec "$PG" psql -U postgres -d kungalgame_patch  -tAc 'select max(id) fro
 docker exec "$PG" psql -U postgres -tAc \
   "select datname from pg_database where datistemplate=false order by 1"
 # 各站点 healthz(端口见 12-dokploy 域名表 / 00-architecture)
-curl -I https://oauth.kungal.com https://www.kungal.com https://www.moyu.moe https://wiki.kungal.com
+curl -I https://oauth.kungal.com https://www.kungal.com https://www.moyu.moe   # wiki.kungal.com 已于 W5 退役(404)
 ```
 
 迁移正确性的深度校验(反查原始 ID、计数核对)见 [docs/migration/user/07-verification.md](../migration/user/07-verification.md)。

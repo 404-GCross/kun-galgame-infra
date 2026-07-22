@@ -40,7 +40,7 @@
 | `KUN_DATABASE_URL` | `postgresql://postgres:191007@postgres:5432/kungalgame_patch?sslmode=disable` |
 | `OAUTH_SERVER_URL` | `http://oauth:9277/api/v1` |
 | `OAUTH_CLIENT_ID` / `_SECRET` | `df3ff6008d740bfacbe46aa8cf483cf2` / (注册时的明文) |
-| `KUN_GALGAME_WIKI_BASE_URL` | `http://catalog:9281/api`(W3 起指 catalog) |
+| `KUN_NEXTMOE_API_BASE` / `KUN_NEXTMOE_API_KEY` | `http://catalog:9281` / (internal-tier `nm_` key)——galgame 富读走 catalog internal 面(客户端拼 `/internal`);W5 起硬依赖 key,空则启动 fail-fast(旧名 `KUN_GALGAME_WIKI_BASE_URL` + legacy `/api` 读面已退役) |
 | `KUN_IMAGE_SERVICE_BASE_URL` / `KUN_IMAGE_CDN_BASE` | `http://image:9278` / `http://localhost:15002/kun-images`(CDN 在 prod 模式**必填**) |
 | `KUN_VISUAL_NOVEL_S3_*` | B2(补丁文件,**非**图床)— 测试机为 `__SET_ME__`,补丁下载需填真值 |
 
