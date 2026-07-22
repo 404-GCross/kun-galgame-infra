@@ -78,7 +78,8 @@ type chatRequest struct {
 type chatResponse struct {
 	Model   string `json:"model"`
 	Choices []struct {
-		Message chatMessage `json:"message"`
+		Message      chatMessage `json:"message"`
+		FinishReason string      `json:"finish_reason"`
 	} `json:"choices"`
 	Error *struct {
 		Message string `json:"message"`
@@ -129,6 +130,14 @@ func (t *HTTPTranslator) Translate(ctx context.Context, jaText string) (string, 
 	}
 	if len(cr.Choices) == 0 {
 		return "", "", fmt.Errorf("gateway returned no choices")
+	}
+	// A non-"stop" finish means the model never completed the translation —
+	// with reasoning models a max_tokens squeeze yields a mid-sentence PARTIAL
+	// that would pass the empty-output guard and land in prod (gate run
+	// 2026-07-22: 2 of 30). Empty finish_reason is tolerated: some gateways
+	// omit it, and the empty-content guard still backstops those.
+	if fr := cr.Choices[0].FinishReason; fr != "" && fr != "stop" {
+		return "", "", fmt.Errorf("generation finished with finish_reason=%q — refusing partial output", fr)
 	}
 	model := cr.Model
 	if model == "" {
