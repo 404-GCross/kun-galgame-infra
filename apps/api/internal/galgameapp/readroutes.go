@@ -6,11 +6,12 @@ import (
 	"github.com/gofiber/fiber/v3"
 )
 
-// readRoutes carries the handler + JWT-middleware references shared by the
-// internal /api read face and the devapi-gated /internal rich read face. The
-// SAME handler/service instances back both faces — no handler logic is
-// duplicated; only the mount prefix and the front gate differ. It is assembled
-// once in Mount and its register method is called on each face's parent group.
+// readRoutes carries the handler + JWT-middleware references for the galgame
+// read surface. Since 09-open-api-phase2 wave 05 A2 retired the legacy /api read
+// face, its register method backs the devapi-gated /internal rich read face
+// only. It is assembled once in Mount and its register method is called on that
+// face's parent group. (The handler/service instances are the same ones the
+// /api write + staff face uses — no handler logic is duplicated.)
 type readRoutes struct {
 	galgameH        *galgameHandler.GalgameHandler
 	searchH         *galgameHandler.SearchHandler
@@ -30,20 +31,19 @@ type readRoutes struct {
 	jwtAuth     fiber.Handler
 }
 
-// register mounts the 44 GET read routes onto parent (the /api group or the
-// /internal group), creating the five entity sub-groups. It registers ONLY read
-// routes and preserves the registration-order discipline of the original /api
-// face:
+// register mounts the 44 GET read routes onto parent (the /internal group since
+// wave 05 A2; historically also the /api group), creating the five entity
+// sub-groups. It registers ONLY read routes and preserves the ordering the /api
+// read face established:
 //   - static / multi-segment paths (calendar, stats, user/:id/*, officials|tags
 //     reverse-lookups) and /mine + /messages/mine are registered BEFORE the
 //     galgame /:gid catch-all, so ":gid" never binds "mine"/"calendar"/… .
 //   - tag/official/engine /search is registered before /:name (else /:name binds
 //     "search"); series /search before /:id.
 //
-// Because both faces call this one function, the read-route order can never
-// drift between them. Write / admin / S2S-feed / catalog-proxy routes are NOT
-// part of the read face — the /api caller registers those separately, AFTER this
-// (so its empty-prefix jwtAuth fences only cover the writes, never these reads).
+// Keeping the registration in this one helper means the read-route order stays
+// correct on the face it backs. Write / admin / S2S-feed / catalog-proxy routes
+// are NOT part of the read face — the /api caller registers those separately.
 func (r readRoutes) register(parent fiber.Router) {
 	// ── Galgame (21) ──
 	galgame := parent.Group("/galgame")

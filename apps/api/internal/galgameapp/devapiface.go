@@ -92,29 +92,28 @@ func (f devapiFace) recordUsage(surface string) fiber.Handler {
 	}
 }
 
-// mountInternal mounts the /internal rich read face: the 44 GET read routes of
-// the internal /api/{galgame,tag,official,engine,series} face, byte-identical,
-// behind the shared devapi chain with a RequireTier(internal) gate (free/trusted
-// keys → 403). The chain order mirrors the /v1 chain with two changes:
-// RequireTier is inserted after recordUsage, and NO sfwGate is attached —
-// content_limit passes through untouched, which is the byte-compat semantics
-// itself (the internal face must serve NSFW rows to downstream consumers).
+// mountInternal mounts the /internal rich read face: the 44 GET read routes the
+// galgame read surface serves (galgame/tag/official/engine/series), behind the
+// shared devapi chain with a RequireTier(internal) gate (free/trusted keys →
+// 403). The chain order mirrors the /v1 chain with two changes: RequireTier is
+// inserted after recordUsage, and NO sfwGate is attached — content_limit passes
+// through untouched (the internal face must serve NSFW rows to downstream
+// consumers). Since 09-open-api-phase2 wave 05 A2 this is the SOLE host of those
+// reads: the legacy /api read face was retired that wave.
 //
 // RateLimit/Quota are kept on the chain for uniformity even though the internal
 // tier is unlimited (TierLimits → no-op). This face is READ-ONLY: writes,
 // admin and the catalog proxy are NOT exposed here (out of scope).
 //
 // It ALSO mounts the two S2S cron feeds — /galgame/messages/feed and
-// /galgame/revisions/recent — which on the legacy /api face carry
-// OAuthClientBasicAuth (see mount.go). Here they ride the SAME devapi chain as
-// the reads (nm_ key IS the identity — no Basic auth): scope galgame:read,
-// internal tier, metered under galgame_internal. This is 09-open-api-phase2
-// wave 05 A1 (feeds收编), a pure-addition move — the legacy /api registrations
-// stay byte-for-byte untouched (their retirement is A2). They are registered
-// ONLY here and deliberately NOT through reads.register: that helper backs BOTH
-// faces, so a feed added there would double-register on /api and collide with
-// the existing Basic-auth registration. /taxonomy/recent is NOT mounted — it is
-// a suspected dead route under post-mortem (V2), retired outright by A2 if so.
+// /galgame/revisions/recent — which downstream kungal/moyu/letmoe cron pull with
+// the nm_ key (the key IS the identity — no Basic auth): scope galgame:read,
+// internal tier, metered under galgame_internal. Wave 05 A1 收编 them here off
+// the legacy /api Basic-auth face; A2 then retired those /api registrations. The
+// feeds are registered directly here and deliberately NOT through reads.register
+// — that helper is the read projection, and the S2S feeds are not part of it.
+// /taxonomy/recent is NOT mounted: the post-mortem (V2) confirmed it a dead
+// route, so A2 dropped it outright rather than migrating it.
 func mountInternal(a *app.App, face devapiFace, reads readRoutes, messageH *galgameHandler.MessageHandler, revisionH *galgameHandler.RevisionHandler) {
 	internal := a.Fiber.Group("/internal",
 		face.mw.ResolveCredential,

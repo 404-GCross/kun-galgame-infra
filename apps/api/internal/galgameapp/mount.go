@@ -28,7 +28,6 @@ import (
 	galgameRepo "api/internal/platform/galgame/repository"
 	galgameSearch "api/internal/platform/galgame/search"
 	galgameService "api/internal/platform/galgame/service"
-	siteRepo "api/internal/platform/site/repository"
 	"api/pkg/catalogclient"
 	"api/pkg/config"
 	"api/pkg/imageclient"
@@ -102,9 +101,6 @@ func Mount(a *app.App, cfg *config.Config, deps Deps) {
 	adminRepo := galgameRepo.NewAdminRepository(wiki)
 	messageRepo := galgameRepo.NewMessageRepository(wiki)
 	taxRevRepo := galgameRepo.NewTaxonomyRevisionRepository(wiki)
-	// OAuth client repo lives on the OAuth DB (read-only from galgame service);
-	// used to authenticate Basic-Auth cron callers on the message feed.
-	oauthClientRepo := siteRepo.NewOAuthClientRepository(oauthDB)
 
 	// Services
 	galgameSvc := galgameService.NewGalgameService(galgameRepository, revisionRepo, prRepo, userReadRepo).
@@ -215,12 +211,14 @@ func Mount(a *app.App, cfg *config.Config, deps Deps) {
 	// ones additionally see their own pending/declined drafts.
 	optionalJWT := middleware.OptionalJWT(tokenVerifier)
 
-	// ── Read-route registrar (shared by the /api internal face and the
-	// devapi-gated /internal rich read face) ──
-	// The SAME handler/service instances back both faces; readRoutes.register
-	// owns the read-route registration order (static/multi-segment + /mine before
-	// the galgame /:gid catch-all; taxonomy /search before /:name; series /search
-	// before /:id) so it can never drift between the two faces.
+	// ── Read-route registrar for the devapi-gated /internal rich read face ──
+	// Since 09-open-api-phase2 wave 05 A2 retired the legacy /api read face,
+	// readRoutes.register now backs the /internal face only (see mountInternal).
+	// It still owns the read-route registration order (static/multi-segment +
+	// /mine before the galgame /:gid catch-all; taxonomy /search before /:name;
+	// series /search before /:id) so that single face stays correctly ordered.
+	// The handler/service instances are the same ones the /api write + staff face
+	// uses below — no handler logic is duplicated.
 	reads := readRoutes{
 		galgameH:        galgameH,
 		searchH:         searchH,
@@ -238,53 +236,25 @@ func Mount(a *app.App, cfg *config.Config, deps Deps) {
 		jwtAuth:         jwtAuth,
 	}
 
-	// API routes
+	// API routes. Since 09-open-api-phase2 wave 05 A2 the /api face is
+	// WRITE + STAFF only: the 44 GET reads and the three S2S cron feeds it used
+	// to carry were retired here. The reads moved to the devapi-gated /internal
+	// rich read face (reads.register(internal) in mountInternal); the two live
+	// feeds (messages/feed + revisions/recent) ride that same /internal chain,
+	// and taxonomy/recent was a confirmed dead route (dropped, not migrated).
+	// Until the 06 wave decides the write-face story, /api carries only writes,
+	// the user submission flow, admin/staff routes, image upload, the edit face
+	// and the staff catalog-browser proxy.
 	api := a.Fiber.Group("/api")
-	// Reads first: every GET read route across galgame/tag/official/engine/
-	// series. Registering them here — before the write/feed/proxy routes and
-	// their empty-prefix jwtAuth fences below — preserves the original ordering,
-	// because a Fiber empty-prefix fence only covers routes registered AFTER it;
-	// the reads registered here stay outside every write fence.
-	reads.register(api)
 
-	// ── Galgame writes / S2S feeds / catalog proxy ──
+	// ── Galgame writes / catalog proxy / staff ──
 	galgame := api.Group("/galgame")
-
-	// ── Cross-service endpoints (OAuth Client Basic Auth) ──
-	//
-	// MUST be registered BEFORE the `galgameAuth := galgame.Group("", jwtAuth)`
-	// line below. Fiber v3's `Group("", middleware)` with an empty prefix is
-	// equivalent to `app.Use("/galgame", middleware)` (see fiber/v3/group.go
-	// Group ctor: it calls `app.register(methodUse, prefix, …)` when the group
-	// has handlers). Use() then matches every `/galgame/*` route registered
-	// AFTER it — including ones registered on the parent `galgame` group
-	// without `galgameAuth`. So any endpoint that needs non-Bearer auth
-	// (Basic / public) MUST land above this fence; otherwise jwtAuth runs
-	// first and rejects Basic with code=10002.
-	//
-	// /messages/feed: kungal/moyu cron pulls wiki messages here via Basic Auth.
-	galgame.Get("/messages/feed",
-		middleware.OAuthClientBasicAuth(oauthClientRepo),
-		messageH.ListFeed,
-	)
-	// /revisions/recent: kungal/moyu cron pulls merged-revision (edit) events
-	// here via Basic Auth → mirror into their local activity timelines.
-	galgame.Get("/revisions/recent",
-		middleware.OAuthClientBasicAuth(oauthClientRepo),
-		revisionH.RecentRevisions,
-	)
-	// /taxonomy/recent: kungal/moyu cron pulls taxonomy change events (e.g.
-	// series creation) here via Basic Auth → mirror into their local timelines.
-	// Filterable by ?entity=&action= (e.g. entity=series&action=created).
-	galgame.Get("/taxonomy/recent",
-		middleware.OAuthClientBasicAuth(oauthClientRepo),
-		taxRevH.RecentFeed,
-	)
 
 	// Internal catalog data browser (step 19): staff-only (catalog.review = ren)
 	// read-only proxy to the catalog S2S read face — the Basic credentials stay
-	// server-side. A non-empty prefix means this group does NOT trip the
-	// empty-prefix fence gotcha above; it carries its own jwtAuth + permission gate.
+	// server-side. Registered ABOVE the empty-prefix Bearer fence below (which
+	// would otherwise blanket every /galgame/* route); it carries its own jwtAuth
+	// + permission gate. A non-empty prefix keeps it clear of that fence gotcha.
 	catalogProxy := galgameHandler.NewCatalogProxyHandler(catalogCli)
 	catBrowse := galgame.Group("/catalog", jwtAuth, middleware.RequirePermission(catalogPerm.Resolver, catalogPerm.Review))
 	catBrowse.Get("/stats", catalogProxy.Stats)
@@ -293,7 +263,12 @@ func Mount(a *app.App, cfg *config.Config, deps Deps) {
 	catBrowse.Get("/works/:id/credits", catalogProxy.Credits)
 	catBrowse.Get("/labels/:id/works", catalogProxy.LabelWorks)
 
-	// ─── Bearer JWT fence — every route below this point inherits jwtAuth ───
+	// ─── Bearer JWT fence — every /galgame route below inherits jwtAuth ───
+	// Fiber v3's Group("", jwtAuth) with an EMPTY prefix is equivalent to
+	// app.Use("/galgame", jwtAuth): it matches every /galgame/* route registered
+	// AFTER it, including ones on the parent `galgame` group. Anything that must
+	// NOT be blanketed by jwtAuth (or needs its own gate, like the catalog proxy
+	// above) therefore has to be registered ABOVE this line.
 	galgameAuth := galgame.Group("", jwtAuth)
 	// POST /galgame is the admin direct-publish bypass: it creates a
 	// status=0 entry immediately, skipping the user submission queue. Regular
@@ -319,19 +294,18 @@ func Mount(a *app.App, cfg *config.Config, deps Deps) {
 	galgameAuth.Delete("/:gid/contributors/:id", contributorH.Delete)
 
 	// ── User submission flow ──
-	// GET /mine is registered earlier (before the public /:gid catch-all)
-	// — see the comment there. submit/claim are POST and patch/delete are
-	// PATCH/DELETE, none of which collide with GET /:gid, so they stay
-	// here in the auth group.
+	// The read companion GET /mine now lives on the /internal read face (its /api
+	// registration retired in A2). submit/claim are POST and patch/delete are
+	// PATCH/DELETE, so none collide on /:gid and they stay here in the auth group.
 	galgameAuth.Post("/submit", submissionH.Submit)
 	galgameAuth.Post("/:gid/claim", submissionH.Claim)
 	galgameAuth.Patch("/:gid", submissionH.PatchDraft)
 	galgameAuth.Delete("/:gid", submissionH.DeleteDraft)
 
 	// ── Messages ──
-	// GET /messages/mine (end-user JWT) is a read route, registered via
-	// reads.register above — before the /:gid catch-all and this fence.
-	// /messages/feed is Basic-Auth, registered ABOVE the fence; see there.
+	// GET /messages/mine and the S2S GET /messages/feed are read routes; since A2
+	// both live on the /internal read face (feed via mountInternal, /messages/mine
+	// via reads.register). Neither is registered on this /api write face anymore.
 
 	// ── Admin ──
 	// Admin endpoints require both JWT validity AND galgame.admin_access
@@ -347,7 +321,7 @@ func Mount(a *app.App, cfg *config.Config, deps Deps) {
 	// content-side companion to the OAuth anonymize action).
 	admin.Post("/galgame/ban-by-user/:userId", adminH.BanGalgamesByUser)
 
-	// ── Tag writes ── (GET reads registered via reads.register above)
+	// ── Tag writes ── (GET reads live on the /internal read face since A2)
 	// Create: any logged-in user (introduce a tag for original/doujin works
 	// missing from VNDB). Update/Delete/revert: admin/moderator (role checked
 	// inside the handler, same as series).
@@ -357,21 +331,21 @@ func Mount(a *app.App, cfg *config.Config, deps Deps) {
 	tag.Delete("/:id", jwtAuth, tagH.Delete)
 	tag.Post("/:id/revert", jwtAuth, taxRevH.TagRevert)
 
-	// ── Official writes ── (GET reads registered via reads.register above)
+	// ── Official writes ── (GET reads live on the /internal read face since A2)
 	official := api.Group("/official")
 	official.Post("/", jwtAuth, officialH.Create)
 	official.Put("/", jwtAuth, officialH.Update)
 	official.Delete("/:id", jwtAuth, officialH.Delete)
 	official.Post("/:id/revert", jwtAuth, taxRevH.OfficialRevert)
 
-	// ── Engine writes ── (GET reads registered via reads.register above)
+	// ── Engine writes ── (GET reads live on the /internal read face since A2)
 	engine := api.Group("/engine")
 	engine.Post("/", jwtAuth, engineH.Create)
 	engine.Put("/", jwtAuth, engineH.Update)
 	engine.Delete("/:id", jwtAuth, engineH.Delete)
 	engine.Post("/:id/revert", jwtAuth, taxRevH.EngineRevert)
 
-	// ── Series writes ── (GET reads registered via reads.register above)
+	// ── Series writes ── (GET reads live on the /internal read face since A2)
 	series := api.Group("/series")
 	seriesAuth := series.Group("", jwtAuth)
 	seriesAuth.Post("/", seriesH.Create)
@@ -385,13 +359,13 @@ func Mount(a *app.App, cfg *config.Config, deps Deps) {
 	// newDevapiFace builds the middleware chain + usage recorder + flush
 	// lifecycle a SINGLE time; both faces register against it — no second flush
 	// ticker, no second OnPreShutdown Redis Close.
-	//   /internal   = the internal-tier rich read face: the 44 read routes
-	//     registered above, byte-identical, gated by RequireTier(internal); NO
-	//     sfwGate (content_limit passes through untouched). Since 09-open-api-
-	//     phase2 wave 05 A1 it ALSO carries the two S2S cron feeds
-	//     (/galgame/messages/feed + /galgame/revisions/recent) on the same devapi
-	//     chain — the legacy /api Basic-auth feed registrations above are left
-	//     untouched (A2 retires them). Downstream kungal/moyu/letmoe S2S consumers.
+	//   /internal   = the internal-tier rich read face: the 44 read routes,
+	//     gated by RequireTier(internal); NO sfwGate (content_limit passes
+	//     through untouched). Since 09-open-api-phase2 wave 05 A2 this is the
+	//     SOLE host of those reads (the legacy /api read face was retired) and it
+	//     ALSO carries the two S2S cron feeds (/galgame/messages/feed +
+	//     /galgame/revisions/recent) on the same devapi chain. Downstream
+	//     kungal/moyu/letmoe S2S consumers.
 	//   /v1/galgame = the public third-party projection (frozen contract).
 	face := newDevapiFace(a, cfg)
 	mountInternal(a, face, reads, messageH, revisionH)
