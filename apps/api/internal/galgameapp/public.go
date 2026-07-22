@@ -24,9 +24,13 @@ func mountPublic(
 	searchSvc *galgameSearch.Service,
 	galgameH *galgameHandler.GalgameHandler,
 	entityGalgamesH *galgameHandler.EntityGalgamesHandler,
+	publicTaxSvc *galgameService.PublicTaxonomyService,
 	optionalJWT fiber.Handler,
 ) {
 	publicH := galgameHandler.NewPublicHandler(galgameSvc, searchSvc)
+	// Curated taxonomy four-family public face (W1b): tags / officials / engines /
+	// series by-id projections over the same devapi chain + Meilisearch service.
+	taxH := galgameHandler.NewPublicTaxonomyHandler(publicTaxSvc, searchSvc)
 
 	// Force the content_limit gate on passthrough routes that honor the param, so
 	// a caller can't pass content_limit=all/nsfw to reach NSFW on the sfw face.
@@ -69,9 +73,30 @@ func mountPublic(
 	// spec, and anything reachable on the frozen /v1 face becomes de-facto
 	// contract (the same reasoning that made search a projection instead of a
 	// raw passthrough). Curated taxonomy projections come as a follow-up.
-	// Entity → galgames reverse-lookups (carry galgames → sfw-forced).
+	// ── Taxonomy four-family public faces (W1b) ──
+	// Static segments (search / multi) are registered BEFORE each family's /:id
+	// catch-all so they never bind to the id param; the entity→galgames reverse-
+	// lookups (sfw-forced, they carry galgame previews) keep their existing wiring.
+	// Tags (list / search / multi / {id} / {id}/galgame-ids + existing reverse-lookup).
+	v1.Get("/tags", taxH.TagList)
+	v1.Get("/tags/search", taxH.TagSearch)
+	v1.Get("/tags/multi", taxH.TagMulti)
 	v1.Get("/tags/:id/galgames", sfwGate, entityGalgamesH.TagGalgames)
+	v1.Get("/tags/:id/galgame-ids", taxH.TagGalgameIDs)
+	v1.Get("/tags/:id", taxH.Tag)
+	// Officials (list / search / {id} / {id}/galgame-ids + existing reverse-lookup).
+	v1.Get("/officials", taxH.OfficialList)
+	v1.Get("/officials/search", taxH.OfficialSearch)
 	v1.Get("/officials/:id/galgames", sfwGate, entityGalgamesH.OfficialGalgames)
+	v1.Get("/officials/:id/galgame-ids", taxH.OfficialGalgameIDs)
+	v1.Get("/officials/:id", taxH.Official)
+	// Engines (list / {id} / {id}/galgame-ids).
+	v1.Get("/engines", taxH.EngineList)
+	v1.Get("/engines/:id/galgame-ids", taxH.EngineGalgameIDs)
+	v1.Get("/engines/:id", taxH.Engine)
+	// Series (list / {id}).
+	v1.Get("/series", taxH.SeriesList)
+	v1.Get("/series/:id", taxH.Series)
 	// Detail catch-all — MUST be last.
 	v1.Get("/:id", publicH.Detail)
 }

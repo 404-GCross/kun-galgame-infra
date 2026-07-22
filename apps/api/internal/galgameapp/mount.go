@@ -118,6 +118,10 @@ func Mount(a *app.App, cfg *config.Config, deps Deps) {
 	// the polymorphic taxonomy_revision audit. Every mutating handler
 	// path below routes through it.
 	taxSvc := galgameService.NewTaxonomyService(tagRepo, officialRepo, engineRepo, seriesRepo, taxRevRepo, galgameRepository)
+	// PublicTaxonomyService — the curated /v1 by-id read projection for the four
+	// taxonomy families (W1b). Reuses the taxonomy repos + borrows galgameSvc for
+	// the thin-item member/preview hydration (non-N+1). Read-only, no audit.
+	publicTaxSvc := galgameService.NewPublicTaxonomyService(tagRepo, officialRepo, engineRepo, seriesRepo, galgameSvc)
 
 	// Meilisearch: indexer + write-through hook + search service
 	indexer := galgameSearch.NewIndexer(searchClient)
@@ -360,5 +364,5 @@ func Mount(a *app.App, cfg *config.Config, deps Deps) {
 	mountInternalWrites(a, face, writes, jwtAuth)
 	mountInternalPropose(a, face, proposeH, jwtAuth)
 	mountInternal(a, face, reads, messageH, revisionH)
-	mountPublic(a, face, galgameSvc, searchSvc, galgameH, entityGalgamesH, optionalJWT)
+	mountPublic(a, face, galgameSvc, searchSvc, galgameH, entityGalgamesH, publicTaxSvc, optionalJWT)
 }

@@ -232,9 +232,12 @@ func TestPublicW1aSmoke(t *testing.T) {
 			return err == nil && resp.Total >= 1
 		}, 15*time.Second, 300*time.Millisecond, "meili did not index the seed in time")
 	}
+	officialRepo := galgameRepo.NewOfficialRepository(testDB)
+	tagRepo := galgameRepo.NewTagRepository(testDB)
 	galgameH := galgameHandler.NewGalgameHandler(svc, nil, nil)
-	entityH := galgameHandler.NewEntityGalgamesHandler(
-		galgameRepo.NewOfficialRepository(testDB), galgameRepo.NewTagRepository(testDB), svc)
+	entityH := galgameHandler.NewEntityGalgamesHandler(officialRepo, tagRepo, svc)
+	publicTaxSvc := galgameService.NewPublicTaxonomyService(
+		tagRepo, officialRepo, galgameRepo.NewEngineRepository(testDB), galgameRepo.NewSeriesRepository(testDB), svc)
 
 	application := &app.App{Fiber: fiber.New()}
 	face := devapiFace{
@@ -242,7 +245,7 @@ func TestPublicW1aSmoke(t *testing.T) {
 		usageRec: devapi.NewUsageRecorder(devapi.NewRepository(testDB), devapi.NewRedisStore(nil)),
 	}
 	optionalJWT := middleware.OptionalJWT(oidctoken.NewVerifierWithJWKS(testJWTSecret, ""))
-	mountPublic(application, face, svc, searchSvc, galgameH, entityH, optionalJWT)
+	mountPublic(application, face, svc, searchSvc, galgameH, entityH, publicTaxSvc, optionalJWT)
 	f := application.Fiber
 
 	readKey := w1aMintKey(t, "w1asmoke_read", devapi.TierInternal, []string{devapi.ScopeGalgameRead}, false)
