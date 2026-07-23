@@ -73,8 +73,35 @@ export interface DevUsageApp {
   status_5xx: number
 }
 
+// One face's total usage over the window, for the per-face breakdown. face =
+// catalog | galgame | galgame_internal[_write|_propose]. Sorted by volume DESC.
+export interface DevUsageFace {
+  face: string
+  count: number
+  status_4xx: number
+  status_5xx: number
+}
+
+// One active key's real-time budget, read from the Redis enforcement counters
+// (same source the middleware writes, not estimated off the rollup). rate_limit
+// / quota_limit are EFFECTIVE (tier default + any override; 0 = unlimited).
+// quota_used is today's request count (UTC); quota_reset is the epoch second at
+// the next UTC midnight when the daily counter rolls over.
+export interface DevLiveKey {
+  app_name: string
+  key_id: number
+  rate_limit: number
+  quota_limit: number
+  quota_used: number
+  quota_remaining: number
+  quota_reset: number
+}
+
 // Account-level usage summary from GET /dev/usage?days=N — window totals, the
-// dense daily series, and the per-app breakdown (sorted by volume).
+// dense daily series, the per-app + per-face breakdowns, and the per-key
+// live-remaining rows. live is empty and live_unavailable is true (omitted when
+// false) when the Redis enforcement backend is unreachable (read-face
+// degradation, never a 5xx).
 export interface DevUsageSummary {
   days: number
   since: string
@@ -83,6 +110,9 @@ export interface DevUsageSummary {
   total_5xx: number
   daily: DevUsageDay[]
   by_app: DevUsageApp[]
+  by_face: DevUsageFace[]
+  live: DevLiveKey[]
+  live_unavailable?: boolean
 }
 
 // The signed-in ecosystem account (subset of /auth/me we render in the portal).

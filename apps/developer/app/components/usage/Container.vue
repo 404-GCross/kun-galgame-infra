@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import type { DevUsageSummary } from '~~/shared/types/dev'
+import type { DevLiveKey, DevUsageSummary } from '~~/shared/types/dev'
 
-// Account-level usage: window totals + a daily volume chart + a per-app
-// breakdown, over a selectable window (7 / 14 / 30 days). Reads GET /dev/usage;
-// the URL is reactive so switching the window refetches (SSR-rendered first).
+// Account-level usage: window totals + a daily volume chart + per-app / per-face
+// breakdowns + the per-key real-time remaining, over a selectable window
+// (7 / 14 / 30 days). Reads GET /dev/usage; the URL is reactive so switching the
+// window refetches (SSR-rendered first).
 useSeoMeta({ title: '用量', robots: 'noindex' })
 
 const days = ref(7)
@@ -16,6 +17,31 @@ const { data } = await useApiFetch<DevUsageSummary>(
 const summary = computed(() => data.value)
 const daily = computed(() => summary.value?.daily ?? [])
 const byApp = computed(() => summary.value?.by_app ?? [])
+const byFace = computed(() => summary.value?.by_face ?? [])
+const live = computed(() => summary.value?.live ?? [])
+const liveUnavailable = computed(() => summary.value?.live_unavailable ?? false)
+
+const faceLabel: Record<string, string> = {
+  galgame: 'Galgame',
+  catalog: 'Catalog',
+  galgame_internal: 'Galgame 内部',
+  galgame_internal_write: 'Galgame 内部写',
+  galgame_internal_propose: 'Galgame 内部提议'
+}
+const labelFace = (face: string) => faceLabel[face] ?? face
+
+const fmt = (n: number) => n.toLocaleString()
+
+// Per-key daily-quota fill ratio (0–100), for the usage bar. An unlimited key
+// (quota_limit 0) shows no bar.
+const usedPct = (k: DevLiveKey) =>
+  k.quota_limit > 0
+    ? Math.min(100, Math.round((k.quota_used / k.quota_limit) * 100))
+    : 0
+
+// The bar tone escalates as a key nears its daily quota. Solid colors only.
+const barTone = (pct: number) =>
+  pct >= 90 ? 'bg-danger' : pct >= 70 ? 'bg-warning' : 'bg-primary'
 
 const total = computed(() => summary.value?.total_count ?? 0)
 const total4xx = computed(() => summary.value?.total_4xx ?? 0)
@@ -102,6 +128,78 @@ const toneClass: Record<string, string> = {
       <UsageChart :days="daily" />
     </KunCard>
 
+    <!-- Live per-key remaining (real-time, from the enforcement counters) -->
+    <div>
+      <div class="mb-3 flex items-center justify-between">
+        <h2 class="text-lg font-semibold text-foreground">实时配额剩余</h2>
+        <span class="text-xs text-default-400">按 UTC 日 · 实时</span>
+      </div>
+
+      <KunCard v-if="liveUnavailable" content-class="p-10">
+        <p class="text-center text-default-400">
+          实时配额暂不可用(计数后端不可达),稍后重试。
+        </p>
+      </KunCard>
+
+      <div
+        v-else-if="live.length"
+        class="grid grid-cols-1 gap-4 md:grid-cols-2"
+      >
+        <div
+          v-for="k in live"
+          :key="k.key_id"
+          class="rounded-xl border border-default-200 bg-content1 px-5 py-4"
+        >
+          <div class="flex items-center justify-between gap-2">
+            <span class="truncate font-medium text-foreground">{{
+              k.app_name
+            }}</span>
+            <KunChip color="default" variant="flat" size="xs">
+              #{{ k.key_id }}
+            </KunChip>
+          </div>
+
+          <template v-if="k.quota_limit > 0">
+            <div class="mt-3 flex items-baseline justify-between text-sm">
+              <span class="text-default-500">今日剩余</span>
+              <span class="font-semibold text-foreground">
+                {{ fmt(k.quota_remaining) }}
+                <span class="text-xs font-normal text-default-400">
+                  / {{ fmt(k.quota_limit) }}
+                </span>
+              </span>
+            </div>
+            <div
+              class="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-default-200"
+            >
+              <div
+                class="h-full rounded-full transition-all"
+                :class="barTone(usedPct(k))"
+                :style="{ width: `${usedPct(k)}%` }"
+              />
+            </div>
+            <p class="mt-2 text-xs text-default-400">
+              已用 {{ fmt(k.quota_used) }} · 速率上限
+              {{ fmt(k.rate_limit) }} 次/分
+            </p>
+          </template>
+
+          <template v-else>
+            <p class="mt-3 text-sm text-default-500">配额无限制(内部层)</p>
+            <p class="mt-1 text-xs text-default-400">
+              已用 {{ fmt(k.quota_used) }}
+            </p>
+          </template>
+        </div>
+      </div>
+
+      <KunCard v-else content-class="p-10">
+        <p class="text-center text-default-400">
+          还没有活跃密钥。在应用详情页创建一把即可开始调用。
+        </p>
+      </KunCard>
+    </div>
+
     <!-- Per-app breakdown -->
     <div>
       <h2 class="mb-3 text-lg font-semibold text-foreground">按应用</h2>
@@ -175,8 +273,62 @@ const toneClass: Record<string, string> = {
       </KunCard>
     </div>
 
+    <!-- Per-face breakdown -->
+    <div v-if="byFace.length">
+      <h2 class="mb-3 text-lg font-semibold text-foreground">按面</h2>
+      <KunCard content-class="p-0" class-name="overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full min-w-[32rem] text-sm">
+            <thead>
+              <tr
+                class="border-b border-default-200 text-left text-default-400"
+              >
+                <th class="px-4 py-2 font-medium">面</th>
+                <th class="px-4 py-2 text-right font-medium">请求数</th>
+                <th class="px-4 py-2 text-right font-medium">4xx</th>
+                <th class="px-4 py-2 text-right font-medium">5xx</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="(row, i) in byFace"
+                :key="row.face"
+                class="border-b border-default-100"
+                :class="i === byFace.length - 1 && 'border-b-0'"
+              >
+                <td class="px-4 py-2">
+                  <KunChip color="default" variant="flat" size="xs">
+                    {{ labelFace(row.face) }}
+                  </KunChip>
+                </td>
+                <td class="px-4 py-2 text-right font-medium text-foreground">
+                  {{ fmt(row.count) }}
+                </td>
+                <td
+                  class="px-4 py-2 text-right"
+                  :class="
+                    row.status_4xx > 0 ? 'text-warning' : 'text-default-400'
+                  "
+                >
+                  {{ fmt(row.status_4xx) }}
+                </td>
+                <td
+                  class="px-4 py-2 text-right"
+                  :class="
+                    row.status_5xx > 0 ? 'text-danger' : 'text-default-400'
+                  "
+                >
+                  {{ fmt(row.status_5xx) }}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </KunCard>
+    </div>
+
     <p class="text-xs text-default-400">
-      免费层配额:每密钥 60 次/分 · 50,000 次/日。用量按 UTC
+      「实时配额剩余」直接读自执法计数器(与限流同源);上方历史用量按 UTC
       日累计,计量周期性落库,最新数据可能有几分钟延迟。
     </p>
   </div>
