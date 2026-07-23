@@ -51,6 +51,14 @@ type Config struct {
 	// only when this is true AND the trust client is configured; any check
 	// error/timeout fails OPEN (posting is never blocked).
 	TrustCheckEnabled bool
+	// DevPortalClientIDs is the developer-platform client fence allowlist: the
+	// OAuth client ids permitted to reach the /dev/* self-service face with a
+	// user token (docs/developer-platform/03-auth-and-tiers.md). First-party
+	// /auth/login tokens (empty client_id) are always admitted; an EMPTY
+	// allowlist therefore fences /dev/* to first-party tokens only (fail-closed,
+	// same shape as TrustForwarderClientIDs). Set it to the developer portal's
+	// own confidential client id once that client is registered.
+	DevPortalClientIDs []string
 	// GalgameImageClient is a SECOND image client identity, used only by the
 	// galgame-image-refping job. The job runs in the oauth container (central
 	// scheduler), where ImageClient is the *account* client — but galgame
@@ -577,6 +585,7 @@ func Load() (*Config, error) {
 	}
 	cfg.TrustCallbackSecret = getEnv("KUN_TRUST_CALLBACK_SECRET", "")
 	cfg.TrustForwarderClientIDs = splitCSV(getEnv("KUN_TRUST_FORWARDER_CLIENT_IDS", ""))
+	cfg.DevPortalClientIDs = splitCSV(getEnv("KUN_DEV_PORTAL_CLIENT_IDS", ""))
 	cfg.TrustScanEnabled, _ = strconv.ParseBool(getEnv("KUN_TRUST_SCAN_ENABLED", "false"))
 	cfg.TrustCheckEnabled, _ = strconv.ParseBool(getEnv("KUN_TRUST_CHECK_ENABLED", "false"))
 

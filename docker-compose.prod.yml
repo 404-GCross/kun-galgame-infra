@@ -237,6 +237,14 @@ services:
       # five verifiers run with KUN_OIDC_JWKS_URL wired (else new tokens 401).
       KUN_OIDC_KEY_ENC_KEY: ${KUN_OIDC_KEY_ENC_KEY:-}
       KUN_OIDC_SIGN_ASYMMETRIC: ${KUN_OIDC_SIGN_ASYMMETRIC:-false}
+      # Developer-platform client fence (docs/developer-platform/03). CSV of the
+      # OAuth client ids allowed to reach the /dev/* self-service face with a user
+      # token — set this to the developer portal's own confidential client id once
+      # it is registered (the portal logs users in as that client via auth-code +
+      # PKCE). Empty is fail-closed: only first-party /auth/login tokens pass, so
+      # the portal's own users would be 403'd until this is set. Any OTHER
+      # third-party app's user token is always 403 (confused-deputy guard).
+      KUN_DEV_PORTAL_CLIENT_IDS: ${KUN_DEV_PORTAL_CLIENT_IDS:-}
     expose: ["9277"]
     labels:
       # Traefik routing for this service on oauth.kungal.com — OWNED HERE, not
