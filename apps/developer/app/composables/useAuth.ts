@@ -15,12 +15,23 @@ export const useAuth = () => {
     secure: !import.meta.dev
   })
 
+  // Which login produced this session — 'oauth' (SSO) or 'password' (fallback).
+  // Selects the refresh/logout path (OAuth tokens can't use /api/v1/auth/*).
+  // For SSO it is written server-side by the exchange route; for the password
+  // fallback we write it here. Both live at Path=/ so the client can read it.
+  const authMode = useCookie('auth_mode', {
+    maxAge: 60 * 60 * 24 * 90,
+    sameSite: 'lax',
+    secure: !import.meta.dev
+  })
+
   const setAccessToken = (token: string) => {
     accessToken.value = token
   }
 
   const clearAuth = () => {
     accessToken.value = null
+    authMode.value = null
     userStore.clearUser()
   }
 
@@ -32,13 +43,20 @@ export const useAuth = () => {
     if (response.code === 0 && response.data) {
       setAccessToken(response.data.access_token)
       userStore.setUser(response.data.user)
+      authMode.value = 'password'
     }
     return response
   }
 
   const logout = async () => {
     try {
-      await api.post('/auth/logout')
+      // OAuth sessions revoke at the IdP via our Nitro route; password sessions
+      // hit the first-party logout through the relay.
+      if (authMode.value === 'oauth') {
+        await $fetch('/auth/logout', { method: 'POST', credentials: 'include' })
+      } else {
+        await api.post('/auth/logout')
+      }
     } finally {
       clearAuth()
       navigateTo('/')
@@ -74,6 +92,7 @@ export const useAuth = () => {
   return {
     user: computed(() => userStore.user),
     isLoggedIn: computed(() => userStore.isLoggedIn),
+    setAccessToken,
     login,
     logout,
     fetchUser,
