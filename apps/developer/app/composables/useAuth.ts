@@ -41,7 +41,7 @@ export const useAuth = () => {
       await api.post('/auth/logout')
     } finally {
       clearAuth()
-      navigateTo('/login')
+      navigateTo('/')
     }
   }
 

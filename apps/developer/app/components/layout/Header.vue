@@ -5,6 +5,7 @@
 const auth = useAuth()
 const route = useRoute()
 const colorMode = useColorMode()
+const { open: openLogin } = useLoginModal()
 
 const navLinks = [
   { to: '/', label: '首页' },
@@ -35,7 +36,7 @@ const handleLogout = async () => {
     class="sticky top-0 z-30 border-b border-default-200 bg-background/85 backdrop-blur-md"
   >
     <div
-      class="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-4 md:px-6"
+      class="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-4 md:px-6"
     >
       <!-- Brand -->
       <NuxtLink to="/" class="flex min-w-0 shrink-0 items-center gap-2">
@@ -123,12 +124,7 @@ const handleLogout = async () => {
           </div>
         </KunPopover>
 
-        <KunButton
-          v-else
-          color="primary"
-          size="sm"
-          @click="navigateTo('/login')"
-        >
+        <KunButton v-else color="primary" size="sm" @click="openLogin()">
           登录
         </KunButton>
       </div>

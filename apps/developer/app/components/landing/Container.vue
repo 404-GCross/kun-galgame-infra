@@ -2,6 +2,7 @@
 import { API_BASE_URL } from '~/constants/dev'
 
 const auth = useAuth()
+const { open: openLogin } = useLoginModal()
 
 useSeoMeta({
   title: '开发者平台',
@@ -10,6 +11,13 @@ useSeoMeta({
   ogTitle: 'NextMoe 开放 API 开发者平台',
   ogDescription: '统一四源的 galgame 数据 API — 一个 base URL，一份凭证。'
 })
+
+const stats = [
+  { value: '21 万+', label: '作品注册' },
+  { value: '4 源', label: 'VNDB · Bangumi · DLsite · EG' },
+  { value: '63 万+', label: 'credits 关系' },
+  { value: '/v1', label: '版本化稳定契约' }
+]
 
 const quickstart = [
   {
@@ -44,82 +52,162 @@ const faces = [
   }
 ]
 
+const features = [
+  {
+    icon: 'lucide:layers',
+    title: '聚合记录',
+    body: '每个字段是多源归并的结果,响应携带 attribution 归源 —— 不是转发某一个源的原始数据。'
+  },
+  {
+    icon: 'lucide:shield-check',
+    title: '鉴权',
+    body: '服务端以 Authorization: Bearer nm_live_… 发送。密钥是机密,仅服务端使用。'
+  },
+  {
+    icon: 'lucide:gauge',
+    title: '限流与配额',
+    body: '按 tier 分层的每分钟限流与每日配额,响应头携带剩余额度;公开读经 Cloudflare 边缘缓存。'
+  },
+  {
+    icon: 'lucide:git-branch',
+    title: '稳定契约',
+    body: 'URL 版本化 /v1;已发布字段只做向后兼容的新增,破坏性变更升 /v2 并给足迁移窗口。'
+  }
+]
+
 const curlSample = `curl https://api.nextmoe.dev/v1/galgame/1 \\
   -H "Authorization: Bearer nm_live_…"`
 </script>
 
 <template>
-  <div class="space-y-20">
+  <div class="space-y-24">
     <!-- Hero -->
-    <section class="pt-6 text-center md:pt-12">
-      <div
-        class="inline-flex items-center gap-2 rounded-full border border-default-200 bg-content1 px-3 py-1 text-xs font-medium text-default-500"
-      >
-        <span class="size-2 rounded-full bg-success" />
-        Phase 1 · 公开只读 API
-      </div>
-
-      <h1
-        class="mx-auto mt-6 max-w-3xl text-4xl font-bold tracking-tight text-foreground md:text-5xl md:leading-tight"
-      >
-        统一四源的 galgame 数据 API
-      </h1>
-      <p class="mx-auto mt-2 text-sm font-medium tracking-wide text-primary">
-        One base URL. One credential. Every source.
-      </p>
-      <p class="mx-auto mt-5 max-w-2xl text-lg text-default-500">
-        把 VNDB、Bangumi、DLsite、ErogameScape 归并成一份稳定的聚合记录,
-        再加上跨媒介的人物、角色与作品关系图谱 —— 通过一个 base URL 与一份凭证访问。
-      </p>
-
-      <div class="mt-8 flex flex-wrap items-center justify-center gap-3">
-        <KunButton
-          v-if="auth.isLoggedIn.value"
-          color="primary"
-          size="lg"
-          @click="navigateTo('/dashboard')"
-        >
-          进入控制台
-          <KunIcon name="lucide:arrow-right" class="ml-1 size-4" />
-        </KunButton>
-        <KunButton
-          v-else
-          color="primary"
-          size="lg"
-          @click="navigateTo('/login')"
-        >
-          登录开始
-          <KunIcon name="lucide:arrow-right" class="ml-1 size-4" />
-        </KunButton>
-        <KunButton variant="flat" size="lg" @click="navigateTo('/docs')">
-          <KunIcon name="lucide:book-open" class="mr-1 size-4" />
-          查看 API 文档
-        </KunButton>
-      </div>
-
-      <!-- Base URL + sample -->
-      <div class="mx-auto mt-10 max-w-2xl text-left">
+    <section
+      class="grid items-center gap-10 pt-4 md:pt-10 lg:grid-cols-2 lg:gap-14"
+    >
+      <!-- Copy -->
+      <div class="text-center lg:text-left">
         <div
-          class="flex items-center justify-between gap-3 rounded-t-xl border border-default-200 bg-content1 px-4 py-2"
+          class="inline-flex items-center gap-2 rounded-full border border-default-200 bg-content1 px-3 py-1 text-xs font-medium text-default-500"
         >
-          <span class="text-xs font-medium text-default-400">Base URL</span>
-          <div class="flex items-center gap-2">
-            <span class="font-mono text-sm text-foreground">{{
-              API_BASE_URL
-            }}</span>
-            <KunCopy :text="API_BASE_URL" size="sm" />
+          <span class="size-2 rounded-full bg-success" />
+          Phase 1 · 公开只读 API
+        </div>
+
+        <h1
+          class="mt-6 text-4xl font-bold tracking-tight text-foreground md:text-5xl md:leading-[1.1] lg:text-6xl"
+        >
+          统一四源的<br class="hidden sm:inline" />
+          galgame 数据 API
+        </h1>
+        <p
+          class="mt-4 text-sm font-medium tracking-wide text-primary lg:text-base"
+        >
+          One base URL. One credential. Every source.
+        </p>
+        <p
+          class="mx-auto mt-5 max-w-xl text-lg leading-relaxed text-default-500 lg:mx-0"
+        >
+          把 VNDB、Bangumi、DLsite、ErogameScape 归并成一份稳定的聚合记录,
+          再加上跨媒介的人物、角色与作品关系图谱 —— 通过一个 base URL
+          与一份凭证访问。
+        </p>
+
+        <div
+          class="mt-8 flex flex-wrap items-center justify-center gap-3 lg:justify-start"
+        >
+          <KunButton
+            v-if="auth.isLoggedIn.value"
+            color="primary"
+            size="lg"
+            @click="navigateTo('/dashboard')"
+          >
+            进入控制台
+            <KunIcon name="lucide:arrow-right" class="ml-1 size-4" />
+          </KunButton>
+          <KunButton v-else color="primary" size="lg" @click="openLogin()">
+            登录开始
+            <KunIcon name="lucide:arrow-right" class="ml-1 size-4" />
+          </KunButton>
+          <KunButton variant="flat" size="lg" @click="navigateTo('/docs')">
+            <KunIcon name="lucide:book-open" class="mr-1 size-4" />
+            查看 API 文档
+          </KunButton>
+        </div>
+
+        <div
+          class="mt-6 inline-flex items-center gap-2 rounded-lg border border-default-200 bg-content1 px-3 py-1.5"
+        >
+          <span class="text-xs text-default-400">Base URL</span>
+          <span class="font-mono text-sm text-foreground">{{
+            API_BASE_URL
+          }}</span>
+          <DocsCopyButton :text="API_BASE_URL" label="复制 Base URL" />
+        </div>
+      </div>
+
+      <!-- Request / response showcase -->
+      <div
+        class="overflow-hidden rounded-2xl border border-default-200 bg-content1 shadow-sm"
+      >
+        <div
+          class="flex items-center gap-2 border-b border-default-200 px-4 py-3"
+        >
+          <span class="size-3 rounded-full bg-danger/50" />
+          <span class="size-3 rounded-full bg-warning/50" />
+          <span class="size-3 rounded-full bg-success/50" />
+          <span class="ml-2 font-mono text-xs text-default-400">
+            api.nextmoe.dev
+          </span>
+          <DocsCopyButton
+            :text="curlSample"
+            label="复制 curl 示例"
+            class="ml-auto"
+          />
+        </div>
+        <div class="space-y-4 px-4 py-4 font-mono text-xs leading-relaxed">
+          <pre
+            class="overflow-x-auto text-default-600"
+          ><code>{{ curlSample }}</code></pre>
+          <div class="space-y-1 border-t border-default-200 pt-4">
+            <p class="font-semibold text-success">200 OK</p>
+            <p class="text-default-400">
+              cache-control:
+              <span class="text-default-600">public, s-maxage=86400</span>
+            </p>
+            <p class="text-default-400">
+              x-ratelimit-remaining:
+              <span class="text-default-600">59</span>
+            </p>
+            <p class="text-default-400">
+              x-quota-remaining:
+              <span class="text-default-600">49999</span>
+            </p>
           </div>
         </div>
-        <pre
-          class="overflow-x-auto rounded-b-xl border border-t-0 border-default-200 bg-default-50 px-4 py-3 font-mono text-xs leading-relaxed text-default-600"
-        ><code>{{ curlSample }}</code></pre>
+      </div>
+    </section>
+
+    <!-- Stats band -->
+    <section
+      class="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-default-200 bg-default-200 md:grid-cols-4"
+    >
+      <div
+        v-for="stat in stats"
+        :key="stat.label"
+        class="bg-background px-6 py-7 text-center"
+      >
+        <p class="text-2xl font-bold text-foreground md:text-3xl">
+          {{ stat.value }}
+        </p>
+        <p class="mt-1 text-xs text-default-500">{{ stat.label }}</p>
       </div>
     </section>
 
     <!-- Quickstart -->
     <section>
-      <div class="mb-8 text-center">
-        <h2 class="text-2xl font-bold text-foreground">三步开始</h2>
+      <div class="mb-10 text-center">
+        <h2 class="text-2xl font-bold text-foreground md:text-3xl">三步开始</h2>
         <p class="mt-2 text-default-500">从登录到第一个成功请求,只需几分钟。</p>
       </div>
       <div class="grid gap-4 md:grid-cols-3">
@@ -152,8 +240,10 @@ const curlSample = `curl https://api.nextmoe.dev/v1/galgame/1 \\
 
     <!-- Faces -->
     <section>
-      <div class="mb-8 text-center">
-        <h2 class="text-2xl font-bold text-foreground">两个数据面</h2>
+      <div class="mb-10 text-center">
+        <h2 class="text-2xl font-bold text-foreground md:text-3xl">
+          两个数据面
+        </h2>
         <p class="mt-2 text-default-500">
           一份凭证覆盖全部;权限范围(scope)按面表达。
         </p>
@@ -197,46 +287,62 @@ const curlSample = `curl https://api.nextmoe.dev/v1/galgame/1 \\
       </div>
     </section>
 
-    <!-- Auth note -->
+    <!-- Built for production -->
+    <section>
+      <div class="mb-10 text-center">
+        <h2 class="text-2xl font-bold text-foreground md:text-3xl">
+          为生产就绪而设计
+        </h2>
+        <p class="mt-2 text-default-500">聚合、鉴权、限流、契约 —— 一次到位。</p>
+      </div>
+      <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div
+          v-for="feature in features"
+          :key="feature.title"
+          class="rounded-2xl border border-default-200 bg-content1 p-6"
+        >
+          <div
+            class="flex size-10 items-center justify-center rounded-lg bg-primary-50 text-primary"
+          >
+            <KunIcon :name="feature.icon" class="size-5" />
+          </div>
+          <h3 class="mt-4 text-base font-semibold text-foreground">
+            {{ feature.title }}
+          </h3>
+          <p class="mt-1 text-sm leading-relaxed text-default-500">
+            {{ feature.body }}
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Closing CTA -->
     <section
-      class="rounded-2xl border border-default-200 bg-content1 px-6 py-8 md:px-10"
+      class="rounded-2xl border border-default-200 bg-content1 px-6 py-12 text-center md:px-10"
     >
-      <div class="grid gap-6 md:grid-cols-3">
-        <div>
-          <h3 class="flex items-center gap-2 text-sm font-semibold text-foreground">
-            <KunIcon name="lucide:shield-check" class="size-4 text-primary" />
-            鉴权
-          </h3>
-          <p class="mt-2 text-sm text-default-500">
-            服务端持 API Key,以
-            <code class="font-mono text-xs text-foreground">
-              Authorization: Bearer nm_live_…
-            </code>
-            发送。密钥是机密,仅服务端使用。
-          </p>
-        </div>
-        <div>
-          <h3 class="flex items-center gap-2 text-sm font-semibold text-foreground">
-            <KunIcon name="lucide:gauge" class="size-4 text-primary" />
-            限流与配额
-          </h3>
-          <p class="mt-2 text-sm text-default-500">
-            按 tier 分层的每分钟限流与每日配额,响应头携带剩余额度。公开读经
-            Cloudflare 边缘缓存。
-          </p>
-        </div>
-        <div>
-          <h3 class="flex items-center gap-2 text-sm font-semibold text-foreground">
-            <KunIcon name="lucide:git-branch" class="size-4 text-primary" />
-            稳定契约
-          </h3>
-          <p class="mt-2 text-sm text-default-500">
-            URL 版本化 <code class="font-mono text-xs text-foreground">/v1</code>;已发布字段只做向后兼容的新增,破坏性变更升 <code
-              class="font-mono text-xs text-foreground"
-              >/v2</code
-            >。
-          </p>
-        </div>
+      <h2 class="text-2xl font-bold text-foreground md:text-3xl">
+        几分钟内发出第一个请求
+      </h2>
+      <p class="mx-auto mt-3 max-w-xl text-default-500">
+        登录生态账号,创建应用,领取密钥 —— 然后带上它请求任意公开面。
+      </p>
+      <div class="mt-7 flex flex-wrap items-center justify-center gap-3">
+        <KunButton
+          v-if="auth.isLoggedIn.value"
+          color="primary"
+          size="lg"
+          @click="navigateTo('/dashboard')"
+        >
+          进入控制台
+          <KunIcon name="lucide:arrow-right" class="ml-1 size-4" />
+        </KunButton>
+        <KunButton v-else color="primary" size="lg" @click="openLogin()">
+          登录开始
+          <KunIcon name="lucide:arrow-right" class="ml-1 size-4" />
+        </KunButton>
+        <KunButton variant="flat" size="lg" @click="navigateTo('/docs')">
+          查看 API 文档
+        </KunButton>
       </div>
     </section>
   </div>

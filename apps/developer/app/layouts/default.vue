@@ -18,13 +18,13 @@ await callOnce('auth:user', async () => {
 
     <!-- min-w-0 lets wide children (tables) scroll inside instead of
          stretching this flex column past the viewport. -->
-    <main class="mx-auto w-full min-w-0 max-w-6xl flex-1 px-4 py-8 md:px-6">
+    <main class="mx-auto w-full min-w-0 max-w-7xl flex-1 px-4 py-8 md:px-6">
       <slot />
     </main>
 
     <footer class="border-t border-default-200">
       <div
-        class="mx-auto flex max-w-6xl flex-col items-center justify-between gap-2 px-4 py-6 text-sm text-default-400 md:flex-row md:px-6"
+        class="mx-auto flex max-w-7xl flex-col items-center justify-between gap-2 px-4 py-6 text-sm text-default-400 md:flex-row md:px-6"
       >
         <p>NextMoe 开放 API · 统一四源 galgame 数据</p>
         <p class="font-mono text-xs">api.nextmoe.dev/v1</p>
