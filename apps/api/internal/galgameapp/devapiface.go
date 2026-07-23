@@ -92,14 +92,22 @@ func (f devapiFace) recordUsage(surface string) fiber.Handler {
 	}
 }
 
-// mountInternal mounts the /internal rich read face: the 44 GET read routes the
-// galgame read surface serves (galgame/tag/official/engine/series), behind the
-// shared devapi chain with a RequireTier(internal) gate (free/trusted keys →
-// 403). The chain order mirrors the /v1 chain with two changes: RequireTier is
-// inserted after recordUsage, and NO sfwGate is attached — content_limit passes
-// through untouched (the internal face must serve NSFW rows to downstream
-// consumers). Since 09-open-api-phase2 wave 05 A2 this is the SOLE host of those
-// reads: the legacy /api read face was retired that wave.
+// mountInternal mounts the /internal platform-workflow face: the 15 GET routes
+// registered by workflowRoutes.register (galgame /mine, /messages/mine, /search
+// [SearchWithPending], /drafts, /user/:id/{stats,galgames,contributed}; the four
+// taxonomy families' /:id/revisions(/:rev)), behind the shared devapi chain with
+// a RequireTier(internal) gate (free/trusted keys → 403). The chain order mirrors
+// the /v1 chain with two changes: RequireTier is inserted after recordUsage, and
+// NO sfwGate is attached — content_limit passes through untouched.
+//
+// Since 09-open-api-phase2 route-B endgame W5 this face is NO LONGER the host of
+// the public galgame data reads: the 29 A/C-bucket reads (list/detail/batch/
+// taxonomy-search/calendar/stats/check/relations + taxonomy list/search/by-id)
+// retired to the frozen public /v1/galgame contract. What remains is the
+// re-chartered platform workflow surface — a designed dual-credential surface in
+// the same family as the write (06a) and proposal (06b) faces, NOT wiki legacy;
+// see workflowroutes.go for the per-route charter. Its metering deliberately
+// stays "galgame_internal".
 //
 // RateLimit/Quota are kept on the chain for uniformity even though the internal
 // tier is unlimited (TierLimits → no-op). This face is READ-ONLY: writes,
@@ -109,9 +117,10 @@ func (f devapiFace) recordUsage(surface string) fiber.Handler {
 // /galgame/revisions/recent — which downstream kungal/moyu/letmoe cron pull with
 // the nm_ key (the key IS the identity — no Basic auth): scope galgame:read,
 // internal tier, metered under galgame_internal. Wave 05 A1 收编 them here off
-// the legacy /api Basic-auth face; A2 then retired those /api registrations. The
-// feeds are registered directly here and deliberately NOT through reads.register
-// — that helper is the read projection, and the S2S feeds are not part of it.
+// the legacy /api Basic-auth face; A2 then retired those /api registrations; they
+// survive W5 by charter. The feeds are registered directly here and deliberately
+// NOT through workflow.register — that helper is the user-context workflow
+// projection, and the S2S feeds are machine-sync primitives, not part of it.
 // /taxonomy/recent is NOT mounted: the post-mortem (V2) confirmed it a dead
 // route, so A2 dropped it outright rather than migrating it.
 // mountInternalWrites mounts the /internal user-write face: the 12 jwtAuth-gated
@@ -150,7 +159,7 @@ func mountInternalWrites(a *app.App, face devapiFace, writes writeRoutes, jwtAut
 	writes.register(a.Fiber.Group("/internal"), chain)
 }
 
-func mountInternal(a *app.App, face devapiFace, reads readRoutes, messageH *galgameHandler.MessageHandler, revisionH *galgameHandler.RevisionHandler) {
+func mountInternal(a *app.App, face devapiFace, workflow workflowRoutes, messageH *galgameHandler.MessageHandler, revisionH *galgameHandler.RevisionHandler) {
 	internal := a.Fiber.Group("/internal",
 		face.mw.ResolveCredential,
 		face.recordUsage("galgame_internal"),
@@ -160,15 +169,16 @@ func mountInternal(a *app.App, face devapiFace, reads readRoutes, messageH *galg
 		devapi.RequireScope(devapi.ScopeGalgameRead),
 	)
 	// Feeds first: /galgame/messages/feed + /galgame/revisions/recent are static
-	// multi-segment paths that MUST be registered ahead of the /galgame/:gid
-	// catch-all reads.register installs — the same fence discipline the /api face
-	// keeps for /messages/mine (see readroutes.go) and the Basic-auth feeds (see
-	// mount.go's empty-prefix fence note). Registration order is app-stack-wide in
-	// Fiber, so ordering these before reads.register(internal) is what guarantees
-	// they win.
+	// multi-segment paths. The /galgame/:gid read catch-all that once made this
+	// ordering load-bearing was retired in W5, but registration order is app-stack-
+	// wide in Fiber and the feeds share the /galgame group with the workflow face's
+	// /messages/mine, so keeping them first stays the safe, self-documenting choice.
+	// They are registered directly here (NOT through workflow.register) because the
+	// S2S feeds are machine-sync primitives, not part of the user-context workflow
+	// projection — same separation the old read face kept.
 	ifeeds := internal.Group("/galgame")
 	ifeeds.Get("/messages/feed", messageH.ListFeed)
 	ifeeds.Get("/revisions/recent", revisionH.RecentRevisions)
 
-	reads.register(internal)
+	workflow.register(internal)
 }
