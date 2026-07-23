@@ -285,7 +285,7 @@ func enrichAlias(ctx context.Context, db, eg *gorm.DB, apply bool) (EnrichStats,
 		if !ok {
 			continue
 		}
-		for _, line := range strings.Split(r.Alias, "\n") {
+		for line := range strings.SplitSeq(r.Alias, "\n") {
 			name := strings.TrimSpace(line)
 			if name == "" || name == names[labelID] {
 				continue
