@@ -180,6 +180,11 @@ func sources() []model.CatalogSource {
 		// source text to this catalog_source id so a bridged upscaled cover carries
 		// honest provenance. First-party derivation → trust_tier 0.
 		{ID: 13, Key: "upscale", TrustTier: 0, Note: "first-party AI-upscaled cover derivation (galgame_cover.source='upscale')"},
+		// cien (ci-en.net) is a creator-support / subscription platform — a
+		// NON-IDENTITY external link only (link_kind=related), same tier as the
+		// other web-presence sources (official_site/twitter/pixiv). Added for the
+		// org/label link facet (refs/proj/83 E2b §3).
+		{ID: 14, Key: "cien", TrustTier: 2, Note: "cien creator-support platform (ci-en.net)"},
 	}
 }
 

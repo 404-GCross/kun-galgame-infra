@@ -40,6 +40,7 @@ func Run(db *gorm.DB) error {
 		&model.CatalogOrg{},
 		&model.CatalogLabel{},
 		&model.CatalogLabelAlias{},
+		&model.CatalogLabelIntro{}, // multilingual label intros (refs/proj/83 E2b)
 		&model.CatalogCharacter{},
 		&model.CatalogCharacterAlias{},
 		&model.CatalogCharacterIntro{}, // multilingual character intros (step 65 field PR C1)
