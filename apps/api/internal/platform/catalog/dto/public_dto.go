@@ -235,14 +235,37 @@ type PublicLabelWork struct {
 	Kind string          `json:"kind"`
 }
 
+// PublicLabelIntro is one language's description of a label, merged to the
+// winning source per language (lowest source_id wins — the step-65 intro merge).
+// source is the catalog_source key (public-face convention — never the numeric
+// source_id).
+type PublicLabelIntro struct {
+	Lang   string `json:"lang"`
+	Intro  string `json:"intro"`
+	Source string `json:"source"`
+}
+
+// PublicLabelLink is one non-identity web-presence link of a label (official
+// site / twitter / ci-en), rendered as an absolute URL. It projects the label's
+// entity_type=3, link_kind=related refs; the exact/probable identity anchors
+// NEVER surface here (identity anchors and web links never cross). source is
+// the catalog_source key.
+type PublicLabelLink struct {
+	Source string `json:"source"`
+	URL    string `json:"url"`
+}
+
 // PublicLabel is the frozen v1 label record (GET /v1/catalog/labels/{id}).
-// works (attributed) are include-gated.
+// intros / links are always present (empty → [], never null); works (attributed)
+// are include-gated.
 type PublicLabel struct {
-	ID          int64             `json:"id"`
-	DisplayName string            `json:"display_name"`
-	Kind        string            `json:"kind"`
-	Works       []PublicLabelWork `json:"works,omitempty"`
-	NextOffset  *int              `json:"next_offset,omitempty"`
+	ID          int64              `json:"id"`
+	DisplayName string             `json:"display_name"`
+	Kind        string             `json:"kind"`
+	Intros      []PublicLabelIntro `json:"intros"`
+	Links       []PublicLabelLink  `json:"links"`
+	Works       []PublicLabelWork  `json:"works,omitempty"`
+	NextOffset  *int               `json:"next_offset,omitempty"`
 }
 
 // PublicEntityHit is one entity-search hit (person / character / label). id is

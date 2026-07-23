@@ -468,8 +468,20 @@ components:
         id:
           format: int64
           type: integer
+        intros:
+          items:
+            $ref: "#/components/schemas/PublicLabelIntro"
+          type:
+            - array
+            - "null"
         kind:
           type: string
+        links:
+          items:
+            $ref: "#/components/schemas/PublicLabelLink"
+          type:
+            - array
+            - "null"
         next_offset:
           format: int64
           type: integer
@@ -483,6 +495,33 @@ components:
         - id
         - display_name
         - kind
+        - intros
+        - links
+      type: object
+    PublicLabelIntro:
+      additionalProperties: false
+      properties:
+        intro:
+          type: string
+        lang:
+          type: string
+        source:
+          type: string
+      required:
+        - lang
+        - intro
+        - source
+      type: object
+    PublicLabelLink:
+      additionalProperties: false
+      properties:
+        source:
+          type: string
+        url:
+          type: string
+      required:
+        - source
+        - url
       type: object
     PublicLabelWork:
       additionalProperties: false

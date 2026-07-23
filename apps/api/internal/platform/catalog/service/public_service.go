@@ -390,6 +390,13 @@ func (s *PublicService) Label(ctx context.Context, id int64, withWorks bool, lim
 		return dto.PublicLabel{}, false, nil
 	}
 	l := dto.PublicLabel{ID: head.ID, DisplayName: head.DisplayName, Kind: labelKindKey(head.Kind)}
+	// intros / links are part of the base record (not include-gated).
+	if l.Intros, err = s.labelIntros(ctx, id); err != nil {
+		return dto.PublicLabel{}, false, err
+	}
+	if l.Links, err = s.labelLinks(ctx, id); err != nil {
+		return dto.PublicLabel{}, false, err
+	}
 	if withWorks {
 		ids := make([]int64, 0, len(items))
 		for _, w := range items {
@@ -415,6 +422,81 @@ func (s *PublicService) Label(ctx context.Context, id int64, withWorks bool, lim
 		l.NextOffset = nextOffset(len(items), limit, offset)
 	}
 	return l, true, nil
+}
+
+// labelIntros loads a label's multilingual intros, merged to one element per
+// language (lowest source_id wins — the step-65 intro merge), lang ASC. source
+// is the catalog_source key (public-face convention, never the numeric id).
+// Empty → [].
+func (s *PublicService) labelIntros(ctx context.Context, labelID int64) ([]dto.PublicLabelIntro, error) {
+	var rows []struct {
+		Lang   string `gorm:"column:lang"`
+		Intro  string `gorm:"column:intro"`
+		Source string `gorm:"column:source"`
+	}
+	if err := s.db.WithContext(ctx).Raw(`
+		SELECT i.lang, i.intro, src.key AS source
+		FROM catalog_label_intro i JOIN catalog_source src ON src.id = i.source_id
+		WHERE i.label_id = ? ORDER BY i.lang, i.source_id`, labelID).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	out := make([]dto.PublicLabelIntro, 0, len(rows))
+	seenLang := map[string]bool{}
+	for _, r := range rows {
+		if seenLang[r.Lang] {
+			continue // a lower source_id already claimed this language
+		}
+		seenLang[r.Lang] = true
+		out = append(out, dto.PublicLabelIntro{Lang: r.Lang, Intro: r.Intro, Source: r.Source})
+	}
+	return out, nil
+}
+
+// labelLinks projects a label's non-identity web-presence links from its
+// entity_type=3, link_kind=related refs (refs/proj/89 ruling 3). The
+// exact/probable identity anchors are excluded at the query level — identity
+// anchors and web links never cross, a hard red line. Each external id is
+// rendered to an absolute URL per source; an unknown related source (a future
+// addition) has no template and is skipped, never guessed.
+// Deterministic (source_id, external_id); empty → [].
+func (s *PublicService) labelLinks(ctx context.Context, labelID int64) ([]dto.PublicLabelLink, error) {
+	var rows []struct {
+		Source     string `gorm:"column:source"`
+		ExternalID string `gorm:"column:external_id"`
+	}
+	if err := s.db.WithContext(ctx).Raw(`
+		SELECT src.key AS source, r.external_id
+		FROM catalog_external_ref r JOIN catalog_source src ON src.id = r.source_id
+		WHERE r.entity_type = ? AND r.entity_id = ? AND r.link_kind = ?
+		ORDER BY r.source_id, r.external_id`,
+		model.EntityTypeLabel, labelID, model.LinkKindRelated).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	out := make([]dto.PublicLabelLink, 0, len(rows))
+	for _, r := range rows {
+		if url, ok := labelLinkURL(r.Source, r.ExternalID); ok {
+			out = append(out, dto.PublicLabelLink{Source: r.Source, URL: url})
+		}
+	}
+	return out, nil
+}
+
+// labelLinkURL renders a related-link external id to its absolute URL per
+// source. E2b stores official_site scheme- and trailing-slash-stripped (so an
+// https:// prefix is exact), twitter as a bare lowercase handle, and ci-en as
+// the numeric creator id. An unknown source returns ok=false (no template — the
+// URL is never guessed).
+func labelLinkURL(source, externalID string) (string, bool) {
+	switch source {
+	case "official_site":
+		return "https://" + externalID, true
+	case "twitter":
+		return "https://x.com/" + externalID, true
+	case "cien":
+		return "https://ci-en.dlsite.com/creator/" + externalID, true
+	default:
+		return "", false
+	}
 }
 
 // ─────────────────────────── shared brief helpers ───────────────────────────

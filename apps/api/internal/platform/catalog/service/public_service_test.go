@@ -311,3 +311,106 @@ func TestPublicNameHiddenLinkAndR18Drop(t *testing.T) {
 		t.Fatalf("hidden link must withhold person_id: %d", h.PersonID)
 	}
 }
+
+// TestPublicLabelIntrosLinks covers the E2c read-face addition to GET
+// /v1/catalog/labels/{id}: intros[] (per-language merge, lowest source_id wins —
+// step 65) and links[] (entity_type=3 link_kind=related refs → templated URLs),
+// including the two hard invariants: identity anchors never leak into links, and
+// a supply-less label serializes [] (never null).
+func TestPublicLabelIntrosLinks(t *testing.T) {
+	cleanTables(t)
+	// catalog_label_intro is not in cleanTables' list; truncate it explicitly
+	// (like the character-intro test) for a deterministic fixture.
+	if err := testDB.Exec("TRUNCATE catalog_label_intro RESTART IDENTITY CASCADE").Error; err != nil {
+		t.Fatalf("truncate label intro: %v", err)
+	}
+	svc := newPublicSvc()
+	ctx := t.Context()
+
+	// Seeded catalog_source ids for the E2b link sources + bangumi intro source.
+	const (
+		srcBangumi      int16 = 3
+		srcOfficialSite int16 = 9
+		srcTwitter      int16 = 10
+		srcCien         int16 = 14
+	)
+
+	lbl := &model.CatalogLabel{DisplayName: "ALcot", Kind: model.LabelKindPublisher}
+	if err := testDB.Create(lbl).Error; err != nil {
+		t.Fatalf("create label: %v", err)
+	}
+
+	// Intros: en (vndb) + ja from two sources — bangumi (3) beats dlsite (4) for
+	// the ja language after the per-language merge.
+	for _, in := range []model.CatalogLabelIntro{
+		{LabelID: lbl.ID, Lang: "en", Intro: "English intro.", SourceID: srcVNDB},
+		{LabelID: lbl.ID, Lang: "ja", Intro: "勝つ紹介。", SourceID: srcBangumi},
+		{LabelID: lbl.ID, Lang: "ja", Intro: "負ける紹介。", SourceID: srcDlsite}, // higher source → merged away
+	} {
+		if err := testDB.Create(&in).Error; err != nil {
+			t.Fatalf("create label intro: %v", err)
+		}
+	}
+
+	// Links: three related sources, one row each → three links, sorted by
+	// (source_id, external_id): official_site(9) < twitter(10) < cien(14).
+	addExternalRef(t, model.EntityTypeLabel, lbl.ID, srcOfficialSite, "www.alcot.biz", model.LinkKindRelated)
+	addExternalRef(t, model.EntityTypeLabel, lbl.ID, srcTwitter, "alcot_official", model.LinkKindRelated)
+	addExternalRef(t, model.EntityTypeLabel, lbl.ID, srcCien, "29601", model.LinkKindRelated)
+	// Identity anchors (exact + probable) MUST NOT surface as links.
+	addExternalRef(t, model.EntityTypeLabel, lbl.ID, srcVNDB, "p129", model.LinkKindExact)
+	addExternalRef(t, model.EntityTypeLabel, lbl.ID, srcDlsite, "VG02192", model.LinkKindProbable)
+
+	got, found, err := svc.Label(ctx, lbl.ID, false, 50, 0)
+	if err != nil || !found {
+		t.Fatalf("label: found=%v err=%v", found, err)
+	}
+
+	// intros: one element per language after the source merge, lang ASC.
+	if len(got.Intros) != 2 {
+		t.Fatalf("intros len=%d want 2: %+v", len(got.Intros), got.Intros)
+	}
+	if got.Intros[0] != (dto.PublicLabelIntro{Lang: "en", Intro: "English intro.", Source: "vndb"}) {
+		t.Fatalf("intros[0]=%+v", got.Intros[0])
+	}
+	if got.Intros[1] != (dto.PublicLabelIntro{Lang: "ja", Intro: "勝つ紹介。", Source: "bangumi"}) {
+		t.Fatalf("intros[1] (lowest source_id must win the language)=%+v", got.Intros[1])
+	}
+
+	// links: three, URL templates asserted byte-for-byte, deterministic order.
+	wantLinks := []dto.PublicLabelLink{
+		{Source: "official_site", URL: "https://www.alcot.biz"},
+		{Source: "twitter", URL: "https://x.com/alcot_official"},
+		{Source: "cien", URL: "https://ci-en.dlsite.com/creator/29601"},
+	}
+	if len(got.Links) != len(wantLinks) {
+		t.Fatalf("links len=%d want %d: %+v", len(got.Links), len(wantLinks), got.Links)
+	}
+	for i, w := range wantLinks {
+		if got.Links[i] != w {
+			t.Fatalf("links[%d]=%+v want %+v", i, got.Links[i], w)
+		}
+	}
+	// The exact/probable identity anchors (vndb / dlsite) must be absent.
+	for _, lk := range got.Links {
+		if lk.Source == "vndb" || lk.Source == "dlsite" {
+			t.Fatalf("identity anchor leaked into links: %+v", lk)
+		}
+	}
+
+	// A label with no intro / link rows serializes [] (never null).
+	bare := &model.CatalogLabel{DisplayName: "Bare", Kind: model.LabelKindGameBrand}
+	if err := testDB.Create(bare).Error; err != nil {
+		t.Fatalf("create bare label: %v", err)
+	}
+	b, found, err := svc.Label(ctx, bare.ID, false, 50, 0)
+	if err != nil || !found {
+		t.Fatalf("bare label: found=%v err=%v", found, err)
+	}
+	if b.Intros == nil || len(b.Intros) != 0 {
+		t.Fatalf("intros must be [] non-null: %+v", b.Intros)
+	}
+	if b.Links == nil || len(b.Links) != 0 {
+		t.Fatalf("links must be [] non-null: %+v", b.Links)
+	}
+}
