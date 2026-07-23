@@ -1,0 +1,88 @@
+# kun-galgame-infra — NextMoe developer portal (developer.nextmoe.dev), STANDALONE.
+#
+# This is the developer portal split OUT of docker-compose.prod.yml into its OWN
+# Dokploy "Compose" project, so portal deploys are triggered MANUALLY and stay
+# independent of the main infra stack's webhook cadence (push → CI → auto-redeploy).
+# Nothing else about the service changed — same GHCR image, same host, same routing.
+#
+# Routing is COMPOSE-OWNED (the labels block below), NEVER the Dokploy domain
+# panel: compose-level labels REPLACE Dokploy's panel-injected domain labels
+# wholesale on a service (learned the hard way via a production oauth 404), so
+# EVERY route of this host must live here.
+#
+# Same-origin shell: the browser only ever talks to developer.nextmoe.dev; Nitro's
+# /api/** relay forwards SERVER-side to the oauth service (NUXT_OAUTH_API_BASE), so
+# there is ZERO CORS and no backend change.
+#
+# Deploy (this project only — the main stack is a SEPARATE Dokploy project):
+#   docker compose -f docker-compose.developer.yml pull
+#   docker compose -f docker-compose.developer.yml up -d
+name: kun-galgame-infra-developer
+
+services:
+  # NextMoe developer portal (developer.nextmoe.dev). A same-origin Nuxt shell:
+  # the browser only ever talks to this host; Nitro's /api/** relay forwards to
+  # the oauth service SERVER-side (NUXT_OAUTH_API_BASE), so there is ZERO CORS and
+  # no backend change. As a NEW host, its Traefik routing is OWNED HERE in a
+  # labels block (see the compose-owns-routing note in the file header).
+  developer:
+    image: ghcr.io/kunmoe/infra-developer:latest
+    pull_policy: always
+    environment:
+      # SERVER-only base for the /api/** relay — never exposed to the browser.
+      # The path is preserved (/api/v1/... → oauth:9277/api/v1/...).
+      #
+      # EXACT container name, NOT the bare `oauth` service alias: this file now
+      # runs as a SEPARATE Dokploy compose project, and on the shared
+      # dokploy-network a bare alias DNS round-robins across same-named services
+      # in other projects. This is the main stack's oauth container
+      # (Dokploy project kun-visual-novel-infra-vqvqbc).
+      NUXT_OAUTH_API_BASE: http://kun-visual-novel-infra-vqvqbc-oauth-1:9277
+    expose: ["3000"]
+    labels:
+      # Traefik routing for developer.nextmoe.dev — OWNED HERE, not in the Dokploy
+      # domain panel. Compose-level labels REPLACE Dokploy's injected domain
+      # labels on a service (learned the hard way on the oauth block), so EVERY
+      # route of this service must live in this block. The WHOLE host goes to this
+      # Nuxt app (pages + the /api/** relay); nothing else is served here.
+      #
+      # Router/service ids are `developer-portal*` (not `infra-developer*`) so they
+      # do NOT collide in Traefik with the old routers on the main stack during the
+      # production overlap window (both projects share one Traefik instance).
+      traefik.enable: "true"
+      traefik.http.routers.developer-portal.rule: Host(`developer.nextmoe.dev`)
+      traefik.http.routers.developer-portal.entrypoints: websecure
+      traefik.http.routers.developer-portal.tls.certresolver: letsencrypt
+      traefik.http.routers.developer-portal.service: developer-portal
+      # http→https twin router (same rule + service), mirroring the oauth block.
+      traefik.http.routers.developer-portal-http.rule: Host(`developer.nextmoe.dev`)
+      traefik.http.routers.developer-portal-http.entrypoints: web
+      traefik.http.routers.developer-portal-http.middlewares: redirect-to-https@file
+      traefik.http.routers.developer-portal-http.service: developer-portal
+      traefik.http.services.developer-portal.loadbalancer.server.port: "3000"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "require('net').connect(3000,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))",
+        ]
+      # Inlined from the main stack's *svc-health anchor (which does not exist in
+      # this standalone file).
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+    # Safety cap for the upstream Nuxt 4.2.2 SSR leak (nuxt#34071). Low-traffic
+    # portal; 1g is generous headroom and just OOM-recycles if a leak grows.
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+
+networks:
+  default:
+    name: dokploy-network
+    external: true
