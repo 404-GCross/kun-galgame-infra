@@ -288,6 +288,116 @@ func (s *SelfServiceService) Usage(ctx context.Context, ownerUserID uint, client
 	return s.repo.AggregateUsageByClient(ctx, clientID, since)
 }
 
+// OwnerUsageAppTotal is one app's total usage over the window (named).
+type OwnerUsageAppTotal struct {
+	ClientID  string `json:"client_id"`
+	Name      string `json:"name"`
+	Count     int64  `json:"count"`
+	Status4xx int64  `json:"status_4xx"`
+	Status5xx int64  `json:"status_5xx"`
+}
+
+// OwnerUsageSummary is the account-level usage view: a dense daily series (every
+// day in the window, gaps 0-filled, oldest→newest) for the volume chart, the
+// per-app breakdown, and window totals. `since` is the window start (UTC).
+type OwnerUsageSummary struct {
+	Days       int                  `json:"days"`
+	Since      string               `json:"since"`
+	TotalCount int64                `json:"total_count"`
+	Total4xx   int64                `json:"total_4xx"`
+	Total5xx   int64                `json:"total_5xx"`
+	Daily      []UsageDayTotal      `json:"daily"`
+	ByApp      []OwnerUsageAppTotal `json:"by_app"`
+}
+
+// OwnerUsage aggregates the caller's usage across ALL their apps for the last
+// `days` days (inclusive of today, UTC): a dense daily series for the chart plus
+// a per-app breakdown sorted by volume. No apps → zero-filled series, empty
+// breakdown (never an error).
+func (s *SelfServiceService) OwnerUsage(ctx context.Context, ownerUserID uint, days int) (*OwnerUsageSummary, error) {
+	apps, err := s.repo.ListAppsByOwner(ctx, ownerUserID)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now().UTC()
+	summary := &OwnerUsageSummary{
+		Days:  days,
+		Since: now.AddDate(0, 0, -(days - 1)).Format("2006-01-02"),
+		ByApp: []OwnerUsageAppTotal{},
+	}
+	if len(apps) == 0 {
+		summary.Daily = denseDays(now, days, nil)
+		return summary, nil
+	}
+
+	clientIDs := make([]string, len(apps))
+	for i := range apps {
+		clientIDs[i] = apps[i].ID
+	}
+	dayRows, err := s.repo.SumUsageByDay(ctx, clientIDs, summary.Since)
+	if err != nil {
+		return nil, err
+	}
+	clientRows, err := s.repo.SumUsageByClient(ctx, clientIDs, summary.Since)
+	if err != nil {
+		return nil, err
+	}
+
+	summary.Daily = denseDays(now, days, dayRows)
+	for i := range summary.Daily {
+		summary.TotalCount += summary.Daily[i].Count
+		summary.Total4xx += summary.Daily[i].Status4xx
+		summary.Total5xx += summary.Daily[i].Status5xx
+	}
+
+	totalsByID := make(map[string]UsageClientTotal, len(clientRows))
+	for _, r := range clientRows {
+		totalsByID[r.ClientID] = r
+	}
+	for i := range apps {
+		t := totalsByID[apps[i].ID]
+		summary.ByApp = append(summary.ByApp, OwnerUsageAppTotal{
+			ClientID:  apps[i].ID,
+			Name:      apps[i].Name,
+			Count:     t.Count,
+			Status4xx: t.Status4xx,
+			Status5xx: t.Status5xx,
+		})
+	}
+	slices.SortFunc(summary.ByApp, func(a, b OwnerUsageAppTotal) int {
+		switch {
+		case a.Count > b.Count:
+			return -1
+		case a.Count < b.Count:
+			return 1
+		default:
+			return 0
+		}
+	})
+	return summary, nil
+}
+
+// denseDays turns sparse (day → totals) rows into a gap-free series over the
+// last `days` days ending today (UTC), oldest→newest, so the chart has a stable
+// x-axis. Missing days become zero rows.
+func denseDays(now time.Time, days int, rows []UsageDayTotal) []UsageDayTotal {
+	byDay := make(map[string]UsageDayTotal, len(rows))
+	for _, r := range rows {
+		byDay[r.Day] = r
+	}
+	out := make([]UsageDayTotal, 0, days)
+	for i := days - 1; i >= 0; i-- {
+		day := now.AddDate(0, 0, -i).Format("2006-01-02")
+		if r, ok := byDay[day]; ok {
+			r.Day = day
+			out = append(out, r)
+		} else {
+			out = append(out, UsageDayTotal{Day: day})
+		}
+	}
+	return out
+}
+
 // checkSelfServiceScopes rejects any scope outside the self-service allow-list.
 // An empty list is fine — MintKey defaults it to the two public reads.
 func checkSelfServiceScopes(scopes []string) error {

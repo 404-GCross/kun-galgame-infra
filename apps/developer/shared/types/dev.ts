@@ -54,6 +54,37 @@ export interface DevUsageDayFace {
   status_5xx: number
 }
 
+// One day's total usage across all of the account's apps (faces folded). The
+// account-level series is DENSE (every day in the window, gaps 0-filled,
+// oldest→newest) so the volume chart has a stable x-axis. day = YYYY-MM-DD UTC.
+export interface DevUsageDay {
+  day: string
+  count: number
+  status_4xx: number
+  status_5xx: number
+}
+
+// One app's total usage over the window (named), for the per-app breakdown.
+export interface DevUsageApp {
+  client_id: string
+  name: string
+  count: number
+  status_4xx: number
+  status_5xx: number
+}
+
+// Account-level usage summary from GET /dev/usage?days=N — window totals, the
+// dense daily series, and the per-app breakdown (sorted by volume).
+export interface DevUsageSummary {
+  days: number
+  since: string
+  total_count: number
+  total_4xx: number
+  total_5xx: number
+  daily: DevUsageDay[]
+  by_app: DevUsageApp[]
+}
+
 // The signed-in ecosystem account (subset of /auth/me we render in the portal).
 export interface User {
   uuid: string

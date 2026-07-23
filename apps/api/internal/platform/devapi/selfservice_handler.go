@@ -40,6 +40,7 @@ func (h *SelfServiceHandler) Register(r fiber.Router) {
 	r.Post("/apps/:client_id/keys/:id/rotate", h.RotateKey)
 	r.Delete("/apps/:client_id/keys/:id", h.RevokeKey)
 	r.Get("/apps/:client_id/usage", h.Usage)
+	r.Get("/usage", h.OwnerUsage)
 }
 
 // --- Request / response DTOs ---
@@ -284,6 +285,21 @@ func (h *SelfServiceHandler) Usage(c fiber.Ctx) error {
 		rows = []UsageDayFace{}
 	}
 	return response.Success(c, rows)
+}
+
+// OwnerUsage returns the caller's usage aggregated across ALL their apps: a
+// dense daily volume series + a per-app breakdown + window totals. ?days=N,
+// clamped to [1, 30], default 7.
+func (h *SelfServiceHandler) OwnerUsage(c fiber.Ctx) error {
+	ownerID, ok := ownerFromCtx(c)
+	if !ok {
+		return response.Unauthorized(c, apperr.ErrAuthUnauthorized)
+	}
+	summary, err := h.svc.OwnerUsage(c.Context(), ownerID, clampDays(c.Query("days")))
+	if err != nil {
+		return response.InternalError(c, apperr.ErrOperationFailed)
+	}
+	return response.Success(c, summary)
 }
 
 // --- helpers ---

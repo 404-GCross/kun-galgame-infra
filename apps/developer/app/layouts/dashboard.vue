@@ -15,6 +15,12 @@ const navItems = [
     match: ['/dashboard', '/apps']
   },
   {
+    to: '/usage',
+    label: '用量',
+    icon: 'lucide:chart-column',
+    match: ['/usage']
+  },
+  {
     to: '/docs',
     label: 'API 文档',
     icon: 'lucide:book-open',
