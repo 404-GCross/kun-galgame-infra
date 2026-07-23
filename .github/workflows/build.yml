@@ -94,6 +94,7 @@ jobs:
             {"name":"infra-migrate-trust","file":"docker/go.Dockerfile","args":"CMD=migrate-trust","group":"go"},
             {"name":"infra-ai","file":"docker/go.Dockerfile","args":"CMD=ai","group":"go"},
             {"name":"infra-migrate-ai","file":"docker/go.Dockerfile","args":"CMD=migrate-ai","group":"go"},
+            {"name":"infra-mcp","file":"docker/go.Dockerfile","args":"CMD=mcp","group":"go"},
             {"name":"infra-web","file":"docker/nuxt.Dockerfile","args":"APP=web\nPUBLIC_API_BASE=https://oauth.kungal.com/api/v1\nPUBLIC_IMAGE_CDN_BASE=https://image.kungal.iloveren.link","group":"web"},
             {"name":"infra-developer","file":"apps/developer/Dockerfile","args":"","group":"developer"}
           ]'

@@ -30,3 +30,9 @@ export const MAX_ACTIVE_KEYS_PER_APP = 5
 
 // The frozen public base URL third parties write into their code.
 export const API_BASE_URL = 'https://api.nextmoe.dev/v1'
+
+// The MCP (Model Context Protocol) endpoint — the SAME public /v1 read faces
+// re-exposed as AI-agent tools over stateless Streamable HTTP. The same API key
+// authenticates both; a tool call is billed to the key exactly like a direct
+// /v1 request. See docs/developer-platform/09-mcp-server.md.
+export const MCP_ENDPOINT = 'https://mcp.nextmoe.dev/mcp'
