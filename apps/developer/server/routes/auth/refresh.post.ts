@@ -4,15 +4,17 @@
 // must refresh through /oauth/token with grant_type=refresh_token. Reads the
 // httpOnly refresh_token cookie, rotates it, and re-lands the session.
 //
-// §4.4 discipline: only a PERMANENT failure (the IdP returned an error envelope
-// — invalid_grant / expired) clears the session; a transient network/5xx blip
+// §4.4 discipline: only a PERMANENT failure (the IdP returned an error body —
+// invalid_grant / expired) clears the session; a transient network/5xx blip
 // keeps the cookies so the caller can retry. The client single-flights refreshes
 // (useTokenRefresh), so concurrent 401s collapse into one call here.
-interface TokenEnvelope {
-  code: number
-  message?: string
-  data?: { access_token: string; refresh_token?: string; expires_in?: number }
-}
+// Token responses are read via the tokenWire helpers so both the legacy
+// {code,data} envelope and the standard bare wire (KUN_OIDC_STANDARD_WIRE) work.
+import {
+  tokenWireError,
+  tokenWirePayload,
+  type TokenWire
+} from '../../utils/oauth-session'
 
 export default defineEventHandler(async (event) => {
   const refreshToken = getCookie(event, 'refresh_token')
@@ -22,9 +24,9 @@ export default defineEventHandler(async (event) => {
   }
 
   const config = useRuntimeConfig(event)
-  let res: TokenEnvelope
+  let res: TokenWire
   try {
-    res = await $fetch<TokenEnvelope>(
+    res = await $fetch<TokenWire>(
       `${config.oauthApiBase}/api/v1/oauth/token`,
       {
         method: 'POST',
@@ -37,21 +39,22 @@ export default defineEventHandler(async (event) => {
       }
     )
   } catch (e) {
-    const data = (e as { data?: TokenEnvelope })?.data
+    const data = (e as { data?: TokenWire })?.data
     if (!data) {
       // Transient (network / 5xx) — keep the session, let the client retry.
       setResponseStatus(event, 503)
       return { code: -1, message: '刷新暂时失败' }
     }
-    res = data // 4xx with an error envelope → treated as permanent below.
+    res = data // 4xx with an error body → treated as permanent below.
   }
 
-  if (res.code !== 0 || !res.data?.access_token) {
+  const tokens = tokenWirePayload(res)
+  if (!tokens) {
     clearOAuthSession(event) // permanent: refresh token dead → force re-login.
     setResponseStatus(event, 401)
-    return { code: res.code || 10003, message: res.message || '会话已过期' }
+    return { code: res.code ?? 10003, message: tokenWireError(res) || '会话已过期' }
   }
 
-  landOAuthSession(event, res.data) // rotation writes the new refresh_token.
-  return { code: 0, data: { access_token: res.data.access_token } }
+  landOAuthSession(event, tokens) // rotation writes the new refresh_token.
+  return { code: 0, data: { access_token: tokens.access_token } }
 })

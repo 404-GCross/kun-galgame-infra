@@ -3,6 +3,7 @@ import {
   generateCodeVerifier,
   generateState
 } from '~/utils/oauth-pkce'
+import { isSafeInternalPath } from '~/utils/safe-path'
 
 // Kicks off the OAuth Authorization Code + PKCE flow against our IdP (the SSO
 // login the ecosystem sites use). Stashes code_verifier + state + the post-login
@@ -12,9 +13,6 @@ import {
 export const useOAuthLogin = () => {
   const config = useRuntimeConfig()
 
-  const isSafe = (r?: string | null): r is string =>
-    !!r && r.startsWith('/') && !r.startsWith('//')
-
   // Build the authorize URL and persist the PKCE/state/redirect for the callback.
   const buildAuthorizeUrl = async (redirect?: string): Promise<string> => {
     const verifier = generateCodeVerifier()
@@ -23,7 +21,8 @@ export const useOAuthLogin = () => {
 
     sessionStorage.setItem('oauth_code_verifier', verifier)
     sessionStorage.setItem('oauth_state', state)
-    if (isSafe(redirect)) sessionStorage.setItem('oauth_redirect', redirect)
+    if (isSafeInternalPath(redirect))
+      sessionStorage.setItem('oauth_redirect', redirect)
     else sessionStorage.removeItem('oauth_redirect')
 
     const params = new URLSearchParams({
