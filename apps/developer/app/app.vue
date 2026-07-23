@@ -16,5 +16,7 @@ useHead({
     <NuxtLayout>
       <NuxtPage />
     </NuxtLayout>
+    <!-- The portal's single login UI — opened from anywhere via useLoginModal. -->
+    <LoginModal />
   </div>
 </template>

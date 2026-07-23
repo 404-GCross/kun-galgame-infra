@@ -13,7 +13,27 @@ export default defineNuxtConfig({
   // nav stays put. `out-in` avoids overlap; the CSS lives in main.css.
   app: {
     pageTransition: { name: 'page', mode: 'out-in' },
-    layoutTransition: { name: 'layout', mode: 'out-in' }
+    layoutTransition: { name: 'layout', mode: 'out-in' },
+    // Favicon set — temporarily shares kungal's marks (the static files copied
+    // from apps/web/public); swap for NextMoe's own brand set once ready.
+    head: {
+      link: [
+        { rel: 'icon', type: 'image/x-icon', href: '/favicon.ico' },
+        {
+          rel: 'icon',
+          type: 'image/png',
+          sizes: '32x32',
+          href: '/favicon-32x32.png'
+        },
+        {
+          rel: 'icon',
+          type: 'image/png',
+          sizes: '16x16',
+          href: '/favicon-16x16.png'
+        },
+        { rel: 'apple-touch-icon', sizes: '180x180', href: '/apple-touch-icon.png' }
+      ]
+    }
   },
 
   // This app owns its Tailwind entry. @kungal/ui-nuxt deliberately does not
