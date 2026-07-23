@@ -4,7 +4,7 @@ import "slices"
 
 // Tier names for the developer platform. D2: developer identity/role stays on
 // the IdP five global roles; tier is platform-internal data granted by the
-// admin surface — not a new global role. See docs/developer-platform §7.
+// admin surface — not a new global role. See docs/developer-platform/03-auth-and-tiers.md §7.
 const (
 	TierFree     = "free"
 	TierTrusted  = "trusted"

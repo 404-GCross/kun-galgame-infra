@@ -9,7 +9,7 @@ import (
 // DeveloperAPIKey is one API key issued to a developer application (an
 // oauth_clients row). Only the sha256 hash of the key is stored; the plaintext
 // is shown once at mint and never persisted. The table lives in the main DB
-// (kun_galgame_infra). See docs/developer-platform/01-design.md §5.2.
+// (kun_galgame_infra). See docs/developer-platform/04-platform-internals.md §5.2.
 //
 // Intent columns (Name/KeyHash/KeyPrefix/Last4/Scopes/NSFWAllowed/
 // CreatedByUserID/ClientID) are NOT NULL with NO GORM `default:` tag — the

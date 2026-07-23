@@ -185,7 +185,7 @@ type OAuthClient struct {
 	// SQL: NOT NULL backfilled then DROP DEFAULT), so the GORM tags below carry
 	// NO `default:` — the zero value is written explicitly (intent-column
 	// discipline, avoiding the GORM zero-value INSERT trap). See
-	// docs/developer-platform/01-design.md §5.1.
+	// docs/developer-platform/04-platform-internals.md §5.1.
 	//
 	// OwnerUserID owns a third-party developer application (ecosystem account);
 	// NULL for first-party site clients (they belong via SiteID). Indexed for
