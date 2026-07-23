@@ -275,12 +275,22 @@ services:
       test: ["CMD", "/app/app", "healthcheck"]
       <<: *svc-health
     networks:
-      default:
+      # Stable cross-project s2s name for the developer portal (its own Dokploy
+      # Compose project): survives a recreation of THIS project (container-name
+      # prefixes change, compose aliases don't) and is distinctive enough that
+      # no other project would accidentally claim it on dokploy-network.
+      #
+      # The alias hangs on the `dokploy-network` KEY, not `default`: at deploy
+      # time Dokploy REWRITES this file and appends `dokploy-network: {}` to a
+      # routed service's networks. With the alias on `default`, the service ends
+      # up on two keys resolving to the same physical network and the alias-less
+      # injected key wins the single connect — the alias silently never registers
+      # (bitten in production, 2026-07-23). Declaring the exact key Dokploy
+      # injects makes its (existence-checked) injection a no-op and keeps the
+      # alias on the one real attachment. Same physical network either way, so
+      # in-stack `oauth` service-name DNS is unaffected.
+      dokploy-network:
         aliases: [infra-oauth]
-        # Stable cross-project s2s name for the developer portal (its own Dokploy
-        # Compose project): survives a recreation of THIS project (container-name
-        # prefixes change, compose aliases don't) and is distinctive enough that
-        # no other project would accidentally claim it on dokploy-network.
     restart: unless-stopped
 
   image:
@@ -681,5 +691,11 @@ volumes:
 
 networks:
   default:
+    name: dokploy-network
+    external: true
+  # Same physical network under the key Dokploy injects at deploy time — must
+  # exist so the oauth service can hang its cross-project alias on that key
+  # (see the oauth networks block for the full story).
+  dokploy-network:
     name: dokploy-network
     external: true
