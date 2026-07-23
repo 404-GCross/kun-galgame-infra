@@ -1,9 +1,10 @@
 name: spec-breaking
 
-# Breaking-change gate for the published OpenAPI contracts. The galgame-wiki
-# specs (and artifact) now have external consumers — moyu / forum and any
-# third-party generated client fetch them from the docs portal — so a breaking
-# change to a spec must not land silently. oasdiff compares the spec BEFORE this
+# Breaking-change gate for the published OpenAPI contracts. The public /v1
+# projections and the artifact specs have external consumers — downstream repos
+# and any third-party generated client fetch them from the docs portals — so a
+# breaking change to a spec must not land silently. (The wiki-era galgame-wiki
+# read/calendar specs were retired with the bridge read face at route-B W5.) oasdiff compares the spec BEFORE this
 # change (the PR base, or the pre-push commit) against the new version and fails
 # on any breaking (ERR) difference.
 #
@@ -17,8 +18,6 @@ on:
   push:
     branches: [main]
     paths: &specs
-      - "docs/galgame_wiki/read-openapi.yaml"
-      - "docs/galgame_wiki/calendar-openapi.yaml"
       - "docs/galgame_wiki/public-openapi.yaml"
       - "docs/artifact/openapi.yaml"
       - "docs/artifact/admin-openapi.yaml"
@@ -77,8 +76,6 @@ jobs:
             exit 0
           fi
           specs="
-            docs/galgame_wiki/read-openapi.yaml
-            docs/galgame_wiki/calendar-openapi.yaml
             docs/galgame_wiki/public-openapi.yaml
             docs/artifact/openapi.yaml
             docs/artifact/admin-openapi.yaml

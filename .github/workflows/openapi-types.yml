@@ -5,8 +5,9 @@ name: openapi-types
 # spec — this catches "the spec changed but the generated types weren't
 # regenerated" and any hand-edit to a generated file. Types live in the app that
 # consumes them: artifact-* / catalog-* / trust-* in apps/web. (The galgame-*
-# pairing retired with apps/wiki at E3b; the galgame_wiki specs live on, gated
-# for breaking changes by spec-breaking.yml.)
+# pairing retired with apps/wiki at E3b; the wiki-era galgame_wiki read/calendar
+# specs retired with the bridge read face at route-B W5 — only the /v1 public
+# projection spec remains, gated by spec-breaking.yml.)
 #
 # Scope: spec -> TS only. The spec-vs-Go-code side is covered separately
 # (`go run ./cmd/gen-openapi` re-exports the spec from the Huma code; a future
