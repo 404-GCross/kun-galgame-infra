@@ -3,28 +3,29 @@
 # This is the developer portal split OUT of docker-compose.prod.yml into its OWN
 # Dokploy "Compose" project, so portal deploys are triggered MANUALLY and stay
 # independent of the main infra stack's webhook cadence (push → CI → auto-redeploy).
-# Nothing else about the service changed — same GHCR image, same host, same routing.
 #
-# Routing is COMPOSE-OWNED (the labels block below), NEVER the Dokploy domain
-# panel: compose-level labels REPLACE Dokploy's panel-injected domain labels
-# wholesale on a service (learned the hard way via a production oauth 404), so
-# EVERY route of this host must live here.
+# Routing: the developer.nextmoe.dev domain is managed in the Dokploy DOMAINS
+# PANEL of this project — the Dokploy-native form for a single-service,
+# whole-host project (same as the kungal/moyu apps). This ONLY works because the
+# service below carries NO labels block: compose-level labels REPLACE Dokploy's
+# panel-injected domain labels wholesale (learned the hard way via a production
+# oauth 404 on the main stack). Do NOT add a labels block back here — it would
+# silently take the domain down on the next deploy.
 #
 # Same-origin shell: the browser only ever talks to developer.nextmoe.dev; Nitro's
 # /api/** relay forwards SERVER-side to the oauth service (NUXT_OAUTH_API_BASE), so
 # there is ZERO CORS and no backend change.
 #
-# Deploy (this project only — the main stack is a SEPARATE Dokploy project):
-#   docker compose -f docker-compose.developer.yml pull
-#   docker compose -f docker-compose.developer.yml up -d
+# Deploy = the Deploy button of this Dokploy project (panel injects the domain
+# labels at deploy time; a bare server-side `docker compose up` would NOT).
 name: kun-galgame-infra-developer
 
 services:
   # NextMoe developer portal (developer.nextmoe.dev). A same-origin Nuxt shell:
   # the browser only ever talks to this host; Nitro's /api/** relay forwards to
   # the oauth service SERVER-side (NUXT_OAUTH_API_BASE), so there is ZERO CORS and
-  # no backend change. As a NEW host, its Traefik routing is OWNED HERE in a
-  # labels block (see the compose-owns-routing note in the file header).
+  # no backend change. Routing = Dokploy Domains panel; NO labels block here (see
+  # the file header for why that must stay true).
   developer:
     image: ghcr.io/kunmoe/infra-developer:latest
     pull_policy: always
@@ -32,34 +33,14 @@ services:
       # SERVER-only base for the /api/** relay — never exposed to the browser.
       # The path is preserved (/api/v1/... → oauth:9277/api/v1/...).
       #
-      # EXACT container name, NOT the bare `oauth` service alias: this file now
-      # runs as a SEPARATE Dokploy compose project, and on the shared
-      # dokploy-network a bare alias DNS round-robins across same-named services
-      # in other projects. This is the main stack's oauth container
-      # (Dokploy project kun-visual-novel-infra-vqvqbc).
-      NUXT_OAUTH_API_BASE: http://kun-visual-novel-infra-vqvqbc-oauth-1:9277
+      # `infra-oauth` is a compose-defined network alias on the main stack's
+      # oauth service (docker-compose.prod.yml), created for exactly this
+      # cross-project call: it survives a recreation of the main Dokploy project
+      # (container-name prefixes change, compose aliases don't) and is
+      # distinctive enough that no other project on the shared dokploy-network
+      # would claim it (bare same-named aliases DNS round-robin across projects).
+      NUXT_OAUTH_API_BASE: http://infra-oauth:9277
     expose: ["3000"]
-    labels:
-      # Traefik routing for developer.nextmoe.dev — OWNED HERE, not in the Dokploy
-      # domain panel. Compose-level labels REPLACE Dokploy's injected domain
-      # labels on a service (learned the hard way on the oauth block), so EVERY
-      # route of this service must live in this block. The WHOLE host goes to this
-      # Nuxt app (pages + the /api/** relay); nothing else is served here.
-      #
-      # Router/service ids are `developer-portal*` (not `infra-developer*`) so they
-      # do NOT collide in Traefik with the old routers on the main stack during the
-      # production overlap window (both projects share one Traefik instance).
-      traefik.enable: "true"
-      traefik.http.routers.developer-portal.rule: Host(`developer.nextmoe.dev`)
-      traefik.http.routers.developer-portal.entrypoints: websecure
-      traefik.http.routers.developer-portal.tls.certresolver: letsencrypt
-      traefik.http.routers.developer-portal.service: developer-portal
-      # http→https twin router (same rule + service), mirroring the oauth block.
-      traefik.http.routers.developer-portal-http.rule: Host(`developer.nextmoe.dev`)
-      traefik.http.routers.developer-portal-http.entrypoints: web
-      traefik.http.routers.developer-portal-http.middlewares: redirect-to-https@file
-      traefik.http.routers.developer-portal-http.service: developer-portal
-      traefik.http.services.developer-portal.loadbalancer.server.port: "3000"
     healthcheck:
       test:
         [
