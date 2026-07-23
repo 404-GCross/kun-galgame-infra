@@ -53,16 +53,19 @@ func (DeveloperAPIKey) TableName() string { return "developer_api_keys" }
 type DeveloperAPIUsage struct {
     ID        uint      `gorm:"primaryKey"`
     ClientID  string    `gorm:"size:50;not null;uniqueIndex:idx_usage_day,priority:1"`
-    KeyID     *uint     `gorm:"uniqueIndex:idx_usage_day,priority:2"` // NULL=应用级汇总
-    Day       string    `gorm:"size:10;not null;uniqueIndex:idx_usage_day,priority:3"` // YYYY-MM-DD(JST)
-    Count     int64     `gorm:"not null;default:0"`
-    Status4xx int64     `gorm:"not null;default:0"`
-    Status5xx int64     `gorm:"not null;default:0"`
+    KeyID     uint      `gorm:"not null;uniqueIndex:idx_usage_day,priority:2"` // 0=应用级汇总哨兵
+    Face      string    `gorm:"size:40;not null;uniqueIndex:idx_usage_day,priority:3"` // catalog/galgame/galgame_internal[_write|_propose]
+    Day       string    `gorm:"size:10;not null;uniqueIndex:idx_usage_day,priority:4"` // YYYY-MM-DD(UTC)
+    Count     int64     `gorm:"not null"`
+    Status4xx int64     `gorm:"column:status_4xx;not null"`
+    Status5xx int64     `gorm:"column:status_5xx;not null"`
     UpdatedAt time.Time
 }
 ```
-> 实时计数在 **Redis**(限流/配额计数器),周期(如每分钟)flush 到此表供门户出历史图;`last_used_at` 同理异步回写。
-> 用量维度可选加 `face` 列(catalog/galgame)——成本极低,门户能出"按面"曲线;v1 先按 (client, key, day),见 [01 §15](./01-design.md)。
+> 实时计数在 **Redis**(限流/配额计数器),周期 flush 到此表供门户出历史图;`last_used_at` 同理异步回写(每 key 每分钟至多一次)。
+> `face` 已是**一等列**(粒度 = (client, key, face, day)),门户能出"按面"曲线;`key_id 0` 是应用级汇总哨兵(不用可空 key_id,避开唯一索引的 NULLs-distinct 语义)。`status_4xx/5xx` 显式列名——GORM 命名策略把 `Status4xx` 蛇形化成 `status4xx`(数字前不加下划线),读写两侧都用 `status_4xx`。
+
+> **留存**:本表只增不减,`prune-developer-usage` 每日 job 删除 `day < 今天−400 天` 的行(400 为拍板值,常量 `DeveloperUsageRetentionDays`)。跨副本单飞由 jobs runner 的按 job 名 advisory lock 提供。
 
 > **迁移**:以上列 + 表都在 `kun_galgame_infra` → `go run ./cmd/migrate`(部署不自动跑,见 [07 §14](./07-migration-and-ops.md))。
 
@@ -121,4 +124,9 @@ func OpenAPIAuth(c fiber.Ctx) error {
 ## 12. 可观测 / 计量
 
 - Redis 实时计数(限流/配额)→ 周期 flush `developer_api_usage` → 门户曲线 + 配额执行 + 告警。
-- 每请求:`last_used_at` 异步回写;按 (client, key, day) 聚合 count/4xx/5xx(可选加 face 维度,见 [01 §15](./01-design.md))。
+- 每请求:`last_used_at` 异步回写;按 (client, key, face, day) 聚合 count/4xx/5xx。
+- **账户级 `GET /dev/usage?days=N`**(user-JWT,owner-guarded;`OwnerUsageSummary`)一次返回:
+  - `daily[]`——窗口内稠密日序列(缺口补 0,老→新),供柱状图;`total_count/4xx/5xx` 为窗口合计。
+  - `by_app[]`——每应用合计(按量降序);`by_face[]`——每 face 合计 `{ face, count, status_4xx, status_5xx }`(按量降序)。以上皆读 `developer_api_usage` rollup。
+  - `live[]`——**实时剩余**(章程 05 §9 的账户级兑现):owner 每把 active key 一行 `{ app_name, key_id, rate_limit, quota_limit, quota_used, quota_remaining, quota_reset }`。**直接读 Redis 执法计数器**(`quota:{key_id}:{UTC日}`,与限流/配额同源,不从 rollup 估算);`quota_reset` = 下个 UTC 零点的 epoch 秒。Redis 不可达时 `live` 为空数组并加 `live_unavailable: true`(读面降级,绝不 5xx)。
+- **留存**:`prune-developer-usage` 每日 job 修剪 `developer_api_usage`(见 [§5.3](#53-新表-developer_api_usage用量落盘按日聚合))。

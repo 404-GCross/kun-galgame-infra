@@ -112,4 +112,13 @@ func RegisterAll(r *Registry) {
 			return RunArtifactGC(ctx, cfg, DefaultArtifactGCOpts(cfg))
 		},
 	})
+
+	r.Register(Job{
+		Name:     "prune-developer-usage",
+		Desc:     "developer_api_usage 留存修剪（删除 day < 今天−400 天 的计量汇总行）",
+		Schedule: Schedule{DailyAt: "06:00"}, // after artifact-gc (05:30); off the image/vndb window
+		Run: func(ctx context.Context, cfg *config.Config) (Summary, error) {
+			return RunPruneDeveloperUsage(ctx, cfg, DefaultPruneDeveloperUsageOpts())
+		},
+	})
 }

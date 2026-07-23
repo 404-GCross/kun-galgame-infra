@@ -248,6 +248,85 @@ func (r *Repository) CountActiveKeysByClient(ctx context.Context, clientID strin
 	return n, err
 }
 
+// OwnerActiveKey is one currently-usable key of an owner (across ALL their
+// dev-enabled apps), carrying the owning app's name + effective-limit inputs.
+// It feeds the account-level live-remaining view (per-key rate/quota read from
+// the Redis enforcement counters).
+type OwnerActiveKey struct {
+	KeyID         uint   `gorm:"column:key_id"`
+	AppName       string `gorm:"column:app_name"`
+	DevTier       string `gorm:"column:dev_tier"`
+	DevRatePerMin int    `gorm:"column:dev_rate_per_min"`
+	DevQuotaDaily int    `gorm:"column:dev_quota_daily"`
+}
+
+// ListOwnerActiveKeys returns every currently-usable key across an owner's
+// dev-enabled apps (not revoked, not past expiry) joined to its app's name and
+// dev-limit columns — the same activeness predicate ResolveByHash enforces.
+// Ordered by app name then key id for a stable render.
+func (r *Repository) ListOwnerActiveKeys(ctx context.Context, ownerUserID uint, now time.Time) ([]OwnerActiveKey, error) {
+	var rows []OwnerActiveKey
+	err := r.db.WithContext(ctx).
+		Table("developer_api_keys AS k").
+		Select(`k.id AS key_id, c.name AS app_name, c.dev_tier AS dev_tier,
+			c.dev_rate_per_min AS dev_rate_per_min, c.dev_quota_daily AS dev_quota_daily`).
+		Joins("JOIN oauth_clients AS c ON c.id = k.client_id").
+		Where(`c.owner_user_id = ? AND c.dev_enabled = ? AND k.revoked_at IS NULL
+			AND (k.expires_at IS NULL OR k.expires_at > ?)`, ownerUserID, true, now).
+		Order("c.name ASC, k.id ASC").
+		Scan(&rows).Error
+	return rows, err
+}
+
+// UsageFaceTotal is one face's total usage over the window (all days/clients
+// folded), for the account-level per-face breakdown. Same status_4xx/5xx column
+// aliases as the sibling aggregates (dodge GORM's acronym/digit naming).
+type UsageFaceTotal struct {
+	Face      string `gorm:"column:face" json:"face"`
+	Count     int64  `gorm:"column:count" json:"count"`
+	Status4xx int64  `gorm:"column:status_4xx" json:"status_4xx"`
+	Status5xx int64  `gorm:"column:status_5xx" json:"status_5xx"`
+}
+
+// SumUsageByFace sums usage across the given clients grouped by face (all
+// days/keys folded), for days on/after sinceDay. Highest-volume face first.
+// Empty clientIDs → no rows (never emits `IN ()`).
+func (r *Repository) SumUsageByFace(ctx context.Context, clientIDs []string, sinceDay string) ([]UsageFaceTotal, error) {
+	var rows []UsageFaceTotal
+	if len(clientIDs) == 0 {
+		return rows, nil
+	}
+	err := r.db.WithContext(ctx).
+		Model(&DeveloperAPIUsage{}).
+		Select("face, SUM(count) AS count, SUM(status_4xx) AS status_4xx, SUM(status_5xx) AS status_5xx").
+		Where("client_id IN ? AND day >= ?", clientIDs, sinceDay).
+		Group("face").
+		Order("count DESC, face ASC").
+		Scan(&rows).Error
+	return rows, err
+}
+
+// CountUsageBefore counts developer_api_usage rows strictly older than beforeDay
+// (YYYY-MM-DD). Used by the retention job's dry-run.
+func (r *Repository) CountUsageBefore(ctx context.Context, beforeDay string) (int64, error) {
+	var n int64
+	err := r.db.WithContext(ctx).
+		Model(&DeveloperAPIUsage{}).
+		Where("day < ?", beforeDay).
+		Count(&n).Error
+	return n, err
+}
+
+// PruneUsageBefore deletes developer_api_usage rows strictly older than
+// beforeDay (YYYY-MM-DD, UTC) and returns the number removed. day is a
+// zero-padded fixed-width string, so the lexicographic `<` is chronological.
+func (r *Repository) PruneUsageBefore(ctx context.Context, beforeDay string) (int64, error) {
+	res := r.db.WithContext(ctx).
+		Where("day < ?", beforeDay).
+		Delete(&DeveloperAPIUsage{})
+	return res.RowsAffected, res.Error
+}
+
 // UsageDayFace is one aggregated usage row for the self-service usage panel:
 // a client's counters summed across all its keys, grouped by (day, face).
 type UsageDayFace struct {

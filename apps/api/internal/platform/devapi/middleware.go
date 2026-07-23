@@ -184,7 +184,7 @@ func (m *Middleware) quotaResult(ctx context.Context, cred *Credential, now time
 		return 0, 0, true, false
 	}
 	utc := now.UTC()
-	key := fmt.Sprintf("quota:%d:%s", cred.KeyID, utc.Format("2006-01-02"))
+	key := quotaCounterKey(cred.KeyID, utc.Format("2006-01-02"))
 	n, err := m.store.Incr(ctx, key, ttlUntilNextDay(utc))
 	if err != nil {
 		return 0, 0, false, true
@@ -293,6 +293,20 @@ func extractKey(c fiber.Ctx) string {
 		}
 	}
 	return strings.TrimSpace(c.Get("X-API-Key"))
+}
+
+// quotaCounterKey is the day-bucketed daily-quota counter key for a key. It is
+// the SINGLE definition shared by the Quota enforcer (which INCRs it) and the
+// account-level live-remaining read (which GETs it) so the two can never drift.
+func quotaCounterKey(keyID uint, day string) string {
+	return fmt.Sprintf("quota:%d:%s", keyID, day)
+}
+
+// nextDayStartUnix is the epoch second at the next UTC midnight — the moment the
+// daily quota counter rolls over (its own key expires and a fresh day begins).
+func nextDayStartUnix(now time.Time) int64 {
+	utc := now.UTC()
+	return time.Date(utc.Year(), utc.Month(), utc.Day(), 0, 0, 0, 0, time.UTC).AddDate(0, 0, 1).Unix()
 }
 
 // ttlUntilNextDay is the duration from now (UTC) to the start of the next day,

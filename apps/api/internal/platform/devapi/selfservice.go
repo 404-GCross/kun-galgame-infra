@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"slices"
+	"strconv"
+	"strings"
 	"time"
 
 	siteModel "api/internal/platform/site/model"
@@ -58,12 +60,17 @@ var (
 type SelfServiceService struct {
 	repo  *Repository
 	admin *AdminService
+	// store is the same Redis enforcement backend the middleware increments;
+	// the account-level usage view reads its live quota counters (same source as
+	// enforcement, not an estimate off the rollup table).
+	store Store
 }
 
-// NewSelfServiceService builds the self-service service over the shared repo and
-// the shared AdminService (so key operations reuse one implementation).
-func NewSelfServiceService(repo *Repository, admin *AdminService) *SelfServiceService {
-	return &SelfServiceService{repo: repo, admin: admin}
+// NewSelfServiceService builds the self-service service over the shared repo,
+// the shared AdminService (so key operations reuse one implementation), and the
+// shared counter store (the live-remaining read source).
+func NewSelfServiceService(repo *Repository, admin *AdminService, store Store) *SelfServiceService {
+	return &SelfServiceService{repo: repo, admin: admin, store: store}
 }
 
 // CreateApp registers a new developer application owned by ownerUserID. It is
@@ -297,17 +304,39 @@ type OwnerUsageAppTotal struct {
 	Status5xx int64  `json:"status_5xx"`
 }
 
+// LiveKeyUsage is one active key's real-time budget, read from the Redis
+// enforcement counters (same source the middleware writes, NOT estimated off the
+// rollup table). rate_limit / quota_limit are the key's EFFECTIVE limits (tier
+// default with any app override; 0 = unlimited/internal). quota_used is the
+// requests counted so far today (UTC); quota_reset is the epoch second at the
+// next UTC midnight when the daily counter rolls over.
+type LiveKeyUsage struct {
+	AppName        string `json:"app_name"`
+	KeyID          uint   `json:"key_id"`
+	RateLimit      int    `json:"rate_limit"`
+	QuotaLimit     int    `json:"quota_limit"`
+	QuotaUsed      int64  `json:"quota_used"`
+	QuotaRemaining int64  `json:"quota_remaining"`
+	QuotaReset     int64  `json:"quota_reset"`
+}
+
 // OwnerUsageSummary is the account-level usage view: a dense daily series (every
 // day in the window, gaps 0-filled, oldest→newest) for the volume chart, the
-// per-app breakdown, and window totals. `since` is the window start (UTC).
+// per-app and per-face breakdowns, window totals, and the per-key live-remaining
+// rows. `since` is the window start (UTC). live_unavailable is set (and live is
+// empty) when the Redis enforcement backend is unreachable — a read-face
+// degradation, never a 5xx.
 type OwnerUsageSummary struct {
-	Days       int                  `json:"days"`
-	Since      string               `json:"since"`
-	TotalCount int64                `json:"total_count"`
-	Total4xx   int64                `json:"total_4xx"`
-	Total5xx   int64                `json:"total_5xx"`
-	Daily      []UsageDayTotal      `json:"daily"`
-	ByApp      []OwnerUsageAppTotal `json:"by_app"`
+	Days            int                  `json:"days"`
+	Since           string               `json:"since"`
+	TotalCount      int64                `json:"total_count"`
+	Total4xx        int64                `json:"total_4xx"`
+	Total5xx        int64                `json:"total_5xx"`
+	Daily           []UsageDayTotal      `json:"daily"`
+	ByApp           []OwnerUsageAppTotal `json:"by_app"`
+	ByFace          []UsageFaceTotal     `json:"by_face"`
+	Live            []LiveKeyUsage       `json:"live"`
+	LiveUnavailable bool                 `json:"live_unavailable,omitempty"`
 }
 
 // OwnerUsage aggregates the caller's usage across ALL their apps for the last
@@ -321,10 +350,16 @@ func (s *SelfServiceService) OwnerUsage(ctx context.Context, ownerUserID uint, d
 	}
 	now := time.Now().UTC()
 	summary := &OwnerUsageSummary{
-		Days:  days,
-		Since: now.AddDate(0, 0, -(days - 1)).Format("2006-01-02"),
-		ByApp: []OwnerUsageAppTotal{},
+		Days:   days,
+		Since:  now.AddDate(0, 0, -(days - 1)).Format("2006-01-02"),
+		ByApp:  []OwnerUsageAppTotal{},
+		ByFace: []UsageFaceTotal{},
+		Live:   []LiveKeyUsage{},
 	}
+	// Live per-key remaining is independent of the rollup window (real-time
+	// counters), so it is built even for an owner with zero recorded usage.
+	s.fillLive(ctx, summary, ownerUserID, now)
+
 	if len(apps) == 0 {
 		summary.Daily = denseDays(now, days, nil)
 		return summary, nil
@@ -341,6 +376,13 @@ func (s *SelfServiceService) OwnerUsage(ctx context.Context, ownerUserID uint, d
 	clientRows, err := s.repo.SumUsageByClient(ctx, clientIDs, summary.Since)
 	if err != nil {
 		return nil, err
+	}
+	faceRows, err := s.repo.SumUsageByFace(ctx, clientIDs, summary.Since)
+	if err != nil {
+		return nil, err
+	}
+	if faceRows != nil {
+		summary.ByFace = faceRows
 	}
 
 	summary.Daily = denseDays(now, days, dayRows)
@@ -375,6 +417,59 @@ func (s *SelfServiceService) OwnerUsage(ctx context.Context, ownerUserID uint, d
 		}
 	})
 	return summary, nil
+}
+
+// fillLive populates summary.Live with each active key's real-time budget read
+// from the Redis quota counters. When the counter backend is unreachable it
+// leaves Live empty and sets LiveUnavailable (read-face degradation — the rest
+// of the summary, sourced from the rollup table, is unaffected). A per-key DB
+// error is non-fatal: live is a best-effort adjunct, not the primary payload.
+func (s *SelfServiceService) fillLive(ctx context.Context, summary *OwnerUsageSummary, ownerUserID uint, now time.Time) {
+	if s.store == nil || !s.store.Available(ctx) {
+		summary.LiveUnavailable = true
+		return
+	}
+	keys, err := s.repo.ListOwnerActiveKeys(ctx, ownerUserID, now)
+	if err != nil {
+		summary.LiveUnavailable = true
+		return
+	}
+	day := now.UTC().Format("2006-01-02")
+	reset := nextDayStartUnix(now)
+	for _, k := range keys {
+		cred := &Credential{Tier: k.DevTier, RateOverride: k.DevRatePerMin, QuotaOverride: k.DevQuotaDaily}
+		rate, _ := cred.EffectiveRate()
+		quota, unlimited := cred.EffectiveQuota()
+		row := LiveKeyUsage{
+			AppName:    k.AppName,
+			KeyID:      k.KeyID,
+			RateLimit:  rate,
+			QuotaLimit: quota,
+			QuotaReset: reset,
+		}
+		if !unlimited {
+			row.QuotaUsed = s.readCounter(ctx, quotaCounterKey(k.KeyID, day))
+			if rem := int64(quota) - row.QuotaUsed; rem > 0 {
+				row.QuotaRemaining = rem
+			}
+		}
+		summary.Live = append(summary.Live, row)
+	}
+}
+
+// readCounter reads an integer enforcement counter through the store (a miss,
+// an outage, or an unparseable value all read as 0 — the live view never errors
+// on a single stale counter).
+func (s *SelfServiceService) readCounter(ctx context.Context, key string) int64 {
+	b, err := s.store.Get(ctx, key)
+	if err != nil || len(b) == 0 {
+		return 0
+	}
+	n, err := strconv.ParseInt(strings.TrimSpace(string(b)), 10, 64)
+	if err != nil || n < 0 {
+		return 0
+	}
+	return n
 }
 
 // denseDays turns sparse (day → totals) rows into a gap-free series over the
