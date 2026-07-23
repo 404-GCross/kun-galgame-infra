@@ -6,7 +6,7 @@ import "time"
 // FROZEN v1 public contract for the catalog face (`/v1/catalog/*`) — deliberately
 // SEPARATE from the internal S2S read DTOs (read_dto.go) so the public wire can
 // evolve on its own "add-only, never change" cadence
-// (docs/developer-platform/01-design.md §3.5). Enum ints are projected to stable
+// (docs/developer-platform/02-public-api.md §3.5). Enum ints are projected to stable
 // string keys (medium / content_rating / title kind / label kind / …) so the
 // contract is self-describing and never leaks the internal numeric state machine
 // (投影化不透内部形状). The aggregate is a cross-media identity registry view:

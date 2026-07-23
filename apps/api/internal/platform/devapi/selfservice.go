@@ -13,7 +13,7 @@ import (
 	"gorm.io/datatypes"
 )
 
-// Self-service caps (docs/developer-platform/01-design.md §9 / 06a 裁定 2-3).
+// Self-service caps (docs/developer-platform/05-developer-portal.md §9 / 06a 裁定 2-3).
 // Plain constants — the developer self-service face has no admin knob to raise
 // them; a higher ceiling is an admin/tier decision, not a self-service one.
 const (

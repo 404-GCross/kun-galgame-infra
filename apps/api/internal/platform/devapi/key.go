@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-// Key format (docs/developer-platform/01-design.md §4.1):
+// Key format (docs/developer-platform/03-auth-and-tiers.md §4.1):
 //
 //	nm_live_<base62(24B)> / nm_test_<base62(24B)>
 //

@@ -4,7 +4,7 @@ package dto
 // public contract for the galgame face (`/v1/galgame/*`) — deliberately kept
 // SEPARATE from the internal read DTOs (GalgameDetail / GalgameBrief) so the
 // public wire can evolve on its own "add-only, never change" cadence
-// (docs/developer-platform/01-design.md §3.5). Locale keys use BCP-47 lowercase
+// (docs/developer-platform/02-public-api.md §3.5). Locale keys use BCP-47 lowercase
 // (ja-jp / zh-cn / zh-tw / en-us); an empty localized string is surfaced as
 // null (the key is always present). The aggregate record is a multi-source
 // MERGE, not a per-source raw re-distribution (design §11): scores are per-source

@@ -383,7 +383,7 @@ func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 	//   - Self-service face (/dev/*): user JWT only, owner-guarded — a developer
 	//     builds + manages their OWN apps/keys.
 	// The public read faces are NOT here — they ship with 02/03.
-	// See docs/developer-platform/01-design.md §5-9.
+	// See docs/developer-platform/ §5-9 (04-platform-internals §5-6/§8, 03-auth-and-tiers §7, 05-developer-portal §9).
 	devRepo := devapi.NewRepository(db)
 	devAdminSvc := devapi.NewAdminService(devRepo, devapi.NewRedisStore(a.Cache))
 	devAdminH := devapi.NewAdminHandler(devAdminSvc)
