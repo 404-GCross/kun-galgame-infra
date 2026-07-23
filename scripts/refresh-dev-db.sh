@@ -200,7 +200,28 @@ do_core() {
   if [[ -f "$dl/manifest.txt" ]]; then
     echo ">> manifest summary:"; grep -E '^# (--- summary|[a-z])' "$dl/manifest.txt" | sed 's/^# /   /'
   fi
+  if in_list "kun_galgame_infra" "${sel[@]}"; then credential_card; fi
   finish
+}
+
+# credential_card prints the dev credential contract every time kun_galgame_infra
+# is refreshed. The restore REPLACES users and oauth_clients with the (scrubbed)
+# prod set, so any consumer still holding pre-refresh credentials breaks in two
+# characteristic ways: S2S calls answer 401 "客户端密钥无效" (stale client
+# secret in a product repo's .env) and logins answer 邮箱或密码错误 (old dev
+# account emails no longer exist). Both are cured by the contract below — never
+# by UPDATEing secrets in the DB, which the next refresh would wipe again.
+credential_card() {
+  local db="kun_galgame_infra${DEVDB_SUFFIX}"
+  echo ""
+  echo ">> dev credential contract (docs/dev-environment.md — re-derived on EVERY refresh):"
+  echo "   logins:        email user<id>@${DEV_EMAIL_DOMAIN}  password kungal-dev   (every account)"
+  echo "   client secret: dev-secret-<client_id>  — set this in each product repo's .env, e.g.:"
+  lpsql -Atc "SELECT id, name FROM oauth_clients ORDER BY site_id NULLS LAST, name" -d "$db" 2>/dev/null \
+    | awk -F'|' '{printf "     %-34s dev-secret-%s  (%s)\n", $1, $1, $2}' \
+    || echo "     (could not list oauth_clients — query $db manually)"
+  echo "   hand-seeded dev-only rows (e.g. letmoe-dev) were WIPED by this refresh — re-seed"
+  echo "   them per docs/dev-environment.md if a repo depends on one."
 }
 
 # --- sources group -----------------------------------------------------------
