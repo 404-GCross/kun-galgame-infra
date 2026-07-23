@@ -95,7 +95,7 @@ W5 后 `/internal` 承载的**唯一读集** = 下列平台工作流路由。它
 
 > **代码(单一真源)**:infra `apps/api/internal/galgameapp/`——`workflowroutes.go` = 15 工作流读的注册 + 逐路由章程;`devapiface.go` = `/internal` 面 devapi 链 + 2 feed 挂载;`writeroutes.go`(06a 写面)/ `proposeroutes.go`(06b 提案面)= 兄弟面。
 >
-> **机器可读 spec 注**:`docs/galgame_wiki/read-openapi.yaml`(门户发布的 `galgame-wiki.openapi.yaml`)由 `gen-openapi -galgame-read`(handler 侧 `SetupGalgameReadSpec`)**独立生成**,与本面 Fiber 路由注册解耦;截至 W5 它仍枚举退役前的整套读面,**待后续(portal 收官)按留任 15 读重生成**——现阶段以本页 + 代码为准。
+> **机器可读 spec 注**:wiki 时代的机器可读 spec(`docs/galgame_wiki/read-openapi.yaml`、`calendar-openapi.yaml`,及门户发布的 `galgame-wiki.openapi.yaml` / `galgame-wiki-calendar.openapi.yaml`)已随桥面一同退役(W5)。平台工作流面**不再产出机器可读 spec**——与其兄弟 `/internal` 写面(06a)、提案面(06b)一致,二者本就无 spec;本面之真源即**代码(`workflowroutes.go`)+ 本页**。唯一对外的机器可读契约是门户发布的 `/v1` 公开投影 `docs/galgame_wiki/public-openapi.yaml`。
 
 ## 终态(路线 B 已达成)
 

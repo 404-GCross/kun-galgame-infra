@@ -194,7 +194,7 @@ func Mount(a *app.App, cfg *config.Config, deps Deps) {
 	tagH := galgameHandler.NewTagHandler(tagRepo, taxSvc, searchHook)
 	officialH := galgameHandler.NewOfficialHandler(officialRepo, taxSvc, searchHook)
 	// Entity reverse-lookups (step 20): official/tag → self-description + galgame
-	// briefs, in the /galgame read namespace (part of read-openapi).
+	// briefs, served on the /v1 public projection (mountPublic).
 	entityGalgamesH := galgameHandler.NewEntityGalgamesHandler(officialRepo, tagRepo, galgameSvc)
 	engineH := galgameHandler.NewEngineHandler(engineRepo, taxSvc)
 	seriesH := galgameHandler.NewSeriesHandler(seriesRepo, taxSvc)
