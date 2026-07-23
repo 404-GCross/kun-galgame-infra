@@ -274,6 +274,13 @@ services:
     healthcheck:
       test: ["CMD", "/app/app", "healthcheck"]
       <<: *svc-health
+    networks:
+      default:
+        aliases: [infra-oauth]
+        # Stable cross-project s2s name for the developer portal (its own Dokploy
+        # Compose project): survives a recreation of THIS project (container-name
+        # prefixes change, compose aliases don't) and is distinctive enough that
+        # no other project would accidentally claim it on dokploy-network.
     restart: unless-stopped
 
   image:
