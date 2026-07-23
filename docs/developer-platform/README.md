@@ -2,7 +2,7 @@
 
 > 一句话定位:把 **NextMoe 开放 API**(生态作品数据的只读能力,按媒介/域分「面」)安全、自助地开放给**第三方开发者**;配套 **NextMoe 开发者平台**(开发者门户)负责注册应用、领取凭证、查看用量、阅读文档。**不引入重型 API 网关**,而是复用已有的 OAuth2 IdP + Fiber + Redis + Cloudflare + Nuxt,把「开发者平台」那薄薄一层做进现有体系。
 
-本目录是该设计的单一来源。原单文件设计稿(v2.1)在 2026-07-22 按主题拆成下列编号文档;**章节号(§1–§15)是跨文档稳定锚点**——代码注释按 `§N` 引用本设计,拆分只改文件名、不改章节号。
+本目录是该设计的单一来源。原单文件设计稿(v2.1)在 2026-07-22 按主题拆成下列编号文档;**章节号(§1–§15)是跨文档稳定锚点**——代码注释按 `§N` 引用本设计,拆分只改文件名、不改章节号。拆分后的新增拍板以 08+ 续编,章节号自 **§16** 起续用同一锚点空间。
 
 ## 文档索引
 
@@ -15,6 +15,7 @@
 | 05 | [developer-portal.md](./05-developer-portal.md) | 开发者门户 `developer.nextmoe.dev`(§9) | 已完成 |
 | 06 | [security-compliance.md](./06-security-compliance.md) | 安全 / 滥用 / 合规:NSFW 闸控、来源投影(D1 再分发)、CORS、ToS、审计(§11) | 已完成 |
 | 07 | [migration-and-ops.md](./07-migration-and-ops.md) | 迁移与运维提醒:主库迁移、新域名 / CF、Redis 键空间、契约登记、面服务中间件(§14) | 已完成 |
+| 08 | [downstream-faces-and-sdk.md](./08-downstream-faces-and-sdk.md) | 下游开放 API = 面联邦(§16)· OpenAPI 契约与客户端 SDK / Flutter(§17) | 拍板 2026-07-23,触发式执行 |
 
 > 各 Phase 的实施进度见 [01 §13 分期](./01-design.md)。战略上位(开放 API 计划与 galgame-wiki 退役,W0–W5 波次)见 `refs/docs/nextmoe-draft/19`;工程任务书见 `refs/plans/05-open-api`(Phase 1)与 `refs/plans/09-open-api-phase2`(Phase 2)。
 
@@ -32,6 +33,7 @@
 - **一份契约三类消费者**——一方站点(forum / moyu / letmoe)以 `internal` tier 真实消费同一开放 API;门户展示的 API = 全部真实 API。
 - **不上网关**——各面服务本地鉴权中间件(JWKS 验签 / introspection + Redis 缓存)+ Traefik 路径分面;没有集中网关单点。
 - **公开读可被 Cloudflare 边缘缓存**——鉴权与响应内容解耦,缓存键不含 key;这是「开放 API 代价可控」的承重墙。详见 [04 §8](./04-platform-internals.md)。
+- **下游开放 API = 面联邦,不建第二平台**——kungal / moyu / letmoe 未来的公开小面并入本平台作新 face(一个凭证/门户/计量平面),接入分进程内中间件与网关 ForwardAuth 两档。详见 [08 §16](./08-downstream-faces-and-sdk.md)。
 
 ## 内部设计文档,非跨仓契约镜像
 
