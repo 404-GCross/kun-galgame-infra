@@ -76,3 +76,17 @@ type DeveloperAPIUsage struct {
 
 // TableName returns the table name for DeveloperAPIUsage.
 func (DeveloperAPIUsage) TableName() string { return "developer_api_usage" }
+
+// DeveloperUsageRetentionDays is how many days of per-(client,key,face,day)
+// usage rollup are kept. Rows older than this are pruned daily by the
+// prune-developer-usage job — developer_api_usage grows unbounded otherwise.
+// 400 (~13 months) preserves a full year-over-year window plus slack; it is a
+// pinned product/ops decision, not derived from anything.
+const DeveloperUsageRetentionDays = 400
+
+// RetentionCutoffDay returns the oldest day (YYYY-MM-DD, UTC) still KEPT: rows
+// whose day is strictly less than this are prunable. now is a parameter so the
+// boundary is unit-testable.
+func RetentionCutoffDay(now time.Time) string {
+	return now.UTC().AddDate(0, 0, -DeveloperUsageRetentionDays).Format("2006-01-02")
+}

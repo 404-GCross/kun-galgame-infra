@@ -385,15 +385,17 @@ func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 	// The public read faces are NOT here — they ship with 02/03.
 	// See docs/developer-platform/ §5-9 (04-platform-internals §5-6/§8, 03-auth-and-tiers §7, 05-developer-portal §9).
 	devRepo := devapi.NewRepository(db)
-	devAdminSvc := devapi.NewAdminService(devRepo, devapi.NewRedisStore(a.Cache))
+	devStore := devapi.NewRedisStore(a.Cache)
+	devAdminSvc := devapi.NewAdminService(devRepo, devStore)
 	devAdminH := devapi.NewAdminHandler(devAdminSvc)
 	devGroup := admin.Group("/devapi", middleware.RequirePermission(devapiPerm.Resolver, devapiPerm.Manage))
 	devAdminH.Register(devGroup)
 
 	// Developer self-service face. User-JWT auth (no admin permission); every
 	// endpoint is owner-guarded in the service (non-owner → 404, no existence
-	// leak). App/key caps are constants (5 apps/user, 5 active keys/app).
-	devSelfH := devapi.NewSelfServiceHandler(devapi.NewSelfServiceService(devRepo, devAdminSvc))
+	// leak). App/key caps are constants (5 apps/user, 5 active keys/app). The
+	// same devStore feeds the account usage view's live-remaining read.
+	devSelfH := devapi.NewSelfServiceHandler(devapi.NewSelfServiceService(devRepo, devAdminSvc, devStore))
 	devSelfGroup := v1.Group("/dev", middleware.Auth(authSvc))
 	devSelfH.Register(devSelfGroup)
 

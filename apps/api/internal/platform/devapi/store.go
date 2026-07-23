@@ -28,6 +28,11 @@ type Store interface {
 	Set(ctx context.Context, key string, value []byte, ttl time.Duration) error
 	// Del removes key (used to actively bust a revoked key's resolve cache).
 	Del(ctx context.Context, key string) error
+	// Available reports whether the counter backend is reachable. A read-only
+	// consumer (the account-level live-remaining view) uses it to degrade to an
+	// empty result + a flag instead of reporting bogus zeros when Redis is down —
+	// Get cannot signal this itself (a miss and a disabled store both read empty).
+	Available(ctx context.Context) bool
 }
 
 // redisStore adapts *cache.RedisCache to Store. Atomic INCR/EXPIRE go through
@@ -90,4 +95,8 @@ func (s *redisStore) Del(_ context.Context, key string) error {
 		return nil
 	}
 	return s.cache.Delete(key)
+}
+
+func (s *redisStore) Available(_ context.Context) bool {
+	return s.live()
 }

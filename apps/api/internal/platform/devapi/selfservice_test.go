@@ -13,13 +13,15 @@ import (
 	"github.com/gofiber/fiber/v3"
 )
 
-// newSelfService builds a self-service service sharing one repo + AdminService
-// (the composition the wiring uses).
-func newSelfService(t *testing.T) (*SelfServiceService, *AdminService, *Repository) {
+// newSelfService builds a self-service service sharing one repo + AdminService +
+// counter store (the composition the wiring uses). The store is returned so a
+// test can seed live enforcement counters or simulate a store outage.
+func newSelfService(t *testing.T) (*SelfServiceService, *AdminService, *Repository, *memStore) {
 	t.Helper()
 	repo := NewRepository(testDB)
-	admin := NewAdminService(repo, newMemStore())
-	return NewSelfServiceService(repo, admin), admin, repo
+	store := newMemStore()
+	admin := NewAdminService(repo, store)
+	return NewSelfServiceService(repo, admin, store), admin, repo, store
 }
 
 // cleanupSelf resets the tables between self-service tests. Unlike cleanup (used
@@ -42,7 +44,7 @@ func cleanupSelf(t *testing.T) {
 // listed only for that owner, and invisible to another user (404 signal).
 func TestSelfServiceCreateAndOwnerScope(t *testing.T) {
 	cleanupSelf(t)
-	svc, _, _ := newSelfService(t)
+	svc, _, _, _ := newSelfService(t)
 	ctx := context.Background()
 	const userA, userB = uint(1), uint(2)
 
@@ -78,7 +80,7 @@ func TestSelfServiceCreateAndOwnerScope(t *testing.T) {
 // TestSelfServiceAppCap: the 6th app for one owner is rejected.
 func TestSelfServiceAppCap(t *testing.T) {
 	cleanupSelf(t)
-	svc, _, _ := newSelfService(t)
+	svc, _, _, _ := newSelfService(t)
 	ctx := context.Background()
 	const owner = uint(1)
 
@@ -95,7 +97,7 @@ func TestSelfServiceAppCap(t *testing.T) {
 // TestSelfServiceKeyCapAndScope: the active-key cap and the scope allow-list.
 func TestSelfServiceKeyCapAndScope(t *testing.T) {
 	cleanupSelf(t)
-	svc, _, _ := newSelfService(t)
+	svc, _, _, _ := newSelfService(t)
 	ctx := context.Background()
 	const owner = uint(1)
 
@@ -138,7 +140,7 @@ func TestSelfServiceKeyCapAndScope(t *testing.T) {
 // A's client_id + key id.
 func TestSelfServiceKeyOwnerGuard(t *testing.T) {
 	cleanupSelf(t)
-	svc, _, repo := newSelfService(t)
+	svc, _, repo, _ := newSelfService(t)
 	ctx := context.Background()
 	const userA, userB = uint(1), uint(2)
 
@@ -165,7 +167,7 @@ func TestSelfServiceKeyOwnerGuard(t *testing.T) {
 // (and they stop resolving) and flips dev_enabled off.
 func TestSelfServiceDeactivateCascade(t *testing.T) {
 	cleanupSelf(t)
-	svc, _, repo := newSelfService(t)
+	svc, _, repo, _ := newSelfService(t)
 	ctx := context.Background()
 	const owner = uint(1)
 
@@ -195,7 +197,7 @@ func TestSelfServiceDeactivateCascade(t *testing.T) {
 // TestSelfServiceUsageShape: usage is aggregated by (day, face) across keys.
 func TestSelfServiceUsageShape(t *testing.T) {
 	cleanupSelf(t)
-	svc, _, repo := newSelfService(t)
+	svc, _, repo, _ := newSelfService(t)
 	ctx := context.Background()
 	const owner = uint(1)
 
@@ -235,7 +237,7 @@ func TestSelfServiceUsageShape(t *testing.T) {
 // volume); an owner with no apps gets a zero-filled series, not an error.
 func TestSelfServiceOwnerUsage(t *testing.T) {
 	cleanupSelf(t)
-	svc, _, repo := newSelfService(t)
+	svc, _, repo, _ := newSelfService(t)
 	ctx := context.Background()
 	const owner = uint(1)
 
@@ -285,6 +287,28 @@ func TestSelfServiceOwnerUsage(t *testing.T) {
 		t.Errorf("by_app[1] = %+v, want app-b 2", b)
 	}
 
+	// Per-face breakdown, sorted by volume DESC. catalog = 3 (app-a) + 2 (app-b)
+	// = 5 with 1 4xx; galgame = 1 with 1 5xx.
+	byFace := map[string]UsageFaceTotal{}
+	for _, f := range sum.ByFace {
+		byFace[f.Face] = f
+	}
+	if len(sum.ByFace) != 2 || sum.ByFace[0].Face != "catalog" {
+		t.Fatalf("by_face = %+v, want catalog first of two", sum.ByFace)
+	}
+	if c := byFace["catalog"]; c.Count != 5 || c.Status4xx != 1 || c.Status5xx != 0 {
+		t.Errorf("by_face[catalog] = %+v, want count 5 / 4xx 1 / 5xx 0", c)
+	}
+	if g := byFace["galgame"]; g.Count != 1 || g.Status5xx != 1 {
+		t.Errorf("by_face[galgame] = %+v, want count 1 / 5xx 1", g)
+	}
+
+	// The recorded key_ids are synthetic (no developer_api_keys rows), so there
+	// are no active keys → an empty (but AVAILABLE) live series.
+	if len(sum.Live) != 0 || sum.LiveUnavailable {
+		t.Errorf("live = %+v (unavailable=%v), want empty + available", sum.Live, sum.LiveUnavailable)
+	}
+
 	// An owner with no apps: zero-filled dense series, empty breakdown, no error.
 	empty, err := svc.OwnerUsage(ctx, uint(999), 7)
 	if err != nil {
@@ -293,6 +317,71 @@ func TestSelfServiceOwnerUsage(t *testing.T) {
 	if len(empty.Daily) != 7 || empty.TotalCount != 0 || len(empty.ByApp) != 0 {
 		t.Errorf("empty-owner = daily %d / total %d / apps %d, want 7/0/0",
 			len(empty.Daily), empty.TotalCount, len(empty.ByApp))
+	}
+	if len(empty.ByFace) != 0 || len(empty.Live) != 0 || empty.LiveUnavailable {
+		t.Errorf("empty-owner by_face %d / live %d / unavailable %v, want 0/0/false",
+			len(empty.ByFace), len(empty.Live), empty.LiveUnavailable)
+	}
+}
+
+// TestSelfServiceOwnerUsageLive: the live[] series reports each active key's
+// real-time budget read from the Redis quota counters (seeded on the fake
+// store); a store outage degrades to an empty live[] + live_unavailable, never
+// an error.
+func TestSelfServiceOwnerUsageLive(t *testing.T) {
+	cleanupSelf(t)
+	svc, _, _, store := newSelfService(t)
+	ctx := context.Background()
+	const owner = uint(1)
+
+	app, err := svc.CreateApp(ctx, owner, "live-app", "")
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	key, _, err := svc.MintKey(ctx, owner, app.ID, MintKeyInput{Name: "k"})
+	if err != nil {
+		t.Fatalf("mint: %v", err)
+	}
+
+	// Seed today's quota counter for this key: 120 requests used so far.
+	now := time.Now().UTC()
+	store.setCounter(quotaCounterKey(key.ID, now.Format("2006-01-02")), 120)
+
+	sum, err := svc.OwnerUsage(ctx, owner, 7)
+	if err != nil {
+		t.Fatalf("owner usage: %v", err)
+	}
+	if sum.LiveUnavailable {
+		t.Fatalf("live must be available with a healthy store")
+	}
+	if len(sum.Live) != 1 {
+		t.Fatalf("live len = %d, want 1", len(sum.Live))
+	}
+	// A free-tier key: 60/min, 50,000/day (the tier defaults). used 120 ⇒
+	// remaining 49,880; reset at the next UTC midnight.
+	l := sum.Live[0]
+	wantRate, wantQuota, _ := TierLimits(TierFree)
+	if l.AppName != "live-app" || l.KeyID != key.ID {
+		t.Errorf("live[0] identity = %q/%d, want live-app/%d", l.AppName, l.KeyID, key.ID)
+	}
+	if l.RateLimit != wantRate || l.QuotaLimit != wantQuota {
+		t.Errorf("live[0] limits = rate %d / quota %d, want %d/%d", l.RateLimit, l.QuotaLimit, wantRate, wantQuota)
+	}
+	if l.QuotaUsed != 120 || l.QuotaRemaining != int64(wantQuota)-120 {
+		t.Errorf("live[0] usage = used %d / remaining %d, want 120/%d", l.QuotaUsed, l.QuotaRemaining, int64(wantQuota)-120)
+	}
+	if l.QuotaReset != nextDayStartUnix(now) {
+		t.Errorf("live[0] quota_reset = %d, want %d", l.QuotaReset, nextDayStartUnix(now))
+	}
+
+	// Store outage → degrade, do not error.
+	store.failing = true
+	deg, err := svc.OwnerUsage(ctx, owner, 7)
+	if err != nil {
+		t.Fatalf("owner usage under outage: %v", err)
+	}
+	if !deg.LiveUnavailable || len(deg.Live) != 0 {
+		t.Errorf("under outage: live_unavailable=%v live=%d, want true/0", deg.LiveUnavailable, len(deg.Live))
 	}
 }
 
@@ -312,7 +401,7 @@ func fakeAuth(userID uint) fiber.Handler {
 // never distinguishable from a nonexistent one (no existence leak).
 func TestSelfServiceHandlerOwnerGuard404(t *testing.T) {
 	cleanupSelf(t)
-	svc, _, _ := newSelfService(t)
+	svc, _, _, _ := newSelfService(t)
 	ctx := context.Background()
 	const userA, userB = uint(1), uint(2)
 
@@ -377,7 +466,7 @@ func TestSelfServiceHandlerOwnerGuard404(t *testing.T) {
 // it never appears in the subsequent list (show-once + no-leak discipline).
 func TestSelfServiceMintShowOnce(t *testing.T) {
 	cleanupSelf(t)
-	svc, _, _ := newSelfService(t)
+	svc, _, _, _ := newSelfService(t)
 	ctx := context.Background()
 	const owner = uint(1)
 	app, _ := svc.CreateApp(ctx, owner, "showonce", "")
