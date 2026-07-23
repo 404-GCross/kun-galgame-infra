@@ -40,6 +40,18 @@ services:
       # distinctive enough that no other project on the shared dokploy-network
       # would claim it (bare same-named aliases DNS round-robin across projects).
       NUXT_OAUTH_API_BASE: http://infra-oauth:9277
+      # OAuth SSO login (doc 05 §9.1). Values come from this Dokploy project's
+      # Environment tab — compose only passes host env INTO a container when the
+      # variable is declared here, so every runtime-config key the SSO flow needs
+      # MUST be forwarded explicitly (a missing entry silently falls back to the
+      # image's build-time localhost defaults — exactly the bug this block fixes).
+      # NUXT_OAUTH_CLIENT_SECRET is the confidential client secret: SERVER-only,
+      # used by Nitro's /auth/{exchange,refresh} calls to /oauth/token.
+      NUXT_PUBLIC_OAUTH_CLIENT_ID: ${NUXT_PUBLIC_OAUTH_CLIENT_ID:-}
+      NUXT_OAUTH_CLIENT_SECRET: ${NUXT_OAUTH_CLIENT_SECRET:-}
+      NUXT_PUBLIC_OAUTH_AUTHORIZE_BASE: ${NUXT_PUBLIC_OAUTH_AUTHORIZE_BASE:-https://oauth.kungal.com/api/v1}
+      NUXT_PUBLIC_OAUTH_WEB_BASE: ${NUXT_PUBLIC_OAUTH_WEB_BASE:-https://oauth.kungal.com}
+      NUXT_PUBLIC_OAUTH_REDIRECT_URI: ${NUXT_PUBLIC_OAUTH_REDIRECT_URI:-https://developer.nextmoe.dev/auth/callback}
     expose: ["3000"]
     healthcheck:
       test:
