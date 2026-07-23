@@ -50,6 +50,20 @@ POST /oauth/apikey/introspect          (s2s, 仅内网/带 s2s 凭证)
 ```
 > 备选:若与 image/artifact 现有的 client 校验机制(site-key)一致地"共享 DB 读",可改为面服务直读 `oauth_clients`/`developer_api_keys`——**实现时与现有 image/artifact 的 client 校验路径对齐**,二选一,保持一致。
 
+### 4.4 `/dev/*` 自助面的 client 栅栏(confused-deputy 硬前置)
+
+开发者门户自助面(`/dev/*`,cmd/oauth)用**用户 JWT** 鉴权(不是 API key)。`middleware.Auth` 只验签名 + 用户在册未封,**不验这枚 access token 属于哪个 OAuth client**。若无额外栅栏,任何第三方 OAuth app 拿到的用户 token(哪怕只授了 `openid profile email`)都能替用户在 `/dev/*` 铸/轮换/吊销 API key——典型 confused-deputy。
+
+因此 `middleware.Auth` 之后加一道 **`DevPortalFence`**(RFC 9068 的 `client_id` claim,pkg/utils/jwt.go 第一方为空):
+
+- `client_id == ""`(第一方 `/auth/login` session token,无 OAuth client)→ **放行**;
+- `client_id` ∈ 允许列表 → **放行**(即开发者门户自己的 confidential client);
+- 其余 → **403** + `slog.Warn` 记被拒的 `client_id`(不记 token)。
+
+**允许列表 = env `KUN_DEV_PORTAL_CLIENT_IDS`(CSV)**。**空 = fail-closed**:只放行第一方 token,任何 client token 一律 403(与 trust 侧 `KUN_TRUST_FORWARDER_CLIENT_IDS` 同形)。门户以 auth-code + PKCE 让用户登录时,token 带门户自己的 `client_id`,故门户 client 注册后须把它填进这个 env,否则门户用户会被自家栅栏 403。设在 **oauth 服务**上。
+
+> **升级路径(第三方实际开放时)**:本栅栏是"只让门户自己进"的硬前置,不是细粒度授权。将来对任意第三方开放 `/dev/*` 时,新增 `dev:manage` scope + 同意页文案(第三方 app 须显式获用户同意才能管理其开发者资源),届时栅栏从"client 白名单"升级为"白名单 ∪ 持 `dev:manage` 的已同意 client"。本波不做。
+
 ---
 
 ## 7. 限流 + 配额 + 分层

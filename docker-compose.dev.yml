@@ -264,6 +264,11 @@ services:
       # absent, access tokens stay HS256 (today's default). Fine for local work.
       KUN_OIDC_KEY_ENC_KEY: ""
       KUN_OIDC_SIGN_ASYMMETRIC: "false"
+      # Developer-platform client fence (docs/developer-platform/03). CSV of the
+      # OAuth client ids allowed to reach /dev/* with a user token. Empty in dev
+      # → fail-closed to first-party /auth/login tokens only (the local portal
+      # logs in first-party), which is all local work needs.
+      KUN_DEV_PORTAL_CLIENT_IDS: ""
     depends_on:
       # redis is not start-gated: it is host-shared on :6379 (the box's own or
       # the compose one) and services retry the connection, so `pnpm dev` can

@@ -396,7 +396,17 @@ func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 	// leak). App/key caps are constants (5 apps/user, 5 active keys/app). The
 	// same devStore feeds the account usage view's live-remaining read.
 	devSelfH := devapi.NewSelfServiceHandler(devapi.NewSelfServiceService(devRepo, devAdminSvc, devStore))
-	devSelfGroup := v1.Group("/dev", middleware.Auth(authSvc))
+	// Client fence (confused-deputy guard): after Auth verifies signer + user,
+	// DevPortalFence admits only first-party session tokens (empty client_id) and
+	// tokens issued to an allow-listed OAuth client (the developer portal itself).
+	// An empty KUN_DEV_PORTAL_CLIENT_IDS is fail-closed — first-party only. Any
+	// third-party app's user token (openid/profile/email) is 403.
+	// See docs/developer-platform/03-auth-and-tiers.md.
+	devPortalClients := make(map[string]bool, len(cfg.DevPortalClientIDs))
+	for _, id := range cfg.DevPortalClientIDs {
+		devPortalClients[id] = true
+	}
+	devSelfGroup := v1.Group("/dev", middleware.Auth(authSvc), middleware.DevPortalFence(devPortalClients))
 	devSelfH.Register(devSelfGroup)
 
 	// Image admin routes — best-effort; if images DB or S3 are unreachable
