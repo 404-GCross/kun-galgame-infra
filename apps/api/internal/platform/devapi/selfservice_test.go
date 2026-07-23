@@ -230,6 +230,72 @@ func TestSelfServiceUsageShape(t *testing.T) {
 	}
 }
 
+// TestSelfServiceOwnerUsage: the account-level aggregate sums across ALL the
+// owner's apps into a dense daily series + a per-app breakdown (sorted by
+// volume); an owner with no apps gets a zero-filled series, not an error.
+func TestSelfServiceOwnerUsage(t *testing.T) {
+	cleanupSelf(t)
+	svc, _, repo := newSelfService(t)
+	ctx := context.Background()
+	const owner = uint(1)
+
+	appA, _ := svc.CreateApp(ctx, owner, "app-a", "")
+	appB, _ := svc.CreateApp(ctx, owner, "app-b", "")
+
+	rec := NewUsageRecorder(repo, newMemStore())
+	// app-a: 4 requests across two faces/keys — 1 4xx, 1 5xx.
+	rec.Record(&Credential{KeyID: 1, ClientID: appA.ID}, "catalog", 200)
+	rec.Record(&Credential{KeyID: 1, ClientID: appA.ID}, "catalog", 200)
+	rec.Record(&Credential{KeyID: 1, ClientID: appA.ID}, "catalog", 404)
+	rec.Record(&Credential{KeyID: 2, ClientID: appA.ID}, "galgame", 500)
+	// app-b: 2 requests.
+	rec.Record(&Credential{KeyID: 3, ClientID: appB.ID}, "catalog", 200)
+	rec.Record(&Credential{KeyID: 3, ClientID: appB.ID}, "catalog", 200)
+	if err := rec.Flush(ctx); err != nil {
+		t.Fatalf("flush: %v", err)
+	}
+
+	sum, err := svc.OwnerUsage(ctx, owner, 7)
+	if err != nil {
+		t.Fatalf("owner usage: %v", err)
+	}
+
+	// Dense window series; all usage lands on today, so the series totals equal
+	// the grand totals (asserted day-agnostically to dodge a UTC-midnight flake).
+	if len(sum.Daily) != 7 {
+		t.Fatalf("daily len = %d, want 7 (dense)", len(sum.Daily))
+	}
+	var dailySum int64
+	for _, d := range sum.Daily {
+		dailySum += d.Count
+	}
+	if dailySum != 6 || sum.TotalCount != 6 || sum.Total4xx != 1 || sum.Total5xx != 1 {
+		t.Errorf("totals = daily %d / total %d / 4xx %d / 5xx %d, want 6/6/1/1",
+			dailySum, sum.TotalCount, sum.Total4xx, sum.Total5xx)
+	}
+
+	// Per-app breakdown, sorted by volume DESC (app-a=4 before app-b=2).
+	if len(sum.ByApp) != 2 {
+		t.Fatalf("by_app len = %d, want 2", len(sum.ByApp))
+	}
+	if a := sum.ByApp[0]; a.Name != "app-a" || a.Count != 4 || a.Status4xx != 1 || a.Status5xx != 1 {
+		t.Errorf("by_app[0] = %+v, want app-a 4/1/1", a)
+	}
+	if b := sum.ByApp[1]; b.Name != "app-b" || b.Count != 2 {
+		t.Errorf("by_app[1] = %+v, want app-b 2", b)
+	}
+
+	// An owner with no apps: zero-filled dense series, empty breakdown, no error.
+	empty, err := svc.OwnerUsage(ctx, uint(999), 7)
+	if err != nil {
+		t.Fatalf("empty-owner usage: %v", err)
+	}
+	if len(empty.Daily) != 7 || empty.TotalCount != 0 || len(empty.ByApp) != 0 {
+		t.Errorf("empty-owner = daily %d / total %d / apps %d, want 7/0/0",
+			len(empty.Daily), empty.TotalCount, len(empty.ByApp))
+	}
+}
+
 // --- handler-level owner guard: every endpoint 404s for a non-owner (no leak) ---
 
 // fakeAuth injects a user_id local, standing in for middleware.Auth so the

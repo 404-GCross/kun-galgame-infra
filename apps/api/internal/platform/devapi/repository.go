@@ -274,6 +274,59 @@ func (r *Repository) AggregateUsageByClient(ctx context.Context, clientID, since
 	return rows, err
 }
 
+// UsageDayTotal is one day's usage summed across a set of clients (all faces
+// folded together), for the account-level usage panel. Same status_4xx/5xx
+// column aliases as UsageDayFace (dodge GORM's acronym/digit naming).
+type UsageDayTotal struct {
+	Day       string `gorm:"column:day" json:"day"`
+	Count     int64  `gorm:"column:count" json:"count"`
+	Status4xx int64  `gorm:"column:status_4xx" json:"status_4xx"`
+	Status5xx int64  `gorm:"column:status_5xx" json:"status_5xx"`
+}
+
+// UsageClientTotal is one client's total usage over the window (all days/faces
+// folded), for the per-app breakdown.
+type UsageClientTotal struct {
+	ClientID  string `gorm:"column:client_id" json:"client_id"`
+	Count     int64  `gorm:"column:count" json:"count"`
+	Status4xx int64  `gorm:"column:status_4xx" json:"status_4xx"`
+	Status5xx int64  `gorm:"column:status_5xx" json:"status_5xx"`
+}
+
+// SumUsageByDay sums usage across the given clients grouped by day (all faces
+// folded), for days on/after sinceDay (YYYY-MM-DD, UTC). Oldest day first (chart
+// order). Empty clientIDs → no rows (never emits `IN ()`).
+func (r *Repository) SumUsageByDay(ctx context.Context, clientIDs []string, sinceDay string) ([]UsageDayTotal, error) {
+	var rows []UsageDayTotal
+	if len(clientIDs) == 0 {
+		return rows, nil
+	}
+	err := r.db.WithContext(ctx).
+		Model(&DeveloperAPIUsage{}).
+		Select("day, SUM(count) AS count, SUM(status_4xx) AS status_4xx, SUM(status_5xx) AS status_5xx").
+		Where("client_id IN ? AND day >= ?", clientIDs, sinceDay).
+		Group("day").
+		Order("day ASC").
+		Scan(&rows).Error
+	return rows, err
+}
+
+// SumUsageByClient sums usage across the given clients grouped by client_id (all
+// days/faces folded), for days on/after sinceDay. Empty clientIDs → no rows.
+func (r *Repository) SumUsageByClient(ctx context.Context, clientIDs []string, sinceDay string) ([]UsageClientTotal, error) {
+	var rows []UsageClientTotal
+	if len(clientIDs) == 0 {
+		return rows, nil
+	}
+	err := r.db.WithContext(ctx).
+		Model(&DeveloperAPIUsage{}).
+		Select("client_id, SUM(count) AS count, SUM(status_4xx) AS status_4xx, SUM(status_5xx) AS status_5xx").
+		Where("client_id IN ? AND day >= ?", clientIDs, sinceDay).
+		Group("client_id").
+		Scan(&rows).Error
+	return rows, err
+}
+
 // UpsertUsage accumulates a batch of usage rollups into developer_api_usage:
 // ON CONFLICT (client_id, key_id, face, day) the counters ADD (not replace), so
 // each instance's periodic flush contributes its delta and re-flushing an empty
