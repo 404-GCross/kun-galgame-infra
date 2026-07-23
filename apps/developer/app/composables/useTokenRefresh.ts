@@ -11,11 +11,18 @@
 // it is a true singleton on the client yet request-isolated during SSR.
 
 const doRefresh = async (): Promise<string | null> => {
+  // OAuth (SSO) sessions refresh via our Nitro route (which wraps /oauth/token —
+  // the first-party /api/v1/auth/refresh rejects client-bound sessions); the
+  // password fallback uses the relayed first-party endpoint. auth_mode selects.
+  const url =
+    useCookie('auth_mode').value === 'oauth'
+      ? '/auth/refresh'
+      : '/api/v1/auth/refresh'
   try {
     const response = await $fetch<{
       code: number
       data?: { access_token: string }
-    }>('/api/v1/auth/refresh', {
+    }>(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include' // browser sends the httpOnly refresh_token cookie

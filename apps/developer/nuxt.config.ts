@@ -85,6 +85,31 @@ export default defineNuxtConfig({
     // /api/** to the oauth service server-side so there is ZERO CORS. In
     // production set NUXT_OAUTH_API_BASE=http://oauth:9277 (docker service
     // name); local dev points it at the locally-running oauth binary.
-    oauthApiBase: process.env.NUXT_OAUTH_API_BASE || 'http://127.0.0.1:19277'
+    // ALSO reused server-side for the OAuth code/refresh exchange (CORS-free).
+    oauthApiBase: process.env.NUXT_OAUTH_API_BASE || 'http://127.0.0.1:19277',
+
+    // Confidential OAuth client secret — SERVER ONLY, never exposed to the
+    // browser. Used by server/routes/auth/{exchange,refresh}.post.ts on the
+    // /oauth/token calls. Empty in local dev unless you seed a dev client.
+    oauthClientSecret: process.env.NUXT_OAUTH_CLIENT_SECRET || '',
+
+    public: {
+      // Browser-facing OAuth API base for the top-level /oauth/authorize
+      // navigation (the IdP's PUBLIC origin — distinct from the server-only,
+      // internal oauthApiBase above). Prod: https://oauth.kungal.com/api/v1.
+      oauthAuthorizeBase:
+        process.env.NUXT_PUBLIC_OAUTH_AUTHORIZE_BASE ||
+        'http://127.0.0.1:9277/api/v1',
+      // OP frontend origin, for the seamless register redirect (/auth/register).
+      // Prod: https://oauth.kungal.com. Dev: the OP web app (:9420).
+      oauthWebBase:
+        process.env.NUXT_PUBLIC_OAUTH_WEB_BASE || 'http://127.0.0.1:9420',
+      // This client's id + its registered callback. redirect_uri is
+      // exact-string-matched by the IdP, so it MUST equal the registered value.
+      oauthClientId: process.env.NUXT_PUBLIC_OAUTH_CLIENT_ID || '',
+      oauthRedirectUri:
+        process.env.NUXT_PUBLIC_OAUTH_REDIRECT_URI ||
+        'http://127.0.0.1:9430/auth/callback'
+    }
   }
 })
