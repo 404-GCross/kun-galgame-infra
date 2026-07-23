@@ -63,6 +63,14 @@ const (
 	roleCharacterDesign int64 = 145
 	roleVocal           int64 = 286
 
+	// EG song-credit tables → existing generated-vocabulary role ids
+	// (refs/proj/84). singers reuse roleVocal (286, above); these three are the
+	// 作词 / 作曲 / 编曲 positions. All four reuse existing roles — zero new
+	// vocabulary rows.
+	roleLyric    int64 = 199 // 作词
+	roleComposer int64 = 158 // 作曲
+	roleArrange  int64 = 115 // 编曲
+
 	// roleDirector is the generated-vocabulary "director" position (key
 	// "director", 导演 / Director), the best-fit slot for VNDB's `director`
 	// staff role.
@@ -89,6 +97,22 @@ func egRoleMap() []model.CatalogSourceRoleMap {
 	m := map[string]int64{
 		"1": roleIllustration, "2": roleScenario, "3": roleMusic, "4": roleCharacterDesign,
 		"5": roleVoiceActor, "6": roleVocal, "7": roleOtherStaff,
+	}
+	out := make([]model.CatalogSourceRoleMap, 0, len(m))
+	for sr, rid := range m {
+		out = append(out, model.CatalogSourceRoleMap{SourceID: egSourceID, SourceRole: sr, RoleID: rid})
+	}
+	return out
+}
+
+// egMusicRoleMap pins the erogamespace song-credit tables → catalog_role mapping
+// (source_role = the source table name; refs/proj/84). catalog has no song
+// entity, so these project as WORK-level credits: singers→vocal, lyricists→
+// lyric, composers→composer, arrangers→arrange. Table-name keys never collide
+// with the shubetu-integer keys of egRoleMap.
+func egMusicRoleMap() []model.CatalogSourceRoleMap {
+	m := map[string]int64{
+		"singers": roleVocal, "lyricists": roleLyric, "composers": roleComposer, "arrangers": roleArrange,
 	}
 	out := make([]model.CatalogSourceRoleMap, 0, len(m))
 	for sr, rid := range m {
@@ -275,6 +299,7 @@ func Run(db *gorm.DB) error {
 	// vocabulary in the same idempotent upserts.
 	roles = append(roles, handRoles()...)
 	roleMap = append(roleMap, egRoleMap()...)
+	roleMap = append(roleMap, egMusicRoleMap()...)
 	roleMap = append(roleMap, dlsiteRoleMap()...)
 	roleMap = append(roleMap, vndbRoleMap()...)
 

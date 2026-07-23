@@ -122,6 +122,16 @@ func (im *Importer) Run(source string) (Stats, error) {
 		}
 		total.add(s)
 	}
+	if source == "eg-music" || source == "all" {
+		if im.eg == nil {
+			return total, fmt.Errorf("eg-music wave requested but no erogamespace connection")
+		}
+		s, err := im.runEGMusic()
+		if err != nil {
+			return total, fmt.Errorf("eg music wave: %w", err)
+		}
+		total.add(s)
+	}
 	if source == "vndb" || source == "all" {
 		s, err := im.runVNDBCredits()
 		if err != nil {
