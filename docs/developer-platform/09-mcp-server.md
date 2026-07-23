@@ -46,8 +46,8 @@ MCP server 是公开 /v1 契约前面的一层**协议适配**,不是第二个 A
 |---|---|---|
 | `galgame_search` | `GET /v1/galgame/search` | Meili 全文搜 galgame |
 | `galgame_get` | `GET /v1/galgame/{id}` | 详情(携 `catalog_work_id` 跨面互链) |
-| `catalog_search` | `GET /v1/catalog/search` | 实体搜索(persons/characters/labels) |
-| `catalog_work_get` | `GET /v1/catalog/works/{id}`(+`include=credits,relations` 时并取两子端点) | 注册行 + 可选 credits/relations |
+| `catalog_search` | `GET /v1/catalog/search` | 实体搜索,`type=names\|characters\|labels`(names 索引即人物/credit-name) |
+| `catalog_work_get` | `GET /v1/catalog/works/{id}` | 注册行 + 可选 credits/relations(`include=credits,relations` 由该端点单次内联返回——MCP 层纯透传 `include`,不再并取子端点) |
 | `catalog_lookup_external` | `GET /v1/catalog/lookup` | killer:`source=vndb&external_id=v19658` → work + 认领指针 |
 | `catalog_label_get` | `GET /v1/catalog/labels/{id}` | 厂牌/社团(intros[]/links[]) |
 | `catalog_character_get` | `GET /v1/catalog/characters/{id}` | 角色(spoiler 字段原样透传) |

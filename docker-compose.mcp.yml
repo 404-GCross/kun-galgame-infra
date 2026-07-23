@@ -1,0 +1,66 @@
+# kun-galgame-infra — NextMoe MCP server (mcp.nextmoe.dev), STANDALONE.
+#
+# This is the MCP (Model Context Protocol) server split OUT into its OWN Dokploy
+# "Compose" project, so its deploys are triggered MANUALLY and stay independent
+# of the main infra stack's webhook cadence (push → CI → auto-redeploy) — the
+# same panel-domain posture as docker-compose.developer.yml.
+#
+# What it is: a THIN, STATELESS protocol adapter that re-exposes the already-
+# public /v1 read faces as MCP tools for AI agents. It holds NO state — no
+# database, no cache. Every tool call is a pass-through GET to the public /v1
+# face (KUN_MCP_UPSTREAM_BASE), forwarding the caller's API key verbatim, so all
+# authz / rate-limit / quota / usage metering happens upstream on the same key.
+# Design: docs/developer-platform/09-mcp-server.md.
+#
+# Routing: the mcp.nextmoe.dev domain is managed in the Dokploy DOMAINS PANEL of
+# this project — the Dokploy-native form for a single-service, whole-host project
+# (same as the developer portal / kungal / moyu apps). This ONLY works because
+# the service below carries NO labels block: compose-level labels REPLACE
+# Dokploy's panel-injected domain labels wholesale (learned the hard way via a
+# production oauth 404 on the main stack). Do NOT add a labels block here — it
+# would silently take the domain down on the next deploy. Point the panel domain
+# at container port 9285, path /mcp (the MCP endpoint; /healthz is the probe).
+#
+# Deploy = the Deploy button of this Dokploy project (panel injects the domain
+# labels at deploy time; a bare server-side `docker compose up` would NOT).
+name: kun-galgame-infra-mcp
+
+services:
+  # NextMoe MCP server (mcp.nextmoe.dev). A stateless Streamable-HTTP MCP adapter
+  # over the public /v1 face. Routing = Dokploy Domains panel; NO labels block
+  # here (see the file header for why that must stay true).
+  mcp:
+    image: ghcr.io/kunmoe/infra-mcp:latest
+    pull_policy: always
+    environment:
+      # The public /v1 face served by the catalog process (galgame + catalog
+      # projections). `catalog` is the main stack's dokploy-network service name,
+      # the same internal address the product backends (forum / moyu) already
+      # reach it at (http://catalog:9281) — no public round-trip through
+      # api.nextmoe.dev. If the catalog service is later given a distinctive
+      # cross-project alias (like oauth's `infra-oauth`), switch this to it.
+      KUN_MCP_UPSTREAM_BASE: http://catalog:9281
+      KUN_MCP_HOST: 0.0.0.0
+      KUN_MCP_PORT: "9285"
+    expose: ["9285"]
+    healthcheck:
+      # distroless go binary: no shell/curl, so the binary probes its own
+      # /healthz via the `healthcheck` subcommand (pkg/health).
+      test: ["CMD", "/app", "healthcheck"]
+      # Inlined from the main stack's *svc-health anchor (absent in this file).
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+    # A lean stateless proxy (no DB, no cache): 256m is generous headroom and just
+    # OOM-recycles in the unlikely event of a leak.
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+
+networks:
+  default:
+    name: dokploy-network
+    external: true

@@ -124,5 +124,34 @@ const totalOperations = computed(() =>
         </NuxtLink>
       </div>
     </section>
+
+    <!-- AI / MCP access -->
+    <section>
+      <h2 class="text-lg font-semibold text-foreground">给 AI 用</h2>
+      <p class="mt-1 text-sm text-default-500">
+        同一套面也以 MCP（Model Context Protocol）server 暴露，AI 助手可直接调用。
+      </p>
+      <NuxtLink
+        to="/docs/mcp"
+        class="group mt-4 flex items-center gap-4 rounded-xl border border-default-200 bg-content1 p-5 transition-colors hover:border-primary"
+      >
+        <div
+          class="flex size-11 shrink-0 items-center justify-center rounded-lg bg-default-100 text-foreground"
+        >
+          <KunIcon name="lucide:bot" class="size-5" />
+        </div>
+        <div class="min-w-0 flex-1">
+          <h3 class="text-base font-semibold text-foreground">AI / MCP 接入</h3>
+          <p class="mt-1 text-sm leading-relaxed text-default-500">
+            纯透传适配层：一个端点、同一把密钥、七个只读工具。含 Claude Code /
+            Claude Desktop / 通用客户端配置示例。
+          </p>
+        </div>
+        <KunIcon
+          name="lucide:arrow-right"
+          class="size-4 shrink-0 text-primary transition-transform group-hover:translate-x-0.5"
+        />
+      </NuxtLink>
+    </section>
   </div>
 </template>
