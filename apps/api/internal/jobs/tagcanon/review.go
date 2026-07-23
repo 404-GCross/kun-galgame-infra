@@ -4,7 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
-	"sort"
+	"slices"
 	"strings"
 
 	"api/internal/platform/catalog/model"
@@ -239,7 +239,7 @@ func nonExactSummary(m map[Relation]int) string {
 	for k := range m {
 		keys = append(keys, k)
 	}
-	sort.Slice(keys, func(i, j int) bool { return keys[i] < keys[j] })
+	slices.Sort(keys)
 	parts := make([]string, 0, len(keys))
 	for _, k := range keys {
 		parts = append(parts, fmt.Sprintf("%s %d", k, m[k]))

@@ -112,7 +112,7 @@ func buildCandidatePairs(pool []candName, opts blockOpts) ([]candPair, blockStat
 		return len(pairs) < opts.MaxPairs
 	}
 
-	for i := 0; i < len(pool); i++ {
+	for i := range len(pool) {
 		a := pool[i]
 		ra := []rune(a.Norm)
 		if len(ra) < opts.MinLen {

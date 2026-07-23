@@ -385,7 +385,7 @@ func loadDlsiteOrig(ctx context.Context, dsn string) (func(string) string, error
 // irrelevant (records are sorted before writing).
 func runPooled(ctx context.Context, n, workers int, fn func(i int)) {
 	if workers <= 1 {
-		for i := 0; i < n; i++ {
+		for i := range n {
 			if ctx.Err() != nil {
 				return
 			}
@@ -395,19 +395,17 @@ func runPooled(ctx context.Context, n, workers int, fn func(i int)) {
 	}
 	ch := make(chan int)
 	var wg sync.WaitGroup
-	for w := 0; w < workers; w++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range workers {
+		wg.Go(func() {
 			for i := range ch {
 				if ctx.Err() != nil {
 					continue
 				}
 				fn(i)
 			}
-		}()
+		})
 	}
-	for i := 0; i < n; i++ {
+	for i := range n {
 		if ctx.Err() != nil {
 			break
 		}
