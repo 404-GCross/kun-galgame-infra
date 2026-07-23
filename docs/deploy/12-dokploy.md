@@ -22,6 +22,7 @@
 
 - **3 个独立 Dokploy "Compose" 应用**(各对应一个 Git 仓库,Dokploy 克隆 + `build`):`kun-galgame-infra`(infra)、`kun-galgame-forum`(kungal)、`kun-galgame-patch`(moyu)。
 - **共享一个 `dokploy-network`**(external)。跨应用 s2s 只用枢纽的**唯一服务名**(`postgres`/`redis`/`meilisearch`/`oauth`/`galgame`/`image`)——这些名字全局唯一,在共享网络上可解析;各应用自己的 `api`/`web`/`migrate` 只在本应用内解析,不跨应用引用,因此**不存在名称冲突**(这点和手动反代文档里"web/api 别名跨仓冲突"是同一回事,Dokploy 用 Traefik router 区分对外路由,内部 s2s 只引用唯一名)。
+- **infra 仓额外挂一个独立 Compose 项目**承载 NextMoe 开发者门户(`developer.nextmoe.dev`):同一 Git 仓库、**两个** Dokploy Compose 应用——主栈 `docker-compose.prod.yml`(push→CI→**自动 redeploy webhook**)与门户 `docker-compose.developer.yml`(**手动部署,不挂 webhook**,发布节奏与主栈解耦)。门户是独立 Compose 项目,跨项目调 oauth 的裸服务名会在共享网上轮询,所以它用**精确容器名**(见 [12.1](#121-域名--服务映射) 表下说明)。总计 Git 仓库 3 个、Dokploy Compose 应用 4 个。
 
 > 为什么**不用伞状单 compose**:Dokploy 的 Compose 应用是"一个 Git 仓库 → 克隆并 build"。三仓是三个独立仓库;伞状 compose 要么需要 monorepo,要么走 Raw compose(那样必须预先 build+push 镜像到 registry)。**单服务器 + 三应用 + 共享网络**才是 Dokploy 的原生形态。
 
@@ -34,6 +35,7 @@ DNS 把下列域名的 A/AAAA 记录指向**服务器公网 IP**;Traefik 自动�
 | `oauth.kungal.com` | `/api/v1` | infra | `oauth:9277` |
 | `oauth.kungal.com` | `/`(默认) | infra | `web:3000`(admin 前端) |
 | ~~`wiki.kungal.com`~~ | — | infra | **已退役(开放 API Phase 2 · W5,2026-07)**:两组 compose labels(`infra-wiki-api` / `infra-wiki-api-http`)已删、域 404,DNS 解析记录待用户删。galgame 富读改走 catalog internal 面(s2s,`nm_` key)。 |
+| `developer.nextmoe.dev` | `/`(整站) | **infra-developer**(独立 Compose,手动部署) | `developer:3000` |
 | `kungal.com` + `www.kungal.com` | `/api` | kungal | `kungal-api:2334` |
 | `kungal.com` + `www.kungal.com` | `/`(默认) | kungal | `web:7777` |
 | `moyu.moe` + `www.moyu.moe` | `/api/v1` | moyu | `moyu-api:5214` |
@@ -43,6 +45,7 @@ DNS 把下列域名的 A/AAAA 记录指向**服务器公网 IP**;Traefik 自动�
 - **`kungal.com` / `moyu.moe` 顶级域 + `www` 子域**:两个都加同样的两条路径记录,指向同一对 `api`/`web`。需要 apex↔www 收敛时,可在 Dokploy/Traefik 加一条 301(否则两域并存即可)。
 - **`image.kungal.iloveren.link`**:生产 `.env` 用的是 **Cloudflare R2**(`KUN_IMAGE_S3_ENDPOINT=...r2.cloudflarestorage.com`),所以这个域名是 **R2 的自定义域,由 Cloudflare 直接服务图片 blob,不经服务器/Traefik**。只有在"自托管 MinIO 存图"时才需要在 Dokploy 给它挂域名回源 `minio:9000`(重写到 `/kun-images` bucket)。
 - **`image` 服务(`:9278`)是 s2s 内部服务**(下游 api 上传时调用),**不对外开域名**。
+- **`developer.nextmoe.dev`(NextMoe 开发者门户)**:由 infra 仓的**第二个**、**独立**的 Dokploy Compose 项目承载(compose 路径 `docker-compose.developer.yml`,与主栈 `docker-compose.prod.yml` 分开),**手动部署**——**不挂** push→CI→自动 redeploy webhook,发布节奏与主栈解耦。它是**同源 Nuxt 壳**:浏览器只访问本域,Nitro 的 `/api/**` relay 在**服务端**转发到 oauth,**零 CORS**。其 Traefik 路由**归 compose**(`docker-compose.developer.yml` 里的 labels,router/service id 为 `developer-portal*`),**绝不进 Dokploy Domains 面板**(compose labels 会整体替换面板注入,和主栈一致)。因是**独立 Compose 项目**,它调 oauth 用**精确容器名** `http://kun-visual-novel-infra-vqvqbc-oauth-1:9277`(而非裸 `oauth` 别名——共享网 `dokploy-network` 上跨项目同名服务会 DNS 轮询)。上线切换顺序:**先让该门户项目在新域名上线跑通,再部署把 `developer` 块删掉的主栈提交**,避免出现两者都不服务该域的空窗。
 
 ## 12.2 接入改造清单(从当前 host-port 部署 → Dokploy)
 
@@ -97,7 +100,7 @@ OAuth client 的 `redirect_uris` 存在枢纽 `kun_galgame_infra.oauth_clients` 
 
 1. **装 Dokploy**(目标服务器):`curl -sSL https://dokploy.com/install.sh | sh`([安装文档](https://docs.dokploy.com/docs/core/manual-installation))。
 2. **DNS**:把 12.1 所有域名 A 记录指向服务器公网 IP(`image.kungal.iloveren.link` 走 R2 则指 Cloudflare,不指本机)。
-3. **建 3 个 Compose 应用**。两种来源:**(推荐·生产)** 指向各仓 `docker-compose.prod.yml`(用 `image:` 引用 GHCR 预构建镜像,见 [13-registry-ci.md](./13-registry-ci.md));**(起步)** 直接 Git source + 在 Dokploy 上 build(简单,但重镜像有拖垮单机风险)。
+3. **建 3 个 Compose 应用**。两种来源:**(推荐·生产)** 指向各仓 `docker-compose.prod.yml`(用 `image:` 引用 GHCR 预构建镜像,见 [13-registry-ci.md](./13-registry-ci.md));**(起步)** 直接 Git source + 在 Dokploy 上 build(简单,但重镜像有拖垮单机风险)。**开发者门户额外建第 4 个、独立** Compose 应用(同 infra 仓,compose 路径 `docker-compose.developer.yml`,**手动部署、不挂 webhook**,见 [12.1](#121-域名--服务映射)),按需单独触发。
 4. **填环境变量**:prod compose 已内联非密钥/域名;**只需在各应用 Dokploy Environment 面板填密钥**(逐个清单见 [15-environment §15.8](./15-environment.md) / [17-go-live-checklist.md](./17-go-live-checklist.md));**全部轮换测试值**(见 [05-configuration.md](./05-configuration.md))。
 5. **部署顺序**:先部署 **infra**(等 `postgres`/`redis`/`minio`/`meili` healthy)→ 在 Dokploy **Terminal/Run** 跑首启迁移(见 12.6)→ 再部署 **kungal**、**moyu**。
 6. **配域名**:每个应用的对外服务在 **Domains** 标签按 12.1 添加(含 `/api*` 与 `/` 两条),Dokploy 自动注入 Traefik labels + 签发证书。
