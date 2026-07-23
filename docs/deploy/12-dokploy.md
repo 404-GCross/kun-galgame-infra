@@ -22,7 +22,7 @@
 
 - **3 个独立 Dokploy "Compose" 应用**(各对应一个 Git 仓库,Dokploy 克隆 + `build`):`kun-galgame-infra`(infra)、`kun-galgame-forum`(kungal)、`kun-galgame-patch`(moyu)。
 - **共享一个 `dokploy-network`**(external)。跨应用 s2s 只用枢纽的**唯一服务名**(`postgres`/`redis`/`meilisearch`/`oauth`/`galgame`/`image`)——这些名字全局唯一,在共享网络上可解析;各应用自己的 `api`/`web`/`migrate` 只在本应用内解析,不跨应用引用,因此**不存在名称冲突**(这点和手动反代文档里"web/api 别名跨仓冲突"是同一回事,Dokploy 用 Traefik router 区分对外路由,内部 s2s 只引用唯一名)。
-- **infra 仓额外挂一个独立 Compose 项目**承载 NextMoe 开发者门户(`developer.nextmoe.dev`):同一 Git 仓库、**两个** Dokploy Compose 应用——主栈 `docker-compose.prod.yml`(push→CI→**自动 redeploy webhook**)与门户 `docker-compose.developer.yml`(**手动部署,不挂 webhook**,发布节奏与主栈解耦)。门户是独立 Compose 项目,跨项目调 oauth 的裸服务名会在共享网上轮询,所以它用**精确容器名**(见 [12.1](#121-域名--服务映射) 表下说明)。总计 Git 仓库 3 个、Dokploy Compose 应用 4 个。
+- **infra 仓额外挂一个独立 Compose 项目**承载 NextMoe 开发者门户(`developer.nextmoe.dev`):同一 Git 仓库、**两个** Dokploy Compose 应用——主栈 `docker-compose.prod.yml`(push→CI→**自动 redeploy webhook**)与门户 `docker-compose.developer.yml`(**手动部署,不挂 webhook**,发布节奏与主栈解耦)。门户是独立 Compose 项目,跨项目调 oauth 走主栈 oauth 服务上**专设的 compose 网络别名 `infra-oauth`**(主栈项目重建也不变;裸 `oauth` 同名别名跨项目会轮询,精确容器名则在项目重建时失效——别名两害皆免,见 [12.1](#121-域名--服务映射) 表下说明)。总计 Git 仓库 3 个、Dokploy Compose 应用 4 个。
 
 > 为什么**不用伞状单 compose**:Dokploy 的 Compose 应用是"一个 Git 仓库 → 克隆并 build"。三仓是三个独立仓库;伞状 compose 要么需要 monorepo,要么走 Raw compose(那样必须预先 build+push 镜像到 registry)。**单服务器 + 三应用 + 共享网络**才是 Dokploy 的原生形态。
 
@@ -35,7 +35,7 @@ DNS 把下列域名的 A/AAAA 记录指向**服务器公网 IP**;Traefik 自动�
 | `oauth.kungal.com` | `/api/v1` | infra | `oauth:9277` |
 | `oauth.kungal.com` | `/`(默认) | infra | `web:3000`(admin 前端) |
 | ~~`wiki.kungal.com`~~ | — | infra | **已退役(开放 API Phase 2 · W5,2026-07)**:两组 compose labels(`infra-wiki-api` / `infra-wiki-api-http`)已删、域 404,DNS 解析记录待用户删。galgame 富读改走 catalog internal 面(s2s,`nm_` key)。 |
-| `developer.nextmoe.dev` | `/`(整站) | **infra-developer**(独立 Compose,手动部署) | `developer:3000` |
+| `developer.nextmoe.dev` | `/`(整站) | **infra-developer**(独立 Compose,手动部署,域名走本项目 **Domains 面板**) | `developer:3000` |
 | `kungal.com` + `www.kungal.com` | `/api` | kungal | `kungal-api:2334` |
 | `kungal.com` + `www.kungal.com` | `/`(默认) | kungal | `web:7777` |
 | `moyu.moe` + `www.moyu.moe` | `/api/v1` | moyu | `moyu-api:5214` |
@@ -45,7 +45,7 @@ DNS 把下列域名的 A/AAAA 记录指向**服务器公网 IP**;Traefik 自动�
 - **`kungal.com` / `moyu.moe` 顶级域 + `www` 子域**:两个都加同样的两条路径记录,指向同一对 `api`/`web`。需要 apex↔www 收敛时,可在 Dokploy/Traefik 加一条 301(否则两域并存即可)。
 - **`image.kungal.iloveren.link`**:生产 `.env` 用的是 **Cloudflare R2**(`KUN_IMAGE_S3_ENDPOINT=...r2.cloudflarestorage.com`),所以这个域名是 **R2 的自定义域,由 Cloudflare 直接服务图片 blob,不经服务器/Traefik**。只有在"自托管 MinIO 存图"时才需要在 Dokploy 给它挂域名回源 `minio:9000`(重写到 `/kun-images` bucket)。
 - **`image` 服务(`:9278`)是 s2s 内部服务**(下游 api 上传时调用),**不对外开域名**。
-- **`developer.nextmoe.dev`(NextMoe 开发者门户)**:由 infra 仓的**第二个**、**独立**的 Dokploy Compose 项目承载(compose 路径 `docker-compose.developer.yml`,与主栈 `docker-compose.prod.yml` 分开),**手动部署**——**不挂** push→CI→自动 redeploy webhook,发布节奏与主栈解耦。它是**同源 Nuxt 壳**:浏览器只访问本域,Nitro 的 `/api/**` relay 在**服务端**转发到 oauth,**零 CORS**。其 Traefik 路由**归 compose**(`docker-compose.developer.yml` 里的 labels,router/service id 为 `developer-portal*`),**绝不进 Dokploy Domains 面板**(compose labels 会整体替换面板注入,和主栈一致)。因是**独立 Compose 项目**,它调 oauth 用**精确容器名** `http://kun-visual-novel-infra-vqvqbc-oauth-1:9277`(而非裸 `oauth` 别名——共享网 `dokploy-network` 上跨项目同名服务会 DNS 轮询)。上线切换顺序:**先让该门户项目在新域名上线跑通,再部署把 `developer` 块删掉的主栈提交**,避免出现两者都不服务该域的空窗。
+- **`developer.nextmoe.dev`(NextMoe 开发者门户)**:由 infra 仓的**第二个**、**独立**的 Dokploy Compose 项目承载(compose 路径 `docker-compose.developer.yml`,与主栈 `docker-compose.prod.yml` 分开),**手动部署**——**不挂** push→CI→自动 redeploy webhook,发布节奏与主栈解耦。它是**同源 Nuxt 壳**:浏览器只访问本域,Nitro 的 `/api/**` relay 在**服务端**转发到 oauth,**零 CORS**。其域名由**本项目的 Dokploy Domains 面板**管理——单服务整站项目的 Dokploy 原生形态(与 kungal/moyu 相同);这能成立的前提是该服务 compose 里**没有任何 labels 块**(compose labels 会整体替换面板注入——主栈 oauth 404 教训),**绝不能加回 labels**,否则下次部署域名静默失效。因是**独立 Compose 项目**,它调 oauth 走主栈 oauth 服务上专设的 compose 网络别名 **`http://infra-oauth:9277`**(`docker-compose.prod.yml` oauth 块 `networks.default.aliases`):主栈项目重建时容器名前缀会变而 compose 别名不变,且名字足够独特不会被其他项目的同名服务在共享网上轮询劫持。注意:**面板注入只在 Dokploy 的 Deploy 动作时生效**,服务器上裸跑 `docker compose up` 不会带域名 labels。
 
 ## 12.2 接入改造清单(从当前 host-port 部署 → Dokploy)
 
