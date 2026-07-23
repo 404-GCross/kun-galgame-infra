@@ -15,7 +15,7 @@ import (
 
 // EntityGalgamesHandler serves the entity reverse-lookup reads (step 20):
 // GET /galgame/officials/{id}/galgames and GET /galgame/tags/{id}/galgames.
-// These sit in the galgame READ namespace (part of read-openapi) so a downstream
+// These are served on the /v1 public projection so a downstream
 // entity page ("what else did this circle make / what else carries this tag") is
 // self-sufficient on direct navigation: the response carries the entity's own
 // identity + a page of enriched galgame briefs + the total. Read-only, no audit.

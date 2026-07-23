@@ -306,11 +306,10 @@ ALTER TABLE galgame ADD COLUMN release_ym integer
 
 ## 11.5 类型化契约(code-first OpenAPI → 生成式 TS)
 
-月历三端点的响应现由**类型化 DTO**（`dto.CalendarItem` / `CalendarMonthData` / `CalendarPendingData` / `CalendarTBAData`，见 `internal/platform/galgame/dto/calendar_dto.go`）单源产出：Fiber handler 用它们组装 body（**保留 ETag/304 + Cache-Control 条件缓存** —— 这套缓存语义不适合 Huma 的类型化 serving 模型，故月历**继续由 Fiber serving**），同一批 DTO 又经 Huma 导出 OpenAPI（`SetupCalendarSpec` + `gen-openapi -galgame-calendar` → `docs/galgame_wiki/calendar-openapi.yaml`），再经 `openapi-typescript` 生成 `apps/web/shared/types/generated/galgame-calendar-api.ts`。
+月历三端点的响应现由**类型化 DTO**（`dto.CalendarItem` / `CalendarMonthData` / `CalendarPendingData` / `CalendarTBAData`，见 `internal/platform/galgame/dto/calendar_dto.go`）单源产出：Fiber handler 用它们组装 body（**保留 ETag/304 + Cache-Control 条件缓存** —— 这套缓存语义不适合 Huma 的类型化 serving 模型，故月历**继续由 Fiber serving**）。月历的机器可读 spec（`calendar-openapi.yaml` / 门户 `galgame-wiki-calendar.openapi.yaml`）与由它生成的 TS 已随桥面一同退役（W5）——月历现以 Fiber serving 的**代码 + 本页**为准。
 
-- **不漂移的保证**:`calendar_dto_test.go` 用 `assert.JSONEq` 把 `CalendarItem` 钉死为「月历预加载的 `model.Galgame`」的 JSON 孪生（含 covers / official.official / effective_banner_hash），所以这次改造是**零线缆变更**;`test.yml`(code→spec)+ `openapi-types.yml`(spec→TS)两道 CI 门闭环 code→spec→TS。
-- **重新生成**:`go run ./cmd/gen-openapi -galgame-calendar -o ../../docs/galgame_wiki/calendar-openapi.yaml` 然后 `pnpm -F web run gen:types:galgame-calendar`。
-- 这是 galgame-wiki 读端点 Huma 化的**第一片**(item 2 / step 2);其余读端点(详情 / batch / search / …)复用这套 DTO+spec+drift-gate 图式。
+- **不漂移的保证**:`calendar_dto_test.go` 用 `assert.JSONEq` 把 `CalendarItem` 钉死为「月历预加载的 `model.Galgame`」的 JSON 孪生（含 covers / official.official / effective_banner_hash），所以 Fiber serving 的线缆形状不会漂移。
+- 历史备注:月历曾是 galgame-wiki 读端点 Huma 化的**第一片**(item 2 / step 2),导出 code-first OpenAPI + 生成式 TS;该机器 spec 轨道随桥面退役后不复存在。
 
 ## 12. 关键文件 & 参考
 

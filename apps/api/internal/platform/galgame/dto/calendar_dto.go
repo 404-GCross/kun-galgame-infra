@@ -6,9 +6,9 @@ import (
 	"api/internal/platform/galgame/model"
 )
 
-// Calendar response DTOs — the code-first source for the release-calendar
-// OpenAPI spec (cmd/gen-openapi -galgame-calendar) and the frontend's generated
-// TypeScript. They are a FAITHFUL, typed mirror of the JSON the calendar
+// Calendar response DTOs — the typed source for the release-calendar responses
+// the Fiber handlers serve (the wiki-era OpenAPI/TS export was retired with the
+// bridge face, W5). They are a FAITHFUL, typed mirror of the JSON the calendar
 // endpoints already emit (model.Galgame with Cover + Official.Official preloaded
 // and EffectiveBannerHash populated) — a wire-equality test
 // (calendar_dto_test.go) pins them to model.Galgame's marshaling so this is not
