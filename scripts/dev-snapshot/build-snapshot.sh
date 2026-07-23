@@ -100,6 +100,7 @@ for db in "${targets[@]}"; do
       "pg_dump -U postgres -d '$db' | psql -q -v ON_ERROR_STOP=1 -U postgres -d '$scratch' >/dev/null"
 
     "${DOCKER[@]}" exec -i "$PG" psql -q -v ON_ERROR_STOP=1 \
+      -v dev_argon2="$DEV_ARGON2" \
       -v dev_bcrypt="$DEV_BCRYPT" \
       -v email_domain="$DEV_EMAIL_DOMAIN" \
       -v marker="$SCRUB_MARKER" \
