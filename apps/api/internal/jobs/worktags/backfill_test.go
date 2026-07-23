@@ -135,7 +135,7 @@ func TestBackfillWorkTags(t *testing.T) {
 	mkSubject(t, 204, `{"name":"百合","count":9}`)
 	mkAnchor(t, wObject, "204", reg.bangumiSource, model.LinkKindExact, ruleTitleYear)
 
-	wClaimed := mkWork(t, reg.galgameMedium, "tags-claimed", &claimed) // claimed → excluded by SQL
+	wClaimed := mkWork(t, reg.galgameMedium, "tags-claimed", &claimed) // claimed → ADMITTED (T2)
 	mkSubject(t, 205, `[{"name":"百合","count":7}]`)
 	mkAnchor(t, wClaimed, "205", reg.bangumiSource, model.LinkKindExact, ruleTitleYear)
 
@@ -150,14 +150,13 @@ func TestBackfillWorkTags(t *testing.T) {
 	// --- dry run: decides, writes nothing.
 	st, err := Run(ctx, Opts{DSN: testDSN})
 	require.NoError(t, err)
-	assert.Equal(t, 5, st.Candidates, "claimed + probable excluded in SQL")
+	assert.Equal(t, 6, st.Candidates, "probable excluded; claimed admitted (T2)")
 	assert.Equal(t, 2, st.NoTags, "NULL + empty array")
 	assert.Equal(t, 1, st.NotArray)
 	assert.Equal(t, 2, st.NameBlank, "whitespace-only + missing name")
 	assert.Equal(t, 1, st.DupCollapsed, "the second 百合 collapsed")
-	assert.Equal(t, 4, st.Planned, "wGood 3 + wGood2 1")
+	assert.Equal(t, 5, st.Planned, "wGood 3 + wGood2 1 + wClaimed 1 (T2 admits claimed)")
 	assert.Equal(t, 3, st.DistinctNames, "百合 / PC / 拔作")
-	assert.Equal(t, 0, st.Refused, "no claimed work reaches the write path")
 	assert.Zero(t, st.Written+st.Conflict+st.Errors)
 	assert.EqualValues(t, 0, tagCount(t, ""), "dry run writes nothing")
 	// Per-subject decided order is (count DESC, name): 百合 30 → PC 5 → 拔作 1.
@@ -167,16 +166,16 @@ func TestBackfillWorkTags(t *testing.T) {
 	assert.Equal(t, "PC", st.Samples[1].Name, "name whitespace-trimmed")
 	assert.Equal(t, Sample{WorkID: wGood, SubjectID: 201, Name: "拔作", Count: 1}, st.Samples[2],
 		"count=1 stored too (store-all, no threshold)")
-	// Top-frequency digest: 百合 is planned on two works.
+	// Top-frequency digest: 百合 is planned on three works (wGood, wGood2, wClaimed).
 	require.NotEmpty(t, st.TopNames)
-	assert.Equal(t, NameFreq{Name: "百合", Works: 2}, st.TopNames[0])
+	assert.Equal(t, NameFreq{Name: "百合", Works: 3}, st.TopNames[0])
 
 	// --- apply: writes the decided plan exactly.
 	st, err = Run(ctx, Opts{DSN: testDSN, Apply: true})
 	require.NoError(t, err)
-	assert.Equal(t, 4, st.Written)
+	assert.Equal(t, 5, st.Written)
 	assert.Zero(t, st.Conflict+st.Errors)
-	assert.EqualValues(t, 4, tagCount(t, ""))
+	assert.EqualValues(t, 5, tagCount(t, ""))
 
 	// Value fidelity: verbatim names (trimmed only), source-attributed counts.
 	var rows []model.CatalogWorkTag
@@ -190,15 +189,17 @@ func TestBackfillWorkTags(t *testing.T) {
 	assert.Equal(t, "拔作", rows[2].Name)
 	assert.Equal(t, 1, rows[2].Count)
 	assert.EqualValues(t, 1, tagCount(t, "WHERE work_id = ?", wGood2))
-	assert.EqualValues(t, 0, tagCount(t, "WHERE work_id IN (?, ?)", wClaimed, wProbable),
-		"claimed / probable works never materialise")
+	assert.EqualValues(t, 1, tagCount(t, "WHERE work_id = ?", wClaimed),
+		"T2: the claimed work's bgm folksonomy row now materialises")
+	assert.EqualValues(t, 0, tagCount(t, "WHERE work_id = ?", wProbable),
+		"probable anchors never materialise")
 
 	// --- second apply: idempotent — zero writes, every planned row conflicts.
 	st, err = Run(ctx, Opts{DSN: testDSN, Apply: true})
 	require.NoError(t, err)
 	assert.Zero(t, st.Written+st.Errors, "second pass writes zero")
-	assert.Equal(t, 4, st.Conflict)
-	assert.EqualValues(t, 4, tagCount(t, ""), "row count unchanged")
+	assert.Equal(t, 5, st.Conflict)
+	assert.EqualValues(t, 5, tagCount(t, ""), "row count unchanged")
 }
 
 // TestNonTitleYearExactAnchorEntersCandidates pins the step-79 fix: an EXACT
@@ -227,10 +228,12 @@ func TestNonTitleYearExactAnchorEntersCandidates(t *testing.T) {
 	assert.EqualValues(t, 0, tagCount(t, "WHERE work_id = ?", wProbable))
 }
 
-// TestXORGuardAndDSNRequired covers the write-time XOR guard (the SQL filter
-// excludes claimed works from candidates, so the guard is only reachable by
-// driving the writer directly) and the refuse-to-guess DSN discipline.
-func TestXORGuardAndDSNRequired(t *testing.T) {
+// TestClaimedMaterialisesAndDSNRequired pins the T2 change: the write-time XOR
+// guard is gone, so a CLAIMED work's bgm folksonomy row materialises exactly
+// like a bodyless one (the (facet, source) XOR keeps only bridge-not-copy, and
+// that is enforced at the read face, not here). Also covers the ON CONFLICT
+// idempotency backstop and the refuse-to-guess DSN discipline.
+func TestClaimedMaterialisesAndDSNRequired(t *testing.T) {
 	clean(t)
 	ctx := context.Background()
 	reg, err := resolveRegistry(ctx, testDB)
@@ -238,23 +241,16 @@ func TestXORGuardAndDSNRequired(t *testing.T) {
 
 	claimed := "galgame_wiki"
 	wClaimed := mkWork(t, reg.galgameMedium, "claimed-direct", &claimed)
-	wBody := mkWork(t, reg.galgameMedium, "bodyless-direct", nil)
 
-	// XOR: a claimed row is refused before any write.
+	// T2: a claimed row now WRITES; a retry conflicts (the UNIQUE backstop)
+	// instead of duplicating; a different name on the same work is a NEW row (the
+	// unique key is (work_id, name, source_id), not one-per-source).
 	w := &writer{db: testDB, stats: &Stats{}}
-	w.write(ctx, plannedRow{WorkID: wClaimed, Site: &claimed, SourceID: reg.bangumiSource, Name: "百合", Count: 3}, true)
-	assert.Equal(t, 1, w.stats.Refused)
-	assert.Zero(t, w.stats.Written+w.stats.Conflict)
-	assert.EqualValues(t, 0, tagCount(t, ""))
-
-	// A bodyless row writes; a retry conflicts (the UNIQUE backstop) instead of
-	// duplicating; a different name on the same work is a NEW row (the unique
-	// key is (work_id, name, source_id), not one-per-source).
-	w.write(ctx, plannedRow{WorkID: wBody, Site: nil, SourceID: reg.bangumiSource, Name: "百合", Count: 3}, true)
-	assert.Equal(t, 1, w.stats.Written)
-	w.write(ctx, plannedRow{WorkID: wBody, Site: nil, SourceID: reg.bangumiSource, Name: "百合", Count: 3}, true)
+	w.write(ctx, plannedRow{WorkID: wClaimed, SourceID: reg.bangumiSource, Name: "百合", Count: 3}, true)
+	assert.Equal(t, 1, w.stats.Written, "T2: the claimed work materialises")
+	w.write(ctx, plannedRow{WorkID: wClaimed, SourceID: reg.bangumiSource, Name: "百合", Count: 3}, true)
 	assert.Equal(t, 1, w.stats.Conflict, "ON CONFLICT refuses the duplicate")
-	w.write(ctx, plannedRow{WorkID: wBody, Site: nil, SourceID: reg.bangumiSource, Name: "拔作", Count: 1}, true)
+	w.write(ctx, plannedRow{WorkID: wClaimed, SourceID: reg.bangumiSource, Name: "拔作", Count: 1}, true)
 	assert.Equal(t, 2, w.stats.Written, "same work+source, different name → distinct row")
 	assert.EqualValues(t, 2, tagCount(t, ""))
 

@@ -35,35 +35,35 @@ func resolveRegistry(ctx context.Context, db *gorm.DB) (registry, error) {
 	return r, nil
 }
 
-// candidate is one bodyless galgame work joined to its EXACT Bangumi anchor's
-// subject tags blob. Site is carried (not filtered out) so the write-time XOR
-// guard can re-assert bodylessness.
+// candidate is one galgame work (claimed OR bodyless — T2 admits both) joined
+// to its EXACT Bangumi anchor's subject tags blob.
 type candidate struct {
-	WorkID    int64   `gorm:"column:work_id"`
-	SubjectID int64   `gorm:"column:subject_id"`
-	Site      *string `gorm:"column:site"`
-	Tags      []byte  `gorm:"column:tags"`
+	WorkID    int64  `gorm:"column:work_id"`
+	SubjectID int64  `gorm:"column:subject_id"`
+	Tags      []byte `gorm:"column:tags"`
 }
 
-// loadCandidates resolves bodyless galgame works carrying an EXACT Bangumi work
-// anchor — matched_by UNRESTRICTED (every exact tier asserts identity, the
-// 66/69/71 ruling; the bgmworkmeta precedent) — joined to the anchored
-// subject's tags jsonb, the same workratings bgm-lane join shape (src_bangumi
-// is a schema inside the catalog DB, single DSN). DISTINCT ON keeps ONE anchor
-// per work (the lowest external_id); the external_id→bigint cast is safe
-// (surveyed: zero non-numeric exact bgm work anchors — the 69 verification).
-// Limit/Offset window the distinct-work list in Go (the dlsitemedia chunking
-// discipline).
+// loadCandidates resolves galgame works carrying an EXACT Bangumi work anchor —
+// matched_by UNRESTRICTED (every exact tier asserts identity, the 66/69/71
+// ruling; the bgmworkmeta precedent) — joined to the anchored subject's tags
+// jsonb, the same workratings bgm-lane join shape (src_bangumi is a schema
+// inside the catalog DB, single DSN). T2 (refs/proj/70 §3/§8, 88): NO claim
+// filter — the bgm folksonomy is a catalog-native SOURCE lane that materializes
+// for claimed and bodyless works alike (the read face merges it with the wiki
+// bridge). DISTINCT ON keeps ONE anchor per work (the lowest external_id); the
+// external_id→bigint cast is safe (surveyed: zero non-numeric exact bgm work
+// anchors — the 69 verification). Limit/Offset window the distinct-work list in
+// Go (the dlsitemedia chunking discipline).
 func loadCandidates(ctx context.Context, db *gorm.DB, reg registry, limit, offset int) ([]candidate, error) {
 	var out []candidate
 	if err := db.WithContext(ctx).
 		Raw(`SELECT DISTINCT ON (w.id) w.id AS work_id, r.external_id::bigint AS subject_id,
-				w.site AS site, sub.tags AS tags
+				sub.tags AS tags
 			FROM catalog_work w
 			JOIN catalog_external_ref r ON r.entity_type = ? AND r.entity_id = w.id
 				AND r.source_id = ? AND r.link_kind = ?
 			JOIN src_bangumi.subject sub ON sub.id = r.external_id::bigint
-			WHERE w.medium_id = ? AND (w.site IS NULL OR w.site = '') AND w.deleted_at IS NULL
+			WHERE w.medium_id = ? AND w.deleted_at IS NULL
 			ORDER BY w.id, r.external_id`,
 			model.EntityTypeWork, reg.bangumiSource, model.LinkKindExact, reg.galgameMedium).
 		Scan(&out).Error; err != nil {

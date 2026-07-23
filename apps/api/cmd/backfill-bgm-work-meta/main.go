@@ -1,5 +1,5 @@
-// backfill-bgm-work-meta fills two Bangumi-side facets for BODYLESS galgame
-// works in one pass (refs/proj/71, ledger T3):
+// backfill-bgm-work-meta fills two Bangumi-side facets for galgame works in one
+// pass (refs/proj/71, ledger T3; T2 = refs/proj/70 §3/§8, 88):
 //
 //   - meta_tags → catalog_work_tag rows with Count=0 (Bangumi's MODERATED
 //     official tags; count=0 distinguishes them from the voted folksonomy
@@ -11,17 +11,20 @@
 //     (change-detected DO UPDATE): favorites are volatile, a dump-refresh
 //     re-run heals values.
 //
-// Candidates: bodyless galgame works with an EXACT Bangumi work anchor
-// (matched_by unrestricted — the 66/69 ruling). Claimed works are out (T2
-// domain). src_bangumi is a schema INSIDE the catalog DB, so ONE --dsn covers
-// the whole run.
+// Candidates: galgame works (claimed OR bodyless — T2) with an EXACT Bangumi
+// work anchor (matched_by unrestricted — the 66/69 ruling). The claim policy is
+// PER FIELD: meta_tags (Field A) admits claimed works — a catalog-native source
+// lane merged with the wiki bridge at the read face; favorite shelves (Field B)
+// still refuse claimed works (popularity's XOR is a future T2b domain).
+// src_bangumi is a schema INSIDE the catalog DB, so ONE --dsn covers the whole
+// run.
 //
 // Logic lives in internal/jobs/bgmworkmeta. Dry-run is the DEFAULT (repo
 // convention); pass --apply to write. The DSN is REQUIRED and never defaulted
 // — the rehearsal copy locally, the live catalog only in the acceptance run.
 // Idempotent: a second --apply writes zero (meta tags all-conflict, favorite
-// shelves all-unchanged). A claimed work is refused at write time (XOR guard
-// §8.D).
+// shelves all-unchanged). Field B refuses a claimed favorite at write time (the
+// retained per-field XOR guard §8.D).
 //
 //	# dry-run: per-field counters + samples
 //	go run ./cmd/backfill-bgm-work-meta \

@@ -1,17 +1,21 @@
-// backfill-work-tags fills catalog_work_tag rows for BODYLESS galgame works
-// from the Bangumi folksonomy (refs/proj/58b): step-56a EXACT anchors
-// (rule:bgm-title-year) × src_bangumi.subject.tags ([{name, count}] jsonb) →
-// one row per tag, VERBATIM — no vocabulary mapping, no threshold (count=1
-// rows are stored too; consumers filter when rendering). Content tags NEVER
-// touch catalog_label (the attribution-vocabulary red line). src_bangumi is a
-// schema INSIDE the catalog DB, so ONE --dsn covers the whole run.
+// backfill-work-tags fills catalog_work_tag rows for galgame works from the
+// Bangumi folksonomy (refs/proj/58b; T2 = refs/proj/70 §3/§8, 88): EXACT bgm
+// work anchors (matched_by unrestricted) × src_bangumi.subject.tags ([{name,
+// count}] jsonb) → one row per tag, VERBATIM — no vocabulary mapping, no
+// threshold (count=1 rows are stored too; consumers filter when rendering).
+// Content tags NEVER touch catalog_label (the attribution-vocabulary red line).
+// src_bangumi is a schema INSIDE the catalog DB, so ONE --dsn covers the whole
+// run.
+//
+// T2: CLAIMED works are admitted (bgm is a catalog-native SOURCE lane per the
+// (facet, source) XOR — the read face merges it with the wiki bridge). No claim
+// filter, no write-time guard.
 //
 // Logic lives in internal/jobs/worktags. Dry-run is the DEFAULT (repo
 // convention); pass --apply to write. The DSN is REQUIRED and never defaulted
 // — the rehearsal copy locally, the live catalog only in the acceptance run.
 // Idempotent: ON CONFLICT (work_id, name, source_id) DO NOTHING — a second
-// --apply writes zero. A claimed work is refused at write time (XOR guard
-// §8.D).
+// --apply writes zero.
 //
 //	# dry-run: counters + top-frequency tag names + samples
 //	go run ./cmd/backfill-work-tags \
@@ -69,7 +73,6 @@ func main() {
 		"distinct_names", st.DistinctNames,
 		"written", st.Written,
 		"conflict", st.Conflict,
-		"refused_claimed", st.Refused,
 		"errors", st.Errors,
 	)
 	if !*apply {

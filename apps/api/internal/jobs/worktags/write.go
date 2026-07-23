@@ -10,29 +10,27 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// writer applies planned tag rows with the write-time XOR guard and the
-// ON CONFLICT idempotency backstop (serial, plain ints).
+// writer applies planned tag rows with the ON CONFLICT idempotency backstop
+// (serial, plain ints). T2 (refs/proj/70 §3/§8, 88) retired the write-time XOR
+// guard: the bgm folksonomy is a catalog-native SOURCE lane, so claimed and
+// bodyless works materialize alike (the read face keeps the wiki bridge in its
+// own lane).
 type writer struct {
 	db    *gorm.DB
 	stats *Stats
 }
 
-// plannedRow is one decided catalog_work_tag write, carrying the work's site
-// so the guard can re-assert bodylessness at the last moment.
+// plannedRow is one decided catalog_work_tag write.
 type plannedRow struct {
 	WorkID   int64
-	Site     *string
 	SourceID int16
 	Name     string
 	Count    int
 }
 
-// write enforces the XOR guard, then (apply only) inserts the row.
+// write (apply only) inserts the row, counting the ON CONFLICT no-op as a
+// conflict.
 func (w *writer) write(ctx context.Context, p plannedRow, apply bool) {
-	if !isBodyless(p.Site) { // XOR guard (§8.D) — never materialise a claimed work
-		w.stats.Refused++
-		return
-	}
 	if !apply {
 		return
 	}
@@ -53,7 +51,3 @@ func (w *writer) write(ctx context.Context, p plannedRow, apply bool) {
 	}
 	w.stats.Written++
 }
-
-// isBodyless reports whether a catalog_work is bodyless (site NULL or ”) —
-// the §8.D claim key, same shape as workratings.
-func isBodyless(site *string) bool { return site == nil || *site == "" }

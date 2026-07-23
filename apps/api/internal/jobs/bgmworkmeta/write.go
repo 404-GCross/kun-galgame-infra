@@ -10,33 +10,32 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// writer applies planned rows with the write-time XOR guard. Field A (meta
-// tags) is a FILL: ON CONFLICT (work_id, name, source_id) DO NOTHING — a
-// same-name folksonomy row keeps its votes, a second pass counts pure
-// conflicts. Field B (favorite shelves) is the step-62 CHANGE-DETECTED upsert:
-// ON CONFLICT DO UPDATE fires only when the value actually differs, so
-// RowsAffected cleanly separates effective writes from refresh no-ops.
+// writer applies planned rows with a PER-FIELD claim policy (T2, refs/proj/70
+// §3/§8, 88): Field A (meta tags) has NO guard — meta_tags is a catalog-native
+// SOURCE lane, so claimed and bodyless works materialize alike; it is a FILL:
+// ON CONFLICT (work_id, name, source_id) DO NOTHING — a same-name folksonomy row
+// keeps its votes, a second pass counts pure conflicts. Field B (favorite
+// shelves) KEEPS the write-time XOR guard: the popularity facet's XOR is not in
+// the T2 tags decision domain (a future T2b decides it), so claimed favorites
+// are still refused. It is the step-62 CHANGE-DETECTED upsert: ON CONFLICT DO
+// UPDATE fires only when the value actually differs, so RowsAffected cleanly
+// separates effective writes from refresh no-ops.
 type writer struct {
 	db    *gorm.DB
 	stats *Stats
 }
 
 // tagRow is one decided catalog_work_tag write (Count is always 0 — the
-// moderated-meta-tag marker), carrying the work's site so the guard can
-// re-assert bodylessness at the last moment.
+// moderated-meta-tag marker).
 type tagRow struct {
 	WorkID   int64
-	Site     *string
 	SourceID int16
 	Name     string
 }
 
-// writeTag enforces the XOR guard, then (apply only) inserts the Count=0 row.
+// writeTag (apply only) inserts the Count=0 row. T2: no claim guard — meta tags
+// materialize for claimed and bodyless works alike.
 func (w *writer) writeTag(ctx context.Context, p tagRow, apply bool) {
-	if !isBodyless(p.Site) { // XOR guard (§8.D) — never materialise a claimed work
-		w.stats.Refused++
-		return
-	}
 	if !apply {
 		return
 	}
@@ -67,10 +66,11 @@ type favRow struct {
 	Value    int64
 }
 
-// writeFavorite enforces the XOR guard, then (apply only) upserts the shelf
-// row — the workratings writePopularity pattern verbatim.
+// writeFavorite enforces the per-field XOR guard (Field B still refuses claimed
+// — popularity's XOR is not in the T2 tags domain), then (apply only) upserts
+// the shelf row — the workratings writePopularity pattern verbatim.
 func (w *writer) writeFavorite(ctx context.Context, p favRow, apply bool) {
-	if !isBodyless(p.Site) { // XOR guard (§8.D)
+	if !isBodyless(p.Site) { // XOR guard (§8.D) — claimed favorites still refused (Field B)
 		w.stats.Refused++
 		return
 	}

@@ -34,9 +34,10 @@ func resolveRegistry(ctx context.Context, db *gorm.DB) (registry, error) {
 	return r, nil
 }
 
-// candidate is one bodyless galgame work joined to its EXACT Bangumi anchor's
-// subject meta_tags + favorite blobs. Site is carried (not filtered out) so
-// the write-time XOR guard can re-assert bodylessness.
+// candidate is one galgame work (claimed OR bodyless — T2 admits both) joined
+// to its EXACT Bangumi anchor's subject meta_tags + favorite blobs. Site is
+// carried because Field B (favorite → popularity) STILL refuses claimed works
+// (its XOR is not in the T2 tags decision domain) — see write.go.
 type candidate struct {
 	WorkID    int64   `gorm:"column:work_id"`
 	SubjectID int64   `gorm:"column:subject_id"`
@@ -45,15 +46,17 @@ type candidate struct {
 	Favorite  []byte  `gorm:"column:favorite"`
 }
 
-// loadCandidates resolves bodyless galgame works carrying an EXACT Bangumi
-// work anchor — matched_by UNRESTRICTED (every exact tier asserts identity,
-// the 66/69 ruling; the releasemeta bgm lane precedent) — joined to the
-// anchored subject's meta_tags + favorite jsonb (src_bangumi is a schema
-// inside the catalog DB, single DSN). DISTINCT ON keeps ONE anchor per work
-// (the lowest external_id); the external_id→bigint cast is safe (surveyed on
-// rehearsal AND live: zero non-numeric exact bgm work anchors — the 69
-// verification). Limit/Offset window the distinct-work list in Go (the
-// bgmsummaries chunking discipline).
+// loadCandidates resolves galgame works carrying an EXACT Bangumi work anchor —
+// matched_by UNRESTRICTED (every exact tier asserts identity, the 66/69 ruling;
+// the releasemeta bgm lane precedent) — joined to the anchored subject's
+// meta_tags + favorite jsonb (src_bangumi is a schema inside the catalog DB,
+// single DSN). T2 (refs/proj/70 §3/§8, 88): NO claim filter — Field A (meta_tags
+// → catalog_work_tag) is a catalog-native SOURCE lane that materializes for
+// claimed and bodyless works alike; Field B keeps its per-field guard at write
+// time. DISTINCT ON keeps ONE anchor per work (the lowest external_id); the
+// external_id→bigint cast is safe (surveyed on rehearsal AND live: zero
+// non-numeric exact bgm work anchors — the 69 verification). Limit/Offset window
+// the distinct-work list in Go (the bgmsummaries chunking discipline).
 func loadCandidates(ctx context.Context, db *gorm.DB, reg registry, limit, offset int) ([]candidate, error) {
 	var out []candidate
 	if err := db.WithContext(ctx).
@@ -63,7 +66,7 @@ func loadCandidates(ctx context.Context, db *gorm.DB, reg registry, limit, offse
 			JOIN catalog_external_ref r ON r.entity_type = ? AND r.entity_id = w.id
 				AND r.source_id = ? AND r.link_kind = ?
 			JOIN src_bangumi.subject sub ON sub.id = r.external_id::bigint
-			WHERE w.medium_id = ? AND (w.site IS NULL OR w.site = '') AND w.deleted_at IS NULL
+			WHERE w.medium_id = ? AND w.deleted_at IS NULL
 			ORDER BY w.id, r.external_id`,
 			model.EntityTypeWork, reg.bangumiSource, model.LinkKindExact, reg.galgameMedium).
 		Scan(&out).Error; err != nil {

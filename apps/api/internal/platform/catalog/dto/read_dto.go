@@ -52,15 +52,17 @@ type WorkByAnchorResponse struct {
 	// BODYLESS work's from its catalog_work_rating rows. Strict XOR: a claimed
 	// work with no scored meta yields [] (never a fallback to native rows).
 	Ratings []WorkRating `json:"ratings"`
-	// Tags is the work's content-tag set (step 58b media-aggregation tags
+	// Tags is the work's content-tag set (step 58b + T2 media-aggregation tags
 	// facet), one element per tag name per source, in a single shape regardless
-	// of source. Names are VERBATIM (no vocabulary mapping): a CLAIMED work's
-	// tags are bridged from the galgame wiki tag layer (localized display names,
-	// non-spoiler only); a BODYLESS work's from its catalog_work_tag rows
-	// (Bangumi folksonomy as-is). Ordered (count DESC, name). Strict XOR: a
-	// claimed work with no galgame tag yields [] (never a fallback to native
-	// rows). Distinct from labels — labels are the attribution vocabulary
-	// (organizational responsibility), tags are content description.
+	// of source. Names are VERBATIM (no vocabulary mapping). Under the (facet,
+	// source) XOR (T2), a work's tags are the UNION of two per-source lanes: the
+	// WIKI bridge lane (galgame_wiki/vndb, localized display names, non-spoiler
+	// only — CLAIMED works only) and the CATALOG-native lane (bangumi/dlsite,
+	// catalog_work_tag rows — ALL works). A claimed work therefore surfaces both
+	// its wiki tags and its bgm folksonomy; a bodyless work degenerates to the
+	// native lane. Ordered (count DESC, name) after the merge. Distinct from
+	// labels — labels are the attribution vocabulary (organizational
+	// responsibility), tags are content description.
 	Tags []WorkTag `json:"tags"`
 	// Popularity is the work's per-metric popularity counter set (step 62), at
 	// most one element per (source, metric), in a single shape regardless of

@@ -1,6 +1,6 @@
-// Package bgmworkmeta backfills two Bangumi-side facets for BODYLESS galgame
-// works in one candidate pass (refs/proj/71, ledger T3 — two similar BGM
-// fields batched, zero schema):
+// Package bgmworkmeta backfills two Bangumi-side facets for galgame works in one
+// candidate pass (refs/proj/71, ledger T3 — two similar BGM fields batched, zero
+// schema; T2 = refs/proj/70 §3/§8, 88):
 //
 //   - Field A, meta_tags → catalog_work_tag (source=bangumi): the subject's
 //     meta_tags (surveyed: jsonb array of strings — Bangumi's MODERATED
@@ -11,7 +11,9 @@
 //     A same-name collision with an existing folksonomy row hits the
 //     (work_id, name, source_id) unique key → ON CONFLICT DO NOTHING keeps
 //     the voted row. FILL semantics, not upsert: meta_tags are quasi-static;
-//     a dump-refresh re-run only adds names that newly appeared.
+//     a dump-refresh re-run only adds names that newly appeared. T2: Field A
+//     admits CLAIMED works — meta_tags is a catalog-native SOURCE lane merged
+//     with the wiki bridge at the read face (no write-time guard).
 //
 //   - Field B, favorite shelves → catalog_work_popularity (source=bangumi):
 //     the subject's favorite (surveyed: jsonb object carrying exactly the
@@ -22,21 +24,23 @@
 //     first time). UPSERT (ON CONFLICT DO UPDATE, change-detected — favorites
 //     are volatile, the 62 write pattern verbatim; a dump-refresh re-run
 //     heals values). A present 0 is a REAL row (about a third of shelf values
-//     are 0); an absent shelf writes no row.
+//     are 0); an absent shelf writes no row. Field B STILL refuses claimed
+//     works: popularity's XOR is not in the T2 tags domain (a future T2b
+//     decides it), so its write-time guard is retained per-field.
 //
-// Candidates: bodyless galgame works carrying an EXACT Bangumi WORK anchor,
-// matched_by UNRESTRICTED — every exact tier asserts identity (the 66/69
-// ruling; the releasemeta bgm lane is the code precedent). Claimed works are
-// OUT: exposing Bangumi data on claimed works is the T2 decision domain.
-// src_bangumi is a schema INSIDE the catalog DB — a single --dsn covers the
-// whole run.
+// Candidates: galgame works (claimed OR bodyless — T2) carrying an EXACT Bangumi
+// WORK anchor, matched_by UNRESTRICTED — every exact tier asserts identity (the
+// 66/69 ruling; the releasemeta bgm lane is the code precedent). The claim
+// policy is now PER FIELD (Field A admits claimed, Field B refuses), enforced at
+// write time. src_bangumi is a schema INSIDE the catalog DB — a single --dsn
+// covers the whole run.
 //
 // Discipline (55/57/58/62 lineage, all spec-pinned):
 //   - The DSN is ALWAYS explicit — a bare run cannot touch a live DB.
 //   - Dry-run is the default: the decided plan (per-field counters + samples)
 //     is identical in dry and apply; only the write outcomes need --apply.
-//   - XOR guard (§8.D): native rows only for bodyless works (site NULL/”);
-//     the SQL already filters to bodyless, and the writer re-asserts it.
+//   - Per-field claim policy (T2): Field A materializes for all works; Field B
+//     keeps its write-time XOR guard (claimed favorites refused).
 //   - Idempotent: a second --apply writes zero — field A counts the no-ops as
 //     conflicts (DO NOTHING), field B as unchanged (change-detected upsert).
 //   - Limit/Offset window the candidate work list (chunking).
@@ -98,7 +102,7 @@ type NameFreq struct {
 // apply; the write outcomes (MetaWritten/MetaConflict, FavWritten/FavUnchanged)
 // are apply-only.
 type Stats struct {
-	Candidates int // exact-anchored bodyless galgame works joined to their subject
+	Candidates int // exact-anchored galgame works (claimed + bodyless) joined to their subject
 
 	// Field A: meta_tags → catalog_work_tag (fill, Count=0).
 	MetaNoTags    int // meta_tags NULL / empty array → nothing to write
@@ -118,7 +122,7 @@ type Stats struct {
 	FavWritten    int // rows inserted or value-updated (apply)
 	FavUnchanged  int // change-detected no-ops (row already current)
 
-	Refused int // XOR guard: claimed work refused at write time
+	Refused int // Field B per-field XOR guard: claimed favorite refused at write time
 	Errors  int
 
 	MetaTopNames []NameFreq
@@ -162,7 +166,7 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 			st.MetaPlanned++
 			nameFreq[name]++
 			collectTag(&st.MetaSamples, TagSample{WorkID: c.WorkID, SubjectID: c.SubjectID, Name: name})
-			w.writeTag(ctx, tagRow{WorkID: c.WorkID, Site: c.Site, SourceID: reg.bangumiSource, Name: name}, opts.Apply)
+			w.writeTag(ctx, tagRow{WorkID: c.WorkID, SourceID: reg.bangumiSource, Name: name}, opts.Apply)
 		}
 		// Field B: favorite shelves, change-detected upsert.
 		for _, b := range parseFavorite(c.Favorite, st) {

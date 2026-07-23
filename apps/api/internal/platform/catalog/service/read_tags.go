@@ -2,13 +2,26 @@ package service
 
 import (
 	"context"
+	"sort"
 	"strings"
 )
 
-// Tags read face (step 58b, refs/proj/58 Facet B) — the fifth media-aggregation
-// facet, structurally identical to intros/covers/screenshots/ratings: CLAIMED
-// works bridge, BODYLESS works read native rows, strict XOR, source_id on every
-// row. The claimed bridge reads the galgame family's tag layer.
+// Tags read face (step 58b + T2, refs/proj/58 Facet B, refs/proj/70 §3/§8) —
+// the fifth media-aggregation facet, and the FIRST with the (facet, source) XOR
+// refinement (T2). Unlike the sibling facets (intros/covers/screenshots/ratings,
+// which keep the whole-facet XOR — claimed bridge XOR bodyless native), tags
+// reads the UNION of two per-source lanes:
+//
+//   - the WIKI bridge lane (galgame_wiki / vndb): read-time bridge from the
+//     galgame family's tag layer, never materialized (bridge-not-copy) — runs
+//     for CLAIMED works only (a bodyless work has no wiki body);
+//   - the CATALOG-native lane (bangumi / dlsite): catalog_work_tag rows — runs
+//     for ALL works, claimed and bodyless alike.
+//
+// A claimed work's read face is therefore bridge ∪ native (its bgm/dlsite tags
+// no longer hide behind the claim); a bodyless work degenerates to the native
+// lane (empty bridge). Every row carries source_id, so the two lanes stay
+// attributable. Merged rows are re-sorted (count DESC, name ASC) per work.
 //
 // Galgame tag storage (surveyed live, 2026-07-21):
 //
@@ -39,8 +52,8 @@ import (
 // normalization — and content tags NEVER touch catalog_label (the attribution
 // vocabulary red line).
 
-// WorkTagRow is one tag on a work's read face — the unified shape the claimed
-// bridge (galgame_tag_relation ⋈ galgame_tag) and the bodyless native table
+// WorkTagRow is one tag on a work's read face — the unified shape the wiki
+// bridge (galgame_tag_relation ⋈ galgame_tag) and the catalog-native table
 // (catalog_work_tag) both project into. Count is the source's vote count; 0 =
 // the source has no votes (the whole galgame layer) and the DTO omits it.
 //
@@ -62,39 +75,65 @@ type WorkTagRow struct {
 }
 
 // loadWorkTags assembles the tag set for a set of works, honoring the
-// media-aggregation contract (refs/proj/51 §2/§3/§8, step 58b):
+// media-aggregation contract with the T2 (facet, source) XOR (refs/proj/51
+// §2/§3/§8, refs/proj/70 §3/§8, step 58b + T2):
 //
-//   - CLAIMED (site='galgame_wiki'): bridge from galgame_tag_relation ⋈
-//     galgame_tag (see the file doc for the mapping; non-spoiler only).
-//     Bridge-not-copy (§2): bridged tags are never materialized into
-//     catalog_work_tag.
-//   - BODYLESS (site=”/NULL): the work's catalog_work_tag rows.
-//   - Strict XOR (§8.D): a claimed work reads ONLY the bridge; it never falls
-//     back to native rows even if it still has shadowed ones (shadow-never-delete).
+//   - WIKI bridge lane (CLAIMED works, site='galgame_wiki'): bridge from
+//     galgame_tag_relation ⋈ galgame_tag (see the file doc for the mapping;
+//     non-spoiler only). Bridge-not-copy (§2): bridged tags are never
+//     materialized into catalog_work_tag.
+//   - CATALOG-native lane (ALL works): the work's catalog_work_tag rows
+//     (bangumi/dlsite). Claimed works read this lane too — the (facet, source)
+//     XOR (T2) narrows the old whole-facet XOR to per-source: the catalog
+//     sources always read native, the wiki sources always bridge.
 //
-// Batched (§9.1): claimed works bridge in one join query, bodyless works read
-// in one catalog_work_tag query — never per-work. Each work's tags are ordered
-// (count DESC, name ASC) — high-vote first for the bodyless folksonomy; the
-// bridged rows all carry count 0, so the order degenerates to name ASC there.
-// Returns a map keyed by work id; a work with no tag is absent (the caller
-// renders []).
+// A claimed work's read face is bridge ∪ native; a bodyless work degenerates to
+// the native lane. (The pre-T2 "claimed never reads native" rule survives only
+// as the per-source fact that a claimed work has no wiki rows in the native
+// table — bridge-not-copy still holds.)
+//
+// Batched (§9.1): claimed works bridge in one join query, every work reads the
+// native table in one catalog_work_tag query — never per-work. Each work's
+// merged rows are re-sorted (count DESC, name ASC): voted bgm rows lead, the
+// count-0 rows (bridged wiki tags + bgm meta tags) trail by name. Returns a map
+// keyed by work id; a work with no tag is absent (the caller renders []).
 func (s *ReadService) loadWorkTags(ctx context.Context, subjects []claimSubject) (map[int64][]WorkTagRow, error) {
 	out := make(map[int64][]WorkTagRow, len(subjects))
-	galgameIDs, galgameToWork, bodylessIDs := partitionClaimSubjects(subjects)
+	galgameIDs, galgameToWork, _ := partitionClaimSubjects(subjects)
+	// Wiki bridge lane — CLAIMED works only.
 	if len(galgameIDs) > 0 {
 		if err := s.bridgeGalgameTags(ctx, galgameIDs, galgameToWork, out); err != nil {
 			return nil, err
 		}
 	}
-	if len(bodylessIDs) > 0 {
-		if err := s.nativeWorkTags(ctx, bodylessIDs, out); err != nil {
+	// Catalog-native lane — ALL works (claimed + bodyless). partitionClaimSubjects
+	// is shared with the whole-facet-XOR facets, so we build the full work-id list
+	// here rather than reusing its bodyless-only split.
+	allIDs := make([]int64, 0, len(subjects))
+	for _, sub := range subjects {
+		allIDs = append(allIDs, sub.WorkID)
+	}
+	if len(allIDs) > 0 {
+		if err := s.nativeWorkTags(ctx, allIDs, out); err != nil {
 			return nil, err
 		}
+	}
+	// Merge re-sort: a claimed work's bridge (count 0) and native rows arrive
+	// from two queries, so re-order each work by the (count DESC, name ASC)
+	// contract before the overlay.
+	for workID, rows := range out {
+		sort.SliceStable(rows, func(i, j int) bool {
+			if rows[i].Count != rows[j].Count {
+				return rows[i].Count > rows[j].Count
+			}
+			return rows[i].Name < rows[j].Name
+		})
+		out[workID] = rows
 	}
 	// Canonical overlay (step 74): stamp canonical_id/tier/kind onto every
 	// mapped tag, across BOTH lanes — the map is keyed (source_id, name), which
 	// a bridged claimed vndb tag (source_id=vndb, name=galgame_tag.name) hits
-	// exactly like a bodyless bangumi/dlsite tag does. Additive: unmapped tags
+	// exactly like a native bangumi/dlsite tag does. Additive: unmapped tags
 	// keep nil overlay fields.
 	if err := s.enrichCanonicalTags(ctx, out); err != nil {
 		return nil, err
@@ -173,11 +212,12 @@ func (s *ReadService) enrichCanonicalTags(ctx context.Context, out map[int64][]W
 	return nil
 }
 
-// bridgeGalgameTags reads the claimed works' tag layer in ONE join query and
-// maps it to the unified shape. galgame_tag.name is UNIQUE and (galgame_id,
-// tag_id) is the relation PK, so a work never sees a duplicate name; the SQL
-// orders by name, which IS the (count DESC, name) contract order because every
-// bridged row carries count 0.
+// bridgeGalgameTags reads the claimed works' wiki tag layer in ONE join query
+// and maps it to the unified shape. galgame_tag.name is UNIQUE and (galgame_id,
+// tag_id) is the relation PK, so a work never sees a duplicate name. The SQL
+// orders by name for a stable append; the final per-work order is (count DESC,
+// name ASC), applied by loadWorkTags after these count-0 bridge rows merge with
+// the native lane's voted rows.
 func (s *ReadService) bridgeGalgameTags(ctx context.Context, galgameIDs []int64, galgameToWork map[int64]int64, out map[int64][]WorkTagRow) error {
 	db := s.db.WithContext(ctx)
 
@@ -218,8 +258,10 @@ func (s *ReadService) bridgeGalgameTags(ctx context.Context, galgameIDs []int64,
 	return nil
 }
 
-// nativeWorkTags reads the bodyless works' catalog_work_tag rows in ONE query,
-// ordered so each work's tags are (count DESC, name ASC) — high-vote first.
+// nativeWorkTags reads the catalog-native catalog_work_tag rows for a set of
+// works (claimed AND bodyless, T2) in ONE query. The SQL pre-orders (count DESC,
+// name) for a stable append; the authoritative per-work order is applied by
+// loadWorkTags after the bridge merge.
 func (s *ReadService) nativeWorkTags(ctx context.Context, workIDs []int64, out map[int64][]WorkTagRow) error {
 	db := s.db.WithContext(ctx)
 	var rows []struct {

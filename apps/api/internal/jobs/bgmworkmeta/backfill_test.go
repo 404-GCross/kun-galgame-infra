@@ -113,14 +113,16 @@ func popCount(t *testing.T, where string, args ...any) int64 {
 }
 
 // TestBackfillBgmWorkMeta exercises the whole pipeline through the real Run
-// entry point: candidate selection (exact anchors of ANY matched_by, bodyless
-// only), field A's defensive branches (NULL / empty / non-array meta_tags,
-// blank elements, in-subject duplicates) and folksonomy coexistence (a voted
-// same-name row keeps its votes, a fresh meta-only name lands with count=0),
-// field B's shelf mapping (done→collect, present-0 real row, absent shelf no
-// row, unknown key counted, negative skipped), dry-run zero-write, apply value
-// fidelity, second-pass idempotency (A all-conflict / B all-unchanged), and
-// the upsert heal (mutated value healed on re-run).
+// entry point: candidate selection (exact anchors of ANY matched_by, T2 admits
+// claimed), the PER-FIELD claim split (a single claimed candidate has Field A
+// meta tag WRITTEN and Field B favorite REFUSED), field A's defensive branches
+// (NULL / empty / non-array meta_tags, blank elements, in-subject duplicates)
+// and folksonomy coexistence (a voted same-name row keeps its votes, a fresh
+// meta-only name lands with count=0), field B's shelf mapping (done→collect,
+// present-0 real row, absent shelf no row, unknown key counted, negative
+// skipped), dry-run zero-write, apply value fidelity, second-pass idempotency
+// (A all-conflict / B all-unchanged), and the upsert heal (mutated value healed
+// on re-run).
 func TestBackfillBgmWorkMeta(t *testing.T) {
 	clean(t)
 	ctx := context.Background()
@@ -158,7 +160,9 @@ func TestBackfillBgmWorkMeta(t *testing.T) {
 	mkSubject(t, 305, `{"name":"游戏"}`, `[1,2,3]`)
 	mkAnchor(t, wBad, "305", reg.bangumiSource, model.LinkKindExact, "rule:bgm-title-year")
 
-	// wClaimed / wProbable: excluded by the SQL (bodyless-only, exact-only).
+	// wClaimed: ADMITTED (T2) — the per-field split showcase. Field A writes its
+	// meta tag "游戏"; Field B refuses its wish favorite (popularity XOR retained).
+	// wProbable: still excluded (exact-only).
 	wClaimed := mkWork(t, reg.galgameMedium, "meta-claimed", &claimed)
 	mkSubject(t, 306, `["游戏"]`, `{"wish": 1}`)
 	mkAnchor(t, wClaimed, "306", reg.bangumiSource, model.LinkKindExact, "rule:bgm-title-year")
@@ -175,18 +179,18 @@ func TestBackfillBgmWorkMeta(t *testing.T) {
 	// --- dry run: decides, writes nothing.
 	st, err := Run(ctx, Opts{DSN: testDSN})
 	require.NoError(t, err)
-	assert.Equal(t, 5, st.Candidates, "claimed + probable excluded in SQL")
+	assert.Equal(t, 6, st.Candidates, "probable excluded; claimed admitted (T2)")
 	assert.Equal(t, 2, st.MetaNoTags, "empty array + NULL (wBad's object is not_array)")
 	assert.Equal(t, 1, st.MetaNotArray)
 	assert.Equal(t, 1, st.MetaNameBlank)
 	assert.Equal(t, 1, st.MetaDup, "the second 游戏 on wFull collapsed")
-	assert.Equal(t, 3, st.MetaPlanned, "wFull 2 (游戏, PC) + wOther 1 (Galgame)")
+	assert.Equal(t, 4, st.MetaPlanned, "wFull 2 (游戏, PC) + wOther 1 (Galgame) + wClaimed 1 (游戏)")
 	assert.Equal(t, 3, st.MetaDistinct)
 	assert.Equal(t, 3, st.FavNoObject, "empty object + NULL + malformed array")
 	assert.Equal(t, 1, st.FavUnknownKey, "mystery counted, never guessed")
 	assert.Equal(t, 1, st.FavBadValue, "negative done skipped")
-	assert.Equal(t, 8, st.FavPlanned, "wFull 5 + wOther 3 (wish/doing/dropped)")
-	assert.Equal(t, 0, st.Refused, "no claimed work reaches the write path")
+	assert.Equal(t, 9, st.FavPlanned, "wFull 5 + wOther 3 + wClaimed 1 (wish)")
+	assert.Equal(t, 1, st.Refused, "Field B refuses wClaimed's favorite even in dry (guard precedes apply)")
 	assert.Zero(t, st.MetaWritten+st.MetaConflict+st.FavWritten+st.FavUnchanged+st.Errors)
 	assert.EqualValues(t, 1, tagCount(t, ""), "dry run writes nothing (only the pre-seeded folksonomy row)")
 	assert.EqualValues(t, 0, popCount(t, ""))
@@ -201,11 +205,12 @@ func TestBackfillBgmWorkMeta(t *testing.T) {
 	// --- apply: writes the decided plan exactly.
 	st, err = Run(ctx, Opts{DSN: testDSN, Apply: true})
 	require.NoError(t, err)
-	assert.Equal(t, 2, st.MetaWritten, "PC + Galgame — 游戏 collided with the folksonomy row")
+	assert.Equal(t, 3, st.MetaWritten, "PC + Galgame + wClaimed 游戏 — wFull 游戏 collided with the folksonomy row")
 	assert.Equal(t, 1, st.MetaConflict)
-	assert.Equal(t, 8, st.FavWritten)
+	assert.Equal(t, 8, st.FavWritten, "wClaimed's favorite refused, not written")
+	assert.Equal(t, 1, st.Refused, "Field B refused the claimed favorite")
 	assert.Zero(t, st.FavUnchanged+st.Errors)
-	assert.EqualValues(t, 3, tagCount(t, ""))
+	assert.EqualValues(t, 4, tagCount(t, ""))
 	assert.EqualValues(t, 8, popCount(t, ""))
 
 	// Coexistence proof: the voted folksonomy row KEPT its votes; the fresh
@@ -229,16 +234,21 @@ func TestBackfillBgmWorkMeta(t *testing.T) {
 	assert.EqualValues(t, 4, pops[1].Value)
 	assert.Equal(t, model.PopularityMetricBgmDropped, pops[2].Metric)
 	assert.EqualValues(t, 0, pops[2].Value, "present 0 is a real row")
-	assert.EqualValues(t, 0, tagCount(t, "WHERE work_id IN (?, ?)", wClaimed, wProbable))
-	assert.EqualValues(t, 0, popCount(t, "WHERE work_id IN (?, ?)", wClaimed, wProbable))
+	// Per-field claim split: Field A materialised wClaimed's meta tag; Field B
+	// refused its favorite. wProbable never enters.
+	assert.EqualValues(t, 1, tagCount(t, "WHERE work_id = ?", wClaimed), "T2: claimed meta tag materialises")
+	assert.EqualValues(t, 0, popCount(t, "WHERE work_id = ?", wClaimed), "Field B refuses the claimed favorite")
+	assert.EqualValues(t, 0, tagCount(t, "WHERE work_id = ?", wProbable))
+	assert.EqualValues(t, 0, popCount(t, "WHERE work_id = ?", wProbable))
 
 	// --- second apply: idempotent — A all-conflict, B all-unchanged.
 	st, err = Run(ctx, Opts{DSN: testDSN, Apply: true})
 	require.NoError(t, err)
 	assert.Zero(t, st.MetaWritten+st.FavWritten+st.Errors, "second pass writes zero")
-	assert.Equal(t, 3, st.MetaConflict)
+	assert.Equal(t, 4, st.MetaConflict, "PC + wFull 游戏 + Galgame + wClaimed 游戏 all exist")
 	assert.Equal(t, 8, st.FavUnchanged)
-	assert.EqualValues(t, 3, tagCount(t, ""))
+	assert.Equal(t, 1, st.Refused, "claimed favorite refused every pass")
+	assert.EqualValues(t, 4, tagCount(t, ""))
 	assert.EqualValues(t, 8, popCount(t, ""))
 
 	// --- upsert heal: mutate one shelf value in the DB, re-run, healed.
@@ -256,13 +266,15 @@ func TestBackfillBgmWorkMeta(t *testing.T) {
 	assert.EqualValues(t, 12, healed, "value healed back to the subject's shelf count")
 	// Meta tags stay a pure fill on the same re-run.
 	assert.Zero(t, st.MetaWritten)
-	assert.Equal(t, 3, st.MetaConflict)
+	assert.Equal(t, 4, st.MetaConflict)
 }
 
-// TestXORGuardAndDSNRequired covers the write-time XOR guard (the SQL filter
-// excludes claimed works from candidates, so the guard is only reachable by
-// driving the writer directly) and the refuse-to-guess DSN discipline.
-func TestXORGuardAndDSNRequired(t *testing.T) {
+// TestPerFieldClaimSplitAndDSNRequired pins the T2 per-field claim policy driven
+// directly through the writer: on the SAME claimed work Field A (writeTag)
+// MATERIALISES while Field B (writeFavorite) still REFUSES. Bodyless rows write
+// on both paths, with the conflict (A) / change-detected (B) idempotency
+// backstops. Also covers the refuse-to-guess DSN discipline.
+func TestPerFieldClaimSplitAndDSNRequired(t *testing.T) {
 	clean(t)
 	ctx := context.Background()
 	reg, err := resolveRegistry(ctx, testDB)
@@ -272,19 +284,20 @@ func TestXORGuardAndDSNRequired(t *testing.T) {
 	wClaimed := mkWork(t, reg.galgameMedium, "claimed-direct", &claimed)
 	wBody := mkWork(t, reg.galgameMedium, "bodyless-direct", nil)
 
-	// XOR: claimed rows are refused before any write, on both paths.
+	// Per-field split on ONE claimed work: Field A writes, Field B refuses.
 	w := &writer{db: testDB, stats: &Stats{}}
-	w.writeTag(ctx, tagRow{WorkID: wClaimed, Site: &claimed, SourceID: reg.bangumiSource, Name: "游戏"}, true)
+	w.writeTag(ctx, tagRow{WorkID: wClaimed, SourceID: reg.bangumiSource, Name: "游戏"}, true)
+	assert.Equal(t, 1, w.stats.MetaWritten, "T2: Field A materialises the claimed meta tag")
 	w.writeFavorite(ctx, favRow{WorkID: wClaimed, Site: &claimed, SourceID: reg.bangumiSource, Metric: model.PopularityMetricBgmWish, Value: 3}, true)
-	assert.Equal(t, 2, w.stats.Refused)
-	assert.Zero(t, w.stats.MetaWritten+w.stats.FavWritten)
-	assert.EqualValues(t, 0, tagCount(t, ""))
-	assert.EqualValues(t, 0, popCount(t, ""))
+	assert.Equal(t, 1, w.stats.Refused, "Field B still refuses the claimed favorite")
+	assert.Zero(t, w.stats.FavWritten)
+	assert.EqualValues(t, 1, tagCount(t, ""), "only the Field A meta tag landed")
+	assert.EqualValues(t, 0, popCount(t, ""), "no claimed favorite row")
 
-	// Bodyless rows write; retries are conflict (A) / unchanged (B).
-	w.writeTag(ctx, tagRow{WorkID: wBody, Site: nil, SourceID: reg.bangumiSource, Name: "游戏"}, true)
-	assert.Equal(t, 1, w.stats.MetaWritten)
-	w.writeTag(ctx, tagRow{WorkID: wBody, Site: nil, SourceID: reg.bangumiSource, Name: "游戏"}, true)
+	// Bodyless rows write on both paths; retries are conflict (A) / unchanged (B).
+	w.writeTag(ctx, tagRow{WorkID: wBody, SourceID: reg.bangumiSource, Name: "游戏"}, true)
+	assert.Equal(t, 2, w.stats.MetaWritten)
+	w.writeTag(ctx, tagRow{WorkID: wBody, SourceID: reg.bangumiSource, Name: "游戏"}, true)
 	assert.Equal(t, 1, w.stats.MetaConflict, "ON CONFLICT refuses the duplicate")
 	w.writeFavorite(ctx, favRow{WorkID: wBody, Site: nil, SourceID: reg.bangumiSource, Metric: model.PopularityMetricBgmWish, Value: 3}, true)
 	assert.Equal(t, 1, w.stats.FavWritten)

@@ -1454,13 +1454,15 @@ func insertGalgameTagRelation(t *testing.T, db *gorm.DB, galgameID, tagID int64,
 		VALUES (?, ?, ?, ?)`, galgameID, tagID, spoiler, source).Error)
 }
 
-// TestWorkTag pins the step-58b media-aggregation tag read face: the CLAIMED
-// bridge (galgame_tag_relation ⋈ galgame_tag — localized display names,
-// NON-SPOILER only, count omitted because the galgame layer has no votes,
-// source mapped from relation.source), the BODYLESS native read
-// (catalog_work_tag, count DESC then name), strict XOR (a claimed work with no
-// bridgeable tag yields [] and never falls back to a shadow native row), and
-// []-not-null serialization.
+// TestWorkTag pins the step-58b + T2 media-aggregation tag read face under the
+// (facet, source) XOR: a CLAIMED work merges its WIKI bridge lane
+// (galgame_tag_relation ⋈ galgame_tag — localized names, NON-SPOILER only, no
+// votes) with its CATALOG-native lane (catalog_work_tag bgm rows), re-sorted
+// (count DESC, name ASC) so voted bgm rows lead. Covers: ① claimed bridge ∪
+// native merge (two-source attribution, contract order); ② a claimed work with
+// NO bridgeable wiki tag still surfaces its native bgm rows (the pre-T2 [] is
+// now filled — the flip); ③ bodyless native read unchanged; ④ the spoiler
+// filter still holds; and []-not-null serialization.
 func TestWorkTag(t *testing.T) {
 	db := openCatalogTestDB(t)
 	ensureGalgameStub(t, db)           // the intro bridge (also run by loadWorkDetail) needs galgame
@@ -1494,13 +1496,21 @@ func TestWorkTag(t *testing.T) {
 	insertGalgameTag(t, db, 9102, "泣きゲー(58b)")
 	insertGalgameTag(t, db, 9103, "ネタバレ(58b)")
 
-	// --- CLAIMED work (galgame_id 9001): two bridgeable tags + one spoiler tag.
+	// --- CLAIMED work (galgame_id 9001): the (facet, source) merge showcase —
+	// two bridgeable wiki tags + one spoiler tag (filtered) + native bgm rows
+	// (the T2 catalog-native lane; voted, so they lead the merge).
 	claimed := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "主張作品", ContentRating: 0, Status: 0,
 		Site: strptr("galgame_wiki"), ProductWorkID: ptrI64(9001)}
 	require.NoError(t, db.Create(&claimed).Error)
 	insertGalgameTagRelation(t, db, 9001, 9101, 0, "")     // user-curated → galgame_wiki
 	insertGalgameTagRelation(t, db, 9001, 9102, 0, "vndb") // synced → vndb
 	insertGalgameTagRelation(t, db, 9001, 9103, 2, "vndb") // severe spoiler → filtered
+	for _, row := range []model.CatalogWorkTag{
+		{WorkID: claimed.ID, Name: "百合", Count: 30, SourceID: srcBangumi},
+		{WorkID: claimed.ID, Name: "PC", Count: 5, SourceID: srcBangumi},
+	} {
+		require.NoError(t, db.Create(&row).Error)
+	}
 
 	// --- BODYLESS work: native folksonomy rows (count DESC, name tie-break).
 	bodyless := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "無体作品", ContentRating: 0, Status: 0}
@@ -1514,15 +1524,16 @@ func TestWorkTag(t *testing.T) {
 		require.NoError(t, db.Create(&row).Error)
 	}
 
-	// --- XOR work: claimed (galgame_id 9002) whose ONLY galgame tag is a
-	// spoiler (filtered → bridge empty), plus a SHADOW native row (a prior
-	// bodyless state) that must NEVER surface.
-	xor := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "空主張", ContentRating: 0, Status: 0,
+	// --- CLAIMED native-only work (galgame_id 9002): its ONLY wiki tag is a
+	// spoiler (filtered → bridge empty), but it carries a native bgm row. Pre-T2
+	// the strict XOR hid that row and served []; under the (facet, source) XOR the
+	// catalog-native lane is legitimate for a claimed work, so the row surfaces.
+	nativeOnly := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "原生主張", ContentRating: 0, Status: 0,
 		Site: strptr("galgame_wiki"), ProductWorkID: ptrI64(9002)}
-	require.NoError(t, db.Create(&xor).Error)
+	require.NoError(t, db.Create(&nativeOnly).Error)
 	insertGalgameTagRelation(t, db, 9002, 9103, 2, "vndb")
 	require.NoError(t, db.Create(&model.CatalogWorkTag{
-		WorkID: xor.ID, Name: "百合", Count: 99, SourceID: srcBangumi}).Error)
+		WorkID: nativeOnly.ID, Name: "百合", Count: 99, SourceID: srcBangumi}).Error)
 
 	// --- EMPTY work: bodyless, no tags → [].
 	empty := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "空作品", ContentRating: 0, Status: 0}
@@ -1530,22 +1541,34 @@ func TestWorkTag(t *testing.T) {
 
 	app := readApp(service.NewReadService(db), nil)
 
-	// CLAIMED: two bridged localized names, spoiler tag absent, count omitted
-	// (the galgame layer has no votes), per-relation source attribution.
-	// Matched by name (not position) — CJK name order is collation-dependent.
+	// CLAIMED ①: bridge ∪ native merge. The voted bgm rows (百合 30, PC 5) lead by
+	// (count DESC, name ASC); the count-0 bridged wiki tags trail. Spoiler tag
+	// filtered. Two-source attribution across the merge (bangumi native +
+	// galgame_wiki/vndb bridge).
 	code, body := getJSON(t, app, "/api/v1/catalog/works/"+itoa(claimed.ID))
 	require.Equal(t, 200, code)
 	tags := body["data"].(map[string]any)["tags"].([]any)
-	require.Len(t, tags, 2, "non-spoiler tags bridged, spoiler tag filtered")
+	require.Len(t, tags, 4, "2 native bgm + 2 bridged wiki tags; spoiler filtered")
+	// Contract order: voted bgm rows first (positional — count breaks the tie).
+	t0 := tags[0].(map[string]any)
+	assert.Equal(t, "百合", t0["name"], "voted bgm row leads the merge")
+	assert.EqualValues(t, 30, t0["count"])
+	assert.EqualValues(t, srcBangumi, t0["source_id"], "native lane attributes bangumi")
+	t1 := tags[1].(map[string]any)
+	assert.Equal(t, "PC", t1["name"])
+	assert.EqualValues(t, 5, t1["count"])
+	assert.EqualValues(t, srcBangumi, t1["source_id"])
+	// Bridged wiki tags trail (count omitted, per-relation source). Matched by
+	// name — CJK order among the count-0 rows is not asserted positionally.
 	byName := map[string]map[string]any{}
 	for _, raw := range tags {
 		tg := raw.(map[string]any)
 		byName[tg["name"].(string)] = tg
-		_, hasCount := tg["count"]
-		assert.False(t, hasCount, "no votes in the galgame layer → count omitted")
 	}
 	require.Contains(t, byName, "恋愛(58b)")
 	assert.EqualValues(t, srcGalgameWiki, byName["恋愛(58b)"]["source_id"], "user-curated relation → galgame_wiki")
+	_, hasCount := byName["恋愛(58b)"]["count"]
+	assert.False(t, hasCount, "bridged wiki tag has no votes → count omitted")
 	require.Contains(t, byName, "泣きゲー(58b)")
 	assert.EqualValues(t, srcVNDB, byName["泣きゲー(58b)"]["source_id"], "vndb-synced relation → vndb")
 	assert.NotContains(t, byName, "ネタバレ(58b)", "spoiler tag never crosses the bridge")
@@ -1566,10 +1589,16 @@ func TestWorkTag(t *testing.T) {
 	assert.Equal(t, "拔作", b3["name"])
 	assert.EqualValues(t, 1, b3["count"], "count=1 rows stored and served (store-all)")
 
-	// XOR: claimed + only a spoiler tag → [] (the shadow native row is invisible).
-	code, body = getJSON(t, app, "/api/v1/catalog/works/"+itoa(xor.ID))
+	// CLAIMED native-only ②: bridge empty (only a spoiler tag), but the native bgm
+	// row now surfaces — the pre-T2 [] is filled (the (facet, source) flip).
+	code, body = getJSON(t, app, "/api/v1/catalog/works/"+itoa(nativeOnly.ID))
 	require.Equal(t, 200, code)
-	assert.Empty(t, body["data"].(map[string]any)["tags"].([]any), "strict XOR: no fallback to native rows")
+	nTags := body["data"].(map[string]any)["tags"].([]any)
+	require.Len(t, nTags, 1, "T2: the claimed work's native bgm row surfaces (was [] under strict XOR)")
+	n0 := nTags[0].(map[string]any)
+	assert.Equal(t, "百合", n0["name"])
+	assert.EqualValues(t, 99, n0["count"])
+	assert.EqualValues(t, srcBangumi, n0["source_id"])
 
 	// EMPTY: [] not null.
 	code, body = getJSON(t, app, "/api/v1/catalog/works/"+itoa(empty.ID))
