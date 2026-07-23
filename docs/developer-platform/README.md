@@ -16,6 +16,7 @@
 | 06 | [security-compliance.md](./06-security-compliance.md) | 安全 / 滥用 / 合规:NSFW 闸控、来源投影(D1 再分发)、CORS、ToS、审计(§11) | 已完成 |
 | 07 | [migration-and-ops.md](./07-migration-and-ops.md) | 迁移与运维提醒:主库迁移、新域名 / CF、Redis 键空间、契约登记、面服务中间件(§14) | 已完成 |
 | 08 | [downstream-faces-and-sdk.md](./08-downstream-faces-and-sdk.md) | 下游开放 API = 面联邦(§16)· OpenAPI 契约与客户端 SDK / Flutter(§17) | 拍板 2026-07-23,触发式执行 |
+| 09 | [mcp-server.md](./09-mcp-server.md) | MCP server:公开 /v1 只读面的纯透传协议适配(架构裁决 · M1 七工具面 · 认证/计量复用 · 部署) | 拍板 2026-07-23,M1 执行中 |
 
 > 各 Phase 的实施进度见 [01 §13 分期](./01-design.md)。战略上位(开放 API 计划与 galgame-wiki 退役,W0–W5 波次)见 `refs/docs/nextmoe-draft/19`;工程任务书见 `refs/plans/05-open-api`(Phase 1)与 `refs/plans/09-open-api-phase2`(Phase 2)。
 

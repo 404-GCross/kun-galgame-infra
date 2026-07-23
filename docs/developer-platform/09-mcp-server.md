@@ -1,0 +1,75 @@
+# MCP Server(公开只读面的 AI-agent 协议适配层)
+
+> 拍板 2026-07-23(D4 提级 Phase 2,见 [01 §13](./01-design.md);派发-验收模式同 wave 08/09)。
+> 一句话定位:把**已有的公开 /v1 只读面**同时暴露为 **MCP(Model Context
+> Protocol)server**,让 AI 助手 / agent 用自然的工具调用直接查生态目录——
+> **不新造任何数据面、权限面或计量面**。
+
+## 1. 核心架构裁决:纯透传适配器(thin pass-through adapter)
+
+MCP server 是公开 /v1 契约前面的一层**协议适配**,不是第二个 API:
+
+- 每个 MCP tool 调用 = 一次对公开 /v1 面(`api.nextmoe.dev`)的 HTTP 请求,
+  **原样转发调用方的 API key**;响应 JSON 即 tool result。
+- 因此鉴权、tier、NSFW 可见性、限流、日配额、用量计量**全部天然复用**:
+  流量落在同一个面、记在同一把 key 上(`/dev/usage` 里与直连流量无别)。
+  MCP 层自身**零 authz 逻辑、零计量逻辑**——它连数据库都不碰。
+- 面的版本化留在上游 `/v1`;tool 名不带版本。上游 expand→contract 纪律
+  (02 §3.5)自动覆盖 MCP 消费者。
+
+## 2. 形态与宿主
+
+- 新 Go 服务 **`cmd/mcp`**(端口 **9285**),用 **官方 MCP Go SDK**
+  (`github.com/modelcontextprotocol/go-sdk`;执行时核最新 tag,若官方 SDK
+  能力缺口再评估 `mark3labs/mcp-go`,以官方优先)。
+- Transport:**Streamable HTTP、stateless 模式**(无会话粘性,水平扩展与
+  现有 Fiber 服务同治)。不做 stdio 分发(自托管用户 M2 再议)。
+- 域名:**`mcp.nextmoe.dev`**(独立子域,Dokploy panel-domain 姿态,与
+  developer-portal 同款单服务项目;`nextmoe.dev` 族命名约定见 README)。
+- 上游 base 走 env(`KUN_MCP_UPSTREAM_BASE`,prod = api.nextmoe.dev 的
+  内网服务地址),超时/重试保守(单次 30s,不重试非幂等——M1 全只读,
+  幂等 GET 允许一次重试)。
+
+## 3. 认证(M1)
+
+- 调用方在 MCP endpoint 上带 `Authorization: Bearer nm_<api-key>`(各 MCP
+  客户端的标准 header 配置即可)。MCP 层只做**形态检查**(缺失/非 `nm_`
+  前缀 → 立即 MCP error,提示去 developer.nextmoe.dev 领 key);**真正的
+  鉴权仍在上游面**(key 无效/超限时把面的 401/403/429 错误体转成带
+  说明的 tool error 返回)。
+- MCP 规范的 OAuth 2.1 授权流 = M2(第三方实际开放后,与 `dev:manage`
+  同期评估);M1 的静态 key 模式对 agent 场景已充分。
+
+## 4. M1 工具面(7 个,少而精,每个都映射既有端点)
+
+| tool | 上游端点 | 说明 |
+|---|---|---|
+| `galgame_search` | `GET /v1/galgame/search` | Meili 全文搜 galgame |
+| `galgame_get` | `GET /v1/galgame/{id}` | 详情(携 `catalog_work_id` 跨面互链) |
+| `catalog_search` | `GET /v1/catalog/search` | 实体搜索(persons/characters/labels) |
+| `catalog_work_get` | `GET /v1/catalog/works/{id}`(+`include=credits,relations` 时并取两子端点) | 注册行 + 可选 credits/relations |
+| `catalog_lookup_external` | `GET /v1/catalog/lookup` | killer:`source=vndb&external_id=v19658` → work + 认领指针 |
+| `catalog_label_get` | `GET /v1/catalog/labels/{id}` | 厂牌/社团(intros[]/links[]) |
+| `catalog_character_get` | `GET /v1/catalog/characters/{id}` | 角色(spoiler 字段原样透传) |
+
+- tool description 用英文、面向 LLM 写清「何时用哪个」(lookup vs search
+  的分工是重点:有外部 id 用 lookup,自然语言用 search)。
+- 输入 schema 逐参对齐上游 query 参数(分页参数透传,默认页量保守)。
+- **不做**的(M1 明确出界):calendar/changes/redirects 流(agent 场景
+  弱)、resources/prompts(M2)、任何写面(Phase 3 submit 开放后随
+  OAuth 一起评估)。
+
+## 5. 运维与部署
+
+- 独立 Dokploy 单服务项目(照抄 developer-portal 的 panel-domain +手动
+  Deploy 姿态,`docker-compose.mcp.yml`);镜像走现有 CI 矩阵。
+- healthz 照平台惯例;结构化日志记 tool 名 + 上游状态码 + 时延,
+  **永不记 key 明文**(fingerprint 前 8 hex)。
+- 冒烟:MCP `initialize` + `tools/list` + 一次 `galgame_search` 真调用。
+
+## 6. 阶段
+
+- **M1(本波)**:§1-§5 全部;门户 docs 页加「AI/MCP 接入」一节(端点、
+  key 配置示例:Claude Code / Claude Desktop / 通用 MCP 客户端片段)。
+- **M2(触发式)**:MCP resources(work 页面作为资源)、prompts、OAuth
+  2.1、stdio 自托管包、写面工具。触发条件 = 真实外部消费者出现。
