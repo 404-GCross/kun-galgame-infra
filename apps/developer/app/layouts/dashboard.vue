@@ -75,18 +75,15 @@ const handleLogout = async () => {
             class="rounded-xl border border-default-200 bg-content1 p-3"
           >
             <div class="flex items-center gap-3">
-              <img
-                v-if="auth.user.value.avatar"
-                :src="auth.user.value.avatar"
-                :alt="auth.user.value.name"
-                class="size-9 shrink-0 rounded-full object-cover"
+              <KunAvatar
+                :user="{
+                  id: 0,
+                  name: auth.user.value.name,
+                  avatar: auth.user.value.avatar || ''
+                }"
+                size="md"
+                :is-navigation="false"
               />
-              <div
-                v-else
-                class="flex size-9 shrink-0 items-center justify-center rounded-full bg-default-100 text-default-400"
-              >
-                <KunIcon name="lucide:circle-user-round" class="size-5" />
-              </div>
               <div class="min-w-0">
                 <p class="truncate text-sm font-semibold text-foreground">
                   {{ auth.user.value.name }}

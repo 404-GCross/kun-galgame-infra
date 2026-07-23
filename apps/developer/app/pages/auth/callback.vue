@@ -3,6 +3,8 @@
 // to the server exchange route (which lands the session cookies), seeds the
 // access_token ref + user store, then continues to the stored redirect (or the
 // console). On any failure it shows a retry that reopens the login modal.
+import { isSafeInternalPath } from '~/utils/safe-path'
+
 definePageMeta({ layout: false })
 
 useSeoMeta({ title: '登录中', robots: 'noindex' })
@@ -56,10 +58,7 @@ onMounted(async () => {
     return
   }
 
-  const dest =
-    redirect && redirect.startsWith('/') && !redirect.startsWith('//')
-      ? redirect
-      : '/dashboard'
+  const dest = isSafeInternalPath(redirect) ? redirect : '/dashboard'
   await navigateTo(dest)
 })
 

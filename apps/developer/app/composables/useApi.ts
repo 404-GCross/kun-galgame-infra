@@ -1,3 +1,5 @@
+import { REFRESH_TRANSIENT } from './useTokenRefresh'
+
 interface ApiOptions {
   method?: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH'
   body?: Record<string, unknown>
@@ -34,10 +36,17 @@ export const useApi = () => {
     // Refresh via the SHARED, single-flighted helper so concurrent 401s collapse
     // into ONE /auth/refresh. On success store the new token into THIS
     // composable's cookie ref so the retry below sends it.
-    const token = await requestTokenRefresh()
-    if (token) {
-      accessToken.value = token
+    const result = await requestTokenRefresh()
+    if (typeof result === 'string') {
+      accessToken.value = result
       return true
+    }
+
+    // Transient refresh failure (network / IdP blip): the session is still
+    // alive — surface this request's error without logging the user out; the
+    // next 401 retries the refresh.
+    if (result === REFRESH_TRANSIENT) {
+      return false
     }
 
     // Dead session: clear local state and bounce to login, preserving the

@@ -49,18 +49,17 @@ export const useAuth = () => {
   }
 
   const logout = async () => {
-    try {
-      // OAuth sessions revoke at the IdP via our Nitro route; password sessions
-      // hit the first-party logout through the relay.
-      if (authMode.value === 'oauth') {
-        await $fetch('/auth/logout', { method: 'POST', credentials: 'include' })
-      } else {
-        await api.post('/auth/logout')
-      }
-    } finally {
-      clearAuth()
-      navigateTo('/')
-    }
+    // Tear down BOTH session modes, not just the current auth_mode: password
+    // and SSO logins write same-named refresh_token cookies on different paths
+    // (/api/v1/auth vs /auth), so a surviving other-mode cookie would silently
+    // log the user back in on the next guarded navigation. Each call is a
+    // harmless no-op when that mode has no session.
+    await Promise.allSettled([
+      api.post('/auth/logout'),
+      $fetch('/auth/logout', { method: 'POST', credentials: 'include' })
+    ])
+    clearAuth()
+    navigateTo('/')
   }
 
   // Refresh via the shared single-flighted helper. On failure we don't clearAuth
@@ -68,7 +67,7 @@ export const useAuth = () => {
   // decides.
   const refreshAccessToken = async () => {
     const token = await requestTokenRefresh()
-    if (token) {
+    if (typeof token === 'string') {
       setAccessToken(token)
       return true
     }

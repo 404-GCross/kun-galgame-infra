@@ -1,3 +1,5 @@
+import { isSafeInternalPath } from '~/utils/safe-path'
+
 // Global login-modal state. The portal has a SINGLE login UI — one modal
 // rendered once in app.vue (LoginModal). The header CTA, the landing CTA, and
 // the /login fallback route (guarded-route + 401 redirects) all open THIS.
@@ -10,8 +12,7 @@ export const useLoginModal = () => {
   const redirect = useState<string | null>('login-modal-redirect', () => null)
 
   const open = (to?: string | null) => {
-    redirect.value =
-      to && to.startsWith('/') && !to.startsWith('//') ? to : null
+    redirect.value = isSafeInternalPath(to) ? to : null
     isOpen.value = true
   }
 

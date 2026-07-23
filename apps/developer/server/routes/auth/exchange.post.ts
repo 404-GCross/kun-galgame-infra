@@ -5,17 +5,14 @@
 // access_token is returned in the body so the client can also seed its cookie
 // ref immediately; the refresh_token stays httpOnly and never reaches the JS.
 // Contract: docs/integration/oauth/01-oauth-endpoints.md §POST /oauth/token.
-interface TokenEnvelope {
-  code: number
-  message?: string
-  data?: {
-    access_token: string
-    refresh_token?: string
-    expires_in?: number
-    token_type?: string
-    scope?: string
-  }
-}
+// The response is read via the tokenWire helpers (server/utils/oauth-session)
+// so BOTH the legacy {code,data} envelope and the standard bare-OAuth2 wire
+// (KUN_OIDC_STANDARD_WIRE) authenticate successfully.
+import {
+  tokenWireError,
+  tokenWirePayload,
+  type TokenWire
+} from '../../utils/oauth-session'
 
 export default defineEventHandler(async (event) => {
   const body = await readBody<{ code?: string; code_verifier?: string }>(event)
@@ -25,7 +22,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const config = useRuntimeConfig(event)
-  const res = await $fetch<TokenEnvelope>(
+  const res = await $fetch<TokenWire>(
     `${config.oauthApiBase}/api/v1/oauth/token`,
     {
       method: 'POST',
@@ -39,15 +36,16 @@ export default defineEventHandler(async (event) => {
       }
     }
   ).catch(
-    (e: { data?: TokenEnvelope }): TokenEnvelope =>
+    (e: { data?: TokenWire }): TokenWire =>
       e?.data ?? { code: -1, message: '换取令牌失败' }
   )
 
-  if (res.code !== 0 || !res.data?.access_token) {
+  const tokens = tokenWirePayload(res)
+  if (!tokens) {
     setResponseStatus(event, 400)
-    return { code: res.code || -1, message: res.message || '登录失败' }
+    return { code: res.code ?? -1, message: tokenWireError(res) || '登录失败' }
   }
 
-  landOAuthSession(event, res.data)
-  return { code: 0, data: { access_token: res.data.access_token } }
+  landOAuthSession(event, tokens)
+  return { code: 0, data: { access_token: tokens.access_token } }
 })

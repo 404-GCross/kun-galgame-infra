@@ -33,6 +33,14 @@
 
 1. **注册 OAuth client**(admin,`POST /api/v1/oauth/clients`,或管理台):`redirect_uris=["https://developer.nextmoe.dev/auth/callback"]`、`grants=["authorization_code","refresh_token"]`、`is_public=false`(confidential,门户有 Nitro 服务端)、`auto_consent=true`(第一方跳过同意页)、`allowed_scopes=[]`(默认 openid/profile/email)。响应给出 `client_id` + 一次性明文 `client_secret`。
 2. **配置门户环境变量**(生产):`NUXT_PUBLIC_OAUTH_CLIENT_ID`、`NUXT_OAUTH_CLIENT_SECRET`(服务端)、`NUXT_PUBLIC_OAUTH_AUTHORIZE_BASE=https://oauth.kungal.com/api/v1`、`NUXT_PUBLIC_OAUTH_WEB_BASE=https://oauth.kungal.com`、`NUXT_PUBLIC_OAUTH_REDIRECT_URI=https://developer.nextmoe.dev/auth/callback`。`redirect_uri` **完全串匹配**,勿有尾斜杠漂移。
-3. **本地 dev**:向本地 `kun_galgame_infra` 播一条等效 client 行(redirect_uri 用 `http://127.0.0.1:9430/auth/callback`),并设对应 `NUXT_PUBLIC_OAUTH_*` / `NUXT_OAUTH_CLIENT_SECRET`;authorize/web base 指向本地 OP(API :9277 / 前端 :9420)。
+3. **本地 dev**:向本地 `kun_galgame_infra` 播一条等效 client 行(redirect_uri 用 `http://127.0.0.1:9430/auth/callback`),并设对应 `NUXT_PUBLIC_OAUTH_*` / `NUXT_OAUTH_CLIENT_SECRET`;authorize/web base 指向本地 OP(API :9277 / 前端 :9420)。注意 `refresh-dev-db` 会抹掉一切手播的 dev-only client 行——刷新后需重播,或改用快照自带的 prod client + `dev-secret-<client_id>` 契约。
 
 > `/dev/*` 的 owner 判定按 uid、与 token 的 client 归属无关(已核:OAuth access_token 在 `/auth/me` 与 devapi 链上等价于直登 token)。
+
+**验收后记(2026-07-23 双维度评审后修正)**:
+
+- **token wire 容错读取器**(`server/utils/oauth-session.ts` `tokenWirePayload/tokenWireError`):`/oauth/token` 有两种线格式(legacy `{code,data}` 信封 / `KUN_OIDC_STANDARD_WIRE` 开启后的裸 OAuth2 shape),exchange/refresh 路由以 **access_token 存在性**判成败、绝不单看 `code`——否则 STANDARD_WIRE 翻转当天门户登录静默全断。
+- **登出双模全清**(`useAuth.logout`):密码与 SSO 两种 session 的 refresh_token 同名不同 Path(`/api/v1/auth` vs `/auth`),登出无条件两路都打——只清当前 auth_mode 会让另一模式的存活 cookie 在下次导航时把用户「静默复活」登录(跨账号时更是错账号复活)。
+- **瞬时刷新失败不清会话**(`useTokenRefresh` 返回 `REFRESH_TRANSIENT`):网络抖动 / IdP 5xx / Nitro 刷新路由的蓄意 503 不再被判成 session 死亡强制登出;仅 4xx(无 cookie / 过期 / 吊销)才清会话跳登录。
+- **已接受的偏差(有意为之,评审记录在案)**:access_token 为 JS 可读 cookie(沿袭 apps/web 约定;refresh_token httpOnly 兜底持久层);PKCE verifier/state 存 sessionStorage(confidential client 下 PKCE 是纵深防御,主认证在服务端 client_secret)。
+- **⚠️ 待拍板(第三方开放的硬前置)**:`/dev/*` 仅验 signer+uid、不查 token 的 client/scope——今天只有第一方 client 无实害,但任何第三方 OAuth app 拿到的用户 token(仅授 `openid profile email`)都能替用户在 `/dev/*` 铸 API key(confused-deputy,同意页未披露此权力)。**开放第三方 OAuth app 之前必须加栅栏**(建议:`/dev/*` 只接受第一方 session token 或门户 client 签发的 token;或引入 `dev:manage` scope + 同意页文案)。
