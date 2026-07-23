@@ -29,7 +29,7 @@ import (
 )
 
 func main() {
-	source := flag.String("source", "all", "bangumi | eg | vndb | all")
+	source := flag.String("source", "all", "bangumi | eg | eg-music | vndb | all")
 	apply := flag.Bool("apply", false, "write (default: dry run — plan counts only)")
 	limit := flag.Int("limit", 0, "cap works processed per wave (0 = all)")
 	egDSN := flag.String("eg-dsn", "", "erogamespace staging DSN (default: erogamespace on the catalog server)")
@@ -50,9 +50,9 @@ func main() {
 	}
 	defer catalogDB.Close()
 
-	// EG is needed for the eg/all waves and for the shared-handle candidates.
+	// EG is needed for the eg / eg-music / all waves and for the shared-handle candidates.
 	var egDB *gorm.DB
-	if *source == "eg" || *source == "all" {
+	if *source == "eg" || *source == "eg-music" || *source == "all" {
 		egDB = openEG(cfg, *egDSN)
 	}
 

@@ -44,6 +44,13 @@ func TestMain(m *testing.M) {
 		`CREATE TABLE IF NOT EXISTS staff (game bigint, creater_id bigint, shubetu int)`,
 		`CREATE TABLE IF NOT EXISTS appearances (game bigint, character_id bigint)`,
 		`CREATE TABLE IF NOT EXISTS appearance_actors (game bigint, character_id bigint, actor_id bigint)`,
+		// EG music-family stand-ins (refs/proj/84): the generated columns modeled
+		// as plain columns, so a --source all / eg-music run has tables to read.
+		`CREATE TABLE IF NOT EXISTS game_music (raw jsonb, music int, game int)`,
+		`CREATE TABLE IF NOT EXISTS singers   (raw jsonb, music int, creater_id int)`,
+		`CREATE TABLE IF NOT EXISTS lyricists (raw jsonb, music int, creater_id int)`,
+		`CREATE TABLE IF NOT EXISTS composers (raw jsonb, music int, creater_id int)`,
+		`CREATE TABLE IF NOT EXISTS arrangers (raw jsonb, music int, creater_id int)`,
 		`CREATE TABLE IF NOT EXISTS works (workno text, work_name text, work_name_kana text, maker_id text, maker_name text, age_category text, work_type_string text, status text, regist_date timestamptz, product_json jsonb)`,
 		`CREATE TABLE IF NOT EXISTS games (id bigint, vndb text, dlsite_id text)`,
 		`ALTER TABLE games ADD COLUMN IF NOT EXISTS dlsite_id text`,
@@ -70,6 +77,7 @@ func clean(t *testing.T) {
 		"src_vndb.staff", "src_vndb.staff_alias", "src_vndb.vn_staff", "src_vndb.vn_seiyuu", "src_vndb.vn_relations",
 		"catalog_release", "catalog_work_title", "catalog_work_label", "catalog_work_relation",
 		"src_llm.bid_identity_verdict", "creaters", "characters", "staff", "appearances", "appearance_actors", "works", "games",
+		"game_music", "singers", "lyricists", "composers", "arrangers",
 	}
 	for _, tb := range tables {
 		require.NoError(t, testDB.Exec("TRUNCATE "+tb+" RESTART IDENTITY CASCADE").Error)
