@@ -218,29 +218,23 @@ func Mount(a *app.App, cfg *config.Config, deps Deps) {
 	// ones additionally see their own pending/declined drafts.
 	optionalJWT := middleware.OptionalJWT(tokenVerifier)
 
-	// ── Read-route registrar for the devapi-gated /internal rich read face ──
-	// Since 09-open-api-phase2 wave 05 A2 retired the legacy /api read face,
-	// readRoutes.register now backs the /internal face only (see mountInternal).
-	// It still owns the read-route registration order (static/multi-segment +
-	// /mine before the galgame /:gid catch-all; taxonomy /search before /:name;
-	// series /search before /:id) so that single face stays correctly ordered.
-	// The handler/service instances are the same ones the /api write + staff face
-	// uses below — no handler logic is duplicated.
-	reads := readRoutes{
-		galgameH:        galgameH,
-		searchH:         searchH,
-		entityGalgamesH: entityGalgamesH,
-		linkH:           linkH,
-		contributorH:    contributorH,
-		submissionH:     submissionH,
-		messageH:        messageH,
-		tagH:            tagH,
-		officialH:       officialH,
-		engineH:         engineH,
-		seriesH:         seriesH,
-		taxRevH:         taxRevH,
-		optionalJWT:     optionalJWT,
-		jwtAuth:         jwtAuth,
+	// ── Registrar for the devapi-gated /internal platform-workflow face ──
+	// Since 09-open-api-phase2 route-B endgame W5 retired the 29 A/C-bucket public
+	// reads to the /v1 contract, workflowRoutes.register backs the surviving 15
+	// platform-workflow routes only (see mountInternal + workflowroutes.go for the
+	// per-route charter). The handler/service instances are the same ones the /api
+	// staff face + /v1 public face + /internal write face use — no handler logic is
+	// duplicated; the workflow struct simply carries the subset those 15 routes
+	// need (the entity-galgames / link / contributor / tag/official/engine/series
+	// list handlers the retired reads used are no longer wired onto this face).
+	workflow := workflowRoutes{
+		galgameH:    galgameH,
+		searchH:     searchH,
+		submissionH: submissionH,
+		messageH:    messageH,
+		taxRevH:     taxRevH,
+		optionalJWT: optionalJWT,
+		jwtAuth:     jwtAuth,
 	}
 
 	// API routes. Since 09-open-api-phase2 wave 06a W3 the /api face is
@@ -331,10 +325,11 @@ func Mount(a *app.App, cfg *config.Config, deps Deps) {
 	// newDevapiFace builds the middleware chain + usage recorder + flush
 	// lifecycle a SINGLE time; both faces register against it — no second flush
 	// ticker, no second OnPreShutdown Redis Close.
-	//   /internal   = the internal-tier rich read face: the 44 read routes,
-	//     gated by RequireTier(internal); NO sfwGate (content_limit passes
-	//     through untouched). Since 09-open-api-phase2 wave 05 A2 this is the
-	//     SOLE host of those reads (the legacy /api read face was retired) and it
+	//   /internal   = the internal-tier platform-workflow face: the 15 surviving
+	//     workflow routes (mine/messages-mine/search[SearchWithPending]/drafts/
+	//     user×3 + taxonomy revisions×8), gated by RequireTier(internal); NO
+	//     sfwGate (content_limit passes through untouched). Since 09-open-api-phase2
+	//     route-B endgame W5 the 29 public data reads retired to /v1; this face
 	//     ALSO carries the two S2S cron feeds (/galgame/messages/feed +
 	//     /galgame/revisions/recent) on the same devapi chain. Downstream
 	//     kungal/moyu/letmoe S2S consumers.
@@ -363,6 +358,6 @@ func Mount(a *app.App, cfg *config.Config, deps Deps) {
 	proposeH := newProposeHandler(deps.Edit, siteRepo.NewOAuthClientRepository(oauthDB))
 	mountInternalWrites(a, face, writes, jwtAuth)
 	mountInternalPropose(a, face, proposeH, jwtAuth)
-	mountInternal(a, face, reads, messageH, revisionH)
+	mountInternal(a, face, workflow, messageH, revisionH)
 	mountPublic(a, face, galgameSvc, searchSvc, galgameH, entityGalgamesH, publicTaxSvc, optionalJWT)
 }
