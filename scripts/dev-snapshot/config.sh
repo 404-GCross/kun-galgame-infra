@@ -65,9 +65,18 @@ REFUSED_DB_REGEX='letmoe'
 
 # --- dev credential constants (public by design) -----------------------------
 
-# Every user's password becomes the bcrypt of "kungal-dev" (one constant, so the
-# hash is identical for all rows). Verified round-trip with golang.org/x/crypto
-# bcrypt (cost 10). Login with password "kungal-dev".
+# Every user's password becomes a fixed hash of "kungal-dev" (one constant, so
+# the hash is identical for all rows). Login with password "kungal-dev".
+#
+# TWO constants because the auth service verifies the two column families with
+# DIFFERENT algorithms (apps/api/internal/platform/auth/service/auth_service.go):
+#   - users.password                → argon2 (utils.VerifyPassword / VerifyEncoded)
+#   - kungal_password/moyu_password → legacy bcrypt (utils.VerifyBcryptPassword)
+# Writing bcrypt into users.password made every dev login fail with 邮箱或密码错误
+# (argon2 cannot parse a $2a$ hash) — caught by a real login round-trip 2026-07-23.
+# DEV_ARGON2 generated with the app's own lib (matthewhartstonge/argon2
+# DefaultConfig); VerifyEncoded is self-describing, params travel in the hash.
+DEV_ARGON2='$argon2id$v=19$m=65536,t=3,p=4$xFBQ4JuYNrLwiZRokXkm0g$xOASQUh8sRd+WYiOgapLBmLfsMtld8wxI5c51Ju9S7E'
 DEV_BCRYPT='$2a$10$vSWo4K3J7j7t2ZKj9BTOnOlBUzgx1/onqF.n14rwMxgiprv5X.mAi'
 DEV_PASSWORD_PLAINTEXT='kungal-dev'
 

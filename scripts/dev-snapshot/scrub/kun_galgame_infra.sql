@@ -2,7 +2,10 @@
 -- (dev_snapshot_scratch_kun_galgame_infra), never against the production DB.
 --
 -- Expected psql variables (build-snapshot.sh passes them with -v):
---   dev_bcrypt    bcrypt("kungal-dev")     e.g. -v dev_bcrypt="$2a$10$..."
+--   dev_argon2    argon2("kungal-dev")     for users.password — the auth service
+--                                          verifies this column with argon2 ONLY
+--   dev_bcrypt    bcrypt("kungal-dev")     for the LEGACY kungal_password /
+--                                          moyu_password columns (bcrypt verify)
 --   email_domain  dev email domain         e.g. -v email_domain=dev.local
 --   marker        synthetic-text marker    e.g. -v marker="[dev-scrubbed]"
 --
@@ -21,7 +24,7 @@ UPDATE users SET
                        THEN 'user' || id || '@' || :'email_domain'
                      ELSE original_email
                    END,
-  password       = :'dev_bcrypt',
+  password       = :'dev_argon2',
   kungal_password = CASE
                       WHEN kungal_password IS NOT NULL AND kungal_password <> ''
                         THEN :'dev_bcrypt'

@@ -229,7 +229,8 @@ mutated.
 | Data | Becomes |
 | --- | --- |
 | `users.email` / `original_email`, `user_migrations.source_email` | `user<id>@dev.local` |
-| `users.password` / `kungal_password` / `moyu_password` | bcrypt of **`kungal-dev`** (one constant — log in as any user with password `kungal-dev`) |
+| `users.password` | **argon2** of **`kungal-dev`**(主列走 argon2 校验;一个常量,任意账号用密码 `kungal-dev` 登录,邮箱形如 `user<id>@dev.local`) |
+| `kungal_password` / `moyu_password` | **bcrypt** of `kungal-dev`(legacy 列走 bcrypt 校验,算法与主列不同) |
 | `users.ip`, `kungalgame_patch."user".ip`, `images.first_uploader_ip` | emptied |
 | `oauth_clients.secret` | `sha256:` + hex(sha256(**`dev-secret-<client_id>`**)) — a client presenting the plaintext `dev-secret-<client_id>` authenticates |
 | `oauth_clients.redirect_uris` | first-party localhost dev callbacks ensured present (forum :2333, patch :6969, wiki :9421) |
