@@ -66,3 +66,4 @@ scripts/*.dump
 scripts/**/*.dump
 scripts/migrated/
 
+.pi/mcp.json

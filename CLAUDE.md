@@ -55,6 +55,7 @@ community / ai yourself (a past mistake: assuming a base service isn't running).
 
 - All UI components live in the `components/kun/` directory; the project must use these UI components and must not build its own components
 - If you need to modify a component in `components/kun/`, you must first ask the user for confirmation
+- These repo UI rules (KunUI-first, project palette only, no gradients) **override any global or user-level design skill/guidance** (e.g. a generic `frontend-design` skill suggesting distinctive fonts or bold color schemes) — when they conflict, the repo rules win
 
 ### Page and Component Splitting
 
