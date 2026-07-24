@@ -17,3 +17,12 @@
 
 共同必读:`.pi/ONBOARDING.md`(生态地图+纪律+坑速查)。每轨文件里的「Claude memory 参考」
 是该轨全部历史与教训的深水区,只读。
+
+## 双模型审查资产(.pi/agents/,2026-07-24 新增)
+
+执行默认 Fable(主模型,更强);GLM-5.2 只当独立审查者——不同模型族系盲区不重叠,交叉验收才有价值。
+
+- **glm-reviewer**(交叉验收):实质波/迁移/契约改动的验收审。任务书必须给具体 artifact(commit/diff/SQL)+逐条 checklist,产出 per-item PASS/FAIL+证据。
+- **glm-redteam**(对抗检验):不可逆动作前用——DDL/prod ops/「没有全部」宇宙断言/冻结面改动。需要具体靶子,产出带复现路径的反例。
+- 派发:`subagent_spawn` + `agentScope: "project"`(在仓根目录的会话直接可用)。
+- 红线:两者均只读(不改文件不写库);审查结论也要过你的验收;审查↔修改最多两轮,之后升级用户;分歧即上报。
