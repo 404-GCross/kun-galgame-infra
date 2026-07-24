@@ -12,7 +12,7 @@
 > Shared baseline across all KUN Galgame repositories. Defaults, not dogma — apply judgment.
 
 1. All commit messages must be written entirely in English.
-2. All code comments must be written entirely in English.
+2. All code comments must be written entirely in English. (Exemption, ruled 2026-07-24: literal quotes of actual system output — error strings, UI text — may keep their original language when identifying the exact symptom is the point of the comment.)
 3. Keep each source file under ~500 lines where practical; once a file grows past ~300 lines, consider splitting it (a guideline, not a hard rule).
 4. Write every frontend function as an arrow function; compose/merge class names with `cn` wherever practical.
 5. Deliberately balance elegant modularity against necessary duplication — choose per case instead of always favoring either.
