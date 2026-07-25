@@ -363,9 +363,27 @@ func (h *AuthHandler) Refresh(c fiber.Ctx) error {
 	})
 }
 
+// visibleEmail gates the address on the token's OIDC `email` scope — the same
+// filter /oauth/userinfo applies, via the one shared rule (service.ScopeGrants,
+// which also decides that a scope-less first-party password-login token sees
+// everything). Without this gate a client granted only `openid profile` could
+// read here the address userinfo deliberately withholds, which made that filter
+// theatre.
+//
+// Denied means present-and-empty, not omitted: `email` on UserResponse carries
+// no omitempty and existing consumers read it as a string. Contract:
+// docs/integration/oauth/02-user-profile.md.
+func visibleEmail(scope, email string) string {
+	if service.ScopeGrants(scope, "email") {
+		return email
+	}
+	return ""
+}
+
 // Me returns the current user
 func (h *AuthHandler) Me(c fiber.Ctx) error {
 	userUUID := c.Locals("user_uuid").(string)
+	scope, _ := c.Locals("user_scope").(string)
 
 	user, err := h.authService.GetCurrentUserWithRoles(c.Context(), userUUID)
 	if err != nil {
@@ -375,7 +393,7 @@ func (h *AuthHandler) Me(c fiber.Ctx) error {
 	return response.Success(c, dto.UserResponse{
 		UUID:            user.UUID,
 		Name:            user.Name,
-		Email:           user.Email,
+		Email:           visibleEmail(scope, user.Email),
 		Avatar:          user.Avatar,
 		AvatarImageHash: user.AvatarImageHash,
 		Bio:             user.Bio,
@@ -401,6 +419,7 @@ func (h *AuthHandler) UpdateProfile(c fiber.Ctx) error {
 	}
 
 	userUUID := c.Locals("user_uuid").(string)
+	scope, _ := c.Locals("user_scope").(string)
 
 	user, err := h.authService.UpdateProfile(c.Context(), userUUID, &req)
 	if err != nil {
@@ -418,7 +437,7 @@ func (h *AuthHandler) UpdateProfile(c fiber.Ctx) error {
 	return response.Success(c, dto.UserResponse{
 		UUID:            user.UUID,
 		Name:            user.Name,
-		Email:           user.Email,
+		Email:           visibleEmail(scope, user.Email),
 		Avatar:          user.Avatar,
 		AvatarImageHash: user.AvatarImageHash,
 		Bio:             user.Bio,

@@ -467,7 +467,8 @@ func (s *OAuthService) ExchangeCode(ctx context.Context, req *dto.TokenRequest) 
 //   - profile → name, picture
 //   - email   → email
 //
-// If scope is empty (e.g. internal /auth/me), all fields are returned.
+// If scope is empty, all fields are returned — see ScopeGrants for why
+// (a first-party password-login token negotiated no scope at all).
 //
 // `id` and `roles` are returned regardless of scope: `id` is a second
 // representation of the same identity as `sub`, and `roles` is already
@@ -492,21 +493,11 @@ func (s *OAuthService) GetUserInfo(ctx context.Context, userUUID, scope string, 
 		UpdatedAt: user.UpdatedAt.Unix(), // documented Unix-timestamp contract
 	}
 
-	// If no scope specified, return all fields
-	if scope == "" {
-		info.Name = user.Name
-		info.Email = user.Email
-		info.Picture = s.resolveAvatar(user)
-		return info, nil
-	}
-
-	scopes := parseScopes(scope)
-
-	if scopes["profile"] {
+	if ScopeGrants(scope, "profile") {
 		info.Name = user.Name
 		info.Picture = s.resolveAvatar(user)
 	}
-	if scopes["email"] {
+	if ScopeGrants(scope, "email") {
 		info.Email = user.Email
 	}
 
@@ -543,6 +534,23 @@ func parseScopes(scope string) map[string]bool {
 		result[s] = true
 	}
 	return result
+}
+
+// ScopeGrants reports whether a token's granted scope includes `want`.
+//
+// An empty scope means no OAuth scope was ever negotiated — the token came
+// from a first-party password login at the account center, not from an
+// authorization-code grant — and grants every field. That is why
+// /auth/login tokens still see the full profile.
+//
+// Exported because the same rule gates PII outside this package (GET/PATCH
+// /auth/me, see handler.visibleEmail): a second copy of "empty means all"
+// would be free to drift away from what /oauth/userinfo enforces.
+func ScopeGrants(scope, want string) bool {
+	if strings.TrimSpace(scope) == "" {
+		return true
+	}
+	return parseScopes(scope)[want]
 }
 
 // RevokeToken revokes a session by either its refresh_token or its

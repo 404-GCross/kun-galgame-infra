@@ -31,6 +31,7 @@ Header 携带 `typ: at+jwt`（RFC 9068 access token 类型标记）；claims：
 - `iss` 固定为 OP issuer（`{issuer}/.well-known/openid-configuration` 的 `issuer`）。
 - `aud` 是资源方标识 = 该 client 绑定站点的域名（RFC 9068 audience 限制）；client 未绑定站点时省略。**下游现有的站点校验仍以 `site_id` 为准**，`aud` 供标准校验器使用。
 - `scope` / `site_id` / `client_id` / `site_roles` 在对应值为空时省略。
+- ⚠️ `email` / `name` 是**早期遗留字段，不随 `scope` 过滤**——注意上面的示例：`scope` 里没有 `email`，`email` claim 照样在。**不要把它们当用户资料源**：`/oauth/userinfo`（受 scope 门控、字段语义稳定、能反映吊销与封禁）才是权威来源，access token 请当作不透明凭证 + 一个 `exp`。
 
 签名算法：HS256（现状）。OIDC 切换（`KUN_OIDC_SIGN_ASYMMETRIC`）后改为 **ES256**（header 带 `kid`，公钥见 `{issuer}/oauth/jwks`）；切换窗口内两种签名都会被各服务接受，**下游把 access_token 当不透明字符串用即可**，不要对签名算法做硬编码假设。
 
