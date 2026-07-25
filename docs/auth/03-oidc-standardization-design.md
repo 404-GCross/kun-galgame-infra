@@ -404,19 +404,27 @@ Makes access tokens ES256 (JWKS-verifiable) instead of HS256. Verifiers are alre
 - [ ] **(Stage 3, later)** once no HS256 tokens remain in the wild, drop HS256 acceptance from the
   verifiers and remove `cfg.JWT.Secret` from galgame/image/artifact.
 
-### 12.2 Standard wire format — **DONE 2026-07-25, no flag**
-`/oauth/{token,userinfo,revoke}` emit spec-compliant top-level JSON unconditionally. The rollout
-ran expand → cut → contract, with stage 3 executed the same day rather than deferred — a
-"(Stage 3, later)" is how the previous attempt left a flag and two shapes behind for a year.
+### 12.2 Standard wire format — no flag; **code ready, NOT yet deployed**
+`/oauth/{token,userinfo,revoke}` will emit spec-compliant top-level JSON unconditionally. There is
+no switch: the envelope branch is deleted, not turned off — a second shape that still exists is a
+second shape that drifts back. Rollout is expand → cut → contract, and stage 3 is scheduled rather
+than deferred; "(Stage 3, later)" is how the previous attempt left a flag and two shapes behind.
 
-- [x] **Stage 1 (expand)** — ship wire-tolerant readers to every first-party RP and deploy them
-  BEFORE the OP changes. Landed: letmoe `8352e4b`, stickers `dce8637`, domain-monitor `1803796`,
-  gpt-image2 `8b63677`, blog `9a62150`, forum `5f13f4b2`. Already tolerant beforehand: moyu,
-  developer portal. Retired, so not an RP any more: infra/wiki.
-- [x] **Stage 2 (cut)** — delete `KUN_OIDC_STANDARD_WIRE`, `okJSON` and the `protoErr` fallback;
-  route `/oauth/userinfo` through `middleware.BearerAuth` (RFC 6750) instead of the house guard.
-- [ ] **Stage 3 (contract)** — strip the now-dead envelope branch from all eight RPs so only the
-  RFC shape remains.
+- [x] **Stage 1a (first-party expand)** — wire-tolerant readers shipped and DEPLOYED before the OP
+  changes: letmoe `8352e4b`, stickers `dce8637`, domain-monitor `1803796`, gpt-image2 `8b63677`,
+  blog `9a62150`, forum `5f13f4b2`. Already tolerant beforehand: moyu, developer portal.
+  Retired, so not an RP any more: infra/wiki.
+- [ ] **Stage 1b (third-party expand)** — ⚠️ **the gate.** All six live third parties must ship
+  their own tolerant readers first; see §12.3 and the partner guide
+  [`docs/integration/oauth/13-standard-wire-migration.md`](../integration/oauth/13-standard-wire-migration.md).
+  Cut only after all six confirm.
+- [x] **Stage 2 (cut) — committed, NOT pushed** (`e74faa7`): `KUN_OIDC_STANDARD_WIRE`, `okJSON` and
+  the `protoErr` fallback deleted; `/oauth/userinfo` moved to `middleware.BearerAuth` (RFC 6750).
+  ⚠️ **Pushing infra IS deploying** — `build.yml` path-filters on `apps/api/**`, so this commit
+  builds and redeploys oauth on push. Do not push it until stage 1b closes. (A docs-only commit
+  touches no filter and is safe to push.)
+- [ ] **Stage 3 (contract)** — strip the now-dead envelope branch from all eight first-party RPs so
+  only the RFC shape remains.
 
 **Two traps this cutover walked into — check them on any similar change:**
 1. An internal fault answered with a 4xx tells every RP the credential is permanently dead. RPs
@@ -425,19 +433,32 @@ ran expand → cut → contract, with stage 3 executed the same day rather than 
 2. `invalid_token` must be mapped by each RP. Left unmapped it falls into "unknown → transient",
    and an RP then retries a permanently dead session forever instead of re-authenticating.
 
-### 12.3 Third-party impact — **it was breaking, and here is why**
-The pre-cutover assumption ("standard-library RPs need no change") was **wrong**, and the
-production data disproved it. The envelope made standard libraries unusable — a conforming client
-read nothing at the top level and gave up. So **every third party with working logins had, by
-construction, written custom unwrapping code**, and that code broke at the cutover.
+### 12.3 Third-party impact — **breaking, which is why the cut waits**
+The original assumption ("standard-library RPs need no change") is **wrong**, and production data
+disproves it. The envelope made standard libraries unusable — a conforming client reads nothing at
+the top level and gives up. So **every third party with working logins has, by construction,
+written custom unwrapping code**, and that code breaks at the cut.
 
-Evidence used to classify each client (`sessions` joined to `oauth_clients`):
-- `rotated_at IS NOT NULL` proves the RP parsed `refresh_token` out of the envelope — 紫缘社 had 4.
-- A high **distinct-user** count with 0 refreshes still proves it read `access_token` (Hikarinagi
-  436 users, LyCorisGal 47, YukiHub Android 21, AniBT 10, Umbra 3).
-- Many sessions over **few** users and 0 refreshes is the signature of a retry loop, i.e. an RP
-  that never read anything — Singureo (4 users / 33 sessions), the standard-library integration
-  the cutover FIXED.
+Classification evidence (`sessions` joined to `oauth_clients`, 2026-07-25):
+
+| client | sessions | users | sess/user | refreshed | verdict |
+|---|---|---|---|---|---|
+| Umbra | 3 | 3 | 1.00 | 0 | working → will break |
+| Hikarinagi | 498 | 437 | 1.14 | 0 | working → will break |
+| YukiHub Android | 26 | 21 | 1.24 | 0 | working → will break |
+| LyCorisGal | 63 | 47 | 1.34 | 0 | working → will break |
+| AniBT | 15 | 10 | 1.50 | 0 | working → will break |
+| 紫缘社 | 123 | 76 | 1.62 | **4** | **proven** envelope reader |
+| Singureo | 33 | 4 | **8.25** | 0 | already broken → the cut FIXES it |
+
+How to read it: `rotated_at IS NOT NULL` proves the RP parsed `refresh_token` out of the envelope.
+Absent that, **sessions-per-user** separates a working integration (~1.0–1.6, one login per user)
+from a retry loop (Singureo's 8.25 — an RP that never managed to read anything). A working
+integration necessarily read `access_token`, so it necessarily unwrapped the envelope.
+
+**Post-cut watch signal:** re-run the same query. Any client whose sess/user climbs toward
+Singureo's range has fallen into a retry loop — that is the rollback trigger, and it is observable
+without waiting for them to report it.
 
 - Communication template: *"The IdP is now a full standards OIDC provider (discovery / JWKS /
   id_token / spec-compliant token & userinfo responses). Configure a standard OIDC client against

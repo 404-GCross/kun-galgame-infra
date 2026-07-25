@@ -69,6 +69,11 @@ Header 携带 `typ: at+jwt`（RFC 9068 access token 类型标记）；claims：
 
 ### 协议端点的线格式（RFC 6749 / 6750）——**唯一格式，无开关**
 
+> ⏳ **生效时间**：本节描述的是**切换后**的形状。切换尚未执行 —— 生产目前仍返回
+> `{code,message,data}` 信封。切换将在所有在线接入方确认完成兼容改造后进行，时间另行公告。
+> **迁移方式（零停机）见 [13-standard-wire-migration.md](./13-standard-wire-migration.md)**，
+> 请不要在切换前就改成只读标准格式。
+
 `/oauth/token`、`/oauth/userinfo`、`/oauth/revoke` 属于 RFC 6749 / RFC 6750 / RFC 7009 与 OIDC Core，**不使用本仓库的 `{code,message,data}` 信封**：
 
 - **成功**：裸顶层 JSON（`{"access_token": "...", ...}`）。`/oauth/revoke` 按 RFC 7009 §2.2 返回 **200 空 body**。
