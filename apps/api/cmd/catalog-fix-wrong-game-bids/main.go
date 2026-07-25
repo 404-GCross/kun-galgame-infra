@@ -17,6 +17,12 @@
 // Only "clean" corrections belong here — where the correct bid is held by no other
 // catalog work. Swap/rotation collisions are handled separately.
 //
+// Modes: default = repoint (wrong bid -> correct bid). --demote = the bid is
+// confirmed-wrong and no correct subject exists — record the rejection, delete the
+// ref, NULL galgame.bid. --promote = the inverse recovery: a previously-demoted
+// game whose correct bid was found later — insert the exact ref + set galgame.bid
+// from NULL (deferred recovery, refs/qa/05).
+//
 //	go run ./cmd/catalog-fix-wrong-game-bids --catalog-dsn '<dsn>' --wiki-dsn '<dsn>' --file corrections.tsv
 //	go run ./cmd/catalog-fix-wrong-game-bids --catalog-dsn '<dsn>' --wiki-dsn '<dsn>' --file corrections.tsv --apply
 package main
@@ -44,10 +50,15 @@ func main() {
 	file := flag.String("file", "", "REQUIRED corrections TSV (gid, work_id, cur_bid, correct_bid, ...)")
 	apply := flag.Bool("apply", false, "actually write (default: dry-run preview)")
 	demote := flag.Bool("demote", false, "DEMOTE mode: the file's bid is confirmed-wrong with no correct replacement — remove the ref + record rejection + null galgame.bid (correct_bid ignored)")
+	promote := flag.Bool("promote", false, "PROMOTE mode: recover a previously-demoted game — the correct bid was found later; insert the catalog exact ref + set galgame.bid from NULL (cur_bid = the old demoted bid)")
 	logPath := flag.String("log", "wrong-game-fix.log.tsv", "TSV change log path")
 	flag.Parse()
 	if *catDSN == "" || *wikiDSN == "" || *file == "" {
 		slog.Error("--catalog-dsn, --wiki-dsn and --file are all required")
+		os.Exit(2)
+	}
+	if *demote && *promote {
+		slog.Error("--demote and --promote are mutually exclusive")
 		os.Exit(2)
 	}
 	fixes := readFixes(*file)
@@ -67,6 +78,10 @@ func main() {
 	for _, f := range fixes {
 		if *demote {
 			demoteOne(cat, wiki, f, *apply, logf, &catDone, &wikiDone, &skipped)
+			continue
+		}
+		if *promote {
+			promoteOne(cat, wiki, f, *apply, logf, &catDone, &wikiDone, &skipped)
 			continue
 		}
 		// ---- catalog side ----
@@ -194,6 +209,87 @@ func demoteOne(cat, wiki *gorm.DB, f fix, apply bool, logf *os.File, catDone, wi
 		}
 	} else {
 		fmt.Fprintf(logf, "%d\t%d\twiki\twould-null-bid\t%d\t0\n", f.gid, f.workID, f.curBid)
+	}
+}
+
+// promoteOne recovers a previously-demoted game once a correct bid has been found
+// (deferred recovery via bangumi-infobox vndb reverse lookup): it re-asserts the
+// negative knowledge on the OLD wrong bid (a no-op when the demote pass already
+// recorded it), inserts the catalog exact ref at the correct bid, and sets
+// galgame.bid from NULL. Guards: the work must still be demoted (no bangumi exact
+// ref), the new (work, bid) pairing must not itself be rejected, and the correct
+// bid must be free in BOTH unique spaces (catalog exact ref + galgame.bid).
+// Idempotent: an already-promoted row is a no-op.
+func promoteOne(cat, wiki *gorm.DB, f fix, apply bool, logf *os.File, catDone, wikiDone, skipped *int) {
+	newBid := strconv.FormatInt(f.correctBid, 10)
+	var curExt string
+	if err := cat.Raw(`SELECT external_id FROM catalog_external_ref
+		WHERE source_id=3 AND entity_type=5 AND link_kind=0 AND entity_id=?`, f.workID).Scan(&curExt).Error; err != nil {
+		slog.Error("catalog read", "gid", f.gid, "error", err)
+		os.Exit(1)
+	}
+	switch {
+	case curExt == newBid:
+		// already promoted — idempotent no-op
+	case curExt != "":
+		*skipped++
+		fmt.Fprintf(logf, "%d\t%d\tcatalog\tSKIP(have=%s)\t%d\t%d\n", f.gid, f.workID, curExt, f.curBid, f.correctBid)
+	default:
+		// negative knowledge on the NEW pairing would contradict the promote
+		var rejected int64
+		cat.Raw(`SELECT count(*) FROM catalog_match_rejection
+			WHERE entity_type=5 AND entity_id=? AND source_id=3 AND external_id=?`, f.workID, newBid).Scan(&rejected)
+		// the correct bid must not be an exact ref on any other work
+		var holder int64
+		cat.Raw(`SELECT entity_id FROM catalog_external_ref
+			WHERE source_id=3 AND entity_type=5 AND link_kind=0 AND external_id=? LIMIT 1`, newBid).Scan(&holder)
+		switch {
+		case rejected > 0:
+			*skipped++
+			fmt.Fprintf(logf, "%d\t%d\tcatalog\tSKIP(rejected-pairing)\t%d\t%d\n", f.gid, f.workID, f.curBid, f.correctBid)
+		case holder != 0:
+			*skipped++
+			fmt.Fprintf(logf, "%d\t%d\tcatalog\tSKIP(collision:%d)\t%d\t%d\n", f.gid, f.workID, holder, f.curBid, f.correctBid)
+		case apply:
+			if err := cat.Transaction(func(tx *gorm.DB) error {
+				reason := fmt.Sprintf("qa deferred recovery: work %d bangumi %d was a confirmed-wrong game (demoted); correct subject %d recovered via bangumi-infobox vndb reverse lookup", f.workID, f.curBid, f.correctBid)
+				if err := tx.Exec(`INSERT INTO catalog_match_rejection (entity_type,entity_id,source_id,external_id,reason,rejected_at)
+					VALUES (5,?,3,?,?,now()) ON CONFLICT DO NOTHING`, f.workID, strconv.FormatInt(f.curBid, 10), reason).Error; err != nil {
+					return err
+				}
+				return tx.Exec(`INSERT INTO catalog_external_ref (entity_type,entity_id,source_id,external_id,link_kind,matched_by,created_at)
+					VALUES (5,?,3,?,0,'rule:wiki-bid-typed',now())`, f.workID, newBid).Error
+			}); err != nil {
+				slog.Error("catalog promote", "gid", f.gid, "error", err)
+				os.Exit(1)
+			}
+			*catDone++
+			fmt.Fprintf(logf, "%d\t%d\tcatalog\tPROMOTE(insert-ref)\t%d\t%d\n", f.gid, f.workID, f.curBid, f.correctBid)
+		default:
+			fmt.Fprintf(logf, "%d\t%d\tcatalog\twould-promote\t%d\t%d\n", f.gid, f.workID, f.curBid, f.correctBid)
+		}
+	}
+	// wiki: set the bid from NULL (galgame.bid is UNIQUE — check the holder first)
+	var wikiHolder int64
+	wiki.Raw(`SELECT id FROM galgame WHERE bid=? AND id<>? LIMIT 1`, f.correctBid, f.gid).Scan(&wikiHolder)
+	switch {
+	case wikiHolder != 0:
+		*skipped++
+		fmt.Fprintf(logf, "%d\t%d\twiki\tSKIP(bid-held-by:%d)\t%d\t%d\n", f.gid, f.workID, wikiHolder, f.curBid, f.correctBid)
+	case apply:
+		res := wiki.Exec(`UPDATE galgame SET bid=? WHERE id=? AND bid IS NULL`, f.correctBid, f.gid)
+		if res.Error != nil {
+			slog.Error("wiki promote", "gid", f.gid, "error", res.Error)
+			os.Exit(1)
+		}
+		if res.RowsAffected > 0 {
+			*wikiDone++
+			fmt.Fprintf(logf, "%d\t%d\twiki\tSET_BID\t0\t%d\n", f.gid, f.workID, f.correctBid)
+		} else {
+			fmt.Fprintf(logf, "%d\t%d\twiki\tno-op(bid not null)\t%d\t%d\n", f.gid, f.workID, f.curBid, f.correctBid)
+		}
+	default:
+		fmt.Fprintf(logf, "%d\t%d\twiki\twould-set-bid\t0\t%d\n", f.gid, f.workID, f.correctBid)
 	}
 }
 
