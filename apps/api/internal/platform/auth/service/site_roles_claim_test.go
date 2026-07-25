@@ -11,9 +11,9 @@ import (
 
 // TestSiteRolesClaimBothWireModes proves the site_roles claim carries
 // identically through both token-signing paths — the legacy HS256 (utils) and
-// the oidctoken signer used once KUN_OIDC_STANDARD_WIRE / asymmetric signing is
-// on. Both serialize the whole TokenClaims struct, so the field is
-// mode-independent; this pins that, plus the omitted-when-empty shape.
+// the oidctoken signer used once asymmetric signing is on. Both serialize the
+// whole TokenClaims struct, so the field is signer-independent; this pins that,
+// plus the omitted-when-empty shape.
 func TestSiteRolesClaimBothWireModes(t *testing.T) {
 	const secret = "test-secret"
 	claims := utils.TokenClaims{
@@ -37,8 +37,8 @@ func TestSiteRolesClaimBothWireModes(t *testing.T) {
 		t.Errorf("legacy: SiteRoles = %v, want [moderator]", got.SiteRoles)
 	}
 
-	// oidctoken signer path (the standard-wire / asymmetric path uses this same
-	// Signer interface).
+	// oidctoken signer path (the asymmetric path uses this same Signer
+	// interface).
 	tok, err := oidctoken.NewHS256Signer(secret, "https://id.example").SignAccess(claims, time.Minute)
 	if err != nil {
 		t.Fatal(err)

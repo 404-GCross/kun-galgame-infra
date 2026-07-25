@@ -22,16 +22,13 @@ export interface OAuthTokens {
   expires_in?: number
 }
 
-// /oauth/token speaks TWO wire formats (expand→contract, Tier-A contract
-// docs/integration/oauth/04-tokens-and-errors.md): the legacy envelope
-// { code: 0, data: {...} } while KUN_OIDC_STANDARD_WIRE is off, and the bare
-// OAuth2 shape { access_token, ... } / { error, error_description } once it
-// flips on. Success MUST be judged by the presence of access_token, never by
-// `code` — an envelope-only check silently kills SSO login on the flip.
+// /oauth/token is an OAuth protocol endpoint: the bare RFC 6749 shape
+// { access_token, ... } on success, { error, error_description } on failure.
+// Tier-A contract: docs/integration/oauth/04-tokens-and-errors.md.
+//
+// Success is judged by the PRESENCE of access_token, never by a status field —
+// that is what keeps this reader honest if the response shape ever shifts again.
 export interface TokenWire {
-  code?: number
-  message?: string
-  data?: OAuthTokens & { token_type?: string; scope?: string }
   access_token?: string
   refresh_token?: string
   expires_in?: number
@@ -41,15 +38,11 @@ export interface TokenWire {
 
 export const tokenWirePayload = (
   res: TokenWire | null | undefined
-): OAuthTokens | null => {
-  if (res?.data?.access_token) return res.data
-  if (res?.access_token) return res as OAuthTokens
-  return null
-}
+): OAuthTokens | null => (res?.access_token ? (res as OAuthTokens) : null)
 
 export const tokenWireError = (
   res: TokenWire | null | undefined
-): string | undefined => res?.message ?? res?.error_description ?? res?.error
+): string | undefined => res?.error_description ?? res?.error
 
 export const landOAuthSession = (event: H3Event, tokens: OAuthTokens) => {
   const secure = !import.meta.dev

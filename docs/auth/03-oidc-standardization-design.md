@@ -404,7 +404,7 @@ Makes access tokens ES256 (JWKS-verifiable) instead of HS256. Verifiers are alre
 - [ ] **(Stage 3, later)** once no HS256 tokens remain in the wild, drop HS256 acceptance from the
   verifiers and remove `cfg.JWT.Secret` from galgame/image/artifact.
 
-### 12.2 Standard wire format — no flag; **code ready, NOT yet deployed**
+### 12.2 Standard wire format — no flag; **LIVE in production 2026-07-25 12:02Z**
 `/oauth/{token,userinfo,revoke}` will emit spec-compliant top-level JSON unconditionally. There is
 no switch: the envelope branch is deleted, not turned off — a second shape that still exists is a
 second shape that drifts back. Rollout is expand → cut → contract, and stage 3 is scheduled rather
@@ -414,17 +414,28 @@ than deferred; "(Stage 3, later)" is how the previous attempt left a flag and tw
   changes: letmoe `8352e4b`, stickers `dce8637`, domain-monitor `1803796`, gpt-image2 `8b63677`,
   blog `9a62150`, forum `5f13f4b2`. Already tolerant beforehand: moyu, developer portal.
   Retired, so not an RP any more: infra/wiki.
-- [ ] **Stage 1b (third-party expand)** — ⚠️ **the gate.** All six live third parties must ship
-  their own tolerant readers first; see §12.3 and the partner guide
-  [`docs/integration/oauth/13-standard-wire-migration.md`](../integration/oauth/13-standard-wire-migration.md).
-  Cut only after all six confirm.
-- [x] **Stage 2 (cut) — committed, NOT pushed** (`e74faa7`): `KUN_OIDC_STANDARD_WIRE`, `okJSON` and
-  the `protoErr` fallback deleted; `/oauth/userinfo` moved to `middleware.BearerAuth` (RFC 6750).
-  ⚠️ **Pushing infra IS deploying** — `build.yml` path-filters on `apps/api/**`, so this commit
-  builds and redeploys oauth on push. Do not push it until stage 1b closes. (A docs-only commit
-  touches no filter and is safe to push.)
-- [ ] **Stage 3 (contract)** — strip the now-dead envelope branch from all eight first-party RPs so
-  only the RFC shape remains.
+- [x] **Stage 1b (third-party expand)** — all six live third parties shipped their own readers
+  against the partner guide
+  [`docs/integration/oauth/13-standard-wire-migration.md`](../integration/oauth/13-standard-wire-migration.md),
+  and confirmed before the cut. See §12.3 for how they were identified.
+- [x] **Stage 2 (cut)** — `e74faa7` + `b21567b`, live 2026-07-25 12:02Z. `KUN_OIDC_STANDARD_WIRE`,
+  `okJSON` and the `protoErr` fallback deleted; `/oauth/userinfo` moved to
+  `middleware.BearerAuth` (RFC 6750).
+  - ⚠️ **Pushing infra IS deploying** — `build.yml` path-filters on `apps/api/**`. A docs-only
+    commit touches no filter and is safe to push.
+  - ⚠️ **The webhook redeploy ran on the STALE image** (it fires ~8s after push; the build takes
+    ~3.5min). The cut only went live after a manual `docker pull` + `--force-recreate`. Always
+    compare the running container's image digest against the registry — see
+    [[dokploy-redeploy-no-pull-gap]].
+  - ⚠️ **Caught by the post-deploy smoke, not by CI**: `/oauth/userinfo` advertised the new
+    challenge header while still emitting the house envelope body. Cause: `oauth.Group("", mw)`
+    attaches the guard to the `/oauth` prefix, so it silently applied to every route registered
+    after it — including the `/userinfo` line that named `BearerAuth`. Fixed in `b21567b` by
+    giving each route its own middleware, so no future route can inherit a guard by position.
+- [x] **Stage 3 (contract)** — envelope branch stripped from all eight first-party RPs. Note the
+  readers in **forum** and **gpt-image2** were SPLIT rather than simplified: they serve
+  `/auth/me*` too, which keeps the house envelope permanently. `decodeProtocol` vs `decodeHouse`
+  now makes the two faces impossible to confuse.
 
 **Two traps this cutover walked into — check them on any similar change:**
 1. An internal fault answered with a 4xx tells every RP the credential is permanently dead. RPs

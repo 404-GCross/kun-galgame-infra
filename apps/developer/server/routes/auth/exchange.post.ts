@@ -5,9 +5,9 @@
 // access_token is returned in the body so the client can also seed its cookie
 // ref immediately; the refresh_token stays httpOnly and never reaches the JS.
 // Contract: docs/integration/oauth/01-oauth-endpoints.md §POST /oauth/token.
-// The response is read via the tokenWire helpers (server/utils/oauth-session)
-// so BOTH the legacy {code,data} envelope and the standard bare-OAuth2 wire
-// (KUN_OIDC_STANDARD_WIRE) authenticate successfully.
+// The response is read via the tokenWire helpers (server/utils/oauth-session),
+// which judge success by the presence of access_token in the bare RFC 6749
+// shape.
 import {
   tokenWireError,
   tokenWirePayload,
@@ -37,13 +37,15 @@ export default defineEventHandler(async (event) => {
     }
   ).catch(
     (e: { data?: TokenWire }): TokenWire =>
-      e?.data ?? { code: -1, message: '换取令牌失败' }
+      e?.data ?? { error: 'server_error', error_description: '换取令牌失败' }
   )
 
   const tokens = tokenWirePayload(res)
   if (!tokens) {
     setResponseStatus(event, 400)
-    return { code: res.code ?? -1, message: tokenWireError(res) || '登录失败' }
+    // The portal answers its OWN browser client in the house envelope; the
+    // upstream's RFC error string only supplies the message.
+    return { code: -1, message: tokenWireError(res) || '登录失败' }
   }
 
   landOAuthSession(event, tokens)

@@ -8,8 +8,8 @@
 // invalid_grant / expired) clears the session; a transient network/5xx blip
 // keeps the cookies so the caller can retry. The client single-flights refreshes
 // (useTokenRefresh), so concurrent 401s collapse into one call here.
-// Token responses are read via the tokenWire helpers so both the legacy
-// {code,data} envelope and the standard bare wire (KUN_OIDC_STANDARD_WIRE) work.
+// Token responses are read via the tokenWire helpers, which judge success by
+// the presence of access_token in the bare RFC 6749 shape.
 import {
   tokenWireError,
   tokenWirePayload,
@@ -52,7 +52,7 @@ export default defineEventHandler(async (event) => {
   if (!tokens) {
     clearOAuthSession(event) // permanent: refresh token dead → force re-login.
     setResponseStatus(event, 401)
-    return { code: res.code ?? 10003, message: tokenWireError(res) || '会话已过期' }
+    return { code: 10003, message: tokenWireError(res) || '会话已过期' }
   }
 
   landOAuthSession(event, tokens) // rotation writes the new refresh_token.

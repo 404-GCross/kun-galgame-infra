@@ -42,7 +42,7 @@
 
 **验收后记(2026-07-23 双维度评审后修正)**:
 
-- **token wire 容错读取器**(`server/utils/oauth-session.ts` `tokenWirePayload/tokenWireError`):`/oauth/token` 有两种线格式(legacy `{code,data}` 信封 / `KUN_OIDC_STANDARD_WIRE` 开启后的裸 OAuth2 shape),exchange/refresh 路由以 **access_token 存在性**判成败、绝不单看 `code`——否则 STANDARD_WIRE 翻转当天门户登录静默全断。
+- **token 读取器**(`server/utils/oauth-session.ts` `tokenWirePayload/tokenWireError`):`/oauth/token` 是 OAuth 协议端点,只有 RFC 6749 裸 shape(成功 `{access_token,...}` / 失败 `{error,error_description}`)。exchange/refresh 路由以 **access_token 存在性**判成败,不看任何状态字段——2026-07-25 线格式切换那天,只看 `code` 的读取器会静默全断,这条判据是唯一没被咬到的原因。
 - **登出双模全清**(`useAuth.logout`):密码与 SSO 两种 session 的 refresh_token 同名不同 Path(`/api/v1/auth` vs `/auth`),登出无条件两路都打——只清当前 auth_mode 会让另一模式的存活 cookie 在下次导航时把用户「静默复活」登录(跨账号时更是错账号复活)。
 - **瞬时刷新失败不清会话**(`useTokenRefresh` 返回 `REFRESH_TRANSIENT`):网络抖动 / IdP 5xx / Nitro 刷新路由的蓄意 503 不再被判成 session 死亡强制登出;仅 4xx(无 cookie / 过期 / 吊销)才清会话跳登录。
 - **已接受的偏差(有意为之,评审记录在案)**:access_token 为 JS 可读 cookie(沿袭 apps/web 约定;refresh_token httpOnly 兜底持久层);PKCE verifier/state 存 sessionStorage(confidential client 下 PKCE 是纵深防御,主认证在服务端 client_secret)。
