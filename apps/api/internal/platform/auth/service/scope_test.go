@@ -41,3 +41,36 @@ func TestScopeGrants(t *testing.T) {
 		})
 	}
 }
+
+// TestEmailForScope pins the single gate every address-bearing surface goes
+// through: the access token's `email` claim, /oauth/userinfo, and GET/PATCH
+// /auth/me. All three used to disagree — userinfo filtered, the other two
+// handed the address to any caller.
+func TestEmailForScope(t *testing.T) {
+	const addr = "kun@kungal.com"
+
+	cases := []struct {
+		name  string
+		scope string
+		want  string
+	}{
+		{"email scope sees the address", "openid profile email", addr},
+		{"email-only scope sees the address", "email", addr},
+
+		// The tightening: without the scope, no address anywhere.
+		{"profile-only scope is denied", "openid profile", ""},
+		{"openid-only scope is denied", "openid", ""},
+
+		// Account-center password logins negotiate no scope at all; the
+		// settings page must keep showing the user their own address.
+		{"scope-less first-party token sees the address", "", addr},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := EmailForScope(tc.scope, addr); got != tc.want {
+				t.Errorf("EmailForScope(%q, addr) = %q, want %q", tc.scope, got, tc.want)
+			}
+		})
+	}
+}

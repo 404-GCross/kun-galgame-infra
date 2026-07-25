@@ -395,7 +395,7 @@ func (s *OAuthService) ExchangeCode(ctx context.Context, req *dto.TokenRequest) 
 		utils.TokenClaims{
 			UserUUID:  user.UUID,
 			ID:        user.ID,
-			Email:     user.Email,
+			Email:     EmailForScope(authCode.Scope, user.Email),
 			Name:      user.Name,
 			Roles:     user.RoleNames(),
 			SiteRoles: s.siteRoles(ctx, user.ID, siteID),
@@ -497,9 +497,10 @@ func (s *OAuthService) GetUserInfo(ctx context.Context, userUUID, scope string, 
 		info.Name = user.Name
 		info.Picture = s.resolveAvatar(user)
 	}
-	if ScopeGrants(scope, "email") {
-		info.Email = user.Email
-	}
+	// UserInfoResponse.Email carries omitempty, so a withheld address becomes an
+	// absent key here — unlike /auth/me, where the field stays present and empty.
+	// Both shapes are pinned in docs/integration/oauth/01 + 02.
+	info.Email = EmailForScope(scope, user.Email)
 
 	return info, nil
 }
@@ -551,6 +552,22 @@ func ScopeGrants(scope, want string) bool {
 		return true
 	}
 	return parseScopes(scope)[want]
+}
+
+// EmailForScope returns the address only when the granted scope includes
+// `email`, and "" otherwise. It is the one gate every surface that can hand a
+// user's address to a client goes through: the access token's `email` claim,
+// /oauth/userinfo, and GET/PATCH /auth/me.
+//
+// Only this one PII field is gated. The display fields (name, avatar, bio,
+// moemoepoint, roles) stay open because any client can already read them via
+// /users/batch — withholding them would break downstreams without buying any
+// privacy.
+func EmailForScope(scope, email string) string {
+	if ScopeGrants(scope, "email") {
+		return email
+	}
+	return ""
 }
 
 // RevokeToken revokes a session by either its refresh_token or its
@@ -698,7 +715,7 @@ func (s *OAuthService) RefreshWithClient(ctx context.Context, refreshToken, clie
 			utils.TokenClaims{
 				UserUUID:  user.UUID,
 				ID:        user.ID,
-				Email:     user.Email,
+				Email:     EmailForScope(session.Scope, user.Email),
 				Name:      user.Name,
 				Roles:     user.RoleNames(),
 				SiteRoles: s.siteRoles(ctx, user.ID, siteID),

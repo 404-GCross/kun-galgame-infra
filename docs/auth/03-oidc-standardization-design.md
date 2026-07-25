@@ -118,7 +118,7 @@ and exactly the subset a third party will later discover and consume.
 |---|---|---|
 | Flow | `/authorize` code + PKCE S256, `/token`, `/userinfo`, `/revoke` (RFC 7009), consent, custom logout (`cmd/oauth/main.go:196-219`) | Same flow, unchanged |
 | Signing | **HS256, single `cfg.JWT.Secret`** (`pkg/utils/jwt.go` `GenerateAccessToken:32`) | **ES256 active + RS256** via `signing_keys` (§4) |
-| Access token | HS256 JWT, claims `sub/id/email/name/roles/scope/site_id` (`TokenClaims`) | RFC 9068 `at+jwt`, same claims + proper `aud`, ES256-signed |
+| Access token | HS256 JWT, claims `sub/id/email/name/roles/scope/site_id` (`TokenClaims`); `email` gated on the `email` scope since 2026-07-24 (`service.EmailForScope` — the same gate as `/oauth/userinfo` + `/auth/me`, closing the "decode the token to bypass the filter" hole) | RFC 9068 `at+jwt`, same claims + proper `aud`, ES256-signed |
 | Refresh token | HS256 JWT **but looked up by DB value, signature never verified** (`FindByRefreshTokenOrPrev`; `ParseRefreshToken` has **no callers**) | **Opaque random string** (drop the vestigial JWT signing) |
 | `id_token` | **none** | Minimal, ES256-signed, issued on `openid` scope |
 | JWKS | **none** | `GET /oauth/jwks` (`jwks_uri`) |

@@ -72,7 +72,7 @@ OAuth 的用户自助 API 在设计上分两层。下游接入时**不要**把�
 
 > **⚠️ 2026-07-24 变更：`email` 受 `email` scope 门控**
 >
-> 此前 `/auth/me` 对 email **完全不过滤**，于是只申请 `openid profile` 的 client 能在这里读到 [/oauth/userinfo](./01-oauth-endpoints.md#get-oauthuserinfo) 刻意不给的邮箱——那个 scope 门控形同虚设。现在两处**用同一条规则**：
+> 此前 `/auth/me` 对 email **完全不过滤**，于是只申请 `openid profile` 的 client 能在这里读到 [/oauth/userinfo](./01-oauth-endpoints.md#get-oauthuserinfo) 刻意不给的邮箱——那个 scope 门控形同虚设。现在 **userinfo / `/auth/me` / access token 的 `email` claim 三处同一条规则**：
 >
 > - token 的 scope 含 `email` → 返回真实邮箱；
 > - token 的 scope 不含 `email` → **返回空字符串 `""`**（注意与 userinfo 不同：userinfo 是**整个键缺失**，`/auth/me` 是**键在、值为空**，因为该字段无 `omitempty`，老调用方按 string 读）；

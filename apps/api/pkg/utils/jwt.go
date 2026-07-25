@@ -18,14 +18,20 @@ import (
 // `uid` claim was renamed to `id` in v0.3.0 — all downstream verifiers
 // must read `id` and stop reading `uid`.
 type TokenClaims struct {
-	UserUUID string   `json:"sub"`
-	ID       uint     `json:"id"`
-	Email    string   `json:"email"`
-	Name     string   `json:"name"`
-	Scope    string   `json:"scope,omitempty"`
-	SiteID   uint     `json:"site_id,omitempty"`
-	Role     int      `json:"role,omitempty"`
-	Roles    []string `json:"roles,omitempty"`
+	UserUUID string `json:"sub"`
+	ID       uint   `json:"id"`
+	// Email is gated on the OIDC `email` scope (service.EmailForScope) and is
+	// therefore omitted from tokens whose grant didn't include it — the same rule
+	// /oauth/userinfo and /auth/me apply. Historically it shipped
+	// unconditionally, which made those filters bypassable by base64-decoding the
+	// access token. Consumers must not treat it as a profile source: request the
+	// scope and read /oauth/userinfo, which also reflects revocation and bans.
+	Email  string   `json:"email,omitempty"`
+	Name   string   `json:"name"`
+	Scope  string   `json:"scope,omitempty"`
+	SiteID uint     `json:"site_id,omitempty"`
+	Role   int      `json:"role,omitempty"`
+	Roles  []string `json:"roles,omitempty"`
 	// SiteRoles are the caller's site-scoped roles for the issuing client's
 	// site only (docs/integration/oauth/12-site-roles.md). A flat string array,
 	// never containing user/admin/ren. Consumers union it with Roles before

@@ -491,7 +491,7 @@ await $fetch('https://oauth.kungal.com/api/v1/oauth/revoke', {
 
 ## 6. JWT Access Token 结构
 
-如果你需要在不调用 userinfo 端点的情况下解析用户信息，可以直接解码 JWT：
+access token 的结构（完整 claim 列表见 [04-tokens-and-errors.md](./04-tokens-and-errors.md)）：
 
 ```json
 {
@@ -499,6 +499,7 @@ await $fetch('https://oauth.kungal.com/api/v1/oauth/revoke', {
   "email": "kun@kungal.com",
   "name": "KUN",
   "roles": ["user", "admin"],
+  "scope": "openid profile email",
   "exp": 1700000000,
   "iat": 1699999100,
   "nbf": 1699999100
@@ -508,7 +509,8 @@ await $fetch('https://oauth.kungal.com/api/v1/oauth/revoke', {
 - **签名算法**：`HS256` **或** `ES256`（取决于 OP 当前的签名模式；`ES256` 时 JWS header 带 `kid`，公钥在 `{issuer}/oauth/jwks`）。**不要硬编码 alg**，也不要假设它永远是 HS256。
 - **有效期**：15 分钟
 - **不要在客户端验证签名**（HS256 模式下你没有 secret），仅用于读取 claims；需要权威校验时调用 `/oauth/userinfo`（token 被吊销 / 用户被封禁也只有它能反映出来）。
-- **不要把 access token 的 claims 当作用户资料来源**：其中的 `email` / `name` 是早期遗留字段，**不随 scope 过滤**，与 `/oauth/userinfo` 的隐私门控不一致，后续可能调整。请一律以 `/oauth/userinfo`（受 scope 约束、字段语义稳定）为准，把 access token 当作不透明凭证 + 一个 `exp`。
+- **`email` claim 受 `email` scope 门控（2026-07-24 起）**：没申请 `email` → 这个 claim **不在 token 里**（此前无条件携带，是能绕过 userinfo 隐私门控的口子，已封）。`name` 不受门控。
+- **不要把 access token 的 claims 当作用户资料来源**：请一律以 `/oauth/userinfo`（受 scope 约束、字段语义稳定、能反映吊销与封禁）为准，把 access token 当作不透明凭证 + 一个 `exp`。
 
 ---
 
@@ -554,6 +556,7 @@ await $fetch('https://oauth.kungal.com/api/v1/oauth/revoke', {
 | 已经改了 scope，邮箱还是不出现 | `scope` 在换码时随会话持久化，`refresh_token` 续签沿用老 scope | 让已登录用户**重新走一次授权码流程**（不是刷新） |
 | id_token 解出来只有 `sub`，没有邮箱和昵称 | id_token 只做身份认证，**不含** `email`/`name`/`picture` | 额外调 `/oauth/userinfo`（AppAuth 等原生 / 移动端接入尤其容易漏） |
 | `/auth/me` 的 `email` 是 `""` | 同一个 `email` scope 门控（2026-07-24 起，此前不过滤） | 同上：申请 `email` scope 并重新授权 |
+| 解开 access token 也没有 `email` claim | 同一个门控（2026-07-24 起，此前无条件携带） | 同上；且**不要**把 token claims 当资料源，改调 `/oauth/userinfo` |
 | 用户名 / 头像拿不到 | 没申请 `profile` scope | `scope` 带上 `profile` |
 
 ---

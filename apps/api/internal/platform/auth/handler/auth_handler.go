@@ -363,24 +363,14 @@ func (h *AuthHandler) Refresh(c fiber.Ctx) error {
 	})
 }
 
-// visibleEmail gates the address on the token's OIDC `email` scope — the same
-// filter /oauth/userinfo applies, via the one shared rule (service.ScopeGrants,
-// which also decides that a scope-less first-party password-login token sees
-// everything). Without this gate a client granted only `openid profile` could
-// read here the address userinfo deliberately withholds, which made that filter
-// theatre.
+// Me returns the current user.
 //
-// Denied means present-and-empty, not omitted: `email` on UserResponse carries
-// no omitempty and existing consumers read it as a string. Contract:
-// docs/integration/oauth/02-user-profile.md.
-func visibleEmail(scope, email string) string {
-	if service.ScopeGrants(scope, "email") {
-		return email
-	}
-	return ""
-}
-
-// Me returns the current user
+// `email` goes through service.EmailForScope — the same gate as the access
+// token's email claim and /oauth/userinfo. Without it a client granted only
+// `openid profile` could read here the address userinfo deliberately withholds,
+// which made that filter theatre. Denied means present-and-empty rather than
+// omitted: UserResponse.Email carries no omitempty and existing consumers read
+// it as a string (contract: docs/integration/oauth/02-user-profile.md).
 func (h *AuthHandler) Me(c fiber.Ctx) error {
 	userUUID := c.Locals("user_uuid").(string)
 	scope, _ := c.Locals("user_scope").(string)
@@ -393,7 +383,7 @@ func (h *AuthHandler) Me(c fiber.Ctx) error {
 	return response.Success(c, dto.UserResponse{
 		UUID:            user.UUID,
 		Name:            user.Name,
-		Email:           visibleEmail(scope, user.Email),
+		Email:           service.EmailForScope(scope, user.Email),
 		Avatar:          user.Avatar,
 		AvatarImageHash: user.AvatarImageHash,
 		Bio:             user.Bio,
@@ -437,7 +427,7 @@ func (h *AuthHandler) UpdateProfile(c fiber.Ctx) error {
 	return response.Success(c, dto.UserResponse{
 		UUID:            user.UUID,
 		Name:            user.Name,
-		Email:           visibleEmail(scope, user.Email),
+		Email:           service.EmailForScope(scope, user.Email),
 		Avatar:          user.Avatar,
 		AvatarImageHash: user.AvatarImageHash,
 		Bio:             user.Bio,
