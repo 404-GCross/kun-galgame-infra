@@ -287,37 +287,22 @@ func (s *OAuthService) verifyClientSecret(ctx context.Context, clientID, clientS
 
 // ExchangeCode exchanges an authorization code for tokens
 func (s *OAuthService) ExchangeCode(ctx context.Context, req *dto.TokenRequest) (*dto.TokenResponse, error) {
-	// Find authorization code
-	authCode, err := s.authCodeRepo.FindValidByCode(ctx, req.Code)
-	if err != nil {
-		return nil, errors.NewWithCode(errors.ErrOAuthInvalidCode)
-	}
-
-	// Validate client
-	if authCode.ClientID != req.ClientID {
-		return nil, errors.NewWithCode(errors.ErrOAuthInvalidClient)
-	}
-
-	// Fetch the full client record (with its Site — the site domain becomes
-	// the access token's `aud`). We need IsPublic (for confidential secret
-	// enforcement below), SiteID (to bind the JWT to a site so image_service
-	// can do its cross-site quota check), and Grants (to confirm this client
-	// is even allowed to use the authorization_code grant).
+	// --- Authenticate the client FIRST (RFC 6749 §4.1.3) ---
+	//
+	// Nothing about the authorization code may be revealed to a caller that has
+	// not proven who it is. Validating the code first (as this used to) turns
+	// the endpoint into an oracle: an unauthenticated caller could tell a live
+	// code from a bogus one by which error came back, which leaks exactly the
+	// signal an attacker holding a stolen code wants to confirm.
+	//
+	// Fetch the full client record (with its Site — the site domain becomes the
+	// access token's `aud`). We need IsPublic (for confidential secret
+	// enforcement), SiteID (to bind the JWT to a site so image_service can do
+	// its cross-site quota check), and Grants (to confirm this client is even
+	// allowed to use the authorization_code grant).
 	client, err := s.clientRepo.FindByClientIDWithSite(ctx, req.ClientID)
 	if err != nil {
 		return nil, errors.NewWithCode(errors.ErrOAuthInvalidClient)
-	}
-
-	// Grant-type allow-list. A client created with Grants only
-	// ["refresh_token"] (hypothetical) cannot mint tokens via code
-	// exchange — and vice versa for the refresh path.
-	if !client.IsGrantAllowed("authorization_code") {
-		return nil, errors.NewWithCode(errors.ErrOAuthInvalidGrant)
-	}
-
-	// Validate redirect URI
-	if authCode.RedirectURI != req.RedirectURI {
-		return nil, errors.NewWithCode(errors.ErrOAuthInvalidRedirectURI)
 	}
 
 	// Authentication rules — strict, type-driven:
@@ -327,21 +312,44 @@ func (s *OAuthService) ExchangeCode(ctx context.Context, req *dto.TokenRequest) 
 	//     otherwise an attacker who steals the auth code only needs the
 	//     PKCE verifier from the same client to bypass secret entirely).
 	//
-	//   public client (IsPublic=true): MUST use PKCE (no secret to give).
-	hasSecret := req.ClientSecret != ""
-	hasPKCE := authCode.CodeChallenge != ""
-
-	if client.IsPublic {
-		if !hasPKCE {
-			return nil, errors.NewWithCode(errors.ErrOAuthPKCERequired)
-		}
-	} else {
-		if !hasSecret {
+	//   public client (IsPublic=true): has no secret to present, so PKCE is the
+	//     substitute (RFC 6749 §2.1) and is enforced below, once the code is
+	//     loaded and its challenge is known.
+	if !client.IsPublic {
+		if req.ClientSecret == "" {
 			return nil, errors.NewWithCode(errors.ErrOAuthInvalidClientSecret)
 		}
 		if err := s.verifyClientSecret(ctx, req.ClientID, req.ClientSecret); err != nil {
 			return nil, err
 		}
+	}
+
+	// Grant-type allow-list. A client created with Grants only
+	// ["refresh_token"] (hypothetical) cannot mint tokens via code
+	// exchange — and vice versa for the refresh path.
+	if !client.IsGrantAllowed("authorization_code") {
+		return nil, errors.NewWithCode(errors.ErrOAuthInvalidGrant)
+	}
+
+	// --- Client is authenticated; now the code may be examined ---
+	authCode, err := s.authCodeRepo.FindValidByCode(ctx, req.Code)
+	if err != nil {
+		return nil, errors.NewWithCode(errors.ErrOAuthInvalidCode)
+	}
+
+	// The code must have been issued to THIS client.
+	if authCode.ClientID != req.ClientID {
+		return nil, errors.NewWithCode(errors.ErrOAuthInvalidClient)
+	}
+
+	// Validate redirect URI
+	if authCode.RedirectURI != req.RedirectURI {
+		return nil, errors.NewWithCode(errors.ErrOAuthInvalidRedirectURI)
+	}
+
+	hasPKCE := authCode.CodeChallenge != ""
+	if client.IsPublic && !hasPKCE {
+		return nil, errors.NewWithCode(errors.ErrOAuthPKCERequired)
 	}
 
 	// Always verify PKCE when a challenge was provided (regardless of
@@ -730,6 +738,30 @@ func (s *OAuthService) RefreshWithClient(ctx context.Context, refreshToken, clie
 		)
 	}
 
+	// freshIDToken mints an id_token for a refreshed session that was granted
+	// `openid`. OIDC Core §12.2 makes this OPTIONAL on the refresh grant, but a
+	// number of client libraries read a missing id_token as "the authentication
+	// ended" and force a full interactive re-login every time the access token
+	// rolls over — the session survives on our side while the user is bounced
+	// through the OP every 15 minutes.
+	//
+	// The nonce is deliberately omitted: §12.2 requires it to equal the nonce
+	// from the original authentication, which the session does not carry.
+	// Omitting is compliant; inventing one would not be.
+	freshIDToken := func() string {
+		if s.idSigner == nil || !parseScopes(session.Scope)["openid"] {
+			return ""
+		}
+		idt, err := s.idSigner.Sign(user.UUID, clientID, "", 15*time.Minute)
+		if err != nil {
+			// Never fail the refresh over this — the access token is what the
+			// caller actually needs.
+			slog.Warn("id_token sign failed on refresh", "client_id", clientID, "err", err)
+			return ""
+		}
+		return idt
+	}
+
 	// ── Refresh-token rotation with grace window ──────────────────────
 	//
 	// The presented token matched the session via current OR previous
@@ -755,6 +787,8 @@ func (s *OAuthService) RefreshWithClient(ctx context.Context, refreshToken, clie
 				TokenType:    "Bearer",
 				ExpiresIn:    900,
 				RefreshToken: session.RefreshToken,
+				Scope:        session.Scope,
+				IDToken:      freshIDToken(),
 			}, nil
 		}
 		// Case C: previous token presented AFTER the grace window — this
@@ -815,6 +849,8 @@ func (s *OAuthService) RefreshWithClient(ctx context.Context, refreshToken, clie
 			TokenType:    "Bearer",
 			ExpiresIn:    900,
 			RefreshToken: fresh.RefreshToken,
+			Scope:        session.Scope,
+			IDToken:      freshIDToken(),
 		}, nil
 	}
 
@@ -829,6 +865,8 @@ func (s *OAuthService) RefreshWithClient(ctx context.Context, refreshToken, clie
 		TokenType:    "Bearer",
 		ExpiresIn:    900,
 		RefreshToken: newRefreshToken,
+		Scope:        session.Scope,
+		IDToken:      freshIDToken(),
 	}, nil
 }
 

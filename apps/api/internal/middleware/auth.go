@@ -2,7 +2,6 @@ package middleware
 
 import (
 	"log/slog"
-	"strings"
 
 	authService "api/internal/platform/auth/service"
 	"api/pkg/errors"
@@ -23,22 +22,24 @@ func Auth(authSvc *authService.AuthService) fiber.Handler {
 		// Get authorization header
 		authHeader := c.Get("Authorization")
 		if authHeader == "" {
+			bearerChallenge(c, "", "")
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
 				"code":    errors.ErrAuthUnauthorized,
 				"message": errors.GetMessage(errors.ErrAuthUnauthorized),
 			})
 		}
 
-		// Check Bearer prefix
-		parts := strings.SplitN(authHeader, " ", 2)
-		if len(parts) != 2 || parts[0] != "Bearer" {
+		// Check Bearer scheme. Case-INSENSITIVE per RFC 7235 §2.1 — standard
+		// clients send `bearer` and `BEARER` too, and rejecting those reads to
+		// the caller as "bad token" rather than "bad header".
+		token, ok := splitBearer(authHeader)
+		if !ok || token == "" {
+			bearerChallenge(c, "invalid_request", "Authorization header must use the Bearer scheme")
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
 				"code":    errors.ErrAuthInvalidToken,
 				"message": errors.GetMessage(errors.ErrAuthInvalidToken),
 			})
 		}
-
-		token := parts[1]
 
 		// Validate token (signature, exp, format)
 		claims, err := authSvc.ValidateAccessToken(token)
@@ -47,6 +48,7 @@ func Auth(authSvc *authService.AuthService) fiber.Handler {
 			// hits this on every user every 15 min — normal, the client
 			// then refreshes. Only interesting when chasing a specific bug.
 			slog.Debug("auth reject", "stage", "token_invalid", "path", c.Path(), "err", err)
+			bearerChallenge(c, "invalid_token", "The access token is expired, revoked or malformed")
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
 				"code":    errors.ErrAuthTokenExpired,
 				"message": errors.GetMessage(errors.ErrAuthTokenExpired),
@@ -65,6 +67,7 @@ func Auth(authSvc *authService.AuthService) fiber.Handler {
 			})
 		}
 		if user.IsBanned() {
+			bearerChallenge(c, "invalid_token", "The account is banned")
 			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
 				"code":    errors.ErrAuthUserBanned,
 				"message": errors.GetMessage(errors.ErrAuthUserBanned),

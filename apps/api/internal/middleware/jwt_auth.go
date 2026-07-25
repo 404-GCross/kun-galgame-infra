@@ -2,7 +2,6 @@ package middleware
 
 import (
 	stderrors "errors"
-	"strings"
 
 	"api/pkg/errors"
 	"api/pkg/oidctoken"
@@ -29,25 +28,29 @@ func JWTAuth(verifier *oidctoken.Verifier) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		authHeader := c.Get("Authorization")
 		if authHeader == "" {
+			bearerChallenge(c, "", "")
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
 				"code":    errors.ErrAuthUnauthorized,
 				"message": errors.GetMessage(errors.ErrAuthUnauthorized),
 			})
 		}
 
-		parts := strings.SplitN(authHeader, " ", 2)
-		if len(parts) != 2 || parts[0] != "Bearer" {
+		// Case-INSENSITIVE scheme per RFC 7235 §2.1 — see splitBearer.
+		token, ok := splitBearer(authHeader)
+		if !ok || token == "" {
+			bearerChallenge(c, "invalid_request", "Authorization header must use the Bearer scheme")
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
 				"code":    errors.ErrAuthInvalidToken,
 				"message": errors.GetMessage(errors.ErrAuthInvalidToken),
 			})
 		}
 
-		claims, err := verifier.Parse(c.Context(), parts[1])
+		claims, err := verifier.Parse(c.Context(), token)
 		if err != nil {
 			if stderrors.Is(err, oidctoken.ErrKeyUnavailable) {
 				return keyUnavailable(c)
 			}
+			bearerChallenge(c, "invalid_token", "The access token is expired, revoked or malformed")
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
 				"code":    errors.ErrAuthTokenExpired,
 				"message": errors.GetMessage(errors.ErrAuthTokenExpired),
@@ -128,11 +131,11 @@ func OptionalJWT(verifier *oidctoken.Verifier) fiber.Handler {
 		if authHeader == "" {
 			return c.Next()
 		}
-		parts := strings.SplitN(authHeader, " ", 2)
-		if len(parts) != 2 || parts[0] != "Bearer" {
+		token, ok := splitBearer(authHeader)
+		if !ok || token == "" {
 			return c.Next()
 		}
-		claims, err := verifier.Parse(c.Context(), parts[1])
+		claims, err := verifier.Parse(c.Context(), token)
 		if err != nil {
 			// A key-store outage must not demote a presented token to anonymous
 			// (users would see their own pending drafts silently vanish) — fail

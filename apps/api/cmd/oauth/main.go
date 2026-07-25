@@ -281,7 +281,12 @@ func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 	oauth.Post("/logout", oauthH.LogoutRedirect)
 	oauthProtected := oauth.Group("", middleware.Auth(authSvc))
 	oauthProtected.Post("/authorize/consent", oauthH.Consent)
-	oauthProtected.Get("/userinfo", oauthH.UserInfo)
+	// /oauth/userinfo is an OIDC *protocol* endpoint, so it gets the RFC 6750
+	// guard rather than the house one: OIDC Core §5.3.3 requires its failures to
+	// be a WWW-Authenticate challenge + {error,error_description}, which is what
+	// a standard OIDC client parses. The house {code,message} body stays on
+	// /oauth/authorize/consent above, which is our own browser flow.
+	oauth.Get("/userinfo", middleware.BearerAuth(authSvc), oauthH.UserInfo)
 
 	// User routes
 	// Cross-service endpoints (kungal / moyu / galgame_wiki backends).

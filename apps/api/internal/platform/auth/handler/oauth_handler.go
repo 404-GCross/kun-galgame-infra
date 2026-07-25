@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"strings"
 
+	"api/internal/middleware"
 	"api/internal/platform/auth/dto"
 	"api/internal/platform/auth/service"
 	"api/pkg/config"
@@ -95,18 +96,15 @@ func NewOAuthHandler(oauthService *service.OAuthService, cfg *config.Config) *OA
 	return &OAuthHandler{oauthService: oauthService, cfg: cfg}
 }
 
-// --- Phase 3: wire-format helpers (standard top-level JSON vs legacy envelope) ---
-
-func (h *OAuthHandler) stdWire() bool { return h.cfg.OIDC.StandardWire }
-
-// okJSON writes a protocol-endpoint success: spec-compliant top-level JSON in
-// standard-wire mode, else the legacy {code,message,data} envelope.
-func (h *OAuthHandler) okJSON(c fiber.Ctx, data any) error {
-	if h.stdWire() {
-		return c.JSON(data)
-	}
-	return response.Success(c, data)
-}
+// --- OAuth/OIDC protocol wire format ---
+//
+// The endpoints below (/oauth/token, /oauth/userinfo, /oauth/revoke) belong to
+// RFC 6749 / RFC 6750 / RFC 7009 and OIDC Core, not to this codebase's house
+// API style. They therefore answer in the spec's own shapes — bare top-level
+// JSON on success, {error, error_description} on failure — with no
+// {code,message,data} envelope and no switch to turn one on. The house
+// envelope remains correct everywhere else (/auth/me, /users/*, ...); the line
+// is drawn at the protocol boundary, not at the repo boundary.
 
 // oauthErrString maps an internal AppError code to an RFC 6749 §5.2 error code.
 func oauthErrString(appCode int) string {
@@ -132,13 +130,9 @@ func oauthErrString(appCode int) string {
 	}
 }
 
-// protoErr writes a protocol-endpoint error: an RFC 6749 error object in
-// standard-wire mode (invalid_client → 401, else 400), else the caller's legacy
-// response.* path (fallback).
-func (h *OAuthHandler) protoErr(c fiber.Ctx, appCode int, fallback func() error) error {
-	if !h.stdWire() {
-		return fallback()
-	}
+// protoErr writes a protocol-endpoint error as an RFC 6749 §5.2 error object.
+// invalid_client is 401 per §5.2; everything else is 400.
+func protoErr(c fiber.Ctx, appCode int) error {
 	errStr := oauthErrString(appCode)
 	status := fiber.StatusBadRequest
 	if errStr == "invalid_client" {
@@ -147,6 +141,30 @@ func (h *OAuthHandler) protoErr(c fiber.Ctx, appCode int, fallback func() error)
 	return c.Status(status).JSON(fiber.Map{
 		"error":             errStr,
 		"error_description": errors.GetMessage(appCode),
+	})
+}
+
+// protoInvalidRequest writes an RFC 6749 invalid_request with a caller-supplied
+// description (validation failures, where the detail is the useful part).
+func protoInvalidRequest(c fiber.Ctx, desc string) error {
+	return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+		"error":             "invalid_request",
+		"error_description": desc,
+	})
+}
+
+// protoServerError writes a 500 for an unexpected internal failure.
+//
+// The status is the load-bearing part: every RP classifies 5xx as transient
+// (keep the session, retry) and 4xx as a verdict on the credential. Answering
+// an internal fault with a 400 would tell every client its refresh token is
+// permanently dead and log the whole userbase out over a blip. RFC 6749 §5.2
+// defines no code for this, so it reuses server_error from §4.1.2.1, which is
+// what standard client libraries expect alongside a 5xx.
+func protoServerError(c fiber.Ctx) error {
+	return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+		"error":             "server_error",
+		"error_description": errors.GetMessage(errors.ErrOperationFailed),
 	})
 }
 
@@ -310,7 +328,7 @@ func (h *OAuthHandler) Token(c fiber.Ctx) error {
 			"body_len", len(c.Body()),
 			"err", err,
 		)
-		return h.protoErr(c, errors.ErrBadRequest, func() error { return response.BadRequest(c, errors.ErrBadRequest) })
+		return protoErr(c, errors.ErrBadRequest)
 	}
 	// client_secret_basic (RFC 6749 §2.3.1): fill client_id/secret from the
 	// Basic header when not supplied in the body (client_secret_post wins).
@@ -325,10 +343,7 @@ func (h *OAuthHandler) Token(c fiber.Ctx) error {
 
 	if err := utils.Validate(&req); err != nil {
 		slog.Warn("oauth token validate failed", "grant_type", req.GrantType, "client_id", req.ClientID, "err", err)
-		if h.stdWire() {
-			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid_request", "error_description": err.Error()})
-		}
-		return response.BadRequestMsg(c, errors.ErrValidationFailed, err.Error())
+		return protoInvalidRequest(c, err.Error())
 	}
 
 	switch req.GrantType {
@@ -336,27 +351,27 @@ func (h *OAuthHandler) Token(c fiber.Ctx) error {
 		tokenResp, err := h.oauthService.ExchangeCode(c.Context(), &req)
 		if err != nil {
 			if appErr, ok := err.(*errors.AppError); ok {
-				return h.protoErr(c, appErr.Code, func() error { return response.BadRequest(c, appErr.Code) })
+				return protoErr(c, appErr.Code)
 			}
-			return response.InternalError(c, errors.ErrOperationFailed)
+			return protoServerError(c)
 		}
-		return h.okJSON(c, tokenResp)
+		return c.JSON(tokenResp)
 
 	case "refresh_token":
 		if req.RefreshToken == "" {
-			return h.protoErr(c, errors.ErrBadRequest, func() error { return response.BadRequest(c, errors.ErrBadRequest) })
+			return protoInvalidRequest(c, "refresh_token is required for grant_type=refresh_token")
 		}
 		tokenResp, err := h.oauthService.RefreshWithClient(c.Context(), req.RefreshToken, req.ClientID, req.ClientSecret)
 		if err != nil {
 			if appErr, ok := err.(*errors.AppError); ok {
-				return h.protoErr(c, appErr.Code, func() error { return response.Unauthorized(c, appErr.Code) })
+				return protoErr(c, appErr.Code)
 			}
-			return response.InternalError(c, errors.ErrOperationFailed)
+			return protoServerError(c)
 		}
-		return h.okJSON(c, tokenResp)
+		return c.JSON(tokenResp)
 
 	default:
-		return h.protoErr(c, errors.ErrOAuthUnsupportedGrantType, func() error { return response.BadRequest(c, errors.ErrOAuthUnsupportedGrantType) })
+		return protoErr(c, errors.ErrOAuthUnsupportedGrantType)
 	}
 }
 
@@ -372,13 +387,18 @@ func (h *OAuthHandler) UserInfo(c fiber.Ctx) error {
 
 	info, err := h.oauthService.GetUserInfo(c.Context(), userUUID, scope, siteID)
 	if err != nil {
+		// OIDC Core §5.3.3 routes UserInfo failures through RFC 6750 §3, not
+		// RFC 6749 §5.2: the caller already authenticated, so a failure here is
+		// about the bearer token, not the request grammar.
 		if appErr, ok := err.(*errors.AppError); ok {
-			return h.protoErr(c, appErr.Code, func() error { return response.NotFound(c, appErr.Code) })
+			slog.Warn("oauth userinfo failed", "user_uuid", userUUID, "code", appErr.Code)
+			return middleware.BearerError(c, fiber.StatusUnauthorized, "invalid_token",
+				errors.GetMessage(appErr.Code))
 		}
-		return response.InternalError(c, errors.ErrOperationFailed)
+		return protoServerError(c)
 	}
 
-	return h.okJSON(c, info)
+	return c.JSON(info)
 }
 
 // GetClientPublic returns public-safe metadata for an OAuth client.
@@ -512,18 +532,16 @@ func (h *OAuthHandler) Revoke(c fiber.Ctx) error {
 		TokenTypeHint string `json:"token_type_hint" form:"token_type_hint"`
 	}
 	if err := bindByContentType(c, &req); err != nil {
-		return h.protoErr(c, errors.ErrBadRequest, func() error { return response.BadRequest(c, errors.ErrBadRequest) })
+		return protoInvalidRequest(c, "the request body could not be parsed")
 	}
 
 	if req.Token == "" {
-		return h.protoErr(c, errors.ErrBadRequest, func() error { return response.BadRequest(c, errors.ErrBadRequest) })
+		return protoInvalidRequest(c, "token is required")
 	}
 
 	_ = h.oauthService.RevokeToken(c.Context(), req.Token, req.TokenTypeHint)
 
-	// RFC 7009: always return 200 OK regardless of whether the token was found.
-	if h.stdWire() {
-		return c.SendStatus(fiber.StatusOK) // empty body, no envelope
-	}
-	return response.Success(c, nil)
+	// RFC 7009 §2.2: 200 with an empty body, whether or not the token existed —
+	// answering differently would turn this into a token oracle.
+	return c.SendStatus(fiber.StatusOK)
 }

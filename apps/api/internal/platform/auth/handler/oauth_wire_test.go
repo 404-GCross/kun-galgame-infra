@@ -1,0 +1,167 @@
+package handler
+
+import (
+	"encoding/json"
+	"io"
+	"net/http/httptest"
+	"testing"
+
+	"api/pkg/config"
+	"api/pkg/errors"
+
+	"github.com/gofiber/fiber/v3"
+)
+
+// callWire runs fn as a fiber handler and returns the status and decoded JSON
+// body it produced.
+func callWire(t *testing.T, fn fiber.Handler) (int, map[string]any) {
+	t.Helper()
+	app := fiber.New()
+	app.Get("/x", fn)
+	resp, err := app.Test(httptest.NewRequest("GET", "/x", nil))
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	raw, _ := io.ReadAll(resp.Body)
+	var body map[string]any
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &body); err != nil {
+			t.Fatalf("body %q is not JSON: %v", raw, err)
+		}
+	}
+	return resp.StatusCode, body
+}
+
+// TestProtocolErrorsAreRFC6749 pins the wire contract of the OAuth protocol
+// endpoints: an RFC 6749 §5.2 error object, and never the house
+// {code,message,data} envelope. This is the regression that made every standard
+// OIDC library unable to talk to this server — the envelope hid access_token
+// one level down, so a conforming client read nothing and retried forever.
+func TestProtocolErrorsAreRFC6749(t *testing.T) {
+	t.Run("error object has error + error_description and no envelope keys", func(t *testing.T) {
+		status, body := callWire(t, func(c fiber.Ctx) error {
+			return protoErr(c, errors.ErrOAuthInvalidCode)
+		})
+		if status != fiber.StatusBadRequest {
+			t.Fatalf("status = %d, want 400", status)
+		}
+		if body["error"] != "invalid_grant" {
+			t.Fatalf("error = %v, want invalid_grant", body["error"])
+		}
+		if _, ok := body["error_description"]; !ok {
+			t.Fatal("error_description is required")
+		}
+		for _, envelopeKey := range []string{"code", "message", "data"} {
+			if _, ok := body[envelopeKey]; ok {
+				t.Fatalf("house envelope key %q leaked onto a protocol endpoint", envelopeKey)
+			}
+		}
+	})
+
+	// RFC 6749 §5.2: invalid_client is the one error that answers 401, because
+	// it is a failure of client authentication rather than of the request.
+	t.Run("invalid_client is 401, everything else is 400", func(t *testing.T) {
+		status, body := callWire(t, func(c fiber.Ctx) error {
+			return protoErr(c, errors.ErrOAuthInvalidClientSecret)
+		})
+		if status != fiber.StatusUnauthorized || body["error"] != "invalid_client" {
+			t.Fatalf("got %d %v, want 401 invalid_client", status, body["error"])
+		}
+	})
+
+	// The status is load-bearing: every RP treats 5xx as transient (keep the
+	// session) and 4xx as a verdict on the credential. A 400 here would log the
+	// entire userbase out over a transient internal fault.
+	t.Run("internal faults are 500 server_error, never 4xx", func(t *testing.T) {
+		status, body := callWire(t, protoServerError)
+		if status != fiber.StatusInternalServerError {
+			t.Fatalf("status = %d, want 500", status)
+		}
+		if body["error"] != "server_error" {
+			t.Fatalf("error = %v, want server_error", body["error"])
+		}
+	})
+
+	t.Run("invalid_request carries the caller-facing detail", func(t *testing.T) {
+		status, body := callWire(t, func(c fiber.Ctx) error {
+			return protoInvalidRequest(c, "token is required")
+		})
+		if status != fiber.StatusBadRequest || body["error"] != "invalid_request" {
+			t.Fatalf("got %d %v", status, body["error"])
+		}
+		if body["error_description"] != "token is required" {
+			t.Fatalf("error_description = %v", body["error_description"])
+		}
+	})
+}
+
+// TestOAuthErrString pins the internal-code → RFC 6749 error-string mapping.
+// RPs branch on these strings to decide "refresh dead → re-login" versus
+// "transient → retry", so a wrong mapping either strands users in a retry loop
+// or logs them out for no reason.
+func TestOAuthErrString(t *testing.T) {
+	cases := []struct {
+		name    string
+		appCode int
+		want    string
+	}{
+		{"bad client secret", errors.ErrOAuthInvalidClientSecret, "invalid_client"},
+		{"unknown client", errors.ErrOAuthInvalidClient, "invalid_client"},
+		{"bad auth code", errors.ErrOAuthInvalidCode, "invalid_grant"},
+		{"bad PKCE verifier", errors.ErrOAuthInvalidCodeVerifier, "invalid_grant"},
+		{"redirect_uri mismatch", errors.ErrOAuthInvalidRedirectURI, "invalid_grant"},
+		{"dead refresh token", errors.ErrAuthTokenExpired, "invalid_grant"},
+		{"banned user", errors.ErrAuthUserBanned, "invalid_grant"},
+		{"grant not allow-listed", errors.ErrOAuthInvalidGrant, "unauthorized_client"},
+		{"bad scope", errors.ErrOAuthInvalidScope, "invalid_scope"},
+		{"unsupported grant_type", errors.ErrOAuthUnsupportedGrantType, "unsupported_grant_type"},
+		{"anything else", errors.ErrBadRequest, "invalid_request"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := oauthErrString(tc.appCode); got != tc.want {
+				t.Fatalf("oauthErrString(%d) = %q, want %q", tc.appCode, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestDiscoveryDocument pins the discovery metadata an RP's auto-configuration
+// reads. A missing field is not neutral: an omitted response_modes_supported
+// reads as "unknown", which lets an operator configure a front-channel
+// connection this OP cannot serve, and then debug a login that silently never
+// completes.
+func TestDiscoveryDocument(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Server.SiteURL = "https://oauth.example.com/"
+	meta := (&OIDCHandler{cfg: cfg}).metadata()
+
+	if meta["issuer"] != "https://oauth.example.com" {
+		t.Fatalf("issuer = %v — the trailing slash must be trimmed, RPs compare it byte-for-byte", meta["issuer"])
+	}
+
+	required := []string{
+		"issuer", "authorization_endpoint", "token_endpoint", "userinfo_endpoint",
+		"jwks_uri", "response_types_supported", "response_modes_supported",
+		"grant_types_supported", "scopes_supported", "subject_types_supported",
+		"id_token_signing_alg_values_supported", "token_endpoint_auth_methods_supported",
+		"code_challenge_methods_supported",
+	}
+	for _, k := range required {
+		if _, ok := meta[k]; !ok {
+			t.Errorf("discovery is missing %q", k)
+		}
+	}
+
+	// We implement the query response mode only — advertising form_post or
+	// fragment would promise a flow that does not exist here.
+	if modes, _ := meta["response_modes_supported"].([]string); len(modes) != 1 || modes[0] != "query" {
+		t.Errorf("response_modes_supported = %v, want [query]", meta["response_modes_supported"])
+	}
+
+	// id_tokens are RS256; advertising anything else breaks zero-config
+	// verification in RP libraries.
+	if algs, _ := meta["id_token_signing_alg_values_supported"].([]string); len(algs) != 1 || algs[0] != "RS256" {
+		t.Errorf("id_token_signing_alg_values_supported = %v, want [RS256]", meta["id_token_signing_alg_values_supported"])
+	}
+}

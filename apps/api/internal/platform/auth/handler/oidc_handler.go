@@ -55,17 +55,23 @@ func (h *OIDCHandler) metadata() fiber.Map {
 	iss := strings.TrimRight(h.cfg.Server.SiteURL, "/")
 	api := iss + "/api/v1/oauth"
 	return fiber.Map{
-		"issuer":                                iss,
-		"authorization_endpoint":                api + "/authorize",
-		"token_endpoint":                        api + "/token",
-		"userinfo_endpoint":                     api + "/userinfo",
-		"revocation_endpoint":                   api + "/revoke",
-		"end_session_endpoint":                  api + "/logout",
-		"jwks_uri":                              iss + "/oauth/jwks",
-		"response_types_supported":              []string{"code"},
-		"grant_types_supported":                 []string{"authorization_code", "refresh_token"},
-		"scopes_supported":                      []string{"openid", "profile", "email"},
-		"subject_types_supported": []string{"public"},
+		"issuer":                   iss,
+		"authorization_endpoint":   api + "/authorize",
+		"token_endpoint":           api + "/token",
+		"userinfo_endpoint":        api + "/userinfo",
+		"revocation_endpoint":      api + "/revoke",
+		"end_session_endpoint":     api + "/logout",
+		"jwks_uri":                 iss + "/oauth/jwks",
+		"response_types_supported": []string{"code"},
+		// Only the query response mode is implemented — /oauth/authorize hands
+		// the code back as a query parameter and there is no form_post path.
+		// Saying so explicitly matters: an omitted field reads as "unknown" to
+		// an RP's connection validator, which then lets an operator configure a
+		// front-channel (id_token + form_post) connection that can never work.
+		"response_modes_supported": []string{"query"},
+		"grant_types_supported":    []string{"authorization_code", "refresh_token"},
+		"scopes_supported":         []string{"openid", "profile", "email"},
+		"subject_types_supported":  []string{"public"},
 		// id_tokens are signed RS256 only (the registration default
 		// id_token_signed_response_alg — RP libs verify with zero config);
 		// ES256 signs access tokens, which discovery doesn't describe.

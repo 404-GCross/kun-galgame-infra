@@ -32,19 +32,15 @@
 > `authorization_codes.nonce` column → needs `cmd/migrate` **BEFORE deploy** — the column
 > is written on every consent, flag-independent); `end_session_endpoint` now GET+POST with
 > the RP-Initiated Logout params (`post_logout_redirect_uri`, `state`, `id_token_hint`).
-> **Phase 2 done** — minimal `id_token` (**RS256** — the OIDC registration default
-> `id_token_signed_response_alg`, so standard RP libraries verify it with zero per-client
-> config; iss/sub/aud/exp/iat + nonce) issued on the `openid` scope for the code grant;
-> `nonce` captured at `/authorize`→consent page→code→id_token (new
-> `authorization_codes.nonce` column → needs `cmd/migrate` **BEFORE deploy** — the column
-> is written on every consent, flag-independent); `end_session_endpoint` now GET+POST with
-> the RP-Initiated Logout params (`post_logout_redirect_uri`, `state`, `id_token_hint`).
-> **Phase 3 producer-side done** — flag `KUN_OIDC_STANDARD_WIRE` (default off): when on,
-> `/oauth/token`·`/oauth/userinfo`·`/oauth/revoke` emit spec-compliant top-level JSON +
-> RFC 6749 error objects instead of the `{code,message,data}` envelope (discovery/jwks were
-> already standard). The flip is cross-repo expand→contract: make each first-party RP a
-> tolerant reader FIRST, then set the flag, then drop legacy. **Phase 4 not started** (deferred:
-> DCR, DPoP, RFC 7662, back-channel logout, id_token-on-refresh).
+> **Phase 3 done, and the flag is gone** — `/oauth/token`·`/oauth/userinfo`·`/oauth/revoke`
+> emit spec-compliant top-level JSON + RFC 6749 / RFC 6750 error objects **unconditionally**.
+> `KUN_OIDC_STANDARD_WIRE` was deleted along with the envelope branch: the line is drawn at the
+> **protocol boundary**, not behind a switch. The house `{code,message,data}` envelope stays
+> correct for every non-protocol endpoint (`/auth/me`, `/users/*`, …) — ~780 call sites that were
+> never in scope. Also landed with it: RFC 7235 case-insensitive `Bearer`, RFC 6750
+> `WWW-Authenticate` on every 401, RFC 6749 §4.1.3 client-authentication-before-code ordering,
+> `response_modes_supported`, and id_token-on-refresh. **Phase 4 not started** (deferred: DCR,
+> DPoP, RFC 7662, back-channel logout).
 > This is the keystone of the developer platform (todos #6), deliberately sequenced
 > **before** any Huma-ification of the auth surface, because an IdP's canonical
 > machine-readable contract is the **OIDC discovery document, not a hand-authored
@@ -184,22 +180,9 @@ option if/when the threat model warrants it.)
   omitted for clients not bound to a site), `client_id` (the requesting client), `exp`
   (15 min), `iat`, `jti`, plus `scope`, `roles`, `site_id`. The resource servers keep
   checking `site_id` (no lockstep change); `aud` serves standard validators.
-- Header: `typ: at+jwt` (stamped on BOTH the HS256 and ES256 paths — the flag flips only
-  the signature), `alg: ES256` (post-flip; `kid` set), HS256 pre-flip.
-- Claims (per RFC 9068 §2.2): `iss` (the OP issuer URL), `sub` (user UUID), `aud` = the
-  client's **site domain** (the resource-server identifier, resolved from the client's Site;
-  omitted for clients not bound to a site), `client_id` (the requesting client), `exp`
-  (15 min), `iat`, `jti`, plus `scope`, `roles`, `site_id`. The resource servers keep
-  checking `site_id` (no lockstep change); `aud` serves standard validators.
 - Verified by the four infra sites (§3) via the `active`/`retired` public keys.
 
 ### 5.2 id_token (minimal)
-- Header: `typ: JWT`, `alg: RS256`, `kid`. **RS256, not ES256**: it is the OIDC
-  registration default for `id_token_signed_response_alg`, and this OP has no per-client
-  alg registration — standard RP libraries (openid-client etc.) verify against their
-  configured alg, which defaults to RS256, so RS256 is the only choice that makes
-  "point a standard library at discovery, zero extra config" true. (Also OIDC Core §15.1
-  mandatory-to-implement.) ES256 stays the access-token algorithm.
 - Header: `typ: JWT`, `alg: RS256`, `kid`. **RS256, not ES256**: it is the OIDC
   registration default for `id_token_signed_response_alg`, and this OP has no per-client
   alg registration — standard RP libraries (openid-client etc.) verify against their
@@ -221,8 +204,7 @@ option if/when the threat model warrants it.)
 ### 5.4 New / changed endpoints
 | Endpoint | Change |
 |---|---|
-| `GET /.well-known/openid-configuration` | **new** — discovery (issuer, endpoints, `jwks_uri`, `id_token_signing_alg_values_supported: [RS256]` (what the OP actually signs id_tokens with — see §5.2), `response_types_supported: [code]`, `grant_types_supported: [authorization_code, refresh_token]`, `scopes_supported`, `subject_types_supported: [public]`, `code_challenge_methods_supported: [S256]`, `end_session_endpoint`) |
-| `GET /.well-known/openid-configuration` | **new** — discovery (issuer, endpoints, `jwks_uri`, `id_token_signing_alg_values_supported: [RS256]` (what the OP actually signs id_tokens with — see §5.2), `response_types_supported: [code]`, `grant_types_supported: [authorization_code, refresh_token]`, `scopes_supported`, `subject_types_supported: [public]`, `code_challenge_methods_supported: [S256]`, `end_session_endpoint`) |
+| `GET /.well-known/openid-configuration` | **new** — discovery (issuer, endpoints, `jwks_uri`, `id_token_signing_alg_values_supported: [RS256]` (what the OP actually signs id_tokens with — see §5.2), `response_types_supported: [code]`, `response_modes_supported: [query]`, `grant_types_supported: [authorization_code, refresh_token]`, `scopes_supported`, `subject_types_supported: [public]`, `code_challenge_methods_supported: [S256]`, `end_session_endpoint`) |
 | `GET /.well-known/oauth-authorization-server` | **new** — RFC 8414 body (same content) |
 | `GET /oauth/jwks` | **new** — JWK Set of all `pending`/`active`/`retired` public keys |
 | `POST /oauth/token` | issue `id_token` on `openid` scope; **standard top-level JSON**; standard OAuth error objects |
@@ -281,10 +263,6 @@ is the right call here precisely because the fleet is mono-owned.
   can't be replayed against kungal's API. (RFC 9700 §2.3) — `aud`/`client_id`/`iss`/`typ:at+jwt`
   are stamped on every access token; the enforcing check in the resource servers remains
   `site_id` (equivalent restriction, no lockstep change).
-- [x] **Audience-restrict** access tokens (`aud` = the client's site domain) so a moyu token
-  can't be replayed against kungal's API. (RFC 9700 §2.3) — `aud`/`client_id`/`iss`/`typ:at+jwt`
-  are stamped on every access token; the enforcing check in the resource servers remains
-  `site_id` (equivalent restriction, no lockstep change).
 - [ ] **`id_token` minimal** — no `roles`/authz data; validate `nonce` when present. (OIDC Core)
 - [ ] **Private keys encrypted at rest**, KEK never logged, never in the JWKS.
 - [ ] **Discovery leaks nothing** beyond endpoints/capabilities (no secrets, no internal hosts).
@@ -334,15 +312,11 @@ Each phase is independently deployable; earlier phases are additive.
    RP-Initiated Logout params (`post_logout_redirect_uri` + `state` echo + `id_token_hint`,
    whose `aud` substitutes a missing `client_id`). ⚠️ needs `cmd/migrate` (new `nonce`
    column) **before deploy** — see §12.0. Deferred: id_token on refresh, `at_hash`.
-   **RS256** (§5.2), `nonce` captured at `/authorize` → consent page → `authorization_codes.nonce`
-   → id_token; the `end_session_endpoint` (`/oauth/logout`) accepts GET+POST with the
-   RP-Initiated Logout params (`post_logout_redirect_uri` + `state` echo + `id_token_hint`,
-   whose `aud` substitutes a missing `client_id`). ⚠️ needs `cmd/migrate` (new `nonce`
-   column) **before deploy** — see §12.0. Deferred: id_token on refresh, `at_hash`.
-3. **Wire-format cutover.** ✅ **PRODUCER DONE** (flag `KUN_OIDC_STANDARD_WIRE`, default off →
-   `/oauth/{token,userinfo,revoke}` emit standard top-level JSON + RFC 6749 error objects).
-   Remaining = the cross-repo expand→contract: tolerant RP readers → flip the flag → remove
-   legacy shape.
+3. **Wire-format cutover.** ✅ **DONE, unconditionally.** `/oauth/{token,userinfo,revoke}` emit
+   standard top-level JSON + RFC 6749 / RFC 6750 error objects; the `KUN_OIDC_STANDARD_WIRE`
+   flag and the envelope branch behind it were deleted rather than left switched-on, so there
+   is no second shape to drift back to. Remaining = strip the now-dead dual-read branches from
+   the RPs (§12.2 stage 3).
 4. **Third parties arrived (2026-07) — the real need is OIDC compliance, not the grab-bag.**
    The registered third parties (hikarinagi, letmoe, LyCorisGal, 紫缘社, …) are all standard
    OIDC-library **SSO relying parties** (confidential code+refresh, scopes `openid profile email`,
@@ -353,8 +327,13 @@ Each phase is independently deployable; earlier phases are additive.
      addition to JSON, and `client_secret_basic` (HTTP Basic) in addition to `client_secret_post`;
      discovery advertises both auth methods. This was the hard blocker (standard libs couldn't even
      exchange the code).
-   - ⏳ **Still blocking these RPs**: the `KUN_OIDC_STANDARD_WIRE` response cutover (their libs need
-     top-level JSON on token/userinfo). And `id_token`-on-refresh (some libs expect it).
+   - ✅ **DONE — response compliance**: top-level JSON on token/userinfo, and `id_token`-on-refresh
+     (OIDC Core §12.2; omitted `nonce`, which the session does not carry). Together with the
+     request compliance above, a standard OIDC client now works against discovery with no
+     per-client configuration.
+   - ⚠️ **This was a BREAKING change for the third parties that were already live.** The envelope
+     had made standard libraries unusable, so every third party with working logins had written
+     custom unwrapping code — that code broke at the cutover. See §12.3.
    - **Genuinely deferred** (no current third party needs them — all are RPs, none host APIs that
      validate our access tokens): RFC 7662 introspection, DCR (RFC 7591), mTLS/DPoP (RFC 9449),
      RFC 8707 resource indicators. Back-channel logout is the one SSO-relevant deferred item.
@@ -375,11 +354,6 @@ discovery/JWKS pages. Update the **source** docs in this repo in the same PR, th
   id_token `aud` = client_id. The access token **keeps** its `site_id` claim (§5.1), so
   galgame/image/artifact need **no lockstep logic change** — migrating those checks from
   `site_id` to `aud` is optional and can happen later.
-- ~~**Exact `aud` values**~~ **RESOLVED**: access token `aud` = the client's **site domain**
-  (from the client's Site; omitted when unbound), `client_id` claim = the requesting client;
-  id_token `aud` = client_id. The access token **keeps** its `site_id` claim (§5.1), so
-  galgame/image/artifact need **no lockstep logic change** — migrating those checks from
-  `site_id` to `aud` is optional and can happen later.
 - **Verifier key-fetch mechanism** for the separate `image`/`artifact` binaries: pull the JWK
   Set from `/oauth/jwks` (cache + refresh on unknown `kid`) vs read the `signing_keys` table
   directly (same DB is reachable). JWKS-over-HTTP is the more decoupled, standard choice.
@@ -393,11 +367,14 @@ discovery/JWKS pages. Update the **source** docs in this repo in the same PR, th
 
 ## 12. Cutover runbook (ops)
 
-All code (Phases 0–3 + token-endpoint request compliance + first-party tolerant readers) is
-committed but **not pushed**, and both cutover flags default **off** — so nothing has changed in
-production yet. This is the operator sequence to actually turn it on. The two flags
-(`KUN_OIDC_SIGN_ASYMMETRIC`, `KUN_OIDC_STANDARD_WIRE`) are **independent** — do either, both, or
-neither — but within each, the order is load-bearing.
+Two cutovers were designed here and they are **independent**. Their status now differs:
+
+- **Asymmetric signing** (§12.1) is still gated by `KUN_OIDC_SIGN_ASYMMETRIC`, default off — the
+  operator sequence below is how to turn it on.
+- **Wire format** (§12.2) shipped on **2026-07-25 with no flag at all**. Its runbook is kept
+  below as the record of what ran, in what order, and what it broke.
+
+Within each, the order is load-bearing.
 
 ### 12.0 Prerequisites — ⚠️ ordered against the DEPLOY, not the flips
 - [x] **Migrate `kun_galgame_infra` BEFORE pushing these commits** — ✅ **RUN ON PROD
@@ -427,61 +404,63 @@ Makes access tokens ES256 (JWKS-verifiable) instead of HS256. Verifiers are alre
 - [ ] **(Stage 3, later)** once no HS256 tokens remain in the wild, drop HS256 acceptance from the
   verifiers and remove `cfg.JWT.Secret` from galgame/image/artifact.
 
-### 12.2 Standard wire format — flip `KUN_OIDC_STANDARD_WIRE`
-Makes `/oauth/{token,userinfo,revoke}` emit spec-compliant top-level JSON so standard OIDC client
-libraries (the third parties) can parse them.
-- [ ] **Deploy the first-party tolerant-reader builds** to ALL three RPs first — they read BOTH the
-  envelope and standard shapes, so they survive the flip: forum (`d9a8c7b6` + the
-  `unauthorized_client` mapping fix), moyu (`4b7f3387` + the refresh-path tolerant fix in
-  `middleware/auth.go` — 4b7f3387 alone does NOT cover refresh), infra/wiki (`620f64a` + the
-  `useAuthApi` error-body passthrough fix).
-  envelope and standard shapes, so they survive the flip: forum (`d9a8c7b6` + the
-  `unauthorized_client` mapping fix), moyu (`4b7f3387` + the refresh-path tolerant fix in
-  `middleware/auth.go` — 4b7f3387 alone does NOT cover refresh), infra/wiki (`620f64a` + the
-  `useAuthApi` error-body passthrough fix).
-- [ ] Verify first-party login/refresh still works (OP still enveloped; RPs read both) — no change yet.
-- [ ] **Notify third parties** (see §12.3) and confirm none depend on the envelope.
-- [ ] Set **`KUN_OIDC_STANDARD_WIRE=true`** on oauth; redeploy oauth.
-- [ ] Verify: `/oauth/token` + `/oauth/userinfo` now return top-level JSON + RFC 6749 error objects;
-  first-party login still works; a standard third-party (e.g. letmoe) completes a full login.
-- [ ] **(Stage 3, later)** remove the legacy-envelope emission from the OP and the both-shape
-  tolerance from the first-party RPs (contract step).
+### 12.2 Standard wire format — **DONE 2026-07-25, no flag**
+`/oauth/{token,userinfo,revoke}` emit spec-compliant top-level JSON unconditionally. The rollout
+ran expand → cut → contract, with stage 3 executed the same day rather than deferred — a
+"(Stage 3, later)" is how the previous attempt left a flag and two shapes behind for a year.
 
-### 12.3 Third-party impact (do they need code changes?)
-- **Standard OIDC-library RPs (letmoe, hikarinagi, LyCorisGal, 紫缘社, … — all of the current ones):
-  NO code change.** Standardization is exactly what makes their standard integration work — point
-  their OIDC client at `{issuer}/.well-known/openid-configuration` (+ client_id/secret) and after the
-  flip they parse token/userinfo natively. They were most likely blocked until now (envelope +
-  previously-missing id_token); the cutover unblocks them.
-- **Only exception:** any RP that wrote **custom code to unwrap the `{code,message,data}` envelope**
-  (a workaround for the old non-standard OP) — that workaround **breaks at the flip** and must be
-  removed / switched to standard. Because `STANDARD_WIRE` is a **global** switch, confirm no third
-  party relies on the envelope **before** flipping.
+- [x] **Stage 1 (expand)** — ship wire-tolerant readers to every first-party RP and deploy them
+  BEFORE the OP changes. Landed: letmoe `8352e4b`, stickers `dce8637`, domain-monitor `1803796`,
+  gpt-image2 `8b63677`, blog `9a62150`, forum `5f13f4b2`. Already tolerant beforehand: moyu,
+  developer portal. Retired, so not an RP any more: infra/wiki.
+- [x] **Stage 2 (cut)** — delete `KUN_OIDC_STANDARD_WIRE`, `okJSON` and the `protoErr` fallback;
+  route `/oauth/userinfo` through `middleware.BearerAuth` (RFC 6750) instead of the house guard.
+- [ ] **Stage 3 (contract)** — strip the now-dead envelope branch from all eight RPs so only the
+  RFC shape remains.
+
+**Two traps this cutover walked into — check them on any similar change:**
+1. An internal fault answered with a 4xx tells every RP the credential is permanently dead. RPs
+   classify 5xx as transient and 4xx as a verdict, so a mis-typed error would log the whole
+   userbase out over a blip. Internal faults MUST be `500 server_error`.
+2. `invalid_token` must be mapped by each RP. Left unmapped it falls into "unknown → transient",
+   and an RP then retries a permanently dead session forever instead of re-authenticating.
+
+### 12.3 Third-party impact — **it was breaking, and here is why**
+The pre-cutover assumption ("standard-library RPs need no change") was **wrong**, and the
+production data disproved it. The envelope made standard libraries unusable — a conforming client
+read nothing at the top level and gave up. So **every third party with working logins had, by
+construction, written custom unwrapping code**, and that code broke at the cutover.
+
+Evidence used to classify each client (`sessions` joined to `oauth_clients`):
+- `rotated_at IS NOT NULL` proves the RP parsed `refresh_token` out of the envelope — 紫缘社 had 4.
+- A high **distinct-user** count with 0 refreshes still proves it read `access_token` (Hikarinagi
+  436 users, LyCorisGal 47, YukiHub Android 21, AniBT 10, Umbra 3).
+- Many sessions over **few** users and 0 refreshes is the signature of a retry loop, i.e. an RP
+  that never read anything — Singureo (4 users / 33 sessions), the standard-library integration
+  the cutover FIXED.
+
 - Communication template: *"The IdP is now a full standards OIDC provider (discovery / JWKS /
   id_token / spec-compliant token & userinfo responses). Configure a standard OIDC client against
   `{issuer}/.well-known/openid-configuration`; if you did anything custom to handle the old
   `{code,message,data}` wrapper, remove it."*
 
 ### 12.4 Rollback
-Both flags are independently reversible: set back to `false` + redeploy oauth.
 - `SIGN_ASYMMETRIC=false` → back to HS256 signing; verifiers still accept both, so **no first-party
   breakage**.
-- `STANDARD_WIRE=false` → back to the envelope; first-party RPs are tolerant so **no first-party
-  breakage**. **Third parties on standard would break on rollback** — coordinate before reverting.
+- **The wire format has no flag to revert.** Rolling it back means reverting the commit and
+  redeploying oauth. Note that a rollback would now break the third parties that migrated TO the
+  standard — after the cutover, standard is the compatible direction, not the risky one.
 
 ### 12.5 Push order
 ⚠️ **One hard precondition before ANY infra push: run the §12.0 migration** — the infra build
 writes `authorization_codes.nonce` on every consent regardless of the flags, so an unmigrated
 prod DB breaks all SSO logins the moment CI redeploys oauth.
-After that, the changes are **behavior-neutral while the flags are off** and the repos can be
-**pushed in any order**: infra (Phases 0–3 + request compliance + wiki tolerant reader + review
-fixes), forum (tolerant reader incl. `unauthorized_client` mapping), moyu (tolerant reader incl.
-the refresh-path fix in `middleware/auth.go`). What is order-sensitive is the *rollout*:
-⚠️ **One hard precondition before ANY infra push: run the §12.0 migration** — the infra build
-writes `authorization_codes.nonce` on every consent regardless of the flags, so an unmigrated
-prod DB breaks all SSO logins the moment CI redeploys oauth.
-After that, the changes are **behavior-neutral while the flags are off** and the repos can be
-**pushed in any order**: infra (Phases 0–3 + request compliance + wiki tolerant reader + review
-fixes), forum (tolerant reader incl. `unauthorized_client` mapping), moyu (tolerant reader incl.
-the refresh-path fix in `middleware/auth.go`). What is order-sensitive is the *rollout*:
-**deploy all RP tolerant builds → then flip `STANDARD_WIRE`** (§12.2), never the reverse.
+The wire cutover has **no flag**, so its push order is not a preference — it is the whole safety
+mechanism. Push and let each RP finish deploying, THEN push infra:
+
+1. **RPs first** — letmoe, stickers, domain-monitor, gpt-image2, blog, forum (moyu and the
+   developer portal were already tolerant). Each must be **deployed**, not merely pushed.
+2. **infra last** — the moment oauth redeploys, the envelope is gone. Any RP still on the old
+   reader breaks at its next login or refresh.
+
+Reversing this order breaks first-party login on every site that has not yet deployed.
