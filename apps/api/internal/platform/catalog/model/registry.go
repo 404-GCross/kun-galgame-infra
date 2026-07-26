@@ -107,3 +107,21 @@ type CatalogRelationType struct {
 }
 
 func (CatalogRelationType) TableName() string { return "catalog_relation_type" }
+
+// CatalogPlatform is the platform vocabulary registry (step 96, doc 17 R1 —
+// every vocabulary is a lookup-table registry). Keys are the VNDB platform
+// codes verbatim — the de-facto standard of the existing data (159,718
+// catalog_release.platform rows + extra.platforms arrays already use them).
+// catalog_release.platform / catalog_work_platform.platform stay TEXT codes
+// (the lang-column convention — no FK rewire of the standing read contract);
+// the registry supplies display names and the deprecation audit face.
+type CatalogPlatform struct {
+	ID  int16  `gorm:"primaryKey;autoIncrement:false" json:"id"`
+	Key string `gorm:"uniqueIndex;not null" json:"key"`
+	// DisplayName is the human label (English; zh localization is a future
+	// vocabulary pass).
+	DisplayName  string `gorm:"not null" json:"display_name"`
+	IsDeprecated bool   `gorm:"not null;default:false" json:"is_deprecated"`
+}
+
+func (CatalogPlatform) TableName() string { return "catalog_platform" }

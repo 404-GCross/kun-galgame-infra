@@ -96,11 +96,23 @@ func TestHandSeedsIntegrity(t *testing.T) {
 	assert.Len(t, media(), 7)
 	// 11 pinned by refs/proj/02 + galgame_wiki (id 12, step 52 bridged-media
 	// provenance) + upscale (id 13, step 53 derived-cover provenance) + cien
-	// (id 14, refs/proj/83 E2b org/label link facet).
-	assert.Len(t, sources(), 14)
+	// (id 14, refs/proj/83 E2b org/label link facet) + dmm (id 15, step 91
+	// EG cross-reference store lane).
+	assert.Len(t, sources(), 15)
 	// 13 pinned by refs/proj/02 + 3 symmetric character/setting-variation keys
 	// added in step 30 (shares_character / alternative_setting / alternative_version).
 	assert.Len(t, relationTypes(), 16)
+	// The 48 VNDB platform codes (step 96, refs/proj/96) — the full distinct
+	// set observed in src_vndb.releases_platforms; ids seed-owned, keys unique.
+	assert.Len(t, platforms(), 48)
+	seenPlat := map[string]struct{}{}
+	for _, p := range platforms() {
+		assert.NotEmpty(t, p.Key)
+		assert.NotEmpty(t, p.DisplayName, "%s: display name required", p.Key)
+		_, dup := seenPlat[p.Key]
+		assert.False(t, dup, "%s: duplicate platform key", p.Key)
+		seenPlat[p.Key] = struct{}{}
+	}
 
 	// The generated role map hard-codes the bangumi source id — keep them in sync.
 	var bangumiOK bool

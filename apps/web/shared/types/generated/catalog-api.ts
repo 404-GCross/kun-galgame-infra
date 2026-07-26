@@ -1275,6 +1275,8 @@ export interface components {
              * @description 0=default 1=digital 2=physical 3=trial 4=patch
              */
             kind: number;
+            platform?: string;
+            platforms?: string[] | null;
             /** Format: int32 */
             released_d?: number;
             /** Format: int32 */
@@ -1352,6 +1354,7 @@ export interface components {
             covers: components["schemas"]["WorkCover"][] | null;
             intro: components["schemas"]["WorkIntro"][] | null;
             labels: components["schemas"]["WorkLabel"][] | null;
+            platforms: components["schemas"]["WorkPlatform"][] | null;
             playtimes: components["schemas"]["WorkPlaytime"][] | null;
             popularity: components["schemas"]["WorkPopularity"][] | null;
             ratings: components["schemas"]["WorkRating"][] | null;
@@ -1465,6 +1468,15 @@ export interface components {
              * @description the label's own kind (0=game_brand … 4=doujin_circle …)
              */
             label_kind: number;
+        };
+        WorkPlatform: {
+            /** @description catalog_platform registry code (win/and/ios/…) */
+            platform: string;
+            /**
+             * Format: int32
+             * @description catalog_source id that asserted it
+             */
+            source_id: number;
         };
         WorkPlaytime: {
             /**

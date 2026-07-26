@@ -86,6 +86,19 @@ type WorkByAnchorResponse struct {
 	// anchored member count. Catalog-native — no claimed bridge (the wiki
 	// family's galgame_series vocabulary lives on its own face).
 	Series []WorkSeries `json:"series"`
+	// Platforms is the work's explicit work-level platform set (step 96):
+	// catalog_work_platform rows — today the bgm lane (Bangumi asserts
+	// platforms on the subject; its bodyless works mostly have no releases).
+	// Release-level platforms ride on releases[].platform / .platforms;
+	// consumers union the two grains as needed. Codes are catalog_platform
+	// registry keys (VNDB codes: win/and/ios/…).
+	Platforms []WorkPlatform `json:"platforms"`
+}
+
+// WorkPlatform is one explicit work-level platform assertion (step 96).
+type WorkPlatform struct {
+	Platform string `json:"platform" doc:"catalog_platform registry code (win/and/ios/…)"`
+	SourceID int16  `json:"source_id" doc:"catalog_source id that asserted it"`
 }
 
 // WorkSeries is one series a work belongs to (step 94).
@@ -271,11 +284,17 @@ type WorkTitle struct {
 
 // ReleaseBrief is one release (SKU) with its own anchors and fuzzy date.
 type ReleaseBrief struct {
-	ID        int64       `json:"id"`
-	Kind      int16       `json:"kind" doc:"0=default 1=digital 2=physical 3=trial 4=patch"`
-	ReleasedY int16       `json:"released_y,omitempty"`
-	ReleasedM int16       `json:"released_m,omitempty"`
-	ReleasedD int16       `json:"released_d,omitempty"`
+	ID        int64 `json:"id"`
+	Kind      int16 `json:"kind" doc:"0=default 1=digital 2=physical 3=trial 4=patch"`
+	ReleasedY int16 `json:"released_y,omitempty"`
+	ReleasedM int16 `json:"released_m,omitempty"`
+	ReleasedD int16 `json:"released_d,omitempty"`
+	// Platform is the release's primary platform code (step 96;
+	// catalog_platform registry key, e.g. win). Empty when unknown.
+	Platform string `json:"platform,omitempty"`
+	// Platforms is the release's full platform code set (extra.platforms —
+	// the step-76/96 shape); a multi-platform release lists every port.
+	Platforms []string    `json:"platforms,omitempty"`
 	Anchors   []AnchorRef `json:"anchors"`
 }
 

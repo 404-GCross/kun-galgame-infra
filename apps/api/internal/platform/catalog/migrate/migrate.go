@@ -66,6 +66,8 @@ func Run(db *gorm.DB) error {
 		&model.CatalogWorkPlaytime{},   // per-source playtime estimates (step 91 playtime facet — no claimed bridge)
 		&model.CatalogSeries{},         // work series entity (step 94, dlsite lane first)
 		&model.CatalogSeriesMember{},   // series membership (step 94)
+		&model.CatalogPlatform{},       // platform vocabulary registry (step 96)
+		&model.CatalogWorkPlatform{},   // work-level platform facet (step 96, bgm lane)
 		&model.CatalogRelease{},
 		&model.CatalogWorkRelation{},
 		&model.CatalogEntityRelation{},

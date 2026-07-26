@@ -323,7 +323,66 @@ func Run(db *gorm.DB) error {
 	if err := upsert(db, "catalog_relation_type", relationTypes(), []string{"id"}, []string{"forward_phrase", "reverse_phrase"}); err != nil {
 		return err
 	}
+	if err := upsert(db, "catalog_platform", platforms(), []string{"id"}, []string{"display_name"}); err != nil {
+		return err
+	}
 	return nil
+}
+
+// platforms rows — the VNDB platform code vocabulary (step 96, refs/proj/96).
+// Ids are seed-owned, keys alphabetical; the 48 codes are the full distinct
+// set observed in src_vndb.releases_platforms (win 117,552 … fm8 8).
+func platforms() []model.CatalogPlatform {
+	return []model.CatalogPlatform{
+		{ID: 1, Key: "and", DisplayName: "Android"},
+		{ID: 2, Key: "bdp", DisplayName: "Blu-ray Player"},
+		{ID: 3, Key: "dos", DisplayName: "DOS"},
+		{ID: 4, Key: "drc", DisplayName: "Dreamcast"},
+		{ID: 5, Key: "dvd", DisplayName: "DVD Player"},
+		{ID: 6, Key: "fm7", DisplayName: "FM-7"},
+		{ID: 7, Key: "fm8", DisplayName: "FM-8"},
+		{ID: 8, Key: "fmt", DisplayName: "FM Towns"},
+		{ID: 9, Key: "gba", DisplayName: "Game Boy Advance"},
+		{ID: 10, Key: "gbc", DisplayName: "Game Boy Color"},
+		{ID: 11, Key: "ios", DisplayName: "iOS"},
+		{ID: 12, Key: "lin", DisplayName: "Linux"},
+		{ID: 13, Key: "mac", DisplayName: "macOS"},
+		{ID: 14, Key: "mob", DisplayName: "Mobile (feature phone)"},
+		{ID: 15, Key: "msx", DisplayName: "MSX"},
+		{ID: 16, Key: "n3d", DisplayName: "Nintendo 3DS"},
+		{ID: 17, Key: "nds", DisplayName: "Nintendo DS"},
+		{ID: 18, Key: "nes", DisplayName: "Famicom"},
+		{ID: 19, Key: "oth", DisplayName: "Other"},
+		{ID: 20, Key: "p88", DisplayName: "PC-88"},
+		{ID: 21, Key: "p98", DisplayName: "PC-98"},
+		{ID: 22, Key: "pce", DisplayName: "PC Engine"},
+		{ID: 23, Key: "pcf", DisplayName: "PC-FX"},
+		{ID: 24, Key: "ps1", DisplayName: "PlayStation"},
+		{ID: 25, Key: "ps2", DisplayName: "PlayStation 2"},
+		{ID: 26, Key: "ps3", DisplayName: "PlayStation 3"},
+		{ID: 27, Key: "ps4", DisplayName: "PlayStation 4"},
+		{ID: 28, Key: "ps5", DisplayName: "PlayStation 5"},
+		{ID: 29, Key: "psp", DisplayName: "PlayStation Portable"},
+		{ID: 30, Key: "psv", DisplayName: "PlayStation Vita"},
+		{ID: 31, Key: "sat", DisplayName: "Sega Saturn"},
+		{ID: 32, Key: "scd", DisplayName: "Sega Mega-CD"},
+		{ID: 33, Key: "sfc", DisplayName: "Super Famicom"},
+		{ID: 34, Key: "smd", DisplayName: "Mega Drive"},
+		{ID: 35, Key: "sw2", DisplayName: "Nintendo Switch 2"},
+		{ID: 36, Key: "swi", DisplayName: "Nintendo Switch"},
+		{ID: 37, Key: "tdo", DisplayName: "3DO"},
+		{ID: 38, Key: "vnd", DisplayName: "VNDS"},
+		{ID: 39, Key: "web", DisplayName: "Web Browser"},
+		{ID: 40, Key: "wii", DisplayName: "Wii"},
+		{ID: 41, Key: "win", DisplayName: "Windows"},
+		{ID: 42, Key: "wiu", DisplayName: "Wii U"},
+		{ID: 43, Key: "x1s", DisplayName: "Sharp X1"},
+		{ID: 44, Key: "x68", DisplayName: "Sharp X68000"},
+		{ID: 45, Key: "xb1", DisplayName: "Xbox"},
+		{ID: 46, Key: "xb3", DisplayName: "Xbox 360"},
+		{ID: 47, Key: "xbo", DisplayName: "Xbox One"},
+		{ID: 48, Key: "xxs", DisplayName: "Xbox Series X/S"},
+	}
 }
 
 // upsert writes rows with ON CONFLICT (conflictCols) DO UPDATE SET

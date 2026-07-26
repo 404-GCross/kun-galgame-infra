@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 	stderrors "errors"
 	"net/http"
 	"strings"
@@ -141,6 +142,8 @@ func buildWorkResponse(detail *service.WorkDetail) dto.WorkByAnchorResponse {
 		Playtimes: make([]dto.WorkPlaytime, 0, len(detail.Playtimes)),
 		// Series pre-sized non-nil so a series-less work serializes `[]`.
 		Series: make([]dto.WorkSeries, 0, len(detail.Series)),
+		// Platforms pre-sized non-nil so a platform-less work serializes `[]`.
+		Platforms: make([]dto.WorkPlatform, 0, len(detail.Platforms)),
 	}
 	if detail.Work.Site != nil {
 		resp.Work.Site = *detail.Work.Site
@@ -157,6 +160,10 @@ func buildWorkResponse(detail *service.WorkDetail) dto.WorkByAnchorResponse {
 	}
 	for _, rd := range detail.Releases {
 		rb := dto.ReleaseBrief{ID: rd.Release.ID, Kind: rd.Release.Kind}
+		if rd.Release.Platform != nil {
+			rb.Platform = *rd.Release.Platform
+		}
+		rb.Platforms = platformsFromExtra(rd.Release.Extra)
 		rb.ReleasedY, rb.ReleasedM, rb.ReleasedD = derefI16(rd.Release.ReleasedY), derefI16(rd.Release.ReleasedM), derefI16(rd.Release.ReleasedD)
 		for _, a := range rd.Anchors {
 			rb.Anchors = append(rb.Anchors, dto.AnchorRef{Source: a.Source, ExternalID: a.ExternalID, LinkKind: a.LinkKind, MatchedBy: a.MatchedBy})
@@ -230,7 +237,25 @@ func buildWorkResponse(detail *service.WorkDetail) dto.WorkByAnchorResponse {
 			ID: se.ID, Name: se.Name, SourceID: se.SourceID, MemberCount: se.MemberCount,
 		})
 	}
+	for _, p := range detail.Platforms {
+		resp.Platforms = append(resp.Platforms, dto.WorkPlatform{Platform: p.Platform, SourceID: p.SourceID})
+	}
 	return resp
+}
+
+// platformsFromExtra parses the extra.platforms code array (the step-76/96
+// write shape). Absent/malformed → nil (the field is omitempty).
+func platformsFromExtra(extra []byte) []string {
+	if len(extra) == 0 {
+		return nil
+	}
+	var e struct {
+		Platforms []string `json:"platforms"`
+	}
+	if err := json.Unmarshal(extra, &e); err != nil {
+		return nil
+	}
+	return e.Platforms
 }
 
 // ---- credits ----

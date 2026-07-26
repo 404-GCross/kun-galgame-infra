@@ -1714,6 +1714,14 @@ components:
           description: 0=default 1=digital 2=physical 3=trial 4=patch
           format: int32
           type: integer
+        platform:
+          type: string
+        platforms:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
         released_d:
           format: int32
           type: integer
@@ -1888,6 +1896,12 @@ components:
           type:
             - array
             - "null"
+        platforms:
+          items:
+            $ref: "#/components/schemas/WorkPlatform"
+          type:
+            - array
+            - "null"
         playtimes:
           items:
             $ref: "#/components/schemas/WorkPlaytime"
@@ -1959,6 +1973,7 @@ components:
         - popularity
         - playtimes
         - series
+        - platforms
       type: object
     WorkCharacter:
       additionalProperties: false
@@ -2133,6 +2148,20 @@ components:
         - display_name
         - label_kind
         - kind
+      type: object
+    WorkPlatform:
+      additionalProperties: false
+      properties:
+        platform:
+          description: catalog_platform registry code (win/and/ios/…)
+          type: string
+        source_id:
+          description: catalog_source id that asserted it
+          format: int32
+          type: integer
+      required:
+        - platform
+        - source_id
       type: object
     WorkPlaytime:
       additionalProperties: false

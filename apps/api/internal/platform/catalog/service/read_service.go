@@ -181,6 +181,11 @@ type WorkDetail struct {
 	// (catalog_series_member → catalog_series), no claimed bridge — the wiki
 	// family's galgame_series vocabulary lives on its own face.
 	Series []WorkSeriesRow
+	// Platforms is the work's explicit work-level platform rows (step 96):
+	// the bgm lane's grain (subject-level platforms, mostly release-less
+	// bodyless works). Release-level platforms ride on Releases[].platform;
+	// consumers union the two grains. Catalog-native — no claimed bridge.
+	Platforms []WorkPlatformRow
 }
 
 // WorkIntroRow is one language's intro on a work's read face, carrying its
@@ -457,6 +462,12 @@ func (s *ReadService) loadWorkDetail(ctx context.Context, workID int64) (*WorkDe
 		return nil, err
 	}
 	detail.Series = series[work.ID]
+
+	platforms, err := s.loadWorkPlatforms(ctx, []claimSubject{subj})
+	if err != nil {
+		return nil, err
+	}
+	detail.Platforms = platforms[work.ID]
 	return detail, nil
 }
 

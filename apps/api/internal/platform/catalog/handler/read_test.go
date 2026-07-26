@@ -1811,3 +1811,60 @@ func TestWorkDetailSeries(t *testing.T) {
 	require.True(t, ok, "series present and non-null")
 	assert.Empty(t, soloSeries)
 }
+
+// TestWorkDetailPlatforms covers the step-96 platform read faces: work-level
+// platforms[] rows carry {platform, source_id}; a release with a platform
+// column + extra.platforms surfaces both the primary code and the full array;
+// a platform-less work serializes `[]` (not null) and its bare release omits
+// both fields.
+func TestWorkDetailPlatforms(t *testing.T) {
+	db := openCatalogTestDB(t)
+	for _, tbl := range []string{"catalog_work_platform", "catalog_release", "catalog_work"} {
+		require.NoError(t, db.Exec("TRUNCATE "+tbl+" RESTART IDENTITY CASCADE").Error)
+	}
+	w := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "平台持ち", ContentRating: 0, Status: 0}
+	require.NoError(t, db.Create(&w).Error)
+	wBare := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "平台無し", ContentRating: 0, Status: 0}
+	require.NoError(t, db.Create(&wBare).Error)
+
+	// Work-level rows (the bgm-lane grain), inserted unordered to pin ordering.
+	require.NoError(t, db.Exec(`INSERT INTO catalog_work_platform (work_id, platform, source_id)
+		VALUES (?, 'win', 3), (?, 'and', 3)`, w.ID, w.ID).Error)
+
+	// Release-level: one with primary + array (the step-76/96 shape), one bare.
+	win := "win"
+	relFull := model.CatalogRelease{WorkID: w.ID, Kind: model.ReleaseKindDigital, Platform: &win,
+		Extra: []byte(`{"platforms": ["win", "and"]}`)}
+	require.NoError(t, db.Create(&relFull).Error)
+	relBare := model.CatalogRelease{WorkID: wBare.ID, Kind: model.ReleaseKindDigital}
+	require.NoError(t, db.Create(&relBare).Error)
+
+	app := readApp(service.NewReadService(db), nil)
+
+	code, body := getJSON(t, app, "/api/v1/catalog/works/"+itoa(w.ID))
+	require.Equal(t, 200, code)
+	data := body["data"].(map[string]any)
+	plats := data["platforms"].([]any)
+	require.Len(t, plats, 2)
+	p0 := plats[0].(map[string]any)
+	assert.Equal(t, "and", p0["platform"], "platform-ascending order")
+	assert.EqualValues(t, 3, p0["source_id"])
+	assert.Equal(t, "win", plats[1].(map[string]any)["platform"])
+	rels := data["releases"].([]any)
+	require.Len(t, rels, 1)
+	r0 := rels[0].(map[string]any)
+	assert.Equal(t, "win", r0["platform"])
+	assert.Equal(t, []any{"win", "and"}, r0["platforms"].([]any))
+
+	code, body = getJSON(t, app, "/api/v1/catalog/works/"+itoa(wBare.ID))
+	require.Equal(t, 200, code)
+	data = body["data"].(map[string]any)
+	barePlats, ok := data["platforms"].([]any)
+	require.True(t, ok, "platforms present and non-null")
+	assert.Empty(t, barePlats)
+	bareRel := data["releases"].([]any)[0].(map[string]any)
+	_, hasP := bareRel["platform"]
+	assert.False(t, hasP, "empty platform omitted")
+	_, hasPs := bareRel["platforms"]
+	assert.False(t, hasPs, "absent extra.platforms omitted")
+}
