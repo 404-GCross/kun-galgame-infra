@@ -21,5 +21,8 @@
 
 ## pi 值守状态(就地更新,一行一钩子)
 
-- 2026-07-25 deferred 回收波(refs/qa/05):17/94 反查独立复现;分类 3 promote / 7 merge-dup(交聚合轨)/ 7 继续 deferred。工具 `--promote` 模式已 commit(`e8b0aa7`,未 push)。rehearsal 全程通过(94 demote 重放→3 promote dry/apply/二遍零写→富集修复 3 alias+1 intro+3 meta,全部 SQL 独立验证)。**prod apply 等用户批准**;runbook 见 05 文档。
+- 2026-07-25 deferred 回收波(refs/qa/05):17/94 反查独立复现;分类 3 promote / 7 merge-dup(交聚合轨)/ 7 继续 deferred。工具 `--promote` 模式已 commit(`e8b0aa7`,未 push)。rehearsal 全程通过(94 demote 重放→3 promote dry/apply/二遍零写→富集修复,全部 SQL 独立验证)。
+- 2026-07-26 **prod apply 已完成(用户批准)**:PRE 基线→dry→3 PROMOTE+3 SET_BID→二遍零写→SQL 验证(0 dup)→富集修复 3 alias+1 intro+3 meta 验证全过;日志在 refs/qa/。台账:3→resolved_promoted、7→merge_dup_reported、7→deferred_no_live_subject。
+- 2026-07-26 bgm token 到手(apps/api/.env 既有配置):7 条 class-C 线上也无 subject(死案);116 条全量 API 扫描→110 条有线上候选;8+1 个分诊 agent 在飞(批 2 重复派发当一致性对照),等 verdicts→GLM 复核→rehearsal→报批 prod。
+- **共享工作树事故 x2**:main.go 的 96 行 promote 代码和轨文件状态行被别的会话 revert,均已 `git restore --source=HEAD` 恢复;教训=从共享树出二进制前要验证产物的 flag 而不是只看源码。
 - 134 人审 = 用户件,列着未催。undermerge 两张 worklist = 聚合轨输入,未动。
