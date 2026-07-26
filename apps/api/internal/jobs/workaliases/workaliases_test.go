@@ -1,0 +1,209 @@
+package workaliases
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"testing"
+	"time"
+
+	"api/internal/platform/catalog/migrate"
+	"api/internal/platform/catalog/model"
+	"api/internal/platform/catalog/seed"
+	srcb "api/internal/platform/catalog/srcbangumi"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
+)
+
+// Integration test: catalog Gold schema + src_bangumi Silver schema + a
+// minimal dlsite mirror fixture in its OWN schema (workaliases_dl) via a
+// search_path DSN (the workratings/workseries pattern).
+var (
+	testDB    *gorm.DB
+	testDSN   string
+	dlTestDSN string
+)
+
+func TestMain(m *testing.M) {
+	testDSN = os.Getenv("TEST_DATABASE_DSN")
+	if testDSN == "" {
+		testDSN = "host=localhost port=5432 user=postgres password=postgres dbname=kun_catalog_test sslmode=disable"
+	}
+	db, err := gorm.Open(postgres.Open(testDSN), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "SKIP: cannot connect to test database: %v\n", err)
+		os.Exit(0)
+	}
+	if err := migrate.Run(db); err != nil {
+		fmt.Fprintf(os.Stderr, "SKIP: catalog migrate failed: %v\n", err)
+		os.Exit(0)
+	}
+	if err := seed.Run(db); err != nil {
+		fmt.Fprintf(os.Stderr, "SKIP: catalog seed failed: %v\n", err)
+		os.Exit(0)
+	}
+	if err := srcb.EnsureSchema(db); err != nil {
+		fmt.Fprintf(os.Stderr, "SKIP: src_bangumi schema failed: %v\n", err)
+		os.Exit(0)
+	}
+	for _, ddl := range []string{
+		`CREATE SCHEMA IF NOT EXISTS workaliases_dl`,
+		`CREATE TABLE IF NOT EXISTS workaliases_dl.works (workno text PRIMARY KEY, product_json jsonb, info_json jsonb)`,
+	} {
+		if err := db.Exec(ddl).Error; err != nil {
+			fmt.Fprintf(os.Stderr, "SKIP: mirror fixture failed: %v\n", err)
+			os.Exit(0)
+		}
+	}
+	dlTestDSN = testDSN + " options='-csearch_path=workaliases_dl'"
+	testDB = db
+	os.Exit(m.Run())
+}
+
+func clean(t *testing.T) {
+	t.Helper()
+	for _, table := range []string{
+		"catalog_work_title", "catalog_external_ref", "catalog_release", "catalog_work",
+		"src_bangumi.subject", "workaliases_dl.works",
+	} {
+		require.NoError(t, testDB.Exec("TRUNCATE "+table+" RESTART IDENTITY CASCADE").Error)
+	}
+}
+
+func mediumID(t *testing.T) int16 {
+	t.Helper()
+	var id int16
+	require.NoError(t, testDB.Raw(`SELECT id FROM catalog_medium WHERE key = 'galgame'`).Scan(&id).Error)
+	require.NotZero(t, id)
+	return id
+}
+
+func mkWork(t *testing.T, medium int16, name string, site *string) int64 {
+	t.Helper()
+	w := model.CatalogWork{MediumID: medium, OLang: "ja", DisplayName: name, Site: site}
+	require.NoError(t, testDB.Create(&w).Error)
+	return w.ID
+}
+
+func mkTitle(t *testing.T, workID int64, lang, title string, kind int16) {
+	t.Helper()
+	require.NoError(t, testDB.Exec(`INSERT INTO catalog_work_title (work_id, lang, title, kind)
+		VALUES (?, ?, ?, ?)`, workID, lang, title, kind).Error)
+}
+
+func mkBgmAnchor(t *testing.T, workID int64, subjectID string) {
+	t.Helper()
+	require.NoError(t, testDB.Create(&model.CatalogExternalRef{
+		EntityType: model.EntityTypeWork, EntityID: workID, SourceID: 3,
+		ExternalID: subjectID, LinkKind: model.LinkKindExact, MatchedBy: "rule:test",
+	}).Error)
+}
+
+func mkSubject(t *testing.T, id int64, infobox string) {
+	t.Helper()
+	sub := srcb.Subject{
+		ID: id, Type: 4, Name: fmt.Sprintf("subject-%d", id), NameCN: "",
+		InfoboxRaw: "", ParseError: "", Summary: "", Date: "",
+		ParserVersion: srcb.ParserVersion, IngestedAt: time.Now(),
+	}
+	if infobox != "" {
+		sub.InfoboxParsed = []byte(infobox)
+	}
+	require.NoError(t, testDB.Create(&sub).Error)
+}
+
+func mkDlsiteRelAnchor(t *testing.T, workID int64, workno string) {
+	t.Helper()
+	rel := model.CatalogRelease{WorkID: workID, Kind: model.ReleaseKindDigital}
+	require.NoError(t, testDB.Create(&rel).Error)
+	require.NoError(t, testDB.Create(&model.CatalogExternalRef{
+		EntityType: model.EntityTypeRelease, EntityID: rel.ID, SourceID: 4,
+		ExternalID: workno, LinkKind: model.LinkKindExact, MatchedBy: "rule:test",
+	}).Error)
+}
+
+func strPtr(s string) *string { return &s }
+
+// TestImportWorkAliases pins both lanes end to end: the Items/Value dual
+// infobox shape, the any-kind (work,title) dedup, the claimed exclusion, the
+// kana fill-only-missing gate, and second-apply idempotence.
+func TestImportWorkAliases(t *testing.T) {
+	clean(t)
+	medium := mediumID(t)
+
+	// bgm lane: bodyless work, subject with Array-form 别名 (2 items, 1 collides
+	// with the official title) + scalar-form on another work + claimed excluded.
+	wA := mkWork(t, medium, "本体A", nil)
+	mkTitle(t, wA, "ja", "オフィシャルA", 0) // official — the colliding alias must be skipped
+	mkBgmAnchor(t, wA, "1001")
+	mkSubject(t, 1001, `{"Fields":[{"Key":"别名","Array":true,"Value":"","Items":[{"Value":"アリアスA1"},{"Value":"オフィシャルA"},{"Value":"  "}]}]}`)
+
+	wB := mkWork(t, medium, "本体B", nil)
+	mkBgmAnchor(t, wB, "1002")
+	mkSubject(t, 1002, `{"Fields":[{"Key":"别名","Array":false,"Value":"别名B","Items":null},{"Key":"平台","Array":false,"Value":"PC","Items":null}]}`)
+
+	wClaimed := mkWork(t, medium, "认领作品", strPtr("galgame_wiki"))
+	mkBgmAnchor(t, wClaimed, "1003")
+	mkSubject(t, 1003, `{"Fields":[{"Key":"别名","Array":false,"Value":"クレイム別名","Items":null}]}`)
+
+	// kana lane: anchored bodyless work with NO kind=3 (candidate), one WITH
+	// kind=3 (not a candidate), one whose mirror row has no kana.
+	wK := mkWork(t, medium, "カナ待ち", nil)
+	mkDlsiteRelAnchor(t, wK, "RJ900001")
+	wHasKana := mkWork(t, medium, "カナ持ち", nil)
+	mkTitle(t, wHasKana, "ja", "スデニカナ", 3)
+	mkDlsiteRelAnchor(t, wHasKana, "RJ900002")
+	wNoKana := mkWork(t, medium, "カナ無し", nil)
+	mkDlsiteRelAnchor(t, wNoKana, "RJ900003")
+	require.NoError(t, testDB.Exec(`INSERT INTO workaliases_dl.works (workno, product_json) VALUES
+		('RJ900001', '{"work_name_kana": "カナマチ"}'),
+		('RJ900002', '{"work_name_kana": "モウアル"}'),
+		('RJ900003', '{}')`).Error)
+
+	ctx := context.Background()
+	opts := Opts{DSN: testDSN, DlsiteDSN: dlTestDSN, Source: "all"}
+
+	// Dry: plan only.
+	st, err := Run(ctx, opts)
+	require.NoError(t, err)
+	assert.Equal(t, 2, st.BgmWorks, "claimed excluded")
+	assert.Equal(t, 2, st.BgmPlanned, "アリアスA1 + 别名B")
+	assert.Equal(t, 1, st.BgmSkippedDup, "official-colliding alias skipped")
+	assert.Equal(t, 2, st.KanaWorks, "wK + wNoKana (wHasKana not a candidate)")
+	assert.Equal(t, 1, st.KanaNoKana)
+	assert.Equal(t, 1, st.KanaPlanned)
+	var n int64
+	require.NoError(t, testDB.Table("catalog_work_title").Where("kind = 1").Count(&n).Error)
+	assert.Zero(t, n, "dry run must not write")
+
+	// Apply.
+	opts.Apply = true
+	st, err = Run(ctx, opts)
+	require.NoError(t, err)
+	assert.Equal(t, 2, st.BgmWritten)
+	assert.Equal(t, 1, st.KanaWritten)
+	assert.Zero(t, st.Errors)
+
+	var titles []model.CatalogWorkTitle
+	require.NoError(t, testDB.Where("work_id = ? AND kind = 1", wA).Find(&titles).Error)
+	require.Len(t, titles, 1)
+	assert.Equal(t, "アリアスA1", titles[0].Title)
+	assert.Equal(t, "", titles[0].Lang)
+	require.NoError(t, testDB.Where("work_id = ? AND kind = 3", wK).Find(&titles).Error)
+	require.Len(t, titles, 1)
+	assert.Equal(t, "カナマチ", titles[0].Title)
+	assert.Equal(t, "ja", titles[0].Lang)
+	// claimed work got nothing.
+	require.NoError(t, testDB.Table("catalog_work_title").Where("work_id = ?", wClaimed).Count(&n).Error)
+	assert.Zero(t, n)
+
+	// Second apply: zero writes (dedup set now contains the landed rows).
+	st, err = Run(ctx, opts)
+	require.NoError(t, err)
+	assert.Zero(t, st.BgmWritten+st.KanaWritten, "idempotent re-run")
+	assert.Equal(t, 3, st.BgmSkippedDup, "landed aliases now dedup-skipped")
+}
