@@ -47,6 +47,8 @@ func newScoresTestApp(t *testing.T) (*fiber.App, *gorm.DB) {
 		&model.GalgameVNDBMeta{},
 		&model.GalgameBangumiMeta{},
 		&model.GalgameEGMeta{},
+		// Step 92: LoadScoreMeta also reads the dlsite narrow row now.
+		&model.GalgameDlsiteMeta{},
 		&model.GalgameStats{},
 	))
 	t.Cleanup(func() { db.Exec(`DROP SCHEMA IF EXISTS galgame_scores_test CASCADE`) })
