@@ -42,6 +42,11 @@ type ProposeOpts struct {
 	Workers  int
 	MaxPairs int
 	MaxEdit  int
+	// Prior is OPTIONAL: a previous wave's verdict/decisions JSONL (doc 90
+	// ruling 5). Pairs already judged there are skipped (counted, never
+	// re-judged); singles are never filtered — a judged single is either
+	// mapped (already out of the pool) or errored (must be re-judged).
+	Prior string
 }
 
 // ProposeStats reports a propose run.
@@ -51,6 +56,7 @@ type ProposeStats struct {
 	SingleProposed int
 	RelationCounts map[Relation]int
 	Errors         int
+	SkippedPrior   int
 }
 
 // Propose runs blocking + the LLM seam and writes the verdict JSONL. mt is the
@@ -94,6 +100,29 @@ func Propose(ctx context.Context, mt Matcher, opts ProposeOpts) (*ProposeStats, 
 		"substring", bst.Substring, "edit", bst.Edit, "cooccur", bst.Cooccur, "capped", bst.Capped)
 
 	st := &ProposeStats{Block: bst, RelationCounts: map[Relation]int{}}
+
+	// --prior: skip pairs a previous wave already judged (doc 90 ruling 5). The
+	// key is the unordered (source,name) x (source,name) identity blocking
+	// on, so a pair re-surfacing across waves is judged exactly once. Only pairs
+	// are filtered: a previously judged single is either already mapped (and so
+	// excluded from the pool upstream) or errored (and must be re-judged).
+	if opts.Prior != "" {
+		priorKeys, err := loadPriorPairKeys(opts.Prior)
+		if err != nil {
+			return nil, fmt.Errorf("load prior verdicts: %w", err)
+		}
+		kept := pairs[:0]
+		for _, p := range pairs {
+			if _, judged := priorKeys[pairKey(p.A.SourceKey, p.A.Name, p.B.SourceKey, p.B.Name)]; judged {
+				st.SkippedPrior++
+				continue
+			}
+			kept = append(kept, p)
+		}
+		pairs = kept
+		slog.Info("tag-pair prior skip", "prior", opts.Prior, "skipped", st.SkippedPrior, "remaining", len(pairs))
+	}
+
 	var mu sync.Mutex
 	var recs []pairRec
 
@@ -445,4 +474,34 @@ func sortRecords(recs []pairRec) {
 // openGorm opens a silent-logger gorm handle (shared by pair/apply phases).
 func openGorm(dsn string) (*gorm.DB, error) {
 	return gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: gormlogger.Default.LogMode(gormlogger.Silent)})
+}
+
+// pairKey is the unordered pair identity used by --prior skipping: the same
+// (source,name) dedupe key blocking uses, joined order-independently.
+func pairKey(aSource, aName, bSource, bName string) string {
+	ka := aSource + ":" + aName
+	kb := bSource + ":" + bName
+	if ka > kb {
+		ka, kb = kb, ka
+	}
+	return ka + "\x00" + kb
+}
+
+// loadPriorPairKeys reads a previous wave's verdict/decisions JSONL and returns
+// the set of already-judged pair keys. Non-pair records are ignored. A missing
+// or unreadable file is a hard error — falling back to a full re-judge is an
+// operator decision (re-run without --prior), never a silent one.
+func loadPriorPairKeys(path string) (map[string]struct{}, error) {
+	recs, err := readRecords(path)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]struct{}, len(recs))
+	for _, r := range recs {
+		if r.Kind != "pair" {
+			continue
+		}
+		out[pairKey(r.ASource, r.AName, r.BSource, r.BName)] = struct{}{}
+	}
+	return out, nil
 }

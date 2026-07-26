@@ -51,6 +51,7 @@ func main() {
 	workers := flag.Int("workers", 1, "propose: LLM call concurrency")
 	maxPairs := flag.Int("max-pairs", 0, "propose: blocking budget cap (0 = pinned default)")
 	maxEdit := flag.Int("max-edit", 0, "propose: max Levenshtein for edit-distance blocking (0 = pinned default 1)")
+	prior := flag.String("prior", "", "propose: OPTIONAL previous wave's verdict/decisions JSONL — already-judged pairs are skipped (doc 90 ruling 5)")
 	highFloor := flag.Float64("high-floor", 0.90, "review: auto-pass confidence floor")
 	mediumFloor := flag.Float64("medium-floor", 0.60, "review: drop-below confidence floor")
 	spotCheck := flag.Int("spot-check", 30, "review: high-confidence spot-check sample size")
@@ -72,10 +73,10 @@ func main() {
 		st, err := tagcanon.Propose(ctx, mt, tagcanon.ProposeOpts{
 			DSN: *dsn, DlsiteDSN: *dlsiteDSN, TagMapPath: *tagMapPath,
 			SingleThreshold: *singleThreshold, Out: *out,
-			Workers: *workers, MaxPairs: *maxPairs, MaxEdit: *maxEdit,
+			Workers: *workers, MaxPairs: *maxPairs, MaxEdit: *maxEdit, Prior: *prior,
 		})
 		must(err)
-		fmt.Printf("\n=== propose ===\npairs=%d singles=%d errors=%d\n", st.Pairs, st.SingleProposed, st.Errors)
+		fmt.Printf("\n=== propose ===\npairs=%d singles=%d skipped_prior=%d errors=%d\n", st.Pairs, st.SingleProposed, st.SkippedPrior, st.Errors)
 		fmt.Printf("blocking: pool_by_source=%v substring=%d edit=%d cooccur=%d capped=%v\n",
 			st.Block.PoolBySource, st.Block.Substring, st.Block.Edit, st.Block.Cooccur, st.Block.Capped)
 		fmt.Printf("relations: %v\n", st.RelationCounts)

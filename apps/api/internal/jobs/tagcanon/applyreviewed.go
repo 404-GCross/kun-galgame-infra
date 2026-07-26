@@ -12,6 +12,13 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+// singleCoreUsageFloor is the deterministic tier gate for single-source
+// admissions (doc 90 ruling 6, codifying the 87 closure calibration): an
+// LLM-proposed core only sticks when the name's usage clears this floor;
+// otherwise it lands longtail. Cross-source exact groups are not gated (74
+// convention: cross-source = core).
+const singleCoreUsageFloor = 1000
+
 // ApplyReviewedOpts configures apply-reviewed (doc 87 P2 --apply-reviewed): it
 // consumes the decisions JSONL (make-review output, human-edited for the medium
 // batch) and writes the approved decisions into the canonical layer. Single
@@ -208,10 +215,14 @@ func singlesFromRecords(recs []pairRec, keyToID map[string]int16, absorbed map[s
 		if _, hit := absorbed[k]; hit {
 			continue // a group already canonicalizes this name
 		}
+		tier := *r.Tier
+		if tier == model.TagTierCore && r.Usage < singleCoreUsageFloor {
+			tier = model.TagTierLongtail
+		}
 		out = append(out, singleRow{
 			group: group{
 				CanonicalName: r.Name,
-				Tier:          *r.Tier,
+				Tier:          tier,
 				Kind:          *r.Kind_,
 				Members:       []vocabEntry{{SourceID: id, Name: r.Name, Norm: normalize(r.Name), Usage: r.Usage}},
 				sourceCount:   1,

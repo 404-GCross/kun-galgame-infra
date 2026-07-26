@@ -1,0 +1,86 @@
+package tagcanon
+
+import (
+	"path/filepath"
+	"testing"
+
+	"api/internal/platform/catalog/model"
+)
+
+// TestPairKeyUnordered pins the --prior identity: the key is order-independent
+// (the same unordered identity blocking dedupes on), and distinct pairs differ.
+func TestPairKeyUnordered(t *testing.T) {
+	a := pairKey("bangumi", "母系", "vndb", "Matriarchy")
+	b := pairKey("vndb", "Matriarchy", "bangumi", "母系")
+	if a != b {
+		t.Fatalf("pairKey is order-dependent: %q vs %q", a, b)
+	}
+	if a == pairKey("bangumi", "母系", "vndb", "Motherhood") {
+		t.Fatalf("distinct pairs collide")
+	}
+}
+
+// TestLoadPriorPairKeys pins ruling 5 mechanics: pair records land in the skip
+// set (matched in either order), single records never do, and a missing file is
+// a hard error (falling back to a full re-judge is an operator decision, not a
+// silent one).
+func TestLoadPriorPairKeys(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "decisions.jsonl")
+	recs := []pairRec{
+		{Kind: "pair", ASource: "bangumi", AName: "百合", BSource: "vndb", BName: "Yuri", Relation: "exact", Confidence: 0.95},
+		{Kind: "single", Source: "bangumi", Name: "幼驯染", Usage: 380, Tier: i16p(model.TagTierCore), Kind_: i16p(model.TagKindContent)},
+	}
+	if err := writeRecords(path, recs); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+	keys, err := loadPriorPairKeys(path)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if len(keys) != 1 {
+		t.Fatalf("want exactly the pair key, got %d keys", len(keys))
+	}
+	if _, ok := keys[pairKey("vndb", "Yuri", "bangumi", "百合")]; !ok {
+		t.Fatalf("pair not matched order-independently")
+	}
+	if _, ok := keys[pairKey("bangumi", "幼驯染", "bangumi", "幼驯染")]; ok {
+		t.Fatalf("single leaked into the pair skip set")
+	}
+
+	if _, err := loadPriorPairKeys(filepath.Join(t.TempDir(), "nope.jsonl")); err == nil {
+		t.Fatalf("missing prior file must be a hard error")
+	}
+}
+
+// TestSingleCoreUsageFloorClamp pins ruling 6: an LLM-proposed core single
+// below the usage floor lands longtail; at/above the floor it sticks; the clamp
+// never promotes. Deterministic — re-deriving the same decisions yields the
+// same tiers (the stampTierKind second-apply zero-write follows from that).
+func TestSingleCoreUsageFloorClamp(t *testing.T) {
+	keyToID := map[string]int16{sourceKeyBangumi: 3}
+	recs := []pairRec{
+		{Kind: "single", Source: "bangumi", Name: "幼驯染", Usage: 380, Approve: true,
+			Tier: i16p(model.TagTierCore), Kind_: i16p(model.TagKindContent)},
+		{Kind: "single", Source: "bangumi", Name: "校园", Usage: 1500, Approve: true,
+			Tier: i16p(model.TagTierCore), Kind_: i16p(model.TagKindContent)},
+		{Kind: "single", Source: "bangumi", Name: "重口", Usage: 5000, Approve: true,
+			Tier: i16p(model.TagTierLongtail), Kind_: i16p(model.TagKindContent)},
+	}
+	rows := singlesFromRecords(recs, keyToID, map[string]struct{}{})
+	if len(rows) != 3 {
+		t.Fatalf("want 3 rows, got %d", len(rows))
+	}
+	got := map[string]int16{}
+	for _, r := range rows {
+		got[r.group.CanonicalName] = r.group.Tier
+	}
+	if got["幼驯染"] != model.TagTierLongtail {
+		t.Fatalf("core below floor not clamped: tier=%d", got["幼驯染"])
+	}
+	if got["校园"] != model.TagTierCore {
+		t.Fatalf("core at/above floor must stick: tier=%d", got["校园"])
+	}
+	if got["重口"] != model.TagTierLongtail {
+		t.Fatalf("clamp must never promote: tier=%d", got["重口"])
+	}
+}
