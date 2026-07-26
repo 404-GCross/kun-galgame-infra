@@ -29,6 +29,14 @@ func EnsureSchema(db *gorm.DB) error {
 			return fmt.Errorf("drop pre-72 chars: %w", err)
 		}
 	}
+	// Step-91 vn widening: same pattern — the pre-91 table staged 5 columns and
+	// AutoMigrate cannot add NOT NULL columns to a populated table. Staging is
+	// fully rebuildable; the next ingest reloads vn wholesale.
+	if m.HasTable(&VN{}) && !m.HasColumn(&VN{}, "c_length") {
+		if err := m.DropTable(&VN{}); err != nil {
+			return fmt.Errorf("drop pre-91 vn: %w", err)
+		}
+	}
 	if err := db.AutoMigrate(
 		&VN{}, &VNRelation{}, &Char{}, &CharName{}, &CharVN{}, &Image{},
 		&Staff{}, &StaffAlias{}, &VNStaff{}, &VNSeiyuu{},
@@ -321,6 +329,18 @@ func getIntPtr(get getter, col string) *int {
 		return nil
 	}
 	return &n
+}
+
+func getFloat64Ptr(get getter, col string) *float64 {
+	v, ok := get(col)
+	if !ok {
+		return nil
+	}
+	f, err := strconv.ParseFloat(v, 64)
+	if err != nil {
+		return nil
+	}
+	return &f
 }
 
 func getBoolPtr(get getter, col string) *bool {

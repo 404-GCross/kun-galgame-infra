@@ -74,6 +74,13 @@ type WorkByAnchorResponse struct {
 	// Strict XOR: a claimed work with no published counter yields [] (never a
 	// fallback to native rows).
 	Popularity []WorkPopularity `json:"popularity"`
+	// Playtimes is the work's per-source playtime estimate set (step 91), at
+	// most one element per source. minutes is normalized to MINUTES (a unit
+	// conversion on ingest: EG hours ×60; vndb c_length is native minutes) —
+	// the estimate semantics stay source-native (vndb = vote-backed median,
+	// erogamespace = community median), so consumers render per source_id.
+	// This facet has NO claimed bridge: every work reads its native rows.
+	Playtimes []WorkPlaytime `json:"playtimes"`
 }
 
 // WorkPopularity is one (source, metric) popularity counter on a work, in the
@@ -86,6 +93,14 @@ type WorkPopularity struct {
 	SourceID int16 `json:"source_id" doc:"catalog_source id (provenance + unit selector): counters are source-relative and never summed across sources"`
 	Metric   int16 `json:"metric" doc:"popularity metric: 0=downloads 1=wishlist 2=reviews (extensible vocabulary)"`
 	Value    int64 `json:"value" doc:"raw counter verbatim from the source; a published 0 is a real value, an unpublished counter has no element"`
+}
+
+// WorkPlaytime is one source's playtime estimate on a work, in the unified
+// media-aggregation shape (step 91).
+type WorkPlaytime struct {
+	SourceID  int16 `json:"source_id" doc:"catalog_source id (provenance): vndb = vote-backed median, erogamespace = community median"`
+	Minutes   int   `json:"minutes" doc:"median playtime in minutes (unit-normalized; estimate semantics stay source-native)"`
+	VoteCount int   `json:"vote_count" doc:"user reports backing the estimate; 0 = the source publishes no per-work count"`
 }
 
 // WorkTag is one content tag on a work, in the unified media-aggregation shape.

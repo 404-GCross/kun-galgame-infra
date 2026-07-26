@@ -209,6 +209,11 @@ func sources() []model.CatalogSource {
 		// other web-presence sources (official_site/twitter/pixiv). Added for the
 		// org/label link facet (refs/proj/83 E2b §3).
 		{ID: 14, Key: "cien", TrustTier: 2, Note: "cien creator-support platform (ci-en.net)"},
+		// dmm (dlsoft.dmm.co.jp / dmm.co.jp) is a storefront: work-level refs
+		// imported from the EG mirror's typed dmm column land as PROBABLE
+		// (community-maintained cross-reference, the same R8 middle tier as
+		// EG's vndb column — refs/proj/91). Same tier as steam (8).
+		{ID: 15, Key: "dmm", TrustTier: 2, Note: "DMM storefront (EG cross-reference lane, step 91)"},
 	}
 }
 

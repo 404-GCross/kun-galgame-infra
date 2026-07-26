@@ -136,6 +136,9 @@ func buildWorkResponse(detail *service.WorkDetail) dto.WorkByAnchorResponse {
 		// Popularity pre-sized non-nil so a work with no counter (or a claimed
 		// work whose meta publishes none — strict XOR) serializes `[]`, not `null`.
 		Popularity: make([]dto.WorkPopularity, 0, len(detail.Popularity)),
+		// Playtimes pre-sized non-nil so a work with no estimate serializes
+		// `[]`, not `null` (this facet has no claimed bridge — no XOR arm).
+		Playtimes: make([]dto.WorkPlaytime, 0, len(detail.Playtimes)),
 	}
 	if detail.Work.Site != nil {
 		resp.Work.Site = *detail.Work.Site
@@ -213,6 +216,11 @@ func buildWorkResponse(detail *service.WorkDetail) dto.WorkByAnchorResponse {
 	for _, pp := range detail.Popularity {
 		resp.Popularity = append(resp.Popularity, dto.WorkPopularity{
 			SourceID: pp.SourceID, Metric: pp.Metric, Value: pp.Value,
+		})
+	}
+	for _, pt := range detail.Playtimes {
+		resp.Playtimes = append(resp.Playtimes, dto.WorkPlaytime{
+			SourceID: pt.SourceID, Minutes: pt.Minutes, VoteCount: pt.VoteCount,
 		})
 	}
 	return resp

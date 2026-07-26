@@ -42,11 +42,11 @@ type Char struct {
 	// No default tags on any loaded column: the GORM default tag drops the Go
 	// value in this batch-insert path (the default-tag zero-value trap), so
 	// every column is plain not-null and the loader writes the value verbatim.
-	ID          string    `gorm:"primaryKey" json:"id"`  // "c1"
-	Image       string    `gorm:"not null" json:"image"` // "ch175652" or "" (no portrait)
-	BloodT      string    `gorm:"column:bloodt;not null" json:"bloodt"`      // a/b/ab/o/unknown
-	CupSize     string    `gorm:"column:cup_size;not null" json:"cup_size"`  // ""/aaa/.../z
-	Sex         string    `gorm:"not null" json:"sex"`                       // m/f/b/n/"" (apparent sex)
+	ID          string    `gorm:"primaryKey" json:"id"`                       // "c1"
+	Image       string    `gorm:"not null" json:"image"`                      // "ch175652" or "" (no portrait)
+	BloodT      string    `gorm:"column:bloodt;not null" json:"bloodt"`       // a/b/ab/o/unknown
+	CupSize     string    `gorm:"column:cup_size;not null" json:"cup_size"`   // ""/aaa/.../z
+	Sex         string    `gorm:"not null" json:"sex"`                        // m/f/b/n/"" (apparent sex)
 	SpoilSex    string    `gorm:"column:spoil_sex;not null" json:"spoil_sex"` // real sex (spoiler) or ""
 	Gender      string    `gorm:"not null" json:"gender"`
 	SpoilGender string    `gorm:"column:spoil_gender;not null" json:"spoil_gender"`
@@ -104,12 +104,25 @@ func (CharVN) TableName() string { return "src_vndb.chars_vns" }
 type VN struct {
 	// No default tags on any loaded column (the default-tag zero-value trap in
 	// this batch-insert path): every column is plain not-null, verbatim.
-	ID          string    `gorm:"primaryKey" json:"id"`                   // "v1"
-	OLang       string    `gorm:"column:olang;not null" json:"olang"`     // VN original language ("ja")
-	Image       string    `gorm:"not null" json:"image"`                  // cover image id "cv20339" or ""
-	CImage      string    `gorm:"column:c_image;not null" json:"c_image"` // reversible-flag cover "cv77859" or ""
-	Description string    `gorm:"not null" json:"description"`            // English blurb, BBCode-ish
-	IngestedAt  time.Time `gorm:"not null" json:"ingested_at"`
+	ID          string `gorm:"primaryKey" json:"id"`                   // "v1"
+	OLang       string `gorm:"column:olang;not null" json:"olang"`     // VN original language ("ja")
+	Image       string `gorm:"not null" json:"image"`                  // cover image id "cv20339" or ""
+	CImage      string `gorm:"column:c_image;not null" json:"c_image"` // reversible-flag cover "cv77859" or ""
+	Description string `gorm:"not null" json:"description"`            // English blurb, BBCode-ish
+	// Step-91 full-width restage: the remaining dump columns, verbatim. The
+	// c_* columns are VNDB's cached vote aggregates (NULL = no votes — staged
+	// as pointers, never fake zeros); length is the hand-entered 1-5 bucket
+	// (0 = unset; the c_length fallback, NOT projected this wave); alias is
+	// the newline-separated alias list (step-94 feedstock).
+	CVotecount int       `gorm:"column:c_votecount;not null" json:"c_votecount"`
+	CRating    *float64  `gorm:"column:c_rating;type:numeric" json:"c_rating"`
+	CAverage   *float64  `gorm:"column:c_average;type:numeric" json:"c_average"`
+	CLength    *int      `gorm:"column:c_length" json:"c_length"` // median playtime MINUTES
+	CLengthnum int       `gorm:"column:c_lengthnum;not null" json:"c_lengthnum"`
+	Length     int16     `gorm:"not null" json:"length"`
+	Devstatus  int16     `gorm:"not null" json:"devstatus"` // 0=finished 1=in dev 2=cancelled
+	Alias      string    `gorm:"not null" json:"alias"`
+	IngestedAt time.Time `gorm:"not null" json:"ingested_at"`
 }
 
 func (VN) TableName() string { return "src_vndb.vn" }

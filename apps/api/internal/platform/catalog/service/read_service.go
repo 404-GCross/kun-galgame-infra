@@ -172,6 +172,11 @@ type WorkDetail struct {
 	// columns pivot to metric rows — see read_popularity.go); for a BODYLESS
 	// work, its catalog_work_popularity rows. Same strict XOR as Ratings.
 	Popularity []WorkPopularityRow
+	// Playtimes is the per-source playtime estimate set (step 91): EVERY work
+	// (claimed and bodyless alike) reads its catalog_work_playtime rows — this
+	// facet has no claimed bridge lane (the wiki family carries no playtime
+	// field), so there is no XOR split.
+	Playtimes []WorkPlaytimeRow
 }
 
 // WorkIntroRow is one language's intro on a work's read face, carrying its
@@ -436,6 +441,12 @@ func (s *ReadService) loadWorkDetail(ctx context.Context, workID int64) (*WorkDe
 		return nil, err
 	}
 	detail.Popularity = popularity[work.ID]
+
+	playtimes, err := s.loadWorkPlaytimes(ctx, []claimSubject{subj})
+	if err != nil {
+		return nil, err
+	}
+	detail.Playtimes = playtimes[work.ID]
 	return detail, nil
 }
 

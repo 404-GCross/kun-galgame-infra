@@ -1,0 +1,254 @@
+// Package storerefs imports store-page work refs from the EG mirror's typed
+// cross-reference columns (refs/proj/91 ruling 4): games.steam (numeric Steam
+// appid) → source steam, games.dmm (DMM cid string) → source dmm. Each lands
+// as a WORK-level PROBABLE external_ref (link_kind=1) — EG's columns are
+// community-maintained cross-references, the R8 middle tier (the same grade as
+// EG's vndb column, step 28 lineage) — matched_by rule:eg-steam / rule:eg-dmm.
+//
+// Discipline: InsertRefIfAbsent (never re-grade an existing assertion, doc 17
+// R8 / step 11 T0.5); the negative-knowledge set (catalog_match_rejection,
+// step 21) is preloaded and blocks re-assertion; every DSN explicit; dry-run
+// default.
+package storerefs
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"strconv"
+
+	"api/internal/platform/catalog/model"
+	"api/internal/platform/catalog/repository"
+
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
+	gormlogger "gorm.io/gorm/logger"
+)
+
+// Opts configures a run.
+type Opts struct {
+	Apply bool
+	DSN   string // catalog DB — REQUIRED
+	EGDSN string // EG mirror DB — REQUIRED
+}
+
+// Stats reports a run. Planned counters are identical in dry and apply.
+type Stats struct {
+	Anchored     int // galgame works carrying an EG exact anchor
+	SteamPlanned int
+	SteamWritten int
+	SteamExists  int
+	DmmPlanned   int
+	DmmWritten   int
+	DmmExists    int
+	Rejected     int // blocked by negative knowledge (both lanes)
+	Errors       int
+}
+
+// Run executes the import.
+func Run(ctx context.Context, opts Opts) (*Stats, error) {
+	if opts.DSN == "" || opts.EGDSN == "" {
+		return nil, fmt.Errorf("both --dsn and --eg-dsn are required")
+	}
+	db, err := openGorm(opts.DSN)
+	if err != nil {
+		return nil, fmt.Errorf("connect catalog db: %w", err)
+	}
+	defer closeGorm(db)
+	egDB, err := openGorm(opts.EGDSN)
+	if err != nil {
+		return nil, fmt.Errorf("connect eg mirror: %w", err)
+	}
+	defer closeGorm(egDB)
+
+	ids, err := resolveIDs(ctx, db)
+	if err != nil {
+		return nil, err
+	}
+
+	anchors, err := loadAnchors(ctx, db, ids.galgameMedium, ids.egSource)
+	if err != nil {
+		return nil, fmt.Errorf("load eg anchors: %w", err)
+	}
+	st := &Stats{Anchored: len(anchors)}
+
+	// Batch-load the mirror's typed cross-reference columns.
+	gameIDs := make([]int64, 0, len(anchors))
+	for _, a := range anchors {
+		if n, err := strconv.ParseInt(a.ExternalID, 10, 64); err == nil {
+			gameIDs = append(gameIDs, n)
+		}
+	}
+	type xref struct {
+		Steam *int64
+		Dmm   string
+	}
+	xrefs := map[int64]xref{}
+	for _, chunk := range chunkInt64(gameIDs, 10000) {
+		var rows []struct {
+			ID    int64  `gorm:"column:id"`
+			Steam *int64 `gorm:"column:steam"`
+			Dmm   string `gorm:"column:dmm"`
+		}
+		if err := egDB.WithContext(ctx).
+			Raw(`SELECT id, steam, coalesce(dmm, '') AS dmm FROM games
+				WHERE id IN ? AND (steam IS NOT NULL OR coalesce(dmm, '') <> '')`, chunk).
+			Scan(&rows).Error; err != nil {
+			return nil, fmt.Errorf("load eg xrefs: %w", err)
+		}
+		for _, r := range rows {
+			xrefs[r.ID] = xref{Steam: r.Steam, Dmm: r.Dmm}
+		}
+	}
+
+	rejected, err := loadRejections(ctx, db, []int16{ids.steamSource, ids.dmmSource})
+	if err != nil {
+		return nil, err
+	}
+
+	for _, a := range anchors {
+		n, err := strconv.ParseInt(a.ExternalID, 10, 64)
+		if err != nil {
+			continue
+		}
+		x, ok := xrefs[n]
+		if !ok {
+			continue
+		}
+		if x.Steam != nil {
+			writeRef(ctx, db, opts.Apply, a.WorkID, ids.steamSource,
+				strconv.FormatInt(*x.Steam, 10), "rule:eg-steam", rejected,
+				&st.SteamPlanned, &st.SteamWritten, &st.SteamExists, &st.Rejected, &st.Errors)
+		}
+		if x.Dmm != "" {
+			writeRef(ctx, db, opts.Apply, a.WorkID, ids.dmmSource,
+				x.Dmm, "rule:eg-dmm", rejected,
+				&st.DmmPlanned, &st.DmmWritten, &st.DmmExists, &st.Rejected, &st.Errors)
+		}
+	}
+	slog.Info("storerefs done", "apply", opts.Apply, "anchored", st.Anchored,
+		"steam_planned", st.SteamPlanned, "steam_written", st.SteamWritten, "steam_exists", st.SteamExists,
+		"dmm_planned", st.DmmPlanned, "dmm_written", st.DmmWritten, "dmm_exists", st.DmmExists,
+		"rejected", st.Rejected, "errors", st.Errors)
+	return st, nil
+}
+
+func writeRef(ctx context.Context, db *gorm.DB, apply bool, workID int64, sourceID int16,
+	externalID, rule string, rejected map[string]struct{},
+	planned, written, exists, rejectedN, errors *int) {
+	if _, hit := rejected[rejKey(workID, sourceID, externalID)]; hit {
+		*rejectedN++
+		return
+	}
+	*planned++
+	if !apply {
+		return
+	}
+	wrote, err := repository.InsertRefIfAbsent(db.WithContext(ctx), model.CatalogExternalRef{
+		EntityType: model.EntityTypeWork, EntityID: workID,
+		SourceID: sourceID, ExternalID: externalID,
+		LinkKind: model.LinkKindProbable, MatchedBy: rule,
+	})
+	if err != nil {
+		*errors++
+		slog.Warn("insert store ref", "work", workID, "source", sourceID, "ext", externalID, "err", err)
+		return
+	}
+	if wrote {
+		*written++
+	} else {
+		*exists++
+	}
+}
+
+type registryIDs struct {
+	galgameMedium int16
+	egSource      int16
+	steamSource   int16
+	dmmSource     int16
+}
+
+func resolveIDs(ctx context.Context, db *gorm.DB) (registryIDs, error) {
+	var r registryIDs
+	for key, dst := range map[string]*int16{
+		"erogamespace": &r.egSource, "steam": &r.steamSource, "dmm": &r.dmmSource,
+	} {
+		if err := db.WithContext(ctx).Raw(`SELECT id FROM catalog_source WHERE key = ?`, key).Scan(dst).Error; err != nil {
+			return r, fmt.Errorf("resolve source %q: %w", key, err)
+		}
+	}
+	if err := db.WithContext(ctx).Raw(`SELECT id FROM catalog_medium WHERE key = 'galgame'`).Scan(&r.galgameMedium).Error; err != nil {
+		return r, fmt.Errorf("resolve galgame medium: %w", err)
+	}
+	if r.galgameMedium == 0 || r.egSource == 0 || r.steamSource == 0 || r.dmmSource == 0 {
+		return r, fmt.Errorf("registry not seeded (medium=%d eg=%d steam=%d dmm=%d)",
+			r.galgameMedium, r.egSource, r.steamSource, r.dmmSource)
+	}
+	return r, nil
+}
+
+type anchor struct {
+	WorkID     int64  `gorm:"column:work_id"`
+	ExternalID string `gorm:"column:external_id"`
+}
+
+func loadAnchors(ctx context.Context, db *gorm.DB, medium, source int16) ([]anchor, error) {
+	var out []anchor
+	if err := db.WithContext(ctx).Raw(`
+		SELECT DISTINCT ON (w.id) w.id AS work_id, r.external_id
+		FROM catalog_work w
+		JOIN catalog_external_ref r ON r.entity_type = 5 AND r.entity_id = w.id
+			AND r.source_id = ? AND r.link_kind = 0
+		WHERE w.medium_id = ? AND w.deleted_at IS NULL
+		ORDER BY w.id, r.external_id`, source, medium).Scan(&out).Error; err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// loadRejections preloads the negative-knowledge set for the target sources
+// (step-21 discipline: reconcilers must consume match_rejection, not only
+// write it).
+func loadRejections(ctx context.Context, db *gorm.DB, sources []int16) (map[string]struct{}, error) {
+	var rows []struct {
+		EntityID   int64  `gorm:"column:entity_id"`
+		SourceID   int16  `gorm:"column:source_id"`
+		ExternalID string `gorm:"column:external_id"`
+	}
+	if err := db.WithContext(ctx).Raw(`
+		SELECT entity_id, source_id, external_id FROM catalog_match_rejection
+		WHERE entity_type = 5 AND source_id IN ?`, sources).Scan(&rows).Error; err != nil {
+		return nil, fmt.Errorf("load rejections: %w", err)
+	}
+	out := make(map[string]struct{}, len(rows))
+	for _, r := range rows {
+		out[rejKey(r.EntityID, r.SourceID, r.ExternalID)] = struct{}{}
+	}
+	return out, nil
+}
+
+func rejKey(entityID int64, sourceID int16, externalID string) string {
+	return fmt.Sprintf("%d\x00%d\x00%s", entityID, sourceID, externalID)
+}
+
+func chunkInt64(in []int64, size int) [][]int64 {
+	var out [][]int64
+	for len(in) > size {
+		out = append(out, in[:size])
+		in = in[size:]
+	}
+	if len(in) > 0 {
+		out = append(out, in)
+	}
+	return out
+}
+
+func openGorm(dsn string) (*gorm.DB, error) {
+	return gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: gormlogger.Default.LogMode(gormlogger.Silent)})
+}
+
+func closeGorm(db *gorm.DB) {
+	if sqlDB, err := db.DB(); err == nil {
+		sqlDB.Close()
+	}
+}

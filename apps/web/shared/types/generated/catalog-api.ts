@@ -1332,6 +1332,7 @@ export interface components {
             covers: components["schemas"]["WorkCover"][] | null;
             intro: components["schemas"]["WorkIntro"][] | null;
             labels: components["schemas"]["WorkLabel"][] | null;
+            playtimes: components["schemas"]["WorkPlaytime"][] | null;
             popularity: components["schemas"]["WorkPopularity"][] | null;
             ratings: components["schemas"]["WorkRating"][] | null;
             refs: components["schemas"]["WorkRef"][] | null;
@@ -1443,6 +1444,23 @@ export interface components {
              * @description the label's own kind (0=game_brand … 4=doujin_circle …)
              */
             label_kind: number;
+        };
+        WorkPlaytime: {
+            /**
+             * Format: int64
+             * @description median playtime in minutes (unit-normalized; estimate semantics stay source-native)
+             */
+            minutes: number;
+            /**
+             * Format: int32
+             * @description catalog_source id (provenance): vndb = vote-backed median, erogamespace = community median
+             */
+            source_id: number;
+            /**
+             * Format: int64
+             * @description user reports backing the estimate; 0 = the source publishes no per-work count
+             */
+            vote_count: number;
         };
         WorkPopularity: {
             /**

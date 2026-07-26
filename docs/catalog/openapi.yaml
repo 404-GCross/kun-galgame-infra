@@ -1850,6 +1850,12 @@ components:
           type:
             - array
             - "null"
+        playtimes:
+          items:
+            $ref: "#/components/schemas/WorkPlaytime"
+          type:
+            - array
+            - "null"
         popularity:
           items:
             $ref: "#/components/schemas/WorkPopularity"
@@ -1907,6 +1913,7 @@ components:
         - ratings
         - tags
         - popularity
+        - playtimes
       type: object
     WorkCharacter:
       additionalProperties: false
@@ -2081,6 +2088,26 @@ components:
         - display_name
         - label_kind
         - kind
+      type: object
+    WorkPlaytime:
+      additionalProperties: false
+      properties:
+        minutes:
+          description: median playtime in minutes (unit-normalized; estimate semantics stay source-native)
+          format: int64
+          type: integer
+        source_id:
+          description: "catalog_source id (provenance): vndb = vote-backed median, erogamespace = community median"
+          format: int32
+          type: integer
+        vote_count:
+          description: user reports backing the estimate; 0 = the source publishes no per-work count
+          format: int64
+          type: integer
+      required:
+        - source_id
+        - minutes
+        - vote_count
       type: object
     WorkPopularity:
       additionalProperties: false

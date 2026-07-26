@@ -16,6 +16,10 @@ func newVNLoader(tx *gorm.DB, now time.Time) tableLoader {
 		return VN{
 			ID: id, OLang: getStr(get, "olang"), Image: getStr(get, "image"),
 			CImage: getStr(get, "c_image"), Description: getStr(get, "description"),
+			CVotecount: getInt(get, "c_votecount"), CRating: getFloat64Ptr(get, "c_rating"),
+			CAverage: getFloat64Ptr(get, "c_average"), CLength: getIntPtr(get, "c_length"),
+			CLengthnum: getInt(get, "c_lengthnum"), Length: getInt16(get, "length"),
+			Devstatus: getInt16(get, "devstatus"), Alias: getStr(get, "alias"),
 			IngestedAt: now,
 		}, true
 	})
