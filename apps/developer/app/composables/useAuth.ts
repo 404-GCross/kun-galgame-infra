@@ -8,6 +8,7 @@ import type { LoginResponse, User } from '~~/shared/types/dev'
 export const useAuth = () => {
   const api = useApi()
   const userStore = useUserStore()
+  const refreshTransient = useRefreshTransient()
 
   const accessToken = useCookie('access_token', {
     maxAge: 60 * 15, // 15 minutes
@@ -27,12 +28,16 @@ export const useAuth = () => {
 
   const setAccessToken = (token: string) => {
     accessToken.value = token
+    // A token landing means the refresh path is healthy again — retire any
+    // outstanding transient-failure banner.
+    refreshTransient.value = false
   }
 
   const clearAuth = () => {
     accessToken.value = null
     authMode.value = null
     userStore.clearUser()
+    refreshTransient.value = false // a stale banner must not outlive the session
   }
 
   const login = async (account: string, password: string) => {

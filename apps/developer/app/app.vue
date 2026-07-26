@@ -18,5 +18,9 @@ useHead({
     </NuxtLayout>
     <!-- The portal's single login UI — opened from anywhere via useLoginModal. -->
     <LoginModal />
+    <!-- Transient refresh-failure recovery (client-only state, so no SSR markup). -->
+    <ClientOnly>
+      <LayoutRefreshBanner />
+    </ClientOnly>
   </div>
 </template>

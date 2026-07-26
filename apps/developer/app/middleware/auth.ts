@@ -1,3 +1,8 @@
+import {
+  REFRESH_TRANSIENT,
+  requestTokenRefresh
+} from '../composables/useTokenRefresh'
+
 export default defineNuxtRouteMiddleware(async (to) => {
   const accessToken = useCookie('access_token')
 
@@ -19,9 +24,21 @@ export default defineNuxtRouteMiddleware(async (to) => {
   }
 
   const auth = useAuth()
-  const refreshed = await auth.refreshAccessToken()
-  if (!refreshed) {
-    const here = to.fullPath
-    return navigateTo(`/login?redirect=${encodeURIComponent(here)}`)
+  const result = await requestTokenRefresh()
+  if (typeof result === 'string') {
+    auth.setAccessToken(result)
+    return
   }
+
+  // Transient failure (network blip / IdP 5xx): the session is still alive, so
+  // bouncing to /login here would violate the REFRESH_TRANSIENT contract. Let
+  // the navigation through — the page renders degraded and the global retry
+  // banner (layout/RefreshBanner) offers recovery.
+  if (result === REFRESH_TRANSIENT) {
+    return
+  }
+
+  // Dead session: to /login, preserving the destination.
+  const here = to.fullPath
+  return navigateTo(`/login?redirect=${encodeURIComponent(here)}`)
 })
