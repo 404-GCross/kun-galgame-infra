@@ -19,4 +19,10 @@
 
 ## pi 值守状态(就地更新,一行一钩子)
 
-- (待 pi 填)
+- **2026-07-26 接管核实**:快照「待推批次二」已过时——git 核实 `origin/main..HEAD` 空,批二(9ce8931,MCP M1+workflows)已推毕;工作树净。
+- **polish ①(账户级用量页「实时剩余」)= 陈旧钩子,勿再做**:wave09(`921dfce`,已在 origin)已交付 usage 页「实时配额剩余」区块(每 key 卡:今日剩余/配额/用量条/速率上限 + `live_unavailable` 降级 + 空态),与 05 §9-3 逐条对齐;类型 `DevLiveKey`/`DevUsageSummary` 同步。该 polish 行写于 wave09 之前。
+- **polish ②(瞬时刷新重试 UI)完成 = `b923210`**:`useRefreshTransient`(useState,记账收敛在单飞 promise)+ `layout/RefreshBanner` 全局横幅(重试/忽略;`auth_mode` cookie 为「确有会话」门)+ `middleware/auth.ts` 三态化(原布尔坍缩把 transient 误弹 /login,违反 REFRESH_TRANSIENT 契约,已修)。typecheck/lint/build 三绿(pnpm 需 `--config.verify-deps-before-run=false`,并行轨升了 packageManager)。
+- **插曲(已修)**:`b923210` 中 docs/developer-platform/05 被我整页覆写混入行锚元数据;`e8b8de3` 修复(HEAD~1 净化底本 + Python 精确重放两处编辑)。两枚同批推即无害。教训:编辑永远走精确替换,不要从带锚读取缓冲整页覆写。
+- **本地 dev SSO 已接线(2026-07-26,用户实测 ClientID required 触发)**:播 `devportal-dev` client(dev-secret 契约,confidential/auto_consent/双 grant/三 scope/redirect 精确 :9430)+ `apps/developer/.env`(五 SSO 变量 + **`NUXT_OAUTH_API_BASE=http://127.0.0.1:9277` 覆写**,nuxt.config dev 默认 :19277 无人监听)。冒烟:authorize 303 → OP 授权页、伪 client 15001 对照、门户 payload 已含 client_id。配方固化 05 §9.1 第 3 条(refresh-dev-db 会抹行,照配方重播)。
+- **⚠️ 本地栅栏缺口(未动,非我进程)**:在跑的 oauth(`/tmp/pi-web-track/oauth`,web 轨 dev loop)无 `KUN_DEV_PORTAL_CLIENT_IDS` → SSO 登录成功但 /dev/* 403(fail-closed)。解法:oauth 重启带 `KUN_DEV_PORTAL_CLIENT_IDS=devportal-dev`,或先用密码回退(快照任意账号,密码 `kungal-dev`)。
+- **未动件**:部署编排 5 步(用户侧,催办单在交接快照);三把 internal key 轮换待用户裁决。
