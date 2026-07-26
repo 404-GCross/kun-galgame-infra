@@ -1358,6 +1358,7 @@ export interface components {
             refs: components["schemas"]["WorkRef"][] | null;
             releases: components["schemas"]["ReleaseBrief"][] | null;
             screenshots: components["schemas"]["WorkScreenshot"][] | null;
+            series: components["schemas"]["WorkSeries"][] | null;
             tags: components["schemas"]["WorkTag"][] | null;
             titles: components["schemas"]["WorkTitle"][] | null;
             work: components["schemas"]["WorkCore"];
@@ -1577,6 +1578,22 @@ export interface components {
         };
         WorkSearchResponse: {
             items: components["schemas"]["WorkSearchHit"][] | null;
+        };
+        WorkSeries: {
+            /** Format: int64 */
+            id: number;
+            /**
+             * Format: int64
+             * @description total anchored works in this series
+             */
+            member_count: number;
+            /** @description series display name, verbatim from the source (dlsite series_name) */
+            name: string;
+            /**
+             * Format: int32
+             * @description catalog_source id the series was materialized from
+             */
+            source_id: number;
         };
         WorkTag: {
             /**

@@ -1924,6 +1924,12 @@ components:
           type:
             - array
             - "null"
+        series:
+          items:
+            $ref: "#/components/schemas/WorkSeries"
+          type:
+            - array
+            - "null"
         tags:
           items:
             $ref: "#/components/schemas/WorkTag"
@@ -1952,6 +1958,7 @@ components:
         - tags
         - popularity
         - playtimes
+        - series
       type: object
     WorkCharacter:
       additionalProperties: false
@@ -2282,6 +2289,29 @@ components:
             - "null"
       required:
         - items
+      type: object
+    WorkSeries:
+      additionalProperties: false
+      properties:
+        id:
+          format: int64
+          type: integer
+        member_count:
+          description: total anchored works in this series
+          format: int64
+          type: integer
+        name:
+          description: series display name, verbatim from the source (dlsite series_name)
+          type: string
+        source_id:
+          description: catalog_source id the series was materialized from
+          format: int32
+          type: integer
+      required:
+        - id
+        - name
+        - source_id
+        - member_count
       type: object
     WorkTag:
       additionalProperties: false

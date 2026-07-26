@@ -177,6 +177,10 @@ type WorkDetail struct {
 	// facet has no claimed bridge lane (the wiki family carries no playtime
 	// field), so there is no XOR split.
 	Playtimes []WorkPlaytimeRow
+	// Series is the work's series memberships (step 94): catalog-native
+	// (catalog_series_member → catalog_series), no claimed bridge — the wiki
+	// family's galgame_series vocabulary lives on its own face.
+	Series []WorkSeriesRow
 }
 
 // WorkIntroRow is one language's intro on a work's read face, carrying its
@@ -447,6 +451,12 @@ func (s *ReadService) loadWorkDetail(ctx context.Context, workID int64) (*WorkDe
 		return nil, err
 	}
 	detail.Playtimes = playtimes[work.ID]
+
+	series, err := s.loadWorkSeries(ctx, []claimSubject{subj})
+	if err != nil {
+		return nil, err
+	}
+	detail.Series = series[work.ID]
 	return detail, nil
 }
 

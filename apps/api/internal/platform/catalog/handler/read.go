@@ -139,6 +139,8 @@ func buildWorkResponse(detail *service.WorkDetail) dto.WorkByAnchorResponse {
 		// Playtimes pre-sized non-nil so a work with no estimate serializes
 		// `[]`, not `null` (this facet has no claimed bridge — no XOR arm).
 		Playtimes: make([]dto.WorkPlaytime, 0, len(detail.Playtimes)),
+		// Series pre-sized non-nil so a series-less work serializes `[]`.
+		Series: make([]dto.WorkSeries, 0, len(detail.Series)),
 	}
 	if detail.Work.Site != nil {
 		resp.Work.Site = *detail.Work.Site
@@ -221,6 +223,11 @@ func buildWorkResponse(detail *service.WorkDetail) dto.WorkByAnchorResponse {
 	for _, pt := range detail.Playtimes {
 		resp.Playtimes = append(resp.Playtimes, dto.WorkPlaytime{
 			SourceID: pt.SourceID, Minutes: pt.Minutes, VoteCount: pt.VoteCount,
+		})
+	}
+	for _, se := range detail.Series {
+		resp.Series = append(resp.Series, dto.WorkSeries{
+			ID: se.ID, Name: se.Name, SourceID: se.SourceID, MemberCount: se.MemberCount,
 		})
 	}
 	return resp

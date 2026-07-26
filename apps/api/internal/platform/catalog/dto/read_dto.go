@@ -81,6 +81,19 @@ type WorkByAnchorResponse struct {
 	// erogamespace = community median), so consumers render per source_id.
 	// This facet has NO claimed bridge: every work reads its native rows.
 	Playtimes []WorkPlaytime `json:"playtimes"`
+	// Series is the work's series memberships (step 94): first-class series
+	// entities (dlsite lane first), each with its display name and total
+	// anchored member count. Catalog-native — no claimed bridge (the wiki
+	// family's galgame_series vocabulary lives on its own face).
+	Series []WorkSeries `json:"series"`
+}
+
+// WorkSeries is one series a work belongs to (step 94).
+type WorkSeries struct {
+	ID          int64  `json:"id"`
+	Name        string `json:"name" doc:"series display name, verbatim from the source (dlsite series_name)"`
+	SourceID    int16  `json:"source_id" doc:"catalog_source id the series was materialized from"`
+	MemberCount int    `json:"member_count" doc:"total anchored works in this series"`
 }
 
 // WorkPopularity is one (source, metric) popularity counter on a work, in the

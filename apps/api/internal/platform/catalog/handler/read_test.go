@@ -1772,3 +1772,42 @@ func TestCharacterDetailTraits(t *testing.T) {
 	require.True(t, ok, "traits present and non-null")
 	assert.Empty(t, bareTraits)
 }
+
+// TestWorkDetailSeries covers the step-94 series[] read face: a work in a
+// series carries {id, name, source_id, member_count}; a series-less work
+// serializes `[]` (not null).
+func TestWorkDetailSeries(t *testing.T) {
+	db := openCatalogTestDB(t)
+	for _, tbl := range []string{"catalog_series_member", "catalog_series", "catalog_work"} {
+		require.NoError(t, db.Exec("TRUNCATE "+tbl+" RESTART IDENTITY CASCADE").Error)
+	}
+	wA := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "系列作一", ContentRating: 0, Status: 0}
+	require.NoError(t, db.Create(&wA).Error)
+	wB := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "系列作二", ContentRating: 0, Status: 0}
+	require.NoError(t, db.Create(&wB).Error)
+	wSolo := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "独立作", ContentRating: 0, Status: 0}
+	require.NoError(t, db.Create(&wSolo).Error)
+
+	se := model.CatalogSeries{DisplayName: "テスト系列", SourceID: 4, ExternalID: "SRI777"}
+	require.NoError(t, db.Create(&se).Error)
+	require.NoError(t, db.Create(&model.CatalogSeriesMember{SeriesID: se.ID, WorkID: wA.ID}).Error)
+	require.NoError(t, db.Create(&model.CatalogSeriesMember{SeriesID: se.ID, WorkID: wB.ID}).Error)
+
+	app := readApp(service.NewReadService(db), nil)
+
+	code, body := getJSON(t, app, "/api/v1/catalog/works/"+itoa(wA.ID))
+	require.Equal(t, 200, code)
+	series := body["data"].(map[string]any)["series"].([]any)
+	require.Len(t, series, 1)
+	s0 := series[0].(map[string]any)
+	assert.EqualValues(t, se.ID, s0["id"])
+	assert.Equal(t, "テスト系列", s0["name"])
+	assert.EqualValues(t, 4, s0["source_id"])
+	assert.EqualValues(t, 2, s0["member_count"])
+
+	code, body = getJSON(t, app, "/api/v1/catalog/works/"+itoa(wSolo.ID))
+	require.Equal(t, 200, code)
+	soloSeries, ok := body["data"].(map[string]any)["series"].([]any)
+	require.True(t, ok, "series present and non-null")
+	assert.Empty(t, soloSeries)
+}

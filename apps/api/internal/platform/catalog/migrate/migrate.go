@@ -64,6 +64,8 @@ func Run(db *gorm.DB) error {
 		&model.CatalogWorkTag{},        // bodyless verbatim folksonomy tags (step 58b media-aggregation facet B)
 		&model.CatalogWorkPopularity{}, // bodyless per-metric popularity counters (step 62 popularity facet)
 		&model.CatalogWorkPlaytime{},   // per-source playtime estimates (step 91 playtime facet — no claimed bridge)
+		&model.CatalogSeries{},         // work series entity (step 94, dlsite lane first)
+		&model.CatalogSeriesMember{},   // series membership (step 94)
 		&model.CatalogRelease{},
 		&model.CatalogWorkRelation{},
 		&model.CatalogEntityRelation{},
