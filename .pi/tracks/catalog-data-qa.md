@@ -21,4 +21,5 @@
 
 ## pi 值守状态(就地更新,一行一钩子)
 
-- (待 pi 填)
+- 2026-07-25 deferred 回收波(refs/qa/05):17/94 反查独立复现;分类 3 promote / 7 merge-dup(交聚合轨)/ 7 继续 deferred。工具 `--promote` 模式已 commit(`e8b0aa7`,未 push)。rehearsal 全程通过(94 demote 重放→3 promote dry/apply/二遍零写→富集修复 3 alias+1 intro+3 meta,全部 SQL 独立验证)。**prod apply 等用户批准**;runbook 见 05 文档。
+- 134 人审 = 用户件,列着未催。undermerge 两张 worklist = 聚合轨输入,未动。
