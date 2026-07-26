@@ -19,6 +19,13 @@ const (
 	// voice credit is the structural "same person" signal here (the twin of
 	// step 49's same-work character rule).
 	classOrphanCreditName = "orphan-creditname"
+	// classMixedCreditName (step 98) merges an ORPHAN credit_name into a
+	// person-ANCHORED credit_name that co-occurs on the same work under the
+	// same role and folded name — the same credit imported once with and once
+	// without its person link (an import artifact, NOT a new person
+	// assertion: the orphan joins an assertion that already exists; buckets
+	// whose anchored rows disagree on the person are FROZEN and skipped).
+	classMixedCreditName = "mixed-creditname"
 )
 
 // mergeGroup is one resolved dedup group: a survivor entity that absorbs its
@@ -46,6 +53,14 @@ type detectStats struct {
 	orphanPairs    int
 	orphanDirtyBkt int
 	orphanBridged  int
+	// mixed* mirror the orphan counters for the step-98 mixed class; frozen
+	// counts buckets/components whose anchored rows carry ≥2 distinct persons
+	// (an implicit person merge — never touched).
+	mixedGroups   int
+	mixedPairs    int
+	mixedDirtyBkt int
+	mixedBridged  int
+	mixedFrozen   int
 }
 
 // charRow is one bucket-member character with its survivor-ordering signal and
@@ -268,14 +283,16 @@ func detectCreditNames(db *gorm.DB) ([]mergeGroup, detectStats, error) {
 }
 
 // orphanRow is one bucket-member orphan credit name with its survivor-ordering
-// signal and the set of import sources that assert it.
+// signal and the set of import sources that assert it. Carries role_id since
+// step 98 (buckets are (work, role, fold)).
 type orphanRow struct {
 	WorkID       int64  `gorm:"column:work_id"`
+	RoleID       int64  `gorm:"column:role_id"`
 	Fold         string `gorm:"column:fold"`
 	CreditNameID int64  `gorm:"column:credit_name_id"`
 	Ncredits     int    `gorm:"column:ncredits"`
 	Naliases     int    `gorm:"column:naliases"`
-	Sources      string `gorm:"column:sources"` // comma-joined external_ref source ids
+	Sources      string `gorm:"column:sources"`
 }
 
 type orphanMeta struct {
@@ -285,15 +302,17 @@ type orphanMeta struct {
 	fold     string
 }
 
-// detectOrphanCreditNames finds cross-source ORPHAN voice-actor names
-// (person_id NULL) that co-occur on the SAME work via a voice credit AND fold
-// to the same name — the step-50 twin of the character detector. Fold =
-// lower(NFKC(name)) with every Unicode space stripped, so EG's 藤咲ウサ and
-// DLsite's 藤咲ウサ collide even across width/space variants. Step 49's
-// credit_name class merged names under a shared person anchor; orphans have no
-// anchor, so same-work co-occurrence of a voice credit IS the "same person"
-// evidence — and once judged the same, the merge repoints ALL of the source's
-// credits globally (a voice actor is one person, not per-work).
+// detectOrphanCreditNames finds cross-source ORPHAN names (person_id NULL)
+// that co-occur on the SAME work under the SAME role AND fold to the same
+// name. Step 50 scoped this to voice credits; step 98 (refs/proj/98) widens it
+// to ALL roles — the QA undermerge scan showed the identical import artifact
+// across scenario/art/music/staff — and tightens the bucket to
+// (work, role, fold): a scenario writer and an artist sharing a pen name on
+// one work stay two names (the role is part of the "same credit" evidence).
+// Fold = lower(NFKC(name)) with every Unicode space stripped, so EG's 藤咲ウサ
+// and DLsite's 藤咲ウサ collide even across width/space variants. Once judged
+// the same, the merge repoints ALL of the source's credits globally (a name is
+// one entity, not per-work).
 //
 // Same safety as the character detector: a (work, fold) bucket is only merged
 // when no single import source (external_ref) contributed two or more of its
@@ -303,27 +322,26 @@ func detectOrphanCreditNames(db *gorm.DB) ([]mergeGroup, detectStats, error) {
 	var rows []orphanRow
 	if err := db.Raw(`
 		WITH cn_work AS (
-		  SELECT DISTINCT c.credit_name_id, c.work_id
+		  SELECT DISTINCT c.credit_name_id, c.work_id, c.role_id
 		  FROM catalog_credit c
-		  JOIN catalog_credit_name cn ON cn.id = c.credit_name_id AND cn.person_id IS NULL
-		  WHERE c.role_id = (SELECT id FROM catalog_role WHERE key = 'voice-actor')),
+		  JOIN catalog_credit_name cn ON cn.id = c.credit_name_id AND cn.person_id IS NULL),
 		folded AS (
-		  SELECT cw.credit_name_id, cw.work_id,
+		  SELECT cw.credit_name_id, cw.work_id, cw.role_id,
 		         regexp_replace(cn.name_norm, '\s', '', 'g') AS fold
 		  FROM cn_work cw
 		  JOIN catalog_credit_name cn ON cn.id = cw.credit_name_id),
 		bn AS (
-		  SELECT work_id, fold FROM folded
-		  GROUP BY work_id, fold HAVING count(DISTINCT credit_name_id) > 1)
-		SELECT f.work_id, f.fold, f.credit_name_id,
+		  SELECT work_id, role_id, fold FROM folded
+		  GROUP BY work_id, role_id, fold HAVING count(DISTINCT credit_name_id) > 1)
+		SELECT f.work_id, f.role_id, f.fold, f.credit_name_id,
 		       (SELECT count(*) FROM catalog_credit c WHERE c.credit_name_id = f.credit_name_id) AS ncredits,
 		       (SELECT count(*) FROM catalog_name_alias a WHERE a.credit_name_id = f.credit_name_id) AS naliases,
 		       COALESCE((SELECT string_agg(DISTINCT r.source_id::text, ',' ORDER BY r.source_id::text)
 		                   FROM catalog_external_ref r
 		                  WHERE r.entity_type = 1 AND r.entity_id = f.credit_name_id), '') AS sources
 		FROM folded f
-		JOIN bn USING (work_id, fold)
-		ORDER BY f.work_id, f.fold, f.credit_name_id`).Scan(&rows).Error; err != nil {
+		JOIN bn USING (work_id, role_id, fold)
+		ORDER BY f.work_id, f.role_id, f.fold, f.credit_name_id`).Scan(&rows).Error; err != nil {
 		return nil, detectStats{}, err
 	}
 
@@ -340,7 +358,7 @@ func detectOrphanCreditNames(db *gorm.DB) ([]mergeGroup, detectStats, error) {
 	inClean := map[int64]bool{}
 	for i := 0; i < len(rows); {
 		j := i
-		for j < len(rows) && rows[j].WorkID == rows[i].WorkID && rows[j].Fold == rows[i].Fold {
+		for j < len(rows) && rows[j].WorkID == rows[i].WorkID && rows[j].RoleID == rows[i].RoleID && rows[j].Fold == rows[i].Fold {
 			j++
 		}
 		bucket := rows[i:j]
@@ -459,4 +477,183 @@ func (u *unionFind) union(a, b int64) {
 	if ra != rb {
 		u.parent[ra] = rb
 	}
+}
+
+// mixedRow is one bucket-member of the step-98 mixed class: an orphan OR
+// person-anchored credit name sharing (work, role, fold) with the others.
+type mixedRow struct {
+	WorkID       int64  `gorm:"column:work_id"`
+	RoleID       int64  `gorm:"column:role_id"`
+	Fold         string `gorm:"column:fold"`
+	CreditNameID int64  `gorm:"column:credit_name_id"`
+	PersonID     *int64 `gorm:"column:person_id"`
+	Ncredits     int    `gorm:"column:ncredits"`
+	Naliases     int    `gorm:"column:naliases"`
+	Sources      string `gorm:"column:sources"`
+}
+
+type mixedMeta struct {
+	personID *int64
+	ncredits int
+	naliases int
+	sources  map[int16]bool
+	fold     string
+}
+
+// detectMixedCreditNames finds the step-98 mixed class (refs/proj/98 ruling):
+// a (work, role, fold) bucket carrying BOTH person-anchored and orphan rows of
+// the same folded name — the same credit imported once with and once without
+// its person link. The merge absorbs the orphan(s) into the anchored survivor;
+// the person link is PRESERVED, not created (the orphan joins an assertion
+// that already exists — person identity resolution stays frozen).
+//
+// Guards:
+//   - anchored rows carrying ≥2 DISTINCT persons in one bucket/component →
+//     FROZEN (an implicit person merge; counted, never touched);
+//   - the same source-distinctness rule as the character/orphan classes (a
+//     source that credited a work under two rows of the same name already
+//     decided they are two names);
+//   - bridged components re-checked whole (union-find across buckets).
+func detectMixedCreditNames(db *gorm.DB) ([]mergeGroup, detectStats, error) {
+	var rows []mixedRow
+	if err := db.Raw(`
+		WITH cn_work AS (
+		  SELECT DISTINCT c.credit_name_id, c.work_id, c.role_id
+		  FROM catalog_credit c),
+		folded AS (
+		  SELECT cw.credit_name_id, cw.work_id, cw.role_id, cn.person_id,
+		         regexp_replace(cn.name_norm, '\s', '', 'g') AS fold
+		  FROM cn_work cw
+		  JOIN catalog_credit_name cn ON cn.id = cw.credit_name_id),
+		bn AS (
+		  SELECT work_id, role_id, fold FROM folded
+		  GROUP BY work_id, role_id, fold
+		  HAVING count(DISTINCT credit_name_id) > 1
+		     AND count(*) FILTER (WHERE person_id IS NULL) > 0
+		     AND count(*) FILTER (WHERE person_id IS NOT NULL) > 0)
+		SELECT f.work_id, f.role_id, f.fold, f.credit_name_id, f.person_id,
+		       (SELECT count(*) FROM catalog_credit c WHERE c.credit_name_id = f.credit_name_id) AS ncredits,
+		       (SELECT count(*) FROM catalog_name_alias a WHERE a.credit_name_id = f.credit_name_id) AS naliases,
+		       COALESCE((SELECT string_agg(DISTINCT r.source_id::text, ',' ORDER BY r.source_id::text)
+		                   FROM catalog_external_ref r
+		                  WHERE r.entity_type = 1 AND r.entity_id = f.credit_name_id), '') AS sources
+		FROM folded f
+		JOIN bn USING (work_id, role_id, fold)
+		ORDER BY f.work_id, f.role_id, f.fold, f.credit_name_id`).Scan(&rows).Error; err != nil {
+		return nil, detectStats{}, err
+	}
+
+	meta := make(map[int64]mixedMeta, len(rows))
+	for _, r := range rows {
+		if _, ok := meta[r.CreditNameID]; !ok {
+			meta[r.CreditNameID] = mixedMeta{personID: r.PersonID, ncredits: r.Ncredits,
+				naliases: r.Naliases, sources: parseSources(r.Sources), fold: r.Fold}
+		}
+	}
+	srcOf := func(id int64) map[int16]bool { return meta[id].sources }
+
+	// distinctPersons counts the DISTINCT non-null persons among ids.
+	distinctPersons := func(ids []int64) map[int64]bool {
+		out := map[int64]bool{}
+		for _, id := range ids {
+			if p := meta[id].personID; p != nil {
+				out[*p] = true
+			}
+		}
+		return out
+	}
+
+	uf := newUnionFind()
+	var st detectStats
+	inClean := map[int64]bool{}
+	for i := 0; i < len(rows); {
+		j := i
+		for j < len(rows) && rows[j].WorkID == rows[i].WorkID && rows[j].RoleID == rows[i].RoleID && rows[j].Fold == rows[i].Fold {
+			j++
+		}
+		bucket := rows[i:j]
+		i = j
+		ids := make([]int64, len(bucket))
+		for k, r := range bucket {
+			ids[k] = r.CreditNameID
+		}
+		if len(distinctPersons(ids)) >= 2 {
+			st.mixedFrozen++
+			continue
+		}
+		if hasSourceCollision(ids, srcOf) {
+			st.mixedDirtyBkt++
+			continue
+		}
+		for k := 1; k < len(ids); k++ {
+			uf.union(ids[0], ids[k])
+		}
+		for _, id := range ids {
+			inClean[id] = true
+		}
+	}
+
+	comps := map[int64][]int64{}
+	for id := range inClean {
+		root := uf.find(id)
+		comps[root] = append(comps[root], id)
+	}
+	var groups []mergeGroup
+	for _, ids := range comps {
+		if len(ids) < 2 {
+			continue
+		}
+		if len(distinctPersons(ids)) >= 2 {
+			st.mixedFrozen++
+			continue
+		}
+		if hasSourceCollision(ids, srcOf) {
+			st.mixedBridged++
+			continue
+		}
+		survivor, sources := pickMixedSurvivor(ids, meta)
+		if survivor == 0 {
+			continue // no anchored member (pure-orphan component — the orphan class's turf)
+		}
+		st.mixedGroups++
+		st.mixedPairs += len(sources)
+		groups = append(groups, mergeGroup{
+			class: classMixedCreditName, survivor: survivor, sources: sources,
+			sample: "'" + meta[survivor].fold + "' survivor=" + itoa(survivor) + " (anchored) sources=" + joinIDs(sources),
+		})
+	}
+	sort.Slice(groups, func(a, b int) bool { return groups[a].survivor < groups[b].survivor })
+	return groups, st, nil
+}
+
+// pickMixedSurvivor keeps the person-ANCHORED member (the assertion that
+// already exists); among several anchored members (same person by the frozen
+// guard), the richest wins. Returns survivor=0 when no member is anchored.
+func pickMixedSurvivor(ids []int64, meta map[int64]mixedMeta) (survivor int64, sources []int64) {
+	var anchored []int64
+	for _, id := range ids {
+		if meta[id].personID != nil {
+			anchored = append(anchored, id)
+		}
+	}
+	if len(anchored) == 0 {
+		return 0, nil
+	}
+	sort.Slice(anchored, func(a, b int) bool {
+		ma, mb := meta[anchored[a]], meta[anchored[b]]
+		if ma.ncredits != mb.ncredits {
+			return ma.ncredits > mb.ncredits
+		}
+		if ma.naliases != mb.naliases {
+			return ma.naliases > mb.naliases
+		}
+		return anchored[a] < anchored[b]
+	})
+	survivor = anchored[0]
+	for _, id := range ids {
+		if id != survivor {
+			sources = append(sources, id)
+		}
+	}
+	return survivor, sources
 }

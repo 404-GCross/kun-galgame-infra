@@ -16,7 +16,7 @@ import (
 // person-anchored (step 49) and the orphan (step 50) credit-name classes are
 // credit_name entities.
 func entityTypeOf(class string) int16 {
-	if class == classCreditName || class == classOrphanCreditName {
+	if class == classCreditName || class == classOrphanCreditName || class == classMixedCreditName {
 		return model.EntityTypeCreditName
 	}
 	return model.EntityTypeCharacter
@@ -37,11 +37,17 @@ func runDetect(db *gorm.DB, w io.Writer) error {
 	if err != nil {
 		return err
 	}
+	mixedGroups, ms, err := detectMixedCreditNames(db)
+	if err != nil {
+		return err
+	}
 	fmt.Fprintf(w, "[detect] character: groups=%d pairs=%d  (skipped: dirty_buckets=%d bridged_components=%d)\n",
 		cs.charGroups, cs.charPairs, cs.charDirtyBkt, cs.charBridged)
 	fmt.Fprintf(w, "[detect] credit_name: groups=%d pairs=%d\n", ns.creditGroups, ns.creditPairs)
 	fmt.Fprintf(w, "[detect] orphan-creditname: groups=%d pairs=%d  (skipped: dirty_buckets=%d bridged_components=%d)\n",
 		os.orphanGroups, os.orphanPairs, os.orphanDirtyBkt, os.orphanBridged)
+	fmt.Fprintf(w, "[detect] mixed-creditname: groups=%d pairs=%d  (skipped: dirty_buckets=%d bridged_components=%d frozen=%d)\n",
+		ms.mixedGroups, ms.mixedPairs, ms.mixedDirtyBkt, ms.mixedBridged, ms.mixedFrozen)
 
 	fmt.Fprintln(w, "  character samples:")
 	printSamples(w, charGroups, 5)
@@ -49,6 +55,8 @@ func runDetect(db *gorm.DB, w io.Writer) error {
 	printSamples(w, creditGroups, 5)
 	fmt.Fprintln(w, "  orphan-creditname samples:")
 	printSamples(w, orphanGroups, 5)
+	fmt.Fprintln(w, "  mixed-creditname samples:")
+	printSamples(w, mixedGroups, 5)
 	// The step-50 trigger group must be visibly in the candidate set.
 	printOrphanGroupContaining(w, orphanGroups, 14695, 47429)
 	return nil
@@ -168,6 +176,13 @@ func collectGroups(db *gorm.DB, class string) ([]mergeGroup, error) {
 	}
 	if class == classOrphanCreditName {
 		g, _, err := detectOrphanCreditNames(db)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, g...)
+	}
+	if class == classMixedCreditName {
+		g, _, err := detectMixedCreditNames(db)
 		if err != nil {
 			return nil, err
 		}

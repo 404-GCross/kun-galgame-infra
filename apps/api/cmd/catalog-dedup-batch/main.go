@@ -62,21 +62,26 @@ import (
 const (
 	waveTag49 = "rule:catalog-dedup step-49"
 	waveTag50 = "rule:catalog-dedup step-50"
+	// waveTag98 tags the QA-undermerge clearing wave (refs/proj/98): the
+	// re-run character class, the all-roles orphan class and the new mixed
+	// class all carry it, so -mode execute addresses exactly this wave (the
+	// 49/50 tags stay on their fully-executed historical proposals).
+	waveTag98 = "rule:catalog-dedup step-98"
 )
 
 // noteTagFor returns the wave note tag for a class (used on both the write side,
-// per group, and the execute side, derived from -class).
+// per group, and the execute side, derived from -class). Step 98 onward every
+// NEW proposal carries waveTag98 — the historical 49/50 tags stay on their
+// fully-executed proposals and are never written again.
 func noteTagFor(class string) string {
-	if class == classOrphanCreditName {
-		return waveTag50
-	}
-	return waveTag49
+	_ = classOrphanCreditName // all classes now tag the current wave
+	return waveTag98
 }
 
 func main() {
 	actor := flag.Int64("actor", 0, "operator user id recorded as proposer/approver/executor (required)")
 	mode := flag.String("mode", "detect", "detect | propose | execute | cleanup")
-	class := flag.String("class", "both", "propose/execute scope: character | credit_name | both (step 49) | orphan-creditname (step 50)")
+	class := flag.String("class", "both", "propose/execute scope: character | credit_name | both (step 49) | orphan-creditname (all roles since step 98) | mixed-creditname (step 98)")
 	run := flag.Bool("run", false, "write (default: dry-run preview)")
 	limit := flag.Int("limit", 0, "propose: max GROUPS this run; execute: max proposals this run (0 = all)")
 	flag.Parse()
