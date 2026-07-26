@@ -171,6 +171,12 @@ components:
           type: string
         latin:
           type: string
+        traits:
+          items:
+            $ref: "#/components/schemas/CharacterTrait"
+          type:
+            - array
+            - "null"
         waist_cm:
           format: int32
           type: integer
@@ -183,6 +189,7 @@ components:
         - lang
         - aliases
         - intros
+        - traits
       type: object
     CharacterHead:
       additionalProperties: false
@@ -197,6 +204,37 @@ components:
       required:
         - id
         - name
+      type: object
+    CharacterTrait:
+      additionalProperties: false
+      properties:
+        group_name:
+          description: root-group display name; absent for a root trait
+          type: string
+        group_tid:
+          description: VNDB root-group tid (i1=Hair, i35=Eyes, …); empty when the trait is itself a root
+          type: string
+        id:
+          format: int64
+          type: integer
+        lie:
+          description: presented as true in-story but actually a lie (VNDB flag)
+          type: boolean
+        name:
+          description: verbatim VNDB English trait name
+          type: string
+        sexual:
+          description: the trait belongs to a sexual trait family — consumers gate rendering themselves
+          type: boolean
+        spoiler_level:
+          description: "per-character spoiler grade: 0 none / 1 minor / 2 major"
+          format: int32
+          type: integer
+      required:
+        - id
+        - name
+        - group_tid
+        - spoiler_level
       type: object
     CharacterWorkRow:
       additionalProperties: false
@@ -2346,6 +2384,14 @@ paths:
           schema:
             description: Catalog character id
             format: int64
+            type: integer
+        - description: max trait spoiler level to include (0-2, default 0)
+          explode: false
+          in: query
+          name: spoilers
+          schema:
+            description: max trait spoiler level to include (0-2, default 0)
+            format: int32
             type: integer
       responses:
         "200":

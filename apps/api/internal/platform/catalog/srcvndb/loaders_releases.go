@@ -29,7 +29,7 @@ func newReleaseLoader(tx *gorm.DB, _ time.Time) tableLoader {
 			Freeware:   getBool(get, "freeware"),
 			Uncensored: getBoolPtr(get, "uncensored"), Official: getBool(get, "official"),
 			Catalog: getStr(get, "catalog"), Notes: getStr(get, "notes"),
-			Engine:  getStr(get, "engine"),
+			Engine: getStr(get, "engine"),
 		}, true
 	})
 }

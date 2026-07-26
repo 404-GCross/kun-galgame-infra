@@ -53,7 +53,7 @@ type vnSeiyuuRow struct {
 }
 
 // aliasName is a staff alias's credited name + its language (from the owning
-// staff row; '' folds to "ja").
+// staff row; ” folds to "ja").
 type aliasName struct {
 	name string
 	lang string
@@ -219,7 +219,7 @@ func (im *Importer) loadVNDBAnchors(entityType int16) (map[string]int64, error) 
 
 // loadVNDBAliasNames returns alias aid (as text) → its credited name + language.
 // The name is staff_alias.name (native form); the language is the owning staff's
-// lang ('' → "ja"). Loaded whole (~65k rows) to avoid a large IN clause.
+// lang (” → "ja"). Loaded whole (~65k rows) to avoid a large IN clause.
 func (im *Importer) loadVNDBAliasNames() (map[string]aliasName, error) {
 	var rows []struct {
 		AID  int    `gorm:"column:aid"`

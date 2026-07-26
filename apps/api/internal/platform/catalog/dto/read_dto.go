@@ -505,6 +505,27 @@ type CharacterDetailResponse struct {
 	// catalog-native, so these are always native catalog_character_intro rows
 	// (no claimed bridge).
 	Intros []WorkIntro `json:"intros"`
+	// Traits is the VNDB trait set (step 93) at or below the requested
+	// ?spoilers ceiling (default 0 — no spoiler leaks unless asked). Ordered
+	// (group_tid, gorder, name) so groups render contiguously. sexual rides on
+	// every row — consumers gate NSFW vocabulary themselves (the catalog is
+	// R18-capable; the step-81 BWH/cup precedent).
+	Traits []CharacterTrait `json:"traits"`
+}
+
+// CharacterTrait is one VNDB trait on a character (step 93). group_tid/
+// group_name locate the trait's root group (Hair/Eyes/Body/Personality/Role/…);
+// group_name is empty when the trait itself is a root. spoiler_level is the
+// per-character grade (0 none / 1 minor / 2 major); lie marks a trait
+// presented as true that is actually false (VNDB semantics, surfaced verbatim).
+type CharacterTrait struct {
+	ID           int64  `json:"id"`
+	Name         string `json:"name" doc:"verbatim VNDB English trait name"`
+	GroupTID     string `json:"group_tid" doc:"VNDB root-group tid (i1=Hair, i35=Eyes, …); empty when the trait is itself a root"`
+	GroupName    string `json:"group_name,omitempty" doc:"root-group display name; absent for a root trait"`
+	Sexual       bool   `json:"sexual,omitempty" doc:"the trait belongs to a sexual trait family — consumers gate rendering themselves"`
+	SpoilerLevel int16  `json:"spoiler_level" doc:"per-character spoiler grade: 0 none / 1 minor / 2 major"`
+	Lie          bool   `json:"lie,omitempty" doc:"presented as true in-story but actually a lie (VNDB flag)"`
 }
 
 // CharacterAlias is one writing-variant of a character's name (not a new

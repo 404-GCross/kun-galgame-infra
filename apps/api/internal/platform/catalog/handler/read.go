@@ -537,6 +537,9 @@ func (s *S2SServer) characterWorks(ctx context.Context, in *characterWorksInput)
 
 type characterByIDInput struct {
 	ID int64 `path:"id" doc:"Catalog character id"`
+	// Spoilers caps traits[] spoiler_level (0 none / 1 minor / 2 major).
+	// Default 0 — no spoiler leaks unless the consumer asks. Clamped to 0..2.
+	Spoilers int16 `query:"spoilers" doc:"max trait spoiler level to include (0-2, default 0)"`
 }
 
 type characterByIDOutput struct {
@@ -544,7 +547,14 @@ type characterByIDOutput struct {
 }
 
 func (s *S2SServer) characterByID(ctx context.Context, in *characterByIDInput) (*characterByIDOutput, error) {
-	detail, err := s.read.CharacterByID(ctx, in.ID)
+	maxSpoiler := in.Spoilers
+	if maxSpoiler < 0 {
+		maxSpoiler = 0
+	}
+	if maxSpoiler > 2 {
+		maxSpoiler = 2
+	}
+	detail, err := s.read.CharacterByID(ctx, in.ID, maxSpoiler)
 	if err != nil {
 		return nil, apiErr(http.StatusInternalServerError, errors.ErrInternalServer)
 	}
@@ -568,6 +578,8 @@ func (s *S2SServer) characterByID(ctx context.Context, in *characterByIDInput) (
 		// intro serializes `[]`, not `null` (docs/proj/16 #3).
 		Aliases: make([]dto.CharacterAlias, 0, len(detail.Aliases)),
 		Intros:  make([]dto.WorkIntro, 0, len(detail.Intros)),
+		// Traits pre-sized non-nil so a trait-less character serializes `[]`.
+		Traits: make([]dto.CharacterTrait, 0, len(detail.Traits)),
 	}
 	for _, a := range detail.Aliases {
 		resp.Aliases = append(resp.Aliases, dto.CharacterAlias{
@@ -579,6 +591,12 @@ func (s *S2SServer) characterByID(ctx context.Context, in *characterByIDInput) (
 		// Character intros are catalog-native source rows (no MT pilot) — Machine
 		// is always false here, mapped for shape consistency.
 		resp.Intros = append(resp.Intros, dto.WorkIntro{Lang: in.Lang, Intro: in.Intro, SourceID: in.SourceID, Machine: in.Machine})
+	}
+	for _, tr := range detail.Traits {
+		resp.Traits = append(resp.Traits, dto.CharacterTrait{
+			ID: tr.ID, Name: tr.Name, GroupTID: tr.GroupTID, GroupName: derefStr(tr.GroupName),
+			Sexual: tr.Sexual, SpoilerLevel: tr.SpoilerLevel, Lie: tr.Lie,
+		})
 	}
 	return &characterByIDOutput{Body: okEnvelope(resp)}, nil
 }

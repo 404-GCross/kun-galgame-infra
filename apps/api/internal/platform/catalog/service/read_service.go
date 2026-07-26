@@ -1388,6 +1388,22 @@ type CharacterDetail struct {
 	// native rows are the only source. Reuses WorkIntroRow: the shape
 	// ({lang, intro, source_id}) is identical by design (step 65).
 	Intros []WorkIntroRow
+	// Traits are the step-93 VNDB trait links at or below the requested
+	// spoiler ceiling, ordered (group_tid, gorder, name) so groups render
+	// contiguously. Sexual rides on every row — consumers gate it themselves
+	// (the catalog is R18-capable; the step-81 precedent).
+	Traits []CharacterTraitRow
+}
+
+// CharacterTraitRow is one trait on a character's read face (step 93).
+type CharacterTraitRow struct {
+	ID           int64   `gorm:"column:id"`
+	Name         string  `gorm:"column:name"`
+	GroupTID     string  `gorm:"column:group_tid"`
+	GroupName    *string `gorm:"column:group_name"` // NULL for a root trait itself
+	Sexual       bool    `gorm:"column:sexual"`
+	SpoilerLevel int16   `gorm:"column:spoiler_level"`
+	Lie          bool    `gorm:"column:lie"`
 }
 
 // CharacterAliasRow is one writing-variant of a character's name.
@@ -1402,8 +1418,9 @@ type CharacterAliasRow struct {
 
 // CharacterByID loads a character's identity fields plus its aliases. Returns
 // (nil, nil) when the character does not exist (caller maps to 404), aligning
-// with the labels/{id} miss semantics (step 20, 85f7f08).
-func (s *ReadService) CharacterByID(ctx context.Context, characterID int64) (*CharacterDetail, error) {
+// with the labels/{id} miss semantics (step 20, 85f7f08). maxSpoiler caps the
+// traits[] spoiler level (0 = safe default; the handler clamps to 0..2).
+func (s *ReadService) CharacterByID(ctx context.Context, characterID int64, maxSpoiler int16) (*CharacterDetail, error) {
 	db := s.db.WithContext(ctx)
 
 	var head struct {
@@ -1470,6 +1487,20 @@ func (s *ReadService) CharacterByID(ctx context.Context, characterID int64) (*Ch
 		detail.Intros = append(detail.Intros, WorkIntroRow{Lang: r.Lang, Intro: r.Intro, SourceID: r.SourceID})
 	}
 	sortIntros(detail.Intros)
+	// Traits (step 93): links at or below the spoiler ceiling, joined to the
+	// vocabulary; group display name resolves by self-join on the verbatim
+	// vndb group tid (NULL when the trait IS a root). Ordered so groups render
+	// contiguously in VNDB's own order.
+	if err := db.Raw(`SELECT t.id, t.name, t.group_tid, g.name AS group_name,
+			t.sexual, l.spoiler_level, l.lie
+		FROM catalog_character_trait_link l
+		JOIN catalog_character_trait t ON t.id = l.trait_id
+		LEFT JOIN catalog_character_trait g ON g.vndb_tid = t.group_tid
+		WHERE l.character_id = ? AND l.spoiler_level <= ?
+		ORDER BY t.group_tid, t.gorder, t.name`, characterID, maxSpoiler).
+		Scan(&detail.Traits).Error; err != nil {
+		return nil, err
+	}
 	return detail, nil
 }
 

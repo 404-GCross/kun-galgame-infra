@@ -1704,3 +1704,71 @@ func ptrI64(v int64) *int64 { return &v }
 func strptr(s string) *string { return &s }
 
 func itoa(v int64) string { return strconv.FormatInt(v, 10) }
+
+// TestCharacterDetailTraits covers the step-93 traits[] read face: the default
+// spoiler gate (0 — no leaks unless asked), ?spoilers widening, group-name
+// resolution via the vocabulary self-join, sexual/lie flags riding verbatim,
+// and `[]` (not null) for a trait-less character.
+func TestCharacterDetailTraits(t *testing.T) {
+	db := openCatalogTestDB(t)
+	for _, tbl := range []string{
+		"catalog_character_trait_link", "catalog_character_trait_parent",
+		"catalog_character_trait", "catalog_character",
+	} {
+		require.NoError(t, db.Exec("TRUNCATE "+tbl+" RESTART IDENTITY CASCADE").Error)
+	}
+	ch := model.CatalogCharacter{DisplayName: "特性持ち", Lang: "ja"}
+	require.NoError(t, db.Create(&ch).Error)
+	chBare := model.CatalogCharacter{DisplayName: "特性なし"}
+	require.NoError(t, db.Create(&chBare).Error)
+
+	mkTrait := func(tid, gid, name string, sexual bool) int64 {
+		tr := model.CatalogCharacterTrait{VndbTID: tid, Name: name, GroupTID: gid, Sexual: sexual, Searchable: true, Applicable: true}
+		require.NoError(t, db.Create(&tr).Error)
+		return tr.ID
+	}
+	mkTrait("i1", "", "Hair", false) // root group
+	mkTrait("i43", "", "Engages in (Sexual)", true)
+	blond := mkTrait("i10", "i1", "Blond Hair", false)
+	long := mkTrait("i11", "i1", "Long Hair", false)
+	sexualX := mkTrait("i50", "i43", "Sexual X", true)
+	for _, l := range []model.CatalogCharacterTraitLink{
+		{CharacterID: ch.ID, TraitID: blond, SpoilerLevel: 0},
+		{CharacterID: ch.ID, TraitID: long, SpoilerLevel: 2}, // major spoiler
+		{CharacterID: ch.ID, TraitID: sexualX, SpoilerLevel: 0, Lie: true},
+	} {
+		require.NoError(t, db.Create(&l).Error)
+	}
+
+	app := readApp(service.NewReadService(db), nil)
+
+	// Default (?spoilers absent = 0): the spoiler-2 trait must NOT leak.
+	code, body := getJSON(t, app, "/api/v1/catalog/characters/"+itoa(ch.ID))
+	require.Equal(t, 200, code)
+	traits := body["data"].(map[string]any)["traits"].([]any)
+	require.Len(t, traits, 2, "spoiler_level 2 gated out by default")
+	t0 := traits[0].(map[string]any)
+	assert.Equal(t, "Blond Hair", t0["name"])
+	assert.Equal(t, "i1", t0["group_tid"])
+	assert.Equal(t, "Hair", t0["group_name"], "group name resolved via self-join")
+	assert.Nil(t, t0["sexual"], "sexual=false omitted")
+	t1 := traits[1].(map[string]any)
+	assert.Equal(t, "Sexual X", t1["name"])
+	assert.Equal(t, true, t1["sexual"])
+	assert.Equal(t, true, t1["lie"], "lie flag rides verbatim")
+
+	// ?spoilers=2 widens to all three, ordered (group_tid, gorder, name).
+	code, body = getJSON(t, app, "/api/v1/catalog/characters/"+itoa(ch.ID)+"?spoilers=2")
+	require.Equal(t, 200, code)
+	traits = body["data"].(map[string]any)["traits"].([]any)
+	require.Len(t, traits, 3)
+	assert.Equal(t, "Long Hair", traits[1].(map[string]any)["name"])
+	assert.EqualValues(t, 2, traits[1].(map[string]any)["spoiler_level"])
+
+	// Trait-less character serializes traits [] (not null).
+	code, body = getJSON(t, app, "/api/v1/catalog/characters/"+itoa(chBare.ID))
+	require.Equal(t, 200, code)
+	bareTraits, ok := body["data"].(map[string]any)["traits"].([]any)
+	require.True(t, ok, "traits present and non-null")
+	assert.Empty(t, bareTraits)
+}

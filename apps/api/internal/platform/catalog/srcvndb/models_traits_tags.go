@@ -47,8 +47,8 @@ func (CharTrait) TableName() string { return "src_vndb.chars_traits" }
 
 // Tag mirrors one db/tags row — one entry of the VN-tag vocabulary.
 type Tag struct {
-	ID           string `gorm:"primaryKey" json:"id"`           // "g1"
-	Cat          string `gorm:"not null" json:"cat"`            // cont/ero/tech
+	ID           string `gorm:"primaryKey" json:"id"` // "g1"
+	Cat          string `gorm:"not null" json:"cat"`  // cont/ero/tech
 	DefaultSpoil int16  `gorm:"column:defaultspoil;not null" json:"defaultspoil"`
 	Searchable   bool   `gorm:"not null" json:"searchable"`
 	Applicable   bool   `gorm:"not null" json:"applicable"`

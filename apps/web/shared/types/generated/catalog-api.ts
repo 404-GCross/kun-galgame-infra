@@ -496,6 +496,7 @@ export interface components {
             intros: components["schemas"]["WorkIntro"][] | null;
             lang: string;
             latin?: string;
+            traits: components["schemas"]["CharacterTrait"][] | null;
             /** Format: int32 */
             waist_cm?: number;
             /** Format: int32 */
@@ -506,6 +507,25 @@ export interface components {
             id: number;
             latin?: string;
             name: components["schemas"]["NameBuckets"];
+        };
+        CharacterTrait: {
+            /** @description root-group display name; absent for a root trait */
+            group_name?: string;
+            /** @description VNDB root-group tid (i1=Hair, i35=Eyes, …); empty when the trait is itself a root */
+            group_tid: string;
+            /** Format: int64 */
+            id: number;
+            /** @description presented as true in-story but actually a lie (VNDB flag) */
+            lie?: boolean;
+            /** @description verbatim VNDB English trait name */
+            name: string;
+            /** @description the trait belongs to a sexual trait family — consumers gate rendering themselves */
+            sexual?: boolean;
+            /**
+             * Format: int32
+             * @description per-character spoiler grade: 0 none / 1 minor / 2 major
+             */
+            spoiler_level: number;
         };
         CharacterWorkRow: {
             /**
@@ -1625,7 +1645,10 @@ export type $defs = Record<string, never>;
 export interface operations {
     getCatalogCharacterByID: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description max trait spoiler level to include (0-2, default 0) */
+                spoilers?: number;
+            };
             header?: never;
             path: {
                 /** @description Catalog character id */

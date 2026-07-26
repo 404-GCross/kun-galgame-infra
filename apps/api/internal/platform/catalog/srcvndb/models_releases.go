@@ -14,11 +14,11 @@ type Release struct {
 	ID          string `gorm:"primaryKey" json:"id"`             // "r1"
 	GTIN        int64  `gorm:"column:gtin;not null" json:"gtin"` // JAN/EAN/UPC, 0 = none
 	OLang       string `gorm:"column:olang;not null" json:"olang"`
-	Released    int    `gorm:"not null" json:"released"` // yyyymmdd, 99999999 = TBA
-	Voiced      int16  `gorm:"not null" json:"voiced"`   // 0-4
+	Released    int    `gorm:"not null" json:"released"`             // yyyymmdd, 99999999 = TBA
+	Voiced      int16  `gorm:"not null" json:"voiced"`               // 0-4
 	ResoX       int16  `gorm:"column:reso_x;not null" json:"reso_x"` // 0 = unknown/non-standard
 	ResoY       int16  `gorm:"column:reso_y;not null" json:"reso_y"`
-	MinAge      *int16 `gorm:"column:minage" json:"minage"` // age rating; 0 = all ages, NULL = unknown
+	MinAge      *int16 `gorm:"column:minage" json:"minage"`                // age rating; 0 = all ages, NULL = unknown
 	AniStory    int16  `gorm:"column:ani_story;not null" json:"ani_story"` // legacy 0-4 scale
 	AniEro      int16  `gorm:"column:ani_ero;not null" json:"ani_ero"`
 	AniStorySp  *int16 `gorm:"column:ani_story_sp" json:"ani_story_sp"` // detail flags, NULL = not surveyed
@@ -43,7 +43,7 @@ func (Release) TableName() string { return "src_vndb.releases" }
 // ReleaseVN mirrors one db/releases_vn row — which VNs a release carries and
 // how completely (rtype: complete/partial/trial).
 type ReleaseVN struct {
-	ID    string `gorm:"primaryKey;column:id" json:"id"`       // "r1"
+	ID    string `gorm:"primaryKey;column:id" json:"id"`         // "r1"
 	VID   string `gorm:"primaryKey;column:vid;index" json:"vid"` // "v1"
 	RType string `gorm:"column:rtype;not null" json:"rtype"`
 }
@@ -53,7 +53,7 @@ func (ReleaseVN) TableName() string { return "src_vndb.releases_vn" }
 // ReleaseProducer mirrors one db/releases_producers row — a producer's
 // involvement in a release (developer and/or publisher).
 type ReleaseProducer struct {
-	ID        string `gorm:"primaryKey;column:id" json:"id"`       // "r1"
+	ID        string `gorm:"primaryKey;column:id" json:"id"`         // "r1"
 	PID       string `gorm:"primaryKey;column:pid;index" json:"pid"` // "p1"
 	Developer bool   `gorm:"not null" json:"developer"`
 	Publisher bool   `gorm:"not null" json:"publisher"`
