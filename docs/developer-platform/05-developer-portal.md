@@ -18,7 +18,7 @@
   5. 申请更高 tier / NSFW(走审批)。
 - **技术**:门户前端 Nuxt(`apps/` 下新增或并入现有);平台后端扩展 account/IdP 侧的 API(应用/key/用量 CRUD,鉴权用现有 JWT + `owner_user_id` 归属校验)。
 
-### 9.1 登录升级为 OP 跳转 SSO(拍板 2026-07-23 · 门户侧实现完成,待部署配置)
+### 9.1 登录升级为 OP 跳转 SSO(拍板 2026-07-23 · 生产部署收官 2026-07-26)
 
 门户登录已从本地密码表单升级为 **OAuth Authorization Code + PKCE(S256)跳转登录**(下游站点那套「已在 hub 登录即一键进入」)。门户即 IdP 的一个**第一方 confidential client**;OAuth token 落进**现有** access_token / refresh cookie 约定,`/dev/*` 与 `/auth/me` 靠同一 signer 的 access_token 直接消费(后端**零代码改动**)。
 
@@ -32,7 +32,7 @@
 
 **关键契约发现(修正原「落进现有 refresh 约定」的假设)**:第一方 `/api/v1/auth/refresh` **拒绝 client-bound(OAuth)session**(`auth_service.go:611`)——OAuth session **只能**经 `/oauth/token` `grant_type=refresh_token` 刷新(轮换)。故门户用 Nitro `/auth/refresh` 包 `/oauth/token`;`auth_mode` cookie 选择刷新/登出路径(`oauth`→Nitro 路由、`password`→第一方 relay),密码回退路径完全不变。access_token 仍是同一 signer,`/dev/*`、`/auth/me` 零改动消费。
 
-**部署配置(交运维 / 用户,门户代码已就绪)**:
+**部署配置(✅ 已于 2026-07-26 全部落地:client 注册 + 双 env + oauth/portal 部署;SSO 全链与 /dev/* 栅栏放行均经生产实测)**:
 
 1. **注册 OAuth client**(admin,`POST /api/v1/oauth/clients`,或管理台):`redirect_uris=["https://developer.nextmoe.dev/auth/callback"]`、`grants=["authorization_code","refresh_token"]`、`is_public=false`(confidential,门户有 Nitro 服务端)、`auto_consent=true`(第一方跳过同意页)、`allowed_scopes=[]`(默认 openid/profile/email)。响应给出 `client_id` + 一次性明文 `client_secret`。
 2. **配置门户环境变量**(生产):`NUXT_PUBLIC_OAUTH_CLIENT_ID`、`NUXT_OAUTH_CLIENT_SECRET`(服务端)、`NUXT_PUBLIC_OAUTH_AUTHORIZE_BASE=https://oauth.kungal.com/api/v1`、`NUXT_PUBLIC_OAUTH_WEB_BASE=https://oauth.kungal.com`、`NUXT_PUBLIC_OAUTH_REDIRECT_URI=https://developer.nextmoe.dev/auth/callback`。`redirect_uri` **完全串匹配**,勿有尾斜杠漂移。**注意:Dokploy Environment 面板的值只做 compose 变量替换——变量必须同时在 `docker-compose.developer.yml` 的 `environment:` 块里声明转发才会进入容器**(缺声明会静默回落到镜像构建期的 localhost 默认值,2026-07-23 首次部署实爆);五个 SSO 变量已全部声明,新增 runtime-config 键时须同步补这里。
