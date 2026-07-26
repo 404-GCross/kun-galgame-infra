@@ -1735,6 +1735,10 @@ components:
           type:
             - string
             - "null"
+        dlsite:
+          type:
+            - string
+            - "null"
         erogamescape:
           type:
             - string
@@ -1747,6 +1751,7 @@ components:
         - vndb
         - bangumi
         - erogamescape
+        - dlsite
       type: object
     PublicSearchData:
       additionalProperties: false

@@ -70,7 +70,7 @@ func w5Migrate(t *testing.T) {
 		&model.GalgameOfficialRelation{}, &model.GalgameEngineRelation{},
 		&model.GalgameLink{}, &model.GalgameCover{}, &model.GalgameScreenshot{},
 		&model.GalgameContributor{}, &model.GalgameVNDBMeta{}, &model.GalgameBangumiMeta{},
-		&model.GalgameEGMeta{}, &model.GalgameStats{},
+		&model.GalgameEGMeta{}, &model.GalgameDlsiteMeta{}, &model.GalgameStats{},
 		&model.TaxonomyRevision{}, &model.GalgameMessage{}, &model.GalgamePR{}, &model.GalgameRevision{},
 	))
 }

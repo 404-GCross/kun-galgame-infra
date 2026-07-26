@@ -58,6 +58,7 @@ func w1aMigrate(t *testing.T) {
 		// table even though the smoke never seeds rows into it.
 		&model.GalgameContributor{},
 		&model.GalgameVNDBMeta{}, &model.GalgameBangumiMeta{}, &model.GalgameEGMeta{},
+		&model.GalgameDlsiteMeta{},
 		&model.GalgameStats{},
 	))
 }

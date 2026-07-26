@@ -562,6 +562,10 @@ func publicRefs(g *model.Galgame, sm repository.ScoreMeta) dto.PublicRefs {
 		s := strconv.Itoa(sm.EG.EGGameID)
 		refs.ErogameScape = &s
 	}
+	if sm.Dlsite != nil {
+		s := sm.Dlsite.Workno
+		refs.Dlsite = &s
+	}
 	return refs
 }
 

@@ -17,6 +17,10 @@ type ScoreMeta struct {
 	VNDB    *model.GalgameVNDBMeta
 	Bangumi *model.GalgameBangumiMeta
 	EG      *model.GalgameEGMeta
+	// Dlsite is the step-62 narrow row (galgame_dlsite_meta, PK galgame_id);
+	// step 92 surfaces its workno as the public refs.dlsite. Same
+	// missing-row-is-not-an-error semantics as the other three.
+	Dlsite *model.GalgameDlsiteMeta
 }
 
 // LoadScoreMeta reads the vndb_id anchor + the three narrow score rows for one
@@ -59,6 +63,13 @@ func (r *GalgameRepository) LoadScoreMeta(ctx context.Context, gid int) (ScoreMe
 		return out, err
 	} else if eg.GalgameID != 0 {
 		out.EG = &eg
+	}
+
+	var dl model.GalgameDlsiteMeta
+	if err := load(&dl); err != nil {
+		return out, err
+	} else if dl.GalgameID != 0 {
+		out.Dlsite = &dl
 	}
 
 	return out, nil

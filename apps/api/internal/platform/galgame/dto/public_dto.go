@@ -36,6 +36,11 @@ type PublicRefs struct {
 	VNDB         *string `json:"vndb"`
 	Bangumi      *string `json:"bangumi"`
 	ErogameScape *string `json:"erogamescape"`
+	// Dlsite is the DLsite product id (workno, RJ/VJ/BJ…) from
+	// galgame_dlsite_meta (step 92, add-only): always present, null when the
+	// galgame has no DLsite anchor. Consumers build store/affiliate URLs from
+	// it themselves (no attribution template — the raw id is the material).
+	Dlsite *string `json:"dlsite"`
 }
 
 // PublicImage is one rendered image: a COMPLETE CDN URL (never a bare hash) plus

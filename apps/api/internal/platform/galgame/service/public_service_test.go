@@ -58,6 +58,26 @@ func sampleScoreMeta() repository.ScoreMeta {
 		VNDBID: "v19658",
 		VNDB:   &model.GalgameVNDBMeta{GalgameID: 1, VNDBID: "v19658", Rating: &rating, VoteCount: 615, SyncedAt: time.Now()},
 		EG:     &model.GalgameEGMeta{GalgameID: 1, EGGameID: 23956, VoteCount: 42, SyncedAt: time.Now()},
+		Dlsite: &model.GalgameDlsiteMeta{GalgameID: 1, Workno: "RJ01234567", SyncedAt: time.Now()},
+	}
+}
+
+// TestPublicRefsDlsiteNull pins the step-92 null semantics: a galgame with no
+// galgame_dlsite_meta row keeps the refs.dlsite KEY (no omitempty) with a JSON
+// null value — the same convention as the other three refs.
+func TestPublicRefsDlsiteNull(t *testing.T) {
+	svc := &GalgameService{cdnBase: "https://cdn.example.com/img"}
+	sm := sampleScoreMeta()
+	sm.Dlsite = nil // no DLsite anchor
+	rec := svc.projectDetail(sampleGalgame(), sm, PublicInclude{}, "sfw", 0, false)
+	m := toMap(t, rec)
+	refs := m["refs"].(map[string]any)
+	v, present := refs["dlsite"]
+	if !present {
+		t.Fatalf("refs.dlsite key must always be present (no omitempty)")
+	}
+	if v != nil {
+		t.Errorf("refs.dlsite = %v (want null)", v)
 	}
 }
 
@@ -104,6 +124,9 @@ func TestProjectDetailFrozenShape(t *testing.T) {
 	refs := m["refs"].(map[string]any)
 	if refs["vndb"] != "v19658" || refs["bangumi"] != "186675" || refs["erogamescape"] != "23956" {
 		t.Errorf("refs = %v", refs)
+	}
+	if refs["dlsite"] != "RJ01234567" {
+		t.Errorf("refs.dlsite = %v (want RJ01234567)", refs["dlsite"])
 	}
 
 	// attribution: constant templates + id.
@@ -258,7 +281,7 @@ func TestChangesCursorMicroPrecision(t *testing.T) {
 
 func migratePublicMeta(t *testing.T) {
 	t.Helper()
-	if err := testDB.AutoMigrate(&model.GalgameVNDBMeta{}, &model.GalgameBangumiMeta{}, &model.GalgameEGMeta{}); err != nil {
+	if err := testDB.AutoMigrate(&model.GalgameVNDBMeta{}, &model.GalgameBangumiMeta{}, &model.GalgameEGMeta{}, &model.GalgameDlsiteMeta{}); err != nil {
 		t.Fatalf("migrate score meta: %v", err)
 	}
 }
