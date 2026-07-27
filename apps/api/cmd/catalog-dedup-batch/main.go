@@ -108,7 +108,7 @@ func main() {
 	defer catalogDB.Close()
 	db := catalogDB.DB()
 	ctx := context.Background()
-	merge := mergeService(db)
+	merge, resolve := mergeService(db)
 
 	switch *mode {
 	case "detect":
@@ -116,7 +116,7 @@ func main() {
 	case "propose":
 		err = runPropose(ctx, db, os.Stdout, merge, *actor, *class, *limit, *run)
 	case "execute":
-		err = runExecute(ctx, db, os.Stdout, merge, *actor, noteTagFor(*class), *limit, *run)
+		err = runExecute(ctx, db, os.Stdout, merge, resolve, *actor, noteTagFor(*class), *limit, *run)
 	case "cleanup":
 		err = runCleanup(db, os.Stdout, *run)
 	default:
@@ -131,8 +131,8 @@ func main() {
 
 // mergeService builds the merge service exactly as cmd/catalog does, so every
 // action is byte-identical to an admin UI click.
-func mergeService(db *gorm.DB) *service.MergeService {
+func mergeService(db *gorm.DB) (*service.MergeService, *service.ResolveService) {
 	resolve := service.NewResolveService(repository.NewRedirectRepository(db))
 	return service.NewMergeService(db, resolve,
-		repository.NewProposalRepository(db), repository.NewRevisionRepository(db))
+		repository.NewProposalRepository(db), repository.NewRevisionRepository(db)), resolve
 }

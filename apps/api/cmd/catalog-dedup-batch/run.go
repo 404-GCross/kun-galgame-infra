@@ -194,38 +194,89 @@ func collectGroups(db *gorm.DB, class string) ([]mergeGroup, error) {
 // runExecute executes this batch's cooled, approved proposals (addressed by the
 // note tag, both classes). The cooling window is enforced by ExecuteMerge —
 // this only selects rows already past execute_after. -limit 1 first (canary).
+// runExecute executes the cooled proposals of this wave in id order,
+// resolving both endpoints through catalog_redirect first (step-98 lesson:
+// execute order is id-ascending, not topological — an earlier merge this
+// wave may consume an endpoint of a later proposal; 1,012/24,009 hit that in
+// the first full run). Classification per proposal:
+//   - both endpoints resolve to the SAME survivor → merged by proxy earlier
+//     this wave — auto-close as rejected "chain-superseded" (no data motion
+//     left to do).
+//   - an endpoint moved and the resolutions differ → possibly still a live
+//     duplicate, but between DIFFERENT entities than the approved pair —
+//     reject as "chain-residual"; the next detect pass re-covers it on live
+//     rows (never silently execute a merge nobody approved).
+//   - both canonical → execute through MergeService as before.
+//
+// Dry-run classifies against the PRE-run redirect state — chains created by
+// this very run only materialize under -run.
 func runExecute(ctx context.Context, db *gorm.DB, w io.Writer, merge *service.MergeService,
-	actor int64, note string, limit int, run bool) error {
-	var ids []int64
-	q := `SELECT id FROM catalog_merge_proposal
-		WHERE status = ? AND execute_after <= now() AND note LIKE ?
-		  AND entity_type IN (?, ?)
-		ORDER BY id`
+	resolve *service.ResolveService, actor int64, note string, limit int, run bool) error {
+	var props []model.CatalogMergeProposal
+	q := db.WithContext(ctx).
+		Where("status = ? AND execute_after <= now() AND note LIKE ? AND entity_type IN (?, ?)",
+			model.ProposalStatusApproved, "%"+note+"%",
+			model.EntityTypeCharacter, model.EntityTypeCreditName).
+		Order("id")
 	if limit > 0 {
-		q += fmt.Sprintf(" LIMIT %d", limit)
+		q = q.Limit(limit)
 	}
-	if err := db.Raw(q, model.ProposalStatusApproved, "%"+note+"%",
-		model.EntityTypeCharacter, model.EntityTypeCreditName).Scan(&ids).Error; err != nil {
+	if err := q.Find(&props).Error; err != nil {
 		return err
 	}
-	var executed, errs int
-	for _, id := range ids {
-		if !run {
-			executed++
-			continue
-		}
-		if err := merge.ExecuteMerge(ctx, id, &actor); err != nil {
-			fmt.Fprintf(w, "  proposal %d: execute ERROR %v\n", id, err)
+	var executed, superseded, residual, errs int
+	for _, p := range props {
+		rsrc, srcMoved, err := resolve.Resolve(ctx, p.EntityType, p.SourceEntityID)
+		if err != nil {
+			fmt.Fprintf(w, "  proposal %d: resolve source ERROR %v\n", p.ID, err)
 			errs++
 			continue
 		}
-		executed++
+		rtgt, tgtMoved, err := resolve.Resolve(ctx, p.EntityType, p.TargetEntityID)
+		if err != nil {
+			fmt.Fprintf(w, "  proposal %d: resolve target ERROR %v\n", p.ID, err)
+			errs++
+			continue
+		}
+		switch {
+		case rsrc == rtgt:
+			superseded++
+			if run {
+				if err := merge.RejectMerge(ctx, p.ID, actor, fmt.Sprintf(
+					"chain-superseded: both endpoints resolve to %d — merged by proxy earlier this wave", rsrc)); err != nil {
+					fmt.Fprintf(w, "  proposal %d: reject ERROR %v\n", p.ID, err)
+					superseded--
+					errs++
+				}
+			}
+		case srcMoved || tgtMoved:
+			residual++
+			if run {
+				if err := merge.RejectMerge(ctx, p.ID, actor, fmt.Sprintf(
+					"chain-residual: endpoints moved (%d→%d, %d→%d) — re-covered by the next detect pass on live rows",
+					p.SourceEntityID, rsrc, p.TargetEntityID, rtgt)); err != nil {
+					fmt.Fprintf(w, "  proposal %d: reject ERROR %v\n", p.ID, err)
+					residual--
+					errs++
+				}
+			}
+		default:
+			if run {
+				if err := merge.ExecuteMerge(ctx, p.ID, &actor); err != nil {
+					fmt.Fprintf(w, "  proposal %d: execute ERROR %v\n", p.ID, err)
+					errs++
+					continue
+				}
+			}
+			executed++
+		}
 	}
 	mode := "DRY-RUN (pass -run to execute)"
 	if run {
 		mode = "APPLIED"
 	}
-	fmt.Fprintf(w, "%s [execute] cooled=%d executed=%d errors=%d\n", mode, len(ids), executed, errs)
+	fmt.Fprintf(w, "%s [execute] cooled=%d executed=%d chain_superseded=%d chain_residual=%d errors=%d\n",
+		mode, len(props), executed, superseded, residual, errs)
 	if errs > 0 {
 		return fmt.Errorf("%d executions failed", errs)
 	}
