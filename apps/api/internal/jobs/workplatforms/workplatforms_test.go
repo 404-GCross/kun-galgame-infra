@@ -236,3 +236,43 @@ func TestImportWorkPlatforms(t *testing.T) {
 	assert.Zero(t, st.DlWritten+st.BgmWritten, "idempotent re-run")
 	assert.Equal(t, 4, st.BgmConflict)
 }
+
+// TestNormalizeSpellingTail pins the step-96-addendum heuristics against raw
+// strings taken verbatim from the measured unmapped tail (refs/proj/96),
+// including the negative guards (stores / ambiguous generations stay "").
+func TestNormalizeSpellingTail(t *testing.T) {
+	reg := map[string]struct{}{}
+	for _, k := range []string{"win", "and", "web", "swi", "mac", "lin", "p98", "p88",
+		"msx", "fm7", "fm8", "fmt", "x1s", "x68", "pce", "pcf", "ps1", "ps2", "ps3",
+		"ps4", "ps5", "psv", "psp", "nds", "n3d", "sfc", "smd", "sat", "scd", "tdo",
+		"dvd", "wii", "xb3", "xbo", "xxs", "nes", "dos"} {
+		reg[k] = struct{}{}
+	}
+	cases := map[string]string{
+		// windows version tail
+		"PC (Windows)": "win", "Windows  7 / 8 / 8.1 / 10": "win", "Win95/Win98": "win",
+		"WindowsXP": "win", "WIndows 10": "win", "Window 10以上": "win", "WINDOWS 95/98/Me/2K/XP": "win",
+		"日本語版Windows®3.1/95": "win", "DVD-ROM／Windows": "win", "PC、PS2": "win", "PC（Steam）": "win",
+		// retro families
+		"PC-9801VM以降": "p98", "PC9801Vシリーズ以降：5\"2HD/3.5\"2HD": "p98", "PC98-21": "p98",
+		"PC8801mk2SR以降：5\"HD": "p88", "Sharp X68000": "x68", "X68K": "x68", "Sharp X1": "x1s",
+		"X1": "x1s", "MSX2/MSX2+": "msx", "FM-7": "fm7", "FM-77": "fm7", "FM-8": "fm8", "TOWNS": "fmt",
+		"PC-FX": "pcf",
+		// modern spellings
+		"Mac OS X": "mac", "Macintosh": "mac", "Nintendo Switch™": "swi", "Nitendo Switch": "swi",
+		"PlayStation®Vita": "psv", "PlayStationPortable®": "psp", "PlayStation2": "ps2",
+		"Play Station 2": "ps2", "XBOX360 (2009-08-27)": "xb3", "Xbox X/S": "xxs", "Xbox One（完全版）": "xbo",
+		"浏览器": "web", "网页": "web", "WEBアプリ": "web", "FLASH": "web", "HTML5": "web",
+		"安卓": "and", "Andoroid": "and", "SteamOS": "lin", "SNES": "sfc", "DS": "nds",
+		"Sega CD": "scd", "3DO": "tdo", "DVDPG": "dvd", "Wii Virtual Console": "wii",
+		// negative guards — never guessed
+		"PS": "", "Mobile": "", "手机": "", "dlsite": "", "DLsite": "", "Steam": "",
+		"Windows Phone": "", "Xbox": "", "Arcade": "", "PSVR": "", "Oculus Quest": "",
+		"Neo Geo Pocket": "", "Commodore 64": "", "PCC": "", "ONS": "", "Doll": "",
+	}
+	for raw, want := range cases {
+		if got := normalize(raw, reg); got != want {
+			t.Errorf("normalize(%q) = %q, want %q", raw, got, want)
+		}
+	}
+}

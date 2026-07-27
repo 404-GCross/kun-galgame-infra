@@ -27,6 +27,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -150,9 +151,68 @@ var aliasMap = map[string]string{
 	"gbc": "gbc", "game boy color": "gbc",
 	"fc": "nes", "famicom": "nes", "sfc": "sfc", "super famicom": "sfc",
 	"md": "smd", "mega drive": "smd", "pc engine": "pce", "pce": "pce",
+	// Measured spelling tail (refs/proj/96 addendum: 313 unmapped kinds / 510
+	// rows surveyed) — exact aliases for the unambiguous ones.
+	"mac os x": "mac", "macosx": "mac", "macos x": "mac", "mac osx": "mac", "macintosh": "mac",
+	"pc-fx": "pcf", "snes": "sfc", "ds": "nds", "3do": "tdo",
+	"sega mega drive": "smd", "segasaturn": "sat", "sega cd": "scd",
+	"wii virtual console": "wii", "dvdpg": "dvd",
+	"steamos": "lin", "ubuntu/steamos": "lin",
+	"andoroid": "and", "flash": "web", "html5": "web",
+	"浏览器": "web", "网页": "web", "在线网页": "web", "安卓": "and",
 }
 
-// normalize maps one raw 平台 string to a registry code, or "" if unmapped.
+// heuristicRules run AFTER an exact aliasMap/registry miss, in order — the
+// bounded prefix families with overwhelming evidence in the measured tail
+// (Windows version strings alone are ~½ of it). Matching is on the lowercased,
+// ®/™-stripped string. A compound string maps to its LEADING platform only
+// (partial capture is honest — one raw string yields one code). Deliberately
+// still unmapped: Steam (store), bare PS/Xbox (generation), Mobile/手机 (era),
+// VR/arcade/NeoGeo/C64 (no registry code) — counted and surfaced, never
+// guessed.
+var heuristicRules = []struct {
+	re   *regexp.Regexp
+	code string
+}{
+	{regexp.MustCompile(`^(nintendo|nitendo) sw`), "swi"}, // ™/Lite/compound/typos
+	{regexp.MustCompile(`^xbox ?360`), "xb3"},
+	{regexp.MustCompile(`^xbox (series|x/s)`), "xxs"},
+	{regexp.MustCompile(`^xbox one`), "xbo"},
+	{regexp.MustCompile(`^playstation ?vita`), "psv"},
+	{regexp.MustCompile(`^playstation ?portable`), "psp"},
+	{regexp.MustCompile(`^play ?station ?1\b`), "ps1"},
+	{regexp.MustCompile(`^play ?station ?2\b`), "ps2"},
+	{regexp.MustCompile(`^play ?station ?3\b`), "ps3"},
+	{regexp.MustCompile(`^play ?station ?4\b`), "ps4"},
+	{regexp.MustCompile(`^play ?station ?5\b`), "ps5"},
+	{regexp.MustCompile(`^pc-?98`), "p98"}, // PC9801VM以降 / PC-9821 / PC98-21 …
+	{regexp.MustCompile(`^pc-?88`), "p88"},
+	{regexp.MustCompile(`^pc-engine`), "pce"},
+	{regexp.MustCompile(`^msx`), "msx"},
+	{regexp.MustCompile(`^fm-?7`), "fm7"}, // FM-7 / FM-77
+	{regexp.MustCompile(`^fm-?8\b`), "fm8"},
+	{regexp.MustCompile(`^(fm-?towns|towns)`), "fmt"},
+	{regexp.MustCompile(`^(sharp ?x1|x1$)`), "x1s"},
+	{regexp.MustCompile(`^(sharp ?)?x68`), "x68"}, // X68000 / X68K
+	{regexp.MustCompile(`^mac`), "mac"},           // MacOS… / Macのみ / mac/pc compounds
+	{regexp.MustCompile(`^web|^浏览器`), "web"},
+	{regexp.MustCompile(`^安卓`), "and"},
+	// Windows version tail: Win95/98, WindowsXP, WIndows 10, Window 7… The
+	// bare ^win prefix is safe in a platform field — the one real trap,
+	// Windows Phone (a mobile OS), is guarded in normalize before this table.
+	{regexp.MustCompile(`^win`), "win"},
+	// pc followed by a non-alphanumeric = the "PC、PS2" / "PC (Windows…)" /
+	// "PC（Steam）" compound family — leading platform is the PC. Ordered after
+	// pc-98/pc-88/pc-engine so those stay specific.
+	{regexp.MustCompile(`^pc([^a-z0-9]|$)`), "win"},
+	// contains-windows fallback (DVD-ROM／Windows, 日本語版Windows®3.1/95,
+	// Microsoft-Windows…) — last so leading-platform prefixes win first.
+	{regexp.MustCompile(`windows`), "win"},
+}
+
+// normalize maps one raw 平台 string to a registry code, or "" if unmapped:
+// exact aliasMap → registry-key direct hit → ®/™-stripped retry → bounded
+// heuristicRules. Unmapped stays "" and is counted, never guessed.
 func normalize(raw string, registry map[string]struct{}) string {
 	s := strings.ToLower(strings.TrimSpace(raw))
 	if s == "" {
@@ -163,6 +223,19 @@ func normalize(raw string, registry map[string]struct{}) string {
 	}
 	if _, ok := registry[s]; ok {
 		return s // already a registry code (psv, swi, …)
+	}
+	// Trademark glyphs glue tokens together (PlayStation®Vita) — strip, retry.
+	stripped := strings.TrimSpace(strings.NewReplacer("®", "", "™", "").Replace(s))
+	if code, ok := aliasMap[stripped]; ok {
+		return code
+	}
+	if strings.Contains(stripped, "phone") {
+		return "" // Windows Phone = mobile OS, not win
+	}
+	for _, r := range heuristicRules {
+		if r.re.MatchString(stripped) {
+			return r.code
+		}
 	}
 	return ""
 }
