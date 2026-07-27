@@ -1,6 +1,7 @@
 // import-work-relations lands work↔work relation edges from the Bangumi
-// game-domain subject relations (source 3) and the VNDB vn↔vn relations
-// (source 2) as catalog_work_relation edges (doc 77 REL1). An edge is written
+// game-domain subject relations (source 3), the VNDB vn↔vn relations
+// (source 2) and the erogamescape game_relations (source 5, doc 101 REL2) as
+// catalog_work_relation edges (doc 77 REL1). An edge is written
 // only when BOTH endpoints carry an exact work anchor for the lane's source.
 // Inverse pairs fold to one directed edge; symmetric types normalize a<b; a
 // pair asserted by both sources converges on one edge (ON CONFLICT DO NOTHING),
@@ -25,18 +26,19 @@ import (
 	"api/pkg/logger"
 
 	"github.com/joho/godotenv"
+	"gorm.io/gorm"
 )
 
 func main() {
-	source := flag.String("source", "all", "bgm | vndb | all")
+	source := flag.String("source", "all", "bgm | vndb | eg | all")
 	apply := flag.Bool("run", false, "write (default: dry run — plan counts only)")
 	limit := flag.Int("limit", 0, "cap edges written by the vndb lane (0 = all; rehearsal small-sample aid; the bgm lane always writes all)")
 	flag.Parse()
 
 	switch *source {
-	case "bgm", "vndb", "all":
+	case "bgm", "vndb", "eg", "all":
 	default:
-		slog.Error("unknown --source (want bgm|vndb|all)", "source", *source)
+		slog.Error("unknown --source (want bgm|vndb|eg|all)", "source", *source)
 		os.Exit(1)
 	}
 
@@ -55,7 +57,22 @@ func main() {
 	}
 	defer catalogDB.Close()
 
-	im := importer.New(catalogDB.DB(), nil, importer.Options{DryRun: !*apply, Limit: *limit})
+	// The EG lane reads the erogamespace mirror — same postgres instance as
+	// the catalog, dbname swapped (the orglabels convention).
+	var egPool *gorm.DB
+	if *source == "eg" || *source == "all" {
+		egCfg := cfg.CatalogDatabase
+		egCfg.DBName = "erogamespace"
+		egConn, err := database.NewPostgresDB(egCfg)
+		if err != nil {
+			slog.Error("erogamespace db connect", "error", err)
+			os.Exit(1)
+		}
+		defer egConn.Close()
+		egPool = egConn.DB()
+	}
+
+	im := importer.New(catalogDB.DB(), egPool, importer.Options{DryRun: !*apply, Limit: *limit})
 
 	// Bangumi first, then VNDB — so the VNDB lane reads the Bangumi lane's
 	// freshly-written edges and reports overlapping pairs as already-in-db
@@ -84,6 +101,20 @@ func main() {
 			"edges_written", st.EdgesWritten, "already_in_db", st.AlreadyInDB,
 			"inverse_folded", st.InverseFolded, "skipped_unmapped", st.SkippedUnmapped,
 			"skipped_unanchored", st.SkippedUnanchored, "skipped_self", st.SkippedSelf,
+		)
+	}
+	if *source == "eg" || *source == "all" {
+		st, err := im.RunEGRelations()
+		if err != nil {
+			slog.Error("eg relations wave failed", "error", err)
+			os.Exit(1)
+		}
+		slog.Info("eg relations wave summary",
+			"total_rows", st.TotalRows, "mapped", st.Mapped, "edges", st.Edges,
+			"edges_written", st.EdgesWritten, "already_in_db", st.AlreadyInDB,
+			"folded", st.Folded, "skipped_by_design", st.SkippedByDesign,
+			"skipped_unmapped", st.SkippedUnmapped, "skipped_unanchored", st.SkippedUnanchored,
+			"skipped_self", st.SkippedSelf,
 		)
 	}
 	if !*apply {
