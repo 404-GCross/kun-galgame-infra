@@ -138,14 +138,14 @@ func TestPublicTagMultiIntersection(t *testing.T) {
 	require.NoError(t, testDB.Create(&model.GalgameTagRelation{GalgameID: both, TagID: t2}).Error)
 	require.NoError(t, testDB.Create(&model.GalgameTagRelation{GalgameID: onlyOne, TagID: t1}).Error)
 
-	res, err := svc.TagMulti(ctx, []int{t1, t2}, 1, 24, "sfw", PublicItemInclude{})
+	res, err := svc.TagMulti(ctx, []int{t1, t2}, 1, 24, "sfw", PublicItemInclude{}, false)
 	require.NoError(t, err)
 	require.Equal(t, int64(1), res.Total)
 	require.Len(t, res.Items, 1)
 	require.Equal(t, both, res.Items[0].ID)
 
 	// Empty ids → empty (non-nil) page.
-	res, err = svc.TagMulti(ctx, nil, 1, 24, "sfw", PublicItemInclude{})
+	res, err = svc.TagMulti(ctx, nil, 1, 24, "sfw", PublicItemInclude{}, false)
 	require.NoError(t, err)
 	require.Equal(t, int64(0), res.Total)
 	require.NotNil(t, res.Items)
@@ -289,4 +289,73 @@ func TestPublicSeriesListNonN1(t *testing.T) {
 	small, large := count(2), count(6)
 	require.Equal(t, small, large, "series-list query count must be constant across page size (non-N+1): 2=%d 6=%d", small, large)
 	require.LessOrEqualf(t, large, int64(6), "expected a small constant query count, got %d — possible N+1", large)
+}
+
+func TestPublicTagMultiExpandAndChildren(t *testing.T) {
+	cleanTables(t)
+	ctx := context.Background()
+	svc := newTaxSvc()
+
+	scifi := createTestTag(t, "科幻", "content")
+	hard := createTestTag(t, "硬科幻", "content")
+	vr := createTestTag(t, "虚拟现实", "content")
+	harem := createTestTag(t, "后宫结局", "content")
+
+	// 科幻 → 硬科幻 → 虚拟现实: two levels, so expand must walk the closure.
+	require.NoError(t, testDB.Create(&model.GalgameTagEdge{ParentID: scifi, ChildID: hard, Source: "vndb"}).Error)
+	require.NoError(t, testDB.Create(&model.GalgameTagEdge{ParentID: hard, ChildID: vr, Source: "vndb"}).Error)
+
+	gA, gB, gC, gD := 830001, 830002, 830003, 830004
+	seedTaxGalgame(t, gA, nil, "sfw") // 后宫结局 + 科幻 itself
+	seedTaxGalgame(t, gB, nil, "sfw") // 后宫结局 + 硬科幻 (depth 1)
+	seedTaxGalgame(t, gC, nil, "sfw") // 后宫结局 + 虚拟现实 (depth 2)
+	seedTaxGalgame(t, gD, nil, "sfw") // 后宫结局 only — must NOT match
+	rel := func(gid, tid int) {
+		require.NoError(t, testDB.Create(&model.GalgameTagRelation{GalgameID: gid, TagID: tid}).Error)
+	}
+	rel(gA, harem)
+	rel(gA, scifi)
+	rel(gB, harem)
+	rel(gB, hard)
+	rel(gC, harem)
+	rel(gC, vr)
+	rel(gD, harem)
+
+	// Flat face (expand=false): only the game carrying 科幻 itself qualifies.
+	res, err := svc.TagMulti(ctx, []int{harem, scifi}, 1, 24, "sfw", PublicItemInclude{}, false)
+	require.NoError(t, err)
+	require.Equal(t, int64(1), res.Total)
+	require.Equal(t, gA, res.Items[0].ID)
+
+	// expand=descendants: 科幻 widens to {科幻, 硬科幻, 虚拟现实} — A+B+C, never D.
+	res, err = svc.TagMulti(ctx, []int{harem, scifi}, 1, 24, "sfw", PublicItemInclude{}, true)
+	require.NoError(t, err)
+	require.Equal(t, int64(3), res.Total)
+	got := map[int]bool{}
+	for i := range res.Items {
+		got[res.Items[i].ID] = true
+	}
+	require.True(t, got[gA] && got[gB] && got[gC])
+	require.False(t, got[gD])
+
+	// Expanding a leaf changes nothing: with no out-edges the faces coincide.
+	res, err = svc.TagMulti(ctx, []int{harem, vr}, 1, 24, "sfw", PublicItemInclude{}, true)
+	require.NoError(t, err)
+	require.Equal(t, int64(1), res.Total)
+	require.Equal(t, gC, res.Items[0].ID)
+
+	// Tag detail: 科幻 lists its DIRECT children only (硬科幻 — one hop).
+	ent, found, err := svc.Tag(ctx, scifi)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Len(t, ent.Children, 1)
+	require.Equal(t, hard, ent.Children[0].ID)
+	require.Equal(t, "硬科幻", ent.Children[0].Name)
+	require.Equal(t, 1, ent.Children[0].GalgameCount)
+
+	// A leaf tag omits children entirely (nil slice → key absent in JSON).
+	ent, found, err = svc.Tag(ctx, vr)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Nil(t, ent.Children)
 }

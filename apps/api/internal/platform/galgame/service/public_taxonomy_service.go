@@ -69,8 +69,9 @@ func (s *PublicTaxonomyService) TagList(ctx context.Context, page, limit int, co
 	return dto.PublicTagListData{Items: items, Total: total}, nil
 }
 
-// Tag returns one tag's curated record by id. found=false (→ 404) when the id is
-// unknown.
+// Tag returns one tag's curated record by id, with its DIRECT hierarchy
+// children attached (galgame_tag_edge; the children key is omitted when the
+// tag is a leaf). found=false (→ 404) when the id is unknown.
 func (s *PublicTaxonomyService) Tag(ctx context.Context, id int) (dto.PublicTagEntity, bool, error) {
 	t, err := s.tagRepo.FindByID(ctx, id)
 	if err != nil {
@@ -79,7 +80,20 @@ func (s *PublicTaxonomyService) Tag(ctx context.Context, id int) (dto.PublicTagE
 		}
 		return dto.PublicTagEntity{}, false, err
 	}
-	return projectTagEntity(t), true, nil
+	ent := projectTagEntity(t)
+	children, err := s.tagRepo.ChildTags(ctx, id)
+	if err != nil {
+		return dto.PublicTagEntity{}, false, err
+	}
+	for i := range children {
+		ent.Children = append(ent.Children, dto.PublicTagChild{
+			ID:           children[i].ID,
+			Name:         children[i].Name,
+			Category:     children[i].Category,
+			GalgameCount: children[i].GalgameCount,
+		})
+	}
+	return ent, true, nil
 }
 
 // TagGalgameIDs returns the ids of every published galgame carrying this tag.
@@ -94,14 +108,43 @@ func (s *PublicTaxonomyService) TagGalgameIDs(ctx context.Context, id int) ([]in
 	return ids, nil
 }
 
-// TagMulti returns the published galgames carrying ALL given tag ids, projected
-// to thin /v1 items + the filtered total. contentLimit gates the rows (and drops
-// NSFW pins on the sfw face). Empty ids → empty page.
-func (s *PublicTaxonomyService) TagMulti(ctx context.Context, ids []int, page, limit int, contentLimit string, inc PublicItemInclude) (dto.PublicItemListData, error) {
+// TagMulti returns the published galgames matching the given tag ids, projected
+// to thin /v1 items + the filtered total. contentLimit gates the rows (and
+// drops NSFW pins on the sfw face). Empty ids → empty page.
+//
+// expand=false is the frozen v1 face: games carrying ALL ids (flat AND).
+// expand=true first widens each id to {itself + its galgame_tag_edge
+// descendants} and matches games carrying at least one tag from EVERY group
+// (AND of OR-groups) — ONE query, so total/pagination stay exact. With no
+// edges seeded the two faces coincide.
+func (s *PublicTaxonomyService) TagMulti(ctx context.Context, ids []int, page, limit int, contentLimit string, inc PublicItemInclude, expand bool) (dto.PublicItemListData, error) {
 	if len(ids) == 0 {
 		return dto.PublicItemListData{Items: []dto.PublicGalgameItem{}, Total: 0}, nil
 	}
-	rows, total, err := s.tagRepo.FindGalgamesByMultipleTags(ctx, ids, page, limit, contentLimit)
+	var (
+		rows  []model.Galgame
+		total int64
+		err   error
+	)
+	if expand {
+		closure, cerr := s.tagRepo.DescendantTagIDs(ctx, ids)
+		if cerr != nil {
+			return dto.PublicItemListData{}, cerr
+		}
+		groups := make([][]int, 0, len(ids))
+		for _, id := range ids {
+			group := closure[id]
+			if len(group) == 0 {
+				// The CTE anchor guarantees seed ∈ closure; keep the empty-group
+				// guard so a future regression cannot emit "tag_id IN (NULL)".
+				group = []int{id}
+			}
+			groups = append(groups, group)
+		}
+		rows, total, err = s.tagRepo.FindGalgamesByTagGroups(ctx, groups, page, limit, contentLimit)
+	} else {
+		rows, total, err = s.tagRepo.FindGalgamesByMultipleTags(ctx, ids, page, limit, contentLimit)
+	}
 	if err != nil {
 		return dto.PublicItemListData{}, err
 	}

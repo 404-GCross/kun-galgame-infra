@@ -14,15 +14,31 @@ package dto
 // aliases is always present ([] when none); created / updated are UTC RFC3339
 // ("" on the zero value). galgame_count is the published (status=0) galgame
 // count, content_limit-independent (mirrors the bridge tag-count semantics).
+//
+// children is DETAIL-ONLY and present only when the tag HAS children (leaf
+// tags and list items omit the key): the tag's direct hierarchy children
+// (galgame_tag_edge, projected from the VNDB tag DAG). It lets consumers show
+// what tags/multi expand=descendants will pull in.
 type PublicTagEntity struct {
-	ID           int      `json:"id"`
-	Name         string   `json:"name"`
-	Category     string   `json:"category"`
-	Description  string   `json:"description"`
-	Aliases      []string `json:"aliases"`
-	GalgameCount int      `json:"galgame_count"`
-	Created      string   `json:"created"`
-	Updated      string   `json:"updated"`
+	ID           int              `json:"id"`
+	Name         string           `json:"name"`
+	Category     string           `json:"category"`
+	Description  string           `json:"description"`
+	Aliases      []string         `json:"aliases"`
+	GalgameCount int              `json:"galgame_count"`
+	Created      string           `json:"created"`
+	Updated      string           `json:"updated"`
+	Children     []PublicTagChild `json:"children,omitempty"`
+}
+
+// PublicTagChild is one direct hierarchy child on the tag detail: id + name +
+// category + published galgame_count — enough to render an "expand includes"
+// chip and link to the child's own detail.
+type PublicTagChild struct {
+	ID           int    `json:"id"`
+	Name         string `json:"name"`
+	Category     string `json:"category"`
+	GalgameCount int    `json:"galgame_count"`
 }
 
 // PublicTagListData is the tag list envelope (GET /v1/galgame/tags): a page of

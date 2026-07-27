@@ -113,10 +113,13 @@ func (h *PublicTaxonomyHandler) TagSearch(c fiber.Ctx) error {
 }
 
 // TagMulti serves GET /v1/galgame/tags/multi?ids= — the published galgames
-// carrying ALL given tag ids, projected to thin /v1 items. content_limit-gated.
+// matching the given tag ids, projected to thin /v1 items. content_limit-gated.
+// expand=descendants widens each id to {itself + its hierarchy descendants}
+// and matches AND-of-OR-groups; the default stays the frozen flat-AND face.
 func (h *PublicTaxonomyHandler) TagMulti(c fiber.Ctx) error {
 	page, limit := taxPageLimit(c, 24, 50)
-	data, err := h.svc.TagMulti(c.Context(), parseIntList(c.Query("ids")), page, limit, taxContentLimit(c), service.ParsePublicItemInclude(c.Query("include")))
+	expand := c.Query("expand") == "descendants"
+	data, err := h.svc.TagMulti(c.Context(), parseIntList(c.Query("ids")), page, limit, taxContentLimit(c), service.ParsePublicItemInclude(c.Query("include")), expand)
 	if err != nil {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}

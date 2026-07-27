@@ -50,6 +50,8 @@ func w1aMigrate(t *testing.T) {
 	t.Helper()
 	require.NoError(t, testDB.AutoMigrate(
 		&model.GalgameSeries{}, &model.GalgameTag{}, &model.GalgameTagAlias{},
+		// Tag-hierarchy edges: the public tag detail now reads children from it.
+		&model.GalgameTagEdge{},
 		&model.GalgameOfficial{}, &model.GalgameOfficialAlias{}, &model.GalgameEngine{},
 		&model.Galgame{}, &model.GalgameAlias{}, &model.GalgameTagRelation{},
 		&model.GalgameOfficialRelation{}, &model.GalgameEngineRelation{},

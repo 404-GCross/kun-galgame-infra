@@ -44,6 +44,7 @@ func TestMain(m *testing.M) {
 		&model.GalgameSeries{},
 		&model.GalgameTag{},
 		&model.GalgameTagAlias{},
+		&model.GalgameTagEdge{},
 		&model.GalgameOfficial{},
 		&model.GalgameOfficialAlias{},
 		&model.GalgameEngine{},
@@ -133,7 +134,7 @@ func cleanTables(t *testing.T) {
 		"galgame_cover", "galgame_screenshot",
 		"galgame_tag_relation", "galgame_official_relation", "galgame_engine_relation",
 		"galgame", "galgame_series",
-		"galgame_tag", "galgame_tag_alias",
+		"galgame_tag", "galgame_tag_alias", "galgame_tag_edge",
 		"galgame_official", "galgame_official_alias",
 		"galgame_engine",
 	}

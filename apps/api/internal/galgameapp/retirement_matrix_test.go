@@ -65,6 +65,7 @@ func w5Migrate(t *testing.T) {
 	t.Helper()
 	require.NoError(t, testDB.AutoMigrate(
 		&model.GalgameSeries{}, &model.GalgameTag{}, &model.GalgameTagAlias{},
+		&model.GalgameTagEdge{},
 		&model.GalgameOfficial{}, &model.GalgameOfficialAlias{}, &model.GalgameEngine{},
 		&model.Galgame{}, &model.GalgameAlias{}, &model.GalgameTagRelation{},
 		&model.GalgameOfficialRelation{}, &model.GalgameEngineRelation{},

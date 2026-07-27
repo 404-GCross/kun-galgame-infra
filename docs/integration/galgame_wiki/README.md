@@ -62,6 +62,8 @@
 | `GET /internal/series{,/:id}`(+ `/search` 由 `/v1` search 适配,零消费 C 桶) | `GET /v1/galgame/series{,/{id}}` |
 
 > `/v1` 是**唯一公开数据契约**,契约 dogfooding(下游与第三方消费同一契约)。字段级真值取门户发布的 `public-openapi.yaml`(`docs/galgame_wiki/public-openapi.yaml`,code-first 从 Huma 导出)。NSFW = scope 门三态 `content_limit=sfw|nsfw|all`(需 key 持 `galgame:nsfw` scope,否则静默回落 sfw)。
+>
+> **标签层级扩展(2026-07 加性)**:`GET /v1/galgame/tags/multi` 新增可选参数 **`expand=descendants`** —— 每个请求 id 先展开为「自身 + 其层级后代」,一部游戏在**每一组**里命中至少一个标签即入选(组间 AND、组内 OR),单次查询,total/分页精确;不传该参数 = 冻结的扁平 AND 交集,逐字节向后兼容。配套地 `GET /v1/galgame/tags/{id}` 详情新增 **`children`** 块(仅当有子标签时出现):直接子标签的 `{id, name, category, galgame_count}`,供 UI 呈现「展开将包含:硬科幻、科幻奇幻」。层级边由 VNDB 标签 DAG 投影到 wiki 词表(infra `cmd/backfill-tag-edges`);元分组节点(如 "Type")永不成为父节点,故「恋爱」的展开不会命中「无恋爱剧情」。
 
 ## 平台工作流面(留任 · 15 读 + 2 feed · 真值在代码)
 

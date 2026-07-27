@@ -1860,6 +1860,25 @@ components:
         - name
         - galgame_count
       type: object
+    PublicTagChild:
+      additionalProperties: false
+      properties:
+        category:
+          type: string
+        galgame_count:
+          format: int64
+          type: integer
+        id:
+          format: int64
+          type: integer
+        name:
+          type: string
+      required:
+        - id
+        - name
+        - category
+        - galgame_count
+      type: object
     PublicTagEntity:
       additionalProperties: false
       properties:
@@ -1871,6 +1890,12 @@ components:
             - "null"
         category:
           type: string
+        children:
+          items:
+            $ref: "#/components/schemas/PublicTagChild"
+          type:
+            - array
+            - "null"
         created:
           type: string
         description:
@@ -2967,12 +2992,19 @@ paths:
     get:
       operationId: multiTagsPublic
       parameters:
-        - description: Comma-separated tag ids; returns the published galgames carrying ALL of them (AND intersection)
+        - description: "Comma-separated tag ids; returns the published galgames matching them (default: AND intersection over the exact ids)"
           explode: false
           in: query
           name: ids
           schema:
-            description: Comma-separated tag ids; returns the published galgames carrying ALL of them (AND intersection)
+            description: "Comma-separated tag ids; returns the published galgames matching them (default: AND intersection over the exact ids)"
+            type: string
+        - description: "Set to 'descendants' to widen each id to itself + its tag-hierarchy descendants before matching: a game then qualifies by carrying at least one tag from EVERY widened group (AND of OR-groups). total/pagination stay exact. Default: no expansion."
+          explode: false
+          in: query
+          name: expand
+          schema:
+            description: "Set to 'descendants' to widen each id to itself + its tag-hierarchy descendants before matching: a game then qualifies by carrying at least one tag from EVERY widened group (AND of OR-groups). total/pagination stay exact. Default: no expansion."
             type: string
         - description: Page number (default 1)
           explode: false
@@ -3017,7 +3049,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Published galgames carrying ALL given tag ids (AND intersection), as thin items
+      summary: Published galgames carrying ALL given tag ids (AND intersection; expand=descendants widens each id to its hierarchy descendants), as thin items
       tags:
         - galgame-public
   /v1/galgame/tags/search:
@@ -3087,7 +3119,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: One tag's curated record (description, galgame_count, aliases, created, updated)
+      summary: One tag's curated record (description, galgame_count, aliases, children, created, updated)
       tags:
         - galgame-public
   /v1/galgame/tags/{id}/galgame-ids:

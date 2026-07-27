@@ -38,7 +38,8 @@ type publicSeriesListInput struct {
 }
 
 type publicTagMultiInput struct {
-	IDs          string `query:"ids" doc:"Comma-separated tag ids; returns the published galgames carrying ALL of them (AND intersection)"`
+	IDs          string `query:"ids" doc:"Comma-separated tag ids; returns the published galgames matching them (default: AND intersection over the exact ids)"`
+	Expand       string `query:"expand" doc:"Set to 'descendants' to widen each id to itself + its tag-hierarchy descendants before matching: a game then qualifies by carrying at least one tag from EVERY widened group (AND of OR-groups). total/pagination stay exact. Default: no expansion."`
 	Page         int    `query:"page" doc:"Page number (default 1)"`
 	Limit        int    `query:"limit" doc:"Items per page 1-50 (default 24)"`
 	ContentLimit string `query:"content_limit" doc:"Content filter: sfw (default) | nsfw | all. nsfw/all require the galgame:nsfw scope; otherwise silently coerced to sfw."`
@@ -127,13 +128,13 @@ func registerGalgameTaxonomyPublicOps(api huma.API, tags []string) {
 	})
 	huma.Register(api, huma.Operation{
 		OperationID: "multiTagsPublic", Method: http.MethodGet, Path: "/v1/galgame/tags/multi",
-		Summary: "Published galgames carrying ALL given tag ids (AND intersection), as thin items", Tags: tags,
+		Summary: "Published galgames carrying ALL given tag ids (AND intersection; expand=descendants widens each id to its hierarchy descendants), as thin items", Tags: tags,
 	}, func(context.Context, *publicTagMultiInput) (*publicTagMultiOutput, error) {
 		return &publicTagMultiOutput{}, nil
 	})
 	huma.Register(api, huma.Operation{
 		OperationID: "getTagPublic", Method: http.MethodGet, Path: "/v1/galgame/tags/{id}",
-		Summary: "One tag's curated record (description, galgame_count, aliases, created, updated)", Tags: tags,
+		Summary: "One tag's curated record (description, galgame_count, aliases, children, created, updated)", Tags: tags,
 	}, func(context.Context, *publicTaxEntityInput) (*publicTagOutput, error) { return &publicTagOutput{}, nil })
 	huma.Register(api, huma.Operation{
 		OperationID: "listTagGalgameIDsPublic", Method: http.MethodGet, Path: "/v1/galgame/tags/{id}/galgame-ids",

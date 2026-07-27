@@ -46,3 +46,21 @@ type GalgameTagRelation struct {
 }
 
 func (GalgameTagRelation) TableName() string { return "galgame_tag_relation" }
+
+// GalgameTagEdge is one parent→child edge of the tag hierarchy, projected onto
+// the wiki tag vocabulary from the VNDB tag DAG (src_vndb.tags_parents). It
+// powers the /v1 tags/multi expand=descendants face ("科幻" also matches games
+// tagged only "硬科幻") and the children block on the tag detail.
+//
+// Source provenance mirrors GalgameTagRelation: "vndb" = projected by
+// cmd/backfill-tag-edges (which owns that subset and reconciles it), "" =
+// user-curated (reserved; no write path yet). Edges reference wiki tag ids on
+// BOTH ends — a VNDB tag without a wiki counterpart contributes no edge.
+type GalgameTagEdge struct {
+	ParentID int       `gorm:"column:parent_id;primaryKey" json:"parent_id"`
+	ChildID  int       `gorm:"column:child_id;primaryKey;index:idx_galgame_tag_edge_child" json:"child_id"`
+	Source   string    `gorm:"column:source;size:16;default:''" json:"source"`
+	Created  Timestamp `gorm:"autoCreateTime" json:"created"`
+}
+
+func (GalgameTagEdge) TableName() string { return "galgame_tag_edge" }

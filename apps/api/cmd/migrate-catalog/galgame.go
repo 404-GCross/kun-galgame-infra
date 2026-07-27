@@ -29,6 +29,11 @@ func migrateGalgame(db *database.PostgresDB) {
 		// Core galgame table (FK to galgame_series)
 		&model.Galgame{},
 
+		// Tag hierarchy edges (wiki tag ids on both ends; projected from the
+		// VNDB tag DAG by cmd/backfill-tag-edges). Powers tags/multi
+		// expand=descendants + the tag-detail children block.
+		&model.GalgameTagEdge{},
+
 		// Tables with FK to galgame
 		&model.GalgameAlias{},
 		&model.GalgameTagRelation{},
