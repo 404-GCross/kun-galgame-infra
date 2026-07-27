@@ -87,9 +87,13 @@ func (s *MergeService) ApproveMerge(ctx context.Context, proposalID, approvedBy 
 	})
 }
 
-// RejectMerge closes an open proposal as rejected.
+// RejectMerge closes an open OR approved proposal as rejected. Approved is
+// deliberately in scope: the 48h cooling-off window exists precisely so a
+// merge can be vetoed after approval but before execution (step 97's #36138
+// edition-split re-check is the motivating case); an executed proposal can
+// never be rejected — that path is UnmergeEntity.
 func (s *MergeService) RejectMerge(ctx context.Context, proposalID, rejectedBy int64, reason string) error {
-	return s.transition(ctx, proposalID, model.ProposalStatusOpen, func(tx *gorm.DB, p *model.CatalogMergeProposal) error {
+	return s.transitionOneOf(ctx, proposalID, []int16{model.ProposalStatusOpen, model.ProposalStatusApproved}, func(tx *gorm.DB, p *model.CatalogMergeProposal) error {
 		return tx.Model(p).Updates(map[string]any{
 			"status": model.ProposalStatusRejected,
 			"note":   appendNote(p.Note, fmt.Sprintf("rejected by user %d: %s", rejectedBy, reason)),
@@ -104,6 +108,26 @@ func (s *MergeService) WithdrawMerge(ctx context.Context, proposalID, withdrawnB
 			"status": model.ProposalStatusWithdrawn,
 			"note":   appendNote(p.Note, fmt.Sprintf("withdrawn by user %d", withdrawnBy)),
 		}).Error
+	})
+}
+
+// transitionOneOf runs fn on a FOR UPDATE-locked proposal after asserting its
+// status is one of allowedStatuses.
+func (s *MergeService) transitionOneOf(ctx context.Context, proposalID int64, allowedStatuses []int16, fn func(*gorm.DB, *model.CatalogMergeProposal) error) error {
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		p, err := repository.LockProposal(tx, proposalID)
+		if err != nil {
+			return err
+		}
+		if p == nil {
+			return fmt.Errorf("%w: proposal %d", ErrNotFound, proposalID)
+		}
+		for _, st := range allowedStatuses {
+			if p.Status == st {
+				return fn(tx, p)
+			}
+		}
+		return fmt.Errorf("%w: proposal %d is in status %d", ErrProposalState, proposalID, p.Status)
 	})
 }
 

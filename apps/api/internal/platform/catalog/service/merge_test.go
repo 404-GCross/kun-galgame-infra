@@ -511,3 +511,36 @@ func TestMergeLabelWorkEdgeDedup(t *testing.T) {
 	testDB.Raw(`SELECT count(*) FROM catalog_work_label WHERE label_id = ?`, source.ID).Scan(&stranded)
 	assert.Zero(t, stranded, "no brand edge may stay on the merged source")
 }
+
+// RejectMerge accepts an APPROVED (cooling) proposal — the 48h window's veto
+// path (step 97 #36138) — and still refuses an executed one.
+func TestRejectMergeDuringCooling(t *testing.T) {
+	cleanTables(t)
+	ctx := t.Context()
+
+	a := createPerson(t, "A")
+	b := createPerson(t, "B")
+	p, err := testMerge.ProposeMerge(ctx, model.EntityTypePerson, a.ID, b.ID, 7, "cooling veto case")
+	require.NoError(t, err)
+	require.NoError(t, testMerge.ApproveMerge(ctx, p.ID, 1))
+
+	require.NoError(t, testMerge.RejectMerge(ctx, p.ID, 1, "edition split confirmed"))
+	var got model.CatalogMergeProposal
+	require.NoError(t, testDB.First(&got, p.ID).Error)
+	require.Equal(t, model.ProposalStatusRejected, got.Status)
+	require.Contains(t, got.Note, "rejected by user 1: edition split confirmed")
+
+	// Executed proposals stay immutable: propose→approve→force-execute a
+	// second pair, then assert reject refuses it.
+	c := createPerson(t, "C")
+	d := createPerson(t, "D")
+	p2, err := testMerge.ProposeMerge(ctx, model.EntityTypePerson, c.ID, d.ID, 7, "")
+	require.NoError(t, err)
+	require.NoError(t, testMerge.ApproveMerge(ctx, p2.ID, 1))
+	require.NoError(t, testDB.Model(&model.CatalogMergeProposal{}).Where("id = ?", p2.ID).
+		Update("execute_after", "2000-01-01").Error)
+	execActor := int64(1)
+	require.NoError(t, testMerge.ExecuteMerge(ctx, p2.ID, &execActor))
+	err = testMerge.RejectMerge(ctx, p2.ID, 1, "too late")
+	require.ErrorIs(t, err, ErrProposalState)
+}

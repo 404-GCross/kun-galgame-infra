@@ -51,10 +51,12 @@ type tsvRow struct {
 }
 
 func main() {
-	mode := flag.String("mode", "", "propose | execute")
+	mode := flag.String("mode", "", "propose | execute | reject")
 	dsn := flag.String("dsn", "", "catalog DSN (REQUIRED)")
 	actor := flag.Int64("actor", 0, "acting user id (REQUIRED)")
 	run := flag.Bool("run", false, "write (default dry)")
+	proposalID := flag.Int64("proposal", 0, "proposal id (reject mode)")
+	reason := flag.String("reason", "", "rejection reason (reject mode)")
 	var tsvs sliceFlag
 	flag.Var(&tsvs, "tsv", "worklist TSV (repeatable; propose mode)")
 	flag.Parse()
@@ -83,10 +85,37 @@ func main() {
 		propose(ctx, db, merge, tsvs, *actor, *run)
 	case "execute":
 		execute(ctx, db, merge, *actor, *run)
+	case "reject":
+		if *proposalID == 0 || *reason == "" {
+			fmt.Fprintln(os.Stderr, "reject mode needs -proposal and -reason")
+			os.Exit(2)
+		}
+		reject(ctx, db, merge, *proposalID, *actor, *reason, *run)
 	default:
-		fmt.Fprintln(os.Stderr, "usage: -mode propose|execute")
+		fmt.Fprintln(os.Stderr, "usage: -mode propose|execute|reject")
 		os.Exit(2)
 	}
+}
+
+// reject vetoes one cooling proposal (open or approved) through the service
+// layer — the step-97 per-case re-check path (#36138 edition split).
+func reject(ctx context.Context, db *gorm.DB, merge *service.MergeService, proposalID, actor int64, reason string, run bool) {
+	var p model.CatalogMergeProposal
+	if err := db.WithContext(ctx).First(&p, proposalID).Error; err != nil {
+		slog.Error("load proposal", "id", proposalID, "err", err)
+		os.Exit(1)
+	}
+	fmt.Printf("proposal #%d: entity_type=%d source=%d target=%d status=%d\n  note: %s\n",
+		p.ID, p.EntityType, p.SourceEntityID, p.TargetEntityID, p.Status, p.Note)
+	if !run {
+		fmt.Println("DRY: would reject (pass -run to write)")
+		return
+	}
+	if err := merge.RejectMerge(ctx, proposalID, actor, reason); err != nil {
+		slog.Error("reject", "id", proposalID, "err", err)
+		os.Exit(1)
+	}
+	fmt.Printf("REJECTED #%d\n", proposalID)
 }
 
 func propose(ctx context.Context, db *gorm.DB, merge *service.MergeService, tsvs []string, actor int64, run bool) {
