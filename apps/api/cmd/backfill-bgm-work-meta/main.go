@@ -12,10 +12,10 @@
 //     re-run heals values.
 //
 // Candidates: galgame works (claimed OR bodyless — T2) with an EXACT Bangumi
-// work anchor (matched_by unrestricted — the 66/69 ruling). The claim policy is
-// PER FIELD: meta_tags (Field A) admits claimed works — a catalog-native source
-// lane merged with the wiki bridge at the read face; favorite shelves (Field B)
-// still refuse claimed works (popularity's XOR is a future T2b domain).
+// work anchor (matched_by unrestricted — the 66/69 ruling). Both fields admit
+// claimed works: meta_tags (Field A, T2) and favorite shelves (Field B, T2b —
+// refs/proj/102); the read face's per-source XOR keeps dlsite
+// bridge-exclusive.
 // src_bangumi is a schema INSIDE the catalog DB, so ONE --dsn covers the whole
 // run.
 //
@@ -23,8 +23,7 @@
 // convention); pass --apply to write. The DSN is REQUIRED and never defaulted
 // — the rehearsal copy locally, the live catalog only in the acceptance run.
 // Idempotent: a second --apply writes zero (meta tags all-conflict, favorite
-// shelves all-unchanged). Field B refuses a claimed favorite at write time (the
-// retained per-field XOR guard §8.D).
+// shelves all-unchanged).
 //
 //	# dry-run: per-field counters + samples
 //	go run ./cmd/backfill-bgm-work-meta \
@@ -88,7 +87,6 @@ func main() {
 		"fav_planned", st.FavPlanned,
 		"fav_written", st.FavWritten,
 		"fav_unchanged", st.FavUnchanged,
-		"refused_claimed", st.Refused,
 		"errors", st.Errors,
 	)
 	if !*apply {

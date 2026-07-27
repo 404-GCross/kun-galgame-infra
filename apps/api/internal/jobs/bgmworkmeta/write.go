@@ -15,11 +15,12 @@ import (
 // SOURCE lane, so claimed and bodyless works materialize alike; it is a FILL:
 // ON CONFLICT (work_id, name, source_id) DO NOTHING — a same-name folksonomy row
 // keeps its votes, a second pass counts pure conflicts. Field B (favorite
-// shelves) KEEPS the write-time XOR guard: the popularity facet's XOR is not in
-// the T2 tags decision domain (a future T2b decides it), so claimed favorites
-// are still refused. It is the step-62 CHANGE-DETECTED upsert: ON CONFLICT DO
-// UPDATE fires only when the value actually differs, so RowsAffected cleanly
-// separates effective writes from refresh no-ops.
+// shelves) has NO guard either since T2b (refs/proj/102): the popularity
+// facet's XOR moved from whole-facet to per-source at the read face, so
+// claimed favorites materialize like bodyless ones. It is the step-62
+// CHANGE-DETECTED upsert: ON CONFLICT DO UPDATE fires only when the value
+// actually differs, so RowsAffected cleanly separates effective writes from
+// refresh no-ops.
 type writer struct {
 	db    *gorm.DB
 	stats *Stats
@@ -60,20 +61,16 @@ func (w *writer) writeTag(ctx context.Context, p tagRow, apply bool) {
 // favRow is one decided catalog_work_popularity write.
 type favRow struct {
 	WorkID   int64
-	Site     *string
 	SourceID int16
 	Metric   int16
 	Value    int64
 }
 
-// writeFavorite enforces the per-field XOR guard (Field B still refuses claimed
-// — popularity's XOR is not in the T2 tags domain), then (apply only) upserts
-// the shelf row — the workratings writePopularity pattern verbatim.
+// writeFavorite (apply only) upserts the shelf row — the workratings
+// writePopularity pattern verbatim. T2b (refs/proj/102): no claim guard —
+// favorite shelves materialize for claimed and bodyless works alike; the
+// per-source XOR at the read face keeps dlsite bridge-exclusive.
 func (w *writer) writeFavorite(ctx context.Context, p favRow, apply bool) {
-	if !isBodyless(p.Site) { // XOR guard (§8.D) — claimed favorites still refused (Field B)
-		w.stats.Refused++
-		return
-	}
 	if !apply {
 		return
 	}
@@ -96,7 +93,3 @@ func (w *writer) writeFavorite(ctx context.Context, p favRow, apply bool) {
 	}
 	w.stats.FavWritten++
 }
-
-// isBodyless reports whether a catalog_work is bodyless (site NULL or ”) —
-// the §8.D claim key, same shape as workratings.
-func isBodyless(site *string) bool { return site == nil || *site == "" }

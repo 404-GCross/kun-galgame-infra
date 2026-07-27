@@ -1308,12 +1308,14 @@ func TestWorkRating(t *testing.T) {
 	assert.Empty(t, body["data"].(map[string]any)["ratings"].([]any))
 }
 
-// TestWorkPopularity pins the step-62 popularity read face: the CLAIMED bridge
-// (galgame_dlsite_meta counter columns pivoted to metric rows — a NULL counter
-// contributes NO row, a published 0 does), the BODYLESS native read
-// (catalog_work_popularity, (source_id, metric) ascending), strict XOR (a
-// claimed work with no published counter yields [] and never falls back to a
-// shadow native row), and []-not-null serialization.
+// TestWorkPopularity pins the popularity read face (step 62; per-source XOR
+// since T2b, refs/proj/102): the CLAIMED dlsite bridge (galgame_dlsite_meta
+// counter columns pivoted to metric rows — a NULL counter contributes NO row,
+// a published 0 does) UNIONED with the claimed work's native NON-dlsite rows
+// (the bgm shelves), the BODYLESS native read (catalog_work_popularity,
+// (source_id, metric) ascending), the per-source XOR (a claimed work's
+// native dlsite rows NEVER surface — dlsite is bridge-exclusive), and
+// []-not-null serialization.
 func TestWorkPopularity(t *testing.T) {
 	db := openCatalogTestDB(t)
 	ensureGalgameStub(t, db)           // the co-loaded intro bridge needs galgame
@@ -1329,9 +1331,11 @@ func TestWorkPopularity(t *testing.T) {
 	for _, tbl := range []string{"catalog_work_popularity", "catalog_work"} {
 		require.NoError(t, db.Exec("TRUNCATE "+tbl+" RESTART IDENTITY CASCADE").Error)
 	}
-	var srcDlsite int16
+	var srcDlsite, srcBgm int16
 	db.Raw("SELECT id FROM catalog_source WHERE key='dlsite'").Scan(&srcDlsite)
 	require.NotZero(t, srcDlsite, "dlsite source must be seeded")
+	db.Raw("SELECT id FROM catalog_source WHERE key='bangumi'").Scan(&srcBgm)
+	require.NotZero(t, srcBgm, "bangumi source must be seeded")
 
 	// --- CLAIMED work (galgame_id 8001): full counter trio published (dl 2000 /
 	// wishlist 300 / reviews 0 — a published 0 IS a row) → three bridged rows.
@@ -1341,6 +1345,12 @@ func TestWorkPopularity(t *testing.T) {
 	dl64, wl64 := int64(2000), int64(300)
 	rv0 := 0
 	insertDlsiteMeta(t, db, 8001, nil, nil, &dl64, &wl64, &rv0)
+	// T2b: a native bgm shelf row on the claimed work surfaces (union lane),
+	// while a SHADOW native dlsite row stays invisible (bridge-exclusive).
+	require.NoError(t, db.Create(&model.CatalogWorkPopularity{
+		WorkID: claimed.ID, SourceID: srcBgm, Metric: model.PopularityMetricBgmWish, Value: 42}).Error)
+	require.NoError(t, db.Create(&model.CatalogWorkPopularity{
+		WorkID: claimed.ID, SourceID: srcDlsite, Metric: model.PopularityMetricDownloads, Value: 777}).Error)
 
 	// --- BODYLESS work: native catalog_work_popularity rows.
 	bodyless := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "無体作品", ContentRating: 0, Status: 0}
@@ -1351,7 +1361,8 @@ func TestWorkPopularity(t *testing.T) {
 		WorkID: bodyless.ID, SourceID: srcDlsite, Metric: model.PopularityMetricDownloads, Value: 4500}).Error)
 
 	// --- XOR work: claimed (galgame_id 8002) with NO dlsite meta at all, plus a
-	// SHADOW native row (a prior bodyless state) that must NEVER surface.
+	// SHADOW native dlsite row (a prior bodyless state) that must NEVER surface
+	// (dlsite is bridge-exclusive; no native non-dlsite rows → []).
 	xor := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "空主張", ContentRating: 0, Status: 0,
 		Site: strptr("galgame_wiki"), ProductWorkID: ptrI64(8002)}
 	require.NoError(t, db.Create(&xor).Error)
@@ -1364,21 +1375,26 @@ func TestWorkPopularity(t *testing.T) {
 
 	app := readApp(service.NewReadService(db), nil)
 
-	// CLAIMED: three bridged rows, metric ascending, dlsite provenance.
+	// CLAIMED: the union lane (T2b) — the native bgm shelf + three bridged
+	// dlsite rows, (source_id, metric) ascending (bgm sorts before dlsite).
 	code, body := getJSON(t, app, "/api/v1/catalog/works/"+itoa(claimed.ID))
 	require.Equal(t, 200, code)
 	pop := body["data"].(map[string]any)["popularity"].([]any)
-	require.Len(t, pop, 3, "all three published counters bridged")
+	require.Len(t, pop, 4, "native bgm shelf + three bridged dlsite counters")
 	p0 := pop[0].(map[string]any)
-	assert.EqualValues(t, srcDlsite, p0["source_id"])
-	assert.EqualValues(t, 0, p0["metric"], "downloads first (metric ascending)")
-	assert.EqualValues(t, 2000, p0["value"])
+	assert.EqualValues(t, srcBgm, p0["source_id"], "bgm sorts before dlsite")
+	assert.EqualValues(t, model.PopularityMetricBgmWish, p0["metric"])
+	assert.EqualValues(t, 42, p0["value"], "T2b: the claimed work's native bgm row surfaces")
 	p1 := pop[1].(map[string]any)
-	assert.EqualValues(t, 1, p1["metric"])
-	assert.EqualValues(t, 300, p1["value"])
+	assert.EqualValues(t, srcDlsite, p1["source_id"])
+	assert.EqualValues(t, 0, p1["metric"], "downloads first (metric ascending)")
+	assert.EqualValues(t, 2000, p1["value"], "bridge value wins — the shadow native dlsite row (777) never surfaces")
 	p2 := pop[2].(map[string]any)
-	assert.EqualValues(t, 2, p2["metric"])
-	assert.EqualValues(t, 0, p2["value"], "a published 0 is a real row")
+	assert.EqualValues(t, 1, p2["metric"])
+	assert.EqualValues(t, 300, p2["value"])
+	p3 := pop[3].(map[string]any)
+	assert.EqualValues(t, 2, p3["metric"])
+	assert.EqualValues(t, 0, p3["value"], "a published 0 is a real row")
 
 	// BODYLESS: native rows, (source_id, metric) ascending.
 	code, body = getJSON(t, app, "/api/v1/catalog/works/"+itoa(bodyless.ID))
@@ -1390,10 +1406,10 @@ func TestWorkPopularity(t *testing.T) {
 	assert.EqualValues(t, 2, pop[1].(map[string]any)["metric"])
 	assert.EqualValues(t, 7, pop[1].(map[string]any)["value"])
 
-	// XOR: claimed without meta → [] (the shadow native row is invisible).
+	// XOR: claimed without meta → [] (the shadow native dlsite row is invisible).
 	code, body = getJSON(t, app, "/api/v1/catalog/works/"+itoa(xor.ID))
 	require.Equal(t, 200, code)
-	assert.Empty(t, body["data"].(map[string]any)["popularity"].([]any), "strict XOR: no fallback to native rows")
+	assert.Empty(t, body["data"].(map[string]any)["popularity"].([]any), "per-source XOR: shadowed native dlsite rows never surface")
 
 	// EMPTY: [] not null.
 	code, body = getJSON(t, app, "/api/v1/catalog/works/"+itoa(empty.ID))

@@ -114,8 +114,8 @@ func popCount(t *testing.T, where string, args ...any) int64 {
 
 // TestBackfillBgmWorkMeta exercises the whole pipeline through the real Run
 // entry point: candidate selection (exact anchors of ANY matched_by, T2 admits
-// claimed), the PER-FIELD claim split (a single claimed candidate has Field A
-// meta tag WRITTEN and Field B favorite REFUSED), field A's defensive branches
+// claimed on both fields — Field A since T2, Field B since T2b), field A's
+// defensive branches
 // (NULL / empty / non-array meta_tags, blank elements, in-subject duplicates)
 // and folksonomy coexistence (a voted same-name row keeps its votes, a fresh
 // meta-only name lands with count=0), field B's shelf mapping (done→collect,
@@ -160,9 +160,9 @@ func TestBackfillBgmWorkMeta(t *testing.T) {
 	mkSubject(t, 305, `{"name":"游戏"}`, `[1,2,3]`)
 	mkAnchor(t, wBad, "305", reg.bangumiSource, model.LinkKindExact, "rule:bgm-title-year")
 
-	// wClaimed: ADMITTED (T2) — the per-field split showcase. Field A writes its
-	// meta tag "游戏"; Field B refuses its wish favorite (popularity XOR retained).
-	// wProbable: still excluded (exact-only).
+	// wClaimed: ADMITTED on BOTH fields (T2 Field A, T2b Field B): the meta tag
+	// "游戏" AND the wish favorite both write. wProbable: still excluded
+	// (exact-only).
 	wClaimed := mkWork(t, reg.galgameMedium, "meta-claimed", &claimed)
 	mkSubject(t, 306, `["游戏"]`, `{"wish": 1}`)
 	mkAnchor(t, wClaimed, "306", reg.bangumiSource, model.LinkKindExact, "rule:bgm-title-year")
@@ -190,7 +190,6 @@ func TestBackfillBgmWorkMeta(t *testing.T) {
 	assert.Equal(t, 1, st.FavUnknownKey, "mystery counted, never guessed")
 	assert.Equal(t, 1, st.FavBadValue, "negative done skipped")
 	assert.Equal(t, 9, st.FavPlanned, "wFull 5 + wOther 3 + wClaimed 1 (wish)")
-	assert.Equal(t, 1, st.Refused, "Field B refuses wClaimed's favorite even in dry (guard precedes apply)")
 	assert.Zero(t, st.MetaWritten+st.MetaConflict+st.FavWritten+st.FavUnchanged+st.Errors)
 	assert.EqualValues(t, 1, tagCount(t, ""), "dry run writes nothing (only the pre-seeded folksonomy row)")
 	assert.EqualValues(t, 0, popCount(t, ""))
@@ -207,11 +206,10 @@ func TestBackfillBgmWorkMeta(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 3, st.MetaWritten, "PC + Galgame + wClaimed 游戏 — wFull 游戏 collided with the folksonomy row")
 	assert.Equal(t, 1, st.MetaConflict)
-	assert.Equal(t, 8, st.FavWritten, "wClaimed's favorite refused, not written")
-	assert.Equal(t, 1, st.Refused, "Field B refused the claimed favorite")
+	assert.Equal(t, 9, st.FavWritten, "wClaimed's favorite writes too (T2b)")
 	assert.Zero(t, st.FavUnchanged+st.Errors)
 	assert.EqualValues(t, 4, tagCount(t, ""))
-	assert.EqualValues(t, 8, popCount(t, ""))
+	assert.EqualValues(t, 9, popCount(t, ""))
 
 	// Coexistence proof: the voted folksonomy row KEPT its votes; the fresh
 	// meta-only names landed with count=0.
@@ -234,10 +232,10 @@ func TestBackfillBgmWorkMeta(t *testing.T) {
 	assert.EqualValues(t, 4, pops[1].Value)
 	assert.Equal(t, model.PopularityMetricBgmDropped, pops[2].Metric)
 	assert.EqualValues(t, 0, pops[2].Value, "present 0 is a real row")
-	// Per-field claim split: Field A materialised wClaimed's meta tag; Field B
-	// refused its favorite. wProbable never enters.
+	// Claim admission on both fields: wClaimed's meta tag AND favorite both
+	// materialised. wProbable never enters.
 	assert.EqualValues(t, 1, tagCount(t, "WHERE work_id = ?", wClaimed), "T2: claimed meta tag materialises")
-	assert.EqualValues(t, 0, popCount(t, "WHERE work_id = ?", wClaimed), "Field B refuses the claimed favorite")
+	assert.EqualValues(t, 1, popCount(t, "WHERE work_id = ?", wClaimed), "T2b: claimed favorite materialises")
 	assert.EqualValues(t, 0, tagCount(t, "WHERE work_id = ?", wProbable))
 	assert.EqualValues(t, 0, popCount(t, "WHERE work_id = ?", wProbable))
 
@@ -246,10 +244,9 @@ func TestBackfillBgmWorkMeta(t *testing.T) {
 	require.NoError(t, err)
 	assert.Zero(t, st.MetaWritten+st.FavWritten+st.Errors, "second pass writes zero")
 	assert.Equal(t, 4, st.MetaConflict, "PC + wFull 游戏 + Galgame + wClaimed 游戏 all exist")
-	assert.Equal(t, 8, st.FavUnchanged)
-	assert.Equal(t, 1, st.Refused, "claimed favorite refused every pass")
+	assert.Equal(t, 9, st.FavUnchanged)
 	assert.EqualValues(t, 4, tagCount(t, ""))
-	assert.EqualValues(t, 8, popCount(t, ""))
+	assert.EqualValues(t, 9, popCount(t, ""))
 
 	// --- upsert heal: mutate one shelf value in the DB, re-run, healed.
 	require.NoError(t, testDB.Exec(
@@ -258,7 +255,7 @@ func TestBackfillBgmWorkMeta(t *testing.T) {
 	st, err = Run(ctx, Opts{DSN: testDSN, Apply: true})
 	require.NoError(t, err)
 	assert.Equal(t, 1, st.FavWritten, "only the mutated row updates")
-	assert.Equal(t, 7, st.FavUnchanged)
+	assert.Equal(t, 8, st.FavUnchanged)
 	var healed int64
 	require.NoError(t, testDB.Raw(
 		`SELECT value FROM catalog_work_popularity WHERE work_id = ? AND metric = ?`,
@@ -269,12 +266,12 @@ func TestBackfillBgmWorkMeta(t *testing.T) {
 	assert.Equal(t, 4, st.MetaConflict)
 }
 
-// TestPerFieldClaimSplitAndDSNRequired pins the T2 per-field claim policy driven
+// TestWriterClaimAdmissionAndDSNRequired pins the T2+T2b claim policy driven
 // directly through the writer: on the SAME claimed work Field A (writeTag)
-// MATERIALISES while Field B (writeFavorite) still REFUSES. Bodyless rows write
-// on both paths, with the conflict (A) / change-detected (B) idempotency
-// backstops. Also covers the refuse-to-guess DSN discipline.
-func TestPerFieldClaimSplitAndDSNRequired(t *testing.T) {
+// AND Field B (writeFavorite) both MATERIALISE. Bodyless rows write on both
+// paths, with the conflict (A) / change-detected (B) idempotency backstops.
+// Also covers the refuse-to-guess DSN discipline.
+func TestWriterClaimAdmissionAndDSNRequired(t *testing.T) {
 	clean(t)
 	ctx := context.Background()
 	reg, err := resolveRegistry(ctx, testDB)
@@ -284,28 +281,27 @@ func TestPerFieldClaimSplitAndDSNRequired(t *testing.T) {
 	wClaimed := mkWork(t, reg.galgameMedium, "claimed-direct", &claimed)
 	wBody := mkWork(t, reg.galgameMedium, "bodyless-direct", nil)
 
-	// Per-field split on ONE claimed work: Field A writes, Field B refuses.
+	// Claim admission on ONE claimed work: Field A AND Field B both write.
 	w := &writer{db: testDB, stats: &Stats{}}
 	w.writeTag(ctx, tagRow{WorkID: wClaimed, SourceID: reg.bangumiSource, Name: "游戏"}, true)
 	assert.Equal(t, 1, w.stats.MetaWritten, "T2: Field A materialises the claimed meta tag")
-	w.writeFavorite(ctx, favRow{WorkID: wClaimed, Site: &claimed, SourceID: reg.bangumiSource, Metric: model.PopularityMetricBgmWish, Value: 3}, true)
-	assert.Equal(t, 1, w.stats.Refused, "Field B still refuses the claimed favorite")
-	assert.Zero(t, w.stats.FavWritten)
-	assert.EqualValues(t, 1, tagCount(t, ""), "only the Field A meta tag landed")
-	assert.EqualValues(t, 0, popCount(t, ""), "no claimed favorite row")
+	w.writeFavorite(ctx, favRow{WorkID: wClaimed, SourceID: reg.bangumiSource, Metric: model.PopularityMetricBgmWish, Value: 3}, true)
+	assert.Equal(t, 1, w.stats.FavWritten, "T2b: Field B materialises the claimed favorite")
+	assert.EqualValues(t, 1, tagCount(t, ""), "the Field A meta tag landed")
+	assert.EqualValues(t, 1, popCount(t, ""), "the claimed favorite row landed")
 
 	// Bodyless rows write on both paths; retries are conflict (A) / unchanged (B).
 	w.writeTag(ctx, tagRow{WorkID: wBody, SourceID: reg.bangumiSource, Name: "游戏"}, true)
 	assert.Equal(t, 2, w.stats.MetaWritten)
 	w.writeTag(ctx, tagRow{WorkID: wBody, SourceID: reg.bangumiSource, Name: "游戏"}, true)
 	assert.Equal(t, 1, w.stats.MetaConflict, "ON CONFLICT refuses the duplicate")
-	w.writeFavorite(ctx, favRow{WorkID: wBody, Site: nil, SourceID: reg.bangumiSource, Metric: model.PopularityMetricBgmWish, Value: 3}, true)
-	assert.Equal(t, 1, w.stats.FavWritten)
-	w.writeFavorite(ctx, favRow{WorkID: wBody, Site: nil, SourceID: reg.bangumiSource, Metric: model.PopularityMetricBgmWish, Value: 3}, true)
+	w.writeFavorite(ctx, favRow{WorkID: wBody, SourceID: reg.bangumiSource, Metric: model.PopularityMetricBgmWish, Value: 3}, true)
+	assert.Equal(t, 2, w.stats.FavWritten)
+	w.writeFavorite(ctx, favRow{WorkID: wBody, SourceID: reg.bangumiSource, Metric: model.PopularityMetricBgmWish, Value: 3}, true)
 	assert.Equal(t, 1, w.stats.FavUnchanged, "same value is a change-detected no-op")
-	w.writeFavorite(ctx, favRow{WorkID: wBody, Site: nil, SourceID: reg.bangumiSource, Metric: model.PopularityMetricBgmWish, Value: 4}, true)
-	assert.Equal(t, 2, w.stats.FavWritten, "changed value updates in place")
-	assert.EqualValues(t, 1, popCount(t, ""))
+	w.writeFavorite(ctx, favRow{WorkID: wBody, SourceID: reg.bangumiSource, Metric: model.PopularityMetricBgmWish, Value: 4}, true)
+	assert.Equal(t, 3, w.stats.FavWritten, "changed value updates in place")
+	assert.EqualValues(t, 2, popCount(t, ""))
 
 	// DSN discipline: required, never guessed.
 	_, err = Run(ctx, Opts{})
