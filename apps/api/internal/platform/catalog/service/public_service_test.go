@@ -606,3 +606,67 @@ func TestPublicNameIntros(t *testing.T) {
 		t.Fatalf("intros = %+v", rec.Intros)
 	}
 }
+
+// createSameSeriesEdge wires a same_series (type 7) edge — the vndb series grain.
+func createSameSeriesEdge(t *testing.T, a, b int64) {
+	t.Helper()
+	if err := testDB.Create(&model.CatalogWorkRelation{AWorkID: a, BWorkID: b, RelationTypeID: 7}).Error; err != nil {
+		t.Fatalf("create same_series edge: %v", err)
+	}
+}
+
+// TestSeriesSiblingsTransitiveClosure pins wave 113: a star-topology series
+// (hub + leaves, the shape 68.6% of vndb series nodes live in) resolves the
+// WHOLE family from any member — a leaf sees the hub AND the other leaves,
+// which the pairwise relations face alone never shows it.
+func TestSeriesSiblingsTransitiveClosure(t *testing.T) {
+	cleanTables(t)
+	ctx := t.Context()
+	svc := newPublicSvc()
+
+	hub := createWork(t, "シリーズ中枢")
+	l1 := createWork(t, "シリーズ枝1")
+	l2 := createWork(t, "シリーズ枝2")
+	l3 := createWork(t, "シリーズ枝3")
+	lone := createWork(t, "無関係作品")
+	// Star: hub—l1, hub—l2, hub—l3 (leaves connect ONLY to the hub).
+	createSameSeriesEdge(t, hub.ID, l1.ID)
+	createSameSeriesEdge(t, hub.ID, l2.ID)
+	createSameSeriesEdge(t, hub.ID, l3.ID)
+
+	ids := func(bs []dto.PublicWorkBrief) map[int64]bool {
+		m := map[int64]bool{}
+		for _, b := range bs {
+			m[b.ID] = true
+		}
+		return m
+	}
+
+	// A leaf sees the hub AND the two other leaves (transitive closure).
+	rec, found, err := svc.WorkDetail(ctx, l1.ID, PublicInclude{}, false)
+	if err != nil || !found {
+		t.Fatalf("leaf detail: found=%v err=%v", found, err)
+	}
+	got := ids(rec.SeriesSiblings)
+	if len(got) != 3 || !got[hub.ID] || !got[l2.ID] || !got[l3.ID] || got[l1.ID] {
+		t.Fatalf("leaf l1 siblings = %v (want hub,l2,l3; not self)", got)
+	}
+
+	// The hub sees all three leaves.
+	recH, _, err := svc.WorkDetail(ctx, hub.ID, PublicInclude{}, false)
+	if err != nil {
+		t.Fatalf("hub detail: %v", err)
+	}
+	if gh := ids(recH.SeriesSiblings); len(gh) != 3 || !gh[l1.ID] || !gh[l2.ID] || !gh[l3.ID] {
+		t.Fatalf("hub siblings = %v (want l1,l2,l3)", gh)
+	}
+
+	// A work with no series edge has an empty (non-nil) list.
+	recL, _, err := svc.WorkDetail(ctx, lone.ID, PublicInclude{}, false)
+	if err != nil {
+		t.Fatalf("lone detail: %v", err)
+	}
+	if recL.SeriesSiblings == nil || len(recL.SeriesSiblings) != 0 {
+		t.Fatalf("lone siblings = %v (want empty non-nil)", recL.SeriesSiblings)
+	}
+}

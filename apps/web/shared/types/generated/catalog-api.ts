@@ -1368,6 +1368,7 @@ export interface components {
             releases: components["schemas"]["ReleaseBrief"][] | null;
             screenshots: components["schemas"]["WorkScreenshot"][] | null;
             series: components["schemas"]["WorkSeries"][] | null;
+            series_siblings: components["schemas"]["WorkSeriesSibling"][] | null;
             tags: components["schemas"]["WorkTag"][] | null;
             titles: components["schemas"]["WorkTitle"][] | null;
             work: components["schemas"]["WorkCore"];
@@ -1634,6 +1635,20 @@ export interface components {
              * @description catalog_source id the series was materialized from
              */
             source_id: number;
+        };
+        WorkSeriesSibling: {
+            /** Format: int32 */
+            content_rating: number;
+            display_name: string;
+            /** Format: int32 */
+            medium_id: number;
+            /** Format: int64 */
+            product_work_id?: number;
+            site?: string;
+            /** Format: int32 */
+            status: number;
+            /** Format: int64 */
+            work_id: number;
         };
         WorkTag: {
             /**

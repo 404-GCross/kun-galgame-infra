@@ -209,6 +209,7 @@ func (s *PublicService) WorkDetail(ctx context.Context, id int64, inc PublicIncl
 		Updated:       w.UpdatedAt.UTC().Format(time.RFC3339),
 	}
 	s.attachWorkFacets(&rec, detail)
+	rec.SeriesSiblings = s.publicSeriesSiblings(detail.SeriesSiblings, nsfw)
 	if inc.Relations {
 		rec.Relations = s.publicRelations(detail.Relations, nsfw)
 	}
@@ -1137,4 +1138,21 @@ func introLang(t string) string {
 		}
 	}
 	return "zh-Hans"
+}
+
+// publicSeriesSiblings projects the transitive-closure series membership (wave
+// 113) to public briefs, dropping r18 ends unless nsfw (same gate as relations).
+// Always non-nil so the field serializes [].
+func (s *PublicService) publicSeriesSiblings(sibs []SeriesSiblingRow, nsfw bool) []dto.PublicWorkBrief {
+	out := make([]dto.PublicWorkBrief, 0, len(sibs))
+	for _, sb := range sibs {
+		if !nsfw && isR18(sb.ContentRating) {
+			continue
+		}
+		out = append(out, dto.PublicWorkBrief{
+			ID: sb.WorkID, Medium: s.mediumKey(sb.MediumID), DisplayName: sb.DisplayName,
+			ContentRating: contentRatingKey(sb.ContentRating), ClaimedBy: claimedBy(sb.Site, sb.ProductWorkID),
+		})
+	}
+	return out
 }

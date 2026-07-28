@@ -442,6 +442,12 @@ components:
           type:
             - array
             - "null"
+        series_siblings:
+          items:
+            $ref: "#/components/schemas/PublicWorkBrief"
+          type:
+            - array
+            - "null"
         tags:
           items:
             $ref: "#/components/schemas/PublicTag"
@@ -479,6 +485,7 @@ components:
         - screenshots
         - characters
         - labels
+        - series_siblings
       type: object
     PublicChangeItem:
       additionalProperties: false

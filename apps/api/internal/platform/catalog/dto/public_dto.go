@@ -114,6 +114,12 @@ type PublicCatalogWork struct {
 	Screenshots []PublicScreenshot      `json:"screenshots"`
 	Characters  []PublicRosterCharacter `json:"characters"`
 	Labels      []PublicWorkLabel       `json:"labels"`
+	// SeriesSiblings is the transitive-closure series membership (wave 113),
+	// projected to briefs — every other live work in the same_series component
+	// (vndb's series is the pairwise same_series relation, never a first-class
+	// entity; a leaf work sees its whole family here). r18 ends drop unless nsfw.
+	// Complementary to series[] (first-class catalog_series). Always present.
+	SeriesSiblings []PublicWorkBrief `json:"series_siblings"`
 }
 
 // PublicLookupData is the external-id reverse-lookup result (GET

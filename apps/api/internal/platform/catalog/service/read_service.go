@@ -190,6 +190,13 @@ type WorkDetail struct {
 	// directions rendered from this work's perspective, other-end identity
 	// riding along. Internal face carries r18 ends verbatim.
 	Relations []WorkRelationRow
+	// SeriesSiblings is the transitive-closure series membership derived from
+	// the same_series (type 7) relation (wave 113): every OTHER live work in
+	// the viewed work's series component. vndb has no first-class series entity
+	// — its series IS the pairwise same_series edge — so a leaf work needs the
+	// closure to see its whole family. Complementary to Series (catalog_series
+	// first-class entities, dlsite lane); the two never overlap by source.
+	SeriesSiblings []SeriesSiblingRow
 }
 
 // WorkIntroRow is one language's intro on a work's read face, carrying its
@@ -478,6 +485,12 @@ func (s *ReadService) loadWorkDetail(ctx context.Context, workID int64) (*WorkDe
 		return nil, err
 	}
 	detail.Relations = relations
+
+	siblings, err := s.loadSeriesSiblings(ctx, workID)
+	if err != nil {
+		return nil, err
+	}
+	detail.SeriesSiblings = siblings
 	return detail, nil
 }
 

@@ -97,6 +97,12 @@ type WorkByAnchorResponse struct {
 	// directions from this work's perspective. The internal face carries r18
 	// ends verbatim (the public face gates them behind nsfw).
 	Relations []WorkRelation `json:"relations"`
+	// SeriesSiblings is the transitive-closure series membership (wave 113):
+	// every other live work reachable through same_series edges, so a leaf work
+	// sees its whole series family (vndb never materializes a series entity —
+	// its series is the pairwise same_series relation). Complementary to
+	// series[] (first-class catalog_series, dlsite lane).
+	SeriesSiblings []WorkSeriesSibling `json:"series_siblings"`
 }
 
 // WorkPlatform is one explicit work-level platform assertion (step 96).
@@ -595,5 +601,17 @@ type WorkRelation struct {
 	ContentRating int16  `json:"content_rating"`
 	Status        int16  `json:"status"`
 	Site          string `json:"site,omitempty" doc:"claim site when the other end is claimed"`
+	ProductWorkID int64  `json:"product_work_id,omitempty"`
+}
+
+// WorkSeriesSibling is one work in the viewed work's same_series transitive
+// closure (wave 113) — a brief so the consumer renders it without a second read.
+type WorkSeriesSibling struct {
+	WorkID        int64  `json:"work_id"`
+	DisplayName   string `json:"display_name"`
+	MediumID      int16  `json:"medium_id"`
+	ContentRating int16  `json:"content_rating"`
+	Status        int16  `json:"status"`
+	Site          string `json:"site,omitempty"`
 	ProductWorkID int64  `json:"product_work_id,omitempty"`
 }

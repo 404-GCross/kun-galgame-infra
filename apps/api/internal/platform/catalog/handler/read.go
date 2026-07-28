@@ -146,6 +146,8 @@ func buildWorkResponse(detail *service.WorkDetail) dto.WorkByAnchorResponse {
 		Platforms: make([]dto.WorkPlatform, 0, len(detail.Platforms)),
 		// Relations pre-sized non-nil so a relation-less work serializes `[]`.
 		Relations: make([]dto.WorkRelation, 0, len(detail.Relations)),
+		// SeriesSiblings pre-sized non-nil so a sibling-less work serializes `[]`.
+		SeriesSiblings: make([]dto.WorkSeriesSibling, 0, len(detail.SeriesSiblings)),
 	}
 	if detail.Work.Site != nil {
 		resp.Work.Site = *detail.Work.Site
@@ -255,6 +257,19 @@ func buildWorkResponse(detail *service.WorkDetail) dto.WorkByAnchorResponse {
 			wr.ProductWorkID = *rl.ProductWorkID
 		}
 		resp.Relations = append(resp.Relations, wr)
+	}
+	for _, sb := range detail.SeriesSiblings {
+		ws := dto.WorkSeriesSibling{
+			WorkID: sb.WorkID, DisplayName: sb.DisplayName, MediumID: sb.MediumID,
+			ContentRating: sb.ContentRating, Status: sb.Status,
+		}
+		if sb.Site != nil {
+			ws.Site = *sb.Site
+		}
+		if sb.ProductWorkID != nil {
+			ws.ProductWorkID = *sb.ProductWorkID
+		}
+		resp.SeriesSiblings = append(resp.SeriesSiblings, ws)
 	}
 	return resp
 }
