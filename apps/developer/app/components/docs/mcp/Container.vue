@@ -10,12 +10,13 @@ useSeoMeta({
     '把 NextMoe 开放 API 作为 MCP（Model Context Protocol）server 接入 AI 助手：端点、密钥配置，以及 Claude Code / Claude Desktop / 通用 MCP 客户端三段配置示例。'
 })
 
-// The seven M1 tools (mirrors apps/api/internal/platform/mcpface). Each maps 1:1
+// The eight tools (mirrors apps/api/internal/platform/mcpface). Each maps 1:1
 // to a public /v1 endpoint; lookup/get take an id, search takes natural language.
+// R18 is hidden by default: nsfw=true on catalog tools, content_limit on galgame.
 const tools = [
   {
     name: 'galgame_search',
-    desc: '全文搜 galgame 聚合面，按相关度返回 brief 记录（自然语言查询首选）。'
+    desc: '全文搜 galgame 聚合面，按相关度返回 brief 记录（自然语言查询首选；支持 fields 稀疏投影与 content_limit 内容分级）。'
   },
   {
     name: 'galgame_get',
@@ -23,7 +24,7 @@ const tools = [
   },
   {
     name: 'catalog_search',
-    desc: '按名字搜身份图谱实体：names（人物名义）/ characters / labels。'
+    desc: '按名字搜身份图谱实体：names（人物名义）/ characters / labels / works（跨媒介作品标题，r18 需 nsfw=true）。'
   },
   {
     name: 'catalog_work_get',
@@ -33,8 +34,15 @@ const tools = [
     name: 'catalog_lookup_external',
     desc: '外部 id 反查（如 source=vndb, external_id=v19658）——手握外部 id 时首选。'
   },
-  { name: 'catalog_label_get', desc: '按 id 取厂牌 / 社团（intros[] / links[]）。' },
-  { name: 'catalog_character_get', desc: '按 id 取角色（spoiler 字段原样透传）。' }
+  {
+    name: 'catalog_name_get',
+    desc: '按 id 取名义（credit-name 同人格分组），include=credits 附署名作品与角色。'
+  },
+  { name: 'catalog_label_get', desc: '按 id 取厂牌 / 社团（include=works 附归属作品）。' },
+  {
+    name: 'catalog_character_get',
+    desc: '按 id 取角色（traits 按 spoilers=0-2 分级；nsfw 控 r18 作品与 sexual 系 traits）。'
+  }
 ]
 
 // Client config snippets. The key is a secret — the placeholder stands in for

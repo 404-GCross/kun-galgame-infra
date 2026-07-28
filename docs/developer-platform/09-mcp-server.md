@@ -40,17 +40,22 @@ MCP server 是公开 /v1 契约前面的一层**协议适配**,不是第二个 A
 - MCP 规范的 OAuth 2.1 授权流 = M2(第三方实际开放后,与 `dev:manage`
   同期评估);M1 的静态 key 模式对 agent 场景已充分。
 
-## 4. M1 工具面(7 个,少而精,每个都映射既有端点)
+## 4. 工具面(8 个 = M1 七个 + `catalog_name_get`;2026-07-28 与 104/105 波 spec 同步)
 
 | tool | 上游端点 | 说明 |
 |---|---|---|
-| `galgame_search` | `GET /v1/galgame/search` | Meili 全文搜 galgame |
-| `galgame_get` | `GET /v1/galgame/{id}` | 详情(携 `catalog_work_id` 跨面互链) |
-| `catalog_search` | `GET /v1/catalog/search` | 实体搜索,`type=names\|characters\|labels`(names 索引即人物/credit-name) |
-| `catalog_work_get` | `GET /v1/catalog/works/{id}` | 注册行 + 可选 credits/relations(`include=credits,relations` 由该端点单次内联返回——MCP 层纯透传 `include`,不再并取子端点) |
-| `catalog_lookup_external` | `GET /v1/catalog/lookup` | killer:`source=vndb&external_id=v19658` → work + 认领指针 |
-| `catalog_label_get` | `GET /v1/catalog/labels/{id}` | 厂牌/社团(intros[]/links[]) |
-| `catalog_character_get` | `GET /v1/catalog/characters/{id}` | 角色(spoiler 字段原样透传) |
+| `galgame_search` | `GET /v1/galgame/search` | Meili 全文搜 galgame(+`fields`/`content_limit`/`age_limit`/`released_months` 透传) |
+| `galgame_get` | `GET /v1/galgame/{id}` | 详情(携 `catalog_work_id` 跨面互链;+`fields`/`content_limit`) |
+| `catalog_search` | `GET /v1/catalog/search` | 实体搜索,`type=names\|characters\|labels\|works`(works=跨媒介作品标题,r18 需 `nsfw=true`) |
+| `catalog_work_get` | `GET /v1/catalog/works/{id}` | 注册行 + 可选 credits/relations(`include=credits,relations` 由该端点单次内联返回——MCP 层纯透传 `include`,不再并取子端点;+`nsfw`) |
+| `catalog_lookup_external` | `GET /v1/catalog/lookup` | killer:`source=vndb&external_id=v19658` → work + 认领指针(+`nsfw`,默认 r18 命中 404) |
+| `catalog_name_get` | `GET /v1/catalog/names/{id}` | 名义(credit-name 同人格分组;`include=credits` 附署名作品+角色) |
+| `catalog_label_get` | `GET /v1/catalog/labels/{id}` | 厂牌/社团(intros[]/links[];`include=works`+`nsfw`) |
+| `catalog_character_get` | `GET /v1/catalog/characters/{id}` | 角色(traits 按 `spoilers=0-2` 分级;`nsfw` 控 r18 作品+sexual 系 traits) |
+
+- **r18 姿态(104 波,调用方自控)**:catalog 系工具 `nsfw=true` 显式开;galgame 系
+  `content_limit=sfw|nsfw|all`(需 key 带 `galgame:nsfw` scope,否则静默降 sfw)。
+  默认全部隐藏——LLM 消费者不显式要就永远看不到 r18。
 
 - tool description 用英文、面向 LLM 写清「何时用哪个」(lookup vs search
   的分工是重点:有外部 id 用 lookup,自然语言用 search)。
@@ -65,7 +70,7 @@ MCP server 是公开 /v1 契约前面的一层**协议适配**,不是第二个 A
   Deploy 姿态,`docker-compose.mcp.yml`);镜像走现有 CI 矩阵。
 - healthz 照平台惯例;结构化日志记 tool 名 + 上游状态码 + 时延,
   **永不记 key 明文**(fingerprint 前 8 hex)。
-- 冒烟:MCP `initialize` + `tools/list` + 一次 `galgame_search` 真调用。
+- 冒烟:MCP `initialize` + `tools/list` + 一次 `galgame_search` 真调用。(2026-07-28 同步后 `tools/list` 应回 8 工具。)
 
 ## 6. 阶段
 
