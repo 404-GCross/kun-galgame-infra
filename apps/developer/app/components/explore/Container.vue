@@ -44,39 +44,20 @@ const expandNote = ref('')
 const expanding = ref(false)
 const EXPAND_CAP = 6
 
-// Entity records name themselves differently per kind: labels carry a flat
-// display_name; names/characters nest it (name: { name, latin, … }). Try the
-// honest chain, fall back to #id.
-const entityName = (data: Record<string, unknown>): string | null => {
-  const dn = data.display_name
-  if (typeof dn === 'string' && dn) return dn
-  const n = data.name
-  if (typeof n === 'string' && n) return n
-  if (n && typeof n === 'object') {
-    const o = n as Record<string, unknown>
-    // stub shape { name, latin }
-    if (typeof o.name === 'string' && o.name) return o.name
-    if (typeof o.latin === 'string' && o.latin) return o.latin
-    // locale map { 'zh-cn': …, ja: …, en: … } (names/characters read faces)
-    for (const k of ['zh_cn', 'zh-cn', 'zh', 'ja', 'en']) {
-      const v = o[k]
-      if (typeof v === 'string' && v) return v
-    }
-    const first = Object.values(o).find((v) => typeof v === 'string' && v)
-    if (typeof first === 'string') return first
-  }
-  // galgame aggregate records: `names` locale map, `name` absent
-  const ns = data.names
-  if (ns && typeof ns === 'object') {
-    const o = ns as Record<string, unknown>
-    for (const k of ['zh_cn', 'zh-cn', 'zh', 'ja', 'en']) {
-      const v = o[k]
-      if (typeof v === 'string' && v) return v
-    }
-    const first = Object.values(o).find((v) => typeof v === 'string' && v)
-    if (typeof first === 'string') return first
-  }
-  return null
+// Click an expanded entity card → its full record in the reusable modal.
+const GROUP_KIND: Record<string, 'characters' | 'names' | 'labels' | 'works'> = {
+  '厂牌 / 社团': 'labels',
+  '角色': 'characters',
+  '名义': 'names',
+  '关联作品': 'works'
+}
+const entityTarget = ref<{
+  kind: 'characters' | 'names' | 'labels' | 'works'
+  id: number
+} | null>(null)
+const openEntity = (e: ExpandedEntity) => {
+  const kind = GROUP_KIND[e.group]
+  if (kind) entityTarget.value = { kind, id: e.id }
 }
 
 const idOf = (v: unknown): number | null => {
@@ -434,9 +415,13 @@ const facetSummary = computed(() => {
               class="rounded-lg border border-default-200 px-3 py-2"
             >
               <div class="flex items-center justify-between gap-2">
-                <span class="truncate text-sm font-medium text-foreground">
+                <button
+                  type="button"
+                  class="truncate text-sm font-medium text-foreground hover:text-primary hover:underline"
+                  @click="openEntity(e)"
+                >
                   {{ e.name }}
-                </span>
+                </button>
                 <KunChip color="default" variant="flat" size="xs">
                   #{{ e.id }}
                 </KunChip>
@@ -469,5 +454,11 @@ const facetSummary = computed(() => {
         </div>
       </KunCard>
     </template>
+
+    <ExploreEntityModal
+      v-model="entityTarget"
+      :api-key="apiKey"
+      :nsfw="nsfw"
+    />
   </div>
 </template>

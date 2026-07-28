@@ -94,6 +94,10 @@ const error = ref('')
 const work = ref<WorkDetail | null>(null)
 const gal = ref<GalAggregate | null>(null)
 const charTraits = ref<Record<number, Trait[]>>({})
+const entityTarget = ref<{
+  kind: 'characters' | 'names' | 'labels' | 'works'
+  id: number
+} | null>(null)
 
 const relay = async (path: string, query: Record<string, string>) => {
   const qs = new URLSearchParams(query).toString()
@@ -106,6 +110,10 @@ const relay = async (path: string, query: Record<string, string>) => {
 const load = async () => {
   loading.value = true
   error.value = ''
+  work.value = null
+  gal.value = null
+  charTraits.value = {}
+  entityTarget.value = null
   try {
     const resp = await relay(`v1/catalog/works/${workId.value}`, {
       include: 'relations,credits',
@@ -157,6 +165,16 @@ onMounted(() => {
   if (apiKey.value) load()
   else loading.value = false
 })
+
+// Relation cards / modal rows navigate to another /explore/work/{id}; Nuxt
+// REUSES the component (same route record), so onMounted won't re-fire —
+// reload whenever the path (or the nsfw query) changes.
+watch(
+  () => route.fullPath,
+  () => {
+    if (route.params.id && apiKey.value) load()
+  }
+)
 
 const pickLocale = (
   m: Record<string, string | null> | undefined,
@@ -360,15 +378,16 @@ const fmt = (n: number) => n.toLocaleString()
           <KunChip v-if="work.olang" color="default" variant="flat" size="sm">
             原语言 {{ work.olang }}
           </KunChip>
-          <KunChip
+          <button
             v-for="l in work.labels ?? []"
             :key="`l-${l.id}`"
-            color="primary"
-            variant="flat"
-            size="sm"
+            type="button"
+            @click="entityTarget = { kind: 'labels', id: l.id }"
           >
-            {{ l.display_name }}
-          </KunChip>
+            <KunChip color="primary" variant="flat" size="sm">
+              {{ l.display_name }}
+            </KunChip>
+          </button>
           <KunChip
             v-for="sr in work.series ?? []"
             :key="`s-${sr.id}`"
@@ -661,9 +680,13 @@ const fmt = (n: number) => n.toLocaleString()
             </div>
             <div class="p-2.5">
               <div class="flex items-center gap-1.5">
-                <span class="truncate text-sm font-medium text-foreground">
+                <button
+                  type="button"
+                  class="truncate text-sm font-medium text-foreground hover:text-primary hover:underline"
+                  @click="entityTarget = { kind: 'characters', id: c.id }"
+                >
                   {{ c.name }}
-                </span>
+                </button>
                 <KunChip
                   v-if="c.kind === 'main'"
                   color="primary"
@@ -675,9 +698,18 @@ const fmt = (n: number) => n.toLocaleString()
               </div>
               <p
                 v-if="c.voices?.length"
-                class="mt-0.5 truncate text-xs text-default-400"
+                class="mt-0.5 flex flex-wrap items-center gap-1 text-xs text-default-400"
               >
-                CV {{ c.voices.map((v) => v.name).join(' / ') }}
+                CV
+                <button
+                  v-for="v in c.voices"
+                  :key="v.id"
+                  type="button"
+                  class="hover:text-primary hover:underline"
+                  @click="entityTarget = { kind: 'names', id: v.id }"
+                >
+                  {{ v.name }}
+                </button>
               </p>
               <div
                 v-if="charTraits[c.id]?.length"
@@ -715,16 +747,17 @@ const fmt = (n: number) => n.toLocaleString()
               {{ g.role_name }}
             </p>
             <div class="mt-1 flex flex-wrap gap-1.5">
-              <KunChip
+              <button
                 v-for="cr in g.credits"
                 :key="`${g.role_key}-${cr.id}-${cr.character ?? ''}`"
-                color="default"
-                variant="flat"
-                size="sm"
+                type="button"
+                @click="entityTarget = { kind: 'names', id: cr.id }"
               >
-                {{ cr.name
-                }}<template v-if="cr.character">（{{ cr.character }}）</template>
-              </KunChip>
+                <KunChip color="default" variant="flat" size="sm">
+                  {{ cr.name
+                  }}<template v-if="cr.character">（{{ cr.character }}）</template>
+                </KunChip>
+              </button>
             </div>
           </div>
         </div>
@@ -816,5 +849,11 @@ const fmt = (n: number) => n.toLocaleString()
         。
       </p>
     </template>
+
+    <ExploreEntityModal
+      v-model="entityTarget"
+      :api-key="apiKey"
+      :nsfw="nsfw"
+    />
   </div>
 </template>
