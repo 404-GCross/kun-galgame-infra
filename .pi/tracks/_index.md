@@ -13,6 +13,7 @@
 | catalog 数据 QA(只修错) | `catalog-data-qa.md` | `refs/qa/` | `fix(catalog-qa)` | 🌗 半休眠 |
 | developer 门户/开放 API 面 | `developer-portal.md` | `refs/plans/09` + docs/developer-platform | `feat(developer)` | 🌗 待部署件 |
 | 编辑引擎 | `editing-engine.md` | `refs/plans/08` | `feat(editing)` | 💤 触发式 |
+| canonical-api(/v1 数据 API 重设计) | `canonical-api.md` | `refs/proj/106` | `feat(api-v1)` | 🔥 设计阶段 |
 | 其余已收官轨(合并一览) | `dormant-tracks.md` | 各 memory 文件 | — | 💤 |
 
 共同必读:`.pi/ONBOARDING.md`(生态地图+纪律+坑速查)。每轨文件里的「Claude memory 参考」
