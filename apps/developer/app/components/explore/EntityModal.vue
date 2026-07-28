@@ -75,6 +75,20 @@ watch(target, async (t) => {
   }
 })
 
+const image = computed(() => {
+  const v = data.value?.image
+  return typeof v === 'string' && v ? v : null
+})
+const siblings = computed(
+  () =>
+    (data.value?.siblings as { id: number; name?: unknown }[] | undefined) ?? []
+)
+const siblingName = (sb: { id: number; name?: unknown }) =>
+  entityName(sb as unknown as Record<string, unknown>) ?? `#${sb.id}`
+const openSibling = (id: number) => {
+  if (target.value) target.value = { kind: 'names', id }
+}
+
 const title = computed(() =>
   data.value ? (entityName(data.value) ?? `#${target.value?.id}`) : ''
 )
@@ -154,6 +168,32 @@ const goWork = (id?: number) => {
           <KunChip v-if="isR18" color="danger" variant="flat" size="xs">
             R18
           </KunChip>
+        </div>
+
+        <div
+          v-if="image"
+          class="w-28 overflow-hidden rounded-lg border border-default-200 bg-default-100"
+        >
+          <KunImageNative
+            :src="image"
+            :alt="title"
+            loading="lazy"
+            class-name="aspect-[3/4] w-full object-cover"
+          />
+        </div>
+
+        <div v-if="siblings.length" class="flex flex-wrap items-center gap-1.5">
+          <span class="text-xs text-default-400">同人格名义</span>
+          <button
+            v-for="sb in siblings"
+            :key="sb.id"
+            type="button"
+            @click="openSibling(sb.id)"
+          >
+            <KunChip color="secondary" variant="flat" size="xs">
+              {{ siblingName(sb) }}
+            </KunChip>
+          </button>
         </div>
 
         <div v-if="refs.length" class="flex flex-wrap items-center gap-1.5">

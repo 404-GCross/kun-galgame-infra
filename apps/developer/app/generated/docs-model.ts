@@ -8879,6 +8879,164 @@ export const docsModel: DocsModel = {
           "title": "Catalog",
           "operations": [
             {
+              "id": "listCatalogChangesPublic",
+              "method": "get",
+              "path": "/v1/catalog/changes",
+              "summary": "Incremental works changes feed ((updated,id) keyset; next_cursor always present — keep polling it for new rows)",
+              "scope": "catalog:read",
+              "params": [
+                {
+                  "name": "entity_type",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "v1 feed scope: work (default)",
+                  "enum": [
+                    "work"
+                  ]
+                },
+                {
+                  "name": "cursor",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "Opaque keyset cursor; omit to start from the beginning"
+                },
+                {
+                  "name": "limit",
+                  "in": "query",
+                  "required": false,
+                  "type": "integer",
+                  "format": "int64",
+                  "doc": "Items per page 1-500 (default 100)"
+                }
+              ],
+              "responses": [
+                {
+                  "status": "200",
+                  "description": "OK",
+                  "schema": {
+                    "type": "object",
+                    "children": [
+                      {
+                        "name": "code",
+                        "required": true,
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      {
+                        "name": "data",
+                        "type": "object",
+                        "children": [
+                          {
+                            "name": "items",
+                            "required": true,
+                            "nullable": true,
+                            "type": "array",
+                            "itemsOf": {
+                              "type": "object",
+                              "children": [
+                                {
+                                  "name": "entity_type",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "id",
+                                  "required": true,
+                                  "format": "int64",
+                                  "type": "integer"
+                                },
+                                {
+                                  "name": "updated",
+                                  "required": true,
+                                  "type": "string"
+                                }
+                              ]
+                            }
+                          },
+                          {
+                            "name": "next_cursor",
+                            "required": true,
+                            "type": "string"
+                          }
+                        ]
+                      },
+                      {
+                        "name": "message",
+                        "required": true,
+                        "type": "string"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "status": "default",
+                  "description": "Error",
+                  "schema": {
+                    "type": "object",
+                    "children": [
+                      {
+                        "name": "detail",
+                        "doc": "A human-readable explanation specific to this occurrence of the problem.",
+                        "type": "string"
+                      },
+                      {
+                        "name": "errors",
+                        "nullable": true,
+                        "doc": "Optional list of individual error details",
+                        "type": "array",
+                        "itemsOf": {
+                          "type": "object",
+                          "children": [
+                            {
+                              "name": "location",
+                              "doc": "Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'",
+                              "type": "string"
+                            },
+                            {
+                              "name": "message",
+                              "doc": "Error message text",
+                              "type": "string"
+                            },
+                            {
+                              "name": "value",
+                              "doc": "The value at the given location",
+                              "type": "object"
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "name": "instance",
+                        "doc": "A URI reference that identifies the specific occurrence of the problem.",
+                        "format": "uri",
+                        "type": "string"
+                      },
+                      {
+                        "name": "status",
+                        "doc": "HTTP status code",
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      {
+                        "name": "title",
+                        "doc": "A short, human-readable summary of the problem type. This value should not change between occurrences of the error.",
+                        "type": "string"
+                      },
+                      {
+                        "name": "type",
+                        "doc": "A URI reference to human-readable documentation for the error.",
+                        "format": "uri",
+                        "type": "string"
+                      }
+                    ]
+                  }
+                }
+              ],
+              "curl": "curl \"https://api.nextmoe.dev/v1/catalog/changes\" \\\n  -H \"Authorization: Bearer nm_live_<YOUR_KEY>\""
+            },
+            {
               "id": "getCatalogCharacterPublic",
               "method": "get",
               "path": "/v1/catalog/characters/{id}",
@@ -8956,6 +9114,36 @@ export const docsModel: DocsModel = {
                             "type": "integer"
                           },
                           {
+                            "name": "image",
+                            "type": "string"
+                          },
+                          {
+                            "name": "intros",
+                            "required": true,
+                            "nullable": true,
+                            "type": "array",
+                            "itemsOf": {
+                              "type": "object",
+                              "children": [
+                                {
+                                  "name": "intro",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "lang",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "source",
+                                  "required": true,
+                                  "type": "string"
+                                }
+                              ]
+                            }
+                          },
+                          {
                             "name": "latin",
                             "type": "string"
                           },
@@ -8982,6 +9170,27 @@ export const docsModel: DocsModel = {
                             "name": "next_offset",
                             "format": "int64",
                             "type": "integer"
+                          },
+                          {
+                            "name": "refs",
+                            "required": true,
+                            "nullable": true,
+                            "type": "array",
+                            "itemsOf": {
+                              "type": "object",
+                              "children": [
+                                {
+                                  "name": "external_id",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "source",
+                                  "required": true,
+                                  "type": "string"
+                                }
+                              ]
+                            }
                           },
                           {
                             "name": "traits",
@@ -9319,6 +9528,27 @@ export const docsModel: DocsModel = {
                             "name": "next_offset",
                             "format": "int64",
                             "type": "integer"
+                          },
+                          {
+                            "name": "refs",
+                            "required": true,
+                            "nullable": true,
+                            "type": "array",
+                            "itemsOf": {
+                              "type": "object",
+                              "children": [
+                                {
+                                  "name": "external_id",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "source",
+                                  "required": true,
+                                  "type": "string"
+                                }
+                              ]
+                            }
                           },
                           {
                             "name": "works",
@@ -10010,6 +10240,32 @@ export const docsModel: DocsModel = {
                             "type": "integer"
                           },
                           {
+                            "name": "intros",
+                            "required": true,
+                            "nullable": true,
+                            "type": "array",
+                            "itemsOf": {
+                              "type": "object",
+                              "children": [
+                                {
+                                  "name": "intro",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "lang",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "source",
+                                  "required": true,
+                                  "type": "string"
+                                }
+                              ]
+                            }
+                          },
+                          {
                             "name": "latin",
                             "type": "string"
                           },
@@ -10041,6 +10297,27 @@ export const docsModel: DocsModel = {
                             "name": "person_id",
                             "format": "int64",
                             "type": "integer"
+                          },
+                          {
+                            "name": "refs",
+                            "required": true,
+                            "nullable": true,
+                            "type": "array",
+                            "itemsOf": {
+                              "type": "object",
+                              "children": [
+                                {
+                                  "name": "external_id",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "source",
+                                  "required": true,
+                                  "type": "string"
+                                }
+                              ]
+                            }
                           },
                           {
                             "name": "siblings",
@@ -10659,6 +10936,507 @@ export const docsModel: DocsModel = {
               "curl": "curl \"https://api.nextmoe.dev/v1/catalog/search\" \\\n  -H \"Authorization: Bearer nm_live_<YOUR_KEY>\""
             },
             {
+              "id": "getCatalogTagPublic",
+              "method": "get",
+              "path": "/v1/catalog/tags/{id}",
+              "summary": "Canonical tag (cross-source vocabulary): name / tier / kind; include=works attaches the tagged works",
+              "scope": "catalog:read",
+              "params": [
+                {
+                  "name": "id",
+                  "in": "path",
+                  "required": true,
+                  "type": "integer",
+                  "format": "int64",
+                  "doc": "Canonical tag id (the cross-source tag vocabulary)"
+                },
+                {
+                  "name": "include",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "works = attach the works carrying any mapped source tag"
+                },
+                {
+                  "name": "nsfw",
+                  "in": "query",
+                  "required": false,
+                  "type": "boolean",
+                  "doc": "true/1 = include r18 works (default false = dropped)"
+                },
+                {
+                  "name": "limit",
+                  "in": "query",
+                  "required": false,
+                  "type": "integer",
+                  "format": "int64",
+                  "doc": "Works per page 1-50 (default 50)"
+                },
+                {
+                  "name": "offset",
+                  "in": "query",
+                  "required": false,
+                  "type": "integer",
+                  "format": "int64",
+                  "doc": "Rows to skip"
+                }
+              ],
+              "responses": [
+                {
+                  "status": "200",
+                  "description": "OK",
+                  "schema": {
+                    "type": "object",
+                    "children": [
+                      {
+                        "name": "code",
+                        "required": true,
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      {
+                        "name": "data",
+                        "type": "object",
+                        "children": [
+                          {
+                            "name": "id",
+                            "required": true,
+                            "format": "int64",
+                            "type": "integer"
+                          },
+                          {
+                            "name": "kind",
+                            "required": true,
+                            "doc": "content|meta",
+                            "type": "string"
+                          },
+                          {
+                            "name": "name",
+                            "required": true,
+                            "type": "string"
+                          },
+                          {
+                            "name": "next_offset",
+                            "format": "int64",
+                            "type": "integer"
+                          },
+                          {
+                            "name": "tier",
+                            "required": true,
+                            "doc": "core|longtail|hidden",
+                            "type": "string"
+                          },
+                          {
+                            "name": "works",
+                            "nullable": true,
+                            "type": "array",
+                            "itemsOf": {
+                              "type": "object",
+                              "children": [
+                                {
+                                  "name": "claimed_by",
+                                  "required": true,
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "site",
+                                      "required": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "work_id",
+                                      "required": true,
+                                      "format": "int64",
+                                      "type": "integer"
+                                    }
+                                  ]
+                                },
+                                {
+                                  "name": "content_rating",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "display_name",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "id",
+                                  "required": true,
+                                  "format": "int64",
+                                  "type": "integer"
+                                },
+                                {
+                                  "name": "medium",
+                                  "required": true,
+                                  "type": "string"
+                                }
+                              ]
+                            }
+                          }
+                        ]
+                      },
+                      {
+                        "name": "message",
+                        "required": true,
+                        "type": "string"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "status": "default",
+                  "description": "Error",
+                  "schema": {
+                    "type": "object",
+                    "children": [
+                      {
+                        "name": "detail",
+                        "doc": "A human-readable explanation specific to this occurrence of the problem.",
+                        "type": "string"
+                      },
+                      {
+                        "name": "errors",
+                        "nullable": true,
+                        "doc": "Optional list of individual error details",
+                        "type": "array",
+                        "itemsOf": {
+                          "type": "object",
+                          "children": [
+                            {
+                              "name": "location",
+                              "doc": "Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'",
+                              "type": "string"
+                            },
+                            {
+                              "name": "message",
+                              "doc": "Error message text",
+                              "type": "string"
+                            },
+                            {
+                              "name": "value",
+                              "doc": "The value at the given location",
+                              "type": "object"
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "name": "instance",
+                        "doc": "A URI reference that identifies the specific occurrence of the problem.",
+                        "format": "uri",
+                        "type": "string"
+                      },
+                      {
+                        "name": "status",
+                        "doc": "HTTP status code",
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      {
+                        "name": "title",
+                        "doc": "A short, human-readable summary of the problem type. This value should not change between occurrences of the error.",
+                        "type": "string"
+                      },
+                      {
+                        "name": "type",
+                        "doc": "A URI reference to human-readable documentation for the error.",
+                        "format": "uri",
+                        "type": "string"
+                      }
+                    ]
+                  }
+                }
+              ],
+              "curl": "curl \"https://api.nextmoe.dev/v1/catalog/tags/1\" \\\n  -H \"Authorization: Bearer nm_live_<YOUR_KEY>\""
+            },
+            {
+              "id": "listCatalogWorksPublic",
+              "method": "get",
+              "path": "/v1/catalog/works",
+              "summary": "Keyset works browse lane: the LIVE galgame registry set (claimed + bodyless) with conjunctive filters; sort=id|updated",
+              "scope": "catalog:read",
+              "params": [
+                {
+                  "name": "content_rating",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "Filter by rating (r18 additionally requires nsfw=1)",
+                  "enum": [
+                    "all_ages",
+                    "sensitive",
+                    "r18"
+                  ]
+                },
+                {
+                  "name": "claimed",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "true = claimed works only; false = bodyless only; absent = both",
+                  "enum": [
+                    "true",
+                    "false"
+                  ]
+                },
+                {
+                  "name": "label_id",
+                  "in": "query",
+                  "required": false,
+                  "type": "integer",
+                  "format": "int64",
+                  "doc": "Only works attributed to this label (the catalog_work_label edge)"
+                },
+                {
+                  "name": "tag_id",
+                  "in": "query",
+                  "required": false,
+                  "type": "integer",
+                  "format": "int64",
+                  "doc": "Only works carrying a source tag mapped to this canonical tag"
+                },
+                {
+                  "name": "series_id",
+                  "in": "query",
+                  "required": false,
+                  "type": "integer",
+                  "format": "int64",
+                  "doc": "Only member works of this series"
+                },
+                {
+                  "name": "platform",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "vndb platform code (win/and/ios/...) — release-level and work-level rows unioned"
+                },
+                {
+                  "name": "released_after",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "YYYY-MM-DD, inclusive, over the EARLIEST release date per work"
+                },
+                {
+                  "name": "released_before",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "YYYY-MM-DD, inclusive"
+                },
+                {
+                  "name": "ids",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "Comma-separated work ids (max 100) — the batch-hydrate lane"
+                },
+                {
+                  "name": "sort",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "id = ascending browse order (default); updated = newest-updated first",
+                  "enum": [
+                    "id",
+                    "updated"
+                  ]
+                },
+                {
+                  "name": "cursor",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "Opaque keyset cursor from a prior next_cursor; omit for the first page"
+                },
+                {
+                  "name": "limit",
+                  "in": "query",
+                  "required": false,
+                  "type": "integer",
+                  "format": "int64",
+                  "doc": "Items per page 1-100 (default 20)"
+                },
+                {
+                  "name": "nsfw",
+                  "in": "query",
+                  "required": false,
+                  "type": "boolean",
+                  "doc": "true/1 = include r18 works (default false = dropped)"
+                }
+              ],
+              "responses": [
+                {
+                  "status": "200",
+                  "description": "OK",
+                  "schema": {
+                    "type": "object",
+                    "children": [
+                      {
+                        "name": "code",
+                        "required": true,
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      {
+                        "name": "data",
+                        "type": "object",
+                        "children": [
+                          {
+                            "name": "items",
+                            "required": true,
+                            "nullable": true,
+                            "type": "array",
+                            "itemsOf": {
+                              "type": "object",
+                              "children": [
+                                {
+                                  "name": "claimed_by",
+                                  "required": true,
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "site",
+                                      "required": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "work_id",
+                                      "required": true,
+                                      "format": "int64",
+                                      "type": "integer"
+                                    }
+                                  ]
+                                },
+                                {
+                                  "name": "content_rating",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "cover",
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "display_name",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "id",
+                                  "required": true,
+                                  "format": "int64",
+                                  "type": "integer"
+                                },
+                                {
+                                  "name": "medium",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "olang",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "release_date",
+                                  "required": true,
+                                  "nullable": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "updated",
+                                  "required": true,
+                                  "type": "string"
+                                }
+                              ]
+                            }
+                          },
+                          {
+                            "name": "next_cursor",
+                            "required": true,
+                            "nullable": true,
+                            "type": "string"
+                          }
+                        ]
+                      },
+                      {
+                        "name": "message",
+                        "required": true,
+                        "type": "string"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "status": "default",
+                  "description": "Error",
+                  "schema": {
+                    "type": "object",
+                    "children": [
+                      {
+                        "name": "detail",
+                        "doc": "A human-readable explanation specific to this occurrence of the problem.",
+                        "type": "string"
+                      },
+                      {
+                        "name": "errors",
+                        "nullable": true,
+                        "doc": "Optional list of individual error details",
+                        "type": "array",
+                        "itemsOf": {
+                          "type": "object",
+                          "children": [
+                            {
+                              "name": "location",
+                              "doc": "Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'",
+                              "type": "string"
+                            },
+                            {
+                              "name": "message",
+                              "doc": "Error message text",
+                              "type": "string"
+                            },
+                            {
+                              "name": "value",
+                              "doc": "The value at the given location",
+                              "type": "object"
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "name": "instance",
+                        "doc": "A URI reference that identifies the specific occurrence of the problem.",
+                        "format": "uri",
+                        "type": "string"
+                      },
+                      {
+                        "name": "status",
+                        "doc": "HTTP status code",
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      {
+                        "name": "title",
+                        "doc": "A short, human-readable summary of the problem type. This value should not change between occurrences of the error.",
+                        "type": "string"
+                      },
+                      {
+                        "name": "type",
+                        "doc": "A URI reference to human-readable documentation for the error.",
+                        "format": "uri",
+                        "type": "string"
+                      }
+                    ]
+                  }
+                }
+              ],
+              "curl": "curl \"https://api.nextmoe.dev/v1/catalog/works\" \\\n  -H \"Authorization: Bearer nm_live_<YOUR_KEY>\""
+            },
+            {
               "id": "getCatalogWorkPublic",
               "method": "get",
               "path": "/v1/catalog/works/{id}",
@@ -11197,6 +11975,12 @@ export const docsModel: DocsModel = {
                                   "type": "string"
                                 },
                                 {
+                                  "name": "id",
+                                  "required": true,
+                                  "format": "int64",
+                                  "type": "integer"
+                                },
+                                {
                                   "name": "kind",
                                   "required": true,
                                   "doc": "default|digital|physical|trial|patch",
@@ -11216,6 +12000,27 @@ export const docsModel: DocsModel = {
                                   "type": "array",
                                   "itemsOf": {
                                     "type": "string"
+                                  }
+                                },
+                                {
+                                  "name": "refs",
+                                  "required": true,
+                                  "nullable": true,
+                                  "type": "array",
+                                  "itemsOf": {
+                                    "type": "object",
+                                    "children": [
+                                      {
+                                        "name": "external_id",
+                                        "required": true,
+                                        "type": "string"
+                                      },
+                                      {
+                                        "name": "source",
+                                        "required": true,
+                                        "type": "string"
+                                      }
+                                    ]
                                   }
                                 },
                                 {
@@ -11304,9 +12109,19 @@ export const docsModel: DocsModel = {
                               "type": "object",
                               "children": [
                                 {
+                                  "name": "canonical_id",
+                                  "format": "int64",
+                                  "type": "integer"
+                                },
+                                {
                                   "name": "count",
                                   "format": "int64",
                                   "type": "integer"
+                                },
+                                {
+                                  "name": "kind",
+                                  "doc": "content|meta",
+                                  "type": "string"
                                 },
                                 {
                                   "name": "name",
@@ -11316,6 +12131,11 @@ export const docsModel: DocsModel = {
                                 {
                                   "name": "source",
                                   "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "tier",
+                                  "doc": "core|longtail|hidden",
                                   "type": "string"
                                 }
                               ]
@@ -11350,6 +12170,11 @@ export const docsModel: DocsModel = {
                                 }
                               ]
                             }
+                          },
+                          {
+                            "name": "updated",
+                            "required": true,
+                            "type": "string"
                           }
                         ]
                       },
