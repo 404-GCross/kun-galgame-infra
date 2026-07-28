@@ -223,7 +223,7 @@ watch(apiKey, (v) => sessionStorage.setItem('explore_api_key', v))
 const relay = async (path: string, query: Record<string, string>) => {
   const qs = new URLSearchParams(query).toString()
   return await $fetch<{ code: number; message: string; data: unknown }>(
-    `/explore/${path}?${qs}`,
+    `/relay/${path}?${qs}`,
     { headers: { Authorization: `Bearer ${apiKey.value.trim()}` } }
   )
 }
@@ -366,6 +366,18 @@ const facetSummary = computed(() => {
           >
             R18
           </KunChip>
+          <KunButton
+            size="sm"
+            color="primary"
+            variant="flat"
+            @click="
+              navigateTo(
+                `/explore/work/${(detail as { id?: number }).id}${nsfw ? '?nsfw=1' : ''}`
+              )
+            "
+          >
+            预览详情页
+          </KunButton>
         </div>
         <div class="grid grid-cols-2 gap-2 md:grid-cols-4">
           <div

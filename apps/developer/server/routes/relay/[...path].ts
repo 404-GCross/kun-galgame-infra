@@ -1,5 +1,7 @@
-// GET-only relay for the /explore data browser: the browser cannot call
-// api.nextmoe.dev directly (no CORS there — it is a server-to-server face), so
+// GET-only relay for the /explore data browser (namespaced /relay/** — a
+// server route at /explore/** would shadow the /explore/work/[id] PAGE route:
+// Nitro server routes outrank pages). The browser cannot call api.nextmoe.dev
+// directly (no CORS there — it is a server-to-server face), so
 // the page sends its requests here and we forward them with the caller's own
 // Authorization header (their nm_ key; never stored server-side). Only the two
 // public read faces are reachable — anything else 404s.
