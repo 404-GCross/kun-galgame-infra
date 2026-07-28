@@ -12,6 +12,16 @@ interface Img {
   sexual?: number
   violence?: number
   source?: string
+  kind?: string
+  portrait_pinned?: boolean
+}
+interface Trait {
+  id: number
+  name: string
+  group?: string
+  sexual?: boolean
+  spoiler?: number
+  lie?: boolean
 }
 interface Character {
   id: number
@@ -56,7 +66,8 @@ interface WorkDetail {
   }[]
   labels?: { id: number; display_name: string; kind?: string }[]
   series?: { id: number; name: string; member_count?: number }[]
-  intro?: { lang: string; intro: string }[]
+  intro?: { lang: string; intro: string; machine?: boolean; source?: string }[]
+  titles?: { kind?: string; lang?: string; latin?: string; title: string }[]
   claimed_by?: { site?: string; work_id?: number } | null
 }
 interface GalAggregate {
@@ -68,6 +79,9 @@ interface GalAggregate {
     bangumi?: { score?: number; rank?: number; url?: string } | null
     eg?: { median?: number; count?: number; url?: string } | null
   }
+  aliases?: string[]
+  links?: { id: number; name: string; link: string; source?: string }[]
+  meta?: Record<string, unknown>
 }
 
 const route = useRoute()
@@ -79,6 +93,7 @@ const loading = ref(true)
 const error = ref('')
 const work = ref<WorkDetail | null>(null)
 const gal = ref<GalAggregate | null>(null)
+const charTraits = ref<Record<number, Trait[]>>({})
 
 const relay = async (path: string, query: Record<string, string>) => {
   const qs = new URLSearchParams(query).toString()
@@ -104,11 +119,31 @@ const load = async () => {
       String(cb.site ?? '').includes('galgame')
     ) {
       const g = await relay(`v1/galgame/${cb.work_id}`, {
-        include: 'intro,scores,covers',
+        include: 'intro,scores,covers,links,meta',
         content_limit: nsfw.value ? 'all' : 'sfw'
       }).catch(() => null)
       gal.value = (g?.data as GalAggregate) ?? null
     }
+    // Per-character traits: one call per DISPLAYED character (cap 12,
+    // concurrent, failures silent). spoilers=0 keeps the page spoiler-safe;
+    // sexual-family traits only appear when the nsfw gate is on (server-side).
+    const visible = (work.value?.characters ?? [])
+      .filter((c) => (c.spoiler ?? 0) === 0)
+      .slice(0, 12)
+    const traitResults = await Promise.allSettled(
+      visible.map(async (c) => {
+        const r = await relay(`v1/catalog/characters/${c.id}`, {
+          spoilers: '0',
+          ...(nsfw.value && { nsfw: '1' })
+        })
+        return { id: c.id, data: r.data as { traits?: Trait[] } | null }
+      })
+    )
+    const tm: Record<number, Trait[]> = {}
+    for (const r of traitResults)
+      if (r.status === 'fulfilled' && r.value.data?.traits?.length)
+        tm[r.value.id] = r.value.data.traits
+    charTraits.value = tm
   } catch (e) {
     const err = e as { data?: { message?: string }; statusCode?: number }
     error.value = err.data?.message ?? `请求失败（${err.statusCode ?? '网络错误'}）`
@@ -157,16 +192,68 @@ const banner = computed(
     null
 )
 
-// The wiki-era long intro carries literal backslash+newline pairs — normalize.
-const introText = computed(() => {
-  const zh = pickLocale(gal.value?.intro, ['zh-cn', 'zh_cn', 'zh-tw'])
-  if (zh) return zh.replace(/\\\n/g, '\n')
-  const list = work.value?.intro ?? []
-  const pick =
-    list.find((i) => i.lang.toLowerCase().startsWith('zh')) ??
-    list.find((i) => i.lang === 'ja') ??
-    list[0]
-  return pick ? pick.intro.replace(/\\\n/g, '\n') : null
+// Every intro variant from BOTH faces, language-labeled and provenance-tagged.
+// work.intro[] carries an honest `machine` flag (MT provenance); the galgame
+// face intro map is wiki-curated. Literal backslash+newline pairs normalized.
+const LOCALE_LABEL: Record<string, string> = {
+  'zh-cn': '中文',
+  zh_cn: '中文',
+  'zh-tw': '繁體中文',
+  'zh-Hans': '中文',
+  'ja-jp': '日本語',
+  ja: '日本語',
+  'en-us': 'English',
+  en: 'English'
+}
+interface IntroVariant {
+  label: string
+  text: string
+  machine: boolean
+  source?: string
+}
+const introVariants = computed<IntroVariant[]>(() => {
+  const out: IntroVariant[] = []
+  const gi = gal.value?.intro
+  if (gi)
+    for (const [k, v] of Object.entries(gi))
+      if (typeof v === 'string' && v)
+        out.push({
+          label: LOCALE_LABEL[k] ?? k,
+          text: v.replace(/\\\n/g, '\n'),
+          machine: false,
+          source: 'galgame_wiki'
+        })
+  for (const i of work.value?.intro ?? [])
+    out.push({
+      label: LOCALE_LABEL[i.lang] ?? i.lang,
+      text: i.intro.replace(/\\\n/g, '\n'),
+      machine: i.machine === true,
+      source: i.source
+    })
+  return out
+})
+const introIdx = ref(0)
+watch(
+  introVariants,
+  (v) => {
+    const zh = v.findIndex((x) => x.label.includes('中文'))
+    introIdx.value = zh >= 0 ? zh : 0
+  },
+  { immediate: true }
+)
+const activeIntro = computed(() => introVariants.value[introIdx.value] ?? null)
+
+const aliasList = computed(() => (gal.value?.aliases ?? []).slice(0, 12))
+const aliasRest = computed(
+  () => Math.max(0, (gal.value?.aliases?.length ?? 0) - 12)
+)
+const coverList = computed(() =>
+  (work.value?.covers ?? []).filter(safeImg).slice(0, 8)
+)
+const linkList = computed(() => (gal.value?.links ?? []).slice(0, 12))
+const galView = computed(() => {
+  const v = gal.value?.meta?.view
+  return typeof v === 'number' ? v : null
 })
 
 const TAG_CAP = 40
@@ -291,8 +378,43 @@ const fmt = (n: number) => n.toLocaleString()
           >
             系列 · {{ sr.name }}（{{ sr.member_count }} 部）
           </KunChip>
+          <KunChip v-if="galView !== null" color="default" variant="flat" size="sm">
+            {{ fmt(galView) }} 次浏览
+          </KunChip>
         </div>
       </header>
+
+      <section v-if="(work.titles ?? []).length || aliasList.length">
+        <h2 class="mb-2 text-lg font-semibold text-foreground">名称与别名</h2>
+        <div
+          v-if="(work.titles ?? []).length"
+          class="mb-2 space-y-1 text-sm text-default-500"
+        >
+          <p v-for="(t, i) in work.titles" :key="`t-${i}`">
+            <KunChip color="default" variant="flat" size="xs">
+              {{ t.kind ?? 'title' }}<template v-if="t.lang"> · {{ t.lang }}</template>
+            </KunChip>
+            <span class="ml-2 text-foreground">{{ t.title }}</span>
+            <span v-if="t.latin" class="ml-2 text-xs text-default-400">
+              {{ t.latin }}
+            </span>
+          </p>
+        </div>
+        <div v-if="aliasList.length" class="flex flex-wrap gap-1.5">
+          <KunChip
+            v-for="a in aliasList"
+            :key="a"
+            color="default"
+            variant="flat"
+            size="xs"
+          >
+            {{ a }}
+          </KunChip>
+          <span v-if="aliasRest" class="text-xs text-default-400">
+            +{{ aliasRest }}
+          </span>
+        </div>
+      </section>
 
       <section
         v-if="(work.ratings ?? []).length || (work.playtimes ?? []).length"
@@ -369,13 +491,107 @@ const fmt = (n: number) => n.toLocaleString()
         </template>
       </section>
 
-      <section v-if="introText">
-        <h2 class="mb-2 text-lg font-semibold text-foreground">简介</h2>
-        <p
-          class="whitespace-pre-line text-sm leading-relaxed text-default-500"
+      <section v-if="linkList.length" class="flex flex-wrap items-center gap-2">
+        <span class="text-xs text-default-400">官方 / 外部链接</span>
+        <a
+          v-for="lk in linkList"
+          :key="lk.id"
+          :href="lk.link"
+          target="_blank"
+          rel="noopener"
         >
-          {{ introText }}
-        </p>
+          <KunChip color="secondary" variant="flat" size="sm">
+            {{ lk.name }}
+          </KunChip>
+        </a>
+      </section>
+
+      <section v-if="introVariants.length">
+        <div class="mb-2 flex flex-wrap items-center gap-2">
+          <h2 class="text-lg font-semibold text-foreground">简介</h2>
+          <div class="flex flex-wrap gap-1">
+            <KunButton
+              v-for="(v, i) in introVariants"
+              :key="`iv-${i}`"
+              size="xs"
+              :color="i === introIdx ? 'primary' : 'default'"
+              variant="flat"
+              @click="introIdx = i"
+            >
+              {{ v.label }}
+              <template v-if="v.machine">· 机翻</template>
+            </KunButton>
+          </div>
+        </div>
+        <div
+          v-if="activeIntro"
+          class="space-y-2 rounded-xl border border-default-200 bg-content1 p-4"
+        >
+          <div class="flex flex-wrap gap-1.5">
+            <KunChip
+              v-if="activeIntro.source"
+              color="default"
+              variant="flat"
+              size="xs"
+            >
+              来源 {{ activeIntro.source }}
+            </KunChip>
+            <KunChip
+              v-if="activeIntro.machine"
+              color="warning"
+              variant="flat"
+              size="xs"
+            >
+              机器翻译（API 原样标注 machine=true）
+            </KunChip>
+          </div>
+          <p
+            class="whitespace-pre-line text-sm leading-relaxed text-default-500"
+          >
+            {{ activeIntro.text }}
+          </p>
+        </div>
+      </section>
+
+      <section v-if="coverList.length">
+        <h2 class="mb-2 text-lg font-semibold text-foreground">
+          封面（{{ coverList.length }}）
+        </h2>
+        <div class="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-6">
+          <div
+            v-for="(cv, i) in coverList"
+            :key="cv.url"
+            class="relative overflow-hidden rounded-lg border border-default-200 bg-default-100"
+          >
+            <KunImageNative
+              :src="cv.url"
+              :alt="`封面 ${i + 1}`"
+              loading="lazy"
+              class-name="aspect-[3/4] w-full object-cover"
+            />
+            <div class="absolute bottom-1 left-1 flex flex-wrap gap-1">
+              <KunChip v-if="cv.source" color="default" variant="solid" size="xs">
+                {{ cv.source }}
+              </KunChip>
+              <KunChip
+                v-if="cv.portrait_pinned"
+                color="primary"
+                variant="solid"
+                size="xs"
+              >
+                主图
+              </KunChip>
+              <KunChip
+                v-if="(cv.sexual ?? 0) > 0"
+                color="danger"
+                variant="solid"
+                size="xs"
+              >
+                s{{ cv.sexual }}
+              </KunChip>
+            </div>
+          </div>
+        </div>
       </section>
 
       <section v-if="tags.length">
@@ -402,7 +618,7 @@ const fmt = (n: number) => n.toLocaleString()
           <div
             v-for="(sh, i) in shots"
             :key="sh.url"
-            class="overflow-hidden rounded-lg border border-default-200 bg-default-100"
+            class="relative overflow-hidden rounded-lg border border-default-200 bg-default-100"
           >
             <KunImageNative
               :src="sh.url"
@@ -410,6 +626,19 @@ const fmt = (n: number) => n.toLocaleString()
               loading="lazy"
               class-name="aspect-video w-full object-cover"
             />
+            <div class="absolute bottom-1 left-1 flex gap-1">
+              <KunChip v-if="sh.source" color="default" variant="solid" size="xs">
+                {{ sh.source }}
+              </KunChip>
+              <KunChip
+                v-if="(sh.sexual ?? 0) > 0 || (sh.violence ?? 0) > 0"
+                color="danger"
+                variant="solid"
+                size="xs"
+              >
+                s{{ sh.sexual ?? 0 }}/v{{ sh.violence ?? 0 }}
+              </KunChip>
+            </div>
           </div>
         </div>
       </section>
@@ -450,6 +679,26 @@ const fmt = (n: number) => n.toLocaleString()
               >
                 CV {{ c.voices.map((v) => v.name).join(' / ') }}
               </p>
+              <div
+                v-if="charTraits[c.id]?.length"
+                class="mt-1.5 flex flex-wrap gap-1"
+              >
+                <KunChip
+                  v-for="tr in (charTraits[c.id] ?? []).slice(0, 6)"
+                  :key="tr.id"
+                  :color="tr.sexual ? 'danger' : 'default'"
+                  variant="flat"
+                  size="xs"
+                >
+                  {{ tr.name }}
+                </KunChip>
+                <span
+                  v-if="(charTraits[c.id]?.length ?? 0) > 6"
+                  class="text-xs text-default-400"
+                >
+                  +{{ (charTraits[c.id]?.length ?? 0) - 6 }}
+                </span>
+              </div>
             </div>
           </div>
         </div>
@@ -550,11 +799,13 @@ const fmt = (n: number) => n.toLocaleString()
       </section>
 
       <p class="border-t border-default-200 pt-4 text-xs text-default-400">
-        本页由 NextMoe 开放 API 实时渲染，仅两次调用：
+        本页由 NextMoe 开放 API 实时渲染：
         <code class="font-mono">/v1/catalog/works/{id}</code>（聚合 facet +
-        逐源归因）与
+        逐源归因）+
         <code class="font-mono">/v1/galgame/{gid}</code>（跨面聚合：banner /
-        多语言名 / 长简介 / 三源评分链接）。同样的数据，你的应用也拿得到 ——
+        多语言名 / 多语言简介含机翻标注 / 别名 / 官方链接 / 三源评分）+
+        逐角色 <code class="font-mono">/v1/catalog/characters/{id}</code>
+        （traits）。同样的数据，你的应用也拿得到 ——
         <NuxtLink to="/docs" class="text-primary hover:underline">
           API 文档
         </NuxtLink>

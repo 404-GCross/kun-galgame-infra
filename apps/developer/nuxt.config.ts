@@ -36,6 +36,15 @@ export default defineNuxtConfig({
   // in app/assets/css/main.css.
   css: ['~/assets/css/main.css'],
 
+  // The /explore data browser (and its work showcase) is a key-gated demo
+  // surface — keep it out of search indexes. Pages also set robots noindex
+  // via useSeoMeta; this adds the header layer (belt and suspenders).
+  routeRules: {
+    '/explore': { headers: { 'X-Robots-Tag': 'noindex, nofollow' } },
+    '/explore/**': { headers: { 'X-Robots-Tag': 'noindex, nofollow' } },
+    '/relay/**': { headers: { 'X-Robots-Tag': 'noindex, nofollow' } }
+  },
+
   modules: [
     '@nuxt/eslint',
     '@nuxtjs/color-mode',
