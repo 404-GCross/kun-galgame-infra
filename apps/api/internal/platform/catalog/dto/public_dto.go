@@ -254,6 +254,13 @@ type PublicCharacter struct {
 	// spoilers ceiling (default 0 = safe); sexual-family traits are served
 	// only with nsfw=1 (caller-controlled, wave 104). Always present.
 	Traits []PublicCharacterTrait `json:"traits"`
+	// Intros is the multilingual description set (wave 107): one element per
+	// language (lowest source_id wins — the step-65 intro merge); vndb
+	// spoiler spans were already stripped at import. Always present.
+	Intros []PublicCharacterIntro `json:"intros"`
+	// Image is the portrait as a complete CDN URL; omitted when the
+	// character has no portrait.
+	Image string `json:"image,omitempty"`
 }
 
 // PublicLabelWork is one work attributed to a label, with the attribution nature.
@@ -512,4 +519,12 @@ type PublicTagDetail struct {
 	// tag (include=works; nsfw-gated briefs).
 	Works      []PublicWorkBrief `json:"works,omitempty"`
 	NextOffset *int              `json:"next_offset,omitempty"`
+}
+
+// PublicCharacterIntro is one language's description of a character (wave
+// 107). source is the catalog_source key.
+type PublicCharacterIntro struct {
+	Lang   string `json:"lang"`
+	Intro  string `json:"intro"`
+	Source string `json:"source"`
 }

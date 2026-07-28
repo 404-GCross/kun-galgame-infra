@@ -569,6 +569,16 @@ func (s *PublicService) Character(ctx context.Context, id int64, withWorks, nsfw
 	if ch.Refs, err = s.entityRefs(ctx, model.EntityTypeCharacter, id); err != nil {
 		return dto.PublicCharacter{}, false, err
 	}
+	if ch.Intros, err = s.characterIntros(ctx, id); err != nil {
+		return dto.PublicCharacter{}, false, err
+	}
+	var imgHash *string
+	if err := s.db.WithContext(ctx).Raw(`SELECT image_hash FROM catalog_character WHERE id = ?`, id).Scan(&imgHash).Error; err != nil {
+		return dto.PublicCharacter{}, false, err
+	}
+	if imgHash != nil {
+		ch.Image = s.imageURL(*imgHash)
+	}
 	if withWorks {
 		briefs, err := s.claimEnrichCharacter(ctx, res.Works)
 		if err != nil {
@@ -1055,6 +1065,33 @@ func (s *PublicService) characterTraits(ctx context.Context, characterID int64, 
 			ID: r.ID, Name: r.Name, Group: derefStrPub(r.GroupName),
 			Spoiler: r.SpoilerLevel, Sexual: r.Sexual, Lie: r.Lie,
 		})
+	}
+	return out, nil
+}
+
+// characterIntros loads a character's multilingual intros, merged to one
+// element per language (lowest source_id wins — the step-65 intro merge
+// convention), lang ASC. Spoiler spans were stripped at import (entityintros).
+// Empty → [].
+func (s *PublicService) characterIntros(ctx context.Context, characterID int64) ([]dto.PublicCharacterIntro, error) {
+	var rows []struct {
+		Lang     string
+		Intro    string
+		SourceID int16 `gorm:"column:source_id"`
+	}
+	if err := s.db.WithContext(ctx).Raw(`SELECT lang, intro, source_id
+		FROM catalog_character_intro WHERE character_id = ?
+		ORDER BY lang, source_id`, characterID).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	out := make([]dto.PublicCharacterIntro, 0, len(rows))
+	seen := map[string]bool{}
+	for _, r := range rows {
+		if seen[r.Lang] {
+			continue
+		}
+		seen[r.Lang] = true
+		out = append(out, dto.PublicCharacterIntro{Lang: r.Lang, Intro: r.Intro, Source: s.sourceKey(r.SourceID)})
 	}
 	return out, nil
 }

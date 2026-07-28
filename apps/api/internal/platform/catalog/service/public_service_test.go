@@ -531,3 +531,44 @@ func TestPublicCharacterTraits(t *testing.T) {
 		t.Fatalf("spoilers-only traits = %+v (want 2: sexual still dropped)", rec.Traits)
 	}
 }
+
+// TestPublicCharacterIntrosImage pins the wave-107 additions: intros[] (one
+// element per language, lowest source_id wins) and the portrait CDN URL.
+func TestPublicCharacterIntrosImage(t *testing.T) {
+	cleanTables(t)
+	svc := NewPublicService(testDB, NewReadService(testDB), testResolve, "http://cdn.test/img")
+	ctx := t.Context()
+
+	c := &model.CatalogCharacter{DisplayName: "紹介娘", Lang: "ja"}
+	if err := testDB.Create(c).Error; err != nil {
+		t.Fatalf("create character: %v", err)
+	}
+	if err := testDB.Exec(`UPDATE catalog_character SET image_hash = ? WHERE id = ?`, "abc123hash", c.ID).Error; err != nil {
+		t.Fatalf("set image: %v", err)
+	}
+	for _, row := range []model.CatalogCharacterIntro{
+		{CharacterID: c.ID, Lang: "ja", Intro: "vndb の紹介", SourceID: 2},
+		{CharacterID: c.ID, Lang: "zh-Hans", Intro: "bgm 简介", SourceID: 3},
+	} {
+		if err := testDB.Create(&row).Error; err != nil {
+			t.Fatalf("intro fixture: %v", err)
+		}
+	}
+
+	rec, found, err := svc.Character(ctx, c.ID, false, false, 0, 50, 0)
+	if err != nil || !found {
+		t.Fatalf("character: found=%v err=%v", found, err)
+	}
+	if len(rec.Intros) != 2 {
+		t.Fatalf("intros = %+v (want ja + zh-Hans)", rec.Intros)
+	}
+	if rec.Intros[0].Lang != "ja" || rec.Intros[0].Source != "vndb" || rec.Intros[0].Intro != "vndb の紹介" {
+		t.Fatalf("ja intro = %+v", rec.Intros[0])
+	}
+	if rec.Intros[1].Lang != "zh-Hans" || rec.Intros[1].Source != "bangumi" {
+		t.Fatalf("zh intro = %+v", rec.Intros[1])
+	}
+	if rec.Image == "" {
+		t.Fatal("image URL empty (want CDN URL from hash)")
+	}
+}

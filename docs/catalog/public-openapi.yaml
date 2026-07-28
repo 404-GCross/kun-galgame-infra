@@ -516,6 +516,14 @@ components:
         id:
           format: int64
           type: integer
+        image:
+          type: string
+        intros:
+          items:
+            $ref: "#/components/schemas/PublicCharacterIntro"
+          type:
+            - array
+            - "null"
         latin:
           type: string
         name:
@@ -546,6 +554,21 @@ components:
         - name
         - refs
         - traits
+        - intros
+      type: object
+    PublicCharacterIntro:
+      additionalProperties: false
+      properties:
+        intro:
+          type: string
+        lang:
+          type: string
+        source:
+          type: string
+      required:
+        - lang
+        - intro
+        - source
       type: object
     PublicCharacterTrait:
       additionalProperties: false
