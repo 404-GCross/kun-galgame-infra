@@ -28,24 +28,6 @@ html {
 }
 
 /*
- * Global route transitions (nuxt.config app.pageTransition / layoutTransition).
- * A subtle opacity fade — no motion trickery. Because the docs sidebar is held
- * by the layout, only the content column runs the page fade; the nav stays put.
- */
-.page-enter-active,
-.page-leave-active,
-.layout-enter-active,
-.layout-leave-active {
-  transition: opacity 0.2s ease;
-}
-.page-enter-from,
-.page-leave-to,
-.layout-enter-from,
-.layout-leave-to {
-  opacity: 0;
-}
-
-/*
  * Opaque modal panels. KunUI's .kun-modal-panel is `bg-content1/85` (translucent)
  * — too see-through here. Force solid content1 (adapts light/dark via --content1).
  * Unlayered → wins over the Tailwind utilities layer.

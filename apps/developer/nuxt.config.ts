@@ -8,12 +8,7 @@ export default defineNuxtConfig({
 
   extends: ['@kungal/ui-nuxt'],
 
-  // Subtle global fade for route changes. In the /docs section the sidebar is
-  // held by the layout, so only the content column (the page) runs this — the
-  // nav stays put. `out-in` avoids overlap; the CSS lives in main.css.
   app: {
-    pageTransition: { name: 'page', mode: 'out-in' },
-    layoutTransition: { name: 'layout', mode: 'out-in' },
     // Favicon set — temporarily shares kungal's marks (the static files copied
     // from apps/web/public); swap for NextMoe's own brand set once ready.
     head: {

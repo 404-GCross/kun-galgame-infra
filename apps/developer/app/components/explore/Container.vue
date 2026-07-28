@@ -24,6 +24,7 @@ const error = ref('')
 const hits = ref<SearchHit[]>([])
 const total = ref(0)
 const detail = ref<Record<string, unknown> | null>(null)
+const showRaw = ref(false)
 
 onMounted(() => {
   apiKey.value = sessionStorage.getItem('explore_api_key') ?? ''
@@ -124,13 +125,9 @@ const rawJson = computed(() =>
             @keyup.enter="search"
           />
         </div>
-        <label
-          for="explore-nsfw"
-          class="flex items-center gap-2 pb-2 text-sm text-default-500"
-        >
-          <input id="explore-nsfw" v-model="nsfw" type="checkbox" class="size-4" />
-          含 R18
-        </label>
+        <div class="pb-2">
+          <KunCheckBox v-model="nsfw" label="含 R18" />
+        </div>
         <KunButton color="primary" :disabled="searching || !apiKey" @click="search">
           {{ searching ? '搜索中…' : '搜索' }}
         </KunButton>
@@ -191,12 +188,17 @@ const rawJson = computed(() =>
             <p class="text-sm font-medium text-foreground">{{ f.kind }}</p>
           </div>
         </div>
-        <details class="rounded-lg border border-default-200">
-          <summary class="cursor-pointer px-4 py-2 text-sm text-default-500">
-            原始 JSON
-          </summary>
-          <pre class="max-h-96 overflow-auto p-4 text-xs leading-relaxed text-default-500"><code>{{ rawJson }}</code></pre>
-        </details>
+        <div class="rounded-lg border border-default-200">
+          <KunButton
+            variant="light"
+            color="default"
+            size="sm"
+            @click="showRaw = !showRaw"
+          >
+            {{ showRaw ? '收起原始 JSON' : '查看原始 JSON' }}
+          </KunButton>
+          <pre v-show="showRaw" class="max-h-96 overflow-auto p-4 text-xs leading-relaxed text-default-500"><code>{{ rawJson }}</code></pre>
+        </div>
       </KunCard>
     </template>
   </div>

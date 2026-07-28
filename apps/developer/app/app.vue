@@ -10,6 +10,7 @@ useHead({
 
 <template>
   <div>
+    <NuxtLoadingIndicator color="var(--color-primary)" />
     <NuxtRouteAnnouncer />
     <KunMessageProvider />
     <KunAlertProvider />
