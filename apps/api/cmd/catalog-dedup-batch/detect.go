@@ -41,12 +41,13 @@ type mergeGroup struct {
 // report can explain what was found and — just as importantly — what was
 // deliberately left alone.
 type detectStats struct {
-	charGroups   int
-	charPairs    int
-	charDirtyBkt int // (work,fold) buckets skipped: a source split ≥2 chars there
-	charBridged  int // components skipped: cross-bucket bridging reintroduced a shared source
-	creditGroups int
-	creditPairs  int
+	charGroups        int
+	charPairs         int
+	charDirtyBkt      int // (work,fold) buckets skipped: a source split ≥2 chars there
+	charBridged       int // components skipped: cross-bucket bridging reintroduced a shared source
+	charInstanceDetox int // buckets where a vndb instance stepped aside for its in-bucket base (step 106)
+	creditGroups      int
+	creditPairs       int
 	// orphan* mirror the character counters for the step-50 orphan voice-name
 	// class (same source-distinctness guard + union-find).
 	orphanGroups   int
@@ -121,6 +122,11 @@ func detectCharacters(db *gorm.DB) ([]mergeGroup, detectStats, error) {
 		return nil, detectStats{}, err
 	}
 
+	instOf, err := loadVndbInstanceMap(db)
+	if err != nil {
+		return nil, detectStats{}, err
+	}
+
 	meta := make(map[int64]charMeta, len(rows))
 	for _, r := range rows {
 		if _, ok := meta[r.CharacterID]; !ok {
@@ -140,6 +146,17 @@ func detectCharacters(db *gorm.DB) ([]mergeGroup, detectStats, error) {
 		}
 		bucket := rows[i:j]
 		i = j
+		// vndb main+instance detox (step 106): an instance row whose base twin
+		// sits in the same bucket is vndb's own deliberate split (main_spoil
+		// carries the spoiler) — the instance steps aside instead of dirtying
+		// the bucket; the remaining members merge onto the base.
+		if filtered := detoxVndbInstances(bucket, instOf); len(filtered) < len(bucket) {
+			st.charInstanceDetox++
+			bucket = filtered
+		}
+		if len(bucket) < 2 {
+			continue
+		}
 		if hasSourceCollision(idsOf(bucket), srcOf) {
 			st.charDirtyBkt++
 			continue
@@ -656,4 +673,53 @@ func pickMixedSurvivor(ids []int64, meta map[int64]mixedMeta) (survivor int64, s
 		}
 	}
 	return survivor, sources
+}
+
+// loadVndbInstanceMap resolves the vndb main+instance links to catalog ids:
+// instance char id → base char id, both ends holding a live EXACT vndb anchor.
+// Read straight from src_vndb (not catalog_character.instance_of) so detect
+// never depends on the backfill's run order.
+func loadVndbInstanceMap(db *gorm.DB) (map[int64]int64, error) {
+	var rows []struct {
+		Inst int64 `gorm:"column:inst"`
+		Main int64 `gorm:"column:main_id"`
+	}
+	if err := db.Raw(`
+		SELECT ri.entity_id AS inst, rm.entity_id AS main_id
+		FROM catalog_external_ref ri
+		JOIN catalog_source s ON s.id = ri.source_id AND s.key = 'vndb'
+		JOIN src_vndb.chars ch ON ch.id = ri.external_id AND ch.main <> ''
+		JOIN catalog_external_ref rm ON rm.source_id = ri.source_id AND rm.entity_type = 4
+			AND rm.link_kind = 0 AND rm.external_id = ch.main AND rm.entity_id <> ri.entity_id
+		WHERE ri.entity_type = 4 AND ri.link_kind = 0`).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	m := make(map[int64]int64, len(rows))
+	for _, r := range rows {
+		m[r.Inst] = r.Main
+	}
+	return m, nil
+}
+
+// detoxVndbInstances drops every bucket member that is a vndb INSTANCE of
+// another member of the same bucket. The instance is not a duplicate — it is
+// vndb's deliberate same-name split (alt-universe/spoiler identity), so it
+// steps aside; other-source rows then merge onto the base without tripping
+// the same-source guard.
+func detoxVndbInstances(bucket []charRow, instOf map[int64]int64) []charRow {
+	if len(instOf) == 0 {
+		return bucket
+	}
+	present := make(map[int64]bool, len(bucket))
+	for _, m := range bucket {
+		present[m.CharacterID] = true
+	}
+	out := bucket[:0:0]
+	for _, m := range bucket {
+		if base, ok := instOf[m.CharacterID]; ok && present[base] {
+			continue
+		}
+		out = append(out, m)
+	}
+	return out
 }

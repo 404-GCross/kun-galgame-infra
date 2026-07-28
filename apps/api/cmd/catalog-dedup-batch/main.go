@@ -67,15 +67,18 @@ const (
 	// class all carry it, so -mode execute addresses exactly this wave (the
 	// 49/50 tags stay on their fully-executed historical proposals).
 	waveTag98 = "rule:catalog-dedup step-98"
+	// waveTag106 tags the vndb main+instance detox wave (refs/proj/106): the
+	// character class re-run with the instance-aware guard.
+	waveTag106 = "rule:catalog-dedup step-106"
 )
 
 // noteTagFor returns the wave note tag for a class (used on both the write side,
-// per group, and the execute side, derived from -class). Step 98 onward every
-// NEW proposal carries waveTag98 — the historical 49/50 tags stay on their
-// fully-executed proposals and are never written again.
+// per group, and the execute side, derived from -class). Every NEW proposal
+// carries the CURRENT wave tag (106); the historical 49/50/98 tags stay on
+// their fully-executed proposals and are never written again.
 func noteTagFor(class string) string {
 	_ = classOrphanCreditName // all classes now tag the current wave
-	return waveTag98
+	return waveTag106
 }
 
 func main() {

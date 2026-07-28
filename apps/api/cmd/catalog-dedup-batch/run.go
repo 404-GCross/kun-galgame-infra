@@ -41,8 +41,8 @@ func runDetect(db *gorm.DB, w io.Writer) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(w, "[detect] character: groups=%d pairs=%d  (skipped: dirty_buckets=%d bridged_components=%d)\n",
-		cs.charGroups, cs.charPairs, cs.charDirtyBkt, cs.charBridged)
+	fmt.Fprintf(w, "[detect] character: groups=%d pairs=%d  (skipped: dirty_buckets=%d bridged_components=%d; vndb_instance_detox=%d)\n",
+		cs.charGroups, cs.charPairs, cs.charDirtyBkt, cs.charBridged, cs.charInstanceDetox)
 	fmt.Fprintf(w, "[detect] credit_name: groups=%d pairs=%d\n", ns.creditGroups, ns.creditPairs)
 	fmt.Fprintf(w, "[detect] orphan-creditname: groups=%d pairs=%d  (skipped: dirty_buckets=%d bridged_components=%d)\n",
 		os.orphanGroups, os.orphanPairs, os.orphanDirtyBkt, os.orphanBridged)
