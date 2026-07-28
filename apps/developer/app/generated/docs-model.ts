@@ -1058,6 +1058,12 @@ export const docsModel: DocsModel = {
                                 "type": "string"
                               },
                               {
+                                "name": "dlsite",
+                                "required": true,
+                                "nullable": true,
+                                "type": "string"
+                              },
+                              {
                                 "name": "erogamescape",
                                 "required": true,
                                 "nullable": true,
@@ -7417,6 +7423,38 @@ export const docsModel: DocsModel = {
                                   "type": "string"
                                 },
                                 {
+                                  "name": "children",
+                                  "nullable": true,
+                                  "type": "array",
+                                  "itemsOf": {
+                                    "type": "object",
+                                    "children": [
+                                      {
+                                        "name": "category",
+                                        "required": true,
+                                        "type": "string"
+                                      },
+                                      {
+                                        "name": "galgame_count",
+                                        "required": true,
+                                        "format": "int64",
+                                        "type": "integer"
+                                      },
+                                      {
+                                        "name": "id",
+                                        "required": true,
+                                        "format": "int64",
+                                        "type": "integer"
+                                      },
+                                      {
+                                        "name": "name",
+                                        "required": true,
+                                        "type": "string"
+                                      }
+                                    ]
+                                  }
+                                },
+                                {
                                   "name": "created",
                                   "required": true,
                                   "type": "string"
@@ -7537,7 +7575,7 @@ export const docsModel: DocsModel = {
               "id": "getTagPublic",
               "method": "get",
               "path": "/v1/galgame/tags/{id}",
-              "summary": "One tag's curated record (description, galgame_count, aliases, created, updated)",
+              "summary": "One tag's curated record (description, galgame_count, aliases, children, created, updated)",
               "scope": "galgame:read",
               "params": [
                 {
@@ -7580,6 +7618,38 @@ export const docsModel: DocsModel = {
                             "name": "category",
                             "required": true,
                             "type": "string"
+                          },
+                          {
+                            "name": "children",
+                            "nullable": true,
+                            "type": "array",
+                            "itemsOf": {
+                              "type": "object",
+                              "children": [
+                                {
+                                  "name": "category",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "galgame_count",
+                                  "required": true,
+                                  "format": "int64",
+                                  "type": "integer"
+                                },
+                                {
+                                  "name": "id",
+                                  "required": true,
+                                  "format": "int64",
+                                  "type": "integer"
+                                },
+                                {
+                                  "name": "name",
+                                  "required": true,
+                                  "type": "string"
+                                }
+                              ]
+                            }
                           },
                           {
                             "name": "created",
@@ -8097,7 +8167,7 @@ export const docsModel: DocsModel = {
               "id": "multiTagsPublic",
               "method": "get",
               "path": "/v1/galgame/tags/multi",
-              "summary": "Published galgames carrying ALL given tag ids (AND intersection), as thin items",
+              "summary": "Published galgames carrying ALL given tag ids (AND intersection; expand=descendants widens each id to its hierarchy descendants), as thin items",
               "scope": "galgame:read",
               "params": [
                 {
@@ -8105,7 +8175,14 @@ export const docsModel: DocsModel = {
                   "in": "query",
                   "required": false,
                   "type": "string",
-                  "doc": "Comma-separated tag ids; returns the published galgames carrying ALL of them (AND intersection)"
+                  "doc": "Comma-separated tag ids; returns the published galgames matching them (default: AND intersection over the exact ids)"
+                },
+                {
+                  "name": "expand",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "Set to 'descendants' to widen each id to itself + its tag-hierarchy descendants before matching: a game then qualifies by carrying at least one tag from EVERY widened group (AND of OR-groups). total/pagination stay exact. Default: no expansion."
                 },
                 {
                   "name": "page",
@@ -8824,6 +8901,21 @@ export const docsModel: DocsModel = {
                   "doc": "works = attach the works this character appears in"
                 },
                 {
+                  "name": "nsfw",
+                  "in": "query",
+                  "required": false,
+                  "type": "boolean",
+                  "doc": "true/1 = include r18 works and sexual-family traits (default false = both dropped)"
+                },
+                {
+                  "name": "spoilers",
+                  "in": "query",
+                  "required": false,
+                  "type": "integer",
+                  "format": "int32",
+                  "doc": "max trait spoiler level 0-2 (default 0 = safe)"
+                },
+                {
                   "name": "limit",
                   "in": "query",
                   "required": false,
@@ -8890,6 +8982,49 @@ export const docsModel: DocsModel = {
                             "name": "next_offset",
                             "format": "int64",
                             "type": "integer"
+                          },
+                          {
+                            "name": "traits",
+                            "required": true,
+                            "nullable": true,
+                            "type": "array",
+                            "itemsOf": {
+                              "type": "object",
+                              "children": [
+                                {
+                                  "name": "group",
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "id",
+                                  "required": true,
+                                  "format": "int64",
+                                  "type": "integer"
+                                },
+                                {
+                                  "name": "lie",
+                                  "required": true,
+                                  "type": "boolean"
+                                },
+                                {
+                                  "name": "name",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "sexual",
+                                  "required": true,
+                                  "type": "boolean"
+                                },
+                                {
+                                  "name": "spoiler",
+                                  "required": true,
+                                  "doc": "0=none 1=minor 2=major",
+                                  "format": "int32",
+                                  "type": "integer"
+                                }
+                              ]
+                            }
                           },
                           {
                             "name": "works",
@@ -9077,6 +9212,13 @@ export const docsModel: DocsModel = {
                   "doc": "works = attach the works attributed to this label"
                 },
                 {
+                  "name": "nsfw",
+                  "in": "query",
+                  "required": false,
+                  "type": "boolean",
+                  "doc": "true/1 = include r18 works among the attributions (default false = dropped)"
+                },
+                {
                   "name": "limit",
                   "in": "query",
                   "required": false,
@@ -9122,9 +9264,56 @@ export const docsModel: DocsModel = {
                             "type": "integer"
                           },
                           {
+                            "name": "intros",
+                            "required": true,
+                            "nullable": true,
+                            "type": "array",
+                            "itemsOf": {
+                              "type": "object",
+                              "children": [
+                                {
+                                  "name": "intro",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "lang",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "source",
+                                  "required": true,
+                                  "type": "string"
+                                }
+                              ]
+                            }
+                          },
+                          {
                             "name": "kind",
                             "required": true,
                             "type": "string"
+                          },
+                          {
+                            "name": "links",
+                            "required": true,
+                            "nullable": true,
+                            "type": "array",
+                            "itemsOf": {
+                              "type": "object",
+                              "children": [
+                                {
+                                  "name": "source",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "url",
+                                  "required": true,
+                                  "type": "string"
+                                }
+                              ]
+                            }
                           },
                           {
                             "name": "next_offset",
@@ -9288,6 +9477,13 @@ export const docsModel: DocsModel = {
                   "required": false,
                   "type": "string",
                   "doc": "The id within that source (vndb accepts v19658 or 19658; dlsite RJ/VJ numbers)"
+                },
+                {
+                  "name": "nsfw",
+                  "in": "query",
+                  "required": false,
+                  "type": "boolean",
+                  "doc": "true/1 = resolve r18 works too (default false = 404 on an r18 hit)"
                 }
               ],
               "responses": [
@@ -9679,6 +9875,13 @@ export const docsModel: DocsModel = {
                   "required": false,
                   "type": "string",
                   "doc": "credits = attach the works this name is credited on"
+                },
+                {
+                  "name": "nsfw",
+                  "in": "query",
+                  "required": false,
+                  "type": "boolean",
+                  "doc": "true/1 = include r18 works among the credits (default false = dropped)"
                 },
                 {
                   "name": "limit",
@@ -10269,11 +10472,12 @@ export const docsModel: DocsModel = {
                   "in": "query",
                   "required": false,
                   "type": "string",
-                  "doc": "Which entity index to search",
+                  "doc": "Which index to search; works (wave 105) searches every LIVE galgame registry work by any title",
                   "enum": [
                     "names",
                     "characters",
-                    "labels"
+                    "labels",
+                    "works"
                   ]
                 },
                 {
@@ -10302,6 +10506,13 @@ export const docsModel: DocsModel = {
                   "type": "integer",
                   "format": "int64",
                   "doc": "Max hits (capped at 20)"
+                },
+                {
+                  "name": "nsfw",
+                  "in": "query",
+                  "required": false,
+                  "type": "boolean",
+                  "doc": "works only: true/1 = include r18 hits (default false = excluded server-side)"
                 }
               ],
               "responses": [
@@ -10329,6 +10540,10 @@ export const docsModel: DocsModel = {
                             "itemsOf": {
                               "type": "object",
                               "children": [
+                                {
+                                  "name": "content_rating",
+                                  "type": "string"
+                                },
                                 {
                                   "name": "entity_type",
                                   "required": true,
@@ -10464,6 +10679,13 @@ export const docsModel: DocsModel = {
                   "required": false,
                   "type": "string",
                   "doc": "Comma-separated heavy blocks: relations,credits (default: none)"
+                },
+                {
+                  "name": "nsfw",
+                  "in": "query",
+                  "required": false,
+                  "type": "boolean",
+                  "doc": "true/1 = serve r18 works and r18 relation ends (caller-controlled; default false = hidden)"
                 }
               ],
               "responses": [
@@ -10483,6 +10705,71 @@ export const docsModel: DocsModel = {
                         "name": "data",
                         "type": "object",
                         "children": [
+                          {
+                            "name": "characters",
+                            "required": true,
+                            "nullable": true,
+                            "type": "array",
+                            "itemsOf": {
+                              "type": "object",
+                              "children": [
+                                {
+                                  "name": "id",
+                                  "required": true,
+                                  "format": "int64",
+                                  "type": "integer"
+                                },
+                                {
+                                  "name": "image",
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "kind",
+                                  "required": true,
+                                  "doc": "main|secondary|appears|unknown",
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "latin",
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "name",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "spoiler",
+                                  "required": true,
+                                  "doc": "0=none 1=minor 2=major",
+                                  "format": "int32",
+                                  "type": "integer"
+                                },
+                                {
+                                  "name": "voices",
+                                  "required": true,
+                                  "nullable": true,
+                                  "type": "array",
+                                  "itemsOf": {
+                                    "type": "object",
+                                    "children": [
+                                      {
+                                        "name": "id",
+                                        "required": true,
+                                        "format": "int64",
+                                        "type": "integer"
+                                      },
+                                      {
+                                        "name": "name",
+                                        "required": true,
+                                        "type": "string"
+                                      }
+                                    ]
+                                  }
+                                }
+                              ]
+                            }
+                          },
                           {
                             "name": "claimed_by",
                             "required": true,
@@ -10505,6 +10792,48 @@ export const docsModel: DocsModel = {
                             "name": "content_rating",
                             "required": true,
                             "type": "string"
+                          },
+                          {
+                            "name": "covers",
+                            "required": true,
+                            "nullable": true,
+                            "type": "array",
+                            "itemsOf": {
+                              "type": "object",
+                              "children": [
+                                {
+                                  "name": "kind",
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "portrait_pinned",
+                                  "required": true,
+                                  "type": "boolean"
+                                },
+                                {
+                                  "name": "sexual",
+                                  "required": true,
+                                  "format": "int32",
+                                  "type": "integer"
+                                },
+                                {
+                                  "name": "source",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "url",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "violence",
+                                  "required": true,
+                                  "format": "int32",
+                                  "type": "integer"
+                                }
+                              ]
+                            }
                           },
                           {
                             "name": "credits",
@@ -10578,6 +10907,69 @@ export const docsModel: DocsModel = {
                             "type": "integer"
                           },
                           {
+                            "name": "intro",
+                            "required": true,
+                            "nullable": true,
+                            "type": "array",
+                            "itemsOf": {
+                              "type": "object",
+                              "children": [
+                                {
+                                  "name": "intro",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "lang",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "machine",
+                                  "type": "boolean"
+                                },
+                                {
+                                  "name": "source",
+                                  "required": true,
+                                  "type": "string"
+                                }
+                              ]
+                            }
+                          },
+                          {
+                            "name": "labels",
+                            "required": true,
+                            "nullable": true,
+                            "type": "array",
+                            "itemsOf": {
+                              "type": "object",
+                              "children": [
+                                {
+                                  "name": "display_name",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "id",
+                                  "required": true,
+                                  "format": "int64",
+                                  "type": "integer"
+                                },
+                                {
+                                  "name": "kind",
+                                  "required": true,
+                                  "doc": "attribution nature: circle|publisher|developer|brand",
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "label_kind",
+                                  "required": true,
+                                  "type": "string"
+                                }
+                              ]
+                            }
+                          },
+                          {
                             "name": "medium",
                             "required": true,
                             "type": "string"
@@ -10586,6 +10978,116 @@ export const docsModel: DocsModel = {
                             "name": "olang",
                             "required": true,
                             "type": "string"
+                          },
+                          {
+                            "name": "platforms",
+                            "required": true,
+                            "nullable": true,
+                            "type": "array",
+                            "itemsOf": {
+                              "type": "object",
+                              "children": [
+                                {
+                                  "name": "platform",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "source",
+                                  "required": true,
+                                  "type": "string"
+                                }
+                              ]
+                            }
+                          },
+                          {
+                            "name": "playtimes",
+                            "required": true,
+                            "nullable": true,
+                            "type": "array",
+                            "itemsOf": {
+                              "type": "object",
+                              "children": [
+                                {
+                                  "name": "minutes",
+                                  "required": true,
+                                  "format": "int64",
+                                  "type": "integer"
+                                },
+                                {
+                                  "name": "source",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "vote_count",
+                                  "required": true,
+                                  "format": "int64",
+                                  "type": "integer"
+                                }
+                              ]
+                            }
+                          },
+                          {
+                            "name": "popularity",
+                            "required": true,
+                            "nullable": true,
+                            "type": "array",
+                            "itemsOf": {
+                              "type": "object",
+                              "children": [
+                                {
+                                  "name": "metric",
+                                  "required": true,
+                                  "doc": "downloads|wishlist|reviews|bgm_wish|bgm_collect|bgm_doing|bgm_on_hold|bgm_dropped",
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "source",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "value",
+                                  "required": true,
+                                  "format": "int64",
+                                  "type": "integer"
+                                }
+                              ]
+                            }
+                          },
+                          {
+                            "name": "ratings",
+                            "required": true,
+                            "nullable": true,
+                            "type": "array",
+                            "itemsOf": {
+                              "type": "object",
+                              "children": [
+                                {
+                                  "name": "rank",
+                                  "format": "int64",
+                                  "type": "integer"
+                                },
+                                {
+                                  "name": "score",
+                                  "required": true,
+                                  "format": "double",
+                                  "type": "number"
+                                },
+                                {
+                                  "name": "source",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "vote_count",
+                                  "required": true,
+                                  "format": "int64",
+                                  "type": "integer"
+                                }
+                              ]
+                            }
                           },
                           {
                             "name": "refs",
@@ -10679,6 +11181,145 @@ export const docsModel: DocsModel = {
                             "required": true,
                             "nullable": true,
                             "type": "string"
+                          },
+                          {
+                            "name": "releases",
+                            "required": true,
+                            "nullable": true,
+                            "type": "array",
+                            "itemsOf": {
+                              "type": "object",
+                              "children": [
+                                {
+                                  "name": "date",
+                                  "required": true,
+                                  "nullable": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "kind",
+                                  "required": true,
+                                  "doc": "default|digital|physical|trial|patch",
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "lang",
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "platform",
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "platforms",
+                                  "nullable": true,
+                                  "type": "array",
+                                  "itemsOf": {
+                                    "type": "string"
+                                  }
+                                },
+                                {
+                                  "name": "title",
+                                  "type": "string"
+                                }
+                              ]
+                            }
+                          },
+                          {
+                            "name": "screenshots",
+                            "required": true,
+                            "nullable": true,
+                            "type": "array",
+                            "itemsOf": {
+                              "type": "object",
+                              "children": [
+                                {
+                                  "name": "caption",
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "sexual",
+                                  "required": true,
+                                  "format": "int32",
+                                  "type": "integer"
+                                },
+                                {
+                                  "name": "source",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "url",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "violence",
+                                  "required": true,
+                                  "format": "int32",
+                                  "type": "integer"
+                                }
+                              ]
+                            }
+                          },
+                          {
+                            "name": "series",
+                            "required": true,
+                            "nullable": true,
+                            "type": "array",
+                            "itemsOf": {
+                              "type": "object",
+                              "children": [
+                                {
+                                  "name": "id",
+                                  "required": true,
+                                  "format": "int64",
+                                  "type": "integer"
+                                },
+                                {
+                                  "name": "member_count",
+                                  "required": true,
+                                  "format": "int64",
+                                  "type": "integer"
+                                },
+                                {
+                                  "name": "name",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "source",
+                                  "required": true,
+                                  "type": "string"
+                                }
+                              ]
+                            }
+                          },
+                          {
+                            "name": "tags",
+                            "required": true,
+                            "nullable": true,
+                            "type": "array",
+                            "itemsOf": {
+                              "type": "object",
+                              "children": [
+                                {
+                                  "name": "count",
+                                  "format": "int64",
+                                  "type": "integer"
+                                },
+                                {
+                                  "name": "name",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "source",
+                                  "required": true,
+                                  "type": "string"
+                                }
+                              ]
+                            }
                           },
                           {
                             "name": "titles",
