@@ -4,7 +4,7 @@
 useHead({
   htmlAttrs: { lang: 'zh-CN' },
   titleTemplate: (title) =>
-    title ? `${title} · NextMoe Codex` : 'NextMoe Codex · ACGN 数据正典'
+    title ? `${title} · NextMoe 开发者平台` : 'NextMoe 开发者平台 · ACGN 数据，以此为准'
 })
 </script>
 

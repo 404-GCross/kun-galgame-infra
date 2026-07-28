@@ -7,8 +7,8 @@ const { open: openLogin } = useLoginModal()
 useSeoMeta({
   title: '开发者平台',
   description:
-    'NextMoe Codex — ACGN 数据的权威正典。当各源各执一词，以 NextMoe 为准。首发 Galgame 面：VNDB / Bangumi / DLsite / ErogameScape 四源裁定；注册应用、领取密钥，几分钟内发出第一个请求。',
-  ogTitle: 'NextMoe Codex 开发者平台',
+    'NextMoe 开发者平台 — ACGN 数据，以此为准。当各源各执一词，NextMoe 逐字段裁定唯一的标准答案：可溯源、可增量同步、可编程引用。首发 Galgame 面（VNDB / Bangumi / DLsite / ErogameScape）。',
+  ogTitle: 'NextMoe 开发者平台',
   ogDescription: 'ACGN 数据，以此为准 — one canon, every source reconciled.'
 })
 
@@ -97,8 +97,8 @@ const curlSample = `curl https://api.nextmoe.dev/v1/galgame/1 \\
         <h1
           class="mt-6 text-4xl font-bold tracking-tight text-foreground md:text-5xl md:leading-[1.1] lg:text-6xl"
         >
-          ACGN 数据的<br class="hidden sm:inline" />
-          权威正典
+          ACGN 数据,<br class="hidden sm:inline" />
+          以此为准
         </h1>
         <p
           class="mt-4 text-sm font-medium tracking-wide text-primary lg:text-base"
@@ -109,8 +109,8 @@ const curlSample = `curl https://api.nextmoe.dev/v1/galgame/1 \\
           class="mx-auto mt-5 max-w-xl text-lg leading-relaxed text-default-500 lg:mx-0"
         >
           当 VNDB、Bangumi、DLsite、ErogameScape 各执一词,
-          NextMoe 给出唯一的标准答案 —— 每个字段皆经多源裁定、可溯源、
-          可增量同步。从 Galgame 起步,同构扩展至全部 ACGN 媒介。以此为准。
+          NextMoe 逐字段裁定出唯一的标准答案 —— 可溯源、可增量同步、
+          可编程引用。首发 Galgame 面,同构扩展至全部 ACGN 媒介。
         </p>
 
         <div
