@@ -7,6 +7,7 @@ import (
 	"api/internal/platform/catalog/model"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // The VNDB roster wave (step 47) lands VNDB character DATA — catalog_character
@@ -334,7 +335,10 @@ func (im *Importer) attachCharAnchors(tx *gorm.DB, source int16, rule string, it
 	for i, it := range items {
 		refs[i] = selfRef(model.EntityTypeCharacter, it.entityID, source, it.extID, rule)
 	}
-	return tx.CreateInBatches(refs, 1000).Error
+	// ON CONFLICT DO NOTHING makes a refreshed-dump re-run idempotent: an
+	// already-attached self-anchor is skipped (the mint path already excludes
+	// anchored chars; only this attach path could re-collide on the pkey).
+	return tx.Clauses(clause.OnConflict{DoNothing: true}).CreateInBatches(refs, 1000).Error
 }
 
 // insertCharAliases adds spelling_variant romaji aliases to resolved characters,
