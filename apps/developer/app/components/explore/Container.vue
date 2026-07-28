@@ -26,6 +26,144 @@ const total = ref(0)
 const detail = ref<Record<string, unknown> | null>(null)
 const showRaw = ref(false)
 
+// ── Entity panorama (fan-out) ──
+// From ONE work, pull every linked entity's own full record — labels,
+// characters, credited names, related works — each through its own public
+// read face. This is the entity-centric read model made visible: one
+// consistent archive per entity kind, aggregates + per-source attribution
+// on every one of them.
+interface ExpandedEntity {
+  group: string
+  id: number
+  name: string
+  raw: Record<string, unknown>
+  showRaw: boolean
+}
+const expanded = ref<ExpandedEntity[]>([])
+const expandNote = ref('')
+const expanding = ref(false)
+const EXPAND_CAP = 6
+
+// Entity records name themselves differently per kind: labels carry a flat
+// display_name; names/characters nest it (name: { name, latin, … }). Try the
+// honest chain, fall back to #id.
+const entityName = (data: Record<string, unknown>): string | null => {
+  const dn = data.display_name
+  if (typeof dn === 'string' && dn) return dn
+  const n = data.name
+  if (typeof n === 'string' && n) return n
+  if (n && typeof n === 'object') {
+    const o = n as Record<string, unknown>
+    // stub shape { name, latin }
+    if (typeof o.name === 'string' && o.name) return o.name
+    if (typeof o.latin === 'string' && o.latin) return o.latin
+    // locale map { 'zh-cn': …, ja: …, en: … } (names/characters read faces)
+    for (const k of ['zh-cn', 'zh', 'ja', 'en']) {
+      const v = o[k]
+      if (typeof v === 'string' && v) return v
+    }
+    const first = Object.values(o).find((v) => typeof v === 'string' && v)
+    if (typeof first === 'string') return first
+  }
+  return null
+}
+
+const idOf = (v: unknown): number | null => {
+  if (v && typeof v === 'object' && 'id' in v) {
+    const n = (v as { id?: unknown }).id
+    return typeof n === 'number' ? n : null
+  }
+  return null
+}
+
+const expandAll = async () => {
+  if (expanding.value || !detail.value) return
+  expanding.value = true
+  expandNote.value = ''
+  expanded.value = []
+  const d = detail.value
+  const arr = (k: string): unknown[] => (Array.isArray(d[k]) ? (d[k] as unknown[]) : [])
+
+  const jobs: { group: string; id: number; path: string }[] = []
+  const seen = new Set<string>()
+  const push = (group: string, id: number | null, path: string) => {
+    if (id === null || seen.has(`${group}:${id}`)) return
+    seen.add(`${group}:${id}`)
+    jobs.push({ group, id, path })
+  }
+
+  for (const l of arr('labels')) push('厂牌 / 社团', idOf(l), 'labels')
+  for (const c of arr('characters')) push('角色', idOf(c), 'characters')
+  for (const r of arr('credits')) {
+    const inner = (r as { credits?: unknown[] }).credits
+    if (Array.isArray(inner))
+      for (const c of inner)
+        push('名义', idOf((c as { name?: unknown }).name) ?? idOf(c), 'names')
+  }
+  for (const r of arr('relations')) push('关联作品', idOf((r as { work?: unknown }).work), 'works')
+
+  const totals = new Map<string, number>()
+  for (const j of jobs) totals.set(j.group, (totals.get(j.group) ?? 0) + 1)
+  const taken = new Map<string, number>()
+  const capped: typeof jobs = []
+  for (const j of jobs) {
+    const n = taken.get(j.group) ?? 0
+    if (n < EXPAND_CAP) {
+      taken.set(j.group, n + 1)
+      capped.push(j)
+    }
+  }
+
+  const results = await Promise.allSettled(
+    capped.map(async (j) => {
+      const resp = await relay(`v1/catalog/${j.path}/${j.id}`, {
+        ...(nsfw.value && { nsfw: '1' })
+      })
+      return { j, data: resp.data as Record<string, unknown> | null }
+    })
+  )
+  let failed = 0
+  for (const r of results) {
+    if (r.status !== 'fulfilled' || !r.value.data) {
+      failed++
+      continue
+    }
+    const { j, data } = r.value
+    expanded.value.push({
+      group: j.group,
+      id: j.id,
+      name: entityName(data) ?? `#${j.id}`,
+      raw: data,
+      showRaw: false
+    })
+  }
+  const notes: string[] = []
+  for (const [g, total] of totals) {
+    const took = taken.get(g) ?? 0
+    if (total > took) notes.push(`${g} 仅取前 ${took}/${total}`)
+  }
+  if (failed) notes.push(`${failed} 个实体拉取失败`)
+  expandNote.value = notes.join('；')
+  expanding.value = false
+}
+
+const expandedGroups = computed(() => {
+  const m = new Map<string, ExpandedEntity[]>()
+  for (const e of expanded.value) {
+    const list = m.get(e.group) ?? []
+    list.push(e)
+    m.set(e.group, list)
+  }
+  return [...m.entries()]
+})
+
+// Chip-sized facet overview of any entity record (arrays show their length).
+const facetsOf = (obj: Record<string, unknown>) =>
+  Object.entries(obj)
+    .filter(([, v]) => (Array.isArray(v) ? v.length > 0 : v !== null && v !== ''))
+    .map(([k, v]) => ({ key: k, count: Array.isArray(v) ? `${v.length}` : '' }))
+    .slice(0, 12)
+
 onMounted(() => {
   apiKey.value = sessionStorage.getItem('explore_api_key') ?? ''
 })
@@ -72,6 +210,9 @@ const openDetail = async (id: number) => {
       ...(nsfw.value && { nsfw: '1' })
     })
     detail.value = (resp.data as Record<string, unknown>) ?? null
+    expanded.value = []
+    expandNote.value = ''
+    showRaw.value = false
   } catch (e) {
     const err = e as { data?: { message?: string }; statusCode?: number }
     error.value = err.data?.message ?? `请求失败（${err.statusCode ?? '网络错误'}）`
@@ -198,6 +339,69 @@ const rawJson = computed(() =>
             {{ showRaw ? '收起原始 JSON' : '查看原始 JSON' }}
           </KunButton>
           <pre v-show="showRaw" class="max-h-96 overflow-auto p-4 text-xs leading-relaxed text-default-500"><code>{{ rawJson }}</code></pre>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-3">
+          <KunButton
+            color="primary"
+            variant="flat"
+            :disabled="expanding"
+            @click="expandAll"
+          >
+            {{ expanding ? '展开中…' : '展开实体全景' }}
+          </KunButton>
+          <span class="text-xs text-default-400">
+            对每个关联实体（厂牌 / 角色 / 名义 / 关联作品）各打一次它自己的读面
+            —— 实体为中心，每类实体一套一致的完整档案。
+          </span>
+        </div>
+        <p v-if="expandNote" class="text-xs text-warning">{{ expandNote }}</p>
+
+        <div
+          v-for="[group, ents] in expandedGroups"
+          :key="group"
+          class="space-y-2"
+        >
+          <h3 class="text-sm font-semibold text-foreground">
+            {{ group }}（{{ ents.length }}）
+          </h3>
+          <div class="grid grid-cols-1 gap-2 md:grid-cols-2">
+            <div
+              v-for="e in ents"
+              :key="`${group}-${e.id}`"
+              class="rounded-lg border border-default-200 px-3 py-2"
+            >
+              <div class="flex items-center justify-between gap-2">
+                <span class="truncate text-sm font-medium text-foreground">
+                  {{ e.name }}
+                </span>
+                <KunChip color="default" variant="flat" size="xs">
+                  #{{ e.id }}
+                </KunChip>
+              </div>
+              <div class="mt-1.5 flex flex-wrap gap-1">
+                <KunChip
+                  v-for="f in facetsOf(e.raw)"
+                  :key="f.key"
+                  color="default"
+                  variant="flat"
+                  size="xs"
+                >
+                  {{ f.key }}{{ f.count ? ` ${f.count}` : '' }}
+                </KunChip>
+              </div>
+              <KunButton
+                variant="light"
+                color="default"
+                size="xs"
+                class="mt-1.5"
+                @click="e.showRaw = !e.showRaw"
+              >
+                {{ e.showRaw ? '收起 JSON' : 'JSON' }}
+              </KunButton>
+              <pre v-if="e.showRaw" class="mt-1 max-h-64 overflow-auto rounded bg-default-100 p-2 text-xs leading-relaxed text-default-500"><code>{{ JSON.stringify(e.raw, null, 2) }}</code></pre>
+            </div>
+          </div>
         </div>
       </KunCard>
     </template>
