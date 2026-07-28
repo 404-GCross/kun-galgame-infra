@@ -516,6 +516,9 @@ func (s *PublicService) Name(ctx context.Context, id int64, withCredits, nsfw bo
 			ID: sib.ID, Name: nameBuckets(sib.Lang, sib.Name), Latin: derefStrPub(sib.Latin),
 		})
 	}
+	if p.Intros, err = s.nameIntros(ctx, id); err != nil {
+		return dto.PublicName{}, false, err
+	}
 	if p.Refs, err = s.entityRefs(ctx, model.EntityTypeCreditName, id); err != nil {
 		return dto.PublicName{}, false, err
 	}
@@ -1094,4 +1097,44 @@ func (s *PublicService) characterIntros(ctx context.Context, characterID int64) 
 		out = append(out, dto.PublicCharacterIntro{Lang: r.Lang, Intro: r.Intro, Source: s.sourceKey(r.SourceID)})
 	}
 	return out, nil
+}
+
+// nameIntros bridges a credit name's description at read time from its OWN
+// bangumi anchor (wave 108): src_bangumi.person.summary, lowest external_id
+// wins when a name holds several anchors. Per-name provenance — reading a
+// name's anchored source is NOT a person-identity assertion (that resolution
+// stays frozen); the E2 label-links doctrine applied to names. vndb staff
+// descriptions are a documented follow-up lane (aid→sid mapping first).
+// Empty → [].
+func (s *PublicService) nameIntros(ctx context.Context, nameID int64) ([]dto.PublicNameIntro, error) {
+	var rows []struct {
+		Summary  string
+		SourceID int16 `gorm:"column:source_id"`
+	}
+	if err := s.db.WithContext(ctx).Raw(`
+		SELECT p.summary, r.source_id
+		FROM catalog_external_ref r
+		JOIN catalog_source s ON s.id = r.source_id AND s.key = 'bangumi'
+		JOIN src_bangumi.person p ON p.id::text = r.external_id
+		WHERE r.entity_type = 1 AND r.entity_id = ? AND r.link_kind = 0
+			AND coalesce(p.summary, '') <> ''
+		ORDER BY r.external_id LIMIT 1`, nameID).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	out := make([]dto.PublicNameIntro, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, dto.PublicNameIntro{Lang: introLang(r.Summary), Intro: r.Summary, Source: s.sourceKey(r.SourceID)})
+	}
+	return out, nil
+}
+
+// introLang is the step-57 two-way heuristic (kana ⇒ ja, else zh-Hans) for
+// bridged bangumi summaries, which carry no lang column.
+func introLang(t string) string {
+	for _, r := range t {
+		if (r >= 'ぁ' && r <= 'ん') || (r >= 'ァ' && r <= 'ヶ') {
+			return "ja"
+		}
+	}
+	return "zh-Hans"
 }

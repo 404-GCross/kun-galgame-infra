@@ -5,6 +5,7 @@ import (
 
 	"api/internal/platform/catalog/dto"
 	"api/internal/platform/catalog/model"
+	srcb "api/internal/platform/catalog/srcbangumi"
 )
 
 // NextMoe open-API catalog public projection tests (step 03). Integration
@@ -570,5 +571,38 @@ func TestPublicCharacterIntrosImage(t *testing.T) {
 	}
 	if rec.Image == "" {
 		t.Fatal("image URL empty (want CDN URL from hash)")
+	}
+}
+
+// TestPublicNameIntros pins the wave-108 bridge: a credit name's description
+// reads from its OWN bangumi anchor at read time (per-name provenance, never a
+// person assertion), kana → ja heuristic, source key not id.
+func TestPublicNameIntros(t *testing.T) {
+	cleanTables(t)
+	if err := srcb.EnsureSchema(testDB); err != nil {
+		t.Fatalf("src_bangumi schema: %v", err)
+	}
+	if err := testDB.Exec(`TRUNCATE src_bangumi.person RESTART IDENTITY CASCADE`).Error; err != nil {
+		t.Fatalf("truncate person: %v", err)
+	}
+	svc := newPublicSvc()
+	ctx := t.Context()
+
+	n := &model.CatalogCreditName{Name: "テスト声優", Lang: "ja"}
+	if err := testDB.Create(n).Error; err != nil {
+		t.Fatalf("create name: %v", err)
+	}
+	addExternalRef(t, model.EntityTypeCreditName, n.ID, int16(3), "999001", model.LinkKindExact)
+	if err := testDB.Exec(`INSERT INTO src_bangumi.person (id, name, type, infobox_raw, parse_error, summary, comments, collects, parser_version, ingested_at)
+		VALUES (999001, 'p', 1, '', '', '日本の声優。', 0, 0, 'x', now())`).Error; err != nil {
+		t.Fatalf("person fixture: %v", err)
+	}
+
+	rec, found, err := svc.Name(ctx, n.ID, false, false, 50, 0)
+	if err != nil || !found {
+		t.Fatalf("name: found=%v err=%v", found, err)
+	}
+	if len(rec.Intros) != 1 || rec.Intros[0].Lang != "ja" || rec.Intros[0].Source != "bangumi" || rec.Intros[0].Intro != "日本の声優。" {
+		t.Fatalf("intros = %+v", rec.Intros)
 	}
 }

@@ -891,6 +891,12 @@ components:
         id:
           format: int64
           type: integer
+        intros:
+          items:
+            $ref: "#/components/schemas/PublicNameIntro"
+          type:
+            - array
+            - "null"
         latin:
           type: string
         name:
@@ -917,6 +923,7 @@ components:
         - id
         - name
         - siblings
+        - intros
         - refs
       type: object
     PublicNameBuckets:
@@ -943,6 +950,20 @@ components:
       required:
         - work
         - roles
+      type: object
+    PublicNameIntro:
+      additionalProperties: false
+      properties:
+        intro:
+          type: string
+        lang:
+          type: string
+        source:
+          type: string
+      required:
+        - lang
+        - intro
+        - source
       type: object
     PublicNameRole:
       additionalProperties: false

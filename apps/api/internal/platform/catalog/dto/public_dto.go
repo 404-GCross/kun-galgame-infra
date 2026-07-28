@@ -220,6 +220,10 @@ type PublicName struct {
 	Latin    string              `json:"latin,omitempty"`
 	PersonID int64               `json:"person_id,omitempty"`
 	Siblings []PublicSiblingName `json:"siblings"`
+	// Intros is the multilingual description set (wave 108): bridged at read
+	// time from the credit name's OWN bangumi anchor (per-name provenance —
+	// never a person-identity assertion; person resolution stays frozen).
+	Intros []PublicNameIntro `json:"intros"`
 	// Refs are this name's EXACT cross-source identity anchors (doc 106 G4).
 	Refs       []PublicCatalogRef `json:"refs"`
 	Credits    []PublicNameCredit `json:"credits,omitempty"`
@@ -524,6 +528,14 @@ type PublicTagDetail struct {
 // PublicCharacterIntro is one language's description of a character (wave
 // 107). source is the catalog_source key.
 type PublicCharacterIntro struct {
+	Lang   string `json:"lang"`
+	Intro  string `json:"intro"`
+	Source string `json:"source"`
+}
+
+// PublicNameIntro is one description of a credited name (wave 108). source is
+// the catalog_source key.
+type PublicNameIntro struct {
 	Lang   string `json:"lang"`
 	Intro  string `json:"intro"`
 	Source string `json:"source"`
