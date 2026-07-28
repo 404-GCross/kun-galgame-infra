@@ -47,7 +47,7 @@ const handleLogout = async () => {
           <KunIcon name="lucide:boxes" class="size-5" />
         </div>
         <span class="truncate text-base font-bold text-foreground">
-          NextMoe 开放 API
+          NextMoe Codex
         </span>
       </NuxtLink>
 

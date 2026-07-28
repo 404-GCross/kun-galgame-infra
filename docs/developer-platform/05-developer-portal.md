@@ -6,6 +6,7 @@
 
 ## 9. 开发者门户(`developer.nextmoe.dev`)
 
+- **品牌定名(2026-07-28)**:门户 = **NextMoe Codex**(ACGN 数据正典定位——codex=正典的物理形态;从 Galgame 面首发,同构扩展至全部 ACGN 媒介)。API 面名不变(NextMoe Open API,spec title 属冻结契约不碰)。
 - **账号复用**:用生态账号经 IdP 登录即开发者账号,**不另造身份**(品牌显示随「NextMoe 账户」改名同步,机制零变)。
 - **核心功能**:
   1. 创建应用(= 一行 `oauth_clients`,`owner_user_id=当前用户`,`dev_enabled=true`)→ 拿 `client_id`(OAuth)。
