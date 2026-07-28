@@ -40,7 +40,7 @@ MCP server 是公开 /v1 契约前面的一层**协议适配**,不是第二个 A
 - MCP 规范的 OAuth 2.1 授权流 = M2(第三方实际开放后,与 `dev:manage`
   同期评估);M1 的静态 key 模式对 agent 场景已充分。
 
-## 4. 工具面(8 个 = M1 七个 + `catalog_name_get`;2026-07-28 与 104/105 波 spec 同步)
+## 4. 工具面(11 个 = M1 七个 + `catalog_name_get` + canonical-W1 三件;2026-07-28 与 104-108 波 spec 同步)
 
 | tool | 上游端点 | 说明 |
 |---|---|---|
@@ -52,6 +52,9 @@ MCP server 是公开 /v1 契约前面的一层**协议适配**,不是第二个 A
 | `catalog_name_get` | `GET /v1/catalog/names/{id}` | 名义(credit-name 同人格分组;`include=credits` 附署名作品+角色) |
 | `catalog_label_get` | `GET /v1/catalog/labels/{id}` | 厂牌/社团(intros[]/links[];`include=works`+`nsfw`) |
 | `catalog_character_get` | `GET /v1/catalog/characters/{id}` | 角色(traits 按 `spoilers=0-2` 分级;`nsfw` 控 r18 作品+sexual 系 traits) |
+| `catalog_works_list` | `GET /v1/catalog/works` | 批量浏览/过滤(content_rating/claimed/label/tag/series/platform/发售窗;`ids=` 批量水合;keyset 分页) |
+| `catalog_changes` | `GET /v1/catalog/changes` | 增量同步变更流(keyset 游标存续轮询;entity_type=work) |
+| `catalog_tag_get` | `GET /v1/catalog/tags/{id}` | 正典标签(跨源标签词表;`include=works` 附携带作品) |
 
 - **r18 姿态(104 波,调用方自控)**:catalog 系工具 `nsfw=true` 显式开;galgame 系
   `content_limit=sfw|nsfw|all`(需 key 带 `galgame:nsfw` scope,否则静默降 sfw)。

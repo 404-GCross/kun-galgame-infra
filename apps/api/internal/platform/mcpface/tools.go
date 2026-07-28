@@ -14,7 +14,8 @@ const defaultSearchLimit = 10
 // read-only, idempotent GET against an open-world external registry.
 var readOnly = &mcp.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true}
 
-// registerTools installs the eight tools on the server (M1 seven + catalog_name_get). Names are unversioned
+// registerTools installs the eleven tools on the server (M1 seven +
+// catalog_name_get + the canonical-W1 trio: works-list / changes / tag). Names are unversioned
 // (the /v1 contract is versioned upstream); descriptions are English and written
 // for the calling LLM, with the lookup-vs-search division spelled out.
 func registerTools(s *mcp.Server, up *Upstream) {
@@ -75,6 +76,27 @@ func registerTools(s *mcp.Server, up *Upstream) {
 		Description: descCatalogCharacterGet,
 		Annotations: readOnly,
 	}, t.catalogCharacterGet)
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "catalog_works_list",
+		Title:       "Browse / filter catalog works",
+		Description: descCatalogWorksList,
+		Annotations: readOnly,
+	}, t.catalogWorksList)
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "catalog_changes",
+		Title:       "Poll the catalog change feed",
+		Description: descCatalogChanges,
+		Annotations: readOnly,
+	}, t.catalogChanges)
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "catalog_tag_get",
+		Title:       "Get a canonical tag by id",
+		Description: descCatalogTagGet,
+		Annotations: readOnly,
+	}, t.catalogTagGet)
 }
 
 // ─────────────────────────── galgame face ───────────────────────────
@@ -272,4 +294,81 @@ func (t *tools) catalogCharacterGet(ctx context.Context, req *mcp.CallToolReques
 	setInt(q, "spoilers", in.Spoilers)
 	setInt(q, "offset", in.Offset)
 	return t.run(ctx, req, "catalog_character_get", pathID("/v1/catalog/characters", in.ID), q)
+}
+
+const descCatalogWorksList = "Browse / filter the catalog works registry — the bulk lane. Filter by content_rating / " +
+	"claimed / label_id / tag_id / series_id / platform / release window; ids=comma-list (max 100) batch-hydrates " +
+	"known ids in one call. sort=id (stable browse, default) or updated (newest-updated first). Keyset-paginated: " +
+	"pass the returned next_cursor to continue. For NATURAL-LANGUAGE title search use catalog_search type=works."
+
+type catalogWorksListInput struct {
+	ContentRating  string `json:"content_rating,omitempty" jsonschema:"Filter by rating: all_ages, sensitive, or r18 (r18 additionally requires nsfw=true)."`
+	Claimed        string `json:"claimed,omitempty" jsonschema:"true = claimed works only; false = bodyless only; omit = both."`
+	LabelID        int    `json:"label_id,omitempty" jsonschema:"Only works attributed to this label id."`
+	TagID          int    `json:"tag_id,omitempty" jsonschema:"Only works carrying a source tag mapped to this canonical tag id."`
+	SeriesID       int    `json:"series_id,omitempty" jsonschema:"Only member works of this series id."`
+	Platform       string `json:"platform,omitempty" jsonschema:"vndb platform code, e.g. win, and, ios."`
+	ReleasedAfter  string `json:"released_after,omitempty" jsonschema:"YYYY-MM-DD inclusive lower bound on the earliest release date per work."`
+	ReleasedBefore string `json:"released_before,omitempty" jsonschema:"YYYY-MM-DD inclusive upper bound."`
+	IDs            string `json:"ids,omitempty" jsonschema:"Comma-separated work ids (max 100) — batch-hydrate known ids in one call."`
+	Sort           string `json:"sort,omitempty" jsonschema:"id = ascending browse order (default); updated = newest-updated first."`
+	Cursor         string `json:"cursor,omitempty" jsonschema:"Opaque keyset cursor from a prior next_cursor; omit for the first page."`
+	Limit          int    `json:"limit,omitempty" jsonschema:"Items per page 1-100 (default 20)."`
+	Nsfw           bool   `json:"nsfw,omitempty" jsonschema:"true = include r18 works (default false = dropped server-side)."`
+}
+
+func (t *tools) catalogWorksList(ctx context.Context, req *mcp.CallToolRequest, in catalogWorksListInput) (*mcp.CallToolResult, any, error) {
+	q := newQuery()
+	setStr(q, "content_rating", in.ContentRating)
+	setStr(q, "claimed", in.Claimed)
+	setInt(q, "label_id", in.LabelID)
+	setInt(q, "tag_id", in.TagID)
+	setInt(q, "series_id", in.SeriesID)
+	setStr(q, "platform", in.Platform)
+	setStr(q, "released_after", in.ReleasedAfter)
+	setStr(q, "released_before", in.ReleasedBefore)
+	setStr(q, "ids", in.IDs)
+	setStr(q, "sort", in.Sort)
+	setStr(q, "cursor", in.Cursor)
+	setInt(q, "limit", in.Limit)
+	setBool(q, "nsfw", in.Nsfw)
+	return t.run(ctx, req, "catalog_works_list", "/v1/catalog/works", q)
+}
+
+const descCatalogChanges = "Poll the catalog change feed for INCREMENTAL SYNC: keyset-paginated entries for works " +
+	"whose records changed, oldest first. Store the returned next_cursor and pass it on the next poll to receive " +
+	"only what changed since. entity_type currently supports work (default)."
+
+type catalogChangesInput struct {
+	EntityType string `json:"entity_type,omitempty" jsonschema:"Feed scope: work (default)."`
+	Cursor     string `json:"cursor,omitempty" jsonschema:"Opaque keyset cursor; omit to start from the beginning."`
+	Limit      int    `json:"limit,omitempty" jsonschema:"Items per page 1-500 (default 100)."`
+}
+
+func (t *tools) catalogChanges(ctx context.Context, req *mcp.CallToolRequest, in catalogChangesInput) (*mcp.CallToolResult, any, error) {
+	q := newQuery()
+	setStr(q, "entity_type", in.EntityType)
+	setStr(q, "cursor", in.Cursor)
+	setInt(q, "limit", in.Limit)
+	return t.run(ctx, req, "catalog_changes", "/v1/catalog/changes", q)
+}
+
+const descCatalogTagGet = "Fetch one canonical tag (the cross-source tag vocabulary) by its numeric id. Pass " +
+	"include=works to attach the works carrying any source tag mapped to it (limit/offset paginated)."
+
+type catalogTagGetInput struct {
+	ID      int    `json:"id" jsonschema:"The canonical tag id (required)."`
+	Include string `json:"include,omitempty" jsonschema:"Set to works to attach works carrying any mapped source tag."`
+	Nsfw    bool   `json:"nsfw,omitempty" jsonschema:"true = include r18 works among the attachments (default false = dropped)."`
+	Limit   int    `json:"limit,omitempty" jsonschema:"Works per page 1-50 (default 50)."`
+	Offset  int    `json:"offset,omitempty" jsonschema:"Rows to skip."`
+}
+
+func (t *tools) catalogTagGet(ctx context.Context, req *mcp.CallToolRequest, in catalogTagGetInput) (*mcp.CallToolResult, any, error) {
+	q := newQuery()
+	setStr(q, "include", in.Include)
+	setBool(q, "nsfw", in.Nsfw)
+	setInt(q, "limit", in.Limit)
+	setInt(q, "offset", in.Offset)
+	return t.run(ctx, req, "catalog_tag_get", pathID("/v1/catalog/tags", in.ID), q)
 }

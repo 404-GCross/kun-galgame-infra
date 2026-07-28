@@ -11,15 +11,19 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// expectedTools is the frozen tool surface (design §4; M1 seven + catalog_name_get).
-// If this list changes, the design doc and portal docs page must change with it.
+// expectedTools is the frozen tool surface (design §4; M1 seven + catalog_name_get
+// + the canonical-W1 trio). If this list changes, the design doc and portal docs
+// page must change with it.
 var expectedTools = []string{
+	"catalog_changes",
 	"catalog_character_get",
 	"catalog_label_get",
 	"catalog_lookup_external",
 	"catalog_name_get",
 	"catalog_search",
+	"catalog_tag_get",
 	"catalog_work_get",
+	"catalog_works_list",
 	"galgame_get",
 	"galgame_search",
 }

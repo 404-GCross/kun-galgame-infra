@@ -10,7 +10,7 @@ useSeoMeta({
     '把 NextMoe 开放 API 作为 MCP（Model Context Protocol）server 接入 AI 助手：端点、密钥配置，以及 Claude Code / Claude Desktop / 通用 MCP 客户端三段配置示例。'
 })
 
-// The eight tools (mirrors apps/api/internal/platform/mcpface). Each maps 1:1
+// The eleven tools (mirrors apps/api/internal/platform/mcpface). Each maps 1:1
 // to a public /v1 endpoint; lookup/get take an id, search takes natural language.
 // R18 is hidden by default: nsfw=true on catalog tools, content_limit on galgame.
 const tools = [
@@ -42,6 +42,18 @@ const tools = [
   {
     name: 'catalog_character_get',
     desc: '按 id 取角色（traits 按 spoilers=0-2 分级；nsfw 控 r18 作品与 sexual 系 traits）。'
+  },
+  {
+    name: 'catalog_works_list',
+    desc: '批量浏览 / 过滤作品注册表（评级 / 厂牌 / 标签 / 系列 / 平台 / 发售窗，keyset 分页，ids= 批量水合）。'
+  },
+  {
+    name: 'catalog_changes',
+    desc: '增量同步变更流——存下 next_cursor，下次轮询只拿变化的部分。'
+  },
+  {
+    name: 'catalog_tag_get',
+    desc: '按 id 取正典标签（跨源标签词表），include=works 附携带作品。'
   }
 ]
 
