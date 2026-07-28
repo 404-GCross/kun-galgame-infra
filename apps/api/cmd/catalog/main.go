@@ -311,10 +311,15 @@ func setupPublicCatalog(
 	v1.Post("/resolve", publicH.Resolve)
 	v1.Get("/redirects", publicH.Redirects)
 	v1.Get("/search", publicH.Search)
+	// Works browse lane + changes feed (doc 106 W1): static paths registered
+	// before the /works/:id catch-all.
+	v1.Get("/works", publicH.WorksList)
+	v1.Get("/changes", publicH.Changes)
 	v1.Get("/works/:id", publicH.WorkDetail)
 	v1.Get("/names/:id", publicH.Name)
 	v1.Get("/characters/:id", publicH.Character)
 	v1.Get("/labels/:id", publicH.Label)
+	v1.Get("/tags/:id", publicH.Tag)
 
 	// Usage flush lifecycle: a 60s ticker upserts the in-memory rollup; a final
 	// flush runs on graceful shutdown via OnPreShutdown, which fires during

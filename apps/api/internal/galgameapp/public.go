@@ -42,7 +42,17 @@ func mountPublic(
 		return c.Next()
 	}
 
+	// doc 106 绞杀式弃用: the /v1/galgame public face retires on 2026-10-31
+	// (90-day window, canonical data lives on /v1/catalog). RFC 9745
+	// Deprecation + RFC 8594 Sunset + a successor Link on every response.
+	deprecationHeaders := func(c fiber.Ctx) error {
+		c.Set("Deprecation", "@1785196800")
+		c.Set("Sunset", "Sat, 31 Oct 2026 00:00:00 GMT")
+		c.Set("Link", `<https://api.nextmoe.dev/v1/catalog>; rel="successor-version"`)
+		return c.Next()
+	}
 	v1 := a.Fiber.Group("/v1/galgame",
+		deprecationHeaders,
 		face.mw.ResolveCredential,
 		face.recordUsage("galgame"),
 		face.mw.RateLimit,

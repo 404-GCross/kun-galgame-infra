@@ -84,17 +84,20 @@ type PublicCreditGroup struct {
 // requested). refs are exact-only; titles / claimed_by / release_date always
 // present (claimed_by / release_date may be null).
 type PublicCatalogWork struct {
-	ID            int64                `json:"id"`
-	Medium        string               `json:"medium"`
-	DisplayName   string               `json:"display_name"`
-	OLang         string               `json:"olang"`
-	ContentRating string               `json:"content_rating"`
-	ReleaseDate   *string              `json:"release_date"`
-	Titles        []PublicCatalogTitle `json:"titles"`
-	Refs          []PublicCatalogRef   `json:"refs"`
-	ClaimedBy     *PublicClaimedBy     `json:"claimed_by"`
-	Relations     []PublicRelation     `json:"relations,omitempty"`
-	Credits       []PublicCreditGroup  `json:"credits,omitempty"`
+	ID            int64   `json:"id"`
+	Medium        string  `json:"medium"`
+	DisplayName   string  `json:"display_name"`
+	OLang         string  `json:"olang"`
+	ContentRating string  `json:"content_rating"`
+	ReleaseDate   *string `json:"release_date"`
+	// Updated is the registry row's last-modified instant (RFC3339) — the
+	// changes-feed watermark (doc 106 G6).
+	Updated   string               `json:"updated"`
+	Titles    []PublicCatalogTitle `json:"titles"`
+	Refs      []PublicCatalogRef   `json:"refs"`
+	ClaimedBy *PublicClaimedBy     `json:"claimed_by"`
+	Relations []PublicRelation     `json:"relations,omitempty"`
+	Credits   []PublicCreditGroup  `json:"credits,omitempty"`
 	// Full-facet expansion (wave 104, add-only): every aggregation facet the
 	// S2S face carries, projected to the public conventions — source keys not
 	// ids, CDN URLs not hashes, string vocabularies not enum ints. Always
@@ -212,13 +215,15 @@ type PublicNameCredit struct {
 // grouping (person_id + public siblings) via the existing link-visibility
 // doctrine. credits are include-gated + keyset-less offset paginated.
 type PublicName struct {
-	ID         int64               `json:"id"`
-	Name       PublicNameBuckets   `json:"name"`
-	Latin      string              `json:"latin,omitempty"`
-	PersonID   int64               `json:"person_id,omitempty"`
-	Siblings   []PublicSiblingName `json:"siblings"`
-	Credits    []PublicNameCredit  `json:"credits,omitempty"`
-	NextOffset *int                `json:"next_offset,omitempty"`
+	ID       int64               `json:"id"`
+	Name     PublicNameBuckets   `json:"name"`
+	Latin    string              `json:"latin,omitempty"`
+	PersonID int64               `json:"person_id,omitempty"`
+	Siblings []PublicSiblingName `json:"siblings"`
+	// Refs are this name's EXACT cross-source identity anchors (doc 106 G4).
+	Refs       []PublicCatalogRef `json:"refs"`
+	Credits    []PublicNameCredit `json:"credits,omitempty"`
+	NextOffset *int               `json:"next_offset,omitempty"`
 }
 
 // PublicVoiceName is one credited name that voiced a character on a work.
@@ -238,9 +243,11 @@ type PublicCharacterWork struct {
 // PublicCharacter is the frozen v1 character record (GET
 // /v1/catalog/characters/{id}). works (appears-in) are include-gated.
 type PublicCharacter struct {
-	ID         int64                 `json:"id"`
-	Name       PublicNameBuckets     `json:"name"`
-	Latin      string                `json:"latin,omitempty"`
+	ID    int64             `json:"id"`
+	Name  PublicNameBuckets `json:"name"`
+	Latin string            `json:"latin,omitempty"`
+	// Refs are this character's EXACT cross-source identity anchors (doc 106 G4).
+	Refs       []PublicCatalogRef    `json:"refs"`
 	Works      []PublicCharacterWork `json:"works,omitempty"`
 	NextOffset *int                  `json:"next_offset,omitempty"`
 	// Traits is the VNDB trait set (step 93) at or below the requested
@@ -279,13 +286,16 @@ type PublicLabelLink struct {
 // intros / links are always present (empty → [], never null); works (attributed)
 // are include-gated.
 type PublicLabel struct {
-	ID          int64              `json:"id"`
-	DisplayName string             `json:"display_name"`
-	Kind        string             `json:"kind"`
-	Intros      []PublicLabelIntro `json:"intros"`
-	Links       []PublicLabelLink  `json:"links"`
-	Works       []PublicLabelWork  `json:"works,omitempty"`
-	NextOffset  *int               `json:"next_offset,omitempty"`
+	ID          int64  `json:"id"`
+	DisplayName string `json:"display_name"`
+	Kind        string `json:"kind"`
+	// Refs are the EXACT identity anchors (doc 106 G4); links stays the
+	// separate non-identity web-presence projection — the two never mix.
+	Refs       []PublicCatalogRef `json:"refs"`
+	Intros     []PublicLabelIntro `json:"intros"`
+	Links      []PublicLabelLink  `json:"links"`
+	Works      []PublicLabelWork  `json:"works,omitempty"`
+	NextOffset *int               `json:"next_offset,omitempty"`
 }
 
 // PublicEntityHit is one entity-search hit (person / character / label). id is
@@ -332,6 +342,12 @@ type PublicTag struct {
 	Name   string `json:"name"`
 	Count  int    `json:"count,omitempty"`
 	Source string `json:"source"`
+	// Canonical overlay (doc 106 G5, the step-74 vocabulary): present only
+	// when this (source, name) maps into the canonical tag vocabulary —
+	// unmapped tags omit all three keys (verbatim rendering as before).
+	CanonicalID int64  `json:"canonical_id,omitempty"`
+	Tier        string `json:"tier,omitempty" doc:"core|longtail|hidden"`
+	Kind        string `json:"kind,omitempty" doc:"content|meta"`
 }
 
 // PublicPlaytime is one per-source playtime estimate (minutes).
@@ -415,12 +431,19 @@ type PublicWorkLabel struct {
 
 // PublicRelease is one release row (date is partial ISO YYYY[-MM[-DD]]).
 type PublicRelease struct {
+	// ID is the stable catalog release id (doc 106 G3) — the addressable
+	// identity the release-level anchors hang off.
+	ID        int64    `json:"id"`
 	Kind      string   `json:"kind" doc:"default|digital|physical|trial|patch"`
 	Date      *string  `json:"date"`
 	Title     string   `json:"title,omitempty"`
 	Lang      string   `json:"lang,omitempty"`
 	Platform  string   `json:"platform,omitempty"`
 	Platforms []string `json:"platforms,omitempty"`
+	// Refs are this release's EXACT external anchors (dlsite workno / vndb
+	// release id / steam appid …) — release-level identity material that was
+	// previously visible only flattened into the work-level refs (doc 106 G3).
+	Refs []PublicCatalogRef `json:"refs"`
 }
 
 // PublicCharacterTrait is one VNDB trait on a character (group is the root
@@ -432,4 +455,61 @@ type PublicCharacterTrait struct {
 	Spoiler int16  `json:"spoiler" doc:"0=none 1=minor 2=major"`
 	Sexual  bool   `json:"sexual"`
 	Lie     bool   `json:"lie"`
+}
+
+// ── doc-106 W1: works list / changes feed / tag detail ──────────────────────
+
+// PublicWorkListItem is one row of the works browse lane (GET
+// /v1/catalog/works): the brief identity plus the list-page essentials so a
+// consumer renders a row without a detail follow-up (doc 106 §4.4).
+type PublicWorkListItem struct {
+	ID            int64            `json:"id"`
+	Medium        string           `json:"medium"`
+	DisplayName   string           `json:"display_name"`
+	ContentRating string           `json:"content_rating"`
+	OLang         string           `json:"olang"`
+	ReleaseDate   *string          `json:"release_date"`
+	ClaimedBy     *PublicClaimedBy `json:"claimed_by"`
+	// Cover is one representative cover as a complete CDN URL (portrait pin
+	// first, then lowest sort order); omitted when the work has none the
+	// caller may see (sfw callers never receive a sexual-flagged cover).
+	Cover   string `json:"cover,omitempty"`
+	Updated string `json:"updated"`
+}
+
+// PublicWorksListData is the keyset works-list envelope. next_cursor is null
+// on the last page.
+type PublicWorksListData struct {
+	Items      []PublicWorkListItem `json:"items"`
+	NextCursor *string              `json:"next_cursor"`
+}
+
+// PublicChangeItem is one changes-feed entry: which entity changed and when.
+type PublicChangeItem struct {
+	EntityType string `json:"entity_type"`
+	ID         int64  `json:"id"`
+	Updated    string `json:"updated"`
+}
+
+// PublicChangesData is the changes-feed envelope (GET /v1/catalog/changes).
+// next_cursor is ALWAYS present — it advances past the last row even on a
+// short page, so an incremental consumer keeps polling the same cursor for
+// new rows (the /v1/galgame/changes semantics, doc 106 G2).
+type PublicChangesData struct {
+	Items      []PublicChangeItem `json:"items"`
+	NextCursor string             `json:"next_cursor"`
+}
+
+// PublicTagDetail is the canonical-tag record (GET /v1/catalog/tags/{id} —
+// the step-74/87/90 cross-source vocabulary, doc 106 G5). works (tagged) are
+// include-gated.
+type PublicTagDetail struct {
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
+	Tier string `json:"tier" doc:"core|longtail|hidden"`
+	Kind string `json:"kind" doc:"content|meta"`
+	// Works are the works carrying any source tag mapped to this canonical
+	// tag (include=works; nsfw-gated briefs).
+	Works      []PublicWorkBrief `json:"works,omitempty"`
+	NextOffset *int              `json:"next_offset,omitempty"`
 }

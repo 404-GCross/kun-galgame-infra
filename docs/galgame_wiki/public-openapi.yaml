@@ -2093,6 +2093,7 @@ openapi: 3.1.0
 paths:
   /v1/galgame:
     get:
+      deprecated: true
       operationId: listGalgamesPublic
       parameters:
         - description: "Sort key: id (default, ascending) or release_date (newest first, undated last)"
@@ -2159,6 +2160,7 @@ paths:
         - galgame-public
   /v1/galgame/batch:
     get:
+      deprecated: true
       operationId: batchGalgamesPublic
       parameters:
         - description: Comma-separated galgame IDs (1-100)
@@ -2217,6 +2219,7 @@ paths:
         - galgame-public
   /v1/galgame/calendar:
     get:
+      deprecated: true
       operationId: getGalgameCalendarPublic
       parameters:
         - description: "ISO month YYYY-MM (default: current JST month)"
@@ -2251,6 +2254,7 @@ paths:
         - galgame-public
   /v1/galgame/calendar/pending:
     get:
+      deprecated: true
       operationId: getGalgameCalendarPendingPublic
       parameters:
         - description: "Year YYYY (default: current JST year)"
@@ -2285,6 +2289,7 @@ paths:
         - galgame-public
   /v1/galgame/calendar/tba:
     get:
+      deprecated: true
       operationId: getGalgameCalendarTBAPublic
       parameters:
         - description: CSV of BCP-47 tags, or 'all'
@@ -2312,6 +2317,7 @@ paths:
         - galgame-public
   /v1/galgame/changes:
     get:
+      deprecated: true
       operationId: getGalgameChangesPublic
       parameters:
         - description: Opaque keyset cursor from a prior response's next_cursor; omit for the first page
@@ -2354,6 +2360,7 @@ paths:
         - galgame-public
   /v1/galgame/engines:
     get:
+      deprecated: true
       operationId: listEnginesPublic
       parameters:
         - description: Page number (default 1)
@@ -2390,6 +2397,7 @@ paths:
         - galgame-public
   /v1/galgame/engines/{id}:
     get:
+      deprecated: true
       operationId: getEnginePublic
       parameters:
         - description: Entity id
@@ -2418,6 +2426,7 @@ paths:
         - galgame-public
   /v1/galgame/engines/{id}/galgame-ids:
     get:
+      deprecated: true
       operationId: listEngineGalgameIDsPublic
       parameters:
         - description: Entity id
@@ -2446,6 +2455,7 @@ paths:
         - galgame-public
   /v1/galgame/lookup:
     get:
+      deprecated: true
       operationId: lookupGalgamePublic
       parameters:
         - description: VNDB visual-novel id (e.g. v17). Required.
@@ -2474,6 +2484,7 @@ paths:
         - galgame-public
   /v1/galgame/officials:
     get:
+      deprecated: true
       operationId: listOfficialsPublic
       parameters:
         - description: Page number (default 1)
@@ -2510,6 +2521,7 @@ paths:
         - galgame-public
   /v1/galgame/officials/search:
     get:
+      deprecated: true
       operationId: searchOfficialsPublic
       parameters:
         - description: Free-text query across maker names + aliases
@@ -2559,6 +2571,7 @@ paths:
         - galgame-public
   /v1/galgame/officials/{id}:
     get:
+      deprecated: true
       operationId: getOfficialPublic
       parameters:
         - description: Entity id
@@ -2587,6 +2600,7 @@ paths:
         - galgame-public
   /v1/galgame/officials/{id}/galgame-ids:
     get:
+      deprecated: true
       operationId: listOfficialGalgameIDsPublic
       parameters:
         - description: Entity id
@@ -2615,6 +2629,7 @@ paths:
         - galgame-public
   /v1/galgame/officials/{id}/galgames:
     get:
+      deprecated: true
       operationId: listOfficialGalgamesPublic
       parameters:
         - description: Official / Tag ID
@@ -2680,6 +2695,7 @@ paths:
         - galgame-public
   /v1/galgame/search:
     get:
+      deprecated: true
       operationId: searchGalgamesPublic
       parameters:
         - description: Free-text query across localized names + aliases
@@ -2836,6 +2852,7 @@ paths:
         - galgame-public
   /v1/galgame/series:
     get:
+      deprecated: true
       operationId: listSeriesPublic
       parameters:
         - description: Page number (default 1)
@@ -2886,6 +2903,7 @@ paths:
         - galgame-public
   /v1/galgame/series/{id}:
     get:
+      deprecated: true
       operationId: getSeriesPublic
       parameters:
         - description: "Comma-separated blocks to expand on the embedded member set: officials,scores,meta,intro (default: none). Unknown names are ignored."
@@ -2928,6 +2946,7 @@ paths:
         - galgame-public
   /v1/galgame/stats:
     get:
+      deprecated: true
       operationId: getGalgameStatsPublic
       responses:
         "200":
@@ -2947,6 +2966,7 @@ paths:
         - galgame-public
   /v1/galgame/tags:
     get:
+      deprecated: true
       operationId: listTagsPublic
       parameters:
         - description: Page number (default 1)
@@ -2990,6 +3010,7 @@ paths:
         - galgame-public
   /v1/galgame/tags/multi:
     get:
+      deprecated: true
       operationId: multiTagsPublic
       parameters:
         - description: "Comma-separated tag ids; returns the published galgames matching them (default: AND intersection over the exact ids)"
@@ -3054,6 +3075,7 @@ paths:
         - galgame-public
   /v1/galgame/tags/search:
     get:
+      deprecated: true
       operationId: searchTagsPublic
       parameters:
         - description: Free-text query across tag names + aliases
@@ -3096,6 +3118,7 @@ paths:
         - galgame-public
   /v1/galgame/tags/{id}:
     get:
+      deprecated: true
       operationId: getTagPublic
       parameters:
         - description: Entity id
@@ -3124,6 +3147,7 @@ paths:
         - galgame-public
   /v1/galgame/tags/{id}/galgame-ids:
     get:
+      deprecated: true
       operationId: listTagGalgameIDsPublic
       parameters:
         - description: Entity id
@@ -3152,6 +3176,7 @@ paths:
         - galgame-public
   /v1/galgame/tags/{id}/galgames:
     get:
+      deprecated: true
       operationId: listTagGalgamesPublic
       parameters:
         - description: Official / Tag ID
@@ -3217,6 +3242,7 @@ paths:
         - galgame-public
   /v1/galgame/{id}:
     get:
+      deprecated: true
       operationId: getGalgamePublic
       parameters:
         - description: Galgame ID

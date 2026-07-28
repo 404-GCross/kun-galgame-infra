@@ -298,6 +298,27 @@ func rawSQL(db *gorm.DB) error {
 			return fmt.Errorf("create index %s: %w", ix.name, err)
 		}
 	}
+
+	// (6) Plain secondary indexes for the canonical public read face (doc 106
+	// W1). Both are pure query-support indexes — no semantics, rerun freely.
+	for _, ix := range []struct{ name, stmt string }{
+		// Reverse lookup canonical tag → works: catalog_tag_source_map keys
+		// (source_id, source_name) and the UNIQUE on catalog_work_tag leads
+		// with work_id, so a (name, source_id) probe needs its own index
+		// (GET /v1/catalog/tags/{id} include=works + works?tag_id=).
+		{"idx_catalog_work_tag_name_source", `
+			CREATE INDEX IF NOT EXISTS idx_catalog_work_tag_name_source
+			    ON catalog_work_tag(name, source_id)`},
+		// Keyset lanes for the public works list (sort=updated) and the
+		// changes feed ((updated_at, id) ascending resume cursor).
+		{"idx_catalog_work_updated_id", `
+			CREATE INDEX IF NOT EXISTS idx_catalog_work_updated_id
+			    ON catalog_work(updated_at, id)`},
+	} {
+		if err := db.Exec(ix.stmt).Error; err != nil {
+			return fmt.Errorf("create index %s: %w", ix.name, err)
+		}
+	}
 	return nil
 }
 

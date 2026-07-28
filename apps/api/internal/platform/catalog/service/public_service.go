@@ -6,6 +6,7 @@ import (
 	stderrors "errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"api/internal/platform/catalog/dto"
 	"api/internal/platform/catalog/model"
@@ -205,6 +206,7 @@ func (s *PublicService) WorkDetail(ctx context.Context, id int64, inc PublicIncl
 		Titles:        publicTitles(detail.Titles),
 		Refs:          publicRefs(detail.Refs),
 		ClaimedBy:     claimedBy(w.Site, w.ProductWorkID),
+		Updated:       w.UpdatedAt.UTC().Format(time.RFC3339),
 	}
 	s.attachWorkFacets(&rec, detail)
 	if inc.Relations {
@@ -247,11 +249,19 @@ func (s *PublicService) attachWorkFacets(rec *dto.PublicCatalogWork, detail *Wor
 	rec.Releases = make([]dto.PublicRelease, 0, len(detail.Releases))
 	for _, rd := range detail.Releases {
 		r := rd.Release
-		rec.Releases = append(rec.Releases, dto.PublicRelease{
-			Kind: releaseKindKey(r.Kind), Date: releaseDate(r),
+		pr := dto.PublicRelease{
+			ID: r.ID, Kind: releaseKindKey(r.Kind), Date: releaseDate(r),
 			Title: derefStrPub(r.Title), Lang: derefStrPub(r.Lang),
 			Platform: derefStrPub(r.Platform), Platforms: publicPlatformsFromExtra(r.Extra),
-		})
+			Refs: make([]dto.PublicCatalogRef, 0, len(rd.Anchors)),
+		}
+		for _, a := range rd.Anchors {
+			if a.LinkKind != model.LinkKindExact {
+				continue // probable/related never cross the public face
+			}
+			pr.Refs = append(pr.Refs, dto.PublicCatalogRef{Source: publicSourceKey(a.Source), ExternalID: a.ExternalID})
+		}
+		rec.Releases = append(rec.Releases, pr)
 	}
 	rec.Popularity = make([]dto.PublicPopularity, 0, len(detail.Popularity))
 	for _, p := range detail.Popularity {
@@ -267,7 +277,17 @@ func (s *PublicService) attachWorkFacets(rec *dto.PublicCatalogWork, detail *Wor
 	}
 	rec.Tags = make([]dto.PublicTag, 0, len(detail.Tags))
 	for _, t := range detail.Tags {
-		rec.Tags = append(rec.Tags, dto.PublicTag{Name: t.Name, Count: t.Count, Source: s.sourceKey(t.SourceID)})
+		pt := dto.PublicTag{Name: t.Name, Count: t.Count, Source: s.sourceKey(t.SourceID)}
+		if t.CanonicalID != nil {
+			pt.CanonicalID = *t.CanonicalID
+		}
+		if t.Tier != nil {
+			pt.Tier = tagTierKey(*t.Tier)
+		}
+		if t.Kind != nil {
+			pt.Kind = tagKindKey(*t.Kind)
+		}
+		rec.Tags = append(rec.Tags, pt)
 	}
 	rec.Playtimes = make([]dto.PublicPlaytime, 0, len(detail.Playtimes))
 	for _, p := range detail.Playtimes {
@@ -496,6 +516,9 @@ func (s *PublicService) Name(ctx context.Context, id int64, withCredits, nsfw bo
 			ID: sib.ID, Name: nameBuckets(sib.Lang, sib.Name), Latin: derefStrPub(sib.Latin),
 		})
 	}
+	if p.Refs, err = s.entityRefs(ctx, model.EntityTypeCreditName, id); err != nil {
+		return dto.PublicName{}, false, err
+	}
 	if withCredits {
 		briefs, err := s.claimEnrich(ctx, res.Works)
 		if err != nil {
@@ -543,6 +566,9 @@ func (s *PublicService) Character(ctx context.Context, id int64, withWorks, nsfw
 	if ch.Traits, err = s.characterTraits(ctx, id, spoilers, nsfw); err != nil {
 		return dto.PublicCharacter{}, false, err
 	}
+	if ch.Refs, err = s.entityRefs(ctx, model.EntityTypeCharacter, id); err != nil {
+		return dto.PublicCharacter{}, false, err
+	}
 	if withWorks {
 		briefs, err := s.claimEnrichCharacter(ctx, res.Works)
 		if err != nil {
@@ -583,6 +609,9 @@ func (s *PublicService) Label(ctx context.Context, id int64, withWorks, nsfw boo
 		return dto.PublicLabel{}, false, err
 	}
 	if l.Links, err = s.labelLinks(ctx, id); err != nil {
+		return dto.PublicLabel{}, false, err
+	}
+	if l.Refs, err = s.entityRefs(ctx, model.EntityTypeLabel, id); err != nil {
 		return dto.PublicLabel{}, false, err
 	}
 	if withWorks {

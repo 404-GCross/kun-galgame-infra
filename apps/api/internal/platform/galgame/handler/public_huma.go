@@ -242,5 +242,15 @@ func SetupGalgamePublicSpec(app *fiber.App) huma.API {
 	// Curated taxonomy four-family public faces (W1b): tags 5 / officials 4 /
 	// engines 3 / series 2 = 14 by-id operations (public_taxonomy_huma.go).
 	registerGalgameTaxonomyPublicOps(api, tags)
+	// doc 106: the whole /v1/galgame face is the kungal product read face,
+	// superseded by the canonical /v1/catalog data face — mark every op
+	// deprecated in the published spec (Sunset 2026-10-31).
+	for _, item := range api.OpenAPI().Paths {
+		for _, op := range []*huma.Operation{item.Get, item.Post, item.Put, item.Patch, item.Delete} {
+			if op != nil {
+				op.Deprecated = true
+			}
+		}
+	}
 	return api
 }

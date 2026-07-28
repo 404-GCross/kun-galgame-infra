@@ -110,6 +110,45 @@ type publicEntitySearchOutput struct {
 	Body Envelope[dto.PublicEntitySearchData]
 }
 
+type publicWorksListInput struct {
+	ContentRating  string `query:"content_rating" enum:"all_ages,sensitive,r18" doc:"Filter by rating (r18 additionally requires nsfw=1)"`
+	Claimed        string `query:"claimed" enum:"true,false" doc:"true = claimed works only; false = bodyless only; absent = both"`
+	LabelID        int64  `query:"label_id" doc:"Only works attributed to this label (the catalog_work_label edge)"`
+	TagID          int64  `query:"tag_id" doc:"Only works carrying a source tag mapped to this canonical tag"`
+	SeriesID       int64  `query:"series_id" doc:"Only member works of this series"`
+	Platform       string `query:"platform" doc:"vndb platform code (win/and/ios/...) — release-level and work-level rows unioned"`
+	ReleasedAfter  string `query:"released_after" doc:"YYYY-MM-DD, inclusive, over the EARLIEST release date per work"`
+	ReleasedBefore string `query:"released_before" doc:"YYYY-MM-DD, inclusive"`
+	IDs            string `query:"ids" doc:"Comma-separated work ids (max 100) — the batch-hydrate lane"`
+	Sort           string `query:"sort" enum:"id,updated" doc:"id = ascending browse order (default); updated = newest-updated first"`
+	Cursor         string `query:"cursor" doc:"Opaque keyset cursor from a prior next_cursor; omit for the first page"`
+	Limit          int    `query:"limit" doc:"Items per page 1-100 (default 20)"`
+	NSFW           bool   `query:"nsfw" doc:"true/1 = include r18 works (default false = dropped)"`
+}
+type publicWorksListOutput struct {
+	Body Envelope[dto.PublicWorksListData]
+}
+
+type publicChangesInput struct {
+	EntityType string `query:"entity_type" enum:"work" doc:"v1 feed scope: work (default)"`
+	Cursor     string `query:"cursor" doc:"Opaque keyset cursor; omit to start from the beginning"`
+	Limit      int    `query:"limit" doc:"Items per page 1-500 (default 100)"`
+}
+type publicChangesOutput struct {
+	Body Envelope[dto.PublicChangesData]
+}
+
+type publicTagInput struct {
+	ID      int64  `path:"id" doc:"Canonical tag id (the cross-source tag vocabulary)"`
+	Include string `query:"include" doc:"works = attach the works carrying any mapped source tag"`
+	NSFW    bool   `query:"nsfw" doc:"true/1 = include r18 works (default false = dropped)"`
+	Limit   int    `query:"limit" doc:"Works per page 1-50 (default 50)"`
+	Offset  int    `query:"offset" doc:"Rows to skip"`
+}
+type publicTagOutput struct {
+	Body Envelope[dto.PublicTagDetail]
+}
+
 // SetupCatalogPublicSpec registers the /v1/catalog public projection operations
 // to derive the frozen public OpenAPI. Handlers are stubs (Fiber serves the live
 // paths); this only shapes the spec.
@@ -171,5 +210,21 @@ func SetupCatalogPublicSpec(app *fiber.App) huma.API {
 	}, func(context.Context, *publicEntitySearchInput) (*publicEntitySearchOutput, error) {
 		return &publicEntitySearchOutput{}, nil
 	})
+	huma.Register(api, huma.Operation{
+		OperationID: "listCatalogWorksPublic", Method: http.MethodGet, Path: "/v1/catalog/works",
+		Summary: "Keyset works browse lane: the LIVE galgame registry set (claimed + bodyless) with conjunctive filters; sort=id|updated", Tags: tags,
+	}, func(context.Context, *publicWorksListInput) (*publicWorksListOutput, error) {
+		return &publicWorksListOutput{}, nil
+	})
+	huma.Register(api, huma.Operation{
+		OperationID: "listCatalogChangesPublic", Method: http.MethodGet, Path: "/v1/catalog/changes",
+		Summary: "Incremental works changes feed ((updated,id) keyset; next_cursor always present — keep polling it for new rows)", Tags: tags,
+	}, func(context.Context, *publicChangesInput) (*publicChangesOutput, error) {
+		return &publicChangesOutput{}, nil
+	})
+	huma.Register(api, huma.Operation{
+		OperationID: "getCatalogTagPublic", Method: http.MethodGet, Path: "/v1/catalog/tags/{id}",
+		Summary: "Canonical tag (cross-source vocabulary): name / tier / kind; include=works attaches the tagged works", Tags: tags,
+	}, func(context.Context, *publicTagInput) (*publicTagOutput, error) { return &publicTagOutput{}, nil })
 	return api
 }

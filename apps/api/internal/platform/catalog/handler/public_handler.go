@@ -1,8 +1,10 @@
 package handler
 
 import (
+	stderrors "errors"
 	"strconv"
 	"strings"
+	"time"
 
 	"api/internal/platform/catalog/dto"
 	"api/internal/platform/catalog/model"
@@ -403,4 +405,147 @@ func publicContentRatingKey(r int16) string {
 	default:
 		return ""
 	}
+}
+
+// contentRatingFromKey is the inverse of publicContentRatingKey (input
+// validation for the works-list filter).
+func contentRatingFromKey(k string) (int16, bool) {
+	switch k {
+	case "all_ages":
+		return model.ContentRatingAllAges, true
+	case "sensitive":
+		return model.ContentRatingSensitive, true
+	case "r18":
+		return model.ContentRatingR18, true
+	default:
+		return 0, false
+	}
+}
+
+// datePub parses an optional YYYY-MM-DD date param into the composed ordinal
+// (y*10000+m*100+d); 0 for absent. ok=false on a malformed value.
+func datePub(raw string) (int64, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 0, true
+	}
+	t, err := time.Parse("2006-01-02", raw)
+	if err != nil {
+		return 0, false
+	}
+	return int64(t.Year())*10000 + int64(t.Month())*100 + int64(t.Day()), true
+}
+
+// WorksList serves GET /v1/catalog/works — the keyset works browse lane
+// (doc 106 G1). Filters are conjunctive; sort=id (ASC, default) | updated
+// (DESC, newest first). A malformed cursor / filter is a 400, never a 500.
+func (h *PublicHandler) WorksList(c fiber.Ctx) error {
+	f := service.WorksListFilter{NSFW: nsfwQuery(c), Platform: strings.TrimSpace(c.Query("platform"))}
+	switch sort := c.Query("sort"); sort {
+	case "", "id":
+		f.Sort = "id"
+	case "updated":
+		f.Sort = "updated"
+	default:
+		return response.BadRequestMsg(c, errors.ErrInvalidParam, "sort must be id|updated")
+	}
+	if cr := c.Query("content_rating"); cr != "" {
+		v, ok := contentRatingFromKey(cr)
+		if !ok {
+			return response.BadRequestMsg(c, errors.ErrInvalidParam, "content_rating must be all_ages|sensitive|r18")
+		}
+		if v == model.ContentRatingR18 && !f.NSFW {
+			return response.BadRequestMsg(c, errors.ErrInvalidParam, "content_rating=r18 requires nsfw=1")
+		}
+		f.ContentRating = &v
+	}
+	if cl := c.Query("claimed"); cl != "" {
+		switch strings.ToLower(strings.TrimSpace(cl)) {
+		case "1", "true", "yes":
+			t := true
+			f.Claimed = &t
+		case "0", "false", "no":
+			v := false
+			f.Claimed = &v
+		default:
+			return response.BadRequestMsg(c, errors.ErrInvalidParam, "claimed must be true|false")
+		}
+	}
+	f.LabelID = int64(atoiOrPub(c.Query("label_id"), 0))
+	f.TagID = int64(atoiOrPub(c.Query("tag_id"), 0))
+	f.SeriesID = int64(atoiOrPub(c.Query("series_id"), 0))
+	var ok bool
+	if f.ReleasedAfter, ok = datePub(c.Query("released_after")); !ok {
+		return response.BadRequestMsg(c, errors.ErrInvalidParam, "released_after must be YYYY-MM-DD")
+	}
+	if f.ReleasedBefor, ok = datePub(c.Query("released_before")); !ok {
+		return response.BadRequestMsg(c, errors.ErrInvalidParam, "released_before must be YYYY-MM-DD")
+	}
+	if raw := strings.TrimSpace(c.Query("ids")); raw != "" {
+		parts := strings.Split(raw, ",")
+		if len(parts) > 100 {
+			return response.BadRequestMsg(c, errors.ErrValidationFailed, "at most 100 ids")
+		}
+		for _, p := range parts {
+			id, err := strconv.ParseInt(strings.TrimSpace(p), 10, 64)
+			if err != nil || id <= 0 {
+				return response.BadRequestMsg(c, errors.ErrInvalidParam, "ids must be positive integers")
+			}
+			f.IDs = append(f.IDs, id)
+		}
+	}
+	limit := atoiOrPub(c.Query("limit"), 20)
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	data, err := h.svc.WorksList(c.Context(), f, c.Query("cursor"), limit)
+	if err != nil {
+		if stderrors.Is(err, service.ErrBadCursor) {
+			return response.BadRequestMsg(c, errors.ErrInvalidParam, "malformed cursor")
+		}
+		return response.InternalError(c, errors.ErrInternalServer)
+	}
+	c.Set("Cache-Control", cacheSearch)
+	return response.Success(c, data)
+}
+
+// Changes serves GET /v1/catalog/changes — the incremental works sync feed
+// (doc 106 G2). No nsfw gate: ids + timestamps are identity, not content —
+// the consumer's detail follow-up re-applies the r18 gate.
+func (h *PublicHandler) Changes(c fiber.Ctx) error {
+	if et := c.Query("entity_type"); et != "" && et != "work" {
+		return response.BadRequestMsg(c, errors.ErrInvalidParam, "entity_type must be work (the v1 feed scope)")
+	}
+	limit := atoiOrPub(c.Query("limit"), 100)
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	data, err := h.svc.Changes(c.Context(), c.Query("cursor"), limit)
+	if err != nil {
+		if stderrors.Is(err, service.ErrBadCursor) {
+			return response.BadRequestMsg(c, errors.ErrInvalidParam, "malformed cursor")
+		}
+		return response.InternalError(c, errors.ErrInternalServer)
+	}
+	c.Set("Cache-Control", cacheRedirects)
+	return response.Success(c, data)
+}
+
+// Tag serves GET /v1/catalog/tags/{id} — the canonical-tag record (doc 106
+// G5). include=works attaches the works carrying any mapped source tag.
+func (h *PublicHandler) Tag(c fiber.Ctx) error {
+	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
+	if err != nil {
+		return response.BadRequest(c, errors.ErrInvalidID)
+	}
+	limit, offset := pagePub(c)
+	rec, found, err := h.svc.TagDetail(c.Context(), id, service.ParsePublicInclude(c.Query("include")).Works, nsfwQuery(c), limit, offset)
+	if err != nil {
+		return response.InternalError(c, errors.ErrInternalServer)
+	}
+	if !found {
+		return response.NotFound(c, errors.ErrNotFound)
+	}
+	c.Set("Cache-Control", cacheDetail)
+	return response.Success(c, rec)
 }
