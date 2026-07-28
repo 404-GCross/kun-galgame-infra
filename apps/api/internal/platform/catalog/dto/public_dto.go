@@ -95,6 +95,22 @@ type PublicCatalogWork struct {
 	ClaimedBy     *PublicClaimedBy     `json:"claimed_by"`
 	Relations     []PublicRelation     `json:"relations,omitempty"`
 	Credits       []PublicCreditGroup  `json:"credits,omitempty"`
+	// Full-facet expansion (wave 104, add-only): every aggregation facet the
+	// S2S face carries, projected to the public conventions — source keys not
+	// ids, CDN URLs not hashes, string vocabularies not enum ints. Always
+	// present ([] when empty, never null).
+	Releases    []PublicRelease         `json:"releases"`
+	Popularity  []PublicPopularity      `json:"popularity"`
+	Ratings     []PublicRating          `json:"ratings"`
+	Tags        []PublicTag             `json:"tags"`
+	Playtimes   []PublicPlaytime        `json:"playtimes"`
+	Series      []PublicSeries          `json:"series"`
+	Platforms   []PublicPlatform        `json:"platforms"`
+	Intro       []PublicWorkIntro       `json:"intro"`
+	Covers      []PublicCover           `json:"covers"`
+	Screenshots []PublicScreenshot      `json:"screenshots"`
+	Characters  []PublicRosterCharacter `json:"characters"`
+	Labels      []PublicWorkLabel       `json:"labels"`
 }
 
 // PublicLookupData is the external-id reverse-lookup result (GET
@@ -227,6 +243,10 @@ type PublicCharacter struct {
 	Latin      string                `json:"latin,omitempty"`
 	Works      []PublicCharacterWork `json:"works,omitempty"`
 	NextOffset *int                  `json:"next_offset,omitempty"`
+	// Traits is the VNDB trait set (step 93) at or below the requested
+	// spoilers ceiling (default 0 = safe); sexual-family traits are served
+	// only with nsfw=1 (caller-controlled, wave 104). Always present.
+	Traits []PublicCharacterTrait `json:"traits"`
 }
 
 // PublicLabelWork is one work attributed to a label, with the attribution nature.
@@ -282,4 +302,131 @@ type PublicEntityHit struct {
 type PublicEntitySearchData struct {
 	Items []PublicEntityHit `json:"items"`
 	Total int64             `json:"total"`
+}
+
+// ── wave-104 full-facet blocks (公开面全量数据; add-only) ──────────────────────
+
+// PublicPopularity is one per-(source, metric) popularity counter. Values are
+// verbatim per source — never summed across sources.
+type PublicPopularity struct {
+	Source string `json:"source"`
+	Metric string `json:"metric" doc:"downloads|wishlist|reviews|bgm_wish|bgm_collect|bgm_doing|bgm_on_hold|bgm_dropped"`
+	Value  int64  `json:"value"`
+}
+
+// PublicRating is one source-native rating (scale is source-native — a vndb 10
+// scale and an erogamescape 100 scale are different units).
+type PublicRating struct {
+	Source    string  `json:"source"`
+	Score     float64 `json:"score"`
+	VoteCount int     `json:"vote_count"`
+	Rank      *int    `json:"rank,omitempty"`
+}
+
+// PublicTag is one content tag, verbatim source folksonomy (no vocabulary
+// mapping; count omitted when the source has no vote concept).
+type PublicTag struct {
+	Name   string `json:"name"`
+	Count  int    `json:"count,omitempty"`
+	Source string `json:"source"`
+}
+
+// PublicPlaytime is one per-source playtime estimate (minutes).
+type PublicPlaytime struct {
+	Source    string `json:"source"`
+	Minutes   int    `json:"minutes"`
+	VoteCount int    `json:"vote_count"`
+}
+
+// PublicSeries is one series membership.
+type PublicSeries struct {
+	ID          int64  `json:"id"`
+	Name        string `json:"name"`
+	Source      string `json:"source"`
+	MemberCount int    `json:"member_count"`
+}
+
+// PublicPlatform is one work-level platform row (release-level platforms ride
+// on releases[]; consumers union the two grains).
+type PublicPlatform struct {
+	Platform string `json:"platform"`
+	Source   string `json:"source"`
+}
+
+// PublicWorkIntro is one language's intro. machine=true flags an LLM machine
+// translation (surfaced only when the language has no source row).
+type PublicWorkIntro struct {
+	Lang    string `json:"lang"`
+	Intro   string `json:"intro"`
+	Source  string `json:"source"`
+	Machine bool   `json:"machine,omitempty"`
+}
+
+// PublicCover is one cover image — a complete CDN URL, never a bare hash.
+// sexual/violence carry the source's content flags (0=safe 1=suggestive 2=explicit).
+type PublicCover struct {
+	URL            string `json:"url"`
+	Kind           string `json:"kind,omitempty"`
+	PortraitPinned bool   `json:"portrait_pinned"`
+	Sexual         int16  `json:"sexual"`
+	Violence       int16  `json:"violence"`
+	Source         string `json:"source"`
+}
+
+// PublicScreenshot is one screenshot — a complete CDN URL.
+type PublicScreenshot struct {
+	URL      string `json:"url"`
+	Caption  string `json:"caption,omitempty"`
+	Sexual   int16  `json:"sexual"`
+	Violence int16  `json:"violence"`
+	Source   string `json:"source"`
+}
+
+// PublicRosterVoice is one voice credit on a roster character (id is a
+// credit-name id — GET /v1/catalog/names/{id}).
+type PublicRosterVoice struct {
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
+}
+
+// PublicRosterCharacter is one character on the work's roster (id — GET
+// /v1/catalog/characters/{id}).
+type PublicRosterCharacter struct {
+	ID      int64               `json:"id"`
+	Name    string              `json:"name"`
+	Latin   string              `json:"latin,omitempty"`
+	Kind    string              `json:"kind" doc:"main|secondary|appears|unknown"`
+	Spoiler int16               `json:"spoiler" doc:"0=none 1=minor 2=major"`
+	Image   string              `json:"image,omitempty"`
+	Voices  []PublicRosterVoice `json:"voices"`
+}
+
+// PublicWorkLabel is one attribution edge to a label (id — GET
+// /v1/catalog/labels/{id}).
+type PublicWorkLabel struct {
+	ID          int64  `json:"id"`
+	DisplayName string `json:"display_name"`
+	LabelKind   string `json:"label_kind"`
+	Kind        string `json:"kind" doc:"attribution nature: circle|publisher|developer|brand"`
+}
+
+// PublicRelease is one release row (date is partial ISO YYYY[-MM[-DD]]).
+type PublicRelease struct {
+	Kind      string   `json:"kind" doc:"default|digital|physical|trial|patch"`
+	Date      *string  `json:"date"`
+	Title     string   `json:"title,omitempty"`
+	Lang      string   `json:"lang,omitempty"`
+	Platform  string   `json:"platform,omitempty"`
+	Platforms []string `json:"platforms,omitempty"`
+}
+
+// PublicCharacterTrait is one VNDB trait on a character (group is the root
+// group's display name, "" when the trait itself is a root).
+type PublicCharacterTrait struct {
+	ID      int64  `json:"id"`
+	Name    string `json:"name"`
+	Group   string `json:"group,omitempty"`
+	Spoiler int16  `json:"spoiler" doc:"0=none 1=minor 2=major"`
+	Sexual  bool   `json:"sexual"`
+	Lie     bool   `json:"lie"`
 }

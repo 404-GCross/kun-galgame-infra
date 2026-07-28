@@ -20,7 +20,7 @@ const (
 )
 
 func newPublicSvc() *PublicService {
-	return NewPublicService(testDB, NewReadService(testDB), testResolve)
+	return NewPublicService(testDB, NewReadService(testDB), testResolve, "")
 }
 
 // createWorkX creates a work with explicit medium / rating / status.
@@ -83,7 +83,7 @@ func TestPublicLookupExactOnly(t *testing.T) {
 
 	// vndb normalization: input with and without the 'v' prefix both resolve.
 	for _, in := range []string{"v19658", "19658"} {
-		data, found, err := svc.Lookup(ctx, "vndb", in)
+		data, found, err := svc.Lookup(ctx, "vndb", in, false)
 		if err != nil || !found {
 			t.Fatalf("lookup %q: found=%v err=%v", in, found, err)
 		}
@@ -98,14 +98,14 @@ func TestPublicLookupExactOnly(t *testing.T) {
 		}
 	}
 	// probable anchor → not found.
-	if _, found, _ := svc.Lookup(ctx, "vndb", "v99999"); found {
+	if _, found, _ := svc.Lookup(ctx, "vndb", "v99999", false); found {
 		t.Fatal("probable anchor must not resolve on the public face")
 	}
 	// unknown source / missing id → not found.
-	if _, found, _ := svc.Lookup(ctx, "vndb", "v00000"); found {
+	if _, found, _ := svc.Lookup(ctx, "vndb", "v00000", false); found {
 		t.Fatal("unknown external id must 404")
 	}
-	if _, found, _ := svc.Lookup(ctx, "nosuchsource", "x"); found {
+	if _, found, _ := svc.Lookup(ctx, "nosuchsource", "x", false); found {
 		t.Fatal("unknown source key must 404")
 	}
 
@@ -114,11 +114,11 @@ func TestPublicLookupExactOnly(t *testing.T) {
 	// refs always carry the public spelling.
 	addExternalRef(t, model.EntityTypeWork, w.ID, srcErogamespace, "23956", model.LinkKindExact)
 	for _, src := range []string{"erogamescape", "erogamespace"} {
-		if _, found, err := svc.Lookup(ctx, src, "23956"); err != nil || !found {
+		if _, found, err := svc.Lookup(ctx, src, "23956", false); err != nil || !found {
 			t.Fatalf("lookup via %q: found=%v err=%v", src, found, err)
 		}
 	}
-	detail, found, err := svc.WorkDetail(ctx, w.ID, PublicInclude{})
+	detail, found, err := svc.WorkDetail(ctx, w.ID, PublicInclude{}, false)
 	if err != nil || !found {
 		t.Fatalf("work detail: found=%v err=%v", found, err)
 	}
@@ -136,7 +136,7 @@ func TestPublicLookupR18Hidden(t *testing.T) {
 
 	w := createWorkX(t, galgameMediumID, model.ContentRatingR18, model.WorkStatusLive, "R18 game")
 	addExternalRef(t, model.EntityTypeWork, w.ID, srcVNDB, "v100", model.LinkKindExact)
-	if _, found, err := svc.Lookup(ctx, "vndb", "v100"); err != nil || found {
+	if _, found, err := svc.Lookup(ctx, "vndb", "v100", false); err != nil || found {
 		t.Fatalf("r18 work must be hidden from lookup: found=%v err=%v", found, err)
 	}
 }
@@ -150,7 +150,7 @@ func TestPublicLookupReleaseAnchor(t *testing.T) {
 	rel := createRelease(t, w.ID, 2016, 11, 25)
 	addExternalRef(t, model.EntityTypeRelease, rel.ID, srcDlsite, "RJ123456", model.LinkKindExact)
 
-	data, found, err := svc.Lookup(ctx, "dlsite", "RJ123456")
+	data, found, err := svc.Lookup(ctx, "dlsite", "RJ123456", false)
 	if err != nil || !found || data.Work == nil || data.Work.ID != w.ID {
 		t.Fatalf("release anchor lookup: found=%v work=%v err=%v", found, data.Work, err)
 	}
@@ -168,7 +168,7 @@ func TestPublicLookupBatchOrder(t *testing.T) {
 		{Source: "vndb", ExternalID: "v1"},
 		{Source: "vndb", ExternalID: "v404"},
 		{Source: "vndb", ExternalID: "1"}, // normalizes to v1 → same hit
-	})
+	}, false)
 	if err != nil {
 		t.Fatalf("batch: %v", err)
 	}
@@ -205,7 +205,7 @@ func TestPublicWorkDetailFetchableSet(t *testing.T) {
 		{99999, false},
 	}
 	for _, c := range cases {
-		_, found, err := svc.WorkDetail(ctx, c.id, PublicInclude{})
+		_, found, err := svc.WorkDetail(ctx, c.id, PublicInclude{}, false)
 		if err != nil {
 			t.Fatalf("work %d: %v", c.id, err)
 		}
@@ -229,7 +229,7 @@ func TestPublicWorkRefsExactOnlyAndRelations(t *testing.T) {
 	createWorkRelation(t, w.ID, sfwOther.ID)
 	createWorkRelation(t, w.ID, r18Other.ID)
 
-	rec, found, err := svc.WorkDetail(ctx, w.ID, PublicInclude{Relations: true})
+	rec, found, err := svc.WorkDetail(ctx, w.ID, PublicInclude{Relations: true}, false)
 	if err != nil || !found {
 		t.Fatalf("detail: found=%v err=%v", found, err)
 	}
@@ -250,7 +250,7 @@ func TestPublicWorkCreditsInclude(t *testing.T) {
 	name := createCreditName(t, nil, "麻枝准")
 	createCredit(t, w.ID, name.ID, seededRoleID(t), nil)
 
-	rec, found, err := svc.WorkDetail(ctx, w.ID, PublicInclude{Credits: true})
+	rec, found, err := svc.WorkDetail(ctx, w.ID, PublicInclude{Credits: true}, false)
 	if err != nil || !found {
 		t.Fatalf("detail: found=%v err=%v", found, err)
 	}
@@ -258,7 +258,7 @@ func TestPublicWorkCreditsInclude(t *testing.T) {
 		t.Fatalf("credits projection: %+v", rec.Credits)
 	}
 	// The bare record (no include) omits credits entirely.
-	bare, _, _ := svc.WorkDetail(ctx, w.ID, PublicInclude{})
+	bare, _, _ := svc.WorkDetail(ctx, w.ID, PublicInclude{}, false)
 	if bare.Credits != nil {
 		t.Fatalf("bare record must omit credits: %+v", bare.Credits)
 	}
@@ -288,7 +288,7 @@ func TestPublicNameHiddenLinkAndR18Drop(t *testing.T) {
 
 	// Public-linked name: person grouping surfaces, but the hidden sibling never
 	// does; r18 credits are dropped.
-	got, found, err := svc.Name(ctx, nPublic.ID, true, 50, 0)
+	got, found, err := svc.Name(ctx, nPublic.ID, true, false, 50, 0)
 	if err != nil || !found {
 		t.Fatalf("person: found=%v err=%v", found, err)
 	}
@@ -303,7 +303,7 @@ func TestPublicNameHiddenLinkAndR18Drop(t *testing.T) {
 	}
 
 	// Hidden-linked name: appears as an independent identity (no person_id).
-	h, found, err := svc.Name(ctx, nHidden.ID, false, 50, 0)
+	h, found, err := svc.Name(ctx, nHidden.ID, false, false, 50, 0)
 	if err != nil || !found {
 		t.Fatalf("hidden person: found=%v err=%v", found, err)
 	}
@@ -361,7 +361,7 @@ func TestPublicLabelIntrosLinks(t *testing.T) {
 	addExternalRef(t, model.EntityTypeLabel, lbl.ID, srcVNDB, "p129", model.LinkKindExact)
 	addExternalRef(t, model.EntityTypeLabel, lbl.ID, srcDlsite, "VG02192", model.LinkKindProbable)
 
-	got, found, err := svc.Label(ctx, lbl.ID, false, 50, 0)
+	got, found, err := svc.Label(ctx, lbl.ID, false, false, 50, 0)
 	if err != nil || !found {
 		t.Fatalf("label: found=%v err=%v", found, err)
 	}
@@ -403,7 +403,7 @@ func TestPublicLabelIntrosLinks(t *testing.T) {
 	if err := testDB.Create(bare).Error; err != nil {
 		t.Fatalf("create bare label: %v", err)
 	}
-	b, found, err := svc.Label(ctx, bare.ID, false, 50, 0)
+	b, found, err := svc.Label(ctx, bare.ID, false, false, 50, 0)
 	if err != nil || !found {
 		t.Fatalf("bare label: found=%v err=%v", found, err)
 	}
@@ -412,5 +412,122 @@ func TestPublicLabelIntrosLinks(t *testing.T) {
 	}
 	if b.Links == nil || len(b.Links) != 0 {
 		t.Fatalf("links must be [] non-null: %+v", b.Links)
+	}
+}
+
+// TestPublicNSFWGate pins the wave-104 caller-controlled r18 switch: an r18
+// work 404s by default (Phase-1 bit-identical) but is served in full — facets,
+// relations, lookup — with nsfw=1; r18 relation ends follow the same switch.
+func TestPublicNSFWGate(t *testing.T) {
+	cleanTables(t)
+	svc := newPublicSvc()
+	ctx := t.Context()
+
+	r18 := createWorkX(t, galgameMediumID, model.ContentRatingR18, model.WorkStatusLive, "R18作品")
+	safe := createWorkX(t, galgameMediumID, model.ContentRatingAllAges, model.WorkStatusLive, "全年齢作品")
+	createWorkRelation(t, r18.ID, safe.ID)
+	addExternalRef(t, model.EntityTypeWork, r18.ID, srcVNDB, "v104", model.LinkKindExact)
+	if err := testDB.Create(&model.CatalogWorkPopularity{WorkID: r18.ID, SourceID: 3, Metric: model.PopularityMetricBgmWish, Value: 42}).Error; err != nil {
+		t.Fatalf("popularity fixture: %v", err)
+	}
+	if err := testDB.Create(&model.CatalogWorkTag{WorkID: r18.ID, Name: "泣きゲー", Count: 7, SourceID: 3}).Error; err != nil {
+		t.Fatalf("tag fixture: %v", err)
+	}
+
+	// Default: hidden — detail 404, lookup miss (Phase-1 bit-identical).
+	if _, found, err := svc.WorkDetail(ctx, r18.ID, PublicInclude{}, false); err != nil || found {
+		t.Fatalf("default r18 detail: found=%v err=%v (want hidden)", found, err)
+	}
+	if _, found, _ := svc.Lookup(ctx, "vndb", "v104", false); found {
+		t.Fatal("default r18 lookup resolved (want miss)")
+	}
+
+	// nsfw=1: served in full, facets projected to public conventions.
+	rec, found, err := svc.WorkDetail(ctx, r18.ID, PublicInclude{Relations: true}, true)
+	if err != nil || !found {
+		t.Fatalf("nsfw r18 detail: found=%v err=%v", found, err)
+	}
+	if rec.ContentRating != "r18" {
+		t.Fatalf("content_rating = %q, want r18", rec.ContentRating)
+	}
+	if len(rec.Popularity) != 1 || rec.Popularity[0].Metric != "bgm_wish" || rec.Popularity[0].Value != 42 || rec.Popularity[0].Source != "bangumi" {
+		t.Fatalf("popularity facet = %+v", rec.Popularity)
+	}
+	if len(rec.Tags) != 1 || rec.Tags[0].Name != "泣きゲー" || rec.Tags[0].Source != "bangumi" {
+		t.Fatalf("tags facet = %+v", rec.Tags)
+	}
+	if len(rec.Relations) != 1 || rec.Relations[0].Work.ID != safe.ID {
+		t.Fatalf("relations = %+v", rec.Relations)
+	}
+	if _, found, _ = svc.Lookup(ctx, "vndb", "v104", true); !found {
+		t.Fatal("nsfw r18 lookup missed (want hit)")
+	}
+
+	// The safe work's relations: the r18 end drops by default, joins with nsfw.
+	recSafe, _, err := svc.WorkDetail(ctx, safe.ID, PublicInclude{Relations: true}, false)
+	if err != nil {
+		t.Fatalf("safe detail: %v", err)
+	}
+	if len(recSafe.Relations) != 0 {
+		t.Fatalf("safe relations nsfw-off = %+v (want r18 end dropped)", recSafe.Relations)
+	}
+	recSafe, _, _ = svc.WorkDetail(ctx, safe.ID, PublicInclude{Relations: true}, true)
+	if len(recSafe.Relations) != 1 || recSafe.Relations[0].Work.ID != r18.ID {
+		t.Fatalf("safe relations nsfw-on = %+v", recSafe.Relations)
+	}
+}
+
+// TestPublicCharacterTraits pins the wave-104 public trait block: safe default
+// (spoilers=0, sexual dropped), the spoilers ceiling, and the nsfw switch for
+// sexual-family traits.
+func TestPublicCharacterTraits(t *testing.T) {
+	cleanTables(t)
+	if err := testDB.Exec("TRUNCATE catalog_character_trait RESTART IDENTITY CASCADE").Error; err != nil {
+		t.Fatalf("truncate trait vocab: %v", err)
+	}
+	svc := newPublicSvc()
+	ctx := t.Context()
+
+	ch := &model.CatalogCharacter{DisplayName: "テスト嬢", Lang: "ja"}
+	if err := testDB.Create(ch).Error; err != nil {
+		t.Fatalf("create character: %v", err)
+	}
+	mkTrait := func(tid, name string, sexual bool) int64 {
+		tr := &model.CatalogCharacterTrait{VndbTID: tid, Name: name, Sexual: sexual, Searchable: true, Applicable: true}
+		if err := testDB.Create(tr).Error; err != nil {
+			t.Fatalf("create trait %s: %v", name, err)
+		}
+		return tr.ID
+	}
+	tSafe := mkTrait("i1", "Long Hair", false)
+	tSexual := mkTrait("i2", "Sexual Trait", true)
+	tSpoiler := mkTrait("i3", "Hidden Past", false)
+	link := func(traitID int64, spoiler int16) {
+		if err := testDB.Create(&model.CatalogCharacterTraitLink{CharacterID: ch.ID, TraitID: traitID, SpoilerLevel: spoiler}).Error; err != nil {
+			t.Fatalf("link trait: %v", err)
+		}
+	}
+	link(tSafe, 0)
+	link(tSexual, 0)
+	link(tSpoiler, 2)
+
+	rec, found, err := svc.Character(ctx, ch.ID, false, false, 0, 50, 0)
+	if err != nil || !found {
+		t.Fatalf("character: found=%v err=%v", found, err)
+	}
+	if len(rec.Traits) != 1 || rec.Traits[0].Name != "Long Hair" {
+		t.Fatalf("default traits = %+v (want safe only)", rec.Traits)
+	}
+	rec, _, _ = svc.Character(ctx, ch.ID, false, true, 0, 50, 0)
+	if len(rec.Traits) != 2 {
+		t.Fatalf("nsfw traits = %+v (want 2: sexual joins)", rec.Traits)
+	}
+	rec, _, _ = svc.Character(ctx, ch.ID, false, true, 2, 50, 0)
+	if len(rec.Traits) != 3 {
+		t.Fatalf("nsfw+spoilers traits = %+v (want 3)", rec.Traits)
+	}
+	rec, _, _ = svc.Character(ctx, ch.ID, false, false, 2, 50, 0)
+	if len(rec.Traits) != 2 {
+		t.Fatalf("spoilers-only traits = %+v (want 2: sexual still dropped)", rec.Traits)
 	}
 }

@@ -93,6 +93,10 @@ type WorkByAnchorResponse struct {
 	// consumers union the two grains as needed. Codes are catalog_platform
 	// registry keys (VNDB codes: win/and/ios/…).
 	Platforms []WorkPlatform `json:"platforms"`
+	// Relations is the work's cross-media relation edge set (wave 104), both
+	// directions from this work's perspective. The internal face carries r18
+	// ends verbatim (the public face gates them behind nsfw).
+	Relations []WorkRelation `json:"relations"`
 }
 
 // WorkPlatform is one explicit work-level platform assertion (step 96).
@@ -577,4 +581,18 @@ type VoiceName struct {
 	Name         string `json:"name"`
 	Lang         string `json:"lang"`
 	Latin        string `json:"latin,omitempty"`
+}
+
+// WorkRelation is one cross-media relation edge (wave 104), rendered
+// single-directionally from the viewed work's perspective.
+type WorkRelation struct {
+	RelationType  string `json:"relation_type" doc:"vocabulary key, e.g. sequel_of / fandisc_of / remake_of / collects / shares_character"`
+	Phrase        string `json:"phrase" doc:"direction-resolved display phrase from this work's perspective"`
+	WorkID        int64  `json:"work_id" doc:"the other end's catalog work id"`
+	DisplayName   string `json:"display_name"`
+	MediumID      int16  `json:"medium_id"`
+	ContentRating int16  `json:"content_rating"`
+	Status        int16  `json:"status"`
+	Site          string `json:"site,omitempty" doc:"claim site when the other end is claimed"`
+	ProductWorkID int64  `json:"product_work_id,omitempty"`
 }

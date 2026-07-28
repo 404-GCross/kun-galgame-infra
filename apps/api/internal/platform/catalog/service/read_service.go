@@ -186,6 +186,10 @@ type WorkDetail struct {
 	// bodyless works). Release-level platforms ride on Releases[].platform;
 	// consumers union the two grains. Catalog-native — no claimed bridge.
 	Platforms []WorkPlatformRow
+	// Relations is the work's cross-media relation edge set (wave 104): both
+	// directions rendered from this work's perspective, other-end identity
+	// riding along. Internal face carries r18 ends verbatim.
+	Relations []WorkRelationRow
 }
 
 // WorkIntroRow is one language's intro on a work's read face, carrying its
@@ -468,6 +472,12 @@ func (s *ReadService) loadWorkDetail(ctx context.Context, workID int64) (*WorkDe
 		return nil, err
 	}
 	detail.Platforms = platforms[work.ID]
+
+	relations, err := s.loadWorkRelations(ctx, workID)
+	if err != nil {
+		return nil, err
+	}
+	detail.Relations = relations
 	return detail, nil
 }
 

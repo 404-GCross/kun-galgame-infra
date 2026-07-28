@@ -48,7 +48,7 @@ func (h *PublicHandler) WorkDetail(c fiber.Ctx) error {
 	if err != nil {
 		return response.BadRequest(c, errors.ErrInvalidID)
 	}
-	rec, found, err := h.svc.WorkDetail(c.Context(), id, service.ParsePublicInclude(c.Query("include")))
+	rec, found, err := h.svc.WorkDetail(c.Context(), id, service.ParsePublicInclude(c.Query("include")), nsfwQuery(c))
 	if err != nil {
 		return response.InternalError(c, errors.ErrInternalServer)
 	}
@@ -67,7 +67,7 @@ func (h *PublicHandler) Lookup(c fiber.Ctx) error {
 	if source == "" || strings.TrimSpace(externalID) == "" {
 		return response.BadRequestMsg(c, errors.ErrBadRequest, "source and external_id are required")
 	}
-	data, found, err := h.svc.Lookup(c.Context(), source, externalID)
+	data, found, err := h.svc.Lookup(c.Context(), source, externalID, nsfwQuery(c))
 	if err != nil {
 		return response.InternalError(c, errors.ErrInternalServer)
 	}
@@ -91,7 +91,7 @@ func (h *PublicHandler) LookupBatch(c fiber.Ctx) error {
 	if len(req.Items) > 100 {
 		return response.BadRequestMsg(c, errors.ErrValidationFailed, "at most 100 pairs per batch")
 	}
-	items, err := h.svc.LookupBatch(c.Context(), req.Items)
+	items, err := h.svc.LookupBatch(c.Context(), req.Items, nsfwQuery(c))
 	if err != nil {
 		return response.InternalError(c, errors.ErrInternalServer)
 	}
@@ -172,7 +172,7 @@ func (h *PublicHandler) Name(c fiber.Ctx) error {
 		return response.BadRequest(c, errors.ErrInvalidID)
 	}
 	limit, offset := pagePub(c)
-	rec, found, err := h.svc.Name(c.Context(), id, service.ParsePublicInclude(c.Query("include")).Credits, limit, offset)
+	rec, found, err := h.svc.Name(c.Context(), id, service.ParsePublicInclude(c.Query("include")).Credits, nsfwQuery(c), limit, offset)
 	if err != nil {
 		return response.InternalError(c, errors.ErrInternalServer)
 	}
@@ -191,7 +191,7 @@ func (h *PublicHandler) Character(c fiber.Ctx) error {
 		return response.BadRequest(c, errors.ErrInvalidID)
 	}
 	limit, offset := pagePub(c)
-	rec, found, err := h.svc.Character(c.Context(), id, service.ParsePublicInclude(c.Query("include")).Works, limit, offset)
+	rec, found, err := h.svc.Character(c.Context(), id, service.ParsePublicInclude(c.Query("include")).Works, nsfwQuery(c), spoilersQuery(c), limit, offset)
 	if err != nil {
 		return response.InternalError(c, errors.ErrInternalServer)
 	}
@@ -210,7 +210,7 @@ func (h *PublicHandler) Label(c fiber.Ctx) error {
 		return response.BadRequest(c, errors.ErrInvalidID)
 	}
 	limit, offset := pagePub(c)
-	rec, found, err := h.svc.Label(c.Context(), id, service.ParsePublicInclude(c.Query("include")).Works, limit, offset)
+	rec, found, err := h.svc.Label(c.Context(), id, service.ParsePublicInclude(c.Query("include")).Works, nsfwQuery(c), limit, offset)
 	if err != nil {
 		return response.InternalError(c, errors.ErrInternalServer)
 	}
@@ -252,6 +252,29 @@ func (h *PublicHandler) Search(c fiber.Ctx) error {
 }
 
 // ─────────────────────────── helpers ───────────────────────────
+
+// nsfwQuery reads the wave-104 caller-controlled r18 switch: nsfw=1|true opts
+// into r18 content (works, relation/credit/label briefs, sexual traits).
+// Default false keeps the Phase-1 hidden behavior bit-identical.
+func nsfwQuery(c fiber.Ctx) bool {
+	switch strings.ToLower(strings.TrimSpace(c.Query("nsfw"))) {
+	case "1", "true", "yes":
+		return true
+	}
+	return false
+}
+
+// spoilersQuery reads the trait spoiler ceiling (0-2, default 0 = safe), the
+// S2S read-face convention verbatim.
+func spoilersQuery(c fiber.Ctx) int16 {
+	switch c.Query("spoilers") {
+	case "1":
+		return 1
+	case "2":
+		return 2
+	}
+	return 0
+}
 
 // entityTypeKey maps a redirect/resolve entity-type constant to its public
 // string key.

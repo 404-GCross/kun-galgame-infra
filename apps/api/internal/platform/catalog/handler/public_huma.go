@@ -27,6 +27,7 @@ import (
 type publicWorkInput struct {
 	ID      int64  `path:"id" doc:"Catalog work id"`
 	Include string `query:"include" doc:"Comma-separated heavy blocks: relations,credits (default: none)"`
+	NSFW    bool   `query:"nsfw" doc:"true/1 = serve r18 works and r18 relation ends (caller-controlled; default false = hidden)"`
 }
 type publicWorkOutput struct {
 	Body Envelope[dto.PublicCatalogWork]
@@ -35,6 +36,7 @@ type publicWorkOutput struct {
 type publicLookupInput struct {
 	Source     string `query:"source" doc:"Upstream source key: vndb | bangumi | dlsite | erogamescape (the internal registry spelling erogamespace is accepted too)"`
 	ExternalID string `query:"external_id" doc:"The id within that source (vndb accepts v19658 or 19658; dlsite RJ/VJ numbers)"`
+	NSFW       bool   `query:"nsfw" doc:"true/1 = resolve r18 works too (default false = 404 on an r18 hit)"`
 }
 type publicLookupOutput struct {
 	Body Envelope[dto.PublicLookupData]
@@ -66,6 +68,7 @@ type publicRedirectsOutput struct {
 type publicPersonInput struct {
 	ID      int64  `path:"id" doc:"Credit-name id (the addressable credited identity)"`
 	Include string `query:"include" doc:"credits = attach the works this name is credited on"`
+	NSFW    bool   `query:"nsfw" doc:"true/1 = include r18 works among the credits (default false = dropped)"`
 	Limit   int    `query:"limit" doc:"Credits per page 1-50 (default 50)"`
 	Offset  int    `query:"offset" doc:"Rows to skip"`
 }
@@ -74,10 +77,12 @@ type publicPersonOutput struct {
 }
 
 type publicCharacterInput struct {
-	ID      int64  `path:"id" doc:"Catalog character id"`
-	Include string `query:"include" doc:"works = attach the works this character appears in"`
-	Limit   int    `query:"limit" doc:"Works per page 1-50 (default 50)"`
-	Offset  int    `query:"offset" doc:"Rows to skip"`
+	ID       int64  `path:"id" doc:"Catalog character id"`
+	Include  string `query:"include" doc:"works = attach the works this character appears in"`
+	NSFW     bool   `query:"nsfw" doc:"true/1 = include r18 works and sexual-family traits (default false = both dropped)"`
+	Spoilers int16  `query:"spoilers" doc:"max trait spoiler level 0-2 (default 0 = safe)"`
+	Limit    int    `query:"limit" doc:"Works per page 1-50 (default 50)"`
+	Offset   int    `query:"offset" doc:"Rows to skip"`
 }
 type publicCharacterOutput struct {
 	Body Envelope[dto.PublicCharacter]
@@ -86,6 +91,7 @@ type publicCharacterOutput struct {
 type publicLabelInput struct {
 	ID      int64  `path:"id" doc:"Catalog label id"`
 	Include string `query:"include" doc:"works = attach the works attributed to this label"`
+	NSFW    bool   `query:"nsfw" doc:"true/1 = include r18 works among the attributions (default false = dropped)"`
 	Limit   int    `query:"limit" doc:"Works per page 1-50 (default 50)"`
 	Offset  int    `query:"offset" doc:"Rows to skip"`
 }

@@ -252,7 +252,7 @@ func setupPublicCatalog(
 	mw := devapi.NewMiddleware(repo, store)
 	usageRec := devapi.NewUsageRecorder(repo, store)
 
-	publicSvc := service.NewPublicService(catalogDB.DB(), readSvc, resolveSvc)
+	publicSvc := service.NewPublicService(catalogDB.DB(), readSvc, resolveSvc, cfg.ImageService.CDNBase)
 	publicH := catHandler.NewPublicHandler(publicSvc, resolveSvc, searcher)
 
 	// Meter every response to (client, key, "catalog", day) + async last-used
