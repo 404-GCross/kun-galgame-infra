@@ -38,6 +38,7 @@ import (
 const (
 	sourceVNDB    int16 = 2
 	sourceBangumi int16 = 3
+	sourceDlsite  int16 = 4
 	sourceEG      int16 = 5
 
 	sourceOfficialSite int16 = 9
@@ -85,12 +86,13 @@ func srcKey(source int16) string {
 
 // Opts configures an anchor or enrich run.
 type Opts struct {
-	Apply  bool
-	DSN    string // catalog DSN — REQUIRED (also hosts src_vndb / src_bangumi)
-	EGDSN  string // erogamespace DSN — defaults to DSN with dbname=erogamespace
-	Source string // anchor: vndb | bangumi | eg | all
-	Facet  string // enrich: intro | alias | link | all
-	Limit  int    // cap orgs processed per source (0 = all); debugging aid
+	Apply     bool
+	DSN       string // catalog DSN — REQUIRED (also hosts src_vndb / src_bangumi)
+	EGDSN     string // erogamespace DSN — defaults to DSN with dbname=erogamespace
+	DlsiteDSN string // dlsite DSN — cien facet only (hosts cien_profiles, read-only)
+	Source    string // anchor: vndb | bangumi | eg | all
+	Facet     string // enrich: intro | alias | link | all | cien
+	Limit     int    // cap orgs processed per source (0 = all); debugging aid
 }
 
 // openGorm opens a silent-logger GORM handle (enrich-precedent convention).
