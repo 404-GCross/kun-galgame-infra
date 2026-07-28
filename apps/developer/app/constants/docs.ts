@@ -22,11 +22,11 @@ export const DOCS_FACE_META: Record<
   galgame: {
     icon: 'lucide:gamepad-2',
     tagline:
-      '聚合记录：多源归并的名称 / 简介 / 封面 / 标签 / 会社 / 发售 / 三源评分，含变更流增量同步。'
+      '正典记录：多源裁定的名称 / 简介 / 封面 / 标签 / 会社 / 发售 / 三源评分，含变更流增量同步。'
   },
   catalog: {
     icon: 'lucide:network',
     tagline:
-      '跨媒介身份图谱：作品 / 人物名义 / 角色 / 厂牌 / credits / 关系，外部 id 反查四源锚。'
+      '跨媒介身份正典：作品 / 人物名义 / 角色 / 厂牌 / credits / 关系，外部 id 反查四源锚。'
   }
 }

@@ -7,9 +7,9 @@ const { open: openLogin } = useLoginModal()
 useSeoMeta({
   title: '开发者平台',
   description:
-    '统一 VNDB / Bangumi / DLsite / ErogameScape 四源的 galgame 数据 API。注册应用、领取密钥、阅读文档，几分钟内发出第一个请求。',
+    'Galgame 数据的权威正典。VNDB / Bangumi / DLsite / ErogameScape 的分歧，在这里被裁定为唯一的标准答案。注册应用、领取密钥，几分钟内发出第一个请求。',
   ogTitle: 'NextMoe 开放 API 开发者平台',
-  ogDescription: '统一四源的 galgame 数据 API — 一个 base URL，一份凭证。'
+  ogDescription: 'Galgame 数据，以此为准 — one canon, every source reconciled.'
 })
 
 const stats = [
@@ -42,21 +42,21 @@ const faces = [
     icon: 'lucide:gamepad-2',
     name: 'Galgame 面',
     path: '/v1/galgame',
-    body: '聚合记录:多源归并的名称 / 简介 / 封面 / 标签 / 会社 / 发售 / 三源评分,含变更流增量同步。'
+    body: '正典记录:多源裁定的名称 / 简介 / 封面 / 标签 / 会社 / 发售 / 三源评分,含变更流增量同步。'
   },
   {
     icon: 'lucide:network',
     name: 'Catalog 面',
     path: '/v1/catalog',
-    body: '跨媒介身份图谱:作品 / 人物名义 / 角色 / 厂牌 / credits / 关系,外部 id 反查四源锚。'
+    body: '跨媒介身份正典:作品 / 人物名义 / 角色 / 厂牌 / credits / 关系,外部 id 反查四源锚。'
   }
 ]
 
 const features = [
   {
     icon: 'lucide:layers',
-    title: '聚合记录',
-    body: '每个字段是多源归并的结果,响应携带 attribution 归源 —— 不是转发某一个源的原始数据。'
+    title: '正典记录',
+    body: '每个字段都是多源裁定后的标准答案,响应携带 attribution 归源 —— 不是任何单一源的转发,而是可引用的结论。'
   },
   {
     icon: 'lucide:shield-check',
@@ -97,20 +97,20 @@ const curlSample = `curl https://api.nextmoe.dev/v1/galgame/1 \\
         <h1
           class="mt-6 text-4xl font-bold tracking-tight text-foreground md:text-5xl md:leading-[1.1] lg:text-6xl"
         >
-          统一四源的<br class="hidden sm:inline" />
-          galgame 数据 API
+          Galgame 数据的<br class="hidden sm:inline" />
+          权威正典
         </h1>
         <p
           class="mt-4 text-sm font-medium tracking-wide text-primary lg:text-base"
         >
-          One base URL. One credential. Every source.
+          One canon. Every source reconciled.
         </p>
         <p
           class="mx-auto mt-5 max-w-xl text-lg leading-relaxed text-default-500 lg:mx-0"
         >
-          把 VNDB、Bangumi、DLsite、ErogameScape 归并成一份稳定的聚合记录,
-          再加上跨媒介的人物、角色与作品关系图谱 —— 通过一个 base URL
-          与一份凭证访问。
+          当 VNDB、Bangumi、DLsite、ErogameScape 各执一词,
+          NextMoe 给出唯一的标准答案 —— 每个字段皆经多源裁定、可溯源、
+          可增量同步。以此为准。
         </p>
 
         <div
