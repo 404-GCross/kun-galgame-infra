@@ -73,5 +73,5 @@ v1 设计时"galgame 无 spec"的前提已过时——现状是**两个面都有
 
 - **galgame 面**:读面已 Huma 出谱(条件缓存端点为 spec-only 形态)。公开 `/v1` 投影 = 沿同一管线(`cmd/gen-openapi` 加一个 public 目标)产出**独立的公开 spec**(白名单端点 + `/v1` 前缀 + 公开 DTO),与内部 spec 解耦。
 - **catalog 面**:服务自带 Huma spec(`/openapi.json`)。同法产出公开投影(白名单只读子集)。
-- 产出 `api.nextmoe.dev/v1/catalog/openapi.json` 与 `…/v1/galgame/openapi.json` → 门户 Scalar 渲染 → 第三方据此生成 SDK(TS 优先,`@kungal/api-*` 发包纪律届时启用)。
+- 产出 `api.nextmoe.dev/v1/catalog/openapi.json` 与 `…/v1/galgame/openapi.json` → 门户 Scalar 渲染 → 第三方据此生成 SDK(TS 优先,`@kungal/api-*` 发包纪律届时启用)。**✅ 两 spec URL 已上线(2026-07-28)**:`cmd/catalog` 无鉴权在线服务——boot 时经 `cmd/gen-openapi` 同一 spec-only 管线构建一次(与仓内冻结 Tier-A YAML 恒等,CI 冻结门背书),JSON 渲染,`Cache-Control: public, max-age=3600`;精确 GET 路由先于 `/v1` 键控组注册,故这两条免 key,其余 `/v1/*` 照旧要 key。门户侧为自建文档体验(06c 已弃 Scalar);SDK 生成策略见 [08](./08-downstream-faces-and-sdk.md)。
 - 公开 spec 纳入 `docs:verify` + oasdiff 破坏性门,升级为 **Tier-A 对外契约**(在 kungal-docs 登记)。

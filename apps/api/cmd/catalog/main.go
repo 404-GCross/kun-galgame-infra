@@ -40,6 +40,7 @@ import (
 	"api/internal/platform/devapi"
 	"api/internal/platform/editing"
 	galgameEditspec "api/internal/platform/galgame/editspec"
+	galgameHandler "api/internal/platform/galgame/handler"
 	galgamePerm "api/internal/platform/galgame/perm"
 	galgameSearch "api/internal/platform/galgame/search"
 	siteRepo "api/internal/platform/site/repository"
@@ -171,6 +172,34 @@ func main() {
 		"catalog": catalogPerm.Resolver,
 		"galgame": galgamePerm.Resolver,
 	})
+
+	// NextMoe open API: serve the two frozen public specs unauthenticated at
+	// their face roots — the machine-readable contract itself must not need a
+	// key. Built ONCE at boot through the same spec-only Setup functions
+	// cmd/gen-openapi uses, so the served JSON always matches the frozen
+	// Tier-A YAML the CI freeze gates pin. Registered BEFORE the /v1 groups
+	// below: an exact GET route outranks their prefix middleware, so these
+	// two paths bypass the devapi key chain while everything else under /v1
+	// stays keyed.
+	catalogSpec, err := json.Marshal(catHandler.SetupCatalogPublicSpec(fiber.New()).OpenAPI())
+	if err != nil {
+		slog.Error("marshal catalog public spec", "error", err)
+		os.Exit(1)
+	}
+	galgameSpec, err := json.Marshal(galgameHandler.SetupGalgamePublicSpec(fiber.New()).OpenAPI())
+	if err != nil {
+		slog.Error("marshal galgame public spec", "error", err)
+		os.Exit(1)
+	}
+	serveSpec := func(path string, body []byte) {
+		application.Fiber.Get(path, func(c fiber.Ctx) error {
+			c.Set("Content-Type", "application/json")
+			c.Set("Cache-Control", "public, max-age=3600")
+			return c.Send(body)
+		})
+	}
+	serveSpec("/v1/catalog/openapi.json", catalogSpec)
+	serveSpec("/v1/galgame/openapi.json", galgameSpec)
 
 	// NextMoe open API: catalog public projection (/v1/catalog/*). A NEW public
 	// read-only bypass (step 03) behind the shared devapi middleware chain; the
