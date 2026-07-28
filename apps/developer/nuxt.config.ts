@@ -93,6 +93,10 @@ export default defineNuxtConfig({
     // /oauth/token calls. Empty in local dev unless you seed a dev client.
     oauthClientSecret: process.env.NUXT_OAUTH_CLIENT_SECRET || '',
 
+    // Upstream base for the /explore data-browser relay (server-side GET-only
+    // proxy to the open API; the caller's own key rides the request).
+    nextmoeApiBase: process.env.NUXT_NEXTMOE_API_BASE || 'https://api.nextmoe.dev',
+
     public: {
       // Browser-facing OAuth API base for the top-level /oauth/authorize
       // navigation (the IdP's PUBLIC origin — distinct from the server-only,

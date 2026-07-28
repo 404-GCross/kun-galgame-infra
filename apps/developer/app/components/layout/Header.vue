@@ -10,6 +10,7 @@ const { open: openLogin } = useLoginModal()
 const navLinks = [
   { to: '/', label: '首页' },
   { to: '/docs', label: 'API 文档' },
+  { to: '/explore', label: '数据浏览' },
   { to: '/dashboard', label: '控制台' }
 ]
 

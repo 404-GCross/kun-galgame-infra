@@ -1,0 +1,26 @@
+// GET-only relay for the /explore data browser: the browser cannot call
+// api.nextmoe.dev directly (no CORS there — it is a server-to-server face), so
+// the page sends its requests here and we forward them with the caller's own
+// Authorization header (their nm_ key; never stored server-side). Only the two
+// public read faces are reachable — anything else 404s.
+export default defineEventHandler(async (event): Promise<unknown> => {
+  assertMethod(event, 'GET')
+  const path = event.context.params?.path ?? ''
+  if (!path.startsWith('v1/catalog/') && !path.startsWith('v1/galgame/')) {
+    setResponseStatus(event, 404)
+    return { code: 404, message: 'only /v1/catalog/* and /v1/galgame/* are relayed' }
+  }
+  const base = useRuntimeConfig(event).nextmoeApiBase
+  const query = getQuery(event)
+  const auth = getHeader(event, 'authorization')
+  try {
+    return await $fetch<unknown>(`${base}/${path}` as string, {
+      query,
+      headers: auth ? { Authorization: auth } : {}
+    })
+  } catch (e) {
+    const err = e as { statusCode?: number; data?: unknown }
+    setResponseStatus(event, err.statusCode ?? 502)
+    return err.data ?? { code: -1, message: 'upstream unreachable' }
+  }
+})
