@@ -1359,6 +1359,7 @@ export interface components {
             popularity: components["schemas"]["WorkPopularity"][] | null;
             ratings: components["schemas"]["WorkRating"][] | null;
             refs: components["schemas"]["WorkRef"][] | null;
+            relations: components["schemas"]["WorkRelation"][] | null;
             releases: components["schemas"]["ReleaseBrief"][] | null;
             screenshots: components["schemas"]["WorkScreenshot"][] | null;
             series: components["schemas"]["WorkSeries"][] | null;
@@ -1544,6 +1545,28 @@ export interface components {
              */
             release_id?: number;
             source: string;
+        };
+        WorkRelation: {
+            /** Format: int32 */
+            content_rating: number;
+            display_name: string;
+            /** Format: int32 */
+            medium_id: number;
+            /** @description direction-resolved display phrase from this work's perspective */
+            phrase: string;
+            /** Format: int64 */
+            product_work_id?: number;
+            /** @description vocabulary key, e.g. sequel_of / fandisc_of / remake_of / collects / shares_character */
+            relation_type: string;
+            /** @description claim site when the other end is claimed */
+            site?: string;
+            /** Format: int32 */
+            status: number;
+            /**
+             * Format: int64
+             * @description the other end's catalog work id
+             */
+            work_id: number;
         };
         WorkScreenshot: {
             caption: string;
