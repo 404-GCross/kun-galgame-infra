@@ -20,7 +20,10 @@ func ensureCienTable(t *testing.T) {
 		description text,
 		dlsite_maker_ids text[],
 		twitter_url text,
+		external_links jsonb,
 		http_status integer)`).Error)
+	// ALTER for a persistent test DB whose table predates the external_links column.
+	require.NoError(t, testDB.Exec(`ALTER TABLE cien_profiles ADD COLUMN IF NOT EXISTS external_links jsonb`).Error)
 	require.NoError(t, testDB.Exec(`TRUNCATE cien_profiles`).Error)
 }
 
@@ -147,4 +150,53 @@ func TestEnrichCien(t *testing.T) {
 	assert.Equal(t, 3, st.IntroSkipDup, "800 ja + 803 ja + 802 en all present now")
 	assert.Equal(t, 2, st.TwitterPlanned, "plan recounts; ON CONFLICT absorbs")
 	assert.Equal(t, 4, st.CienLinkPlanned)
+}
+
+// TestEnrichCienExtLinks pins the full-open item-3 whitelist projection: only
+// external_links whose host maps to an already-SEEDED catalog_source
+// (pixiv/dmm/steam) become related refs; unregistered hosts (skeb/youtube) are
+// deliberately skipped (a source-registry decision, never an invented source).
+func TestEnrichCienExtLinks(t *testing.T) {
+	if testDB == nil {
+		t.Skip("no test db")
+	}
+	cleanAll(t)
+	ensureCienTable(t)
+	ctx := context.Background()
+
+	mkLabel(t, 900, "サークルEXT", model.LabelKindDoujinCircle)
+	mkLabelAnchor(t, sourceDlsite, "RG900", 900, model.LinkKindExact)
+
+	require.NoError(t, testDB.Exec(
+		`INSERT INTO cien_profiles (creator_id, creator_name, description, dlsite_maker_ids, twitter_url, external_links, http_status)
+		 VALUES (?, ?, ?, ?::text[], '', ?::jsonb, 200)`,
+		201, "c", "外部リンク豊富なサークルの長い紹介文です。", "{RG900}",
+		`[{"url":"https://www.pixiv.net/users/12345","type":"else"},`+
+			`{"url":"https://www.dmm.co.jp/dc/doujin/-/list/=/article=maker/id=99/","type":"else"},`+
+			`{"url":"https://store.steampowered.com/app/7777","type":"else"},`+
+			`{"url":"https://skeb.jp/@someone","type":"else"},`+
+			`{"url":"https://www.youtube.com/@chan","type":"youtube"}]`).Error)
+
+	st, err := enrichCien(ctx, testDB, testDB, true)
+	require.NoError(t, err)
+	assert.Equal(t, 3, st.ExtLinkPlanned, "pixiv+dmm+steam whitelisted; skeb+youtube skipped")
+	assert.Equal(t, 3, st.ExtLinkWritten)
+	assert.Zero(t, st.Errors)
+
+	var refs []model.CatalogExternalRef
+	require.NoError(t, testDB.Where("entity_id = ? AND matched_by = ?", 900, ruleCienExtLink).
+		Order("source_id").Find(&refs).Error)
+	require.Len(t, refs, 3)
+	assert.Equal(t, sourceSteam, refs[0].SourceID) // 8
+	assert.Equal(t, sourcePixiv, refs[1].SourceID) // 11
+	assert.Equal(t, sourceDmm, refs[2].SourceID)   // 15
+	for _, r := range refs {
+		assert.Equal(t, model.LinkKindRelated, r.LinkKind)
+	}
+
+	// Idempotent: second apply writes zero (ON CONFLICT DO NOTHING).
+	st, err = enrichCien(ctx, testDB, testDB, true)
+	require.NoError(t, err)
+	assert.Zero(t, st.ExtLinkWritten, "second pass writes zero")
+	assert.Equal(t, 3, st.ExtLinkPlanned, "plan recounts; ON CONFLICT absorbs")
 }

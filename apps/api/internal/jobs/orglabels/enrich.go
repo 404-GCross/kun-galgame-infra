@@ -248,7 +248,7 @@ func enrichIntro(ctx context.Context, db *gorm.DB, apply bool) (EnrichStats, err
 
 // enrichAlias writes VNDB producer aliases (spelling variant) + EG furigana
 // (search hint) onto their anchored labels. A variant equal to the label's
-// display name is dropped; lang is unknown ('').
+// display name is dropped; lang is unknown (”).
 func enrichAlias(ctx context.Context, db, eg *gorm.DB, apply bool) (EnrichStats, error) {
 	var st EnrichStats
 	var rows []model.CatalogLabelAlias

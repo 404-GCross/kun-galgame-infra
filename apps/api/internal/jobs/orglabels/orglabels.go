@@ -41,9 +41,12 @@ const (
 	sourceDlsite  int16 = 4
 	sourceEG      int16 = 5
 
+	sourceSteam        int16 = 8
 	sourceOfficialSite int16 = 9
 	sourceTwitter      int16 = 10
+	sourcePixiv        int16 = 11
 	sourceCien         int16 = 14
+	sourceDmm          int16 = 15
 )
 
 // matched_by rule ids (rule:<src>-<entity>-<action> convention, importer.go).

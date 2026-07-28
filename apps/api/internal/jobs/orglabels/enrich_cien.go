@@ -2,6 +2,7 @@ package orglabels
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -35,6 +36,7 @@ import (
 const (
 	ruleCienIntroTwitter = "rule:cien-twitter"
 	ruleCienSelf         = "rule:cien-self"
+	ruleCienExtLink      = "rule:cien-ext-link"
 )
 
 // CienStats reports one projection run (doc 86 task item 2 counter set).
@@ -53,16 +55,19 @@ type CienStats struct {
 	TwitterWritten   int
 	CienLinkPlanned  int
 	CienLinkWritten  int
+	ExtLinkPlanned   int // whitelisted external_links (pixiv/dmm/steam) planned
+	ExtLinkWritten   int
 	Errors           int
 }
 
 // cienProfile is one crawled creator row (makers pre-joined to CSV — keeps the
 // scan pgx-simple; splitMakersCSV undoes it).
 type cienProfile struct {
-	CreatorID  int64  `gorm:"column:creator_id"`
-	Desc       string `gorm:"column:descr"`
-	MakersCSV  string `gorm:"column:makers_csv"`
-	TwitterURL string `gorm:"column:twitter_url"`
+	CreatorID    int64  `gorm:"column:creator_id"`
+	Desc         string `gorm:"column:descr"`
+	MakersCSV    string `gorm:"column:makers_csv"`
+	TwitterURL   string `gorm:"column:twitter_url"`
+	ExtLinksJSON string `gorm:"column:ext_links_json"`
 }
 
 // RunEnrichCien opens the catalog + dlsite pools and runs the projection.
@@ -105,7 +110,8 @@ func enrichCien(ctx context.Context, catalog, dlsite *gorm.DB, apply bool) (Cien
 	if err := dlsite.WithContext(ctx).Raw(`
 		SELECT creator_id, coalesce(description, '') AS descr,
 			coalesce(array_to_string(dlsite_maker_ids, ','), '') AS makers_csv,
-			coalesce(twitter_url, '') AS twitter_url
+			coalesce(twitter_url, '') AS twitter_url,
+			coalesce(external_links::text, '') AS ext_links_json
 		FROM cien_profiles
 		WHERE http_status = 200
 		ORDER BY creator_id`).Scan(&profiles).Error; err != nil {
@@ -117,6 +123,7 @@ func enrichCien(ctx context.Context, catalog, dlsite *gorm.DB, apply bool) (Cien
 	labelSet := map[int64]bool{}
 	var intros []model.CatalogLabelIntro
 	var refs []model.CatalogExternalRef
+	var extRefs []model.CatalogExternalRef
 	seenRef := map[string]bool{}
 
 	for i := range profiles {
@@ -206,6 +213,31 @@ func enrichCien(ctx context.Context, catalog, dlsite *gorm.DB, apply bool) (Cien
 				})
 			}
 		}
+
+		// External-links whitelist (full-open item 3): project only links whose
+		// target is an already-SEEDED catalog_source (pixiv/dmm/steam). The
+		// crawler pre-typed twitter/cien (handled above) and dlsite (the maker
+		// anchor itself); youtube/skeb/fantia/… have no catalog_source yet — a
+		// source-registry decision, deliberately NOT projected here (no invented
+		// sources). link_kind=related — a related presence, never an identity anchor.
+		for _, el := range parseCienExtLinks(p.ExtLinksJSON) {
+			src, ext, ok := cienExtLinkSource(el.URL)
+			if !ok {
+				continue
+			}
+			for _, lab := range labelIDs {
+				lp := linkPlan{lab, src, ext, ruleCienExtLink}
+				if k := planKey(lp); !seenRef[k] {
+					seenRef[k] = true
+					st.ExtLinkPlanned++
+					extRefs = append(extRefs, model.CatalogExternalRef{
+						EntityType: model.EntityTypeLabel, EntityID: lab,
+						SourceID: src, ExternalID: ext,
+						LinkKind: model.LinkKindRelated, MatchedBy: ruleCienExtLink,
+					})
+				}
+			}
+		}
 	}
 	st.MappedLabels = len(labelSet)
 
@@ -229,6 +261,9 @@ func enrichCien(ctx context.Context, catalog, dlsite *gorm.DB, apply bool) (Cien
 		if st.CienLinkWritten, err = batchInsert(ctx, catalog, cl); err != nil {
 			return st, fmt.Errorf("insert cien refs: %w", err)
 		}
+		if st.ExtLinkWritten, err = batchInsert(ctx, catalog, extRefs); err != nil {
+			return st, fmt.Errorf("insert ext-link refs: %w", err)
+		}
 	}
 
 	slog.Info("cien-label projection done", "apply", apply,
@@ -240,6 +275,7 @@ func enrichCien(ctx context.Context, catalog, dlsite *gorm.DB, apply bool) (Cien
 		"intro_skip_dup", st.IntroSkipDup,
 		"twitter_planned", st.TwitterPlanned, "twitter_written", st.TwitterWritten,
 		"cien_link_planned", st.CienLinkPlanned, "cien_link_written", st.CienLinkWritten,
+		"ext_link_planned", st.ExtLinkPlanned, "ext_link_written", st.ExtLinkWritten,
 		"errors", st.Errors)
 	return st, nil
 }
@@ -301,4 +337,55 @@ func splitMakersCSV(s string) []string {
 		out = append(out, p)
 	}
 	return out
+}
+
+// cienExtLinkRow is one entry in cien_profiles.external_links (the crawler
+// pre-types each link).
+type cienExtLinkRow struct {
+	URL  string `json:"url"`
+	Type string `json:"type"`
+}
+
+// parseCienExtLinks unmarshals the external_links jsonb array text; a null / [] /
+// malformed value yields nil (never an error — the projection just skips it).
+func parseCienExtLinks(raw string) []cienExtLinkRow {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || raw == "null" || raw == "[]" {
+		return nil
+	}
+	var rows []cienExtLinkRow
+	if json.Unmarshal([]byte(raw), &rows) != nil {
+		return nil
+	}
+	return rows
+}
+
+// cienExtLinkSource maps a crawled URL to an already-SEEDED catalog_source, or
+// ok=false when the host is outside the whitelist. external_id is the trimmed
+// URL (a related presence, not an identity key). The whitelist is host-suffix
+// matched so subdomains (pixiv.me, al.dmm.co.jp) fold onto the same source.
+func cienExtLinkSource(url string) (int16, string, bool) {
+	host := extHost(url)
+	switch {
+	case strings.HasSuffix(host, "pixiv.net") || strings.HasSuffix(host, "pixiv.me"):
+		return sourcePixiv, strings.TrimSpace(url), true
+	case strings.HasSuffix(host, "dmm.co.jp"):
+		return sourceDmm, strings.TrimSpace(url), true
+	case strings.HasSuffix(host, "steampowered.com"):
+		return sourceSteam, strings.TrimSpace(url), true
+	}
+	return 0, "", false
+}
+
+// extHost extracts the lowercased host of a URL without net/url (defensive
+// against the malformed URLs a crawl accumulates): strip scheme, cut at the
+// first /:? boundary.
+func extHost(url string) string {
+	s := strings.TrimSpace(url)
+	s = strings.TrimPrefix(s, "https://")
+	s = strings.TrimPrefix(s, "http://")
+	if i := strings.IndexAny(s, "/:?#"); i >= 0 {
+		s = s[:i]
+	}
+	return strings.ToLower(s)
 }

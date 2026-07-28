@@ -32,11 +32,11 @@ type orgRec struct {
 type resKind int
 
 const (
-	resAnchorExisting resKind = iota // anchor to an existing label (tier decides exact/probable)
-	resNewLabel                      // mint a new label + edges
-	resSkipNoMatch                   // no gradeable label, no name match, cannot mint
-	resSkipAmbiguous                 // name matches several distinct labels (name-only)
-	resSkipUngradeable               // shares exactly one work with label(s) but no name — not gradeable
+	resAnchorExisting  resKind = iota // anchor to an existing label (tier decides exact/probable)
+	resNewLabel                       // mint a new label + edges
+	resSkipNoMatch                    // no gradeable label, no name match, cannot mint
+	resSkipAmbiguous                  // name matches several distinct labels (name-only)
+	resSkipUngradeable                // shares exactly one work with label(s) but no name — not gradeable
 )
 
 // gradeResult is the per-org decision, before the one-anchor-per-label pass.
