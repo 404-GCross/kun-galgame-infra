@@ -251,9 +251,10 @@ type syncer struct {
 	createdIDs      []int // galgame ids created this run; indexed into search at the end (write-through)
 
 	stats struct {
-		created   int
-		skipped   int
-		cancelled int
+		created       int
+		skipped       int
+		cancelled     int // cancelled AND date-less — still skipped (vaporware)
+		cancelledKept int // cancelled WITH a real release date — admitted since 2026-07
 	}
 }
 
@@ -362,7 +363,7 @@ func (s *syncer) run(ctx context.Context, full bool) error {
 		newCount, skipCount, cancelCount := s.processBatch(resp.Results)
 		lastID := resp.Results[len(resp.Results)-1].ID
 
-		fmt.Printf("Batch %d: fetched %d VNs (after %s → %s), %d new, %d existing, %d cancelled\n",
+		fmt.Printf("Batch %d: fetched %d VNs (after %s → %s), %d new, %d existing, %d cancelled-skipped\n",
 			batch, len(resp.Results), afterID, lastID, newCount, skipCount, cancelCount)
 
 		afterID = lastID
@@ -375,11 +376,27 @@ func (s *syncer) run(ctx context.Context, full bool) error {
 	fmt.Printf("\nSync complete:\n")
 	fmt.Printf("  Created:       %d galgames\n", s.stats.created)
 	fmt.Printf("  Skipped:       %d (already exist)\n", s.stats.skipped)
-	fmt.Printf("  Cancelled:     %d (devstatus=2)\n", s.stats.cancelled)
+	fmt.Printf("  Cancelled:     %d skipped (devstatus=2, no release date), %d admitted (has date)\n", s.stats.cancelled, s.stats.cancelledKept)
 	fmt.Printf("  New tags:      %d\n", s.resolver.NewTags())
 	fmt.Printf("  New officials: %d\n", s.resolver.NewOfficials())
 
 	return nil
+}
+
+// cancelledVaporware reports whether a cancelled (devstatus=2) VN should stay
+// out of the sync: true when it has no REAL release date — Released nil/empty/
+// "TBA"/garbage all parse to a nil time via the same shared parser insertVN
+// uses (model.ParseLegacyReleased), so admission and storage agree on what "a
+// date" means. Cancelled VNs WITH a date actually shipped (trial or full
+// release before development stopped — VNDB's devstatus tracks the project,
+// not the shelf) and are admitted as claimable drafts. VNDB: ~1.5k dated vs
+// ~1k date-less cancelled entries (2026-07 audit).
+func cancelledVaporware(vn *vndbVN) bool {
+	if vn.Released == nil {
+		return true
+	}
+	t, _ := model.ParseLegacyReleased(*vn.Released)
+	return t == nil
 }
 
 func (s *syncer) processBatch(vns []vndbVN) (newCount, skipCount, cancelCount int) {
@@ -393,9 +410,17 @@ func (s *syncer) processBatch(vns []vndbVN) (newCount, skipCount, cancelCount in
 		}
 
 		if vn.Devstatus == 2 { // cancelled
-			cancelCount++
-			s.stats.cancelled++
-			continue
+			if cancelledVaporware(vn) {
+				cancelCount++
+				s.stats.cancelled++
+				continue
+			}
+			// Cancelled but actually shipped (real release date, e.g. v1912
+			// EDEN): admit it — skipping these left ~1.5k released games
+			// invisible to the publish selector AND broke moyu's "every VNDB
+			// entry is a claimable draft" premise (the no-vndb_id duplicate
+			// door). Date-less cancelled vaporware stays out.
+			s.stats.cancelledKept++
 		}
 
 		if err := s.insertVN(vn); err != nil {
@@ -664,11 +689,12 @@ func Run(ctx context.Context, cfg *config.Config, opts Opts) (map[string]any, er
 	}
 
 	return map[string]any{
-		"mode":          mode,
-		"created":       s.stats.created,
-		"skipped":       s.stats.skipped,
-		"cancelled":     s.stats.cancelled,
-		"new_tags":      resolver.NewTags(),
-		"new_officials": resolver.NewOfficials(),
+		"mode":           mode,
+		"created":        s.stats.created,
+		"skipped":        s.stats.skipped,
+		"cancelled":      s.stats.cancelled,
+		"cancelled_kept": s.stats.cancelledKept,
+		"new_tags":       resolver.NewTags(),
+		"new_officials":  resolver.NewOfficials(),
 	}, nil
 }
