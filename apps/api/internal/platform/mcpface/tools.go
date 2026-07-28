@@ -210,8 +210,9 @@ func (t *tools) catalogLookupExternal(ctx context.Context, req *mcp.CallToolRequ
 	return t.run(ctx, req, "catalog_lookup_external", "/v1/catalog/lookup", q)
 }
 
-const descCatalogNameGet = "Fetch one credited name (creator identity; same-person grouping via public links) by its " +
-	"numeric id. Pass include=credits to attach the works this name is credited on, with roles."
+const descCatalogNameGet = "Fetch one credited name (creator identity) by its numeric id: localized intros[] (creator " +
+	"bio), siblings[] (same-person alternate names) and external refs. Pass include=credits to attach the " +
+	"works this name is credited on, with roles."
 
 type catalogNameGetInput struct {
 	ID      int    `json:"id" jsonschema:"The name id (required). Find one with catalog_search type=names."`
@@ -250,9 +251,9 @@ func (t *tools) catalogLabelGet(ctx context.Context, req *mcp.CallToolRequest, i
 	return t.run(ctx, req, "catalog_label_get", pathID("/v1/catalog/labels", in.ID), q)
 }
 
-const descCatalogCharacterGet = "Fetch one character by its numeric id. Traits are spoiler-gated: pass spoilers=1|2 to " +
-	"raise the max spoiler level (default 0 = safe). Pass include=works to attach the works the character " +
-	"appears in (with voice-actor names)."
+const descCatalogCharacterGet = "Fetch one character by its numeric id: localized intros[] (bio), a portrait image URL, " +
+	"and external refs. Traits are spoiler-gated: pass spoilers=1|2 to raise the max spoiler level (default " +
+	"0 = safe). Pass include=works to attach the works the character appears in (with voice-actor names)."
 
 type catalogCharacterGetInput struct {
 	ID       int    `json:"id" jsonschema:"The character id (required)."`
