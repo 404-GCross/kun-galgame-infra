@@ -127,6 +127,33 @@ const totalOperations = computed(() =>
 
     <!-- AI / MCP access -->
     <section>
+      <h2 class="text-lg font-semibold text-foreground">实战示例</h2>
+      <p class="mt-1 text-sm text-default-500">
+        用两个真实系列（SEQUEL × いろセカ）走通 搜索 → 详情 → 厂牌 → 外部 id 反查 全链。
+      </p>
+      <NuxtLink
+        to="/docs/example"
+        class="group mt-4 flex items-center gap-4 rounded-xl border border-default-200 bg-content1 p-5 transition-colors hover:border-primary"
+      >
+        <div
+          class="flex size-11 shrink-0 items-center justify-center rounded-lg bg-default-100 text-foreground"
+        >
+          <KunIcon name="lucide:book-open" class="size-5" />
+        </div>
+        <div class="min-w-0 flex-1">
+          <h3 class="text-base font-semibold text-foreground">金样双系列 Walkthrough</h3>
+          <p class="mt-1 text-sm leading-relaxed text-default-500">
+            每段响应节选都是线上真实数据；顺带演示 nsfw 参数与多源并列的读法。
+          </p>
+        </div>
+        <KunIcon
+          name="lucide:arrow-right"
+          class="size-4 shrink-0 text-default-400 transition-transform group-hover:translate-x-0.5"
+        />
+      </NuxtLink>
+    </section>
+
+    <section>
       <h2 class="text-lg font-semibold text-foreground">给 AI 用</h2>
       <p class="mt-1 text-sm text-default-500">
         同一套面也以 MCP（Model Context Protocol）server 暴露，AI 助手可直接调用。
