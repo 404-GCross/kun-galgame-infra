@@ -100,10 +100,11 @@ type publicLabelOutput struct {
 }
 
 type publicEntitySearchInput struct {
-	Type   string `query:"type" enum:"names,characters,labels" doc:"Which entity index to search"`
+	Type   string `query:"type" enum:"names,characters,labels,works" doc:"Which index to search; works (wave 105) searches every LIVE galgame registry work by any title"`
 	Q      string `query:"q" doc:"Search text; empty returns the most-credited entities"`
 	Locale string `query:"locale" enum:"zh,ja,en" doc:"UI locale; the server pins the query language"`
 	Limit  int    `query:"limit" doc:"Max hits (capped at 20)"`
+	NSFW   bool   `query:"nsfw" doc:"works only: true/1 = include r18 hits (default false = excluded server-side)"`
 }
 type publicEntitySearchOutput struct {
 	Body Envelope[dto.PublicEntitySearchData]

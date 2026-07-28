@@ -356,7 +356,7 @@ func (s *S2SServer) searchWorks(ctx context.Context, in *searchWorksInput) (*sea
 
 type searchInput struct {
 	Q      string `query:"q" doc:"Search text; empty returns the most-credited entities"`
-	Type   string `query:"type" enum:"names,characters,labels" doc:"Which entity index to search"`
+	Type   string `query:"type" enum:"names,characters,labels,works" doc:"Which entity index to search (works: wave 105 — LIVE galgame registry works, r18 verbatim on this face)"`
 	Locale string `query:"locale" enum:"zh,ja,en" doc:"UI locale; the server pins the query language (client-supplied Meili locales are never accepted)"`
 	Limit  int    `query:"limit" default:"20" doc:"Max hits (capped at 20)"`
 }
@@ -368,13 +368,13 @@ type searchOutput struct {
 func (s *S2SServer) searchEntities(ctx context.Context, in *searchInput) (*searchOutput, error) {
 	uid, ok := catsearch.IndexForType(in.Type)
 	if !ok {
-		return nil, apiErrMsg(http.StatusBadRequest, errors.ErrInvalidParam, "type must be one of names|characters|labels")
+		return nil, apiErrMsg(http.StatusBadRequest, errors.ErrInvalidParam, "type must be one of names|characters|labels|works")
 	}
 	limit := in.Limit
 	if limit <= 0 || limit > 20 {
 		limit = 20
 	}
-	res, err := s.search.SearchEntities(ctx, uid, in.Q, catsearch.LocalesForUI(in.Locale), limit)
+	res, err := s.search.SearchEntities(ctx, uid, in.Q, catsearch.LocalesForUI(in.Locale), limit, "")
 	if err != nil {
 		return nil, apiErr(http.StatusInternalServerError, errors.ErrInternalServer)
 	}
@@ -383,6 +383,7 @@ func (s *S2SServer) searchEntities(ctx context.Context, in *searchInput) (*searc
 		resp.Items = append(resp.Items, dto.EntitySearchHit{
 			ID: d.ID, EntityType: d.EntityType, Name: d.Name(), Latin: d.Latin,
 			Sources: d.Sources, Popularity: d.Popularity, Kind: d.Kind, PersonID: d.PersonID,
+			ContentRating: d.ContentRating,
 		})
 	}
 	return &searchOutput{Body: okEnvelope(resp)}, nil

@@ -382,14 +382,15 @@ type EntitySearchResponse struct {
 
 // EntitySearchHit is one projected entity (name / character / label).
 type EntitySearchHit struct {
-	ID         string   `json:"id" doc:"prefixed: n{id} / c{id} / b{id}"`
-	EntityType string   `json:"entity_type"`
-	Name       string   `json:"name"`
-	Latin      string   `json:"latin,omitempty"`
-	Sources    []string `json:"sources"`
-	Popularity float64  `json:"popularity"`
-	Kind       *int16   `json:"kind,omitempty" doc:"label kind (labels only)"`
-	PersonID   *int64   `json:"person_id,omitempty" doc:"credit-name → person link (names only; absent = orphan)"`
+	ID            string   `json:"id" doc:"prefixed: n{id} / c{id} / b{id}"`
+	EntityType    string   `json:"entity_type"`
+	Name          string   `json:"name"`
+	Latin         string   `json:"latin,omitempty"`
+	Sources       []string `json:"sources"`
+	Popularity    float64  `json:"popularity"`
+	Kind          *int16   `json:"kind,omitempty" doc:"label kind (labels only)"`
+	PersonID      *int64   `json:"person_id,omitempty" doc:"credit-name → person link (names only; absent = orphan)"`
+	ContentRating *int16   `json:"content_rating,omitempty" doc:"works only (wave 105): 0=all_ages 1=sensitive 2=r18"`
 }
 
 // --- entity reverse-lookups (step 19: names/{id}/works & characters/{id}/works) ---

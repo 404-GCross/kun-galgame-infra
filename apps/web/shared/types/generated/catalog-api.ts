@@ -863,6 +863,11 @@ export interface components {
             persons: number;
         };
         EntitySearchHit: {
+            /**
+             * Format: int32
+             * @description works only (wave 105): 0=all_ages 1=sensitive 2=r18
+             */
+            content_rating?: number;
             entity_type: string;
             /** @description prefixed: n{id} / c{id} / b{id} */
             id: string;
@@ -2341,8 +2346,8 @@ export interface operations {
             query?: {
                 /** @description Search text; empty returns the most-credited entities */
                 q?: string;
-                /** @description Which entity index to search */
-                type?: "names" | "characters" | "labels";
+                /** @description Which entity index to search (works: wave 105 — LIVE galgame registry works, r18 verbatim on this face) */
+                type?: "names" | "characters" | "labels" | "works";
                 /** @description UI locale; the server pins the query language (client-supplied Meili locales are never accepted) */
                 locale?: "zh" | "ja" | "en";
                 /** @description Max hits (capped at 20) */

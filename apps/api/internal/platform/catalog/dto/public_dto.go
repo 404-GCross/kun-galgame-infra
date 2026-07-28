@@ -296,6 +296,9 @@ type PublicEntityHit struct {
 	Name       string   `json:"name"`
 	Latin      string   `json:"latin,omitempty"`
 	Sources    []string `json:"sources"`
+	// ContentRating is present on works hits only (wave 105): all_ages |
+	// sensitive | r18 (r18 hits appear only with nsfw=1).
+	ContentRating string `json:"content_rating,omitempty"`
 }
 
 // PublicEntitySearchData is the entity-search envelope.

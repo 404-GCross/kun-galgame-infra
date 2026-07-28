@@ -17,6 +17,8 @@ func IndexForType(t string) (uid string, ok bool) {
 		return IndexCharacters, true
 	case "labels":
 		return IndexLabels, true
+	case "works":
+		return IndexWorks, true
 	default:
 		return "", false
 	}
@@ -44,12 +46,16 @@ type SearchResult struct {
 
 // SearchEntities queries one entity index. locales is server-set (invariant 2);
 // an empty query returns the top entities by popularity. limit is applied as-is
-// (the handler caps it).
-func (i *Indexer) SearchEntities(ctx context.Context, uid, q string, locales []string, limit int) (SearchResult, error) {
+// (the handler caps it). filter is a server-built Meili filter expression
+// (wave 105: the public works nsfw gate) — "" for none; never client-supplied.
+func (i *Indexer) SearchEntities(ctx context.Context, uid, q string, locales []string, limit int, filter string) (SearchResult, error) {
 	req := &meilisearch.SearchRequest{
 		HitsPerPage:      int64(limit),
 		Locales:          locales,
 		MatchingStrategy: meilisearch.All,
+	}
+	if filter != "" {
+		req.Filter = filter
 	}
 	q = sanitizeQuery(q)
 	if q == "" {

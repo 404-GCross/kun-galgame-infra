@@ -227,13 +227,19 @@ func (h *PublicHandler) Label(c fiber.Ctx) error {
 func (h *PublicHandler) Search(c fiber.Ctx) error {
 	uid, entityType, ok := publicSearchIndex(c.Query("type"))
 	if !ok {
-		return response.BadRequestMsg(c, errors.ErrInvalidParam, "type must be one of names|characters|labels")
+		return response.BadRequestMsg(c, errors.ErrInvalidParam, "type must be one of names|characters|labels|works")
 	}
 	limit := atoiOrPub(c.Query("limit"), 20)
 	if limit <= 0 || limit > 20 {
 		limit = 20
 	}
-	res, err := h.search.SearchEntities(c.Context(), uid, c.Query("q"), catsearch.LocalesForUI(c.Query("locale")), limit)
+	// The works index carries r18 rows; the nsfw switch (wave 104 doctrine)
+	// gates them server-side. Entity indexes have no rating — no filter.
+	filter := ""
+	if entityType == "work" && !nsfwQuery(c) {
+		filter = "content_rating != " + strconv.Itoa(int(model.ContentRatingR18))
+	}
+	res, err := h.search.SearchEntities(c.Context(), uid, c.Query("q"), catsearch.LocalesForUI(c.Query("locale")), limit, filter)
 	if err != nil {
 		return response.InternalError(c, errors.ErrInternalServer)
 	}
@@ -243,9 +249,13 @@ func (h *PublicHandler) Search(c fiber.Ctx) error {
 		if !ok {
 			continue
 		}
-		out.Items = append(out.Items, dto.PublicEntityHit{
+		hit := dto.PublicEntityHit{
 			ID: id, EntityType: entityType, Name: d.Name(), Latin: d.Latin, Sources: d.Sources,
-		})
+		}
+		if d.ContentRating != nil {
+			hit.ContentRating = publicContentRatingKey(*d.ContentRating)
+		}
+		out.Items = append(out.Items, hit)
 	}
 	c.Set("Cache-Control", cacheSearch)
 	return response.Success(c, out)
@@ -335,6 +345,9 @@ func publicSearchIndex(t string) (uid, entityType string, ok bool) {
 	case "labels":
 		uid, ok = catsearch.IndexForType("labels")
 		return uid, "label", ok
+	case "works":
+		uid, ok = catsearch.IndexForType("works")
+		return uid, "work", ok
 	default:
 		return "", "", false
 	}
@@ -375,4 +388,19 @@ func atoiOrPub(s string, def int) int {
 		return def
 	}
 	return n
+}
+
+// publicContentRatingKey mirrors the service-layer projection (works search
+// hits only): the contract speaks string keys, never enum ints.
+func publicContentRatingKey(r int16) string {
+	switch r {
+	case model.ContentRatingAllAges:
+		return "all_ages"
+	case model.ContentRatingSensitive:
+		return "sensitive"
+	case model.ContentRatingR18:
+		return "r18"
+	default:
+		return ""
+	}
 }

@@ -44,12 +44,12 @@ func TestMain(m *testing.M) {
 func TestEnsureIndexesMatchesMatrix(t *testing.T) {
 	require.NoError(t, EnsureIndexes(testClient))
 	t.Cleanup(func() {
-		for _, uid := range []string{IndexCreditNames, IndexCharacters, IndexLabels} {
+		for _, uid := range []string{IndexCreditNames, IndexCharacters, IndexLabels, IndexWorks} {
 			_, _ = testClient.Svc().DeleteIndex(testClient.IndexUID(uid))
 		}
 	})
 
-	for _, uid := range []string{IndexCreditNames, IndexCharacters, IndexLabels} {
+	for _, uid := range []string{IndexCreditNames, IndexCharacters, IndexLabels, IndexWorks} {
 		s, err := testClient.Index(uid).GetSettings()
 		require.NoError(t, err, uid)
 
@@ -87,4 +87,47 @@ func indexOf(s []string, v string) int {
 		}
 	}
 	return -1
+}
+
+// TestWorksNSFWFilter pins the wave-105 works lane: content_rating is
+// filterable (the public nsfw gate) and title aliases match.
+func TestWorksNSFWFilter(t *testing.T) {
+	require.NoError(t, EnsureIndexes(testClient))
+	t.Cleanup(func() {
+		_, _ = testClient.Svc().DeleteIndex(testClient.IndexUID(IndexWorks))
+	})
+
+	r18, safe := int16(2), int16(0)
+	docA := EntityDoc{ID: "w1", EntityType: "work", ContentRating: &r18, Popularity: 3}
+	docA.SetNameOrAlias("ja", "いろとりどりのセカイ")
+	docA.SetNameOrAlias("zh", "五彩斑斓的世界")
+	docB := EntityDoc{ID: "w2", EntityType: "work", ContentRating: &safe, Popularity: 1}
+	docB.SetNameOrAlias("ja", "全年齢作品")
+
+	task, err := testClient.Index(IndexWorks).AddDocuments([]EntityDoc{docA, docB}, nil)
+	require.NoError(t, err)
+	_, err = testClient.Svc().WaitForTask(task.TaskUID, 0)
+	require.NoError(t, err)
+
+	idx := NewIndexer(testClient)
+	ctx := t.Context()
+
+	// nsfw off: the r18 hit is excluded server-side.
+	res, err := idx.SearchEntities(ctx, IndexWorks, "いろとりどり", []string{"jpn"}, 20, "content_rating != 2")
+	require.NoError(t, err)
+	assert.Len(t, res.Hits, 0, "r18 filtered")
+	// nsfw on: no filter, the alias (zh bucket) matches too.
+	res, err = idx.SearchEntities(ctx, IndexWorks, "五彩斑斓", []string{"cmn"}, 20, "")
+	require.NoError(t, err)
+	if assert.Len(t, res.Hits, 1) {
+		assert.Equal(t, "w1", res.Hits[0].ID)
+		require.NotNil(t, res.Hits[0].ContentRating)
+		assert.EqualValues(t, 2, *res.Hits[0].ContentRating)
+	}
+	// empty query + filter: popularity sort, safe doc only.
+	res, err = idx.SearchEntities(ctx, IndexWorks, "", nil, 20, "content_rating != 2")
+	require.NoError(t, err)
+	if assert.Len(t, res.Hits, 1) {
+		assert.Equal(t, "w2", res.Hits[0].ID)
+	}
 }

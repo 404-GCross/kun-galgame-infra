@@ -924,6 +924,10 @@ components:
     EntitySearchHit:
       additionalProperties: false
       properties:
+        content_rating:
+          description: "works only (wave 105): 0=all_ages 1=sensitive 2=r18"
+          format: int32
+          type: integer
         entity_type:
           type: string
         id:
@@ -3202,16 +3206,17 @@ paths:
           schema:
             description: Search text; empty returns the most-credited entities
             type: string
-        - description: Which entity index to search
+        - description: "Which entity index to search (works: wave 105 — LIVE galgame registry works, r18 verbatim on this face)"
           explode: false
           in: query
           name: type
           schema:
-            description: Which entity index to search
+            description: "Which entity index to search (works: wave 105 — LIVE galgame registry works, r18 verbatim on this face)"
             enum:
               - names
               - characters
               - labels
+              - works
             type: string
         - description: UI locale; the server pins the query language (client-supplied Meili locales are never accepted)
           explode: false

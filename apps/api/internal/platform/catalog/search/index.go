@@ -2,8 +2,12 @@
 // labels) into Meilisearch, applying the doc-13 cross-media search config
 // matrix. Read-side only: it never writes Gold. Consumers (the admin
 // review-queue entity finder, letmoe's staff picker, future NextMoe
-// aggregation) query these indexes; works indexes are born with each medium's
-// product (doc 13 §4.3), so they are deliberately NOT built here.
+// aggregation) query these indexes. The WORKS index (wave 105) is the one
+// exception to doc 13 §4.3 ("works indexes are born with each medium's
+// product"): the cross-source registry works (incl. bodyless, which no
+// product face indexes) get their own catalog_works index so the public
+// catalog face can search by title; the wiki's galgames index remains the
+// wiki product's own.
 package search
 
 import (
@@ -21,6 +25,7 @@ const (
 	IndexCreditNames = "catalog_credit_names"
 	IndexCharacters  = "catalog_characters"
 	IndexLabels      = "catalog_labels"
+	IndexWorks       = "catalog_works"
 )
 
 // localizedAttributes pins the CJK language per field pattern (doc 13 invariant
@@ -90,6 +95,17 @@ func labelsSettings() *meilisearch.Settings {
 	}
 }
 
+func worksSettings() *meilisearch.Settings {
+	return &meilisearch.Settings{
+		SearchableAttributes: []string{"name_zh", "name_ja", "name_other", "aliases_zh", "aliases_ja", "aliases_other", "latin"},
+		FilterableAttributes: []string{"entity_type", "source_keys", "content_rating"},
+		SortableAttributes:   []string{"popularity"},
+		RankingRules:         entityRankingRules,
+		LocalizedAttributes:  localizedAttributes(),
+		TypoTolerance:        &meilisearch.TypoTolerance{Enabled: true, DisableOnAttributes: cjkTypoDisabled()},
+	}
+}
+
 func indexSpecs() []struct {
 	uid      string
 	settings *meilisearch.Settings
@@ -101,10 +117,11 @@ func indexSpecs() []struct {
 		{IndexCreditNames, creditNamesSettings()},
 		{IndexCharacters, charactersSettings()},
 		{IndexLabels, labelsSettings()},
+		{IndexWorks, worksSettings()},
 	}
 }
 
-// EnsureIndexes creates the three entity indexes (if missing) and PATCHes their
+// EnsureIndexes creates the four catalog indexes (if missing) and PATCHes their
 // settings to the doc-13 matrix. Idempotent; pushes no documents.
 func EnsureIndexes(client *search.Client) error {
 	for _, spec := range indexSpecs() {

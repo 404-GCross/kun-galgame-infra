@@ -29,9 +29,13 @@ type EntityDoc struct {
 	// absent). link_visibility is intentionally NOT indexed — names have no
 	// person link yet, and a hidden link's aggregation filtering happens when a
 	// person page is assembled, not on the name index.
-	PersonID   *int64  `json:"person_id,omitempty"`
-	Kind       *int16  `json:"kind,omitempty"` // label kind
-	Popularity float64 `json:"popularity"`     // log-damped credit count
+	PersonID *int64 `json:"person_id,omitempty"`
+	Kind     *int16 `json:"kind,omitempty"` // label kind
+	// ContentRating is set on WORKS docs only (wave 105): 0=all_ages
+	// 1=sensitive 2=r18 — filterable so the public face's nsfw switch can
+	// exclude r18 hits server-side. Absent on entity docs.
+	ContentRating *int16  `json:"content_rating,omitempty"`
+	Popularity    float64 `json:"popularity"` // log-damped credit count (works: log-damped collect/download count)
 }
 
 // SetName routes a name into its language bucket by the row's lang (invariant
@@ -45,6 +49,30 @@ func (d *EntityDoc) SetName(lang, name string) {
 	default:
 		d.NameOther = name
 	}
+}
+
+// SetNameOrAlias fills the name bucket for the row's lang if still empty,
+// otherwise appends to the bucket's aliases (works docs: display_name wins
+// its bucket, official titles win theirs, everything else is an alias).
+func (d *EntityDoc) SetNameOrAlias(lang, name string) {
+	switch bucket(lang) {
+	case "zh":
+		if d.NameZh == "" {
+			d.NameZh = name
+			return
+		}
+	case "ja":
+		if d.NameJa == "" {
+			d.NameJa = name
+			return
+		}
+	default:
+		if d.NameOther == "" {
+			d.NameOther = name
+			return
+		}
+	}
+	d.AddAlias(lang, name)
 }
 
 // AddAlias routes an alias into its language bucket.

@@ -563,6 +563,8 @@ components:
     PublicEntityHit:
       additionalProperties: false
       properties:
+        content_rating:
+          type: string
         entity_type:
           type: string
         id:
@@ -1508,16 +1510,17 @@ paths:
     get:
       operationId: searchCatalogEntitiesPublic
       parameters:
-        - description: Which entity index to search
+        - description: Which index to search; works (wave 105) searches every LIVE galgame registry work by any title
           explode: false
           in: query
           name: type
           schema:
-            description: Which entity index to search
+            description: Which index to search; works (wave 105) searches every LIVE galgame registry work by any title
             enum:
               - names
               - characters
               - labels
+              - works
             type: string
         - description: Search text; empty returns the most-credited entities
           explode: false
@@ -1545,6 +1548,13 @@ paths:
             description: Max hits (capped at 20)
             format: int64
             type: integer
+        - description: "works only: true/1 = include r18 hits (default false = excluded server-side)"
+          explode: false
+          in: query
+          name: nsfw
+          schema:
+            description: "works only: true/1 = include r18 hits (default false = excluded server-side)"
+            type: boolean
       responses:
         "200":
           content:
