@@ -72,7 +72,7 @@ interface WorkDetail {
 }
 interface GalAggregate {
   names?: Record<string, string | null>
-  images?: { banner?: { url?: string } }
+  images?: { banner?: { url?: string }; portrait?: { url?: string } }
   intro?: Record<string, string | null>
   scores?: {
     vndb?: { rating?: number; vote_count?: number; url?: string } | null
@@ -209,6 +209,7 @@ const banner = computed(
     work.value?.covers?.find(safeImg)?.url ??
     null
 )
+const portrait = computed(() => gal.value?.images?.portrait?.url ?? null)
 
 // Every intro variant from BOTH faces, language-labeled and provenance-tagged.
 // work.intro[] carries an honest `machine` flag (MT provenance); the galgame
@@ -306,6 +307,38 @@ const refLink = (source: string) => {
 }
 
 const fmt = (n: number) => n.toLocaleString()
+
+// Normalize a source-native score to 0-100 for the bar: EG is already 0-100,
+// vndb / bangumi are 10-point scales.
+const scorePct = (r: { score: number }) =>
+  Math.max(0, Math.min(100, r.score > 10 ? r.score : r.score * 10))
+
+// Popularity rows grouped per source, bar-scaled to the group max — bgm's five
+// collection buckets (wish/collect/doing/hold/drop) become a real distribution
+// chart; dlsite counters chart the same way.
+const METRIC_LABEL: Record<string, string> = {
+  wish: '想玩',
+  collect: '玩过',
+  doing: '在玩',
+  hold: '搁置',
+  drop: '抛弃',
+  dl_count: '下载数',
+  wishlist: '愿望单',
+  review_count: '评论数'
+}
+const popGroups = computed(() => {
+  const by = new Map<string, { metric: string; value: number }[]>()
+  for (const pp of work.value?.popularity ?? []) {
+    const arr = by.get(pp.source) ?? []
+    arr.push({ metric: pp.metric, value: pp.value })
+    by.set(pp.source, arr)
+  }
+  return [...by.entries()].map(([source, rows]) => ({
+    source,
+    max: Math.max(...rows.map((r) => r.value), 1),
+    rows
+  }))
+})
 </script>
 
 <template>
@@ -340,24 +373,55 @@ const fmt = (n: number) => n.toLocaleString()
     </div>
 
     <template v-else-if="work">
-      <div
+      <section
         v-if="banner"
-        class="overflow-hidden rounded-2xl border border-default-200"
+        class="relative overflow-hidden rounded-2xl border border-default-200"
       >
         <KunImageNative
           :src="banner"
           :alt="titleMain"
           loading="eager"
-          class-name="max-h-80 w-full object-cover"
+          class-name="max-h-96 min-h-56 w-full object-cover"
         />
-      </div>
+        <!-- Solid-color scrim (palette color + opacity, no gradients). -->
+        <div
+          class="absolute inset-x-0 bottom-0 flex items-end gap-4 bg-background/85 p-4 backdrop-blur md:p-5"
+        >
+          <div
+            v-if="portrait"
+            class="hidden w-20 shrink-0 overflow-hidden rounded-lg border border-default-200 sm:block md:w-24"
+          >
+            <KunImageNative
+              :src="portrait"
+              :alt="titleMain"
+              loading="eager"
+              class-name="aspect-[3/4] w-full object-cover"
+            />
+          </div>
+          <div class="min-w-0">
+            <h1
+              class="truncate text-2xl font-bold tracking-tight text-foreground md:text-3xl"
+            >
+              {{ titleMain }}
+            </h1>
+            <p v-if="titleJa" class="truncate text-base text-default-500">
+              {{ titleJa }}
+            </p>
+            <p v-if="titleEn" class="truncate text-xs text-default-400">
+              {{ titleEn }}
+            </p>
+          </div>
+        </div>
+      </section>
 
       <header class="space-y-2">
-        <h1 class="text-3xl font-bold tracking-tight text-foreground">
-          {{ titleMain }}
-        </h1>
-        <p v-if="titleJa" class="text-lg text-default-500">{{ titleJa }}</p>
-        <p v-if="titleEn" class="text-sm text-default-400">{{ titleEn }}</p>
+        <template v-if="!banner">
+          <h1 class="text-3xl font-bold tracking-tight text-foreground">
+            {{ titleMain }}
+          </h1>
+          <p v-if="titleJa" class="text-lg text-default-500">{{ titleJa }}</p>
+          <p v-if="titleEn" class="text-sm text-default-400">{{ titleEn }}</p>
+        </template>
         <div class="flex flex-wrap items-center gap-2 pt-1">
           <KunChip
             v-if="work.content_rating === 'r18'"
@@ -453,6 +517,14 @@ const fmt = (n: number) => n.toLocaleString()
               · rank {{ fmt(r.rank) }}</template
             >
           </p>
+          <div
+            class="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-default-200"
+          >
+            <div
+              class="h-full rounded-full bg-primary"
+              :style="{ width: `${scorePct(r)}%` }"
+            />
+          </div>
         </div>
         <div
           v-for="p in work.playtimes ?? []"
@@ -470,19 +542,43 @@ const fmt = (n: number) => n.toLocaleString()
         </div>
       </section>
 
-      <section
-        v-if="(work.popularity ?? []).length"
-        class="flex flex-wrap gap-2"
-      >
-        <KunChip
-          v-for="p in work.popularity"
-          :key="`${p.source}-${p.metric}`"
-          color="default"
-          variant="flat"
-          size="sm"
-        >
-          {{ p.source }} · {{ p.metric }} {{ fmt(p.value) }}
-        </KunChip>
+      <section v-if="popGroups.length">
+        <h2 class="mb-2 text-lg font-semibold text-foreground">热度分布</h2>
+        <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+          <div
+            v-for="g in popGroups"
+            :key="g.source"
+            class="rounded-xl border border-default-200 bg-content1 p-4"
+          >
+            <p class="text-xs uppercase tracking-wide text-default-400">
+              {{ g.source }}
+            </p>
+            <div class="mt-2 space-y-1.5">
+              <div
+                v-for="r in g.rows"
+                :key="r.metric"
+                class="flex items-center gap-2"
+              >
+                <span class="w-14 shrink-0 text-xs text-default-500">
+                  {{ METRIC_LABEL[r.metric] ?? r.metric }}
+                </span>
+                <div
+                  class="h-2 flex-1 overflow-hidden rounded-full bg-default-200"
+                >
+                  <div
+                    class="h-full rounded-full bg-primary"
+                    :style="{ width: `${(r.value / g.max) * 100}%` }"
+                  />
+                </div>
+                <span
+                  class="w-16 shrink-0 text-right text-xs font-medium text-foreground"
+                >
+                  {{ fmt(r.value) }}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
       </section>
 
       <section
@@ -580,7 +676,7 @@ const fmt = (n: number) => n.toLocaleString()
           <div
             v-for="(cv, i) in coverList"
             :key="cv.url"
-            class="relative overflow-hidden rounded-lg border border-default-200 bg-default-100"
+            class="relative overflow-hidden rounded-lg border border-default-200 bg-default-100 transition-colors hover:border-primary"
           >
             <KunImageNative
               :src="cv.url"
@@ -637,7 +733,7 @@ const fmt = (n: number) => n.toLocaleString()
           <div
             v-for="(sh, i) in shots"
             :key="sh.url"
-            class="relative overflow-hidden rounded-lg border border-default-200 bg-default-100"
+            class="relative overflow-hidden rounded-lg border border-default-200 bg-default-100 transition-colors hover:border-primary"
           >
             <KunImageNative
               :src="sh.url"
