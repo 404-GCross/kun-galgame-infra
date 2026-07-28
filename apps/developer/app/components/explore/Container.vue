@@ -58,7 +58,18 @@ const entityName = (data: Record<string, unknown>): string | null => {
     if (typeof o.name === 'string' && o.name) return o.name
     if (typeof o.latin === 'string' && o.latin) return o.latin
     // locale map { 'zh-cn': …, ja: …, en: … } (names/characters read faces)
-    for (const k of ['zh-cn', 'zh', 'ja', 'en']) {
+    for (const k of ['zh_cn', 'zh-cn', 'zh', 'ja', 'en']) {
+      const v = o[k]
+      if (typeof v === 'string' && v) return v
+    }
+    const first = Object.values(o).find((v) => typeof v === 'string' && v)
+    if (typeof first === 'string') return first
+  }
+  // galgame aggregate records: `names` locale map, `name` absent
+  const ns = data.names
+  if (ns && typeof ns === 'object') {
+    const o = ns as Record<string, unknown>
+    for (const k of ['zh_cn', 'zh-cn', 'zh', 'ja', 'en']) {
       const v = o[k]
       if (typeof v === 'string' && v) return v
     }
@@ -84,23 +95,65 @@ const expandAll = async () => {
   const d = detail.value
   const arr = (k: string): unknown[] => (Array.isArray(d[k]) ? (d[k] as unknown[]) : [])
 
-  const jobs: { group: string; id: number; path: string }[] = []
+  const jobs: {
+    group: string
+    id: number
+    path: string
+    query: Record<string, string>
+  }[] = []
   const seen = new Set<string>()
-  const push = (group: string, id: number | null, path: string) => {
+  const gate = (): Record<string, string> =>
+    nsfw.value ? { nsfw: '1' } : {}
+  const push = (
+    group: string,
+    id: number | null,
+    path: (i: number) => string,
+    query: Record<string, string> = {}
+  ) => {
     if (id === null || seen.has(`${group}:${id}`)) return
     seen.add(`${group}:${id}`)
-    jobs.push({ group, id, path })
+    jobs.push({ group, id, path: path(id), query })
   }
 
-  for (const l of arr('labels')) push('厂牌 / 社团', idOf(l), 'labels')
-  for (const c of arr('characters')) push('角色', idOf(c), 'characters')
+  // Each entity kind is pulled with ITS OWN heaviest include set — the point
+  // is the fullest single-entity record each face can serve.
+  for (const l of arr('labels'))
+    push('厂牌 / 社团', idOf(l), (i) => `v1/catalog/labels/${i}`, {
+      include: 'works',
+      ...gate()
+    })
+  for (const c of arr('characters'))
+    push('角色', idOf(c), (i) => `v1/catalog/characters/${i}`, {
+      include: 'works',
+      spoilers: '2',
+      ...gate()
+    })
   for (const r of arr('credits')) {
     const inner = (r as { credits?: unknown[] }).credits
     if (Array.isArray(inner))
       for (const c of inner)
-        push('名义', idOf((c as { name?: unknown }).name) ?? idOf(c), 'names')
+        push(
+          '名义',
+          idOf((c as { name?: unknown }).name) ?? idOf(c),
+          (i) => `v1/catalog/names/${i}`,
+          { include: 'credits', ...gate() }
+        )
   }
-  for (const r of arr('relations')) push('关联作品', idOf((r as { work?: unknown }).work), 'works')
+  for (const r of arr('relations'))
+    push(
+      '关联作品',
+      idOf((r as { work?: unknown }).work),
+      (i) => `v1/catalog/works/${i}`,
+      { include: 'relations,credits', ...gate() }
+    )
+  // Cross-face: the claimed galgame aggregate is the richest single record
+  // in the system — intro/scores/covers/taxonomy/links/screenshots/series/meta.
+  const cb = d.claimed_by as { site?: string; work_id?: number } | null
+  if (cb && typeof cb.work_id === 'number' && String(cb.site ?? '').includes('galgame'))
+    push('跨面 · Galgame 聚合', cb.work_id, (i) => `v1/galgame/${i}`, {
+      include: 'intro,scores,covers,taxonomy,links,screenshots,series,meta',
+      content_limit: nsfw.value ? 'all' : 'sfw'
+    })
 
   const totals = new Map<string, number>()
   for (const j of jobs) totals.set(j.group, (totals.get(j.group) ?? 0) + 1)
@@ -116,9 +169,7 @@ const expandAll = async () => {
 
   const results = await Promise.allSettled(
     capped.map(async (j) => {
-      const resp = await relay(`v1/catalog/${j.path}/${j.id}`, {
-        ...(nsfw.value && { nsfw: '1' })
-      })
+      const resp = await relay(j.path, j.query)
       return { j, data: resp.data as Record<string, unknown> | null }
     })
   )
@@ -233,9 +284,6 @@ const facetSummary = computed(() => {
     .sort((a, b) => a.key.localeCompare(b.key))
 })
 
-const rawJson = computed(() =>
-  detail.value ? JSON.stringify(detail.value, null, 2) : ''
-)
 </script>
 
 <template>
@@ -336,9 +384,11 @@ const rawJson = computed(() =>
             size="sm"
             @click="showRaw = !showRaw"
           >
-            {{ showRaw ? '收起原始 JSON' : '查看原始 JSON' }}
+            {{ showRaw ? '收起数据树' : '展开数据树' }}
           </KunButton>
-          <pre v-show="showRaw" class="max-h-96 overflow-auto p-4 text-xs leading-relaxed text-default-500"><code>{{ rawJson }}</code></pre>
+          <div v-show="showRaw" class="max-h-96 overflow-auto p-4">
+            <ExploreJsonTree :data="detail" />
+          </div>
         </div>
 
         <div class="flex flex-wrap items-center gap-3">
@@ -397,9 +447,11 @@ const rawJson = computed(() =>
                 class="mt-1.5"
                 @click="e.showRaw = !e.showRaw"
               >
-                {{ e.showRaw ? '收起 JSON' : 'JSON' }}
+                {{ e.showRaw ? '收起数据树' : '数据树' }}
               </KunButton>
-              <pre v-if="e.showRaw" class="mt-1 max-h-64 overflow-auto rounded bg-default-100 p-2 text-xs leading-relaxed text-default-500"><code>{{ JSON.stringify(e.raw, null, 2) }}</code></pre>
+              <div v-if="e.showRaw" class="mt-1 max-h-64 overflow-auto rounded bg-default-100 p-2">
+                <ExploreJsonTree :data="e.raw" />
+              </div>
             </div>
           </div>
         </div>
