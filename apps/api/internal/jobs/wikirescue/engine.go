@@ -27,7 +27,7 @@ type parkedEngineEdge struct {
 	EngineName string `json:"engine_name"`
 }
 
-// stepEngine migrates the engine facet (charter 拍板 4): galgame_engine rows
+// stepEngine migrates the engine facet (charter ruling 4): galgame_engine rows
 // become catalog_engine rows verbatim, and the anchored engine_relation edges
 // become catalog_work_engine rows attributed to galgame_wiki.
 //

@@ -81,7 +81,7 @@ func (CatalogTagSourceMap) TableName() string { return "catalog_tag_source_map" 
 // CatalogTagIntro is a canonical tag's multilingual description body, one row
 // per (tag, language, source) — the exact shape of CatalogLabelIntro
 // (refs/proj/83 E2b). It lands with the data-layer-retirement wave
-// (refs/plans/10 charter 拍板 3): the wiki galgame_tag.description rows are
+// (refs/plans/10 charter ruling 3): the wiki galgame_tag.description rows are
 // hand-written user content with no upstream to regenerate them from, so the
 // ones whose tag converged onto the canonical vocabulary are rescued here
 // before the wiki table family is dropped.

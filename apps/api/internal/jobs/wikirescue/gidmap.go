@@ -15,7 +15,7 @@ import (
 // matchedByGid is the provenance rule stamped on every gid mapping row.
 const matchedByGid = "wiki:gid"
 
-// stepGidMap lands the gid → catalog_work address map (charter "默认结构件").
+// stepGidMap lands the gid → catalog_work address map (a charter default-structural item).
 //
 // This is the piece that keeps the wiki's URL space resolvable after the table
 // family is dropped: every old /galgame/<id> link, every downstream row still

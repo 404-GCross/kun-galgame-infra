@@ -9,7 +9,7 @@ import (
 
 // parkedTagIntro is a tag description whose tag never converged onto the
 // canonical vocabulary. The charter accepts this: the wiki tag layer itself is
-// discarded (拍板 3), and the doc-70 vocabulary pipeline owns catalog_tag — this
+// discarded (charter ruling 3), and the doc-70 vocabulary pipeline owns catalog_tag — this
 // step is forbidden from minting tag rows to make a description fit.
 type parkedTagIntro struct {
 	TagID       int64  `json:"galgame_tag_id"`

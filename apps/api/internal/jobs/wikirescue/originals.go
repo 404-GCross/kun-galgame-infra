@@ -78,7 +78,7 @@ type parkedOriginal struct {
 }
 
 // stepOriginals guarantees the 279 user-original entries survive the table
-// drop (charter "默认结构件"). These are the only wiki works with NO upstream:
+// drop (a charter default-structural item). These are the only wiki works with NO upstream:
 // everything else is VNDB-derived and regenerable.
 //
 // Scope is vndb_id='' AND status=0 (published). The status 1/4 rows are counted

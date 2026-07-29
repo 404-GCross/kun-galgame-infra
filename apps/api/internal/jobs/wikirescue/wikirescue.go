@@ -3,7 +3,7 @@
 // one-shot rescue of every wiki-family row that has NO upstream to regenerate
 // it from, executed before the galgame_* table family is dropped.
 //
-// The charter's総 principle is that the wiki tables are overwhelmingly
+// The charter's core principle is that the wiki tables are overwhelmingly
 // VNDB-derived and can be discarded wholesale; this package moves the
 // exceptions — hand-curated engines, user-uploaded screenshots, user-entered
 // links, three families of hand-written descriptions, the unprojected official

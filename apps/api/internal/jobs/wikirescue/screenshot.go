@@ -22,14 +22,14 @@ type parkedScreenshot struct {
 	Violence  int16  `json:"violence"`
 }
 
-// stepScreenshot rescues the non-VNDB screenshots (charter 拍板 3). VNDB
+// stepScreenshot rescues the non-VNDB screenshots (charter ruling 3). VNDB
 // screenshots are regenerable by sync-vndb-screenshots and are discarded with
 // the table; the rest are user uploads with no upstream, so they project onto
 // catalog_work_screenshot verbatim.
 //
 // BYTE OWNERSHIP CAVEAT: catalog_work_screenshot's contract says its bytes live
 // in the CATALOG image scope, but these rows carry hashes whose bytes live in
-// the galgame_wiki scope. That mismatch is the charter's硬骨头② (image-byte
+// the galgame_wiki scope. That mismatch is the charter's hard-bone #2 (image-byte
 // retirement, wave W2) and is deliberately NOT resolved here — this step moves
 // the database rows only.
 func (r *Runner) stepScreenshot(ctx context.Context) (Stats, error) {

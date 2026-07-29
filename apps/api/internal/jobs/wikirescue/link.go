@@ -104,7 +104,7 @@ func classifyLink(raw string) (string, string, bool) {
 	return "web", u, true
 }
 
-// stepLink rescues the non-VNDB links (charter 拍板 3) into catalog_external_ref
+// stepLink rescues the non-VNDB links (charter ruling 3) into catalog_external_ref
 // as entity_type=work rows.
 //
 // Every row is link_kind=RELATED. That is a hard boundary: a related ref must
