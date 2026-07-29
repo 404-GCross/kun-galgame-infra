@@ -48,10 +48,11 @@ type laneRunner struct {
 	vndb     bool   // vndb lane: strip markup before the language decision
 	lang     string // fixed lane language ("" = detect from the text)
 	insert   insertFn
-	// hostWorks/touched are the char-eg lane's changes-feed wiring: only that
-	// lane populates hostWorks, so the others append nothing and touch nothing.
-	// Only REAL writes contribute — dry-runs, dup-lang skips and ON CONFLICT
-	// no-ops leave every watermark where it was (the step-117 discipline).
+	// hostWorks/touched are the changes-feed wiring of the three CHARACTER
+	// lanes; person-bgm leaves hostWorks nil, so it appends nothing and touches
+	// nothing. Only REAL writes contribute — dry-runs, dup-lang skips and ON
+	// CONFLICT no-ops leave every watermark where it was (the step-117
+	// discipline).
 	hostWorks map[int64][]int64
 	touched   []int64
 }
@@ -188,6 +189,15 @@ func preview(s string) string {
 // The order is the fill-missing precedence: char-bgm and char-eg both speak ja,
 // so a character supplied by both takes the Bangumi text and the EG lane skips
 // it as an already-present language. char-vndb writes en and never collides.
+//
+// All three lanes fill the SAME table, so all three bump the works that host
+// the characters they wrote (refs/proj/122 — step 120 wired only char-eg, and
+// the weekly Bangumi refresh is the lane that keeps adding intros). The host
+// map is preloaded ONCE over the union of the candidate ids, the same set the
+// exist map uses, so a run pays for it once rather than per lane. A work that
+// hosts characters written by two lanes is bumped by each of them: updated_at
+// is a watermark, so repeating it within one run is harmless, and each lane's
+// Touched then stays an honest fact about its own writes.
 func runCharacterLanes(ctx context.Context, db, egDB *gorm.DB, reg registry, opts Opts, st *Stats) error {
 	wantBgm := opts.Only == "" || opts.Only == LaneCharBangumi
 	wantVndb := opts.Only == "" || opts.Only == LaneCharVNDB
@@ -212,43 +222,56 @@ func runCharacterLanes(ctx context.Context, db, egDB *gorm.DB, reg registry, opt
 			return err
 		}
 	}
+	// The union of the lanes' candidates, deduplicated: a character anchored in
+	// several sources is a candidate of several lanes, and the host preload
+	// appends per returned row — an id repeated across two preload CHUNKS would
+	// otherwise stack its works twice.
 	ids := make([]int64, 0, len(bgmCands)+len(vndbCands)+len(egCands))
-	for _, c := range bgmCands {
-		ids = append(ids, c.EntityID)
-	}
-	for _, c := range vndbCands {
-		ids = append(ids, c.EntityID)
-	}
-	for _, c := range egCands {
-		ids = append(ids, c.EntityID)
+	seen := make(map[int64]struct{}, cap(ids))
+	for _, cands := range [][]candidate{bgmCands, vndbCands, egCands} {
+		for _, c := range cands {
+			if _, dup := seen[c.EntityID]; dup {
+				continue
+			}
+			seen[c.EntityID] = struct{}{}
+			ids = append(ids, c.EntityID)
+		}
 	}
 	exist, err := preloadExistingLangs(ctx, db, "catalog_character_intro", "character_id", ids)
 	if err != nil {
 		return fmt.Errorf("preload character intro langs: %w", err)
+	}
+	hosts, err := preloadHostWorks(ctx, db, ids)
+	if err != nil {
+		return err
 	}
 	slog.Info("entity-intros character candidates", "char_bgm", len(bgmCands), "char_vndb", len(vndbCands),
 		"char_eg", len(egCands), "char_eg_no_supply", st.CharEG.NoSupply,
 		"apply", opts.Apply, "offset", opts.Offset, "limit", opts.Limit)
 	if wantBgm {
 		st.CharBangumi.Candidates = len(bgmCands)
-		r := &laneRunner{db: db, sourceID: reg.bangumiSource, exist: exist, stats: &st.CharBangumi, insert: insertCharacterIntro}
+		r := &laneRunner{db: db, sourceID: reg.bangumiSource, exist: exist, stats: &st.CharBangumi,
+			insert: insertCharacterIntro, hostWorks: hosts}
 		r.process(ctx, bgmCands, opts.Apply)
+		if opts.Apply {
+			if err := r.flushTouch(ctx); err != nil {
+				return fmt.Errorf("touch char-bgm host works: %w", err)
+			}
+		}
 	}
 	if wantVndb {
 		st.CharVNDB.Candidates = len(vndbCands)
-		r := &laneRunner{db: db, sourceID: reg.vndbSource, exist: exist, stats: &st.CharVNDB, vndb: true, lang: langEn, insert: insertCharacterIntro}
+		r := &laneRunner{db: db, sourceID: reg.vndbSource, exist: exist, stats: &st.CharVNDB,
+			vndb: true, lang: langEn, insert: insertCharacterIntro, hostWorks: hosts}
 		r.process(ctx, vndbCands, opts.Apply)
+		if opts.Apply {
+			if err := r.flushTouch(ctx); err != nil {
+				return fmt.Errorf("touch char-vndb host works: %w", err)
+			}
+		}
 	}
 	if wantEG {
 		st.CharEG.Candidates = len(egCands)
-		egIDs := make([]int64, len(egCands))
-		for i, c := range egCands {
-			egIDs[i] = c.EntityID
-		}
-		hosts, err := preloadHostWorks(ctx, db, egIDs)
-		if err != nil {
-			return err
-		}
 		r := &laneRunner{db: db, sourceID: reg.egSource, exist: exist, stats: &st.CharEG,
 			lang: langJa, insert: insertCharacterIntro, hostWorks: hosts}
 		r.process(ctx, egCands, opts.Apply)
@@ -263,6 +286,14 @@ func runCharacterLanes(ctx context.Context, db, egDB *gorm.DB, reg registry, opt
 
 // runPersonLane runs person-bgm. Empty today (person anchors don't exist yet —
 // identity resolution deferred); re-runs auto-expand once anchors land.
+//
+// This lane deliberately gets NO touch wiring (refs/proj/122 §1). A person is
+// not on the work read face: step 118 kept person_id on the credit-NAME facet
+// only (see service/merge_execute.go — "person_id lives on the name face only
+// — no work changes"), so a new person intro changes no work's rendered page,
+// and catalog_work_character carries no person edge to derive hosts from. On
+// top of that the anchor set is empty, so wiring one would mean writing a
+// false changes-feed signal against a set that cannot even exercise it.
 func runPersonLane(ctx context.Context, db *gorm.DB, reg registry, opts Opts, st *Stats) error {
 	if opts.Only != "" && opts.Only != LanePersonBangumi {
 		return nil

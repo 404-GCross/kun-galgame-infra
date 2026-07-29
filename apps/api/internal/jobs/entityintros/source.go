@@ -141,3 +141,31 @@ func preloadExistingLangs(ctx context.Context, db *gorm.DB, table, idCol string,
 	}
 	return out, nil
 }
+
+// preloadHostWorks maps each candidate character to the live works that list it
+// on their roster. Those works are what a new character intro changes for a
+// reader, so they are the set the character lanes bump through the public
+// changes feed (repository.TouchWorks, wired in step 117). Soft-deleted works
+// are dropped here rather than at touch time — a deleted work has no read face
+// to refresh. Introduced for char-eg in step 120 and shared by all three
+// character lanes since 122, so it sits here with the other shared preload.
+func preloadHostWorks(ctx context.Context, db *gorm.DB, ids []int64) (map[int64][]int64, error) {
+	out := map[int64][]int64{}
+	for start := 0; start < len(ids); start += preloadChunk {
+		end := min(start+preloadChunk, len(ids))
+		var rows []struct {
+			CharacterID int64 `gorm:"column:character_id"`
+			WorkID      int64 `gorm:"column:work_id"`
+		}
+		if err := db.WithContext(ctx).Raw(`SELECT wc.character_id, wc.work_id
+			FROM catalog_work_character wc
+			JOIN catalog_work w ON w.id = wc.work_id AND w.deleted_at IS NULL
+			WHERE wc.character_id IN ?`, ids[start:end]).Scan(&rows).Error; err != nil {
+			return nil, fmt.Errorf("preload character host works: %w", err)
+		}
+		for _, r := range rows {
+			out[r.CharacterID] = append(out[r.CharacterID], r.WorkID)
+		}
+	}
+	return out, nil
+}

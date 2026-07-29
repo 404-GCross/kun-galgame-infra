@@ -105,7 +105,7 @@ type LaneStats struct {
 	EnWritten       int
 	Conflict        int
 	Errors          int
-	Touched         int // host works whose updated_at this lane bumped (char-eg)
+	Touched         int // host works whose updated_at this lane bumped (character lanes; person-bgm has none)
 
 	Samples    []Sample
 	DupSamples []Sample

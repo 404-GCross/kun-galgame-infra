@@ -217,6 +217,24 @@ func TestFillMissingAllLanes(t *testing.T) {
 		PersonID: pJaDup, Lang: "ja", Intro: "既存の人物紹介。", SourceID: userSrc,
 	}).Error)
 
+	// Host works (refs/proj/122): every character lane bumps the works that
+	// roster the characters it wrote. wBoth is rostered by a character both
+	// character lanes write, so BOTH lanes count and bump it; wQuiet's two
+	// characters are a dup-lang skip and a no_text, so it never moves; wGone is
+	// soft-deleted, so the preload drops it even though its character is written.
+	wBgm := mkWork(t, "host-bgm")
+	wVndb := mkWork(t, "host-vndb")
+	wBoth := mkWork(t, "host-both")
+	wQuiet := mkWork(t, "host-quiet")
+	wGone := mkWork(t, "host-deleted")
+	mkRosterEdge(t, wBgm, chZh)
+	mkRosterEdge(t, wVndb, chSpoiler)
+	mkRosterEdge(t, wBoth, chBoth)
+	mkRosterEdge(t, wQuiet, chJaDup)
+	mkRosterEdge(t, wQuiet, chBlank)
+	mkRosterEdge(t, wGone, chJaCRLF)
+	require.NoError(t, testDB.Delete(&model.CatalogWork{ID: wGone}).Error)
+
 	// --- dry run: decides, writes nothing. char-eg runs too (its stand-in is
 	// empty here), so the all-lane run needs the erogamespace DSN.
 	st, err := Run(ctx, Opts{DSN: testDSN, EGDSN: egTestDSN})
@@ -239,6 +257,11 @@ func TestFillMissingAllLanes(t *testing.T) {
 	assert.Zero(t, st.CharBangumi.JaWritten+st.CharBangumi.ZhWritten+st.CharVNDB.EnWritten+
 		st.PersonBangumi.JaWritten+st.PersonBangumi.ZhWritten, "dry run writes nothing")
 	assert.EqualValues(t, 1, charIntroCount(t, ""), "only the fixture row exists")
+	assert.Zero(t, st.CharBangumi.Touched+st.CharVNDB.Touched+st.PersonBangumi.Touched,
+		"dry run touches nothing")
+	for _, w := range []int64{wBgm, wVndb, wBoth, wQuiet} {
+		assert.Equal(t, backdated.UTC(), workUpdatedAt(t, w).UTC(), "dry run moves no watermark")
+	}
 
 	// --- apply.
 	st, err = Run(ctx, Opts{DSN: testDSN, EGDSN: egTestDSN, Apply: true})
@@ -249,6 +272,19 @@ func TestFillMissingAllLanes(t *testing.T) {
 	assert.Equal(t, 1, st.PersonBangumi.ZhWritten)
 	assert.Zero(t, st.CharBangumi.Errors+st.CharVNDB.Errors+st.PersonBangumi.Errors)
 	assert.Zero(t, st.CharBangumi.Conflict+st.CharVNDB.Conflict+st.PersonBangumi.Conflict)
+
+	// Touch parity: both character lanes bump their own hosts, the person lane
+	// has no touch path at all, and wQuiet/wGone stay where they were.
+	assert.Equal(t, 2, st.CharBangumi.Touched, "wBgm (chZh) + wBoth (chBoth ja); wGone is soft-deleted")
+	assert.Equal(t, 2, st.CharVNDB.Touched, "wVndb (chSpoiler) + wBoth (chBoth en)")
+	assert.Zero(t, st.PersonBangumi.Touched, "persons are not on the work read face — no touch path")
+	bumped := map[int64]time.Time{}
+	for _, w := range []int64{wBgm, wVndb, wBoth} {
+		bumped[w] = workUpdatedAt(t, w)
+		assert.True(t, bumped[w].After(backdated), "host work of a written character is bumped")
+	}
+	assert.Equal(t, backdated.UTC(), workUpdatedAt(t, wQuiet).UTC(), "dup-lang skip and no_text bump nothing")
+	assert.Equal(t, backdated.UTC(), workUpdatedAt(t, wGone).UTC(), "a soft-deleted host work is never bumped")
 
 	// Spoiler-strip proof: the span content never lands; surrounding text does.
 	var spoilRow model.CatalogCharacterIntro
@@ -280,6 +316,10 @@ func TestFillMissingAllLanes(t *testing.T) {
 		st.CharBangumi.Errors+st.CharVNDB.Errors+st.PersonBangumi.Errors, "second pass writes zero")
 	assert.Equal(t, 4, st.CharBangumi.SkipDupLang, "the three written langs now skip; chJaDup still dup")
 	assert.EqualValues(t, 6, charIntroCount(t, ""), "row count unchanged: 1 fixture + 5 writes")
+	assert.Zero(t, st.CharBangumi.Touched+st.CharVNDB.Touched, "no writes, so no watermark moves")
+	for w, ts := range bumped {
+		assert.Equal(t, ts.UTC(), workUpdatedAt(t, w).UTC(), "watermark does not drift on a re-run")
+	}
 }
 
 // TestOnlyLaneAndConflictBackstop covers --only lane selection, the invalid
