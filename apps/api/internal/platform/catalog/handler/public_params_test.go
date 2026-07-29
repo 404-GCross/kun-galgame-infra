@@ -84,7 +84,7 @@ func TestPublicWorksListStrictIDFilters(t *testing.T) {
 	cases := []struct{ name, url, msg string }{
 		{"label_id non numeric", "/v1/catalog/works?label_id=abc", "label_id must be a positive integer"},
 		{"label_id fractional", "/v1/catalog/works?label_id=1.5", "label_id must be a positive integer"},
-		{"tag_id zero", "/v1/catalog/works?tag_id=0", "tag_id must be a positive integer"},
+		{"tag_id zero", "/v1/catalog/works?tag_id=0", "tag_id must be up to 10 comma-separated positive integers"},
 		{"series_id negative", "/v1/catalog/works?series_id=-5", "series_id must be a positive integer"},
 	}
 	for _, tc := range cases {

@@ -25,6 +25,7 @@ import (
 	"strings"
 
 	"api/internal/platform/catalog/dto"
+	"api/internal/platform/catalog/model"
 )
 
 // WorksListInclude selects the works-list rich-brief blocks. Deliberately its
@@ -36,12 +37,13 @@ type WorksListInclude struct {
 	Labels  bool
 	Ratings bool
 	Covers  bool
+	Refs    bool
 }
 
 // any reports whether any block was requested (the no-op short-circuit that
 // keeps the default page exactly as cheap as it was).
 func (i WorksListInclude) any() bool {
-	return i.Names || i.Intros || i.Labels || i.Ratings || i.Covers
+	return i.Names || i.Intros || i.Labels || i.Ratings || i.Covers || i.Refs
 }
 
 // ParseWorksListInclude resolves the comma-separated include token set for the
@@ -60,6 +62,8 @@ func ParseWorksListInclude(raw string) WorksListInclude {
 			inc.Ratings = true
 		case "covers":
 			inc.Covers = true
+		case "refs":
+			inc.Refs = true
 		}
 	}
 	return inc
@@ -149,7 +153,65 @@ func (s *PublicService) attachWorkListBlocks(
 			items[i].Covers = s.pickCoverSlots(covers[r.ID], meta, nsfw)
 		}
 	}
+	if inc.Refs {
+		refs, err := s.workListRefs(ctx, ids)
+		if err != nil {
+			return err
+		}
+		for i, r := range rows {
+			items[i].Refs = refs[r.ID]
+		}
+	}
 	return nil
+}
+
+// workListRefs batch-loads the EXACT identity anchors for a page of works, in
+// the detail face's shape: work-level anchors UNION the anchors of the work's
+// own releases, deduplicated on (source, external_id).
+//
+// One query for the whole page — the release join happens in SQL rather than by
+// loading release rows per work. link_kind is pinned to EXACT in the predicate:
+// probable is an unreviewed hypothesis and related is a web link, and neither
+// has ever crossed the public face (硬红线). Works with no anchor are simply
+// absent from the map, so their block is omitted rather than an empty array —
+// the same "absent means nothing to say" rule the other include= blocks follow.
+func (s *PublicService) workListRefs(ctx context.Context, ids []int64) (map[int64][]dto.PublicCatalogRef, error) {
+	out := make(map[int64][]dto.PublicCatalogRef, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	var rows []struct {
+		WorkID     int64  `gorm:"column:work_id"`
+		Source     string `gorm:"column:source"`
+		ExternalID string `gorm:"column:external_id"`
+	}
+	if err := s.db.WithContext(ctx).Raw(`
+		SELECT r.entity_id AS work_id, src.key AS source, r.external_id
+		FROM catalog_external_ref r JOIN catalog_source src ON src.id = r.source_id
+		WHERE r.entity_type = ? AND r.entity_id IN ? AND r.link_kind = ?
+		UNION ALL
+		SELECT rel.work_id, src.key AS source, r.external_id
+		FROM catalog_external_ref r
+		JOIN catalog_release rel ON rel.id = r.entity_id AND rel.deleted_at IS NULL
+		JOIN catalog_source src ON src.id = r.source_id
+		WHERE r.entity_type = ? AND rel.work_id IN ? AND r.link_kind = ?
+		ORDER BY work_id, source, external_id`,
+		model.EntityTypeWork, ids, model.LinkKindExact,
+		model.EntityTypeRelease, ids, model.LinkKindExact).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	seen := make(map[[2]any]struct{}, len(rows))
+	for _, r := range rows {
+		key := [2]any{r.WorkID, r.Source + "\x00" + r.ExternalID}
+		if _, dup := seen[key]; dup {
+			continue // the same anchor at both grains renders once
+		}
+		seen[key] = struct{}{}
+		out[r.WorkID] = append(out[r.WorkID], dto.PublicCatalogRef{
+			Source: publicSourceKey(r.Source), ExternalID: r.ExternalID,
+		})
+	}
+	return out, nil
 }
 
 // publicWorkNames pivots a work's titles onto the four D7 product keys. Within
@@ -241,7 +303,7 @@ func publicWorkLabels(rows []LabelAttribution) []dto.PublicWorkLabel {
 	for _, l := range rows {
 		out = append(out, dto.PublicWorkLabel{
 			ID: l.LabelID, DisplayName: l.DisplayName,
-			LabelKind: labelKindKey(l.LabelKind), Kind: workLabelKindKey(l.Kind),
+			LabelKind: labelKindKey(l.LabelKind), Kind: workLabelKindKey(l.Kind), Lang: l.Lang,
 		})
 	}
 	return out

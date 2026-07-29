@@ -366,7 +366,7 @@ func TestWorkDetailCoversCarryImageMeta(t *testing.T) {
 	addWorkCover(t, w.ID, known, 0, "main", false, 0, srcVNDB)
 	addWorkCover(t, w.ID, unknown, 1, "main", false, 0, srcVNDB)
 
-	rec, found, err := svc.WorkDetail(t.Context(), w.ID, PublicInclude{}, false)
+	rec, found, err := svc.WorkDetail(t.Context(), w.ID, PublicInclude{}, false, 0)
 	if err != nil || !found {
 		t.Fatalf("WorkDetail: found=%v err=%v", found, err)
 	}

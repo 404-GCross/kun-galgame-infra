@@ -27,6 +27,23 @@ type CatalogWork struct {
 	// triple is globally unique — exactly the wanted rule.
 	Site          *string `gorm:"uniqueIndex:uq_catalog_work_claim" json:"site"`
 	ProductWorkID *int64  `gorm:"uniqueIndex:uq_catalog_work_claim" json:"product_work_id"`
+	// ClaimState is the claim's VISIBILITY on the owning product face
+	// (ClaimState* constants — a catalog-owned vocabulary, never a product's
+	// status machine). NULLABLE by design, three-valued:
+	//
+	//   - NULL on every UNCLAIMED row (no claim, no state) — the ONLY correct
+	//     value there, and what ClaimWork writes;
+	//   - NULL on a claimed row whose state has not been projected yet (right
+	//     after the migration, before the first reconcile pass); the read face
+	//     renders that as `live`, which is exactly the pre-R7 behavior, and the
+	//     reconciler converges it on its next run;
+	//   - 0/1/2 once a projector has run.
+	//
+	// Maintained by the claim reconciler (internal/platform/galgame/catalogsync
+	// for the wiki; a future claimer projects its own lifecycle the same way).
+	// A claimer with no draft/hidden concept simply leaves every claim live.
+	// No `default:` tag: live is a meaningful zero (see the constants).
+	ClaimState *int16 `gorm:"column:claim_state" json:"claim_state"`
 	// OLang is the original language (BCP-47); it decides which title row is
 	// primary (VNDB model). Write paths default it to 'ja' explicitly — no
 	// DB default on purpose.

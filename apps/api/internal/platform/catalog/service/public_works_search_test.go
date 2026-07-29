@@ -41,7 +41,7 @@ func TestWorksSearchFilterCompilation(t *testing.T) {
 	claimed, r18 := true, model.ContentRatingR18
 	f := WorksSearchFilter{
 		ContentRating: &r18, Claimed: &claimed,
-		TagID: 7, LabelID: 8, EngineID: 9, SeriesID: 10,
+		TagIDs: []int64{7}, LabelID: 8, EngineID: 9, SeriesID: 10,
 		ReleasedAfter: 20200101, ReleasedBefore: 20241231,
 		NSFW: true,
 	}
@@ -78,7 +78,7 @@ func TestWorksSearchFilterCompilation(t *testing.T) {
 	}
 
 	// The v-shortcut pins one document and keeps every other clause.
-	pinned := (WorksSearchFilter{TagID: 3}).meiliFilter("w42")
+	pinned := (WorksSearchFilter{TagIDs: []int64{3}}).meiliFilter("w42")
 	if !strings.Contains(pinned, "id = 'w42'") || !strings.Contains(pinned, "tag_ids = 3") {
 		t.Fatalf("pinned filter = %q, want the doc id AND the caller's filters", pinned)
 	}
@@ -415,7 +415,7 @@ func TestWorksSearchFiltersAreOrthogonalToText(t *testing.T) {
 		t.Fatalf("text-only = %v, want both いろとりどり works", got)
 	}
 	// Text ∧ tag_id still matches both (both carry the tag)…
-	if got := searchIDs(t, c.svc, WorksSearchFilter{Q: "いろとりどり", TagID: c.tagID, NSFW: true}); len(got) != 2 {
+	if got := searchIDs(t, c.svc, WorksSearchFilter{Q: "いろとりどり", TagIDs: []int64{c.tagID}, NSFW: true}); len(got) != 2 {
 		t.Fatalf("text ∧ tag = %v, want 2", got)
 	}
 	// …but text ∧ label_id narrows to the one work carrying that label.

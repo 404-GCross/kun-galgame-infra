@@ -57,11 +57,13 @@ func (s *PublicService) WithWorksSearch(idx *catsearch.Indexer) *PublicService {
 // is the works LIST field of the same name, with the same meaning — a consumer
 // moves a query between the two faces by changing the path only.
 type WorksSearchFilter struct {
-	Q              string // free text; empty = a filter-only browse
-	ContentRating  *int16 // model.ContentRating* — nil = all (r18 still needs NSFW)
-	Claimed        *bool  // true = claimed only; false = bodyless only; nil = both
-	LabelID        int64
-	TagID          int64 // canonical tag id
+	Q             string // free text; empty = a filter-only browse
+	ContentRating *int16 // model.ContentRating* — nil = all (r18 still needs NSFW)
+	Claimed       *bool  // true = claimed only; false = bodyless only; nil = both
+	LabelID       int64
+	// TagIDs are canonical tag ids ANDed together (A2-1e) — the works list's
+	// tag_id semantics verbatim.
+	TagIDs         []int64
 	EngineID       int64
 	SeriesID       int64
 	ReleasedAfter  int64 // composed ordinal (y*10000+m*100+d), inclusive; 0 = unbounded
@@ -208,17 +210,19 @@ func (f WorksSearchFilter) meiliFilter(docID string) string {
 	if f.Claimed != nil {
 		clauses = append(clauses, "claimed = "+strconv.FormatBool(*f.Claimed))
 	}
+	for _, tagID := range f.TagIDs {
+		// One clause per tag, ANDed: `array = value` is Meilisearch's "contains"
+		// on a multi-valued attribute, so repeating it is exactly the works
+		// list's chain of EXISTS sub-selects.
+		clauses = append(clauses, "tag_ids = "+strconv.FormatInt(tagID, 10))
+	}
 	for _, e := range []struct {
 		attr string
 		id   int64
 	}{
-		{"tag_ids", f.TagID}, {"label_ids", f.LabelID},
-		{"engine_ids", f.EngineID}, {"series_ids", f.SeriesID},
+		{"label_ids", f.LabelID}, {"engine_ids", f.EngineID}, {"series_ids", f.SeriesID},
 	} {
 		if e.id > 0 {
-			// `array = value` is Meilisearch's "contains" on a multi-valued
-			// attribute — the AND-per-facet semantics the works list's EXISTS
-			// sub-selects give.
 			clauses = append(clauses, e.attr+" = "+strconv.FormatInt(e.id, 10))
 		}
 	}
@@ -342,9 +346,10 @@ func (s *PublicService) hydrateWorkIDs(ctx context.Context, ids []int64, nsfw bo
 		ContentRating int16
 		Site          *string
 		ProductWorkID *int64
+		ClaimState    *int16 `gorm:"column:claim_state"`
 		UpdatedAt     time.Time
 	}
-	q := `SELECT w.id, w.medium_id, w.display_name, w.olang, w.content_rating, w.site, w.product_work_id, w.updated_at
+	q := `SELECT w.id, w.medium_id, w.display_name, w.olang, w.content_rating, w.site, w.product_work_id, w.claim_state, w.updated_at
 		FROM catalog_work w WHERE ` + strings.Join(where, " AND ")
 	if err := s.db.WithContext(ctx).Raw(q, args...).Scan(&rows).Error; err != nil {
 		return nil, err
@@ -355,7 +360,7 @@ func (s *PublicService) hydrateWorkIDs(ctx context.Context, ids []int64, nsfw bo
 		byID[r.ID] = workListSourceRow{
 			ID: r.ID, MediumID: r.MediumID, DisplayName: r.DisplayName, OLang: r.OLang,
 			ContentRating: r.ContentRating, Site: r.Site, ProductWorkID: r.ProductWorkID,
-			UpdatedAt: r.UpdatedAt.UTC().Format(time.RFC3339),
+			ClaimState: r.ClaimState, UpdatedAt: r.UpdatedAt.UTC().Format(time.RFC3339),
 		}
 	}
 	src := make([]workListSourceRow, 0, len(ids))

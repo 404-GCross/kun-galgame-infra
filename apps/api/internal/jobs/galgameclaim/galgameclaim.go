@@ -88,6 +88,7 @@ func run(ctx context.Context, wiki, catalog *gorm.DB, opts Opts) (map[string]any
 		"bid_exact", cs.BIDExact, "bid_skipped_bad", cs.BIDSkippedBad,
 		"skipped_rejected", cs.SkippedRejected,
 		"workid_backfilled", cs.WorkIDBackfilled, "workid_covered", cs.WorkIDCovered,
+		"claim_state_written", cs.ClaimStateWritten,
 		"applied", opts.Apply)
 	if !opts.Apply {
 		slog.Info("DRY RUN — nothing written; re-run with Apply")
@@ -109,6 +110,10 @@ func summary(cs catalogsync.ClaimStats, apply bool) map[string]any {
 		"skipped_rejected":  cs.SkippedRejected,
 		"workid_backfilled": cs.WorkIDBackfilled,
 		"workid_covered":    cs.WorkIDCovered,
-		"applied":           apply,
+		// R7: cells whose claim visibility state moved this run. A converged
+		// population reports 0 every night; a spike means the wiki republished
+		// or withdrew entries.
+		"claim_state_written": cs.ClaimStateWritten,
+		"applied":             apply,
 	}
 }

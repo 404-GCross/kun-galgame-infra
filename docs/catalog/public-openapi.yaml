@@ -449,6 +449,8 @@ components:
           type:
             - array
             - "null"
+        meta:
+          $ref: "#/components/schemas/PublicCalendarMeta"
         month:
           description: YYYY-MM — the month bucket only
           type: string
@@ -463,6 +465,23 @@ components:
         - count
         - items
         - next_cursor
+        - meta
+      type: object
+    PublicCalendarMeta:
+      additionalProperties: false
+      properties:
+        has_next:
+          type: boolean
+        has_prev:
+          type: boolean
+        max_month:
+          type: string
+        min_month:
+          type: string
+        today:
+          type: string
+      required:
+        - today
       type: object
     PublicCatalogRef:
       additionalProperties: false
@@ -510,6 +529,8 @@ components:
           type:
             - array
             - "null"
+        created:
+          type: string
         credits:
           items:
             $ref: "#/components/schemas/PublicCreditGroup"
@@ -518,6 +539,12 @@ components:
             - "null"
         display_name:
           type: string
+        engines:
+          items:
+            $ref: "#/components/schemas/PublicWorkEngine"
+          type:
+            - array
+            - "null"
         id:
           format: int64
           type: integer
@@ -530,6 +557,12 @@ components:
         labels:
           items:
             $ref: "#/components/schemas/PublicWorkLabel"
+          type:
+            - array
+            - "null"
+        links:
+          items:
+            $ref: "#/components/schemas/PublicWorkLink"
           type:
             - array
             - "null"
@@ -622,6 +655,7 @@ components:
         - olang
         - content_rating
         - release_date
+        - created
         - updated
         - titles
         - refs
@@ -638,6 +672,8 @@ components:
         - screenshots
         - characters
         - labels
+        - engines
+        - links
         - series_siblings
       type: object
     PublicChangeItem:
@@ -775,12 +811,16 @@ components:
       properties:
         site:
           type: string
+        state:
+          description: live|draft|hidden
+          type: string
         work_id:
           format: int64
           type: integer
       required:
         - site
         - work_id
+        - state
       type: object
     PublicCover:
       additionalProperties: false
@@ -884,6 +924,14 @@ components:
     PublicEngine:
       additionalProperties: false
       properties:
+        aliases:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+        description:
+          type: string
         id:
           format: int64
           type: integer
@@ -902,11 +950,21 @@ components:
         - id
         - name
         - work_count
+        - description
+        - aliases
         - refs
       type: object
     PublicEngineListItem:
       additionalProperties: false
       properties:
+        aliases:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+        description:
+          type: string
         id:
           format: int64
           type: integer
@@ -919,6 +977,8 @@ components:
         - id
         - name
         - work_count
+        - description
+        - aliases
       type: object
     PublicEnginesListData:
       additionalProperties: false
@@ -933,9 +993,13 @@ components:
           type:
             - string
             - "null"
+        total:
+          format: int64
+          type: integer
       required:
         - items
         - next_cursor
+        - total
       type: object
     PublicEntityHit:
       additionalProperties: false
@@ -986,6 +1050,12 @@ components:
     PublicLabel:
       additionalProperties: false
       properties:
+        aliases:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
         display_name:
           type: string
         id:
@@ -998,6 +1068,8 @@ components:
             - array
             - "null"
         kind:
+          type: string
+        lang:
           type: string
         links:
           items:
@@ -1014,6 +1086,9 @@ components:
           type:
             - array
             - "null"
+        work_count:
+          format: int64
+          type: integer
         works:
           items:
             $ref: "#/components/schemas/PublicLabelWork"
@@ -1024,6 +1099,8 @@ components:
         - id
         - display_name
         - kind
+        - aliases
+        - work_count
         - refs
         - intros
         - links
@@ -1097,9 +1174,13 @@ components:
           type:
             - string
             - "null"
+        total:
+          format: int64
+          type: integer
       required:
         - items
         - next_cursor
+        - total
       type: object
     PublicLookupBatchData:
       additionalProperties: false
@@ -1602,14 +1683,22 @@ components:
           type: string
         name:
           type: string
+        sexual:
+          type: boolean
         source:
           type: string
+        spoiler:
+          description: 0=none 1=minor 2=major
+          format: int32
+          type: integer
         tier:
           description: core|longtail|hidden
           type: string
       required:
         - name
         - source
+        - spoiler
+        - sexual
       type: object
     PublicTagDetail:
       additionalProperties: false
@@ -1634,6 +1723,9 @@ components:
         tier:
           description: core|longtail|hidden
           type: string
+        work_count:
+          format: int64
+          type: integer
         works:
           items:
             $ref: "#/components/schemas/PublicWorkBrief"
@@ -1645,6 +1737,7 @@ components:
         - name
         - tier
         - kind
+        - work_count
         - intros
       type: object
     PublicTagIntro:
@@ -1698,9 +1791,13 @@ components:
           type:
             - string
             - "null"
+        total:
+          format: int64
+          type: integer
       required:
         - items
         - next_cursor
+        - total
       type: object
     PublicVoiceName:
       additionalProperties: false
@@ -1750,6 +1847,18 @@ components:
       required:
         - portrait
         - banner
+      type: object
+    PublicWorkEngine:
+      additionalProperties: false
+      properties:
+        id:
+          format: int64
+          type: integer
+        name:
+          type: string
+      required:
+        - id
+        - name
       type: object
     PublicWorkIntro:
       additionalProperties: false
@@ -1805,11 +1914,24 @@ components:
           type: string
         label_kind:
           type: string
+        lang:
+          type: string
       required:
         - id
         - display_name
         - label_kind
         - kind
+      type: object
+    PublicWorkLink:
+      additionalProperties: false
+      properties:
+        source:
+          type: string
+        url:
+          type: string
+      required:
+        - source
+        - url
       type: object
     PublicWorkListItem:
       additionalProperties: false
@@ -1844,6 +1966,12 @@ components:
         ratings:
           items:
             $ref: "#/components/schemas/PublicRating"
+          type:
+            - array
+            - "null"
+        refs:
+          items:
+            $ref: "#/components/schemas/PublicCatalogRef"
           type:
             - array
             - "null"
@@ -1969,12 +2097,12 @@ paths:
           schema:
             description: true/1 = include r18 works (default false = dropped)
             type: boolean
-        - description: "Comma-separated rich-brief blocks: names,intros,labels,ratings,covers — the works-list vocabulary verbatim (unknown tokens ignored)"
+        - description: "Comma-separated rich-brief blocks: names,intros,labels,ratings,covers,refs — the works-list vocabulary verbatim (unknown tokens ignored)"
           explode: false
           in: query
           name: include
           schema:
-            description: "Comma-separated rich-brief blocks: names,intros,labels,ratings,covers — the works-list vocabulary verbatim (unknown tokens ignored)"
+            description: "Comma-separated rich-brief blocks: names,intros,labels,ratings,covers,refs — the works-list vocabulary verbatim (unknown tokens ignored)"
             type: string
       responses:
         "200":
@@ -2033,12 +2161,12 @@ paths:
           schema:
             description: true/1 = include r18 works (default false = dropped)
             type: boolean
-        - description: "Comma-separated rich-brief blocks: names,intros,labels,ratings,covers — the works-list vocabulary verbatim (unknown tokens ignored)"
+        - description: "Comma-separated rich-brief blocks: names,intros,labels,ratings,covers,refs — the works-list vocabulary verbatim (unknown tokens ignored)"
           explode: false
           in: query
           name: include
           schema:
-            description: "Comma-separated rich-brief blocks: names,intros,labels,ratings,covers — the works-list vocabulary verbatim (unknown tokens ignored)"
+            description: "Comma-separated rich-brief blocks: names,intros,labels,ratings,covers,refs — the works-list vocabulary verbatim (unknown tokens ignored)"
             type: string
       responses:
         "200":
@@ -2090,12 +2218,12 @@ paths:
           schema:
             description: true/1 = include r18 works (default false = dropped)
             type: boolean
-        - description: "Comma-separated rich-brief blocks: names,intros,labels,ratings,covers — the works-list vocabulary verbatim (unknown tokens ignored)"
+        - description: "Comma-separated rich-brief blocks: names,intros,labels,ratings,covers,refs — the works-list vocabulary verbatim (unknown tokens ignored)"
           explode: false
           in: query
           name: include
           schema:
-            description: "Comma-separated rich-brief blocks: names,intros,labels,ratings,covers — the works-list vocabulary verbatim (unknown tokens ignored)"
+            description: "Comma-separated rich-brief blocks: names,intros,labels,ratings,covers,refs — the works-list vocabulary verbatim (unknown tokens ignored)"
             type: string
       responses:
         "200":
@@ -2843,14 +2971,13 @@ paths:
             description: Only works attributed to this label (the catalog_work_label edge)
             format: int64
             type: integer
-        - description: Only works carrying a source tag mapped to this canonical tag
+        - description: Only works carrying a source tag mapped to this canonical tag; up to 10 comma-separated ids are ANDed (a work must carry all of them), more than 10 or a non-positive/non-numeric entry is a 400
           explode: false
           in: query
           name: tag_id
           schema:
-            description: Only works carrying a source tag mapped to this canonical tag
-            format: int64
-            type: integer
+            description: Only works carrying a source tag mapped to this canonical tag; up to 10 comma-separated ids are ANDed (a work must carry all of them), more than 10 or a non-positive/non-numeric entry is a 400
+            type: string
         - description: Only member works of this series
           explode: false
           in: query
@@ -2927,12 +3054,12 @@ paths:
           schema:
             description: true/1 = include r18 works (default false = dropped)
             type: boolean
-        - description: "Comma-separated rich-brief blocks: names,intros,labels,ratings,covers (default: none — the response is then byte-identical to the base contract). Unknown tokens are ignored. names/intros are keyed by the four product locales ja-jp/zh-cn/zh-tw/en-us; covers carries the portrait + banner slots with width/height/thumbhash"
+        - description: "Comma-separated rich-brief blocks: names,intros,labels,ratings,covers,refs (default: none — the response is then byte-identical to the base contract). Unknown tokens are ignored. names/intros are keyed by the four product locales ja-jp/zh-cn/zh-tw/en-us; covers carries the portrait + banner slots with width/height/thumbhash; refs carries the work exact identity anchors, detail-face shape"
           explode: false
           in: query
           name: include
           schema:
-            description: "Comma-separated rich-brief blocks: names,intros,labels,ratings,covers (default: none — the response is then byte-identical to the base contract). Unknown tokens are ignored. names/intros are keyed by the four product locales ja-jp/zh-cn/zh-tw/en-us; covers carries the portrait + banner slots with width/height/thumbhash"
+            description: "Comma-separated rich-brief blocks: names,intros,labels,ratings,covers,refs (default: none — the response is then byte-identical to the base contract). Unknown tokens are ignored. names/intros are keyed by the four product locales ja-jp/zh-cn/zh-tw/en-us; covers carries the portrait + banner slots with width/height/thumbhash; refs carries the work exact identity anchors, detail-face shape"
             type: string
       responses:
         "200":
@@ -2991,14 +3118,13 @@ paths:
             description: Only works attributed to this label
             format: int64
             type: integer
-        - description: Only works carrying a source tag mapped to this canonical tag
+        - description: Only works carrying a source tag mapped to this canonical tag; up to 10 comma-separated ids are ANDed (a work must carry all of them), more than 10 or a non-positive/non-numeric entry is a 400
           explode: false
           in: query
           name: tag_id
           schema:
-            description: Only works carrying a source tag mapped to this canonical tag
-            format: int64
-            type: integer
+            description: Only works carrying a source tag mapped to this canonical tag; up to 10 comma-separated ids are ANDed (a work must carry all of them), more than 10 or a non-positive/non-numeric entry is a 400
+            type: string
         - description: Only member works of this series
           explode: false
           in: query
@@ -3079,12 +3205,12 @@ paths:
           schema:
             description: true/1 = include r18 works (default false = dropped from items, total AND facets alike)
             type: boolean
-        - description: "Comma-separated rich-brief blocks: names,intros,labels,ratings,covers — the works-list vocabulary verbatim (unknown tokens ignored)"
+        - description: "Comma-separated rich-brief blocks: names,intros,labels,ratings,covers,refs — the works-list vocabulary verbatim (unknown tokens ignored)"
           explode: false
           in: query
           name: include
           schema:
-            description: "Comma-separated rich-brief blocks: names,intros,labels,ratings,covers — the works-list vocabulary verbatim (unknown tokens ignored)"
+            description: "Comma-separated rich-brief blocks: names,intros,labels,ratings,covers,refs — the works-list vocabulary verbatim (unknown tokens ignored)"
             type: string
       responses:
         "200":
@@ -3128,6 +3254,14 @@ paths:
           schema:
             description: true/1 = serve r18 works and r18 relation ends (caller-controlled; default false = hidden)
             type: boolean
+        - description: "Max tag spoiler level 0-2 (default 0 = safe): tags[] carries per-edge spoiler + per-tag sexual flags, and rows above this ceiling are omitted entirely. The axis is populated for the VNDB-derived vocabulary only — Bangumi/DLsite folksonomy publishes no spoiler or category concept, so those rows read 0/false"
+          explode: false
+          in: query
+          name: spoilers
+          schema:
+            description: "Max tag spoiler level 0-2 (default 0 = safe): tags[] carries per-edge spoiler + per-tag sexual flags, and rows above this ceiling are omitted entirely. The axis is populated for the VNDB-derived vocabulary only — Bangumi/DLsite folksonomy publishes no spoiler or category concept, so those rows read 0/false"
+            format: int32
+            type: integer
       responses:
         "200":
           content:

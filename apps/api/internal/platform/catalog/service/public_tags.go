@@ -32,6 +32,14 @@ func (s *PublicService) TagDetail(ctx context.Context, id int64, withWorks, nsfw
 	rec := dto.PublicTagDetail{
 		ID: head.ID, Name: head.Name, Tier: tagTierKey(head.Tier), Kind: tagKindKey(head.Kind),
 	}
+	// work_count is the browse lane's number for this one row (A2-1e) — the
+	// SAME nsfw-aware aggregate, so a detail page and the list it was reached
+	// from can never disagree.
+	counts, err := s.workCountsFor(ctx, tagWorkEdge, []int64{id}, nsfw)
+	if err != nil {
+		return dto.PublicTagDetail{}, false, err
+	}
+	rec.WorkCount = counts[id]
 	// intros are part of the base record (not include-gated), like a label's.
 	intros, err := s.tagIntros(ctx, id)
 	if err != nil {

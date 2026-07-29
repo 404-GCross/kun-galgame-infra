@@ -120,7 +120,7 @@ func TestPublicLookupExactOnly(t *testing.T) {
 			t.Fatalf("lookup via %q: found=%v err=%v", src, found, err)
 		}
 	}
-	detail, found, err := svc.WorkDetail(ctx, w.ID, PublicInclude{}, false)
+	detail, found, err := svc.WorkDetail(ctx, w.ID, PublicInclude{}, false, 0)
 	if err != nil || !found {
 		t.Fatalf("work detail: found=%v err=%v", found, err)
 	}
@@ -414,7 +414,7 @@ func TestPublicWorkDetailFetchableSet(t *testing.T) {
 		{99999, false},
 	}
 	for _, c := range cases {
-		_, found, err := svc.WorkDetail(ctx, c.id, PublicInclude{}, false)
+		_, found, err := svc.WorkDetail(ctx, c.id, PublicInclude{}, false, 0)
 		if err != nil {
 			t.Fatalf("work %d: %v", c.id, err)
 		}
@@ -438,7 +438,7 @@ func TestPublicWorkRefsExactOnlyAndRelations(t *testing.T) {
 	createWorkRelation(t, w.ID, sfwOther.ID)
 	createWorkRelation(t, w.ID, r18Other.ID)
 
-	rec, found, err := svc.WorkDetail(ctx, w.ID, PublicInclude{Relations: true}, false)
+	rec, found, err := svc.WorkDetail(ctx, w.ID, PublicInclude{Relations: true}, false, 0)
 	if err != nil || !found {
 		t.Fatalf("detail: found=%v err=%v", found, err)
 	}
@@ -459,7 +459,7 @@ func TestPublicWorkCreditsInclude(t *testing.T) {
 	name := createCreditName(t, nil, "麻枝准")
 	createCredit(t, w.ID, name.ID, seededRoleID(t), nil)
 
-	rec, found, err := svc.WorkDetail(ctx, w.ID, PublicInclude{Credits: true}, false)
+	rec, found, err := svc.WorkDetail(ctx, w.ID, PublicInclude{Credits: true}, false, 0)
 	if err != nil || !found {
 		t.Fatalf("detail: found=%v err=%v", found, err)
 	}
@@ -467,7 +467,7 @@ func TestPublicWorkCreditsInclude(t *testing.T) {
 		t.Fatalf("credits projection: %+v", rec.Credits)
 	}
 	// The bare record (no include) omits credits entirely.
-	bare, _, _ := svc.WorkDetail(ctx, w.ID, PublicInclude{}, false)
+	bare, _, _ := svc.WorkDetail(ctx, w.ID, PublicInclude{}, false, 0)
 	if bare.Credits != nil {
 		t.Fatalf("bare record must omit credits: %+v", bare.Credits)
 	}
@@ -644,7 +644,7 @@ func TestPublicNSFWGate(t *testing.T) {
 	}
 
 	// Default: hidden — detail 404, lookup miss (Phase-1 bit-identical).
-	if _, found, err := svc.WorkDetail(ctx, r18.ID, PublicInclude{}, false); err != nil || found {
+	if _, found, err := svc.WorkDetail(ctx, r18.ID, PublicInclude{}, false, 0); err != nil || found {
 		t.Fatalf("default r18 detail: found=%v err=%v (want hidden)", found, err)
 	}
 	if _, found, _ := svc.Lookup(ctx, "vndb", "v104", false); found {
@@ -652,7 +652,7 @@ func TestPublicNSFWGate(t *testing.T) {
 	}
 
 	// nsfw=1: served in full, facets projected to public conventions.
-	rec, found, err := svc.WorkDetail(ctx, r18.ID, PublicInclude{Relations: true}, true)
+	rec, found, err := svc.WorkDetail(ctx, r18.ID, PublicInclude{Relations: true}, true, 0)
 	if err != nil || !found {
 		t.Fatalf("nsfw r18 detail: found=%v err=%v", found, err)
 	}
@@ -673,14 +673,14 @@ func TestPublicNSFWGate(t *testing.T) {
 	}
 
 	// The safe work's relations: the r18 end drops by default, joins with nsfw.
-	recSafe, _, err := svc.WorkDetail(ctx, safe.ID, PublicInclude{Relations: true}, false)
+	recSafe, _, err := svc.WorkDetail(ctx, safe.ID, PublicInclude{Relations: true}, false, 0)
 	if err != nil {
 		t.Fatalf("safe detail: %v", err)
 	}
 	if len(recSafe.Relations) != 0 {
 		t.Fatalf("safe relations nsfw-off = %+v (want r18 end dropped)", recSafe.Relations)
 	}
-	recSafe, _, _ = svc.WorkDetail(ctx, safe.ID, PublicInclude{Relations: true}, true)
+	recSafe, _, _ = svc.WorkDetail(ctx, safe.ID, PublicInclude{Relations: true}, true, 0)
 	if len(recSafe.Relations) != 1 || recSafe.Relations[0].Work.ID != r18.ID {
 		t.Fatalf("safe relations nsfw-on = %+v", recSafe.Relations)
 	}
@@ -851,7 +851,7 @@ func TestSeriesSiblingsTransitiveClosure(t *testing.T) {
 	}
 
 	// A leaf sees the hub AND the two other leaves (transitive closure).
-	rec, found, err := svc.WorkDetail(ctx, l1.ID, PublicInclude{}, false)
+	rec, found, err := svc.WorkDetail(ctx, l1.ID, PublicInclude{}, false, 0)
 	if err != nil || !found {
 		t.Fatalf("leaf detail: found=%v err=%v", found, err)
 	}
@@ -861,7 +861,7 @@ func TestSeriesSiblingsTransitiveClosure(t *testing.T) {
 	}
 
 	// The hub sees all three leaves.
-	recH, _, err := svc.WorkDetail(ctx, hub.ID, PublicInclude{}, false)
+	recH, _, err := svc.WorkDetail(ctx, hub.ID, PublicInclude{}, false, 0)
 	if err != nil {
 		t.Fatalf("hub detail: %v", err)
 	}
@@ -870,7 +870,7 @@ func TestSeriesSiblingsTransitiveClosure(t *testing.T) {
 	}
 
 	// A work with no series edge has an empty (non-nil) list.
-	recL, _, err := svc.WorkDetail(ctx, lone.ID, PublicInclude{}, false)
+	recL, _, err := svc.WorkDetail(ctx, lone.ID, PublicInclude{}, false, 0)
 	if err != nil {
 		t.Fatalf("lone detail: %v", err)
 	}

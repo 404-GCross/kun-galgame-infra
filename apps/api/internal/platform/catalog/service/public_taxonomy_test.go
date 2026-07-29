@@ -180,8 +180,8 @@ func TestTaxonomyListsKeysetAndCounts(t *testing.T) {
 	if tagPageNSFW.Items[0].WorkCount != 2 {
 		t.Fatalf("nsfw tag work_count = %d, want 2", tagPageNSFW.Items[0].WorkCount)
 	}
-	assertCountMatchesWorksList(t, svc, WorksListFilter{Sort: "id", TagID: coreTagID}, tagPage.Items[0].WorkCount)
-	assertCountMatchesWorksList(t, svc, WorksListFilter{Sort: "id", TagID: coreTagID, NSFW: true}, tagPageNSFW.Items[0].WorkCount)
+	assertCountMatchesWorksList(t, svc, WorksListFilter{Sort: "id", TagIDs: []int64{coreTagID}}, tagPage.Items[0].WorkCount)
+	assertCountMatchesWorksList(t, svc, WorksListFilter{Sort: "id", TagIDs: []int64{coreTagID}, NSFW: true}, tagPageNSFW.Items[0].WorkCount)
 
 	tier := model.TagTierHidden
 	tagKind := model.TagKindMeta
@@ -399,7 +399,7 @@ func TestScreenshotMetaEnrichment(t *testing.T) {
 
 	// Enrichment unwired: the URLs still render, the three keys stay zero.
 	bare := newPublicSvcCDN()
-	rec, found, err := bare.WorkDetail(ctx, w.ID, PublicInclude{}, false)
+	rec, found, err := bare.WorkDetail(ctx, w.ID, PublicInclude{}, false, 0)
 	if err != nil || !found {
 		t.Fatalf("WorkDetail unwired: found=%v err=%v", found, err)
 	}
@@ -419,7 +419,7 @@ func TestScreenshotMetaEnrichment(t *testing.T) {
 	svc := newPublicSvcCDN().WithImageMeta(stubMeta(map[string]ImageMeta{
 		known: {Width: 1280, Height: 720, Thumbhash: "shot-hash"},
 	}))
-	rec, _, err = svc.WorkDetail(ctx, w.ID, PublicInclude{}, false)
+	rec, _, err = svc.WorkDetail(ctx, w.ID, PublicInclude{}, false, 0)
 	if err != nil {
 		t.Fatalf("WorkDetail wired: %v", err)
 	}
@@ -459,7 +459,7 @@ func TestWorkMediaMetaBatchesCoversAndScreenshots(t *testing.T) {
 		}
 		return out, nil
 	})
-	rec, found, err := svc.WorkDetail(ctx, w.ID, PublicInclude{}, false)
+	rec, found, err := svc.WorkDetail(ctx, w.ID, PublicInclude{}, false, 0)
 	if err != nil || !found {
 		t.Fatalf("WorkDetail: found=%v err=%v", found, err)
 	}

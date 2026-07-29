@@ -18,6 +18,7 @@ package handler
 
 import (
 	stderrors "errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -111,10 +112,56 @@ func (h *PublicHandler) serveCalendar(c fiber.Ctx, b service.CalendarBucket, buc
 		return response.InternalError(c, errors.ErrInternalServer)
 	}
 	data.Count = count
+	if data.Meta, err = h.calendarMeta(c, b, f); err != nil {
+		return response.InternalError(c, errors.ErrInternalServer)
+	}
 	if echo != nil {
 		echo(&data)
 	}
 	return response.Success(c, data)
+}
+
+// calendarMeta builds the bucket's navigation frame (A2-1e / R10).
+//
+// `today` is on every bucket; the month bounds and prev/next are on the MONTH
+// bucket only — pending and tba are not month-addressed, so a prev/next arrow
+// there would point at nothing. The bounds query runs under the caller's own
+// population gates, so an sfw and an nsfw caller can legitimately see different
+// ends of the calendar.
+//
+// It runs AFTER the 304 short-circuit on purpose: a fresh response is the only
+// one that needs the frame, and a cache hit must stay a single cheap meta
+// query. The frame is derived from the same population the ETag folds (nsfw ×
+// olang) plus the requested month, both of which are already in the validator
+// or in the URL — so it introduces no cache-correctness gap and does NOT enter
+// the ETag key.
+func (h *PublicHandler) calendarMeta(c fiber.Ctx, b service.CalendarBucket, f service.CalendarFilter) (dto.PublicCalendarMeta, error) {
+	meta := dto.PublicCalendarMeta{Today: time.Now().In(calendarJST).Format("2006-01-02")}
+	if b.Kind != service.CalendarMonthBucket {
+		return meta, nil
+	}
+	minOrd, maxOrd, found, err := h.svc.CalendarBounds(c.Context(), f)
+	if err != nil {
+		return dto.PublicCalendarMeta{}, err
+	}
+	if !found {
+		// Empty population: no bounds to publish, and nothing to page to in
+		// either direction. has_prev / has_next are still stated (false) so a
+		// UI can disable both arrows instead of guessing from absent keys.
+		no := false
+		meta.HasPrev, meta.HasNext = &no, &no
+		return meta, nil
+	}
+	meta.MinMonth, meta.MaxMonth = monthOfOrdinal(minOrd), monthOfOrdinal(maxOrd)
+	cur := int64(b.Year)*10000 + int64(b.Month)*100
+	prev, next := cur > minOrd, cur < maxOrd
+	meta.HasPrev, meta.HasNext = &prev, &next
+	return meta, nil
+}
+
+// monthOfOrdinal renders a composed month ordinal (y*10000+m*100) as YYYY-MM.
+func monthOfOrdinal(ord int64) string {
+	return fmt.Sprintf("%04d-%02d", ord/10000, (ord/100)%100)
 }
 
 // defaultCalendarMonth / defaultCalendarYear resolve the omitted window in JST.

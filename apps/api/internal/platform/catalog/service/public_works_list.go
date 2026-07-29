@@ -24,15 +24,18 @@ import (
 // projection selector. Date bounds are composed ordinals
 // (y*10000 + m*100 + d) over the EARLIEST release date per work.
 type WorksListFilter struct {
-	ContentRating  *int16 // model.ContentRating* — nil = all (r18 still needs NSFW)
-	Claimed        *bool  // true = claimed only; false = bodyless only; nil = both
-	LabelID        int64  // via catalog_work_label
-	TagID          int64  // canonical tag id, via catalog_tag_source_map ⋈ catalog_work_tag
-	SeriesID       int64  // via catalog_series_member
-	EngineID       int64  // via catalog_work_engine (A2-1b)
-	Platform       string // release-level platform ∪ work-level platform rows
-	ReleasedAfter  int64  // composed ordinal, inclusive; 0 = unbounded
-	ReleasedBefore int64  // composed ordinal, inclusive; 0 = unbounded
+	ContentRating *int16 // model.ContentRating* — nil = all (r18 still needs NSFW)
+	Claimed       *bool  // true = claimed only; false = bodyless only; nil = both
+	LabelID       int64  // via catalog_work_label
+	// TagIDs are canonical tag ids ANDed together (A2-1e): a work must carry a
+	// source tag mapped to EVERY id, which is what a facet sidebar's "narrow by
+	// another tag" means. One id behaves exactly as the pre-A2-1e scalar did.
+	TagIDs         []int64 // via catalog_tag_source_map ⋈ catalog_work_tag
+	SeriesID       int64   // via catalog_series_member
+	EngineID       int64   // via catalog_work_engine (A2-1b)
+	Platform       string  // release-level platform ∪ work-level platform rows
+	ReleasedAfter  int64   // composed ordinal, inclusive; 0 = unbounded
+	ReleasedBefore int64   // composed ordinal, inclusive; 0 = unbounded
 	IDs            []int64
 	NSFW           bool
 	Sort           string // "id" (default, ASC) | "updated" (DESC, newest first)
@@ -82,13 +85,15 @@ func (s *PublicService) WorksList(ctx context.Context, f WorksListFilter, cursor
 		where = append(where, "EXISTS (SELECT 1 FROM catalog_work_label wl WHERE wl.work_id = w.id AND wl.label_id = ?)")
 		args = append(args, f.LabelID)
 	}
-	if f.TagID > 0 {
+	for _, tagID := range f.TagIDs {
 		// Canonical tag → any source tag mapped to it (idx on catalog_work_tag
-		// (work_id,...) unique carries the correlated work_id probe).
+		// (work_id,...) unique carries the correlated work_id probe). ONE EXISTS
+		// per requested tag — conjunctive by construction, and each probe stays
+		// index-served (a single IN + HAVING count would force an aggregate).
 		where = append(where, `EXISTS (SELECT 1 FROM catalog_work_tag wt
 			JOIN catalog_tag_source_map m ON m.source_id = wt.source_id AND m.source_name = wt.name
 			WHERE wt.work_id = w.id AND m.tag_id = ?)`)
-		args = append(args, f.TagID)
+		args = append(args, tagID)
 	}
 	if f.SeriesID > 0 {
 		where = append(where, "EXISTS (SELECT 1 FROM catalog_series_member sm WHERE sm.work_id = w.id AND sm.series_id = ?)")
@@ -145,7 +150,7 @@ func (s *PublicService) WorksList(ctx context.Context, f WorksListFilter, cursor
 		order = "ORDER BY w.id ASC"
 	}
 
-	q := `SELECT w.id, w.medium_id, w.display_name, w.olang, w.content_rating, w.site, w.product_work_id, w.updated_at
+	q := `SELECT w.id, w.medium_id, w.display_name, w.olang, w.content_rating, w.site, w.product_work_id, w.claim_state, w.updated_at
 		FROM catalog_work w WHERE ` + strings.Join(where, " AND ") + " " + order + " LIMIT ?"
 	args = append(args, limit)
 
@@ -160,6 +165,7 @@ func (s *PublicService) WorksList(ctx context.Context, f WorksListFilter, cursor
 		ContentRating int16
 		Site          *string
 		ProductWorkID *int64
+		ClaimState    *int16 `gorm:"column:claim_state"`
 		UpdatedAt     time.Time
 	}
 	if err := s.db.WithContext(ctx).Raw(q, args...).Scan(&rows).Error; err != nil {
@@ -171,7 +177,7 @@ func (s *PublicService) WorksList(ctx context.Context, f WorksListFilter, cursor
 		src[i] = workListSourceRow{
 			ID: r.ID, MediumID: r.MediumID, DisplayName: r.DisplayName, OLang: r.OLang,
 			ContentRating: r.ContentRating, Site: r.Site, ProductWorkID: r.ProductWorkID,
-			UpdatedAt: r.UpdatedAt.UTC().Format(time.RFC3339),
+			ClaimState: r.ClaimState, UpdatedAt: r.UpdatedAt.UTC().Format(time.RFC3339),
 		}
 	}
 	items, err := s.enrichWorkListItems(ctx, src, f.NSFW, f.Include)
@@ -270,6 +276,7 @@ type workListSourceRow struct {
 	ContentRating int16
 	Site          *string
 	ProductWorkID *int64
+	ClaimState    *int16
 	UpdatedAt     string // RFC3339
 }
 
@@ -301,7 +308,7 @@ func (s *PublicService) enrichWorkListItems(ctx context.Context, rows []workList
 		out[i] = dto.PublicWorkListItem{
 			ID: r.ID, Medium: s.mediumKey(r.MediumID), DisplayName: r.DisplayName,
 			ContentRating: contentRatingKey(r.ContentRating), OLang: r.OLang,
-			ReleaseDate: dates[r.ID], ClaimedBy: claimedBy(r.Site, r.ProductWorkID),
+			ReleaseDate: dates[r.ID], ClaimedBy: claimedBy(r.Site, r.ProductWorkID, r.ClaimState),
 			Cover: s.pickListCover(covers[r.ID], nsfw), Updated: r.UpdatedAt,
 		}
 	}

@@ -53,14 +53,16 @@ const (
 )
 
 // WorkDetail serves GET /v1/catalog/works/{id} — the frozen work record.
-// include gates relations / credits. 404 outside the fetchable set (galgame,
-// live, non-r18).
+// include gates relations / credits; spoilers raises the tag spoiler ceiling
+// (default 0 = no spoiler-flagged tag at all). 404 outside the fetchable set
+// (galgame, live, non-r18).
 func (h *PublicHandler) WorkDetail(c fiber.Ctx) error {
 	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
 	if err != nil {
 		return response.BadRequest(c, errors.ErrInvalidID)
 	}
-	rec, found, err := h.svc.WorkDetail(c.Context(), id, service.ParsePublicInclude(c.Query("include")), nsfwQuery(c))
+	rec, found, err := h.svc.WorkDetail(c.Context(), id,
+		service.ParsePublicInclude(c.Query("include")), nsfwQuery(c), spoilersQuery(c))
 	if err != nil {
 		return response.InternalError(c, errors.ErrInternalServer)
 	}
@@ -487,6 +489,45 @@ func posIntQueryPub(raw string) (int64, bool) {
 	return n, true
 }
 
+// maxTagIDFilters caps the conjunctive tag filter. Ten is well past any real
+// UI (a facet sidebar with ten tags already returns nothing) and keeps the
+// EXISTS chain / Meilisearch expression bounded.
+const maxTagIDFilters = 10
+
+// msgBadTagIDs is the single 400 message for every malformed tag_id list.
+const msgBadTagIDs = "tag_id must be up to 10 comma-separated positive integers"
+
+// posIntListQueryPub reads a comma-separated positive-integer id filter, the
+// multi-value form of posIntQueryPub (A2-1e). Absent/empty → nil (no filter);
+// a SINGLE value behaves exactly as it did before this wave. Duplicates
+// collapse (asking for tag 7 twice is asking for tag 7). ok=false — a 400 — on
+// any non-positive / non-numeric entry or on more than max entries, never a
+// silent drop of the filter.
+func posIntListQueryPub(raw string, max int) ([]int64, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, true
+	}
+	parts := strings.Split(raw, ",")
+	if len(parts) > max {
+		return nil, false
+	}
+	out := make([]int64, 0, len(parts))
+	seen := make(map[int64]struct{}, len(parts))
+	for _, p := range parts {
+		n, err := strconv.ParseInt(strings.TrimSpace(p), 10, 64)
+		if err != nil || n <= 0 {
+			return nil, false
+		}
+		if _, dup := seen[n]; dup {
+			continue
+		}
+		seen[n] = struct{}{}
+		out = append(out, n)
+	}
+	return out, true
+}
+
 func atoiOrPub(s string, def int) int {
 	if s == "" {
 		return def
@@ -587,8 +628,8 @@ func (h *PublicHandler) WorksList(c fiber.Ctx) error {
 	if f.LabelID, ok = posIntQueryPub(c.Query("label_id")); !ok {
 		return response.BadRequestMsg(c, errors.ErrInvalidParam, "label_id must be a positive integer")
 	}
-	if f.TagID, ok = posIntQueryPub(c.Query("tag_id")); !ok {
-		return response.BadRequestMsg(c, errors.ErrInvalidParam, "tag_id must be a positive integer")
+	if f.TagIDs, ok = posIntListQueryPub(c.Query("tag_id"), maxTagIDFilters); !ok {
+		return response.BadRequestMsg(c, errors.ErrInvalidParam, msgBadTagIDs)
 	}
 	if f.SeriesID, ok = posIntQueryPub(c.Query("series_id")); !ok {
 		return response.BadRequestMsg(c, errors.ErrInvalidParam, "series_id must be a positive integer")

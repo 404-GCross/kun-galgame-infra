@@ -25,9 +25,10 @@ import (
 // ─────────────── input types (query/path/body params for the public spec) ───────────────
 
 type publicWorkInput struct {
-	ID      int64  `path:"id" doc:"Catalog work id"`
-	Include string `query:"include" doc:"Comma-separated heavy blocks: relations,credits (default: none)"`
-	NSFW    bool   `query:"nsfw" doc:"true/1 = serve r18 works and r18 relation ends (caller-controlled; default false = hidden)"`
+	ID       int64  `path:"id" doc:"Catalog work id"`
+	Include  string `query:"include" doc:"Comma-separated heavy blocks: relations,credits (default: none)"`
+	NSFW     bool   `query:"nsfw" doc:"true/1 = serve r18 works and r18 relation ends (caller-controlled; default false = hidden)"`
+	Spoilers int16  `query:"spoilers" doc:"Max tag spoiler level 0-2 (default 0 = safe): tags[] carries per-edge spoiler + per-tag sexual flags, and rows above this ceiling are omitted entirely. The axis is populated for the VNDB-derived vocabulary only — Bangumi/DLsite folksonomy publishes no spoiler or category concept, so those rows read 0/false"`
 }
 type publicWorkOutput struct {
 	Body Envelope[dto.PublicCatalogWork]
@@ -124,7 +125,7 @@ type publicWorksSearchInput struct {
 	ContentRating  string `query:"content_rating" enum:"all_ages,sensitive,r18" doc:"Filter by rating (r18 additionally requires nsfw=1)"`
 	Claimed        string `query:"claimed" enum:"true,false" doc:"true = claimed works only; false = bodyless only; absent = both"`
 	LabelID        int64  `query:"label_id" doc:"Only works attributed to this label"`
-	TagID          int64  `query:"tag_id" doc:"Only works carrying a source tag mapped to this canonical tag"`
+	TagID          string `query:"tag_id" doc:"Only works carrying a source tag mapped to this canonical tag; up to 10 comma-separated ids are ANDed (a work must carry all of them), more than 10 or a non-positive/non-numeric entry is a 400"`
 	SeriesID       int64  `query:"series_id" doc:"Only member works of this series"`
 	EngineID       int64  `query:"engine_id" doc:"Only works built with this engine"`
 	ReleasedAfter  string `query:"released_after" doc:"YYYY-MM-DD, inclusive, over the EARLIEST release date per work — the same anchor the works list filters and the calendar buckets on"`
@@ -135,7 +136,7 @@ type publicWorksSearchInput struct {
 	Page           int    `query:"page" doc:"1-based page number (default 1); a non-positive or non-numeric value is a 400. A page past the end is an empty page"`
 	Limit          int    `query:"limit" doc:"Items per page 1-100 (default 20); above 100 is clamped to 100, a non-positive or non-numeric value is a 400"`
 	NSFW           bool   `query:"nsfw" doc:"true/1 = include r18 works (default false = dropped from items, total AND facets alike)"`
-	Include        string `query:"include" doc:"Comma-separated rich-brief blocks: names,intros,labels,ratings,covers — the works-list vocabulary verbatim (unknown tokens ignored)"`
+	Include        string `query:"include" doc:"Comma-separated rich-brief blocks: names,intros,labels,ratings,covers,refs — the works-list vocabulary verbatim (unknown tokens ignored)"`
 }
 type publicWorksSearchOutput struct {
 	Body Envelope[dto.PublicWorksSearchData]
@@ -145,7 +146,7 @@ type publicWorksListInput struct {
 	ContentRating  string `query:"content_rating" enum:"all_ages,sensitive,r18" doc:"Filter by rating (r18 additionally requires nsfw=1)"`
 	Claimed        string `query:"claimed" enum:"true,false" doc:"true = claimed works only; false = bodyless only; absent = both"`
 	LabelID        int64  `query:"label_id" doc:"Only works attributed to this label (the catalog_work_label edge)"`
-	TagID          int64  `query:"tag_id" doc:"Only works carrying a source tag mapped to this canonical tag"`
+	TagID          string `query:"tag_id" doc:"Only works carrying a source tag mapped to this canonical tag; up to 10 comma-separated ids are ANDed (a work must carry all of them), more than 10 or a non-positive/non-numeric entry is a 400"`
 	SeriesID       int64  `query:"series_id" doc:"Only member works of this series"`
 	EngineID       int64  `query:"engine_id" doc:"Only works built with this engine (the catalog_work_engine edge); browse the ids via GET /v1/catalog/engines"`
 	Platform       string `query:"platform" doc:"vndb platform code (win/and/ios/...) — release-level and work-level rows unioned"`
@@ -156,7 +157,7 @@ type publicWorksListInput struct {
 	Cursor         string `query:"cursor" doc:"Opaque keyset cursor from a prior next_cursor; omit for the first page"`
 	Limit          int    `query:"limit" doc:"Items per page 1-100 (default 20); above 100 is clamped to 100, a non-positive or non-numeric value is a 400"`
 	NSFW           bool   `query:"nsfw" doc:"true/1 = include r18 works (default false = dropped)"`
-	Include        string `query:"include" doc:"Comma-separated rich-brief blocks: names,intros,labels,ratings,covers (default: none — the response is then byte-identical to the base contract). Unknown tokens are ignored. names/intros are keyed by the four product locales ja-jp/zh-cn/zh-tw/en-us; covers carries the portrait + banner slots with width/height/thumbhash"`
+	Include        string `query:"include" doc:"Comma-separated rich-brief blocks: names,intros,labels,ratings,covers,refs (default: none — the response is then byte-identical to the base contract). Unknown tokens are ignored. names/intros are keyed by the four product locales ja-jp/zh-cn/zh-tw/en-us; covers carries the portrait + banner slots with width/height/thumbhash; refs carries the work exact identity anchors, detail-face shape"`
 }
 type publicWorksListOutput struct {
 	Body Envelope[dto.PublicWorksListData]
@@ -241,7 +242,7 @@ type publicCalendarInput struct {
 	Cursor  string `query:"cursor" doc:"Opaque keyset cursor from a prior next_cursor; omit for the first page"`
 	Limit   int    `query:"limit" doc:"Items per page 1-100 (default 20); above 100 is clamped to 100, a non-positive or non-numeric value is a 400"`
 	NSFW    bool   `query:"nsfw" doc:"true/1 = include r18 works (default false = dropped)"`
-	Include string `query:"include" doc:"Comma-separated rich-brief blocks: names,intros,labels,ratings,covers — the works-list vocabulary verbatim (unknown tokens ignored)"`
+	Include string `query:"include" doc:"Comma-separated rich-brief blocks: names,intros,labels,ratings,covers,refs — the works-list vocabulary verbatim (unknown tokens ignored)"`
 }
 type publicCalendarOutput struct {
 	Body Envelope[dto.PublicCalendarData]
@@ -253,7 +254,7 @@ type publicCalendarPendingInput struct {
 	Cursor  string `query:"cursor" doc:"Opaque keyset cursor from a prior next_cursor; omit for the first page"`
 	Limit   int    `query:"limit" doc:"Items per page 1-100 (default 20); above 100 is clamped to 100, a non-positive or non-numeric value is a 400"`
 	NSFW    bool   `query:"nsfw" doc:"true/1 = include r18 works (default false = dropped)"`
-	Include string `query:"include" doc:"Comma-separated rich-brief blocks: names,intros,labels,ratings,covers — the works-list vocabulary verbatim (unknown tokens ignored)"`
+	Include string `query:"include" doc:"Comma-separated rich-brief blocks: names,intros,labels,ratings,covers,refs — the works-list vocabulary verbatim (unknown tokens ignored)"`
 }
 type publicCalendarPendingOutput struct {
 	Body Envelope[dto.PublicCalendarData]
@@ -264,7 +265,7 @@ type publicCalendarTBAInput struct {
 	Cursor  string `query:"cursor" doc:"Opaque keyset cursor from a prior next_cursor; omit for the first page"`
 	Limit   int    `query:"limit" doc:"Items per page 1-100 (default 20); above 100 is clamped to 100, a non-positive or non-numeric value is a 400"`
 	NSFW    bool   `query:"nsfw" doc:"true/1 = include r18 works (default false = dropped)"`
-	Include string `query:"include" doc:"Comma-separated rich-brief blocks: names,intros,labels,ratings,covers — the works-list vocabulary verbatim (unknown tokens ignored)"`
+	Include string `query:"include" doc:"Comma-separated rich-brief blocks: names,intros,labels,ratings,covers,refs — the works-list vocabulary verbatim (unknown tokens ignored)"`
 }
 type publicCalendarTBAOutput struct {
 	Body Envelope[dto.PublicCalendarData]

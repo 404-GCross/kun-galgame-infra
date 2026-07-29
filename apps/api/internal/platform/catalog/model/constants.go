@@ -155,6 +155,31 @@ const (
 	WorkStatusMerged int16 = 2 // merged away via redirect
 )
 
+// Claim visibility state (R7, refs/proj/135 A2-1e) — a CATALOG-OWNED
+// vocabulary describing how visible the CLAIM is on the owning product face,
+// NOT a copy of any product's status machine (the R2 red line: a wiki status
+// value never crosses into the catalog contract).
+//
+// It exists because `claimed_by` alone is state-blind: a consumer that follows
+// the pointer cannot tell a published entry from a draft one or from an entry
+// the product has taken down, so re-anchoring on `claimed_by` would resurrect
+// banned entries on a downstream site (A2-2 S1).
+//
+//   - live   — the claim is publicly visible on the product face;
+//   - draft  — it exists but is not published yet (an editorial state);
+//   - hidden — the product has withdrawn it; a consumer must render neither a
+//     claim badge nor any product content for it.
+//
+// Meaningful zero (live) → the column is NULLABLE with NO `default:` tag: NULL
+// means "no claim, or not yet projected" (see CatalogWork.ClaimState), and a
+// DB default would silently promote a legitimately-live row's state out of the
+// INSERT (the default-tag zero-value trap).
+const (
+	ClaimStateLive   int16 = 0
+	ClaimStateDraft  int16 = 1
+	ClaimStateHidden int16 = 2
+)
+
 // Work title kinds (doc 17 R2). Search hints are findability-only, never
 // displayed.
 const (

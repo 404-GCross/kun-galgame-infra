@@ -29,7 +29,8 @@ import (
 //	  VNDB sync resolves through docs/tagMap.ts english→chinese, so a mapped
 //	  tag's name IS the localized zh name; an unmapped tag keeps its English
 //	  VNDB name; user-created tags are whatever the wiki editor typed) |
-//	  category (content/sexual/technical) | description
+//	  category (content/sexual/technical — VNDB's cont/ero/tech, mapped at sync
+//	  time; this is the `sexual` flag's ONLY source) | description
 //	galgame_tag_relation: (galgame_id, tag_id) PK | spoiler_level
 //	  (0=none 1=mild 2=severe) | source ('' = user-curated, 'vndb' = synced)
 //	  — NO vote field anywhere in the layer.
@@ -40,17 +41,29 @@ import (
 // galgameMediaSourceKey ('' → galgame_wiki, 'vndb' → vndb, unknown → the
 // galgame_wiki fallback — a claimed tag is always part of the wiki body)}.
 //
-// Spoiler discipline: the bridge emits NON-SPOILER tags only
-// (spoiler_level=0). The unified tags[] shape carries no spoiler flag (the
-// bodyless side is Bangumi folksonomy, which has no spoiler concept), so a
-// bridged spoiler tag would surface unlabeled to every consumer — the galgame
-// read face can gate them (it exposes spoiler_level), this face cannot.
-// Filtering to the non-spoiler subset is the honest bridge; it parallels the
-// ratings bridge's score>0 filter.
+// Spoiler discipline (A2-1e / R8 — the shape this file's older comment said
+// was missing): the unified row now CARRIES the axis (Spoiler per edge, Sexual
+// per tag), so a bridged spoiler tag can no longer surface unlabeled. The
+// bridge therefore filters to a CEILING supplied by the caller instead of the
+// hard spoiler_level=0 it used to apply: 0 (the default on every face) is the
+// old behavior byte for byte, and only a caller that explicitly asks for
+// spoilers=1|2 ever sees more.
+//
+// Coverage is asymmetric and that asymmetry is real, not an implementation
+// gap: the spoiler level and the sexual category exist ONLY in the VNDB-derived
+// vocabulary the wiki layer carries. Bangumi/DLsite folksonomy has neither
+// concept, so those rows are spoiler 0 / sexual false — the absence of the
+// axis, which the public DTO documents so a consumer cannot mistake it for an
+// assertion of safety.
 //
 // Tags are VERBATIM folksonomy (58 拍板): no vocabulary mapping, no
 // normalization — and content tags NEVER touch catalog_label (the attribution
 // vocabulary red line).
+
+// galgameTagCategorySexual is the wiki tag category that VNDB's `ero` maps to
+// (the sync writes cont→content, ero→sexual, tech→technical). It is the sole
+// input of the public tag `sexual` flag.
+const galgameTagCategorySexual = "sexual"
 
 // WorkTagRow is one tag on a work's read face — the unified shape the wiki
 // bridge (galgame_tag_relation ⋈ galgame_tag) and the catalog-native table
@@ -67,6 +80,12 @@ type WorkTagRow struct {
 	Name     string
 	Count    int
 	SourceID int16
+	// Safety axis (A2-1e / R8). Spoiler is the per-EDGE level (0 none, 1 minor,
+	// 2 major) and Sexual flags the TAG as sexual-category. Both come from the
+	// wiki/VNDB lane only; the catalog-native lane leaves them zero because
+	// Bangumi/DLsite publish no such axis.
+	Spoiler int16
+	Sexual  bool
 	// Canonical overlay — nil when the tag is not (yet) in the canonical
 	// vocabulary. Tier: 0=core 1=longtail 2=hidden; Kind: 0=content 1=meta.
 	CanonicalID *int64
@@ -97,12 +116,14 @@ type WorkTagRow struct {
 // merged rows are re-sorted (count DESC, name ASC): voted bgm rows lead, the
 // count-0 rows (bridged wiki tags + bgm meta tags) trail by name. Returns a map
 // keyed by work id; a work with no tag is absent (the caller renders []).
-func (s *ReadService) loadWorkTags(ctx context.Context, subjects []claimSubject) (map[int64][]WorkTagRow, error) {
+// spoilerMax is the per-edge spoiler CEILING: rows above it are not loaded.
+// 0 (every face's default) reproduces the pre-A2-1e behavior exactly.
+func (s *ReadService) loadWorkTags(ctx context.Context, subjects []claimSubject, spoilerMax int16) (map[int64][]WorkTagRow, error) {
 	out := make(map[int64][]WorkTagRow, len(subjects))
 	galgameIDs, galgameToWork, _ := partitionClaimSubjects(subjects)
 	// Wiki bridge lane — CLAIMED works only.
 	if len(galgameIDs) > 0 {
-		if err := s.bridgeGalgameTags(ctx, galgameIDs, galgameToWork, out); err != nil {
+		if err := s.bridgeGalgameTags(ctx, galgameIDs, galgameToWork, out, spoilerMax); err != nil {
 			return nil, err
 		}
 	}
@@ -218,7 +239,7 @@ func (s *ReadService) enrichCanonicalTags(ctx context.Context, out map[int64][]W
 // orders by name for a stable append; the final per-work order is (count DESC,
 // name ASC), applied by loadWorkTags after these count-0 bridge rows merge with
 // the native lane's voted rows.
-func (s *ReadService) bridgeGalgameTags(ctx context.Context, galgameIDs []int64, galgameToWork map[int64]int64, out map[int64][]WorkTagRow) error {
+func (s *ReadService) bridgeGalgameTags(ctx context.Context, galgameIDs []int64, galgameToWork map[int64]int64, out map[int64][]WorkTagRow, spoilerMax int16) error {
 	db := s.db.WithContext(ctx)
 
 	// The tag relation's source domain is only ”/vndb (surveyed), but resolving
@@ -234,14 +255,21 @@ func (s *ReadService) bridgeGalgameTags(ctx context.Context, galgameIDs []int64,
 		GalgameID int64  `gorm:"column:galgame_id"`
 		Name      string `gorm:"column:name"`
 		Source    string `gorm:"column:source"`
+		Spoiler   int16  `gorm:"column:spoiler"`
+		Category  string `gorm:"column:category"`
 	}
 	// COALESCE guards the two nullable-with-default columns against legacy NULLs
 	// (both semantically equal their defaults: no spoiler / user-curated).
-	if err := db.Raw(`SELECT r.galgame_id, t.name, COALESCE(r.source, '') AS source
+	// spoiler_level is clamped into 0-2 on the way out: the wiki column is a
+	// bigint with no CHECK, and the public contract promises a three-value
+	// vocabulary.
+	if err := db.Raw(`SELECT r.galgame_id, t.name, COALESCE(r.source, '') AS source,
+			LEAST(GREATEST(COALESCE(r.spoiler_level, 0), 0), 2)::smallint AS spoiler,
+			t.category
 		FROM galgame_tag_relation r
 		JOIN galgame_tag t ON t.id = r.tag_id
-		WHERE r.galgame_id IN ? AND COALESCE(r.spoiler_level, 0) = 0
-		ORDER BY r.galgame_id, t.name`, galgameIDs).Scan(&rows).Error; err != nil {
+		WHERE r.galgame_id IN ? AND COALESCE(r.spoiler_level, 0) <= ?
+		ORDER BY r.galgame_id, t.name`, galgameIDs, spoilerMax).Scan(&rows).Error; err != nil {
 		return err
 	}
 	for _, r := range rows {
@@ -253,7 +281,10 @@ func (s *ReadService) bridgeGalgameTags(ctx context.Context, galgameIDs []int64,
 		if key, known := galgameMediaSourceKey[r.Source]; known {
 			srcID = srcIDByKey[key]
 		}
-		out[workID] = append(out[workID], WorkTagRow{Name: r.Name, SourceID: srcID})
+		out[workID] = append(out[workID], WorkTagRow{
+			Name: r.Name, SourceID: srcID,
+			Spoiler: r.Spoiler, Sexual: r.Category == galgameTagCategorySexual,
+		})
 	}
 	return nil
 }

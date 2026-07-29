@@ -289,8 +289,12 @@ func (s *PublicService) lookupBrief(ctx context.Context, source, externalID stri
 // stay include-gated; every aggregation facet (popularity / ratings / tags /
 // playtimes / series / platforms / intro / covers / screenshots / characters /
 // labels / releases) is always present (wave 104 全量开放).
-func (s *PublicService) WorkDetail(ctx context.Context, id int64, inc PublicInclude, nsfw bool) (dto.PublicCatalogWork, bool, error) {
-	detail, err := s.read.WorkByID(ctx, id)
+// spoilers is the tag/edge spoiler ceiling (0-2, default 0 = safe), the same
+// parameter shape characters/{id} already uses: at 0 the record contains no
+// spoiler-flagged tag at all, so a consumer that ignores the axis is safe by
+// construction and the default response stays byte-identical to A2-1d's.
+func (s *PublicService) WorkDetail(ctx context.Context, id int64, inc PublicInclude, nsfw bool, spoilers int16) (dto.PublicCatalogWork, bool, error) {
+	detail, err := s.read.WorkByID(ctx, id, spoilers)
 	if err != nil {
 		if stderrors.Is(err, ErrWorkNotFound) {
 			return dto.PublicCatalogWork{}, false, nil
@@ -314,10 +318,17 @@ func (s *PublicService) WorkDetail(ctx context.Context, id int64, inc PublicIncl
 		ReleaseDate:   earliestReleaseDate(detail.Releases),
 		Titles:        publicTitles(detail.Titles),
 		Refs:          publicRefs(detail.Refs),
-		ClaimedBy:     claimedBy(w.Site, w.ProductWorkID),
+		ClaimedBy:     claimedBy(w.Site, w.ProductWorkID, w.ClaimState),
+		Created:       w.CreatedAt.UTC().Format(time.RFC3339),
 		Updated:       w.UpdatedAt.UTC().Format(time.RFC3339),
 	}
-	s.attachWorkFacets(ctx, &rec, detail)
+	s.attachWorkFacets(ctx, &rec, detail, spoilers)
+	if rec.Engines, err = s.workEngines(ctx, id); err != nil {
+		return dto.PublicCatalogWork{}, false, err
+	}
+	if rec.Links, err = s.workLinks(ctx, id); err != nil {
+		return dto.PublicCatalogWork{}, false, err
+	}
 	rec.SeriesSiblings = s.publicSeriesSiblings(detail.SeriesSiblings, nsfw)
 	if inc.Relations {
 		rec.Relations = s.publicRelations(detail.Relations, nsfw)
@@ -345,7 +356,7 @@ func (s *PublicService) publicRelations(rels []WorkRelationRow, nsfw bool) []dto
 			RelationType: r.Key, Phrase: r.Phrase,
 			Work: dto.PublicWorkBrief{
 				ID: r.OtherID, Medium: s.mediumKey(r.MediumID), DisplayName: r.DisplayName,
-				ContentRating: contentRatingKey(r.ContentRating), ClaimedBy: claimedBy(r.Site, r.ProductWorkID),
+				ContentRating: contentRatingKey(r.ContentRating), ClaimedBy: claimedBy(r.Site, r.ProductWorkID, r.ClaimState),
 			},
 		})
 	}
@@ -358,7 +369,7 @@ func (s *PublicService) publicRelations(rels []WorkRelationRow, nsfw bool) []dto
 // ctx carries the one batched image_service lookup that enriches covers AND
 // screenshots with width/height/thumbhash (A2-1a, extended to screenshots by
 // A2-1b); an unwired lookup or an unknown hash simply omits the three keys.
-func (s *PublicService) attachWorkFacets(ctx context.Context, rec *dto.PublicCatalogWork, detail *WorkDetail) {
+func (s *PublicService) attachWorkFacets(ctx context.Context, rec *dto.PublicCatalogWork, detail *WorkDetail, spoilers int16) {
 	rec.Releases = make([]dto.PublicRelease, 0, len(detail.Releases))
 	for _, rd := range detail.Releases {
 		r := rd.Release
@@ -390,7 +401,16 @@ func (s *PublicService) attachWorkFacets(ctx context.Context, rec *dto.PublicCat
 	}
 	rec.Tags = make([]dto.PublicTag, 0, len(detail.Tags))
 	for _, t := range detail.Tags {
-		pt := dto.PublicTag{Name: t.Name, Count: t.Count, Source: s.sourceKey(t.SourceID)}
+		// Defence in depth: the loader already filtered to the ceiling, but a
+		// spoiler tag leaking onto a default response is the one failure this
+		// axis exists to prevent, so the projection re-checks it.
+		if t.Spoiler > spoilers {
+			continue
+		}
+		pt := dto.PublicTag{
+			Name: t.Name, Count: t.Count, Source: s.sourceKey(t.SourceID),
+			Spoiler: t.Spoiler, Sexual: t.Sexual,
+		}
 		if t.CanonicalID != nil {
 			pt.CanonicalID = *t.CanonicalID
 		}
@@ -475,7 +495,7 @@ func (s *PublicService) attachWorkFacets(ctx context.Context, rec *dto.PublicCat
 	for _, l := range detail.Labels {
 		rec.Labels = append(rec.Labels, dto.PublicWorkLabel{
 			ID: l.LabelID, DisplayName: l.DisplayName,
-			LabelKind: labelKindKey(l.LabelKind), Kind: workLabelKindKey(l.Kind),
+			LabelKind: labelKindKey(l.LabelKind), Kind: workLabelKindKey(l.Kind), Lang: l.Lang,
 		})
 	}
 }
@@ -740,8 +760,21 @@ func (s *PublicService) Label(ctx context.Context, id int64, withWorks, nsfw boo
 	if head == nil {
 		return dto.PublicLabel{}, false, nil
 	}
-	l := dto.PublicLabel{ID: head.ID, DisplayName: head.DisplayName, Kind: labelKindKey(head.Kind)}
-	// intros / links are part of the base record (not include-gated).
+	l := dto.PublicLabel{
+		ID: head.ID, DisplayName: head.DisplayName, Kind: labelKindKey(head.Kind), Lang: head.Lang,
+	}
+	// work_count is the browse lane's number for this one row (A2-1e) — the
+	// SAME nsfw-aware aggregate, so a detail page and the list it was reached
+	// from can never disagree.
+	counts, err := s.workCountsFor(ctx, labelWorkEdge, []int64{id}, nsfw)
+	if err != nil {
+		return dto.PublicLabel{}, false, err
+	}
+	l.WorkCount = counts[id]
+	// intros / links / aliases are part of the base record (not include-gated).
+	if l.Aliases, err = s.labelAliases(ctx, id); err != nil {
+		return dto.PublicLabel{}, false, err
+	}
 	if l.Intros, err = s.labelIntros(ctx, id); err != nil {
 		return dto.PublicLabel{}, false, err
 	}
@@ -806,6 +839,38 @@ func (s *PublicService) labelIntros(ctx context.Context, labelID int64) ([]dto.P
 	return out, nil
 }
 
+// labelAliases loads a label's alternate spellings (A2-1e) as a flat, ordered,
+// deduplicated string list. The display name is excluded — it is already the
+// record's display_name and repeating it in aliases[] would make every
+// consumer filter it out again. Empty → [].
+//
+// Flat strings rather than {name, lang, kind} objects: the alias table's lang /
+// kind columns describe the alias row's provenance, and every downstream
+// consumer of this field (search-as-you-type matching, "also known as" lines)
+// wants the strings. A richer shape stays available as a later addition.
+func (s *PublicService) labelAliases(ctx context.Context, labelID int64) ([]string, error) {
+	var rows []struct {
+		Name string `gorm:"column:name"`
+	}
+	if err := s.db.WithContext(ctx).Raw(`
+		SELECT a.name FROM catalog_label_alias a
+		JOIN catalog_label l ON l.id = a.label_id
+		WHERE a.label_id = ? AND a.name <> l.display_name
+		ORDER BY a.name, a.id`, labelID).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(rows))
+	seen := make(map[string]struct{}, len(rows))
+	for _, r := range rows {
+		if _, dup := seen[r.Name]; dup {
+			continue // the same spelling under two langs renders once
+		}
+		seen[r.Name] = struct{}{}
+		out = append(out, r.Name)
+	}
+	return out, nil
+}
+
 // labelLinks projects a label's non-identity web-presence links from its
 // entity_type=3, link_kind=related refs (refs/proj/89 ruling 3). The
 // exact/probable identity anchors are excluded at the query level — identity
@@ -853,6 +918,97 @@ func labelLinkURL(source, externalID string) (string, bool) {
 	}
 }
 
+// workEngines projects a work's engine attributions (A2-1e). Deterministic by
+// name so two reads of the same work render the same order. Empty → [].
+func (s *PublicService) workEngines(ctx context.Context, workID int64) ([]dto.PublicWorkEngine, error) {
+	var rows []struct {
+		ID   int64  `gorm:"column:id"`
+		Name string `gorm:"column:name"`
+	}
+	if err := s.db.WithContext(ctx).Raw(`
+		SELECT e.id, e.name FROM catalog_work_engine we
+		JOIN catalog_engine e ON e.id = we.engine_id
+		WHERE we.work_id = ? ORDER BY e.name, e.id`, workID).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	out := make([]dto.PublicWorkEngine, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, dto.PublicWorkEngine{ID: r.ID, Name: r.Name})
+	}
+	return out, nil
+}
+
+// workLinks projects a work's NON-IDENTITY external links from its
+// entity_type=work, link_kind=related refs (doc 126 D6) — the wiki's
+// user-submitted link table as the retirement wave absorbed it: URL bytes only,
+// platform-curated, no user attribution (the wiki's user_id was deliberately
+// never carried across, so the "hide links by banned authors" rule has no input
+// here and is gone by design, not by oversight).
+//
+// The exact/probable identity anchors are excluded at the query level — the
+// same hard boundary labelLinks draws. Deterministic (source_id, external_id);
+// empty → [].
+func (s *PublicService) workLinks(ctx context.Context, workID int64) ([]dto.PublicWorkLink, error) {
+	var rows []struct {
+		Source     string `gorm:"column:source"`
+		ExternalID string `gorm:"column:external_id"`
+	}
+	if err := s.db.WithContext(ctx).Raw(`
+		SELECT src.key AS source, r.external_id
+		FROM catalog_external_ref r JOIN catalog_source src ON src.id = r.source_id
+		WHERE r.entity_type = ? AND r.entity_id = ? AND r.link_kind = ?
+		ORDER BY r.source_id, r.external_id`,
+		model.EntityTypeWork, workID, model.LinkKindRelated).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	out := make([]dto.PublicWorkLink, 0, len(rows))
+	for _, r := range rows {
+		if url, ok := workLinkURL(r.Source, r.ExternalID); ok {
+			out = append(out, dto.PublicWorkLink{Source: publicSourceKey(r.Source), URL: url})
+		}
+	}
+	return out, nil
+}
+
+// workLinkURL renders a work-level related-link external id to its absolute
+// URL. The templates are the exact inverses of the parsers the rescue step used
+// to mint these rows (internal/jobs/wikirescue/link.go), which is why they are
+// safe to apply rather than guesses:
+//
+//	web      the external_id IS the full URL (that is the whole point of the
+//	         `web` source — a link whose host we do not model)
+//	twitter  a bare lowercase handle
+//	cien     the numeric ci-en creator id
+//	steam    the numeric app id
+//	pixiv    the numeric user id
+//	dlsite   an RJ/VJ/BJ work number
+//	dmm      a storefront product code
+//
+// dlsite and dmm are deliberately ABSENT: their storefront URLs are
+// section-dependent (dlsite maniax/home/pro/soft; dmm digital/dlsoft), and the
+// registry stores only the bare code, so any single template would be a guess
+// that 404s for part of the population. Those two anchors stay reachable as
+// data through the source key; the face never invents an address for them. An
+// unknown source is skipped for the same reason (labelLinkURL's rule verbatim).
+func workLinkURL(source, externalID string) (string, bool) {
+	switch source {
+	case "web":
+		return externalID, true
+	case "twitter":
+		return "https://x.com/" + externalID, true
+	case "cien":
+		return "https://ci-en.dlsite.com/creator/" + externalID, true
+	case "steam":
+		return "https://store.steampowered.com/app/" + externalID, true
+	case "pixiv":
+		return "https://www.pixiv.net/users/" + externalID, true
+	case "official_site":
+		return "https://" + externalID, true
+	default:
+		return "", false
+	}
+}
+
 // ─────────────────────────── shared brief helpers ───────────────────────────
 
 type workBriefRow struct {
@@ -863,6 +1019,7 @@ type workBriefRow struct {
 	Status        int16
 	Site          *string
 	ProductWorkID *int64
+	ClaimState    *int16 `gorm:"column:claim_state"`
 }
 
 // loadWorkBriefs loads public briefs for a set of work ids, keyed by id. r18
@@ -874,7 +1031,7 @@ func (s *PublicService) loadWorkBriefs(ctx context.Context, ids []int64, nsfw bo
 	}
 	var rows []workBriefRow
 	if err := s.db.WithContext(ctx).Raw(`
-		SELECT id, medium_id, display_name, content_rating, status, site, product_work_id
+		SELECT id, medium_id, display_name, content_rating, status, site, product_work_id, claim_state
 		FROM catalog_work WHERE id IN ? AND deleted_at IS NULL`, ids).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
@@ -885,7 +1042,7 @@ func (s *PublicService) loadWorkBriefs(ctx context.Context, ids []int64, nsfw bo
 		}
 		out[r.ID] = &dto.PublicWorkBrief{
 			ID: r.ID, Medium: s.mediumKey(r.MediumID), DisplayName: r.DisplayName,
-			ContentRating: contentRatingKey(r.ContentRating), ClaimedBy: claimedBy(r.Site, r.ProductWorkID),
+			ContentRating: contentRatingKey(r.ContentRating), ClaimedBy: claimedBy(r.Site, r.ProductWorkID, r.ClaimState),
 		}
 	}
 	return out, nil
@@ -932,15 +1089,18 @@ func (s *PublicService) claimedByFor(ctx context.Context, ids []int64) (map[int6
 		ID            int64
 		Site          string
 		ProductWorkID int64
+		ClaimState    *int16 `gorm:"column:claim_state"`
 	}
 	if err := s.db.WithContext(ctx).Raw(`
-		SELECT id, site, product_work_id FROM catalog_work
+		SELECT id, site, product_work_id, claim_state FROM catalog_work
 		WHERE id IN ? AND site IS NOT NULL AND product_work_id IS NOT NULL AND deleted_at IS NULL`, ids).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	out := make(map[int64]*dto.PublicClaimedBy, len(rows))
 	for _, r := range rows {
-		out[r.ID] = &dto.PublicClaimedBy{Site: r.Site, WorkID: r.ProductWorkID}
+		out[r.ID] = &dto.PublicClaimedBy{
+			Site: r.Site, WorkID: r.ProductWorkID, State: claimStateKey(r.ClaimState),
+		}
 	}
 	return out, nil
 }
@@ -1067,12 +1227,35 @@ func publicRefs(refs []RefDetail) []dto.PublicCatalogRef {
 }
 
 // claimedBy builds the cross-face pointer from a work's site + product_work_id
-// (both set = claimed).
-func claimedBy(site *string, productWorkID *int64) *dto.PublicClaimedBy {
+// (both set = claimed) and stamps the claim's visibility state (A2-1e / R7).
+func claimedBy(site *string, productWorkID *int64, claimState *int16) *dto.PublicClaimedBy {
 	if site == nil || *site == "" || productWorkID == nil {
 		return nil
 	}
-	return &dto.PublicClaimedBy{Site: *site, WorkID: *productWorkID}
+	return &dto.PublicClaimedBy{
+		Site: *site, WorkID: *productWorkID, State: claimStateKey(claimState),
+	}
+}
+
+// claimStateKey projects the claim visibility column to its public string.
+//
+// NULL → "live" on purpose: that is a claimed row no projector has stamped yet
+// (the window between this wave's migration and the reconciler's next pass),
+// and "live" is exactly how every consumer treated claimed_by before this
+// field existed. Anything OUTSIDE the vocabulary is the conservative "hidden"
+// — an unrecognized state must never be published downstream.
+func claimStateKey(s *int16) string {
+	if s == nil {
+		return "live"
+	}
+	switch *s {
+	case model.ClaimStateLive:
+		return "live"
+	case model.ClaimStateDraft:
+		return "draft"
+	default:
+		return "hidden"
+	}
 }
 
 // nameBuckets places a name into its single language bucket by the row's lang
@@ -1274,7 +1457,7 @@ func (s *PublicService) publicSeriesSiblings(sibs []SeriesSiblingRow, nsfw bool)
 		}
 		out = append(out, dto.PublicWorkBrief{
 			ID: sb.WorkID, Medium: s.mediumKey(sb.MediumID), DisplayName: sb.DisplayName,
-			ContentRating: contentRatingKey(sb.ContentRating), ClaimedBy: claimedBy(sb.Site, sb.ProductWorkID),
+			ContentRating: contentRatingKey(sb.ContentRating), ClaimedBy: claimedBy(sb.Site, sb.ProductWorkID, sb.ClaimState),
 		})
 	}
 	return out

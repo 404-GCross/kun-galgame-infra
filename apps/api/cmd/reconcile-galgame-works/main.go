@@ -104,6 +104,7 @@ func main() {
 			"bid_exact", stats.Claim.BIDExact,
 			"bid_skipped_bad", stats.Claim.BIDSkippedBad,
 			"skipped_rejected", stats.Claim.SkippedRejected,
+			"claim_state_written", stats.Claim.ClaimStateWritten,
 		)
 	}
 	if *phase == catalogsync.PhaseEG || *phase == catalogsync.PhaseAll {

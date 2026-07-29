@@ -280,7 +280,7 @@ func TestTwoCoversReadFace(t *testing.T) {
 	require.Equal(t, 1, r.c.coverUploaded)
 
 	// Read through the real read face.
-	detail, err := service.NewReadService(testDB).WorkByID(ctx, work)
+	detail, err := service.NewReadService(testDB).WorkByID(ctx, work, 0)
 	require.NoError(t, err)
 	require.Len(t, detail.Covers, 2, "read face must carry both the landscape and the portrait")
 

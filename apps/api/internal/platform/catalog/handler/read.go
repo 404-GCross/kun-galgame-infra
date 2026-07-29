@@ -89,7 +89,7 @@ type workByIDInput struct {
 }
 
 func (s *S2SServer) workByID(ctx context.Context, in *workByIDInput) (*byAnchorOutput, error) {
-	detail, err := s.read.WorkByID(ctx, in.ID)
+	detail, err := s.read.WorkByID(ctx, in.ID, 0) // S2S: spoiler-free tag set, unchanged
 	if err != nil {
 		return nil, workDetailErr(err)
 	}

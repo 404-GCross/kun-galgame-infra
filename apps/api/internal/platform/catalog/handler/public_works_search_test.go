@@ -61,7 +61,7 @@ func TestWorksSearchParamValidation(t *testing.T) {
 		{"/v1/catalog/works/search?limit=0", msgBadLimit},
 		{"/v1/catalog/works/search?limit=abc", msgBadLimit},
 		// id filters: a dropped filter would serve the UNFILTERED first page.
-		{"/v1/catalog/works/search?tag_id=0", "tag_id must be a positive integer"},
+		{"/v1/catalog/works/search?tag_id=0", "tag_id must be up to 10 comma-separated positive integers"},
 		{"/v1/catalog/works/search?label_id=-1", "label_id must be a positive integer"},
 		{"/v1/catalog/works/search?engine_id=abc", "engine_id must be a positive integer"},
 		{"/v1/catalog/works/search?series_id=x", "series_id must be a positive integer"},

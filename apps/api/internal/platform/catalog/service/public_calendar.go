@@ -219,7 +219,7 @@ func (s *PublicService) CalendarPage(ctx context.Context, b CalendarBucket, f Ca
 	limit = clampBrowseLimit(limit)
 
 	from, where, args := calendarSource(b, f)
-	sel := `SELECT w.id, w.medium_id, w.display_name, w.olang, w.content_rating, w.site, w.product_work_id, w.updated_at`
+	sel := `SELECT w.id, w.medium_id, w.display_name, w.olang, w.content_rating, w.site, w.product_work_id, w.claim_state, w.updated_at`
 	order := ` ORDER BY w.id ASC`
 	if b.Kind == CalendarMonthBucket {
 		// The month bucket is the only one that sorts by date: pending is a
@@ -248,6 +248,7 @@ func (s *PublicService) CalendarPage(ctx context.Context, b CalendarBucket, f Ca
 		ContentRating int16
 		Site          *string
 		ProductWorkID *int64
+		ClaimState    *int16 `gorm:"column:claim_state"`
 		UpdatedAt     time.Time
 		Ord           int64 `gorm:"column:ord"`
 	}
@@ -261,7 +262,7 @@ func (s *PublicService) CalendarPage(ctx context.Context, b CalendarBucket, f Ca
 		src[i] = workListSourceRow{
 			ID: r.ID, MediumID: r.MediumID, DisplayName: r.DisplayName, OLang: r.OLang,
 			ContentRating: r.ContentRating, Site: r.Site, ProductWorkID: r.ProductWorkID,
-			UpdatedAt: r.UpdatedAt.UTC().Format(time.RFC3339),
+			ClaimState: r.ClaimState, UpdatedAt: r.UpdatedAt.UTC().Format(time.RFC3339),
 		}
 	}
 	items, err := s.enrichWorkListItems(ctx, src, f.NSFW, f.Include)
@@ -324,6 +325,59 @@ func calendarSource(b CalendarBucket, f CalendarFilter) (from string, where []st
 // release_date projection share.
 func releaseOrd(alias string) string {
 	return alias + ".released_y::int * 10000 + coalesce(" + alias + ".released_m,0)::int * 100 + coalesce(" + alias + ".released_d,0)::int"
+}
+
+// CalendarBounds returns the earliest and latest month (composed ordinals
+// y*10000+m*100) that hold at least one member under THIS caller's population
+// gates — the navigation frame's min_month / max_month (A2-1e / R10).
+// found=false when the whole population is empty (there is then no month to
+// navigate to, and the meta omits the bounds rather than inventing them).
+//
+// Same-gate guarantee: the predicate is calendarSource's for a month-kind
+// bucket MINUS the window join, so "the newest month with anything in it"
+// is scoped by exactly the nsfw × olang gates that decide bucket membership.
+// A work is placed by its EARLIEST dated release — the same anchor as
+// release_date and as the buckets themselves — so a bound month is always a
+// month whose bucket is genuinely non-empty.
+//
+// Cost: one aggregate over the release table's dated rows joined to the gated
+// work population. It rides the same request as the ETag meta query, i.e. it
+// is paid once per calendar call, not per page.
+func (s *PublicService) CalendarBounds(ctx context.Context, f CalendarFilter) (minOrd, maxOrd int64, found bool, err error) {
+	where := []string{"w.deleted_at IS NULL", "w.status = ?", "w.medium_id = ?"}
+	args := []any{model.WorkStatusLive, galgameMediumID}
+	if !f.NSFW {
+		where = append(where, "w.content_rating <> ?")
+		args = append(args, model.ContentRatingR18)
+	}
+	if pred, pargs := f.OLang.predicate(); pred != "" {
+		where = append(where, pred)
+		args = append(args, pargs...)
+	}
+	var row struct {
+		MinOrd *int64 `gorm:"column:min_ord"`
+		MaxOrd *int64 `gorm:"column:max_ord"`
+	}
+	// The inner aggregate is each work's earliest dated release ordinal; the
+	// outer one takes the extremes over the GATED population. Year-precision
+	// works (d=m=0) are deliberately included: their ordinal floors to the
+	// year's January, which is the correct lower bound for month navigation.
+	q := `SELECT min(e.ord) AS min_ord, max(e.ord) AS max_ord
+		FROM (SELECT r.work_id, min(` + releaseOrd("r") + `) AS ord
+			FROM catalog_release r
+			WHERE r.released_y IS NOT NULL AND r.deleted_at IS NULL
+			GROUP BY r.work_id) e
+		JOIN catalog_work w ON w.id = e.work_id
+		WHERE ` + strings.Join(where, " AND ")
+	if err := s.db.WithContext(ctx).Raw(q, args...).Scan(&row).Error; err != nil {
+		return 0, 0, false, err
+	}
+	if row.MinOrd == nil || row.MaxOrd == nil {
+		return 0, 0, false, nil
+	}
+	// Floor both to their month: a bound is a MONTH, and a day-precision
+	// extreme must not make has_next look false for the rest of its month.
+	return (*row.MinOrd / 100) * 100, (*row.MaxOrd / 100) * 100, true, nil
 }
 
 // CalendarETag mints a bucket's weak validator from the cheap meta pair. The

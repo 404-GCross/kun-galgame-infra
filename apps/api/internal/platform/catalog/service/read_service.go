@@ -289,6 +289,10 @@ type LabelAttribution struct {
 	DisplayName string
 	LabelKind   int16
 	Kind        int16 // attribution edge kind
+	// Lang is the label display name's own BCP-47 tag ("" when unrecorded).
+	// Loaded for the public face's labels[].lang (A2-1e); the S2S face maps its
+	// DTO field by field and is unaffected.
+	Lang string
 }
 
 // WorkByAnchor resolves a work via any of its external anchors (work- or
@@ -326,18 +330,21 @@ func (s *ReadService) WorkByAnchor(ctx context.Context, sourceKey, externalID st
 			return nil, err
 		}
 	}
-	return s.loadWorkDetail(ctx, workID)
+	// The S2S anchor face keeps the historical spoiler-free tag set.
+	return s.loadWorkDetail(ctx, workID, 0)
 }
 
 // WorkByID loads the same bundle as WorkByAnchor, addressed by catalog work id
 // (the internal browser's drill-down entry). 404 semantics identical.
-func (s *ReadService) WorkByID(ctx context.Context, workID int64) (*WorkDetail, error) {
-	return s.loadWorkDetail(ctx, workID)
+// spoilers is the tag spoiler ceiling (0-2); the S2S face passes 0, which is
+// the historical behavior (no spoiler-flagged tag is loaded at all).
+func (s *ReadService) WorkByID(ctx context.Context, workID int64, spoilers int16) (*WorkDetail, error) {
+	return s.loadWorkDetail(ctx, workID, spoilers)
 }
 
 // loadWorkDetail assembles a work's titles, releases (with anchors) and label
 // attributions. Returns ErrWorkNotFound if the work does not exist.
-func (s *ReadService) loadWorkDetail(ctx context.Context, workID int64) (*WorkDetail, error) {
+func (s *ReadService) loadWorkDetail(ctx context.Context, workID int64, spoilers int16) (*WorkDetail, error) {
 	db := s.db.WithContext(ctx)
 	var work model.CatalogWork
 	if err := db.First(&work, workID).Error; err != nil {
@@ -384,7 +391,7 @@ func (s *ReadService) loadWorkDetail(ctx context.Context, workID int64) (*WorkDe
 		detail.Releases = append(detail.Releases, ReleaseDetail{Release: r, Anchors: anchorsByRelease[r.ID]})
 	}
 
-	if err := db.Raw(`SELECT wl.label_id, l.display_name, l.kind AS label_kind, wl.kind AS kind
+	if err := db.Raw(`SELECT wl.label_id, l.display_name, l.kind AS label_kind, wl.kind AS kind, l.lang
 		FROM catalog_work_label wl JOIN catalog_label l ON l.id = wl.label_id
 		WHERE wl.work_id = ? ORDER BY wl.kind, l.display_name`, workID).Scan(&detail.Labels).Error; err != nil {
 		return nil, err
@@ -452,7 +459,7 @@ func (s *ReadService) loadWorkDetail(ctx context.Context, workID int64) (*WorkDe
 	}
 	detail.Ratings = ratings[work.ID]
 
-	tags, err := s.loadWorkTags(ctx, []claimSubject{subj})
+	tags, err := s.loadWorkTags(ctx, []claimSubject{subj}, spoilers)
 	if err != nil {
 		return nil, err
 	}
@@ -1065,6 +1072,10 @@ type LabelHead struct {
 	ID          int64  `gorm:"column:id"`
 	DisplayName string `gorm:"column:display_name"`
 	Kind        int16  `gorm:"column:kind"`
+	// Lang is the display name's own BCP-47 tag ("" when unrecorded), loaded
+	// for the public face's labels/{id}.lang (A2-1e). The S2S face maps its DTO
+	// field by field and is unaffected.
+	Lang string `gorm:"column:lang"`
 }
 
 // LabelWorks returns a label's own identity plus the works attributed to it
@@ -1073,7 +1084,7 @@ type LabelHead struct {
 func (s *ReadService) LabelWorks(ctx context.Context, labelID int64, limit, offset int) (head *LabelHead, items []LabelWork, total int64, err error) {
 	db := s.db.WithContext(ctx)
 	var h LabelHead
-	if err = db.Raw(`SELECT id, display_name, kind FROM catalog_label WHERE id = ?`, labelID).Scan(&h).Error; err != nil {
+	if err = db.Raw(`SELECT id, display_name, kind, lang FROM catalog_label WHERE id = ?`, labelID).Scan(&h).Error; err != nil {
 		return nil, nil, 0, err
 	}
 	if h.ID != 0 {

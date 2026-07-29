@@ -21,6 +21,10 @@ type WorkRelationRow struct {
 	Status        int16   `gorm:"column:status"`
 	Site          *string `gorm:"column:site"`
 	ProductWorkID *int64  `gorm:"column:product_work_id"`
+	// ClaimState rides along so the public face can stamp claimed_by.state on
+	// the other end without a second query (A2-1e / R7). The S2S face maps its
+	// DTOs field by field and therefore stays byte-identical.
+	ClaimState *int16 `gorm:"column:claim_state"`
 }
 
 // loadWorkRelations reads a work's relation edges (both directions, one query)
@@ -30,7 +34,7 @@ func (s *ReadService) loadWorkRelations(ctx context.Context, workID int64) ([]Wo
 	var rows []WorkRelationRow
 	if err := s.db.WithContext(ctx).Raw(`
 		SELECT rt.key, rt.forward_phrase AS phrase, w.id AS other_id, w.display_name,
-		       w.medium_id, w.content_rating, w.status, w.site, w.product_work_id
+		       w.medium_id, w.content_rating, w.status, w.site, w.product_work_id, w.claim_state
 		FROM catalog_work_relation r
 		JOIN catalog_relation_type rt ON rt.id = r.relation_type_id
 		JOIN catalog_work w ON w.id = r.b_work_id AND w.deleted_at IS NULL
@@ -39,7 +43,7 @@ func (s *ReadService) loadWorkRelations(ctx context.Context, workID int64) ([]Wo
 		SELECT rt.key,
 		       CASE WHEN rt.is_symmetric THEN rt.forward_phrase ELSE rt.reverse_phrase END AS phrase,
 		       w.id AS other_id, w.display_name,
-		       w.medium_id, w.content_rating, w.status, w.site, w.product_work_id
+		       w.medium_id, w.content_rating, w.status, w.site, w.product_work_id, w.claim_state
 		FROM catalog_work_relation r
 		JOIN catalog_relation_type rt ON rt.id = r.relation_type_id
 		JOIN catalog_work w ON w.id = r.a_work_id AND w.deleted_at IS NULL
@@ -65,6 +69,10 @@ type SeriesSiblingRow struct {
 	Status        int16   `gorm:"column:status"`
 	Site          *string `gorm:"column:site"`
 	ProductWorkID *int64  `gorm:"column:product_work_id"`
+	// ClaimState rides along so the public face can stamp claimed_by.state on
+	// the other end without a second query (A2-1e / R7). The S2S face maps its
+	// DTOs field by field and therefore stays byte-identical.
+	ClaimState *int16 `gorm:"column:claim_state"`
 }
 
 // loadSeriesSiblings computes the transitive closure of the same_series (type 7)
@@ -113,7 +121,7 @@ func (s *ReadService) loadSeriesSiblings(ctx context.Context, workID int64) ([]S
 	}
 	var rows []SeriesSiblingRow
 	if err := s.db.WithContext(ctx).Raw(`
-		SELECT w.id AS work_id, w.display_name, w.medium_id, w.content_rating, w.status, w.site, w.product_work_id
+		SELECT w.id AS work_id, w.display_name, w.medium_id, w.content_rating, w.status, w.site, w.product_work_id, w.claim_state
 		FROM catalog_work w
 		WHERE w.id IN (?) AND w.deleted_at IS NULL
 		ORDER BY w.id`, nodes).Scan(&rows).Error; err != nil {

@@ -89,6 +89,12 @@ type ClaimStats struct {
 	// dry-run WorkIDBackfilled is the count that WOULD change (no write).
 	WorkIDBackfilled int
 	WorkIDCovered    int
+	// ClaimStateWritten counts the catalog_work.claim_state cells this run
+	// changed (R7). Dry-run reports what WOULD change. A converged re-run
+	// reports 0 — the projection is a pure function of the wiki status, so
+	// re-running it is the backfill (`--phase claim --apply` over the whole
+	// population is how the existing rows get their first value).
+	ClaimStateWritten int
 }
 
 // EGStats reports the erogamespace rosetta phase.
@@ -142,9 +148,13 @@ type Reconciler struct {
 // EXACT Silver expression (lower(normalize(col, NFKC))) so title comparison is
 // byte-isomorphic with src_bangumi.*_norm — see bangumi.go.
 type wikiGame struct {
-	ID       int64  `gorm:"column:id"`
-	VNDBID   string `gorm:"column:vndb_id"`
-	BID      *int64 `gorm:"column:bid"`
+	ID     int64  `gorm:"column:id"`
+	VNDBID string `gorm:"column:vndb_id"`
+	BID    *int64 `gorm:"column:bid"`
+	// Status is the wiki's own publication state machine (model.GalgameStatus*).
+	// It NEVER crosses into the catalog contract as a value — it is projected
+	// here into the catalog-owned claim_state vocabulary (R7) and nothing else.
+	Status   int16  `gorm:"column:status"`
 	NameJaJP string `gorm:"column:name_ja_jp"`
 	NameZhCN string `gorm:"column:name_zh_cn"`
 	NameEnUS string `gorm:"column:name_en_us"`
@@ -229,7 +239,7 @@ func (r *Reconciler) Run(ctx context.Context, phase string) (Stats, error) {
 // all phases.
 func (r *Reconciler) loadGames() error {
 	q := `
-		SELECT id, vndb_id, bid, name_ja_jp, name_zh_cn, name_en_us, name_zh_tw,
+		SELECT id, vndb_id, bid, status, name_ja_jp, name_zh_cn, name_en_us, name_zh_tw,
 		       lower(normalize(name_ja_jp, NFKC)) AS ja_norm,
 		       lower(normalize(name_zh_cn, NFKC)) AS zh_norm,
 		       CASE WHEN release_date IS NOT NULL

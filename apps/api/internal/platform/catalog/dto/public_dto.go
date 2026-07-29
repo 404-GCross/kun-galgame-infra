@@ -19,6 +19,17 @@ import "time"
 type PublicClaimedBy struct {
 	Site   string `json:"site"`
 	WorkID int64  `json:"work_id"`
+	// State is the claim's VISIBILITY on that product face (A2-1e / R7) — a
+	// CATALOG-owned vocabulary, never a product's own status machine:
+	//
+	//	live   — publicly visible there; follow the pointer freely
+	//	draft  — exists but unpublished; render no product content for it
+	//	hidden — the product withdrew it; render neither badge nor content
+	//
+	// Always present. It is the difference between "this work is on the wiki"
+	// and "this work has a wiki row" — without it a consumer that re-anchors on
+	// claimed_by silently republishes entries the product took down.
+	State string `json:"state" doc:"live|draft|hidden"`
 }
 
 // PublicWorkBrief is the lightweight work identity shared by lookup results,
@@ -90,6 +101,11 @@ type PublicCatalogWork struct {
 	OLang         string  `json:"olang"`
 	ContentRating string  `json:"content_rating"`
 	ReleaseDate   *string `json:"release_date"`
+	// Created is the REGISTRY row's creation instant (RFC3339, A2-1e) — when
+	// this identity entered the catalog, which is NOT the work's release date
+	// and NOT its product-side creation time. Same source convention as
+	// `updated` (the registry row's own timestamps).
+	Created string `json:"created"`
 	// Updated is the registry row's last-modified instant (RFC3339) — the
 	// changes-feed watermark (doc 106 G6).
 	Updated   string               `json:"updated"`
@@ -114,6 +130,16 @@ type PublicCatalogWork struct {
 	Screenshots []PublicScreenshot      `json:"screenshots"`
 	Characters  []PublicRosterCharacter `json:"characters"`
 	Labels      []PublicWorkLabel       `json:"labels"`
+	// Engines are the engine attributions (A2-1e, catalog_work_engine). Always
+	// present ([] when the work has none — VNDB publishes no engine data, so
+	// only the wiki-curated facet fills this).
+	Engines []PublicWorkEngine `json:"engines"`
+	// Links are the work's NON-IDENTITY external web links (A2-1e, doc 126 D6):
+	// the store / official / social pages the wiki's users hand-entered, absorbed
+	// by the retirement wave as PLATFORM-CURATED rows with no user attribution.
+	// Identity anchors (refs[]) and web links never mix — same hard boundary the
+	// label face draws. Always present ([] when the work has none).
+	Links []PublicWorkLink `json:"links"`
 	// SeriesSiblings is the transitive-closure series membership (wave 113),
 	// projected to briefs — every other live work in the same_series component
 	// (vndb's series is the pairwise same_series relation, never a first-class
@@ -321,6 +347,16 @@ type PublicLabel struct {
 	ID          int64  `json:"id"`
 	DisplayName string `json:"display_name"`
 	Kind        string `json:"kind"`
+	// Lang is the display name's own language tag (BCP-47, A2-1e); empty when
+	// unrecorded.
+	Lang string `json:"lang,omitempty"`
+	// Aliases are the label's alternate spellings (A2-1e, catalog_label_alias)
+	// — the 12,935 rows the wiki's official aliases migrated into. Deduplicated,
+	// display-name excluded, always present ([] when the label has none).
+	Aliases []string `json:"aliases"`
+	// WorkCount is NSFW-AWARE, exactly like the browse lane's (A2-1e): the
+	// number of works this caller would page through via works?label_id=.
+	WorkCount int `json:"work_count"`
 	// Refs are the EXACT identity anchors (doc 106 G4); links stays the
 	// separate non-identity web-presence projection — the two never mix.
 	Refs       []PublicCatalogRef `json:"refs"`
@@ -388,6 +424,24 @@ type PublicTag struct {
 	CanonicalID int64  `json:"canonical_id,omitempty"`
 	Tier        string `json:"tier,omitempty" doc:"core|longtail|hidden"`
 	Kind        string `json:"kind,omitempty" doc:"content|meta"`
+	// ── the safety axis (A2-1e / R8) ────────────────────────────────────────
+	//
+	// Spoiler is this WORK-TAG EDGE's spoiler level: 0 none, 1 minor, 2 major.
+	// Sexual flags the TAG ITSELF as belonging to the sexual-content category.
+	// Both are always present.
+	//
+	// COVERAGE, stated plainly because a consumer must not read the default as
+	// an assertion: the axis exists upstream only for the VNDB-derived tag
+	// vocabulary (which is where every spoiler-worthy tag lives). Bangumi and
+	// DLsite folksonomy rows carry no spoiler and no category concept at all,
+	// so they render 0 / false — that is the ABSENCE of the axis on that
+	// source, not a guarantee of safety.
+	//
+	// Rows with spoiler > 0 appear ONLY when the caller opts in with
+	// `spoilers=1|2` on the work detail; the default response contains none, so
+	// a consumer that ignores this axis entirely still shows nothing spoiling.
+	Spoiler int16 `json:"spoiler" doc:"0=none 1=minor 2=major"`
+	Sexual  bool  `json:"sexual"`
 }
 
 // PublicPlaytime is one per-source playtime estimate (minutes).
@@ -481,6 +535,33 @@ type PublicWorkLabel struct {
 	DisplayName string `json:"display_name"`
 	LabelKind   string `json:"label_kind"`
 	Kind        string `json:"kind" doc:"attribution nature: circle|publisher|developer|brand"`
+	// Lang is the label name's own language tag (BCP-47, A2-1e) — a Japanese
+	// brand name and its English rendering are different strings and a consumer
+	// that renders both needs to know which is which. Empty when unrecorded.
+	Lang string `json:"lang,omitempty"`
+}
+
+// PublicWorkEngine is one engine attribution on a work (A2-1e) — the id side
+// of GET /v1/catalog/engines/{id}. Deliberately the minimal {id, name} pair:
+// description / aliases live on the engine record, not on every work that used
+// the engine.
+type PublicWorkEngine struct {
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
+}
+
+// PublicWorkLink is one non-identity external web link of a work (A2-1e, doc
+// 126 D6), rendered as an absolute URL. Same {source, url} shape as
+// PublicLabelLink — and the same rule: identity anchors (refs[]) never appear
+// here, web links never appear in refs[].
+//
+// There is deliberately no label/title key: the wiki link rows carried a
+// user-typed caption, and the retirement wave absorbed the URL bytes WITHOUT
+// it. Inventing one would be fabrication, so consumers render the source key
+// (or the host) instead.
+type PublicWorkLink struct {
+	Source string `json:"source"`
+	URL    string `json:"url"`
 }
 
 // PublicRelease is one release row (date is partial ISO YYYY[-MM[-DD]]).
@@ -539,6 +620,12 @@ type PublicWorkListItem struct {
 	Labels  []PublicWorkLabel     `json:"labels,omitempty"`
 	Ratings []PublicRating        `json:"ratings,omitempty"`
 	Covers  *PublicWorkCoverSlots `json:"covers,omitempty"`
+	// Refs (include=refs, A2-1e) are the work's EXACT identity anchors, the
+	// same exact-only projection the detail record's refs[] carries — so a
+	// consumer holding a page of rows can map every one of them onto its own
+	// upstream ids (vndb / dlsite / bangumi) without a detail round-trip.
+	// Release-level anchors flatten in exactly as they do on the detail face.
+	Refs []PublicCatalogRef `json:"refs,omitempty"`
 }
 
 // PublicWorkNames is the D7 product-key title pivot (include=names): the
@@ -626,6 +713,9 @@ type PublicTagDetail struct {
 	Name string `json:"name"`
 	Tier string `json:"tier" doc:"core|longtail|hidden"`
 	Kind string `json:"kind" doc:"content|meta"`
+	// WorkCount is NSFW-AWARE, exactly like the browse lane's (A2-1e): the
+	// number of works this caller would page through via works?tag_id=.
+	WorkCount int `json:"work_count"`
 	// Intros is the multilingual description set (A2-1b), merged to one
 	// element per language exactly like a label's. Always present ([] when the
 	// tag carries none).
@@ -686,6 +776,11 @@ type PublicLabelListItem struct {
 type PublicLabelsListData struct {
 	Items      []PublicLabelListItem `json:"items"`
 	NextCursor *string               `json:"next_cursor"`
+	// Total is the size of the WHOLE filtered set (A2-1e) — the same filters
+	// that produced items, so paging to exhaustion collects exactly `total`
+	// rows. It is NOT nsfw-dependent: a label/tag/engine row is an identity,
+	// not content, and nsfw only ever gates the per-row work_count.
+	Total int64 `json:"total"`
 }
 
 // PublicTagListItem is one row of the canonical-tag browse lane (GET
@@ -702,6 +797,8 @@ type PublicTagListItem struct {
 type PublicTagsListData struct {
 	Items      []PublicTagListItem `json:"items"`
 	NextCursor *string             `json:"next_cursor"`
+	// Total — see PublicLabelsListData.Total.
+	Total int64 `json:"total"`
 }
 
 // PublicEngineListItem is one row of the engine browse lane (GET
@@ -710,12 +807,22 @@ type PublicEngineListItem struct {
 	ID        int64  `json:"id"`
 	Name      string `json:"name"`
 	WorkCount int    `json:"work_count"`
+	// Description / Aliases (A2-1e) are on the LIST row as well as the record:
+	// the engine facet is a few hundred hand-curated rows that consumers render
+	// as one page, so a second round-trip per row to fetch a one-line blurb
+	// would be pure waste. Always present (description "" / aliases [] when the
+	// row carries none).
+	Description string   `json:"description"`
+	Aliases     []string `json:"aliases"`
 }
 
 // PublicEnginesListData is the keyset engine-list envelope.
 type PublicEnginesListData struct {
 	Items      []PublicEngineListItem `json:"items"`
 	NextCursor *string                `json:"next_cursor"`
+	// Total is the size of the WHOLE filtered set (A2-1e), not of this page —
+	// so a consumer can render "N engines" without walking the cursor.
+	Total int64 `json:"total"`
 }
 
 // ── A2-1c: the release-calendar buckets ─────────────────────────────────────
@@ -739,6 +846,39 @@ type PublicCalendarData struct {
 	Count      int64                `json:"count"`
 	Items      []PublicWorkListItem `json:"items"`
 	NextCursor *string              `json:"next_cursor"`
+	// Meta is the navigation frame (A2-1e / R10) — always present.
+	Meta PublicCalendarMeta `json:"meta"`
+}
+
+// PublicCalendarMeta is the calendar's navigation frame (A2-1e, R10): what a
+// month-view UI needs to draw its prev/next arrows and to recover from an empty
+// month WITHOUT probing months one at a time.
+//
+// min_month / max_month are computed under the CALLER'S OWN population gates
+// (nsfw × olang) — the same gates that decide what lands in the bucket — so
+// "the newest month that has anything in it" means the same thing as "the
+// newest month YOU can see something in". An sfw caller and an nsfw caller can
+// legitimately get different bounds.
+//
+// The pending and tba buckets carry `today` only: they are not month-addressed,
+// so month bounds and prev/next are meaningless there and the four keys are
+// omitted rather than filled with something arbitrary.
+type PublicCalendarMeta struct {
+	// Today is the current Asia/Tokyo civil date (YYYY-MM-DD) — the same
+	// timezone that decides the default month/year. Always present, on all
+	// three buckets.
+	Today string `json:"today"`
+	// MinMonth / MaxMonth are the earliest / latest YYYY-MM that has at least
+	// one member under these gates; both omitted when the whole population is
+	// empty (there is then no month to jump to).
+	MinMonth string `json:"min_month,omitempty"`
+	MaxMonth string `json:"max_month,omitempty"`
+	// HasPrev / HasNext say whether a non-empty month exists before / after the
+	// REQUESTED month — derived from the bounds, so `has_next=false` is a real
+	// end-of-data signal and not merely "the next month happens to be empty".
+	// Month bucket only.
+	HasPrev *bool `json:"has_prev,omitempty"`
+	HasNext *bool `json:"has_next,omitempty"`
 }
 
 // PublicEngine is the engine record (GET /v1/catalog/engines/{id}) — the
@@ -747,10 +887,16 @@ type PublicCalendarData struct {
 // data-layer-retirement wave migrated. refs are exact-only identity anchors,
 // like every other entity's (doc 106 G4).
 type PublicEngine struct {
-	ID        int64              `json:"id"`
-	Name      string             `json:"name"`
-	WorkCount int                `json:"work_count"`
-	Refs      []PublicCatalogRef `json:"refs"`
+	ID        int64  `json:"id"`
+	Name      string `json:"name"`
+	WorkCount int    `json:"work_count"`
+	// Description is the engine blurb verbatim from the source (A2-1e); ""
+	// when the row carries none. Aliases are its alternate spellings ([] when
+	// none). Both are always present — the data has been in catalog_engine
+	// since the retirement wave migrated it; this wave simply stops hiding it.
+	Description string             `json:"description"`
+	Aliases     []string           `json:"aliases"`
+	Refs        []PublicCatalogRef `json:"refs"`
 }
 
 // ── A2-1d: the works product search ─────────────────────────────────────────

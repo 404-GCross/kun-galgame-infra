@@ -26,10 +26,13 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 
 	"api/internal/platform/catalog/dto"
 	"api/internal/platform/catalog/model"
+
+	"gorm.io/datatypes"
 )
 
 // Cursor lanes of the three taxonomy browse lanes. Each is its own lane token
@@ -78,6 +81,9 @@ func (s *PublicService) LabelsList(ctx context.Context, f LabelsListFilter, curs
 		where = append(where, "kind = ?")
 		args = append(args, *f.Kind)
 	}
+	// Snapshot the FILTER-only predicate before the cursor clause joins it: the
+	// total counts the whole filtered set, not the tail after the cursor.
+	filterWhere, filterArgs := append([]string(nil), where...), append([]any(nil), args...)
 	if cur.ID > 0 {
 		where = append(where, "id > ?")
 		args = append(args, cur.ID)
@@ -109,6 +115,9 @@ func (s *PublicService) LabelsList(ctx context.Context, f LabelsListFilter, curs
 			ID: r.ID, DisplayName: r.DisplayName, Kind: labelKindKey(r.Kind), WorkCount: counts[r.ID],
 		}
 	}
+	if out.Total, err = s.taxonomyTotal(ctx, "catalog_label", filterWhere, filterArgs); err != nil {
+		return dto.PublicLabelsListData{}, err
+	}
 	out.NextCursor = taxonomyNextCursor(taxonomyLaneLabels, ids, limit)
 	return out, nil
 }
@@ -131,6 +140,8 @@ func (s *PublicService) TagsList(ctx context.Context, f TagsListFilter, cursor s
 		where = append(where, "kind = ?")
 		args = append(args, *f.Kind)
 	}
+	// Filter-only predicate for the total (see LabelsList).
+	filterWhere, filterArgs := append([]string(nil), where...), append([]any(nil), args...)
 	if cur.ID > 0 {
 		where = append(where, "id > ?")
 		args = append(args, cur.ID)
@@ -162,6 +173,9 @@ func (s *PublicService) TagsList(ctx context.Context, f TagsListFilter, cursor s
 			ID: r.ID, Name: r.Name, Tier: tagTierKey(r.Tier), Kind: tagKindKey(r.Kind), WorkCount: counts[r.ID],
 		}
 	}
+	if out.Total, err = s.taxonomyTotal(ctx, "catalog_tag", filterWhere, filterArgs); err != nil {
+		return dto.PublicTagsListData{}, err
+	}
 	out.NextCursor = taxonomyNextCursor(taxonomyLaneTags, ids, limit)
 	return out, nil
 }
@@ -185,10 +199,12 @@ func (s *PublicService) EnginesList(ctx context.Context, f EnginesListFilter, cu
 	args = append(args, limit)
 
 	var rows []struct {
-		ID   int64
-		Name string
+		ID          int64
+		Name        string
+		Description string
+		Aliases     datatypes.JSON
 	}
-	q := `SELECT id, name FROM catalog_engine ` + whereClause(where) + ` ORDER BY id ASC LIMIT ?`
+	q := `SELECT id, name, description, aliases FROM catalog_engine ` + whereClause(where) + ` ORDER BY id ASC LIMIT ?`
 	if err := s.db.WithContext(ctx).Raw(q, args...).Scan(&rows).Error; err != nil {
 		return dto.PublicEnginesListData{}, err
 	}
@@ -203,7 +219,13 @@ func (s *PublicService) EnginesList(ctx context.Context, f EnginesListFilter, cu
 	}
 	out := dto.PublicEnginesListData{Items: make([]dto.PublicEngineListItem, len(rows))}
 	for i, r := range rows {
-		out.Items[i] = dto.PublicEngineListItem{ID: r.ID, Name: r.Name, WorkCount: counts[r.ID]}
+		out.Items[i] = dto.PublicEngineListItem{
+			ID: r.ID, Name: r.Name, WorkCount: counts[r.ID],
+			Description: r.Description, Aliases: engineAliases(r.Aliases),
+		}
+	}
+	if out.Total, err = s.taxonomyTotal(ctx, "catalog_engine", nil, nil); err != nil {
+		return dto.PublicEnginesListData{}, err
 	}
 	out.NextCursor = taxonomyNextCursor(taxonomyLaneEngines, ids, limit)
 	return out, nil
@@ -214,11 +236,13 @@ func (s *PublicService) EnginesList(ctx context.Context, f EnginesListFilter, cu
 // entity loader, so A2-0's wiki eid anchors surface with no extra plumbing.
 func (s *PublicService) EngineDetail(ctx context.Context, id int64, nsfw bool) (dto.PublicEngine, bool, error) {
 	var head struct {
-		ID   int64
-		Name string
+		ID          int64
+		Name        string
+		Description string
+		Aliases     datatypes.JSON
 	}
 	if err := s.db.WithContext(ctx).Raw(
-		`SELECT id, name FROM catalog_engine WHERE id = ?`, id).Scan(&head).Error; err != nil {
+		`SELECT id, name, description, aliases FROM catalog_engine WHERE id = ?`, id).Scan(&head).Error; err != nil {
 		return dto.PublicEngine{}, false, err
 	}
 	if head.ID == 0 {
@@ -228,7 +252,10 @@ func (s *PublicService) EngineDetail(ctx context.Context, id int64, nsfw bool) (
 	if err != nil {
 		return dto.PublicEngine{}, false, err
 	}
-	rec := dto.PublicEngine{ID: head.ID, Name: head.Name, WorkCount: counts[id]}
+	rec := dto.PublicEngine{
+		ID: head.ID, Name: head.Name, WorkCount: counts[id],
+		Description: head.Description, Aliases: engineAliases(head.Aliases),
+	}
 	if rec.Refs, err = s.entityRefs(ctx, model.EntityTypeEngine, id); err != nil {
 		return dto.PublicEngine{}, false, err
 	}
@@ -284,6 +311,46 @@ func (s *PublicService) workCountsFor(ctx context.Context, edge string, ids []in
 		out[r.KeyID] = r.N
 	}
 	return out, nil
+}
+
+// taxonomyTotal counts the WHOLE filtered set of a browse lane (A2-1e) — the
+// same predicate that produced the page, MINUS the cursor clause, so paging a
+// lane to exhaustion collects exactly `total` rows.
+//
+// table is FIXED internal SQL (never caller input) and where holds only the
+// lane's own filter fragments; every caller value stays a bound argument.
+//
+// Deliberately NOT nsfw-aware: a label / tag / engine row is an identity, and
+// the nsfw gate on this face only ever governs CONTENT — which on these lanes
+// means the per-row work_count, not whether the row itself exists.
+func (s *PublicService) taxonomyTotal(ctx context.Context, table string, where []string, args []any) (int64, error) {
+	var total int64
+	q := `SELECT count(*) FROM ` + table + ` ` + whereClause(where)
+	if err := s.db.WithContext(ctx).Raw(q, args...).Scan(&total).Error; err != nil {
+		return 0, err
+	}
+	return total, nil
+}
+
+// engineAliases decodes catalog_engine.aliases (a jsonb string array) to the
+// wire shape. A NULL / malformed / non-array value yields [] rather than an
+// error: the column is a display convenience, and one bad row must not 500 a
+// whole browse page.
+func engineAliases(raw datatypes.JSON) []string {
+	out := []string{}
+	if len(raw) == 0 {
+		return out
+	}
+	var vals []string
+	if err := json.Unmarshal(raw, &vals); err != nil {
+		return out
+	}
+	for _, v := range vals {
+		if v = strings.TrimSpace(v); v != "" {
+			out = append(out, v)
+		}
+	}
+	return out
 }
 
 // clampBrowseLimit is the defensive service-side clamp shared by the secondary

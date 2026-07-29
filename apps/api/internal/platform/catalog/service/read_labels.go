@@ -25,9 +25,10 @@ func (s *ReadService) loadWorkLabels(ctx context.Context, workIDs []int64) (map[
 		DisplayName string `gorm:"column:display_name"`
 		LabelKind   int16  `gorm:"column:label_kind"`
 		Kind        int16  `gorm:"column:kind"`
+		Lang        string `gorm:"column:lang"`
 	}
 	if err := s.db.WithContext(ctx).Raw(`
-		SELECT wl.work_id, wl.label_id, l.display_name, l.kind AS label_kind, wl.kind AS kind
+		SELECT wl.work_id, wl.label_id, l.display_name, l.kind AS label_kind, wl.kind AS kind, l.lang
 		FROM catalog_work_label wl JOIN catalog_label l ON l.id = wl.label_id
 		WHERE wl.work_id IN ?
 		ORDER BY wl.work_id, wl.kind, l.display_name`, workIDs).Scan(&rows).Error; err != nil {
@@ -35,7 +36,7 @@ func (s *ReadService) loadWorkLabels(ctx context.Context, workIDs []int64) (map[
 	}
 	for _, r := range rows {
 		out[r.WorkID] = append(out[r.WorkID], LabelAttribution{
-			LabelID: r.LabelID, DisplayName: r.DisplayName, LabelKind: r.LabelKind, Kind: r.Kind,
+			LabelID: r.LabelID, DisplayName: r.DisplayName, LabelKind: r.LabelKind, Kind: r.Kind, Lang: r.Lang,
 		})
 	}
 	return out, nil

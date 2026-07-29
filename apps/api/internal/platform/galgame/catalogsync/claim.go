@@ -9,6 +9,7 @@ import (
 	"api/internal/platform/catalog/model"
 	"api/internal/platform/catalog/repository"
 	"api/internal/platform/catalog/service"
+	galgamemodel "api/internal/platform/galgame/model"
 )
 
 // runClaim registers every preloaded wiki galgame as a claimed catalog_work
@@ -116,9 +117,117 @@ func (r *Reconciler) runClaim(ctx context.Context) (ClaimStats, error) {
 		} else {
 			stats.AlreadyClaimed++
 		}
+		claimed[g.ID] = workID // so the claim-state pass below covers it too
 	}
 
+	// Project the claim VISIBILITY state (R7) for every claimed work. Runs
+	// last so it also covers the works this pass just minted.
+	n, err := r.syncClaimStates(claimed)
+	if err != nil {
+		return stats, fmt.Errorf("sync claim_state: %w", err)
+	}
+	stats.ClaimStateWritten = n
+
 	return stats, nil
+}
+
+// claimStateOf projects a wiki publication status onto the catalog-owned claim
+// visibility vocabulary (R7). This is the ONLY place the two vocabularies meet:
+// the wiki value itself never reaches the catalog contract.
+//
+//	published (0)              → live   — publicly visible on the wiki
+//	vndb draft (2) / pending (3) → draft — exists, not published yet
+//	banned (1) / declined (4)   → hidden — withdrawn; consumers show nothing
+//
+// An unknown future status is the CONSERVATIVE hidden rather than live: a
+// status we do not understand must not be published on downstream sites.
+func claimStateOf(wikiStatus int16) int16 {
+	switch wikiStatus {
+	case galgamemodel.GalgameStatusPublished:
+		return model.ClaimStateLive
+	case galgamemodel.GalgameStatusVNDBDraft, galgamemodel.GalgameStatusPending:
+		return model.ClaimStateDraft
+	default:
+		return model.ClaimStateHidden
+	}
+}
+
+// syncClaimStates writes catalog_work.claim_state for the given galgame →
+// work id pairs, touching only the cells whose value differs (so a converged
+// re-run writes nothing and the daily job stays free). Dry-run counts the
+// cells that WOULD change.
+//
+// Idempotent re-projection by construction: the value is a pure function of
+// the wiki row's current status, so running this over the whole population IS
+// the backfill — there is no separate one-shot migration step to remember.
+//
+// Chunked like writeBackWorkIDs (its mirror image: that one drives the wiki
+// pool from catalog ids, this one drives the catalog pool from wiki statuses),
+// because the two pools may be different connections and the join therefore
+// has to happen through a VALUES list.
+func (r *Reconciler) syncClaimStates(claimed map[int64]int64) (int, error) {
+	if len(claimed) == 0 {
+		return 0, nil
+	}
+	type pair struct{ workID, state int64 }
+	pairs := make([]pair, 0, len(claimed))
+	for i := range r.games {
+		g := &r.games[i]
+		workID, ok := claimed[g.ID]
+		if !ok || workID == 0 { // unclaimed, or a dry-run placeholder id
+			continue
+		}
+		pairs = append(pairs, pair{workID: workID, state: int64(claimStateOf(g.Status))})
+	}
+	if len(pairs) == 0 {
+		return 0, nil
+	}
+
+	const chunk = 1000
+	changed := 0
+	for start := 0; start < len(pairs); start += chunk {
+		end := min(start+chunk, len(pairs))
+		batch := pairs[start:end]
+		var sb strings.Builder
+		args := make([]any, 0, len(batch)*2)
+		for i, p := range batch {
+			if i > 0 {
+				sb.WriteString(",")
+			}
+			if i == 0 {
+				// Cast the first tuple so Postgres infers the derived columns'
+				// types; claim_state is smallint, hence the narrower cast.
+				sb.WriteString("(?::bigint,?::smallint)")
+			} else {
+				sb.WriteString("(?,?)")
+			}
+			args = append(args, p.workID, p.state)
+		}
+		values := sb.String()
+		// IS DISTINCT FROM, not <>: the pre-projection value is NULL, which a
+		// plain inequality would never match (and every row would look
+		// converged forever).
+		if r.dryRun {
+			var n int64
+			q := `SELECT count(*) FROM catalog_work AS w
+			      JOIN (VALUES ` + values + `) AS v(wid, st) ON w.id = v.wid
+			      WHERE w.claim_state IS DISTINCT FROM v.st`
+			if err := r.catalog.Raw(q, args...).Scan(&n).Error; err != nil {
+				return changed, err
+			}
+			changed += int(n)
+			continue
+		}
+		q := `UPDATE catalog_work AS w SET claim_state = v.st
+		      FROM (VALUES ` + values + `) AS v(wid, st)
+		      WHERE w.id = v.wid AND w.claim_state IS DISTINCT FROM v.st`
+		res := r.catalog.Exec(q, args...)
+		if res.Error != nil {
+			return changed, res.Error
+		}
+		changed += int(res.RowsAffected)
+	}
+	return changed, nil
 }
 
 // writeBackWorkIDs sets wiki galgame.catalog_work_id from the given galgame_id →

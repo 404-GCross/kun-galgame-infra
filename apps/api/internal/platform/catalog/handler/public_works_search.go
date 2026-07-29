@@ -83,8 +83,8 @@ func (h *PublicHandler) WorksSearch(c fiber.Ctx) error {
 	if f.LabelID, ok = posIntQueryPub(c.Query("label_id")); !ok {
 		return response.BadRequestMsg(c, errors.ErrInvalidParam, "label_id must be a positive integer")
 	}
-	if f.TagID, ok = posIntQueryPub(c.Query("tag_id")); !ok {
-		return response.BadRequestMsg(c, errors.ErrInvalidParam, "tag_id must be a positive integer")
+	if f.TagIDs, ok = posIntListQueryPub(c.Query("tag_id"), maxTagIDFilters); !ok {
+		return response.BadRequestMsg(c, errors.ErrInvalidParam, msgBadTagIDs)
 	}
 	if f.SeriesID, ok = posIntQueryPub(c.Query("series_id")); !ok {
 		return response.BadRequestMsg(c, errors.ErrInvalidParam, "series_id must be a positive integer")
