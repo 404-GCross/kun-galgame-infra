@@ -831,17 +831,26 @@ components:
     PublicLookupBatchItem:
       additionalProperties: false
       properties:
+        character:
+          $ref: "#/components/schemas/PublicCharacter"
         claimed_by:
           $ref: "#/components/schemas/PublicClaimedBy"
         external_id:
           type: string
+        label:
+          $ref: "#/components/schemas/PublicLabel"
+        name:
+          $ref: "#/components/schemas/PublicName"
         source:
+          type: string
+        type:
           type: string
         work:
           $ref: "#/components/schemas/PublicWorkBrief"
       required:
         - source
         - external_id
+        - type
         - work
         - claimed_by
       type: object
@@ -867,8 +876,14 @@ components:
     PublicLookupData:
       additionalProperties: false
       properties:
+        character:
+          $ref: "#/components/schemas/PublicCharacter"
         claimed_by:
           $ref: "#/components/schemas/PublicClaimedBy"
+        label:
+          $ref: "#/components/schemas/PublicLabel"
+        name:
+          $ref: "#/components/schemas/PublicName"
         work:
           $ref: "#/components/schemas/PublicWorkBrief"
       required:
@@ -881,6 +896,8 @@ components:
         external_id:
           type: string
         source:
+          type: string
+        type:
           type: string
       required:
         - source
@@ -1639,19 +1656,32 @@ paths:
           schema:
             description: "Upstream source key: vndb | bangumi | dlsite | erogamescape (the internal registry spelling erogamespace is accepted too)"
             type: string
-        - description: The id within that source (vndb accepts v19658 or 19658; dlsite RJ/VJ numbers)
+        - description: The id within that source. type=work accepts vndb v19658 or 19658 (and dlsite RJ/VJ numbers); the non-work types match VERBATIM as the registry stores them — vndb character c1234, label p129, staff a bare number
           explode: false
           in: query
           name: external_id
           schema:
-            description: The id within that source (vndb accepts v19658 or 19658; dlsite RJ/VJ numbers)
+            description: The id within that source. type=work accepts vndb v19658 or 19658 (and dlsite RJ/VJ numbers); the non-work types match VERBATIM as the registry stores them — vndb character c1234, label p129, staff a bare number
             type: string
-        - description: true/1 = resolve r18 works too (default false = 404 on an r18 hit)
+        - description: Which entity family the external id is resolved against (default work); an unknown token is a 400, whereas an unknown SOURCE is a miss
+          explode: false
+          in: query
+          name: type
+          schema:
+            default: work
+            description: Which entity family the external id is resolved against (default work); an unknown token is a 400, whereas an unknown SOURCE is a miss
+            enum:
+              - work
+              - name
+              - character
+              - label
+            type: string
+        - description: true/1 = resolve r18 works too (default false = 404 on an r18 hit); on type=character it also keeps sexual traits
           explode: false
           in: query
           name: nsfw
           schema:
-            description: true/1 = resolve r18 works too (default false = 404 on an r18 hit)
+            description: true/1 = resolve r18 works too (default false = 404 on an r18 hit); on type=character it also keeps sexual traits
             type: boolean
       responses:
         "200":
@@ -1666,7 +1696,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Reverse-lookup an external id to its catalog work via an EXACT anchor (killer feature); 404 on miss/hidden
+      summary: Reverse-lookup an external id via an EXACT anchor (killer feature); type=work|name|character|label, 404 on miss/hidden
       tags:
         - catalog-public
   /v1/catalog/lookup/batch:
@@ -1691,7 +1721,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Batch external-id reverse-lookup (≤100 pairs); misses return a null work in order
+      summary: Batch external-id reverse-lookup (≤100 pairs, per-pair type); misses return null blocks in order
       tags:
         - catalog-public
   /v1/catalog/names/{id}:

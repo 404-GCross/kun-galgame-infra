@@ -50,7 +50,7 @@
 | `GET /v1/catalog/tags/{id}` | `catalog:read` | **规范 tag(doc 106 G5)**:`{id, name, tier, kind}`(跨源规范词表 catalog_tag);`include=works` 附带该规范 tag 下的作品(经 catalog_tag_source_map ⋈ catalog_work_tag,nsfw 门),按 `limit`/`offset` 翻页,**满页时**带 `next_offset`(= `offset+limit`),不满页则省略 = 到底 |
 | `GET /v1/catalog/search` | `catalog:read` | 实体搜索(persons/characters/labels,复用三索引) |
 | `POST /v1/catalog/resolve` | `catalog:read` | 批量旧 ID → canonical(redirect 压平语义与内部一致) |
-| `GET /v1/catalog/lookup` + `POST …/lookup/batch` | `catalog:read` | **外部 id 反查(killer,doc 19 §3.1,Phase 1)**:`?source=vndb&external_id=v19658` → work + `claimed_by` 指针;批量 ≤100。背书 = 四源 exact 锚(在产) |
+| `GET /v1/catalog/lookup` + `POST …/lookup/batch` | `catalog:read` | **外部 id 反查(killer,doc 19 §3.1,Phase 1)**:`?source=vndb&external_id=v19658` → work + `claimed_by` 指针;批量 ≤100。背书 = 四源 exact 锚(在产)。**`type=work\|name\|character\|label`(缺省 `work`,加法扩展)**:同一反查面按实体族分流——`work` 语义逐字不变(含 release 锚回落到属主 work),其余三族取**该族** exact 锚后委派各自详情投影(重块关闭),命中只填对应块 `name` / `character` / `label`,`work` / `claimed_by` 留空;批量每对可各带 `type`,响应回显**归一后**的 token(缺省对回显 `work`) |
 | `GET /v1/catalog/redirects` | `catalog:read` | id 收敛事件 keyset 流(内部 S2S 面公开化,doc 19 §3.3) |
 
 > 不进入公开路由:`/admin/*`、人审队列、merge/claim 等 S2S 写面、`/:gid/revert`、消息队列、site 管理等。
@@ -69,6 +69,13 @@
 > - **非正数 / 非数字 400**:`limit=0`、`limit=-1`、`limit=abc` 一律 `400 limit must be a positive integer`,不再静默取默认值。
 > - **`label_id` / `tag_id` / `series_id` 同理**:缺省/空 = 不过滤;一旦给值就必须是正整数,`abc` / `0` / `-5` / `1.5` 一律 400(旧行为把非法值退化成 0 → 过滤器**静默消失**、返回不过滤的首页,是最坏的一类失败)。
 > - `offset` 保持宽松(负数归 0,不 400)。
+>
+> **lookup `type` 词表(2026-07-29 加法波)**:`work`(缺省)/ `name` / `character` / `label`,两个面(GET 单查 + POST 批量)同一套。
+>
+> - **非法 token 一律 400**(`type must be one of work, name, character, label`):`type` 是**我方封闭词表**,拼错即调用方错误;批量中**任一对**非法即整个请求 400,不把该槽悄悄降级成 miss。对照:**未知 `source` 仍是 miss/404**——来源是开放注册表,不该因为我们尚未收录某个站点就把调用判为错误。
+> - **`external_id` 归一只发生在 `work` 面**:vndb 作品接受 `v19658` 或裸 `19658`;`name` / `character` / `label` 按注册表存法**逐字匹配**(vndb 角色 `c1234`、厂牌 `p129`、staff 是**裸数字**)——给非作品面补 `v` 前缀只会 100% miss。
+> - **可见性继承各实体详情面**:命中后委派 `names/{id}` / `characters/{id}` / `labels/{id}` 的投影(`include` 重块关闭),因此 `nsfw` 语义与那三个端点逐字一致(例:character 身份不因 `nsfw=0` 隐藏,只掉 sexual traits;r18 隐藏仍只是 `work` 面的规则)。
+> - **响应加法**:`PublicLookupData` / 批量 item 新增可选块 `name` / `character` / `label`(不命中即整块省略),`work` / `claimed_by` 字段语义不变;批量 item 另加恒在的 `type` 回显。spec-breaking 门(oasdiff)背书为非破坏。
 >
 > **封面严格度:列表面 > 详情面(对 sfw 调用方)**——`works` 列表的单图 `cover` 对 sfw 调用方会**丢弃 `sexual≠0` 的封面**(挑不出合规图时 `cover` 为空串),而详情面 `covers[]` / `screenshots[]` **恒发全量**并逐行带 `sexual` / `violence` 旗标交由消费端自行取舍。
 

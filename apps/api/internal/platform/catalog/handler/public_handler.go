@@ -45,6 +45,11 @@ const (
 	// every public lane (the clamp handles "too big"; this covers "not a
 	// positive integer").
 	msgBadLimit = "limit must be a positive integer"
+
+	// msgBadLookupType is the single wording for a lookup type outside the
+	// closed vocabulary — our own token set, so an unknown one is a caller
+	// mistake (400), unlike an unknown source (an open registry → a miss).
+	msgBadLookupType = "type must be one of work, name, character, label"
 )
 
 // WorkDetail serves GET /v1/catalog/works/{id} — the frozen work record.
@@ -66,15 +71,20 @@ func (h *PublicHandler) WorkDetail(c fiber.Ctx) error {
 	return response.Success(c, rec)
 }
 
-// Lookup serves GET /v1/catalog/lookup?source=&external_id= — the external-id
-// reverse-lookup killer. Exact anchors only; 404 on a miss / hidden work.
+// Lookup serves GET /v1/catalog/lookup?source=&external_id=&type= — the
+// external-id reverse-lookup killer. Exact anchors only; 404 on a miss / hidden
+// entity. type selects the family (work default | name | character | label).
 func (h *PublicHandler) Lookup(c fiber.Ctx) error {
 	source := strings.TrimSpace(c.Query("source"))
 	externalID := c.Query("external_id")
 	if source == "" || strings.TrimSpace(externalID) == "" {
 		return response.BadRequestMsg(c, errors.ErrBadRequest, "source and external_id are required")
 	}
-	data, found, err := h.svc.Lookup(c.Context(), source, externalID, nsfwQuery(c))
+	entityType, _, ok := service.ParsePublicLookupType(c.Query("type"))
+	if !ok {
+		return response.BadRequestMsg(c, errors.ErrInvalidParam, msgBadLookupType)
+	}
+	data, found, err := h.svc.LookupTyped(c.Context(), source, externalID, entityType, nsfwQuery(c))
 	if err != nil {
 		return response.InternalError(c, errors.ErrInternalServer)
 	}
@@ -86,7 +96,9 @@ func (h *PublicHandler) Lookup(c fiber.Ctx) error {
 }
 
 // LookupBatch serves POST /v1/catalog/lookup/batch — up to 100 (source,
-// external_id) pairs; misses return a null work in their slot (order preserved).
+// external_id, type) pairs; misses return null blocks in their slot (order
+// preserved). One illegal type token fails the whole request (400) rather than
+// silently degrading that pair to a miss.
 func (h *PublicHandler) LookupBatch(c fiber.Ctx) error {
 	var req dto.PublicLookupBatchRequest
 	if err := c.Bind().JSON(&req); err != nil {
@@ -97,6 +109,11 @@ func (h *PublicHandler) LookupBatch(c fiber.Ctx) error {
 	}
 	if len(req.Items) > 100 {
 		return response.BadRequestMsg(c, errors.ErrValidationFailed, "at most 100 pairs per batch")
+	}
+	for _, p := range req.Items {
+		if _, _, ok := service.ParsePublicLookupType(p.Type); !ok {
+			return response.BadRequestMsg(c, errors.ErrInvalidParam, msgBadLookupType)
+		}
 	}
 	items, err := h.svc.LookupBatch(c.Context(), req.Items, nsfwQuery(c))
 	if err != nil {

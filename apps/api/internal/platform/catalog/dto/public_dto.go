@@ -123,17 +123,27 @@ type PublicCatalogWork struct {
 }
 
 // PublicLookupData is the external-id reverse-lookup result (GET
-// /v1/catalog/lookup). work/claimed_by are null-free on a hit; the miss/hidden
-// case is a 404 (design §3.1). Exact anchors only.
+// /v1/catalog/lookup). Exact anchors only; the miss/hidden case is a 404
+// (design §3.1). The `type` parameter picks WHICH entity family the external id
+// is resolved against — work (the default, byte-identical to the original
+// contract) | name | character | label — and exactly one block is populated:
+// work + claimed_by for type=work, otherwise the matching entity record. The
+// three typed blocks are omitted entirely (not null) when unused.
 type PublicLookupData struct {
 	Work      *PublicWorkBrief `json:"work"`
 	ClaimedBy *PublicClaimedBy `json:"claimed_by"`
+	Name      *PublicName      `json:"name,omitempty"`
+	Character *PublicCharacter `json:"character,omitempty"`
+	Label     *PublicLabel     `json:"label,omitempty"`
 }
 
 // PublicLookupPair is one (source, external_id) request in a batch lookup.
+// Type is the per-pair lookup family (work | name | character | label); absent
+// means work. An unknown token fails the WHOLE batch with a 400.
 type PublicLookupPair struct {
 	Source     string `json:"source"`
 	ExternalID string `json:"external_id"`
+	Type       string `json:"type,omitempty"`
 }
 
 // PublicLookupBatchRequest is the batch reverse-lookup body (≤100 pairs).
@@ -141,13 +151,18 @@ type PublicLookupBatchRequest struct {
 	Items []PublicLookupPair `json:"items"`
 }
 
-// PublicLookupBatchItem echoes the request pair and carries its resolution;
-// work is null for a miss / hidden work (order preserved, 裁定 3).
+// PublicLookupBatchItem echoes the request pair — including the RESOLVED type
+// token (work when the pair omitted it) — and carries its resolution; every
+// block is null for a miss / hidden entity (order preserved, 裁定 3).
 type PublicLookupBatchItem struct {
 	Source     string           `json:"source"`
 	ExternalID string           `json:"external_id"`
+	Type       string           `json:"type"`
 	Work       *PublicWorkBrief `json:"work"`
 	ClaimedBy  *PublicClaimedBy `json:"claimed_by"`
+	Name       *PublicName      `json:"name,omitempty"`
+	Character  *PublicCharacter `json:"character,omitempty"`
+	Label      *PublicLabel     `json:"label,omitempty"`
 }
 
 // PublicLookupBatchData is the batch reverse-lookup envelope.

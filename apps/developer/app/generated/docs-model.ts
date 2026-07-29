@@ -8883,6 +8883,7 @@ export const docsModel: DocsModel = {
               "method": "get",
               "path": "/v1/catalog/changes",
               "summary": "Incremental works changes feed ((updated,id) keyset; next_cursor always present — keep polling it for new rows)",
+              "description": "Creations and updates of LIVE galgame works, ordered by (updated_at, id) ASC. The feed deliberately trails real time by ~5 seconds: updated_at is statement time, not commit time, so serving rows younger than that lag would let a slow transaction commit behind an already-advanced consumer cursor and be skipped forever. DELETIONS DO NOT FLOW THROUGH THIS FEED — a row that leaves the LIVE set simply stops appearing; merge-style disappearances are covered by /v1/catalog/redirects, and mirror-style consumers should periodically reconcile the full id set via works?sort=id.",
               "scope": "catalog:read",
               "params": [
                 {
@@ -8908,7 +8909,7 @@ export const docsModel: DocsModel = {
                   "required": false,
                   "type": "integer",
                   "format": "int64",
-                  "doc": "Items per page 1-500 (default 100)"
+                  "doc": "Items per page 1-500 (default 100); above 500 is clamped to 500, a non-positive or non-numeric value is a 400"
                 }
               ],
               "responses": [
@@ -9079,7 +9080,7 @@ export const docsModel: DocsModel = {
                   "required": false,
                   "type": "integer",
                   "format": "int64",
-                  "doc": "Works per page 1-50 (default 50)"
+                  "doc": "Works per page 1-50 (default 50); above 50 is clamped to 50, a non-positive or non-numeric value is a 400"
                 },
                 {
                   "name": "offset",
@@ -9433,7 +9434,7 @@ export const docsModel: DocsModel = {
                   "required": false,
                   "type": "integer",
                   "format": "int64",
-                  "doc": "Works per page 1-50 (default 50)"
+                  "doc": "Works per page 1-50 (default 50); above 50 is clamped to 50, a non-positive or non-numeric value is a 400"
                 },
                 {
                   "name": "offset",
@@ -9691,7 +9692,7 @@ export const docsModel: DocsModel = {
               "id": "lookupCatalogPublic",
               "method": "get",
               "path": "/v1/catalog/lookup",
-              "summary": "Reverse-lookup an external id to its catalog work via an EXACT anchor (killer feature); 404 on miss/hidden",
+              "summary": "Reverse-lookup an external id via an EXACT anchor (killer feature); type=work|name|character|label, 404 on miss/hidden",
               "scope": "catalog:read",
               "params": [
                 {
@@ -9706,14 +9707,27 @@ export const docsModel: DocsModel = {
                   "in": "query",
                   "required": false,
                   "type": "string",
-                  "doc": "The id within that source (vndb accepts v19658 or 19658; dlsite RJ/VJ numbers)"
+                  "doc": "The id within that source. type=work accepts vndb v19658 or 19658 (and dlsite RJ/VJ numbers); the non-work types match VERBATIM as the registry stores them — vndb character c1234, label p129, staff a bare number"
+                },
+                {
+                  "name": "type",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "Which entity family the external id is resolved against (default work); an unknown token is a 400, whereas an unknown SOURCE is a miss",
+                  "enum": [
+                    "work",
+                    "name",
+                    "character",
+                    "label"
+                  ]
                 },
                 {
                   "name": "nsfw",
                   "in": "query",
                   "required": false,
                   "type": "boolean",
-                  "doc": "true/1 = resolve r18 works too (default false = 404 on an r18 hit)"
+                  "doc": "true/1 = resolve r18 works too (default false = 404 on an r18 hit); on type=character it also keeps sexual traits"
                 }
               ],
               "responses": [
@@ -9734,6 +9748,227 @@ export const docsModel: DocsModel = {
                         "type": "object",
                         "children": [
                           {
+                            "name": "character",
+                            "type": "object",
+                            "children": [
+                              {
+                                "name": "id",
+                                "required": true,
+                                "format": "int64",
+                                "type": "integer"
+                              },
+                              {
+                                "name": "image",
+                                "type": "string"
+                              },
+                              {
+                                "name": "intros",
+                                "required": true,
+                                "nullable": true,
+                                "type": "array",
+                                "itemsOf": {
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "intro",
+                                      "required": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "lang",
+                                      "required": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "source",
+                                      "required": true,
+                                      "type": "string"
+                                    }
+                                  ]
+                                }
+                              },
+                              {
+                                "name": "latin",
+                                "type": "string"
+                              },
+                              {
+                                "name": "name",
+                                "required": true,
+                                "type": "object",
+                                "children": [
+                                  {
+                                    "name": "ja",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "name": "other",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "name": "zh",
+                                    "type": "string"
+                                  }
+                                ]
+                              },
+                              {
+                                "name": "next_offset",
+                                "format": "int64",
+                                "type": "integer"
+                              },
+                              {
+                                "name": "refs",
+                                "required": true,
+                                "nullable": true,
+                                "type": "array",
+                                "itemsOf": {
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "external_id",
+                                      "required": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "source",
+                                      "required": true,
+                                      "type": "string"
+                                    }
+                                  ]
+                                }
+                              },
+                              {
+                                "name": "traits",
+                                "required": true,
+                                "nullable": true,
+                                "type": "array",
+                                "itemsOf": {
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "group",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "id",
+                                      "required": true,
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "name": "lie",
+                                      "required": true,
+                                      "type": "boolean"
+                                    },
+                                    {
+                                      "name": "name",
+                                      "required": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "sexual",
+                                      "required": true,
+                                      "type": "boolean"
+                                    },
+                                    {
+                                      "name": "spoiler",
+                                      "required": true,
+                                      "doc": "0=none 1=minor 2=major",
+                                      "format": "int32",
+                                      "type": "integer"
+                                    }
+                                  ]
+                                }
+                              },
+                              {
+                                "name": "works",
+                                "nullable": true,
+                                "type": "array",
+                                "itemsOf": {
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "voices",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "array",
+                                      "itemsOf": {
+                                        "type": "object",
+                                        "children": [
+                                          {
+                                            "name": "id",
+                                            "required": true,
+                                            "format": "int64",
+                                            "type": "integer"
+                                          },
+                                          {
+                                            "name": "lang",
+                                            "required": true,
+                                            "type": "string"
+                                          },
+                                          {
+                                            "name": "latin",
+                                            "type": "string"
+                                          },
+                                          {
+                                            "name": "name",
+                                            "required": true,
+                                            "type": "string"
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    {
+                                      "name": "work",
+                                      "required": true,
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "claimed_by",
+                                          "required": true,
+                                          "type": "object",
+                                          "children": [
+                                            {
+                                              "name": "site",
+                                              "required": true,
+                                              "type": "string"
+                                            },
+                                            {
+                                              "name": "work_id",
+                                              "required": true,
+                                              "format": "int64",
+                                              "type": "integer"
+                                            }
+                                          ]
+                                        },
+                                        {
+                                          "name": "content_rating",
+                                          "required": true,
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "display_name",
+                                          "required": true,
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "id",
+                                          "required": true,
+                                          "format": "int64",
+                                          "type": "integer"
+                                        },
+                                        {
+                                          "name": "medium",
+                                          "required": true,
+                                          "type": "string"
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                }
+                              }
+                            ]
+                          },
+                          {
                             "name": "claimed_by",
                             "required": true,
                             "type": "object",
@@ -9748,6 +9983,380 @@ export const docsModel: DocsModel = {
                                 "required": true,
                                 "format": "int64",
                                 "type": "integer"
+                              }
+                            ]
+                          },
+                          {
+                            "name": "label",
+                            "type": "object",
+                            "children": [
+                              {
+                                "name": "display_name",
+                                "required": true,
+                                "type": "string"
+                              },
+                              {
+                                "name": "id",
+                                "required": true,
+                                "format": "int64",
+                                "type": "integer"
+                              },
+                              {
+                                "name": "intros",
+                                "required": true,
+                                "nullable": true,
+                                "type": "array",
+                                "itemsOf": {
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "intro",
+                                      "required": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "lang",
+                                      "required": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "source",
+                                      "required": true,
+                                      "type": "string"
+                                    }
+                                  ]
+                                }
+                              },
+                              {
+                                "name": "kind",
+                                "required": true,
+                                "type": "string"
+                              },
+                              {
+                                "name": "links",
+                                "required": true,
+                                "nullable": true,
+                                "type": "array",
+                                "itemsOf": {
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "source",
+                                      "required": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "url",
+                                      "required": true,
+                                      "type": "string"
+                                    }
+                                  ]
+                                }
+                              },
+                              {
+                                "name": "next_offset",
+                                "format": "int64",
+                                "type": "integer"
+                              },
+                              {
+                                "name": "refs",
+                                "required": true,
+                                "nullable": true,
+                                "type": "array",
+                                "itemsOf": {
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "external_id",
+                                      "required": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "source",
+                                      "required": true,
+                                      "type": "string"
+                                    }
+                                  ]
+                                }
+                              },
+                              {
+                                "name": "works",
+                                "nullable": true,
+                                "type": "array",
+                                "itemsOf": {
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "kind",
+                                      "required": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "work",
+                                      "required": true,
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "claimed_by",
+                                          "required": true,
+                                          "type": "object",
+                                          "children": [
+                                            {
+                                              "name": "site",
+                                              "required": true,
+                                              "type": "string"
+                                            },
+                                            {
+                                              "name": "work_id",
+                                              "required": true,
+                                              "format": "int64",
+                                              "type": "integer"
+                                            }
+                                          ]
+                                        },
+                                        {
+                                          "name": "content_rating",
+                                          "required": true,
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "display_name",
+                                          "required": true,
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "id",
+                                          "required": true,
+                                          "format": "int64",
+                                          "type": "integer"
+                                        },
+                                        {
+                                          "name": "medium",
+                                          "required": true,
+                                          "type": "string"
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                }
+                              }
+                            ]
+                          },
+                          {
+                            "name": "name",
+                            "type": "object",
+                            "children": [
+                              {
+                                "name": "credits",
+                                "nullable": true,
+                                "type": "array",
+                                "itemsOf": {
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "roles",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "array",
+                                      "itemsOf": {
+                                        "type": "object",
+                                        "children": [
+                                          {
+                                            "name": "character",
+                                            "type": "string"
+                                          },
+                                          {
+                                            "name": "character_id",
+                                            "format": "int64",
+                                            "type": "integer"
+                                          },
+                                          {
+                                            "name": "role_key",
+                                            "required": true,
+                                            "type": "string"
+                                          },
+                                          {
+                                            "name": "role_name",
+                                            "required": true,
+                                            "type": "string"
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    {
+                                      "name": "work",
+                                      "required": true,
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "claimed_by",
+                                          "required": true,
+                                          "type": "object",
+                                          "children": [
+                                            {
+                                              "name": "site",
+                                              "required": true,
+                                              "type": "string"
+                                            },
+                                            {
+                                              "name": "work_id",
+                                              "required": true,
+                                              "format": "int64",
+                                              "type": "integer"
+                                            }
+                                          ]
+                                        },
+                                        {
+                                          "name": "content_rating",
+                                          "required": true,
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "display_name",
+                                          "required": true,
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "id",
+                                          "required": true,
+                                          "format": "int64",
+                                          "type": "integer"
+                                        },
+                                        {
+                                          "name": "medium",
+                                          "required": true,
+                                          "type": "string"
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                }
+                              },
+                              {
+                                "name": "id",
+                                "required": true,
+                                "format": "int64",
+                                "type": "integer"
+                              },
+                              {
+                                "name": "intros",
+                                "required": true,
+                                "nullable": true,
+                                "type": "array",
+                                "itemsOf": {
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "intro",
+                                      "required": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "lang",
+                                      "required": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "source",
+                                      "required": true,
+                                      "type": "string"
+                                    }
+                                  ]
+                                }
+                              },
+                              {
+                                "name": "latin",
+                                "type": "string"
+                              },
+                              {
+                                "name": "name",
+                                "required": true,
+                                "type": "object",
+                                "children": [
+                                  {
+                                    "name": "ja",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "name": "other",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "name": "zh",
+                                    "type": "string"
+                                  }
+                                ]
+                              },
+                              {
+                                "name": "next_offset",
+                                "format": "int64",
+                                "type": "integer"
+                              },
+                              {
+                                "name": "person_id",
+                                "format": "int64",
+                                "type": "integer"
+                              },
+                              {
+                                "name": "refs",
+                                "required": true,
+                                "nullable": true,
+                                "type": "array",
+                                "itemsOf": {
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "external_id",
+                                      "required": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "source",
+                                      "required": true,
+                                      "type": "string"
+                                    }
+                                  ]
+                                }
+                              },
+                              {
+                                "name": "siblings",
+                                "required": true,
+                                "nullable": true,
+                                "type": "array",
+                                "itemsOf": {
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "id",
+                                      "required": true,
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "name": "latin",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "name",
+                                      "required": true,
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "ja",
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "other",
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "zh",
+                                          "type": "string"
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                }
                               }
                             ]
                           },
@@ -9877,7 +10486,7 @@ export const docsModel: DocsModel = {
               "id": "lookupCatalogBatchPublic",
               "method": "post",
               "path": "/v1/catalog/lookup/batch",
-              "summary": "Batch external-id reverse-lookup (≤100 pairs); misses return a null work in order",
+              "summary": "Batch external-id reverse-lookup (≤100 pairs, per-pair type); misses return null blocks in order",
               "scope": "catalog:read",
               "params": [],
               "requestBody": {
@@ -9899,6 +10508,10 @@ export const docsModel: DocsModel = {
                         {
                           "name": "source",
                           "required": true,
+                          "type": "string"
+                        },
+                        {
+                          "name": "type",
                           "type": "string"
                         }
                       ]
@@ -9932,6 +10545,227 @@ export const docsModel: DocsModel = {
                               "type": "object",
                               "children": [
                                 {
+                                  "name": "character",
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "id",
+                                      "required": true,
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "name": "image",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "intros",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "array",
+                                      "itemsOf": {
+                                        "type": "object",
+                                        "children": [
+                                          {
+                                            "name": "intro",
+                                            "required": true,
+                                            "type": "string"
+                                          },
+                                          {
+                                            "name": "lang",
+                                            "required": true,
+                                            "type": "string"
+                                          },
+                                          {
+                                            "name": "source",
+                                            "required": true,
+                                            "type": "string"
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    {
+                                      "name": "latin",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "name",
+                                      "required": true,
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "ja",
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "other",
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "zh",
+                                          "type": "string"
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "name": "next_offset",
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "name": "refs",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "array",
+                                      "itemsOf": {
+                                        "type": "object",
+                                        "children": [
+                                          {
+                                            "name": "external_id",
+                                            "required": true,
+                                            "type": "string"
+                                          },
+                                          {
+                                            "name": "source",
+                                            "required": true,
+                                            "type": "string"
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    {
+                                      "name": "traits",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "array",
+                                      "itemsOf": {
+                                        "type": "object",
+                                        "children": [
+                                          {
+                                            "name": "group",
+                                            "type": "string"
+                                          },
+                                          {
+                                            "name": "id",
+                                            "required": true,
+                                            "format": "int64",
+                                            "type": "integer"
+                                          },
+                                          {
+                                            "name": "lie",
+                                            "required": true,
+                                            "type": "boolean"
+                                          },
+                                          {
+                                            "name": "name",
+                                            "required": true,
+                                            "type": "string"
+                                          },
+                                          {
+                                            "name": "sexual",
+                                            "required": true,
+                                            "type": "boolean"
+                                          },
+                                          {
+                                            "name": "spoiler",
+                                            "required": true,
+                                            "doc": "0=none 1=minor 2=major",
+                                            "format": "int32",
+                                            "type": "integer"
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    {
+                                      "name": "works",
+                                      "nullable": true,
+                                      "type": "array",
+                                      "itemsOf": {
+                                        "type": "object",
+                                        "children": [
+                                          {
+                                            "name": "voices",
+                                            "required": true,
+                                            "nullable": true,
+                                            "type": "array",
+                                            "itemsOf": {
+                                              "type": "object",
+                                              "children": [
+                                                {
+                                                  "name": "id",
+                                                  "required": true,
+                                                  "format": "int64",
+                                                  "type": "integer"
+                                                },
+                                                {
+                                                  "name": "lang",
+                                                  "required": true,
+                                                  "type": "string"
+                                                },
+                                                {
+                                                  "name": "latin",
+                                                  "type": "string"
+                                                },
+                                                {
+                                                  "name": "name",
+                                                  "required": true,
+                                                  "type": "string"
+                                                }
+                                              ]
+                                            }
+                                          },
+                                          {
+                                            "name": "work",
+                                            "required": true,
+                                            "type": "object",
+                                            "children": [
+                                              {
+                                                "name": "claimed_by",
+                                                "required": true,
+                                                "type": "object",
+                                                "children": [
+                                                  {
+                                                    "name": "site",
+                                                    "required": true,
+                                                    "type": "string"
+                                                  },
+                                                  {
+                                                    "name": "work_id",
+                                                    "required": true,
+                                                    "format": "int64",
+                                                    "type": "integer"
+                                                  }
+                                                ]
+                                              },
+                                              {
+                                                "name": "content_rating",
+                                                "required": true,
+                                                "type": "string"
+                                              },
+                                              {
+                                                "name": "display_name",
+                                                "required": true,
+                                                "type": "string"
+                                              },
+                                              {
+                                                "name": "id",
+                                                "required": true,
+                                                "format": "int64",
+                                                "type": "integer"
+                                              },
+                                              {
+                                                "name": "medium",
+                                                "required": true,
+                                                "type": "string"
+                                              }
+                                            ]
+                                          }
+                                        ]
+                                      }
+                                    }
+                                  ]
+                                },
+                                {
                                   "name": "claimed_by",
                                   "required": true,
                                   "type": "object",
@@ -9955,7 +10789,386 @@ export const docsModel: DocsModel = {
                                   "type": "string"
                                 },
                                 {
+                                  "name": "label",
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "display_name",
+                                      "required": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "id",
+                                      "required": true,
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "name": "intros",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "array",
+                                      "itemsOf": {
+                                        "type": "object",
+                                        "children": [
+                                          {
+                                            "name": "intro",
+                                            "required": true,
+                                            "type": "string"
+                                          },
+                                          {
+                                            "name": "lang",
+                                            "required": true,
+                                            "type": "string"
+                                          },
+                                          {
+                                            "name": "source",
+                                            "required": true,
+                                            "type": "string"
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    {
+                                      "name": "kind",
+                                      "required": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "links",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "array",
+                                      "itemsOf": {
+                                        "type": "object",
+                                        "children": [
+                                          {
+                                            "name": "source",
+                                            "required": true,
+                                            "type": "string"
+                                          },
+                                          {
+                                            "name": "url",
+                                            "required": true,
+                                            "type": "string"
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    {
+                                      "name": "next_offset",
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "name": "refs",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "array",
+                                      "itemsOf": {
+                                        "type": "object",
+                                        "children": [
+                                          {
+                                            "name": "external_id",
+                                            "required": true,
+                                            "type": "string"
+                                          },
+                                          {
+                                            "name": "source",
+                                            "required": true,
+                                            "type": "string"
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    {
+                                      "name": "works",
+                                      "nullable": true,
+                                      "type": "array",
+                                      "itemsOf": {
+                                        "type": "object",
+                                        "children": [
+                                          {
+                                            "name": "kind",
+                                            "required": true,
+                                            "type": "string"
+                                          },
+                                          {
+                                            "name": "work",
+                                            "required": true,
+                                            "type": "object",
+                                            "children": [
+                                              {
+                                                "name": "claimed_by",
+                                                "required": true,
+                                                "type": "object",
+                                                "children": [
+                                                  {
+                                                    "name": "site",
+                                                    "required": true,
+                                                    "type": "string"
+                                                  },
+                                                  {
+                                                    "name": "work_id",
+                                                    "required": true,
+                                                    "format": "int64",
+                                                    "type": "integer"
+                                                  }
+                                                ]
+                                              },
+                                              {
+                                                "name": "content_rating",
+                                                "required": true,
+                                                "type": "string"
+                                              },
+                                              {
+                                                "name": "display_name",
+                                                "required": true,
+                                                "type": "string"
+                                              },
+                                              {
+                                                "name": "id",
+                                                "required": true,
+                                                "format": "int64",
+                                                "type": "integer"
+                                              },
+                                              {
+                                                "name": "medium",
+                                                "required": true,
+                                                "type": "string"
+                                              }
+                                            ]
+                                          }
+                                        ]
+                                      }
+                                    }
+                                  ]
+                                },
+                                {
+                                  "name": "name",
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "credits",
+                                      "nullable": true,
+                                      "type": "array",
+                                      "itemsOf": {
+                                        "type": "object",
+                                        "children": [
+                                          {
+                                            "name": "roles",
+                                            "required": true,
+                                            "nullable": true,
+                                            "type": "array",
+                                            "itemsOf": {
+                                              "type": "object",
+                                              "children": [
+                                                {
+                                                  "name": "character",
+                                                  "type": "string"
+                                                },
+                                                {
+                                                  "name": "character_id",
+                                                  "format": "int64",
+                                                  "type": "integer"
+                                                },
+                                                {
+                                                  "name": "role_key",
+                                                  "required": true,
+                                                  "type": "string"
+                                                },
+                                                {
+                                                  "name": "role_name",
+                                                  "required": true,
+                                                  "type": "string"
+                                                }
+                                              ]
+                                            }
+                                          },
+                                          {
+                                            "name": "work",
+                                            "required": true,
+                                            "type": "object",
+                                            "children": [
+                                              {
+                                                "name": "claimed_by",
+                                                "required": true,
+                                                "type": "object",
+                                                "children": [
+                                                  {
+                                                    "name": "site",
+                                                    "required": true,
+                                                    "type": "string"
+                                                  },
+                                                  {
+                                                    "name": "work_id",
+                                                    "required": true,
+                                                    "format": "int64",
+                                                    "type": "integer"
+                                                  }
+                                                ]
+                                              },
+                                              {
+                                                "name": "content_rating",
+                                                "required": true,
+                                                "type": "string"
+                                              },
+                                              {
+                                                "name": "display_name",
+                                                "required": true,
+                                                "type": "string"
+                                              },
+                                              {
+                                                "name": "id",
+                                                "required": true,
+                                                "format": "int64",
+                                                "type": "integer"
+                                              },
+                                              {
+                                                "name": "medium",
+                                                "required": true,
+                                                "type": "string"
+                                              }
+                                            ]
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    {
+                                      "name": "id",
+                                      "required": true,
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "name": "intros",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "array",
+                                      "itemsOf": {
+                                        "type": "object",
+                                        "children": [
+                                          {
+                                            "name": "intro",
+                                            "required": true,
+                                            "type": "string"
+                                          },
+                                          {
+                                            "name": "lang",
+                                            "required": true,
+                                            "type": "string"
+                                          },
+                                          {
+                                            "name": "source",
+                                            "required": true,
+                                            "type": "string"
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    {
+                                      "name": "latin",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "name",
+                                      "required": true,
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "ja",
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "other",
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "zh",
+                                          "type": "string"
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "name": "next_offset",
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "name": "person_id",
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "name": "refs",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "array",
+                                      "itemsOf": {
+                                        "type": "object",
+                                        "children": [
+                                          {
+                                            "name": "external_id",
+                                            "required": true,
+                                            "type": "string"
+                                          },
+                                          {
+                                            "name": "source",
+                                            "required": true,
+                                            "type": "string"
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    {
+                                      "name": "siblings",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "array",
+                                      "itemsOf": {
+                                        "type": "object",
+                                        "children": [
+                                          {
+                                            "name": "id",
+                                            "required": true,
+                                            "format": "int64",
+                                            "type": "integer"
+                                          },
+                                          {
+                                            "name": "latin",
+                                            "type": "string"
+                                          },
+                                          {
+                                            "name": "name",
+                                            "required": true,
+                                            "type": "object",
+                                            "children": [
+                                              {
+                                                "name": "ja",
+                                                "type": "string"
+                                              },
+                                              {
+                                                "name": "other",
+                                                "type": "string"
+                                              },
+                                              {
+                                                "name": "zh",
+                                                "type": "string"
+                                              }
+                                            ]
+                                          }
+                                        ]
+                                      }
+                                    }
+                                  ]
+                                },
+                                {
                                   "name": "source",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "type",
                                   "required": true,
                                   "type": "string"
                                 },
@@ -10119,7 +11332,7 @@ export const docsModel: DocsModel = {
                   "required": false,
                   "type": "integer",
                   "format": "int64",
-                  "doc": "Credits per page 1-50 (default 50)"
+                  "doc": "Credits per page 1-50 (default 50); above 50 is clamped to 50, a non-positive or non-numeric value is a 400"
                 },
                 {
                   "name": "offset",
@@ -10970,7 +12183,7 @@ export const docsModel: DocsModel = {
                   "required": false,
                   "type": "integer",
                   "format": "int64",
-                  "doc": "Works per page 1-50 (default 50)"
+                  "doc": "Works per page 1-50 (default 50); above 50 is clamped to 50, a non-positive or non-numeric value is a 400"
                 },
                 {
                   "name": "offset",
@@ -11257,7 +12470,7 @@ export const docsModel: DocsModel = {
                   "required": false,
                   "type": "integer",
                   "format": "int64",
-                  "doc": "Items per page 1-100 (default 20)"
+                  "doc": "Items per page 1-100 (default 20); above 100 is clamped to 100, a non-positive or non-numeric value is a 400"
                 },
                 {
                   "name": "nsfw",
@@ -12094,6 +13307,56 @@ export const docsModel: DocsModel = {
                                 },
                                 {
                                   "name": "source",
+                                  "required": true,
+                                  "type": "string"
+                                }
+                              ]
+                            }
+                          },
+                          {
+                            "name": "series_siblings",
+                            "required": true,
+                            "nullable": true,
+                            "type": "array",
+                            "itemsOf": {
+                              "type": "object",
+                              "children": [
+                                {
+                                  "name": "claimed_by",
+                                  "required": true,
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "site",
+                                      "required": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "work_id",
+                                      "required": true,
+                                      "format": "int64",
+                                      "type": "integer"
+                                    }
+                                  ]
+                                },
+                                {
+                                  "name": "content_rating",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "display_name",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "id",
+                                  "required": true,
+                                  "format": "int64",
+                                  "type": "integer"
+                                },
+                                {
+                                  "name": "medium",
                                   "required": true,
                                   "type": "string"
                                 }

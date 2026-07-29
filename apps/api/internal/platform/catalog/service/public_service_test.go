@@ -186,6 +186,213 @@ func TestPublicLookupBatchOrder(t *testing.T) {
 	if items[2].Work == nil || items[2].Work.ID != w.ID {
 		t.Fatalf("item2 (normalized) miss: %+v", items[2])
 	}
+	// The resolved type token is echoed even when the pair omitted it.
+	for i, it := range items {
+		if it.Type != "work" {
+			t.Fatalf("item%d type=%q want the resolved default \"work\"", i, it.Type)
+		}
+	}
+}
+
+// srcBangumiPub is the seeded bangumi source id — the one registry whose id
+// spaces genuinely OVERLAP across families (subject 12345 and character 12345
+// are different things), which is why the lookup face needs `type` at all.
+const srcBangumiPub int16 = 3
+
+// TestPublicLookupTypedEntities pins the additive `type` parameter: the same
+// exact-anchor reverse-lookup answers for name / character / label too, `type`
+// (not the anchor) decides which family answers, and each hit carries ONLY its
+// own block — work/claimed_by stay null off the work lane.
+func TestPublicLookupTypedEntities(t *testing.T) {
+	cleanTables(t)
+	svc := newPublicSvc()
+	ctx := t.Context()
+
+	w := createWorkX(t, galgameMediumID, model.ContentRatingAllAges, model.WorkStatusLive, "同 id 作品")
+	claimWork(t, w.ID, "galgame_wiki", 7)
+	addExternalRef(t, model.EntityTypeWork, w.ID, srcBangumiPub, "12345", model.LinkKindExact)
+
+	ch := createCharacter(t, "同 id 角色")
+	addExternalRef(t, model.EntityTypeCharacter, ch.ID, srcBangumiPub, "12345", model.LinkKindExact)
+
+	// vndb staff anchors are stored as BARE numbers (characters are c123, labels
+	// p123) — the typed lane must pass the id through verbatim instead of
+	// applying the work-only "v" prefix rule, or this can never resolve.
+	n := createCreditName(t, nil, "テスト脚本家")
+	addExternalRef(t, model.EntityTypeCreditName, n.ID, srcVNDB, "54321", model.LinkKindExact)
+
+	lbl := &model.CatalogLabel{DisplayName: "テストブランド", Kind: model.LabelKindGameBrand}
+	if err := testDB.Create(lbl).Error; err != nil {
+		t.Fatalf("create label: %v", err)
+	}
+	addExternalRef(t, model.EntityTypeLabel, lbl.ID, srcVNDB, "p129", model.LinkKindExact)
+	// Exact-only is the red line on the typed lanes too.
+	addExternalRef(t, model.EntityTypeLabel, lbl.ID, srcVNDB, "p999", model.LinkKindProbable)
+
+	// An absent type is the ORIGINAL work contract, unchanged — and the colliding
+	// bangumi character anchor must not disturb it.
+	untyped, found, err := svc.Lookup(ctx, "bangumi", "12345", false)
+	if err != nil || !found || untyped.Work == nil || untyped.Work.ID != w.ID {
+		t.Fatalf("absent type must resolve the work: found=%v work=%v err=%v", found, untyped.Work, err)
+	}
+	if untyped.ClaimedBy == nil || untyped.ClaimedBy.Site != "galgame_wiki" {
+		t.Fatalf("absent type must keep claimed_by: %+v", untyped.ClaimedBy)
+	}
+	if untyped.Name != nil || untyped.Character != nil || untyped.Label != nil {
+		t.Fatalf("the work lane must leave the typed blocks empty: %+v", untyped)
+	}
+
+	// type=character on the SAME (source, external_id) answers the character.
+	got, found, err := svc.LookupTyped(ctx, "bangumi", "12345", model.EntityTypeCharacter, false)
+	if err != nil || !found || got.Character == nil || got.Character.ID != ch.ID {
+		t.Fatalf("type=character: found=%v character=%+v err=%v", found, got.Character, err)
+	}
+	if got.Work != nil || got.ClaimedBy != nil || got.Name != nil || got.Label != nil {
+		t.Fatalf("type=character must populate character only: %+v", got)
+	}
+
+	got, found, err = svc.LookupTyped(ctx, "vndb", "54321", model.EntityTypeCreditName, false)
+	if err != nil || !found || got.Name == nil || got.Name.ID != n.ID {
+		t.Fatalf("type=name: found=%v name=%+v err=%v", found, got.Name, err)
+	}
+	if got.Work != nil || got.ClaimedBy != nil || got.Character != nil || got.Label != nil {
+		t.Fatalf("type=name must populate name only: %+v", got)
+	}
+
+	got, found, err = svc.LookupTyped(ctx, "vndb", "p129", model.EntityTypeLabel, false)
+	if err != nil || !found || got.Label == nil || got.Label.ID != lbl.ID {
+		t.Fatalf("type=label: found=%v label=%+v err=%v", found, got.Label, err)
+	}
+	if got.Work != nil || got.ClaimedBy != nil || got.Name != nil || got.Character != nil {
+		t.Fatalf("type=label must populate label only: %+v", got)
+	}
+
+	// Cross-family misses: the anchor exists, but not for THAT family. And a
+	// probable anchor never resolves, typed or not.
+	for _, c := range []struct {
+		name       string
+		source     string
+		ext        string
+		entityType int16
+	}{
+		{"work anchor asked as a name", "bangumi", "12345", model.EntityTypeCreditName},
+		{"character anchor asked as a label", "bangumi", "12345", model.EntityTypeLabel},
+		{"label anchor asked as a work", "vndb", "p129", model.EntityTypeWork},
+		{"probable label anchor", "vndb", "p999", model.EntityTypeLabel},
+		{"unknown source", "nosuchsource", "p129", model.EntityTypeLabel},
+	} {
+		if _, found, err := svc.LookupTyped(ctx, c.source, c.ext, c.entityType, false); err != nil || found {
+			t.Fatalf("%s must miss: found=%v err=%v", c.name, found, err)
+		}
+	}
+}
+
+// TestPublicLookupTypedNSFWParity pins that a typed lookup INHERITS the entity's
+// own visibility rules instead of growing a second, drifting copy: a character
+// identity is never hidden by nsfw=false (identity is not content — only its
+// sexual traits drop), and the projected record is identical to what GET
+// /v1/catalog/characters/{id} serves with the heavy block off.
+func TestPublicLookupTypedNSFWParity(t *testing.T) {
+	cleanTables(t)
+	if err := testDB.Exec("TRUNCATE catalog_character_trait RESTART IDENTITY CASCADE").Error; err != nil {
+		t.Fatalf("truncate trait vocab: %v", err)
+	}
+	svc := newPublicSvc()
+	ctx := t.Context()
+
+	ch := createCharacter(t, "隠しヒロイン")
+	addExternalRef(t, model.EntityTypeCharacter, ch.ID, srcVNDB, "c777", model.LinkKindExact)
+	for _, tr := range []model.CatalogCharacterTrait{
+		{VndbTID: "i1", Name: "Long Hair", Sexual: false, Searchable: true, Applicable: true},
+		{VndbTID: "i2", Name: "Sexual Trait", Sexual: true, Searchable: true, Applicable: true},
+	} {
+		trait := tr
+		if err := testDB.Create(&trait).Error; err != nil {
+			t.Fatalf("create trait %s: %v", trait.Name, err)
+		}
+		if err := testDB.Create(&model.CatalogCharacterTraitLink{
+			CharacterID: ch.ID, TraitID: trait.ID, SpoilerLevel: 0,
+		}).Error; err != nil {
+			t.Fatalf("link trait %s: %v", trait.Name, err)
+		}
+	}
+
+	sfw, found, err := svc.LookupTyped(ctx, "vndb", "c777", model.EntityTypeCharacter, false)
+	if err != nil || !found || sfw.Character == nil {
+		t.Fatalf("nsfw=false must still resolve the identity: found=%v err=%v", found, err)
+	}
+	if len(sfw.Character.Traits) != 1 || sfw.Character.Traits[0].Name != "Long Hair" {
+		t.Fatalf("nsfw=false traits = %+v (want the safe one only)", sfw.Character.Traits)
+	}
+	direct, found, err := svc.Character(ctx, ch.ID, false, false, 0, 0, 0)
+	if err != nil || !found {
+		t.Fatalf("direct character: found=%v err=%v", found, err)
+	}
+	if !reflect.DeepEqual(*sfw.Character, direct) {
+		t.Fatalf("lookup record must equal the detail projection:\nlookup=%+v\ndetail=%+v", *sfw.Character, direct)
+	}
+
+	nsfwData, found, err := svc.LookupTyped(ctx, "vndb", "c777", model.EntityTypeCharacter, true)
+	if err != nil || !found || nsfwData.Character == nil {
+		t.Fatalf("nsfw=true character: found=%v err=%v", found, err)
+	}
+	if len(nsfwData.Character.Traits) != 2 {
+		t.Fatalf("nsfw=true traits = %+v (want the sexual trait to join)", nsfwData.Character.Traits)
+	}
+}
+
+// TestPublicLookupBatchMixedTypes pins per-pair types: order preserved, each
+// slot carries only its own family's block, and every item echoes the RESOLVED
+// token (work when the pair omitted it).
+func TestPublicLookupBatchMixedTypes(t *testing.T) {
+	cleanTables(t)
+	svc := newPublicSvc()
+	ctx := t.Context()
+
+	w := createWorkX(t, galgameMediumID, model.ContentRatingAllAges, model.WorkStatusLive, "batch 作品")
+	addExternalRef(t, model.EntityTypeWork, w.ID, srcVNDB, "v1", model.LinkKindExact)
+	ch := createCharacter(t, "batch 角色")
+	addExternalRef(t, model.EntityTypeCharacter, ch.ID, srcBangumiPub, "12345", model.LinkKindExact)
+	lbl := &model.CatalogLabel{DisplayName: "batch ブランド", Kind: model.LabelKindGameBrand}
+	if err := testDB.Create(lbl).Error; err != nil {
+		t.Fatalf("create label: %v", err)
+	}
+	addExternalRef(t, model.EntityTypeLabel, lbl.ID, srcVNDB, "p129", model.LinkKindExact)
+
+	items, err := svc.LookupBatch(ctx, []dto.PublicLookupPair{
+		{Source: "vndb", ExternalID: "v1"},                          // omitted type → work
+		{Source: "bangumi", ExternalID: "12345", Type: "character"}, //
+		{Source: "vndb", ExternalID: "p129", Type: "label"},         //
+		{Source: "vndb", ExternalID: "p129", Type: "work"},          // wrong family → miss
+		{Source: "vndb", ExternalID: "v1", Type: "name"},            // wrong family → miss
+	}, false)
+	if err != nil {
+		t.Fatalf("batch: %v", err)
+	}
+	if len(items) != 5 {
+		t.Fatalf("batch len=%d want 5", len(items))
+	}
+	wantTypes := []string{"work", "character", "label", "work", "name"}
+	for i, want := range wantTypes {
+		if items[i].Type != want {
+			t.Fatalf("item%d type=%q want %q", i, items[i].Type, want)
+		}
+	}
+	if items[0].Work == nil || items[0].Work.ID != w.ID || items[0].Character != nil {
+		t.Fatalf("item0 (work) = %+v", items[0])
+	}
+	if items[1].Character == nil || items[1].Character.ID != ch.ID || items[1].Work != nil {
+		t.Fatalf("item1 (character) = %+v", items[1])
+	}
+	if items[2].Label == nil || items[2].Label.ID != lbl.ID || items[2].Work != nil {
+		t.Fatalf("item2 (label) = %+v", items[2])
+	}
+	for _, i := range []int{3, 4} {
+		it := items[i]
+		if it.Work != nil || it.ClaimedBy != nil || it.Name != nil || it.Character != nil || it.Label != nil {
+			t.Fatalf("item%d must be an all-null miss: %+v", i, it)
+		}
+	}
 }
 
 func TestPublicWorkDetailFetchableSet(t *testing.T) {

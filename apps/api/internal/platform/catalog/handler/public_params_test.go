@@ -6,6 +6,9 @@
 package handler
 
 import (
+	"encoding/json"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"api/internal/platform/catalog/model"
@@ -29,7 +32,22 @@ func publicApp(db *gorm.DB) *fiber.App {
 	app.Get("/v1/catalog/works", h.WorksList)
 	app.Get("/v1/catalog/changes", h.Changes)
 	app.Get("/v1/catalog/labels/:id", h.Label)
+	app.Get("/v1/catalog/lookup", h.Lookup)
+	app.Post("/v1/catalog/lookup/batch", h.LookupBatch)
 	return app
+}
+
+// postJSON posts a JSON body and decodes the envelope (the GET-side getJSON
+// lives in read_test.go).
+func postJSON(t *testing.T, app *fiber.App, url, body string) (int, map[string]any) {
+	t.Helper()
+	req := httptest.NewRequest("POST", url, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := app.Test(req)
+	require.NoError(t, err)
+	var out map[string]any
+	_ = json.NewDecoder(resp.Body).Decode(&out)
+	return resp.StatusCode, out
 }
 
 // seedPublicWorks truncates the works tables and inserts n bodyless LIVE
@@ -119,6 +137,56 @@ func TestPublicLimitSemantics(t *testing.T) {
 	code, body = getJSON(t, app, "/v1/catalog/works")
 	require.Equal(t, 200, code)
 	assert.Len(t, body["data"].(map[string]any)["items"], 20)
+}
+
+// TestPublicLookupTypeVocabulary pins the closed `type` vocabulary on both
+// lookup faces. A token outside work|name|character|label is a 400 — it is OUR
+// vocabulary, so an unknown one is a caller mistake — whereas an unknown SOURCE
+// stays a 404 miss because sources are an open registry. In the batch face a
+// single illegal pair fails the whole request rather than degrading that slot to
+// a silent miss.
+func TestPublicLookupTypeVocabulary(t *testing.T) {
+	db := openCatalogTestDB(t)
+	seedPublicWorks(t, db, 1)
+	app := publicApp(db)
+
+	for _, raw := range []string{"person", "org", "release", "works", "WORK", "1"} {
+		t.Run("GET type="+raw, func(t *testing.T) {
+			code, body := getJSON(t, app, "/v1/catalog/lookup?source=vndb&external_id=v1&type="+raw)
+			require.Equal(t, 400, code)
+			assert.Equal(t, "type must be one of work, name, character, label", body["message"])
+		})
+	}
+
+	// Legal tokens (and an absent one) reach the resolver: nothing is anchored,
+	// so they 404 — a miss, never a 400.
+	for _, url := range []string{
+		"/v1/catalog/lookup?source=vndb&external_id=v1",
+		"/v1/catalog/lookup?source=vndb&external_id=v1&type=work",
+		"/v1/catalog/lookup?source=vndb&external_id=p1&type=label",
+		"/v1/catalog/lookup?source=bangumi&external_id=1&type=character",
+		"/v1/catalog/lookup?source=bangumi&external_id=1&type=name",
+		"/v1/catalog/lookup?source=nosuchsource&external_id=1&type=label",
+	} {
+		t.Run("GET "+url, func(t *testing.T) {
+			code, _ := getJSON(t, app, url)
+			assert.Equal(t, 404, code)
+		})
+	}
+
+	code, body := postJSON(t, app, "/v1/catalog/lookup/batch",
+		`{"items":[{"source":"vndb","external_id":"v1"},{"source":"vndb","external_id":"v2","type":"release"}]}`)
+	require.Equal(t, 400, code, "one illegal pair fails the whole batch")
+	assert.Equal(t, "type must be one of work, name, character, label", body["message"])
+
+	// An all-legal batch resolves normally and echoes the resolved token.
+	code, body = postJSON(t, app, "/v1/catalog/lookup/batch",
+		`{"items":[{"source":"vndb","external_id":"v1"},{"source":"vndb","external_id":"p1","type":"label"}]}`)
+	require.Equal(t, 200, code)
+	items := body["data"].(map[string]any)["items"].([]any)
+	require.Len(t, items, 2)
+	assert.Equal(t, "work", items[0].(map[string]any)["type"])
+	assert.Equal(t, "label", items[1].(map[string]any)["type"])
 }
 
 // TestLimitPubClampArithmetic unit-pins the helper (no database needed).

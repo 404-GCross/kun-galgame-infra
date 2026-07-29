@@ -90,38 +90,138 @@ func ParsePublicInclude(raw string) PublicInclude {
 
 // ─────────────────────────── lookup (killer) ───────────────────────────
 
+// publicLookupTypes is the CLOSED `type` vocabulary of the reverse-lookup face:
+// token → the entity family the external id is resolved against. Deliberately
+// narrower than the resolve/redirects entity vocabulary — person / org / release
+// are not independently addressable on the public face, so they are not
+// lookup-able either.
+var publicLookupTypes = map[string]int16{
+	"work":      model.EntityTypeWork,
+	"name":      model.EntityTypeCreditName,
+	"character": model.EntityTypeCharacter,
+	"label":     model.EntityTypeLabel,
+}
+
+// ParsePublicLookupType resolves a lookup `type` token to its entity family plus
+// the canonical token echoed back on the response; an absent token means work
+// (the original contract, unchanged). ok=false → the token is outside the closed
+// vocabulary and BOTH faces answer 400 — note the deliberate contrast with an
+// unknown SOURCE, which stays a miss because sources are an open registry.
+func ParsePublicLookupType(raw string) (entityType int16, key string, ok bool) {
+	key = strings.TrimSpace(raw)
+	if key == "" {
+		key = "work"
+	}
+	entityType, ok = publicLookupTypes[key]
+	return entityType, key, ok
+}
+
 // Lookup resolves an external id to its catalog work via an EXACT anchor only
 // (probable is an unverified hypothesis and never crosses the public face).
 // found=false → 404 when the source is unknown, no exact anchor exists, or the
 // resolved work is r18 (hidden). external_id is normalized per source (裁定 3).
 func (s *PublicService) Lookup(ctx context.Context, source, externalID string, nsfw bool) (dto.PublicLookupData, bool, error) {
-	brief, err := s.lookupBrief(ctx, source, externalID, nsfw)
-	if err != nil {
+	return s.LookupTyped(ctx, source, externalID, model.EntityTypeWork, nsfw)
+}
+
+// LookupTyped resolves an external id against ONE entity family (the `type`
+// parameter, already parsed to its constant). work keeps the release-anchor
+// fallback and answers with the work brief + claim pointer; name / character /
+// label take a single-entity-type exact anchor and then delegate to that
+// entity's own detail projection with the heavy blocks off — so each family
+// inherits its established visibility rules by construction instead of growing a
+// second, drifting copy of them here.
+func (s *PublicService) LookupTyped(ctx context.Context, source, externalID string, entityType int16, nsfw bool) (dto.PublicLookupData, bool, error) {
+	if entityType == model.EntityTypeWork {
+		brief, err := s.lookupBrief(ctx, source, externalID, nsfw)
+		if err != nil || brief == nil {
+			return dto.PublicLookupData{}, false, err
+		}
+		return dto.PublicLookupData{Work: brief, ClaimedBy: brief.ClaimedBy}, true, nil
+	}
+
+	id, err := s.lookupEntityID(ctx, source, externalID, entityType)
+	if err != nil || id == 0 {
 		return dto.PublicLookupData{}, false, err
 	}
-	if brief == nil {
+	switch entityType {
+	case model.EntityTypeCreditName:
+		rec, found, err := s.Name(ctx, id, false, nsfw, 0, 0)
+		if err != nil || !found {
+			return dto.PublicLookupData{}, false, err
+		}
+		return dto.PublicLookupData{Name: &rec}, true, nil
+	case model.EntityTypeCharacter:
+		rec, found, err := s.Character(ctx, id, false, nsfw, 0, 0, 0)
+		if err != nil || !found {
+			return dto.PublicLookupData{}, false, err
+		}
+		return dto.PublicLookupData{Character: &rec}, true, nil
+	case model.EntityTypeLabel:
+		rec, found, err := s.Label(ctx, id, false, nsfw, 0, 0)
+		if err != nil || !found {
+			return dto.PublicLookupData{}, false, err
+		}
+		return dto.PublicLookupData{Label: &rec}, true, nil
+	default:
 		return dto.PublicLookupData{}, false, nil
 	}
-	return dto.PublicLookupData{Work: brief, ClaimedBy: brief.ClaimedBy}, true, nil
 }
 
 // LookupBatch resolves up to len(pairs) external ids, preserving order; a miss /
-// hidden work yields a null work in its slot (裁定 3). The caller caps the count.
+// hidden entity yields null blocks in its slot (裁定 3), and every item echoes
+// the RESOLVED type token. The caller caps the count and rejects unknown type
+// tokens with a 400 — an unknown token reaching here can only miss.
 func (s *PublicService) LookupBatch(ctx context.Context, pairs []dto.PublicLookupPair, nsfw bool) ([]dto.PublicLookupBatchItem, error) {
 	out := make([]dto.PublicLookupBatchItem, 0, len(pairs))
 	for _, p := range pairs {
-		item := dto.PublicLookupBatchItem{Source: p.Source, ExternalID: p.ExternalID}
-		brief, err := s.lookupBrief(ctx, p.Source, p.ExternalID, nsfw)
-		if err != nil {
-			return nil, err
-		}
-		if brief != nil {
-			item.Work = brief
-			item.ClaimedBy = brief.ClaimedBy
+		entityType, key, ok := ParsePublicLookupType(p.Type)
+		item := dto.PublicLookupBatchItem{Source: p.Source, ExternalID: p.ExternalID, Type: key}
+		if ok {
+			data, found, err := s.LookupTyped(ctx, p.Source, p.ExternalID, entityType, nsfw)
+			if err != nil {
+				return nil, err
+			}
+			if found {
+				item.Work, item.ClaimedBy = data.Work, data.ClaimedBy
+				item.Name, item.Character, item.Label = data.Name, data.Character, data.Label
+			}
 		}
 		out = append(out, item)
 	}
 	return out, nil
+}
+
+// lookupEntityID is the single-family exact-anchor resolver behind the non-work
+// lookup types: source key → source id → the exact ref OF THAT entity type.
+// 0 = miss. There is no release-style fallback — that indirection is specific to
+// works (a SKU anchor standing in for its work).
+func (s *PublicService) lookupEntityID(ctx context.Context, source, externalID string, entityType int16) (int64, error) {
+	db := s.db.WithContext(ctx)
+
+	var srcID int16
+	if err := db.Raw(`SELECT id FROM catalog_source WHERE key = ?`, registrySourceKey(source)).Scan(&srcID).Error; err != nil {
+		return 0, err
+	}
+	if srcID == 0 {
+		return 0, nil // unknown source key
+	}
+	// Verbatim id — deliberately NOT normalizeExternalID, whose vndb "v" prefix
+	// rule is work-specific. The registry stores vndb characters as c123 and
+	// labels as p123 but staff as BARE numbers, so there is no bare-number form
+	// to complete here: prefixing would make every vndb non-work anchor miss.
+	ext := strings.TrimSpace(externalID)
+	if ext == "" {
+		return 0, nil
+	}
+
+	var entityID int64
+	if err := db.Raw(`SELECT entity_id FROM catalog_external_ref
+		WHERE source_id = ? AND external_id = ? AND link_kind = ? AND entity_type = ? LIMIT 1`,
+		srcID, ext, model.LinkKindExact, entityType).Scan(&entityID).Error; err != nil {
+		return 0, err
+	}
+	return entityID, nil
 }
 
 // lookupBrief is the shared exact-anchor resolver: source key → source id →

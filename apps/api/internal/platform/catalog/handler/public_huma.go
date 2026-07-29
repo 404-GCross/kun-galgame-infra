@@ -35,8 +35,9 @@ type publicWorkOutput struct {
 
 type publicLookupInput struct {
 	Source     string `query:"source" doc:"Upstream source key: vndb | bangumi | dlsite | erogamescape (the internal registry spelling erogamespace is accepted too)"`
-	ExternalID string `query:"external_id" doc:"The id within that source (vndb accepts v19658 or 19658; dlsite RJ/VJ numbers)"`
-	NSFW       bool   `query:"nsfw" doc:"true/1 = resolve r18 works too (default false = 404 on an r18 hit)"`
+	ExternalID string `query:"external_id" doc:"The id within that source. type=work accepts vndb v19658 or 19658 (and dlsite RJ/VJ numbers); the non-work types match VERBATIM as the registry stores them — vndb character c1234, label p129, staff a bare number"`
+	Type       string `query:"type" enum:"work,name,character,label" default:"work" doc:"Which entity family the external id is resolved against (default work); an unknown token is a 400, whereas an unknown SOURCE is a miss"`
+	NSFW       bool   `query:"nsfw" doc:"true/1 = resolve r18 works too (default false = 404 on an r18 hit); on type=character it also keeps sexual traits"`
 }
 type publicLookupOutput struct {
 	Body Envelope[dto.PublicLookupData]
@@ -166,13 +167,13 @@ func SetupCatalogPublicSpec(app *fiber.App) huma.API {
 	}, func(context.Context, *publicWorkInput) (*publicWorkOutput, error) { return &publicWorkOutput{}, nil })
 	huma.Register(api, huma.Operation{
 		OperationID: "lookupCatalogPublic", Method: http.MethodGet, Path: "/v1/catalog/lookup",
-		Summary: "Reverse-lookup an external id to its catalog work via an EXACT anchor (killer feature); 404 on miss/hidden", Tags: tags,
+		Summary: "Reverse-lookup an external id via an EXACT anchor (killer feature); type=work|name|character|label, 404 on miss/hidden", Tags: tags,
 	}, func(context.Context, *publicLookupInput) (*publicLookupOutput, error) {
 		return &publicLookupOutput{}, nil
 	})
 	huma.Register(api, huma.Operation{
 		OperationID: "lookupCatalogBatchPublic", Method: http.MethodPost, Path: "/v1/catalog/lookup/batch",
-		Summary: "Batch external-id reverse-lookup (≤100 pairs); misses return a null work in order", Tags: tags,
+		Summary: "Batch external-id reverse-lookup (≤100 pairs, per-pair type); misses return null blocks in order", Tags: tags,
 	}, func(context.Context, *publicLookupBatchInput) (*publicLookupBatchOutput, error) {
 		return &publicLookupBatchOutput{}, nil
 	})
