@@ -324,6 +324,18 @@ func rehangEntity(tx *gorm.DB, entityType int16, src, dst int64) ([]int64, error
 // identical (source_id, external_id) duplicates drop; when the target ends
 // with competing EXACT ids on one source, ALL of them demote to probable —
 // two silent exacts must never survive a merge.
+//
+// The galgame_wiki source is EXEMPT from that demotion (A2-0 §4c-1). Its rows
+// are not upstream anchors at all: they are the wiki's own id map, the address
+// book that keeps /galgame/<gid>, /galgame/official/<oid> and friends
+// resolving after the galgame_* tables are dropped. Two wiki ids pointing at
+// one entity is the NORMAL outcome of a merge, not a contradiction to review —
+// both old URLs legitimately lead to the survivor, and the partial unique
+// index is keyed by external_id so nothing collides. Demoting them would take
+// both old URLs off the public face at once (exact-only crosses it), breaking
+// the 100% redirect promise the rescue exists to keep. NOT IN (rather than
+// <>) so a registry without the row demotes normally instead of silently
+// exempting every source.
 func mergeExternalRefs(tx *gorm.DB, entityType int16, src, dst int64) error {
 	stmts := []mergeStmt{
 		{`UPDATE catalog_external_ref r SET entity_id = ? WHERE r.entity_type = ? AND r.entity_id = ?
@@ -334,10 +346,12 @@ func mergeExternalRefs(tx *gorm.DB, entityType int16, src, dst int64) error {
 		{`DELETE FROM catalog_external_ref WHERE entity_type = ? AND entity_id = ?`, []any{entityType, src}, false},
 		{`UPDATE catalog_external_ref SET link_kind = ?
 		   WHERE entity_type = ? AND entity_id = ? AND link_kind = ?
+		     AND source_id NOT IN (SELECT id FROM catalog_source WHERE key = ?)
 		     AND source_id IN (SELECT source_id FROM catalog_external_ref
 		                        WHERE entity_type = ? AND entity_id = ? AND link_kind = ?
 		                        GROUP BY source_id HAVING COUNT(DISTINCT external_id) > 1)`,
-			[]any{model.LinkKindProbable, entityType, dst, model.LinkKindExact, entityType, dst, model.LinkKindExact}, false},
+			[]any{model.LinkKindProbable, entityType, dst, model.LinkKindExact, sourceKeyGalgameWiki,
+				entityType, dst, model.LinkKindExact}, false},
 	}
 	// Refs are an identity face, not a work face: a work merge already touches
 	// its target, and the other entity types never reach catalog_work here.
