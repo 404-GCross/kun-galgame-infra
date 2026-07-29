@@ -56,6 +56,14 @@ MCP server 是公开 /v1 契约前面的一层**协议适配**,不是第二个 A
 | `catalog_changes` | `GET /v1/catalog/changes` | 增量同步变更流(keyset 游标存续轮询;entity_type=work) |
 | `catalog_tag_get` | `GET /v1/catalog/tags/{id}` | 正典标签(跨源标签词表;`include=works` 附携带作品) |
 
+- **catalog 覆盖面(9/12,三条「有意留白」)**:公开 catalog 面共 12 op,上表覆盖 9;
+  留白 `POST /v1/catalog/lookup/batch`(批量外部 id 水合)、`GET /v1/catalog/redirects`
+  (合并事件 keyset 流,供镜像清理存量 id)、`POST /v1/catalog/resolve`(旧 id→正典 id
+  批量扁平化)。这三条服务的是**镜像维护 / 批量同步**型消费者,应直连 HTTP 面——单轮
+  LLM tool call 没有批量、也没有存量 id 维护语义;小批量水合已由 `catalog_works_list`
+  的 `ids=` 覆盖,单个外部 id 由 `catalog_lookup_external` 覆盖;且 `lookup/batch` 与
+  `resolve` 是 POST,而 mcpface 传输是 GET 纯透传。
+
 - **r18 姿态(104 波,调用方自控)**:catalog 系工具 `nsfw=true` 显式开;galgame 系
   `content_limit=sfw|nsfw|all`(需 key 带 `galgame:nsfw` scope,否则静默降 sfw)。
   默认全部隐藏——LLM 消费者不显式要就永远看不到 r18。
@@ -63,9 +71,10 @@ MCP server 是公开 /v1 契约前面的一层**协议适配**,不是第二个 A
 - tool description 用英文、面向 LLM 写清「何时用哪个」(lookup vs search
   的分工是重点:有外部 id 用 lookup,自然语言用 search)。
 - 输入 schema 逐参对齐上游 query 参数(分页参数透传,默认页量保守)。
-- **不做**的(M1 明确出界):calendar/changes/redirects 流(agent 场景
-  弱)、resources/prompts(M2)、任何写面(Phase 3 submit 开放后随
-  OAuth 一起评估)。
+- **不做**的(明确出界):calendar 流(galgame 面,agent 场景弱)、
+  redirects/resolve/lookup/batch(镜像维护面,理由见上面的覆盖说明)、
+  resources/prompts(M2)、任何写面(Phase 3 submit 开放后随 OAuth 一起
+  评估)。`changes` 原属此列,canonical-W1 已进面(见上表)。
 
 ## 5. 运维与部署
 
