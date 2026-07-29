@@ -197,6 +197,49 @@ type publicEngineOutput struct {
 	Body Envelope[dto.PublicEngine]
 }
 
+// ── A2-1c release-calendar buckets ───────────────────────────────────────────
+//
+// The three buckets partition the works whose earliest dated release is known
+// to a month (month bucket), to a year only (pending) or not at all (tba). They
+// share the works-list paging posture, the works-list population predicate, the
+// works-list item shape and its full include= vocabulary; what they add is the
+// olang population gate and a bucket-level ETag.
+
+type publicCalendarInput struct {
+	Month   string `query:"month" doc:"ISO month YYYY-MM; default = the CURRENT Asia/Tokyo month, echoed back in the response. A malformed value is a 400"`
+	OLang   string `query:"olang" doc:"Original-language gate: comma-separated olang values in the upstream BCP-47 spelling (ja, zh-Hans, en, …) or 'all' to switch it off. Default = the ja + zh* family. olang is an OPEN vocabulary, so an unrecognized value yields an empty bucket, never a 400"`
+	Cursor  string `query:"cursor" doc:"Opaque keyset cursor from a prior next_cursor; omit for the first page"`
+	Limit   int    `query:"limit" doc:"Items per page 1-100 (default 20); above 100 is clamped to 100, a non-positive or non-numeric value is a 400"`
+	NSFW    bool   `query:"nsfw" doc:"true/1 = include r18 works (default false = dropped)"`
+	Include string `query:"include" doc:"Comma-separated rich-brief blocks: names,intros,labels,ratings,covers — the works-list vocabulary verbatim (unknown tokens ignored)"`
+}
+type publicCalendarOutput struct {
+	Body Envelope[dto.PublicCalendarData]
+}
+
+type publicCalendarPendingInput struct {
+	Year    string `query:"year" doc:"YYYY; default = the CURRENT Asia/Tokyo year, echoed back in the response. A malformed value is a 400"`
+	OLang   string `query:"olang" doc:"Original-language gate: comma-separated olang values in the upstream BCP-47 spelling (ja, zh-Hans, en, …) or 'all' to switch it off. Default = the ja + zh* family. olang is an OPEN vocabulary, so an unrecognized value yields an empty bucket, never a 400"`
+	Cursor  string `query:"cursor" doc:"Opaque keyset cursor from a prior next_cursor; omit for the first page"`
+	Limit   int    `query:"limit" doc:"Items per page 1-100 (default 20); above 100 is clamped to 100, a non-positive or non-numeric value is a 400"`
+	NSFW    bool   `query:"nsfw" doc:"true/1 = include r18 works (default false = dropped)"`
+	Include string `query:"include" doc:"Comma-separated rich-brief blocks: names,intros,labels,ratings,covers — the works-list vocabulary verbatim (unknown tokens ignored)"`
+}
+type publicCalendarPendingOutput struct {
+	Body Envelope[dto.PublicCalendarData]
+}
+
+type publicCalendarTBAInput struct {
+	OLang   string `query:"olang" doc:"Original-language gate: comma-separated olang values in the upstream BCP-47 spelling (ja, zh-Hans, en, …) or 'all' to switch it off. Default = the ja + zh* family. olang is an OPEN vocabulary, so an unrecognized value yields an empty bucket, never a 400"`
+	Cursor  string `query:"cursor" doc:"Opaque keyset cursor from a prior next_cursor; omit for the first page"`
+	Limit   int    `query:"limit" doc:"Items per page 1-100 (default 20); above 100 is clamped to 100, a non-positive or non-numeric value is a 400"`
+	NSFW    bool   `query:"nsfw" doc:"true/1 = include r18 works (default false = dropped)"`
+	Include string `query:"include" doc:"Comma-separated rich-brief blocks: names,intros,labels,ratings,covers — the works-list vocabulary verbatim (unknown tokens ignored)"`
+}
+type publicCalendarTBAOutput struct {
+	Body Envelope[dto.PublicCalendarData]
+}
+
 // SetupCatalogPublicSpec registers the /v1/catalog public projection operations
 // to derive the frozen public OpenAPI. Handlers are stubs (Fiber serves the live
 // paths); this only shapes the spec.
@@ -316,6 +359,38 @@ func SetupCatalogPublicSpec(app *fiber.App) huma.API {
 		Summary: "Engine record: name + nsfw-aware work_count + exact cross-source refs", Tags: tags,
 	}, func(context.Context, *publicEngineInput) (*publicEngineOutput, error) {
 		return &publicEngineOutput{}, nil
+	})
+	huma.Register(api, huma.Operation{
+		OperationID: "listCatalogCalendarPublic", Method: http.MethodGet, Path: "/v1/catalog/calendar",
+		Summary: "Release calendar, one ISO month (date ASC keyset); default = the current Asia/Tokyo month",
+		Description: "Works whose EARLIEST year-carrying, non-deleted release falls inside the month — day precision and " +
+			"month precision alike (a month-precision work sorts at the head of its month, it is never pinned to the 1st). " +
+			"Same classification anchor as the works-list release_date, so a row's bucket and its printed date can never disagree. " +
+			"Year-precision works live in /v1/catalog/calendar/pending, undated ones in /v1/catalog/calendar/tba, and a work with " +
+			"no release row at all is in no bucket. Items are works-list rows verbatim, include= and all. " +
+			"Carries a bucket-level ETag (count + newest updated_at over the whole filtered set): an If-None-Match hit 304s " +
+			"before any page is loaded.",
+		Tags: tags,
+	}, func(context.Context, *publicCalendarInput) (*publicCalendarOutput, error) {
+		return &publicCalendarOutput{}, nil
+	})
+	huma.Register(api, huma.Operation{
+		OperationID: "listCatalogCalendarPendingPublic", Method: http.MethodGet, Path: "/v1/catalog/calendar/pending",
+		Summary: "Release calendar, one year's month-still-unknown bucket (id ASC keyset); default = the current Asia/Tokyo year",
+		Description: "Works whose earliest release is known only to the YEAR — they appear in no month view of that year, by design. " +
+			"Same population, item shape, olang gate and ETag mechanics as the month bucket.",
+		Tags: tags,
+	}, func(context.Context, *publicCalendarPendingInput) (*publicCalendarPendingOutput, error) {
+		return &publicCalendarPendingOutput{}, nil
+	})
+	huma.Register(api, huma.Operation{
+		OperationID: "listCatalogCalendarTBAPublic", Method: http.MethodGet, Path: "/v1/catalog/calendar/tba",
+		Summary: "Release calendar, the global announced-but-undated bucket (id ASC keyset)",
+		Description: "Works that HAVE release rows but none carrying a year. A work with no release row at all is 'unknown' " +
+			"and deliberately enters no bucket — absence of a release is absence of an announcement, not a TBA date.",
+		Tags: tags,
+	}, func(context.Context, *publicCalendarTBAInput) (*publicCalendarTBAOutput, error) {
+		return &publicCalendarTBAOutput{}, nil
 	})
 	return api
 }

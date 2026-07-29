@@ -710,6 +710,29 @@ type PublicEnginesListData struct {
 	NextCursor *string                `json:"next_cursor"`
 }
 
+// ── A2-1c: the release-calendar buckets ─────────────────────────────────────
+
+// PublicCalendarData is the envelope of all three calendar buckets (GET
+// /v1/catalog/calendar, …/calendar/pending, …/calendar/tba).
+//
+// items are works-list rows VERBATIM (PublicWorkListItem, include= and all) —
+// the calendar introduces no item field of its own, so a consumer renders a
+// calendar row with exactly the code that renders a browse row, and the
+// `release_date` it prints is the very value the bucket was decided by.
+//
+// month / year echo which window the server actually served: both parameters
+// default to the CURRENT Asia/Tokyo month / year, so a caller that omitted them
+// cannot otherwise know what it got. Each is present only on its own bucket.
+// count is the whole bucket's size (the page is at most `limit` of it) and
+// comes free from the ETag meta query.
+type PublicCalendarData struct {
+	Month      string               `json:"month,omitempty" doc:"YYYY-MM — the month bucket only"`
+	Year       string               `json:"year,omitempty" doc:"YYYY — the pending bucket only"`
+	Count      int64                `json:"count"`
+	Items      []PublicWorkListItem `json:"items"`
+	NextCursor *string              `json:"next_cursor"`
+}
+
 // PublicEngine is the engine record (GET /v1/catalog/engines/{id}) — the
 // visual-novel / game engine a work was built with. VNDB publishes no engine
 // data, so this facet's only copy is the hand-curated wiki one the

@@ -24,6 +24,10 @@ type publicCursor struct {
 	// Updated is the RFC3339Nano watermark, present on the updated/changes
 	// lanes only.
 	Updated string `json:"u,omitempty"`
+	// Ord is the composed release-date ordinal (y*10000+m*100+d), present on
+	// the date-ordered calendar month lane only (A2-1c). omitempty keeps every
+	// pre-existing lane's cursor byte-identical.
+	Ord int64 `json:"o,omitempty"`
 }
 
 // encodePublicCursor renders the position as base64url(JSON) — opaque on the

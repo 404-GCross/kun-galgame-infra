@@ -68,7 +68,7 @@ func (s *PublicService) LabelsList(ctx context.Context, f LabelsListFilter, curs
 	if err != nil {
 		return dto.PublicLabelsListData{}, err
 	}
-	limit = clampTaxonomyLimit(limit)
+	limit = clampBrowseLimit(limit)
 
 	// Raw SQL bypasses GORM soft-delete, so deleted_at is filtered explicitly
 	// (see the head-row note in the file doc).
@@ -119,7 +119,7 @@ func (s *PublicService) TagsList(ctx context.Context, f TagsListFilter, cursor s
 	if err != nil {
 		return dto.PublicTagsListData{}, err
 	}
-	limit = clampTaxonomyLimit(limit)
+	limit = clampBrowseLimit(limit)
 
 	var where []string
 	var args []any
@@ -174,7 +174,7 @@ func (s *PublicService) EnginesList(ctx context.Context, f EnginesListFilter, cu
 	if err != nil {
 		return dto.PublicEnginesListData{}, err
 	}
-	limit = clampTaxonomyLimit(limit)
+	limit = clampBrowseLimit(limit)
 
 	var where []string
 	var args []any
@@ -286,11 +286,12 @@ func (s *PublicService) workCountsFor(ctx context.Context, edge string, ids []in
 	return out, nil
 }
 
-// clampTaxonomyLimit is the defensive service-side clamp of the taxonomy lanes
-// — the handler is the wire authority (it 400s a bad limit). Same numbers as
-// the works list, and the same "clamp at the ceiling, never reset to default"
-// rule so both layers agree on what an over-max limit means.
-func clampTaxonomyLimit(limit int) int {
+// clampBrowseLimit is the defensive service-side clamp shared by the secondary
+// browse lanes (the three taxonomy lanes, the three calendar buckets) — the
+// handler is the wire authority (it 400s a bad limit). Same numbers as the
+// works list, and the same "clamp at the ceiling, never reset to default" rule
+// so both layers agree on what an over-max limit means.
+func clampBrowseLimit(limit int) int {
 	if limit <= 0 {
 		return 20
 	}

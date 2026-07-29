@@ -1,5 +1,26 @@
 components:
   schemas:
+    EnvelopePublicCalendarData:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EnvelopePublicCalendarData.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/PublicCalendarData"
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
     EnvelopePublicCatalogWork:
       additionalProperties: false
       properties:
@@ -394,6 +415,33 @@ components:
             - https://example.com/errors/example
           format: uri
           type: string
+      type: object
+    PublicCalendarData:
+      additionalProperties: false
+      properties:
+        count:
+          format: int64
+          type: integer
+        items:
+          items:
+            $ref: "#/components/schemas/PublicWorkListItem"
+          type:
+            - array
+            - "null"
+        month:
+          description: YYYY-MM — the month bucket only
+          type: string
+        next_cursor:
+          type:
+            - string
+            - "null"
+        year:
+          description: YYYY — the pending bucket only
+          type: string
+      required:
+        - count
+        - items
+        - next_cursor
       type: object
     PublicCatalogRef:
       additionalProperties: false
@@ -1824,6 +1872,191 @@ info:
   version: 1.0.0
 openapi: 3.1.0
 paths:
+  /v1/catalog/calendar:
+    get:
+      description: "Works whose EARLIEST year-carrying, non-deleted release falls inside the month — day precision and month precision alike (a month-precision work sorts at the head of its month, it is never pinned to the 1st). Same classification anchor as the works-list release_date, so a row's bucket and its printed date can never disagree. Year-precision works live in /v1/catalog/calendar/pending, undated ones in /v1/catalog/calendar/tba, and a work with no release row at all is in no bucket. Items are works-list rows verbatim, include= and all. Carries a bucket-level ETag (count + newest updated_at over the whole filtered set): an If-None-Match hit 304s before any page is loaded."
+      operationId: listCatalogCalendarPublic
+      parameters:
+        - description: ISO month YYYY-MM; default = the CURRENT Asia/Tokyo month, echoed back in the response. A malformed value is a 400
+          explode: false
+          in: query
+          name: month
+          schema:
+            description: ISO month YYYY-MM; default = the CURRENT Asia/Tokyo month, echoed back in the response. A malformed value is a 400
+            type: string
+        - description: "Original-language gate: comma-separated olang values in the upstream BCP-47 spelling (ja, zh-Hans, en, …) or 'all' to switch it off. Default = the ja + zh* family. olang is an OPEN vocabulary, so an unrecognized value yields an empty bucket, never a 400"
+          explode: false
+          in: query
+          name: olang
+          schema:
+            description: "Original-language gate: comma-separated olang values in the upstream BCP-47 spelling (ja, zh-Hans, en, …) or 'all' to switch it off. Default = the ja + zh* family. olang is an OPEN vocabulary, so an unrecognized value yields an empty bucket, never a 400"
+            type: string
+        - description: Opaque keyset cursor from a prior next_cursor; omit for the first page
+          explode: false
+          in: query
+          name: cursor
+          schema:
+            description: Opaque keyset cursor from a prior next_cursor; omit for the first page
+            type: string
+        - description: Items per page 1-100 (default 20); above 100 is clamped to 100, a non-positive or non-numeric value is a 400
+          explode: false
+          in: query
+          name: limit
+          schema:
+            description: Items per page 1-100 (default 20); above 100 is clamped to 100, a non-positive or non-numeric value is a 400
+            format: int64
+            type: integer
+        - description: true/1 = include r18 works (default false = dropped)
+          explode: false
+          in: query
+          name: nsfw
+          schema:
+            description: true/1 = include r18 works (default false = dropped)
+            type: boolean
+        - description: "Comma-separated rich-brief blocks: names,intros,labels,ratings,covers — the works-list vocabulary verbatim (unknown tokens ignored)"
+          explode: false
+          in: query
+          name: include
+          schema:
+            description: "Comma-separated rich-brief blocks: names,intros,labels,ratings,covers — the works-list vocabulary verbatim (unknown tokens ignored)"
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopePublicCalendarData"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Release calendar, one ISO month (date ASC keyset); default = the current Asia/Tokyo month
+      tags:
+        - catalog-public
+  /v1/catalog/calendar/pending:
+    get:
+      description: Works whose earliest release is known only to the YEAR — they appear in no month view of that year, by design. Same population, item shape, olang gate and ETag mechanics as the month bucket.
+      operationId: listCatalogCalendarPendingPublic
+      parameters:
+        - description: YYYY; default = the CURRENT Asia/Tokyo year, echoed back in the response. A malformed value is a 400
+          explode: false
+          in: query
+          name: year
+          schema:
+            description: YYYY; default = the CURRENT Asia/Tokyo year, echoed back in the response. A malformed value is a 400
+            type: string
+        - description: "Original-language gate: comma-separated olang values in the upstream BCP-47 spelling (ja, zh-Hans, en, …) or 'all' to switch it off. Default = the ja + zh* family. olang is an OPEN vocabulary, so an unrecognized value yields an empty bucket, never a 400"
+          explode: false
+          in: query
+          name: olang
+          schema:
+            description: "Original-language gate: comma-separated olang values in the upstream BCP-47 spelling (ja, zh-Hans, en, …) or 'all' to switch it off. Default = the ja + zh* family. olang is an OPEN vocabulary, so an unrecognized value yields an empty bucket, never a 400"
+            type: string
+        - description: Opaque keyset cursor from a prior next_cursor; omit for the first page
+          explode: false
+          in: query
+          name: cursor
+          schema:
+            description: Opaque keyset cursor from a prior next_cursor; omit for the first page
+            type: string
+        - description: Items per page 1-100 (default 20); above 100 is clamped to 100, a non-positive or non-numeric value is a 400
+          explode: false
+          in: query
+          name: limit
+          schema:
+            description: Items per page 1-100 (default 20); above 100 is clamped to 100, a non-positive or non-numeric value is a 400
+            format: int64
+            type: integer
+        - description: true/1 = include r18 works (default false = dropped)
+          explode: false
+          in: query
+          name: nsfw
+          schema:
+            description: true/1 = include r18 works (default false = dropped)
+            type: boolean
+        - description: "Comma-separated rich-brief blocks: names,intros,labels,ratings,covers — the works-list vocabulary verbatim (unknown tokens ignored)"
+          explode: false
+          in: query
+          name: include
+          schema:
+            description: "Comma-separated rich-brief blocks: names,intros,labels,ratings,covers — the works-list vocabulary verbatim (unknown tokens ignored)"
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopePublicCalendarData"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Release calendar, one year's month-still-unknown bucket (id ASC keyset); default = the current Asia/Tokyo year
+      tags:
+        - catalog-public
+  /v1/catalog/calendar/tba:
+    get:
+      description: Works that HAVE release rows but none carrying a year. A work with no release row at all is 'unknown' and deliberately enters no bucket — absence of a release is absence of an announcement, not a TBA date.
+      operationId: listCatalogCalendarTBAPublic
+      parameters:
+        - description: "Original-language gate: comma-separated olang values in the upstream BCP-47 spelling (ja, zh-Hans, en, …) or 'all' to switch it off. Default = the ja + zh* family. olang is an OPEN vocabulary, so an unrecognized value yields an empty bucket, never a 400"
+          explode: false
+          in: query
+          name: olang
+          schema:
+            description: "Original-language gate: comma-separated olang values in the upstream BCP-47 spelling (ja, zh-Hans, en, …) or 'all' to switch it off. Default = the ja + zh* family. olang is an OPEN vocabulary, so an unrecognized value yields an empty bucket, never a 400"
+            type: string
+        - description: Opaque keyset cursor from a prior next_cursor; omit for the first page
+          explode: false
+          in: query
+          name: cursor
+          schema:
+            description: Opaque keyset cursor from a prior next_cursor; omit for the first page
+            type: string
+        - description: Items per page 1-100 (default 20); above 100 is clamped to 100, a non-positive or non-numeric value is a 400
+          explode: false
+          in: query
+          name: limit
+          schema:
+            description: Items per page 1-100 (default 20); above 100 is clamped to 100, a non-positive or non-numeric value is a 400
+            format: int64
+            type: integer
+        - description: true/1 = include r18 works (default false = dropped)
+          explode: false
+          in: query
+          name: nsfw
+          schema:
+            description: true/1 = include r18 works (default false = dropped)
+            type: boolean
+        - description: "Comma-separated rich-brief blocks: names,intros,labels,ratings,covers — the works-list vocabulary verbatim (unknown tokens ignored)"
+          explode: false
+          in: query
+          name: include
+          schema:
+            description: "Comma-separated rich-brief blocks: names,intros,labels,ratings,covers — the works-list vocabulary verbatim (unknown tokens ignored)"
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopePublicCalendarData"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Release calendar, the global announced-but-undated bucket (id ASC keyset)
+      tags:
+        - catalog-public
   /v1/catalog/changes:
     get:
       description: "Creations and updates of LIVE galgame works, ordered by (updated_at, id) ASC. The feed deliberately trails real time by ~5 seconds: updated_at is statement time, not commit time, so serving rows younger than that lag would let a slow transaction commit behind an already-advanced consumer cursor and be skipped forever. DELETIONS DO NOT FLOW THROUGH THIS FEED — a row that leaves the LIVE set simply stops appearing; merge-style disappearances are covered by /v1/catalog/redirects, and mirror-style consumers should periodically reconcile the full id set via works?sort=id."

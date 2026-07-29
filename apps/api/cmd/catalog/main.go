@@ -344,6 +344,10 @@ func setupPublicCatalog(
 	// before the /works/:id catch-all.
 	v1.Get("/works", publicH.WorksList)
 	v1.Get("/changes", publicH.Changes)
+	// Release-calendar buckets (A2-1c): month view + the two pending buckets.
+	v1.Get("/calendar", publicH.Calendar)
+	v1.Get("/calendar/pending", publicH.CalendarPending)
+	v1.Get("/calendar/tba", publicH.CalendarTBA)
 	// Taxonomy browse lanes (A2-1b), each registered before its own /:id.
 	v1.Get("/labels", publicH.LabelsList)
 	v1.Get("/tags", publicH.TagsList)

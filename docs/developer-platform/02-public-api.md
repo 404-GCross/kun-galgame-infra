@@ -52,6 +52,9 @@
 | `GET /v1/catalog/tags/{id}` | `catalog:read` | **规范 tag(doc 106 G5)**:`{id, name, tier, kind}`(跨源规范词表 catalog_tag);**恒带 `intros[]`(A2-1b 加法)**——多语言简介,shape 与 `labels/{id}` 的 `intros[]` 一致(`{lang, intro, source}`、按语言归并低 source_id 胜出、`source`=公开来源键),无供给则为 `[]`;`include=works` 附带该规范 tag 下的作品(经 catalog_tag_source_map ⋈ catalog_work_tag,nsfw 门),按 `limit`/`offset` 翻页,**满页时**带 `next_offset`(= `offset+limit`),不满页则省略 = 到底 |
 | `GET /v1/catalog/engines` | `catalog:read` | **引擎浏览/列表(A2-1b,keyset id ASC)**:无过滤;item = `{id, name, work_count}`。VNDB 不发布引擎数据,该 facet 的唯一副本是 wiki 手工整理并由数据层退役波迁入的行 |
 | `GET /v1/catalog/engines/{id}` | `catalog:read` | **引擎条目(A2-1b)**:`{id, name, work_count, refs[]}`;`refs[]` 同 names/characters/labels 的 exact-only 身份锚(doc 106 G4),A2-0 落的 wiki eid 即在此浮出。非法 id 400、无此行 404 |
+| `GET /v1/catalog/calendar` | `catalog:read` | **发售日历 · 月桶(A2-1c,keyset date ASC + id ASC)**:`month=YYYY-MM`(非法 400;**缺省 = 当前 Asia/Tokyo 月**,响应回显 `month`);收录**最早带年份 release 落在该月**的作品——**day 精度与 month 精度同桶**(month 精度排在该月月首,**不臆造 1 号**);item = works 列表行**逐字**(`PublicWorkListItem`,`include=` 五词表全支持),`nsfw` 同参;新增 `olang=` 人口过滤(见下);`count` = 整桶行数(非本页),`next_cursor` 末页 null;带**桶级 ETag**(见下) |
+| `GET /v1/catalog/calendar/pending` | `catalog:read` | **发售日历 · 月份未定桶(A2-1c,keyset id ASC)**:`year=YYYY`(非法 400;缺省 = 当前 JST 年,响应回显 `year`);收录**最早 release 只精确到年**的作品——它们**刻意不出现在该年的任何月桶**里。人口/item/`olang`/ETag 语义与月桶逐字一致 |
+| `GET /v1/catalog/calendar/tba` | `catalog:read` | **发售日历 · TBA 桶(A2-1c,全局,keyset id ASC)**:有 release 行但**无一行带年份**的作品(已官宣、日期未定)。**无 release 行 = unknown,不进任何桶**——"没有 release"是"没有官宣",不是"日期待定" |
 | `GET /v1/catalog/search` | `catalog:read` | 实体搜索(persons/characters/labels,复用三索引) |
 | `POST /v1/catalog/resolve` | `catalog:read` | 批量旧 ID → canonical(redirect 压平语义与内部一致) |
 | `GET /v1/catalog/lookup` + `POST …/lookup/batch` | `catalog:read` | **外部 id 反查(killer,doc 19 §3.1,Phase 1)**:`?source=vndb&external_id=v19658` → work + `claimed_by` 指针;批量 ≤100。背书 = 四源 exact 锚(在产)。**`type=work\|name\|character\|label`(缺省 `work`,加法扩展)**:同一反查面按实体族分流——`work` 语义逐字不变(含 release 锚回落到属主 work),其余三族取**该族** exact 锚后委派各自详情投影(重块关闭),命中只填对应块 `name` / `character` / `label`,`work` / `claimed_by` 留空;批量每对可各带 `type`,响应回显**归一后**的 token(缺省对回显 `work`) |
@@ -63,19 +66,22 @@
 >
 > **A2-1b taxonomy 读面加法(2026-07-29)**:三条 keyset 列表道(`labels` / `tags` / `engines`)+ `engines/{id}` + works 的 `engine_id` 过滤 + `tags/{id}` 的 `intros[]` + 详情面 `screenshots[]` 的 `width/height/thumbhash`。**公开 lookup 词表不扩**——仍是 `work\|name\|character\|label` 四族;engine / tag 的 id 解析走各自 detail / list 面,不进 lookup(它们是分类词表,不是可反查的跨源身份族)。全部加法,oasdiff 零 breaking。
 >
+> **A2-1c 发售日历加法(2026-07-29)**:三个 keyset 桶(`calendar` / `calendar/pending` / `calendar/tba`)+ 桶级 ETag + 新 `olang=` 人口参数。**item 零新字段**——就是 works 列表行本身(`include=` 词表一并继承),所以日历行和浏览行用同一套渲染代码;日历也**不新增**任何数据源或精度字段,它只是把既有的作品级 `release_date` 按序数分桶(语义见下)。全部加法,oasdiff 零 breaking。
+>
 > **参数区间与越界语义(2026-07-28 cleanup 波)**:
 >
 > | 端点 | `limit` 区间 | 默认 |
 > |---|---|---|
 > | `GET /v1/catalog/works` | 1-100 | 20 |
 > | `GET /v1/catalog/labels` / `…/tags` / `…/engines`(A2-1b 三条 taxonomy keyset 道) | 1-100 | 20 |
+> | `GET /v1/catalog/calendar` / `…/calendar/pending` / `…/calendar/tba`(A2-1c 三个日历桶) | 1-100 | 20 |
 > | `GET /v1/catalog/changes` | 1-500 | 100 |
 > | offset 型子列表(`names/{id}?include=credits`、`characters/{id}` / `labels/{id}` / `tags/{id}?include=works`) | 1-50 | 50 |
 >
 > - **越上限 clamp 到上限**(不回落默认值):`limit=1000` 在 works 面即 `limit=100`,而不是悄悄退回 20。
 > - **非正数 / 非数字 400**:`limit=0`、`limit=-1`、`limit=abc` 一律 `400 limit must be a positive integer`,不再静默取默认值。
 > - **`label_id` / `tag_id` / `series_id` / `engine_id` 同理**:缺省/空 = 不过滤;一旦给值就必须是正整数,`abc` / `0` / `-5` / `1.5` 一律 400(旧行为把非法值退化成 0 → 过滤器**静默消失**、返回不过滤的首页,是最坏的一类失败)。
-> - **游标不跨道**:每条 keyset 道(works `id` / works `updated` / changes / labels / tags / engines)的 `next_cursor` 只在本道有效,拿去另一条道一律 `400 malformed cursor`。
+> - **游标不跨道**:每条 keyset 道(works `id` / works `updated` / changes / labels / tags / engines / calendar / calendar-pending / calendar-tba)的 `next_cursor` 只在本道有效,拿去另一条道一律 `400 malformed cursor`。
 > - `offset` 保持宽松(负数归 0,不 400)。
 >
 > **lookup `type` 词表(2026-07-29 加法波)**:`work`(缺省)/ `name` / `character` / `label`,两个面(GET 单查 + POST 批量)同一套。
@@ -91,6 +97,23 @@
 > - 统计口径 = works 列表的种群谓词逐字复用:LIVE + galgame 媒介 + 未软删,`stub` / 其它媒介 / 软删行一律不计。
 > - **去重按作品**:一个作品对同一厂牌可有多条不同 `kind` 的归属边、可携带多个映射到同一规范 tag 的源 tag,计数只算一次。
 > - 实现上是**页级批量 GROUP BY**(每页一条聚合查询),不是逐行 count。
+>
+> **发售日历三桶语义(2026-07-29 A2-1c 落账)**:三个桶按**同一个分类锚**切分——作品的**最早一条「带年份、未软删」release** 的组合序数(`y*10000 + m*100 + d`,月/日未知记 0)。这**正是** works 列表投影为 `release_date` 的那个数,所以「一行落在哪个桶」与「这一行印着什么日期」永不打架。
+>
+> | 该作品最早 release 的精度 | 组合序数示例 | 落桶 |
+> |---|---|---|
+> | day(`2024-06-14`) | `20240614` | `calendar?month=2024-06` |
+> | month(`2024-06`) | `20240600` | `calendar?month=2024-06`(排在该月**月首**,**不补 1 号**) |
+> | year(`2024`) | `20240000` | `calendar/pending?year=2024`——**该年任何月桶都不出** |
+> | 有 release 行但无一行带年份 | — | `calendar/tba` |
+> | **无 release 行**(unknown) | — | **不进任何桶** |
+>
+> - **月窗判据 = 序数区间 `[y*10000+m*100, +99]`**:day 精度(1-31)与 month 精度(d=0)同时落入,year 精度(`y*10000`)天然出界。
+> - **移植/复刻按最早那次归桶**:2024-05 首发、2024-06 复刻的作品在**五月**桶,和它 `release_date=2024-05-02` 一致。
+> - **JST 定界**:galgame 发售日是日本民用日期,故 `month` / `year` 缺省 = **Asia/Tokyo 当前**月/年(固定 +09:00,JST 无夏令时);服务端解析出的窗口**回显**在响应的 `month` / `year` 里——缺省调用方否则无从得知拿到的是哪一格。
+> - **人口 = works 列表谓词逐字**(LIVE + galgame 媒介 + 未软删;`nsfw=1` 才出 r18)**+ `olang=` 原语言门**:缺省 = **`ja` + 全部 `zh*` 家族**(VNDB 系西方目录会淹没新作月表);`olang=all` 关闭该门;也可给逗号分隔的显式集合(`olang=ja,en`)。**`olang` 是开放词表**(存的是上游 BCP-47 拼写 `ja` / `zh-Hans` / `zh-Hant` / `en` / `ko` …,**不是**弃用 wiki 面的产品 locale 形态 `ja-jp` / `zh-cn`),故无人使用的值 = **空桶,不是 400**——对照我方封闭词表(`content_rating` / `kind` / `tier`)拼错即 400。works 列表本身**本波不加** `olang=` 参数。
+> - **桶级 ETag**:`W/"cal-<桶键>-<人口键>-<count>-<max(updated_at) unix>"`,其中元查询(`count` + `max(updated_at)`)跑在**整个过滤集**上、**先于**任何分页加载,`If-None-Match` 命中即 `304` 短路(省掉整页 item 富化)。人口门(`nsfw` × `olang`)进键——两个不同人口的 count 可能偶然相等,不能共用校验子。`limit` / `cursor` / `include` **不**进键:ETag 只需在**同一 URL** 内唯一,而这三个参数都写在 query string 里。`max(updated_at)` 取自 `catalog_work`——facet 写入统一 touch 宿主作品(与 changes 流同一纪律),所以改 release 日期会推动校验子。
+> - `count` 是**整桶**行数(本页至多 `limit` 行),由上面那次必跑的元查询顺带给出。
 >
 > **封面严格度:列表面 > 详情面(对 sfw 调用方)**——`works` 列表的单图 `cover` 对 sfw 调用方会**丢弃 `sexual≠0` 的封面**(挑不出合规图时 `cover` 为空串),而详情面 `covers[]` / `screenshots[]` **恒发全量**并逐行带 `sexual` / `violence` 旗标交由消费端自行取舍。列表 `include=covers` 的两槽同样吃这条 sfw 规则(见 §3.2.1)。
 
@@ -127,6 +150,7 @@ catalog 的 release 日期是**部分 ISO**:`YYYY` / `YYYY-MM` / `YYYY-MM-DD`,�
 
 - 作品级 `release_date` = 该作品**最早**有年份的 release 的部分 ISO;无任何带年份的 release 即 `null`。
 - 消费端解析建议:按长度分派(4 / 7 / 10),**不要**用 `Date.parse` 后取字段——那会把 `"2021"` 悄悄变成 1 月 1 日,正是本表要避免的失真。
+- **日历三桶与本表同一个分类锚**(A2-1c):`calendar` / `calendar/pending` / `calendar/tba` 的桶籍就是由这里的作品级 `release_date` 决定的——长度 10 / 7 落月桶、长度 4 落 pending 桶、`null` 且有 release 行落 tba、`null` 且无 release 行不进任何桶。所以一行的**桶籍与它印出来的 `release_date` 永不打架**。
 
 **③ intro `machine` 旗标语义**
 
