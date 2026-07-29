@@ -230,26 +230,40 @@ interface IntroVariant {
   machine: boolean
   source?: string
 }
+const normalizeIntro = (s: string) => s.replace(/\\\n/g, '\n').trim()
+// For a CLAIMED work the catalog face bridges the galgame face's four intro
+// columns into intro[], so the union of both faces repeats every wiki language
+// (two 中文 chips, two 日本語 chips…). Dedupe on the normalized TEXT, first
+// writer wins — never on language alone, since two genuinely different texts in
+// one language are honest multi-source display and must both survive. Catalog
+// rows are inserted first so they win any tie: only they carry the `machine` MT
+// flag and the `source` chip.
 const introVariants = computed<IntroVariant[]>(() => {
-  const out: IntroVariant[] = []
+  const byText = new Map<string, IntroVariant>()
+  for (const i of work.value?.intro ?? []) {
+    const text = normalizeIntro(i.intro)
+    if (text && !byText.has(text))
+      byText.set(text, {
+        label: LOCALE_LABEL[i.lang] ?? i.lang,
+        text,
+        machine: i.machine === true,
+        source: i.source
+      })
+  }
   const gi = gal.value?.intro
   if (gi)
-    for (const [k, v] of Object.entries(gi))
-      if (typeof v === 'string' && v)
-        out.push({
+    for (const [k, v] of Object.entries(gi)) {
+      if (typeof v !== 'string') continue
+      const text = normalizeIntro(v)
+      if (text && !byText.has(text))
+        byText.set(text, {
           label: LOCALE_LABEL[k] ?? k,
-          text: v.replace(/\\\n/g, '\n'),
+          text,
           machine: false,
           source: 'galgame_wiki'
         })
-  for (const i of work.value?.intro ?? [])
-    out.push({
-      label: LOCALE_LABEL[i.lang] ?? i.lang,
-      text: i.intro.replace(/\\\n/g, '\n'),
-      machine: i.machine === true,
-      source: i.source
-    })
-  return out
+    }
+  return [...byText.values()]
 })
 const introIdx = ref(0)
 watch(
