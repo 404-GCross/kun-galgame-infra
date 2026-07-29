@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"api/internal/infrastructure/database"
+	"api/internal/jobs/galgametouch"
 	"api/internal/platform/galgame/model"
 	"api/internal/platform/galgame/vndb"
 	"api/pkg/config"
@@ -76,6 +77,18 @@ func Run(ctx context.Context, cfg *config.Config, opts Opts) (map[string]any, er
 	}
 	defer db.Close()
 
+	// A landed screenshot changes what the claimed work shows, so the changes
+	// feed has to learn about it. Opened only when applying — a dry run keeps a
+	// nil Toucher, which is a no-op.
+	var toucher *galgametouch.Toucher
+	if opts.Apply {
+		toucher, err = galgametouch.Open(cfg)
+		if err != nil {
+			return nil, err
+		}
+		defer toucher.Close()
+	}
+
 	httpClient := &http.Client{Timeout: defaultTimeout}
 	vc := vndb.New(opts.Gap)
 
@@ -106,7 +119,7 @@ func Run(ctx context.Context, cfg *config.Config, opts Opts) (map[string]any, er
 	var pingHashes []string
 	for start := 0; start < len(cands); start += batchSize {
 		if err := ctx.Err(); err != nil {
-			return summary(len(cands), uploaded, noShots, wouldUpload, failed), err
+			return summary(len(cands), uploaded, noShots, wouldUpload, failed, toucher.Count()), err
 		}
 		end := min(start+batchSize, len(cands))
 		batch := cands[start:end]
@@ -122,6 +135,9 @@ func Run(ctx context.Context, cfg *config.Config, opts Opts) (map[string]any, er
 			continue
 		}
 
+		// batchTouched holds the games that really gained ≥1 screenshot row; a
+		// game whose shots were all already present, or all failed, adds nothing.
+		var batchTouched []int
 		for _, c := range batch {
 			shots := shotsByVN[c.VNDBID]
 			if len(shots) == 0 {
@@ -136,15 +152,28 @@ func Run(ctx context.Context, cfg *config.Config, opts Opts) (map[string]any, er
 			uploaded += len(hashes)
 			failed += fail
 			pingHashes = append(pingHashes, hashes...)
+			if len(hashes) > 0 {
+				batchTouched = append(batchTouched, c.ID)
+			}
 			if quota {
 				slog.Error("upload quota exceeded — bump galgame_wiki image_quota_daily and re-run")
 				pingUploaded(ctx, cli, pingHashes)
-				return summary(len(cands), uploaded, noShots, wouldUpload, failed),
+				// Stamp what the aborted run already committed before bailing out.
+				if err := toucher.Touch(ctx, batchTouched); err != nil {
+					slog.Error("touch claimed works", "err", err)
+				}
+				return summary(len(cands), uploaded, noShots, wouldUpload, failed, toucher.Count()),
 					fmt.Errorf("image quota exceeded after %d screenshots", uploaded)
 			}
 		}
+		// Batch-level stamping: the inserts above are already committed, so an
+		// interrupted run keeps the watermarks it has earned so far. A failure
+		// here is loud but not fatal — the screenshots themselves are sound.
+		if err := toucher.Touch(ctx, batchTouched); err != nil {
+			slog.Error("touch claimed works", "from", batch[0].ID, "to", batch[len(batch)-1].ID, "err", err)
+		}
 		slog.Info("progress", "processed", end, "of", len(cands),
-			"uploaded", uploaded, "no_shots", noShots, "failed", failed)
+			"uploaded", uploaded, "no_shots", noShots, "failed", failed, "touched", toucher.Count())
 	}
 
 	// Keep freshly-uploaded screenshots alive immediately (galgame-image-refping
@@ -154,11 +183,12 @@ func Run(ctx context.Context, cfg *config.Config, opts Opts) (map[string]any, er
 	}
 
 	slog.Info("sync-vndb-screenshots done", "candidates", len(cands), "uploaded", uploaded,
-		"no_shots", noShots, "would_upload", wouldUpload, "failed", failed, "applied", opts.Apply)
+		"no_shots", noShots, "would_upload", wouldUpload, "failed", failed,
+		"touched", toucher.Count(), "applied", opts.Apply)
 	if !opts.Apply {
 		slog.Info("DRY RUN — nothing written; re-run with Apply")
 	}
-	return summary(len(cands), uploaded, noShots, wouldUpload, failed), nil
+	return summary(len(cands), uploaded, noShots, wouldUpload, failed, toucher.Count()), nil
 }
 
 // processGame uploads + inserts the not-yet-present VNDB screenshots of one game.
@@ -279,13 +309,14 @@ func resolveBaseURL(cfg *config.Config, clientCfg config.ImageClientConfig, over
 	return fmt.Sprintf("http://%s:%d", cfg.ImageService.Host, cfg.ImageService.Port)
 }
 
-func summary(cands, uploaded, noShots, wouldUpload, failed int) map[string]any {
+func summary(cands, uploaded, noShots, wouldUpload, failed, touched int) map[string]any {
 	return map[string]any{
 		"candidates":   cands,
 		"uploaded":     uploaded,
 		"no_shots":     noShots,
 		"would_upload": wouldUpload,
 		"failed":       failed,
+		"touched":      touched,
 	}
 }
 

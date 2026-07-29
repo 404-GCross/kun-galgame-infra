@@ -39,6 +39,7 @@ import (
 	"time"
 
 	"api/internal/infrastructure/database"
+	"api/internal/jobs/galgametouch"
 	"api/internal/platform/galgame/model"
 	"api/internal/platform/galgame/vndb"
 	"api/pkg/config"
@@ -187,6 +188,18 @@ func Run(ctx context.Context, cfg *config.Config, opts Opts) (map[string]any, er
 	}
 	defer db.Close()
 
+	// A landed cover changes what the claimed work shows, so the changes feed
+	// has to learn about it. Opened only when applying — a dry run keeps a nil
+	// Toucher, which is a no-op.
+	var toucher *galgametouch.Toucher
+	if opts.Apply {
+		toucher, err = galgametouch.Open(cfg)
+		if err != nil {
+			return nil, err
+		}
+		defer toucher.Close()
+	}
+
 	httpClient := &http.Client{Timeout: defaultTimeout}
 
 	var cli *imageclient.Client
@@ -217,13 +230,16 @@ func Run(ctx context.Context, cfg *config.Config, opts Opts) (map[string]any, er
 		uploaded, noCover, wouldUpload, failed int64
 		quotaHit                               int32
 		pingHashes                             []string
-		mu                                     sync.Mutex
-		sem                                    = make(chan struct{}, conc)
-		wg                                     sync.WaitGroup
+		// batchTouched collects the galgames of THIS batch that really gained a
+		// cover; it is flushed and reset at the batch barrier below.
+		batchTouched []int
+		mu           sync.Mutex
+		sem          = make(chan struct{}, conc)
+		wg           sync.WaitGroup
 	)
 	for start := 0; start < len(cands); start += batchSize {
 		if err := ctx.Err(); err != nil {
-			return summary(len(cands), int(uploaded), int(noCover), int(wouldUpload), int(failed)), err
+			return summary(len(cands), int(uploaded), int(noCover), int(wouldUpload), int(failed), toucher.Count()), err
 		}
 		end := min(start+batchSize, len(cands))
 		batch := cands[start:end]
@@ -266,6 +282,9 @@ func Run(ctx context.Context, cfg *config.Config, opts Opts) (map[string]any, er
 				if len(hashes) > 0 {
 					mu.Lock()
 					pingHashes = append(pingHashes, hashes...)
+					// At least one cover row landed for this game — a game whose
+					// covers were all already present, or all failed, adds nothing.
+					batchTouched = append(batchTouched, c.ID)
 					mu.Unlock()
 				}
 				if quota {
@@ -274,12 +293,19 @@ func Run(ctx context.Context, cfg *config.Config, opts Opts) (map[string]any, er
 			}(c, items)
 		}
 		wg.Wait() // barrier per batch (bounds memory + lets progress log)
+		// Stamp before the quota check so an aborted run still carries the
+		// watermarks its committed covers earned.
+		if err := toucher.Touch(ctx, batchTouched); err != nil {
+			slog.Error("touch claimed works", "from", batch[0].ID, "to", batch[len(batch)-1].ID, "err", err)
+		}
+		batchTouched = batchTouched[:0]
 		slog.Info("progress", "processed", end, "of", len(cands),
-			"uploaded", atomic.LoadInt64(&uploaded), "no_cover", atomic.LoadInt64(&noCover), "failed", atomic.LoadInt64(&failed))
+			"uploaded", atomic.LoadInt64(&uploaded), "no_cover", atomic.LoadInt64(&noCover),
+			"failed", atomic.LoadInt64(&failed), "touched", toucher.Count())
 		if atomic.LoadInt32(&quotaHit) != 0 {
 			slog.Error("upload quota exceeded — bump galgame_wiki image_quota_daily and re-run")
 			pingUploaded(ctx, cli, pingHashes)
-			return summary(len(cands), int(uploaded), int(noCover), int(wouldUpload), int(failed)),
+			return summary(len(cands), int(uploaded), int(noCover), int(wouldUpload), int(failed), toucher.Count()),
 				fmt.Errorf("image quota exceeded after %d covers", uploaded)
 		}
 	}
@@ -291,11 +317,12 @@ func Run(ctx context.Context, cfg *config.Config, opts Opts) (map[string]any, er
 	}
 
 	slog.Info("sync-vndb-covers done", "candidates", len(cands), "uploaded", uploaded,
-		"no_cover", noCover, "would_upload", wouldUpload, "failed", failed, "applied", opts.Apply)
+		"no_cover", noCover, "would_upload", wouldUpload, "failed", failed,
+		"touched", toucher.Count(), "applied", opts.Apply)
 	if !opts.Apply {
 		slog.Info("DRY RUN — nothing written; re-run with Apply")
 	}
-	return summary(len(cands), int(uploaded), int(noCover), int(wouldUpload), int(failed)), nil
+	return summary(len(cands), int(uploaded), int(noCover), int(wouldUpload), int(failed), toucher.Count()), nil
 }
 
 // processGame uploads + upserts the not-yet-present covers of one game. Returns the
@@ -521,13 +548,14 @@ func resolveBaseURL(cfg *config.Config, clientCfg config.ImageClientConfig, over
 	return fmt.Sprintf("http://%s:%d", cfg.ImageService.Host, cfg.ImageService.Port)
 }
 
-func summary(cands, uploaded, noCover, wouldUpload, failed int) map[string]any {
+func summary(cands, uploaded, noCover, wouldUpload, failed, touched int) map[string]any {
 	return map[string]any{
 		"candidates":   cands,
 		"uploaded":     uploaded,
 		"no_cover":     noCover,
 		"would_upload": wouldUpload,
 		"failed":       failed,
+		"touched":      touched,
 	}
 }
 

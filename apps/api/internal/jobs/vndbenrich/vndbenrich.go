@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"api/internal/infrastructure/database"
+	"api/internal/jobs/galgametouch"
 	"api/internal/platform/galgame/model"
 	"api/internal/platform/galgame/service"
 	"api/internal/platform/galgame/vndb"
@@ -62,6 +63,19 @@ func Run(ctx context.Context, cfg *config.Config, opts Opts) (map[string]any, er
 	}
 	defer db.Close()
 
+	// Reconciling links/tags/officials moves a claimed work's public body, so the
+	// changes feed has to learn about it. Opened only when applying — a dry run
+	// keeps a nil Toucher, which is a no-op, so a preview can never stamp a work
+	// even though reconcileOne still reports the diffs it WOULD write.
+	var toucher *galgametouch.Toucher
+	if opts.Apply {
+		toucher, err = galgametouch.Open(cfg)
+		if err != nil {
+			return nil, err
+		}
+		defer toucher.Close()
+	}
+
 	resolver := vndbresolve.New(tagMap)
 	if err := resolver.LoadCaches(db.DB()); err != nil {
 		return nil, fmt.Errorf("load tag/official caches: %w", err)
@@ -78,7 +92,7 @@ func Run(ctx context.Context, cfg *config.Config, opts Opts) (map[string]any, er
 	var changed, failed int
 	for start := 0; start < len(cands); start += batchSize {
 		if err := ctx.Err(); err != nil {
-			return summary(len(cands), start, changed, failed, resolver), err
+			return summary(len(cands), start, changed, failed, toucher.Count(), resolver), err
 		}
 		end := min(start+batchSize, len(cands))
 		batch := cands[start:end]
@@ -103,6 +117,10 @@ func Run(ctx context.Context, cfg *config.Config, opts Opts) (map[string]any, er
 			continue
 		}
 
+		// Only galgames whose reconcile produced ≥1 real write reach the touch set:
+		// a zero-diff pass (the steady state for an already-enriched game) must
+		// leave the feed alone. A failed reconcile never lands here either.
+		var changedIDs []int
 		for _, c := range batch {
 			didChange, err := reconcileOne(ctx, db.DB(), resolver, c.ID, links[c.VNDBID], meta[c.VNDBID], opts.Apply)
 			if err != nil {
@@ -112,17 +130,26 @@ func Run(ctx context.Context, cfg *config.Config, opts Opts) (map[string]any, er
 			}
 			if didChange {
 				changed++
+				changedIDs = append(changedIDs, c.ID)
 			}
 		}
-		slog.Info("progress", "processed", end, "of", len(cands), "changed", changed, "failed", failed)
+		// Batch-level stamping: the writes above are already committed, so an
+		// interrupted run keeps the watermarks it has earned so far. A failure
+		// here is loud but not fatal — the reconciled data itself is sound.
+		if err := toucher.Touch(ctx, changedIDs); err != nil {
+			slog.Error("touch claimed works", "from", batch[0].ID, "to", batch[len(batch)-1].ID, "error", err)
+		}
+		slog.Info("progress", "processed", end, "of", len(cands), "changed", changed,
+			"failed", failed, "touched", toucher.Count())
 	}
 
 	slog.Info("sync-vndb-enrich done", "processed", len(cands), "changed", changed, "failed", failed,
-		"new_tags", resolver.NewTags(), "new_officials", resolver.NewOfficials(), "applied", opts.Apply)
+		"touched", toucher.Count(), "new_tags", resolver.NewTags(), "new_officials", resolver.NewOfficials(),
+		"applied", opts.Apply)
 	if !opts.Apply {
 		slog.Info("DRY RUN — nothing written; re-run with Apply")
 	}
-	return summary(len(cands), len(cands), changed, failed, resolver), nil
+	return summary(len(cands), len(cands), changed, failed, toucher.Count(), resolver), nil
 }
 
 // reconcileOne reconciles one galgame's links, tags and officials. Returns true
@@ -220,12 +247,13 @@ func candidates(db *gorm.DB, opts Opts) ([]candidate, error) {
 	return cands, q.Scan(&cands).Error
 }
 
-func summary(candidates, processed, changed, failed int, r *vndbresolve.Resolver) map[string]any {
+func summary(candidates, processed, changed, failed, touched int, r *vndbresolve.Resolver) map[string]any {
 	return map[string]any{
 		"candidates":    candidates,
 		"processed":     processed,
 		"changed":       changed,
 		"failed":        failed,
+		"touched":       touched,
 		"new_tags":      r.NewTags(),
 		"new_officials": r.NewOfficials(),
 	}
