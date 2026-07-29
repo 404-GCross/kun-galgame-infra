@@ -1461,6 +1461,7 @@ openapi: 3.1.0
 paths:
   /v1/catalog/changes:
     get:
+      description: "Creations and updates of LIVE galgame works, ordered by (updated_at, id) ASC. The feed deliberately trails real time by ~5 seconds: updated_at is statement time, not commit time, so serving rows younger than that lag would let a slow transaction commit behind an already-advanced consumer cursor and be skipped forever. DELETIONS DO NOT FLOW THROUGH THIS FEED — a row that leaves the LIVE set simply stops appearing; merge-style disappearances are covered by /v1/catalog/redirects, and mirror-style consumers should periodically reconcile the full id set via works?sort=id."
       operationId: listCatalogChangesPublic
       parameters:
         - description: "v1 feed scope: work (default)"
@@ -1479,12 +1480,12 @@ paths:
           schema:
             description: Opaque keyset cursor; omit to start from the beginning
             type: string
-        - description: Items per page 1-500 (default 100)
+        - description: Items per page 1-500 (default 100); above 500 is clamped to 500, a non-positive or non-numeric value is a 400
           explode: false
           in: query
           name: limit
           schema:
-            description: Items per page 1-500 (default 100)
+            description: Items per page 1-500 (default 100); above 500 is clamped to 500, a non-positive or non-numeric value is a 400
             format: int64
             type: integer
       responses:
@@ -1537,12 +1538,12 @@ paths:
             description: max trait spoiler level 0-2 (default 0 = safe)
             format: int32
             type: integer
-        - description: Works per page 1-50 (default 50)
+        - description: Works per page 1-50 (default 50); above 50 is clamped to 50, a non-positive or non-numeric value is a 400
           explode: false
           in: query
           name: limit
           schema:
-            description: Works per page 1-50 (default 50)
+            description: Works per page 1-50 (default 50); above 50 is clamped to 50, a non-positive or non-numeric value is a 400
             format: int64
             type: integer
         - description: Rows to skip
@@ -1595,12 +1596,12 @@ paths:
           schema:
             description: true/1 = include r18 works among the attributions (default false = dropped)
             type: boolean
-        - description: Works per page 1-50 (default 50)
+        - description: Works per page 1-50 (default 50); above 50 is clamped to 50, a non-positive or non-numeric value is a 400
           explode: false
           in: query
           name: limit
           schema:
-            description: Works per page 1-50 (default 50)
+            description: Works per page 1-50 (default 50); above 50 is clamped to 50, a non-positive or non-numeric value is a 400
             format: int64
             type: integer
         - description: Rows to skip
@@ -1719,12 +1720,12 @@ paths:
           schema:
             description: true/1 = include r18 works among the credits (default false = dropped)
             type: boolean
-        - description: Credits per page 1-50 (default 50)
+        - description: Credits per page 1-50 (default 50); above 50 is clamped to 50, a non-positive or non-numeric value is a 400
           explode: false
           in: query
           name: limit
           schema:
-            description: Credits per page 1-50 (default 50)
+            description: Credits per page 1-50 (default 50); above 50 is clamped to 50, a non-positive or non-numeric value is a 400
             format: int64
             type: integer
         - description: Rows to skip
@@ -1909,12 +1910,12 @@ paths:
           schema:
             description: true/1 = include r18 works (default false = dropped)
             type: boolean
-        - description: Works per page 1-50 (default 50)
+        - description: Works per page 1-50 (default 50); above 50 is clamped to 50, a non-positive or non-numeric value is a 400
           explode: false
           in: query
           name: limit
           schema:
-            description: Works per page 1-50 (default 50)
+            description: Works per page 1-50 (default 50); above 50 is clamped to 50, a non-positive or non-numeric value is a 400
             format: int64
             type: integer
         - description: Rows to skip
@@ -2035,12 +2036,12 @@ paths:
           schema:
             description: Opaque keyset cursor from a prior next_cursor; omit for the first page
             type: string
-        - description: Items per page 1-100 (default 20)
+        - description: Items per page 1-100 (default 20); above 100 is clamped to 100, a non-positive or non-numeric value is a 400
           explode: false
           in: query
           name: limit
           schema:
-            description: Items per page 1-100 (default 20)
+            description: Items per page 1-100 (default 20); above 100 is clamped to 100, a non-positive or non-numeric value is a 400
             format: int64
             type: integer
         - description: true/1 = include r18 works (default false = dropped)

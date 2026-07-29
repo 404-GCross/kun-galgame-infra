@@ -40,6 +40,11 @@ const (
 	cacheDetail    = "public, max-age=0, s-maxage=300, stale-while-revalidate=60"
 	cacheSearch    = "public, max-age=0, s-maxage=60, stale-while-revalidate=60"
 	cacheRedirects = "public, max-age=0, s-maxage=30, stale-while-revalidate=30"
+
+	// msgBadLimit is the single wording for a present-but-illegal limit across
+	// every public lane (the clamp handles "too big"; this covers "not a
+	// positive integer").
+	msgBadLimit = "limit must be a positive integer"
 )
 
 // WorkDetail serves GET /v1/catalog/works/{id} — the frozen work record.
@@ -173,7 +178,10 @@ func (h *PublicHandler) Name(c fiber.Ctx) error {
 	if err != nil {
 		return response.BadRequest(c, errors.ErrInvalidID)
 	}
-	limit, offset := pagePub(c)
+	limit, offset, ok := pagePub(c)
+	if !ok {
+		return response.BadRequestMsg(c, errors.ErrInvalidParam, msgBadLimit)
+	}
 	rec, found, err := h.svc.Name(c.Context(), id, service.ParsePublicInclude(c.Query("include")).Credits, nsfwQuery(c), limit, offset)
 	if err != nil {
 		return response.InternalError(c, errors.ErrInternalServer)
@@ -192,7 +200,10 @@ func (h *PublicHandler) Character(c fiber.Ctx) error {
 	if err != nil {
 		return response.BadRequest(c, errors.ErrInvalidID)
 	}
-	limit, offset := pagePub(c)
+	limit, offset, ok := pagePub(c)
+	if !ok {
+		return response.BadRequestMsg(c, errors.ErrInvalidParam, msgBadLimit)
+	}
 	rec, found, err := h.svc.Character(c.Context(), id, service.ParsePublicInclude(c.Query("include")).Works, nsfwQuery(c), spoilersQuery(c), limit, offset)
 	if err != nil {
 		return response.InternalError(c, errors.ErrInternalServer)
@@ -211,7 +222,10 @@ func (h *PublicHandler) Label(c fiber.Ctx) error {
 	if err != nil {
 		return response.BadRequest(c, errors.ErrInvalidID)
 	}
-	limit, offset := pagePub(c)
+	limit, offset, ok := pagePub(c)
+	if !ok {
+		return response.BadRequestMsg(c, errors.ErrInvalidParam, msgBadLimit)
+	}
 	rec, found, err := h.svc.Label(c.Context(), id, service.ParsePublicInclude(c.Query("include")).Works, nsfwQuery(c), limit, offset)
 	if err != nil {
 		return response.InternalError(c, errors.ErrInternalServer)
@@ -368,17 +382,55 @@ func stripEntityPrefix(id string) (int64, bool) {
 	return n, true
 }
 
-// pagePub reads the offset-pagination params (limit ≤50, non-negative offset).
-func pagePub(c fiber.Ctx) (limit, offset int) {
-	limit = atoiOrPub(c.Query("limit"), 50)
-	if limit <= 0 || limit > 50 {
-		limit = 50
+// pagePub reads the offset-pagination params of the sub-list lanes (limit
+// 1-50, default 50; non-negative offset). ok=false when limit is present but
+// not a positive integer — the caller turns that into a 400.
+func pagePub(c fiber.Ctx) (limit, offset int, ok bool) {
+	limit, ok = limitPub(c.Query("limit"), 50, 50)
+	if !ok {
+		return 0, 0, false
 	}
 	offset = atoiOrPub(c.Query("offset"), 0)
 	if offset < 0 {
 		offset = 0
 	}
-	return limit, offset
+	return limit, offset, true
+}
+
+// limitPub reads a `limit` query param: absent/empty → def; a value above max
+// is CLAMPED down to max (never reset to def — a caller asking for more than
+// we serve should get the most we serve); anything that is not a positive
+// integer is rejected (ok=false → 400) instead of silently falling back, which
+// would hide the caller's mistake behind a plausible-looking page.
+func limitPub(raw string, def, max int) (int, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return def, true
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n <= 0 {
+		return 0, false
+	}
+	if n > max {
+		return max, true
+	}
+	return n, true
+}
+
+// posIntQueryPub reads an optional positive-integer id filter: absent/empty →
+// 0 (no filter). A present-but-illegal value (non-numeric, 0, negative) is
+// rejected (ok=false → 400) rather than degrading to 0, which would silently
+// DROP the filter and serve the unfiltered first page as if it matched.
+func posIntQueryPub(raw string) (int64, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 0, true
+	}
+	n, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || n <= 0 {
+		return 0, false
+	}
+	return n, true
 }
 
 func atoiOrPub(s string, def int) int {
@@ -471,14 +523,20 @@ func (h *PublicHandler) WorksList(c fiber.Ctx) error {
 			return response.BadRequestMsg(c, errors.ErrInvalidParam, "claimed must be true|false")
 		}
 	}
-	f.LabelID = int64(atoiOrPub(c.Query("label_id"), 0))
-	f.TagID = int64(atoiOrPub(c.Query("tag_id"), 0))
-	f.SeriesID = int64(atoiOrPub(c.Query("series_id"), 0))
 	var ok bool
+	if f.LabelID, ok = posIntQueryPub(c.Query("label_id")); !ok {
+		return response.BadRequestMsg(c, errors.ErrInvalidParam, "label_id must be a positive integer")
+	}
+	if f.TagID, ok = posIntQueryPub(c.Query("tag_id")); !ok {
+		return response.BadRequestMsg(c, errors.ErrInvalidParam, "tag_id must be a positive integer")
+	}
+	if f.SeriesID, ok = posIntQueryPub(c.Query("series_id")); !ok {
+		return response.BadRequestMsg(c, errors.ErrInvalidParam, "series_id must be a positive integer")
+	}
 	if f.ReleasedAfter, ok = datePub(c.Query("released_after")); !ok {
 		return response.BadRequestMsg(c, errors.ErrInvalidParam, "released_after must be YYYY-MM-DD")
 	}
-	if f.ReleasedBefor, ok = datePub(c.Query("released_before")); !ok {
+	if f.ReleasedBefore, ok = datePub(c.Query("released_before")); !ok {
 		return response.BadRequestMsg(c, errors.ErrInvalidParam, "released_before must be YYYY-MM-DD")
 	}
 	if raw := strings.TrimSpace(c.Query("ids")); raw != "" {
@@ -494,9 +552,9 @@ func (h *PublicHandler) WorksList(c fiber.Ctx) error {
 			f.IDs = append(f.IDs, id)
 		}
 	}
-	limit := atoiOrPub(c.Query("limit"), 20)
-	if limit <= 0 || limit > 100 {
-		limit = 20
+	limit, ok := limitPub(c.Query("limit"), 20, 100)
+	if !ok {
+		return response.BadRequestMsg(c, errors.ErrInvalidParam, msgBadLimit)
 	}
 	data, err := h.svc.WorksList(c.Context(), f, c.Query("cursor"), limit)
 	if err != nil {
@@ -516,9 +574,9 @@ func (h *PublicHandler) Changes(c fiber.Ctx) error {
 	if et := c.Query("entity_type"); et != "" && et != "work" {
 		return response.BadRequestMsg(c, errors.ErrInvalidParam, "entity_type must be work (the v1 feed scope)")
 	}
-	limit := atoiOrPub(c.Query("limit"), 100)
-	if limit <= 0 || limit > 500 {
-		limit = 100
+	limit, ok := limitPub(c.Query("limit"), 100, 500)
+	if !ok {
+		return response.BadRequestMsg(c, errors.ErrInvalidParam, msgBadLimit)
 	}
 	data, err := h.svc.Changes(c.Context(), c.Query("cursor"), limit)
 	if err != nil {
@@ -538,7 +596,10 @@ func (h *PublicHandler) Tag(c fiber.Ctx) error {
 	if err != nil {
 		return response.BadRequest(c, errors.ErrInvalidID)
 	}
-	limit, offset := pagePub(c)
+	limit, offset, ok := pagePub(c)
+	if !ok {
+		return response.BadRequestMsg(c, errors.ErrInvalidParam, msgBadLimit)
+	}
 	rec, found, err := h.svc.TagDetail(c.Context(), id, service.ParsePublicInclude(c.Query("include")).Works, nsfwQuery(c), limit, offset)
 	if err != nil {
 		return response.InternalError(c, errors.ErrInternalServer)

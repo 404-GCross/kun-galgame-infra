@@ -23,17 +23,17 @@ import (
 // value = the whole fetchable set). Date bounds are composed ordinals
 // (y*10000 + m*100 + d) over the EARLIEST release date per work.
 type WorksListFilter struct {
-	ContentRating *int16 // model.ContentRating* — nil = all (r18 still needs NSFW)
-	Claimed       *bool  // true = claimed only; false = bodyless only; nil = both
-	LabelID       int64  // via catalog_work_label
-	TagID         int64  // canonical tag id, via catalog_tag_source_map ⋈ catalog_work_tag
-	SeriesID      int64  // via catalog_series_member
-	Platform      string // release-level platform ∪ work-level platform rows
-	ReleasedAfter int64  // composed ordinal, inclusive; 0 = unbounded
-	ReleasedBefor int64  // composed ordinal, inclusive; 0 = unbounded
-	IDs           []int64
-	NSFW          bool
-	Sort          string // "id" (default, ASC) | "updated" (DESC, newest first)
+	ContentRating  *int16 // model.ContentRating* — nil = all (r18 still needs NSFW)
+	Claimed        *bool  // true = claimed only; false = bodyless only; nil = both
+	LabelID        int64  // via catalog_work_label
+	TagID          int64  // canonical tag id, via catalog_tag_source_map ⋈ catalog_work_tag
+	SeriesID       int64  // via catalog_series_member
+	Platform       string // release-level platform ∪ work-level platform rows
+	ReleasedAfter  int64  // composed ordinal, inclusive; 0 = unbounded
+	ReleasedBefore int64  // composed ordinal, inclusive; 0 = unbounded
+	IDs            []int64
+	NSFW           bool
+	Sort           string // "id" (default, ASC) | "updated" (DESC, newest first)
 }
 
 // WorksList serves the keyset works browse lane. Returns one page of enriched
@@ -45,8 +45,13 @@ func (s *PublicService) WorksList(ctx context.Context, f WorksListFilter, cursor
 	if err != nil {
 		return dto.PublicWorksListData{}, err
 	}
-	if limit <= 0 || limit > 100 {
+	// Defensive only — the handler is the wire authority (it 400s a bad limit).
+	// Clamp at the ceiling rather than resetting to the default so both layers
+	// agree on what an over-max limit means.
+	if limit <= 0 {
 		limit = 20
+	} else if limit > 100 {
+		limit = 100
 	}
 
 	where := []string{"w.deleted_at IS NULL", "w.status = ?", "w.medium_id = ?"}
@@ -90,16 +95,16 @@ func (s *PublicService) WorksList(ctx context.Context, f WorksListFilter, cursor
 			OR EXISTS (SELECT 1 FROM catalog_work_platform wp WHERE wp.work_id = w.id AND wp.platform = ?))`)
 		args = append(args, f.Platform, f.Platform)
 	}
-	if f.ReleasedAfter > 0 || f.ReleasedBefor > 0 {
+	if f.ReleasedAfter > 0 || f.ReleasedBefore > 0 {
 		earliest := `(SELECT min(r.released_y::int*10000 + coalesce(r.released_m,0)::int*100 + coalesce(r.released_d,0)::int)
 			FROM catalog_release r WHERE r.work_id = w.id AND r.released_y IS NOT NULL AND r.deleted_at IS NULL)`
 		if f.ReleasedAfter > 0 {
 			where = append(where, earliest+" >= ?")
 			args = append(args, f.ReleasedAfter)
 		}
-		if f.ReleasedBefor > 0 {
+		if f.ReleasedBefore > 0 {
 			where = append(where, earliest+" <= ?")
-			args = append(args, f.ReleasedBefor)
+			args = append(args, f.ReleasedBefore)
 		}
 	}
 	if len(f.IDs) > 0 {
@@ -174,16 +179,29 @@ func (s *PublicService) WorksList(ctx context.Context, f WorksListFilter, cursor
 // Changes serves the incremental works changes feed: LIVE galgame works
 // ordered by (updated_at, id) ASC, resuming from the cursor. next_cursor is
 // ALWAYS returned (it advances past the last row even on a short page, so a
-// consumer keeps polling the same cursor for new rows). No nsfw gate.
+// consumer keeps polling the same cursor for new rows). No nsfw gate. The feed
+// deliberately trails real time by 5 seconds (see the watermark note below).
 func (s *PublicService) Changes(ctx context.Context, cursor string, limit int) (dto.PublicChangesData, error) {
 	cur, err := decodePublicCursor(cursor, "changes")
 	if err != nil {
 		return dto.PublicChangesData{}, err
 	}
-	if limit <= 0 || limit > 500 {
+	// Defensive only — the handler is the wire authority (it 400s a bad limit).
+	// Clamp at the ceiling rather than resetting to the default so both layers
+	// agree on what an over-max limit means.
+	if limit <= 0 {
 		limit = 100
+	} else if limit > 500 {
+		limit = 500
 	}
-	where := []string{"deleted_at IS NULL", "status = ?", "medium_id = ?"}
+	// Watermark safety lag: updated_at is STATEMENT time, not commit time, so a
+	// long transaction can commit a row whose updated_at already sits behind a
+	// consumer's advanced cursor — that row would be skipped forever. Refusing
+	// to serve rows younger than the lag means any transaction that commits
+	// within 5s of its statement can no longer be missed. Changes feed ONLY:
+	// the works-list `sort=updated` lane is a browse lane, not a sync watermark.
+	where := []string{"deleted_at IS NULL", "status = ?", "medium_id = ?",
+		"updated_at < now() - interval '5 seconds'"}
 	args := []any{model.WorkStatusLive, galgameMediumID}
 	if cur.Updated != "" {
 		ts, perr := time.Parse(time.RFC3339Nano, cur.Updated)

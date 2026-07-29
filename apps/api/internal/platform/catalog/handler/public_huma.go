@@ -69,7 +69,7 @@ type publicPersonInput struct {
 	ID      int64  `path:"id" doc:"Credit-name id (the addressable credited identity)"`
 	Include string `query:"include" doc:"credits = attach the works this name is credited on"`
 	NSFW    bool   `query:"nsfw" doc:"true/1 = include r18 works among the credits (default false = dropped)"`
-	Limit   int    `query:"limit" doc:"Credits per page 1-50 (default 50)"`
+	Limit   int    `query:"limit" doc:"Credits per page 1-50 (default 50); above 50 is clamped to 50, a non-positive or non-numeric value is a 400"`
 	Offset  int    `query:"offset" doc:"Rows to skip"`
 }
 type publicPersonOutput struct {
@@ -81,7 +81,7 @@ type publicCharacterInput struct {
 	Include  string `query:"include" doc:"works = attach the works this character appears in"`
 	NSFW     bool   `query:"nsfw" doc:"true/1 = include r18 works and sexual-family traits (default false = both dropped)"`
 	Spoilers int16  `query:"spoilers" doc:"max trait spoiler level 0-2 (default 0 = safe)"`
-	Limit    int    `query:"limit" doc:"Works per page 1-50 (default 50)"`
+	Limit    int    `query:"limit" doc:"Works per page 1-50 (default 50); above 50 is clamped to 50, a non-positive or non-numeric value is a 400"`
 	Offset   int    `query:"offset" doc:"Rows to skip"`
 }
 type publicCharacterOutput struct {
@@ -92,7 +92,7 @@ type publicLabelInput struct {
 	ID      int64  `path:"id" doc:"Catalog label id"`
 	Include string `query:"include" doc:"works = attach the works attributed to this label"`
 	NSFW    bool   `query:"nsfw" doc:"true/1 = include r18 works among the attributions (default false = dropped)"`
-	Limit   int    `query:"limit" doc:"Works per page 1-50 (default 50)"`
+	Limit   int    `query:"limit" doc:"Works per page 1-50 (default 50); above 50 is clamped to 50, a non-positive or non-numeric value is a 400"`
 	Offset  int    `query:"offset" doc:"Rows to skip"`
 }
 type publicLabelOutput struct {
@@ -122,7 +122,7 @@ type publicWorksListInput struct {
 	IDs            string `query:"ids" doc:"Comma-separated work ids (max 100) — the batch-hydrate lane"`
 	Sort           string `query:"sort" enum:"id,updated" doc:"id = ascending browse order (default); updated = newest-updated first"`
 	Cursor         string `query:"cursor" doc:"Opaque keyset cursor from a prior next_cursor; omit for the first page"`
-	Limit          int    `query:"limit" doc:"Items per page 1-100 (default 20)"`
+	Limit          int    `query:"limit" doc:"Items per page 1-100 (default 20); above 100 is clamped to 100, a non-positive or non-numeric value is a 400"`
 	NSFW           bool   `query:"nsfw" doc:"true/1 = include r18 works (default false = dropped)"`
 }
 type publicWorksListOutput struct {
@@ -132,7 +132,7 @@ type publicWorksListOutput struct {
 type publicChangesInput struct {
 	EntityType string `query:"entity_type" enum:"work" doc:"v1 feed scope: work (default)"`
 	Cursor     string `query:"cursor" doc:"Opaque keyset cursor; omit to start from the beginning"`
-	Limit      int    `query:"limit" doc:"Items per page 1-500 (default 100)"`
+	Limit      int    `query:"limit" doc:"Items per page 1-500 (default 100); above 500 is clamped to 500, a non-positive or non-numeric value is a 400"`
 }
 type publicChangesOutput struct {
 	Body Envelope[dto.PublicChangesData]
@@ -142,7 +142,7 @@ type publicTagInput struct {
 	ID      int64  `path:"id" doc:"Canonical tag id (the cross-source tag vocabulary)"`
 	Include string `query:"include" doc:"works = attach the works carrying any mapped source tag"`
 	NSFW    bool   `query:"nsfw" doc:"true/1 = include r18 works (default false = dropped)"`
-	Limit   int    `query:"limit" doc:"Works per page 1-50 (default 50)"`
+	Limit   int    `query:"limit" doc:"Works per page 1-50 (default 50); above 50 is clamped to 50, a non-positive or non-numeric value is a 400"`
 	Offset  int    `query:"offset" doc:"Rows to skip"`
 }
 type publicTagOutput struct {
@@ -218,7 +218,15 @@ func SetupCatalogPublicSpec(app *fiber.App) huma.API {
 	})
 	huma.Register(api, huma.Operation{
 		OperationID: "listCatalogChangesPublic", Method: http.MethodGet, Path: "/v1/catalog/changes",
-		Summary: "Incremental works changes feed ((updated,id) keyset; next_cursor always present — keep polling it for new rows)", Tags: tags,
+		Summary: "Incremental works changes feed ((updated,id) keyset; next_cursor always present — keep polling it for new rows)",
+		Description: "Creations and updates of LIVE galgame works, ordered by (updated_at, id) ASC. " +
+			"The feed deliberately trails real time by ~5 seconds: updated_at is statement time, not commit time, " +
+			"so serving rows younger than that lag would let a slow transaction commit behind an already-advanced " +
+			"consumer cursor and be skipped forever. " +
+			"DELETIONS DO NOT FLOW THROUGH THIS FEED — a row that leaves the LIVE set simply stops appearing; " +
+			"merge-style disappearances are covered by /v1/catalog/redirects, and mirror-style consumers should " +
+			"periodically reconcile the full id set via works?sort=id.",
+		Tags: tags,
 	}, func(context.Context, *publicChangesInput) (*publicChangesOutput, error) {
 		return &publicChangesOutput{}, nil
 	})

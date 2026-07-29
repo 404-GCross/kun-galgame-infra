@@ -167,6 +167,57 @@ func TestChangesFeedOrderAndResume(t *testing.T) {
 	}
 }
 
+// TestChangesFeedWatermarkLag pins the cleanup-wave safety lag: updated_at is
+// statement time, not commit time, so the feed refuses to serve rows younger
+// than 5 seconds — a row committed by a slow transaction can never land behind
+// an already-advanced consumer cursor and be skipped forever.
+func TestChangesFeedWatermarkLag(t *testing.T) {
+	cleanTables(t)
+	svc := newPublicSvc()
+
+	settled := createWorkX(t, 1, model.ContentRatingAllAges, model.WorkStatusLive, "Settled")
+	fresh := createWorkX(t, 1, model.ContentRatingAllAges, model.WorkStatusLive, "Fresh")
+	// settled is older than the lag; fresh keeps its creation-time stamp (now()).
+	if err := testDB.Exec(`UPDATE catalog_work SET updated_at = now() - interval '1 minute' WHERE id = ?`, settled.ID).Error; err != nil {
+		t.Fatalf("stamp settled: %v", err)
+	}
+
+	page, err := svc.Changes(t.Context(), "", 50)
+	if err != nil {
+		t.Fatalf("Changes: %v", err)
+	}
+	if len(page.Items) != 1 || page.Items[0].ID != settled.ID {
+		t.Fatalf("changes = %+v, want only the settled row %d (fresh row %d must be held back)",
+			page.Items, settled.ID, fresh.ID)
+	}
+
+	// Once the fresh row ages past the lag it enters the feed — held back, never
+	// dropped.
+	if err := testDB.Exec(`UPDATE catalog_work SET updated_at = now() - interval '30 seconds' WHERE id = ?`, fresh.ID).Error; err != nil {
+		t.Fatalf("age fresh: %v", err)
+	}
+	page, err = svc.Changes(t.Context(), "", 50)
+	if err != nil {
+		t.Fatalf("Changes after aging: %v", err)
+	}
+	if len(page.Items) != 2 {
+		t.Fatalf("changes after aging = %d items, want 2", len(page.Items))
+	}
+
+	// The lag applies to the CHANGES feed only — the works-list updated lane is
+	// a browse lane, not a sync watermark, and still shows the fresh row.
+	if err := testDB.Exec(`UPDATE catalog_work SET updated_at = now() WHERE id = ?`, fresh.ID).Error; err != nil {
+		t.Fatalf("refresh fresh: %v", err)
+	}
+	list, err := svc.WorksList(t.Context(), WorksListFilter{Sort: "updated"}, "", 50)
+	if err != nil {
+		t.Fatalf("WorksList updated lane: %v", err)
+	}
+	if len(list.Items) != 2 || list.Items[0].ID != fresh.ID {
+		t.Fatalf("works-list updated lane = %+v, want the fresh row %d first", list.Items, fresh.ID)
+	}
+}
+
 func TestTagDetailWorksAttach(t *testing.T) {
 	cleanTables(t)
 	cleanTagTables(t)
