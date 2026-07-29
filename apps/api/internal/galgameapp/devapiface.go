@@ -92,10 +92,11 @@ func (f devapiFace) recordUsage(surface string) fiber.Handler {
 	}
 }
 
-// mountInternal mounts the /internal platform-workflow face: the 15 GET routes
+// mountInternal mounts the /internal platform-workflow face: the 16 GET routes
 // registered by workflowRoutes.register (galgame /mine, /messages/mine, /search
-// [SearchWithPending], /drafts, /user/:id/{stats,galgames,contributed}; the four
-// taxonomy families' /:id/revisions(/:rev)) plus the machine-facing reads
+// [SearchWithPending], /drafts, /user/:id/{stats,galgames,contributed},
+// /taxonomy/:family/search; the four taxonomy families' /:id/revisions(/:rev))
+// plus the machine-facing reads
 // registered directly below (the two S2S cron feeds and, since A2-1e, the
 // ownership-meta batch), behind the shared devapi chain with
 // a RequireTier(internal) gate (free/trusted keys → 403). The chain order mirrors

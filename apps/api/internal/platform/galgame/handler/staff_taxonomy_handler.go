@@ -35,11 +35,11 @@ package handler
 import (
 	"encoding/json"
 	"strconv"
-	"strings"
 
 	"api/internal/platform/galgame/dto"
 	"api/internal/platform/galgame/perm"
 	"api/internal/platform/galgame/repository"
+	"api/internal/platform/galgame/service"
 	"api/pkg/errors"
 	"api/pkg/response"
 
@@ -47,19 +47,17 @@ import (
 	"gorm.io/gorm"
 )
 
-// staffSearchLimit caps a picker response. The four families are 146-3,037
-// rows each, so this is a response-size guard, not a paging scheme — the
-// console narrows with `q`, it does not walk pages here.
-const staffSearchLimit = 50
-
 // StaffTaxonomyHandler serves the read-back pairs over the four taxonomy
-// repositories. It holds no service: these are pure reads with no revision,
-// no search hook and no write path to coordinate with.
+// repositories. The DETAIL ops read their repository directly (each record has
+// its own field set); the SEARCH ops delegate to service.TaxonomyPicker, which
+// the contributor-facing /internal door shares — one query, two gates, so the
+// two pickers cannot drift (A2-1g).
 type StaffTaxonomyHandler struct {
 	tagRepo      *repository.TagRepository
 	officialRepo *repository.OfficialRepository
 	engineRepo   *repository.EngineRepository
 	seriesRepo   *repository.SeriesRepository
+	picker       *service.TaxonomyPicker
 }
 
 // NewStaffTaxonomyHandler wires the staff taxonomy read-back handler.
@@ -68,33 +66,33 @@ func NewStaffTaxonomyHandler(
 	officialRepo *repository.OfficialRepository,
 	engineRepo *repository.EngineRepository,
 	seriesRepo *repository.SeriesRepository,
+	picker *service.TaxonomyPicker,
 ) *StaffTaxonomyHandler {
 	return &StaffTaxonomyHandler{
 		tagRepo: tagRepo, officialRepo: officialRepo,
-		engineRepo: engineRepo, seriesRepo: seriesRepo,
+		engineRepo: engineRepo, seriesRepo: seriesRepo, picker: picker,
 	}
+}
+
+// staffFamilySearch is the shared body of the four staff search ops: enforce
+// the editor gate, then run the SAME picker query the contributor door runs.
+func (h *StaffTaxonomyHandler) staffFamilySearch(c fiber.Ctx, family string) error {
+	if err := requireTaxonomyEditor(c); err != nil {
+		return err
+	}
+	items, _, err := h.picker.Search(c.Context(), family,
+		service.TaxonomySearchTerms(c.Query("q")), service.TaxonomyPickerLimit)
+	if err != nil {
+		return response.InternalError(c, errors.ErrOperationFailed)
+	}
+	return response.Success(c, staffList(items))
 }
 
 // ── tag ─────────────────────────────────────────────────────────────────────
 
 // TagSearch serves GET /api/tag/search?q= — identity rows for the picker.
 func (h *StaffTaxonomyHandler) TagSearch(c fiber.Ctx) error {
-	if err := requireTaxonomyEditor(c); err != nil {
-		return err
-	}
-	terms, ok := staffSearchTerms(c)
-	if !ok {
-		return response.Success(c, staffList(nil))
-	}
-	rows, err := h.tagRepo.Search(c.Context(), terms)
-	if err != nil {
-		return response.InternalError(c, errors.ErrOperationFailed)
-	}
-	items := make([]dto.StaffTaxonomyListItem, 0, len(rows))
-	for _, r := range rows {
-		items = append(items, dto.StaffTaxonomyListItem{ID: r.ID, Name: r.Name})
-	}
-	return response.Success(c, staffList(items))
+	return h.staffFamilySearch(c, service.TaxonomyFamilyTag)
 }
 
 // TagDetail serves GET /api/tag/{id} — the tag edit form's full read-back.
@@ -124,22 +122,7 @@ func (h *StaffTaxonomyHandler) TagDetail(c fiber.Ctx) error {
 
 // OfficialSearch serves GET /api/official/search?q=.
 func (h *StaffTaxonomyHandler) OfficialSearch(c fiber.Ctx) error {
-	if err := requireTaxonomyEditor(c); err != nil {
-		return err
-	}
-	terms, ok := staffSearchTerms(c)
-	if !ok {
-		return response.Success(c, staffList(nil))
-	}
-	rows, err := h.officialRepo.Search(c.Context(), terms)
-	if err != nil {
-		return response.InternalError(c, errors.ErrOperationFailed)
-	}
-	items := make([]dto.StaffTaxonomyListItem, 0, len(rows))
-	for _, r := range rows {
-		items = append(items, dto.StaffTaxonomyListItem{ID: r.ID, Name: r.Name})
-	}
-	return response.Success(c, staffList(items))
+	return h.staffFamilySearch(c, service.TaxonomyFamilyOfficial)
 }
 
 // OfficialDetail serves GET /api/official/{id} — the 会社 edit form's read-back.
@@ -175,19 +158,7 @@ func (h *StaffTaxonomyHandler) OfficialDetail(c fiber.Ctx) error {
 // hydrate their engine picker from the flat list, and refusing to serve it
 // would just push them back to the deprecated public lane.
 func (h *StaffTaxonomyHandler) EngineSearch(c fiber.Ctx) error {
-	if err := requireTaxonomyEditor(c); err != nil {
-		return err
-	}
-	terms, _ := staffSearchTerms(c) // nil terms = unfiltered
-	rows, err := h.engineRepo.SearchByName(c.Context(), terms, staffSearchLimit)
-	if err != nil {
-		return response.InternalError(c, errors.ErrOperationFailed)
-	}
-	items := make([]dto.StaffTaxonomyListItem, 0, len(rows))
-	for _, r := range rows {
-		items = append(items, dto.StaffTaxonomyListItem{ID: r.ID, Name: r.Name})
-	}
-	return response.Success(c, staffList(items))
+	return h.staffFamilySearch(c, service.TaxonomyFamilyEngine)
 }
 
 // EngineDetail serves GET /api/engine/{id}.
@@ -214,19 +185,7 @@ func (h *StaffTaxonomyHandler) EngineDetail(c fiber.Ctx) error {
 // SeriesSearch serves GET /api/series/search?q=. Empty q = the whole facet,
 // same rationale as EngineSearch.
 func (h *StaffTaxonomyHandler) SeriesSearch(c fiber.Ctx) error {
-	if err := requireTaxonomyEditor(c); err != nil {
-		return err
-	}
-	terms, _ := staffSearchTerms(c) // nil terms = unfiltered
-	rows, err := h.seriesRepo.SearchByName(c.Context(), terms, staffSearchLimit)
-	if err != nil {
-		return response.InternalError(c, errors.ErrOperationFailed)
-	}
-	items := make([]dto.StaffTaxonomyListItem, 0, len(rows))
-	for _, r := range rows {
-		items = append(items, dto.StaffTaxonomyListItem{ID: r.ID, Name: r.Name})
-	}
-	return response.Success(c, staffList(items))
+	return h.staffFamilySearch(c, service.TaxonomyFamilySeries)
 }
 
 // SeriesDetail serves GET /api/series/{id}. galgame_ids is the membership the
@@ -282,13 +241,6 @@ func staffID(c fiber.Ctx) (int, bool) {
 		return 0, false
 	}
 	return id, true
-}
-
-// staffSearchTerms splits ?q= into whitespace-separated terms, which the repo
-// searches AND together. ok=false when the query is blank.
-func staffSearchTerms(c fiber.Ctx) ([]string, bool) {
-	terms := strings.Fields(strings.TrimSpace(c.Query("q")))
-	return terms, len(terms) > 0
 }
 
 // staffList wraps rows in the face's list envelope. total is the returned row

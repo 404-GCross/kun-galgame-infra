@@ -119,6 +119,8 @@ func buildW5App(t *testing.T) (*fiber.App, string) {
 	taxRevH := galgameHandler.NewTaxonomyRevisionHandler(taxSvc)
 	revisionH := galgameHandler.NewRevisionHandler(svc)
 	metaH := galgameHandler.NewGalgameMetaHandler(repo)
+	contribTaxH := galgameHandler.NewContributorTaxonomyHandler(
+		galgameService.NewTaxonomyPicker(tagRepo, officialRepo, engineRepo, seriesRepo))
 	linkH := galgameHandler.NewLinkHandler(svc, repo)
 	contributorH := galgameHandler.NewContributorHandler(repo, userRepo)
 
@@ -136,7 +138,8 @@ func buildW5App(t *testing.T) (*fiber.App, string) {
 	writes := writeRoutes{galgameH: galgameH, linkH: linkH, contributorH: contributorH, submissionH: submissionH}
 	workflow := workflowRoutes{
 		galgameH: galgameH, searchH: searchH, submissionH: submissionH,
-		messageH: messageH, taxRevH: taxRevH, optionalJWT: optionalJWT, jwtAuth: jwtAuth,
+		messageH: messageH, taxRevH: taxRevH, contribTaxH: contribTaxH,
+		optionalJWT: optionalJWT, jwtAuth: jwtAuth,
 	}
 
 	// SAME order as Mount: writes + propose (per-route chains) BEFORE the read
@@ -210,7 +213,7 @@ func TestW5RetirementMatrix(t *testing.T) {
 	// ── Surviving platform-workflow routes (15): all still registered ──
 	// The /search probe uses a bad released_from so it 400s BEFORE any Meili call.
 	survivors := []string{
-		// galgame workflow (8)
+		// galgame workflow (9)
 		"/internal/galgame/mine",
 		"/internal/galgame/messages/mine",
 		"/internal/galgame/search?released_from=not-a-date",
@@ -218,6 +221,9 @@ func TestW5RetirementMatrix(t *testing.T) {
 		"/internal/galgame/user/1/stats",
 		"/internal/galgame/user/1/galgames",
 		"/internal/galgame/user/1/contributed",
+		// submission-form taxonomy picker (A2-1g): the staff picker's query
+		// behind a contributor gate.
+		"/internal/galgame/taxonomy/tag/search?q=x",
 		// ownership meta (A2-1e area B): status-blind {gid,user_id,status} for
 		// the forum edit lane's owner assertion + notification recipient.
 		"/internal/galgame/meta?ids=1",
@@ -231,7 +237,7 @@ func TestW5RetirementMatrix(t *testing.T) {
 		"/internal/series/1/revisions",
 		"/internal/series/1/revisions/1",
 	}
-	require.Len(t, survivors, 16, "the surviving census is 16 platform-workflow routes")
+	require.Len(t, survivors, 17, "the surviving census is 17 platform-workflow routes")
 	for _, path := range survivors {
 		status, body := req(t, f, "GET", path, key, "", "")
 		require.Falsef(t, getRouteAbsent(status, body),

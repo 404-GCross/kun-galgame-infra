@@ -18,6 +18,7 @@ import (
 
 	"api/internal/platform/galgame/model"
 	"api/internal/platform/galgame/repository"
+	"api/internal/platform/galgame/service"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/stretchr/testify/assert"
@@ -55,6 +56,7 @@ func staffApp(db *gorm.DB, userID uint, roles []string) *fiber.App {
 	h := NewStaffTaxonomyHandler(
 		repository.NewTagRepository(db), repository.NewOfficialRepository(db),
 		repository.NewEngineRepository(db), repository.NewSeriesRepository(db),
+		taxPickerFor(db),
 	)
 	app := fiber.New()
 	app.Use(func(c fiber.Ctx) error {
@@ -73,6 +75,14 @@ func staffApp(db *gorm.DB, userID uint, roles []string) *fiber.App {
 	app.Get("/api/series/search", h.SeriesSearch)
 	app.Get("/api/series/:id", h.SeriesDetail)
 	return app
+}
+
+// taxPickerFor builds the shared picker both doors run on.
+func taxPickerFor(db *gorm.DB) *service.TaxonomyPicker {
+	return service.NewTaxonomyPicker(
+		repository.NewTagRepository(db), repository.NewOfficialRepository(db),
+		repository.NewEngineRepository(db), repository.NewSeriesRepository(db),
+	)
 }
 
 func staffGet(t *testing.T, app *fiber.App, url string) (int, map[string]any) {

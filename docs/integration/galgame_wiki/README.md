@@ -65,11 +65,11 @@
 >
 > **标签层级扩展(2026-07 加性)**:`GET /v1/galgame/tags/multi` 新增可选参数 **`expand=descendants`** —— 每个请求 id 先展开为「自身 + 其层级后代」,一部游戏在**每一组**里命中至少一个标签即入选(组间 AND、组内 OR),单次查询,total/分页精确;不传该参数 = 冻结的扁平 AND 交集,逐字节向后兼容。配套地 `GET /v1/galgame/tags/{id}` 详情新增 **`children`** 块(仅当有子标签时出现):直接子标签的 `{id, name, category, galgame_count}`,供 UI 呈现「展开将包含:硬科幻、科幻奇幻」。层级边由 VNDB 标签 DAG 投影到 wiki 词表(infra `cmd/backfill-tag-edges`);元分组节点(如 "Type")永不成为父节点,故「恋爱」的展开不会命中「无恋爱剧情」。
 
-## 平台工作流面(留任 · 15 读 + 3 机器面读 · 真值在代码)
+## 平台工作流面(留任 · 16 读 + 3 机器面读 · 真值在代码)
 
 W5 后 `/internal` 承载的**唯一读集** = 下列平台工作流路由。它**不是** wiki 遗产,是与写/提案面同族的设计面(见 infra `apps/api/internal/galgameapp/workflowroutes.go` 的章程注释)。字段级形状取代码。
 
-**galgame 工作流(7)**
+**galgame 工作流(8)**
 
 | 路由 | 章程 |
 |---|---|
@@ -80,6 +80,13 @@ W5 后 `/internal` 承载的**唯一读集** = 下列平台工作流路由。它
 | `GET /internal/galgame/user/:id/stats` | 社区工作流:用户贡献统计 |
 | `GET /internal/galgame/user/:id/galgames` | 社区工作流:用户创建的 galgame |
 | `GET /internal/galgame/user/:id/contributed` | 社区工作流:用户参与贡献的 galgame |
+| `GET /internal/galgame/taxonomy/{family}/search?q=`(jwtAuth) | **投稿表单的 taxonomy 选择器(A2-1g)**:`family` = `tag\|official\|engine\|series`,出 `{id,name}` 选择器行,**wiki id 空间**。词表外的 `family` = `400`(我方封闭词表,拼错是调用方错误,不是「无匹配」) |
+
+> **为什么 taxonomy 选择器要有两扇门(A2-1g)**:投稿表单要把 tag / 会社 / 引擎 / 系列的**名字**解析成它写回载荷里带的 **wiki id**。A2-1e 区 B 已经给这个查询建了家,但挂在 `/api` staff 面的 `galgame.taxonomy.edit_any` 门后——于是**普通投稿者填表时被自己唯一能问的那条道 403**。
+>
+> 所以本 op = **同一个查询 + 投稿者门**。信任级取 `/internal` 写面 / 提案面既有的那一档(登录用户 + 双凭证),这不是放宽:它返回的只是公开 taxonomy 行的名字,而同一个用户下一步就要用这些 id 去**写**投稿;W5 之前那份数据在弃用的公开面上本来就是匿名可读的。
+>
+> **实现上只差一道门**:族词表、分词、行形状、条数上限全部来自共享的 `service.TaxonomyPicker`,所以前端同一个选择器组件指哪扇门都一样(测试直接对拍两扇门的响应体逐字节相同)。空 `q` 的行为按**族**而非按门区分:`tag`/`official`(3,037 / 24,334 行)返回空列表——请先打字;`engine`/`series`(189 / 146 行)返回整个小词表——两站本就当扁平列表水化。
 
 **taxonomy 修订(8)** —— legacy 形状历史,编辑引擎轨的未来疆域,**刻意不冻进 `/v1`**(其形状将在编辑引擎轨现代化)。
 

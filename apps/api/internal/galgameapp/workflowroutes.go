@@ -13,7 +13,7 @@ import (
 // 29 A/C-bucket public-data reads (galgame list/detail/batch/search-of-taxonomy/
 // calendar/stats/check/relations + the four taxonomy families' list/search/by-id
 // projections) were retired outright — downstream now consumes the SAME data from
-// the frozen public /v1/galgame contract (waves W2-W4) — while the 15 routes here
+// the frozen public /v1/galgame contract (waves W2-W4) — while the routes here
 // are re-chartered as their own designed surface: the platform workflow face.
 //
 // This is NOT wiki legacy that happened to survive. It is a platform surface in
@@ -44,6 +44,12 @@ import (
 //     revision history — future territory of the
 //     editing-engine track, deliberately NOT frozen
 //     into /v1 (its shape will modernize there).
+//   - /galgame/taxonomy/:family/search ..... the SUBMISSION FORM's taxonomy
+//     picker (A2-1g). Same query as the /api staff
+//     picker, contributor gate: resolving a tag name
+//     to the wiki id the submission payload carries
+//     is part of filling the form in, so it cannot
+//     sit behind taxonomy.edit_any.
 //
 // The two S2S cron feeds — GET /galgame/messages/feed and /galgame/revisions/
 // recent — ALSO survive the retirement but are registered elsewhere (directly in
@@ -55,6 +61,9 @@ type workflowRoutes struct {
 	submissionH *galgameHandler.SubmissionHandler
 	messageH    *galgameHandler.MessageHandler
 	taxRevH     *galgameHandler.TaxonomyRevisionHandler
+	// contribTaxH serves the submission form's taxonomy picker (A2-1g) — the
+	// staff picker's query behind a contributor gate.
+	contribTaxH *galgameHandler.ContributorTaxonomyHandler
 	// optionalJWT populates user_id when a valid Bearer JWT is present but never
 	// blocks; jwtAuth requires one. Same instances the /internal write + proposal
 	// faces use.
@@ -62,7 +71,7 @@ type workflowRoutes struct {
 	jwtAuth     fiber.Handler
 }
 
-// register mounts the 15 GET workflow routes onto parent (the /internal group).
+// register mounts the 16 GET workflow routes onto parent (the /internal group).
 // (A2-1e added a 16th surviving /internal read — the ownership-meta batch — but
 // it is registered alongside the S2S feeds in mountInternal, not here; see the
 // machine-primitive note at the end of this file's doc.)
@@ -77,7 +86,7 @@ type workflowRoutes struct {
 // keeping the static personal paths first is cheap insurance should a future
 // param route be added to this group.
 func (r workflowRoutes) register(parent fiber.Router) {
-	// ── Galgame workflow (7) ──
+	// ── Galgame workflow (8) ──
 	galgame := parent.Group("/galgame")
 	// /mine + /messages/mine: JWT-required personal surface, registered first
 	// (see the fence note above).
@@ -91,6 +100,11 @@ func (r workflowRoutes) register(parent fiber.Router) {
 	galgame.Get("/user/:id/stats", r.galgameH.UserStats)
 	galgame.Get("/user/:id/galgames", r.galgameH.UserGalgames)
 	galgame.Get("/user/:id/contributed", r.galgameH.UserContributedGalgames)
+	// Submission-form taxonomy picker (A2-1g): jwtAuth only — a signed-in
+	// contributor filling in the form, the same trust level the /internal write
+	// and propose faces set. `taxonomy` is a static segment, so it cannot
+	// collide with the /user/:id param routes above.
+	galgame.Get("/taxonomy/:family/search", r.jwtAuth, r.contribTaxH.Search)
 
 	// ── Taxonomy revisions (8) — legacy-shape history, one pair per family ──
 	// Each family group now carries ONLY its revision routes (list + by-rev); the

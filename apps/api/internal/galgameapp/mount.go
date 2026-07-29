@@ -204,7 +204,11 @@ func Mount(a *app.App, cfg *config.Config, deps Deps) {
 	taxRevH := galgameHandler.NewTaxonomyRevisionHandler(taxSvc)
 	// A2-1e area B: the staff taxonomy READ-BACK pairs and the /internal
 	// ownership-meta batch. Both are pure reads over the existing repositories.
-	staffTaxH := galgameHandler.NewStaffTaxonomyHandler(tagRepo, officialRepo, engineRepo, seriesRepo)
+	// The picker query is shared by the staff door (/api, edit_any) and the
+	// contributor door (/internal, any signed-in user) — A2-1g.
+	taxPicker := galgameService.NewTaxonomyPicker(tagRepo, officialRepo, engineRepo, seriesRepo)
+	staffTaxH := galgameHandler.NewStaffTaxonomyHandler(tagRepo, officialRepo, engineRepo, seriesRepo, taxPicker)
+	contribTaxH := galgameHandler.NewContributorTaxonomyHandler(taxPicker)
 	metaH := galgameHandler.NewGalgameMetaHandler(galgameRepository)
 	adminH := galgameHandler.NewAdminHandler(adminRepo, adminSvc, searchHook)
 	submissionH := galgameHandler.NewSubmissionHandler(submissionSvc, searchHook, imgCli)
@@ -237,6 +241,7 @@ func Mount(a *app.App, cfg *config.Config, deps Deps) {
 		submissionH: submissionH,
 		messageH:    messageH,
 		taxRevH:     taxRevH,
+		contribTaxH: contribTaxH,
 		optionalJWT: optionalJWT,
 		jwtAuth:     jwtAuth,
 	}
