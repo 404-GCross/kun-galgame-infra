@@ -36,8 +36,10 @@ Thumbs.db
 .turbo
 .env.goenv
 
-refs
-tmp
+# Root-anchored: a bare name would silently ignore any nested refs/ or tmp/
+# source directory anywhere in the tree.
+/refs
+/tmp
 
 # build
 apps/api/build
@@ -59,7 +61,7 @@ backup
 prompts
 
 # reference
-refs
+/refs
 
 # dumps (contain production user data / password hashes — never commit)
 scripts/*.dump
