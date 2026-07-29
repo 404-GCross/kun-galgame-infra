@@ -49,3 +49,4 @@
 - 2026-07-29 A2-2 moyu 复航验收放行:弃用面消费归零(4 commit,vendor md5 亲证,169 PASS 复跑);A2-1f 微波(intro 可搜+tag sexual)下达;部署硬序=infra reconcile 先于 moyu 上线。
 - 2026-07-29 A2-3 forum 复航验收放行:弃用面消费归零(5 commit +6905/-3282;386 PASS 复跑;/c/ 判别位路径批准);STOP 裁决=contributor 级选择器搜索排 A2-1f 后;两梯队归零达成,摘牌条件只剩部署+流量观察。
 - 2026-07-30 A2-1f/A2-1g/moyu 尾件三连验收放行——infra 侧(5 commit)与 moyu 侧(7 commit)全部收官;forum 尾件(选择器改指)在飞=A2 全梯队最后一件。
+- 2026-07-30 forum 尾件验收放行(12667cbb)——A2 梯队代码全收官:infra 13+moyu 7+forum 7 功能 commit 全未推,弃用面全生态消费归零;下一步=用户 push→轨长 prod apply(migrate→deploy→reconcile→reindex→cron)→流量观察→摘牌合波。
