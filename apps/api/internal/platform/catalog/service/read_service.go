@@ -780,22 +780,27 @@ func (s *ReadService) nativeWorkCovers(ctx context.Context, workIDs []int64, out
 // stay attributable, and the old whole-facet "claimed never reads native" rule is
 // gone: a claimed work's native rows are first-class read-face rows.
 //
-// The two lanes are NOT deduplicated, by design. The 125 backfiller targets only
-// claimed works with an empty bridge, so it never doubles a picture — but it is
-// not the only writer, and neither of the other two produces a mistake this face
-// should paper over:
+// The two lanes ARE deduplicated, by (work_id, image_hash), with the bridge
+// leading and winning (refs/proj/128 ruling). Note what that does and does not
+// mean: nothing is filtered by SOURCE — the native lane still reads wiki-source
+// rows, which is non-negotiable, because the wiki-retirement rescue
+// (internal/jobs/wikirescue) materializes galgame_screenshot into
+// catalog_work_screenshot under source_id=galgame_wiki precisely so those
+// screenshots survive the galgame tables being dropped, and hiding them would
+// erase the rescue. What the dedup removes is the same PICTURE appearing twice:
+// while the bridge and the rescued native row coexist, one screenshot has a row
+// in each lane, and a reader should see one screenshot. The bridge wins the key
+// because it is the live body today; once the bridge retires, the native row is
+// the only row left and surfaces unchanged.
 //
+// The other two writers are unaffected, and neither produces a duplicate:
+//
+//   - the 125 backfiller only targets claimed works with an EMPTY bridge, so its
+//     rows never collide with a bridged hash.
 //   - a bodyless work carrying step-54 native rows can be ADOPTED by a later claim
 //     (the claim adopts assets in place, §8.B shadow-never-delete). Its native
-//     screenshots then surface next to whatever the wiki body has — which is the
-//     point of this wave, not a defect.
-//   - the wiki-retirement rescue (internal/jobs/wikirescue) materializes
-//     galgame_screenshot rows into catalog_work_screenshot under source_id=
-//     galgame_wiki so they survive the galgame tables being dropped. While both
-//     the bridge and the rescued rows exist, a rescued screenshot legitimately
-//     appears in BOTH lanes (same image_hash, two source_ids); once the bridge is
-//     retired the native row is all that is left. Filtering wiki sources out of
-//     the native lane would erase exactly what the rescue saved.
+//     screenshots then surface next to whatever the wiki body has — different
+//     pictures, different hashes, both shown, which is the point of this wave.
 //
 // Batched (§9.1): claimed works bridge in one galgame_screenshot query, every work
 // reads the native table in one catalog_work_screenshot query — never per-work.
@@ -880,8 +885,22 @@ func (s *ReadService) bridgeGalgameScreenshots(ctx context.Context, galgameIDs [
 // and with NO source filter: the media backfillers honor bridge-not-copy, and the
 // one writer that does put wiki-source rows here (the wiki-retirement rescue)
 // needs them visible — see loadWorkScreenshots for why filtering would be wrong.
+//
+// A native row whose (work_id, image_hash) the bridge lane already produced is
+// dropped (refs/proj/128): during the wiki-retirement window one screenshot has a
+// row in both lanes, and it is one screenshot. `out` holds only bridged rows at
+// this point — the caller runs the bridge first — so the seen-set is exactly the
+// bridge's keys.
 func (s *ReadService) nativeWorkScreenshots(ctx context.Context, workIDs []int64, out map[int64][]WorkScreenshotRow) error {
 	db := s.db.WithContext(ctx)
+	bridged := make(map[int64]map[string]struct{}, len(out))
+	for workID, rows := range out {
+		hashes := make(map[string]struct{}, len(rows))
+		for _, r := range rows {
+			hashes[r.ImageHash] = struct{}{}
+		}
+		bridged[workID] = hashes
+	}
 	var rows []struct {
 		WorkID    int64  `gorm:"column:work_id"`
 		ImageHash string `gorm:"column:image_hash"`
@@ -897,6 +916,9 @@ func (s *ReadService) nativeWorkScreenshots(ctx context.Context, workIDs []int64
 		return err
 	}
 	for _, r := range rows {
+		if _, dup := bridged[r.WorkID][r.ImageHash]; dup {
+			continue
+		}
 		out[r.WorkID] = append(out[r.WorkID], WorkScreenshotRow{
 			ImageHash: r.ImageHash, Caption: r.Caption,
 			SortOrder: r.SortOrder, Sexual: r.Sexual, Violence: r.Violence, SourceID: r.SourceID,

@@ -18,8 +18,18 @@
 //	k  engine map        galgame_engine.id → engine       → catalog_external_ref (exact)
 //	l  tag map           galgame_tag.id → canonical tag   → catalog_external_ref (exact)
 //
+//	m  cover bytes       ALL galgame_cover                → catalog_work_cover
+//	n  screenshot bytes  ALL galgame_screenshot           → catalog_work_screenshot
+//	o  image ownership   catalog-referenced hashes        → image_site_usage (site=catalog)
+//
 // Steps j..l are the A2-0 registrar rescue (refs/proj/127): the three taxonomy
 // id maps that today only exist as a joinable wiki table.
+//
+// Steps m..o are the W2 image-byte retirement (refs/proj/128): the wiki media
+// tables are the only reference source for 174,843 image-service hashes, so the
+// rows are projected whole and the catalog site is given ownership of the hashes
+// — after which the existing catalog reference ping keeps the bytes alive. Step o
+// is the ONLY step that writes to the images database, and it only ever INSERTs.
 //
 // Every step is fill-missing (ON CONFLICT DO NOTHING), so a second pass writes
 // nothing — that is the acceptance criterion. Dry run is the default.
@@ -33,9 +43,14 @@
 //	go run ./cmd/rescue-wiki-data --step all --apply      # write
 //	go run ./cmd/rescue-wiki-data --step all --apply      # ×2 = idempotent, writes 0
 //
+// --step also takes a comma-separated selection, which is how a later wave runs
+// its own steps without replaying the converged ones:
+//
+//	go run ./cmd/rescue-wiki-data --step m,n,o            # the W2 wave alone
+//
 // Databases come from the environment (KUN_CATALOG_PG_DATABASE /
-// KUN_GALGAME_PG_DATABASE), never a flag — rehearsal runs simply point those
-// at the rehearsal database.
+// KUN_GALGAME_PG_DATABASE, plus KUN_IMAGES_PG_DATABASE for step o), never a flag
+// — rehearsal runs simply point those at the rehearsal databases.
 package main
 
 import (
@@ -44,6 +59,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"slices"
 
 	"api/internal/infrastructure/database"
 	"api/internal/jobs/wikirescue"
@@ -54,10 +70,16 @@ import (
 )
 
 func main() {
-	step := flag.String("step", "all", "which step to run: a..l, or all")
+	step := flag.String("step", "all", "which steps to run: a..o, a comma-separated selection, or all")
 	apply := flag.Bool("apply", false, "write changes (default dry)")
 	artifacts := flag.String("artifacts", "", "directory for parked-row JSON (empty = do not write)")
 	flag.Parse()
+
+	selected, err := wikirescue.ParseSteps(*step)
+	if err != nil {
+		slog.Error("parse steps", "error", err)
+		os.Exit(1)
+	}
 
 	_ = godotenv.Load("apps/api/.env") // allow running from the repo root
 
@@ -88,6 +110,19 @@ func main() {
 	if err != nil {
 		slog.Error("wire runner", "error", err)
 		os.Exit(1)
+	}
+
+	// The images pool is opened only when a selected step needs it: the wiki
+	// rescue steps must stay runnable when kun_images is out of reach.
+	if slices.Contains(selected, wikirescue.StepImageUsage) {
+		imagesDB, err := database.NewPostgresDB(cfg.ImagesDatabase)
+		if err != nil {
+			slog.Error("images db connect", "error", err, "dbname", cfg.ImagesDatabase.DBName)
+			os.Exit(1)
+		}
+		defer imagesDB.Close()
+		runner.WithImages(imagesDB.DB())
+		slog.Info("images pool attached", "dbname", cfg.ImagesDatabase.DBName)
 	}
 
 	stats, err := runner.Run(context.Background())

@@ -941,7 +941,7 @@ func TestWorkCover(t *testing.T) {
 // galgameScreenshotStubIDs are the fixture galgame body ids used by the claimed
 // screenshot bridge (kept distinct from the intro/cover stub ids so the media
 // tests never collide on shared galgame ids).
-var galgameScreenshotStubIDs = []int64{7001, 7002, 7003}
+var galgameScreenshotStubIDs = []int64{7001, 7002, 7003, 7004}
 
 // ensureGalgameScreenshotStub provisions the galgame_screenshot table the
 // claimed-screenshot bridge joins against. In prod/rehearsal galgame_screenshot
@@ -985,6 +985,10 @@ func insertGalgameScreenshot(t *testing.T, db *gorm.DB, galgameID int64, hash st
 // The pre-125 "strict XOR" case (claimed + native-only → []) is deliberately
 // INVERTED here: under the (facet, source) XOR a claimed work's dlsite rows are
 // first-class read-face rows, so they now surface.
+//
+// The last case pins the refs/proj/128 dedup: while the wiki-retirement rescue's
+// materialized rows coexist with the bridge, one screenshot has a row in each
+// lane and must be rendered once, with the bridge winning the key.
 func TestWorkScreenshot(t *testing.T) {
 	db := openCatalogTestDB(t)
 	ensureGalgameStub(t, db)           // the intro bridge (also run by loadWorkDetail) needs galgame
@@ -999,6 +1003,7 @@ func TestWorkScreenshot(t *testing.T) {
 	insertGalgameBody(t, db, 7001, 0, "", "", "", "")
 	insertGalgameBody(t, db, 7002, 0, "", "", "", "")
 	insertGalgameBody(t, db, 7003, 0, "", "", "", "")
+	insertGalgameBody(t, db, 7004, 0, "", "", "", "")
 	for _, tbl := range []string{"catalog_work_screenshot", "catalog_work"} {
 		require.NoError(t, db.Exec("TRUNCATE "+tbl+" RESTART IDENTITY CASCADE").Error)
 	}
@@ -1049,6 +1054,23 @@ func TestWorkScreenshot(t *testing.T) {
 	insertGalgameScreenshot(t, db, 7003, "hash_wiki_bridged", 0, "wiki", 0, 0, "")
 	require.NoError(t, db.Create(&model.CatalogWorkScreenshot{
 		WorkID: union.ID, ImageHash: "hash_native_dlsite", SortOrder: 0, SourceID: srcDlsite}).Error)
+
+	// --- RESCUED work: claimed (galgame_id 7004) whose wiki screenshot the
+	// wiki-retirement rescue has ALREADY materialized into the native table under
+	// source_id=galgame_wiki (refs/proj/128 steps b/n). The same picture then has a
+	// row in each lane; the read face must show it ONCE, attributed to the bridge.
+	// A second, native-only hash proves the dedup is keyed per (work, hash) and
+	// does not swallow the rest of the native lane.
+	rescued := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "抢救双现", ContentRating: 0, Status: 0,
+		Site: strptr("galgame_wiki"), ProductWorkID: ptrI64(7004)}
+	require.NoError(t, db.Create(&rescued).Error)
+	insertGalgameScreenshot(t, db, 7004, "hash_rescued_shot", 0, "wiki caption", 1, 0, "")
+	require.NoError(t, db.Create(&model.CatalogWorkScreenshot{
+		WorkID: rescued.ID, ImageHash: "hash_rescued_shot", SortOrder: 0, Caption: "",
+		SourceID: srcGalgameWiki}).Error)
+	require.NoError(t, db.Create(&model.CatalogWorkScreenshot{
+		WorkID: rescued.ID, ImageHash: "hash_rescued_native_only", SortOrder: 1,
+		SourceID: srcDlsite}).Error)
 
 	// --- EMPTY work: bodyless, no screenshots → [].
 	empty := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "空作品", ContentRating: 0, Status: 0}
@@ -1105,6 +1127,22 @@ func TestWorkScreenshot(t *testing.T) {
 	u1 := shots[1].(map[string]any)
 	assert.Equal(t, "hash_native_dlsite", u1["image_hash"], "native rows follow")
 	assert.EqualValues(t, srcDlsite, u1["source_id"])
+
+	// CLAIMED, RESCUED: the doubled hash collapses to one row, the bridge wins the
+	// key (caption + sexual come from the wiki body), and the native-only row still
+	// follows.
+	code, body = getJSON(t, app, "/api/v1/catalog/works/"+itoa(rescued.ID))
+	require.Equal(t, 200, code)
+	shots = body["data"].(map[string]any)["screenshots"].([]any)
+	require.Len(t, shots, 2, "the doubled (work, image_hash) appears once")
+	r0 := shots[0].(map[string]any)
+	assert.Equal(t, "hash_rescued_shot", r0["image_hash"])
+	assert.Equal(t, "wiki caption", r0["caption"], "the bridge row wins the key")
+	assert.EqualValues(t, 1, r0["sexual"], "bridge attributes, not the native row's zero")
+	assert.EqualValues(t, srcGalgameWiki, r0["source_id"])
+	r1 := shots[1].(map[string]any)
+	assert.Equal(t, "hash_rescued_native_only", r1["image_hash"], "the rest of the native lane is untouched")
+	assert.EqualValues(t, srcDlsite, r1["source_id"])
 
 	// EMPTY: [] not null.
 	code, body = getJSON(t, app, "/api/v1/catalog/works/"+itoa(empty.ID))

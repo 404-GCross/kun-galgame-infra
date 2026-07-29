@@ -13,6 +13,16 @@
 // and tag id spaces are addressable today only by joining a wiki table, so they
 // are filed into catalog_external_ref before the join disappears.
 //
+// Steps m..o are the W2 image-byte retirement (refs/proj/128,
+// refs/plans/10-data-layer-retirement/01-w2-image-bytes.md) and invert the
+// charter's discard rule for one reason: the wiki cover and screenshot tables are
+// the ONLY thing referencing 174,843 image-service hashes, and an unreferenced
+// hash is one GC cycle away from having its bytes deleted. The rows are
+// regenerable; the bytes are not. So m and n project both media tables WHOLE, and
+// o gives the catalog site an ownership row for every hash the catalog face now
+// references, which is what lets the existing catalog reference ping take over
+// from the wiki one. None of the three touches the galgame_wiki image client.
+//
 // Three rules every step obeys:
 //
 //   - FILL-MISSING, NEVER OVERWRITE. Every write is ON CONFLICT DO NOTHING, so
@@ -68,7 +78,8 @@ type Opts struct {
 	// Apply switches from planning to writing. Dry run is the default
 	// everywhere in this repo's one-shot tools.
 	Apply bool
-	// Step selects one lettered step (a..l) or "all" for the charter order.
+	// Step selects one lettered step, a comma-separated selection ("m,n,o"), or
+	// "all" for the charter order. See ParseSteps.
 	Step string
 	// ArtifactDir receives the parked-row JSON files. Empty disables parking
 	// output (the counts are still reported).
@@ -101,8 +112,11 @@ type Stats struct {
 
 // Runner holds the two pools and the resolved source ids for a run.
 type Runner struct {
-	galgame  *gorm.DB
-	catalog  *gorm.DB
+	galgame *gorm.DB
+	catalog *gorm.DB
+	// images is the kun_images pool, attached by WithImages and needed only by
+	// the image-usage step; nil for every other run.
+	images   *gorm.DB
 	opts     Opts
 	wikiSrc  int16
 	webSrc   int16
@@ -140,18 +154,16 @@ func resolveSourceID(db *gorm.DB, key string) (int16, error) {
 // steps is the charter's execution order. A is the schema step and belongs to
 // cmd/migrate-catalog; A's DATA migration is the "a" step here. j..l are the
 // A2-0 registrar rescue (refs/proj/127): the three taxonomy id maps that, like
-// the gid map, only exist today as a joinable wiki table.
-var steps = []string{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l"}
+// the gid map, only exist today as a joinable wiki table. m..o are the W2
+// image-byte retirement (refs/proj/128) and are normally selected explicitly
+// ("--step m,n,o"), since a..l are already converged in production.
+var steps = []string{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o"}
 
 // Run dispatches the selected step(s) and returns one Stats per step executed.
 func (r *Runner) Run(ctx context.Context) ([]Stats, error) {
-	want := strings.ToLower(strings.TrimSpace(r.opts.Step))
-	selected := steps
-	if want != "all" && want != "" {
-		if !contains(steps, want) {
-			return nil, fmt.Errorf("unknown step %q (want one of %s or \"all\")", want, strings.Join(steps, ","))
-		}
-		selected = []string{want}
+	selected, err := ParseSteps(r.opts.Step)
+	if err != nil {
+		return nil, err
 	}
 	out := make([]Stats, 0, len(selected))
 	for _, s := range selected {
@@ -190,6 +202,12 @@ func (r *Runner) runStep(ctx context.Context, step string) (Stats, error) {
 		return r.stepEngineMap(ctx)
 	case "l":
 		return r.stepTagMap(ctx)
+	case "m":
+		return r.stepCoverProject(ctx)
+	case "n":
+		return r.stepScreenshotProject(ctx)
+	case StepImageUsage:
+		return r.stepImageUsage(ctx)
 	}
 	return Stats{}, fmt.Errorf("unhandled step %q", step)
 }

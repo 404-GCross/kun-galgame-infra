@@ -44,7 +44,9 @@ type WorkByAnchorResponse struct {
 	// table (catalog_work_screenshot — ALL works). A claimed work's read face is
 	// bridge ∪ native (bridged rows lead); a bodyless work is the degenerate case
 	// with an empty bridge. source_id keeps the lanes attributable. The union is
-	// NOT deduplicated across lanes — see loadWorkScreenshots.
+	// deduplicated by (work, image_hash) with the bridge winning, so a screenshot
+	// that the wiki-retirement rescue has already materialized appears once — no
+	// source is ever filtered out — see loadWorkScreenshots.
 	Screenshots []WorkScreenshot `json:"screenshots"`
 	// Ratings is the work's rating set (step 58a media-aggregation ratings
 	// facet), at most one element per source, in a single shape regardless of
