@@ -314,6 +314,26 @@ func rawSQL(db *gorm.DB) error {
 		{"idx_catalog_work_updated_id", `
 			CREATE INDEX IF NOT EXISTS idx_catalog_work_updated_id
 			    ON catalog_work(updated_at, id)`},
+		// Series-closure walk (wave 117): loadSeriesSiblings recurses over
+		// same_series edges on EVERY work detail read, probing one node at a
+		// time from both endpoint columns. Partial + INCLUDE keeps the whole
+		// recursion on Index Only Scans (~112 kB each) instead of two full
+		// relation-table scans per round.
+		//
+		// The literal 7 is catalog_relation_type.id for key "same_series",
+		// pinned by seed.go (`{ID: 7, Key: "same_series", ...}`) and mirrored
+		// by service.seriesRelationTypeID. That coupling is deliberate: type 7
+		// is this index's only consumer, so a partial index is the smallest
+		// thing that works. Changing the seed id means changing these two
+		// index predicates too.
+		{"idx_catalog_work_relation_series_a", `
+			CREATE INDEX IF NOT EXISTS idx_catalog_work_relation_series_a
+			    ON catalog_work_relation (a_work_id) INCLUDE (b_work_id)
+			    WHERE relation_type_id = 7`},
+		{"idx_catalog_work_relation_series_b", `
+			CREATE INDEX IF NOT EXISTS idx_catalog_work_relation_series_b
+			    ON catalog_work_relation (b_work_id) INCLUDE (a_work_id)
+			    WHERE relation_type_id = 7`},
 	} {
 		if err := db.Exec(ix.stmt).Error; err != nil {
 			return fmt.Errorf("create index %s: %w", ix.name, err)

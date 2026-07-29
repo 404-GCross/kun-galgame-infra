@@ -1,6 +1,7 @@
 package service
 
 import (
+	"reflect"
 	"testing"
 
 	"api/internal/platform/catalog/dto"
@@ -669,4 +670,101 @@ func TestSeriesSiblingsTransitiveClosure(t *testing.T) {
 	if recL.SeriesSiblings == nil || len(recL.SeriesSiblings) != 0 {
 		t.Fatalf("lone siblings = %v (want empty non-nil)", recL.SeriesSiblings)
 	}
+}
+
+// siblingIDs runs the closure walk straight against the read service (the layer
+// wave 117 rewrote) and returns the sibling ids in the returned order.
+func siblingIDs(t *testing.T, workID int64) []int64 {
+	t.Helper()
+	rows, err := NewReadService(testDB).loadSeriesSiblings(t.Context(), workID)
+	if err != nil {
+		t.Fatalf("loadSeriesSiblings(%d): %v", workID, err)
+	}
+	out := make([]int64, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, r.WorkID)
+	}
+	return out
+}
+
+// TestSeriesSiblingsClosureShapes pins the wave-117 two-stage rewrite against
+// the topologies the single-statement form used to absorb implicitly: a long
+// chain (the walk must not stop at depth 1), a cycle (UNION dedup is what
+// terminates it), no edges at all (the stage-2 short circuit), and a
+// soft-deleted node (drops from the result but still bridges the component).
+func TestSeriesSiblingsClosureShapes(t *testing.T) {
+	cleanTables(t)
+
+	t.Run("multi-hop chain", func(t *testing.T) {
+		cleanTables(t)
+		// a—b—c—d—e, each work linked only to its neighbour.
+		w := make([]*model.CatalogWork, 5)
+		for i := range w {
+			w[i] = createWork(t, "鎖"+string(rune('A'+i)))
+		}
+		for i := 0; i < len(w)-1; i++ {
+			createSameSeriesEdge(t, w[i].ID, w[i+1].ID)
+		}
+		// The far end sees all four others, four hops away included.
+		got := siblingIDs(t, w[4].ID)
+		want := []int64{w[0].ID, w[1].ID, w[2].ID, w[3].ID}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("tail siblings = %v (want %v, ascending by id)", got, want)
+		}
+		// A middle node reaches both directions.
+		if got := siblingIDs(t, w[2].ID); len(got) != 4 {
+			t.Fatalf("middle siblings = %v (want 4)", got)
+		}
+	})
+
+	t.Run("cycle terminates", func(t *testing.T) {
+		cleanTables(t)
+		a := createWork(t, "環A")
+		b := createWork(t, "環B")
+		c := createWork(t, "環C")
+		createSameSeriesEdge(t, a.ID, b.ID)
+		createSameSeriesEdge(t, b.ID, c.ID)
+		createSameSeriesEdge(t, c.ID, a.ID) // closes the loop
+		// A duplicate edge in the reverse direction must not duplicate rows.
+		createSameSeriesEdge(t, b.ID, a.ID)
+		got := siblingIDs(t, a.ID)
+		if want := []int64{b.ID, c.ID}; !reflect.DeepEqual(got, want) {
+			t.Fatalf("cycle siblings = %v (want %v, no dups, no self)", got, want)
+		}
+	})
+
+	t.Run("no edges", func(t *testing.T) {
+		cleanTables(t)
+		lone := createWork(t, "孤立作品")
+		createWork(t, "無関係")
+		if got := siblingIDs(t, lone.ID); len(got) != 0 {
+			t.Fatalf("lone siblings = %v (want none)", got)
+		}
+		// A work id that does not exist at all walks to nothing too.
+		if got := siblingIDs(t, lone.ID+9999); len(got) != 0 {
+			t.Fatalf("missing work siblings = %v (want none)", got)
+		}
+	})
+
+	t.Run("soft-deleted node bridges but drops", func(t *testing.T) {
+		cleanTables(t)
+		a := createWork(t, "橋A")
+		mid := createWork(t, "橋M")
+		c := createWork(t, "橋C")
+		createSameSeriesEdge(t, a.ID, mid.ID)
+		createSameSeriesEdge(t, mid.ID, c.ID)
+		if err := testDB.Delete(&model.CatalogWork{}, mid.ID).Error; err != nil {
+			t.Fatalf("soft delete mid: %v", err)
+		}
+		// mid is gone from the result, yet a still reaches c through it —
+		// the walk is over edges, the liveness filter is on the briefs.
+		if got := siblingIDs(t, a.ID); !reflect.DeepEqual(got, []int64{c.ID}) {
+			t.Fatalf("siblings across deleted node = %v (want [%d])", got, c.ID)
+		}
+		// Walking FROM the deleted node still sees its live neighbours: the
+		// caller's own liveness is the read face's business, not this walk's.
+		if got := siblingIDs(t, mid.ID); !reflect.DeepEqual(got, []int64{a.ID, c.ID}) {
+			t.Fatalf("deleted node's own siblings = %v (want [%d %d])", got, a.ID, c.ID)
+		}
+	})
 }

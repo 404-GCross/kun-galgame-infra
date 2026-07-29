@@ -74,25 +74,49 @@ type SeriesSiblingRow struct {
 // transitive: a leaf work (wave 113 measured 68.6% of series nodes are degree-1
 // leaves) sees its WHOLE family here, not just the one neighbour the pairwise
 // relations face records. Self is excluded; deleted ends drop.
+//
+// Wave 117 splits this into two statements — the walk and the briefs — because
+// this runs on EVERY work detail read (S2S works/{id}, by-anchor, public
+// /v1/catalog/works/{id}) and the old single-statement form was unconditionally
+// quadratic-ish: the materialised `edges` UNION ALL view cannot be
+// parameterised, so the planner re-scanned the whole relation table twice per
+// recursion round (prod: 87.5ms / 6,699 buffers, plus a 226k-row hash over
+// catalog_work). The LATERAL shape below probes per node instead, so the two
+// covering partial indexes (idx_catalog_work_relation_series_a/_b, see
+// migrate.go) serve the whole walk as Index Only Scans. Keep the LATERAL form:
+// measurements showed an equivalent UNION-ALL-view form never gets the probe.
 func (s *ReadService) loadSeriesSiblings(ctx context.Context, workID int64) ([]SeriesSiblingRow, error) {
-	var rows []SeriesSiblingRow
+	// Stage 1 — the connected component's node set. UNION (not UNION ALL)
+	// dedups, which is what terminates the walk on cycles.
+	var nodes []int64
 	if err := s.db.WithContext(ctx).Raw(`
-		WITH RECURSIVE edges AS (
-			SELECT a_work_id AS a, b_work_id AS b FROM catalog_work_relation WHERE relation_type_id = ?
-			UNION ALL
-			SELECT b_work_id, a_work_id FROM catalog_work_relation WHERE relation_type_id = ?
-		),
-		reach(node) AS (
+		WITH RECURSIVE reach(node) AS (
 			SELECT ?::bigint
 			UNION
-			SELECT e.b FROM edges e JOIN reach r ON e.a = r.node
+			SELECT x.other FROM reach rc CROSS JOIN LATERAL (
+				SELECT r.b_work_id AS other FROM catalog_work_relation r
+				WHERE r.relation_type_id = ? AND r.a_work_id = rc.node
+				UNION ALL
+				SELECT r.a_work_id FROM catalog_work_relation r
+				WHERE r.relation_type_id = ? AND r.b_work_id = rc.node
+			) x
 		)
+		SELECT node FROM reach WHERE node <> ?`,
+		workID, seriesRelationTypeID, seriesRelationTypeID, workID).Scan(&nodes).Error; err != nil {
+		return nil, err
+	}
+	// Stage 2 — briefs. The 98.2% of works with no series edge stop here and
+	// never touch catalog_work at all; nil matches what the old form scanned
+	// into for an empty walk (the handler/public projections pre-size non-nil).
+	if len(nodes) == 0 {
+		return nil, nil
+	}
+	var rows []SeriesSiblingRow
+	if err := s.db.WithContext(ctx).Raw(`
 		SELECT w.id AS work_id, w.display_name, w.medium_id, w.content_rating, w.status, w.site, w.product_work_id
-		FROM reach rc
-		JOIN catalog_work w ON w.id = rc.node AND w.deleted_at IS NULL
-		WHERE rc.node <> ?
-		ORDER BY w.id`,
-		seriesRelationTypeID, seriesRelationTypeID, workID, workID).Scan(&rows).Error; err != nil {
+		FROM catalog_work w
+		WHERE w.id IN (?) AND w.deleted_at IS NULL
+		ORDER BY w.id`, nodes).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	return rows, nil
