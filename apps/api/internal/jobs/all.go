@@ -24,6 +24,15 @@ func RegisterAll(r *Registry) {
 	})
 
 	r.Register(Job{
+		Name:     "reconcile-galgame-claims",
+		Desc:     "galgame → catalog 注册通道（reconcile phase=claim：认领 catalog_work + vndb/bid exact 锚 + 回写 galgame.catalog_work_id）",
+		Schedule: Schedule{DailyAt: "03:20"}, // after sync-vndb (03:00) so the night's new drafts are claimed same-day, before image-gc (03:30)
+		Run: func(ctx context.Context, cfg *config.Config) (Summary, error) {
+			return RunReconcileGalgameClaims(ctx, cfg, DefaultReconcileGalgameClaimsOpts())
+		},
+	})
+
+	r.Register(Job{
 		Name:     "sync-vndb-enrich",
 		Desc:     "VNDB → galgame wiki 富集 links+tags+officials（已发布游戏中尚缺 vndb 数据的，如新建/claim）",
 		Schedule: Schedule{DailyAt: "05:00"}, // staggered after sync-vndb (03:00) + refpings

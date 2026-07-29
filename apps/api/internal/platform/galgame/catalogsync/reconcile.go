@@ -5,7 +5,9 @@
 //
 // Dependency direction: this is a PRODUCT-domain package importing the
 // PLATFORM-domain catalog (galgame → catalog is allowed; the reverse is not).
-// It is driven only by cmd/reconcile-galgame-works, never by the running API.
+// Its drivers are cmd/reconcile-galgame-works (any phase, on demand) and the
+// nightly reconcile-galgame-claims job (the claim phase only, via
+// internal/jobs/galgameclaim). No request path ever reaches it.
 //
 // The R8 three-layer write policy (doc 17 §3) lands here on real data for the
 // first time:
