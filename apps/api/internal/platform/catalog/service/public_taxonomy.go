@@ -167,10 +167,15 @@ func (s *PublicService) TagsList(ctx context.Context, f TagsListFilter, cursor s
 	if err != nil {
 		return dto.PublicTagsListData{}, err
 	}
+	sexual, err := s.tagSexualFor(ctx, ids)
+	if err != nil {
+		return dto.PublicTagsListData{}, err
+	}
 	out := dto.PublicTagsListData{Items: make([]dto.PublicTagListItem, len(rows))}
 	for i, r := range rows {
 		out.Items[i] = dto.PublicTagListItem{
-			ID: r.ID, Name: r.Name, Tier: tagTierKey(r.Tier), Kind: tagKindKey(r.Kind), WorkCount: counts[r.ID],
+			ID: r.ID, Name: r.Name, Tier: tagTierKey(r.Tier), Kind: tagKindKey(r.Kind),
+			WorkCount: counts[r.ID], Sexual: sexual[r.ID],
 		}
 	}
 	if out.Total, err = s.taxonomyTotal(ctx, "catalog_tag", filterWhere, filterArgs); err != nil {
@@ -309,6 +314,49 @@ func (s *PublicService) workCountsFor(ctx context.Context, edge string, ids []in
 	}
 	for _, r := range rows {
 		out[r.KeyID] = r.N
+	}
+	return out, nil
+}
+
+// tagSexualFor batch-resolves the TAG-LEVEL sexual-category flag (A2-1f) for a
+// set of canonical tag ids. Tags with no mapping are simply absent from the
+// map, which renders false.
+//
+// Derivation, and why it is this join and not a name match: A2-0 minted an
+// identity anchor per mapped tag (entity_type=tag, source=galgame_wiki,
+// external_id = the wiki tag id, link_kind=exact), so the canonical tag reaches
+// its wiki vocabulary row by ID. The alternative — joining
+// catalog_tag_source_map on the vndb source NAME — resolves the same 1,530 tags
+// today (verified: 901 content / 357 sexual / 267 technical either way) but is
+// a string key, so it silently drops a tag the moment either side is renamed.
+//
+// galgame_tag.category is the VNDB cat vocabulary as the wiki sync mapped it
+// (cont→content, ero→sexual, tech→technical); `sexual` is the only value that
+// carries a safety meaning, so it is the only one projected.
+func (s *PublicService) tagSexualFor(ctx context.Context, ids []int64) (map[int64]bool, error) {
+	out := make(map[int64]bool, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	var rows []struct {
+		TagID int64 `gorm:"column:tag_id"`
+	}
+	// external_id is compared as TEXT (gt.id::text), never by casting the ref's
+	// text to bigint: the ref table is a mixed key space and a non-numeric row
+	// from any other lane would turn a cast into a query-wide error.
+	if err := s.db.WithContext(ctx).Raw(`
+		SELECT DISTINCT r.entity_id AS tag_id
+		FROM catalog_external_ref r
+		JOIN catalog_source src ON src.id = r.source_id AND src.key = ?
+		JOIN galgame_tag gt ON gt.id::text = r.external_id
+		WHERE r.entity_type = ? AND r.link_kind = ? AND r.entity_id IN ?
+		  AND gt.category = ?`,
+		sourceKeyGalgameWiki, model.EntityTypeTag, model.LinkKindExact, ids,
+		galgameTagCategorySexual).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, r := range rows {
+		out[r.TagID] = true
 	}
 	return out, nil
 }

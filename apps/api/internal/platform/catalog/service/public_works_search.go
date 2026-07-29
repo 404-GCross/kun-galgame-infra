@@ -75,6 +75,9 @@ type WorksSearchFilter struct {
 	Page           int      // 1-based
 	Limit          int
 	Include        WorksListInclude
+	// SearchIntro widens free-text matching from titles to synopses (A2-1f).
+	// Default false = the A2-1d behavior byte for byte.
+	SearchIntro bool
 }
 
 // worksSearchFacetAttr maps a public facet token — which is the FILTER
@@ -168,12 +171,13 @@ func (s *PublicService) WorksSearch(ctx context.Context, f WorksSearchFilter) (d
 
 	rule, _ := WorksSearchSortRule(f.Sort)
 	res, err := s.worksSearch.SearchWorks(ctx, catsearch.WorksQuery{
-		Q:      text,
-		Filter: f.meiliFilter(docID),
-		Sort:   rule,
-		Facets: worksSearchMeiliFacets(f.Facets),
-		Page:   page,
-		Limit:  limit,
+		Q:           text,
+		Filter:      f.meiliFilter(docID),
+		Sort:        rule,
+		Facets:      worksSearchMeiliFacets(f.Facets),
+		Page:        page,
+		Limit:       limit,
+		SearchIntro: f.SearchIntro,
 	})
 	if err != nil {
 		return dto.PublicWorksSearchData{}, err

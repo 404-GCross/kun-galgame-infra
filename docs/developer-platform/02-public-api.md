@@ -48,14 +48,14 @@
 | `GET /v1/catalog/characters/{id}` | `catalog:read` | 角色(含出演,spoiler 级字段) |
 | `GET /v1/catalog/labels` | `catalog:read` | **厂牌浏览/列表(A2-1b,keyset id ASC)**:过滤 `kind=`(封闭词表 `game_brand\|bunko\|publisher\|anime_studio\|doujin_circle\|group`,非法 token 400);item = `{id, display_name, kind, work_count}`;**合并走掉的厂牌不出列表**(merge 软删源行 + 写 redirect,旧 id 仍由 `/v1/catalog/redirects` 覆盖)。**A2-1e**:信封加 `total`(见下) |
 | `GET /v1/catalog/labels/{id}`(+ `…/works`) | `catalog:read` | 厂牌/文库/社团;恒带 `intros[]`(多语言简介,按语言归并、`source`=来源键)与 `links[]`(官网/twitter/ci-en 外链,`{source,url}`;身份锚 exact/probable 永不入 `links`),无供给则为 `[]`;`refs[]` exact 身份锚(doc 106)。**A2-1e 加法**:`aliases[]`(别名扁平字符串,**排除 display_name**、跨语言同拼写去重,恒出)、`lang`(display_name 自身的 BCP-47 标签,未记录则省略)、`work_count`(**nsfw 感知**,与 `labels` 列表行同一聚合——详情页与来路列表永不打架) |
-| `GET /v1/catalog/tags` | `catalog:read` | **规范 tag 浏览/列表(A2-1b,keyset id ASC)**:过滤 `tier=`(`core\|longtail\|hidden`)、`kind=`(`content\|meta`),两者皆封闭词表、非法 token 400;item = `{id, name, tier, kind, work_count}`。**A2-1e**:信封加 `total`(见下) |
-| `GET /v1/catalog/tags/{id}` | `catalog:read` | **规范 tag(doc 106 G5)**:`{id, name, tier, kind}`(跨源规范词表 catalog_tag);**恒带 `intros[]`(A2-1b 加法)**——多语言简介,shape 与 `labels/{id}` 的 `intros[]` 一致(`{lang, intro, source}`、按语言归并低 source_id 胜出、`source`=公开来源键),无供给则为 `[]`;`include=works` 附带该规范 tag 下的作品(经 catalog_tag_source_map ⋈ catalog_work_tag,nsfw 门),按 `limit`/`offset` 翻页,**满页时**带 `next_offset`(= `offset+limit`),不满页则省略 = 到底。**A2-1e 加法**:`work_count`(**nsfw 感知**,与 `tags` 列表行同一聚合) |
+| `GET /v1/catalog/tags` | `catalog:read` | **规范 tag 浏览/列表(A2-1b,keyset id ASC)**:过滤 `tier=`(`core\|longtail\|hidden`)、`kind=`(`content\|meta`),两者皆封闭词表、非法 token 400;item = `{id, name, tier, kind, work_count, sexual}`(**A2-1f** 补 `sexual`,见 §3.2.4)。**A2-1e**:信封加 `total`(见下) |
+| `GET /v1/catalog/tags/{id}` | `catalog:read` | **规范 tag(doc 106 G5)**:`{id, name, tier, kind}`(跨源规范词表 catalog_tag);**恒带 `intros[]`(A2-1b 加法)**——多语言简介,shape 与 `labels/{id}` 的 `intros[]` 一致(`{lang, intro, source}`、按语言归并低 source_id 胜出、`source`=公开来源键),无供给则为 `[]`;`include=works` 附带该规范 tag 下的作品(经 catalog_tag_source_map ⋈ catalog_work_tag,nsfw 门),按 `limit`/`offset` 翻页,**满页时**带 `next_offset`(= `offset+limit`),不满页则省略 = 到底。**A2-1e 加法**:`work_count`(**nsfw 感知**,与 `tags` 列表行同一聚合);**A2-1f 加法**:`sexual`(tag 级性内容轴,与列表行同一派生,见 §3.2.4) |
 | `GET /v1/catalog/engines` | `catalog:read` | **引擎浏览/列表(A2-1b,keyset id ASC)**:无过滤;item = `{id, name, work_count, description, aliases}`(**A2-1e** 补齐后两键——引擎 facet 只有几百行、消费端一页渲染完,再为一行简介发第二趟请求是纯浪费)。VNDB 不发布引擎数据,该 facet 的唯一副本是 wiki 手工整理并由数据层退役波迁入的行。**A2-1e**:信封加 `total`(见下) |
 | `GET /v1/catalog/engines/{id}` | `catalog:read` | **引擎条目(A2-1b)**:`{id, name, work_count, description, aliases, refs[]}`(后两键 A2-1e 补);`refs[]` 同 names/characters/labels 的 exact-only 身份锚(doc 106 G4),A2-0 落的 wiki eid 即在此浮出。非法 id 400、无此行 404 |
 | `GET /v1/catalog/calendar` | `catalog:read` | **发售日历 · 月桶(A2-1c,keyset date ASC + id ASC)**:`month=YYYY-MM`(非法 400;**缺省 = 当前 Asia/Tokyo 月**,响应回显 `month`);收录**最早带年份 release 落在该月**的作品——**day 精度与 month 精度同桶**(month 精度排在该月月首,**不臆造 1 号**);item = works 列表行**逐字**(`PublicWorkListItem`,`include=` 五词表全支持),`nsfw` 同参;新增 `olang=` 人口过滤(见下);`count` = 整桶行数(非本页),`next_cursor` 末页 null;带**桶级 ETag**(见下);**A2-1e**:恒带 `meta{}` 导航框(见下) |
 | `GET /v1/catalog/calendar/pending` | `catalog:read` | **发售日历 · 月份未定桶(A2-1c,keyset id ASC)**:`year=YYYY`(非法 400;缺省 = 当前 JST 年,响应回显 `year`);收录**最早 release 只精确到年**的作品——它们**刻意不出现在该年的任何月桶**里。人口/item/`olang`/ETag 语义与月桶逐字一致;`meta` 只带 `today`(非月寻址,无月界与前后翻) |
 | `GET /v1/catalog/calendar/tba` | `catalog:read` | **发售日历 · TBA 桶(A2-1c,全局,keyset id ASC)**:有 release 行但**无一行带年份**的作品(已官宣、日期未定)。**无 release 行 = unknown,不进任何桶**——"没有 release"是"没有官宣",不是"日期待定" |
-| `GET /v1/catalog/works/search` | `catalog:read` | **作品产品搜索(A2-1d,doc 126 D5;page/limit 分页)**:自由文本 `q=` 命中作品的**全部索引标题/别名**(含 search hint,仅供检索永不下发);过滤 `tag_id`(**多值 AND**,同列表)/`label_id`/`engine_id`/`series_id`/`released_after\|before`/`olang`/`content_rating`/`claimed`/`nsfw`——**与 works 列表同名参数逐字同义**(`released_*` 同样锚在**最早带年份 release** 的组合序数上,与列表 `release_date`、日历分桶三者同源)。`sort=relevance\|released_desc\|released_asc\|updated\|popularity`(缺省 relevance;**空 q 时 relevance 退化为 popularity** 即浏览序;`released_*` 两个方向都把**无日期作品排在最后**;`popularity` = 跨源信号 `log1p(max(bangumi collect 架, DLsite 下载数))`,**替代弃用面的 `view`**——那是 wiki 浏览量,catalog 无对应物,故 `sort=view` 是 400)。`facets=` 封闭词表 `content_rating,olang,claimed,tag_id,label_id,engine_id,series_id,source`(**非法 token 400**;外层键 = 可直接回传的**过滤参数名**,非索引字段名;`content_rating` 分布按公开字符串键计数不出枚举整数;每 facet 至多 100 个值)。`include=` 六词表全支持。**item = works 列表行逐字**(`PublicWorkListItem`,按 id 回库水化;**Meili 文档字段永不出 wire**)。`page` 缺省 1、非正/非数字 400,`limit` 1-100 缺省 20(超限截顶、非正/非数字 400)。**`q` 恰为 VNDB 作品 id(`v19658`)时短路**为该 id 的 exact 锚精查(全文会前缀串味:`v1965` 亦命中 `v19650`),仍套用调用方全部过滤器,**无解 = 空信封而非 404**。**`total`/`facets`/`items` 同门过滤**:翻完 `total` 页恰好收满 `total` 行,sfw 调用方的 `total` **已扣除**其永远拿不到的 r18 作品——**与弃用面 `content_limit` 陷阱(总数不过滤、items 过滤、sfw 翻页丢行)明令相反** |
+| `GET /v1/catalog/works/search` | `catalog:read` | **作品产品搜索(A2-1d,doc 126 D5;page/limit 分页)**:自由文本 `q=` 命中作品的**全部索引标题/别名**(含 search hint,仅供检索永不下发);**`search_intro=1` 另放宽到作品简介**(A2-1f,见 §3.2.4);过滤 `tag_id`(**多值 AND**,同列表)/`label_id`/`engine_id`/`series_id`/`released_after\|before`/`olang`/`content_rating`/`claimed`/`nsfw`——**与 works 列表同名参数逐字同义**(`released_*` 同样锚在**最早带年份 release** 的组合序数上,与列表 `release_date`、日历分桶三者同源)。`sort=relevance\|released_desc\|released_asc\|updated\|popularity`(缺省 relevance;**空 q 时 relevance 退化为 popularity** 即浏览序;`released_*` 两个方向都把**无日期作品排在最后**;`popularity` = 跨源信号 `log1p(max(bangumi collect 架, DLsite 下载数))`,**替代弃用面的 `view`**——那是 wiki 浏览量,catalog 无对应物,故 `sort=view` 是 400)。`facets=` 封闭词表 `content_rating,olang,claimed,tag_id,label_id,engine_id,series_id,source`(**非法 token 400**;外层键 = 可直接回传的**过滤参数名**,非索引字段名;`content_rating` 分布按公开字符串键计数不出枚举整数;每 facet 至多 100 个值)。`include=` 六词表全支持。**item = works 列表行逐字**(`PublicWorkListItem`,按 id 回库水化;**Meili 文档字段永不出 wire**)。`page` 缺省 1、非正/非数字 400,`limit` 1-100 缺省 20(超限截顶、非正/非数字 400)。**`q` 恰为 VNDB 作品 id(`v19658`)时短路**为该 id 的 exact 锚精查(全文会前缀串味:`v1965` 亦命中 `v19650`),仍套用调用方全部过滤器,**无解 = 空信封而非 404**。**`total`/`facets`/`items` 同门过滤**:翻完 `total` 页恰好收满 `total` 行,sfw 调用方的 `total` **已扣除**其永远拿不到的 r18 作品——**与弃用面 `content_limit` 陷阱(总数不过滤、items 过滤、sfw 翻页丢行)明令相反** |
 | `GET /v1/catalog/search` | `catalog:read` | **实体自动补全**(`type=names\|characters\|labels\|works\|tags`,五索引;**`tags` 为 A2-1d 加法**,hit 镜像 labels 惯例并附 `tier`/`kind`,其余四族 hit shape **逐字节冻结**)。至多 20 条扁平 hit、无过滤无分页 —— picker / 跳转框用面;**作品结果页(过滤/facets/排序/翻页/完整列表行)走 `GET /v1/catalog/works/search`** |
 | `POST /v1/catalog/resolve` | `catalog:read` | 批量旧 ID → canonical(redirect 压平语义与内部一致) |
 | `GET /v1/catalog/lookup` + `POST …/lookup/batch` | `catalog:read` | **外部 id 反查(killer,doc 19 §3.1,Phase 1)**:`?source=vndb&external_id=v19658` → work + `claimed_by` 指针;批量 ≤100。背书 = 四源 exact 锚(在产)。**`type=work\|name\|character\|label`(缺省 `work`,加法扩展)**:同一反查面按实体族分流——`work` 语义逐字不变(含 release 锚回落到属主 work),其余三族取**该族** exact 锚后委派各自详情投影(重块关闭),命中只填对应块 `name` / `character` / `label`,`work` / `claimed_by` 留空;批量每对可各带 `type`,响应回显**归一后**的 token(缺省对回显 `work`) |
@@ -94,6 +94,8 @@
 > - **人口为空**时 `min_month`/`max_month` **省略**(没有可跳转的月就不编一个),`has_prev`/`has_next` 仍明确给 `false`。
 > - `pending`/`tba` **只带 `today`**:它们不是按月寻址的桶,前后翻箭头在那里没有指向。
 > - **不进 ETag 键**:`meta` 完全由「桶级 ETag 已经折进去的人口键」加「写在 URL 里的请求月」决定,没有第三个自由度,所以缓存校验子不需要因它变化;它也在 `304` 短路**之后**才计算——命中缓存的请求依旧只付一次元查询。
+
+> **A2-1f 供给微波(2026-07-29)**:`works/search` 加 `search_intro=`(简介检索,缺省关)+ `tags` 列表行与 `tags/{id}` 加 `sexual`。两项均为加法,缺省响应逐字节不变,oasdiff 零 breaking。语义见 §3.2.4。**部署注**:`search_intro` 需要跑一次 `reindex-catalog` 才有内容可匹配。
 
 > **参数区间与越界语义(2026-07-28 cleanup 波)**:
 >
@@ -222,6 +224,28 @@ catalog 的 release 日期是**部分 ISO**:`YYYY` / `YYYY-MM` / `YYYY-MM-DD`,�
 - **覆盖面必须照实说**:这条轴的上游只有 **VNDB 系词表**(剧透值与性内容类别都出自那里,也正是剧透 tag 的实际所在)。**Bangumi / DLsite 的 folksonomy 上游根本没有剧透与类别概念**,所以那些行渲染成 `0` / `false` —— 这表示**该来源没有这条轴**,**不是**「已确认安全」的断言。消费端若要做严格门控,应结合 tag 的来源 `source` 判断。
 - 词表外的 `spoilers` 值退化为缺省 0(与 `characters/{id}` 的 `spoilers` 姿态一致),不是 400。
 - **明确不做的事**:安全门**没有**降级成作品级 `content_rating`。用作品分级当 tag 剧透门是静默暴露——一个全年龄作品照样可以有严重剧透 tag。
+
+### 3.2.4 简介检索与 tag 级 `sexual`(2026-07-29 A2-1f 落账)
+
+**① `search_intro=`(works 搜索)**
+
+`GET /v1/catalog/works/search` 的 `q=` 缺省**只匹配标题族**(标题 / 别名 / latin / search hint)。传 `search_intro=1` 后**额外**匹配作品**简介正文**。
+
+- **缺省逐字节不变**:索引里现在**确实存了**简介字段,但本面对每个请求显式把可搜索属性钉在标题族上。所以 A2-1f 之前写好的调用方,结果集一行不变——放宽是**请求级 opt-in**,不是索引级的既成事实。
+- **简介永远排在标题之后**:简介字段在索引可搜索列表里位列标题族之后,而 Meilisearch 的 `attribute` 排序规则按该顺序给权重——**标题命中永远压过简介命中**,不会出现「正文里提了一嘴的作品挤掉同名作品」。
+- **每语言截断 2000 字**:简介是 1-10 KB 的 markdown,而「用户记得的那句话」几乎总在开头设定段。2000 字(CJK 下一字即一词)覆盖前若干段,同时把 ~22.6 万作品的索引增量压在可接受范围;更深处的短语检索不到,是这条取舍**明写的代价**。
+- **语言分桶**:简介按语言分桶存(ja / zh / 其它),日文走 jpn、中文走 cmn 分词;简繁两种译文并入同一 zh 桶(**为召回而合并**,你记得哪个版本都能搜到)。
+- **正文永不下发**:与索引里其它字段一样,命中后 item 仍是按 id 回库水化的 works 列表行,Meilisearch 文档字段不出 wire。
+- 未识别的取值(拼错)= `false`,不是 400:这个开关只会**放宽**结果,退化到窄的一侧才是安全方向。
+- ⚠️ **需要 reindex**:简介是索引内容而非查询逻辑,所以本参数在**跑过一次 `reindex-catalog` 之前**只会返回空(索引里还没有简介字节)。
+
+**② tag 级 `sexual`**
+
+`GET /v1/catalog/tags` 的行与 `GET /v1/catalog/tags/{id}` 恒带 `sexual`(bool):该 **tag 本身**属于性内容类别。
+
+- **派生**:规范 tag 经 **A2-0 落的身份锚**(`entity_type=tag`、`source=galgame_wiki`、`link_kind=exact`、`external_id` = wiki tag id)对上 wiki 词表行,取其 VNDB 血统的类别(`cont→content` / `ero→sexual` / `tech→technical`),**只有 `sexual` 有安全含义,故只投影它**。走 id 锚而非名字匹配:两条路今天解出的集合一模一样(901 content / 357 sexual / 267 technical),但名字键会在任一侧改名时**静默失联**。
+- **⚠️ 覆盖面 = 与 §3.2.3 同一条款**:只有**映射进该词表**的 tag 才有这条轴。纯 Bangumi / DLsite folksonomy 长出来的规范 tag 上游**没有类别概念**,渲染 `false` —— 这表示**「该 tag 没有这条轴」,不是「已确认安全」**。要做严格门控,请结合 tag 的来源判断,**不要**把 `sexual=false` 当作安全断言。
+- 与作品详情 `tags[]` 上那个 **per-edge** 的 `spoiler` / `sexual`(§3.2.3)是两个粒度:那里描述的是「这个作品的这条 tag 边」,这里描述的是「这个 tag 本身」。**§3.2.3 的既有语义本波一字未动。**
 
 ### 3.5 稳定性承诺
 

@@ -716,6 +716,10 @@ type PublicTagDetail struct {
 	// WorkCount is NSFW-AWARE, exactly like the browse lane's (A2-1e): the
 	// number of works this caller would page through via works?tag_id=.
 	WorkCount int `json:"work_count"`
+	// Sexual flags the tag itself as belonging to the sexual-content category
+	// (A2-1f). Always present. See PublicTagListItem.Sexual for the coverage
+	// caveat — false means "no such axis for this tag", NOT "confirmed safe".
+	Sexual bool `json:"sexual"`
 	// Intros is the multilingual description set (A2-1b), merged to one
 	// element per language exactly like a label's. Always present ([] when the
 	// tag carries none).
@@ -791,6 +795,16 @@ type PublicTagListItem struct {
 	Tier      string `json:"tier" doc:"core|longtail|hidden"`
 	Kind      string `json:"kind" doc:"content|meta"`
 	WorkCount int    `json:"work_count"`
+	// Sexual flags the tag as belonging to the sexual-content category (A2-1f),
+	// derived from the VNDB-descended wiki vocabulary through the identity
+	// anchor A2-0 minted for each mapped tag. Always present.
+	//
+	// COVERAGE — read this before gating on it, it is the same caveat the
+	// work-detail tags[] axis carries (R8): only tags that MAP onto that
+	// vocabulary have the axis at all. A canonical tag reached purely from
+	// Bangumi / DLsite folksonomy has no category upstream and renders false —
+	// that is the ABSENCE of the axis, NOT an assertion that the tag is safe.
+	Sexual bool `json:"sexual"`
 }
 
 // PublicTagsListData is the keyset tag-list envelope.

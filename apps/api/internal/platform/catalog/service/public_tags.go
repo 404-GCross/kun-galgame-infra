@@ -40,6 +40,13 @@ func (s *PublicService) TagDetail(ctx context.Context, id int64, withWorks, nsfw
 		return dto.PublicTagDetail{}, false, err
 	}
 	rec.WorkCount = counts[id]
+	// sexual is the TAG-level safety flag (A2-1f) — the same derivation and the
+	// same coverage caveat the browse lane's rows carry.
+	sexual, err := s.tagSexualFor(ctx, []int64{id})
+	if err != nil {
+		return dto.PublicTagDetail{}, false, err
+	}
+	rec.Sexual = sexual[id]
 	// intros are part of the base record (not include-gated), like a label's.
 	intros, err := s.tagIntros(ctx, id)
 	if err != nil {

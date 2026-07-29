@@ -43,6 +43,13 @@ type WorkDocTitle struct {
 	Latin string
 }
 
+// WorkDocIntro is one synopsis row as the projection needs it: the language
+// tag (BCP-47, the same values the read face merges on) and the body.
+type WorkDocIntro struct {
+	Lang string
+	Text string
+}
+
 // WorkDocInput is a whole works document's worth of registry state.
 type WorkDocInput struct {
 	ID            int64
@@ -63,6 +70,10 @@ type WorkDocInput struct {
 	LabelIDs    []int64
 	EngineIDs   []int64
 	SeriesIDs   []int64
+	// Intros are the work's synopses (A2-1f), already merged to one row per
+	// language by the caller — the same set the read face would serve, so
+	// "searchable" and "readable" cannot describe different text.
+	Intros []WorkDocIntro
 }
 
 // BuildWorkDoc projects one registry work to its works-index document.
@@ -98,6 +109,10 @@ func BuildWorkDoc(in WorkDocInput) EntityDoc {
 		}
 		d.SetNameOrAlias(lang, t.Title)
 	}
+	for _, in := range in.Intros {
+		d.SetIntro(in.Lang, in.Text)
+	}
+	d.TruncateIntros()
 	return d
 }
 

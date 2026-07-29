@@ -320,6 +320,18 @@ func nsfwQuery(c fiber.Ctx) bool {
 	return false
 }
 
+// boolQueryPub reads an opt-in boolean query flag, the same vocabulary
+// nsfwQuery accepts. Anything else — including a typo — is false: these flags
+// only ever WIDEN a response, so an unrecognized value degrading to the narrow
+// default is the safe direction.
+func boolQueryPub(raw string) bool {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "1", "true", "yes":
+		return true
+	}
+	return false
+}
+
 // spoilersQuery reads the trait spoiler ceiling (0-2, default 0 = safe), the
 // S2S read-face convention verbatim.
 func spoilersQuery(c fiber.Ctx) int16 {

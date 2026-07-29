@@ -38,10 +38,11 @@ const (
 // works-list rows.
 func (h *PublicHandler) WorksSearch(c fiber.Ctx) error {
 	f := service.WorksSearchFilter{
-		Q:       c.Query("q"),
-		NSFW:    nsfwQuery(c),
-		OLang:   parsePublicOLang(c.Query("olang")),
-		Include: service.ParseWorksListInclude(c.Query("include")),
+		SearchIntro: boolQueryPub(c.Query("search_intro")),
+		Q:           c.Query("q"),
+		NSFW:        nsfwQuery(c),
+		OLang:       parsePublicOLang(c.Query("olang")),
+		Include:     service.ParseWorksListInclude(c.Query("include")),
 	}
 
 	f.Sort = strings.TrimSpace(c.Query("sort"))

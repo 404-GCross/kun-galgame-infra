@@ -84,6 +84,85 @@ type EntityDoc struct {
 	// Tier is set on TAG docs only (A2-1d, the A2-1b account): the canonical
 	// tag's display tier, alongside the shared Kind.
 	Tier *int16 `json:"tier,omitempty"`
+
+	// ── A2-1f: the works intro text ─────────────────────────────────────────
+	//
+	// Set on WORKS docs only. Language-bucketed like the name fields for the
+	// same reason (invariant 1 + the *_ja / *_zh localizedAttributes patterns):
+	// a Japanese synopsis must tokenize under jpn and a Chinese one under cmn,
+	// and one field may never mix the two.
+	//
+	// They sit LAST in the searchable list, so the `attribute` ranking rule can
+	// never let a synopsis match outrank a title match — and they are searched
+	// only when the caller passes search_intro=1 (the face restricts
+	// attributesToSearchOn to the title family otherwise, which is what keeps
+	// the default result set byte-identical to A2-1d's).
+	//
+	// Like every other field here they never reach the wire: hits are
+	// re-hydrated from Postgres into the works-list item shape (裁定 4).
+	IntroJa    string `json:"intro_ja,omitempty"`
+	IntroZh    string `json:"intro_zh,omitempty"`
+	IntroOther string `json:"intro_other,omitempty"`
+}
+
+// SetIntro appends a synopsis to its language bucket (invariant 1). Several
+// source languages can share a bucket (zh-Hans and zh-Hant both land in zh);
+// they are newline-joined rather than first-wins, because this field exists for
+// RECALL — a phrase a user remembers may sit in either variant.
+func (d *EntityDoc) SetIntro(lang, text string) {
+	if text = strings.TrimSpace(text); text == "" {
+		return
+	}
+	switch bucket(lang) {
+	case "zh":
+		d.IntroZh = appendIntro(d.IntroZh, text)
+	case "ja":
+		d.IntroJa = appendIntro(d.IntroJa, text)
+	default:
+		d.IntroOther = appendIntro(d.IntroOther, text)
+	}
+}
+
+func appendIntro(cur, add string) string {
+	if cur == "" {
+		return add
+	}
+	return cur + "\n" + add
+}
+
+// TruncateIntros caps every intro bucket at IntroMaxRunes, on a RUNE boundary
+// (a byte cut would produce invalid UTF-8 and Meilisearch would reject or
+// mis-tokenize the document).
+func (d *EntityDoc) TruncateIntros() {
+	d.IntroJa = truncateRunes(d.IntroJa, IntroMaxRunes)
+	d.IntroZh = truncateRunes(d.IntroZh, IntroMaxRunes)
+	d.IntroOther = truncateRunes(d.IntroOther, IntroMaxRunes)
+}
+
+// IntroMaxRunes caps the indexed synopsis per language bucket.
+//
+// Chosen, not tuned: a wiki intro is 1-10 KB of markdown, and the whole
+// searchable point of it is that a user recalls a PHRASE from the setup — which
+// lives in the opening paragraphs, not in a route-by-route walkthrough at the
+// end. 2,000 runes covers several paragraphs in CJK (where a rune is a word's
+// worth of meaning) while bounding the index at roughly a few MB per language
+// across the ~226k-work population, instead of the tens of MB an uncapped field
+// would add. Truncation costs recall only for phrases deep inside a long
+// synopsis; an uncapped field would cost it for everyone, via index size.
+const IntroMaxRunes = 2000
+
+func truncateRunes(s string, max int) string {
+	if s == "" {
+		return s
+	}
+	n := 0
+	for i := range s {
+		if n == max {
+			return s[:i]
+		}
+		n++
+	}
+	return s
 }
 
 // SetName routes a name into its language bucket by the row's lang (invariant

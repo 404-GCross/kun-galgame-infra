@@ -1,0 +1,141 @@
+// works_intros_test.go — A2-1f: the reindexer's synopsis loader.
+//
+// The service suite proves the SEARCH face gates intro matching correctly; this
+// proves the reindexer feeds it the right text in the first place. The property
+// that matters is that the loader mirrors the READ face's own merge — a work
+// must never be findable by text the read face would not show — so the cases
+// here are the read face's rules: claimed works bridge the wiki body, bodyless
+// works read the native table, the two lanes are a strict XOR, a machine
+// translation loses to a source row, and nothing outside the index population
+// contributes at all.
+package main
+
+import (
+	"testing"
+
+	"api/internal/platform/catalog/model"
+
+	"gorm.io/gorm"
+)
+
+// ensureGalgameIntroStub provisions the wiki body table the claimed lane
+// bridges. CREATE ... IF NOT EXISTS is a no-op when the REAL table is already
+// present (other suites migrate it into this database), which is why the insert
+// helper below supplies user_id too: the real schema has it NOT NULL with no
+// default, and the stub shape must never diverge from what production has.
+// Cleanup is a targeted DELETE of this suite's own fixture ids.
+func ensureGalgameIntroStub(t *testing.T, db *gorm.DB, ids []int64) {
+	t.Helper()
+	if err := db.Exec(`CREATE TABLE IF NOT EXISTS galgame (
+		id bigint PRIMARY KEY,
+		user_id bigint NOT NULL,
+		intro_ja_jp text DEFAULT '',
+		intro_en_us text DEFAULT '',
+		intro_zh_cn text DEFAULT '',
+		intro_zh_tw text DEFAULT ''
+	)`).Error; err != nil {
+		t.Fatalf("galgame stub: %v", err)
+	}
+	if err := db.Exec(`DELETE FROM galgame WHERE id IN ?`, ids).Error; err != nil {
+		t.Fatalf("clear galgame fixtures: %v", err)
+	}
+}
+
+// introsOf flattens the loader's result for one work into lang → text.
+func introsOf(t *testing.T, workID int64) map[string]string {
+	t.Helper()
+	all, err := loadWorkIntros(facetTestDB)
+	if err != nil {
+		t.Fatalf("loadWorkIntros: %v", err)
+	}
+	out := map[string]string{}
+	for _, in := range all[workID] {
+		out[in.lang] = in.text
+	}
+	return out
+}
+
+// TestLoadWorkIntrosMirrorsTheReadFace covers the whole rule set in one corpus.
+func TestLoadWorkIntrosMirrorsTheReadFace(t *testing.T) {
+	truncateFacetTables(t)
+	wikiIDs := []int64{96001, 96002}
+	ensureGalgameIntroStub(t, facetTestDB, wikiIDs)
+	t.Cleanup(func() { _ = facetTestDB.Exec(`DELETE FROM galgame WHERE id IN ?`, wikiIDs).Error })
+
+	// ── claimed: bridges the wiki body's four columns ──
+	claimed := mkWork(t, "claimed-intro", model.WorkStatusLive, galgameMedium)
+	if err := facetTestDB.Exec(
+		`UPDATE catalog_work SET site = 'galgame_wiki', product_work_id = ? WHERE id = ?`,
+		wikiIDs[0], claimed).Error; err != nil {
+		t.Fatalf("claim: %v", err)
+	}
+	if err := facetTestDB.Exec(`INSERT INTO galgame (id, user_id, intro_ja_jp, intro_en_us, intro_zh_cn, intro_zh_tw)
+		VALUES (?, 1, '日本語のあらすじ', 'English synopsis', '简体梗概', '   ')`, wikiIDs[0]).Error; err != nil {
+		t.Fatalf("seed galgame body: %v", err)
+	}
+	// A native row on the SAME claimed work must be ignored (strict XOR) — the
+	// read face never falls back to it, so neither may the index.
+	if err := facetTestDB.Create(&model.CatalogWorkIntro{
+		WorkID: claimed, Lang: "ja", Intro: "この行は使われない", SourceID: 2,
+	}).Error; err != nil {
+		t.Fatalf("seed shadow native intro: %v", err)
+	}
+
+	// ── bodyless: reads the native table, one row per language ──
+	bodyless := mkWork(t, "bodyless-intro", model.WorkStatusLive, galgameMedium)
+	for _, r := range []struct {
+		lang, intro string
+		source      int16
+		provenance  int16
+	}{
+		// Same language, two rows: the MACHINE one (provenance 1) must lose to
+		// the source row no matter its source id (step 75).
+		{"zh-Hans", "机翻译文", 2, 1},
+		{"zh-Hans", "源文", 3, 0},
+		{"ja", "native ja", 2, 0},
+	} {
+		if err := facetTestDB.Exec(`INSERT INTO catalog_work_intro (work_id, lang, intro, source_id, provenance)
+			VALUES (?, ?, ?, ?, ?)`, bodyless, r.lang, r.intro, r.source, r.provenance).Error; err != nil {
+			t.Fatalf("seed native intro: %v", err)
+		}
+	}
+
+	// ── outside the population: a stub work contributes nothing ──
+	stub := mkWork(t, "stub-intro", model.WorkStatusStub, galgameMedium)
+	if err := facetTestDB.Create(&model.CatalogWorkIntro{
+		WorkID: stub, Lang: "ja", Intro: "スタブ", SourceID: 2,
+	}).Error; err != nil {
+		t.Fatalf("seed stub intro: %v", err)
+	}
+
+	got := introsOf(t, claimed)
+	want := map[string]string{
+		"ja": "日本語のあらすじ", "en": "English synopsis", "zh-Hans": "简体梗概",
+	}
+	if len(got) != len(want) {
+		t.Fatalf("claimed intros = %v, want %v (a whitespace-only column is not an intro)", got, want)
+	}
+	for lang, text := range want {
+		if got[lang] != text {
+			t.Fatalf("claimed[%s] = %q, want %q", lang, got[lang], text)
+		}
+	}
+	if _, shadowed := got["zh-Hant"]; shadowed {
+		t.Fatalf("a blank wiki column produced an intro row: %v", got)
+	}
+
+	got = introsOf(t, bodyless)
+	if got["zh-Hans"] != "源文" {
+		t.Fatalf("bodyless zh-Hans = %q, want the SOURCE row (a machine translation must lose)", got["zh-Hans"])
+	}
+	if got["ja"] != "native ja" {
+		t.Fatalf("bodyless ja = %q", got["ja"])
+	}
+	if len(got) != 2 {
+		t.Fatalf("bodyless intros = %v, want one row per language", got)
+	}
+
+	if got = introsOf(t, stub); len(got) != 0 {
+		t.Fatalf("a non-LIVE work contributed intros: %v", got)
+	}
+}

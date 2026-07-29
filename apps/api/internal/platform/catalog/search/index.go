@@ -116,6 +116,33 @@ var WorksFilterableAttributes = []string{
 // (no sort at all), released_desc / released_asc, updated and popularity.
 var WorksSortableAttributes = []string{"popularity", "released_ord", "updated_ts"}
 
+// WorksTitleSearchable is the works index's TITLE family — the attribute set
+// the product search restricts itself to unless the caller opts into synopsis
+// matching (A2-1f).
+//
+// It is exported and used as a per-request `attributesToSearchOn` rather than
+// being the index's whole searchable list, because the index must CONTAIN the
+// intro fields for search_intro=1 to have anything to match. That makes the
+// restriction load-bearing: with it absent, growing the searchable list would
+// silently start matching synopses for every existing caller — the byte-freeze
+// break this wave exists to avoid.
+var WorksTitleSearchable = []string{
+	"name_zh", "name_ja", "name_other",
+	"aliases_zh", "aliases_ja", "aliases_other", "latin",
+}
+
+// worksIntroSearchable is the synopsis family, appended AFTER the title family
+// in the index's searchable list. Order is semantics here: Meilisearch's
+// `attribute` ranking rule ranks earlier attributes higher, so a title match can
+// never lose to a synopsis match no matter how the two documents score
+// elsewhere.
+var worksIntroSearchable = []string{"intro_zh", "intro_ja", "intro_other"}
+
+// worksSearchable is the full declared list (titles then intros).
+func worksSearchable() []string {
+	return append(append([]string{}, WorksTitleSearchable...), worksIntroSearchable...)
+}
+
 // worksMaxTotalHits raises Meilisearch's pagination ceiling above the whole
 // galgame registry population (~226k live works and growing).
 //
@@ -131,13 +158,19 @@ const worksMaxTotalHits int64 = 500_000
 
 func worksSettings() *meilisearch.Settings {
 	return &meilisearch.Settings{
-		SearchableAttributes: []string{"name_zh", "name_ja", "name_other", "aliases_zh", "aliases_ja", "aliases_other", "latin"},
+		SearchableAttributes: worksSearchable(),
 		FilterableAttributes: WorksFilterableAttributes,
 		SortableAttributes:   WorksSortableAttributes,
 		RankingRules:         entityRankingRules,
 		LocalizedAttributes:  localizedAttributes(),
-		TypoTolerance:        &meilisearch.TypoTolerance{Enabled: true, DisableOnAttributes: cjkTypoDisabled()},
-		Pagination:           &meilisearch.Pagination{MaxTotalHits: worksMaxTotalHits},
+		// The intro fields join the CJK typo-disabled set for the same reason
+		// the name fields are in it: a wrong kanji is a different character, not
+		// an edit-distance neighbour — and over a 2,000-rune body, typo
+		// tolerance is pure false-positive surface.
+		TypoTolerance: &meilisearch.TypoTolerance{
+			Enabled: true, DisableOnAttributes: cjkTypoDisabled(worksIntroSearchable...),
+		},
+		Pagination: &meilisearch.Pagination{MaxTotalHits: worksMaxTotalHits},
 	}
 }
 

@@ -358,6 +358,81 @@ func loadWorkTitles(db *gorm.DB) (map[int64][]workTitle, error) {
 	return m, nil
 }
 
+type workIntro struct{ lang, text string }
+
+// loadWorkIntros returns work id → merged synopsis rows for the index
+// population (A2-1f). It mirrors the READ face's own merge exactly
+// (ReadService.loadWorkIntros), because a work must not be findable by text
+// the read face would never show:
+//
+//   - CLAIMED works bridge the wiki body's four fixed language columns
+//     (galgame.intro_*), pivoted to BCP-47 — bridge-not-copy, same as the read
+//     face;
+//   - BODYLESS works read catalog_work_intro, merged to ONE row per language
+//     by (provenance, source_id): provenance ASC keeps a machine translation
+//     from beating a source row (step 75), then the usual source priority.
+//
+// Strict XOR, like the read face: a claimed work never falls back to native
+// rows. Two queries for the whole population, never per work.
+func loadWorkIntros(db *gorm.DB) (map[int64][]workIntro, error) {
+	const population = `w.deleted_at IS NULL AND w.status = 0
+		AND w.medium_id = (SELECT id FROM catalog_medium WHERE key = 'galgame')`
+
+	out := map[int64][]workIntro{}
+
+	// ── claimed: the wiki bridge ──
+	var bridged []struct {
+		WorkID    int64  `gorm:"column:work_id"`
+		IntroJaJP string `gorm:"column:intro_ja_jp"`
+		IntroEnUS string `gorm:"column:intro_en_us"`
+		IntroZhCN string `gorm:"column:intro_zh_cn"`
+		IntroZhTW string `gorm:"column:intro_zh_tw"`
+	}
+	if err := db.Raw(`SELECT w.id AS work_id, g.intro_ja_jp, g.intro_en_us, g.intro_zh_cn, g.intro_zh_tw
+		FROM catalog_work w JOIN galgame g ON g.id = w.product_work_id
+		WHERE w.site = 'galgame_wiki' AND ` + population).Scan(&bridged).Error; err != nil {
+		return nil, err
+	}
+	// The pivot is the read face's, verbatim — same columns, same BCP-47 tags.
+	for _, r := range bridged {
+		for _, p := range []struct{ lang, text string }{
+			{"ja", r.IntroJaJP}, {"en", r.IntroEnUS},
+			{"zh-Hans", r.IntroZhCN}, {"zh-Hant", r.IntroZhTW},
+		} {
+			if strings.TrimSpace(p.text) != "" {
+				out[r.WorkID] = append(out[r.WorkID], workIntro{lang: p.lang, text: p.text})
+			}
+		}
+	}
+
+	// ── bodyless: the native rows, first-per-language wins ──
+	var native []struct {
+		WorkID int64  `gorm:"column:work_id"`
+		Lang   string `gorm:"column:lang"`
+		Intro  string `gorm:"column:intro"`
+	}
+	if err := db.Raw(`SELECT i.work_id, i.lang, i.intro
+		FROM catalog_work_intro i JOIN catalog_work w ON w.id = i.work_id
+		WHERE coalesce(w.site, '') = '' AND ` + population + `
+		ORDER BY i.work_id, i.lang, i.provenance, i.source_id`).Scan(&native).Error; err != nil {
+		return nil, err
+	}
+	seen := map[int64]map[string]bool{}
+	for _, r := range native {
+		langs := seen[r.WorkID]
+		if langs == nil {
+			langs = map[string]bool{}
+			seen[r.WorkID] = langs
+		}
+		if langs[r.Lang] {
+			continue // a higher-priority row already claimed this language
+		}
+		langs[r.Lang] = true
+		out[r.WorkID] = append(out[r.WorkID], workIntro{lang: r.Lang, text: r.Intro})
+	}
+	return out, nil
+}
+
 // reindexWorks builds the catalog_works index (wave 105): every LIVE galgame
 // registry work — claimed AND bodyless — searchable by display_name + all
 // title rows (search hints included: findability-only, never displayed), with
@@ -369,6 +444,11 @@ func loadWorkTitles(db *gorm.DB) (map[int64][]workTitle, error) {
 // exist so GET /v1/catalog/works/search can push its WHOLE filter set into
 // Meilisearch — that is what makes its total, its facets and its items share
 // one gate instead of the deprecated face's unfiltered-total trap.
+//
+// A2-1f adds the synopsis text, language-bucketed and rune-capped. It only
+// ever MATCHES when a caller passes search_intro=1: the face pins
+// attributesToSearchOn to the title family otherwise, so growing the index does
+// not widen anybody's existing query.
 func reindexWorks(ctx context.Context, db *gorm.DB, idx *catalogSearch.Indexer, batch int) error {
 	pop, err := loadWorkPopularitySignal(db)
 	if err != nil {
@@ -383,6 +463,10 @@ func reindexWorks(ctx context.Context, db *gorm.DB, idx *catalogSearch.Indexer, 
 		return err
 	}
 	facets, err := loadWorksFacets(db)
+	if err != nil {
+		return err
+	}
+	intros, err := loadWorkIntros(db)
 	if err != nil {
 		return err
 	}
@@ -424,6 +508,9 @@ func reindexWorks(ctx context.Context, db *gorm.DB, idx *catalogSearch.Indexer, 
 			}
 			for _, t := range titles[r.ID] {
 				in.Titles = append(in.Titles, catalogSearch.WorkDocTitle{Lang: t.lang, Title: t.title, Latin: t.latin})
+			}
+			for _, iv := range intros[r.ID] {
+				in.Intros = append(in.Intros, catalogSearch.WorkDocIntro{Lang: iv.lang, Text: iv.text})
 			}
 			docs[i] = catalogSearch.BuildWorkDoc(in)
 		}

@@ -45,6 +45,13 @@ type WorksQuery struct {
 	Facets []string
 	Page   int // 1-based
 	Limit  int
+	// SearchIntro widens the matched attribute set from the title family to the
+	// whole searchable list, i.e. synopses too (A2-1f). False — the default —
+	// pins attributesToSearchOn to WorksTitleSearchable, which is what keeps the
+	// result set byte-identical to A2-1d's now that the index CONTAINS intro
+	// fields. Never leave it to Meilisearch's default (the full list): that
+	// would silently widen every existing caller's query.
+	SearchIntro bool
 }
 
 // WorksResult is one page of the product search: the work ids in ranked order,
@@ -78,6 +85,10 @@ func (i *Indexer) SearchWorks(ctx context.Context, q WorksQuery) (WorksResult, e
 	}
 	if q.Filter != "" {
 		req.Filter = q.Filter
+	}
+	if !q.SearchIntro {
+		// Explicit restriction, not an omission — see WorksQuery.SearchIntro.
+		req.AttributesToSearchOn = WorksTitleSearchable
 	}
 	if len(q.Facets) > 0 {
 		req.Facets = q.Facets
