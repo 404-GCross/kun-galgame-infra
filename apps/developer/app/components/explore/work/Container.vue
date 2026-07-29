@@ -219,6 +219,7 @@ const LOCALE_LABEL: Record<string, string> = {
   zh_cn: '中文',
   'zh-tw': '繁體中文',
   'zh-Hans': '中文',
+  'zh-Hant': '繁體中文',
   'ja-jp': '日本語',
   ja: '日本語',
   'en-us': 'English',
