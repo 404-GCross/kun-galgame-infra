@@ -47,3 +47,4 @@
 - 2026-07-29 A2-1d works/search 产品面+tags 索引+套件锁交付验收放行(f0c10cf2,158 PASS 复跑;部署须一次 reindex);A2-2/A2-3 双 STOP 验收+R1-R13 裁决,A2-1e 供给补全波批准待派。
 - 2026-07-29 A2-1e 供给补全波交付验收放行(383ea4c2+835a339d,300 PASS 复跑;claim_state 迁移随波)——A2 缺口收口,search 尾留红线解除,A2-2/A2-3 复航令下达;新记 W1 前置:安全轴 catalog 本体化。
 - 2026-07-29 A2-2 moyu 复航验收放行:弃用面消费归零(4 commit,vendor md5 亲证,169 PASS 复跑);A2-1f 微波(intro 可搜+tag sexual)下达;部署硬序=infra reconcile 先于 moyu 上线。
+- 2026-07-29 A2-3 forum 复航验收放行:弃用面消费归零(5 commit +6905/-3282;386 PASS 复跑;/c/ 判别位路径批准);STOP 裁决=contributor 级选择器搜索排 A2-1f 后;两梯队归零达成,摘牌条件只剩部署+流量观察。
