@@ -432,12 +432,19 @@ type PublicCover struct {
 }
 
 // PublicScreenshot is one screenshot — a complete CDN URL.
+// width/height/thumbhash are the intrinsic display metadata resolved from
+// image_service at read time (A2-1b, the same lookup covers[] rides); all
+// three are omitted when the lookup is unwired or the hash is unknown, so a
+// consumer falls back to a skeleton instead of reserving a wrong aspect ratio.
 type PublicScreenshot struct {
-	URL      string `json:"url"`
-	Caption  string `json:"caption,omitempty"`
-	Sexual   int16  `json:"sexual"`
-	Violence int16  `json:"violence"`
-	Source   string `json:"source"`
+	URL       string `json:"url"`
+	Caption   string `json:"caption,omitempty"`
+	Sexual    int16  `json:"sexual"`
+	Violence  int16  `json:"violence"`
+	Source    string `json:"source"`
+	Width     int    `json:"width,omitempty"`
+	Height    int    `json:"height,omitempty"`
+	Thumbhash string `json:"thumbhash,omitempty"`
 }
 
 // PublicRosterVoice is one voice credit on a roster character (id is a
@@ -611,10 +618,25 @@ type PublicTagDetail struct {
 	Name string `json:"name"`
 	Tier string `json:"tier" doc:"core|longtail|hidden"`
 	Kind string `json:"kind" doc:"content|meta"`
+	// Intros is the multilingual description set (A2-1b), merged to one
+	// element per language exactly like a label's. Always present ([] when the
+	// tag carries none).
+	Intros []PublicTagIntro `json:"intros"`
 	// Works are the works carrying any source tag mapped to this canonical
 	// tag (include=works; nsfw-gated briefs).
 	Works      []PublicWorkBrief `json:"works,omitempty"`
 	NextOffset *int              `json:"next_offset,omitempty"`
+}
+
+// PublicTagIntro is one language's description of a canonical tag, merged to
+// the winning source per language (lowest source_id wins — the step-65 intro
+// merge). source is the catalog_source key (public-face convention — never the
+// numeric source_id). Same shape as PublicLabelIntro, deliberately its own type
+// so the two vocabularies stay free to evolve apart.
+type PublicTagIntro struct {
+	Lang   string `json:"lang"`
+	Intro  string `json:"intro"`
+	Source string `json:"source"`
 }
 
 // PublicCharacterIntro is one language's description of a character (wave
@@ -631,4 +653,71 @@ type PublicNameIntro struct {
 	Lang   string `json:"lang"`
 	Intro  string `json:"intro"`
 	Source string `json:"source"`
+}
+
+// ── A2-1b: the taxonomy browse lanes (labels / tags / engines) ───────────────
+//
+// work_count on every taxonomy row is NSFW-AWARE: it counts the works a caller
+// with the SAME nsfw setting would actually page through via
+// works?label_id=/tag_id=/engine_id=. A count and its own member list can never
+// disagree — the deliberate opposite of the deprecated galgame face's
+// official.galgame_count, which was permanently 0 next to a non-empty list.
+
+// PublicLabelListItem is one row of the label browse lane (GET
+// /v1/catalog/labels). Follow id to /v1/catalog/labels/{id} for the full
+// record (intros / links / refs).
+type PublicLabelListItem struct {
+	ID          int64  `json:"id"`
+	DisplayName string `json:"display_name"`
+	Kind        string `json:"kind" doc:"game_brand|bunko|publisher|anime_studio|doujin_circle|group|other"`
+	WorkCount   int    `json:"work_count"`
+}
+
+// PublicLabelsListData is the keyset label-list envelope. next_cursor is null
+// on the last page.
+type PublicLabelsListData struct {
+	Items      []PublicLabelListItem `json:"items"`
+	NextCursor *string               `json:"next_cursor"`
+}
+
+// PublicTagListItem is one row of the canonical-tag browse lane (GET
+// /v1/catalog/tags).
+type PublicTagListItem struct {
+	ID        int64  `json:"id"`
+	Name      string `json:"name"`
+	Tier      string `json:"tier" doc:"core|longtail|hidden"`
+	Kind      string `json:"kind" doc:"content|meta"`
+	WorkCount int    `json:"work_count"`
+}
+
+// PublicTagsListData is the keyset tag-list envelope.
+type PublicTagsListData struct {
+	Items      []PublicTagListItem `json:"items"`
+	NextCursor *string             `json:"next_cursor"`
+}
+
+// PublicEngineListItem is one row of the engine browse lane (GET
+// /v1/catalog/engines).
+type PublicEngineListItem struct {
+	ID        int64  `json:"id"`
+	Name      string `json:"name"`
+	WorkCount int    `json:"work_count"`
+}
+
+// PublicEnginesListData is the keyset engine-list envelope.
+type PublicEnginesListData struct {
+	Items      []PublicEngineListItem `json:"items"`
+	NextCursor *string                `json:"next_cursor"`
+}
+
+// PublicEngine is the engine record (GET /v1/catalog/engines/{id}) — the
+// visual-novel / game engine a work was built with. VNDB publishes no engine
+// data, so this facet's only copy is the hand-curated wiki one the
+// data-layer-retirement wave migrated. refs are exact-only identity anchors,
+// like every other entity's (doc 106 G4).
+type PublicEngine struct {
+	ID        int64              `json:"id"`
+	Name      string             `json:"name"`
+	WorkCount int                `json:"work_count"`
+	Refs      []PublicCatalogRef `json:"refs"`
 }

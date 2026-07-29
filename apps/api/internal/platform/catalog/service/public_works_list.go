@@ -29,6 +29,7 @@ type WorksListFilter struct {
 	LabelID        int64  // via catalog_work_label
 	TagID          int64  // canonical tag id, via catalog_tag_source_map ⋈ catalog_work_tag
 	SeriesID       int64  // via catalog_series_member
+	EngineID       int64  // via catalog_work_engine (A2-1b)
 	Platform       string // release-level platform ∪ work-level platform rows
 	ReleasedAfter  int64  // composed ordinal, inclusive; 0 = unbounded
 	ReleasedBefore int64  // composed ordinal, inclusive; 0 = unbounded
@@ -92,6 +93,12 @@ func (s *PublicService) WorksList(ctx context.Context, f WorksListFilter, cursor
 	if f.SeriesID > 0 {
 		where = append(where, "EXISTS (SELECT 1 FROM catalog_series_member sm WHERE sm.work_id = w.id AND sm.series_id = ?)")
 		args = append(args, f.SeriesID)
+	}
+	if f.EngineID > 0 {
+		// catalog_work_engine.engine_id carries its own reverse index, so the
+		// correlated probe is an index lookup (A2-1b).
+		where = append(where, "EXISTS (SELECT 1 FROM catalog_work_engine we WHERE we.work_id = w.id AND we.engine_id = ?)")
+		args = append(args, f.EngineID)
 	}
 	if f.Platform != "" {
 		// Release-level primary platform ∪ work-level platform rows (the two

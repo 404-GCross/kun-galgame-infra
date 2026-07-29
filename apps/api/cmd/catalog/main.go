@@ -344,11 +344,16 @@ func setupPublicCatalog(
 	// before the /works/:id catch-all.
 	v1.Get("/works", publicH.WorksList)
 	v1.Get("/changes", publicH.Changes)
+	// Taxonomy browse lanes (A2-1b), each registered before its own /:id.
+	v1.Get("/labels", publicH.LabelsList)
+	v1.Get("/tags", publicH.TagsList)
+	v1.Get("/engines", publicH.EnginesList)
 	v1.Get("/works/:id", publicH.WorkDetail)
 	v1.Get("/names/:id", publicH.Name)
 	v1.Get("/characters/:id", publicH.Character)
 	v1.Get("/labels/:id", publicH.Label)
 	v1.Get("/tags/:id", publicH.Tag)
+	v1.Get("/engines/:id", publicH.EngineDetail)
 
 	// Usage flush lifecycle: a 60s ticker upserts the in-memory rollup; a final
 	// flush runs on graceful shutdown via OnPreShutdown, which fires during

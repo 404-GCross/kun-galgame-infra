@@ -351,8 +351,9 @@ func (s *PublicService) publicRelations(rels []WorkRelationRow, nsfw bool) []dto
 // attachWorkFacets projects every aggregation facet onto the public record
 // (wave 104 全量开放): source keys not ids, CDN URLs not hashes, string
 // vocabularies not enum ints. Every block is always present ([] when empty).
-// ctx carries the one batched image_service lookup that enriches covers with
-// width/height/thumbhash (A2-1a); screenshots stay un-enriched for now.
+// ctx carries the one batched image_service lookup that enriches covers AND
+// screenshots with width/height/thumbhash (A2-1a, extended to screenshots by
+// A2-1b); an unwired lookup or an unknown hash simply omits the three keys.
 func (s *PublicService) attachWorkFacets(ctx context.Context, rec *dto.PublicCatalogWork, detail *WorkDetail) {
 	rec.Releases = make([]dto.PublicRelease, 0, len(detail.Releases))
 	for _, rd := range detail.Releases {
@@ -420,7 +421,9 @@ func (s *PublicService) attachWorkFacets(ctx context.Context, rec *dto.PublicCat
 		})
 	}
 	rec.Covers = make([]dto.PublicCover, 0, len(detail.Covers))
-	coverMeta := s.coverMetaFor(ctx, detail.Covers)
+	// ONE image_service batch for the record's whole image set — covers and
+	// screenshots share it (A2-1b).
+	imgMeta := s.workMediaMetaFor(ctx, detail.Covers, detail.Screenshots)
 	for _, c := range detail.Covers {
 		url := s.imageURL(c.ImageHash)
 		if url == "" {
@@ -430,7 +433,7 @@ func (s *PublicService) attachWorkFacets(ctx context.Context, rec *dto.PublicCat
 			URL: url, Kind: c.Kind, PortraitPinned: c.PortraitPinned,
 			Sexual: c.Sexual, Violence: c.Violence, Source: s.sourceKey(c.SourceID),
 		}
-		if m, ok := coverMeta[c.ImageHash]; ok {
+		if m, ok := imgMeta[c.ImageHash]; ok {
 			pc.Width, pc.Height, pc.Thumbhash = m.Width, m.Height, m.Thumbhash
 		}
 		rec.Covers = append(rec.Covers, pc)
@@ -441,9 +444,13 @@ func (s *PublicService) attachWorkFacets(ctx context.Context, rec *dto.PublicCat
 		if url == "" {
 			continue
 		}
-		rec.Screenshots = append(rec.Screenshots, dto.PublicScreenshot{
+		ps := dto.PublicScreenshot{
 			URL: url, Caption: sc.Caption, Sexual: sc.Sexual, Violence: sc.Violence, Source: s.sourceKey(sc.SourceID),
-		})
+		}
+		if m, ok := imgMeta[sc.ImageHash]; ok {
+			ps.Width, ps.Height, ps.Thumbhash = m.Width, m.Height, m.Thumbhash
+		}
+		rec.Screenshots = append(rec.Screenshots, ps)
 	}
 	rec.Characters = make([]dto.PublicRosterCharacter, 0, len(detail.Characters))
 	for _, ch := range detail.Characters {

@@ -32,6 +32,12 @@ func (s *PublicService) TagDetail(ctx context.Context, id int64, withWorks, nsfw
 	rec := dto.PublicTagDetail{
 		ID: head.ID, Name: head.Name, Tier: tagTierKey(head.Tier), Kind: tagKindKey(head.Kind),
 	}
+	// intros are part of the base record (not include-gated), like a label's.
+	intros, err := s.tagIntros(ctx, id)
+	if err != nil {
+		return dto.PublicTagDetail{}, false, err
+	}
+	rec.Intros = intros
 	if withWorks {
 		var wrows []struct {
 			WorkID int64 `gorm:"column:work_id"`
@@ -63,6 +69,36 @@ func (s *PublicService) TagDetail(ctx context.Context, id int64, withWorks, nsfw
 		rec.NextOffset = nextOffset(len(wrows), limit, offset)
 	}
 	return rec, true, nil
+}
+
+// tagIntros loads a canonical tag's multilingual intros, merged to one element
+// per language (lowest source_id wins — the step-65 intro merge), lang ASC.
+// The labelIntros projection one table over: the W0 data-layer-retirement wave
+// rescued the wiki's hand-written galgame_tag.description rows into
+// catalog_tag_intro, and this is the read face that makes them reachable.
+// source goes through sourceKey so the wire always carries the PUBLIC source
+// spelling (the character/name intro convention). Empty → [].
+func (s *PublicService) tagIntros(ctx context.Context, tagID int64) ([]dto.PublicTagIntro, error) {
+	var rows []struct {
+		Lang     string `gorm:"column:lang"`
+		Intro    string `gorm:"column:intro"`
+		SourceID int16  `gorm:"column:source_id"`
+	}
+	if err := s.db.WithContext(ctx).Raw(`
+		SELECT lang, intro, source_id FROM catalog_tag_intro
+		WHERE tag_id = ? ORDER BY lang, source_id`, tagID).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	out := make([]dto.PublicTagIntro, 0, len(rows))
+	seenLang := map[string]bool{}
+	for _, r := range rows {
+		if seenLang[r.Lang] {
+			continue // a lower source_id already claimed this language
+		}
+		seenLang[r.Lang] = true
+		out = append(out, dto.PublicTagIntro{Lang: r.Lang, Intro: r.Intro, Source: s.sourceKey(r.SourceID)})
+	}
+	return out, nil
 }
 
 // tagTierKey projects the TagTier* vocabulary to the public string keys.

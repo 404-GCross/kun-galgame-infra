@@ -137,12 +137,26 @@ func (s *PublicService) resolveImageMeta(ctx context.Context, hashes []string) m
 // coverMetaFor is the cover-shaped convenience over resolveImageMeta: it
 // collects the hashes of a cover set and resolves them in one batch.
 func (s *PublicService) coverMetaFor(ctx context.Context, rows []WorkCoverRow) map[string]ImageMeta {
-	if s.imageMeta == nil || len(rows) == 0 {
+	return s.workMediaMetaFor(ctx, rows, nil)
+}
+
+// workMediaMetaFor resolves a work's WHOLE image set — covers and screenshots
+// together — in ONE batch (A2-1b, which extended the enrichment to
+// screenshots). Sharing the batch matters: a screenshot set runs to dozens of
+// rows, and two separate calls would double the detail face's image_service
+// round-trips for no benefit. nil (= no enrichment) when the lookup is unwired
+// or there is nothing to resolve; every consumer treats a missing entry as
+// "unknown" and omits the three keys.
+func (s *PublicService) workMediaMetaFor(ctx context.Context, covers []WorkCoverRow, shots []WorkScreenshotRow) map[string]ImageMeta {
+	if s.imageMeta == nil || (len(covers) == 0 && len(shots) == 0) {
 		return nil
 	}
-	hashes := make([]string, 0, len(rows))
-	for _, c := range rows {
+	hashes := make([]string, 0, len(covers)+len(shots))
+	for _, c := range covers {
 		hashes = append(hashes, c.ImageHash)
+	}
+	for _, sc := range shots {
+		hashes = append(hashes, sc.ImageHash)
 	}
 	return s.resolveImageMeta(ctx, hashes)
 }

@@ -2,10 +2,12 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 
 	"api/internal/middleware"
@@ -217,23 +219,44 @@ func TestClaimConflict_StructuredBody(t *testing.T) {
 	assert.Equal(t, int64(9001), envelope.Data.OwningProductWorkID)
 }
 
+// catalogTestDB memoizes the package's single connection pool + migrate/seed
+// run. Opening one pool PER TEST (the original shape) leaked ~30 pools into one
+// binary and the tail of the suite started tripping Postgres' max_connections —
+// which surfaces as t.Skipf, i.e. a SILENTLY GREEN suite whose last cases never
+// ran. One pool per binary removes the ceiling entirely; the tests already
+// share the same database and truncate what they own.
+var (
+	catalogTestOnce sync.Once
+	catalogTestDBH  *gorm.DB
+	catalogTestErr  error
+)
+
 func openCatalogTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	dsn := os.Getenv("TEST_DATABASE_DSN")
-	if dsn == "" {
-		dsn = "host=localhost port=5432 user=postgres password=postgres dbname=kun_catalog_test sslmode=disable"
+	catalogTestOnce.Do(func() {
+		dsn := os.Getenv("TEST_DATABASE_DSN")
+		if dsn == "" {
+			dsn = "host=localhost port=5432 user=postgres password=postgres dbname=kun_catalog_test sslmode=disable"
+		}
+		db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: glogger.Default.LogMode(glogger.Silent)})
+		if err != nil {
+			catalogTestErr = fmt.Errorf("catalog test database unreachable: %w", err)
+			return
+		}
+		if err := migrate.Run(db); err != nil {
+			catalogTestErr = fmt.Errorf("catalog migrate failed: %w", err)
+			return
+		}
+		if err := seed.Run(db); err != nil {
+			catalogTestErr = fmt.Errorf("catalog seed failed: %w", err)
+			return
+		}
+		catalogTestDBH = db
+	})
+	if catalogTestErr != nil {
+		t.Skip(catalogTestErr.Error())
 	}
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: glogger.Default.LogMode(glogger.Silent)})
-	if err != nil {
-		t.Skipf("catalog test database unreachable: %v", err)
-	}
-	if err := migrate.Run(db); err != nil {
-		t.Skipf("catalog migrate failed: %v", err)
-	}
-	if err := seed.Run(db); err != nil {
-		t.Skipf("catalog seed failed: %v", err)
-	}
-	return db
+	return catalogTestDBH
 }
 
 // TestRedirectCursorRoundTrip pins the opaque cursor encoding.

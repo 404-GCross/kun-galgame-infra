@@ -117,6 +117,7 @@ type publicWorksListInput struct {
 	LabelID        int64  `query:"label_id" doc:"Only works attributed to this label (the catalog_work_label edge)"`
 	TagID          int64  `query:"tag_id" doc:"Only works carrying a source tag mapped to this canonical tag"`
 	SeriesID       int64  `query:"series_id" doc:"Only member works of this series"`
+	EngineID       int64  `query:"engine_id" doc:"Only works built with this engine (the catalog_work_engine edge); browse the ids via GET /v1/catalog/engines"`
 	Platform       string `query:"platform" doc:"vndb platform code (win/and/ios/...) — release-level and work-level rows unioned"`
 	ReleasedAfter  string `query:"released_after" doc:"YYYY-MM-DD, inclusive, over the EARLIEST release date per work"`
 	ReleasedBefore string `query:"released_before" doc:"YYYY-MM-DD, inclusive"`
@@ -149,6 +150,51 @@ type publicTagInput struct {
 }
 type publicTagOutput struct {
 	Body Envelope[dto.PublicTagDetail]
+}
+
+// ── A2-1b taxonomy browse lanes ──────────────────────────────────────────────
+//
+// The three lanes share the works-list paging posture verbatim (keyset id ASC,
+// limit 1-100 default 20, clamp-high / 400-low) and every item carries an
+// NSFW-AWARE work_count — the number of works the SAME caller would page
+// through via the matching works?<filter>= call.
+
+type publicLabelsListInput struct {
+	Kind   string `query:"kind" enum:"game_brand,bunko,publisher,anime_studio,doujin_circle,group" doc:"Filter by label kind; a token outside this closed set is a 400"`
+	Cursor string `query:"cursor" doc:"Opaque keyset cursor from a prior next_cursor; omit for the first page"`
+	Limit  int    `query:"limit" doc:"Items per page 1-100 (default 20); above 100 is clamped to 100, a non-positive or non-numeric value is a 400"`
+	NSFW   bool   `query:"nsfw" doc:"true/1 = count r18 works in work_count (default false = excluded, matching what an sfw works?label_id= call returns)"`
+}
+type publicLabelsListOutput struct {
+	Body Envelope[dto.PublicLabelsListData]
+}
+
+type publicTagsListInput struct {
+	Tier   string `query:"tier" enum:"core,longtail,hidden" doc:"Filter by display tier; a token outside this closed set is a 400"`
+	Kind   string `query:"kind" enum:"content,meta" doc:"Filter by tag kind; a token outside this closed set is a 400"`
+	Cursor string `query:"cursor" doc:"Opaque keyset cursor from a prior next_cursor; omit for the first page"`
+	Limit  int    `query:"limit" doc:"Items per page 1-100 (default 20); above 100 is clamped to 100, a non-positive or non-numeric value is a 400"`
+	NSFW   bool   `query:"nsfw" doc:"true/1 = count r18 works in work_count (default false = excluded, matching what an sfw works?tag_id= call returns)"`
+}
+type publicTagsListOutput struct {
+	Body Envelope[dto.PublicTagsListData]
+}
+
+type publicEnginesListInput struct {
+	Cursor string `query:"cursor" doc:"Opaque keyset cursor from a prior next_cursor; omit for the first page"`
+	Limit  int    `query:"limit" doc:"Items per page 1-100 (default 20); above 100 is clamped to 100, a non-positive or non-numeric value is a 400"`
+	NSFW   bool   `query:"nsfw" doc:"true/1 = count r18 works in work_count (default false = excluded, matching what an sfw works?engine_id= call returns)"`
+}
+type publicEnginesListOutput struct {
+	Body Envelope[dto.PublicEnginesListData]
+}
+
+type publicEngineInput struct {
+	ID   int64 `path:"id" doc:"Catalog engine id"`
+	NSFW bool  `query:"nsfw" doc:"true/1 = count r18 works in work_count (default false = excluded)"`
+}
+type publicEngineOutput struct {
+	Body Envelope[dto.PublicEngine]
 }
 
 // SetupCatalogPublicSpec registers the /v1/catalog public projection operations
@@ -234,7 +280,42 @@ func SetupCatalogPublicSpec(app *fiber.App) huma.API {
 	})
 	huma.Register(api, huma.Operation{
 		OperationID: "getCatalogTagPublic", Method: http.MethodGet, Path: "/v1/catalog/tags/{id}",
-		Summary: "Canonical tag (cross-source vocabulary): name / tier / kind; include=works attaches the tagged works", Tags: tags,
+		Summary: "Canonical tag (cross-source vocabulary): name / tier / kind / intros; include=works attaches the tagged works", Tags: tags,
 	}, func(context.Context, *publicTagInput) (*publicTagOutput, error) { return &publicTagOutput{}, nil })
+	huma.Register(api, huma.Operation{
+		OperationID: "listCatalogLabelsPublic", Method: http.MethodGet, Path: "/v1/catalog/labels",
+		Summary: "Keyset label browse lane (id ASC); filter by kind, each row carries an nsfw-aware work_count",
+		Description: "Every label that has not been merged away, id ascending. " +
+			"work_count is the number of works THIS caller would page through via works?label_id=<id> — " +
+			"so an sfw caller's count excludes r18 works and always matches the list it can actually fetch.",
+		Tags: tags,
+	}, func(context.Context, *publicLabelsListInput) (*publicLabelsListOutput, error) {
+		return &publicLabelsListOutput{}, nil
+	})
+	huma.Register(api, huma.Operation{
+		OperationID: "listCatalogTagsPublic", Method: http.MethodGet, Path: "/v1/catalog/tags",
+		Summary: "Keyset canonical-tag browse lane (id ASC); filter by tier / kind, each row carries an nsfw-aware work_count",
+		Description: "The cross-source canonical tag vocabulary, id ascending. " +
+			"work_count is the number of works THIS caller would page through via works?tag_id=<id> " +
+			"(counted over the source-tag map, so a work carrying two mapped source tags counts once).",
+		Tags: tags,
+	}, func(context.Context, *publicTagsListInput) (*publicTagsListOutput, error) {
+		return &publicTagsListOutput{}, nil
+	})
+	huma.Register(api, huma.Operation{
+		OperationID: "listCatalogEnginesPublic", Method: http.MethodGet, Path: "/v1/catalog/engines",
+		Summary: "Keyset engine browse lane (id ASC); each row carries an nsfw-aware work_count",
+		Description: "The visual-novel / game engines works are built with, id ascending. " +
+			"work_count is the number of works THIS caller would page through via works?engine_id=<id>.",
+		Tags: tags,
+	}, func(context.Context, *publicEnginesListInput) (*publicEnginesListOutput, error) {
+		return &publicEnginesListOutput{}, nil
+	})
+	huma.Register(api, huma.Operation{
+		OperationID: "getCatalogEnginePublic", Method: http.MethodGet, Path: "/v1/catalog/engines/{id}",
+		Summary: "Engine record: name + nsfw-aware work_count + exact cross-source refs", Tags: tags,
+	}, func(context.Context, *publicEngineInput) (*publicEngineOutput, error) {
+		return &publicEngineOutput{}, nil
+	})
 	return api
 }

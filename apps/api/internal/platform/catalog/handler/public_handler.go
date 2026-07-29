@@ -556,6 +556,9 @@ func (h *PublicHandler) WorksList(c fiber.Ctx) error {
 	if f.SeriesID, ok = posIntQueryPub(c.Query("series_id")); !ok {
 		return response.BadRequestMsg(c, errors.ErrInvalidParam, "series_id must be a positive integer")
 	}
+	if f.EngineID, ok = posIntQueryPub(c.Query("engine_id")); !ok {
+		return response.BadRequestMsg(c, errors.ErrInvalidParam, "engine_id must be a positive integer")
+	}
 	if f.ReleasedAfter, ok = datePub(c.Query("released_after")); !ok {
 		return response.BadRequestMsg(c, errors.ErrInvalidParam, "released_after must be YYYY-MM-DD")
 	}

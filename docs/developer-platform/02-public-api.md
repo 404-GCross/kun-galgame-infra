@@ -40,14 +40,18 @@
 | 公开端点(`/v1`) | scope | 说明 |
 |---|---|---|
 | `GET /v1/catalog/works/{id}` | `catalog:read` | 注册行:display_name / titles / medium / 分级 / 外部锚(来源白名单过滤,见 [06 §11](./06-security-compliance.md))/ **认领指针**(→ 内容面路由,见 [01 §3.3](./01-design.md))+ **全量聚合 facet**(wave 104 加法扩容:popularity/ratings/tags/playtimes/series/platforms/intro/covers/screenshots/characters/labels/releases——source 键归因、CDN 完整 URL、字符串词表);**R18 调用方自控**:`nsfw=1` 出 r18 作品与 r18 关系端(works/lookup/names/characters/labels 同参;characters 另有 `spoilers=0-2` + sexual traits 随 nsfw),缺省隐藏与 Phase-1 逐字节一致;`updated` 恒在(doc 106);`releases[]` 每行带 `id`+`refs[]`,`tags[]` 每行带 canonical `canonical_id/tier/kind`(doc 106,未映射省略) |
-| `GET /v1/catalog/works` | `catalog:read` | **作品浏览/列表(doc 106 G1,keyset)**:过滤 `content_rating`/`claimed`/`label_id`/`tag_id`(canonical)/`series_id`/`platform`/`released_after\|before`/`ids`(≤100);`sort=id\|updated`;item = 轻 brief(+`release_date`/`olang`/`cover` 单图/`updated`);`nsfw` 同参;`next_cursor` 末页 null。**`include=` 富 brief 块(A2-1a 加法波)**:词表 `names,intros,labels,ratings,covers`(逗号分隔,**未知 token 静默忽略**,§3.5 条款 2);每块按页内 work id **批量加载**(无 N+1),未点名即整块缺席——**缺省(无 `include=`)响应与本波前逐字节相同**。`names`/`intros` 走 D7 四键投影(见 §3.2.1 表①),`labels`/`ratings` 与详情面同形同口径(评分保持源原生分制,不聚合),`covers` 出 `{portrait, banner}` 两槽、每槽带 `width/height/thumbhash`(见 §3.2.1);`ids=` + `include=` 即批量富取(两梯队的 batch 替代面) |
+| `GET /v1/catalog/works` | `catalog:read` | **作品浏览/列表(doc 106 G1,keyset)**:过滤 `content_rating`/`claimed`/`label_id`/`tag_id`(canonical)/`series_id`/**`engine_id`(A2-1b 第九过滤器,经 `catalog_work_engine`)**/`platform`/`released_after\|before`/`ids`(≤100);`sort=id\|updated`;item = 轻 brief(+`release_date`/`olang`/`cover` 单图/`updated`);`nsfw` 同参;`next_cursor` 末页 null。**`include=` 富 brief 块(A2-1a 加法波)**:词表 `names,intros,labels,ratings,covers`(逗号分隔,**未知 token 静默忽略**,§3.5 条款 2);每块按页内 work id **批量加载**(无 N+1),未点名即整块缺席——**缺省(无 `include=`)响应与本波前逐字节相同**。`names`/`intros` 走 D7 四键投影(见 §3.2.1 表①),`labels`/`ratings` 与详情面同形同口径(评分保持源原生分制,不聚合),`covers` 出 `{portrait, banner}` 两槽、每槽带 `width/height/thumbhash`(见 §3.2.1);`ids=` + `include=` 即批量富取(两梯队的 batch 替代面) |
 | `GET /v1/catalog/changes` | `catalog:read` | **增量同步流(doc 106 G2,keyset)**:`{entity_type=work, cursor, limit}` → `[{entity_type, id, updated}]`;`next_cursor` 恒在(续轮询新行);**无 nsfw 门**(id+时间戳=身份非内容,详情跟查再门控)。**删除不经此流**——行离开 LIVE 集(软删/降级/退出 galgame 媒介)后只是从流中**静默消失**,不发 tombstone;**合并型消亡由 `GET /v1/catalog/redirects` 覆盖**(旧 id → canonical id),**镜像型消费者应周期性全量对账**(`works?sort=id` keyset 扫 id 全集,与本地镜像取差集即失效行)。`op` 字段登记为将来的加法扩展位(现不下发,消费端须按 §3.5 条款 2 忽略未知字段)。**流有意滞后 ~5 秒**(2026-07-28 cleanup 波):`updated_at` 是**语句时间**而非提交时间,不设滞后则长事务可能提交出一行 `updated_at` 已落在消费者水位之后的记录 → 该行被**永久跳过**;拒发 5 秒内的新行,使提交耗时 ≤5s 的在途事务不可能被漏掉 |
 | `GET /v1/catalog/works/{id}/credits` | `catalog:read` | 该作品的 credits(名义/角色/role) |
 | `GET /v1/catalog/works/{id}/relations` | `catalog:read` | 跨媒介关系(改编/续作/同世界观…,单行双向渲染) |
 | `GET /v1/catalog/names/{id}`(+ `…/credits`) | `catalog:read` | 名义(credited identity;{id}=credit_name id,携 person_id+公开 sibling 名义)——**hidden 名义链接不出现在公开聚合**(既有可见性政策)。v2.1 实施时由 persons/{id} 更名:实体层 credits 指向名义而非 person,公开词表与 resolve/redirects 的 "name" 键统一 |
 | `GET /v1/catalog/characters/{id}` | `catalog:read` | 角色(含出演,spoiler 级字段) |
+| `GET /v1/catalog/labels` | `catalog:read` | **厂牌浏览/列表(A2-1b,keyset id ASC)**:过滤 `kind=`(封闭词表 `game_brand\|bunko\|publisher\|anime_studio\|doujin_circle\|group`,非法 token 400);item = `{id, display_name, kind, work_count}`;**合并走掉的厂牌不出列表**(merge 软删源行 + 写 redirect,旧 id 仍由 `/v1/catalog/redirects` 覆盖) |
 | `GET /v1/catalog/labels/{id}`(+ `…/works`) | `catalog:read` | 厂牌/文库/社团;恒带 `intros[]`(多语言简介,按语言归并、`source`=来源键)与 `links[]`(官网/twitter/ci-en 外链,`{source,url}`;身份锚 exact/probable 永不入 `links`),无供给则为 `[]`;`refs[]` exact 身份锚(doc 106) |
-| `GET /v1/catalog/tags/{id}` | `catalog:read` | **规范 tag(doc 106 G5)**:`{id, name, tier, kind}`(跨源规范词表 catalog_tag);`include=works` 附带该规范 tag 下的作品(经 catalog_tag_source_map ⋈ catalog_work_tag,nsfw 门),按 `limit`/`offset` 翻页,**满页时**带 `next_offset`(= `offset+limit`),不满页则省略 = 到底 |
+| `GET /v1/catalog/tags` | `catalog:read` | **规范 tag 浏览/列表(A2-1b,keyset id ASC)**:过滤 `tier=`(`core\|longtail\|hidden`)、`kind=`(`content\|meta`),两者皆封闭词表、非法 token 400;item = `{id, name, tier, kind, work_count}` |
+| `GET /v1/catalog/tags/{id}` | `catalog:read` | **规范 tag(doc 106 G5)**:`{id, name, tier, kind}`(跨源规范词表 catalog_tag);**恒带 `intros[]`(A2-1b 加法)**——多语言简介,shape 与 `labels/{id}` 的 `intros[]` 一致(`{lang, intro, source}`、按语言归并低 source_id 胜出、`source`=公开来源键),无供给则为 `[]`;`include=works` 附带该规范 tag 下的作品(经 catalog_tag_source_map ⋈ catalog_work_tag,nsfw 门),按 `limit`/`offset` 翻页,**满页时**带 `next_offset`(= `offset+limit`),不满页则省略 = 到底 |
+| `GET /v1/catalog/engines` | `catalog:read` | **引擎浏览/列表(A2-1b,keyset id ASC)**:无过滤;item = `{id, name, work_count}`。VNDB 不发布引擎数据,该 facet 的唯一副本是 wiki 手工整理并由数据层退役波迁入的行 |
+| `GET /v1/catalog/engines/{id}` | `catalog:read` | **引擎条目(A2-1b)**:`{id, name, work_count, refs[]}`;`refs[]` 同 names/characters/labels 的 exact-only 身份锚(doc 106 G4),A2-0 落的 wiki eid 即在此浮出。非法 id 400、无此行 404 |
 | `GET /v1/catalog/search` | `catalog:read` | 实体搜索(persons/characters/labels,复用三索引) |
 | `POST /v1/catalog/resolve` | `catalog:read` | 批量旧 ID → canonical(redirect 压平语义与内部一致) |
 | `GET /v1/catalog/lookup` + `POST …/lookup/batch` | `catalog:read` | **外部 id 反查(killer,doc 19 §3.1,Phase 1)**:`?source=vndb&external_id=v19658` → work + `claimed_by` 指针;批量 ≤100。背书 = 四源 exact 锚(在产)。**`type=work\|name\|character\|label`(缺省 `work`,加法扩展)**:同一反查面按实体族分流——`work` 语义逐字不变(含 release 锚回落到属主 work),其余三族取**该族** exact 锚后委派各自详情投影(重块关闭),命中只填对应块 `name` / `character` / `label`,`work` / `claimed_by` 留空;批量每对可各带 `type`,响应回显**归一后**的 token(缺省对回显 `work`) |
@@ -57,17 +61,21 @@
 > catalog 面范围备注:`stub`(无锚且元数据不达标的未认领行)不进公开聚合——既有不变量,公开面直接继承;asmr/同人未认领波是否进 v1 投影,并入 [01 §15](./01-design.md) 再分发授权一起拍板(倾向:v1 先只放 galgame 可达闭包 + 跨媒介关系可达行,letmoe 上线时再扩)。
 > **doc 106 加法(2026-07-28)**:`refs[]`(exact-only 身份锚)现同构出现在 names / characters / labels(此前仅 works 有);works 浏览列表 + changes 增量流 + 规范 tag 读面补齐了「可浏览 / 可增量同步 / release 与 tag 可寻址」四缺口。全部加法,spec-breaking 门背书;S2S/admin spec 逐字节不变。
 >
+> **A2-1b taxonomy 读面加法(2026-07-29)**:三条 keyset 列表道(`labels` / `tags` / `engines`)+ `engines/{id}` + works 的 `engine_id` 过滤 + `tags/{id}` 的 `intros[]` + 详情面 `screenshots[]` 的 `width/height/thumbhash`。**公开 lookup 词表不扩**——仍是 `work\|name\|character\|label` 四族;engine / tag 的 id 解析走各自 detail / list 面,不进 lookup(它们是分类词表,不是可反查的跨源身份族)。全部加法,oasdiff 零 breaking。
+>
 > **参数区间与越界语义(2026-07-28 cleanup 波)**:
 >
 > | 端点 | `limit` 区间 | 默认 |
 > |---|---|---|
 > | `GET /v1/catalog/works` | 1-100 | 20 |
+> | `GET /v1/catalog/labels` / `…/tags` / `…/engines`(A2-1b 三条 taxonomy keyset 道) | 1-100 | 20 |
 > | `GET /v1/catalog/changes` | 1-500 | 100 |
 > | offset 型子列表(`names/{id}?include=credits`、`characters/{id}` / `labels/{id}` / `tags/{id}?include=works`) | 1-50 | 50 |
 >
 > - **越上限 clamp 到上限**(不回落默认值):`limit=1000` 在 works 面即 `limit=100`,而不是悄悄退回 20。
 > - **非正数 / 非数字 400**:`limit=0`、`limit=-1`、`limit=abc` 一律 `400 limit must be a positive integer`,不再静默取默认值。
-> - **`label_id` / `tag_id` / `series_id` 同理**:缺省/空 = 不过滤;一旦给值就必须是正整数,`abc` / `0` / `-5` / `1.5` 一律 400(旧行为把非法值退化成 0 → 过滤器**静默消失**、返回不过滤的首页,是最坏的一类失败)。
+> - **`label_id` / `tag_id` / `series_id` / `engine_id` 同理**:缺省/空 = 不过滤;一旦给值就必须是正整数,`abc` / `0` / `-5` / `1.5` 一律 400(旧行为把非法值退化成 0 → 过滤器**静默消失**、返回不过滤的首页,是最坏的一类失败)。
+> - **游标不跨道**:每条 keyset 道(works `id` / works `updated` / changes / labels / tags / engines)的 `next_cursor` 只在本道有效,拿去另一条道一律 `400 malformed cursor`。
 > - `offset` 保持宽松(负数归 0,不 400)。
 >
 > **lookup `type` 词表(2026-07-29 加法波)**:`work`(缺省)/ `name` / `character` / `label`,两个面(GET 单查 + POST 批量)同一套。
@@ -76,6 +84,13 @@
 > - **`external_id` 归一只发生在 `work` 面**:vndb 作品接受 `v19658` 或裸 `19658`;`name` / `character` / `label` 按注册表存法**逐字匹配**(vndb 角色 `c1234`、厂牌 `p129`、staff 是**裸数字**)——给非作品面补 `v` 前缀只会 100% miss。
 > - **可见性继承各实体详情面**:命中后委派 `names/{id}` / `characters/{id}` / `labels/{id}` 的投影(`include` 重块关闭),因此 `nsfw` 语义与那三个端点逐字一致(例:character 身份不因 `nsfw=0` 隐藏,只掉 sexual traits;r18 隐藏仍只是 `work` 面的规则)。
 > - **响应加法**:`PublicLookupData` / 批量 item 新增可选块 `name` / `character` / `label`(不命中即整块省略),`work` / `claimed_by` 字段语义不变;批量 item 另加恒在的 `type` 回显。spec-breaking 门(oasdiff)背书为非破坏。
+>
+> **taxonomy 三道的 `work_count` 语义(2026-07-29 A2-1b 落账)**:`labels` / `tags` / `engines` 每行的 `work_count` 是 **nsfw 感知**的——它等于**同一调用方**用 `works?label_id=` / `?tag_id=` / `?engine_id=` 翻页能真正拿到的行数。
+>
+> - sfw 调用方(缺省)的计数**剔除 r18**;`nsfw=1` 给全量。计数与成员列表**永不打架**——这是刻意反着写弃用面的 `official.galgame_count`(恒 0 却挂着非空成员列表)。
+> - 统计口径 = works 列表的种群谓词逐字复用:LIVE + galgame 媒介 + 未软删,`stub` / 其它媒介 / 软删行一律不计。
+> - **去重按作品**:一个作品对同一厂牌可有多条不同 `kind` 的归属边、可携带多个映射到同一规范 tag 的源 tag,计数只算一次。
+> - 实现上是**页级批量 GROUP BY**(每页一条聚合查询),不是逐行 count。
 >
 > **封面严格度:列表面 > 详情面(对 sfw 调用方)**——`works` 列表的单图 `cover` 对 sfw 调用方会**丢弃 `sexual≠0` 的封面**(挑不出合规图时 `cover` 为空串),而详情面 `covers[]` / `screenshots[]` **恒发全量**并逐行带 `sexual` / `violence` 旗标交由消费端自行取舍。列表 `include=covers` 的两槽同样吃这条 sfw 规则(见 §3.2.1)。
 
@@ -131,7 +146,7 @@ catalog 的 release 日期是**部分 ISO**:`YYYY` / `YYYY-MM` / `YYYY-MM-DD`,�
 - `portrait` = `portrait_pinned` 行 → 否则首个尺寸判定为竖版的封面 → 否则该调用方可见的首图(按 `sort_order`, `image_hash` 序),**故有可见封面时恒非 null**。
 - `banner` = 首个尺寸判定为横版的封面;**无(含 image_service 查询未接线时)即 `null`**,绝不猜。
 - 只有一张可用封面时两槽可能指向同一图,这是预期。
-- `width` / `height` / `thumbhash` 来自 image_service 的按需批量查询,**未知即三键一并省略**(消费端退回骨架屏);详情面 `covers[]` 每行同样带这三个可选键(A2-1a 加法,screenshots 待后续波)。
+- `width` / `height` / `thumbhash` 来自 image_service 的按需批量查询,**未知即三键一并省略**(消费端退回骨架屏);详情面 `covers[]` **与 `screenshots[]`** 每行同样带这三个可选键(A2-1a 加法,A2-1b 补齐 screenshots——两个粒度共用**同一次**批量查询,详情面对 image_service 仍只发一趟)。
 - sfw 调用方在**两槽**都永不见 `sexual≠0` 的封面(与列表单图 `cover` 同一规则;`violence` 同样不入门槛)。
 
 ### 3.5 稳定性承诺
