@@ -7,7 +7,11 @@
 // public read faces are reachable — anything else 404s.
 export default defineEventHandler(async (event): Promise<unknown> => {
   assertMethod(event, 'GET')
-  const path = event.context.params?.path ?? ''
+  const raw = event.context.params?.path ?? ''
+  // Normalize before the whitelist check: a raw prefix match would pass
+  // "v1/catalog/%2e%2e/…" whose dot segments only fold later, inside $fetch's
+  // URL resolution, escaping the two allowed faces.
+  const path = new URL(raw, 'http://relay.local/').pathname.slice(1)
   if (!path.startsWith('v1/catalog/') && !path.startsWith('v1/galgame/')) {
     setResponseStatus(event, 404)
     return { code: 404, message: 'only /v1/catalog/* and /v1/galgame/* are relayed' }
