@@ -9,6 +9,10 @@
 // links, three families of hand-written descriptions, the unprojected official
 // tail, the user-original works, and the gid→work address map.
 //
+// Steps j..l extend that last idea (A2-0, refs/proj/127): the official, engine
+// and tag id spaces are addressable today only by joining a wiki table, so they
+// are filed into catalog_external_ref before the join disappears.
+//
 // Three rules every step obeys:
 //
 //   - FILL-MISSING, NEVER OVERWRITE. Every write is ON CONFLICT DO NOTHING, so
@@ -64,7 +68,7 @@ type Opts struct {
 	// Apply switches from planning to writing. Dry run is the default
 	// everywhere in this repo's one-shot tools.
 	Apply bool
-	// Step selects one lettered step (b..i) or "all" for the charter order.
+	// Step selects one lettered step (a..l) or "all" for the charter order.
 	Step string
 	// ArtifactDir receives the parked-row JSON files. Empty disables parking
 	// output (the counts are still reported).
@@ -134,8 +138,10 @@ func resolveSourceID(db *gorm.DB, key string) (int16, error) {
 }
 
 // steps is the charter's execution order. A is the schema step and belongs to
-// cmd/migrate-catalog; A's DATA migration is the "a" step here.
-var steps = []string{"a", "b", "c", "d", "e", "f", "g", "h", "i"}
+// cmd/migrate-catalog; A's DATA migration is the "a" step here. j..l are the
+// A2-0 registrar rescue (refs/proj/127): the three taxonomy id maps that, like
+// the gid map, only exist today as a joinable wiki table.
+var steps = []string{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l"}
 
 // Run dispatches the selected step(s) and returns one Stats per step executed.
 func (r *Runner) Run(ctx context.Context) ([]Stats, error) {
@@ -178,6 +184,12 @@ func (r *Runner) runStep(ctx context.Context, step string) (Stats, error) {
 		return r.stepOriginals(ctx)
 	case "i":
 		return r.stepGidMap(ctx)
+	case "j":
+		return r.stepOfficialMap(ctx)
+	case "k":
+		return r.stepEngineMap(ctx)
+	case "l":
+		return r.stepTagMap(ctx)
 	}
 	return Stats{}, fmt.Errorf("unhandled step %q", step)
 }

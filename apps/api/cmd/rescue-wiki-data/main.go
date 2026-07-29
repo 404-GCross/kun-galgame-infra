@@ -14,6 +14,12 @@
 //	g  official tail     unmapped galgame_official        → catalog_label (+ brand edges)
 //	h  user originals    vndb_id='' works                 → catalog_work + catalog_work_title
 //	i  gid map           galgame.id → work                → catalog_external_ref (exact)
+//	j  official map      galgame_official.id → label      → catalog_external_ref (exact)
+//	k  engine map        galgame_engine.id → engine       → catalog_external_ref (exact)
+//	l  tag map           galgame_tag.id → canonical tag   → catalog_external_ref (exact)
+//
+// Steps j..l are the A2-0 registrar rescue (refs/proj/127): the three taxonomy
+// id maps that today only exist as a joinable wiki table.
 //
 // Every step is fill-missing (ON CONFLICT DO NOTHING), so a second pass writes
 // nothing — that is the acceptance criterion. Dry run is the default.
@@ -48,7 +54,7 @@ import (
 )
 
 func main() {
-	step := flag.String("step", "all", "which step to run: a..i, or all")
+	step := flag.String("step", "all", "which step to run: a..l, or all")
 	apply := flag.Bool("apply", false, "write changes (default dry)")
 	artifacts := flag.String("artifacts", "", "directory for parked-row JSON (empty = do not write)")
 	flag.Parse()

@@ -14,6 +14,7 @@ func TestConstantGroupsHaveUniqueValues(t *testing.T) {
 		"entity_type": {
 			EntityTypePerson, EntityTypeCreditName, EntityTypeOrg,
 			EntityTypeLabel, EntityTypeCharacter, EntityTypeWork, EntityTypeRelease,
+			EntityTypeTag, EntityTypeEngine,
 		},
 		"gender": {GenderMale, GenderFemale, GenderOther},
 		"credit_name_kind": {
@@ -76,4 +77,6 @@ func TestEntityTypeValuesArePinned(t *testing.T) {
 	assert.Equal(t, int16(4), EntityTypeCharacter)
 	assert.Equal(t, int16(5), EntityTypeWork)
 	assert.Equal(t, int16(6), EntityTypeRelease)
+	assert.Equal(t, int16(7), EntityTypeTag)
+	assert.Equal(t, int16(8), EntityTypeEngine)
 }

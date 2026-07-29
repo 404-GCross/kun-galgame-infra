@@ -19,6 +19,15 @@ const (
 	EntityTypeCharacter  int16 = 4
 	EntityTypeWork       int16 = 5
 	EntityTypeRelease    int16 = 6
+	// Tag (7) and Engine (8) are DATA-ONLY discriminators for now (A2-0, the
+	// wiki registrar rescue): they exist so the wiki's tid/eid id spaces can be
+	// filed in catalog_external_ref before the galgame_* tables are dropped.
+	// Neither has a public read surface — the public lookup/redirect/resolve
+	// vocabularies deliberately stay at the four/seven established families,
+	// and extending them is A2-1's decision, not a side effect of this wave.
+	// The values are pinned here so the id space never shifts.
+	EntityTypeTag    int16 = 7
+	EntityTypeEngine int16 = 8
 )
 
 // Gender values for person/character. The columns are nullable: NULL means
