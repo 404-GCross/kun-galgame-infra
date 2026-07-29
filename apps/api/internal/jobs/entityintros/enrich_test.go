@@ -25,9 +25,29 @@ import (
 // co-located in ONE database, exactly as production lays them out (the
 // single-DSN premise of this job). Run drives the DSN itself, so we capture it
 // (not just the handle) to exercise the real entry point.
+//
+// erogamespace is a separate DATABASE in production. Standing up a second one
+// for the tests would buy nothing, so its `appearances` table is created in a
+// dedicated SCHEMA of the same test database and reached through a DSN whose
+// search_path points at it — the lane's SQL stays unqualified and identical to
+// what it runs against the real mirror. The dedicated schema also keeps this
+// stand-in from colliding with the differently-shaped `appearances` that the
+// catalog importer tests create in public.
+const egSchema = "entityintros_eg"
+
 var (
-	testDB  *gorm.DB
-	testDSN string
+	testDB    *gorm.DB
+	testDSN   string
+	egTestDSN string
+	egDDL     = []string{
+		`CREATE SCHEMA IF NOT EXISTS ` + egSchema,
+		`CREATE TABLE IF NOT EXISTS ` + egSchema + `.appearances (
+			raw jsonb NOT NULL,
+			pk text GENERATED ALWAYS AS ((raw->>'game') || '/' || (raw->>'character') || '/' || (raw->>'stage')) STORED,
+			game integer GENERATED ALWAYS AS ((raw->>'game')::integer) STORED,
+			character_id integer GENERATED ALWAYS AS ((raw->>'character')::integer) STORED,
+			synced_at timestamptz NOT NULL DEFAULT now())`,
+	}
 )
 
 func TestMain(m *testing.M) {
@@ -56,7 +76,14 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "SKIP: src_vndb schema failed: %v\n", err)
 		os.Exit(0)
 	}
+	for _, stmt := range egDDL {
+		if err := db.Exec(stmt).Error; err != nil {
+			fmt.Fprintf(os.Stderr, "SKIP: erogamespace stand-in failed: %v\n", err)
+			os.Exit(0)
+		}
+	}
 	testDB = db
+	egTestDSN = testDSN + " search_path=" + egSchema
 	os.Exit(m.Run())
 }
 
@@ -64,8 +91,10 @@ func clean(t *testing.T) {
 	t.Helper()
 	for _, table := range []string{
 		"catalog_character_intro", "catalog_person_intro", "catalog_external_ref",
+		"catalog_work_character", "catalog_work",
 		"catalog_character", "catalog_person",
 		"src_bangumi.character", "src_bangumi.person", "src_vndb.chars",
+		egSchema + ".appearances",
 	} {
 		require.NoError(t, testDB.Exec("TRUNCATE "+table+" RESTART IDENTITY CASCADE").Error)
 	}
@@ -188,8 +217,9 @@ func TestFillMissingAllLanes(t *testing.T) {
 		PersonID: pJaDup, Lang: "ja", Intro: "既存の人物紹介。", SourceID: userSrc,
 	}).Error)
 
-	// --- dry run: decides, writes nothing.
-	st, err := Run(ctx, Opts{DSN: testDSN})
+	// --- dry run: decides, writes nothing. char-eg runs too (its stand-in is
+	// empty here), so the all-lane run needs the erogamespace DSN.
+	st, err := Run(ctx, Opts{DSN: testDSN, EGDSN: egTestDSN})
 	require.NoError(t, err)
 	assert.Equal(t, 5, st.CharBangumi.Candidates, "chZh chJaDup chJaCRLF chBlank chBoth")
 	assert.Equal(t, 1, st.CharBangumi.ZhNew, "chZh")
@@ -211,7 +241,7 @@ func TestFillMissingAllLanes(t *testing.T) {
 	assert.EqualValues(t, 1, charIntroCount(t, ""), "only the fixture row exists")
 
 	// --- apply.
-	st, err = Run(ctx, Opts{DSN: testDSN, Apply: true})
+	st, err = Run(ctx, Opts{DSN: testDSN, EGDSN: egTestDSN, Apply: true})
 	require.NoError(t, err)
 	assert.Equal(t, 1, st.CharBangumi.ZhWritten)
 	assert.Equal(t, 2, st.CharBangumi.JaWritten)
@@ -243,7 +273,7 @@ func TestFillMissingAllLanes(t *testing.T) {
 	assert.Equal(t, "zh-Hans", pRow.Lang)
 
 	// --- second apply: fill-missing is idempotent — zero writes everywhere.
-	st, err = Run(ctx, Opts{DSN: testDSN, Apply: true})
+	st, err = Run(ctx, Opts{DSN: testDSN, EGDSN: egTestDSN, Apply: true})
 	require.NoError(t, err)
 	assert.Zero(t, st.CharBangumi.JaWritten+st.CharBangumi.ZhWritten+st.CharVNDB.EnWritten+
 		st.PersonBangumi.JaWritten+st.PersonBangumi.ZhWritten+
@@ -279,7 +309,7 @@ func TestOnlyLaneAndConflictBackstop(t *testing.T) {
 	// Backstop: a STALE (empty) exist map cannot duplicate a row — the
 	// (character_id,lang,source_id) unique key refuses it.
 	r := &laneRunner{db: testDB, sourceID: reg.vndbSource, exist: map[int64]map[string]bool{},
-		stats: &LaneStats{}, vndb: true, insert: insertCharacterIntro}
+		stats: &LaneStats{}, vndb: true, lang: langEn, insert: insertCharacterIntro}
 	r.enrich(ctx, candidate{EntityID: ch, ExternalID: "c900", Text: "Only-lane description."}, true)
 	assert.Equal(t, 1, r.stats.Conflict, "ON CONFLICT refuses the duplicate")
 	assert.Equal(t, 0, r.stats.EnWritten)

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"api/internal/platform/catalog/model"
+	"api/internal/platform/catalog/repository"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -36,16 +37,53 @@ func insertPersonIntro(ctx context.Context, db *gorm.DB, entityID int64, lang, t
 }
 
 // laneRunner carries one lane's dependencies + stats (serial, plain ints). The
-// exist map is SHARED between the two character lanes: an earlier lane's write
-// marks the language present, so the later lane's fill-missing skip stays
-// correct within one run.
+// exist map is SHARED between the character lanes: an earlier lane's decision
+// marks the language present, so a later lane's fill-missing skip stays correct
+// within one run.
 type laneRunner struct {
 	db       *gorm.DB
 	sourceID int16
 	exist    map[int64]map[string]bool // entity_id → intro langs already present (any source)
 	stats    *LaneStats
-	vndb     bool // vndb lane: strip markup, lang=en fixed
+	vndb     bool   // vndb lane: strip markup before the language decision
+	lang     string // fixed lane language ("" = detect from the text)
 	insert   insertFn
+	// hostWorks/touched are the char-eg lane's changes-feed wiring: only that
+	// lane populates hostWorks, so the others append nothing and touch nothing.
+	// Only REAL writes contribute — dry-runs, dup-lang skips and ON CONFLICT
+	// no-ops leave every watermark where it was (the step-117 discipline).
+	hostWorks map[int64][]int64
+	touched   []int64
+}
+
+// flushTouch bumps catalog_work.updated_at once for every host work this lane
+// actually wrote an intro into, and records how many distinct works that was.
+func (r *laneRunner) flushTouch(ctx context.Context) error {
+	seen := make(map[int64]struct{}, len(r.touched))
+	ids := make([]int64, 0, len(r.touched))
+	for _, id := range r.touched {
+		if _, dup := seen[id]; dup {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	if err := repository.TouchWorks(ctx, r.db, ids); err != nil {
+		return err
+	}
+	r.stats.Touched = len(ids)
+	return nil
+}
+
+// markLang records that the entity now has (or is planned to have) an intro in
+// this language, so the fill-missing rule keeps holding across lanes.
+func (r *laneRunner) markLang(entityID int64, lang string) {
+	set := r.exist[entityID]
+	if set == nil {
+		set = map[string]bool{}
+		r.exist[entityID] = set
+	}
+	set[lang] = true
 }
 
 // process walks the candidates and applies the fill-missing-language rule:
@@ -63,20 +101,19 @@ func (r *laneRunner) process(ctx context.Context, cands []candidate, apply bool)
 // enrich decides and (in apply mode) writes one candidate's intro row.
 func (r *laneRunner) enrich(ctx context.Context, c candidate, apply bool) {
 	text := normalizeText(c.Text)
-	lang := ""
 	if r.vndb {
 		var stripped bool
 		text, stripped = stripVNDBMarkup(text)
 		if stripped {
 			r.stats.SpoilerStripped++
 		}
-		lang = langEn
 	}
 	if strings.TrimSpace(text) == "" {
 		r.stats.NoText++
 		return
 	}
-	if !r.vndb {
+	lang := r.lang
+	if lang == "" {
 		lang = detectLang(text)
 	}
 	if r.exist[c.EntityID][lang] {
@@ -96,6 +133,10 @@ func (r *laneRunner) enrich(ctx context.Context, c candidate, apply bool) {
 	}
 	r.collect(&r.stats.Samples, c, lang, text)
 	if !apply {
+		// A dry run marks the PLANNED language too, so the forecast matches what
+		// an apply would do: char-bgm and char-eg can both offer ja for the same
+		// character, and without this both lanes would count the same write.
+		r.markLang(c.EntityID, lang)
 		return
 	}
 
@@ -111,12 +152,8 @@ func (r *laneRunner) enrich(ctx context.Context, c candidate, apply bool) {
 	}
 	// Mark the lang present so a later lane (or a same-run duplicate) skips via
 	// the primary rule.
-	set := r.exist[c.EntityID]
-	if set == nil {
-		set = map[string]bool{}
-		r.exist[c.EntityID] = set
-	}
-	set[lang] = true
+	r.markLang(c.EntityID, lang)
+	r.touched = append(r.touched, r.hostWorks[c.EntityID]...)
 	switch lang {
 	case langJa:
 		r.stats.JaWritten++
@@ -145,15 +182,20 @@ func preview(s string) string {
 	return string(runes[:previewRunes]) + "…"
 }
 
-// runCharacterLanes runs char-bgm then char-vndb over ONE shared exist map
-// (preloaded across both lanes' candidate ids in a single query).
-func runCharacterLanes(ctx context.Context, db *gorm.DB, reg registry, opts Opts, st *Stats) error {
+// runCharacterLanes runs char-bgm, then char-vndb, then char-eg over ONE shared
+// exist map (preloaded across every lane's candidate ids in a single query).
+//
+// The order is the fill-missing precedence: char-bgm and char-eg both speak ja,
+// so a character supplied by both takes the Bangumi text and the EG lane skips
+// it as an already-present language. char-vndb writes en and never collides.
+func runCharacterLanes(ctx context.Context, db, egDB *gorm.DB, reg registry, opts Opts, st *Stats) error {
 	wantBgm := opts.Only == "" || opts.Only == LaneCharBangumi
 	wantVndb := opts.Only == "" || opts.Only == LaneCharVNDB
-	if !wantBgm && !wantVndb {
+	wantEG := opts.Only == "" || opts.Only == LaneCharEG
+	if !wantBgm && !wantVndb && !wantEG {
 		return nil
 	}
-	var bgmCands, vndbCands []candidate
+	var bgmCands, vndbCands, egCands []candidate
 	var err error
 	if wantBgm {
 		if bgmCands, err = loadCandidates(ctx, db, LaneCharBangumi, reg, opts.Limit, opts.Offset); err != nil {
@@ -165,11 +207,19 @@ func runCharacterLanes(ctx context.Context, db *gorm.DB, reg registry, opts Opts
 			return err
 		}
 	}
-	ids := make([]int64, 0, len(bgmCands)+len(vndbCands))
+	if wantEG {
+		if egCands, st.CharEG.NoSupply, err = loadEGCandidates(ctx, db, egDB, reg, opts.Limit, opts.Offset); err != nil {
+			return err
+		}
+	}
+	ids := make([]int64, 0, len(bgmCands)+len(vndbCands)+len(egCands))
 	for _, c := range bgmCands {
 		ids = append(ids, c.EntityID)
 	}
 	for _, c := range vndbCands {
+		ids = append(ids, c.EntityID)
+	}
+	for _, c := range egCands {
 		ids = append(ids, c.EntityID)
 	}
 	exist, err := preloadExistingLangs(ctx, db, "catalog_character_intro", "character_id", ids)
@@ -177,6 +227,7 @@ func runCharacterLanes(ctx context.Context, db *gorm.DB, reg registry, opts Opts
 		return fmt.Errorf("preload character intro langs: %w", err)
 	}
 	slog.Info("entity-intros character candidates", "char_bgm", len(bgmCands), "char_vndb", len(vndbCands),
+		"char_eg", len(egCands), "char_eg_no_supply", st.CharEG.NoSupply,
 		"apply", opts.Apply, "offset", opts.Offset, "limit", opts.Limit)
 	if wantBgm {
 		st.CharBangumi.Candidates = len(bgmCands)
@@ -185,8 +236,27 @@ func runCharacterLanes(ctx context.Context, db *gorm.DB, reg registry, opts Opts
 	}
 	if wantVndb {
 		st.CharVNDB.Candidates = len(vndbCands)
-		r := &laneRunner{db: db, sourceID: reg.vndbSource, exist: exist, stats: &st.CharVNDB, vndb: true, insert: insertCharacterIntro}
+		r := &laneRunner{db: db, sourceID: reg.vndbSource, exist: exist, stats: &st.CharVNDB, vndb: true, lang: langEn, insert: insertCharacterIntro}
 		r.process(ctx, vndbCands, opts.Apply)
+	}
+	if wantEG {
+		st.CharEG.Candidates = len(egCands)
+		egIDs := make([]int64, len(egCands))
+		for i, c := range egCands {
+			egIDs[i] = c.EntityID
+		}
+		hosts, err := preloadHostWorks(ctx, db, egIDs)
+		if err != nil {
+			return err
+		}
+		r := &laneRunner{db: db, sourceID: reg.egSource, exist: exist, stats: &st.CharEG,
+			lang: langJa, insert: insertCharacterIntro, hostWorks: hosts}
+		r.process(ctx, egCands, opts.Apply)
+		if opts.Apply {
+			if err := r.flushTouch(ctx); err != nil {
+				return fmt.Errorf("touch char-eg host works: %w", err)
+			}
+		}
 	}
 	return nil
 }
