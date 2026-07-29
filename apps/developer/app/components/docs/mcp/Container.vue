@@ -175,7 +175,7 @@ const curlHandshake = `curl -sN ${MCP_ENDPOINT} \\
 
     <!-- Tool surface -->
     <section>
-      <h2 class="text-lg font-semibold text-foreground">工具面（7 个）</h2>
+      <h2 class="text-lg font-semibold text-foreground">工具面（{{ tools.length }} 个）</h2>
       <p class="mt-1 text-sm text-default-500">
         每个工具映射一个公开只读端点。手握 id / 外部 id 用
         <code class="font-mono text-xs text-foreground">*_get</code> /

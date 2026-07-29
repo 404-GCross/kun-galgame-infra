@@ -82,7 +82,7 @@ MCP server 是公开 /v1 契约前面的一层**协议适配**,不是第二个 A
   Deploy 姿态,`docker-compose.mcp.yml`);镜像走现有 CI 矩阵。
 - healthz 照平台惯例;结构化日志记 tool 名 + 上游状态码 + 时延,
   **永不记 key 明文**(fingerprint 前 8 hex)。
-- 冒烟:MCP `initialize` + `tools/list` + 一次 `galgame_search` 真调用。(2026-07-28 同步后 `tools/list` 应回 8 工具。)
+- 冒烟:MCP `initialize` + `tools/list` + 一次 `galgame_search` 真调用。(2026-07-28 同步后 `tools/list` 应回 11 工具。)
 
 ## 6. 阶段
 
