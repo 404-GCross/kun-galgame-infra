@@ -1,0 +1,348 @@
+// public_works_include.go — the works LIST `include=` rich-brief blocks
+// (A2-1a, refs/proj/126 D1/D7).
+//
+// Contract shape, in one place because it is the whole point of the wave:
+//
+//   - Every block is OPT-IN. With no include= the response is byte-identical
+//     to the frozen W1 list contract — the hard gate of this wave.
+//   - Every block is BATCH-loaded over the page's work ids (never per row);
+//     the loaders are the same ones the detail face uses, so a block on the
+//     list means the same thing it means on the detail record.
+//   - An unknown token is IGNORED (§3.5 clause 2, the same posture as the
+//     detail face's ParsePublicInclude) — a client that misspells a token gets
+//     a thinner response, never a 400.
+//
+// D7 (the four product keys): names / intros pivot the catalog's BCP-47
+// languages onto ja-jp / zh-cn / zh-tw / en-us because that is the vocabulary
+// every downstream product face already renders. Languages outside the four
+// are dropped rather than passed through — the block is a rendering
+// convenience, and the complete language set stays available on the detail
+// face (titles[] / intro[]).
+package service
+
+import (
+	"context"
+	"strings"
+
+	"api/internal/platform/catalog/dto"
+)
+
+// WorksListInclude selects the works-list rich-brief blocks. Deliberately its
+// own type rather than the detail face's PublicInclude: the two vocabularies
+// are disjoint and must be free to evolve apart.
+type WorksListInclude struct {
+	Names   bool
+	Intros  bool
+	Labels  bool
+	Ratings bool
+	Covers  bool
+}
+
+// any reports whether any block was requested (the no-op short-circuit that
+// keeps the default page exactly as cheap as it was).
+func (i WorksListInclude) any() bool {
+	return i.Names || i.Intros || i.Labels || i.Ratings || i.Covers
+}
+
+// ParseWorksListInclude resolves the comma-separated include token set for the
+// works list. Unknown tokens are ignored.
+func ParseWorksListInclude(raw string) WorksListInclude {
+	var inc WorksListInclude
+	for _, tok := range strings.Split(raw, ",") {
+		switch strings.TrimSpace(tok) {
+		case "names":
+			inc.Names = true
+		case "intros":
+			inc.Intros = true
+		case "labels":
+			inc.Labels = true
+		case "ratings":
+			inc.Ratings = true
+		case "covers":
+			inc.Covers = true
+		}
+	}
+	return inc
+}
+
+// d7ProductKey maps a catalog BCP-47 language tag to its product key. ok=false
+// for anything outside the four keys (dropped, per the D7 ruling).
+//
+// The mapping is deliberately prefix-based on the zh side: the registry holds
+// zh-Hans (the canonical import spelling), bare zh (older bangumi rows) and
+// zh-Hant, and a bare `zh` is Simplified in every source that produces it.
+func d7ProductKey(lang string) (string, bool) {
+	switch {
+	case lang == "ja" || strings.HasPrefix(lang, "ja-"):
+		return "ja-jp", true
+	case lang == "en" || strings.HasPrefix(lang, "en-"):
+		return "en-us", true
+	case lang == "zh-Hant" || strings.HasPrefix(lang, "zh-Hant-") || lang == "zh-TW" || lang == "zh-HK":
+		return "zh-tw", true
+	case lang == "zh" || strings.HasPrefix(lang, "zh"):
+		return "zh-cn", true
+	default:
+		return "", false
+	}
+}
+
+// attachWorkListBlocks loads and attaches every requested include= block to a
+// page of list items, in one batched query set per block. items and rows are
+// index-aligned (the caller built them in the same pass).
+func (s *PublicService) attachWorkListBlocks(
+	ctx context.Context, items []dto.PublicWorkListItem, rows []workListSourceRow,
+	subjects []claimSubject, covers map[int64][]WorkCoverRow, inc WorksListInclude, nsfw bool,
+) error {
+	if !inc.any() || len(items) == 0 {
+		return nil
+	}
+	ids := make([]int64, len(rows))
+	for i, r := range rows {
+		ids[i] = r.ID
+	}
+
+	if inc.Names {
+		titles, err := s.read.loadWorkTitles(ctx, ids)
+		if err != nil {
+			return err
+		}
+		for i, r := range rows {
+			items[i].Names = publicWorkNames(titles[r.ID])
+		}
+	}
+	if inc.Intros {
+		intros, err := s.read.loadWorkIntros(ctx, subjects)
+		if err != nil {
+			return err
+		}
+		for i, r := range rows {
+			items[i].Intros = s.publicWorkIntros(intros[r.ID])
+		}
+	}
+	if inc.Labels {
+		labels, err := s.read.loadWorkLabels(ctx, ids)
+		if err != nil {
+			return err
+		}
+		for i, r := range rows {
+			items[i].Labels = publicWorkLabels(labels[r.ID])
+		}
+	}
+	if inc.Ratings {
+		ratings, err := s.read.loadWorkRatings(ctx, subjects)
+		if err != nil {
+			return err
+		}
+		for i, r := range rows {
+			items[i].Ratings = s.publicRatings(ratings[r.ID])
+		}
+	}
+	if inc.Covers {
+		// One image_service batch for the WHOLE page — the metadata is both the
+		// enrichment and the orientation evidence the slot picker runs on.
+		all := make([]WorkCoverRow, 0, len(rows))
+		for _, r := range rows {
+			all = append(all, covers[r.ID]...)
+		}
+		meta := s.coverMetaFor(ctx, all)
+		for i, r := range rows {
+			items[i].Covers = s.pickCoverSlots(covers[r.ID], meta, nsfw)
+		}
+	}
+	return nil
+}
+
+// publicWorkNames pivots a work's titles onto the four D7 product keys. Within
+// a key the LOWEST kind wins (official → alias → abbreviation, the detail
+// face's own ordering) and the loader's (kind, id) order breaks the rest of
+// the tie, so two languages mapping to the same key (zh-Hans and bare zh both
+// → zh-cn) resolve to the first row the ordering yields — deterministic, and
+// the same row on every call. nil when the work has no title in any of the
+// four keys (the block is then omitted entirely).
+func publicWorkNames(titles []WorkTitleRow) *dto.PublicWorkNames {
+	var out dto.PublicWorkNames
+	filled := false
+	for _, t := range titles {
+		key, ok := d7ProductKey(t.Lang)
+		if !ok {
+			continue
+		}
+		switch key {
+		case "ja-jp":
+			if out.JaJP == "" {
+				out.JaJP, filled = t.Title, true
+			}
+		case "zh-cn":
+			if out.ZhCN == "" {
+				out.ZhCN, filled = t.Title, true
+			}
+		case "zh-tw":
+			if out.ZhTW == "" {
+				out.ZhTW, filled = t.Title, true
+			}
+		case "en-us":
+			if out.EnUS == "" {
+				out.EnUS, filled = t.Title, true
+			}
+		}
+	}
+	if !filled {
+		return nil
+	}
+	return &out
+}
+
+// publicWorkIntros pivots a work's merged intros onto the four D7 product
+// keys. The per-language merge already happened in loadWorkIntros — including
+// the step-75 rule that a machine translation surfaces ONLY when the language
+// has no source row — so this is a pure re-keying: first row wins per key, in
+// the loader's lang-ascending order. nil when nothing lands in the four keys.
+func (s *PublicService) publicWorkIntros(intros []WorkIntroRow) *dto.PublicWorkIntros {
+	var out dto.PublicWorkIntros
+	filled := false
+	for _, in := range intros {
+		key, ok := d7ProductKey(in.Lang)
+		if !ok {
+			continue
+		}
+		slot := &dto.PublicWorkIntroSlot{Intro: in.Intro, Source: s.sourceKey(in.SourceID), Machine: in.Machine}
+		switch key {
+		case "ja-jp":
+			if out.JaJP == nil {
+				out.JaJP, filled = slot, true
+			}
+		case "zh-cn":
+			if out.ZhCN == nil {
+				out.ZhCN, filled = slot, true
+			}
+		case "zh-tw":
+			if out.ZhTW == nil {
+				out.ZhTW, filled = slot, true
+			}
+		case "en-us":
+			if out.EnUS == nil {
+				out.EnUS, filled = slot, true
+			}
+		}
+	}
+	if !filled {
+		return nil
+	}
+	return &out
+}
+
+// publicWorkLabels projects the label attributions to the same shape the
+// detail face's labels[] carries. nil (block omitted) when the work has none.
+func publicWorkLabels(rows []LabelAttribution) []dto.PublicWorkLabel {
+	if len(rows) == 0 {
+		return nil
+	}
+	out := make([]dto.PublicWorkLabel, 0, len(rows))
+	for _, l := range rows {
+		out = append(out, dto.PublicWorkLabel{
+			ID: l.LabelID, DisplayName: l.DisplayName,
+			LabelKind: labelKindKey(l.LabelKind), Kind: workLabelKindKey(l.Kind),
+		})
+	}
+	return out
+}
+
+// publicRatings projects the rating rows to the same shape (and the same
+// source-native scales — never aggregated) the detail face's ratings[]
+// carries. nil (block omitted) when the work has none.
+func (s *PublicService) publicRatings(rows []WorkRatingRow) []dto.PublicRating {
+	if len(rows) == 0 {
+		return nil
+	}
+	out := make([]dto.PublicRating, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, dto.PublicRating{
+			Source: s.sourceKey(r.SourceID), Score: r.Score, VoteCount: r.VoteCount, Rank: r.Rank,
+		})
+	}
+	return out
+}
+
+// isPortraitDims reports whether height exceeds width * 1.05 — the U-track
+// portrait cutoff, kept as the exact rational 21/20 to avoid float noise.
+// Copied verbatim from cmd/pin-portrait-covers so the public face's idea of
+// "portrait" is the same one the portrait-pinning job applies.
+func isPortraitDims(w, h int) bool { return int64(h)*20 > int64(w)*21 }
+
+// pickCoverSlots resolves a work's cover set into the two display slots.
+//
+// Orientation comes from the image's real DIMENSIONS, not from kind: the kind
+// vocabulary in the registry is a sample-image taxonomy (catalog-native rows
+// are all "main"; the wiki bridge adds ""/dig/pkgfront/pkgback/pkgcontent/
+// pkgmed/pkgside), and none of those words says which way up the picture is.
+// So the same image_service batch that fills width/height/thumbhash is what
+// classifies the slots — and with the lookup unwired the banner slot is simply
+// null rather than guessed.
+//
+//   - portrait: the portrait_pinned row (the wiki's own EffectivePortrait
+//     rule) → else the first dimension-portrait cover → else the first visible
+//     cover, so a card always has key art when any cover is visible.
+//   - banner: the first dimension-landscape cover; null when none is known to
+//     be landscape.
+//
+// Candidates arrive in the loader's (sort_order, image_hash) order, so "first"
+// IS "lowest sort order". An sfw caller never sees a sexual-flagged cover in
+// either slot (the list face's existing single-cover rule; violence is not
+// gated here either, matching it).
+func (s *PublicService) pickCoverSlots(rows []WorkCoverRow, meta map[string]ImageMeta, nsfw bool) *dto.PublicWorkCoverSlots {
+	var pinned, portrait, landscape, first *WorkCoverRow
+	for i := range rows {
+		c := &rows[i]
+		if !nsfw && c.Sexual != 0 {
+			continue
+		}
+		if s.imageURL(c.ImageHash) == "" {
+			continue // never a bare hash on the public face
+		}
+		if first == nil {
+			first = c
+		}
+		if c.PortraitPinned && pinned == nil {
+			pinned = c
+		}
+		if m, ok := meta[c.ImageHash]; ok && m.Width > 0 && m.Height > 0 {
+			if isPortraitDims(m.Width, m.Height) {
+				if portrait == nil {
+					portrait = c
+				}
+			} else if landscape == nil {
+				landscape = c
+			}
+		}
+	}
+	if first == nil {
+		return nil // no cover this caller may see → block omitted
+	}
+	best := pinned
+	if best == nil {
+		best = portrait
+	}
+	if best == nil {
+		best = first
+	}
+	return &dto.PublicWorkCoverSlots{
+		Portrait: s.coverSlot(best, meta),
+		Banner:   s.coverSlot(landscape, meta),
+	}
+}
+
+// coverSlot renders one chosen cover row to its public slot (nil → nil, the
+// unfilled-slot null).
+func (s *PublicService) coverSlot(c *WorkCoverRow, meta map[string]ImageMeta) *dto.PublicCoverSlot {
+	if c == nil {
+		return nil
+	}
+	slot := &dto.PublicCoverSlot{
+		URL: s.imageURL(c.ImageHash), Sexual: c.Sexual, Violence: c.Violence,
+		Source: s.sourceKey(c.SourceID),
+	}
+	if m, ok := meta[c.ImageHash]; ok {
+		slot.Width, slot.Height, slot.Thumbhash = m.Width, m.Height, m.Thumbhash
+	}
+	return slot
+}

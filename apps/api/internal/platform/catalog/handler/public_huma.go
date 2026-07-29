@@ -125,6 +125,7 @@ type publicWorksListInput struct {
 	Cursor         string `query:"cursor" doc:"Opaque keyset cursor from a prior next_cursor; omit for the first page"`
 	Limit          int    `query:"limit" doc:"Items per page 1-100 (default 20); above 100 is clamped to 100, a non-positive or non-numeric value is a 400"`
 	NSFW           bool   `query:"nsfw" doc:"true/1 = include r18 works (default false = dropped)"`
+	Include        string `query:"include" doc:"Comma-separated rich-brief blocks: names,intros,labels,ratings,covers (default: none — the response is then byte-identical to the base contract). Unknown tokens are ignored. names/intros are keyed by the four product locales ja-jp/zh-cn/zh-tw/en-us; covers carries the portrait + banner slots with width/height/thumbhash"`
 }
 type publicWorksListOutput struct {
 	Body Envelope[dto.PublicWorksListData]

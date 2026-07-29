@@ -46,6 +46,7 @@ import (
 	siteRepo "api/internal/platform/site/repository"
 	"api/pkg/config"
 	"api/pkg/health"
+	"api/pkg/imageclient"
 	"api/pkg/logger"
 	"api/pkg/oidctoken"
 
@@ -282,6 +283,34 @@ func setupPublicCatalog(
 	usageRec := devapi.NewUsageRecorder(repo, store)
 
 	publicSvc := service.NewPublicService(catalogDB.DB(), readSvc, resolveSvc, cfg.ImageService.CDNBase)
+	// Cover enrichment (A2-1a): resolve dimensions + thumbhash from
+	// image_service so the public covers carry no-CLS metadata and the works
+	// list can tell a portrait from a banner. Same client config galgameapp
+	// builds for the galgame face — a second instance rather than a shared one
+	// because Mount owns its client privately and runs after this; the SDK is
+	// stateless beyond its HTTP pool, so two instances cost nothing. Unset
+	// credentials leave enrichment off, which degrades gracefully.
+	if cfg.ImageClient.ClientID != "" && cfg.ImageClient.ClientSecret != "" {
+		imgCli := imageclient.New(imageclient.Config{
+			BaseURL:      cfg.ImageClient.BaseURL,
+			CDNBase:      cfg.ImageService.CDNBase,
+			ClientID:     cfg.ImageClient.ClientID,
+			ClientSecret: cfg.ImageClient.ClientSecret,
+		})
+		publicSvc.WithImageMeta(func(ctx context.Context, hashes []string) (map[string]service.ImageMeta, error) {
+			raw, err := imgCli.MetaBatch(ctx, hashes)
+			if err != nil {
+				return nil, err
+			}
+			out := make(map[string]service.ImageMeta, len(raw))
+			for h, m := range raw {
+				out[h] = service.ImageMeta{Width: m.Width, Height: m.Height, Thumbhash: m.Thumbhash}
+			}
+			return out, nil
+		})
+	} else {
+		slog.Warn("catalog public face: image client not configured — covers will carry no dimensions/thumbhash and the banner slot stays null")
+	}
 	publicH := catHandler.NewPublicHandler(publicSvc, resolveSvc, searcher)
 
 	// Meter every response to (client, key, "catalog", day) + async last-used

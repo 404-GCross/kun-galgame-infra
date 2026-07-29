@@ -415,6 +415,10 @@ type PublicWorkIntro struct {
 
 // PublicCover is one cover image — a complete CDN URL, never a bare hash.
 // sexual/violence carry the source's content flags (0=safe 1=suggestive 2=explicit).
+// width/height/thumbhash are the intrinsic display metadata resolved from
+// image_service at read time (A2-1a); all three are omitted when the lookup is
+// unwired or the hash is unknown, so a consumer falls back to a skeleton
+// instead of reserving a wrong aspect ratio.
 type PublicCover struct {
 	URL            string `json:"url"`
 	Kind           string `json:"kind,omitempty"`
@@ -422,6 +426,9 @@ type PublicCover struct {
 	Sexual         int16  `json:"sexual"`
 	Violence       int16  `json:"violence"`
 	Source         string `json:"source"`
+	Width          int    `json:"width,omitempty"`
+	Height         int    `json:"height,omitempty"`
+	Thumbhash      string `json:"thumbhash,omitempty"`
 }
 
 // PublicScreenshot is one screenshot — a complete CDN URL.
@@ -507,6 +514,70 @@ type PublicWorkListItem struct {
 	// caller may see (sfw callers never receive a sexual-flagged cover).
 	Cover   string `json:"cover,omitempty"`
 	Updated string `json:"updated"`
+
+	// ── include= rich-brief blocks (A2-1a, refs/proj/126 D1/D7) ──────────
+	// Every block is absent unless its token appears in include=, so the
+	// default response is byte-identical to the frozen W1 contract. Each is
+	// batch-loaded per page (never per row).
+	Names   *PublicWorkNames      `json:"names,omitempty"`
+	Intros  *PublicWorkIntros     `json:"intros,omitempty"`
+	Labels  []PublicWorkLabel     `json:"labels,omitempty"`
+	Ratings []PublicRating        `json:"ratings,omitempty"`
+	Covers  *PublicWorkCoverSlots `json:"covers,omitempty"`
+}
+
+// PublicWorkNames is the D7 product-key title pivot (include=names): the
+// catalog's BCP-47 title languages projected onto the four product keys the
+// downstream faces render (ja-jp / zh-cn / zh-tw / en-us). A language outside
+// those four is DROPPED — this block is a rendering convenience, not the
+// complete title set (the detail face's titles[] stays the full projection).
+// Every key is omitted when the work has no title for it.
+type PublicWorkNames struct {
+	JaJP string `json:"ja-jp,omitempty"`
+	ZhCN string `json:"zh-cn,omitempty"`
+	ZhTW string `json:"zh-tw,omitempty"`
+	EnUS string `json:"en-us,omitempty"`
+}
+
+// PublicWorkIntroSlot is one product key's intro with its provenance. machine
+// mirrors PublicWorkIntro.Machine: an LLM machine translation, which surfaces
+// only when that language has no source row.
+type PublicWorkIntroSlot struct {
+	Intro   string `json:"intro"`
+	Source  string `json:"source"`
+	Machine bool   `json:"machine,omitempty"`
+}
+
+// PublicWorkIntros is the D7 product-key intro pivot (include=intros), same
+// four keys and same "outside the four is dropped" rule as PublicWorkNames.
+type PublicWorkIntros struct {
+	JaJP *PublicWorkIntroSlot `json:"ja-jp,omitempty"`
+	ZhCN *PublicWorkIntroSlot `json:"zh-cn,omitempty"`
+	ZhTW *PublicWorkIntroSlot `json:"zh-tw,omitempty"`
+	EnUS *PublicWorkIntroSlot `json:"en-us,omitempty"`
+}
+
+// PublicCoverSlot is one filled cover slot: a complete CDN URL plus the
+// intrinsic display metadata (omitted when image_service has no entry) and the
+// source's content flags.
+type PublicCoverSlot struct {
+	URL       string `json:"url"`
+	Width     int    `json:"width,omitempty"`
+	Height    int    `json:"height,omitempty"`
+	Thumbhash string `json:"thumbhash,omitempty"`
+	Sexual    int16  `json:"sexual"`
+	Violence  int16  `json:"violence"`
+	Source    string `json:"source"`
+}
+
+// PublicWorkCoverSlots is the two-slot cover projection (include=covers): the
+// vertical key art a card renders and the horizontal art a hero banner
+// renders. Either may be null when the work has no cover that fits the slot
+// (and an sfw caller never sees a sexual-flagged cover in either). The two MAY
+// point at the same image when a work carries only one usable cover.
+type PublicWorkCoverSlots struct {
+	Portrait *PublicCoverSlot `json:"portrait"`
+	Banner   *PublicCoverSlot `json:"banner"`
 }
 
 // PublicWorksListData is the keyset works-list envelope. next_cursor is null

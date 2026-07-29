@@ -40,7 +40,7 @@
 | 公开端点(`/v1`) | scope | 说明 |
 |---|---|---|
 | `GET /v1/catalog/works/{id}` | `catalog:read` | 注册行:display_name / titles / medium / 分级 / 外部锚(来源白名单过滤,见 [06 §11](./06-security-compliance.md))/ **认领指针**(→ 内容面路由,见 [01 §3.3](./01-design.md))+ **全量聚合 facet**(wave 104 加法扩容:popularity/ratings/tags/playtimes/series/platforms/intro/covers/screenshots/characters/labels/releases——source 键归因、CDN 完整 URL、字符串词表);**R18 调用方自控**:`nsfw=1` 出 r18 作品与 r18 关系端(works/lookup/names/characters/labels 同参;characters 另有 `spoilers=0-2` + sexual traits 随 nsfw),缺省隐藏与 Phase-1 逐字节一致;`updated` 恒在(doc 106);`releases[]` 每行带 `id`+`refs[]`,`tags[]` 每行带 canonical `canonical_id/tier/kind`(doc 106,未映射省略) |
-| `GET /v1/catalog/works` | `catalog:read` | **作品浏览/列表(doc 106 G1,keyset)**:过滤 `content_rating`/`claimed`/`label_id`/`tag_id`(canonical)/`series_id`/`platform`/`released_after\|before`/`ids`(≤100);`sort=id\|updated`;item = 轻 brief(+`release_date`/`olang`/`cover` 单图/`updated`);`nsfw` 同参;`next_cursor` 末页 null |
+| `GET /v1/catalog/works` | `catalog:read` | **作品浏览/列表(doc 106 G1,keyset)**:过滤 `content_rating`/`claimed`/`label_id`/`tag_id`(canonical)/`series_id`/`platform`/`released_after\|before`/`ids`(≤100);`sort=id\|updated`;item = 轻 brief(+`release_date`/`olang`/`cover` 单图/`updated`);`nsfw` 同参;`next_cursor` 末页 null。**`include=` 富 brief 块(A2-1a 加法波)**:词表 `names,intros,labels,ratings,covers`(逗号分隔,**未知 token 静默忽略**,§3.5 条款 2);每块按页内 work id **批量加载**(无 N+1),未点名即整块缺席——**缺省(无 `include=`)响应与本波前逐字节相同**。`names`/`intros` 走 D7 四键投影(见 §3.2.1 表①),`labels`/`ratings` 与详情面同形同口径(评分保持源原生分制,不聚合),`covers` 出 `{portrait, banner}` 两槽、每槽带 `width/height/thumbhash`(见 §3.2.1);`ids=` + `include=` 即批量富取(两梯队的 batch 替代面) |
 | `GET /v1/catalog/changes` | `catalog:read` | **增量同步流(doc 106 G2,keyset)**:`{entity_type=work, cursor, limit}` → `[{entity_type, id, updated}]`;`next_cursor` 恒在(续轮询新行);**无 nsfw 门**(id+时间戳=身份非内容,详情跟查再门控)。**删除不经此流**——行离开 LIVE 集(软删/降级/退出 galgame 媒介)后只是从流中**静默消失**,不发 tombstone;**合并型消亡由 `GET /v1/catalog/redirects` 覆盖**(旧 id → canonical id),**镜像型消费者应周期性全量对账**(`works?sort=id` keyset 扫 id 全集,与本地镜像取差集即失效行)。`op` 字段登记为将来的加法扩展位(现不下发,消费端须按 §3.5 条款 2 忽略未知字段)。**流有意滞后 ~5 秒**(2026-07-28 cleanup 波):`updated_at` 是**语句时间**而非提交时间,不设滞后则长事务可能提交出一行 `updated_at` 已落在消费者水位之后的记录 → 该行被**永久跳过**;拒发 5 秒内的新行,使提交耗时 ≤5s 的在途事务不可能被漏掉 |
 | `GET /v1/catalog/works/{id}/credits` | `catalog:read` | 该作品的 credits(名义/角色/role) |
 | `GET /v1/catalog/works/{id}/relations` | `catalog:read` | 跨媒介关系(改编/续作/同世界观…,单行双向渲染) |
@@ -77,7 +77,62 @@
 > - **可见性继承各实体详情面**:命中后委派 `names/{id}` / `characters/{id}` / `labels/{id}` 的投影(`include` 重块关闭),因此 `nsfw` 语义与那三个端点逐字一致(例:character 身份不因 `nsfw=0` 隐藏,只掉 sexual traits;r18 隐藏仍只是 `work` 面的规则)。
 > - **响应加法**:`PublicLookupData` / 批量 item 新增可选块 `name` / `character` / `label`(不命中即整块省略),`work` / `claimed_by` 字段语义不变;批量 item 另加恒在的 `type` 回显。spec-breaking 门(oasdiff)背书为非破坏。
 >
-> **封面严格度:列表面 > 详情面(对 sfw 调用方)**——`works` 列表的单图 `cover` 对 sfw 调用方会**丢弃 `sexual≠0` 的封面**(挑不出合规图时 `cover` 为空串),而详情面 `covers[]` / `screenshots[]` **恒发全量**并逐行带 `sexual` / `violence` 旗标交由消费端自行取舍。
+> **封面严格度:列表面 > 详情面(对 sfw 调用方)**——`works` 列表的单图 `cover` 对 sfw 调用方会**丢弃 `sexual≠0` 的封面**(挑不出合规图时 `cover` 为空串),而详情面 `covers[]` / `screenshots[]` **恒发全量**并逐行带 `sexual` / `violence` 旗标交由消费端自行取舍。列表 `include=covers` 的两槽同样吃这条 sfw 规则(见 §3.2.1)。
+
+### 3.2.1 D7 投影约定(2026-07-29 A2-1a 落账)
+
+三张对照表,定义公开面在「多语言」「模糊日期」「机翻」三处的**投影口径**。它们描述的是既有数据的**呈现约定**,不新增任何数据源。
+
+**① 语言标签 → 产品四键**(用于 `works?include=names,intros`)
+
+catalog 内部按 BCP-47 存语言(`ja` / `zh-Hans` / `zh-Hant` / `en`、以及历史遗留的裸 `zh`);产品面(kungal / moyu / letmoe)统一渲染四个 locale 键。投影表:
+
+| catalog 语言标签 | 产品键 | 备注 |
+|---|---|---|
+| `ja`、`ja-*` | `ja-jp` | |
+| `zh-Hans`、裸 `zh`、其余 `zh*` 非 Hant | `zh-cn` | 产生裸 `zh` 的来源全部是简体,故并入 |
+| `zh-Hant`、`zh-Hant-*`、`zh-TW`、`zh-HK` | `zh-tw` | |
+| `en`、`en-*` | `en-us` | |
+| **其它一切**(`ko` / `ru` / …) | **丢弃** | |
+
+- **四键之外的语言在该块里丢弃**,不是丢失:详情面 `titles[]` / `intro[]` 恒发**完整**语言集合,富 brief 块只是渲染便利。
+- **每键选唯一行**:`names` 取该键下 **kind 最低**的一行(`official`(0) > `alias`(1) > `abbreviation`(2)——与详情面 `titles[]` 的 `ORDER BY kind` 同一序),同 kind 再按行 id 升序定序;**`search_hint`(kind=3)永不公开**(既有硬规则,查询层即排除)。两个语言映射到同一键时(`zh-Hans` 与裸 `zh`),按上述定序取首行,结果稳定可重放。
+- `intros` 的每语言归并在读面已完成(每语言最优来源胜出 + 机翻让位于源文,见表③),此块只做重新键控:按 lang 升序取首个落入该键的行。
+
+**② release `date` ↔ 旧面 `release_date` + `release_precision`**
+
+catalog 的 release 日期是**部分 ISO**:`YYYY` / `YYYY-MM` / `YYYY-MM-DD`,精度**由字符串长度自明**,不另发精度字段。与弃用的 `/v1/galgame` 面(`release_date` 是**归一化**的完整日期,精度另存 `release_precision`)对照:
+
+| 旧面(`/v1/galgame`) | catalog `date` / `release_date` | 说明 |
+|---|---|---|
+| `release_date=2021-06-04`, `release_precision=day` | `"2021-06-04"` | 长度 10 |
+| `release_date=2021-06-01`, `release_precision=month` | `"2021-06"` | 长度 7;**日不得臆造**,旧面归一化补的 `01` 是占位符,不要回读为 1 号 |
+| `release_date=2021-01-01`, `release_precision=year` | `"2021"` | 长度 4;同上,月/日均为占位符 |
+| `release_precision=tba` / `unknown` / `release_date=null` | **`null`** | 作品级 `release_date`(最早 release)与 release 级 `date` 同此口径 |
+
+- 作品级 `release_date` = 该作品**最早**有年份的 release 的部分 ISO;无任何带年份的 release 即 `null`。
+- 消费端解析建议:按长度分派(4 / 7 / 10),**不要**用 `Date.parse` 后取字段——那会把 `"2021"` 悄悄变成 1 月 1 日,正是本表要避免的失真。
+
+**③ intro `machine` 旗标语义**
+
+| `machine` | 含义 | 消费端建议 |
+|---|---|---|
+| 缺席 / `false` | **源文**:来自 `source` 指名的上游站点原文 | 直接展示 |
+| `true` | **机器翻译**(LLM,step 75 ja→zh-Hans 起):`source` 仍是**被翻译的那个源**,归因语义是"译自该源" | 展示时应标注「机翻」之类的提示,不与源文等同 |
+
+- **机翻永不冒充源文**:某语言只要存在源文行,机翻行就在读面归并中落败、根本不出现;`machine=true` 只可能出现在"该语言没有任何源文"的语言上。
+- 该旗标同时出现在详情面 `intro[]` 与列表 `include=intros` 的每个槽,语义逐字一致。
+
+**④ `include=covers` 两槽判据**(与三表同批落账)
+
+`covers` 出 `{portrait, banner}`,每槽 `{url, width, height, thumbhash, sexual, violence, source}` 或 `null`。
+
+- **朝向来自真实尺寸,不来自 `kind`**:注册表的 `kind` 是样图分类词表(catalog 原生行全为 `main`;wiki 桥面另有 `""` / `dig` / `pkgfront` / `pkgback` / `pkgcontent` / `pkgmed` / `pkgside`),**没有一个词说明图片是横是竖**。判据沿用仓内既有的竖版定义 `height > width × 1.05`(`cmd/pin-portrait-covers` 的 U 轨切点)。
+- `portrait` = `portrait_pinned` 行 → 否则首个尺寸判定为竖版的封面 → 否则该调用方可见的首图(按 `sort_order`, `image_hash` 序),**故有可见封面时恒非 null**。
+- `banner` = 首个尺寸判定为横版的封面;**无(含 image_service 查询未接线时)即 `null`**,绝不猜。
+- 只有一张可用封面时两槽可能指向同一图,这是预期。
+- `width` / `height` / `thumbhash` 来自 image_service 的按需批量查询,**未知即三键一并省略**(消费端退回骨架屏);详情面 `covers[]` 每行同样带这三个可选键(A2-1a 加法,screenshots 待后续波)。
+- sfw 调用方在**两槽**都永不见 `sexual≠0` 的封面(与列表单图 `cover` 同一规则;`violence` 同样不入门槛)。
 
 ### 3.5 稳定性承诺
 

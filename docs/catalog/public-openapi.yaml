@@ -632,6 +632,9 @@ components:
     PublicCover:
       additionalProperties: false
       properties:
+        height:
+          format: int64
+          type: integer
         kind:
           type: string
         portrait_pinned:
@@ -641,14 +644,46 @@ components:
           type: integer
         source:
           type: string
+        thumbhash:
+          type: string
         url:
           type: string
         violence:
           format: int32
           type: integer
+        width:
+          format: int64
+          type: integer
       required:
         - url
         - portrait_pinned
+        - sexual
+        - violence
+        - source
+      type: object
+    PublicCoverSlot:
+      additionalProperties: false
+      properties:
+        height:
+          format: int64
+          type: integer
+        sexual:
+          format: int32
+          type: integer
+        source:
+          type: string
+        thumbhash:
+          type: string
+        url:
+          type: string
+        violence:
+          format: int32
+          type: integer
+        width:
+          format: int64
+          type: integer
+      required:
+        - url
         - sexual
         - violence
         - source
@@ -1385,6 +1420,17 @@ components:
         - content_rating
         - claimed_by
       type: object
+    PublicWorkCoverSlots:
+      additionalProperties: false
+      properties:
+        banner:
+          $ref: "#/components/schemas/PublicCoverSlot"
+        portrait:
+          $ref: "#/components/schemas/PublicCoverSlot"
+      required:
+        - portrait
+        - banner
+      type: object
     PublicWorkIntro:
       additionalProperties: false
       properties:
@@ -1400,6 +1446,31 @@ components:
         - lang
         - intro
         - source
+      type: object
+    PublicWorkIntroSlot:
+      additionalProperties: false
+      properties:
+        intro:
+          type: string
+        machine:
+          type: boolean
+        source:
+          type: string
+      required:
+        - intro
+        - source
+      type: object
+    PublicWorkIntros:
+      additionalProperties: false
+      properties:
+        en-us:
+          $ref: "#/components/schemas/PublicWorkIntroSlot"
+        ja-jp:
+          $ref: "#/components/schemas/PublicWorkIntroSlot"
+        zh-cn:
+          $ref: "#/components/schemas/PublicWorkIntroSlot"
+        zh-tw:
+          $ref: "#/components/schemas/PublicWorkIntroSlot"
       type: object
     PublicWorkLabel:
       additionalProperties: false
@@ -1429,15 +1500,33 @@ components:
           type: string
         cover:
           type: string
+        covers:
+          $ref: "#/components/schemas/PublicWorkCoverSlots"
         display_name:
           type: string
         id:
           format: int64
           type: integer
+        intros:
+          $ref: "#/components/schemas/PublicWorkIntros"
+        labels:
+          items:
+            $ref: "#/components/schemas/PublicWorkLabel"
+          type:
+            - array
+            - "null"
         medium:
           type: string
+        names:
+          $ref: "#/components/schemas/PublicWorkNames"
         olang:
           type: string
+        ratings:
+          items:
+            $ref: "#/components/schemas/PublicRating"
+          type:
+            - array
+            - "null"
         release_date:
           type:
             - string
@@ -1453,6 +1542,18 @@ components:
         - release_date
         - claimed_by
         - updated
+      type: object
+    PublicWorkNames:
+      additionalProperties: false
+      properties:
+        en-us:
+          type: string
+        ja-jp:
+          type: string
+        zh-cn:
+          type: string
+        zh-tw:
+          type: string
       type: object
     PublicWorksListData:
       additionalProperties: false
@@ -2081,6 +2182,13 @@ paths:
           schema:
             description: true/1 = include r18 works (default false = dropped)
             type: boolean
+        - description: "Comma-separated rich-brief blocks: names,intros,labels,ratings,covers (default: none — the response is then byte-identical to the base contract). Unknown tokens are ignored. names/intros are keyed by the four product locales ja-jp/zh-cn/zh-tw/en-us; covers carries the portrait + banner slots with width/height/thumbhash"
+          explode: false
+          in: query
+          name: include
+          schema:
+            description: "Comma-separated rich-brief blocks: names,intros,labels,ratings,covers (default: none — the response is then byte-identical to the base contract). Unknown tokens are ignored. names/intros are keyed by the four product locales ja-jp/zh-cn/zh-tw/en-us; covers carries the portrait + banner slots with width/height/thumbhash"
+            type: string
       responses:
         "200":
           content:

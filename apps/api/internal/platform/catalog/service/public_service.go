@@ -30,6 +30,11 @@ type PublicService struct {
 	mediums map[int16]string // medium id → key (seeded, tiny, loaded once)
 	sources map[int16]string // source id → PUBLIC key (facet provenance, wave 104)
 	cdnBase string           // image CDN base — covers/screenshots render complete URLs, never hashes
+	// imageMeta / metaCache are the A2-1a cover enrichment (dimensions +
+	// thumbhash, and the orientation evidence the cover-slot picker needs).
+	// Both nil = enrichment off, which degrades gracefully (see WithImageMeta).
+	imageMeta ImageMetaFunc
+	metaCache *imageMetaCache
 }
 
 // NewPublicService builds the public projection over the catalog DB, reusing the
@@ -308,7 +313,7 @@ func (s *PublicService) WorkDetail(ctx context.Context, id int64, inc PublicIncl
 		ClaimedBy:     claimedBy(w.Site, w.ProductWorkID),
 		Updated:       w.UpdatedAt.UTC().Format(time.RFC3339),
 	}
-	s.attachWorkFacets(&rec, detail)
+	s.attachWorkFacets(ctx, &rec, detail)
 	rec.SeriesSiblings = s.publicSeriesSiblings(detail.SeriesSiblings, nsfw)
 	if inc.Relations {
 		rec.Relations = s.publicRelations(detail.Relations, nsfw)
@@ -346,7 +351,9 @@ func (s *PublicService) publicRelations(rels []WorkRelationRow, nsfw bool) []dto
 // attachWorkFacets projects every aggregation facet onto the public record
 // (wave 104 全量开放): source keys not ids, CDN URLs not hashes, string
 // vocabularies not enum ints. Every block is always present ([] when empty).
-func (s *PublicService) attachWorkFacets(rec *dto.PublicCatalogWork, detail *WorkDetail) {
+// ctx carries the one batched image_service lookup that enriches covers with
+// width/height/thumbhash (A2-1a); screenshots stay un-enriched for now.
+func (s *PublicService) attachWorkFacets(ctx context.Context, rec *dto.PublicCatalogWork, detail *WorkDetail) {
 	rec.Releases = make([]dto.PublicRelease, 0, len(detail.Releases))
 	for _, rd := range detail.Releases {
 		r := rd.Release
@@ -413,15 +420,20 @@ func (s *PublicService) attachWorkFacets(rec *dto.PublicCatalogWork, detail *Wor
 		})
 	}
 	rec.Covers = make([]dto.PublicCover, 0, len(detail.Covers))
+	coverMeta := s.coverMetaFor(ctx, detail.Covers)
 	for _, c := range detail.Covers {
 		url := s.imageURL(c.ImageHash)
 		if url == "" {
 			continue // never a bare hash on the public face
 		}
-		rec.Covers = append(rec.Covers, dto.PublicCover{
+		pc := dto.PublicCover{
 			URL: url, Kind: c.Kind, PortraitPinned: c.PortraitPinned,
 			Sexual: c.Sexual, Violence: c.Violence, Source: s.sourceKey(c.SourceID),
-		})
+		}
+		if m, ok := coverMeta[c.ImageHash]; ok {
+			pc.Width, pc.Height, pc.Thumbhash = m.Width, m.Height, m.Thumbhash
+		}
+		rec.Covers = append(rec.Covers, pc)
 	}
 	rec.Screenshots = make([]dto.PublicScreenshot, 0, len(detail.Screenshots))
 	for _, sc := range detail.Screenshots {

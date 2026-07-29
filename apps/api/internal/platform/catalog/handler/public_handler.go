@@ -507,9 +507,15 @@ func datePub(raw string) (int64, bool) {
 
 // WorksList serves GET /v1/catalog/works — the keyset works browse lane
 // (doc 106 G1). Filters are conjunctive; sort=id (ASC, default) | updated
-// (DESC, newest first). A malformed cursor / filter is a 400, never a 500.
+// (DESC, newest first). include= attaches the rich-brief blocks (A2-1a);
+// an unknown token is ignored, never a 400. A malformed cursor / filter is a
+// 400, never a 500.
 func (h *PublicHandler) WorksList(c fiber.Ctx) error {
-	f := service.WorksListFilter{NSFW: nsfwQuery(c), Platform: strings.TrimSpace(c.Query("platform"))}
+	f := service.WorksListFilter{
+		NSFW:     nsfwQuery(c),
+		Platform: strings.TrimSpace(c.Query("platform")),
+		Include:  service.ParseWorksListInclude(c.Query("include")),
+	}
 	switch sort := c.Query("sort"); sort {
 	case "", "id":
 		f.Sort = "id"

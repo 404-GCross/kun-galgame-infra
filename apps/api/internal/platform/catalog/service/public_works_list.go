@@ -19,8 +19,9 @@ import (
 	"api/internal/platform/catalog/model"
 )
 
-// WorksListFilter is the works browse lane's filter set (all optional; zero
-// value = the whole fetchable set). Date bounds are composed ordinals
+// WorksListFilter is the works browse lane's request shape: the filter set
+// (all optional; zero value = the whole fetchable set) plus the include=
+// projection selector. Date bounds are composed ordinals
 // (y*10000 + m*100 + d) over the EARLIEST release date per work.
 type WorksListFilter struct {
 	ContentRating  *int16 // model.ContentRating* — nil = all (r18 still needs NSFW)
@@ -34,6 +35,10 @@ type WorksListFilter struct {
 	IDs            []int64
 	NSFW           bool
 	Sort           string // "id" (default, ASC) | "updated" (DESC, newest first)
+	// Include selects the optional rich-brief blocks (A2-1a). The zero value
+	// asks for none, which is what keeps the default page byte-identical to
+	// the frozen W1 contract.
+	Include WorksListInclude
 }
 
 // WorksList serves the keyset works browse lane. Returns one page of enriched
@@ -159,7 +164,7 @@ func (s *PublicService) WorksList(ctx context.Context, f WorksListFilter, cursor
 			UpdatedAt: r.UpdatedAt.UTC().Format(time.RFC3339),
 		}
 	}
-	items, err := s.enrichWorkListItems(ctx, src, f.NSFW)
+	items, err := s.enrichWorkListItems(ctx, src, f.NSFW, f.Include)
 	if err != nil {
 		return dto.PublicWorksListData{}, err
 	}
@@ -261,8 +266,9 @@ type workListSourceRow struct {
 // enrichWorkListItems projects one page of registry rows to the public list
 // items, batch-attaching release_date (earliest release, partial ISO) and one
 // representative cover (portrait pin first; sexual-flagged covers are never
-// served to sfw callers). Order is preserved.
-func (s *PublicService) enrichWorkListItems(ctx context.Context, rows []workListSourceRow, nsfw bool) ([]dto.PublicWorkListItem, error) {
+// served to sfw callers), then whatever include= asked for on top. Order is
+// preserved. The cover set is loaded ONCE and shared with the covers block.
+func (s *PublicService) enrichWorkListItems(ctx context.Context, rows []workListSourceRow, nsfw bool, inc WorksListInclude) ([]dto.PublicWorkListItem, error) {
 	if len(rows) == 0 {
 		return []dto.PublicWorkListItem{}, nil
 	}
@@ -288,6 +294,9 @@ func (s *PublicService) enrichWorkListItems(ctx context.Context, rows []workList
 			ReleaseDate: dates[r.ID], ClaimedBy: claimedBy(r.Site, r.ProductWorkID),
 			Cover: s.pickListCover(covers[r.ID], nsfw), Updated: r.UpdatedAt,
 		}
+	}
+	if err := s.attachWorkListBlocks(ctx, out, rows, subjects, covers, inc, nsfw); err != nil {
+		return nil, err
 	}
 	return out, nil
 }
