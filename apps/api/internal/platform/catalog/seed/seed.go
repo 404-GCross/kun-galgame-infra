@@ -214,6 +214,14 @@ func sources() []model.CatalogSource {
 		// (community-maintained cross-reference, the same R8 middle tier as
 		// EG's vndb column — refs/proj/91). Same tier as steam (8).
 		{ID: 15, Key: "dmm", TrustTier: 2, Note: "DMM storefront (EG cross-reference lane, step 91)"},
+		// web is the generic external-webpage catch-all: a link whose host has
+		// no dedicated source row (an official site, a fan page, a storefront we
+		// do not model). Its external_id is the FULL URL rather than a
+		// site-native id, so it can never anchor an identity — rows are
+		// link_kind=related only, and the lowest trust tier says so. Added by
+		// the data-layer-retirement wave (refs/plans/10 W0), which rescues the
+		// wiki family's 5,410 hand-entered links.
+		{ID: 16, Key: "web", TrustTier: 2, Note: "generic external web page (external_id = full URL, related links only)"},
 	}
 }
 

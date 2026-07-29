@@ -66,6 +66,7 @@ func Run(db *gorm.DB) error {
 		&model.CatalogWorkPlaytime{},   // per-source playtime estimates (step 91 playtime facet — no claimed bridge)
 		&model.CatalogSeries{},         // work series entity (step 94, dlsite lane first)
 		&model.CatalogSeriesMember{},   // series membership (step 94)
+		&model.CatalogSeriesIntro{},    // multilingual series intros (refs/plans/10 W0 拍板 3)
 		&model.CatalogPlatform{},       // platform vocabulary registry (step 96)
 		&model.CatalogWorkPlatform{},   // work-level platform facet (step 96, bgm lane)
 		&model.CatalogRelease{},
@@ -74,11 +75,19 @@ func Run(db *gorm.DB) error {
 		&model.CatalogWorkLabel{},     // work↔label attribution edge (step 18)
 		&model.CatalogWorkCharacter{}, // work↔character roster edge (step 45)
 
+		// Engine facet (refs/plans/10 W0 拍板 4): the wiki family's engine
+		// layer has no upstream to regenerate from, so it is migrated rather
+		// than discarded. catalog_engine before catalog_work_engine so the
+		// engine_id FK can be created.
+		&model.CatalogEngine{},
+		&model.CatalogWorkEngine{},
+
 		// Tag canonical layer (step 74, doc 70a): the cross-source convergence
 		// vocabulary ABOVE the original tag layers. catalog_tag before
 		// catalog_tag_source_map so the tag_id FK can be created.
 		&model.CatalogTag{},
 		&model.CatalogTagSourceMap{},
+		&model.CatalogTagIntro{}, // multilingual tag intros (refs/plans/10 W0 拍板 3)
 
 		// Reconciliation family (step 04).
 		&model.CatalogExternalRef{},

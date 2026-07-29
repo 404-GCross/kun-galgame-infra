@@ -97,8 +97,9 @@ func TestHandSeedsIntegrity(t *testing.T) {
 	// 11 pinned by refs/proj/02 + galgame_wiki (id 12, step 52 bridged-media
 	// provenance) + upscale (id 13, step 53 derived-cover provenance) + cien
 	// (id 14, refs/proj/83 E2b org/label link facet) + dmm (id 15, step 91
-	// EG cross-reference store lane).
-	assert.Len(t, sources(), 15)
+	// EG cross-reference store lane) + web (id 16, refs/plans/10 W0 generic
+	// external-page catch-all for the rescued wiki links).
+	assert.Len(t, sources(), 16)
 	// 13 pinned by refs/proj/02 + 3 symmetric character/setting-variation keys
 	// added in step 30 (shares_character / alternative_setting / alternative_version).
 	assert.Len(t, relationTypes(), 16)
