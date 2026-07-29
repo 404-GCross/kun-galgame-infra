@@ -404,7 +404,7 @@ func Load() (*Config, error) {
 		Port:     getEnv("KUN_GALGAME_PG_PORT", cfg.Database.Port),
 		User:     getEnv("KUN_GALGAME_PG_USER", cfg.Database.User),
 		Password: getEnv("KUN_GALGAME_PG_PASSWORD", cfg.Database.Password),
-		DBName:   getEnv("KUN_GALGAME_PG_DATABASE", "kun_galgame_wiki"),
+		DBName:   getEnv("KUN_GALGAME_PG_DATABASE", "kun_catalog"),
 		SSLMode:  getEnv("KUN_GALGAME_PG_SSLMODE", cfg.Database.SSLMode),
 		Timezone: getEnv("KUN_GALGAME_PG_TIMEZONE", cfg.Database.Timezone),
 	}

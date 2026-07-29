@@ -71,7 +71,7 @@ Every service uses `network_mode: host`, so:
    psql -h 127.0.0.1 -U postgres -f docker/initdb.d/01-create-databases.sh   # or run the CREATE DATABASE lines
    ```
 
-   (`kun_galgame_infra`, `kun_galgame_wiki`, `kun_images`, `kun_artifacts`,
+   (`kun_galgame_infra`, `kun_images`, `kun_artifacts`,
    `kun_catalog`, `kun_community`, `kun_trust`.)
 
 2. **GHCR access for the platform images** (they are private). The default `gh`
@@ -208,7 +208,7 @@ local script only downloads + restores (and deletes the download afterwards).
 
 | Group | Databases | How |
 | --- | --- | --- |
-| `core` (default) | kun_galgame_infra, kun_galgame_wiki, kungalgame, kungalgame_patch, kun_community, kun_catalog, kun_images, kun_artifacts | download desensitised `*.dump`, `terminate → drop → create → pg_restore -j4` |
+| `core` (default) | kun_galgame_infra, kungalgame, kungalgame_patch, kun_community, kun_catalog, kun_images, kun_artifacts | download desensitised `*.dump`, `terminate → drop → create → pg_restore -j4` |
 | `sources` | dlsite, erogamespace | raw `pg_dump -Fc | pg_restore` stream — **zero PII, zero desensitisation**, no artifact |
 | — | **kun_trust** | *not in any group.* Local trust = `go run ./cmd/migrate-trust` (re-seed). |
 | — | **letmoe (any `*letmoe*`)** | **hard-refused** by the script — letmoe runs its own seed system. |
@@ -269,7 +269,7 @@ local code has a newer migration than the snapshot, **run that repo's migration*
 ```sh
 cd apps/api
 go run ./cmd/migrate           # kun_galgame_infra (oauth + site models)
-go run ./cmd/migrate-catalog   # kun_galgame_wiki (galgame models) + kun_catalog — one entry point, two pools (W5)
+go run ./cmd/migrate-catalog   # galgame models + catalog models — one entry point, two pools, both on kun_catalog (dev split retired 2026-07-29)
 # cmd/image, cmd/artifact AutoMigrate on boot
 ```
 

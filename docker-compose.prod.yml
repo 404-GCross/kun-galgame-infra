@@ -41,9 +41,10 @@ x-infra-env: &infra-env
   KUN_PG_DATABASE: kun_galgame_infra
   KUN_PG_SSLMODE: disable
   KUN_PG_TIMEZONE: Asia/Shanghai
-  # W1 (wiki retirement, doc 19): the galgame content body now lives in
-  # kun_catalog — full byte-verified move on 2026-07-16; kun_galgame_wiki is a
-  # frozen rollback copy (>=30d retention). Flip back = revert this one line.
+  # W1 (wiki retirement, doc 19): the galgame content body lives in kun_catalog
+  # — full byte-verified move on 2026-07-16. The frozen rollback copy was
+  # archived + renamed to kun_galgame_wiki_retired_w1 on 2026-07-29 (final dump
+  # at /root/retired/); DROP it after 2026-08-15 (the >=30d retention).
   KUN_GALGAME_PG_DATABASE: kun_catalog
   KUN_IMAGES_PG_DATABASE: kun_images
   KUN_CATALOG_PG_DATABASE: kun_catalog

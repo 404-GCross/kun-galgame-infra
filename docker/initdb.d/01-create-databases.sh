@@ -5,7 +5,6 @@
 set -e
 
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-'EOSQL'
-	CREATE DATABASE kun_galgame_wiki;
 	CREATE DATABASE kun_images;
 	CREATE DATABASE kun_artifacts;
 	-- Cross-media catalog registry (identity + graph + credits), see cmd/migrate-catalog.

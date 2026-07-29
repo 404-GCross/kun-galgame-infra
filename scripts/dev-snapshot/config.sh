@@ -27,9 +27,10 @@ RETAIN_SNAPSHOTS=3
 # --- database groups ---------------------------------------------------------
 
 # core = the desensitised pipeline (download + restore). Charter 裁定 4.
+# kun_galgame_wiki retired 2026-07-29: the galgame (wiki-family) tables live
+# inside kun_catalog on BOTH prod and dev — the kun_catalog dump carries them.
 CORE_DBS=(
   kun_galgame_infra
-  kun_galgame_wiki
   kungalgame
   kungalgame_patch
   kun_community

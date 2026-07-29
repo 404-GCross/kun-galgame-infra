@@ -48,7 +48,9 @@ x-dev-env: &dev-env
   KUN_PG_DATABASE: kun_galgame_infra
   KUN_PG_SSLMODE: disable
   KUN_PG_TIMEZONE: Asia/Shanghai
-  KUN_GALGAME_PG_DATABASE: kun_galgame_wiki
+  # Same-DB posture as prod since the dev split retired (2026-07-29): the
+  # galgame (wiki-family) tables live inside kun_catalog everywhere.
+  KUN_GALGAME_PG_DATABASE: kun_catalog
   KUN_IMAGES_PG_DATABASE: kun_images
   KUN_CATALOG_PG_DATABASE: kun_catalog
   KUN_COMMUNITY_PG_DATABASE: kun_community
@@ -208,8 +210,9 @@ services:
     restart: "no"
 
   # Single entry point for BOTH content families since W5: galgame (wiki-family)
-  # models → KUN_GALGAME_PG_DATABASE (kun_galgame_wiki here — dev keeps the
-  # split-DB posture) and catalog models → KUN_CATALOG_PG_DATABASE (kun_catalog).
+  # models → KUN_GALGAME_PG_DATABASE and catalog models → KUN_CATALOG_PG_DATABASE.
+  # Both point at kun_catalog since the dev split retired (2026-07-29) — two
+  # pools, one database, same as prod.
   migrate-catalog:
     image: ghcr.io/kunmoe/infra-migrate-catalog:${INFRA_IMAGE_TAG:-latest}
     network_mode: host
@@ -323,9 +326,9 @@ services:
     restart: unless-stopped
 
   # catalog hosts the FULL galgame surface too (galgameapp.Mount — wiki
-  # retirement W2/W3): the wiki-family content DB stays split in dev
-  # (KUN_GALGAME_PG_DATABASE=kun_galgame_wiki) while the registry reads
-  # kun_catalog. In the `full` profile since W5 — it went from "rarely edited"
+  # retirement W2/W3): the wiki-family content pool and the registry both read
+  # kun_catalog (dev split retired 2026-07-29, matching prod).
+  # In the `full` profile since W5 — it went from "rarely edited"
   # to the most-edited service, so infra's `pnpm dev` runs it from source via
   # air (:9281) and only `dev:full` serves it from the image.
   catalog:

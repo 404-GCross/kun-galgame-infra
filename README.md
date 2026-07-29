@@ -42,7 +42,7 @@
 
 **共享基础设施**(本仓 compose 定义一次):Postgres、Redis、MinIO、Meilisearch。
 
-**一套 Postgres 承载全生态 5 个库**:`kun_galgame_infra`(oauth/用户)、`kun_galgame_wiki`、`kun_images`、`kungalgame`(下游论坛)、`kungalgame_patch`(下游补丁)。
+**一套 Postgres 承载全生态 5 个库**:`kun_galgame_infra`(oauth/用户)、`kun_catalog`(catalog+galgame 两族)、`kun_images`、`kungalgame`(下游论坛)、`kungalgame_patch`(下游补丁)。
 
 ## 技术栈
 
