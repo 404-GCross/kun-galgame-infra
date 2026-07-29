@@ -455,3 +455,58 @@ func TestNonTitleYearExactAnchorEntersBgmCandidates(t *testing.T) {
 	assert.EqualValues(t, 1, ratingCount(t, "WHERE work_id = ? AND source_id = ?", wGated, reg.bangumiSource))
 	assert.EqualValues(t, 0, ratingCount(t, "WHERE work_id = ?", wProbable))
 }
+
+func workUpdatedAt(t *testing.T, id int64) time.Time {
+	t.Helper()
+	var ts time.Time
+	require.NoError(t, testDB.Raw(`SELECT updated_at FROM catalog_work WHERE id = ?`, id).Scan(&ts).Error)
+	return ts
+}
+
+// TestRatingWriteTouchesHostWork pins the wave-117 discipline for the
+// change-detected lane: an effective rating/popularity write bumps the host
+// work's updated_at so the public /v1/catalog/changes feed can see it, while a
+// dry run and a refresh no-op leave the watermark exactly where it was. The
+// no-op half is the load-bearing one here — this job re-reads the whole mirror
+// on every pass, so a naive touch would republish every rated work nightly.
+func TestRatingWriteTouchesHostWork(t *testing.T) {
+	clean(t)
+	ctx := context.Background()
+	reg, err := resolveRegistry(ctx, testDB)
+	require.NoError(t, err)
+
+	wRated := mkWork(t, reg.galgameMedium, "touch-rated", nil)
+	mkAnchor(t, wRated, "801", reg.bangumiSource, model.LinkKindExact, "rule:bgm-title-year")
+	mkSubject(t, 801, 7.5, 120, `{"1":1,"8":9}`)
+
+	wBystander := mkWork(t, reg.galgameMedium, "touch-bystander", nil) // no anchor
+	stamp := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+	require.NoError(t, testDB.Exec(`UPDATE catalog_work SET updated_at = ?`, stamp).Error)
+
+	// Dry run decides but writes nothing.
+	_, err = Run(ctx, runOpts(false))
+	require.NoError(t, err)
+	assert.True(t, workUpdatedAt(t, wRated).Equal(stamp), "dry run must not touch")
+
+	st, err := Run(ctx, runOpts(true))
+	require.NoError(t, err)
+	require.Equal(t, 1, st.BgmWritten)
+	touched := workUpdatedAt(t, wRated)
+	assert.True(t, touched.After(stamp), "the rating write bumped its host work")
+	assert.True(t, workUpdatedAt(t, wBystander).Equal(stamp), "an unrated work stays put")
+
+	// Second apply with identical staging: the change-detected upsert writes
+	// nothing, so the watermark must not drift.
+	st, err = Run(ctx, runOpts(true))
+	require.NoError(t, err)
+	require.Zero(t, st.BgmWritten)
+	require.Equal(t, 1, st.BgmUnchanged)
+	assert.True(t, workUpdatedAt(t, wRated).Equal(touched), "a refresh no-op must not drift the watermark")
+
+	// A real value change writes again — and touches again.
+	require.NoError(t, testDB.Exec(`UPDATE src_bangumi.subject SET score = 8.5 WHERE id = 801`).Error)
+	st, err = Run(ctx, runOpts(true))
+	require.NoError(t, err)
+	require.Equal(t, 1, st.BgmWritten)
+	assert.True(t, workUpdatedAt(t, wRated).After(touched), "a changed score re-publishes the work")
+}

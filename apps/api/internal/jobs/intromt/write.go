@@ -8,6 +8,8 @@ import (
 	"sync"
 	"time"
 
+	"api/internal/platform/catalog/repository"
+
 	"gorm.io/gorm"
 )
 
@@ -49,6 +51,26 @@ type runner struct {
 	tr    Translator
 	stats *Stats
 	mu    sync.Mutex
+	// touched collects works whose machine intro was actually inserted or
+	// re-translated, so the run bumps their catalog_work.updated_at once at the
+	// end and the public changes feed learns the work is worth re-pulling.
+	// Guarded by mu — the apply path runs a worker pool. Unchanged rows,
+	// refusals and dry-runs contribute nothing, so a second --apply moves no
+	// watermark.
+	touched []int64
+}
+
+// markTouched records a work whose intro row this run really rewrote.
+func (r *runner) markTouched(workID int64) {
+	r.mu.Lock()
+	r.touched = append(r.touched, workID)
+	r.mu.Unlock()
+}
+
+// touch bumps updated_at on every work this run wrote an intro for. Called
+// after the worker pool has drained, so no lock is needed here.
+func (r *runner) touch(ctx context.Context) error {
+	return repository.TouchWorks(ctx, r.db, r.touched)
 }
 
 func (r *runner) inc(n *int) {
@@ -151,6 +173,7 @@ func (r *runner) handle(ctx context.Context, c candidate, apply bool, delay time
 		slog.Warn("refused to overwrite a source intro row", "work", c.WorkID, "source_id", c.JaSourceID)
 		return
 	}
+	r.markTouched(c.WorkID)
 	if dec == decRetrans {
 		r.inc(&r.stats.Retranslated)
 	} else {

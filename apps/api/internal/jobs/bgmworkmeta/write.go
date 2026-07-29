@@ -5,6 +5,7 @@ import (
 	"log/slog"
 
 	"api/internal/platform/catalog/model"
+	"api/internal/platform/catalog/repository"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -24,6 +25,16 @@ import (
 type writer struct {
 	db    *gorm.DB
 	stats *Stats
+	// touched collects works whose meta-tag or shelf facet actually changed, so
+	// the run bumps their catalog_work.updated_at once at the end and the public
+	// changes feed learns the work is worth re-pulling. Conflicts, refresh
+	// no-ops and dry-runs contribute nothing.
+	touched []int64
+}
+
+// touch bumps updated_at on every work this run effectively wrote for.
+func (w *writer) touch(ctx context.Context) error {
+	return repository.TouchWorks(ctx, w.db, w.touched)
 }
 
 // tagRow is one decided catalog_work_tag write (Count is always 0 — the
@@ -56,6 +67,7 @@ func (w *writer) writeTag(ctx context.Context, p tagRow, apply bool) {
 		return
 	}
 	w.stats.MetaWritten++
+	w.touched = append(w.touched, p.WorkID)
 }
 
 // favRow is one decided catalog_work_popularity write.
@@ -92,4 +104,5 @@ func (w *writer) writeFavorite(ctx context.Context, p favRow, apply bool) {
 		return
 	}
 	w.stats.FavWritten++
+	w.touched = append(w.touched, p.WorkID)
 }

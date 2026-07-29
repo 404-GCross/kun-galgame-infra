@@ -158,3 +158,48 @@ func TestVNDBRelationsCrossSourceConverge(t *testing.T) {
 	assert.Equal(t, int64(1), scalarInt(t,
 		`SELECT count(*) FROM catalog_work_relation WHERE a_work_id=`+itoa64(wB)+` AND b_work_id=`+itoa64(wA)+` AND relation_type_id=2`))
 }
+
+// TestVNDBRelationsTouchesBothEnds pins the wave-117 discipline for relation
+// edges: an edge changes what BOTH works render, so both hosts' updated_at move
+// and the public /v1/catalog/changes feed republishes the pair. A dry run and an
+// idempotent second pass must leave the watermark alone.
+func TestVNDBRelationsTouchesBothEnds(t *testing.T) {
+	if testDB == nil {
+		t.Skip("no test db")
+	}
+	clean(t)
+
+	w100 := seedVNDBWork(t, "v100")
+	w200 := seedVNDBWork(t, "v200")
+	wLone := seedVNDBWork(t, "v900") // anchored but never related
+	seedVNRelation(t, "v100", "seq", "v200")
+
+	stamp := "2020-01-01T00:00:00Z"
+	require.NoError(t, testDB.Exec(`UPDATE catalog_work SET updated_at = ?`, stamp).Error)
+	updatedAt := func(id int64) string {
+		var ts string
+		require.NoError(t, testDB.Raw(
+			`SELECT to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SSZ') FROM catalog_work WHERE id = ?`,
+			id).Scan(&ts).Error)
+		return ts
+	}
+
+	// Dry run decides but writes nothing.
+	_, err := New(testDB, nil, Options{DryRun: true}).RunVNDBRelations()
+	require.NoError(t, err)
+	assert.Equal(t, stamp, updatedAt(w100), "dry run must not touch")
+
+	st, err := New(testDB, nil, Options{}).RunVNDBRelations()
+	require.NoError(t, err)
+	require.Equal(t, 1, st.EdgesWritten)
+	assert.NotEqual(t, stamp, updatedAt(w100), "the a end is republished")
+	assert.NotEqual(t, stamp, updatedAt(w200), "the b end is republished too")
+	assert.Equal(t, stamp, updatedAt(wLone), "an unrelated work stays put")
+
+	touchedA, touchedB := updatedAt(w100), updatedAt(w200)
+	st2, err := New(testDB, nil, Options{}).RunVNDBRelations()
+	require.NoError(t, err)
+	require.Zero(t, st2.EdgesWritten)
+	assert.Equal(t, touchedA, updatedAt(w100), "a no-op re-run must not drift the watermark")
+	assert.Equal(t, touchedB, updatedAt(w200))
+}

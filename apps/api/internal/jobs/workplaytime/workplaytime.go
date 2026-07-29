@@ -28,6 +28,8 @@ import (
 	"regexp"
 	"strconv"
 
+	"api/internal/platform/catalog/repository"
+
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
@@ -172,6 +174,10 @@ func runEG(ctx context.Context, db *gorm.DB, opts Opts, ids registryIDs, st *Sta
 		}
 	}
 
+	// touched collects works whose playtime really moved, so the lane bumps their
+	// catalog_work.updated_at once and the public changes feed sees it. Unchanged
+	// upserts and dry-runs contribute nothing.
+	var touched []int64
 	for _, a := range anchors {
 		n, err := strconv.ParseInt(a.ExternalID, 10, 64)
 		if err != nil {
@@ -194,9 +200,11 @@ func runEG(ctx context.Context, db *gorm.DB, opts Opts, ids registryIDs, st *Sta
 		if !opts.Apply {
 			continue
 		}
-		upsert(ctx, db, a.WorkID, ids.egSource, minutes, 0, &st.EGWritten, &st.EGUnchanged, &st.Errors)
+		if upsert(ctx, db, a.WorkID, ids.egSource, minutes, 0, &st.EGWritten, &st.EGUnchanged, &st.Errors) {
+			touched = append(touched, a.WorkID)
+		}
 	}
-	return nil
+	return repository.TouchWorks(ctx, db, touched)
 }
 
 // runVndb: anchors ⋈ src_vndb.vn c_length (already minutes) → upsert.
@@ -217,6 +225,7 @@ func runVndb(ctx context.Context, db *gorm.DB, opts Opts, ids registryIDs, st *S
 		Scan(&rows).Error; err != nil {
 		return fmt.Errorf("load vndb playtimes: %w", err)
 	}
+	var touched []int64 // works whose playtime really moved (see runEG)
 	for _, r := range rows {
 		if r.Minutes <= 0 {
 			continue
@@ -229,9 +238,11 @@ func runVndb(ctx context.Context, db *gorm.DB, opts Opts, ids registryIDs, st *S
 		if !opts.Apply {
 			continue
 		}
-		upsert(ctx, db, r.WorkID, ids.vndbSource, r.Minutes, r.VoteCount, &st.VndbWritten, &st.VndbUnchanged, &st.Errors)
+		if upsert(ctx, db, r.WorkID, ids.vndbSource, r.Minutes, r.VoteCount, &st.VndbWritten, &st.VndbUnchanged, &st.Errors) {
+			touched = append(touched, r.WorkID)
+		}
 	}
-	return nil
+	return repository.TouchWorks(ctx, db, touched)
 }
 
 type anchor struct {
@@ -258,7 +269,9 @@ func loadAnchors(ctx context.Context, db *gorm.DB, medium, source int16) ([]anch
 
 // upsert writes one row with change detection: insert, or update only when the
 // stored (minutes, vote_count) differ — the second identical run writes zero.
-func upsert(ctx context.Context, db *gorm.DB, workID int64, sourceID int16, minutes, votes int, written, unchanged, errors *int) {
+// Reports whether the row actually moved, which is what the caller needs to
+// decide whose catalog_work.updated_at to bump.
+func upsert(ctx context.Context, db *gorm.DB, workID int64, sourceID int16, minutes, votes int, written, unchanged, errors *int) bool {
 	res := db.WithContext(ctx).Exec(`
 		INSERT INTO catalog_work_playtime (work_id, source_id, minutes, vote_count)
 		VALUES (?, ?, ?, ?)
@@ -270,13 +283,14 @@ func upsert(ctx context.Context, db *gorm.DB, workID int64, sourceID int16, minu
 	if res.Error != nil {
 		*errors++
 		slog.Warn("playtime upsert", "work", workID, "source", sourceID, "err", res.Error)
-		return
+		return false
 	}
 	if res.RowsAffected == 1 {
 		*written++
-	} else {
-		*unchanged++
+		return true
 	}
+	*unchanged++
+	return false
 }
 
 func chunkInt64(in []int64, size int) [][]int64 {

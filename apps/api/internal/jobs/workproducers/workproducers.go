@@ -21,12 +21,13 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"api/internal/platform/catalog/model"
+	"api/internal/platform/catalog/repository"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 	gormlogger "gorm.io/gorm/logger"
 )
 
@@ -129,18 +130,26 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 	}
 
 	if opts.Apply {
+		// touched collects the works that actually gained an edge. RETURNING is
+		// what makes that exact under ON CONFLICT DO NOTHING — it yields only the
+		// inserted rows, so a re-run over an already-complete edge set returns
+		// nothing and bumps no catalog_work.updated_at.
+		var touched []int64
 		for start := 0; start < len(rows); start += 2000 {
 			end := min(start+2000, len(rows))
-			batch := rows[start:end]
-			res := db.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&batch)
-			if res.Error != nil {
+			written, err := insertEdges(ctx, db, rows[start:end])
+			if err != nil {
 				st.Errors++
-				slog.Warn("edge batch insert", "start", start, "err", res.Error)
+				slog.Warn("edge batch insert", "start", start, "err", err)
 				continue
 			}
-			st.Written += int(res.RowsAffected)
+			st.Written += len(written)
+			touched = append(touched, written...)
 		}
 		st.SkippedDup = st.DevPlanned + st.PubPlanned - st.Written
+		if err := repository.TouchWorks(ctx, db, touched); err != nil {
+			return nil, fmt.Errorf("touch works: %w", err)
+		}
 	}
 
 	slog.Info("workproducers done", "apply", opts.Apply,
@@ -148,4 +157,27 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 		"written", st.Written, "skipped_dup", st.SkippedDup,
 		"unresolved_pairs", st.Unresolved, "errors", st.Errors)
 	return st, nil
+}
+
+// insertEdges inserts one batch of work↔label edges, insert-if-absent, and
+// returns the work ids of the rows that were really written (RETURNING under
+// ON CONFLICT DO NOTHING yields inserted rows only). Raw SQL rather than a GORM
+// batch create because GORM cannot hand back a non-primary-key column.
+func insertEdges(ctx context.Context, db *gorm.DB, batch []model.CatalogWorkLabel) ([]int64, error) {
+	var sb strings.Builder
+	sb.WriteString(`INSERT INTO catalog_work_label (work_id, label_id, kind, source_id) VALUES `)
+	args := make([]any, 0, len(batch)*4)
+	for i, r := range batch {
+		if i > 0 {
+			sb.WriteString(",")
+		}
+		sb.WriteString("(?,?,?,?)")
+		args = append(args, r.WorkID, r.LabelID, r.Kind, r.SourceID)
+	}
+	sb.WriteString(` ON CONFLICT DO NOTHING RETURNING work_id`)
+	var written []int64
+	if err := db.WithContext(ctx).Raw(sb.String(), args...).Scan(&written).Error; err != nil {
+		return nil, err
+	}
+	return written, nil
 }

@@ -27,6 +27,8 @@ import (
 	"log/slog"
 	"strings"
 
+	"api/internal/platform/catalog/repository"
+
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
@@ -200,6 +202,10 @@ func runBgm(ctx context.Context, db *gorm.DB, opts Opts, st *Stats) error {
 		}
 	}
 
+	// touched collects works that actually gained a title row, so the lane can
+	// bump their catalog_work.updated_at once and put them on the public changes
+	// feed. Dups, conflicts and dry-runs contribute nothing.
+	var touched []int64
 	for _, c := range cands {
 		if _, dup := existing[titleKey(c.workID, c.alias)]; dup {
 			st.BgmSkippedDup++
@@ -218,11 +224,12 @@ func runBgm(ctx context.Context, db *gorm.DB, opts Opts, st *Stats) error {
 		}
 		if res.RowsAffected == 1 {
 			st.BgmWritten++
+			touched = append(touched, c.workID)
 		} else {
 			st.BgmConflict++
 		}
 	}
-	return nil
+	return repository.TouchWorks(ctx, db, touched)
 }
 
 // runKana: anchored bodyless galgame works lacking a kind=3 row × mirror
@@ -276,6 +283,7 @@ func runKana(ctx context.Context, db *gorm.DB, opts Opts, st *Stats) error {
 		}
 	}
 
+	var touched []int64 // works that really gained a kana title (see runBgm)
 	for _, r := range rows {
 		k, ok := kana[r.Workno]
 		if !ok {
@@ -295,9 +303,10 @@ func runKana(ctx context.Context, db *gorm.DB, opts Opts, st *Stats) error {
 		}
 		if res.RowsAffected == 1 {
 			st.KanaWritten++
+			touched = append(touched, r.WorkID)
 		}
 	}
-	return nil
+	return repository.TouchWorks(ctx, db, touched)
 }
 
 func titleKey(workID int64, title string) string {

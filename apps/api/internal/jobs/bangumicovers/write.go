@@ -86,6 +86,7 @@ func (r *runner) writeCover(ctx context.Context, mirrorRoot string, c candidate,
 		return false
 	}
 	r.exist[c.WorkID] = true
+	r.touched = append(r.touched, c.WorkID)
 	r.c.coverUploaded++
 	return false
 }

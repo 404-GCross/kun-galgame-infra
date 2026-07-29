@@ -261,7 +261,14 @@ func (im *Importer) RunReleases() (ReleaseStats, error) {
 		}
 		st.ReleasesWritten = len(releases)
 		st.AnchorsWritten = len(refs)
-		return nil
+		// The releases hang off works that already existed, so their hosts have
+		// to surface on the public changes feed. plans is the not-yet-stored set
+		// (releaseKey dedup above), so a re-run plans nothing and touches nothing.
+		hosts := make([]int64, 0, len(releases))
+		for _, r := range releases {
+			hosts = append(hosts, r.WorkID)
+		}
+		return touchWorks(tx, hosts)
 	})
 	return st, err
 }

@@ -20,12 +20,14 @@
 package importer
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
 
 	"api/internal/platform/catalog/model"
+	"api/internal/platform/catalog/repository"
 
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
@@ -300,6 +302,58 @@ func selfRef(etype int16, id int64, source int16, extID, rule string) model.Cata
 	}
 }
 
+// touchWorks bumps catalog_work.updated_at for works whose facets an importer
+// just changed, so the public /v1/catalog/changes feed — which walks
+// catalog_work on an (updated_at, id) keyset — actually sees side-table writes.
+// Callers pass only works they really wrote to; an idempotent re-run writes
+// nothing and therefore touches nothing.
+//
+// The Run* entry points are one-shot CLI passes with no ambient context, hence
+// the background one here.
+func touchWorks(db *gorm.DB, workIDs []int64) error {
+	return repository.TouchWorks(context.Background(), db, workIDs)
+}
+
+// insertWorkLabelEdges inserts attribution edges insert-if-absent and returns
+// the works that really gained one. Raw SQL rather than a GORM batch create
+// because only RETURNING can tell an inserted row from a conflict-skipped one,
+// and the changes feed must not move for edges that were already there.
+func insertWorkLabelEdges(db *gorm.DB, edges []model.CatalogWorkLabel) ([]int64, error) {
+	var touched []int64
+	const batch = 1000
+	for start := 0; start < len(edges); start += batch {
+		end := min(start+batch, len(edges))
+		var sb strings.Builder
+		sb.WriteString(`INSERT INTO catalog_work_label (work_id, label_id, kind, source_id) VALUES `)
+		args := make([]any, 0, (end-start)*4)
+		for i := start; i < end; i++ {
+			e := edges[i]
+			if i > start {
+				sb.WriteString(",")
+			}
+			sb.WriteString("(?,?,?,?)")
+			args = append(args, e.WorkID, e.LabelID, e.Kind, e.SourceID)
+		}
+		sb.WriteString(` ON CONFLICT DO NOTHING RETURNING work_id`)
+		var hosts []int64
+		if err := db.Raw(sb.String(), args...).Scan(&hosts).Error; err != nil {
+			return nil, err
+		}
+		touched = append(touched, hosts...)
+	}
+	return touched, nil
+}
+
+// relationEndpoints flattens relation edges to the works on BOTH ends — a
+// series or sequel edge changes what each side renders, so both need the bump.
+func relationEndpoints(edges []model.CatalogWorkRelation) []int64 {
+	out := make([]int64, 0, len(edges)*2)
+	for _, e := range edges {
+		out = append(out, e.AWorkID, e.BWorkID)
+	}
+	return out
+}
+
 func importedRev(etype int16, id int64, snap datatypes.JSON) model.CatalogRevision {
 	return model.CatalogRevision{
 		EntityType: etype, EntityID: id, Revision: 1,
@@ -311,8 +365,13 @@ func importedRev(etype int16, id int64, snap datatypes.JSON) model.CatalogRevisi
 // doc-10 expression unique (work, credit_name, role, COALESCE(character,0)) —
 // a raw insert because GORM's OnConflict cannot target an expression index.
 // Returns the number actually written.
+//
+// RETURNING work_id hands back exactly the rows that landed, which is what the
+// host works' updated_at bump keys off: a re-run inserts nothing, so nothing is
+// touched and the public changes feed stays quiet.
 func (im *Importer) insertCredits(tx *gorm.DB, credits []model.CatalogCredit) (int, error) {
 	written := 0
+	var touched []int64
 	const batch = 1000
 	for start := 0; start < len(credits); start += batch {
 		end := min(start+batch, len(credits))
@@ -327,14 +386,15 @@ func (im *Importer) insertCredits(tx *gorm.DB, credits []model.CatalogCredit) (i
 			sb.WriteString("(?,?,?,?,?,?,?,?,now(),now())")
 			args = append(args, c.WorkID, c.CreditNameID, c.LabelID, c.RoleID, c.CharacterID, c.Spoiler, c.Note, c.SourceID)
 		}
-		sb.WriteString(` ON CONFLICT (work_id, credit_name_id, role_id, COALESCE(character_id, 0)) DO NOTHING`)
-		res := tx.Exec(sb.String(), args...)
-		if res.Error != nil {
-			return written, res.Error
+		sb.WriteString(` ON CONFLICT (work_id, credit_name_id, role_id, COALESCE(character_id, 0)) DO NOTHING RETURNING work_id`)
+		var hosts []int64
+		if err := tx.Raw(sb.String(), args...).Scan(&hosts).Error; err != nil {
+			return written, err
 		}
-		written += int(res.RowsAffected)
+		written += len(hosts)
+		touched = append(touched, hosts...)
 	}
-	return written, nil
+	return written, touchWorks(tx, touched)
 }
 
 // resolver looks up a source external id → entity id, preferring the

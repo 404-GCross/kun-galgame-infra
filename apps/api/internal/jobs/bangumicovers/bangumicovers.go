@@ -39,6 +39,7 @@ import (
 	"log/slog"
 	"time"
 
+	"api/internal/platform/catalog/repository"
 	"api/pkg/config"
 	"api/pkg/imageclient"
 
@@ -94,6 +95,11 @@ type runner struct {
 	exist      map[int64]bool
 	c          counters
 	pingHashes []string
+	// touched collects works that actually gained a cover row, so the run bumps
+	// their catalog_work.updated_at once at the end and the public changes feed
+	// learns the work is worth re-pulling. Dedup hits and dry-runs contribute
+	// nothing, so a second --apply moves no watermark.
+	touched []int64
 }
 
 // Run resolves the candidate set, forecasts (dry) or backfills (apply) the
@@ -160,6 +166,10 @@ func Run(ctx context.Context, cfg *config.Config, opts Opts) (map[string]any, er
 	}
 
 	quota := r.process(ctx, opts, cands, d)
+
+	if err := repository.TouchWorks(ctx, r.db, r.touched); err != nil {
+		return nil, fmt.Errorf("touch works: %w", err)
+	}
 
 	if opts.Apply {
 		for _, b := range chunk(r.pingHashes, 1000) {

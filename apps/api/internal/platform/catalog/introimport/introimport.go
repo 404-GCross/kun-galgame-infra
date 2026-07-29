@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	"api/internal/platform/catalog/model"
+	"api/internal/platform/catalog/repository"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -157,5 +158,15 @@ func Run(ctx context.Context, db *gorm.DB, opts Options) (Stats, error) {
 	// so it reflects a concurrent writer or a partially-applied prior run.
 	st.IntrosWritten = res.RowsAffected
 	st.WorksCovered = res.RowsAffected
+	// toWrite is the not-yet-stored set (works with an intro were filtered out
+	// above), so these hosts really gained one and belong on the public changes
+	// feed; a re-run plans nothing and returns before this point.
+	hosts := make([]int64, 0, len(toWrite))
+	for _, row := range toWrite {
+		hosts = append(hosts, row.WorkID)
+	}
+	if err := repository.TouchWorks(ctx, db, hosts); err != nil {
+		return st, fmt.Errorf("touch works: %w", err)
+	}
 	return st, nil
 }

@@ -176,6 +176,10 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 		}
 	}
 
+	if err := w.touch(ctx); err != nil {
+		return nil, fmt.Errorf("touch works: %w", err)
+	}
+
 	st.MetaDistinct = len(nameFreq)
 	st.MetaTopNames = topNames(nameFreq)
 

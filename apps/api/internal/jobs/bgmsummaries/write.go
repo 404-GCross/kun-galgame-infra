@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"api/internal/platform/catalog/model"
+	"api/internal/platform/catalog/repository"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -20,6 +21,16 @@ type runner struct {
 	sourceID int16
 	exist    map[int64]map[string]bool // work_id → intro langs already present (any source)
 	stats    *Stats
+	// touched collects works that actually gained an intro row, so the run bumps
+	// their catalog_work.updated_at once at the end and the public changes feed
+	// learns the work is worth re-pulling. Skips, conflicts and dry-runs
+	// contribute nothing, so a second --apply moves no watermark.
+	touched []int64
+}
+
+// touch bumps updated_at on every work this run wrote an intro for.
+func (r *runner) touch(ctx context.Context) error {
+	return repository.TouchWorks(ctx, r.db, r.touched)
 }
 
 // process walks the candidates and applies the fill-missing-language rule:
@@ -87,6 +98,7 @@ func (r *runner) enrich(ctx context.Context, c candidate, apply bool) {
 		r.exist[c.WorkID] = set
 	}
 	set[lang] = true
+	r.touched = append(r.touched, c.WorkID)
 	if lang == langJa {
 		r.stats.JaWritten++
 	} else {

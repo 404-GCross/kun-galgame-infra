@@ -326,8 +326,11 @@ func materializeRoster(plans []rosterPlan, char func(string) (int64, bool), matc
 // insertRosterEdges batch-inserts roster edges with ON CONFLICT (work_id,
 // character_id) DO NOTHING — insert-if-absent, so the first source to assert a
 // pair wins and re-runs write nothing. Returns the number actually written.
+// RETURNING work_id gives the host works whose roster really grew, so only they
+// surface on the public changes feed.
 func insertRosterEdges(tx *gorm.DB, edges []model.CatalogWorkCharacter) (int, error) {
 	written := 0
+	var touched []int64
 	const batch = 1000
 	for start := 0; start < len(edges); start += batch {
 		end := min(start+batch, len(edges))
@@ -342,12 +345,13 @@ func insertRosterEdges(tx *gorm.DB, edges []model.CatalogWorkCharacter) (int, er
 			sb.WriteString("(?,?,?,?,?,now(),now())")
 			args = append(args, e.WorkID, e.CharacterID, e.Kind, e.Spoiler, e.MatchedBy)
 		}
-		sb.WriteString(` ON CONFLICT (work_id, character_id) DO NOTHING`)
-		res := tx.Exec(sb.String(), args...)
-		if res.Error != nil {
-			return written, res.Error
+		sb.WriteString(` ON CONFLICT (work_id, character_id) DO NOTHING RETURNING work_id`)
+		var hosts []int64
+		if err := tx.Raw(sb.String(), args...).Scan(&hosts).Error; err != nil {
+			return written, err
 		}
-		written += int(res.RowsAffected)
+		written += len(hosts)
+		touched = append(touched, hosts...)
 	}
-	return written, nil
+	return written, touchWorks(tx, touched)
 }

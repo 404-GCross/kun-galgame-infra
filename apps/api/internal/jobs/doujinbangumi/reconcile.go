@@ -220,6 +220,10 @@ func buildGraph(cands []candTitle, subjects []subjectRow) *graph {
 // decide grades every candidate work and, in apply mode, writes the anchor.
 func (g *graph) decide(ctx context.Context, db *gorm.DB, reg registry, opts Opts, workYears map[int64]int, anchored map[int64]struct{}, stats *Stats) error {
 	processed := 0
+	// touched collects works that really gained a Bangumi anchor, so the pass
+	// bumps their catalog_work.updated_at once and the public changes feed shows
+	// the new identity. Already-anchored works and dry-runs contribute nothing.
+	var touched []int64
 	for _, wid := range g.workOrder {
 		if opts.Limit > 0 && processed >= opts.Limit {
 			break
@@ -286,11 +290,13 @@ func (g *graph) decide(ctx context.Context, db *gorm.DB, reg registry, opts Opts
 			stats.Already++
 		case exact:
 			stats.ExactWritten++
+			touched = append(touched, wid)
 		default:
 			stats.ProbableWritten++
+			touched = append(touched, wid)
 		}
 	}
-	return nil
+	return repository.TouchWorks(ctx, db, touched)
 }
 
 func (s *Stats) collectSample(exact bool, sample Sample) {

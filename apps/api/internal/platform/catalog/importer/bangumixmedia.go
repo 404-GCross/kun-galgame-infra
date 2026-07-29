@@ -189,6 +189,12 @@ func (im *Importer) RunBangumiXmedia() (XmediaStats, error) {
 	}
 	st.EdgesWritten = int(res.RowsAffected)
 	st.AlreadyEdge += st.Edges - st.EdgesWritten
+	// Edges here are the planned-NEW set (stored pairs were filtered out above),
+	// and the galgame end is a pre-existing work that just gained an adaptation
+	// link. A re-run plans no edges and returns before this point.
+	if err := touchWorks(im.catalog, relationEndpoints(edges)); err != nil {
+		return st, err
+	}
 	return st, nil
 }
 

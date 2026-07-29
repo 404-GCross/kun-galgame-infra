@@ -180,6 +180,9 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 	if err := runDlsiteLane(ctx, db, dlsiteDB, w, reg, opts); err != nil {
 		return nil, err
 	}
+	if err := w.touch(ctx); err != nil {
+		return nil, fmt.Errorf("touch works: %w", err)
+	}
 
 	slog.Info("backfill-work-ratings done", "apply", opts.Apply,
 		"bgm_candidates", st.BgmCandidates, "bgm_no_score", st.BgmNoScore,

@@ -240,7 +240,15 @@ func (im *Importer) createAttachChunk(tx *gorm.DB, chunk []egdlItem, cnResolve f
 	st.ReleasesCreated += len(releases)
 	st.TitlesCreated += len(titles)
 	st.CreditsWritten += written
-	return nil
+	// Every item in an attach chunk is a work that already existed and just
+	// gained a release (plus maybe a title and credits), so the hosts must
+	// surface on the public changes feed. Worknos that already carry a release
+	// anchor never reach this chunk, so a re-run touches nothing.
+	hosts := make([]int64, 0, len(chunk))
+	for _, it := range chunk {
+		hosts = append(hosts, it.workID)
+	}
+	return touchWorks(tx, hosts)
 }
 
 // emitEGDLEdges asserts the work↔maker attribution edge for every wave work,
@@ -287,6 +295,8 @@ func (im *Importer) emitEGDLEdges(items []egdlItem, labelAnchor map[string]int64
 		return res.Error
 	}
 	st.EdgesWritten = int(res.RowsAffected)
+	// No touch here: every work in items was either just minted (a fresh row
+	// carries its own updated_at) or just attached (createAttachChunk bumped it).
 	return nil
 }
 

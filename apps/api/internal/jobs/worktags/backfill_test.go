@@ -258,3 +258,60 @@ func TestClaimedMaterialisesAndDSNRequired(t *testing.T) {
 	_, err = Run(ctx, Opts{})
 	require.Error(t, err)
 }
+
+// backdate stamps a known-old updated_at on every work so a later bump is
+// unambiguous, and returns the stamp.
+func backdate(t *testing.T) time.Time {
+	t.Helper()
+	ts := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+	require.NoError(t, testDB.Exec(`UPDATE catalog_work SET updated_at = ?`, ts).Error)
+	return ts
+}
+
+func workUpdatedAt(t *testing.T, id int64) time.Time {
+	t.Helper()
+	var ts time.Time
+	require.NoError(t, testDB.Raw(`SELECT updated_at FROM catalog_work WHERE id = ?`, id).Scan(&ts).Error)
+	return ts
+}
+
+// TestTagWriteTouchesHostWork pins the wave-117 discipline: a facet write must
+// move the host work's updated_at, because the public /v1/catalog/changes feed
+// walks catalog_work on an (updated_at, id) keyset and would otherwise never
+// tell a downstream mirror that the work's tags changed. The flip side matters
+// just as much — a dry run and an idempotent second --apply must leave the
+// watermark exactly where it was, or every pass would shove the whole candidate
+// set through the feed.
+func TestTagWriteTouchesHostWork(t *testing.T) {
+	clean(t)
+	ctx := context.Background()
+	reg, err := resolveRegistry(ctx, testDB)
+	require.NoError(t, err)
+
+	wTagged := mkWork(t, reg.galgameMedium, "touch-tagged", nil)
+	mkSubject(t, 701, `[{"name":"純愛","count":12}]`)
+	mkAnchor(t, wTagged, "701", reg.bangumiSource, model.LinkKindExact, ruleTitleYear)
+
+	wUntagged := mkWork(t, reg.galgameMedium, "touch-untagged", nil) // no anchor, no tags
+	stamp := backdate(t)
+
+	// Dry run decides but writes nothing — no watermark may move.
+	_, err = Run(ctx, Opts{DSN: testDSN})
+	require.NoError(t, err)
+	assert.True(t, workUpdatedAt(t, wTagged).Equal(stamp), "dry run must not touch")
+
+	// Apply: the tagged work surfaces, the bystander does not.
+	st, err := Run(ctx, Opts{DSN: testDSN, Apply: true})
+	require.NoError(t, err)
+	require.Equal(t, 1, st.Written)
+	touched := workUpdatedAt(t, wTagged)
+	assert.True(t, touched.After(stamp), "the tag write bumped its host work")
+	assert.True(t, workUpdatedAt(t, wUntagged).Equal(stamp), "an unwritten work stays put")
+
+	// Second apply: every row conflicts, so nothing may move.
+	st, err = Run(ctx, Opts{DSN: testDSN, Apply: true})
+	require.NoError(t, err)
+	require.Zero(t, st.Written)
+	require.Equal(t, 1, st.Conflict)
+	assert.True(t, workUpdatedAt(t, wTagged).Equal(touched), "a no-op re-run must not drift the watermark")
+}

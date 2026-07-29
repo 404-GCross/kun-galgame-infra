@@ -120,6 +120,9 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 
 	r := &runner{db: db, sourceID: reg.bangumiSource, exist: exist, stats: &Stats{Candidates: len(cands)}}
 	r.process(ctx, cands, opts.Apply)
+	if err := r.touch(ctx); err != nil {
+		return nil, fmt.Errorf("touch works: %w", err)
+	}
 
 	st := r.stats
 	slog.Info("bgm-summaries done", "apply", opts.Apply,

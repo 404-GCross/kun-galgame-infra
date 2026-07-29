@@ -10,7 +10,6 @@ import (
 
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 // DLsiteStats is the DLsite-wave tally.
@@ -258,12 +257,15 @@ func (im *Importer) emitDLWorkLabels(works []dlWork, labelAnchor map[string]int6
 	if len(edges) == 0 {
 		return nil
 	}
-	res := im.catalog.Clauses(clause.OnConflict{DoNothing: true}).CreateInBatches(&edges, 1000)
-	if res.Error != nil {
-		return res.Error
+	// This lane deliberately re-plans edges for already-imported works, so the
+	// insert itself has to say which ones landed — a steady-state re-run writes
+	// nothing and must therefore touch nothing.
+	touched, err := insertWorkLabelEdges(im.catalog, edges)
+	if err != nil {
+		return err
 	}
-	st.EdgesWritten = int(res.RowsAffected)
-	return nil
+	st.EdgesWritten = len(touched)
+	return touchWorks(im.catalog, touched)
 }
 
 // dlEdgeKind maps a label kind to the attribution-edge kind: a publisher label

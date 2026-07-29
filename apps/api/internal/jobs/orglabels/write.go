@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 
 	"api/internal/platform/catalog/model"
+	"api/internal/platform/catalog/repository"
 
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
@@ -78,6 +79,15 @@ func mintLabel(ctx context.Context, db *gorm.DB, source int16, o *orgRec) (int, 
 				return res.Error
 			}
 			edgesWritten = int(res.RowsAffected)
+			// The label id is brand new, so every edge here is a first
+			// attribution for its work — bump the hosts so the public changes
+			// feed shows them. A re-run never reaches this function again (the
+			// org is anchored by then), so nothing drifts.
+			if edgesWritten > 0 {
+				if err := repository.TouchWorks(ctx, tx, o.works); err != nil {
+					return err
+				}
+			}
 		}
 		return nil
 	})

@@ -5,6 +5,7 @@ import (
 	"log/slog"
 
 	"api/internal/platform/catalog/model"
+	"api/internal/platform/catalog/repository"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -19,6 +20,16 @@ import (
 type writer struct {
 	db    *gorm.DB
 	stats *Stats
+	// touched collects works whose rating/popularity facet actually changed, so
+	// one bump of catalog_work.updated_at at the end of the run puts them on the
+	// public changes feed. A refresh no-op contributes nothing, so a re-run
+	// against unchanged staging moves no watermark at all.
+	touched []int64
+}
+
+// touch bumps updated_at on every work this run effectively wrote for.
+func (w *writer) touch(ctx context.Context) error {
+	return repository.TouchWorks(ctx, w.db, w.touched)
 }
 
 // plannedRow is one decided catalog_work_rating write, carrying the work's
@@ -61,6 +72,7 @@ func (w *writer) write(ctx context.Context, p plannedRow, apply bool, written, u
 		return
 	}
 	*written++
+	w.touched = append(w.touched, p.WorkID)
 }
 
 // popPlannedRow is one decided catalog_work_popularity write.
@@ -100,6 +112,7 @@ func (w *writer) writePopularity(ctx context.Context, p popPlannedRow, apply boo
 		return
 	}
 	w.stats.PopWritten++
+	w.touched = append(w.touched, p.WorkID)
 }
 
 // isBodyless reports whether a catalog_work is bodyless (site NULL or ”) —

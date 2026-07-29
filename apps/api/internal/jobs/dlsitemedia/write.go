@@ -81,6 +81,7 @@ func (r *runner) writeIntro(ctx context.Context, c candidate, m dlsiteMeta, appl
 		return
 	}
 	r.exist.intro[c.WorkID] = true
+	r.touched = append(r.touched, c.WorkID)
 	r.c.introWritten++
 }
 
@@ -133,6 +134,7 @@ func (r *runner) writeCover(ctx context.Context, dir string, c candidate, m dlsi
 		return false
 	}
 	r.exist.cover[c.WorkID] = true
+	r.touched = append(r.touched, c.WorkID)
 	r.c.coverUploaded++
 	return false
 }
@@ -190,6 +192,7 @@ func (r *runner) writeScreenshots(ctx context.Context, dir string, c candidate, 
 			r.exist.shot[c.WorkID] = present
 		}
 		present[i] = true
+		r.touched = append(r.touched, c.WorkID)
 		r.c.shotUploaded++
 	}
 	return false

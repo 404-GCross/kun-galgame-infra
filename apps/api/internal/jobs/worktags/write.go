@@ -5,6 +5,7 @@ import (
 	"log/slog"
 
 	"api/internal/platform/catalog/model"
+	"api/internal/platform/catalog/repository"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -18,6 +19,11 @@ import (
 type writer struct {
 	db    *gorm.DB
 	stats *Stats
+	// touched collects the host works whose tag set actually grew, so the run
+	// can bump their catalog_work.updated_at once at the end and let the public
+	// changes feed see the facet write. Conflicts and dry-runs never land here,
+	// which is what keeps a second --apply from re-emitting every work.
+	touched []int64
 }
 
 // plannedRow is one decided catalog_work_tag write.
@@ -50,4 +56,10 @@ func (w *writer) write(ctx context.Context, p plannedRow, apply bool) {
 		return
 	}
 	w.stats.Written++
+	w.touched = append(w.touched, p.WorkID)
+}
+
+// touch bumps updated_at on every work this run actually wrote a tag for.
+func (w *writer) touch(ctx context.Context) error {
+	return repository.TouchWorks(ctx, w.db, w.touched)
 }

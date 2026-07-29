@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"api/internal/platform/catalog/model"
+	"api/internal/platform/catalog/repository"
 )
 
 // cleanTagTables truncates the tag facet + canonical vocabulary tables that
@@ -277,5 +278,65 @@ func TestTagDetailWorksAttach(t *testing.T) {
 	// Unknown id → not found.
 	if _, found, _ := svc.TagDetail(t.Context(), 999999, false, false, 50, 0); found {
 		t.Fatalf("unknown tag id should be found=false")
+	}
+}
+
+// TestChangesFeedSeesFacetOnlyWrites is the wave-117 end-to-end: a facet write
+// lands in a SIDE table (here catalog_work_tag), so nothing about catalog_work
+// changes on its own and the feed — which walks catalog_work on an
+// (updated_at, id) keyset — would never tell a downstream mirror to re-pull.
+// repository.TouchWorks is what closes that gap; this pins the whole chain from
+// facet row to resumed cursor.
+func TestChangesFeedSeesFacetOnlyWrites(t *testing.T) {
+	cleanTables(t)
+	cleanTagTables(t)
+	svc := newPublicSvc()
+
+	host := createWorkX(t, 1, model.ContentRatingAllAges, model.WorkStatusLive, "FacetHost")
+	bystander := createWorkX(t, 1, model.ContentRatingAllAges, model.WorkStatusLive, "Bystander")
+	// Both settled well behind the feed's freshness lag.
+	if err := testDB.Exec(`UPDATE catalog_work SET updated_at = now() - interval '1 hour'`).Error; err != nil {
+		t.Fatalf("settle works: %v", err)
+	}
+
+	// Drain the feed: the consumer is now caught up on both works.
+	page, err := svc.Changes(t.Context(), "", 50)
+	if err != nil {
+		t.Fatalf("Changes drain: %v", err)
+	}
+	if len(page.Items) != 2 {
+		t.Fatalf("drain = %d items, want 2", len(page.Items))
+	}
+	cursor := page.NextCursor
+	if follow, err := svc.Changes(t.Context(), cursor, 50); err != nil || len(follow.Items) != 0 {
+		t.Fatalf("caught-up poll = %+v err=%v, want empty", follow, err)
+	}
+
+	// A pure facet write: one tag row on host, nothing on catalog_work.
+	if err := testDB.Create(&model.CatalogWorkTag{WorkID: host.ID, Name: "純愛", Count: 3, SourceID: 1}).Error; err != nil {
+		t.Fatalf("write facet row: %v", err)
+	}
+	if quiet, err := svc.Changes(t.Context(), cursor, 50); err != nil || len(quiet.Items) != 0 {
+		t.Fatalf("facet row alone must not move the feed: %+v err=%v", quiet, err)
+	}
+
+	// The importer discipline: touch the host work it just wrote a facet for.
+	if err := repository.TouchWorks(t.Context(), testDB, []int64{host.ID}); err != nil {
+		t.Fatalf("TouchWorks: %v", err)
+	}
+	// TouchWorks stamps now(), which the feed's freshness lag holds back on
+	// purpose (a separate mechanism, pinned by TestChangesFeedWatermarkLag);
+	// age it just past the lag so this test is about the touch, not the lag.
+	if err := testDB.Exec(`UPDATE catalog_work SET updated_at = updated_at - interval '10 seconds' WHERE id = ?`, host.ID).Error; err != nil {
+		t.Fatalf("age touched row: %v", err)
+	}
+
+	resumed, err := svc.Changes(t.Context(), cursor, 50)
+	if err != nil {
+		t.Fatalf("Changes resume: %v", err)
+	}
+	if len(resumed.Items) != 1 || resumed.Items[0].ID != host.ID || resumed.Items[0].EntityType != "work" {
+		t.Fatalf("resumed = %+v, want only work %d (bystander %d must stay silent)",
+			resumed.Items, host.ID, bystander.ID)
 	}
 }

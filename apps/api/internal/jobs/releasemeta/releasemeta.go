@@ -229,6 +229,9 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 	if err := runRatingLane(ctx, db, dlDB, wikiDB, w, reg, opts); err != nil {
 		return nil, err
 	}
+	if err := w.touch(ctx); err != nil {
+		return nil, fmt.Errorf("touch works: %w", err)
+	}
 
 	slog.Info("backfill-release-meta done", "apply", opts.Apply,
 		"dl_date_candidates", st.DlDateCandidates, "dl_date_missing_mirror", st.DlDateMissingMirror,

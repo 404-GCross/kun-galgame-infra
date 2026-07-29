@@ -125,6 +125,12 @@ func (im *Importer) RunEGRelations() (EGRelationStats, error) {
 	}
 	st.EdgesWritten = int(res.RowsAffected)
 	st.AlreadyInDB += st.Edges - st.EdgesWritten
+	// Edges here are the planned-NEW set (already-stored pairs were filtered out
+	// above), so both endpoints of each one genuinely changed. A re-run plans no
+	// edges at all and returns before this point, touching nothing.
+	if err := touchWorks(im.catalog, relationEndpoints(edges)); err != nil {
+		return st, err
+	}
 	return st, nil
 }
 

@@ -22,6 +22,8 @@ import (
 	"sort"
 	"strings"
 
+	"api/internal/platform/catalog/repository"
+
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
@@ -196,6 +198,13 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 		return st, nil
 	}
 
+	// touched collects works whose series facet really moved — membership gained
+	// or lost, or the series they belong to renamed. The public changes feed
+	// reads catalog_work.updated_at, so without this a re-serialised series is
+	// invisible downstream. A steady-state re-run changes nothing and therefore
+	// touches nothing.
+	var touched []int64
+
 	// ── apply: series rows ───────────────────────────────────────────────────
 	idByExt := make(map[string]int64, len(want))
 	for sid, si := range want {
@@ -217,6 +226,10 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 				WHERE id = ?`, si.name, e.id).Error; err != nil {
 				st.Errors++
 				slog.Warn("series rename", "ext", sid, "err", err)
+				continue
+			}
+			for w := range si.members { // the members render the new name
+				touched = append(touched, w)
 			}
 		}
 	}
@@ -225,11 +238,14 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 		if _, ok := want[sid]; ok {
 			continue
 		}
-		if err := db.WithContext(ctx).Exec(`DELETE FROM catalog_series_member WHERE series_id = ?`, e.id).Error; err != nil {
+		var orphaned []int64
+		if err := db.WithContext(ctx).Raw(`DELETE FROM catalog_series_member WHERE series_id = ?
+			RETURNING work_id`, e.id).Scan(&orphaned).Error; err != nil {
 			st.Errors++
 			slog.Warn("series member cascade", "ext", sid, "err", err)
 			continue
 		}
+		touched = append(touched, orphaned...)
 		if err := db.WithContext(ctx).Exec(`DELETE FROM catalog_series WHERE id = ?`, e.id).Error; err != nil {
 			st.Errors++
 			slog.Warn("series delete", "ext", sid, "err", err)
@@ -266,6 +282,7 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 			}
 			if res.RowsAffected == 1 {
 				st.MembersAdded++
+				touched = append(touched, w)
 			}
 		}
 		for _, w := range existingMembers {
@@ -279,7 +296,11 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 				continue
 			}
 			st.MembersStale++
+			touched = append(touched, w)
 		}
+	}
+	if err := repository.TouchWorks(ctx, db, touched); err != nil {
+		return nil, fmt.Errorf("touch works: %w", err)
 	}
 	logDone(st, opts.Apply)
 	return st, nil

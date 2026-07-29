@@ -106,6 +106,10 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 		return nil, err
 	}
 
+	// touched collects works that really gained a store ref, so the run bumps
+	// their catalog_work.updated_at once and the public changes feed sees the new
+	// store link. Existing refs, rejections and dry-runs contribute nothing.
+	var touched []int64
 	for _, a := range anchors {
 		n, err := strconv.ParseInt(a.ExternalID, 10, 64)
 		if err != nil {
@@ -116,15 +120,22 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 			continue
 		}
 		if x.Steam != nil {
-			writeRef(ctx, db, opts.Apply, a.WorkID, ids.steamSource,
+			if writeRef(ctx, db, opts.Apply, a.WorkID, ids.steamSource,
 				strconv.FormatInt(*x.Steam, 10), "rule:eg-steam", rejected,
-				&st.SteamPlanned, &st.SteamWritten, &st.SteamExists, &st.Rejected, &st.Errors)
+				&st.SteamPlanned, &st.SteamWritten, &st.SteamExists, &st.Rejected, &st.Errors) {
+				touched = append(touched, a.WorkID)
+			}
 		}
 		if x.Dmm != "" {
-			writeRef(ctx, db, opts.Apply, a.WorkID, ids.dmmSource,
+			if writeRef(ctx, db, opts.Apply, a.WorkID, ids.dmmSource,
 				x.Dmm, "rule:eg-dmm", rejected,
-				&st.DmmPlanned, &st.DmmWritten, &st.DmmExists, &st.Rejected, &st.Errors)
+				&st.DmmPlanned, &st.DmmWritten, &st.DmmExists, &st.Rejected, &st.Errors) {
+				touched = append(touched, a.WorkID)
+			}
 		}
+	}
+	if err := repository.TouchWorks(ctx, db, touched); err != nil {
+		return nil, fmt.Errorf("touch works: %w", err)
 	}
 	slog.Info("storerefs done", "apply", opts.Apply, "anchored", st.Anchored,
 		"steam_planned", st.SteamPlanned, "steam_written", st.SteamWritten, "steam_exists", st.SteamExists,
@@ -133,16 +144,18 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 	return st, nil
 }
 
+// writeRef inserts one store ref if absent, reporting whether a row was really
+// written (which is what decides whether the host work needs a touch).
 func writeRef(ctx context.Context, db *gorm.DB, apply bool, workID int64, sourceID int16,
 	externalID, rule string, rejected map[string]struct{},
-	planned, written, exists, rejectedN, errors *int) {
+	planned, written, exists, rejectedN, errors *int) bool {
 	if _, hit := rejected[rejKey(workID, sourceID, externalID)]; hit {
 		*rejectedN++
-		return
+		return false
 	}
 	*planned++
 	if !apply {
-		return
+		return false
 	}
 	wrote, err := repository.InsertRefIfAbsent(db.WithContext(ctx), model.CatalogExternalRef{
 		EntityType: model.EntityTypeWork, EntityID: workID,
@@ -152,13 +165,14 @@ func writeRef(ctx context.Context, db *gorm.DB, apply bool, workID int64, source
 	if err != nil {
 		*errors++
 		slog.Warn("insert store ref", "work", workID, "source", sourceID, "ext", externalID, "err", err)
-		return
+		return false
 	}
 	if wrote {
 		*written++
 	} else {
 		*exists++
 	}
+	return wrote
 }
 
 type registryIDs struct {

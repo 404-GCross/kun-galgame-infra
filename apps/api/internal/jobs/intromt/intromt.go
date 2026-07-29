@@ -112,6 +112,9 @@ func Run(ctx context.Context, tr Translator, opts Opts) (*Stats, error) {
 
 	r := &runner{db: db, tr: tr, stats: &Stats{Candidates: len(cands)}}
 	r.process(ctx, cands, opts.Apply, opts.Delay, opts.Workers)
+	if err := r.touch(ctx); err != nil {
+		return nil, fmt.Errorf("touch works: %w", err)
+	}
 
 	st := r.stats
 	slog.Info("intro-mt done", "apply", opts.Apply,

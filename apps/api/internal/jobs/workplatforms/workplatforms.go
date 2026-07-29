@@ -31,6 +31,8 @@ import (
 	"sort"
 	"strings"
 
+	"api/internal/platform/catalog/repository"
+
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
@@ -245,10 +247,11 @@ func normalize(raw string, registry map[string]struct{}) string {
 func runDlsite(ctx context.Context, db *gorm.DB, opts Opts, st *Stats) error {
 	var rows []struct {
 		ReleaseID int64  `gorm:"column:release_id"`
+		WorkID    int64  `gorm:"column:work_id"` // host work — carried so a fill can touch it
 		Workno    string `gorm:"column:workno"`
 	}
 	if err := db.WithContext(ctx).Raw(`
-		SELECT DISTINCT ON (rel.id) rel.id AS release_id, r.external_id AS workno
+		SELECT DISTINCT ON (rel.id) rel.id AS release_id, rel.work_id, r.external_id AS workno
 		FROM catalog_external_ref r
 		JOIN catalog_release rel ON rel.id = r.entity_id AND rel.deleted_at IS NULL
 		JOIN catalog_work w ON w.id = rel.work_id AND w.deleted_at IS NULL
@@ -291,6 +294,10 @@ func runDlsite(ctx context.Context, db *gorm.DB, opts Opts, st *Stats) error {
 		}
 	}
 
+	// touched collects works whose release really gained a platform, so the lane
+	// bumps their catalog_work.updated_at once and the public changes feed sees
+	// the fill. Races, skips and dry-runs contribute nothing.
+	var touched []int64
 	for _, r := range rows {
 		codes, ok := mirrorCodes[r.Workno]
 		if !ok {
@@ -318,11 +325,12 @@ func runDlsite(ctx context.Context, db *gorm.DB, opts Opts, st *Stats) error {
 		}
 		if res.RowsAffected == 1 {
 			st.DlWritten++
+			touched = append(touched, r.WorkID)
 		} else {
 			st.DlRaced++
 		}
 	}
-	return nil
+	return repository.TouchWorks(ctx, db, touched)
 }
 
 // mapDlsite maps a mirror product_json.platform array onto registry codes,
@@ -446,6 +454,7 @@ func runBgm(ctx context.Context, db *gorm.DB, opts Opts, registry map[string]str
 		}
 	}
 
+	var touched []int64 // works that really gained a platform row (see runDlsite)
 	for _, c := range cands {
 		st.BgmPlanned++
 		if !opts.Apply {
@@ -460,11 +469,12 @@ func runBgm(ctx context.Context, db *gorm.DB, opts Opts, registry map[string]str
 		}
 		if res.RowsAffected == 1 {
 			st.BgmWritten++
+			touched = append(touched, c.workID)
 		} else {
 			st.BgmConflict++
 		}
 	}
-	return nil
+	return repository.TouchWorks(ctx, db, touched)
 }
 
 // TopUnmapped renders the unmapped 平台 values, count-descending, for the
