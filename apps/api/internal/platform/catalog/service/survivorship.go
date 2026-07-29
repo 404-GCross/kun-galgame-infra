@@ -119,6 +119,11 @@ func (m *fieldMerger) apply(tx *gorm.DB, table string, targetID int64) error {
 	} else if err != nil {
 		return err
 	}
+	// Table() hands GORM no model, so its auto-update-time convention cannot
+	// fire — without this the survivor would keep a stale updated_at after the
+	// merge rewrote its fields. now() is the transaction timestamp, the same
+	// instant every other statement of this merge stamps.
+	m.updates["updated_at"] = gorm.Expr("now()")
 	return tx.Table(table).Where("id = ?", targetID).Updates(m.updates).Error
 }
 
@@ -250,10 +255,10 @@ func applySurvivorship(tx *gorm.DB, entityType int16, src, dst int64, resolution
 		// source is claimed, the claim moves (source first — the unique
 		// index holds both rows).
 		if d.Site == nil && s.Site != nil {
-			if err := tx.Exec(`UPDATE catalog_work SET site = NULL, product_work_id = NULL WHERE id = ?`, src).Error; err != nil {
+			if err := tx.Exec(`UPDATE catalog_work SET site = NULL, product_work_id = NULL, updated_at = now() WHERE id = ?`, src).Error; err != nil {
 				return nil, err
 			}
-			if err := tx.Exec(`UPDATE catalog_work SET site = ?, product_work_id = ?, status = ? WHERE id = ?`,
+			if err := tx.Exec(`UPDATE catalog_work SET site = ?, product_work_id = ?, status = ?, updated_at = now() WHERE id = ?`,
 				*s.Site, s.ProductWorkID, s.Status, dst).Error; err != nil {
 				return nil, err
 			}
