@@ -362,19 +362,26 @@ func parseCienExtLinks(raw string) []cienExtLinkRow {
 
 // cienExtLinkSource maps a crawled URL to an already-SEEDED catalog_source, or
 // ok=false when the host is outside the whitelist. external_id is the trimmed
-// URL (a related presence, not an identity key). The whitelist is host-suffix
-// matched so subdomains (pixiv.me, al.dmm.co.jp) fold onto the same source.
+// URL (a related presence, not an identity key). Matching is dot-bounded so
+// subdomains (www.pixiv.net, al.dmm.co.jp) fold onto the same source but
+// look-alike hosts (evilpixiv.net) do not.
 func cienExtLinkSource(url string) (int16, string, bool) {
 	host := extHost(url)
 	switch {
-	case strings.HasSuffix(host, "pixiv.net") || strings.HasSuffix(host, "pixiv.me"):
+	case hostUnder(host, "pixiv.net") || hostUnder(host, "pixiv.me"):
 		return sourcePixiv, strings.TrimSpace(url), true
-	case strings.HasSuffix(host, "dmm.co.jp"):
+	case hostUnder(host, "dmm.co.jp"):
 		return sourceDmm, strings.TrimSpace(url), true
-	case strings.HasSuffix(host, "steampowered.com"):
+	case hostUnder(host, "steampowered.com"):
 		return sourceSteam, strings.TrimSpace(url), true
 	}
 	return 0, "", false
+}
+
+// hostUnder reports whether host is domain itself or a subdomain of it — a
+// dot-bounded suffix match, so "evilpixiv.net" never passes for "pixiv.net".
+func hostUnder(host, domain string) bool {
+	return host == domain || strings.HasSuffix(host, "."+domain)
 }
 
 // extHost extracts the lowercased host of a URL without net/url (defensive
