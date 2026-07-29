@@ -95,7 +95,9 @@ func (f devapiFace) recordUsage(surface string) fiber.Handler {
 // mountInternal mounts the /internal platform-workflow face: the 15 GET routes
 // registered by workflowRoutes.register (galgame /mine, /messages/mine, /search
 // [SearchWithPending], /drafts, /user/:id/{stats,galgames,contributed}; the four
-// taxonomy families' /:id/revisions(/:rev)), behind the shared devapi chain with
+// taxonomy families' /:id/revisions(/:rev)) plus the machine-facing reads
+// registered directly below (the two S2S cron feeds and, since A2-1e, the
+// ownership-meta batch), behind the shared devapi chain with
 // a RequireTier(internal) gate (free/trusted keys → 403). The chain order mirrors
 // the /v1 chain with two changes: RequireTier is inserted after recordUsage, and
 // NO sfwGate is attached — content_limit passes through untouched.
@@ -159,7 +161,7 @@ func mountInternalWrites(a *app.App, face devapiFace, writes writeRoutes, jwtAut
 	writes.register(a.Fiber.Group("/internal"), chain)
 }
 
-func mountInternal(a *app.App, face devapiFace, workflow workflowRoutes, messageH *galgameHandler.MessageHandler, revisionH *galgameHandler.RevisionHandler) {
+func mountInternal(a *app.App, face devapiFace, workflow workflowRoutes, messageH *galgameHandler.MessageHandler, revisionH *galgameHandler.RevisionHandler, metaH *galgameHandler.GalgameMetaHandler) {
 	internal := a.Fiber.Group("/internal",
 		face.mw.ResolveCredential,
 		face.recordUsage("galgame_internal"),
@@ -179,6 +181,11 @@ func mountInternal(a *app.App, face devapiFace, workflow workflowRoutes, message
 	ifeeds := internal.Group("/galgame")
 	ifeeds.Get("/messages/feed", messageH.ListFeed)
 	ifeeds.Get("/revisions/recent", revisionH.RecentRevisions)
+	// A2-1e: the ownership-meta batch (status-blind {gid,user_id,status} for the
+	// forum edit lane's owner assertion). Static path, registered with the other
+	// machine-facing reads and ahead of the workflow group for the same reason
+	// they are.
+	ifeeds.Get("/meta", metaH.Meta)
 
 	workflow.register(internal)
 }

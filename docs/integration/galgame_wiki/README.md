@@ -65,7 +65,7 @@
 >
 > **标签层级扩展(2026-07 加性)**:`GET /v1/galgame/tags/multi` 新增可选参数 **`expand=descendants`** —— 每个请求 id 先展开为「自身 + 其层级后代」,一部游戏在**每一组**里命中至少一个标签即入选(组间 AND、组内 OR),单次查询,total/分页精确;不传该参数 = 冻结的扁平 AND 交集,逐字节向后兼容。配套地 `GET /v1/galgame/tags/{id}` 详情新增 **`children`** 块(仅当有子标签时出现):直接子标签的 `{id, name, category, galgame_count}`,供 UI 呈现「展开将包含:硬科幻、科幻奇幻」。层级边由 VNDB 标签 DAG 投影到 wiki 词表(infra `cmd/backfill-tag-edges`);元分组节点(如 "Type")永不成为父节点,故「恋爱」的展开不会命中「无恋爱剧情」。
 
-## 平台工作流面(留任 · 15 读 + 2 feed · 真值在代码)
+## 平台工作流面(留任 · 15 读 + 3 机器面读 · 真值在代码)
 
 W5 后 `/internal` 承载的**唯一读集** = 下列平台工作流路由。它**不是** wiki 遗产,是与写/提案面同族的设计面(见 infra `apps/api/internal/galgameapp/workflowroutes.go` 的章程注释)。字段级形状取代码。
 
@@ -94,10 +94,34 @@ W5 后 `/internal` 承载的**唯一读集** = 下列平台工作流路由。它
 
 - `GET /internal/galgame/messages/feed`
 - `GET /internal/galgame/revisions/recent`
+- `GET /internal/galgame/meta?ids=…`(**A2-1e 加**)—— **归属元数据批取**:`{items:[{gid, user_id, status}]}`,**状态盲**、按 gid 升序、最多 100 id、无解 id 直接缺席(删了的条目不是错误)。
+
+> **为什么要有它**:forum 编辑轨的「谁能编辑」断言与「通知发给谁」目前都读**匿名的已发布 batch 面**——那个面对 status ∈ {2,3,4} 的条目**什么都不返回**,于是断言退化成「你不是作者」,真正的作者被挡在自己未发布条目的编辑 / 回滚 / 复核之外。本 op 就是这个问题的诚实供给:凭证面、状态盲、**只出归属**。`status` 随行,是为了让调用方能区分「不是作者」与「未发布」,而不是从「查不到」里去猜。
+>
+> **它刻意不是 brief**:没有标题、没有封面、没有简介。归属不是内容,一条回答「谁拥有这个条目」的道不能顺带变成读未发布正文的道。R2 红线亦不破——这是**幸存的 wiki 面**,wiki 自己的状态机本就住在这里,一个字节都不进 catalog 公开契约。
 
 > **代码(单一真源)**:infra `apps/api/internal/galgameapp/`——`workflowroutes.go` = 15 工作流读的注册 + 逐路由章程;`devapiface.go` = `/internal` 面 devapi 链 + 2 feed 挂载;`writeroutes.go`(06a 写面)/ `proposeroutes.go`(06b 提案面)= 兄弟面。
 >
 > **机器可读 spec 注**:wiki 时代的机器可读 spec(`docs/galgame_wiki/read-openapi.yaml`、`calendar-openapi.yaml`,及门户发布的 `galgame-wiki.openapi.yaml` / `galgame-wiki-calendar.openapi.yaml`)已随桥面一同退役(W5)。平台工作流面**不再产出机器可读 spec**——与其兄弟 `/internal` 写面(06a)、提案面(06b)一致,二者本就无 spec;本面之真源即**代码(`workflowroutes.go`)+ 本页**。唯一对外的机器可读契约是门户发布的 `/v1` 公开投影 `docs/galgame_wiki/public-openapi.yaml`。
+
+## `/api` staff 面 · taxonomy 读回(A2-1e 加 · 8 op)
+
+`/api` 自 W3 起是 **staff-only** 面(admin / taxonomy CRUD·revert / catalog 浏览代理),此前**一条 GET 都没有**:读在 wave 05 迁去 `/internal`,又在 W5 退役到 `/v1`。于是两个管理台只能拿**列表行**去预填编辑表单——而 taxonomy 的 update 载荷是**整体替换**语义(字段给了就替换,不给才保留),**凡是读不回来的字段,保存时就被静默抹掉**。两站今天都在每次编辑时抹掉 `alias`(moyu 另抹 tag/official 的 `description`)。
+
+本波按族补一对读回 op:
+
+| op | 出参 |
+|---|---|
+| `GET /api/tag/search?q=` / `GET /api/tag/{id}` | 列表行 `{id,name}` / 记录 `{id,name,category,description,alias[]}` |
+| `GET /api/official/search?q=` / `GET /api/official/{id}` | 列表行 `{id,name}` / 记录 `{id,name,original,link,lang,category,description,alias[]}` |
+| `GET /api/engine/search?q=` / `GET /api/engine/{id}` | 列表行 `{id,name}` / 记录 `{id,name,description,alias[]}` |
+| `GET /api/series/search?q=` / `GET /api/series/{id}` | 列表行 `{id,name}` / 记录 `{id,name,description,galgame_ids[]}` |
+
+- **字段集 = 对应 `Update*Request` 的可编辑集,逐字段对齐**——读得回来的,正是写得进去的。这是本组 op 的全部意义,也是它的验收判据。
+- **id 是 wiki id,端到端**(R11):与写 op、与修订历史同一键空间。公开浏览道迁向 catalog id(P2/R1)**刻意不伸进这条编辑道**——半迁两套 id 空间正是 R11 明令避免的事。
+- **鉴权 = jwtAuth + `galgame.taxonomy.edit_any`**,与 update op **同一道门**:能读回编辑表单的人,按定义就是能写的人。无 JWT `401`,登录但无权 `403`。
+- `search` 的 `q` 空白时:tag/official 返回空列表(它们是几千行的词表,无条件全量没有意义);engine/series 返回整个(小)facet ——两站的引擎/系列选择器本就是当扁平列表水化的。上限 50。
+- 非法 id `400`,无此行 `404`。**无 spec**:`/api` 是 staff 面,与写面惯例一致不产出机器可读契约;真源 = 代码(`internal/platform/galgame/handler/staff_taxonomy_handler.go`)+ 本页。
 
 ## 终态(路线 B 已达成)
 

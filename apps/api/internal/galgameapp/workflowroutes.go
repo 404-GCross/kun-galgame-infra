@@ -63,6 +63,9 @@ type workflowRoutes struct {
 }
 
 // register mounts the 15 GET workflow routes onto parent (the /internal group).
+// (A2-1e added a 16th surviving /internal read — the ownership-meta batch — but
+// it is registered alongside the S2S feeds in mountInternal, not here; see the
+// machine-primitive note at the end of this file's doc.)
 // It registers ONLY the surviving platform-workflow reads; the 29 retired public-
 // data reads are gone (served by /v1), so the /galgame /:gid catch-all no longer
 // exists and route ordering is much more relaxed than the old read face's.

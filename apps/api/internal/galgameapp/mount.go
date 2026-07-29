@@ -202,6 +202,10 @@ func Mount(a *app.App, cfg *config.Config, deps Deps) {
 	// four taxonomy entities — the entity discriminator is baked into
 	// the route wrapper methods (TagListRevisions / OfficialRevert / …).
 	taxRevH := galgameHandler.NewTaxonomyRevisionHandler(taxSvc)
+	// A2-1e area B: the staff taxonomy READ-BACK pairs and the /internal
+	// ownership-meta batch. Both are pure reads over the existing repositories.
+	staffTaxH := galgameHandler.NewStaffTaxonomyHandler(tagRepo, officialRepo, engineRepo, seriesRepo)
+	metaH := galgameHandler.NewGalgameMetaHandler(galgameRepository)
 	adminH := galgameHandler.NewAdminHandler(adminRepo, adminSvc, searchHook)
 	submissionH := galgameHandler.NewSubmissionHandler(submissionSvc, searchHook, imgCli)
 	messageH := galgameHandler.NewMessageHandler(messageSvc)
@@ -291,7 +295,13 @@ func Mount(a *app.App, cfg *config.Config, deps Deps) {
 	// Create: any logged-in user (introduce a tag for original/doujin works
 	// missing from VNDB). Update/Delete/revert: admin/moderator (role checked
 	// inside the handler, same as series).
+	// A2-1e: the READ-BACK pair. `/search` is registered BEFORE `/:id` — Fiber
+	// matches in registration order, so a static segment must precede the param
+	// route that would otherwise swallow it (the same fence every group here
+	// keeps).
 	tag := api.Group("/tag")
+	tag.Get("/search", jwtAuth, staffTaxH.TagSearch)
+	tag.Get("/:id", jwtAuth, staffTaxH.TagDetail)
 	tag.Post("/", jwtAuth, tagH.Create)
 	tag.Put("/", jwtAuth, tagH.Update)
 	tag.Delete("/:id", jwtAuth, tagH.Delete)
@@ -299,6 +309,8 @@ func Mount(a *app.App, cfg *config.Config, deps Deps) {
 
 	// ── Official writes ── (GET reads live on the /internal read face since A2)
 	official := api.Group("/official")
+	official.Get("/search", jwtAuth, staffTaxH.OfficialSearch)
+	official.Get("/:id", jwtAuth, staffTaxH.OfficialDetail)
 	official.Post("/", jwtAuth, officialH.Create)
 	official.Put("/", jwtAuth, officialH.Update)
 	official.Delete("/:id", jwtAuth, officialH.Delete)
@@ -306,6 +318,8 @@ func Mount(a *app.App, cfg *config.Config, deps Deps) {
 
 	// ── Engine writes ── (GET reads live on the /internal read face since A2)
 	engine := api.Group("/engine")
+	engine.Get("/search", jwtAuth, staffTaxH.EngineSearch)
+	engine.Get("/:id", jwtAuth, staffTaxH.EngineDetail)
 	engine.Post("/", jwtAuth, engineH.Create)
 	engine.Put("/", jwtAuth, engineH.Update)
 	engine.Delete("/:id", jwtAuth, engineH.Delete)
@@ -314,6 +328,8 @@ func Mount(a *app.App, cfg *config.Config, deps Deps) {
 	// ── Series writes ── (GET reads live on the /internal read face since A2)
 	series := api.Group("/series")
 	seriesAuth := series.Group("", jwtAuth)
+	seriesAuth.Get("/search", staffTaxH.SeriesSearch)
+	seriesAuth.Get("/:id", staffTaxH.SeriesDetail)
 	seriesAuth.Post("/", seriesH.Create)
 	seriesAuth.Post("/modal", seriesH.Modal)
 	seriesAuth.Put("/:id", seriesH.Update)
@@ -358,6 +374,6 @@ func Mount(a *app.App, cfg *config.Config, deps Deps) {
 	proposeH := newProposeHandler(deps.Edit, siteRepo.NewOAuthClientRepository(oauthDB))
 	mountInternalWrites(a, face, writes, jwtAuth)
 	mountInternalPropose(a, face, proposeH, jwtAuth)
-	mountInternal(a, face, workflow, messageH, revisionH)
+	mountInternal(a, face, workflow, messageH, revisionH, metaH)
 	mountPublic(a, face, galgameSvc, searchSvc, galgameH, entityGalgamesH, publicTaxSvc, optionalJWT)
 }

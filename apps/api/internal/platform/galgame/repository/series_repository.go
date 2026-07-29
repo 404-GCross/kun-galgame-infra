@@ -73,6 +73,19 @@ func (r *SeriesRepository) List(ctx context.Context, page, limit int, contentLim
 	return items, total, err
 }
 
+// SearchByName finds series whose name contains every given term
+// (case-insensitive AND), identity columns only — the staff picker's lane
+// (A2-1e area B). galgame_series has no alias table, so name is the only axis.
+func (r *SeriesRepository) SearchByName(ctx context.Context, terms []string, limit int) ([]model.GalgameSeries, error) {
+	q := r.db.WithContext(ctx).Model(&model.GalgameSeries{})
+	for _, term := range terms {
+		q = q.Where("LOWER(name) LIKE ?", "%"+strings.ToLower(term)+"%")
+	}
+	var items []model.GalgameSeries
+	err := q.Order("name").Limit(limit).Find(&items).Error
+	return items, err
+}
+
 // FindByID finds a series by ID with all galgames.
 //
 // contentLimit follows the canonical contract: "" = no filter,

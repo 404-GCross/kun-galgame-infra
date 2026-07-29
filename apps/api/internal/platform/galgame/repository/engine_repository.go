@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"encoding/json"
+	"strings"
 
 	"api/internal/platform/galgame/model"
 
@@ -35,6 +36,22 @@ func (r *EngineRepository) ListAll(ctx context.Context) ([]model.GalgameEngine, 
 		Joins("LEFT JOIN (SELECT r.engine_id, COUNT(*) AS cnt FROM galgame_engine_relation r JOIN galgame g ON g.id = r.galgame_id AND g.status = 0 GROUP BY r.engine_id) ec ON ec.engine_id = galgame_engine.id").
 		Order("cnt DESC").
 		Find(&items).Error
+	return items, err
+}
+
+// SearchByName finds engines whose name contains every given term
+// (case-insensitive AND), identity columns only — the staff picker's lane
+// (A2-1e area B). Unlike the tag / official searches there is no alias table to
+// join: galgame_engine keeps its aliases in a jsonb column, and matching inside
+// it would need a jsonb operator that no index serves. The facet is a few
+// hundred hand-curated rows, so name matching is what the console needs.
+func (r *EngineRepository) SearchByName(ctx context.Context, terms []string, limit int) ([]model.GalgameEngine, error) {
+	q := r.db.WithContext(ctx).Model(&model.GalgameEngine{})
+	for _, term := range terms {
+		q = q.Where("LOWER(name) LIKE ?", "%"+strings.ToLower(term)+"%")
+	}
+	var items []model.GalgameEngine
+	err := q.Order("name").Limit(limit).Find(&items).Error
 	return items, err
 }
 

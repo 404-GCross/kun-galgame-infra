@@ -118,6 +118,7 @@ func buildW5App(t *testing.T) (*fiber.App, string) {
 	messageH := galgameHandler.NewMessageHandler(messageSvc)
 	taxRevH := galgameHandler.NewTaxonomyRevisionHandler(taxSvc)
 	revisionH := galgameHandler.NewRevisionHandler(svc)
+	metaH := galgameHandler.NewGalgameMetaHandler(repo)
 	linkH := galgameHandler.NewLinkHandler(svc, repo)
 	contributorH := galgameHandler.NewContributorHandler(repo, userRepo)
 
@@ -142,7 +143,7 @@ func buildW5App(t *testing.T) (*fiber.App, string) {
 	// group Use, so the read chain never blankets them.
 	mountInternalWrites(application, face, writes, jwtAuth)
 	mountInternalPropose(application, face, proposeH, jwtAuth)
-	mountInternal(application, face, workflow, messageH, revisionH)
+	mountInternal(application, face, workflow, messageH, revisionH, metaH)
 
 	testDB.Exec("DELETE FROM developer_api_keys WHERE client_id = 'w5ret_key'")
 	testDB.Exec("DELETE FROM oauth_clients WHERE id = 'w5ret_key'")
@@ -209,7 +210,7 @@ func TestW5RetirementMatrix(t *testing.T) {
 	// ── Surviving platform-workflow routes (15): all still registered ──
 	// The /search probe uses a bad released_from so it 400s BEFORE any Meili call.
 	survivors := []string{
-		// galgame workflow (7)
+		// galgame workflow (8)
 		"/internal/galgame/mine",
 		"/internal/galgame/messages/mine",
 		"/internal/galgame/search?released_from=not-a-date",
@@ -217,6 +218,9 @@ func TestW5RetirementMatrix(t *testing.T) {
 		"/internal/galgame/user/1/stats",
 		"/internal/galgame/user/1/galgames",
 		"/internal/galgame/user/1/contributed",
+		// ownership meta (A2-1e area B): status-blind {gid,user_id,status} for
+		// the forum edit lane's owner assertion + notification recipient.
+		"/internal/galgame/meta?ids=1",
 		// taxonomy revisions (8)
 		"/internal/tag/1/revisions",
 		"/internal/tag/1/revisions/1",
@@ -227,7 +231,7 @@ func TestW5RetirementMatrix(t *testing.T) {
 		"/internal/series/1/revisions",
 		"/internal/series/1/revisions/1",
 	}
-	require.Len(t, survivors, 15, "the surviving census is 15 platform-workflow routes")
+	require.Len(t, survivors, 16, "the surviving census is 16 platform-workflow routes")
 	for _, path := range survivors {
 		status, body := req(t, f, "GET", path, key, "", "")
 		require.Falsef(t, getRouteAbsent(status, body),

@@ -261,6 +261,42 @@ func (r *GalgameRepository) FindByIDsAny(ctx context.Context, ids []int) ([]mode
 	return galgames, err
 }
 
+// GalgameMetaRow is the minimal ownership + lifecycle projection of a galgame
+// (A2-1e area B): who submitted it and what state it is in. Nothing else — this
+// is deliberately NOT a brief, and it is not renderable content.
+type GalgameMetaRow struct {
+	GID    int64 `gorm:"column:id" json:"gid"`
+	UserID int64 `gorm:"column:user_id" json:"user_id"`
+	Status int16 `gorm:"column:status" json:"status"`
+}
+
+// FindMetaByIDs returns the ownership meta of the given galgames, STATUS-BLIND
+// and deterministic by id.
+//
+// Status-blind is the point, not an oversight. Its consumer is the forum's edit
+// lane, whose owner assertion currently rides the anonymous published-only batch
+// read: for any entry in status {2,3,4} that read returns nothing, the assertion
+// degrades to "not the owner", and the true owner is locked out of editing,
+// reverting and reviewing their own unpublished entry. An ownership question
+// must be answerable for rows the PUBLIC face will not show — which is exactly
+// why this lives on the credentialed /internal face and returns no content.
+//
+// Missing ids are simply absent from the result (a deleted / never-existing
+// galgame is not an error).
+func (r *GalgameRepository) FindMetaByIDs(ctx context.Context, ids []int64) ([]GalgameMetaRow, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	var rows []GalgameMetaRow
+	err := r.db.WithContext(ctx).
+		Model(&model.Galgame{}).
+		Select("id, user_id, status").
+		Where("id IN ?", ids).
+		Order("id ASC").
+		Find(&rows).Error
+	return rows, err
+}
+
 // FindByIDsWithViewer is like FindByIDs but additionally returns entries
 // in status {3, 4} where the viewer is the submitter. Used by
 // GET /galgame/batch when the caller authenticates with a user JWT.
