@@ -1,10 +1,16 @@
-// backfill-dlsite-media fills the catalog-native media rows for BODYLESS galgame
-// works from DLsite (media-aggregation wave, refs/proj/55). For each bodyless
+// backfill-dlsite-media fills the catalog-native media rows for galgame works
+// from DLsite (media-aggregation wave, refs/proj/55 + refs/proj/125). For each
 // galgame work reachable via a DLsite workno release anchor it writes an intro
 // (from dlsite.works.page_json.parts), a cover (image_main), and screenshots
 // (image_samples[]) — all under source_id=dlsite. Image BYTES are read from a
 // LOCAL mirror produced by kun-dlsite-api's `mirror` command; this job NEVER
 // dials DLsite.
+//
+// Two candidate lanes: BODYLESS works take all three kinds; CLAIMED works
+// (site='galgame_wiki') take SCREENSHOTS ONLY, and only those that show no
+// screenshot at all today (no wiki bridge row, no native row) — refs/proj/125.
+// intro/cover on a claimed work stay refused (they are bridged at read time).
+// The summary reports the lane split as candidates_bodyless / candidates_claimed.
 //
 // Logic lives in internal/jobs/dlsitemedia. Idempotent: a work whose media row
 // already exists is skipped before any byte read, so a re-run writes nothing.
@@ -46,7 +52,7 @@ func main() {
 	apply := flag.Bool("apply", false, "write changes (default: dry-run forecast only)")
 	kind := flag.String("kind", "all", "which media to backfill: all | intro | cover | screenshot (comma-separated)")
 	limit := flag.Int("limit", 0, "max candidate works to process (0 = all)")
-	offset := flag.Int("offset", 0, "skip this many candidate works (for chunking)")
+	offset := flag.Int("offset", 0, "skip this many BODYLESS candidate works (for chunking); the claimed screenshot lane is always taken from its head — it self-resumes, so offsetting into it would skip works")
 	dsn := flag.String("dsn", "", "catalog DSN — REQUIRED; the rehearsal copy locally (kun_catalog_rehearsal), the live catalog only in the production run")
 	dlsiteDSN := flag.String("dlsite-dsn", "", "dlsite staging DSN — REQUIRED; reads product_json/page_json")
 	mirrorDir := flag.String("mirror-dir", "", "local mirror root <root>/<workno>/<filename> (required for cover/screenshot)")

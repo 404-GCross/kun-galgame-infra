@@ -1,12 +1,12 @@
-// Package dlsitemedia backfills catalog-native media rows for BODYLESS galgame
-// works from DLsite (media-aggregation wave, refs/proj/55). Steps 52/53/54 built
-// the three native tables (catalog_work_intro / catalog_work_cover /
+// Package dlsitemedia backfills catalog-native media rows for galgame works from
+// DLsite (media-aggregation wave, refs/proj/55 + refs/proj/125). Steps 52/53/54
+// built the three native tables (catalog_work_intro / catalog_work_cover /
 // catalog_work_screenshot), their read-face nativeWork* branches, and the catalog
 // image refping — but bodyless read faces returned [] because the BYTES were
 // deferred to this wave. 55 fills them.
 //
-// For each bodyless galgame work reachable via an EXACT DLsite workno release
-// anchor it writes, all attributed to source_id = dlsite (4):
+// For each galgame work reachable via an EXACT DLsite workno release anchor it
+// writes, all attributed to source_id = dlsite (4):
 //
 //   - intro: dlsite.works.page_json.parts → catalog_work_intro (lang 'ja'). Pure
 //     DB, no bytes, no image service, no quota — landed first for immediate value.
@@ -16,6 +16,19 @@
 //   - screenshot: each image_samples[i] → UploadWithSub(catalog_screenshot) →
 //     catalog_work_screenshot (sort_order=i, caption=”).
 //
+// TWO CANDIDATE LANES (the write side of the (facet, source) XOR):
+//   - BODYLESS (site=”/NULL) — every kind. The whole-facet XOR still holds for
+//     intro and cover: a claimed work bridges those at read time, so this job
+//     refuses to materialise them (writeIntro / writeCover).
+//   - CLAIMED (site='galgame_wiki') — SCREENSHOT ONLY (refs/proj/125). dlsite is a
+//     catalog-native source, so its screenshot rows live in catalog_work_screenshot
+//     for claimed and bodyless alike, and the read face unions them with the wiki
+//     bridge. Narrowly targeted: only claimed works with NO bridged screenshot and
+//     NO native screenshot (see loadClaimedScreenshotCandidates), so the store
+//     samples are a fallback for works that show nothing today, never a supplement
+//     to real wiki screenshots. The wiki sources themselves are still never
+//     materialised (bridge-not-copy, §2).
+//
 // Discipline, modeled on internal/jobs/charportraits:
 //   - Bytes ONLY ever come from a LOCAL mirror (--mirror-dir), produced by
 //     kun-dlsite-api's `mirror` command (<root>/<workno>/<filename>). This job
@@ -24,10 +37,12 @@
 //     writes are ON CONFLICT DO NOTHING, so a second run writes zero.
 //   - --dsn (catalog) and --dlsite-dsn (staging) are ALWAYS explicit — a bare run
 //     cannot touch a live DB.
-//   - XOR guard (§8.D): native rows are written ONLY for bodyless works
-//     (site=”); a claimed work is refused at write time.
 //   - Freshly-uploaded hashes are reference-pinged immediately (an image sits at
-//     TTL from upload time; don't wait for the nightly refping).
+//     TTL from upload time; don't wait for the nightly refping). catalog-image-refping
+//     takes catalog_work_screenshot in FULL, so the claimed lane's bytes are kept
+//     alive by the same nightly sweep as the bodyless ones.
+//   - Only works that actually GAINED a row are touched (catalog_work.updated_at),
+//     so a second --apply moves no watermark on the public changes feed.
 package dlsitemedia
 
 import (
@@ -108,7 +123,7 @@ type counters struct {
 
 	coverUploaded, coverWould, coverExists, coverPlaceholder, coverMissing, coverRejected, coverRefused, coverDedup int
 
-	shotUploaded, shotWould, shotExists, shotMissing, shotRejected, shotRefused, shotDedup int
+	shotUploaded, shotWould, shotExists, shotMissing, shotRejected, shotNoSamples, shotDedup int
 
 	errors int
 }
@@ -171,7 +186,7 @@ func Run(ctx context.Context, cfg *config.Config, opts Opts) (map[string]any, er
 	if err != nil {
 		return nil, err
 	}
-	cands, err := loadCandidates(ctx, db, reg, opts.Limit, opts.Offset)
+	cands, err := loadCandidates(ctx, db, reg, opts.Kinds, opts.Limit, opts.Offset)
 	if err != nil {
 		return nil, fmt.Errorf("load candidates: %w", err)
 	}
@@ -183,7 +198,9 @@ func Run(ctx context.Context, cfg *config.Config, opts Opts) (map[string]any, er
 	if err != nil {
 		return nil, err
 	}
-	slog.Info("dlsite-media candidates", "candidates", len(cands), "apply", opts.Apply,
+	bodylessCands, claimedCands := laneSplit(cands)
+	slog.Info("dlsite-media candidates", "candidates", len(cands),
+		"bodyless", bodylessCands, "claimed", claimedCands, "apply", opts.Apply,
 		"kinds", fmt.Sprintf("intro=%t cover=%t screenshot=%t", opts.Kinds.Intro, opts.Kinds.Cover, opts.Kinds.Screenshot),
 		"offset", opts.Offset, "limit", opts.Limit)
 
@@ -218,6 +235,8 @@ func Run(ctx context.Context, cfg *config.Config, opts Opts) (map[string]any, er
 	}
 
 	sum := r.summary(opts, len(cands))
+	sum["candidates_bodyless"] = bodylessCands
+	sum["candidates_claimed"] = claimedCands
 	slog.Info("dlsite-media done", "summary", sum)
 	if quota {
 		return sum, fmt.Errorf("image quota exceeded — aborted (rerun to resume; idempotent)")
@@ -290,10 +309,23 @@ func (r *runner) summary(opts Opts, candidates int) map[string]any {
 		s["screenshot"] = map[string]any{
 			"uploaded": r.c.shotUploaded, "would_upload": r.c.shotWould,
 			"already_exists": r.c.shotExists, "missing_file": r.c.shotMissing,
-			"rejected": r.c.shotRejected, "refused_claimed": r.c.shotRefused, "dedup": r.c.shotDedup,
+			"rejected": r.c.shotRejected, "no_samples": r.c.shotNoSamples, "dedup": r.c.shotDedup,
 		}
 	}
 	return s
+}
+
+// laneSplit counts the two candidate lanes so a run reports how much of its work
+// is the bodyless backlog vs. the claimed screenshot lane (refs/proj/125).
+func laneSplit(cands []candidate) (bodyless, claimed int) {
+	for _, c := range cands {
+		if isBodyless(c.Site) {
+			bodyless++
+			continue
+		}
+		claimed++
+	}
+	return bodyless, claimed
 }
 
 func openGorm(dsn string) (*gorm.DB, error) {

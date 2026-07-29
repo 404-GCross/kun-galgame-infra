@@ -32,25 +32,80 @@ func resolveRegistry(ctx context.Context, db *gorm.DB) (registry, error) {
 	return r, nil
 }
 
-// candidate is one bodyless galgame work joined to its DLsite workno anchor.
-// Site is carried (not filtered out) so the write-time XOR guard can re-assert
-// it even though loadCandidates already selects only bodyless rows.
+// siteGalgameWiki is the claim marker on catalog_work.site: the work has a
+// galgame (wiki) body, keyed by product_work_id.
+const siteGalgameWiki = "galgame_wiki"
+
+// candidate is one galgame work joined to its DLsite workno anchor. Site is
+// carried (not filtered out) so the write-time guard can decide PER KIND which
+// lane the work belongs to: intro/cover stay bodyless-only (whole-facet XOR),
+// screenshot admits the claimed lane too (refs/proj/125).
 type candidate struct {
 	WorkID int64   `gorm:"column:work_id"`
 	Workno string  `gorm:"column:workno"`
 	Site   *string `gorm:"column:site"`
 }
 
-// loadCandidates resolves bodyless galgame works reachable via an EXACT DLsite
-// workno release anchor:
+// loadCandidates resolves the works this run may write, as the concatenation of
+// the two lanes (bodyless first, claimed appended). The claimed lane only exists
+// when the run backfills screenshots — it is a screenshot-facet decision
+// (refs/proj/125), so an intro/cover-only run resolves exactly the pre-125
+// candidate set.
+//
+// WINDOWING IS ASYMMETRIC, and deliberately so. The two lanes differ in a way
+// that matters for chunked --apply campaigns:
+//
+//   - the BODYLESS lane is STABLE across runs (its query has no "already done"
+//     predicate), so --offset is meaningful there and keeps its pre-125 meaning.
+//   - the CLAIMED lane CONSUMES ITSELF: every work an --apply chunk fills gains a
+//     catalog_work_screenshot row and drops out of the next run's lane. Offsetting
+//     INTO a shrinking list skips works — chunk k starts where chunk k-1's writes
+//     already moved the head, leaving alternating gaps unwritten. So --offset
+//     never enters the claimed lane; it is always taken from its own head, which
+//     is also how it self-resumes after a quota abort.
+//
+// Hence: --offset windows the bodyless lane only, --limit caps the concatenation.
+// `--offset <bodyless-count>` still isolates the claimed lane for a dry run, and
+// stays correct under --apply because the offset only ever consumes stable rows.
+// Windowing happens in Go after the per-lane DISTINCT ON so it applies to distinct
+// works (DISTINCT ON + LIMIT in one query can only window on the DISTINCT order
+// key, which is exactly w.id here).
+func loadCandidates(ctx context.Context, db *gorm.DB, reg registry, kinds Kinds, limit, offset int) ([]candidate, error) {
+	out, err := loadBodylessCandidates(ctx, db, reg)
+	if err != nil {
+		return nil, fmt.Errorf("bodyless lane: %w", err)
+	}
+	if offset > 0 {
+		if offset >= len(out) {
+			out = nil
+		} else {
+			out = out[offset:]
+		}
+	}
+	if kinds.Screenshot {
+		claimed, err := loadClaimedScreenshotCandidates(ctx, db, reg)
+		if err != nil {
+			return nil, fmt.Errorf("claimed screenshot lane: %w", err)
+		}
+		out = append(out, claimed...)
+	}
+	if limit > 0 && limit < len(out) {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
+// loadBodylessCandidates resolves bodyless galgame works reachable via an EXACT
+// DLsite workno release anchor:
 //
 //	catalog_work(bodyless galgame) → catalog_release(work_id)
 //	  → catalog_external_ref(entity_type=release, source_id=dlsite, link_kind=exact, external_id=workno)
 //
 // DISTINCT ON keeps ONE workno per work (the lowest) — a work with several DLsite
-// releases sources its media from one anchor. Ordered + windowed for chunking.
-func loadCandidates(ctx context.Context, db *gorm.DB, reg registry, limit, offset int) ([]candidate, error) {
-	q := db.WithContext(ctx).
+// releases sources its media from one anchor.
+func loadBodylessCandidates(ctx context.Context, db *gorm.DB, reg registry) ([]candidate, error) {
+	var out []candidate
+	err := db.WithContext(ctx).
 		Raw(`SELECT DISTINCT ON (w.id) w.id AS work_id, r.external_id AS workno, w.site AS site
 			FROM catalog_work w
 			JOIN catalog_release rel ON rel.work_id = w.id AND rel.deleted_at IS NULL
@@ -58,24 +113,43 @@ func loadCandidates(ctx context.Context, db *gorm.DB, reg registry, limit, offse
 				AND r.source_id = ? AND r.link_kind = ?
 			WHERE w.medium_id = ? AND (w.site IS NULL OR w.site = '') AND w.deleted_at IS NULL
 			ORDER BY w.id, r.external_id`,
-			model.EntityTypeRelease, reg.dlsiteSource, model.LinkKindExact, reg.galgameMedium)
+			model.EntityTypeRelease, reg.dlsiteSource, model.LinkKindExact, reg.galgameMedium).
+		Scan(&out).Error
+	return out, err
+}
+
+// loadClaimedScreenshotCandidates resolves the CLAIMED half of the screenshot
+// lane (refs/proj/125): a claimed galgame work whose read face shows NO
+// screenshot at all today, reachable via the same EXACT DLsite workno release
+// anchor. Three conditions, all load-bearing:
+//
+//   - site='galgame_wiki' — the claimed population, admitted by the (facet,
+//     source) XOR: dlsite is a catalog-native source, so its rows live in
+//     catalog_work_screenshot for claimed and bodyless alike.
+//   - no bridged screenshot (galgame_screenshot on the work's galgame body) — the
+//     targeting rule. A work whose wiki body already has screenshots would show
+//     both lanes at once; DLsite store samples are a FALLBACK for the works that
+//     have nothing, never a supplement to real wiki screenshots.
+//   - no native screenshot — idempotency at the candidate level (preloadExisting +
+//     ON CONFLICT still guard the write itself).
+//
+// A claimed work with a NULL product_work_id has no bridge to collide with, so
+// the galgame_screenshot NOT EXISTS admits it, which is the intended reading.
+func loadClaimedScreenshotCandidates(ctx context.Context, db *gorm.DB, reg registry) ([]candidate, error) {
 	var out []candidate
-	if err := q.Scan(&out).Error; err != nil {
-		return nil, err
-	}
-	// Window in Go after DISTINCT ON so the offset/limit apply to distinct works
-	// (DISTINCT ON + LIMIT in one query can only window on the DISTINCT order key,
-	// which is exactly w.id here — but slicing keeps chunking obviously correct).
-	if offset > 0 {
-		if offset >= len(out) {
-			return nil, nil
-		}
-		out = out[offset:]
-	}
-	if limit > 0 && limit < len(out) {
-		out = out[:limit]
-	}
-	return out, nil
+	err := db.WithContext(ctx).
+		Raw(`SELECT DISTINCT ON (w.id) w.id AS work_id, r.external_id AS workno, w.site AS site
+			FROM catalog_work w
+			JOIN catalog_release rel ON rel.work_id = w.id AND rel.deleted_at IS NULL
+			JOIN catalog_external_ref r ON r.entity_type = ? AND r.entity_id = rel.id
+				AND r.source_id = ? AND r.link_kind = ?
+			WHERE w.medium_id = ? AND w.site = ? AND w.deleted_at IS NULL
+				AND NOT EXISTS (SELECT 1 FROM galgame_screenshot gs WHERE gs.galgame_id = w.product_work_id)
+				AND NOT EXISTS (SELECT 1 FROM catalog_work_screenshot cs WHERE cs.work_id = w.id)
+			ORDER BY w.id, r.external_id`,
+			model.EntityTypeRelease, reg.dlsiteSource, model.LinkKindExact, reg.galgameMedium, siteGalgameWiki).
+		Scan(&out).Error
+	return out, err
 }
 
 // dlsiteMeta is the per-work media metadata derived from the dlsite staging DB.

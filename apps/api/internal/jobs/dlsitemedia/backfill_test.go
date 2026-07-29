@@ -2,13 +2,21 @@ package dlsitemedia
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"api/internal/platform/catalog/migrate"
 	"api/internal/platform/catalog/model"
+	"api/internal/platform/catalog/repository"
 	"api/internal/platform/catalog/seed"
+	"api/pkg/imageclient"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -125,4 +133,241 @@ func TestIntroWritePath(t *testing.T) {
 	assert.Equal(t, 1, rStale.c.introExists)
 	require.NoError(t, db.Raw("SELECT count(*) FROM catalog_work_intro").Scan(&n).Error)
 	assert.EqualValues(t, 1, n, "still exactly one row")
+}
+
+// --- refs/proj/125: the CLAIMED screenshot lane ---
+
+// claimedLaneGalgameIDs are the fixture galgame body ids the claimed screenshot
+// lane's bridge-emptiness check joins against.
+var claimedLaneGalgameIDs = []int64{9101, 9102, 9103}
+
+// ensureGalgameScreenshotStub provisions the two galgame-family tables the
+// claimed lane's candidate query reads: galgame (the body the claim points at)
+// and galgame_screenshot (the bridge whose EMPTINESS admits a work). In
+// prod/dev both live in kun_catalog alongside catalog; the catalog test DB has
+// no such tables, so this creates stubs (image_hash text — short test hashes —
+// rather than the real char(64)). CREATE ... IF NOT EXISTS is a no-op against a
+// real table, and the inserts pass every real-schema NOT NULL column without a
+// default, so this works either way. Cleanup is a targeted DELETE. Idempotent.
+func ensureGalgameScreenshotStub(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	require.NoError(t, db.Exec(`CREATE TABLE IF NOT EXISTS galgame (
+		id bigint PRIMARY KEY,
+		catalog_work_id bigint,
+		user_id int NOT NULL DEFAULT 0,
+		intro_en_us text NOT NULL DEFAULT '',
+		intro_ja_jp text NOT NULL DEFAULT '',
+		intro_zh_cn text NOT NULL DEFAULT '',
+		intro_zh_tw text NOT NULL DEFAULT ''
+	)`).Error)
+	require.NoError(t, db.Exec(`CREATE TABLE IF NOT EXISTS galgame_screenshot (
+		galgame_id bigint NOT NULL,
+		image_hash text NOT NULL,
+		sort_order bigint NOT NULL DEFAULT 0,
+		caption text NOT NULL DEFAULT '',
+		sexual smallint NOT NULL DEFAULT 0,
+		violence smallint NOT NULL DEFAULT 0,
+		source text NOT NULL DEFAULT '',
+		PRIMARY KEY (galgame_id, image_hash)
+	)`).Error)
+	// Screenshots first: galgame_screenshot carries an FK to galgame(id) in the
+	// real schema, so the children must go before the parents.
+	require.NoError(t, db.Exec(`DELETE FROM galgame_screenshot WHERE galgame_id IN ?`, claimedLaneGalgameIDs).Error)
+	require.NoError(t, db.Exec(`DELETE FROM galgame WHERE id IN ?`, claimedLaneGalgameIDs).Error)
+	for _, id := range claimedLaneGalgameIDs {
+		require.NoError(t, db.Exec(`INSERT INTO galgame (id, catalog_work_id, user_id,
+			intro_en_us, intro_ja_jp, intro_zh_cn, intro_zh_tw) VALUES (?, NULL, 0, '', '', '', '')`, id).Error)
+	}
+}
+
+// stubImageService stands in for image_service's /image/upload: it answers with
+// the standard envelope, hashing the uploaded bytes so identical files dedup to
+// identical hashes (matching the real content-addressed behavior). Only the
+// upload endpoint is needed — the test drives the writers directly, so neither
+// Health nor ReferencePing is called.
+func stubImageService(t *testing.T) *imageclient.Client {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "/image/upload", r.URL.Path)
+		require.NoError(t, r.ParseMultipartForm(1<<20))
+		f, hdr, err := r.FormFile("file")
+		require.NoError(t, err)
+		defer f.Close()
+		sum := sha256.New()
+		buf := make([]byte, hdr.Size)
+		n, _ := f.Read(buf)
+		sum.Write(buf[:n])
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 200,
+			"data": map[string]any{"hash": hex.EncodeToString(sum.Sum(nil)), "size_bytes": hdr.Size},
+		})
+	}))
+	t.Cleanup(srv.Close)
+	return imageclient.New(imageclient.Config{BaseURL: srv.URL, ClientID: "test", ClientSecret: "test"})
+}
+
+// TestClaimedScreenshotLane pins the refs/proj/125 write side: the candidate
+// query's three-condition targeting of claimed works, the PER-KIND guard split
+// (screenshot admits a claimed work, intro/cover still refuse the very same
+// candidate), the real write with the dlsite age→sexual mapping, touch
+// inheritance, and idempotency (second apply writes nothing and touches nothing).
+func TestClaimedScreenshotLane(t *testing.T) {
+	db := testDB
+	ctx := context.Background()
+	ensureGalgameScreenshotStub(t, db)
+	// No RESTART IDENTITY: the identity sequences are shared with every other
+	// package running against this DB, and rewinding them cross-pollutes ids.
+	for _, tbl := range []string{"catalog_external_ref", "catalog_release", "catalog_work_screenshot", "catalog_work"} {
+		require.NoError(t, db.Exec("TRUNCATE "+tbl+" CASCADE").Error)
+	}
+
+	reg, err := resolveRegistry(ctx, db)
+	require.NoError(t, err)
+
+	// anchored creates a galgame work + a release carrying an EXACT dlsite workno
+	// anchor — the reachability every candidate query shares.
+	anchored := func(name, workno string, site *string, galgameID *int64) int64 {
+		w := model.CatalogWork{MediumID: reg.galgameMedium, OLang: "ja", DisplayName: name, Site: site, ProductWorkID: galgameID}
+		require.NoError(t, db.Create(&w).Error)
+		rel := model.CatalogRelease{WorkID: w.ID, Kind: 0}
+		require.NoError(t, db.Create(&rel).Error)
+		require.NoError(t, db.Create(&model.CatalogExternalRef{
+			EntityType: model.EntityTypeRelease, EntityID: rel.ID, SourceID: reg.dlsiteSource,
+			ExternalID: workno, LinkKind: model.LinkKindExact, MatchedBy: "import:test"}).Error)
+		return w.ID
+	}
+	claimed := siteGalgameWiki
+	wBodyless := anchored("bodyless", "RJ100001", nil, nil)
+	wClaimedBare := anchored("claimed-no-screenshot", "RJ100002", &claimed, &claimedLaneGalgameIDs[0])
+	wClaimedBridged := anchored("claimed-with-wiki-screenshot", "RJ100003", &claimed, &claimedLaneGalgameIDs[1])
+	wClaimedNative := anchored("claimed-with-native-screenshot", "RJ100004", &claimed, &claimedLaneGalgameIDs[2])
+
+	// wClaimedBridged already shows a wiki screenshot → the store samples must not
+	// supplement it. wClaimedNative already has a native row → nothing to do.
+	require.NoError(t, db.Exec(`INSERT INTO galgame_screenshot (galgame_id, image_hash, sort_order, source)
+		VALUES (?, 'wiki_shot_hash', 0, '')`, claimedLaneGalgameIDs[1]).Error)
+	require.NoError(t, db.Create(&model.CatalogWorkScreenshot{
+		WorkID: wClaimedNative, ImageHash: "already_here", SortOrder: 0, SourceID: reg.dlsiteSource}).Error)
+
+	// --- candidate targeting: screenshot runs see both lanes, intro/cover-only
+	// runs see the pre-125 bodyless set.
+	shotCands, err := loadCandidates(ctx, db, reg, Kinds{Screenshot: true}, 0, 0)
+	require.NoError(t, err)
+	ids := map[int64]string{}
+	for _, c := range shotCands {
+		ids[c.WorkID] = c.Workno
+	}
+	assert.Contains(t, ids, wBodyless, "bodyless lane unchanged")
+	assert.Contains(t, ids, wClaimedBare, "claimed with no screenshot at all → admitted")
+	assert.NotContains(t, ids, wClaimedBridged, "claimed with a bridged wiki screenshot → excluded")
+	assert.NotContains(t, ids, wClaimedNative, "claimed that already has a native row → excluded")
+	bodyless, claimedCount := laneSplit(shotCands)
+	assert.Equal(t, 1, bodyless)
+	assert.Equal(t, 1, claimedCount)
+
+	introCands, err := loadCandidates(ctx, db, reg, Kinds{Intro: true, Cover: true}, 0, 0)
+	require.NoError(t, err)
+	require.Len(t, introCands, 1, "an intro/cover-only run resolves the bodyless lane alone")
+	assert.Equal(t, wBodyless, introCands[0].WorkID)
+
+	// --- asymmetric windowing: --offset consumes the STABLE bodyless lane only, so
+	// it can isolate the self-consuming claimed lane without ever skipping it.
+	for _, off := range []int{1, 99} {
+		windowed, err := loadCandidates(ctx, db, reg, Kinds{Screenshot: true}, 0, off)
+		require.NoError(t, err)
+		require.Len(t, windowed, 1, "offset %d skips the bodyless lane, never the claimed one", off)
+		assert.Equal(t, wClaimedBare, windowed[0].WorkID)
+	}
+	capped, err := loadCandidates(ctx, db, reg, Kinds{Screenshot: true}, 1, 0)
+	require.NoError(t, err)
+	require.Len(t, capped, 1, "--limit caps the concatenation")
+	assert.Equal(t, wBodyless, capped[0].WorkID)
+
+	// --- the claimed candidate, driven through all three writers.
+	var cand candidate
+	for _, c := range shotCands {
+		if c.WorkID == wClaimedBare {
+			cand = c
+		}
+	}
+	require.Equal(t, wClaimedBare, cand.WorkID)
+
+	// Two mirrored samples + one sample whose bytes were never mirrored.
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, cand.Workno), 0o755))
+	for _, f := range []string{"a.jpg", "b.jpg"} {
+		require.NoError(t, os.WriteFile(filepath.Join(dir, cand.Workno, f), []byte("bytes-of-"+f), 0o644))
+	}
+	meta := dlsiteMeta{Age: "3", Intro: "claimed prose", CoverFile: "cover.jpg",
+		SampleFiles: []string{"a.jpg", "b.jpg", "never_mirrored.jpg"}}
+
+	newRunner := func() *runner {
+		exist, err := preloadExisting(ctx, db, []int64{cand.WorkID}, reg.dlsiteSource, langJa)
+		require.NoError(t, err)
+		return &runner{db: db, sourceID: reg.dlsiteSource, exist: exist, cli: stubImageService(t)}
+	}
+
+	// PER-KIND GUARD SPLIT: intro and cover still refuse this claimed work (their
+	// facets are bridged at read time), screenshot writes it.
+	r := newRunner()
+	r.writeIntro(ctx, cand, meta, true)
+	r.writeCover(ctx, dir, cand, meta, true)
+	assert.Equal(t, 1, r.c.introRefused, "intro still refuses claimed")
+	assert.Equal(t, 1, r.c.coverRefused, "cover still refuses claimed")
+	assert.Zero(t, r.c.introWritten)
+	assert.Zero(t, r.c.coverUploaded)
+	var n int64
+	require.NoError(t, db.Raw("SELECT count(*) FROM catalog_work_intro WHERE work_id = ?", cand.WorkID).Scan(&n).Error)
+	assert.EqualValues(t, 0, n, "claimed intro never materialised")
+	require.NoError(t, db.Raw("SELECT count(*) FROM catalog_work_cover WHERE work_id = ?", cand.WorkID).Scan(&n).Error)
+	assert.EqualValues(t, 0, n, "claimed cover never materialised")
+
+	// Dry run first: forecasts, writes nothing.
+	r = newRunner()
+	assert.False(t, r.writeScreenshots(ctx, dir, cand, meta, false))
+	assert.Equal(t, 2, r.c.shotWould)
+	assert.Equal(t, 1, r.c.shotMissing, "unmirrored sample is a forecast miss, not an error")
+	assert.Empty(t, r.touched, "a dry run touches nothing")
+	require.NoError(t, db.Raw("SELECT count(*) FROM catalog_work_screenshot WHERE work_id = ?", cand.WorkID).Scan(&n).Error)
+	assert.EqualValues(t, 0, n)
+
+	// Apply: two dlsite rows on a CLAIMED work, sexual mapped from age_category 3.
+	r = newRunner()
+	assert.False(t, r.writeScreenshots(ctx, dir, cand, meta, true))
+	assert.Equal(t, 2, r.c.shotUploaded)
+	assert.Equal(t, 1, r.c.shotMissing)
+	assert.Equal(t, []int64{cand.WorkID, cand.WorkID}, r.touched, "every real write feeds the touch list")
+	require.NoError(t, repository.TouchWorks(ctx, r.db, r.touched))
+	var rows []model.CatalogWorkScreenshot
+	require.NoError(t, db.Where("work_id = ?", cand.WorkID).Order("sort_order").Find(&rows).Error)
+	require.Len(t, rows, 2)
+	assert.EqualValues(t, 0, rows[0].SortOrder)
+	assert.EqualValues(t, 1, rows[1].SortOrder)
+	for _, row := range rows {
+		assert.EqualValues(t, reg.dlsiteSource, row.SourceID, "claimed native rows are dlsite-sourced only")
+		assert.EqualValues(t, 2, row.Sexual, "age_category 3 (adult) → sexual 2")
+		assert.EqualValues(t, 0, row.Violence)
+		assert.Equal(t, "", row.Caption)
+	}
+	assert.Len(t, r.pingHashes, 2, "fresh uploads are reference-pinged immediately")
+
+	// Second apply: the preloaded-exists skip means zero writes and zero touches.
+	r = newRunner()
+	assert.False(t, r.writeScreenshots(ctx, dir, cand, meta, true))
+	assert.Zero(t, r.c.shotUploaded)
+	assert.Equal(t, 2, r.c.shotExists)
+	assert.Empty(t, r.touched, "idempotent re-run moves no watermark")
+
+	// And the work drops out of the candidate set entirely (it now has native rows).
+	shotCands, err = loadCandidates(ctx, db, reg, Kinds{Screenshot: true}, 0, 0)
+	require.NoError(t, err)
+	for _, c := range shotCands {
+		assert.NotEqual(t, cand.WorkID, c.WorkID, "a filled work is no longer a candidate")
+	}
+
+	// A work with no samples at all is classified, not silently dropped.
+	r = newRunner()
+	assert.False(t, r.writeScreenshots(ctx, dir, cand, dlsiteMeta{Age: "1"}, true))
+	assert.Equal(t, 1, r.c.shotNoSamples)
 }

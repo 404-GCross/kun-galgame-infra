@@ -49,7 +49,7 @@ const (
 // DLsite description. Pure DB — no bytes, no image service, no quota. Idempotent:
 // a preloaded existing row (or an ON CONFLICT hit) is a skip.
 func (r *runner) writeIntro(ctx context.Context, c candidate, m dlsiteMeta, apply bool) {
-	if !isBodyless(c.Site) { // XOR guard (§8.D) — never materialise a claimed work
+	if !isBodyless(c.Site) { // whole-facet XOR (§8.D) — never materialise a claimed work
 		r.c.introRefused++
 		return
 	}
@@ -91,7 +91,7 @@ func (r *runner) writeIntro(ctx context.Context, c candidate, m dlsiteMeta, appl
 // false — DLsite store covers are landscape; bodyless works have no portrait
 // cover (only claimed works bridge a VNDB portrait), a data fact (§data-reality).
 func (r *runner) writeCover(ctx context.Context, dir string, c candidate, m dlsiteMeta, apply bool) (quota bool) {
-	if !isBodyless(c.Site) {
+	if !isBodyless(c.Site) { // whole-facet XOR (§8.D) — cover keeps the claimed refusal
 		r.c.coverRefused++
 		return false
 	}
@@ -139,13 +139,20 @@ func (r *runner) writeCover(ctx context.Context, dir string, c candidate, m dlsi
 	return false
 }
 
-// writeScreenshots uploads a bodyless work's sample images (image_samples[]) from
+// writeScreenshots uploads a work's DLsite sample images (image_samples[]) from
 // the mirror and writes one catalog_work_screenshot row each, sort_order = the
 // sample's index. Per-sample idempotent (skip an index already present), so an
 // interrupted run resumes cleanly. Returns quota=true on quota exhaustion.
+//
+// NO claim guard, unlike writeIntro/writeCover: the screenshot facet carries the
+// (facet, source) XOR (refs/proj/125), so a dlsite-sourced native row is legal on
+// a claimed work — the wiki sources still never materialize here, and this writer
+// only ever writes source_id=dlsite. WHICH claimed works are admitted is decided
+// once, in loadClaimedScreenshotCandidates (no bridged screenshot, no native
+// screenshot); this writer trusts that candidate set rather than re-deriving it.
 func (r *runner) writeScreenshots(ctx context.Context, dir string, c candidate, m dlsiteMeta, apply bool) (quota bool) {
-	if !isBodyless(c.Site) {
-		r.c.shotRefused++
+	if len(m.SampleFiles) == 0 { // staging row absent, or the work has no samples
+		r.c.shotNoSamples++
 		return false
 	}
 	present := r.exist.shot[c.WorkID]

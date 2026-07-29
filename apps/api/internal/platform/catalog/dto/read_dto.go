@@ -38,11 +38,13 @@ type WorkByAnchorResponse struct {
 	// (portrait_pinned=true) are what kungal/moyu read for the portrait-first UI.
 	Covers []WorkCover `json:"covers"`
 	// Screenshots is the work's screenshot set (step 54 media-aggregation wave
-	// III, the closing read-face wave), one element per screenshot in a single
-	// shape regardless of source. A CLAIMED work's screenshots are bridged from
-	// galgame_screenshot; a BODYLESS work's from its catalog_work_screenshot rows.
-	// Strict XOR: a claimed work with no galgame screenshot yields [] (never a
-	// fallback to native rows).
+	// III + refs/proj/125), one element per screenshot in a single shape
+	// regardless of source. Two per-source lanes ((facet, source) XOR): the wiki
+	// bridge (galgame_screenshot — CLAIMED works only) and the catalog-native
+	// table (catalog_work_screenshot — ALL works). A claimed work's read face is
+	// bridge ∪ native (bridged rows lead); a bodyless work is the degenerate case
+	// with an empty bridge. source_id keeps the lanes attributable. The union is
+	// NOT deduplicated across lanes — see loadWorkScreenshots.
 	Screenshots []WorkScreenshot `json:"screenshots"`
 	// Ratings is the work's rating set (step 58a media-aggregation ratings
 	// facet), at most one element per source, in a single shape regardless of
@@ -182,8 +184,9 @@ type WorkRating struct {
 // claimed work's bytes live in the galgame_wiki scope; a bodyless work's in the
 // catalog scope). Unlike WorkCover it carries a caption and has no kind /
 // portrait_pinned. source_id references the catalog_source registry (§8.C): a
-// bridged claimed screenshot carries its galgame_screenshot.source provenance
-// (galgame_wiki / vndb), a bodyless screenshot its backfill source.
+// bridged screenshot carries its galgame_screenshot.source provenance
+// (galgame_wiki / vndb), a native screenshot its backfill source (dlsite) — a
+// claimed work can now show both, so source_id is the lane discriminator.
 type WorkScreenshot struct {
 	ImageHash string `json:"image_hash"`
 	Caption   string `json:"caption"`

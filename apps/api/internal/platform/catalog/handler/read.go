@@ -125,8 +125,8 @@ func buildWorkResponse(detail *service.WorkDetail) dto.WorkByAnchorResponse {
 		// Covers pre-sized non-nil so a work with no cover (or a claimed work whose
 		// galgame body has none — strict XOR) serializes `[]`, not `null`.
 		Covers: make([]dto.WorkCover, 0, len(detail.Covers)),
-		// Screenshots pre-sized non-nil so a work with no screenshot (or a claimed
-		// work whose galgame body has none — strict XOR) serializes `[]`, not `null`.
+		// Screenshots pre-sized non-nil so a work with neither a bridged nor a
+		// native screenshot serializes `[]`, not `null`.
 		Screenshots: make([]dto.WorkScreenshot, 0, len(detail.Screenshots)),
 		// Ratings pre-sized non-nil so a work with no rating (or a claimed work
 		// whose metas are unscored — strict XOR) serializes `[]`, not `null`.

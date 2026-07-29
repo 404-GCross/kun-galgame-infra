@@ -941,7 +941,7 @@ func TestWorkCover(t *testing.T) {
 // galgameScreenshotStubIDs are the fixture galgame body ids used by the claimed
 // screenshot bridge (kept distinct from the intro/cover stub ids so the media
 // tests never collide on shared galgame ids).
-var galgameScreenshotStubIDs = []int64{7001, 7002}
+var galgameScreenshotStubIDs = []int64{7001, 7002, 7003}
 
 // ensureGalgameScreenshotStub provisions the galgame_screenshot table the
 // claimed-screenshot bridge joins against. In prod/rehearsal galgame_screenshot
@@ -974,12 +974,17 @@ func insertGalgameScreenshot(t *testing.T, db *gorm.DB, galgameID int64, hash st
 		galgameID, hash, sortOrder, caption, sexual, violence, source).Error)
 }
 
-// TestWorkScreenshot pins the step-54 media-aggregation screenshot read face: the
-// CLAIMED bridge (galgame_screenshot mapped to the unified shape, with caption
-// and per-row source mapping ""→galgame_wiki / vndb→vndb), the BODYLESS native
-// read (catalog_work_screenshot), strict XOR (a claimed work with no galgame
-// screenshot yields [] and never falls back to a shadow native row), and
-// []-not-null serialization. Sorted by (sort_order, image_hash).
+// TestWorkScreenshot pins the step-54 + refs/proj/125 screenshot read face: the
+// WIKI BRIDGE lane (galgame_screenshot mapped to the unified shape, with caption
+// and per-row source mapping ""→galgame_wiki / vndb→vndb, claimed works only),
+// the CATALOG-NATIVE lane (catalog_work_screenshot, run for ALL works), their
+// UNION on a claimed work (bridged rows lead, native rows follow, each keeping
+// its source attribution), and []-not-null serialization. Each lane is sorted by
+// (sort_order, image_hash).
+//
+// The pre-125 "strict XOR" case (claimed + native-only → []) is deliberately
+// INVERTED here: under the (facet, source) XOR a claimed work's dlsite rows are
+// first-class read-face rows, so they now surface.
 func TestWorkScreenshot(t *testing.T) {
 	db := openCatalogTestDB(t)
 	ensureGalgameStub(t, db)           // the intro bridge (also run by loadWorkDetail) needs galgame
@@ -993,15 +998,18 @@ func TestWorkScreenshot(t *testing.T) {
 	require.NoError(t, db.Exec(`DELETE FROM galgame WHERE id IN ?`, galgameScreenshotStubIDs).Error)
 	insertGalgameBody(t, db, 7001, 0, "", "", "", "")
 	insertGalgameBody(t, db, 7002, 0, "", "", "", "")
+	insertGalgameBody(t, db, 7003, 0, "", "", "", "")
 	for _, tbl := range []string{"catalog_work_screenshot", "catalog_work"} {
 		require.NoError(t, db.Exec("TRUNCATE "+tbl+" RESTART IDENTITY CASCADE").Error)
 	}
-	// Source ids from the seed: galgame_wiki=12, vndb=2, user=1.
-	var srcGalgameWiki, srcVNDB, srcUser int16
+	// Source ids from the seed: galgame_wiki=12, vndb=2, user=1, dlsite=4.
+	var srcGalgameWiki, srcVNDB, srcUser, srcDlsite int16
 	db.Raw("SELECT id FROM catalog_source WHERE key='galgame_wiki'").Scan(&srcGalgameWiki)
 	db.Raw("SELECT id FROM catalog_source WHERE key='vndb'").Scan(&srcVNDB)
 	db.Raw("SELECT id FROM catalog_source WHERE key='user'").Scan(&srcUser)
+	db.Raw("SELECT id FROM catalog_source WHERE key='dlsite'").Scan(&srcDlsite)
 	require.NotZero(t, srcGalgameWiki, "galgame_wiki source must be seeded")
+	require.NotZero(t, srcDlsite, "dlsite source must be seeded")
 
 	// --- CLAIMED work: screenshots bridged from galgame_screenshot (galgame_id 7001).
 	//   sort_order 0: a captioned vndb screenshot (source=vndb → vndb, sexual=1)
@@ -1021,14 +1029,26 @@ func TestWorkScreenshot(t *testing.T) {
 	require.NoError(t, db.Create(&model.CatalogWorkScreenshot{
 		WorkID: bodyless.ID, ImageHash: "hash_bodyless_extra", SortOrder: 1, SourceID: srcUser}).Error)
 
-	// --- XOR work: claimed (galgame_id 7002) but galgame_screenshot empty; a SHADOW
-	// native catalog_work_screenshot row exists (a prior bodyless state) and must
-	// NEVER surface.
-	xor := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "空主張", ContentRating: 0, Status: 0,
+	// --- NATIVE-ONLY CLAIMED work: claimed (galgame_id 7002) with an empty
+	// galgame_screenshot bridge and a native dlsite row (the refs/proj/125
+	// backfill's exact target shape). Pre-125 this yielded []; the catalog-native
+	// lane now runs for claimed works too, so the row surfaces.
+	nativeOnly := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "空主張", ContentRating: 0, Status: 0,
 		Site: strptr("galgame_wiki"), ProductWorkID: ptrI64(7002)}
-	require.NoError(t, db.Create(&xor).Error)
+	require.NoError(t, db.Create(&nativeOnly).Error)
 	require.NoError(t, db.Create(&model.CatalogWorkScreenshot{
-		WorkID: xor.ID, ImageHash: "hash_shadow_must_not_appear", SortOrder: 0, SourceID: srcVNDB}).Error)
+		WorkID: nativeOnly.ID, ImageHash: "hash_claimed_dlsite_only", SortOrder: 0,
+		Sexual: 2, SourceID: srcDlsite}).Error)
+
+	// --- UNION work: claimed (galgame_id 7003) with BOTH a bridged wiki
+	// screenshot and a native dlsite row. Bridged rows lead, native rows follow;
+	// source_id keeps the two lanes attributable.
+	union := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "双泳道", ContentRating: 0, Status: 0,
+		Site: strptr("galgame_wiki"), ProductWorkID: ptrI64(7003)}
+	require.NoError(t, db.Create(&union).Error)
+	insertGalgameScreenshot(t, db, 7003, "hash_wiki_bridged", 0, "wiki", 0, 0, "")
+	require.NoError(t, db.Create(&model.CatalogWorkScreenshot{
+		WorkID: union.ID, ImageHash: "hash_native_dlsite", SortOrder: 0, SourceID: srcDlsite}).Error)
 
 	// --- EMPTY work: bodyless, no screenshots → [].
 	empty := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "空作品", ContentRating: 0, Status: 0}
@@ -1064,10 +1084,27 @@ func TestWorkScreenshot(t *testing.T) {
 	assert.EqualValues(t, srcVNDB, b0["source_id"])
 	assert.EqualValues(t, srcUser, shots[1].(map[string]any)["source_id"])
 
-	// XOR: claimed + empty galgame_screenshot → [] (the shadow native row is invisible).
-	code, body = getJSON(t, app, "/api/v1/catalog/works/"+itoa(xor.ID))
+	// CLAIMED, NATIVE-ONLY: the dlsite row surfaces (refs/proj/125 semantic flip).
+	code, body = getJSON(t, app, "/api/v1/catalog/works/"+itoa(nativeOnly.ID))
 	require.Equal(t, 200, code)
-	assert.Empty(t, body["data"].(map[string]any)["screenshots"].([]any), "strict XOR: no fallback to native rows")
+	shots = body["data"].(map[string]any)["screenshots"].([]any)
+	require.Len(t, shots, 1, "the catalog-native lane runs for claimed works too")
+	n0 := shots[0].(map[string]any)
+	assert.Equal(t, "hash_claimed_dlsite_only", n0["image_hash"])
+	assert.EqualValues(t, srcDlsite, n0["source_id"], "native row keeps its dlsite attribution")
+	assert.EqualValues(t, 2, n0["sexual"])
+
+	// CLAIMED, BOTH LANES: bridge ∪ native, bridged row first, both attributed.
+	code, body = getJSON(t, app, "/api/v1/catalog/works/"+itoa(union.ID))
+	require.Equal(t, 200, code)
+	shots = body["data"].(map[string]any)["screenshots"].([]any)
+	require.Len(t, shots, 2, "bridge ∪ native")
+	u0 := shots[0].(map[string]any)
+	assert.Equal(t, "hash_wiki_bridged", u0["image_hash"], "bridged rows lead")
+	assert.EqualValues(t, srcGalgameWiki, u0["source_id"])
+	u1 := shots[1].(map[string]any)
+	assert.Equal(t, "hash_native_dlsite", u1["image_hash"], "native rows follow")
+	assert.EqualValues(t, srcDlsite, u1["source_id"])
 
 	// EMPTY: [] not null.
 	code, body = getJSON(t, app, "/api/v1/catalog/works/"+itoa(empty.ID))

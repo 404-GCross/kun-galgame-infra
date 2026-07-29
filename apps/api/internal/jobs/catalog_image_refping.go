@@ -34,13 +34,17 @@ func DefaultCatalogImageRefpingOpts() CatalogImageRefpingOpts {
 // The catalog-scope hash universe is three sources (step 54, refs/proj/51 §4):
 //  1. catalog_character.image_hash — VNDB portrait wave (step 48).
 //  2. catalog_work_cover.image_hash — bodyless cover backfill (step 53).
-//  3. catalog_work_screenshot.image_hash — bodyless screenshot backfill (step 54).
+//  3. catalog_work_screenshot.image_hash — DLsite screenshot backfill (step 54 for
+//     bodyless works, refs/proj/125 for the claimed lane).
 //
 // For (2) and (3) ALL rows count, INCLUDING those shadowed by a later claim
 // (§8.B shadow-never-delete): a shadowed media row's bytes stay in catalog scope
 // until an explicit handoff, so a missed shadowed row = GC eats a live image.
-// (Claimed works' bridged covers/screenshots live in the galgame_wiki scope and
-// are pinged by the SEPARATE galgame-image-refping, not here — byte discipline §4.)
+// Claim state is deliberately NOT a filter here — a claimed work's BRIDGED
+// covers/screenshots live in the galgame_wiki scope and are pinged by the
+// SEPARATE galgame-image-refping, but its NATIVE catalog_work_screenshot rows
+// (the DLsite claimed lane) are catalog-scope bytes owned by this sweep — byte
+// discipline §4.
 //
 // Reference-ping is SITE-SCOPED, so this MUST authenticate as the catalog image
 // client (site_key "catalog"); any other identity 404s every hash and the images rot.

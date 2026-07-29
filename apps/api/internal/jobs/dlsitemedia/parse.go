@@ -172,7 +172,10 @@ func mirrorPath(root, workno, filename string) string {
 	return filepath.Join(root, workno, filename)
 }
 
-// isBodyless reports whether a catalog_work is bodyless (site NULL or ”). The
-// XOR guard (§8.D): native media rows are written ONLY for bodyless works — a
-// claimed work bridges its media at read time and must never get a native row.
+// isBodyless reports whether a catalog_work is bodyless (site NULL or ”). It
+// drives the whole-facet XOR guard (§8.D) on intro and cover: those are written
+// ONLY for bodyless works — a claimed work bridges them at read time and must
+// never get a native row. The screenshot facet is exempt (refs/proj/125): dlsite
+// is a catalog-native source there, so isBodyless only splits the run's lane
+// reporting, not its right to write.
 func isBodyless(site *string) bool { return site == nil || *site == "" }
