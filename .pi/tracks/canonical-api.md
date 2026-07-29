@@ -46,3 +46,4 @@
 - 2026-07-29 **A2-1c 交付+验收放行**(doc 106 §24):`c87af47f` calendar 三桶——分类锚=最早带年 release 序数,olang 门(存量单值 ja 亲证=前瞻闸),桶级 ETag+count,查询形状 144 月窗等价实测 38ms;七偏离全批;spec 3 端点 0 breaking。共库干扰三例累计→跟进候选=service 套件 advisory 锁。**A2-1 余 A2-1d(D5 search):前置=聚合轨 reindex 排程对齐,待协调后开工。**
 - 2026-07-29 A2-1d works/search 产品面+tags 索引+套件锁交付验收放行(f0c10cf2,158 PASS 复跑;部署须一次 reindex);A2-2/A2-3 双 STOP 验收+R1-R13 裁决,A2-1e 供给补全波批准待派。
 - 2026-07-29 A2-1e 供给补全波交付验收放行(383ea4c2+835a339d,300 PASS 复跑;claim_state 迁移随波)——A2 缺口收口,search 尾留红线解除,A2-2/A2-3 复航令下达;新记 W1 前置:安全轴 catalog 本体化。
+- 2026-07-29 A2-2 moyu 复航验收放行:弃用面消费归零(4 commit,vendor md5 亲证,169 PASS 复跑);A2-1f 微波(intro 可搜+tag sexual)下达;部署硬序=infra reconcile 先于 moyu 上线。
