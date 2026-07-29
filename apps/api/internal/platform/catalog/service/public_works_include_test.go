@@ -135,14 +135,11 @@ func TestWorksListDefaultResponseIsByteIdentical(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	// NOTE olang is "" even though the row carries olang='ja': the works-list
-	// page query scans into an anonymous struct whose OLang field GORM names
-	// o_lang (the acronym-naming trap), so the selected `olang` column never
-	// binds. That is the SHIPPED W1 behaviour and this golden pins it on
-	// purpose — the wave that fixes the column mapping changes the default
-	// response and must update this string deliberately, not by accident.
+	// olang carries the real row value since the o_lang column-tag fix (the
+	// list scan struct previously never bound the selected `olang` column and
+	// the field shipped as "" from W1 — a value correction, not a shape change).
 	want := `{"items":[{"id":` + itoa(id) + `,"medium":"galgame","display_name":"Rich Brief",` +
-		`"content_rating":"all_ages","olang":"","release_date":"2021-06-04","claimed_by":null,` +
+		`"content_rating":"all_ages","olang":"ja","release_date":"2021-06-04","claimed_by":null,` +
 		`"cover":"` + testCDNBase + `/aa/11/` + hash64("aa11") + `.webp",` +
 		`"updated":"2026-01-02T03:04:05Z"}],"next_cursor":null}`
 	if string(got) != want {

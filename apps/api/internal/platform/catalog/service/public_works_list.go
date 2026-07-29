@@ -143,10 +143,13 @@ func (s *PublicService) WorksList(ctx context.Context, f WorksListFilter, cursor
 	args = append(args, limit)
 
 	var rows []struct {
-		ID            int64
-		MediumID      int16
-		DisplayName   string
-		OLang         string
+		ID          int64
+		MediumID    int16
+		DisplayName string
+		// The explicit column tag is load-bearing: GORM snake-cases the field
+		// to o_lang, which matches no result column, so the value silently
+		// scanned as "" from W1 until A2-1a caught it.
+		OLang         string `gorm:"column:olang"`
 		ContentRating int16
 		Site          *string
 		ProductWorkID *int64
