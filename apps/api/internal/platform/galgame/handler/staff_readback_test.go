@@ -268,23 +268,35 @@ func TestStaffTaxonomyReadBackIsGated(t *testing.T) {
 	assert.Equal(t, 403, code)
 }
 
+// metaRowKeys is the meta op's frozen row shape (A2-1e + its tail): ownership,
+// lifecycle, and the four localized names the forum's notification titles are
+// built from. Nothing else may appear here — the moment a body field creeps in,
+// this credentialed status-blind lane becomes a way to read unpublished
+// content.
+var metaRowKeys = []string{
+	"gid", "user_id", "status",
+	"name_zh_cn", "name_zh_tw", "name_ja_jp", "name_en_us",
+}
+
 // TestGalgameMetaBatchIsStatusBlind is the area-B ownership case: the op
 // answers for UNPUBLISHED entries — which is the whole reason it exists, since
 // the published-only batch read silently locks their owners out of their own
-// edit lane.
+// edit lane — and it answers WITH the localized names, since that same read is
+// where the notification title comes from.
 func TestGalgameMetaBatchIsStatusBlind(t *testing.T) {
 	db := openStaffTestDB(t)
 	require.NoError(t, db.Exec(`DELETE FROM galgame WHERE id IN (92001,92002,92003,92004)`).Error)
-	seed := func(id, status, userID int) {
+	seed := func(id, status, userID int, zhCN, zhTW, jaJP, enUS string) {
 		require.NoError(t, db.Exec(`
 			INSERT INTO galgame (id, vndb_id, name_en_us, name_ja_jp, name_zh_cn, name_zh_tw,
 			                     intro_en_us, intro_ja_jp, intro_zh_cn, intro_zh_tw, status, user_id)
-			VALUES (?, '', '', '', '', '', '', '', '', '', ?, ?)`, id, status, userID).Error)
+			VALUES (?, '', ?, ?, ?, ?, '', '', '', '', ?, ?)`,
+			id, enUS, jaJP, zhCN, zhTW, status, userID).Error)
 	}
-	seed(92001, model.GalgameStatusPublished, 11)
-	seed(92002, model.GalgameStatusVNDBDraft, 12)
-	seed(92003, model.GalgameStatusPending, 13)
-	seed(92004, model.GalgameStatusBanned, 14)
+	seed(92001, model.GalgameStatusPublished, 11, "简体名", "繁體名", "日本語名", "English Name")
+	seed(92002, model.GalgameStatusVNDBDraft, 12, "", "", "草案の名", "")
+	seed(92003, model.GalgameStatusPending, 13, "", "", "", "")
+	seed(92004, model.GalgameStatusBanned, 14, "封禁名", "", "", "")
 
 	h := NewGalgameMetaHandler(repository.NewGalgameRepository(db))
 	app := fiber.New()
@@ -295,19 +307,31 @@ func TestGalgameMetaBatchIsStatusBlind(t *testing.T) {
 	items := body["data"].(map[string]any)["items"].([]any)
 	require.Len(t, items, 4, "an unresolvable id is absent, not an error")
 
-	want := map[float64][2]float64{
-		92001: {11, float64(model.GalgameStatusPublished)},
-		92002: {12, float64(model.GalgameStatusVNDBDraft)},
-		92003: {13, float64(model.GalgameStatusPending)},
-		92004: {14, float64(model.GalgameStatusBanned)},
+	type meta struct {
+		userID, status         float64
+		zhCN, zhTW, jaJP, enUS string
+	}
+	want := map[float64]meta{
+		92001: {11, float64(model.GalgameStatusPublished), "简体名", "繁體名", "日本語名", "English Name"},
+		// An unpublished entry with only ONE locale filled: the notification
+		// title falls back to it, which is the whole point of carrying all four.
+		92002: {12, float64(model.GalgameStatusVNDBDraft), "", "", "草案の名", ""},
+		// A wholly nameless row: every key must still be PRESENT and "", so a
+		// consumer's fallback chain never has to tell absent from blank.
+		92003: {13, float64(model.GalgameStatusPending), "", "", "", ""},
+		92004: {14, float64(model.GalgameStatusBanned), "封禁名", "", "", ""},
 	}
 	for _, raw := range items {
 		row := raw.(map[string]any)
-		assert.ElementsMatch(t, []string{"gid", "user_id", "status"}, mapKeys(row),
-			"the meta op carries ownership only — never renderable content")
+		assert.ElementsMatch(t, metaRowKeys, mapKeys(row),
+			"the meta op carries ownership + title only — never a body")
 		exp := want[row["gid"].(float64)]
-		assert.Equal(t, exp[0], row["user_id"], "gid %v", row["gid"])
-		assert.Equal(t, exp[1], row["status"], "gid %v", row["gid"])
+		assert.Equal(t, exp.userID, row["user_id"], "gid %v", row["gid"])
+		assert.Equal(t, exp.status, row["status"], "gid %v", row["gid"])
+		assert.Equal(t, exp.zhCN, row["name_zh_cn"], "gid %v", row["gid"])
+		assert.Equal(t, exp.zhTW, row["name_zh_tw"], "gid %v", row["gid"])
+		assert.Equal(t, exp.jaJP, row["name_ja_jp"], "gid %v", row["gid"])
+		assert.Equal(t, exp.enUS, row["name_en_us"], "gid %v", row["gid"])
 	}
 
 	// Parameter posture: missing / malformed / over-limit are all 400.

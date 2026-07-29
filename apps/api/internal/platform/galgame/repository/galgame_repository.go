@@ -262,12 +262,29 @@ func (r *GalgameRepository) FindByIDsAny(ctx context.Context, ids []int) ([]mode
 }
 
 // GalgameMetaRow is the minimal ownership + lifecycle projection of a galgame
-// (A2-1e area B): who submitted it and what state it is in. Nothing else — this
-// is deliberately NOT a brief, and it is not renderable content.
+// (A2-1e area B): who submitted it, what state it is in, and what to call it.
+//
+// The four localized names are the ONLY content-adjacent keys here, and they
+// earn their place by the same argument the rest of the row does (A2-1e tail
+// ruling): the forum edit lane's notifications carry the entry's title, and it
+// resolves that title from the published-only batch read — which returns
+// nothing for an unpublished entry, so the very notifications this op exists to
+// address would go out titleless. A title is not a body: no intro, no cover, no
+// release data, nothing that would turn this into a way to read unpublished
+// content.
+//
+// Empty names come back as empty strings (the wiki columns are NOT NULL with an
+// empty-string default), and all four keys are ALWAYS present — a consumer
+// picking a locale with a fallback chain must not have to distinguish "absent"
+// from "blank".
 type GalgameMetaRow struct {
-	GID    int64 `gorm:"column:id" json:"gid"`
-	UserID int64 `gorm:"column:user_id" json:"user_id"`
-	Status int16 `gorm:"column:status" json:"status"`
+	GID      int64  `gorm:"column:id" json:"gid"`
+	UserID   int64  `gorm:"column:user_id" json:"user_id"`
+	Status   int16  `gorm:"column:status" json:"status"`
+	NameZhCN string `gorm:"column:name_zh_cn" json:"name_zh_cn"`
+	NameZhTW string `gorm:"column:name_zh_tw" json:"name_zh_tw"`
+	NameJaJP string `gorm:"column:name_ja_jp" json:"name_ja_jp"`
+	NameEnUS string `gorm:"column:name_en_us" json:"name_en_us"`
 }
 
 // FindMetaByIDs returns the ownership meta of the given galgames, STATUS-BLIND
@@ -279,7 +296,7 @@ type GalgameMetaRow struct {
 // degrades to "not the owner", and the true owner is locked out of editing,
 // reverting and reviewing their own unpublished entry. An ownership question
 // must be answerable for rows the PUBLIC face will not show — which is exactly
-// why this lives on the credentialed /internal face and returns no content.
+// why this lives on the credentialed /internal face and carries no body.
 //
 // Missing ids are simply absent from the result (a deleted / never-existing
 // galgame is not an error).
@@ -290,7 +307,7 @@ func (r *GalgameRepository) FindMetaByIDs(ctx context.Context, ids []int64) ([]G
 	var rows []GalgameMetaRow
 	err := r.db.WithContext(ctx).
 		Model(&model.Galgame{}).
-		Select("id, user_id, status").
+		Select("id, user_id, status, name_zh_cn, name_zh_tw, name_ja_jp, name_en_us").
 		Where("id IN ?", ids).
 		Order("id ASC").
 		Find(&rows).Error

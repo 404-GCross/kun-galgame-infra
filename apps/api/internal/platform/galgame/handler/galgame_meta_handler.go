@@ -10,15 +10,19 @@
 // entry.
 //
 // This op is the honest supply for that question: STATUS-BLIND, credentialed,
-// and carrying only `{gid, user_id, status}`. `status` rides along so the caller
-// can tell "not the owner" from "unpublished" instead of inferring it from an
-// absence.
+// and carrying `{gid, user_id, status}` plus the four localized names.
+// `status` rides along so the caller can tell "not the owner" from
+// "unpublished" instead of inferring it from an absence; the names are there
+// because the SAME notifications resolve their title from that same
+// published-only read and would otherwise go out titleless for exactly the
+// unpublished entries this op exists to serve (A2-1e tail ruling).
 //
-// It is deliberately NOT a brief: no titles, no cover, no intro. Ownership is
-// not content, and a lane that answers "who owns this" must not become a way to
-// read unpublished bodies. The R2 red line also stays intact — this is the
-// SURVIVING wiki face, where the wiki's own state machine legitimately lives;
-// none of it crosses into the catalog public contract.
+// It is deliberately NOT a brief: a title, and nothing else — no cover, no
+// intro, no release data. Ownership is not content, and a lane that answers
+// "who owns this" must not become a way to read unpublished bodies. The R2 red
+// line also stays intact — this is the SURVIVING wiki face, where the wiki's
+// own state machine legitimately lives; none of it crosses into the catalog
+// public contract.
 package handler
 
 import (
@@ -48,9 +52,10 @@ func NewGalgameMetaHandler(repo *repository.GalgameRepository) *GalgameMetaHandl
 }
 
 // Meta serves GET /internal/galgame/meta?ids=1,2,3 — `{items:[{gid,user_id,
-// status}]}`, status-blind, order by gid ASC. Ids that do not resolve are
-// simply absent (a deleted galgame is not an error), so the caller distinguishes
-// "no such entry" from "not the owner" by presence.
+// status,name_zh_cn,name_zh_tw,name_ja_jp,name_en_us}]}`, status-blind, order
+// by gid ASC. Every key is always present (an unset name is ""). Ids that do
+// not resolve are simply absent (a deleted galgame is not an error), so the
+// caller distinguishes "no such entry" from "not the owner" by presence.
 func (h *GalgameMetaHandler) Meta(c fiber.Ctx) error {
 	raw := strings.TrimSpace(c.Query("ids"))
 	if raw == "" {
