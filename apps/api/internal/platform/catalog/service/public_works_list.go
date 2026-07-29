@@ -114,8 +114,10 @@ func (s *PublicService) WorksList(ctx context.Context, f WorksListFilter, cursor
 			if perr != nil {
 				return dto.PublicWorksListData{}, ErrBadCursor
 			}
-			where = append(where, "(w.updated_at < ? OR (w.updated_at = ? AND w.id < ?))")
-			args = append(args, ts, ts, cur.ID)
+			// Row-value comparison (not OR expansion) so the keyset lands as an
+			// Index Cond on idx_catalog_work_updated_id instead of a Filter.
+			where = append(where, "(w.updated_at, w.id) < (?, ?)")
+			args = append(args, ts, cur.ID)
 		}
 		order = "ORDER BY w.updated_at DESC, w.id DESC"
 	} else {
@@ -188,8 +190,10 @@ func (s *PublicService) Changes(ctx context.Context, cursor string, limit int) (
 		if perr != nil {
 			return dto.PublicChangesData{}, ErrBadCursor
 		}
-		where = append(where, "(updated_at > ? OR (updated_at = ? AND id > ?))")
-		args = append(args, ts, ts, cur.ID)
+		// Row-value comparison (not OR expansion) so the keyset lands as an
+		// Index Cond on idx_catalog_work_updated_id instead of a Filter.
+		where = append(where, "(updated_at, id) > (?, ?)")
+		args = append(args, ts, cur.ID)
 	}
 	q := `SELECT id, updated_at FROM catalog_work WHERE ` + strings.Join(where, " AND ") +
 		` ORDER BY updated_at ASC, id ASC LIMIT ?`
