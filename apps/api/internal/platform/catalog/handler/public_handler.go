@@ -254,13 +254,18 @@ func (h *PublicHandler) Label(c fiber.Ctx) error {
 	return response.Success(c, rec)
 }
 
-// Search serves GET /v1/catalog/search — entity relevance search over the three
-// indexes (names / characters / labels), projected to public briefs (never the
-// internal document shape, 裁定 9).
+// Search serves GET /v1/catalog/search — entity relevance AUTOCOMPLETE over the
+// entity indexes (names / characters / labels / works / tags), projected to
+// public briefs (never the internal document shape, 裁定 9).
+//
+// This is the identity finder: 20 hits, one flat shape per family, no
+// pagination. The works PRODUCT search — filters, facets, sort, paging,
+// works-list rows — is a separate door at GET /v1/catalog/works/search; this
+// lane's wire stays frozen (A2-1d adds the `tags` type and nothing else).
 func (h *PublicHandler) Search(c fiber.Ctx) error {
 	uid, entityType, ok := publicSearchIndex(c.Query("type"))
 	if !ok {
-		return response.BadRequestMsg(c, errors.ErrInvalidParam, "type must be one of names|characters|labels|works")
+		return response.BadRequestMsg(c, errors.ErrInvalidParam, "type must be one of names|characters|labels|works|tags")
 	}
 	limit := atoiOrPub(c.Query("limit"), 20)
 	if limit <= 0 || limit > 20 {
@@ -287,6 +292,12 @@ func (h *PublicHandler) Search(c fiber.Ctx) error {
 		}
 		if d.ContentRating != nil {
 			hit.ContentRating = publicContentRatingKey(*d.ContentRating)
+		}
+		if entityType == "tag" {
+			// Tag docs carry both axes; every other family leaves them empty, so
+			// the four pre-A2-1d hit shapes stay byte-identical.
+			hit.Tier = publicTagTierKey(derefI16(d.Tier))
+			hit.Kind = publicTagKindKey(derefI16(d.Kind))
 		}
 		out.Items = append(out.Items, hit)
 	}
@@ -381,13 +392,39 @@ func publicSearchIndex(t string) (uid, entityType string, ok bool) {
 	case "works":
 		uid, ok = catsearch.IndexForType("works")
 		return uid, "work", ok
+	case "tags":
+		// A2-1d settles the A2-1b account: the canonical tag vocabulary joins
+		// the entity search. Same index shape as labels; the hit additionally
+		// carries tier + kind.
+		uid, ok = catsearch.IndexForType("tags")
+		return uid, "tag", ok
 	default:
 		return "", "", false
 	}
 }
 
-// stripEntityPrefix turns a prefixed entity-search id (n123 / c123 / b123) into
-// its numeric id (裁定 2 — public ids are plain numbers).
+// publicTagTierKey / publicTagKindKey mirror the service-layer projections (tag
+// search hits only): the contract speaks string keys, never enum ints.
+func publicTagTierKey(t int16) string {
+	switch t {
+	case model.TagTierLongtail:
+		return "longtail"
+	case model.TagTierHidden:
+		return "hidden"
+	default:
+		return "core"
+	}
+}
+
+func publicTagKindKey(k int16) string {
+	if k == model.TagKindMeta {
+		return "meta"
+	}
+	return "content"
+}
+
+// stripEntityPrefix turns a prefixed entity-search id (n123 / c123 / b123 /
+// w123 / t123) into its numeric id (裁定 2 — public ids are plain numbers).
 func stripEntityPrefix(id string) (int64, bool) {
 	if len(id) < 2 {
 		return 0, false

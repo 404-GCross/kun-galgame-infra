@@ -39,6 +39,7 @@ import (
 
 	"api/internal/platform/catalog/dto"
 	"api/internal/platform/catalog/model"
+	catsearch "api/internal/platform/catalog/search"
 )
 
 // Cursor lanes of the three buckets. Each is its own lane token so a cursor can
@@ -102,11 +103,13 @@ func (b CalendarBucket) lane() string {
 	}
 }
 
-// CalendarOLang is the calendar's original-language population gate (P1). The
-// zero value is the DEFAULT family (ja + every zh variant) — the JP/CN audience
-// the 新作月表 exists for. olang is an OPEN vocabulary (upstream BCP-47 tags),
-// so an unrecognized value is an empty bucket, never a 400.
-type CalendarOLang struct {
+// PublicOLang is the original-language population gate (P1), shared by the
+// calendar buckets and the works product search — one olang means one thing
+// across the whole public face. The zero value is the DEFAULT family (ja +
+// every zh variant), the JP/CN audience the 新作月表 exists for. olang is an
+// OPEN vocabulary (upstream BCP-47 tags), so an unrecognized value yields an
+// empty result, never a 400.
+type PublicOLang struct {
 	// All turns the gate off entirely (olang=all).
 	All bool
 	// Values is an explicit olang set; empty (with All false) = the default family.
@@ -114,7 +117,7 @@ type CalendarOLang struct {
 }
 
 // predicate renders the gate's SQL over the catalog_work alias w ("" = no gate).
-func (o CalendarOLang) predicate() (string, []any) {
+func (o PublicOLang) predicate() (string, []any) {
 	switch {
 	case o.All:
 		return "", nil
@@ -130,9 +133,30 @@ func (o CalendarOLang) predicate() (string, []any) {
 	}
 }
 
+// meiliFilter renders the SAME gate as a Meilisearch filter expression ("" = no
+// gate). It lives next to predicate() on purpose: the two encodings of one
+// population rule must be read together, and `STARTS WITH 'zh'` is the exact
+// counterpart of SQL's `LIKE 'zh%'` (a stock operator since Meilisearch 1.8 —
+// unlike CONTAINS it needs no experimental flag; verified against the pinned
+// v1.45 image).
+func (o PublicOLang) meiliFilter() string {
+	switch {
+	case o.All:
+		return ""
+	case len(o.Values) > 0:
+		quoted := make([]string, len(o.Values))
+		for i, v := range o.Values {
+			quoted[i] = "'" + catsearch.EscapeFilterValue(v) + "'"
+		}
+		return "olang IN [" + strings.Join(quoted, ", ") + "]"
+	default:
+		return "(olang = 'ja' OR olang STARTS WITH 'zh')"
+	}
+}
+
 // Key is the ETag discriminator of this gate — two different populations must
 // never share a cache validator.
-func (o CalendarOLang) Key() string {
+func (o PublicOLang) Key() string {
 	switch {
 	case o.All:
 		return "all"
@@ -147,7 +171,7 @@ func (o CalendarOLang) Key() string {
 // population gates plus the include= projection selector.
 type CalendarFilter struct {
 	NSFW    bool
-	OLang   CalendarOLang
+	OLang   PublicOLang
 	Include WorksListInclude
 }
 

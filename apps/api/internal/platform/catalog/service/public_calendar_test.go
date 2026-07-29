@@ -182,23 +182,23 @@ func TestCalendarPopulationGates(t *testing.T) {
 	}
 
 	// olang=all opens the language gate (but not the r18 one).
-	got = calIDs(t, svc, june2024(), CalendarFilter{OLang: CalendarOLang{All: true}})
+	got = calIDs(t, svc, june2024(), CalendarFilter{OLang: PublicOLang{All: true}})
 	if len(got) != 4 || got[3] != en.ID {
 		t.Fatalf("olang=all = %v, want the en work %d to join and r18 to stay out", got, en.ID)
 	}
 
 	// An explicit set is exactly that set.
-	got = calIDs(t, svc, june2024(), CalendarFilter{OLang: CalendarOLang{Values: []string{"en"}}})
+	got = calIDs(t, svc, june2024(), CalendarFilter{OLang: PublicOLang{Values: []string{"en"}}})
 	if len(got) != 1 || got[0] != en.ID {
 		t.Fatalf("olang=en = %v, want only %d", got, en.ID)
 	}
-	got = calIDs(t, svc, june2024(), CalendarFilter{OLang: CalendarOLang{Values: []string{"ja", "en"}}})
+	got = calIDs(t, svc, june2024(), CalendarFilter{OLang: PublicOLang{Values: []string{"ja", "en"}}})
 	if len(got) != 2 || got[0] != ja.ID || got[1] != en.ID {
 		t.Fatalf("olang=ja,en = %v, want [%d %d]", got, ja.ID, en.ID)
 	}
 	// An olang nobody uses is an empty bucket, never an error — olang is an
 	// OPEN vocabulary, unlike our own closed filter词表.
-	if got = calIDs(t, svc, june2024(), CalendarFilter{OLang: CalendarOLang{Values: []string{"nope"}}}); len(got) != 0 {
+	if got = calIDs(t, svc, june2024(), CalendarFilter{OLang: PublicOLang{Values: []string{"nope"}}}); len(got) != 0 {
 		t.Fatalf("unknown olang = %v, want an empty bucket", got)
 	}
 
@@ -206,7 +206,7 @@ func TestCalendarPopulationGates(t *testing.T) {
 	if err := testDB.Exec(`UPDATE catalog_work SET deleted_at = now() WHERE id = ?`, ja.ID).Error; err != nil {
 		t.Fatalf("soft delete work: %v", err)
 	}
-	for _, id := range calIDs(t, svc, june2024(), CalendarFilter{OLang: CalendarOLang{All: true}}) {
+	for _, id := range calIDs(t, svc, june2024(), CalendarFilter{OLang: PublicOLang{All: true}}) {
 		if id == ja.ID {
 			t.Fatalf("soft-deleted work %d still in the bucket", ja.ID)
 		}

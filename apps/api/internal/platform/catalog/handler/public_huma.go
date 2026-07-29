@@ -101,7 +101,7 @@ type publicLabelOutput struct {
 }
 
 type publicEntitySearchInput struct {
-	Type   string `query:"type" enum:"names,characters,labels,works" doc:"Which index to search; works (wave 105) searches every LIVE galgame registry work by any title"`
+	Type   string `query:"type" enum:"names,characters,labels,works,tags" doc:"Which index to search; works (wave 105) searches every LIVE galgame registry work by any title, tags (A2-1d) the canonical cross-source tag vocabulary"`
 	Q      string `query:"q" doc:"Search text; empty returns the most-credited entities"`
 	Locale string `query:"locale" enum:"zh,ja,en" doc:"UI locale; the server pins the query language"`
 	Limit  int    `query:"limit" doc:"Max hits (capped at 20)"`
@@ -109,6 +109,36 @@ type publicEntitySearchInput struct {
 }
 type publicEntitySearchOutput struct {
 	Body Envelope[dto.PublicEntitySearchData]
+}
+
+// ── A2-1d works product search ───────────────────────────────────────────────
+//
+// A SECOND search door, disjoint from /v1/catalog/search: that one is the
+// entity autocomplete (20 flat hits, no paging), this one is the results page a
+// galgame site renders. Every filter below is the works LIST parameter of the
+// same name with the same meaning, so a query moves between the browse lane and
+// the search lane by changing the path only.
+
+type publicWorksSearchInput struct {
+	Q              string `query:"q" doc:"Free text over every indexed title / alias of a work (search hints included — findability only). A query that is EXACTLY a VNDB work id (v19658) short-circuits to that one work via its exact anchor instead of full-text, which would prefix-bleed (v1965 also matches v19650). Empty = a filter-only browse ordered by popularity"`
+	ContentRating  string `query:"content_rating" enum:"all_ages,sensitive,r18" doc:"Filter by rating (r18 additionally requires nsfw=1)"`
+	Claimed        string `query:"claimed" enum:"true,false" doc:"true = claimed works only; false = bodyless only; absent = both"`
+	LabelID        int64  `query:"label_id" doc:"Only works attributed to this label"`
+	TagID          int64  `query:"tag_id" doc:"Only works carrying a source tag mapped to this canonical tag"`
+	SeriesID       int64  `query:"series_id" doc:"Only member works of this series"`
+	EngineID       int64  `query:"engine_id" doc:"Only works built with this engine"`
+	ReleasedAfter  string `query:"released_after" doc:"YYYY-MM-DD, inclusive, over the EARLIEST release date per work — the same anchor the works list filters and the calendar buckets on"`
+	ReleasedBefore string `query:"released_before" doc:"YYYY-MM-DD, inclusive"`
+	OLang          string `query:"olang" doc:"Original-language gate: comma-separated olang values in the upstream BCP-47 spelling (ja, zh-Hans, en, …) or 'all' to switch it off. Default = the ja + zh* family. olang is an OPEN vocabulary, so an unrecognized value yields an empty result, never a 400"`
+	Sort           string `query:"sort" enum:"relevance,released_desc,released_asc,updated,popularity" doc:"relevance (default; an empty q degenerates to popularity), released_desc/asc over the earliest release date (works with no dated release sort last in BOTH directions), updated = newest-updated first, popularity = the cross-source signal log1p(max(bangumi collect shelf, DLsite downloads))"`
+	Facets         string `query:"facets" doc:"Comma-separated CLOSED vocabulary: content_rating,olang,claimed,tag_id,label_id,engine_id,series_id,source. An unknown token is a 400. Each distribution is counted over the SAME filtered set as total and is keyed by the values you would pass back to that very filter (content_rating counts use the public strings, not enum ints). At most 100 values per facet"`
+	Page           int    `query:"page" doc:"1-based page number (default 1); a non-positive or non-numeric value is a 400. A page past the end is an empty page"`
+	Limit          int    `query:"limit" doc:"Items per page 1-100 (default 20); above 100 is clamped to 100, a non-positive or non-numeric value is a 400"`
+	NSFW           bool   `query:"nsfw" doc:"true/1 = include r18 works (default false = dropped from items, total AND facets alike)"`
+	Include        string `query:"include" doc:"Comma-separated rich-brief blocks: names,intros,labels,ratings,covers — the works-list vocabulary verbatim (unknown tokens ignored)"`
+}
+type publicWorksSearchOutput struct {
+	Body Envelope[dto.PublicWorksSearchData]
 }
 
 type publicWorksListInput struct {
@@ -297,9 +327,25 @@ func SetupCatalogPublicSpec(app *fiber.App) huma.API {
 	}, func(context.Context, *publicLabelInput) (*publicLabelOutput, error) { return &publicLabelOutput{}, nil })
 	huma.Register(api, huma.Operation{
 		OperationID: "searchCatalogEntitiesPublic", Method: http.MethodGet, Path: "/v1/catalog/search",
-		Summary: "Entity relevance search over names / characters / labels, projected to public briefs", Tags: tags,
+		Summary: "Entity autocomplete over names / characters / labels / works / tags, projected to public briefs",
+		Description: "The identity finder: up to 20 flat hits of ONE family, no filters and no pagination — what a picker or a " +
+			"jump-to-entity box needs. For a works RESULTS PAGE (filters, facets, sort, paging, full works-list rows) use " +
+			"GET /v1/catalog/works/search instead.",
+		Tags: tags,
 	}, func(context.Context, *publicEntitySearchInput) (*publicEntitySearchOutput, error) {
 		return &publicEntitySearchOutput{}, nil
+	})
+	huma.Register(api, huma.Operation{
+		OperationID: "searchCatalogWorksPublic", Method: http.MethodGet, Path: "/v1/catalog/works/search",
+		Summary: "Works product search: free text + the works-list filter set, page-paginated, with opt-in facets and five sort lanes",
+		Description: "Searches the LIVE galgame registry (claimed + bodyless) by any indexed title or alias and narrows it with the " +
+			"same filters GET /v1/catalog/works accepts. Items are works-list rows VERBATIM (PublicWorkListItem, include= and all), " +
+			"re-hydrated from the registry — the search documents never reach the wire. " +
+			"total, the facet distribution and items are three views of ONE filtered set: page through total and you collect exactly " +
+			"that many rows, and an sfw caller's total already excludes the r18 works it can never receive.",
+		Tags: tags,
+	}, func(context.Context, *publicWorksSearchInput) (*publicWorksSearchOutput, error) {
+		return &publicWorksSearchOutput{}, nil
 	})
 	huma.Register(api, huma.Operation{
 		OperationID: "listCatalogWorksPublic", Method: http.MethodGet, Path: "/v1/catalog/works",

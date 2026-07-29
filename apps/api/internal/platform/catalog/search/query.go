@@ -7,8 +7,8 @@ import (
 	"github.com/meilisearch/meilisearch-go"
 )
 
-// IndexForType maps a public entity-search type (names|characters|labels) to
-// its index uid. ok=false for an unknown type.
+// IndexForType maps a public entity-search type (names|characters|labels|
+// works|tags) to its index uid. ok=false for an unknown type.
 func IndexForType(t string) (uid string, ok bool) {
 	switch t {
 	case "names":
@@ -19,6 +19,8 @@ func IndexForType(t string) (uid string, ok bool) {
 		return IndexLabels, true
 	case "works":
 		return IndexWorks, true
+	case "tags":
+		return IndexTags, true
 	default:
 		return "", false
 	}

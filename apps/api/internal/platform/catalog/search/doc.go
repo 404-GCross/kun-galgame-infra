@@ -8,12 +8,12 @@ import (
 	"api/internal/infrastructure/search"
 )
 
-// EntityDoc is the Meilisearch document shared by all three entity indexes.
+// EntityDoc is the Meilisearch document shared by every catalog index.
 // A name lives in exactly ONE of the language-bucketed fields (invariant 1);
 // fields that don't apply to a given entity are omitted.
 type EntityDoc struct {
-	ID           string   `json:"id"`          // prefixed: n{id} / c{id} / b{id}
-	EntityType   string   `json:"entity_type"` // credit_name | character | label
+	ID           string   `json:"id"`          // prefixed: n{id} / c{id} / b{id} / w{id} / t{id}
+	EntityType   string   `json:"entity_type"` // credit_name | character | label | work | tag
 	NameJa       string   `json:"name_ja,omitempty"`
 	NameZh       string   `json:"name_zh,omitempty"`
 	NameOther    string   `json:"name_other,omitempty"`
@@ -36,6 +36,54 @@ type EntityDoc struct {
 	// exclude r18 hits server-side. Absent on entity docs.
 	ContentRating *int16  `json:"content_rating,omitempty"`
 	Popularity    float64 `json:"popularity"` // log-damped credit count (works: log-damped collect/download count)
+
+	// ── A2-1d: the works product-search axes ────────────────────────────────
+	//
+	// Every field below is set on WORKS docs only. They exist so the product
+	// search face (GET /v1/catalog/works/search) can push its WHOLE filter set
+	// into Meilisearch — which is what makes `total`, the facet distribution
+	// and `items` share one gate. Filtering any of these during the DB
+	// re-hydration instead would resurrect the deprecated face's content_limit
+	// trap (an unfiltered total beside filtered items).
+	//
+	// None of them ever reaches the wire: the hits are re-hydrated from
+	// Postgres into the works-list item shape (裁定 4).
+
+	// Claimed mirrors the works list's `claimed` filter (a product site owns
+	// this registry row). A pointer so an explicit false is still indexed —
+	// omitempty on a non-pointer bool would erase the bodyless half.
+	Claimed *bool `json:"claimed,omitempty"`
+	// OLang is the registry's original-language tag in the UPSTREAM BCP-47
+	// spelling (ja / zh-Hans / en …), never the product locale form — the same
+	// value the calendar's olang gate matches on.
+	OLang string `json:"olang,omitempty"`
+	// TagIDs are CANONICAL tag ids (catalog_work_tag resolved through
+	// catalog_tag_source_map), so the index speaks the same id space the
+	// public tag_id filter does. Label / engine / series ids are the edge
+	// tables' ids verbatim.
+	TagIDs    []int64 `json:"tag_ids,omitempty"`
+	LabelIDs  []int64 `json:"label_ids,omitempty"`
+	EngineIDs []int64 `json:"engine_ids,omitempty"`
+	SeriesIDs []int64 `json:"series_ids,omitempty"`
+	// ReleasedOrd is the COMPOSED DATE ORDINAL (y*10000 + m*100 + d, unknown
+	// month/day = 0) of the work's earliest year-carrying release — NOT a Unix
+	// timestamp, despite the released_ts spelling the deprecated face used.
+	// The ordinal is what makes released_after / released_before mean here
+	// exactly what they mean on the works list: both sides compare the same
+	// number, so a month-precision work (2024-06 → 20240600) sorts and filters
+	// identically on both faces. A Unix timestamp would have to invent a day
+	// for it and would then disagree at the month boundary.
+	//
+	// Absent (not zero) when the work has no dated release, so Meilisearch
+	// places it LAST in both sort directions and no released_* bound matches
+	// it — the works list's `NULL >= bound` behaviour, reproduced.
+	ReleasedOrd int64 `json:"released_ord,omitempty"`
+	// UpdatedTS is catalog_work.updated_at in Unix seconds (genuinely a
+	// timestamp) — the sort=updated lane.
+	UpdatedTS int64 `json:"updated_ts,omitempty"`
+	// Tier is set on TAG docs only (A2-1d, the A2-1b account): the canonical
+	// tag's display tier, alongside the shared Kind.
+	Tier *int16 `json:"tier,omitempty"`
 }
 
 // SetName routes a name into its language bucket by the row's lang (invariant

@@ -10,6 +10,7 @@ import (
 
 	"api/internal/platform/catalog/dto"
 	"api/internal/platform/catalog/model"
+	catsearch "api/internal/platform/catalog/search"
 	"api/pkg/imageclient"
 
 	"gorm.io/datatypes"
@@ -35,6 +36,9 @@ type PublicService struct {
 	// Both nil = enrichment off, which degrades gracefully (see WithImageMeta).
 	imageMeta ImageMetaFunc
 	metaCache *imageMetaCache
+	// worksSearch backs the works PRODUCT search face (A2-1d). nil = the face
+	// is unavailable (ErrSearchUnavailable); see WithWorksSearch.
+	worksSearch *catsearch.Indexer
 }
 
 // NewPublicService builds the public projection over the catalog DB, reusing the

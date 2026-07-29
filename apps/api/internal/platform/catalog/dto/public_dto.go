@@ -330,8 +330,9 @@ type PublicLabel struct {
 	NextOffset *int               `json:"next_offset,omitempty"`
 }
 
-// PublicEntityHit is one entity-search hit (person / character / label). id is
-// numeric; entity_type routes the consumer to the right detail endpoint.
+// PublicEntityHit is one entity-search hit (name / character / label / work /
+// tag). id is numeric; entity_type routes the consumer to the right detail
+// endpoint.
 type PublicEntityHit struct {
 	ID         int64    `json:"id"`
 	EntityType string   `json:"entity_type"`
@@ -341,6 +342,13 @@ type PublicEntityHit struct {
 	// ContentRating is present on works hits only (wave 105): all_ages |
 	// sensitive | r18 (r18 hits appear only with nsfw=1).
 	ContentRating string `json:"content_rating,omitempty"`
+	// Tier / Kind are present on TAG hits only (A2-1d): the canonical tag's
+	// display tier (core | longtail | hidden) and kind (content | meta), the
+	// same vocabulary GET /v1/catalog/tags renders. Both are omitted on every
+	// other family, which is what keeps the four pre-existing hit shapes
+	// byte-identical to the frozen contract.
+	Tier string `json:"tier,omitempty"`
+	Kind string `json:"kind,omitempty"`
 }
 
 // PublicEntitySearchData is the entity-search envelope.
@@ -743,4 +751,33 @@ type PublicEngine struct {
 	Name      string             `json:"name"`
 	WorkCount int                `json:"work_count"`
 	Refs      []PublicCatalogRef `json:"refs"`
+}
+
+// ── A2-1d: the works product search ─────────────────────────────────────────
+
+// PublicWorksSearchData is the envelope of GET /v1/catalog/works/search.
+//
+// items are works-list rows VERBATIM (PublicWorkListItem, include= and all), so
+// a consumer renders a search result with exactly the code that renders a
+// browse row — the Meilisearch documents behind the ranking never reach the
+// wire.
+//
+// total is the size of the WHOLE filtered set under the same gate that produced
+// items and facets — page through it and the rows you collect sum to total.
+// (The deprecated wiki search did NOT hold this: its total ignored the sfw
+// filter that its items applied.)
+//
+// page / limit echo the window actually served, so a caller that omitted them
+// still knows where it is.
+type PublicWorksSearchData struct {
+	Total int64                `json:"total"`
+	Page  int                  `json:"page"`
+	Limit int                  `json:"limit"`
+	Items []PublicWorkListItem `json:"items"`
+	// Facets is present only when facets= asked for it. Outer keys are the
+	// FILTER PARAMETER names the values can be fed straight back into
+	// (tag_id, content_rating, …); inner keys are the values, counted over the
+	// same filtered set as total. content_rating counts are keyed by the
+	// public strings (all_ages | sensitive | r18), never the enum ints.
+	Facets map[string]map[string]int64 `json:"facets,omitempty"`
 }

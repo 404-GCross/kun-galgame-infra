@@ -44,12 +44,12 @@ func TestMain(m *testing.M) {
 func TestEnsureIndexesMatchesMatrix(t *testing.T) {
 	require.NoError(t, EnsureIndexes(testClient))
 	t.Cleanup(func() {
-		for _, uid := range []string{IndexCreditNames, IndexCharacters, IndexLabels, IndexWorks} {
+		for _, uid := range []string{IndexCreditNames, IndexCharacters, IndexLabels, IndexWorks, IndexTags} {
 			_, _ = testClient.Svc().DeleteIndex(testClient.IndexUID(uid))
 		}
 	})
 
-	for _, uid := range []string{IndexCreditNames, IndexCharacters, IndexLabels, IndexWorks} {
+	for _, uid := range []string{IndexCreditNames, IndexCharacters, IndexLabels, IndexWorks, IndexTags} {
 		s, err := testClient.Index(uid).GetSettings()
 		require.NoError(t, err, uid)
 

@@ -318,19 +318,19 @@ func TestCalendarDefaultsAreJST(t *testing.T) {
 	assert.Equal(t, defaultCalendarYear(time.Now()), body["data"].(map[string]any)["year"])
 }
 
-// TestParseCalendarOLang unit-pins the gate parser (no database needed).
-func TestParseCalendarOLang(t *testing.T) {
-	assert.Equal(t, service.CalendarOLang{}, parseCalendarOLang(""))
-	assert.Equal(t, service.CalendarOLang{}, parseCalendarOLang("   "))
-	assert.Equal(t, service.CalendarOLang{All: true}, parseCalendarOLang("all"))
-	assert.Equal(t, service.CalendarOLang{Values: []string{"ja"}}, parseCalendarOLang("ja"))
-	assert.Equal(t, service.CalendarOLang{Values: []string{"ja", "zh-Hans"}}, parseCalendarOLang(" ja , zh-Hans "))
+// TestParsePublicOLang unit-pins the gate parser (no database needed).
+func TestParsePublicOLang(t *testing.T) {
+	assert.Equal(t, service.PublicOLang{}, parsePublicOLang(""))
+	assert.Equal(t, service.PublicOLang{}, parsePublicOLang("   "))
+	assert.Equal(t, service.PublicOLang{All: true}, parsePublicOLang("all"))
+	assert.Equal(t, service.PublicOLang{Values: []string{"ja"}}, parsePublicOLang("ja"))
+	assert.Equal(t, service.PublicOLang{Values: []string{"ja", "zh-Hans"}}, parsePublicOLang(" ja , zh-Hans "))
 	// An all-blank list degrades to the default rather than to an impossible IN ().
-	assert.Equal(t, service.CalendarOLang{}, parseCalendarOLang(" , , "))
+	assert.Equal(t, service.PublicOLang{}, parsePublicOLang(" , , "))
 
-	assert.Equal(t, "jazh", service.CalendarOLang{}.Key())
-	assert.Equal(t, "all", service.CalendarOLang{All: true}.Key())
-	assert.Equal(t, "ja+en", service.CalendarOLang{Values: []string{"ja", "en"}}.Key())
+	assert.Equal(t, "jazh", service.PublicOLang{}.Key())
+	assert.Equal(t, "all", service.PublicOLang{All: true}.Key())
+	assert.Equal(t, "ja+en", service.PublicOLang{Values: []string{"ja", "en"}}.Key())
 	assert.Equal(t, "sfw-jazh", service.CalendarFilter{}.PopulationKey())
-	assert.Equal(t, "nsfw-all", service.CalendarFilter{NSFW: true, OLang: service.CalendarOLang{All: true}}.PopulationKey())
+	assert.Equal(t, "nsfw-all", service.CalendarFilter{NSFW: true, OLang: service.PublicOLang{All: true}}.PopulationKey())
 }

@@ -63,7 +63,13 @@ func TestMain(m *testing.M) {
 	testGuard = NewGuardService(db)
 	testQueues = NewAdminQueueService(db, testMerge)
 
-	os.Exit(m.Run())
+	// Hold the shared edit-table suite lock for the WHOLE package run — these
+	// tests truncate tables the handler / editing / galgameapp suites also
+	// write (suite_lock_test.go explains the key choice).
+	release := acquireCatalogSuiteLock(db)
+	code := m.Run()
+	release()
+	os.Exit(code)
 }
 
 // cleanTables truncates every DATA table (registry seeds stay). RESTART

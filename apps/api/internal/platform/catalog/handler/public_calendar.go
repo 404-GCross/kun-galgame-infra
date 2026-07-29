@@ -84,7 +84,7 @@ func (h *PublicHandler) CalendarTBA(c fiber.Ctx) error {
 func (h *PublicHandler) serveCalendar(c fiber.Ctx, b service.CalendarBucket, bucketKey string, echo func(*dto.PublicCalendarData)) error {
 	f := service.CalendarFilter{
 		NSFW:    nsfwQuery(c),
-		OLang:   parseCalendarOLang(c.Query("olang")),
+		OLang:   parsePublicOLang(c.Query("olang")),
 		Include: service.ParseWorksListInclude(c.Query("include")),
 	}
 	limit, ok := limitPub(c.Query("limit"), 20, 100)
@@ -123,15 +123,15 @@ func (h *PublicHandler) serveCalendar(c fiber.Ctx, b service.CalendarBucket, buc
 func defaultCalendarMonth(now time.Time) string { return now.In(calendarJST).Format("2006-01") }
 func defaultCalendarYear(now time.Time) string  { return now.In(calendarJST).Format("2006") }
 
-// parseCalendarOLang resolves ?olang=: omitted → the default ja+zh family,
+// parsePublicOLang resolves ?olang=: omitted → the default ja+zh family,
 // `all` → no gate, otherwise the comma-separated set (blank entries dropped; an
 // all-blank list degrades to the default rather than to an impossible IN ()).
-func parseCalendarOLang(raw string) service.CalendarOLang {
+func parsePublicOLang(raw string) service.PublicOLang {
 	switch trimmed := strings.TrimSpace(raw); trimmed {
 	case "":
-		return service.CalendarOLang{}
+		return service.PublicOLang{}
 	case "all":
-		return service.CalendarOLang{All: true}
+		return service.PublicOLang{All: true}
 	default:
 		var vals []string
 		for _, p := range strings.Split(trimmed, ",") {
@@ -139,6 +139,6 @@ func parseCalendarOLang(raw string) service.CalendarOLang {
 				vals = append(vals, p)
 			}
 		}
-		return service.CalendarOLang{Values: vals}
+		return service.PublicOLang{Values: vals}
 	}
 }

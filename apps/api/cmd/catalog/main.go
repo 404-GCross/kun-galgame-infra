@@ -311,6 +311,10 @@ func setupPublicCatalog(
 	} else {
 		slog.Warn("catalog public face: image client not configured — covers will carry no dimensions/thumbhash and the banner slot stays null")
 	}
+	// The works product search (A2-1d) runs its filters/facets/sort inside the
+	// same catalog_works index the entity autocomplete uses, then re-hydrates
+	// the page from Postgres.
+	publicSvc.WithWorksSearch(searcher)
 	publicH := catHandler.NewPublicHandler(publicSvc, resolveSvc, searcher)
 
 	// Meter every response to (client, key, "catalog", day) + async last-used
@@ -341,8 +345,11 @@ func setupPublicCatalog(
 	v1.Get("/redirects", publicH.Redirects)
 	v1.Get("/search", publicH.Search)
 	// Works browse lane + changes feed (doc 106 W1): static paths registered
-	// before the /works/:id catch-all.
+	// before the /works/:id catch-all. /works/search is the product search face
+	// (A2-1d) and must also precede /works/:id, or "search" would be parsed as
+	// an id.
 	v1.Get("/works", publicH.WorksList)
+	v1.Get("/works/search", publicH.WorksSearch)
 	v1.Get("/changes", publicH.Changes)
 	// Release-calendar buckets (A2-1c): month view + the two pending buckets.
 	v1.Get("/calendar", publicH.Calendar)

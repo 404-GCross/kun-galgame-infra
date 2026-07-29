@@ -1,11 +1,19 @@
 // reindex-catalog (re)builds the catalog search indexes — credit names,
-// characters, labels, works (wave 105) — from kun_catalog into Meilisearch, applying the doc-13
-// config matrix. Read-side only; writes no Gold. Run after a bulk import wave
-// (which skips write-through) or on a fresh Meilisearch instance.
+// characters, labels, works (wave 105), tags (A2-1d) — from kun_catalog into
+// Meilisearch, applying the doc-13 config matrix. Read-side only; writes no
+// Gold. Run after a bulk import wave (which skips write-through) or on a fresh
+// Meilisearch instance.
 //
-//	go run ./cmd/reindex-catalog                                # all three
+//	go run ./cmd/reindex-catalog                                # all five
 //	go run ./cmd/reindex-catalog --index=catalog_labels         # one
 //	go run ./cmd/reindex-catalog --batch=5000
+//
+// It is also the ONLY carrier of an index SETTINGS change: EnsureIndexes runs
+// unconditionally below, before any lane, so re-running this command is what
+// brings a deployed Meilisearch to the declared terminal state — filterable /
+// sortable / pagination settings included. There is deliberately no manual
+// "PATCH these settings" step for an operator to forget, and running it twice
+// changes nothing the second time.
 package main
 
 import (
@@ -29,7 +37,7 @@ import (
 )
 
 func main() {
-	indexFlag := flag.String("index", "catalog_credit_names,catalog_characters,catalog_labels,catalog_works", "comma-separated index uids")
+	indexFlag := flag.String("index", "catalog_credit_names,catalog_characters,catalog_labels,catalog_works,catalog_tags", "comma-separated index uids")
 	batch := flag.Int("batch", 5000, "batch size per Meilisearch upsert")
 	flag.Parse()
 
@@ -75,6 +83,8 @@ func main() {
 			err = reindexLabels(ctx, db.DB(), idx, *batch)
 		case catalogSearch.IndexWorks:
 			err = reindexWorks(ctx, db.DB(), idx, *batch)
+		case catalogSearch.IndexTags:
+			err = reindexTags(ctx, db.DB(), idx, *batch)
 		case "":
 			continue
 		default:
@@ -348,31 +358,17 @@ func loadWorkTitles(db *gorm.DB) (map[int64][]workTitle, error) {
 	return m, nil
 }
 
-// guessLang buckets a bare display_name (no lang column on catalog_work) for
-// the CJK-locale index fields: kana → ja; han-only → zh (a kanji-only Japanese
-// title tokenizes acceptably under cmn — CJK ideographs segment alike); else
-// latin/other.
-func guessLang(s string) string {
-	hasHan := false
-	for _, r := range s {
-		if (r >= 'ぁ' && r <= 'ん') || (r >= 'ァ' && r <= 'ヶ') || r == 'ー' {
-			return "ja"
-		}
-		if r >= 0x4E00 && r <= 0x9FFF {
-			hasHan = true
-		}
-	}
-	if hasHan {
-		return "zh"
-	}
-	return "en"
-}
-
 // reindexWorks builds the catalog_works index (wave 105): every LIVE galgame
 // registry work — claimed AND bodyless — searchable by display_name + all
 // title rows (search hints included: findability-only, never displayed), with
 // content_rating filterable (the public nsfw gate) and a cross-population
 // popularity tiebreaker.
+//
+// A2-1d adds the product-search axes: the tag / label / engine / series id
+// arrays, the earliest-release ordinal, olang, claimed and updated_ts. They
+// exist so GET /v1/catalog/works/search can push its WHOLE filter set into
+// Meilisearch — that is what makes its total, its facets and its items share
+// one gate instead of the deprecated face's unfiltered-total trap.
 func reindexWorks(ctx context.Context, db *gorm.DB, idx *catalogSearch.Indexer, batch int) error {
 	pop, err := loadWorkPopularitySignal(db)
 	if err != nil {
@@ -386,14 +382,25 @@ func reindexWorks(ctx context.Context, db *gorm.DB, idx *catalogSearch.Indexer, 
 	if err != nil {
 		return err
 	}
+	facets, err := loadWorksFacets(db)
+	if err != nil {
+		return err
+	}
 	processed, lastID := 0, int64(0)
 	for {
 		var rows []struct {
-			ID            int64  `gorm:"column:id"`
-			DisplayName   string `gorm:"column:display_name"`
-			ContentRating int16  `gorm:"column:content_rating"`
+			ID          int64  `gorm:"column:id"`
+			DisplayName string `gorm:"column:display_name"`
+			// Explicit column tag: GORM snake-cases OLang to o_lang, which
+			// matches no result column and would scan as "" — the trap that left
+			// the works list's olang empty from W1 until A2-1a.
+			OLang         string    `gorm:"column:olang"`
+			ContentRating int16     `gorm:"column:content_rating"`
+			Site          string    `gorm:"column:site"`
+			UpdatedAt     time.Time `gorm:"column:updated_at"`
 		}
-		if err := db.Raw(`SELECT id, display_name, content_rating FROM catalog_work
+		if err := db.Raw(`SELECT id, display_name, olang, content_rating, coalesce(site,'') AS site, updated_at
+			FROM catalog_work
 			WHERE id > ? AND deleted_at IS NULL AND status = 0
 				AND medium_id = (SELECT id FROM catalog_medium WHERE key = 'galgame')
 			ORDER BY id LIMIT ?`, lastID, batch).Scan(&rows).Error; err != nil {
@@ -404,29 +411,21 @@ func reindexWorks(ctx context.Context, db *gorm.DB, idx *catalogSearch.Indexer, 
 		}
 		docs := make([]catalogSearch.EntityDoc, len(rows))
 		for i, r := range rows {
-			cr := r.ContentRating
-			d := catalogSearch.EntityDoc{
-				ID: "w" + fmt.Sprint(r.ID), EntityType: "work",
-				Sources: srcs[r.ID], SourceKeys: keys[r.ID],
-				ContentRating: &cr, Popularity: pop[r.ID],
+			in := catalogSearch.WorkDocInput{
+				ID: r.ID, DisplayName: r.DisplayName, OLang: r.OLang,
+				ContentRating: r.ContentRating,
+				// claimed == "a product site owns this row", i.e. the works
+				// list's `w.site <> ''` (NULL and '' are both bodyless).
+				Claimed:     r.Site != "",
+				ReleasedOrd: facets.releasedOrd[r.ID], UpdatedTS: r.UpdatedAt.Unix(),
+				Popularity: pop[r.ID], Sources: srcs[r.ID], SourceKeys: keys[r.ID],
+				TagIDs: facets.tagIDs[r.ID], LabelIDs: facets.labelIDs[r.ID],
+				EngineIDs: facets.engineIDs[r.ID], SeriesIDs: facets.seriesIDs[r.ID],
 			}
-			seen := map[string]bool{r.DisplayName: true}
-			d.SetNameOrAlias(guessLang(r.DisplayName), r.DisplayName)
 			for _, t := range titles[r.ID] {
-				if d.Latin == "" && t.latin != "" {
-					d.Latin = t.latin
-				}
-				if seen[t.title] {
-					continue
-				}
-				seen[t.title] = true
-				lang := t.lang
-				if lang == "" {
-					lang = guessLang(t.title)
-				}
-				d.SetNameOrAlias(lang, t.title)
+				in.Titles = append(in.Titles, catalogSearch.WorkDocTitle{Lang: t.lang, Title: t.title, Latin: t.latin})
 			}
-			docs[i] = d
+			docs[i] = catalogSearch.BuildWorkDoc(in)
 		}
 		if err := idx.UpsertBatch(ctx, catalogSearch.IndexWorks, docs); err != nil {
 			return err
