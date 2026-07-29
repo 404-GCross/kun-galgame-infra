@@ -44,3 +44,4 @@
 - 2026-07-29 **A2-1b 交付+验收放行**(doc 106 §23):`0fd04f68` taxonomy 三读面+engine detail+engine_id 过滤+tag intros+screenshots 富集;work_count nsfw 感知与列表自洽有对拍;偏离一处(handler 测试单池化=skip-green 根治)批准;spec 4 新端点 0 breaking。报备:labels 详情不滤 deleted_at 既存不一致。下一波=A2-1c(D2 calendar)。
 - 2026-07-29 **A2-1c(D2 calendar)开工派发**(任务书=refs/proj/131):三桶 month/pending/tba,分类锚=作品级 release_date 同源(最早带年 release 的 y/m/d 空值即精度,组合序数天然分桶);population=works 谓词+P1 缺省 olang=ja+zh 家族(olang= 参数带 all 逃生口);items=D1 富 list item 原样零新字段;桶级 ETag;旧面四缺陷明令不带。
 - 2026-07-29 **A2-1c 交付+验收放行**(doc 106 §24):`c87af47f` calendar 三桶——分类锚=最早带年 release 序数,olang 门(存量单值 ja 亲证=前瞻闸),桶级 ETag+count,查询形状 144 月窗等价实测 38ms;七偏离全批;spec 3 端点 0 breaking。共库干扰三例累计→跟进候选=service 套件 advisory 锁。**A2-1 余 A2-1d(D5 search):前置=聚合轨 reindex 排程对齐,待协调后开工。**
+- 2026-07-29 A2-1d works/search 产品面+tags 索引+套件锁交付验收放行(f0c10cf2,158 PASS 复跑;部署须一次 reindex);A2-2/A2-3 双 STOP 验收+R1-R13 裁决,A2-1e 供给补全波批准待派。
