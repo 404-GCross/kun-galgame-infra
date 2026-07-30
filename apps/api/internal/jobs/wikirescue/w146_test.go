@@ -50,7 +50,7 @@ const (
 // bodies than the mirror suite (one per language verdict, times the two zh
 // columns), so it clears its own range on entry — a targeted DELETE, never a
 // TRUNCATE, since the galgame table is shared with the other suites.
-var introRemainderGalgameIDs = []int64{7401, 7402, 7403, 7404, 7405, 7406}
+var introRemainderGalgameIDs = []int64{2776, 7401, 7402, 7403, 7404, 7405, 7406, 7407}
 
 // resetIntroRemainder prepares the mirror fixtures plus the one wiki column steps
 // u and v need that no earlier wave touched: `updated`, the body's own change
@@ -281,11 +281,15 @@ func TestIntroOrphanAdopt(t *testing.T) {
 	hasBangumi := mkClaimedWork(t, 7403, "has a bangumi summary")
 	stillJapanese := mkClaimedWork(t, 7404, "u has not run yet")
 	gray := mkClaimedWork(t, 7405, "bilingual")
+	stub := mkClaimedWork(t, 7407, "placeholder stub")
 	mkZhBody(t, 7401, "", "", zhTranslated, "")
 	mkZhBody(t, 7402, "", "", "", zhTwTranslated)
 	mkZhBody(t, 7403, "", "", zhTranslated, "")
 	mkZhBody(t, 7404, "", "", jaMisfiled, "")
 	mkZhBody(t, 7405, "", "", grayBilingual, "")
+	// An editor's stub under introAdoptMinRunes: a Chinese verdict, but not a
+	// translation — the placeholder guard leaves the face honestly blank.
+	mkZhBody(t, 7407, "", "", "截图", "")
 	// An original DOES exist for this work, from another source entirely — so its
 	// wiki Chinese text is a translation ruling ① discards, not an orphan.
 	require.NoError(t, testDB.Create(&model.CatalogWorkIntro{
@@ -294,9 +298,9 @@ func TestIntroOrphanAdopt(t *testing.T) {
 	before := workUpdatedAt(t, orphan)
 	dry, err := newRunner(t, false).runStep(ctx, "v")
 	require.NoError(t, err)
-	assert.Equal(t, 5, dry.Source)
-	assert.Equal(t, 3, dry.Anchored, "the three Chinese verdicts")
-	assert.Equal(t, 2, dry.Planned, "the bangumi-covered work is not an orphan")
+	assert.Equal(t, 6, dry.Source)
+	assert.Equal(t, 4, dry.Anchored, "the four Chinese verdicts")
+	assert.Equal(t, 2, dry.Planned, "the bangumi-covered work is not an orphan, the stub not a translation")
 	assert.Equal(t, 1, dry.Skipped)
 	assert.Zero(t, dry.Written)
 
@@ -327,6 +331,7 @@ func TestIntroOrphanAdopt(t *testing.T) {
 	}{
 		{stillJapanese, "japanese text is never filed as Chinese, even before step u runs"},
 		{gray, "the gray band waits for a ruling"},
+		{stub, "a placeholder under introAdoptMinRunes is not adopted"},
 	} {
 		var n int64
 		require.NoError(t, testDB.Model(&model.CatalogWorkIntro{}).Where("work_id = ?", tc.work).Count(&n).Error)
@@ -397,6 +402,34 @@ func TestIntroRemainderStepsSkipUnclaimed(t *testing.T) {
 	assert.Zero(t, n)
 	_, _, zhCN, _ := wikiIntros(t, 7401)
 	assert.Equal(t, jaMisfiled, zhCN, "the wiki side is untouched too")
+}
+
+// TestIntroManualGrayPin pins acceptance finding E (refs/proj/146 §6.6): body
+// 2776's production text — a Chinese annotation quoting Japanese release titles —
+// crosses the density threshold on quoted text alone, so it is pinned gray BY ID:
+// parked by step u, never adopted by step v, awaiting the same human ruling as the
+// measured gray band.
+func TestIntroManualGrayPin(t *testing.T) {
+	resetIntroRemainder(t)
+	ctx := context.Background()
+
+	pinned := mkClaimedWork(t, 2776, "manual gray pin")
+	mkZhBody(t, 2776, "", "", jaMisfiled, "") // the density says Japanese; the pin overrides
+
+	dir := t.TempDir()
+	u, err := runnerWithArtifacts(t, true, dir).runStep(ctx, "u")
+	require.NoError(t, err)
+	assert.Zero(t, u.Written, "a pinned body is parked, not moved")
+	assert.Equal(t, 1, u.Parked)
+	_, _, zhCN, _ := wikiIntros(t, 2776)
+	assert.Equal(t, jaMisfiled, zhCN, "the text stays put")
+
+	v, err := newRunner(t, true).runStep(ctx, "v")
+	require.NoError(t, err)
+	assert.Zero(t, v.Written, "nor filed as Chinese")
+	var n int64
+	require.NoError(t, testDB.Model(&model.CatalogWorkIntro{}).Where("work_id = ?", pinned).Count(&n).Error)
+	assert.Zero(t, n)
 }
 
 // TestParseStepsIntroRemainder pins the ORDER trap the runbook depends on: q sorts

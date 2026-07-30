@@ -3,11 +3,19 @@ package wikirescue
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"api/internal/platform/catalog/repository"
 
 	"gorm.io/gorm"
 )
+
+// introAdoptMinRunes is the minimum trimmed length for a zh column to count as a
+// translation at all. The class's short tail is editor STUBS ("-", "无", "***",
+// "截图" — acceptance finding D, refs/proj/146 §6.6) whose adoption would render
+// a broken-looking face where blank is honest; the archival dump keeps the stubs
+// (ruling ②), so nothing is lost by not adopting them.
+const introAdoptMinRunes = 4
 
 // stepIntroOrphanAdopt is step v — ORPHAN zh ADOPTION (refs/proj/146 §2, user
 // ruling of 2026-07-30: keep every one of them).
@@ -80,13 +88,17 @@ func (r *Runner) stepIntroOrphanAdopt(ctx context.Context) (Stats, error) {
 	}
 
 	rows := make([][]any, 0, len(cands))
-	var hant, skippedNonJa int
+	var hant, skippedNonJa, placeholders int
 	for _, c := range cands {
 		if c.class != kanaZh {
 			skippedNonJa++ // japanese (step u's) or gray (parked, awaiting a ruling)
 			continue
 		}
 		st.Anchored++
+		if len([]rune(strings.TrimSpace(c.raw))) < introAdoptMinRunes {
+			placeholders++ // an editor's stub, not a translation
+			continue
+		}
 		if _, ok := sourced[c.workID]; ok {
 			st.Skipped++ // an original exists elsewhere → ruling ① discards this text
 			continue
@@ -97,8 +109,8 @@ func (r *Runner) stepIntroOrphanAdopt(ctx context.Context) (Stats, error) {
 		rows = append(rows, []any{c.workID, c.lang, c.raw, r.wikiSrc, introProvenanceSource, "", "", r.now, r.now})
 	}
 	st.Planned = len(rows)
-	st.Note = fmt.Sprintf("one-shot orphan adoption (never the daily chain); candidates=%d chinese=%d orphans-adopted=%d (zh-Hant %d) non-orphan-discarded=%d not-chinese=%d; zh is outside step q's lang scope, so these rows are structurally safe from the mirror",
-		st.Source, st.Anchored, len(rows), hant, st.Skipped, skippedNonJa)
+	st.Note = fmt.Sprintf("one-shot orphan adoption (never the daily chain); candidates=%d chinese=%d orphans-adopted=%d (zh-Hant %d) non-orphan-discarded=%d not-chinese=%d placeholders-skipped=%d; zh is outside step q's lang scope, so these rows are structurally safe from the mirror",
+		st.Source, st.Anchored, len(rows), hant, st.Skipped, skippedNonJa, placeholders)
 
 	if !r.opts.Apply || len(rows) == 0 {
 		return st, nil

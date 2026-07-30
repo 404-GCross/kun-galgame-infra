@@ -52,6 +52,17 @@ type parkedGrayIntro struct {
 // of the wiki table.
 const grayHeadRunes = 80
 
+// introManualGray pins specific bodies to the GRAY verdict, overriding the kana
+// density. The density is blind to composition: a Chinese annotation dominated by
+// QUOTED Japanese release titles reads as Japanese by sheer volume. Known cases
+// (acceptance finding E, refs/proj/146 §6.6) are parked with the measured gray
+// band — step u must not move them, step v must not adopt them.
+var introManualGray = map[int64]bool{
+	// A Chinese release annotation quoting four Japanese titles: the quoted text
+	// alone pushes the density past kanaJaDensity.
+	2776: true,
+}
+
 // zhOnlyClaimedBodies resolves the candidate class shared by steps u and v:
 // claimed bodies with a blank ja column, a blank en column, and text in a zh one.
 //
@@ -87,6 +98,9 @@ func (r *Runner) zhOnlyClaimedBodies(ctx context.Context, span claimSpan) ([]zhO
 				continue
 			}
 			class, density, cjk := classifyKana(raw)
+			if introManualGray[b.ID] {
+				class = kanaGray
+			}
 			out = append(out, zhOnlyBody{
 				galgameID: b.ID, workID: workID, column: p.Column, lang: p.Lang,
 				raw: raw, class: class, density: density, cjk: cjk,
