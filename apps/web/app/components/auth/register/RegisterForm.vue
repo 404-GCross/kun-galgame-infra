@@ -185,10 +185,10 @@ const handleRegister = async () => {
 </script>
 
 <template>
-  <KunCard class="p-8">
-    <div class="mb-8 text-center">
-      <h1 class="text-2xl font-bold text-foreground">创建账号</h1>
-      <p class="mt-2 text-default-500">加入鲲 Galgame 社区</p>
+  <AuthShell>
+    <div class="mb-8">
+      <h1 class="text-foreground text-2xl font-bold">创建账号</h1>
+      <p class="text-default-500 mt-2 text-sm">加入鲲 Galgame 社区</p>
     </div>
 
     <form @submit.prevent>
@@ -242,14 +242,15 @@ const handleRegister = async () => {
           autofocus
         />
 
-        <div v-if="error" class="rounded-lg bg-danger-50 p-3 text-sm text-danger">{{ error }}</div>
-        <div v-if="success" class="rounded-lg bg-success-50 p-3 text-sm text-success">{{ success }}</div>
+        <div v-if="error" class="bg-danger-50 text-danger rounded-xl p-3 text-sm">{{ error }}</div>
+        <div v-if="success" class="bg-success-50 text-success rounded-xl p-3 text-sm">{{ success }}</div>
 
         <div class="flex gap-3">
           <KunButton
             v-if="!codeSent"
             type="button"
             color="primary"
+            size="lg"
             class="w-full"
             :disabled="isLoading"
             @click="handleSendCode"
@@ -262,6 +263,8 @@ const handleRegister = async () => {
             <KunButton
               type="button"
               color="default"
+              variant="flat"
+              size="lg"
               :disabled="countdown > 0 || isLoading"
               @click="handleSendCode"
             >
@@ -270,6 +273,7 @@ const handleRegister = async () => {
             <KunButton
               type="button"
               color="primary"
+              size="lg"
               class="flex-1"
               :disabled="isLoading || !code"
               @click="handleRegister"
@@ -282,7 +286,7 @@ const handleRegister = async () => {
       </div>
     </form>
 
-    <div class="mt-6 text-center text-sm">
+    <div class="border-default-200 mt-8 border-t pt-6 text-sm">
       <p class="text-default-500">
         已有账号？
         <NuxtLink
@@ -290,6 +294,13 @@ const handleRegister = async () => {
           class="text-primary hover:underline"
         >立即登录</NuxtLink>
       </p>
+
+      <!-- TODO: re-enable the "一键登录以下网站" ecosystem strip once everything
+           (downstream CORS, prod client `listed` flags, logos) is ready. Backend
+           (GET /oauth/ecosystem) stays live; this just hides the UI for now.
+           Component kept at components/auth/EcosystemStrip.vue. Moved here from
+           pages/auth/register.vue so that page keeps a single root node. -->
+      <!-- <AuthEcosystemStrip /> -->
     </div>
-  </KunCard>
+  </AuthShell>
 </template>

@@ -29,7 +29,9 @@ const isSwitching = computed(() => !!props.switchingSub)
 <template>
   <div class="space-y-6">
     <div class="text-center">
-      <KunIcon name="lucide:users" class="text-primary mx-auto mb-3 size-12" />
+      <div class="bg-primary-50 mx-auto mb-4 inline-flex size-14 items-center justify-center rounded-2xl">
+        <KunIcon name="lucide:users" class="text-primary size-7" />
+      </div>
       <h1 class="text-foreground text-xl font-bold">选择账号</h1>
       <p class="text-default-500 mt-2 text-sm">
         继续访问
@@ -42,7 +44,7 @@ const isSwitching = computed(() => !!props.switchingSub)
       <li v-for="session in sessions" :key="session.sub">
         <button
           type="button"
-          class="border-default-200 hover:bg-default-100 flex w-full items-center gap-3 rounded-xl border p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60"
+          class="border-default-200 hover:border-primary-200 hover:bg-primary-50 flex w-full items-center gap-3 rounded-xl border p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60"
           :disabled="isSwitching"
           @click="emit('pick', session.sub)"
         >

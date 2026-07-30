@@ -52,7 +52,9 @@ const setColorMode = (mode: string) => {
       </KunPopover>
     </div>
 
-    <div class="w-full max-w-md">
+    <!-- The layout no longer imposes a width: each page's root owns it (the
+         AuthShell pages go wide, the OAuth consent card stays narrow). -->
+    <div class="flex w-full justify-center">
       <slot />
     </div>
   </div>

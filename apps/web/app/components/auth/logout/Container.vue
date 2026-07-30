@@ -48,10 +48,11 @@ onMounted(async () => {
 </script>
 
 <template>
-  <KunCard class="p-8">
-    <div class="py-8 text-center">
-      <KunIcon name="lucide:loader-circle" class="text-primary mx-auto mb-3 size-8 animate-spin" />
-      <p class="text-default-500 text-sm">正在登出...</p>
+  <AuthShell>
+    <div class="flex min-h-40 flex-col items-center justify-center py-8 text-center">
+      <KunIcon name="lucide:loader-circle" class="text-primary mb-4 size-8 animate-spin" />
+      <h1 class="text-foreground text-lg font-semibold">正在登出...</h1>
+      <p class="text-default-500 mt-1 text-sm">正在清除登录状态并返回来源站点</p>
     </div>
-  </KunCard>
+  </AuthShell>
 </template>

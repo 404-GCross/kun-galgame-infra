@@ -393,10 +393,13 @@ const handleDeny = async () => {
 </script>
 
 <template>
-  <KunCard class="p-8">
-    <div v-if="error && !clientId" class="text-center">
-      <KunIcon name="lucide:circle-alert" class="mx-auto mb-4 size-12 text-danger" />
-      <p class="text-danger">{{ error }}</p>
+  <KunCard class="w-full max-w-md p-8">
+    <div v-if="error && !clientId" class="py-4 text-center">
+      <div class="bg-danger-50 mx-auto mb-4 inline-flex size-14 items-center justify-center rounded-2xl">
+        <KunIcon name="lucide:circle-alert" class="text-danger size-7" />
+      </div>
+      <h1 class="text-foreground text-lg font-semibold">无法完成授权</h1>
+      <p class="text-danger mt-2 text-sm">{{ error }}</p>
     </div>
 
     <!-- Login-required prompt: unauthenticated user landed here via an
@@ -410,8 +413,9 @@ const handleDeny = async () => {
              post-login the user re-enters this page logged-in, auto-
              consent fires, they bounce to redirect_uri seamlessly. -->
     <div v-else-if="needsLogin" class="space-y-6">
+      <OauthAuthorizeHandshake :client-name="clientInfo?.name" />
+
       <div class="text-center">
-        <KunIcon name="lucide:shield-check" class="text-primary mx-auto mb-3 size-12" />
         <h1 class="text-foreground text-xl font-bold">需要登录后授权</h1>
         <p class="text-default-500 mt-2 text-sm">
           <template v-if="clientInfo">
@@ -426,12 +430,12 @@ const handleDeny = async () => {
         </p>
       </div>
 
-      <div class="flex gap-3">
-        <KunButton color="default" class="flex-1" @click="handleDeny">
-          取消
-        </KunButton>
-        <KunButton color="primary" class="flex-1" @click="goLogin">
+      <div class="space-y-2">
+        <KunButton color="primary" size="lg" class="w-full" @click="goLogin">
           登录后继续
+        </KunButton>
+        <KunButton color="default" variant="light" class="w-full" @click="handleDeny">
+          取消
         </KunButton>
       </div>
 
@@ -449,8 +453,11 @@ const handleDeny = async () => {
          No consent question rendered — show a brief "redirecting" spinner
          while we POST /oauth/authorize/consent + bounce to redirect_uri.
          Typical wall-clock time visible to user: ~150 ms. -->
-    <div v-else-if="autoConsenting || clientInfo === undefined" class="py-8 text-center">
-      <KunIcon name="lucide:loader-circle" class="text-primary mx-auto mb-3 size-8 animate-spin" />
+    <div
+      v-else-if="autoConsenting || clientInfo === undefined"
+      class="flex min-h-40 flex-col items-center justify-center py-8 text-center"
+    >
+      <KunIcon name="lucide:loader-circle" class="text-primary mb-4 size-8 animate-spin" />
       <p class="text-default-500 text-sm">
         {{ autoConsenting ? '正在跳转回应用...' : '加载中...' }}
       </p>
@@ -467,62 +474,64 @@ const handleDeny = async () => {
         @pick="handleChooserPick"
         @add="handleChooserAdd"
       />
-      <div v-if="error" class="bg-danger-50 text-danger rounded-lg p-3 text-sm">
+      <div v-if="error" class="bg-danger-50 text-danger rounded-xl p-3 text-sm">
         {{ error }}
       </div>
     </div>
 
     <template v-else>
-      <div class="mb-6 text-center">
-        <KunIcon name="lucide:shield-check" class="mx-auto mb-3 size-12 text-primary" />
-        <h1 class="text-xl font-bold text-foreground">授权请求</h1>
-        <p class="mt-2 text-sm text-default-500">
+      <OauthAuthorizeHandshake :client-name="clientInfo?.name" />
+
+      <div class="mt-6 mb-6 text-center">
+        <h1 class="text-foreground text-xl font-bold">授权请求</h1>
+        <p class="text-default-500 mt-2 text-sm">
           <span v-if="clientInfo">「{{ clientInfo.name }}」</span>
           正在请求访问你的账户
         </p>
       </div>
 
-      <div class="mb-6 space-y-3">
-        <p class="text-sm font-medium text-foreground">该应用将获得以下权限：</p>
+      <div class="bg-default-50 mb-6 space-y-3 rounded-xl p-4">
+        <p class="text-foreground text-sm font-medium">该应用将获得以下权限：</p>
         <ul class="space-y-2">
           <li
             v-for="s in scopeList"
             :key="s"
-            class="flex items-center gap-2 text-sm text-default-500"
+            class="text-default-500 flex items-center gap-2 text-sm"
           >
-            <KunIcon name="lucide:check" class="size-4 text-success" />
+            <KunIcon name="lucide:check" class="text-success size-4 shrink-0" />
             {{ scopeLabels[s] || s }}
           </li>
           <li
             v-if="scopeList.length === 0"
-            class="flex items-center gap-2 text-sm text-default-500"
+            class="text-default-500 flex items-center gap-2 text-sm"
           >
-            <KunIcon name="lucide:check" class="size-4 text-success" />
+            <KunIcon name="lucide:check" class="text-success size-4 shrink-0" />
             基本账户信息
           </li>
         </ul>
       </div>
 
-      <div v-if="error" class="mb-4 rounded-lg bg-danger-50 p-3 text-sm text-danger">
+      <div v-if="error" class="bg-danger-50 text-danger mb-4 rounded-xl p-3 text-sm">
         {{ error }}
       </div>
 
-      <div class="flex gap-3">
-        <KunButton color="default" class="flex-1" @click="handleDeny">
-          拒绝
-        </KunButton>
+      <div class="space-y-2">
         <KunButton
           color="primary"
-          class="flex-1"
+          size="lg"
+          class="w-full"
           :disabled="isLoading"
           @click="handleApprove"
         >
           <KunIcon v-if="isLoading" name="lucide:loader-circle" class="mr-2 size-4 animate-spin" />
           {{ isLoading ? '授权中...' : '同意授权' }}
         </KunButton>
+        <KunButton color="default" variant="light" class="w-full" @click="handleDeny">
+          拒绝
+        </KunButton>
       </div>
 
-      <p class="mt-4 text-center text-xs text-default-400">
+      <p class="text-default-400 mt-4 text-center text-xs break-all">
         授权后将跳转回 {{ redirectUri }}
       </p>
     </template>
