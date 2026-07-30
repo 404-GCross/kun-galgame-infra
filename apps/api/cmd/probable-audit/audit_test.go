@@ -161,8 +161,8 @@ func cleanCatalog(t *testing.T) {
 func seedWork(t *testing.T, id int64) {
 	t.Helper()
 	require.NoError(t, testDB.Exec(`INSERT INTO catalog_work
-		(id, medium_id, olang, display_name, content_rating, status, extra, field_provenance)
-		VALUES (?, 1, 'ja', 'W', 0, 0, '{}', '{}')`, id).Error)
+		(id, medium_id, olang, display_name, content_rating, status, extra, field_provenance, display_nsfw)
+		VALUES (?, 1, 'ja', 'W', 0, 0, '{}', '{}', false)`, id).Error)
 }
 
 func seedProbable(t *testing.T, workID int64, source int16, ext string) {

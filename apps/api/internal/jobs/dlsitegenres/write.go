@@ -11,10 +11,15 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// writer applies planned tag rows with the write-time XOR guard and the
-// ON CONFLICT idempotency backstop (serial, plain ints) — the worktags writer
-// shape, FILL semantics (DO NOTHING, deliberately not step 62's refresh
-// upsert: genre sets are quasi-static).
+// writer applies planned tag rows with the ON CONFLICT idempotency backstop
+// (serial, plain ints) — the worktags writer shape, FILL semantics (DO NOTHING,
+// deliberately not step 62's refresh upsert: genre sets are quasi-static).
+//
+// W1-pre bridge nativization (refs/proj/140 §2.6): claimed and bodyless are peers
+// now. The step-88 write-time XOR guard is gone together with the read-time bridge
+// it protected — a claimed work's DLsite genres were never bridged from the wiki
+// in the first place, and the tags facet's per-source lanes make this importer
+// their single persistent writer for EVERY galgame work.
 type writer struct {
 	db    *gorm.DB
 	stats *Stats
@@ -30,22 +35,16 @@ func (w *writer) touch(ctx context.Context) error {
 	return repository.TouchWorks(ctx, w.db, w.touched)
 }
 
-// plannedRow is one decided catalog_work_tag write, carrying the work's site
-// so the guard can re-assert bodylessness at the last moment. No Count field —
-// DLsite genres carry no votes; every row lands count=0.
+// plannedRow is one decided catalog_work_tag write. No Count field — DLsite
+// genres carry no votes; every row lands count=0.
 type plannedRow struct {
 	WorkID   int64
-	Site     *string
 	SourceID int16
 	Name     string
 }
 
-// write enforces the XOR guard, then (apply only) inserts the row.
+// write inserts the row (apply only).
 func (w *writer) write(ctx context.Context, p plannedRow, apply bool) {
-	if !isBodyless(p.Site) { // XOR guard (§8.D) — never materialise a claimed work
-		w.stats.Refused++
-		return
-	}
 	if !apply {
 		return
 	}
@@ -67,7 +66,3 @@ func (w *writer) write(ctx context.Context, p plannedRow, apply bool) {
 	w.stats.Written++
 	w.touched = append(w.touched, p.WorkID)
 }
-
-// isBodyless reports whether a catalog_work is bodyless (site NULL or ”) —
-// the §8.D claim key, same shape as worktags/workratings.
-func isBodyless(site *string) bool { return site == nil || *site == "" }

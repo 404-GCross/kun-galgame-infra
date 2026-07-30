@@ -17,29 +17,27 @@ import (
 // pins medium=galgame (the game-domain ruling: the ASMR family carries DLsite
 // anchors too and is out of scope).
 
-// dlsiteCandidate is one bodyless galgame work with its representative DLsite
-// workno. DISTINCT ON keeps ONE anchor per work (the lexicographically lowest
-// workno — the bgm-lane precedent; surveyed live: zero galgame-medium works
-// carry more than one distinct workno). Site is carried for the write-time XOR
-// guard.
+// dlsiteCandidate is one galgame work with its representative DLsite workno.
+// DISTINCT ON keeps ONE anchor per work (the lexicographically lowest workno —
+// the bgm-lane precedent; surveyed live: zero galgame-medium works carry more than
+// one distinct workno).
 type dlsiteCandidate struct {
-	WorkID int64   `gorm:"column:work_id"`
-	Site   *string `gorm:"column:site"`
-	Workno string  `gorm:"column:workno"`
+	WorkID int64  `gorm:"column:work_id"`
+	Workno string `gorm:"column:workno"`
 }
 
-// loadDlsiteCandidates resolves bodyless GALGAME-medium works carrying a DLsite
-// EXACT release anchor. Limit/Offset window the distinct-work list in Go (the
+// loadDlsiteCandidates resolves GALGAME-medium works carrying a DLsite EXACT
+// release anchor. Limit/Offset window the distinct-work list in Go (the
 // dlsitemedia chunking discipline).
 func loadDlsiteCandidates(ctx context.Context, db *gorm.DB, reg registry, limit, offset int) ([]dlsiteCandidate, error) {
 	var out []dlsiteCandidate
 	if err := db.WithContext(ctx).
-		Raw(`SELECT DISTINCT ON (w.id) w.id AS work_id, w.site AS site, r.external_id AS workno
+		Raw(`SELECT DISTINCT ON (w.id) w.id AS work_id, r.external_id AS workno
 			FROM catalog_work w
 			JOIN catalog_release rel ON rel.work_id = w.id AND rel.deleted_at IS NULL
 			JOIN catalog_external_ref r ON r.entity_type = ? AND r.entity_id = rel.id
 				AND r.source_id = ? AND r.link_kind = ?
-			WHERE w.medium_id = ? AND (w.site IS NULL OR w.site = '') AND w.deleted_at IS NULL
+			WHERE w.medium_id = ? AND w.deleted_at IS NULL
 			ORDER BY w.id, r.external_id`,
 			model.EntityTypeRelease, reg.dlsiteSource, model.LinkKindExact, reg.galgameMedium).
 		Scan(&out).Error; err != nil {
@@ -148,7 +146,7 @@ func runDlsiteLane(ctx context.Context, db, dlsiteDB *gorm.DB, w *writer, reg re
 			st.DlRatingPlanned++
 			collect(&st.DlSamples, Sample{WorkID: c.WorkID, Workno: c.Workno, Score: *dl.rateStar, VoteCount: *dl.rateCount})
 			w.write(ctx, plannedRow{
-				WorkID: c.WorkID, Site: c.Site, SourceID: reg.dlsiteSource,
+				WorkID: c.WorkID, SourceID: reg.dlsiteSource,
 				Score: *dl.rateStar, VoteCount: *dl.rateCount,
 			}, opts.Apply, &st.DlRatingWritten, &st.DlRatingUnchanged)
 		} else {
@@ -171,7 +169,7 @@ func runDlsiteLane(ctx context.Context, db, dlsiteDB *gorm.DB, w *writer, reg re
 			}
 			st.PopPlanned++
 			w.writePopularity(ctx, popPlannedRow{
-				WorkID: c.WorkID, Site: c.Site, SourceID: reg.dlsiteSource,
+				WorkID: c.WorkID, SourceID: reg.dlsiteSource,
 				Metric: pm.metric, Value: *pm.value,
 			}, opts.Apply)
 		}

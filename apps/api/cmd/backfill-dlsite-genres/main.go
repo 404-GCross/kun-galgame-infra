@@ -88,7 +88,6 @@ func main() {
 		"distinct_names", st.DistinctNames,
 		"written", st.Written,
 		"conflict", st.Conflict,
-		"refused_claimed", st.Refused,
 		"errors", st.Errors,
 	)
 	if !*apply {

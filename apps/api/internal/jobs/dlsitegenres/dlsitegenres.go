@@ -102,7 +102,6 @@ type Stats struct {
 	Planned       int // decided tag rows
 	Written       int // rows inserted (apply)
 	Conflict      int // ON CONFLICT no-ops (row already existed)
-	Refused       int // XOR guard: claimed work refused at write time
 	Errors        int
 
 	DistinctNames   int        // distinct tag names across the plan
@@ -185,7 +184,7 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 				collect(&st.FallbackSamples, s)
 			}
 			w.write(ctx, plannedRow{
-				WorkID: c.WorkID, Site: c.Site, SourceID: reg.dlsiteSource, Name: g.Name,
+				WorkID: c.WorkID, SourceID: reg.dlsiteSource, Name: g.Name,
 			}, opts.Apply)
 		}
 	}
@@ -203,7 +202,7 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 		"zh_hit", st.ZhHit, "ja_fallback", st.JaFallback, "name_blank", st.NameBlank,
 		"dup_collapsed", st.DupCollapsed, "planned", st.Planned,
 		"distinct_names", st.DistinctNames, "written", st.Written, "conflict", st.Conflict,
-		"refused_claimed", st.Refused, "errors", st.Errors)
+		"errors", st.Errors)
 	for _, nf := range st.TopNames {
 		slog.Info("backfill-dlsite-genres top genre", "name", nf.Name, "works", nf.Works)
 	}

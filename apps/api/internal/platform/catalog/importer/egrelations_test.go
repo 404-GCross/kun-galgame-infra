@@ -12,8 +12,8 @@ import (
 func seedEGWork(t *testing.T, gid string) int64 {
 	t.Helper()
 	var workID int64
-	require.NoError(t, testDB.Raw(`INSERT INTO catalog_work (medium_id, olang, display_name, content_rating, status, extra)
-		VALUES (1, 'ja', 'eg-'||?::text, 0, 0, '{}') RETURNING id`, gid).Scan(&workID).Error)
+	require.NoError(t, testDB.Raw(`INSERT INTO catalog_work (medium_id, olang, display_name, content_rating, status, extra, display_nsfw)
+		VALUES (1, 'ja', 'eg-'||?::text, 0, 0, '{}', false) RETURNING id`, gid).Scan(&workID).Error)
 	require.NoError(t, testDB.Exec(`INSERT INTO catalog_external_ref (entity_type, entity_id, source_id, external_id, link_kind, matched_by)
 		VALUES (5, ?, 5, ?, 0, 'rule:test')`, workID, gid).Error)
 	return workID

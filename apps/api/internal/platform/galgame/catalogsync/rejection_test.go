@@ -84,8 +84,8 @@ func TestNegativeKnowledgeEnforcement(t *testing.T) {
 		// An existing UNCLAIMED work already carries the bangumi-13 exact ref;
 		// a human rejected that pairing for it.
 		require.NoError(t, testDB.Exec(`INSERT INTO catalog_work
-			(id, medium_id, olang, display_name, content_rating, status, extra, field_provenance)
-			VALUES (9001, 1, 'ja', 'W', 0, 0, '{}', '{}')`).Error)
+			(id, medium_id, olang, display_name, content_rating, status, extra, field_provenance, display_nsfw)
+			VALUES (9001, 1, 'ja', 'W', 0, 0, '{}', '{}', false)`).Error)
 		require.NoError(t, testDB.Exec(`INSERT INTO catalog_external_ref
 			(entity_type, entity_id, source_id, external_id, link_kind, matched_by)
 			VALUES (5, 9001, 3, '13', 0, 'import:x')`).Error)

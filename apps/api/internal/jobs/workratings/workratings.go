@@ -4,16 +4,16 @@
 // template):
 //
 //   - bangumi lane: EVERY EXACT Bangumi work anchor (matched_by unrestricted —
-//     the 66/69/71 ruling) joins each bodyless work to a src_bangumi.subject (a
+//     the 66/69/71 ruling) joins each work to a src_bangumi.subject (a
 //     schema INSIDE the catalog DB — single --dsn); subjects with score>0 land
 //     as a bangumi row: score on the native 0-10 scale, rank (NULL when
 //     Bangumi's rank is 0 = unranked), and vote_count = the SUM of the
 //     score_details buckets — the dump carries NO total field (surveyed; the
 //     same derivation galgame_bangumi_meta.total uses via
 //     bangumienrich.ratingTotal).
-//   - erogamespace lane: EG EXACT work anchors on bodyless works (the
-//     cmd/enrich-eg-scores anchor query with its claimed-only filter INVERTED
-//     to bodyless-only) join the EG mirror's games (--eg-dsn, a separate
+//   - erogamespace lane: EG EXACT work anchors (the cmd/enrich-eg-scores anchor
+//     query with its claim filter removed) join the EG mirror's games
+//     (--eg-dsn, a separate
 //     database): games with a non-NULL median land as an erogamespace row:
 //     score = median on the native 0-100 scale, vote_count = count2, rank NULL
 //     (EG has no rank facet).
@@ -34,8 +34,11 @@
 //   - Every DSN is ALWAYS explicit — a bare run cannot touch a live DB.
 //   - Dry-run is the default: the decided plan (per-lane counters + samples)
 //     is identical in dry and apply; only *Written/*Unchanged need --apply.
-//   - XOR guard (§8.D): native rows only for bodyless works (site NULL/”);
-//     the SQL already filters to bodyless, and the writer re-asserts it.
+//   - EVERY galgame work, claimed or bodyless (W1-pre bridge nativization,
+//     refs/proj/140 §2.6). The step-88 site predicate and the write-time XOR
+//     guard are gone with the read-time bridge they protected: the catalog face
+//     no longer reads a claimed work's bgm/dlsite/eg scores out of the wiki meta
+//     tables, so this importer is their single persistent writer everywhere.
 //   - Refresh-runnable (step 62 upsert unification): every write is
 //     ON CONFLICT DO UPDATE with change detection — a re-run after a mirror
 //     refresh updates rows in place; a re-run against unchanged staging is a
@@ -122,8 +125,7 @@ type Stats struct {
 	PopWritten        int // popularity rows inserted or updated (apply)
 	PopUnchanged      int // change-detected no-ops (row already current)
 
-	Refused int // XOR guard: claimed work refused at write time
-	Errors  int
+	Errors int
 
 	BgmSamples []Sample
 	EgSamples  []Sample
@@ -194,7 +196,7 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 		"dl_no_rating", st.DlNoRating, "dl_rating_planned", st.DlRatingPlanned,
 		"dl_rating_written", st.DlRatingWritten, "dl_rating_unchanged", st.DlRatingUnchanged,
 		"pop_planned", st.PopPlanned, "pop_written", st.PopWritten, "pop_unchanged", st.PopUnchanged,
-		"refused_claimed", st.Refused, "errors", st.Errors)
+		"errors", st.Errors)
 	logSamples("bgm", st.BgmSamples)
 	logSamples("eg", st.EgSamples)
 	logSamples("dlsite", st.DlSamples)
@@ -226,7 +228,7 @@ func runBgmLane(ctx context.Context, db *gorm.DB, w *writer, reg registry, opts 
 		st.BgmPlanned++
 		collect(&st.BgmSamples, Sample{WorkID: c.WorkID, ExternalID: c.SubjectID, Score: c.Score, VoteCount: votes, Rank: rank})
 		w.write(ctx, plannedRow{
-			WorkID: c.WorkID, Site: c.Site, SourceID: reg.bangumiSource,
+			WorkID: c.WorkID, SourceID: reg.bangumiSource,
 			Score: c.Score, VoteCount: votes, Rank: rank,
 		}, opts.Apply, &st.BgmWritten, &st.BgmUnchanged)
 	}
@@ -275,7 +277,7 @@ func runEgLane(ctx context.Context, db, egDB *gorm.DB, w *writer, reg registry, 
 		st.EgPlanned++
 		collect(&st.EgSamples, Sample{WorkID: c.WorkID, ExternalID: chosen, Score: float64(*eg.median), VoteCount: eg.votes})
 		w.write(ctx, plannedRow{
-			WorkID: c.WorkID, Site: c.Site, SourceID: reg.egSource,
+			WorkID: c.WorkID, SourceID: reg.egSource,
 			Score: float64(*eg.median), VoteCount: eg.votes,
 		}, opts.Apply, &st.EgWritten, &st.EgUnchanged)
 	}

@@ -21,8 +21,8 @@ func seedVNDBWork(t *testing.T, vid string) int64 {
 	pwid, err := strconv.ParseInt(strings.TrimPrefix(vid, "v"), 10, 64)
 	require.NoError(t, err)
 	var workID int64
-	require.NoError(t, testDB.Raw(`INSERT INTO catalog_work (medium_id, site, product_work_id, olang, display_name, content_rating, status, extra, field_provenance)
-		VALUES (1,'galgame_wiki',?,'ja','w',0,0,'{}','{}') RETURNING id`, pwid).Scan(&workID).Error)
+	require.NoError(t, testDB.Raw(`INSERT INTO catalog_work (medium_id, site, product_work_id, olang, display_name, content_rating, status, extra, field_provenance, display_nsfw)
+		VALUES (1,'galgame_wiki',?,'ja','w',0,0,'{}','{}',false) RETURNING id`, pwid).Scan(&workID).Error)
 	require.NoError(t, testDB.Exec(`INSERT INTO catalog_external_ref (entity_type, entity_id, source_id, external_id, link_kind, matched_by)
 		VALUES (5, ?, 2, ?, 0, 'rule:test-vndb-work-anchor')`, workID, vid).Error)
 	return workID

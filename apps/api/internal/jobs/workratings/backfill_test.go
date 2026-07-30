@@ -186,13 +186,15 @@ func TestBackfillWorkRatings(t *testing.T) {
 	wBgm := mkWork(t, reg.galgameMedium, "bgm-scored", nil)      // scored subject → planned (rank 321)
 	wBgmZero := mkWork(t, reg.galgameMedium, "bgm-unrated", nil) // score 0 → bgm_no_score
 	wBgmNoRank := mkWork(t, reg.galgameMedium, "bgm-norank", nil)
-	wBgmClaimed := mkWork(t, reg.galgameMedium, "bgm-claimed", &claimed) // claimed → excluded by SQL
-	wBgmProbable := mkWork(t, reg.galgameMedium, "bgm-probable", nil)    // probable tier → excluded by SQL
-	mkSubject(t, 101, 7.4, 321, `{"1":0,"5":10,"7":20,"10":12}`)         // votes = 42
-	mkSubject(t, 102, 0, 0, `{"1":0}`)                                   // unrated
-	mkSubject(t, 103, 5.5, 0, `{"5":3}`)                                 // rank 0 → NULL rank, votes 3
-	mkSubject(t, 104, 8.0, 1, `{"10":5}`)                                // behind a claimed work
-	mkSubject(t, 105, 8.0, 1, `{"10":5}`)                                // behind a probable anchor
+	// CLAIMED works are peers of bodyless ones since the W1-pre nativization
+	// (refs/proj/140 §2.6): this importer owns their bgm/eg/dlsite rows too.
+	wBgmClaimed := mkWork(t, reg.galgameMedium, "bgm-claimed", &claimed)
+	wBgmProbable := mkWork(t, reg.galgameMedium, "bgm-probable", nil) // probable tier → excluded by SQL
+	mkSubject(t, 101, 7.4, 321, `{"1":0,"5":10,"7":20,"10":12}`)      // votes = 42
+	mkSubject(t, 102, 0, 0, `{"1":0}`)                                // unrated
+	mkSubject(t, 103, 5.5, 0, `{"5":3}`)                              // rank 0 → NULL rank, votes 3
+	mkSubject(t, 104, 8.0, 1, `{"10":5}`)                             // behind a claimed work
+	mkSubject(t, 105, 8.0, 1, `{"10":5}`)                             // behind a probable anchor
 	mkAnchor(t, wBgm, "101", reg.bangumiSource, model.LinkKindExact, ruleTitleYear)
 	mkAnchor(t, wBgmZero, "102", reg.bangumiSource, model.LinkKindExact, ruleTitleYear)
 	mkAnchor(t, wBgmNoRank, "103", reg.bangumiSource, model.LinkKindExact, ruleTitleYear)
@@ -204,7 +206,7 @@ func TestBackfillWorkRatings(t *testing.T) {
 	wEgNoMedian := mkWork(t, reg.galgameMedium, "eg-nomedian", nil)    // NULL median → eg_no_median
 	wEgMissing := mkWork(t, reg.galgameMedium, "eg-missing", nil)      // absent from mirror
 	wEgMulti := mkWork(t, reg.galgameMedium, "eg-multianchor", nil)    // two anchors → most-voted wins
-	wEgClaimed := mkWork(t, reg.galgameMedium, "eg-claimed", &claimed) // claimed → excluded by SQL
+	wEgClaimed := mkWork(t, reg.galgameMedium, "eg-claimed", &claimed) // a peer now
 	mkEGGame(t, 1001, p(78), 40)
 	mkEGGame(t, 1002, nil, 5)
 	mkEGGame(t, 1004, p(50), 10) // fewer votes
@@ -231,7 +233,7 @@ func TestBackfillWorkRatings(t *testing.T) {
 	mkDlsiteWork(t, "RJ100002", nil, nil, nil, pl(7), p(0))
 	wDlMissing := mkWork(t, reg.galgameMedium, "dl-missing", nil) // absent from mirror
 	mkReleaseAnchor(t, wDlMissing, "RJ100003", reg.dlsiteSource, model.LinkKindExact)
-	wDlClaimed := mkWork(t, reg.galgameMedium, "dl-claimed", &claimed) // claimed → excluded by SQL
+	wDlClaimed := mkWork(t, reg.galgameMedium, "dl-claimed", &claimed) // a peer now
 	mkReleaseAnchor(t, wDlClaimed, "RJ100004", reg.dlsiteSource, model.LinkKindExact)
 	mkDlsiteWork(t, "RJ100004", pf(4.9), p(999), pl(1), pl(1), p(1))
 	wDlAsmr := mkWork(t, 5 /* asmr medium */, "dl-asmr", nil) // wrong medium → excluded (game-domain ruling)
@@ -244,20 +246,19 @@ func TestBackfillWorkRatings(t *testing.T) {
 	// --- dry run: decides, writes nothing.
 	st, err := Run(ctx, runOpts(false))
 	require.NoError(t, err)
-	assert.Equal(t, 3, st.BgmCandidates, "claimed + probable excluded in SQL")
+	assert.Equal(t, 4, st.BgmCandidates, "claimed included now; probable still excluded in SQL")
 	assert.Equal(t, 1, st.BgmNoScore)
-	assert.Equal(t, 2, st.BgmPlanned, "wBgm + wBgmNoRank")
-	assert.Equal(t, 5, st.EgCandidates, "wBgm's EG anchor joins the lane; claimed excluded")
+	assert.Equal(t, 3, st.BgmPlanned, "wBgm + wBgmNoRank + wBgmClaimed")
+	assert.Equal(t, 6, st.EgCandidates, "wBgm's EG anchor joins the lane; claimed included now")
 	assert.Equal(t, 1, st.EgMultiAnchor, "wEgMulti's second anchor collapsed")
 	assert.Equal(t, 1, st.EgMissingMirror)
 	assert.Equal(t, 1, st.EgNoMedian)
-	assert.Equal(t, 3, st.EgPlanned, "wEg + wEgMulti + wBgm")
-	assert.Equal(t, 3, st.DlCandidates, "claimed / probable / asmr excluded in SQL")
+	assert.Equal(t, 4, st.EgPlanned, "wEg + wEgMulti + wBgm + wEgClaimed")
+	assert.Equal(t, 4, st.DlCandidates, "claimed included now; probable / asmr excluded in SQL")
 	assert.Equal(t, 1, st.DlMissingMirror)
 	assert.Equal(t, 1, st.DlNoRating, "wDlNoRating publishes no rating")
-	assert.Equal(t, 1, st.DlRatingPlanned, "wDl")
-	assert.Equal(t, 5, st.PopPlanned, "wDl's 3 counters + wDlNoRating's wishlist+reviews")
-	assert.Equal(t, 0, st.Refused, "no claimed work reaches the write path")
+	assert.Equal(t, 2, st.DlRatingPlanned, "wDl + wDlClaimed")
+	assert.Equal(t, 8, st.PopPlanned, "wDl 3 + wDlNoRating 2 + wDlClaimed 3")
 	assert.Zero(t, st.BgmWritten+st.EgWritten+st.DlRatingWritten+st.PopWritten+
 		st.BgmUnchanged+st.EgUnchanged+st.DlRatingUnchanged+st.PopUnchanged+st.Errors)
 	assert.EqualValues(t, 0, ratingCount(t, ""), "dry run writes nothing")
@@ -271,13 +272,13 @@ func TestBackfillWorkRatings(t *testing.T) {
 	// --- apply: writes the decided plan exactly.
 	st, err = Run(ctx, runOpts(true))
 	require.NoError(t, err)
-	assert.Equal(t, 2, st.BgmWritten)
-	assert.Equal(t, 3, st.EgWritten)
-	assert.Equal(t, 1, st.DlRatingWritten)
-	assert.Equal(t, 5, st.PopWritten)
+	assert.Equal(t, 3, st.BgmWritten)
+	assert.Equal(t, 4, st.EgWritten)
+	assert.Equal(t, 2, st.DlRatingWritten)
+	assert.Equal(t, 8, st.PopWritten)
 	assert.Zero(t, st.BgmUnchanged+st.EgUnchanged+st.DlRatingUnchanged+st.PopUnchanged+st.Errors)
-	assert.EqualValues(t, 6, ratingCount(t, ""))
-	assert.EqualValues(t, 5, popCount(t, ""))
+	assert.EqualValues(t, 9, ratingCount(t, ""))
+	assert.EqualValues(t, 8, popCount(t, ""))
 
 	// Value fidelity: the bangumi row (native 0-10, rank, derived votes).
 	var rBgm model.CatalogWorkRating
@@ -334,22 +335,23 @@ func TestBackfillWorkRatings(t *testing.T) {
 
 	// Both lanes on one work → two rows, one per source.
 	assert.EqualValues(t, 2, ratingCount(t, "WHERE work_id = ?", wBgm))
-	assert.EqualValues(t, 0, ratingCount(t, "WHERE work_id IN (?, ?, ?)", wBgmClaimed, wEgClaimed, wDlClaimed),
-		"claimed works never materialise")
-	assert.EqualValues(t, 0, popCount(t, "WHERE work_id IN (?, ?)", wDlClaimed, wDlAsmr),
-		"claimed/off-domain works never materialise")
+	assert.EqualValues(t, 3, ratingCount(t, "WHERE work_id IN (?, ?, ?)", wBgmClaimed, wEgClaimed, wDlClaimed),
+		"CLAIMED works materialise now — the claim guard is gone")
+	assert.EqualValues(t, 3, popCount(t, "WHERE work_id = ?", wDlClaimed), "and so do their counters")
+	assert.EqualValues(t, 0, popCount(t, "WHERE work_id = ?", wDlAsmr),
+		"off-domain works never materialise")
 
 	// --- second apply: change-detected no-op — zero effective writes, every
 	// planned row unchanged, no row growth.
 	st, err = Run(ctx, runOpts(true))
 	require.NoError(t, err)
 	assert.Zero(t, st.BgmWritten+st.EgWritten+st.DlRatingWritten+st.PopWritten+st.Errors, "second pass writes zero")
-	assert.Equal(t, 2, st.BgmUnchanged)
-	assert.Equal(t, 3, st.EgUnchanged)
-	assert.Equal(t, 1, st.DlRatingUnchanged)
-	assert.Equal(t, 5, st.PopUnchanged)
-	assert.EqualValues(t, 6, ratingCount(t, ""), "row count unchanged")
-	assert.EqualValues(t, 5, popCount(t, ""), "row count unchanged")
+	assert.Equal(t, 3, st.BgmUnchanged)
+	assert.Equal(t, 4, st.EgUnchanged)
+	assert.Equal(t, 2, st.DlRatingUnchanged)
+	assert.Equal(t, 8, st.PopUnchanged)
+	assert.EqualValues(t, 9, ratingCount(t, ""), "row count unchanged")
+	assert.EqualValues(t, 8, popCount(t, ""), "row count unchanged")
 
 	// --- refresh loop (step 62 ⑤): mutate mirror values → third apply updates
 	// exactly those rows in place.
@@ -359,10 +361,10 @@ func TestBackfillWorkRatings(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 1, st.DlRatingWritten, "rate_count change updates the rating row")
 	assert.Equal(t, 1, st.PopWritten, "exactly the mutated wishlist row updates")
-	assert.Equal(t, 4, st.PopUnchanged)
+	assert.Equal(t, 7, st.PopUnchanged)
 	assert.Zero(t, st.BgmWritten+st.EgWritten, "untouched lanes stay no-op")
-	assert.EqualValues(t, 6, ratingCount(t, ""), "update in place — no row growth")
-	assert.EqualValues(t, 5, popCount(t, ""))
+	assert.EqualValues(t, 9, ratingCount(t, ""), "update in place — no row growth")
+	assert.EqualValues(t, 8, popCount(t, ""))
 	require.NoError(t, testDB.Where("work_id = ? AND source_id = ?", wDl, reg.dlsiteSource).First(&rDl).Error)
 	assert.Equal(t, 121, rDl.VoteCount, "refreshed vote_count lands")
 	var wl model.CatalogWorkPopularity
@@ -370,10 +372,10 @@ func TestBackfillWorkRatings(t *testing.T) {
 	assert.EqualValues(t, 301, wl.Value, "refreshed wishlist lands")
 }
 
-// TestXORGuardAndDSNRequired covers the write-time XOR guard (the SQL filter
-// excludes claimed works from candidates, so the guard is only reachable by
-// driving the writer directly) and the refuse-to-guess DSN discipline.
-func TestXORGuardAndDSNRequired(t *testing.T) {
+// TestClaimPeerWritesAndDSNRequired covers the writer after the W1-pre claim-guard
+// removal (a CLAIMED work writes exactly like a bodyless one, both facets) and the
+// refuse-to-guess DSN discipline.
+func TestClaimPeerWritesAndDSNRequired(t *testing.T) {
 	clean(t)
 	ctx := context.Background()
 	reg, err := resolveRegistry(ctx, testDB)
@@ -383,40 +385,41 @@ func TestXORGuardAndDSNRequired(t *testing.T) {
 	wClaimed := mkWork(t, reg.galgameMedium, "claimed-direct", &claimed)
 	wBody := mkWork(t, reg.galgameMedium, "bodyless-direct", nil)
 
-	// XOR: a claimed row is refused before any write (both facets).
+	// A claimed row writes, both facets: the step-88 XOR guard retired with the
+	// read-time bridge it protected (refs/proj/140 §2.6).
 	w := &writer{db: testDB, stats: &Stats{}}
 	var written, unchanged int
-	w.write(ctx, plannedRow{WorkID: wClaimed, Site: &claimed, SourceID: reg.bangumiSource, Score: 7.0}, true, &written, &unchanged)
-	w.writePopularity(ctx, popPlannedRow{WorkID: wClaimed, Site: &claimed, SourceID: reg.dlsiteSource,
+	w.write(ctx, plannedRow{WorkID: wClaimed, SourceID: reg.bangumiSource, Score: 7.0}, true, &written, &unchanged)
+	w.writePopularity(ctx, popPlannedRow{WorkID: wClaimed, SourceID: reg.dlsiteSource,
 		Metric: model.PopularityMetricDownloads, Value: 5}, true)
-	assert.Equal(t, 2, w.stats.Refused)
-	assert.Zero(t, written+unchanged+w.stats.PopWritten+w.stats.PopUnchanged)
-	assert.EqualValues(t, 0, ratingCount(t, ""))
-	assert.EqualValues(t, 0, popCount(t, ""))
+	assert.Equal(t, 1, written)
+	assert.Equal(t, 1, w.stats.PopWritten)
+	assert.EqualValues(t, 1, ratingCount(t, ""))
+	assert.EqualValues(t, 1, popCount(t, ""))
 
 	// A bodyless row writes; a same-value retry is a change-detected no-op; a
 	// changed-value retry UPDATEs in place (the step-62 upsert unification).
-	w.write(ctx, plannedRow{WorkID: wBody, Site: nil, SourceID: reg.bangumiSource, Score: 7.0, VoteCount: 3}, true, &written, &unchanged)
-	assert.Equal(t, 1, written)
-	w.write(ctx, plannedRow{WorkID: wBody, Site: nil, SourceID: reg.bangumiSource, Score: 7.0, VoteCount: 3}, true, &written, &unchanged)
+	w.write(ctx, plannedRow{WorkID: wBody, SourceID: reg.bangumiSource, Score: 7.0, VoteCount: 3}, true, &written, &unchanged)
+	assert.Equal(t, 2, written)
+	w.write(ctx, plannedRow{WorkID: wBody, SourceID: reg.bangumiSource, Score: 7.0, VoteCount: 3}, true, &written, &unchanged)
 	assert.Equal(t, 1, unchanged, "unchanged values → no-op")
-	w.write(ctx, plannedRow{WorkID: wBody, Site: nil, SourceID: reg.bangumiSource, Score: 7.2, VoteCount: 4}, true, &written, &unchanged)
-	assert.Equal(t, 2, written, "changed values → in-place update")
-	assert.EqualValues(t, 1, ratingCount(t, ""), "still exactly one row")
+	w.write(ctx, plannedRow{WorkID: wBody, SourceID: reg.bangumiSource, Score: 7.2, VoteCount: 4}, true, &written, &unchanged)
+	assert.Equal(t, 3, written, "changed values → in-place update")
+	assert.EqualValues(t, 2, ratingCount(t, ""), "the claimed row plus this one")
 	var r model.CatalogWorkRating
 	require.NoError(t, testDB.Where("work_id = ?", wBody).First(&r).Error)
 	assert.InDelta(t, 7.2, r.Score, 1e-9)
 
 	// Same trio for popularity.
-	w.writePopularity(ctx, popPlannedRow{WorkID: wBody, Site: nil, SourceID: reg.dlsiteSource,
+	w.writePopularity(ctx, popPlannedRow{WorkID: wBody, SourceID: reg.dlsiteSource,
 		Metric: model.PopularityMetricWishlist, Value: 10}, true)
-	w.writePopularity(ctx, popPlannedRow{WorkID: wBody, Site: nil, SourceID: reg.dlsiteSource,
+	w.writePopularity(ctx, popPlannedRow{WorkID: wBody, SourceID: reg.dlsiteSource,
 		Metric: model.PopularityMetricWishlist, Value: 10}, true)
-	w.writePopularity(ctx, popPlannedRow{WorkID: wBody, Site: nil, SourceID: reg.dlsiteSource,
+	w.writePopularity(ctx, popPlannedRow{WorkID: wBody, SourceID: reg.dlsiteSource,
 		Metric: model.PopularityMetricWishlist, Value: 11}, true)
-	assert.Equal(t, 2, w.stats.PopWritten)
+	assert.Equal(t, 3, w.stats.PopWritten)
 	assert.Equal(t, 1, w.stats.PopUnchanged)
-	assert.EqualValues(t, 1, popCount(t, ""), "still exactly one row")
+	assert.EqualValues(t, 2, popCount(t, ""), "the claimed row plus this one")
 	var pop model.CatalogWorkPopularity
 	require.NoError(t, testDB.Where("work_id = ?", wBody).First(&pop).Error)
 	assert.EqualValues(t, 11, pop.Value)

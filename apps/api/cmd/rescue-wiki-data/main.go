@@ -22,6 +22,12 @@
 //	n  screenshot bytes  ALL galgame_screenshot           → catalog_work_screenshot
 //	o  image ownership   catalog-referenced hashes        → image_site_usage (site=catalog)
 //
+//	p  titles mirror     galgame names + galgame_alias    → catalog_work_title
+//	q  intros mirror     galgame.intro_{ja,en}            → catalog_work_intro
+//	r  tags mirror       galgame_tag_relation ⋈ galgame_tag → catalog_work_tag (+ catalog_tag.sexual)
+//	s  vndb ratings      galgame_vndb_meta                → catalog_work_rating
+//	t  meta adoption     galgame_{bangumi,dlsite,eg}_meta  → catalog_work_rating / _popularity
+//
 // Steps j..l are the A2-0 registrar rescue (refs/proj/127): the three taxonomy
 // id maps that today only exist as a joinable wiki table.
 //
@@ -31,8 +37,20 @@
 // — after which the existing catalog reference ping keeps the bytes alive. Step o
 // is the ONLY step that writes to the images database, and it only ever INSERTs.
 //
-// Every step is fill-missing (ON CONFLICT DO NOTHING), so a second pass writes
-// nothing — that is the acceptance criterion. Dry run is the default.
+// Steps p..t are the W1-pre read-time-bridge nativization (refs/proj/140): the
+// catalog read face bridged those five facets out of the wiki tables for every
+// CLAIMED work, and these steps materialize the bridges verbatim so the face can
+// be flipped to one native lane and the tables dropped. They are MIRRORS, so they
+// insert, update AND delete inside a declared ownership scope; p,q,r,s are
+// idempotent followers, t is one-shot (never re-run it — see the package doc).
+//
+//	go run ./cmd/rescue-wiki-data --step p,q,r,s          # the daily follow-up
+//	go run ./cmd/rescue-wiki-data --step t --apply        # exactly once
+//
+// Steps a..o are fill-missing (ON CONFLICT DO NOTHING) and p..t converge, so in
+// both cases a second pass changes nothing — that is the acceptance criterion.
+// Dry run is the default; for a mirror step it is an exact forecast (the
+// insert/update/delete ledger reads the same in dry and apply).
 //
 // The schema this wave needs (catalog_engine, catalog_work_engine,
 // catalog_tag_intro, catalog_series_intro, the `web` source seed) ships in
@@ -140,6 +158,22 @@ func report(stats []wikirescue.Stats, apply bool, dbname string) {
 	for _, s := range stats {
 		fmt.Printf("%-5s %9d %9d %8d %9d %9d %9d %9d\n",
 			s.Step, s.Source, s.Anchored, s.Parked, s.Planned, s.Written, s.Touched, s.Created)
+	}
+	// The mirror ledger (steps p..t) is a second table: its insert/update/delete
+	// split is the whole acceptance signal, and it reads the same in dry and apply.
+	mirror := make([]wikirescue.Stats, 0, len(stats))
+	for _, s := range stats {
+		if s.Insert+s.Update+s.Delete+s.Already+s.Skipped+s.Vocab > 0 {
+			mirror = append(mirror, s)
+		}
+	}
+	if len(mirror) > 0 {
+		fmt.Printf("\n%-5s %9s %9s %9s %9s %9s %9s\n",
+			"step", "insert", "update", "delete", "already", "skipped", "vocab")
+		for _, s := range mirror {
+			fmt.Printf("%-5s %9d %9d %9d %9d %9d %9d\n",
+				s.Step, s.Insert, s.Update, s.Delete, s.Already, s.Skipped, s.Vocab)
+		}
 	}
 	for _, s := range stats {
 		if s.Note != "" {

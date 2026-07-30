@@ -120,22 +120,51 @@ type WorkTagRow struct {
 // 0 (every face's default) reproduces the pre-A2-1e behavior exactly.
 func (s *ReadService) loadWorkTags(ctx context.Context, subjects []claimSubject, spoilerMax int16) (map[int64][]WorkTagRow, error) {
 	out := make(map[int64][]WorkTagRow, len(subjects))
-	galgameIDs, galgameToWork, _ := partitionClaimSubjects(subjects)
-	// Wiki bridge lane — CLAIMED works only.
-	if len(galgameIDs) > 0 {
-		if err := s.bridgeGalgameTags(ctx, galgameIDs, galgameToWork, out, spoilerMax); err != nil {
+	galgameIDs, galgameToWork, bodylessIDs := partitionClaimSubjects(subjects)
+	// The tag lanes' source registry, resolved ONCE: the bridge attributes each
+	// edge through it, and the claimed native read excludes the same two ids.
+	var srcIDByKey map[string]int16
+	if len(galgameToWork) > 0 {
+		var err error
+		srcIDByKey, err = s.sourceIDsByKey(ctx,
+			[]string{sourceKeyGalgameWiki, sourceKeyVNDB, sourceKeyBangumi, sourceKeyUpscale})
+		if err != nil {
 			return nil, err
 		}
 	}
-	// Catalog-native lane — ALL works (claimed + bodyless). partitionClaimSubjects
-	// is shared with the whole-facet-XOR facets, so we build the full work-id list
-	// here rather than reusing its bodyless-only split.
-	allIDs := make([]int64, 0, len(subjects))
-	for _, sub := range subjects {
-		allIDs = append(allIDs, sub.WorkID)
+	// Wiki bridge lane — CLAIMED works only.
+	if len(galgameIDs) > 0 {
+		if err := s.bridgeGalgameTags(ctx, galgameIDs, galgameToWork, out, spoilerMax, srcIDByKey); err != nil {
+			return nil, err
+		}
 	}
-	if len(allIDs) > 0 {
-		if err := s.nativeWorkTags(ctx, allIDs, out); err != nil {
+	// Catalog-native lane — ALL works (claimed + bodyless), in two calls that
+	// differ only in the DOUBLE-VISION FUSE below.
+	if len(bodylessIDs) > 0 {
+		if err := s.nativeWorkTags(ctx, bodylessIDs, out, nil); err != nil {
+			return nil, err
+		}
+	}
+	if len(galgameToWork) > 0 {
+		claimedIDs := make([]int64, 0, len(galgameToWork))
+		for _, workID := range galgameToWork {
+			claimedIDs = append(claimedIDs, workID)
+		}
+		// DOUBLE-VISION FUSE (W1-pre segment A, refs/proj/140 §2.3). The mirror
+		// step r materializes a claimed work's wiki tag edges into
+		// catalog_work_tag under galgame_wiki / vndb — the two sources this
+		// function's sibling still BRIDGES above. Between the data commit (which
+		// lands the rows) and the flip commit (which deletes the bridge) a claimed
+		// work would otherwise read every wiki tag twice, once per lane.
+		//
+		// Excluding those two sources from the claimed works' native read is the
+		// same shape as the popularity lane's bridge-exclusive dlsite source. It is
+		// a NO-OP before step r runs (no claimed work has a wiki-source native tag
+		// row — surveyed live) and it is deleted together with the bridge in the
+		// flip commit, when the native rows become the only lane.
+		if err := s.nativeWorkTags(ctx, claimedIDs, out, []int16{
+			srcIDByKey[sourceKeyGalgameWiki], srcIDByKey[sourceKeyVNDB],
+		}); err != nil {
 			return nil, err
 		}
 	}
@@ -239,16 +268,12 @@ func (s *ReadService) enrichCanonicalTags(ctx context.Context, out map[int64][]W
 // orders by name for a stable append; the final per-work order is (count DESC,
 // name ASC), applied by loadWorkTags after these count-0 bridge rows merge with
 // the native lane's voted rows.
-func (s *ReadService) bridgeGalgameTags(ctx context.Context, galgameIDs []int64, galgameToWork map[int64]int64, out map[int64][]WorkTagRow, spoilerMax int16) error {
+// srcIDByKey resolves the full galgameMediaSourceKey range (the caller resolves
+// it once — the claimed native read needs the same ids); the tag relation's source
+// domain is only ”/vndb (surveyed), but keeping the mapping total means an
+// unexpected value falls back to galgame_wiki like the cover bridge.
+func (s *ReadService) bridgeGalgameTags(ctx context.Context, galgameIDs []int64, galgameToWork map[int64]int64, out map[int64][]WorkTagRow, spoilerMax int16, srcIDByKey map[string]int16) error {
 	db := s.db.WithContext(ctx)
-
-	// The tag relation's source domain is only ”/vndb (surveyed), but resolving
-	// the full galgameMediaSourceKey range keeps the mapping total — an
-	// unexpected value falls back to galgame_wiki like the cover bridge.
-	srcIDByKey, err := s.sourceIDsByKey(ctx, []string{sourceKeyGalgameWiki, sourceKeyVNDB, sourceKeyBangumi, sourceKeyUpscale})
-	if err != nil {
-		return err
-	}
 	fallbackSrc := srcIDByKey[sourceKeyGalgameWiki]
 
 	var rows []struct {
@@ -293,7 +318,11 @@ func (s *ReadService) bridgeGalgameTags(ctx context.Context, galgameIDs []int64,
 // works (claimed AND bodyless, T2) in ONE query. The SQL pre-orders (count DESC,
 // name) for a stable append; the authoritative per-work order is applied by
 // loadWorkTags after the bridge merge.
-func (s *ReadService) nativeWorkTags(ctx context.Context, workIDs []int64, out map[int64][]WorkTagRow) error {
+//
+// excludeSrcs drops those sources' rows — the claimed lane's double-vision fuse
+// (see loadWorkTags). Empty for the bodyless lane, which has no bridge to collide
+// with.
+func (s *ReadService) nativeWorkTags(ctx context.Context, workIDs []int64, out map[int64][]WorkTagRow, excludeSrcs []int16) error {
 	db := s.db.WithContext(ctx)
 	var rows []struct {
 		WorkID   int64  `gorm:"column:work_id"`
@@ -301,8 +330,15 @@ func (s *ReadService) nativeWorkTags(ctx context.Context, workIDs []int64, out m
 		Count    int    `gorm:"column:count"`
 		SourceID int16  `gorm:"column:source_id"`
 	}
-	if err := db.Raw(`SELECT work_id, name, count, source_id FROM catalog_work_tag
-		WHERE work_id IN ? ORDER BY work_id, count DESC, name`, workIDs).Scan(&rows).Error; err != nil {
+	q := `SELECT work_id, name, count, source_id FROM catalog_work_tag
+		WHERE work_id IN ? ORDER BY work_id, count DESC, name`
+	args := []any{workIDs}
+	if len(excludeSrcs) > 0 {
+		q = `SELECT work_id, name, count, source_id FROM catalog_work_tag
+		WHERE work_id IN ? AND source_id NOT IN ? ORDER BY work_id, count DESC, name`
+		args = append(args, excludeSrcs)
+	}
+	if err := db.Raw(q, args...).Scan(&rows).Error; err != nil {
 		return err
 	}
 	for _, r := range rows {

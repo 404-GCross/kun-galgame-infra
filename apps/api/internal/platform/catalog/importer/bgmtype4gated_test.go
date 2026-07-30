@@ -186,7 +186,7 @@ func seedVNDBTitle(t *testing.T, id, title string) {
 func seedExistingWork(t *testing.T, title string) {
 	t.Helper()
 	var wid int64
-	require.NoError(t, testDB.Raw(`INSERT INTO catalog_work (medium_id, olang, display_name, content_rating, status, extra, field_provenance)
-		VALUES (1,'ja',?,0,0,'{}','{}') RETURNING id`, title).Scan(&wid).Error)
+	require.NoError(t, testDB.Raw(`INSERT INTO catalog_work (medium_id, olang, display_name, content_rating, status, extra, field_provenance, display_nsfw)
+		VALUES (1,'ja',?,0,0,'{}','{}',false) RETURNING id`, title).Scan(&wid).Error)
 	require.NoError(t, testDB.Exec(`INSERT INTO catalog_work_title (work_id, lang, title, kind) VALUES (?,'ja',?,0)`, wid, title).Error)
 }

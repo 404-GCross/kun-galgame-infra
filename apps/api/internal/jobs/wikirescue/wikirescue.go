@@ -23,12 +23,22 @@
 // references, which is what lets the existing catalog reference ping take over
 // from the wiki one. None of the three touches the galgame_wiki image client.
 //
+// Steps p..t are the W1-pre read-time-bridge nativization (refs/proj/140,
+// refs/plans/10-data-layer-retirement/02-w1pre-bridge-nativization.md) and are a
+// different KIND of step: MIRRORS, not fills. The catalog read face used to bridge
+// a claimed work's titles / intros / tags / ratings / popularity / display flag out of the wiki
+// tables at read time; these steps materialize those projections verbatim so the
+// face can read one lane for every work and the tables can be dropped. Because a
+// mirror must also drop what the wiki dropped, they own a real set-diff — insert,
+// update AND delete — inside a declared ownership scope. See mirror.go.
+//
 // Three rules every step obeys:
 //
-//   - FILL-MISSING, NEVER OVERWRITE. Every write is ON CONFLICT DO NOTHING, so
-//     a second pass writes zero rows. That is the acceptance criterion, not an
-//     optimization: these steps run against production once, and a re-run must
-//     be provably inert.
+//   - FILL-MISSING, NEVER OVERWRITE (a..o). Every write is ON CONFLICT DO
+//     NOTHING, so a second pass writes zero rows. That is the acceptance
+//     criterion, not an optimization: these steps run against production once, and
+//     a re-run must be provably inert. The mirror steps p..t reach the same
+//     acceptance criterion by converging: a second pass decides zero changes.
 //   - ANCHORED IS THE DENOMINATOR. A wiki row only projects when its galgame
 //     row carries a catalog_work_id. Unanchored rows are PARKED to a JSON
 //     artifact with their full original text, never silently dropped — the
@@ -50,6 +60,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"gorm.io/gorm"
 )
@@ -106,6 +117,26 @@ type Stats struct {
 	Created int `json:"created"`
 	// Linked counts bridge-column write-backs (G/H anchor repair).
 	Linked int `json:"linked"`
+
+	// The MIRROR ledger (steps p..t, refs/proj/140). Insert/Update/Delete/Already
+	// are the DECIDED set-diff and read the same in dry and apply, so a dry run is
+	// an exact forecast; Written is the rows a --apply run really changed
+	// (inserted + updated + deleted). A converged re-run reports
+	// Insert=Update=Delete=0 and Already = the whole desired set.
+	Insert  int `json:"insert,omitempty"`
+	Update  int `json:"update,omitempty"`
+	Delete  int `json:"delete,omitempty"`
+	Already int `json:"already,omitempty"`
+	// Skipped counts desired rows a step declined to write because the row's key
+	// is held by another owner (step q: an intromt machine row).
+	Skipped int `json:"skipped,omitempty"`
+	// Vocab counts vocabulary-column corrections outside the work facets (step r:
+	// catalog_tag.sexual).
+	Vocab int `json:"vocab,omitempty"`
+	// Scalar counts work-SCALAR column corrections — a column on catalog_work
+	// itself, where a mirror can only update (step q: display_nsfw).
+	Scalar int `json:"scalar,omitempty"`
+
 	// Note carries a step-specific remark for the report.
 	Note string `json:"note,omitempty"`
 }
@@ -121,6 +152,9 @@ type Runner struct {
 	wikiSrc  int16
 	webSrc   int16
 	artifact string
+	// now is the run's single clock: every row a mirror step writes carries the
+	// same created_at/updated_at, so one run is one watermark on the changes feed.
+	now time.Time
 }
 
 // New wires a runner and resolves the source-registry ids it needs. It fails
@@ -136,7 +170,11 @@ func New(galgame, catalog *gorm.DB, opts Opts) (*Runner, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Runner{galgame: galgame, catalog: catalog, opts: opts, wikiSrc: wikiSrc, webSrc: webSrc, artifact: opts.ArtifactDir}, nil
+	return &Runner{
+		galgame: galgame, catalog: catalog, opts: opts,
+		wikiSrc: wikiSrc, webSrc: webSrc, artifact: opts.ArtifactDir,
+		now: time.Now().UTC(),
+	}, nil
 }
 
 // resolveSourceID looks a catalog_source key up by key (orglabels' pattern).
@@ -157,7 +195,14 @@ func resolveSourceID(db *gorm.DB, key string) (int16, error) {
 // the gid map, only exist today as a joinable wiki table. m..o are the W2
 // image-byte retirement (refs/proj/128) and are normally selected explicitly
 // ("--step m,n,o"), since a..l are already converged in production.
-var steps = []string{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o"}
+//
+// p..t are the W1-pre read-time-bridge nativization (refs/proj/140): the MIRROR
+// steps that move the title / intro (+ display flag) / tag / rating / popularity facets of a
+// CLAIMED work out of the wiki tables and into the catalog's own, so the read face
+// can stop bridging. p,q,r,s are idempotent followers and are the ones the daily
+// chain runs ("--step p,q,r,s"); t is a ONE-SHOT adoption and must not be re-run
+// (see stepMetaAdopt).
+var steps = []string{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t"}
 
 // Run dispatches the selected step(s) and returns one Stats per step executed.
 func (r *Runner) Run(ctx context.Context) ([]Stats, error) {
@@ -208,6 +253,16 @@ func (r *Runner) runStep(ctx context.Context, step string) (Stats, error) {
 		return r.stepScreenshotProject(ctx)
 	case StepImageUsage:
 		return r.stepImageUsage(ctx)
+	case "p":
+		return r.stepTitleMirror(ctx)
+	case "q":
+		return r.stepIntroMirror(ctx)
+	case "r":
+		return r.stepTagMirror(ctx)
+	case "s":
+		return r.stepRatingVndbMirror(ctx)
+	case "t":
+		return r.stepMetaAdopt(ctx)
 	}
 	return Stats{}, fmt.Errorf("unhandled step %q", step)
 }

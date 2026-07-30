@@ -199,6 +199,47 @@ func preMigrate(db *gorm.DB) error {
 		END $$`).Error; err != nil {
 		return fmt.Errorf("premigrate catalog_work_intro.provenance: %w", err)
 	}
+
+	// The W1-pre nativization columns (refs/proj/140,
+	// refs/plans/10-data-layer-retirement/02-w1pre-bridge-nativization.md): three
+	// axes that used to exist ONLY in the wiki body the read face bridged, and that
+	// nativizing those bridges needs on the catalog's own tables.
+	//
+	//	catalog_work_tag.{spoiler,sexual}  the tag SAFETY axis (galgame_tag_relation
+	//	                                   .spoiler_level + galgame_tag.category)
+	//	catalog_tag.sexual                 the same flag on the canonical vocabulary
+	//	catalog_work.display_nsfw          the EDITORIAL DISPLAY axis (A2-R5's
+	//	                                   galgame.content_limit = 'nsfw')
+	//
+	// Every one carries a MEANINGFUL zero (0 = no spoiler, false = not
+	// sexual-category / no NSFW display material), so they are NOT NULL with NO
+	// default — which is exactly what AutoMigrate cannot add to a populated table.
+	//
+	// The 0/false backfill is not a placeholder, it is the correct value of the rows
+	// that are already there. The tag rows are Bangumi/DLsite folksonomy and the
+	// canonical vocabulary they map to, and neither source publishes a safety axis.
+	// A work's false means "no editorial declaration of NSFW display material",
+	// which is what the display projection already read for a bodyless work (it
+	// consults the age axis instead) and for a claimed work whose body says anything
+	// other than 'nsfw' — the mirror step then writes the claimed rows' real value.
+	for _, c := range []struct{ table, column, typ, zero string }{
+		{"catalog_work_tag", "spoiler", "smallint", "0"},
+		{"catalog_work_tag", "sexual", "boolean", "false"},
+		{"catalog_tag", "sexual", "boolean", "false"},
+		{"catalog_work", "display_nsfw", "boolean", "false"},
+	} {
+		if err := db.Exec(`
+			DO $$
+			BEGIN
+				IF to_regclass('` + c.table + `') IS NOT NULL THEN
+					ALTER TABLE ` + c.table + ` ADD COLUMN IF NOT EXISTS ` + c.column + ` ` + c.typ + `;
+					UPDATE ` + c.table + ` SET ` + c.column + ` = ` + c.zero + ` WHERE ` + c.column + ` IS NULL;
+					ALTER TABLE ` + c.table + ` ALTER COLUMN ` + c.column + ` SET NOT NULL;
+				END IF;
+			END $$`).Error; err != nil {
+			return fmt.Errorf("premigrate %s.%s: %w", c.table, c.column, err)
+		}
+	}
 	return nil
 }
 

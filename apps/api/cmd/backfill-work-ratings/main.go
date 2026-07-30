@@ -101,7 +101,6 @@ func main() {
 		"pop_planned", st.PopPlanned,
 		"pop_written", st.PopWritten,
 		"pop_unchanged", st.PopUnchanged,
-		"refused_claimed", st.Refused,
 		"errors", st.Errors,
 	)
 	if !*apply {

@@ -129,8 +129,9 @@ func runOpts(apply bool) Opts {
 }
 
 // TestBackfillDlsiteGenres exercises the whole pipeline through the real Run
-// entry point: candidate selection (exact release anchors only, bodyless only,
-// galgame medium only), the name-resolution buckets (zh_CN taxonomy hit — with
+// entry point: candidate selection (exact release anchors only, galgame medium
+// only, CLAIMED AND BODYLESS ALIKE since the W1-pre nativization removed the
+// claim guard), the name-resolution buckets (zh_CN taxonomy hit — with
 // the rename auto-correction and the locale pin — vs the retired-id embedded-ja
 // fallback vs the blank skip), same-name in-work dedupe, the defensive parse
 // branches, count=0 fill semantics, coexistence with pre-existing bgm
@@ -184,7 +185,10 @@ func TestBackfillDlsiteGenres(t *testing.T) {
 	wMissing := mkWork(t, reg.galgameMedium, "genres-missing", nil) // absent from mirror
 	mkReleaseAnchor(t, wMissing, "RJ200007", reg.dlsiteSource, model.LinkKindExact)
 
-	wClaimed := mkWork(t, reg.galgameMedium, "genres-claimed", &claimed) // claimed → excluded by SQL
+	// A CLAIMED work: a peer of the bodyless ones since the W1-pre nativization
+	// (refs/proj/140 §2.6) — this importer is the single persistent writer of the
+	// dlsite genre lane for every galgame work.
+	wClaimed := mkWork(t, reg.galgameMedium, "genres-claimed", &claimed)
 	mkReleaseAnchor(t, wClaimed, "RJ200008", reg.dlsiteSource, model.LinkKindExact)
 	mkMirrorWork(t, "RJ200008", `[{"id":226,"name":"女教師"}]`)
 
@@ -200,21 +204,20 @@ func TestBackfillDlsiteGenres(t *testing.T) {
 	st, err := Run(ctx, runOpts(false))
 	require.NoError(t, err)
 	assert.Equal(t, 4, st.TaxonomyRows, "zh_CN rows only — the ja_JP 226 row is pinned out")
-	assert.Equal(t, 7, st.Candidates, "claimed + asmr + probable excluded in SQL")
+	assert.Equal(t, 8, st.Candidates, "claimed included now; asmr + probable still excluded in SQL")
 	assert.Equal(t, 1, st.MissingMirror)
 	assert.Equal(t, 2, st.NoGenres, "empty array + missing key")
 	assert.Equal(t, 1, st.NotArray)
-	assert.Equal(t, 4, st.ZhHit, "226 + 113 + 300 + 301")
+	assert.Equal(t, 5, st.ZhHit, "226 + 113 + 300 + 301 + the claimed work's 226")
 	assert.Equal(t, 1, st.JaFallback, "retired 9999")
 	assert.Equal(t, 2, st.NameBlank, "whitespace-only + missing embedded name")
 	assert.Equal(t, 1, st.DupCollapsed, "301's 重复名 collapsed into 300's")
-	assert.Equal(t, 4, st.Planned, "wFull 3 + wDup 1")
+	assert.Equal(t, 5, st.Planned, "wFull 3 + wDup 1 + wClaimed 1")
 	assert.Equal(t, 4, st.DistinctNames)
-	assert.Equal(t, 0, st.Refused, "no claimed work reaches the write path")
 	assert.Zero(t, st.Written+st.Conflict+st.Errors)
 	assert.EqualValues(t, 0, tagCount(t, ""), "dry run writes nothing")
 	// Planned order keeps the mirror's element order; names resolve by id.
-	require.Len(t, st.Samples, 4)
+	require.Len(t, st.Samples, 5)
 	assert.Equal(t, Sample{WorkID: wFull, Workno: "RJ200001", GenreID: 226, Name: "女教师", FromTaxonomy: true},
 		st.Samples[0], "zh_CN taxonomy name wins over the embedded ja name AND the ja_JP taxonomy row")
 	assert.Equal(t, Sample{WorkID: wFull, Workno: "RJ200001", GenreID: 113, Name: "强X", FromTaxonomy: true},
@@ -234,9 +237,9 @@ func TestBackfillDlsiteGenres(t *testing.T) {
 	// --- apply: writes the decided plan exactly.
 	st, err = Run(ctx, runOpts(true))
 	require.NoError(t, err)
-	assert.Equal(t, 4, st.Written)
+	assert.Equal(t, 5, st.Written)
 	assert.Zero(t, st.Conflict+st.Errors)
-	assert.EqualValues(t, 5, tagCount(t, ""), "4 dlsite rows + the pre-existing bgm row")
+	assert.EqualValues(t, 6, tagCount(t, ""), "5 dlsite rows + the pre-existing bgm row")
 
 	// Value fidelity + coexistence under the read-face order (count DESC, name):
 	// the voted bgm folksonomy row sorts first; the count=0 dlsite genre rows
@@ -254,15 +257,17 @@ func TestBackfillDlsiteGenres(t *testing.T) {
 	assert.EqualValues(t, 0, tagCount(t, "WHERE name = ?", "レイプ"),
 		"the outdated embedded name never lands")
 	assert.EqualValues(t, 1, tagCount(t, "WHERE work_id = ?", wDup), "重复名 deduped to one row")
-	assert.EqualValues(t, 0, tagCount(t, "WHERE work_id IN (?, ?, ?)", wClaimed, wAsmr, wProbable),
-		"claimed / off-domain / probable works never materialise")
+	assert.EqualValues(t, 1, tagCount(t, "WHERE work_id = ?", wClaimed),
+		"a CLAIMED work materialises now — the claim guard is gone")
+	assert.EqualValues(t, 0, tagCount(t, "WHERE work_id IN (?, ?)", wAsmr, wProbable),
+		"off-domain / probable works never materialise")
 
 	// --- second apply: idempotent — zero writes, every planned row conflicts.
 	st, err = Run(ctx, runOpts(true))
 	require.NoError(t, err)
 	assert.Zero(t, st.Written+st.Errors, "second pass writes zero")
-	assert.Equal(t, 4, st.Conflict)
-	assert.EqualValues(t, 5, tagCount(t, ""), "row count unchanged")
+	assert.Equal(t, 5, st.Conflict)
+	assert.EqualValues(t, 6, tagCount(t, ""), "row count unchanged")
 
 	// --- fill semantics (NOT step 62's upsert): a mirror refresh adding a NEW
 	// genre back-fills only the new row; existing rows are never touched.
@@ -274,14 +279,14 @@ func TestBackfillDlsiteGenres(t *testing.T) {
 	st, err = Run(ctx, runOpts(true))
 	require.NoError(t, err)
 	assert.Equal(t, 1, st.Written, "only the newly-appeared genre lands")
-	assert.Equal(t, 4, st.Conflict)
+	assert.Equal(t, 5, st.Conflict)
 	assert.EqualValues(t, 2, tagCount(t, "WHERE work_id = ?", wDup))
 }
 
-// TestXORGuardAndDSNRequired covers the write-time XOR guard (the SQL filter
-// excludes claimed works from candidates, so the guard is only reachable by
-// driving the writer directly) and the refuse-to-guess DSN discipline.
-func TestXORGuardAndDSNRequired(t *testing.T) {
+// TestClaimPeerWritesAndDSNRequired covers the writer after the W1-pre claim-guard
+// removal (a CLAIMED work is a peer: it writes exactly like a bodyless one) and the
+// refuse-to-guess DSN discipline.
+func TestClaimPeerWritesAndDSNRequired(t *testing.T) {
 	clean(t)
 	ctx := context.Background()
 	reg, err := resolveRegistry(ctx, testDB)
@@ -291,23 +296,23 @@ func TestXORGuardAndDSNRequired(t *testing.T) {
 	wClaimed := mkWork(t, reg.galgameMedium, "claimed-direct", &claimed)
 	wBody := mkWork(t, reg.galgameMedium, "bodyless-direct", nil)
 
-	// XOR: a claimed row is refused before any write.
+	// A claimed row writes: the step-88 XOR guard retired with the read-time
+	// bridge it protected (refs/proj/140 §2.6).
 	w := &writer{db: testDB, stats: &Stats{}}
-	w.write(ctx, plannedRow{WorkID: wClaimed, Site: &claimed, SourceID: reg.dlsiteSource, Name: "女教师"}, true)
-	assert.Equal(t, 1, w.stats.Refused)
-	assert.Zero(t, w.stats.Written+w.stats.Conflict)
-	assert.EqualValues(t, 0, tagCount(t, ""))
+	w.write(ctx, plannedRow{WorkID: wClaimed, SourceID: reg.dlsiteSource, Name: "女教师"}, true)
+	assert.Equal(t, 1, w.stats.Written)
+	assert.EqualValues(t, 1, tagCount(t, ""))
 
 	// A bodyless row writes; a retry conflicts (the UNIQUE backstop) instead of
 	// duplicating; the same name from ANOTHER source is a NEW row (the unique
 	// key is (work_id, name, source_id) — sources coexist).
-	w.write(ctx, plannedRow{WorkID: wBody, Site: nil, SourceID: reg.dlsiteSource, Name: "女教师"}, true)
-	assert.Equal(t, 1, w.stats.Written)
-	w.write(ctx, plannedRow{WorkID: wBody, Site: nil, SourceID: reg.dlsiteSource, Name: "女教师"}, true)
+	w.write(ctx, plannedRow{WorkID: wBody, SourceID: reg.dlsiteSource, Name: "女教师"}, true)
+	assert.Equal(t, 2, w.stats.Written)
+	w.write(ctx, plannedRow{WorkID: wBody, SourceID: reg.dlsiteSource, Name: "女教师"}, true)
 	assert.Equal(t, 1, w.stats.Conflict, "ON CONFLICT refuses the duplicate")
-	w.write(ctx, plannedRow{WorkID: wBody, Site: nil, SourceID: 1 /* bangumi seed id */, Name: "女教师"}, true)
-	assert.Equal(t, 2, w.stats.Written, "same work+name, different source → distinct row")
-	assert.EqualValues(t, 2, tagCount(t, ""))
+	w.write(ctx, plannedRow{WorkID: wBody, SourceID: 1 /* bangumi seed id */, Name: "女教师"}, true)
+	assert.Equal(t, 3, w.stats.Written, "same work+name, different source → distinct row")
+	assert.EqualValues(t, 3, tagCount(t, ""))
 
 	// DSN discipline: both DSNs are required, never guessed.
 	_, err = Run(ctx, Opts{DlsiteDSN: dlTestDSN})

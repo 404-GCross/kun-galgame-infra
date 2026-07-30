@@ -43,20 +43,17 @@ func resolveRegistry(ctx context.Context, db *gorm.DB) (registry, error) {
 	return r, nil
 }
 
-// bgmCandidate is one bodyless galgame work joined to its EXACT Bangumi
-// anchor's subject score block. Site is carried (not filtered out) so the
-// write-time XOR guard can re-assert bodylessness.
+// bgmCandidate is one galgame work joined to its EXACT Bangumi anchor's subject
+// score block.
 type bgmCandidate struct {
 	WorkID       int64   `gorm:"column:work_id"`
 	SubjectID    int64   `gorm:"column:subject_id"`
-	Site         *string `gorm:"column:site"`
 	Score        float64 `gorm:"column:score"`
 	Rank         int     `gorm:"column:rank"`
 	ScoreDetails []byte  `gorm:"column:score_details"`
 }
 
-// loadBgmCandidates resolves bodyless galgame works carrying an EXACT Bangumi
-// work anchor — matched_by UNRESTRICTED (every exact tier asserts identity, the
+// loadBgmCandidates resolves galgame works carrying an EXACT Bangumi work anchor — matched_by UNRESTRICTED (every exact tier asserts identity, the
 // 66/69/71 ruling; the bgmworkmeta precedent) — joined to the anchored
 // subject's score/rank/score_details, the same join shape as
 // bgmsummaries.loadCandidates (src_bangumi is a schema inside the catalog DB,
@@ -68,12 +65,12 @@ func loadBgmCandidates(ctx context.Context, db *gorm.DB, reg registry, limit, of
 	var out []bgmCandidate
 	if err := db.WithContext(ctx).
 		Raw(`SELECT DISTINCT ON (w.id) w.id AS work_id, r.external_id::bigint AS subject_id,
-				w.site AS site, sub.score AS score, sub.rank AS rank, sub.score_details AS score_details
+				sub.score AS score, sub.rank AS rank, sub.score_details AS score_details
 			FROM catalog_work w
 			JOIN catalog_external_ref r ON r.entity_type = ? AND r.entity_id = w.id
 				AND r.source_id = ? AND r.link_kind = ?
 			JOIN src_bangumi.subject sub ON sub.id = r.external_id::bigint
-			WHERE w.medium_id = ? AND (w.site IS NULL OR w.site = '') AND w.deleted_at IS NULL
+			WHERE w.medium_id = ? AND w.deleted_at IS NULL
 			ORDER BY w.id, r.external_id`,
 			model.EntityTypeWork, reg.bangumiSource, model.LinkKindExact, reg.galgameMedium).
 		Scan(&out).Error; err != nil {
@@ -82,21 +79,18 @@ func loadBgmCandidates(ctx context.Context, db *gorm.DB, reg registry, limit, of
 	return window(out, limit, offset), nil
 }
 
-// egCandidate is one bodyless galgame work with its EG exact work anchors
-// (several when a work carries >1 EG exact anchor — pickBest collapses them).
+// egCandidate is one galgame work with its EG exact work anchors (several when a
+// work carries >1 EG exact anchor — pickBest collapses them).
 type egCandidate struct {
 	WorkID int64
-	Site   *string
 	EgIDs  []int64
 }
 
-// loadEgCandidates resolves bodyless galgame works carrying EG EXACT work
-// anchors — cmd/enrich-eg-scores' anchor query with the claimed-only filter
-// (site='galgame_wiki' AND product_work_id IS NOT NULL) INVERTED to
-// bodyless-only. A non-numeric external_id becomes the -1 sentinel so it is
-// counted missing_in_mirror rather than silently dropped (same tool's
-// convention). Grouped one candidate per work, ordered by work id;
-// Limit/Offset window the per-work list in Go.
+// loadEgCandidates resolves galgame works carrying EG EXACT work anchors —
+// cmd/enrich-eg-scores' anchor query with its claim filter removed. A non-numeric
+// external_id becomes the -1 sentinel so it is counted missing_in_mirror rather
+// than silently dropped (same tool's convention). Grouped one candidate per work,
+// ordered by work id; Limit/Offset window the per-work list in Go.
 func loadEgCandidates(ctx context.Context, db *gorm.DB, reg registry, limit, offset int) ([]egCandidate, error) {
 	var rows []struct {
 		WorkID     int64   `gorm:"column:work_id"`
@@ -104,11 +98,11 @@ func loadEgCandidates(ctx context.Context, db *gorm.DB, reg registry, limit, off
 		ExternalID string  `gorm:"column:external_id"`
 	}
 	if err := db.WithContext(ctx).
-		Raw(`SELECT w.id AS work_id, w.site AS site, r.external_id AS external_id
+		Raw(`SELECT w.id AS work_id, r.external_id AS external_id
 			FROM catalog_external_ref r
 			JOIN catalog_work w ON w.id = r.entity_id
 			WHERE r.entity_type = ? AND r.source_id = ? AND r.link_kind = ?
-				AND w.medium_id = ? AND (w.site IS NULL OR w.site = '') AND w.deleted_at IS NULL
+				AND w.medium_id = ? AND w.deleted_at IS NULL
 			ORDER BY w.id, r.external_id`,
 			model.EntityTypeWork, reg.egSource, model.LinkKindExact, reg.galgameMedium).
 		Scan(&rows).Error; err != nil {
@@ -123,7 +117,7 @@ func loadEgCandidates(ctx context.Context, db *gorm.DB, reg registry, limit, off
 		}
 		c := byWork[r.WorkID]
 		if c == nil {
-			c = &egCandidate{WorkID: r.WorkID, Site: r.Site}
+			c = &egCandidate{WorkID: r.WorkID}
 			byWork[r.WorkID] = c
 			order = append(order, r.WorkID)
 		}

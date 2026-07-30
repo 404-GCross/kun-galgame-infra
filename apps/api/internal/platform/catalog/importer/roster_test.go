@@ -15,8 +15,8 @@ import (
 func seedExactWork(t *testing.T, source int16, extID int64) int64 {
 	t.Helper()
 	var workID int64
-	require.NoError(t, testDB.Raw(`INSERT INTO catalog_work (medium_id, site, product_work_id, olang, display_name, content_rating, status, extra, field_provenance)
-		VALUES (1,'galgame_wiki',?, 'ja','w',0,0,'{}','{}') RETURNING id`, extID).Scan(&workID).Error)
+	require.NoError(t, testDB.Raw(`INSERT INTO catalog_work (medium_id, site, product_work_id, olang, display_name, content_rating, status, extra, field_provenance, display_nsfw)
+		VALUES (1,'galgame_wiki',?, 'ja','w',0,0,'{}','{}',false) RETURNING id`, extID).Scan(&workID).Error)
 	require.NoError(t, testDB.Exec(`INSERT INTO catalog_external_ref (entity_type, entity_id, source_id, external_id, link_kind, matched_by)
 		VALUES (5, ?, ?, ?, 0, 'rule:test-work-anchor')`, workID, source, fmt.Sprint(extID)).Error)
 	return workID

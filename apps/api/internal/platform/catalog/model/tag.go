@@ -43,7 +43,14 @@ type CatalogTag struct {
 	// Tier uses the TagTier* constants (0=core is meaningful → NOT NULL, no default).
 	Tier int16 `gorm:"not null" json:"tier"`
 	// Kind uses the TagKind* constants (0=content is meaningful → NOT NULL, no default).
-	Kind      int16     `gorm:"not null" json:"kind"`
+	Kind int16 `gorm:"not null" json:"kind"`
+	// Sexual is the TAG-level sexual-category flag — the safety axis the W1-pre
+	// nativization wave moved off galgame_tag.category and onto this vocabulary
+	// row (refs/plans/10-data-layer-retirement/02-w1pre-bridge-nativization.md).
+	// false is a MEANINGFUL zero ("this tag is not sexual-category", which is
+	// also what an unmapped tag reads), so the column is NOT NULL with NO default
+	// tag (the default-tag zero-value trap).
+	Sexual    bool      `gorm:"not null" json:"sexual"`
 	Note      string    `gorm:"type:text;not null;default:''" json:"note"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`

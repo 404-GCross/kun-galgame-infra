@@ -11,12 +11,18 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// writer applies planned rating/popularity rows with the write-time XOR guard
-// and the CHANGE-DETECTED upsert (step 62 upsert unification): ON CONFLICT
-// DO UPDATE fires only when a value actually differs (row-wise IS DISTINCT
-// FROM handles the NULLs), so RowsAffected cleanly separates effective writes
-// (insert or value-update → *written) from refresh no-ops (→ *unchanged) and a
-// re-run against unchanged staging performs zero updates.
+// writer applies planned rating/popularity rows with the CHANGE-DETECTED upsert
+// (step 62 upsert unification): ON CONFLICT DO UPDATE fires only when a value
+// actually differs (row-wise IS DISTINCT FROM handles the NULLs), so RowsAffected
+// cleanly separates effective writes (insert or value-update → *written) from
+// refresh no-ops (→ *unchanged) and a re-run against unchanged staging performs
+// zero updates.
+//
+// W1-pre bridge nativization (refs/proj/140 §2.6): claimed and bodyless are peers
+// now. The step-88 write-time XOR guard is gone together with the read-time
+// bridge it protected — the catalog read face no longer reads a claimed work's
+// bangumi / dlsite / erogamespace scores out of the wiki meta tables, so this
+// importer is their single persistent writer for EVERY galgame work.
 type writer struct {
 	db    *gorm.DB
 	stats *Stats
@@ -32,24 +38,18 @@ func (w *writer) touch(ctx context.Context) error {
 	return repository.TouchWorks(ctx, w.db, w.touched)
 }
 
-// plannedRow is one decided catalog_work_rating write, carrying the work's
-// site so the guard can re-assert bodylessness at the last moment.
+// plannedRow is one decided catalog_work_rating write.
 type plannedRow struct {
 	WorkID    int64
-	Site      *string
 	SourceID  int16
 	Score     float64
 	VoteCount int
 	Rank      *int
 }
 
-// write enforces the XOR guard, then (apply only) upserts the row. written /
-// unchanged point at the owning lane's counters so all lanes share one path.
+// write upserts the row (apply only). written / unchanged point at the owning
+// lane's counters so all lanes share one path.
 func (w *writer) write(ctx context.Context, p plannedRow, apply bool, written, unchanged *int) {
-	if !isBodyless(p.Site) { // XOR guard (§8.D) — never materialise a claimed work
-		w.stats.Refused++
-		return
-	}
 	if !apply {
 		return
 	}
@@ -78,19 +78,14 @@ func (w *writer) write(ctx context.Context, p plannedRow, apply bool, written, u
 // popPlannedRow is one decided catalog_work_popularity write.
 type popPlannedRow struct {
 	WorkID   int64
-	Site     *string
 	SourceID int16
 	Metric   int16
 	Value    int64
 }
 
-// writePopularity is the popularity twin of write: XOR guard + change-detected
-// upsert on the (work_id, source_id, metric) key.
+// writePopularity is the popularity twin of write: the change-detected upsert on
+// the (work_id, source_id, metric) key.
 func (w *writer) writePopularity(ctx context.Context, p popPlannedRow, apply bool) {
-	if !isBodyless(p.Site) { // XOR guard (§8.D)
-		w.stats.Refused++
-		return
-	}
 	if !apply {
 		return
 	}
@@ -114,7 +109,3 @@ func (w *writer) writePopularity(ctx context.Context, p popPlannedRow, apply boo
 	w.stats.PopWritten++
 	w.touched = append(w.touched, p.WorkID)
 }
-
-// isBodyless reports whether a catalog_work is bodyless (site NULL or ”) —
-// the §8.D claim key, same shape as bgmsummaries.
-func isBodyless(site *string) bool { return site == nil || *site == "" }

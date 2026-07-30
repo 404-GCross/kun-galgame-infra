@@ -70,8 +70,8 @@ func fixture(t *testing.T, bid int64, subjectNameCN, subjectSummary, aliasInfobo
 	t.Helper()
 	galgameID, workID = 100, 500
 	// catalog work + bangumi exact ref
-	require.NoError(t, testDB.Exec(`INSERT INTO catalog_work (id, medium_id, olang, display_name, content_rating, status, extra, field_provenance)
-		VALUES (?, 1, 'ja', 'W', 0, 0, '{}', '{}')`, workID).Error)
+	require.NoError(t, testDB.Exec(`INSERT INTO catalog_work (id, medium_id, olang, display_name, content_rating, status, extra, field_provenance, display_nsfw)
+		VALUES (?, 1, 'ja', 'W', 0, 0, '{}', '{}', false)`, workID).Error)
 	require.NoError(t, testDB.Exec(`INSERT INTO catalog_external_ref (entity_type, entity_id, source_id, external_id, link_kind, matched_by)
 		VALUES (5, ?, 3, ?, 0, 'rule:wiki-bid-typed')`, workID, itoa(bid)).Error)
 	// bangumi subject (the enrichment source), type=4 game

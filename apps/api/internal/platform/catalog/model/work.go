@@ -54,6 +54,22 @@ type CatalogWork struct {
 	ContentRating int16 `gorm:"not null" json:"content_rating"`
 	// Status uses the WorkStatus* constants.
 	Status int16 `gorm:"not null;index:idx_catalog_work_medium_status,priority:2" json:"status"`
+	// DisplayNSFW is the EDITORIAL DISPLAY axis (A2-R5): "this work's display
+	// material is NSFW", as a human editor declared it. It is the claimed branch of
+	// DisplayLimitKey — nativized off galgame.content_limit by the W1-pre wave
+	// (refs/plans/10-data-layer-retirement/02-w1pre-bridge-nativization.md §5b) and
+	// kept in step by wikirescue step q until the wiki family drops, after which the
+	// catalog's own editing face owns it.
+	//
+	// It is NOT the age axis: ContentRating answers "who may buy this game",
+	// DisplayNSFW answers "may this work's cover art be shown", and on production
+	// they disagree for thousands of works (see model.DisplayLimitKey). Only a
+	// CLAIMED row's value is ever consulted — a bodyless work has no editorial
+	// declaration, so its projection reads the age axis instead.
+	//
+	// false is a meaningful zero ("nothing declared" renders sfw, the conservative
+	// choice for THIS axis), so NOT NULL with no default tag.
+	DisplayNSFW bool `gorm:"column:display_nsfw;not null" json:"display_nsfw"`
 	// Extra is the governed escape hatch (doc 17 R9): object-only + 64KB cap
 	// (CHECKs in the raw-SQL section). Rule: a key that gets queried
 	// regularly must be promoted to a real column — extra is a buffer, not a
@@ -328,7 +344,19 @@ type CatalogWorkTag struct {
 	Count int `gorm:"not null;default:0" json:"count"`
 	// SourceID is the provenance FK AND part of the unique key: one row per
 	// (work, name, source).
-	SourceID  int16     `gorm:"not null;uniqueIndex:uq_catalog_work_tag" json:"source_id"`
+	SourceID int16 `gorm:"not null;uniqueIndex:uq_catalog_work_tag" json:"source_id"`
+	// Spoiler is the per-EDGE spoiler level (0 none, 1 minor, 2 major) and Sexual
+	// flags the tag as sexual-category — the safety axis the W1-pre nativization
+	// wave moved off the wiki tag layer and onto this table
+	// (refs/plans/10-data-layer-retirement/02-w1pre-bridge-nativization.md).
+	//
+	// Both are MEANINGFUL zeros, so they are NOT NULL with NO default tag (the
+	// default-tag zero-value trap): a folksonomy row (bangumi/dlsite) records
+	// 0/false EXPLICITLY, which is the honest "this source publishes no safety
+	// axis" value the public DTO documents — never a DB default that could later
+	// be re-interpreted.
+	Spoiler   int16     `gorm:"not null" json:"spoiler"`
+	Sexual    bool      `gorm:"not null" json:"sexual"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 

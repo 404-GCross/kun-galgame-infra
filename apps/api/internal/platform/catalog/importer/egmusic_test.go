@@ -20,8 +20,8 @@ func scalarIntA(t *testing.T, q string, args ...any) int64 {
 func seedEGRosettaWork(t *testing.T, game int64) int64 {
 	t.Helper()
 	var workID int64
-	require.NoError(t, testDB.Raw(`INSERT INTO catalog_work (medium_id, site, product_work_id, olang, display_name, content_rating, status, extra, field_provenance)
-		VALUES (1,'galgame_wiki',?, 'ja','w',0,0,'{}','{}') RETURNING id`, game).Scan(&workID).Error)
+	require.NoError(t, testDB.Raw(`INSERT INTO catalog_work (medium_id, site, product_work_id, olang, display_name, content_rating, status, extra, field_provenance, display_nsfw)
+		VALUES (1,'galgame_wiki',?, 'ja','w',0,0,'{}','{}',false) RETURNING id`, game).Scan(&workID).Error)
 	require.NoError(t, testDB.Exec(`INSERT INTO catalog_external_ref (entity_type, entity_id, source_id, external_id, link_kind, matched_by)
 		VALUES (5, ?, 5, ?, 1, 'rule:eg-vndb-rosetta')`, workID, strconv.FormatInt(game, 10)).Error)
 	return workID

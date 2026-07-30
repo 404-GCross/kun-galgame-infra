@@ -19,6 +19,18 @@ import (
 // after the works exist; the image-usage adoption runs after the rows that
 // reference the hashes are in place), and honoring a typed order would let a
 // typo silently produce a half-projected run.
+//
+// The W1-pre mirror steps (refs/proj/140) split into two selections:
+//
+//	--step p,q,r,s   the idempotent followers — the daily chain's selection,
+//	                 canonical order p → q → r → s
+//	--step t         the ONE-SHOT meta adoption, run exactly once per database
+//
+// t is in the canonical order (so "all" and a rehearsal replay stay complete) but
+// must NEVER join the daily chain, and the W1 final sweep must not run it either:
+// its rows pass to the workratings / dlsitegenres importers the moment this wave
+// removes their claim guards, and re-running t would overwrite the importers'
+// fresher values with the wiki meta's older snapshot. See stepMetaAdopt.
 func ParseSteps(spec string) ([]string, error) {
 	want := strings.ToLower(strings.TrimSpace(spec))
 	if want == "" || want == "all" {

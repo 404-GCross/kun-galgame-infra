@@ -57,8 +57,8 @@ func clean(t *testing.T) {
 func seedWork(t *testing.T, id int64) {
 	t.Helper()
 	require.NoError(t, testDB.Exec(`INSERT INTO catalog_work
-		(id, medium_id, olang, display_name, content_rating, status, extra, field_provenance)
-		VALUES (?, 1, 'ja', 'W', 0, 0, '{}', '{}')`, id).Error)
+		(id, medium_id, olang, display_name, content_rating, status, extra, field_provenance, display_nsfw)
+		VALUES (?, 1, 'ja', 'W', 0, 0, '{}', '{}', false)`, id).Error)
 }
 
 func seedRef(t *testing.T, work int64, source int16, ext string, kind int16, matchedBy string) {

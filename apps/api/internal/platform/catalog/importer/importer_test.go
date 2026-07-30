@@ -90,8 +90,8 @@ func clean(t *testing.T) {
 func seedAnchoredWork(t *testing.T, bid int64) int64 {
 	t.Helper()
 	var workID int64
-	require.NoError(t, testDB.Raw(`INSERT INTO catalog_work (medium_id, site, product_work_id, olang, display_name, content_rating, status, extra, field_provenance)
-		VALUES (1,'galgame_wiki',?, 'ja','w',0,0,'{}','{}') RETURNING id`, bid).Scan(&workID).Error)
+	require.NoError(t, testDB.Raw(`INSERT INTO catalog_work (medium_id, site, product_work_id, olang, display_name, content_rating, status, extra, field_provenance, display_nsfw)
+		VALUES (1,'galgame_wiki',?, 'ja','w',0,0,'{}','{}',false) RETURNING id`, bid).Scan(&workID).Error)
 	require.NoError(t, testDB.Exec(`INSERT INTO catalog_external_ref (entity_type, entity_id, source_id, external_id, link_kind, matched_by)
 		VALUES (5, ?, 3, ?, 0, 'rule:wiki-bid-typed')`, workID, fmt.Sprint(bid)).Error)
 	return workID
@@ -107,8 +107,8 @@ func TestBangumiWave(t *testing.T) {
 		VALUES (?, 200, 200, 'suspect', 'h200', 'm', 'p')`, suspectWork).Error)
 	// A work with only a PROBABLE bangumi ref stays gated out.
 	var probableWork int64
-	require.NoError(t, testDB.Raw(`INSERT INTO catalog_work (medium_id, site, product_work_id, olang, display_name, content_rating, status, extra, field_provenance)
-		VALUES (1,'galgame_wiki',300,'ja','w',0,0,'{}','{}') RETURNING id`).Scan(&probableWork).Error)
+	require.NoError(t, testDB.Raw(`INSERT INTO catalog_work (medium_id, site, product_work_id, olang, display_name, content_rating, status, extra, field_provenance, display_nsfw)
+		VALUES (1,'galgame_wiki',300,'ja','w',0,0,'{}','{}',false) RETURNING id`).Scan(&probableWork).Error)
 	require.NoError(t, testDB.Exec(`INSERT INTO catalog_external_ref (entity_type, entity_id, source_id, external_id, link_kind, matched_by)
 		VALUES (5, ?, 3, '300', 1, 'rule:probable-guess')`, probableWork).Error)
 
@@ -237,8 +237,8 @@ func TestEGWaveAndCandidates(t *testing.T) {
 	clean(t)
 	// gated EG work (rosetta ref) for game 7.
 	var workID int64
-	require.NoError(t, testDB.Raw(`INSERT INTO catalog_work (medium_id, site, product_work_id, olang, display_name, content_rating, status, extra, field_provenance)
-		VALUES (1,'galgame_wiki',7,'ja','w',0,0,'{}','{}') RETURNING id`).Scan(&workID).Error)
+	require.NoError(t, testDB.Raw(`INSERT INTO catalog_work (medium_id, site, product_work_id, olang, display_name, content_rating, status, extra, field_provenance, display_nsfw)
+		VALUES (1,'galgame_wiki',7,'ja','w',0,0,'{}','{}',false) RETURNING id`).Scan(&workID).Error)
 	testDB.Exec(`INSERT INTO catalog_external_ref (entity_type, entity_id, source_id, external_id, link_kind, matched_by) VALUES (5,?,5,'7',1,'rule:eg-vndb-rosetta')`, workID)
 	// EG staging: creater 500 (illustrator shubetu 1) + VA 501; character 800.
 	testDB.Exec(`INSERT INTO creaters (id, raw) VALUES (500, '{"name":"絵師","twitter_username":"SharedHandle"}'), (501,'{"name":"声太"}')`)
