@@ -117,8 +117,8 @@ func BuildWorkDoc(in WorkDocInput) EntityDoc {
 		}
 		d.SetNameOrAlias(lang, t.Title)
 	}
-	for _, in := range in.Intros {
-		d.SetIntro(in.Lang, in.Text)
+	for _, intro := range in.Intros {
+		d.SetIntro(intro.Lang, intro.Text)
 	}
 	d.TruncateIntros()
 	return d
