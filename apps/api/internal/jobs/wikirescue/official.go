@@ -57,9 +57,9 @@ func (r *Runner) stepOfficial(ctx context.Context) (Stats, error) {
 	st.Created = ost.Minted
 	st.Linked = ost.Minted
 	st.Note = fmt.Sprintf(
-		"officials=%d minted=%d already=%d aliases=%d name_candidates=%d edges_written=%d edges_already=%d edges_skipped_unclaimed=%d",
+		"officials=%d minted=%d already=%d aliases=%d name_candidates=%d edges_written=%d edges_already=%d edges_skipped_unclaimed=%d edges_skipped_dead_label=%d",
 		ost.Officials, ost.Minted, ost.Already, ost.AliasesWritten, ost.NameCandidates,
-		ost.EdgesWritten, ost.EdgesAlready, ost.EdgesSkippedUnclaimed)
+		ost.EdgesWritten, ost.EdgesAlready, ost.EdgesSkippedUnclaimed, ost.EdgesSkippedDeadLabel)
 
 	if !r.opts.Apply {
 		return st, nil
@@ -85,10 +85,18 @@ func (r *Runner) pendingBrandEdgeWorks(ctx context.Context) ([]int64, error) {
 		     SELECT product_work_id AS gid, id AS wid FROM catalog_work
 		     WHERE site = 'galgame_wiki' AND product_work_id IS NOT NULL AND deleted_at IS NULL
 		 ), proj AS (
-		     SELECT DISTINCT c.wid AS work_id, o.catalog_label_id AS label_id
+		     -- coalesce through catalog_redirect for the same reason the writer
+		     -- resolves it (loadOfficialLabelMap): the bridge column is not
+		     -- repointed on a label merge, and comparing against the dead id
+		     -- would report the same works as pending forever.
+		     SELECT DISTINCT c.wid AS work_id, coalesce(rd.current_id, o.catalog_label_id) AS label_id
 		     FROM galgame_official_relation r
 		     JOIN claimed c ON c.gid = r.galgame_id
 		     JOIN galgame_official o ON o.id = r.official_id
+		     LEFT JOIN catalog_redirect rd
+		       ON rd.entity_type = 3 AND rd.old_id = o.catalog_label_id
+		     JOIN catalog_label l ON l.id = coalesce(rd.current_id, o.catalog_label_id)
+		      AND l.deleted_at IS NULL
 		     WHERE o.catalog_label_id IS NOT NULL AND o.catalog_label_id <> 0
 		 )
 		 SELECT DISTINCT p.work_id FROM proj p

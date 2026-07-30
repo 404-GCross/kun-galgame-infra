@@ -80,7 +80,8 @@ func NewOfficialRegistrar(wiki, catalog *gorm.DB, dryRun bool, limit int) *Offic
 }
 
 // OfficialStats is the wave tally. Identity (full run): Officials = Minted +
-// Already; Relations = EdgesWritten + EdgesAlready + EdgesSkippedUnclaimed.
+// Already; Relations = EdgesWritten + EdgesAlready + EdgesSkippedUnclaimed +
+// EdgesSkippedDeadLabel.
 type OfficialStats struct {
 	Officials             int // total galgame_official rows
 	Minted                int // labels newly created this run (catalog_label_id was NULL)
@@ -90,6 +91,7 @@ type OfficialStats struct {
 	EdgesWritten          int // catalog_work_label rows inserted (dry: would-write)
 	EdgesAlready          int // brand edges already present (apply only)
 	EdgesSkippedUnclaimed int // relations whose galgame is not a claimed catalog_work
+	EdgesSkippedDeadLabel int // relations whose official points at a soft-deleted label with no redirect
 }
 
 // officialRow is one to-mint official with its NFKC-lower norms computed by the

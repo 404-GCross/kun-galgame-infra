@@ -2,6 +2,7 @@ package catalogsync
 
 import (
 	"testing"
+	"time"
 
 	"api/internal/platform/catalog/model"
 	gmodel "api/internal/platform/galgame/model"
@@ -20,7 +21,7 @@ func setupOfficials(t *testing.T) {
 	))
 	require.NoError(t, testDB.Exec(`TRUNCATE
 		catalog_work_label, catalog_match_candidate, catalog_label_alias, catalog_label,
-		catalog_revision, catalog_work_title, catalog_release, catalog_credit, catalog_work,
+		catalog_redirect, catalog_revision, catalog_work_title, catalog_release, catalog_credit, catalog_work,
 		galgame_official_relation, galgame_official_alias, galgame_official, galgame
 		RESTART IDENTITY CASCADE`).Error)
 }
@@ -223,7 +224,102 @@ func TestRegisterOfficialsLimit(t *testing.T) {
 	assert.Equal(t, int64(0), officialUnmapped(t))
 }
 
+// TestRegisterOfficialsRedirectResolution pins the edge phase against a stale
+// official→label bridge: galgame_official.catalog_label_id is NOT repointed
+// when a label is merged away, so the edge phase must resolve it through
+// catalog_redirect (to a fixpoint, chains included) and must refuse to write an
+// edge to a soft-deleted label that has no redirect at all.
+func TestRegisterOfficialsRedirectResolution(t *testing.T) {
+	if testDB == nil {
+		t.Skip("no test database")
+	}
+	setupOfficials(t)
+
+	for id := int64(1); id <= 3; id++ {
+		seedGalgameStub(t, id)
+	}
+	wG1 := seedClaimedWork(t, 1)
+	wG2 := seedClaimedWork(t, 2)
+	seedClaimedWork(t, 3)
+
+	// Three pre-existing labels acting as merge targets / a dead end.
+	lSurvivor := seedExistingLabel(t, "生存ブランド", model.LabelKindGameBrand)
+	lMid := seedExistingLabel(t, "中間ブランド", model.LabelKindGameBrand)
+	lChainEnd := seedExistingLabel(t, "連鎖の終点", model.LabelKindGameBrand)
+	lMerged := seedExistingLabel(t, "併合済みブランド", model.LabelKindGameBrand)
+	lChainStart := seedExistingLabel(t, "連鎖の起点", model.LabelKindGameBrand)
+	lOrphan := seedExistingLabel(t, "孤立した死んだブランド", model.LabelKindGameBrand)
+
+	// lMerged → lSurvivor (one hop); lChainStart → lMid → lChainEnd (the a→b→c
+	// chain successive merges of the same id space leave behind).
+	seedLabelRedirect(t, lMerged, lSurvivor)
+	seedLabelRedirect(t, lChainStart, lMid)
+	seedLabelRedirect(t, lMid, lChainEnd)
+	softDeleteLabel(t, lMerged)
+	softDeleteLabel(t, lChainStart)
+	softDeleteLabel(t, lMid)
+	softDeleteLabel(t, lOrphan)
+
+	// Officials mapped by hand onto the stale ids (what the merge left behind).
+	seedOfficial(t, 301, "ブランド甲", "", "ja", "company")
+	seedOfficial(t, 302, "ブランド乙", "", "ja", "company")
+	seedOfficial(t, 303, "ブランド丙", "", "ja", "company")
+	mapOfficialToLabel(t, 301, lMerged)     // one hop → lSurvivor
+	mapOfficialToLabel(t, 302, lChainStart) // a→b→c → lChainEnd
+	mapOfficialToLabel(t, 303, lOrphan)     // dead, no redirect → dropped
+	seedOfficialRelation(t, 1, 301)
+	seedOfficialRelation(t, 2, 302)
+	seedOfficialRelation(t, 3, 303)
+
+	s, err := NewOfficialRegistrar(testDB, testDB, false, 0).Run()
+	require.NoError(t, err)
+	assert.Equal(t, 0, s.Minted, "all three officials are already mapped")
+	assert.Equal(t, 2, s.EdgesWritten, "301→survivor, 302→chain end")
+	assert.Equal(t, 1, s.EdgesSkippedDeadLabel, "303 points at a dead label with no redirect")
+
+	assert.Equal(t, int64(1), edgeCount(t, wG1, lSurvivor), "one hop resolved")
+	assert.Equal(t, int64(0), edgeCount(t, wG1, lMerged), "no edge on the merged-away id")
+	assert.Equal(t, int64(1), edgeCount(t, wG2, lChainEnd), "chain resolved to its fixpoint")
+	assert.Equal(t, int64(0), edgeCount(t, wG2, lMid), "no edge on the intermediate id")
+	assert.Equal(t, int64(2), count(t, "catalog_work_label"), "the orphan wrote nothing")
+
+	// A second pass is still idempotent on the resolved ids.
+	s2, err := NewOfficialRegistrar(testDB, testDB, false, 0).Run()
+	require.NoError(t, err)
+	assert.Equal(t, 0, s2.EdgesWritten)
+	assert.Equal(t, 2, s2.EdgesAlready)
+	assert.Equal(t, int64(2), count(t, "catalog_work_label"))
+}
+
 // --- helpers ---------------------------------------------------------------
+
+func seedLabelRedirect(t *testing.T, oldID, currentID int64) {
+	t.Helper()
+	now := time.Now()
+	require.NoError(t, testDB.Create(&model.CatalogRedirect{
+		EntityType: model.EntityTypeLabel, OldID: oldID, CurrentID: currentID,
+		MergedAt: &now, Reason: "test",
+	}).Error)
+}
+
+func softDeleteLabel(t *testing.T, labelID int64) {
+	t.Helper()
+	require.NoError(t, testDB.Exec(`UPDATE catalog_label SET deleted_at = now() WHERE id = ?`, labelID).Error)
+}
+
+func mapOfficialToLabel(t *testing.T, officialID, labelID int64) {
+	t.Helper()
+	require.NoError(t, testDB.Exec(
+		`UPDATE galgame_official SET catalog_label_id = ? WHERE id = ?`, labelID, officialID).Error)
+}
+
+func edgeCount(t *testing.T, workID, labelID int64) int64 {
+	t.Helper()
+	var n int64
+	require.NoError(t, testDB.Raw(`SELECT count(*) FROM catalog_work_label WHERE work_id=? AND label_id=?`,
+		workID, labelID).Scan(&n).Error)
+	return n
+}
 
 func officialUnmapped(t *testing.T) int64 {
 	t.Helper()

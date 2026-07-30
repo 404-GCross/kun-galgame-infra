@@ -92,6 +92,7 @@ func main() {
 		"edges_written", stats.EdgesWritten,
 		"edges_already", stats.EdgesAlready,
 		"edges_skipped_unclaimed", stats.EdgesSkippedUnclaimed,
+		"edges_skipped_dead_label", stats.EdgesSkippedDeadLabel,
 	)
 	if !*apply {
 		slog.Info("DRY RUN — nothing written; re-run with --apply")
