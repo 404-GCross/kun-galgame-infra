@@ -33,8 +33,8 @@ func (s *PublicService) TagDetail(ctx context.Context, id int64, withWorks, nsfw
 		ID: head.ID, Name: head.Name, Tier: tagTierKey(head.Tier), Kind: tagKindKey(head.Kind),
 	}
 	// work_count is the browse lane's number for this one row (A2-1e) — the
-	// SAME nsfw-aware aggregate, so a detail page and the list it was reached
-	// from can never disagree.
+	// SAME nsfw-aware, live-claim aggregate, so a detail page and the list it was
+	// reached from can never disagree.
 	counts, err := s.workCountsFor(ctx, tagWorkEdge, []int64{id}, nsfw)
 	if err != nil {
 		return dto.PublicTagDetail{}, false, err

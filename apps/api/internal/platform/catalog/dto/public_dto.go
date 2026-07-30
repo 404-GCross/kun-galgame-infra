@@ -372,7 +372,8 @@ type PublicLabel struct {
 	// display-name excluded, always present ([] when the label has none).
 	Aliases []string `json:"aliases"`
 	// WorkCount is NSFW-AWARE, exactly like the browse lane's (A2-1e): the
-	// number of works this caller would page through via works?label_id=.
+	// number of works this caller would page through via
+	// works?label_id=&claim_state=live — the call an entity page makes (146).
 	WorkCount int `json:"work_count"`
 	// Refs are the EXACT identity anchors (doc 106 G4); links stays the
 	// separate non-identity web-presence projection — the two never mix.
@@ -461,7 +462,8 @@ type PublicTag struct {
 	Sexual  bool  `json:"sexual"`
 	// WorkCount is the nsfw-aware taxonomy aggregate for the CANONICAL tag this
 	// row maps to (A2-R1) — the number of works the caller reaches by following
-	// the chip to works?tag_id=, and the same number tags/{id} reports.
+	// the chip to works?tag_id=&claim_state=live, and the same number tags/{id}
+	// reports.
 	//
 	// A POINTER, and deliberately so: the key is absent for an UNMAPPED tag
 	// (no canonical_id → no landing page → no count to state, the same rule its
@@ -567,7 +569,8 @@ type PublicWorkLabel struct {
 	// that renders both needs to know which is which. Empty when unrecorded.
 	Lang string `json:"lang,omitempty"`
 	// WorkCount is the nsfw-aware taxonomy aggregate (A2-R1) — the number of
-	// works this caller reaches by following the chip to works?label_id=, and
+	// works this caller reaches by following the chip to
+	// works?label_id=&claim_state=live, and
 	// the same number labels/{id} and the labels browse lane report. ALWAYS
 	// present (never omitempty): every label chip is an addressable identity and
 	// 0 is a real answer, so a missing key would be indistinguishable from a
@@ -584,7 +587,8 @@ type PublicWorkEngine struct {
 	ID   int64  `json:"id"`
 	Name string `json:"name"`
 	// WorkCount is the nsfw-aware taxonomy aggregate (A2-R1) — the number of
-	// works this caller reaches by following the chip to works?engine_id=, and
+	// works this caller reaches by following the chip to
+	// works?engine_id=&claim_state=live, and
 	// the same number engines/{id} and the engines browse lane report. Always
 	// present, for the same reason labels[] carries it unconditionally.
 	WorkCount int `json:"work_count"`
@@ -754,7 +758,8 @@ type PublicTagDetail struct {
 	Tier string `json:"tier" doc:"core|longtail|hidden"`
 	Kind string `json:"kind" doc:"content|meta"`
 	// WorkCount is NSFW-AWARE, exactly like the browse lane's (A2-1e): the
-	// number of works this caller would page through via works?tag_id=.
+	// number of works this caller would page through via
+	// works?tag_id=&claim_state=live — the call an entity page makes (146).
 	WorkCount int `json:"work_count"`
 	// Sexual flags the tag itself as belonging to the sexual-content category
 	// (A2-1f). Always present. See PublicTagListItem.Sexual for the coverage
@@ -804,6 +809,11 @@ type PublicNameIntro struct {
 // works?label_id=/tag_id=/engine_id=. A count and its own member list can never
 // disagree — the deliberate opposite of the deprecated galgame face's
 // official.galgame_count, which was permanently 0 next to a non-empty list.
+//
+// Since wave 146 the member call it equals carries claim_state=live, the gate an
+// entity page passes (A2-R4): a count that also included unpublished drafts and
+// unclaimed registry rows promised works nobody could reach. The nsfw axis stays
+// the caller's and is untouched by that ruling.
 
 // PublicLabelListItem is one row of the label browse lane (GET
 // /v1/catalog/labels). Follow id to /v1/catalog/labels/{id} for the full

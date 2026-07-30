@@ -28,6 +28,9 @@ func TestWorkChipCountsMatchTheirLandingPages(t *testing.T) {
 	safe := createWorkX(t, galgameMediumID, model.ContentRatingAllAges, model.WorkStatusLive, "ChipSafe")
 	r18 := createWorkX(t, galgameMediumID, model.ContentRatingR18, model.WorkStatusLive, "ChipR18")
 	stub := createWorkX(t, galgameMediumID, model.ContentRatingAllAges, model.WorkStatusStub, "ChipStub")
+	for i, id := range []int64{safe.ID, r18.ID, stub.ID} {
+		claimLive(t, id, int64(9320+i))
+	}
 
 	brandID := addWorkLabel(t, safe.ID, "Alcot", model.LabelKindGameBrand, model.WorkLabelKindBrand)
 	for _, w := range []int64{r18.ID, stub.ID} {
@@ -145,4 +148,162 @@ func TestWorkChipCountsMatchTheirLandingPages(t *testing.T) {
 			t.Fatalf("nsfw=%v: the work under test is missing from the list page", tc.nsfw)
 		}
 	}
+}
+
+// TestWorkCountCountsOnlyLiveClaims is wave 146's core case: the number beside a
+// chip counts a work only when that work's claim is LIVE. A draft (submitted,
+// not published), a hidden (banned / declined) and an unclaimed registry row
+// each carry the identical taxonomy edges here and must each be absent from the
+// number — because they are absent from the member list an entity page renders
+// (works?<filter>=&claim_state=live). Before this, a tag page promised several
+// times the works a reader could actually reach.
+//
+// All three families are exercised on BOTH the taxonomy lane and the chip,
+// because they share one aggregate: a regression in it would be a regression in
+// all six faces at once.
+func TestWorkCountCountsOnlyLiveClaims(t *testing.T) {
+	cleanTables(t)
+	cleanTagTables(t)
+	cleanTaxonomyTables(t)
+	svc := newPublicSvc()
+	ctx := t.Context()
+
+	// Four all-ages LIVE galgame works, identical in every respect except the
+	// claim axis — so the count can only be moved by that axis.
+	live := createWorkX(t, galgameMediumID, model.ContentRatingAllAges, model.WorkStatusLive, "StateLive")
+	draft := createWorkX(t, galgameMediumID, model.ContentRatingAllAges, model.WorkStatusLive, "StateDraft")
+	hidden := createWorkX(t, galgameMediumID, model.ContentRatingAllAges, model.WorkStatusLive, "StateHidden")
+	none := createWorkX(t, galgameMediumID, model.ContentRatingAllAges, model.WorkStatusLive, "StateNone")
+	claimLive(t, live.ID, 9401)
+	claimWork(t, draft.ID, "galgame_wiki", 9402)
+	setClaimState(t, draft.ID, i16(model.ClaimStateDraft))
+	claimWork(t, hidden.ID, "galgame_wiki", 9403)
+	setClaimState(t, hidden.ID, i16(model.ClaimStateHidden))
+	// `none` stays unclaimed: no site, no product_work_id.
+
+	all := []int64{live.ID, draft.ID, hidden.ID, none.ID}
+
+	labelID := addWorkLabel(t, live.ID, "Alcot", model.LabelKindGameBrand, model.WorkLabelKindBrand)
+	for _, w := range []int64{draft.ID, hidden.ID, none.ID} {
+		if err := testDB.Create(&model.CatalogWorkLabel{
+			WorkID: w, LabelID: labelID, Kind: model.WorkLabelKindBrand,
+		}).Error; err != nil {
+			t.Fatalf("attach label to %d: %v", w, err)
+		}
+	}
+
+	engineID := createEngine(t, "KiriKiri")
+	for _, w := range all {
+		attachEngine(t, w, engineID)
+	}
+
+	const srcBangumi int16 = 3
+	tagID := createCanonicalTag(t, "fantasy", model.TagTierCore, model.TagKindContent)
+	if err := testDB.Create(&model.CatalogTagSourceMap{
+		SourceID: srcBangumi, SourceName: "ファンタジー", TagID: tagID,
+	}).Error; err != nil {
+		t.Fatalf("map source tag: %v", err)
+	}
+	for _, w := range all {
+		if err := testDB.Create(&model.CatalogWorkTag{
+			WorkID: w, Name: "ファンタジー", Count: 1, SourceID: srcBangumi,
+		}).Error; err != nil {
+			t.Fatalf("work tag on %d: %v", w, err)
+		}
+	}
+
+	// ── the three browse lanes ───────────────────────────────────────────────
+	labels, err := svc.LabelsList(ctx, LabelsListFilter{}, "", 50)
+	if err != nil {
+		t.Fatalf("LabelsList: %v", err)
+	}
+	if len(labels.Items) != 1 || labels.Items[0].WorkCount != 1 {
+		t.Fatalf("labels lane = %+v, want one row counting only the live claim", labels.Items)
+	}
+	assertCountMatchesWorksList(t, svc, WorksListFilter{Sort: "id", LabelID: labelID}, 1)
+
+	tags, err := svc.TagsList(ctx, TagsListFilter{}, "", 50)
+	if err != nil {
+		t.Fatalf("TagsList: %v", err)
+	}
+	if len(tags.Items) != 1 || tags.Items[0].WorkCount != 1 {
+		t.Fatalf("tags lane = %+v, want work_count 1", tags.Items)
+	}
+	assertCountMatchesWorksList(t, svc, WorksListFilter{Sort: "id", TagIDs: []int64{tagID}}, 1)
+
+	engines, err := svc.EnginesList(ctx, EnginesListFilter{}, "", 50)
+	if err != nil {
+		t.Fatalf("EnginesList: %v", err)
+	}
+	if len(engines.Items) != 1 || engines.Items[0].WorkCount != 1 {
+		t.Fatalf("engines lane = %+v, want work_count 1", engines.Items)
+	}
+	assertCountMatchesWorksList(t, svc, WorksListFilter{Sort: "id", EngineID: engineID}, 1)
+
+	// ── the three detail records ─────────────────────────────────────────────
+	labelRec, ok, err := svc.Label(ctx, labelID, false, false, 20, 0)
+	if err != nil || !ok {
+		t.Fatalf("Label = %v, %v", ok, err)
+	}
+	if labelRec.WorkCount != 1 {
+		t.Fatalf("labels/{id}.work_count = %d, want 1", labelRec.WorkCount)
+	}
+	tagRec, ok, err := svc.TagDetail(ctx, tagID, false, false, 20, 0)
+	if err != nil || !ok {
+		t.Fatalf("TagDetail = %v, %v", ok, err)
+	}
+	if tagRec.WorkCount != 1 {
+		t.Fatalf("tags/{id}.work_count = %d, want 1", tagRec.WorkCount)
+	}
+	engRec, ok, err := svc.EngineDetail(ctx, engineID, false)
+	if err != nil || !ok {
+		t.Fatalf("EngineDetail = %v, %v", ok, err)
+	}
+	if engRec.WorkCount != 1 {
+		t.Fatalf("engines/{id}.work_count = %d, want 1", engRec.WorkCount)
+	}
+
+	// ── the chips on a work record, and the list's include=labels block ──────
+	// Read them off the DRAFT work on purpose: a row hidden from every count
+	// still renders its own chips, and those chips must report the live number.
+	rec, found, err := svc.WorkDetail(ctx, draft.ID, PublicInclude{}, false, 0)
+	if err != nil || !found {
+		t.Fatalf("WorkDetail = %v, %v", found, err)
+	}
+	if len(rec.Labels) != 1 || rec.Labels[0].WorkCount != 1 {
+		t.Fatalf("labels[] chip = %+v, want work_count 1", rec.Labels)
+	}
+	if len(rec.Engines) != 1 || rec.Engines[0].WorkCount != 1 {
+		t.Fatalf("engines[] chip = %+v, want work_count 1", rec.Engines)
+	}
+	if len(rec.Tags) != 1 || rec.Tags[0].WorkCount == nil || *rec.Tags[0].WorkCount != 1 {
+		t.Fatalf("tags[] chip = %+v, want work_count 1", rec.Tags)
+	}
+
+	page, err := svc.WorksList(ctx, WorksListFilter{
+		Sort: "id", Include: ParseWorksListInclude("labels"),
+	}, "", 100)
+	if err != nil {
+		t.Fatalf("WorksList include=labels: %v", err)
+	}
+	if len(page.Items) != len(all) {
+		t.Fatalf("the ungated list must still serve all %d rows, got %d", len(all), len(page.Items))
+	}
+	for _, it := range page.Items {
+		if len(it.Labels) != 1 || it.Labels[0].WorkCount != 1 {
+			t.Fatalf("list row %d labels = %+v, want work_count 1 on every row", it.ID, it.Labels)
+		}
+	}
+
+	// Publishing the draft moves the number: the count follows the claim state,
+	// it is not frozen at claim time.
+	setClaimState(t, draft.ID, i16(model.ClaimStateLive))
+	tags, err = svc.TagsList(ctx, TagsListFilter{}, "", 50)
+	if err != nil {
+		t.Fatalf("TagsList after publish: %v", err)
+	}
+	if tags.Items[0].WorkCount != 2 {
+		t.Fatalf("after publishing the draft, tag work_count = %d, want 2", tags.Items[0].WorkCount)
+	}
+	assertCountMatchesWorksList(t, svc, WorksListFilter{Sort: "id", TagIDs: []int64{tagID}}, 2)
 }

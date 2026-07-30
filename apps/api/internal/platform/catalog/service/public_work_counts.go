@@ -12,7 +12,8 @@
 // So the numbers here are not a new aggregate — they are workCountsFor, the
 // taxonomy lane's own query, over the same three edge fragments. One batched
 // GROUP BY per facet for the whole record (or the whole list page), never one
-// count per chip:
+// count per chip. The member call each ≡ names below is the one an entity page
+// actually makes, i.e. carrying claim_state=live — see taxonomyLiveClaim:
 //
 //	labels[]  → labelWorkEdge  ≡ works?label_id=  ≡ labels/{id}.work_count
 //	tags[]    → tagWorkEdge    ≡ works?tag_id=    ≡ tags/{id}.work_count

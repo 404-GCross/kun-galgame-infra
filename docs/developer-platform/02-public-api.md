@@ -128,10 +128,12 @@
 > - **可见性继承各实体详情面**:命中后委派 `names/{id}` / `characters/{id}` / `labels/{id}` 的投影(`include` 重块关闭),因此 `nsfw` 语义与那三个端点逐字一致(例:character 身份不因 `nsfw=0` 隐藏,只掉 sexual traits;r18 隐藏仍只是 `work` 面的规则)。
 > - **响应加法**:`PublicLookupData` / 批量 item 新增可选块 `name` / `character` / `label`(不命中即整块省略),`work` / `claimed_by` 字段语义不变;批量 item 另加恒在的 `type` 回显。spec-breaking 门(oasdiff)背书为非破坏。
 >
-> **taxonomy 三道的 `work_count` 语义(2026-07-29 A2-1b 落账)**:`labels` / `tags` / `engines` 每行的 `work_count` 是 **nsfw 感知**的——它等于**同一调用方**用 `works?label_id=` / `?tag_id=` / `?engine_id=` 翻页能真正拿到的行数。
+> **taxonomy 三道的 `work_count` 语义(2026-07-29 A2-1b 落账;口径于 2026-07-30 wave 146 统一为 live)**:`labels` / `tags` / `engines` 每行的 `work_count` 是 **nsfw 感知**的——它等于**同一调用方**用 `works?label_id=` / `?tag_id=` / `?engine_id=` **且带 `claim_state=live`** 翻页能真正拿到的行数,也就是词条页成员列表实际发出的那一次调用。
 >
 > - sfw 调用方(缺省)的计数**剔除 r18**;`nsfw=1` 给全量。计数与成员列表**永不打架**——这是刻意反着写弃用面的 `official.galgame_count`(恒 0 却挂着非空成员列表)。
-> - 统计口径 = works 列表的种群谓词逐字复用:LIVE + galgame 媒介 + 未软删,`stub` / 其它媒介 / 软删行一律不计。
+> - 统计口径 = works 列表的种群谓词逐字复用:LIVE + galgame 媒介 + 未软删 + **`claim_state=live`**,`stub` / 其它媒介 / 软删行一律不计。
+> - ⚠️ **`claim_state=live` 闸(2026-07-30,wave 146)**:此前计数把**未发布的 draft 行**与**未认领注册行**一并算入,而词条页成员列表按 §3.2.7 传 `claim_state=live`——两个数于是**系统性不等**,计数偏高(07-30 断面 galgame 媒介:live 10,927 vs draft 53,521 + 未认领 17,560,约 6 倍)。现在计数与成员列表**同一个闸**,且由**同一个谓词编译器**产出,构造上不可能再分叉。**这三个数会一次性下降**——这是既知虚高被修好,不是计数丢失。
+> - **nsfw 轴不动**(§23「身份非内容」裁定不翻案):`nsfw` 在这三条道上仍然只管每行的 `work_count`、不管行本身是否存在,也不受本次 claim 闸影响。
 > - **去重按作品**:一个作品对同一厂牌可有多条不同 `kind` 的归属边、可携带多个映射到同一规范 tag 的源 tag,计数只算一次。
 > - 实现上是**页级批量 GROUP BY**(每页一条聚合查询),不是逐行 count。
 >
@@ -277,12 +279,12 @@ A2-1b 给 **taxonomy 浏览道与其详情面**发了 nsfw 感知的 `work_count
 
 | 位置 | 键 | 恒出? | 口径 |
 |---|---|---|---|
-| `works/{id}` 的 `labels[]` | `work_count` | **恒出** | ≡ `works?label_id={id}` 同 nsfw 下的总数 ≡ `labels/{id}.work_count` |
+| `works/{id}` 的 `labels[]` | `work_count` | **恒出** | ≡ `works?label_id={id}&claim_state=live` 同 nsfw 下的总数 ≡ `labels/{id}.work_count` |
 | `works?include=labels` 的 `labels[]` | `work_count` | **恒出** | **与详情面同一次聚合、同一个数** |
-| `works/{id}` 的 `engines[]` | `work_count` | **恒出** | ≡ `works?engine_id={id}` ≡ `engines/{id}.work_count` |
-| `works/{id}` 的 `tags[]` | `work_count` | **仅映射行** | ≡ `works?tag_id={canonical_id}` ≡ `tags/{id}.work_count` |
+| `works/{id}` 的 `engines[]` | `work_count` | **恒出** | ≡ `works?engine_id={id}&claim_state=live` ≡ `engines/{id}.work_count` |
+| `works/{id}` 的 `tags[]` | `work_count` | **仅映射行** | ≡ `works?tag_id={canonical_id}&claim_state=live` ≡ `tags/{id}.work_count` |
 
-- **nsfw 感知**:与 §3.2 的 taxonomy 不变量同一条——数字等于**这个调用方**点进去真正能翻到的行数,不是边表行数。
+- **nsfw 感知 + live 闸**:与 §3.2 的 taxonomy 不变量同一条(含 2026-07-30 wave 146 的 `claim_state=live` 统一)——数字等于**这个调用方**点进去真正能翻到的行数,不是边表行数。chip 与 taxonomy 三道走**同一个聚合函数**,六个面因此不可能各说各话。
 - **未映射 tag 无此键**:没有 `canonical_id` 就没有落地页,也就没有数可报(与该行 `canonical_id`/`tier`/`kind` 三键同一省略规则)。已映射的行**一定**带这个键,**包括值为 0**——所以 `work_count` 缺席只意味「这条 tag 没进规范词表」,永远不意味「0 部作品」。
 - **`labels[]`/`engines[]` 恒出**:这两处每一行都是可寻址身份,`0` 是一个真实答案;缺键与「消费端解析失败」不可区分,而那正是弃用面那个永久「+ 0」的来源。
 - ℹ️ **认领作品的 wiki tag 现已计入(2026-07-30,W1-pre)**:`works?tag_id=` 与 taxonomy `work_count` 经 `catalog_tag_source_map ⋈ catalog_work_tag` 找作品,而认领作品的 wiki tag 曾是读时桥接的、不在那张边表里,于是这两个数**系统性偏低**。refs/proj/140 把 92 万条 wiki tag 边物化进了该表,**两个数因此一次性上涨**——这是既知不对称被修好,不是计数错误;数字承诺的**始终**只有「点进去会拿到多少」,现在它能连认领作品一起如实回答了。

@@ -65,12 +65,16 @@ func TestTaxonomyListsKeysetAndCounts(t *testing.T) {
 	svc := newPublicSvc()
 	ctx := t.Context()
 
-	// One all-ages work and one r18 work, both LIVE galgame. Plus a stub work
-	// and an ASMR work that must never be counted anywhere.
+	// One all-ages work and one r18 work, both LIVE galgame carrying a LIVE
+	// claim — the only rows work_count counts (146). Plus a stub work and an
+	// ASMR work that must never be counted anywhere.
 	wSafe := createWorkX(t, galgameMediumID, model.ContentRatingAllAges, model.WorkStatusLive, "SafeWork")
 	wR18 := createWorkX(t, galgameMediumID, model.ContentRatingR18, model.WorkStatusLive, "R18Work")
 	wStub := createWorkX(t, galgameMediumID, model.ContentRatingAllAges, model.WorkStatusStub, "StubWork")
 	wASMR := createWorkX(t, 5, model.ContentRatingAllAges, model.WorkStatusLive, "AsmrWork")
+	for i, id := range []int64{wSafe.ID, wR18.ID, wStub.ID, wASMR.ID} {
+		claimLive(t, id, int64(9300+i))
+	}
 
 	// ── labels ───────────────────────────────────────────────────────────────
 	// brandID gets all four works (so the count must drop the stub + asmr);
@@ -267,8 +271,15 @@ func TestTaxonomyListsKeysetAndCounts(t *testing.T) {
 
 // assertCountMatchesWorksList walks the works list under the given filter and
 // checks the row count equals the work_count the taxonomy lane advertised.
+//
+// The claim gate is applied HERE, not by the callers: work_count's promise is
+// "what you get by following this chip", and what an entity page follows it with
+// is claim_state=live (A2-R4). Injecting it in the assertion is what makes every
+// case below a statement about THAT member call, and not about some other query
+// that merely happens to agree.
 func assertCountMatchesWorksList(t *testing.T, svc *PublicService, f WorksListFilter, want int) {
 	t.Helper()
+	f.ClaimStates = taxonomyLiveClaim
 	page, err := svc.WorksList(t.Context(), f, "", 100)
 	if err != nil {
 		t.Fatalf("WorksList %+v: %v", f, err)
@@ -277,6 +288,15 @@ func assertCountMatchesWorksList(t *testing.T, svc *PublicService, f WorksListFi
 		t.Fatalf("works?filter=%+v returned %d rows but work_count advertised %d — a count must never disagree with its own member list",
 			f, len(page.Items), want)
 	}
+}
+
+// claimLive marks a fixture work as a LIVE galgame_wiki claim — the only state
+// work_count counts since wave 146. productWorkID must be unique per work
+// ((medium_id, site, product_work_id) is a unique key).
+func claimLive(t *testing.T, workID, productWorkID int64) {
+	t.Helper()
+	claimWork(t, workID, "galgame_wiki", productWorkID)
+	setClaimState(t, workID, i16(model.ClaimStateLive))
 }
 
 // TestEngineDetailRefsExactOnly pins the engine record: refs ride the generic
@@ -291,6 +311,9 @@ func TestEngineDetailRefsExactOnly(t *testing.T) {
 	eng := createEngine(t, "RealLive")
 	wSafe := createWorkX(t, galgameMediumID, model.ContentRatingAllAges, model.WorkStatusLive, "EngSafe")
 	wR18 := createWorkX(t, galgameMediumID, model.ContentRatingR18, model.WorkStatusLive, "EngR18")
+	for i, id := range []int64{wSafe.ID, wR18.ID} {
+		claimLive(t, id, int64(9310+i))
+	}
 	attachEngine(t, wSafe.ID, eng)
 	attachEngine(t, wR18.ID, eng)
 

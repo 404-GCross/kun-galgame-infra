@@ -128,10 +128,15 @@ func loadWorksFacets(db *gorm.DB) (worksFacets, error) {
 // --- tags lane (A2-1d: the canonical tag vocabulary joins the entity search) --
 
 // loadTagWorkCounts returns canonical tag id → the number of DISTINCT LIVE
-// galgame works carrying any source tag mapped to it — the same number
-// GET /v1/catalog/tags publishes as work_count (nsfw INCLUDED here: this is a
-// ranking signal for an index that serves both sfw and nsfw callers, not a
-// count on the wire).
+// galgame works carrying any source tag mapped to it.
+//
+// This is a RANKING SIGNAL, not a wire count: BuildTagDoc log-damps it into the
+// tags index's popularity tiebreaker and never publishes the number. It is
+// therefore deliberately the WIDE population — nsfw included, and (unlike
+// GET /v1/catalog/tags's work_count since wave 146) claim state included too:
+// how much a tag is used across the whole registry is the honest ranking input,
+// while the published count answers the narrower "what will I get if I click
+// this".
 func loadTagWorkCounts(db *gorm.DB) (map[int64]int, error) {
 	var rows []struct {
 		TagID int64 `gorm:"column:tag_id"`

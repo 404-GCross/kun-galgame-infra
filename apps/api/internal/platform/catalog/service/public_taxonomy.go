@@ -7,7 +7,8 @@
 // a caller gets is the number of works that same caller would actually page
 // through via works?label_id=/tag_id=/engine_id=. The count query therefore
 // reuses the works-list population predicate literally (LIVE galgame, not
-// soft-deleted, r18 dropped unless nsfw) instead of counting edge rows. The
+// soft-deleted, r18 dropped unless nsfw, and — wave 146 — claim_state=live, the
+// gate an entity page's member list passes) instead of counting edge rows. The
 // deprecated galgame face shipped the opposite — official.galgame_count sat at
 // a permanent 0 beside a non-empty member list — and that is the failure this
 // face is written to avoid.
@@ -272,6 +273,23 @@ func (s *PublicService) EngineDetail(ctx context.Context, id int64, nsfw bool) (
 // columns the helper joins on: key_id (the taxonomy id) and work_id. They are
 // flat subqueries, so the planner pulls them up and the key_id IN (...) probe
 // still lands on the edge tables' own reverse indexes.
+// taxonomyLiveClaim is the claim gate every work_count on this face is counted
+// behind (wave 146). It is a CONSTANT, not a parameter, and that is the point:
+// the number beside a chip must be the number the reader gets by following it,
+// and what a downstream entity page follows it with is
+// works?<filter>=&claim_state=live — the spelling A2-R4 introduced precisely
+// because DRAFT (unpublished) stubs and unclaimed registry rows were reaching
+// public member lists. Counting them anyway is how a tag page came to promise
+// works nobody can see: at the 2026-07-30 断面 the galgame medium held 10,927
+// live claims beside 53,521 drafts and 17,560 unclaimed rows, so the ungated
+// number ran ~6x high. Ruled by the track owner (the A2-R wave logged it as a
+// candidate; 146 executes it).
+//
+// The nsfw axis is deliberately untouched by that ruling: it stays the caller's
+// (doc 106 §23 "identity is not content" — nsfw governs the per-row count,
+// never whether the taxonomy row itself exists).
+var taxonomyLiveClaim = []string{model.ClaimStateKeyLive}
+
 const (
 	labelWorkEdge  = `(SELECT label_id AS key_id, work_id FROM catalog_work_label) e`
 	engineWorkEdge = `(SELECT engine_id AS key_id, work_id FROM catalog_work_engine) e`
@@ -303,6 +321,15 @@ func (s *PublicService) workCountsFor(ctx context.Context, edge string, ids []in
 		where = append(where, "w.content_rating <> ?")
 		args = append(args, model.ContentRatingR18)
 	}
+	// …and the CLAIM gate an entity page's member list passes (wave 146). Not a
+	// second opinion about it: the predicate is compiled by the very same
+	// claimStateWhere the works list compiles `claim_state=live` with, so the two
+	// cannot drift by construction. See taxonomyLiveClaim for why live is THE
+	// number here and not merely one of several a caller may ask for.
+	pred, pargs := claimStateWhere(taxonomyLiveClaim)
+	where = append(where, pred)
+	args = append(args, pargs...)
+
 	var rows []struct {
 		KeyID int64 `gorm:"column:key_id"`
 		N     int   `gorm:"column:n"`

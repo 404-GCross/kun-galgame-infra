@@ -338,6 +338,10 @@ func TestLabelAliasesLangAndWorkCount(t *testing.T) {
 
 	w := createWorkX(t, galgameMediumID, model.ContentRatingAllAges, model.WorkStatusLive, "LabelledWork")
 	r18 := createWorkX(t, galgameMediumID, model.ContentRatingR18, model.WorkStatusLive, "LabelledR18")
+	// work_count counts LIVE claims only (146), so the fixture has to be one.
+	for i, id := range []int64{w.ID, r18.ID} {
+		claimLive(t, id, int64(9330+i))
+	}
 	labelID := addWorkLabel(t, w.ID, "みるくそふと", model.LabelKindGameBrand, model.WorkLabelKindBrand)
 	if err := testDB.Exec(`UPDATE catalog_label SET lang = 'ja' WHERE id = ?`, labelID).Error; err != nil {
 		t.Fatalf("stamp label lang: %v", err)
@@ -418,6 +422,10 @@ func TestTaxonomyTotalsAndTagDetailWorkCount(t *testing.T) {
 
 	wSafe := createWorkX(t, galgameMediumID, model.ContentRatingAllAges, model.WorkStatusLive, "TagSafe")
 	wR18 := createWorkX(t, galgameMediumID, model.ContentRatingR18, model.WorkStatusLive, "TagR18")
+	// work_count counts LIVE claims only (146), so the fixture has to be one.
+	for i, id := range []int64{wSafe.ID, wR18.ID} {
+		claimLive(t, id, int64(9340+i))
+	}
 	if err := testDB.Create(&model.CatalogTagSourceMap{
 		SourceID: srcBangumiSupply, SourceName: "ファンタジー", TagID: core,
 	}).Error; err != nil {

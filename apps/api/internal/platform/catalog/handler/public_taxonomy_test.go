@@ -46,6 +46,12 @@ func seedTaxonomy(t *testing.T, db *gorm.DB) (labelID, tagID, engineID int64) {
 		require.NoError(t, db.Exec("TRUNCATE "+tbl+" RESTART IDENTITY CASCADE").Error)
 	}
 	ids := seedPublicWorks(t, db, 1)
+	// work_count counts LIVE claims only (146) — an entity page's member list is
+	// works?<filter>=&claim_state=live, so the fixture work must be one or every
+	// count on this face is legitimately 0.
+	require.NoError(t, db.Exec(
+		`UPDATE catalog_work SET site = 'galgame_wiki', product_work_id = 9350, claim_state = ? WHERE id = ?`,
+		model.ClaimStateLive, ids[0]).Error)
 
 	label := model.CatalogLabel{DisplayName: "Wire Brand", Kind: model.LabelKindGameBrand}
 	require.NoError(t, db.Create(&label).Error)

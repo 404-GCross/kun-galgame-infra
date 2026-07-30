@@ -785,8 +785,8 @@ func (s *PublicService) Label(ctx context.Context, id int64, withWorks, nsfw boo
 		ID: head.ID, DisplayName: head.DisplayName, Kind: labelKindKey(head.Kind), Lang: head.Lang,
 	}
 	// work_count is the browse lane's number for this one row (A2-1e) — the
-	// SAME nsfw-aware aggregate, so a detail page and the list it was reached
-	// from can never disagree.
+	// SAME nsfw-aware, live-claim aggregate, so a detail page and the list it was
+	// reached from can never disagree.
 	counts, err := s.workCountsFor(ctx, labelWorkEdge, []int64{id}, nsfw)
 	if err != nil {
 		return dto.PublicLabel{}, false, err
