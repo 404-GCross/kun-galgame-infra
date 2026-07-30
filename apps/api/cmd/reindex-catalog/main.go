@@ -525,8 +525,10 @@ func loadWorkIntros(db *gorm.DB) (map[int64][]workIntro, error) {
 // one gate instead of the deprecated face's unfiltered-total trap.
 //
 // A2-R5 adds content_limit, the EDITORIAL DISPLAY axis: a claimed work's value
-// comes from its WIKI body (the LEFT JOIN below), a bodyless work's from its
-// rating. It is a second axis beside content_rating, never a re-encoding of it.
+// comes from the editor's declaration (catalog_work.display_nsfw — a wiki-body
+// LEFT JOIN until the W1-pre wave nativized it, refs/proj/140 §5b), a bodyless
+// work's from its rating. It is a second axis beside content_rating, never a
+// re-encoding of it.
 //
 // A2-1f adds the synopsis text, language-bucketed and rune-capped. It only
 // ever MATCHES when a caller passes search_intro=1: the face pins
@@ -571,18 +573,16 @@ func reindexWorks(ctx context.Context, db *gorm.DB, idx *catalogSearch.Indexer, 
 			ProductWorkID *int64    `gorm:"column:product_work_id"`
 			ClaimState    *int16    `gorm:"column:claim_state"`
 			UpdatedAt     time.Time `gorm:"column:updated_at"`
-			// WikiContentLimit is the CLAIMED work's wiki-body display flag — the
+			// DisplayNSFW is the CLAIMED work's editorial display flag — the
 			// authority for the content_limit field, which model.DisplayLimitKey
-			// projects alongside the three claim columns (A2-R5). Joined here for
-			// the same reason the title bridge below reads galgame directly: the
-			// wiki family shares this database.
-			WikiContentLimit string `gorm:"column:wiki_content_limit"`
+			// projects alongside the three claim columns (A2-R5). A column on the
+			// row since the W1-pre wave nativized it off the wiki body
+			// (refs/proj/140 §5b); it was a LEFT JOIN into galgame before.
+			DisplayNSFW bool `gorm:"column:display_nsfw"`
 		}
 		if err := db.Raw(`SELECT w.id, w.display_name, w.olang, w.content_rating, coalesce(w.site,'') AS site,
-				w.product_work_id, w.claim_state, w.updated_at,
-				coalesce(g.content_limit, '') AS wiki_content_limit
+				w.product_work_id, w.claim_state, w.updated_at, w.display_nsfw
 			FROM catalog_work w
-			LEFT JOIN galgame g ON w.site = 'galgame_wiki' AND g.id = w.product_work_id
 			WHERE w.id > ? AND w.deleted_at IS NULL AND w.status = 0
 				AND w.medium_id = (SELECT id FROM catalog_medium WHERE key = 'galgame')
 			ORDER BY w.id LIMIT ?`, lastID, batch).Scan(&rows).Error; err != nil {
@@ -600,7 +600,7 @@ func reindexWorks(ctx context.Context, db *gorm.DB, idx *catalogSearch.Indexer, 
 				// list's `w.site <> ''` (NULL and '' are both bodyless).
 				Claimed:      r.Site != "",
 				ClaimState:   model.ClaimStateKey(&r.Site, r.ProductWorkID, r.ClaimState),
-				ContentLimit: model.DisplayLimitKey(&r.Site, r.ProductWorkID, r.WikiContentLimit, r.ContentRating),
+				ContentLimit: model.DisplayLimitKey(&r.Site, r.ProductWorkID, r.DisplayNSFW, r.ContentRating),
 				ReleasedOrd:  facets.releasedOrd[r.ID], UpdatedTS: r.UpdatedAt.Unix(),
 				Popularity: pop[r.ID], Sources: srcs[r.ID], SourceKeys: keys[r.ID],
 				TagIDs: facets.tagIDs[r.ID], LabelIDs: facets.labelIDs[r.ID],

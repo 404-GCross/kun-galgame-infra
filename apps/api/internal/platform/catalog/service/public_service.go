@@ -321,7 +321,7 @@ func (s *PublicService) WorkDetail(ctx context.Context, id int64, inc PublicIncl
 			subjects = append(subjects, claimSubject{WorkID: r.OtherID, Site: r.Site, ProductWorkID: r.ProductWorkID})
 		}
 	}
-	limits, err := s.read.loadWikiContentLimits(ctx, subjects)
+	limits, err := s.read.loadDisplayNSFW(ctx, subjects)
 	if err != nil {
 		return dto.PublicCatalogWork{}, false, err
 	}
@@ -366,7 +366,7 @@ func (s *PublicService) WorkDetail(ctx context.Context, id int64, inc PublicIncl
 // publicRelations projects the detail's relation edges (loaded by ReadService,
 // wave 104) to the public shape, dropping r18 ends unless nsfw. A dropped end's
 // identity stays reachable via lookup once the caller opts in.
-func (s *PublicService) publicRelations(rels []WorkRelationRow, nsfw bool, limits map[int64]string) []dto.PublicRelation {
+func (s *PublicService) publicRelations(rels []WorkRelationRow, nsfw bool, limits map[int64]bool) []dto.PublicRelation {
 	out := make([]dto.PublicRelation, 0, len(rels))
 	for _, r := range rels {
 		if !nsfw && isR18(r.ContentRating) {
@@ -1041,9 +1041,10 @@ type workBriefRow struct {
 	Site          *string
 	ProductWorkID *int64
 	ClaimState    *int16 `gorm:"column:claim_state"`
-	// WikiContentLimit is the claimed work's galgame body content_limit — the
-	// display axis's authority (A2-R5), joined in rather than fetched per row.
-	WikiContentLimit string `gorm:"column:wiki_content_limit"`
+	// DisplayNSFW is the claimed work's editorial display flag — the display
+	// axis's authority (A2-R5), read off the row itself since the W1-pre wave
+	// nativized it (refs/proj/140 §5b).
+	DisplayNSFW bool `gorm:"column:display_nsfw"`
 }
 
 // loadWorkBriefs loads public briefs for a set of work ids, keyed by id. r18
@@ -1056,10 +1057,9 @@ func (s *PublicService) loadWorkBriefs(ctx context.Context, ids []int64, nsfw bo
 	var rows []workBriefRow
 	if err := s.db.WithContext(ctx).Raw(`
 		SELECT w.id, w.medium_id, w.display_name, w.content_rating, w.status, w.site, w.product_work_id, w.claim_state,
-		       coalesce(g.content_limit, '') AS wiki_content_limit
+		       w.display_nsfw
 		FROM catalog_work w
-		LEFT JOIN galgame g ON w.site = ? AND g.id = w.product_work_id
-		WHERE w.id IN ? AND w.deleted_at IS NULL`, siteGalgameWiki, ids).Scan(&rows).Error; err != nil {
+		WHERE w.id IN ? AND w.deleted_at IS NULL`, ids).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	out := make(map[int64]*dto.PublicWorkBrief, len(rows))
@@ -1070,7 +1070,7 @@ func (s *PublicService) loadWorkBriefs(ctx context.Context, ids []int64, nsfw bo
 		out[r.ID] = &dto.PublicWorkBrief{
 			ID: r.ID, Medium: s.mediumKey(r.MediumID), DisplayName: r.DisplayName,
 			ContentRating: contentRatingKey(r.ContentRating),
-			ClaimedBy:     claimedBy(r.Site, r.ProductWorkID, r.ClaimState, r.WikiContentLimit, r.ContentRating),
+			ClaimedBy:     claimedBy(r.Site, r.ProductWorkID, r.ClaimState, r.DisplayNSFW, r.ContentRating),
 		}
 	}
 	return out, nil
@@ -1108,8 +1108,9 @@ func (s *PublicService) briefFromRow(b WorkBriefRow, claim *dto.PublicClaimedBy,
 }
 
 // claimedByFor batch-loads the claim pointers for a set of work ids (only claimed
-// rows are returned). ONE query: the wiki body that decides the display axis
-// rides in as a LEFT JOIN rather than a per-row follow-up.
+// rows are returned). ONE query: the editorial flag that decides the display axis
+// is a column on the row (it was a LEFT JOIN into the wiki body until the W1-pre
+// wave nativized it, refs/proj/140 §5b).
 func (s *PublicService) claimedByFor(ctx context.Context, ids []int64) (map[int64]*dto.PublicClaimedBy, error) {
 	if len(ids) == 0 {
 		return map[int64]*dto.PublicClaimedBy{}, nil
@@ -1120,18 +1121,15 @@ func (s *PublicService) claimedByFor(ctx context.Context, ids []int64) (map[int6
 		ProductWorkID int64
 		ClaimState    *int16 `gorm:"column:claim_state"`
 		ContentRating int16  `gorm:"column:content_rating"`
-		// WikiContentLimit is galgame.content_limit for a galgame_wiki claim, ""
-		// otherwise — the join condition carries the same site test the Go
-		// projection's caller applies (see public_display_limit.go).
-		WikiContentLimit string `gorm:"column:wiki_content_limit"`
+		// DisplayNSFW is the editorial display flag (see public_display_limit.go);
+		// only a galgame_wiki claim ever carries true.
+		DisplayNSFW bool `gorm:"column:display_nsfw"`
 	}
 	if err := s.db.WithContext(ctx).Raw(`
-		SELECT w.id, w.site, w.product_work_id, w.claim_state, w.content_rating,
-		       coalesce(g.content_limit, '') AS wiki_content_limit
+		SELECT w.id, w.site, w.product_work_id, w.claim_state, w.content_rating, w.display_nsfw
 		FROM catalog_work w
-		LEFT JOIN galgame g ON w.site = ? AND g.id = w.product_work_id
 		WHERE w.id IN ? AND w.site IS NOT NULL AND w.product_work_id IS NOT NULL AND w.deleted_at IS NULL`,
-		siteGalgameWiki, ids).Scan(&rows).Error; err != nil {
+		ids).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	out := make(map[int64]*dto.PublicClaimedBy, len(rows))
@@ -1141,7 +1139,7 @@ func (s *PublicService) claimedByFor(ctx context.Context, ids []int64) (map[int6
 		out[r.ID] = &dto.PublicClaimedBy{
 			Site: r.Site, WorkID: r.ProductWorkID,
 			State:        model.ClaimStateKey(&r.Site, &r.ProductWorkID, r.ClaimState),
-			ContentLimit: model.DisplayLimitKey(&r.Site, &r.ProductWorkID, r.WikiContentLimit, r.ContentRating),
+			ContentLimit: model.DisplayLimitKey(&r.Site, &r.ProductWorkID, r.DisplayNSFW, r.ContentRating),
 		}
 	}
 	return out, nil
@@ -1274,16 +1272,17 @@ func publicRefs(refs []RefDetail) []dto.PublicCatalogRef {
 // in, so `claim_state=live` and `content_limit=sfw` each select exactly the rows
 // this function renders with that value.
 //
-// wikiContentLimit is the work's galgame body content_limit (loadWikiContentLimits,
-// or a joined column); "" for a bodyless work or a claim with no wiki lane.
-func claimedBy(site *string, productWorkID *int64, claimState *int16, wikiContentLimit string, contentRating int16) *dto.PublicClaimedBy {
+// displayNSFW is the work's editorial display flag (catalog_work.display_nsfw, via
+// loadDisplayNSFW or the row itself); false for a bodyless work, where the
+// projection reads the age axis instead.
+func claimedBy(site *string, productWorkID *int64, claimState *int16, displayNSFW bool, contentRating int16) *dto.PublicClaimedBy {
 	state := model.ClaimStateKey(site, productWorkID, claimState)
 	if state == model.ClaimStateKeyNone {
 		return nil // unclaimed: claimed_by is null, not an object with a state
 	}
 	return &dto.PublicClaimedBy{
 		Site: *site, WorkID: *productWorkID, State: state,
-		ContentLimit: model.DisplayLimitKey(site, productWorkID, wikiContentLimit, contentRating),
+		ContentLimit: model.DisplayLimitKey(site, productWorkID, displayNSFW, contentRating),
 	}
 }
 
@@ -1478,7 +1477,7 @@ func introLang(t string) string {
 // publicSeriesSiblings projects the transitive-closure series membership (wave
 // 113) to public briefs, dropping r18 ends unless nsfw (same gate as relations).
 // Always non-nil so the field serializes [].
-func (s *PublicService) publicSeriesSiblings(sibs []SeriesSiblingRow, nsfw bool, limits map[int64]string) []dto.PublicWorkBrief {
+func (s *PublicService) publicSeriesSiblings(sibs []SeriesSiblingRow, nsfw bool, limits map[int64]bool) []dto.PublicWorkBrief {
 	out := make([]dto.PublicWorkBrief, 0, len(sibs))
 	for _, sb := range sibs {
 		if !nsfw && isR18(sb.ContentRating) {

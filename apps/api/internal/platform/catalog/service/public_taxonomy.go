@@ -319,40 +319,26 @@ func (s *PublicService) workCountsFor(ctx context.Context, edge string, ids []in
 }
 
 // tagSexualFor batch-resolves the TAG-LEVEL sexual-category flag (A2-1f) for a
-// set of canonical tag ids. Tags with no mapping are simply absent from the
-// map, which renders false.
+// set of canonical tag ids. Tags whose flag is false are simply absent from
+// the map, which renders false — the same absent-means-false contract the old
+// read-time derivation had.
 //
-// Derivation, and why it is this join and not a name match: A2-0 minted an
-// identity anchor per mapped tag (entity_type=tag, source=galgame_wiki,
-// external_id = the wiki tag id, link_kind=exact), so the canonical tag reaches
-// its wiki vocabulary row by ID. The alternative — joining
-// catalog_tag_source_map on the vndb source NAME — resolves the same 1,530 tags
-// today (verified: 901 content / 357 sexual / 267 technical either way) but is
-// a string key, so it silently drops a tag the moment either side is renamed.
-//
-// galgame_tag.category is the VNDB cat vocabulary as the wiki sync mapped it
-// (cont→content, ero→sexual, tech→technical); `sexual` is the only value that
-// carries a safety meaning, so it is the only one projected.
+// The flag is the catalog_tag.sexual column since the W1-pre nativization
+// (refs/proj/140): what used to be derived at read time by joining the wiki
+// vocabulary through the A2-0 identity anchors (catalog_external_ref
+// entity_type=tag → galgame_tag.category = 'sexual') is written onto the
+// canonical row by wikirescue step r, using THAT SAME derivation, and kept in
+// step daily until the wiki family drops.
 func (s *PublicService) tagSexualFor(ctx context.Context, ids []int64) (map[int64]bool, error) {
 	out := make(map[int64]bool, len(ids))
 	if len(ids) == 0 {
 		return out, nil
 	}
 	var rows []struct {
-		TagID int64 `gorm:"column:tag_id"`
+		TagID int64 `gorm:"column:id"`
 	}
-	// external_id is compared as TEXT (gt.id::text), never by casting the ref's
-	// text to bigint: the ref table is a mixed key space and a non-numeric row
-	// from any other lane would turn a cast into a query-wide error.
-	if err := s.db.WithContext(ctx).Raw(`
-		SELECT DISTINCT r.entity_id AS tag_id
-		FROM catalog_external_ref r
-		JOIN catalog_source src ON src.id = r.source_id AND src.key = ?
-		JOIN galgame_tag gt ON gt.id::text = r.external_id
-		WHERE r.entity_type = ? AND r.link_kind = ? AND r.entity_id IN ?
-		  AND gt.category = ?`,
-		sourceKeyGalgameWiki, model.EntityTypeTag, model.LinkKindExact, ids,
-		galgameTagCategorySexual).Scan(&rows).Error; err != nil {
+	if err := s.db.WithContext(ctx).Raw(
+		`SELECT id FROM catalog_tag WHERE id IN ? AND sexual`, ids).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	for _, r := range rows {

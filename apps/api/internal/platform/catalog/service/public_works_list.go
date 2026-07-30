@@ -346,7 +346,7 @@ func (s *PublicService) enrichWorkListItems(ctx context.Context, rows []workList
 	// shape (and the same claim partition) the cover bridge above rides on. This
 	// is the ONE place the works list, the works search and the three calendar
 	// buckets all fill claimed_by.content_limit from: they share this function.
-	limits, err := s.read.loadWikiContentLimits(ctx, subjects)
+	limits, err := s.read.loadDisplayNSFW(ctx, subjects)
 	if err != nil {
 		return nil, err
 	}

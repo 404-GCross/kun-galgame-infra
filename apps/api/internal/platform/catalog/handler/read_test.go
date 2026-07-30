@@ -749,11 +749,17 @@ func insertGalgameBody(t *testing.T, db *gorm.DB, id, catalogWorkID int64, en, j
 		VALUES (?, ?, 0, ?, ?, ?, ?)`, id, catalogWorkID, en, ja, zhCN, zhTW).Error)
 }
 
-// TestWorkIntro pins the step-52 media-aggregation read face: the CLAIMED bridge
-// (galgame.intro_* pivoted to language rows, source=galgame_wiki), the BODYLESS
-// native merge (catalog_work_intro, lowest source_id wins per language), strict
-// XOR (a claimed work with empty galgame intros yields [] and never falls back
-// to a shadow native row), and []-not-null serialization.
+// TestWorkIntro pins the step-52 media-aggregation read face, now fed by the
+// W1-pre mirror (refs/proj/140): the claimed work's wiki intro columns pivoted to
+// language rows under source=galgame_wiki — mirrored by step q, byte-identical to
+// what the bridge projected — the native merge (catalog_work_intro, lowest
+// source_id wins per language) that now serves claimed and bodyless works alike,
+// and []-not-null serialization.
+//
+// The strict XOR retired with the bridge: a claimed work's OTHER-source intro row
+// is no longer shadowed, it is one more source in the merge. Production had no such
+// rows (the claimed population's intro parity is exact), so nothing moved on the
+// wire there.
 func TestWorkIntro(t *testing.T) {
 	db := openCatalogTestDB(t)
 	ensureGalgameStub(t, db)
@@ -781,13 +787,16 @@ func TestWorkIntro(t *testing.T) {
 	require.NoError(t, db.Create(&model.CatalogWorkIntro{WorkID: bodyless.ID, Lang: "en", Intro: "User english", SourceID: srcUser}).Error)
 	require.NoError(t, db.Create(&model.CatalogWorkIntro{WorkID: bodyless.ID, Lang: "ja", Intro: "VNDB日本語", SourceID: srcVNDB}).Error)
 
-	// --- XOR work: claimed but galgame intros all empty; a SHADOW native row exists
-	// (simulating a prior bodyless state) and must NEVER surface.
-	xor := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "空主張", ContentRating: 0, Status: 0,
+	// --- MERGE work: claimed with EMPTY wiki intros, carrying a native VNDB row.
+	// The mirror writes nothing for it (nothing to mirror) and does not touch the
+	// foreign source's row, which the one native lane then serves.
+	merged := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "空主張", ContentRating: 0, Status: 0,
 		Site: strptr("galgame_wiki"), ProductWorkID: ptrI64(5002)}
-	require.NoError(t, db.Create(&xor).Error)
-	insertGalgameBody(t, db, 5002, xor.ID, "", "", "", "")
-	require.NoError(t, db.Create(&model.CatalogWorkIntro{WorkID: xor.ID, Lang: "en", Intro: "shadow row must not appear", SourceID: srcVNDB}).Error)
+	require.NoError(t, db.Create(&merged).Error)
+	insertGalgameBody(t, db, 5002, merged.ID, "", "", "", "")
+	require.NoError(t, db.Create(&model.CatalogWorkIntro{WorkID: merged.ID, Lang: "en", Intro: "VNDB english", SourceID: srcVNDB}).Error)
+
+	mirrorWikiIntoCatalog(t, db, "q")
 
 	app := readApp(service.NewReadService(db), nil)
 
@@ -813,10 +822,14 @@ func TestWorkIntro(t *testing.T) {
 	assert.EqualValues(t, srcUser, en["source_id"])
 	assert.EqualValues(t, srcVNDB, intro[1].(map[string]any)["source_id"])
 
-	// XOR: claimed + empty galgame intros → [] (the shadow native row is invisible).
-	code, body = getJSON(t, app, "/api/v1/catalog/works/"+itoa(xor.ID))
+	// MERGE: the wiki body had nothing to mirror, so the work reads the one row it
+	// does have — its foreign source's, untouched by the mirror.
+	code, body = getJSON(t, app, "/api/v1/catalog/works/"+itoa(merged.ID))
 	require.Equal(t, 200, code)
-	assert.Empty(t, body["data"].(map[string]any)["intro"].([]any), "strict XOR: no fallback to native rows")
+	intro = body["data"].(map[string]any)["intro"].([]any)
+	require.Len(t, intro, 1, "an empty wiki column writes no row; the native one is not shadowed")
+	assert.Equal(t, "VNDB english", intro[0].(map[string]any)["intro"])
+	assert.EqualValues(t, srcVNDB, intro[0].(map[string]any)["source_id"])
 }
 
 // galgameCoverStubIDs are the fixture galgame body ids used by the claimed
@@ -1329,10 +1342,12 @@ func TestWorkRating(t *testing.T) {
 	require.NoError(t, db.Create(&model.CatalogWorkRating{
 		WorkID: bodyless.ID, SourceID: srcEG, Score: 82, VoteCount: 40}).Error)
 
-	// --- XOR work: claimed (galgame_id 8002) with only UNSCORED metas (vndb
+	// --- UNSCORED work: claimed (galgame_id 8002) with only UNSCORED metas (vndb
 	// rating NULL = no public rating, bangumi score 0 = unrated, dlsite star
-	// NULL = below the rating threshold, EG median NULL) — all filtered — plus
-	// a SHADOW native row (a prior bodyless state) that must NEVER surface.
+	// NULL = below the rating threshold, EG median NULL) — all filtered, so the
+	// mirror writes nothing — plus a native bangumi row the importer owns, which
+	// the one native lane serves (the strict XOR that hid it retired with the
+	// bridge).
 	xor := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "空主張", ContentRating: 0, Status: 0,
 		Site: strptr("galgame_wiki"), ProductWorkID: ptrI64(8002)}
 	require.NoError(t, db.Create(&xor).Error)
@@ -1348,13 +1363,15 @@ func TestWorkRating(t *testing.T) {
 	empty := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "空作品", ContentRating: 0, Status: 0}
 	require.NoError(t, db.Create(&empty).Error)
 
+	mirrorWikiIntoCatalog(t, db, "s,t")
+
 	app := readApp(service.NewReadService(db), nil)
 
 	// CLAIMED: four ratings, source_id ascending, native scales, rank bgm-only.
 	code, body := getJSON(t, app, "/api/v1/catalog/works/"+itoa(claimed.ID))
 	require.Equal(t, 200, code)
 	ratings := body["data"].(map[string]any)["ratings"].([]any)
-	require.Len(t, ratings, 4, "all four metas bridged")
+	require.Len(t, ratings, 4, "all four metas materialized")
 	rVndb := ratings[0].(map[string]any)
 	assert.EqualValues(t, srcVNDB, rVndb["source_id"], "vndb row first (source_id ascending)")
 	assert.EqualValues(t, 8.45, rVndb["score"], "vndb wire 84.5 decoded to its displayed 1-10 scale")
@@ -1395,10 +1412,14 @@ func TestWorkRating(t *testing.T) {
 	_, hasRank = b1["rank"]
 	assert.False(t, hasRank, "NULL rank omitted")
 
-	// XOR: claimed + unscored metas → [] (the shadow native row is invisible).
+	// UNSCORED: the metas contributed nothing, so what is left is the importer's own
+	// bangumi row — one lane, no shadows.
 	code, body = getJSON(t, app, "/api/v1/catalog/works/"+itoa(xor.ID))
 	require.Equal(t, 200, code)
-	assert.Empty(t, body["data"].(map[string]any)["ratings"].([]any), "strict XOR: no fallback to native rows")
+	ratings = body["data"].(map[string]any)["ratings"].([]any)
+	require.Len(t, ratings, 1, "an unscored meta writes no row; the native one is not shadowed")
+	assert.EqualValues(t, srcBangumi, ratings[0].(map[string]any)["source_id"])
+	assert.EqualValues(t, 9.9, ratings[0].(map[string]any)["score"])
 
 	// EMPTY: [] not null.
 	code, body = getJSON(t, app, "/api/v1/catalog/works/"+itoa(empty.ID))
@@ -1443,8 +1464,9 @@ func TestWorkPopularity(t *testing.T) {
 	dl64, wl64 := int64(2000), int64(300)
 	rv0 := 0
 	insertDlsiteMeta(t, db, 8001, nil, nil, &dl64, &wl64, &rv0)
-	// T2b: a native bgm shelf row on the claimed work surfaces (union lane),
-	// while a SHADOW native dlsite row stays invisible (bridge-exclusive).
+	// T2b: a native bgm shelf row on the claimed work surfaces, and a STALE native
+	// dlsite row (777) is corrected to the meta's value by the adoption step rather
+	// than shadowed behind a bridge.
 	require.NoError(t, db.Create(&model.CatalogWorkPopularity{
 		WorkID: claimed.ID, SourceID: srcBgm, Metric: model.PopularityMetricBgmWish, Value: 42}).Error)
 	require.NoError(t, db.Create(&model.CatalogWorkPopularity{
@@ -1458,9 +1480,10 @@ func TestWorkPopularity(t *testing.T) {
 	require.NoError(t, db.Create(&model.CatalogWorkPopularity{
 		WorkID: bodyless.ID, SourceID: srcDlsite, Metric: model.PopularityMetricDownloads, Value: 4500}).Error)
 
-	// --- XOR work: claimed (galgame_id 8002) with NO dlsite meta at all, plus a
-	// SHADOW native dlsite row (a prior bodyless state) that must NEVER surface
-	// (dlsite is bridge-exclusive; no native non-dlsite rows → []).
+	// --- ADOPTED-ROW work: claimed (galgame_id 8002) with NO dlsite meta at all,
+	// carrying a native dlsite row the importer owns. The adoption step has no
+	// delete arm — these rows belong to the importer now — so the row stays and the
+	// one native lane serves it.
 	xor := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "空主張", ContentRating: 0, Status: 0,
 		Site: strptr("galgame_wiki"), ProductWorkID: ptrI64(8002)}
 	require.NoError(t, db.Create(&xor).Error)
@@ -1471,22 +1494,24 @@ func TestWorkPopularity(t *testing.T) {
 	empty := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "空作品", ContentRating: 0, Status: 0}
 	require.NoError(t, db.Create(&empty).Error)
 
+	mirrorWikiIntoCatalog(t, db, "t")
+
 	app := readApp(service.NewReadService(db), nil)
 
-	// CLAIMED: the union lane (T2b) — the native bgm shelf + three bridged
-	// dlsite rows, (source_id, metric) ascending (bgm sorts before dlsite).
+	// CLAIMED: the native bgm shelf + the three adopted dlsite counters,
+	// (source_id, metric) ascending (bgm sorts before dlsite).
 	code, body := getJSON(t, app, "/api/v1/catalog/works/"+itoa(claimed.ID))
 	require.Equal(t, 200, code)
 	pop := body["data"].(map[string]any)["popularity"].([]any)
-	require.Len(t, pop, 4, "native bgm shelf + three bridged dlsite counters")
+	require.Len(t, pop, 4, "native bgm shelf + three adopted dlsite counters")
 	p0 := pop[0].(map[string]any)
 	assert.EqualValues(t, srcBgm, p0["source_id"], "bgm sorts before dlsite")
 	assert.EqualValues(t, model.PopularityMetricBgmWish, p0["metric"])
-	assert.EqualValues(t, 42, p0["value"], "T2b: the claimed work's native bgm row surfaces")
+	assert.EqualValues(t, 42, p0["value"], "the claimed work's native bgm row surfaces")
 	p1 := pop[1].(map[string]any)
 	assert.EqualValues(t, srcDlsite, p1["source_id"])
 	assert.EqualValues(t, 0, p1["metric"], "downloads first (metric ascending)")
-	assert.EqualValues(t, 2000, p1["value"], "bridge value wins — the shadow native dlsite row (777) never surfaces")
+	assert.EqualValues(t, 2000, p1["value"], "the adoption corrected the stale native row (777) to the meta's value")
 	p2 := pop[2].(map[string]any)
 	assert.EqualValues(t, 1, p2["metric"])
 	assert.EqualValues(t, 300, p2["value"])
@@ -1504,10 +1529,12 @@ func TestWorkPopularity(t *testing.T) {
 	assert.EqualValues(t, 2, pop[1].(map[string]any)["metric"])
 	assert.EqualValues(t, 7, pop[1].(map[string]any)["value"])
 
-	// XOR: claimed without meta → [] (the shadow native dlsite row is invisible).
+	// ADOPTED-ROW: no meta to adopt, and the importer's row is kept and served.
 	code, body = getJSON(t, app, "/api/v1/catalog/works/"+itoa(xor.ID))
 	require.Equal(t, 200, code)
-	assert.Empty(t, body["data"].(map[string]any)["popularity"].([]any), "per-source XOR: shadowed native dlsite rows never surface")
+	pop = body["data"].(map[string]any)["popularity"].([]any)
+	require.Len(t, pop, 1, "the adoption keeps what it did not write; nothing is shadowed")
+	assert.EqualValues(t, 99, pop[0].(map[string]any)["value"])
 
 	// EMPTY: [] not null.
 	code, body = getJSON(t, app, "/api/v1/catalog/works/"+itoa(empty.ID))
@@ -1656,6 +1683,8 @@ func TestWorkTag(t *testing.T) {
 	empty := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "空作品", ContentRating: 0, Status: 0}
 	require.NoError(t, db.Create(&empty).Error)
 
+	mirrorWikiIntoCatalog(t, db, "r")
+
 	app := readApp(service.NewReadService(db), nil)
 
 	// CLAIMED ①: bridge ∪ native merge. The voted bgm rows (百合 30, PC 5) lead by
@@ -1726,9 +1755,10 @@ func TestWorkTag(t *testing.T) {
 // TestWorkTagCanonicalOverlay pins the step-74 additive canonical overlay on
 // the tag read face: a tag whose (source_id, name) is mapped into
 // catalog_tag_source_map carries canonical_id/tier/kind; an UNMAPPED tag omits
-// all three. It covers BOTH lanes — the claimed vndb bridge (source_id=vndb,
-// name=galgame_tag.name hits the same map key a bodyless vndb tag would) and the
-// bodyless native lane — and asserts the overlay never mutates name/source_id.
+// all three. It covers both provenances — a MIRRORED wiki edge (source_id=vndb,
+// name=galgame_tag.name, which hits the same map key a bodyless vndb tag would,
+// and that key-compatibility is exactly what let the flip delete the bridge) and
+// an importer's own row — and asserts the overlay never mutates name/source_id.
 func TestWorkTagCanonicalOverlay(t *testing.T) {
 	db := openCatalogTestDB(t)
 	ensureGalgameStub(t, db)
@@ -1770,9 +1800,11 @@ func TestWorkTagCanonicalOverlay(t *testing.T) {
 	require.NoError(t, db.Create(&model.CatalogWorkTag{WorkID: bodyless.ID, Name: "像素(74)", Count: 3, SourceID: srcDlsite}).Error)
 	require.NoError(t, db.Create(&model.CatalogWorkTag{WorkID: bodyless.ID, Name: "独有(74)", Count: 2, SourceID: srcDlsite}).Error)
 
+	mirrorWikiIntoCatalog(t, db, "r")
+
 	app := readApp(service.NewReadService(db), nil)
 
-	// CLAIMED: the vndb-mapped tag carries the overlay; the wiki user tag omits it.
+	// CLAIMED: the mirrored vndb tag carries the overlay; the wiki user tag omits it.
 	code, body := getJSON(t, app, "/api/v1/catalog/works/"+itoa(claimed.ID))
 	require.Equal(t, 200, code)
 	byName := tagsByName(body)

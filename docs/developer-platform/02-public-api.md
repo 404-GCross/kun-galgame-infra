@@ -252,16 +252,16 @@ catalog 的 release 日期是**部分 ISO**:`YYYY` / `YYYY-MM` / `YYYY-MM-DD`,�
 - **⚠️ 覆盖面 = 与 §3.2.3 同一条款**:只有**映射进该词表**的 tag 才有这条轴。纯 Bangumi / DLsite folksonomy 长出来的规范 tag 上游**没有类别概念**,渲染 `false` —— 这表示**「该 tag 没有这条轴」,不是「已确认安全」**。要做严格门控,请结合 tag 的来源判断,**不要**把 `sexual=false` 当作安全断言。
 - 与作品详情 `tags[]` 上那个 **per-edge** 的 `spoiler` / `sexual`(§3.2.3)是两个粒度:那里描述的是「这个作品的这条 tag 边」,这里描述的是「这个 tag 本身」。**§3.2.3 的既有语义本波一字未动。**
 
-### 3.2.5 认领作品的标题供给 = wiki 桥(2026-07-29 A2-R1 落账)
+### 3.2.5 认领作品的标题供给(2026-07-29 A2-R1 落账;2026-07-30 W1-pre 本体化)
 
-`titles[]`(详情)、`names`(列表 `include=names`)与作品搜索索引的标题族,对**认领作品**(`claimed_by.site=galgame_wiki`)读的是 **wiki 正文**,不是 catalog 自己的标题表——与 `intro[]` / `covers[]` / `screenshots[]` 同一条 bridge-not-copy 规则(读时桥接,不落副本)。
+`titles[]`(详情)、`names`(列表 `include=names`)与作品搜索索引的标题族,对**认领作品**(`claimed_by.site=galgame_wiki`)供的是 **wiki 正文的名字**——四个固定语言列 + 别名表。A2-R1 用读时桥接供这些字(catalog 自己的标题表对 87% 的认领作品是空的),**W1-pre(refs/proj/140)把该投影逐字物化进 `catalog_work_title` 并删掉桥**:同一批字,同一形状,来源改为 registry 自己的表,由镜面步跟随 wiki 编辑直至 wiki 表族退役。消费端无感——下表的「标题来源」列描述的是**供给内容**,不再是读取路径。
 
 | 作品形态 | 标题来源 |
 |---|---|
-| **认领**(`site=galgame_wiki`) | wiki 正文的**四个名称列** → `official` 行(`ja` / `en` / `zh-Hans` / `zh-Hant`);wiki **别名表**每行 → `alias` 行,**`lang=""`** |
+| **认领**(`site=galgame_wiki`) | wiki 正文的**四个名称列** → `official` 行(`ja` / `en` / `zh-Hans` / `zh-Hant`);wiki **别名表**每行 → `alias` 行,**`lang=""`**(经镜面步物化进 catalog 标题表) |
 | **无正文**(未认领) | catalog 自己的标题行,逐字不变 |
 
-- **严格 XOR**:认领作品**只**读桥,绝不回落到 catalog 标题行——即使它还留着历史行(与 `intro[]` 同律)。
+- **一份真相**:认领作品的名字只有一套。桥接时代它只读桥、绝不回落到 catalog 标题行;本体化后镜面步在其属权范围内做**真差分**(增/改/**删**),wiki 编辑删掉的名字这边跟着消失,历史残行被清掉而不是被遮蔽。
 - **别名不编造语言**:wiki 不记录别名的语言,故 `lang` 为空串。空 `lang` 落不进 §3.2.1 的四键投影,所以别名**只**出现在 `titles[]` 与搜索索引,不进 `names` 块——这正是想要的:别名可搜可列,但不占某个 locale 的名字槽位。
 - **同名只出一次**:别名字符串与某个名称列**完全相同**时只渲染一次(取 `official` 那行)。
 - **`latin`**:wiki 正文没有罗马音列,故桥接行不带 `latin`;catalog 原生行的 `latin` 一如既往。
@@ -281,7 +281,7 @@ A2-1b 给 **taxonomy 浏览道与其详情面**发了 nsfw 感知的 `work_count
 - **nsfw 感知**:与 §3.2 的 taxonomy 不变量同一条——数字等于**这个调用方**点进去真正能翻到的行数,不是边表行数。
 - **未映射 tag 无此键**:没有 `canonical_id` 就没有落地页,也就没有数可报(与该行 `canonical_id`/`tier`/`kind` 三键同一省略规则)。已映射的行**一定**带这个键,**包括值为 0**——所以 `work_count` 缺席只意味「这条 tag 没进规范词表」,永远不意味「0 部作品」。
 - **`labels[]`/`engines[]` 恒出**:这两处每一行都是可寻址身份,`0` 是一个真实答案;缺键与「消费端解析失败」不可区分,而那正是弃用面那个永久「+ 0」的来源。
-- ⚠️ **认领作品的桥接 tag 可能报出不含它自己的数**:`works?tag_id=` 经 `catalog_tag_source_map ⋈ catalog_work_tag` 找作品,而**认领作品的 wiki tag 是读时桥接的**(见 §3.2.5 同一条 bridge-not-copy 规则),不在那张边表里。这不是计数错误——数字承诺的**只有**「点进去会拿到多少」,它照实回答。
+- ℹ️ **认领作品的 wiki tag 现已计入(2026-07-30,W1-pre)**:`works?tag_id=` 与 taxonomy `work_count` 经 `catalog_tag_source_map ⋈ catalog_work_tag` 找作品,而认领作品的 wiki tag 曾是读时桥接的、不在那张边表里,于是这两个数**系统性偏低**。refs/proj/140 把 92 万条 wiki tag 边物化进了该表,**两个数因此一次性上涨**——这是既知不对称被修好,不是计数错误;数字承诺的**始终**只有「点进去会拿到多少」,现在它能连认领作品一起如实回答了。
 - **成本**:每个 facet 每次请求(或每页)**一条批量 GROUP BY**,不是每 chip 一次。
 
 ### 3.2.7 works 两面的 `claim_state=` 闸(搜索面 = A2-R1 区 C;列表面 = A2-R4)

@@ -11,6 +11,10 @@
 // The cases below pin the axis where it actually runs: the Go projection, its
 // SQL twin (cross-checked row-for-row, exactly as the claim_state axis is), the
 // three-gate conjunction, and the value that reaches the wire.
+//
+// The axis's authority is catalog_work.display_nsfw since the W1-pre nativization
+// (refs/proj/140 §5b) — it was galgame.content_limit, read out of the wiki body per
+// request, and these cases are the same cases re-pointed at the native column.
 package service
 
 import (
@@ -21,44 +25,45 @@ import (
 	catsearch "api/internal/platform/catalog/search"
 )
 
-// ensureGalgameDisplayStub makes sure the wiki body table the claimed branch
-// reads exists with the one column this axis needs. Against the real schema
-// (the shared kun_catalog_test) both statements are no-ops; against a database
-// that only ever ran the catalog migration they create the minimum the bridge
-// needs — the same stub posture the handler package's title-bridge suite uses.
-func ensureGalgameDisplayStub(t *testing.T) {
+// setDisplayNSFW writes one work's editorial display flag by CATALOG work id — the
+// column the whole axis reads since refs/proj/140 §5b.
+func setDisplayNSFW(t *testing.T, workID int64, nsfw bool) {
 	t.Helper()
-	if err := testDB.Exec(`CREATE TABLE IF NOT EXISTS galgame (
-		id bigint PRIMARY KEY,
-		user_id bigint NOT NULL DEFAULT 0
-	)`).Error; err != nil {
-		t.Fatalf("galgame stub: %v", err)
-	}
 	if err := testDB.Exec(
-		`ALTER TABLE galgame ADD COLUMN IF NOT EXISTS content_limit varchar(10) DEFAULT 'sfw'`).Error; err != nil {
-		t.Fatalf("galgame content_limit column: %v", err)
+		`UPDATE catalog_work SET display_nsfw = ? WHERE id = ?`, nsfw, workID).Error; err != nil {
+		t.Fatalf("set display_nsfw on work %d: %v", workID, err)
 	}
 }
 
-// insertGalgameBodyLimit writes one wiki body carrying just its display flag.
-// user_id is passed explicitly for the real schema (NOT NULL, no default).
-func insertGalgameBodyLimit(t *testing.T, galgameID int64, contentLimit string) {
+// declareDisplayLimit sets the editorial display flag of the work that claims the
+// given wiki body — the mirror step's write, expressed as one test line. It is
+// addressed by PRODUCT WORK ID (the claim key) rather than by catalog work id
+// because that is how the wave's editors talk about a body, and because it keeps
+// these cases readable next to their claimWork() calls.
+//
+// A miss is FATAL: a fixture that forgot to claim first would otherwise silently
+// update nothing and the case would pass for the wrong reason.
+func declareDisplayLimit(t *testing.T, productWorkID int64, contentLimit string) {
 	t.Helper()
-	if err := testDB.Exec(
-		`INSERT INTO galgame (id, user_id, content_limit) VALUES (?, 0, ?)
-		 ON CONFLICT (id) DO UPDATE SET content_limit = EXCLUDED.content_limit`,
-		galgameID, contentLimit).Error; err != nil {
-		t.Fatalf("insert galgame body %d: %v", galgameID, err)
+	res := testDB.Exec(
+		`UPDATE catalog_work SET display_nsfw = ? WHERE site = ? AND product_work_id = ?`,
+		contentLimit == model.WikiContentLimitNSFW, siteGalgameWiki, productWorkID)
+	if res.Error != nil {
+		t.Fatalf("declare display limit for body %d: %v", productWorkID, res.Error)
+	}
+	if res.RowsAffected != 1 {
+		t.Fatalf("declare display limit for body %d touched %d rows, want 1 (is the work claimed?)",
+			productWorkID, res.RowsAffected)
 	}
 }
 
-// displayRow is one column combination plus the wiki body (if any) behind it.
+// displayRow is one column combination plus the editorial declaration behind it.
 type displayRow struct {
-	name   string
-	site   *string
-	pwid   *int64
-	wiki   string // "" = no body row at all
-	rating int16
+	name    string
+	site    *string
+	pwid    *int64
+	display bool
+	rating  int16
 }
 
 // displayLimitFixture creates one LIVE galgame work per combination — including
@@ -70,35 +75,33 @@ type displayRow struct {
 // instead of exercising the case.
 func displayLimitFixture(t *testing.T) (byLimit map[string][]int64, all []int64) {
 	t.Helper()
-	ensureGalgameDisplayStub(t)
 	wiki, empty, letmoe := "galgame_wiki", "", "letmoe"
 	pw := func(n int64) *int64 { return &n }
 
 	rows := []displayRow{
 		// ── bodyless: the age axis is the only signal ──
-		{"bodyless all_ages", nil, nil, "", model.ContentRatingAllAges},
-		{"bodyless sensitive", nil, nil, "", model.ContentRatingSensitive},
-		{"bodyless r18", nil, nil, "", model.ContentRatingR18},
-		{"empty site is bodyless", &empty, pw(9401), "", model.ContentRatingR18},
-		{"site without a product work id", &wiki, nil, "", model.ContentRatingR18},
-		// ── claimed: the wiki body decides, and the rating is ignored ──
-		{"claimed r18 game, wiki says sfw", &wiki, pw(9405), "sfw", model.ContentRatingR18},
-		{"claimed all_ages game, wiki says nsfw", &wiki, pw(9406), "nsfw", model.ContentRatingAllAges},
-		{"claimed r18 game, wiki says nsfw", &wiki, pw(9407), "nsfw", model.ContentRatingR18},
-		{"claimed, wiki body missing", &wiki, pw(9408), "", model.ContentRatingR18},
-		{"claimed, wiki value outside the vocabulary", &wiki, pw(9409), "bogus", model.ContentRatingR18},
-		// ── a claimer with no wiki lane: no body to read, so sfw ──
-		{"non-wiki claim of an r18 game", &letmoe, pw(9410), "", model.ContentRatingR18},
+		{"bodyless all_ages", nil, nil, false, model.ContentRatingAllAges},
+		{"bodyless sensitive", nil, nil, false, model.ContentRatingSensitive},
+		{"bodyless r18", nil, nil, false, model.ContentRatingR18},
+		{"empty site is bodyless", &empty, pw(9401), false, model.ContentRatingR18},
+		{"site without a product work id", &wiki, nil, false, model.ContentRatingR18},
+		// ── claimed: the editorial flag decides, and the rating is ignored ──
+		{"claimed r18 game, editorially sfw", &wiki, pw(9405), false, model.ContentRatingR18},
+		{"claimed all_ages game, editorially nsfw", &wiki, pw(9406), true, model.ContentRatingAllAges},
+		{"claimed r18 game, editorially nsfw", &wiki, pw(9407), true, model.ContentRatingR18},
+		{"claimed, nothing declared", &wiki, pw(9408), false, model.ContentRatingR18},
+		// ── a claimer with no wiki lane: nothing declares its material, so sfw ──
+		{"non-wiki claim of an r18 game", &letmoe, pw(9410), false, model.ContentRatingR18},
 	}
 
 	byLimit = map[string][]int64{}
 	for _, r := range rows {
 		w := createWorkX(t, galgameMediumID, r.rating, model.WorkStatusLive, r.name)
 		setClaimColumns(t, w.ID, r.site, r.pwid, nil)
-		if r.wiki != "" && r.pwid != nil {
-			insertGalgameBodyLimit(t, *r.pwid, r.wiki)
+		if r.display {
+			setDisplayNSFW(t, w.ID, true)
 		}
-		key := model.DisplayLimitKey(r.site, r.pwid, r.wiki, r.rating)
+		key := model.DisplayLimitKey(r.site, r.pwid, r.display, r.rating)
 		byLimit[key] = append(byLimit[key], w.ID)
 		all = append(all, w.ID)
 	}
@@ -159,7 +162,6 @@ func TestDisplayLimitWhereMatchesProjection(t *testing.T) {
 func TestWorksListDisplayLimitIsNotTheAgeAxis(t *testing.T) {
 	cleanTables(t)
 	cleanTagTables(t)
-	ensureGalgameDisplayStub(t)
 
 	safeR18 := createWorkX(t, galgameMediumID, model.ContentRatingR18, model.WorkStatusLive, "成人ゲーム・素材は安全")
 	spicySFW := createWorkX(t, galgameMediumID, model.ContentRatingAllAges, model.WorkStatusLive, "全年齢ゲーム・素材は成人")
@@ -167,8 +169,8 @@ func TestWorksListDisplayLimitIsNotTheAgeAxis(t *testing.T) {
 	for i, id := range []int64{safeR18.ID, spicySFW.ID} {
 		claimWork(t, id, "galgame_wiki", int64(9500+i))
 	}
-	insertGalgameBodyLimit(t, 9500, "sfw")
-	insertGalgameBodyLimit(t, 9501, "nsfw")
+	declareDisplayLimit(t, 9500, "sfw")
+	declareDisplayLimit(t, 9501, "nsfw")
 
 	sfw := idSet(listIDs(t, WorksListFilter{
 		Sort: "id", NSFW: true, DisplayLimits: []string{model.DisplayLimitKeySFW},
@@ -204,7 +206,6 @@ func TestWorksListDisplayLimitIsNotTheAgeAxis(t *testing.T) {
 func TestWorksListThreeGatesAreOrthogonal(t *testing.T) {
 	cleanTables(t)
 	cleanTagTables(t)
-	ensureGalgameDisplayStub(t)
 
 	// Four claimed works spanning (rating × wiki flag × claim state).
 	safeLive := createWorkX(t, galgameMediumID, model.ContentRatingR18, model.WorkStatusLive, "成人・安全・公開")
@@ -215,7 +216,7 @@ func TestWorksListThreeGatesAreOrthogonal(t *testing.T) {
 		claimWork(t, id, "galgame_wiki", int64(9600+i))
 	}
 	for id, limit := range map[int64]string{9600: "sfw", 9601: "sfw", 9602: "nsfw", 9603: "sfw"} {
-		insertGalgameBodyLimit(t, id, limit)
+		declareDisplayLimit(t, id, limit)
 	}
 	setClaimState(t, safeLive.ID, i16(model.ClaimStateLive))
 	setClaimState(t, safeDraft.ID, i16(model.ClaimStateDraft))
@@ -272,7 +273,6 @@ func TestWorksListThreeGatesAreOrthogonal(t *testing.T) {
 // null rather than an object.
 func TestClaimedByContentLimitOnEveryFace(t *testing.T) {
 	cleanTables(t)
-	ensureGalgameDisplayStub(t)
 	svc := newPublicSvc()
 	ctx := t.Context()
 
@@ -281,8 +281,8 @@ func TestClaimedByContentLimitOnEveryFace(t *testing.T) {
 	bodyless := createWorkX(t, galgameMediumID, model.ContentRatingAllAges, model.WorkStatusLive, "LimitBodyless")
 	claimWork(t, safeR18.ID, "galgame_wiki", 9700)
 	claimWork(t, spicySFW.ID, "galgame_wiki", 9701)
-	insertGalgameBodyLimit(t, 9700, "sfw")
-	insertGalgameBodyLimit(t, 9701, "nsfw")
+	declareDisplayLimit(t, 9700, "sfw")
+	declareDisplayLimit(t, 9701, "nsfw")
 	// The draft/hidden claims carry the editorial flag too — the display axis is
 	// independent of the claim's visibility.
 	setClaimState(t, spicySFW.ID, i16(model.ClaimStateDraft))
@@ -357,7 +357,6 @@ func TestClaimedByContentLimitOnEveryFace(t *testing.T) {
 // cache-correctness half — two different gates can never mint the same ETag.
 func TestCalendarDisplayLimitGateAndETag(t *testing.T) {
 	cleanTables(t)
-	ensureGalgameDisplayStub(t)
 	svc := newPublicSvc()
 	ctx := t.Context()
 
@@ -367,8 +366,8 @@ func TestCalendarDisplayLimitGateAndETag(t *testing.T) {
 	spicy := createWorkX(t, galgameMediumID, model.ContentRatingR18, model.WorkStatusLive, "CalSpicy")
 	claimWork(t, safe.ID, "galgame_wiki", 9800)
 	claimWork(t, spicy.ID, "galgame_wiki", 9801)
-	insertGalgameBodyLimit(t, 9800, "sfw")
-	insertGalgameBodyLimit(t, 9801, "nsfw")
+	declareDisplayLimit(t, 9800, "sfw")
+	declareDisplayLimit(t, 9801, "nsfw")
 	createRelease(t, safe.ID, 2024, 6, 14)
 	// The nsfw one is a year later, so the gate also moves the navigation bounds.
 	createRelease(t, spicy.ID, 2025, 6, 14)
@@ -498,7 +497,6 @@ func TestWorksSearchDisplayLimitGate(t *testing.T) {
 	cleanTables(t)
 	cleanTagTables(t)
 	cleanTaxonomyTables(t)
-	ensureGalgameDisplayStub(t)
 	idx := worksSearchIndexer(t)
 	svc := newPublicSvc().WithWorksSearch(idx)
 
@@ -507,8 +505,8 @@ func TestWorksSearchDisplayLimitGate(t *testing.T) {
 	bodylessR18 := createWorkX(t, galgameMediumID, model.ContentRatingR18, model.WorkStatusLive, "検索・無認領・成人")
 	claimWork(t, safeR18.ID, "galgame_wiki", 9900)
 	claimWork(t, spicySFW.ID, "galgame_wiki", 9901)
-	insertGalgameBodyLimit(t, 9900, "sfw")
-	insertGalgameBodyLimit(t, 9901, "nsfw")
+	declareDisplayLimit(t, 9900, "sfw")
+	declareDisplayLimit(t, 9901, "nsfw")
 
 	// Index off the very columns the reindexer reads, through the very
 	// projection it uses — a look-alike here would prove nothing.
@@ -521,18 +519,15 @@ func TestWorksSearchDisplayLimitGate(t *testing.T) {
 		{bodylessR18.ID, "検索・無認領・成人"},
 	} {
 		var row struct {
-			Site             *string `gorm:"column:site"`
-			ProductWorkID    *int64  `gorm:"column:product_work_id"`
-			ClaimState       *int16  `gorm:"column:claim_state"`
-			ContentRating    int16   `gorm:"column:content_rating"`
-			WikiContentLimit string  `gorm:"column:wiki_content_limit"`
+			Site          *string `gorm:"column:site"`
+			ProductWorkID *int64  `gorm:"column:product_work_id"`
+			ClaimState    *int16  `gorm:"column:claim_state"`
+			ContentRating int16   `gorm:"column:content_rating"`
+			DisplayNSFW   bool    `gorm:"column:display_nsfw"`
 		}
 		if err := testDB.Raw(`
-			SELECT w.site, w.product_work_id, w.claim_state, w.content_rating,
-			       coalesce(g.content_limit, '') AS wiki_content_limit
-			FROM catalog_work w
-			LEFT JOIN galgame g ON w.site = 'galgame_wiki' AND g.id = w.product_work_id
-			WHERE w.id = ?`, w.id).Scan(&row).Error; err != nil {
+			SELECT w.site, w.product_work_id, w.claim_state, w.content_rating, w.display_nsfw
+			FROM catalog_work w WHERE w.id = ?`, w.id).Scan(&row).Error; err != nil {
 			t.Fatalf("read claim columns: %v", err)
 		}
 		docs = append(docs, catsearch.WorkDocInput{
@@ -540,7 +535,7 @@ func TestWorksSearchDisplayLimitGate(t *testing.T) {
 			ContentRating: row.ContentRating,
 			Claimed:       row.Site != nil && *row.Site != "",
 			ClaimState:    model.ClaimStateKey(row.Site, row.ProductWorkID, row.ClaimState),
-			ContentLimit:  model.DisplayLimitKey(row.Site, row.ProductWorkID, row.WikiContentLimit, row.ContentRating),
+			ContentLimit:  model.DisplayLimitKey(row.Site, row.ProductWorkID, row.DisplayNSFW, row.ContentRating),
 			UpdatedTS:     1700000000,
 		})
 	}

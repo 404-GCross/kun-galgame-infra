@@ -7,8 +7,8 @@
 // claimed_by, whose new key is what the sister waves 141 / 142 consume.
 //
 // It lives in the handler package for the reason the title-bridge suite does:
-// the claimed branch reads the wiki-side galgame body, whose stub
-// (ensureGalgameStub) is defined in read_test.go.
+// the fixtures write the wiki-side galgame body, whose stub (ensureGalgameStub) is
+// defined in read_test.go, and mirror it into the registry the way production does.
 package handler
 
 import (
@@ -152,6 +152,10 @@ func TestClaimedByContentLimitOnTheWire(t *testing.T) {
 	}
 	require.NoError(t, db.Create(&bodyless).Error)
 
+	// The display flag is catalog_work.display_nsfw now; step q mirrors it off the
+	// wiki bodies written above (refs/proj/140 §5b).
+	mirrorWikiIntoCatalog(t, db, "q")
+
 	app := supplyApp(db)
 
 	// ── the DETAIL face ──
@@ -170,7 +174,7 @@ func TestClaimedByContentLimitOnTheWire(t *testing.T) {
 		data := body["data"].(map[string]any)
 		claim, ok := data["claimed_by"].(map[string]any)
 		require.True(t, ok, "claimed_by must be an object on a claimed work")
-		assert.Equal(t, tc.limit, claim["content_limit"], "content_limit is the WIKI body's editorial flag")
+		assert.Equal(t, tc.limit, claim["content_limit"], "content_limit is the editorial display flag, not the rating")
 		assert.Equal(t, tc.rating, data["content_rating"], "content_rating is the GAME's age rating")
 		assert.Equal(t, "live", claim["state"], "the display axis does not disturb the visibility axis")
 	}

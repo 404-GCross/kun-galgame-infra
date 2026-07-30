@@ -51,11 +51,17 @@ func titleRows(t *testing.T, body map[string]any) [][3]string {
 	return out
 }
 
-// TestClaimedWorkTitlesBridge is 区 A's core case on the PUBLIC work record:
-// a claimed work's titles come from the wiki body (four name columns pivoted to
-// BCP-47 official rows + galgame_alias as lang-less alias rows), a shadow native
-// row never surfaces (strict XOR), an alias that repeats an official name is not
-// rendered twice, and a bodyless work reads its native rows unchanged.
+// TestClaimedWorkTitlesBridge is 区 A's core case on the PUBLIC work record, now
+// run through the W1-pre mirror (refs/proj/140): a claimed work's titles are the
+// wiki body's — four name columns pivoted to BCP-47 official rows, galgame_alias as
+// lang-less alias rows, an alias that repeats an official name not rendered twice —
+// and a bodyless work reads its native rows unchanged.
+//
+// Two things changed with the flip and are pinned here as such: a stale native row
+// on a claimed work is DELETED by the mirror rather than hidden by the old strict
+// XOR (better: the table cannot drift), and the detail lane sorts (kind, lang) like
+// every native work's instead of the wiki's column order — the intended reorder the
+// wave measured at 10,349 works.
 func TestClaimedWorkTitlesBridge(t *testing.T) {
 	db := openCatalogTestDB(t)
 	ensureGalgameStub(t, db)
@@ -75,7 +81,8 @@ func TestClaimedWorkTitlesBridge(t *testing.T) {
 	insertGalgameAlias(t, db, 5001, "べつめい")
 	insertGalgameAlias(t, db, 5001, "日本語名") // == the official ja name: one name, one row
 	insertGalgameAlias(t, db, 5001, "   ")  // whitespace is not an alias
-	// A SHADOW native row on the same claimed work must never surface.
+	// A STALE native row on the same claimed work: in scope for the mirror, so it
+	// is deleted rather than merely outvoted.
 	require.NoError(t, db.Create(&model.CatalogWorkTitle{
 		WorkID: claimed.ID, Lang: "ja", Title: "この行は使われない", Kind: model.WorkTitleKindOfficial,
 	}).Error)
@@ -91,19 +98,25 @@ func TestClaimedWorkTitlesBridge(t *testing.T) {
 		WorkID: bodyless.ID, Lang: "ja", Title: "けんさくヒント", Kind: model.WorkTitleKindSearchHint,
 	}).Error)
 
+	mirrorWikiIntoCatalog(t, db, "p")
+
 	app := supplyApp(db)
 
-	// CLAIMED: the four pivot rows in fixed table-position order, then the one
-	// surviving alias — lang-less, kind=alias.
+	// CLAIMED: the four official rows — (kind, lang) ordered on the detail lane —
+	// then the one surviving alias, lang-less, kind=alias.
 	code, body := getJSON(t, app, "/v1/catalog/works/"+itoa(claimed.ID))
 	require.Equal(t, 200, code)
 	assert.Equal(t, [][3]string{
-		{"ja", "日本語名", "official"},
 		{"en", "English Name", "official"},
+		{"ja", "日本語名", "official"},
 		{"zh-Hans", "简体中文名", "official"},
 		{"zh-Hant", "繁體中文名", "official"},
 		{"", "べつめい", "alias"},
-	}, titleRows(t, body), "bridge = four-key pivot then aliases; XOR drops the shadow native row")
+	}, titleRows(t, body), "the wiki body's names, one row each; the stale native row is gone")
+	var stale int64
+	require.NoError(t, db.Model(&model.CatalogWorkTitle{}).
+		Where("work_id = ? AND title = ?", claimed.ID, "この行は使われない").Count(&stale).Error)
+	assert.Zero(t, stale, "the mirror DELETES a row the wiki body does not justify")
 
 	// BODYLESS: unchanged — the official row with its latin, no search hint.
 	code, body = getJSON(t, app, "/v1/catalog/works/"+itoa(bodyless.ID))
@@ -115,7 +128,7 @@ func TestClaimedWorkTitlesBridge(t *testing.T) {
 }
 
 // TestClaimedWorkNamesBlockBridged pins the LIST face's D7 names pivot on top of
-// the bridge: the four product keys all fill from the wiki body, and the
+// the mirrored rows: the four product keys all fill from the wiki body, and the
 // lang-less alias rows stay OUT of the block (they carry no language, so they
 // belong to no key — which is exactly why the bridge does not invent one).
 func TestClaimedWorkNamesBlockBridged(t *testing.T) {
@@ -133,6 +146,8 @@ func TestClaimedWorkNamesBlockBridged(t *testing.T) {
 	require.NoError(t, db.Create(&claimed).Error)
 	insertGalgameNames(t, db, 5002, "日本語名", "English Name", "简体中文名", "繁體中文名")
 	insertGalgameAlias(t, db, 5002, "べつめい")
+
+	mirrorWikiIntoCatalog(t, db, "p")
 
 	app := supplyApp(db)
 	code, body := getJSON(t, app, "/v1/catalog/works?include=names")

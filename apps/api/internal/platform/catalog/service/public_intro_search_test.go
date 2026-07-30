@@ -11,7 +11,6 @@
 package service
 
 import (
-	"context"
 	"os"
 	"strings"
 	"testing"
@@ -21,10 +20,6 @@ import (
 	catsearch "api/internal/platform/catalog/search"
 	"api/pkg/config"
 )
-
-// srcGalgameWiki is the seeded catalog_source id of the wiki product — the
-// source the A2-0 tag identity anchors carry.
-const srcGalgameWiki int16 = 12
 
 // worksSearchClient opens a Meilisearch client under this package's own index
 // prefix, so a settings assertion reads the very index worksSearchIndexer
@@ -206,68 +201,32 @@ func TestEnsureIndexesConvergesOnSecondRun(t *testing.T) {
 
 // ── tag-level sexual (A2-1f) ────────────────────────────────────────────────
 
-// ensureGalgameTagStubSvc provisions the wiki tag table the tag-level sexual
-// derivation joins. Mirrors the real shape (name text UNIQUE, category NOT
-// NULL); CREATE ... IF NOT EXISTS is a no-op against the real table, and the
-// cleanup is a targeted DELETE of this suite's own fixture ids.
-func ensureGalgameTagStubSvc(t *testing.T, ids []int64) {
-	t.Helper()
-	if err := testDB.Exec(`CREATE TABLE IF NOT EXISTS galgame_tag (
-		id bigint PRIMARY KEY,
-		name text NOT NULL UNIQUE,
-		category text NOT NULL,
-		description text DEFAULT ''
-	)`).Error; err != nil {
-		t.Fatalf("galgame_tag stub: %v", err)
-	}
-	if err := testDB.Exec(`DELETE FROM galgame_tag WHERE id IN ?`, ids).Error; err != nil {
-		t.Fatalf("clear galgame_tag fixtures: %v", err)
-	}
-}
-
-// TestTagSexualDerivedThroughTheIdentityAnchor covers the A2-1f tag axis on
-// BOTH faces: the browse row and the record agree, a `sexual`-category wiki tag
-// flags true, a content/technical one false, and an UNMAPPED canonical tag
-// (pure folksonomy, no anchor) is false — the "no axis" case the Tier-A caveat
-// is about.
-func TestTagSexualDerivedThroughTheIdentityAnchor(t *testing.T) {
+// TestTagSexualReachesBothFacesFromTheColumn covers the A2-1f tag axis on BOTH
+// faces: the browse row and the record agree, a sexual-category tag flags true, a
+// plain one false, and a tag nobody ever flagged (pure folksonomy) is false — the
+// "no axis" case the Tier-A caveat is about.
+//
+// The flag is catalog_tag.sexual since the W1-pre nativization (refs/proj/140): the
+// read-time derivation through the A2-0 identity anchors into galgame_tag.category
+// moved into wikirescue step r, which writes THAT SAME derivation onto this column
+// — anchor discipline included, and pinned there (TestTagMirror,
+// TestTagVocabularySexualIgnoresNonExactAndForeignAnchors). What this suite owes is
+// the other half: that whatever the column says reaches both faces intact.
+func TestTagSexualReachesBothFacesFromTheColumn(t *testing.T) {
 	cleanTables(t)
 	cleanTagTables(t)
 	svc := newPublicSvc()
 	ctx := t.Context()
 
-	wikiIDs := []int64{95101, 95102, 95103}
-	ensureGalgameTagStubSvc(t, wikiIDs)
-	t.Cleanup(func() { _ = testDB.Exec(`DELETE FROM galgame_tag WHERE id IN ?`, wikiIDs).Error })
-	for _, r := range []struct {
-		id       int64
-		name     string
-		category string
-	}{
-		{95101, "エロ(a2-1f)", "sexual"},
-		{95102, "純愛(a2-1f)", "content"},
-		{95103, "実写(a2-1f)", "technical"},
-	} {
-		if err := testDB.Exec(
-			`INSERT INTO galgame_tag (id, name, category) VALUES (?, ?, ?)`,
-			r.id, r.name, r.category).Error; err != nil {
-			t.Fatalf("seed galgame_tag: %v", err)
-		}
-	}
-
 	sexualTag := createCanonicalTag(t, "エロ(a2-1f)", model.TagTierCore, model.TagKindContent)
 	contentTag := createCanonicalTag(t, "純愛(a2-1f)", model.TagTierCore, model.TagKindContent)
 	techTag := createCanonicalTag(t, "実写(a2-1f)", model.TagTierCore, model.TagKindMeta)
-	// Unmapped: a canonical tag that exists only through folksonomy — no wiki
-	// anchor, so no axis at all.
+	// Never flagged: a canonical tag that exists only through folksonomy, whose
+	// sources publish no safety axis at all.
 	folkTag := createCanonicalTag(t, "百合(a2-1f)", model.TagTierCore, model.TagKindContent)
-
-	// The A2-0 anchors: entity_type=tag, source=galgame_wiki, external_id=wiki id.
-	for _, pair := range []struct {
-		canonical int64
-		wiki      string
-	}{{sexualTag, "95101"}, {contentTag, "95102"}, {techTag, "95103"}} {
-		addExternalRef(t, model.EntityTypeTag, pair.canonical, srcGalgameWiki, pair.wiki, model.LinkKindExact)
+	if err := testDB.Exec(
+		`UPDATE catalog_tag SET sexual = true WHERE id = ?`, sexualTag).Error; err != nil {
+		t.Fatalf("flag the sexual tag: %v", err)
 	}
 
 	want := map[int64]bool{
@@ -303,40 +262,5 @@ func TestTagSexualDerivedThroughTheIdentityAnchor(t *testing.T) {
 		if rec.Sexual != exp {
 			t.Fatalf("detail tag %d sexual=%v, want %v", id, rec.Sexual, exp)
 		}
-	}
-}
-
-// TestTagSexualIgnoresNonExactAndForeignAnchors: only the EXACT galgame_wiki
-// tag anchor derives the axis. A probable anchor is an unreviewed hypothesis
-// and another source's anchor is a different key space — neither may flip a
-// safety flag.
-func TestTagSexualIgnoresNonExactAndForeignAnchors(t *testing.T) {
-	cleanTables(t)
-	cleanTagTables(t)
-	svc := newPublicSvc()
-
-	wikiIDs := []int64{95201}
-	ensureGalgameTagStubSvc(t, wikiIDs)
-	t.Cleanup(func() { _ = testDB.Exec(`DELETE FROM galgame_tag WHERE id IN ?`, wikiIDs).Error })
-	if err := testDB.Exec(
-		`INSERT INTO galgame_tag (id, name, category) VALUES (95201, 'エロ二号(a2-1f)', 'sexual')`).Error; err != nil {
-		t.Fatalf("seed galgame_tag: %v", err)
-	}
-
-	probable := createCanonicalTag(t, "probable(a2-1f)", model.TagTierCore, model.TagKindContent)
-	foreign := createCanonicalTag(t, "foreign(a2-1f)", model.TagTierCore, model.TagKindContent)
-	addExternalRef(t, model.EntityTypeTag, probable, srcGalgameWiki, "95201", model.LinkKindProbable)
-	// vndb's own tag id space — same digits, different meaning entirely.
-	addExternalRef(t, model.EntityTypeTag, foreign, srcVNDB, "95201", model.LinkKindExact)
-
-	got, err := svc.tagSexualFor(context.Background(), []int64{probable, foreign})
-	if err != nil {
-		t.Fatalf("tagSexualFor: %v", err)
-	}
-	if got[probable] {
-		t.Fatalf("a PROBABLE anchor flipped the sexual flag — only exact anchors may")
-	}
-	if got[foreign] {
-		t.Fatalf("a non-wiki source's anchor flipped the sexual flag — key spaces must not cross")
 	}
 }

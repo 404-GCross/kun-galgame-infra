@@ -2,57 +2,31 @@ package service
 
 import (
 	"context"
-	"sort"
 	"strings"
 )
 
 // Tags read face (step 58b + T2, refs/proj/58 Facet B, refs/proj/70 §3/§8) —
-// the fifth media-aggregation facet, and the FIRST with the (facet, source) XOR
-// refinement (T2). Unlike the sibling facets (intros/covers/screenshots/ratings,
-// which keep the whole-facet XOR — claimed bridge XOR bodyless native), tags
-// reads the UNION of two per-source lanes:
+// the fifth media-aggregation facet. ONE native lane for every work since the
+// W1-pre nativization (refs/proj/140): the wiki tag layer a CLAIMED work used
+// to bridge at read time (galgame_tag_relation ⋈ galgame_tag) was materialized
+// into catalog_work_tag by wikirescue step r — name = the wiki's localized
+// display name verbatim, source_id = the edge's own source (galgame_wiki for a
+// user-curated edge, vndb for a synced one), count = 0 (the wiki layer has no
+// votes — the DTO omits count via omitempty), plus the safety axis — and the
+// bridge was deleted. Rows are per-source attributable exactly as the two-lane
+// union was; the per-work order is (count DESC, name ASC, source_id ASC):
+// voted bgm rows lead, the count-0 rows trail by name, and the source id
+// breaks the (count, name) tie deterministically (the old two-lane merge left
+// that tie to an unstable sort — 4 groups corpus-wide).
 //
-//   - the WIKI bridge lane (galgame_wiki / vndb): read-time bridge from the
-//     galgame family's tag layer, never materialized (bridge-not-copy) — runs
-//     for CLAIMED works only (a bodyless work has no wiki body);
-//   - the CATALOG-native lane (bangumi / dlsite): catalog_work_tag rows — runs
-//     for ALL works, claimed and bodyless alike.
-//
-// A claimed work's read face is therefore bridge ∪ native (its bgm/dlsite tags
-// no longer hide behind the claim); a bodyless work degenerates to the native
-// lane (empty bridge). Every row carries source_id, so the two lanes stay
-// attributable. Merged rows are re-sorted (count DESC, name ASC) per work.
-//
-// Galgame tag storage (surveyed live, 2026-07-21):
-//
-//	galgame_tag: id | name text UNIQUE (the display name kungal renders — the
-//	  VNDB sync resolves through docs/tagMap.ts english→chinese, so a mapped
-//	  tag's name IS the localized zh name; an unmapped tag keeps its English
-//	  VNDB name; user-created tags are whatever the wiki editor typed) |
-//	  category (content/sexual/technical — VNDB's cont/ero/tech, mapped at sync
-//	  time; this is the `sexual` flag's ONLY source) | description
-//	galgame_tag_relation: (galgame_id, tag_id) PK | spoiler_level
-//	  (0=none 1=mild 2=severe) | source ('' = user-curated, 'vndb' = synced)
-//	  — NO vote field anywhere in the layer.
-//
-// Bridge mapping: relation ⋈ tag → {name: galgame_tag.name (the localized
-// display name, verbatim), count: 0 (the galgame layer has no votes — the DTO
-// omits count via omitempty), source_id: relation.source mapped through
-// galgameMediaSourceKey ('' → galgame_wiki, 'vndb' → vndb, unknown → the
-// galgame_wiki fallback — a claimed tag is always part of the wiki body)}.
-//
-// Spoiler discipline (A2-1e / R8 — the shape this file's older comment said
-// was missing): the unified row now CARRIES the axis (Spoiler per edge, Sexual
-// per tag), so a bridged spoiler tag can no longer surface unlabeled. The
-// bridge therefore filters to a CEILING supplied by the caller instead of the
-// hard spoiler_level=0 it used to apply: 0 (the default on every face) is the
-// old behavior byte for byte, and only a caller that explicitly asks for
-// spoilers=1|2 ever sees more.
-//
-// Coverage is asymmetric and that asymmetry is real, not an implementation
-// gap: the spoiler level and the sexual category exist ONLY in the VNDB-derived
-// vocabulary the wiki layer carries. Bangumi/DLsite folksonomy has neither
-// concept, so those rows are spoiler 0 / sexual false — the absence of the
+// Safety axis (A2-1e / R8): Spoiler is per-EDGE (0 none, 1 minor, 2 major),
+// Sexual flags the TAG as sexual-category; both live on the row now. The
+// caller supplies a spoiler CEILING, applied in the query: 0 (every face's
+// default) means no spoiler-flagged tag at all, and only an explicit
+// spoilers=1|2 ever sees more. Coverage is asymmetric and that asymmetry is
+// real, not an implementation gap: the axis exists only in the VNDB-derived
+// vocabulary; Bangumi/DLsite folksonomy publishes neither concept, so those
+// rows carry the explicit 0/false the importers write — the absence of the
 // axis, which the public DTO documents so a consumer cannot mistake it for an
 // assertion of safety.
 //
@@ -60,15 +34,9 @@ import (
 // normalization — and content tags NEVER touch catalog_label (the attribution
 // vocabulary red line).
 
-// galgameTagCategorySexual is the wiki tag category that VNDB's `ero` maps to
-// (the sync writes cont→content, ero→sexual, tech→technical). It is the sole
-// input of the public tag `sexual` flag.
-const galgameTagCategorySexual = "sexual"
-
-// WorkTagRow is one tag on a work's read face — the unified shape the wiki
-// bridge (galgame_tag_relation ⋈ galgame_tag) and the catalog-native table
-// (catalog_work_tag) both project into. Count is the source's vote count; 0 =
-// the source has no votes (the whole galgame layer) and the DTO omits it.
+// WorkTagRow is one tag on a work's read face, projected from catalog_work_tag.
+// Count is the source's vote count; 0 = the source has no votes (the whole
+// mirrored wiki layer) and the DTO omits it.
 //
 // Canonical layer (step 74, additive): when this tag's (source_id, name) is
 // mapped into the cross-source canonical vocabulary (catalog_tag_source_map),
@@ -81,9 +49,9 @@ type WorkTagRow struct {
 	Count    int
 	SourceID int16
 	// Safety axis (A2-1e / R8). Spoiler is the per-EDGE level (0 none, 1 minor,
-	// 2 major) and Sexual flags the TAG as sexual-category. Both come from the
-	// wiki/VNDB lane only; the catalog-native lane leaves them zero because
-	// Bangumi/DLsite publish no such axis.
+	// 2 major) and Sexual flags the TAG as sexual-category. Stored on the row;
+	// folksonomy rows (bangumi/dlsite) carry the explicit 0/false their sources'
+	// missing axis honestly is.
 	Spoiler int16
 	Sexual  bool
 	// Canonical overlay — nil when the tag is not (yet) in the canonical
@@ -93,98 +61,31 @@ type WorkTagRow struct {
 	Kind        *int16
 }
 
-// loadWorkTags assembles the tag set for a set of works, honoring the
-// media-aggregation contract with the T2 (facet, source) XOR (refs/proj/51
-// §2/§3/§8, refs/proj/70 §3/§8, step 58b + T2):
+// loadWorkTags assembles the tag set for a set of works from catalog_work_tag —
+// one native lane for every work (see the file doc for how the wiki tag layer
+// got here).
 //
-//   - WIKI bridge lane (CLAIMED works, site='galgame_wiki'): bridge from
-//     galgame_tag_relation ⋈ galgame_tag (see the file doc for the mapping;
-//     non-spoiler only). Bridge-not-copy (§2): bridged tags are never
-//     materialized into catalog_work_tag.
-//   - CATALOG-native lane (ALL works): the work's catalog_work_tag rows
-//     (bangumi/dlsite). Claimed works read this lane too — the (facet, source)
-//     XOR (T2) narrows the old whole-facet XOR to per-source: the catalog
-//     sources always read native, the wiki sources always bridge.
-//
-// A claimed work's read face is bridge ∪ native; a bodyless work degenerates to
-// the native lane. (The pre-T2 "claimed never reads native" rule survives only
-// as the per-source fact that a claimed work has no wiki rows in the native
-// table — bridge-not-copy still holds.)
-//
-// Batched (§9.1): claimed works bridge in one join query, every work reads the
-// native table in one catalog_work_tag query — never per-work. Each work's
-// merged rows are re-sorted (count DESC, name ASC): voted bgm rows lead, the
-// count-0 rows (bridged wiki tags + bgm meta tags) trail by name. Returns a map
-// keyed by work id; a work with no tag is absent (the caller renders []).
-// spoilerMax is the per-edge spoiler CEILING: rows above it are not loaded.
-// 0 (every face's default) reproduces the pre-A2-1e behavior exactly.
+// Batched (§9.1): ONE catalog_work_tag query for the whole set — never
+// per-work. Returns a map keyed by work id; a work with no tag is absent (the
+// caller renders []). spoilerMax is the per-edge spoiler CEILING, applied in
+// the query: rows above it are not loaded, and 0 (every face's default)
+// reproduces the pre-A2-1e behavior exactly.
 func (s *ReadService) loadWorkTags(ctx context.Context, subjects []claimSubject, spoilerMax int16) (map[int64][]WorkTagRow, error) {
 	out := make(map[int64][]WorkTagRow, len(subjects))
-	galgameIDs, galgameToWork, bodylessIDs := partitionClaimSubjects(subjects)
-	// The tag lanes' source registry, resolved ONCE: the bridge attributes each
-	// edge through it, and the claimed native read excludes the same two ids.
-	var srcIDByKey map[string]int16
-	if len(galgameToWork) > 0 {
-		var err error
-		srcIDByKey, err = s.sourceIDsByKey(ctx,
-			[]string{sourceKeyGalgameWiki, sourceKeyVNDB, sourceKeyBangumi, sourceKeyUpscale})
-		if err != nil {
+	if len(subjects) > 0 {
+		workIDs := make([]int64, 0, len(subjects))
+		for _, sub := range subjects {
+			workIDs = append(workIDs, sub.WorkID)
+		}
+		if err := s.nativeWorkTags(ctx, workIDs, out, spoilerMax); err != nil {
 			return nil, err
 		}
-	}
-	// Wiki bridge lane — CLAIMED works only.
-	if len(galgameIDs) > 0 {
-		if err := s.bridgeGalgameTags(ctx, galgameIDs, galgameToWork, out, spoilerMax, srcIDByKey); err != nil {
-			return nil, err
-		}
-	}
-	// Catalog-native lane — ALL works (claimed + bodyless), in two calls that
-	// differ only in the DOUBLE-VISION FUSE below.
-	if len(bodylessIDs) > 0 {
-		if err := s.nativeWorkTags(ctx, bodylessIDs, out, nil); err != nil {
-			return nil, err
-		}
-	}
-	if len(galgameToWork) > 0 {
-		claimedIDs := make([]int64, 0, len(galgameToWork))
-		for _, workID := range galgameToWork {
-			claimedIDs = append(claimedIDs, workID)
-		}
-		// DOUBLE-VISION FUSE (W1-pre segment A, refs/proj/140 §2.3). The mirror
-		// step r materializes a claimed work's wiki tag edges into
-		// catalog_work_tag under galgame_wiki / vndb — the two sources this
-		// function's sibling still BRIDGES above. Between the data commit (which
-		// lands the rows) and the flip commit (which deletes the bridge) a claimed
-		// work would otherwise read every wiki tag twice, once per lane.
-		//
-		// Excluding those two sources from the claimed works' native read is the
-		// same shape as the popularity lane's bridge-exclusive dlsite source. It is
-		// a NO-OP before step r runs (no claimed work has a wiki-source native tag
-		// row — surveyed live) and it is deleted together with the bridge in the
-		// flip commit, when the native rows become the only lane.
-		if err := s.nativeWorkTags(ctx, claimedIDs, out, []int16{
-			srcIDByKey[sourceKeyGalgameWiki], srcIDByKey[sourceKeyVNDB],
-		}); err != nil {
-			return nil, err
-		}
-	}
-	// Merge re-sort: a claimed work's bridge (count 0) and native rows arrive
-	// from two queries, so re-order each work by the (count DESC, name ASC)
-	// contract before the overlay.
-	for workID, rows := range out {
-		sort.SliceStable(rows, func(i, j int) bool {
-			if rows[i].Count != rows[j].Count {
-				return rows[i].Count > rows[j].Count
-			}
-			return rows[i].Name < rows[j].Name
-		})
-		out[workID] = rows
 	}
 	// Canonical overlay (step 74): stamp canonical_id/tier/kind onto every
-	// mapped tag, across BOTH lanes — the map is keyed (source_id, name), which
-	// a bridged claimed vndb tag (source_id=vndb, name=galgame_tag.name) hits
-	// exactly like a native bangumi/dlsite tag does. Additive: unmapped tags
-	// keep nil overlay fields.
+	// mapped tag — the map is keyed (source_id, name), which a mirrored claimed
+	// vndb tag (source_id=vndb, name=the wiki display name) hits exactly like a
+	// native bangumi/dlsite tag does. Additive: unmapped tags keep nil overlay
+	// fields.
 	if err := s.enrichCanonicalTags(ctx, out); err != nil {
 		return nil, err
 	}
@@ -262,88 +163,37 @@ func (s *ReadService) enrichCanonicalTags(ctx context.Context, out map[int64][]W
 	return nil
 }
 
-// bridgeGalgameTags reads the claimed works' wiki tag layer in ONE join query
-// and maps it to the unified shape. galgame_tag.name is UNIQUE and (galgame_id,
-// tag_id) is the relation PK, so a work never sees a duplicate name. The SQL
-// orders by name for a stable append; the final per-work order is (count DESC,
-// name ASC), applied by loadWorkTags after these count-0 bridge rows merge with
-// the native lane's voted rows.
-// srcIDByKey resolves the full galgameMediaSourceKey range (the caller resolves
-// it once — the claimed native read needs the same ids); the tag relation's source
-// domain is only ”/vndb (surveyed), but keeping the mapping total means an
-// unexpected value falls back to galgame_wiki like the cover bridge.
-func (s *ReadService) bridgeGalgameTags(ctx context.Context, galgameIDs []int64, galgameToWork map[int64]int64, out map[int64][]WorkTagRow, spoilerMax int16, srcIDByKey map[string]int16) error {
-	db := s.db.WithContext(ctx)
-	fallbackSrc := srcIDByKey[sourceKeyGalgameWiki]
-
-	var rows []struct {
-		GalgameID int64  `gorm:"column:galgame_id"`
-		Name      string `gorm:"column:name"`
-		Source    string `gorm:"column:source"`
-		Spoiler   int16  `gorm:"column:spoiler"`
-		Category  string `gorm:"column:category"`
-	}
-	// COALESCE guards the two nullable-with-default columns against legacy NULLs
-	// (both semantically equal their defaults: no spoiler / user-curated).
-	// spoiler_level is clamped into 0-2 on the way out: the wiki column is a
-	// bigint with no CHECK, and the public contract promises a three-value
-	// vocabulary.
-	if err := db.Raw(`SELECT r.galgame_id, t.name, COALESCE(r.source, '') AS source,
-			LEAST(GREATEST(COALESCE(r.spoiler_level, 0), 0), 2)::smallint AS spoiler,
-			t.category
-		FROM galgame_tag_relation r
-		JOIN galgame_tag t ON t.id = r.tag_id
-		WHERE r.galgame_id IN ? AND COALESCE(r.spoiler_level, 0) <= ?
-		ORDER BY r.galgame_id, t.name`, galgameIDs, spoilerMax).Scan(&rows).Error; err != nil {
-		return err
-	}
-	for _, r := range rows {
-		workID, ok := galgameToWork[r.GalgameID]
-		if !ok {
-			continue
-		}
-		srcID := fallbackSrc
-		if key, known := galgameMediaSourceKey[r.Source]; known {
-			srcID = srcIDByKey[key]
-		}
-		out[workID] = append(out[workID], WorkTagRow{
-			Name: r.Name, SourceID: srcID,
-			Spoiler: r.Spoiler, Sexual: r.Category == galgameTagCategorySexual,
-		})
-	}
-	return nil
-}
-
-// nativeWorkTags reads the catalog-native catalog_work_tag rows for a set of
-// works (claimed AND bodyless, T2) in ONE query. The SQL pre-orders (count DESC,
-// name) for a stable append; the authoritative per-work order is applied by
-// loadWorkTags after the bridge merge.
+// nativeWorkTags reads the catalog_work_tag rows for a set of works in ONE
+// query, spoiler-ceilinged in SQL. The per-work order (count DESC, name ASC,
+// source_id ASC) is the read contract: source_id breaks the (count, name) tie
+// deterministically now that one query serves what used to be a two-lane merge.
 //
-// excludeSrcs drops those sources' rows — the claimed lane's double-vision fuse
-// (see loadWorkTags). Empty for the bodyless lane, which has no bridge to collide
-// with.
-func (s *ReadService) nativeWorkTags(ctx context.Context, workIDs []int64, out map[int64][]WorkTagRow, excludeSrcs []int16) error {
+// `name ASC` means BYTE order, which is why the COLLATE is spelled out. The order
+// used to be produced by a Go sort — `rows[i].Name < rows[j].Name`, i.e. a byte
+// comparison — and moving it into SQL would otherwise silently adopt the database
+// collation, which is a different order for anything but plain lowercase ASCII
+// ("iOS" sorts before "NS" under en_US, after it byte-wise). On a frozen face that
+// is a wire drift, and one no SQL-to-SQL parity check can see; the flip's own A/B
+// against the pre-flip binary is what caught it.
+func (s *ReadService) nativeWorkTags(ctx context.Context, workIDs []int64, out map[int64][]WorkTagRow, spoilerMax int16) error {
 	db := s.db.WithContext(ctx)
 	var rows []struct {
 		WorkID   int64  `gorm:"column:work_id"`
 		Name     string `gorm:"column:name"`
 		Count    int    `gorm:"column:count"`
 		SourceID int16  `gorm:"column:source_id"`
+		Spoiler  int16  `gorm:"column:spoiler"`
+		Sexual   bool   `gorm:"column:sexual"`
 	}
-	q := `SELECT work_id, name, count, source_id FROM catalog_work_tag
-		WHERE work_id IN ? ORDER BY work_id, count DESC, name`
-	args := []any{workIDs}
-	if len(excludeSrcs) > 0 {
-		q = `SELECT work_id, name, count, source_id FROM catalog_work_tag
-		WHERE work_id IN ? AND source_id NOT IN ? ORDER BY work_id, count DESC, name`
-		args = append(args, excludeSrcs)
-	}
-	if err := db.Raw(q, args...).Scan(&rows).Error; err != nil {
+	if err := db.Raw(`SELECT work_id, name, count, source_id, spoiler, sexual FROM catalog_work_tag
+		WHERE work_id IN ? AND spoiler <= ?
+		ORDER BY work_id, count DESC, name COLLATE "C", source_id`, workIDs, spoilerMax).Scan(&rows).Error; err != nil {
 		return err
 	}
 	for _, r := range rows {
 		out[r.WorkID] = append(out[r.WorkID], WorkTagRow{
 			Name: r.Name, Count: r.Count, SourceID: r.SourceID,
+			Spoiler: r.Spoiler, Sexual: r.Sexual,
 		})
 	}
 	return nil

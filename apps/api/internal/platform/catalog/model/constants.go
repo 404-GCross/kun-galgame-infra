@@ -250,9 +250,13 @@ const (
 )
 
 // WikiContentLimitNSFW is the galgame body's own spelling of "this work's
-// display material is NSFW" (galgame.content_limit). The wiki column is the
-// AUTHORITY for a claimed work's display axis — a human editor set it — so the
-// projection reads it verbatim rather than re-deriving it from the rating.
+// display material is NSFW" (galgame.content_limit).
+//
+// Since the W1-pre nativization the catalog does not READ this vocabulary at
+// request time: CatalogWork.DisplayNSFW holds the same judgement as a boolean,
+// and this constant survives as the wiki-side comparison the mirror step makes
+// while translating one into the other (wikirescue.mirrorDisplayNSFW). It dies
+// with the galgame family.
 const WikiContentLimitNSFW = "nsfw"
 
 // DisplayLimitKey projects a registry row onto the display vocabulary. It lives
@@ -266,26 +270,32 @@ const WikiContentLimitNSFW = "nsfw"
 // The two branches, and why they differ:
 //
 //   - CLAIMED (site non-empty AND product_work_id set — ClaimStateKey's claimed
-//     judgement verbatim): the WIKI BODY decides. wikiContentLimit is
-//     galgame.content_limit for that body; "nsfw" → nsfw, anything else → sfw.
-//     An empty string (no body, a claimer with no wiki lane) or an unrecognized
-//     value is sfw: the conservative choice HERE is to keep the work visible,
-//     because over-marking is precisely the incident (see the vocabulary note).
+//     judgement verbatim): the EDITORIAL DECLARATION decides. displayNSFW is
+//     CatalogWork.DisplayNSFW, the flag a human editor set. Nothing declared is
+//     sfw: the conservative choice HERE is to keep the work visible, because
+//     over-marking is precisely the incident (see the vocabulary note).
 //   - BODYLESS: there is no editorial judgement to read, so the age axis is the
 //     only signal available — r18 → nsfw, all_ages/sensitive → sfw. That is the
 //     mapping every downstream already applies to unclaimed rows
 //     (contentLimitFromRating), so bodyless rows keep the behaviour they have.
 //
+// displayNSFW was galgame.content_limit == 'nsfw', read out of the wiki body per
+// request, until the W1-pre wave nativized it onto the registry row
+// (refs/plans/10-data-layer-retirement/02-w1pre-bridge-nativization.md §5b). Same
+// judgement, same two branches, one less table: a boolean cannot carry a value
+// outside the vocabulary, so the old "unrecognized string → sfw" arm is gone by
+// construction rather than by a check.
+//
 // Two values, total: every row gets exactly one, so the pair is a partition and
 // naming both is no gate at all.
-func DisplayLimitKey(site *string, productWorkID *int64, wikiContentLimit string, contentRating int16) string {
+func DisplayLimitKey(site *string, productWorkID *int64, displayNSFW bool, contentRating int16) string {
 	if site == nil || *site == "" || productWorkID == nil {
 		if contentRating == ContentRatingR18 {
 			return DisplayLimitKeyNSFW
 		}
 		return DisplayLimitKeySFW
 	}
-	if wikiContentLimit == WikiContentLimitNSFW {
+	if displayNSFW {
 		return DisplayLimitKeyNSFW
 	}
 	return DisplayLimitKeySFW

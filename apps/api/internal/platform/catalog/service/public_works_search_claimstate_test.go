@@ -50,7 +50,7 @@ func TestClaimStateProjectionIsOneDefinition(t *testing.T) {
 		// And the read face's claimed_by must agree with it, always. The display
 		// axis is held constant here (A2-R5 covers it in its own suite) — the
 		// point of this case is that the STATE projection has one definition.
-		cb := claimedBy(tc.site, tc.pwid, tc.state, "", model.ContentRatingAllAges)
+		cb := claimedBy(tc.site, tc.pwid, tc.state, false, model.ContentRatingAllAges)
 		if tc.want == model.ClaimStateKeyNone {
 			if cb != nil {
 				t.Fatalf("%s: claimed_by = %+v, want null", tc.name, cb)

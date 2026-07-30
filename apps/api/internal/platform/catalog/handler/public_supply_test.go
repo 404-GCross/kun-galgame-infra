@@ -90,6 +90,8 @@ func TestWorkDetailTagSafetyAxis(t *testing.T) {
 		WorkID: claimed.ID, Name: "百合", Count: 30, SourceID: srcBangumi,
 	}).Error)
 
+	mirrorWikiIntoCatalog(t, db, "r")
+
 	app := supplyApp(db)
 	// tagsAt returns name → (spoiler, sexual) for one spoilers= setting.
 	tagsAt := func(query string) map[string][2]any {
