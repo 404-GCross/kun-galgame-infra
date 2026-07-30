@@ -130,8 +130,15 @@ func (s *PublicService) attachWorkListBlocks(
 		if err != nil {
 			return err
 		}
+		blocks := make([][]dto.PublicWorkLabel, len(rows))
 		for i, r := range rows {
 			items[i].Labels = publicWorkLabels(labels[r.ID])
+			blocks[i] = items[i].Labels
+		}
+		// ONE work_count aggregate for the whole page, through the same helper
+		// the detail record uses — the two faces cannot disagree (A2-R1).
+		if err := s.fillWorkLabelCounts(ctx, blocks, nsfw); err != nil {
+			return err
 		}
 	}
 	if inc.Ratings {

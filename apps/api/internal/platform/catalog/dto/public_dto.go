@@ -442,6 +442,16 @@ type PublicTag struct {
 	// a consumer that ignores this axis entirely still shows nothing spoiling.
 	Spoiler int16 `json:"spoiler" doc:"0=none 1=minor 2=major"`
 	Sexual  bool  `json:"sexual"`
+	// WorkCount is the nsfw-aware taxonomy aggregate for the CANONICAL tag this
+	// row maps to (A2-R1) — the number of works the caller reaches by following
+	// the chip to works?tag_id=, and the same number tags/{id} reports.
+	//
+	// A POINTER, and deliberately so: the key is absent for an UNMAPPED tag
+	// (no canonical_id → no landing page → no count to state, the same rule its
+	// canonical_id / tier / kind already follow), but a mapped tag ALWAYS
+	// carries it — including a genuine 0, which a bare int + omitempty would
+	// have silently turned back into "unmapped".
+	WorkCount *int `json:"work_count,omitempty"`
 }
 
 // PublicPlaytime is one per-source playtime estimate (minutes).
@@ -539,6 +549,14 @@ type PublicWorkLabel struct {
 	// brand name and its English rendering are different strings and a consumer
 	// that renders both needs to know which is which. Empty when unrecorded.
 	Lang string `json:"lang,omitempty"`
+	// WorkCount is the nsfw-aware taxonomy aggregate (A2-R1) — the number of
+	// works this caller reaches by following the chip to works?label_id=, and
+	// the same number labels/{id} and the labels browse lane report. ALWAYS
+	// present (never omitempty): every label chip is an addressable identity and
+	// 0 is a real answer, so a missing key would be indistinguishable from a
+	// consumer's own parse failure — which is how the deprecated face's
+	// permanent "+ 0" got shipped in the first place.
+	WorkCount int `json:"work_count"`
 }
 
 // PublicWorkEngine is one engine attribution on a work (A2-1e) — the id side
@@ -548,6 +566,11 @@ type PublicWorkLabel struct {
 type PublicWorkEngine struct {
 	ID   int64  `json:"id"`
 	Name string `json:"name"`
+	// WorkCount is the nsfw-aware taxonomy aggregate (A2-R1) — the number of
+	// works this caller reaches by following the chip to works?engine_id=, and
+	// the same number engines/{id} and the engines browse lane report. Always
+	// present, for the same reason labels[] carries it unconditionally.
+	WorkCount int `json:"work_count"`
 }
 
 // PublicWorkLink is one non-identity external web link of a work (A2-1e, doc

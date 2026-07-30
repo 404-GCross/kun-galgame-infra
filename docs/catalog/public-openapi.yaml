@@ -1694,6 +1694,9 @@ components:
         tier:
           description: core|longtail|hidden
           type: string
+        work_count:
+          format: int64
+          type: integer
       required:
         - name
         - source
@@ -1862,9 +1865,13 @@ components:
           type: integer
         name:
           type: string
+        work_count:
+          format: int64
+          type: integer
       required:
         - id
         - name
+        - work_count
       type: object
     PublicWorkIntro:
       additionalProperties: false
@@ -1922,11 +1929,15 @@ components:
           type: string
         lang:
           type: string
+        work_count:
+          format: int64
+          type: integer
       required:
         - id
         - display_name
         - label_kind
         - kind
+        - work_count
       type: object
     PublicWorkLink:
       additionalProperties: false

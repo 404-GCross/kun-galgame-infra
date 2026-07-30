@@ -326,6 +326,9 @@ func (s *PublicService) WorkDetail(ctx context.Context, id int64, inc PublicIncl
 	if rec.Engines, err = s.workEngines(ctx, id); err != nil {
 		return dto.PublicCatalogWork{}, false, err
 	}
+	if err = s.attachWorkChipCounts(ctx, &rec, nsfw); err != nil {
+		return dto.PublicCatalogWork{}, false, err
+	}
 	if rec.Links, err = s.workLinks(ctx, id); err != nil {
 		return dto.PublicCatalogWork{}, false, err
 	}
