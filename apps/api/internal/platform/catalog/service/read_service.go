@@ -390,8 +390,11 @@ func (s *ReadService) loadWorkDetail(ctx context.Context, workID int64, spoilers
 		detail.Releases = append(detail.Releases, ReleaseDetail{Release: r, Anchors: anchorsByRelease[r.ID]})
 	}
 
+	// The DETAIL grain of the attribution query — loadWorkLabels is the same
+	// query at page grain, including the l.deleted_at gate (see its comment for
+	// why a surviving edge is not proof of a surviving label).
 	if err := db.Raw(`SELECT wl.label_id, l.display_name, l.kind AS label_kind, wl.kind AS kind, l.lang
-		FROM catalog_work_label wl JOIN catalog_label l ON l.id = wl.label_id
+		FROM catalog_work_label wl JOIN catalog_label l ON l.id = wl.label_id AND l.deleted_at IS NULL
 		WHERE wl.work_id = ? ORDER BY wl.kind, l.display_name`, workID).Scan(&detail.Labels).Error; err != nil {
 		return nil, err
 	}

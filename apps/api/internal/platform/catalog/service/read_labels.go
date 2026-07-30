@@ -5,6 +5,12 @@ package service
 // same rows for a whole page, so this is that query with an IN list and a
 // work_id lead in the ORDER BY. Same projection, same ordering within a work
 // (attribution kind, then label display name) — one 口径, two grains.
+//
+// Both grains gate on l.deleted_at IS NULL. The attribution edge is NOT the
+// authority on whether a label still exists: an edge survives its label being
+// merged away or soft-deleted (writers repoint lazily, some not at all), and
+// projecting it anyway renders the merged-away twin beside the survivor — two
+// identically named companies on one work page.
 
 import "context"
 
@@ -25,7 +31,7 @@ func (s *ReadService) loadWorkLabels(ctx context.Context, workIDs []int64) (map[
 	}
 	if err := s.db.WithContext(ctx).Raw(`
 		SELECT wl.work_id, wl.label_id, l.display_name, l.kind AS label_kind, wl.kind AS kind, l.lang
-		FROM catalog_work_label wl JOIN catalog_label l ON l.id = wl.label_id
+		FROM catalog_work_label wl JOIN catalog_label l ON l.id = wl.label_id AND l.deleted_at IS NULL
 		WHERE wl.work_id IN ?
 		ORDER BY wl.work_id, wl.kind, l.display_name`, workIDs).Scan(&rows).Error; err != nil {
 		return nil, err

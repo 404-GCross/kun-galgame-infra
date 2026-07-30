@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
+	"time"
 
 	"api/internal/platform/catalog/model"
 )
@@ -423,4 +424,58 @@ func itoa(v int64) string {
 		v /= 10
 	}
 	return string(buf[i:])
+}
+
+// TestWorkLabelsExcludeSoftDeleted pins the read-face defense against a stale
+// attribution edge: a label merged away (soft-deleted, redirect left behind)
+// keeps its catalog_work_label rows, because the wiki official→label writer
+// projected the pre-merge id. All three display grains — the public detail, the
+// list include= block and the S2S WorkByID bundle — must render the survivor
+// only, or the work page shows the same company name twice.
+func TestWorkLabelsExcludeSoftDeleted(t *testing.T) {
+	cleanTables(t)
+	svc := newPublicSvc()
+
+	w := createWorkX(t, galgameMediumID, model.ContentRatingAllAges, model.WorkStatusLive, "Duplicated Brand")
+	claimLive(t, w.ID, 9470)
+	survivor := addWorkLabel(t, w.ID, "みるくそふと", model.LabelKindGameBrand, model.WorkLabelKindBrand)
+	merged := addWorkLabel(t, w.ID, "みるくそふと", model.LabelKindGameBrand, model.WorkLabelKindBrand)
+	if err := testDB.Exec(`UPDATE catalog_label SET deleted_at = now() WHERE id = ?`, merged).Error; err != nil {
+		t.Fatalf("soft-delete the merged label: %v", err)
+	}
+	now := time.Now()
+	if err := testDB.Create(&model.CatalogRedirect{
+		EntityType: model.EntityTypeLabel, OldID: merged, CurrentID: survivor,
+		MergedAt: &now, Reason: "test",
+	}).Error; err != nil {
+		t.Fatalf("create redirect: %v", err)
+	}
+
+	detail, found, err := svc.WorkDetail(t.Context(), w.ID, PublicInclude{}, false, 0)
+	if err != nil || !found {
+		t.Fatalf("WorkDetail: found=%v err=%v", found, err)
+	}
+	if len(detail.Labels) != 1 || detail.Labels[0].ID != survivor {
+		t.Fatalf("public detail labels = %+v, want only the survivor %d", detail.Labels, survivor)
+	}
+
+	page, err := svc.WorksList(t.Context(),
+		WorksListFilter{Sort: "id", Include: ParseWorksListInclude("labels")}, "", 50)
+	if err != nil {
+		t.Fatalf("WorksList include=labels: %v", err)
+	}
+	if len(page.Items) != 1 {
+		t.Fatalf("page = %d items, want 1", len(page.Items))
+	}
+	if len(page.Items[0].Labels) != 1 || page.Items[0].Labels[0].ID != survivor {
+		t.Fatalf("list labels = %+v, want only the survivor %d", page.Items[0].Labels, survivor)
+	}
+
+	s2s, err := NewReadService(testDB).WorkByID(t.Context(), w.ID, 0)
+	if err != nil {
+		t.Fatalf("S2S WorkByID: %v", err)
+	}
+	if len(s2s.Labels) != 1 || s2s.Labels[0].LabelID != survivor {
+		t.Fatalf("s2s labels = %+v, want only the survivor %d", s2s.Labels, survivor)
+	}
 }
