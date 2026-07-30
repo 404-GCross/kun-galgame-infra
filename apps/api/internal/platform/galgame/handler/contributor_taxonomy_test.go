@@ -13,6 +13,9 @@ import (
 	"fmt"
 	"testing"
 
+	"api/internal/platform/galgame/model"
+	"api/internal/platform/galgame/service"
+
 	"github.com/gofiber/fiber/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -141,4 +144,42 @@ func TestContributorTaxonomyBlankQueryPerFamily(t *testing.T) {
 			assert.NotEmpty(t, items, "%s: a small curated facet is served unfiltered", tc.family)
 		}
 	}
+}
+
+// TestContributorTaxonomyBlankQueryEnumeratesWholeFamily pins the FLAT-LIST
+// promise for the curated families past the search cap: "serve them unfiltered"
+// means the whole family, not its first TaxonomyPickerLimit rows. Engine really
+// runs 189 rows in production, so a 50-row cap on this path would drop ~3/4 of
+// the picker and read as "that engine is missing from the wiki".
+//
+// The counterpart assertion is on the same fixture: the term-search path still
+// caps, because that one IS a response-size guard.
+func TestContributorTaxonomyBlankQueryEnumeratesWholeFamily(t *testing.T) {
+	db := openStaffTestDB(t)
+	seedStaffTaxonomy(t, db)
+
+	// Comfortably past the 50-row search cap, the way the real facet is.
+	const seeded = 60
+	require.NoError(t, db.Exec("TRUNCATE galgame_engine RESTART IDENTITY CASCADE").Error)
+	for i := 0; i < seeded; i++ {
+		require.NoError(t, db.Create(&model.GalgameEngine{
+			Name: fmt.Sprintf("enumfuse-%03d", i), Alias: []byte(`[]`),
+		}).Error)
+	}
+
+	app := contribApp(db, 42, []string{"user"})
+
+	code, body := staffGet(t, app, "/internal/galgame/taxonomy/engine/search?q=")
+	require.Equal(t, 200, code)
+	items := body["data"].(map[string]any)["items"].([]any)
+	assert.Greater(t, len(items), service.TaxonomyPickerLimit,
+		"a blank engine query must not stop at the search cap")
+	assert.Len(t, items, seeded, "a blank engine query enumerates the WHOLE family")
+
+	// Same rows, now reached through the term path: the cap applies there.
+	code, body = staffGet(t, app, "/internal/galgame/taxonomy/engine/search?q=enumfuse")
+	require.Equal(t, 200, code)
+	items = body["data"].(map[string]any)["items"].([]any)
+	assert.Len(t, items, service.TaxonomyPickerLimit,
+		"a term search is still capped at TaxonomyPickerLimit")
 }

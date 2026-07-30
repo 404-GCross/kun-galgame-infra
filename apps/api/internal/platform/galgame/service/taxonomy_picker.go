@@ -34,10 +34,19 @@ const (
 	TaxonomyFamilySeries   = "series"
 )
 
-// TaxonomyPickerLimit caps a picker response. The four families run 146-3,037
-// rows, so this is a response-size guard rather than a paging scheme: the
-// caller narrows with `q`, it never walks pages here.
+// TaxonomyPickerLimit caps a picker SEARCH response. The four families run
+// 146-3,037 rows, so this is a response-size guard rather than a paging scheme:
+// the caller narrows with `q`, it never walks pages here.
 const TaxonomyPickerLimit = 50
+
+// taxonomyEnumerationCap bounds the blank-query enumeration of the two small
+// curated families (engine 189 rows / series 146). Those two are hydrated as a
+// FLAT list by every console, so the search cap must not apply there — it would
+// silently serve the first 50 names and the picker would look like the row is
+// missing. This constant is a safety fuse rather than a limit anyone is meant
+// to hit: it exists only so a pathological future (someone bulk-importing
+// engines) turns into a truncated list instead of an unbounded table dump.
+const taxonomyEnumerationCap = 1000
 
 // TaxonomyPicker resolves picker rows over the four taxonomy repositories.
 // Pure reads: no revision, no search hook, no write path to coordinate with.
@@ -88,7 +97,10 @@ func TaxonomySearchTerms(raw string) []string {
 //     list: type something.
 //   - engine / series are small curated sets (189 / 146) that every console
 //     hydrates as a flat list. Refusing to serve them unfiltered would just
-//     push the caller back onto the deprecated public lane.
+//     push the caller back onto the deprecated public lane, so a blank query
+//     enumerates the WHOLE family — the caller's search cap is deliberately
+//     not applied there (see taxonomyEnumerationCap); it still binds on the
+//     term-search path.
 func (p *TaxonomyPicker) Search(ctx context.Context, family string, terms []string, limit int) ([]dto.StaffTaxonomyListItem, bool, error) {
 	if limit <= 0 {
 		limit = TaxonomyPickerLimit
@@ -123,7 +135,7 @@ func (p *TaxonomyPicker) Search(ctx context.Context, family string, terms []stri
 		return capPickerRows(out, limit), true, nil
 
 	case TaxonomyFamilyEngine:
-		rows, err := p.engineRepo.SearchByName(ctx, terms, limit)
+		rows, err := p.engineRepo.SearchByName(ctx, terms, curatedFamilyLimit(terms, limit))
 		if err != nil {
 			return nil, true, err
 		}
@@ -134,7 +146,7 @@ func (p *TaxonomyPicker) Search(ctx context.Context, family string, terms []stri
 		return out, true, nil
 
 	case TaxonomyFamilySeries:
-		rows, err := p.seriesRepo.SearchByName(ctx, terms, limit)
+		rows, err := p.seriesRepo.SearchByName(ctx, terms, curatedFamilyLimit(terms, limit))
 		if err != nil {
 			return nil, true, err
 		}
@@ -147,6 +159,16 @@ func (p *TaxonomyPicker) Search(ctx context.Context, family string, terms []stri
 	default:
 		return nil, false, nil
 	}
+}
+
+// curatedFamilyLimit picks the row cap for one engine / series query: a blank
+// query enumerates the whole family under the safety fuse, a term search keeps
+// the response cap the caller asked for.
+func curatedFamilyLimit(terms []string, limit int) int {
+	if len(terms) == 0 {
+		return taxonomyEnumerationCap
+	}
+	return limit
 }
 
 // capPickerRows trims to the response cap. The tag / official repositories
