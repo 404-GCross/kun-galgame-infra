@@ -5,7 +5,6 @@
 //	go run ./cmd/gen-openapi -o ../../docs/artifact/openapi.yaml            # 3.1 (canonical)
 //	go run ./cmd/gen-openapi -downgrade -o ../../docs/artifact/openapi-3.0.yaml  # 3.0.3 (oapi-codegen)
 //	go run ./cmd/gen-openapi -admin -o ../../docs/artifact/admin-openapi.yaml    # oauth admin API (3.1)
-//	go run ./cmd/gen-openapi -galgame-public -o ../../docs/galgame_wiki/public-openapi.yaml      # NextMoe open-API galgame public projection (3.1)
 //	go run ./cmd/gen-openapi -catalog -o ../../docs/catalog/openapi.yaml                # catalog S2S face (3.1)
 //	go run ./cmd/gen-openapi -catalog-admin -o ../../docs/catalog/admin-openapi.yaml    # catalog review queues (3.1)
 //	go run ./cmd/gen-openapi -catalog-public -o ../../docs/catalog/public-openapi.yaml  # NextMoe open-API catalog public projection (3.1)
@@ -26,7 +25,6 @@ import (
 	"api/internal/platform/artifact/service"
 	catHandler "api/internal/platform/catalog/handler"
 	commHandler "api/internal/platform/community/handler"
-	galgameHandler "api/internal/platform/galgame/handler"
 	trustHandler "api/internal/platform/trust/handler"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -37,7 +35,8 @@ func main() {
 	out := flag.String("o", "", "output file (default: stdout)")
 	downgrade := flag.Bool("downgrade", false, "emit OpenAPI 3.0.3 instead of 3.1 (for tools without 3.1 support, e.g. oapi-codegen)")
 	admin := flag.Bool("admin", false, "emit the oauth-hosted admin API spec (/api/v1/admin/artifact/*) instead of the artifact service spec")
-	galgamePublic := flag.Bool("galgame-public", false, "emit the NextMoe open-API galgame public projection spec (/v1/galgame/*)")
+	// The -galgame-public target retired with the /v1/galgame face itself (wave
+	// 146, 2026-07-30): the projection is delisted, so there is no spec to emit.
 	catalog := flag.Bool("catalog", false, "emit the catalog S2S spec (/api/v1/catalog/*)")
 	catalogAdmin := flag.Bool("catalog-admin", false, "emit the catalog admin review-queue spec (/api/v1/admin/catalog/*)")
 	catalogPublic := flag.Bool("catalog-public", false, "emit the NextMoe open-API catalog public projection spec (/v1/catalog/*)")
@@ -53,8 +52,6 @@ func main() {
 	app := fiber.New()
 	var api huma.API
 	switch {
-	case *galgamePublic:
-		api = galgameHandler.SetupGalgamePublicSpec(app)
 	case *catalog:
 		api = catHandler.Setup(app, nil, nil, nil, nil, nil)
 		// The editing-engine face (/api/v1/catalog/edit/*, E0) registers on the
