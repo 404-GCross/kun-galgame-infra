@@ -31,7 +31,6 @@ const (
 	msgBadPage        = "page must be a positive integer"
 	msgBadSearchSort  = "sort must be one of relevance, released_desc, released_asc, updated, popularity"
 	msgBadSearchFacet = "facets must be a comma-separated subset of content_rating, olang, claimed, tag_id, label_id, engine_id, series_id, source"
-	msgBadClaimState  = "claim_state must be a comma-separated subset of none, live, draft, hidden"
 )
 
 // WorksSearch serves GET /v1/catalog/works/search — free-text + conjunctive
@@ -81,19 +80,15 @@ func (h *PublicHandler) WorksSearch(c fiber.Ctx) error {
 			return response.BadRequestMsg(c, errors.ErrInvalidParam, "claimed must be true|false")
 		}
 	}
+	var ok bool
 	// claim_state: our OWN closed vocabulary, so an unknown token is a LOUD 400
 	// (A2-R1 区 C). Silently ignoring it would hand a caller that asked to hide
 	// unpublished works a 200 full of them — the incident this parameter ends.
-	if raw := strings.TrimSpace(c.Query("claim_state")); raw != "" {
-		for _, tok := range strings.Split(raw, ",") {
-			tok = strings.TrimSpace(tok)
-			if !service.IsWorksSearchClaimState(tok) {
-				return response.BadRequestMsg(c, errors.ErrInvalidParam, msgBadClaimState)
-			}
-			f.ClaimStates = append(f.ClaimStates, tok)
-		}
+	// Parsed by the SAME helper the works LIST face uses (A2-R4), so the two
+	// spellings of the parameter cannot drift.
+	if f.ClaimStates, ok = claimStatesPub(c.Query("claim_state")); !ok {
+		return response.BadRequestMsg(c, errors.ErrInvalidParam, msgBadClaimState)
 	}
-	var ok bool
 	if f.LabelID, ok = posIntQueryPub(c.Query("label_id")); !ok {
 		return response.BadRequestMsg(c, errors.ErrInvalidParam, "label_id must be a positive integer")
 	}

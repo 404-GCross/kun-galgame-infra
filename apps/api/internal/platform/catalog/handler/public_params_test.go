@@ -107,6 +107,48 @@ func TestPublicWorksListStrictIDFilters(t *testing.T) {
 	assert.Empty(t, body["data"].(map[string]any)["items"])
 }
 
+// TestWorksListClaimStateVocabulary pins the works LIST claim_state= wire
+// posture (A2-R4) as the works SEARCH one verbatim: OUR closed vocabulary, so a
+// token outside it is a LOUD 400 with the shared message — a silently-ignored
+// token would answer 200 with the very draft stubs the caller asked to exclude,
+// which is the production incident this parameter closes.
+func TestWorksListClaimStateVocabulary(t *testing.T) {
+	db := openCatalogTestDB(t)
+	seedPublicWorks(t, db, 3)
+	app := publicApp(db)
+
+	for _, raw := range []string{"liev", "LIVE", "published", "true", "claimed", "live,bogus", "live,", ",live"} {
+		t.Run("400 "+raw, func(t *testing.T) {
+			code, body := getJSON(t, app, "/v1/catalog/works?claim_state="+raw)
+			require.Equal(t, 400, code)
+			assert.Equal(t, msgBadClaimState, body["message"])
+		})
+	}
+
+	// The whole vocabulary is accepted, in any combination.
+	for _, raw := range []string{"none", "live", "draft", "hidden", "none,live,draft,hidden", "%20live%20,%20draft%20"} {
+		t.Run("200 "+raw, func(t *testing.T) {
+			code, _ := getJSON(t, app, "/v1/catalog/works?claim_state="+raw)
+			require.Equal(t, 200, code)
+		})
+	}
+
+	// NO default: absent = no gate, so the three bodyless seeds still serve —
+	// the pre-wave wire, byte for byte. Naming their state selects them; naming
+	// any other state selects none of them.
+	code, body := getJSON(t, app, "/v1/catalog/works")
+	require.Equal(t, 200, code)
+	assert.Len(t, body["data"].(map[string]any)["items"], 3)
+
+	code, body = getJSON(t, app, "/v1/catalog/works?claim_state=none")
+	require.Equal(t, 200, code)
+	assert.Len(t, body["data"].(map[string]any)["items"], 3)
+
+	code, body = getJSON(t, app, "/v1/catalog/works?claim_state=live,draft,hidden")
+	require.Equal(t, 200, code)
+	assert.Empty(t, body["data"].(map[string]any)["items"])
+}
+
 // TestPublicLimitSemantics pins limit on all three lanes: non-positive /
 // non-numeric = 400, above-max = clamped DOWN to max (NOT reset to default).
 func TestPublicLimitSemantics(t *testing.T) {

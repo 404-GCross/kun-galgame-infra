@@ -147,6 +147,7 @@ type publicWorksSearchOutput struct {
 type publicWorksListInput struct {
 	ContentRating  string `query:"content_rating" enum:"all_ages,sensitive,r18" doc:"Filter by rating (r18 additionally requires nsfw=1)"`
 	Claimed        string `query:"claimed" enum:"true,false" doc:"true = claimed works only; false = bodyless only; absent = both"`
+	ClaimState     string `query:"claim_state" doc:"Comma-separated CLOSED vocabulary: none,live,draft,hidden — the values claimed_by.state renders on these very items (none = unclaimed registry row). Matching works must be in ANY of the listed states. An unknown token is a 400. Absent = no gate (every state), which keeps pre-existing callers byte-identical. Word-for-word the works/search parameter of the same name; a product site listing an entity's member works should pass claim_state=live, since the claimed parameter alone cannot tell a LIVE claim from a DRAFT (unpublished) or WITHDRAWN one. Unlike the search face this is a live registry predicate, so a claim-state change takes effect immediately — there is no index to wait for"`
 	LabelID        int64  `query:"label_id" doc:"Only works attributed to this label (the catalog_work_label edge)"`
 	TagID          string `query:"tag_id" doc:"Only works carrying a source tag mapped to this canonical tag; up to 10 comma-separated ids are ANDed (a work must carry all of them), more than 10 or a non-positive/non-numeric entry is a 400"`
 	SeriesID       int64  `query:"series_id" doc:"Only member works of this series"`

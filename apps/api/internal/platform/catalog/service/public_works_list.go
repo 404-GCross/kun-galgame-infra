@@ -26,7 +26,19 @@ import (
 type WorksListFilter struct {
 	ContentRating *int16 // model.ContentRating* — nil = all (r18 still needs NSFW)
 	Claimed       *bool  // true = claimed only; false = bodyless only; nil = both
-	LabelID       int64  // via catalog_work_label
+	// ClaimStates narrows to a set of PUBLIC claim states (none|live|draft|
+	// hidden, A2-R4) — the values claimed_by.state renders on the very items
+	// this lane returns. Empty = no gate at all, so every pre-existing caller's
+	// wire stays byte-identical.
+	//
+	// It is a different axis from Claimed, not a finer spelling of it: `claimed`
+	// answers "does a product own this row", this answers "may it be shown". An
+	// entity page listing its member works passes claim_state=live — without it
+	// there is no server-side way to keep DRAFT (unpublished) stubs and
+	// unclaimed rows off a public list, which is exactly how they reached
+	// production. Semantics are the works/search parameter's, word for word.
+	ClaimStates []string
+	LabelID     int64 // via catalog_work_label
 	// TagIDs are canonical tag ids ANDed together (A2-1e): a work must carry a
 	// source tag mapped to EVERY id, which is what a facet sidebar's "narrow by
 	// another tag" means. One id behaves exactly as the pre-A2-1e scalar did.
@@ -80,6 +92,14 @@ func (s *PublicService) WorksList(ctx context.Context, f WorksListFilter, cursor
 		} else {
 			where = append(where, "(w.site = '' OR w.site IS NULL)")
 		}
+	}
+	if pred, pargs := claimStateWhere(f.ClaimStates); pred != "" {
+		// ONE clause in the SAME conjunction as every other filter. This face
+		// emits no total (keyset paging: items + next_cursor), so "the count and
+		// the rows share one gate" holds by construction — there is exactly one
+		// query, and adding a count later would inherit this WHERE with it.
+		where = append(where, pred)
+		args = append(args, pargs...)
 	}
 	if f.LabelID > 0 {
 		where = append(where, "EXISTS (SELECT 1 FROM catalog_work_label wl WHERE wl.work_id = w.id AND wl.label_id = ?)")

@@ -509,6 +509,39 @@ const maxTagIDFilters = 10
 // msgBadTagIDs is the single 400 message for every malformed tag_id list.
 const msgBadTagIDs = "tag_id must be up to 10 comma-separated positive integers"
 
+// msgBadClaimState is the single 400 message for a malformed claim_state list —
+// shared by the works LIST and the works SEARCH faces, which must reject the
+// same tokens with the same words.
+const msgBadClaimState = "claim_state must be a comma-separated subset of none, live, draft, hidden"
+
+// claimStatesPub reads the comma-separated claim_state= filter: the CLOSED
+// public claim vocabulary (model.ClaimStateKey's whole range — the four values
+// claimed_by.state renders). Absent/empty → nil, meaning NO gate at all, so
+// every pre-existing caller's wire stays byte-identical. ok=false — a LOUD 400
+// — on any token outside the vocabulary, never a silent drop: answering 200 to
+// `claim_state=liev` with a page full of the drafts the caller asked to exclude
+// is the production incident this parameter exists to end.
+//
+// Both faces parse through THIS function (A2-R4): "the list parameter is
+// word-for-word the search parameter" is then structural, not a promise two
+// copies have to keep.
+func claimStatesPub(raw string) ([]string, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, true
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		tok := strings.TrimSpace(p)
+		if !service.IsWorksSearchClaimState(tok) {
+			return nil, false
+		}
+		out = append(out, tok)
+	}
+	return out, true
+}
+
 // posIntListQueryPub reads a comma-separated positive-integer id filter, the
 // multi-value form of posIntQueryPub (A2-1e). Absent/empty → nil (no filter);
 // a SINGLE value behaves exactly as it did before this wave. Duplicates
@@ -637,6 +670,12 @@ func (h *PublicHandler) WorksList(c fiber.Ctx) error {
 		}
 	}
 	var ok bool
+	// claim_state (A2-R4): the works/search parameter word-for-word, same helper.
+	// `claimed` answers "does a product own this row"; this answers "may it be
+	// shown" — a site's own entity page listing its members needs the second.
+	if f.ClaimStates, ok = claimStatesPub(c.Query("claim_state")); !ok {
+		return response.BadRequestMsg(c, errors.ErrInvalidParam, msgBadClaimState)
+	}
 	if f.LabelID, ok = posIntQueryPub(c.Query("label_id")); !ok {
 		return response.BadRequestMsg(c, errors.ErrInvalidParam, "label_id must be a positive integer")
 	}

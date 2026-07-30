@@ -40,7 +40,7 @@
 | 公开端点(`/v1`) | scope | 说明 |
 |---|---|---|
 | `GET /v1/catalog/works/{id}` | `catalog:read` | 注册行:display_name / titles / medium / 分级 / 外部锚(来源白名单过滤,见 [06 §11](./06-security-compliance.md))/ **认领指针**(→ 内容面路由,见 [01 §3.3](./01-design.md))+ **全量聚合 facet**(wave 104 加法扩容:popularity/ratings/tags/playtimes/series/platforms/intro/covers/screenshots/characters/labels/releases——source 键归因、CDN 完整 URL、字符串词表);**R18 调用方自控**:`nsfw=1` 出 r18 作品与 r18 关系端(works/lookup/names/characters/labels 同参;characters 另有 `spoilers=0-2` + sexual traits 随 nsfw),缺省隐藏与 Phase-1 逐字节一致;`updated` 恒在(doc 106);`releases[]` 每行带 `id`+`refs[]`,`tags[]` 每行带 canonical `canonical_id/tier/kind`(doc 106,未映射省略)。**A2-1e 加法**:`created`(RFC3339,注册行**进入 catalog 的时刻**——既不是发售日也不是产品侧创建时间)、`engines[]`(`{id,name}`,恒出空为 `[]`)、`links[]`(非身份外链,见 §3.2.2)、`labels[]` 每行 `lang`、`tags[]` 的**安全轴** `spoiler`/`sexual` + `spoilers=0\|1\|2` 参数(见 §3.2.3)。**A2-R1 修复**:`titles[]` 对**认领作品**来自 wiki 桥(四名称列 + 别名,见 §3.2.5)——此前认领作品的中文名/别名整体缺席;`labels[]`/`engines[]` 每行恒带 `work_count`、`tags[]` 映射行带 `work_count`(nsfw 感知,见 §3.2.6) |
-| `GET /v1/catalog/works` | `catalog:read` | **作品浏览/列表(doc 106 G1,keyset)**:过滤 `content_rating`/`claimed`/`label_id`/`tag_id`(canonical)/`series_id`/**`engine_id`(A2-1b 第九过滤器,经 `catalog_work_engine`)**/`platform`/`released_after\|before`/`ids`(≤100);`sort=id\|updated`;item = 轻 brief(+`release_date`/`olang`/`cover` 单图/`updated`);`nsfw` 同参;`next_cursor` 末页 null。**`include=` 富 brief 块(A2-1a 加法波)**:词表 `names,intros,labels,ratings,covers`(逗号分隔,**未知 token 静默忽略**,§3.5 条款 2);每块按页内 work id **批量加载**(无 N+1),未点名即整块缺席——**缺省(无 `include=`)响应与本波前逐字节相同**。`names`/`intros` 走 D7 四键投影(见 §3.2.1 表①),`labels`/`ratings` 与详情面同形同口径(评分保持源原生分制,不聚合),`covers` 出 `{portrait, banner}` 两槽、每槽带 `width/height/thumbhash`(见 §3.2.1);`ids=` + `include=` 即批量富取(两梯队的 batch 替代面)。**A2-1e**:`include=` 词表加 `refs`(该作品的 **exact 身份锚**,与详情面 `refs[]` 同构——work 级 ∪ release 级去重,exact-only 红线不破),`tag_id` 收**逗号分隔多值 AND**(≤10,见下)。**A2-R1 修复**:`names` 块对**认领作品**来自 wiki 桥(见 §3.2.5);`labels` 块每行恒带 `work_count`(与详情面同数,见 §3.2.6) |
+| `GET /v1/catalog/works` | `catalog:read` | **作品浏览/列表(doc 106 G1,keyset)**:过滤 `content_rating`/`claimed`/`label_id`/`tag_id`(canonical)/`series_id`/**`engine_id`(A2-1b 第九过滤器,经 `catalog_work_engine`)**/`platform`/`released_after\|before`/`ids`(≤100);`sort=id\|updated`;item = 轻 brief(+`release_date`/`olang`/`cover` 单图/`updated`);`nsfw` 同参;`next_cursor` 末页 null。**`include=` 富 brief 块(A2-1a 加法波)**:词表 `names,intros,labels,ratings,covers`(逗号分隔,**未知 token 静默忽略**,§3.5 条款 2);每块按页内 work id **批量加载**(无 N+1),未点名即整块缺席——**缺省(无 `include=`)响应与本波前逐字节相同**。`names`/`intros` 走 D7 四键投影(见 §3.2.1 表①),`labels`/`ratings` 与详情面同形同口径(评分保持源原生分制,不聚合),`covers` 出 `{portrait, banner}` 两槽、每槽带 `width/height/thumbhash`(见 §3.2.1);`ids=` + `include=` 即批量富取(两梯队的 batch 替代面)。**A2-1e**:`include=` 词表加 `refs`(该作品的 **exact 身份锚**,与详情面 `refs[]` 同构——work 级 ∪ release 级去重,exact-only 红线不破),`tag_id` 收**逗号分隔多值 AND**(≤10,见下)。**A2-R1 修复**:`names` 块对**认领作品**来自 wiki 桥(见 §3.2.5);`labels` 块每行恒带 `work_count`(与详情面同数,见 §3.2.6)。**A2-R4 加法**:`claim_state=`(封闭词表 `none\|live\|draft\|hidden`,逗号分隔 IN 语义,非法 token 400,不传=不闸)——**与 `works/search` 同名参数逐字同义**,词条成员列表务必传 `claim_state=live` 以排除未发布/未认领行;与搜索面不同,这里是**读时库内谓词,改态立即生效**,见 §3.2.7 |
 | `GET /v1/catalog/changes` | `catalog:read` | **增量同步流(doc 106 G2,keyset)**:`{entity_type=work, cursor, limit}` → `[{entity_type, id, updated}]`;`next_cursor` 恒在(续轮询新行);**无 nsfw 门**(id+时间戳=身份非内容,详情跟查再门控)。**删除不经此流**——行离开 LIVE 集(软删/降级/退出 galgame 媒介)后只是从流中**静默消失**,不发 tombstone;**合并型消亡由 `GET /v1/catalog/redirects` 覆盖**(旧 id → canonical id),**镜像型消费者应周期性全量对账**(`works?sort=id` keyset 扫 id 全集,与本地镜像取差集即失效行)。`op` 字段登记为将来的加法扩展位(现不下发,消费端须按 §3.5 条款 2 忽略未知字段)。**流有意滞后 ~5 秒**(2026-07-28 cleanup 波):`updated_at` 是**语句时间**而非提交时间,不设滞后则长事务可能提交出一行 `updated_at` 已落在消费者水位之后的记录 → 该行被**永久跳过**;拒发 5 秒内的新行,使提交耗时 ≤5s 的在途事务不可能被漏掉 |
 | `GET /v1/catalog/works/{id}/credits` | `catalog:read` | 该作品的 credits(名义/角色/role) |
 | `GET /v1/catalog/works/{id}/relations` | `catalog:read` | 跨媒介关系(改编/续作/同世界观…,单行双向渲染) |
@@ -280,19 +280,18 @@ A2-1b 给 **taxonomy 浏览道与其详情面**发了 nsfw 感知的 `work_count
 - ⚠️ **认领作品的桥接 tag 可能报出不含它自己的数**:`works?tag_id=` 经 `catalog_tag_source_map ⋈ catalog_work_tag` 找作品,而**认领作品的 wiki tag 是读时桥接的**(见 §3.2.5 同一条 bridge-not-copy 规则),不在那张边表里。这不是计数错误——数字承诺的**只有**「点进去会拿到多少」,它照实回答。
 - **成本**:每个 facet 每次请求(或每页)**一条批量 GROUP BY**,不是每 chip 一次。
 
-### 3.2.7 works 搜索的 `claim_state=` 闸(2026-07-31 A2-R1 区 C 落账)
+### 3.2.7 works 两面的 `claim_state=` 闸(搜索面 = A2-R1 区 C;列表面 = A2-R4)
 
-> 事故驱动:两个产品站的搜索把**未发布(draft)**与**未认领**的注册行渲染进了结果页,因为 `works/search` 此前**没有任何 claim 态过滤供给**——`claimed` 只答「有没有产品站认领」,答不了「能不能给人看」。
+> 事故驱动:两个产品站把**未发布(draft)**与**未认领**的注册行渲染进了公开页面——搜索结果页与词条成员列表**两条 lane 同一个漏闸**,因为 `works/search` 与 `works` 此前**都没有任何 claim 态过滤供给**;`claimed` 只答「有没有产品站认领」,答不了「能不能给人看」。搜索面先补(A2-R1 区 C),列表面随后(A2-R4),**同名同义**。
 
-`GET /v1/catalog/works/search` 新增 `claim_state=`:逗号分隔、**封闭词表 `none|live|draft|hidden`**(即 `claimed_by.state` 的四个取值,`none` = 未认领注册行),命中作品须**属于所列任一态**(IN 语义)。
+`GET /v1/catalog/works/search` 与 `GET /v1/catalog/works` 各有 `claim_state=`:逗号分隔、**封闭词表 `none|live|draft|hidden`**(即 `claimed_by.state` 的四个取值,`none` = 未认领注册行),命中作品须**属于所列任一态**(IN 语义)。**两面逐字同义**——同一套词表、同一份解析、同一句 400 文案,把查询从一条 lane 挪到另一条只是换路径。
 
 - **非法 token = 响亮 400**(与 `sort`/`facets`/`content_rating` 同一姿态)。静默忽略会把「请帮我排除草稿」变成「200 + 满屏草稿」,正是本参数要终结的事故。
-- **无缺省 = 不闸**:不传这个参数,结果集与本波前**逐字节一致**。
-- **同一道门**:它编译进与 `total`/`facets`/`items` 共享的那一条 Meili 过滤表达式,所以翻完 `total` 页恰好收满 `total` 行——不会重演弃用面「总数不过滤、items 过滤」的陷阱。
-- **投影与读面同一份定义**:索引里的 `claim_state` 与记录上的 `claimed_by.state` 走**同一个函数**(`model.ClaimStateKey`):`site` 为空或无 `product_work_id` → `none`;已认领而状态列为 NULL → `live`(零回归语义);0/1/2 → live/draft/hidden;词表外 → 保守的 `hidden`。所以 `claim_state=live` 选出的,恰好是详情页写着 `state: "live"` 的那些行。
-- ⚠️ **新鲜度随索引**:claim 态变化由 `reindex-catalog`(每日 cron)带进索引,与其余索引 facet 同律——不是读时计算。
-- **works 列表面(`GET /v1/catalog/works`)本波不加**该参数。
-- **消费建议**:产品站渲染自家目录的搜索 lane 一律传 `claim_state=live`,并**删掉客户端事后过滤**——客户端过滤修不了 `total`,翻页照样丢行。
+- **无缺省 = 不闸**:不传这个参数,结果集与各自加参数前**逐字节一致**。
+- **同一道门**:搜索面编译进与 `total`/`facets`/`items` 共享的那一条 Meili 过滤表达式,所以翻完 `total` 页恰好收满 `total` 行;列表面是**单条 SQL 谓词**,进的是与其余过滤器同一个 `WHERE` 合取——两面都不会重演弃用面「总数不过滤、items 过滤」的陷阱。
+- **投影与读面同一份定义**:索引里的 `claim_state`、列表面的 SQL 谓词、记录上的 `claimed_by.state`,语义源都是 `model.ClaimStateKey`:`site` 为空或无 `product_work_id` → `none`;已认领而状态列为 NULL → `live`(零回归语义);0/1/2 → live/draft/hidden;**词表外 → 保守的 `hidden`**。所以 `claim_state=live` 选出的,恰好是详情页写着 `state: "live"` 的那些行。四态是这张表的一个**划分**:每行恰属其一,列全四态 = 不闸。
+- ⚠️ **两面新鲜度不同**:搜索面的 claim 态由 `reindex-catalog`(每日 cron)带进索引,与其余索引 facet 同律;**列表面是读时的库内谓词,claim 态一改立即生效**,不等索引。
+- **消费建议**:产品站渲染自家目录的搜索 lane **与**词条成员列表一律传 `claim_state=live`,并**删掉客户端事后过滤**——客户端过滤修不了 `total`,翻页照样丢行。
 
 ### 3.5 稳定性承诺
 
