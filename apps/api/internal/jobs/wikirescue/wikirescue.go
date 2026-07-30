@@ -23,6 +23,13 @@
 // references, which is what lets the existing catalog reference ping take over
 // from the wiki one. None of the three touches the galgame_wiki image client.
 //
+// Steps u..v are the W1-pre INTRO remainder (refs/proj/146, plans/10 02 §6.6):
+// after the flip, a claimed work whose wiki body only ever had a Chinese intro
+// shows a blank intro face. u corrects the ones whose "Chinese" column actually
+// holds the Japanese ORIGINAL — writing the wiki source table, the only place
+// such a fix survives step q's set-diff — and v adopts the genuinely Chinese ones
+// that have no original anywhere. Both are one-shot; see their step functions.
+//
 // Steps p..t are the W1-pre read-time-bridge nativization (refs/proj/140,
 // refs/plans/10-data-layer-retirement/02-w1pre-bridge-nativization.md) and are a
 // different KIND of step: MIRRORS, not fills. The catalog read face used to bridge
@@ -202,7 +209,13 @@ func resolveSourceID(db *gorm.DB, key string) (int16, error) {
 // can stop bridging. p,q,r,s are idempotent followers and are the ones the daily
 // chain runs ("--step p,q,r,s"); t is a ONE-SHOT adoption and must not be re-run
 // (see stepMetaAdopt).
-var steps = []string{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t"}
+//
+// u and v are the W1-pre intro remainder (refs/proj/146) and are ONE-SHOT like t.
+// u sorts AFTER q on purpose — it writes the wiki source table and lets q's next
+// pass materialize the correction, so running the two in one invocation would put
+// q first and leave u's fix unprojected until the following day. Invoke them
+// separately: "--step u --apply" then "--step q --apply", then "--step v --apply".
+var steps = []string{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", "u", "v"}
 
 // Run dispatches the selected step(s) and returns one Stats per step executed.
 func (r *Runner) Run(ctx context.Context) ([]Stats, error) {
@@ -263,6 +276,10 @@ func (r *Runner) runStep(ctx context.Context, step string) (Stats, error) {
 		return r.stepRatingVndbMirror(ctx)
 	case "t":
 		return r.stepMetaAdopt(ctx)
+	case "u":
+		return r.stepIntroLangFix(ctx)
+	case "v":
+		return r.stepIntroOrphanAdopt(ctx)
 	}
 	return Stats{}, fmt.Errorf("unhandled step %q", step)
 }

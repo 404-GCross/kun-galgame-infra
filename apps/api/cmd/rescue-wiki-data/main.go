@@ -28,6 +28,9 @@
 //	s  vndb ratings      galgame_vndb_meta                → catalog_work_rating
 //	t  meta adoption     galgame_{bangumi,dlsite,eg}_meta  → catalog_work_rating / _popularity
 //
+//	u  intro lang fix    misfiled ja intro in a zh column → galgame (THE WIKI TABLE)
+//	v  orphan zh adopt   sole-copy zh intro                → catalog_work_intro
+//
 // Steps j..l are the A2-0 registrar rescue (refs/proj/127): the three taxonomy
 // id maps that today only exist as a joinable wiki table.
 //
@@ -46,6 +49,15 @@
 //
 //	go run ./cmd/rescue-wiki-data --step p,q,r,s          # the daily follow-up
 //	go run ./cmd/rescue-wiki-data --step t --apply        # exactly once
+//
+// Steps u and v are the intro remainder of that wave (refs/proj/146) and are
+// one-shot too. u writes the WIKI source table — the only place a language
+// correction survives step q's set-diff — so it must be a SEPARATE invocation
+// followed by q, which materializes it (ParseSteps would otherwise order q first):
+//
+//	go run ./cmd/rescue-wiki-data --step u --apply        # reattribute, wiki side
+//	go run ./cmd/rescue-wiki-data --step q --apply        # materialize the fix
+//	go run ./cmd/rescue-wiki-data --step v --apply        # adopt the orphan zh
 //
 // Steps a..o are fill-missing (ON CONFLICT DO NOTHING) and p..t converge, so in
 // both cases a second pass changes nothing — that is the acceptance criterion.
