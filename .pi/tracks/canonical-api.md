@@ -51,3 +51,4 @@
 - 2026-07-30 A2-1f/A2-1g/moyu 尾件三连验收放行——infra 侧(5 commit)与 moyu 侧(7 commit)全部收官;forum 尾件(选择器改指)在飞=A2 全梯队最后一件。
 - 2026-07-30 forum 尾件验收放行(12667cbb)——A2 梯队代码全收官:infra 13+moyu 7+forum 7 功能 commit 全未推,弃用面全生态消费归零;下一步=用户 push→轨长 prod apply(migrate→deploy→reconcile→reindex→cron)→流量观察→摘牌合波。
 - 2026-07-30 用户令全权 push+apply:四仓全推、三库三迁移、reconcile/reindex/cron 全落、双站 creator 回填毕——**弃用面生产流量实测归零**(3,759 vs 0),摘牌证据窗起算;详录 doc 106 §35。
+- 2026-07-31 上线回归+搜索泄露事故(§36/§37)单日闭环:六点裁决(路由/id 维持设计;titles 无桥/计数缺供/会社重复=修;发布人=用户令暂缓)+严重事故三症状定性(两站搜索泄 draft/未认领、中文搜索失效同 titles 根因);A2-R1..R4 六波九功能 commit 全交付全验收(infra 4=titles 桥/chip 计数/claim_state facet+搜索闸/LIST 谓词,forum 5,moyu 2)——claim 人口闸自此单门化,renderable() 后过滤生产绝迹;进入即推即部署链(用户令)。
