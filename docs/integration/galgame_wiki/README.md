@@ -7,6 +7,13 @@
 >
 > 1. **公开数据读 = 已退役 → `/v1/galgame/*`。** 列表 / 详情 / batch / 搜索 / 月历 / stats / check / 关系反查 + 四族 taxonomy 的 list/search/by-id —— 共 **29 条 A/C 桶读** —— 全部下线,下游改从**冻结的公开 `/v1` 契约**消费同一份数据(W1-W4)。这些桥路由现在返回 `404`(路径已无)或 `405`(路径被同名写路由占用,仅 GET 读退役)。
 > 2. **平台工作流面 = 留任(不是遗产,是设计面)。** 剩 **15 条 B 桶路由** + 2 条 S2S feed,W5 显式**重新立册(re-charter)**为**平台工作流面**——与 `/internal` 写面(06a)、提案面(06b)同族的双凭证工作流面,curated `/v1` 不该也无法承载它。它**按宪章永久留任**,face 计量续用 `galgame_internal`。
+>
+> **⚠️ 第三段历史(2026-07-30,wave 146):`/v1/galgame` 这个「新家」自己也摘牌了。**
+> doc 106 原定 Sunset 2026-10-31 的 90 天绞杀窗,因证据充分被用户令**提前执行**:12 小时窗内正典面 `/v1/catalog` 146,236 次、`/v1/galgame` 1 次(裸路径扫描器,401)。
+> 全部 26 条公开 op **整体摘除**,`/v1/galgame` 与 `/v1/galgame/*` 现返回 **`410 Gone`**(仓内标准信封 `{code, message}`,`code` = 通用 `11`,`message` 指向后继面与文档;响应保留 `Link: rel="successor-version"`,而宣告「未来退役」的 `Deprecation` / `Sunset` 头随面一同退役)。
+> **后继面 = 正典 `/v1/catalog`**(<https://developer.nextmoe.dev/docs/catalog>)。冻结 spec `docs/galgame_wiki/public-openapi.yaml` 已删除,`cmd/gen-openapi -galgame-public` 目标同退。
+> **本页下方所有「迁 `/v1/galgame`」的映射表因此是历史记录,不再是可执行的迁移指引。**
+> 未受影响:`/internal/*` 平台工作流面、`/api/*` staff 面、全部 `/v1/catalog/*`。
 
 本目录曾是「Galgame Wiki API」的整套人读契约手册。**wiki 前端 / `wiki.kungal.com` 域 / 独立 galgame 服务 / legacy `/api` 读面 / Basic-auth feeds / `*_WIKI_BASE_URL` env 名**均已在**开放 API Phase 2 · W5(2026-07-21)**退役;**桥面的公开数据读**又在**路线 B · W5(2026-07-22)**退役到 `/v1`。故整套手册已失真,收容为本页参考。
 
@@ -19,7 +26,7 @@
 | 服务 | catalog(container `catalog`,端口 `9281`) |
 | 基址 env | `KUN_NEXTMOE_API_BASE`(prod `http://catalog:9281`,dev 默认 `http://127.0.0.1:19281`) |
 | 平台工作流面前缀 | `/internal`(客户端在基址之后拼 `/internal/...`) |
-| 公开数据面前缀 | `/v1/galgame`(**桥面 A/C 桶读的新家**——见下「已退役」) |
+| 公开数据面前缀 | ~~`/v1/galgame`~~ → **已于 2026-07-30 摘牌,整族返回 `410 Gone`**;公开数据面现为正典 `/v1/catalog` |
 | S2S feeds | `GET /internal/galgame/messages/feed`、`GET /internal/galgame/revisions/recent`(W5-05 由 legacy `/api` + Basic 迁入本面;路线 B W5 按宪章留任) |
 
 > legacy `/api` 前缀的 galgame **读**路由已在 W5-05 退役;`/api` 现只承载**写 / 投稿 / staff / 图片上传 / taxonomy CRUD·revert**面(06 波领地,永久 S2S,不进本参考)。`/internal` 上的**用户写面**(06a)与**提案面**(06b `/internal/edit/*`)是本工作流面的兄弟面,同样不在本读参考的路由集内。
@@ -41,9 +48,11 @@
 { "code": 0, "message": "成功", "data": { "items": [], "total": 0 } }
 ```
 
-## 已退役 → 迁 `/v1/galgame`(路线 B W5,29 条 A/C 桶读)
+## 已退役 → 曾迁 `/v1/galgame`(路线 B W5,29 条 A/C 桶读)· **两端皆已下线**
 
-以下桥读**已从 `/internal` 下线**。下游改调 `/v1/galgame` 的**冻结公开契约**(curated 形状,非桥面 raw-model;富化走 include 词表)。桥面 raw 形状的 legacy 怪癖(engine bare-array、`/:name` 从 query 取 id、raw GORM 行泄漏内部列)**刻意不带入** `/v1`。
+> **本表是历史记录,不是迁移指引。** 右列的 `/v1/galgame` 目标已于 **2026-07-30** 随该面整体摘牌,现返回 `410 Gone`;左列的 `/internal` 桥读早在 W5 下线。今天的公开数据面是正典 `/v1/catalog`(<https://developer.nextmoe.dev/docs/catalog>),字段与形状**不是**本表右列的逐条 analog——请按 catalog 契约重新对表,而不是照搬。
+
+以下桥读**已从 `/internal` 下线**。当时下游改调 `/v1/galgame` 的**冻结公开契约**(curated 形状,非桥面 raw-model;富化走 include 词表)。桥面 raw 形状的 legacy 怪癖(engine bare-array、`/:name` 从 query 取 id、raw GORM 行泄漏内部列)**刻意不带入** `/v1`。
 
 | 桥面(已 404/405) | `/v1` 新址 |
 |---|---|
@@ -61,9 +70,9 @@
 | `GET /internal/engine{,/:name,/:id/galgame-ids}` | `GET /v1/galgame/engines{,/{id},/{id}/galgame-ids}` |
 | `GET /internal/series{,/:id}`(+ `/search` 由 `/v1` search 适配,零消费 C 桶) | `GET /v1/galgame/series{,/{id}}` |
 
-> `/v1` 是**唯一公开数据契约**,契约 dogfooding(下游与第三方消费同一契约)。字段级真值取门户发布的 `public-openapi.yaml`(`docs/galgame_wiki/public-openapi.yaml`,code-first 从 Huma 导出)。NSFW = scope 门三态 `content_limit=sfw|nsfw|all`(需 key 持 `galgame:nsfw` scope,否则静默回落 sfw)。
+> `/v1` 是**唯一公开数据契约**,契约 dogfooding(下游与第三方消费同一契约)。**2026-07-30 起该契约只剩 `/v1/catalog` 一面**:galgame 面的字段级真值来源 `docs/galgame_wiki/public-openapi.yaml` 已随面删除,改取 `docs/catalog/public-openapi.yaml`。下述 NSFW 三态 `content_limit=sfw|nsfw|all`(需 key 持 `galgame:nsfw` scope)是**已摘牌面的历史语义**,catalog 面用自己的 `nsfw` 参数。
 >
-> **标签层级扩展(2026-07 加性)**:`GET /v1/galgame/tags/multi` 新增可选参数 **`expand=descendants`** —— 每个请求 id 先展开为「自身 + 其层级后代」,一部游戏在**每一组**里命中至少一个标签即入选(组间 AND、组内 OR),单次查询,total/分页精确;不传该参数 = 冻结的扁平 AND 交集,逐字节向后兼容。配套地 `GET /v1/galgame/tags/{id}` 详情新增 **`children`** 块(仅当有子标签时出现):直接子标签的 `{id, name, category, galgame_count}`,供 UI 呈现「展开将包含:硬科幻、科幻奇幻」。层级边由 VNDB 标签 DAG 投影到 wiki 词表(infra `cmd/backfill-tag-edges`);元分组节点(如 "Type")永不成为父节点,故「恋爱」的展开不会命中「无恋爱剧情」。
+> **标签层级扩展(2026-07 加性,已随面摘牌 · 存档)**:`GET /v1/galgame/tags/multi` 曾新增可选参数 **`expand=descendants`** —— 每个请求 id 先展开为「自身 + 其层级后代」,一部游戏在**每一组**里命中至少一个标签即入选(组间 AND、组内 OR),单次查询,total/分页精确;不传该参数 = 冻结的扁平 AND 交集,逐字节向后兼容。配套地 `GET /v1/galgame/tags/{id}` 详情新增 **`children`** 块(仅当有子标签时出现):直接子标签的 `{id, name, category, galgame_count}`,供 UI 呈现「展开将包含:硬科幻、科幻奇幻」。层级边由 VNDB 标签 DAG 投影到 wiki 词表(infra `cmd/backfill-tag-edges`);元分组节点(如 "Type")永不成为父节点,故「恋爱」的展开不会命中「无恋爱剧情」。
 
 ## 平台工作流面(留任 · 16 读 + 3 机器面读 · 真值在代码)
 
@@ -111,7 +120,7 @@ W5 后 `/internal` 承载的**唯一读集** = 下列平台工作流路由。它
 
 > **代码(单一真源)**:infra `apps/api/internal/galgameapp/`——`workflowroutes.go` = 15 工作流读的注册 + 逐路由章程;`devapiface.go` = `/internal` 面 devapi 链 + 2 feed 挂载;`writeroutes.go`(06a 写面)/ `proposeroutes.go`(06b 提案面)= 兄弟面。
 >
-> **机器可读 spec 注**:wiki 时代的机器可读 spec(`docs/galgame_wiki/read-openapi.yaml`、`calendar-openapi.yaml`,及门户发布的 `galgame-wiki.openapi.yaml` / `galgame-wiki-calendar.openapi.yaml`)已随桥面一同退役(W5)。平台工作流面**不再产出机器可读 spec**——与其兄弟 `/internal` 写面(06a)、提案面(06b)一致,二者本就无 spec;本面之真源即**代码(`workflowroutes.go`)+ 本页**。唯一对外的机器可读契约是门户发布的 `/v1` 公开投影 `docs/galgame_wiki/public-openapi.yaml`。
+> **机器可读 spec 注**:wiki 时代的机器可读 spec(`docs/galgame_wiki/read-openapi.yaml`、`calendar-openapi.yaml`,及门户发布的 `galgame-wiki.openapi.yaml` / `galgame-wiki-calendar.openapi.yaml`)已随桥面一同退役(W5)。平台工作流面**不再产出机器可读 spec**——与其兄弟 `/internal` 写面(06a)、提案面(06b)一致,二者本就无 spec;本面之真源即**代码(`workflowroutes.go`)+ 本页**。唯一对外的机器可读契约是门户发布的 `/v1` 公开投影——**2026-07-30 起即 `docs/catalog/public-openapi.yaml`**;galgame 面的 `docs/galgame_wiki/public-openapi.yaml` 已随该面摘牌而删除。
 
 ## `/api` staff 面 · taxonomy 读回(A2-1e 加 · 8 op)
 

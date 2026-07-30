@@ -396,9 +396,15 @@ services:
       traefik.http.routers.infra-catalog-pub-http.middlewares: redirect-to-https@file
       traefik.http.routers.infra-catalog-pub-http.service: infra-catalog-pub
       # /v1/galgame — moved here from the galgame block (W3): the open-API
-      # galgame projection is served by THIS process (galgameapp.Mount, W2).
+      # galgame projection was served by THIS process (galgameapp.Mount, W2).
       # Same router names as before, now targeting the shared infra-catalog-pub
       # loadbalancer (:9281) — two routers, one service.
+      #
+      # The projection itself was DELISTED at wave 146 (2026-07-30) and the
+      # prefix now answers 410 Gone. These routers deliberately STAY: without
+      # them Traefik would answer its own 404 for the whole prefix, and a stale
+      # client would learn "wrong path" instead of "this face was retired, here
+      # is the successor". Retiring them is a separate, later decision.
       traefik.http.routers.infra-galgame-pub.rule: Host(`api.nextmoe.dev`) && PathPrefix(`/v1/galgame`)
       traefik.http.routers.infra-galgame-pub.entrypoints: websecure
       traefik.http.routers.infra-galgame-pub.tls.certresolver: letsencrypt

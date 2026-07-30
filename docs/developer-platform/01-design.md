@@ -29,7 +29,7 @@
 ### 1.1 现状(2026-07-11 修订)
 
 - **两个真相源,各司其职**:
-  - **galgame 内容真源 = wiki**(`cmd/galgame` / `kun_galgame_wiki`):多语名称/简介、封面/截图、tag、会社、发售、revision——所有 galgame 内容读操作走 wiki API(API-first),不向下游复制目录数据。**日落条款(2026-07-14,doc 19)**:wiki 按 W0-W5 波次整体退役,W2 后 galgame 内容真源 = catalog 侧内容体;`/v1/galgame/*` 契约与 gid 全程不变,后端换血对外零感知。
+  - **galgame 内容真源 = wiki**(`cmd/galgame` / `kun_galgame_wiki`):多语名称/简介、封面/截图、tag、会社、发售、revision——所有 galgame 内容读操作走 wiki API(API-first),不向下游复制目录数据。**日落条款(2026-07-14,doc 19)**:wiki 按 W0-W5 波次整体退役,W2 后 galgame 内容真源 = catalog 侧内容体;`/v1/galgame/*` 契约与 gid 全程不变,后端换血对外零感知。**该公开面本身已于 2026-07-30(wave 146)提前摘牌,整族返回 `410 Gone`,后继面 = 正典 `/v1/catalog`。**
   - **跨媒介身份/图谱真源 = catalog**(`cmd/catalog` / `kun_catalog`,生产在线):全媒介作品注册行(21 万+,含 anime/manga/novel/asmr)、人物名义/角色/厂牌实体族、credits(63 万级)、跨媒介关系、外部溯源锚(VNDB / Bangumi / DLsite / ErogameScape exact 锚)、redirect/resolve、三索引实体搜索。
 - **契约基础比 v1 设计时更好**:galgame 读面(list / detail / batch / search / calendar / 官方·标签·引擎·系列 / revisions)已 Huma 出谱并入契约三门(spec→TS drift / code→spec / oasdiff);catalog 服务自带 `openapi.json`;calendar 已有 ETag/缓存样板。
 - **缺口**:① 面向第三方的注册 / 凭证 / 配额 / 用量 / 门户;② 公开 `/v1` 投影(两个面的白名单子集,与内部 spec 解耦);③ 缓存铺开(calendar 之外的热路径);④ 源数据再分发的授权姿态(§15,拍板项)。
@@ -60,7 +60,7 @@
 
 | 角色 | 域名 | 后端 | 库 |
 |---|---|---|---|
-| NextMoe 开放 API(对外只读) | `api.nextmoe.dev` | Traefik 按路径分发:`/v1/catalog/*` 与 `/v1/galgame/*` 均 → catalog 服务(`cmd/catalog`;galgame 面自 W3 起由它独家承载,契约不变) | `kun_catalog` |
+| NextMoe 开放 API(对外只读) | `api.nextmoe.dev` | Traefik 按路径分发:`/v1/catalog/*` 与 `/v1/galgame/*` 均 → catalog 服务(`cmd/catalog`)。**galgame 面已于 2026-07-30 摘牌**:其 Traefik 路由留任,只为把整族稳定地落到 `410 Gone` 而非 404 | `kun_catalog` |
 | 开发者门户 | `developer.nextmoe.dev` | 门户前端(Nuxt)+ 平台后端(扩展 account/IdP 侧) | `kun_galgame_infra` |
 | IdP(已存在) | 现有 oauth 域名 | `cmd/oauth` | `kun_galgame_infra` |
 
@@ -100,7 +100,7 @@
 
 **不搬数据,靠稳定 ID 互链**:
 
-- catalog work 响应携带认领指针:`{"claimed_by": {"site": "galgame_wiki", "work_id": 1234}}` → 开发者据此调 `/v1/galgame/1234` 取内容详情;
+- catalog work 响应携带认领指针:`{"claimed_by": {"site": "galgame_wiki", "work_id": 1234}}` → 该指针**仍在**(它是身份事实,不是路由承诺),但 2026-07-30 起**不再有可调的公开 galgame 端点**(`/v1/galgame/1234` 落 410);内容详情走正典 `/v1/catalog/works/{id}`;
 - galgame 详情响应携带 `catalog_work_id: "w56789"` → 开发者据此取 credits / 跨媒介关系 / 多源锚;
 - 旧 ID 永久 301 到 canonical(redirect 语义写进 OpenAPI 描述,SDK 自动跟随)。
 
@@ -119,7 +119,7 @@
 |---|---|---|
 | **Phase 1 地基** | 两面公开只读投影(`/v1/galgame/*` 白名单 + 游标分页 + **聚合记录 DTO(D1)** + **变更流**;`/v1/catalog/*` 白名单 + **lookup 外部 id 反查** + redirects 流)+ 公开 OpenAPI ×2 + Scalar 文档 + **API Key**(hash/show-once/轮换/吊销)+ Redis 限流 + **热路径缓存 + Cloudflare** + `api.nextmoe.dev` / `developer.nextmoe.dev` 域名 + **trusted tier 首批邀请 key** | 🚧 执行中(refs/plans/05-open-api) |
 | **Phase 2** | 配额/分层打磨 + 用量面板 + 门户打磨 + **OAuth2 client_credentials** + scope 词表 + **MCP server(D4 提级:公开只读 API 同时暴露为 MCP,AI 助手/agent 直接查生态目录)** | ⬜ |
-| **Phase 2.5 统计面** | 跨源评分/发布分布派生层(→ `/v1/galgame/stats/*`);**前置已全清**(D1 拍板 + 三源评分 meta 在产,§3.4) | ⬜ 可随 Phase 2 实施 |
+| **Phase 2.5 统计面** | 跨源评分/发布分布派生层(原拟挂 `/v1/galgame/stats/*`;该面 2026-07-30 摘牌后须改挂正典 `/v1/catalog` 之下);**前置已全清**(D1 拍板 + 三源评分 meta 在产,§3.4) | ⬜ 可随 Phase 2 实施 |
 | **Phase 3** | `authorization_code`+PKCE **代表用户**(投稿/写)+ `galgame:nsfw` tier 闸 + 审批流 | ⬜ |
 | **事件驱动(非阶段)** | manga / novel / anime 内容面随各产品上线挂载(§3.4);letmoe 相关的同人/asmr 注册行投影随其上线评估;**wiki 退役 W1-W5(doc 19)在 Phase 1 之后独立推进** | — |
 

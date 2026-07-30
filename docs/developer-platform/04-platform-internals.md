@@ -115,7 +115,7 @@ func OpenAPIAuth(c fiber.Ctx) error {
   - `Cache-Tag`(Cloudflare Cache Rules / 按内容键)便于精准失效。
 - 鉴权失败 / 配额头等**不可缓存**部分,仍在回源层处理(CF 仅缓存 2xx 公开读)。
 - catalog 面的 **301 redirect 响应同样可缓存**(旧 ID → canonical 是永久事实)。
-- **备注(吸收自 API 设计 skill,用在对的地方)**:`GET /v1/galgame` 列表在 6 万→10 万+ 目录上,offset 深翻页有性能悬崖 → 公开列表改 **游标分页**(`cursor`/`next_cursor`),既稳又对缓存友好。
+- **备注(吸收自 API 设计 skill,用在对的地方)**:`GET /v1/galgame` 列表在 6 万→10 万+ 目录上,offset 深翻页有性能悬崖 → 公开列表改 **游标分页**(`cursor`/`next_cursor`),既稳又对缓存友好。(该面已于 2026-07-30 摘牌,但结论**原样适用**于接棒的 `GET /v1/catalog/works`,后者本就是 keyset 分页。)
 
 > 这一节是"开放 API 代价可控"的核心:做好缓存 + CF,绝大多数公开读在边缘命中,回源服务不被打爆。
 
