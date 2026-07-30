@@ -309,6 +309,23 @@ func (s *PublicService) WorkDetail(ctx context.Context, id int64, inc PublicIncl
 		return dto.PublicCatalogWork{}, false, nil
 	}
 
+	// The display axis (A2-R5) for this record AND every brief it embeds, in ONE
+	// batched wiki-body read: the work itself, its series siblings and — when
+	// asked for — its relation ends. Every one of them renders a claimed_by.
+	subjects := []claimSubject{{WorkID: w.ID, Site: w.Site, ProductWorkID: w.ProductWorkID}}
+	for _, sb := range detail.SeriesSiblings {
+		subjects = append(subjects, claimSubject{WorkID: sb.WorkID, Site: sb.Site, ProductWorkID: sb.ProductWorkID})
+	}
+	if inc.Relations {
+		for _, r := range detail.Relations {
+			subjects = append(subjects, claimSubject{WorkID: r.OtherID, Site: r.Site, ProductWorkID: r.ProductWorkID})
+		}
+	}
+	limits, err := s.read.loadWikiContentLimits(ctx, subjects)
+	if err != nil {
+		return dto.PublicCatalogWork{}, false, err
+	}
+
 	rec := dto.PublicCatalogWork{
 		ID:            w.ID,
 		Medium:        s.mediumKey(w.MediumID),
@@ -318,7 +335,7 @@ func (s *PublicService) WorkDetail(ctx context.Context, id int64, inc PublicIncl
 		ReleaseDate:   earliestReleaseDate(detail.Releases),
 		Titles:        publicTitles(detail.Titles),
 		Refs:          publicRefs(detail.Refs),
-		ClaimedBy:     claimedBy(w.Site, w.ProductWorkID, w.ClaimState),
+		ClaimedBy:     claimedBy(w.Site, w.ProductWorkID, w.ClaimState, limits[w.ID], w.ContentRating),
 		Created:       w.CreatedAt.UTC().Format(time.RFC3339),
 		Updated:       w.UpdatedAt.UTC().Format(time.RFC3339),
 	}
@@ -332,9 +349,9 @@ func (s *PublicService) WorkDetail(ctx context.Context, id int64, inc PublicIncl
 	if rec.Links, err = s.workLinks(ctx, id); err != nil {
 		return dto.PublicCatalogWork{}, false, err
 	}
-	rec.SeriesSiblings = s.publicSeriesSiblings(detail.SeriesSiblings, nsfw)
+	rec.SeriesSiblings = s.publicSeriesSiblings(detail.SeriesSiblings, nsfw, limits)
 	if inc.Relations {
-		rec.Relations = s.publicRelations(detail.Relations, nsfw)
+		rec.Relations = s.publicRelations(detail.Relations, nsfw, limits)
 	}
 	if inc.Credits {
 		groups, err := s.workCredits(ctx, id)
@@ -349,7 +366,7 @@ func (s *PublicService) WorkDetail(ctx context.Context, id int64, inc PublicIncl
 // publicRelations projects the detail's relation edges (loaded by ReadService,
 // wave 104) to the public shape, dropping r18 ends unless nsfw. A dropped end's
 // identity stays reachable via lookup once the caller opts in.
-func (s *PublicService) publicRelations(rels []WorkRelationRow, nsfw bool) []dto.PublicRelation {
+func (s *PublicService) publicRelations(rels []WorkRelationRow, nsfw bool, limits map[int64]string) []dto.PublicRelation {
 	out := make([]dto.PublicRelation, 0, len(rels))
 	for _, r := range rels {
 		if !nsfw && isR18(r.ContentRating) {
@@ -359,7 +376,8 @@ func (s *PublicService) publicRelations(rels []WorkRelationRow, nsfw bool) []dto
 			RelationType: r.Key, Phrase: r.Phrase,
 			Work: dto.PublicWorkBrief{
 				ID: r.OtherID, Medium: s.mediumKey(r.MediumID), DisplayName: r.DisplayName,
-				ContentRating: contentRatingKey(r.ContentRating), ClaimedBy: claimedBy(r.Site, r.ProductWorkID, r.ClaimState),
+				ContentRating: contentRatingKey(r.ContentRating),
+				ClaimedBy:     claimedBy(r.Site, r.ProductWorkID, r.ClaimState, limits[r.OtherID], r.ContentRating),
 			},
 		})
 	}
@@ -1023,6 +1041,9 @@ type workBriefRow struct {
 	Site          *string
 	ProductWorkID *int64
 	ClaimState    *int16 `gorm:"column:claim_state"`
+	// WikiContentLimit is the claimed work's galgame body content_limit — the
+	// display axis's authority (A2-R5), joined in rather than fetched per row.
+	WikiContentLimit string `gorm:"column:wiki_content_limit"`
 }
 
 // loadWorkBriefs loads public briefs for a set of work ids, keyed by id. r18
@@ -1034,8 +1055,11 @@ func (s *PublicService) loadWorkBriefs(ctx context.Context, ids []int64, nsfw bo
 	}
 	var rows []workBriefRow
 	if err := s.db.WithContext(ctx).Raw(`
-		SELECT id, medium_id, display_name, content_rating, status, site, product_work_id, claim_state
-		FROM catalog_work WHERE id IN ? AND deleted_at IS NULL`, ids).Scan(&rows).Error; err != nil {
+		SELECT w.id, w.medium_id, w.display_name, w.content_rating, w.status, w.site, w.product_work_id, w.claim_state,
+		       coalesce(g.content_limit, '') AS wiki_content_limit
+		FROM catalog_work w
+		LEFT JOIN galgame g ON w.site = ? AND g.id = w.product_work_id
+		WHERE w.id IN ? AND w.deleted_at IS NULL`, siteGalgameWiki, ids).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	out := make(map[int64]*dto.PublicWorkBrief, len(rows))
@@ -1045,7 +1069,8 @@ func (s *PublicService) loadWorkBriefs(ctx context.Context, ids []int64, nsfw bo
 		}
 		out[r.ID] = &dto.PublicWorkBrief{
 			ID: r.ID, Medium: s.mediumKey(r.MediumID), DisplayName: r.DisplayName,
-			ContentRating: contentRatingKey(r.ContentRating), ClaimedBy: claimedBy(r.Site, r.ProductWorkID, r.ClaimState),
+			ContentRating: contentRatingKey(r.ContentRating),
+			ClaimedBy:     claimedBy(r.Site, r.ProductWorkID, r.ClaimState, r.WikiContentLimit, r.ContentRating),
 		}
 	}
 	return out, nil
@@ -1083,7 +1108,8 @@ func (s *PublicService) briefFromRow(b WorkBriefRow, claim *dto.PublicClaimedBy,
 }
 
 // claimedByFor batch-loads the claim pointers for a set of work ids (only claimed
-// rows are returned).
+// rows are returned). ONE query: the wiki body that decides the display axis
+// rides in as a LEFT JOIN rather than a per-row follow-up.
 func (s *PublicService) claimedByFor(ctx context.Context, ids []int64) (map[int64]*dto.PublicClaimedBy, error) {
 	if len(ids) == 0 {
 		return map[int64]*dto.PublicClaimedBy{}, nil
@@ -1093,10 +1119,19 @@ func (s *PublicService) claimedByFor(ctx context.Context, ids []int64) (map[int6
 		Site          string
 		ProductWorkID int64
 		ClaimState    *int16 `gorm:"column:claim_state"`
+		ContentRating int16  `gorm:"column:content_rating"`
+		// WikiContentLimit is galgame.content_limit for a galgame_wiki claim, ""
+		// otherwise — the join condition carries the same site test the Go
+		// projection's caller applies (see public_display_limit.go).
+		WikiContentLimit string `gorm:"column:wiki_content_limit"`
 	}
 	if err := s.db.WithContext(ctx).Raw(`
-		SELECT id, site, product_work_id, claim_state FROM catalog_work
-		WHERE id IN ? AND site IS NOT NULL AND product_work_id IS NOT NULL AND deleted_at IS NULL`, ids).Scan(&rows).Error; err != nil {
+		SELECT w.id, w.site, w.product_work_id, w.claim_state, w.content_rating,
+		       coalesce(g.content_limit, '') AS wiki_content_limit
+		FROM catalog_work w
+		LEFT JOIN galgame g ON w.site = ? AND g.id = w.product_work_id
+		WHERE w.id IN ? AND w.site IS NOT NULL AND w.product_work_id IS NOT NULL AND w.deleted_at IS NULL`,
+		siteGalgameWiki, ids).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	out := make(map[int64]*dto.PublicClaimedBy, len(rows))
@@ -1105,7 +1140,8 @@ func (s *PublicService) claimedByFor(ctx context.Context, ids []int64) (map[int6
 		// projection can only return one of the three claimed states here.
 		out[r.ID] = &dto.PublicClaimedBy{
 			Site: r.Site, WorkID: r.ProductWorkID,
-			State: model.ClaimStateKey(&r.Site, &r.ProductWorkID, r.ClaimState),
+			State:        model.ClaimStateKey(&r.Site, &r.ProductWorkID, r.ClaimState),
+			ContentLimit: model.DisplayLimitKey(&r.Site, &r.ProductWorkID, r.WikiContentLimit, r.ContentRating),
 		}
 	}
 	return out, nil
@@ -1230,16 +1266,25 @@ func publicRefs(refs []RefDetail) []dto.PublicCatalogRef {
 }
 
 // claimedBy builds the cross-face pointer from a work's site + product_work_id
-// (both set = claimed) and stamps the claim's visibility state (A2-1e / R7).
-// The projection itself is model.ClaimStateKey — the ONE definition the works
-// search index also bakes in, so `claim_state=live` selects exactly the rows
-// this function renders as state "live" (A2-R1 区 C).
-func claimedBy(site *string, productWorkID *int64, claimState *int16) *dto.PublicClaimedBy {
+// (both set = claimed) and stamps the claim's two axes: its visibility state
+// (A2-1e / R7) and its editorial display limit (A2-R5).
+//
+// Both projections are the model package's — model.ClaimStateKey and
+// model.DisplayLimitKey — the ONE definitions the works search index also bakes
+// in, so `claim_state=live` and `content_limit=sfw` each select exactly the rows
+// this function renders with that value.
+//
+// wikiContentLimit is the work's galgame body content_limit (loadWikiContentLimits,
+// or a joined column); "" for a bodyless work or a claim with no wiki lane.
+func claimedBy(site *string, productWorkID *int64, claimState *int16, wikiContentLimit string, contentRating int16) *dto.PublicClaimedBy {
 	state := model.ClaimStateKey(site, productWorkID, claimState)
 	if state == model.ClaimStateKeyNone {
 		return nil // unclaimed: claimed_by is null, not an object with a state
 	}
-	return &dto.PublicClaimedBy{Site: *site, WorkID: *productWorkID, State: state}
+	return &dto.PublicClaimedBy{
+		Site: *site, WorkID: *productWorkID, State: state,
+		ContentLimit: model.DisplayLimitKey(site, productWorkID, wikiContentLimit, contentRating),
+	}
 }
 
 // nameBuckets places a name into its single language bucket by the row's lang
@@ -1433,7 +1478,7 @@ func introLang(t string) string {
 // publicSeriesSiblings projects the transitive-closure series membership (wave
 // 113) to public briefs, dropping r18 ends unless nsfw (same gate as relations).
 // Always non-nil so the field serializes [].
-func (s *PublicService) publicSeriesSiblings(sibs []SeriesSiblingRow, nsfw bool) []dto.PublicWorkBrief {
+func (s *PublicService) publicSeriesSiblings(sibs []SeriesSiblingRow, nsfw bool, limits map[int64]string) []dto.PublicWorkBrief {
 	out := make([]dto.PublicWorkBrief, 0, len(sibs))
 	for _, sb := range sibs {
 		if !nsfw && isR18(sb.ContentRating) {
@@ -1441,7 +1486,8 @@ func (s *PublicService) publicSeriesSiblings(sibs []SeriesSiblingRow, nsfw bool)
 		}
 		out = append(out, dto.PublicWorkBrief{
 			ID: sb.WorkID, Medium: s.mediumKey(sb.MediumID), DisplayName: sb.DisplayName,
-			ContentRating: contentRatingKey(sb.ContentRating), ClaimedBy: claimedBy(sb.Site, sb.ProductWorkID, sb.ClaimState),
+			ContentRating: contentRatingKey(sb.ContentRating),
+			ClaimedBy:     claimedBy(sb.Site, sb.ProductWorkID, sb.ClaimState, limits[sb.WorkID], sb.ContentRating),
 		})
 	}
 	return out

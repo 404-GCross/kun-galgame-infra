@@ -542,6 +542,44 @@ func claimStatesPub(raw string) ([]string, bool) {
 	return out, true
 }
 
+// msgBadDisplayLimit is the single 400 message for a malformed content_limit
+// list — shared by the works LIST, the works SEARCH and the three calendar
+// buckets, which must reject the same tokens with the same words.
+const msgBadDisplayLimit = "content_limit must be a comma-separated subset of sfw, nsfw"
+
+// displayLimitsPub reads the comma-separated content_limit= filter: the CLOSED
+// editorial display vocabulary (model.DisplayLimitKey's whole range — the two
+// values claimed_by.content_limit renders). Absent/empty → nil, meaning NO gate
+// at all, so every pre-existing caller's wire stays byte-identical. ok=false —
+// a LOUD 400 — on any token outside the vocabulary.
+//
+// All three faces parse through THIS function (A2-R5), the claimStatesPub
+// posture verbatim: "the list parameter is word-for-word the search parameter"
+// is then structural, not a promise three copies have to keep.
+//
+// Note the vocabulary is NOT the wiki face's own content_limit vocabulary,
+// which additionally accepts `all`. Here absence already means "both", so an
+// `all` token would be a second spelling of the default — and a caller that
+// typed it expecting the wiki semantics would get exactly what it wanted
+// anyway, which is precisely why it must 400 instead: silently agreeing here
+// would hide the fact that the two faces' parameters are not the same thing.
+func displayLimitsPub(raw string) ([]string, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, true
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		tok := strings.TrimSpace(p)
+		if !service.IsDisplayLimit(tok) {
+			return nil, false
+		}
+		out = append(out, tok)
+	}
+	return out, true
+}
+
 // posIntListQueryPub reads a comma-separated positive-integer id filter, the
 // multi-value form of posIntQueryPub (A2-1e). Absent/empty → nil (no filter);
 // a SINGLE value behaves exactly as it did before this wave. Duplicates
@@ -675,6 +713,12 @@ func (h *PublicHandler) WorksList(c fiber.Ctx) error {
 	// shown" — a site's own entity page listing its members needs the second.
 	if f.ClaimStates, ok = claimStatesPub(c.Query("claim_state")); !ok {
 		return response.BadRequestMsg(c, errors.ErrInvalidParam, msgBadClaimState)
+	}
+	// content_limit (A2-R5): the EDITORIAL DISPLAY axis, orthogonal to both
+	// `content_rating` (the age axis) and `claim_state` — same helper as the
+	// works/search and calendar faces.
+	if f.DisplayLimits, ok = displayLimitsPub(c.Query("content_limit")); !ok {
+		return response.BadRequestMsg(c, errors.ErrInvalidParam, msgBadDisplayLimit)
 	}
 	if f.LabelID, ok = posIntQueryPub(c.Query("label_id")); !ok {
 		return response.BadRequestMsg(c, errors.ErrInvalidParam, "label_id must be a positive integer")

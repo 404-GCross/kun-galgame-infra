@@ -38,7 +38,19 @@ type WorksListFilter struct {
 	// unclaimed rows off a public list, which is exactly how they reached
 	// production. Semantics are the works/search parameter's, word for word.
 	ClaimStates []string
-	LabelID     int64 // via catalog_work_label
+	// DisplayLimits narrows to a set of EDITORIAL DISPLAY limits (sfw|nsfw,
+	// A2-R5) — the values claimed_by.content_limit renders on these very items.
+	// Empty = no gate at all, so every pre-existing caller's wire stays
+	// byte-identical.
+	//
+	// It is a different axis from ContentRating, not a finer spelling of it:
+	// content_rating answers "what is the GAME rated", this answers "is the
+	// material we would RENDER safe to publish". A site building its indexable
+	// surface passes content_limit=sfw — mapping the age axis onto that question
+	// instead is what collapsed one downstream's SEO surface from 6,117 works to
+	// 599 (doc 106 §38).
+	DisplayLimits []string
+	LabelID       int64 // via catalog_work_label
 	// TagIDs are canonical tag ids ANDed together (A2-1e): a work must carry a
 	// source tag mapped to EVERY id, which is what a facet sidebar's "narrow by
 	// another tag" means. One id behaves exactly as the pre-A2-1e scalar did.
@@ -98,6 +110,13 @@ func (s *PublicService) WorksList(ctx context.Context, f WorksListFilter, cursor
 		// emits no total (keyset paging: items + next_cursor), so "the count and
 		// the rows share one gate" holds by construction — there is exactly one
 		// query, and adding a count later would inherit this WHERE with it.
+		where = append(where, pred)
+		args = append(args, pargs...)
+	}
+	if pred, pargs := displayLimitWhere(f.DisplayLimits); pred != "" {
+		// The editorial display axis (A2-R5), ANDed into the SAME conjunction as
+		// the nsfw age gate and the claim-state gate — three orthogonal doors, one
+		// query, so a caller opening one never widens another.
 		where = append(where, pred)
 		args = append(args, pargs...)
 	}
@@ -323,13 +342,22 @@ func (s *PublicService) enrichWorkListItems(ctx context.Context, rows []workList
 	if err != nil {
 		return nil, err
 	}
+	// The display axis (A2-R5), one batched wiki-body read per page — the same
+	// shape (and the same claim partition) the cover bridge above rides on. This
+	// is the ONE place the works list, the works search and the three calendar
+	// buckets all fill claimed_by.content_limit from: they share this function.
+	limits, err := s.read.loadWikiContentLimits(ctx, subjects)
+	if err != nil {
+		return nil, err
+	}
 	out := make([]dto.PublicWorkListItem, len(rows))
 	for i, r := range rows {
 		out[i] = dto.PublicWorkListItem{
 			ID: r.ID, Medium: s.mediumKey(r.MediumID), DisplayName: r.DisplayName,
 			ContentRating: contentRatingKey(r.ContentRating), OLang: r.OLang,
-			ReleaseDate: dates[r.ID], ClaimedBy: claimedBy(r.Site, r.ProductWorkID, r.ClaimState),
-			Cover: s.pickListCover(covers[r.ID], nsfw), Updated: r.UpdatedAt,
+			ReleaseDate: dates[r.ID],
+			ClaimedBy:   claimedBy(r.Site, r.ProductWorkID, r.ClaimState, limits[r.ID], r.ContentRating),
+			Cover:       s.pickListCover(covers[r.ID], nsfw), Updated: r.UpdatedAt,
 		}
 	}
 	if err := s.attachWorkListBlocks(ctx, out, rows, subjects, covers, inc, nsfw); err != nil {

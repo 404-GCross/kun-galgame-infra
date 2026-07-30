@@ -67,6 +67,49 @@ func TestConstantGroupsHaveUniqueValues(t *testing.T) {
 	}
 }
 
+// TestDisplayLimitKeyIsATwoValuePartition pins the A2-R5 editorial display
+// projection: every column combination lands on exactly one of the two values,
+// and — the load-bearing half — the CLAIMED branch reads the wiki body while the
+// BODYLESS branch reads the rating. Collapsing the two is the incident (doc 106
+// §38): a claimed r18 game with editorially safe material must project `sfw`.
+func TestDisplayLimitKeyIsATwoValuePartition(t *testing.T) {
+	wiki, empty := "galgame_wiki", ""
+	pwid := int64(42)
+
+	for _, tc := range []struct {
+		name   string
+		site   *string
+		pwid   *int64
+		wiki   string
+		rating int16
+		want   string
+	}{
+		// ── bodyless: the age axis is the only signal there is ──
+		{"bodyless all_ages", nil, nil, "", ContentRatingAllAges, DisplayLimitKeySFW},
+		{"bodyless sensitive", nil, nil, "", ContentRatingSensitive, DisplayLimitKeySFW},
+		{"bodyless r18", nil, nil, "", ContentRatingR18, DisplayLimitKeyNSFW},
+		{"empty site is bodyless", &empty, &pwid, "nsfw", ContentRatingR18, DisplayLimitKeyNSFW},
+		{"site without a product work id is bodyless", &wiki, nil, "nsfw", ContentRatingAllAges, DisplayLimitKeySFW},
+		// ── claimed: the WIKI BODY decides, and the rating is ignored ──
+		{"claimed, wiki sfw, game r18", &wiki, &pwid, "sfw", ContentRatingR18, DisplayLimitKeySFW},
+		{"claimed, wiki nsfw, game all_ages", &wiki, &pwid, "nsfw", ContentRatingAllAges, DisplayLimitKeyNSFW},
+		{"claimed, wiki nsfw, game r18", &wiki, &pwid, "nsfw", ContentRatingR18, DisplayLimitKeyNSFW},
+		{"claimed, no body at all", &wiki, &pwid, "", ContentRatingR18, DisplayLimitKeySFW},
+		{"claimed, value outside the vocabulary", &wiki, &pwid, "bogus", ContentRatingR18, DisplayLimitKeySFW},
+	} {
+		got := DisplayLimitKey(tc.site, tc.pwid, tc.wiki, tc.rating)
+		assert.Equal(t, tc.want, got, "%s", tc.name)
+		assert.Contains(t, []string{DisplayLimitKeySFW, DisplayLimitKeyNSFW}, got,
+			"%s: the vocabulary is exactly two values", tc.name)
+	}
+
+	// The two axes are genuinely independent: neither is a widening of the other.
+	assert.NotEqual(t,
+		DisplayLimitKey(&wiki, &pwid, "sfw", ContentRatingR18),
+		DisplayLimitKey(nil, nil, "", ContentRatingR18),
+		"an r18 game reads sfw when claimed with safe material, nsfw when bodyless")
+}
+
 // The polymorphic discriminator values are pinned forever — renumbering them
 // would silently re-address every redirect/usage/revision row.
 func TestEntityTypeValuesArePinned(t *testing.T) {

@@ -14,6 +14,8 @@ catalog **不存**产品展示体:简介、封面/截图字节、评分、点赞
 
 来源注册表(节选):`source` `2=vndb 3=bangumi 4=dlsite 5=erogamespace 1=user`;`medium` `1=galgame 5=asmr`;`content_rating` `0=all_ages 1=sensitive 2=r18`。完整注册表由 `cmd/migrate-catalog` 的 seed 落库。
 
+⚠️ **`content_rating` 是年龄轴,不是展示轴**(A2-R5,doc 106 §38 事故)。这一列答的是「**游戏本体**是什么分级」;「我要**渲染的素材**(封面/截图/简介)能不能摆上公开页」是**另一个问题**,由**编辑展示轴**回答——公开面 `claimed_by.content_limit`(词表 `sfw|nsfw`),认领作品**读时桥接** wiki 正文的人工判定 `galgame.content_limit`(bridge-not-copy,catalog 不落这一列,不破上面那条硬分界),未认领行按年龄轴回落。生产实测两轴在 5,568 部作品上不一致(r18 游戏 × 编辑判定 sfw),**互不是对方的放宽或收紧**;把年龄轴当展示门正是那次 SEO 塌缩的根因。语义源 = `model.DisplayLimitKey`,契约与闸参见 [developer-platform/02 §3.2.8](../developer-platform/02-public-api.md#328-编辑展示轴-content_limit闸a2-r5)。
+
 ## 2. S2S 端点(Basic client 认证,前缀 `/api/v1/catalog`)
 
 写/运维面:resolve(2.1)· redirects feed(2.2)· claim(2.3,带 site 绑定)。读面(D-01,2.4-2.6):by-anchor · credits · entity search。内部浏览器(D-02,2.7):stats · works/{id} · labels/{id}/works。产品建游面(2.8):works/search。实体读面(2.9-2.11):names/{id}/works · characters/{id}/works · characters/{id}。

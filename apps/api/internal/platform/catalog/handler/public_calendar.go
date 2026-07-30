@@ -88,6 +88,13 @@ func (h *PublicHandler) serveCalendar(c fiber.Ctx, b service.CalendarBucket, buc
 		OLang:   parsePublicOLang(c.Query("olang")),
 		Include: service.ParseWorksListInclude(c.Query("include")),
 	}
+	// content_limit (A2-R5): a CLOSED vocabulary, so an unknown token is a 400 —
+	// the deliberate opposite of olang above. It gates bucket membership, so it
+	// also rides in the ETag's population key (CalendarFilter.PopulationKey).
+	var ok bool
+	if f.DisplayLimits, ok = displayLimitsPub(c.Query("content_limit")); !ok {
+		return response.BadRequestMsg(c, errors.ErrInvalidParam, msgBadDisplayLimit)
+	}
 	limit, ok := limitPub(c.Query("limit"), 20, 100)
 	if !ok {
 		return response.BadRequestMsg(c, errors.ErrInvalidParam, msgBadLimit)

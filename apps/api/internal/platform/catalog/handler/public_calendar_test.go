@@ -331,6 +331,13 @@ func TestParsePublicOLang(t *testing.T) {
 	assert.Equal(t, "jazh", service.PublicOLang{}.Key())
 	assert.Equal(t, "all", service.PublicOLang{All: true}.Key())
 	assert.Equal(t, "ja+en", service.PublicOLang{Values: []string{"ja", "en"}}.Key())
-	assert.Equal(t, "sfw-jazh", service.CalendarFilter{}.PopulationKey())
-	assert.Equal(t, "nsfw-all", service.CalendarFilter{NSFW: true, OLang: service.PublicOLang{All: true}}.PopulationKey())
+	// The population key carries one segment per gate that decides membership.
+	// A2-R5 appended the editorial display axis, `all` when it is ungated — two
+	// different gates must never share a cache validator.
+	assert.Equal(t, "sfw-jazh-all", service.CalendarFilter{}.PopulationKey())
+	assert.Equal(t, "nsfw-all-all", service.CalendarFilter{NSFW: true, OLang: service.PublicOLang{All: true}}.PopulationKey())
+	assert.Equal(t, "sfw-jazh-sfw",
+		service.CalendarFilter{DisplayLimits: []string{"sfw"}}.PopulationKey())
+	assert.Equal(t, "sfw-jazh-sfw+nsfw",
+		service.CalendarFilter{DisplayLimits: []string{"sfw", "nsfw"}}.PopulationKey())
 }

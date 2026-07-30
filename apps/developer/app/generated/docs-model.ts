@@ -8901,6 +8901,13 @@ export const docsModel: DocsModel = {
                   "doc": "Original-language gate: comma-separated olang values in the upstream BCP-47 spelling (ja, zh-Hans, en, …) or 'all' to switch it off. Default = the ja + zh* family. olang is an OPEN vocabulary, so an unrecognized value yields an empty bucket, never a 400"
                 },
                 {
+                  "name": "content_limit",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "Comma-separated CLOSED vocabulary: sfw,nsfw — the EDITORIAL DISPLAY axis (the values claimed_by.content_limit renders), gating BUCKET MEMBERSHIP, the count and the meta frame alike. An unknown token is a 400 (a CLOSED vocabulary, unlike olang above). Absent = no gate (both values), byte-identical to the pre-A2-R5 bucket. NOT content_rating: that is the AGE axis (what the GAME is rated), this is whether the material you would RENDER is safe to publish. It rides in the ETag population key, so an sfw-gated and an ungated caller never share a validator"
+                },
+                {
                   "name": "cursor",
                   "in": "query",
                   "required": false,
@@ -8966,6 +8973,12 @@ export const docsModel: DocsModel = {
                                   "required": true,
                                   "type": "object",
                                   "children": [
+                                    {
+                                      "name": "content_limit",
+                                      "required": true,
+                                      "doc": "sfw|nsfw",
+                                      "type": "string"
+                                    },
                                     {
                                       "name": "site",
                                       "required": true,
@@ -9466,6 +9479,13 @@ export const docsModel: DocsModel = {
                   "doc": "Original-language gate: comma-separated olang values in the upstream BCP-47 spelling (ja, zh-Hans, en, …) or 'all' to switch it off. Default = the ja + zh* family. olang is an OPEN vocabulary, so an unrecognized value yields an empty bucket, never a 400"
                 },
                 {
+                  "name": "content_limit",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "Comma-separated CLOSED vocabulary: sfw,nsfw — the EDITORIAL DISPLAY axis (the values claimed_by.content_limit renders), gating BUCKET MEMBERSHIP, the count and the meta frame alike. An unknown token is a 400 (a CLOSED vocabulary, unlike olang above). Absent = no gate (both values), byte-identical to the pre-A2-R5 bucket. NOT content_rating: that is the AGE axis (what the GAME is rated), this is whether the material you would RENDER is safe to publish. It rides in the ETag population key, so an sfw-gated and an ungated caller never share a validator"
+                },
+                {
                   "name": "cursor",
                   "in": "query",
                   "required": false,
@@ -9531,6 +9551,12 @@ export const docsModel: DocsModel = {
                                   "required": true,
                                   "type": "object",
                                   "children": [
+                                    {
+                                      "name": "content_limit",
+                                      "required": true,
+                                      "doc": "sfw|nsfw",
+                                      "type": "string"
+                                    },
                                     {
                                       "name": "site",
                                       "required": true,
@@ -10024,6 +10050,13 @@ export const docsModel: DocsModel = {
                   "doc": "Original-language gate: comma-separated olang values in the upstream BCP-47 spelling (ja, zh-Hans, en, …) or 'all' to switch it off. Default = the ja + zh* family. olang is an OPEN vocabulary, so an unrecognized value yields an empty bucket, never a 400"
                 },
                 {
+                  "name": "content_limit",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "Comma-separated CLOSED vocabulary: sfw,nsfw — the EDITORIAL DISPLAY axis (the values claimed_by.content_limit renders), gating BUCKET MEMBERSHIP, the count and the meta frame alike. An unknown token is a 400 (a CLOSED vocabulary, unlike olang above). Absent = no gate (both values), byte-identical to the pre-A2-R5 bucket. NOT content_rating: that is the AGE axis (what the GAME is rated), this is whether the material you would RENDER is safe to publish. It rides in the ETag population key, so an sfw-gated and an ungated caller never share a validator"
+                },
+                {
                   "name": "cursor",
                   "in": "query",
                   "required": false,
@@ -10089,6 +10122,12 @@ export const docsModel: DocsModel = {
                                   "required": true,
                                   "type": "object",
                                   "children": [
+                                    {
+                                      "name": "content_limit",
+                                      "required": true,
+                                      "doc": "sfw|nsfw",
+                                      "type": "string"
+                                    },
                                     {
                                       "name": "site",
                                       "required": true,
@@ -10973,6 +11012,12 @@ export const docsModel: DocsModel = {
                                       "type": "object",
                                       "children": [
                                         {
+                                          "name": "content_limit",
+                                          "required": true,
+                                          "doc": "sfw|nsfw",
+                                          "type": "string"
+                                        },
+                                        {
                                           "name": "site",
                                           "required": true,
                                           "type": "string"
@@ -11818,6 +11863,12 @@ export const docsModel: DocsModel = {
                                       "type": "object",
                                       "children": [
                                         {
+                                          "name": "content_limit",
+                                          "required": true,
+                                          "doc": "sfw|nsfw",
+                                          "type": "string"
+                                        },
+                                        {
                                           "name": "site",
                                           "required": true,
                                           "type": "string"
@@ -12178,6 +12229,12 @@ export const docsModel: DocsModel = {
                                           "type": "object",
                                           "children": [
                                             {
+                                              "name": "content_limit",
+                                              "required": true,
+                                              "doc": "sfw|nsfw",
+                                              "type": "string"
+                                            },
+                                            {
                                               "name": "site",
                                               "required": true,
                                               "type": "string"
@@ -12229,6 +12286,12 @@ export const docsModel: DocsModel = {
                             "required": true,
                             "type": "object",
                             "children": [
+                              {
+                                "name": "content_limit",
+                                "required": true,
+                                "doc": "sfw|nsfw",
+                                "type": "string"
+                              },
                               {
                                 "name": "site",
                                 "required": true,
@@ -12383,6 +12446,12 @@ export const docsModel: DocsModel = {
                                           "type": "object",
                                           "children": [
                                             {
+                                              "name": "content_limit",
+                                              "required": true,
+                                              "doc": "sfw|nsfw",
+                                              "type": "string"
+                                            },
+                                            {
                                               "name": "site",
                                               "required": true,
                                               "type": "string"
@@ -12480,6 +12549,12 @@ export const docsModel: DocsModel = {
                                           "required": true,
                                           "type": "object",
                                           "children": [
+                                            {
+                                              "name": "content_limit",
+                                              "required": true,
+                                              "doc": "sfw|nsfw",
+                                              "type": "string"
+                                            },
                                             {
                                               "name": "site",
                                               "required": true,
@@ -12663,6 +12738,12 @@ export const docsModel: DocsModel = {
                                 "required": true,
                                 "type": "object",
                                 "children": [
+                                  {
+                                    "name": "content_limit",
+                                    "required": true,
+                                    "doc": "sfw|nsfw",
+                                    "type": "string"
+                                  },
                                   {
                                     "name": "site",
                                     "required": true,
@@ -13024,6 +13105,12 @@ export const docsModel: DocsModel = {
                                                 "type": "object",
                                                 "children": [
                                                   {
+                                                    "name": "content_limit",
+                                                    "required": true,
+                                                    "doc": "sfw|nsfw",
+                                                    "type": "string"
+                                                  },
+                                                  {
                                                     "name": "site",
                                                     "required": true,
                                                     "type": "string"
@@ -13075,6 +13162,12 @@ export const docsModel: DocsModel = {
                                   "required": true,
                                   "type": "object",
                                   "children": [
+                                    {
+                                      "name": "content_limit",
+                                      "required": true,
+                                      "doc": "sfw|nsfw",
+                                      "type": "string"
+                                    },
                                     {
                                       "name": "site",
                                       "required": true,
@@ -13234,6 +13327,12 @@ export const docsModel: DocsModel = {
                                                 "type": "object",
                                                 "children": [
                                                   {
+                                                    "name": "content_limit",
+                                                    "required": true,
+                                                    "doc": "sfw|nsfw",
+                                                    "type": "string"
+                                                  },
+                                                  {
                                                     "name": "site",
                                                     "required": true,
                                                     "type": "string"
@@ -13331,6 +13430,12 @@ export const docsModel: DocsModel = {
                                                 "required": true,
                                                 "type": "object",
                                                 "children": [
+                                                  {
+                                                    "name": "content_limit",
+                                                    "required": true,
+                                                    "doc": "sfw|nsfw",
+                                                    "type": "string"
+                                                  },
                                                   {
                                                     "name": "site",
                                                     "required": true,
@@ -13524,6 +13629,12 @@ export const docsModel: DocsModel = {
                                       "required": true,
                                       "type": "object",
                                       "children": [
+                                        {
+                                          "name": "content_limit",
+                                          "required": true,
+                                          "doc": "sfw|nsfw",
+                                          "type": "string"
+                                        },
                                         {
                                           "name": "site",
                                           "required": true,
@@ -13755,6 +13866,12 @@ export const docsModel: DocsModel = {
                                       "required": true,
                                       "type": "object",
                                       "children": [
+                                        {
+                                          "name": "content_limit",
+                                          "required": true,
+                                          "doc": "sfw|nsfw",
+                                          "type": "string"
+                                        },
                                         {
                                           "name": "site",
                                           "required": true,
@@ -14857,6 +14974,12 @@ export const docsModel: DocsModel = {
                                   "type": "object",
                                   "children": [
                                     {
+                                      "name": "content_limit",
+                                      "required": true,
+                                      "doc": "sfw|nsfw",
+                                      "type": "string"
+                                    },
+                                    {
                                       "name": "site",
                                       "required": true,
                                       "type": "string"
@@ -15013,6 +15136,13 @@ export const docsModel: DocsModel = {
                   "doc": "Comma-separated CLOSED vocabulary: none,live,draft,hidden — the values claimed_by.state renders on these very items (none = unclaimed registry row). Matching works must be in ANY of the listed states. An unknown token is a 400. Absent = no gate (every state), which keeps pre-existing callers byte-identical. Word-for-word the works/search parameter of the same name; a product site listing an entity's member works should pass claim_state=live, since the claimed parameter alone cannot tell a LIVE claim from a DRAFT (unpublished) or WITHDRAWN one. Unlike the search face this is a live registry predicate, so a claim-state change takes effect immediately — there is no index to wait for"
                 },
                 {
+                  "name": "content_limit",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "Comma-separated CLOSED vocabulary: sfw,nsfw — the EDITORIAL DISPLAY axis, i.e. the values claimed_by.content_limit renders on these very items. An unknown token is a 400. Absent = no gate (both values), which keeps pre-existing callers byte-identical. Word-for-word the works/search parameter of the same name. This is NOT content_rating: content_rating is the AGE axis (what the GAME is rated), this is whether the material you would RENDER (cover, screenshots, synopsis) is safe to publish — a claimed work reads its wiki body's editorial flag, a bodyless one falls back to r18=nsfw. Unlike the search face this is a live registry predicate, so an editorial change takes effect immediately"
+                },
+                {
                   "name": "label_id",
                   "in": "query",
                   "required": false,
@@ -15142,6 +15272,12 @@ export const docsModel: DocsModel = {
                                   "required": true,
                                   "type": "object",
                                   "children": [
+                                    {
+                                      "name": "content_limit",
+                                      "required": true,
+                                      "doc": "sfw|nsfw",
+                                      "type": "string"
+                                    },
                                     {
                                       "name": "site",
                                       "required": true,
@@ -15707,6 +15843,12 @@ export const docsModel: DocsModel = {
                             "type": "object",
                             "children": [
                               {
+                                "name": "content_limit",
+                                "required": true,
+                                "doc": "sfw|nsfw",
+                                "type": "string"
+                              },
+                              {
                                 "name": "site",
                                 "required": true,
                                 "type": "string"
@@ -16153,6 +16295,12 @@ export const docsModel: DocsModel = {
                                       "type": "object",
                                       "children": [
                                         {
+                                          "name": "content_limit",
+                                          "required": true,
+                                          "doc": "sfw|nsfw",
+                                          "type": "string"
+                                        },
+                                        {
                                           "name": "site",
                                           "required": true,
                                           "type": "string"
@@ -16370,6 +16518,12 @@ export const docsModel: DocsModel = {
                                   "required": true,
                                   "type": "object",
                                   "children": [
+                                    {
+                                      "name": "content_limit",
+                                      "required": true,
+                                      "doc": "sfw|nsfw",
+                                      "type": "string"
+                                    },
                                     {
                                       "name": "site",
                                       "required": true,
@@ -16628,6 +16782,13 @@ export const docsModel: DocsModel = {
                   "doc": "Comma-separated CLOSED vocabulary: none,live,draft,hidden — the values claimed_by.state renders (none = unclaimed registry row). Matching works must be in ANY of the listed states. An unknown token is a 400. Absent = no gate (every state), which keeps pre-existing callers byte-identical. A product site rendering its own catalogue should pass claim_state=live: the claimed parameter alone cannot tell a LIVE claim from a DRAFT (unpublished) or WITHDRAWN one. Freshness follows the index: a claim-state change is reflected by the next reindex-catalog run (daily cron), like every other indexed facet"
                 },
                 {
+                  "name": "content_limit",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "Comma-separated CLOSED vocabulary: sfw,nsfw — the EDITORIAL DISPLAY axis, i.e. the values claimed_by.content_limit renders. An unknown token is a 400. Absent = no gate (both values), which keeps pre-existing callers byte-identical. This is NOT content_rating: content_rating is the AGE axis (what the GAME is rated), this is whether the material you would RENDER (cover, screenshots, synopsis) is safe to publish. Most r18 games carry editorially sfw display material, so filtering by content_rating instead hides the majority of a healthy catalogue. Orthogonal to nsfw= and claim_state=: all of them AND together in one filter, so total, facets and items stay behind the same gate"
+                },
+                {
                   "name": "label_id",
                   "in": "query",
                   "required": false,
@@ -16779,6 +16940,12 @@ export const docsModel: DocsModel = {
                                   "required": true,
                                   "type": "object",
                                   "children": [
+                                    {
+                                      "name": "content_limit",
+                                      "required": true,
+                                      "doc": "sfw|nsfw",
+                                      "type": "string"
+                                    },
                                     {
                                       "name": "site",
                                       "required": true,

@@ -62,6 +62,10 @@ type WorkDocInput struct {
 	// supplied by the caller through model.ClaimStateKey so the index and the
 	// read face project the same registry columns exactly alike (A2-R1 区 C).
 	ClaimState string
+	// ContentLimit is the EDITORIAL DISPLAY vocabulary value (sfw|nsfw),
+	// supplied by the caller through model.DisplayLimitKey — which needs the
+	// CLAIMED work's wiki body flag, so the caller joins galgame (A2-R5).
+	ContentLimit string
 	// ReleasedOrd is the composed ordinal of the earliest year-carrying
 	// release; 0 = the work has no dated release (the field is then omitted).
 	ReleasedOrd int64
@@ -92,7 +96,7 @@ func BuildWorkDoc(in WorkDocInput) EntityDoc {
 		ID: WorkDocID(in.ID), EntityType: "work",
 		Sources: in.Sources, SourceKeys: in.SourceKeys,
 		ContentRating: &rating, Popularity: in.Popularity,
-		Claimed: &claimed, ClaimState: in.ClaimState, OLang: in.OLang,
+		Claimed: &claimed, ClaimState: in.ClaimState, ContentLimit: in.ContentLimit, OLang: in.OLang,
 		TagIDs: in.TagIDs, LabelIDs: in.LabelIDs,
 		EngineIDs: in.EngineIDs, SeriesIDs: in.SeriesIDs,
 		ReleasedOrd: in.ReleasedOrd, UpdatedTS: in.UpdatedTS,

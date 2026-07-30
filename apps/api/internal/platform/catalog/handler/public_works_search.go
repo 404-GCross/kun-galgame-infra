@@ -89,6 +89,12 @@ func (h *PublicHandler) WorksSearch(c fiber.Ctx) error {
 	if f.ClaimStates, ok = claimStatesPub(c.Query("claim_state")); !ok {
 		return response.BadRequestMsg(c, errors.ErrInvalidParam, msgBadClaimState)
 	}
+	// content_limit: the EDITORIAL DISPLAY axis (A2-R5), another of our own
+	// closed vocabularies — parsed by the SAME helper the works LIST and the
+	// calendar use, so the three spellings cannot drift.
+	if f.DisplayLimits, ok = displayLimitsPub(c.Query("content_limit")); !ok {
+		return response.BadRequestMsg(c, errors.ErrInvalidParam, msgBadDisplayLimit)
+	}
 	if f.LabelID, ok = posIntQueryPub(c.Query("label_id")); !ok {
 		return response.BadRequestMsg(c, errors.ErrInvalidParam, "label_id must be a positive integer")
 	}

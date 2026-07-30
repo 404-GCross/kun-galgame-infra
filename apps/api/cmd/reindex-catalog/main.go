@@ -524,6 +524,10 @@ func loadWorkIntros(db *gorm.DB) (map[int64][]workIntro, error) {
 // Meilisearch — that is what makes its total, its facets and its items share
 // one gate instead of the deprecated face's unfiltered-total trap.
 //
+// A2-R5 adds content_limit, the EDITORIAL DISPLAY axis: a claimed work's value
+// comes from its WIKI body (the LEFT JOIN below), a bodyless work's from its
+// rating. It is a second axis beside content_rating, never a re-encoding of it.
+//
 // A2-1f adds the synopsis text, language-bucketed and rune-capped. It only
 // ever MATCHES when a caller passes search_intro=1: the face pins
 // attributesToSearchOn to the title family otherwise, so growing the index does
@@ -567,13 +571,21 @@ func reindexWorks(ctx context.Context, db *gorm.DB, idx *catalogSearch.Indexer, 
 			ProductWorkID *int64    `gorm:"column:product_work_id"`
 			ClaimState    *int16    `gorm:"column:claim_state"`
 			UpdatedAt     time.Time `gorm:"column:updated_at"`
+			// WikiContentLimit is the CLAIMED work's wiki-body display flag — the
+			// authority for the content_limit field, which model.DisplayLimitKey
+			// projects alongside the three claim columns (A2-R5). Joined here for
+			// the same reason the title bridge below reads galgame directly: the
+			// wiki family shares this database.
+			WikiContentLimit string `gorm:"column:wiki_content_limit"`
 		}
-		if err := db.Raw(`SELECT id, display_name, olang, content_rating, coalesce(site,'') AS site,
-				product_work_id, claim_state, updated_at
-			FROM catalog_work
-			WHERE id > ? AND deleted_at IS NULL AND status = 0
-				AND medium_id = (SELECT id FROM catalog_medium WHERE key = 'galgame')
-			ORDER BY id LIMIT ?`, lastID, batch).Scan(&rows).Error; err != nil {
+		if err := db.Raw(`SELECT w.id, w.display_name, w.olang, w.content_rating, coalesce(w.site,'') AS site,
+				w.product_work_id, w.claim_state, w.updated_at,
+				coalesce(g.content_limit, '') AS wiki_content_limit
+			FROM catalog_work w
+			LEFT JOIN galgame g ON w.site = 'galgame_wiki' AND g.id = w.product_work_id
+			WHERE w.id > ? AND w.deleted_at IS NULL AND w.status = 0
+				AND w.medium_id = (SELECT id FROM catalog_medium WHERE key = 'galgame')
+			ORDER BY w.id LIMIT ?`, lastID, batch).Scan(&rows).Error; err != nil {
 			return err
 		}
 		if len(rows) == 0 {
@@ -586,9 +598,10 @@ func reindexWorks(ctx context.Context, db *gorm.DB, idx *catalogSearch.Indexer, 
 				ContentRating: r.ContentRating,
 				// claimed == "a product site owns this row", i.e. the works
 				// list's `w.site <> ''` (NULL and '' are both bodyless).
-				Claimed:     r.Site != "",
-				ClaimState:  model.ClaimStateKey(&r.Site, r.ProductWorkID, r.ClaimState),
-				ReleasedOrd: facets.releasedOrd[r.ID], UpdatedTS: r.UpdatedAt.Unix(),
+				Claimed:      r.Site != "",
+				ClaimState:   model.ClaimStateKey(&r.Site, r.ProductWorkID, r.ClaimState),
+				ContentLimit: model.DisplayLimitKey(&r.Site, r.ProductWorkID, r.WikiContentLimit, r.ContentRating),
+				ReleasedOrd:  facets.releasedOrd[r.ID], UpdatedTS: r.UpdatedAt.Unix(),
 				Popularity: pop[r.ID], Sources: srcs[r.ID], SourceKeys: keys[r.ID],
 				TagIDs: facets.tagIDs[r.ID], LabelIDs: facets.labelIDs[r.ID],
 				EngineIDs: facets.engineIDs[r.ID], SeriesIDs: facets.seriesIDs[r.ID],

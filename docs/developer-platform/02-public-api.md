@@ -40,7 +40,7 @@
 | 公开端点(`/v1`) | scope | 说明 |
 |---|---|---|
 | `GET /v1/catalog/works/{id}` | `catalog:read` | 注册行:display_name / titles / medium / 分级 / 外部锚(来源白名单过滤,见 [06 §11](./06-security-compliance.md))/ **认领指针**(→ 内容面路由,见 [01 §3.3](./01-design.md))+ **全量聚合 facet**(wave 104 加法扩容:popularity/ratings/tags/playtimes/series/platforms/intro/covers/screenshots/characters/labels/releases——source 键归因、CDN 完整 URL、字符串词表);**R18 调用方自控**:`nsfw=1` 出 r18 作品与 r18 关系端(works/lookup/names/characters/labels 同参;characters 另有 `spoilers=0-2` + sexual traits 随 nsfw),缺省隐藏与 Phase-1 逐字节一致;`updated` 恒在(doc 106);`releases[]` 每行带 `id`+`refs[]`,`tags[]` 每行带 canonical `canonical_id/tier/kind`(doc 106,未映射省略)。**A2-1e 加法**:`created`(RFC3339,注册行**进入 catalog 的时刻**——既不是发售日也不是产品侧创建时间)、`engines[]`(`{id,name}`,恒出空为 `[]`)、`links[]`(非身份外链,见 §3.2.2)、`labels[]` 每行 `lang`、`tags[]` 的**安全轴** `spoiler`/`sexual` + `spoilers=0\|1\|2` 参数(见 §3.2.3)。**A2-R1 修复**:`titles[]` 对**认领作品**来自 wiki 桥(四名称列 + 别名,见 §3.2.5)——此前认领作品的中文名/别名整体缺席;`labels[]`/`engines[]` 每行恒带 `work_count`、`tags[]` 映射行带 `work_count`(nsfw 感知,见 §3.2.6) |
-| `GET /v1/catalog/works` | `catalog:read` | **作品浏览/列表(doc 106 G1,keyset)**:过滤 `content_rating`/`claimed`/`label_id`/`tag_id`(canonical)/`series_id`/**`engine_id`(A2-1b 第九过滤器,经 `catalog_work_engine`)**/`platform`/`released_after\|before`/`ids`(≤100);`sort=id\|updated`;item = 轻 brief(+`release_date`/`olang`/`cover` 单图/`updated`);`nsfw` 同参;`next_cursor` 末页 null。**`include=` 富 brief 块(A2-1a 加法波)**:词表 `names,intros,labels,ratings,covers`(逗号分隔,**未知 token 静默忽略**,§3.5 条款 2);每块按页内 work id **批量加载**(无 N+1),未点名即整块缺席——**缺省(无 `include=`)响应与本波前逐字节相同**。`names`/`intros` 走 D7 四键投影(见 §3.2.1 表①),`labels`/`ratings` 与详情面同形同口径(评分保持源原生分制,不聚合),`covers` 出 `{portrait, banner}` 两槽、每槽带 `width/height/thumbhash`(见 §3.2.1);`ids=` + `include=` 即批量富取(两梯队的 batch 替代面)。**A2-1e**:`include=` 词表加 `refs`(该作品的 **exact 身份锚**,与详情面 `refs[]` 同构——work 级 ∪ release 级去重,exact-only 红线不破),`tag_id` 收**逗号分隔多值 AND**(≤10,见下)。**A2-R1 修复**:`names` 块对**认领作品**来自 wiki 桥(见 §3.2.5);`labels` 块每行恒带 `work_count`(与详情面同数,见 §3.2.6)。**A2-R4 加法**:`claim_state=`(封闭词表 `none\|live\|draft\|hidden`,逗号分隔 IN 语义,非法 token 400,不传=不闸)——**与 `works/search` 同名参数逐字同义**,词条成员列表务必传 `claim_state=live` 以排除未发布/未认领行;与搜索面不同,这里是**读时库内谓词,改态立即生效**,见 §3.2.7 |
+| `GET /v1/catalog/works` | `catalog:read` | **作品浏览/列表(doc 106 G1,keyset)**:过滤 `content_rating`/`claimed`/`label_id`/`tag_id`(canonical)/`series_id`/**`engine_id`(A2-1b 第九过滤器,经 `catalog_work_engine`)**/`platform`/`released_after\|before`/`ids`(≤100);`sort=id\|updated`;item = 轻 brief(+`release_date`/`olang`/`cover` 单图/`updated`);`nsfw` 同参;`next_cursor` 末页 null。**`include=` 富 brief 块(A2-1a 加法波)**:词表 `names,intros,labels,ratings,covers`(逗号分隔,**未知 token 静默忽略**,§3.5 条款 2);每块按页内 work id **批量加载**(无 N+1),未点名即整块缺席——**缺省(无 `include=`)响应与本波前逐字节相同**。`names`/`intros` 走 D7 四键投影(见 §3.2.1 表①),`labels`/`ratings` 与详情面同形同口径(评分保持源原生分制,不聚合),`covers` 出 `{portrait, banner}` 两槽、每槽带 `width/height/thumbhash`(见 §3.2.1);`ids=` + `include=` 即批量富取(两梯队的 batch 替代面)。**A2-1e**:`include=` 词表加 `refs`(该作品的 **exact 身份锚**,与详情面 `refs[]` 同构——work 级 ∪ release 级去重,exact-only 红线不破),`tag_id` 收**逗号分隔多值 AND**(≤10,见下)。**A2-R1 修复**:`names` 块对**认领作品**来自 wiki 桥(见 §3.2.5);`labels` 块每行恒带 `work_count`(与详情面同数,见 §3.2.6)。**A2-R4 加法**:`claim_state=`(封闭词表 `none\|live\|draft\|hidden`,逗号分隔 IN 语义,非法 token 400,不传=不闸)——**与 `works/search` 同名参数逐字同义**,词条成员列表务必传 `claim_state=live` 以排除未发布/未认领行;与搜索面不同,这里是**读时库内谓词,改态立即生效**,见 §3.2.7。**A2-R5 加法**:`content_limit=`(封闭词表 `sfw|nsfw`,逗号分隔 IN 语义,非法 token 400,不传=不闸)——**编辑展示轴,不是年龄轴 `content_rating`**;做可索引面传 `content_limit=sfw`,见 §3.2.8 |
 | `GET /v1/catalog/changes` | `catalog:read` | **增量同步流(doc 106 G2,keyset)**:`{entity_type=work, cursor, limit}` → `[{entity_type, id, updated}]`;`next_cursor` 恒在(续轮询新行);**无 nsfw 门**(id+时间戳=身份非内容,详情跟查再门控)。**删除不经此流**——行离开 LIVE 集(软删/降级/退出 galgame 媒介)后只是从流中**静默消失**,不发 tombstone;**合并型消亡由 `GET /v1/catalog/redirects` 覆盖**(旧 id → canonical id),**镜像型消费者应周期性全量对账**(`works?sort=id` keyset 扫 id 全集,与本地镜像取差集即失效行)。`op` 字段登记为将来的加法扩展位(现不下发,消费端须按 §3.5 条款 2 忽略未知字段)。**流有意滞后 ~5 秒**(2026-07-28 cleanup 波):`updated_at` 是**语句时间**而非提交时间,不设滞后则长事务可能提交出一行 `updated_at` 已落在消费者水位之后的记录 → 该行被**永久跳过**;拒发 5 秒内的新行,使提交耗时 ≤5s 的在途事务不可能被漏掉 |
 | `GET /v1/catalog/works/{id}/credits` | `catalog:read` | 该作品的 credits(名义/角色/role) |
 | `GET /v1/catalog/works/{id}/relations` | `catalog:read` | 跨媒介关系(改编/续作/同世界观…,单行双向渲染) |
@@ -55,7 +55,7 @@
 | `GET /v1/catalog/calendar` | `catalog:read` | **发售日历 · 月桶(A2-1c,keyset date ASC + id ASC)**:`month=YYYY-MM`(非法 400;**缺省 = 当前 Asia/Tokyo 月**,响应回显 `month`);收录**最早带年份 release 落在该月**的作品——**day 精度与 month 精度同桶**(month 精度排在该月月首,**不臆造 1 号**);item = works 列表行**逐字**(`PublicWorkListItem`,`include=` 五词表全支持),`nsfw` 同参;新增 `olang=` 人口过滤(见下);`count` = 整桶行数(非本页),`next_cursor` 末页 null;带**桶级 ETag**(见下);**A2-1e**:恒带 `meta{}` 导航框(见下) |
 | `GET /v1/catalog/calendar/pending` | `catalog:read` | **发售日历 · 月份未定桶(A2-1c,keyset id ASC)**:`year=YYYY`(非法 400;缺省 = 当前 JST 年,响应回显 `year`);收录**最早 release 只精确到年**的作品——它们**刻意不出现在该年的任何月桶**里。人口/item/`olang`/ETag 语义与月桶逐字一致;`meta` 只带 `today`(非月寻址,无月界与前后翻) |
 | `GET /v1/catalog/calendar/tba` | `catalog:read` | **发售日历 · TBA 桶(A2-1c,全局,keyset id ASC)**:有 release 行但**无一行带年份**的作品(已官宣、日期未定)。**无 release 行 = unknown,不进任何桶**——"没有 release"是"没有官宣",不是"日期待定" |
-| `GET /v1/catalog/works/search` | `catalog:read` | **作品产品搜索(A2-1d,doc 126 D5;page/limit 分页)**:自由文本 `q=` 命中作品的**全部索引标题/别名**(含 search hint,仅供检索永不下发);**`search_intro=1` 另放宽到作品简介**(A2-1f,见 §3.2.4);过滤 `tag_id`(**多值 AND**,同列表)/`label_id`/`engine_id`/`series_id`/`released_after\|before`/`olang`/`content_rating`/`claimed`/`nsfw`——**与 works 列表同名参数逐字同义**(`released_*` 同样锚在**最早带年份 release** 的组合序数上,与列表 `release_date`、日历分桶三者同源)。`sort=relevance\|released_desc\|released_asc\|updated\|popularity`(缺省 relevance;**空 q 时 relevance 退化为 popularity** 即浏览序;`released_*` 两个方向都把**无日期作品排在最后**;`popularity` = 跨源信号 `log1p(max(bangumi collect 架, DLsite 下载数))`,**替代弃用面的 `view`**——那是 wiki 浏览量,catalog 无对应物,故 `sort=view` 是 400)。`facets=` 封闭词表 `content_rating,olang,claimed,tag_id,label_id,engine_id,series_id,source`(**非法 token 400**;外层键 = 可直接回传的**过滤参数名**,非索引字段名;`content_rating` 分布按公开字符串键计数不出枚举整数;每 facet 至多 100 个值)。`include=` 六词表全支持。**item = works 列表行逐字**(`PublicWorkListItem`,按 id 回库水化;**Meili 文档字段永不出 wire**)。`page` 缺省 1、非正/非数字 400,`limit` 1-100 缺省 20(超限截顶、非正/非数字 400)。**`q` 恰为 VNDB 作品 id(`v19658`)时短路**为该 id 的 exact 锚精查(全文会前缀串味:`v1965` 亦命中 `v19650`),仍套用调用方全部过滤器,**无解 = 空信封而非 404**。**`total`/`facets`/`items` 同门过滤**:翻完 `total` 页恰好收满 `total` 行,sfw 调用方的 `total` **已扣除**其永远拿不到的 r18 作品——**与弃用面 `content_limit` 陷阱(总数不过滤、items 过滤、sfw 翻页丢行)明令相反**。**A2-R1 区 C 加法**:`claim_state=`(封闭词表 `none\|live\|draft\|hidden`,逗号分隔 IN 语义,非法 token 400,不传=不闸)——产品站搜索务必传 `claim_state=live` 以排除未发布/未认领行,见 §3.2.7 |
+| `GET /v1/catalog/works/search` | `catalog:read` | **作品产品搜索(A2-1d,doc 126 D5;page/limit 分页)**:自由文本 `q=` 命中作品的**全部索引标题/别名**(含 search hint,仅供检索永不下发);**`search_intro=1` 另放宽到作品简介**(A2-1f,见 §3.2.4);过滤 `tag_id`(**多值 AND**,同列表)/`label_id`/`engine_id`/`series_id`/`released_after\|before`/`olang`/`content_rating`/`claimed`/`nsfw`——**与 works 列表同名参数逐字同义**(`released_*` 同样锚在**最早带年份 release** 的组合序数上,与列表 `release_date`、日历分桶三者同源)。`sort=relevance\|released_desc\|released_asc\|updated\|popularity`(缺省 relevance;**空 q 时 relevance 退化为 popularity** 即浏览序;`released_*` 两个方向都把**无日期作品排在最后**;`popularity` = 跨源信号 `log1p(max(bangumi collect 架, DLsite 下载数))`,**替代弃用面的 `view`**——那是 wiki 浏览量,catalog 无对应物,故 `sort=view` 是 400)。`facets=` 封闭词表 `content_rating,olang,claimed,tag_id,label_id,engine_id,series_id,source`(**非法 token 400**;外层键 = 可直接回传的**过滤参数名**,非索引字段名;`content_rating` 分布按公开字符串键计数不出枚举整数;每 facet 至多 100 个值)。`include=` 六词表全支持。**item = works 列表行逐字**(`PublicWorkListItem`,按 id 回库水化;**Meili 文档字段永不出 wire**)。`page` 缺省 1、非正/非数字 400,`limit` 1-100 缺省 20(超限截顶、非正/非数字 400)。**`q` 恰为 VNDB 作品 id(`v19658`)时短路**为该 id 的 exact 锚精查(全文会前缀串味:`v1965` 亦命中 `v19650`),仍套用调用方全部过滤器,**无解 = 空信封而非 404**。**`total`/`facets`/`items` 同门过滤**:翻完 `total` 页恰好收满 `total` 行,sfw 调用方的 `total` **已扣除**其永远拿不到的 r18 作品——**与弃用面 `content_limit` 陷阱(总数不过滤、items 过滤、sfw 翻页丢行)明令相反**。**A2-R1 区 C 加法**:`claim_state=`(封闭词表 `none\|live\|draft\|hidden`,逗号分隔 IN 语义,非法 token 400,不传=不闸)——产品站搜索务必传 `claim_state=live` 以排除未发布/未认领行,见 §3.2.7。**A2-R5 加法**:`content_limit=`(封闭词表 `sfw|nsfw`,逗号分隔 IN 语义,非法 token 400,不传=不闸)——与 `nsfw=`/`claim_state=` 正交,同编进那一条 Meili 表达式(故 `total`/facets/items 同门),见 §3.2.8 |
 | `GET /v1/catalog/search` | `catalog:read` | **实体自动补全**(`type=names\|characters\|labels\|works\|tags`,五索引;**`tags` 为 A2-1d 加法**,hit 镜像 labels 惯例并附 `tier`/`kind`,其余四族 hit shape **逐字节冻结**)。至多 20 条扁平 hit、无过滤无分页 —— picker / 跳转框用面;**作品结果页(过滤/facets/排序/翻页/完整列表行)走 `GET /v1/catalog/works/search`** |
 | `POST /v1/catalog/resolve` | `catalog:read` | 批量旧 ID → canonical(redirect 压平语义与内部一致) |
 | `GET /v1/catalog/lookup` + `POST …/lookup/batch` | `catalog:read` | **外部 id 反查(killer,doc 19 §3.1,Phase 1)**:`?source=vndb&external_id=v19658` → work + `claimed_by` 指针;批量 ≤100。背书 = 四源 exact 锚(在产)。**`type=work\|name\|character\|label`(缺省 `work`,加法扩展)**:同一反查面按实体族分流——`work` 语义逐字不变(含 release 锚回落到属主 work),其余三族取**该族** exact 锚后委派各自详情投影(重块关闭),命中只填对应块 `name` / `character` / `label`,`work` / `claimed_by` 留空;批量每对可各带 `type`,响应回显**归一后**的 token(缺省对回显 `work`) |
@@ -71,6 +71,8 @@
 >
 > **A2-1e 供给补全加法(2026-07-29)**:本波**不新增端点**,只把既有端点上「消费方已经在用、catalog 侧却没有出口」的供给补齐。清单:`claimed_by.state`(R7)、engines `description`/`aliases`、labels `aliases`/`lang` 与 `labels[].lang`、works 列表 `include=refs`、详情 `engines[]`/`links[]`/`created`、三条 taxonomy 列表的 `total` 与 `labels/{id}`+`tags/{id}` 的 `work_count`、`tag_id` 多值 AND、日历 `meta{}`、`tags[]` 安全轴 + `spoilers=`。全部加法,oasdiff pinned 1.21.0 零 breaking;**缺省响应逐字节不变**(唯一新增的请求参数 `spoilers` 默认 0 = 旧行为)。
 >
+> **A2-R5 编辑展示轴加法(2026-07-29)**:本波**不新增端点**,只补一条**新的轴**——`claimed_by.content_limit`(恒出)+ works 列表 / works/search / 三个日历桶的 `content_limit=` 闸 + works 索引的 `content_limit` 可过滤字段。**年龄轴 `content_rating` 一字未动**(语义/参数/公面全保持)。全部加法,oasdiff pinned 1.21.0 零 breaking;**缺省响应除新增的 `claimed_by.content_limit` 键外逐字节不变**(新参数不传 = 不闸)。日历 ETag 人口键因此从 `nsfw × olang` 变为 `nsfw × olang × content_limit`——**校验子形态变了,缓存会失效一轮**,这是必须的(否则跨闸串味)。详见 §3.2.8。
+>
 > **`claimed_by.state` 语义(R7)**:`claimed_by` 从此恒带 `state`,词表 `live | draft | hidden` —— 这是 **catalog 自有的认领可见性词表**,不是任何产品的状态机(产品状态值永不进公开面)。
 >
 > | `state` | 含义 | 消费端 |
@@ -82,6 +84,8 @@
 > - 这一位解决的是「`claimed_by` 是状态盲的」这个结构缺陷:没有它,下游按 `claimed_by` 再锚定会把产品已经撤下的词条在自己站上复活。
 > - 投影由认领方的对账器维护(wiki:published→live、vndb-draft/pending→draft、banned/declined→hidden);**没有 draft/hidden 生命周期的认领方**(letmoe 等)不写这一列,读面渲染 `live`。
 > - **词表外的值一律读作 `hidden`**——不认识的状态绝不对外发布。未认领行 `claimed_by` 仍是 `null`(不是一个带 state 的对象)。
+>
+> **`claimed_by.content_limit` 语义(A2-R5)**:`claimed_by` 另恒带 `content_limit`,词表 `sfw | nsfw`——**编辑展示轴**,与 `content_rating`(年龄轴)**不是同一件事**,详见 [§3.2.8](#328-编辑展示轴-content_limit闸a2-r5)。认领作品取的是 **wiki 正文的编辑判定**(人工设的 `galgame.content_limit`);未认领行没有 `claimed_by`,消费端按年龄轴回落(`r18→nsfw`,其余 `sfw`)。**凡吐 `claimed_by` 对象的面全带**——works 列表 item、works/search item、日历 item、`works/{id}` 详情(含 `relations[].work` / `series_siblings[]`)、`lookup` 单查与批量的 `work` + `claimed_by` 两块、各实体反查的作品 brief;`draft`/`hidden` 的认领同样带(编辑口径与可见性无关)。
 >
 > **taxonomy 三道的 `total` 语义**:等于**同一组过滤器**下的**整集**行数(不是本页、也不是游标之后的余量),所以把一条道翻到底收集到的行数恰好等于 `total`。它**不随 `nsfw` 变**——厂牌/tag/引擎行是身份而非内容,`nsfw` 在这三条道上只管每行的 `work_count`。
 >
@@ -140,8 +144,8 @@
 > - **月窗判据 = 序数区间 `[y*10000+m*100, +99]`**:day 精度(1-31)与 month 精度(d=0)同时落入,year 精度(`y*10000`)天然出界。
 > - **移植/复刻按最早那次归桶**:2024-05 首发、2024-06 复刻的作品在**五月**桶,和它 `release_date=2024-05-02` 一致。
 > - **JST 定界**:galgame 发售日是日本民用日期,故 `month` / `year` 缺省 = **Asia/Tokyo 当前**月/年(固定 +09:00,JST 无夏令时);服务端解析出的窗口**回显**在响应的 `month` / `year` 里——缺省调用方否则无从得知拿到的是哪一格。
-> - **人口 = works 列表谓词逐字**(LIVE + galgame 媒介 + 未软删;`nsfw=1` 才出 r18)**+ `olang=` 原语言门**:缺省 = **`ja` + 全部 `zh*` 家族**(VNDB 系西方目录会淹没新作月表);`olang=all` 关闭该门;也可给逗号分隔的显式集合(`olang=ja,en`)。**`olang` 是开放词表**(存的是上游 BCP-47 拼写 `ja` / `zh-Hans` / `zh-Hant` / `en` / `ko` …,**不是**弃用 wiki 面的产品 locale 形态 `ja-jp` / `zh-cn`),故无人使用的值 = **空桶,不是 400**——对照我方封闭词表(`content_rating` / `kind` / `tier`)拼错即 400。works 列表本身**本波不加** `olang=` 参数。
-> - **桶级 ETag**:`W/"cal-<桶键>-<人口键>-<count>-<max(updated_at) unix>"`,其中元查询(`count` + `max(updated_at)`)跑在**整个过滤集**上、**先于**任何分页加载,`If-None-Match` 命中即 `304` 短路(省掉整页 item 富化)。人口门(`nsfw` × `olang`)进键——两个不同人口的 count 可能偶然相等,不能共用校验子。`limit` / `cursor` / `include` **不**进键:ETag 只需在**同一 URL** 内唯一,而这三个参数都写在 query string 里。`max(updated_at)` 取自 `catalog_work`——facet 写入统一 touch 宿主作品(与 changes 流同一纪律),所以改 release 日期会推动校验子。
+> - **人口 = works 列表谓词逐字**(LIVE + galgame 媒介 + 未软删;`nsfw=1` 才出 r18)**+ `olang=` 原语言门**:缺省 = **`ja` + 全部 `zh*` 家族**(VNDB 系西方目录会淹没新作月表);`olang=all` 关闭该门;也可给逗号分隔的显式集合(`olang=ja,en`)。**`olang` 是开放词表**(存的是上游 BCP-47 拼写 `ja` / `zh-Hans` / `zh-Hant` / `en` / `ko` …,**不是**弃用 wiki 面的产品 locale 形态 `ja-jp` / `zh-cn`),故无人使用的值 = **空桶,不是 400**——对照我方封闭词表(`content_rating` / `kind` / `tier`)拼错即 400。works 列表本身**本波不加** `olang=` 参数。**A2-R5 再加一道 `content_limit=` 门**(封闭词表 `sfw|nsfw`,非法 token 400,不传=不闸):它参与**分桶成员判定**、`count` 与 `meta` 框,因此也进下面的 ETag 人口键,见 §3.2.8。
+> - **桶级 ETag**:`W/"cal-<桶键>-<人口键>-<count>-<max(updated_at) unix>"`,其中元查询(`count` + `max(updated_at)`)跑在**整个过滤集**上、**先于**任何分页加载,`If-None-Match` 命中即 `304` 短路(省掉整页 item 富化)。人口门(`nsfw` × `olang` × `content_limit`,A2-R5 起三段)进键——两个不同人口的 count 可能偶然相等,不能共用校验子。`limit` / `cursor` / `include` **不**进键:ETag 只需在**同一 URL** 内唯一,而这三个参数都写在 query string 里。`max(updated_at)` 取自 `catalog_work`——facet 写入统一 touch 宿主作品(与 changes 流同一纪律),所以改 release 日期会推动校验子。
 > - `count` 是**整桶**行数(本页至多 `limit` 行),由上面那次必跑的元查询顺带给出。
 >
 > **封面严格度:列表面 > 详情面(对 sfw 调用方)**——`works` 列表的单图 `cover` 对 sfw 调用方会**丢弃 `sexual≠0` 的封面**(挑不出合规图时 `cover` 为空串),而详情面 `covers[]` / `screenshots[]` **恒发全量**并逐行带 `sexual` / `violence` 旗标交由消费端自行取舍。列表 `include=covers` 的两槽同样吃这条 sfw 规则(见 §3.2.1)。
@@ -292,6 +296,34 @@ A2-1b 给 **taxonomy 浏览道与其详情面**发了 nsfw 感知的 `work_count
 - **投影与读面同一份定义**:索引里的 `claim_state`、列表面的 SQL 谓词、记录上的 `claimed_by.state`,语义源都是 `model.ClaimStateKey`:`site` 为空或无 `product_work_id` → `none`;已认领而状态列为 NULL → `live`(零回归语义);0/1/2 → live/draft/hidden;**词表外 → 保守的 `hidden`**。所以 `claim_state=live` 选出的,恰好是详情页写着 `state: "live"` 的那些行。四态是这张表的一个**划分**:每行恰属其一,列全四态 = 不闸。
 - ⚠️ **两面新鲜度不同**:搜索面的 claim 态由 `reindex-catalog`(每日 cron)带进索引,与其余索引 facet 同律;**列表面是读时的库内谓词,claim 态一改立即生效**,不等索引。
 - **消费建议**:产品站渲染自家目录的搜索 lane **与**词条成员列表一律传 `claim_state=live`,并**删掉客户端事后过滤**——客户端过滤修不了 `total`,翻页照样丢行。
+
+### 3.2.8 编辑展示轴 `content_limit=` 闸(A2-R5)
+
+> 事故驱动(doc 106 §38):下游把 catalog 的**年龄轴** `content_rating` 映成了自家的**编辑展示轴** `content_limit`,于是 r18 游戏被整体标成 NSFW 从公开面消失——注册表里 claimed live 的 10,929 部有 10,330 部(94.5%)是 `r18`,该站的可索引面因此从 6,117 部塌到 599 部。反向漏也在:该遮的没遮。**根因不是过滤写错了,是把两个不同的问题当成了一个。**
+
+**两轴各答各的**,`claimed_by` 上并排出、两面都可闸:
+
+| 轴 | 键 | 词表 | 回答的问题 |
+|---|---|---|---|
+| **年龄轴** | `content_rating`(记录顶层) | `all_ages` / `sensitive` / `r18` | **游戏本体**是什么分级——能不能卖给未成年人 |
+| **编辑展示轴** | `claimed_by.content_limit` | `sfw` / `nsfw` | 我要**渲染的素材**(封面/截图/简介)能不能摆上公开页——能不能给搜索引擎索引 |
+
+生产口径的实测交叉表(2026-07,claimed live):`sfw × r18` = **5,568**(被误标 NSFW 的主体)、`nsfw × all_ages` = **50**(反向漏)。所以两轴**互不是对方的放宽或收紧**,谁也替代不了谁。
+
+**投影(单一语义源 `model.DisplayLimitKey`)**:
+
+- **认领作品**(`site` 非空且有 `product_work_id`):读 **wiki 正文** `galgame.content_limit`,`nsfw` → `nsfw`,其余(含空值、无正文、词表外的值)→ `sfw`。这一支**完全不看** `content_rating`——编辑判定是人设的,注册表不去二次猜它。保守方向在这里是**保持可见**:过度遮蔽正是事故本身。
+- **未认领(bodyless)**:没有编辑判定可读,只剩年龄轴——`r18` → `nsfw`,其余 → `sfw`(与下游既有的 `contentLimitFromRating` 一致,所以未认领行的行为**一字未变**)。
+- 二值**全划分**:每行恰属其一,两个值都列 = 不闸。
+
+**参数**:`GET /v1/catalog/works` / `GET /v1/catalog/works/search` / 三个日历桶各有 `content_limit=`,逗号分隔、**封闭词表 `sfw|nsfw`**、IN 语义、**三面逐字同义**(同一份解析、同一句 400 文案)。
+
+- **非法 token = 响亮 400**(`content_limit must be a comma-separated subset of sfw, nsfw`)。⚠️ 注意 **wiki 面同名参数的第三个 token `all` 在这里是 400**:本面「不传」已经等于「两个都要」,再收 `all` 等于默许两个参数是同一个参数——而它们不是。
+- **无缺省 = 不闸**:不传即与本波前**逐字节一致**。
+- **与 `nsfw=` / `claim_state=` 正交**:三道门编进**同一个**合取(搜索面是那一条 Meili 表达式,列表面/日历是同一个 `WHERE`),所以 `total`/facets/items/月桶计数/`meta` 框永远在同一道门后面;开一道门绝不会把另一道带开。
+- **日历另加一条**:该闸参与**分桶成员判定**,因此也进 **ETag 人口键**(`nsfw × olang × content_limit`)——否则两个不同人口会共用校验子而串味。
+- ⚠️ **三面新鲜度不同**:搜索面的 `content_limit` 由 `reindex-catalog`(每日 cron)带进索引;**列表面与日历是读时的库内谓词,编辑一改立即生效**。
+- **消费建议**:要做**可索引面 / SEO 面**的站点,闸 `content_limit=sfw`,并把渲染判定读 `claimed_by.content_limit` —— **不要**拿 `content_rating` 当展示门;年龄门该走 `nsfw=` / `content_rating=`,那是另一回事。
 
 ### 3.5 稳定性承诺
 

@@ -71,7 +71,11 @@ type WorksSearchFilter struct {
 	// (unpublished) and unclaimed rows out of a results page, which is exactly
 	// how they reached production.
 	ClaimStates []string
-	LabelID     int64
+	// DisplayLimits narrows to a set of EDITORIAL DISPLAY limits (sfw|nsfw,
+	// A2-R5) — the works list parameter of the same name, word for word. Empty =
+	// no gate at all, so every pre-existing caller's wire stays byte-identical.
+	DisplayLimits []string
+	LabelID       int64
 	// TagIDs are canonical tag ids ANDed together (A2-1e) — the works list's
 	// tag_id semantics verbatim.
 	TagIDs         []int64
@@ -256,6 +260,17 @@ func (f WorksSearchFilter) meiliFilter(docID string) string {
 		or := make([]string, 0, len(f.ClaimStates))
 		for _, st := range f.ClaimStates {
 			or = append(or, "claim_state = '"+catsearch.EscapeFilterValue(st)+"'")
+		}
+		clauses = append(clauses, "("+strings.Join(or, " OR ")+")")
+	}
+	if len(f.DisplayLimits) > 0 {
+		// The editorial display axis (A2-R5). Same one-group shape as claim_state
+		// above, for the same reason: it must AND with the nsfw age gate rather
+		// than replace it, and it must ride the SAME expression total, facets and
+		// items share.
+		or := make([]string, 0, len(f.DisplayLimits))
+		for _, lim := range f.DisplayLimits {
+			or = append(or, "content_limit = '"+catsearch.EscapeFilterValue(lim)+"'")
 		}
 		clauses = append(clauses, "("+strings.Join(or, " OR ")+")")
 	}

@@ -66,6 +66,19 @@ type EntityDoc struct {
 	// Every works document carries a value ("none" for a bodyless row), so
 	// omitempty only ever drops it from the entity indexes, which have no claim.
 	ClaimState string `json:"claim_state,omitempty"`
+	// ContentLimit is the EDITORIAL DISPLAY vocabulary (sfw|nsfw) from
+	// model.DisplayLimitKey — the very projection the read face renders as
+	// claimed_by.content_limit, so a `content_limit=sfw` search selects exactly
+	// the rows whose records say "sfw" (A2-R5).
+	//
+	// It is a SECOND axis beside content_rating, not a re-encoding of it: a
+	// claimed work's value comes from its wiki body's editorial flag, so most
+	// r18 games index as sfw here. Collapsing the two is what hid 5,568 works
+	// from a downstream's public surface (doc 106 §38).
+	//
+	// Every works document carries a value, so omitempty only ever drops it from
+	// the entity indexes, which have no display material of their own.
+	ContentLimit string `json:"content_limit,omitempty"`
 	// OLang is the registry's original-language tag in the UPSTREAM BCP-47
 	// spelling (ja / zh-Hans / en …), never the product locale form — the same
 	// value the calendar's olang gate matches on.

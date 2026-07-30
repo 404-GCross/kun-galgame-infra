@@ -170,18 +170,34 @@ func (o PublicOLang) Key() string {
 // CalendarFilter is the shared request shape of all three buckets: the
 // population gates plus the include= projection selector.
 type CalendarFilter struct {
-	NSFW    bool
-	OLang   PublicOLang
-	Include WorksListInclude
+	NSFW  bool
+	OLang PublicOLang
+	// DisplayLimits is the EDITORIAL DISPLAY gate (sfw|nsfw, A2-R5) — the works
+	// list parameter of the same name, word for word. Empty = no gate, so a
+	// pre-existing caller's bucket membership, count and meta frame are all
+	// unchanged.
+	DisplayLimits []string
+	Include       WorksListInclude
 }
 
-// PopulationKey is the ETag discriminator of the whole population (nsfw × olang).
+// PopulationKey is the ETag discriminator of the whole population
+// (nsfw × olang × content_limit).
+//
+// EVERY gate that changes bucket membership must be in here. Two different
+// populations must never share a cache validator: their counts and max(updated)
+// can coincide by accident, and an ETag that ignored the display gate would
+// serve an sfw-gated page to an ungated caller (and vice versa) on the first
+// If-None-Match — the cross-gate cache smear this key exists to prevent.
 func (f CalendarFilter) PopulationKey() string {
 	gate := "sfw"
 	if f.NSFW {
 		gate = "nsfw"
 	}
-	return gate + "-" + f.OLang.Key()
+	limit := "all"
+	if len(f.DisplayLimits) > 0 {
+		limit = strings.Join(f.DisplayLimits, "+")
+	}
+	return gate + "-" + f.OLang.Key() + "-" + limit
 }
 
 // CalendarMeta returns the bucket's (row count, newest updated_at) over the
@@ -309,6 +325,10 @@ func calendarSource(b CalendarBucket, f CalendarFilter) (from string, where []st
 		where = append(where, pred)
 		args = append(args, pargs...)
 	}
+	if pred, pargs := displayLimitWhere(f.DisplayLimits); pred != "" {
+		where = append(where, pred)
+		args = append(args, pargs...)
+	}
 	if b.Kind == CalendarTBABucket {
 		// Announced but undated: release rows exist, none of them carries a
 		// year. A work with NO release row at all is "unknown" and deliberately
@@ -334,8 +354,9 @@ func releaseOrd(alias string) string {
 // navigate to, and the meta omits the bounds rather than inventing them).
 //
 // Same-gate guarantee: the predicate is calendarSource's for a month-kind
-// bucket MINUS the window join, so "the newest month with anything in it"
-// is scoped by exactly the nsfw × olang gates that decide bucket membership.
+// bucket MINUS the window join, so "the newest month with anything in it" is
+// scoped by exactly the nsfw × olang × content_limit gates that decide bucket
+// membership.
 // A work is placed by its EARLIEST dated release — the same anchor as
 // release_date and as the buckets themselves — so a bound month is always a
 // month whose bucket is genuinely non-empty.
@@ -351,6 +372,10 @@ func (s *PublicService) CalendarBounds(ctx context.Context, f CalendarFilter) (m
 		args = append(args, model.ContentRatingR18)
 	}
 	if pred, pargs := f.OLang.predicate(); pred != "" {
+		where = append(where, pred)
+		args = append(args, pargs...)
+	}
+	if pred, pargs := displayLimitWhere(f.DisplayLimits); pred != "" {
 		where = append(where, pred)
 		args = append(args, pargs...)
 	}

@@ -107,7 +107,7 @@ func labelsSettings() *meilisearch.Settings {
 // its primary key without a second round trip; the numeric scalars are
 // filterable for the released_* bounds and sortable for the sort lanes.
 var WorksFilterableAttributes = []string{
-	"id", "entity_type", "source_keys", "content_rating",
+	"id", "entity_type", "source_keys", "content_rating", "content_limit",
 	"claimed", "claim_state", "olang", "tag_ids", "label_ids", "engine_ids", "series_ids",
 	"released_ord",
 }

@@ -227,6 +227,70 @@ func ClaimStateKey(site *string, productWorkID *int64, claimState *int16) string
 	}
 }
 
+// The PUBLIC display-limit vocabulary (A2-R5) — the two values
+// `claimed_by.content_limit` renders and the works index's `content_limit`
+// filters on. It is the EDITORIAL DISPLAY axis, and it is NOT content_rating:
+//
+//   - content_rating (all_ages | sensitive | r18) is the AGE axis: what the GAME
+//     itself is rated. It answers "may a minor buy this".
+//   - content_limit (sfw | nsfw) is the DISPLAY axis: whether the material a
+//     consumer would RENDER for this work — cover, screenshots, synopsis — is
+//     safe to put on a public page. It answers "may a search engine index this".
+//
+// The two disagree in bulk, which is the whole reason this vocabulary exists:
+// on the 2026-07 production registry 5,568 works are r18 games whose wiki
+// display material is editorially sfw. A downstream that mapped the age axis
+// onto its display gate hid all of them, collapsing its indexable surface from
+// 6,117 works to 599 (doc 106 §38). The reverse leak exists too (50 all_ages
+// works whose material the wiki marked nsfw), so neither axis is a widening or
+// a narrowing of the other — they are different questions.
+const (
+	DisplayLimitKeySFW  = "sfw"
+	DisplayLimitKeyNSFW = "nsfw"
+)
+
+// WikiContentLimitNSFW is the galgame body's own spelling of "this work's
+// display material is NSFW" (galgame.content_limit). The wiki column is the
+// AUTHORITY for a claimed work's display axis — a human editor set it — so the
+// projection reads it verbatim rather than re-deriving it from the rating.
+const WikiContentLimitNSFW = "nsfw"
+
+// DisplayLimitKey projects a registry row onto the display vocabulary. It lives
+// in the model package for exactly the reason ClaimStateKey does: the read face
+// renders it as claimed_by.content_limit, the reindexer bakes it into the works
+// index as the filterable content_limit field, and the works list compiles it
+// into a SQL predicate (service.displayLimitWhere). A filter that selected a
+// different set than the record it returns is the failure this function exists
+// to make unrepresentable.
+//
+// The two branches, and why they differ:
+//
+//   - CLAIMED (site non-empty AND product_work_id set — ClaimStateKey's claimed
+//     judgement verbatim): the WIKI BODY decides. wikiContentLimit is
+//     galgame.content_limit for that body; "nsfw" → nsfw, anything else → sfw.
+//     An empty string (no body, a claimer with no wiki lane) or an unrecognized
+//     value is sfw: the conservative choice HERE is to keep the work visible,
+//     because over-marking is precisely the incident (see the vocabulary note).
+//   - BODYLESS: there is no editorial judgement to read, so the age axis is the
+//     only signal available — r18 → nsfw, all_ages/sensitive → sfw. That is the
+//     mapping every downstream already applies to unclaimed rows
+//     (contentLimitFromRating), so bodyless rows keep the behaviour they have.
+//
+// Two values, total: every row gets exactly one, so the pair is a partition and
+// naming both is no gate at all.
+func DisplayLimitKey(site *string, productWorkID *int64, wikiContentLimit string, contentRating int16) string {
+	if site == nil || *site == "" || productWorkID == nil {
+		if contentRating == ContentRatingR18 {
+			return DisplayLimitKeyNSFW
+		}
+		return DisplayLimitKeySFW
+	}
+	if wikiContentLimit == WikiContentLimitNSFW {
+		return DisplayLimitKeyNSFW
+	}
+	return DisplayLimitKeySFW
+}
+
 // Work title kinds (doc 17 R2). Search hints are findability-only, never
 // displayed.
 const (

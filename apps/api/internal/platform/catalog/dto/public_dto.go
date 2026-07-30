@@ -30,6 +30,23 @@ type PublicClaimedBy struct {
 	// and "this work has a wiki row" — without it a consumer that re-anchors on
 	// claimed_by silently republishes entries the product took down.
 	State string `json:"state" doc:"live|draft|hidden"`
+	// ContentLimit is the claim's EDITORIAL DISPLAY axis (A2-R5) — whether the
+	// material a consumer would RENDER for this work (cover, screenshots,
+	// synopsis) is safe to put on a public page. For a claimed work it is the
+	// wiki body's own content_limit, set by a human editor.
+	//
+	// It is NOT content_rating, which is the AGE axis (what the GAME is rated).
+	// The two disagree in bulk — most r18 games carry editorially sfw display
+	// material — so a consumer that maps content_rating onto its display gate
+	// hides the majority of a healthy catalogue (doc 106 §38). Read this field
+	// for "may I show / index this", read content_rating for "may a minor buy
+	// it".
+	//
+	// Always present on a claimed_by object, whatever the claim's state (the
+	// editorial judgement is independent of visibility). Absent for an unclaimed
+	// row — claimed_by is null there, and the consumer falls back to mapping the
+	// age axis, which is what this projection does for a bodyless work anyway.
+	ContentLimit string `json:"content_limit" doc:"sfw|nsfw"`
 }
 
 // PublicWorkBrief is the lightweight work identity shared by lookup results,

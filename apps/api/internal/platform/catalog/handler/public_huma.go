@@ -125,6 +125,7 @@ type publicWorksSearchInput struct {
 	ContentRating  string `query:"content_rating" enum:"all_ages,sensitive,r18" doc:"Filter by rating (r18 additionally requires nsfw=1)"`
 	Claimed        string `query:"claimed" enum:"true,false" doc:"true = claimed works only; false = bodyless only; absent = both"`
 	ClaimState     string `query:"claim_state" doc:"Comma-separated CLOSED vocabulary: none,live,draft,hidden — the values claimed_by.state renders (none = unclaimed registry row). Matching works must be in ANY of the listed states. An unknown token is a 400. Absent = no gate (every state), which keeps pre-existing callers byte-identical. A product site rendering its own catalogue should pass claim_state=live: the claimed parameter alone cannot tell a LIVE claim from a DRAFT (unpublished) or WITHDRAWN one. Freshness follows the index: a claim-state change is reflected by the next reindex-catalog run (daily cron), like every other indexed facet"`
+	ContentLimit   string `query:"content_limit" doc:"Comma-separated CLOSED vocabulary: sfw,nsfw — the EDITORIAL DISPLAY axis, i.e. the values claimed_by.content_limit renders. An unknown token is a 400. Absent = no gate (both values), which keeps pre-existing callers byte-identical. This is NOT content_rating: content_rating is the AGE axis (what the GAME is rated), this is whether the material you would RENDER (cover, screenshots, synopsis) is safe to publish. Most r18 games carry editorially sfw display material, so filtering by content_rating instead hides the majority of a healthy catalogue. Orthogonal to nsfw= and claim_state=: all of them AND together in one filter, so total, facets and items stay behind the same gate"`
 	LabelID        int64  `query:"label_id" doc:"Only works attributed to this label"`
 	TagID          string `query:"tag_id" doc:"Only works carrying a source tag mapped to this canonical tag; up to 10 comma-separated ids are ANDed (a work must carry all of them), more than 10 or a non-positive/non-numeric entry is a 400"`
 	SeriesID       int64  `query:"series_id" doc:"Only member works of this series"`
@@ -148,6 +149,7 @@ type publicWorksListInput struct {
 	ContentRating  string `query:"content_rating" enum:"all_ages,sensitive,r18" doc:"Filter by rating (r18 additionally requires nsfw=1)"`
 	Claimed        string `query:"claimed" enum:"true,false" doc:"true = claimed works only; false = bodyless only; absent = both"`
 	ClaimState     string `query:"claim_state" doc:"Comma-separated CLOSED vocabulary: none,live,draft,hidden — the values claimed_by.state renders on these very items (none = unclaimed registry row). Matching works must be in ANY of the listed states. An unknown token is a 400. Absent = no gate (every state), which keeps pre-existing callers byte-identical. Word-for-word the works/search parameter of the same name; a product site listing an entity's member works should pass claim_state=live, since the claimed parameter alone cannot tell a LIVE claim from a DRAFT (unpublished) or WITHDRAWN one. Unlike the search face this is a live registry predicate, so a claim-state change takes effect immediately — there is no index to wait for"`
+	ContentLimit   string `query:"content_limit" doc:"Comma-separated CLOSED vocabulary: sfw,nsfw — the EDITORIAL DISPLAY axis, i.e. the values claimed_by.content_limit renders on these very items. An unknown token is a 400. Absent = no gate (both values), which keeps pre-existing callers byte-identical. Word-for-word the works/search parameter of the same name. This is NOT content_rating: content_rating is the AGE axis (what the GAME is rated), this is whether the material you would RENDER (cover, screenshots, synopsis) is safe to publish — a claimed work reads its wiki body's editorial flag, a bodyless one falls back to r18=nsfw. Unlike the search face this is a live registry predicate, so an editorial change takes effect immediately"`
 	LabelID        int64  `query:"label_id" doc:"Only works attributed to this label (the catalog_work_label edge)"`
 	TagID          string `query:"tag_id" doc:"Only works carrying a source tag mapped to this canonical tag; up to 10 comma-separated ids are ANDed (a work must carry all of them), more than 10 or a non-positive/non-numeric entry is a 400"`
 	SeriesID       int64  `query:"series_id" doc:"Only member works of this series"`
@@ -240,35 +242,38 @@ type publicEngineOutput struct {
 // olang population gate and a bucket-level ETag.
 
 type publicCalendarInput struct {
-	Month   string `query:"month" doc:"ISO month YYYY-MM; default = the CURRENT Asia/Tokyo month, echoed back in the response. A malformed value is a 400"`
-	OLang   string `query:"olang" doc:"Original-language gate: comma-separated olang values in the upstream BCP-47 spelling (ja, zh-Hans, en, …) or 'all' to switch it off. Default = the ja + zh* family. olang is an OPEN vocabulary, so an unrecognized value yields an empty bucket, never a 400"`
-	Cursor  string `query:"cursor" doc:"Opaque keyset cursor from a prior next_cursor; omit for the first page"`
-	Limit   int    `query:"limit" doc:"Items per page 1-100 (default 20); above 100 is clamped to 100, a non-positive or non-numeric value is a 400"`
-	NSFW    bool   `query:"nsfw" doc:"true/1 = include r18 works (default false = dropped)"`
-	Include string `query:"include" doc:"Comma-separated rich-brief blocks: names,intros,labels,ratings,covers,refs — the works-list vocabulary verbatim (unknown tokens ignored)"`
+	Month        string `query:"month" doc:"ISO month YYYY-MM; default = the CURRENT Asia/Tokyo month, echoed back in the response. A malformed value is a 400"`
+	OLang        string `query:"olang" doc:"Original-language gate: comma-separated olang values in the upstream BCP-47 spelling (ja, zh-Hans, en, …) or 'all' to switch it off. Default = the ja + zh* family. olang is an OPEN vocabulary, so an unrecognized value yields an empty bucket, never a 400"`
+	ContentLimit string `query:"content_limit" doc:"Comma-separated CLOSED vocabulary: sfw,nsfw — the EDITORIAL DISPLAY axis (the values claimed_by.content_limit renders), gating BUCKET MEMBERSHIP, the count and the meta frame alike. An unknown token is a 400 (a CLOSED vocabulary, unlike olang above). Absent = no gate (both values), byte-identical to the pre-A2-R5 bucket. NOT content_rating: that is the AGE axis (what the GAME is rated), this is whether the material you would RENDER is safe to publish. It rides in the ETag population key, so an sfw-gated and an ungated caller never share a validator"`
+	Cursor       string `query:"cursor" doc:"Opaque keyset cursor from a prior next_cursor; omit for the first page"`
+	Limit        int    `query:"limit" doc:"Items per page 1-100 (default 20); above 100 is clamped to 100, a non-positive or non-numeric value is a 400"`
+	NSFW         bool   `query:"nsfw" doc:"true/1 = include r18 works (default false = dropped)"`
+	Include      string `query:"include" doc:"Comma-separated rich-brief blocks: names,intros,labels,ratings,covers,refs — the works-list vocabulary verbatim (unknown tokens ignored)"`
 }
 type publicCalendarOutput struct {
 	Body Envelope[dto.PublicCalendarData]
 }
 
 type publicCalendarPendingInput struct {
-	Year    string `query:"year" doc:"YYYY; default = the CURRENT Asia/Tokyo year, echoed back in the response. A malformed value is a 400"`
-	OLang   string `query:"olang" doc:"Original-language gate: comma-separated olang values in the upstream BCP-47 spelling (ja, zh-Hans, en, …) or 'all' to switch it off. Default = the ja + zh* family. olang is an OPEN vocabulary, so an unrecognized value yields an empty bucket, never a 400"`
-	Cursor  string `query:"cursor" doc:"Opaque keyset cursor from a prior next_cursor; omit for the first page"`
-	Limit   int    `query:"limit" doc:"Items per page 1-100 (default 20); above 100 is clamped to 100, a non-positive or non-numeric value is a 400"`
-	NSFW    bool   `query:"nsfw" doc:"true/1 = include r18 works (default false = dropped)"`
-	Include string `query:"include" doc:"Comma-separated rich-brief blocks: names,intros,labels,ratings,covers,refs — the works-list vocabulary verbatim (unknown tokens ignored)"`
+	Year         string `query:"year" doc:"YYYY; default = the CURRENT Asia/Tokyo year, echoed back in the response. A malformed value is a 400"`
+	OLang        string `query:"olang" doc:"Original-language gate: comma-separated olang values in the upstream BCP-47 spelling (ja, zh-Hans, en, …) or 'all' to switch it off. Default = the ja + zh* family. olang is an OPEN vocabulary, so an unrecognized value yields an empty bucket, never a 400"`
+	ContentLimit string `query:"content_limit" doc:"Comma-separated CLOSED vocabulary: sfw,nsfw — the EDITORIAL DISPLAY axis (the values claimed_by.content_limit renders), gating BUCKET MEMBERSHIP, the count and the meta frame alike. An unknown token is a 400 (a CLOSED vocabulary, unlike olang above). Absent = no gate (both values), byte-identical to the pre-A2-R5 bucket. NOT content_rating: that is the AGE axis (what the GAME is rated), this is whether the material you would RENDER is safe to publish. It rides in the ETag population key, so an sfw-gated and an ungated caller never share a validator"`
+	Cursor       string `query:"cursor" doc:"Opaque keyset cursor from a prior next_cursor; omit for the first page"`
+	Limit        int    `query:"limit" doc:"Items per page 1-100 (default 20); above 100 is clamped to 100, a non-positive or non-numeric value is a 400"`
+	NSFW         bool   `query:"nsfw" doc:"true/1 = include r18 works (default false = dropped)"`
+	Include      string `query:"include" doc:"Comma-separated rich-brief blocks: names,intros,labels,ratings,covers,refs — the works-list vocabulary verbatim (unknown tokens ignored)"`
 }
 type publicCalendarPendingOutput struct {
 	Body Envelope[dto.PublicCalendarData]
 }
 
 type publicCalendarTBAInput struct {
-	OLang   string `query:"olang" doc:"Original-language gate: comma-separated olang values in the upstream BCP-47 spelling (ja, zh-Hans, en, …) or 'all' to switch it off. Default = the ja + zh* family. olang is an OPEN vocabulary, so an unrecognized value yields an empty bucket, never a 400"`
-	Cursor  string `query:"cursor" doc:"Opaque keyset cursor from a prior next_cursor; omit for the first page"`
-	Limit   int    `query:"limit" doc:"Items per page 1-100 (default 20); above 100 is clamped to 100, a non-positive or non-numeric value is a 400"`
-	NSFW    bool   `query:"nsfw" doc:"true/1 = include r18 works (default false = dropped)"`
-	Include string `query:"include" doc:"Comma-separated rich-brief blocks: names,intros,labels,ratings,covers,refs — the works-list vocabulary verbatim (unknown tokens ignored)"`
+	OLang        string `query:"olang" doc:"Original-language gate: comma-separated olang values in the upstream BCP-47 spelling (ja, zh-Hans, en, …) or 'all' to switch it off. Default = the ja + zh* family. olang is an OPEN vocabulary, so an unrecognized value yields an empty bucket, never a 400"`
+	ContentLimit string `query:"content_limit" doc:"Comma-separated CLOSED vocabulary: sfw,nsfw — the EDITORIAL DISPLAY axis (the values claimed_by.content_limit renders), gating BUCKET MEMBERSHIP, the count and the meta frame alike. An unknown token is a 400 (a CLOSED vocabulary, unlike olang above). Absent = no gate (both values), byte-identical to the pre-A2-R5 bucket. NOT content_rating: that is the AGE axis (what the GAME is rated), this is whether the material you would RENDER is safe to publish. It rides in the ETag population key, so an sfw-gated and an ungated caller never share a validator"`
+	Cursor       string `query:"cursor" doc:"Opaque keyset cursor from a prior next_cursor; omit for the first page"`
+	Limit        int    `query:"limit" doc:"Items per page 1-100 (default 20); above 100 is clamped to 100, a non-positive or non-numeric value is a 400"`
+	NSFW         bool   `query:"nsfw" doc:"true/1 = include r18 works (default false = dropped)"`
+	Include      string `query:"include" doc:"Comma-separated rich-brief blocks: names,intros,labels,ratings,covers,refs — the works-list vocabulary verbatim (unknown tokens ignored)"`
 }
 type publicCalendarTBAOutput struct {
 	Body Envelope[dto.PublicCalendarData]
