@@ -8879,6 +8879,1694 @@ export const docsModel: DocsModel = {
           "title": "Catalog",
           "operations": [
             {
+              "id": "listCatalogCalendarPublic",
+              "method": "get",
+              "path": "/v1/catalog/calendar",
+              "summary": "Release calendar, one ISO month (date ASC keyset); default = the current Asia/Tokyo month",
+              "description": "Works whose EARLIEST year-carrying, non-deleted release falls inside the month — day precision and month precision alike (a month-precision work sorts at the head of its month, it is never pinned to the 1st). Same classification anchor as the works-list release_date, so a row's bucket and its printed date can never disagree. Year-precision works live in /v1/catalog/calendar/pending, undated ones in /v1/catalog/calendar/tba, and a work with no release row at all is in no bucket. Items are works-list rows verbatim, include= and all. Carries a bucket-level ETag (count + newest updated_at over the whole filtered set): an If-None-Match hit 304s before any page is loaded.",
+              "scope": "catalog:read",
+              "params": [
+                {
+                  "name": "month",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "ISO month YYYY-MM; default = the CURRENT Asia/Tokyo month, echoed back in the response. A malformed value is a 400"
+                },
+                {
+                  "name": "olang",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "Original-language gate: comma-separated olang values in the upstream BCP-47 spelling (ja, zh-Hans, en, …) or 'all' to switch it off. Default = the ja + zh* family. olang is an OPEN vocabulary, so an unrecognized value yields an empty bucket, never a 400"
+                },
+                {
+                  "name": "cursor",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "Opaque keyset cursor from a prior next_cursor; omit for the first page"
+                },
+                {
+                  "name": "limit",
+                  "in": "query",
+                  "required": false,
+                  "type": "integer",
+                  "format": "int64",
+                  "doc": "Items per page 1-100 (default 20); above 100 is clamped to 100, a non-positive or non-numeric value is a 400"
+                },
+                {
+                  "name": "nsfw",
+                  "in": "query",
+                  "required": false,
+                  "type": "boolean",
+                  "doc": "true/1 = include r18 works (default false = dropped)"
+                },
+                {
+                  "name": "include",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "Comma-separated rich-brief blocks: names,intros,labels,ratings,covers,refs — the works-list vocabulary verbatim (unknown tokens ignored)"
+                }
+              ],
+              "responses": [
+                {
+                  "status": "200",
+                  "description": "OK",
+                  "schema": {
+                    "type": "object",
+                    "children": [
+                      {
+                        "name": "code",
+                        "required": true,
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      {
+                        "name": "data",
+                        "type": "object",
+                        "children": [
+                          {
+                            "name": "count",
+                            "required": true,
+                            "format": "int64",
+                            "type": "integer"
+                          },
+                          {
+                            "name": "items",
+                            "required": true,
+                            "nullable": true,
+                            "type": "array",
+                            "itemsOf": {
+                              "type": "object",
+                              "children": [
+                                {
+                                  "name": "claimed_by",
+                                  "required": true,
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "site",
+                                      "required": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "state",
+                                      "required": true,
+                                      "doc": "live|draft|hidden",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "work_id",
+                                      "required": true,
+                                      "format": "int64",
+                                      "type": "integer"
+                                    }
+                                  ]
+                                },
+                                {
+                                  "name": "content_rating",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "cover",
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "covers",
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "banner",
+                                      "required": true,
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "height",
+                                          "format": "int64",
+                                          "type": "integer"
+                                        },
+                                        {
+                                          "name": "sexual",
+                                          "required": true,
+                                          "format": "int32",
+                                          "type": "integer"
+                                        },
+                                        {
+                                          "name": "source",
+                                          "required": true,
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "thumbhash",
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "url",
+                                          "required": true,
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "violence",
+                                          "required": true,
+                                          "format": "int32",
+                                          "type": "integer"
+                                        },
+                                        {
+                                          "name": "width",
+                                          "format": "int64",
+                                          "type": "integer"
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "name": "portrait",
+                                      "required": true,
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "height",
+                                          "format": "int64",
+                                          "type": "integer"
+                                        },
+                                        {
+                                          "name": "sexual",
+                                          "required": true,
+                                          "format": "int32",
+                                          "type": "integer"
+                                        },
+                                        {
+                                          "name": "source",
+                                          "required": true,
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "thumbhash",
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "url",
+                                          "required": true,
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "violence",
+                                          "required": true,
+                                          "format": "int32",
+                                          "type": "integer"
+                                        },
+                                        {
+                                          "name": "width",
+                                          "format": "int64",
+                                          "type": "integer"
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                },
+                                {
+                                  "name": "display_name",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "id",
+                                  "required": true,
+                                  "format": "int64",
+                                  "type": "integer"
+                                },
+                                {
+                                  "name": "intros",
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "en-us",
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "intro",
+                                          "required": true,
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "machine",
+                                          "type": "boolean"
+                                        },
+                                        {
+                                          "name": "source",
+                                          "required": true,
+                                          "type": "string"
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "name": "ja-jp",
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "intro",
+                                          "required": true,
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "machine",
+                                          "type": "boolean"
+                                        },
+                                        {
+                                          "name": "source",
+                                          "required": true,
+                                          "type": "string"
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "name": "zh-cn",
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "intro",
+                                          "required": true,
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "machine",
+                                          "type": "boolean"
+                                        },
+                                        {
+                                          "name": "source",
+                                          "required": true,
+                                          "type": "string"
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "name": "zh-tw",
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "intro",
+                                          "required": true,
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "machine",
+                                          "type": "boolean"
+                                        },
+                                        {
+                                          "name": "source",
+                                          "required": true,
+                                          "type": "string"
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                },
+                                {
+                                  "name": "labels",
+                                  "nullable": true,
+                                  "type": "array",
+                                  "itemsOf": {
+                                    "type": "object",
+                                    "children": [
+                                      {
+                                        "name": "display_name",
+                                        "required": true,
+                                        "type": "string"
+                                      },
+                                      {
+                                        "name": "id",
+                                        "required": true,
+                                        "format": "int64",
+                                        "type": "integer"
+                                      },
+                                      {
+                                        "name": "kind",
+                                        "required": true,
+                                        "doc": "attribution nature: circle|publisher|developer|brand",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "name": "label_kind",
+                                        "required": true,
+                                        "type": "string"
+                                      },
+                                      {
+                                        "name": "lang",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "name": "work_count",
+                                        "required": true,
+                                        "format": "int64",
+                                        "type": "integer"
+                                      }
+                                    ]
+                                  }
+                                },
+                                {
+                                  "name": "medium",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "names",
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "en-us",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "ja-jp",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "zh-cn",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "zh-tw",
+                                      "type": "string"
+                                    }
+                                  ]
+                                },
+                                {
+                                  "name": "olang",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "ratings",
+                                  "nullable": true,
+                                  "type": "array",
+                                  "itemsOf": {
+                                    "type": "object",
+                                    "children": [
+                                      {
+                                        "name": "rank",
+                                        "format": "int64",
+                                        "type": "integer"
+                                      },
+                                      {
+                                        "name": "score",
+                                        "required": true,
+                                        "format": "double",
+                                        "type": "number"
+                                      },
+                                      {
+                                        "name": "source",
+                                        "required": true,
+                                        "type": "string"
+                                      },
+                                      {
+                                        "name": "vote_count",
+                                        "required": true,
+                                        "format": "int64",
+                                        "type": "integer"
+                                      }
+                                    ]
+                                  }
+                                },
+                                {
+                                  "name": "refs",
+                                  "nullable": true,
+                                  "type": "array",
+                                  "itemsOf": {
+                                    "type": "object",
+                                    "children": [
+                                      {
+                                        "name": "external_id",
+                                        "required": true,
+                                        "type": "string"
+                                      },
+                                      {
+                                        "name": "source",
+                                        "required": true,
+                                        "type": "string"
+                                      }
+                                    ]
+                                  }
+                                },
+                                {
+                                  "name": "release_date",
+                                  "required": true,
+                                  "nullable": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "updated",
+                                  "required": true,
+                                  "type": "string"
+                                }
+                              ]
+                            }
+                          },
+                          {
+                            "name": "meta",
+                            "required": true,
+                            "type": "object",
+                            "children": [
+                              {
+                                "name": "has_next",
+                                "type": "boolean"
+                              },
+                              {
+                                "name": "has_prev",
+                                "type": "boolean"
+                              },
+                              {
+                                "name": "max_month",
+                                "type": "string"
+                              },
+                              {
+                                "name": "min_month",
+                                "type": "string"
+                              },
+                              {
+                                "name": "today",
+                                "required": true,
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          {
+                            "name": "month",
+                            "doc": "YYYY-MM — the month bucket only",
+                            "type": "string"
+                          },
+                          {
+                            "name": "next_cursor",
+                            "required": true,
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          {
+                            "name": "year",
+                            "doc": "YYYY — the pending bucket only",
+                            "type": "string"
+                          }
+                        ]
+                      },
+                      {
+                        "name": "message",
+                        "required": true,
+                        "type": "string"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "status": "default",
+                  "description": "Error",
+                  "schema": {
+                    "type": "object",
+                    "children": [
+                      {
+                        "name": "detail",
+                        "doc": "A human-readable explanation specific to this occurrence of the problem.",
+                        "type": "string"
+                      },
+                      {
+                        "name": "errors",
+                        "nullable": true,
+                        "doc": "Optional list of individual error details",
+                        "type": "array",
+                        "itemsOf": {
+                          "type": "object",
+                          "children": [
+                            {
+                              "name": "location",
+                              "doc": "Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'",
+                              "type": "string"
+                            },
+                            {
+                              "name": "message",
+                              "doc": "Error message text",
+                              "type": "string"
+                            },
+                            {
+                              "name": "value",
+                              "doc": "The value at the given location",
+                              "type": "object"
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "name": "instance",
+                        "doc": "A URI reference that identifies the specific occurrence of the problem.",
+                        "format": "uri",
+                        "type": "string"
+                      },
+                      {
+                        "name": "status",
+                        "doc": "HTTP status code",
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      {
+                        "name": "title",
+                        "doc": "A short, human-readable summary of the problem type. This value should not change between occurrences of the error.",
+                        "type": "string"
+                      },
+                      {
+                        "name": "type",
+                        "doc": "A URI reference to human-readable documentation for the error.",
+                        "format": "uri",
+                        "type": "string"
+                      }
+                    ]
+                  }
+                }
+              ],
+              "curl": "curl \"https://api.nextmoe.dev/v1/catalog/calendar\" \\\n  -H \"Authorization: Bearer nm_live_<YOUR_KEY>\""
+            },
+            {
+              "id": "listCatalogCalendarPendingPublic",
+              "method": "get",
+              "path": "/v1/catalog/calendar/pending",
+              "summary": "Release calendar, one year's month-still-unknown bucket (id ASC keyset); default = the current Asia/Tokyo year",
+              "description": "Works whose earliest release is known only to the YEAR — they appear in no month view of that year, by design. Same population, item shape, olang gate and ETag mechanics as the month bucket.",
+              "scope": "catalog:read",
+              "params": [
+                {
+                  "name": "year",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "YYYY; default = the CURRENT Asia/Tokyo year, echoed back in the response. A malformed value is a 400"
+                },
+                {
+                  "name": "olang",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "Original-language gate: comma-separated olang values in the upstream BCP-47 spelling (ja, zh-Hans, en, …) or 'all' to switch it off. Default = the ja + zh* family. olang is an OPEN vocabulary, so an unrecognized value yields an empty bucket, never a 400"
+                },
+                {
+                  "name": "cursor",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "Opaque keyset cursor from a prior next_cursor; omit for the first page"
+                },
+                {
+                  "name": "limit",
+                  "in": "query",
+                  "required": false,
+                  "type": "integer",
+                  "format": "int64",
+                  "doc": "Items per page 1-100 (default 20); above 100 is clamped to 100, a non-positive or non-numeric value is a 400"
+                },
+                {
+                  "name": "nsfw",
+                  "in": "query",
+                  "required": false,
+                  "type": "boolean",
+                  "doc": "true/1 = include r18 works (default false = dropped)"
+                },
+                {
+                  "name": "include",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "Comma-separated rich-brief blocks: names,intros,labels,ratings,covers,refs — the works-list vocabulary verbatim (unknown tokens ignored)"
+                }
+              ],
+              "responses": [
+                {
+                  "status": "200",
+                  "description": "OK",
+                  "schema": {
+                    "type": "object",
+                    "children": [
+                      {
+                        "name": "code",
+                        "required": true,
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      {
+                        "name": "data",
+                        "type": "object",
+                        "children": [
+                          {
+                            "name": "count",
+                            "required": true,
+                            "format": "int64",
+                            "type": "integer"
+                          },
+                          {
+                            "name": "items",
+                            "required": true,
+                            "nullable": true,
+                            "type": "array",
+                            "itemsOf": {
+                              "type": "object",
+                              "children": [
+                                {
+                                  "name": "claimed_by",
+                                  "required": true,
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "site",
+                                      "required": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "state",
+                                      "required": true,
+                                      "doc": "live|draft|hidden",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "work_id",
+                                      "required": true,
+                                      "format": "int64",
+                                      "type": "integer"
+                                    }
+                                  ]
+                                },
+                                {
+                                  "name": "content_rating",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "cover",
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "covers",
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "banner",
+                                      "required": true,
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "height",
+                                          "format": "int64",
+                                          "type": "integer"
+                                        },
+                                        {
+                                          "name": "sexual",
+                                          "required": true,
+                                          "format": "int32",
+                                          "type": "integer"
+                                        },
+                                        {
+                                          "name": "source",
+                                          "required": true,
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "thumbhash",
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "url",
+                                          "required": true,
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "violence",
+                                          "required": true,
+                                          "format": "int32",
+                                          "type": "integer"
+                                        },
+                                        {
+                                          "name": "width",
+                                          "format": "int64",
+                                          "type": "integer"
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "name": "portrait",
+                                      "required": true,
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "height",
+                                          "format": "int64",
+                                          "type": "integer"
+                                        },
+                                        {
+                                          "name": "sexual",
+                                          "required": true,
+                                          "format": "int32",
+                                          "type": "integer"
+                                        },
+                                        {
+                                          "name": "source",
+                                          "required": true,
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "thumbhash",
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "url",
+                                          "required": true,
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "violence",
+                                          "required": true,
+                                          "format": "int32",
+                                          "type": "integer"
+                                        },
+                                        {
+                                          "name": "width",
+                                          "format": "int64",
+                                          "type": "integer"
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                },
+                                {
+                                  "name": "display_name",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "id",
+                                  "required": true,
+                                  "format": "int64",
+                                  "type": "integer"
+                                },
+                                {
+                                  "name": "intros",
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "en-us",
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "intro",
+                                          "required": true,
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "machine",
+                                          "type": "boolean"
+                                        },
+                                        {
+                                          "name": "source",
+                                          "required": true,
+                                          "type": "string"
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "name": "ja-jp",
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "intro",
+                                          "required": true,
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "machine",
+                                          "type": "boolean"
+                                        },
+                                        {
+                                          "name": "source",
+                                          "required": true,
+                                          "type": "string"
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "name": "zh-cn",
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "intro",
+                                          "required": true,
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "machine",
+                                          "type": "boolean"
+                                        },
+                                        {
+                                          "name": "source",
+                                          "required": true,
+                                          "type": "string"
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "name": "zh-tw",
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "intro",
+                                          "required": true,
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "machine",
+                                          "type": "boolean"
+                                        },
+                                        {
+                                          "name": "source",
+                                          "required": true,
+                                          "type": "string"
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                },
+                                {
+                                  "name": "labels",
+                                  "nullable": true,
+                                  "type": "array",
+                                  "itemsOf": {
+                                    "type": "object",
+                                    "children": [
+                                      {
+                                        "name": "display_name",
+                                        "required": true,
+                                        "type": "string"
+                                      },
+                                      {
+                                        "name": "id",
+                                        "required": true,
+                                        "format": "int64",
+                                        "type": "integer"
+                                      },
+                                      {
+                                        "name": "kind",
+                                        "required": true,
+                                        "doc": "attribution nature: circle|publisher|developer|brand",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "name": "label_kind",
+                                        "required": true,
+                                        "type": "string"
+                                      },
+                                      {
+                                        "name": "lang",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "name": "work_count",
+                                        "required": true,
+                                        "format": "int64",
+                                        "type": "integer"
+                                      }
+                                    ]
+                                  }
+                                },
+                                {
+                                  "name": "medium",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "names",
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "en-us",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "ja-jp",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "zh-cn",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "zh-tw",
+                                      "type": "string"
+                                    }
+                                  ]
+                                },
+                                {
+                                  "name": "olang",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "ratings",
+                                  "nullable": true,
+                                  "type": "array",
+                                  "itemsOf": {
+                                    "type": "object",
+                                    "children": [
+                                      {
+                                        "name": "rank",
+                                        "format": "int64",
+                                        "type": "integer"
+                                      },
+                                      {
+                                        "name": "score",
+                                        "required": true,
+                                        "format": "double",
+                                        "type": "number"
+                                      },
+                                      {
+                                        "name": "source",
+                                        "required": true,
+                                        "type": "string"
+                                      },
+                                      {
+                                        "name": "vote_count",
+                                        "required": true,
+                                        "format": "int64",
+                                        "type": "integer"
+                                      }
+                                    ]
+                                  }
+                                },
+                                {
+                                  "name": "refs",
+                                  "nullable": true,
+                                  "type": "array",
+                                  "itemsOf": {
+                                    "type": "object",
+                                    "children": [
+                                      {
+                                        "name": "external_id",
+                                        "required": true,
+                                        "type": "string"
+                                      },
+                                      {
+                                        "name": "source",
+                                        "required": true,
+                                        "type": "string"
+                                      }
+                                    ]
+                                  }
+                                },
+                                {
+                                  "name": "release_date",
+                                  "required": true,
+                                  "nullable": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "updated",
+                                  "required": true,
+                                  "type": "string"
+                                }
+                              ]
+                            }
+                          },
+                          {
+                            "name": "meta",
+                            "required": true,
+                            "type": "object",
+                            "children": [
+                              {
+                                "name": "has_next",
+                                "type": "boolean"
+                              },
+                              {
+                                "name": "has_prev",
+                                "type": "boolean"
+                              },
+                              {
+                                "name": "max_month",
+                                "type": "string"
+                              },
+                              {
+                                "name": "min_month",
+                                "type": "string"
+                              },
+                              {
+                                "name": "today",
+                                "required": true,
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          {
+                            "name": "month",
+                            "doc": "YYYY-MM — the month bucket only",
+                            "type": "string"
+                          },
+                          {
+                            "name": "next_cursor",
+                            "required": true,
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          {
+                            "name": "year",
+                            "doc": "YYYY — the pending bucket only",
+                            "type": "string"
+                          }
+                        ]
+                      },
+                      {
+                        "name": "message",
+                        "required": true,
+                        "type": "string"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "status": "default",
+                  "description": "Error",
+                  "schema": {
+                    "type": "object",
+                    "children": [
+                      {
+                        "name": "detail",
+                        "doc": "A human-readable explanation specific to this occurrence of the problem.",
+                        "type": "string"
+                      },
+                      {
+                        "name": "errors",
+                        "nullable": true,
+                        "doc": "Optional list of individual error details",
+                        "type": "array",
+                        "itemsOf": {
+                          "type": "object",
+                          "children": [
+                            {
+                              "name": "location",
+                              "doc": "Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'",
+                              "type": "string"
+                            },
+                            {
+                              "name": "message",
+                              "doc": "Error message text",
+                              "type": "string"
+                            },
+                            {
+                              "name": "value",
+                              "doc": "The value at the given location",
+                              "type": "object"
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "name": "instance",
+                        "doc": "A URI reference that identifies the specific occurrence of the problem.",
+                        "format": "uri",
+                        "type": "string"
+                      },
+                      {
+                        "name": "status",
+                        "doc": "HTTP status code",
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      {
+                        "name": "title",
+                        "doc": "A short, human-readable summary of the problem type. This value should not change between occurrences of the error.",
+                        "type": "string"
+                      },
+                      {
+                        "name": "type",
+                        "doc": "A URI reference to human-readable documentation for the error.",
+                        "format": "uri",
+                        "type": "string"
+                      }
+                    ]
+                  }
+                }
+              ],
+              "curl": "curl \"https://api.nextmoe.dev/v1/catalog/calendar/pending\" \\\n  -H \"Authorization: Bearer nm_live_<YOUR_KEY>\""
+            },
+            {
+              "id": "listCatalogCalendarTBAPublic",
+              "method": "get",
+              "path": "/v1/catalog/calendar/tba",
+              "summary": "Release calendar, the global announced-but-undated bucket (id ASC keyset)",
+              "description": "Works that HAVE release rows but none carrying a year. A work with no release row at all is 'unknown' and deliberately enters no bucket — absence of a release is absence of an announcement, not a TBA date.",
+              "scope": "catalog:read",
+              "params": [
+                {
+                  "name": "olang",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "Original-language gate: comma-separated olang values in the upstream BCP-47 spelling (ja, zh-Hans, en, …) or 'all' to switch it off. Default = the ja + zh* family. olang is an OPEN vocabulary, so an unrecognized value yields an empty bucket, never a 400"
+                },
+                {
+                  "name": "cursor",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "Opaque keyset cursor from a prior next_cursor; omit for the first page"
+                },
+                {
+                  "name": "limit",
+                  "in": "query",
+                  "required": false,
+                  "type": "integer",
+                  "format": "int64",
+                  "doc": "Items per page 1-100 (default 20); above 100 is clamped to 100, a non-positive or non-numeric value is a 400"
+                },
+                {
+                  "name": "nsfw",
+                  "in": "query",
+                  "required": false,
+                  "type": "boolean",
+                  "doc": "true/1 = include r18 works (default false = dropped)"
+                },
+                {
+                  "name": "include",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "Comma-separated rich-brief blocks: names,intros,labels,ratings,covers,refs — the works-list vocabulary verbatim (unknown tokens ignored)"
+                }
+              ],
+              "responses": [
+                {
+                  "status": "200",
+                  "description": "OK",
+                  "schema": {
+                    "type": "object",
+                    "children": [
+                      {
+                        "name": "code",
+                        "required": true,
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      {
+                        "name": "data",
+                        "type": "object",
+                        "children": [
+                          {
+                            "name": "count",
+                            "required": true,
+                            "format": "int64",
+                            "type": "integer"
+                          },
+                          {
+                            "name": "items",
+                            "required": true,
+                            "nullable": true,
+                            "type": "array",
+                            "itemsOf": {
+                              "type": "object",
+                              "children": [
+                                {
+                                  "name": "claimed_by",
+                                  "required": true,
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "site",
+                                      "required": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "state",
+                                      "required": true,
+                                      "doc": "live|draft|hidden",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "work_id",
+                                      "required": true,
+                                      "format": "int64",
+                                      "type": "integer"
+                                    }
+                                  ]
+                                },
+                                {
+                                  "name": "content_rating",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "cover",
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "covers",
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "banner",
+                                      "required": true,
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "height",
+                                          "format": "int64",
+                                          "type": "integer"
+                                        },
+                                        {
+                                          "name": "sexual",
+                                          "required": true,
+                                          "format": "int32",
+                                          "type": "integer"
+                                        },
+                                        {
+                                          "name": "source",
+                                          "required": true,
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "thumbhash",
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "url",
+                                          "required": true,
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "violence",
+                                          "required": true,
+                                          "format": "int32",
+                                          "type": "integer"
+                                        },
+                                        {
+                                          "name": "width",
+                                          "format": "int64",
+                                          "type": "integer"
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "name": "portrait",
+                                      "required": true,
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "height",
+                                          "format": "int64",
+                                          "type": "integer"
+                                        },
+                                        {
+                                          "name": "sexual",
+                                          "required": true,
+                                          "format": "int32",
+                                          "type": "integer"
+                                        },
+                                        {
+                                          "name": "source",
+                                          "required": true,
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "thumbhash",
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "url",
+                                          "required": true,
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "violence",
+                                          "required": true,
+                                          "format": "int32",
+                                          "type": "integer"
+                                        },
+                                        {
+                                          "name": "width",
+                                          "format": "int64",
+                                          "type": "integer"
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                },
+                                {
+                                  "name": "display_name",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "id",
+                                  "required": true,
+                                  "format": "int64",
+                                  "type": "integer"
+                                },
+                                {
+                                  "name": "intros",
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "en-us",
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "intro",
+                                          "required": true,
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "machine",
+                                          "type": "boolean"
+                                        },
+                                        {
+                                          "name": "source",
+                                          "required": true,
+                                          "type": "string"
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "name": "ja-jp",
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "intro",
+                                          "required": true,
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "machine",
+                                          "type": "boolean"
+                                        },
+                                        {
+                                          "name": "source",
+                                          "required": true,
+                                          "type": "string"
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "name": "zh-cn",
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "intro",
+                                          "required": true,
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "machine",
+                                          "type": "boolean"
+                                        },
+                                        {
+                                          "name": "source",
+                                          "required": true,
+                                          "type": "string"
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "name": "zh-tw",
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "intro",
+                                          "required": true,
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "machine",
+                                          "type": "boolean"
+                                        },
+                                        {
+                                          "name": "source",
+                                          "required": true,
+                                          "type": "string"
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                },
+                                {
+                                  "name": "labels",
+                                  "nullable": true,
+                                  "type": "array",
+                                  "itemsOf": {
+                                    "type": "object",
+                                    "children": [
+                                      {
+                                        "name": "display_name",
+                                        "required": true,
+                                        "type": "string"
+                                      },
+                                      {
+                                        "name": "id",
+                                        "required": true,
+                                        "format": "int64",
+                                        "type": "integer"
+                                      },
+                                      {
+                                        "name": "kind",
+                                        "required": true,
+                                        "doc": "attribution nature: circle|publisher|developer|brand",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "name": "label_kind",
+                                        "required": true,
+                                        "type": "string"
+                                      },
+                                      {
+                                        "name": "lang",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "name": "work_count",
+                                        "required": true,
+                                        "format": "int64",
+                                        "type": "integer"
+                                      }
+                                    ]
+                                  }
+                                },
+                                {
+                                  "name": "medium",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "names",
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "en-us",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "ja-jp",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "zh-cn",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "zh-tw",
+                                      "type": "string"
+                                    }
+                                  ]
+                                },
+                                {
+                                  "name": "olang",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "ratings",
+                                  "nullable": true,
+                                  "type": "array",
+                                  "itemsOf": {
+                                    "type": "object",
+                                    "children": [
+                                      {
+                                        "name": "rank",
+                                        "format": "int64",
+                                        "type": "integer"
+                                      },
+                                      {
+                                        "name": "score",
+                                        "required": true,
+                                        "format": "double",
+                                        "type": "number"
+                                      },
+                                      {
+                                        "name": "source",
+                                        "required": true,
+                                        "type": "string"
+                                      },
+                                      {
+                                        "name": "vote_count",
+                                        "required": true,
+                                        "format": "int64",
+                                        "type": "integer"
+                                      }
+                                    ]
+                                  }
+                                },
+                                {
+                                  "name": "refs",
+                                  "nullable": true,
+                                  "type": "array",
+                                  "itemsOf": {
+                                    "type": "object",
+                                    "children": [
+                                      {
+                                        "name": "external_id",
+                                        "required": true,
+                                        "type": "string"
+                                      },
+                                      {
+                                        "name": "source",
+                                        "required": true,
+                                        "type": "string"
+                                      }
+                                    ]
+                                  }
+                                },
+                                {
+                                  "name": "release_date",
+                                  "required": true,
+                                  "nullable": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "updated",
+                                  "required": true,
+                                  "type": "string"
+                                }
+                              ]
+                            }
+                          },
+                          {
+                            "name": "meta",
+                            "required": true,
+                            "type": "object",
+                            "children": [
+                              {
+                                "name": "has_next",
+                                "type": "boolean"
+                              },
+                              {
+                                "name": "has_prev",
+                                "type": "boolean"
+                              },
+                              {
+                                "name": "max_month",
+                                "type": "string"
+                              },
+                              {
+                                "name": "min_month",
+                                "type": "string"
+                              },
+                              {
+                                "name": "today",
+                                "required": true,
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          {
+                            "name": "month",
+                            "doc": "YYYY-MM — the month bucket only",
+                            "type": "string"
+                          },
+                          {
+                            "name": "next_cursor",
+                            "required": true,
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          {
+                            "name": "year",
+                            "doc": "YYYY — the pending bucket only",
+                            "type": "string"
+                          }
+                        ]
+                      },
+                      {
+                        "name": "message",
+                        "required": true,
+                        "type": "string"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "status": "default",
+                  "description": "Error",
+                  "schema": {
+                    "type": "object",
+                    "children": [
+                      {
+                        "name": "detail",
+                        "doc": "A human-readable explanation specific to this occurrence of the problem.",
+                        "type": "string"
+                      },
+                      {
+                        "name": "errors",
+                        "nullable": true,
+                        "doc": "Optional list of individual error details",
+                        "type": "array",
+                        "itemsOf": {
+                          "type": "object",
+                          "children": [
+                            {
+                              "name": "location",
+                              "doc": "Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'",
+                              "type": "string"
+                            },
+                            {
+                              "name": "message",
+                              "doc": "Error message text",
+                              "type": "string"
+                            },
+                            {
+                              "name": "value",
+                              "doc": "The value at the given location",
+                              "type": "object"
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "name": "instance",
+                        "doc": "A URI reference that identifies the specific occurrence of the problem.",
+                        "format": "uri",
+                        "type": "string"
+                      },
+                      {
+                        "name": "status",
+                        "doc": "HTTP status code",
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      {
+                        "name": "title",
+                        "doc": "A short, human-readable summary of the problem type. This value should not change between occurrences of the error.",
+                        "type": "string"
+                      },
+                      {
+                        "name": "type",
+                        "doc": "A URI reference to human-readable documentation for the error.",
+                        "format": "uri",
+                        "type": "string"
+                      }
+                    ]
+                  }
+                }
+              ],
+              "curl": "curl \"https://api.nextmoe.dev/v1/catalog/calendar/tba\" \\\n  -H \"Authorization: Bearer nm_live_<YOUR_KEY>\""
+            },
+            {
               "id": "listCatalogChangesPublic",
               "method": "get",
               "path": "/v1/catalog/changes",
@@ -9290,6 +10978,12 @@ export const docsModel: DocsModel = {
                                           "type": "string"
                                         },
                                         {
+                                          "name": "state",
+                                          "required": true,
+                                          "doc": "live|draft|hidden",
+                                          "type": "string"
+                                        },
+                                        {
                                           "name": "work_id",
                                           "required": true,
                                           "format": "int64",
@@ -9400,6 +11094,537 @@ export const docsModel: DocsModel = {
               "curl": "curl \"https://api.nextmoe.dev/v1/catalog/characters/1\" \\\n  -H \"Authorization: Bearer nm_live_<YOUR_KEY>\""
             },
             {
+              "id": "listCatalogEnginesPublic",
+              "method": "get",
+              "path": "/v1/catalog/engines",
+              "summary": "Keyset engine browse lane (id ASC); each row carries an nsfw-aware work_count",
+              "description": "The visual-novel / game engines works are built with, id ascending. work_count is the number of works THIS caller would page through via works?engine_id=<id>.",
+              "scope": "catalog:read",
+              "params": [
+                {
+                  "name": "cursor",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "Opaque keyset cursor from a prior next_cursor; omit for the first page"
+                },
+                {
+                  "name": "limit",
+                  "in": "query",
+                  "required": false,
+                  "type": "integer",
+                  "format": "int64",
+                  "doc": "Items per page 1-100 (default 20); above 100 is clamped to 100, a non-positive or non-numeric value is a 400"
+                },
+                {
+                  "name": "nsfw",
+                  "in": "query",
+                  "required": false,
+                  "type": "boolean",
+                  "doc": "true/1 = count r18 works in work_count (default false = excluded, matching what an sfw works?engine_id= call returns)"
+                }
+              ],
+              "responses": [
+                {
+                  "status": "200",
+                  "description": "OK",
+                  "schema": {
+                    "type": "object",
+                    "children": [
+                      {
+                        "name": "code",
+                        "required": true,
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      {
+                        "name": "data",
+                        "type": "object",
+                        "children": [
+                          {
+                            "name": "items",
+                            "required": true,
+                            "nullable": true,
+                            "type": "array",
+                            "itemsOf": {
+                              "type": "object",
+                              "children": [
+                                {
+                                  "name": "aliases",
+                                  "required": true,
+                                  "nullable": true,
+                                  "type": "array",
+                                  "itemsOf": {
+                                    "type": "string"
+                                  }
+                                },
+                                {
+                                  "name": "description",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "id",
+                                  "required": true,
+                                  "format": "int64",
+                                  "type": "integer"
+                                },
+                                {
+                                  "name": "name",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "work_count",
+                                  "required": true,
+                                  "format": "int64",
+                                  "type": "integer"
+                                }
+                              ]
+                            }
+                          },
+                          {
+                            "name": "next_cursor",
+                            "required": true,
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          {
+                            "name": "total",
+                            "required": true,
+                            "format": "int64",
+                            "type": "integer"
+                          }
+                        ]
+                      },
+                      {
+                        "name": "message",
+                        "required": true,
+                        "type": "string"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "status": "default",
+                  "description": "Error",
+                  "schema": {
+                    "type": "object",
+                    "children": [
+                      {
+                        "name": "detail",
+                        "doc": "A human-readable explanation specific to this occurrence of the problem.",
+                        "type": "string"
+                      },
+                      {
+                        "name": "errors",
+                        "nullable": true,
+                        "doc": "Optional list of individual error details",
+                        "type": "array",
+                        "itemsOf": {
+                          "type": "object",
+                          "children": [
+                            {
+                              "name": "location",
+                              "doc": "Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'",
+                              "type": "string"
+                            },
+                            {
+                              "name": "message",
+                              "doc": "Error message text",
+                              "type": "string"
+                            },
+                            {
+                              "name": "value",
+                              "doc": "The value at the given location",
+                              "type": "object"
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "name": "instance",
+                        "doc": "A URI reference that identifies the specific occurrence of the problem.",
+                        "format": "uri",
+                        "type": "string"
+                      },
+                      {
+                        "name": "status",
+                        "doc": "HTTP status code",
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      {
+                        "name": "title",
+                        "doc": "A short, human-readable summary of the problem type. This value should not change between occurrences of the error.",
+                        "type": "string"
+                      },
+                      {
+                        "name": "type",
+                        "doc": "A URI reference to human-readable documentation for the error.",
+                        "format": "uri",
+                        "type": "string"
+                      }
+                    ]
+                  }
+                }
+              ],
+              "curl": "curl \"https://api.nextmoe.dev/v1/catalog/engines\" \\\n  -H \"Authorization: Bearer nm_live_<YOUR_KEY>\""
+            },
+            {
+              "id": "getCatalogEnginePublic",
+              "method": "get",
+              "path": "/v1/catalog/engines/{id}",
+              "summary": "Engine record: name + nsfw-aware work_count + exact cross-source refs",
+              "scope": "catalog:read",
+              "params": [
+                {
+                  "name": "id",
+                  "in": "path",
+                  "required": true,
+                  "type": "integer",
+                  "format": "int64",
+                  "doc": "Catalog engine id"
+                },
+                {
+                  "name": "nsfw",
+                  "in": "query",
+                  "required": false,
+                  "type": "boolean",
+                  "doc": "true/1 = count r18 works in work_count (default false = excluded)"
+                }
+              ],
+              "responses": [
+                {
+                  "status": "200",
+                  "description": "OK",
+                  "schema": {
+                    "type": "object",
+                    "children": [
+                      {
+                        "name": "code",
+                        "required": true,
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      {
+                        "name": "data",
+                        "type": "object",
+                        "children": [
+                          {
+                            "name": "aliases",
+                            "required": true,
+                            "nullable": true,
+                            "type": "array",
+                            "itemsOf": {
+                              "type": "string"
+                            }
+                          },
+                          {
+                            "name": "description",
+                            "required": true,
+                            "type": "string"
+                          },
+                          {
+                            "name": "id",
+                            "required": true,
+                            "format": "int64",
+                            "type": "integer"
+                          },
+                          {
+                            "name": "name",
+                            "required": true,
+                            "type": "string"
+                          },
+                          {
+                            "name": "refs",
+                            "required": true,
+                            "nullable": true,
+                            "type": "array",
+                            "itemsOf": {
+                              "type": "object",
+                              "children": [
+                                {
+                                  "name": "external_id",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "source",
+                                  "required": true,
+                                  "type": "string"
+                                }
+                              ]
+                            }
+                          },
+                          {
+                            "name": "work_count",
+                            "required": true,
+                            "format": "int64",
+                            "type": "integer"
+                          }
+                        ]
+                      },
+                      {
+                        "name": "message",
+                        "required": true,
+                        "type": "string"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "status": "default",
+                  "description": "Error",
+                  "schema": {
+                    "type": "object",
+                    "children": [
+                      {
+                        "name": "detail",
+                        "doc": "A human-readable explanation specific to this occurrence of the problem.",
+                        "type": "string"
+                      },
+                      {
+                        "name": "errors",
+                        "nullable": true,
+                        "doc": "Optional list of individual error details",
+                        "type": "array",
+                        "itemsOf": {
+                          "type": "object",
+                          "children": [
+                            {
+                              "name": "location",
+                              "doc": "Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'",
+                              "type": "string"
+                            },
+                            {
+                              "name": "message",
+                              "doc": "Error message text",
+                              "type": "string"
+                            },
+                            {
+                              "name": "value",
+                              "doc": "The value at the given location",
+                              "type": "object"
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "name": "instance",
+                        "doc": "A URI reference that identifies the specific occurrence of the problem.",
+                        "format": "uri",
+                        "type": "string"
+                      },
+                      {
+                        "name": "status",
+                        "doc": "HTTP status code",
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      {
+                        "name": "title",
+                        "doc": "A short, human-readable summary of the problem type. This value should not change between occurrences of the error.",
+                        "type": "string"
+                      },
+                      {
+                        "name": "type",
+                        "doc": "A URI reference to human-readable documentation for the error.",
+                        "format": "uri",
+                        "type": "string"
+                      }
+                    ]
+                  }
+                }
+              ],
+              "curl": "curl \"https://api.nextmoe.dev/v1/catalog/engines/1\" \\\n  -H \"Authorization: Bearer nm_live_<YOUR_KEY>\""
+            },
+            {
+              "id": "listCatalogLabelsPublic",
+              "method": "get",
+              "path": "/v1/catalog/labels",
+              "summary": "Keyset label browse lane (id ASC); filter by kind, each row carries an nsfw-aware work_count",
+              "description": "Every label that has not been merged away, id ascending. work_count is the number of works THIS caller would page through via works?label_id=<id> — so an sfw caller's count excludes r18 works and always matches the list it can actually fetch.",
+              "scope": "catalog:read",
+              "params": [
+                {
+                  "name": "kind",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "Filter by label kind; a token outside this closed set is a 400",
+                  "enum": [
+                    "game_brand",
+                    "bunko",
+                    "publisher",
+                    "anime_studio",
+                    "doujin_circle",
+                    "group"
+                  ]
+                },
+                {
+                  "name": "cursor",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "Opaque keyset cursor from a prior next_cursor; omit for the first page"
+                },
+                {
+                  "name": "limit",
+                  "in": "query",
+                  "required": false,
+                  "type": "integer",
+                  "format": "int64",
+                  "doc": "Items per page 1-100 (default 20); above 100 is clamped to 100, a non-positive or non-numeric value is a 400"
+                },
+                {
+                  "name": "nsfw",
+                  "in": "query",
+                  "required": false,
+                  "type": "boolean",
+                  "doc": "true/1 = count r18 works in work_count (default false = excluded, matching what an sfw works?label_id= call returns)"
+                }
+              ],
+              "responses": [
+                {
+                  "status": "200",
+                  "description": "OK",
+                  "schema": {
+                    "type": "object",
+                    "children": [
+                      {
+                        "name": "code",
+                        "required": true,
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      {
+                        "name": "data",
+                        "type": "object",
+                        "children": [
+                          {
+                            "name": "items",
+                            "required": true,
+                            "nullable": true,
+                            "type": "array",
+                            "itemsOf": {
+                              "type": "object",
+                              "children": [
+                                {
+                                  "name": "display_name",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "id",
+                                  "required": true,
+                                  "format": "int64",
+                                  "type": "integer"
+                                },
+                                {
+                                  "name": "kind",
+                                  "required": true,
+                                  "doc": "game_brand|bunko|publisher|anime_studio|doujin_circle|group|other",
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "work_count",
+                                  "required": true,
+                                  "format": "int64",
+                                  "type": "integer"
+                                }
+                              ]
+                            }
+                          },
+                          {
+                            "name": "next_cursor",
+                            "required": true,
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          {
+                            "name": "total",
+                            "required": true,
+                            "format": "int64",
+                            "type": "integer"
+                          }
+                        ]
+                      },
+                      {
+                        "name": "message",
+                        "required": true,
+                        "type": "string"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "status": "default",
+                  "description": "Error",
+                  "schema": {
+                    "type": "object",
+                    "children": [
+                      {
+                        "name": "detail",
+                        "doc": "A human-readable explanation specific to this occurrence of the problem.",
+                        "type": "string"
+                      },
+                      {
+                        "name": "errors",
+                        "nullable": true,
+                        "doc": "Optional list of individual error details",
+                        "type": "array",
+                        "itemsOf": {
+                          "type": "object",
+                          "children": [
+                            {
+                              "name": "location",
+                              "doc": "Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'",
+                              "type": "string"
+                            },
+                            {
+                              "name": "message",
+                              "doc": "Error message text",
+                              "type": "string"
+                            },
+                            {
+                              "name": "value",
+                              "doc": "The value at the given location",
+                              "type": "object"
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "name": "instance",
+                        "doc": "A URI reference that identifies the specific occurrence of the problem.",
+                        "format": "uri",
+                        "type": "string"
+                      },
+                      {
+                        "name": "status",
+                        "doc": "HTTP status code",
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      {
+                        "name": "title",
+                        "doc": "A short, human-readable summary of the problem type. This value should not change between occurrences of the error.",
+                        "type": "string"
+                      },
+                      {
+                        "name": "type",
+                        "doc": "A URI reference to human-readable documentation for the error.",
+                        "format": "uri",
+                        "type": "string"
+                      }
+                    ]
+                  }
+                }
+              ],
+              "curl": "curl \"https://api.nextmoe.dev/v1/catalog/labels\" \\\n  -H \"Authorization: Bearer nm_live_<YOUR_KEY>\""
+            },
+            {
               "id": "getCatalogLabelPublic",
               "method": "get",
               "path": "/v1/catalog/labels/{id}",
@@ -9463,6 +11688,15 @@ export const docsModel: DocsModel = {
                         "type": "object",
                         "children": [
                           {
+                            "name": "aliases",
+                            "required": true,
+                            "nullable": true,
+                            "type": "array",
+                            "itemsOf": {
+                              "type": "string"
+                            }
+                          },
+                          {
                             "name": "display_name",
                             "required": true,
                             "type": "string"
@@ -9502,6 +11736,10 @@ export const docsModel: DocsModel = {
                           {
                             "name": "kind",
                             "required": true,
+                            "type": "string"
+                          },
+                          {
+                            "name": "lang",
                             "type": "string"
                           },
                           {
@@ -9552,6 +11790,12 @@ export const docsModel: DocsModel = {
                             }
                           },
                           {
+                            "name": "work_count",
+                            "required": true,
+                            "format": "int64",
+                            "type": "integer"
+                          },
+                          {
                             "name": "works",
                             "nullable": true,
                             "type": "array",
@@ -9576,6 +11820,12 @@ export const docsModel: DocsModel = {
                                         {
                                           "name": "site",
                                           "required": true,
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "state",
+                                          "required": true,
+                                          "doc": "live|draft|hidden",
                                           "type": "string"
                                         },
                                         {
@@ -9933,6 +12183,12 @@ export const docsModel: DocsModel = {
                                               "type": "string"
                                             },
                                             {
+                                              "name": "state",
+                                              "required": true,
+                                              "doc": "live|draft|hidden",
+                                              "type": "string"
+                                            },
+                                            {
                                               "name": "work_id",
                                               "required": true,
                                               "format": "int64",
@@ -9979,6 +12235,12 @@ export const docsModel: DocsModel = {
                                 "type": "string"
                               },
                               {
+                                "name": "state",
+                                "required": true,
+                                "doc": "live|draft|hidden",
+                                "type": "string"
+                              },
+                              {
                                 "name": "work_id",
                                 "required": true,
                                 "format": "int64",
@@ -9990,6 +12252,15 @@ export const docsModel: DocsModel = {
                             "name": "label",
                             "type": "object",
                             "children": [
+                              {
+                                "name": "aliases",
+                                "required": true,
+                                "nullable": true,
+                                "type": "array",
+                                "itemsOf": {
+                                  "type": "string"
+                                }
+                              },
                               {
                                 "name": "display_name",
                                 "required": true,
@@ -10030,6 +12301,10 @@ export const docsModel: DocsModel = {
                               {
                                 "name": "kind",
                                 "required": true,
+                                "type": "string"
+                              },
+                              {
+                                "name": "lang",
                                 "type": "string"
                               },
                               {
@@ -10080,6 +12355,12 @@ export const docsModel: DocsModel = {
                                 }
                               },
                               {
+                                "name": "work_count",
+                                "required": true,
+                                "format": "int64",
+                                "type": "integer"
+                              },
+                              {
                                 "name": "works",
                                 "nullable": true,
                                 "type": "array",
@@ -10104,6 +12385,12 @@ export const docsModel: DocsModel = {
                                             {
                                               "name": "site",
                                               "required": true,
+                                              "type": "string"
+                                            },
+                                            {
+                                              "name": "state",
+                                              "required": true,
+                                              "doc": "live|draft|hidden",
                                               "type": "string"
                                             },
                                             {
@@ -10196,6 +12483,12 @@ export const docsModel: DocsModel = {
                                             {
                                               "name": "site",
                                               "required": true,
+                                              "type": "string"
+                                            },
+                                            {
+                                              "name": "state",
+                                              "required": true,
+                                              "doc": "live|draft|hidden",
                                               "type": "string"
                                             },
                                             {
@@ -10373,6 +12666,12 @@ export const docsModel: DocsModel = {
                                   {
                                     "name": "site",
                                     "required": true,
+                                    "type": "string"
+                                  },
+                                  {
+                                    "name": "state",
+                                    "required": true,
+                                    "doc": "live|draft|hidden",
                                     "type": "string"
                                   },
                                   {
@@ -10730,6 +13029,12 @@ export const docsModel: DocsModel = {
                                                     "type": "string"
                                                   },
                                                   {
+                                                    "name": "state",
+                                                    "required": true,
+                                                    "doc": "live|draft|hidden",
+                                                    "type": "string"
+                                                  },
+                                                  {
                                                     "name": "work_id",
                                                     "required": true,
                                                     "format": "int64",
@@ -10776,6 +13081,12 @@ export const docsModel: DocsModel = {
                                       "type": "string"
                                     },
                                     {
+                                      "name": "state",
+                                      "required": true,
+                                      "doc": "live|draft|hidden",
+                                      "type": "string"
+                                    },
+                                    {
                                       "name": "work_id",
                                       "required": true,
                                       "format": "int64",
@@ -10792,6 +13103,15 @@ export const docsModel: DocsModel = {
                                   "name": "label",
                                   "type": "object",
                                   "children": [
+                                    {
+                                      "name": "aliases",
+                                      "required": true,
+                                      "nullable": true,
+                                      "type": "array",
+                                      "itemsOf": {
+                                        "type": "string"
+                                      }
+                                    },
                                     {
                                       "name": "display_name",
                                       "required": true,
@@ -10832,6 +13152,10 @@ export const docsModel: DocsModel = {
                                     {
                                       "name": "kind",
                                       "required": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "lang",
                                       "type": "string"
                                     },
                                     {
@@ -10882,6 +13206,12 @@ export const docsModel: DocsModel = {
                                       }
                                     },
                                     {
+                                      "name": "work_count",
+                                      "required": true,
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
                                       "name": "works",
                                       "nullable": true,
                                       "type": "array",
@@ -10906,6 +13236,12 @@ export const docsModel: DocsModel = {
                                                   {
                                                     "name": "site",
                                                     "required": true,
+                                                    "type": "string"
+                                                  },
+                                                  {
+                                                    "name": "state",
+                                                    "required": true,
+                                                    "doc": "live|draft|hidden",
                                                     "type": "string"
                                                   },
                                                   {
@@ -10998,6 +13334,12 @@ export const docsModel: DocsModel = {
                                                   {
                                                     "name": "site",
                                                     "required": true,
+                                                    "type": "string"
+                                                  },
+                                                  {
+                                                    "name": "state",
+                                                    "required": true,
+                                                    "doc": "live|draft|hidden",
                                                     "type": "string"
                                                   },
                                                   {
@@ -11185,6 +13527,12 @@ export const docsModel: DocsModel = {
                                         {
                                           "name": "site",
                                           "required": true,
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "state",
+                                          "required": true,
+                                          "doc": "live|draft|hidden",
                                           "type": "string"
                                         },
                                         {
@@ -11410,6 +13758,12 @@ export const docsModel: DocsModel = {
                                         {
                                           "name": "site",
                                           "required": true,
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "state",
+                                          "required": true,
+                                          "doc": "live|draft|hidden",
                                           "type": "string"
                                         },
                                         {
@@ -11954,7 +14308,8 @@ export const docsModel: DocsModel = {
               "id": "searchCatalogEntitiesPublic",
               "method": "get",
               "path": "/v1/catalog/search",
-              "summary": "Entity relevance search over names / characters / labels, projected to public briefs",
+              "summary": "Entity autocomplete over names / characters / labels / works / tags, projected to public briefs",
+              "description": "The identity finder: up to 20 flat hits of ONE family, no filters and no pagination — what a picker or a jump-to-entity box needs. For a works RESULTS PAGE (filters, facets, sort, paging, full works-list rows) use GET /v1/catalog/works/search instead.",
               "scope": "catalog:read",
               "params": [
                 {
@@ -11962,12 +14317,13 @@ export const docsModel: DocsModel = {
                   "in": "query",
                   "required": false,
                   "type": "string",
-                  "doc": "Which index to search; works (wave 105) searches every LIVE galgame registry work by any title",
+                  "doc": "Which index to search; works (wave 105) searches every LIVE galgame registry work by any title, tags (A2-1d) the canonical cross-source tag vocabulary",
                   "enum": [
                     "names",
                     "characters",
                     "labels",
-                    "works"
+                    "works",
+                    "tags"
                   ]
                 },
                 {
@@ -12046,6 +14402,10 @@ export const docsModel: DocsModel = {
                                   "type": "integer"
                                 },
                                 {
+                                  "name": "kind",
+                                  "type": "string"
+                                },
+                                {
                                   "name": "latin",
                                   "type": "string"
                                 },
@@ -12062,6 +14422,10 @@ export const docsModel: DocsModel = {
                                   "itemsOf": {
                                     "type": "string"
                                   }
+                                },
+                                {
+                                  "name": "tier",
+                                  "type": "string"
                                 }
                               ]
                             }
@@ -12149,10 +14513,214 @@ export const docsModel: DocsModel = {
               "curl": "curl \"https://api.nextmoe.dev/v1/catalog/search\" \\\n  -H \"Authorization: Bearer nm_live_<YOUR_KEY>\""
             },
             {
+              "id": "listCatalogTagsPublic",
+              "method": "get",
+              "path": "/v1/catalog/tags",
+              "summary": "Keyset canonical-tag browse lane (id ASC); filter by tier / kind, each row carries an nsfw-aware work_count",
+              "description": "The cross-source canonical tag vocabulary, id ascending. work_count is the number of works THIS caller would page through via works?tag_id=<id> (counted over the source-tag map, so a work carrying two mapped source tags counts once).",
+              "scope": "catalog:read",
+              "params": [
+                {
+                  "name": "tier",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "Filter by display tier; a token outside this closed set is a 400",
+                  "enum": [
+                    "core",
+                    "longtail",
+                    "hidden"
+                  ]
+                },
+                {
+                  "name": "kind",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "Filter by tag kind; a token outside this closed set is a 400",
+                  "enum": [
+                    "content",
+                    "meta"
+                  ]
+                },
+                {
+                  "name": "cursor",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "Opaque keyset cursor from a prior next_cursor; omit for the first page"
+                },
+                {
+                  "name": "limit",
+                  "in": "query",
+                  "required": false,
+                  "type": "integer",
+                  "format": "int64",
+                  "doc": "Items per page 1-100 (default 20); above 100 is clamped to 100, a non-positive or non-numeric value is a 400"
+                },
+                {
+                  "name": "nsfw",
+                  "in": "query",
+                  "required": false,
+                  "type": "boolean",
+                  "doc": "true/1 = count r18 works in work_count (default false = excluded, matching what an sfw works?tag_id= call returns)"
+                }
+              ],
+              "responses": [
+                {
+                  "status": "200",
+                  "description": "OK",
+                  "schema": {
+                    "type": "object",
+                    "children": [
+                      {
+                        "name": "code",
+                        "required": true,
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      {
+                        "name": "data",
+                        "type": "object",
+                        "children": [
+                          {
+                            "name": "items",
+                            "required": true,
+                            "nullable": true,
+                            "type": "array",
+                            "itemsOf": {
+                              "type": "object",
+                              "children": [
+                                {
+                                  "name": "id",
+                                  "required": true,
+                                  "format": "int64",
+                                  "type": "integer"
+                                },
+                                {
+                                  "name": "kind",
+                                  "required": true,
+                                  "doc": "content|meta",
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "name",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "sexual",
+                                  "required": true,
+                                  "type": "boolean"
+                                },
+                                {
+                                  "name": "tier",
+                                  "required": true,
+                                  "doc": "core|longtail|hidden",
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "work_count",
+                                  "required": true,
+                                  "format": "int64",
+                                  "type": "integer"
+                                }
+                              ]
+                            }
+                          },
+                          {
+                            "name": "next_cursor",
+                            "required": true,
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          {
+                            "name": "total",
+                            "required": true,
+                            "format": "int64",
+                            "type": "integer"
+                          }
+                        ]
+                      },
+                      {
+                        "name": "message",
+                        "required": true,
+                        "type": "string"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "status": "default",
+                  "description": "Error",
+                  "schema": {
+                    "type": "object",
+                    "children": [
+                      {
+                        "name": "detail",
+                        "doc": "A human-readable explanation specific to this occurrence of the problem.",
+                        "type": "string"
+                      },
+                      {
+                        "name": "errors",
+                        "nullable": true,
+                        "doc": "Optional list of individual error details",
+                        "type": "array",
+                        "itemsOf": {
+                          "type": "object",
+                          "children": [
+                            {
+                              "name": "location",
+                              "doc": "Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'",
+                              "type": "string"
+                            },
+                            {
+                              "name": "message",
+                              "doc": "Error message text",
+                              "type": "string"
+                            },
+                            {
+                              "name": "value",
+                              "doc": "The value at the given location",
+                              "type": "object"
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "name": "instance",
+                        "doc": "A URI reference that identifies the specific occurrence of the problem.",
+                        "format": "uri",
+                        "type": "string"
+                      },
+                      {
+                        "name": "status",
+                        "doc": "HTTP status code",
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      {
+                        "name": "title",
+                        "doc": "A short, human-readable summary of the problem type. This value should not change between occurrences of the error.",
+                        "type": "string"
+                      },
+                      {
+                        "name": "type",
+                        "doc": "A URI reference to human-readable documentation for the error.",
+                        "format": "uri",
+                        "type": "string"
+                      }
+                    ]
+                  }
+                }
+              ],
+              "curl": "curl \"https://api.nextmoe.dev/v1/catalog/tags\" \\\n  -H \"Authorization: Bearer nm_live_<YOUR_KEY>\""
+            },
+            {
               "id": "getCatalogTagPublic",
               "method": "get",
               "path": "/v1/catalog/tags/{id}",
-              "summary": "Canonical tag (cross-source vocabulary): name / tier / kind; include=works attaches the tagged works",
+              "summary": "Canonical tag (cross-source vocabulary): name / tier / kind / intros; include=works attaches the tagged works",
               "scope": "catalog:read",
               "params": [
                 {
@@ -12218,6 +14786,32 @@ export const docsModel: DocsModel = {
                             "type": "integer"
                           },
                           {
+                            "name": "intros",
+                            "required": true,
+                            "nullable": true,
+                            "type": "array",
+                            "itemsOf": {
+                              "type": "object",
+                              "children": [
+                                {
+                                  "name": "intro",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "lang",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "source",
+                                  "required": true,
+                                  "type": "string"
+                                }
+                              ]
+                            }
+                          },
+                          {
                             "name": "kind",
                             "required": true,
                             "doc": "content|meta",
@@ -12234,10 +14828,21 @@ export const docsModel: DocsModel = {
                             "type": "integer"
                           },
                           {
+                            "name": "sexual",
+                            "required": true,
+                            "type": "boolean"
+                          },
+                          {
                             "name": "tier",
                             "required": true,
                             "doc": "core|longtail|hidden",
                             "type": "string"
+                          },
+                          {
+                            "name": "work_count",
+                            "required": true,
+                            "format": "int64",
+                            "type": "integer"
                           },
                           {
                             "name": "works",
@@ -12254,6 +14859,12 @@ export const docsModel: DocsModel = {
                                     {
                                       "name": "site",
                                       "required": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "state",
+                                      "required": true,
+                                      "doc": "live|draft|hidden",
                                       "type": "string"
                                     },
                                     {
@@ -12395,6 +15006,13 @@ export const docsModel: DocsModel = {
                   ]
                 },
                 {
+                  "name": "claim_state",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "Comma-separated CLOSED vocabulary: none,live,draft,hidden — the values claimed_by.state renders on these very items (none = unclaimed registry row). Matching works must be in ANY of the listed states. An unknown token is a 400. Absent = no gate (every state), which keeps pre-existing callers byte-identical. Word-for-word the works/search parameter of the same name; a product site listing an entity's member works should pass claim_state=live, since the claimed parameter alone cannot tell a LIVE claim from a DRAFT (unpublished) or WITHDRAWN one. Unlike the search face this is a live registry predicate, so a claim-state change takes effect immediately — there is no index to wait for"
+                },
+                {
                   "name": "label_id",
                   "in": "query",
                   "required": false,
@@ -12406,9 +15024,8 @@ export const docsModel: DocsModel = {
                   "name": "tag_id",
                   "in": "query",
                   "required": false,
-                  "type": "integer",
-                  "format": "int64",
-                  "doc": "Only works carrying a source tag mapped to this canonical tag"
+                  "type": "string",
+                  "doc": "Only works carrying a source tag mapped to this canonical tag; up to 10 comma-separated ids are ANDed (a work must carry all of them), more than 10 or a non-positive/non-numeric entry is a 400"
                 },
                 {
                   "name": "series_id",
@@ -12417,6 +15034,14 @@ export const docsModel: DocsModel = {
                   "type": "integer",
                   "format": "int64",
                   "doc": "Only member works of this series"
+                },
+                {
+                  "name": "engine_id",
+                  "in": "query",
+                  "required": false,
+                  "type": "integer",
+                  "format": "int64",
+                  "doc": "Only works built with this engine (the catalog_work_engine edge); browse the ids via GET /v1/catalog/engines"
                 },
                 {
                   "name": "platform",
@@ -12478,6 +15103,13 @@ export const docsModel: DocsModel = {
                   "required": false,
                   "type": "boolean",
                   "doc": "true/1 = include r18 works (default false = dropped)"
+                },
+                {
+                  "name": "include",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "Comma-separated rich-brief blocks: names,intros,labels,ratings,covers,refs (default: none — the response is then byte-identical to the base contract). Unknown tokens are ignored. names/intros are keyed by the four product locales ja-jp/zh-cn/zh-tw/en-us; covers carries the portrait + banner slots with width/height/thumbhash; refs carries the work exact identity anchors, detail-face shape"
                 }
               ],
               "responses": [
@@ -12516,6 +15148,12 @@ export const docsModel: DocsModel = {
                                       "type": "string"
                                     },
                                     {
+                                      "name": "state",
+                                      "required": true,
+                                      "doc": "live|draft|hidden",
+                                      "type": "string"
+                                    },
+                                    {
                                       "name": "work_id",
                                       "required": true,
                                       "format": "int64",
@@ -12533,6 +15171,98 @@ export const docsModel: DocsModel = {
                                   "type": "string"
                                 },
                                 {
+                                  "name": "covers",
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "banner",
+                                      "required": true,
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "height",
+                                          "format": "int64",
+                                          "type": "integer"
+                                        },
+                                        {
+                                          "name": "sexual",
+                                          "required": true,
+                                          "format": "int32",
+                                          "type": "integer"
+                                        },
+                                        {
+                                          "name": "source",
+                                          "required": true,
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "thumbhash",
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "url",
+                                          "required": true,
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "violence",
+                                          "required": true,
+                                          "format": "int32",
+                                          "type": "integer"
+                                        },
+                                        {
+                                          "name": "width",
+                                          "format": "int64",
+                                          "type": "integer"
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "name": "portrait",
+                                      "required": true,
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "height",
+                                          "format": "int64",
+                                          "type": "integer"
+                                        },
+                                        {
+                                          "name": "sexual",
+                                          "required": true,
+                                          "format": "int32",
+                                          "type": "integer"
+                                        },
+                                        {
+                                          "name": "source",
+                                          "required": true,
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "thumbhash",
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "url",
+                                          "required": true,
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "violence",
+                                          "required": true,
+                                          "format": "int32",
+                                          "type": "integer"
+                                        },
+                                        {
+                                          "name": "width",
+                                          "format": "int64",
+                                          "type": "integer"
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                },
+                                {
                                   "name": "display_name",
                                   "required": true,
                                   "type": "string"
@@ -12544,14 +15274,216 @@ export const docsModel: DocsModel = {
                                   "type": "integer"
                                 },
                                 {
+                                  "name": "intros",
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "en-us",
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "intro",
+                                          "required": true,
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "machine",
+                                          "type": "boolean"
+                                        },
+                                        {
+                                          "name": "source",
+                                          "required": true,
+                                          "type": "string"
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "name": "ja-jp",
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "intro",
+                                          "required": true,
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "machine",
+                                          "type": "boolean"
+                                        },
+                                        {
+                                          "name": "source",
+                                          "required": true,
+                                          "type": "string"
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "name": "zh-cn",
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "intro",
+                                          "required": true,
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "machine",
+                                          "type": "boolean"
+                                        },
+                                        {
+                                          "name": "source",
+                                          "required": true,
+                                          "type": "string"
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "name": "zh-tw",
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "intro",
+                                          "required": true,
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "machine",
+                                          "type": "boolean"
+                                        },
+                                        {
+                                          "name": "source",
+                                          "required": true,
+                                          "type": "string"
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                },
+                                {
+                                  "name": "labels",
+                                  "nullable": true,
+                                  "type": "array",
+                                  "itemsOf": {
+                                    "type": "object",
+                                    "children": [
+                                      {
+                                        "name": "display_name",
+                                        "required": true,
+                                        "type": "string"
+                                      },
+                                      {
+                                        "name": "id",
+                                        "required": true,
+                                        "format": "int64",
+                                        "type": "integer"
+                                      },
+                                      {
+                                        "name": "kind",
+                                        "required": true,
+                                        "doc": "attribution nature: circle|publisher|developer|brand",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "name": "label_kind",
+                                        "required": true,
+                                        "type": "string"
+                                      },
+                                      {
+                                        "name": "lang",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "name": "work_count",
+                                        "required": true,
+                                        "format": "int64",
+                                        "type": "integer"
+                                      }
+                                    ]
+                                  }
+                                },
+                                {
                                   "name": "medium",
                                   "required": true,
                                   "type": "string"
                                 },
                                 {
+                                  "name": "names",
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "en-us",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "ja-jp",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "zh-cn",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "zh-tw",
+                                      "type": "string"
+                                    }
+                                  ]
+                                },
+                                {
                                   "name": "olang",
                                   "required": true,
                                   "type": "string"
+                                },
+                                {
+                                  "name": "ratings",
+                                  "nullable": true,
+                                  "type": "array",
+                                  "itemsOf": {
+                                    "type": "object",
+                                    "children": [
+                                      {
+                                        "name": "rank",
+                                        "format": "int64",
+                                        "type": "integer"
+                                      },
+                                      {
+                                        "name": "score",
+                                        "required": true,
+                                        "format": "double",
+                                        "type": "number"
+                                      },
+                                      {
+                                        "name": "source",
+                                        "required": true,
+                                        "type": "string"
+                                      },
+                                      {
+                                        "name": "vote_count",
+                                        "required": true,
+                                        "format": "int64",
+                                        "type": "integer"
+                                      }
+                                    ]
+                                  }
+                                },
+                                {
+                                  "name": "refs",
+                                  "nullable": true,
+                                  "type": "array",
+                                  "itemsOf": {
+                                    "type": "object",
+                                    "children": [
+                                      {
+                                        "name": "external_id",
+                                        "required": true,
+                                        "type": "string"
+                                      },
+                                      {
+                                        "name": "source",
+                                        "required": true,
+                                        "type": "string"
+                                      }
+                                    ]
+                                  }
                                 },
                                 {
                                   "name": "release_date",
@@ -12677,6 +15609,14 @@ export const docsModel: DocsModel = {
                   "required": false,
                   "type": "boolean",
                   "doc": "true/1 = serve r18 works and r18 relation ends (caller-controlled; default false = hidden)"
+                },
+                {
+                  "name": "spoilers",
+                  "in": "query",
+                  "required": false,
+                  "type": "integer",
+                  "format": "int32",
+                  "doc": "Max tag spoiler level 0-2 (default 0 = safe): tags[] carries per-edge spoiler + per-tag sexual flags, and rows above this ceiling are omitted entirely. The axis is populated for the VNDB-derived vocabulary only — Bangumi/DLsite folksonomy publishes no spoiler or category concept, so those rows read 0/false"
                 }
               ],
               "responses": [
@@ -12772,6 +15712,12 @@ export const docsModel: DocsModel = {
                                 "type": "string"
                               },
                               {
+                                "name": "state",
+                                "required": true,
+                                "doc": "live|draft|hidden",
+                                "type": "string"
+                              },
+                              {
                                 "name": "work_id",
                                 "required": true,
                                 "format": "int64",
@@ -12793,6 +15739,11 @@ export const docsModel: DocsModel = {
                               "type": "object",
                               "children": [
                                 {
+                                  "name": "height",
+                                  "format": "int64",
+                                  "type": "integer"
+                                },
+                                {
                                   "name": "kind",
                                   "type": "string"
                                 },
@@ -12813,6 +15764,10 @@ export const docsModel: DocsModel = {
                                   "type": "string"
                                 },
                                 {
+                                  "name": "thumbhash",
+                                  "type": "string"
+                                },
+                                {
                                   "name": "url",
                                   "required": true,
                                   "type": "string"
@@ -12822,9 +15777,19 @@ export const docsModel: DocsModel = {
                                   "required": true,
                                   "format": "int32",
                                   "type": "integer"
+                                },
+                                {
+                                  "name": "width",
+                                  "format": "int64",
+                                  "type": "integer"
                                 }
                               ]
                             }
+                          },
+                          {
+                            "name": "created",
+                            "required": true,
+                            "type": "string"
                           },
                           {
                             "name": "credits",
@@ -12892,6 +15857,34 @@ export const docsModel: DocsModel = {
                             "type": "string"
                           },
                           {
+                            "name": "engines",
+                            "required": true,
+                            "nullable": true,
+                            "type": "array",
+                            "itemsOf": {
+                              "type": "object",
+                              "children": [
+                                {
+                                  "name": "id",
+                                  "required": true,
+                                  "format": "int64",
+                                  "type": "integer"
+                                },
+                                {
+                                  "name": "name",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "work_count",
+                                  "required": true,
+                                  "format": "int64",
+                                  "type": "integer"
+                                }
+                              ]
+                            }
+                          },
+                          {
                             "name": "id",
                             "required": true,
                             "format": "int64",
@@ -12954,6 +15947,37 @@ export const docsModel: DocsModel = {
                                 },
                                 {
                                   "name": "label_kind",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "lang",
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "work_count",
+                                  "required": true,
+                                  "format": "int64",
+                                  "type": "integer"
+                                }
+                              ]
+                            }
+                          },
+                          {
+                            "name": "links",
+                            "required": true,
+                            "nullable": true,
+                            "type": "array",
+                            "itemsOf": {
+                              "type": "object",
+                              "children": [
+                                {
+                                  "name": "source",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "url",
                                   "required": true,
                                   "type": "string"
                                 }
@@ -13134,6 +16158,12 @@ export const docsModel: DocsModel = {
                                           "type": "string"
                                         },
                                         {
+                                          "name": "state",
+                                          "required": true,
+                                          "doc": "live|draft|hidden",
+                                          "type": "string"
+                                        },
+                                        {
                                           "name": "work_id",
                                           "required": true,
                                           "format": "int64",
@@ -13256,6 +16286,11 @@ export const docsModel: DocsModel = {
                                   "type": "string"
                                 },
                                 {
+                                  "name": "height",
+                                  "format": "int64",
+                                  "type": "integer"
+                                },
+                                {
                                   "name": "sexual",
                                   "required": true,
                                   "format": "int32",
@@ -13267,6 +16302,10 @@ export const docsModel: DocsModel = {
                                   "type": "string"
                                 },
                                 {
+                                  "name": "thumbhash",
+                                  "type": "string"
+                                },
+                                {
                                   "name": "url",
                                   "required": true,
                                   "type": "string"
@@ -13275,6 +16314,11 @@ export const docsModel: DocsModel = {
                                   "name": "violence",
                                   "required": true,
                                   "format": "int32",
+                                  "type": "integer"
+                                },
+                                {
+                                  "name": "width",
+                                  "format": "int64",
                                   "type": "integer"
                                 }
                               ]
@@ -13329,6 +16373,12 @@ export const docsModel: DocsModel = {
                                     {
                                       "name": "site",
                                       "required": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "state",
+                                      "required": true,
+                                      "doc": "live|draft|hidden",
                                       "type": "string"
                                     },
                                     {
@@ -13392,14 +16442,31 @@ export const docsModel: DocsModel = {
                                   "type": "string"
                                 },
                                 {
+                                  "name": "sexual",
+                                  "required": true,
+                                  "type": "boolean"
+                                },
+                                {
                                   "name": "source",
                                   "required": true,
                                   "type": "string"
                                 },
                                 {
+                                  "name": "spoiler",
+                                  "required": true,
+                                  "doc": "0=none 1=minor 2=major",
+                                  "format": "int32",
+                                  "type": "integer"
+                                },
+                                {
                                   "name": "tier",
                                   "doc": "core|longtail|hidden",
                                   "type": "string"
+                                },
+                                {
+                                  "name": "work_count",
+                                  "format": "int64",
+                                  "type": "integer"
                                 }
                               ]
                             }
@@ -13514,6 +16581,654 @@ export const docsModel: DocsModel = {
                 }
               ],
               "curl": "curl \"https://api.nextmoe.dev/v1/catalog/works/1\" \\\n  -H \"Authorization: Bearer nm_live_<YOUR_KEY>\""
+            },
+            {
+              "id": "searchCatalogWorksPublic",
+              "method": "get",
+              "path": "/v1/catalog/works/search",
+              "summary": "Works product search: free text + the works-list filter set, page-paginated, with opt-in facets and five sort lanes",
+              "description": "Searches the LIVE galgame registry (claimed + bodyless) by any indexed title or alias and narrows it with the same filters GET /v1/catalog/works accepts. Items are works-list rows VERBATIM (PublicWorkListItem, include= and all), re-hydrated from the registry — the search documents never reach the wire. total, the facet distribution and items are three views of ONE filtered set: page through total and you collect exactly that many rows, and an sfw caller's total already excludes the r18 works it can never receive.",
+              "scope": "catalog:read",
+              "params": [
+                {
+                  "name": "q",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "Free text over every indexed title / alias of a work (search hints included — findability only). A query that is EXACTLY a VNDB work id (v19658) short-circuits to that one work via its exact anchor instead of full-text, which would prefix-bleed (v1965 also matches v19650). Empty = a filter-only browse ordered by popularity"
+                },
+                {
+                  "name": "content_rating",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "Filter by rating (r18 additionally requires nsfw=1)",
+                  "enum": [
+                    "all_ages",
+                    "sensitive",
+                    "r18"
+                  ]
+                },
+                {
+                  "name": "claimed",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "true = claimed works only; false = bodyless only; absent = both",
+                  "enum": [
+                    "true",
+                    "false"
+                  ]
+                },
+                {
+                  "name": "claim_state",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "Comma-separated CLOSED vocabulary: none,live,draft,hidden — the values claimed_by.state renders (none = unclaimed registry row). Matching works must be in ANY of the listed states. An unknown token is a 400. Absent = no gate (every state), which keeps pre-existing callers byte-identical. A product site rendering its own catalogue should pass claim_state=live: the claimed parameter alone cannot tell a LIVE claim from a DRAFT (unpublished) or WITHDRAWN one. Freshness follows the index: a claim-state change is reflected by the next reindex-catalog run (daily cron), like every other indexed facet"
+                },
+                {
+                  "name": "label_id",
+                  "in": "query",
+                  "required": false,
+                  "type": "integer",
+                  "format": "int64",
+                  "doc": "Only works attributed to this label"
+                },
+                {
+                  "name": "tag_id",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "Only works carrying a source tag mapped to this canonical tag; up to 10 comma-separated ids are ANDed (a work must carry all of them), more than 10 or a non-positive/non-numeric entry is a 400"
+                },
+                {
+                  "name": "series_id",
+                  "in": "query",
+                  "required": false,
+                  "type": "integer",
+                  "format": "int64",
+                  "doc": "Only member works of this series"
+                },
+                {
+                  "name": "engine_id",
+                  "in": "query",
+                  "required": false,
+                  "type": "integer",
+                  "format": "int64",
+                  "doc": "Only works built with this engine"
+                },
+                {
+                  "name": "released_after",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "YYYY-MM-DD, inclusive, over the EARLIEST release date per work — the same anchor the works list filters and the calendar buckets on"
+                },
+                {
+                  "name": "released_before",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "YYYY-MM-DD, inclusive"
+                },
+                {
+                  "name": "olang",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "Original-language gate: comma-separated olang values in the upstream BCP-47 spelling (ja, zh-Hans, en, …) or 'all' to switch it off. Default = the ja + zh* family. olang is an OPEN vocabulary, so an unrecognized value yields an empty result, never a 400"
+                },
+                {
+                  "name": "sort",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "relevance (default; an empty q degenerates to popularity), released_desc/asc over the earliest release date (works with no dated release sort last in BOTH directions), updated = newest-updated first, popularity = the cross-source signal log1p(max(bangumi collect shelf, DLsite downloads))",
+                  "enum": [
+                    "relevance",
+                    "released_desc",
+                    "released_asc",
+                    "updated",
+                    "popularity"
+                  ]
+                },
+                {
+                  "name": "facets",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "Comma-separated CLOSED vocabulary: content_rating,olang,claimed,tag_id,label_id,engine_id,series_id,source. An unknown token is a 400. Each distribution is counted over the SAME filtered set as total and is keyed by the values you would pass back to that very filter (content_rating counts use the public strings, not enum ints). At most 100 values per facet"
+                },
+                {
+                  "name": "page",
+                  "in": "query",
+                  "required": false,
+                  "type": "integer",
+                  "format": "int64",
+                  "doc": "1-based page number (default 1); a non-positive or non-numeric value is a 400. A page past the end is an empty page"
+                },
+                {
+                  "name": "limit",
+                  "in": "query",
+                  "required": false,
+                  "type": "integer",
+                  "format": "int64",
+                  "doc": "Items per page 1-100 (default 20); above 100 is clamped to 100, a non-positive or non-numeric value is a 400"
+                },
+                {
+                  "name": "nsfw",
+                  "in": "query",
+                  "required": false,
+                  "type": "boolean",
+                  "doc": "true/1 = include r18 works (default false = dropped from items, total AND facets alike)"
+                },
+                {
+                  "name": "include",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "Comma-separated rich-brief blocks: names,intros,labels,ratings,covers,refs — the works-list vocabulary verbatim (unknown tokens ignored)"
+                },
+                {
+                  "name": "search_intro",
+                  "in": "query",
+                  "required": false,
+                  "type": "boolean",
+                  "doc": "true/1 = also match q against the work SYNOPSIS, not just its titles and aliases (A2-1f). Default false = titles only, byte-identical to the pre-A2-1f result set. Indexed synopses are capped at 2000 characters per language, and a synopsis match can never outrank a title match (the title attributes are ranked first)"
+                }
+              ],
+              "responses": [
+                {
+                  "status": "200",
+                  "description": "OK",
+                  "schema": {
+                    "type": "object",
+                    "children": [
+                      {
+                        "name": "code",
+                        "required": true,
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      {
+                        "name": "data",
+                        "type": "object",
+                        "children": [
+                          {
+                            "name": "facets",
+                            "type": "map",
+                            "itemsOf": {
+                              "type": "map",
+                              "itemsOf": {
+                                "format": "int64",
+                                "type": "integer"
+                              }
+                            }
+                          },
+                          {
+                            "name": "items",
+                            "required": true,
+                            "nullable": true,
+                            "type": "array",
+                            "itemsOf": {
+                              "type": "object",
+                              "children": [
+                                {
+                                  "name": "claimed_by",
+                                  "required": true,
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "site",
+                                      "required": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "state",
+                                      "required": true,
+                                      "doc": "live|draft|hidden",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "work_id",
+                                      "required": true,
+                                      "format": "int64",
+                                      "type": "integer"
+                                    }
+                                  ]
+                                },
+                                {
+                                  "name": "content_rating",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "cover",
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "covers",
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "banner",
+                                      "required": true,
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "height",
+                                          "format": "int64",
+                                          "type": "integer"
+                                        },
+                                        {
+                                          "name": "sexual",
+                                          "required": true,
+                                          "format": "int32",
+                                          "type": "integer"
+                                        },
+                                        {
+                                          "name": "source",
+                                          "required": true,
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "thumbhash",
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "url",
+                                          "required": true,
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "violence",
+                                          "required": true,
+                                          "format": "int32",
+                                          "type": "integer"
+                                        },
+                                        {
+                                          "name": "width",
+                                          "format": "int64",
+                                          "type": "integer"
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "name": "portrait",
+                                      "required": true,
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "height",
+                                          "format": "int64",
+                                          "type": "integer"
+                                        },
+                                        {
+                                          "name": "sexual",
+                                          "required": true,
+                                          "format": "int32",
+                                          "type": "integer"
+                                        },
+                                        {
+                                          "name": "source",
+                                          "required": true,
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "thumbhash",
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "url",
+                                          "required": true,
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "violence",
+                                          "required": true,
+                                          "format": "int32",
+                                          "type": "integer"
+                                        },
+                                        {
+                                          "name": "width",
+                                          "format": "int64",
+                                          "type": "integer"
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                },
+                                {
+                                  "name": "display_name",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "id",
+                                  "required": true,
+                                  "format": "int64",
+                                  "type": "integer"
+                                },
+                                {
+                                  "name": "intros",
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "en-us",
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "intro",
+                                          "required": true,
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "machine",
+                                          "type": "boolean"
+                                        },
+                                        {
+                                          "name": "source",
+                                          "required": true,
+                                          "type": "string"
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "name": "ja-jp",
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "intro",
+                                          "required": true,
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "machine",
+                                          "type": "boolean"
+                                        },
+                                        {
+                                          "name": "source",
+                                          "required": true,
+                                          "type": "string"
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "name": "zh-cn",
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "intro",
+                                          "required": true,
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "machine",
+                                          "type": "boolean"
+                                        },
+                                        {
+                                          "name": "source",
+                                          "required": true,
+                                          "type": "string"
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "name": "zh-tw",
+                                      "type": "object",
+                                      "children": [
+                                        {
+                                          "name": "intro",
+                                          "required": true,
+                                          "type": "string"
+                                        },
+                                        {
+                                          "name": "machine",
+                                          "type": "boolean"
+                                        },
+                                        {
+                                          "name": "source",
+                                          "required": true,
+                                          "type": "string"
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                },
+                                {
+                                  "name": "labels",
+                                  "nullable": true,
+                                  "type": "array",
+                                  "itemsOf": {
+                                    "type": "object",
+                                    "children": [
+                                      {
+                                        "name": "display_name",
+                                        "required": true,
+                                        "type": "string"
+                                      },
+                                      {
+                                        "name": "id",
+                                        "required": true,
+                                        "format": "int64",
+                                        "type": "integer"
+                                      },
+                                      {
+                                        "name": "kind",
+                                        "required": true,
+                                        "doc": "attribution nature: circle|publisher|developer|brand",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "name": "label_kind",
+                                        "required": true,
+                                        "type": "string"
+                                      },
+                                      {
+                                        "name": "lang",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "name": "work_count",
+                                        "required": true,
+                                        "format": "int64",
+                                        "type": "integer"
+                                      }
+                                    ]
+                                  }
+                                },
+                                {
+                                  "name": "medium",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "names",
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "en-us",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "ja-jp",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "zh-cn",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "zh-tw",
+                                      "type": "string"
+                                    }
+                                  ]
+                                },
+                                {
+                                  "name": "olang",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "ratings",
+                                  "nullable": true,
+                                  "type": "array",
+                                  "itemsOf": {
+                                    "type": "object",
+                                    "children": [
+                                      {
+                                        "name": "rank",
+                                        "format": "int64",
+                                        "type": "integer"
+                                      },
+                                      {
+                                        "name": "score",
+                                        "required": true,
+                                        "format": "double",
+                                        "type": "number"
+                                      },
+                                      {
+                                        "name": "source",
+                                        "required": true,
+                                        "type": "string"
+                                      },
+                                      {
+                                        "name": "vote_count",
+                                        "required": true,
+                                        "format": "int64",
+                                        "type": "integer"
+                                      }
+                                    ]
+                                  }
+                                },
+                                {
+                                  "name": "refs",
+                                  "nullable": true,
+                                  "type": "array",
+                                  "itemsOf": {
+                                    "type": "object",
+                                    "children": [
+                                      {
+                                        "name": "external_id",
+                                        "required": true,
+                                        "type": "string"
+                                      },
+                                      {
+                                        "name": "source",
+                                        "required": true,
+                                        "type": "string"
+                                      }
+                                    ]
+                                  }
+                                },
+                                {
+                                  "name": "release_date",
+                                  "required": true,
+                                  "nullable": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "updated",
+                                  "required": true,
+                                  "type": "string"
+                                }
+                              ]
+                            }
+                          },
+                          {
+                            "name": "limit",
+                            "required": true,
+                            "format": "int64",
+                            "type": "integer"
+                          },
+                          {
+                            "name": "page",
+                            "required": true,
+                            "format": "int64",
+                            "type": "integer"
+                          },
+                          {
+                            "name": "total",
+                            "required": true,
+                            "format": "int64",
+                            "type": "integer"
+                          }
+                        ]
+                      },
+                      {
+                        "name": "message",
+                        "required": true,
+                        "type": "string"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "status": "default",
+                  "description": "Error",
+                  "schema": {
+                    "type": "object",
+                    "children": [
+                      {
+                        "name": "detail",
+                        "doc": "A human-readable explanation specific to this occurrence of the problem.",
+                        "type": "string"
+                      },
+                      {
+                        "name": "errors",
+                        "nullable": true,
+                        "doc": "Optional list of individual error details",
+                        "type": "array",
+                        "itemsOf": {
+                          "type": "object",
+                          "children": [
+                            {
+                              "name": "location",
+                              "doc": "Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'",
+                              "type": "string"
+                            },
+                            {
+                              "name": "message",
+                              "doc": "Error message text",
+                              "type": "string"
+                            },
+                            {
+                              "name": "value",
+                              "doc": "The value at the given location",
+                              "type": "object"
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "name": "instance",
+                        "doc": "A URI reference that identifies the specific occurrence of the problem.",
+                        "format": "uri",
+                        "type": "string"
+                      },
+                      {
+                        "name": "status",
+                        "doc": "HTTP status code",
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      {
+                        "name": "title",
+                        "doc": "A short, human-readable summary of the problem type. This value should not change between occurrences of the error.",
+                        "type": "string"
+                      },
+                      {
+                        "name": "type",
+                        "doc": "A URI reference to human-readable documentation for the error.",
+                        "format": "uri",
+                        "type": "string"
+                      }
+                    ]
+                  }
+                }
+              ],
+              "curl": "curl \"https://api.nextmoe.dev/v1/catalog/works/search\" \\\n  -H \"Authorization: Bearer nm_live_<YOUR_KEY>\""
             }
           ]
         }
