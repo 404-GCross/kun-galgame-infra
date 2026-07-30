@@ -56,13 +56,18 @@ MCP server 是公开 /v1 契约前面的一层**协议适配**,不是第二个 A
 | `catalog_changes` | `GET /v1/catalog/changes` | 增量同步变更流(keyset 游标存续轮询;entity_type=work) |
 | `catalog_tag_get` | `GET /v1/catalog/tags/{id}` | 正典标签(跨源标签词表;`include=works` 附携带作品) |
 
-- **catalog 覆盖面(9/12,三条「有意留白」)**:公开 catalog 面共 12 op,上表覆盖 9;
-  留白 `POST /v1/catalog/lookup/batch`(批量外部 id 水合)、`GET /v1/catalog/redirects`
-  (合并事件 keyset 流,供镜像清理存量 id)、`POST /v1/catalog/resolve`(旧 id→正典 id
-  批量扁平化)。这三条服务的是**镜像维护 / 批量同步**型消费者,应直连 HTTP 面——单轮
-  LLM tool call 没有批量、也没有存量 id 维护语义;小批量水合已由 `catalog_works_list`
-  的 `ids=` 覆盖,单个外部 id 由 `catalog_lookup_external` 覆盖;且 `lookup/batch` 与
-  `resolve` 是 POST,而 mcpface 传输是 GET 纯透传。
+- **catalog 覆盖面(9/20:三条「有意留白」+ 八条「待裁定」)**:公开 catalog 面
+  现共 20 op,上表覆盖 9。**有意留白**三条:`POST /v1/catalog/lookup/batch`(批量
+  外部 id 水合)、`GET /v1/catalog/redirects`(合并事件 keyset 流,供镜像清理存量
+  id)、`POST /v1/catalog/resolve`(旧 id→正典 id 批量扁平化)——它们服务的是
+  **镜像维护 / 批量同步**型消费者,应直连 HTTP 面:单轮 LLM tool call 没有批量、
+  也没有存量 id 维护语义;小批量水合已由 `catalog_works_list` 的 `ids=` 覆盖,单个
+  外部 id 由 `catalog_lookup_external` 覆盖;且 `lookup/batch` 与 `resolve` 是
+  POST,而 mcpface 传输是 GET 纯透传。**另八条尚未上工具面,但属「待裁定」而非
+  留白**(A2 canonical 轨新增,晚于本节定稿):calendar 三桶(`calendar`/
+  `calendar/pending`/`calendar/tba`)、taxonomy 列表三条(`labels`/`tags`/
+  `engines`)、`engines/{id}` 详情、`works/search` 作品检索——是否收进工具面待
+  owner 裁定。
 
 - **r18 姿态(104 波,调用方自控)**:catalog 系工具 `nsfw=true` 显式开;galgame 系
   `content_limit=sfw|nsfw|all`(需 key 带 `galgame:nsfw` scope,否则静默降 sfw)。
