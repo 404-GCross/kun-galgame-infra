@@ -5,8 +5,30 @@ import "testing"
 func TestCheckEmailDomainAllowed(t *testing.T) {
 	allowed := []string{
 		"user@qq.com",
+		"user@foxmail.com",
+		"user@163.com",
+		"user@126.com",
+		"user@yeah.net",
+		"user@sina.com",
+		"user@sina.cn",
+		"user@sohu.com",
+		"user@aliyun.com",
+		"user@139.com",
+		"user@189.cn",
 		"user@gmail.com",
+		"user@googlemail.com",
 		"user@outlook.com",
+		"user@hotmail.com",
+		"user@live.com",
+		"user@msn.com",
+		"user@icloud.com",
+		"user@me.com",
+		"user@mac.com",
+		"user@yahoo.com",
+		"user@yahoo.co.jp",
+		"user@proton.me",
+		"user@protonmail.com",
+		"user@pm.me",
 		"USER@QQ.COM",       // case-insensitive
 		"a.b+tag@gmail.com", // local part with dots/plus
 		"x@outlook.com ",    // trailing space on domain tolerated
@@ -18,12 +40,10 @@ func TestCheckEmailDomainAllowed(t *testing.T) {
 	}
 
 	rejected := []string{
-		"user@163.com",
-		"user@hotmail.com", // outlook variant NOT auto-allowed
-		"user@live.com",
-		"user@googlemail.com", // gmail variant NOT auto-allowed
-		"user@sub.qq.com",     // subdomain is a different domain
+		"user@example.com",
+		"user@mail.qq.com", // subdomain is a different domain
 		"user@qq.com.evil.com",
+		"user@10minutemail.com",
 		"user@",
 		"noatsign",
 		"",

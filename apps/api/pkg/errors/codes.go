@@ -165,7 +165,7 @@ var codeMessages = map[int]string{
 	ErrAuthEmailChangeTooFrequent: "邮箱验证码发送过于频繁，请稍后再试",
 	ErrAuthEmailSameAsCurrent:     "新邮箱与当前邮箱相同",
 	ErrAuthUserBanned:             "账号已被封禁",
-	ErrAuthEmailDomainNotAllowed:  "仅支持 qq.com、gmail.com、outlook.com 邮箱",
+	ErrAuthEmailDomainNotAllowed:  "该邮箱服务商暂不支持，请使用 QQ、网易、Gmail、Outlook、iCloud 等常见邮箱",
 	ErrAuthStepUpRequired:         "切换到该账号需要重新验证身份",
 
 	ErrCreatorAlreadyHas:    "你已经是创作者了",

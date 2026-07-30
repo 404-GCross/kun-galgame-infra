@@ -12,9 +12,40 @@ import (
 // providers keep working. Keys are lowercase and matched exactly against the
 // part after the final "@".
 var allowedEmailDomains = map[string]struct{}{
+	// Tencent
 	"qq.com":      {},
-	"gmail.com":   {},
+	"foxmail.com": {},
+	// NetEase
+	"163.com":  {},
+	"126.com":  {},
+	"yeah.net": {},
+	// Sina / Sohu
+	"sina.com": {},
+	"sina.cn":  {},
+	"sohu.com": {},
+	// Alibaba / CN carriers
+	"aliyun.com": {},
+	"139.com":    {},
+	"189.cn":     {},
+	// Google
+	"gmail.com":      {},
+	"googlemail.com": {},
+	// Microsoft
 	"outlook.com": {},
+	"hotmail.com": {},
+	"live.com":    {},
+	"msn.com":     {},
+	// Apple
+	"icloud.com": {},
+	"me.com":     {},
+	"mac.com":    {},
+	// Yahoo
+	"yahoo.com":   {},
+	"yahoo.co.jp": {},
+	// Proton
+	"proton.me":      {},
+	"protonmail.com": {},
+	"pm.me":          {},
 }
 
 // checkEmailDomainAllowed returns an AppError when email's domain isn't in
