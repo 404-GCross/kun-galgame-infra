@@ -37,18 +37,14 @@ const quickstart = [
   }
 ]
 
+// The /v1/galgame face was delisted on 2026-07-30 (it now answers 410 Gone);
+// /v1/catalog is the single public data face.
 const faces = [
-  {
-    icon: 'lucide:gamepad-2',
-    name: 'Galgame 面',
-    path: '/v1/galgame',
-    body: '正典记录:多源裁定的名称 / 简介 / 封面 / 标签 / 会社 / 发售 / 三源评分,含变更流增量同步。'
-  },
   {
     icon: 'lucide:network',
     name: 'Catalog 面',
     path: '/v1/catalog',
-    body: '跨媒介身份正典:作品 / 人物名义 / 角色 / 厂牌 / credits / 关系,外部 id 反查四源锚。'
+    body: '跨媒介身份正典:作品 / 人物名义 / 角色 / 厂牌 / credits / 关系,外部 id 反查四源锚,含变更流增量同步。'
   }
 ]
 
@@ -75,7 +71,7 @@ const features = [
   }
 ]
 
-const curlSample = `curl https://api.nextmoe.dev/v1/galgame/1 \\
+const curlSample = `curl https://api.nextmoe.dev/v1/catalog/works/1 \\
   -H "Authorization: Bearer nm_live_…"`
 </script>
 
@@ -242,13 +238,13 @@ const curlSample = `curl https://api.nextmoe.dev/v1/galgame/1 \\
     <section>
       <div class="mb-10 text-center">
         <h2 class="text-2xl font-bold text-foreground md:text-3xl">
-          两个数据面
+          公开数据面
         </h2>
         <p class="mt-2 text-default-500">
           一份凭证覆盖全部;权限范围(scope)按面表达。
         </p>
       </div>
-      <div class="grid gap-4 md:grid-cols-2">
+      <div class="grid gap-4">
         <NuxtLink
           v-for="face in faces"
           :key="face.path"

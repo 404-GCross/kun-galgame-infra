@@ -10,18 +10,12 @@ useSeoMeta({
     '把 NextMoe 开放 API 作为 MCP（Model Context Protocol）server 接入 AI 助手：端点、密钥配置，以及 Claude Code / Claude Desktop / 通用 MCP 客户端三段配置示例。'
 })
 
-// The eleven tools (mirrors apps/api/internal/platform/mcpface). Each maps 1:1
+// The nine tools (mirrors apps/api/internal/platform/mcpface). Each maps 1:1
 // to a public /v1 endpoint; lookup/get take an id, search takes natural language.
-// R18 is hidden by default: nsfw=true on catalog tools, content_limit on galgame.
+// R18 is hidden by default (nsfw=true opts in). The two galgame_* tools retired
+// on 2026-07-30 with the /v1/galgame face they proxied — catalog_search
+// (type=works) and catalog_work_get replace them.
 const tools = [
-  {
-    name: 'galgame_search',
-    desc: '全文搜 galgame 聚合面，按相关度返回 brief 记录（自然语言查询首选；支持 fields 稀疏投影与 content_limit 内容分级）。'
-  },
-  {
-    name: 'galgame_get',
-    desc: '按 id 取一部 galgame 的完整聚合记录（含跨面互链 catalog_work_id）。'
-  },
   {
     name: 'catalog_search',
     desc: '按名字搜身份图谱实体：names（人物名义）/ characters / labels / works（跨媒介作品标题，r18 需 nsfw=true）。'

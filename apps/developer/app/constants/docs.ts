@@ -19,11 +19,6 @@ export const DOCS_FACE_META: Record<
   DocsFaceKey,
   { icon: string; tagline: string }
 > = {
-  galgame: {
-    icon: 'lucide:gamepad-2',
-    tagline:
-      '正典记录：多源裁定的名称 / 简介 / 封面 / 标签 / 会社 / 发售 / 三源评分，含变更流增量同步。'
-  },
   catalog: {
     icon: 'lucide:network',
     tagline:

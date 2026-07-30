@@ -1,14 +1,15 @@
 // Typed documentation model for the self-built API reference (/docs/**).
 //
-// The two Tier-A public OpenAPI specs (docs/{galgame_wiki,catalog}/public-
-// openapi.yaml) are parsed at build time into this render-friendly shape by
-// scripts/sync-specs.mjs, which writes the committed generated module
-// app/generated/docs-model.ts. Nothing here is hand-authored per endpoint —
-// the specs are the single source, this is their projection.
+// The Tier-A public OpenAPI spec (docs/catalog/public-openapi.yaml) is parsed at
+// build time into this render-friendly shape by scripts/sync-specs.mjs, which
+// writes the committed generated module app/generated/docs-model.ts. Nothing
+// here is hand-authored per endpoint — the spec is the single source, this is
+// its projection. (The galgame face was delisted on 2026-07-30 and its spec
+// deleted with it.)
 
 export type DocsMethod = 'get' | 'post' | 'put' | 'patch' | 'delete'
 
-export type DocsFaceKey = 'galgame' | 'catalog'
+export type DocsFaceKey = 'catalog'
 
 // A render-friendly schema tree node. $ref pointers are dereferenced inline
 // while building the tree (acyclic in both specs; a cycle guard degrades to a

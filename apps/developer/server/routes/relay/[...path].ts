@@ -5,6 +5,13 @@
 // the page sends its requests here and we forward them with the caller's own
 // Authorization header (their nm_ key; never stored server-side). Only the two
 // public read faces are reachable — anything else 404s.
+//
+// NOTE (wave 146, 2026-07-30): the /v1/galgame face was delisted and answers
+// 410 Gone. Its entry stays whitelisted on purpose — /explore's optional
+// cross-face enrichment still requests it and already treats any failure as
+// "no data", so the 410 surfaces as a thinner page rather than an error. Drop
+// this entry together with those call sites when /explore is reworked onto
+// catalog-only data.
 export default defineEventHandler(async (event): Promise<unknown> => {
   assertMethod(event, 'GET')
   const raw = event.context.params?.path ?? ''

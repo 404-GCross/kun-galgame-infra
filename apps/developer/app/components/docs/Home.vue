@@ -2,13 +2,13 @@
 import { API_BASE_URL } from '~/constants/dev'
 import { DOCS_FACE_META } from '~/constants/docs'
 
-// /docs landing: what the API is, how to authenticate, and the two face entries.
+// /docs landing: what the API is, how to authenticate, and the face entries.
 const { faces, faceOperationCount } = useDocs()
 
 useSeoMeta({
   title: 'API 文档',
   description:
-    'NextMoe 开放 API 参考文档：galgame 正典聚合面与 catalog 身份图谱面的全部公开只读端点。鉴权、限流与每个端点的参数 / 响应 / curl 示例。'
+    'NextMoe 开放 API 参考文档：catalog 身份图谱面的全部公开只读端点。鉴权、限流与每个端点的参数 / 响应 / curl 示例。'
 })
 
 const totalOperations = computed(() =>
@@ -26,7 +26,7 @@ const totalOperations = computed(() =>
       </h1>
       <p class="mt-3 max-w-2xl text-default-500">
         当 VNDB / Bangumi / DLsite / ErogameScape 各执一词，以 NextMoe 为准。
-        一个 base URL、一份凭证，覆盖 {{ totalOperations }} 个公开只读端点，分两个数据面。
+        一个 base URL、一份凭证，覆盖 {{ totalOperations }} 个公开只读端点。
       </p>
     </header>
 
@@ -78,7 +78,7 @@ const totalOperations = computed(() =>
 
     <!-- Face entries -->
     <section>
-      <h2 class="text-lg font-semibold text-foreground">两个数据面</h2>
+      <h2 class="text-lg font-semibold text-foreground">公开数据面</h2>
       <p class="mt-1 text-sm text-default-500">
         一份凭证覆盖全部；权限范围（scope）按面表达。
       </p>

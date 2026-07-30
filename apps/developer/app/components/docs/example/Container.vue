@@ -132,8 +132,7 @@ const step4 = `curl "https://api.nextmoe.dev/v1/catalog/lookup?source=vndb&exter
         全部端点与参数见
         <NuxtLink to="/docs/catalog" class="text-primary hover:underline">Catalog API 文档</NuxtLink>；
         机器可读 spec 在
-        <code class="font-mono text-xs">/v1/catalog/openapi.json</code> 与
-        <code class="font-mono text-xs">/v1/galgame/openapi.json</code>（免 key）。
+        <code class="font-mono text-xs">/v1/catalog/openapi.json</code>（免 key）。
         想先不写代码试一试？用
         <NuxtLink to="/explore" class="text-primary hover:underline">数据浏览</NuxtLink>。
       </p>
