@@ -53,6 +53,19 @@ type EntityDoc struct {
 	// this registry row). A pointer so an explicit false is still indexed —
 	// omitempty on a non-pointer bool would erase the bodyless half.
 	Claimed *bool `json:"claimed,omitempty"`
+	// ClaimState is the PUBLIC claim vocabulary (none|live|draft|hidden) from
+	// model.ClaimStateKey — the very projection the read face renders as
+	// claimed_by.state, so a `claim_state=live` search selects exactly the rows
+	// whose records say "live" (A2-R1 区 C).
+	//
+	// It exists because `claimed` alone is not a publishability gate: it cannot
+	// separate a LIVE claim from a DRAFT or WITHDRAWN one, so a product site
+	// searching the registry had no server-side way to keep unpublished entries
+	// out of its results — and shipped them.
+	//
+	// Every works document carries a value ("none" for a bodyless row), so
+	// omitempty only ever drops it from the entity indexes, which have no claim.
+	ClaimState string `json:"claim_state,omitempty"`
 	// OLang is the registry's original-language tag in the UPSTREAM BCP-47
 	// spelling (ja / zh-Hans / en …), never the product locale form — the same
 	// value the calendar's olang gate matches on.

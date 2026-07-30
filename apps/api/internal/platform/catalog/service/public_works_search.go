@@ -60,7 +60,18 @@ type WorksSearchFilter struct {
 	Q             string // free text; empty = a filter-only browse
 	ContentRating *int16 // model.ContentRating* — nil = all (r18 still needs NSFW)
 	Claimed       *bool  // true = claimed only; false = bodyless only; nil = both
-	LabelID       int64
+	// ClaimStates narrows to a set of PUBLIC claim states (none|live|draft|
+	// hidden, A2-R1 区 C) — the values claimed_by.state renders. Empty = no gate
+	// at all, so every pre-existing caller's wire stays byte-identical.
+	//
+	// It is a different axis from Claimed, not a finer spelling of it: `claimed`
+	// answers "does a product own this row", this answers "may it be shown".
+	// A product site searching the registry for its own catalogue passes
+	// claim_state=live — without it there is no server-side way to keep DRAFT
+	// (unpublished) and unclaimed rows out of a results page, which is exactly
+	// how they reached production.
+	ClaimStates []string
+	LabelID     int64
 	// TagIDs are canonical tag ids ANDed together (A2-1e) — the works list's
 	// tag_id semantics verbatim.
 	TagIDs         []int64
@@ -130,6 +141,28 @@ var worksSearchSortRules = map[string]string{
 
 // WorksSearchSortTokens lists the legal sort= tokens in a stable order.
 var WorksSearchSortTokens = []string{"relevance", "released_desc", "released_asc", "updated", "popularity"}
+
+// WorksSearchClaimStateTokens is the CLOSED claim_state= vocabulary (A2-R1 区 C),
+// in the order the handler quotes it and the spec documents it. It is the public
+// claim vocabulary verbatim — model.ClaimStateKey's whole range — so a caller
+// filters on the same four words a work record renders.
+var WorksSearchClaimStateTokens = []string{
+	model.ClaimStateKeyNone, model.ClaimStateKeyLive,
+	model.ClaimStateKeyDraft, model.ClaimStateKeyHidden,
+}
+
+// IsWorksSearchClaimState reports whether a token is in that vocabulary. A
+// token outside it is a LOUD 400 at the handler, never a silently-ignored
+// filter: a caller asking for `claim_state=liev` and getting a 200 full of
+// drafts is precisely the incident this parameter was added to end.
+func IsWorksSearchClaimState(tok string) bool {
+	for _, v := range WorksSearchClaimStateTokens {
+		if tok == v {
+			return true
+		}
+	}
+	return false
+}
 
 // WorksSearchSortRule resolves a sort token; ok=false = outside the vocabulary.
 func WorksSearchSortRule(sort string) (rule string, ok bool) {
@@ -213,6 +246,18 @@ func (f WorksSearchFilter) meiliFilter(docID string) string {
 	}
 	if f.Claimed != nil {
 		clauses = append(clauses, "claimed = "+strconv.FormatBool(*f.Claimed))
+	}
+	if len(f.ClaimStates) > 0 {
+		// One parenthesized OR group — an IN over the closed vocabulary — so it
+		// ANDs with every other clause and rides the SAME single expression the
+		// total, the facets and the page all share (rule 1 of this file). The
+		// values come from a server-side vocabulary, but they still go through
+		// the escaper: every string that reaches a filter does.
+		or := make([]string, 0, len(f.ClaimStates))
+		for _, st := range f.ClaimStates {
+			or = append(or, "claim_state = '"+catsearch.EscapeFilterValue(st)+"'")
+		}
+		clauses = append(clauses, "("+strings.Join(or, " OR ")+")")
 	}
 	for _, tagID := range f.TagIDs {
 		// One clause per tag, ANDed: `array = value` is Meilisearch's "contains"

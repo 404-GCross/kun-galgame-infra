@@ -557,12 +557,19 @@ func reindexWorks(ctx context.Context, db *gorm.DB, idx *catalogSearch.Indexer, 
 			// Explicit column tag: GORM snake-cases OLang to o_lang, which
 			// matches no result column and would scan as "" — the trap that left
 			// the works list's olang empty from W1 until A2-1a.
-			OLang         string    `gorm:"column:olang"`
-			ContentRating int16     `gorm:"column:content_rating"`
-			Site          string    `gorm:"column:site"`
+			OLang         string `gorm:"column:olang"`
+			ContentRating int16  `gorm:"column:content_rating"`
+			Site          string `gorm:"column:site"`
+			// The two other claim columns (A2-R1 区 C): the claim_state field is
+			// projected from all three through model.ClaimStateKey, which is the
+			// read face's own projection — so `claim_state=live` selects exactly
+			// the rows whose records render claimed_by.state=live.
+			ProductWorkID *int64    `gorm:"column:product_work_id"`
+			ClaimState    *int16    `gorm:"column:claim_state"`
 			UpdatedAt     time.Time `gorm:"column:updated_at"`
 		}
-		if err := db.Raw(`SELECT id, display_name, olang, content_rating, coalesce(site,'') AS site, updated_at
+		if err := db.Raw(`SELECT id, display_name, olang, content_rating, coalesce(site,'') AS site,
+				product_work_id, claim_state, updated_at
 			FROM catalog_work
 			WHERE id > ? AND deleted_at IS NULL AND status = 0
 				AND medium_id = (SELECT id FROM catalog_medium WHERE key = 'galgame')
@@ -580,6 +587,7 @@ func reindexWorks(ctx context.Context, db *gorm.DB, idx *catalogSearch.Indexer, 
 				// claimed == "a product site owns this row", i.e. the works
 				// list's `w.site <> ''` (NULL and '' are both bodyless).
 				Claimed:     r.Site != "",
+				ClaimState:  model.ClaimStateKey(&r.Site, r.ProductWorkID, r.ClaimState),
 				ReleasedOrd: facets.releasedOrd[r.ID], UpdatedTS: r.UpdatedAt.Unix(),
 				Popularity: pop[r.ID], Sources: srcs[r.ID], SourceKeys: keys[r.ID],
 				TagIDs: facets.tagIDs[r.ID], LabelIDs: facets.labelIDs[r.ID],

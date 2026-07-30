@@ -3127,6 +3127,13 @@ paths:
               - "true"
               - "false"
             type: string
+        - description: "Comma-separated CLOSED vocabulary: none,live,draft,hidden — the values claimed_by.state renders (none = unclaimed registry row). Matching works must be in ANY of the listed states. An unknown token is a 400. Absent = no gate (every state), which keeps pre-existing callers byte-identical. A product site rendering its own catalogue should pass claim_state=live: the claimed parameter alone cannot tell a LIVE claim from a DRAFT (unpublished) or WITHDRAWN one. Freshness follows the index: a claim-state change is reflected by the next reindex-catalog run (daily cron), like every other indexed facet"
+          explode: false
+          in: query
+          name: claim_state
+          schema:
+            description: "Comma-separated CLOSED vocabulary: none,live,draft,hidden — the values claimed_by.state renders (none = unclaimed registry row). Matching works must be in ANY of the listed states. An unknown token is a 400. Absent = no gate (every state), which keeps pre-existing callers byte-identical. A product site rendering its own catalogue should pass claim_state=live: the claimed parameter alone cannot tell a LIVE claim from a DRAFT (unpublished) or WITHDRAWN one. Freshness follows the index: a claim-state change is reflected by the next reindex-catalog run (daily cron), like every other indexed facet"
+            type: string
         - description: Only works attributed to this label
           explode: false
           in: query

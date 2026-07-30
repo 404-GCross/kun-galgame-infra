@@ -70,6 +70,14 @@ func TestWorksSearchParamValidation(t *testing.T) {
 		{"/v1/catalog/works/search?released_before=nope", "released_before must be YYYY-MM-DD"},
 		{"/v1/catalog/works/search?content_rating=adult", "content_rating must be all_ages|sensitive|r18"},
 		{"/v1/catalog/works/search?claimed=maybe", "claimed must be true|false"},
+		// claim_state: our own closed vocabulary (A2-R1 区 C). A silently-ignored
+		// token here would answer 200 with the very draft works the caller asked
+		// to exclude — the production incident this parameter closes.
+		{"/v1/catalog/works/search?claim_state=liev", msgBadClaimState},
+		{"/v1/catalog/works/search?claim_state=LIVE", msgBadClaimState},
+		{"/v1/catalog/works/search?claim_state=published", msgBadClaimState},
+		{"/v1/catalog/works/search?claim_state=live,bogus", msgBadClaimState},
+		{"/v1/catalog/works/search?claim_state=true", msgBadClaimState},
 		// The works-list rule carried over: asking for r18 without opting in.
 		{"/v1/catalog/works/search?content_rating=r18", "content_rating=r18 requires nsfw=1"},
 	}
@@ -90,6 +98,8 @@ func TestWorksSearchOpenVocabulariesDoNotReject(t *testing.T) {
 	for _, url := range []string{
 		"/v1/catalog/works/search?olang=klingon",
 		"/v1/catalog/works/search?olang=all",
+		"/v1/catalog/works/search?claim_state=live",
+		"/v1/catalog/works/search?claim_state=none,live,draft,hidden",
 		"/v1/catalog/works/search?include=names,bogus",
 		"/v1/catalog/works/search?sort=relevance&facets=content_rating,olang,claimed,tag_id,label_id,engine_id,series_id,source",
 		"/v1/catalog/works/search?page=99999&limit=100",

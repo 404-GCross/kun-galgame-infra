@@ -108,7 +108,7 @@ func labelsSettings() *meilisearch.Settings {
 // filterable for the released_* bounds and sortable for the sort lanes.
 var WorksFilterableAttributes = []string{
 	"id", "entity_type", "source_keys", "content_rating",
-	"claimed", "olang", "tag_ids", "label_ids", "engine_ids", "series_ids",
+	"claimed", "claim_state", "olang", "tag_ids", "label_ids", "engine_ids", "series_ids",
 	"released_ord",
 }
 

@@ -1101,8 +1101,11 @@ func (s *PublicService) claimedByFor(ctx context.Context, ids []int64) (map[int6
 	}
 	out := make(map[int64]*dto.PublicClaimedBy, len(rows))
 	for _, r := range rows {
+		// The query already pinned site / product_work_id non-NULL, so the shared
+		// projection can only return one of the three claimed states here.
 		out[r.ID] = &dto.PublicClaimedBy{
-			Site: r.Site, WorkID: r.ProductWorkID, State: claimStateKey(r.ClaimState),
+			Site: r.Site, WorkID: r.ProductWorkID,
+			State: model.ClaimStateKey(&r.Site, &r.ProductWorkID, r.ClaimState),
 		}
 	}
 	return out, nil
@@ -1228,34 +1231,15 @@ func publicRefs(refs []RefDetail) []dto.PublicCatalogRef {
 
 // claimedBy builds the cross-face pointer from a work's site + product_work_id
 // (both set = claimed) and stamps the claim's visibility state (A2-1e / R7).
+// The projection itself is model.ClaimStateKey — the ONE definition the works
+// search index also bakes in, so `claim_state=live` selects exactly the rows
+// this function renders as state "live" (A2-R1 区 C).
 func claimedBy(site *string, productWorkID *int64, claimState *int16) *dto.PublicClaimedBy {
-	if site == nil || *site == "" || productWorkID == nil {
-		return nil
+	state := model.ClaimStateKey(site, productWorkID, claimState)
+	if state == model.ClaimStateKeyNone {
+		return nil // unclaimed: claimed_by is null, not an object with a state
 	}
-	return &dto.PublicClaimedBy{
-		Site: *site, WorkID: *productWorkID, State: claimStateKey(claimState),
-	}
-}
-
-// claimStateKey projects the claim visibility column to its public string.
-//
-// NULL → "live" on purpose: that is a claimed row no projector has stamped yet
-// (the window between this wave's migration and the reconciler's next pass),
-// and "live" is exactly how every consumer treated claimed_by before this
-// field existed. Anything OUTSIDE the vocabulary is the conservative "hidden"
-// — an unrecognized state must never be published downstream.
-func claimStateKey(s *int16) string {
-	if s == nil {
-		return "live"
-	}
-	switch *s {
-	case model.ClaimStateLive:
-		return "live"
-	case model.ClaimStateDraft:
-		return "draft"
-	default:
-		return "hidden"
-	}
+	return &dto.PublicClaimedBy{Site: *site, WorkID: *productWorkID, State: state}
 }
 
 // nameBuckets places a name into its single language bucket by the row's lang

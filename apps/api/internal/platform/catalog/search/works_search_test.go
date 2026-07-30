@@ -23,7 +23,7 @@ func mustJSON(t *testing.T, d EntityDoc) string {
 func TestBuildWorkDoc(t *testing.T) {
 	d := BuildWorkDoc(WorkDocInput{
 		ID: 42, DisplayName: "いろとりどりのセカイ", OLang: "zh-Hans",
-		ContentRating: 2, Claimed: true,
+		ContentRating: 2, Claimed: true, ClaimState: "live",
 		ReleasedOrd: 20240600, UpdatedTS: 1700000000, Popularity: 3.5,
 		Titles: []WorkDocTitle{
 			{Lang: "ja", Title: "いろとりどりのセカイ"}, // == display_name, must not duplicate
@@ -66,6 +66,16 @@ func TestBuildWorkDoc(t *testing.T) {
 	// A BODYLESS work still carries claimed=false: omitempty on a bare bool
 	// would erase half the population from the claimed facet.
 	assert.Contains(t, mustJSON(t, undated), `"claimed":false`)
+
+	// claim_state (A2-R1 区 C) reaches the document verbatim and is filterable —
+	// the works search's publishability gate is only as good as the field it
+	// filters on being present on EVERY works document, "none" included.
+	assert.Equal(t, "live", d.ClaimState)
+	assert.Contains(t, mustJSON(t, d), `"claim_state":"live"`)
+	none := BuildWorkDoc(WorkDocInput{ID: 2, DisplayName: "Bodyless", ClaimState: "none"})
+	assert.Contains(t, mustJSON(t, none), `"claim_state":"none"`)
+	assert.Contains(t, WorksFilterableAttributes, "claim_state",
+		"a claim_state the index cannot filter on is a gate that silently does nothing")
 }
 
 // TestBuildTagDoc pins the tags-index projection (A2-1d).

@@ -180,6 +180,53 @@ const (
 	ClaimStateHidden int16 = 2
 )
 
+// The PUBLIC claim vocabulary — the four values `claimed_by.state` renders and
+// the works search index's `claim_state` filters on. `none` has no column
+// counterpart: it is the UNCLAIMED registry row, which the read face renders as
+// `claimed_by: null`.
+const (
+	ClaimStateKeyNone   = "none"
+	ClaimStateKeyLive   = "live"
+	ClaimStateKeyDraft  = "draft"
+	ClaimStateKeyHidden = "hidden"
+)
+
+// ClaimStateKey projects a registry row's claim columns onto that vocabulary.
+//
+// It lives in the model package because it must have exactly ONE definition:
+// the read face renders it as claimed_by.state and the reindexer bakes it into
+// the works index as a filterable field, and a search filter that selected a
+// different set than the record it returns is the precise failure this function
+// exists to make unrepresentable.
+//
+// The rules, in the order they apply:
+//
+//   - no site, or a site with no product_work_id → `none`. The second half is
+//     not pedantry: claimed_by is null without a product work id (there is
+//     nothing to point at), so such a row reads as unclaimed on the wire and
+//     must filter as unclaimed too.
+//   - claimed, column NULL → `live`. That is a claimed row no projector has
+//     stamped yet, and `live` is how every consumer treated claimed_by before
+//     the column existed (zero-regression semantics).
+//   - 0/1/2 → live/draft/hidden; anything OUTSIDE the vocabulary → `hidden`,
+//     the conservative choice: an unrecognized state must never be published.
+func ClaimStateKey(site *string, productWorkID *int64, claimState *int16) string {
+	if site == nil || *site == "" || productWorkID == nil {
+		return ClaimStateKeyNone
+	}
+	if claimState == nil {
+		return ClaimStateKeyLive
+	}
+	switch *claimState {
+	case ClaimStateLive:
+		return ClaimStateKeyLive
+	case ClaimStateDraft:
+		return ClaimStateKeyDraft
+	default:
+		return ClaimStateKeyHidden
+	}
+}
+
 // Work title kinds (doc 17 R2). Search hints are findability-only, never
 // displayed.
 const (
