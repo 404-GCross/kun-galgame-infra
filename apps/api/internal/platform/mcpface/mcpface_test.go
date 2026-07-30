@@ -11,9 +11,13 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// expectedTools is the frozen tool surface (design §4; M1 seven + catalog_name_get
-// + the canonical-W1 trio). If this list changes, the design doc and portal docs
-// page must change with it.
+// expectedTools is the frozen tool surface (design §4; the M1 five that survive
+// + catalog_name_get + the canonical-W1 trio). If this list changes, the design
+// doc and portal docs page must change with it.
+//
+// galgame_search / galgame_get left the surface at wave 146 (2026-07-30) with
+// the /v1/galgame face they proxied; this list doubles as the assertion that
+// they are really unregistered, since TestToolRegistry pins it exactly.
 var expectedTools = []string{
 	"catalog_changes",
 	"catalog_character_get",
@@ -24,8 +28,6 @@ var expectedTools = []string{
 	"catalog_tag_get",
 	"catalog_work_get",
 	"catalog_works_list",
-	"galgame_get",
-	"galgame_search",
 }
 
 // TestToolRegistry drives the built server through an in-memory MCP client and
@@ -116,7 +118,7 @@ func TestUpstreamGetPassthrough(t *testing.T) {
 	up := NewUpstream(srv.URL)
 	q := newQuery()
 	q.Set("q", "スモーク")
-	status, body, err := up.Get(context.Background(), "/v1/galgame/search", q, "Bearer nm_live_k")
+	status, body, err := up.Get(context.Background(), "/v1/catalog/search", q, "Bearer nm_live_k")
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
@@ -126,7 +128,7 @@ func TestUpstreamGetPassthrough(t *testing.T) {
 	if string(body) != `{"data":{"ok":true}}` {
 		t.Errorf("body = %s", body)
 	}
-	if gotPath != "/v1/galgame/search" {
+	if gotPath != "/v1/catalog/search" {
 		t.Errorf("upstream path = %q", gotPath)
 	}
 	if gotQuery != "q=%E3%82%B9%E3%83%A2%E3%83%BC%E3%82%AF" {
@@ -172,13 +174,13 @@ func TestUpstreamGetTimeout(t *testing.T) {
 	up := NewUpstream(srv.URL)
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
-	if _, _, err := up.Get(ctx, "/v1/galgame/search", newQuery(), "Bearer nm_live_k"); err == nil {
+	if _, _, err := up.Get(ctx, "/v1/catalog/search", newQuery(), "Bearer nm_live_k"); err == nil {
 		t.Fatal("expected a timeout error, got nil")
 	}
 }
 
 // TestHandlerEndToEnd exercises a full tool handler: the auth form check, the
-// pass-through GET (default limit applied), and the success mapping — plus the
+// pass-through GET (query params serialized), and the success mapping — plus the
 // missing-key rejection path.
 func TestHandlerEndToEnd(t *testing.T) {
 	var gotPath, gotQuery string
@@ -191,28 +193,28 @@ func TestHandlerEndToEnd(t *testing.T) {
 	tl := &tools{up: NewUpstream(srv.URL)}
 	ctx := context.Background()
 
-	// Happy path: a well-formed key + a query param, default limit filled in.
+	// Happy path: a well-formed key + query params.
 	req := &mcp.CallToolRequest{Extra: &mcp.RequestExtra{
 		Header: http.Header{"Authorization": {"Bearer nm_test_smoke"}},
 	}}
-	res, _, err := tl.galgameSearch(ctx, req, galgameSearchInput{Q: "fate"})
+	res, _, err := tl.catalogSearch(ctx, req, catalogSearchInput{Type: "works", Q: "fate", Limit: 10})
 	if err != nil {
 		t.Fatalf("handler err: %v", err)
 	}
 	if res.IsError {
 		t.Fatalf("handler returned an error result: %q", textOf(t, res))
 	}
-	if gotPath != "/v1/galgame/search" {
+	if gotPath != "/v1/catalog/search" {
 		t.Errorf("path = %q", gotPath)
 	}
-	if !contains(gotQuery, "q=fate") || !contains(gotQuery, "limit=10") {
-		t.Errorf("query = %q (want q=fate and default limit=10)", gotQuery)
+	if !contains(gotQuery, "q=fate") || !contains(gotQuery, "type=works") || !contains(gotQuery, "limit=10") {
+		t.Errorf("query = %q (want type=works, q=fate and limit=10)", gotQuery)
 	}
 
 	// Missing-key path: no Authorization → the form check rejects before any
 	// upstream call, returning a tool error pointing at the portal.
 	noKey := &mcp.CallToolRequest{Extra: &mcp.RequestExtra{Header: http.Header{}}}
-	res2, _, err := tl.galgameGet(ctx, noKey, galgameGetInput{ID: 1})
+	res2, _, err := tl.catalogWorkGet(ctx, noKey, catalogWorkGetInput{ID: 1})
 	if err != nil {
 		t.Fatalf("handler err: %v", err)
 	}
