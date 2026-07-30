@@ -1032,11 +1032,19 @@ type LabelHead struct {
 
 // LabelWorks returns a label's own identity plus the works attributed to it
 // (via the attribution edge), offset-paginated. head is nil if the label does
-// not exist; total is the full count for the label.
+// not exist OR was merged away; total is the full count for the label.
+//
+// Raw SQL bypasses GORM soft-delete, so deleted_at is filtered explicitly —
+// the browse lane's posture (see public_taxonomy.go's head-row note), which the
+// detail lanes had missed: a merged label kept answering 200 with its old name
+// and an empty member list, i.e. a ghost page under a dead id. head == nil is
+// the single miss signal both callers key on, and the public handler turns it
+// into a 301 when a catalog_redirect exists for the id.
 func (s *ReadService) LabelWorks(ctx context.Context, labelID int64, limit, offset int) (head *LabelHead, items []LabelWork, total int64, err error) {
 	db := s.db.WithContext(ctx)
 	var h LabelHead
-	if err = db.Raw(`SELECT id, display_name, kind, lang FROM catalog_label WHERE id = ?`, labelID).Scan(&h).Error; err != nil {
+	if err = db.Raw(`SELECT id, display_name, kind, lang FROM catalog_label
+		WHERE id = ? AND deleted_at IS NULL`, labelID).Scan(&h).Error; err != nil {
 		return nil, nil, 0, err
 	}
 	if h.ID != 0 {

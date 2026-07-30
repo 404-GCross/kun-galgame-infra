@@ -242,6 +242,18 @@ type PublicRedirectsData struct {
 	NextCursor *string              `json:"next_cursor"`
 }
 
+// PublicMovedData is the body of a 301 answer from a detail lane whose id was
+// merged away: the requested id, the survivor it now lives on, and the entity
+// family both belong to. It rides the standard {code, message, data} envelope
+// with code = errors.ErrMoved, alongside a Location header — so a client that
+// does NOT follow redirects still learns where to go, in one hop, without ever
+// receiving the survivor's record under the dead id.
+type PublicMovedData struct {
+	EntityType string `json:"entity_type"`
+	ID         int64  `json:"id"`
+	CurrentID  int64  `json:"current_id"`
+}
+
 // PublicNameBuckets holds an entity display name in exactly ONE language bucket
 // (a credit name / character lives in a single language). Consumers pick by their
 // UI locale.

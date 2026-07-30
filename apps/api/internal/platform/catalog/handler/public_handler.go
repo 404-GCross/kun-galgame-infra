@@ -250,10 +250,45 @@ func (h *PublicHandler) Label(c fiber.Ctx) error {
 		return response.InternalError(c, errors.ErrInternalServer)
 	}
 	if !found {
-		return response.NotFound(c, errors.ErrNotFound)
+		return h.missOrMoved(c, model.EntityTypeLabel, "labels", id)
 	}
 	c.Set("Cache-Control", cacheDetail)
 	return response.Success(c, rec)
+}
+
+// missOrMoved is the miss branch of every MERGE-CAPABLE detail lane.
+//
+// A merged entity is soft-deleted and leaves a catalog_redirect behind, so
+// "the row is not there" has two very different meanings: the id never existed
+// (404) or its identity moved to a survivor (301). Serving the survivor's
+// record under the dead id would be the third, worst option — a 200 that
+// duplicates one entity across two URLs — so the survivor's CONTENT never
+// travels this path; only its id does.
+//
+// The resolver is the shared ResolveService, which is fixpoint by construction:
+// merges flatten chains at write time and it errors loudly rather than
+// following one, so the current_id handed out here is always final.
+//
+// lane is the /v1/catalog path segment ("labels") used to build Location.
+func (h *PublicHandler) missOrMoved(c fiber.Ctx, entityType int16, lane string, id int64) error {
+	current, moved, err := h.resolve.Resolve(c.Context(), entityType, id)
+	if err != nil {
+		// A broken flatten invariant (ErrRedirectChain) is a real fault, not a
+		// miss: 500 rather than a 404 that would hide it.
+		return response.InternalError(c, errors.ErrInternalServer)
+	}
+	if !moved {
+		return response.NotFound(c, errors.ErrNotFound)
+	}
+	c.Set("Location", "/v1/catalog/"+lane+"/"+strconv.FormatInt(current, 10))
+	c.Set("Cache-Control", cacheDetail)
+	return c.Status(fiber.StatusMovedPermanently).JSON(response.Response{
+		Code:    errors.ErrMoved,
+		Message: "this id was merged away; use current_id",
+		Data: dto.PublicMovedData{
+			EntityType: entityTypeKey(entityType), ID: id, CurrentID: current,
+		},
+	})
 }
 
 // Search serves GET /v1/catalog/search — entity relevance AUTOCOMPLETE over the

@@ -28,6 +28,12 @@ const (
 	// which means "this resource does not exist on a live endpoint". Paired with
 	// HTTP 410 so a caller can tell a decommissioned face from a typo'd path.
 	ErrGone = 11 // 接口已下线
+	// ErrMoved: the RESOURCE moved — its id was merged away and the identity now
+	// lives on a survivor. Distinct from ErrNotFound (4, "never existed / is
+	// gone for good") and from ErrGone (11, which is about the endpoint, not the
+	// row). Paired with HTTP 301 + Location, and the envelope's data carries
+	// current_id so a caller can redirect in a single hop.
+	ErrMoved = 12 // 资源已合并
 
 	// Auth (10000-19999)
 	ErrAuthUnauthorized           = 10001
@@ -149,6 +155,7 @@ var codeMessages = map[int]string{
 	ErrInvalidParam:     "参数格式错误",
 	ErrOperationFailed:  "操作失败",
 	ErrGone:             "接口已下线",
+	ErrMoved:            "资源已合并",
 
 	// Auth
 	ErrAuthUnauthorized:           "未授权，请先登录",
