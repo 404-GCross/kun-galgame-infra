@@ -177,13 +177,38 @@ func monthOfOrdinal(ord int64) string {
 func defaultCalendarMonth(now time.Time) string { return now.In(calendarJST).Format("2006-01") }
 func defaultCalendarYear(now time.Time) string  { return now.In(calendarJST).Format("2006") }
 
-// parsePublicOLang resolves ?olang=: omitted → the default ja+zh family,
-// `all` → no gate, otherwise the comma-separated set (blank entries dropped; an
-// all-blank list degrades to the default rather than to an impossible IN ()).
+// parsePublicOLang resolves ?olang= for the CALENDAR buckets: omitted → the
+// default ja+zh family. The calendar is a CURATED surface — 新作月表 — and the
+// family default is exactly what the wiki-era release calendar showed, so it
+// stays. (The works product search resolves the same parameter against a
+// different default; see worksSearchOLang.)
 func parsePublicOLang(raw string) service.PublicOLang {
+	return parsePublicOLangDefault(raw, service.PublicOLang{})
+}
+
+// worksSearchOLang resolves ?olang= for the works PRODUCT SEARCH lane: omitted →
+// NO gate at all.
+//
+// The two lanes differ on purpose (144, the olang-restoration wave). Search and
+// browse are the DISCOVERY surface: a caller who did not name a language is
+// asking "what do you have", and answering only with ja+zh would — the moment
+// the registry stopped being uniformly 'ja' — silently vanish every en/ru/ko
+// work kungal, moyu and letmoe can find today. Curation belongs to the calendar;
+// reachability belongs to search. Everything else about the parameter is
+// identical across the lanes: same open vocabulary, same `all`, same explicit
+// comma-separated set.
+func worksSearchOLang(raw string) service.PublicOLang {
+	return parsePublicOLangDefault(raw, service.PublicOLang{All: true})
+}
+
+// parsePublicOLangDefault is the one parser both lanes share; def is what an
+// OMITTED olang resolves to. `all` → no gate, otherwise the comma-separated set
+// (blank entries dropped; an all-blank list degrades to the caller's default
+// rather than to an impossible IN ()).
+func parsePublicOLangDefault(raw string, def service.PublicOLang) service.PublicOLang {
 	switch trimmed := strings.TrimSpace(raw); trimmed {
 	case "":
-		return service.PublicOLang{}
+		return def
 	case "all":
 		return service.PublicOLang{All: true}
 	default:
@@ -192,6 +217,9 @@ func parsePublicOLang(raw string) service.PublicOLang {
 			if p = strings.TrimSpace(p); p != "" {
 				vals = append(vals, p)
 			}
+		}
+		if len(vals) == 0 {
+			return def
 		}
 		return service.PublicOLang{Values: vals}
 	}

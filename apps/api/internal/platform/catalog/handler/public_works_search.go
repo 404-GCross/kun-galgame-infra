@@ -10,7 +10,10 @@
 //     an unknown token: a plausible-looking 200 whose ranking or distribution is
 //     not what the caller asked for is the worst failure class.
 //   - olang stays an OPEN vocabulary (upstream BCP-47 tags) and yields an empty
-//     result rather than a 400 — the calendar's posture, verbatim.
+//     result rather than a 400 — the calendar's posture, verbatim. Its DEFAULT
+//     is the one thing that differs: omitting olang here means NO gate, where
+//     the calendar's curated buckets fall back to the ja+zh family (144). See
+//     worksSearchOLang for the ruling.
 //   - include= ignores unknown tokens (§3.5 clause 2), like every other lane.
 package handler
 
@@ -41,7 +44,7 @@ func (h *PublicHandler) WorksSearch(c fiber.Ctx) error {
 		SearchIntro: boolQueryPub(c.Query("search_intro")),
 		Q:           c.Query("q"),
 		NSFW:        nsfwQuery(c),
-		OLang:       parsePublicOLang(c.Query("olang")),
+		OLang:       worksSearchOLang(c.Query("olang")),
 		Include:     service.ParseWorksListInclude(c.Query("include")),
 	}
 

@@ -136,6 +136,45 @@ func TestPageNumPub(t *testing.T) {
 	assert.Equal(t, 1000000, n)
 }
 
+// TestWorksSearchOLangDefaultIsUngated pins wave 144's split: ONE parameter,
+// two lanes, two different defaults — and nothing else about it moves.
+//
+// Search is the DISCOVERY surface, so an omitted olang means the whole
+// population: once the registry stopped being uniformly 'ja', a family default
+// here would have silently deleted every en/ru/ko work the consumer sites can
+// find today. The calendar is the CURATED surface (新作月表) and keeps the ja+zh
+// family — pinned end to end by TestCalendarBucketsWire, and unit-pinned against
+// TestParsePublicOLang's expectations right below.
+func TestWorksSearchOLangDefaultIsUngated(t *testing.T) {
+	// The default, which is the whole point of the wave.
+	assert.Equal(t, service.PublicOLang{All: true}, worksSearchOLang(""),
+		"omitted olang on the search lane = no gate")
+	assert.Equal(t, service.PublicOLang{All: true}, worksSearchOLang("   "))
+	// An all-blank list degrades to the LANE's default, not to the calendar's.
+	assert.Equal(t, service.PublicOLang{All: true}, worksSearchOLang(" , , "))
+	// …while the calendar keeps the family for exactly the same inputs.
+	assert.Equal(t, service.PublicOLang{}, parsePublicOLang(""))
+	assert.Equal(t, service.PublicOLang{}, parsePublicOLang(" , , "))
+
+	// Everything a caller states explicitly is identical across the two lanes.
+	for _, raw := range []string{"all", "ja", " ja , zh-Hans ", "xx-Nope"} {
+		assert.Equalf(t, parsePublicOLang(raw), worksSearchOLang(raw),
+			"olang=%q must mean the same thing on both lanes", raw)
+	}
+	assert.Equal(t, service.PublicOLang{All: true}, worksSearchOLang("all"))
+	assert.Equal(t, service.PublicOLang{Values: []string{"en"}}, worksSearchOLang("en"))
+
+	// The gate's ETag discriminator does not collapse: the search lane's new
+	// default folds to the SAME key as an explicit olang=all (they are the same
+	// population), and still differs from the calendar's family default.
+	assert.Equal(t, "all", worksSearchOLang("").Key())
+	assert.Equal(t, "jazh", parsePublicOLang("").Key())
+	assert.NotEqual(t, parsePublicOLang("").Key(), worksSearchOLang("").Key())
+	// The calendar's population key is untouched by this wave.
+	assert.Equal(t, "sfw-jazh-all",
+		service.CalendarFilter{OLang: parsePublicOLang("")}.PopulationKey())
+}
+
 // TestPublicSearchIndexTagsType pins the A2-1b account this wave settles: the
 // entity-search `type` vocabulary gains `tags`, and nothing else moves.
 func TestPublicSearchIndexTagsType(t *testing.T) {

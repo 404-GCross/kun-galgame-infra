@@ -3225,12 +3225,12 @@ paths:
           schema:
             description: YYYY-MM-DD, inclusive
             type: string
-        - description: "Original-language gate: comma-separated olang values in the upstream BCP-47 spelling (ja, zh-Hans, en, …) or 'all' to switch it off. Default = the ja + zh* family. olang is an OPEN vocabulary, so an unrecognized value yields an empty result, never a 400"
+        - description: "Original-language gate: comma-separated olang values in the upstream BCP-47 spelling (ja, zh-Hans, en, …), or 'all'. Default (absent) = NO gate, i.e. the whole population — search is the discovery surface, so a caller who did not name a language gets every language. This is deliberately NOT the calendar's default, which curates down to the ja + zh* family. olang is an OPEN vocabulary, so an unrecognized value yields an empty result, never a 400"
           explode: false
           in: query
           name: olang
           schema:
-            description: "Original-language gate: comma-separated olang values in the upstream BCP-47 spelling (ja, zh-Hans, en, …) or 'all' to switch it off. Default = the ja + zh* family. olang is an OPEN vocabulary, so an unrecognized value yields an empty result, never a 400"
+            description: "Original-language gate: comma-separated olang values in the upstream BCP-47 spelling (ja, zh-Hans, en, …), or 'all'. Default (absent) = NO gate, i.e. the whole population — search is the discovery surface, so a caller who did not name a language gets every language. This is deliberately NOT the calendar's default, which curates down to the ja + zh* family. olang is an OPEN vocabulary, so an unrecognized value yields an empty result, never a 400"
             type: string
         - description: relevance (default; an empty q degenerates to popularity), released_desc/asc over the earliest release date (works with no dated release sort last in BOTH directions), updated = newest-updated first, popularity = the cross-source signal log1p(max(bangumi collect shelf, DLsite downloads))
           explode: false
