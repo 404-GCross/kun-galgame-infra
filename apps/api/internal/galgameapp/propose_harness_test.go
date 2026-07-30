@@ -87,17 +87,22 @@ func TestMain(m *testing.M) {
 	if dsn == "" {
 		dsn = "host=localhost port=5432 user=postgres password=postgres dbname=kun_galgame_infra_test sslmode=disable"
 	}
+	// A missing database leaves testDB nil and runs the suite anyway: every
+	// DB-backed test in this package guards on `testDB == nil`, while the
+	// dependency-free ones (the wave-146 delisting contract) MUST still execute —
+	// exiting here would report the whole package as a green no-op in CI's
+	// service-less unit job.
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "SKIP: cannot connect to test database: %v\n", err)
-		os.Exit(0)
+		fmt.Fprintf(os.Stderr, "SKIP(db-backed): cannot connect to test database: %v\n", err)
+		os.Exit(m.Run())
 	}
 	sqlDB, _ := db.DB()
 	release := acquireSuiteLocks(sqlDB, devapiSuiteLockKey, editSuiteLockKey)
 	if err := provisionProposeSchema(db); err != nil {
 		release()
-		fmt.Fprintf(os.Stderr, "SKIP: propose-face schema provisioning failed: %v\n", err)
-		os.Exit(0)
+		fmt.Fprintf(os.Stderr, "SKIP(db-backed): propose-face schema provisioning failed: %v\n", err)
+		os.Exit(m.Run())
 	}
 	testDB = db
 	code := m.Run()

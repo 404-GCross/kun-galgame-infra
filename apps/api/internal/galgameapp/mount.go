@@ -65,8 +65,9 @@ type Deps struct {
 // its full HTTP surface — the /api staff face (admin/ban + the taxonomy
 // tag/official/engine/series CRUD+revert family + the staff catalog-browser
 // proxy), the devapi-gated /internal face carrying ALL user reads (galgame:read)
-// and user writes (galgame:write), the S2S cron feeds, and the NextMoe
-// /v1/galgame public projection — onto a.Fiber.
+// and user writes (galgame:write), and the S2S cron feeds — onto a.Fiber. The
+// NextMoe /v1/galgame public projection was DELISTED at wave 146 (2026-07-30);
+// its prefix is now a 410 catch-all (publicgone.go).
 //
 // Global middleware and /healthz are the caller's responsibility (see the package
 // doc); Mount assumes CORS + request-id + logging are already installed.
@@ -118,10 +119,6 @@ func Mount(a *app.App, cfg *config.Config, deps Deps) {
 	// the polymorphic taxonomy_revision audit. Every mutating handler
 	// path below routes through it.
 	taxSvc := galgameService.NewTaxonomyService(tagRepo, officialRepo, engineRepo, seriesRepo, taxRevRepo, galgameRepository)
-	// PublicTaxonomyService — the curated /v1 by-id read projection for the four
-	// taxonomy families (W1b). Reuses the taxonomy repos + borrows galgameSvc for
-	// the thin-item member/preview hydration (non-N+1). Read-only, no audit.
-	publicTaxSvc := galgameService.NewPublicTaxonomyService(tagRepo, officialRepo, engineRepo, seriesRepo, galgameSvc)
 
 	// Meilisearch: indexer + write-through hook + search service
 	indexer := galgameSearch.NewIndexer(searchClient)
@@ -193,9 +190,6 @@ func Mount(a *app.App, cfg *config.Config, deps Deps) {
 	contributorH := galgameHandler.NewContributorHandler(galgameRepository, userReadRepo)
 	tagH := galgameHandler.NewTagHandler(tagRepo, taxSvc, searchHook)
 	officialH := galgameHandler.NewOfficialHandler(officialRepo, taxSvc, searchHook)
-	// Entity reverse-lookups (step 20): official/tag → self-description + galgame
-	// briefs, served on the /v1 public projection (mountPublic).
-	entityGalgamesH := galgameHandler.NewEntityGalgamesHandler(officialRepo, tagRepo, galgameSvc)
 	engineH := galgameHandler.NewEngineHandler(engineRepo, taxSvc)
 	seriesH := galgameHandler.NewSeriesHandler(seriesRepo, taxSvc)
 	// One handler covers ListRevisions / GetRevision / Revert for all
@@ -220,10 +214,10 @@ func Mount(a *app.App, cfg *config.Config, deps Deps) {
 	// See docs/auth/03-oidc-standardization-design.md §10 Phase 1.
 	tokenVerifier := oidctoken.NewVerifierWithJWKS(cfg.JWT.Secret, cfg.OIDC.JWKSURL)
 	jwtAuth := middleware.JWTAuth(tokenVerifier)
-	// OptionalJWT — populates user_id when a valid Bearer token is present,
-	// but never blocks the request. Used on /galgame/batch and /galgame/search
-	// so anonymous callers still get status=0-only results while authenticated
-	// ones additionally see their own pending/declined drafts.
+	// OptionalJWT — populates user_id when a valid Bearer token is present, but
+	// never blocks the request. Used on the /internal workflow search so
+	// anonymous callers still get status=0-only results while authenticated ones
+	// additionally see their own pending/declined drafts.
 	optionalJWT := middleware.OptionalJWT(tokenVerifier)
 
 	// ── Registrar for the devapi-gated /internal platform-workflow face ──
@@ -362,7 +356,10 @@ func Mount(a *app.App, cfg *config.Config, deps Deps) {
 	//     legacy /api Bearer registrations, so this face is now their only host.
 	//     Registered BEFORE mountInternal so the read face's Group Use does not
 	//     blanket it (see mountInternalWrites).
-	//   /v1/galgame = the public third-party projection (frozen contract).
+	//
+	// The fourth face this used to build — /v1/galgame, the public third-party
+	// projection — was delisted at wave 146 and no longer rides this chain; its
+	// prefix is a credential-free 410 catch-all (mountRetiredPublic).
 	face := newDevapiFace(a, cfg)
 	writes := writeRoutes{
 		galgameH:     galgameH,
@@ -380,5 +377,5 @@ func Mount(a *app.App, cfg *config.Config, deps Deps) {
 	mountInternalWrites(a, face, writes, jwtAuth)
 	mountInternalPropose(a, face, proposeH, jwtAuth)
 	mountInternal(a, face, workflow, messageH, revisionH, metaH)
-	mountPublic(a, face, galgameSvc, searchSvc, galgameH, entityGalgamesH, publicTaxSvc, optionalJWT)
+	mountRetiredPublic(a)
 }

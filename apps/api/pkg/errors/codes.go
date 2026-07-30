@@ -24,6 +24,10 @@ const (
 	ErrMissingParam     = 8  // 缺少必要参数
 	ErrInvalidParam     = 9  // 参数格式错误
 	ErrOperationFailed  = 10 // 操作失败
+	// ErrGone: the endpoint itself was retired — distinct from ErrNotFound (4),
+	// which means "this resource does not exist on a live endpoint". Paired with
+	// HTTP 410 so a caller can tell a decommissioned face from a typo'd path.
+	ErrGone = 11 // 接口已下线
 
 	// Auth (10000-19999)
 	ErrAuthUnauthorized           = 10001
@@ -144,6 +148,7 @@ var codeMessages = map[int]string{
 	ErrMissingParam:     "缺少必要参数",
 	ErrInvalidParam:     "参数格式错误",
 	ErrOperationFailed:  "操作失败",
+	ErrGone:             "接口已下线",
 
 	// Auth
 	ErrAuthUnauthorized:           "未授权，请先登录",
