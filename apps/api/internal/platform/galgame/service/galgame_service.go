@@ -31,6 +31,18 @@ var vndbIDRegex = regexp.MustCompile(`^v\d+$`)
 // hashes alive, so the probe is a safety net, not a hard dependency).
 type ImageProbeFunc func(ctx context.Context, hashes []string) (notFound []string, err error)
 
+// ClaimHookFunc mints / refreshes one galgame's catalog identity right after it
+// is published (wave 146). It returns nothing on purpose: a registry hiccup
+// must never fail a landed publication, so the implementation
+// (catalogsync.Hook) logs and defers to the nightly reconcile.
+//
+// It covers only the two paths that CREATE a published row; every later status
+// transition is an editing-engine merge and is claimed by the galgame.game
+// OnMerge hook instead. nil = unwired (tests, and any process that has no
+// catalog pool) — the nightly job then remains the sole registrar, i.e. the
+// pre-146 behaviour.
+type ClaimHookFunc func(ctx context.Context, galgameID int64)
+
 // GalgameService handles galgame business logic
 type GalgameService struct {
 	galgameRepo  *repository.GalgameRepository
@@ -65,6 +77,10 @@ type GalgameService struct {
 	// WithCDNBase in galgameapp.Mount; irrelevant to every internal read path (they
 	// return the bare hash and let the frontend resolve the URL).
 	cdnBase string
+
+	// claimCatalog is the post-commit catalog claim for admin direct-create
+	// (which is born published). See ClaimHookFunc.
+	claimCatalog ClaimHookFunc
 }
 
 // NewGalgameService creates a new GalgameService
@@ -108,6 +124,14 @@ func (s *GalgameService) WithImageProbe(p ImageProbeFunc) *GalgameService {
 // leaked on the public wire).
 func (s *GalgameService) WithCDNBase(base string) *GalgameService {
 	s.cdnBase = base
+	return s
+}
+
+// WithClaimHook wires the catalog write-path claim fired after Create commits
+// (wave 146). Returns the service for fluent chaining; nil explicitly disables
+// it. See ClaimHookFunc.
+func (s *GalgameService) WithClaimHook(h ClaimHookFunc) *GalgameService {
+	s.claimCatalog = h
 	return s
 }
 
@@ -298,6 +322,14 @@ func (s *GalgameService) Create(ctx context.Context, userID int, req *dto.Create
 	})
 	if err != nil {
 		return nil, err
+	}
+
+	// Catalog claim BEFORE the birth record: the galgame row is committed and
+	// published from here on, so this is the earliest honest moment to register
+	// its identity — and it must not be skipped when the birth record below
+	// fails (that combination is precisely "published but invisible").
+	if s.claimCatalog != nil {
+		s.claimCatalog(ctx, int64(newID))
 	}
 
 	// Engine birth record (seq=1, action=created) AFTER the product commit —

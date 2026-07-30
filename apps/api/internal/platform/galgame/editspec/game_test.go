@@ -86,13 +86,13 @@ func TestMain(m *testing.M) {
 }
 
 func newGameEngine(t *testing.T) *editing.Engine {
-	return newGameEngineReindex(t, nil)
+	return newGameEngineHooks(t, nil, nil)
 }
 
-// newGameEngineReindex truncates and registers galgame.game with an injected
-// reindex spy (nil = no search write-through, contributor recording still runs)
-// so the OnMerge side effects can be asserted.
-func newGameEngineReindex(t *testing.T, reindex func(entityID int)) *editing.Engine {
+// newGameEngineHooks truncates and registers galgame.game with injected OnMerge
+// spies (nil = that write-through is unwired; contributor recording still runs)
+// so every side effect of the single write path can be asserted.
+func newGameEngineHooks(t *testing.T, reindex func(entityID int), claim func(context.Context, int64)) *editing.Engine {
 	t.Helper()
 	for _, table := range []string{
 		"edit_proposal_amendment", "edit_proposal", "edit_revision",
@@ -106,7 +106,7 @@ func newGameEngineReindex(t *testing.T, reindex func(entityID int)) *editing.Eng
 		}
 	}
 	reg := editing.NewRegistry()
-	if err := editspec.RegisterGame(reg, testDB, reindex); err != nil {
+	if err := editspec.RegisterGame(reg, testDB, reindex, claim); err != nil {
 		t.Fatalf("register galgame.game: %v", err)
 	}
 	return editing.NewEngine(testDB, reg)
@@ -129,7 +129,7 @@ func contributorUIDs(t *testing.T, gid int) []int {
 // revert), so the kungal BFF / a future /v1 writer can never drop them.
 func TestOnMergeSideEffects(t *testing.T) {
 	var reindexed []int
-	e := newGameEngineReindex(t, func(id int) { reindexed = append(reindexed, id) })
+	e := newGameEngineHooks(t, func(id int) { reindexed = append(reindexed, id) }, nil)
 	g := createGame(t, nil)
 
 	// 1) Direct edit (automerge) by a trusted proposer → actor credited + reindex.
@@ -190,6 +190,50 @@ func TestOnMergeSideEffects(t *testing.T) {
 	for _, id := range reindexed {
 		if id != g.ID {
 			t.Fatalf("reindex called for %d, want %d", id, g.ID)
+		}
+	}
+}
+
+// TestOnMergeClaimsCatalogIdentity pins wave 146's half of the same seam: every
+// status transition on this family lands as an engine merge, so the catalog
+// claim hangs off OnMerge and no publication path can forget it — approve, VNDB
+// draft claim and unban all reach it, and it fires on the merge, never on an
+// open proposal.
+func TestOnMergeClaimsCatalogIdentity(t *testing.T) {
+	var claimed []int64
+	e := newGameEngineHooks(t, nil, func(_ context.Context, id int64) { claimed = append(claimed, id) })
+	g := createGame(t, nil)
+	staff := gameActor(11, editing.TrustedTier, "admin")
+
+	// A status transition to published — the transition the 404 was about.
+	if _, rev, err := e.CreateProposal(testCtx, editing.CreateProposalInput{
+		EntityType: editspec.TypeGame, EntityID: int64(g.ID),
+		Patch: map[string]any{editspec.FieldStatus: float64(model.GalgameStatusBanned)}, Actor: staff,
+	}); err != nil || rev == nil {
+		t.Fatalf("ban: rev=%v err=%v", rev, err)
+	}
+	if _, rev, err := e.CreateProposal(testCtx, editing.CreateProposalInput{
+		EntityType: editspec.TypeGame, EntityID: int64(g.ID),
+		Patch: map[string]any{editspec.FieldStatus: float64(model.GalgameStatusPublished)}, Actor: staff,
+	}); err != nil || rev == nil {
+		t.Fatalf("unban: rev=%v err=%v", rev, err)
+	}
+
+	// An open proposal (untrusted, default-policy field) must NOT claim: nothing
+	// landed, so there is nothing to register.
+	if _, rev, err := e.CreateProposal(testCtx, editing.CreateProposalInput{
+		EntityType: editspec.TypeGame, EntityID: int64(g.ID),
+		Patch: map[string]any{editspec.FieldNameEnUS: "Pending"}, Actor: gameActor(22, 0),
+	}); err != nil || rev != nil {
+		t.Fatalf("open proposal: rev=%v err=%v", rev, err)
+	}
+
+	if len(claimed) != 2 {
+		t.Fatalf("want 2 claim calls (each landed status merge), got %d: %v", len(claimed), claimed)
+	}
+	for _, id := range claimed {
+		if id != int64(g.ID) {
+			t.Fatalf("claim called for %d, want %d", id, g.ID)
 		}
 	}
 }

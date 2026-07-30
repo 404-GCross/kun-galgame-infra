@@ -27,7 +27,7 @@ func (r *Reconciler) runClaim(ctx context.Context) (ClaimStats, error) {
 	// Read-prefetch which product works are already claimed, so a re-run skips
 	// the ClaimWork transaction entirely (the second full pass writes nothing)
 	// and dry-run can predict claimed_new without touching the DB.
-	claimed, err := repository.LoadClaimedWorkIDs(r.catalog, siteGalgame)
+	claimed, err := repository.LoadClaimedWorkIDs(r.catalog, siteGalgame, r.writePathIDs...)
 	if err != nil {
 		return stats, err
 	}
@@ -244,9 +244,10 @@ func (r *Reconciler) syncClaimStates(claimed map[int64]int64) (int, error) {
 // re-run writes nothing once converged). Returns rows actually changed; in
 // dry-run it counts the rows that WOULD change without writing. Chunked so the
 // VALUES list stays bounded on the full ~62k-work backfill. The claims this
-// mirrors are owned by reconcile-galgame-works, so this is the wiki's single
-// source for the cross-face pointer (there is no live catalog claim on the
-// galgame write path).
+// mirrors are made HERE and nowhere else — by the nightly reconcile over the
+// whole population, and (wave 146) by the write-path lane over the single
+// galgame a publication just landed. Both run this same function, so the
+// cross-face pointer has one writer either way.
 func (r *Reconciler) writeBackWorkIDs(pairs map[int64]int64) (int, error) {
 	if len(pairs) == 0 {
 		return 0, nil

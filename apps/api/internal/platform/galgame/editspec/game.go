@@ -30,10 +30,12 @@ import (
 // see the E2a report), status is the perm-gated management direct-edit
 // field (approve/ban/unban/decline land as engine direct edits).
 //
-// reindex is the Meilisearch write-through wired into the post-commit OnMerge
-// hook (search.Hook.Galgame at the assembly point; nil in tests / when search
-// is unconfigured — contributor recording still runs). See buildOnMerge.
-func RegisterGame(reg *editing.Registry, db *gorm.DB, reindex func(entityID int)) error {
+// reindex is the Meilisearch write-through and claim the catalog write-path
+// claim lane, both wired into the post-commit OnMerge hook (search.Hook.Galgame
+// / catalogsync.Hook at the assembly point; either may be nil in tests or when
+// the dependency is unconfigured — contributor recording still runs). See
+// buildOnMerge.
+func RegisterGame(reg *editing.Registry, db *gorm.DB, reindex func(entityID int), claim func(context.Context, int64)) error {
 	reviewRule := editing.ReviewPerm(string(perm.EditGameReview))
 
 	lockedPolicy := &editing.Policy{
@@ -140,8 +142,9 @@ func RegisterGame(reg *editing.Registry, db *gorm.DB, reindex func(entityID int)
 			return db.WithContext(ctx).Transaction(fn)
 		},
 		// Single-write-path side effects (contributor recording + search
-		// reindex) — the E3a/E3b parity gap the strangled per-handler paths left.
-		OnMerge: buildOnMerge(db, reindex),
+		// reindex + catalog claim) — the E3a/E3b parity gap the strangled
+		// per-handler paths left, plus wave 146's publication→registry latency.
+		OnMerge: buildOnMerge(db, reindex, claim),
 		DefaultPolicy: editing.Policy{
 			Propose:   editing.ProposeOpen,
 			Review:    reviewRule,

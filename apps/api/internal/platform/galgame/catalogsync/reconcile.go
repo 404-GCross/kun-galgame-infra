@@ -5,9 +5,12 @@
 //
 // Dependency direction: this is a PRODUCT-domain package importing the
 // PLATFORM-domain catalog (galgame → catalog is allowed; the reverse is not).
-// Its drivers are cmd/reconcile-galgame-works (any phase, on demand) and the
+// Its drivers are cmd/reconcile-galgame-works (any phase, on demand), the
 // nightly reconcile-galgame-claims job (the claim phase only, via
-// internal/jobs/galgameclaim). No request path ever reaches it.
+// internal/jobs/galgameclaim) and — since wave 146 — the galgame write paths,
+// which run the claim phase over the ONE galgame they just published
+// (ClaimOne, claimone.go). The nightly job is unchanged and becomes the
+// reconciliation safety net behind that.
 //
 // The R8 three-layer write policy (doc 17 §3) lands here on real data for the
 // first time:
@@ -26,6 +29,7 @@ import (
 
 	"api/internal/platform/catalog/repository"
 	"api/internal/platform/catalog/service"
+	galgamemodel "api/internal/platform/galgame/model"
 
 	"gorm.io/gorm"
 )
@@ -69,6 +73,14 @@ type Options struct {
 	Phase  string // one of Phase*; "" is treated as PhaseAll
 	DryRun bool
 	Limit  int // cap the wiki galgames processed (0 = all); debugging aid
+	// WritePathIDs selects the SINGLE-WORK write-path lane (wave 146): the run
+	// covers only these wiki galgame ids, and only those of them that are
+	// PUBLISHED or ALREADY CLAIMED (see loadGames). It exists so a publication
+	// can mint its own catalog anchor synchronously instead of waiting up to 24h
+	// for the nightly reconcile — the registration logic itself is the very same
+	// runClaim, so the two lanes cannot drift. ClaimOne is its only constructor;
+	// the claim phase is the only phase it may run.
+	WritePathIDs []int64
 }
 
 // ClaimStats reports the work-registration phase.
@@ -135,6 +147,9 @@ type Reconciler struct {
 	works   *service.WorkService
 	dryRun  bool
 	limit   int
+	// writePathIDs is Options.WritePathIDs; non-empty puts every loader in the
+	// single-work lane.
+	writePathIDs []int64
 
 	games []wikiGame // preloaded once, reused across phases
 	// type4 subject ids (bid audit-ok gate) + the RHS rows for title match.
@@ -183,12 +198,13 @@ func New(wiki, catalog, eg *gorm.DB, opts Options) *Reconciler {
 	// package-level tx helpers; a resolve service backed by the same db keeps
 	// the constructor honest without adding a second code path.
 	return &Reconciler{
-		wiki:    wiki,
-		catalog: catalog,
-		eg:      eg,
-		works:   service.NewWorkService(catalog, service.NewResolveService(repository.NewRedirectRepository(catalog))),
-		dryRun:  opts.DryRun,
-		limit:   opts.Limit,
+		wiki:         wiki,
+		catalog:      catalog,
+		eg:           eg,
+		works:        service.NewWorkService(catalog, service.NewResolveService(repository.NewRedirectRepository(catalog))),
+		dryRun:       opts.DryRun,
+		limit:        opts.Limit,
+		writePathIDs: opts.WritePathIDs,
 	}
 }
 
@@ -198,6 +214,12 @@ func (r *Reconciler) Run(ctx context.Context, phase string) (Stats, error) {
 		phase = PhaseAll
 	}
 	var stats Stats
+	// The single-work lane loads only what the claim phase needs (see loadGames
+	// / loadType4Subjects); running eg or bangumi on that partial input would
+	// silently compare against an empty right-hand side.
+	if len(r.writePathIDs) > 0 && phase != PhaseClaim {
+		return stats, fmt.Errorf("write-path lane supports phase %q only, got %q", PhaseClaim, phase)
+	}
 	if err := r.loadGames(); err != nil {
 		return stats, fmt.Errorf("load wiki galgames: %w", err)
 	}
@@ -241,6 +263,14 @@ func (r *Reconciler) Run(ctx context.Context, phase string) (Stats, error) {
 // the two title fields with the SAME Postgres expression as the Silver
 // generated columns and extracting the release year. Loaded once, reused by
 // all phases.
+//
+// The write-path lane narrows to the named ids AND to rows that are either
+// PUBLISHED or already claimed. That second clause is the lane's whole policy,
+// expressed once here so runClaim below stays the nightly job's verbatim code:
+// a publication mints its identity immediately, an already-claimed row keeps
+// its claim_state projected (ban / unban / decline land instantly too), and an
+// unclaimed DRAFT is left to the nightly backlog — claiming one at submit time
+// would leave an orphan registry row behind every withdrawn submission.
 func (r *Reconciler) loadGames() error {
 	q := `
 		SELECT id, vndb_id, bid, status, name_ja_jp, name_zh_cn, name_en_us, name_zh_tw,
@@ -249,27 +279,50 @@ func (r *Reconciler) loadGames() error {
 		       lower(normalize(name_zh_cn, NFKC)) AS zh_norm,
 		       CASE WHEN release_date IS NOT NULL
 		            THEN EXTRACT(YEAR FROM release_date)::int END AS year
-		FROM galgame ORDER BY id`
+		FROM galgame`
+	var args []any
+	if len(r.writePathIDs) > 0 {
+		q += ` WHERE id IN ? AND (status = ? OR catalog_work_id IS NOT NULL)`
+		args = append(args, r.writePathIDs, galgamemodel.GalgameStatusPublished)
+	}
+	q += ` ORDER BY id`
 	if r.limit > 0 {
 		q += fmt.Sprintf(" LIMIT %d", r.limit)
 	}
-	return r.wiki.Raw(q).Scan(&r.games).Error
+	return r.wiki.Raw(q, args...).Scan(&r.games).Error
 }
 
 // loadType4Subjects preloads the game-subject rows: their ids gate the bid
 // anchor (audit-ok = exists AND type=4), and the normalized names + year are
 // the RHS of the title match.
+//
+// The write-path lane needs the gate but not the RHS, so it probes only the
+// bids the loaded games actually carry — the full type=4 set is ~105k rows and
+// pulling it on a request path would be absurd.
 func (r *Reconciler) loadType4Subjects() error {
+	q := `SELECT id, name_norm, name_cn_norm, date FROM src_bangumi.subject WHERE type = ?`
+	args := []any{bangumiGameType}
+	if len(r.writePathIDs) > 0 {
+		bids := make([]int64, 0, len(r.games))
+		for i := range r.games {
+			if r.games[i].BID != nil {
+				bids = append(bids, *r.games[i].BID)
+			}
+		}
+		if len(bids) == 0 {
+			r.type4 = nil
+			return nil
+		}
+		q += ` AND id IN ?`
+		args = append(args, bids)
+	}
 	var rows []struct {
 		ID         int64  `gorm:"column:id"`
 		NameNorm   string `gorm:"column:name_norm"`
 		NameCNNorm string `gorm:"column:name_cn_norm"`
 		Date       string `gorm:"column:date"`
 	}
-	if err := r.catalog.Raw(
-		`SELECT id, name_norm, name_cn_norm, date FROM src_bangumi.subject WHERE type = ?`,
-		bangumiGameType,
-	).Scan(&rows).Error; err != nil {
+	if err := r.catalog.Raw(q, args...).Scan(&rows).Error; err != nil {
 		return err
 	}
 	r.type4 = make([]subjectRow, 0, len(rows))

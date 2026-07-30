@@ -92,15 +92,22 @@ func LockEntityRow(tx *gorm.DB, entityType int16, id int64) error {
 // by the given site — a read-only batch prefetch that lets a bulk
 // reconciliation job map product rows onto their catalog identities without
 // one round-trip per row.
-func LoadClaimedWorkIDs(db *gorm.DB, site string) (map[int64]int64, error) {
+//
+// productWorkIDs narrows the prefetch to specific product rows. Variadic so the
+// bulk callers keep reading as "the whole site"; the write path passes the one
+// id it is claiming, which turns this whole-registry scan into an index probe.
+func LoadClaimedWorkIDs(db *gorm.DB, site string, productWorkIDs ...int64) (map[int64]int64, error) {
 	var rows []struct {
 		ProductWorkID int64
 		ID            int64
 	}
-	if err := db.Model(&model.CatalogWork{}).
+	q := db.Model(&model.CatalogWork{}).
 		Select("product_work_id, id").
-		Where("site = ? AND product_work_id IS NOT NULL", site).
-		Scan(&rows).Error; err != nil {
+		Where("site = ? AND product_work_id IS NOT NULL", site)
+	if len(productWorkIDs) > 0 {
+		q = q.Where("product_work_id IN ?", productWorkIDs)
+	}
+	if err := q.Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	out := make(map[int64]int64, len(rows))

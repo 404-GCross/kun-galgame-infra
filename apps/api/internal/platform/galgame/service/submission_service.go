@@ -32,6 +32,11 @@ type SubmissionService struct {
 	// E2a strangler: submission revisions land in the engine log; the
 	// legacy galgame_revision table is frozen.
 	edit *editing.Engine
+	// claimCatalog is the post-commit catalog claim for a trusted publisher's
+	// direct publish (the one submission path born at status=0). A pending
+	// submission is deliberately NOT claimed — see ClaimHookFunc and the
+	// write-path lane's policy in catalogsync.loadGames.
+	claimCatalog ClaimHookFunc
 }
 
 // NewSubmissionService creates a SubmissionService.
@@ -43,6 +48,14 @@ func NewSubmissionService(g *repository.GalgameRepository, m *repository.Message
 // GalgameService.WithEditing for the posture).
 func (s *SubmissionService) WithEditing(eng *editing.Engine) *SubmissionService {
 	s.edit = eng
+	return s
+}
+
+// WithClaimHook wires the catalog write-path claim fired after a direct publish
+// commits (wave 146). Returns the service for fluent chaining; nil explicitly
+// disables it. See ClaimHookFunc.
+func (s *SubmissionService) WithClaimHook(h ClaimHookFunc) *SubmissionService {
+	s.claimCatalog = h
 	return s
 }
 
@@ -148,6 +161,14 @@ func (s *SubmissionService) Submit(ctx context.Context, userID int, roles []stri
 	})
 	if err != nil {
 		return nil, err
+	}
+
+	// Catalog claim for the DIRECT PUBLISH only, before the birth record (same
+	// ordering rationale as GalgameService.Create). A pending(3) draft gets no
+	// identity here: it may still be withdrawn, and the nightly reconcile
+	// claims it once it has survived to 03:20.
+	if publishDirect && s.claimCatalog != nil {
+		s.claimCatalog(ctx, int64(newID))
 	}
 
 	// Engine birth record after the product commit (same posture and

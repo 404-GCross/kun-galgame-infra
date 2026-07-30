@@ -39,6 +39,7 @@ import (
 	"api/internal/platform/catalog/service"
 	"api/internal/platform/devapi"
 	"api/internal/platform/editing"
+	"api/internal/platform/galgame/catalogsync"
 	galgameEditspec "api/internal/platform/galgame/editspec"
 	galgamePerm "api/internal/platform/galgame/perm"
 	galgameSearch "api/internal/platform/galgame/search"
@@ -158,8 +159,17 @@ func main() {
 	// index. The same hook the galgame handlers use (search.Hook.Galgame,
 	// fire-and-forget). Built here so RegisterGame carries it; Mount builds its
 	// own hook for the surviving Create/Update/taxonomy handlers.
+	//
+	// The claim hook (wave 146) is the registry twin of that reindex: every
+	// status transition on this family is an engine merge, so hanging the
+	// single-work catalog claim off the same OnMerge seam registers a game the
+	// moment it is published — closing the up-to-24h window in which a live wiki
+	// entry had no catalog identity and every /v1/catalog lookup 404'd it. It
+	// carries BOTH pools because the claim reads the wiki row and writes the
+	// registry (one database, two pools — hence no shared transaction).
 	galgameReindex := galgameSearch.NewHook(galgameDB.DB(), galgameSearch.NewIndexer(searchClient))
-	if err := galgameEditspec.RegisterGame(editRegistry, galgameDB.DB(), galgameReindex.Galgame); err != nil {
+	galgameClaim := catalogsync.Hook(galgameDB.DB(), catalogDB.DB())
+	if err := galgameEditspec.RegisterGame(editRegistry, galgameDB.DB(), galgameReindex.Galgame, galgameClaim); err != nil {
 		slog.Error("editing: register galgame.game", "error", err)
 		os.Exit(1)
 	}
@@ -210,11 +220,12 @@ func main() {
 	// /api/v1/admin/catalog, /v1/catalog); the shared global middleware +
 	// /healthz were already installed above, so Mount does not re-register them.
 	galgameapp.Mount(application, cfg, galgameapp.Deps{
-		OAuthDB:   application.DB.DB(),
-		GalgameDB: galgameDB.DB(),
-		Search:    searchClient,
-		Edit:      editEngine,
-		EditDB:    catalogDB.DB(),
+		OAuthDB:      application.DB.DB(),
+		GalgameDB:    galgameDB.DB(),
+		Search:       searchClient,
+		Edit:         editEngine,
+		EditDB:       catalogDB.DB(),
+		ClaimCatalog: galgameClaim,
 	})
 
 	// Serve the S2S OpenAPI 3.1 spec unauthenticated at the app root (the

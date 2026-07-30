@@ -59,6 +59,14 @@ type Deps struct {
 	// surface cannot run without the engine.
 	Edit   *editing.Engine
 	EditDB *gorm.DB
+	// ClaimCatalog mints a freshly PUBLISHED galgame's catalog identity right
+	// after the product commit (wave 146), so a new entry is registry-visible
+	// immediately instead of after the nightly reconcile. Built at the assembly
+	// point from catalogsync.Hook (it needs both pools); nil leaves the nightly
+	// job as the sole registrar. The status-TRANSITION half of the same fix
+	// lives on the editing engine's galgame.game OnMerge hook, wired next to
+	// the engine itself.
+	ClaimCatalog galgameService.ClaimHookFunc
 }
 
 // Mount wires the galgame domain (repositories, services, handlers) and registers
@@ -109,9 +117,11 @@ func Mount(a *app.App, cfg *config.Config, deps Deps) {
 	// Services
 	galgameSvc := galgameService.NewGalgameService(galgameRepository, revisionRepo, prRepo, userReadRepo).
 		WithCDNBase(cfg.ImageService.CDNBase).
-		WithEditing(deps.Edit, editq)
+		WithEditing(deps.Edit, editq).
+		WithClaimHook(deps.ClaimCatalog)
 	submissionSvc := galgameService.NewSubmissionService(galgameRepository, messageRepo).
-		WithEditing(deps.Edit)
+		WithEditing(deps.Edit).
+		WithClaimHook(deps.ClaimCatalog)
 	messageSvc := galgameService.NewMessageService(messageRepo, galgameRepository, userReadRepo)
 	adminSvc := galgameService.NewAdminService(galgameRepository, messageRepo).
 		WithEditing(deps.Edit)

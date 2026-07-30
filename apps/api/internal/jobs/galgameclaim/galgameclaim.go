@@ -3,6 +3,14 @@
 // a galgame born today (a sync-vndb draft, a user creation) is registered in the
 // catalog registry today instead of waiting for someone to remember the CLI.
 //
+// Since wave 146 it is no longer the FIRST registrar of a published galgame: the
+// write paths claim their own row the moment it is published
+// (catalogsync.ClaimOne), because "registered by tomorrow morning" meant up to
+// 24h of 404s on a live entry. This job is unchanged and keeps the harder job —
+// the reconciliation safety net over the whole population: the drafts the write
+// path deliberately skips, anything a write path dropped (its claim is
+// best-effort by contract), and every row that predates the lane.
+//
 // Why only claim. The eg / bangumi phases propose PROBABLE cross-references out
 // of staging mirrors (erogamespace, the Bangumi Silver layer) that refresh on
 // their own import cadence, so re-running them nightly would be work without new
