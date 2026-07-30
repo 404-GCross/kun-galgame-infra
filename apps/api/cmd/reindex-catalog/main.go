@@ -335,9 +335,89 @@ type workTitle struct {
 }
 
 // loadWorkTitles returns work id → title rows (official first, then alias /
-// abbreviation / search-hint — kind ASC), scoped to the index population.
+// abbreviation / search-hint — kind ASC), scoped to the index population. It
+// mirrors the READ face's own title merge (ReadService.loadWorkTitles, A2-R1),
+// because a work must not be findable by a name the read face would never show
+// — and, far more importantly here, must BE findable by the names it does show:
+//
+//   - CLAIMED works bridge the wiki body — galgame's four fixed name columns
+//     pivot to BCP-47 official rows and galgame_alias rows become alias rows
+//     with no language, with the read face's own intra-bridge dedup (an alias
+//     whose string is already an official name is one name, indexed once);
+//   - BODYLESS works read catalog_work_title verbatim, every kind.
+//
+// Strict XOR on the DISPLAY lane, like the read face: a claimed work's native
+// display rows are not read. The SEARCH-HINT lane is deliberately NOT part of
+// that XOR — hints are catalog-native findability rows with no wiki counterpart
+// (the DLsite importer attaches a store product name to a work it did not
+// create, and thousands of those sit on claimed works), they are never
+// displayed anywhere, and dropping them would make a findability FIX remove
+// findability. So a claimed work keeps its hints alongside the bridge — the
+// screenshot facet's (facet, source) XOR refinement, applied to titles: two
+// lanes carrying different rows, not two copies of one row.
+//
+// Three queries for the whole population, never per work.
 func loadWorkTitles(db *gorm.DB) (map[int64][]workTitle, error) {
-	var rows []struct {
+	const population = `w.deleted_at IS NULL AND w.status = 0
+		AND w.medium_id = (SELECT id FROM catalog_medium WHERE key = 'galgame')`
+
+	m := map[int64][]workTitle{}
+
+	// ── claimed: the wiki bridge, official names first ──
+	var names []struct {
+		WorkID   int64  `gorm:"column:work_id"`
+		NameJaJP string `gorm:"column:name_ja_jp"`
+		NameEnUS string `gorm:"column:name_en_us"`
+		NameZhCN string `gorm:"column:name_zh_cn"`
+		NameZhTW string `gorm:"column:name_zh_tw"`
+	}
+	if err := db.Raw(`SELECT w.id AS work_id, g.name_ja_jp, g.name_en_us, g.name_zh_cn, g.name_zh_tw
+		FROM catalog_work w JOIN galgame g ON g.id = w.product_work_id
+		WHERE w.site = 'galgame_wiki' AND ` + population).Scan(&names).Error; err != nil {
+		return nil, err
+	}
+	// The pivot is the read face's, verbatim — same columns, same BCP-47 tags.
+	official := map[int64]map[string]bool{}
+	for _, r := range names {
+		seen := map[string]bool{}
+		for _, p := range []struct{ lang, text string }{
+			{"ja", r.NameJaJP}, {"en", r.NameEnUS},
+			{"zh-Hans", r.NameZhCN}, {"zh-Hant", r.NameZhTW},
+		} {
+			title := strings.TrimSpace(p.text)
+			if title == "" {
+				continue
+			}
+			seen[title] = true
+			m[r.WorkID] = append(m[r.WorkID], workTitle{
+				lang: p.lang, title: title, kind: model.WorkTitleKindOfficial,
+			})
+		}
+		official[r.WorkID] = seen
+	}
+
+	// ── claimed: the wiki aliases, no language (the wiki records none) ──
+	var aliases []struct {
+		WorkID int64  `gorm:"column:work_id"`
+		Name   string `gorm:"column:name"`
+	}
+	if err := db.Raw(`SELECT w.id AS work_id, a.name
+		FROM catalog_work w JOIN galgame_alias a ON a.galgame_id = w.product_work_id
+		WHERE w.site = 'galgame_wiki' AND ` + population + `
+		ORDER BY w.id, a.id`).Scan(&aliases).Error; err != nil {
+		return nil, err
+	}
+	for _, a := range aliases {
+		name := strings.TrimSpace(a.Name)
+		if name == "" || official[a.WorkID][name] {
+			continue
+		}
+		m[a.WorkID] = append(m[a.WorkID], workTitle{title: name, kind: model.WorkTitleKindAlias})
+	}
+
+	// ── native: every kind for a BODYLESS work, search hints only for a claimed
+	// one (see the doc comment — the hint lane has no wiki counterpart).
+	var native []struct {
 		WorkID int64  `gorm:"column:work_id"`
 		Lang   string `gorm:"column:lang"`
 		Title  string `gorm:"column:title"`
@@ -346,13 +426,12 @@ func loadWorkTitles(db *gorm.DB) (map[int64][]workTitle, error) {
 	}
 	if err := db.Raw(`SELECT t.work_id, t.lang, t.title, coalesce(t.latin,'') AS latin, t.kind
 		FROM catalog_work_title t
-		JOIN catalog_work w ON w.id = t.work_id AND w.deleted_at IS NULL
-			AND w.medium_id = (SELECT id FROM catalog_medium WHERE key = 'galgame') AND w.status = 0
-		ORDER BY t.work_id, t.kind, t.lang`).Scan(&rows).Error; err != nil {
+		JOIN catalog_work w ON w.id = t.work_id
+		WHERE `+population+` AND (coalesce(w.site, '') = '' OR t.kind = ?)
+		ORDER BY t.work_id, t.kind, t.lang`, model.WorkTitleKindSearchHint).Scan(&native).Error; err != nil {
 		return nil, err
 	}
-	m := map[int64][]workTitle{}
-	for _, r := range rows {
+	for _, r := range native {
 		m[r.WorkID] = append(m[r.WorkID], workTitle{lang: r.Lang, title: r.Title, latin: r.Latin, kind: r.Kind})
 	}
 	return m, nil

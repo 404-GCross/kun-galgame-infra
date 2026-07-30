@@ -106,7 +106,9 @@ func (s *PublicService) attachWorkListBlocks(
 	}
 
 	if inc.Names {
-		titles, err := s.read.loadWorkTitles(ctx, ids)
+		// subjects, not ids: a claimed work's names come from the wiki bridge
+		// (A2-R1) — the same partition every other bridged block runs on.
+		titles, err := s.read.loadWorkTitles(ctx, subjects)
 		if err != nil {
 			return err
 		}

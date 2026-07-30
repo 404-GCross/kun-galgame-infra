@@ -6,11 +6,7 @@ package service
 // work_id lead in the ORDER BY. Same projection, same ordering within a work
 // (attribution kind, then label display name) — one 口径, two grains.
 
-import (
-	"context"
-
-	"api/internal/platform/catalog/model"
-)
+import "context"
 
 // loadWorkLabels reads the label attributions for a set of works in ONE query.
 // A work with no attribution is absent from the map (the caller renders []).
@@ -40,40 +36,4 @@ func (s *ReadService) loadWorkLabels(ctx context.Context, workIDs []int64) (map[
 		})
 	}
 	return out, nil
-}
-
-// loadWorkTitles reads the display titles for a set of works in ONE query,
-// search_hint rows excluded at the query level (they are findability-only and
-// never leave the internal face). Ordered (work, kind, id): kind ASC is the
-// detail face's own ordering, and the id tie-break makes "the first row for a
-// language" a stable choice for the LIST face's per-key pivot.
-func (s *ReadService) loadWorkTitles(ctx context.Context, workIDs []int64) (map[int64][]WorkTitleRow, error) {
-	out := make(map[int64][]WorkTitleRow, len(workIDs))
-	if len(workIDs) == 0 {
-		return out, nil
-	}
-	var rows []struct {
-		WorkID int64  `gorm:"column:work_id"`
-		Lang   string `gorm:"column:lang"`
-		Title  string `gorm:"column:title"`
-		Kind   int16  `gorm:"column:kind"`
-	}
-	if err := s.db.WithContext(ctx).Raw(`
-		SELECT work_id, lang, title, kind FROM catalog_work_title
-		WHERE work_id IN ? AND kind <> ?
-		ORDER BY work_id, kind, id`, workIDs, model.WorkTitleKindSearchHint).Scan(&rows).Error; err != nil {
-		return nil, err
-	}
-	for _, r := range rows {
-		out[r.WorkID] = append(out[r.WorkID], WorkTitleRow{Lang: r.Lang, Title: r.Title, Kind: r.Kind})
-	}
-	return out, nil
-}
-
-// WorkTitleRow is one display title on a work's read face (search_hint rows
-// never appear here).
-type WorkTitleRow struct {
-	Lang  string
-	Title string
-	Kind  int16
 }

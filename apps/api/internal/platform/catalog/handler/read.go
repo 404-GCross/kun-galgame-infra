@@ -156,11 +156,7 @@ func buildWorkResponse(detail *service.WorkDetail) dto.WorkByAnchorResponse {
 		resp.Work.ProductWorkID = *detail.Work.ProductWorkID
 	}
 	for _, t := range detail.Titles {
-		wt := dto.WorkTitle{Lang: t.Lang, Title: t.Title, Kind: t.Kind}
-		if t.Latin != nil {
-			wt.Latin = *t.Latin
-		}
-		resp.Titles = append(resp.Titles, wt)
+		resp.Titles = append(resp.Titles, dto.WorkTitle{Lang: t.Lang, Title: t.Title, Latin: t.Latin, Kind: t.Kind})
 	}
 	for _, rd := range detail.Releases {
 		rb := dto.ReleaseBrief{ID: rd.Release.ID, Kind: rd.Release.Kind}

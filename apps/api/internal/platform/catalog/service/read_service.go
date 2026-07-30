@@ -125,8 +125,13 @@ var ErrWorkNotFound = stderrors.New("catalog: no work for anchor")
 
 // WorkDetail is the anchor read-through result.
 type WorkDetail struct {
-	Work     model.CatalogWork
-	Titles   []model.CatalogWorkTitle
+	Work model.CatalogWork
+	// Titles is the merged title set (A2-R1): for a CLAIMED work, bridged from
+	// the wiki body (galgame's four name columns + galgame_alias); for a
+	// BODYLESS work, its catalog_work_title rows verbatim, every kind included
+	// (search hints have always ridden the internal record). Same strict XOR as
+	// Intros — see read_titles.go.
+	Titles   []WorkTitleRow
 	Releases []ReleaseDetail
 	Labels   []LabelAttribution
 	// Refs is the flat exact-only external-ref projection (work- and
@@ -355,9 +360,14 @@ func (s *ReadService) loadWorkDetail(ctx context.Context, workID int64, spoilers
 	}
 
 	detail := &WorkDetail{Work: work}
-	if err := db.Where("work_id = ?", workID).Order("kind, lang").Find(&detail.Titles).Error; err != nil {
+	// The claim subject drives every bridged facet on this record — titles first,
+	// then the media/aggregation facets further down.
+	subj := claimSubject{WorkID: work.ID, Site: work.Site, ProductWorkID: work.ProductWorkID}
+	titles, err := s.loadWorkDetailTitles(ctx, []claimSubject{subj})
+	if err != nil {
 		return nil, err
 	}
+	detail.Titles = titles[work.ID]
 
 	var releases []model.CatalogRelease
 	if err := db.Where("work_id = ?", workID).Order("id").Find(&releases).Error; err != nil {
@@ -434,7 +444,6 @@ func (s *ReadService) loadWorkDetail(ctx context.Context, workID int64, spoilers
 	// Intro + covers: bridged (claimed) XOR native (bodyless). Both loaders are
 	// batched by construction (claimed pivot/bridge in one query, bodyless in one)
 	// so this same path serves a future multi-work list read with no N+1.
-	subj := claimSubject{WorkID: work.ID, Site: work.Site, ProductWorkID: work.ProductWorkID}
 	intros, err := s.loadWorkIntros(ctx, []claimSubject{subj})
 	if err != nil {
 		return nil, err

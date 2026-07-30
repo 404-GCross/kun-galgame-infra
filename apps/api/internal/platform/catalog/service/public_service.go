@@ -1173,19 +1173,16 @@ func workLabelKindKey(k int16) string {
 	}
 }
 
-// publicTitles projects the S2S title rows, dropping search_hint titles.
-func publicTitles(titles []model.CatalogWorkTitle) []dto.PublicCatalogTitle {
+// publicTitles projects the merged title rows (bridged for a claimed work,
+// native for a bodyless one — read_titles.go), dropping search_hint titles.
+func publicTitles(titles []WorkTitleRow) []dto.PublicCatalogTitle {
 	out := make([]dto.PublicCatalogTitle, 0, len(titles))
 	for _, t := range titles {
 		kind, ok := titleKindKey(t.Kind)
 		if !ok {
 			continue
 		}
-		pt := dto.PublicCatalogTitle{Lang: t.Lang, Title: t.Title, Kind: kind}
-		if t.Latin != nil {
-			pt.Latin = *t.Latin
-		}
-		out = append(out, pt)
+		out = append(out, dto.PublicCatalogTitle{Lang: t.Lang, Title: t.Title, Latin: t.Latin, Kind: kind})
 	}
 	return out
 }
