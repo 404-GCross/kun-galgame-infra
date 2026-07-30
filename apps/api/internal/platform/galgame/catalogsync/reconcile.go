@@ -162,6 +162,10 @@ type wikiGame struct {
 	JaNorm   string `gorm:"column:ja_norm"`
 	ZhNorm   string `gorm:"column:zh_norm"`
 	Year     *int   `gorm:"column:year"`
+	// OriginalLanguage is the wiki's product-locale spelling (ja-jp / en-us /
+	// zh-cn / …). It becomes the claimed work's catalog olang via
+	// model.MapWikiOLang — see runClaim.
+	OriginalLanguage string `gorm:"column:original_language"`
 }
 
 // subjectRow is one type=4 Bangumi subject: its normalized names and release
@@ -240,6 +244,7 @@ func (r *Reconciler) Run(ctx context.Context, phase string) (Stats, error) {
 func (r *Reconciler) loadGames() error {
 	q := `
 		SELECT id, vndb_id, bid, status, name_ja_jp, name_zh_cn, name_en_us, name_zh_tw,
+		       original_language,
 		       lower(normalize(name_ja_jp, NFKC)) AS ja_norm,
 		       lower(normalize(name_zh_cn, NFKC)) AS zh_norm,
 		       CASE WHEN release_date IS NOT NULL

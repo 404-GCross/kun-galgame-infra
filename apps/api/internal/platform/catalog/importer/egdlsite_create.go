@@ -104,8 +104,13 @@ func (im *Importer) createMintChunk(tx *gorm.DB, chunk []egdlItem, cnResolve fun
 			status = model.WorkStatusStub
 			st.Stubs++
 		}
+		// olang: the eges × DLsite catalogue is Japanese doujin/commercial VN
+		// releases by construction and neither source publishes an original
+		// language, so the default is a STATED fact here, not the placeholder
+		// wave 144 had to undo elsewhere. A work of this population that also
+		// carries a VNDB anchor gets the upstream truth from backfill-olang.
 		works[i] = model.CatalogWork{
-			MediumID: mediumGalgame, OLang: "ja", DisplayName: it.dw.name,
+			MediumID: mediumGalgame, OLang: model.OLangDefault, DisplayName: it.dw.name,
 			ContentRating: it.dw.contentRating, Status: status,
 			Extra: datatypes.JSON(`{}`), FieldProvenance: datatypes.JSON(`{}`),
 		}

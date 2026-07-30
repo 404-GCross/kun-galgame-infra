@@ -91,12 +91,21 @@ func (r *Reconciler) runClaim(ctx context.Context) (ClaimStats, error) {
 			continue
 		}
 
+		// olang is the work's TRUE original language, mapped from the wiki's
+		// product-locale spelling (144). It used to be a flat "ja" here, which is
+		// how the whole registry ended up unable to answer "is this a JP/CN
+		// title?" — and turned the public calendar's ja+zh family gate into a
+		// no-op. Note this only decides a work MINTED by this claim: adopting an
+		// existing unclaimed row deliberately keeps that row's own olang, which
+		// its minting lane resolved from the upstream source directly (VNDB for
+		// the anchored bulk) and is therefore at least as good as this mapping.
+		olang, _ := model.MapWikiOLang(g.OriginalLanguage)
 		workID, created, err := r.works.ClaimWork(ctx, service.ClaimWorkParams{
 			MediumID:       mediumGalgame,
 			Site:           siteGalgame,
 			ProductWorkID:  g.ID,
 			DisplayName:    displayName(g),
-			OLang:          "ja",
+			OLang:          olang,
 			ContentRating:  0, // all_ages is never inferred (doc 17 §6); wiki has no rating we map here
 			Anchors:        anchors,
 			RejectedAnchor: rejectedAnchor,
@@ -290,8 +299,11 @@ func (r *Reconciler) writeBackWorkIDs(pairs map[int64]int64) (int, error) {
 	return changed, nil
 }
 
-// displayName picks the wiki main name for olang=ja: Japanese first, then the
-// other locales as fallbacks so a work is never nameless.
+// displayName picks the wiki main name: Japanese first, then the other locales
+// as fallbacks so a work is never nameless. Deliberately NOT keyed on the work's
+// olang — the display name is the catalog's denormalized fast-path and its
+// preference order is frozen; changing it would rename existing rows on the next
+// reconcile, which is a separate decision from getting olang right.
 func displayName(g *wikiGame) string {
 	for _, n := range []string{g.NameJaJP, g.NameZhCN, g.NameEnUS, g.NameZhTW} {
 		if n != "" {
