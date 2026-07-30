@@ -20,6 +20,7 @@ package search
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"strconv"
 	"strings"
 
@@ -120,12 +121,23 @@ func (i *Indexer) SearchWorks(ctx context.Context, q WorksQuery) (WorksResult, e
 		var d struct {
 			ID string `json:"id"`
 		}
+		// A hit we cannot resolve to a work id is DROPPED, which makes the page
+		// shorter than `total` says. Behaviour is deliberate (a malformed
+		// document must not fail a whole search), but it has to leave a trace:
+		// silently short pages are otherwise indistinguishable from a filter
+		// bug, and the index is machine-written so a hit landing here means the
+		// projection or the id scheme drifted.
 		if err := h.DecodeInto(&d); err != nil {
+			slog.Warn("works search: undecodable hit dropped",
+				"raw_id", string(h["id"]), "err", err)
 			continue
 		}
-		if id, ok := WorkDocIDToWorkID(d.ID); ok {
-			out.IDs = append(out.IDs, id)
+		id, ok := WorkDocIDToWorkID(d.ID)
+		if !ok {
+			slog.Warn("works search: hit with unparseable doc id dropped", "doc_id", d.ID)
+			continue
 		}
+		out.IDs = append(out.IDs, id)
 	}
 	out.Total = resp.TotalHits
 	if out.Total == 0 {
