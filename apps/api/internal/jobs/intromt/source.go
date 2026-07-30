@@ -9,6 +9,23 @@ import (
 	"gorm.io/gorm"
 )
 
+// Population selects the candidate pool.
+type Population string
+
+const (
+	// PopulationBodyless — catalog-native works (empty site): the doc-75 pilot
+	// lane (dlsite/bangumi-anchored works whose ja intro came from an importer).
+	PopulationBodyless Population = "bodyless"
+	// PopulationClaimed — wiki-face works (site='galgame_wiki'): the W1-pre
+	// refill lane. Their ja intros were materialized verbatim from the galgame
+	// body by wikirescue step q (source_id=galgame_wiki, provenance=0) while
+	// their wiki zh translations were deliberately dropped as unsourced
+	// (ruling ①, refs/plans/10) — this lane refills zh-Hans from the ja
+	// original. Works whose only body text sat in the zh columns have no ja row
+	// and are therefore NOT candidates until the kana re-file wave lands.
+	PopulationClaimed Population = "claimed"
+)
+
 // registry holds the ids this job resolves by key (never hardcoded) so a
 // rehearsal / prod DB with different auto-increment seeds still works.
 type registry struct {
@@ -30,7 +47,7 @@ func resolveRegistry(ctx context.Context, db *gorm.DB) (registry, error) {
 	return r, nil
 }
 
-// candidate is one bodyless galgame work eligible for the ja→zh-Hans MT pilot.
+// candidate is one galgame work eligible for the ja→zh-Hans MT job.
 //
 //   - JaSourceID / JaText: the CHOSEN ja intro — the lowest-source_id ja row,
 //     i.e. the one the read face surfaces. The machine row is attributed to
@@ -54,7 +71,7 @@ type candidate struct {
 
 // loadCandidates resolves the popularity-ranked candidate set:
 //
-//	catalog_work (bodyless galgame)
+//	catalog_work (population lane: bodyless or claimed)
 //	  → has a lang='ja' intro row (the chosen row = lowest source_id)
 //	  → has NO lang IN ('zh-Hans','zh-Hant') row with provenance=0 (fill-missing)
 //	  LEFT JOIN its existing machine zh-Hans row (provenance=1), if any
@@ -67,14 +84,29 @@ type candidate struct {
 // so `top` selects the same set every run. `top` caps the pilot population
 // (5,000); Go-side windowing by `limit` then takes the most-popular N for a
 // sample run.
-func loadCandidates(ctx context.Context, db *gorm.DB, reg registry, top, limit int) ([]candidate, error) {
+//
+// The claimed lane reuses the same rank unchanged: wiki-face works typically
+// carry no dlsite popularity, so they rank 0 and fall back to the work_id ASC
+// tiebreak — still a total, deterministic order. Deliberately NO join onto the
+// galgame table for view counts: that family is scheduled to DROP (W1) and the
+// whole lane is translated in one run anyway, so order is cosmetic.
+func loadCandidates(ctx context.Context, db *gorm.DB, reg registry, pop Population, top, limit int) ([]candidate, error) {
 	if top <= 0 {
 		top = 5000
 	}
+	var sitePredicate string
+	switch pop {
+	case PopulationBodyless:
+		sitePredicate = "(site IS NULL OR site = '')"
+	case PopulationClaimed:
+		sitePredicate = "site = 'galgame_wiki'"
+	default:
+		return nil, fmt.Errorf("unknown population %q (want %q or %q)", pop, PopulationBodyless, PopulationClaimed)
+	}
 	q := db.WithContext(ctx).Raw(`
-		WITH bodyless AS (
+		WITH pool AS (
 			SELECT id FROM catalog_work
-			WHERE medium_id = ? AND (site IS NULL OR site = '') AND deleted_at IS NULL
+			WHERE medium_id = ? AND `+sitePredicate+` AND deleted_at IS NULL
 		),
 		has_zh_source AS (
 			SELECT DISTINCT work_id FROM catalog_work_intro
@@ -99,7 +131,7 @@ func loadCandidates(ctx context.Context, db *gorm.DB, reg registry, top, limit i
 		SELECT b.id AS work_id, ja.ja_source_id, ja.ja_text,
 			mzh.mzh_id, mzh.mzh_src_hash,
 			COALESCE(pop.dl, pop.wl, 0) AS pop_score
-		FROM bodyless b
+		FROM pool b
 		JOIN ja ON ja.work_id = b.id
 		LEFT JOIN has_zh_source hs ON hs.work_id = b.id
 		LEFT JOIN mzh ON mzh.work_id = b.id

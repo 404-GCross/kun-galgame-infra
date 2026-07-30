@@ -1,7 +1,8 @@
-// Package intromt is the machine-translation PILOT for bodyless work intros —
-// ja→zh-Hans, the popularity-ranked top N (doc 75). It fills a MISSING language
-// only: a work that already carries any zh-Hans/zh-Hant SOURCE row (provenance
-// =0) is skipped, and a machine row NEVER overwrites a source row. Three hard
+// Package intromt machine-translates work intros ja→zh-Hans over a selected
+// population lane: bodyless catalog-native works (the doc-75 pilot) or claimed
+// wiki-face works (the W1-pre zh refill — see Population). It fills a MISSING
+// language only: a work that already carries any zh-Hans/zh-Hant SOURCE row
+// (provenance=0) is skipped, and a machine row NEVER overwrites a source row. Three hard
 // constraints back the "machine text never masquerades as source data" rule:
 //
 //   - provenance = 1 marks every machine row; the read face prefers the source
@@ -41,6 +42,9 @@ type Opts struct {
 	DSN string
 	// Apply=false is a dry forecast (no LLM, no writes).
 	Apply bool
+	// Population selects the candidate lane; empty defaults to
+	// PopulationBodyless (the pilot lane, backward compatible).
+	Population Population
 	// Top caps the popularity-ranked candidate population (the pilot ceiling,
 	// default 5000). Limit then windows to the most-popular N for a sample run
 	// (0 = all within Top).
@@ -104,11 +108,15 @@ func Run(ctx context.Context, tr Translator, opts Opts) (*Stats, error) {
 	if err != nil {
 		return nil, err
 	}
-	cands, err := loadCandidates(ctx, db, reg, opts.Top, opts.Limit)
+	pop := opts.Population
+	if pop == "" {
+		pop = PopulationBodyless
+	}
+	cands, err := loadCandidates(ctx, db, reg, pop, opts.Top, opts.Limit)
 	if err != nil {
 		return nil, fmt.Errorf("load candidates: %w", err)
 	}
-	slog.Info("intro-mt candidates", "candidates", len(cands), "apply", opts.Apply, "top", opts.Top, "limit", opts.Limit)
+	slog.Info("intro-mt candidates", "population", pop, "candidates", len(cands), "apply", opts.Apply, "top", opts.Top, "limit", opts.Limit)
 
 	r := &runner{db: db, tr: tr, stats: &Stats{Candidates: len(cands)}}
 	r.process(ctx, cands, opts.Apply, opts.Delay, opts.Workers)

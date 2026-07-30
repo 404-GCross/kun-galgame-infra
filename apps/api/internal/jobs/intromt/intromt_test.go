@@ -240,12 +240,76 @@ func TestPopularityOrdering(t *testing.T) {
 
 	reg2, err := resolveRegistry(ctx, testDB)
 	require.NoError(t, err)
-	cands, err := loadCandidates(ctx, testDB, reg2, 5000, 2)
+	cands, err := loadCandidates(ctx, testDB, reg2, PopulationBodyless, 5000, 2)
 	require.NoError(t, err)
 	require.Len(t, cands, 2, "--limit 2 keeps the two most popular")
 	assert.Equal(t, wHi, cands[0].WorkID, "9000 downloads first")
 	// wWish (wishlist 8000) outranks wMid (downloads 100) under COALESCE(dl,wl).
 	assert.Equal(t, wWish, cands[1].WorkID)
+}
+
+// TestClaimedPopulation drives the claimed lane (site='galgame_wiki'): wiki
+// works with a step-q ja row (source_id=galgame_wiki) qualify, bodyless works
+// are excluded, fill-missing still applies, and the machine row lands
+// attributed to the wiki ja row's source_id. Ordering falls back to work_id
+// ASC (claimed works carry no dlsite popularity).
+func TestClaimedPopulation(t *testing.T) {
+	clean(t)
+	ctx := context.Background()
+	medium, _, bangumi := reg(t)
+	var wiki int16
+	require.NoError(t, testDB.Raw(`SELECT id FROM catalog_source WHERE key='galgame_wiki'`).Scan(&wiki).Error)
+	require.NotZero(t, wiki)
+	claimed := "galgame_wiki"
+
+	wA := mkWork(t, medium, "claimed-a", &claimed)
+	wB := mkWork(t, medium, "claimed-b", &claimed)
+	wZh := mkWork(t, medium, "claimed-has-zh", &claimed)
+	wBodyless := mkWork(t, medium, "bodyless", nil)
+
+	mkIntro(t, wA, "ja", "認領作品Aのあらすじ。", wiki)
+	mkIntro(t, wB, "ja", "認領作品Bのあらすじ。", wiki)
+	mkIntro(t, wZh, "ja", "中文既存のあらすじ。", wiki)
+	mkIntro(t, wZh, "zh-Hans", "已有的中文简介。", bangumi) // any zh source row excludes the work
+	mkIntro(t, wBodyless, "ja", "ボディレスのあらすじ。", bangumi)
+
+	// dry claimed lane: exactly the two zh-less wiki works, work_id ASC.
+	st, err := Run(ctx, nil, Opts{DSN: testDSN, Population: PopulationClaimed})
+	require.NoError(t, err)
+	assert.Equal(t, 2, st.Candidates, "wZh excluded (fill-missing), wBodyless excluded (claimed lane)")
+
+	reg2, err := resolveRegistry(ctx, testDB)
+	require.NoError(t, err)
+	cands, err := loadCandidates(ctx, testDB, reg2, PopulationClaimed, 5000, 0)
+	require.NoError(t, err)
+	require.Len(t, cands, 2)
+	assert.Equal(t, wA, cands[0].WorkID, "no popularity → work_id ASC")
+	assert.Equal(t, wB, cands[1].WorkID)
+	assert.Equal(t, wiki, cands[0].JaSourceID, "chosen ja row is the wiki materialized one")
+
+	// apply: machine rows land on the wiki works only, wiki attribution.
+	tr := &fakeTranslator{model: "claimed-mt", fn: func(ja string) string { return "[译] " + ja }}
+	st, err = Run(ctx, tr, Opts{DSN: testDSN, Apply: true, Population: PopulationClaimed})
+	require.NoError(t, err)
+	assert.Equal(t, 2, st.Inserted)
+	assert.Zero(t, st.Refused)
+	assert.Zero(t, st.Errors)
+
+	var row model.CatalogWorkIntro
+	require.NoError(t, testDB.Where("work_id=? AND lang='zh-Hans'", wA).First(&row).Error)
+	assert.EqualValues(t, 1, row.Provenance, "machine row")
+	assert.Equal(t, wiki, row.SourceID, "attributed to the wiki ja row's source_id")
+	assert.Equal(t, "[译] 認領作品Aのあらすじ。", row.Intro)
+	assert.EqualValues(t, 0, introCount(t, "WHERE work_id=? AND lang='zh-Hans'", wBodyless), "bodyless work untouched by the claimed lane")
+
+	// default lane stays bodyless: the same DB state yields only wBodyless.
+	st, err = Run(ctx, nil, Opts{DSN: testDSN})
+	require.NoError(t, err)
+	assert.Equal(t, 1, st.Candidates, "empty Population defaults to the bodyless pilot lane")
+
+	// unknown population → hard error, nothing guessed.
+	_, err = Run(ctx, nil, Opts{DSN: testDSN, Population: "everything"})
+	assert.ErrorContains(t, err, "unknown population")
 }
 
 // TestHTTPTranslator is the LLM-call-layer mock gate (httptest): the client

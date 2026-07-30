@@ -1,10 +1,14 @@
-// intro-mt is the bodyless work-intro machine-translation PILOT driver (doc
-// 75): ja→zh-Hans over the popularity-ranked top N, filling a MISSING language
-// only, with a machine-provenance flag + source hash + model recorded on every
-// row. The job never overwrites a source/human zh row.
+// intro-mt is the work-intro machine-translation driver (doc 75 pilot +
+// claimed refill): ja→zh-Hans over the popularity-ranked top N of a population
+// lane (--population bodyless|claimed), filling a MISSING language only, with
+// a machine-provenance flag + source hash + model recorded on every row. The
+// job never overwrites a source/human zh row.
 //
 //	# dry forecast (no LLM, no writes) — counts + samples
 //	go run ./cmd/intro-mt --dsn "$DSN"
+//
+//	# W1-pre zh refill lane: claimed wiki-face works (ja rows from wikirescue q)
+//	go run ./cmd/intro-mt --dsn "$DSN" --population claimed
 //
 //	# quality gate: real-translate the 30 most popular, write them, print pairs
 //	go run ./cmd/intro-mt --dsn "$DSN" --limit 30 --apply \
@@ -35,6 +39,7 @@ import (
 func main() {
 	dsn := flag.String("dsn", "", "catalog DSN (REQUIRED; rehearsal locally, live catalog only in the acceptance run)")
 	apply := flag.Bool("apply", false, "translate + write (default: dry — counts + samples, no LLM, no writes)")
+	population := flag.String("population", string(intromt.PopulationBodyless), "candidate lane: bodyless (catalog-native, doc-75 pilot) or claimed (wiki-face works, W1-pre zh refill)")
 	top := flag.Int("top", 5000, "popularity-ranked candidate ceiling (the pilot population)")
 	limit := flag.Int("limit", 0, "process only the most-popular N candidates (0 = all within --top)")
 	model := flag.String("model", envOr("KUN_INTRO_MT_LLM_MODEL", envOr("KUN_AI_UPSTREAM_MODEL", "deepseek-chat")), "served model id (recorded in mt_model)")
@@ -71,7 +76,7 @@ func main() {
 	}
 
 	st, err := intromt.Run(context.Background(), tr, intromt.Opts{
-		DSN: *dsn, Apply: *apply, Top: *top, Limit: *limit,
+		DSN: *dsn, Apply: *apply, Population: intromt.Population(*population), Top: *top, Limit: *limit,
 		Delay:   time.Duration(*delayMS) * time.Millisecond,
 		Workers: *workers,
 	})
