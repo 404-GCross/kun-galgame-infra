@@ -1,19 +1,15 @@
-// cmd/migrate-catalog — the SINGLE migration entry point for the content hub
-// (wiki-retirement W5, charter ruling 6). It migrates TWO model families over
-// two independent connection pools:
+// cmd/migrate-catalog — the migration entry point for the content hub: the
+// catalog models + registry seeds against cfg.CatalogDatabase.
 //
-//   - galgame (wiki-family) models → cfg.GalgameDatabase (KUN_GALGAME_PG_DATABASE)
-//   - catalog models + seeds       → cfg.CatalogDatabase (KUN_CATALOG_PG_DATABASE)
+// It carried a SECOND family until wave 161. Since wiki-retirement W5 it also
+// AutoMigrated the galgame (wiki) models against cfg.GalgameDatabase, which is
+// how those 27 tables got (re)created on every single deploy. That half is
+// deleted here, and the deletion is load-bearing rather than tidy-up: with it
+// still in place, the N5 window would DROP the family and the very next deploy
+// would silently recreate all 27 tables as empty shells — leaving the registry
+// looking healthy while every consumer read nothing.
 //
-// In production both env vars point at kun_catalog (one database, two disjoint
-// table families — W1 verified zero collision); in local dev they stay split
-// (kun_galgame_wiki / kun_catalog). Both postures are correct by construction
-// because each family only ever touches its own pool.
-//
-// Order: galgame first, catalog second. The families share no DDL objects, so
-// the order is convention, not dependency — galgame-first keeps the catalog
-// registry seeds as the very last step, exactly like the pre-W5 flow where
-// the retired cmd/migrate-galgame and this binary ran independently.
+// cfg.GalgameDatabase is consequently no longer opened by this binary.
 package main
 
 import (
@@ -36,19 +32,7 @@ func main() {
 
 	logger.Init(cfg.Server.Env)
 
-	// ── pool 1: galgame (wiki-family) schema ────────────────────────────────
-	slog.Info("connecting to galgame content database", "dbname", cfg.GalgameDatabase.DBName)
-	galgameDB, err := database.NewPostgresDB(cfg.GalgameDatabase)
-	if err != nil {
-		slog.Error("failed to connect to galgame content database", "error", err)
-		os.Exit(1)
-	}
-	migrateGalgame(galgameDB) // exits the process on failure
-	if err := galgameDB.Close(); err != nil {
-		slog.Error("failed to close galgame content database", "error", err)
-	}
-
-	// ── pool 2: catalog schema + registry seeds ─────────────────────────────
+	// ── catalog schema + registry seeds ─────────────────────────────────────
 	slog.Info("connecting to catalog database", "dbname", cfg.CatalogDatabase.DBName)
 	db, err := database.NewPostgresDB(cfg.CatalogDatabase)
 	if err != nil {

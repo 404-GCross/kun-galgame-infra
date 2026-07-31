@@ -120,9 +120,10 @@ services:
     #   shared_buffers 2GB     — PG's own page cache (default 128MB is tiny); ~8%
     #                            of host RAM, leaves plenty for OS cache + the
     #                            capped web containers. (restart-only)
-    #   work_mem 64MB          — per-sort/-hash; kills the wiki tag-list disk sorts
-    #                            (default 4MB spilled GBs of temp). See the wiki
-    #                            perf indexes in cmd/migrate-catalog/galgame.go.
+    #   work_mem 64MB          — per-sort/-hash; sized for the tag-list sorts
+    #                            (default 4MB spilled GBs of temp). Originally
+    #                            for the wiki tag lists, whose perf indexes
+    #                            retired with the family at wave 161.
     #   effective_cache_size 12GB — planner hint (no allocation); favors index scans.
     #   maintenance_work_mem 512MB — faster VACUUM / CREATE INDEX.
     command:
@@ -421,12 +422,12 @@ services:
       traefik.http.services.infra-catalog-pub.loadbalancer.server.port: "9281"
     depends_on:
       postgres: { condition: service_healthy }
-      meili: { condition: service_healthy } # the co-hosted galgame face self-heals its indexes at start
+      meili: { condition: service_healthy } # catalog search
       migrate: { condition: service_completed_successfully }         # reads oauth_clients from kun_galgame_infra
-      # migrate-catalog (W5 single entry point) covers BOTH schema families this
-      # process serves: the catalog tables and the galgame (wiki-family) tables
-      # in kun_catalog. This gate is what keeps the deploy-migration-gap closed —
-      # without it the migration job has no dependent and never runs on deploy.
+      # migrate-catalog owns the catalog schema this process serves (it also
+      # carried the galgame wiki family until wave 161 retired it). This gate is
+      # what keeps the deploy-migration-gap closed — without a dependent, the
+      # migration job never runs on deploy.
       migrate-catalog: { condition: service_completed_successfully }
     healthcheck:
       test: ["CMD", "/app", "healthcheck"]
@@ -639,12 +640,15 @@ services:
       postgres: { condition: service_healthy }
     restart: "no"
 
-  # Auto-applied on every deploy (catalog waits for it). The single migration
-  # entry point for BOTH content families since W5 (absorbed migrate-galgame):
-  # galgame (wiki-family) models via KUN_GALGAME_PG_DATABASE + catalog models
-  # via KUN_CATALOG_PG_DATABASE — both kun_catalog here. Idempotent: AutoMigrate
-  # + guarded raw-SQL (constraints, indexes, generated columns, FKs — all
-  # IF NOT EXISTS / drop-then-add) + seed upserts.
+  # Auto-applied on every deploy (catalog waits for it). The migration entry
+  # point for the catalog models via KUN_CATALOG_PG_DATABASE. Idempotent:
+  # AutoMigrate + guarded raw-SQL (constraints, indexes, generated columns, FKs
+  # — all IF NOT EXISTS / drop-then-add) + seed upserts.
+  #
+  # It absorbed cmd/migrate-galgame at W5 and re-created the 27 wiki tables on
+  # every deploy; wave 161 deleted that half. KUN_GALGAME_PG_DATABASE is no
+  # longer read by this job — had it stayed, the deploy after the N5 DROP would
+  # have recreated the whole family as empty shells.
   migrate-catalog:
     image: ghcr.io/kunmoe/infra-migrate-catalog:latest
     pull_policy: always

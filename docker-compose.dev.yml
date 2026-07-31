@@ -209,10 +209,9 @@ services:
     environment: { <<: *dev-env }
     restart: "no"
 
-  # Single entry point for BOTH content families since W5: galgame (wiki-family)
-  # models → KUN_GALGAME_PG_DATABASE and catalog models → KUN_CATALOG_PG_DATABASE.
-  # Both point at kun_catalog since the dev split retired (2026-07-29) — two
-  # pools, one database, same as prod.
+  # The catalog schema against KUN_CATALOG_PG_DATABASE (kun_catalog). It also
+  # migrated the galgame wiki family via KUN_GALGAME_PG_DATABASE from W5 until
+  # wave 161 retired that family; the env var is now unread by this job.
   migrate-catalog:
     image: ghcr.io/kunmoe/infra-migrate-catalog:${INFRA_IMAGE_TAG:-latest}
     network_mode: host
@@ -350,9 +349,9 @@ services:
       KUN_CATALOG_CLIENT_ID: ""
       KUN_CATALOG_CLIENT_SECRET: ""
     depends_on:
-      meili: { condition: service_healthy } # the galgame face self-heals its indexes at start
+      meili: { condition: service_healthy } # catalog search
       migrate: { condition: service_completed_successfully }         # reads oauth_clients + users
-      migrate-catalog: { condition: service_completed_successfully }  # kun_galgame_wiki + kun_catalog schemas
+      migrate-catalog: { condition: service_completed_successfully }  # kun_catalog schema
     healthcheck:
       test: ["CMD", "/app", "healthcheck"]
       <<: *svc-health
