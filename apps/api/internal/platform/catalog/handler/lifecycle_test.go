@@ -86,7 +86,7 @@ func TestLifecycleFaceAuthority(t *testing.T) {
 
 	status, _ = editPost(t, app, "/api/v1/catalog/works/1/claim-actions/approve",
 		`{"actor":{"user_id":1,"roles":["user"]}}`)
-	assert.Equal(t, fiber.StatusForbidden, status, "reviewing requires catalog.review")
+	assert.Equal(t, fiber.StatusForbidden, status, "reviewing requires catalog.claim.review")
 }
 
 // TestLifecycleFaceEndToEnd drives a submission over HTTP and pins the 409 the
@@ -132,13 +132,14 @@ func TestLifecycleFaceEndToEnd(t *testing.T) {
 	assert.Equal(t, model.ClaimStateKeyLive, conflict.Data.CurrentState)
 	assert.NotEmpty(t, conflict.Data.AllowedFrom)
 
-	// A curator (asserted ren) may act across tenants. A decline with no reason
-	// is refused as malformed BEFORE the transaction opens — the input check runs
-	// ahead of the state machine, so the caller is told the actual problem rather
-	// than "wrong state".
-	status, raw = editPost(t, app, path("decline"), `{"actor":{"user_id":9,"roles":["ren"]}}`)
+	// A reviewer (asserted moderator — wave 157 re-keyed these four actions to
+	// catalog.claim.review, which moderators hold) may act across tenants. A
+	// decline with no reason is refused as malformed BEFORE the transaction
+	// opens — the input check runs ahead of the state machine, so the caller is
+	// told the actual problem rather than "wrong state".
+	status, raw = editPost(t, app, path("decline"), `{"actor":{"user_id":9,"roles":["moderator"]}}`)
 	assert.Equal(t, fiber.StatusUnprocessableEntity, status, string(raw))
-	status, raw = editPost(t, app, path("ban"), `{"actor":{"user_id":9,"roles":["ren"]},"reason":"policy"}`)
+	status, raw = editPost(t, app, path("ban"), `{"actor":{"user_id":9,"roles":["moderator"]},"reason":"policy"}`)
 	require.Equal(t, fiber.StatusOK, status, string(raw))
 
 	// The feed serves what just happened, oldest first.

@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"net/http"
 
-	"api/internal/platform/authz"
 	"api/internal/platform/catalog/dto"
 	catperm "api/internal/platform/catalog/perm"
 	"api/internal/platform/catalog/service"
@@ -28,8 +27,10 @@ import (
 //
 // Authority split follows 03 定案 §3: the four OWNER actions require the
 // client's catalog_site binding to match the claim's site, the four REVIEW
-// actions require the asserted actor to hold catalog.review. No new global role
-// is minted for either — the existing keys are the authority.
+// actions require the asserted actor to hold catalog.claim.review (wave 157 —
+// a NEW key granted moderator and up, not the ren-only catalog.review, because
+// judging submissions is moderation and the surface it replaces was staffed by
+// moderators). No new global ROLE is minted for either.
 //
 // The two feeds are ascending-by-id with an exclusive `since`, the shape both
 // wiki feeds they replace use, because that is what the downstream crons
@@ -92,9 +93,9 @@ func (s *LifecycleServer) act(ctx context.Context, in *claimActionInput) (*claim
 		// Review authority is the asserted user's, resolved through the catalog
 		// family's own vocabulary — the same fail-closed shape the editing face
 		// uses for its review rules.
-		if !catperm.Resolver.Can(in.Body.Actor.Roles, authz.Permission(catperm.Review)) {
+		if !catperm.Resolver.Can(in.Body.Actor.Roles, catperm.ClaimReview) {
 			return nil, apiErrMsg(http.StatusForbidden, errors.ErrForbidden,
-				"reviewing a claim requires the "+string(catperm.Review)+" permission")
+				"reviewing a claim requires the "+string(catperm.ClaimReview)+" permission")
 		}
 	} else if he := enforceSiteBinding(client, in.Body.Site); he != nil {
 		return nil, he

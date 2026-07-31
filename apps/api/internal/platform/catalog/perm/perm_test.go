@@ -11,7 +11,11 @@ import (
 // derived from the pre-migration ren-only route gates. Any drift between the
 // bundles and this table fails the build.
 var goldenGrants = map[authz.Permission][]string{
-	perm.Review:         {"ren"},
+	perm.Review: {"ren"},
+	// Claim review is content moderation, not registry curation: it reaches
+	// down to moderator so the wiki submission queue's staffing survives the
+	// move onto the registry (wave 157).
+	perm.ClaimReview:    {"moderator", "admin", "ren"},
 	perm.EditWork:       {"admin", "ren"},
 	perm.EditWorkReview: {"admin", "ren"},
 	// The vocabulary layer follows the work keys: curation staff only. Tenant
@@ -51,9 +55,9 @@ func TestNonBundleRolesGrantNothing(t *testing.T) {
 }
 
 // TestManagementAxisContainment pins the contract's逐级包含: moderator ⊆ admin ⊆
-// ren. Here moderator/admin grant nothing and ren grants all, so containment
-// holds trivially — the assertion guards against a future admin-visible perm
-// being added without ren also getting it.
+// ren. Since wave 157 the moderator bundle is non-empty (catalog.claim.review),
+// so this is a live assertion rather than a vacuous one: it fails the build if a
+// moderator-visible permission is ever added without admin/ren inheriting it.
 func TestManagementAxisContainment(t *testing.T) {
 	for p := range goldenGrants {
 		if perm.Resolver.Can([]string{"moderator"}, p) && !perm.Resolver.Can([]string{"admin"}, p) {

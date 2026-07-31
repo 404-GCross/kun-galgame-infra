@@ -10,6 +10,16 @@ import "api/internal/platform/authz"
 // reconcile queues, entity browser). ren-only.
 const Review authz.Permission = "catalog.review"
 
+// ClaimReview: decide a product site's submission — approve / decline / ban /
+// unban a claim (wave 157). Deliberately NOT the same key as Review: judging
+// submissions is ordinary content moderation, staffed by moderators on every
+// surface this platform has ever shipped, while Review is curation of the
+// identity registry itself (merge/unmerge, reconcile queues) and stays
+// ren-only. Keying the claim actions to Review would have narrowed a live
+// product right from "moderator and up" to one person the moment the wiki's
+// submission queue moved here — a regression dressed as a migration.
+const ClaimReview authz.Permission = "catalog.claim.review"
+
 // Editing-engine field policy keys (doc 21 §2.5, added per docs/auth/04
 // §2.5). The engine's catalog.work default policy references these:
 // EditWork gates proposing, EditWorkReview gates amend/merge/decline/revert.
@@ -33,12 +43,27 @@ const (
 	EditTaxonomyReview authz.Permission = "edit.catalog.taxonomy.review"
 )
 
-// Bundles is the catalog domain's role→permission table. The identity-
-// registry surface stays ren-only; the editing keys extend to admin (site
-// curation is an admin duty, unlike merge/unmerge which stays ren-only).
+// moderatorPerms is content moderation on the registry: today exactly the
+// claim review queue — the successor of the wiki submission queue moderators
+// have always staffed.
+var moderatorPerms = []authz.Permission{ClaimReview}
+
+// adminPerms adds the editing keys on top: site curation is an admin duty,
+// unlike merge/unmerge which stays ren-only.
+var adminPerms = append(append([]authz.Permission{}, moderatorPerms...),
+	EditWork, EditWorkReview, EditTaxonomy, EditTaxonomyReview)
+
+// renPerms adds the identity-registry surface itself.
+var renPerms = append(append([]authz.Permission{}, adminPerms...), Review)
+
+// Bundles is the catalog domain's role→permission table. The three bundles are
+// composed upward rather than hand-listed, so the contract's management-axis
+// containment (moderator ⊆ admin ⊆ ren) holds by construction — the property
+// perm_test.go asserts, here made true by the shape of the code.
 var Bundles = authz.Bundles{
-	"admin": {EditWork, EditWorkReview, EditTaxonomy, EditTaxonomyReview},
-	"ren":   {Review, EditWork, EditWorkReview, EditTaxonomy, EditTaxonomyReview},
+	"moderator": moderatorPerms,
+	"admin":     adminPerms,
+	"ren":       renPerms,
 }
 
 // Resolver is the package-level singleton the catalog enforcement points check.

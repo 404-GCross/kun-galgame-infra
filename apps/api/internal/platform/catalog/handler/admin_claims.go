@@ -18,9 +18,11 @@ import (
 // It is a PROXY, not a second implementation: both faces call the same
 // ClaimLifecycleService.Act, so the state machine, the event row and the touch
 // have exactly one definition. What differs is only where the authority comes
-// from — here the operator's JWT plus the catalog.review permission the
-// /api/v1/admin/catalog prefix already enforces, so no role is asserted in a
-// body and no site binding applies (a curator works across tenants).
+// from — here the operator's JWT plus the catalog.claim.review permission
+// AdminGate enforces on this subtree, so no role is asserted in a body and no
+// site binding applies (a moderator works across tenants). That is the SAME key
+// the S2S face checks on its asserted actor (wave 157): one authority, two ways
+// of learning who the actor is.
 //
 // 03 定案 §3 is explicit that the queue needs no dedicated message table: it is
 // "claim_state = pending, oldest first", which is exactly this query.
