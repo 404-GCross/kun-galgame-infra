@@ -5771,6 +5771,443 @@ export const docsModel: DocsModel = {
               "curl": "curl \"https://api.nextmoe.dev/v1/catalog/search\" \\\n  -H \"Authorization: Bearer nm_live_<YOUR_KEY>\""
             },
             {
+              "id": "getCatalogSeriesPublic",
+              "method": "get",
+              "path": "/v1/catalog/series/{id}",
+              "summary": "Series record: identity + source anchor + intros; include=works attaches its member works",
+              "description": "The address of the grouping entity works?series_id= filters on. Members are the LIVE galgame fetchable set, paged by limit/offset exactly like labels/{id} and tags/{id}. Series carry no merge or soft-delete machinery, so an unknown id is a plain 404 — never a redirect.",
+              "scope": "catalog:read",
+              "params": [
+                {
+                  "name": "id",
+                  "in": "path",
+                  "required": true,
+                  "type": "integer",
+                  "format": "int64",
+                  "doc": "Catalog series id"
+                },
+                {
+                  "name": "include",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "works = attach the series' member works"
+                },
+                {
+                  "name": "nsfw",
+                  "in": "query",
+                  "required": false,
+                  "type": "boolean",
+                  "doc": "true/1 = include r18 works among the members (default false = dropped)"
+                },
+                {
+                  "name": "limit",
+                  "in": "query",
+                  "required": false,
+                  "type": "integer",
+                  "format": "int64",
+                  "doc": "Works per page 1-50 (default 50); above 50 is clamped to 50, a non-positive or non-numeric value is a 400"
+                },
+                {
+                  "name": "offset",
+                  "in": "query",
+                  "required": false,
+                  "type": "integer",
+                  "format": "int64",
+                  "doc": "Rows to skip"
+                }
+              ],
+              "responses": [
+                {
+                  "status": "200",
+                  "description": "OK",
+                  "schema": {
+                    "type": "object",
+                    "children": [
+                      {
+                        "name": "code",
+                        "required": true,
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      {
+                        "name": "data",
+                        "type": "object",
+                        "children": [
+                          {
+                            "name": "display_name",
+                            "required": true,
+                            "type": "string"
+                          },
+                          {
+                            "name": "id",
+                            "required": true,
+                            "format": "int64",
+                            "type": "integer"
+                          },
+                          {
+                            "name": "intros",
+                            "required": true,
+                            "nullable": true,
+                            "type": "array",
+                            "itemsOf": {
+                              "type": "object",
+                              "children": [
+                                {
+                                  "name": "intro",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "lang",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "source",
+                                  "required": true,
+                                  "type": "string"
+                                }
+                              ]
+                            }
+                          },
+                          {
+                            "name": "next_offset",
+                            "format": "int64",
+                            "type": "integer"
+                          },
+                          {
+                            "name": "refs",
+                            "required": true,
+                            "nullable": true,
+                            "type": "array",
+                            "itemsOf": {
+                              "type": "object",
+                              "children": [
+                                {
+                                  "name": "external_id",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "source",
+                                  "required": true,
+                                  "type": "string"
+                                }
+                              ]
+                            }
+                          },
+                          {
+                            "name": "works",
+                            "nullable": true,
+                            "type": "array",
+                            "itemsOf": {
+                              "type": "object",
+                              "children": [
+                                {
+                                  "name": "claimed_by",
+                                  "required": true,
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "content_limit",
+                                      "required": true,
+                                      "doc": "sfw|nsfw",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "site",
+                                      "required": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "state",
+                                      "required": true,
+                                      "doc": "live|draft|hidden",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "work_id",
+                                      "required": true,
+                                      "format": "int64",
+                                      "type": "integer"
+                                    }
+                                  ]
+                                },
+                                {
+                                  "name": "content_rating",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "display_name",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "id",
+                                  "required": true,
+                                  "format": "int64",
+                                  "type": "integer"
+                                },
+                                {
+                                  "name": "medium",
+                                  "required": true,
+                                  "type": "string"
+                                }
+                              ]
+                            }
+                          }
+                        ]
+                      },
+                      {
+                        "name": "message",
+                        "required": true,
+                        "type": "string"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "status": "default",
+                  "description": "Error",
+                  "schema": {
+                    "type": "object",
+                    "children": [
+                      {
+                        "name": "detail",
+                        "doc": "A human-readable explanation specific to this occurrence of the problem.",
+                        "type": "string"
+                      },
+                      {
+                        "name": "errors",
+                        "nullable": true,
+                        "doc": "Optional list of individual error details",
+                        "type": "array",
+                        "itemsOf": {
+                          "type": "object",
+                          "children": [
+                            {
+                              "name": "location",
+                              "doc": "Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'",
+                              "type": "string"
+                            },
+                            {
+                              "name": "message",
+                              "doc": "Error message text",
+                              "type": "string"
+                            },
+                            {
+                              "name": "value",
+                              "doc": "The value at the given location",
+                              "type": "object"
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "name": "instance",
+                        "doc": "A URI reference that identifies the specific occurrence of the problem.",
+                        "format": "uri",
+                        "type": "string"
+                      },
+                      {
+                        "name": "status",
+                        "doc": "HTTP status code",
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      {
+                        "name": "title",
+                        "doc": "A short, human-readable summary of the problem type. This value should not change between occurrences of the error.",
+                        "type": "string"
+                      },
+                      {
+                        "name": "type",
+                        "doc": "A URI reference to human-readable documentation for the error.",
+                        "format": "uri",
+                        "type": "string"
+                      }
+                    ]
+                  }
+                }
+              ],
+              "curl": "curl \"https://api.nextmoe.dev/v1/catalog/series/1\" \\\n  -H \"Authorization: Bearer nm_live_<YOUR_KEY>\""
+            },
+            {
+              "id": "getCatalogStatsPublic",
+              "method": "get",
+              "path": "/v1/catalog/stats",
+              "summary": "Slim catalogue counts: LIVE works per medium + the identity-family totals",
+              "description": "The product-facing size of the registry, no parameters and one payload for every caller. works counts LIVE rows only (stubs, merged-away rows and soft-deleted rows are not part of the catalogue) and total is the sum of by_medium, so the two can never disagree. R18 works ARE counted: these are aggregates with nothing renderable attached, and splitting them by nsfw would publish exactly what the r18 gate exists to hide. The INTERNAL dashboard (review queues, LLM verdicts, the anchor source × tier matrix, source freshness, orphan and claim-state breakdowns) is curation telemetry and stays on the S2S face.",
+              "scope": "catalog:read",
+              "params": [],
+              "responses": [
+                {
+                  "status": "200",
+                  "description": "OK",
+                  "schema": {
+                    "type": "object",
+                    "children": [
+                      {
+                        "name": "code",
+                        "required": true,
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      {
+                        "name": "data",
+                        "type": "object",
+                        "children": [
+                          {
+                            "name": "entities",
+                            "required": true,
+                            "type": "object",
+                            "children": [
+                              {
+                                "name": "characters",
+                                "required": true,
+                                "format": "int64",
+                                "type": "integer"
+                              },
+                              {
+                                "name": "credit_names",
+                                "required": true,
+                                "format": "int64",
+                                "type": "integer"
+                              },
+                              {
+                                "name": "labels",
+                                "required": true,
+                                "format": "int64",
+                                "type": "integer"
+                              },
+                              {
+                                "name": "persons",
+                                "required": true,
+                                "format": "int64",
+                                "type": "integer"
+                              }
+                            ]
+                          },
+                          {
+                            "name": "works",
+                            "required": true,
+                            "type": "object",
+                            "children": [
+                              {
+                                "name": "by_medium",
+                                "required": true,
+                                "nullable": true,
+                                "type": "array",
+                                "itemsOf": {
+                                  "type": "object",
+                                  "children": [
+                                    {
+                                      "name": "count",
+                                      "required": true,
+                                      "format": "int64",
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "name": "medium",
+                                      "required": true,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "name": "medium_id",
+                                      "required": true,
+                                      "format": "int32",
+                                      "type": "integer"
+                                    }
+                                  ]
+                                }
+                              },
+                              {
+                                "name": "total",
+                                "required": true,
+                                "format": "int64",
+                                "type": "integer"
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "name": "message",
+                        "required": true,
+                        "type": "string"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "status": "default",
+                  "description": "Error",
+                  "schema": {
+                    "type": "object",
+                    "children": [
+                      {
+                        "name": "detail",
+                        "doc": "A human-readable explanation specific to this occurrence of the problem.",
+                        "type": "string"
+                      },
+                      {
+                        "name": "errors",
+                        "nullable": true,
+                        "doc": "Optional list of individual error details",
+                        "type": "array",
+                        "itemsOf": {
+                          "type": "object",
+                          "children": [
+                            {
+                              "name": "location",
+                              "doc": "Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'",
+                              "type": "string"
+                            },
+                            {
+                              "name": "message",
+                              "doc": "Error message text",
+                              "type": "string"
+                            },
+                            {
+                              "name": "value",
+                              "doc": "The value at the given location",
+                              "type": "object"
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "name": "instance",
+                        "doc": "A URI reference that identifies the specific occurrence of the problem.",
+                        "format": "uri",
+                        "type": "string"
+                      },
+                      {
+                        "name": "status",
+                        "doc": "HTTP status code",
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      {
+                        "name": "title",
+                        "doc": "A short, human-readable summary of the problem type. This value should not change between occurrences of the error.",
+                        "type": "string"
+                      },
+                      {
+                        "name": "type",
+                        "doc": "A URI reference to human-readable documentation for the error.",
+                        "format": "uri",
+                        "type": "string"
+                      }
+                    ]
+                  }
+                }
+              ],
+              "curl": "curl \"https://api.nextmoe.dev/v1/catalog/stats\" \\\n  -H \"Authorization: Bearer nm_live_<YOUR_KEY>\""
+            },
+            {
               "id": "listCatalogTagsPublic",
               "method": "get",
               "path": "/v1/catalog/tags",
