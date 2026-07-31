@@ -57,6 +57,7 @@
 | `GET /v1/catalog/tags/{id}` | `catalog:read` | **规范 tag(doc 106 G5)**:`{id, name, tier, kind}`(跨源规范词表 catalog_tag);**恒带 `intros[]`(A2-1b 加法)**——多语言简介,shape 与 `labels/{id}` 的 `intros[]` 一致(`{lang, intro, source}`、按语言归并低 source_id 胜出、`source`=公开来源键),无供给则为 `[]`;`include=works` 附带该规范 tag 下的作品(经 catalog_tag_source_map ⋈ catalog_work_tag,nsfw 门),按 `limit`/`offset` 翻页,**满页时**带 `next_offset`(= `offset+limit`),不满页则省略 = 到底。**A2-1e 加法**:`work_count`(**nsfw 感知**,与 `tags` 列表行同一聚合);**A2-1f 加法**:`sexual`(tag 级性内容轴,与列表行同一派生,见 §3.2.4) |
 | `GET /v1/catalog/engines` | `catalog:read` | **引擎浏览/列表(A2-1b,keyset id ASC)**:无过滤;item = `{id, name, work_count, description, aliases}`(**A2-1e** 补齐后两键——引擎 facet 只有几百行、消费端一页渲染完,再为一行简介发第二趟请求是纯浪费)。VNDB 不发布引擎数据,该 facet 的唯一副本是 wiki 手工整理并由数据层退役波迁入的行。**A2-1e**:信封加 `total`(见下) |
 | `GET /v1/catalog/engines/{id}` | `catalog:read` | **引擎条目(A2-1b)**:`{id, name, work_count, description, aliases, refs[]}`(后两键 A2-1e 补);`refs[]` 同 names/characters/labels 的 exact-only 身份锚(doc 106 G4),A2-0 落的 wiki eid 即在此浮出。非法 id 400、无此行 404 |
+| `GET /v1/catalog/series/{id}` | `catalog:read` | **系列条目(149c,聚合轨最后一处读面缺口)**:`works?series_id=` 过滤的那个分组实体终于有了地址——`{id, display_name, refs[], intros[]}`;`refs[]` = 该系列**行内**的来源锚(唯一键 `(source_id, external_id)`,不走 `catalog_external_ref`,故恒 1 元、构造上 exact),shape 与其它身份面的 `refs[]` 一致;`intros[]` = `{lang, intro, source}`(`source` 为公开来源键)——与 labels/tags 不同,**同一语言的多行不归并**:系列简介是退役波从 wiki 抢救来的手写正文、上游无从再生,第二个来源的正文是**另一份正文**而非劣质副本。`include=works` 附带成员作品(LIVE galgame 种群,`limit`/`offset` 与 `tags/{id}` 逐字同义,满页给 `next_offset`;`nsfw` 缺省丢弃 r18 成员,空成员集则整块省略)。**系列无合并/软删机制**(`catalog_redirect` 无 series 实体类型),故无此行即**纯 404,永不 301**。**刻意不开** `GET /v1/catalog/series` 列表道,作品详情的 series 内联块也**不加** `intro`(详情面保持精简) |
 | `GET /v1/catalog/calendar` | `catalog:read` | **发售日历 · 月桶(A2-1c,keyset date ASC + id ASC)**:`month=YYYY-MM`(非法 400;**缺省 = 当前 Asia/Tokyo 月**,响应回显 `month`);收录**最早带年份 release 落在该月**的作品——**day 精度与 month 精度同桶**(month 精度排在该月月首,**不臆造 1 号**);item = works 列表行**逐字**(`PublicWorkListItem`,`include=` 五词表全支持),`nsfw` 同参;新增 `olang=` 人口过滤(见下);`count` = 整桶行数(非本页),`next_cursor` 末页 null;带**桶级 ETag**(见下);**A2-1e**:恒带 `meta{}` 导航框(见下) |
 | `GET /v1/catalog/calendar/pending` | `catalog:read` | **发售日历 · 月份未定桶(A2-1c,keyset id ASC)**:`year=YYYY`(非法 400;缺省 = 当前 JST 年,响应回显 `year`);收录**最早 release 只精确到年**的作品——它们**刻意不出现在该年的任何月桶**里。人口/item/`olang`/ETag 语义与月桶逐字一致;`meta` 只带 `today`(非月寻址,无月界与前后翻) |
 | `GET /v1/catalog/calendar/tba` | `catalog:read` | **发售日历 · TBA 桶(A2-1c,全局,keyset id ASC)**:有 release 行但**无一行带年份**的作品(已官宣、日期未定)。**无 release 行 = unknown,不进任何桶**——"没有 release"是"没有官宣",不是"日期待定" |
@@ -114,7 +115,7 @@
 > | `GET /v1/catalog/labels` / `…/tags` / `…/engines`(A2-1b 三条 taxonomy keyset 道) | 1-100 | 20 |
 > | `GET /v1/catalog/calendar` / `…/calendar/pending` / `…/calendar/tba`(A2-1c 三个日历桶) | 1-100 | 20 |
 > | `GET /v1/catalog/changes` | 1-500 | 100 |
-> | offset 型子列表(`names/{id}?include=credits`、`characters/{id}` / `labels/{id}` / `tags/{id}?include=works`) | 1-50 | 50 |
+> | offset 型子列表(`names/{id}?include=credits`、`characters/{id}` / `labels/{id}` / `tags/{id}` / `series/{id}?include=works`) | 1-50 | 50 |
 >
 > - **越上限 clamp 到上限**(不回落默认值):`limit=1000` 在 works 面即 `limit=100`,而不是悄悄退回 20。
 > - **非正数 / 非数字 400**:`limit=0`、`limit=-1`、`limit=abc` 一律 `400 limit must be a positive integer`,不再静默取默认值。

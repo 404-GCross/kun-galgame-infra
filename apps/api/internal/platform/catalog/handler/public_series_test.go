@@ -1,0 +1,163 @@
+// public_series_test.go — wire-level coverage of the series read face
+// (GET /v1/catalog/series/{id}, 149c): the 400/404 split, the always-present
+// head blocks (refs + intros), and the include=works member lane inheriting the
+// tags/{id} paging + nsfw posture verbatim.
+package handler
+
+import (
+	"testing"
+
+	"api/internal/platform/catalog/model"
+	"api/internal/platform/catalog/repository"
+	"api/internal/platform/catalog/service"
+
+	"github.com/gofiber/fiber/v3"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
+)
+
+// seriesApp mounts the series detail lane bare, as taxonomyApp does for its own.
+func seriesApp(db *gorm.DB) *fiber.App {
+	resolveSvc := service.NewResolveService(repository.NewRedirectRepository(db))
+	publicSvc := service.NewPublicService(db, service.NewReadService(db), resolveSvc, "")
+	h := NewPublicHandler(publicSvc, resolveSvc, nil, nil)
+	app := fiber.New()
+	app.Get("/v1/catalog/series/:id", h.Series)
+	return app
+}
+
+// dlsiteSourceID is the source the series lane is fed from today (the step-94
+// importer is dlsite-only); its public key is "dlsite".
+const dlsiteSourceID int16 = 4
+
+// seedSeries wipes the series tables and builds one series with two zh-Hans
+// intros (two sources), three member works — one all-ages, one r18, one stub
+// (never a member of the fetchable set) — plus a second, empty series.
+func seedSeries(t *testing.T, db *gorm.DB) (seriesID, emptyID, sfwWorkID, r18WorkID int64) {
+	t.Helper()
+	for _, tbl := range []string{"catalog_series_intro", "catalog_series_member", "catalog_series"} {
+		require.NoError(t, db.Exec("TRUNCATE "+tbl+" RESTART IDENTITY CASCADE").Error)
+	}
+	ids := seedPublicWorks(t, db, 1)
+	sfwWorkID = ids[0]
+	r18 := model.CatalogWork{
+		MediumID: 1, OLang: "ja", DisplayName: "続編 R18",
+		ContentRating: model.ContentRatingR18, Status: model.WorkStatusLive,
+	}
+	require.NoError(t, db.Create(&r18).Error)
+	stub := model.CatalogWork{
+		MediumID: 1, OLang: "ja", DisplayName: "スタブ続編",
+		ContentRating: model.ContentRatingAllAges, Status: model.WorkStatusStub,
+	}
+	require.NoError(t, db.Create(&stub).Error)
+
+	series := model.CatalogSeries{DisplayName: "限界シリーズ", SourceID: dlsiteSourceID, ExternalID: "SRI0000001"}
+	require.NoError(t, db.Create(&series).Error)
+	empty := model.CatalogSeries{DisplayName: "空シリーズ", SourceID: dlsiteSourceID, ExternalID: "SRI0000002"}
+	require.NoError(t, db.Create(&empty).Error)
+	for _, wid := range []int64{sfwWorkID, r18.ID, stub.ID} {
+		require.NoError(t, db.Create(&model.CatalogSeriesMember{SeriesID: series.ID, WorkID: wid}).Error)
+	}
+	require.NoError(t, db.Create(&model.CatalogSeriesIntro{
+		SeriesID: series.ID, Lang: "zh-Hans", Intro: "系列简介", SourceID: dlsiteSourceID,
+	}).Error)
+	require.NoError(t, db.Create(&model.CatalogSeriesIntro{
+		SeriesID: series.ID, Lang: "zh-Hans", Intro: "用户补写的简介", SourceID: 1,
+	}).Error)
+	return series.ID, empty.ID, sfwWorkID, r18.ID
+}
+
+// TestSeriesDetailWire pins the 400 / 404 split and the head blocks that are
+// always present — refs (the in-row source anchor) and intros.
+func TestSeriesDetailWire(t *testing.T) {
+	db := openCatalogTestDB(t)
+	seriesID, emptyID, _, _ := seedSeries(t, db)
+	app := seriesApp(db)
+
+	code, _ := getJSON(t, app, "/v1/catalog/series/not-a-number")
+	assert.Equal(t, 400, code)
+
+	// A series has no merge machinery, so an unknown id is a plain 404 — never
+	// a redirect.
+	code, _ = getJSON(t, app, "/v1/catalog/series/999999")
+	assert.Equal(t, 404, code)
+
+	code, body := getJSON(t, app, "/v1/catalog/series/"+itoa(seriesID))
+	require.Equal(t, 200, code)
+	data := body["data"].(map[string]any)
+	assert.EqualValues(t, seriesID, data["id"])
+	assert.Equal(t, "限界シリーズ", data["display_name"])
+	refs := data["refs"].([]any)
+	require.Len(t, refs, 1, "a series anchors in-row, so refs carries exactly its source key")
+	assert.Equal(t, "dlsite", refs[0].(map[string]any)["source"])
+	assert.Equal(t, "SRI0000001", refs[0].(map[string]any)["external_id"])
+	// Both rows of the same language survive: a rescued hand-written body is
+	// content that exists nowhere else, not a worse copy of another source's.
+	intros := data["intros"].([]any)
+	require.Len(t, intros, 2)
+	assert.Equal(t, "zh-Hans", intros[0].(map[string]any)["lang"])
+	assert.Equal(t, "user", intros[0].(map[string]any)["source"], "ordered by (lang, source_id)")
+	assert.Equal(t, "dlsite", intros[1].(map[string]any)["source"])
+	// Members are include-gated: absent without include=works.
+	assert.NotContains(t, data, "works")
+
+	// A series with no members and no intros still renders: intros is [] (never
+	// null), and an empty works block is omitted entirely — the tags/{id}
+	// convention verbatim (its Works field is omitempty too).
+	code, body = getJSON(t, app, "/v1/catalog/series/"+itoa(emptyID)+"?include=works")
+	require.Equal(t, 200, code)
+	data = body["data"].(map[string]any)
+	assert.Equal(t, []any{}, data["intros"])
+	assert.NotContains(t, data, "works")
+}
+
+// TestSeriesDetailWorksAttach pins the member lane: the LIVE galgame fetchable
+// set only, the nsfw switch travelling from the query string into the briefs,
+// and the tags/{id} paging semantics (clamp-high limit, 400 on an illegal one,
+// next_offset only on a full page).
+func TestSeriesDetailWorksAttach(t *testing.T) {
+	db := openCatalogTestDB(t)
+	seriesID, _, sfwWorkID, r18WorkID := seedSeries(t, db)
+	app := seriesApp(db)
+	base := "/v1/catalog/series/" + itoa(seriesID)
+
+	// sfw caller: the r18 member is dropped, the stub member was never in the
+	// fetchable set → one work.
+	code, body := getJSON(t, app, base+"?include=works")
+	require.Equal(t, 200, code)
+	works := body["data"].(map[string]any)["works"].([]any)
+	require.Len(t, works, 1)
+	assert.EqualValues(t, sfwWorkID, works[0].(map[string]any)["id"])
+	assert.Equal(t, "galgame", works[0].(map[string]any)["medium"])
+	assert.Nil(t, body["data"].(map[string]any)["next_offset"], "a short page has no next_offset")
+
+	// nsfw=1 opts into the r18 member.
+	code, body = getJSON(t, app, base+"?include=works&nsfw=1")
+	require.Equal(t, 200, code)
+	works = body["data"].(map[string]any)["works"].([]any)
+	require.Len(t, works, 2)
+	assert.EqualValues(t, r18WorkID, works[1].(map[string]any)["id"])
+
+	// A full page advertises the next offset (limit=1 over two nsfw members).
+	code, body = getJSON(t, app, base+"?include=works&nsfw=1&limit=1")
+	require.Equal(t, 200, code)
+	assert.Len(t, body["data"].(map[string]any)["works"], 1)
+	assert.EqualValues(t, 1, body["data"].(map[string]any)["next_offset"])
+
+	// offset pages forward.
+	code, body = getJSON(t, app, base+"?include=works&nsfw=1&limit=1&offset=1")
+	require.Equal(t, 200, code)
+	works = body["data"].(map[string]any)["works"].([]any)
+	require.Len(t, works, 1)
+	assert.EqualValues(t, r18WorkID, works[0].(map[string]any)["id"])
+
+	// The shared limit posture: illegal is a 400, above the cap is clamped.
+	for _, raw := range []string{"abc", "0", "-1"} {
+		code, body = getJSON(t, app, base+"?include=works&limit="+raw)
+		require.Equal(t, 400, code)
+		assert.Equal(t, msgBadLimit, body["message"])
+	}
+	code, _ = getJSON(t, app, base+"?include=works&limit=500")
+	assert.Equal(t, 200, code)
+}

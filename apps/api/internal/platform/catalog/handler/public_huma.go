@@ -177,6 +177,17 @@ type publicChangesOutput struct {
 	Body Envelope[dto.PublicChangesData]
 }
 
+type publicSeriesInput struct {
+	ID      int64  `path:"id" doc:"Catalog series id"`
+	Include string `query:"include" doc:"works = attach the series' member works"`
+	NSFW    bool   `query:"nsfw" doc:"true/1 = include r18 works among the members (default false = dropped)"`
+	Limit   int    `query:"limit" doc:"Works per page 1-50 (default 50); above 50 is clamped to 50, a non-positive or non-numeric value is a 400"`
+	Offset  int    `query:"offset" doc:"Rows to skip"`
+}
+type publicSeriesOutput struct {
+	Body Envelope[dto.PublicSeriesDetail]
+}
+
 // publicStatsOutput has no input type at all (the payload is one global
 // aggregate with no parameters) — huma.Register takes *struct{} for that.
 type publicStatsOutput struct {
@@ -382,6 +393,14 @@ func SetupCatalogPublicSpec(app *fiber.App) huma.API {
 	}, func(context.Context, *publicChangesInput) (*publicChangesOutput, error) {
 		return &publicChangesOutput{}, nil
 	})
+	huma.Register(api, huma.Operation{
+		OperationID: "getCatalogSeriesPublic", Method: http.MethodGet, Path: "/v1/catalog/series/{id}",
+		Summary: "Series record: identity + source anchor + intros; include=works attaches its member works",
+		Description: "The address of the grouping entity works?series_id= filters on. Members are the LIVE galgame " +
+			"fetchable set, paged by limit/offset exactly like labels/{id} and tags/{id}. " +
+			"Series carry no merge or soft-delete machinery, so an unknown id is a plain 404 — never a redirect.",
+		Tags: tags,
+	}, func(context.Context, *publicSeriesInput) (*publicSeriesOutput, error) { return &publicSeriesOutput{}, nil })
 	huma.Register(api, huma.Operation{
 		OperationID: "getCatalogStatsPublic", Method: http.MethodGet, Path: "/v1/catalog/stats",
 		Summary: "Slim catalogue counts: LIVE works per medium + the identity-family totals",

@@ -315,6 +315,27 @@ components:
         - code
         - message
       type: object
+    EnvelopePublicSeriesDetail:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EnvelopePublicSeriesDetail.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/PublicSeriesDetail"
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
     EnvelopePublicTagDetail:
       additionalProperties: false
       properties:
@@ -1691,6 +1712,55 @@ components:
         - source
         - member_count
       type: object
+    PublicSeriesDetail:
+      additionalProperties: false
+      properties:
+        display_name:
+          type: string
+        id:
+          format: int64
+          type: integer
+        intros:
+          items:
+            $ref: "#/components/schemas/PublicSeriesIntro"
+          type:
+            - array
+            - "null"
+        next_offset:
+          format: int64
+          type: integer
+        refs:
+          items:
+            $ref: "#/components/schemas/PublicCatalogRef"
+          type:
+            - array
+            - "null"
+        works:
+          items:
+            $ref: "#/components/schemas/PublicWorkBrief"
+          type:
+            - array
+            - "null"
+      required:
+        - id
+        - display_name
+        - refs
+        - intros
+      type: object
+    PublicSeriesIntro:
+      additionalProperties: false
+      properties:
+        intro:
+          type: string
+        lang:
+          type: string
+        source:
+          type: string
+      required:
+        - lang
+        - intro
+        - source
+      type: object
     PublicSiblingName:
       additionalProperties: false
       properties:
@@ -2941,6 +3011,65 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Entity autocomplete over names / characters / labels / works / tags, projected to public briefs
+      tags:
+        - catalog-public
+  /v1/catalog/series/{id}:
+    get:
+      description: The address of the grouping entity works?series_id= filters on. Members are the LIVE galgame fetchable set, paged by limit/offset exactly like labels/{id} and tags/{id}. Series carry no merge or soft-delete machinery, so an unknown id is a plain 404 — never a redirect.
+      operationId: getCatalogSeriesPublic
+      parameters:
+        - description: Catalog series id
+          in: path
+          name: id
+          required: true
+          schema:
+            description: Catalog series id
+            format: int64
+            type: integer
+        - description: works = attach the series' member works
+          explode: false
+          in: query
+          name: include
+          schema:
+            description: works = attach the series' member works
+            type: string
+        - description: true/1 = include r18 works among the members (default false = dropped)
+          explode: false
+          in: query
+          name: nsfw
+          schema:
+            description: true/1 = include r18 works among the members (default false = dropped)
+            type: boolean
+        - description: Works per page 1-50 (default 50); above 50 is clamped to 50, a non-positive or non-numeric value is a 400
+          explode: false
+          in: query
+          name: limit
+          schema:
+            description: Works per page 1-50 (default 50); above 50 is clamped to 50, a non-positive or non-numeric value is a 400
+            format: int64
+            type: integer
+        - description: Rows to skip
+          explode: false
+          in: query
+          name: offset
+          schema:
+            description: Rows to skip
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopePublicSeriesDetail"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: "Series record: identity + source anchor + intros; include=works attaches its member works"
       tags:
         - catalog-public
   /v1/catalog/stats:

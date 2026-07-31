@@ -374,6 +374,9 @@ func setupPublicCatalog(
 	v1.Get("/labels/:id", publicH.Label)
 	v1.Get("/tags/:id", publicH.Tag)
 	v1.Get("/engines/:id", publicH.EngineDetail)
+	// Series detail (149c) — the address of the grouping entity works?series_id=
+	// filters on; there is deliberately no series browse lane.
+	v1.Get("/series/:id", publicH.Series)
 
 	// Usage flush lifecycle: a 60s ticker upserts the in-memory rollup; a final
 	// flush runs on graceful shutdown via OnPreShutdown, which fires during

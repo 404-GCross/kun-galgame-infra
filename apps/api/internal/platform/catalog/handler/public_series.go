@@ -1,0 +1,39 @@
+// public_series.go — the series detail face on the frozen /v1/catalog public
+// projection (wave 149c).
+package handler
+
+import (
+	"strconv"
+
+	"api/internal/platform/catalog/service"
+	"api/pkg/errors"
+	"api/pkg/response"
+
+	"github.com/gofiber/fiber/v3"
+)
+
+// Series serves GET /v1/catalog/series/{id} — the series record (identity +
+// source anchor + intros); include=works attaches its member works with the
+// tags/{id} paging posture (limit 1-50 default 50, clamp-high / 400-low).
+//
+// 400 on a non-numeric id, 404 on an unknown one. Series have no merge or
+// soft-delete machinery, so a miss is a plain miss — never a redirect.
+func (h *PublicHandler) Series(c fiber.Ctx) error {
+	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
+	if err != nil {
+		return response.BadRequest(c, errors.ErrInvalidID)
+	}
+	limit, offset, ok := pagePub(c)
+	if !ok {
+		return response.BadRequestMsg(c, errors.ErrInvalidParam, msgBadLimit)
+	}
+	rec, found, err := h.svc.SeriesDetail(c.Context(), id, service.ParsePublicInclude(c.Query("include")).Works, nsfwQuery(c), limit, offset)
+	if err != nil {
+		return response.InternalError(c, errors.ErrInternalServer)
+	}
+	if !found {
+		return response.NotFound(c, errors.ErrNotFound)
+	}
+	c.Set("Cache-Control", cacheDetail)
+	return response.Success(c, rec)
+}
