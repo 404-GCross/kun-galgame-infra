@@ -1080,7 +1080,7 @@ type WorkSearchHit struct {
 // ~190k title rows, acceptable for a low-frequency staff picker; add a pg_trgm
 // index on title_norm if the call volume grows (docs/proj/18). Each hit is
 // annotated with its first DLsite anchor (work- or release-level, exact first).
-func (s *ReadService) SearchWorks(ctx context.Context, q string, mediumID int16, limit int) ([]WorkSearchHit, error) {
+func (s *ReadService) SearchWorks(ctx context.Context, q string, mediumID int16, limit int, claimStates []string) ([]WorkSearchHit, error) {
 	q = strings.TrimSpace(q)
 	if q == "" {
 		return nil, nil
@@ -1090,25 +1090,37 @@ func (s *ReadService) SearchWorks(ctx context.Context, q string, mediumID int16,
 	}
 	db := s.db.WithContext(ctx)
 
+	// The optional claim gate (wave 155 W4) compiles through the SAME
+	// claimStateWhere the public list and search faces use, so "B bucket" means
+	// one thing on every face — the 03 定案 §8-1 supply that must exist before a
+	// consumer is switched onto it. Absent = no gate, i.e. every pre-existing
+	// caller's wire stays byte-identical.
+	claimGate, claimArgs := claimStateWhere(claimStates)
+	if claimGate != "" {
+		claimGate = " AND " + claimGate
+	}
+
 	// EXISTS keeps one row per work even when several of its titles match. The
 	// merged tombstones (status=2) never surface — their identity lives on a
 	// survivor. The bind param is NFKC-folded in-query to match title_norm.
 	var hits []WorkSearchHit
+	args := []any{model.WorkStatusMerged, mediumID, mediumID}
+	args = append(args, claimArgs...)
+	args = append(args, q, limit)
 	if err := db.Raw(`
 		SELECT w.id AS work_id, w.display_name, w.medium_id, w.content_rating,
 		       w.status, COALESCE(w.site, '') AS site
 		FROM catalog_work w
 		WHERE w.deleted_at IS NULL
 		  AND w.status <> ?
-		  AND (? <= 0 OR w.medium_id = ?)
+		  AND (? <= 0 OR w.medium_id = ?)`+claimGate+`
 		  AND EXISTS (
 		      SELECT 1 FROM catalog_work_title t
 		      WHERE t.work_id = w.id
 		        AND t.title_norm LIKE '%' || lower(normalize(?, NFKC)) || '%'
 		  )
 		ORDER BY w.id
-		LIMIT ?`,
-		model.WorkStatusMerged, mediumID, mediumID, q, limit).Scan(&hits).Error; err != nil {
+		LIMIT ?`, args...).Scan(&hits).Error; err != nil {
 		return nil, err
 	}
 	if len(hits) == 0 {

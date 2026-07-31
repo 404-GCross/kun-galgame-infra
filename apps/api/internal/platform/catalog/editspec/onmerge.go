@@ -25,12 +25,24 @@ import (
 // mirror keeps serving the pre-edit state until some unrelated write happens to
 // move the watermark.
 //
-// What is NOT here yet, and why the hook is the place for it: a single-work
-// search reindex and a claim-projection refresh. The catalog works index is
-// rebuilt by a daily cron today — the public spec states that freshness
-// contract in as many words — and claim_state is moved by the projector, not by
-// a field edit. Both become write-throughs with the N2 lifecycle wave, and this
-// is the one seam they hang off, instead of four endpoints each remembering.
+// The two write-throughs wave 154 left for N2, and what became of them:
+//
+//   - CLAIM PROJECTION: resolved, and it belongs nowhere near this hook. Wave
+//     155 moved claim_state onto semantic lifecycle actions that write the
+//     column and its event row in one transaction, and the field matrix has no
+//     `status` key by design (03 定案 §2) — so no field edit can move a claim,
+//     and there is nothing here to refresh.
+//   - SINGLE-WORK REINDEX: NOT built, deliberately. The catalog works index is
+//     produced by cmd/reindex-catalog as a whole-corpus batch — it preloads a
+//     popularity signal, the source map, every title, the facet arrays and the
+//     intro buckets before emitting a document — and there is no single-document
+//     upsert path to reuse. Writing one here would mean a second, divergent
+//     definition of what a works document contains, which is the failure the
+//     wave-155 task book forbids ("no self-made index write path"). The index
+//     therefore stays on its daily cron, which is the freshness contract the
+//     public spec already states, and a same-day search reflection needs a
+//     single-document builder extracted from the batch first — a wave of its
+//     own, on the search package rather than on this hook.
 //
 // Deliberately NOT here: contributor credit. galgame.game records contributors
 // in its OnMerge because galgame_contributor is its own table with 61% of the

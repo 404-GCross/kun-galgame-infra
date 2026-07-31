@@ -337,6 +337,10 @@ type searchWorksInput struct {
 	// -1 = no filter (Huma cannot express optional scalars as pointers).
 	MediumID int16 `query:"medium_id" default:"-1" doc:"Filter to one medium; -1 = all"`
 	Limit    int   `query:"limit" default:"20" doc:"Max hits (capped at 50)"`
+	// The B-bucket supply (wave 155 W4, 03 定案 §8-1). Absent = no gate, so
+	// every existing caller is byte-identical; a submitter's own view asks for
+	// `live,draft,pending` and gets it in ONE query.
+	ClaimState string `query:"claim_state" doc:"Comma-separated subset of none, live, draft, pending, declined, hidden; absent = every state"`
 }
 
 type searchWorksOutput struct {
@@ -348,7 +352,11 @@ func (s *S2SServer) searchWorks(ctx context.Context, in *searchWorksInput) (*sea
 	if limit <= 0 || limit > 50 {
 		limit = 20
 	}
-	hits, err := s.read.SearchWorks(ctx, in.Q, in.MediumID, limit)
+	claimStates, ok := claimStatesPub(in.ClaimState)
+	if !ok {
+		return nil, apiErrMsg(http.StatusBadRequest, errors.ErrInvalidParam, msgBadClaimState)
+	}
+	hits, err := s.read.SearchWorks(ctx, in.Q, in.MediumID, limit, claimStates)
 	if err != nil {
 		return nil, apiErr(http.StatusInternalServerError, errors.ErrInternalServer)
 	}
