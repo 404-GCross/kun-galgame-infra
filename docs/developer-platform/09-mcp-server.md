@@ -40,7 +40,7 @@ MCP server 是公开 /v1 契约前面的一层**协议适配**,不是第二个 A
 - MCP 规范的 OAuth 2.1 授权流 = M2(第三方实际开放后,与 `dev:manage`
   同期评估);M1 的静态 key 模式对 agent 场景已充分。
 
-## 4. 工具面(9 个 = M1 五个幸存 + `catalog_name_get` + canonical-W1 三件;2026-07-28 与 104-108 波 spec 同步)
+## 4. 工具面(17 个 = M1 五个幸存 + `catalog_name_get` + canonical-W1 三件 + A2 八件;2026-07-30 与 A2 canonical 轨 spec 同步)
 
 > **wave 146(2026-07-30)**:`galgame_search` / `galgame_get` **随其上游 `/v1/galgame` 面一同退役**——该面现返回 `410 Gone`,继续注册这两个工具只会稳定地喂给调用方一个错误。后继:`catalog_search`(`type=works`)接自然语言搜索,`catalog_work_get` 接按 id 取详情。
 
@@ -55,19 +55,25 @@ MCP server 是公开 /v1 契约前面的一层**协议适配**,不是第二个 A
 | `catalog_works_list` | `GET /v1/catalog/works` | 批量浏览/过滤(content_rating/claimed/label/tag/series/platform/发售窗;`ids=` 批量水合;keyset 分页) |
 | `catalog_changes` | `GET /v1/catalog/changes` | 增量同步变更流(keyset 游标存续轮询;entity_type=work) |
 | `catalog_tag_get` | `GET /v1/catalog/tags/{id}` | 正典标签(跨源标签词表;`include=works` 附携带作品) |
+| `catalog_works_search` | `GET /v1/catalog/works/search` | 作品产品检索(自由文本 + works-list 全过滤集;五档 sort、可选 facets、page 分页;`claim_state`/`content_limit`/`olang`/`search_intro`) |
+| `catalog_calendar` | `GET /v1/catalog/calendar` | 发售月历单月(date ASC keyset;缺省=当前 Asia/Tokyo 月;`olang` 缺省 ja+zh* 族) |
+| `catalog_calendar_pending` | `GET /v1/catalog/calendar/pending` | 月历「知年不知月」桶(缺省=当前 Asia/Tokyo 年) |
+| `catalog_calendar_tba` | `GET /v1/catalog/calendar/tba` | 月历「已公布未定档」全局桶 |
+| `catalog_labels_list` | `GET /v1/catalog/labels` | 厂牌词表浏览(`kind` 过滤;每行带 nsfw 感知 `work_count`;发现 label id 用) |
+| `catalog_tags_list` | `GET /v1/catalog/tags` | 正典标签词表浏览(`tier`/`kind` 过滤;发现 tag id 喂给 works 过滤) |
+| `catalog_engines_list` | `GET /v1/catalog/engines` | 引擎词表浏览(发现 engine id 喂给 `catalog_works_search`) |
+| `catalog_engine_get` | `GET /v1/catalog/engines/{id}` | 引擎记录(名称 + nsfw 感知 `work_count` + 跨源 refs) |
 
-- **catalog 覆盖面(9/20:三条「有意留白」+ 八条「待裁定」)**:公开 catalog 面
-  现共 20 op,上表覆盖 9。**有意留白**三条:`POST /v1/catalog/lookup/batch`(批量
-  外部 id 水合)、`GET /v1/catalog/redirects`(合并事件 keyset 流,供镜像清理存量
-  id)、`POST /v1/catalog/resolve`(旧 id→正典 id 批量扁平化)——它们服务的是
+- **catalog 覆盖面(17/20,只剩三条「有意留白」)**:公开 catalog 面现共 20 op,
+  上表覆盖 17。上一波记为「待裁定」的 A2 八条(calendar 三桶 / taxonomy 列表三条 /
+  `engines/{id}` / `works/search`)已由 owner 裁定收进工具面(wave 7,2026-07-30),
+  八条全是 GET,合乎纯透传红线。**有意留白**仍是三条:`POST /v1/catalog/lookup/batch`
+  (批量外部 id 水合)、`GET /v1/catalog/redirects`(合并事件 keyset 流,供镜像清理
+  存量 id)、`POST /v1/catalog/resolve`(旧 id→正典 id 批量扁平化)——它们服务的是
   **镜像维护 / 批量同步**型消费者,应直连 HTTP 面:单轮 LLM tool call 没有批量、
   也没有存量 id 维护语义;小批量水合已由 `catalog_works_list` 的 `ids=` 覆盖,单个
   外部 id 由 `catalog_lookup_external` 覆盖;且 `lookup/batch` 与 `resolve` 是
-  POST,而 mcpface 传输是 GET 纯透传。**另八条尚未上工具面,但属「待裁定」而非
-  留白**(A2 canonical 轨新增,晚于本节定稿):calendar 三桶(`calendar`/
-  `calendar/pending`/`calendar/tba`)、taxonomy 列表三条(`labels`/`tags`/
-  `engines`)、`engines/{id}` 详情、`works/search` 作品检索——是否收进工具面待
-  owner 裁定。
+  POST,而 mcpface 传输是 GET 纯透传。
 
 - **r18 姿态(104 波,调用方自控)**:catalog 系工具 `nsfw=true` 显式开;galgame 系
   `content_limit=sfw|nsfw|all`(需 key 带 `galgame:nsfw` scope,否则静默降 sfw)。
@@ -76,10 +82,11 @@ MCP server 是公开 /v1 契约前面的一层**协议适配**,不是第二个 A
 - tool description 用英文、面向 LLM 写清「何时用哪个」(lookup vs search
   的分工是重点:有外部 id 用 lookup,自然语言用 search)。
 - 输入 schema 逐参对齐上游 query 参数(分页参数透传,默认页量保守)。
-- **不做**的(明确出界):calendar 流(galgame 面,agent 场景弱)、
-  redirects/resolve/lookup/batch(镜像维护面,理由见上面的覆盖说明)、
-  resources/prompts(M2)、任何写面(Phase 3 submit 开放后随 OAuth 一起
-  评估)。`changes` 原属此列,canonical-W1 已进面(见上表)。
+- **不做**的(明确出界):redirects/resolve/lookup/batch(镜像维护面,理由见
+  上面的覆盖说明)、resources/prompts(M2)、任何写面(Phase 3 submit 开放后随
+  OAuth 一起评估)。`changes`(canonical-W1)与 calendar 三桶(wave 7,收的是
+  **catalog 面**的月历;当年出界的是已退役的 galgame 面月历)原属此列,现均已
+  进面(见上表)。
 
 ## 5. 运维与部署
 
@@ -87,7 +94,7 @@ MCP server 是公开 /v1 契约前面的一层**协议适配**,不是第二个 A
   Deploy 姿态,`docker-compose.mcp.yml`);镜像走现有 CI 矩阵。
 - healthz 照平台惯例;结构化日志记 tool 名 + 上游状态码 + 时延,
   **永不记 key 明文**(fingerprint 前 8 hex)。
-- 冒烟:MCP `initialize` + `tools/list` + 一次 `galgame_search` 真调用。(2026-07-28 同步后 `tools/list` 应回 11 工具。)
+- 冒烟:MCP `initialize` + `tools/list` + 一次 `catalog_search` 真调用。(wave 7 / 2026-07-30 同步后 `tools/list` 应回 17 工具;冒烟调用早先写的是 `galgame_search`,该工具已随 `/v1/galgame` 面于 wave 146 退役。)
 
 ## 6. 阶段
 

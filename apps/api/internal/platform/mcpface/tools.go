@@ -10,8 +10,10 @@ import (
 // read-only, idempotent GET against an open-world external registry.
 var readOnly = &mcp.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true}
 
-// registerTools installs the nine tools on the server (M1 five surviving +
-// catalog_name_get + the canonical-W1 trio: works-list / changes / tag). Names are unversioned
+// registerTools installs the seventeen tools on the server (M1 five surviving +
+// catalog_name_get + the canonical-W1 trio: works-list / changes / tag + the
+// eight A2 read ops: works search, the three calendar buckets, the three
+// taxonomy browse lanes and engine detail). Names are unversioned
 // (the /v1 contract is versioned upstream); descriptions are English and written
 // for the calling LLM, with the lookup-vs-search division spelled out.
 //
@@ -85,6 +87,62 @@ func registerTools(s *mcp.Server, up *Upstream) {
 		Description: descCatalogTagGet,
 		Annotations: readOnly,
 	}, t.catalogTagGet)
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "catalog_works_search",
+		Title:       "Search catalog works (product search)",
+		Description: descCatalogWorksSearch,
+		Annotations: readOnly,
+	}, t.catalogWorksSearch)
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "catalog_calendar",
+		Title:       "Release calendar for one month",
+		Description: descCatalogCalendar,
+		Annotations: readOnly,
+	}, t.catalogCalendar)
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "catalog_calendar_pending",
+		Title:       "Release calendar, month-unknown bucket",
+		Description: descCatalogCalendarPending,
+		Annotations: readOnly,
+	}, t.catalogCalendarPending)
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "catalog_calendar_tba",
+		Title:       "Release calendar, undated bucket",
+		Description: descCatalogCalendarTBA,
+		Annotations: readOnly,
+	}, t.catalogCalendarTBA)
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "catalog_labels_list",
+		Title:       "Browse catalog labels",
+		Description: descCatalogLabelsList,
+		Annotations: readOnly,
+	}, t.catalogLabelsList)
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "catalog_tags_list",
+		Title:       "Browse canonical tags",
+		Description: descCatalogTagsList,
+		Annotations: readOnly,
+	}, t.catalogTagsList)
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "catalog_engines_list",
+		Title:       "Browse catalog engines",
+		Description: descCatalogEnginesList,
+		Annotations: readOnly,
+	}, t.catalogEnginesList)
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "catalog_engine_get",
+		Title:       "Get a catalog engine by id",
+		Description: descCatalogEngineGet,
+		Annotations: readOnly,
+	}, t.catalogEngineGet)
 }
 
 // ─────────────────────────── catalog face ───────────────────────────
@@ -287,4 +345,208 @@ func (t *tools) catalogTagGet(ctx context.Context, req *mcp.CallToolRequest, in 
 	setInt(q, "limit", in.Limit)
 	setInt(q, "offset", in.Offset)
 	return t.run(ctx, req, "catalog_tag_get", pathID("/v1/catalog/tags", in.ID), q)
+}
+
+// ─────────────────── catalog face: the A2 read ops ───────────────────
+
+const descCatalogWorksSearch = "PRODUCT SEARCH over catalog works: free text plus the whole works-list filter set, " +
+	"page-paginated, with five sort lanes and opt-in facet counts. Prefer this over catalog_search type=works " +
+	"whenever the user combines a query with filters (rating / label / tag / engine / series / release window / " +
+	"original language) or wants a ranked, faceted result set; catalog_search is the plain name index. A q that is " +
+	"exactly a VNDB id (v19658) short-circuits to that one work. Empty q = a filter-only browse ordered by popularity."
+
+type catalogWorksSearchInput struct {
+	Q              string `json:"q,omitempty" jsonschema:"Free text over every indexed title / alias; empty = filter-only browse by popularity."`
+	ContentRating  string `json:"content_rating,omitempty" jsonschema:"Filter by rating: all_ages, sensitive, or r18 (r18 additionally requires nsfw=true)."`
+	Claimed        string `json:"claimed,omitempty" jsonschema:"true = claimed works only; false = bodyless only; omit = both."`
+	ClaimState     string `json:"claim_state,omitempty" jsonschema:"Comma-separated CLOSED vocabulary none,live,draft,hidden matched as ANY-of; a product site rendering its own catalogue wants live. Unknown token = 400."`
+	ContentLimit   string `json:"content_limit,omitempty" jsonschema:"Comma-separated CLOSED vocabulary sfw,nsfw — the EDITORIAL DISPLAY axis (is the material you would render safe to publish), NOT the age rating. Unknown token = 400."`
+	LabelID        int    `json:"label_id,omitempty" jsonschema:"Only works attributed to this label id."`
+	TagID          string `json:"tag_id,omitempty" jsonschema:"Up to 10 comma-separated canonical tag ids, ANDed (a work must carry all of them)."`
+	SeriesID       int    `json:"series_id,omitempty" jsonschema:"Only member works of this series id."`
+	EngineID       int    `json:"engine_id,omitempty" jsonschema:"Only works built with this engine id."`
+	ReleasedAfter  string `json:"released_after,omitempty" jsonschema:"YYYY-MM-DD inclusive lower bound on the earliest release date per work."`
+	ReleasedBefore string `json:"released_before,omitempty" jsonschema:"YYYY-MM-DD inclusive upper bound."`
+	Olang          string `json:"olang,omitempty" jsonschema:"Original-language gate: comma-separated BCP-47 values (ja, zh-Hans, en, …) or all. Default = NO gate, unlike the calendar."`
+	Sort           string `json:"sort,omitempty" jsonschema:"relevance (default), released_desc, released_asc, updated, or popularity."`
+	Facets         string `json:"facets,omitempty" jsonschema:"Comma-separated CLOSED vocabulary: content_rating,olang,claimed,tag_id,label_id,engine_id,series_id,source. Counted over the same filtered set as total."`
+	Page           int    `json:"page,omitempty" jsonschema:"1-based page number (default 1); a page past the end is empty."`
+	Limit          int    `json:"limit,omitempty" jsonschema:"Items per page 1-100 (default 20)."`
+	Nsfw           bool   `json:"nsfw,omitempty" jsonschema:"true = include r18 works in items, total AND facets (default false = dropped)."`
+	Include        string `json:"include,omitempty" jsonschema:"Comma-separated rich-brief blocks: names,intros,labels,ratings,covers,refs."`
+	SearchIntro    bool   `json:"search_intro,omitempty" jsonschema:"true = also match q against the work synopsis, not just titles/aliases (default false)."`
+}
+
+func (t *tools) catalogWorksSearch(ctx context.Context, req *mcp.CallToolRequest, in catalogWorksSearchInput) (*mcp.CallToolResult, any, error) {
+	q := newQuery()
+	setStr(q, "q", in.Q)
+	setStr(q, "content_rating", in.ContentRating)
+	setStr(q, "claimed", in.Claimed)
+	setStr(q, "claim_state", in.ClaimState)
+	setStr(q, "content_limit", in.ContentLimit)
+	setInt(q, "label_id", in.LabelID)
+	setStr(q, "tag_id", in.TagID)
+	setInt(q, "series_id", in.SeriesID)
+	setInt(q, "engine_id", in.EngineID)
+	setStr(q, "released_after", in.ReleasedAfter)
+	setStr(q, "released_before", in.ReleasedBefore)
+	setStr(q, "olang", in.Olang)
+	setStr(q, "sort", in.Sort)
+	setStr(q, "facets", in.Facets)
+	setInt(q, "page", in.Page)
+	setInt(q, "limit", in.Limit)
+	setBool(q, "nsfw", in.Nsfw)
+	setStr(q, "include", in.Include)
+	setBool(q, "search_intro", in.SearchIntro)
+	return t.run(ctx, req, "catalog_works_search", "/v1/catalog/works/search", q)
+}
+
+const descCatalogCalendar = "Release calendar for ONE ISO month, date ascending. Omit month to get the current " +
+	"Asia/Tokyo month (the resolved month is echoed back). The olang gate defaults to the ja + zh* family — pass " +
+	"olang=all for every language. Works whose month is not yet known live in catalog_calendar_pending, and " +
+	"announced-but-undated ones in catalog_calendar_tba."
+
+type catalogCalendarInput struct {
+	Month        string `json:"month,omitempty" jsonschema:"ISO month YYYY-MM; omit for the current Asia/Tokyo month. A malformed value is a 400."`
+	Olang        string `json:"olang,omitempty" jsonschema:"Comma-separated original languages in BCP-47 spelling (ja, zh-Hans, en, …) or all. Default = the ja + zh* family; an unknown value yields an empty bucket, never a 400."`
+	ContentLimit string `json:"content_limit,omitempty" jsonschema:"Comma-separated CLOSED vocabulary sfw,nsfw — the editorial display axis, gating bucket membership and the count alike. Unknown token = 400."`
+	Cursor       string `json:"cursor,omitempty" jsonschema:"Opaque keyset cursor from a prior next_cursor; omit for the first page."`
+	Limit        int    `json:"limit,omitempty" jsonschema:"Items per page 1-100 (default 20)."`
+	Nsfw         bool   `json:"nsfw,omitempty" jsonschema:"true = include r18 works (default false = dropped)."`
+	Include      string `json:"include,omitempty" jsonschema:"Comma-separated rich-brief blocks: names,intros,labels,ratings,covers,refs."`
+}
+
+func (t *tools) catalogCalendar(ctx context.Context, req *mcp.CallToolRequest, in catalogCalendarInput) (*mcp.CallToolResult, any, error) {
+	q := newQuery()
+	setStr(q, "month", in.Month)
+	setStr(q, "olang", in.Olang)
+	setStr(q, "content_limit", in.ContentLimit)
+	setStr(q, "cursor", in.Cursor)
+	setInt(q, "limit", in.Limit)
+	setBool(q, "nsfw", in.Nsfw)
+	setStr(q, "include", in.Include)
+	return t.run(ctx, req, "catalog_calendar", "/v1/catalog/calendar", q)
+}
+
+const descCatalogCalendarPending = "Release calendar bucket for works dated to a YEAR but whose MONTH is still " +
+	"unknown, id ascending. Omit year for the current Asia/Tokyo year (echoed back). Same gates as catalog_calendar."
+
+type catalogCalendarPendingInput struct {
+	Year         string `json:"year,omitempty" jsonschema:"YYYY; omit for the current Asia/Tokyo year. A malformed value is a 400."`
+	Olang        string `json:"olang,omitempty" jsonschema:"Comma-separated original languages or all. Default = the ja + zh* family."`
+	ContentLimit string `json:"content_limit,omitempty" jsonschema:"Comma-separated CLOSED vocabulary sfw,nsfw (editorial display axis). Unknown token = 400."`
+	Cursor       string `json:"cursor,omitempty" jsonschema:"Opaque keyset cursor from a prior next_cursor; omit for the first page."`
+	Limit        int    `json:"limit,omitempty" jsonschema:"Items per page 1-100 (default 20)."`
+	Nsfw         bool   `json:"nsfw,omitempty" jsonschema:"true = include r18 works (default false = dropped)."`
+	Include      string `json:"include,omitempty" jsonschema:"Comma-separated rich-brief blocks: names,intros,labels,ratings,covers,refs."`
+}
+
+func (t *tools) catalogCalendarPending(ctx context.Context, req *mcp.CallToolRequest, in catalogCalendarPendingInput) (*mcp.CallToolResult, any, error) {
+	q := newQuery()
+	setStr(q, "year", in.Year)
+	setStr(q, "olang", in.Olang)
+	setStr(q, "content_limit", in.ContentLimit)
+	setStr(q, "cursor", in.Cursor)
+	setInt(q, "limit", in.Limit)
+	setBool(q, "nsfw", in.Nsfw)
+	setStr(q, "include", in.Include)
+	return t.run(ctx, req, "catalog_calendar_pending", "/v1/catalog/calendar/pending", q)
+}
+
+const descCatalogCalendarTBA = "Release calendar bucket for works ANNOUNCED BUT UNDATED (no release date at all), " +
+	"global rather than per-period, id ascending. Same gates as catalog_calendar."
+
+type catalogCalendarTBAInput struct {
+	Olang        string `json:"olang,omitempty" jsonschema:"Comma-separated original languages or all. Default = the ja + zh* family."`
+	ContentLimit string `json:"content_limit,omitempty" jsonschema:"Comma-separated CLOSED vocabulary sfw,nsfw (editorial display axis). Unknown token = 400."`
+	Cursor       string `json:"cursor,omitempty" jsonschema:"Opaque keyset cursor from a prior next_cursor; omit for the first page."`
+	Limit        int    `json:"limit,omitempty" jsonschema:"Items per page 1-100 (default 20)."`
+	Nsfw         bool   `json:"nsfw,omitempty" jsonschema:"true = include r18 works (default false = dropped)."`
+	Include      string `json:"include,omitempty" jsonschema:"Comma-separated rich-brief blocks: names,intros,labels,ratings,covers,refs."`
+}
+
+func (t *tools) catalogCalendarTBA(ctx context.Context, req *mcp.CallToolRequest, in catalogCalendarTBAInput) (*mcp.CallToolResult, any, error) {
+	q := newQuery()
+	setStr(q, "olang", in.Olang)
+	setStr(q, "content_limit", in.ContentLimit)
+	setStr(q, "cursor", in.Cursor)
+	setInt(q, "limit", in.Limit)
+	setBool(q, "nsfw", in.Nsfw)
+	setStr(q, "include", in.Include)
+	return t.run(ctx, req, "catalog_calendar_tba", "/v1/catalog/calendar/tba", q)
+}
+
+const descCatalogLabelsList = "Browse the label (brand / doujin circle) vocabulary itself, id ascending and keyset " +
+	"paginated, optionally filtered by kind; each row carries an nsfw-aware work_count. Use this to DISCOVER label " +
+	"ids; to fetch one label with its works use catalog_label_get, and to find a label by name use catalog_search " +
+	"type=labels."
+
+type catalogLabelsListInput struct {
+	Kind   string `json:"kind,omitempty" jsonschema:"Filter by kind: game_brand, bunko, publisher, anime_studio, doujin_circle, or group. A token outside this closed set is a 400."`
+	Cursor string `json:"cursor,omitempty" jsonschema:"Opaque keyset cursor from a prior next_cursor; omit for the first page."`
+	Limit  int    `json:"limit,omitempty" jsonschema:"Items per page 1-100 (default 20)."`
+	Nsfw   bool   `json:"nsfw,omitempty" jsonschema:"true = count r18 works in work_count (default false = excluded)."`
+}
+
+func (t *tools) catalogLabelsList(ctx context.Context, req *mcp.CallToolRequest, in catalogLabelsListInput) (*mcp.CallToolResult, any, error) {
+	q := newQuery()
+	setStr(q, "kind", in.Kind)
+	setStr(q, "cursor", in.Cursor)
+	setInt(q, "limit", in.Limit)
+	setBool(q, "nsfw", in.Nsfw)
+	return t.run(ctx, req, "catalog_labels_list", "/v1/catalog/labels", q)
+}
+
+const descCatalogTagsList = "Browse the canonical tag vocabulary itself, id ascending and keyset paginated, " +
+	"optionally filtered by tier / kind; each row carries an nsfw-aware work_count. Use this to DISCOVER tag ids " +
+	"to feed catalog_works_list tag_id= or catalog_works_search; to fetch one tag with its works use catalog_tag_get."
+
+type catalogTagsListInput struct {
+	Tier   string `json:"tier,omitempty" jsonschema:"Filter by display tier: core, longtail, or hidden. A token outside this closed set is a 400."`
+	Kind   string `json:"kind,omitempty" jsonschema:"Filter by kind: content or meta. A token outside this closed set is a 400."`
+	Cursor string `json:"cursor,omitempty" jsonschema:"Opaque keyset cursor from a prior next_cursor; omit for the first page."`
+	Limit  int    `json:"limit,omitempty" jsonschema:"Items per page 1-100 (default 20)."`
+	Nsfw   bool   `json:"nsfw,omitempty" jsonschema:"true = count r18 works in work_count (default false = excluded)."`
+}
+
+func (t *tools) catalogTagsList(ctx context.Context, req *mcp.CallToolRequest, in catalogTagsListInput) (*mcp.CallToolResult, any, error) {
+	q := newQuery()
+	setStr(q, "tier", in.Tier)
+	setStr(q, "kind", in.Kind)
+	setStr(q, "cursor", in.Cursor)
+	setInt(q, "limit", in.Limit)
+	setBool(q, "nsfw", in.Nsfw)
+	return t.run(ctx, req, "catalog_tags_list", "/v1/catalog/tags", q)
+}
+
+const descCatalogEnginesList = "Browse the engine vocabulary itself (the visual-novel engines works are built with), " +
+	"id ascending and keyset paginated; each row carries an nsfw-aware work_count. Use this to DISCOVER engine ids " +
+	"to feed catalog_works_search engine_id=."
+
+type catalogEnginesListInput struct {
+	Cursor string `json:"cursor,omitempty" jsonschema:"Opaque keyset cursor from a prior next_cursor; omit for the first page."`
+	Limit  int    `json:"limit,omitempty" jsonschema:"Items per page 1-100 (default 20)."`
+	Nsfw   bool   `json:"nsfw,omitempty" jsonschema:"true = count r18 works in work_count (default false = excluded)."`
+}
+
+func (t *tools) catalogEnginesList(ctx context.Context, req *mcp.CallToolRequest, in catalogEnginesListInput) (*mcp.CallToolResult, any, error) {
+	q := newQuery()
+	setStr(q, "cursor", in.Cursor)
+	setInt(q, "limit", in.Limit)
+	setBool(q, "nsfw", in.Nsfw)
+	return t.run(ctx, req, "catalog_engines_list", "/v1/catalog/engines", q)
+}
+
+const descCatalogEngineGet = "Fetch one engine by its numeric id: name, an nsfw-aware work_count and the exact " +
+	"cross-source refs. Find an id with catalog_engines_list."
+
+type catalogEngineGetInput struct {
+	ID   int  `json:"id" jsonschema:"The catalog engine id (required)."`
+	Nsfw bool `json:"nsfw,omitempty" jsonschema:"true = count r18 works in work_count (default false = excluded)."`
+}
+
+func (t *tools) catalogEngineGet(ctx context.Context, req *mcp.CallToolRequest, in catalogEngineGetInput) (*mcp.CallToolResult, any, error) {
+	q := newQuery()
+	setBool(q, "nsfw", in.Nsfw)
+	return t.run(ctx, req, "catalog_engine_get", pathID("/v1/catalog/engines", in.ID), q)
 }

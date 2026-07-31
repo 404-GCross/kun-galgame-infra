@@ -12,22 +12,30 @@ import (
 )
 
 // expectedTools is the frozen tool surface (design §4; the M1 five that survive
-// + catalog_name_get + the canonical-W1 trio). If this list changes, the design
-// doc and portal docs page must change with it.
+// + catalog_name_get + the canonical-W1 trio + the eight A2 read ops). If this
+// list changes, the design doc and portal docs page must change with it.
 //
 // galgame_search / galgame_get left the surface at wave 146 (2026-07-30) with
 // the /v1/galgame face they proxied; this list doubles as the assertion that
 // they are really unregistered, since TestToolRegistry pins it exactly.
 var expectedTools = []string{
+	"catalog_calendar",
+	"catalog_calendar_pending",
+	"catalog_calendar_tba",
 	"catalog_changes",
 	"catalog_character_get",
+	"catalog_engine_get",
+	"catalog_engines_list",
 	"catalog_label_get",
+	"catalog_labels_list",
 	"catalog_lookup_external",
 	"catalog_name_get",
 	"catalog_search",
 	"catalog_tag_get",
+	"catalog_tags_list",
 	"catalog_work_get",
 	"catalog_works_list",
+	"catalog_works_search",
 }
 
 // TestToolRegistry drives the built server through an in-memory MCP client and
