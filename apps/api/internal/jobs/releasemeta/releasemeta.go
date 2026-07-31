@@ -161,6 +161,9 @@ type Stats struct {
 	RatingPlanned         int // verdicts > 0 (actual planned writes)
 	RatingFilled          int
 	RatingSkippedNonEmpty int
+	// RatingCuratedOverride counts candidates skipped because a human edited
+	// catalog.work.content_rating through the editing engine.
+	RatingCuratedOverride int
 
 	Errors int
 
@@ -253,6 +256,7 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 		"rating_wiki_unmapped", st.RatingWikiUnmapped, "rating_bgm_r18", st.RatingBgmR18,
 		"rating_no_verdict", st.RatingNoVerdict, "rating_planned", st.RatingPlanned,
 		"rating_filled", st.RatingFilled, "rating_skipped_non_empty", st.RatingSkippedNonEmpty,
+		"rating_curated_override", st.RatingCuratedOverride,
 		"errors", st.Errors)
 	logDateSamples("dlsite", st.DlDateSamples)
 	logDateSamples("eg", st.EgDateSamples)

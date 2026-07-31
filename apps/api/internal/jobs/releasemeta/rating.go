@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"strconv"
 
+	"api/internal/platform/catalog/editspec"
 	"api/internal/platform/catalog/model"
+	"api/internal/platform/editing"
 
 	"gorm.io/gorm"
 )
@@ -75,9 +77,28 @@ func runRatingLane(ctx context.Context, db, dlDB, wikiDB *gorm.DB, w *writer, re
 		return fmt.Errorf("load wiki age limits: %w", err)
 	}
 
+	// CURATED OVERRIDE (03 定案 §0 line 2): works whose content_rating a human
+	// edited through the engine are off limits. The lane's fill-empty guard is
+	// NOT enough on its own — an editor who ruled a work all_ages leaves the
+	// column at 0, which is exactly the state this job treats as "unset", so
+	// without this check the one verdict a human made explicitly is the one the
+	// importer would overwrite. Preloaded in one query for the whole window.
+	ratingWorkIDs := make([]int64, 0, len(cands))
+	for _, c := range cands {
+		ratingWorkIDs = append(ratingWorkIDs, c.WorkID)
+	}
+	edited, err := editing.EditedEntities(ctx, db, editspec.TypeWork, editspec.FieldWorkContentRating, ratingWorkIDs)
+	if err != nil {
+		return fmt.Errorf("load curated content_rating overrides: %w", err)
+	}
+
 	for _, c := range cands {
 		if ctx.Err() != nil {
 			return ctx.Err()
+		}
+		if edited[c.WorkID] {
+			st.RatingCuratedOverride++
+			continue
 		}
 		rating, source, ext, ok := decideRating(c, dlAnchors, dlAges, wikiAges, bgmNSFW, st)
 		if !ok {

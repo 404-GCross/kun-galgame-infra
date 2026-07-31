@@ -53,7 +53,9 @@ import (
 	"log/slog"
 	"sort"
 
+	"api/internal/platform/catalog/editspec"
 	"api/internal/platform/catalog/model"
+	"api/internal/platform/editing"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -123,6 +125,11 @@ type Stats struct {
 	WikiPlanned    int
 	WikiUnchanged  int
 
+	// CuratedOverride counts candidates skipped because a human edited
+	// catalog.work.olang through the editing engine (03 定案 §0 line 2). Their
+	// value is not a placeholder this job may correct — it is a decision.
+	CuratedOverride int
+
 	Planned int // VNPlanned + WikiPlanned
 	Written int // rows actually updated (apply)
 	Errors  int
@@ -164,6 +171,20 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 	}
 
 	cands = window(cands, opts.Limit, opts.Offset)
+
+	// CURATED OVERRIDE: preload, in one query, the works whose olang a human has
+	// already edited. Loading the whole window's set up front rather than asking
+	// per row is not an optimization detail — a per-row EXISTS turns an 82k-row
+	// job into 82k round trips.
+	workIDs := make([]int64, 0, len(cands))
+	for _, c := range cands {
+		workIDs = append(workIDs, c.WorkID)
+	}
+	edited, err := editing.EditedEntities(ctx, db, editspec.TypeWork, editspec.FieldWorkOLang, workIDs)
+	if err != nil {
+		return nil, fmt.Errorf("load curated olang overrides: %w", err)
+	}
+
 	matrix := map[Transition]int{}
 	unknown := map[string]bool{}
 	w := &writer{db: db, stats: st}
@@ -171,6 +192,10 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 	for _, c := range cands {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
+		}
+		if edited[c.WorkID] {
+			st.CuratedOverride++
+			continue
 		}
 		next, ok := decide(c, st)
 		if !ok {
@@ -212,6 +237,7 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 	slog.Info("backfill-olang done", "apply", opts.Apply,
 		"vn_candidates", st.VNCandidates, "vn_multi_anchor", st.VNMultiAnchor,
 		"vn_missing_row", st.VNMissingRow, "vn_blank_olang", st.VNBlankOLang,
+		"curated_override", st.CuratedOverride,
 		"vn_planned", st.VNPlanned, "vn_unchanged", st.VNUnchanged,
 		"wiki_candidates", st.WikiCandidates, "wiki_row_missing", st.WikiRowMissing,
 		"wiki_junk_lang", st.WikiJunkLang, "wiki_planned", st.WikiPlanned,
