@@ -231,15 +231,35 @@ func (t *transformer) scalarOrList(key string, value any) (any, string, bool) {
 	return nil, "", false
 }
 
-// foldTitles builds catalog.work.titles from the four name columns. Empty
-// names are skipped (the wiki stores "" for "no name in this language", which
-// is the absence of a title row, not an empty one). Nothing to fold = no
-// titles value: the four keys stay put rather than produce a value the
-// validator would reject anyway (titles requires one official).
+// foldTitles builds catalog.work.titles from the four name columns plus the
+// alias list. Empty names are skipped (the wiki stores "" for "no name in this
+// language", which is the absence of a title row, not an empty one); aliases
+// become kind=alias rows with NO language, which is what they are and what the
+// mirror has always written.
+//
+// Nothing to fold = no titles value: the source keys stay put rather than
+// produce a value the validator would reject anyway (titles requires at least
+// one official, so an alias-only work cannot be expressed here — it is counted
+// and left in the wiki vocabulary rather than given a fabricated official).
 func (t *transformer) foldTitles(in map[string]any) ([]any, []string, bool) {
 	var titles []any
 	var sources []string
+	officials := 0
 	seen := map[string]bool{}
+	add := func(lang, name string, kind float64) {
+		if strings.TrimSpace(name) == "" {
+			return
+		}
+		key := fmt.Sprintf("%s\x00%s\x00%v", lang, name, kind)
+		if seen[key] {
+			return
+		}
+		seen[key] = true
+		if kind == 0 {
+			officials++
+		}
+		titles = append(titles, map[string]any{"lang": lang, "title": name, "kind": kind})
+	}
 	for _, p := range nameFold {
 		raw, present := in[p.Key]
 		if !present {
@@ -247,18 +267,37 @@ func (t *transformer) foldTitles(in map[string]any) ([]any, []string, bool) {
 		}
 		sources = append(sources, p.Key)
 		name, _ := raw.(string)
-		if strings.TrimSpace(name) == "" {
-			continue
-		}
-		if seen[p.Lang+"\x00"+name] {
-			continue
-		}
-		seen[p.Lang+"\x00"+name] = true
-		titles = append(titles, map[string]any{"lang": p.Lang, "title": name, "kind": float64(0)})
+		add(p.Lang, name, 0)
 	}
-	if len(titles) == 0 {
+	// Aliases are appended after the officials, mirroring step p's own order
+	// (it writes the official rows first, then the alias rows).
+	aliasesOK := true
+	if raw, present := in[wikiAliases]; present {
+		sources = append(sources, wikiAliases)
+		switch list := raw.(type) {
+		case nil:
+		case []any:
+			for _, el := range list {
+				name, ok := el.(string)
+				if !ok {
+					aliasesOK = false
+					break
+				}
+				add("", name, float64(aliasesFoldKind))
+			}
+		default:
+			aliasesOK = false
+		}
+	}
+	if !aliasesOK {
 		for _, src := range sources {
-			t.stats.retired(src, "no non-empty name in any language: there is no titles value to fold onto")
+			t.stats.retired(src, "the alias list is not an array of strings: the titles fold would have to drop part of it")
+		}
+		return nil, nil, false
+	}
+	if officials == 0 {
+		for _, src := range sources {
+			t.stats.retired(src, "no non-empty official name in any language: titles requires one, and inventing it is not on the table")
 		}
 		return nil, nil, false
 	}

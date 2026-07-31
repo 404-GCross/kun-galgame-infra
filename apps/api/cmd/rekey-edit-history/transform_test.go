@@ -67,6 +67,9 @@ func TestSnapshotFoldsAndRetiresTheWholeVocabulary(t *testing.T) {
 		map[string]any{"lang": "ja", "title": "ちっちゃいお姉ちゃん", "kind": float64(0)},
 		map[string]any{"lang": "zh-Hans", "title": "小巧的姐姐", "kind": float64(0)},
 		map[string]any{"lang": "zh-Hant", "title": "小巧的姐姐", "kind": float64(0)},
+		// Aliases fold in as lang-less alias rows, after the officials, in
+		// mirror step p's own order.
+		map[string]any{"lang": "", "title": "alias one", "kind": float64(aliasesFoldKind)},
 	}
 	if got := out[editspec.FieldWorkTitles]; !reflect.DeepEqual(got, wantTitles) {
 		t.Errorf("titles = %#v, want %#v (empty names dropped, mirror's language codes)", got, wantTitles)
@@ -104,7 +107,7 @@ func TestSnapshotFoldsAndRetiresTheWholeVocabulary(t *testing.T) {
 
 	// The nine retired keys survive verbatim under their wiki spelling.
 	for _, key := range []string{
-		wikiAliases, wikiBanner, wikiVNDBID, wikiBID,
+		wikiBanner, wikiVNDBID, wikiBID,
 		wikiReleaseDate, wikiReleaseDateTBA, wikiReleasePrecision, wikiStatus, wikiSeriesID,
 	} {
 		if _, present := out[key]; !present {
@@ -298,5 +301,51 @@ func TestEveryMappedValuePassesTheLiveValidator(t *testing.T) {
 		if err := tr.validate[key](out[key]); err != nil {
 			t.Errorf("%s value does not validate: %v", key, err)
 		}
+	}
+}
+
+// The alias fold is the wave-161 correction to the first draft, which retired
+// aliases in place. Retiring them meant a revert of a migrated revision wrote a
+// titles value holding officials only — and applyTitles full-replaces kinds
+// 0..2, so it would have deleted every alias row the work had. Folding them in
+// (now that a lang-less alias is legal) makes the revert restore them instead.
+func TestAliasesFoldIntoTitlesWithNoLanguage(t *testing.T) {
+	tr := newTestTransformer(t)
+	out, route := tr.document(map[string]any{
+		wikiNameJaJP: "本名",
+		wikiAliases:  []any{"first", "second", "first"},
+	}, modeSnapshot)
+
+	if route[wikiAliases] != editspec.FieldWorkTitles {
+		t.Fatalf("aliases must route onto titles, got %q", route[wikiAliases])
+	}
+	if _, left := out[wikiAliases]; left {
+		t.Error("a folded key must not also survive under its wiki spelling")
+	}
+	got := out[editspec.FieldWorkTitles].([]any)
+	want := []any{
+		map[string]any{"lang": "ja", "title": "本名", "kind": float64(0)},
+		map[string]any{"lang": "", "title": "first", "kind": float64(1)},
+		map[string]any{"lang": "", "title": "second", "kind": float64(1)},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("titles = %#v, want %#v (duplicate alias folded away)", got, want)
+	}
+	if err := tr.validate[editspec.FieldWorkTitles](got); err != nil {
+		t.Errorf("the folded value must pass the live validator: %v", err)
+	}
+}
+
+// An alias-only work cannot be expressed: titles requires an official, and the
+// migration will not fabricate one. Both keys stay in the wiki vocabulary.
+func TestAliasOnlyWorkKeepsTheWikiKeys(t *testing.T) {
+	tr := newTestTransformer(t)
+	in := map[string]any{wikiNameJaJP: "", wikiAliases: []any{"only an alias"}}
+	out, route := tr.document(in, modeSnapshot)
+	if len(route) != 0 {
+		t.Fatalf("nothing may be routed, got %v", route)
+	}
+	if !reflect.DeepEqual(out, in) {
+		t.Fatalf("both keys must survive verbatim, got %#v", out)
 	}
 }

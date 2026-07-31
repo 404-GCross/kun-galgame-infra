@@ -13,7 +13,7 @@ import "api/internal/platform/catalog/editspec"
 //  1. MAPPED — a catalog key exists AND the value transform is total and
 //     round-trips (the transformed value passes the catalog field's own
 //     Validate, and re-reading it from the catalog tables would produce the
-//     same JSON). 17 wiki keys land on 9 catalog keys this way.
+//     same JSON). 18 wiki keys land on 9 catalog keys this way.
 //
 //  2. RETIRED IN PLACE — no catalog counterpart exists, by ruling or by fact.
 //     The row KEEPS the historical key spelling (`galgame.game.<field>`) and
@@ -91,6 +91,14 @@ var nameFold = []struct{ Key, Lang string }{
 	{wikiNameZhTW, "zh-Hant"},
 }
 
+// aliasesFoldKind is the title kind the wiki's alias list becomes. The wiki
+// alias carries NO language, and since wave 161 neither does a catalog alias
+// row: parseTitles accepts an empty lang for kind=alias only, which is also
+// what mirror step p has always written. So the fold is exact — no language is
+// guessed, and a revert of a migrated revision restores the aliases instead of
+// reaping them (the hazard the retire-in-place draft carried).
+const aliasesFoldKind = int64(1) // model.WorkTitleKindAlias
+
 // introFold is the same for the four synopsis columns; the language order is
 // catalog's own (editspec.introLangs).
 var introFold = []struct{ Key, Lang string }{
@@ -135,13 +143,13 @@ var retiredKeys = map[string]string{
 	wikiVNDBID:           "03 §2: vndb_id is an identity ref (catalog_external_ref source 2), not a work field — no editable key exists",
 	wikiBID:              "03 §2: bid is an identity ref (catalog_external_ref source 3), not a work field — no editable key exists",
 	wikiBanner:           "catalog has no banner concept: work media is covers + screenshots, and no catalog column carries a banner URL (STOP item 1)",
-	wikiAliases:          "catalog.work.titles cannot represent a lang-less alias — the mirror writes alias rows with lang='' and the field's validator rejects that (STOP item 2)",
 	wikiSeriesID:         "no wiki→catalog series id space exists: catalog_series holds dlsite series only, and galgame_series was never mirrored (STOP item 3)",
 }
 
 // mappedTargets lists, for the ledger, which catalog key each mappable wiki key
 // aims at. Folds are many→one.
 var mappedTargets = map[string]string{
+	wikiAliases:          editspec.FieldWorkTitles,
 	wikiNameJaJP:         editspec.FieldWorkTitles,
 	wikiNameEnUS:         editspec.FieldWorkTitles,
 	wikiNameZhCN:         editspec.FieldWorkTitles,
@@ -167,6 +175,7 @@ var mappedTargets = map[string]string{
 // carry a SUBSET, so a fold would record "the work's only title is this" —
 // a statement the proposal never made). See transform.go.
 var foldKeys = map[string]bool{
+	wikiAliases:  true,
 	wikiNameJaJP: true, wikiNameEnUS: true, wikiNameZhCN: true, wikiNameZhTW: true,
 	wikiIntroEnUS: true, wikiIntroJaJP: true, wikiIntroZhCN: true, wikiIntroZhTW: true,
 }
