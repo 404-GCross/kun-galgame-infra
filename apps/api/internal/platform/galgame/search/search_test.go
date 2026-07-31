@@ -139,9 +139,13 @@ func TestSanitizeQuery(t *testing.T) {
 	cases := map[string]string{
 		// the reported bug: dash-delimited subtitle must not negate
 		"CRAZY CHA!N -エルピスの鎖-": "CRAZY CHA!N  エルピスの鎖",
-		"-エルピス":                "エルピス",        // bare leading-dash negation neutralized
-		`"CLANNAD"`:            "CLANNAD",     // phrase quotes stripped
-		"Steins-Gate":          "Steins Gate", // internal dash → space (tokenizer splits it anyway)
+		"-エルピス":                "エルピス", // bare leading-dash negation neutralized
+		// wave 158: Meilisearch folds the FULLWIDTH forms onto the ASCII
+		// operators before parsing, so they negate/quote just the same.
+		"アヘ顔アクメ中毒 －人体改造で狂ってイク私を見ないで－": "アヘ顔アクメ中毒  人体改造で狂ってイク私を見ないで",
+		"＂CLANNAD＂":   "CLANNAD",
+		`"CLANNAD"`:   "CLANNAD",     // phrase quotes stripped
+		"Steins-Gate": "Steins Gate", // internal dash → space (tokenizer splits it anyway)
 		// untouched cases
 		"CLANNAD":    "CLANNAD",
 		"ファントム":      "ファントム",

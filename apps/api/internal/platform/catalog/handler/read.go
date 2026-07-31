@@ -393,7 +393,7 @@ func (s *S2SServer) searchEntities(ctx context.Context, in *searchInput) (*searc
 	if limit <= 0 || limit > 20 {
 		limit = 20
 	}
-	res, err := s.search.SearchEntities(ctx, uid, in.Q, catsearch.LocalesForUI(in.Locale), limit, "")
+	res, err := s.search.SearchEntities(ctx, uid, in.Q, catsearch.LocalesForUI(uid, in.Locale), limit, "")
 	if err != nil {
 		return nil, apiErr(http.StatusInternalServerError, errors.ErrInternalServer)
 	}

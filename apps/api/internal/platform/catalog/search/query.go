@@ -29,7 +29,16 @@ func IndexForType(t string) (uid string, ok bool) {
 // LocalesForUI maps a coarse UI locale (zh|ja|en) to the Meilisearch query
 // locales the SERVER pins (doc 13 invariant 2 — the client never supplies raw
 // Meili locales). en / unknown → nil (the default pipeline handles latin).
-func LocalesForUI(locale string) []string {
+//
+// uid decides whether pinning is allowed at all: a query locale is only correct
+// when the index pinned the SAME locale at write time. The works index pins
+// nothing (wave 158 — see EnsureIndexes), so forcing the Chinese pipeline onto a
+// Japanese title pasted into a zh UI would recreate the very miss that wave
+// fixed. Pinning stays paired with the indexes that are pinned.
+func LocalesForUI(uid, locale string) []string {
+	if uid == IndexWorks {
+		return nil
+	}
 	switch locale {
 	case "zh":
 		return []string{"cmn"}
@@ -96,12 +105,25 @@ func (d EntityDoc) Name() string {
 	}
 }
 
-// sanitizeQuery strips Meili query operators (- and ") that would otherwise be
-// parsed as negation/phrase — the same guard the galgame search applies.
+// queryOperators are the runes Meilisearch parses as query-string operators
+// (leading '-' = negation, '"' = phrase delimiters) plus their FULLWIDTH
+// compatibility forms, which Meilisearch normalizes to the ASCII operators
+// before parsing them: '－' U+FF0D and '＂' U+FF02 behave exactly like '-' and
+// '"'. Japanese titles use the fullwidth dash as a subtitle delimiter
+// (`アヘ顔アクメ中毒 －人体改造で狂ってイク私を見ないで－`), so pasting such a title into the
+// search box excluded the very work being searched — the same failure class the
+// ASCII guard already covered, escaping through the fullwidth door.
+//
+// The Japanese long-vowel mark 'ー' (U+30FC) and the wave dash '～' (U+FF5E) are
+// letters here, NOT operators, and are deliberately left alone.
+const queryOperators = "-\"－＂"
+
+// sanitizeQuery neutralizes those operators by mapping them to spaces (they are
+// tokenizer separators anyway, so matching loses nothing).
 func sanitizeQuery(q string) string {
-	if strings.ContainsAny(q, "-\"") {
+	if strings.ContainsAny(q, queryOperators) {
 		q = strings.Map(func(r rune) rune {
-			if r == '-' || r == '"' {
+			if strings.ContainsRune(queryOperators, r) {
 				return ' '
 			}
 			return r

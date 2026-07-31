@@ -338,12 +338,19 @@ func (r *GalgameSearchRequest) normalize() {
 // returned zero (or the wrong) results. Both '-' and '"' are already tokenizer
 // separators, so mapping them to spaces is lossless for matching while stripping
 // the accidental operators. This is a title-lookup box, not an advanced-query
-// DSL, so no expressive power is lost. Only ASCII '-' (U+002D) triggers negation;
-// the Japanese long-vowel mark 'ー' (U+30FC) is a letter and left untouched.
+// DSL, so no expressive power is lost. The Japanese long-vowel mark 'ー' (U+30FC)
+// and the wave dash '～' (U+FF5E) are letters and left untouched.
+//
+// Wave 158: the FULLWIDTH forms '－' (U+FF0D) and '＂' (U+FF02) must be
+// neutralized too. Meilisearch normalizes them to the ASCII operators before
+// parsing, so `アヘ顔アクメ中毒 －人体改造で狂ってイク私を見ないで－` — a real title in the
+// registry — excluded itself exactly like the ASCII case.
+const queryOperators = "-\"－＂"
+
 func sanitizeQuery(q string) string {
-	if strings.ContainsAny(q, "-\"") {
+	if strings.ContainsAny(q, queryOperators) {
 		q = strings.Map(func(r rune) rune {
-			if r == '-' || r == '"' {
+			if strings.ContainsRune(queryOperators, r) {
 				return ' '
 			}
 			return r

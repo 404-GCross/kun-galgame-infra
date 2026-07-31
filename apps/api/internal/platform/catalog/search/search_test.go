@@ -53,15 +53,22 @@ func TestEnsureIndexesMatchesMatrix(t *testing.T) {
 		s, err := testClient.Index(uid).GetSettings()
 		require.NoError(t, err, uid)
 
-		// localizedAttributes: *_ja→jpn, *_zh→cmn (invariant 1).
+		// localizedAttributes: *_ja→jpn, *_zh→cmn (invariant 1) — except the
+		// works index, which pins NOTHING (wave 158: its callers cannot pin the
+		// query side, and a half-pinned pair loses CJK recall outright).
 		locales := map[string][]string{}
 		for _, la := range s.LocalizedAttributes {
 			for _, p := range la.AttributePatterns {
 				locales[p] = la.Locales
 			}
 		}
-		assert.Equal(t, []string{"jpn"}, locales["*_ja"], uid)
-		assert.Equal(t, []string{"cmn"}, locales["*_zh"], uid)
+		if uid == IndexWorks {
+			assert.Empty(t, s.LocalizedAttributes, uid)
+			assert.Nil(t, LocalesForUI(uid, "zh"), "the works lane must never pin a query locale either")
+		} else {
+			assert.Equal(t, []string{"jpn"}, locales["*_ja"], uid)
+			assert.Equal(t, []string{"cmn"}, locales["*_zh"], uid)
+		}
 
 		// CJK name fields have typo disabled; latin does not (invariant 3).
 		require.NotNil(t, s.TypoTolerance, uid)

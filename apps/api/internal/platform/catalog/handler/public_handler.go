@@ -318,7 +318,7 @@ func (h *PublicHandler) Search(c fiber.Ctx) error {
 	if entityType == "work" && !nsfwQuery(c) {
 		filter = "content_rating != " + strconv.Itoa(int(model.ContentRatingR18))
 	}
-	res, err := h.search.SearchEntities(c.Context(), uid, c.Query("q"), catsearch.LocalesForUI(c.Query("locale")), limit, filter)
+	res, err := h.search.SearchEntities(c.Context(), uid, c.Query("q"), catsearch.LocalesForUI(uid, c.Query("locale")), limit, filter)
 	if err != nil {
 		return response.InternalError(c, errors.ErrInternalServer)
 	}

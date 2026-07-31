@@ -156,13 +156,14 @@ func worksSearchable() []string {
 // distribution ~2 ms — the ceiling costs nothing at this population.
 const worksMaxTotalHits int64 = 500_000
 
+// worksSettings deliberately declares NO localizedAttributes — see
+// "why the works index does not pin locales" above EnsureIndexes.
 func worksSettings() *meilisearch.Settings {
 	return &meilisearch.Settings{
 		SearchableAttributes: worksSearchable(),
 		FilterableAttributes: WorksFilterableAttributes,
 		SortableAttributes:   WorksSortableAttributes,
 		RankingRules:         entityRankingRules,
-		LocalizedAttributes:  localizedAttributes(),
 		// The intro fields join the CJK typo-disabled set for the same reason
 		// the name fields are in it: a wrong kanji is a different character, not
 		// an edit-distance neighbour — and over a 2,000-rune body, typo
@@ -201,6 +202,30 @@ func indexSpecs() []struct {
 	}
 }
 
+// ── why the works index does not pin locales (wave 158) ─────────────────────
+//
+// localizedAttributes pins the TOKENIZER used to index a field. It only helps
+// when the SEARCH side pins the same locale — Meilisearch otherwise autodetects
+// the query's language, and a Japanese title written in kanji only (地獄学園,
+// 脅迫優等生姉妹) is detected as Chinese, segmented by the Chinese pipeline, and
+// then matches none of the Japanese-segmented terms in the index. With
+// matchingStrategy=all that is a total miss: measured on the 2026-07-30 local
+// snapshot, searching a work by its own full title recalled 55/60 with the pins
+// and 59/60 without them (the wiki's own galgames index, which never pinned,
+// scores the same 59/60).
+//
+// The works index cannot pin the query side, because it is the ONE index whose
+// callers do not know the query's language: the public product search takes a
+// bare `q` from kungal's site search box, where a zh reader routinely pastes a
+// Japanese title. Pinning per UI locale would just move the mismatch (a Japanese
+// title typed on the zh site would be forced through the Chinese pipeline).
+// Autodetect on BOTH sides is what makes the two agree — correctness of the
+// detection does not matter, agreement does.
+//
+// The entity indexes keep their pins: their callers (admin entity finder,
+// letmoe staff picker) pass a locale that SearchEntities forwards, so both
+// sides are pinned together. LocalesForUI is what keeps that paired.
+//
 // EnsureIndexes creates the five catalog indexes (if missing) and PATCHes their
 // settings to the doc-13 matrix. Idempotent; pushes no documents.
 //
@@ -227,6 +252,20 @@ func EnsureIndexes(client *search.Client) error {
 		}
 		if _, err := client.Svc().WaitForTask(task.TaskUID, 50*time.Millisecond); err != nil {
 			return fmt.Errorf("wait settings %s: %w", fullUID, err)
+		}
+		if spec.settings.LocalizedAttributes == nil {
+			// meilisearch-go tags every Settings field `omitempty`, so a spec
+			// that declares NO localizedAttributes PATCHes nothing and an index
+			// created under an older spec would silently keep its old pins
+			// forever. Reset explicitly, or this settings block stops being the
+			// declared terminal state it claims to be.
+			task, err := client.Index(spec.uid).ResetLocalizedAttributes()
+			if err != nil {
+				return fmt.Errorf("reset localized attributes %s: %w", fullUID, err)
+			}
+			if _, err := client.Svc().WaitForTask(task.TaskUID, 50*time.Millisecond); err != nil {
+				return fmt.Errorf("wait reset localized attributes %s: %w", fullUID, err)
+			}
 		}
 	}
 	return nil
