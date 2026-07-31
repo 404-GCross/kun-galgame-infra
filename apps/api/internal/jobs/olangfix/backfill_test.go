@@ -11,6 +11,7 @@ import (
 	"api/internal/platform/catalog/model"
 	"api/internal/platform/catalog/seed"
 	"api/internal/platform/catalog/srcvndb"
+	"api/internal/platform/galgame/galgametest"
 	gmodel "api/internal/platform/galgame/model"
 
 	"github.com/stretchr/testify/assert"
@@ -52,7 +53,7 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "SKIP: src_vndb schema failed: %v\n", err)
 		os.Exit(0)
 	}
-	if err := db.AutoMigrate(&gmodel.Galgame{}); err != nil {
+	if err := galgametest.EnsureBodyTables(db); err != nil {
 		fmt.Fprintf(os.Stderr, "SKIP: galgame automigrate failed: %v\n", err)
 		os.Exit(0)
 	}

@@ -16,6 +16,7 @@ import (
 	"api/internal/platform/catalog/model"
 	"api/internal/platform/catalog/repository"
 	"api/internal/platform/catalog/seed"
+	"api/internal/platform/galgame/galgametest"
 	"api/pkg/imageclient"
 
 	"github.com/stretchr/testify/assert"
@@ -144,32 +145,13 @@ var claimedLaneGalgameIDs = []int64{9101, 9102, 9103}
 // ensureGalgameScreenshotStub provisions the two galgame-family tables the
 // claimed lane's candidate query reads: galgame (the body the claim points at)
 // and galgame_screenshot (the bridge whose EMPTINESS admits a work). In
-// prod/dev both live in kun_catalog alongside catalog; the catalog test DB has
-// no such tables, so this creates stubs (image_hash text — short test hashes —
-// rather than the real char(64)). CREATE ... IF NOT EXISTS is a no-op against a
-// real table, and the inserts pass every real-schema NOT NULL column without a
-// default, so this works either way. Cleanup is a targeted DELETE. Idempotent.
+// prod/dev both live in kun_catalog alongside catalog; here they come from the
+// real models (galgametest) so the shape is the same for every package sharing
+// the integration database. The inserts pass every real-schema NOT NULL column
+// without a default. Cleanup is a targeted DELETE. Idempotent.
 func ensureGalgameScreenshotStub(t *testing.T, db *gorm.DB) {
 	t.Helper()
-	require.NoError(t, db.Exec(`CREATE TABLE IF NOT EXISTS galgame (
-		id bigint PRIMARY KEY,
-		catalog_work_id bigint,
-		user_id int NOT NULL DEFAULT 0,
-		intro_en_us text NOT NULL DEFAULT '',
-		intro_ja_jp text NOT NULL DEFAULT '',
-		intro_zh_cn text NOT NULL DEFAULT '',
-		intro_zh_tw text NOT NULL DEFAULT ''
-	)`).Error)
-	require.NoError(t, db.Exec(`CREATE TABLE IF NOT EXISTS galgame_screenshot (
-		galgame_id bigint NOT NULL,
-		image_hash text NOT NULL,
-		sort_order bigint NOT NULL DEFAULT 0,
-		caption text NOT NULL DEFAULT '',
-		sexual smallint NOT NULL DEFAULT 0,
-		violence smallint NOT NULL DEFAULT 0,
-		source text NOT NULL DEFAULT '',
-		PRIMARY KEY (galgame_id, image_hash)
-	)`).Error)
+	require.NoError(t, galgametest.EnsureBodyTables(db))
 	// Screenshots first: galgame_screenshot carries an FK to galgame(id) in the
 	// real schema, so the children must go before the parents.
 	require.NoError(t, db.Exec(`DELETE FROM galgame_screenshot WHERE galgame_id IN ?`, claimedLaneGalgameIDs).Error)
