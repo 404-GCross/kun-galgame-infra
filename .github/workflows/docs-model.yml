@@ -1,0 +1,57 @@
+name: docs-model
+
+# Drift gate for the developer portal's API reference. `app/generated/docs-model.ts`
+# is a committed build artifact derived from the frozen public OpenAPI spec, and
+# nothing rebuilt it in CI: public specs live under docs/**, which does not even
+# trigger the developer image build, so a spec edit that forgot the regen was
+# only ever caught by the next human who happened to run the script. It sat stale
+# through the whole A2 canonical track that way.
+#
+# Two failure modes, one job:
+#   1. the coverage guard in sync-specs.mjs disagrees with the spec — the script
+#      throws and the step fails;
+#   2. the guard still matches but the model content moved (a param, a summary,
+#      an enum) — the script succeeds and `git diff --exit-code` fails.
+#
+# Sibling gate: openapi-types.yml does the same for the spec -> TS arm in
+# apps/web. This one is the spec -> portal-docs-model arm.
+#
+# No step consumes event-supplied text (titles, branch names, commit messages),
+# so there is no injection surface in the run: blocks below.
+
+on:
+  push:
+    paths: &paths
+      - "docs/catalog/public-openapi.yaml"
+      - "apps/developer/scripts/sync-specs.mjs"
+      - "apps/developer/app/generated/docs-model.ts"
+      - ".github/workflows/docs-model.yml"
+  pull_request:
+    paths: *paths
+
+permissions:
+  contents: read
+
+jobs:
+  drift:
+    name: generated docs model matches the public specs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # No version input: action-setup reads the repo's packageManager pin.
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      # The script needs exactly one dependency (`yaml`) out of the developer
+      # workspace, so install that project only. --ignore-scripts skips the
+      # `nuxt prepare` postinstall: nothing here builds the app.
+      - name: Install the developer workspace
+        run: pnpm install --filter developer --frozen-lockfile --ignore-scripts
+      # Run the script by path rather than `pnpm -F developer sync:specs`: bare
+      # specifiers resolve from the script's own directory, so the working
+      # directory does not matter and the pnpm run indirection buys nothing.
+      - name: Rebuild the docs model from the committed specs
+        run: node apps/developer/scripts/sync-specs.mjs
+      - name: Fail if the committed model is stale vs the specs
+        run: git diff --exit-code -- apps/developer/app/generated/docs-model.ts
