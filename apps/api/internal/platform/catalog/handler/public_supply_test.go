@@ -56,8 +56,6 @@ func supplyApp(db *gorm.DB) *fiber.App {
 func TestWorkDetailTagSafetyAxis(t *testing.T) {
 	db := openCatalogTestDB(t)
 	ensureGalgameStub(t, db)
-	ensureGalgameCoverStub(t, db)
-	ensureGalgameScreenshotStub(t, db)
 	ensureGalgameRatingStub(t, db)
 	for _, tbl := range []string{"catalog_work_tag", "catalog_work"} {
 		require.NoError(t, db.Exec("TRUNCATE "+tbl+" RESTART IDENTITY CASCADE").Error)

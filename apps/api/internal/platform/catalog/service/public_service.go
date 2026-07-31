@@ -312,13 +312,13 @@ func (s *PublicService) WorkDetail(ctx context.Context, id int64, inc PublicIncl
 	// The display axis (A2-R5) for this record AND every brief it embeds, in ONE
 	// batched wiki-body read: the work itself, its series siblings and — when
 	// asked for — its relation ends. Every one of them renders a claimed_by.
-	subjects := []claimSubject{{WorkID: w.ID, Site: w.Site, ProductWorkID: w.ProductWorkID}}
+	subjects := []claimSubject{{WorkID: w.ID}}
 	for _, sb := range detail.SeriesSiblings {
-		subjects = append(subjects, claimSubject{WorkID: sb.WorkID, Site: sb.Site, ProductWorkID: sb.ProductWorkID})
+		subjects = append(subjects, claimSubject{WorkID: sb.WorkID})
 	}
 	if inc.Relations {
 		for _, r := range detail.Relations {
-			subjects = append(subjects, claimSubject{WorkID: r.OtherID, Site: r.Site, ProductWorkID: r.ProductWorkID})
+			subjects = append(subjects, claimSubject{WorkID: r.OtherID})
 		}
 	}
 	limits, err := s.read.loadDisplayNSFW(ctx, subjects)

@@ -351,7 +351,7 @@ func (s *PublicService) enrichWorkListItems(ctx context.Context, rows []workList
 	subjects := make([]claimSubject, len(rows))
 	for i, r := range rows {
 		ids[i] = r.ID
-		subjects[i] = claimSubject{WorkID: r.ID, Site: r.Site, ProductWorkID: r.ProductWorkID}
+		subjects[i] = claimSubject{WorkID: r.ID}
 	}
 	dates, err := s.earliestReleaseDatesFor(ctx, ids)
 	if err != nil {

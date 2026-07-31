@@ -110,8 +110,6 @@ func TestDisplayLimitAbsentIsNoGate(t *testing.T) {
 func TestClaimedByContentLimitOnTheWire(t *testing.T) {
 	db := openCatalogTestDB(t)
 	ensureGalgameStub(t, db)
-	ensureGalgameCoverStub(t, db)
-	ensureGalgameScreenshotStub(t, db)
 	ensureGalgameRatingStub(t, db)
 	for _, tbl := range []string{"catalog_work_title", "catalog_work"} {
 		require.NoError(t, db.Exec("TRUNCATE "+tbl+" RESTART IDENTITY CASCADE").Error)

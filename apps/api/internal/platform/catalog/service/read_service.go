@@ -95,38 +95,15 @@ func curatedSourceID(byKey map[string]int16) int16 {
 	return 0
 }
 
-// Media-bridge provenance keys (step 53/54, §8.C): galgame_cover /
-// galgame_screenshot each carry a `source` TEXT column, so — unlike the intro
-// bridge which has no per-source column and attributes everything to
-// galgame_wiki — the media bridges preserve the finer upstream provenance the
-// wiki already records.
-const (
-	sourceKeyVNDB    = "vndb"
-	sourceKeyBangumi = "bangumi"
-	sourceKeyUpscale = "upscale"
-)
-
 // sourceKeyErogamespace is the catalog_source key the ratings bridge (step 58a)
 // attributes a galgame_eg_meta row to — the EG (ErogameScape) rating source.
 const sourceKeyErogamespace = "erogamespace"
 
-// galgameMediaSourceKey maps a galgame_cover/galgame_screenshot.source text
-// value to the catalog_source key its bridged media row is attributed to. Empty
-// source (a wiki user upload) is the first-party curated lane, consistent with
-// the intro bridge; vndb/bangumi keep their upstream provenance; upscale is the
-// first-party DERIVED cover source. An UNRECOGNIZED value falls back to
-// galgame_wiki (a claimed media row is always part of the wiki body — never
-// dropped, never mis-attributed to a wrong upstream). The map is media-neutral:
-// screenshots only ever carry ”/vndb, the extra cover keys are harmless no-ops.
-var galgameMediaSourceKey = map[string]string{
-	"":               sourceKeyCurated,
-	sourceKeyVNDB:    sourceKeyVNDB,
-	sourceKeyBangumi: sourceKeyBangumi,
-	sourceKeyUpscale: sourceKeyUpscale,
-}
-
-// siteGalgameWiki is the catalog_work.site of a galgame-wiki-claimed work — the
-// claim key whose media the read face bridges rather than copies (§2).
+// siteGalgameWiki is the catalog_work.site of a wiki-claimed work. The read face
+// no longer branches on it — every facet reads its native catalog table since the
+// cover/screenshot flip (wave 164) closed the last bridge — but it is still the
+// live claim key a claimed row carries, and the display-limit projection is keyed
+// on it.
 const siteGalgameWiki = "galgame_wiki"
 
 // ReadService backs the S2S read face (step 18, D-01): anchor read-through and
@@ -163,18 +140,15 @@ type WorkDetail struct {
 	// Strict XOR (§8.D): a claimed work reads ONLY the bridge — no fallback to
 	// native rows — so galgame intros all-empty means an empty slice.
 	Intros []WorkIntroRow
-	// Covers is the merged cover set (step 53 media-aggregation wave II): for a
-	// CLAIMED work, bridged from galgame_cover (kind/portrait_pinned/sexual/
-	// violence as-is, source mapped from galgame_cover.source); for a BODYLESS
-	// work, its catalog_work_cover rows. Same strict XOR as Intros. The PORTRAIT
-	// covers (portrait_pinned=true) are the value kungal/moyu read for the
-	// portrait-first UI.
+	// Covers is the work's cover set: its catalog_work_cover rows, for every work
+	// alike (wave 164 flipped the claimed lane off the galgame_cover bridge — the
+	// native rows are the only rows). The PORTRAIT covers (portrait_pinned=true)
+	// are the value kungal/moyu read for the portrait-first UI.
 	Covers []WorkCoverRow
-	// Screenshots is the merged screenshot set (step 54 media-aggregation wave
-	// III, the closing read-face wave): for a CLAIMED work, bridged from
-	// galgame_screenshot (caption/sexual/violence/sort_order as-is, source mapped
-	// from galgame_screenshot.source); for a BODYLESS work, its
-	// catalog_work_screenshot rows. Same strict XOR as Covers.
+	// Screenshots is the work's screenshot set: its catalog_work_screenshot rows,
+	// for every work alike (wave 164 collapsed the claimed work's bridge ∪ native
+	// union onto the native lane). Source stays on each row, so the dlsite and
+	// rescued-wiki lanes remain attributable.
 	Screenshots []WorkScreenshotRow
 	// Ratings is the merged rating set (step 58a media-aggregation ratings
 	// facet): for a CLAIMED work, bridged from galgame_bangumi_meta ∪
@@ -231,10 +205,9 @@ type WorkIntroRow struct {
 	Machine  bool
 }
 
-// WorkCoverRow is one cover on a work's read face — the unified shape the
-// claimed bridge (galgame_cover) and the bodyless native table
-// (catalog_work_cover) both project into. PortraitPinned flags the vertical
-// portrait pin; SourceID is the provenance (§8.C).
+// WorkCoverRow is one cover on a work's read face, projected from
+// catalog_work_cover. PortraitPinned flags the vertical portrait pin; SourceID
+// is the provenance (§8.C).
 type WorkCoverRow struct {
 	ImageHash      string
 	Kind           string
@@ -245,12 +218,11 @@ type WorkCoverRow struct {
 	SourceID       int16
 }
 
-// WorkScreenshotRow is one screenshot on a work's read face — the unified shape
-// the wiki bridge (galgame_screenshot) and the catalog-native table
-// (catalog_work_screenshot) both project into. Unlike WorkCoverRow it carries a
-// Caption and has no kind / portrait_pinned. SourceID is the provenance (§8.C)
-// and is what keeps the two lanes of the (facet, source) XOR attributable when a
-// claimed work reads both (refs/proj/125).
+// WorkScreenshotRow is one screenshot on a work's read face, projected from
+// catalog_work_screenshot. Unlike WorkCoverRow it carries a Caption and has no
+// kind / portrait_pinned. SourceID is the provenance (§8.C) — what keeps the
+// rescued wiki rows and the dlsite store samples (refs/proj/125) attributable
+// now that they share one table.
 type WorkScreenshotRow struct {
 	ImageHash string
 	Caption   string
@@ -378,7 +350,7 @@ func (s *ReadService) loadWorkDetail(ctx context.Context, workID int64, spoilers
 	detail := &WorkDetail{Work: work}
 	// The claim subject drives every bridged facet on this record — titles first,
 	// then the media/aggregation facets further down.
-	subj := claimSubject{WorkID: work.ID, Site: work.Site, ProductWorkID: work.ProductWorkID}
+	subj := claimSubject{WorkID: work.ID}
 	titles, err := s.loadWorkDetailTitles(ctx, []claimSubject{subj})
 	if err != nil {
 		return nil, err
@@ -462,8 +434,8 @@ func (s *ReadService) loadWorkDetail(ctx context.Context, workID int64, spoilers
 
 	// All facet loaders are batched by construction (one query per facet for the
 	// whole subject set) so this same path serves a future multi-work list read
-	// with no N+1. Covers/screenshots still bridge the wiki body for a claimed
-	// work; every other facet reads its native table since the W1-pre flip.
+	// with no N+1. Every facet reads its own catalog-native table: the W1-pre flip
+	// took the first five, wave 164 took the last two (covers/screenshots).
 	intros, err := s.loadWorkIntros(ctx, []claimSubject{subj})
 	if err != nil {
 		return nil, err
@@ -532,40 +504,13 @@ func (s *ReadService) loadWorkDetail(ctx context.Context, workID int64, spoilers
 	return detail, nil
 }
 
-// partitionClaimSubjects splits a set of works into the claimed and bodyless
-// lanes: a CLAIMED work (site='galgame_wiki') is keyed by its galgame body id
-// (product_work_id) and lands in galgameIDs + galgameToWork; every other work
-// is BODYLESS and reads by work id.
-//
-// Since the W1-pre flip (refs/proj/140) only the two IMAGE lanes still partition:
-// loadWorkCovers (whole-facet XOR) and loadWorkScreenshots (bridge half of the
-// hash-dedup union). Both are W1's own handover — W2 already materialized the
-// native rows, so retiring the wiki family is what flips them — and when it does,
-// this function goes with them. Every other facet, the display axis included,
-// reads its native table for every work alike.
-func partitionClaimSubjects(subjects []claimSubject) (galgameIDs []int64, galgameToWork map[int64]int64, bodylessIDs []int64) {
-	galgameToWork = make(map[int64]int64) // galgame.id → catalog_work.id
-	for _, sub := range subjects {
-		if sub.Site != nil && *sub.Site == siteGalgameWiki {
-			if sub.ProductWorkID != nil { // claimed rows always fill product_work_id
-				galgameToWork[*sub.ProductWorkID] = sub.WorkID
-				galgameIDs = append(galgameIDs, *sub.ProductWorkID)
-			}
-			continue // strict XOR: claimed works never read native rows
-		}
-		bodylessIDs = append(bodylessIDs, sub.WorkID)
-	}
-	return galgameIDs, galgameToWork, bodylessIDs
-}
-
-// claimSubject identifies a work for the media merge (intro / covers): its id
-// plus the claim state that decides which source (bridge vs native) it reads
-// from. Shared by loadWorkIntros and loadWorkCovers — the claimed/bodyless
-// partition is identical for every media type.
+// claimSubject identifies a work on the read face. It used to carry the claim
+// (site + product_work_id) that decided which source a facet read from; with the
+// last two bridges gone (wave 164) every facet reads catalog-native rows by work
+// id, so the subject is the work id alone. The type survives the partition it
+// once fed because every facet loader takes a subject set.
 type claimSubject struct {
-	WorkID        int64
-	Site          *string
-	ProductWorkID *int64
+	WorkID int64
 }
 
 // loadWorkIntros assembles the multilingual intro for a set of works from
@@ -636,91 +581,37 @@ func sortIntros(intros []WorkIntroRow) {
 	sort.Slice(intros, func(i, j int) bool { return intros[i].Lang < intros[j].Lang })
 }
 
-// loadWorkCovers assembles the cover set for a set of works, honoring the same
-// media-aggregation contract as loadWorkIntros (refs/proj/51, step 53):
+// loadWorkCovers assembles the cover set for a set of works from
+// catalog_work_cover — one native lane for every work, claimed and bodyless
+// alike, since wave 164 deleted the galgame_cover bridge.
 //
-//   - CLAIMED (site='galgame_wiki'): bridge from galgame_cover — kind /
-//     portrait_pinned / sexual / violence as-is, source mapped from
-//     galgame_cover.source (coverSourceKeyByGalgame). Bridge-not-copy (§2):
-//     galgame_cover rows are never materialized into catalog_work_cover, and the
-//     bridged bytes are never re-uploaded (they stay in the galgame_wiki scope).
-//   - BODYLESS (site=”/NULL): the work's catalog_work_cover rows (bytes in the
-//     catalog image scope).
-//   - Strict XOR (§8.D): a claimed work reads ONLY the bridge; it never falls
-//     back to native rows even if it still has shadowed ones (shadow-never-delete).
+// The bridge was the last whole-facet XOR (refs/proj/51 step 53): a claimed work
+// read galgame_cover and never its own native rows. W1-pre step m mirrored the
+// wiki covers into catalog_work_cover (fill-missing, keeping kind /
+// portrait_pinned / sexual / violence / source verbatim), so the native table is
+// what survives the wiki tables being dropped, and the shadow rows the XOR used
+// to hide are the same rows.
 //
-// Batched (§9.1): claimed works bridge in one galgame_cover query, bodyless works
-// read in one catalog_work_cover query — never per-work. Each work's covers are
-// ordered by (sort_order, image_hash). Returns a map keyed by work id; a work
-// with no cover is absent (the caller renders []).
+// Batched (§9.1): one catalog_work_cover query for the whole set — never
+// per-work. Each work's covers are ordered by (sort_order, image_hash). Returns
+// a map keyed by work id; a work with no cover is absent (the caller renders []).
 func (s *ReadService) loadWorkCovers(ctx context.Context, subjects []claimSubject) (map[int64][]WorkCoverRow, error) {
 	out := make(map[int64][]WorkCoverRow, len(subjects))
-	galgameIDs, galgameToWork, bodylessIDs := partitionClaimSubjects(subjects)
-	if len(galgameIDs) > 0 {
-		if err := s.bridgeGalgameCovers(ctx, galgameIDs, galgameToWork, out); err != nil {
-			return nil, err
-		}
+	if len(subjects) == 0 {
+		return out, nil
 	}
-	if len(bodylessIDs) > 0 {
-		if err := s.nativeWorkCovers(ctx, bodylessIDs, out); err != nil {
-			return nil, err
-		}
+	workIDs := make([]int64, 0, len(subjects))
+	for _, sub := range subjects {
+		workIDs = append(workIDs, sub.WorkID)
+	}
+	if err := s.nativeWorkCovers(ctx, workIDs, out); err != nil {
+		return nil, err
 	}
 	return out, nil
 }
 
-// bridgeGalgameCovers reads the claimed works' galgame_cover rows in ONE query
-// and maps each to the unified cover shape, resolving galgame_cover.source →
-// catalog_source id (coverSourceKeyByGalgame). Rows come back ordered so each
-// work's covers are already (sort_order, image_hash)-sorted on append.
-func (s *ReadService) bridgeGalgameCovers(ctx context.Context, galgameIDs []int64, galgameToWork map[int64]int64, out map[int64][]WorkCoverRow) error {
-	db := s.db.WithContext(ctx)
-
-	// Resolve every catalog_source key the source map can produce, in one query.
-	srcIDByKey, err := s.sourceIDsByKey(ctx, append(append([]string{},
-		curatedSourceKeys...), sourceKeyVNDB, sourceKeyBangumi, sourceKeyUpscale))
-	if err != nil {
-		return err
-	}
-	fallbackSrc := curatedSourceID(srcIDByKey)
-	srcIDByKey[sourceKeyCurated] = fallbackSrc
-
-	var rows []struct {
-		GalgameID      int64  `gorm:"column:galgame_id"`
-		ImageHash      string `gorm:"column:image_hash"`
-		SortOrder      int    `gorm:"column:sort_order"`
-		Kind           string `gorm:"column:kind"`
-		PortraitPinned bool   `gorm:"column:portrait_pinned"`
-		Sexual         int16  `gorm:"column:sexual"`
-		Violence       int16  `gorm:"column:violence"`
-		Source         string `gorm:"column:source"`
-	}
-	if err := db.Raw(`SELECT galgame_id, image_hash, sort_order, kind, portrait_pinned, sexual, violence, source
-		FROM galgame_cover WHERE galgame_id IN ?
-		ORDER BY galgame_id, sort_order, image_hash`, galgameIDs).Scan(&rows).Error; err != nil {
-		return err
-	}
-	for _, r := range rows {
-		workID, ok := galgameToWork[r.GalgameID]
-		if !ok {
-			continue
-		}
-		srcID := fallbackSrc
-		if key, known := galgameMediaSourceKey[r.Source]; known {
-			srcID = srcIDByKey[key]
-		}
-		out[workID] = append(out[workID], WorkCoverRow{
-			// image_hash is char(64) upstream (exactly filled by a sha-256, so no
-			// pad) — TrimSpace is a defensive no-op guarding a bad row.
-			ImageHash: strings.TrimSpace(r.ImageHash), Kind: r.Kind, PortraitPinned: r.PortraitPinned,
-			SortOrder: r.SortOrder, Sexual: r.Sexual, Violence: r.Violence, SourceID: srcID,
-		})
-	}
-	return nil
-}
-
-// nativeWorkCovers reads the bodyless works' catalog_work_cover rows in ONE
-// query, ordered so each work's covers are (sort_order, image_hash)-sorted.
+// nativeWorkCovers reads the works' catalog_work_cover rows in ONE query,
+// ordered so each work's covers are (sort_order, image_hash)-sorted.
 func (s *ReadService) nativeWorkCovers(ctx context.Context, workIDs []int64, out map[int64][]WorkCoverRow) error {
 	db := s.db.WithContext(ctx)
 	var rows []struct {
@@ -747,150 +638,46 @@ func (s *ReadService) nativeWorkCovers(ctx context.Context, workIDs []int64, out
 	return nil
 }
 
-// loadWorkScreenshots assembles the screenshot set for a set of works. Unlike its
-// intro/cover siblings (which keep the whole-facet XOR), the screenshot facet
-// carries the (facet, source) XOR refinement (refs/proj/51 step 54, refs/proj/70
-// §3/§8 T2, refs/proj/125) — it reads the UNION of two per-source lanes:
+// loadWorkScreenshots assembles the screenshot set for a set of works from
+// catalog_work_screenshot — one native lane for every work, claimed and bodyless
+// alike, since wave 164 collapsed the bridge ∪ native union onto the native side.
 //
-//   - the WIKI bridge lane (galgame_wiki / vndb): read-time bridge from
-//     galgame_screenshot — caption / sexual / violence / sort_order as-is, source
-//     mapped from galgame_screenshot.source (galgameMediaSourceKey). Runs for
-//     CLAIMED works only (a bodyless work has no wiki body). Bridge-not-copy
-//     (§2): those rows are never materialized into catalog_work_screenshot and
-//     their bytes are never re-uploaded (they stay in the galgame_wiki scope).
-//   - the CATALOG-native lane (dlsite): catalog_work_screenshot rows, bytes in
-//     the catalog image scope. Runs for ALL works, claimed and bodyless alike —
-//     a claimed work's DLsite store samples (refs/proj/125) no longer hide behind
-//     the claim.
+// The union (refs/proj/51 step 54, refs/proj/125, refs/proj/128) existed because
+// two writers put screenshots in two places: the wiki body in galgame_screenshot,
+// the dlsite store samples in catalog_work_screenshot. The wiki-retirement rescue
+// (wikirescue step n) materialized the wiki rows into catalog_work_screenshot
+// under source_id=galgame_wiki so they survive the galgame tables being dropped,
+// which is what makes the bridge lane redundant rather than lost — and with the
+// bridge gone the (work_id, image_hash) dedup goes with it: there is only one
+// lane left to be a duplicate of.
 //
-// A claimed work's read face is therefore bridge ∪ native; a bodyless work is the
-// degenerate case (empty bridge). Every row carries source_id, so the two lanes
-// stay attributable, and the old whole-facet "claimed never reads native" rule is
-// gone: a claimed work's native rows are first-class read-face rows.
+// No source filter, deliberately: the rescued wiki rows and the dlsite samples
+// share the table and both belong on the read face; source_id is what keeps them
+// attributable.
 //
-// The two lanes ARE deduplicated, by (work_id, image_hash), with the bridge
-// leading and winning (refs/proj/128 ruling). Note what that does and does not
-// mean: nothing is filtered by SOURCE — the native lane still reads wiki-source
-// rows, which is non-negotiable, because the wiki-retirement rescue
-// (internal/jobs/wikirescue) materializes galgame_screenshot into
-// catalog_work_screenshot under source_id=galgame_wiki precisely so those
-// screenshots survive the galgame tables being dropped, and hiding them would
-// erase the rescue. What the dedup removes is the same PICTURE appearing twice:
-// while the bridge and the rescued native row coexist, one screenshot has a row
-// in each lane, and a reader should see one screenshot. The bridge wins the key
-// because it is the live body today; once the bridge retires, the native row is
-// the only row left and surfaces unchanged.
-//
-// The other two writers are unaffected, and neither produces a duplicate:
-//
-//   - the 125 backfiller only targets claimed works with an EMPTY bridge, so its
-//     rows never collide with a bridged hash.
-//   - a bodyless work carrying step-54 native rows can be ADOPTED by a later claim
-//     (the claim adopts assets in place, §8.B shadow-never-delete). Its native
-//     screenshots then surface next to whatever the wiki body has — different
-//     pictures, different hashes, both shown, which is the point of this wave.
-//
-// Batched (§9.1): claimed works bridge in one galgame_screenshot query, every work
-// reads the native table in one catalog_work_screenshot query — never per-work.
-// Bridged rows lead (keeping their (sort_order, image_hash) order), native rows
-// follow in their own (sort_order, image_hash) order. Returns a map keyed by work
-// id; a work with no screenshot is absent (the caller renders []).
+// Batched (§9.1): one catalog_work_screenshot query for the whole set — never
+// per-work. Each work's screenshots are ordered by (sort_order, image_hash).
+// Returns a map keyed by work id; a work with no screenshot is absent (the caller
+// renders []).
 func (s *ReadService) loadWorkScreenshots(ctx context.Context, subjects []claimSubject) (map[int64][]WorkScreenshotRow, error) {
 	out := make(map[int64][]WorkScreenshotRow, len(subjects))
-	galgameIDs, galgameToWork, _ := partitionClaimSubjects(subjects)
-	// Wiki bridge lane — CLAIMED works only.
-	if len(galgameIDs) > 0 {
-		if err := s.bridgeGalgameScreenshots(ctx, galgameIDs, galgameToWork, out); err != nil {
-			return nil, err
-		}
+	if len(subjects) == 0 {
+		return out, nil
 	}
-	// Catalog-native lane — ALL works (claimed + bodyless). partitionClaimSubjects
-	// is shared with the whole-facet-XOR facets, so we build the full work-id list
-	// here rather than reusing its bodyless-only split.
-	allIDs := make([]int64, 0, len(subjects))
+	workIDs := make([]int64, 0, len(subjects))
 	for _, sub := range subjects {
-		allIDs = append(allIDs, sub.WorkID)
+		workIDs = append(workIDs, sub.WorkID)
 	}
-	if len(allIDs) > 0 {
-		if err := s.nativeWorkScreenshots(ctx, allIDs, out); err != nil {
-			return nil, err
-		}
+	if err := s.nativeWorkScreenshots(ctx, workIDs, out); err != nil {
+		return nil, err
 	}
 	return out, nil
 }
 
-// bridgeGalgameScreenshots reads the claimed works' galgame_screenshot rows in
-// ONE query and maps each to the unified screenshot shape, resolving
-// galgame_screenshot.source → catalog_source id (galgameMediaSourceKey). Rows
-// come back ordered so each work's screenshots are already (sort_order,
-// image_hash)-sorted on append.
-func (s *ReadService) bridgeGalgameScreenshots(ctx context.Context, galgameIDs []int64, galgameToWork map[int64]int64, out map[int64][]WorkScreenshotRow) error {
-	db := s.db.WithContext(ctx)
-
-	// Resolve every catalog_source key the source map can produce, in one query.
-	srcIDByKey, err := s.sourceIDsByKey(ctx, append(append([]string{},
-		curatedSourceKeys...), sourceKeyVNDB, sourceKeyBangumi, sourceKeyUpscale))
-	if err != nil {
-		return err
-	}
-	fallbackSrc := curatedSourceID(srcIDByKey)
-	srcIDByKey[sourceKeyCurated] = fallbackSrc
-
-	var rows []struct {
-		GalgameID int64  `gorm:"column:galgame_id"`
-		ImageHash string `gorm:"column:image_hash"`
-		SortOrder int    `gorm:"column:sort_order"`
-		Caption   string `gorm:"column:caption"`
-		Sexual    int16  `gorm:"column:sexual"`
-		Violence  int16  `gorm:"column:violence"`
-		Source    string `gorm:"column:source"`
-	}
-	if err := db.Raw(`SELECT galgame_id, image_hash, sort_order, caption, sexual, violence, source
-		FROM galgame_screenshot WHERE galgame_id IN ?
-		ORDER BY galgame_id, sort_order, image_hash`, galgameIDs).Scan(&rows).Error; err != nil {
-		return err
-	}
-	for _, r := range rows {
-		workID, ok := galgameToWork[r.GalgameID]
-		if !ok {
-			continue
-		}
-		srcID := fallbackSrc
-		if key, known := galgameMediaSourceKey[r.Source]; known {
-			srcID = srcIDByKey[key]
-		}
-		out[workID] = append(out[workID], WorkScreenshotRow{
-			// image_hash is char(64) upstream (exactly filled by a sha-256, so no
-			// pad) — TrimSpace is a defensive no-op guarding a bad row.
-			ImageHash: strings.TrimSpace(r.ImageHash), Caption: r.Caption,
-			SortOrder: r.SortOrder, Sexual: r.Sexual, Violence: r.Violence, SourceID: srcID,
-		})
-	}
-	return nil
-}
-
-// nativeWorkScreenshots reads the catalog-native lane's catalog_work_screenshot
-// rows in ONE query, ordered so each work's screenshots are (sort_order,
-// image_hash)-sorted. Called with EVERY work id (claimed included, refs/proj/125)
-// and with NO source filter: the media backfillers honor bridge-not-copy, and the
-// one writer that does put wiki-source rows here (the wiki-retirement rescue)
-// needs them visible — see loadWorkScreenshots for why filtering would be wrong.
-//
-// A native row whose (work_id, image_hash) the bridge lane already produced is
-// dropped (refs/proj/128): during the wiki-retirement window one screenshot has a
-// row in both lanes, and it is one screenshot. `out` holds only bridged rows at
-// this point — the caller runs the bridge first — so the seen-set is exactly the
-// bridge's keys.
+// nativeWorkScreenshots reads the works' catalog_work_screenshot rows in ONE
+// query, ordered so each work's screenshots are (sort_order, image_hash)-sorted.
 func (s *ReadService) nativeWorkScreenshots(ctx context.Context, workIDs []int64, out map[int64][]WorkScreenshotRow) error {
 	db := s.db.WithContext(ctx)
-	bridged := make(map[int64]map[string]struct{}, len(out))
-	for workID, rows := range out {
-		hashes := make(map[string]struct{}, len(rows))
-		for _, r := range rows {
-			hashes[r.ImageHash] = struct{}{}
-		}
-		bridged[workID] = hashes
-	}
 	var rows []struct {
 		WorkID    int64  `gorm:"column:work_id"`
 		ImageHash string `gorm:"column:image_hash"`
@@ -906,32 +693,12 @@ func (s *ReadService) nativeWorkScreenshots(ctx context.Context, workIDs []int64
 		return err
 	}
 	for _, r := range rows {
-		if _, dup := bridged[r.WorkID][r.ImageHash]; dup {
-			continue
-		}
 		out[r.WorkID] = append(out[r.WorkID], WorkScreenshotRow{
 			ImageHash: r.ImageHash, Caption: r.Caption,
 			SortOrder: r.SortOrder, Sexual: r.Sexual, Violence: r.Violence, SourceID: r.SourceID,
 		})
 	}
 	return nil
-}
-
-// sourceIDsByKey resolves a set of catalog_source keys to their ids in one
-// query, returning a key→id map (absent keys are simply omitted).
-func (s *ReadService) sourceIDsByKey(ctx context.Context, keys []string) (map[string]int16, error) {
-	var rows []struct {
-		Key string `gorm:"column:key"`
-		ID  int16  `gorm:"column:id"`
-	}
-	if err := s.db.WithContext(ctx).Raw(`SELECT key, id FROM catalog_source WHERE key IN ?`, keys).Scan(&rows).Error; err != nil {
-		return nil, err
-	}
-	m := make(map[string]int16, len(rows))
-	for _, r := range rows {
-		m[r.Key] = r.ID
-	}
-	return m, nil
 }
 
 // loadWorkCharacters assembles a work's roster (step 46) as the UNION of the

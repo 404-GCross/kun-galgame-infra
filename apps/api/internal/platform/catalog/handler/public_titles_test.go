@@ -48,8 +48,6 @@ func titleRows(t *testing.T, body map[string]any) [][3]string {
 func TestClaimedWorkTitlesBridge(t *testing.T) {
 	db := openCatalogTestDB(t)
 	ensureGalgameStub(t, db)
-	ensureGalgameCoverStub(t, db)
-	ensureGalgameScreenshotStub(t, db)
 	ensureGalgameRatingStub(t, db)
 	for _, tbl := range []string{"catalog_work_title", "catalog_work"} {
 		require.NoError(t, db.Exec("TRUNCATE "+tbl+" RESTART IDENTITY CASCADE").Error)
@@ -120,8 +118,6 @@ func TestClaimedWorkTitlesBridge(t *testing.T) {
 func TestClaimedWorkNamesBlockBridged(t *testing.T) {
 	db := openCatalogTestDB(t)
 	ensureGalgameStub(t, db)
-	ensureGalgameCoverStub(t, db)
-	ensureGalgameScreenshotStub(t, db)
 	ensureGalgameRatingStub(t, db)
 	for _, tbl := range []string{"catalog_work_title", "catalog_work"} {
 		require.NoError(t, db.Exec("TRUNCATE "+tbl+" RESTART IDENTITY CASCADE").Error)

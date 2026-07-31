@@ -31,22 +31,18 @@ type WorkByAnchorResponse struct {
 	// work with no galgame intro yields [] (never a fallback to native rows).
 	Intro []WorkIntro `json:"intro"`
 	// Covers is the work's cover set (step 53 media-aggregation wave II), one
-	// element per cover in a single shape regardless of source. A CLAIMED work's
-	// covers are bridged from galgame_cover; a BODYLESS work's from its
-	// catalog_work_cover rows. Strict XOR: a claimed work with no galgame cover
-	// yields [] (never a fallback to native rows). The PORTRAIT covers
-	// (portrait_pinned=true) are what kungal/moyu read for the portrait-first UI.
+	// element per cover in a single shape regardless of source: the work's
+	// catalog_work_cover rows, claimed and bodyless alike (wave 164 retired the
+	// galgame_cover bridge — W1-pre step m had already mirrored the wiki covers
+	// into the native table). The PORTRAIT covers (portrait_pinned=true) are what
+	// kungal/moyu read for the portrait-first UI.
 	Covers []WorkCover `json:"covers"`
 	// Screenshots is the work's screenshot set (step 54 media-aggregation wave
 	// III + refs/proj/125), one element per screenshot in a single shape
-	// regardless of source. Two per-source lanes ((facet, source) XOR): the wiki
-	// bridge (galgame_screenshot — CLAIMED works only) and the catalog-native
-	// table (catalog_work_screenshot — ALL works). A claimed work's read face is
-	// bridge ∪ native (bridged rows lead); a bodyless work is the degenerate case
-	// with an empty bridge. source_id keeps the lanes attributable. The union is
-	// deduplicated by (work, image_hash) with the bridge winning, so a screenshot
-	// that the wiki-retirement rescue has already materialized appears once — no
-	// source is ever filtered out — see loadWorkScreenshots.
+	// regardless of source: the work's catalog_work_screenshot rows, claimed and
+	// bodyless alike (wave 164 collapsed the bridge ∪ native union onto the native
+	// lane, the rescued wiki rows having landed there at wikirescue step n).
+	// source_id keeps the lanes — rescued wiki, dlsite store samples — attributable.
 	Screenshots []WorkScreenshot `json:"screenshots"`
 	// Ratings is the work's rating set (step 58a media-aggregation ratings
 	// facet), at most one element per source, in a single shape regardless of
@@ -182,13 +178,11 @@ type WorkRating struct {
 }
 
 // WorkScreenshot is one screenshot image on a work, in the unified
-// media-aggregation shape. image_hash keys the bytes in the image service (a
-// claimed work's bytes live in the galgame_wiki scope; a bodyless work's in the
-// catalog scope). Unlike WorkCover it carries a caption and has no kind /
-// portrait_pinned. source_id references the catalog_source registry (§8.C): a
-// bridged screenshot carries its galgame_screenshot.source provenance
-// (galgame_wiki / vndb), a native screenshot its backfill source (dlsite) — a
-// claimed work can now show both, so source_id is the lane discriminator.
+// media-aggregation shape, projected from catalog_work_screenshot. image_hash
+// keys the bytes in the image service. Unlike WorkCover it carries a caption and
+// has no kind / portrait_pinned. source_id references the catalog_source
+// registry (§8.C) and stays the lane discriminator now that the rescued wiki
+// rows (galgame_wiki / vndb) and the dlsite store samples share one table.
 type WorkScreenshot struct {
 	ImageHash string `json:"image_hash"`
 	Caption   string `json:"caption"`
@@ -200,12 +194,10 @@ type WorkScreenshot struct {
 }
 
 // WorkCover is one cover image on a work, in the unified media-aggregation
-// shape. image_hash keys the bytes in the image service (a claimed work's
-// bytes live in the galgame_wiki scope; a bodyless work's in the catalog
-// scope). portrait_pinned marks the vertical portrait pin. source_id
-// references the catalog_source registry (§8.C): a bridged claimed cover
-// carries its galgame_cover.source provenance (galgame_wiki / vndd / bangumi /
-// upscale), a bodyless cover its backfill source.
+// shape, projected from catalog_work_cover. image_hash keys the bytes in the
+// image service. portrait_pinned marks the vertical portrait pin. source_id
+// references the catalog_source registry (§8.C) and carries the provenance the
+// row was mirrored or backfilled with (curated / vndb / bangumi / upscale).
 type WorkCover struct {
 	ImageHash string `json:"image_hash"`
 	// Kind labels the cover type (main / pkgfront / dig / …); empty string =

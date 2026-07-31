@@ -160,23 +160,21 @@ type CatalogWorkIntro struct {
 
 func (CatalogWorkIntro) TableName() string { return "catalog_work_intro" }
 
-// CatalogWorkCover is one cover image row for a BODYLESS work (site=” — no
-// product database to hold its media), the media-aggregation wave's first
-// byte-bearing native table (refs/proj/51 §3, step 53). It mirrors the
-// galgame_cover shape (same columns, INDEPENDENT table — never the same row) so
-// the read face can merge it with the CLAIMED bridge: a claimed galgame_wiki
-// work reads its covers directly from galgame_cover (bridge-not-copy, §2) and
-// NEVER writes a row here. One row per (work, image_hash): the unique key lets a
-// work carry several covers, and the read face orders them by sort_order.
+// CatalogWorkCover is one cover image row of a work, the media-aggregation
+// wave's first byte-bearing native table (refs/proj/51 §3, step 53). It was
+// born as the BODYLESS lane, mirroring the galgame_cover shape (same columns,
+// INDEPENDENT table — never the same row) while a claimed work read its covers
+// off the wiki body; W1-pre step m mirrored those wiki covers in and wave 164
+// flipped the read face onto this table, so it now holds EVERY work's covers.
+// One row per (work, image_hash): the unique key lets a work carry several
+// covers, and the read face orders them by sort_order.
 //
-// Byte discipline (§4): a bodyless cover's bytes live in the CATALOG image
-// scope (the same `catalog` image client the portrait wave opened) — distinct
-// from galgame covers, which live in the galgame_wiki scope and are only ever
-// bridge-READ here. shadow-never-delete (§8.B, the byte-version live wire): a
-// bodyless work later claimed keeps its cover rows (claim is reversible); the
-// read face's strict XOR stops reading them, but their bytes stay in catalog
-// scope, so catalog-image-refping MUST keep pinging them (a missed shadowed row
-// = GC eats a live image, the 66k-frozen failure class).
+// Byte discipline (§4): these bytes live in the CATALOG image scope (the same
+// `catalog` image client the portrait wave opened), and every row here must be
+// kept alive by catalog-image-refping — including rows no face happens to render
+// (a missed row = GC eats a live image, the 66k-frozen failure class). The wiki
+// scope's own copies are pinged by galgame-image-refping until the byte-ownership
+// step (wikirescue step o) hands them over.
 //
 // source_id is row-level provenance (§8.C) — NOT NULL with NO default (the
 // default-tag zero-value trap: a legitimately-low source id would drop from the
@@ -214,25 +212,23 @@ type CatalogWorkCover struct {
 
 func (CatalogWorkCover) TableName() string { return "catalog_work_cover" }
 
-// CatalogWorkScreenshot is one screenshot image row for a BODYLESS work (site=”
-// — no product database to hold its media), the media-aggregation wave's
-// closing native table (refs/proj/51 §3, step 54). It mirrors the
-// galgame_screenshot shape (same columns, INDEPENDENT table — never the same
-// row) so the read face can merge it with the CLAIMED bridge: a claimed
-// galgame_wiki work reads its screenshots directly from galgame_screenshot
-// (bridge-not-copy, §2) and NEVER writes a row here. One row per
-// (work, image_hash): the unique key lets a work carry several screenshots, and
-// the read face orders them by sort_order. Unlike catalog_work_cover it carries
-// a caption and has no kind / portrait_pinned (galgame_screenshot's shape).
+// CatalogWorkScreenshot is one screenshot image row of a work, the
+// media-aggregation wave's closing native table (refs/proj/51 §3, step 54). Born
+// as the BODYLESS + dlsite lane, mirroring the galgame_screenshot shape (same
+// columns, INDEPENDENT table — never the same row) alongside the wiki bridge;
+// wikirescue step n materialized the wiki screenshots in and wave 164 collapsed
+// the read face onto this table, so it now holds EVERY work's screenshots. One
+// row per (work, image_hash): the unique key lets a work carry several
+// screenshots, and the read face orders them by sort_order. Unlike
+// catalog_work_cover it carries a caption and has no kind / portrait_pinned
+// (galgame_screenshot's shape).
 //
-// Byte discipline (§4): a bodyless screenshot's bytes live in the CATALOG image
-// scope (the same `catalog` image client the portrait/cover waves opened) —
-// distinct from galgame screenshots, which live in the galgame_wiki scope and
-// are only ever bridge-READ here. shadow-never-delete (§8.B, the byte-version
-// live wire): a bodyless work later claimed keeps its screenshot rows (claim is
-// reversible); the read face's strict XOR stops reading them, but their bytes
-// stay in catalog scope, so catalog-image-refping MUST keep pinging them (a
-// missed shadowed row = GC eats a live image, the 66k-frozen failure class).
+// Byte discipline (§4): these bytes live in the CATALOG image scope (the same
+// `catalog` image client the portrait/cover waves opened), and every row here
+// must be kept alive by catalog-image-refping — including rows no face happens
+// to render (a missed row = GC eats a live image, the 66k-frozen failure class).
+// The wiki scope's own copies are pinged by galgame-image-refping until the
+// byte-ownership step (wikirescue step o) hands them over.
 //
 // source_id is row-level provenance (§8.C) — NOT NULL with NO default (the
 // default-tag zero-value trap: a legitimately-low source id would drop from the
