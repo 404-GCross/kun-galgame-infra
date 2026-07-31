@@ -39,10 +39,6 @@ import (
 	"api/internal/platform/catalog/service"
 	"api/internal/platform/devapi"
 	"api/internal/platform/editing"
-	"api/internal/platform/galgame/catalogsync"
-	galgameEditspec "api/internal/platform/galgame/editspec"
-	galgamePerm "api/internal/platform/galgame/perm"
-	galgameSearch "api/internal/platform/galgame/search"
 	siteRepo "api/internal/platform/site/repository"
 	"api/pkg/config"
 	"api/pkg/health"
@@ -159,31 +155,27 @@ func main() {
 		slog.Error("editing: register catalog taxonomy families", "error", err)
 		os.Exit(1)
 	}
-	// galgame.game (E2a): the galgame family's registration carries the
-	// galgame pool in its closures; the engine tables stay on the catalog
-	// pool. The same engine instance serves the S2S edit face AND the
-	// galgame surface's strangler adapter (Mount below).
+	// galgame.game (E2a) is NO LONGER REGISTERED (wave 161 P5).
 	//
-	// OnMerge (E3b-tail) reindexes Meilisearch on the single write path so an
-	// engine-path edit (kungal BFF → catalog edit face → engine) is searchable
-	// immediately — the gap that let game 5794's DB name drift ahead of the
-	// index. The same hook the galgame handlers use (search.Hook.Galgame,
-	// fire-and-forget). Built here so RegisterGame carries it; Mount builds its
-	// own hook for the surviving Create/Update/taxonomy handlers.
+	// This is the last write path into the galgame tables, and it is not a
+	// face — it is an entity_type the generic S2S edit face accepts. Taking
+	// down the HTTP surfaces without unregistering it would leave
+	// POST /api/v1/catalog/edit/proposals with entity_type=galgame.game as a
+	// fully working way to write tables the window is about to DROP, which is
+	// exactly the hole SW-E1 exists to close: after this deploy nothing can
+	// mint or mutate a galgame row, so the edit-history rekey that follows can
+	// never be overtaken.
 	//
-	// The claim hook (wave 146) is the registry twin of that reindex: every
-	// status transition on this family is an engine merge, so hanging the
-	// single-work catalog claim off the same OnMerge seam registers a game the
-	// moment it is published — closing the up-to-24h window in which a live wiki
-	// entry had no catalog identity and every /v1/catalog lookup 404'd it. It
-	// carries BOTH pools because the claim reads the wiki row and writes the
-	// registry (one database, two pools — hence no shared transaction).
-	galgameReindex := galgameSearch.NewHook(galgameDB.DB(), galgameSearch.NewIndexer(searchClient))
-	galgameClaim := catalogsync.Hook(galgameDB.DB(), catalogDB.DB())
-	if err := galgameEditspec.RegisterGame(editRegistry, galgameDB.DB(), galgameReindex.Galgame, galgameClaim); err != nil {
-		slog.Error("editing: register galgame.game", "error", err)
-		os.Exit(1)
-	}
+	// Its two OnMerge hooks die with it: the Meilisearch galgame reindex (whose
+	// indexes retire with the family) and the wave-146 single-work catalog
+	// claim (whose subject — a status transition on a wiki row — can no longer
+	// occur). The nightly reconcile that was the claim's slower twin was
+	// unregistered in the same wave.
+	//
+	// Residual edit_* rows still carrying entity_type='galgame.game' after the
+	// rekey are the ~36 unanchorable residue rows, which T3 deletes. They are
+	// unrenderable in the meantime, which is correct: every face that could
+	// have rendered them is gone.
 	editEngine := editing.NewEngine(catalogDB.DB(), editRegistry)
 	// Per-family perm resolvers (E3a ruling 1): the generic edit face routes
 	// an asserted actor's roles through the vocabulary of the entity's own
@@ -191,14 +183,12 @@ func main() {
 	// hardcodes no family name and the engine stays family-agnostic.
 	catHandler.SetupEdit(s2sAPI, editEngine, catHandler.PermResolvers{
 		"catalog": catalogPerm.Resolver,
-		"galgame": galgamePerm.Resolver,
 	})
 	// The claim lifecycle (wave 155 W2/W3) rides the same S2S API and the same
 	// asserted-actor convention. It is registered AFTER the engine exists
 	// because the revision feed is a read-only projection of the engine's log.
 	catHandler.SetupLifecycle(s2sAPI, claimSvc, editEngine, catHandler.PermResolvers{
 		"catalog": catalogPerm.Resolver,
-		"galgame": galgamePerm.Resolver,
 	})
 
 	// NextMoe open API: serve the frozen public spec unauthenticated at its face
