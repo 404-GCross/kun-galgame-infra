@@ -62,7 +62,7 @@ func TestClaimLifecycleHappyPath(t *testing.T) {
 		t.Fatalf("approve: %+v", approved)
 	}
 
-	events, err := s.EventsSince(context.Background(), 0, 100, "")
+	events, err := s.EventsSince(context.Background(), 0, 100, "", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,7 +109,7 @@ func TestClaimLifecycleIllegalTransition(t *testing.T) {
 	if conflict.Current != model.ClaimStateKeyLive {
 		t.Fatalf("current state echoed as %q", conflict.Current)
 	}
-	events, err := s.EventsSince(context.Background(), 0, 10, "")
+	events, err := s.EventsSince(context.Background(), 0, 10, "", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,7 +142,7 @@ func TestClaimLifecycleDeclineNeedsAReason(t *testing.T) {
 	if res.To != model.ClaimStateKeyDeclined {
 		t.Fatalf("decline: %+v", res)
 	}
-	events, err := s.EventsSince(context.Background(), 0, 10, "")
+	events, err := s.EventsSince(context.Background(), 0, 10, "", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -208,7 +208,7 @@ func TestClaimLifecycleTenancy(t *testing.T) {
 func TestClaimEventFeedCursor(t *testing.T) {
 	s := newLifecycle(t)
 
-	empty, err := s.EventsSince(context.Background(), 0, 10, "")
+	empty, err := s.EventsSince(context.Background(), 0, 10, "", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -222,14 +222,14 @@ func TestClaimEventFeedCursor(t *testing.T) {
 	act(t, s, work.ID, ClaimActionSubmit, ClaimActionParams{Site: "kungal", ActorUID: 1})
 	act(t, s, work.ID, ClaimActionApprove, ClaimActionParams{ActorUID: 2})
 
-	page, err := s.EventsSince(context.Background(), 0, 2, "")
+	page, err := s.EventsSince(context.Background(), 0, 2, "", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(page) != 2 || page[0].ID >= page[1].ID {
 		t.Fatalf("first page: %+v", page)
 	}
-	rest, err := s.EventsSince(context.Background(), page[1].ID, 10, "")
+	rest, err := s.EventsSince(context.Background(), page[1].ID, 10, "", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -237,7 +237,7 @@ func TestClaimEventFeedCursor(t *testing.T) {
 		t.Fatalf("second page: %+v", rest)
 	}
 	// The site filter is the tenant's own lane.
-	other, err := s.EventsSince(context.Background(), 0, 10, "moyu")
+	other, err := s.EventsSince(context.Background(), 0, 10, "moyu", 0)
 	if err != nil {
 		t.Fatal(err)
 	}

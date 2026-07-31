@@ -28,6 +28,7 @@ func TestSetupLifecycle_RegistersOperations(t *testing.T) {
 		"/api/v1/catalog/works/{id}/claim-actions/{action}",
 		"/api/v1/catalog/claim-events/feed",
 		"/api/v1/catalog/edit-revisions/feed",
+		"/api/v1/catalog/users/{uid}/claims",
 	} {
 		assert.NotNilf(t, paths[p], "operation %s must be registered", p)
 	}

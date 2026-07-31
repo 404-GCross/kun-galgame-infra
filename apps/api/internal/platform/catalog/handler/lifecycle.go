@@ -69,6 +69,7 @@ func SetupLifecycle(api huma.API, claims *service.ClaimLifecycleService, engine 
 		Summary: "Cursor feed of editing-engine revisions across all entities (ascending id; filterable by entity family/type)",
 		Tags:    tags,
 	}, s.editRevisions)
+	s.registerUserClaims(api)
 }
 
 // ---- actions ----
@@ -156,6 +157,10 @@ type claimEventsInput struct {
 	Since int64  `query:"since" doc:"Exclusive cursor: return events with a greater id (0 = from the beginning)"`
 	Limit int    `query:"limit" doc:"Page size (default 200, max 1000)"`
 	Site  string `query:"site" doc:"Restrict to one claiming site"`
+	// Wave 157: the same feed, narrowed to one user's own transitions — a
+	// product rendering one person's activity should not have to filter the
+	// global stream client-side.
+	ActorUID int64 `query:"actor_uid" doc:"Restrict to transitions caused by this user (0 = every actor)"`
 }
 
 type claimEventsOutput struct {
@@ -163,7 +168,7 @@ type claimEventsOutput struct {
 }
 
 func (s *LifecycleServer) claimEvents(ctx context.Context, in *claimEventsInput) (*claimEventsOutput, error) {
-	items, err := s.claims.EventsSince(ctx, in.Since, in.Limit, in.Site)
+	items, err := s.claims.EventsSince(ctx, in.Since, in.Limit, in.Site, in.ActorUID)
 	if err != nil {
 		slog.Error("catalog claim event feed", "err", err)
 		return nil, apiErr(http.StatusInternalServerError, errors.ErrInternalServer)

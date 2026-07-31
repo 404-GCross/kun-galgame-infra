@@ -60,7 +60,14 @@ type CatalogClaimEvent struct {
 	// ActorUID is the user who caused the transition; 0 = system/unattributed
 	// (a nightly projector, a cascade). A meaningful zero again — not null, no
 	// default.
-	ActorUID int64 `gorm:"column:actor_uid;not null" json:"actor_uid"`
+	//
+	// Indexed since wave 157: actor identity lives ONLY on this row (the work
+	// carries a claiming site, never a user), so "the works this user submitted"
+	// — every per-user face downstream products need — is an aggregate over this
+	// column. One plain index is the whole plan: a single actor owns a tiny
+	// fraction of the table, and the id ordering inside that slice is the
+	// primary key's, which the planner sorts for free.
+	ActorUID int64 `gorm:"column:actor_uid;not null;index" json:"actor_uid"`
 	// Reason is the moderator's note (decline reason, ban reason). NULL = none
 	// given, which is distinct from an empty note the actor deliberately left.
 	Reason *string `gorm:"type:text" json:"reason"`

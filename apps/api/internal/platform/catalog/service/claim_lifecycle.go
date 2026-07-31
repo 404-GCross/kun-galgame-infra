@@ -314,7 +314,12 @@ type ClaimEventItem struct {
 // exclusive. Ascending and id-keyed for the same reason the two wiki feeds it
 // replaces are: a consumer stores one integer and can never skip a row, no
 // matter how many rows share a timestamp.
-func (s *ClaimLifecycleService) EventsSince(ctx context.Context, since int64, limit int, site string) ([]ClaimEventItem, error) {
+//
+// actorUID (wave 157, 0 = no filter) narrows the same feed to one user's own
+// transitions. It is the cheap half of the per-user need: a product rendering
+// "what happened to my submissions" reads this, and a product rendering "my
+// submissions" reads ClaimsByActor.
+func (s *ClaimLifecycleService) EventsSince(ctx context.Context, since int64, limit int, site string, actorUID int64) ([]ClaimEventItem, error) {
 	if limit <= 0 || limit > 1000 {
 		limit = 200
 	}
@@ -337,6 +342,9 @@ func (s *ClaimLifecycleService) EventsSince(ctx context.Context, since int64, li
 		Where("e.id > ?", since)
 	if site != "" {
 		q = q.Where("e.site = ?", site)
+	}
+	if actorUID > 0 {
+		q = q.Where("e.actor_uid = ?", actorUID)
 	}
 	if err := q.Order("e.id ASC").Limit(limit).Scan(&rows).Error; err != nil {
 		return nil, err

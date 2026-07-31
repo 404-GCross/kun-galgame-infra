@@ -521,6 +521,26 @@ components:
         - name
         - lang
       type: object
+    CursorPageUserClaimItem:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: "#/components/schemas/UserClaimItem"
+          type:
+            - array
+            - "null"
+        next_before:
+          format: int64
+          type: integer
+        total:
+          format: int64
+          type: integer
+      required:
+        - items
+        - next_before
+        - total
+      type: object
     EditActor:
       additionalProperties: false
       properties:
@@ -1279,6 +1299,27 @@ components:
           type: integer
         data:
           $ref: "#/components/schemas/ClaimWorkResponse"
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
+    EnvelopeCursorPageUserClaimItem:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EnvelopeCursorPageUserClaimItem.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/CursorPageUserClaimItem"
         message:
           type: string
       required:
@@ -2072,6 +2113,63 @@ components:
       required:
         - status
         - count
+      type: object
+    UserClaimItem:
+      additionalProperties: false
+      properties:
+        acted_count:
+          format: int64
+          type: integer
+        claim_state:
+          type: string
+        display_name:
+          type: string
+        first_acted_at:
+          format: date-time
+          type: string
+        last_actor_uid:
+          format: int64
+          type: integer
+        last_event_at:
+          format: date-time
+          type: string
+        last_event_id:
+          format: int64
+          type: integer
+        last_from_state:
+          type:
+            - string
+            - "null"
+        last_reason:
+          type:
+            - string
+            - "null"
+        last_to_state:
+          type: string
+        product_work_id:
+          format: int64
+          type:
+            - integer
+            - "null"
+        site:
+          type: string
+        work_id:
+          format: int64
+          type: integer
+      required:
+        - work_id
+        - display_name
+        - site
+        - product_work_id
+        - claim_state
+        - last_event_id
+        - last_from_state
+        - last_to_state
+        - last_reason
+        - last_actor_uid
+        - last_event_at
+        - first_acted_at
+        - acted_count
       type: object
     VoiceName:
       additionalProperties: false
@@ -2871,6 +2969,14 @@ paths:
           schema:
             description: Restrict to one claiming site
             type: string
+        - description: Restrict to transitions caused by this user (0 = every actor)
+          explode: false
+          in: query
+          name: actor_uid
+          schema:
+            description: Restrict to transitions caused by this user (0 = every actor)
+            format: int64
+            type: integer
       responses:
         "200":
           content:
@@ -3647,6 +3753,65 @@ paths:
       summary: Dashboard counts for the internal data browser (one round-trip)
       tags:
         - catalog-s2s
+  /api/v1/catalog/users/{uid}/claims:
+    get:
+      operationId: listCatalogClaimsByUser
+      parameters:
+        - description: The product-side user id recorded as the event actor
+          in: path
+          name: uid
+          required: true
+          schema:
+            description: The product-side user id recorded as the event actor
+            format: int64
+            minimum: 1
+            type: integer
+        - description: Restrict to one claiming site
+          explode: false
+          in: query
+          name: site
+          schema:
+            description: Restrict to one claiming site
+            type: string
+        - description: Comma-separated subset of none, live, draft, pending, declined, hidden; absent = every state
+          explode: false
+          in: query
+          name: claim_state
+          schema:
+            description: Comma-separated subset of none, live, draft, pending, declined, hidden; absent = every state
+            type: string
+        - description: "Exclusive cursor: return works whose last_event_id is smaller (0 = first page)"
+          explode: false
+          in: query
+          name: before
+          schema:
+            description: "Exclusive cursor: return works whose last_event_id is smaller (0 = first page)"
+            format: int64
+            type: integer
+        - description: Page size (default 20, max 100)
+          explode: false
+          in: query
+          name: limit
+          schema:
+            description: Page size (default 20, max 100)
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeCursorPageUserClaimItem"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: "The claims a user has acted on: current state, latest transition and reason, most recent activity first (cursor: before=last_event_id)"
+      tags:
+        - catalog-lifecycle
   /api/v1/catalog/works/by-anchor:
     get:
       operationId: getCatalogWorkByAnchor

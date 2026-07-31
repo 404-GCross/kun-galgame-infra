@@ -59,6 +59,19 @@ type ClaimEventFeed struct {
 	NextSince int64 `json:"next_since"`
 }
 
+// CursorPage is one page of a DESCENDING, cursor-paged list (wave 157). It is
+// a different shape from Page[T] on purpose: Page is offset-paged with a total
+// only, while a list a user is actively writing to needs a stable cursor —
+// here the id the next page must start below. Total accompanies it because on
+// this face the count IS the per-user statistic downstream products used to
+// need a separate endpoint for.
+type CursorPage[T any] struct {
+	Items []T `json:"items"`
+	// NextBefore is the cursor for the following page; 0 = no more rows.
+	NextBefore int64 `json:"next_before"`
+	Total      int64 `json:"total"`
+}
+
 // EditRevisionFeedItem is one engine revision on the wire. The snapshot is
 // deliberately absent: the feed exists so a consumer knows THAT an entity
 // changed and which fields did, and shipping every full snapshot would make a

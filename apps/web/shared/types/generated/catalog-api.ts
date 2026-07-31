@@ -362,6 +362,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/catalog/users/{uid}/claims": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The claims a user has acted on: current state, latest transition and reason, most recent activity first (cursor: before=last_event_id) */
+        get: operations["listCatalogClaimsByUser"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/catalog/works/by-anchor": {
         parameters: {
             query?: never;
@@ -718,6 +735,13 @@ export interface components {
             name: string;
             note?: string;
             source?: string;
+        };
+        CursorPageUserClaimItem: {
+            items: components["schemas"]["UserClaimItem"][] | null;
+            /** Format: int64 */
+            next_before: number;
+            /** Format: int64 */
+            total: number;
         };
         EditActor: {
             /** @description Product-asserted entity ownership (owner-review overlays) */
@@ -1094,6 +1118,18 @@ export interface components {
             /** Format: int64 */
             code: number;
             data?: components["schemas"]["ClaimWorkResponse"];
+            message: string;
+        };
+        EnvelopeCursorPageUserClaimItem: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/EnvelopeCursorPageUserClaimItem.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            code: number;
+            data?: components["schemas"]["CursorPageUserClaimItem"];
             message: string;
         };
         EnvelopeEditAmendmentView: {
@@ -1496,6 +1532,28 @@ export interface components {
             count: number;
             /** Format: int32 */
             status: number;
+        };
+        UserClaimItem: {
+            /** Format: int64 */
+            acted_count: number;
+            claim_state: string;
+            display_name: string;
+            /** Format: date-time */
+            first_acted_at: string;
+            /** Format: int64 */
+            last_actor_uid: number;
+            /** Format: date-time */
+            last_event_at: string;
+            /** Format: int64 */
+            last_event_id: number;
+            last_from_state: string | null;
+            last_reason: string | null;
+            last_to_state: string;
+            /** Format: int64 */
+            product_work_id: number | null;
+            site: string;
+            /** Format: int64 */
+            work_id: number;
         };
         VoiceName: {
             /** Format: int64 */
@@ -1964,6 +2022,8 @@ export interface operations {
                 limit?: number;
                 /** @description Restrict to one claiming site */
                 site?: string;
+                /** @description Restrict to transitions caused by this user (0 = every actor) */
+                actor_uid?: number;
             };
             header?: never;
             path?: never;
@@ -2652,6 +2712,47 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EnvelopeCatalogStats"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HouseError"];
+                };
+            };
+        };
+    };
+    listCatalogClaimsByUser: {
+        parameters: {
+            query?: {
+                /** @description Restrict to one claiming site */
+                site?: string;
+                /** @description Comma-separated subset of none, live, draft, pending, declined, hidden; absent = every state */
+                claim_state?: string;
+                /** @description Exclusive cursor: return works whose last_event_id is smaller (0 = first page) */
+                before?: number;
+                /** @description Page size (default 20, max 100) */
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                /** @description The product-side user id recorded as the event actor */
+                uid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeCursorPageUserClaimItem"];
                 };
             };
             /** @description Error */
