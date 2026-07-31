@@ -64,7 +64,11 @@ func TestClaimStateProjectionIsTotalAndIdempotent(t *testing.T) {
 	}{
 		{11, gmodel.GalgameStatusPublished, model.ClaimStateLive},
 		{12, gmodel.GalgameStatusVNDBDraft, model.ClaimStateDraft},
-		{13, gmodel.GalgameStatusPending, model.ClaimStateDraft},
+		// Wave 161 P5 / 162 §4 ruling ②: pending is its OWN state, not a
+		// second spelling of draft. An unclaimed VNDB stub can be claimed;
+		// somebody else's submission under review cannot, and before this
+		// split the wire could not tell a wizard which it was looking at.
+		{13, gmodel.GalgameStatusPending, model.ClaimStatePending},
 		{14, gmodel.GalgameStatusBanned, model.ClaimStateHidden},
 		{15, gmodel.GalgameStatusDeclined, model.ClaimStateHidden},
 		// A status outside the vocabulary must land on the CONSERVATIVE end —
@@ -130,9 +134,11 @@ func TestClaimStateDryRunWritesNothing(t *testing.T) {
 // own lifecycle endpoints have acted on a claim — the presence of any
 // catalog_claim_event row is the whole signal — this projector stops recomputing
 // its state from galgame.status. Without the skip, an approve/decline/ban made
-// through the catalog face is reverted within the day, and the two states the
-// catalog vocabulary gained in wave 154 (pending, declined) can never survive:
-// claimStateOf cannot even produce them.
+// through the catalog face is reverted within the day, and `declined` — the one
+// wave-154 state this projector still cannot produce — can never survive.
+// (`pending` it CAN produce since wave 161 P5, but only from wiki status 3; a
+// governed claim that reached pending through the catalog face must keep it
+// regardless of what the wiki row says, which is what this test pins.)
 func TestClaimStateSkipsGovernedWorks(t *testing.T) {
 	clean(t)
 	seedGameStatus(t, 31, gmodel.GalgameStatusPublished) // stays projected
@@ -175,4 +181,37 @@ func TestClaimStateSkipsGovernedWorks(t *testing.T) {
 	untouched := claimStateOfWork(t, 31)
 	require.NotNil(t, untouched)
 	assert.Equal(t, model.ClaimStateHidden, *untouched)
+}
+
+// TestClaimStateSeparatesPendingFromDraft pins wave 161 P5 (162 §4 ruling ②)
+// on its own, because the property it protects is not "the table has the right
+// values" but "the two populations are DISTINGUISHABLE on the wire".
+//
+// Before the split, a publish wizard reading claim_state=draft got both the
+// unclaimed VNDB stubs it may offer to claim and the submissions already under
+// somebody else's review, where claiming is guaranteed to be refused. That is
+// the 160 §7-1 gap, and this is the only place the distinction is produced —
+// so a regression here is silent everywhere else.
+func TestClaimStateSeparatesPendingFromDraft(t *testing.T) {
+	clean(t)
+	seedGameStatus(t, 41, gmodel.GalgameStatusVNDBDraft) // claimable stub
+	seedGameStatus(t, 42, gmodel.GalgameStatusPending)   // under review
+
+	_, err := New(testDB, testDB, nil, Options{Phase: PhaseClaim}).Run(t.Context(), PhaseClaim)
+	require.NoError(t, err)
+
+	stub, review := claimStateOfWork(t, 41), claimStateOfWork(t, 42)
+	require.NotNil(t, stub)
+	require.NotNil(t, review)
+	assert.Equal(t, model.ClaimStateDraft, *stub)
+	assert.Equal(t, model.ClaimStatePending, *review)
+	assert.NotEqual(t, *stub, *review, "the two must never collapse back onto one value")
+
+	// A wizard's actual query: claim_state=draft must no longer hand back the
+	// row it cannot claim.
+	var draftIDs []int64
+	require.NoError(t, testDB.Raw(
+		`SELECT product_work_id FROM catalog_work WHERE site = ? AND claim_state = ? ORDER BY product_work_id`,
+		siteGalgame, model.ClaimStateDraft).Scan(&draftIDs).Error)
+	assert.Equal(t, []int64{41}, draftIDs)
 }

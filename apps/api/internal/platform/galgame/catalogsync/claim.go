@@ -145,18 +145,37 @@ func (r *Reconciler) runClaim(ctx context.Context) (ClaimStats, error) {
 // visibility vocabulary (R7). This is the ONLY place the two vocabularies meet:
 // the wiki value itself never reaches the catalog contract.
 //
-//	published (0)              → live   — publicly visible on the wiki
-//	vndb draft (2) / pending (3) → draft — exists, not published yet
-//	banned (1) / declined (4)   → hidden — withdrawn; consumers show nothing
+//	published (0)             → live    — publicly visible on the wiki
+//	vndb draft (2)            → draft   — a stub nobody has claimed yet
+//	pending (3)               → pending — somebody's submission, under review
+//	banned (1) / declined (4) → hidden  — withdrawn; consumers show nothing
 //
 // An unknown future status is the CONSERVATIVE hidden rather than live: a
 // status we do not understand must not be published on downstream sites.
+//
+// The 2/3 split is wave 161 P5 (162 §4 ruling ②, the answer to 160 §7-1). This
+// function was written when the catalog side had only live/draft/hidden, so
+// collapsing the two was the only choice available; wave 154 W1 widened the
+// vocabulary to five states and nobody came back to it, which left `pending` a
+// value the contract advertised, the query layer implemented and NOTHING ever
+// produced. The consequence is the gap the publish wizard hit: "an unclaimed
+// VNDB stub you may claim" and "somebody else's submission, where claiming is
+// guaranteed to be refused" were the same wire value.
+//
+// This is a PROJECTION fix, not a vocabulary change — the wire is unchanged.
+// Callers asking for claim_state=draft receive fewer rows and callers asking
+// for claim_state=pending receive them instead, so the DOWNSTREAM QUERIES MUST
+// LEARN `pending` FIRST (today that widening matches nothing and is a no-op);
+// only then may this projector ship. That ordering is the whole reason this
+// lands as its own commit.
 func claimStateOf(wikiStatus int16) int16 {
 	switch wikiStatus {
 	case galgamemodel.GalgameStatusPublished:
 		return model.ClaimStateLive
-	case galgamemodel.GalgameStatusVNDBDraft, galgamemodel.GalgameStatusPending:
+	case galgamemodel.GalgameStatusVNDBDraft:
 		return model.ClaimStateDraft
+	case galgamemodel.GalgameStatusPending:
+		return model.ClaimStatePending
 	default:
 		return model.ClaimStateHidden
 	}
