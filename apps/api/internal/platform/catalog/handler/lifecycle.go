@@ -161,15 +161,15 @@ func (s *LifecycleServer) submitWork(ctx context.Context, in *submitWorkInput) (
 	})}, nil
 }
 
-// submitErr maps the mint's refusals. The two 409s are different facts and stay
-// distinguishable: "you already submitted this" carries the existing work, and
-// the mirror gate carries the facet that is still owned by a retiring duty-chain
-// step (both are "the world, not your request" — hence 409, not 422).
+// submitErr maps the mint's refusals. The 409 carries the existing work ("you
+// already submitted this" is a fact about the world, not a malformed request).
+// It used to have a sibling 409 from the mirror gate; wave 161 retired the duty-
+// chain steps that gate protected, so a submission can no longer be refused for
+// naming a facet somebody else still writes.
 func submitErr(err error) error {
 	var (
-		exists     *service.ClaimExistsError
-		fieldErr   *editspec.SubmissionFieldError
-		mirrorGate *editspec.MirrorGateError
+		exists   *service.ClaimExistsError
+		fieldErr *editspec.SubmissionFieldError
 	)
 	switch {
 	case stderrors.As(err, &exists):
@@ -179,8 +179,6 @@ func submitErr(err error) error {
 				CurrentState: exists.CurrentState,
 				MatchedBy:    exists.MatchedBy, Anchor: exists.Anchor,
 			})
-	case stderrors.As(err, &mirrorGate):
-		return apiErrMsg(http.StatusConflict, errors.ErrOperationFailed, mirrorGate.Error())
 	case stderrors.As(err, &fieldErr),
 		stderrors.Is(err, service.ErrSubmitTargetRequired),
 		stderrors.Is(err, service.ErrSubmitDisplayNameRequired),

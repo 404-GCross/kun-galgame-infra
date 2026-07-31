@@ -178,7 +178,7 @@ func RegisterWork(reg *editing.Registry, db *gorm.DB) error {
 // so a SECOND caller can drive the very same Validate + Apply closures: the
 // submission mint (submit.go). Nothing about a field may differ between "a user
 // edited it" and "a user filled it in on the submission form" — one table, one
-// validator, one write, one mirror gate.
+// validator, one write.
 func workFieldSpecs() []editing.FieldSpec {
 	return []editing.FieldSpec{
 		{
@@ -199,7 +199,7 @@ func workFieldSpecs() []editing.FieldSpec {
 		{
 			Key: FieldWorkTitles, Kind: editing.KindList, DiffHint: editing.DiffHintItems,
 			Validate: validateTitles,
-			Apply:    gated(FieldWorkTitles, applyTitles),
+			Apply:    applyTitles,
 		},
 		{
 			Key: FieldWorkIntros, Kind: editing.KindList, DiffHint: editing.DiffHintLines,
@@ -209,12 +209,12 @@ func workFieldSpecs() []editing.FieldSpec {
 		{
 			Key: FieldWorkDisplayNSFW, Kind: editing.KindEnum, DiffHint: editing.DiffHintInline,
 			Validate: validateBool,
-			Apply:    gated(FieldWorkDisplayNSFW, applyWorkColumn("display_nsfw", asBool)),
+			Apply:    applyWorkColumn("display_nsfw", asBool),
 		},
 		{
 			Key: FieldWorkTagIDs, Kind: editing.KindList, DiffHint: editing.DiffHintItems,
 			Validate: validateTagIDs,
-			Apply:    gated(FieldWorkTagIDs, applyTagIDs),
+			Apply:    applyTagIDs,
 		},
 		{
 			Key: FieldWorkLabels, Kind: editing.KindList, DiffHint: editing.DiffHintItems,
@@ -239,12 +239,12 @@ func workFieldSpecs() []editing.FieldSpec {
 		{
 			Key: FieldWorkCovers, Kind: editing.KindList, DiffHint: editing.DiffHintImage,
 			Validate: validateCovers,
-			Apply:    gated(FieldWorkCovers, applyCovers),
+			Apply:    applyCovers,
 		},
 		{
 			Key: FieldWorkScreenshots, Kind: editing.KindList, DiffHint: editing.DiffHintImage,
 			Validate: validateScreenshots,
-			Apply:    gated(FieldWorkScreenshots, applyScreenshots),
+			Apply:    applyScreenshots,
 		},
 	}
 }

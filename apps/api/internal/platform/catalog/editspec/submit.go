@@ -15,7 +15,7 @@ import (
 // A product's submit wizard mints a work and fills its content in one request.
 // The content half is NOT a second write path: it is this package's own field
 // table (workFieldSpecs), driven by the same Validate closures and the same
-// Apply closures — including the mirror gate — that the editing face uses. A
+// Apply closures that the editing face uses. A
 // field cannot mean one thing when a user edits it and another when the same
 // user first types it into the submission form, and a second copy of the write
 // rules is precisely how the wiki's two writers drifted apart.

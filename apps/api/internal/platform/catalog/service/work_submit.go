@@ -316,10 +316,8 @@ func (s *ClaimLifecycleService) SubmitWork(ctx context.Context, p SubmitWorkPara
 			return err
 		}
 
-		// The content, through the editing face's own field table — including
-		// the mirror gate, which refuses the mirrored facets while the claiming
-		// site is still the one the duty chain owns (409, same message the edit
-		// face gives).
+		// The content, through the editing face's own field table — the same
+		// validators and the same writes a later edit of these fields will use.
 		if err := editspec.ApplyWorkFields(ctx, tx, w.ID, p.Fields); err != nil {
 			return err
 		}

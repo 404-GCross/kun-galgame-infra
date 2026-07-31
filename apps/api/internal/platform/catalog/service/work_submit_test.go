@@ -177,6 +177,12 @@ func TestSubmitWorkIsIdempotent(t *testing.T) {
 	}
 }
 
+// TestSubmitWorkOnTheFormerMirrorSite: the mint used to be refused outright on
+// the site the duty chain mirrored, because five of its facets had a second
+// persistent writer that would have reaped them (wave 162 §2-5). Wave 161
+// retired those steps, so the SAME payload that was a 409 now lands whole —
+// this is the pinning that the gate's removal actually opened the lane, rather
+// than merely deleting the error.
 // TestSubmitWorkIssuesTheIdentity is the charter §6.P4-verdict 1 path: a wizard
 // that has nothing to name the work by omits product_work_id and the registry
 // issues one. The claim must be complete the moment the row exists — a work
@@ -306,44 +312,27 @@ func TestSubmitWorkIssuedIdempotency(t *testing.T) {
 	}
 }
 
-// TestSubmitWorkRefusesMirroredFacets: the mint obeys the SAME mirror gate the
-// editing face does — a work claimed for the site the duty chain owns cannot
-// have its mirrored facets written, and the whole mint rolls back rather than
-// leaving a half-filled row behind.
-func TestSubmitWorkRefusesMirroredFacets(t *testing.T) {
+func TestSubmitWorkOnTheFormerMirrorSite(t *testing.T) {
 	s := newLifecycle(t)
 	ctx := t.Context()
 	fields := submitFields("鏡面作品")
-
-	_, err := s.SubmitWork(ctx, SubmitWorkParams{
-		Site: "galgame_wiki", ProductWorkID: 90003, ActorUID: 7, Fields: fields,
-	})
-	var gate *editspec.MirrorGateError
-	if !errors.As(err, &gate) {
-		t.Fatalf("mirrored submit: %v", err)
-	}
-	var works int64
-	testDB.Raw(`SELECT count(*) FROM catalog_work WHERE product_work_id = ?`, 90003).Scan(&works)
-	if works != 0 {
-		t.Fatalf("refused mint left %d rows behind", works)
-	}
-	var events int64
-	testDB.Raw(`SELECT count(*) FROM catalog_claim_event`).Scan(&events)
-	if events != 0 {
-		t.Fatalf("refused mint left %d events behind", events)
+	if _, ok := fields[editspec.FieldWorkTitles]; !ok {
+		t.Fatal("this test is only meaningful while titles is in the submission set")
 	}
 
-	// The open half of the same population still submits: drop the gated facets
-	// and the mint goes through on the mirrored site too.
-	delete(fields, editspec.FieldWorkTitles)
 	res, err := s.SubmitWork(ctx, SubmitWorkParams{
 		Site: "galgame_wiki", ProductWorkID: 90003, ActorUID: 7, Fields: fields,
 	})
 	if err != nil {
-		t.Fatalf("ungated submit: %v", err)
+		t.Fatalf("submit with the formerly gated facets: %v", err)
 	}
 	if res.ClaimState != model.ClaimStateKeyPending {
 		t.Fatalf("result: %+v", res)
+	}
+	var titles int64
+	testDB.Raw(`SELECT count(*) FROM catalog_work_title WHERE work_id = ?`, res.WorkID).Scan(&titles)
+	if titles == 0 {
+		t.Fatal("titles must actually be written, not silently dropped")
 	}
 }
 

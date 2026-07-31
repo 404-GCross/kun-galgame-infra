@@ -98,10 +98,6 @@ func applyIntros(ctx context.Context, tx *gorm.DB, entityID int64, value any) er
 	if err := assertWorkExists(ctx, tx, entityID); err != nil {
 		return err
 	}
-	// The ja/en half of this lane is still step q's on a mirrored work (guard.go).
-	if err := guardIntroLangs(ctx, tx, entityID, intros); err != nil {
-		return err
-	}
 	// The delete scope is the curated lane's SOURCE rows (the full replace)
 	// PLUS any curated machine row in a language this edit writes.
 	//
