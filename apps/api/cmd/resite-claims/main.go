@@ -12,7 +12,8 @@
 //  2. one catalog_claim_event per re-sited claim: from_state=NULL (there was
 //     no prior recorded state — the transition that created the claim
 //     predates the event table), to_state = the claim's CURRENT state,
-//     actor_uid=0 (system), reason='w1-resite backfill'. This is the 157 §4-②
+//     actor_uid = the submitter where the forum still remembers one (see
+//     --forum-dsn), reason='w1-resite backfill'. This is the 157 §4-②
 //     ruling landing: without it the per-user faces and the pending queue that
 //     wave 157 shipped are empty for every pre-existing claim, because they
 //     are aggregates over this table and the table only starts at wave 155.
@@ -21,6 +22,12 @@
 //
 // Both are idempotent: the update is keyed on the OLD site, and the backfill
 // skips a work that already carries a backfill row. A second run writes zero.
+//
+// NOTE on the literal "galgame_wiki": it names TWO unrelated things — the claim
+// SITE on catalog_work (what this tool flips) and the catalog_source KEY behind
+// external_ref source 12 (which this tool never reads and P5 renames, id
+// unchanged). They are deliberately not a shared constant anywhere in these
+// tools; fromSite below is the site role only.
 //
 // It changes NO credentials and NO client bindings — it only reports on them
 // (--infra-dsn), because deciding what happens to galgame-wiki-admin and the
@@ -63,6 +70,8 @@ const (
 
 func main() {
 	dsn := flag.String("dsn", "", "catalog DSN (REQUIRED — this tool never guesses a database)")
+	forumDSN := flag.String("forum-dsn", "", "forum DSN, read-only; supplies the submitter of each claim (REQUIRED unless --no-forum-attribution)")
+	noForumAttribution := flag.Bool("no-forum-attribution", false, "deliberately mint every event with actor_uid=0")
 	infraDSN := flag.String("infra-dsn", "", "infra DSN; when set, prints the OAuth client / API key binding report")
 	apply := flag.Bool("apply", false, "write changes (default: dry run, ledger only)")
 	flag.Parse()
@@ -70,6 +79,13 @@ func main() {
 	logger.Init("development")
 	if *dsn == "" {
 		slog.Error("--dsn is required")
+		os.Exit(2)
+	}
+	// Attribution is opt-OUT, not opt-in. A forgotten flag would mint 64k
+	// unattributed events, and the backfill is idempotent — the second run
+	// would not fix them, it would skip them. The footgun is worth a flag.
+	if *forumDSN == "" && !*noForumAttribution {
+		slog.Error("--forum-dsn is required (or pass --no-forum-attribution to mint every event as system)")
 		os.Exit(2)
 	}
 	db, err := open(*dsn)
@@ -82,7 +98,23 @@ func main() {
 	}
 
 	ctx := context.Background()
-	r := &resiter{db: db, apply: *apply}
+	submitters := map[int64]int64{}
+	if *forumDSN != "" {
+		forum, err := open(*forumDSN)
+		if err != nil {
+			slog.Error("forum db connect", "error", err)
+			os.Exit(1)
+		}
+		if s, err := forum.DB(); err == nil {
+			defer s.Close()
+		}
+		if submitters, err = loadSubmitters(ctx, forum); err != nil {
+			slog.Error("load submitters", "error", err)
+			os.Exit(1)
+		}
+		slog.Info("forum submitter snapshot loaded", "stubs_with_creator", len(submitters))
+	}
+	r := &resiter{db: db, apply: *apply, submitters: submitters}
 	if err := r.run(ctx); err != nil {
 		slog.Error("resite failed", "error", err)
 		os.Exit(1)
@@ -112,16 +144,19 @@ func open(dsn string) (*gorm.DB, error) {
 
 // workRow is one claim considered for re-siting.
 type workRow struct {
-	ID         int64  `gorm:"column:id"`
-	ClaimState *int16 `gorm:"column:claim_state"`
-	HasEvent   bool   `gorm:"column:has_event"`
+	ID int64 `gorm:"column:id"`
+	// ProductWorkID is the wiki gid — the join key to the forum's stub table.
+	ProductWorkID *int64 `gorm:"column:product_work_id"`
+	ClaimState    *int16 `gorm:"column:claim_state"`
+	HasEvent      bool   `gorm:"column:has_event"`
 }
 
 // plannedEvent is one backfill row, built before any write so the dry run
 // prints exactly what an apply would insert.
 type plannedEvent struct {
-	WorkID  int64
-	ToState int16
+	WorkID   int64
+	ToState  int16
+	ActorUID int64
 }
 
 // planEvents decides which claims get a birth event.
@@ -136,7 +171,13 @@ type plannedEvent struct {
 // backfill that had to fill in a state deserves to be visible.
 //
 // The only skip is idempotency: a work that already carries a backfill row.
-func planEvents(rows []workRow) (events []plannedEvent, nullState, already int) {
+//
+// actor_uid comes from the forum's own creator snapshot (submitters, keyed by
+// gid) and falls back to 0 = system. 0 is not a guess and not a placeholder: it
+// is the model's documented value for "unattributed", and the wiki genuinely
+// did not record a submitter for most of this corpus. Inventing an actor for
+// those rows would put a name on an act nobody performed.
+func planEvents(rows []workRow, submitters map[int64]int64) (events []plannedEvent, nullState, already, attributed int) {
 	for _, row := range rows {
 		if row.HasEvent {
 			already++
@@ -148,14 +189,48 @@ func planEvents(rows []workRow) (events []plannedEvent, nullState, already int) 
 		} else {
 			nullState++
 		}
-		events = append(events, plannedEvent{WorkID: row.ID, ToState: state})
+		var actor int64
+		if row.ProductWorkID != nil {
+			if uid, ok := submitters[*row.ProductWorkID]; ok {
+				actor = uid
+				attributed++
+			}
+		}
+		events = append(events, plannedEvent{WorkID: row.ID, ToState: state, ActorUID: actor})
 	}
-	return events, nullState, already
+	return events, nullState, already, attributed
 }
 
 type resiter struct {
 	db    *gorm.DB
 	apply bool
+	// submitters maps a wiki gid to the forum user who submitted it, read from
+	// the forum's own galgame stub table (its id IS the gid). Empty = every
+	// event is minted as system.
+	submitters map[int64]int64
+}
+
+// loadSubmitters reads the forum's creator snapshot. READ ONLY, and the only
+// thing this tool ever asks the forum database for.
+//
+// This is the same column the forum's "my submissions" page renders off, which
+// is the point: attributing the backfill to anything else would build a
+// per-user face that disagrees with the one the product already shows.
+func loadSubmitters(ctx context.Context, db *gorm.DB) (map[int64]int64, error) {
+	var rows []struct {
+		ID            int64 `gorm:"column:id"`
+		CreatorUserID int64 `gorm:"column:creator_user_id"`
+	}
+	if err := db.WithContext(ctx).Raw(
+		`SELECT id, creator_user_id FROM galgame
+		 WHERE creator_user_id IS NOT NULL AND creator_user_id > 0`).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	out := make(map[int64]int64, len(rows))
+	for _, row := range rows {
+		out[row.ID] = row.CreatorUserID
+	}
+	return out, nil
 }
 
 func (r *resiter) run(ctx context.Context) error {
@@ -166,15 +241,21 @@ func (r *resiter) run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	events, nullState, already := planEvents(rows)
+	events, nullState, already, attributed := planEvents(rows, r.submitters)
 
 	byState := map[int16]int{}
+	actors := map[int64]struct{}{}
 	for _, e := range events {
 		byState[e.ToState]++
+		if e.ActorUID != 0 {
+			actors[e.ActorUID] = struct{}{}
+		}
 	}
 	slog.Info("claims to re-site", "from", fromSite, "to", toSite, "works", len(rows))
 	slog.Info("backfill events planned", "events", len(events),
 		"null_claim_state_recorded_as_live", nullState, "skipped_already_backfilled", already)
+	slog.Info("attribution", "attributed_to_a_submitter", attributed,
+		"system_actor_0", len(events)-attributed, "distinct_submitters", len(actors))
 	site, productWorkID := toSite, int64(1) // a claimed row, for the projection
 	for state, n := range byState {
 		slog.Info("  by state", "claim_state", state,
@@ -234,7 +315,7 @@ func (r *resiter) guardCollisions(ctx context.Context) error {
 func (r *resiter) claims(ctx context.Context) ([]workRow, error) {
 	var rows []workRow
 	err := r.db.WithContext(ctx).Raw(
-		`SELECT w.id, w.claim_state,
+		`SELECT w.id, w.product_work_id, w.claim_state,
 		        EXISTS (SELECT 1 FROM catalog_claim_event e
 		                WHERE e.work_id = w.id AND e.reason = ?) AS has_event
 		 FROM catalog_work w WHERE w.site = ? ORDER BY w.id`, backfillReason, fromSite).
@@ -252,8 +333,8 @@ func insertEvents(ctx context.Context, tx *gorm.DB, batch []plannedEvent) error 
 		if i > 0 {
 			values += ","
 		}
-		values += "(?, NULL, ?, 0, ?, ?, now())"
-		args = append(args, e.WorkID, e.ToState, backfillReason, toSite)
+		values += "(?, NULL, ?, ?, ?, ?, now())"
+		args = append(args, e.WorkID, e.ToState, e.ActorUID, backfillReason, toSite)
 	}
 	return tx.WithContext(ctx).Exec(
 		`INSERT INTO catalog_claim_event

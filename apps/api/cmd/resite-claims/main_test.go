@@ -16,9 +16,10 @@ func TestPlanEventsRecordsEveryClaimExactlyOnce(t *testing.T) {
 		{ID: 4, ClaimState: ptr(catmodel.ClaimStatePending)},
 		{ID: 5, ClaimState: ptr(catmodel.ClaimStateDeclined)},
 	}
-	events, nullState, already := planEvents(rows)
-	if len(events) != len(rows) || nullState != 0 || already != 0 {
-		t.Fatalf("events=%d null=%d already=%d, want one event per claim", len(events), nullState, already)
+	events, nullState, already, attributed := planEvents(rows, nil)
+	if len(events) != len(rows) || nullState != 0 || already != 0 || attributed != 0 {
+		t.Fatalf("events=%d null=%d already=%d attributed=%d, want one event per claim",
+			len(events), nullState, already, attributed)
 	}
 	for i, e := range events {
 		if e.WorkID != rows[i].ID || e.ToState != *rows[i].ClaimState {
@@ -30,7 +31,7 @@ func TestPlanEventsRecordsEveryClaimExactlyOnce(t *testing.T) {
 // A NULL claim_state on a claimed row means `live` — the one definition in
 // model.ClaimStateKey. The backfill must record that, not skip the row.
 func TestNullClaimStateIsRecordedAsLive(t *testing.T) {
-	events, nullState, _ := planEvents([]workRow{{ID: 7, ClaimState: nil}})
+	events, nullState, _, _ := planEvents([]workRow{{ID: 7, ClaimState: nil}}, nil)
 	if len(events) != 1 {
 		t.Fatalf("events = %d, want 1 — a claim with no stamped state still has a state", len(events))
 	}
@@ -43,10 +44,10 @@ func TestNullClaimStateIsRecordedAsLive(t *testing.T) {
 }
 
 func TestAlreadyBackfilledClaimsAreSkipped(t *testing.T) {
-	events, _, already := planEvents([]workRow{
+	events, _, already, _ := planEvents([]workRow{
 		{ID: 1, ClaimState: ptr(catmodel.ClaimStateLive), HasEvent: true},
 		{ID: 2, ClaimState: ptr(catmodel.ClaimStateLive)},
-	})
+	}, nil)
 	if len(events) != 1 || events[0].WorkID != 2 || already != 1 {
 		t.Fatalf("events=%+v already=%d, want only the un-backfilled work", events, already)
 	}
@@ -67,6 +68,30 @@ func TestClientVerdicts(t *testing.T) {
 	for _, c := range cases {
 		if got := clientVerdict(c.catalogSite, c.imageSiteKey); got != c.want {
 			t.Errorf("clientVerdict(%q, %q) = %q, want %q", c.catalogSite, c.imageSiteKey, got, c.want)
+		}
+	}
+}
+
+// Attribution comes from the forum's own creator snapshot, joined on the gid.
+// A claim the forum has no creator for stays actor 0 = system: the wiki simply
+// did not record who submitted it, and putting a name on an act nobody
+// performed would be worse than an honest blank.
+func TestEventsAreAttributedToTheForumSubmitter(t *testing.T) {
+	submitters := map[int64]int64{100: 7, 200: 9}
+	rows := []workRow{
+		{ID: 1, ProductWorkID: ptr(int64(100)), ClaimState: ptr(catmodel.ClaimStateLive)},
+		{ID: 2, ProductWorkID: ptr(int64(200)), ClaimState: ptr(catmodel.ClaimStateDraft)},
+		{ID: 3, ProductWorkID: ptr(int64(300)), ClaimState: ptr(catmodel.ClaimStateLive)}, // no stub
+		{ID: 4, ProductWorkID: nil, ClaimState: ptr(catmodel.ClaimStateLive)},             // no gid at all
+	}
+	events, _, _, attributed := planEvents(rows, submitters)
+	if attributed != 2 {
+		t.Fatalf("attributed = %d, want 2", attributed)
+	}
+	want := []int64{7, 9, 0, 0}
+	for i, e := range events {
+		if e.ActorUID != want[i] {
+			t.Errorf("event %d actor = %d, want %d", i, e.ActorUID, want[i])
 		}
 	}
 }
