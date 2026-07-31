@@ -66,7 +66,8 @@ func (r *Resolver) Can(roles []string, p Permission) bool
 
 ### 2.3 全部权限的当前 golden 表
 
-> 唯一权威在代码里的 `*_test.go` golden 映射;下表是它的人读快照(2026-07-08)。
+> 唯一权威在代码里的 `*_test.go` golden 映射;下表是它的人读快照(**2026-07-31**,
+> 逐行核对七个 `perm_test.go` 的 `goldenGrants` 取得)。
 
 | 权限 | 授予角色捆 | 语义 |
 |---|---|---|
@@ -79,18 +80,32 @@ func (r *Resolver) Can(roles []string, p Permission) bool
 | `galgame.taxonomy.review` | moderator, admin, ren | taxonomy 修订回滚 |
 | `galgame.search.all_states` | moderator, admin, ren | 越过公开态钳制、跨全部状态搜索 |
 | `galgame.owner_override` | admin, ren | 越权处置(owner-or-admin 的 admin 支;**不含 moderator**) |
-| `catalog.review` | ren | catalog 内部审核/浏览面 |
+| `edit.galgame.game.review` | admin, ren | 引擎面裁决 `galgame.game` 提案(merge/decline/amend/revert);跟随 owner_override 轴(**不含 moderator**) |
+| `edit.galgame.game.status` | moderator, admin, ren | 直改 `galgame.game.status` 管理字段(approve/decline/ban/unban 落为引擎直编);跟随 admin_access 轴 |
+| `edit.galgame.game.vndb_id` | moderator, admin, ren | 改 `galgame.game.vndb_id`(占坑教训 → 已发布条目 staff-only;投稿人改自己草稿由 adapter 情境授予,非角色) |
+| `catalog.review` | ren | catalog 内部审核/浏览面(注册表策展:merge/unmerge、对账队列) |
+| `catalog.claim.review` | moderator, admin, ren | 裁决产品站投稿认领(approve/decline/ban/unban);与 `catalog.review` **刻意分键**——投稿审核是常规内容审核,收窄到 ren 即产品权利回归 |
+| `edit.catalog.work` | admin, ren | 引擎面对 `catalog.work` 提提案(全局角色授予只给策展 staff;租户用户经信任层级/站点叠加取得) |
+| `edit.catalog.work.review` | admin, ren | 引擎面裁决 `catalog.work` 提案(amend/merge/decline/revert) |
+| `edit.catalog.taxonomy` | admin, ren | 引擎面对 `catalog.{label,tag,engine,series}` 提提案(四族**一把键**=同一权威:注册表共享词表) |
+| `edit.catalog.taxonomy.review` | admin, ren | 引擎面裁决词表提案;**建/删/合并词表条目不在此键**,属注册表策展,仍在 `catalog.review` 之后 |
 | `trust.queue_access` | moderator, admin, ren | T&S 统一审核收件箱队列 |
 | `trust.term_manage` | admin, ren | Tier0 词表增改/退役(站域封禁权,比 queue_access 敏感;**不含 moderator**) |
 | `ai.usage_view` | admin, ren | AI 网关用量/成本/预算看板(**不含 moderator**——运营面) |
 | `oauth.admin_access` | admin, ren | 控制台四组门(/admin、/sites、/oauth/clients、/admin/artifact) |
 | `oauth.users.pii_view` | ren | 看用户 PII(邮箱/IP) |
 | `oauth.roles.grant_basic` | admin, ren | 授予/撤销 moderator、creator |
+| `oauth.roles.grant_site` | admin, ren | 授予/撤销站点作用域角色(契约 12-site-roles;站点角色恒低于全局 moderator,故 admin 可授) |
 | `oauth.roles.grant_admin` | ren | 授予/撤销 admin(及隐式 user 基座) |
 | `oauth.clients.storage_config` | ren | 开客户端存储能力(artifact/image) |
 | `oauth.clients.privileged_config` | ren | 敏感客户端字段(ren-only scope / auto_consent / display_order) |
 | `artifact.files.manage` | ren | artifact 文件浏览/删除/回收 |
 | `devapi.manage` | admin, ren | 开发者平台管理面(启用应用 / tier / 铸·轮换·吊销 key) |
+
+> **`edit.*` 命名段说明**:编辑引擎的字段策略键以 `edit.<entity 全名>` 起头
+> (`edit.galgame.game.*` / `edit.catalog.work*` / `edit.catalog.taxonomy*`),
+> 与 §2.4 的 `<domain>.<object>.<verb>` 并存——引擎按实体名解析策略,故 domain
+> 段落在 `edit.` 之后。键仍分别由所属域的 perm 包(galgame / catalog)持有。
 
 ### 2.4 命名约定
 
