@@ -70,7 +70,10 @@ func TestClaimStateProjectionIsTotalAndIdempotent(t *testing.T) {
 		// split the wire could not tell a wizard which it was looking at.
 		{13, gmodel.GalgameStatusPending, model.ClaimStatePending},
 		{14, gmodel.GalgameStatusBanned, model.ClaimStateHidden},
-		{15, gmodel.GalgameStatusDeclined, model.ClaimStateHidden},
+		// The second half of the same ruling: a turned-down submission and a
+		// staff-removed entry are different facts about a work, and the
+		// submitter is the person who most needs them told apart.
+		{15, gmodel.GalgameStatusDeclined, model.ClaimStateDeclined},
 		// A status outside the vocabulary must land on the CONSERVATIVE end —
 		// publishing an entry we do not understand is the failure this guards.
 		{16, 77, model.ClaimStateHidden},
@@ -134,11 +137,12 @@ func TestClaimStateDryRunWritesNothing(t *testing.T) {
 // own lifecycle endpoints have acted on a claim — the presence of any
 // catalog_claim_event row is the whole signal — this projector stops recomputing
 // its state from galgame.status. Without the skip, an approve/decline/ban made
-// through the catalog face is reverted within the day, and `declined` — the one
-// wave-154 state this projector still cannot produce — can never survive.
-// (`pending` it CAN produce since wave 161 P5, but only from wiki status 3; a
-// governed claim that reached pending through the catalog face must keep it
-// regardless of what the wiki row says, which is what this test pins.)
+// through the catalog face is reverted within the day.
+//
+// Since wave 161 P5 this projector CAN produce all five states, but only ever
+// as a function of the wiki row. A governed claim's state came from a lifecycle
+// action instead, and must survive regardless of what the wiki row now says —
+// which is what this test pins.
 func TestClaimStateSkipsGovernedWorks(t *testing.T) {
 	clean(t)
 	seedGameStatus(t, 31, gmodel.GalgameStatusPublished) // stays projected
@@ -183,7 +187,8 @@ func TestClaimStateSkipsGovernedWorks(t *testing.T) {
 	assert.Equal(t, model.ClaimStateHidden, *untouched)
 }
 
-// TestClaimStateSeparatesPendingFromDraft pins wave 161 P5 (162 §4 ruling ②)
+// TestClaimStateSeparatesPendingFromDraft pins wave 161 P5 (162 §4 ruling ②,
+// extended to declined by the P4 verdict)
 // on its own, because the property it protects is not "the table has the right
 // values" but "the two populations are DISTINGUISHABLE on the wire".
 //
@@ -206,6 +211,18 @@ func TestClaimStateSeparatesPendingFromDraft(t *testing.T) {
 	assert.Equal(t, model.ClaimStateDraft, *stub)
 	assert.Equal(t, model.ClaimStatePending, *review)
 	assert.NotEqual(t, *stub, *review, "the two must never collapse back onto one value")
+
+	// The declined/hidden half of the same ruling.
+	seedGameStatus(t, 43, gmodel.GalgameStatusDeclined)
+	seedGameStatus(t, 44, gmodel.GalgameStatusBanned)
+	_, err = New(testDB, testDB, nil, Options{Phase: PhaseClaim}).Run(t.Context(), PhaseClaim)
+	require.NoError(t, err)
+	turnedDown, removed := claimStateOfWork(t, 43), claimStateOfWork(t, 44)
+	require.NotNil(t, turnedDown)
+	require.NotNil(t, removed)
+	assert.Equal(t, model.ClaimStateDeclined, *turnedDown)
+	assert.Equal(t, model.ClaimStateHidden, *removed)
+	assert.NotEqual(t, *turnedDown, *removed, "a turned-down submission is not a staff removal")
 
 	// A wizard's actual query: claim_state=draft must no longer hand back the
 	// row it cannot claim.
