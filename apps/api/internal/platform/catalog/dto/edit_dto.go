@@ -103,6 +103,12 @@ type EditAmendmentView struct {
 
 type EditProposalListResponse struct {
 	Items []EditProposalView `json:"items"`
+	// Total is how many proposals the SAME filter matches, ignoring limit
+	// (wave 162). A contribution statistic — "edits merged", a creator
+	// eligibility threshold — is a number, and counting a capped page answers
+	// 50 forever. Additive: pre-existing callers reading only items are
+	// byte-identical.
+	Total int64 `json:"total"`
 }
 
 // EditRevisionView is one row of the append-only revision log. Action is a

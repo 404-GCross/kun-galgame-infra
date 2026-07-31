@@ -861,6 +861,8 @@ export interface components {
         };
         EditProposalListResponse: {
             items: components["schemas"]["EditProposalView"][] | null;
+            /** Format: int64 */
+            total: number;
         };
         EditProposalView: {
             /** @description Seq-ordered (detail endpoint only) */

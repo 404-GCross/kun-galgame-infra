@@ -297,14 +297,14 @@ func (s *EditServer) list(ctx context.Context, in *editListInput) (*editListOutp
 			return nil, apiErrMsg(http.StatusUnprocessableEntity, errors.ErrValidationFailed, "unknown status")
 		}
 	}
-	items, err := s.engine.ListProposals(ctx, editing.ProposalFilter{
+	items, total, err := s.engine.ListProposalsWithTotal(ctx, editing.ProposalFilter{
 		EntityType: in.EntityType, EntityID: in.EntityID, Site: in.Site,
 		ProposerUID: in.ProposerUID, Status: status, Limit: in.Limit,
 	})
 	if err != nil {
 		return nil, editErr(err)
 	}
-	resp := dto.EditProposalListResponse{Items: make([]dto.EditProposalView, 0, len(items))}
+	resp := dto.EditProposalListResponse{Items: make([]dto.EditProposalView, 0, len(items)), Total: total}
 	for i := range items {
 		resp.Items = append(resp.Items, proposalView(&items[i]))
 	}

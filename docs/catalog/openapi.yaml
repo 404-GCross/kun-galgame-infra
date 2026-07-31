@@ -747,8 +747,12 @@ components:
           type:
             - array
             - "null"
+        total:
+          format: int64
+          type: integer
       required:
         - items
+        - total
       type: object
     EditProposalView:
       additionalProperties: false

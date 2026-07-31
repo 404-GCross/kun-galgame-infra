@@ -290,11 +290,15 @@ func TestEditFaceLetmoeTenant(t *testing.T) {
 				ID          int64 `json:"id"`
 				ProposerUID int64 `json:"proposer_uid"`
 			} `json:"items"`
+			Total int64 `json:"total"`
 		} `json:"data"`
 	}
 	require.NoError(t, json.Unmarshal(raw, &list))
 	require.Len(t, list.Data.Items, 1)
 	assert.Equal(t, open.Data.Proposal.ID, list.Data.Items[0].ID)
+	// wave 162: the total is counted behind the SAME filter, so a product can
+	// read "edits by this user" as a number instead of a page length.
+	assert.EqualValues(t, 1, list.Data.Total)
 
 	// Entity-aware schema projection: owned → would_automerge, public → not.
 	wouldAutomerge := func(entityID int64) bool {

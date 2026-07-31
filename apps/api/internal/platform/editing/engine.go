@@ -125,6 +125,19 @@ type ProposalFilter struct {
 
 // ListProposals returns proposals newest-first.
 func (e *Engine) ListProposals(ctx context.Context, f ProposalFilter) ([]Proposal, error) {
+	items, _, err := e.ListProposalsWithTotal(ctx, f)
+	return items, err
+}
+
+// ListProposalsWithTotal is ListProposals plus the count of rows the SAME
+// filter matches, ignoring the page limit (wave 162, 161 §6.P3-verdict STOP-4).
+//
+// A count is not a nicety here: a product's contribution statistics ("edits
+// merged", the creator-eligibility threshold) are a NUMBER, and reading it off
+// a capped page silently answers "50" forever. Wave 157 argued the per-user
+// claims face's total made a dedicated stats endpoint unnecessary; the same
+// argument only holds for edits once this face carries a total too.
+func (e *Engine) ListProposalsWithTotal(ctx context.Context, f ProposalFilter) ([]Proposal, int64, error) {
 	q := e.db.WithContext(ctx).Model(&Proposal{})
 	if f.EntityType != "" {
 		q = q.Where("entity_type = ?", f.EntityType)
@@ -145,11 +158,17 @@ func (e *Engine) ListProposals(ctx context.Context, f ProposalFilter) ([]Proposa
 	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
-	var out []Proposal
-	if err := q.Order("id DESC").Limit(limit).Find(&out).Error; err != nil {
-		return nil, err
+	// The count runs on a SESSION-forked query so the shared WHERE clauses are
+	// reused without the paging clauses leaking into either statement.
+	var total int64
+	if err := q.Session(&gorm.Session{}).Count(&total).Error; err != nil {
+		return nil, 0, err
 	}
-	return out, nil
+	var out []Proposal
+	if err := q.Session(&gorm.Session{}).Order("id DESC").Limit(limit).Find(&out).Error; err != nil {
+		return nil, 0, err
+	}
+	return out, total, nil
 }
 
 // ListRevisions returns an entity's revision log, newest-first.
