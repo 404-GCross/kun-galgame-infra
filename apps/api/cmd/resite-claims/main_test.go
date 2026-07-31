@@ -16,10 +16,10 @@ func TestPlanEventsRecordsEveryClaimExactlyOnce(t *testing.T) {
 		{ID: 4, ClaimState: ptr(catmodel.ClaimStatePending)},
 		{ID: 5, ClaimState: ptr(catmodel.ClaimStateDeclined)},
 	}
-	events, nullState, already, attributed := planEvents(rows, nil)
-	if len(events) != len(rows) || nullState != 0 || already != 0 || attributed != 0 {
-		t.Fatalf("events=%d null=%d already=%d attributed=%d, want one event per claim",
-			len(events), nullState, already, attributed)
+	events, nullState, already, bySource := planEvents(rows, nil)
+	if len(events) != len(rows) || nullState != 0 || already != 0 || len(bySource) != 0 {
+		t.Fatalf("events=%d null=%d already=%d bySource=%v, want one event per claim",
+			len(events), nullState, already, bySource)
 	}
 	for i, e := range events {
 		if e.WorkID != rows[i].ID || e.ToState != *rows[i].ClaimState {
@@ -72,26 +72,32 @@ func TestClientVerdicts(t *testing.T) {
 	}
 }
 
-// Attribution comes from the forum's own creator snapshot, joined on the gid.
-// A claim the forum has no creator for stays actor 0 = system: the wiki simply
-// did not record who submitted it, and putting a name on an act nobody
-// performed would be worse than an honest blank.
-func TestEventsAreAttributedToTheForumSubmitter(t *testing.T) {
-	submitters := map[int64]int64{100: 7, 200: 9}
+// Attribution walks the sources in order and takes the first hit. A claim
+// neither product has a submitter for stays actor 0 = system: nobody recorded
+// who submitted it, and putting a name on an act nobody performed would be
+// worse than an honest blank.
+func TestEventsAreAttributedInSourceOrder(t *testing.T) {
+	sources := []attributionSource{
+		{Name: sourceForum, ByGID: map[int64]int64{100: 7, 200: 9}},
+		{Name: sourceMoyu, ByGID: map[int64]int64{200: 99, 300: 11}},
+	}
 	rows := []workRow{
-		{ID: 1, ProductWorkID: ptr(int64(100)), ClaimState: ptr(catmodel.ClaimStateLive)},
-		{ID: 2, ProductWorkID: ptr(int64(200)), ClaimState: ptr(catmodel.ClaimStateDraft)},
-		{ID: 3, ProductWorkID: ptr(int64(300)), ClaimState: ptr(catmodel.ClaimStateLive)}, // no stub
-		{ID: 4, ProductWorkID: nil, ClaimState: ptr(catmodel.ClaimStateLive)},             // no gid at all
+		{ID: 1, ProductWorkID: ptr(int64(100)), ClaimState: ptr(catmodel.ClaimStateLive)},  // forum only
+		{ID: 2, ProductWorkID: ptr(int64(200)), ClaimState: ptr(catmodel.ClaimStateDraft)}, // both → forum wins
+		{ID: 3, ProductWorkID: ptr(int64(300)), ClaimState: ptr(catmodel.ClaimStateLive)},  // moyu only
+		{ID: 4, ProductWorkID: ptr(int64(400)), ClaimState: ptr(catmodel.ClaimStateLive)},  // neither
+		{ID: 5, ProductWorkID: nil, ClaimState: ptr(catmodel.ClaimStateLive)},              // no gid at all
 	}
-	events, _, _, attributed := planEvents(rows, submitters)
-	if attributed != 2 {
-		t.Fatalf("attributed = %d, want 2", attributed)
-	}
-	want := []int64{7, 9, 0, 0}
+	events, _, _, bySource := planEvents(rows, sources)
+	wantUID := []int64{7, 9, 11, 0, 0}
+	wantSrc := []string{sourceForum, sourceForum, sourceMoyu, "", ""}
 	for i, e := range events {
-		if e.ActorUID != want[i] {
-			t.Errorf("event %d actor = %d, want %d", i, e.ActorUID, want[i])
+		if e.ActorUID != wantUID[i] || e.Source != wantSrc[i] {
+			t.Errorf("event %d = (uid %d, source %q), want (uid %d, source %q)",
+				i, e.ActorUID, e.Source, wantUID[i], wantSrc[i])
 		}
+	}
+	if bySource[sourceForum] != 2 || bySource[sourceMoyu] != 1 {
+		t.Errorf("bySource = %v, want forum 2 / moyu 1", bySource)
 	}
 }

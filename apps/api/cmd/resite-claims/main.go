@@ -12,8 +12,9 @@
 //  2. one catalog_claim_event per re-sited claim: from_state=NULL (there was
 //     no prior recorded state — the transition that created the claim
 //     predates the event table), to_state = the claim's CURRENT state,
-//     actor_uid = the submitter where the forum still remembers one (see
-//     --forum-dsn), reason='w1-resite backfill'. This is the 157 §4-②
+//     actor_uid = the submitter, looked up in the products' own records
+//     (--forum-dsn then --moyu-dsn, in that order), reason='w1-resite
+//     backfill'. This is the 157 §4-②
 //     ruling landing: without it the per-user faces and the pending queue that
 //     wave 157 shipped are empty for every pre-existing claim, because they
 //     are aggregates over this table and the table only starts at wave 155.
@@ -70,8 +71,9 @@ const (
 
 func main() {
 	dsn := flag.String("dsn", "", "catalog DSN (REQUIRED — this tool never guesses a database)")
-	forumDSN := flag.String("forum-dsn", "", "forum DSN, read-only; supplies the submitter of each claim (REQUIRED unless --no-forum-attribution)")
-	noForumAttribution := flag.Bool("no-forum-attribution", false, "deliberately mint every event with actor_uid=0")
+	forumDSN := flag.String("forum-dsn", "", "forum DSN, read-only; first attribution source (REQUIRED unless --no-attribution)")
+	moyuDSN := flag.String("moyu-dsn", "", "moyu DSN, read-only; second attribution source (REQUIRED unless --no-attribution)")
+	noAttribution := flag.Bool("no-attribution", false, "deliberately mint every event with actor_uid=0")
 	infraDSN := flag.String("infra-dsn", "", "infra DSN; when set, prints the OAuth client / API key binding report")
 	apply := flag.Bool("apply", false, "write changes (default: dry run, ledger only)")
 	flag.Parse()
@@ -84,8 +86,8 @@ func main() {
 	// Attribution is opt-OUT, not opt-in. A forgotten flag would mint 64k
 	// unattributed events, and the backfill is idempotent — the second run
 	// would not fix them, it would skip them. The footgun is worth a flag.
-	if *forumDSN == "" && !*noForumAttribution {
-		slog.Error("--forum-dsn is required (or pass --no-forum-attribution to mint every event as system)")
+	if (*forumDSN == "" || *moyuDSN == "") && !*noAttribution {
+		slog.Error("--forum-dsn and --moyu-dsn are both required (or pass --no-attribution to mint every event as system)")
 		os.Exit(2)
 	}
 	db, err := open(*dsn)
@@ -98,23 +100,33 @@ func main() {
 	}
 
 	ctx := context.Background()
-	submitters := map[int64]int64{}
-	if *forumDSN != "" {
-		forum, err := open(*forumDSN)
+	var sources []attributionSource
+	for _, src := range []struct {
+		name, dsn, query string
+	}{
+		{sourceForum, *forumDSN, forumSubmitterQuery},
+		{sourceMoyu, *moyuDSN, moyuSubmitterQuery},
+	} {
+		if src.dsn == "" {
+			continue
+		}
+		conn, err := open(src.dsn)
 		if err != nil {
-			slog.Error("forum db connect", "error", err)
+			slog.Error("attribution db connect", "source", src.name, "error", err)
 			os.Exit(1)
 		}
-		if s, err := forum.DB(); err == nil {
-			defer s.Close()
+		if sqlDB, err := conn.DB(); err == nil {
+			defer sqlDB.Close()
 		}
-		if submitters, err = loadSubmitters(ctx, forum); err != nil {
-			slog.Error("load submitters", "error", err)
+		byGID, err := loadSubmitters(ctx, conn, src.query)
+		if err != nil {
+			slog.Error("load submitters", "source", src.name, "error", err)
 			os.Exit(1)
 		}
-		slog.Info("forum submitter snapshot loaded", "stubs_with_creator", len(submitters))
+		slog.Info("submitter snapshot loaded", "source", src.name, "rows_with_a_submitter", len(byGID))
+		sources = append(sources, attributionSource{Name: src.name, ByGID: byGID})
 	}
-	r := &resiter{db: db, apply: *apply, submitters: submitters}
+	r := &resiter{db: db, apply: *apply, sources: sources}
 	if err := r.run(ctx); err != nil {
 		slog.Error("resite failed", "error", err)
 		os.Exit(1)
@@ -157,6 +169,8 @@ type plannedEvent struct {
 	WorkID   int64
 	ToState  int16
 	ActorUID int64
+	// Source names the attribution lane that supplied ActorUID ("" = system).
+	Source string
 }
 
 // planEvents decides which claims get a birth event.
@@ -172,12 +186,17 @@ type plannedEvent struct {
 //
 // The only skip is idempotency: a work that already carries a backfill row.
 //
-// actor_uid comes from the forum's own creator snapshot (submitters, keyed by
-// gid) and falls back to 0 = system. 0 is not a guess and not a placeholder: it
-// is the model's documented value for "unattributed", and the wiki genuinely
-// did not record a submitter for most of this corpus. Inventing an actor for
-// those rows would put a name on an act nobody performed.
-func planEvents(rows []workRow, submitters map[int64]int64) (events []plannedEvent, nullState, already, attributed int) {
+// actor_uid is looked up in the attribution sources IN ORDER — forum first,
+// then moyu — and falls back to 0 = system. First match wins: a work both
+// products know is the forum's submission, because that is where its stub was
+// created.
+//
+// 0 is not a guess and not a placeholder: it is the model's documented value
+// for "unattributed", and neither product recorded a submitter for most of this
+// corpus. Inventing an actor for those rows would put a name on an act nobody
+// performed.
+func planEvents(rows []workRow, sources []attributionSource) (events []plannedEvent, nullState, already int, bySource map[string]int) {
+	bySource = map[string]int{}
 	for _, row := range rows {
 		if row.HasEvent {
 			already++
@@ -189,46 +208,85 @@ func planEvents(rows []workRow, submitters map[int64]int64) (events []plannedEve
 		} else {
 			nullState++
 		}
-		var actor int64
+		event := plannedEvent{WorkID: row.ID, ToState: state}
 		if row.ProductWorkID != nil {
-			if uid, ok := submitters[*row.ProductWorkID]; ok {
-				actor = uid
-				attributed++
+			for _, src := range sources {
+				if uid, ok := src.ByGID[*row.ProductWorkID]; ok {
+					event.ActorUID, event.Source = uid, src.Name
+					bySource[src.Name]++
+					break
+				}
 			}
 		}
-		events = append(events, plannedEvent{WorkID: row.ID, ToState: state, ActorUID: actor})
+		events = append(events, event)
 	}
-	return events, nullState, already, attributed
+	return events, nullState, already, bySource
 }
 
 type resiter struct {
 	db    *gorm.DB
 	apply bool
-	// submitters maps a wiki gid to the forum user who submitted it, read from
-	// the forum's own galgame stub table (its id IS the gid). Empty = every
-	// event is minted as system.
-	submitters map[int64]int64
+	// sources are the attribution lanes IN PRIORITY ORDER: the first one that
+	// knows a gid's submitter wins. Empty = every event is minted as system.
+	sources []attributionSource
 }
 
-// loadSubmitters reads the forum's creator snapshot. READ ONLY, and the only
-// thing this tool ever asks the forum database for.
+// attributionSource is one product's record of who submitted a work, keyed by
+// the wiki gid.
+type attributionSource struct {
+	Name  string
+	ByGID map[int64]int64
+}
+
+const (
+	sourceForum = "forum"
+	sourceMoyu  = "moyu"
+
+	// forumSubmitterQuery reads the forum's creator snapshot. Its galgame stub
+	// table's id IS the wiki gid, and creator_user_id is the very column the
+	// forum's "my submissions" page renders off — attributing the backfill to
+	// anything else would build a per-user face that disagrees with the one the
+	// product already shows.
+	forumSubmitterQuery = `SELECT id, creator_user_id AS uid FROM galgame
+	                       WHERE creator_user_id IS NOT NULL AND creator_user_id > 0`
+
+	// moyuSubmitterQuery is the second lane: a work submitted on moyu and never
+	// touched on the forum has no forum stub, so without this its events would
+	// be system-owned and moyu's own mine page would come back empty.
+	//
+	// patch.id IS the wiki gid — VERIFIED, not assumed, because the obvious
+	// alternative is a trap. galgame_migrations(source_db='moyu') looks like the
+	// id map and is not one: it records the PRE-migration moyu ids, and joining
+	// through it agrees with the wiki's vndb_id on 4 rows out of 6,465. The
+	// direct join agrees on 10,091 of 10,232, and 135 of the 141 remainder are
+	// moyu placeholder ids of the literal form 'wiki-<gid>' against an empty
+	// wiki vndb_id — i.e. the moyu row names the gid it is joined to. moyu
+	// adopted the gid as its own primary key at migration time.
+	//
+	// user_id (not creator_id) per the P4 ruling. The two differ on 3,430 of
+	// 10,233 rows, so this is a real choice and not a synonym.
+	moyuSubmitterQuery = `SELECT id, user_id AS uid FROM patch WHERE user_id > 0`
+)
+
+// loadSubmitters reads one product's gid → submitter map. READ ONLY, and the
+// single query this tool ever sends that database.
 //
-// This is the same column the forum's "my submissions" page renders off, which
-// is the point: attributing the backfill to anything else would build a
-// per-user face that disagrees with the one the product already shows.
-func loadSubmitters(ctx context.Context, db *gorm.DB) (map[int64]int64, error) {
+// Both products' user ids are the PLATFORM uid (their user tables have no
+// sequence of their own and every id resolves in the infra users table —
+// verified for all 38,199 moyu and 75,807 forum rows), so the two lanes write
+// into the same actor space and a moyu-attributed event means the same thing to
+// a consumer as a forum-attributed one.
+func loadSubmitters(ctx context.Context, db *gorm.DB, query string) (map[int64]int64, error) {
 	var rows []struct {
-		ID            int64 `gorm:"column:id"`
-		CreatorUserID int64 `gorm:"column:creator_user_id"`
+		ID  int64 `gorm:"column:id"`
+		UID int64 `gorm:"column:uid"`
 	}
-	if err := db.WithContext(ctx).Raw(
-		`SELECT id, creator_user_id FROM galgame
-		 WHERE creator_user_id IS NOT NULL AND creator_user_id > 0`).Scan(&rows).Error; err != nil {
+	if err := db.WithContext(ctx).Raw(query).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	out := make(map[int64]int64, len(rows))
 	for _, row := range rows {
-		out[row.ID] = row.CreatorUserID
+		out[row.ID] = row.UID
 	}
 	return out, nil
 }
@@ -241,13 +299,15 @@ func (r *resiter) run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	events, nullState, already, attributed := planEvents(rows, r.submitters)
+	events, nullState, already, bySource := planEvents(rows, r.sources)
 
 	byState := map[int16]int{}
 	actors := map[int64]struct{}{}
+	attributed := 0
 	for _, e := range events {
 		byState[e.ToState]++
-		if e.ActorUID != 0 {
+		if e.Source != "" {
+			attributed++
 			actors[e.ActorUID] = struct{}{}
 		}
 	}
@@ -256,6 +316,9 @@ func (r *resiter) run(ctx context.Context) error {
 		"null_claim_state_recorded_as_live", nullState, "skipped_already_backfilled", already)
 	slog.Info("attribution", "attributed_to_a_submitter", attributed,
 		"system_actor_0", len(events)-attributed, "distinct_submitters", len(actors))
+	for _, src := range r.sources {
+		slog.Info("  by source", "source", src.Name, "events", bySource[src.Name])
+	}
 	site, productWorkID := toSite, int64(1) // a claimed row, for the projection
 	for state, n := range byState {
 		slog.Info("  by state", "claim_state", state,
