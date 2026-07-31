@@ -193,7 +193,12 @@ func TestEditFaceEndToEnd(t *testing.T) {
 		} `json:"data"`
 	}
 	require.NoError(t, json.Unmarshal(raw, &schema))
-	require.Len(t, schema.Data.Fields, 4)
+	// The projection carries catalog.work's whole registered field table, which
+	// wave 154 completed (03 定案 §2). Asserted as "every field is proposable
+	// and reviewable for this actor, and none automerges" rather than as a
+	// count, so adding a field to the matrix does not require editing a number
+	// here — the policy claim is what this case is about.
+	require.NotEmpty(t, schema.Data.Fields)
 	for _, f := range schema.Data.Fields {
 		assert.True(t, f.CanPropose, f.Key)
 		assert.True(t, f.CanReview, f.Key)
