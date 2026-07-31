@@ -10,11 +10,13 @@ useSeoMeta({
     '把 NextMoe 开放 API 作为 MCP（Model Context Protocol）server 接入 AI 助手：端点、密钥配置，以及 Claude Code / Claude Desktop / 通用 MCP 客户端三段配置示例。'
 })
 
-// The nine tools (mirrors apps/api/internal/platform/mcpface). Each maps 1:1
-// to a public /v1 endpoint; lookup/get take an id, search takes natural language.
+// The seventeen tools (mirrors apps/api/internal/platform/mcpface). Each maps
+// 1:1 to a public /v1 endpoint; lookup/get take an id, search takes natural
+// language, _list browses a vocabulary to discover the ids the filters take.
 // R18 is hidden by default (nsfw=true opts in). The two galgame_* tools retired
 // on 2026-07-30 with the /v1/galgame face they proxied — catalog_search
-// (type=works) and catalog_work_get replace them.
+// (type=works) and catalog_work_get replace them; the eight A2 catalog ops
+// (works search, the calendar buckets, the browse lanes) joined at wave 7.
 const tools = [
   {
     name: 'catalog_search',
@@ -48,6 +50,38 @@ const tools = [
   {
     name: 'catalog_tag_get',
     desc: '按 id 取正典标签（跨源标签词表），include=works 附携带作品。'
+  },
+  {
+    name: 'catalog_works_search',
+    desc: '作品产品检索：自由文本 + works-list 全过滤集，五档排序、可选 facets 分面计数、page 分页（组合「查询 + 过滤」时优先用它，纯名字检索用 catalog_search）。'
+  },
+  {
+    name: 'catalog_calendar',
+    desc: '发售月历单月（缺省为当前 Asia/Tokyo 月；olang 缺省收敛到 ja + zh* 族，olang=all 放开）。'
+  },
+  {
+    name: 'catalog_calendar_pending',
+    desc: '月历「知年不知月」桶（缺省为当前 Asia/Tokyo 年）。'
+  },
+  {
+    name: 'catalog_calendar_tba',
+    desc: '月历「已公布未定档」全局桶。'
+  },
+  {
+    name: 'catalog_labels_list',
+    desc: '浏览厂牌 / 社团词表本身（kind 过滤，每行带 nsfw 感知 work_count）——用来发现 label id。'
+  },
+  {
+    name: 'catalog_tags_list',
+    desc: '浏览正典标签词表本身（tier / kind 过滤）——用来发现 tag id 再喂给作品过滤。'
+  },
+  {
+    name: 'catalog_engines_list',
+    desc: '浏览引擎词表本身——用来发现 engine id 再喂给 catalog_works_search。'
+  },
+  {
+    name: 'catalog_engine_get',
+    desc: '按 id 取引擎记录（名称 + nsfw 感知 work_count + 跨源 refs）。'
   }
 ]
 
