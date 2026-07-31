@@ -153,6 +153,7 @@ func RegisterWork(reg *editing.Registry, db *gorm.DB) error {
 		Txn: func(ctx context.Context, fn func(tx *gorm.DB) error) error {
 			return db.WithContext(ctx).Transaction(fn)
 		},
+		OnMerge: buildWorkOnMerge(db),
 		// OwnerSite = the claiming site (work.Site; nil = unclaimed) — what
 		// the owner automerge rule compares the proposal's site against.
 		OwnerSite: func(ctx context.Context, entityID int64) (*string, error) {

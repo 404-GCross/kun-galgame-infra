@@ -191,13 +191,19 @@ func parseLinks(v any) ([]string, error) {
 
 func validateLinks(v any) error { _, err := parseLinks(v); return err }
 
+// applyLinks is catalog.work's links Apply; applyLinksFor is the same machine
+// for any entity family that registers a links field (catalog.label does).
 func applyLinks(ctx context.Context, tx *gorm.DB, entityID int64, value any) error {
+	if err := assertWorkExists(ctx, tx, entityID); err != nil {
+		return err
+	}
+	return applyLinksFor(ctx, tx, catmodel.EntityTypeWork, entityID, value)
+}
+
+func applyLinksFor(ctx context.Context, tx *gorm.DB, entityType int16, entityID int64, value any) error {
 	urls, err := parseLinks(value)
 	if err != nil {
 		return fmt.Errorf("editspec: links: %w", err)
-	}
-	if err := assertWorkExists(ctx, tx, entityID); err != nil {
-		return err
 	}
 	sources, err := sourceIDsByKey(ctx, tx)
 	if err != nil {
@@ -205,7 +211,7 @@ func applyLinks(ctx context.Context, tx *gorm.DB, entityID int64, value any) err
 	}
 	if err := tx.WithContext(ctx).
 		Where("entity_type = ? AND entity_id = ? AND matched_by = ?",
-			catmodel.EntityTypeWork, entityID, curatedMatchedBy).
+			entityType, entityID, curatedMatchedBy).
 		Delete(&catmodel.CatalogExternalRef{}).Error; err != nil {
 		return err
 	}
@@ -220,7 +226,7 @@ func applyLinks(ctx context.Context, tx *gorm.DB, entityID int64, value any) err
 			return fmt.Errorf("editspec: links: source %q is not registered", cl.SourceKey)
 		}
 		rows = append(rows, catmodel.CatalogExternalRef{
-			EntityType: catmodel.EntityTypeWork, EntityID: entityID,
+			EntityType: entityType, EntityID: entityID,
 			SourceID: srcID, ExternalID: cl.ExternalID,
 			LinkKind: cl.LinkKind, MatchedBy: curatedMatchedBy,
 		})
@@ -237,6 +243,10 @@ func applyLinks(ctx context.Context, tx *gorm.DB, entityID int64, value any) err
 // sources canonicalLinkURL can invert), so nothing is dropped here — the guard
 // exists for rows a future source key would leave unrenderable.
 func loadLinks(ctx context.Context, db *gorm.DB, workID int64) ([]any, error) {
+	return loadLinksFor(ctx, db, catmodel.EntityTypeWork, workID)
+}
+
+func loadLinksFor(ctx context.Context, db *gorm.DB, entityType int16, entityID int64) ([]any, error) {
 	var rows []struct {
 		SourceKey  string `gorm:"column:key"`
 		ExternalID string `gorm:"column:external_id"`
@@ -247,7 +257,7 @@ func loadLinks(ctx context.Context, db *gorm.DB, workID int64) ([]any, error) {
 		JOIN catalog_source s ON s.id = r.source_id
 		WHERE r.entity_type = ? AND r.entity_id = ? AND r.matched_by = ?
 		ORDER BY r.source_id, r.external_id`,
-		catmodel.EntityTypeWork, workID, curatedMatchedBy).Scan(&rows).Error; err != nil {
+		entityType, entityID, curatedMatchedBy).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	out := make([]any, 0, len(rows))

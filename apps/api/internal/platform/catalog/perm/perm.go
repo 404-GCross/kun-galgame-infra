@@ -21,12 +21,24 @@ const (
 	EditWorkReview authz.Permission = "edit.catalog.work.review"
 )
 
+// Vocabulary-layer editing keys (wave 154, 03 定案 §4). ONE pair covers all
+// four narrow families — catalog.{label,tag,engine,series} — because they are
+// one authority: the registry's shared vocabulary, whose entries every
+// consumer's pages hang off. Splitting the key per family would suggest a
+// distinction ("may edit engines but not series") that nothing on the platform
+// makes. Creating, deleting and merging vocabulary entries is NOT covered here:
+// that is curation of the registry itself and stays behind catalog.review.
+const (
+	EditTaxonomy       authz.Permission = "edit.catalog.taxonomy"
+	EditTaxonomyReview authz.Permission = "edit.catalog.taxonomy.review"
+)
+
 // Bundles is the catalog domain's role→permission table. The identity-
 // registry surface stays ren-only; the editing keys extend to admin (site
 // curation is an admin duty, unlike merge/unmerge which stays ren-only).
 var Bundles = authz.Bundles{
-	"admin": {EditWork, EditWorkReview},
-	"ren":   {Review, EditWork, EditWorkReview},
+	"admin": {EditWork, EditWorkReview, EditTaxonomy, EditTaxonomyReview},
+	"ren":   {Review, EditWork, EditWorkReview, EditTaxonomy, EditTaxonomyReview},
 }
 
 // Resolver is the package-level singleton the catalog enforcement points check.

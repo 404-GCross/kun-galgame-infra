@@ -14,6 +14,11 @@ var goldenGrants = map[authz.Permission][]string{
 	perm.Review:         {"ren"},
 	perm.EditWork:       {"admin", "ren"},
 	perm.EditWorkReview: {"admin", "ren"},
+	// The vocabulary layer follows the work keys: curation staff only. Tenant
+	// users reach the editing engine through trust tiers and site overlays,
+	// never through a global role.
+	perm.EditTaxonomy:       {"admin", "ren"},
+	perm.EditTaxonomyReview: {"admin", "ren"},
 }
 
 var allRoles = []string{"user", "creator", "moderator", "admin", "ren"}

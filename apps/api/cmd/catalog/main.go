@@ -148,6 +148,15 @@ func main() {
 		slog.Error("editing: register catalog.work", "error", err)
 		os.Exit(1)
 	}
+	// The vocabulary layer (wave 154, 03 定案 §4): catalog.{label,tag,engine,
+	// series} as narrow field-edit registrations. Registering them here is all
+	// it takes for the generic /internal/edit face to serve them — which is the
+	// point of a family-agnostic engine, and why retiring the two taxonomy CRUD
+	// consoles costs no replacement UI on this side.
+	if err := editspec.RegisterTaxonomy(editRegistry, catalogDB.DB()); err != nil {
+		slog.Error("editing: register catalog taxonomy families", "error", err)
+		os.Exit(1)
+	}
 	// galgame.game (E2a): the galgame family's registration carries the
 	// galgame pool in its closures; the engine tables stay on the catalog
 	// pool. The same engine instance serves the S2S edit face AND the
