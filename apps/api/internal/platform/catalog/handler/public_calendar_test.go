@@ -26,7 +26,7 @@ import (
 func calendarApp(db *gorm.DB) *fiber.App {
 	resolveSvc := service.NewResolveService(repository.NewRedirectRepository(db))
 	publicSvc := service.NewPublicService(db, service.NewReadService(db), resolveSvc, "")
-	h := NewPublicHandler(publicSvc, resolveSvc, nil)
+	h := NewPublicHandler(publicSvc, resolveSvc, nil, nil)
 	app := fiber.New()
 	app.Get("/v1/catalog/calendar", h.Calendar)
 	app.Get("/v1/catalog/calendar/pending", h.CalendarPending)

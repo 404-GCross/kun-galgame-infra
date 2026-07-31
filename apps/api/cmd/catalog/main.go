@@ -209,7 +209,7 @@ func main() {
 	// read-only bypass (step 03) behind the shared devapi middleware chain; the
 	// S2S (/api/v1/catalog) and admin (/api/v1/admin/catalog) faces are untouched
 	// (disjoint prefixes). Probable anchors and r18 works never surface.
-	setupPublicCatalog(application, cfg, catalogDB, readSvc, resolveSvc, searcher)
+	setupPublicCatalog(application, cfg, catalogDB, readSvc, resolveSvc, searcher, statsSvc)
 
 	// Host the full galgame HTTP surface (wiki-retirement W2; SOLE host since
 	// the standalone galgame service retired at W3) — internal /api/galgame|tag|
@@ -270,6 +270,7 @@ func setupPublicCatalog(
 	readSvc *service.ReadService,
 	resolveSvc *service.ResolveService,
 	searcher *catalogSearch.Indexer,
+	statsSvc *service.StatsService,
 ) {
 	oauthDB := application.DB.DB() // kun_galgame_infra — the developer-platform tables
 
@@ -320,7 +321,7 @@ func setupPublicCatalog(
 	// same catalog_works index the entity autocomplete uses, then re-hydrates
 	// the page from Postgres.
 	publicSvc.WithWorksSearch(searcher)
-	publicH := catHandler.NewPublicHandler(publicSvc, resolveSvc, searcher)
+	publicH := catHandler.NewPublicHandler(publicSvc, resolveSvc, searcher, statsSvc)
 
 	// Meter every response to (client, key, "catalog", day) + async last-used
 	// touch. Placed right after ResolveCredential so a 401 (no/invalid key) is not
@@ -356,6 +357,9 @@ func setupPublicCatalog(
 	v1.Get("/works", publicH.WorksList)
 	v1.Get("/works/search", publicH.WorksSearch)
 	v1.Get("/changes", publicH.Changes)
+	// Slim public counts (149b) — the product-facing "how big is this
+	// catalogue" number; the internal dashboard stays on the S2S face.
+	v1.Get("/stats", publicH.Stats)
 	// Release-calendar buckets (A2-1c): month view + the two pending buckets.
 	v1.Get("/calendar", publicH.Calendar)
 	v1.Get("/calendar/pending", publicH.CalendarPending)

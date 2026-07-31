@@ -29,7 +29,7 @@ import (
 func worksSearchApp(db *gorm.DB) *fiber.App {
 	resolveSvc := service.NewResolveService(repository.NewRedirectRepository(db))
 	publicSvc := service.NewPublicService(db, service.NewReadService(db), resolveSvc, "")
-	h := NewPublicHandler(publicSvc, resolveSvc, nil)
+	h := NewPublicHandler(publicSvc, resolveSvc, nil, nil)
 	app := fiber.New()
 	app.Get("/v1/catalog/works/search", h.WorksSearch)
 	return app
@@ -259,7 +259,7 @@ func TestWorksSearchRouteOrder(t *testing.T) {
 	db := openCatalogTestDB(t)
 	resolveSvc := service.NewResolveService(repository.NewRedirectRepository(db))
 	publicSvc := service.NewPublicService(db, service.NewReadService(db), resolveSvc, "")
-	h := NewPublicHandler(publicSvc, resolveSvc, nil)
+	h := NewPublicHandler(publicSvc, resolveSvc, nil, nil)
 	app := fiber.New()
 	// Same order as setupPublicCatalog.
 	app.Get("/v1/catalog/works", h.WorksList)

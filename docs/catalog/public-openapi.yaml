@@ -21,6 +21,27 @@ components:
         - code
         - message
       type: object
+    EnvelopePublicCatalogStats:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EnvelopePublicCatalogStats.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/PublicCatalogStats"
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
     EnvelopePublicCatalogWork:
       additionalProperties: false
       properties:
@@ -493,6 +514,17 @@ components:
       required:
         - source
         - external_id
+      type: object
+    PublicCatalogStats:
+      additionalProperties: false
+      properties:
+        entities:
+          $ref: "#/components/schemas/PublicStatsEntities"
+        works:
+          $ref: "#/components/schemas/PublicStatsWorks"
+      required:
+        - works
+        - entities
       type: object
     PublicCatalogTitle:
       additionalProperties: false
@@ -1672,6 +1704,59 @@ components:
       required:
         - id
         - name
+      type: object
+    PublicStatsEntities:
+      additionalProperties: false
+      properties:
+        characters:
+          format: int64
+          type: integer
+        credit_names:
+          format: int64
+          type: integer
+        labels:
+          format: int64
+          type: integer
+        persons:
+          format: int64
+          type: integer
+      required:
+        - labels
+        - characters
+        - credit_names
+        - persons
+      type: object
+    PublicStatsMediumCount:
+      additionalProperties: false
+      properties:
+        count:
+          format: int64
+          type: integer
+        medium:
+          type: string
+        medium_id:
+          format: int32
+          type: integer
+      required:
+        - medium_id
+        - medium
+        - count
+      type: object
+    PublicStatsWorks:
+      additionalProperties: false
+      properties:
+        by_medium:
+          items:
+            $ref: "#/components/schemas/PublicStatsMediumCount"
+          type:
+            - array
+            - "null"
+        total:
+          format: int64
+          type: integer
+      required:
+        - total
+        - by_medium
       type: object
     PublicTag:
       additionalProperties: false
@@ -2856,6 +2941,26 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Entity autocomplete over names / characters / labels / works / tags, projected to public briefs
+      tags:
+        - catalog-public
+  /v1/catalog/stats:
+    get:
+      description: "The product-facing size of the registry, no parameters and one payload for every caller. works counts LIVE rows only (stubs, merged-away rows and soft-deleted rows are not part of the catalogue) and total is the sum of by_medium, so the two can never disagree. R18 works ARE counted: these are aggregates with nothing renderable attached, and splitting them by nsfw would publish exactly what the r18 gate exists to hide. The INTERNAL dashboard (review queues, LLM verdicts, the anchor source × tier matrix, source freshness, orphan and claim-state breakdowns) is curation telemetry and stays on the S2S face."
+      operationId: getCatalogStatsPublic
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopePublicCatalogStats"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: "Slim catalogue counts: LIVE works per medium + the identity-family totals"
       tags:
         - catalog-public
   /v1/catalog/tags:

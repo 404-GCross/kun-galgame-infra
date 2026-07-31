@@ -27,11 +27,15 @@ type PublicHandler struct {
 	svc     *service.PublicService
 	resolve *service.ResolveService
 	search  *catsearch.Indexer
+	// stats backs the SLIM public counts lane only (wave 149b) — the same
+	// service the internal dashboard uses, through a different, public-only
+	// method. None of the dashboard's telemetry reaches this face.
+	stats *service.StatsService
 }
 
 // NewPublicHandler builds the public projection handler.
-func NewPublicHandler(svc *service.PublicService, resolve *service.ResolveService, searcher *catsearch.Indexer) *PublicHandler {
-	return &PublicHandler{svc: svc, resolve: resolve, search: searcher}
+func NewPublicHandler(svc *service.PublicService, resolve *service.ResolveService, searcher *catsearch.Indexer, stats *service.StatsService) *PublicHandler {
+	return &PublicHandler{svc: svc, resolve: resolve, search: searcher, stats: stats}
 }
 
 const (

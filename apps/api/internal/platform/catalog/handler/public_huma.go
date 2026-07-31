@@ -177,6 +177,12 @@ type publicChangesOutput struct {
 	Body Envelope[dto.PublicChangesData]
 }
 
+// publicStatsOutput has no input type at all (the payload is one global
+// aggregate with no parameters) — huma.Register takes *struct{} for that.
+type publicStatsOutput struct {
+	Body Envelope[dto.PublicCatalogStats]
+}
+
 type publicTagInput struct {
 	ID      int64  `path:"id" doc:"Canonical tag id (the cross-source tag vocabulary)"`
 	Include string `query:"include" doc:"works = attach the works carrying any mapped source tag"`
@@ -376,6 +382,18 @@ func SetupCatalogPublicSpec(app *fiber.App) huma.API {
 	}, func(context.Context, *publicChangesInput) (*publicChangesOutput, error) {
 		return &publicChangesOutput{}, nil
 	})
+	huma.Register(api, huma.Operation{
+		OperationID: "getCatalogStatsPublic", Method: http.MethodGet, Path: "/v1/catalog/stats",
+		Summary: "Slim catalogue counts: LIVE works per medium + the identity-family totals",
+		Description: "The product-facing size of the registry, no parameters and one payload for every caller. " +
+			"works counts LIVE rows only (stubs, merged-away rows and soft-deleted rows are not part of the " +
+			"catalogue) and total is the sum of by_medium, so the two can never disagree. " +
+			"R18 works ARE counted: these are aggregates with nothing renderable attached, and splitting them by " +
+			"nsfw would publish exactly what the r18 gate exists to hide. " +
+			"The INTERNAL dashboard (review queues, LLM verdicts, the anchor source × tier matrix, source " +
+			"freshness, orphan and claim-state breakdowns) is curation telemetry and stays on the S2S face.",
+		Tags: tags,
+	}, func(context.Context, *struct{}) (*publicStatsOutput, error) { return &publicStatsOutput{}, nil })
 	huma.Register(api, huma.Operation{
 		OperationID: "getCatalogTagPublic", Method: http.MethodGet, Path: "/v1/catalog/tags/{id}",
 		Summary: "Canonical tag (cross-source vocabulary): name / tier / kind / intros; include=works attaches the tagged works", Tags: tags,

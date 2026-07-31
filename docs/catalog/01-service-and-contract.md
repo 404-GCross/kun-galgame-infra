@@ -86,7 +86,7 @@ catalog **不存**产品展示体:简介、封面/截图字节、评分、点赞
 
 供**内部数据浏览器**(wiki 前端 staff 专用,经 galgame 后端代理)用;仍是 Basic S2S 读面。
 
-- `GET /catalog/stats`:仪表盘全部计数**单端点单往返**——works 矩阵(medium × 认领态 × status)、实体计数(**孤儿名义单列**,person=0 如实)、credits 按 source、归属边 by kind、**refs source × tier 交叉表**(身份质量一张表)、队列水位(candidates/proposals by status、probable refs、rejections)、**src_llm bid 判定**(same/different/unsure/deterministic;src_llm 缺表则该段空)、**新鲜度 = 各 source 锚 max(created_at)**(诚实近似,不加簿记)。
+- `GET /catalog/stats`:仪表盘全部计数**单端点单往返**——works 矩阵(medium × 认领态 × status)、实体计数(**孤儿名义单列**,person=0 如实)、credits 按 source、归属边 by kind、**refs source × tier 交叉表**(身份质量一张表)、队列水位(candidates/proposals by status、probable refs、rejections)、**src_llm bid 判定**(same/different/unsure/deterministic;src_llm 缺表则该段空)、**新鲜度 = 各 source 锚 max(created_at)**(诚实近似,不加簿记)。⚠️ **本端点是内部遥测,不上公开面**:队列水位/LLM 判定/锚交叉表/新鲜度/孤儿与 claim 态矩阵描述的是「注册表如何被治理」。产品面要的「目录有多大」由 **公开面 `GET /v1/catalog/stats`(149b)** 单独回答——**另一套 DTO、另一组 SQL**(LIVE works 按 medium + 身份族存量,r18 计入),见 [developer-platform/02 §3.2](../developer-platform/02-public-api.md)。
 - `GET /catalog/works/{id}`:与 2.4 by-anchor 同 bundle,入口换 catalog id;404 同义。
 - `GET /catalog/labels/{id}/works`:厂牌反查(经归属边),返回 label 自身信息(`label`:id/名/kind)+ offset 分页作品列表(cap 50)+ total,页面直达即自足。**被合并掉的 label(软删除 + 留下 catalog_redirect)与不存在的 id 同义 → 404**;旧 id 的去向走 §2.1 resolve / §2.2 redirects。公开面 `GET /v1/catalog/labels/{id}` 在同一情形下更进一步:**301 + `Location` + 信封 `code=12` 且 `data.current_id` 给出幸存者 id**(绝不在旧 id 下 200 出幸存者内容)。
 
