@@ -101,20 +101,20 @@ type proposeStats struct {
 // proposal is tagged with its class's wave note (noteTagFor) so -mode execute
 // addresses exactly one wave.
 func runPropose(ctx context.Context, db *gorm.DB, w io.Writer, merge *service.MergeService,
-	actor int64, class string, limit int, run bool) error {
-	groups, err := collectGroups(db, class)
+	actor int64, class, worklist string, limit int, run bool) error {
+	groups, err := collectGroups(db, class, worklist)
 	if err != nil {
 		return err
 	}
 	if limit > 0 && limit < len(groups) {
 		groups = groups[:limit]
 	}
+	note := noteTagFor(worklist)
 
 	var st proposeStats
 	for _, g := range groups {
 		st.groups++
 		et := entityTypeOf(g.class)
-		note := noteTagFor(g.class)
 		for _, src := range g.sources {
 			st.pairs++
 			if !run {
@@ -146,8 +146,12 @@ func runPropose(ctx context.Context, db *gorm.DB, w io.Writer, merge *service.Me
 	if run {
 		mode = "APPLIED"
 	}
-	fmt.Fprintf(w, "%s [propose] class=%s groups=%d pairs=%d proposals=%d approved=%d skipped=%d errors=%d\n",
-		mode, class, st.groups, st.pairs, st.proposals, st.approved, st.skipped, st.errs)
+	scope := "class=" + class
+	if worklist != "" {
+		scope = "worklist=" + worklist
+	}
+	fmt.Fprintf(w, "%s [propose] %s note=%s groups=%d pairs=%d proposals=%d approved=%d skipped=%d errors=%d\n",
+		mode, scope, note, st.groups, st.pairs, st.proposals, st.approved, st.skipped, st.errs)
 	if st.errs > 0 {
 		return fmt.Errorf("%d pairs failed to propose/approve", st.errs)
 	}
@@ -158,7 +162,13 @@ func runPropose(ctx context.Context, db *gorm.DB, w io.Writer, merge *service.Me
 // step-49 pair (character + person-anchored credit_name); the step-50 orphan
 // class is a deliberately separate wave (its own note tag) reached only by
 // -class orphan-creditname.
-func collectGroups(db *gorm.DB, class string) ([]mergeGroup, error) {
+func collectGroups(db *gorm.DB, class, worklist string) ([]mergeGroup, error) {
+	// A worklist replaces detection entirely: the wave that produced it already
+	// applied its own rules and guards and picked the survivor, and this binary
+	// contributes only the execution path.
+	if worklist != "" {
+		return loadWorklist(worklist)
+	}
 	var out []mergeGroup
 	if class == classCharacter || class == "both" {
 		g, _, err := detectCharacters(db)

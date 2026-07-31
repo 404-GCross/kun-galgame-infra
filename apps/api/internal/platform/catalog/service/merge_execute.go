@@ -269,6 +269,30 @@ func rehangEntity(tx *gorm.DB, entityType int16, src, dst int64) ([]int64, error
 			                     WHERE x.work_id = e.work_id AND x.character_id = ?)
 			  RETURNING e.work_id`, []any{dst, src, dst}, true},
 			{`DELETE FROM catalog_work_character WHERE character_id = ? RETURNING work_id`, []any{src}, true},
+			// Descriptions (step 107) and vndb trait links (step 93) were added
+			// to the character face AFTER this hook list was written, and were
+			// never re-hung: a merge stranded them on the retired row, where
+			// nothing reads them (770 such intro rows exist in the 2026-07-30
+			// production snapshot, from the step-97/98 waves). Both are
+			// character-face tables, so like instance_of above they collect no
+			// work id — the work read face does not render them.
+			//
+			// Dedup targets are the tables' own unique keys:
+			// uq_catalog_character_intro (character_id, lang, source_id) and
+			// uq_catalog_character_trait_link (character_id, trait_id). On a
+			// collision the survivor's row stands and the source's is dropped
+			// (doc 10 §6.2 first-source-wins); no field fold is needed, since
+			// both facets carry a single source's assertion per key.
+			{`UPDATE catalog_character_intro i SET character_id = ? WHERE i.character_id = ?
+			    AND NOT EXISTS (SELECT 1 FROM catalog_character_intro x
+			                     WHERE x.character_id = ? AND x.lang = i.lang AND x.source_id = i.source_id)`,
+				[]any{dst, src, dst}, false},
+			{`DELETE FROM catalog_character_intro WHERE character_id = ?`, []any{src}, false},
+			{`UPDATE catalog_character_trait_link t SET character_id = ? WHERE t.character_id = ?
+			    AND NOT EXISTS (SELECT 1 FROM catalog_character_trait_link x
+			                     WHERE x.character_id = ? AND x.trait_id = t.trait_id)`,
+				[]any{dst, src, dst}, false},
+			{`DELETE FROM catalog_character_trait_link WHERE character_id = ?`, []any{src}, false},
 			// variant pointers follow the base character — character face only.
 			{`UPDATE catalog_character SET instance_of = ? WHERE instance_of = ?`, []any{dst, src}, false},
 		}

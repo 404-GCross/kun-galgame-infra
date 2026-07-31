@@ -84,7 +84,8 @@ func cleanTables(t *testing.T) {
 		"catalog_work_title", "catalog_release", "catalog_work",
 		"catalog_name_alias", "catalog_credit_name", "catalog_person",
 		"catalog_label_alias", "catalog_label", "catalog_org",
-		"catalog_character_alias", "catalog_character",
+		"catalog_character_alias", "catalog_character_intro",
+		"catalog_character_trait_link", "catalog_character_trait", "catalog_character",
 		"catalog_survivorship_rule",
 	} {
 		if err := testDB.Exec("TRUNCATE " + table + " RESTART IDENTITY CASCADE").Error; err != nil {

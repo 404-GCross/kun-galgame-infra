@@ -35,6 +35,12 @@
 //	go run ./cmd/catalog-dedup-batch -actor 1 -mode execute -class orphan-creditname -run # execute all cooled step-50
 //	go run ./cmd/catalog-dedup-batch -actor 1 -mode cleanup                               # class B dry: count + samples
 //	go run ./cmd/catalog-dedup-batch -actor 1 -mode cleanup -run                          # class B delete
+//
+// A wave whose candidates are computed elsewhere feeds them in as a worklist
+// (worklist.go) instead of a detector class; proposals carry their own wave tag:
+//
+//	go run ./cmd/catalog-dedup-batch -actor 1 -mode propose -worklist w.jsonl -run
+//	go run ./cmd/catalog-dedup-batch -actor 1 -mode execute -worklist w.jsonl -run
 package main
 
 import (
@@ -70,14 +76,22 @@ const (
 	// waveTag106 tags the vndb main+instance detox wave (refs/proj/106): the
 	// character class re-run with the instance-aware guard.
 	waveTag106 = "rule:catalog-dedup step-106"
+	// waveTag154 tags every proposal opened from a -worklist file
+	// (refs/proj/154): candidates computed outside this binary, executed
+	// through the same path. It is deliberately its OWN tag so -mode execute
+	// addresses a worklist wave without touching the SQL detectors' waves.
+	waveTag154 = "rule:catalog-dedup step-154"
 )
 
-// noteTagFor returns the wave note tag for a class (used on both the write side,
-// per group, and the execute side, derived from -class). Every NEW proposal
-// carries the CURRENT wave tag (106); the historical 49/50/98 tags stay on
-// their fully-executed proposals and are never written again.
-func noteTagFor(class string) string {
-	_ = classOrphanCreditName // all classes now tag the current wave
+// noteTagFor returns the wave note tag for a run (used on both the write side
+// and the execute side). Worklist-driven runs carry the worklist tag; the
+// detector classes all carry the CURRENT detector wave tag (106). The
+// historical 49/50/98 tags stay on their fully-executed proposals and are never
+// written again.
+func noteTagFor(worklist string) string {
+	if worklist != "" {
+		return waveTag154
+	}
 	return waveTag106
 }
 
@@ -87,6 +101,7 @@ func main() {
 	class := flag.String("class", "both", "propose/execute scope: character | credit_name | both (step 49) | orphan-creditname (all roles since step 98) | mixed-creditname (step 98)")
 	run := flag.Bool("run", false, "write (default: dry-run preview)")
 	limit := flag.Int("limit", 0, "propose: max GROUPS this run; execute: max proposals this run (0 = all)")
+	worklist := flag.String("worklist", "", "propose/execute: drive the merges from this JSONL worklist instead of the SQL detectors (see worklist.go)")
 	flag.Parse()
 
 	if *actor <= 0 {
@@ -117,9 +132,9 @@ func main() {
 	case "detect":
 		err = runDetect(db, os.Stdout)
 	case "propose":
-		err = runPropose(ctx, db, os.Stdout, merge, *actor, *class, *limit, *run)
+		err = runPropose(ctx, db, os.Stdout, merge, *actor, *class, *worklist, *limit, *run)
 	case "execute":
-		err = runExecute(ctx, db, os.Stdout, merge, resolve, *actor, noteTagFor(*class), *limit, *run)
+		err = runExecute(ctx, db, os.Stdout, merge, resolve, *actor, noteTagFor(*worklist), *limit, *run)
 	case "cleanup":
 		err = runCleanup(db, os.Stdout, *run)
 	default:
