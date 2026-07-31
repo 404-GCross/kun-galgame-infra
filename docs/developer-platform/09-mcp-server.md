@@ -64,8 +64,10 @@ MCP server 是公开 /v1 契约前面的一层**协议适配**,不是第二个 A
 | `catalog_engines_list` | `GET /v1/catalog/engines` | 引擎词表浏览(发现 engine id 喂给 `catalog_works_search`) |
 | `catalog_engine_get` | `GET /v1/catalog/engines/{id}` | 引擎记录(名称 + nsfw 感知 `work_count` + 跨源 refs) |
 
-- **catalog 覆盖面(17/20,只剩三条「有意留白」)**:公开 catalog 面现共 20 op,
-  上表覆盖 17。上一波记为「待裁定」的 A2 八条(calendar 三桶 / taxonomy 列表三条 /
+- **catalog 覆盖面(17/22:三条「有意留白」+ 两条「待裁定」)**:公开 catalog 面
+  现共 22 op,上表覆盖 17。**待裁定**两条 = wave-149b/c 新增(晚于 wave 7 定稿):
+  `GET /v1/catalog/stats`(瘦身公开计数)与 `GET /v1/catalog/series/{id}`(系列
+  读面)——均为 GET 纯透传适格,是否收进工具面待 owner 裁定。上一波记为「待裁定」的 A2 八条(calendar 三桶 / taxonomy 列表三条 /
   `engines/{id}` / `works/search`)已由 owner 裁定收进工具面(wave 7,2026-07-30),
   八条全是 GET,合乎纯透传红线。**有意留白**仍是三条:`POST /v1/catalog/lookup/batch`
   (批量外部 id 水合)、`GET /v1/catalog/redirects`(合并事件 keyset 流,供镜像清理
