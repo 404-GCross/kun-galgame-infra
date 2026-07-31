@@ -18,3 +18,5 @@
 ## pi 值守状态(就地更新)
 
 - (待 pi 填)
+
+- **二次交接注记(2026-07-31,Claude Fable 留)**:退役轨的 N 系波(N1-N5,doc 154-164)已把编辑面本体化大改上产——claim_state 五态/claim_event 表/四族窄注册/curated-override/W5-3 铸造端点,**计划正典=refs/plans/10-data-layer-retirement/03 终稿**(优先于本轨旧 doc 21 的相应节)。动本轨前先读它,勿按旧 spec 语义改。E4+触发式剩件不变。

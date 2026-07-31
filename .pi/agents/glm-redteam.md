@@ -2,7 +2,7 @@
 name: glm-redteam
 description: Adversarial red-team running on GLM-5.2. Attacks one specific proposal/diff/SQL/claim by constructing counterexamples, edge cases, and failure paths before it ships. Read-only; never an executor. Use before irreversible actions — DDL, prod ops, universal "none/all" claims, freeze-face changes.
 tools: read, grep, find, ls, bash
-model: inyx/glm-5.2
+model: botcf/glm-5.2
 thinkingLevel: high
 ---
 

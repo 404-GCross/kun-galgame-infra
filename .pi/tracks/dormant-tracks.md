@@ -10,3 +10,4 @@
 - **dev 环境轨**(`dev-environment-track.md`):完结。注意 refresh-dev-db 周刷红线(见 ONBOARDING §2)。
 - **letmoe wiki/catalog 方向**(`letmoe-wiki-catalog-direction.md`):四轨完结;剩上线 runbook+触发式。
 - **AI 网关**(`ai-gateway-track.md`):Tier0 LIVE;⚠️ importer 重跑会复活退役词;refs/plans/06。
+- **OP 认证页现代化**(`op-auth-ui-refresh.md`):🏁 已推(26741f0e+c09ad547);剩=站娘图 public/mascot/auth.webp 后补即生效+client logo 候选件。

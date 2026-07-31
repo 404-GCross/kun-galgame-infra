@@ -42,21 +42,22 @@
   一次性命令=静态二进制 scp + busybox 借 postgres 容器 netns + env-file(用后 `shred -u`)。
   配方细节在 memory `prod-ops-access` / `deploy-migration-gap`。**prod 操作只在用户明示时做。**
 
-## 3. 台面快照(2026-07-23 交接时点;之后以 refs/proj 台账为准)
+## 3. 台面快照(**2026-07-31 二次交接时点**;07-23 首次交接的旧快照已作废,以各轨文件「二次交接快照」节+git 为准)
 
-- **未 push**:infra main **8 枚**(数据轨 4:`8a138cf`/`0fb76b9`/`d751fa0`/`f04357e`;developer 轨 4:
-  `35d569e`/`98b1d6a`/`3023324`/`ba6312e`)+ kun-dlsite-api 一批(含 `adc5c27`)。用户攒批推。
-- **零待跑迁移**。下次部署自然揭示两件已收账的读面:70c claimed bgm tags(doc 88)+ E2c label
-  intros[]/links[](doc 89)。
-- **数据聚合轨**(memory `media-aggregation-track`,台账 refs/proj/61):
-  - 85 Ci-en 爬取 ⏸ **等专用 JP 出口**(用户采购件;续跑配方 doc 85 ⑨,拿到出口后数小时补完 28,573)。
-  - 86 cien→label 投影:**parked**,85 爬完一炮打齐(fill-missing 幂等,别提前跑)。
-  - 队列推荐下一波 = **新名配对补波**(8,593 个词表外 bgm tag 名;复用 70b 的 tagcanon 管线+风险分割人审
-    配方,见 doc 87)——**等用户说开才开**。层级波(2,858 关系留档)排其后,需先设计。
-  - 用户拍板项(列着别催):T2b popularity claimed 暴露 / REL2 / D 族解冻;人物身份解析冻结勿碰。
-- **其他轨一句话**(细节各自 memory 文件):developer 门户待推批次二(含 workflows 文件→需 SSH push);
-  open-api 轨剩三把 internal key 轮换待裁决+第三方开放;catalog QA 轨剩 134 人审(用户件);
-  编辑引擎剩 E4+触发式。
+- **未 push(优先级序)**:①infra 分支 **`w165-resite-readers` @`049eb9b5`**(搜索事故防复发件,
+  **push 优先级最高**——未部署前 intromt/dlsitemedia 等五个 job 在产零人口静默,且明早值日链依赖已手工重铺的
+  binary 兜底);②infra `e8a61bd5`(164 波 zhrestore,在 scratchpad worktree 分支);③**本地 main 有作废三
+  commit `6d75c169`/`a8e60881`/`21417414` 勿推**(踩已删 wikirescue,rebase 时应丢弃);④letmoe `bc6191d` 攒批。
+- **共享工作树交接时点在分支 `w161-hotfix`**(退役轨的)——勿 switch 别轨所在分支;自己的波开独立
+  worktree,**基底显式 origin/main**(163 波教训:本地 main 被未推攒批占用)。
+- **零待跑迁移**(截至交接时点;退役轨 T2/T3 段会有,见其轨文件)。
+- **大局**:①退役轨 **T1 48h 浸泡中**→T2→T3 DROP 对账(**DROP 须用户明示**);其 CI test 门红 Opus 修复中。
+  ②聚合轨:人物身份解析 program 大部收官,剩 855 代审桶+P4;164/165 详见轨文件。③canonical-api A2 收官+
+  弃用面已摘牌(146),发布人=用户令暂缓。④developer 轨剩 mcp 镜像重部+门户 Deploy+P4 冒烟。
+- **07-31 新约定**:kun_catalog_rehearsal 归聚合轨专用;退役轨用 kun_catalog_w<波号> 私库;测试库按轨分名。
+- **refs/proj 编号已用到 165**,新波从 166 起。
+- **165 事故教训(全轨适用)**:改值/改名波的验收门必须 `git grep 旧值` 全仓零残留(测试/注释单独裁),
+  冒烟必须含「带过滤的搜索」而不只裸查。
 
 ## 4. 工作纪律(这套文化是两个月血泪换的,请原样继承)
 

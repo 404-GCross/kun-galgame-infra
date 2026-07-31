@@ -1,4 +1,4 @@
-# pi 值守分轨索引(2026-07-23 交接)
+# pi 值守分轨索引(2026-07-23 首次交接;**2026-07-31 二次交接**——Fable 额度再度耗尽,各轨文件已刷新「二次交接快照」,先读你轨的那节)
 
 > 复刻 Claude Code 时代的多会话架构:**一轨 = 一个 pi agent = 一个状态文件**。
 > 规则:①你只认领用户指派给你的那一轨,**其他轨的文件与代码域勿碰**;②本目录你的轨文件由你
@@ -13,8 +13,11 @@
 | catalog 数据 QA(只修错) | `catalog-data-qa.md` | `refs/qa/` | `fix(catalog-qa)` | 🌗 半休眠 |
 | developer 门户/开放 API 面 | `developer-portal.md` | `refs/plans/09` + docs/developer-platform | `feat(developer)` | 🌗 待部署件 |
 | 编辑引擎 | `editing-engine.md` | `refs/plans/08` | `feat(editing)` | 💤 触发式 |
-| canonical-api(/v1 数据 API 重设计) | `canonical-api.md` | `refs/proj/106` | `feat(api-v1)` | 🔥 设计阶段 |
+| canonical-api(/v1 数据 API 重设计) | `canonical-api.md` | `refs/proj/106` | `feat(api-v1)` | 🌗 收官,余触发式 |
+| **数据层退役(galgame 表家族 DROP)** | `data-layer-retirement.md` | `refs/plans/10` + doc 140/146/154-164 | `feat(catalog)` wave-16x | 🔥 T1 浸泡中 |
 | 其余已收官轨(合并一览) | `dormant-tracks.md` | 各 memory 文件 | — | 💤 |
+
+> **07-31 活跃度校准**:数据聚合=🔥(855 代审桶+150 program 尾件);退役轨=🔥(T1→DROP 链,DROP 须用户明示);canonical-api/developer-portal=🌗(剩部署生效+触发式);web/QA/editing=💤 触发式。
 
 共同必读:`.pi/ONBOARDING.md`(生态地图+纪律+坑速查)。每轨文件里的「Claude memory 参考」
 是该轨全部历史与教训的深水区,只读。

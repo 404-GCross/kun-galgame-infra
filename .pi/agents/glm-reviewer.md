@@ -2,7 +2,7 @@
 name: glm-reviewer
 description: Cross-model reviewer running on GLM-5.2 (a different model family than the Fable executors — independent blind spots). Reviews concrete artifacts (commit/diff/SQL/contract) against an explicit checklist and returns per-item PASS/FAIL with evidence. Read-only; never an executor. Use for acceptance review of substantial waves, migrations, and contract changes.
 tools: read, grep, find, ls, bash
-model: inyx/glm-5.2
+model: botcf/glm-5.2
 thinkingLevel: high
 ---
 

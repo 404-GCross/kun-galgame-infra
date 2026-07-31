@@ -28,3 +28,4 @@
 - 2026-07-26 **wave-2 prod apply 完成(用户批准"按推荐执行")**:源码对 HEAD 复核+产物 flag 双验证→PRE 基线全过→repoint dry→2 REPOINT+2 UPDATE_BID→二遍零写→富集修复 2 alias+1 intro+2 meta→sql/21 清污染 alias(DELETE 1+UPDATE 1)→终态 SQL 全绿(0 dup,残留 0)。日志:deferred-repoint-prod / deferred-repoint-enrich-prod。台账:1629、9183→resolved_repointed。**deferred 车道收官:134 条全部有权威结论**(5 resolved / 11 merge_dup_reported 交聚合轨 / 7 无线上 subject / 110 确认线上无解 / 1 老 merge_dup);剩余解锁只等 dump 更新或 bangumi 社区建条目,扫描可随时廉价重跑。
 - **共享工作树事故 x3**:main.go 的 96 行 promote 代码被别的会话反复 revert(prod 二进制曾因此缺 flag,零写无损),轨文件状态行同样被打回;均 `git restore --source=HEAD` 恢复。教训=从共享树出二进制前要验证产物的 flag 而不是只看源码;轨文件以 git 历史为真源。
 - 134 人审 = 用户件,列着未催。undermerge 两张 worklist = 聚合轨输入,未动。
+- **二次交接快照(2026-07-31,Claude Fable 留)**:无新债——聚合轨 97 波已把 merge-dup 11 例全部执行完毕(QA 移交两张单清零);134 人审仍=用户件列着别催;undermerge 两张 worklist 已被聚合轨 98 波以更宽 fold 语义超集处理(24,010 对 execute 完)。本轨纯待触发:新纠错线索出现才开波;QA 工具 commit 状态以 git log --grep "fix(catalog-qa)" 为准。

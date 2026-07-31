@@ -26,3 +26,4 @@
 ## pi 值守状态(就地更新,一行一钩子)
 
 - (待 pi 填)
+- **二次交接快照(2026-07-31,Claude Fable 留)**:07-23 快照仍基本成立,仅两处增量:①OP 认证页现代化已推(`26741f0e`+`c09ad547`,split brand shell;站娘图槽位=public/mascot/auth.webp 后补即生效,client logo=候选件);②catalog TS 类型随聚合/canonical 轨多次再生(以 git 为准)。待验清单(OAuth 三链+前端视觉亲验+首个 KunDrawer)与 Wave2/3 尾波原样未动。
