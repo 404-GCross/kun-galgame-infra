@@ -284,6 +284,54 @@ components:
         - items
         - total
       type: object
+    ClaimActionRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/ClaimActionRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        actor:
+          $ref: "#/components/schemas/EditActor"
+          description: The end user the product backend is acting for
+        product_work_id:
+          description: The product-side work id to anchor (claim only)
+          format: int64
+          minimum: 0
+          type: integer
+        reason:
+          description: Moderator note; REQUIRED for decline, recorded on the event
+          type: string
+        site:
+          description: Acting tenant; must equal the client's catalog_site binding for owner actions
+          type: string
+      required:
+        - actor
+      type: object
+    ClaimActionResult:
+      additionalProperties: false
+      properties:
+        event_id:
+          format: int64
+          type: integer
+        from_state:
+          type:
+            - string
+            - "null"
+        to_state:
+          type: string
+        work_id:
+          format: int64
+          type: integer
+      required:
+        - work_id
+        - from_state
+        - to_state
+        - event_id
+      type: object
     ClaimAnchor:
       additionalProperties: false
       properties:
@@ -303,6 +351,66 @@ components:
       required:
         - source_id
         - external_id
+      type: object
+    ClaimEventFeed:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: "#/components/schemas/ClaimEventFeedItem"
+          type:
+            - array
+            - "null"
+        next_since:
+          format: int64
+          type: integer
+      required:
+        - items
+        - next_since
+      type: object
+    ClaimEventFeedItem:
+      additionalProperties: false
+      properties:
+        actor_uid:
+          format: int64
+          type: integer
+        created_at:
+          format: date-time
+          type: string
+        from_state:
+          type:
+            - string
+            - "null"
+        id:
+          format: int64
+          type: integer
+        product_work_id:
+          description: The claim's CURRENT product-side id (a snapshot, not the value at event time)
+          format: int64
+          type:
+            - integer
+            - "null"
+        reason:
+          type:
+            - string
+            - "null"
+        site:
+          type: string
+        to_state:
+          type: string
+        work_id:
+          format: int64
+          type: integer
+      required:
+        - id
+        - work_id
+        - from_state
+        - to_state
+        - actor_uid
+        - reason
+        - site
+        - product_work_id
+        - created_at
       type: object
     ClaimWorkRequest:
       additionalProperties: false
@@ -737,6 +845,80 @@ components:
         - proposal
         - revision
       type: object
+    EditRevisionFeed:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: "#/components/schemas/EditRevisionFeedItem"
+          type:
+            - array
+            - "null"
+        next_since:
+          format: int64
+          type: integer
+      required:
+        - items
+        - next_since
+      type: object
+    EditRevisionFeedItem:
+      additionalProperties: false
+      properties:
+        action:
+          description: 0=created 1=merged 2=direct 3=reverted
+          format: int32
+          type: integer
+        actor_uid:
+          format: int64
+          type: integer
+        amender_uid:
+          format: int64
+          type:
+            - integer
+            - "null"
+        changed_fields:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+        created_at:
+          format: date-time
+          type: string
+        entity_family:
+          type: string
+        entity_id:
+          format: int64
+          type: integer
+        entity_type:
+          type: string
+        id:
+          format: int64
+          type: integer
+        proposal_id:
+          format: int64
+          type:
+            - integer
+            - "null"
+        seq:
+          format: int64
+          type: integer
+        site:
+          type: string
+      required:
+        - id
+        - entity_family
+        - entity_type
+        - entity_id
+        - seq
+        - action
+        - changed_fields
+        - actor_uid
+        - amender_uid
+        - proposal_id
+        - site
+        - created_at
+      type: object
     EditRevisionListResponse:
       additionalProperties: false
       properties:
@@ -1040,6 +1222,48 @@ components:
         - code
         - message
       type: object
+    EnvelopeClaimActionResult:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EnvelopeClaimActionResult.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/ClaimActionResult"
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
+    EnvelopeClaimEventFeed:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EnvelopeClaimEventFeed.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/ClaimEventFeed"
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
     EnvelopeClaimWorkResponse:
       additionalProperties: false
       properties:
@@ -1181,6 +1405,27 @@ components:
           type: integer
         data:
           $ref: "#/components/schemas/EditRevertResponse"
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
+    EnvelopeEditRevisionFeed:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EnvelopeEditRevisionFeed.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/EditRevisionFeed"
         message:
           type: string
       required:
@@ -2599,6 +2844,99 @@ paths:
       summary: Works a character appears in (roster edges ∪ voice credits) with kind + voice names
       tags:
         - catalog-s2s
+  /api/v1/catalog/claim-events/feed:
+    get:
+      operationId: listCatalogClaimEvents
+      parameters:
+        - description: "Exclusive cursor: return events with a greater id (0 = from the beginning)"
+          explode: false
+          in: query
+          name: since
+          schema:
+            description: "Exclusive cursor: return events with a greater id (0 = from the beginning)"
+            format: int64
+            type: integer
+        - description: Page size (default 200, max 1000)
+          explode: false
+          in: query
+          name: limit
+          schema:
+            description: Page size (default 200, max 1000)
+            format: int64
+            type: integer
+        - description: Restrict to one claiming site
+          explode: false
+          in: query
+          name: site
+          schema:
+            description: Restrict to one claiming site
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeClaimEventFeed"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: Cursor feed of claim-state transitions (ascending id; the source for downstream inboxes and point awards)
+      tags:
+        - catalog-lifecycle
+  /api/v1/catalog/edit-revisions/feed:
+    get:
+      operationId: listCatalogEditRevisions
+      parameters:
+        - description: "Exclusive cursor: return revisions with a greater id (0 = from the beginning)"
+          explode: false
+          in: query
+          name: since
+          schema:
+            description: "Exclusive cursor: return revisions with a greater id (0 = from the beginning)"
+            format: int64
+            type: integer
+        - description: Page size (default 200, max 1000)
+          explode: false
+          in: query
+          name: limit
+          schema:
+            description: Page size (default 200, max 1000)
+            format: int64
+            type: integer
+        - description: Restrict to one family, e.g. catalog
+          explode: false
+          in: query
+          name: entity_family
+          schema:
+            description: Restrict to one family, e.g. catalog
+            type: string
+        - description: Restrict to one type, e.g. catalog.work
+          explode: false
+          in: query
+          name: entity_type
+          schema:
+            description: Restrict to one type, e.g. catalog.work
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeEditRevisionFeed"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: Cursor feed of editing-engine revisions across all entities (ascending id; filterable by entity family/type)
+      tags:
+        - catalog-lifecycle
   /api/v1/catalog/edit/diff:
     get:
       operationId: diffEditRevisions
@@ -3400,6 +3738,13 @@ paths:
             description: Max hits (capped at 50)
             format: int64
             type: integer
+        - description: Comma-separated subset of none, live, draft, pending, declined, hidden; absent = every state
+          explode: false
+          in: query
+          name: claim_state
+          schema:
+            description: Comma-separated subset of none, live, draft, pending, declined, hidden; absent = every state
+            type: string
       responses:
         "200":
           content:
@@ -3444,6 +3789,46 @@ paths:
       summary: Read a work by catalog id (same bundle as by-anchor)
       tags:
         - catalog-s2s
+  /api/v1/catalog/works/{id}/claim-actions/{action}:
+    post:
+      operationId: actOnCatalogClaim
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            format: int64
+            minimum: 1
+            type: integer
+        - description: claim | submit | publish | withdraw | approve | decline | ban | unban
+          in: path
+          name: action
+          required: true
+          schema:
+            description: claim | submit | publish | withdraw | approve | decline | ban | unban
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClaimActionRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeClaimActionResult"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: "Move a claim through its lifecycle: claim / submit / publish / withdraw (owner) or approve / decline / ban / unban (review). 409 on an illegal transition, echoing the current state"
+      tags:
+        - catalog-lifecycle
   /api/v1/catalog/works/{id}/credits:
     get:
       operationId: getCatalogWorkCredits

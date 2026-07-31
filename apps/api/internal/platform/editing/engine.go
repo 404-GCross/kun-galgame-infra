@@ -170,6 +170,41 @@ func (e *Engine) ListRevisions(ctx context.Context, entityType string, entityID 
 	return out, nil
 }
 
+// RevisionFeedFilter narrows the GLOBAL revision cursor feed (wave 155 W3).
+type RevisionFeedFilter struct {
+	// Since is exclusive: rows with a greater id. The revision id is the only
+	// monotonic key that spans entities — seq is per-entity and created_at can
+	// repeat within a transaction — so it is the cursor.
+	Since        int64
+	EntityFamily string // "" = every family
+	EntityType   string // "" = every type
+	Limit        int    // default 200, max 1000
+}
+
+// RevisionsSince is the engine's read-only projection for downstream cursor
+// consumers: ascending by id, so a consumer stores one integer and can never
+// skip a row. It resolves NO spec — a feed must keep serving the history of an
+// entity type that has since been unregistered, which is exactly what the
+// N5 re-anchoring will produce.
+func (e *Engine) RevisionsSince(ctx context.Context, f RevisionFeedFilter) ([]Revision, error) {
+	limit := f.Limit
+	if limit <= 0 || limit > 1000 {
+		limit = 200
+	}
+	q := e.db.WithContext(ctx).Model(&Revision{}).Where("id > ?", f.Since)
+	if f.EntityFamily != "" {
+		q = q.Where("entity_family = ?", f.EntityFamily)
+	}
+	if f.EntityType != "" {
+		q = q.Where("entity_type = ?", f.EntityType)
+	}
+	var out []Revision
+	if err := q.Order("id ASC").Limit(limit).Find(&out).Error; err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // FieldDiff is one field's difference between two revisions, with the
 // registry's rendering hints attached (empty for keys that are no longer
 // registered — historic snapshots still render, just generically).

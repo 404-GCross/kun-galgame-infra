@@ -80,6 +80,27 @@ components:
         - note
         - is_deprecated
       type: object
+    ClaimActionResult:
+      additionalProperties: false
+      properties:
+        event_id:
+          format: int64
+          type: integer
+        from_state:
+          type:
+            - string
+            - "null"
+        to_state:
+          type: string
+        work_id:
+          format: int64
+          type: integer
+      required:
+        - work_id
+        - from_state
+        - to_state
+        - event_id
+      type: object
     DecideCandidateData:
       additionalProperties: false
       properties:
@@ -185,6 +206,27 @@ components:
         - id
         - display_name
       type: object
+    EnvelopeClaimActionResult:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EnvelopeClaimActionResult.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/ClaimActionResult"
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
     EnvelopeDecideCandidateData:
       additionalProperties: false
       properties:
@@ -242,6 +284,27 @@ components:
           type: integer
         data:
           $ref: "#/components/schemas/PageCandidateItem"
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
+    EnvelopePagePendingClaimItem:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EnvelopePagePendingClaimItem.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/PagePendingClaimItem"
         message:
           type: string
       required:
@@ -368,6 +431,22 @@ components:
         - items
         - total
       type: object
+    PagePendingClaimItem:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: "#/components/schemas/PendingClaimItem"
+          type:
+            - array
+            - "null"
+        total:
+          format: int64
+          type: integer
+      required:
+        - items
+        - total
+      type: object
     PageProbableRefItem:
       additionalProperties: false
       properties:
@@ -399,6 +478,35 @@ components:
       required:
         - items
         - total
+      type: object
+    PendingClaimItem:
+      additionalProperties: false
+      properties:
+        display_name:
+          type: string
+        product_work_id:
+          format: int64
+          type:
+            - integer
+            - "null"
+        site:
+          type:
+            - string
+            - "null"
+        submitted_event_id:
+          format: int64
+          type:
+            - integer
+            - "null"
+        work_id:
+          format: int64
+          type: integer
+      required:
+        - work_id
+        - display_name
+        - site
+        - product_work_id
+        - submitted_event_id
       type: object
     ProbableRefItem:
       additionalProperties: false
@@ -604,6 +712,20 @@ components:
         - external_id
         - reason
       type: object
+    StaffClaimActionRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/StaffClaimActionRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        reason:
+          description: Moderator note; REQUIRED for decline, recorded on the event
+          type: string
+      type: object
 info:
   title: KUN Catalog Admin API
   version: 1.0.0
@@ -695,6 +817,81 @@ paths:
                 $ref: "#/components/schemas/HouseError"
           description: Error
       summary: "Decide a match candidate: accept (credit_name → link a person; else opens a merge proposal), reject (kept forever) or defer"
+      tags:
+        - catalog-admin
+  /api/v1/admin/catalog/claims/pending:
+    get:
+      operationId: listCatalogPendingClaims
+      parameters:
+        - description: Restrict to one claiming site
+          explode: false
+          in: query
+          name: site
+          schema:
+            description: Restrict to one claiming site
+            type: string
+        - description: Items per page (max 200)
+          explode: false
+          in: query
+          name: limit
+          schema:
+            description: Items per page (max 200)
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopePagePendingClaimItem"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: "The claim review queue: submissions awaiting a decision, oldest submission first"
+      tags:
+        - catalog-admin
+  /api/v1/admin/catalog/claims/{id}/{action}:
+    post:
+      operationId: actOnCatalogClaimAsStaff
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            format: int64
+            minimum: 1
+            type: integer
+        - description: approve | decline | ban | unban
+          in: path
+          name: action
+          required: true
+          schema:
+            description: approve | decline | ban | unban
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StaffClaimActionRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeClaimActionResult"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: Approve / decline / ban / unban a claim (decline and ban record the reason on the event)
       tags:
         - catalog-admin
   /api/v1/admin/catalog/names/detach:

@@ -20,6 +20,7 @@ import (
 type AdminServer struct {
 	queues *service.AdminQueueService
 	merge  *service.MergeService
+	claims *service.ClaimLifecycleService
 }
 
 // SetupAdmin builds the admin review-queue Huma API (doc 17 §5 buckets:
@@ -28,7 +29,7 @@ type AdminServer struct {
 // permission, ren) on the /api/v1/admin/catalog prefix BEFORE this — Huma registers on the
 // app, so the group middleware does not cover these routes. Callable with
 // nil services for spec export.
-func SetupAdmin(app *fiber.App, queues *service.AdminQueueService, merge *service.MergeService) huma.API {
+func SetupAdmin(app *fiber.App, queues *service.AdminQueueService, merge *service.MergeService, claims *service.ClaimLifecycleService) huma.API {
 	InstallErrorEnvelope()
 
 	cfg := huma.DefaultConfig("KUN Catalog Admin API", "1.0.0")
@@ -39,8 +40,9 @@ func SetupAdmin(app *fiber.App, queues *service.AdminQueueService, merge *servic
 	api := humafiber.New(app, cfg)
 	api.UseMiddleware(AdminBridge)
 
-	s := &AdminServer{queues: queues, merge: merge}
+	s := &AdminServer{queues: queues, merge: merge, claims: claims}
 	s.register(api)
+	s.registerClaims(api)
 	return api
 }
 

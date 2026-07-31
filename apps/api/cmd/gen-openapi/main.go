@@ -58,8 +58,10 @@ func main() {
 		// same S2S huma.API in cmd/catalog — mirror it so the exported spec
 		// matches the runtime surface (nil engine is fine for spec emission).
 		catHandler.SetupEdit(api, nil, nil)
+		// Same for the claim-lifecycle face (wave 155): actions + the two feeds.
+		catHandler.SetupLifecycle(api, nil, nil, nil)
 	case *catalogAdmin:
-		api = catHandler.SetupAdmin(app, nil, nil)
+		api = catHandler.SetupAdmin(app, nil, nil, nil)
 	case *catalogPublic:
 		api = catHandler.SetupCatalogPublicSpec(app)
 	case *community:

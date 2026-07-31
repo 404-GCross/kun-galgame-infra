@@ -135,7 +135,8 @@ func main() {
 		middleware.JWTAuth(tokenVerifier), middleware.RequirePermission(catalogPerm.Resolver, catalogPerm.Review))
 
 	s2sAPI := catHandler.Setup(application.Fiber, resolveSvc, workSvc, readSvc, searcher, statsSvc)
-	catHandler.SetupAdmin(application.Fiber, queueSvc, mergeSvc)
+	claimSvc := service.NewClaimLifecycleService(catalogDB.DB())
+	catHandler.SetupAdmin(application.Fiber, queueSvc, mergeSvc, claimSvc)
 
 	// Editing engine (E0): the media-agnostic edit_proposal primitive. This
 	// is the ASSEMBLY POINT (charter ruling 1) — the engine itself knows no
@@ -188,6 +189,13 @@ func main() {
 	// family — registered here alongside the EntityTypeSpecs, so the face
 	// hardcodes no family name and the engine stays family-agnostic.
 	catHandler.SetupEdit(s2sAPI, editEngine, catHandler.PermResolvers{
+		"catalog": catalogPerm.Resolver,
+		"galgame": galgamePerm.Resolver,
+	})
+	// The claim lifecycle (wave 155 W2/W3) rides the same S2S API and the same
+	// asserted-actor convention. It is registered AFTER the engine exists
+	// because the revision feed is a read-only projection of the engine's log.
+	catHandler.SetupLifecycle(s2sAPI, claimSvc, editEngine, catHandler.PermResolvers{
 		"catalog": catalogPerm.Resolver,
 		"galgame": galgamePerm.Resolver,
 	})

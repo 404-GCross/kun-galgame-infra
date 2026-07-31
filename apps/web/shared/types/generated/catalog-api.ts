@@ -38,6 +38,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/catalog/claim-events/feed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Cursor feed of claim-state transitions (ascending id; the source for downstream inboxes and point awards) */
+        get: operations["listCatalogClaimEvents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/catalog/edit-revisions/feed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Cursor feed of editing-engine revisions across all entities (ascending id; filterable by entity family/type) */
+        get: operations["listCatalogEditRevisions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/catalog/edit/diff": {
         parameters: {
             query?: never;
@@ -396,6 +430,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/catalog/works/{id}/claim-actions/{action}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Move a claim through its lifecycle: claim / submit / publish / withdraw (owner) or approve / decline / ban / unban (review). 409 on an illegal transition, echoing the current state */
+        post: operations["actOnCatalogClaim"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/catalog/works/{id}/credits": {
         parameters: {
             query?: never;
@@ -549,6 +600,33 @@ export interface components {
             /** Format: int64 */
             total: number;
         };
+        ClaimActionRequest: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/ClaimActionRequest.json
+             */
+            readonly $schema?: string;
+            /** @description The end user the product backend is acting for */
+            actor: components["schemas"]["EditActor"];
+            /**
+             * Format: int64
+             * @description The product-side work id to anchor (claim only)
+             */
+            product_work_id?: number;
+            /** @description Moderator note; REQUIRED for decline, recorded on the event */
+            reason?: string;
+            /** @description Acting tenant; must equal the client's catalog_site binding for owner actions */
+            site?: string;
+        };
+        ClaimActionResult: {
+            /** Format: int64 */
+            event_id: number;
+            from_state: string | null;
+            to_state: string;
+            /** Format: int64 */
+            work_id: number;
+        };
         ClaimAnchor: {
             external_id: string;
             /**
@@ -561,6 +639,30 @@ export interface components {
              * @description catalog_source registry id (e.g. 2=vndb 3=bangumi 4=dlsite)
              */
             source_id: number;
+        };
+        ClaimEventFeed: {
+            items: components["schemas"]["ClaimEventFeedItem"][] | null;
+            /** Format: int64 */
+            next_since: number;
+        };
+        ClaimEventFeedItem: {
+            /** Format: int64 */
+            actor_uid: number;
+            /** Format: date-time */
+            created_at: string;
+            from_state: string | null;
+            /** Format: int64 */
+            id: number;
+            /**
+             * Format: int64
+             * @description The claim's CURRENT product-side id (a snapshot, not the value at event time)
+             */
+            product_work_id: number | null;
+            reason: string | null;
+            site: string;
+            to_state: string;
+            /** Format: int64 */
+            work_id: number;
         };
         ClaimWorkRequest: {
             /**
@@ -775,6 +877,36 @@ export interface components {
             proposal: components["schemas"]["EditProposalView"];
             revision: components["schemas"]["EditRevisionView"];
         };
+        EditRevisionFeed: {
+            items: components["schemas"]["EditRevisionFeedItem"][] | null;
+            /** Format: int64 */
+            next_since: number;
+        };
+        EditRevisionFeedItem: {
+            /**
+             * Format: int32
+             * @description 0=created 1=merged 2=direct 3=reverted
+             */
+            action: number;
+            /** Format: int64 */
+            actor_uid: number;
+            /** Format: int64 */
+            amender_uid: number | null;
+            changed_fields: string[] | null;
+            /** Format: date-time */
+            created_at: string;
+            entity_family: string;
+            /** Format: int64 */
+            entity_id: number;
+            entity_type: string;
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            proposal_id: number | null;
+            /** Format: int64 */
+            seq: number;
+            site: string;
+        };
         EditRevisionListResponse: {
             items: components["schemas"]["EditRevisionView"][] | null;
         };
@@ -928,6 +1060,30 @@ export interface components {
             data?: components["schemas"]["CharacterWorksResponse"];
             message: string;
         };
+        EnvelopeClaimActionResult: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/EnvelopeClaimActionResult.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            code: number;
+            data?: components["schemas"]["ClaimActionResult"];
+            message: string;
+        };
+        EnvelopeClaimEventFeed: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/EnvelopeClaimEventFeed.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            code: number;
+            data?: components["schemas"]["ClaimEventFeed"];
+            message: string;
+        };
         EnvelopeClaimWorkResponse: {
             /**
              * Format: uri
@@ -1010,6 +1166,18 @@ export interface components {
             /** Format: int64 */
             code: number;
             data?: components["schemas"]["EditRevertResponse"];
+            message: string;
+        };
+        EnvelopeEditRevisionFeed: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/EnvelopeEditRevisionFeed.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            code: number;
+            data?: components["schemas"]["EditRevisionFeed"];
             message: string;
         };
         EnvelopeEditRevisionListResponse: {
@@ -1787,6 +1955,80 @@ export interface operations {
             };
         };
     };
+    listCatalogClaimEvents: {
+        parameters: {
+            query?: {
+                /** @description Exclusive cursor: return events with a greater id (0 = from the beginning) */
+                since?: number;
+                /** @description Page size (default 200, max 1000) */
+                limit?: number;
+                /** @description Restrict to one claiming site */
+                site?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeClaimEventFeed"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HouseError"];
+                };
+            };
+        };
+    };
+    listCatalogEditRevisions: {
+        parameters: {
+            query?: {
+                /** @description Exclusive cursor: return revisions with a greater id (0 = from the beginning) */
+                since?: number;
+                /** @description Page size (default 200, max 1000) */
+                limit?: number;
+                /** @description Restrict to one family, e.g. catalog */
+                entity_family?: string;
+                /** @description Restrict to one type, e.g. catalog.work */
+                entity_type?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeEditRevisionFeed"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HouseError"];
+                };
+            };
+        };
+    };
     diffEditRevisions: {
         parameters: {
             query?: {
@@ -2499,6 +2741,8 @@ export interface operations {
                 medium_id?: number;
                 /** @description Max hits (capped at 50) */
                 limit?: number;
+                /** @description Comma-separated subset of none, live, draft, pending, declined, hidden; absent = every state */
+                claim_state?: string;
             };
             header?: never;
             path?: never;
@@ -2545,6 +2789,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EnvelopeWorkByAnchorResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HouseError"];
+                };
+            };
+        };
+    };
+    actOnCatalogClaim: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+                /** @description claim | submit | publish | withdraw | approve | decline | ban | unban */
+                action: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClaimActionRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeClaimActionResult"];
                 };
             };
             /** @description Error */

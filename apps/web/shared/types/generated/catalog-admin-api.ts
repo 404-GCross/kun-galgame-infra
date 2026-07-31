@@ -38,6 +38,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/catalog/claims/pending": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The claim review queue: submissions awaiting a decision, oldest submission first */
+        get: operations["listCatalogPendingClaims"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/catalog/claims/{id}/{action}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approve / decline / ban / unban a claim (decline and ban record the reason on the event) */
+        post: operations["actOnCatalogClaimAsStaff"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/catalog/names/detach": {
         parameters: {
             query?: never;
@@ -176,6 +210,14 @@ export interface components {
             trust_tier: number;
             url_template: string | null;
         };
+        ClaimActionResult: {
+            /** Format: int64 */
+            event_id: number;
+            from_state: string | null;
+            to_state: string;
+            /** Format: int64 */
+            work_id: number;
+        };
         DecideCandidateData: {
             decided: boolean;
             needs_manual?: boolean;
@@ -241,6 +283,18 @@ export interface components {
             /** Format: int32 */
             source_id?: number;
         };
+        EnvelopeClaimActionResult: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/EnvelopeClaimActionResult.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            code: number;
+            data?: components["schemas"]["ClaimActionResult"];
+            message: string;
+        };
         EnvelopeDecideCandidateData: {
             /**
              * Format: uri
@@ -275,6 +329,18 @@ export interface components {
             /** Format: int64 */
             code: number;
             data?: components["schemas"]["PageCandidateItem"];
+            message: string;
+        };
+        EnvelopePagePendingClaimItem: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/EnvelopePagePendingClaimItem.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            code: number;
+            data?: components["schemas"]["PagePendingClaimItem"];
             message: string;
         };
         EnvelopePageProbableRefItem: {
@@ -342,6 +408,11 @@ export interface components {
             /** Format: int64 */
             total: number;
         };
+        PagePendingClaimItem: {
+            items: components["schemas"]["PendingClaimItem"][] | null;
+            /** Format: int64 */
+            total: number;
+        };
         PageProbableRefItem: {
             items: components["schemas"]["ProbableRefItem"][] | null;
             /** Format: int64 */
@@ -351,6 +422,16 @@ export interface components {
             items: components["schemas"]["ProposalItem"][] | null;
             /** Format: int64 */
             total: number;
+        };
+        PendingClaimItem: {
+            display_name: string;
+            /** Format: int64 */
+            product_work_id: number | null;
+            site: string | null;
+            /** Format: int64 */
+            submitted_event_id: number | null;
+            /** Format: int64 */
+            work_id: number;
         };
         ProbableRefItem: {
             /** Format: date-time */
@@ -448,6 +529,16 @@ export interface components {
             /** Format: int32 */
             source_id: number;
         };
+        StaffClaimActionRequest: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/StaffClaimActionRequest.json
+             */
+            readonly $schema?: string;
+            /** @description Moderator note; REQUIRED for decline, recorded on the event */
+            reason?: string;
+        };
     };
     responses: never;
     parameters: never;
@@ -517,6 +608,77 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EnvelopeDecideCandidateData"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HouseError"];
+                };
+            };
+        };
+    };
+    listCatalogPendingClaims: {
+        parameters: {
+            query?: {
+                /** @description Restrict to one claiming site */
+                site?: string;
+                /** @description Items per page (max 200) */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopePagePendingClaimItem"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HouseError"];
+                };
+            };
+        };
+    };
+    actOnCatalogClaimAsStaff: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+                /** @description approve | decline | ban | unban */
+                action: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StaffClaimActionRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeClaimActionResult"];
                 };
             };
             /** @description Error */
