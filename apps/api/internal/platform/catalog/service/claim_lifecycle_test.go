@@ -308,7 +308,7 @@ func TestSearchWorksBBucketSupply(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ungated, err := NewReadService(testDB).SearchWorks(context.Background(), "供給テスト", -1, 50, nil)
+	ungated, err := NewReadService(testDB).SearchWorks(context.Background(), "供給テスト", -1, 50, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -317,7 +317,7 @@ func TestSearchWorksBBucketSupply(t *testing.T) {
 	}
 
 	bucket, err := NewReadService(testDB).SearchWorks(context.Background(), "供給テスト", -1, 50,
-		[]string{model.ClaimStateKeyLive, model.ClaimStateKeyDraft, model.ClaimStateKeyPending})
+		[]string{model.ClaimStateKeyLive, model.ClaimStateKeyDraft, model.ClaimStateKeyPending}, "")
 	if err != nil {
 		t.Fatal(err)
 	}

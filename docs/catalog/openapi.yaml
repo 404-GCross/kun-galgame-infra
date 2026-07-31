@@ -4015,6 +4015,13 @@ paths:
           schema:
             description: Comma-separated subset of none, live, draft, pending, declined, hidden; absent = every state
             type: string
+        - description: Restrict to works claimed by ONE site; absent = every tenant and every unclaimed work. Live SQL predicate — no reindex delay
+          explode: false
+          in: query
+          name: site
+          schema:
+            description: Restrict to works claimed by ONE site; absent = every tenant and every unclaimed work. Live SQL predicate — no reindex delay
+            type: string
       responses:
         "200":
           content:

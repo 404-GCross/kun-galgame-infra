@@ -2928,6 +2928,8 @@ export interface operations {
                 limit?: number;
                 /** @description Comma-separated subset of none, live, draft, pending, declined, hidden; absent = every state */
                 claim_state?: string;
+                /** @description Restrict to works claimed by ONE site; absent = every tenant and every unclaimed work. Live SQL predicate — no reindex delay */
+                site?: string;
             };
             header?: never;
             path?: never;

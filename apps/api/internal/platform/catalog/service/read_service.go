@@ -1080,7 +1080,13 @@ type WorkSearchHit struct {
 // ~190k title rows, acceptable for a low-frequency staff picker; add a pg_trgm
 // index on title_norm if the call volume grows (docs/proj/18). Each hit is
 // annotated with its first DLsite anchor (work- or release-level, exact first).
-func (s *ReadService) SearchWorks(ctx context.Context, q string, mediumID int16, limit int, claimStates []string) ([]WorkSearchHit, error) {
+//
+// site (wave 162, 161 §6.P3-verdict STOP-5) restricts the hits to ONE claiming
+// tenant — the sibling of the parameter PendingClaims already takes. Empty
+// means no gate, so every pre-existing caller is byte-identical. It is a live
+// SQL predicate, not an indexed facet: a claim that moved tenant is reflected
+// on the next call, with no reindex in between.
+func (s *ReadService) SearchWorks(ctx context.Context, q string, mediumID int16, limit int, claimStates []string, site string) ([]WorkSearchHit, error) {
 	q = strings.TrimSpace(q)
 	if q == "" {
 		return nil, nil
@@ -1099,6 +1105,13 @@ func (s *ReadService) SearchWorks(ctx context.Context, q string, mediumID int16,
 	if claimGate != "" {
 		claimGate = " AND " + claimGate
 	}
+	// The tenant gate is ANDed into the SAME predicate, so it narrows the hits
+	// the caller pages through rather than being applied after the LIMIT (which
+	// is how a filtered list quietly starts returning short pages).
+	siteGate, siteArgs := "", []any(nil)
+	if site != "" {
+		siteGate, siteArgs = " AND w.site = ?", []any{site}
+	}
 
 	// EXISTS keeps one row per work even when several of its titles match. The
 	// merged tombstones (status=2) never surface — their identity lives on a
@@ -1106,6 +1119,7 @@ func (s *ReadService) SearchWorks(ctx context.Context, q string, mediumID int16,
 	var hits []WorkSearchHit
 	args := []any{model.WorkStatusMerged, mediumID, mediumID}
 	args = append(args, claimArgs...)
+	args = append(args, siteArgs...)
 	args = append(args, q, limit)
 	if err := db.Raw(`
 		SELECT w.id AS work_id, w.display_name, w.medium_id, w.content_rating,
@@ -1113,7 +1127,7 @@ func (s *ReadService) SearchWorks(ctx context.Context, q string, mediumID int16,
 		FROM catalog_work w
 		WHERE w.deleted_at IS NULL
 		  AND w.status <> ?
-		  AND (? <= 0 OR w.medium_id = ?)`+claimGate+`
+		  AND (? <= 0 OR w.medium_id = ?)`+claimGate+siteGate+`
 		  AND EXISTS (
 		      SELECT 1 FROM catalog_work_title t
 		      WHERE t.work_id = w.id

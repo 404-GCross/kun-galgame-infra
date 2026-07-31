@@ -341,6 +341,10 @@ type searchWorksInput struct {
 	// every existing caller is byte-identical; a submitter's own view asks for
 	// `live,draft,pending` and gets it in ONE query.
 	ClaimState string `query:"claim_state" doc:"Comma-separated subset of none, live, draft, pending, declined, hidden; absent = every state"`
+	// The tenant gate (wave 162, 161 §6.P3-verdict STOP-5) — the sibling of the
+	// parameter the pending-claims queue already takes. Absent = no gate, so
+	// every existing caller's result set is byte-identical.
+	Site string `query:"site" doc:"Restrict to works claimed by ONE site; absent = every tenant and every unclaimed work. Live SQL predicate — no reindex delay"`
 }
 
 type searchWorksOutput struct {
@@ -356,7 +360,7 @@ func (s *S2SServer) searchWorks(ctx context.Context, in *searchWorksInput) (*sea
 	if !ok {
 		return nil, apiErrMsg(http.StatusBadRequest, errors.ErrInvalidParam, msgBadClaimState)
 	}
-	hits, err := s.read.SearchWorks(ctx, in.Q, in.MediumID, limit, claimStates)
+	hits, err := s.read.SearchWorks(ctx, in.Q, in.MediumID, limit, claimStates, in.Site)
 	if err != nil {
 		return nil, apiErr(http.StatusInternalServerError, errors.ErrInternalServer)
 	}
