@@ -88,7 +88,7 @@ func TestWorklistDrivesTheMergeMachinery(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, merge.ApproveMerge(ctx, foreign.ID, 1))
 
-	require.NoError(t, runPropose(ctx, testDB, io.Discard, merge, 1, "", path, 0, true))
+	require.NoError(t, runPropose(ctx, testDB, io.Discard, merge, 1, "", path, "", 0, true))
 
 	var opened []model.CatalogMergeProposal
 	require.NoError(t, testDB.Where("note LIKE ?", "%"+waveTag154+"%").Find(&opened).Error)
@@ -125,7 +125,7 @@ func TestWorklistDrivesTheMergeMachinery(t *testing.T) {
 		"another wave's proposal must not be executed by a worklist run")
 
 	// Second pass over the same worklist is a zero-write no-op.
-	require.NoError(t, runPropose(ctx, testDB, io.Discard, merge, 1, "", path, 0, true))
+	require.NoError(t, runPropose(ctx, testDB, io.Discard, merge, 1, "", path, "", 0, true))
 	var total int64
 	require.NoError(t, testDB.Model(&model.CatalogMergeProposal{}).
 		Where("note LIKE ?", "%"+waveTag154+"%").Count(&total).Error)

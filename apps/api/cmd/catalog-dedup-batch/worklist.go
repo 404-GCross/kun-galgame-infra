@@ -60,7 +60,7 @@ func loadWorklist(path string) ([]mergeGroup, error) {
 			return nil, fmt.Errorf("%s:%d: %w", path, line, err)
 		}
 		switch e.Class {
-		case classCharacter, classCreditName, classOrphanCreditName, classMixedCreditName:
+		case classCharacter, classCreditName, classOrphanCreditName, classMixedCreditName, classPerson:
 		default:
 			return nil, fmt.Errorf("%s:%d: unknown class %q", path, line, e.Class)
 		}

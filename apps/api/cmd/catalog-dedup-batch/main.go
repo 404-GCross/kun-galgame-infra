@@ -37,10 +37,15 @@
 //	go run ./cmd/catalog-dedup-batch -actor 1 -mode cleanup -run                          # class B delete
 //
 // A wave whose candidates are computed elsewhere feeds them in as a worklist
-// (worklist.go) instead of a detector class; proposals carry their own wave tag:
+// (worklist.go) instead of a detector class; proposals carry their own wave tag,
+// which -note overrides so two worklist waves never address each other's cooled
+// proposals. The worklist is also the ONLY way to reach the person class
+// (step 156): person equivalence is an identity judgement, never a SQL signal.
 //
 //	go run ./cmd/catalog-dedup-batch -actor 1 -mode propose -worklist w.jsonl -run
 //	go run ./cmd/catalog-dedup-batch -actor 1 -mode execute -worklist w.jsonl -run
+//	go run ./cmd/catalog-dedup-batch -actor 1 -mode propose -worklist persons.jsonl \
+//	    -note "rule:catalog-dedup step-156" -run
 package main
 
 import (
@@ -88,7 +93,14 @@ const (
 // detector classes all carry the CURRENT detector wave tag (106). The
 // historical 49/50/98 tags stay on their fully-executed proposals and are never
 // written again.
-func noteTagFor(worklist string) string {
+//
+// override (-note) lets a LATER worklist wave carry its own tag. Without it
+// every worklist run would share step-154's tag, and -mode execute would
+// address another wave's cooled proposals as if they were its own.
+func noteTagFor(worklist, override string) string {
+	if override != "" {
+		return override
+	}
 	if worklist != "" {
 		return waveTag154
 	}
@@ -102,6 +114,7 @@ func main() {
 	run := flag.Bool("run", false, "write (default: dry-run preview)")
 	limit := flag.Int("limit", 0, "propose: max GROUPS this run; execute: max proposals this run (0 = all)")
 	worklist := flag.String("worklist", "", "propose/execute: drive the merges from this JSONL worklist instead of the SQL detectors (see worklist.go)")
+	note := flag.String("note", "", "override the wave note tag stamped on proposals and matched by -mode execute (a later worklist wave must not share step-154's tag)")
 	flag.Parse()
 
 	if *actor <= 0 {
@@ -132,9 +145,9 @@ func main() {
 	case "detect":
 		err = runDetect(db, os.Stdout)
 	case "propose":
-		err = runPropose(ctx, db, os.Stdout, merge, *actor, *class, *worklist, *limit, *run)
+		err = runPropose(ctx, db, os.Stdout, merge, *actor, *class, *worklist, *note, *limit, *run)
 	case "execute":
-		err = runExecute(ctx, db, os.Stdout, merge, resolve, *actor, noteTagFor(*worklist), *limit, *run)
+		err = runExecute(ctx, db, os.Stdout, merge, resolve, *actor, noteTagFor(*worklist, *note), *limit, *run)
 	case "cleanup":
 		err = runCleanup(db, os.Stdout, *run)
 	default:

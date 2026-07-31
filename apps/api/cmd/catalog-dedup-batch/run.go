@@ -14,10 +14,14 @@ import (
 
 // entityTypeOf maps a class label to its EntityType* constant. Both the
 // person-anchored (step 49) and the orphan (step 50) credit-name classes are
-// credit_name entities.
+// credit_name entities; step 156's worklist-only person class is the person
+// entity.
 func entityTypeOf(class string) int16 {
-	if class == classCreditName || class == classOrphanCreditName || class == classMixedCreditName {
+	switch class {
+	case classCreditName, classOrphanCreditName, classMixedCreditName:
 		return model.EntityTypeCreditName
+	case classPerson:
+		return model.EntityTypePerson
 	}
 	return model.EntityTypeCharacter
 }
@@ -101,7 +105,7 @@ type proposeStats struct {
 // proposal is tagged with its class's wave note (noteTagFor) so -mode execute
 // addresses exactly one wave.
 func runPropose(ctx context.Context, db *gorm.DB, w io.Writer, merge *service.MergeService,
-	actor int64, class, worklist string, limit int, run bool) error {
+	actor int64, class, worklist, noteOverride string, limit int, run bool) error {
 	groups, err := collectGroups(db, class, worklist)
 	if err != nil {
 		return err
@@ -109,7 +113,7 @@ func runPropose(ctx context.Context, db *gorm.DB, w io.Writer, merge *service.Me
 	if limit > 0 && limit < len(groups) {
 		groups = groups[:limit]
 	}
-	note := noteTagFor(worklist)
+	note := noteTagFor(worklist, noteOverride)
 
 	var st proposeStats
 	for _, g := range groups {
@@ -224,9 +228,9 @@ func runExecute(ctx context.Context, db *gorm.DB, w io.Writer, merge *service.Me
 	resolve *service.ResolveService, actor int64, note string, limit int, run bool) error {
 	var props []model.CatalogMergeProposal
 	q := db.WithContext(ctx).
-		Where("status = ? AND execute_after <= now() AND note LIKE ? AND entity_type IN (?, ?)",
+		Where("status = ? AND execute_after <= now() AND note LIKE ? AND entity_type IN (?, ?, ?)",
 			model.ProposalStatusApproved, "%"+note+"%",
-			model.EntityTypeCharacter, model.EntityTypeCreditName).
+			model.EntityTypeCharacter, model.EntityTypeCreditName, model.EntityTypePerson).
 		Order("id")
 	if limit > 0 {
 		q = q.Limit(limit)

@@ -26,6 +26,16 @@ const (
 	// assertion: the orphan joins an assertion that already exists; buckets
 	// whose anchored rows disagree on the person are FROZEN and skipped).
 	classMixedCreditName = "mixed-creditname"
+	// classPerson (step 156) merges two catalog_person entities. It has NO SQL
+	// detector and is reachable only through -worklist: person equivalence is
+	// an identity judgement made by the evidence graph plus adjudication
+	// (refs/proj/156), never by a name-shaped signal inside this binary.
+	// The merge itself is fully implemented in the shared machinery — a person
+	// merge repoints catalog_credit_name.person_id, moves the et=0 anchors,
+	// records the redirect and soft-deletes the loser — and touches NO work:
+	// person sits one level below the credited name and never reaches a work's
+	// read face (the wave-118 touch matrix).
+	classPerson = "person"
 )
 
 // mergeGroup is one resolved dedup group: a survivor entity that absorbs its
