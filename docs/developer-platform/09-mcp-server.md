@@ -75,9 +75,10 @@ MCP server 是公开 /v1 契约前面的一层**协议适配**,不是第二个 A
   外部 id 由 `catalog_lookup_external` 覆盖;且 `lookup/batch` 与 `resolve` 是
   POST,而 mcpface 传输是 GET 纯透传。
 
-- **r18 姿态(104 波,调用方自控)**:catalog 系工具 `nsfw=true` 显式开;galgame 系
-  `content_limit=sfw|nsfw|all`(需 key 带 `galgame:nsfw` scope,否则静默降 sfw)。
-  默认全部隐藏——LLM 消费者不显式要就永远看不到 r18。
+- **r18 姿态(104 波,调用方自控)**:catalog 系工具 `nsfw=true` 显式开。
+  默认全部隐藏——LLM 消费者不显式要就永远看不到 r18。(旧 galgame 系工具的
+  `content_limit`+`galgame:nsfw` scope 姿态已随 /v1/galgame 摘牌一并退役;
+  `catalog_works_search` 的 `content_limit` 是编辑展示轴,与 r18 轴无关。)
 
 - tool description 用英文、面向 LLM 写清「何时用哪个」(lookup vs search
   的分工是重点:有外部 id 用 lookup,自然语言用 search)。
