@@ -1,3 +1,20 @@
+// Package galgameapp is what is LEFT of the galgame HTTP-surface assembly: the
+// /v1/galgame 410 tombstone, and nothing else.
+//
+// Until wave 161 this package mounted the whole surface — the /api staff face
+// (admin/ban + the tag/official/engine/series CRUD family + the staff catalog
+// browser), the devapi-gated /internal platform-workflow / user-write / proposal
+// faces, and the two S2S cron feeds. Wave 161's N5 window retired every one of
+// them together with the galgame table family they read and wrote; keeping a
+// route alive over tables that are about to be DROPped is how a decommission
+// turns into a 500 storm.
+//
+// The 410 face is deliberately NOT retired with them (wave 146 ruling): a
+// decommissioned public contract must keep answering "gone, here is the
+// successor" rather than degrading into a 404 that reads as "you typed it
+// wrong". It needs no database, no credential and no dependency — which is why
+// what used to be a Mount(app, cfg, Deps{five pools}) is now a one-argument
+// MountRetiredPublic(app).
 package galgameapp
 
 import (
@@ -18,9 +35,10 @@ import (
 // lookup / calendar ×3 / entity reverse-lookups ×2 / taxonomy by-id ×14) are
 // gone; nothing on this prefix is served any more.
 //
-// SURVIVING faces are deliberately untouched by this file: the /api staff face,
-// the devapi-gated /internal platform-workflow + write + propose faces, and the
-// whole canonical /v1/catalog face.
+// The faces this file used to be careful NOT to touch — the /api staff face and
+// the devapi-gated /internal platform-workflow + write + propose faces — are
+// themselves gone as of wave 161's N5 window; the surviving neighbour is the
+// canonical /v1/catalog face, whose prefix is disjoint from this one.
 //
 // 410 rather than 404 is the point: it separates "this face was decommissioned,
 // here is the successor" from "you typed the path wrong", so a stale third-party
@@ -38,14 +56,14 @@ const (
 		"use the canonical /v1/catalog face instead — https://developer.nextmoe.dev/docs/catalog"
 )
 
-// mountRetiredPublic parks the retired /v1/galgame prefix on a 410 Gone catch-all.
+// MountRetiredPublic parks the retired /v1/galgame prefix on a 410 Gone catch-all.
 //
 // It takes no credential, no scope and no rate limiter: a decommissioned face
 // must answer the same way to everyone, and making a caller authenticate only to
 // learn the endpoint is gone would be a worse diagnosis than the 401 the old
 // devapi chain produced. Both the bare prefix and every sub-path are registered,
 // for every method, so no verb slips through to Fiber's plain 404.
-func mountRetiredPublic(a *app.App) {
+func MountRetiredPublic(a *app.App) {
 	gone := func(c fiber.Ctx) error {
 		c.Set("Link", retiredSuccessorLink)
 		return response.Error(c, fiber.StatusGone, errors.ErrGone, retiredPublicMessage)

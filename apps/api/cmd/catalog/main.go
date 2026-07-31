@@ -229,22 +229,23 @@ func main() {
 	// (disjoint prefixes). Probable anchors and r18 works never surface.
 	setupPublicCatalog(application, cfg, catalogDB, readSvc, resolveSvc, searcher, statsSvc)
 
-	// Host the full galgame HTTP surface (wiki-retirement W2; SOLE host since
-	// the standalone galgame service retired at W3) — internal /api/galgame|tag|
-	// official|engine|series + admin + S2S cron feeds + the /v1/galgame 410
-	// catch-all (the public projection it replaced was delisted at wave 146) —
-	// registered on this process, reading galgameDB (kun_catalog).
-	// Disjoint route prefixes from the catalog faces (/api/v1/catalog,
-	// /api/v1/admin/catalog, /v1/catalog); the shared global middleware +
-	// /healthz were already installed above, so Mount does not re-register them.
-	galgameapp.Mount(application, cfg, galgameapp.Deps{
-		OAuthDB:      application.DB.DB(),
-		GalgameDB:    galgameDB.DB(),
-		Search:       searchClient,
-		Edit:         editEngine,
-		EditDB:       catalogDB.DB(),
-		ClaimCatalog: galgameClaim,
-	})
+	// What is left of the galgame HTTP surface: the /v1/galgame 410 tombstone.
+	//
+	// This process hosted the whole surface from the wiki-retirement W2 merge
+	// until wave 161's N5 window — the /api staff face (admin/ban + the
+	// tag/official/engine/series CRUD family + the staff catalog browser), the
+	// devapi-gated /internal platform-workflow / user-write / proposal faces,
+	// and the two S2S cron feeds. All of them read and wrote the galgame table
+	// family this window DROPs, so they retire in the same deploy that stops
+	// the wiki from minting new rows (§3 SW-E1: this must land BEFORE the
+	// edit-history rekey, or the write face keeps producing galgame.game rows
+	// behind it).
+	//
+	// The 410 stays (wave 146 ruling) and needs nothing: no pool, no search
+	// client, no engine, no credential. Its prefix is disjoint from the catalog
+	// faces (/api/v1/catalog, /api/v1/admin/catalog, /v1/catalog), and the
+	// shared global middleware + /healthz are already installed above.
+	galgameapp.MountRetiredPublic(application)
 
 	// Serve the S2S OpenAPI 3.1 spec unauthenticated at the app root (the
 	// auto doc routes are disabled in Setup so they don't land under the

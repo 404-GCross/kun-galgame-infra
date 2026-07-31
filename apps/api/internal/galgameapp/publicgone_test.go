@@ -67,7 +67,7 @@ var retiredPublicPaths = []string{
 // goneApp builds a bare Fiber app carrying only the retired-face catch-all.
 func goneApp() *fiber.App {
 	a := &app.App{Fiber: fiber.New()}
-	mountRetiredPublic(a)
+	MountRetiredPublic(a)
 	return a.Fiber
 }
 
@@ -140,14 +140,23 @@ func TestRetiredPublicCatchAllStaysInsideItsPrefix(t *testing.T) {
 	// The catch-all must not swallow the surviving faces. Register stand-ins on
 	// the neighbouring prefixes AFTER the catch-all (the harshest ordering) and
 	// prove each still reaches its own handler.
+	//
+	// Wave 161 note: the /api and /internal probes below are now stand-ins for
+	// prefixes this process no longer registers at all (the staff and
+	// platform-workflow faces retired with the galgame tables). They are KEPT
+	// on purpose. What this test asserts is a property of the catch-all's own
+	// path patterns — that `/v1/galgame` and `/v1/galgame/*` capture nothing
+	// outside that prefix — and that property must stay pinned no matter which
+	// neighbours happen to exist today, precisely so the next face added under
+	// /api or /internal does not have to rediscover it.
 	a := &app.App{Fiber: fiber.New()}
-	mountRetiredPublic(a)
+	MountRetiredPublic(a)
 	ok := func(c fiber.Ctx) error { return c.SendString("survivor") }
 	for _, p := range []string{
 		"/v1/catalog/works/1",        // canonical public face
 		"/v1/catalogue",              // adjacent literal, must not be captured
-		"/api/galgame/catalog/stats", // staff face
-		"/internal/galgame/mine",     // platform-workflow face
+		"/api/galgame/catalog/stats", // retired staff face's prefix
+		"/internal/galgame/mine",     // retired workflow face's prefix
 		"/v1/galgamesque",            // shares the retired prefix as a string, not as a path
 	} {
 		a.Fiber.Get(p, ok)
@@ -164,5 +173,49 @@ func TestRetiredPublicCatchAllStaysInsideItsPrefix(t *testing.T) {
 		raw, _ := io.ReadAll(resp.Body)
 		require.Equalf(t, fiber.StatusOK, resp.StatusCode, "surviving route %s must not be captured by the 410 catch-all", p)
 		require.Equalf(t, "survivor", strings.TrimSpace(string(raw)), "surviving route %s must reach its own handler", p)
+	}
+}
+
+// TestRetiredSiblingFacesFallThroughTo404 is the §0-4 prefix-fallthrough audit
+// for wave 161's removals, pinned as a test rather than left as a claim in a
+// report.
+//
+// The N5 window unregistered every other face this package used to mount. The
+// hazard a route removal creates is never the 404 — it is a SURVIVING pattern
+// quietly widening to capture the freed paths and answering 200 with the wrong
+// entity (the `/galgame/:gid` two-segment catch-all did exactly that to
+// /galgame/mine and /galgame/drafts, which is why registration order was
+// load-bearing for three waves).
+//
+// So: with the tombstone as the only thing mounted, every retired sibling path
+// must reach Fiber's plain 404 — NOT this file's 410. A 410 here would mean the
+// catch-all had grown outside /v1/galgame; a 200 would mean something else had.
+func TestRetiredSiblingFacesFallThroughTo404(t *testing.T) {
+	a := &app.App{Fiber: fiber.New()}
+	MountRetiredPublic(a)
+
+	// One path per retired face, chosen at the shape most likely to be captured
+	// (parameter segments, and the static siblings that used to need an
+	// ordering fence against them).
+	for _, p := range []string{
+		"/api/galgame/catalog/stats",      // staff catalog browser
+		"/api/admin/galgame/123",          // staff admin
+		"/api/admin/galgame/messages",     // the static sibling of the line above
+		"/api/tag/search", "/api/tag/123", // staff taxonomy CRUD
+		"/api/official/123/revert",
+		"/internal/galgame/mine",             // workflow face, static personal path
+		"/internal/galgame/123",              // write face, parameter segment
+		"/internal/galgame/messages/feed",    // S2S cron feed
+		"/internal/galgame/revisions/recent", // S2S cron feed
+		"/internal/tag/1/revisions",          // workflow taxonomy history
+		"/internal/edit/proposals",           // proposal face
+	} {
+		for _, m := range []string{"GET", "POST", "DELETE"} {
+			r := httptest.NewRequest(m, p, nil)
+			resp, err := a.Fiber.Test(r, fiber.TestConfig{Timeout: 5 * time.Second})
+			require.NoError(t, err)
+			require.Equalf(t, fiber.StatusNotFound, resp.StatusCode,
+				"%s %s must fall through to a plain 404, not be captured by a surviving pattern", m, p)
+		}
 	}
 }
