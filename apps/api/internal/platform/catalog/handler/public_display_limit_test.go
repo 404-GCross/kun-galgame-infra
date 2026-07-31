@@ -6,9 +6,9 @@
 // the three calendar buckets — one parser, one message), and the JSON shape of
 // claimed_by, whose new key is what the sister waves 141 / 142 consume.
 //
-// It lives in the handler package for the reason the title-bridge suite does:
-// the fixtures write the wiki-side galgame body, whose stub (ensureGalgameStub) is
-// defined in read_test.go, and mirror it into the registry the way production does.
+// It lives in the handler package for the reason the title suite does: it shares
+// that suite's stubs (ensureGalgameStub & friends), which are defined in
+// read_test.go.
 package handler
 
 import (
@@ -19,20 +19,7 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gorm.io/gorm"
 )
-
-// displayLimitGalgameIDs are this file's fixture wiki-body ids, distinct from
-// every other suite's so the stubs never collide.
-var displayLimitGalgameIDs = []int64{5401, 5402}
-
-// insertGalgameDisplayBody writes one wiki body carrying just its editorial
-// display flag (user_id explicit for the real schema, which has no default).
-func insertGalgameDisplayBody(t *testing.T, db *gorm.DB, id int64, contentLimit string) {
-	t.Helper()
-	require.NoError(t, db.Exec(
-		`INSERT INTO galgame (id, user_id, content_limit) VALUES (?, 0, ?)`, id, contentLimit).Error)
-}
 
 // TestDisplayLimitVocabularyOnEveryLane pins the wire posture: content_limit is
 // OUR closed vocabulary, so a token outside {sfw, nsfw} is a LOUD 400 with ONE
@@ -112,49 +99,46 @@ func TestDisplayLimitAbsentIsNoGate(t *testing.T) {
 }
 
 // TestClaimedByContentLimitOnTheWire is the shape case the sister waves consume:
-// every claimed_by object carries content_limit, its value is the WIKI body's
-// editorial flag (not the game's rating), and an unclaimed row is still a bare
-// null rather than an object.
+// every claimed_by object carries content_limit, its value is the EDITORIAL
+// display flag (not the game's rating), and an unclaimed row is still a bare null
+// rather than an object.
+//
+// The flag is catalog_work.display_nsfw. It used to be mirrored there from the
+// wiki bodies' content_limit column by step q; wave 161 retired that column with
+// the rest of the galgame family, so the works below carry the two values the
+// wave-140 mirror wrote for the old 'sfw' / 'nsfw' fixtures, set directly.
 func TestClaimedByContentLimitOnTheWire(t *testing.T) {
 	db := openCatalogTestDB(t)
 	ensureGalgameStub(t, db)
 	ensureGalgameCoverStub(t, db)
 	ensureGalgameScreenshotStub(t, db)
 	ensureGalgameRatingStub(t, db)
-	ensureGalgameTagStub(t, db) // the detail face co-loads the claimed tag bridge (fresh-DB file order)
-	require.NoError(t, db.Exec(`DELETE FROM galgame WHERE id IN ?`, displayLimitGalgameIDs).Error)
 	for _, tbl := range []string{"catalog_work_title", "catalog_work"} {
 		require.NoError(t, db.Exec("TRUNCATE "+tbl+" RESTART IDENTITY CASCADE").Error)
 	}
 
-	// An r18 GAME whose wiki display material an editor marked safe — the 5,568-row
+	// An r18 GAME whose display material an editor marked safe — the 5,568-row
 	// production majority the age axis was mis-hiding.
 	safeR18 := model.CatalogWork{
 		MediumID: 1, OLang: "ja", DisplayName: "成人ゲーム・安全素材",
 		ContentRating: model.ContentRatingR18, Status: model.WorkStatusLive,
-		Site: strptr("galgame_wiki"), ProductWorkID: ptrI64(5401),
+		Site: strptr("galgame_wiki"), ProductWorkID: ptrI64(5401), DisplayNSFW: false,
 	}
 	require.NoError(t, db.Create(&safeR18).Error)
-	insertGalgameDisplayBody(t, db, 5401, "sfw")
 
-	// The reverse leak: an all_ages GAME the wiki marked nsfw.
+	// The reverse leak: an all_ages GAME an editor marked nsfw.
 	spicySFW := model.CatalogWork{
 		MediumID: 1, OLang: "ja", DisplayName: "全年齢ゲーム・成人素材",
 		ContentRating: model.ContentRatingAllAges, Status: model.WorkStatusLive,
-		Site: strptr("galgame_wiki"), ProductWorkID: ptrI64(5402),
+		Site: strptr("galgame_wiki"), ProductWorkID: ptrI64(5402), DisplayNSFW: true,
 	}
 	require.NoError(t, db.Create(&spicySFW).Error)
-	insertGalgameDisplayBody(t, db, 5402, "nsfw")
 
 	bodyless := model.CatalogWork{
 		MediumID: 1, OLang: "ja", DisplayName: "無認領作品",
 		ContentRating: model.ContentRatingAllAges, Status: model.WorkStatusLive,
 	}
 	require.NoError(t, db.Create(&bodyless).Error)
-
-	// The display flag is catalog_work.display_nsfw now; step q mirrors it off the
-	// wiki bodies written above (refs/proj/140 §5b).
-	mirrorWikiIntoCatalog(t, db, "q")
 
 	app := supplyApp(db)
 

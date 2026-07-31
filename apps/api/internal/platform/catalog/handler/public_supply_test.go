@@ -1,10 +1,11 @@
 // public_supply_test.go — A2-1e wire-level cases (refs/proj/135): the tag
-// SAFETY AXIS (R8) end to end over the claimed-work bridge, the calendar
-// navigation meta (R10), and the conjunctive tag_id parameter's 400 posture.
+// SAFETY AXIS (R8) end to end on a claimed work, the calendar navigation meta
+// (R10), and the conjunctive tag_id parameter's 400 posture.
 //
-// The safety axis lives here rather than in the service package because it
-// reads the wiki-side galgame_tag / galgame_tag_relation layer, whose stubs
-// (ensureGalgameTagStub & friends) are defined in read_test.go.
+// The safety axis used to read the wiki-side galgame_tag / galgame_tag_relation
+// layer through a bridge, then through the wave-140 mirror. Wave 161 retired
+// both: catalog_work_tag now carries the axis natively and the fixture writes
+// that table directly.
 package handler
 
 import (
@@ -35,14 +36,6 @@ func supplyApp(db *gorm.DB) *fiber.App {
 	return app
 }
 
-// insertGalgameTagCat is insertGalgameTag with an explicit category — the
-// column the public `sexual` flag projects from (content / sexual / technical).
-func insertGalgameTagCat(t *testing.T, db *gorm.DB, id int64, name, category string) {
-	t.Helper()
-	require.NoError(t, db.Exec(
-		`INSERT INTO galgame_tag (id, name, category) VALUES (?, ?, ?)`, id, name, category).Error)
-}
-
 // TestWorkDetailTagSafetyAxis is R8's case. It pins four things at once:
 //
 //	① the DEFAULT response carries no spoiler-flagged tag (the wire is
@@ -53,44 +46,45 @@ func insertGalgameTagCat(t *testing.T, db *gorm.DB, id int64, name, category str
 //	   tags the wiki classifies as the sexual category;
 //	④ a catalog-native (bangumi) row — a source with NO spoiler or category
 //	   concept — reads 0 / false rather than being dropped or guessed at.
+//
+// The four vndb-attributed rows below ARE the wave-140 mirror's output for the
+// original wiki fixture (four galgame_tag definitions, categories content /
+// sexual / content / sexual, joined to spoiler levels 0 / 0 / 1 / 2 through
+// vndb-sourced relations): count=0 because the wiki tag layer had no vote field,
+// sexual = (category == 'sexual'). Wave 161 retired that layer and its mirror, so
+// the rows are written natively and every response assertion is unchanged.
 func TestWorkDetailTagSafetyAxis(t *testing.T) {
 	db := openCatalogTestDB(t)
 	ensureGalgameStub(t, db)
 	ensureGalgameCoverStub(t, db)
 	ensureGalgameScreenshotStub(t, db)
 	ensureGalgameRatingStub(t, db)
-	ensureGalgameTagStub(t, db)
-	require.NoError(t, db.Exec(`DELETE FROM galgame WHERE id IN ?`, galgameTagStubGalgameIDs).Error)
-	insertGalgameBody(t, db, 9001, 0, "", "", "", "")
 	for _, tbl := range []string{"catalog_work_tag", "catalog_work"} {
 		require.NoError(t, db.Exec("TRUNCATE "+tbl+" RESTART IDENTITY CASCADE").Error)
 	}
-	var srcBangumi int16
+	var srcBangumi, srcVNDB int16
 	db.Raw("SELECT id FROM catalog_source WHERE key='bangumi'").Scan(&srcBangumi)
 	require.NotZero(t, srcBangumi)
-
-	// One safe content tag, one safe SEXUAL-category tag, one minor-spoiler and
-	// one severe-spoiler tag.
-	insertGalgameTagCat(t, db, 9101, "恋愛(a2-1e)", "content")
-	insertGalgameTagCat(t, db, 9102, "エロ(a2-1e)", "sexual")
-	insertGalgameTagCat(t, db, 9103, "軽ネタバレ(a2-1e)", "content")
-	insertGalgameTagCat(t, db, 9104, "重ネタバレ(a2-1e)", "sexual")
+	db.Raw("SELECT id FROM catalog_source WHERE key='vndb'").Scan(&srcVNDB)
+	require.NotZero(t, srcVNDB)
 
 	claimed := model.CatalogWork{
 		MediumID: 1, OLang: "ja", DisplayName: "安全軸作品", ContentRating: 0, Status: 0,
 		Site: strptr("galgame_wiki"), ProductWorkID: ptrI64(9001),
 	}
 	require.NoError(t, db.Create(&claimed).Error)
-	insertGalgameTagRelation(t, db, 9001, 9101, 0, "vndb")
-	insertGalgameTagRelation(t, db, 9001, 9102, 0, "vndb")
-	insertGalgameTagRelation(t, db, 9001, 9103, 1, "vndb")
-	insertGalgameTagRelation(t, db, 9001, 9104, 2, "vndb")
-	// A catalog-native row: bangumi folksonomy, no axis upstream.
-	require.NoError(t, db.Create(&model.CatalogWorkTag{
-		WorkID: claimed.ID, Name: "百合", Count: 30, SourceID: srcBangumi,
-	}).Error)
-
-	mirrorWikiIntoCatalog(t, db, "r")
+	// One safe content tag, one safe SEXUAL-category tag, one minor-spoiler and
+	// one severe-spoiler tag — plus a catalog-native bangumi row with no axis
+	// upstream.
+	for _, row := range []model.CatalogWorkTag{
+		{WorkID: claimed.ID, Name: "恋愛(a2-1e)", SourceID: srcVNDB, Spoiler: 0, Sexual: false},
+		{WorkID: claimed.ID, Name: "エロ(a2-1e)", SourceID: srcVNDB, Spoiler: 0, Sexual: true},
+		{WorkID: claimed.ID, Name: "軽ネタバレ(a2-1e)", SourceID: srcVNDB, Spoiler: 1, Sexual: false},
+		{WorkID: claimed.ID, Name: "重ネタバレ(a2-1e)", SourceID: srcVNDB, Spoiler: 2, Sexual: true},
+		{WorkID: claimed.ID, Name: "百合", Count: 30, SourceID: srcBangumi},
+	} {
+		require.NoError(t, db.Create(&row).Error)
+	}
 
 	app := supplyApp(db)
 	// tagsAt returns name → (spoiler, sexual) for one spoilers= setting.

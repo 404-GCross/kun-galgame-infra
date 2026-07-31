@@ -1,15 +1,16 @@
 // public_titles_test.go — A2-R1 区 A wire-level cases (refs/proj/136): the
-// CLAIMED title bridge end to end.
+// claimed work's TITLE face end to end.
 //
-// It lives here rather than in the service package for the same reason the tag
-// safety axis does: the bridge reads the wiki-side galgame / galgame_alias
-// layer, whose stubs (ensureGalgameStub) are defined in read_test.go.
+// Originally an A/B harness over the wiki title bridge, then over the wave-140
+// mirror that replaced it. Wave 161 retired both the wiki galgame / galgame_alias
+// layer and the mirror, so these are now plain CONTRACT tests over native
+// catalog_work_title rows: the fixtures below ARE the rows the mirror produced
+// for the old wiki bodies, which is why the frozen expectations never moved.
 //
-// The regression this wave fixes: 87% of claimed works had ZERO
+// The regression the original wave fixed: 87% of claimed works had ZERO
 // catalog_work_title rows, so their Chinese names and aliases were absent from
-// every consumer. The cases below pin the fix and its guardrails — the four-key
-// pivot, aliases as lang-less alias rows, strict XOR over a shadow native row,
-// and byte-identity for a bodyless work.
+// every consumer. The cases pin the resulting shape — the four-key pivot, aliases
+// as lang-less alias rows, and byte-identity for a bodyless work.
 package handler
 
 import (
@@ -19,24 +20,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gorm.io/gorm"
 )
-
-// insertGalgameNames fills one fixture body's four name columns (the bridge's
-// official lane). user_id is passed for the real-schema case.
-func insertGalgameNames(t *testing.T, db *gorm.DB, id int64, ja, en, zhCN, zhTW string) {
-	t.Helper()
-	require.NoError(t, db.Exec(`INSERT INTO galgame (id, user_id, name_ja_jp, name_en_us, name_zh_cn, name_zh_tw,
-		intro_ja_jp, intro_en_us, intro_zh_cn, intro_zh_tw)
-		VALUES (?, 0, ?, ?, ?, ?, '', '', '', '')`, id, ja, en, zhCN, zhTW).Error)
-}
-
-// insertGalgameAlias appends one wiki alias row (the bridge's alias lane).
-func insertGalgameAlias(t *testing.T, db *gorm.DB, galgameID int64, name string) {
-	t.Helper()
-	require.NoError(t, db.Exec(
-		`INSERT INTO galgame_alias (galgame_id, name) VALUES (?, ?)`, galgameID, name).Error)
-}
 
 // titleRows flattens a work record's titles[] into comparable tuples.
 func titleRows(t *testing.T, body map[string]any) [][3]string {
@@ -51,17 +35,16 @@ func titleRows(t *testing.T, body map[string]any) [][3]string {
 	return out
 }
 
-// TestClaimedWorkTitlesBridge is 区 A's core case on the PUBLIC work record, now
-// run through the W1-pre mirror (refs/proj/140): a claimed work's titles are the
-// wiki body's — four name columns pivoted to BCP-47 official rows, galgame_alias as
-// lang-less alias rows, an alias that repeats an official name not rendered twice —
-// and a bodyless work reads its native rows unchanged.
+// TestClaimedWorkTitlesBridge is 区 A's core case on the PUBLIC work record, now a
+// CONTRACT test over NATIVE catalog_work_title rows: the wiki title layer and its
+// mirror are both gone (wave 161), so the claimed work is seeded with exactly the
+// rows the wave-140 mirror produced for this fixture — the four name columns
+// pivoted to BCP-47 official rows and the one surviving galgame_alias as a
+// lang-less alias row. A bodyless work reads its native rows unchanged.
 //
-// Two things changed with the flip and are pinned here as such: a stale native row
-// on a claimed work is DELETED by the mirror rather than hidden by the old strict
-// XOR (better: the table cannot drift), and the detail lane sorts (kind, lang) like
-// every native work's instead of the wiki's column order — the intended reorder the
-// wave measured at 10,349 works.
+// The frozen expectations below are therefore unchanged from the bridge era; only
+// the INPUT moved from "wiki body + mirror" to "the mirror's own output, written
+// directly". The detail lane sorts (kind, lang) like every native work's.
 func TestClaimedWorkTitlesBridge(t *testing.T) {
 	db := openCatalogTestDB(t)
 	ensureGalgameStub(t, db)
@@ -72,20 +55,26 @@ func TestClaimedWorkTitlesBridge(t *testing.T) {
 		require.NoError(t, db.Exec("TRUNCATE "+tbl+" RESTART IDENTITY CASCADE").Error)
 	}
 
-	// ── CLAIMED: all four name columns + three aliases, one of which repeats an
-	// official name and one of which is whitespace-only.
+	// ── CLAIMED: the mirror's output for a body carrying all four name columns
+	// plus three aliases — one repeating the official ja name (dropped: one name,
+	// one row) and one whitespace-only (not an alias). Only べつめい survived, with
+	// no language and latin NULL.
 	claimed := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "認領作品", ContentRating: 0, Status: 0,
 		Site: strptr("galgame_wiki"), ProductWorkID: ptrI64(5001)}
 	require.NoError(t, db.Create(&claimed).Error)
-	insertGalgameNames(t, db, 5001, "日本語名", "English Name", "简体中文名", "繁體中文名")
-	insertGalgameAlias(t, db, 5001, "べつめい")
-	insertGalgameAlias(t, db, 5001, "日本語名") // == the official ja name: one name, one row
-	insertGalgameAlias(t, db, 5001, "   ")  // whitespace is not an alias
-	// A STALE native row on the same claimed work: in scope for the mirror, so it
-	// is deleted rather than merely outvoted.
-	require.NoError(t, db.Create(&model.CatalogWorkTitle{
-		WorkID: claimed.ID, Lang: "ja", Title: "この行は使われない", Kind: model.WorkTitleKindOfficial,
-	}).Error)
+	for _, row := range []model.CatalogWorkTitle{
+		{WorkID: claimed.ID, Lang: "ja", Title: "日本語名", Kind: model.WorkTitleKindOfficial},
+		{WorkID: claimed.ID, Lang: "en", Title: "English Name", Kind: model.WorkTitleKindOfficial},
+		{WorkID: claimed.ID, Lang: "zh-Hans", Title: "简体中文名", Kind: model.WorkTitleKindOfficial},
+		{WorkID: claimed.ID, Lang: "zh-Hant", Title: "繁體中文名", Kind: model.WorkTitleKindOfficial},
+		{WorkID: claimed.ID, Title: "べつめい", Kind: model.WorkTitleKindAlias},
+	} {
+		require.NoError(t, db.Create(&row).Error)
+	}
+	// The bridge-era "the mirror DELETES a stale native row the wiki body does not
+	// justify" sub-case and its fixture row are gone: with no mirror there is no
+	// deletion arm to exercise, and catalog_work_title is now the only truth there
+	// ever was. Every response assertion below is unchanged.
 
 	// ── BODYLESS: native rows, verbatim (including latin, excluding search hints).
 	bodyless := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "無体作品", ContentRating: 0, Status: 0}
@@ -97,8 +86,6 @@ func TestClaimedWorkTitlesBridge(t *testing.T) {
 	require.NoError(t, db.Create(&model.CatalogWorkTitle{
 		WorkID: bodyless.ID, Lang: "ja", Title: "けんさくヒント", Kind: model.WorkTitleKindSearchHint,
 	}).Error)
-
-	mirrorWikiIntoCatalog(t, db, "p")
 
 	app := supplyApp(db)
 
@@ -112,11 +99,7 @@ func TestClaimedWorkTitlesBridge(t *testing.T) {
 		{"zh-Hans", "简体中文名", "official"},
 		{"zh-Hant", "繁體中文名", "official"},
 		{"", "べつめい", "alias"},
-	}, titleRows(t, body), "the wiki body's names, one row each; the stale native row is gone")
-	var stale int64
-	require.NoError(t, db.Model(&model.CatalogWorkTitle{}).
-		Where("work_id = ? AND title = ?", claimed.ID, "この行は使われない").Count(&stale).Error)
-	assert.Zero(t, stale, "the mirror DELETES a row the wiki body does not justify")
+	}, titleRows(t, body), "one row per name, (kind, lang) ordered")
 
 	// BODYLESS: unchanged — the official row with its latin, no search hint.
 	code, body = getJSON(t, app, "/v1/catalog/works/"+itoa(bodyless.ID))
@@ -128,9 +111,12 @@ func TestClaimedWorkTitlesBridge(t *testing.T) {
 }
 
 // TestClaimedWorkNamesBlockBridged pins the LIST face's D7 names pivot on top of
-// the mirrored rows: the four product keys all fill from the wiki body, and the
-// lang-less alias rows stay OUT of the block (they carry no language, so they
-// belong to no key — which is exactly why the bridge does not invent one).
+// the NATIVE title rows: the four product keys all fill from the four official
+// rows, and the lang-less alias row stays OUT of the block (it carries no
+// language, so it belongs to no key).
+//
+// The fixture is the wave-140 mirror's output for a body with all four name
+// columns plus one alias — the numbers are the frozen ones, only the input moved.
 func TestClaimedWorkNamesBlockBridged(t *testing.T) {
 	db := openCatalogTestDB(t)
 	ensureGalgameStub(t, db)
@@ -144,10 +130,15 @@ func TestClaimedWorkNamesBlockBridged(t *testing.T) {
 	claimed := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "認領一覧", ContentRating: 0, Status: 0,
 		Site: strptr("galgame_wiki"), ProductWorkID: ptrI64(5002)}
 	require.NoError(t, db.Create(&claimed).Error)
-	insertGalgameNames(t, db, 5002, "日本語名", "English Name", "简体中文名", "繁體中文名")
-	insertGalgameAlias(t, db, 5002, "べつめい")
-
-	mirrorWikiIntoCatalog(t, db, "p")
+	for _, row := range []model.CatalogWorkTitle{
+		{WorkID: claimed.ID, Lang: "ja", Title: "日本語名", Kind: model.WorkTitleKindOfficial},
+		{WorkID: claimed.ID, Lang: "en", Title: "English Name", Kind: model.WorkTitleKindOfficial},
+		{WorkID: claimed.ID, Lang: "zh-Hans", Title: "简体中文名", Kind: model.WorkTitleKindOfficial},
+		{WorkID: claimed.ID, Lang: "zh-Hant", Title: "繁體中文名", Kind: model.WorkTitleKindOfficial},
+		{WorkID: claimed.ID, Title: "べつめい", Kind: model.WorkTitleKindAlias},
+	} {
+		require.NoError(t, db.Create(&row).Error)
+	}
 
 	app := supplyApp(db)
 	code, body := getJSON(t, app, "/v1/catalog/works?include=names")

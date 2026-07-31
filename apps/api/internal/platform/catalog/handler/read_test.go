@@ -749,12 +749,15 @@ func insertGalgameBody(t *testing.T, db *gorm.DB, id, catalogWorkID int64, en, j
 		VALUES (?, ?, 0, ?, ?, ?, ?)`, id, catalogWorkID, en, ja, zhCN, zhTW).Error)
 }
 
-// TestWorkIntro pins the step-52 media-aggregation read face, now fed by the
-// W1-pre mirror (refs/proj/140): the claimed work's wiki intro columns pivoted to
-// language rows under source=galgame_wiki — mirrored by step q, byte-identical to
-// what the bridge projected — the native merge (catalog_work_intro, lowest
-// source_id wins per language) that now serves claimed and bodyless works alike,
-// and []-not-null serialization.
+// TestWorkIntro pins the step-52 media-aggregation read face over NATIVE
+// catalog_work_intro rows: the merge (lowest source_id wins per language) that
+// serves claimed and bodyless works alike, and []-not-null serialization.
+//
+// The claimed work's galgame_wiki rows below are what the wave-140 mirror (step q)
+// wrote for a wiki body with en + ja intro columns set and zh empty — provenance
+// =source, attribution galgame_wiki, one row per non-empty column. Wave 161 retired
+// the wiki body and the mirror, so the rows are written natively; the wire
+// expectations are the frozen ones.
 //
 // The strict XOR retired with the bridge: a claimed work's OTHER-source intro row
 // is no longer shadowed, it is one more source in the merge. Production had no such
@@ -769,16 +772,22 @@ func TestWorkIntro(t *testing.T) {
 	}
 	// Source ids from the seed: galgame_wiki=12 (bridge provenance), vndb=2, user=1.
 	var srcGalgameWiki, srcVNDB, srcUser int16
-	db.Raw("SELECT id FROM catalog_source WHERE key='galgame_wiki'").Scan(&srcGalgameWiki)
+	db.Raw("SELECT id FROM catalog_source WHERE key IN ('curated','galgame_wiki')").Scan(&srcGalgameWiki)
 	db.Raw("SELECT id FROM catalog_source WHERE key='vndb'").Scan(&srcVNDB)
 	db.Raw("SELECT id FROM catalog_source WHERE key='user'").Scan(&srcUser)
 	require.NotZero(t, srcGalgameWiki, "galgame_wiki source must be seeded")
 
-	// --- CLAIMED work: intro bridged from its galgame body (en + ja set, zh empty).
+	// --- CLAIMED work: the two galgame_wiki rows step q wrote for a body with the
+	// en + ja columns set and zh empty (an empty column wrote no row at all).
 	claimed := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "主張作品", ContentRating: 0, Status: 0,
 		Site: strptr("galgame_wiki"), ProductWorkID: ptrI64(5001)}
 	require.NoError(t, db.Create(&claimed).Error)
-	insertGalgameBody(t, db, 5001, claimed.ID, "English intro.", "日本語の紹介。", "", "")
+	require.NoError(t, db.Create(&model.CatalogWorkIntro{
+		WorkID: claimed.ID, Lang: "en", Intro: "English intro.", SourceID: srcGalgameWiki,
+		Provenance: model.IntroProvenanceSource}).Error)
+	require.NoError(t, db.Create(&model.CatalogWorkIntro{
+		WorkID: claimed.ID, Lang: "ja", Intro: "日本語の紹介。", SourceID: srcGalgameWiki,
+		Provenance: model.IntroProvenanceSource}).Error)
 
 	// --- BODYLESS work: native rows; en has TWO sources (user beats vndb), plus ja.
 	bodyless := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "無体作品", ContentRating: 0, Status: 0}
@@ -787,16 +796,13 @@ func TestWorkIntro(t *testing.T) {
 	require.NoError(t, db.Create(&model.CatalogWorkIntro{WorkID: bodyless.ID, Lang: "en", Intro: "User english", SourceID: srcUser}).Error)
 	require.NoError(t, db.Create(&model.CatalogWorkIntro{WorkID: bodyless.ID, Lang: "ja", Intro: "VNDB日本語", SourceID: srcVNDB}).Error)
 
-	// --- MERGE work: claimed with EMPTY wiki intros, carrying a native VNDB row.
-	// The mirror writes nothing for it (nothing to mirror) and does not touch the
-	// foreign source's row, which the one native lane then serves.
+	// --- MERGE work: claimed with NO galgame_wiki intro row (its wiki body's intro
+	// columns were all empty, so step q wrote nothing for it), carrying a native
+	// VNDB row that the one native lane serves.
 	merged := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "空主張", ContentRating: 0, Status: 0,
 		Site: strptr("galgame_wiki"), ProductWorkID: ptrI64(5002)}
 	require.NoError(t, db.Create(&merged).Error)
-	insertGalgameBody(t, db, 5002, merged.ID, "", "", "", "")
 	require.NoError(t, db.Create(&model.CatalogWorkIntro{WorkID: merged.ID, Lang: "en", Intro: "VNDB english", SourceID: srcVNDB}).Error)
-
-	mirrorWikiIntoCatalog(t, db, "q")
 
 	app := readApp(service.NewReadService(db), nil)
 
@@ -804,10 +810,10 @@ func TestWorkIntro(t *testing.T) {
 	code, body := getJSON(t, app, "/api/v1/catalog/works/"+itoa(claimed.ID))
 	require.Equal(t, 200, code)
 	intro := body["data"].(map[string]any)["intro"].([]any)
-	require.Len(t, intro, 2, "en + ja bridged; empty zh columns dropped")
+	require.Len(t, intro, 2, "en + ja rows; the empty zh columns never became rows")
 	assert.Equal(t, "en", intro[0].(map[string]any)["lang"])
 	assert.Equal(t, "English intro.", intro[0].(map[string]any)["intro"])
-	assert.EqualValues(t, srcGalgameWiki, intro[0].(map[string]any)["source_id"], "bridge attributes galgame_wiki")
+	assert.EqualValues(t, srcGalgameWiki, intro[0].(map[string]any)["source_id"], "the wiki pivot is attributed to galgame_wiki")
 	assert.Equal(t, "ja", intro[1].(map[string]any)["lang"])
 	assert.Equal(t, "日本語の紹介。", intro[1].(map[string]any)["intro"])
 
@@ -822,12 +828,12 @@ func TestWorkIntro(t *testing.T) {
 	assert.EqualValues(t, srcUser, en["source_id"])
 	assert.EqualValues(t, srcVNDB, intro[1].(map[string]any)["source_id"])
 
-	// MERGE: the wiki body had nothing to mirror, so the work reads the one row it
-	// does have — its foreign source's, untouched by the mirror.
+	// MERGE: no galgame_wiki row exists, so the work reads the one row it does
+	// have — its foreign source's.
 	code, body = getJSON(t, app, "/api/v1/catalog/works/"+itoa(merged.ID))
 	require.Equal(t, 200, code)
 	intro = body["data"].(map[string]any)["intro"].([]any)
-	require.Len(t, intro, 1, "an empty wiki column writes no row; the native one is not shadowed")
+	require.Len(t, intro, 1, "a claimed work with no wiki row is not shadowed; the native one serves")
 	assert.Equal(t, "VNDB english", intro[0].(map[string]any)["intro"])
 	assert.EqualValues(t, srcVNDB, intro[0].(map[string]any)["source_id"])
 }
@@ -890,7 +896,7 @@ func TestWorkCover(t *testing.T) {
 	}
 	// Source ids from the seed: galgame_wiki=12, vndb=2, upscale=13, user=1.
 	var srcGalgameWiki, srcVNDB, srcUpscale, srcUser int16
-	db.Raw("SELECT id FROM catalog_source WHERE key='galgame_wiki'").Scan(&srcGalgameWiki)
+	db.Raw("SELECT id FROM catalog_source WHERE key IN ('curated','galgame_wiki')").Scan(&srcGalgameWiki)
 	db.Raw("SELECT id FROM catalog_source WHERE key='vndb'").Scan(&srcVNDB)
 	db.Raw("SELECT id FROM catalog_source WHERE key='upscale'").Scan(&srcUpscale)
 	db.Raw("SELECT id FROM catalog_source WHERE key='user'").Scan(&srcUser)
@@ -1045,7 +1051,7 @@ func TestWorkScreenshot(t *testing.T) {
 	}
 	// Source ids from the seed: galgame_wiki=12, vndb=2, user=1, dlsite=4.
 	var srcGalgameWiki, srcVNDB, srcUser, srcDlsite int16
-	db.Raw("SELECT id FROM catalog_source WHERE key='galgame_wiki'").Scan(&srcGalgameWiki)
+	db.Raw("SELECT id FROM catalog_source WHERE key IN ('curated','galgame_wiki')").Scan(&srcGalgameWiki)
 	db.Raw("SELECT id FROM catalog_source WHERE key='vndb'").Scan(&srcVNDB)
 	db.Raw("SELECT id FROM catalog_source WHERE key='user'").Scan(&srcUser)
 	db.Raw("SELECT id FROM catalog_source WHERE key='dlsite'").Scan(&srcDlsite)
@@ -1280,28 +1286,23 @@ func insertEGMeta(t *testing.T, db *gorm.DB, galgameID int64, median *int, voteC
 		VALUES (?, 0, ?, ?, now())`, galgameID, median, voteCount).Error)
 }
 
-// TestWorkRating pins the step-58a/60 media-aggregation rating read face: the
-// CLAIMED bridge (galgame_vndb_meta ∪ galgame_bangumi_meta ∪ galgame_eg_meta
-// mapped to the unified shape on SOURCE-NATIVE scales — vndb 1-10 mean without
-// rank and the kana 10-100 wire value decoded ÷10, bangumi 0-10 mean with
-// rank, erogamespace 0-100 median without), the BODYLESS native read
-// (catalog_work_rating), strict XOR (a claimed work with only unscored metas —
-// vndb NULL rating / bangumi score 0 / EG NULL median — yields [] and never
-// falls back to a shadow native row), and []-not-null serialization. Ordered
-// by source_id ascending.
+// TestWorkRating pins the step-58a/60 media-aggregation rating read face over
+// NATIVE catalog_work_rating rows: the unified shape on SOURCE-NATIVE scales
+// (vndb 1-10 mean without rank, bangumi 0-10 mean with rank, dlsite 0-5 star
+// average without, erogamespace 0-100 median without), source_id ascending, and
+// []-not-null serialization.
+//
+// The claimed work's four rows are what the wave-140 mirror (steps s + t) wrote
+// for the wiki meta fixtures: vndb rating 84.5 on the kana wire scale decoded ÷10
+// to 8.45 / 456 votes, bangumi 7.6 with rank 1234 and total 890 votes, dlsite
+// star 4.36 / rate_count 120, EG median 78 / 321 votes. Wave 161 retired the meta
+// tables and the mirror, so the rows are written natively and every wire
+// expectation is the frozen one.
 func TestWorkRating(t *testing.T) {
 	db := openCatalogTestDB(t)
-	ensureGalgameStub(t, db)           // the intro bridge (also run by loadWorkDetail) needs galgame
+	ensureGalgameStub(t, db)
 	ensureGalgameCoverStub(t, db)      // the co-loaded cover bridge needs galgame_cover
 	ensureGalgameScreenshotStub(t, db) // the co-loaded screenshot bridge needs galgame_screenshot
-	ensureGalgameRatingStub(t, db)     // the rating bridge needs the two meta tables (clears 8001/8002)
-	// The meta tables carry FKs to galgame(id) in the shared test DB, so the
-	// bridge galgame ids need a parent body row. Metas cleared above → safe to
-	// reset the parents. Empty intros / no cover / no screenshot rows keep the
-	// co-loaded sibling bridges no-ops.
-	require.NoError(t, db.Exec(`DELETE FROM galgame WHERE id IN ?`, galgameRatingStubIDs).Error)
-	insertGalgameBody(t, db, 8001, 0, "", "", "", "")
-	insertGalgameBody(t, db, 8002, 0, "", "", "", "")
 	for _, tbl := range []string{"catalog_work_rating", "catalog_work"} {
 		require.NoError(t, db.Exec("TRUNCATE "+tbl+" RESTART IDENTITY CASCADE").Error)
 	}
@@ -1316,22 +1317,21 @@ func TestWorkRating(t *testing.T) {
 	require.NotZero(t, srcDlsite, "dlsite source must be seeded")
 	require.NotZero(t, srcEG, "erogamespace source must be seeded")
 
-	// --- CLAIMED work: all four metas scored (galgame_id 8001) → four bridged
-	// rows. The vndb fixture stores the kana wire value 84.5 (displayed 8.45);
-	// the dlsite fixture the displayed 0-5 star average (4.36).
+	// --- CLAIMED work: all four sources scored → four rows, one per source, each
+	// on that source's own scale (vndb 8.45 = the wire value 84.5 decoded, dlsite
+	// 4.36 = the displayed 0-5 star average).
 	claimed := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "主張作品", ContentRating: 0, Status: 0,
 		Site: strptr("galgame_wiki"), ProductWorkID: ptrI64(8001)}
 	require.NoError(t, db.Create(&claimed).Error)
-	wire := 84.5
-	insertVNDBMeta(t, db, 8001, &wire, 456)
-	insertBangumiMeta(t, db, 8001, 7.6, 1234, 890)
-	star := 4.36
-	rc := 120
-	dl64, wl64 := int64(2000), int64(300)
-	rv := 12
-	insertDlsiteMeta(t, db, 8001, &star, &rc, &dl64, &wl64, &rv)
-	median := 78
-	insertEGMeta(t, db, 8001, &median, 321)
+	bgmRank1234 := 1234
+	for _, row := range []model.CatalogWorkRating{
+		{WorkID: claimed.ID, SourceID: srcVNDB, Score: 8.45, VoteCount: 456},
+		{WorkID: claimed.ID, SourceID: srcBangumi, Score: 7.6, VoteCount: 890, Rank: &bgmRank1234},
+		{WorkID: claimed.ID, SourceID: srcDlsite, Score: 4.36, VoteCount: 120},
+		{WorkID: claimed.ID, SourceID: srcEG, Score: 78, VoteCount: 321},
+	} {
+		require.NoError(t, db.Create(&row).Error)
+	}
 
 	// --- BODYLESS work: native catalog_work_rating rows (backfill provenance).
 	bodyless := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "無体作品", ContentRating: 0, Status: 0}
@@ -1342,20 +1342,14 @@ func TestWorkRating(t *testing.T) {
 	require.NoError(t, db.Create(&model.CatalogWorkRating{
 		WorkID: bodyless.ID, SourceID: srcEG, Score: 82, VoteCount: 40}).Error)
 
-	// --- UNSCORED work: claimed (galgame_id 8002) with only UNSCORED metas (vndb
-	// rating NULL = no public rating, bangumi score 0 = unrated, dlsite star
-	// NULL = below the rating threshold, EG median NULL) — all filtered, so the
-	// mirror writes nothing — plus a native bangumi row the importer owns, which
-	// the one native lane serves (the strict XOR that hid it retired with the
-	// bridge).
+	// --- UNSCORED work: a claimed work whose upstreams published no rating at all
+	// (the old fixture: vndb rating NULL, bangumi score 0, dlsite star NULL, EG
+	// median NULL — every one filtered, so the mirror wrote nothing for it), left
+	// carrying only the native bangumi row the importer owns. The strict XOR that
+	// used to hide that row retired with the bridge, so the one native lane serves it.
 	xor := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "空主張", ContentRating: 0, Status: 0,
 		Site: strptr("galgame_wiki"), ProductWorkID: ptrI64(8002)}
 	require.NoError(t, db.Create(&xor).Error)
-	insertVNDBMeta(t, db, 8002, nil, 3)
-	insertBangumiMeta(t, db, 8002, 0, 0, 0)
-	xorWl := int64(9)
-	insertDlsiteMeta(t, db, 8002, nil, nil, nil, &xorWl, nil)
-	insertEGMeta(t, db, 8002, nil, 3)
 	require.NoError(t, db.Create(&model.CatalogWorkRating{
 		WorkID: xor.ID, SourceID: srcBangumi, Score: 9.9, VoteCount: 1}).Error)
 
@@ -1363,15 +1357,13 @@ func TestWorkRating(t *testing.T) {
 	empty := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "空作品", ContentRating: 0, Status: 0}
 	require.NoError(t, db.Create(&empty).Error)
 
-	mirrorWikiIntoCatalog(t, db, "s,t")
-
 	app := readApp(service.NewReadService(db), nil)
 
 	// CLAIMED: four ratings, source_id ascending, native scales, rank bgm-only.
 	code, body := getJSON(t, app, "/api/v1/catalog/works/"+itoa(claimed.ID))
 	require.Equal(t, 200, code)
 	ratings := body["data"].(map[string]any)["ratings"].([]any)
-	require.Len(t, ratings, 4, "all four metas materialized")
+	require.Len(t, ratings, 4, "all four sources materialized")
 	rVndb := ratings[0].(map[string]any)
 	assert.EqualValues(t, srcVNDB, rVndb["source_id"], "vndb row first (source_id ascending)")
 	assert.EqualValues(t, 8.45, rVndb["score"], "vndb wire 84.5 decoded to its displayed 1-10 scale")
@@ -1412,12 +1404,12 @@ func TestWorkRating(t *testing.T) {
 	_, hasRank = b1["rank"]
 	assert.False(t, hasRank, "NULL rank omitted")
 
-	// UNSCORED: the metas contributed nothing, so what is left is the importer's own
-	// bangumi row — one lane, no shadows.
+	// UNSCORED: the upstreams contributed nothing, so what is left is the importer's
+	// own bangumi row — one lane, no shadows.
 	code, body = getJSON(t, app, "/api/v1/catalog/works/"+itoa(xor.ID))
 	require.Equal(t, 200, code)
 	ratings = body["data"].(map[string]any)["ratings"].([]any)
-	require.Len(t, ratings, 1, "an unscored meta writes no row; the native one is not shadowed")
+	require.Len(t, ratings, 1, "an unscored upstream leaves no row; the native one is not shadowed")
 	assert.EqualValues(t, srcBangumi, ratings[0].(map[string]any)["source_id"])
 	assert.EqualValues(t, 9.9, ratings[0].(map[string]any)["score"])
 
@@ -1428,25 +1420,21 @@ func TestWorkRating(t *testing.T) {
 }
 
 // TestWorkPopularity pins the popularity read face (step 62; per-source XOR
-// since T2b, refs/proj/102): the CLAIMED dlsite bridge (galgame_dlsite_meta
-// counter columns pivoted to metric rows — a NULL counter contributes NO row,
-// a published 0 does) UNIONED with the claimed work's native NON-dlsite rows
-// (the bgm shelves), the BODYLESS native read (catalog_work_popularity,
-// (source_id, metric) ascending), the per-source XOR (a claimed work's
-// native dlsite rows NEVER surface — dlsite is bridge-exclusive), and
+// since T2b, refs/proj/102) over NATIVE catalog_work_popularity rows: the
+// claimed work's dlsite counters alongside its NON-dlsite rows (the bgm
+// shelves), the bodyless read, (source_id, metric) ascending ordering, and
 // []-not-null serialization.
+//
+// The claimed work's three dlsite rows are what the wave-140 adoption step (t)
+// wrote for a galgame_dlsite_meta fixture publishing dl_count 2000 / wishlist 300
+// / review_count 0 — a NULL counter yielded NO row, a published 0 did. Wave 161
+// retired the meta table and the mirror; the rows are written natively now and
+// every wire expectation is the frozen one.
 func TestWorkPopularity(t *testing.T) {
 	db := openCatalogTestDB(t)
-	ensureGalgameStub(t, db)           // the co-loaded intro bridge needs galgame
+	ensureGalgameStub(t, db)
 	ensureGalgameCoverStub(t, db)      // the co-loaded cover bridge needs galgame_cover
 	ensureGalgameScreenshotStub(t, db) // the co-loaded screenshot bridge needs galgame_screenshot
-	ensureGalgameRatingStub(t, db)     // the popularity bridge needs galgame_dlsite_meta (clears 8001/8002)
-	// The meta tables carry FKs to galgame(id) in the shared test DB, so the
-	// bridge galgame ids need a parent body row. Metas cleared above → safe to
-	// reset the parents. Empty sibling bridges stay no-ops.
-	require.NoError(t, db.Exec(`DELETE FROM galgame WHERE id IN ?`, galgameRatingStubIDs).Error)
-	insertGalgameBody(t, db, 8001, 0, "", "", "", "")
-	insertGalgameBody(t, db, 8002, 0, "", "", "", "")
 	for _, tbl := range []string{"catalog_work_popularity", "catalog_work"} {
 		require.NoError(t, db.Exec("TRUNCATE "+tbl+" RESTART IDENTITY CASCADE").Error)
 	}
@@ -1456,21 +1444,25 @@ func TestWorkPopularity(t *testing.T) {
 	db.Raw("SELECT id FROM catalog_source WHERE key='bangumi'").Scan(&srcBgm)
 	require.NotZero(t, srcBgm, "bangumi source must be seeded")
 
-	// --- CLAIMED work (galgame_id 8001): full counter trio published (dl 2000 /
-	// wishlist 300 / reviews 0 — a published 0 IS a row) → three bridged rows.
+	// --- CLAIMED work: the full dlsite counter trio (dl 2000 / wishlist 300 /
+	// reviews 0 — a published 0 IS a row) plus, per T2b, a native bgm shelf row
+	// that surfaces alongside them.
+	//
+	// The bridge-era sub-case "a STALE native dlsite row (777) is CORRECTED to the
+	// meta's value by the adoption step" and its fixture row are gone: with no
+	// mirror there is no update arm to exercise. The downloads row simply carries
+	// 2000, which is exactly the value that assertion pinned.
 	claimed := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "主張作品", ContentRating: 0, Status: 0,
 		Site: strptr("galgame_wiki"), ProductWorkID: ptrI64(8001)}
 	require.NoError(t, db.Create(&claimed).Error)
-	dl64, wl64 := int64(2000), int64(300)
-	rv0 := 0
-	insertDlsiteMeta(t, db, 8001, nil, nil, &dl64, &wl64, &rv0)
-	// T2b: a native bgm shelf row on the claimed work surfaces, and a STALE native
-	// dlsite row (777) is corrected to the meta's value by the adoption step rather
-	// than shadowed behind a bridge.
-	require.NoError(t, db.Create(&model.CatalogWorkPopularity{
-		WorkID: claimed.ID, SourceID: srcBgm, Metric: model.PopularityMetricBgmWish, Value: 42}).Error)
-	require.NoError(t, db.Create(&model.CatalogWorkPopularity{
-		WorkID: claimed.ID, SourceID: srcDlsite, Metric: model.PopularityMetricDownloads, Value: 777}).Error)
+	for _, row := range []model.CatalogWorkPopularity{
+		{WorkID: claimed.ID, SourceID: srcBgm, Metric: model.PopularityMetricBgmWish, Value: 42},
+		{WorkID: claimed.ID, SourceID: srcDlsite, Metric: model.PopularityMetricDownloads, Value: 2000},
+		{WorkID: claimed.ID, SourceID: srcDlsite, Metric: model.PopularityMetricWishlist, Value: 300},
+		{WorkID: claimed.ID, SourceID: srcDlsite, Metric: model.PopularityMetricReviews, Value: 0},
+	} {
+		require.NoError(t, db.Create(&row).Error)
+	}
 
 	// --- BODYLESS work: native catalog_work_popularity rows.
 	bodyless := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "無体作品", ContentRating: 0, Status: 0}
@@ -1480,10 +1472,9 @@ func TestWorkPopularity(t *testing.T) {
 	require.NoError(t, db.Create(&model.CatalogWorkPopularity{
 		WorkID: bodyless.ID, SourceID: srcDlsite, Metric: model.PopularityMetricDownloads, Value: 4500}).Error)
 
-	// --- ADOPTED-ROW work: claimed (galgame_id 8002) with NO dlsite meta at all,
-	// carrying a native dlsite row the importer owns. The adoption step has no
-	// delete arm — these rows belong to the importer now — so the row stays and the
-	// one native lane serves it.
+	// --- ADOPTED-ROW work: a claimed work with no dlsite upstream of its own,
+	// carrying a native dlsite row the importer owns. Those rows belong to the
+	// importer, so nothing shadows them and the one native lane serves it.
 	xor := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "空主張", ContentRating: 0, Status: 0,
 		Site: strptr("galgame_wiki"), ProductWorkID: ptrI64(8002)}
 	require.NoError(t, db.Create(&xor).Error)
@@ -1494,16 +1485,14 @@ func TestWorkPopularity(t *testing.T) {
 	empty := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "空作品", ContentRating: 0, Status: 0}
 	require.NoError(t, db.Create(&empty).Error)
 
-	mirrorWikiIntoCatalog(t, db, "t")
-
 	app := readApp(service.NewReadService(db), nil)
 
-	// CLAIMED: the native bgm shelf + the three adopted dlsite counters,
+	// CLAIMED: the native bgm shelf + the three dlsite counters,
 	// (source_id, metric) ascending (bgm sorts before dlsite).
 	code, body := getJSON(t, app, "/api/v1/catalog/works/"+itoa(claimed.ID))
 	require.Equal(t, 200, code)
 	pop := body["data"].(map[string]any)["popularity"].([]any)
-	require.Len(t, pop, 4, "native bgm shelf + three adopted dlsite counters")
+	require.Len(t, pop, 4, "native bgm shelf + three dlsite counters")
 	p0 := pop[0].(map[string]any)
 	assert.EqualValues(t, srcBgm, p0["source_id"], "bgm sorts before dlsite")
 	assert.EqualValues(t, model.PopularityMetricBgmWish, p0["metric"])
@@ -1511,7 +1500,7 @@ func TestWorkPopularity(t *testing.T) {
 	p1 := pop[1].(map[string]any)
 	assert.EqualValues(t, srcDlsite, p1["source_id"])
 	assert.EqualValues(t, 0, p1["metric"], "downloads first (metric ascending)")
-	assert.EqualValues(t, 2000, p1["value"], "the adoption corrected the stale native row (777) to the meta's value")
+	assert.EqualValues(t, 2000, p1["value"], "the dlsite downloads counter")
 	p2 := pop[2].(map[string]any)
 	assert.EqualValues(t, 1, p2["metric"])
 	assert.EqualValues(t, 300, p2["value"])
@@ -1529,11 +1518,11 @@ func TestWorkPopularity(t *testing.T) {
 	assert.EqualValues(t, 2, pop[1].(map[string]any)["metric"])
 	assert.EqualValues(t, 7, pop[1].(map[string]any)["value"])
 
-	// ADOPTED-ROW: no meta to adopt, and the importer's row is kept and served.
+	// ADOPTED-ROW: the importer's row is kept and served.
 	code, body = getJSON(t, app, "/api/v1/catalog/works/"+itoa(xor.ID))
 	require.Equal(t, 200, code)
 	pop = body["data"].(map[string]any)["popularity"].([]any)
-	require.Len(t, pop, 1, "the adoption keeps what it did not write; nothing is shadowed")
+	require.Len(t, pop, 1, "a claimed work's own dlsite row is not shadowed")
 	assert.EqualValues(t, 99, pop[0].(map[string]any)["value"])
 
 	// EMPTY: [] not null.
@@ -1598,58 +1587,47 @@ func insertGalgameTagRelation(t *testing.T, db *gorm.DB, galgameID, tagID int64,
 		VALUES (?, ?, ?, ?)`, galgameID, tagID, spoiler, source).Error)
 }
 
-// TestWorkTag pins the step-58b + T2 media-aggregation tag read face under the
-// (facet, source) XOR: a CLAIMED work merges its WIKI bridge lane
-// (galgame_tag_relation ⋈ galgame_tag — localized names, NON-SPOILER only, no
-// votes) with its CATALOG-native lane (catalog_work_tag bgm rows), re-sorted
-// (count DESC, name ASC) so voted bgm rows lead. Covers: ① claimed bridge ∪
-// native merge (two-source attribution, contract order); ② a claimed work with
-// NO bridgeable wiki tag still surfaces its native bgm rows (the pre-T2 [] is
-// now filled — the flip); ③ bodyless native read unchanged; ④ the spoiler
-// filter still holds; and []-not-null serialization.
+// TestWorkTag pins the step-58b + T2 media-aggregation tag read face over NATIVE
+// catalog_work_tag rows: a work's wiki-derived lane (localized names, per-edge
+// spoiler, count 0 — the wiki tag layer had no vote field) merges with its
+// folksonomy lane (bgm rows) and the whole set re-sorts (count DESC, name ASC) so
+// voted bgm rows lead. Covers: ① the merge (two-source attribution, contract
+// order); ② a claimed work whose only wiki tag is a spoiler still surfaces its
+// native bgm row (the pre-T2 [] is filled — the flip); ③ bodyless read unchanged;
+// ④ the spoiler filter still holds; and []-not-null serialization.
+//
+// The wiki-derived rows are what the wave-140 mirror (step r) wrote for the old
+// fixture: relations on tags 恋愛(58b) (curated, empty source → galgame_wiki),
+// 泣きゲー(58b) (source 'vndb') and ネタバレ(58b) (source 'vndb', spoiler_level 2),
+// all in the 'content' category so sexual=false. Wave 161 retired the tag layer
+// and the mirror; the rows are written natively and the wire is unchanged.
 func TestWorkTag(t *testing.T) {
 	db := openCatalogTestDB(t)
-	ensureGalgameStub(t, db)           // the intro bridge (also run by loadWorkDetail) needs galgame
+	ensureGalgameStub(t, db)
 	ensureGalgameCoverStub(t, db)      // the co-loaded cover bridge needs galgame_cover
 	ensureGalgameScreenshotStub(t, db) // the co-loaded screenshot bridge needs galgame_screenshot
-	ensureGalgameRatingStub(t, db)     // the co-loaded rating bridge needs the two meta tables
-	ensureGalgameTagStub(t, db)        // the tag bridge needs the tag layer (clears 9001/9002 + fixture tags)
-	// The relation FKs galgame(id) in the real-schema case, so the bridge
-	// galgame ids need a parent body row. Relations cleared above → safe to
-	// reset the parents. Empty intros / no other media rows keep the co-loaded
-	// sibling bridges no-ops.
-	require.NoError(t, db.Exec(`DELETE FROM galgame WHERE id IN ?`, galgameTagStubGalgameIDs).Error)
-	insertGalgameBody(t, db, 9001, 0, "", "", "", "")
-	insertGalgameBody(t, db, 9002, 0, "", "", "", "")
 	for _, tbl := range []string{"catalog_work_tag", "catalog_work"} {
 		require.NoError(t, db.Exec("TRUNCATE "+tbl+" RESTART IDENTITY CASCADE").Error)
 	}
-	// Source ids from the seed: galgame_wiki=12 (bridge fallback), vndb=2, bangumi=3.
+	// Source ids from the seed: galgame_wiki=12 (the curated lane), vndb=2, bangumi=3.
 	var srcGalgameWiki, srcVNDB, srcBangumi int16
-	db.Raw("SELECT id FROM catalog_source WHERE key='galgame_wiki'").Scan(&srcGalgameWiki)
+	db.Raw("SELECT id FROM catalog_source WHERE key IN ('curated','galgame_wiki')").Scan(&srcGalgameWiki)
 	db.Raw("SELECT id FROM catalog_source WHERE key='vndb'").Scan(&srcVNDB)
 	db.Raw("SELECT id FROM catalog_source WHERE key='bangumi'").Scan(&srcBangumi)
 	require.NotZero(t, srcGalgameWiki, "galgame_wiki source must be seeded")
 	require.NotZero(t, srcVNDB, "vndb source must be seeded")
 	require.NotZero(t, srcBangumi, "bangumi source must be seeded")
 
-	// Fixture tag layer: a user-curated tag, a vndb-synced tag, and a severe-
-	// spoiler tag that must NEVER cross the bridge (the unified shape carries no
-	// spoiler flag, so only the non-spoiler subset is honest).
-	insertGalgameTag(t, db, 9101, "恋愛(58b)")
-	insertGalgameTag(t, db, 9102, "泣きゲー(58b)")
-	insertGalgameTag(t, db, 9103, "ネタバレ(58b)")
-
-	// --- CLAIMED work (galgame_id 9001): the (facet, source) merge showcase —
-	// two bridgeable wiki tags + one spoiler tag (filtered) + native bgm rows
-	// (the T2 catalog-native lane; voted, so they lead the merge).
+	// --- CLAIMED work: the (facet, source) merge showcase — two surfacing wiki
+	// tags + one severe-spoiler tag (filtered by the read face's default ceiling)
+	// + native bgm rows (the T2 folksonomy lane; voted, so they lead the merge).
 	claimed := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "主張作品", ContentRating: 0, Status: 0,
 		Site: strptr("galgame_wiki"), ProductWorkID: ptrI64(9001)}
 	require.NoError(t, db.Create(&claimed).Error)
-	insertGalgameTagRelation(t, db, 9001, 9101, 0, "")     // user-curated → galgame_wiki
-	insertGalgameTagRelation(t, db, 9001, 9102, 0, "vndb") // synced → vndb
-	insertGalgameTagRelation(t, db, 9001, 9103, 2, "vndb") // severe spoiler → filtered
 	for _, row := range []model.CatalogWorkTag{
+		{WorkID: claimed.ID, Name: "恋愛(58b)", SourceID: srcGalgameWiki}, // curated → galgame_wiki
+		{WorkID: claimed.ID, Name: "泣きゲー(58b)", SourceID: srcVNDB},      // synced → vndb
+		{WorkID: claimed.ID, Name: "ネタバレ(58b)", SourceID: srcVNDB, Spoiler: 2},
 		{WorkID: claimed.ID, Name: "百合", Count: 30, SourceID: srcBangumi},
 		{WorkID: claimed.ID, Name: "PC", Count: 5, SourceID: srcBangumi},
 	} {
@@ -1668,14 +1646,15 @@ func TestWorkTag(t *testing.T) {
 		require.NoError(t, db.Create(&row).Error)
 	}
 
-	// --- CLAIMED native-only work (galgame_id 9002): its ONLY wiki tag is a
-	// spoiler (filtered → bridge empty), but it carries a native bgm row. Pre-T2
-	// the strict XOR hid that row and served []; under the (facet, source) XOR the
-	// catalog-native lane is legitimate for a claimed work, so the row surfaces.
+	// --- CLAIMED native-only work: its ONLY wiki tag is a severe spoiler
+	// (filtered), but it carries a native bgm row. Pre-T2 the strict XOR hid that
+	// row and served []; under the (facet, source) XOR the folksonomy lane is
+	// legitimate for a claimed work, so the row surfaces.
 	nativeOnly := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "原生主張", ContentRating: 0, Status: 0,
 		Site: strptr("galgame_wiki"), ProductWorkID: ptrI64(9002)}
 	require.NoError(t, db.Create(&nativeOnly).Error)
-	insertGalgameTagRelation(t, db, 9002, 9103, 2, "vndb")
+	require.NoError(t, db.Create(&model.CatalogWorkTag{
+		WorkID: nativeOnly.ID, Name: "ネタバレ(58b)", SourceID: srcVNDB, Spoiler: 2}).Error)
 	require.NoError(t, db.Create(&model.CatalogWorkTag{
 		WorkID: nativeOnly.ID, Name: "百合", Count: 99, SourceID: srcBangumi}).Error)
 
@@ -1683,18 +1662,15 @@ func TestWorkTag(t *testing.T) {
 	empty := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "空作品", ContentRating: 0, Status: 0}
 	require.NoError(t, db.Create(&empty).Error)
 
-	mirrorWikiIntoCatalog(t, db, "r")
-
 	app := readApp(service.NewReadService(db), nil)
 
-	// CLAIMED ①: bridge ∪ native merge. The voted bgm rows (百合 30, PC 5) lead by
-	// (count DESC, name ASC); the count-0 bridged wiki tags trail. Spoiler tag
-	// filtered. Two-source attribution across the merge (bangumi native +
-	// galgame_wiki/vndb bridge).
+	// CLAIMED ①: wiki ∪ folksonomy merge. The voted bgm rows (百合 30, PC 5) lead by
+	// (count DESC, name ASC); the count-0 wiki tags trail. Spoiler tag filtered.
+	// Two-source attribution across the merge (bangumi + galgame_wiki/vndb).
 	code, body := getJSON(t, app, "/api/v1/catalog/works/"+itoa(claimed.ID))
 	require.Equal(t, 200, code)
 	tags := body["data"].(map[string]any)["tags"].([]any)
-	require.Len(t, tags, 4, "2 native bgm + 2 bridged wiki tags; spoiler filtered")
+	require.Len(t, tags, 4, "2 native bgm + 2 wiki tags; spoiler filtered")
 	// Contract order: voted bgm rows first (positional — count breaks the tie).
 	t0 := tags[0].(map[string]any)
 	assert.Equal(t, "百合", t0["name"], "voted bgm row leads the merge")
@@ -1704,7 +1680,7 @@ func TestWorkTag(t *testing.T) {
 	assert.Equal(t, "PC", t1["name"])
 	assert.EqualValues(t, 5, t1["count"])
 	assert.EqualValues(t, srcBangumi, t1["source_id"])
-	// Bridged wiki tags trail (count omitted, per-relation source). Matched by
+	// The wiki tags trail (count omitted, per-edge source). Matched by
 	// name — CJK order among the count-0 rows is not asserted positionally.
 	byName := map[string]map[string]any{}
 	for _, raw := range tags {
@@ -1712,12 +1688,12 @@ func TestWorkTag(t *testing.T) {
 		byName[tg["name"].(string)] = tg
 	}
 	require.Contains(t, byName, "恋愛(58b)")
-	assert.EqualValues(t, srcGalgameWiki, byName["恋愛(58b)"]["source_id"], "user-curated relation → galgame_wiki")
+	assert.EqualValues(t, srcGalgameWiki, byName["恋愛(58b)"]["source_id"], "user-curated edge → galgame_wiki")
 	_, hasCount := byName["恋愛(58b)"]["count"]
-	assert.False(t, hasCount, "bridged wiki tag has no votes → count omitted")
+	assert.False(t, hasCount, "a wiki tag has no votes → count omitted")
 	require.Contains(t, byName, "泣きゲー(58b)")
-	assert.EqualValues(t, srcVNDB, byName["泣きゲー(58b)"]["source_id"], "vndb-synced relation → vndb")
-	assert.NotContains(t, byName, "ネタバレ(58b)", "spoiler tag never crosses the bridge")
+	assert.EqualValues(t, srcVNDB, byName["泣きゲー(58b)"]["source_id"], "vndb-synced edge → vndb")
+	assert.NotContains(t, byName, "ネタバレ(58b)", "a severe-spoiler tag never surfaces by default")
 
 	// BODYLESS: native rows, (count DESC, name) — high-vote first, ASCII tie
 	// broken by name; counts present.
@@ -1735,8 +1711,8 @@ func TestWorkTag(t *testing.T) {
 	assert.Equal(t, "拔作", b3["name"])
 	assert.EqualValues(t, 1, b3["count"], "count=1 rows stored and served (store-all)")
 
-	// CLAIMED native-only ②: bridge empty (only a spoiler tag), but the native bgm
-	// row now surfaces — the pre-T2 [] is filled (the (facet, source) flip).
+	// CLAIMED native-only ②: the wiki lane is empty after the spoiler filter, but
+	// the native bgm row surfaces — the pre-T2 [] is filled (the (facet, source) flip).
 	code, body = getJSON(t, app, "/api/v1/catalog/works/"+itoa(nativeOnly.ID))
 	require.Equal(t, 200, code)
 	nTags := body["data"].(map[string]any)["tags"].([]any)
@@ -1755,26 +1731,27 @@ func TestWorkTag(t *testing.T) {
 // TestWorkTagCanonicalOverlay pins the step-74 additive canonical overlay on
 // the tag read face: a tag whose (source_id, name) is mapped into
 // catalog_tag_source_map carries canonical_id/tier/kind; an UNMAPPED tag omits
-// all three. It covers both provenances — a MIRRORED wiki edge (source_id=vndb,
-// name=galgame_tag.name, which hits the same map key a bodyless vndb tag would,
-// and that key-compatibility is exactly what let the flip delete the bridge) and
-// an importer's own row — and asserts the overlay never mutates name/source_id.
+// all three. It covers both provenances — a WIKI-DERIVED edge (source_id=vndb,
+// name = the wiki tag's localized name, which hits the same map key a bodyless
+// vndb tag would, and that key-compatibility is exactly what let the flip delete
+// the bridge) and an importer's own row — and asserts the overlay never mutates
+// name/source_id.
+//
+// The two wiki-derived rows are the wave-140 mirror's (step r) output for a
+// vndb-sourced relation to 泣きゲー(74) and a curated (empty source → galgame_wiki) relation
+// to 未映射(74), both spoiler 0 / category content.
 func TestWorkTagCanonicalOverlay(t *testing.T) {
 	db := openCatalogTestDB(t)
 	ensureGalgameStub(t, db)
 	ensureGalgameCoverStub(t, db)
 	ensureGalgameScreenshotStub(t, db)
-	ensureGalgameRatingStub(t, db)
-	ensureGalgameTagStub(t, db)
-	require.NoError(t, db.Exec(`DELETE FROM galgame WHERE id IN ?`, galgameTagStubGalgameIDs).Error)
-	insertGalgameBody(t, db, 9001, 0, "", "", "", "")
 	for _, tbl := range []string{"catalog_tag_source_map", "catalog_tag", "catalog_work_tag", "catalog_work"} {
 		require.NoError(t, db.Exec("TRUNCATE "+tbl+" RESTART IDENTITY CASCADE").Error)
 	}
 	var srcVNDB, srcDlsite, srcGalgameWiki int16
 	db.Raw("SELECT id FROM catalog_source WHERE key='vndb'").Scan(&srcVNDB)
 	db.Raw("SELECT id FROM catalog_source WHERE key='dlsite'").Scan(&srcDlsite)
-	db.Raw("SELECT id FROM catalog_source WHERE key='galgame_wiki'").Scan(&srcGalgameWiki)
+	db.Raw("SELECT id FROM catalog_source WHERE key IN ('curated','galgame_wiki')").Scan(&srcGalgameWiki)
 
 	// Canonical vocabulary: one mapped vndb name (content) + one mapped dlsite
 	// name (meta). Their map keys are exactly (source_id, source_name).
@@ -1787,12 +1764,12 @@ func TestWorkTagCanonicalOverlay(t *testing.T) {
 
 	// CLAIMED work: a vndb-synced tag that IS mapped + a user tag (galgame_wiki
 	// source) that is NOT (no source-12 key exists).
-	insertGalgameTag(t, db, 9101, "泣きゲー(74)")
-	insertGalgameTag(t, db, 9102, "未映射(74)")
 	claimed := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "主張", Site: strptr("galgame_wiki"), ProductWorkID: ptrI64(9001)}
 	require.NoError(t, db.Create(&claimed).Error)
-	insertGalgameTagRelation(t, db, 9001, 9101, 0, "vndb") // mapped (source_id=vndb)
-	insertGalgameTagRelation(t, db, 9001, 9102, 0, "")     // galgame_wiki → unmapped
+	require.NoError(t, db.Create(&model.CatalogWorkTag{
+		WorkID: claimed.ID, Name: "泣きゲー(74)", SourceID: srcVNDB}).Error) // mapped (source_id=vndb)
+	require.NoError(t, db.Create(&model.CatalogWorkTag{
+		WorkID: claimed.ID, Name: "未映射(74)", SourceID: srcGalgameWiki}).Error) // galgame_wiki → unmapped
 
 	// BODYLESS work: a mapped dlsite tag + an unmapped dlsite tag.
 	bodyless := model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "無体"}
@@ -1800,16 +1777,14 @@ func TestWorkTagCanonicalOverlay(t *testing.T) {
 	require.NoError(t, db.Create(&model.CatalogWorkTag{WorkID: bodyless.ID, Name: "像素(74)", Count: 3, SourceID: srcDlsite}).Error)
 	require.NoError(t, db.Create(&model.CatalogWorkTag{WorkID: bodyless.ID, Name: "独有(74)", Count: 2, SourceID: srcDlsite}).Error)
 
-	mirrorWikiIntoCatalog(t, db, "r")
-
 	app := readApp(service.NewReadService(db), nil)
 
-	// CLAIMED: the mirrored vndb tag carries the overlay; the wiki user tag omits it.
+	// CLAIMED: the vndb-attributed tag carries the overlay; the wiki user tag omits it.
 	code, body := getJSON(t, app, "/api/v1/catalog/works/"+itoa(claimed.ID))
 	require.Equal(t, 200, code)
 	byName := tagsByName(body)
 	require.Contains(t, byName, "泣きゲー(74)")
-	assert.EqualValues(t, tContent.ID, byName["泣きゲー(74)"]["canonical_id"], "mapped vndb tag carries canonical_id")
+	assert.EqualValues(t, tContent.ID, byName["泣きゲー(74)"]["canonical_id"], "a mapped vndb tag carries canonical_id")
 	assert.EqualValues(t, 0, byName["泣きゲー(74)"]["tier"], "core tier surfaces")
 	assert.EqualValues(t, 0, byName["泣きゲー(74)"]["kind"], "content kind surfaces")
 	assert.EqualValues(t, srcVNDB, byName["泣きゲー(74)"]["source_id"], "overlay never mutates source_id")
