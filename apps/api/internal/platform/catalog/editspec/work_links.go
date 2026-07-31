@@ -191,6 +191,15 @@ func parseLinks(v any) ([]string, error) {
 
 func validateLinks(v any) error { _, err := parseLinks(v); return err }
 
+// CanonicalWorkLinks is parseLinks under an exported name, for the one caller
+// that has to produce a links VALUE rather than accept one: the N5 edit-history
+// rekey (cmd/rekey-edit-history), which rewrites migrated wiki snapshots into
+// this field's vocabulary. It must canonicalize with the classifier this field
+// actually uses — a second copy of the URL table is exactly the duplication
+// wave 154 already flagged (§3.3-5) — and its output has to be a value this
+// field would accept, which is the same statement as "parseLinks returns it".
+func CanonicalWorkLinks(v any) ([]string, error) { return parseLinks(v) }
+
 // applyLinks is catalog.work's links Apply; applyLinksFor is the same machine
 // for any entity family that registers a links field (catalog.label does).
 func applyLinks(ctx context.Context, tx *gorm.DB, entityID int64, value any) error {
