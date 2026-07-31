@@ -59,7 +59,13 @@ func newEngine(t *testing.T) *editing.Engine {
 	t.Helper()
 	for _, table := range []string{
 		"edit_proposal_amendment", "edit_proposal", "edit_revision",
-		"catalog_work_title", "catalog_work",
+		// Every table a catalog.work field writes (wave 154 W3), so a facet
+		// case never inherits another case's rows.
+		"catalog_work_title", "catalog_work_intro", "catalog_work_tag",
+		"catalog_work_label", "catalog_work_engine", "catalog_series_member",
+		"catalog_work_cover", "catalog_work_screenshot", "catalog_external_ref",
+		"catalog_tag", "catalog_label", "catalog_engine", "catalog_series",
+		"catalog_work",
 	} {
 		if err := testDB.Exec("TRUNCATE " + table + " RESTART IDENTITY CASCADE").Error; err != nil {
 			t.Fatalf("truncate %s: %v", table, err)

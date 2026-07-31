@@ -155,6 +155,18 @@ const (
 	WorkStatusMerged int16 = 2 // merged away via redirect
 )
 
+// Intro provenance (step 75) — whether an intro row carries the UPSTREAM
+// text or a machine translation of it. It is not a source: a machine row
+// reuses the source row's source_id (attribution = "translated from that
+// source") and is told apart only by this column, which is what lets the read
+// face prefer source text by ordering on it. The values were until now spelled
+// as local constants at each writer; they are pinned here so the editing face
+// and the MT lane cannot drift apart on the one column that separates them.
+const (
+	IntroProvenanceSource  int16 = 0
+	IntroProvenanceMachine int16 = 1
+)
+
 // Claim visibility state (R7, refs/proj/135 A2-1e) — a CATALOG-OWNED
 // vocabulary describing how visible the CLAIM is on the owning product face,
 // NOT a copy of any product's status machine (the R2 red line: a wiki status

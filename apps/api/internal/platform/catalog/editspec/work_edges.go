@@ -1,0 +1,374 @@
+package editspec
+
+import (
+	"context"
+	"errors"
+	"fmt"
+
+	catmodel "api/internal/platform/catalog/model"
+	"api/internal/platform/editing"
+
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
+)
+
+// work_edges.go — the four taxonomy EDGES of a work: tags, labels, engines and
+// series (03 定案 §2).
+//
+// One rule shapes all four: the wire payload is CATALOG IDS, never names. The
+// wiki family passed tid/eid/official-id keys of its own tables, and every
+// consumer that ever had to map those keys is a bridge this nativization
+// deletes. A picker on the product side searches the catalog vocabulary and
+// submits what it found.
+//
+// The second rule is the curated lane. Each Apply full-replaces only the rows
+// this face owns and leaves every importer row untouched:
+//
+//   - work_tag / work_engine carry source_id → the lane is source_id = curated;
+//   - work_label carries a nullable source_id → same, with NULL (pre-source
+//     rows) staying out of the lane;
+//   - series_member carries NO source column, so the lane is expressed one
+//     level up: a curated membership may only point at a CURATED series (see
+//     applySeriesIDs, where the restriction is a correctness requirement, not
+//     tidiness).
+//
+// Edges that duplicate an importer assertion insert as DO NOTHING rather than
+// erroring: "this work is by that label" being true from two directions is not
+// a conflict, and the human's intent (the edge exists) is already satisfied.
+
+// assertWorkExists is the existence check every facet Apply needs — the scalar
+// applies get it free from RowsAffected, a child-table write does not. Soft
+// deletes are scoped out by the model, so a deleted work is not found.
+func assertWorkExists(ctx context.Context, tx *gorm.DB, entityID int64) error {
+	var w catmodel.CatalogWork
+	err := tx.WithContext(ctx).Select("id").First(&w, entityID).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return editing.ErrEntityNotFound
+	}
+	return err
+}
+
+// parseIDList parses a bare array of positive catalog ids.
+func parseIDList(v any, what string) ([]int64, error) {
+	arr, err := asArray(v, what)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]int64, 0, len(arr))
+	seen := make(map[int64]struct{}, len(arr))
+	for i, el := range arr {
+		var id int64
+		switch n := el.(type) {
+		case float64:
+			if n != float64(int64(n)) {
+				return nil, fmt.Errorf("element %d: must be an integer id", i)
+			}
+			id = int64(n)
+		case int64:
+			id = n
+		default:
+			return nil, fmt.Errorf("element %d: must be an integer id", i)
+		}
+		if id <= 0 {
+			return nil, fmt.Errorf("element %d: id must be positive", i)
+		}
+		if _, dup := seen[id]; dup {
+			return nil, fmt.Errorf("element %d: duplicate id %d", i, id)
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	return out, nil
+}
+
+func validateTagIDs(v any) error    { _, err := parseIDList(v, "tag ids"); return err }
+func validateEngineIDs(v any) error { _, err := parseIDList(v, "engine ids"); return err }
+func validateSeriesIDs(v any) error { _, err := parseIDList(v, "series ids"); return err }
+
+// ── tags ────────────────────────────────────────────────────────────────────
+
+// applyTagIDs replaces the curated tag edges. catalog_work_tag stores the tag
+// NAME (it is a verbatim folksonomy table: every source files its own spelling
+// and the canonical layer sits above it), so the ids the wire carries are
+// resolved through catalog_tag here — the single place that translation lives.
+// sexual rides along from the canonical row, because the safety axis is a
+// property of the tag, not of who attached it.
+func applyTagIDs(ctx context.Context, tx *gorm.DB, entityID int64, value any) error {
+	ids, err := parseIDList(value, "tag ids")
+	if err != nil {
+		return fmt.Errorf("editspec: tag_ids: %w", err)
+	}
+	if err := assertWorkExists(ctx, tx, entityID); err != nil {
+		return err
+	}
+	var tags []catmodel.CatalogTag
+	if len(ids) > 0 {
+		if err := tx.WithContext(ctx).Select("id", "name", "sexual").
+			Where("id IN ?", ids).Find(&tags).Error; err != nil {
+			return err
+		}
+		if len(tags) != len(ids) {
+			return fmt.Errorf("editspec: tag_ids: %d of %d ids do not exist", len(ids)-len(tags), len(ids))
+		}
+	}
+	if err := tx.WithContext(ctx).
+		Where("work_id = ? AND source_id = ?", entityID, curatedSourceID).
+		Delete(&catmodel.CatalogWorkTag{}).Error; err != nil {
+		return err
+	}
+	if len(tags) == 0 {
+		return nil
+	}
+	rows := make([]catmodel.CatalogWorkTag, 0, len(tags))
+	for _, t := range tags {
+		rows = append(rows, catmodel.CatalogWorkTag{
+			WorkID: entityID, Name: t.Name, SourceID: curatedSourceID,
+			// count 0 = "no vote data", the honest value for a curated edge;
+			// spoiler 0 = not a spoiler, the same default every non-VNDB lane
+			// writes because no other source models the axis.
+			Sexual: t.Sexual,
+		})
+	}
+	return tx.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&rows).Error
+}
+
+// loadTagIDs reads the curated lane back as ids by joining the names home
+// through catalog_tag. A curated row whose canonical tag was since renamed or
+// folded away resolves to nothing and drops out of the value — the snapshot
+// tells the truth about what is still addressable rather than carrying a name
+// the wire cannot express.
+func loadTagIDs(ctx context.Context, db *gorm.DB, workID int64) ([]any, error) {
+	var ids []int64
+	if err := db.WithContext(ctx).Raw(`
+		SELECT t.id FROM catalog_work_tag wt
+		JOIN catalog_tag t ON t.name = wt.name
+		WHERE wt.work_id = ? AND wt.source_id = ?
+		ORDER BY t.id`, workID, curatedSourceID).Scan(&ids).Error; err != nil {
+		return nil, err
+	}
+	return int64sToAny(ids), nil
+}
+
+// ── labels ──────────────────────────────────────────────────────────────────
+
+// workLabel is one parsed label edge: which label, in what attribution role.
+type workLabel struct {
+	LabelID int64
+	Kind    int16
+}
+
+func parseLabels(v any) ([]workLabel, error) {
+	arr, err := asArray(v, "label objects")
+	if err != nil {
+		return nil, err
+	}
+	out := make([]workLabel, 0, len(arr))
+	seen := make(map[[2]int64]struct{}, len(arr))
+	for i, el := range arr {
+		obj, err := asObject(el, i, "label_id", "kind")
+		if err != nil {
+			return nil, err
+		}
+		labelID, err := objInt(obj, "label_id", i, true)
+		if err != nil {
+			return nil, err
+		}
+		if labelID <= 0 {
+			return nil, fmt.Errorf("element %d: label_id must be positive", i)
+		}
+		kind, err := objInt(obj, "kind", i, true)
+		if err != nil {
+			return nil, err
+		}
+		switch int16(kind) {
+		case catmodel.WorkLabelKindCircle, catmodel.WorkLabelKindPublisher,
+			catmodel.WorkLabelKindDeveloper, catmodel.WorkLabelKindBrand:
+		default:
+			return nil, fmt.Errorf("element %d: kind must be 0 (circle), 1 (publisher), 2 (developer) or 3 (brand)", i)
+		}
+		key := [2]int64{labelID, kind}
+		if _, dup := seen[key]; dup {
+			return nil, fmt.Errorf("element %d: duplicate (label_id, kind)", i)
+		}
+		seen[key] = struct{}{}
+		out = append(out, workLabel{LabelID: labelID, Kind: int16(kind)})
+	}
+	return out, nil
+}
+
+func validateLabels(v any) error { _, err := parseLabels(v); return err }
+
+func applyLabels(ctx context.Context, tx *gorm.DB, entityID int64, value any) error {
+	labels, err := parseLabels(value)
+	if err != nil {
+		return fmt.Errorf("editspec: labels: %w", err)
+	}
+	if err := assertWorkExists(ctx, tx, entityID); err != nil {
+		return err
+	}
+	if len(labels) > 0 {
+		ids := make([]int64, 0, len(labels))
+		for _, l := range labels {
+			ids = append(ids, l.LabelID)
+		}
+		if err := assertEntitiesExist(ctx, tx, &catmodel.CatalogLabel{}, ids, "labels"); err != nil {
+			return err
+		}
+	}
+	if err := tx.WithContext(ctx).
+		Where("work_id = ? AND source_id = ?", entityID, curatedSourceID).
+		Delete(&catmodel.CatalogWorkLabel{}).Error; err != nil {
+		return err
+	}
+	if len(labels) == 0 {
+		return nil
+	}
+	src := curatedSourceID
+	rows := make([]catmodel.CatalogWorkLabel, 0, len(labels))
+	for _, l := range labels {
+		rows = append(rows, catmodel.CatalogWorkLabel{
+			WorkID: entityID, LabelID: l.LabelID, Kind: l.Kind, SourceID: &src,
+		})
+	}
+	return tx.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&rows).Error
+}
+
+func loadLabels(ctx context.Context, db *gorm.DB, workID int64) ([]any, error) {
+	var rows []catmodel.CatalogWorkLabel
+	if err := db.WithContext(ctx).
+		Where("work_id = ? AND source_id = ?", workID, curatedSourceID).
+		Order("label_id, kind").Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	out := make([]any, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, map[string]any{"label_id": r.LabelID, "kind": int64(r.Kind)})
+	}
+	return out, nil
+}
+
+// ── engines ─────────────────────────────────────────────────────────────────
+
+func applyEngineIDs(ctx context.Context, tx *gorm.DB, entityID int64, value any) error {
+	ids, err := parseIDList(value, "engine ids")
+	if err != nil {
+		return fmt.Errorf("editspec: engine_ids: %w", err)
+	}
+	if err := assertWorkExists(ctx, tx, entityID); err != nil {
+		return err
+	}
+	if err := assertEntitiesExist(ctx, tx, &catmodel.CatalogEngine{}, ids, "engine_ids"); err != nil {
+		return err
+	}
+	if err := tx.WithContext(ctx).
+		Where("work_id = ? AND source_id = ?", entityID, curatedSourceID).
+		Delete(&catmodel.CatalogWorkEngine{}).Error; err != nil {
+		return err
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	rows := make([]catmodel.CatalogWorkEngine, 0, len(ids))
+	for _, id := range ids {
+		rows = append(rows, catmodel.CatalogWorkEngine{
+			WorkID: entityID, EngineID: id, SourceID: curatedSourceID,
+		})
+	}
+	return tx.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&rows).Error
+}
+
+func loadEngineIDs(ctx context.Context, db *gorm.DB, workID int64) ([]any, error) {
+	var ids []int64
+	if err := db.WithContext(ctx).Model(&catmodel.CatalogWorkEngine{}).
+		Where("work_id = ? AND source_id = ?", workID, curatedSourceID).
+		Order("engine_id").Pluck("engine_id", &ids).Error; err != nil {
+		return nil, err
+	}
+	return int64sToAny(ids), nil
+}
+
+// ── series ──────────────────────────────────────────────────────────────────
+
+// applySeriesIDs replaces the work's CURATED series memberships.
+//
+// catalog_series_member has no source column, so the lane is defined by the
+// SERIES: a curated membership may only point at a series whose own source is
+// curated. That is not a stylistic choice — the dlsite series importer
+// reconciles membership by "insert absent, delete stale", so a human-added
+// member of a dlsite series would be reaped on its next run. Attaching a work
+// to an upstream series is therefore a curation operation (the identity plane),
+// not a field edit, exactly as 03 定案 §0 line 3 partitions them.
+func applySeriesIDs(ctx context.Context, tx *gorm.DB, entityID int64, value any) error {
+	ids, err := parseIDList(value, "series ids")
+	if err != nil {
+		return fmt.Errorf("editspec: series_ids: %w", err)
+	}
+	if err := assertWorkExists(ctx, tx, entityID); err != nil {
+		return err
+	}
+	if len(ids) > 0 {
+		var n int64
+		if err := tx.WithContext(ctx).Model(&catmodel.CatalogSeries{}).
+			Where("id IN ? AND source_id = ?", ids, curatedSourceID).Count(&n).Error; err != nil {
+			return err
+		}
+		if int(n) != len(ids) {
+			return fmt.Errorf("editspec: series_ids: every id must be an existing CURATED series " +
+				"(an upstream series' membership is reconciled by its importer and cannot be edited here)")
+		}
+	}
+	if err := tx.WithContext(ctx).Exec(`
+		DELETE FROM catalog_series_member m
+		USING catalog_series s
+		WHERE m.series_id = s.id AND m.work_id = ? AND s.source_id = ?`,
+		entityID, curatedSourceID).Error; err != nil {
+		return err
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	rows := make([]catmodel.CatalogSeriesMember, 0, len(ids))
+	for _, id := range ids {
+		rows = append(rows, catmodel.CatalogSeriesMember{SeriesID: id, WorkID: entityID})
+	}
+	return tx.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&rows).Error
+}
+
+func loadSeriesIDs(ctx context.Context, db *gorm.DB, workID int64) ([]any, error) {
+	var ids []int64
+	if err := db.WithContext(ctx).Raw(`
+		SELECT m.series_id FROM catalog_series_member m
+		JOIN catalog_series s ON s.id = m.series_id
+		WHERE m.work_id = ? AND s.source_id = ?
+		ORDER BY m.series_id`, workID, curatedSourceID).Scan(&ids).Error; err != nil {
+		return nil, err
+	}
+	return int64sToAny(ids), nil
+}
+
+// ── shared ──────────────────────────────────────────────────────────────────
+
+// assertEntitiesExist fails the merge when the payload references a vocabulary
+// row that is not there. A dangling edge is worse than a rejected edit: the
+// read face would render an entity with no name.
+func assertEntitiesExist(ctx context.Context, tx *gorm.DB, model any, ids []int64, field string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	var n int64
+	if err := tx.WithContext(ctx).Model(model).Where("id IN ?", ids).Count(&n).Error; err != nil {
+		return err
+	}
+	if int(n) != len(ids) {
+		return fmt.Errorf("editspec: %s: %d of %d ids do not exist", field, len(ids)-int(n), len(ids))
+	}
+	return nil
+}
+
+func int64sToAny(ids []int64) []any {
+	out := make([]any, 0, len(ids))
+	for _, id := range ids {
+		out = append(out, id)
+	}
+	return out
+}

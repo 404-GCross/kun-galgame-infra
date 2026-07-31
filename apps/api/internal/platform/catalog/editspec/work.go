@@ -19,8 +19,25 @@ import (
 )
 
 // Eternal field keys of catalog.work (§2.2b — never renamed, never reused).
-// E0 shipped the three scalar columns; E1 adds titles (the list field, see
-// work_titles.go). Credits/relations follow in later waves.
+// E0 shipped the three scalar columns; E1 added titles (the list field, see
+// work_titles.go); wave 154 (03 定案 §2) completes the matrix so the catalog
+// entity is editable in full and the wiki's 26-key surface has a native
+// counterpart for everything it is losing.
+//
+// TWO KEYS THE MATRIX DELIBERATELY DOES NOT HAVE (03 §6-1, authorized cuts):
+//
+//   - no release date. The wiki carried a work-level date plus a TBA flag and a
+//     precision enum; the catalog models dates on catalog_release rows whose
+//     nullable y/m/d ARE the precision, and 99%+ of entries already get their
+//     date from the release aggregate. A date edit is therefore a curated
+//     release row — the future release族 registration — not three work columns.
+//   - no status. Lifecycle is claim_state end to end (§3), reached through
+//     semantic actions (approve/decline/ban), never by patching a field. That
+//     is also why this spec cannot be used to publish anything.
+//
+// Credits and character edges stay OUT by the 07-30 ruling: they wait for the
+// cross-source person identity resolution, without which an edge edit would be
+// guessing which person it points at.
 const (
 	TypeWork = "catalog.work"
 
@@ -28,6 +45,15 @@ const (
 	FieldWorkOLang         = "catalog.work.olang"
 	FieldWorkContentRating = "catalog.work.content_rating"
 	FieldWorkTitles        = "catalog.work.titles"
+	FieldWorkIntros        = "catalog.work.intros"
+	FieldWorkDisplayNSFW   = "catalog.work.display_nsfw"
+	FieldWorkTagIDs        = "catalog.work.tag_ids"
+	FieldWorkLabels        = "catalog.work.labels"
+	FieldWorkEngineIDs     = "catalog.work.engine_ids"
+	FieldWorkSeriesIDs     = "catalog.work.series_ids"
+	FieldWorkLinks         = "catalog.work.links"
+	FieldWorkCovers        = "catalog.work.covers"
+	FieldWorkScreenshots   = "catalog.work.screenshots"
 )
 
 // letmoeSites are the letmoe tenant keys sharing one overlay policy (02 号
@@ -66,7 +92,12 @@ func RegisterWork(reg *editing.Registry, db *gorm.DB) error {
 		Review:    editing.ReviewPerm(string(perm.EditWorkReview)),
 		Automerge: editing.AutomergeOwner,
 	}
-	fieldKeys := []string{FieldWorkDisplayName, FieldWorkOLang, FieldWorkContentRating, FieldWorkTitles}
+	fieldKeys := []string{
+		FieldWorkDisplayName, FieldWorkOLang, FieldWorkContentRating, FieldWorkTitles,
+		FieldWorkIntros, FieldWorkDisplayNSFW, FieldWorkTagIDs, FieldWorkLabels,
+		FieldWorkEngineIDs, FieldWorkSeriesIDs, FieldWorkLinks,
+		FieldWorkCovers, FieldWorkScreenshots,
+	}
 	overlays := make(map[string]map[string]editing.Policy, len(letmoeSites))
 	for _, site := range letmoeSites {
 		overlay := make(map[string]editing.Policy, len(fieldKeys))
@@ -82,7 +113,7 @@ func RegisterWork(reg *editing.Registry, db *gorm.DB) error {
 		LoadSnapshot: func(ctx context.Context, entityID int64) (map[string]any, error) {
 			var w catmodel.CatalogWork
 			err := db.WithContext(ctx).
-				Select("id", "display_name", "olang", "content_rating").
+				Select("id", "display_name", "olang", "content_rating", "display_nsfw").
 				First(&w, entityID).Error
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return nil, editing.ErrEntityNotFound
@@ -90,16 +121,34 @@ func RegisterWork(reg *editing.Registry, db *gorm.DB) error {
 			if err != nil {
 				return nil, err
 			}
-			titles, err := loadTitles(ctx, db, entityID)
-			if err != nil {
-				return nil, err
-			}
-			return map[string]any{
+			snapshot := map[string]any{
 				FieldWorkDisplayName:   w.DisplayName,
 				FieldWorkOLang:         w.OLang,
 				FieldWorkContentRating: int64(w.ContentRating),
-				FieldWorkTitles:        titles,
-			}, nil
+				FieldWorkDisplayNSFW:   w.DisplayNSFW,
+			}
+			// Each facet reads its own curated lane. They are separate queries
+			// rather than one join because the lanes have nothing in common but
+			// the work id, and a snapshot is taken once per edit — clarity is
+			// worth more here than a saved round trip.
+			for key, load := range map[string]func(context.Context, *gorm.DB, int64) ([]any, error){
+				FieldWorkTitles:      loadTitles,
+				FieldWorkIntros:      loadIntros,
+				FieldWorkTagIDs:      loadTagIDs,
+				FieldWorkLabels:      loadLabels,
+				FieldWorkEngineIDs:   loadEngineIDs,
+				FieldWorkSeriesIDs:   loadSeriesIDs,
+				FieldWorkLinks:       loadLinks,
+				FieldWorkCovers:      loadCovers,
+				FieldWorkScreenshots: loadScreenshots,
+			} {
+				value, err := load(ctx, db, entityID)
+				if err != nil {
+					return nil, err
+				}
+				snapshot[key] = value
+			}
+			return snapshot, nil
 		},
 		Txn: func(ctx context.Context, fn func(tx *gorm.DB) error) error {
 			return db.WithContext(ctx).Transaction(fn)
@@ -145,6 +194,51 @@ func RegisterWork(reg *editing.Registry, db *gorm.DB) error {
 				Key: FieldWorkTitles, Kind: editing.KindList, DiffHint: editing.DiffHintItems,
 				Validate: validateTitles,
 				Apply:    applyTitles,
+			},
+			{
+				Key: FieldWorkIntros, Kind: editing.KindList, DiffHint: editing.DiffHintLines,
+				Validate: validateIntros,
+				Apply:    applyIntros,
+			},
+			{
+				Key: FieldWorkDisplayNSFW, Kind: editing.KindEnum, DiffHint: editing.DiffHintInline,
+				Validate: validateBool,
+				Apply:    applyWorkColumn("display_nsfw", asBool),
+			},
+			{
+				Key: FieldWorkTagIDs, Kind: editing.KindList, DiffHint: editing.DiffHintItems,
+				Validate: validateTagIDs,
+				Apply:    applyTagIDs,
+			},
+			{
+				Key: FieldWorkLabels, Kind: editing.KindList, DiffHint: editing.DiffHintItems,
+				Validate: validateLabels,
+				Apply:    applyLabels,
+			},
+			{
+				Key: FieldWorkEngineIDs, Kind: editing.KindList, DiffHint: editing.DiffHintItems,
+				Validate: validateEngineIDs,
+				Apply:    applyEngineIDs,
+			},
+			{
+				Key: FieldWorkSeriesIDs, Kind: editing.KindList, DiffHint: editing.DiffHintItems,
+				Validate: validateSeriesIDs,
+				Apply:    applySeriesIDs,
+			},
+			{
+				Key: FieldWorkLinks, Kind: editing.KindList, DiffHint: editing.DiffHintItems,
+				Validate: validateLinks,
+				Apply:    applyLinks,
+			},
+			{
+				Key: FieldWorkCovers, Kind: editing.KindList, DiffHint: editing.DiffHintImage,
+				Validate: validateCovers,
+				Apply:    applyCovers,
+			},
+			{
+				Key: FieldWorkScreenshots, Kind: editing.KindList, DiffHint: editing.DiffHintImage,
+				Validate: validateScreenshots,
+				Apply:    applyScreenshots,
 			},
 		},
 	})
