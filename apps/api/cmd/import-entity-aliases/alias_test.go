@@ -9,6 +9,7 @@ import (
 	"api/internal/platform/catalog/migrate"
 	"api/internal/platform/catalog/model"
 	"api/internal/platform/catalog/seed"
+	srcb "api/internal/platform/catalog/srcbangumi"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -18,7 +19,7 @@ import (
 )
 
 // The bangumi-Items extraction SQL is validated by the real-data dry run in the
-// step report (src_bangumi is not in the migrate-catalog test schema). Here the
+// step report (the schema is provisioned empty here, so nothing joins). Here the
 // Go logic and the catalog-only paths (EG name-paren hints + leg B candidate
 // generation) get real-DB integration tests; the fold is unit-tested for
 // parity with step 24.
@@ -41,6 +42,13 @@ func TestMain(m *testing.M) {
 	}
 	if err := seed.Run(db); err != nil {
 		fmt.Fprintf(os.Stderr, "SKIP: catalog seeding failed: %v\n", err)
+		os.Exit(0)
+	}
+	// The leg-A hint queries and the leg-B candidate query both JOIN
+	// src_bangumi tables. Provision the Silver layer here rather than relying
+	// on another package having created it earlier in the shared-DB run.
+	if err := srcb.EnsureSchema(db); err != nil {
+		fmt.Fprintf(os.Stderr, "SKIP: src_bangumi schema failed: %v\n", err)
 		os.Exit(0)
 	}
 	testDB = db
