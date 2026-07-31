@@ -13,11 +13,13 @@ import (
 // curated release, its registry revision and its birth event, and that a
 // refusal anywhere leaves none of them.
 
-// submitSite is deliberately NOT the mirrored site: the duty chain owns
-// `galgame_wiki` claims, and TestSubmitWorkRefusesMirroredFacets covers that
-// half on purpose.
+// submitSite is the post-re-site tenant key; TestSubmitWorkOnTheFormerMirrorSite
+// covers the legacy `galgame_wiki` spelling separately.
 const submitSite = "kungal"
 
+// submitFields carries an identity link on purpose: it is both content AND, on
+// the registry-issued path, the idempotency key. submitFieldsNoAnchor is the
+// variant that has neither.
 func submitFields(name string) map[string]any {
 	return map[string]any{
 		editspec.FieldWorkDisplayName:   name,
@@ -34,6 +36,14 @@ func submitFields(name string) map[string]any {
 	}
 }
 
+// submitFieldsNoAnchor is a submission of a game nothing upstream knows yet —
+// the case with no natural idempotency key at all.
+func submitFieldsNoAnchor(name string) map[string]any {
+	f := submitFields(name)
+	delete(f, editspec.FieldWorkLinks)
+	return f
+}
+
 func TestSubmitWorkMintsPendingClaim(t *testing.T) {
 	s := newLifecycle(t)
 	ctx := t.Context()
@@ -48,6 +58,9 @@ func TestSubmitWorkMintsPendingClaim(t *testing.T) {
 	}
 	if res.ClaimState != model.ClaimStateKeyPending || res.WorkID == 0 || res.EventID == 0 || res.ReleaseID == 0 {
 		t.Fatalf("result: %+v", res)
+	}
+	if res.ProductWorkID != 90001 {
+		t.Fatalf("a supplied product id must be echoed verbatim: %+v", res)
 	}
 
 	var work model.CatalogWork
@@ -164,6 +177,135 @@ func TestSubmitWorkIsIdempotent(t *testing.T) {
 	}
 }
 
+// TestSubmitWorkIssuesTheIdentity is the charter §6.P4-verdict 1 path: a wizard
+// that has nothing to name the work by omits product_work_id and the registry
+// issues one. The claim must be complete the moment the row exists — a work
+// with a site and no product id projects as unclaimed, which is a state no
+// reader has a name for.
+func TestSubmitWorkIssuesTheIdentity(t *testing.T) {
+	s := newLifecycle(t)
+	ctx := t.Context()
+
+	res, err := s.SubmitWork(ctx, SubmitWorkParams{
+		Site: submitSite, ActorUID: 7, Fields: submitFieldsNoAnchor("番号なし投稿"),
+	})
+	if err != nil {
+		t.Fatalf("submit: %v", err)
+	}
+	if res.ProductWorkID != res.WorkID {
+		t.Fatalf("the claim must adopt the minted work id: %+v", res)
+	}
+	if res.ClaimState != model.ClaimStateKeyPending {
+		t.Fatalf("result: %+v", res)
+	}
+
+	var work model.CatalogWork
+	if err := testDB.First(&work, res.WorkID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if work.ProductWorkID == nil || *work.ProductWorkID != res.WorkID {
+		t.Fatalf("stored claim: %+v", work.ProductWorkID)
+	}
+	// The row projects as a CLAIMED, pending work — claimed_by is (site,
+	// product_work_id) together, so this is the assertion that the adoption
+	// actually took effect on the contract and not just on a column.
+	if got := model.ClaimStateKey(work.Site, work.ProductWorkID, work.ClaimState); got != model.ClaimStateKeyPending {
+		t.Fatalf("projection: %s", got)
+	}
+
+	// The birth event exists exactly as on the supplied-id path.
+	events, err := s.EventsSince(ctx, 0, 10, "", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 || events[0].FromState != nil ||
+		events[0].ToState != model.ClaimStateKeyPending || events[0].WorkID != res.WorkID {
+		t.Fatalf("birth event: %+v", events)
+	}
+	// And the feed's identity snapshot carries the issued id, so a consumer
+	// routes to the product row it is about to create.
+	if events[0].ProductWorkID == nil || *events[0].ProductWorkID != res.WorkID {
+		t.Fatalf("feed snapshot: %+v", events[0])
+	}
+	// It reaches the review queue like any other submission.
+	items, total, err := s.PendingClaims(ctx, submitSite, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if total != 1 || len(items) != 1 || items[0].WorkID != res.WorkID {
+		t.Fatalf("queue: total=%d items=%+v", total, items)
+	}
+}
+
+// TestSubmitWorkIssuedIdempotency pins the two halves of the idempotency
+// answer on the registry-issued path: an identity anchor in the payload IS the
+// key, and its absence is an honest gap rather than a silent one.
+func TestSubmitWorkIssuedIdempotency(t *testing.T) {
+	s := newLifecycle(t)
+	ctx := t.Context()
+
+	anchored := SubmitWorkParams{Site: submitSite, ActorUID: 7, Fields: submitFields("锚あり")}
+	first, err := s.SubmitWork(ctx, anchored)
+	if err != nil {
+		t.Fatalf("submit: %v", err)
+	}
+	// A retry carries the same VNDB link and is recognized by it.
+	_, err = s.SubmitWork(ctx, anchored)
+	var exists *ClaimExistsError
+	if !errors.As(err, &exists) {
+		t.Fatalf("anchored retry: %v", err)
+	}
+	if exists.WorkID != first.WorkID || exists.MatchedBy != ClaimMatchAnchor ||
+		exists.CurrentState != model.ClaimStateKeyPending || exists.Anchor != "vndb:v19658" {
+		t.Fatalf("conflict echo: %+v", exists)
+	}
+	if exists.ProductWorkID != first.WorkID {
+		t.Fatalf("the conflict must carry the issued product id: %+v", exists)
+	}
+
+	// A DIFFERENT user submitting the same game for the same site hits the same
+	// rule — which is the answer that page wants anyway (point them at the
+	// entry that exists instead of minting a rival identity for it).
+	other := anchored
+	other.ActorUID = 8
+	if _, err := s.SubmitWork(ctx, other); !errors.As(err, &exists) {
+		t.Fatalf("second submitter: %v", err)
+	}
+
+	// The anchor is scoped to the caller's own tenant: another site claiming the
+	// same VNDB id is not a duplicate, the registry is multi-tenant.
+	foreign := anchored
+	foreign.Site = "moyu"
+	if _, err := s.SubmitWork(ctx, foreign); err != nil {
+		t.Fatalf("another tenant must still be able to submit: %v", err)
+	}
+
+	// A supplied product id keeps the exact key and is NOT diverted by the
+	// anchor — behaviour unchanged for the stub flows.
+	supplied := anchored
+	supplied.ProductWorkID = 90777
+	if _, err := s.SubmitWork(ctx, supplied); err != nil {
+		t.Fatalf("a supplied id must not be diverted by the anchor: %v", err)
+	}
+
+	// And the documented gap: no id AND no identity anchor = no key to match
+	// on, so a retry mints a second work. Pinned so the contract cannot change
+	// by accident — if this ever starts failing, the endpoint gained an
+	// idempotency key and its documentation must say so.
+	bare := SubmitWorkParams{Site: submitSite, ActorUID: 7, Fields: submitFieldsNoAnchor("锚なし")}
+	a, err := s.SubmitWork(ctx, bare)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := s.SubmitWork(ctx, bare)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.WorkID == b.WorkID {
+		t.Fatal("unexpectedly idempotent — update the endpoint documentation")
+	}
+}
+
 // TestSubmitWorkRefusesMirroredFacets: the mint obeys the SAME mirror gate the
 // editing face does — a work claimed for the site the duty chain owns cannot
 // have its mirrored facets written, and the whole mint rolls back rather than
@@ -220,7 +362,9 @@ func TestSubmitWorkRejectsPayloads(t *testing.T) {
 		wantErr error
 	}{
 		{"no site", func(p *SubmitWorkParams) { p.Site = "" }, ErrSubmitTargetRequired},
-		{"no product id", func(p *SubmitWorkParams) { p.ProductWorkID = 0 }, ErrSubmitTargetRequired},
+		// A missing product id is now LEGAL (the registry issues one); a
+		// negative one is still a malformed request.
+		{"negative product id", func(p *SubmitWorkParams) { p.ProductWorkID = -1 }, ErrSubmitTargetRequired},
 		{"no display name", func(p *SubmitWorkParams) {
 			delete(p.Fields, editspec.FieldWorkDisplayName)
 		}, ErrSubmitDisplayNameRequired},

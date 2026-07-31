@@ -40,10 +40,12 @@ type StaffClaimActionRequest struct {
 type WorkSubmitRequest struct {
 	Site  string    `json:"site" minLength:"1" doc:"Submitting tenant; must equal the client's catalog_site binding"`
 	Actor EditActor `json:"actor" doc:"The end user the product backend is submitting for"`
-	// ProductWorkID is allocated by the PRODUCT, never by the registry: the
-	// product site owns its own id space, and the registry records the id it
-	// was told (161 §6.P3-verdict STOP-1).
-	ProductWorkID int64           `json:"product_work_id" minimum:"1" doc:"The product-side work id this submission will be reachable at"`
+	// ProductWorkID is OPTIONAL (charter §6.P4-verdict 1). Supplied = the
+	// product allocated the id first and the registry records it; omitted = the
+	// registry issues the identity and the claim adopts the minted work's own
+	// id, which the response hands back for the product to create its local row
+	// at.
+	ProductWorkID int64           `json:"product_work_id,omitempty" minimum:"0" doc:"The product-side work id to anchor this submission at. OMIT IT to have the registry issue the identity: the claim then adopts the minted work id, which the response returns. Idempotency depends on this choice — see the endpoint summary"`
 	Fields        map[string]any  `json:"fields" doc:"Field-key → value, the submission subset of catalog.work: display_name (required), olang, content_rating, titles, intros, display_nsfw, tag_ids, labels, engine_ids, series_ids, links. covers/screenshots are NOT accepted here — upload the bytes, then edit those facets"`
 	Released      *WorkSubmitDate `json:"released,omitempty" doc:"Optional submitted release date; becomes ONE curated catalog_release row. Omit for TBA"`
 }
@@ -59,17 +61,28 @@ type WorkSubmitDate struct {
 
 // WorkSubmitResponse is the minted identity plus the birth event.
 type WorkSubmitResponse struct {
-	WorkID     int64  `json:"work_id"`
-	ClaimState string `json:"claim_state" doc:"Always pending — a submission is born awaiting review"`
-	EventID    int64  `json:"event_id" doc:"The claim-event row recording the birth (from_state null → pending)"`
-	ReleaseID  int64  `json:"release_id,omitempty" doc:"The curated release row the submitted date produced; absent when no date was given"`
+	WorkID int64 `json:"work_id"`
+	// ProductWorkID is the id the claim is anchored at — the supplied one, or
+	// the registry-issued one (equal to work_id) when the request omitted it.
+	// A product that omitted it creates its local row at THIS id.
+	ProductWorkID int64  `json:"product_work_id"`
+	ClaimState    string `json:"claim_state" doc:"Always pending — a submission is born awaiting review"`
+	EventID       int64  `json:"event_id" doc:"The claim-event row recording the birth (from_state null → pending)"`
+	ReleaseID     int64  `json:"release_id,omitempty" doc:"The curated release row the submitted date produced; absent when no date was given"`
 }
 
 // WorkSubmitConflictInfo rides the 409 of a repeat submission so the wizard can
 // resume the existing work instead of retrying the mint.
 type WorkSubmitConflictInfo struct {
-	WorkID       int64  `json:"work_id"`
-	CurrentState string `json:"current_state"`
+	WorkID        int64  `json:"work_id"`
+	ProductWorkID int64  `json:"product_work_id"`
+	CurrentState  string `json:"current_state"`
+	// MatchedBy names which idempotency key recognized the request: `claim`
+	// (site + product_work_id, exact) or `anchor` (an identity ref the payload
+	// asserted, which also fires when a DIFFERENT user already registered this
+	// game for the same site).
+	MatchedBy string `json:"matched_by" doc:"claim | anchor"`
+	Anchor    string `json:"anchor,omitempty" doc:"The matching identity coordinate (source:external_id), for matched_by=anchor"`
 }
 
 // ClaimTransitionInfo rides the 409 of an illegal transition so the caller can

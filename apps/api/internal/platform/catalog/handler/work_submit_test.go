@@ -59,6 +59,7 @@ func TestSubmitFaceEndToEnd(t *testing.T) {
 	assert.NotZero(t, minted.Data.WorkID)
 	assert.NotZero(t, minted.Data.EventID)
 	assert.NotZero(t, minted.Data.ReleaseID, "a submitted date becomes a curated release row")
+	assert.EqualValues(t, 80001, minted.Data.ProductWorkID, "a supplied id is echoed verbatim")
 
 	// A repeat submission is a 409 that hands back the existing work.
 	status, raw = editPost(t, app, "/api/v1/catalog/works/submit", body)
@@ -69,6 +70,30 @@ func TestSubmitFaceEndToEnd(t *testing.T) {
 	require.NoError(t, json.Unmarshal(raw, &conflict))
 	assert.Equal(t, minted.Data.WorkID, conflict.Data.WorkID)
 	assert.Equal(t, model.ClaimStateKeyPending, conflict.Data.CurrentState)
+	assert.Equal(t, service.ClaimMatchClaim, conflict.Data.MatchedBy)
+
+	// product_work_id OMITTED: the registry issues the identity and hands it
+	// back, and the wire must not require the field at all (charter
+	// §6.P4-verdict 1). A retry is then recognized by the VNDB link.
+	issuedBody := `{"site":"kungal","actor":{"user_id":5},
+	                "fields":{"catalog.work.display_name":"番号なし",
+	                          "catalog.work.links":["https://vndb.org/v11111"]}}`
+	status, raw = editPost(t, app, "/api/v1/catalog/works/submit", issuedBody)
+	require.Equal(t, fiber.StatusOK, status, string(raw))
+	var issued struct {
+		Data dto.WorkSubmitResponse `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &issued))
+	assert.NotZero(t, issued.Data.WorkID)
+	assert.Equal(t, issued.Data.WorkID, issued.Data.ProductWorkID,
+		"an omitted product id is issued as the minted work id")
+
+	status, raw = editPost(t, app, "/api/v1/catalog/works/submit", issuedBody)
+	require.Equal(t, fiber.StatusConflict, status, string(raw))
+	require.NoError(t, json.Unmarshal(raw, &conflict))
+	assert.Equal(t, issued.Data.WorkID, conflict.Data.WorkID)
+	assert.Equal(t, service.ClaimMatchAnchor, conflict.Data.MatchedBy)
+	assert.Equal(t, "vndb:v11111", conflict.Data.Anchor)
 
 	// A payload key outside the submission subset is a 422, not a silent drop.
 	status, raw = editPost(t, app, "/api/v1/catalog/works/submit",
@@ -76,10 +101,12 @@ func TestSubmitFaceEndToEnd(t *testing.T) {
 		  "fields":{"catalog.work.display_name":"x","catalog.work.covers":[]}}`)
 	assert.Equal(t, fiber.StatusUnprocessableEntity, status, string(raw))
 
-	// And the minted submission is immediately in the review queue.
+	// And both minted submissions — the supplied-id one and the issued-id one —
+	// are immediately in the review queue, oldest first.
 	items, total, err := claims.PendingClaims(t.Context(), "kungal", 10)
 	require.NoError(t, err)
-	assert.EqualValues(t, 1, total)
-	require.Len(t, items, 1)
+	assert.EqualValues(t, 2, total)
+	require.Len(t, items, 2)
 	assert.Equal(t, minted.Data.WorkID, items[0].WorkID)
+	assert.Equal(t, issued.Data.WorkID, items[1].WorkID)
 }

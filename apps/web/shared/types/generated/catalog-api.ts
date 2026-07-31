@@ -439,7 +439,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Mint a work in the pending claim state from a submission form (one transaction: registry row + content + birth event). Repeat submits for the same site + product_work_id are a 409 echoing the existing work */
+        /** Mint a work in the pending claim state from a submission form (one transaction: registry row + content + birth event). product_work_id is OPTIONAL: omit it and the registry issues the identity, the claim adopting the minted work id (returned as product_work_id — create your local row at it). IDEMPOTENCY: with product_work_id, a repeat is a 409 echoing the existing work (matched_by=claim); without it, a repeat is recognized only by the identity anchors the payload's links assert (matched_by=anchor, scoped to your own site) — a submission that omits BOTH the id and any VNDB/Bangumi link has no key to match on and WILL mint a second work if retried */
         post: operations["submitCatalogWork"];
         delete?: never;
         options?: never;
@@ -1936,9 +1936,9 @@ export interface components {
             };
             /**
              * Format: int64
-             * @description The product-side work id this submission will be reachable at
+             * @description The product-side work id to anchor this submission at. OMIT IT to have the registry issue the identity: the claim then adopts the minted work id, which the response returns. Idempotency depends on this choice — see the endpoint summary
              */
-            product_work_id: number;
+            product_work_id?: number;
             /** @description Optional submitted release date; becomes ONE curated catalog_release row. Omit for TBA */
             released?: components["schemas"]["WorkSubmitDate"];
             /** @description Submitting tenant; must equal the client's catalog_site binding */
@@ -1952,6 +1952,8 @@ export interface components {
              * @description The claim-event row recording the birth (from_state null → pending)
              */
             event_id: number;
+            /** Format: int64 */
+            product_work_id: number;
             /**
              * Format: int64
              * @description The curated release row the submitted date produced; absent when no date was given

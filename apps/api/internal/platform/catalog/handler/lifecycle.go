@@ -61,7 +61,7 @@ func SetupLifecycle(api huma.API, claims *service.ClaimLifecycleService, engine 
 	huma.Register(api, huma.Operation{
 		OperationID: "submitCatalogWork", Method: http.MethodPost,
 		Path:    "/api/v1/catalog/works/submit",
-		Summary: "Mint a work in the pending claim state from a submission form (one transaction: registry row + content + birth event). Repeat submits for the same site + product_work_id are a 409 echoing the existing work",
+		Summary: "Mint a work in the pending claim state from a submission form (one transaction: registry row + content + birth event). product_work_id is OPTIONAL: omit it and the registry issues the identity, the claim adopting the minted work id (returned as product_work_id — create your local row at it). IDEMPOTENCY: with product_work_id, a repeat is a 409 echoing the existing work (matched_by=claim); without it, a repeat is recognized only by the identity anchors the payload's links assert (matched_by=anchor, scoped to your own site) — a submission that omits BOTH the id and any VNDB/Bangumi link has no key to match on and WILL mint a second work if retried",
 		Tags:    tags,
 	}, s.submitWork)
 	huma.Register(api, huma.Operation{
@@ -156,7 +156,7 @@ func (s *LifecycleServer) submitWork(ctx context.Context, in *submitWorkInput) (
 		return nil, submitErr(err)
 	}
 	return &submitWorkOutput{Body: okEnvelope(dto.WorkSubmitResponse{
-		WorkID: res.WorkID, ClaimState: res.ClaimState,
+		WorkID: res.WorkID, ProductWorkID: res.ProductWorkID, ClaimState: res.ClaimState,
 		EventID: res.EventID, ReleaseID: res.ReleaseID,
 	})}, nil
 }
@@ -174,7 +174,11 @@ func submitErr(err error) error {
 	switch {
 	case stderrors.As(err, &exists):
 		return apiErrData(http.StatusConflict, errors.ErrOperationFailed, exists.Error(),
-			dto.WorkSubmitConflictInfo{WorkID: exists.WorkID, CurrentState: exists.CurrentState})
+			dto.WorkSubmitConflictInfo{
+				WorkID: exists.WorkID, ProductWorkID: exists.ProductWorkID,
+				CurrentState: exists.CurrentState,
+				MatchedBy:    exists.MatchedBy, Anchor: exists.Anchor,
+			})
 	case stderrors.As(err, &mirrorGate):
 		return apiErrMsg(http.StatusConflict, errors.ErrOperationFailed, mirrorGate.Error())
 	case stderrors.As(err, &fieldErr),

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 
+	catmodel "api/internal/platform/catalog/model"
+
 	"gorm.io/gorm"
 )
 
@@ -79,6 +81,40 @@ func (e *SubmissionFieldError) Error() string {
 }
 
 func (e *SubmissionFieldError) Unwrap() error { return e.Err }
+
+// SubmissionAnchor is one IDENTITY coordinate a submission asserted through its
+// links field — the (source, external id) pair a VNDB or Bangumi URL resolves
+// to. It is deliberately not the whole classified link: a `web` or `twitter` ref
+// identifies a page, not a work, and must never be used to decide that two
+// submissions are the same thing.
+type SubmissionAnchor struct {
+	SourceKey  string
+	ExternalID string
+}
+
+// SubmissionAnchorsOf extracts the identity anchors from a links payload value.
+// It reuses classifyWorkLink, so what counts as an identity source here is the
+// same closed decision that decides which links become CANDIDATES rather than
+// related refs — one rule, not a second list that could drift.
+//
+// A value the links field would reject yields no anchors rather than an error:
+// the caller uses this before validation, and the field's own Validate is what
+// reports a malformed payload.
+func SubmissionAnchorsOf(value any) []SubmissionAnchor {
+	urls, err := parseLinks(value)
+	if err != nil {
+		return nil
+	}
+	out := make([]SubmissionAnchor, 0, len(urls))
+	for _, u := range urls {
+		cl, ok := classifyWorkLink(u)
+		if !ok || cl.LinkKind != catmodel.LinkKindProbable {
+			continue
+		}
+		out = append(out, SubmissionAnchor{SourceKey: cl.SourceKey, ExternalID: cl.ExternalID})
+	}
+	return out
+}
 
 // ApplyWorkFields validates and applies a submission payload onto a work inside
 // the caller's transaction. It is the mint-time counterpart of an engine merge:
