@@ -715,6 +715,12 @@ func (h *PublicHandler) WorksList(c fiber.Ctx) error {
 		NSFW:     nsfwQuery(c),
 		Platform: strings.TrimSpace(c.Query("platform")),
 		Include:  service.ParseWorksListInclude(c.Query("include")),
+		// site (wave 161 P5): the tenant gate. Any non-empty value is a legal
+		// query — an unknown site simply matches nothing, exactly like an
+		// unknown label_id. There is no closed vocabulary to validate against
+		// (sites are registered per OAuth client, not enumerated on this face),
+		// so 400ing on "not a site I know" would leak the tenant registry.
+		Site: strings.TrimSpace(c.Query("site")),
 	}
 	switch sort := c.Query("sort"); sort {
 	case "", "id":

@@ -50,7 +50,19 @@ type WorksListFilter struct {
 	// instead is what collapsed one downstream's SEO surface from 6,117 works to
 	// 599 (doc 106 §38).
 	DisplayLimits []string
-	LabelID       int64 // via catalog_work_label
+	// Site narrows to the works claimed by ONE tenant (catalog_work.site) —
+	// the sibling of the parameter PendingClaims and the S2S work search
+	// already take (wave 161 P5, 162 §4 ruling ①). Empty = no gate at all, so
+	// every pre-existing caller's wire stays byte-identical.
+	//
+	// A product's own review queue and "my site's works" lane cannot be built
+	// without it: filtering another tenant's rows out AFTER the page is fetched
+	// makes both the page size and the keyset cursor lie. This is a LIVE SQL
+	// predicate inside the LIMIT, so a claim that moves tenant is reflected on
+	// the very next call — the works search index carries no site facet and
+	// deliberately gains none.
+	Site    string
+	LabelID int64 // via catalog_work_label
 	// TagIDs are canonical tag ids ANDed together (A2-1e): a work must carry a
 	// source tag mapped to EVERY id, which is what a facet sidebar's "narrow by
 	// another tag" means. One id behaves exactly as the pre-A2-1e scalar did.
@@ -104,6 +116,13 @@ func (s *PublicService) WorksList(ctx context.Context, f WorksListFilter, cursor
 		} else {
 			where = append(where, "(w.site = '' OR w.site IS NULL)")
 		}
+	}
+	if f.Site != "" {
+		// ANDed into the SAME conjunction as every other filter — i.e. inside
+		// the LIMIT — so the page the caller receives is a page of THIS tenant's
+		// works and the next_cursor it derives is honest.
+		where = append(where, "w.site = ?")
+		args = append(args, f.Site)
 	}
 	if pred, pargs := claimStateWhere(f.ClaimStates); pred != "" {
 		// ONE clause in the SAME conjunction as every other filter. This face

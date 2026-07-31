@@ -6721,6 +6721,13 @@ export const docsModel: DocsModel = {
                   "doc": "Comma-separated CLOSED vocabulary: sfw,nsfw — the EDITORIAL DISPLAY axis, i.e. the values claimed_by.content_limit renders on these very items. An unknown token is a 400. Absent = no gate (both values), which keeps pre-existing callers byte-identical. Word-for-word the works/search parameter of the same name. This is NOT content_rating: content_rating is the AGE axis (what the GAME is rated), this is whether the material you would RENDER (cover, screenshots, synopsis) is safe to publish — a claimed work reads its wiki body's editorial flag, a bodyless one falls back to r18=nsfw. Unlike the search face this is a live registry predicate, so an editorial change takes effect immediately"
                 },
                 {
+                  "name": "site",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "Restrict to the works claimed by ONE site (the value claimed_by.site renders on these very items); absent = every tenant and every unclaimed work, which keeps pre-existing callers byte-identical. An unknown site matches nothing rather than erroring. Live registry predicate applied inside the page, so both the page and its next_cursor describe that one tenant — and a claim that moves tenant is reflected immediately, with no index to wait for. The works/search face deliberately does NOT take this parameter: its index carries no site facet, and a tenant queue must read the live registry anyway"
+                },
+                {
                   "name": "label_id",
                   "in": "query",
                   "required": false,
