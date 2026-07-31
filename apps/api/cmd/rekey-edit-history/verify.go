@@ -111,8 +111,8 @@ func verifyLeftovers(ctx context.Context, db *gorm.DB) (string, error) {
 		`SELECT count(*) FROM edit_revision r
 		 JOIN catalog_external_ref x
 		   ON x.entity_type = 5 AND x.link_kind = 0 AND x.external_id = r.entity_id::text
-		   AND x.source_id = (SELECT id FROM catalog_source WHERE key = 'galgame_wiki')
-		 WHERE r.entity_type = ?`, wikiType).Scan(&split).Error; err != nil {
+		   AND x.matched_by = ?
+		 WHERE r.entity_type = ?`, matchedByGID, wikiType).Scan(&split).Error; err != nil {
 		return "", err
 	}
 	if split > 0 {

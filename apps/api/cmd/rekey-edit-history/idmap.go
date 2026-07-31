@@ -16,6 +16,18 @@ import (
 // tables: gid→work (`wiki:gid`), oid→label (`wiki:oid`), tid→tag (`wiki:tid`),
 // eid→engine (`wiki:eid`). This tool READS them and invents none.
 //
+// The rows are selected by MATCHED_BY, not by the source key, and that is a
+// correctness requirement rather than a style choice. The literal
+// "galgame_wiki" names two unrelated things — the claim site on catalog_work
+// and the catalog_source key behind source 12 — and P5 renames the second to
+// `curated` (id unchanged) in the same window this tool runs in. A source-key
+// lookup therefore breaks the moment P5's seed lands, which is exactly what
+// happened in rehearsal. matched_by is the address maps' own provenance stamp:
+// it is what identifies these rows, it is never renamed, and it is exclusive —
+// across the whole table the four `wiki:{gid,oid,tid,eid}` stamps occur only on
+// source 12 and only on one entity type each (`wiki:link`, a different stamp on
+// other sources, does not collide).
+//
 // There is deliberately no series map: catalog_series holds dlsite series only
 // and galgame_series was never mirrored, so `series_id` is retired in place
 // (keymap.go, STOP item 3).
@@ -34,17 +46,18 @@ type idMaps struct {
 // Resolving is not optional: catalog_redirect is how a merged entity keeps its
 // old id addressable, and the 147 incident is the record of what reading a
 // merged id literally costs (1,618 dead label edges).
-func loadIDMaps(ctx context.Context, db *gorm.DB, wikiSourceID int16) (*idMaps, error) {
+func loadIDMaps(ctx context.Context, db *gorm.DB) (*idMaps, error) {
 	m := &idMaps{Redirected: map[string]int{}}
 	for _, space := range []struct {
 		name       string
+		matchedBy  string
 		entityType int16
 		into       *map[int64]int64
 	}{
-		{"work", catmodel.EntityTypeWork, &m.Work},
-		{"label", catmodel.EntityTypeLabel, &m.Label},
-		{"tag", catmodel.EntityTypeTag, &m.Tag},
-		{"engine", catmodel.EntityTypeEngine, &m.Engine},
+		{"work", matchedByGID, catmodel.EntityTypeWork, &m.Work},
+		{"label", matchedByOID, catmodel.EntityTypeLabel, &m.Label},
+		{"tag", matchedByTID, catmodel.EntityTypeTag, &m.Tag},
+		{"engine", matchedByEID, catmodel.EntityTypeEngine, &m.Engine},
 	} {
 		redirects, err := loadRedirects(ctx, db, space.entityType)
 		if err != nil {
@@ -56,8 +69,8 @@ func loadIDMaps(ctx context.Context, db *gorm.DB, wikiSourceID int16) (*idMaps, 
 		}
 		if err := db.WithContext(ctx).Raw(
 			`SELECT external_id, entity_id FROM catalog_external_ref
-			 WHERE source_id = ? AND entity_type = ? AND link_kind = ?`,
-			wikiSourceID, space.entityType, catmodel.LinkKindExact).Scan(&rows).Error; err != nil {
+			 WHERE matched_by = ? AND entity_type = ? AND link_kind = ?`,
+			space.matchedBy, space.entityType, catmodel.LinkKindExact).Scan(&rows).Error; err != nil {
 			return nil, fmt.Errorf("load %s refs: %w", space.name, err)
 		}
 		out := make(map[int64]int64, len(rows))
@@ -123,17 +136,12 @@ func resolveRedirect(redirects map[int64]int64, id int64) int64 {
 	return id
 }
 
-// wikiSourceID resolves the galgame_wiki catalog_source row by KEY, never by a
-// hardcoded 12: a rehearsal database seeded in a different order still works
-// (the rule the wikirescue steps established).
-func wikiSourceID(ctx context.Context, db *gorm.DB) (int16, error) {
-	var id int16
-	if err := db.WithContext(ctx).Raw(
-		`SELECT id FROM catalog_source WHERE key = ?`, "galgame_wiki").Scan(&id).Error; err != nil {
-		return 0, err
-	}
-	if id == 0 {
-		return 0, fmt.Errorf("catalog_source has no galgame_wiki row")
-	}
-	return id, nil
-}
+// The wikirescue address-map steps' provenance stamps (jobs/wikirescue:
+// gidmap.go, officialmap.go, tagmap.go, enginemap.go). These strings are the
+// migration's key into catalog_external_ref.
+const (
+	matchedByGID = "wiki:gid"
+	matchedByOID = "wiki:oid"
+	matchedByTID = "wiki:tid"
+	matchedByEID = "wiki:eid"
+)

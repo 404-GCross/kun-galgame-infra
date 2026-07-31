@@ -144,17 +144,17 @@ type rekeyer struct {
 }
 
 func (r *rekeyer) run(ctx context.Context) error {
-	srcID, err := wikiSourceID(ctx, r.db)
-	if err != nil {
-		return fmt.Errorf("resolve galgame_wiki source: %w", err)
-	}
-	r.ids, err = loadIDMaps(ctx, r.db, srcID)
+	ids, err := loadIDMaps(ctx, r.db)
 	if err != nil {
 		return fmt.Errorf("load id maps: %w", err)
 	}
+	r.ids = ids
 	slog.Info("id maps loaded",
-		"source_id", srcID, "work", len(r.ids.Work), "label", len(r.ids.Label),
+		"work", len(r.ids.Work), "label", len(r.ids.Label),
 		"tag", len(r.ids.Tag), "engine", len(r.ids.Engine), "via_redirect", r.ids.Redirected)
+	if len(r.ids.Work) == 0 {
+		return fmt.Errorf("the gid address map is empty: no catalog_external_ref rows carry %q", matchedByGID)
+	}
 
 	reg := editing.NewRegistry()
 	if err := editspec.RegisterWork(reg, r.db); err != nil {
