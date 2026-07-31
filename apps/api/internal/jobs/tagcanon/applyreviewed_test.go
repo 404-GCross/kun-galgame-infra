@@ -24,21 +24,16 @@ import (
 func TestProposeReviewApplyDB(t *testing.T) {
 	cleanTagcanon(t)
 	ctx := context.Background()
-	bgm, dl := srcID(t, "bangumi"), srcID(t, "dlsite")
+	vndb, bgm, dl := srcID(t, "vndb"), srcID(t, "bangumi"), srcID(t, "dlsite")
 	var medium int16
 	require.NoError(t, testDB.Raw(`SELECT id FROM catalog_medium WHERE key='galgame'`).Scan(&medium).Error)
 
-	// vndb vocabulary via the galgame join.
-	for _, id := range []int64{74111, 74112, 74113} {
-		mkGalgame(t, id)
-	}
-	mkGalgameTag(t, 74011, "百合")  // → cross-source EXACT with bangumi 百合
-	mkGalgameTag(t, 74012, "巨乳")  // → substring (broader) with dlsite 巨乳/爆乳, NOT merged
-	mkGalgameTag(t, 74013, "破处")  // → single-source admission
-	mkGalgameRel(t, 74111, 74011) // 百合 usage 1
-	mkGalgameRel(t, 74111, 74012) // 巨乳 usage 2
-	mkGalgameRel(t, 74112, 74012)
-	mkGalgameRel(t, 74111, 74013) // 破处 usage 1
+	// vndb vocabulary via catalog_work_tag (wave 149).
+	wV1, wV2 := mkBodylessWork(t, medium), mkBodylessWork(t, medium)
+	mkWorkTag(t, wV1, "百合", 0, vndb) // usage 1 → cross-source EXACT with bangumi 百合
+	mkWorkTag(t, wV1, "巨乳", 0, vndb) // usage 2 → substring (broader) with dlsite 巨乳/爆乳, NOT merged
+	mkWorkTag(t, wV2, "巨乳", 0, vndb)
+	mkWorkTag(t, wV1, "破处", 0, vndb) // usage 1 → single-source admission
 
 	// bangumi + dlsite vocabulary via catalog_work_tag.
 	wB := mkBodylessWork(t, medium)

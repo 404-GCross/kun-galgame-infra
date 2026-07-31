@@ -210,7 +210,7 @@ func buildPool(ctx context.Context, db *gorm.DB, opts ProposeOpts) ([]candName, 
 	}
 	srcKeys := map[int16]string{src.vndb: sourceKeyVNDB, src.bangumi: sourceKeyBangumi, src.dlsite: sourceKeyDlsite}
 
-	vndb, err := loadVndbVocab(ctx, db, src)
+	vndb, err := loadWorkTagVocab(ctx, db, src.vndb)
 	if err != nil {
 		return nil, err
 	}

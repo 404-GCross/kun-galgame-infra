@@ -1,7 +1,6 @@
 // Package tagcanon builds the DETERMINISTIC slice of the tag canonical layer
 // (refs/proj/74, design refs/proj/70 §7/§8): it extracts the three per-source
-// tag vocabularies (vndb = galgame_tag ⋈ galgame_tag_relation; bangumi/dlsite =
-// catalog_work_tag grouped by source), mechanically prefilters bangumi junk
+// tag vocabularies (all three = catalog_work_tag grouped by source), mechanically prefilters bangumi junk
 // (date/disc/number regexes + maker/label collisions — junk is reported but
 // never written), folds the survivors on NFKC+casefold+trim, and mints ONE
 // catalog_tag + per-source catalog_tag_source_map rows for every norm spanning
@@ -9,11 +8,12 @@
 // hand-pinned meta set is kind=meta, everything else content. Single-source
 // names get NO row this wave (70b's domain).
 //
-// The ORIGINAL layers (galgame_tag / catalog_work_tag) are read-only here — not
-// one row is touched. Discipline (55/57/58a/58b lineage):
-//   - The DSN is ALWAYS explicit — a bare run cannot touch a live DB. The tool
-//     needs all three vocabularies co-located in ONE database (prod: kun_catalog
-//     holds both families; local rehearsal: the galgame vocab is copied in).
+// The ORIGINAL layer (catalog_work_tag) is read-only here — not one row is
+// touched. Discipline (55/57/58a/58b lineage):
+//   - The DSN is ALWAYS explicit — a bare run cannot touch a live DB. All three
+//     vocabularies now live in catalog_work_tag, so one catalog database is the
+//     whole input (wave 149: the vndb lane no longer joins the wiki tag layer —
+//     see loadWorkTagVocab).
 //   - Dry-run is the default: the decided plan (vocab sizes, junk digest, group
 //     count, per-source absorption, single-source distribution) is identical in
 //     dry and apply; only Tags/Maps Created/Conflict need --apply.
@@ -111,7 +111,7 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 	srcKeys := map[int16]string{src.vndb: sourceKeyVNDB, src.bangumi: sourceKeyBangumi, src.dlsite: sourceKeyDlsite}
 
 	// ── vocabulary extraction ────────────────────────────────────────────────
-	vndb, err := loadVndbVocab(ctx, db, src)
+	vndb, err := loadWorkTagVocab(ctx, db, src.vndb)
 	if err != nil {
 		return nil, err
 	}

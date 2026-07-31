@@ -53,34 +53,27 @@ type vocabEntry struct {
 	JunkReason string // date / disc / number / label
 }
 
-// loadVndbVocab reads the vndb vocabulary: galgame_tag.name (the localized
-// display name) with its usage = number of galgame_tag_relation rows. A tag
-// with no relation lands at usage 0 (LEFT JOIN).
-func loadVndbVocab(ctx context.Context, db *gorm.DB, src sourceIDs) ([]vocabEntry, error) {
-	var rows []struct {
-		Name  string `gorm:"column:name"`
-		Usage int    `gorm:"column:usage"`
-	}
-	if err := db.WithContext(ctx).Raw(`
-		SELECT t.name AS name, count(r.galgame_id) AS usage
-		FROM galgame_tag t
-		LEFT JOIN galgame_tag_relation r ON r.tag_id = t.id
-		GROUP BY t.id, t.name`).Scan(&rows).Error; err != nil {
-		return nil, fmt.Errorf("load vndb vocab: %w", err)
-	}
-	out := make([]vocabEntry, 0, len(rows))
-	for _, r := range rows {
-		name := strings.TrimSpace(r.Name)
-		if name == "" {
-			continue
-		}
-		out = append(out, vocabEntry{SourceID: src.vndb, Name: name, Norm: normalize(name), Usage: r.Usage})
-	}
-	return out, nil
-}
-
 // loadWorkTagVocab reads a catalog_work_tag source's vocabulary: distinct name
 // with usage = number of distinct works carrying it.
+//
+// Since wave 149 this backs the vndb lane too. It used to read the wiki tag
+// layer directly (galgame_tag.name ⋈ galgame_tag_relation), which does not
+// survive the galgame family's retirement; W1-pre step r materialized that whole
+// layer into catalog_work_tag under source_id=vndb *carrying the same curated
+// zh display names*, so the native table is a name-for-name replacement — not
+// the English src_vndb.tags upstream, which would have swapped the vocabulary's
+// language out from under the cross-source folding. Measured on the 2026-07-30
+// kun_catalog snapshot: 2,793 native entries vs 3,037 wiki entries, ZERO names
+// added and 244 dropped — every dropped name was carried only by unclaimed wiki
+// drafts (57 of them by nothing at all), so none of them has a catalog-side
+// footprint once the wiki tables are gone.
+//
+// 66 of those 244 do currently fold with a bangumi/dlsite name, so the group
+// count falls with them. That is the correction, not the cost: a cross-source
+// group exists to canonicalize a name that several sources actually carry, and
+// a vndb map row for a name with no vndb work edge canonicalizes nothing. The
+// wiki-draft-only vocabulary was inflating the vndb lane with supply the
+// catalog read face never saw.
 func loadWorkTagVocab(ctx context.Context, db *gorm.DB, sourceID int16) ([]vocabEntry, error) {
 	var rows []struct {
 		Name  string `gorm:"column:name"`

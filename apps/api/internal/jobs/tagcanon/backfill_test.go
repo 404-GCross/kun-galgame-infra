@@ -18,10 +18,10 @@ import (
 )
 
 // Integration test against a real Postgres: the catalog Gold schema (migrate.Run
-// + seeds) plus the galgame tag layer the vndb lane joins (galgame_tag ⋈
-// galgame_tag_relation), which in prod is co-located with catalog. This
-// exercises Run end-to-end across ALL THREE lanes (vndb via the join,
-// bangumi/dlsite via catalog_work_tag): extraction, junk prefilter, ≥2-source
+// + seeds) is the WHOLE fixture surface since wave 149 — all three lanes now
+// read catalog_work_tag, so the galgame tag layer the vndb lane used to join is
+// gone from this file. This exercises Run end-to-end across ALL THREE lanes:
+// extraction, junk prefilter, ≥2-source
 // grouping with the canonical-name pick + meta stamping, dry-run zero-write,
 // apply fidelity, and second-pass idempotence. Run drives the DSN itself, so we
 // capture it to exercise the real entry point.
@@ -48,37 +48,17 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "SKIP: catalog seed failed: %v\n", err)
 		os.Exit(0)
 	}
-	ensureGalgameTagLayer(db)
 	testDB = db
 	os.Exit(m.Run())
-}
-
-// ensureGalgameTagLayer provisions the galgame tag tables the vndb lane joins,
-// mirroring the handler-test stubs (real shapes). CREATE ... IF NOT EXISTS is a
-// no-op where the real tables already exist; on a bare catalog test DB it makes
-// minimal stubs (galgame needs only id + user_id). galgame is created so the
-// relation's galgame FK — present on the real table — is always satisfiable via
-// a parent row.
-func ensureGalgameTagLayer(db *gorm.DB) {
-	db.Exec(`CREATE TABLE IF NOT EXISTS galgame (id bigint PRIMARY KEY, user_id bigint NOT NULL DEFAULT 0)`)
-	db.Exec(`CREATE TABLE IF NOT EXISTS galgame_tag (
-		id bigint PRIMARY KEY, name text NOT NULL UNIQUE, category text NOT NULL DEFAULT '', description text DEFAULT '')`)
-	db.Exec(`CREATE TABLE IF NOT EXISTS galgame_tag_relation (
-		galgame_id bigint NOT NULL, tag_id bigint NOT NULL, spoiler_level bigint DEFAULT 0,
-		source varchar(16) DEFAULT '', PRIMARY KEY (galgame_id, tag_id))`)
 }
 
 func cleanTagcanon(t *testing.T) {
 	t.Helper()
 	for _, table := range []string{
 		"catalog_tag_source_map", "catalog_tag", "catalog_work_tag",
-		"galgame_tag_relation", "galgame_tag",
 	} {
 		require.NoError(t, testDB.Exec("TRUNCATE "+table+" RESTART IDENTITY CASCADE").Error)
 	}
-	// galgame is not truncated (it may hold other data / be large); drop just the
-	// fixture parent rows (74100-block) so a re-run's mkGalgame does not collide.
-	require.NoError(t, testDB.Exec(`DELETE FROM galgame WHERE id BETWEEN 74100 AND 74199`).Error)
 }
 
 func srcID(t *testing.T, key string) int16 {
@@ -92,22 +72,6 @@ func srcID(t *testing.T, key string) int16 {
 func mkWorkTag(t *testing.T, workID int64, name string, count int, source int16) {
 	t.Helper()
 	require.NoError(t, testDB.Create(&model.CatalogWorkTag{WorkID: workID, Name: name, Count: count, SourceID: source}).Error)
-}
-
-func mkGalgame(t *testing.T, id int64) {
-	t.Helper()
-	require.NoError(t, testDB.Exec(`INSERT INTO galgame (id, user_id) VALUES (?, 0)`, id).Error)
-}
-
-func mkGalgameTag(t *testing.T, id int64, name string) {
-	t.Helper()
-	require.NoError(t, testDB.Exec(`INSERT INTO galgame_tag (id, name, category) VALUES (?, ?, 'content')`, id, name).Error)
-}
-
-func mkGalgameRel(t *testing.T, galgameID, tagID int64) {
-	t.Helper()
-	require.NoError(t, testDB.Exec(`INSERT INTO galgame_tag_relation (galgame_id, tag_id, spoiler_level, source)
-		VALUES (?, ?, 0, 'vndb')`, galgameID, tagID).Error)
 }
 
 func mkBodylessWork(t *testing.T, medium int16) int64 {
@@ -125,18 +89,15 @@ func TestTagcanonRun(t *testing.T) {
 	var medium int16
 	require.NoError(t, testDB.Raw(`SELECT id FROM catalog_medium WHERE key='galgame'`).Scan(&medium).Error)
 
-	// vndb vocabulary via the galgame join: 奇幻 (usage 3) + 百合 (usage 1) +
-	// 巨乳女主角 (usage 0, single-source → no group).
-	for _, id := range []int64{74101, 74102, 74103} {
-		mkGalgame(t, id)
-	}
-	mkGalgameTag(t, 74001, "奇幻")
-	mkGalgameTag(t, 74002, "百合")
-	mkGalgameTag(t, 74003, "巨乳女主角")
-	mkGalgameRel(t, 74101, 74001)
-	mkGalgameRel(t, 74102, 74001)
-	mkGalgameRel(t, 74103, 74001)
-	mkGalgameRel(t, 74101, 74002)
+	// vndb vocabulary via catalog_work_tag (wave 149): 奇幻 (usage 3) +
+	// 百合 (usage 1) + 巨乳女主角 (usage 1, single-source → no group). Usage is
+	// distinct works, so each name needs one row per carrying work.
+	wV1, wV2, wV3 := mkBodylessWork(t, medium), mkBodylessWork(t, medium), mkBodylessWork(t, medium)
+	mkWorkTag(t, wV1, "奇幻", 0, vndb)
+	mkWorkTag(t, wV2, "奇幻", 0, vndb)
+	mkWorkTag(t, wV3, "奇幻", 0, vndb)
+	mkWorkTag(t, wV1, "百合", 0, vndb)
+	mkWorkTag(t, wV1, "巨乳女主角", 0, vndb)
 
 	// bangumi + dlsite vocabulary via catalog_work_tag.
 	wB := mkBodylessWork(t, medium)
