@@ -258,7 +258,11 @@ func TestClaimedPopulation(t *testing.T) {
 	ctx := context.Background()
 	medium, _, bangumi := reg(t)
 	var wiki int16
-	require.NoError(t, testDB.Raw(`SELECT id FROM catalog_source WHERE key='galgame_wiki'`).Scan(&wiki).Error)
+	// Dual-read: wave 161 renamed source 12's key galgame_wiki → curated, and
+	// the fixture must resolve the same row on either side of that deploy.
+	require.NoError(t, testDB.Raw(
+		`SELECT id FROM catalog_source WHERE key IN ('curated','galgame_wiki') ORDER BY id LIMIT 1`).
+		Scan(&wiki).Error)
 	require.NotZero(t, wiki)
 	claimed := "galgame_wiki"
 
