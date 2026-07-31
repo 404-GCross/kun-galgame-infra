@@ -28,19 +28,26 @@ const claimedSQL = "(w.site IS NOT NULL AND w.site <> '' AND w.product_work_id I
 // bind args; an empty state list returns an empty predicate, i.e. no gate at all
 // (absent means every state, so pre-existing callers stay byte-identical).
 //
-// The four branches mirror model.ClaimStateKey exactly:
+// The six branches mirror model.ClaimStateKey exactly:
 //
-//	none   → NOT claimed
-//	live   → claimed AND (claim_state IS NULL OR claim_state = 0)
-//	draft  → claimed AND claim_state = 1
-//	hidden → claimed AND claim_state IS NOT NULL AND claim_state NOT IN (0, 1)
+//	none     → NOT claimed
+//	live     → claimed AND (claim_state IS NULL OR claim_state = 0)
+//	draft    → claimed AND claim_state = 1
+//	pending  → claimed AND claim_state = 3
+//	declined → claimed AND claim_state = 4
+//	hidden   → claimed AND claim_state IS NOT NULL AND claim_state NOT IN (0, 1, 3, 4)
 //
 // The NULL column reads as `live` because that is how every consumer treated a
 // claim before the column existed (zero-regression semantics), and `hidden`
 // takes EVERYTHING else rather than just the literal 2 — the Go default branch's
-// conservative choice, so an unrecognized state is never published. The four are
+// conservative choice, so an unrecognized state is never published. The six are
 // therefore a partition of the table: each row satisfies exactly one, and a
-// caller naming all four gets the ungated set back.
+// caller naming all six gets the ungated set back.
+//
+// The pending/declined branches are what makes the N2 B-bucket supply
+// (claim_state ∈ {live, draft, pending}) expressible as ONE query — the
+// prerequisite the 03 定案 §8-1 red line demands be in place BEFORE any
+// consumer is switched over.
 //
 // Several states OR into one parenthesized group that ANDs with every other
 // filter — the same one-door shape the search face's Meilisearch expression has,
@@ -61,9 +68,15 @@ func claimStateWhere(states []string) (string, []any) {
 		case model.ClaimStateKeyDraft:
 			ors = append(ors, claimedSQL+" AND w.claim_state = ?")
 			args = append(args, model.ClaimStateDraft)
+		case model.ClaimStateKeyPending:
+			ors = append(ors, claimedSQL+" AND w.claim_state = ?")
+			args = append(args, model.ClaimStatePending)
+		case model.ClaimStateKeyDeclined:
+			ors = append(ors, claimedSQL+" AND w.claim_state = ?")
+			args = append(args, model.ClaimStateDeclined)
 		case model.ClaimStateKeyHidden:
-			ors = append(ors, claimedSQL+" AND w.claim_state IS NOT NULL AND w.claim_state NOT IN (?, ?)")
-			args = append(args, model.ClaimStateLive, model.ClaimStateDraft)
+			ors = append(ors, claimedSQL+" AND w.claim_state IS NOT NULL AND w.claim_state NOT IN (?, ?, ?, ?)")
+			args = append(args, model.ClaimStateLive, model.ClaimStateDraft, model.ClaimStatePending, model.ClaimStateDeclined)
 		default:
 			// Unreachable — the handler 400s every token outside the vocabulary
 			// before it gets here. Match nothing rather than widen the gate: a

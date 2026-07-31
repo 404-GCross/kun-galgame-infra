@@ -551,10 +551,10 @@ const msgBadTagIDs = "tag_id must be up to 10 comma-separated positive integers"
 // msgBadClaimState is the single 400 message for a malformed claim_state list —
 // shared by the works LIST and the works SEARCH faces, which must reject the
 // same tokens with the same words.
-const msgBadClaimState = "claim_state must be a comma-separated subset of none, live, draft, hidden"
+const msgBadClaimState = "claim_state must be a comma-separated subset of none, live, draft, pending, declined, hidden"
 
 // claimStatesPub reads the comma-separated claim_state= filter: the CLOSED
-// public claim vocabulary (model.ClaimStateKey's whole range — the four values
+// public claim vocabulary (model.ClaimStateKey's whole range — the six values
 // claimed_by.state renders). Absent/empty → nil, meaning NO gate at all, so
 // every pre-existing caller's wire stays byte-identical. ok=false — a LOUD 400
 // — on any token outside the vocabulary, never a silent drop: answering 200 to

@@ -149,10 +149,11 @@ var WorksSearchSortTokens = []string{"relevance", "released_desc", "released_asc
 // WorksSearchClaimStateTokens is the CLOSED claim_state= vocabulary (A2-R1 区 C),
 // in the order the handler quotes it and the spec documents it. It is the public
 // claim vocabulary verbatim — model.ClaimStateKey's whole range — so a caller
-// filters on the same four words a work record renders.
+// filters on the same six words a work record renders.
 var WorksSearchClaimStateTokens = []string{
 	model.ClaimStateKeyNone, model.ClaimStateKeyLive,
-	model.ClaimStateKeyDraft, model.ClaimStateKeyHidden,
+	model.ClaimStateKeyDraft, model.ClaimStateKeyPending,
+	model.ClaimStateKeyDeclined, model.ClaimStateKeyHidden,
 }
 
 // IsWorksSearchClaimState reports whether a token is in that vocabulary. A

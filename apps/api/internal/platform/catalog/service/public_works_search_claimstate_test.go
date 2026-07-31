@@ -26,6 +26,7 @@ import (
 func TestClaimStateProjectionIsOneDefinition(t *testing.T) {
 	site, wiki, pwid := "galgame_wiki", "galgame_wiki", int64(42)
 	draft, hidden, live, bogus := model.ClaimStateDraft, model.ClaimStateHidden, model.ClaimStateLive, int16(99)
+	pending, declined := model.ClaimStatePending, model.ClaimStateDeclined
 	empty := ""
 
 	for _, tc := range []struct {
@@ -42,6 +43,8 @@ func TestClaimStateProjectionIsOneDefinition(t *testing.T) {
 		{"claimed live", &wiki, &pwid, &live, model.ClaimStateKeyLive},
 		{"claimed draft", &wiki, &pwid, &draft, model.ClaimStateKeyDraft},
 		{"claimed hidden", &wiki, &pwid, &hidden, model.ClaimStateKeyHidden},
+		{"claimed pending", &wiki, &pwid, &pending, model.ClaimStateKeyPending},
+		{"claimed declined", &wiki, &pwid, &declined, model.ClaimStateKeyDeclined},
 		{"unknown state is conservatively hidden", &wiki, &pwid, &bogus, model.ClaimStateKeyHidden},
 	} {
 		if got := model.ClaimStateKey(tc.site, tc.pwid, tc.state); got != tc.want {
@@ -91,7 +94,7 @@ func TestClaimStateFilterCompilation(t *testing.T) {
 
 // TestClaimStateVocabularyIsClosed pins the token set the handler 400s against.
 func TestClaimStateVocabularyIsClosed(t *testing.T) {
-	for _, ok := range []string{"none", "live", "draft", "hidden"} {
+	for _, ok := range []string{"none", "live", "draft", "pending", "declined", "hidden"} {
 		if !IsWorksSearchClaimState(ok) {
 			t.Fatalf("%q must be a legal claim_state token", ok)
 		}

@@ -60,6 +60,8 @@ func claimStateFixture(t *testing.T) (byState map[string][]int64, all []int64) {
 		{"claimed live", &wiki, pw(9106), i16(model.ClaimStateLive)},
 		{"claimed draft", &wiki, pw(9107), i16(model.ClaimStateDraft)},
 		{"claimed hidden", &wiki, pw(9108), i16(model.ClaimStateHidden)},
+		{"claimed pending", &wiki, pw(9110), i16(model.ClaimStatePending)},
+		{"claimed declined", &wiki, pw(9111), i16(model.ClaimStateDeclined)},
 		{"claimed, state outside the vocabulary", &wiki, pw(9109), &bogus},
 	}
 
@@ -117,10 +119,11 @@ func TestClaimStateWhereMatchesProjection(t *testing.T) {
 	cleanTagTables(t)
 	byState, all := claimStateFixture(t)
 
-	// Sanity: the fixture actually exercises all four states.
+	// Sanity: the fixture actually exercises all six states.
 	for _, st := range []string{
 		model.ClaimStateKeyNone, model.ClaimStateKeyLive,
-		model.ClaimStateKeyDraft, model.ClaimStateKeyHidden,
+		model.ClaimStateKeyDraft, model.ClaimStateKeyPending,
+		model.ClaimStateKeyDeclined, model.ClaimStateKeyHidden,
 	} {
 		if len(byState[st]) == 0 {
 			t.Fatalf("fixture covers no %q row", st)
@@ -140,8 +143,8 @@ func TestClaimStateWhereMatchesProjection(t *testing.T) {
 			seen[id]++
 		}
 	}
-	// A partition, not four overlapping filters: every row landed in exactly one
-	// state, so naming all four is the ungated set and no row can hide from all.
+	// A partition, not six overlapping filters: every row landed in exactly one
+	// state, so naming all six is the ungated set and no row can hide from all.
 	for _, id := range all {
 		if seen[id] != 1 {
 			t.Fatalf("work %d matched %d states, want exactly 1", id, seen[id])
@@ -151,10 +154,11 @@ func TestClaimStateWhereMatchesProjection(t *testing.T) {
 		Sort: "id",
 		ClaimStates: []string{
 			model.ClaimStateKeyNone, model.ClaimStateKeyLive,
-			model.ClaimStateKeyDraft, model.ClaimStateKeyHidden,
+			model.ClaimStateKeyDraft, model.ClaimStateKeyPending,
+			model.ClaimStateKeyDeclined, model.ClaimStateKeyHidden,
 		},
 	}))); n != len(all) {
-		t.Fatalf("all four states selected %d rows, want the whole set of %d", n, len(all))
+		t.Fatalf("all six states selected %d rows, want the whole set of %d", n, len(all))
 	}
 }
 
@@ -172,7 +176,10 @@ func TestWorksListClaimStateGate(t *testing.T) {
 	}
 
 	live := idSet(listIDs(t, WorksListFilter{Sort: "id", ClaimStates: []string{model.ClaimStateKeyLive}}))
-	for _, st := range []string{model.ClaimStateKeyDraft, model.ClaimStateKeyHidden, model.ClaimStateKeyNone} {
+	for _, st := range []string{
+		model.ClaimStateKeyDraft, model.ClaimStateKeyPending,
+		model.ClaimStateKeyDeclined, model.ClaimStateKeyHidden, model.ClaimStateKeyNone,
+	} {
 		for _, id := range byState[st] {
 			if live[id] {
 				t.Fatalf("claim_state=live leaked a %s work (%d) — the incident this gate closes", st, id)
@@ -216,6 +223,41 @@ func TestWorksListClaimStateGate(t *testing.T) {
 	if len(onePage.Items) != len(csv) {
 		t.Fatalf("single page served %d rows but the keyset walk served %d — the gate must not depend on paging",
 			len(onePage.Items), len(csv))
+	}
+}
+
+// TestWorksListBBucketSupply pins the N2 prerequisite (03 定案 §8-1): the
+// "B bucket" — everything a submitter's own view must see, i.e.
+// claim_state ∈ {live, draft, pending} — is expressible as ONE query on this
+// face, and it excludes declined / hidden / unclaimed rows exactly. The B-bucket
+// supply must exist BEFORE any consumer is switched onto it (the moyu 52k
+// hidden-works incident is what that red line is made of).
+func TestWorksListBBucketSupply(t *testing.T) {
+	cleanTables(t)
+	cleanTagTables(t)
+	byState, _ := claimStateFixture(t)
+
+	bucket := []string{model.ClaimStateKeyLive, model.ClaimStateKeyDraft, model.ClaimStateKeyPending}
+	got := idSet(listIDs(t, WorksListFilter{Sort: "id", ClaimStates: bucket}))
+
+	var want []int64
+	for _, st := range bucket {
+		want = append(want, byState[st]...)
+	}
+	if len(got) != len(want) {
+		t.Fatalf("B bucket selected %d rows, want %d (%v)", len(got), len(want), got)
+	}
+	for _, id := range want {
+		if !got[id] {
+			t.Fatalf("B bucket missing work %d", id)
+		}
+	}
+	for _, st := range []string{model.ClaimStateKeyDeclined, model.ClaimStateKeyHidden, model.ClaimStateKeyNone} {
+		for _, id := range byState[st] {
+			if got[id] {
+				t.Fatalf("B bucket leaked a %s work (%d)", st, id)
+			}
+		}
 	}
 }
 

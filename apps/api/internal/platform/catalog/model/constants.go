@@ -165,30 +165,42 @@ const (
 // the product has taken down, so re-anchoring on `claimed_by` would resurrect
 // banned entries on a downstream site (A2-2 S1).
 //
-//   - live   — the claim is publicly visible on the product face;
-//   - draft  — it exists but is not published yet (an editorial state);
-//   - hidden — the product has withdrawn it; a consumer must render neither a
+//   - live     — the claim is publicly visible on the product face;
+//   - draft    — it exists but is not published yet (an editorial state);
+//   - pending  — it is submitted and awaiting a curator's decision (N1);
+//   - declined — a curator refused it; the submitter may revise and resubmit (N1);
+//   - hidden   — the product has withdrawn it; a consumer must render neither a
 //     claim badge nor any product content for it.
+//
+// pending/declined arrive with the editing-face nativization (refs/plans/10 §3):
+// they are the natural subdivision of the SAME axis hidden already occupies —
+// "how visible is this claim" — and NOT a copy of the wiki's status column,
+// whose numbering they deliberately do not share. Existing rows need no
+// migration: 0/1/2 keep their meaning and the column is already int16.
 //
 // Meaningful zero (live) → the column is NULLABLE with NO `default:` tag: NULL
 // means "no claim, or not yet projected" (see CatalogWork.ClaimState), and a
 // DB default would silently promote a legitimately-live row's state out of the
 // INSERT (the default-tag zero-value trap).
 const (
-	ClaimStateLive   int16 = 0
-	ClaimStateDraft  int16 = 1
-	ClaimStateHidden int16 = 2
+	ClaimStateLive     int16 = 0
+	ClaimStateDraft    int16 = 1
+	ClaimStateHidden   int16 = 2
+	ClaimStatePending  int16 = 3
+	ClaimStateDeclined int16 = 4
 )
 
-// The PUBLIC claim vocabulary — the four values `claimed_by.state` renders and
+// The PUBLIC claim vocabulary — the six values `claimed_by.state` renders and
 // the works search index's `claim_state` filters on. `none` has no column
 // counterpart: it is the UNCLAIMED registry row, which the read face renders as
 // `claimed_by: null`.
 const (
-	ClaimStateKeyNone   = "none"
-	ClaimStateKeyLive   = "live"
-	ClaimStateKeyDraft  = "draft"
-	ClaimStateKeyHidden = "hidden"
+	ClaimStateKeyNone     = "none"
+	ClaimStateKeyLive     = "live"
+	ClaimStateKeyDraft    = "draft"
+	ClaimStateKeyPending  = "pending"
+	ClaimStateKeyDeclined = "declined"
+	ClaimStateKeyHidden   = "hidden"
 )
 
 // ClaimStateKey projects a registry row's claim columns onto that vocabulary.
@@ -208,8 +220,9 @@ const (
 //   - claimed, column NULL → `live`. That is a claimed row no projector has
 //     stamped yet, and `live` is how every consumer treated claimed_by before
 //     the column existed (zero-regression semantics).
-//   - 0/1/2 → live/draft/hidden; anything OUTSIDE the vocabulary → `hidden`,
-//     the conservative choice: an unrecognized state must never be published.
+//   - 0/1/2/3/4 → live/draft/hidden/pending/declined; anything OUTSIDE the
+//     vocabulary → `hidden`, the conservative choice: an unrecognized state must
+//     never be published.
 func ClaimStateKey(site *string, productWorkID *int64, claimState *int16) string {
 	if site == nil || *site == "" || productWorkID == nil {
 		return ClaimStateKeyNone
@@ -222,6 +235,10 @@ func ClaimStateKey(site *string, productWorkID *int64, claimState *int16) string
 		return ClaimStateKeyLive
 	case ClaimStateDraft:
 		return ClaimStateKeyDraft
+	case ClaimStatePending:
+		return ClaimStateKeyPending
+	case ClaimStateDeclined:
+		return ClaimStateKeyDeclined
 	default:
 		return ClaimStateKeyHidden
 	}

@@ -126,7 +126,11 @@ func TestWorksListClaimStateVocabulary(t *testing.T) {
 	}
 
 	// The whole vocabulary is accepted, in any combination.
-	for _, raw := range []string{"none", "live", "draft", "hidden", "none,live,draft,hidden", "%20live%20,%20draft%20"} {
+	for _, raw := range []string{
+		"none", "live", "draft", "pending", "declined", "hidden",
+		"none,live,draft,pending,declined,hidden", "live,draft,pending",
+		"%20live%20,%20draft%20",
+	} {
 		t.Run("200 "+raw, func(t *testing.T) {
 			code, _ := getJSON(t, app, "/v1/catalog/works?claim_state="+raw)
 			require.Equal(t, 200, code)

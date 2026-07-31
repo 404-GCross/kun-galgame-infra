@@ -22,14 +22,20 @@ type PublicClaimedBy struct {
 	// State is the claim's VISIBILITY on that product face (A2-1e / R7) — a
 	// CATALOG-owned vocabulary, never a product's own status machine:
 	//
-	//	live   — publicly visible there; follow the pointer freely
-	//	draft  — exists but unpublished; render no product content for it
-	//	hidden — the product withdrew it; render neither badge nor content
+	//	live     — publicly visible there; follow the pointer freely
+	//	draft    — exists but unpublished; render no product content for it
+	//	pending  — submitted, awaiting a curator's decision; not public yet
+	//	declined — a curator refused it; not public, may be revised
+	//	hidden   — the product withdrew it; render neither badge nor content
 	//
 	// Always present. It is the difference between "this work is on the wiki"
 	// and "this work has a wiki row" — without it a consumer that re-anchors on
 	// claimed_by silently republishes entries the product took down.
-	State string `json:"state" doc:"live|draft|hidden"`
+	//
+	// live is the ONLY value a consumer may follow through to product content;
+	// pending/declined joined the vocabulary with the editing-face nativization
+	// and are, like draft and hidden, "do not render" for every consumer.
+	State string `json:"state" doc:"live|draft|pending|declined|hidden"`
 	// ContentLimit is the claim's EDITORIAL DISPLAY axis (A2-R5) — whether the
 	// material a consumer would RENDER for this work (cover, screenshots,
 	// synopsis) is safe to put on a public page. For a claimed work it is the

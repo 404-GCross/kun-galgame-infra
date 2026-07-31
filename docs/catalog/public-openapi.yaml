@@ -868,7 +868,7 @@ components:
         site:
           type: string
         state:
-          description: live|draft|hidden
+          description: live|draft|pending|declined|hidden
           type: string
         work_id:
           format: int64
@@ -3239,12 +3239,12 @@ paths:
               - "true"
               - "false"
             type: string
-        - description: "Comma-separated CLOSED vocabulary: none,live,draft,hidden — the values claimed_by.state renders on these very items (none = unclaimed registry row). Matching works must be in ANY of the listed states. An unknown token is a 400. Absent = no gate (every state), which keeps pre-existing callers byte-identical. Word-for-word the works/search parameter of the same name; a product site listing an entity's member works should pass claim_state=live, since the claimed parameter alone cannot tell a LIVE claim from a DRAFT (unpublished) or WITHDRAWN one. Unlike the search face this is a live registry predicate, so a claim-state change takes effect immediately — there is no index to wait for"
+        - description: "Comma-separated CLOSED vocabulary: none,live,draft,pending,declined,hidden — the values claimed_by.state renders on these very items (none = unclaimed registry row). Matching works must be in ANY of the listed states. An unknown token is a 400. Absent = no gate (every state), which keeps pre-existing callers byte-identical. Word-for-word the works/search parameter of the same name; a product site listing an entity's member works should pass claim_state=live, since the claimed parameter alone cannot tell a LIVE claim from a DRAFT (unpublished) or WITHDRAWN one. Unlike the search face this is a live registry predicate, so a claim-state change takes effect immediately — there is no index to wait for"
           explode: false
           in: query
           name: claim_state
           schema:
-            description: "Comma-separated CLOSED vocabulary: none,live,draft,hidden — the values claimed_by.state renders on these very items (none = unclaimed registry row). Matching works must be in ANY of the listed states. An unknown token is a 400. Absent = no gate (every state), which keeps pre-existing callers byte-identical. Word-for-word the works/search parameter of the same name; a product site listing an entity's member works should pass claim_state=live, since the claimed parameter alone cannot tell a LIVE claim from a DRAFT (unpublished) or WITHDRAWN one. Unlike the search face this is a live registry predicate, so a claim-state change takes effect immediately — there is no index to wait for"
+            description: "Comma-separated CLOSED vocabulary: none,live,draft,pending,declined,hidden — the values claimed_by.state renders on these very items (none = unclaimed registry row). Matching works must be in ANY of the listed states. An unknown token is a 400. Absent = no gate (every state), which keeps pre-existing callers byte-identical. Word-for-word the works/search parameter of the same name; a product site listing an entity's member works should pass claim_state=live, since the claimed parameter alone cannot tell a LIVE claim from a DRAFT (unpublished) or WITHDRAWN one. Unlike the search face this is a live registry predicate, so a claim-state change takes effect immediately — there is no index to wait for"
             type: string
         - description: "Comma-separated CLOSED vocabulary: sfw,nsfw — the EDITORIAL DISPLAY axis, i.e. the values claimed_by.content_limit renders on these very items. An unknown token is a 400. Absent = no gate (both values), which keeps pre-existing callers byte-identical. Word-for-word the works/search parameter of the same name. This is NOT content_rating: content_rating is the AGE axis (what the GAME is rated), this is whether the material you would RENDER (cover, screenshots, synopsis) is safe to publish — a claimed work reads its wiki body's editorial flag, a bodyless one falls back to r18=nsfw. Unlike the search face this is a live registry predicate, so an editorial change takes effect immediately"
           explode: false
@@ -3400,12 +3400,12 @@ paths:
               - "true"
               - "false"
             type: string
-        - description: "Comma-separated CLOSED vocabulary: none,live,draft,hidden — the values claimed_by.state renders (none = unclaimed registry row). Matching works must be in ANY of the listed states. An unknown token is a 400. Absent = no gate (every state), which keeps pre-existing callers byte-identical. A product site rendering its own catalogue should pass claim_state=live: the claimed parameter alone cannot tell a LIVE claim from a DRAFT (unpublished) or WITHDRAWN one. Freshness follows the index: a claim-state change is reflected by the next reindex-catalog run (daily cron), like every other indexed facet"
+        - description: "Comma-separated CLOSED vocabulary: none,live,draft,pending,declined,hidden — the values claimed_by.state renders (none = unclaimed registry row). Matching works must be in ANY of the listed states. An unknown token is a 400. Absent = no gate (every state), which keeps pre-existing callers byte-identical. A product site rendering its own catalogue should pass claim_state=live: the claimed parameter alone cannot tell a LIVE claim from a DRAFT (unpublished) or WITHDRAWN one. Freshness follows the index: a claim-state change is reflected by the next reindex-catalog run (daily cron), like every other indexed facet"
           explode: false
           in: query
           name: claim_state
           schema:
-            description: "Comma-separated CLOSED vocabulary: none,live,draft,hidden — the values claimed_by.state renders (none = unclaimed registry row). Matching works must be in ANY of the listed states. An unknown token is a 400. Absent = no gate (every state), which keeps pre-existing callers byte-identical. A product site rendering its own catalogue should pass claim_state=live: the claimed parameter alone cannot tell a LIVE claim from a DRAFT (unpublished) or WITHDRAWN one. Freshness follows the index: a claim-state change is reflected by the next reindex-catalog run (daily cron), like every other indexed facet"
+            description: "Comma-separated CLOSED vocabulary: none,live,draft,pending,declined,hidden — the values claimed_by.state renders (none = unclaimed registry row). Matching works must be in ANY of the listed states. An unknown token is a 400. Absent = no gate (every state), which keeps pre-existing callers byte-identical. A product site rendering its own catalogue should pass claim_state=live: the claimed parameter alone cannot tell a LIVE claim from a DRAFT (unpublished) or WITHDRAWN one. Freshness follows the index: a claim-state change is reflected by the next reindex-catalog run (daily cron), like every other indexed facet"
             type: string
         - description: "Comma-separated CLOSED vocabulary: sfw,nsfw — the EDITORIAL DISPLAY axis, i.e. the values claimed_by.content_limit renders. An unknown token is a 400. Absent = no gate (both values), which keeps pre-existing callers byte-identical. This is NOT content_rating: content_rating is the AGE axis (what the GAME is rated), this is whether the material you would RENDER (cover, screenshots, synopsis) is safe to publish. Most r18 games carry editorially sfw display material, so filtering by content_rating instead hides the majority of a healthy catalogue. Orthogonal to nsfw= and claim_state=: all of them AND together in one filter, so total, facets and items stay behind the same gate"
           explode: false
