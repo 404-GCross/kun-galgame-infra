@@ -250,9 +250,10 @@ const (
 	forumSubmitterQuery = `SELECT id, creator_user_id AS uid FROM galgame
 	                       WHERE creator_user_id IS NOT NULL AND creator_user_id > 0`
 
-	// moyuSubmitterQuery is the second lane: a work submitted on moyu and never
-	// touched on the forum has no forum stub, so without this its events would
-	// be system-owned and moyu's own mine page would come back empty.
+	// moyuSubmitterQuery is the second lane: a work whose entry was created on
+	// moyu and never touched on the forum has no forum stub, so without this its
+	// events would be system-owned and moyu's own mine page would come back
+	// empty.
 	//
 	// patch.id IS the wiki gid — VERIFIED, not assumed, because the obvious
 	// alternative is a trap. galgame_migrations(source_db='moyu') looks like the
@@ -263,9 +264,20 @@ const (
 	// wiki vndb_id — i.e. the moyu row names the gid it is joined to. moyu
 	// adopted the gid as its own primary key at migration time.
 	//
-	// user_id (not creator_id) per the P4 ruling. The two differ on 3,430 of
-	// 10,233 rows, so this is a real choice and not a synonym.
-	moyuSubmitterQuery = `SELECT id, user_id AS uid FROM patch WHERE user_id > 0`
+	// creator_id, NOT user_id, and the difference is the whole point (the two
+	// disagree on 3,430 of 10,233 rows). moyu's own model settles it
+	// (patch/model/model.go): CreatorID is "the FROZEN snapshot of the wiki
+	// entry's creator (an OAuth user id)" — precisely the person a claim's birth
+	// event names — while UserID is the PATCH PUBLISHER, which `createPatchRow`
+	// TRANSFERS on stub adoption and which is a placeholder owner on any row
+	// still flagged is_stub. Naming a publisher as the entry's submitter would
+	// be misattribution, and there is no fallback for the same reason: a wrong
+	// name is worse than an honest actor=0.
+	//
+	// NULL = unknown by the model's own doc, so it is excluded rather than
+	// substituted.
+	moyuSubmitterQuery = `SELECT id, creator_id AS uid FROM patch
+	                      WHERE creator_id IS NOT NULL AND creator_id > 0`
 )
 
 // loadSubmitters reads one product's gid → submitter map. READ ONLY, and the
