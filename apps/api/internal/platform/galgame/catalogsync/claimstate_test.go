@@ -125,3 +125,54 @@ func TestClaimStateDryRunWritesNothing(t *testing.T) {
 	assert.Equal(t, 1, stats.Claim.ClaimStateWritten, "dry run reports what WOULD change")
 	assert.Nil(t, claimStateOfWork(t, 21), "dry run must not write")
 }
+
+// TestClaimStateSkipsGovernedWorks pins wave 155 ruling 1: once the registry's
+// own lifecycle endpoints have acted on a claim — the presence of any
+// catalog_claim_event row is the whole signal — this projector stops recomputing
+// its state from galgame.status. Without the skip, an approve/decline/ban made
+// through the catalog face is reverted within the day, and the two states the
+// catalog vocabulary gained in wave 154 (pending, declined) can never survive:
+// claimStateOf cannot even produce them.
+func TestClaimStateSkipsGovernedWorks(t *testing.T) {
+	clean(t)
+	seedGameStatus(t, 31, gmodel.GalgameStatusPublished) // stays projected
+	seedGameStatus(t, 32, gmodel.GalgameStatusPublished) // taken over below
+
+	_, err := New(testDB, testDB, nil, Options{Phase: PhaseClaim}).Run(t.Context(), PhaseClaim)
+	require.NoError(t, err)
+
+	var governedWorkID int64
+	require.NoError(t, testDB.Raw(
+		`SELECT id FROM catalog_work WHERE site = ? AND product_work_id = 32`, siteGalgame).
+		Scan(&governedWorkID).Error)
+
+	// The catalog face moves it to `pending` and records the event — the same
+	// pair of writes ClaimLifecycleService.Act performs in one transaction.
+	require.NoError(t, testDB.Exec(
+		`UPDATE catalog_work SET claim_state = ? WHERE id = ?`, model.ClaimStatePending, governedWorkID).Error)
+	require.NoError(t, testDB.Exec(
+		`INSERT INTO catalog_claim_event (work_id, from_state, to_state, actor_uid, site)
+		 VALUES (?, ?, ?, 1, ?)`,
+		governedWorkID, model.ClaimStateDraft, model.ClaimStatePending, siteGalgame).Error)
+
+	// Both wiki rows now say "published", which would project to live.
+	stats, err := New(testDB, testDB, nil, Options{Phase: PhaseClaim}).Run(t.Context(), PhaseClaim)
+	require.NoError(t, err)
+	assert.Equal(t, 0, stats.Claim.ClaimStateWritten, "nothing left to project")
+	assert.Equal(t, 1, stats.Claim.ClaimStateGoverned, "exactly the taken-over claim is skipped")
+
+	got := claimStateOfWork(t, 32)
+	require.NotNil(t, got)
+	assert.Equal(t, model.ClaimStatePending, *got, "a governed claim keeps the state the catalog gave it")
+
+	// The ungoverned neighbour still follows the wiki, so the handover is per
+	// work and the existing population is untouched.
+	require.NoError(t, testDB.Exec(`UPDATE galgame SET status = ? WHERE id = 31`,
+		gmodel.GalgameStatusBanned).Error)
+	stats2, err := New(testDB, testDB, nil, Options{Phase: PhaseClaim}).Run(t.Context(), PhaseClaim)
+	require.NoError(t, err)
+	assert.Equal(t, 1, stats2.Claim.ClaimStateWritten)
+	untouched := claimStateOfWork(t, 31)
+	require.NotNil(t, untouched)
+	assert.Equal(t, model.ClaimStateHidden, *untouched)
+}

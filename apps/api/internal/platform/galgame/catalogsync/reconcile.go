@@ -107,6 +107,9 @@ type ClaimStats struct {
 	// re-running it is the backfill (`--phase claim --apply` over the whole
 	// population is how the existing rows get their first value).
 	ClaimStateWritten int
+	// ClaimStateGoverned counts the claimed works this run did NOT project
+	// because the catalog has taken their lifecycle over (wave 155 ruling 1).
+	ClaimStateGoverned int
 }
 
 // EGStats reports the erogamespace rosetta phase.

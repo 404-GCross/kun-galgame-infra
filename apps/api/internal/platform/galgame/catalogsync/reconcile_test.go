@@ -66,6 +66,7 @@ func clean(t *testing.T) {
 	t.Helper()
 	for _, table := range []string{
 		"catalog_external_ref", "catalog_revision", "catalog_redirect",
+		"catalog_claim_event",
 		"catalog_work_title", "catalog_release", "catalog_work",
 		"galgame", "src_bangumi.subject", "games",
 	} {

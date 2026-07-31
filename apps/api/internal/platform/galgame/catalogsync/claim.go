@@ -131,11 +131,12 @@ func (r *Reconciler) runClaim(ctx context.Context) (ClaimStats, error) {
 
 	// Project the claim VISIBILITY state (R7) for every claimed work. Runs
 	// last so it also covers the works this pass just minted.
-	n, err := r.syncClaimStates(claimed)
+	n, governed, err := r.syncClaimStates(claimed)
 	if err != nil {
 		return stats, fmt.Errorf("sync claim_state: %w", err)
 	}
 	stats.ClaimStateWritten = n
+	stats.ClaimStateGoverned = governed
 
 	return stats, nil
 }
@@ -174,22 +175,42 @@ func claimStateOf(wikiStatus int16) int16 {
 // pool from catalog ids, this one drives the catalog pool from wiki statuses),
 // because the two pools may be different connections and the join therefore
 // has to happen through a VALUES list.
-func (r *Reconciler) syncClaimStates(claimed map[int64]int64) (int, error) {
+//
+// GOVERNED WORKS ARE SKIPPED (wave 155 ruling 1). A work with any
+// catalog_claim_event row has had its lifecycle taken over by the registry's own
+// semantic action endpoints, and this projector — which recomputes the state
+// from galgame.status and can only ever emit live/draft/hidden — would revert
+// an approve/decline/ban within the day and erase the two states (pending,
+// declined) the catalog vocabulary gained in wave 154. Handover is per work and
+// happens the first time a human acts through the catalog face; a work nobody
+// has acted on keeps projecting exactly as before, which is why the existing
+// 64k-row population sees no behaviour change. Returns (cells changed, works
+// skipped as governed).
+func (r *Reconciler) syncClaimStates(claimed map[int64]int64) (int, int, error) {
 	if len(claimed) == 0 {
-		return 0, nil
+		return 0, 0, nil
+	}
+	governed, err := r.governedWorks()
+	if err != nil {
+		return 0, 0, err
 	}
 	type pair struct{ workID, state int64 }
 	pairs := make([]pair, 0, len(claimed))
+	skipped := 0
 	for i := range r.games {
 		g := &r.games[i]
 		workID, ok := claimed[g.ID]
 		if !ok || workID == 0 { // unclaimed, or a dry-run placeholder id
 			continue
 		}
+		if _, taken := governed[workID]; taken {
+			skipped++
+			continue
+		}
 		pairs = append(pairs, pair{workID: workID, state: int64(claimStateOf(g.Status))})
 	}
 	if len(pairs) == 0 {
-		return 0, nil
+		return 0, skipped, nil
 	}
 
 	const chunk = 1000
@@ -222,7 +243,7 @@ func (r *Reconciler) syncClaimStates(claimed map[int64]int64) (int, error) {
 			      JOIN (VALUES ` + values + `) AS v(wid, st) ON w.id = v.wid
 			      WHERE w.claim_state IS DISTINCT FROM v.st`
 			if err := r.catalog.Raw(q, args...).Scan(&n).Error; err != nil {
-				return changed, err
+				return changed, skipped, err
 			}
 			changed += int(n)
 			continue
@@ -232,11 +253,31 @@ func (r *Reconciler) syncClaimStates(claimed map[int64]int64) (int, error) {
 		      WHERE w.id = v.wid AND w.claim_state IS DISTINCT FROM v.st`
 		res := r.catalog.Exec(q, args...)
 		if res.Error != nil {
-			return changed, res.Error
+			return changed, skipped, res.Error
 		}
 		changed += int(res.RowsAffected)
 	}
-	return changed, nil
+	return changed, skipped, nil
+}
+
+// governedWorks is the set of works whose lifecycle the catalog has taken over
+// — those carrying at least one catalog_claim_event row.
+//
+// One DISTINCT scan of the whole event table rather than a per-row EXISTS or a
+// 64k-element IN list: the table only grows when a human acts through a
+// lifecycle endpoint, so it stays orders of magnitude smaller than the claimed
+// population it filters, and one round trip keeps this projector's cost where
+// it was.
+func (r *Reconciler) governedWorks() (map[int64]struct{}, error) {
+	var ids []int64
+	if err := r.catalog.Raw(`SELECT DISTINCT work_id FROM catalog_claim_event`).Scan(&ids).Error; err != nil {
+		return nil, fmt.Errorf("load governed works: %w", err)
+	}
+	out := make(map[int64]struct{}, len(ids))
+	for _, id := range ids {
+		out[id] = struct{}{}
+	}
+	return out, nil
 }
 
 // writeBackWorkIDs sets wiki galgame.catalog_work_id from the given galgame_id →
