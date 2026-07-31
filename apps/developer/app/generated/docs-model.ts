@@ -128,7 +128,7 @@ export const docsModel: DocsModel = {
                                     {
                                       "name": "state",
                                       "required": true,
-                                      "doc": "live|draft|hidden",
+                                      "doc": "live|draft|pending|declined|hidden",
                                       "type": "string"
                                     },
                                     {
@@ -706,7 +706,7 @@ export const docsModel: DocsModel = {
                                     {
                                       "name": "state",
                                       "required": true,
-                                      "doc": "live|draft|hidden",
+                                      "doc": "live|draft|pending|declined|hidden",
                                       "type": "string"
                                     },
                                     {
@@ -1277,7 +1277,7 @@ export const docsModel: DocsModel = {
                                     {
                                       "name": "state",
                                       "required": true,
-                                      "doc": "live|draft|hidden",
+                                      "doc": "live|draft|pending|declined|hidden",
                                       "type": "string"
                                     },
                                     {
@@ -2166,7 +2166,7 @@ export const docsModel: DocsModel = {
                                         {
                                           "name": "state",
                                           "required": true,
-                                          "doc": "live|draft|hidden",
+                                          "doc": "live|draft|pending|declined|hidden",
                                           "type": "string"
                                         },
                                         {
@@ -3017,7 +3017,7 @@ export const docsModel: DocsModel = {
                                         {
                                           "name": "state",
                                           "required": true,
-                                          "doc": "live|draft|hidden",
+                                          "doc": "live|draft|pending|declined|hidden",
                                           "type": "string"
                                         },
                                         {
@@ -3383,7 +3383,7 @@ export const docsModel: DocsModel = {
                                             {
                                               "name": "state",
                                               "required": true,
-                                              "doc": "live|draft|hidden",
+                                              "doc": "live|draft|pending|declined|hidden",
                                               "type": "string"
                                             },
                                             {
@@ -3441,7 +3441,7 @@ export const docsModel: DocsModel = {
                               {
                                 "name": "state",
                                 "required": true,
-                                "doc": "live|draft|hidden",
+                                "doc": "live|draft|pending|declined|hidden",
                                 "type": "string"
                               },
                               {
@@ -3600,7 +3600,7 @@ export const docsModel: DocsModel = {
                                             {
                                               "name": "state",
                                               "required": true,
-                                              "doc": "live|draft|hidden",
+                                              "doc": "live|draft|pending|declined|hidden",
                                               "type": "string"
                                             },
                                             {
@@ -3704,7 +3704,7 @@ export const docsModel: DocsModel = {
                                             {
                                               "name": "state",
                                               "required": true,
-                                              "doc": "live|draft|hidden",
+                                              "doc": "live|draft|pending|declined|hidden",
                                               "type": "string"
                                             },
                                             {
@@ -3893,7 +3893,7 @@ export const docsModel: DocsModel = {
                                   {
                                     "name": "state",
                                     "required": true,
-                                    "doc": "live|draft|hidden",
+                                    "doc": "live|draft|pending|declined|hidden",
                                     "type": "string"
                                   },
                                   {
@@ -4259,7 +4259,7 @@ export const docsModel: DocsModel = {
                                                   {
                                                     "name": "state",
                                                     "required": true,
-                                                    "doc": "live|draft|hidden",
+                                                    "doc": "live|draft|pending|declined|hidden",
                                                     "type": "string"
                                                   },
                                                   {
@@ -4317,7 +4317,7 @@ export const docsModel: DocsModel = {
                                     {
                                       "name": "state",
                                       "required": true,
-                                      "doc": "live|draft|hidden",
+                                      "doc": "live|draft|pending|declined|hidden",
                                       "type": "string"
                                     },
                                     {
@@ -4481,7 +4481,7 @@ export const docsModel: DocsModel = {
                                                   {
                                                     "name": "state",
                                                     "required": true,
-                                                    "doc": "live|draft|hidden",
+                                                    "doc": "live|draft|pending|declined|hidden",
                                                     "type": "string"
                                                   },
                                                   {
@@ -4585,7 +4585,7 @@ export const docsModel: DocsModel = {
                                                   {
                                                     "name": "state",
                                                     "required": true,
-                                                    "doc": "live|draft|hidden",
+                                                    "doc": "live|draft|pending|declined|hidden",
                                                     "type": "string"
                                                   },
                                                   {
@@ -4784,7 +4784,7 @@ export const docsModel: DocsModel = {
                                         {
                                           "name": "state",
                                           "required": true,
-                                          "doc": "live|draft|hidden",
+                                          "doc": "live|draft|pending|declined|hidden",
                                           "type": "string"
                                         },
                                         {
@@ -5021,7 +5021,7 @@ export const docsModel: DocsModel = {
                                         {
                                           "name": "state",
                                           "required": true,
-                                          "doc": "live|draft|hidden",
+                                          "doc": "live|draft|pending|declined|hidden",
                                           "type": "string"
                                         },
                                         {
@@ -5923,7 +5923,7 @@ export const docsModel: DocsModel = {
                                     {
                                       "name": "state",
                                       "required": true,
-                                      "doc": "live|draft|hidden",
+                                      "doc": "live|draft|pending|declined|hidden",
                                       "type": "string"
                                     },
                                     {
@@ -6565,7 +6565,7 @@ export const docsModel: DocsModel = {
                                     {
                                       "name": "state",
                                       "required": true,
-                                      "doc": "live|draft|hidden",
+                                      "doc": "live|draft|pending|declined|hidden",
                                       "type": "string"
                                     },
                                     {
@@ -6711,7 +6711,7 @@ export const docsModel: DocsModel = {
                   "in": "query",
                   "required": false,
                   "type": "string",
-                  "doc": "Comma-separated CLOSED vocabulary: none,live,draft,hidden — the values claimed_by.state renders on these very items (none = unclaimed registry row). Matching works must be in ANY of the listed states. An unknown token is a 400. Absent = no gate (every state), which keeps pre-existing callers byte-identical. Word-for-word the works/search parameter of the same name; a product site listing an entity's member works should pass claim_state=live, since the claimed parameter alone cannot tell a LIVE claim from a DRAFT (unpublished) or WITHDRAWN one. Unlike the search face this is a live registry predicate, so a claim-state change takes effect immediately — there is no index to wait for"
+                  "doc": "Comma-separated CLOSED vocabulary: none,live,draft,pending,declined,hidden — the values claimed_by.state renders on these very items (none = unclaimed registry row). Matching works must be in ANY of the listed states. An unknown token is a 400. Absent = no gate (every state), which keeps pre-existing callers byte-identical. Word-for-word the works/search parameter of the same name; a product site listing an entity's member works should pass claim_state=live, since the claimed parameter alone cannot tell a LIVE claim from a DRAFT (unpublished) or WITHDRAWN one. Unlike the search face this is a live registry predicate, so a claim-state change takes effect immediately — there is no index to wait for"
                 },
                 {
                   "name": "content_limit",
@@ -6864,7 +6864,7 @@ export const docsModel: DocsModel = {
                                     {
                                       "name": "state",
                                       "required": true,
-                                      "doc": "live|draft|hidden",
+                                      "doc": "live|draft|pending|declined|hidden",
                                       "type": "string"
                                     },
                                     {
@@ -7434,7 +7434,7 @@ export const docsModel: DocsModel = {
                               {
                                 "name": "state",
                                 "required": true,
-                                "doc": "live|draft|hidden",
+                                "doc": "live|draft|pending|declined|hidden",
                                 "type": "string"
                               },
                               {
@@ -7886,7 +7886,7 @@ export const docsModel: DocsModel = {
                                         {
                                           "name": "state",
                                           "required": true,
-                                          "doc": "live|draft|hidden",
+                                          "doc": "live|draft|pending|declined|hidden",
                                           "type": "string"
                                         },
                                         {
@@ -8110,7 +8110,7 @@ export const docsModel: DocsModel = {
                                     {
                                       "name": "state",
                                       "required": true,
-                                      "doc": "live|draft|hidden",
+                                      "doc": "live|draft|pending|declined|hidden",
                                       "type": "string"
                                     },
                                     {
@@ -8357,7 +8357,7 @@ export const docsModel: DocsModel = {
                   "in": "query",
                   "required": false,
                   "type": "string",
-                  "doc": "Comma-separated CLOSED vocabulary: none,live,draft,hidden — the values claimed_by.state renders (none = unclaimed registry row). Matching works must be in ANY of the listed states. An unknown token is a 400. Absent = no gate (every state), which keeps pre-existing callers byte-identical. A product site rendering its own catalogue should pass claim_state=live: the claimed parameter alone cannot tell a LIVE claim from a DRAFT (unpublished) or WITHDRAWN one. Freshness follows the index: a claim-state change is reflected by the next reindex-catalog run (daily cron), like every other indexed facet"
+                  "doc": "Comma-separated CLOSED vocabulary: none,live,draft,pending,declined,hidden — the values claimed_by.state renders (none = unclaimed registry row). Matching works must be in ANY of the listed states. An unknown token is a 400. Absent = no gate (every state), which keeps pre-existing callers byte-identical. A product site rendering its own catalogue should pass claim_state=live: the claimed parameter alone cannot tell a LIVE claim from a DRAFT (unpublished) or WITHDRAWN one. Freshness follows the index: a claim-state change is reflected by the next reindex-catalog run (daily cron), like every other indexed facet"
                 },
                 {
                   "name": "content_limit",
@@ -8532,7 +8532,7 @@ export const docsModel: DocsModel = {
                                     {
                                       "name": "state",
                                       "required": true,
-                                      "doc": "live|draft|hidden",
+                                      "doc": "live|draft|pending|declined|hidden",
                                       "type": "string"
                                     },
                                     {
