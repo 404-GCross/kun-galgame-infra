@@ -192,12 +192,22 @@ func sources() []model.CatalogSource {
 		{ID: 9, Key: "official_site", TrustTier: 2},
 		{ID: 10, Key: "twitter", TrustTier: 2},
 		{ID: 11, Key: "pixiv", TrustTier: 2},
-		// galgame_wiki is the first-party KUN galgame product (site key
-		// 'galgame_wiki'). It backs the media-aggregation read face's
-		// provenance for CLAIMED works: a claimed work's intro is bridged from
-		// galgame.intro_* and attributed to this source (step 52, refs/proj/51
-		// §8.C). First-party product → trust_tier 0.
-		{ID: 12, Key: "galgame_wiki", TrustTier: 0, Note: "first-party galgame wiki product (bridged media provenance)"},
+		// curated is the FIRST-PARTY HUMAN lane: the source_id every facet row
+		// a human edit writes carries, and the one mechanism separating human
+		// writes from importer writes on the multi-valued facets (03 定案 §0).
+		//
+		// It was seeded as `galgame_wiki` from step 52 until wave 161, when the
+		// last mirror step retired and the wiki product it was named after
+		// ceased to exist. Only the LABEL moved; id 12 is untouched, because
+		// 60k+ works' intros / tags / covers / screenshots are already filed
+		// under it and a fresh id would split one lane in two and force every
+		// read face to know both (03 §1 / §9-3).
+		//
+		// Renaming a registry KEY is a wire-visible act — source_keys[] on the
+		// public face renders it, and a consumer that resolves gids through
+		// this key sees an empty bridge if it only knows the old spelling. See
+		// the dual-read note on curatedSourceKeys in service/read_service.go.
+		{ID: 12, Key: "curated", TrustTier: 0, Note: "first-party curated/human lane (was galgame_wiki until wave 161)"},
 		// upscale is the first-party DERIVED cover source: galgame_cover rows whose
 		// source='upscale' are AI-upscaled portrait covers produced inside the
 		// galgame wiki. The cover bridge (step 53, refs/proj/51 §8.C) maps that
@@ -303,6 +313,7 @@ func unmarshalData(name string, out any) error {
 // Run upserts all registry seeds. Idempotent: conflicting rows only get
 // their display fields refreshed; is_deprecated and behavioral fields
 // (trust_tier, domain, is_symmetric, role_id, ...) are never overwritten.
+// catalog_source additionally refreshes `key` — see the note at its call.
 func Run(db *gorm.DB) error {
 	roles, roleMap, err := loadGeneratedRoles()
 	if err != nil {
@@ -319,7 +330,13 @@ func Run(db *gorm.DB) error {
 	if err := upsert(db, "catalog_medium", media(), []string{"id"}, []string{"name_cn"}); err != nil {
 		return err
 	}
-	if err := upsert(db, "catalog_source", sources(), []string{"id"}, []string{"note"}); err != nil {
+	// `key` joins `note` in the refreshed set at wave 161. A source's key is
+	// its public NAME (the public face renders it in source_keys[]), and this
+	// slice is declared the single write path for the registry vocabulary — a
+	// key that could only be corrected by hand-written SQL would mean the two
+	// disagree with no mechanism to converge. The concrete need is source 12,
+	// renamed galgame_wiki → curated; the id never moves.
+	if err := upsert(db, "catalog_source", sources(), []string{"id"}, []string{"note", "key"}); err != nil {
 		return err
 	}
 	if err := upsert(db, "catalog_role", roles, []string{"id"}, []string{"category", "name_cn", "name_ja", "name_en"}); err != nil {

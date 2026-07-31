@@ -63,10 +63,37 @@ func attrSources(raw datatypes.JSON) map[string]string {
 // product side keys its doujin rows on the DLsite workno).
 const sourceKeyDlsite = "dlsite"
 
-// sourceKeyGalgameWiki is the catalog_source key attributed to a CLAIMED work's
-// bridged intro (step 52, refs/proj/51 §8.C) — the first-party galgame wiki
-// product whose body the intro is read from.
-const sourceKeyGalgameWiki = "galgame_wiki"
+// sourceKeyCurated is the catalog_source key of the first-party human lane
+// (source id 12). Wave 161 renamed it from `galgame_wiki` — the wiki product it
+// was named after no longer exists — while the id stayed put.
+const sourceKeyCurated = "curated"
+
+// curatedSourceKeys is that source's key resolved DUAL-READ: both spellings,
+// whichever the row currently carries.
+//
+// The rename lands through the seed, which runs as its own migration job before
+// this service starts. That ordering is not something this code can rely on: a
+// redeploy that does not re-pull an image runs yesterday's binary against
+// today's registry (and a rollback runs it deliberately). A single-spelling
+// lookup in that window resolves to id 0 — and id 0 is not an error here, it is
+// a silently wrong source attribution on every bridged row. Accepting both
+// spellings makes the two orderings indistinguishable.
+//
+// The stale spelling can be dropped once the window has closed; it matches
+// nothing by itself, so keeping it costs one array element.
+var curatedSourceKeys = []string{sourceKeyCurated, "galgame_wiki"}
+
+// curatedSourceID picks whichever of the two spellings the registry answered
+// with. Zero when the source is absent entirely, which is the same "unknown
+// source" case every caller already handles.
+func curatedSourceID(byKey map[string]int16) int16 {
+	for _, k := range curatedSourceKeys {
+		if id, ok := byKey[k]; ok {
+			return id
+		}
+	}
+	return 0
+}
 
 // Media-bridge provenance keys (step 53/54, §8.C): galgame_cover /
 // galgame_screenshot each carry a `source` TEXT column, so — unlike the intro
@@ -85,14 +112,14 @@ const sourceKeyErogamespace = "erogamespace"
 
 // galgameMediaSourceKey maps a galgame_cover/galgame_screenshot.source text
 // value to the catalog_source key its bridged media row is attributed to. Empty
-// source (a wiki user upload) is first-party galgame_wiki, consistent with the
-// intro bridge; vndb/bangumi keep their upstream provenance; upscale is the
+// source (a wiki user upload) is the first-party curated lane, consistent with
+// the intro bridge; vndb/bangumi keep their upstream provenance; upscale is the
 // first-party DERIVED cover source. An UNRECOGNIZED value falls back to
 // galgame_wiki (a claimed media row is always part of the wiki body — never
 // dropped, never mis-attributed to a wrong upstream). The map is media-neutral:
 // screenshots only ever carry ”/vndb, the extra cover keys are harmless no-ops.
 var galgameMediaSourceKey = map[string]string{
-	"":               sourceKeyGalgameWiki,
+	"":               sourceKeyCurated,
 	sourceKeyVNDB:    sourceKeyVNDB,
 	sourceKeyBangumi: sourceKeyBangumi,
 	sourceKeyUpscale: sourceKeyUpscale,
@@ -650,11 +677,13 @@ func (s *ReadService) bridgeGalgameCovers(ctx context.Context, galgameIDs []int6
 	db := s.db.WithContext(ctx)
 
 	// Resolve every catalog_source key the source map can produce, in one query.
-	srcIDByKey, err := s.sourceIDsByKey(ctx, []string{sourceKeyGalgameWiki, sourceKeyVNDB, sourceKeyBangumi, sourceKeyUpscale})
+	srcIDByKey, err := s.sourceIDsByKey(ctx, append(append([]string{},
+		curatedSourceKeys...), sourceKeyVNDB, sourceKeyBangumi, sourceKeyUpscale))
 	if err != nil {
 		return err
 	}
-	fallbackSrc := srcIDByKey[sourceKeyGalgameWiki]
+	fallbackSrc := curatedSourceID(srcIDByKey)
+	srcIDByKey[sourceKeyCurated] = fallbackSrc
 
 	var rows []struct {
 		GalgameID      int64  `gorm:"column:galgame_id"`
@@ -799,11 +828,13 @@ func (s *ReadService) bridgeGalgameScreenshots(ctx context.Context, galgameIDs [
 	db := s.db.WithContext(ctx)
 
 	// Resolve every catalog_source key the source map can produce, in one query.
-	srcIDByKey, err := s.sourceIDsByKey(ctx, []string{sourceKeyGalgameWiki, sourceKeyVNDB, sourceKeyBangumi, sourceKeyUpscale})
+	srcIDByKey, err := s.sourceIDsByKey(ctx, append(append([]string{},
+		curatedSourceKeys...), sourceKeyVNDB, sourceKeyBangumi, sourceKeyUpscale))
 	if err != nil {
 		return err
 	}
-	fallbackSrc := srcIDByKey[sourceKeyGalgameWiki]
+	fallbackSrc := curatedSourceID(srcIDByKey)
+	srcIDByKey[sourceKeyCurated] = fallbackSrc
 
 	var rows []struct {
 		GalgameID int64  `gorm:"column:galgame_id"`

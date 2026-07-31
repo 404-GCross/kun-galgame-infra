@@ -12,12 +12,26 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// wikiSourceID resolves the galgame_wiki registry source id.
+// wikiSourceID resolves the curated (ex-galgame_wiki) registry source id.
+// Looked up through the same dual-read key list production uses, so the test
+// passes on either side of the wave-161 rename rather than pinning one
+// spelling and quietly failing on the day the other lands.
 func wikiSourceID(t *testing.T) int16 {
 	t.Helper()
-	var id int16
-	if err := testDB.Raw(`SELECT id FROM catalog_source WHERE key = ?`, sourceKeyGalgameWiki).Scan(&id).Error; err != nil || id == 0 {
-		t.Fatalf("galgame_wiki source lookup: id=%d err=%v", id, err)
+	var rows []struct {
+		Key string `gorm:"column:key"`
+		ID  int16  `gorm:"column:id"`
+	}
+	if err := testDB.Raw(`SELECT key, id FROM catalog_source WHERE key IN ?`, curatedSourceKeys).Scan(&rows).Error; err != nil {
+		t.Fatalf("curated source lookup: %v", err)
+	}
+	byKey := make(map[string]int16, len(rows))
+	for _, r := range rows {
+		byKey[r.Key] = r.ID
+	}
+	id := curatedSourceID(byKey)
+	if id == 0 {
+		t.Fatalf("curated source absent (looked for %v)", curatedSourceKeys)
 	}
 	return id
 }

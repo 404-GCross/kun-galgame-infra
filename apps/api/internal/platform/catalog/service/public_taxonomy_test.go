@@ -317,7 +317,7 @@ func TestEngineDetailRefsExactOnly(t *testing.T) {
 	attachEngine(t, wSafe.ID, eng)
 	attachEngine(t, wR18.ID, eng)
 
-	const srcWiki int16 = 12 // galgame_wiki — the A2-0 registrar rescue's source
+	const srcWiki int16 = 12 // the curated lane (`galgame_wiki` before wave 161)
 	addExternalRef(t, model.EntityTypeEngine, eng, srcWiki, "1001", model.LinkKindExact)
 	addExternalRef(t, model.EntityTypeEngine, eng, srcVNDB, "e999", model.LinkKindProbable)
 	addExternalRef(t, model.EntityTypeEngine, eng, srcDlsite, "https://example.test", model.LinkKindRelated)
@@ -329,7 +329,7 @@ func TestEngineDetailRefsExactOnly(t *testing.T) {
 	if rec.Name != "RealLive" || rec.WorkCount != 1 {
 		t.Fatalf("engine detail = %+v, want RealLive/work_count 1", rec)
 	}
-	if len(rec.Refs) != 1 || rec.Refs[0].Source != "galgame_wiki" || rec.Refs[0].ExternalID != "1001" {
+	if len(rec.Refs) != 1 || rec.Refs[0].Source != sourceKeyCurated || rec.Refs[0].ExternalID != "1001" {
 		t.Fatalf("engine refs = %+v, want only the exact wiki anchor", rec.Refs)
 	}
 
@@ -367,7 +367,7 @@ func TestTagDetailIntrosAlwaysPresent(t *testing.T) {
 		t.Fatalf("intros must be an empty slice (serialized []), got %#v", rec.Intros)
 	}
 
-	const srcWiki int16 = 12 // galgame_wiki — higher id, so it loses the merge
+	const srcWiki int16 = 12 // the curated lane — higher id, so it loses the merge
 	for _, in := range []struct {
 		lang, body string
 		src        int16

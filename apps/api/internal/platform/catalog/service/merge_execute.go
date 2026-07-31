@@ -370,11 +370,11 @@ func mergeExternalRefs(tx *gorm.DB, entityType int16, src, dst int64) error {
 		{`DELETE FROM catalog_external_ref WHERE entity_type = ? AND entity_id = ?`, []any{entityType, src}, false},
 		{`UPDATE catalog_external_ref SET link_kind = ?
 		   WHERE entity_type = ? AND entity_id = ? AND link_kind = ?
-		     AND source_id NOT IN (SELECT id FROM catalog_source WHERE key = ?)
+		     AND source_id NOT IN (SELECT id FROM catalog_source WHERE key IN ?)
 		     AND source_id IN (SELECT source_id FROM catalog_external_ref
 		                        WHERE entity_type = ? AND entity_id = ? AND link_kind = ?
 		                        GROUP BY source_id HAVING COUNT(DISTINCT external_id) > 1)`,
-			[]any{model.LinkKindProbable, entityType, dst, model.LinkKindExact, sourceKeyGalgameWiki,
+			[]any{model.LinkKindProbable, entityType, dst, model.LinkKindExact, curatedSourceKeys,
 				entityType, dst, model.LinkKindExact}, false},
 	}
 	// Refs are an identity face, not a work face: a work merge already touches
