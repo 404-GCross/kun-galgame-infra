@@ -53,6 +53,10 @@ func Run(db *gorm.DB) error {
 		&model.CatalogRedirect{},
 		&model.CatalogEntityUsage{},
 		&model.CatalogRevision{},
+		// Claim lifecycle log (refs/plans/10 03 §3). Polymorphic-adjacent: no
+		// FK to catalog_work, because the transition history must outlive the
+		// work row exactly as catalog_revision's snapshots do.
+		&model.CatalogClaimEvent{},
 
 		// Work graph (step 04): registry work/title/release, then edges.
 		&model.CatalogWork{},
