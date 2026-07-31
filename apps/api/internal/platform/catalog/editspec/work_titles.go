@@ -55,6 +55,7 @@ import (
 
 const (
 	titleKindOfficial     = int64(catmodel.WorkTitleKindOfficial)
+	titleKindAlias        = int64(catmodel.WorkTitleKindAlias)
 	titleKindAbbreviation = int64(catmodel.WorkTitleKindAbbreviation)
 
 	maxTitleElements = 100
@@ -102,9 +103,6 @@ func parseTitles(v any) ([]workTitle, error) {
 		if !ok {
 			return nil, fmt.Errorf("element %d: lang must be a string", i)
 		}
-		if _, allowed := olangAllowed[lang]; !allowed {
-			return nil, fmt.Errorf("element %d: %q is not an allowed language", i, lang)
-		}
 		title, ok := obj["title"].(string)
 		if !ok {
 			return nil, fmt.Errorf("element %d: title must be a string", i)
@@ -122,6 +120,23 @@ func parseTitles(v any) ([]workTitle, error) {
 		kind := int64(kindF)
 		if kind < titleKindOfficial || kind > titleKindAbbreviation {
 			return nil, fmt.Errorf("element %d: kind must be 0 (official), 1 (alias) or 2 (abbreviation)", i)
+		}
+		// An ALIAS may carry the empty language, and only an alias may. An alias
+		// is a string people also call the work by — a fan abbreviation, a
+		// romanization, a store's spelling — and it belongs to no language in
+		// particular; the mirror that filled this table has written alias rows
+		// with lang='' from the start (41,373 of them), and the strict rule made
+		// this field unable to read back its own table: LoadSnapshot returned
+		// lang:"" and the validator then rejected the value it had just produced,
+		// so a full-replace edit silently reaped every alias row. Officials keep
+		// the strict rule — an official title is the work's name IN a language,
+		// and it is the row olang selects the display name from.
+		if lang == "" {
+			if kind != titleKindAlias {
+				return nil, fmt.Errorf("element %d: only an alias (kind 1) may have an empty lang", i)
+			}
+		} else if _, allowed := olangAllowed[lang]; !allowed {
+			return nil, fmt.Errorf("element %d: %q is not an allowed language", i, lang)
 		}
 		latin := ""
 		if raw, present := obj["latin"]; present {

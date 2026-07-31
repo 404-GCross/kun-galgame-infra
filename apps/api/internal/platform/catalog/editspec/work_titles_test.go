@@ -1,6 +1,7 @@
 package editspec_test
 
 import (
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -341,4 +342,82 @@ func TestLetmoeSiteOverlay(t *testing.T) {
 			t.Fatalf("default-site propose: %v", err)
 		}
 	})
+}
+
+// A lang-less ALIAS is legal and must round-trip. This is the wave-161 P1
+// relaxation: the mirror has always written alias rows with an empty lang (41,373 of
+// them), so before this the field could not read back its own table — a full
+// replace loaded lang:"" and then failed its own validator, which meant the
+// only way to edit a title was to reap every alias the work had. Officials and
+// abbreviations keep the strict rule.
+func TestAliasMayHaveNoLanguage(t *testing.T) {
+	e := newEngine(t)
+	reviewer := realActor(200, "ren")
+	work := createWork(t, "alias lang target")
+
+	value := []any{
+		title("ja", "日本語名", 0),
+		title("", "no-language alias", 1),
+	}
+	prop, _, err := e.CreateProposal(testCtx, editing.CreateProposalInput{
+		EntityType: editspec.TypeWork, EntityID: work.ID,
+		Patch: map[string]any{editspec.FieldWorkTitles: value}, Actor: realActor(100, "admin"),
+	})
+	if err != nil {
+		t.Fatalf("propose a lang-less alias: %v", err)
+	}
+	if _, err := e.MergeProposal(testCtx, prop.ID, reviewer, ""); err != nil {
+		t.Fatalf("merge: %v", err)
+	}
+
+	rows := loadTitleRows(t, work.ID)
+	if len(rows) != 2 || rows[1].Lang != "" || rows[1].Kind != model.WorkTitleKindAlias {
+		t.Fatalf("stored rows: %+v", rows)
+	}
+
+	// The round trip is the point: what LoadSnapshot returns must be a value
+	// this field accepts, or the next full replace destroys the alias lane.
+	// Through JSON, because that is the only form the value ever travels in —
+	// the snapshot column is jsonb and every patch arrives decoded from the
+	// wire (parseTitles's own doc: "the wire truth: a decoded JSON array").
+	snapshot, err := e.CurrentSnapshot(testCtx, editspec.TypeWork, work.ID)
+	if err != nil {
+		t.Fatalf("current snapshot: %v", err)
+	}
+	encoded, err := json.Marshal(snapshot[editspec.FieldWorkTitles])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wire any
+	if err := json.Unmarshal(encoded, &wire); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := e.CreateProposal(testCtx, editing.CreateProposalInput{
+		EntityType: editspec.TypeWork, EntityID: work.ID,
+		Patch: map[string]any{editspec.FieldWorkTitles: wire},
+		Actor: realActor(100, "admin"),
+	}); err != nil && !errors.Is(err, editing.ErrNoEffectiveChanges) {
+		t.Fatalf("the field must accept its own snapshot: %v", err)
+	}
+}
+
+// Only an alias gets the exemption.
+func TestOnlyAliasMayHaveNoLanguage(t *testing.T) {
+	e := newEngine(t)
+	work := createWork(t, "alias lang negative")
+	var valErr *editing.ValidationError
+	for _, c := range []struct {
+		name  string
+		value any
+	}{
+		{"official with no lang", []any{title("", "a", 0)}},
+		{"abbreviation with no lang", []any{title("ja", "a", 0), title("", "b", 2)}},
+	} {
+		if _, _, err := e.CreateProposal(testCtx, editing.CreateProposalInput{
+			EntityType: editspec.TypeWork, EntityID: work.ID,
+			Patch: map[string]any{editspec.FieldWorkTitles: c.value}, Actor: realActor(100, "admin"),
+		}); !errors.As(err, &valErr) {
+			t.Errorf("%s: want ValidationError, got %v", c.name, err)
+		}
+	}
 }
