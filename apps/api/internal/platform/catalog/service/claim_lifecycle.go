@@ -241,26 +241,25 @@ func (s *ClaimLifecycleService) Act(ctx context.Context, p ClaimActionParams) (*
 			return gorm.ErrRecordNotFound
 		}
 
-		event := model.CatalogClaimEvent{
+		row := claimEventRow{
 			WorkID:   p.WorkID,
-			ToState:  claimStateValue[target],
+			To:       claimStateValue[target],
 			ActorUID: p.ActorUID,
 			Site:     eventSite,
+			Reason:   p.Reason,
 		}
 		// from_state is NULL only for the birth of a claim — the one transition
 		// with no prior state to record (model/claimevent.go).
 		if p.Action != ClaimActionClaim {
 			prior := claimStateValue[current]
-			event.FromState = &prior
+			row.From = &prior
 		}
-		if reason := strings.TrimSpace(p.Reason); reason != "" {
-			event.Reason = &reason
-		}
-		if err := tx.Create(&event).Error; err != nil {
+		eventID, err := appendClaimEvent(tx, row)
+		if err != nil {
 			return err
 		}
 
-		out = ClaimActionResult{WorkID: p.WorkID, To: target, EventID: event.ID}
+		out = ClaimActionResult{WorkID: p.WorkID, To: target, EventID: eventID}
 		if p.Action != ClaimActionClaim {
 			from := current
 			out.From = &from
@@ -271,6 +270,39 @@ func (s *ClaimLifecycleService) Act(ctx context.Context, p ClaimActionParams) (*
 		return nil, err
 	}
 	return &out, nil
+}
+
+// claimEventRow is one append to the transition ledger. From is nil for the
+// birth of a claim; Reason is trimmed and dropped when empty.
+type claimEventRow struct {
+	WorkID   int64
+	From     *int16
+	To       int16
+	ActorUID int64
+	Site     string
+	Reason   string
+}
+
+// appendClaimEvent is the ONLY writer of catalog_claim_event (wave 162): the
+// eight semantic actions and the submission mint both go through here. A second
+// writer would be a second definition of "this work's lifecycle authority has
+// moved to the registry" (155 ruling 1), and the projector that reads this
+// table as a handover ledger cannot tell two definitions apart.
+func appendClaimEvent(tx *gorm.DB, row claimEventRow) (int64, error) {
+	event := model.CatalogClaimEvent{
+		WorkID:    row.WorkID,
+		FromState: row.From,
+		ToState:   row.To,
+		ActorUID:  row.ActorUID,
+		Site:      row.Site,
+	}
+	if reason := strings.TrimSpace(row.Reason); reason != "" {
+		event.Reason = &reason
+	}
+	if err := tx.Create(&event).Error; err != nil {
+		return 0, err
+	}
+	return event.ID, nil
 }
 
 // priorState answers "what was this claim before it was hidden": the from_state

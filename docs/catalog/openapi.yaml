@@ -1725,6 +1725,27 @@ components:
         - code
         - message
       type: object
+    EnvelopeWorkSubmitResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/EnvelopeWorkSubmitResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          format: int64
+          type: integer
+        data:
+          $ref: "#/components/schemas/WorkSubmitResponse"
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
     HouseError:
       additionalProperties: false
       properties:
@@ -2770,6 +2791,86 @@ components:
         - medium_id
         - content_rating
         - status
+      type: object
+    WorkSubmitDate:
+      additionalProperties: false
+      properties:
+        d:
+          description: 0 = unknown day; requires m
+          format: int32
+          maximum: 31
+          minimum: 0
+          type: integer
+        m:
+          description: 0 = unknown month
+          format: int32
+          maximum: 12
+          minimum: 0
+          type: integer
+        "y":
+          format: int32
+          maximum: 2200
+          minimum: 1970
+          type: integer
+      required:
+        - "y"
+      type: object
+    WorkSubmitRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/WorkSubmitRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        actor:
+          $ref: "#/components/schemas/EditActor"
+          description: The end user the product backend is submitting for
+        fields:
+          additionalProperties: {}
+          description: "Field-key → value, the submission subset of catalog.work: display_name (required), olang, content_rating, titles, intros, display_nsfw, tag_ids, labels, engine_ids, series_ids, links. covers/screenshots are NOT accepted here — upload the bytes, then edit those facets"
+          type: object
+        product_work_id:
+          description: The product-side work id this submission will be reachable at
+          format: int64
+          minimum: 1
+          type: integer
+        released:
+          $ref: "#/components/schemas/WorkSubmitDate"
+          description: Optional submitted release date; becomes ONE curated catalog_release row. Omit for TBA
+        site:
+          description: Submitting tenant; must equal the client's catalog_site binding
+          minLength: 1
+          type: string
+      required:
+        - site
+        - actor
+        - product_work_id
+        - fields
+      type: object
+    WorkSubmitResponse:
+      additionalProperties: false
+      properties:
+        claim_state:
+          description: Always pending — a submission is born awaiting review
+          type: string
+        event_id:
+          description: The claim-event row recording the birth (from_state null → pending)
+          format: int64
+          type: integer
+        release_id:
+          description: The curated release row the submitted date produced; absent when no date was given
+          format: int64
+          type: integer
+        work_id:
+          format: int64
+          type: integer
+      required:
+        - work_id
+        - claim_state
+        - event_id
       type: object
     WorkTag:
       additionalProperties: false
@@ -3926,6 +4027,31 @@ paths:
       summary: Search works by title (NFKC-folded substring) for the product-side create picker
       tags:
         - catalog-s2s
+  /api/v1/catalog/works/submit:
+    post:
+      operationId: submitCatalogWork
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkSubmitRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeWorkSubmitResponse"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseError"
+          description: Error
+      summary: "Mint a work in the pending claim state from a submission form (one transaction: registry row + content + birth event). Repeat submits for the same site + product_work_id are a 409 echoing the existing work"
+      tags:
+        - catalog-lifecycle
   /api/v1/catalog/works/{id}:
     get:
       operationId: getCatalogWorkByID

@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"api/internal/platform/catalog/dto"
+	"api/internal/platform/catalog/editspec"
 	catperm "api/internal/platform/catalog/perm"
 	"api/internal/platform/catalog/service"
 	"api/internal/platform/editing"
@@ -57,6 +58,12 @@ func SetupLifecycle(api huma.API, claims *service.ClaimLifecycleService, engine 
 		Summary: "Move a claim through its lifecycle: claim / submit / publish / withdraw (owner) or approve / decline / ban / unban (review). 409 on an illegal transition, echoing the current state",
 		Tags:    tags,
 	}, s.act)
+	huma.Register(api, huma.Operation{
+		OperationID: "submitCatalogWork", Method: http.MethodPost,
+		Path:    "/api/v1/catalog/works/submit",
+		Summary: "Mint a work in the pending claim state from a submission form (one transaction: registry row + content + birth event). Repeat submits for the same site + product_work_id are a 409 echoing the existing work",
+		Tags:    tags,
+	}, s.submitWork)
 	huma.Register(api, huma.Operation{
 		OperationID: "listCatalogClaimEvents", Method: http.MethodGet,
 		Path:    "/api/v1/catalog/claim-events/feed",
@@ -116,6 +123,68 @@ func (s *LifecycleServer) act(ctx context.Context, in *claimActionInput) (*claim
 		return nil, claimErr(err)
 	}
 	return &claimActionOutput{Body: okEnvelope(*res)}, nil
+}
+
+// ---- submission mint ----
+
+type submitWorkInput struct {
+	Body dto.WorkSubmitRequest
+}
+
+type submitWorkOutput struct {
+	Body Envelope[dto.WorkSubmitResponse]
+}
+
+// submitWork is the OWNER half of the lifecycle face: no review permission is
+// involved, only the client's site binding, because filing a submission is what
+// a product's own users do. The asserted actor becomes the birth event's actor,
+// which is what makes "my submissions" answerable later (wave 157's per-user
+// face reads exactly these rows).
+func (s *LifecycleServer) submitWork(ctx context.Context, in *submitWorkInput) (*submitWorkOutput, error) {
+	if he := enforceSiteBinding(clientFromCtx(ctx), in.Body.Site); he != nil {
+		return nil, he
+	}
+	params := service.SubmitWorkParams{
+		Site: in.Body.Site, ProductWorkID: in.Body.ProductWorkID,
+		ActorUID: in.Body.Actor.UserID, Fields: in.Body.Fields,
+	}
+	if d := in.Body.Released; d != nil {
+		params.Released = service.ReleaseDate{Y: d.Y, M: d.M, D: d.D}
+	}
+	res, err := s.claims.SubmitWork(ctx, params)
+	if err != nil {
+		return nil, submitErr(err)
+	}
+	return &submitWorkOutput{Body: okEnvelope(dto.WorkSubmitResponse{
+		WorkID: res.WorkID, ClaimState: res.ClaimState,
+		EventID: res.EventID, ReleaseID: res.ReleaseID,
+	})}, nil
+}
+
+// submitErr maps the mint's refusals. The two 409s are different facts and stay
+// distinguishable: "you already submitted this" carries the existing work, and
+// the mirror gate carries the facet that is still owned by a retiring duty-chain
+// step (both are "the world, not your request" — hence 409, not 422).
+func submitErr(err error) error {
+	var (
+		exists     *service.ClaimExistsError
+		fieldErr   *editspec.SubmissionFieldError
+		mirrorGate *editspec.MirrorGateError
+	)
+	switch {
+	case stderrors.As(err, &exists):
+		return apiErrData(http.StatusConflict, errors.ErrOperationFailed, exists.Error(),
+			dto.WorkSubmitConflictInfo{WorkID: exists.WorkID, CurrentState: exists.CurrentState})
+	case stderrors.As(err, &mirrorGate):
+		return apiErrMsg(http.StatusConflict, errors.ErrOperationFailed, mirrorGate.Error())
+	case stderrors.As(err, &fieldErr),
+		stderrors.Is(err, service.ErrSubmitTargetRequired),
+		stderrors.Is(err, service.ErrSubmitDisplayNameRequired),
+		stderrors.Is(err, service.ErrSubmitInvalidDate):
+		return apiErrMsg(http.StatusUnprocessableEntity, errors.ErrValidationFailed, err.Error())
+	}
+	slog.Error("catalog work submit", "err", err)
+	return apiErr(http.StatusInternalServerError, errors.ErrInternalServer)
 }
 
 // optionalID turns the wire's 0-means-absent into a pointer (Huma cannot

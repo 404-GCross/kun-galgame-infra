@@ -92,17 +92,12 @@ func RegisterWork(reg *editing.Registry, db *gorm.DB) error {
 		Review:    editing.ReviewPerm(string(perm.EditWorkReview)),
 		Automerge: editing.AutomergeOwner,
 	}
-	fieldKeys := []string{
-		FieldWorkDisplayName, FieldWorkOLang, FieldWorkContentRating, FieldWorkTitles,
-		FieldWorkIntros, FieldWorkDisplayNSFW, FieldWorkTagIDs, FieldWorkLabels,
-		FieldWorkEngineIDs, FieldWorkSeriesIDs, FieldWorkLinks,
-		FieldWorkCovers, FieldWorkScreenshots,
-	}
+	fields := workFieldSpecs()
 	overlays := make(map[string]map[string]editing.Policy, len(letmoeSites))
 	for _, site := range letmoeSites {
-		overlay := make(map[string]editing.Policy, len(fieldKeys))
-		for _, key := range fieldKeys {
-			overlay[key] = letmoePolicy
+		overlay := make(map[string]editing.Policy, len(fields))
+		for _, f := range fields {
+			overlay[f.Key] = letmoePolicy
 		}
 		overlays[site] = overlay
 	}
@@ -175,74 +170,83 @@ func RegisterWork(reg *editing.Registry, db *gorm.DB) error {
 			Automerge: editing.AutomergeNever,
 		},
 		SiteOverlays: overlays,
-		Fields: []editing.FieldSpec{
-			{
-				Key: FieldWorkDisplayName, Kind: editing.KindText, DiffHint: editing.DiffHintInline,
-				Validate: validateDisplayName,
-				Apply:    applyWorkColumn("display_name", asString),
-			},
-			{
-				Key: FieldWorkOLang, Kind: editing.KindEnum, DiffHint: editing.DiffHintInline,
-				Validate: validateOLang,
-				Apply:    applyWorkColumn("olang", asString),
-			},
-			{
-				Key: FieldWorkContentRating, Kind: editing.KindEnum, DiffHint: editing.DiffHintInline,
-				Validate: validateContentRating,
-				Apply:    applyWorkColumn("content_rating", asContentRating),
-			},
-			{
-				Key: FieldWorkTitles, Kind: editing.KindList, DiffHint: editing.DiffHintItems,
-				Validate: validateTitles,
-				Apply:    gated(FieldWorkTitles, applyTitles),
-			},
-			{
-				Key: FieldWorkIntros, Kind: editing.KindList, DiffHint: editing.DiffHintLines,
-				Validate: validateIntros,
-				Apply:    applyIntros,
-			},
-			{
-				Key: FieldWorkDisplayNSFW, Kind: editing.KindEnum, DiffHint: editing.DiffHintInline,
-				Validate: validateBool,
-				Apply:    gated(FieldWorkDisplayNSFW, applyWorkColumn("display_nsfw", asBool)),
-			},
-			{
-				Key: FieldWorkTagIDs, Kind: editing.KindList, DiffHint: editing.DiffHintItems,
-				Validate: validateTagIDs,
-				Apply:    gated(FieldWorkTagIDs, applyTagIDs),
-			},
-			{
-				Key: FieldWorkLabels, Kind: editing.KindList, DiffHint: editing.DiffHintItems,
-				Validate: validateLabels,
-				Apply:    applyLabels,
-			},
-			{
-				Key: FieldWorkEngineIDs, Kind: editing.KindList, DiffHint: editing.DiffHintItems,
-				Validate: validateEngineIDs,
-				Apply:    applyEngineIDs,
-			},
-			{
-				Key: FieldWorkSeriesIDs, Kind: editing.KindList, DiffHint: editing.DiffHintItems,
-				Validate: validateSeriesIDs,
-				Apply:    applySeriesIDs,
-			},
-			{
-				Key: FieldWorkLinks, Kind: editing.KindList, DiffHint: editing.DiffHintItems,
-				Validate: validateLinks,
-				Apply:    applyLinks,
-			},
-			{
-				Key: FieldWorkCovers, Kind: editing.KindList, DiffHint: editing.DiffHintImage,
-				Validate: validateCovers,
-				Apply:    gated(FieldWorkCovers, applyCovers),
-			},
-			{
-				Key: FieldWorkScreenshots, Kind: editing.KindList, DiffHint: editing.DiffHintImage,
-				Validate: validateScreenshots,
-				Apply:    gated(FieldWorkScreenshots, applyScreenshots),
-			},
-		},
+		Fields:       fields,
 	})
+}
+
+// workFieldSpecs is catalog.work's field table, extracted from the registration
+// so a SECOND caller can drive the very same Validate + Apply closures: the
+// submission mint (submit.go). Nothing about a field may differ between "a user
+// edited it" and "a user filled it in on the submission form" — one table, one
+// validator, one write, one mirror gate.
+func workFieldSpecs() []editing.FieldSpec {
+	return []editing.FieldSpec{
+		{
+			Key: FieldWorkDisplayName, Kind: editing.KindText, DiffHint: editing.DiffHintInline,
+			Validate: validateDisplayName,
+			Apply:    applyWorkColumn("display_name", asString),
+		},
+		{
+			Key: FieldWorkOLang, Kind: editing.KindEnum, DiffHint: editing.DiffHintInline,
+			Validate: validateOLang,
+			Apply:    applyWorkColumn("olang", asString),
+		},
+		{
+			Key: FieldWorkContentRating, Kind: editing.KindEnum, DiffHint: editing.DiffHintInline,
+			Validate: validateContentRating,
+			Apply:    applyWorkColumn("content_rating", asContentRating),
+		},
+		{
+			Key: FieldWorkTitles, Kind: editing.KindList, DiffHint: editing.DiffHintItems,
+			Validate: validateTitles,
+			Apply:    gated(FieldWorkTitles, applyTitles),
+		},
+		{
+			Key: FieldWorkIntros, Kind: editing.KindList, DiffHint: editing.DiffHintLines,
+			Validate: validateIntros,
+			Apply:    applyIntros,
+		},
+		{
+			Key: FieldWorkDisplayNSFW, Kind: editing.KindEnum, DiffHint: editing.DiffHintInline,
+			Validate: validateBool,
+			Apply:    gated(FieldWorkDisplayNSFW, applyWorkColumn("display_nsfw", asBool)),
+		},
+		{
+			Key: FieldWorkTagIDs, Kind: editing.KindList, DiffHint: editing.DiffHintItems,
+			Validate: validateTagIDs,
+			Apply:    gated(FieldWorkTagIDs, applyTagIDs),
+		},
+		{
+			Key: FieldWorkLabels, Kind: editing.KindList, DiffHint: editing.DiffHintItems,
+			Validate: validateLabels,
+			Apply:    applyLabels,
+		},
+		{
+			Key: FieldWorkEngineIDs, Kind: editing.KindList, DiffHint: editing.DiffHintItems,
+			Validate: validateEngineIDs,
+			Apply:    applyEngineIDs,
+		},
+		{
+			Key: FieldWorkSeriesIDs, Kind: editing.KindList, DiffHint: editing.DiffHintItems,
+			Validate: validateSeriesIDs,
+			Apply:    applySeriesIDs,
+		},
+		{
+			Key: FieldWorkLinks, Kind: editing.KindList, DiffHint: editing.DiffHintItems,
+			Validate: validateLinks,
+			Apply:    applyLinks,
+		},
+		{
+			Key: FieldWorkCovers, Kind: editing.KindList, DiffHint: editing.DiffHintImage,
+			Validate: validateCovers,
+			Apply:    gated(FieldWorkCovers, applyCovers),
+		},
+		{
+			Key: FieldWorkScreenshots, Kind: editing.KindList, DiffHint: editing.DiffHintImage,
+			Validate: validateScreenshots,
+			Apply:    gated(FieldWorkScreenshots, applyScreenshots),
+		},
+	}
 }
 
 func validateDisplayName(v any) error {

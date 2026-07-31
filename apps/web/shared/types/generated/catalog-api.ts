@@ -430,6 +430,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/catalog/works/submit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mint a work in the pending claim state from a submission form (one transaction: registry row + content + birth event). Repeat submits for the same site + product_work_id are a 409 echoing the existing work */
+        post: operations["submitCatalogWork"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/catalog/works/{id}": {
         parameters: {
             query?: never;
@@ -1360,6 +1377,18 @@ export interface components {
             data?: components["schemas"]["WorkSearchResponse"];
             message: string;
         };
+        EnvelopeWorkSubmitResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/EnvelopeWorkSubmitResponse.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            code: number;
+            data?: components["schemas"]["WorkSubmitResponse"];
+            message: string;
+        };
         HouseError: {
             /**
              * Format: uri
@@ -1873,6 +1902,59 @@ export interface components {
             site?: string;
             /** Format: int32 */
             status: number;
+            /** Format: int64 */
+            work_id: number;
+        };
+        WorkSubmitDate: {
+            /**
+             * Format: int32
+             * @description 0 = unknown day; requires m
+             */
+            d?: number;
+            /**
+             * Format: int32
+             * @description 0 = unknown month
+             */
+            m?: number;
+            /** Format: int32 */
+            y: number;
+        };
+        WorkSubmitRequest: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/WorkSubmitRequest.json
+             */
+            readonly $schema?: string;
+            /** @description The end user the product backend is submitting for */
+            actor: components["schemas"]["EditActor"];
+            /** @description Field-key → value, the submission subset of catalog.work: display_name (required), olang, content_rating, titles, intros, display_nsfw, tag_ids, labels, engine_ids, series_ids, links. covers/screenshots are NOT accepted here — upload the bytes, then edit those facets */
+            fields: {
+                [key: string]: unknown;
+            };
+            /**
+             * Format: int64
+             * @description The product-side work id this submission will be reachable at
+             */
+            product_work_id: number;
+            /** @description Optional submitted release date; becomes ONE curated catalog_release row. Omit for TBA */
+            released?: components["schemas"]["WorkSubmitDate"];
+            /** @description Submitting tenant; must equal the client's catalog_site binding */
+            site: string;
+        };
+        WorkSubmitResponse: {
+            /** @description Always pending — a submission is born awaiting review */
+            claim_state: string;
+            /**
+             * Format: int64
+             * @description The claim-event row recording the birth (from_state null → pending)
+             */
+            event_id: number;
+            /**
+             * Format: int64
+             * @description The curated release row the submitted date produced; absent when no date was given
+             */
+            release_id?: number;
             /** Format: int64 */
             work_id: number;
         };
@@ -2858,6 +2940,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EnvelopeWorkSearchResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HouseError"];
+                };
+            };
+        };
+    };
+    submitCatalogWork: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkSubmitRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeWorkSubmitResponse"];
                 };
             };
             /** @description Error */

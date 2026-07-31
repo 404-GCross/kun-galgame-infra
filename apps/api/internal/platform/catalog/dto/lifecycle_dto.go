@@ -29,6 +29,49 @@ type StaffClaimActionRequest struct {
 	Reason string `json:"reason,omitempty" doc:"Moderator note; REQUIRED for decline, recorded on the event"`
 }
 
+// WorkSubmitRequest mints a work in the pending claim state (wave 162).
+//
+// The content half is keyed exactly like an edit patch — the SAME field keys
+// the editing face registers for catalog.work — so a wizard renders one form
+// from one schema and posts it here to create or there to amend. Two keys the
+// matrix does not have and this face therefore does not accept: a work-level
+// release date (send `released` instead: it becomes one curated release row)
+// and a status (lifecycle is claim_state, moved only by the semantic actions).
+type WorkSubmitRequest struct {
+	Site  string    `json:"site" minLength:"1" doc:"Submitting tenant; must equal the client's catalog_site binding"`
+	Actor EditActor `json:"actor" doc:"The end user the product backend is submitting for"`
+	// ProductWorkID is allocated by the PRODUCT, never by the registry: the
+	// product site owns its own id space, and the registry records the id it
+	// was told (161 §6.P3-verdict STOP-1).
+	ProductWorkID int64           `json:"product_work_id" minimum:"1" doc:"The product-side work id this submission will be reachable at"`
+	Fields        map[string]any  `json:"fields" doc:"Field-key → value, the submission subset of catalog.work: display_name (required), olang, content_rating, titles, intros, display_nsfw, tag_ids, labels, engine_ids, series_ids, links. covers/screenshots are NOT accepted here — upload the bytes, then edit those facets"`
+	Released      *WorkSubmitDate `json:"released,omitempty" doc:"Optional submitted release date; becomes ONE curated catalog_release row. Omit for TBA"`
+}
+
+// WorkSubmitDate is the fuzzy submitted date. The nullable tail IS the
+// precision — {y:2019} means "sometime in 2019" — which is why there is no
+// separate precision enum (03 §6-1).
+type WorkSubmitDate struct {
+	Y int16 `json:"y" minimum:"1970" maximum:"2200"`
+	M int16 `json:"m,omitempty" minimum:"0" maximum:"12" doc:"0 = unknown month"`
+	D int16 `json:"d,omitempty" minimum:"0" maximum:"31" doc:"0 = unknown day; requires m"`
+}
+
+// WorkSubmitResponse is the minted identity plus the birth event.
+type WorkSubmitResponse struct {
+	WorkID     int64  `json:"work_id"`
+	ClaimState string `json:"claim_state" doc:"Always pending — a submission is born awaiting review"`
+	EventID    int64  `json:"event_id" doc:"The claim-event row recording the birth (from_state null → pending)"`
+	ReleaseID  int64  `json:"release_id,omitempty" doc:"The curated release row the submitted date produced; absent when no date was given"`
+}
+
+// WorkSubmitConflictInfo rides the 409 of a repeat submission so the wizard can
+// resume the existing work instead of retrying the mint.
+type WorkSubmitConflictInfo struct {
+	WorkID       int64  `json:"work_id"`
+	CurrentState string `json:"current_state"`
+}
+
 // ClaimTransitionInfo rides the 409 of an illegal transition so the caller can
 // re-render without a second read.
 type ClaimTransitionInfo struct {
