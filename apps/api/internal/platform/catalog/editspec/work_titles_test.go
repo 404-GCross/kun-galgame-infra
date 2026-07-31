@@ -125,21 +125,32 @@ func TestTitlesApplyAndDerivation(t *testing.T) {
 		}).Error; err != nil {
 			t.Fatal(err)
 		}
+		// A search_hint row the dlsite importer owns. Since wave 155 it is
+		// neither part of the value nor part of the replace scope, so it must
+		// still be here afterwards (TestTitlesReplaceLeavesTheSearchHintLane
+		// pins the whole rule).
+		if err := testDB.Create(&model.CatalogWorkTitle{
+			WorkID: work.ID, Lang: "ja", Title: "にほんごめい", Kind: model.WorkTitleKindSearchHint,
+		}).Error; err != nil {
+			t.Fatal(err)
+		}
 		mergeTitles(t, work.ID, []any{
 			title("zh", "中文名", 0),
 			titleLatin("ja", "日本語名", "nihongo mei", 0),
-			title("ja", "にほんごめい", 3),
 		}, nil)
 
 		rows := loadTitleRows(t, work.ID)
 		if len(rows) != 3 {
 			t.Fatalf("rows after replace: %+v", rows)
 		}
-		if rows[0].Title != "中文名" || rows[1].Title != "日本語名" || rows[2].Kind != model.WorkTitleKindSearchHint {
+		// The importer row keeps its (older) id, so the editorial rows — which
+		// the replace re-inserted in array order — follow it.
+		if rows[0].Kind != model.WorkTitleKindSearchHint ||
+			rows[1].Title != "中文名" || rows[2].Title != "日本語名" {
 			t.Fatalf("row order/content: %+v", rows)
 		}
-		if rows[1].Latin == nil || *rows[1].Latin != "nihongo mei" {
-			t.Fatalf("latin: %+v", rows[1])
+		if rows[2].Latin == nil || *rows[2].Latin != "nihongo mei" {
+			t.Fatalf("latin: %+v", rows[2])
 		}
 		var w model.CatalogWork
 		if err := testDB.First(&w, work.ID).Error; err != nil {

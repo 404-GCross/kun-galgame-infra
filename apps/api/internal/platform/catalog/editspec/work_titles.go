@@ -41,12 +41,21 @@ import (
 //     are truth".
 //
 // Validation therefore requires at least one official element, making the
-// derivation total. search_hint (kind=3) rows are part of the value: a full
-// replace that dropped them would silently destroy findability data.
+// derivation total.
+//
+// search_hint (kind=3) is NOT part of the value and NOT part of the replace
+// scope (wave 155, 03 定案 §8-5). It is an importer lane: dlsite files a work's
+// kana there on release attach (importer/dlsite.go, egdlsite_create.go) and
+// cmd/reindex-catalog reads exactly those rows. Carrying it in the value made a
+// caller that rendered only the editorial kinds — every plausible editor UI —
+// silently reap findability data no human can restore, and it put a human
+// full-replace in permanent flap with an importer. Excluding it makes this
+// Apply's ownership scope identical to mirror step p's, which excludes the lane
+// for the same reason (titlemirror.go). Editorial kinds 0..2 are unaffected.
 
 const (
-	titleKindOfficial   = int64(catmodel.WorkTitleKindOfficial)
-	titleKindSearchHint = int64(catmodel.WorkTitleKindSearchHint)
+	titleKindOfficial     = int64(catmodel.WorkTitleKindOfficial)
+	titleKindAbbreviation = int64(catmodel.WorkTitleKindAbbreviation)
 
 	maxTitleElements = 100
 	maxTitleRunes    = 500
@@ -111,8 +120,8 @@ func parseTitles(v any) ([]workTitle, error) {
 			return nil, fmt.Errorf("element %d: kind must be an integer", i)
 		}
 		kind := int64(kindF)
-		if kind < titleKindOfficial || kind > titleKindSearchHint {
-			return nil, fmt.Errorf("element %d: kind must be 0 (official), 1 (alias), 2 (abbreviation) or 3 (search_hint)", i)
+		if kind < titleKindOfficial || kind > titleKindAbbreviation {
+			return nil, fmt.Errorf("element %d: kind must be 0 (official), 1 (alias) or 2 (abbreviation)", i)
 		}
 		latin := ""
 		if raw, present := obj["latin"]; present {
@@ -181,8 +190,16 @@ func applyTitles(ctx context.Context, tx *gorm.DB, entityID int64, value any) er
 		}
 		return err
 	}
+	// The full replace covers the EDITORIAL kinds only. search_hint (kind=3) is a
+	// live foreign lane — the dlsite release-attach importer files a work's kana
+	// there, claimed or not, and cmd/reindex-catalog reads exactly those rows —
+	// so reaping it here would destroy findability data no editor can restore and
+	// flap against its importer forever. Step p's ownership scope excludes it for
+	// the same reason (titlemirror.go); this delete now agrees with that scope.
 	if err := tx.WithContext(ctx).
-		Where("work_id = ?", entityID).Delete(&catmodel.CatalogWorkTitle{}).Error; err != nil {
+		Where("work_id = ? AND kind IN ?", entityID,
+			[]int16{catmodel.WorkTitleKindOfficial, catmodel.WorkTitleKindAlias, catmodel.WorkTitleKindAbbreviation}).
+		Delete(&catmodel.CatalogWorkTitle{}).Error; err != nil {
 		return err
 	}
 	rows := make([]catmodel.CatalogWorkTitle, 0, len(titles))
@@ -207,7 +224,8 @@ func applyTitles(ctx context.Context, tx *gorm.DB, entityID int64, value any) er
 func loadTitles(ctx context.Context, db *gorm.DB, workID int64) ([]any, error) {
 	var rows []catmodel.CatalogWorkTitle
 	if err := db.WithContext(ctx).
-		Where("work_id = ?", workID).Order("id").Find(&rows).Error; err != nil {
+		Where("work_id = ? AND kind <> ?", workID, catmodel.WorkTitleKindSearchHint).
+		Order("id").Find(&rows).Error; err != nil {
 		return nil, err
 	}
 	out := make([]any, 0, len(rows))

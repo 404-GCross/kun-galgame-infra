@@ -241,7 +241,7 @@ func registerSeries(reg *editing.Registry, db *gorm.DB) error {
 			{
 				Key: FieldSeriesName, Kind: editing.KindText, DiffHint: editing.DiffHintInline,
 				Validate: validateName,
-				Apply:    applyEntityColumn(&catmodel.CatalogSeries{}, "display_name", asString),
+				Apply:    curatedOnly(applyEntityColumn(&catmodel.CatalogSeries{}, "display_name", asString)),
 			},
 			{
 				Key: FieldSeriesIntros, Kind: editing.KindList, DiffHint: editing.DiffHintLines,
@@ -355,6 +355,33 @@ func applyEngineAliases(ctx context.Context, tx *gorm.DB, entityID int64, value 
 
 // applyEntityColumn is applyWorkColumn for any vocabulary entity: one scalar
 // column, existence asserted by RowsAffected.
+// curatedOnly refuses a series NAME edit on a series an importer reconciles
+// (wave 155 §3.1). jobs/workseries rewrites display_name of every dlsite-sourced
+// series whenever it differs from the upstream title, and DELETES the row
+// outright when it falls out of the upstream set — so a human rename there is
+// undone on the next run, and the revert history would point at a row that no
+// longer exists. The same narrowing, for the same reason, as applySeriesIDs'
+// "curated series only" rule: naming an upstream series is an identity-face
+// operation (03 定案 §0 line 3), not a field edit. Curated series (source 12,
+// the ones a human minted) are unaffected.
+//
+// Only the NAME is guarded: catalog_series_intro carries no importer writer, so
+// the intro of an upstream series is a legitimate curated addition.
+func curatedOnly(inner editing.ApplyFunc) editing.ApplyFunc {
+	return func(ctx context.Context, tx *gorm.DB, entityID int64, value any) error {
+		var n int64
+		if err := tx.WithContext(ctx).Model(&catmodel.CatalogSeries{}).
+			Where("id = ? AND source_id = ?", entityID, curatedSourceID).Count(&n).Error; err != nil {
+			return err
+		}
+		if n == 0 {
+			return fmt.Errorf("editspec: series name: only a CURATED series can be renamed here " +
+				"(an upstream series' name is reconciled by its importer)")
+		}
+		return inner(ctx, tx, entityID, value)
+	}
+}
+
 func applyEntityColumn(model any, column string, conv func(any) (any, error)) editing.ApplyFunc {
 	return func(ctx context.Context, tx *gorm.DB, entityID int64, value any) error {
 		v, err := conv(value)

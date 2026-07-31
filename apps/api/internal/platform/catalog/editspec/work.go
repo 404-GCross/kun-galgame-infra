@@ -194,7 +194,7 @@ func RegisterWork(reg *editing.Registry, db *gorm.DB) error {
 			{
 				Key: FieldWorkTitles, Kind: editing.KindList, DiffHint: editing.DiffHintItems,
 				Validate: validateTitles,
-				Apply:    applyTitles,
+				Apply:    gated(FieldWorkTitles, applyTitles),
 			},
 			{
 				Key: FieldWorkIntros, Kind: editing.KindList, DiffHint: editing.DiffHintLines,
@@ -204,12 +204,12 @@ func RegisterWork(reg *editing.Registry, db *gorm.DB) error {
 			{
 				Key: FieldWorkDisplayNSFW, Kind: editing.KindEnum, DiffHint: editing.DiffHintInline,
 				Validate: validateBool,
-				Apply:    applyWorkColumn("display_nsfw", asBool),
+				Apply:    gated(FieldWorkDisplayNSFW, applyWorkColumn("display_nsfw", asBool)),
 			},
 			{
 				Key: FieldWorkTagIDs, Kind: editing.KindList, DiffHint: editing.DiffHintItems,
 				Validate: validateTagIDs,
-				Apply:    applyTagIDs,
+				Apply:    gated(FieldWorkTagIDs, applyTagIDs),
 			},
 			{
 				Key: FieldWorkLabels, Kind: editing.KindList, DiffHint: editing.DiffHintItems,
@@ -234,12 +234,12 @@ func RegisterWork(reg *editing.Registry, db *gorm.DB) error {
 			{
 				Key: FieldWorkCovers, Kind: editing.KindList, DiffHint: editing.DiffHintImage,
 				Validate: validateCovers,
-				Apply:    applyCovers,
+				Apply:    gated(FieldWorkCovers, applyCovers),
 			},
 			{
 				Key: FieldWorkScreenshots, Kind: editing.KindList, DiffHint: editing.DiffHintImage,
 				Validate: validateScreenshots,
-				Apply:    applyScreenshots,
+				Apply:    gated(FieldWorkScreenshots, applyScreenshots),
 			},
 		},
 	})

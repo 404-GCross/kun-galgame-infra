@@ -10,6 +10,7 @@ import (
 
 	"api/internal/platform/authz"
 	"api/internal/platform/catalog/dto"
+	"api/internal/platform/catalog/editspec"
 	"api/internal/platform/editing"
 	"api/pkg/errors"
 
@@ -150,8 +151,15 @@ func editErr(err error) error {
 		validation   *editing.ValidationError
 		permission   *editing.PermissionError
 		conflict     *editing.ConflictError
+		mirrorGate   *editspec.MirrorGateError
 	)
 	switch {
+	// The mirror gate (wave 155): a facet whose duty-chain step has not retired
+	// yet. 409, not 422 — the patch is well-formed and the caller is entitled to
+	// it; the world is not ready. It surfaces from Apply, i.e. at merge/direct-
+	// edit/revert time, so the case must sit ahead of the generic fallthrough.
+	case stderrors.As(err, &mirrorGate):
+		return apiErrMsg(http.StatusConflict, errors.ErrOperationFailed, mirrorGate.Error())
 	case stderrors.Is(err, editing.ErrProposalNotFound),
 		stderrors.Is(err, editing.ErrRevisionNotFound),
 		stderrors.Is(err, editing.ErrEntityNotFound),
