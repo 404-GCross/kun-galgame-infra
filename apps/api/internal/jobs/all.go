@@ -13,70 +13,21 @@ import (
 //
 // Schedules are in the process local timezone — set TZ on the oauth
 // container (docs/jobs/01-implementation-plan.md §6), else they are UTC.
+//
+// Wave 161 unregistered seven jobs whose only subject was the galgame table
+// family: sync-vndb (03:00), reconcile-galgame-claims (03:20), sync-vndb-covers
+// (03:45), sync-vndb-screenshots (03:50), sync-vndb-enrich (05:00),
+// sync-vndb-scores (05:15) and build-galgame-stats (05:45). They are
+// unregistered in the SAME deploy that takes down the wiki write faces, well
+// ahead of the DROP: a scheduled job that writes a table which is about to
+// disappear is a race with a deploy window, and one of them (sync-vndb) mints
+// brand-new galgame rows nightly — behind a migration that has already run,
+// those rows would be invisible to everything and lost at T3.
+//
+// The catalog registry keeps its own upstream lanes (jobs/workratings,
+// bangumicovers, worktags, ...), which read the same VNDB/Bangumi sources
+// directly and write catalog tables.
 func RegisterAll(r *Registry) {
-	r.Register(Job{
-		Name:     "sync-vndb",
-		Desc:     "VNDB → galgame wiki 增量同步（status=2 草稿）",
-		Schedule: Schedule{DailyAt: "03:00"},
-		Run: func(ctx context.Context, cfg *config.Config) (Summary, error) {
-			return RunSyncVNDB(ctx, cfg, DefaultSyncVNDBOpts())
-		},
-	})
-
-	r.Register(Job{
-		Name:     "reconcile-galgame-claims",
-		Desc:     "galgame → catalog 注册通道（reconcile phase=claim：认领 catalog_work + vndb/bid exact 锚 + 回写 galgame.catalog_work_id）",
-		Schedule: Schedule{DailyAt: "03:20"}, // after sync-vndb (03:00) so the night's new drafts are claimed same-day, before image-gc (03:30)
-		Run: func(ctx context.Context, cfg *config.Config) (Summary, error) {
-			return RunReconcileGalgameClaims(ctx, cfg, DefaultReconcileGalgameClaimsOpts())
-		},
-	})
-
-	r.Register(Job{
-		Name:     "sync-vndb-enrich",
-		Desc:     "VNDB → galgame wiki 富集 links+tags+officials（已发布游戏中尚缺 vndb 数据的，如新建/claim）",
-		Schedule: Schedule{DailyAt: "05:00"}, // staggered after sync-vndb (03:00) + refpings
-		Run: func(ctx context.Context, cfg *config.Config) (Summary, error) {
-			return RunSyncVNDBEnrich(ctx, cfg, DefaultSyncVNDBEnrichOpts())
-		},
-	})
-
-	r.Register(Job{
-		Name:     "sync-vndb-covers",
-		Desc:     "VNDB → galgame wiki 封面同步（已发布但尚无封面的游戏，如新建/claim）",
-		Schedule: Schedule{DailyAt: "03:45"}, // after image-gc (03:30), before galgame-image-refping (04:00)
-		Run: func(ctx context.Context, cfg *config.Config) (Summary, error) {
-			return RunSyncVNDBCovers(ctx, cfg, DefaultSyncVNDBCoversOpts())
-		},
-	})
-
-	r.Register(Job{
-		Name:     "sync-vndb-screenshots",
-		Desc:     "VNDB → galgame wiki 截图同步（已发布但尚无 vndb 截图的游戏，如新建/claim）",
-		Schedule: Schedule{DailyAt: "03:50"}, // after sync-vndb-covers (03:45), before galgame-image-refping (04:00)
-		Run: func(ctx context.Context, cfg *config.Config) (Summary, error) {
-			return RunSyncVNDBScreenshots(ctx, cfg, DefaultSyncVNDBScreenshotsOpts())
-		},
-	})
-
-	r.Register(Job{
-		Name:     "sync-vndb-scores",
-		Desc:     "VNDB → galgame wiki 评分同步（rating+votecount 落窄表 galgame_vndb_meta）",
-		Schedule: Schedule{DailyAt: "05:15"}, // staggered: after sync-vndb-enrich (05:00), before artifact-gc (05:30)
-		Run: func(ctx context.Context, cfg *config.Config) (Summary, error) {
-			return RunSyncVNDBScores(ctx, cfg, DefaultSyncVNDBScoresOpts())
-		},
-	})
-
-	r.Register(Job{
-		Name:     "build-galgame-stats",
-		Desc:     "跨源统计物化（release_years/score 直方图/yearly_scores/coverage 快照落 galgame_stats）",
-		Schedule: Schedule{DailyAt: "05:45"}, // staggered: after sync-vndb-scores (05:15) has refreshed the narrow tables
-		Run: func(ctx context.Context, cfg *config.Config) (Summary, error) {
-			return RunBuildGalgameStats(ctx, cfg, DefaultBuildGalgameStatsOpts())
-		},
-	})
-
 	r.Register(Job{
 		Name:     "image-gc",
 		Desc:     "image_service TTL 生命周期（冷候选/软删/物删）",
