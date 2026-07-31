@@ -26,12 +26,21 @@ func DefaultGalgameImageRefpingOpts() GalgameImageRefpingOpts {
 	return GalgameImageRefpingOpts{Batch: 1000, Timeout: 30 * time.Minute}
 }
 
-// RunGalgameImageRefping keeps galgame wiki banner images alive in
-// image_service (TTL: >365d unreferenced → soft-deleted, +30d → physical
-// delete). galgame banners are set-once, so without this daily ping they
-// only ever get the single upload-time TTL touch and vanish ~13 months
-// later. Body is the original cmd/galgame-image-refping logic, returning
-// a Summary / error instead of os.Exit (single source of truth).
+// RunGalgameImageRefping keeps the image_service bytes that only the EDIT
+// HISTORY still references alive (TTL: >365d unreferenced → soft-deleted, +30d
+// → physical delete). Cover/screenshot bytes are set-once, so without a daily
+// ping they get the single upload-time TTL touch and vanish ~13 months later.
+//
+// Wave 161 removed this job's WIKI LANE — the scan over galgame_cover /
+// galgame_screenshot / galgame_revision / galgame_pr — together with the tables
+// it read. The surviving subject is the engine lane: image hashes that appear
+// ONLY inside a historical edit snapshot or an open proposal, which no live
+// table references and which a revert or a diff render must therefore still be
+// able to resolve.
+//
+// It keeps pinging as the galgame_wiki image client and that is deliberate: the
+// bytes in question were uploaded under that site, and reference-ping is
+// site-scoped. The site KEY itself is never touched by this wave.
 func RunGalgameImageRefping(ctx context.Context, cfg *config.Config, opts GalgameImageRefpingOpts) (Summary, error) {
 	if opts.Batch < 1 || opts.Batch > 1000 {
 		opts.Batch = 1000 // image_service / SDK reject batches > 1000
@@ -42,53 +51,37 @@ func RunGalgameImageRefping(ctx context.Context, cfg *config.Config, opts Galgam
 		defer cancel()
 	}
 
-	db, err := database.NewPostgresDB(cfg.GalgameDatabase)
-	if err != nil {
-		return nil, fmt.Errorf("db connect: %w", err)
-	}
-	defer db.Close()
-
-	// E2a: new-era revision/PR snapshots live in edit_revision/edit_proposal
-	// on the CATALOG pool (same physical DB in prod, a separate one in dev),
-	// so the job opens a second pool for that scan.
+	// The engine tables (edit_revision / edit_proposal) live on the CATALOG
+	// pool. Since the wiki lane retired, this is the only pool the job opens —
+	// cfg.GalgameDatabase is no longer read here.
 	editDB, err := database.NewPostgresDB(cfg.CatalogDatabase)
 	if err != nil {
 		return nil, fmt.Errorf("catalog db connect: %w", err)
 	}
 	defer editDB.Close()
 
-	// The hash universe we must keep alive in image_service:
-	//   1. current galgame_cover.image_hash (the authoritative cover set)
-	//   2. current galgame_screenshot.image_hash
-	//   3. EVERY image_hash that has ever appeared in a galgame_revision
-	//      snapshot — historical revert / diff must not resurrect a hash that
-	//      image_service has TTL-deleted
-	//   4. EVERY image_hash in a galgame_pr.snapshot — same reasoning for
-	//      pending PRs (admin may still merge them and trigger revert paths)
-	//   5. (E2a) the same universe on the engine tables: edit_revision
-	//      snapshots + edit_proposal patches / archived legacy snapshots for
-	//      galgame.game rows — the strangler write path appends there, and
-	//      the frozen legacy tables stop growing at the migration cutover.
+	// The hash universe: every image_hash that has ever appeared in an
+	// edit_revision snapshot, an edit_proposal patch, or an archived
+	// legacy_meta snapshot. Historical revert and diff must not resurrect a
+	// hash image_service has TTL-deleted, and an open proposal's proposed
+	// images must survive until it is decided.
 	//
-	// (The pre-PR5 banner_image_hash source was retired together with the
-	// column; pinned-cover via galgame_cover is now the sole banner ref.
-	// Old snapshot rows that still carry the banner_image_hash jsonb key
-	// were patched by migrate-drop-banner-image-hash to embed the value
-	// into covers[] before the column drop.)
+	// The four wiki sources this list used to open with (current covers,
+	// current screenshots, galgame_revision snapshots, galgame_pr snapshots)
+	// retired with their tables at wave 161. The LIVE cover/screenshot rows
+	// they protected are now catalog_work_cover / catalog_work_screenshot,
+	// which catalog-image-refping walks under site=catalog once wikirescue
+	// step o has adopted the byte ownership — that adoption is the same-window
+	// precondition for this deletion, not an optional follow-up.
 	//
-	// Implementation lives in collectRefpingHashes / collectEditRefpingHashes
-	// so they can be tested against a real DB without an image_service mock.
-	hashes, err := collectRefpingHashes(ctx, db.DB())
-	if err != nil {
-		return nil, fmt.Errorf("collect refping hashes: %w", err)
-	}
-	editHashes, err := collectEditRefpingHashes(ctx, editDB.DB())
+	// Implementation lives in collectEditRefpingHashes so it can be tested
+	// against a real DB without an image_service mock.
+	hashes, err := collectEditRefpingHashes(ctx, editDB.DB())
 	if err != nil {
 		return nil, fmt.Errorf("collect edit_* refping hashes: %w", err)
 	}
-	hashes = mergeHashSets(hashes, editHashes)
 
-	slog.Info("refping: collected banner hashes", "count", len(hashes))
+	slog.Info("refping: collected edit-history hashes", "count", len(hashes))
 	if len(hashes) == 0 {
 		return Summary{"distinct_hashes": 0, "note": "nothing to ping"}, nil
 	}
@@ -173,98 +166,45 @@ func RunGalgameImageRefping(ctx context.Context, cfg *config.Config, opts Galgam
 	return summary, nil
 }
 
-// collectRefpingHashes returns the deduped union of every image hash that
-// the galgame wiki currently OR historically references. Four sources
-// (see RunGalgameImageRefping comment for the rationale):
-//
-//  1. galgame_cover.image_hash
-//  2. galgame_screenshot.image_hash
-//  3. galgame_revision.snapshot — jsonb walk of covers[].image_hash +
-//     screenshots[].image_hash
-//  4. galgame_pr.snapshot — same as #3
-//
-// All NULL / empty values are filtered out. Postgres jsonb operators
-// `?` (top-key exists), `->` and `jsonb_array_elements` do the heavy
-// lifting — there is no Go-side jsonb walk.
-func collectRefpingHashes(ctx context.Context, db *gorm.DB) ([]string, error) {
-	const q = `
-WITH all_hashes AS (
-    -- (1) current cover set
-    SELECT image_hash AS hash FROM galgame_cover
-    UNION
-    -- (2) current screenshot set
-    SELECT image_hash FROM galgame_screenshot
-    UNION
-    -- (3a) historical revision: every cover entry
-    SELECT (jsonb_array_elements(snapshot->'covers'))->>'image_hash'
-        FROM galgame_revision
-        WHERE jsonb_typeof(snapshot->'covers') = 'array'
-    UNION
-    -- (3b) historical revision: every screenshot entry
-    SELECT (jsonb_array_elements(snapshot->'screenshots'))->>'image_hash'
-        FROM galgame_revision
-        WHERE jsonb_typeof(snapshot->'screenshots') = 'array'
-    UNION
-    -- (4a) PR snapshots: cover entries
-    SELECT (jsonb_array_elements(snapshot->'covers'))->>'image_hash'
-        FROM galgame_pr
-        WHERE jsonb_typeof(snapshot->'covers') = 'array'
-    UNION
-    -- (4b) PR snapshots: screenshot entries
-    SELECT (jsonb_array_elements(snapshot->'screenshots'))->>'image_hash'
-        FROM galgame_pr
-        WHERE jsonb_typeof(snapshot->'screenshots') = 'array'
-)
-SELECT DISTINCT hash FROM all_hashes
-WHERE hash IS NOT NULL AND hash <> ''
-`
-	var hashes []string
-	if err := db.WithContext(ctx).Raw(q).Scan(&hashes).Error; err != nil {
-		return nil, err
-	}
-	return hashes, nil
-}
-
 // collectEditRefpingHashes walks the editing-engine tables (catalog pool) for
-// galgame.game image references (E2a):
+// image references:
 //
-//  1. edit_revision.snapshot — 'galgame.game.covers' / 'galgame.game.screenshots'
-//  2. edit_proposal.patch — same keys (an open PR's proposed images must
+//  1. edit_revision.snapshot — the covers / screenshots field keys
+//  2. edit_proposal.patch — same keys (an open proposal's proposed images must
 //     survive until it is decided)
 //  3. edit_proposal.legacy_meta->'snapshot' — the archived old-wire snapshot
-//     of migrated merged PRs (served verbatim by the read bridge)
+//     of migrated merged PRs
+//
+// It matches BOTH key spellings, and that is not belt-and-braces. Wave 161's
+// rekey rewrites every galgame.game row in these tables to catalog.work with
+// the catalog field keys; a galgame.game-only filter would return the empty set
+// the moment that migration lands, and this job's own zero-guard would turn a
+// successful no-op into a daily failed run with an alert attached. Matching
+// both spellings means the same rows keep being found on either side of the
+// rekey, and the pre-rekey spelling stops matching anything by itself.
 func collectEditRefpingHashes(ctx context.Context, db *gorm.DB) ([]string, error) {
 	const q = `
 WITH all_hashes AS (
-    SELECT (jsonb_array_elements(snapshot->'galgame.game.covers'))->>'image_hash' AS hash
-        FROM edit_revision
-        WHERE entity_type = 'galgame.game'
-          AND jsonb_typeof(snapshot->'galgame.game.covers') = 'array'
+    SELECT (jsonb_array_elements(r.snapshot->k))->>'image_hash' AS hash
+        FROM edit_revision r, LATERAL unnest(ARRAY[
+            'galgame.game.covers', 'galgame.game.screenshots',
+            'catalog.work.covers', 'catalog.work.screenshots']) AS k
+        WHERE r.entity_type IN ('galgame.game', 'catalog.work')
+          AND jsonb_typeof(r.snapshot->k) = 'array'
     UNION
-    SELECT (jsonb_array_elements(snapshot->'galgame.game.screenshots'))->>'image_hash'
-        FROM edit_revision
-        WHERE entity_type = 'galgame.game'
-          AND jsonb_typeof(snapshot->'galgame.game.screenshots') = 'array'
+    SELECT (jsonb_array_elements(p.patch->k))->>'image_hash'
+        FROM edit_proposal p, LATERAL unnest(ARRAY[
+            'galgame.game.covers', 'galgame.game.screenshots',
+            'catalog.work.covers', 'catalog.work.screenshots']) AS k
+        WHERE p.entity_type IN ('galgame.game', 'catalog.work')
+          AND jsonb_typeof(p.patch->k) = 'array'
     UNION
-    SELECT (jsonb_array_elements(patch->'galgame.game.covers'))->>'image_hash'
-        FROM edit_proposal
-        WHERE entity_type = 'galgame.game'
-          AND jsonb_typeof(patch->'galgame.game.covers') = 'array'
-    UNION
-    SELECT (jsonb_array_elements(patch->'galgame.game.screenshots'))->>'image_hash'
-        FROM edit_proposal
-        WHERE entity_type = 'galgame.game'
-          AND jsonb_typeof(patch->'galgame.game.screenshots') = 'array'
-    UNION
-    SELECT (jsonb_array_elements(legacy_meta->'snapshot'->'covers'))->>'image_hash'
-        FROM edit_proposal
-        WHERE entity_type = 'galgame.game'
-          AND jsonb_typeof(legacy_meta->'snapshot'->'covers') = 'array'
-    UNION
-    SELECT (jsonb_array_elements(legacy_meta->'snapshot'->'screenshots'))->>'image_hash'
-        FROM edit_proposal
-        WHERE entity_type = 'galgame.game'
-          AND jsonb_typeof(legacy_meta->'snapshot'->'screenshots') = 'array'
+    -- legacy_meta is the archived OLD-wire snapshot, whose keys are bare
+    -- ('covers' / 'screenshots') and are not rewritten by the rekey.
+    SELECT (jsonb_array_elements(p.legacy_meta->'snapshot'->k))->>'image_hash'
+        FROM edit_proposal p, LATERAL unnest(ARRAY['covers', 'screenshots']) AS k
+        WHERE p.entity_type IN ('galgame.game', 'catalog.work')
+          AND jsonb_typeof(p.legacy_meta->'snapshot'->k) = 'array'
 )
 SELECT DISTINCT hash FROM all_hashes
 WHERE hash IS NOT NULL AND hash <> ''
@@ -274,20 +214,4 @@ WHERE hash IS NOT NULL AND hash <> ''
 		return nil, err
 	}
 	return hashes, nil
-}
-
-// mergeHashSets unions two hash slices, preserving dedup.
-func mergeHashSets(a, b []string) []string {
-	seen := make(map[string]struct{}, len(a)+len(b))
-	out := make([]string, 0, len(a)+len(b))
-	for _, list := range [][]string{a, b} {
-		for _, h := range list {
-			if _, dup := seen[h]; dup {
-				continue
-			}
-			seen[h] = struct{}{}
-			out = append(out, h)
-		}
-	}
-	return out
 }
