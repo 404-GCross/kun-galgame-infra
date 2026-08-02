@@ -22,14 +22,8 @@
 10. Never let the pursuit of elegance or modularity make the code complex or hard to follow, and don't write over-defensive code.
 11. A Nuxt page — and any component used as a page/route root — must have a **single real root element**: never `display: contents` (generates no box, so the transition can't attach) and never a leading comment / whitespace / sibling at the template root (a comment is itself a root node). Either trips Nuxt's "does not have a single root node" warning and drops the page-transition enter animation (the page appears without animating). Keep explanatory comments *inside* the root element.
 12. Reserve the scrollbar gutter globally — `html { scrollbar-gutter: stable }`, with an `overflow-y: scroll` `@supports` fallback — so the document width is constant across routes. Otherwise navigating from a scrolling page to a height-locked one (no scrollbar) removes the classic scrollbar's ~15px and the centered layout shifts sideways: a "teleport" at the tail of the page transition. This is a browser layout fact, not a transition bug. Use single-edge `stable` (`both-edges` is buggy in Chrome); it's a harmless no-op under overlay scrollbars (macOS/iOS).
-13. **One task = one Codex session; one assigned target repo = one branch = one worktree.** Never let two sessions write the same checkout. Prefer the user-level `codex-session new <repo> <session>` launcher; it exposes source-repo reference material through `$CODEX_SESSION_REFS` when present. Read it in place and never copy this repo's ignored multi-gigabyte `refs/` tree into any worktree. A single-repo session may write only its own worktree; an explicitly coordinated cross-repo operation may write only separately assigned target worktrees. Launcher source checkouts and refs are always read-only.
-14. **Every DB-backed session gets its own test database.** Use only the launcher-provided `TEST_DATABASE_DSN`; never discover or fall back to a DSN from `.env`, and never print the DSN. Keep `GOMAXPROCS=8` and run DB integration suites with `-count=1 -p 1`. `kun_catalog` is always read-only; `kun_catalog_rehearsal` belongs only to the explicitly assigned rehearsal/aggregation track and is never a general test target.
-
-## Current migration state (read before starting a task)
-
-- Git state is not production state. First inspect the current branch/worktree and then read the read-only ledger at `$CODEX_SESSION_REFS/proj/161-n5-grand-window.md`; use `162`, `163`, and `165` for the immediately following infra/catalog work. The Wave 161 ledger currently records prepared window branches and acceptance evidence, not blanket proof that every downstream or production step ran.
-- The checked-out infra code has the Wave 161 P5 retirement shape: the galgame write/staff/workflow faces and the two legacy feeds are gone, `galgame.game` is not registered, and only the `/v1/galgame` 410 tombstone remains. Do not reintroduce a galgame HTTP client or treat the retired Tier-A route table as a live contract.
-- Before cross-repo work, verify the paired forum/moyu branch and deployment state explicitly. Never infer it from infra `origin/main`, and never mix pre-window and window-only commits in a shared checkout.
+13. **One task = one session, and every path has exactly one writer.** Parallel work is allowed only when the user assigns non-overlapping writable paths or system domains. Never rewrite shared Git state a peer may be standing on: on a shared checkout, no branch switch, reset, rebase, merge, cherry-pick, clean, stash or prune. Before editing, record the branch, HEAD, verified `origin/main`, dirty paths and your owned paths, and preserve every foreign change; commit with explicit paths (`git commit -- <paths>`), never `add -A` and never a repository-wide commit. An isolated worktree is the safer default for a long wave — base it explicitly on `origin/main`, not on a local branch that may be holding someone's unpushed work.
+14. **Every DB-backed track gets its own explicitly assigned test database.** Use the track-specific `TEST_DATABASE_DSN` placed in that session's process environment; if it is unset or the database identity is not confirmed unique, stop before DB-backed tests and ask. Never discover or fall back to a DSN from `.env`, and never print the DSN. Give concurrently running services unique ports, and never stop a process whose owner is unknown. Keep `GOMAXPROCS=8` and run DB integration suites with `-count=1 -p 1`. `kun_catalog` is always read-only; `kun_catalog_rehearsal` belongs only to the explicitly assigned rehearsal/aggregation track and is never a general test target.
 
 ## Local development (one command)
 
@@ -40,8 +34,9 @@ images) and then runs `air` for the five frequently-edited Go services
 (**oauth / catalog / image / artifact / trust**, hot-reloaded from source)
 plus the Nuxt frontends. catalog (:9281) hosts the catalog faces and the
 `/v1/galgame` **410 tombstone only** (`galgameapp.MountRetiredPublic`); the
-standalone galgame service (:9280) and every live galgame face are retired.
-Ctrl-C stops only the hot stack; the base
+standalone galgame service (:9280) and every live galgame face are retired,
+so do not reintroduce a galgame HTTP client or treat the retired galgame
+route table as a live contract. Ctrl-C stops only the hot stack; the base
 stays up. So a bare `pnpm dev` is enough — you do **not** need to start
 community / ai yourself (a past mistake: assuming a base service isn't running).
 
@@ -101,9 +96,9 @@ community / ai yourself (a past mistake: assuming a base service isn't running).
 
 `docs/integration/oauth`, `docs/image_service`, `docs/artifact`, and `docs/catalog` are the **single sources for the four active cross-service contracts** OAuth / image hosting / artifact (large files) / catalog. `docs/integration/galgame_wiki` is the retained source location for the retired contract and is being reduced to a 410/successor tombstone; its former route tables are not implementation guidance. Forum/patch only vendor the generated `docs/{oauth,image_service,artifact}` mirrors now. Catalog and retired galgame-wiki are portal + `docs:verify` sources without downstream mirrors.
 
-- **To change a contract**: edit only these source files in the assigned infra worktree. Run `pnpm docs:sync --write` only from a separately assigned kungal-docs worktree in an explicitly coordinated sibling-layout workspace whose infra/forum/patch/docs targets are all separately assigned worktrees; then `pnpm docs:audit` (`docs:check` verifies mirror consistency + `docs:verify` verifies source == code) should report 0 error. If that topology is unavailable, run only feasible read-only checks and hand off the sync requirement; never write a launcher source checkout.
+- **To change a contract**: edit only these source files here → go to `../kungal-docs` and run `pnpm docs:sync --write` (pushes the mirrors out to forum/patch) → `pnpm docs:audit` (`docs:check` verifies mirror consistency + `docs:verify` verifies source == code) should report 0 error. If another session may be writing the same sibling repos, hold only the paths you touch and never switch a shared checkout's branch.
 - The **source of truth for active contracts is in the code** (`cmd/oauth`, `cmd/image`, `cmd/artifact`, `cmd/catalog`, and their handlers). `internal/galgameapp` now implements only the public 410 tombstone. When code changes, update the owning source docs in the same PR; `docs:verify` catches code/doc drift.
-- Unified docs portal: `docs-kungal.nextmoe.dev`; read the full ownership model (Tier A/B/C) from the read-only source-workspace copy at `${CODEX_SESSION_REPO%/*}/kungal-docs/docs/_meta/ownership.md`.
+- Unified docs portal: `docs-kungal.nextmoe.dev`; read the full ownership model (Tier A/B/C) from the sibling checkout at `../kungal-docs/docs/_meta/ownership.md` (relative to this repository root).
 
 ## Database schema changes → you must remind about migrations
 
