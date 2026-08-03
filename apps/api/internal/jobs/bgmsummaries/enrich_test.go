@@ -105,9 +105,10 @@ func introCount(t *testing.T, where string, args ...any) int64 {
 }
 
 // TestFillMissingLanguage exercises the whole pipeline through the real Run
-// entry point: candidate selection (exact anchors only, bodyless only),
-// fill-missing-language decisions, CRLF normalization, dry-run zero-write,
-// apply, and second-pass idempotency.
+// entry point under the BODYLESS population: candidate selection (exact anchors
+// only), fill-missing-language decisions, CRLF normalization, dry-run
+// zero-write, apply, and second-pass idempotency. The claimed half is
+// TestClaimedPopulation.
 func TestFillMissingLanguage(t *testing.T) {
 	clean(t)
 	ctx := context.Background()
@@ -117,12 +118,12 @@ func TestFillMissingLanguage(t *testing.T) {
 	require.NoError(t, testDB.Raw(`SELECT id FROM catalog_source WHERE key = 'dlsite'`).Scan(&dlsite).Error)
 	require.NotZero(t, dlsite)
 
-	claimed := "galgame_wiki"
+	claimed := "kungal"
 	wZh := mkWork(t, reg.galgameMedium, "has-ja-gets-zh", nil)        // ja intro exists, zh summary → writes zh-Hans
 	wJaDup := mkWork(t, reg.galgameMedium, "has-ja-dup-ja", nil)      // ja intro exists, ja summary → skipped
 	wJaFill := mkWork(t, reg.galgameMedium, "no-intro-gets-ja", nil)  // no intro, ja summary (CRLF) → writes ja
 	wEmpty := mkWork(t, reg.galgameMedium, "blank-summary", nil)      // whitespace-only summary → no_summary
-	wClaimed := mkWork(t, reg.galgameMedium, "claimed", &claimed)     // claimed → excluded by SQL
+	wClaimed := mkWork(t, reg.galgameMedium, "claimed", &claimed)     // claimed → out of THIS population
 	wProbable := mkWork(t, reg.galgameMedium, "probable-anchor", nil) // probable tier → excluded by SQL
 
 	zhSummary := "两位新人冒险者发现自己被困孤岛。"
@@ -146,14 +147,13 @@ func TestFillMissingLanguage(t *testing.T) {
 	mkIntro(t, wJaDup, "ja", "既にある日本語紹介。", dlsite)
 
 	// --- dry run: decides, writes nothing.
-	st, err := Run(ctx, Opts{DSN: testDSN})
+	st, err := Run(ctx, Opts{DSN: testDSN, Population: PopulationBodyless})
 	require.NoError(t, err)
-	assert.Equal(t, 4, st.Candidates, "claimed + probable are excluded in SQL")
+	assert.Equal(t, 4, st.Candidates, "claimed (other population) + probable are excluded in SQL")
 	assert.Equal(t, 1, st.ZhNew, "wZh: zh summary, no zh intro yet")
 	assert.Equal(t, 1, st.JaFill, "wJaFill: ja summary, no intro at all")
 	assert.Equal(t, 1, st.SkipDupLang, "wJaDup: ja summary duplicates the DLsite ja intro")
 	assert.Equal(t, 1, st.NoSummary)
-	assert.Equal(t, 0, st.Refused, "no claimed work reaches the write path")
 	assert.Zero(t, st.ZhWritten+st.JaWritten+st.Conflict+st.Errors)
 	assert.EqualValues(t, 2, introCount(t, ""), "dry run writes nothing (the two fixtures only)")
 	require.Len(t, st.ZhSamples, 1)
@@ -161,7 +161,7 @@ func TestFillMissingLanguage(t *testing.T) {
 	assert.Equal(t, "zh-Hans", st.ZhSamples[0].Lang)
 
 	// --- apply: writes exactly wZh(zh-Hans) + wJaFill(ja).
-	st, err = Run(ctx, Opts{DSN: testDSN, Apply: true})
+	st, err = Run(ctx, Opts{DSN: testDSN, Apply: true, Population: PopulationBodyless})
 	require.NoError(t, err)
 	assert.Equal(t, 1, st.ZhWritten)
 	assert.Equal(t, 1, st.JaWritten)
@@ -179,12 +179,12 @@ func TestFillMissingLanguage(t *testing.T) {
 	assert.Equal(t, "一行目です。\n二行目です。", rowJa.Intro, "CRLF normalized to LF")
 	assert.EqualValues(t, 0, introCount(t, "WHERE work_id = ? AND source_id = ?", wJaDup, reg.bangumiSource),
 		"duplicate-language summary never lands")
-	assert.EqualValues(t, 0, introCount(t, "WHERE work_id = ?", wClaimed), "claimed work never materialised")
+	assert.EqualValues(t, 0, introCount(t, "WHERE work_id = ?", wClaimed), "the other population stays untouched")
 	assert.EqualValues(t, 4, introCount(t, ""), "2 fixtures + 2 writes")
 
 	// --- second apply: fill-missing is idempotent — zero writes, the two
 	// written langs now skip as duplicates.
-	st, err = Run(ctx, Opts{DSN: testDSN, Apply: true})
+	st, err = Run(ctx, Opts{DSN: testDSN, Apply: true, Population: PopulationBodyless})
 	require.NoError(t, err)
 	assert.Zero(t, st.ZhWritten+st.JaWritten+st.Errors, "second pass writes zero")
 	assert.Equal(t, 3, st.SkipDupLang, "wZh + wJaFill now have their langs; wJaDup still dup")
@@ -226,26 +226,91 @@ func TestNonTitleYearExactAnchorEntersCandidates(t *testing.T) {
 	assert.EqualValues(t, 0, introCount(t, "WHERE work_id = ?", wProbable), "probable work stays out")
 }
 
-// TestXORAndConflictBackstop drives the write path directly (the SQL filter
-// excludes claimed works from candidates, so the guard is only reachable
-// here): a claimed candidate is refused, and a STALE exist map still cannot
-// duplicate a row thanks to the (work_id,lang,source_id) ON CONFLICT.
-func TestXORAndConflictBackstop(t *testing.T) {
+// TestClaimedPopulation is the wave-166 core: a PUBLISHED work now gets its
+// Bangumi intro. Before 166 the lane refused every claimed work, which is why
+// 4,725 published works read English-only in prod while their anchored subject
+// carried a perfectly good Japanese or Chinese blurb.
+//
+// It also pins the two rules that keep the new lane from doing damage: the
+// work's own curated text is never displaced (fill-missing is per language,
+// across all sources), and the site VALUE is never matched literally.
+func TestClaimedPopulation(t *testing.T) {
+	clean(t)
+	ctx := context.Background()
+	reg, err := resolveRegistry(ctx, testDB)
+	require.NoError(t, err)
+	var curated int16
+	require.NoError(t, testDB.Raw(`SELECT id FROM catalog_source WHERE key = 'curated'`).Scan(&curated).Error)
+	require.NotZero(t, curated)
+
+	// The site value is deliberately NOT the one the code was born with: after
+	// wave 161 it is 'kungal', and a lane that pins a literal goes silently
+	// empty on the next rename.
+	site := "kungal"
+	wBlank := mkWork(t, reg.galgameMedium, "published-en-only", &site) // en curated only → gains ja
+	wZh := mkWork(t, reg.galgameMedium, "published-gets-zh", &site)    // en curated only, zh summary → gains zh-Hans
+	wHasJa := mkWork(t, reg.galgameMedium, "published-has-ja", &site)  // ja already there → skipped
+	wBody := mkWork(t, reg.galgameMedium, "bodyless-peer", nil)        // the other population
+
+	mkIntro(t, wBlank, "en", "An English blurb carried over from the wiki.", curated)
+	mkIntro(t, wZh, "en", "Another English blurb.", curated)
+	mkIntro(t, wHasJa, "ja", "既にある日本語紹介。", curated)
+
+	mkSubject(t, 4001, "ふたりの少女が出会う物語。")
+	mkSubject(t, 4002, "两位新人冒险者发现自己被困孤岛。")
+	mkSubject(t, 4003, "重複する日本語のあらすじ。")
+	mkSubject(t, 4004, "ボディレスのあらすじ。")
+	mkAnchor(t, wBlank, 4001, reg.bangumiSource, model.LinkKindExact, ruleTitleYear)
+	mkAnchor(t, wZh, 4002, reg.bangumiSource, model.LinkKindExact, ruleTitleYear)
+	mkAnchor(t, wHasJa, 4003, reg.bangumiSource, model.LinkKindExact, ruleTitleYear)
+	mkAnchor(t, wBody, 4004, reg.bangumiSource, model.LinkKindExact, ruleTitleYear)
+
+	st, err := Run(ctx, Opts{DSN: testDSN, Apply: true, Population: PopulationClaimed})
+	require.NoError(t, err)
+	assert.Equal(t, 3, st.Candidates, "the bodyless peer is out of this population")
+	assert.Equal(t, 1, st.JaWritten)
+	assert.Equal(t, 1, st.ZhWritten)
+	assert.Equal(t, 2, st.ClaimedWritten, "both writes landed on published works")
+	assert.Equal(t, 1, st.SkipDupLang, "wHasJa already has ja")
+	assert.Zero(t, st.Errors)
+
+	assert.EqualValues(t, 1, introCount(t, "WHERE work_id = ? AND lang = 'ja'", wBlank))
+	assert.EqualValues(t, 1, introCount(t, "WHERE work_id = ? AND lang = 'zh-Hans'", wZh))
+	assert.EqualValues(t, 1, introCount(t, "WHERE work_id = ? AND source_id = ? AND lang = 'en'", wBlank, curated),
+		"the work's own curated English text is untouched")
+	assert.EqualValues(t, 0, introCount(t, "WHERE work_id = ?", wBody), "the other population stays untouched")
+
+	// The whole point of writing ja: the machine-translation lane fills zh from
+	// it. Assert the row it will pick up is provenance=0 (a SOURCE row), since
+	// intro-mt refuses to re-translate its own output.
+	var row model.CatalogWorkIntro
+	require.NoError(t, testDB.Where("work_id = ? AND lang = 'ja'", wBlank).First(&row).Error)
+	assert.EqualValues(t, 0, row.Provenance, "an ingested upstream blurb is a source row, never machine")
+
+	// Second pass writes zero.
+	st, err = Run(ctx, Opts{DSN: testDSN, Apply: true, Population: PopulationClaimed})
+	require.NoError(t, err)
+	assert.Zero(t, st.ZhWritten+st.JaWritten+st.Errors, "second pass writes zero")
+}
+
+// TestNoLangAbstentionAndConflictBackstop pins the two write-path guards: a
+// summary with no CJK evidence is never filed under a language tag (the wave-164
+// defect), and a STALE exist map still cannot duplicate a row thanks to the
+// (work_id,lang,source_id) ON CONFLICT.
+func TestNoLangAbstentionAndConflictBackstop(t *testing.T) {
 	clean(t)
 	ctx := context.Background()
 	reg, err := resolveRegistry(ctx, testDB)
 	require.NoError(t, err)
 
-	claimed := "galgame_wiki"
-	wClaimed := mkWork(t, reg.galgameMedium, "claimed-direct", &claimed)
+	wLatin := mkWork(t, reg.galgameMedium, "latin-summary", nil)
 	wBody := mkWork(t, reg.galgameMedium, "bodyless-direct", nil)
 
-	// XOR: a claimed candidate is refused before any language decision.
 	r := &runner{db: testDB, sourceID: reg.bangumiSource, exist: map[int64]map[string]bool{}, stats: &Stats{}}
-	r.enrich(ctx, candidate{WorkID: wClaimed, SubjectID: 2001, Site: &claimed, Summary: "あらすじ"}, true)
-	assert.Equal(t, 1, r.stats.Refused)
-	assert.Zero(t, r.stats.JaFill+r.stats.JaWritten)
-	assert.EqualValues(t, 0, introCount(t, ""))
+	r.enrich(ctx, candidate{WorkID: wLatin, SubjectID: 2001, Summary: "A short doujin RPG about friendship."}, true)
+	assert.Equal(t, 1, r.stats.NoLang)
+	assert.Zero(t, r.stats.JaFill+r.stats.JaWritten+r.stats.ZhNew+r.stats.ZhWritten)
+	assert.EqualValues(t, 0, introCount(t, ""), "CJK-free text is never filed under a language tag")
 
 	// Backstop: write once, then retry with an EMPTY exist map — the primary
 	// fill-missing skip is blind, but the unique key refuses the duplicate.

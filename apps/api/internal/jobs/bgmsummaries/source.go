@@ -33,11 +33,41 @@ func resolveRegistry(ctx context.Context, db *gorm.DB) (registry, error) {
 	return r, nil
 }
 
-// candidate is one bodyless galgame work joined to its EXACT Bangumi anchor's
-// subject. Summary is verbatim from the dump ('' when the subject has none —
-// counted, not filtered, so the run reports skip_no_summary). Site is carried
-// (not filtered out) so the write-time XOR guard can re-assert bodylessness
-// even though loadCandidates already selects only bodyless rows.
+// Population selects which works a run may write intros for. Before wave 166
+// this job was hard-wired to bodyless: a claimed work's intro was BRIDGED from
+// its product body at read time, so materialising a native row would have
+// double-shown it. The W1-pre nativization (refs/proj/140) mirrored those
+// bodies into catalog_work_intro and DELETED the bridge, so today
+// loadWorkIntros reads that one table for EVERY work — and the bodyless-only
+// gate stopped being an invariant and became the reason 4,725 published works
+// show an English-only intro (the 164 blank face). All is now the default.
+const (
+	PopulationAll      = "all"
+	PopulationBodyless = "bodyless"
+	PopulationClaimed  = "claimed"
+)
+
+// sitePredicate renders the population as a catalog_work.site SQL predicate.
+// Claimed is "has a site", not "site = <some product>" — wave 161 renamed the
+// only value there has ever been (galgame_wiki → kungal) and pinning a literal
+// is what silently emptied four other lanes.
+func sitePredicate(pop string) (string, error) {
+	switch pop {
+	case PopulationAll, "":
+		return "TRUE", nil
+	case PopulationBodyless:
+		return "(w.site IS NULL OR w.site = '')", nil
+	case PopulationClaimed:
+		return "(w.site IS NOT NULL AND w.site <> '')", nil
+	default:
+		return "", fmt.Errorf("unknown population %q (want all|bodyless|claimed)", pop)
+	}
+}
+
+// candidate is one galgame work joined to its EXACT Bangumi anchor's subject.
+// Summary is verbatim from the dump ('' when the subject has none — counted,
+// not filtered, so the run reports skip_no_summary). Site is carried so the run
+// can report the bodyless/claimed split of what it wrote.
 type candidate struct {
 	WorkID    int64   `gorm:"column:work_id"`
 	SubjectID int64   `gorm:"column:subject_id"`
@@ -45,20 +75,24 @@ type candidate struct {
 	Summary   string  `gorm:"column:summary"`
 }
 
-// loadCandidates resolves bodyless galgame works carrying an EXACT Bangumi work
-// anchor — matched_by UNRESTRICTED (every exact tier asserts identity, the
-// 66/69/71 ruling; the bgmworkmeta precedent) — joined to the anchored
-// subject's summary:
+// loadCandidates resolves galgame works in the requested population carrying an
+// EXACT Bangumi work anchor — matched_by UNRESTRICTED (every exact tier asserts
+// identity, the 66/69/71 ruling; the bgmworkmeta precedent) — joined to the
+// anchored subject's summary:
 //
-//	catalog_work(bodyless galgame)
-//	  → catalog_external_ref(entity_type=work, source=bangumi, link_kind=exact)
-//	  → src_bangumi.subject (same DB — src_bangumi is a schema, single DSN)
+//	catalog_work(galgame) → catalog_external_ref(entity_type=work,
+//	  source=bangumi, link_kind=exact) → src_bangumi.subject
+//	  (same DB — src_bangumi is a schema, single DSN)
 //
 // Probable anchors (link_kind=probable) never appear (the exact gate excludes
 // them). The external_id→bigint cast is safe (surveyed: zero non-numeric exact
 // bgm work anchors — the 69 verification). DISTINCT ON keeps ONE anchor per
 // work (the lowest external_id), same as dlsitemedia.
-func loadCandidates(ctx context.Context, db *gorm.DB, reg registry, limit, offset int) ([]candidate, error) {
+func loadCandidates(ctx context.Context, db *gorm.DB, reg registry, pop string, limit, offset int) ([]candidate, error) {
+	site, err := sitePredicate(pop)
+	if err != nil {
+		return nil, err
+	}
 	q := db.WithContext(ctx).
 		Raw(`SELECT DISTINCT ON (w.id) w.id AS work_id, r.external_id::bigint AS subject_id,
 				w.site AS site, sub.summary AS summary
@@ -66,7 +100,7 @@ func loadCandidates(ctx context.Context, db *gorm.DB, reg registry, limit, offse
 			JOIN catalog_external_ref r ON r.entity_type = ? AND r.entity_id = w.id
 				AND r.source_id = ? AND r.link_kind = ?
 			JOIN src_bangumi.subject sub ON sub.id = r.external_id::bigint
-			WHERE w.medium_id = ? AND (w.site IS NULL OR w.site = '') AND w.deleted_at IS NULL
+			WHERE w.medium_id = ? AND `+site+` AND w.deleted_at IS NULL
 			ORDER BY w.id, r.external_id`,
 			model.EntityTypeWork, reg.bangumiSource, model.LinkKindExact, reg.galgameMedium)
 	var out []candidate

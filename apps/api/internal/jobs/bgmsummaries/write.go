@@ -47,16 +47,17 @@ func (r *runner) process(ctx context.Context, cands []candidate, apply bool) {
 
 // enrich decides and (in apply mode) writes one candidate's intro row.
 func (r *runner) enrich(ctx context.Context, c candidate, apply bool) {
-	if !isBodyless(c.Site) { // XOR guard (§8.D) — never materialise a claimed work
-		r.stats.Refused++
-		return
-	}
 	text := normalizeSummary(c.Summary)
 	if strings.TrimSpace(text) == "" {
 		r.stats.NoSummary++
 		return
 	}
-	lang := detectLang(text)
+	lang, ok := detectLang(text)
+	if !ok { // no CJK evidence — never guess a language tag (the 164 defect)
+		r.stats.NoLang++
+		r.collect(&r.stats.NoLangSamples, c, "", text)
+		return
+	}
 	if r.exist[c.WorkID][lang] {
 		r.stats.SkipDupLang++
 		r.collect(&r.stats.DupSamples, c, lang, text)
@@ -103,6 +104,9 @@ func (r *runner) enrich(ctx context.Context, c candidate, apply bool) {
 		r.stats.JaWritten++
 	} else {
 		r.stats.ZhWritten++
+	}
+	if c.Site != nil && *c.Site != "" {
+		r.stats.ClaimedWritten++
 	}
 }
 
