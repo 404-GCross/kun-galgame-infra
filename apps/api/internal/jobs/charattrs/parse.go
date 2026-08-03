@@ -339,3 +339,48 @@ func parseBGMBWH(raw string) bgmBWH {
 	}
 	return out
 }
+
+// --- shared parsers -----------------------------------------------------
+//
+// These wrap the per-field rules wave 81 ruled on (the width normalization, the
+// unknown-value sentinels, the range gates that keep a 200m "height" out of a
+// typed column, the blood-type vocabulary). They are exported because a second
+// source now needs the SAME rules: the Getchu lane (refs/proj/167) reads
+// 身長/スリーサイズ/血液型/誕生日 strings of the same shape, and a private copy
+// of these rules in that package would be two normalizers free to drift.
+//
+// The "BGM" in the underlying names is historical — the parsers were always
+// generic over a raw string.
+
+// ParseHeightCM parses a height, gated to the range wave 81 pinned. found is
+// true when a number was present at all, so a caller can tell "no value" from
+// "value out of range" (the latter stays raw upstream rather than being typed).
+func ParseHeightCM(raw string) (v *int16, found bool) {
+	m := parseBGMMeasure(raw, minHeight, maxHeight)
+	return m.value, m.found
+}
+
+// ParseWeightKG parses a weight under the same discipline.
+func ParseWeightKG(raw string) (v *int16, found bool) {
+	m := parseBGMMeasure(raw, minWeight, maxWeight)
+	return m.value, m.found
+}
+
+// ParseBloodType maps a blood-type string onto the model vocabulary. Values
+// outside A/B/AB/O (X型 and friends) return nil — wave 81's ruling, so the
+// column never carries a value the vocabulary cannot name.
+func ParseBloodType(raw string) *int16 { return parseBGMBlood(raw) }
+
+// ParseBWH parses a three-size string plus any embedded cup ("86/57/82",
+// "B87/W59/H88", "B85(E)/W58/H86").
+func ParseBWH(raw string) (bust, waist, hip *int16, cup *string) {
+	p := parseBGMBWH(raw)
+	return p.bust, p.waist, p.hip, p.cup
+}
+
+// ParseBirthdayMD parses a birthday to (month, day). Either may be nil when the
+// source gives only one half.
+func ParseBirthdayMD(raw string) (month, day *int16) {
+	b := parseBGMBirthday(raw)
+	return b.month, b.day
+}
