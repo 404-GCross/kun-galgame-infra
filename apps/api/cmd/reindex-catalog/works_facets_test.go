@@ -18,6 +18,7 @@ import (
 	"api/internal/platform/catalog/migrate"
 	"api/internal/platform/catalog/model"
 	"api/internal/platform/catalog/seed"
+	"api/internal/testsupport/dbtest"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -27,10 +28,9 @@ import (
 var facetTestDB *gorm.DB
 
 func TestMain(m *testing.M) {
-	dsn := os.Getenv("TEST_DATABASE_DSN")
-	if dsn == "" {
-		fmt.Fprintln(os.Stderr, "FAIL: TEST_DATABASE_DSN is required")
-		os.Exit(2)
+	dsn, ok := dbtest.DSN()
+	if !ok {
+		dbtest.SkipMain("reindex-catalog suite")
 	}
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: glogger.Default.LogMode(glogger.Silent)})
 	if err != nil {

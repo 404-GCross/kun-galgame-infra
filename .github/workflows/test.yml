@@ -5,7 +5,9 @@ name: test
 #                 Pure unit tests run; every service-gated test skips cleanly
 #                 (they're written to Skip when their env var is unset). This is
 #                 the always-green day-one gate: it catches "compiles but the
-#                 unit logic is wrong".
+#                 unit logic is wrong". A DB-backed suite that FAILS here instead
+#                 of skipping is a bug in the suite, not a missing service — see
+#                 internal/testsupport/dbtest, which is where that decision lives.
 #   integration — spins Postgres + Meilisearch service containers and re-runs
 #                 the suite with the env vars the integration tests look for, so
 #                 the galgame service / search / refping tests (which
@@ -103,6 +105,13 @@ jobs:
       # The galgame service + jobs (refping) tests read TEST_DATABASE_DSN and
       # self-AutoMigrate into it; an empty DB is all they need.
       TEST_DATABASE_DSN: "host=localhost port=5432 user=postgres password=postgres dbname=galtest sslmode=disable"
+      # Assert that the DB-backed suites RAN. Without it, losing the DSN above
+      # (a typo, a renamed service container) makes every such suite skip and
+      # still print `ok` — a green job that tested nothing. internal/testsupport/
+      # dbtest turns a missing DSN into a hard failure when this is set, which is
+      # exactly the case where a missing DSN means the job is broken rather than
+      # a service being legitimately absent (the unit job above).
+      REQUIRE_DB_TESTS: "1"
       MEILISEARCH_TEST_HOST: "http://127.0.0.1:7700"
       MEILISEARCH_TEST_API_KEY: citest_meili_master_key_change_me
     steps:

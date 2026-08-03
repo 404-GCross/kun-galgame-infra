@@ -1,11 +1,11 @@
 package main
 
 import (
-	"os"
 	"testing"
 
 	"api/internal/platform/catalog/migrate"
 	"api/internal/platform/catalog/seed"
+	"api/internal/testsupport/dbtest"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -43,9 +43,9 @@ var retiredSchemaTables = []string{
 }
 
 func TestCatalogMigrationMaintainsCatalogOnlySchema(t *testing.T) {
-	dsn := os.Getenv("TEST_DATABASE_DSN")
-	if dsn == "" {
-		t.Fatal("TEST_DATABASE_DSN is required")
+	dsn, ok := dbtest.DSN()
+	if !ok {
+		dbtest.Skip(t)
 	}
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 	if err != nil {

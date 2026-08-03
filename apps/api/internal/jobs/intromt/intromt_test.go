@@ -16,6 +16,7 @@ import (
 	"api/internal/platform/catalog/migrate"
 	"api/internal/platform/catalog/model"
 	"api/internal/platform/catalog/seed"
+	"api/internal/testsupport/dbtest"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -34,10 +35,10 @@ var (
 )
 
 func TestMain(m *testing.M) {
-	testDSN = os.Getenv("TEST_DATABASE_DSN")
-	if testDSN == "" {
-		fmt.Fprintln(os.Stderr, "FAIL: TEST_DATABASE_DSN is required")
-		os.Exit(2)
+	var ok bool
+	testDSN, ok = dbtest.DSN()
+	if !ok {
+		dbtest.SkipMain("intromt suite")
 	}
 	db, err := gorm.Open(postgres.Open(testDSN), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 	if err != nil {
