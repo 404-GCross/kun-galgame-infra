@@ -165,7 +165,7 @@ func propose(ctx context.Context, db *gorm.DB, merge *service.MergeService, tsvs
 	fmt.Printf("\n=== propose %s ===\nproposed=%d skipped=%d failed=%d\n", modeLabel(run), proposed, skipped, failed)
 }
 
-// sanity pins the QA case shape before any write: target = live claimed wiki
+// sanity pins the QA case shape before any write: target = live claimed kungal
 // work; source = live BODYLESS work (claim guard would reject a claimed source
 // anyway — this fails fast with a better message) carrying the correct_bid
 // exact bgm anchor.
@@ -181,8 +181,8 @@ func sanity(ctx context.Context, db *gorm.DB, r tsvRow) error {
 	if tgt.ID == 0 {
 		return fmt.Errorf("target work missing/deleted")
 	}
-	if tgt.Site == nil || *tgt.Site != "galgame_wiki" {
-		return fmt.Errorf("target not a claimed galgame_wiki work")
+	if tgt.Site == nil || *tgt.Site != "kungal" {
+		return fmt.Errorf("target not a claimed kungal work")
 	}
 	var src struct {
 		ID   int64

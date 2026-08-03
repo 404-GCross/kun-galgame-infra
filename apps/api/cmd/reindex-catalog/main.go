@@ -336,87 +336,15 @@ type workTitle struct {
 
 // loadWorkTitles returns work id → title rows (official first, then alias /
 // abbreviation / search-hint — kind ASC), scoped to the index population. It
-// mirrors the READ face's own title merge (ReadService.loadWorkTitles, A2-R1),
-// because a work must not be findable by a name the read face would never show
-// — and, far more importantly here, must BE findable by the names it does show:
-//
-//   - CLAIMED works bridge the wiki body — galgame's four fixed name columns
-//     pivot to BCP-47 official rows and galgame_alias rows become alias rows
-//     with no language, with the read face's own intra-bridge dedup (an alias
-//     whose string is already an official name is one name, indexed once);
-//   - BODYLESS works read catalog_work_title verbatim, every kind.
-//
-// Strict XOR on the DISPLAY lane, like the read face: a claimed work's native
-// display rows are not read. The SEARCH-HINT lane is deliberately NOT part of
-// that XOR — hints are catalog-native findability rows with no wiki counterpart
-// (the DLsite importer attaches a store product name to a work it did not
-// create, and thousands of those sit on claimed works), they are never
-// displayed anywhere, and dropping them would make a findability FIX remove
-// findability. So a claimed work keeps its hints alongside the bridge — the
-// screenshot facet's (facet, source) XOR refinement, applied to titles: two
-// lanes carrying different rows, not two copies of one row.
-//
-// Three queries for the whole population, never per work.
+// reads catalog_work_title for every live galgame work, independent of claim
+// ownership. The native table already contains every official, alias,
+// abbreviation, and search-hint row; latin is preserved on the same row.
+// One query serves the whole population, never per work.
 func loadWorkTitles(db *gorm.DB) (map[int64][]workTitle, error) {
 	const population = `w.deleted_at IS NULL AND w.status = 0
 		AND w.medium_id = (SELECT id FROM catalog_medium WHERE key = 'galgame')`
 
 	m := map[int64][]workTitle{}
-
-	// ── claimed: the wiki bridge, official names first ──
-	var names []struct {
-		WorkID   int64  `gorm:"column:work_id"`
-		NameJaJP string `gorm:"column:name_ja_jp"`
-		NameEnUS string `gorm:"column:name_en_us"`
-		NameZhCN string `gorm:"column:name_zh_cn"`
-		NameZhTW string `gorm:"column:name_zh_tw"`
-	}
-	if err := db.Raw(`SELECT w.id AS work_id, g.name_ja_jp, g.name_en_us, g.name_zh_cn, g.name_zh_tw
-		FROM catalog_work w JOIN galgame g ON g.id = w.product_work_id
-		WHERE w.site = 'galgame_wiki' AND ` + population).Scan(&names).Error; err != nil {
-		return nil, err
-	}
-	// The pivot is the read face's, verbatim — same columns, same BCP-47 tags.
-	official := map[int64]map[string]bool{}
-	for _, r := range names {
-		seen := map[string]bool{}
-		for _, p := range []struct{ lang, text string }{
-			{"ja", r.NameJaJP}, {"en", r.NameEnUS},
-			{"zh-Hans", r.NameZhCN}, {"zh-Hant", r.NameZhTW},
-		} {
-			title := strings.TrimSpace(p.text)
-			if title == "" {
-				continue
-			}
-			seen[title] = true
-			m[r.WorkID] = append(m[r.WorkID], workTitle{
-				lang: p.lang, title: title, kind: model.WorkTitleKindOfficial,
-			})
-		}
-		official[r.WorkID] = seen
-	}
-
-	// ── claimed: the wiki aliases, no language (the wiki records none) ──
-	var aliases []struct {
-		WorkID int64  `gorm:"column:work_id"`
-		Name   string `gorm:"column:name"`
-	}
-	if err := db.Raw(`SELECT w.id AS work_id, a.name
-		FROM catalog_work w JOIN galgame_alias a ON a.galgame_id = w.product_work_id
-		WHERE w.site = 'galgame_wiki' AND ` + population + `
-		ORDER BY w.id, a.id`).Scan(&aliases).Error; err != nil {
-		return nil, err
-	}
-	for _, a := range aliases {
-		name := strings.TrimSpace(a.Name)
-		if name == "" || official[a.WorkID][name] {
-			continue
-		}
-		m[a.WorkID] = append(m[a.WorkID], workTitle{title: name, kind: model.WorkTitleKindAlias})
-	}
-
-	// ── native: every kind for a BODYLESS work, search hints only for a claimed
-	// one (see the doc comment — the hint lane has no wiki counterpart).
 	var native []struct {
 		WorkID int64  `gorm:"column:work_id"`
 		Lang   string `gorm:"column:lang"`
@@ -427,8 +355,8 @@ func loadWorkTitles(db *gorm.DB) (map[int64][]workTitle, error) {
 	if err := db.Raw(`SELECT t.work_id, t.lang, t.title, coalesce(t.latin,'') AS latin, t.kind
 		FROM catalog_work_title t
 		JOIN catalog_work w ON w.id = t.work_id
-		WHERE `+population+` AND (coalesce(w.site, '') = '' OR t.kind = ?)
-		ORDER BY t.work_id, t.kind, t.lang`, model.WorkTitleKindSearchHint).Scan(&native).Error; err != nil {
+		WHERE ` + population + `
+		ORDER BY t.work_id, t.kind, t.lang, t.id`).Scan(&native).Error; err != nil {
 		return nil, err
 	}
 	for _, r := range native {
@@ -440,51 +368,15 @@ func loadWorkTitles(db *gorm.DB) (map[int64][]workTitle, error) {
 type workIntro struct{ lang, text string }
 
 // loadWorkIntros returns work id → merged synopsis rows for the index
-// population (A2-1f). It mirrors the READ face's own merge exactly
-// (ReadService.loadWorkIntros), because a work must not be findable by text
-// the read face would never show:
-//
-//   - CLAIMED works bridge the wiki body's four fixed language columns
-//     (galgame.intro_*), pivoted to BCP-47 — bridge-not-copy, same as the read
-//     face;
-//   - BODYLESS works read catalog_work_intro, merged to ONE row per language
-//     by (provenance, source_id): provenance ASC keeps a machine translation
-//     from beating a source row (step 75), then the usual source priority.
-//
-// Strict XOR, like the read face: a claimed work never falls back to native
-// rows. Two queries for the whole population, never per work.
+// population. Claimed and bodyless works both read catalog_work_intro, merged
+// to one row per language by (provenance, source_id): provenance ASC keeps a
+// machine translation from beating a source row, then source_id supplies the
+// stable source priority. One query serves the whole population.
 func loadWorkIntros(db *gorm.DB) (map[int64][]workIntro, error) {
 	const population = `w.deleted_at IS NULL AND w.status = 0
 		AND w.medium_id = (SELECT id FROM catalog_medium WHERE key = 'galgame')`
 
 	out := map[int64][]workIntro{}
-
-	// ── claimed: the wiki bridge ──
-	var bridged []struct {
-		WorkID    int64  `gorm:"column:work_id"`
-		IntroJaJP string `gorm:"column:intro_ja_jp"`
-		IntroEnUS string `gorm:"column:intro_en_us"`
-		IntroZhCN string `gorm:"column:intro_zh_cn"`
-		IntroZhTW string `gorm:"column:intro_zh_tw"`
-	}
-	if err := db.Raw(`SELECT w.id AS work_id, g.intro_ja_jp, g.intro_en_us, g.intro_zh_cn, g.intro_zh_tw
-		FROM catalog_work w JOIN galgame g ON g.id = w.product_work_id
-		WHERE w.site = 'galgame_wiki' AND ` + population).Scan(&bridged).Error; err != nil {
-		return nil, err
-	}
-	// The pivot is the read face's, verbatim — same columns, same BCP-47 tags.
-	for _, r := range bridged {
-		for _, p := range []struct{ lang, text string }{
-			{"ja", r.IntroJaJP}, {"en", r.IntroEnUS},
-			{"zh-Hans", r.IntroZhCN}, {"zh-Hant", r.IntroZhTW},
-		} {
-			if strings.TrimSpace(p.text) != "" {
-				out[r.WorkID] = append(out[r.WorkID], workIntro{lang: p.lang, text: p.text})
-			}
-		}
-	}
-
-	// ── bodyless: the native rows, first-per-language wins ──
 	var native []struct {
 		WorkID int64  `gorm:"column:work_id"`
 		Lang   string `gorm:"column:lang"`
@@ -492,8 +384,8 @@ func loadWorkIntros(db *gorm.DB) (map[int64][]workIntro, error) {
 	}
 	if err := db.Raw(`SELECT i.work_id, i.lang, i.intro
 		FROM catalog_work_intro i JOIN catalog_work w ON w.id = i.work_id
-		WHERE coalesce(w.site, '') = '' AND ` + population + `
-		ORDER BY i.work_id, i.lang, i.provenance, i.source_id`).Scan(&native).Error; err != nil {
+		WHERE ` + population + `
+		ORDER BY i.work_id, i.lang, i.provenance, i.source_id, i.id`).Scan(&native).Error; err != nil {
 		return nil, err
 	}
 	seen := map[int64]map[string]bool{}

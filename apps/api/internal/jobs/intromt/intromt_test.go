@@ -36,20 +36,21 @@ var (
 func TestMain(m *testing.M) {
 	testDSN = os.Getenv("TEST_DATABASE_DSN")
 	if testDSN == "" {
-		testDSN = "host=localhost port=5432 user=postgres password=postgres dbname=kun_catalog_test sslmode=disable"
+		fmt.Fprintln(os.Stderr, "FAIL: TEST_DATABASE_DSN is required")
+		os.Exit(2)
 	}
 	db, err := gorm.Open(postgres.Open(testDSN), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "SKIP: cannot connect to test database: %v\n", err)
-		os.Exit(0)
+		fmt.Fprintln(os.Stderr, "FAIL: cannot connect to the assigned test database")
+		os.Exit(1)
 	}
 	if err := migrate.Run(db); err != nil {
-		fmt.Fprintf(os.Stderr, "SKIP: catalog migrate failed: %v\n", err)
-		os.Exit(0)
+		fmt.Fprintf(os.Stderr, "FAIL: catalog migrate failed: %v\n", err)
+		os.Exit(1)
 	}
 	if err := seed.Run(db); err != nil {
-		fmt.Fprintf(os.Stderr, "SKIP: catalog seed failed: %v\n", err)
-		os.Exit(0)
+		fmt.Fprintf(os.Stderr, "FAIL: catalog seed failed: %v\n", err)
+		os.Exit(1)
 	}
 	testDB = db
 	os.Exit(m.Run())
@@ -127,7 +128,7 @@ func TestPilotEndToEnd(t *testing.T) {
 	clean(t)
 	ctx := context.Background()
 	medium, dlsite, bangumi := reg(t)
-	claimed := "galgame_wiki"
+	claimed := "kungal"
 
 	wInsert := mkWork(t, medium, "ja-no-zh", nil)      // ja intro, no zh → insert
 	wHasZh := mkWork(t, medium, "ja-has-zh-src", nil)  // ja + zh source → excluded (fill-missing)
@@ -248,39 +249,39 @@ func TestPopularityOrdering(t *testing.T) {
 	assert.Equal(t, wWish, cands[1].WorkID)
 }
 
-// TestClaimedPopulation drives the claimed lane (site='galgame_wiki'): wiki
-// works with a step-q ja row (source_id=galgame_wiki) qualify, bodyless works
-// are excluded, fill-missing still applies, and the machine row lands
-// attributed to the wiki ja row's source_id. Ordering falls back to work_id
-// ASC (claimed works carry no dlsite popularity).
+// TestClaimedPopulation drives the claimed lane (site='kungal'): current-site
+// works with a curated ja row qualify, while bodyless and former-site works are
+// excluded. Fill-missing still applies, and the machine row is attributed to
+// the chosen ja row's source_id. Ordering falls back to work_id ASC because
+// these works carry no dlsite popularity.
 func TestClaimedPopulation(t *testing.T) {
 	clean(t)
 	ctx := context.Background()
 	medium, _, bangumi := reg(t)
-	var wiki int16
-	// Dual-read: wave 161 renamed source 12's key galgame_wiki → curated, and
-	// the fixture must resolve the same row on either side of that deploy.
+	var curated int16
 	require.NoError(t, testDB.Raw(
-		`SELECT id FROM catalog_source WHERE key IN ('curated','galgame_wiki') ORDER BY id LIMIT 1`).
-		Scan(&wiki).Error)
-	require.NotZero(t, wiki)
-	claimed := "galgame_wiki"
+		`SELECT id FROM catalog_source WHERE key = 'curated'`).Scan(&curated).Error)
+	require.NotZero(t, curated)
+	claimed := "kungal"
+	formerSite := "galgame_wiki"
 
 	wA := mkWork(t, medium, "claimed-a", &claimed)
 	wB := mkWork(t, medium, "claimed-b", &claimed)
 	wZh := mkWork(t, medium, "claimed-has-zh", &claimed)
+	wFormer := mkWork(t, medium, "former-site", &formerSite)
 	wBodyless := mkWork(t, medium, "bodyless", nil)
 
-	mkIntro(t, wA, "ja", "認領作品Aのあらすじ。", wiki)
-	mkIntro(t, wB, "ja", "認領作品Bのあらすじ。", wiki)
-	mkIntro(t, wZh, "ja", "中文既存のあらすじ。", wiki)
+	mkIntro(t, wA, "ja", "認領作品Aのあらすじ。", curated)
+	mkIntro(t, wB, "ja", "認領作品Bのあらすじ。", curated)
+	mkIntro(t, wZh, "ja", "中文既存のあらすじ。", curated)
 	mkIntro(t, wZh, "zh-Hans", "已有的中文简介。", bangumi) // any zh source row excludes the work
+	mkIntro(t, wFormer, "ja", "旧サイトのあらすじ。", curated)
 	mkIntro(t, wBodyless, "ja", "ボディレスのあらすじ。", bangumi)
 
-	// dry claimed lane: exactly the two zh-less wiki works, work_id ASC.
+	// Dry claimed lane: exactly the two zh-less current-site works, work_id ASC.
 	st, err := Run(ctx, nil, Opts{DSN: testDSN, Population: PopulationClaimed})
 	require.NoError(t, err)
-	assert.Equal(t, 2, st.Candidates, "wZh excluded (fill-missing), wBodyless excluded (claimed lane)")
+	assert.Equal(t, 2, st.Candidates, "zh-present, bodyless, and former-site works are excluded")
 
 	reg2, err := resolveRegistry(ctx, testDB)
 	require.NoError(t, err)
@@ -289,9 +290,10 @@ func TestClaimedPopulation(t *testing.T) {
 	require.Len(t, cands, 2)
 	assert.Equal(t, wA, cands[0].WorkID, "no popularity → work_id ASC")
 	assert.Equal(t, wB, cands[1].WorkID)
-	assert.Equal(t, wiki, cands[0].JaSourceID, "chosen ja row is the wiki materialized one")
+	assert.Equal(t, curated, cands[0].JaSourceID, "chosen ja row is the curated source row")
 
-	// apply: machine rows land on the wiki works only, wiki attribution.
+	// Apply: machine rows land on current-site works only, with source
+	// attribution inherited from their ja rows.
 	tr := &fakeTranslator{model: "claimed-mt", fn: func(ja string) string { return "[译] " + ja }}
 	st, err = Run(ctx, tr, Opts{DSN: testDSN, Apply: true, Population: PopulationClaimed})
 	require.NoError(t, err)
@@ -302,8 +304,9 @@ func TestClaimedPopulation(t *testing.T) {
 	var row model.CatalogWorkIntro
 	require.NoError(t, testDB.Where("work_id=? AND lang='zh-Hans'", wA).First(&row).Error)
 	assert.EqualValues(t, 1, row.Provenance, "machine row")
-	assert.Equal(t, wiki, row.SourceID, "attributed to the wiki ja row's source_id")
+	assert.Equal(t, curated, row.SourceID, "attributed to the curated ja row's source_id")
 	assert.Equal(t, "[译] 認領作品Aのあらすじ。", row.Intro)
+	assert.EqualValues(t, 0, introCount(t, "WHERE work_id=? AND lang='zh-Hans'", wFormer), "former-site work untouched by the claimed lane")
 	assert.EqualValues(t, 0, introCount(t, "WHERE work_id=? AND lang='zh-Hans'", wBodyless), "bodyless work untouched by the claimed lane")
 
 	// default lane stays bodyless: the same DB state yields only wBodyless.

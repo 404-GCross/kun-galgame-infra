@@ -16,13 +16,11 @@ const (
 	// PopulationBodyless — catalog-native works (empty site): the doc-75 pilot
 	// lane (dlsite/bangumi-anchored works whose ja intro came from an importer).
 	PopulationBodyless Population = "bodyless"
-	// PopulationClaimed — wiki-face works (site='galgame_wiki'): the W1-pre
-	// refill lane. Their ja intros were materialized verbatim from the galgame
-	// body by wikirescue step q (source_id=galgame_wiki, provenance=0) while
-	// their wiki zh translations were deliberately dropped as unsourced
-	// (ruling ①, refs/plans/10) — this lane refills zh-Hans from the ja
-	// original. Works whose only body text sat in the zh columns have no ja row
-	// and are therefore NOT candidates until the kana re-file wave lands.
+	// PopulationClaimed — current product works (site='kungal'): the retirement
+	// refill lane. Their source ja intros are already materialized in
+	// catalog_work_intro while the former wiki zh translations were deliberately
+	// dropped as unsourced (ruling ①, refs/plans/10), so this lane refills
+	// zh-Hans from the ja original. Works with no ja row are not candidates.
 	PopulationClaimed Population = "claimed"
 )
 
@@ -85,11 +83,11 @@ type candidate struct {
 // (5,000); Go-side windowing by `limit` then takes the most-popular N for a
 // sample run.
 //
-// The claimed lane reuses the same rank unchanged: wiki-face works typically
+// The claimed lane reuses the same rank unchanged: claimed works typically
 // carry no dlsite popularity, so they rank 0 and fall back to the work_id ASC
-// tiebreak — still a total, deterministic order. Deliberately NO join onto the
-// galgame table for view counts: that family is scheduled to DROP (W1) and the
-// whole lane is translated in one run anyway, so order is cosmetic.
+// tiebreak — still a total, deterministic order. Deliberately no join onto the
+// retired galgame table for view counts: the whole lane is translated in one
+// run anyway, so order is cosmetic.
 func loadCandidates(ctx context.Context, db *gorm.DB, reg registry, pop Population, top, limit int) ([]candidate, error) {
 	if top <= 0 {
 		top = 5000
@@ -99,7 +97,7 @@ func loadCandidates(ctx context.Context, db *gorm.DB, reg registry, pop Populati
 	case PopulationBodyless:
 		sitePredicate = "(site IS NULL OR site = '')"
 	case PopulationClaimed:
-		sitePredicate = "site = 'galgame_wiki'"
+		sitePredicate = "site = 'kungal'"
 	default:
 		return nil, fmt.Errorf("unknown population %q (want %q or %q)", pop, PopulationBodyless, PopulationClaimed)
 	}

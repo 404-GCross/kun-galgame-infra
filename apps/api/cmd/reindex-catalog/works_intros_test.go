@@ -1,42 +1,17 @@
-// works_intros_test.go — A2-1f: the reindexer's synopsis loader.
+// works_intros_test.go — the reindexer's Catalog-native synopsis loader.
 //
 // The service suite proves the SEARCH face gates intro matching correctly; this
 // proves the reindexer feeds it the right text in the first place. The property
-// that matters is that the loader mirrors the READ face's own merge — a work
-// must never be findable by text the read face would not show — so the cases
-// here are the read face's rules: claimed works bridge the wiki body, bodyless
-// works read the native table, the two lanes are a strict XOR, a machine
-// translation loses to a source row, and nothing outside the index population
-// contributes at all.
+// that matters is that claimed and bodyless works both read
+// catalog_work_intro, a machine translation loses to a source row, and nothing
+// outside the index population contributes at all.
 package main
 
 import (
 	"testing"
 
 	"api/internal/platform/catalog/model"
-	"api/internal/platform/galgame/galgametest"
-
-	"gorm.io/gorm"
 )
-
-// ensureGalgameBodyStub provisions the wiki body tables the claimed lanes bridge
-// (galgame for intros + the four name columns, galgame_alias for the A2-R1 title
-// bridge) from the real models, so every package sharing this database sees the
-// same shape whichever one runs first. The insert helpers still supply user_id:
-// the real schema has it NOT NULL with no default. Cleanup is a targeted DELETE
-// of this suite's own fixture ids — the tables are shared, never truncated here.
-func ensureGalgameBodyStub(t *testing.T, db *gorm.DB, ids []int64) {
-	t.Helper()
-	if err := galgametest.EnsureBodyTables(db); err != nil {
-		t.Fatalf("galgame body tables: %v", err)
-	}
-	if err := db.Exec(`DELETE FROM galgame_alias WHERE galgame_id IN ?`, ids).Error; err != nil {
-		t.Fatalf("clear galgame_alias fixtures: %v", err)
-	}
-	if err := db.Exec(`DELETE FROM galgame WHERE id IN ?`, ids).Error; err != nil {
-		t.Fatalf("clear galgame fixtures: %v", err)
-	}
-}
 
 // introsOf flattens the loader's result for one work into lang → text.
 func introsOf(t *testing.T, workID int64) map[string]string {
@@ -52,30 +27,32 @@ func introsOf(t *testing.T, workID int64) map[string]string {
 	return out
 }
 
-// TestLoadWorkIntrosMirrorsTheReadFace covers the whole rule set in one corpus.
-func TestLoadWorkIntrosMirrorsTheReadFace(t *testing.T) {
+// TestLoadWorkIntrosUsesCatalogRowsForEveryWork covers the native-only rule in
+// one corpus.
+func TestLoadWorkIntrosUsesCatalogRowsForEveryWork(t *testing.T) {
 	truncateFacetTables(t)
-	wikiIDs := []int64{96001, 96002}
-	ensureGalgameBodyStub(t, facetTestDB, wikiIDs)
-	t.Cleanup(func() { _ = facetTestDB.Exec(`DELETE FROM galgame WHERE id IN ?`, wikiIDs).Error })
 
-	// ── claimed: bridges the wiki body's four columns ──
+	// Claimed works consume their already-materialized Catalog intro rows.
 	claimed := mkWork(t, "claimed-intro", model.WorkStatusLive, galgameMedium)
 	if err := facetTestDB.Exec(
-		`UPDATE catalog_work SET site = 'galgame_wiki', product_work_id = ? WHERE id = ?`,
-		wikiIDs[0], claimed).Error; err != nil {
+		`UPDATE catalog_work SET site = 'kungal', product_work_id = 96001 WHERE id = ?`,
+		claimed).Error; err != nil {
 		t.Fatalf("claim: %v", err)
 	}
-	if err := facetTestDB.Exec(`INSERT INTO galgame (id, user_id, intro_ja_jp, intro_en_us, intro_zh_cn, intro_zh_tw)
-		VALUES (?, 1, '日本語のあらすじ', 'English synopsis', '简体梗概', '   ')`, wikiIDs[0]).Error; err != nil {
-		t.Fatalf("seed galgame body: %v", err)
-	}
-	// A native row on the SAME claimed work must be ignored (strict XOR) — the
-	// read face never falls back to it, so neither may the index.
-	if err := facetTestDB.Create(&model.CatalogWorkIntro{
-		WorkID: claimed, Lang: "ja", Intro: "この行は使われない", SourceID: 2,
-	}).Error; err != nil {
-		t.Fatalf("seed shadow native intro: %v", err)
+	for _, r := range []struct {
+		lang, intro string
+		source      int16
+		provenance  int16
+	}{
+		{"ja", "日本語のあらすじ", 3, 0},
+		{"en", "English synopsis", 3, 0},
+		{"zh-Hans", "机翻译文", 2, 1},
+		{"zh-Hans", "源文", 3, 0},
+	} {
+		if err := facetTestDB.Exec(`INSERT INTO catalog_work_intro (work_id, lang, intro, source_id, provenance)
+			VALUES (?, ?, ?, ?, ?)`, claimed, r.lang, r.intro, r.source, r.provenance).Error; err != nil {
+			t.Fatalf("seed claimed intro: %v", err)
+		}
 	}
 
 	// ── bodyless: reads the native table, one row per language ──
@@ -107,20 +84,16 @@ func TestLoadWorkIntrosMirrorsTheReadFace(t *testing.T) {
 
 	got := introsOf(t, claimed)
 	want := map[string]string{
-		"ja": "日本語のあらすじ", "en": "English synopsis", "zh-Hans": "简体梗概",
+		"ja": "日本語のあらすじ", "en": "English synopsis", "zh-Hans": "源文",
 	}
 	if len(got) != len(want) {
-		t.Fatalf("claimed intros = %v, want %v (a whitespace-only column is not an intro)", got, want)
+		t.Fatalf("claimed intros = %v, want %v", got, want)
 	}
 	for lang, text := range want {
 		if got[lang] != text {
 			t.Fatalf("claimed[%s] = %q, want %q", lang, got[lang], text)
 		}
 	}
-	if _, shadowed := got["zh-Hant"]; shadowed {
-		t.Fatalf("a blank wiki column produced an intro row: %v", got)
-	}
-
 	got = introsOf(t, bodyless)
 	if got["zh-Hans"] != "源文" {
 		t.Fatalf("bodyless zh-Hans = %q, want the SOURCE row (a machine translation must lose)", got["zh-Hans"])
