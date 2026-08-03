@@ -43,6 +43,7 @@ const (
 	taxonomyLaneLabels  = "labels"
 	taxonomyLaneTags    = "tags"
 	taxonomyLaneEngines = "engines"
+	taxonomyLaneSeries  = "series"
 )
 
 // LabelsListFilter is the label browse lane's request shape.
@@ -293,6 +294,7 @@ var taxonomyLiveClaim = []string{model.ClaimStateKeyLive}
 const (
 	labelWorkEdge  = `(SELECT label_id AS key_id, work_id FROM catalog_work_label) e`
 	engineWorkEdge = `(SELECT engine_id AS key_id, work_id FROM catalog_work_engine) e`
+	seriesWorkEdge = `(SELECT series_id AS key_id, work_id FROM catalog_series_member) e`
 	// A canonical tag reaches works through the source-name map, exactly as the
 	// works list's tag_id filter does.
 	tagWorkEdge = `(SELECT m.tag_id AS key_id, wt.work_id

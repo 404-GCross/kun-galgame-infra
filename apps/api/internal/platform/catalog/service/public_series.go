@@ -112,3 +112,65 @@ func (s *PublicService) seriesIntros(ctx context.Context, seriesID int64) ([]dto
 	}
 	return out, nil
 }
+
+// SeriesList serves the keyset series browse lane (id ASC), the fourth member
+// of the labels / tags / engines family and shaped identically to them.
+//
+// It exists because a series id had an ADDRESS but no way to be discovered: a
+// picker or an index had to already know the id to render a name. Search is the
+// wrong tool here — the facet is ~600 curated rows with no Meilisearch index of
+// its own, and giving it one would mean a new index plus a reindex lane for a
+// population two keyset pages cover.
+//
+// A malformed cursor is ErrBadCursor (the handler maps it to 400).
+func (s *PublicService) SeriesList(ctx context.Context, nsfw bool, cursor string, limit int) (dto.PublicSeriesListData, error) {
+	cur, err := decodePublicCursor(cursor, taxonomyLaneSeries)
+	if err != nil {
+		return dto.PublicSeriesListData{}, err
+	}
+	limit = clampBrowseLimit(limit)
+
+	// No deleted_at predicate, unlike the other three lanes: catalog_series
+	// carries no soft-delete column at all (see SeriesDetail — the importer
+	// mirrors the source by inserting and deleting rows outright).
+	var where []string
+	var args []any
+	if cur.ID > 0 {
+		where = append(where, "s.id > ?")
+		args = append(args, cur.ID)
+	}
+	args = append(args, limit)
+
+	var rows []struct {
+		ID          int64  `gorm:"column:id"`
+		DisplayName string `gorm:"column:display_name"`
+		Source      string `gorm:"column:source"`
+	}
+	q := `SELECT s.id, s.display_name, coalesce(src.key, '') AS source
+		FROM catalog_series s
+		LEFT JOIN catalog_source src ON src.id = s.source_id ` +
+		whereClause(where) + ` ORDER BY s.id ASC LIMIT ?`
+	if err := s.db.WithContext(ctx).Raw(q, args...).Scan(&rows).Error; err != nil {
+		return dto.PublicSeriesListData{}, err
+	}
+
+	ids := make([]int64, len(rows))
+	for i, r := range rows {
+		ids[i] = r.ID
+	}
+	counts, err := s.workCountsFor(ctx, seriesWorkEdge, ids, nsfw)
+	if err != nil {
+		return dto.PublicSeriesListData{}, err
+	}
+	out := dto.PublicSeriesListData{Items: make([]dto.PublicSeriesListItem, len(rows))}
+	for i, r := range rows {
+		out.Items[i] = dto.PublicSeriesListItem{
+			ID: r.ID, DisplayName: r.DisplayName, Source: r.Source, WorkCount: counts[r.ID],
+		}
+	}
+	if out.Total, err = s.taxonomyTotal(ctx, "catalog_series", nil, nil); err != nil {
+		return dto.PublicSeriesListData{}, err
+	}
+	out.NextCursor = taxonomyNextCursor(taxonomyLaneSeries, ids, limit)
+	return out, nil
+}

@@ -5771,6 +5771,173 @@ export const docsModel: DocsModel = {
               "curl": "curl \"https://api.nextmoe.dev/v1/catalog/search\" \\\n  -H \"Authorization: Bearer nm_live_<YOUR_KEY>\""
             },
             {
+              "id": "listCatalogSeriesPublic",
+              "method": "get",
+              "path": "/v1/catalog/series",
+              "summary": "Keyset series browse lane (id ASC); each row carries an nsfw-aware work_count",
+              "description": "The grouping entities works?series_id= filters on, id ascending. work_count is the number of works THIS caller would page through via works?series_id=<id>. Series are a curated, source-mirrored facet with no search index of their own, so this lane is how a consumer discovers an id it does not already hold.",
+              "scope": "catalog:read",
+              "params": [
+                {
+                  "name": "cursor",
+                  "in": "query",
+                  "required": false,
+                  "type": "string",
+                  "doc": "Opaque keyset cursor from a prior next_cursor; omit for the first page"
+                },
+                {
+                  "name": "limit",
+                  "in": "query",
+                  "required": false,
+                  "type": "integer",
+                  "format": "int64",
+                  "doc": "Items per page 1-100 (default 20); above 100 is clamped to 100, a non-positive or non-numeric value is a 400"
+                },
+                {
+                  "name": "nsfw",
+                  "in": "query",
+                  "required": false,
+                  "type": "boolean",
+                  "doc": "true/1 = count r18 works in work_count (default false = excluded, matching what an sfw works?series_id= call returns)"
+                }
+              ],
+              "responses": [
+                {
+                  "status": "200",
+                  "description": "OK",
+                  "schema": {
+                    "type": "object",
+                    "children": [
+                      {
+                        "name": "code",
+                        "required": true,
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      {
+                        "name": "data",
+                        "type": "object",
+                        "children": [
+                          {
+                            "name": "items",
+                            "required": true,
+                            "nullable": true,
+                            "type": "array",
+                            "itemsOf": {
+                              "type": "object",
+                              "children": [
+                                {
+                                  "name": "display_name",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "id",
+                                  "required": true,
+                                  "format": "int64",
+                                  "type": "integer"
+                                },
+                                {
+                                  "name": "source",
+                                  "required": true,
+                                  "type": "string"
+                                },
+                                {
+                                  "name": "work_count",
+                                  "required": true,
+                                  "format": "int64",
+                                  "type": "integer"
+                                }
+                              ]
+                            }
+                          },
+                          {
+                            "name": "next_cursor",
+                            "type": "string"
+                          },
+                          {
+                            "name": "total",
+                            "required": true,
+                            "format": "int64",
+                            "type": "integer"
+                          }
+                        ]
+                      },
+                      {
+                        "name": "message",
+                        "required": true,
+                        "type": "string"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "status": "default",
+                  "description": "Error",
+                  "schema": {
+                    "type": "object",
+                    "children": [
+                      {
+                        "name": "detail",
+                        "doc": "A human-readable explanation specific to this occurrence of the problem.",
+                        "type": "string"
+                      },
+                      {
+                        "name": "errors",
+                        "nullable": true,
+                        "doc": "Optional list of individual error details",
+                        "type": "array",
+                        "itemsOf": {
+                          "type": "object",
+                          "children": [
+                            {
+                              "name": "location",
+                              "doc": "Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'",
+                              "type": "string"
+                            },
+                            {
+                              "name": "message",
+                              "doc": "Error message text",
+                              "type": "string"
+                            },
+                            {
+                              "name": "value",
+                              "doc": "The value at the given location",
+                              "type": "object"
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "name": "instance",
+                        "doc": "A URI reference that identifies the specific occurrence of the problem.",
+                        "format": "uri",
+                        "type": "string"
+                      },
+                      {
+                        "name": "status",
+                        "doc": "HTTP status code",
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      {
+                        "name": "title",
+                        "doc": "A short, human-readable summary of the problem type. This value should not change between occurrences of the error.",
+                        "type": "string"
+                      },
+                      {
+                        "name": "type",
+                        "doc": "A URI reference to human-readable documentation for the error.",
+                        "format": "uri",
+                        "type": "string"
+                      }
+                    ]
+                  }
+                }
+              ],
+              "curl": "curl \"https://api.nextmoe.dev/v1/catalog/series\" \\\n  -H \"Authorization: Bearer nm_live_<YOUR_KEY>\""
+            },
+            {
               "id": "getCatalogSeriesPublic",
               "method": "get",
               "path": "/v1/catalog/series/{id}",

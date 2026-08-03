@@ -189,6 +189,15 @@ type publicSeriesOutput struct {
 	Body Envelope[dto.PublicSeriesDetail]
 }
 
+type publicSeriesListInput struct {
+	Cursor string `query:"cursor" doc:"Opaque keyset cursor from a prior next_cursor; omit for the first page"`
+	Limit  int    `query:"limit" doc:"Items per page 1-100 (default 20); above 100 is clamped to 100, a non-positive or non-numeric value is a 400"`
+	NSFW   bool   `query:"nsfw" doc:"true/1 = count r18 works in work_count (default false = excluded, matching what an sfw works?series_id= call returns)"`
+}
+type publicSeriesListOutput struct {
+	Body Envelope[dto.PublicSeriesListData]
+}
+
 // publicStatsOutput has no input type at all (the payload is one global
 // aggregate with no parameters) — huma.Register takes *struct{} for that.
 type publicStatsOutput struct {
@@ -393,6 +402,17 @@ func SetupCatalogPublicSpec(app *fiber.App) huma.API {
 		Tags: tags,
 	}, func(context.Context, *publicChangesInput) (*publicChangesOutput, error) {
 		return &publicChangesOutput{}, nil
+	})
+	huma.Register(api, huma.Operation{
+		OperationID: "listCatalogSeriesPublic", Method: http.MethodGet, Path: "/v1/catalog/series",
+		Summary: "Keyset series browse lane (id ASC); each row carries an nsfw-aware work_count",
+		Description: "The grouping entities works?series_id= filters on, id ascending. " +
+			"work_count is the number of works THIS caller would page through via works?series_id=<id>. " +
+			"Series are a curated, source-mirrored facet with no search index of their own, so this lane " +
+			"is how a consumer discovers an id it does not already hold.",
+		Tags: tags,
+	}, func(context.Context, *publicSeriesListInput) (*publicSeriesListOutput, error) {
+		return &publicSeriesListOutput{}, nil
 	})
 	huma.Register(api, huma.Operation{
 		OperationID: "getCatalogSeriesPublic", Method: http.MethodGet, Path: "/v1/catalog/series/{id}",

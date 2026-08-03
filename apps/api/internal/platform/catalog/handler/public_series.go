@@ -12,6 +12,22 @@ import (
 	"github.com/gofiber/fiber/v3"
 )
 
+// SeriesList serves GET /v1/catalog/series — the keyset series browse lane
+// (id ASC), the fourth member of the labels / tags / engines family. No
+// filters; work_count is nsfw-aware, exactly like its three siblings.
+func (h *PublicHandler) SeriesList(c fiber.Ctx) error {
+	limit, ok := limitPub(c.Query("limit"), 20, 100)
+	if !ok {
+		return response.BadRequestMsg(c, errors.ErrInvalidParam, msgBadLimit)
+	}
+	data, err := h.svc.SeriesList(c.Context(), nsfwQuery(c), c.Query("cursor"), limit)
+	if err != nil {
+		return taxonomyListError(c, err)
+	}
+	c.Set("Cache-Control", cacheSearch)
+	return response.Success(c, data)
+}
+
 // Series serves GET /v1/catalog/series/{id} — the series record (identity +
 // source anchor + intros); include=works attaches its member works with the
 // tags/{id} paging posture (limit 1-50 default 50, clamp-high / 400-low).

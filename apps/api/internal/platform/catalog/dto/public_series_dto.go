@@ -24,6 +24,27 @@ type PublicSeriesDetail struct {
 	NextOffset *int              `json:"next_offset,omitempty"`
 }
 
+// PublicSeriesListData is one page of the series browse lane
+// (GET /v1/catalog/series), shaped exactly like the labels / tags / engines
+// lanes so a consumer that can walk one can walk all four.
+type PublicSeriesListData struct {
+	Items      []PublicSeriesListItem `json:"items"`
+	Total      int64                  `json:"total"`
+	NextCursor *string                `json:"next_cursor,omitempty"`
+}
+
+// PublicSeriesListItem is one row of that lane. It carries identity plus the
+// same nsfw-aware work_count the other three lanes publish — the number of
+// works the SAME caller would page through via works?series_id=<id>.
+type PublicSeriesListItem struct {
+	ID          int64  `json:"id"`
+	DisplayName string `json:"display_name"`
+	// Source is the catalog_source KEY (public-face convention — never the
+	// numeric source_id), matching the refs[] on the detail record.
+	Source    string `json:"source"`
+	WorkCount int    `json:"work_count"`
+}
+
 // PublicSeriesIntro is one description of a series. source is the catalog_source
 // key (public-face convention — never the numeric source_id). Unlike the label
 // / tag intro sets this one is NOT merged to one row per language; see

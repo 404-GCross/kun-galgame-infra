@@ -161,3 +161,67 @@ func TestSeriesDetailWorksAttach(t *testing.T) {
 	code, _ = getJSON(t, app, base+"?include=works&limit=500")
 	assert.Equal(t, 200, code)
 }
+
+// TestSeriesListLane pins the browse lane against its three siblings: rows in id
+// order, an nsfw-aware work_count that equals what works?series_id= would hand
+// back to the SAME caller, and a series with no members rendering 0 rather than
+// being hidden.
+//
+// The count is the whole reason the lane is not just a name dump: a picker that
+// says "限界シリーズ (3)" while the link behind it lists 1 work is worse than one
+// that says nothing.
+func TestSeriesListLane(t *testing.T) {
+	db := openCatalogTestDB(t)
+	seriesID, emptyID, _, _ := seedSeries(t, db)
+	app := seriesApp(db)
+
+	code, body := getJSON(t, app, "/v1/catalog/series")
+	require.Equal(t, 200, code)
+	data := body["data"].(map[string]any)
+	items := data["items"].([]any)
+	require.Len(t, items, 2)
+
+	// id ASC — the lane's ordering contract, and what the cursor walks.
+	first := items[0].(map[string]any)
+	second := items[1].(map[string]any)
+	assert.EqualValues(t, seriesID, first["id"])
+	assert.EqualValues(t, emptyID, second["id"])
+	assert.Equal(t, "限界シリーズ", first["display_name"])
+	assert.Equal(t, "dlsite", first["source"], "the source KEY, never the numeric source_id")
+	// Three members: one live all-ages, one live r18, one stub. An sfw caller
+	// reaches exactly the first.
+	assert.EqualValues(t, 1, first["work_count"])
+	assert.EqualValues(t, 0, second["work_count"], "a memberless series is listed with 0, not hidden")
+	assert.EqualValues(t, 2, data["total"])
+
+	code, body = getJSON(t, app, "/v1/catalog/series?nsfw=1")
+	require.Equal(t, 200, code)
+	items = body["data"].(map[string]any)["items"].([]any)
+	assert.EqualValues(t, 2, items[0].(map[string]any)["work_count"],
+		"r18 joins the count; the stub never does — it is not in the fetchable set")
+
+	// The keyset walk: one row per page, and the last page ends it.
+	code, body = getJSON(t, app, "/v1/catalog/series?limit=1")
+	require.Equal(t, 200, code)
+	data = body["data"].(map[string]any)
+	require.Len(t, data["items"].([]any), 1)
+	cursor, ok := data["next_cursor"].(string)
+	require.True(t, ok, "a full page carries a cursor")
+
+	code, body = getJSON(t, app, "/v1/catalog/series?limit=1&cursor="+cursor)
+	require.Equal(t, 200, code)
+	data = body["data"].(map[string]any)
+	items = data["items"].([]any)
+	require.Len(t, items, 1)
+	assert.EqualValues(t, emptyID, items[0].(map[string]any)["id"])
+	assert.NotContains(t, data, "next_cursor", "the last page ends the walk")
+
+	// Lane-pinned cursors are why the four lanes can share one encoder: a cursor
+	// from another facet replayed here would silently page the wrong thing.
+	code, _ = getJSON(t, app, "/v1/catalog/series?cursor=not-a-real-cursor")
+	assert.Equal(t, 400, code)
+
+	// A non-positive limit is a 400, not a silent default — the shared posture.
+	code, _ = getJSON(t, app, "/v1/catalog/series?limit=0")
+	assert.Equal(t, 400, code)
+}
