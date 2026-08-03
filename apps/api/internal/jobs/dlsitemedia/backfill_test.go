@@ -70,7 +70,7 @@ func TestIntroWritePath(t *testing.T) {
 		require.NoError(t, db.Create(&w).Error)
 		return w.ID
 	}
-	claimed := "galgame_wiki"
+	claimed := "kungal"
 	wBody := mkWork("bodyless-with-intro", nil)
 	wEmpty := mkWork("bodyless-no-text", nil)
 	wClaimed := mkWork("claimed", &claimed)
@@ -83,7 +83,7 @@ func TestIntroWritePath(t *testing.T) {
 	metas := map[string]dlsiteMeta{
 		"RJ000001": {Age: "3", Intro: "A bodyless doujin blurb."},
 		"RJ000002": {Age: "1", Intro: ""}, // no prose
-		"RJ000003": {Age: "3", Intro: "Claimed — must be bridged, never copied."},
+		"RJ000003": {Age: "3", Intro: "A claimed work's store blurb (wave 166)."},
 	}
 
 	ctx := context.Background()
@@ -99,31 +99,33 @@ func TestIntroWritePath(t *testing.T) {
 
 	// --- dry run: classifies, writes nothing.
 	r := run(false)
-	assert.Equal(t, 1, r.c.introWould, "wBody would write")
+	assert.Equal(t, 2, r.c.introWould, "wBody and wClaimed both would write (wave 166)")
 	assert.Equal(t, 1, r.c.introNoText, "wEmpty no text")
-	assert.Equal(t, 1, r.c.introRefused, "wClaimed refused by XOR guard")
 	assert.Equal(t, 0, r.c.introWritten)
 	var n int64
 	require.NoError(t, db.Raw("SELECT count(*) FROM catalog_work_intro").Scan(&n).Error)
 	assert.EqualValues(t, 0, n, "dry run writes nothing")
 
-	// --- apply: writes exactly wBody's intro (ja, dlsite, verbatim).
+	// --- apply: writes wBody's AND the claimed work's intro (ja, dlsite,
+	// verbatim). Before wave 166 the claimed one was refused, which is what
+	// left published works with an English-only intro.
 	r = run(true)
-	assert.Equal(t, 1, r.c.introWritten)
-	assert.Equal(t, 1, r.c.introRefused)
+	assert.Equal(t, 2, r.c.introWritten)
 	var row model.CatalogWorkIntro
 	require.NoError(t, db.Where("work_id = ?", wBody).First(&row).Error)
 	assert.Equal(t, "ja", row.Lang)
 	assert.EqualValues(t, reg.dlsiteSource, row.SourceID)
 	assert.Equal(t, "A bodyless doujin blurb.", row.Intro)
-	// Claimed work never materialised (bridge-not-copy).
-	require.NoError(t, db.Raw("SELECT count(*) FROM catalog_work_intro WHERE work_id = ?", wClaimed).Scan(&n).Error)
-	assert.EqualValues(t, 0, n)
+	var claimedRow model.CatalogWorkIntro
+	require.NoError(t, db.Where("work_id = ?", wClaimed).First(&claimedRow).Error)
+	assert.Equal(t, "ja", claimedRow.Lang)
+	assert.Equal(t, "A claimed work's store blurb (wave 166).", claimedRow.Intro)
+	assert.EqualValues(t, 0, claimedRow.Provenance, "an ingested store blurb is a source row, never machine")
 
 	// --- second apply via the preloaded-exists skip: zero new writes.
 	r = run(true)
 	assert.Equal(t, 0, r.c.introWritten)
-	assert.Equal(t, 1, r.c.introExists, "preloaded exists → skip before write")
+	assert.Equal(t, 2, r.c.introExists, "preloaded exists → skip before write")
 
 	// --- and the ON CONFLICT guard: force a write attempt with a STALE (empty)
 	// exist map; the DB unique key still refuses the duplicate.
@@ -132,8 +134,10 @@ func TestIntroWritePath(t *testing.T) {
 	rStale.writeIntro(ctx, cands[0], metas["RJ000001"], true)
 	assert.Equal(t, 0, rStale.c.introWritten, "ON CONFLICT refuses the duplicate")
 	assert.Equal(t, 1, rStale.c.introExists)
+	require.NoError(t, db.Raw("SELECT count(*) FROM catalog_work_intro WHERE work_id = ?", wBody).Scan(&n).Error)
+	assert.EqualValues(t, 1, n, "still exactly one row for the retried work")
 	require.NoError(t, db.Raw("SELECT count(*) FROM catalog_work_intro").Scan(&n).Error)
-	assert.EqualValues(t, 1, n, "still exactly one row")
+	assert.EqualValues(t, 2, n, "bodyless + claimed, nothing more")
 }
 
 // --- refs/proj/125: the CLAIMED screenshot lane ---
@@ -248,10 +252,28 @@ func TestClaimedScreenshotLane(t *testing.T) {
 	assert.Equal(t, 1, bodyless)
 	assert.Equal(t, 1, claimedCount)
 
-	introCands, err := loadCandidates(ctx, db, reg, Kinds{Intro: true, Cover: true}, 0, 0)
+	// COVER-only still resolves the bodyless lane alone — cover keeps its
+	// claimed refusal (wave 164 already filled those slots from the wiki).
+	coverCands, err := loadCandidates(ctx, db, reg, Kinds{Cover: true}, 0, 0)
 	require.NoError(t, err)
-	require.Len(t, introCands, 1, "an intro/cover-only run resolves the bodyless lane alone")
-	assert.Equal(t, wBodyless, introCands[0].WorkID)
+	require.Len(t, coverCands, 1, "a cover-only run resolves the bodyless lane alone")
+	assert.Equal(t, wBodyless, coverCands[0].WorkID)
+
+	// INTRO, since wave 166, adds its own claimed lane: every claimed work with
+	// a dlsite anchor and no ja intro from ANY source. All three claimed
+	// fixtures qualify here — none of them has an intro row.
+	introCands, err := loadCandidates(ctx, db, reg, Kinds{Intro: true}, 0, 0)
+	require.NoError(t, err)
+	introIDs := map[int64]bool{}
+	for _, c := range introCands {
+		introIDs[c.WorkID] = true
+	}
+	assert.Contains(t, introIDs, wBodyless, "bodyless lane unchanged")
+	assert.Contains(t, introIDs, wClaimedBare, "claimed work with no ja intro → admitted")
+	assert.Contains(t, introIDs, wClaimedBridged, "the screenshot lane's exclusions do not apply to intro")
+	introBodyless, introClaimed := laneSplit(introCands)
+	assert.Equal(t, 1, introBodyless)
+	assert.Equal(t, 3, introClaimed)
 
 	// --- asymmetric windowing: --offset consumes the STABLE bodyless lane only, so
 	// it can isolate the self-consuming claimed lane without ever skipping it.
@@ -290,18 +312,20 @@ func TestClaimedScreenshotLane(t *testing.T) {
 		return &runner{db: db, sourceID: reg.dlsiteSource, exist: exist, cli: stubImageService(t)}
 	}
 
-	// PER-KIND GUARD SPLIT: intro and cover still refuse this claimed work (their
-	// facets are bridged at read time), screenshot writes it.
+	// PER-KIND GUARD SPLIT, post-166: intro and screenshot write a claimed
+	// work, COVER still refuses it. The split is not arbitrary — wave 164
+	// flipped covers onto the native table with the wiki rows already mirrored
+	// in, so a claimed work's cover slot is occupied and a store cover would be
+	// a second, worse one; its intro slot may be genuinely empty.
 	r := newRunner()
 	r.writeIntro(ctx, cand, meta, true)
 	r.writeCover(ctx, dir, cand, meta, true)
-	assert.Equal(t, 1, r.c.introRefused, "intro still refuses claimed")
+	assert.Equal(t, 1, r.c.introWritten, "intro now writes claimed (wave 166)")
 	assert.Equal(t, 1, r.c.coverRefused, "cover still refuses claimed")
-	assert.Zero(t, r.c.introWritten)
 	assert.Zero(t, r.c.coverUploaded)
 	var n int64
 	require.NoError(t, db.Raw("SELECT count(*) FROM catalog_work_intro WHERE work_id = ?", cand.WorkID).Scan(&n).Error)
-	assert.EqualValues(t, 0, n, "claimed intro never materialised")
+	assert.EqualValues(t, 1, n, "claimed intro materialised")
 	require.NoError(t, db.Raw("SELECT count(*) FROM catalog_work_cover WHERE work_id = ?", cand.WorkID).Scan(&n).Error)
 	assert.EqualValues(t, 0, n, "claimed cover never materialised")
 

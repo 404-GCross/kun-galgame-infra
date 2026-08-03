@@ -49,10 +49,6 @@ const (
 // DLsite description. Pure DB — no bytes, no image service, no quota. Idempotent:
 // a preloaded existing row (or an ON CONFLICT hit) is a skip.
 func (r *runner) writeIntro(ctx context.Context, c candidate, m dlsiteMeta, apply bool) {
-	if !isBodyless(c.Site) { // whole-facet XOR (§8.D) — never materialise a claimed work
-		r.c.introRefused++
-		return
-	}
 	if m.Intro == "" {
 		r.c.introNoText++
 		return

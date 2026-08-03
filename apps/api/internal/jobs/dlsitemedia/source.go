@@ -89,6 +89,13 @@ func loadCandidates(ctx context.Context, db *gorm.DB, reg registry, kinds Kinds,
 		}
 		out = append(out, claimed...)
 	}
+	if kinds.Intro {
+		claimed, err := loadClaimedIntroCandidates(ctx, db, reg)
+		if err != nil {
+			return nil, fmt.Errorf("claimed intro lane: %w", err)
+		}
+		out = append(out, claimed...)
+	}
 	if limit > 0 && limit < len(out) {
 		out = out[:limit]
 	}
@@ -114,6 +121,48 @@ func loadBodylessCandidates(ctx context.Context, db *gorm.DB, reg registry) ([]c
 			WHERE w.medium_id = ? AND (w.site IS NULL OR w.site = '') AND w.deleted_at IS NULL
 			ORDER BY w.id, r.external_id`,
 			model.EntityTypeRelease, reg.dlsiteSource, model.LinkKindExact, reg.galgameMedium).
+		Scan(&out).Error
+	return out, err
+}
+
+// loadClaimedIntroCandidates resolves the CLAIMED half of the intro lane
+// (refs/proj/166): a published work reachable via the same EXACT DLsite workno
+// release anchor that has NO Japanese intro from any source yet.
+//
+// Why this lane did not exist before: a claimed work used to BRIDGE its intro
+// off its product body at read time, so materialising a native row would have
+// double-shown it. W1-pre (refs/proj/140) mirrored those bodies into
+// catalog_work_intro and deleted the bridge — catalog_work_intro is now the
+// only intro storage there is, and the missing lane is why 4,725 published
+// works read English-only.
+//
+// Two deliberate shapes:
+//
+//   - "site IS NOT NULL AND site <> ''" — claimed is a PROPERTY, not a literal.
+//     Wave 161 renamed the only value that has ever existed (galgame_wiki →
+//     kungal); pinning the literal is what silently emptied four other lanes.
+//   - The NOT EXISTS is on catalog_work_intro alone. This query must not name a
+//     galgame_* table: that family is mid-retirement and its DROP would take
+//     this lane down with it (the intro-mt claimed-lane discipline).
+//
+// The ja-from-ANY-source gate (not just source=dlsite) is the noise guard the
+// bgmsummaries lane already states: the read face should never surface two
+// same-language intros for one work. Run bgmsummaries FIRST — bangumi is the
+// lower source id, so it wins the read-face merge either way, and letting it
+// write first keeps the table free of rows that would never be displayed.
+func loadClaimedIntroCandidates(ctx context.Context, db *gorm.DB, reg registry) ([]candidate, error) {
+	var out []candidate
+	err := db.WithContext(ctx).
+		Raw(`SELECT DISTINCT ON (w.id) w.id AS work_id, r.external_id AS workno, w.site AS site
+			FROM catalog_work w
+			JOIN catalog_release rel ON rel.work_id = w.id AND rel.deleted_at IS NULL
+			JOIN catalog_external_ref r ON r.entity_type = ? AND r.entity_id = rel.id
+				AND r.source_id = ? AND r.link_kind = ?
+			WHERE w.medium_id = ? AND w.site IS NOT NULL AND w.site <> '' AND w.deleted_at IS NULL
+				AND NOT EXISTS (SELECT 1 FROM catalog_work_intro i
+					WHERE i.work_id = w.id AND i.lang = ?)
+			ORDER BY w.id, r.external_id`,
+			model.EntityTypeRelease, reg.dlsiteSource, model.LinkKindExact, reg.galgameMedium, langJa).
 		Scan(&out).Error
 	return out, err
 }
@@ -210,9 +259,14 @@ func preloadExisting(ctx context.Context, db *gorm.DB, workIDs []int64, sourceID
 	}
 	db = db.WithContext(ctx)
 
+	// Intros are gated on the LANGUAGE across every source, not on this
+	// source's own row: since wave 166 the bangumi lane writes ja for the same
+	// works, and the read face should never surface two same-language intros
+	// for one work (the noise guard bgmsummaries states). Covers and
+	// screenshots stay per-source — those facets are genuinely additive.
 	var introWorks []int64
-	if err := db.Raw(`SELECT work_id FROM catalog_work_intro WHERE source_id = ? AND lang = ? AND work_id IN ?`,
-		sourceID, lang, workIDs).Scan(&introWorks).Error; err != nil {
+	if err := db.Raw(`SELECT work_id FROM catalog_work_intro WHERE lang = ? AND work_id IN ?`,
+		lang, workIDs).Scan(&introWorks).Error; err != nil {
 		return nil, fmt.Errorf("preload intros: %w", err)
 	}
 	for _, id := range introWorks {

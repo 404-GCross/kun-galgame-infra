@@ -17,17 +17,21 @@
 //     catalog_work_screenshot (sort_order=i, caption=”).
 //
 // TWO CANDIDATE LANES (the write side of the (facet, source) XOR):
-//   - BODYLESS (site=”/NULL) — every kind. The whole-facet XOR still holds for
-//     intro and cover: a claimed work bridges those at read time, so this job
-//     refuses to materialise them (writeIntro / writeCover).
-//   - CLAIMED (site='galgame_wiki') — SCREENSHOT ONLY (refs/proj/125). dlsite is a
-//     catalog-native source, so its screenshot rows live in catalog_work_screenshot
-//     for claimed and bodyless alike, and the read face unions them with the wiki
-//     bridge. Narrowly targeted: only claimed works with NO bridged screenshot and
-//     NO native screenshot (see loadClaimedScreenshotCandidates), so the store
-//     samples are a fallback for works that show nothing today, never a supplement
-//     to real wiki screenshots. The wiki sources themselves are still never
-//     materialised (bridge-not-copy, §2).
+//   - BODYLESS (site=”/NULL) — every kind.
+//   - CLAIMED — SCREENSHOT (refs/proj/125) and, since refs/proj/166, INTRO.
+//     The intro lane was bodyless-only because a claimed work BRIDGED its intro
+//     off its product body at read time; W1-pre (refs/proj/140) mirrored those
+//     bodies into catalog_work_intro and deleted the bridge, so the table is now
+//     the only intro storage and the gate had become the reason published works
+//     read English-only. COVER keeps the claimed refusal — wave 164 flipped
+//     covers onto the native table with the wiki rows already mirrored in, so a
+//     claimed work's cover slot is occupied, not empty.
+//
+// Both claimed lanes are narrowly targeted at works showing NOTHING for that
+// facet today — a fallback, never a supplement: no ja intro from any source
+// (loadClaimedIntroCandidates), no screenshot at all
+// (loadClaimedScreenshotCandidates). dlsite is a catalog-native source, so its
+// rows live in the catalog tables for claimed and bodyless alike.
 //
 // Discipline, modeled on internal/jobs/charportraits:
 //   - Bytes ONLY ever come from a LOCAL mirror (--mirror-dir), produced by
@@ -119,7 +123,7 @@ type Opts struct {
 // counters tallies per-kind outcomes. In a dry run the *Would fields carry the
 // forecast; in apply the *Written/*Uploaded fields carry the real writes.
 type counters struct {
-	introWritten, introWould, introExists, introNoText, introRefused int
+	introWritten, introWould, introExists, introNoText int
 
 	coverUploaded, coverWould, coverExists, coverPlaceholder, coverMissing, coverRejected, coverRefused, coverDedup int
 
@@ -294,7 +298,7 @@ func (r *runner) summary(opts Opts, candidates int) map[string]any {
 	if opts.Kinds.Intro {
 		s["intro"] = map[string]any{
 			"written": r.c.introWritten, "would_write": r.c.introWould,
-			"already_exists": r.c.introExists, "no_text": r.c.introNoText, "refused_claimed": r.c.introRefused,
+			"already_exists": r.c.introExists, "no_text": r.c.introNoText,
 		}
 	}
 	if opts.Kinds.Cover {
