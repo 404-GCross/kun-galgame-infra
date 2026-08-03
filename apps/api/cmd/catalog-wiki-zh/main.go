@@ -26,6 +26,7 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"api/internal/infrastructure/database"
@@ -50,7 +51,8 @@ func main() {
 		apply     = fs.Bool("apply", false, "apply: write (default is a dry forecast)")
 		limit     = fs.Int("limit", 0, "max candidates (0 = all)")
 		chunk     = fs.Int("chunk", 5, "judge: candidates per gateway request")
-		rpm       = fs.Int("rpm", 60, "judge: gateway requests per minute (even pacing)")
+		rpm       = fs.Int("rpm", 60, "judge: gateway requests per minute (even pacing, shared across workers)")
+		workers   = fs.Int("workers", 6, "judge: concurrent chunks; the reasoning model's per-request latency dominates, so this is the throughput lever, while --rpm stays the politeness ceiling")
 		maxTokens = fs.Int("max-tokens", 24576, "judge: output budget; a reasoning model needs headroom or finish_reason trips")
 		mock      = fs.Bool("mock", false, "judge: offline deterministic stand-in")
 		llmBase   = fs.String("llm-base", os.Getenv("KUN_AI_UPSTREAM_BASE_URL"), "OpenAI-compatible base URL")
@@ -123,28 +125,50 @@ func main() {
 		defer f.Close()
 		enc := json.NewEncoder(f)
 
+		// Chunks run concurrently: a reasoning model spends ~15s on a chunk of
+		// five, so a serial loop leaves 89% of the rpm budget unused and turns
+		// a three-round pass into half a day. The shared pace limiter inside
+		// the judge remains the politeness ceiling regardless of worker count.
+		type chunkJob struct{ from, to int }
+		jobs := make(chan chunkJob)
+		var wg sync.WaitGroup
+		var mu sync.Mutex // guards the encoder and the counters
 		var judged, failed int
-		for i := 0; i < len(pending); i += *chunk {
-			end := min(i+*chunk, len(pending))
-			vs, err := judge.JudgeBatch(ctx, b, pending[i:end])
-			if err != nil {
-				// One failed chunk is not a failed pass — the file is the
-				// resume point, so a re-run picks these up.
-				failed += end - i
-				slog.Warn("chunk failed", "from", i, "to", end, "err", err)
-				continue
-			}
-			for _, v := range vs {
-				if err := enc.Encode(v); err != nil {
-					slog.Error("write verdict", "error", err)
-					os.Exit(1)
+
+		for w := 0; w < max(*workers, 1); w++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for j := range jobs {
+					vs, err := judge.JudgeBatch(ctx, b, pending[j.from:j.to])
+					mu.Lock()
+					if err != nil {
+						// One failed chunk is not a failed pass — the file is
+						// the resume point, so a re-run picks these up.
+						failed += j.to - j.from
+						slog.Warn("chunk failed", "from", j.from, "to", j.to, "err", err)
+					} else {
+						for _, v := range vs {
+							if e := enc.Encode(v); e != nil {
+								slog.Error("write verdict", "error", e)
+								mu.Unlock()
+								os.Exit(1)
+							}
+							judged++
+						}
+						if judged%100 < *chunk {
+							slog.Info("progress", "judged", judged, "of", len(pending), "failed", failed)
+						}
+					}
+					mu.Unlock()
 				}
-				judged++
-			}
-			if judged%50 == 0 || end == len(pending) {
-				slog.Info("progress", "judged", judged, "of", len(pending), "failed", failed)
-			}
+			}()
 		}
+		for i := 0; i < len(pending); i += *chunk {
+			jobs <- chunkJob{i, min(i+*chunk, len(pending))}
+		}
+		close(jobs)
+		wg.Wait()
 		slog.Info("wiki-zh judge done", "judged", judged, "failed", failed, "file", *out)
 
 	case "apply":
