@@ -61,9 +61,10 @@ type DeveloperAPIUsage struct {
 	// and galgame_internal_propose (24) overflowed it, and because UpsertUsage is
 	// one batched INSERT and Flush re-merges on error, a single long face poisoned
 	// EVERY subsequent flush on that process (silent metering stall, 06a→06b W1).
-	// 40 gives every current face headroom; prod was widened by hand in the 06b W1
-	// deploy, cmd/migrate realigns any other environment.
-	Face  string `gorm:"size:40;not null;uniqueIndex:idx_usage_day,priority:3" json:"face"` // catalog / galgame / galgame_internal[_write|_propose]
+	// Those two faces retired in wave-161 P5, but the column stays 40: historical
+	// usage rows still carry their names, and re-narrowing a varchar is how a
+	// future long face gets silently truncated instead of loudly rejected.
+	Face  string `gorm:"size:40;not null;uniqueIndex:idx_usage_day,priority:3" json:"face"` // catalog (the only live face; retired rows carry galgame*)
 	Day   string `gorm:"size:10;not null;uniqueIndex:idx_usage_day,priority:4" json:"day"`  // YYYY-MM-DD (UTC)
 	Count int64  `gorm:"not null" json:"count"`
 	// Explicit column tags: GORM's naming strategy renders Status4xx as

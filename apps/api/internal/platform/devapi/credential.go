@@ -14,23 +14,22 @@ const (
 // Public-read scopes. galgame:nsfw is defined for the content_limit gate but is
 // not granted to any Phase 1 key (裁定 6 — NSFW scope not issued yet).
 //
-// ScopeGalgameWrite (galgame:write) gates the /internal user-write face
-// (09-open-api-phase2 06a doc 23 D3). It is deliberately NOT in the
-// selfServiceScopes allow-list: a write scope is minted only by the admin
-// console / SQL, never self-service, until the proposal face + trust tiers
-// (06b) are ready to gate third-party writers.
+// ScopeGalgameWrite (galgame:write) gated the /internal user-write face, which
+// retired with the wiki in wave-161 P5 — it now gates nothing. The constant
+// survives for ONE reason: prod keys still carry the string, and the D3
+// invariant that it is never self-service-grantable has to keep holding for as
+// long as it can be presented (see credential_test.go). Do not read it as a
+// live capability, and do not build a new face on it — a write face for third
+// parties is an unimplemented design item (doc 23 §5), not a dormant feature.
 //
-// ScopeGalgamePropose (galgame:propose) gates the /internal/edit/* platform
-// proposal face (09-open-api-phase2 06b doc 23 §5 — the dogfood bridge). Like
-// the write scope it is NOT self-service-grantable (opening it to third parties
-// is a user-level decision gated on review-capacity + consent copy); until then
-// it is minted only by admin console / SQL onto the trusted first-party keys.
+// galgame:propose is gone entirely: it gated the /internal/edit/* platform
+// proposal face, deleted in the same wave, and no key was ever issued it beyond
+// the first-party dogfood.
 const (
-	ScopeCatalogRead    = "catalog:read"
-	ScopeGalgameRead    = "galgame:read"
-	ScopeGalgameNSFW    = "galgame:nsfw"
-	ScopeGalgameWrite   = "galgame:write"
-	ScopeGalgamePropose = "galgame:propose"
+	ScopeCatalogRead  = "catalog:read"
+	ScopeGalgameRead  = "galgame:read"
+	ScopeGalgameNSFW  = "galgame:nsfw"
+	ScopeGalgameWrite = "galgame:write"
 )
 
 // TierLimits returns a tier's default per-minute rate and daily quota.
