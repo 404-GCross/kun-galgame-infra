@@ -18,6 +18,26 @@
 - 聚合轨在飞件(refs/proj/150 人物身份解析 program、164/165 波产物)勿碰;`kun_catalog_rehearsal` 勿重置(二犯已定约)。
 - 共享工作树交接时点在分支 `w161-hotfix`——**勿switch 别轨所在分支**;自己的波开独立 worktree 基底显式 origin/main。
 
+## ⚠️ P5 摘面漏了下游 — 2026-08-03 事故与修复
+
+P5 摘 `/internal/*` + `/api/*` staff 面时,149 STOP-1 要求的「先盘下游依赖并给迁移期」只覆盖了 forum 的
+`client.go`,**五条 lane 漏网**(实测全部 404):`/internal/edit/*`(编辑面,全站无法编辑游戏
+**2026-07-31 10:25:48Z 起约 67 小时**)、`/internal/galgame/meta`(属主判定,15.9 万次/天)、
+`/internal/galgame/taxonomy/*/search`(投稿标签选择器)、`/internal/galgame/messages/mine`、
+`/api/admin/{stats,galgame/messages}`。
+
+前两条已修(forum `77289497` + `3ca9beda`:编辑链归一 S2S、属主改读本地 066 冻结列);
+**后三条待产品裁定替代面**,见值守状态行。
+
+放大器是日志缺陷:未匹配路由的 404 被记成 200,所以 16 万次/天的失败在日志里长成 200。已修
+(`ae09dc30`,7 个服务共用)。**连带作废一条方法论**:07 §78 用「访问日志 path 统计」证明「A 桶流量归零」
+——该方法在缺陷修复前分不清「面服务了」和「面没了」,以后摘面别再单独依赖它。
+
 ## pi 值守状态(就地更新,一行一钩子)
 
 - (待 pi 填;接手第一件=核 T1 浸泡态+CI 门是否已绿)
+- **2026-08-03 待用户裁定(P5 漏网三条,均在产失效)**:①投稿表单标签选择器
+  (`/internal/galgame/taxonomy/*/search`)——156 已记「catalog 策展面缺口」,需定替代入口;
+  ②wiki 通知页(`/internal/galgame/messages/mine`)——N 波已用 claim_event feed + forum 本地消息
+  取代,待定是撤页还是改源;③管理台 `/api/admin/{stats,galgame/messages}`——需定 catalog 侧对应面
+  (157 的 claim.review 面覆盖一部分)。**三条都不是止血件,但都在静默 404。**
