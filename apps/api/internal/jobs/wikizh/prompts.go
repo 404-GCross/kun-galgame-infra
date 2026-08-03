@@ -11,6 +11,11 @@ package wikizh
 //     whose entire body is a three-character fragment ("深夜、") sitting beside
 //     a complete machine translation of the same work. 1,556 of the 3,807
 //     bucket-A texts are under 250 characters.
+//   - a third of it is not user writing at all but an English-relay machine
+//     translation that reads like Chinese while having lost the information:
+//     Latin names left in place, one character rendered two different ways,
+//     Japanese lines turned into nonsense. The v1 prompt let one of those
+//     through at exactly the auto-apply confidence, which is what v2 targets.
 //   - and it is not uniformly bad either, which is why wave 146's blanket
 //     "claimed zh is a translation, discard it" ruling had to be walked back in
 //     wave 164: plenty are signed original writing by site users.
@@ -18,7 +23,7 @@ package wikizh
 // So neither "the human wrote it, keep it" nor "the machine is newer, keep it"
 // is a defensible default, and the judge is asked for a quality comparison
 // rather than a provenance classification.
-const promptVersion = "wiki-zh-quality-v1"
+const promptVersion = "wiki-zh-quality-v2"
 
 // PromptVersion identifies the pinned prompt set in every verdict batch.
 func PromptVersion() string { return promptVersion }
@@ -33,8 +38,9 @@ const usableSystem = `你是 galgame 资料站的资深编辑。下面给你一�
 2. 判 unusable 的典型:内容被截断只剩残片(如只有一两句话就断了)、只是一个标题或一行标语、纯粹的购买/发售信息、与该作品无关的内容、明显的乱码或占位符。
 3. 长度本身不是判据。一段 80 字的完整概述是 usable;一段 200 字但读到一半戛然而止的是 unusable。
 4. 带有 markdown 标题、引用块等排版标记是正常的,不影响判定。
-5. 含有少量错别字或不通顺的句子仍可判 usable,只要整体信息正确且完整。
-6. 拿不准就填 unsure。unsure 会进人工复核,不会造成损失;错误地判 usable 会让残片直接对外发布。
+5. **务必识别「经英文转译的机翻残次品」并判 unusable**:典型特征是人名/专有名词以拉丁字母原样留在中文里(如「年轻人 Tsukasa Kazami」)、同一角色在文中有两个不同译名、把日文台词转译成不知所云的中文(如把「初歩だよ」译成「初级」)。这类文本读起来"像中文"但信息已经失真,不能对外发布。
+6. 少量错别字或个别句子不顺,不影响判 usable。但第 5 条描述的整体性转译劣化不属于「少量瑕疵」。
+7. 拿不准就填 unsure。unsure 会进人工复核,不会造成损失;错误地判 usable 会让残片或劣化译文直接对外发布。
 
 输出要求:只输出一个 JSON 对象,不要代码块围栏、不要多余文字:
 {"key":"<原样回填给你的 key>","verdict":"usable|unusable|unsure","confidence":0.0-1.0,"reason":"一句话中文理由"}`

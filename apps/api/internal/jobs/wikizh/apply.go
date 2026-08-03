@@ -23,7 +23,13 @@ const curatedSourceKey = "curated"
 // review rather than written — the 87/156/164 pattern, and the reason the gate
 // exists is that an unusable text published as a work's only Chinese intro is
 // visible to every reader of that page.
-const MinConfidence = 0.85
+//
+// 0.90, not 0.85, and the number is calibrated rather than chosen: the 30-case
+// v1 calibration put an English-relay machine translation — Latin names left
+// untranslated, one character spelled two ways, a Japanese line turned into
+// nonsense — at EXACTLY 0.85. The prompt now names that failure mode (v2), and
+// the gate sits above where it landed, so the two corrections are independent.
+const MinConfidence = 0.90
 
 // ApplyStats reports one apply pass.
 type ApplyStats struct {

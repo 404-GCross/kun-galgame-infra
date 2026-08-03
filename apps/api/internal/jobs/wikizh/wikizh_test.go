@@ -195,7 +195,7 @@ func TestGateAndVocabulary(t *testing.T) {
 	mkSnapshot(t, wNo, true, "残片", "日本語。", "", "")
 
 	vs := []Verdict{
-		{WorkID: wLow, Bucket: BucketUsable, Verdict: VerdictUsable, Confidence: 0.60},
+		{WorkID: wLow, Bucket: BucketUsable, Verdict: VerdictUsable, Confidence: 0.85}, // the v1 calibration's relay-MT sat here
 		// A verdict the model invented — outside the bucket's vocabulary.
 		{WorkID: wBogus, Bucket: BucketUsable, Verdict: "definitely_keep", Confidence: 0.99},
 		{WorkID: wNo, Bucket: BucketUsable, Verdict: VerdictUnusable, Confidence: 0.97},
