@@ -98,8 +98,9 @@ func TestHandSeedsIntegrity(t *testing.T) {
 	// provenance) + upscale (id 13, step 53 derived-cover provenance) + cien
 	// (id 14, refs/proj/83 E2b org/label link facet) + dmm (id 15, step 91
 	// EG cross-reference store lane) + web (id 16, refs/plans/10 W0 generic
-	// external-page catch-all for the rescued wiki links).
-	assert.Len(t, sources(), 16)
+	// external-page catch-all for the rescued wiki links) + getchu (id 17,
+	// refs/proj/167 — the character-roster source, anchored via VNDB extlinks).
+	assert.Len(t, sources(), 17)
 	// 13 pinned by refs/proj/02 + 3 symmetric character/setting-variation keys
 	// added in step 30 (shares_character / alternative_setting / alternative_version).
 	assert.Len(t, relationTypes(), 16)

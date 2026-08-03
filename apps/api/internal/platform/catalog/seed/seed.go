@@ -232,6 +232,15 @@ func sources() []model.CatalogSource {
 		// the data-layer-retirement wave (refs/plans/10 W0), which rescues the
 		// wiki family's 5,410 hand-entered links.
 		{ID: 16, Key: "web", TrustTier: 2, Note: "generic external web page (external_id = full URL, related links only)"},
+		// Getchu is a Japanese retailer whose product pages carry the one facet
+		// no other upstream we ingest covers at scale: a structured character
+		// roster (name / furigana / CV / 身長・スリーサイズ・血液型・誕生日 /
+		// profile prose / portrait). Trust tier 1, not 2: the anchors are not
+		// guessed from titles — they come from VNDB's own curated getchu
+		// extlink on a release we already anchored EXACT, so a getchu ref
+		// asserts identity as strongly as the vndb ref it rides on
+		// (refs/proj/167 §1). Crawler: ../kun-getchu-api.
+		{ID: 17, Key: "getchu", TrustTier: 1, Note: "Getchu.com retailer pages (character rosters, story text, sample CG; anchored via VNDB extlinks)"},
 	}
 }
 

@@ -42,6 +42,7 @@ func EnsureSchema(db *gorm.DB) error {
 		&Staff{}, &StaffAlias{}, &VNStaff{}, &VNSeiyuu{},
 		&Trait{}, &TraitParent{}, &CharTrait{}, &Tag{}, &TagParent{}, &TagVN{},
 		&Release{}, &ReleaseVN{}, &ReleaseProducer{}, &ReleasePlatform{}, &ReleaseTitle{}, &Producer{},
+		&Extlink{}, &ReleaseExtlink{},
 		&PortraitBackfill{}, &IngestRun{},
 	); err != nil {
 		return fmt.Errorf("automigrate src_vndb: %w", err)
@@ -58,6 +59,7 @@ var Files = []string{
 	"traits", "traits_parents", "chars_traits",
 	"tags", "tags_parents", "tags_vn",
 	"producers", "releases", "releases_vn", "releases_producers", "releases_platforms", "releases_titles",
+	"extlinks", "releases_extlinks",
 }
 
 // FileReport is one file's ingestion outcome.
@@ -267,6 +269,8 @@ var loaders = map[string]func(tx *gorm.DB, now time.Time) tableLoader{
 	"releases_producers": newReleaseProducerLoader,
 	"releases_platforms": newReleasePlatformLoader,
 	"releases_titles":    newReleaseTitleLoader,
+	"extlinks":           newExtlinkLoader,
+	"releases_extlinks":  newReleaseExtlinkLoader,
 }
 
 // --- field helpers ----------------------------------------------------------

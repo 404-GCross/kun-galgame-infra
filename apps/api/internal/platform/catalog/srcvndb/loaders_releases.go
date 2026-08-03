@@ -82,3 +82,21 @@ func newProducerLoader(tx *gorm.DB, _ time.Time) tableLoader {
 		}, true
 	})
 }
+
+func newExtlinkLoader(tx *gorm.DB, _ time.Time) tableLoader {
+	return newLoader(tx, func(get getter) (Extlink, bool) {
+		site := getStr(get, "site")
+		value := getStr(get, "value")
+		if site == "" || value == "" {
+			return Extlink{}, false
+		}
+		return Extlink{ID: getInt(get, "id"), Site: site, Value: value}, true
+	})
+}
+
+func newReleaseExtlinkLoader(tx *gorm.DB, _ time.Time) tableLoader {
+	return newLoader(tx, func(get getter) (ReleaseExtlink, bool) {
+		id, _ := get("id")
+		return ReleaseExtlink{ID: id, Link: getInt(get, "link")}, true
+	})
+}

@@ -127,7 +127,11 @@ func TestIngestFixtureAndIdempotency(t *testing.T) {
 		"src_vndb.releases_vn":        2,
 		"src_vndb.releases_producers": 2,
 		"src_vndb.releases_platforms": 3,
-		"src_vndb.releases_titles":    2,
+		// wave 167: the getchu anchor supply. Three links of which one is a
+		// getchu id, and three release edges over two releases.
+		"src_vndb.extlinks":          3,
+		"src_vndb.releases_extlinks": 3,
+		"src_vndb.releases_titles":   2,
 	} {
 		assert.Equal(t, want, count(table), table)
 	}

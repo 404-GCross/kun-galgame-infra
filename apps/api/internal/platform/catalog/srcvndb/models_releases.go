@@ -97,3 +97,29 @@ type Producer struct {
 }
 
 func (Producer) TableName() string { return "src_vndb.producers" }
+
+// Extlink mirrors one db/extlinks row — VNDB's shared external-link pool. A row
+// is (site, value) where `site` is a VNDB vocabulary key ("getchu", "getchudl",
+// "dlsite", "steam"…) and `value` is that site's own identifier, NOT a URL.
+// The pool is shared: vn / releases / producers / staff each have their own
+// junction table pointing at these ids.
+//
+// Staged for wave 167: VNDB's curated getchu ids are the anchor supply for the
+// kun-getchu-api crawler, which is why that crawler needs no discovery phase.
+type Extlink struct {
+	ID    int    `gorm:"primaryKey;column:id" json:"id"`
+	Site  string `gorm:"not null;index" json:"site"`
+	Value string `gorm:"not null" json:"value"`
+}
+
+func (Extlink) TableName() string { return "src_vndb.extlinks" }
+
+// ReleaseExtlink mirrors one db/releases_extlinks row: release "r1" carries
+// extlink #15. A release can carry several links, and one link id is shared by
+// every entity that points at it.
+type ReleaseExtlink struct {
+	ID   string `gorm:"primaryKey;column:id" json:"id"`           // "r1"
+	Link int    `gorm:"primaryKey;column:link;index" json:"link"` // extlinks.id
+}
+
+func (ReleaseExtlink) TableName() string { return "src_vndb.releases_extlinks" }
