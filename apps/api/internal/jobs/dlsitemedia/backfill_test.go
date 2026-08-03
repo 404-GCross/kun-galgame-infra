@@ -144,7 +144,7 @@ func TestIntroWritePath(t *testing.T) {
 
 // claimedLaneGalgameIDs are the fixture galgame body ids the claimed screenshot
 // lane's bridge-emptiness check joins against.
-var claimedLaneGalgameIDs = []int64{9101, 9102, 9103}
+var claimedLaneGalgameIDs = []int64{9101, 9102, 9103, 9104}
 
 // ensureGalgameScreenshotStub provisions the two galgame-family tables the
 // claimed lane's candidate query reads: galgame (the body the claim points at)
@@ -229,12 +229,23 @@ func TestClaimedScreenshotLane(t *testing.T) {
 	wClaimedBridged := anchored("claimed-with-wiki-screenshot", "RJ100003", &claimed, &claimedLaneGalgameIDs[1])
 	wClaimedNative := anchored("claimed-with-native-screenshot", "RJ100004", &claimed, &claimedLaneGalgameIDs[2])
 
+	// A claim that is NOT on the public face. The wave-166 intro lane targets
+	// PUBLISHED works — the draft sea is roughly 5x the published one and every
+	// ja row written there becomes a downstream translation call. It carries a
+	// native screenshot so the SCREENSHOT lane's own targeting keeps it out and
+	// this fixture isolates exactly one variable: claim_state.
+	wDraft := anchored("claimed-but-draft", "RJ100005", &claimed, &claimedLaneGalgameIDs[3])
+	require.NoError(t, db.Model(&model.CatalogWork{}).Where("id = ?", wDraft).
+		Update("claim_state", model.ClaimStateDraft).Error)
+
 	// wClaimedBridged already shows a wiki screenshot → the store samples must not
 	// supplement it. wClaimedNative already has a native row → nothing to do.
 	require.NoError(t, db.Exec(`INSERT INTO galgame_screenshot (galgame_id, image_hash, sort_order, source)
 		VALUES (?, 'wiki_shot_hash', 0, '')`, claimedLaneGalgameIDs[1]).Error)
 	require.NoError(t, db.Create(&model.CatalogWorkScreenshot{
 		WorkID: wClaimedNative, ImageHash: "already_here", SortOrder: 0, SourceID: reg.dlsiteSource}).Error)
+	require.NoError(t, db.Create(&model.CatalogWorkScreenshot{
+		WorkID: wDraft, ImageHash: "draft_shot", SortOrder: 0, SourceID: reg.dlsiteSource}).Error)
 
 	// --- candidate targeting: screenshot runs see both lanes, intro/cover-only
 	// runs see the pre-125 bodyless set.
@@ -271,9 +282,10 @@ func TestClaimedScreenshotLane(t *testing.T) {
 	assert.Contains(t, introIDs, wBodyless, "bodyless lane unchanged")
 	assert.Contains(t, introIDs, wClaimedBare, "claimed work with no ja intro → admitted")
 	assert.Contains(t, introIDs, wClaimedBridged, "the screenshot lane's exclusions do not apply to intro")
+	assert.NotContains(t, introIDs, wDraft, "a DRAFT claim is not on the public face → excluded")
 	introBodyless, introClaimed := laneSplit(introCands)
 	assert.Equal(t, 1, introBodyless)
-	assert.Equal(t, 3, introClaimed)
+	assert.Equal(t, 3, introClaimed, "the three live claims; the draft is out")
 
 	// --- asymmetric windowing: --offset consumes the STABLE bodyless lane only, so
 	// it can isolate the self-consuming claimed lane without ever skipping it.

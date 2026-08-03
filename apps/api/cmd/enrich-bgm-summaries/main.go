@@ -19,8 +19,10 @@
 //	go run ./cmd/enrich-bgm-summaries \
 //	    --dsn "host=127.0.0.1 port=5432 user=postgres password=... dbname=kun_catalog_rehearsal sslmode=disable"
 //
-//	# apply, published works only (the staged 166 rollout)
-//	go run ./cmd/enrich-bgm-summaries --apply --population claimed \
+//	# apply, published works only (the staged 166 rollout). NOT "claimed":
+//	# claimed includes the draft sea, roughly 3x the rows and 3x the downstream
+//	# translation bill.
+//	go run ./cmd/enrich-bgm-summaries --apply --population published \
 //	    --dsn "host=127.0.0.1 port=5432 user=postgres password=... dbname=kun_catalog_rehearsal sslmode=disable"
 package main
 
@@ -40,7 +42,7 @@ import (
 func main() {
 	apply := flag.Bool("apply", false, "write changes (default: dry run, counters + samples only)")
 	dsn := flag.String("dsn", "", "catalog DSN — REQUIRED; the rehearsal copy locally (kun_catalog_rehearsal), the live catalog only in the acceptance run")
-	population := flag.String("population", bgmsummaries.PopulationAll, "which works to enrich: all | bodyless | claimed")
+	population := flag.String("population", bgmsummaries.PopulationAll, "which works to enrich: all | bodyless | claimed | published")
 	limit := flag.Int("limit", 0, "max candidate works to process (0 = all)")
 	offset := flag.Int("offset", 0, "skip this many candidate works (for chunking)")
 	flag.Parse()

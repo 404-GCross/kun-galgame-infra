@@ -125,9 +125,17 @@ func loadBodylessCandidates(ctx context.Context, db *gorm.DB, reg registry) ([]c
 	return out, err
 }
 
-// loadClaimedIntroCandidates resolves the CLAIMED half of the intro lane
-// (refs/proj/166): a published work reachable via the same EXACT DLsite workno
-// release anchor that has NO Japanese intro from any source yet.
+// loadClaimedIntroCandidates resolves the PUBLISHED half of the intro lane
+// (refs/proj/166): a work on the public face, reachable via the same EXACT
+// DLsite workno release anchor, with NO Japanese intro from any source yet.
+//
+// Published, not merely claimed: of the 64,530 claimed works in prod only
+// 10,970 are on the public face, and the rest are the draft sea this track has
+// repeatedly declined to spend translation budget on (the step-75 ruling) —
+// every ja row written here becomes a machine-translation call downstream. The
+// predicate mirrors model.ClaimStateKey's `live` rule, NULL claim_state and
+// product_work_id halves included; see the bgmsummaries sitePredicate doc,
+// which carries the same rule for the same reason.
 //
 // Why this lane did not exist before: a claimed work used to BRIDGE its intro
 // off its product body at read time, so materialising a native row would have
@@ -158,7 +166,9 @@ func loadClaimedIntroCandidates(ctx context.Context, db *gorm.DB, reg registry) 
 			JOIN catalog_release rel ON rel.work_id = w.id AND rel.deleted_at IS NULL
 			JOIN catalog_external_ref r ON r.entity_type = ? AND r.entity_id = rel.id
 				AND r.source_id = ? AND r.link_kind = ?
-			WHERE w.medium_id = ? AND w.site IS NOT NULL AND w.site <> '' AND w.deleted_at IS NULL
+			WHERE w.medium_id = ? AND w.deleted_at IS NULL
+				AND w.site IS NOT NULL AND w.site <> '' AND w.product_work_id IS NOT NULL
+				AND (w.claim_state IS NULL OR w.claim_state = 0)
 				AND NOT EXISTS (SELECT 1 FROM catalog_work_intro i
 					WHERE i.work_id = w.id AND i.lang = ?)
 			ORDER BY w.id, r.external_id`,

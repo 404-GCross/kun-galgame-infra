@@ -123,4 +123,16 @@ func TestSitePredicate(t *testing.T) {
 	if _, err := sitePredicate("kungal"); err == nil {
 		t.Error("a site VALUE is not a population name — must be rejected, not silently accepted")
 	}
+
+	// published must carry BOTH halves of ClaimStateKey's live rule. Dropping
+	// either one silently changes which works the lane writes for.
+	pub, err := sitePredicate(PopulationPublished)
+	if err != nil {
+		t.Fatalf("published population rejected: %v", err)
+	}
+	for _, must := range []string{"product_work_id IS NOT NULL", "claim_state IS NULL", "claim_state = 0"} {
+		if !strings.Contains(pub, must) {
+			t.Errorf("published predicate lost %q: %s", must, pub)
+		}
+	}
 }

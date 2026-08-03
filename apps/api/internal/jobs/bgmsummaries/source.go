@@ -42,15 +42,28 @@ func resolveRegistry(ctx context.Context, db *gorm.DB) (registry, error) {
 // gate stopped being an invariant and became the reason 4,725 published works
 // show an English-only intro (the 164 blank face). All is now the default.
 const (
-	PopulationAll      = "all"
-	PopulationBodyless = "bodyless"
-	PopulationClaimed  = "claimed"
+	PopulationAll       = "all"
+	PopulationBodyless  = "bodyless"
+	PopulationClaimed   = "claimed"
+	PopulationPublished = "published"
 )
 
-// sitePredicate renders the population as a catalog_work.site SQL predicate.
+// sitePredicate renders the population as a catalog_work SQL predicate.
+//
 // Claimed is "has a site", not "site = <some product>" — wave 161 renamed the
 // only value there has ever been (galgame_wiki → kungal) and pinning a literal
 // is what silently emptied four other lanes.
+//
+// PUBLISHED is the narrower, product-facing population: claimed AND actually on
+// the public face. It is NOT a synonym for claimed — in prod, claimed is 64,530
+// works of which only 10,970 are published; the rest are the draft sea, which
+// this track has repeatedly declined to invest translation budget in (the
+// step-75 ruling). The predicate mirrors model.ClaimStateKey's `live` rule
+// EXACTLY, including its two easily-missed halves: a NULL claim_state is live
+// (a claimed row no projector has stamped yet), and a row without
+// product_work_id reads as unclaimed on the wire and must filter as unclaimed
+// here. Those two must not drift — a lane that selected a different set than
+// the read face renders is the bug ClaimStateKey exists to prevent.
 func sitePredicate(pop string) (string, error) {
 	switch pop {
 	case PopulationAll, "":
@@ -59,8 +72,11 @@ func sitePredicate(pop string) (string, error) {
 		return "(w.site IS NULL OR w.site = '')", nil
 	case PopulationClaimed:
 		return "(w.site IS NOT NULL AND w.site <> '')", nil
+	case PopulationPublished:
+		return `(w.site IS NOT NULL AND w.site <> '' AND w.product_work_id IS NOT NULL
+			AND (w.claim_state IS NULL OR w.claim_state = 0))`, nil
 	default:
-		return "", fmt.Errorf("unknown population %q (want all|bodyless|claimed)", pop)
+		return "", fmt.Errorf("unknown population %q (want all|bodyless|claimed|published)", pop)
 	}
 }
 
