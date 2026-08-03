@@ -61,6 +61,15 @@ func TestMain(m *testing.M) {
 
 func clean(t *testing.T) {
 	t.Helper()
+	// catalog_external_ref carries a POLYMORPHIC entity_id, so it has no foreign
+	// key to catalog_work and a CASCADE truncate of works leaves its rows
+	// behind — which then collide with the restarted identity. It is cleaned
+	// explicitly, without RESTART IDENTITY: the sequence is shared with every
+	// other package running against this database and rewinding it
+	// cross-pollutes ids.
+	for _, table := range []string{"catalog_external_ref", "catalog_release"} {
+		require.NoError(t, testDB.Exec("TRUNCATE "+table+" CASCADE").Error)
+	}
 	for _, table := range []string{"catalog_work_intro", "catalog_work_popularity", "catalog_work"} {
 		require.NoError(t, testDB.Exec("TRUNCATE "+table+" RESTART IDENTITY CASCADE").Error)
 	}
@@ -71,6 +80,35 @@ func mkWork(t *testing.T, medium int16, name string, site *string) int64 {
 	w := model.CatalogWork{MediumID: medium, OLang: "ja", DisplayName: name, Site: site}
 	require.NoError(t, testDB.Create(&w).Error)
 	return w.ID
+}
+
+// mkPublished builds a work that is actually on the public face: claimed AND
+// carrying a product_work_id, which model.ClaimStateKey requires before it will
+// call a row live at all.
+var nextProductWorkID int64 = 900000
+
+func mkPublished(t *testing.T, medium int16, name string, site *string) int64 {
+	t.Helper()
+	// (site, product_work_id) is UNIQUE — a claim points at exactly one product
+	// row — so the fixture needs a fresh id per work, not one derived from the
+	// name.
+	nextProductWorkID++
+	pid := nextProductWorkID
+	w := model.CatalogWork{MediumID: medium, OLang: "ja", DisplayName: name, Site: site, ProductWorkID: &pid}
+	require.NoError(t, testDB.Create(&w).Error)
+	return w.ID
+}
+
+// mkGetchuAnchor gives a work a release carrying a getchu external ref — the
+// marker that says "the crawler will supply the Japanese original for this one".
+func mkGetchuAnchor(t *testing.T, workID int64, getchu, vndb int16, getchuID string) {
+	t.Helper()
+	rel := model.CatalogRelease{WorkID: workID, Kind: 0}
+	require.NoError(t, testDB.Create(&rel).Error)
+	require.NoError(t, testDB.Create(&model.CatalogExternalRef{
+		EntityType: model.EntityTypeRelease, EntityID: rel.ID, SourceID: getchu,
+		ExternalID: getchuID, LinkKind: model.LinkKindExact, MatchedBy: "import:test"}).Error)
+	_ = vndb
 }
 
 // mkIntro inserts a SOURCE intro row (provenance 0).
@@ -242,7 +280,7 @@ func TestPopularityOrdering(t *testing.T) {
 
 	reg2, err := resolveRegistry(ctx, testDB)
 	require.NoError(t, err)
-	cands, err := loadCandidates(ctx, testDB, reg2, PopulationBodyless, 5000, 2)
+	cands, err := loadCandidates(ctx, testDB, reg2, PopulationBodyless, SourceJa, 5000, 2)
 	require.NoError(t, err)
 	require.Len(t, cands, 2, "--limit 2 keeps the two most popular")
 	assert.Equal(t, wHi, cands[0].WorkID, "9000 downloads first")
@@ -279,26 +317,35 @@ func TestClaimedPopulation(t *testing.T) {
 	mkIntro(t, wFormer, "ja", "旧サイトのあらすじ。", curated)
 	mkIntro(t, wBodyless, "ja", "ボディレスのあらすじ。", bangumi)
 
-	// Dry claimed lane: exactly the two zh-less current-site works, work_id ASC.
+	// Dry claimed lane: every zh-less work that HAS a site, work_id ASC.
+	//
+	// The former-site fixture is admitted, and that is the point: since
+	// refs/proj/168 the lane keys on the PROPERTY "has a site", not on the
+	// literal value. Wave 161 renamed the only value that had ever existed and
+	// every lane pinning the literal went silently empty for three days while
+	// reporting clean zero-candidate runs. Prod carries no stale value today
+	// (only '' and 'kungal'), so this is rename-proofing, not a behaviour
+	// change anyone can observe.
 	st, err := Run(ctx, nil, Opts{DSN: testDSN, Population: PopulationClaimed})
 	require.NoError(t, err)
-	assert.Equal(t, 2, st.Candidates, "zh-present, bodyless, and former-site works are excluded")
+	assert.Equal(t, 3, st.Candidates, "zh-present and bodyless works are excluded; a stale site value is still a claim")
 
 	reg2, err := resolveRegistry(ctx, testDB)
 	require.NoError(t, err)
-	cands, err := loadCandidates(ctx, testDB, reg2, PopulationClaimed, 5000, 0)
+	cands, err := loadCandidates(ctx, testDB, reg2, PopulationClaimed, SourceJa, 5000, 0)
 	require.NoError(t, err)
-	require.Len(t, cands, 2)
+	require.Len(t, cands, 3)
 	assert.Equal(t, wA, cands[0].WorkID, "no popularity → work_id ASC")
 	assert.Equal(t, wB, cands[1].WorkID)
+	assert.Equal(t, wFormer, cands[2].WorkID, "a stale site value is still a claim")
 	assert.Equal(t, curated, cands[0].JaSourceID, "chosen ja row is the curated source row")
 
-	// Apply: machine rows land on current-site works only, with source
-	// attribution inherited from their ja rows.
+	// Apply: machine rows land on every claimed work, with source attribution
+	// inherited from their ja rows.
 	tr := &fakeTranslator{model: "claimed-mt", fn: func(ja string) string { return "[译] " + ja }}
 	st, err = Run(ctx, tr, Opts{DSN: testDSN, Apply: true, Population: PopulationClaimed})
 	require.NoError(t, err)
-	assert.Equal(t, 2, st.Inserted)
+	assert.Equal(t, 3, st.Inserted)
 	assert.Zero(t, st.Refused)
 	assert.Zero(t, st.Errors)
 
@@ -307,7 +354,7 @@ func TestClaimedPopulation(t *testing.T) {
 	assert.EqualValues(t, 1, row.Provenance, "machine row")
 	assert.Equal(t, curated, row.SourceID, "attributed to the curated ja row's source_id")
 	assert.Equal(t, "[译] 認領作品Aのあらすじ。", row.Intro)
-	assert.EqualValues(t, 0, introCount(t, "WHERE work_id=? AND lang='zh-Hans'", wFormer), "former-site work untouched by the claimed lane")
+	assert.EqualValues(t, 1, introCount(t, "WHERE work_id=? AND lang='zh-Hans'", wFormer), "a stale site value is still a claim")
 	assert.EqualValues(t, 0, introCount(t, "WHERE work_id=? AND lang='zh-Hans'", wBodyless), "bodyless work untouched by the claimed lane")
 
 	// default lane stays bodyless: the same DB state yields only wBodyless.
@@ -454,4 +501,100 @@ func TestMockTranslatorDeterminism(t *testing.T) {
 	assert.Equal(t, a1, a2, "same source → same output (idempotent)")
 	assert.NotEqual(t, a1, b, "different source → different output (re-translate trigger)")
 	assert.True(t, strings.HasPrefix(mdl, "mock:"), "obvious mock model id")
+}
+
+// TestEnglishLaneIsALastResort pins the two exclusions that make the en→zh lane
+// safe to run BESIDE the Getchu crawl rather than after it (refs/proj/168).
+//
+// Both are correctness, not tidiness. en→zh is a relay: the English is itself a
+// translation of a Japanese original, so it compounds two hops' losses. And
+// fill-missing means whichever lane writes zh FIRST wins permanently — a
+// premature English translation would lock out the better Japanese one forever.
+func TestEnglishLaneIsALastResort(t *testing.T) {
+	clean(t)
+	ctx := context.Background()
+	medium, _, bangumi := reg(t)
+	var curated, getchu, vndb int16
+	require.NoError(t, testDB.Raw(`SELECT id FROM catalog_source WHERE key='curated'`).Scan(&curated).Error)
+	require.NoError(t, testDB.Raw(`SELECT id FROM catalog_source WHERE key='getchu'`).Scan(&getchu).Error)
+	require.NoError(t, testDB.Raw(`SELECT id FROM catalog_source WHERE key='vndb'`).Scan(&vndb).Error)
+	require.NotZero(t, getchu, "the seed must carry the getchu source row")
+	site := "kungal"
+
+	// The target: published, English only, nothing else can reach it.
+	wTarget := mkPublished(t, medium, "en-only-orphan", &site)
+	mkIntro(t, wTarget, "en", "A quiet town where nothing ever happens.", curated)
+
+	// Has ja → the ja lane translates it in one hop; the en lane must not touch it.
+	wHasJa := mkPublished(t, medium, "en-and-ja", &site)
+	mkIntro(t, wHasJa, "en", "An English blurb.", curated)
+	mkIntro(t, wHasJa, "ja", "日本語のあらすじ。", bangumi)
+
+	// Getchu anchors it → the crawler is about to supply the Japanese original.
+	wGetchu := mkPublished(t, medium, "en-but-getchu-anchored", &site)
+	mkIntro(t, wGetchu, "en", "Another English blurb.", curated)
+	mkGetchuAnchor(t, wGetchu, getchu, vndb, "1117747")
+
+	// Already has zh → fill-missing excludes it regardless of lane.
+	wHasZh := mkPublished(t, medium, "en-and-zh", &site)
+	mkIntro(t, wHasZh, "en", "Yet another English blurb.", curated)
+	mkIntro(t, wHasZh, "zh-Hans", "已有的中文简介。", bangumi)
+
+	st, err := Run(ctx, nil, Opts{DSN: testDSN, Population: PopulationPublished, SourceLang: SourceEn})
+	require.NoError(t, err)
+	assert.Equal(t, 1, st.Candidates,
+		"only the work no other lane can reach: ja-having, getchu-anchored and zh-having works are all excluded")
+
+	reg2, err := resolveRegistry(ctx, testDB)
+	require.NoError(t, err)
+	cands, err := loadCandidates(ctx, testDB, reg2, PopulationPublished, SourceEn, 5000, 0)
+	require.NoError(t, err)
+	require.Len(t, cands, 1)
+	assert.Equal(t, wTarget, cands[0].WorkID)
+	assert.Equal(t, "A quiet town where nothing ever happens.", cands[0].JaText,
+		"the lane carries the ENGLISH source text through the same field")
+
+	// Apply writes exactly one machine row, attributed to the English row's source.
+	tr := &fakeTranslator{model: "en-mt", fn: func(src string) string { return "[译] " + src }}
+	st, err = Run(ctx, tr, Opts{DSN: testDSN, Apply: true, Population: PopulationPublished, SourceLang: SourceEn})
+	require.NoError(t, err)
+	assert.Equal(t, 1, st.Inserted)
+	assert.Zero(t, st.Errors)
+
+	var row model.CatalogWorkIntro
+	require.NoError(t, testDB.Where("work_id=? AND lang='zh-Hans'", wTarget).First(&row).Error)
+	assert.EqualValues(t, 1, row.Provenance, "machine row")
+	assert.Equal(t, curated, row.SourceID, "attributed to the English row's source_id")
+	for _, w := range []int64{wHasJa, wGetchu} {
+		assert.EqualValues(t, 0, introCount(t, "WHERE work_id=? AND lang='zh-Hans'", w),
+			"work %d must be left for the japanese path", w)
+	}
+
+	// Second pass writes zero.
+	st, err = Run(ctx, tr, Opts{DSN: testDSN, Apply: true, Population: PopulationPublished, SourceLang: SourceEn})
+	require.NoError(t, err)
+	assert.Zero(t, st.Inserted, "fill-missing is idempotent")
+}
+
+// TestPublishedPopulationExcludesDrafts pins that the en lane does not spend
+// translation budget on the draft sea — 5x the published population, and the
+// step-75 ruling already declined to invest there.
+func TestPublishedPopulationExcludesDrafts(t *testing.T) {
+	clean(t)
+	ctx := context.Background()
+	medium, _, _ := reg(t)
+	var curated int16
+	require.NoError(t, testDB.Raw(`SELECT id FROM catalog_source WHERE key='curated'`).Scan(&curated).Error)
+	site := "kungal"
+
+	wLive := mkPublished(t, medium, "live", &site)
+	mkIntro(t, wLive, "en", "Live work.", curated)
+	wDraft := mkPublished(t, medium, "draft", &site)
+	mkIntro(t, wDraft, "en", "Draft work.", curated)
+	require.NoError(t, testDB.Model(&model.CatalogWork{}).Where("id = ?", wDraft).
+		Update("claim_state", model.ClaimStateDraft).Error)
+
+	st, err := Run(ctx, nil, Opts{DSN: testDSN, Population: PopulationPublished, SourceLang: SourceEn})
+	require.NoError(t, err)
+	assert.Equal(t, 1, st.Candidates, "the draft claim is not on the public face")
 }

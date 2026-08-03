@@ -1,6 +1,7 @@
 // intro-mt is the work-intro machine-translation driver (doc 75 pilot +
-// claimed refill): ja→zh-Hans over the popularity-ranked top N of a population
-// lane (--population bodyless|claimed), filling a MISSING language only, with
+// claimed refill): →zh-Hans over the popularity-ranked top N of a population
+// lane (--population bodyless|claimed|published), from ja by default or from en
+// as a last resort (--source-lang), filling a MISSING language only, with
 // a machine-provenance flag + source hash + model recorded on every row. The
 // job never overwrites a source/human zh row.
 //
@@ -39,7 +40,8 @@ import (
 func main() {
 	dsn := flag.String("dsn", "", "catalog DSN (REQUIRED; rehearsal locally, live catalog only in the acceptance run)")
 	apply := flag.Bool("apply", false, "translate + write (default: dry — counts + samples, no LLM, no writes)")
-	population := flag.String("population", string(intromt.PopulationBodyless), "candidate lane: bodyless (catalog-native, doc-75 pilot) or claimed (wiki-face works, W1-pre zh refill)")
+	population := flag.String("population", string(intromt.PopulationBodyless), "candidate lane: bodyless | claimed | published (claimed narrowed to the public face)")
+	sourceLang := flag.String("source-lang", string(intromt.SourceJa), "translate FROM: ja (default) or en (last resort — excludes anything with ja, and anything Getchu anchors)")
 	top := flag.Int("top", 5000, "popularity-ranked candidate ceiling (the pilot population)")
 	limit := flag.Int("limit", 0, "process only the most-popular N candidates (0 = all within --top)")
 	model := flag.String("model", envOr("KUN_INTRO_MT_LLM_MODEL", envOr("KUN_AI_UPSTREAM_MODEL", "deepseek-chat")), "served model id (recorded in mt_model)")
@@ -65,6 +67,9 @@ func main() {
 			slog.Warn("MOCK translator active — rehearsal write-path proof only; rows are NOT real translations")
 		} else {
 			ht := intromt.NewHTTPTranslator(*llmBase, *llmToken, *model, *maxTokens)
+			// The prompt must match the lane: the ja prompt opens by calling
+			// its input 日文, which would contradict an English source.
+			ht.SetSourceLang(intromt.SourceLang(*sourceLang))
 			if !ht.Configured() {
 				fmt.Printf("BLOCKED: LLM gateway not configured (need --llm-base + --llm-token, or KUN_INTRO_MT_LLM_* / KUN_AI_UPSTREAM_*).\n" +
 					"This is a designed precondition for a real --apply, not a failure. Use --mock for the offline write-path rehearsal.\n")
@@ -76,7 +81,8 @@ func main() {
 	}
 
 	st, err := intromt.Run(context.Background(), tr, intromt.Opts{
-		DSN: *dsn, Apply: *apply, Population: intromt.Population(*population), Top: *top, Limit: *limit,
+		DSN: *dsn, Apply: *apply, Population: intromt.Population(*population),
+		SourceLang: intromt.SourceLang(*sourceLang), Top: *top, Limit: *limit,
 		Delay:   time.Duration(*delayMS) * time.Millisecond,
 		Workers: *workers,
 	})

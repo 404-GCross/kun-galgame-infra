@@ -45,6 +45,10 @@ type Opts struct {
 	// Population selects the candidate lane; empty defaults to
 	// PopulationBodyless (the pilot lane, backward compatible).
 	Population Population
+	// SourceLang selects the language translated FROM; empty defaults to
+	// SourceJa (the pilot lane, backward compatible). See SourceEn for why the
+	// English lane is a strictly disjoint last resort.
+	SourceLang SourceLang
 	// Top caps the popularity-ranked candidate population (the pilot ceiling,
 	// default 5000). Limit then windows to the most-popular N for a sample run
 	// (0 = all within Top).
@@ -112,7 +116,11 @@ func Run(ctx context.Context, tr Translator, opts Opts) (*Stats, error) {
 	if pop == "" {
 		pop = PopulationBodyless
 	}
-	cands, err := loadCandidates(ctx, db, reg, pop, opts.Top, opts.Limit)
+	src := opts.SourceLang
+	if src == "" {
+		src = SourceJa
+	}
+	cands, err := loadCandidates(ctx, db, reg, pop, src, opts.Top, opts.Limit)
 	if err != nil {
 		return nil, fmt.Errorf("load candidates: %w", err)
 	}

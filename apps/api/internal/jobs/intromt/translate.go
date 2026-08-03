@@ -33,6 +33,26 @@ const TranslateSystemPrompt = `你是资深的游戏本地化译者,专门把日
 4. 遇到无法确定的内容,按字面直译,不要留空或添加译注。
 5. 只输出译文正文本身,不要输出原文、解释、前言、后记、标注或任何引号包裹。`
 
+// TranslateSystemPromptEn is the en→zh-Hans prompt (refs/proj/168). It is a
+// separate constant rather than a tweak of the ja one: that prompt says "日文
+// 视觉小说" in its first line, so feeding it English would hand the model a
+// premise that contradicts its input.
+//
+// Two rules differ from the Japanese lane, both because the English source is
+// itself usually a translation of a Japanese original:
+//
+//   - proper nouns are to be rendered as the ORIGINAL Japanese/Latin form where
+//     the translator can recognise one, not transliterated back out of English;
+//   - the English wording is not authoritative, so awkward literalism inherited
+//     from the first hop should not be preserved as if it were style.
+const TranslateSystemPromptEn = `你是资深的游戏本地化译者,负责把视觉小说(galgame)的英文作品简介忠实地翻译成简体中文。请注意:英文原文本身通常是从日文翻译而来的二次文本。翻译要求:
+1. 忠实、完整地翻译原文,不增删、不总结、不改写、不做任何评论。
+2. 专有名词(作品标题、角色名、人名、品牌/社团/厂牌名、商标)如果能辨认出其原本的日文或拉丁字母写法,请使用该原写法;辨认不出时保留英文原样,不要音译成中文。
+3. 保持原文的段落与换行结构。
+4. 英文原文可能带有转译造成的生硬表达;请按中文的自然表达翻译其含义,但不得改变信息内容。
+5. 遇到无法确定的内容,按字面直译,不要留空或添加译注。
+6. 只输出译文正文本身,不要输出原文、解释、前言、后记、标注或任何引号包裹。`
+
 // HTTPTranslator is an OpenAI-compatible chat-completions translator (the same
 // wire the AI gateway's upstream client and llmsuggest speak). Its entire
 // config is base URL + bearer token + model, taken from env/flag — NEVER
@@ -40,11 +60,12 @@ const TranslateSystemPrompt = `你是资深的游戏本地化译者,专门把日
 // OpenAI-compatible gateway); locally it is unconfigured/unreachable, which is
 // why the pilot proves itself with the mock.
 type HTTPTranslator struct {
-	baseURL   string
-	token     string
-	model     string
-	maxTokens int
-	http      *http.Client
+	sourceLang SourceLang
+	baseURL    string
+	token      string
+	model      string
+	maxTokens  int
+	http       *http.Client
 }
 
 // NewHTTPTranslator builds an OpenAI-compatible translator. baseURL is the
@@ -58,7 +79,7 @@ func NewHTTPTranslator(baseURL, token, model string, maxTokens int) *HTTPTransla
 		// Reasoning upstreams (glm-5.2 on Workers AI) can spend minutes on a
 		// ~4k-char source before the first byte arrives — 120s killed the
 		// longest gate sample. Per-item wall ceiling, not a liveness knob.
-		http:      &http.Client{Timeout: 600 * time.Second},
+		http: &http.Client{Timeout: 600 * time.Second},
 	}
 }
 
@@ -104,7 +125,7 @@ func (t *HTTPTranslator) Translate(ctx context.Context, jaText string) (string, 
 		MaxTokens:   t.maxTokens,
 		Temperature: 0,
 		Messages: []chatMessage{
-			{Role: "system", Content: TranslateSystemPrompt},
+			{Role: "system", Content: t.systemPrompt()},
 			{Role: "user", Content: jaText},
 		},
 	}
@@ -223,4 +244,15 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return s[:n] + "…"
+}
+
+// SetSourceLang selects which pinned prompt this translator sends. Default (and
+// zero value) is the Japanese lane, so existing callers are unaffected.
+func (t *HTTPTranslator) SetSourceLang(src SourceLang) { t.sourceLang = src }
+
+func (t *HTTPTranslator) systemPrompt() string {
+	if t.sourceLang == SourceEn {
+		return TranslateSystemPromptEn
+	}
+	return TranslateSystemPrompt
 }

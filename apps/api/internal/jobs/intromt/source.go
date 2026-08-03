@@ -22,6 +22,30 @@ const (
 	// dropped as unsourced (ruling ①, refs/plans/10), so this lane refills
 	// zh-Hans from the ja original. Works with no ja row are not candidates.
 	PopulationClaimed Population = "claimed"
+
+	// PopulationPublished is the claimed population narrowed to what is
+	// actually on the public face. Claimed is 64,530 works in prod of which
+	// only 10,970 are published; the rest are the draft sea this track has
+	// repeatedly declined to spend translation budget on (the step-75 ruling).
+	// The predicate mirrors model.ClaimStateKey's `live` rule exactly — NULL
+	// claim_state is live, and a row without product_work_id reads as unclaimed
+	// on the wire so it must filter as unclaimed here.
+	PopulationPublished Population = "published"
+)
+
+// SourceLang selects which language the machine lane translates FROM.
+type SourceLang string
+
+const (
+	// SourceJa is the original lane (doc 75): the upstream's own Japanese blurb.
+	SourceJa SourceLang = "ja"
+
+	// SourceEn translates the English text instead, for works that have no
+	// Japanese anywhere. It is a LAST RESORT and is kept strictly disjoint from
+	// SourceJa: a work with any ja intro is excluded, because ja→zh is a
+	// shorter, more faithful hop than en→zh (the English is itself usually a
+	// translation, so en→zh is a relay and compounds both hops' losses).
+	SourceEn SourceLang = "en"
 )
 
 // registry holds the ids this job resolves by key (never hardcoded) so a
@@ -88,18 +112,41 @@ type candidate struct {
 // tiebreak — still a total, deterministic order. Deliberately no join onto the
 // retired galgame table for view counts: the whole lane is translated in one
 // run anyway, so order is cosmetic.
-func loadCandidates(ctx context.Context, db *gorm.DB, reg registry, pop Population, top, limit int) ([]candidate, error) {
+func loadCandidates(ctx context.Context, db *gorm.DB, reg registry, pop Population, src SourceLang, top, limit int) ([]candidate, error) {
+	if src == "" {
+		src = SourceJa
+	}
+	if src != SourceJa && src != SourceEn {
+		return nil, fmt.Errorf("unknown source language %q (want %q or %q)", src, SourceJa, SourceEn)
+	}
+	// The English lane is a LAST RESORT, so it excludes two populations the
+	// Japanese path serves better:
+	//
+	//   - anything with a ja intro, which the ja lane already translates in a
+	//     single hop (en→zh would be a relay through a translation);
+	//   - anything Getchu anchors, because that crawler is about to supply the
+	//     Japanese original (refs/proj/167). Writing an en→zh row now would
+	//     LOCK IT IN: fill-missing means the later, better ja→zh translation
+	//     would find zh already present and skip.
+	//
+	// Both are exclusions rather than orderings on purpose — a lane that "runs
+	// second" is not a guarantee, a NOT EXISTS is.
+	lastResortGate := ""
+	if src == SourceEn {
+		lastResortGate = `
+		  AND NOT EXISTS (SELECT 1 FROM catalog_work_intro j WHERE j.work_id = b.id AND j.lang = 'ja')
+		  AND NOT EXISTS (
+			SELECT 1 FROM catalog_release rel
+			JOIN catalog_external_ref g ON g.entity_type = 6 AND g.entity_id = rel.id
+				AND g.source_id = (SELECT id FROM catalog_source WHERE key = 'getchu')
+			WHERE rel.work_id = b.id AND rel.deleted_at IS NULL)`
+	}
 	if top <= 0 {
 		top = 5000
 	}
-	var sitePredicate string
-	switch pop {
-	case PopulationBodyless:
-		sitePredicate = "(site IS NULL OR site = '')"
-	case PopulationClaimed:
-		sitePredicate = "site = 'kungal'"
-	default:
-		return nil, fmt.Errorf("unknown population %q (want %q or %q)", pop, PopulationBodyless, PopulationClaimed)
+	sitePredicate, err := sitePredicateFor(pop)
+	if err != nil {
+		return nil, err
 	}
 	q := db.WithContext(ctx).Raw(`
 		WITH pool AS (
@@ -112,7 +159,7 @@ func loadCandidates(ctx context.Context, db *gorm.DB, reg registry, pop Populati
 		),
 		ja AS (
 			SELECT DISTINCT ON (work_id) work_id, source_id AS ja_source_id, intro AS ja_text
-			FROM catalog_work_intro WHERE lang = 'ja'
+			FROM catalog_work_intro WHERE lang = ?
 			ORDER BY work_id, source_id
 		),
 		mzh AS (
@@ -134,10 +181,10 @@ func loadCandidates(ctx context.Context, db *gorm.DB, reg registry, pop Populati
 		LEFT JOIN has_zh_source hs ON hs.work_id = b.id
 		LEFT JOIN mzh ON mzh.work_id = b.id
 		LEFT JOIN pop ON pop.work_id = b.id
-		WHERE hs.work_id IS NULL
+		WHERE hs.work_id IS NULL`+lastResortGate+`
 		ORDER BY COALESCE(pop.dl, pop.wl, 0) DESC, b.id ASC
 		LIMIT ?`,
-		reg.galgameMedium,
+		reg.galgameMedium, string(src),
 		reg.dlsiteSource, model.PopularityMetricDownloads,
 		reg.dlsiteSource, model.PopularityMetricWishlist,
 		top)
@@ -152,4 +199,25 @@ func loadCandidates(ctx context.Context, db *gorm.DB, reg registry, pop Populati
 		out = out[:limit]
 	}
 	return out, nil
+}
+
+// sitePredicateFor renders a population as a catalog_work predicate.
+//
+// "claimed" is a PROPERTY — has a site — and never the literal site value.
+// Wave 161 renamed the only value that has ever existed (galgame_wiki →
+// kungal), and every lane that had pinned the literal went silently empty for
+// three days while reporting a clean zero-candidate run.
+func sitePredicateFor(pop Population) (string, error) {
+	switch pop {
+	case PopulationBodyless:
+		return "(site IS NULL OR site = '')", nil
+	case PopulationClaimed:
+		return "(site IS NOT NULL AND site <> '')", nil
+	case PopulationPublished:
+		return `(site IS NOT NULL AND site <> '' AND product_work_id IS NOT NULL
+			AND (claim_state IS NULL OR claim_state = 0))`, nil
+	default:
+		return "", fmt.Errorf("unknown population %q (want %q, %q or %q)",
+			pop, PopulationBodyless, PopulationClaimed, PopulationPublished)
+	}
 }
