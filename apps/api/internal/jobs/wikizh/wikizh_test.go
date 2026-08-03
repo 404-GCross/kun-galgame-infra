@@ -235,3 +235,57 @@ func TestUserPacketShape(t *testing.T) {
 	p = UserPacket(Candidate{WorkID: 7, Bucket: BucketUsable, Source: "原文", WikiZh: "甲"})
 	assert.NotContains(t, p, "B(机器翻译中文)")
 }
+
+// TestConsensusRequiresUnanimity pins the fold. The v2 calibration ran the
+// UNCHANGED compare prompt twice and 6 of 15 verdicts moved, two of them from
+// "unsure, no write" to "a_better, 0.90, auto-write" — so agreement across
+// rounds is the real signal and confidence is only a floor.
+func TestConsensusRequiresUnanimity(t *testing.T) {
+	r := func(id int64, v string, c float64) Verdict {
+		return Verdict{Key: fmt.Sprintf("w%d", id), WorkID: id, Bucket: BucketCompare, Verdict: v, Confidence: c}
+	}
+	rounds := [][]Verdict{
+		{r(1, VerdictABetter, 0.95), r(2, VerdictABetter, 0.95), r(3, VerdictABetter, 0.95), r(4, VerdictABetter, 0.95)},
+		{r(1, VerdictABetter, 0.92), r(2, VerdictBBetter, 0.90), r(3, VerdictABetter, 0.80), r(4, VerdictABetter, 0.95)},
+		{r(1, VerdictABetter, 0.99), r(2, VerdictABetter, 0.95), r(3, VerdictABetter, 0.95)}, // work 4 missing
+	}
+	got, st := Consensus(rounds)
+	assert.Equal(t, 3, st.Rounds)
+	assert.Equal(t, 4, st.Works)
+	assert.Equal(t, 2, st.Unanimous, "works 1 and 3 agreed in every round")
+	assert.Equal(t, 1, st.Disagreed, "work 2 flipped")
+	assert.Equal(t, 1, st.Incomplete, "work 4 is missing a round")
+
+	by := map[int64]Verdict{}
+	for _, v := range got {
+		by[v.WorkID] = v
+	}
+	// Unanimous keeps the verdict but carries the LOWEST confidence, so an
+	// optimistic round cannot satisfy the gate on its own.
+	assert.Equal(t, VerdictABetter, by[1].Verdict)
+	assert.InDelta(t, 0.92, by[1].Confidence, 0.001)
+	assert.Equal(t, VerdictABetter, by[3].Verdict)
+	assert.InDelta(t, 0.80, by[3].Confidence, 0.001, "the 0.80 round drags it under the gate")
+
+	// Disagreement and incompleteness both become unsure — never a write.
+	for _, id := range []int64{2, 4} {
+		assert.Equal(t, VerdictUnsure, by[id].Verdict)
+		assert.Zero(t, by[id].Confidence)
+		assert.NotEmpty(t, by[id].Reason, "the review pile needs to know WHY it landed there")
+	}
+
+	// And that survives Apply: nothing here may be written.
+	clean(t)
+	for _, id := range []int64{1, 2, 3, 4} {
+		w := mkWork(t, true)
+		by[id] = Verdict{WorkID: w, Bucket: by[id].Bucket, Verdict: by[id].Verdict, Confidence: by[id].Confidence}
+		mkSnapshot(t, w, true, "候选中文。", "日本語。", "机翻。", "")
+	}
+	var folded []Verdict
+	for _, id := range []int64{2, 3, 4} { // the three that must not write
+		folded = append(folded, by[id])
+	}
+	stApply, err := Apply(context.Background(), testDB, folded, true)
+	require.NoError(t, err)
+	assert.Zero(t, stApply.Written, "disagreement, incompleteness and a sub-gate fold all block the write")
+}

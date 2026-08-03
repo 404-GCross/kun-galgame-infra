@@ -9,9 +9,10 @@
 //	catalog-wiki-zh judge --bucket usable  --out verdicts-usable.jsonl  --limit 30
 //	catalog-wiki-zh judge --bucket compare --out verdicts-compare.jsonl --limit 30
 //
-//	# 2. apply: consume a verdict file. Dry by default.
-//	catalog-wiki-zh apply --in verdicts-usable.jsonl
-//	catalog-wiki-zh apply --in verdicts-usable.jsonl --apply
+//	# 2. apply: fold N independent rounds and consume the consensus. Dry by
+//	#    default. Auto-apply needs EVERY round to agree and clear the gate.
+//	catalog-wiki-zh apply --in r1.jsonl,r2.jsonl,r3.jsonl
+//	catalog-wiki-zh apply --in r1.jsonl,r2.jsonl,r3.jsonl --apply
 //
 // A restore INSERTs a provenance=0 row; the machine row is never touched, so a
 // rollback is a DELETE of the ids the apply pass reports.
@@ -24,6 +25,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 	"time"
 
 	"api/internal/infrastructure/database"
@@ -44,7 +46,7 @@ func main() {
 	var (
 		bucket    = fs.String("bucket", string(wikizh.BucketUsable), "judge: usable (no zh at all) | compare (a machine row holds the slot)")
 		out       = fs.String("out", "", "judge: JSONL verdict file (appended; already-judged keys are skipped)")
-		in        = fs.String("in", "", "apply: JSONL verdict file to consume")
+		in        = fs.String("in", "", "apply: comma-separated JSONL verdict files — one per INDEPENDENT judging round. Auto-apply requires every round to agree.")
 		apply     = fs.Bool("apply", false, "apply: write (default is a dry forecast)")
 		limit     = fs.Int("limit", 0, "max candidates (0 = all)")
 		chunk     = fs.Int("chunk", 5, "judge: candidates per gateway request")
@@ -150,11 +152,28 @@ func main() {
 			slog.Error("--in is required")
 			os.Exit(2)
 		}
-		vs, err := wikizh.LoadVerdicts(*in)
-		if err != nil {
-			slog.Error("read verdicts", "error", err)
-			os.Exit(1)
+		files := strings.Split(*in, ",")
+		rounds := make([][]wikizh.Verdict, 0, len(files))
+		for _, f := range files {
+			f = strings.TrimSpace(f)
+			if f == "" {
+				continue
+			}
+			r, err := wikizh.LoadVerdicts(f)
+			if err != nil {
+				slog.Error("read verdicts", "file", f, "error", err)
+				os.Exit(1)
+			}
+			slog.Info("round loaded", "file", f, "verdicts", len(r))
+			rounds = append(rounds, r)
 		}
+		if len(rounds) < 2 {
+			slog.Warn("SINGLE ROUND — a lone judging round cannot tell a borderline case from a confident one; " +
+				"the wave-168 calibration saw 6 of 15 verdicts move between identical runs")
+		}
+		vs, cs := wikizh.Consensus(rounds)
+		slog.Info("consensus", "result", cs.String())
+
 		st, err := wikizh.Apply(ctx, db.DB(), vs, *apply)
 		if st != nil {
 			slog.Info("wiki-zh apply done", "apply", *apply, "result", st.String())
@@ -183,7 +202,10 @@ func usage() {
 	fmt.Fprint(os.Stderr, `catalog-wiki-zh <judge|apply> [flags]
 
   judge --bucket usable|compare --out FILE [--limit N] [--chunk 5] [--mock]
-  apply --in FILE [--apply]
+        run it N times to N different files — independent rounds are what
+        distinguishes a borderline case from a confident one
+  apply --in r1.jsonl,r2.jsonl,r3.jsonl [--apply]
+        auto-applies only where EVERY round agreed and cleared the gate
 `)
 }
 
