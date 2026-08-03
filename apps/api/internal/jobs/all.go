@@ -65,6 +65,17 @@ func RegisterAll(r *Registry) {
 	})
 
 	r.Register(Job{
+		Name: JobImageRefAudit,
+		Desc: "catalog 图片引用对账（引用指向已删字节即告警，赶在 30 天物删前抢救）",
+		// After image-gc (03:30) and all three refpings (04:00/04:15/04:30) so
+		// it audits the settled state, not one mid-sweep.
+		Schedule: Schedule{DailyAt: "04:45"},
+		Run: func(ctx context.Context, cfg *config.Config) (Summary, error) {
+			return RunImageRefAudit(ctx, cfg, DefaultImageRefAuditOpts())
+		},
+	})
+
+	r.Register(Job{
 		Name:     "artifact-gc",
 		Desc:     "artifact 生命周期（孤儿上传回收 + 软删物理回收）",
 		Schedule: Schedule{DailyAt: "05:30"},
