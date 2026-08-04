@@ -12,10 +12,15 @@
 |---|---|---|---|---|---|---|---|---|
 | OAuth | `cmd/oauth` | `/api/v1` | [20](./oauth.get.md) | [21](./oauth.post.md) | [4](./oauth.put.md) | [3](./oauth.delete.md) | [2](./oauth.patch.md) | 50 |
 | Image | `cmd/image`（+管理端在 oauth 进程）| `/`、`/api/v1/admin/image` | [6](./image.get.md) | [2](./image.post.md) | — | [2](./image.delete.md) | [1](./image.patch.md) | 11 |
-| Galgame Wiki | `internal/galgameapp`(宿主 `cmd/catalog`) | `/api` | [42](./galgame.get.md) | [17](./galgame.post.md) | [8](./galgame.put.md) | [8](./galgame.delete.md) | [1](./galgame.patch.md) | 76 |
-| Moderation（骨架已删除，doc 18 P0） | — | `/api/v1` | [4](./moderation.get.md) | [1](./moderation.post.md) | — | — | — | 5 |
 | Artifact | `cmd/artifact` | `/api/v1` | [4](./artifact.get.md) | [1](./artifact.post.md) | — | [1](./artifact.delete.md) | — | 6 |
-| **合计** | | | **76** | **42** | **12** | **14** | **4** | **148** |
+| **合计** | | | **30** | **24** | **4** | **6** | **3** | **67** |
+
+> **已退役,清单已删除(2026-08-04)**:
+>
+> - **Galgame Wiki**(原 76 端点)—— 面在 N5 W 窗摘除、表族在波次 149 DROP,`internal/galgameapp` 只剩 410 墓碑。逐端点清单描述的路由**一条都不存在了**,留着会被当成可调用契约,故删除;墓碑见 `docs/integration/galgame_wiki/README.md`。
+> - **Moderation**(原 5 端点)—— 骨架早在 doc 18 P0 删除,T&S 平台改由 `cmd/trust` 承载,清单一直没跟着走。
+>
+> 两者的**审计结论**保留在下方「审计结果」里——那才是这份文档的价值,路由表只是当时的取样面。
 
 > 注：`/api/v1/admin/image/*`、`/api/v1/admin/jobs/*` 物理上跑在 oauth 进程（admin 鉴权在那边）。image 管理端归到 image.* 审计；jobs 管理端归到 oauth.* 审计。上表 Image 的 DELETE/PATCH 各含 1 个 oauth 进程内的管理端端点。
 
