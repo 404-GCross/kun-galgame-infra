@@ -84,15 +84,14 @@ const minYear = 1950
 
 // Opts configures a run. Apply=false is a dry-run forecast (no writes). All
 // four DSNs are REQUIRED and never defaulted: DSN (catalog, which also hosts
-// src_bangumi), DlsiteDSN / EGDSN (the staging mirrors) and WikiDSN (the
-// galgame-family DB — kun_galgame_wiki locally, kun_catalog in prod since W5).
+// src_bangumi) and DlsiteDSN / EGDSN (the staging mirrors). WikiDSN is gone
+// with the galgame family (wave 149) — see rating.go source ②.
 // Limit/Offset window each lane's candidate list (0 = all).
 type Opts struct {
 	Apply     bool
 	DSN       string
 	DlsiteDSN string
 	EGDSN     string
-	WikiDSN   string
 	Limit     int
 	Offset    int
 }
@@ -153,9 +152,6 @@ type Stats struct {
 	RatingDlR18           int
 	RatingDlSensitive     int
 	RatingDlAllAges       int // explicit DLsite all-ages — stays 0, suppresses lower lanes
-	RatingWikiR18         int
-	RatingWikiAllAges     int // explicit wiki 'all' — stays 0, suppresses bgm
-	RatingWikiUnmapped    int // unexpected age_limit value → no verdict from wiki
 	RatingBgmR18          int // nsfw=true fallback
 	RatingNoVerdict       int // no source had a verdict → stays unrated
 	RatingPlanned         int // verdicts > 0 (actual planned writes)
@@ -185,9 +181,6 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 	if opts.EGDSN == "" {
 		return nil, fmt.Errorf("EG mirror DSN is required (--eg-dsn); refusing to guess")
 	}
-	if opts.WikiDSN == "" {
-		return nil, fmt.Errorf("galgame-family DSN is required (--wiki-dsn); refusing to guess")
-	}
 	db, err := openGorm(opts.DSN)
 	if err != nil {
 		return nil, fmt.Errorf("connect catalog db: %w", err)
@@ -203,11 +196,6 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 		return nil, fmt.Errorf("connect EG mirror db: %w", err)
 	}
 	defer closeDB(egDB)
-	wikiDB, err := openGorm(opts.WikiDSN)
-	if err != nil {
-		return nil, fmt.Errorf("connect galgame-family db: %w", err)
-	}
-	defer closeDB(wikiDB)
 
 	reg, err := resolveRegistry(ctx, db)
 	if err != nil {
@@ -229,7 +217,7 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 	if err := runBgmDateLane(ctx, db, w, reg, opts, maxYear, planned); err != nil {
 		return nil, err
 	}
-	if err := runRatingLane(ctx, db, dlDB, wikiDB, w, reg, opts); err != nil {
+	if err := runRatingLane(ctx, db, dlDB, w, reg, opts); err != nil {
 		return nil, err
 	}
 	if err := w.touch(ctx); err != nil {
@@ -252,8 +240,7 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 		"rating_candidates", st.RatingCandidates,
 		"rating_dl_r18", st.RatingDlR18, "rating_dl_sensitive", st.RatingDlSensitive,
 		"rating_dl_all_ages", st.RatingDlAllAges,
-		"rating_wiki_r18", st.RatingWikiR18, "rating_wiki_all_ages", st.RatingWikiAllAges,
-		"rating_wiki_unmapped", st.RatingWikiUnmapped, "rating_bgm_r18", st.RatingBgmR18,
+		"rating_bgm_r18", st.RatingBgmR18,
 		"rating_no_verdict", st.RatingNoVerdict, "rating_planned", st.RatingPlanned,
 		"rating_filled", st.RatingFilled, "rating_skipped_non_empty", st.RatingSkippedNonEmpty,
 		"rating_curated_override", st.RatingCuratedOverride,

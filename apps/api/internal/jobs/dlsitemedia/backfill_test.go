@@ -141,28 +141,12 @@ func TestIntroWritePath(t *testing.T) {
 
 // --- refs/proj/125: the CLAIMED screenshot lane ---
 
-// claimedLaneGalgameIDs are the fixture galgame body ids the claimed screenshot
-// lane's bridge-emptiness check joins against.
-var claimedLaneGalgameIDs = []int64{9101, 9102, 9103, 9104}
+// claimedLaneClaimIDs are the fixture product_work_id values a claim points at.
+// They used to be galgame body ids the screenshot lane joined against; wave 149
+// dropped that body, so today they are opaque claim keys and nothing resolves
+// them.
+var claimedLaneClaimIDs = []int64{9101, 9102, 9103, 9104}
 
-// ensureGalgameScreenshotStub provisions the two galgame-family tables the
-// claimed lane's candidate query reads: galgame (the body the claim points at)
-// and galgame_screenshot (the bridge whose EMPTINESS admits a work). In
-// prod/dev both live in kun_catalog alongside catalog; here they come from the
-// real models (galgametest) so the shape is the same for every package sharing
-// the integration database. The inserts pass every real-schema NOT NULL column
-// without a default. Cleanup is a targeted DELETE. Idempotent.
-func ensureGalgameScreenshotStub(t *testing.T, db *gorm.DB) {
-	t.Helper()
-	// Screenshots first: galgame_screenshot carries an FK to galgame(id) in the
-	// real schema, so the children must go before the parents.
-	require.NoError(t, db.Exec(`DELETE FROM galgame_screenshot WHERE galgame_id IN ?`, claimedLaneGalgameIDs).Error)
-	require.NoError(t, db.Exec(`DELETE FROM galgame WHERE id IN ?`, claimedLaneGalgameIDs).Error)
-	for _, id := range claimedLaneGalgameIDs {
-		require.NoError(t, db.Exec(`INSERT INTO galgame (id, catalog_work_id, user_id,
-			intro_en_us, intro_ja_jp, intro_zh_cn, intro_zh_tw) VALUES (?, NULL, 0, '', '', '', '')`, id).Error)
-	}
-}
 
 // stubImageService stands in for image_service's /image/upload: it answers with
 // the standard envelope, hashing the uploaded bytes so identical files dedup to
@@ -199,7 +183,6 @@ func stubImageService(t *testing.T) *imageclient.Client {
 func TestClaimedScreenshotLane(t *testing.T) {
 	db := testDB
 	ctx := context.Background()
-	ensureGalgameScreenshotStub(t, db)
 	// No RESTART IDENTITY: the identity sequences are shared with every other
 	// package running against this DB, and rewinding them cross-pollutes ids.
 	for _, tbl := range []string{"catalog_external_ref", "catalog_release", "catalog_work_screenshot", "catalog_work"} {
@@ -223,23 +206,24 @@ func TestClaimedScreenshotLane(t *testing.T) {
 	}
 	claimed := "kungal"
 	wBodyless := anchored("bodyless", "RJ100001", nil, nil)
-	wClaimedBare := anchored("claimed-no-screenshot", "RJ100002", &claimed, &claimedLaneGalgameIDs[0])
-	wClaimedBridged := anchored("claimed-with-wiki-screenshot", "RJ100003", &claimed, &claimedLaneGalgameIDs[1])
-	wClaimedNative := anchored("claimed-with-native-screenshot", "RJ100004", &claimed, &claimedLaneGalgameIDs[2])
+	wClaimedBare := anchored("claimed-no-screenshot", "RJ100002", &claimed, &claimedLaneClaimIDs[0])
+	wClaimedNative := anchored("claimed-with-native-screenshot", "RJ100004", &claimed, &claimedLaneClaimIDs[2])
 
 	// A claim that is NOT on the public face. The wave-166 intro lane targets
 	// PUBLISHED works — the draft sea is roughly 5x the published one and every
 	// ja row written there becomes a downstream translation call. It carries a
 	// native screenshot so the SCREENSHOT lane's own targeting keeps it out and
 	// this fixture isolates exactly one variable: claim_state.
-	wDraft := anchored("claimed-but-draft", "RJ100005", &claimed, &claimedLaneGalgameIDs[3])
+	wDraft := anchored("claimed-but-draft", "RJ100005", &claimed, &claimedLaneClaimIDs[3])
 	require.NoError(t, db.Model(&model.CatalogWork{}).Where("id = ?", wDraft).
 		Update("claim_state", model.ClaimStateDraft).Error)
 
-	// wClaimedBridged already shows a wiki screenshot → the store samples must not
-	// supplement it. wClaimedNative already has a native row → nothing to do.
-	require.NoError(t, db.Exec(`INSERT INTO galgame_screenshot (galgame_id, image_hash, sort_order, source)
-		VALUES (?, 'wiki_shot_hash', 0, '')`, claimedLaneGalgameIDs[1]).Error)
+	// wClaimedNative already has a native row → nothing to do. The third case
+	// this fixture used to carry — a claim whose WIKI body already showed
+	// screenshots, which kept DLsite store samples a fallback rather than a
+	// supplement — went with the table in wave 149. Its last 99 rows were swept
+	// into catalog_work_screenshot before the DROP, so the native check below
+	// now answers what the bridge and the native row used to answer together.
 	require.NoError(t, db.Create(&model.CatalogWorkScreenshot{
 		WorkID: wClaimedNative, ImageHash: "already_here", SortOrder: 0, SourceID: reg.dlsiteSource}).Error)
 	require.NoError(t, db.Create(&model.CatalogWorkScreenshot{
@@ -255,7 +239,6 @@ func TestClaimedScreenshotLane(t *testing.T) {
 	}
 	assert.Contains(t, ids, wBodyless, "bodyless lane unchanged")
 	assert.Contains(t, ids, wClaimedBare, "claimed with no screenshot at all → admitted")
-	assert.NotContains(t, ids, wClaimedBridged, "claimed with a bridged wiki screenshot → excluded")
 	assert.NotContains(t, ids, wClaimedNative, "claimed that already has a native row → excluded")
 	bodyless, claimedCount := laneSplit(shotCands)
 	assert.Equal(t, 1, bodyless)
@@ -269,8 +252,9 @@ func TestClaimedScreenshotLane(t *testing.T) {
 	assert.Equal(t, wBodyless, coverCands[0].WorkID)
 
 	// INTRO, since wave 166, adds its own claimed lane: every claimed work with
-	// a dlsite anchor and no ja intro from ANY source. All three claimed
-	// fixtures qualify here — none of them has an intro row.
+	// a dlsite anchor and no ja intro from ANY source. Both live claimed
+	// fixtures qualify here — neither has an intro row — and the screenshot
+	// lane's own exclusions (a native screenshot) do not apply to intro.
 	introCands, err := loadCandidates(ctx, db, reg, Kinds{Intro: true}, 0, 0)
 	require.NoError(t, err)
 	introIDs := map[int64]bool{}
@@ -279,11 +263,10 @@ func TestClaimedScreenshotLane(t *testing.T) {
 	}
 	assert.Contains(t, introIDs, wBodyless, "bodyless lane unchanged")
 	assert.Contains(t, introIDs, wClaimedBare, "claimed work with no ja intro → admitted")
-	assert.Contains(t, introIDs, wClaimedBridged, "the screenshot lane's exclusions do not apply to intro")
 	assert.NotContains(t, introIDs, wDraft, "a DRAFT claim is not on the public face → excluded")
 	introBodyless, introClaimed := laneSplit(introCands)
 	assert.Equal(t, 1, introBodyless)
-	assert.Equal(t, 3, introClaimed, "the three live claims; the draft is out")
+	assert.Equal(t, 2, introClaimed, "the two live claims; the draft is out")
 
 	// --- asymmetric windowing: --offset consumes the STABLE bodyless lane only, so
 	// it can isolate the self-consuming claimed lane without ever skipping it.

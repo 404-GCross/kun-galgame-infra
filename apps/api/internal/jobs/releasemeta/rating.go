@@ -3,7 +3,6 @@ package releasemeta
 import (
 	"context"
 	"fmt"
-	"strconv"
 
 	"api/internal/platform/catalog/editspec"
 	"api/internal/platform/catalog/model"
@@ -31,7 +30,7 @@ import (
 //	wiki     'all'        0 (all_ages, explicit — no write)
 //	bangumi  nsfw=true    2 (r18)
 //	bangumi  nsfw=false   NO VERDICT (never an all-ages statement, doc 17 §6)
-func runRatingLane(ctx context.Context, db, dlDB, wikiDB *gorm.DB, w *writer, reg registry, opts Opts) error {
+func runRatingLane(ctx context.Context, db, dlDB *gorm.DB, w *writer, reg registry, opts Opts) error {
 	cands, err := loadRatingCandidates(ctx, db, opts.Limit, opts.Offset)
 	if err != nil {
 		return fmt.Errorf("load rating candidates: %w", err)
@@ -55,13 +54,9 @@ func runRatingLane(ctx context.Context, db, dlDB, wikiDB *gorm.DB, w *writer, re
 	}
 
 	worknoSet := map[string]bool{}
-	var wikiIDs []int64
 	for _, c := range cands {
 		if wn, ok := dlAnchors[c.WorkID]; ok {
 			worknoSet[wn] = true
-		}
-		if isWikiClaimed(c) {
-			wikiIDs = append(wikiIDs, *c.ProductWorkID)
 		}
 	}
 	worknos := make([]string, 0, len(worknoSet))
@@ -71,10 +66,6 @@ func runRatingLane(ctx context.Context, db, dlDB, wikiDB *gorm.DB, w *writer, re
 	dlAges, err := loadDlsiteAges(ctx, dlDB, worknos)
 	if err != nil {
 		return fmt.Errorf("load dlsite mirror ages: %w", err)
-	}
-	wikiAges, err := loadWikiAgeLimits(ctx, wikiDB, wikiIDs)
-	if err != nil {
-		return fmt.Errorf("load wiki age limits: %w", err)
 	}
 
 	// CURATED OVERRIDE (03 定案 §0 line 2): works whose content_rating a human
@@ -100,7 +91,7 @@ func runRatingLane(ctx context.Context, db, dlDB, wikiDB *gorm.DB, w *writer, re
 			st.RatingCuratedOverride++
 			continue
 		}
-		rating, source, ext, ok := decideRating(c, dlAnchors, dlAges, wikiAges, bgmNSFW, st)
+		rating, source, ext, ok := decideRating(c, dlAnchors, dlAges, bgmNSFW, st)
 		if !ok {
 			st.RatingNoVerdict++
 			continue
@@ -117,7 +108,7 @@ func runRatingLane(ctx context.Context, db, dlDB, wikiDB *gorm.DB, w *writer, re
 
 // decideRating walks the priority chain and returns the first verdict.
 func decideRating(c ratingCandidate, dlAnchors map[int64]string, dlAges map[string]string,
-	wikiAges map[int64]string, bgmNSFW map[int64]bool, st *Stats) (int16, string, string, bool) {
+	bgmNSFW map[int64]bool, st *Stats) (int16, string, string, bool) {
 
 	// ① DLsite age_category via the work's release anchors.
 	if wn, ok := dlAnchors[c.WorkID]; ok {
@@ -134,21 +125,13 @@ func decideRating(c ratingCandidate, dlAnchors map[int64]string, dlAges map[stri
 		}
 	}
 
-	// ② claimed works: the wiki's editorial age_limit.
-	if isWikiClaimed(c) {
-		ext := strconv.FormatInt(*c.ProductWorkID, 10)
-		switch age, ok := wikiAges[*c.ProductWorkID]; {
-		case !ok: // claimed but no wiki row — fall through to ③
-		case age == "r18":
-			st.RatingWikiR18++
-			return model.ContentRatingR18, "wiki", ext, true
-		case age == "all":
-			st.RatingWikiAllAges++
-			return model.ContentRatingAllAges, "wiki", ext, true
-		default:
-			st.RatingWikiUnmapped++ // unexpected value — no verdict, fall through
-		}
-	}
+	// ② was the wiki's editorial age_limit, read from galgame.age_limit for
+	// claimed works. Wave 149 dropped that table, so the lane is gone rather
+	// than merely unfilled. It had in fact stopped producing verdicts earlier:
+	// its claim test pinned site == "galgame_wiki", the literal wave 161
+	// renamed, so it silently matched nothing from then on. Removing it is
+	// behaviour-neutral; the numbering below keeps ③ so the priority ladder
+	// still reads against the spec.
 
 	// ③ Bangumi nsfw=true fallback (false is never a verdict).
 	if bgmNSFW[c.WorkID] {
@@ -156,10 +139,4 @@ func decideRating(c ratingCandidate, dlAnchors map[int64]string, dlAges map[stri
 		return model.ContentRatingR18, "bangumi", "", true
 	}
 	return 0, "", "", false
-}
-
-// isWikiClaimed reports whether the work is claimed by the galgame wiki (the
-// only claiming site live today) with a product row to look up.
-func isWikiClaimed(c ratingCandidate) bool {
-	return c.Site != nil && *c.Site == "galgame_wiki" && c.ProductWorkID != nil
 }

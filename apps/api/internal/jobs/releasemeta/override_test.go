@@ -3,6 +3,7 @@ package releasemeta
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"testing"
 
 	"api/internal/platform/catalog/editspec"
@@ -23,18 +24,25 @@ func TestRatingRespectsCuratedOverride(t *testing.T) {
 	require.NoError(t, testDB.Exec("TRUNCATE edit_revision CASCADE").Error)
 	ctx := context.Background()
 	medium := galgameMedium(t)
+	registry, err := resolveRegistry(ctx, testDB)
+	require.NoError(t, err)
 	wiki := "galgame_wiki"
 
-	// Two claimed works the wiki calls r18; a human ruled the first one
-	// all-ages through the editing engine.
+	// Two works DLsite calls r18; a human ruled the first one all-ages through
+	// the editing engine. (The verdict used to come from the wiki's age_limit;
+	// wave 149 dropped that lane, so the r18 now comes from DLsite — the source
+	// is incidental to what this test pins, which is that a human ruling wins.)
 	pw1, pw2 := int64(5001), int64(5002)
 	edited := mkWork(t, medium, "human-ruled", &wiki, &pw1, 0)
 	untouched := mkWork(t, medium, "never-edited", &wiki, &pw2, 0)
-	mkWikiGalgame(t, 5001, "r18")
-	mkWikiGalgame(t, 5002, "r18")
+	for i, w := range []int64{edited, untouched} {
+		workno := fmt.Sprintf("RJ5000%02d", i)
+		mkReleaseAnchor(t, mkRelease(t, w, 2000, 1, 1), workno, registry.dlsiteSource)
+		mkDlWork(t, workno, "", "3") // '3' → r18
+	}
 
-	changed, err := json.Marshal([]string{editspec.FieldWorkContentRating})
-	require.NoError(t, err)
+	changed, err2 := json.Marshal([]string{editspec.FieldWorkContentRating})
+	require.NoError(t, err2)
 	require.NoError(t, testDB.Create(&editing.Revision{
 		EntityFamily: "catalog", EntityType: editspec.TypeWork, EntityID: edited,
 		Seq: 1, Action: editing.ActionDirect,
@@ -49,5 +57,5 @@ func TestRatingRespectsCuratedOverride(t *testing.T) {
 	assert.Equal(t, model.ContentRatingAllAges, workRating(t, edited),
 		"a human all-ages ruling must survive the importer")
 	assert.Equal(t, model.ContentRatingR18, workRating(t, untouched),
-		"a work nobody edited is still filled from the wiki verdict")
+		"a work nobody edited is still filled from the DLsite verdict")
 }

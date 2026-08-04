@@ -21,8 +21,8 @@ import (
 
 // Integration test against a real Postgres: the catalog Gold schema
 // (migrate.Run + registry seeds), the src_bangumi Silver schema, and minimal
-// DLsite / EG / wiki fixtures each in a DEDICATED schema
-// (releasemeta_dl / releasemeta_eg / releasemeta_wiki) reached via search_path
+// DLsite / EG fixtures each in a DEDICATED schema
+// (releasemeta_dl / releasemeta_eg) reached via search_path
 // DSNs — the workratings discipline: the shared test DB's public tables belong
 // to other suites and must not be clobbered.
 var (
@@ -30,7 +30,6 @@ var (
 	testDSN     string
 	dlTestDSN   string
 	egTestDSN   string
-	wikiTestDSN string
 )
 
 func TestMain(m *testing.M) {
@@ -60,8 +59,6 @@ func TestMain(m *testing.M) {
 		`CREATE TABLE IF NOT EXISTS releasemeta_dl.works (workno text PRIMARY KEY, regist_date timestamptz, age_category text)`,
 		`CREATE SCHEMA IF NOT EXISTS releasemeta_eg`,
 		`CREATE TABLE IF NOT EXISTS releasemeta_eg.games (id int PRIMARY KEY, sellday text)`,
-		`CREATE SCHEMA IF NOT EXISTS releasemeta_wiki`,
-		`CREATE TABLE IF NOT EXISTS releasemeta_wiki.galgame (id int PRIMARY KEY, age_limit text)`,
 	} {
 		if err := db.Exec(ddl).Error; err != nil {
 			fmt.Fprintf(os.Stderr, "SKIP: fixture schema failed: %v\n", err)
@@ -70,7 +67,6 @@ func TestMain(m *testing.M) {
 	}
 	dlTestDSN = testDSN + " options='-csearch_path=releasemeta_dl'"
 	egTestDSN = testDSN + " options='-csearch_path=releasemeta_eg'"
-	wikiTestDSN = testDSN + " options='-csearch_path=releasemeta_wiki'"
 	testDB = db
 	os.Exit(m.Run())
 }
@@ -79,7 +75,7 @@ func clean(t *testing.T) {
 	t.Helper()
 	for _, table := range []string{
 		"catalog_external_ref", "catalog_release", "catalog_work", "src_bangumi.subject",
-		"releasemeta_dl.works", "releasemeta_eg.games", "releasemeta_wiki.galgame",
+		"releasemeta_dl.works", "releasemeta_eg.games",
 	} {
 		require.NoError(t, testDB.Exec("TRUNCATE "+table+" RESTART IDENTITY CASCADE").Error)
 	}
@@ -150,11 +146,6 @@ func mkEgGame(t *testing.T, id int64, sellday string) {
 	require.NoError(t, testDB.Exec(`INSERT INTO releasemeta_eg.games (id, sellday) VALUES (?, ?)`, id, sellday).Error)
 }
 
-func mkWikiGalgame(t *testing.T, id int64, ageLimit string) {
-	t.Helper()
-	require.NoError(t, testDB.Exec(`INSERT INTO releasemeta_wiki.galgame (id, age_limit) VALUES (?, ?)`, id, ageLimit).Error)
-}
-
 func relDate(t *testing.T, id int64) (y, m, d *int16) {
 	t.Helper()
 	var rel model.CatalogRelease
@@ -189,7 +180,7 @@ func assertDate(t *testing.T, relID int64, y, m, d int16) {
 }
 
 func runOpts(apply bool) Opts {
-	return Opts{Apply: apply, DSN: testDSN, DlsiteDSN: dlTestDSN, EGDSN: egTestDSN, WikiDSN: wikiTestDSN}
+	return Opts{Apply: apply, DSN: testDSN, DlsiteDSN: dlTestDSN, EGDSN: egTestDSN}
 }
 
 func str(s string) *string { return &s }
@@ -328,21 +319,16 @@ func TestBackfillReleaseMeta(t *testing.T) {
 	mkReleaseAnchor(t, relRDlR15, "RJ000102", reg.dlsiteSource)
 	mkDlWork(t, "RJ000102", "", "2")
 
-	// Priority ① beats ②: DLsite says all-ages, the wiki says r18 → stays 0.
-	rDlAll := mkWork(t, medium, "rating-dl-all-vs-wiki", str(wiki), i64(9103), 0)
+	// An explicit DLsite all-ages verdict keeps the row at 0 and suppresses the
+	// lower lane — ownership, not strictest-across-sources.
+	rDlAll := mkWork(t, medium, "rating-dl-all", str(wiki), i64(9103), 0)
 	relRDlAll := mkRelease(t, rDlAll, 2000, 1, 1)
 	mkReleaseAnchor(t, relRDlAll, "RJ000103", reg.dlsiteSource)
 	mkDlWork(t, "RJ000103", "", "1")
-	mkWikiGalgame(t, 9103, "r18")
 
-	rWiki := mkWork(t, medium, "rating-wiki-r18", str(wiki), i64(9104), 0)
-	mkWikiGalgame(t, 9104, "r18")
-
-	// Priority ② beats ③: wiki says all, bangumi says nsfw → stays 0.
-	rWikiAll := mkWork(t, medium, "rating-wiki-all-vs-bgm", str(wiki), i64(9105), 0)
-	mkWikiGalgame(t, 9105, "all")
-	mkWorkAnchor(t, rWikiAll, "707", reg.bangumiSource, model.LinkKindExact)
-	mkSubject(t, 707, "", true)
+	// The wiki lane (source ②, galgame.age_limit) and its three fixtures went
+	// with the table in wave 149 — see rating.go. Priority is now ① DLsite
+	// then ③ Bangumi.
 
 	rBgm := mkWork(t, medium, "rating-bgm-nsfw", nil, nil, 0)
 	mkWorkAnchor(t, rBgm, "708", reg.bangumiSource, model.LinkKindExact)
@@ -351,9 +337,6 @@ func TestBackfillReleaseMeta(t *testing.T) {
 	rBgmFalse := mkWork(t, medium, "rating-bgm-sfw", nil, nil, 0) // nsfw=false is NOT a verdict
 	mkWorkAnchor(t, rBgmFalse, "709", reg.bangumiSource, model.LinkKindExact)
 	mkSubject(t, 709, "", false)
-
-	rWikiUnmapped := mkWork(t, medium, "rating-wiki-unmapped", str(wiki), i64(9106), 0)
-	mkWikiGalgame(t, 9106, "weird")
 
 	// Fill-empty: an already-rated work is never a candidate.
 	rRated := mkWork(t, medium, "rating-already-rated", nil, nil, model.ContentRatingR18)
@@ -381,16 +364,13 @@ func TestBackfillReleaseMeta(t *testing.T) {
 	assert.Equal(t, 1, st.BgmDateBadDate)
 	assert.Equal(t, 1, st.BgmDatePartial)
 	assert.Equal(t, 2, st.BgmDatePlanned, "wBgmClaimed + wBgmPartial")
-	assert.Equal(t, 27, st.RatingCandidates, "every rating-0 work; rRated excluded")
+	assert.Equal(t, 24, st.RatingCandidates, "every rating-0 work; rRated excluded")
 	assert.Equal(t, 1, st.RatingDlR18)
 	assert.Equal(t, 1, st.RatingDlSensitive)
-	assert.Equal(t, 1, st.RatingDlAllAges, "explicit all-ages verdict — suppresses the wiki r18")
-	assert.Equal(t, 1, st.RatingWikiR18)
-	assert.Equal(t, 1, st.RatingWikiAllAges, "explicit all verdict — suppresses the bgm nsfw")
-	assert.Equal(t, 1, st.RatingWikiUnmapped)
+	assert.Equal(t, 1, st.RatingDlAllAges, "explicit all-ages verdict keeps the row at 0")
 	assert.Equal(t, 1, st.RatingBgmR18)
-	assert.Equal(t, 21, st.RatingNoVerdict)
-	assert.Equal(t, 4, st.RatingPlanned, "rDlAdult + rDlR15 + rWiki + rBgm")
+	assert.Equal(t, 20, st.RatingNoVerdict)
+	assert.Equal(t, 3, st.RatingPlanned, "rDlAdult + rDlR15 + rBgm")
 	assert.Zero(t, st.DlDateFilled+st.EgDateFilled+st.BgmDateFilled+st.RatingFilled+
 		st.DlDateSkippedNonEmpty+st.EgDateSkippedNonEmpty+st.BgmDateSkippedNonEmpty+
 		st.RatingSkippedNonEmpty+st.Errors)
@@ -424,12 +404,9 @@ func TestBackfillReleaseMeta(t *testing.T) {
 
 	assert.Equal(t, model.ContentRatingR18, workRating(t, rDlAdult))
 	assert.Equal(t, model.ContentRatingSensitive, workRating(t, rDlR15))
-	assert.Equal(t, int16(0), workRating(t, rDlAll), "① all-ages verdict wins over ② r18 — ownership, not strictest")
-	assert.Equal(t, model.ContentRatingR18, workRating(t, rWiki))
-	assert.Equal(t, int16(0), workRating(t, rWikiAll), "② all verdict wins over ③ nsfw")
+	assert.Equal(t, int16(0), workRating(t, rDlAll), "an explicit all-ages verdict leaves the row at 0")
 	assert.Equal(t, model.ContentRatingR18, workRating(t, rBgm))
 	assert.Equal(t, int16(0), workRating(t, rBgmFalse), "nsfw=false never infers a rating")
-	assert.Equal(t, int16(0), workRating(t, rWikiUnmapped), "unmapped wiki value yields no verdict")
 	assert.Equal(t, model.ContentRatingR18, workRating(t, rRated), "non-zero rating untouched")
 
 	// --- second apply: fill-empty idempotency — filled rows left the candidate
@@ -439,13 +416,12 @@ func TestBackfillReleaseMeta(t *testing.T) {
 	assert.Equal(t, 3, st.DlDateCandidates, "only the unfillable three remain")
 	assert.Equal(t, 2, st.EgDateCandidates, "bad-date + missing-mirror remain")
 	assert.Equal(t, 2, st.BgmDateCandidates, "no-date + garbage remain")
-	assert.Equal(t, 23, st.RatingCandidates, "the four filled works left the set")
+	assert.Equal(t, 21, st.RatingCandidates, "the three filled works left the set")
 	assert.Zero(t, st.DlDatePlanned+st.EgDatePlanned+st.BgmDatePlanned+st.RatingPlanned,
 		"second pass plans zero")
 	assert.Zero(t, st.DlDateFilled+st.EgDateFilled+st.BgmDateFilled+st.RatingFilled+st.Errors,
 		"second pass writes zero")
 	assert.Equal(t, 1, st.RatingDlAllAges, "all-ages verdicts persist as counted no-ops")
-	assert.Equal(t, 1, st.RatingWikiAllAges)
 }
 
 // TestFillEmptyGuardAndDSNRequired covers the writer's last-moment fill-empty
@@ -474,12 +450,11 @@ func TestFillEmptyGuardAndDSNRequired(t *testing.T) {
 	assert.Equal(t, 1, w.stats.RatingSkippedNonEmpty, "non-zero rating refused at write time")
 	assert.Equal(t, model.ContentRatingSensitive, workRating(t, wRated))
 
-	// DSN discipline: all four DSNs are required, never guessed.
+	// DSN discipline: all three DSNs are required, never guessed.
 	for _, opts := range []Opts{
-		{DlsiteDSN: testDSN, EGDSN: testDSN, WikiDSN: testDSN},
-		{DSN: testDSN, EGDSN: testDSN, WikiDSN: testDSN},
-		{DSN: testDSN, DlsiteDSN: testDSN, WikiDSN: testDSN},
-		{DSN: testDSN, DlsiteDSN: testDSN, EGDSN: testDSN},
+		{DlsiteDSN: testDSN, EGDSN: testDSN},
+		{DSN: testDSN, EGDSN: testDSN},
+		{DSN: testDSN, DlsiteDSN: testDSN},
 	} {
 		_, err := Run(context.Background(), opts)
 		require.Error(t, err)

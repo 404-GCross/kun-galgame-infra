@@ -40,7 +40,7 @@ import (
 const defaultGoldSet = "internal/platform/catalog/llmsuggest/testdata/goldset.jsonl"
 
 func main() {
-	task := flag.String("task", "", "goldset | residue | bid-audit")
+	task := flag.String("task", "", "goldset | residue | sanity")
 	apply := flag.Bool("apply", false, "write suggestions (default: dry run — sample + print)")
 	limit := flag.Int("limit", 0, "cap items processed (0 = all); dry-run sample size")
 	conc := flag.Int("concurrency", 4, "parallel LLM calls (<=4)")
@@ -147,18 +147,6 @@ func main() {
 		fail(err)
 		fmt.Printf("sanity: extraction↔parser key overlap = %.3f over %d parse-OK infoboxes\n", mean, sampled)
 		return
-	case "bid-audit":
-		wikiDB, err := database.NewPostgresDB(cfg.GalgameDatabase)
-		fail(err)
-		defer wikiDB.Close()
-		layers, errs, err := llmsuggest.RunBidAudit(ctx, wikiDB.DB(), catalogDB.DB(), client, opts)
-		fail(err)
-		if *apply {
-			slog.Info("bid-audit done", "pass", layers.Pass, "boundary", layers.Boundary, "suspect", layers.Suspect, "errors", errs)
-			layer, verdict, found := llmsuggest.CanaryVerdict(catalogDB.DB(), 2308, 13, *model)
-			fmt.Printf("CANARY galgame=2308 bid=13 (atled×CLANNAD): found=%v layer=%s verdict=%s → %s\n",
-				found, layer, verdict, canaryVerdictStatus(layer, verdict))
-		}
 	default:
 		slog.Error("unknown task", "task", *task)
 		os.Exit(2)
@@ -182,15 +170,6 @@ func openEG(cfg *config.Config, dsn string) *gorm.DB {
 		os.Exit(1)
 	}
 	return db
-}
-
-// canaryVerdictStatus: the pair is CAUGHT when it is flagged for human review —
-// either the deterministic layer marks it suspect, or the model says different.
-func canaryVerdictStatus(layer, verdict string) string {
-	if layer == "suspect" || verdict == llmsuggest.VerdictDifferent {
-		return "CAUGHT (flagged: suspect layer or different verdict)"
-	}
-	return "*** MISSED — pipeline problem, investigate ***"
 }
 
 func printCalibration(metrics []llmsuggest.LayerMetrics) {

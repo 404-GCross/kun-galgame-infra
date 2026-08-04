@@ -102,30 +102,3 @@ func loadEgSelldays(ctx context.Context, egDB *gorm.DB, ids []int64) (map[int64]
 	}
 	return out, nil
 }
-
-// loadWikiAgeLimits batch-loads galgame.age_limit (surveyed live values:
-// 'r18' / 'all') for the referenced wiki galgame ids.
-func loadWikiAgeLimits(ctx context.Context, wikiDB *gorm.DB, ids []int64) (map[int64]string, error) {
-	out := make(map[int64]string, len(ids))
-	type row struct {
-		ID       int64   `gorm:"column:id"`
-		AgeLimit *string `gorm:"column:age_limit"`
-	}
-	for start := 0; start < len(ids); start += mirrorBatch {
-		end := min(start+mirrorBatch, len(ids))
-		var batch []row
-		if err := wikiDB.WithContext(ctx).Table("galgame").
-			Select("id, age_limit").
-			Where("id IN ?", ids[start:end]).Scan(&batch).Error; err != nil {
-			return nil, err
-		}
-		for _, r := range batch {
-			limit := ""
-			if r.AgeLimit != nil {
-				limit = *r.AgeLimit
-			}
-			out[r.ID] = limit
-		}
-	}
-	return out, nil
-}

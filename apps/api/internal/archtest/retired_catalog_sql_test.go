@@ -56,29 +56,6 @@ func TestP0ARuntimeSQLDoesNotReferenceRetiredCatalogTables(t *testing.T) {
 		retired[table] = struct{}{}
 	}
 
-	// KNOWN-DEAD, PENDING DELETION. Each of these queries a table wave 149
-	// dropped, so each is already broken — the exemption records that fact, it
-	// does not bless it. They are one-off tools whose waves are finished and
-	// whose owners are other tracks, which is why this pass enumerates them
-	// instead of deleting them. Deleting one is the fix; removing its line
-	// without deleting it is not.
-	//
-	//	cmd/heal-label-redirects   repairs galgame_official.catalog_label_id — a
-	//	                           bridge column that no longer exists (147/148)
-	//	cmd/import-kungal-comments the comments migration, completed (doc 03)
-	//	cmd/probable-audit         audits probable anchors against the wiki body
-	//	cmd/resite-claims          N5 one-off, executed in the W window (161 P2)
-	//	internal/jobs/releasemeta  mirrors age_limit FROM the wiki galgame table
-	//	llmsuggest/bidaudit        already designated for retirement (149 §D)
-	exempt := map[string]struct{}{
-		"cmd/heal-label-redirects/main.go":                 {},
-		"cmd/import-kungal-comments/run.go":                {},
-		"cmd/probable-audit/audit.go":                      {},
-		"cmd/resite-claims/main.go":                        {},
-		"internal/jobs/releasemeta/mirror.go":              {},
-		"internal/platform/catalog/llmsuggest/bidaudit.go": {},
-	}
-
 	var violations []string
 	// The WHOLE module, since wave 149 dropped the family: any runtime
 	// reference is now a query against a table that does not exist. The
@@ -91,12 +68,7 @@ func TestP0ARuntimeSQLDoesNotReferenceRetiredCatalogTables(t *testing.T) {
 		if err != nil {
 			t.Fatalf("scan %s: %v", rel, err)
 		}
-		for _, v := range found {
-			if _, ok := exempt[strings.SplitN(v, ":", 2)[0]]; ok {
-				continue
-			}
-			violations = append(violations, v)
-		}
+		violations = append(violations, found...)
 	}
 
 	if len(violations) > 0 {

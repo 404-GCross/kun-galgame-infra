@@ -26,10 +26,9 @@
 //	    --dsn "host=127.0.0.1 port=5432 user=postgres password=... dbname=kun_catalog_rehearsal sslmode=disable" \
 //	    --dlsite-dsn "host=127.0.0.1 port=5432 user=postgres password=... dbname=dlsite sslmode=disable" \
 //	    --eg-dsn "host=127.0.0.1 port=5432 user=postgres password=... dbname=erogamespace sslmode=disable" \
-//	    --wiki-dsn "host=127.0.0.1 port=5432 user=postgres password=... dbname=kun_galgame_wiki sslmode=disable"
 //
 //	# apply: fill the empty scalars (all lanes)
-//	go run ./cmd/backfill-release-meta --apply --dsn "..." --dlsite-dsn "..." --eg-dsn "..." --wiki-dsn "..."
+//	go run ./cmd/backfill-release-meta --apply --dsn "..." --dlsite-dsn "..." --eg-dsn "..."
 package main
 
 import (
@@ -50,7 +49,6 @@ func main() {
 	dsn := flag.String("dsn", "", "catalog DSN (also hosts src_bangumi) — REQUIRED; the rehearsal copy locally, the live catalog only in the acceptance run")
 	dlsiteDSN := flag.String("dlsite-dsn", "", "DLsite mirror DSN (the dlsite database) — REQUIRED")
 	egDSN := flag.String("eg-dsn", "", "EG mirror DSN (the erogamespace database) — REQUIRED")
-	wikiDSN := flag.String("wiki-dsn", "", "galgame-family DSN (kun_galgame_wiki locally; the galgame tables live in kun_catalog in prod) — REQUIRED")
 	limit := flag.Int("limit", 0, "max candidates per lane (0 = all)")
 	offset := flag.Int("offset", 0, "skip this many candidates per lane (for chunking)")
 	flag.Parse()
@@ -67,7 +65,6 @@ func main() {
 		DSN:       *dsn,
 		DlsiteDSN: *dlsiteDSN,
 		EGDSN:     *egDSN,
-		WikiDSN:   *wikiDSN,
 		Limit:     *limit,
 		Offset:    *offset,
 	})
@@ -93,7 +90,7 @@ func main() {
 		"rating_candidates", st.RatingCandidates,
 		"rating_planned", st.RatingPlanned,
 		"rating_filled", st.RatingFilled,
-		"rating_all_ages_verdicts", st.RatingDlAllAges+st.RatingWikiAllAges,
+		"rating_all_ages_verdicts", st.RatingDlAllAges,
 		"rating_no_verdict", st.RatingNoVerdict,
 		"errors", st.Errors,
 	)

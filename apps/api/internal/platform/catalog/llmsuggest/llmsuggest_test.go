@@ -78,26 +78,6 @@ func TestExtractResidueValidatesJSON(t *testing.T) {
 	assert.JSONEq(t, `{"type":"Game","fields":[{"key":"名","value":"X"}]}`, string(out))
 }
 
-func TestClassifyBidPair(t *testing.T) {
-	// Primary titles equal → pass.
-	assert.Equal(t, "pass", classifyBidPair(&bidPair{
-		WikiPrimary: []string{"CLANNAD"}, SubjPrimary: []string{"CLANNAD"}}))
-	// The canary shape: primary titles differ, but aliases were smeared to
-	// match → suspect (must NOT pass).
-	assert.Equal(t, "suspect", classifyBidPair(&bidPair{
-		WikiPrimary: []string{"-atled-everlasting song"}, WikiAlias: []string{"CLANNAD", "クラナド"},
-		SubjPrimary: []string{"CLANNAD"}, SubjAlias: []string{"クラナド"}}))
-	// No overlap + year mismatch → suspect.
-	assert.Equal(t, "suspect", classifyBidPair(&bidPair{
-		WikiPrimary: []string{"GameAlpha"}, SubjPrimary: []string{"GameBravo"}, WikiYear: 2010, SubjYear: 2005}))
-	// No overlap, no year signal → boundary (the model decides).
-	assert.Equal(t, "boundary", classifyBidPair(&bidPair{
-		WikiPrimary: []string{"GameAlpha"}, SubjPrimary: []string{"GameBravo"}}))
-	// A short (<4 rune) fragment must never falsely pass.
-	assert.NotEqual(t, "pass", classifyBidPair(&bidPair{
-		WikiPrimary: []string{"abcdefg"}, SubjPrimary: []string{"ab"}}))
-}
-
 // --- DB-backed: schema + resume ---
 
 func testCatalogDB(t *testing.T) *gorm.DB {
