@@ -48,3 +48,9 @@ P5 摘 `/internal/*` + `/api/*` staff 面时,149 STOP-1 要求的「先盘下游
   修=改用 `cfg.CatalogImageClient`(compose 透传既有栈级 env,无新 secret)+handler 内
   preset 映射 galgame_*→catalog_{cover,screenshot}(变体同构);**原「prod SQL 加 preset」
   前置整条取消**。底稿=refs/proj/169 §6;待再 push 部署。
+- **🩹 作者章小修 2f4b0b9a(forum 仓,08-04)**:claim cron 建 stub 从不写 creator_user_id
+  (列原为 wiki 冻结快照)→ 切轨后新词条全部无作者章(207 行在产累积)。修=cron 归属申领人
+  (approval 路读 +3 同款 submitter memo,绝不误记 reviewer;owner-publish/born-live 记事件
+  actor)+`SetCreatorIfUnset` 随建 stub 事务写一次、永不覆写。存量 prod 已回填 133/208
+  (claim_event 首事件 actor);余 75 行 claim 早于事件流(切轨系统回填 actor=0)按设计保持
+  无章。语义更新:creator=「wiki 提交者或领养申领人」快照。待 forum push 部署。
