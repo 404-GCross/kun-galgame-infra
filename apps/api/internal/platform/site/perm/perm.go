@@ -33,6 +33,12 @@ const (
 	// upload scopes (image:upload/artifact:upload), auto_consent, and the
 	// cross-site display_order — on create or update.
 	ClientsPrivilegedConfig authz.Permission = "oauth.clients.privileged_config"
+	// SitesManageAll: see and edit EVERY site and OAuth client, not just the
+	// ones the caller created. Without it an admin's console is scoped to their
+	// own rows (sites.created_by_user_id / oauth_clients.created_by_user_id),
+	// including rows created before ownership stamping existed (NULL creator —
+	// they belong to nobody, so only this permission reaches them).
+	SitesManageAll authz.Permission = "oauth.sites.manage_all"
 )
 
 // adminPerms is what an ordinary admin holds on the console: reach it, and
@@ -50,6 +56,7 @@ var renPerms = append(append([]authz.Permission{}, adminPerms...),
 	RolesGrantAdmin,
 	ClientsStorageConfig,
 	ClientsPrivilegedConfig,
+	SitesManageAll,
 )
 
 // Bundles is the console's role→permission table. moderator/creator have no

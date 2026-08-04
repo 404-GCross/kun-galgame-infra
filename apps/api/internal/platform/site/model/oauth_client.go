@@ -51,6 +51,13 @@ type OAuthClient struct {
 	Grants       datatypes.JSON `gorm:"type:jsonb;not null" json:"grants"`
 	CreatedAt    time.Time      `json:"created_at"`
 
+	// CreatedByUserID is the admin who created this client in the console. It
+	// scopes the console the same way sites.created_by_user_id does: without
+	// oauth.sites.manage_all (ren) an admin sees and edits only their own
+	// clients. NULL = created before ownership stamping, or minted by the
+	// developer portal (those are owned via OwnerUserID instead) — ren only.
+	CreatedByUserID *uint `gorm:"index" json:"created_by_user_id,omitempty"`
+
 	// IsPublic marks this client as a public OAuth client (RFC 6749 §2.1):
 	// a SPA / native app that cannot securely hold a client_secret.
 	// Such clients MUST use PKCE on the authorization-code flow, and the

@@ -54,6 +54,12 @@ func (s *SiteService) List(ctx context.Context) ([]model.Site, error) {
 	return s.siteRepo.List(ctx)
 }
 
+// ListByCreator lists the sites created by one admin (console ownership
+// scope — see model.Site.CreatedByUserID).
+func (s *SiteService) ListByCreator(ctx context.Context, userID uint) ([]model.Site, error) {
+	return s.siteRepo.ListByCreator(ctx, userID)
+}
+
 // DomainExists checks if a domain already exists
 func (s *SiteService) DomainExists(ctx context.Context, domain string) bool {
 	site, err := s.siteRepo.FindByDomain(ctx, domain)
@@ -65,9 +71,20 @@ func (s *SiteService) ListOAuthClients(ctx context.Context) ([]model.OAuthClient
 	return s.oauthClientRepo.FindAll(ctx)
 }
 
+// ListOAuthClientsByCreator lists the clients created by one admin.
+func (s *SiteService) ListOAuthClientsByCreator(ctx context.Context, userID uint) ([]model.OAuthClient, error) {
+	return s.oauthClientRepo.FindAllByCreator(ctx, userID)
+}
+
 // GetOAuthClientsBySiteID gets OAuth clients for a specific site
 func (s *SiteService) GetOAuthClientsBySiteID(ctx context.Context, siteID uint) ([]model.OAuthClient, error) {
 	return s.oauthClientRepo.FindBySiteID(ctx, siteID)
+}
+
+// GetOAuthClientsBySiteIDAndCreator is GetOAuthClientsBySiteID narrowed to the
+// caller's own clients.
+func (s *SiteService) GetOAuthClientsBySiteIDAndCreator(ctx context.Context, siteID, userID uint) ([]model.OAuthClient, error) {
+	return s.oauthClientRepo.FindBySiteIDAndCreator(ctx, siteID, userID)
 }
 
 // CreateOAuthClient creates a new OAuth client with generated ID and secret.
@@ -79,7 +96,9 @@ func (s *SiteService) GetOAuthClientsBySiteID(ctx context.Context, siteID uint) 
 //   - refreshTokenTTLSeconds: per-client refresh_token lifetime in seconds; nil → DB default (90d).
 //   - listed/logoURL/tagline/displayOrder: public app-directory display fields
 //     (GET /oauth/ecosystem). Plain metadata, not ren-gated.
-func (s *SiteService) CreateOAuthClient(ctx context.Context, siteID uint, name string, redirectURIs, grants, allowedScopes []string, isPublic, autoConsent bool, refreshTokenTTLSeconds *int, listed bool, logoURL, tagline string, displayOrder int) (*model.OAuthClient, string, error) {
+//   - createdBy: the admin creating it; stamped for the console ownership scope
+//     (nil only when there is no authenticated caller, e.g. a seeder).
+func (s *SiteService) CreateOAuthClient(ctx context.Context, siteID uint, name string, redirectURIs, grants, allowedScopes []string, isPublic, autoConsent bool, refreshTokenTTLSeconds *int, listed bool, logoURL, tagline string, displayOrder int, createdBy *uint) (*model.OAuthClient, string, error) {
 	// Generate client ID (16 bytes = 32 hex chars)
 	clientID, err := generateRandomHex(16)
 	if err != nil {
@@ -101,15 +120,16 @@ func (s *SiteService) CreateOAuthClient(ctx context.Context, siteID uint, name s
 		Name:   name,
 		// Store only the hash; the plaintext `secret` is returned to the admin
 		// once below and never persisted.
-		Secret:       model.HashOAuthClientSecret(secret),
-		RedirectURIs: urisJSON,
-		Grants:       grantsJSON,
-		IsPublic:     isPublic,
-		AutoConsent:  autoConsent,
-		Listed:       listed,
-		LogoURL:      logoURL,
-		Tagline:      tagline,
-		DisplayOrder: displayOrder,
+		Secret:          model.HashOAuthClientSecret(secret),
+		RedirectURIs:    urisJSON,
+		Grants:          grantsJSON,
+		IsPublic:        isPublic,
+		AutoConsent:     autoConsent,
+		CreatedByUserID: createdBy,
+		Listed:          listed,
+		LogoURL:         logoURL,
+		Tagline:         tagline,
+		DisplayOrder:    displayOrder,
 	}
 	if allowedScopes != nil {
 		scopesJSON, _ := json.Marshal(allowedScopes)

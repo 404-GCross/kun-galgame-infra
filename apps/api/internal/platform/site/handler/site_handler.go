@@ -70,9 +70,46 @@ func callerRoles(c fiber.Ctx) []string {
 	return roles
 }
 
-// List lists all sites
+// callerUserID returns the authenticated caller's numeric user id (0 when the
+// JWT middleware did not populate one, which never happens on these routes).
+func callerUserID(c fiber.Ctx) uint {
+	id, _ := c.Locals("user_id").(uint)
+	return id
+}
+
+// managesAll reports whether the caller sees the whole console (ren) rather
+// than just the sites/clients they created.
+func (h *SiteHandler) managesAll(c fiber.Ctx) bool {
+	return perm.Resolver.Can(callerRoles(c), perm.SitesManageAll)
+}
+
+// mayManage is the ownership rule behind every per-row gate below: a manage_all
+// caller reaches everything; anyone else reaches only rows they created. A NULL
+// creator (pre-ownership rows, developer-portal apps) belongs to nobody and is
+// therefore manage_all-only. Kept a pure function so it is unit-testable.
+func mayManage(managesAll bool, callerID uint, createdBy *uint) bool {
+	if managesAll {
+		return true
+	}
+	return callerID != 0 && createdBy != nil && *createdBy == callerID
+}
+
+// notOwnerMsg is what a non-ren admin sees when they address someone else's row
+// (or a pre-ownership one). Deliberately a 403 rather than a 404: the console's
+// admins are trusted, and "you don't own this" is far more actionable than a
+// phantom "not found".
+const notOwnerMsg = "只能查看和管理自己创建的站点 / 客户端"
+
+// List lists the sites the caller may manage: all of them for ren, only their
+// own for an ordinary admin.
 func (h *SiteHandler) List(c fiber.Ctx) error {
-	sites, err := h.siteService.List(c.Context())
+	var sites []siteModel.Site
+	var err error
+	if h.managesAll(c) {
+		sites, err = h.siteService.List(c.Context())
+	} else {
+		sites, err = h.siteService.ListByCreator(c.Context(), callerUserID(c))
+	}
 	if err != nil {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
@@ -104,6 +141,9 @@ func (h *SiteHandler) Get(c fiber.Ctx) error {
 	if err != nil {
 		return response.NotFound(c, errors.ErrSiteNotFound)
 	}
+	if !mayManage(h.managesAll(c), callerUserID(c), site.CreatedByUserID) {
+		return response.ForbiddenMsg(c, errors.ErrForbidden, notOwnerMsg)
+	}
 
 	return response.Success(c, dto.SiteResponse{
 		ID:          site.ID,
@@ -130,10 +170,14 @@ func (h *SiteHandler) Create(c fiber.Ctx) error {
 		return response.BadRequest(c, errors.ErrSiteAlreadyExists)
 	}
 
+	// Stamp the creator: this is what scopes the console for non-ren admins.
 	site := &siteModel.Site{
 		Name:        req.Name,
 		Domain:      req.Domain,
 		Description: req.Description,
+	}
+	if uid := callerUserID(c); uid != 0 {
+		site.CreatedByUserID = &uid
 	}
 
 	if err := h.siteService.Create(c.Context(), site); err != nil {
@@ -170,6 +214,9 @@ func (h *SiteHandler) Update(c fiber.Ctx) error {
 	if err != nil {
 		return response.NotFound(c, errors.ErrSiteNotFound)
 	}
+	if !mayManage(h.managesAll(c), callerUserID(c), site.CreatedByUserID) {
+		return response.ForbiddenMsg(c, errors.ErrForbidden, notOwnerMsg)
+	}
 
 	if req.Name != nil {
 		site.Name = *req.Name
@@ -199,6 +246,14 @@ func (h *SiteHandler) Delete(c fiber.Ctx) error {
 		return response.BadRequest(c, errors.ErrInvalidID)
 	}
 
+	site, err := h.siteService.GetByID(c.Context(), uint(id))
+	if err != nil {
+		return response.NotFound(c, errors.ErrSiteNotFound)
+	}
+	if !mayManage(h.managesAll(c), callerUserID(c), site.CreatedByUserID) {
+		return response.ForbiddenMsg(c, errors.ErrForbidden, notOwnerMsg)
+	}
+
 	// Precheck attached OAuth clients: the FK (sites ← oauth_clients) is
 	// NO ACTION, so deleting a site that still has clients raises an opaque
 	// FK-violation 500. Surface an actionable message instead. We must NOT
@@ -218,9 +273,16 @@ func (h *SiteHandler) Delete(c fiber.Ctx) error {
 	return response.Success(c, nil)
 }
 
-// ListClients lists all OAuth clients
+// ListClients lists the OAuth clients the caller may manage: all of them for
+// ren, only their own for an ordinary admin.
 func (h *SiteHandler) ListClients(c fiber.Ctx) error {
-	clients, err := h.siteService.ListOAuthClients(c.Context())
+	var clients []siteModel.OAuthClient
+	var err error
+	if h.managesAll(c) {
+		clients, err = h.siteService.ListOAuthClients(c.Context())
+	} else {
+		clients, err = h.siteService.ListOAuthClientsByCreator(c.Context(), callerUserID(c))
+	}
 	if err != nil {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
@@ -241,7 +303,23 @@ func (h *SiteHandler) GetSiteClients(c fiber.Ctx) error {
 		return response.BadRequest(c, errors.ErrInvalidID)
 	}
 
-	clients, err := h.siteService.GetOAuthClientsBySiteID(c.Context(), uint(id))
+	// The site itself must be visible before its clients are, and the client
+	// list is then narrowed by the same ownership rule.
+	site, err := h.siteService.GetByID(c.Context(), uint(id))
+	if err != nil {
+		return response.NotFound(c, errors.ErrSiteNotFound)
+	}
+	managesAll := h.managesAll(c)
+	if !mayManage(managesAll, callerUserID(c), site.CreatedByUserID) {
+		return response.ForbiddenMsg(c, errors.ErrForbidden, notOwnerMsg)
+	}
+
+	var clients []siteModel.OAuthClient
+	if managesAll {
+		clients, err = h.siteService.GetOAuthClientsBySiteID(c.Context(), uint(id))
+	} else {
+		clients, err = h.siteService.GetOAuthClientsBySiteIDAndCreator(c.Context(), uint(id), callerUserID(c))
+	}
 	if err != nil {
 		return response.InternalError(c, errors.ErrOperationFailed)
 	}
@@ -285,9 +363,15 @@ func (h *SiteHandler) CreateClient(c fiber.Ctx) error {
 		req.DisplayOrder = 0
 	}
 
-	// Verify site exists
-	if _, err := h.siteService.GetByID(c.Context(), req.SiteID); err != nil {
+	// Verify site exists — and that the caller may manage it. Without the
+	// ownership check an admin could attach a client to someone else's site by
+	// guessing its id, which the filtered site list would never show them.
+	site, err := h.siteService.GetByID(c.Context(), req.SiteID)
+	if err != nil {
 		return response.NotFound(c, errors.ErrSiteNotFound)
+	}
+	if !mayManage(perm.Resolver.Can(roles, perm.SitesManageAll), callerUserID(c), site.CreatedByUserID) {
+		return response.ForbiddenMsg(c, errors.ErrForbidden, notOwnerMsg)
 	}
 
 	// Default grants include BOTH authorization_code and refresh_token —
@@ -298,6 +382,11 @@ func (h *SiteHandler) CreateClient(c fiber.Ctx) error {
 	grants := req.Grants
 	if grants == nil {
 		grants = []string{"authorization_code", "refresh_token"}
+	}
+
+	var createdBy *uint
+	if uid := callerUserID(c); uid != 0 {
+		createdBy = &uid
 	}
 
 	client, secret, err := h.siteService.CreateOAuthClient(
@@ -314,6 +403,7 @@ func (h *SiteHandler) CreateClient(c fiber.Ctx) error {
 		req.LogoURL,
 		req.Tagline,
 		req.DisplayOrder,
+		createdBy,
 	)
 	if err != nil {
 		return response.InternalError(c, errors.ErrOperationFailed)
@@ -353,6 +443,14 @@ func (h *SiteHandler) UpdateClient(c fiber.Ctx) error {
 		return response.BadRequestMsg(c, errors.ErrValidationFailed, err.Error())
 	}
 
+	cur, err := h.siteService.GetOAuthClient(c.Context(), clientID)
+	if err != nil {
+		return response.NotFound(c, errors.ErrOperationFailed)
+	}
+	if !mayManage(h.managesAll(c), callerUserID(c), cur.CreatedByUserID) {
+		return response.ForbiddenMsg(c, errors.ErrForbidden, notOwnerMsg)
+	}
+
 	// privileged-config gate (no-escalation): a caller without
 	// oauth.clients.privileged_config may edit a client, but may not ADD a
 	// ren-only scope (image:upload / artifact:upload) or turn ON auto_consent.
@@ -360,10 +458,6 @@ func (h *SiteHandler) UpdateClient(c fiber.Ctx) error {
 	// (the form re-submits them) and de-escalating are both fine — only
 	// escalation is blocked, compared against the current row.
 	if !perm.Resolver.Can(callerRoles(c), perm.ClientsPrivilegedConfig) {
-		cur, err := h.siteService.GetOAuthClient(c.Context(), clientID)
-		if err != nil {
-			return response.NotFound(c, errors.ErrOperationFailed)
-		}
 		var curScopes []string
 		_ = json.Unmarshal(cur.AllowedScopes, &curScopes)
 		addsScope := req.AllowedScopes != nil && addsNewRenOnlyScope(req.AllowedScopes, curScopes)
@@ -413,11 +507,14 @@ func (h *SiteHandler) UpdateClientStorage(c fiber.Ctx) error {
 		return response.BadRequestMsg(c, errors.ErrValidationFailed, err.Error())
 	}
 
+	cur, err := h.siteService.GetOAuthClient(c.Context(), clientID)
+	if err != nil {
+		return response.NotFound(c, errors.ErrOperationFailed)
+	}
+	if !mayManage(h.managesAll(c), callerUserID(c), cur.CreatedByUserID) {
+		return response.ForbiddenMsg(c, errors.ErrForbidden, notOwnerMsg)
+	}
 	if !perm.Resolver.Can(callerRoles(c), perm.ClientsStorageConfig) {
-		cur, err := h.siteService.GetOAuthClient(c.Context(), clientID)
-		if err != nil {
-			return response.NotFound(c, errors.ErrOperationFailed)
-		}
 		if (req.ArtifactEnabled && !cur.ArtifactEnabled) || (req.ImageEnabled && !cur.ImageEnabled) {
 			return response.ForbiddenMsg(c, errors.ErrForbidden, renSensitiveFieldMsg)
 		}
@@ -450,6 +547,14 @@ func (h *SiteHandler) DeleteClient(c fiber.Ctx) error {
 	clientID := c.Params("id")
 	if clientID == "" {
 		return response.BadRequest(c, errors.ErrMissingParam)
+	}
+
+	cur, err := h.siteService.GetOAuthClient(c.Context(), clientID)
+	if err != nil {
+		return response.NotFound(c, errors.ErrOperationFailed)
+	}
+	if !mayManage(h.managesAll(c), callerUserID(c), cur.CreatedByUserID) {
+		return response.ForbiddenMsg(c, errors.ErrForbidden, notOwnerMsg)
 	}
 
 	if err := h.siteService.DeleteOAuthClient(c.Context(), clientID); err != nil {

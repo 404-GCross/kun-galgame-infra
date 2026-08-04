@@ -61,6 +61,27 @@ func (r *OAuthClientRepository) FindAll(ctx context.Context) ([]model.OAuthClien
 	return clients, nil
 }
 
+// FindAllByCreator returns the clients a given admin created (console
+// ownership scope; NULL creators are ren-only and never match).
+func (r *OAuthClientRepository) FindAllByCreator(ctx context.Context, userID uint) ([]model.OAuthClient, error) {
+	var clients []model.OAuthClient
+	if err := r.db.WithContext(ctx).Where("created_by_user_id = ?", userID).Find(&clients).Error; err != nil {
+		return nil, err
+	}
+	return clients, nil
+}
+
+// FindBySiteIDAndCreator is FindBySiteID narrowed to one creator.
+func (r *OAuthClientRepository) FindBySiteIDAndCreator(ctx context.Context, siteID, userID uint) ([]model.OAuthClient, error) {
+	var clients []model.OAuthClient
+	if err := r.db.WithContext(ctx).
+		Where("site_id = ? AND created_by_user_id = ?", siteID, userID).
+		Find(&clients).Error; err != nil {
+		return nil, err
+	}
+	return clients, nil
+}
+
 // FindListed returns the opt-in (listed) clients for the public app directory,
 // Site preloaded. Ordered official (auto_consent) first, then display_order,
 // then name. See GET /oauth/ecosystem.

@@ -20,6 +20,7 @@ var goldenGrants = map[authz.Permission][]string{
 	perm.RolesGrantAdmin:         {"ren"},
 	perm.ClientsStorageConfig:    {"ren"},
 	perm.ClientsPrivilegedConfig: {"ren"},
+	perm.SitesManageAll:          {"ren"},
 }
 
 var allRoles = []string{"user", "creator", "moderator", "admin", "ren"}

@@ -12,6 +12,13 @@ type Site struct {
 	Description string    `gorm:"type:text;default:''" json:"description"`
 	CreatedAt   time.Time `json:"created_at"`
 
+	// CreatedByUserID is the admin who registered this site. It scopes the
+	// console: an admin without oauth.sites.manage_all (ren) sees and edits
+	// only their own rows. NULL means "created before ownership stamping" —
+	// such a site belongs to nobody and is reachable by ren only, which is the
+	// safe default for the first-party sites that predate this column.
+	CreatedByUserID *uint `gorm:"index" json:"created_by_user_id,omitempty"`
+
 	// Relations
 	OAuthClients []OAuthClient `gorm:"foreignKey:SiteID" json:"oauth_clients,omitempty"`
 }
