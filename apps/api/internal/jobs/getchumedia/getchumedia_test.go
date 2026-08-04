@@ -50,7 +50,7 @@ func TestMain(m *testing.M) {
 	}
 	// The crawler's staging table, reduced to the columns this job reads.
 	if err := db.Exec(`CREATE TABLE IF NOT EXISTS item_images (
-		getchu_id text, kind text, ordinal int, url text, local_path text)`).Error; err != nil {
+		getchu_id text, kind text, ordinal int, url text, local_path text, sha256 text)`).Error; err != nil {
 		fmt.Fprintf(os.Stderr, "FAIL: staging item_images: %v\n", err)
 		os.Exit(1)
 	}

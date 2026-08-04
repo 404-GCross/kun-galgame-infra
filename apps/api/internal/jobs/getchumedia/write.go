@@ -50,8 +50,26 @@ type runner struct {
 // nonsense. Duplicate bytes across the two collapse on the (work, hash) key.
 func (r *runner) fill(ctx context.Context, dir string, c candidate, staged map[string][]stagedImage, apply bool) {
 	var images []stagedImage
+	seenBytes := map[string]bool{}
 	for _, gid := range c.GetchuIDs {
-		images = append(images, staged[gid]...)
+		for _, im := range staged[gid] {
+			// A work's Getchu editions (regular / DL) publish the SAME CG set, so
+			// concatenating their samples offers the same bytes twice. The
+			// (work_id, image_hash) key would collapse them anyway — but only
+			// AFTER paying ~2s to upload each duplicate, and across the backfill
+			// that is 2,556 of 16,199 uploads spent to learn nothing. The mirror
+			// already recorded each file's sha256, so the duplicate is knowable
+			// here for free. Files with no recorded hash fall through and are
+			// uploaded, where the unique key still catches them.
+			if im.SHA256 != "" {
+				if seenBytes[im.SHA256] {
+					r.stats.Dedup++
+					continue
+				}
+				seenBytes[im.SHA256] = true
+			}
+			images = append(images, im)
+		}
 	}
 	if len(images) == 0 {
 		r.stats.NoStaged++

@@ -72,6 +72,11 @@ type stagedImage struct {
 	GetchuID string
 	Ordinal  int
 	File     string // basename, which is also the mirror filename
+	// SHA256 of the downloaded bytes, recorded by the mirror pass. Used ONLY to
+	// skip re-uploading bytes this work has already sent (see fill); it is not
+	// assumed equal to the image service's own hash, and the
+	// (work_id, image_hash) unique key remains the correctness backstop.
+	SHA256 string
 }
 
 // loadSamples reads the crawler's staging database for the sample images that
@@ -92,9 +97,10 @@ func loadSamples(ctx context.Context, gdb *gorm.DB) (map[string][]stagedImage, e
 		GetchuID string `gorm:"column:getchu_id"`
 		Ordinal  int    `gorm:"column:ordinal"`
 		URL      string `gorm:"column:url"`
+		SHA256   string `gorm:"column:sha256"`
 	}
 	err := gdb.WithContext(ctx).Raw(`
-		SELECT getchu_id, ordinal, url FROM item_images
+		SELECT getchu_id, ordinal, url, coalesce(sha256,'') AS sha256 FROM item_images
 		WHERE kind = 'sample' AND local_path IS NOT NULL AND url NOT LIKE '%\_s.jpg'
 		ORDER BY getchu_id, ordinal`).Scan(&rows).Error
 	if err != nil {
@@ -103,7 +109,7 @@ func loadSamples(ctx context.Context, gdb *gorm.DB) (map[string][]stagedImage, e
 	out := map[string][]stagedImage{}
 	for _, r := range rows {
 		out[r.GetchuID] = append(out[r.GetchuID], stagedImage{
-			GetchuID: r.GetchuID, Ordinal: r.Ordinal, File: path.Base(r.URL),
+			GetchuID: r.GetchuID, Ordinal: r.Ordinal, File: path.Base(r.URL), SHA256: r.SHA256,
 		})
 	}
 	return out, nil
