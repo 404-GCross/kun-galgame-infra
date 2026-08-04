@@ -360,9 +360,9 @@ func nsfwQuery(c fiber.Ctx) bool {
 }
 
 // boolQueryPub reads an opt-in boolean query flag, the same vocabulary
-// nsfwQuery accepts. Anything else — including a typo — is false: these flags
-// only ever WIDEN a response, so an unrecognized value degrading to the narrow
-// default is the safe direction.
+// nsfwQuery accepts. Anything else — including a typo — is false: false is
+// always the lane's long-standing default behavior, so an unrecognized value
+// degrading to it can surprise nobody.
 func boolQueryPub(raw string) bool {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case "1", "true", "yes":

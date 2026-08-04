@@ -125,6 +125,34 @@ func TestTaxonomyListsKeysetAndCounts(t *testing.T) {
 	assertCountMatchesWorksList(t, svc, WorksListFilter{Sort: "id", LabelID: brandID}, labels.Items[0].WorkCount)
 	assertCountMatchesWorksList(t, svc, WorksListFilter{Sort: "id", LabelID: brandID, NSFW: true}, labelsNSFW.Items[0].WorkCount)
 
+	// has_works drops the +0 rows, total converges with the filter, and the
+	// existence gate follows the SAME nsfw arm as the count: a label whose only
+	// work is r18 exists for an nsfw caller and vanishes for an sfw one.
+	r18OnlyID := addWorkLabel(t, wR18.ID, "R18 Only Brand", model.LabelKindGameBrand, model.WorkLabelKindBrand)
+	attached, err := svc.LabelsList(ctx, LabelsListFilter{HasWorks: true}, "", 50)
+	if err != nil {
+		t.Fatalf("LabelsList has_works sfw: %v", err)
+	}
+	if len(attached.Items) != 1 || attached.Items[0].ID != brandID || attached.Items[0].WorkCount != 1 {
+		t.Fatalf("has_works sfw labels = %+v, want only brand", attached.Items)
+	}
+	if attached.Total != 1 {
+		t.Fatalf("has_works sfw total = %d, want 1 (the empty and r18-only rows leave the total too)", attached.Total)
+	}
+	attachedNSFW, err := svc.LabelsList(ctx, LabelsListFilter{HasWorks: true, NSFW: true}, "", 50)
+	if err != nil {
+		t.Fatalf("LabelsList has_works nsfw: %v", err)
+	}
+	if len(attachedNSFW.Items) != 2 || attachedNSFW.Total != 2 || attachedNSFW.Items[1].ID != r18OnlyID {
+		t.Fatalf("has_works nsfw labels = %+v total=%d, want brand + r18-only", attachedNSFW.Items, attachedNSFW.Total)
+	}
+	if err := testDB.Exec(`DELETE FROM catalog_work_label WHERE label_id = ?`, r18OnlyID).Error; err != nil {
+		t.Fatalf("detach r18-only: %v", err)
+	}
+	if err := testDB.Exec(`DELETE FROM catalog_label WHERE id = ?`, r18OnlyID).Error; err != nil {
+		t.Fatalf("drop r18-only label: %v", err)
+	}
+
 	// kind filter.
 	kind := model.LabelKindDoujinCircle
 	filtered, err := svc.LabelsList(ctx, LabelsListFilter{Kind: &kind}, "", 50)
@@ -186,6 +214,16 @@ func TestTaxonomyListsKeysetAndCounts(t *testing.T) {
 	}
 	assertCountMatchesWorksList(t, svc, WorksListFilter{Sort: "id", TagIDs: []int64{coreTagID}}, tagPage.Items[0].WorkCount)
 	assertCountMatchesWorksList(t, svc, WorksListFilter{Sort: "id", TagIDs: []int64{coreTagID}, NSFW: true}, tagPageNSFW.Items[0].WorkCount)
+
+	// has_works on the tags lane: the unmapped "PC" meta tag (+0) leaves the
+	// page and the total, through the same source-name-map edge the count uses.
+	attachedTags, err := svc.TagsList(ctx, TagsListFilter{HasWorks: true}, "", 50)
+	if err != nil {
+		t.Fatalf("TagsList has_works: %v", err)
+	}
+	if len(attachedTags.Items) != 1 || attachedTags.Items[0].ID != coreTagID || attachedTags.Total != 1 {
+		t.Fatalf("has_works tags = %+v total=%d, want only the mapped core tag", attachedTags.Items, attachedTags.Total)
+	}
 
 	tier := model.TagTierHidden
 	tagKind := model.TagKindMeta

@@ -2726,6 +2726,13 @@ paths:
           schema:
             description: true/1 = count r18 works in work_count (default false = excluded, matching what an sfw works?label_id= call returns)
             type: boolean
+        - description: true/1 = only labels whose work_count is > 0 under the same nsfw setting (default false = every label); total converges with the filter
+          explode: false
+          in: query
+          name: has_works
+          schema:
+            description: true/1 = only labels whose work_count is > 0 under the same nsfw setting (default false = every label); total converges with the filter
+            type: boolean
       responses:
         "200":
           content:
@@ -3240,6 +3247,13 @@ paths:
           name: nsfw
           schema:
             description: true/1 = count r18 works in work_count (default false = excluded, matching what an sfw works?tag_id= call returns)
+            type: boolean
+        - description: true/1 = only tags whose work_count is > 0 under the same nsfw setting (default false = every tag); total converges with the filter
+          explode: false
+          in: query
+          name: has_works
+          schema:
+            description: true/1 = only tags whose work_count is > 0 under the same nsfw setting (default false = every tag); total converges with the filter
             type: boolean
       responses:
         "200":

@@ -223,21 +223,23 @@ type publicTagOutput struct {
 // through via the matching works?<filter>= call.
 
 type publicLabelsListInput struct {
-	Kind   string `query:"kind" enum:"game_brand,bunko,publisher,anime_studio,doujin_circle,group" doc:"Filter by label kind; a token outside this closed set is a 400"`
-	Cursor string `query:"cursor" doc:"Opaque keyset cursor from a prior next_cursor; omit for the first page"`
-	Limit  int    `query:"limit" doc:"Items per page 1-100 (default 20); above 100 is clamped to 100, a non-positive or non-numeric value is a 400"`
-	NSFW   bool   `query:"nsfw" doc:"true/1 = count r18 works in work_count (default false = excluded, matching what an sfw works?label_id= call returns)"`
+	Kind     string `query:"kind" enum:"game_brand,bunko,publisher,anime_studio,doujin_circle,group" doc:"Filter by label kind; a token outside this closed set is a 400"`
+	Cursor   string `query:"cursor" doc:"Opaque keyset cursor from a prior next_cursor; omit for the first page"`
+	Limit    int    `query:"limit" doc:"Items per page 1-100 (default 20); above 100 is clamped to 100, a non-positive or non-numeric value is a 400"`
+	NSFW     bool   `query:"nsfw" doc:"true/1 = count r18 works in work_count (default false = excluded, matching what an sfw works?label_id= call returns)"`
+	HasWorks bool   `query:"has_works" doc:"true/1 = only labels whose work_count is > 0 under the same nsfw setting (default false = every label); total converges with the filter"`
 }
 type publicLabelsListOutput struct {
 	Body Envelope[dto.PublicLabelsListData]
 }
 
 type publicTagsListInput struct {
-	Tier   string `query:"tier" enum:"core,longtail,hidden" doc:"Filter by display tier; a token outside this closed set is a 400"`
-	Kind   string `query:"kind" enum:"content,meta" doc:"Filter by tag kind; a token outside this closed set is a 400"`
-	Cursor string `query:"cursor" doc:"Opaque keyset cursor from a prior next_cursor; omit for the first page"`
-	Limit  int    `query:"limit" doc:"Items per page 1-100 (default 20); above 100 is clamped to 100, a non-positive or non-numeric value is a 400"`
-	NSFW   bool   `query:"nsfw" doc:"true/1 = count r18 works in work_count (default false = excluded, matching what an sfw works?tag_id= call returns)"`
+	Tier     string `query:"tier" enum:"core,longtail,hidden" doc:"Filter by display tier; a token outside this closed set is a 400"`
+	Kind     string `query:"kind" enum:"content,meta" doc:"Filter by tag kind; a token outside this closed set is a 400"`
+	Cursor   string `query:"cursor" doc:"Opaque keyset cursor from a prior next_cursor; omit for the first page"`
+	Limit    int    `query:"limit" doc:"Items per page 1-100 (default 20); above 100 is clamped to 100, a non-positive or non-numeric value is a 400"`
+	NSFW     bool   `query:"nsfw" doc:"true/1 = count r18 works in work_count (default false = excluded, matching what an sfw works?tag_id= call returns)"`
+	HasWorks bool   `query:"has_works" doc:"true/1 = only tags whose work_count is > 0 under the same nsfw setting (default false = every tag); total converges with the filter"`
 }
 type publicTagsListOutput struct {
 	Body Envelope[dto.PublicTagsListData]

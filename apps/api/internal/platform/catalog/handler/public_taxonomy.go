@@ -30,9 +30,9 @@ const (
 )
 
 // LabelsList serves GET /v1/catalog/labels — the keyset label browse lane
-// (id ASC). Filter by kind; work_count is nsfw-aware.
+// (id ASC). Filter by kind and/or has_works; work_count is nsfw-aware.
 func (h *PublicHandler) LabelsList(c fiber.Ctx) error {
-	f := service.LabelsListFilter{NSFW: nsfwQuery(c)}
+	f := service.LabelsListFilter{NSFW: nsfwQuery(c), HasWorks: boolQueryPub(c.Query("has_works"))}
 	if raw := c.Query("kind"); raw != "" {
 		v, ok := labelKindFromKey(raw)
 		if !ok {
@@ -53,9 +53,9 @@ func (h *PublicHandler) LabelsList(c fiber.Ctx) error {
 }
 
 // TagsList serves GET /v1/catalog/tags — the keyset canonical-tag browse lane
-// (id ASC). Filter by tier and/or kind; work_count is nsfw-aware.
+// (id ASC). Filter by tier, kind and/or has_works; work_count is nsfw-aware.
 func (h *PublicHandler) TagsList(c fiber.Ctx) error {
-	f := service.TagsListFilter{NSFW: nsfwQuery(c)}
+	f := service.TagsListFilter{NSFW: nsfwQuery(c), HasWorks: boolQueryPub(c.Query("has_works"))}
 	if raw := c.Query("tier"); raw != "" {
 		v, ok := tagTierFromKey(raw)
 		if !ok {

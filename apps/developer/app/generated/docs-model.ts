@@ -2669,6 +2669,13 @@ export const docsModel: DocsModel = {
                   "required": false,
                   "type": "boolean",
                   "doc": "true/1 = count r18 works in work_count (default false = excluded, matching what an sfw works?label_id= call returns)"
+                },
+                {
+                  "name": "has_works",
+                  "in": "query",
+                  "required": false,
+                  "type": "boolean",
+                  "doc": "true/1 = only labels whose work_count is > 0 under the same nsfw setting (default false = every label); total converges with the filter"
                 }
               ],
               "responses": [
@@ -6426,6 +6433,13 @@ export const docsModel: DocsModel = {
                   "required": false,
                   "type": "boolean",
                   "doc": "true/1 = count r18 works in work_count (default false = excluded, matching what an sfw works?tag_id= call returns)"
+                },
+                {
+                  "name": "has_works",
+                  "in": "query",
+                  "required": false,
+                  "type": "boolean",
+                  "doc": "true/1 = only tags whose work_count is > 0 under the same nsfw setting (default false = every tag); total converges with the filter"
                 }
               ],
               "responses": [

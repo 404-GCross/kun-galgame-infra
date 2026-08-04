@@ -48,15 +48,17 @@ const (
 
 // LabelsListFilter is the label browse lane's request shape.
 type LabelsListFilter struct {
-	Kind *int16 // model.LabelKind* — nil = every kind
-	NSFW bool
+	Kind     *int16 // model.LabelKind* — nil = every kind
+	NSFW     bool
+	HasWorks bool // true = only rows whose work_count (under this NSFW) is > 0
 }
 
 // TagsListFilter is the canonical-tag browse lane's request shape.
 type TagsListFilter struct {
-	Tier *int16 // model.TagTier* — nil = every tier
-	Kind *int16 // model.TagKind* — nil = every kind
-	NSFW bool
+	Tier     *int16 // model.TagTier* — nil = every tier
+	Kind     *int16 // model.TagKind* — nil = every kind
+	NSFW     bool
+	HasWorks bool // true = only rows whose work_count (under this NSFW) is > 0
 }
 
 // EnginesListFilter is the engine browse lane's request shape. The facet is a
@@ -82,6 +84,11 @@ func (s *PublicService) LabelsList(ctx context.Context, f LabelsListFilter, curs
 	if f.Kind != nil {
 		where = append(where, "kind = ?")
 		args = append(args, *f.Kind)
+	}
+	if f.HasWorks {
+		pred, pargs := workExistsClause(labelWorkEdge, "catalog_label.id", f.NSFW)
+		where = append(where, pred)
+		args = append(args, pargs...)
 	}
 	// Snapshot the FILTER-only predicate before the cursor clause joins it: the
 	// total counts the whole filtered set, not the tail after the cursor.
@@ -142,6 +149,11 @@ func (s *PublicService) TagsList(ctx context.Context, f TagsListFilter, cursor s
 	if f.Kind != nil {
 		where = append(where, "kind = ?")
 		args = append(args, *f.Kind)
+	}
+	if f.HasWorks {
+		pred, pargs := workExistsClause(tagWorkEdge, "catalog_tag.id", f.NSFW)
+		where = append(where, pred)
+		args = append(args, pargs...)
 	}
 	// Filter-only predicate for the total (see LabelsList).
 	filterWhere, filterArgs := append([]string(nil), where...), append([]any(nil), args...)
@@ -350,6 +362,29 @@ func (s *PublicService) workCountsFor(ctx context.Context, edge string, ids []in
 	return out, nil
 }
 
+// workExistsClause compiles the has_works row filter: keep a taxonomy row only
+// if at least one work the SAME caller can reach through the matching
+// works?<filter>= call hangs off it. It is workCountsFor's predicate verbatim —
+// correlated on the outer row instead of batched over a page — so "work_count
+// > 0" and "row survives the filter" cannot drift apart. That shared predicate
+// is nsfw-aware, which makes has_works nsfw-aware by construction: a label
+// whose only works are r18 exists for an nsfw caller and vanishes for an sfw
+// one, exactly like its count. outerID is FIXED internal SQL (a qualified id
+// column), never caller input.
+func workExistsClause(edge, outerID string, nsfw bool) (string, []any) {
+	where := []string{"e.key_id = " + outerID, "w.deleted_at IS NULL", "w.status = ?", "w.medium_id = ?"}
+	args := []any{model.WorkStatusLive, galgameMediumID}
+	if !nsfw {
+		where = append(where, "w.content_rating <> ?")
+		args = append(args, model.ContentRatingR18)
+	}
+	pred, pargs := claimStateWhere(taxonomyLiveClaim)
+	where = append(where, pred)
+	args = append(args, pargs...)
+	return `EXISTS (SELECT 1 FROM ` + edge + ` JOIN catalog_work w ON w.id = e.work_id WHERE ` +
+		strings.Join(where, " AND ") + `)`, args
+}
+
 // tagSexualFor batch-resolves the TAG-LEVEL sexual-category flag (A2-1f) for a
 // set of canonical tag ids. Tags whose flag is false are simply absent from
 // the map, which renders false — the same absent-means-false contract the old
@@ -386,9 +421,12 @@ func (s *PublicService) tagSexualFor(ctx context.Context, ids []int64) (map[int6
 // table is FIXED internal SQL (never caller input) and where holds only the
 // lane's own filter fragments; every caller value stays a bound argument.
 //
-// Deliberately NOT nsfw-aware: a label / tag / engine row is an identity, and
-// the nsfw gate on this face only ever governs CONTENT — which on these lanes
-// means the per-row work_count, not whether the row itself exists.
+// Deliberately NOT nsfw-aware on its own: a label / tag / engine row is an
+// identity, and the nsfw gate on this face only ever governs CONTENT — which on
+// these lanes means the per-row work_count, not whether the row itself exists.
+// The one caller-chosen exception is has_works: opting into it puts the
+// (nsfw-aware) existence predicate INTO the lane's filter, and this total
+// follows that filter like any other, so page rows and total keep converging.
 func (s *PublicService) taxonomyTotal(ctx context.Context, table string, where []string, args []any) (int64, error) {
 	var total int64
 	q := `SELECT count(*) FROM ` + table + ` ` + whereClause(where)
