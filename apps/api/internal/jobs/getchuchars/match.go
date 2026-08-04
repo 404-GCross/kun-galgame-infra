@@ -155,7 +155,9 @@ func match(chars []getchuChar, idx map[string]*rosterIndex) ([]Candidate, MatchS
 				continue
 			}
 			st.Deduped += len(group) - 1
-			group = []Candidate{richest(group)}
+			group = []Candidate{withEditions(richest(group), group)}
+		} else {
+			group = []Candidate{withEditions(group[0], group)}
 		}
 		h := struct{ cand Candidate }{group[0]}
 		st.Matched++
@@ -176,6 +178,31 @@ func match(chars []getchuChar, idx map[string]*rosterIndex) ([]Candidate, MatchS
 		return out[i].Ordinal < out[j].Ordinal
 	})
 	return out, st
+}
+
+// withEditions records every roster row that resolved to this character,
+// ordered richest-first and then by (getchu_id, ordinal) so the list is
+// reproducible rather than map-iteration order.
+func withEditions(chosen Candidate, group []Candidate) Candidate {
+	eds := make([]Edition, 0, len(group))
+	eds = append(eds, Edition{GetchuID: chosen.GetchuID, Ordinal: chosen.Ordinal})
+	rest := make([]Candidate, 0, len(group))
+	for _, c := range group {
+		if c.GetchuID != chosen.GetchuID || c.Ordinal != chosen.Ordinal {
+			rest = append(rest, c)
+		}
+	}
+	sort.Slice(rest, func(i, j int) bool {
+		if rest[i].GetchuID != rest[j].GetchuID {
+			return rest[i].GetchuID < rest[j].GetchuID
+		}
+		return rest[i].Ordinal < rest[j].Ordinal
+	})
+	for _, c := range rest {
+		eds = append(eds, Edition{GetchuID: c.GetchuID, Ordinal: c.Ordinal})
+	}
+	chosen.Editions = eds
+	return chosen
 }
 
 // richest picks which edition's copy of a character to keep: the longest

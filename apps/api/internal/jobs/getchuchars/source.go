@@ -36,6 +36,14 @@ import (
 	"gorm.io/gorm"
 )
 
+// Edition is one Getchu roster row that resolved to a catalog character. A
+// product's 限定版 / 通常版 / DL版 each publish the same roster, so one
+// character routinely has several.
+type Edition struct {
+	GetchuID string
+	Ordinal  int
+}
+
 // Candidate is one matched (Getchu character → catalog character) pair.
 type Candidate struct {
 	CharacterID int64  `gorm:"column:character_id"`
@@ -46,6 +54,17 @@ type Candidate struct {
 	Profile     string `gorm:"column:profile"`
 	Attrs       []byte `gorm:"column:attrs"`
 	MatchedBy   string `gorm:"column:matched_by"`
+	// Editions is every roster row that resolved to this character, richest
+	// first — GetchuID/Ordinal above are Editions[0].
+	//
+	// Prose lanes only ever want the richest one. A lane fetching a PER-ROW
+	// asset must not: the page pairs an image with the row it sits beside, so
+	// the image lives on a specific edition, and the richest edition is not
+	// necessarily the one that has it. Picking "the edition that actually
+	// carries the thing" belongs in Go, exactly as getchuintros learned for
+	// `story` — a SQL DISTINCT ON would silently choose an empty row and report
+	// the character as having nothing.
+	Editions []Edition
 }
 
 // loadRoster reads the catalog side: every character on a work that carries a

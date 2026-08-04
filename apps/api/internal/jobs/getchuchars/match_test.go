@@ -147,3 +147,49 @@ func TestRichestIsDeterministic(t *testing.T) {
 		}
 	}
 }
+
+// TestEditionsListsEveryResolvedRow pins what the portrait lane depends on: the
+// chosen (richest) edition comes first, but every edition that resolved to this
+// character stays reachable. A lane fetching a per-row asset must be able to
+// fall back, because "has the fullest profile" and "has the image" are
+// unrelated properties of an edition.
+func TestEditionsListsEveryResolvedRow(t *testing.T) {
+	idx := buildIndex([]rosterRow{
+		rr("limited", 1, 100, "九條都", ""),
+		rr("regular", 1, 100, "九條都", ""),
+	})
+	got, st := match([]getchuChar{
+		{GetchuID: "regular", Ordinal: 3, Name: "九條都", Profile: "short"},
+		{GetchuID: "limited", Ordinal: 7, Name: "九條都", Profile: "a much longer profile"},
+	}, idx)
+
+	if st.Matched != 1 || len(got) != 1 {
+		t.Fatalf("matched = %d, candidates = %d; want 1/1 — two editions are one character", st.Matched, len(got))
+	}
+	c := got[0]
+	if c.GetchuID != "limited" || c.Ordinal != 7 {
+		t.Errorf("chosen edition = %s/%d; want limited/7 (the richest profile)", c.GetchuID, c.Ordinal)
+	}
+	want := []Edition{{GetchuID: "limited", Ordinal: 7}, {GetchuID: "regular", Ordinal: 3}}
+	if len(c.Editions) != len(want) {
+		t.Fatalf("editions = %+v; want %+v", c.Editions, want)
+	}
+	for i := range want {
+		if c.Editions[i] != want[i] {
+			t.Errorf("editions[%d] = %+v; want %+v", i, c.Editions[i], want[i])
+		}
+	}
+}
+
+// A character matched through a single edition still carries that edition, so
+// consumers never need a nil check.
+func TestEditionsPopulatedForASingleMatch(t *testing.T) {
+	idx := buildIndex([]rosterRow{rr("g1", 1, 100, "九條都", "")})
+	got, _ := match([]getchuChar{{GetchuID: "g1", Ordinal: 2, Name: "九條都", Profile: "p"}}, idx)
+	if len(got) != 1 {
+		t.Fatalf("candidates = %d; want 1", len(got))
+	}
+	if len(got[0].Editions) != 1 || got[0].Editions[0] != (Edition{GetchuID: "g1", Ordinal: 2}) {
+		t.Errorf("editions = %+v; want exactly [{g1 2}]", got[0].Editions)
+	}
+}

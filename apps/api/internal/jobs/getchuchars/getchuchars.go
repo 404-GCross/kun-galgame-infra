@@ -77,24 +77,15 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 	}
 	defer closeDB(gdb)
 
-	var getchuSource int16
-	if err := db.WithContext(ctx).
-		Raw(`SELECT id FROM catalog_source WHERE key = 'getchu'`).Scan(&getchuSource).Error; err != nil {
+	getchuSource, err := SourceID(ctx, db)
+	if err != nil {
 		return nil, err
-	}
-	if getchuSource == 0 {
-		return nil, fmt.Errorf("catalog_source has no getchu row — seed it first (refs/proj/167)")
 	}
 
-	roster, err := loadRoster(ctx, db, getchuSource)
+	cands, ms, err := Resolve(ctx, db, gdb, getchuSource)
 	if err != nil {
 		return nil, err
 	}
-	chars, err := loadGetchuChars(ctx, gdb)
-	if err != nil {
-		return nil, err
-	}
-	cands, ms := match(chars, buildIndex(roster))
 	if opts.Limit > 0 && opts.Limit < len(cands) {
 		cands = cands[:opts.Limit]
 	}
