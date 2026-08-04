@@ -32,9 +32,13 @@ func resolveRegistry(ctx context.Context, db *gorm.DB) (registry, error) {
 	return r, nil
 }
 
-// siteGalgameWiki is the claim marker on catalog_work.site: the work has a
-// galgame (wiki) body, keyed by product_work_id.
-const siteGalgameWiki = "galgame_wiki"
+// claimedSite is the CLAIM PREDICATE, not a site name. Being claimed is a
+// property — catalog_work.site is non-empty — and wave 161 renamed the only
+// value that has ever existed (galgame_wiki → kungal). A lane pinned to the old
+// literal does not fail; it silently matches nothing and reports a clean
+// zero-candidate run, which is how the intromt claimed lane sat dead for three
+// days while looking healthy.
+const claimedSite = `w.site IS NOT NULL AND w.site <> ''`
 
 // candidate is one galgame work joined to its DLsite workno anchor. Site is
 // carried (not filtered out) so the write-time guard can decide PER KIND which
@@ -182,18 +186,19 @@ func loadClaimedIntroCandidates(ctx context.Context, db *gorm.DB, reg registry) 
 // screenshot at all today, reachable via the same EXACT DLsite workno release
 // anchor. Three conditions, all load-bearing:
 //
-//   - site='galgame_wiki' — the claimed population, admitted by the (facet,
-//     source) XOR: dlsite is a catalog-native source, so its rows live in
-//     catalog_work_screenshot for claimed and bodyless alike.
-//   - no bridged screenshot (galgame_screenshot on the work's galgame body) — the
-//     targeting rule. A work whose wiki body already has screenshots would show
-//     both lanes at once; DLsite store samples are a FALLBACK for the works that
-//     have nothing, never a supplement to real wiki screenshots.
-//   - no native screenshot — idempotency at the candidate level (preloadExisting +
-//     ON CONFLICT still guard the write itself).
+//   - claimed (site non-empty) — admitted by the (facet, source) XOR: dlsite is
+//     a catalog-native source, so its rows live in catalog_work_screenshot for
+//     claimed and bodyless alike. Expressed as the PROPERTY, never the literal
+//     site value (see claimedSite).
+//   - no native screenshot — both the targeting rule and idempotency now, since
+//     wave 149 dropped the wiki family.
 //
-// A claimed work with a NULL product_work_id has no bridge to collide with, so
-// the galgame_screenshot NOT EXISTS admits it, which is the intended reading.
+// The wiki-bridge condition this lane used to carry — "no galgame_screenshot on
+// the work's galgame body", which kept DLsite store samples a FALLBACK rather
+// than a supplement to real wiki screenshots — went with the table. It is not
+// lost: wave 149's final sweep copied the last 99 bridged screenshots into
+// catalog_work_screenshot before the DROP, so the native NOT EXISTS now answers
+// exactly what the pair used to answer between them.
 func loadClaimedScreenshotCandidates(ctx context.Context, db *gorm.DB, reg registry) ([]candidate, error) {
 	var out []candidate
 	err := db.WithContext(ctx).
@@ -202,11 +207,10 @@ func loadClaimedScreenshotCandidates(ctx context.Context, db *gorm.DB, reg regis
 			JOIN catalog_release rel ON rel.work_id = w.id AND rel.deleted_at IS NULL
 			JOIN catalog_external_ref r ON r.entity_type = ? AND r.entity_id = rel.id
 				AND r.source_id = ? AND r.link_kind = ?
-			WHERE w.medium_id = ? AND w.site = ? AND w.deleted_at IS NULL
-				AND NOT EXISTS (SELECT 1 FROM galgame_screenshot gs WHERE gs.galgame_id = w.product_work_id)
+			WHERE w.medium_id = ? AND `+claimedSite+` AND w.deleted_at IS NULL
 				AND NOT EXISTS (SELECT 1 FROM catalog_work_screenshot cs WHERE cs.work_id = w.id)
 			ORDER BY w.id, r.external_id`,
-			model.EntityTypeRelease, reg.dlsiteSource, model.LinkKindExact, reg.galgameMedium, siteGalgameWiki).
+			model.EntityTypeRelease, reg.dlsiteSource, model.LinkKindExact, reg.galgameMedium).
 		Scan(&out).Error
 	return out, err
 }

@@ -16,7 +16,6 @@ import (
 	"api/internal/platform/catalog/model"
 	"api/internal/platform/catalog/repository"
 	"api/internal/platform/catalog/seed"
-	"api/internal/platform/galgame/galgametest"
 	"api/pkg/imageclient"
 
 	"github.com/stretchr/testify/assert"
@@ -155,7 +154,6 @@ var claimedLaneGalgameIDs = []int64{9101, 9102, 9103, 9104}
 // without a default. Cleanup is a targeted DELETE. Idempotent.
 func ensureGalgameScreenshotStub(t *testing.T, db *gorm.DB) {
 	t.Helper()
-	require.NoError(t, galgametest.EnsureBodyTables(db))
 	// Screenshots first: galgame_screenshot carries an FK to galgame(id) in the
 	// real schema, so the children must go before the parents.
 	require.NoError(t, db.Exec(`DELETE FROM galgame_screenshot WHERE galgame_id IN ?`, claimedLaneGalgameIDs).Error)
@@ -223,7 +221,7 @@ func TestClaimedScreenshotLane(t *testing.T) {
 			ExternalID: workno, LinkKind: model.LinkKindExact, MatchedBy: "import:test"}).Error)
 		return w.ID
 	}
-	claimed := siteGalgameWiki
+	claimed := "kungal"
 	wBodyless := anchored("bodyless", "RJ100001", nil, nil)
 	wClaimedBare := anchored("claimed-no-screenshot", "RJ100002", &claimed, &claimedLaneGalgameIDs[0])
 	wClaimedBridged := anchored("claimed-with-wiki-screenshot", "RJ100003", &claimed, &claimedLaneGalgameIDs[1])
