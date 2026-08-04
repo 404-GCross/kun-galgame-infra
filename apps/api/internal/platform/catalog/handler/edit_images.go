@@ -27,12 +27,17 @@ import (
 // editor then attaches to covers/screenshots is pinged by the existing cron
 // with no new plumbing. The galgame_wiki image key is never touched (03 §2).
 
-// editImagePresets is the closed set of presets this face will forward. The
-// image service gates presets per client again upstream; the closed set here
-// keeps the route from becoming an open proxy into arbitrary presets.
-var editImagePresets = map[string]bool{
-	"galgame_banner":     true, // cover
-	"galgame_screenshot": true,
+// editImagePresets is the closed set of wire presets this face accepts, each
+// mapped to the preset actually sent upstream. Callers still speak the
+// galgame_* names the forum FE has always sent, but the bytes are stored under
+// the catalog site's own presets (same 460x259 mini variant, superset MIME) —
+// one preset per asset kind across editor uploads and the aggregation-job
+// backfills, and the catalog image client's allow-list already contains them.
+// The image service gates presets per client again upstream; the closed set
+// here keeps the route from becoming an open proxy into arbitrary presets.
+var editImagePresets = map[string]string{
+	"galgame_banner":     "catalog_cover",
+	"galgame_screenshot": "catalog_screenshot",
 }
 
 // EditImageUpload forwards one file to the image service under the catalog
@@ -48,8 +53,8 @@ func SetupEditImages(app *fiber.App, upload EditImageUpload) {
 				Code: errors.ErrOperationFailed, Message: "image client not configured",
 			})
 		}
-		preset := c.FormValue("preset")
-		if !editImagePresets[preset] {
+		preset, ok := editImagePresets[c.FormValue("preset")]
+		if !ok {
 			return c.Status(http.StatusBadRequest).JSON(Envelope[any]{
 				Code: errors.ErrInvalidParam, Message: "preset must be galgame_banner or galgame_screenshot",
 			})

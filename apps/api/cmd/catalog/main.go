@@ -328,11 +328,22 @@ func setupPublicCatalog(
 		slog.Warn("catalog public face: image client not configured — covers will carry no dimensions/thumbhash and the banner slot stays null")
 	}
 	// Edit-face byte upload (wave 169): the multipart leg the row-set editors
-	// (covers/screenshots) obtain their hashes from. Rides the same catalog
-	// image identity as the meta reads; unset credentials disable it (503).
+	// (covers/screenshots) obtain their hashes from. Deliberately NOT imgCli:
+	// that identity is the wiki-era client the meta reads still ride, while
+	// new bytes must land under the catalog SITE's own client — the scope the
+	// daily catalog refping keeps out of the image GC. Unset credentials
+	// disable the leg (503) rather than silently falling back to the wrong
+	// site, which would strand every editor upload outside the refping sweep.
 	var editUpload catHandler.EditImageUpload
-	if imgCli != nil {
-		editUpload = imgCli.UploadWithSub
+	if cfg.CatalogImageClient.ClientID != "" && cfg.CatalogImageClient.ClientSecret != "" {
+		editUpload = imageclient.New(imageclient.Config{
+			BaseURL:      cfg.CatalogImageClient.BaseURL,
+			CDNBase:      cfg.ImageService.CDNBase,
+			ClientID:     cfg.CatalogImageClient.ClientID,
+			ClientSecret: cfg.CatalogImageClient.ClientSecret,
+		}).UploadWithSub
+	} else {
+		slog.Warn("catalog edit face: catalog image client not configured — editor image upload disabled (503)")
 	}
 	catHandler.SetupEditImages(application.Fiber, editUpload)
 	// The works product search (A2-1d) runs its filters/facets/sort inside the

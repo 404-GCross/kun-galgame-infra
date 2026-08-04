@@ -88,7 +88,9 @@ func TestEditImageUploadForwardsFileAndStampsActor(t *testing.T) {
 	if err := json.Unmarshal(env.Data, &data); err != nil || data.Hash != "abc" {
 		t.Fatalf("data=%s err=%v", env.Data, err)
 	}
-	if gotPreset != "galgame_banner" || gotFilename != "cover.png" || string(gotBytes) != "png-bytes" {
+	// The wire preset galgame_banner is stored under the catalog site's own
+	// catalog_cover preset (169-E) — the forwarded name must be the mapped one.
+	if gotPreset != "catalog_cover" || gotFilename != "cover.png" || string(gotBytes) != "png-bytes" {
 		t.Fatalf("forwarded preset=%q filename=%q bytes=%q", gotPreset, gotFilename, gotBytes)
 	}
 	if gotSub != "kungal:42" {

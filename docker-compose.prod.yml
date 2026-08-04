@@ -371,6 +371,13 @@ services:
       KUN_IMAGE_CLIENT_SECRET: ${KUN_IMAGE_CLIENT_SECRET:-}
       KUN_CATALOG_CLIENT_ID: ${KUN_CATALOG_CLIENT_ID:-${KUN_IMAGE_CLIENT_ID:-}}
       KUN_CATALOG_CLIENT_SECRET: ${KUN_CATALOG_CLIENT_SECRET:-${KUN_IMAGE_CLIENT_SECRET:-}}
+      # Wave 169-E: the edit-face byte upload leg stores editor covers/
+      # screenshots under the catalog SITE's image identity (the scope the
+      # daily refping keeps alive) — same Dokploy vars the oauth service's
+      # refping job already reads, no new secret.
+      KUN_CATALOG_IMAGE_CLIENT_ID: ${KUN_CATALOG_IMAGE_CLIENT_ID:-}
+      KUN_CATALOG_IMAGE_CLIENT_SECRET: ${KUN_CATALOG_IMAGE_CLIENT_SECRET:-}
+      KUN_CATALOG_IMAGE_CLIENT_BASE_URL: http://image:9278
     # S2S read/admin face stays internal — product backends (wiki/forum/moyu)
     # reach it at http://catalog:9281 over dokploy-network. The ONLY public path
     # is the open-API /v1/catalog projection routed by the labels block below.
