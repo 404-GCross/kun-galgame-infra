@@ -11,19 +11,18 @@
 // its own reason:
 //   - package (17,753) is the store cover, and the anchored population is
 //     ALREADY at 100% cover coverage. The entire kind would fill five gaps.
-//   - nameplate (75,133, a face/bust crop) and portrait (39,617, full-body
-//     standing art) are character art. They belong on
-//     catalog_character.image_hash, and attaching one to the right character
-//     needs a pairing this lane does not have — see the note on ordinals below.
+//   - nameplate (75,133, a 250x300 bust crop) and portrait (39,617, 500x500
+//     full-body standing art) are character art, not work galleries. The bust
+//     goes on catalog_character.image_hash — see internal/jobs/getchuportraits.
 //
 // THE ORDINAL TRAP, recorded so nobody tries the shortcut. It is tempting to
 // match character art positionally: item_characters.ordinal N ←→ the Nth
 // nameplate/portrait. Measured, that holds for only 8,013 of 13,127 items on
 // nameplate and 3,667 on portrait — a wrong link on ~39% of items, which is
-// exactly the kind of guess getchuchars refuses to make. The source itself
-// carries the pairing (each character sits in one <tr> with its own image),
-// so the honest fix is a crawler reparse that records the image URL on the
-// character row. That is a separate wave and needs no re-crawl.
+// exactly the kind of guess getchuchars refuses to make. No such guess is
+// needed: the parser DOES record the page's own pairing, on
+// item_characters.nameplate_url / portrait_url (each character sits in one <tr>
+// with its own image), and getchuportraits reads it from there.
 //
 // DISCIPLINE, from internal/jobs/dlsitemedia:
 //   - Bytes come ONLY from the local mirror (--mirror-dir), produced by
