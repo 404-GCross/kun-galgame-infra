@@ -36,8 +36,11 @@ P5 摘 `/internal/*` + `/api/*` staff 面时,149 STOP-1 要求的「先盘下游
 ## pi 值守状态(就地更新,一行一钩子)
 
 - (待 pi 填;接手第一件=核 T1 浸泡态+CI 门是否已绿)
-- **2026-08-03 待用户裁定(P5 漏网三条,均在产失效)**:①投稿表单标签选择器
-  (`/internal/galgame/taxonomy/*/search`)——156 已记「catalog 策展面缺口」,需定替代入口;
-  ②wiki 通知页(`/internal/galgame/messages/mine`)——N 波已用 claim_event feed + forum 本地消息
-  取代,待定是撤页还是改源;③管理台 `/api/admin/{stats,galgame/messages}`——需定 catalog 侧对应面
-  (157 的 claim.review 面覆盖一部分)。**三条都不是止血件,但都在静默 404。**
+- **🏁 2026-08-04 P5 漏网全清(wave 169,Fable 亲执,用户全权委托裁定;底稿=refs/proj/169)**:
+  ①标签选择器已由 f7c3fb74(08-03)换源 catalog;②wiki 通知页=撤页(FE+代理+read-state 全链删,
+  表留历史);③管理台=摘 7 个 wiki 指标不造对等物;④**盘出第五条断裂:图片上传**(POST
+  /image/galgame→死面,编辑能改字段不能传图)——infra 新造 catalog 编辑面字节上传腿
+  `POST /api/v1/catalog/edit/images`(27b451c1,字节落 site=catalog 随 refping 保活)+forum
+  换轨(157d7abb/51715b11,净删 ~3,900 行:13 写代理/词表控制台/浏览页建改删 modal/wiki 通知链/
+  census 测试随双 base 字段消亡=编译期保证)。**部署顺序 infra 先于 forum;prod 前置=catalog
+  image client 行允许 galgame_banner+galgame_screenshot 两 preset。**
