@@ -305,8 +305,9 @@ func setupPublicCatalog(
 	// because Mount owns its client privately and runs after this; the SDK is
 	// stateless beyond its HTTP pool, so two instances cost nothing. Unset
 	// credentials leave enrichment off, which degrades gracefully.
+	var imgCli *imageclient.Client
 	if cfg.ImageClient.ClientID != "" && cfg.ImageClient.ClientSecret != "" {
-		imgCli := imageclient.New(imageclient.Config{
+		imgCli = imageclient.New(imageclient.Config{
 			BaseURL:      cfg.ImageClient.BaseURL,
 			CDNBase:      cfg.ImageService.CDNBase,
 			ClientID:     cfg.ImageClient.ClientID,
@@ -326,6 +327,14 @@ func setupPublicCatalog(
 	} else {
 		slog.Warn("catalog public face: image client not configured — covers will carry no dimensions/thumbhash and the banner slot stays null")
 	}
+	// Edit-face byte upload (wave 169): the multipart leg the row-set editors
+	// (covers/screenshots) obtain their hashes from. Rides the same catalog
+	// image identity as the meta reads; unset credentials disable it (503).
+	var editUpload catHandler.EditImageUpload
+	if imgCli != nil {
+		editUpload = imgCli.UploadWithSub
+	}
+	catHandler.SetupEditImages(application.Fiber, editUpload)
 	// The works product search (A2-1d) runs its filters/facets/sort inside the
 	// same catalog_works index the entity autocomplete uses, then re-hydrates
 	// the page from Postgres.

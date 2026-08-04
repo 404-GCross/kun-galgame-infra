@@ -126,6 +126,15 @@ catalog **不存**产品展示体:简介、封面/截图字节、评分、点赞
 
 > **读面无 site 绑定**(16 语义:绑定只作用于写端点 claim);读端点仍走 Basic S2S(无凭据 401)。
 
+### 2.12 `POST /catalog/edit/images` — 编辑面字节上传(写,multipart;wave 169)
+
+编辑面 covers/screenshots 只收**已存在的 image hash**(行集编辑与字节存在分离,见 editspec/work_media.go);本端点即字节那一半:产品站 BFF 把用户选的封面/截图 multipart 转发到这里,catalog 以**自己的图床身份(site_key `catalog`)**上传并返回 hash,随后编辑提案携带该 hash 提交行集。字节落 catalog scope → 每日 catalog refping 自动保活,galgame_wiki 图床 key 永不经手(03 §2)。
+
+- 请求:multipart `file`(必填)· `preset`(闭集 `galgame_banner`=封面 / `galgame_screenshot`)· `actor_uid`(可选,断言的终端用户 id,记入图床 `first_uploader_sub` 为 `kungal:{uid}`)。
+- 响应 `data`:图床 UploadResult 原样(`hash`/`url`/`variant_urls`/`width`/`height`/`thumbhash`/`size_bytes`/`deduplicated`)。
+- 错误:preset 不在闭集/缺文件 → 400;配额超限/审核拒绝 → 400(message 区分);图床身份未配置 → 503;图床异常 → 502。
+- **注意:本端点是纯 Fiber 路由,不在生成的 openapi.yaml 里**(multipart 不入 Huma 面);鉴权同前缀 Basic S2S。
+
 ## 3. Admin 三桶(Bearer JWT + **ren 超管角色**,前缀 `/api/v1/admin/catalog`)
 
 人审治理面,把「机器不敢自动终判」的三类东西交给人:
