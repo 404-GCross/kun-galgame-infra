@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"api/internal/jobs/charattrs"
 	"api/internal/platform/catalog/model"
@@ -20,6 +21,9 @@ const (
 	linkKindExact     = int16(0)
 	// langJa — the profile prose is Japanese; Getchu has no other language.
 	langJa = "ja"
+	// provenanceSource is the key recorded in catalog_character.field_provenance,
+	// matching the vocabulary wave 81 established there ("vndb", "bangumi", …).
+	provenanceSource = "getchu"
 )
 
 // Opts configures a run. Both DSNs are explicit and never defaulted: this job
@@ -42,6 +46,7 @@ type Stats struct {
 	AttrsWritten int // characters that gained at least one attribute
 	AttrFields   int // individual columns filled
 	AttrSkipped  int // every field this row could offer was already set
+	AttrAdopted  int // fields this lane had written before it recorded provenance
 	Conflict     int
 	Errors       int
 }
@@ -49,11 +54,11 @@ type Stats struct {
 func (s Stats) String() string {
 	return fmt.Sprintf(
 		"input=%d matched=%d (name=%d alias=%d reading=%d) no_work=%d no_name=%d ambiguous=%d collided=%d | "+
-			"intro_written=%d intro_exists=%d intro_no_text=%d | attr_rows=%d attr_fields=%d attr_skipped=%d | conflict=%d errors=%d",
+			"intro_written=%d intro_exists=%d intro_no_text=%d | attr_rows=%d attr_fields=%d attr_adopted=%d attr_skipped=%d | conflict=%d errors=%d",
 		s.Match.Input, s.Match.Matched, s.Match.ByName, s.Match.ByAlias, s.Match.ByReading,
 		s.Match.NoWork, s.Match.NoNameInWork, s.Match.Ambiguous, s.Match.Collided,
 		s.IntroWritten, s.IntroExists, s.IntroNoText,
-		s.AttrsWritten, s.AttrFields, s.AttrSkipped, s.Conflict, s.Errors)
+		s.AttrsWritten, s.AttrFields, s.AttrAdopted, s.AttrSkipped, s.Conflict, s.Errors)
 }
 
 // Run matches and (in apply mode) writes.
@@ -98,7 +103,7 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 
 	for _, c := range cands {
 		writeIntro(ctx, db, getchuSource, c, opts.Apply, st)
-		writeAttrs(ctx, db, c, opts.Apply, st)
+		writeAttrs(ctx, db, provenanceSource, c, opts.Apply, st)
 	}
 	slog.Info("getchu-chars done", "apply", opts.Apply, "result", st.String())
 	return st, nil
@@ -147,9 +152,19 @@ func writeIntro(ctx context.Context, db *gorm.DB, source int16, c Candidate, app
 // (charattrs.Parse*) rather than a private copy — one set of rules for the
 // sentinels, the ranges and the blood vocabulary.
 //
-// Fill-missing per FIELD, never per row: a character with a height but no blood
-// type gains only the blood type, and an existing value is never overwritten.
-func writeAttrs(ctx context.Context, db *gorm.DB, c Candidate, apply bool, st *Stats) {
+// Fill-missing per FIELD: the current row is read first and only genuinely NULL
+// columns are proposed. Two things depend on reading first rather than leaning
+// on `coalesce(col, ?)`:
+//
+//   - the counters mean something. coalesce updates the row whatever happens,
+//     so RowsAffected is 1 even when nothing changed, and a second pass claimed
+//     to have written the same 10,166 fields again. A fill-missing lane must be
+//     able to show a zero second pass.
+//   - field_provenance can be recorded for exactly the fields this source
+//     supplied. Wave 81 made that column the record of which upstream stands
+//     behind each attribute (187,377 characters carry it); writing values
+//     without it would leave getchu-sourced heights unattributable.
+func writeAttrs(ctx context.Context, db *gorm.DB, source string, c Candidate, apply bool, st *Stats) {
 	if len(c.Attrs) == 0 {
 		return
 	}
@@ -159,71 +174,175 @@ func writeAttrs(ctx context.Context, db *gorm.DB, c Candidate, apply bool, st *S
 		return
 	}
 
-	set := map[string]any{}
+	proposed := map[string]any{}
 	if v, _ := charattrs.ParseHeightCM(raw["身長"]); v != nil {
-		set["height_cm"] = *v
+		proposed["height_cm"] = *v
 	}
 	if v, _ := charattrs.ParseWeightKG(raw["体重"]); v != nil {
-		set["weight_kg"] = *v
+		proposed["weight_kg"] = *v
 	}
 	if v := charattrs.ParseBloodType(raw["血液型"]); v != nil {
-		set["blood_type"] = *v
+		proposed["blood_type"] = *v
 	}
 	if m, d := charattrs.ParseBirthdayMD(raw["誕生日"]); m != nil || d != nil {
 		if m != nil {
-			set["birthday_month"] = *m
+			proposed["birthday_month"] = *m
 		}
 		if d != nil {
-			set["birthday_day"] = *d
+			proposed["birthday_day"] = *d
 		}
 	}
 	if b, w, h, cup := charattrs.ParseBWH(raw["スリーサイズ"]); b != nil || w != nil || h != nil || cup != nil {
 		if b != nil {
-			set["bust_cm"] = *b
+			proposed["bust_cm"] = *b
 		}
 		if w != nil {
-			set["waist_cm"] = *w
+			proposed["waist_cm"] = *w
 		}
 		if h != nil {
-			set["hip_cm"] = *h
+			proposed["hip_cm"] = *h
 		}
 		if cup != nil {
-			set["cup"] = *cup
+			proposed["cup"] = *cup
 		}
 	}
-	if len(set) == 0 {
+	if len(proposed) == 0 {
 		return
 	}
 
-	// coalesce(col, ?) is the never-overwrite: an existing value keeps itself,
-	// a NULL takes the new one. Doing it in the UPDATE rather than by reading
-	// first also makes it safe against a concurrent writer — there is no window
-	// between the read and the write for one to slip through.
-	assigns := make([]string, 0, len(set))
-	args := make([]any, 0, len(set)+1)
-	for col, v := range set {
-		assigns = append(assigns, fmt.Sprintf("%s = coalesce(%s, ?)", col, col))
-		args = append(args, v)
-	}
-	if !apply {
-		st.AttrsWritten++
-		st.AttrFields += len(set)
+	cur, prov, err := currentAttrs(ctx, db, c.CharacterID)
+	if err != nil {
+		st.Errors++
 		return
 	}
-	args = append(args, c.CharacterID)
-	res := db.WithContext(ctx).Exec(
-		"UPDATE catalog_character SET "+strings.Join(assigns, ", ")+" WHERE id = ?", args...)
+	fill := map[string]any{}
+	// adopt: a column this source proposes that is ALREADY set to exactly this
+	// value and carries no provenance entry. That is the signature of a value
+	// this lane itself wrote before it recorded provenance — the first
+	// production run filled 10,166 fields that way. Claiming them back is
+	// self-healing and cannot mis-attribute: a field another source filled
+	// carries that source's entry, and a field with a different value is not
+	// ours to claim.
+	var adopt []string
+	for col, v := range proposed {
+		switch {
+		case cur[col] == nil:
+			fill[col] = v
+		case sameValue(cur[col], v):
+			if _, has := prov[col]; !has {
+				adopt = append(adopt, col)
+			}
+		}
+	}
+	if len(fill) == 0 && len(adopt) == 0 {
+		st.AttrSkipped++
+		return
+	}
+	// Counted once, on the single path both modes pass through: an adopt-only
+	// row went through two increments when the dry branch had its own.
+	st.AttrAdopted += len(adopt)
+	if !apply {
+		if len(fill) > 0 {
+			st.AttrsWritten++
+			st.AttrFields += len(fill)
+		}
+		return
+	}
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	for _, col := range adopt {
+		prov[col] = mustMarshal([]json.RawMessage{
+			json.RawMessage(fmt.Sprintf(`{"at":%q,"source":%q}`, now, source))})
+	}
+	for col := range fill {
+		entry := json.RawMessage(fmt.Sprintf(`{"at":%q,"source":%q}`, now, source))
+		var arr []json.RawMessage
+		if b, ok := prov[col]; ok {
+			_ = json.Unmarshal(b, &arr)
+		}
+		prov[col] = mustMarshal(append([]json.RawMessage{entry}, arr...))
+	}
+	fill["field_provenance"] = mustMarshal(prov)
+	fill["updated_at"] = time.Now()
+
+	res := db.WithContext(ctx).Table("catalog_character").Where("id = ?", c.CharacterID).Updates(fill)
 	if res.Error != nil {
 		st.Errors++
 		slog.Warn("write character attrs", "character", c.CharacterID, "err", res.Error)
 		return
 	}
-	if res.RowsAffected == 0 {
-		st.AttrSkipped++
-		return
+	if n := len(fill) - 2; n > 0 { // minus field_provenance and updated_at
+		st.AttrsWritten++
+		st.AttrFields += n
 	}
-	st.AttrsWritten++
-	st.AttrFields += len(set)
+}
+
+// sameValue compares a persisted column against a proposed one across the
+// int16/string shapes this lane writes.
+func sameValue(cur any, proposed any) bool {
+	switch c := cur.(type) {
+	case int16:
+		p, ok := proposed.(int16)
+		return ok && c == p
+	case string:
+		p, ok := proposed.(string)
+		return ok && c == p
+	default:
+		return false
+	}
+}
+
+// currentAttrs reads the columns this lane may fill plus the provenance doc.
+func currentAttrs(ctx context.Context, db *gorm.DB, id int64) (map[string]any, map[string]json.RawMessage, error) {
+	var row struct {
+		HeightCM      *int16          `gorm:"column:height_cm"`
+		WeightKG      *int16          `gorm:"column:weight_kg"`
+		BloodType     *int16          `gorm:"column:blood_type"`
+		BirthdayMonth *int16          `gorm:"column:birthday_month"`
+		BirthdayDay   *int16          `gorm:"column:birthday_day"`
+		BustCM        *int16          `gorm:"column:bust_cm"`
+		WaistCM       *int16          `gorm:"column:waist_cm"`
+		HipCM         *int16          `gorm:"column:hip_cm"`
+		Cup           *string         `gorm:"column:cup"`
+		Prov          json.RawMessage `gorm:"column:field_provenance"`
+	}
+	if err := db.WithContext(ctx).Raw(`
+		SELECT height_cm, weight_kg, blood_type, birthday_month, birthday_day,
+		       bust_cm, waist_cm, hip_cm, cup, field_provenance
+		FROM catalog_character WHERE id = ?`, id).Scan(&row).Error; err != nil {
+		return nil, nil, err
+	}
+	cur := map[string]any{
+		"height_cm": nilIf(row.HeightCM), "weight_kg": nilIf(row.WeightKG),
+		"blood_type":     nilIf(row.BloodType),
+		"birthday_month": nilIf(row.BirthdayMonth), "birthday_day": nilIf(row.BirthdayDay),
+		"bust_cm": nilIf(row.BustCM), "waist_cm": nilIf(row.WaistCM), "hip_cm": nilIf(row.HipCM),
+		"cup": nilIfStr(row.Cup),
+	}
+	prov := map[string]json.RawMessage{}
+	if len(row.Prov) > 0 {
+		_ = json.Unmarshal(row.Prov, &prov)
+	}
+	return cur, prov, nil
+}
+
+func nilIf(v *int16) any {
+	if v == nil {
+		return nil
+	}
+	return *v
+}
+
+func nilIfStr(v *string) any {
+	if v == nil || *v == "" {
+		return nil
+	}
+	return *v
+}
+
+func mustMarshal(v any) json.RawMessage {
+	b, _ := json.Marshal(v)
+	return b
 }
 
 func open(dsn string) (*gorm.DB, error) {
