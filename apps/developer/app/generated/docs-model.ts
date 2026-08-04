@@ -5839,6 +5839,11 @@ export const docsModel: DocsModel = {
                                   "type": "string"
                                 },
                                 {
+                                  "name": "has_nsfw",
+                                  "required": true,
+                                  "type": "boolean"
+                                },
+                                {
                                   "name": "id",
                                   "required": true,
                                   "format": "int64",
@@ -6012,6 +6017,11 @@ export const docsModel: DocsModel = {
                             "name": "display_name",
                             "required": true,
                             "type": "string"
+                          },
+                          {
+                            "name": "has_nsfw",
+                            "required": true,
+                            "type": "boolean"
                           },
                           {
                             "name": "id",
