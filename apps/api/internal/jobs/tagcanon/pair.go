@@ -8,8 +8,6 @@ import (
 	"strings"
 	"sync"
 
-	"api/internal/platform/galgame/vndbresolve"
-
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
@@ -343,9 +341,9 @@ func loadNameWorkIDs(ctx context.Context, db *gorm.DB, sourceID int16) (map[stri
 func loadVndbOrig(tagMapPath string) func(string) string {
 	path := tagMapPath
 	if path == "" {
-		path = vndbresolve.DefaultTagMapPath()
+		path = DefaultTagMapPath()
 	}
-	m, err := vndbresolve.ParseTagMap(path)
+	m, err := ParseTagMap(path)
 	if err != nil {
 		slog.Warn("tag-pair: tagMap unreadable — vndb originals fall back to zh names", "path", path, "err", err)
 		return func(s string) string { return s }

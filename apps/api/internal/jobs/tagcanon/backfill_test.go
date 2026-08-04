@@ -9,6 +9,7 @@ import (
 	"api/internal/platform/catalog/migrate"
 	"api/internal/platform/catalog/model"
 	"api/internal/platform/catalog/seed"
+	"api/internal/testsupport/dbtest"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -30,23 +31,32 @@ var (
 	testDSN string
 )
 
+// TestMain takes the assigned DSN and NOTHING else. It used to fall back to a
+// hard-coded localhost/kun_catalog_test, which is the exact failure dbtest was
+// written to prevent: a suite that silently adopts whichever database happens
+// to be listening, including one another track is mid-run against.
+//
+// It also no longer exits the package when there is no database — the tagMap
+// reader here is a pure function, and a package-level exit reported it as `ok`
+// while running none of it.
 func TestMain(m *testing.M) {
-	testDSN = os.Getenv("TEST_DATABASE_DSN")
-	if testDSN == "" {
-		testDSN = "host=localhost port=5432 user=postgres password=postgres dbname=kun_catalog_test sslmode=disable"
+	var ok bool
+	if testDSN, ok = dbtest.DSN(); !ok {
+		fmt.Fprintln(os.Stderr, "SKIP: no TEST_DATABASE_DSN — DB-backed tagcanon tests will skip individually")
+		os.Exit(m.Run())
 	}
 	db, err := gorm.Open(postgres.Open(testDSN), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "SKIP: cannot connect to test database: %v\n", err)
-		os.Exit(0)
+		fmt.Fprintf(os.Stderr, "FAIL: cannot connect to the assigned test database: %v\n", err)
+		os.Exit(1)
 	}
 	if err := migrate.Run(db); err != nil {
-		fmt.Fprintf(os.Stderr, "SKIP: catalog migrate failed: %v\n", err)
-		os.Exit(0)
+		fmt.Fprintf(os.Stderr, "FAIL: catalog migrate failed: %v\n", err)
+		os.Exit(1)
 	}
 	if err := seed.Run(db); err != nil {
-		fmt.Fprintf(os.Stderr, "SKIP: catalog seed failed: %v\n", err)
-		os.Exit(0)
+		fmt.Fprintf(os.Stderr, "FAIL: catalog seed failed: %v\n", err)
+		os.Exit(1)
 	}
 	testDB = db
 	os.Exit(m.Run())
@@ -54,6 +64,9 @@ func TestMain(m *testing.M) {
 
 func cleanTagcanon(t *testing.T) {
 	t.Helper()
+	if testDB == nil {
+		dbtest.Skip(t)
+	}
 	for _, table := range []string{
 		"catalog_tag_source_map", "catalog_tag", "catalog_work_tag",
 	} {
