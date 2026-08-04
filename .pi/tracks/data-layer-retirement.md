@@ -42,5 +42,9 @@ P5 摘 `/internal/*` + `/api/*` staff 面时,149 STOP-1 要求的「先盘下游
   /image/galgame→死面,编辑能改字段不能传图)——infra 新造 catalog 编辑面字节上传腿
   `POST /api/v1/catalog/edit/images`(27b451c1,字节落 site=catalog 随 refping 保活)+forum
   换轨(157d7abb/51715b11,净删 ~3,900 行:13 写代理/词表控制台/浏览页建改删 modal/wiki 通知链/
-  census 测试随双 base 字段消亡=编译期保证)。**部署顺序 infra 先于 forum;prod 前置=catalog
-  image client 行允许 galgame_banner+galgame_screenshot 两 preset。**
+  census 测试随双 base 字段消亡=编译期保证)。部署顺序 infra 先于 forum。
+- **🩹 169-E 部署后热修 f3a473aa(08-04 当日)**:冒烟发现 169-D 上传腿错挂 `cfg.ImageClient`
+  =prod 的 galgame-wiki-admin 身份(字节落 wiki scope、catalog refping 够不着=66k GC 险情同类)。
+  修=改用 `cfg.CatalogImageClient`(compose 透传既有栈级 env,无新 secret)+handler 内
+  preset 映射 galgame_*→catalog_{cover,screenshot}(变体同构);**原「prod SQL 加 preset」
+  前置整条取消**。底稿=refs/proj/169 §6;待再 push 部署。
