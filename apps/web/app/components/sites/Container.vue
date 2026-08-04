@@ -60,8 +60,8 @@ const handleDelete = async (id: number) => {
       <p class="text-default-400">暂无站点配置</p>
     </KunCard>
 
-    <div v-else class="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-      <SitesCard
+    <div v-else class="space-y-2">
+      <SitesRow
         v-for="site in sites"
         :key="site.id"
         :site="site"
