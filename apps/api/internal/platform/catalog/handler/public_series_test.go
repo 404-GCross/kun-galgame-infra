@@ -23,6 +23,11 @@ func seriesApp(db *gorm.DB) *fiber.App {
 	publicSvc := service.NewPublicService(db, service.NewReadService(db), resolveSvc, "")
 	h := NewPublicHandler(publicSvc, resolveSvc, nil, nil)
 	app := fiber.New()
+	// Both routes, in the order cmd/catalog/main.go registers them: the browse
+	// lane before its own /:id. TestSeriesListLane calls GET /v1/catalog/series
+	// and this helper only carried the detail route, so the lane 404'd against
+	// a router that production does not have — the endpoint itself was fine.
+	app.Get("/v1/catalog/series", h.SeriesList)
 	app.Get("/v1/catalog/series/:id", h.Series)
 	return app
 }
