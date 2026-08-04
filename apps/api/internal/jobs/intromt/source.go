@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"api/internal/jobs/workpop"
 	"api/internal/platform/catalog/model"
 
 	"gorm.io/gorm"
@@ -207,7 +208,14 @@ func loadCandidates(ctx context.Context, db *gorm.DB, reg registry, pop Populati
 	return out, nil
 }
 
-// sitePredicateFor renders a population as a catalog_work predicate.
+// sitePredicateFor renders a population as a catalog_work predicate, over
+// unqualified columns (this job's candidate query has no table alias).
+//
+// The definitions live in workpop so the four lanes that need them cannot
+// drift from each other or from model.ClaimStateKey. This job's own vocabulary
+// stays narrower on purpose: unlike the enrichment lanes it has no "all", and
+// an empty population is an error rather than "everything" — a translation run
+// is expensive, and defaulting it to the whole table is not a safe default.
 //
 // "claimed" is a PROPERTY — has a site — and never the literal site value.
 // Wave 161 renamed the only value that has ever existed (galgame_wiki →
@@ -215,13 +223,8 @@ func loadCandidates(ctx context.Context, db *gorm.DB, reg registry, pop Populati
 // three days while reporting a clean zero-candidate run.
 func sitePredicateFor(pop Population) (string, error) {
 	switch pop {
-	case PopulationBodyless:
-		return "(site IS NULL OR site = '')", nil
-	case PopulationClaimed:
-		return "(site IS NOT NULL AND site <> '')", nil
-	case PopulationPublished:
-		return `(site IS NOT NULL AND site <> '' AND product_work_id IS NOT NULL
-			AND (claim_state IS NULL OR claim_state = 0))`, nil
+	case PopulationBodyless, PopulationClaimed, PopulationPublished:
+		return workpop.Predicate(workpop.Population(pop), "")
 	default:
 		return "", fmt.Errorf("unknown population %q (want %q, %q or %q)",
 			pop, PopulationBodyless, PopulationClaimed, PopulationPublished)

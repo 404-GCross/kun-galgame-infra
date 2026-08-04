@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"api/internal/jobs/workpop"
 	"api/internal/platform/catalog/model"
 
 	"gorm.io/gorm"
@@ -64,20 +65,10 @@ const (
 // product_work_id reads as unclaimed on the wire and must filter as unclaimed
 // here. Those two must not drift — a lane that selected a different set than
 // the read face renders is the bug ClaimStateKey exists to prevent.
+// The definitions themselves live in workpop, so the lanes that share them
+// cannot drift from each other or from model.ClaimStateKey.
 func sitePredicate(pop string) (string, error) {
-	switch pop {
-	case PopulationAll, "":
-		return "TRUE", nil
-	case PopulationBodyless:
-		return "(w.site IS NULL OR w.site = '')", nil
-	case PopulationClaimed:
-		return "(w.site IS NOT NULL AND w.site <> '')", nil
-	case PopulationPublished:
-		return `(w.site IS NOT NULL AND w.site <> '' AND w.product_work_id IS NOT NULL
-			AND (w.claim_state IS NULL OR w.claim_state = 0))`, nil
-	default:
-		return "", fmt.Errorf("unknown population %q (want all|bodyless|claimed|published)", pop)
-	}
+	return workpop.Predicate(workpop.Population(pop), "w")
 }
 
 // candidate is one galgame work joined to its EXACT Bangumi anchor's subject.
