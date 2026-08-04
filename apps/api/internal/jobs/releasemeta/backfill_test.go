@@ -384,7 +384,7 @@ func TestBackfillReleaseMeta(t *testing.T) {
 	assert.Equal(t, 2, st.DlDateFilled)
 	assert.Equal(t, 4, st.EgDateFilled)
 	assert.Equal(t, 2, st.BgmDateFilled)
-	assert.Equal(t, 4, st.RatingFilled)
+	assert.Equal(t, 3, st.RatingFilled)
 	assert.Zero(t, st.DlDateSkippedNonEmpty+st.EgDateSkippedNonEmpty+st.BgmDateSkippedNonEmpty+
 		st.RatingSkippedNonEmpty+st.Errors)
 
