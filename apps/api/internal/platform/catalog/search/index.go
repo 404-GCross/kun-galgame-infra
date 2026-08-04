@@ -65,7 +65,7 @@ var entityRankingRules = []string{
 
 func creditNamesSettings() *meilisearch.Settings {
 	return &meilisearch.Settings{
-		SearchableAttributes: []string{"name_zh", "name_ja", "name_other", "aliases_zh", "aliases_ja", "aliases_other", "latin"},
+		SearchableAttributes: entityNameSearchable(),
 		FilterableAttributes: []string{"entity_type", "source_keys", "person_id"},
 		SortableAttributes:   []string{"popularity"},
 		RankingRules:         entityRankingRules,
@@ -77,9 +77,27 @@ func creditNamesSettings() *meilisearch.Settings {
 	}
 }
 
+// entityNameSearchable is the name family every entity index searches: each
+// language bucket's display name first, then its aliases, then the romanization.
+//
+// Order is semantics — Meilisearch's `attribute` ranking rule ranks earlier
+// attributes higher — so a display-name match always outranks an alias match,
+// and a romanization match comes last.
+//
+// The alias fields belong here on EVERY entity index, not just credit_names.
+// Leaving them out of labels and characters is what made `Yuzusoft` return
+// nothing while the label listed it as an alias: 14,845 label aliases and
+// 168,655 character aliases were indexed as document fields nobody could search.
+func entityNameSearchable() []string {
+	return []string{
+		"name_zh", "name_ja", "name_other",
+		"aliases_zh", "aliases_ja", "aliases_other", "latin",
+	}
+}
+
 func charactersSettings() *meilisearch.Settings {
 	return &meilisearch.Settings{
-		SearchableAttributes: []string{"name_zh", "name_ja", "name_other", "latin"},
+		SearchableAttributes: entityNameSearchable(),
 		FilterableAttributes: []string{"entity_type", "source_keys"},
 		SortableAttributes:   []string{"popularity"},
 		RankingRules:         entityRankingRules,
@@ -90,7 +108,7 @@ func charactersSettings() *meilisearch.Settings {
 
 func labelsSettings() *meilisearch.Settings {
 	return &meilisearch.Settings{
-		SearchableAttributes: []string{"name_zh", "name_ja", "name_other", "latin"},
+		SearchableAttributes: entityNameSearchable(),
 		FilterableAttributes: []string{"entity_type", "source_keys", "kind"},
 		SortableAttributes:   []string{"popularity"},
 		RankingRules:         entityRankingRules,

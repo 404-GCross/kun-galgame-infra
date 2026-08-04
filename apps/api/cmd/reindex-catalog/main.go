@@ -78,7 +78,8 @@ func main() {
 		case catalogSearch.IndexCreditNames:
 			err = reindexCreditNames(ctx, db.DB(), idx, *batch)
 		case catalogSearch.IndexCharacters:
-			err = reindexEntity(ctx, db.DB(), idx, *batch, catalogSearch.IndexCharacters, "catalog_character", "c", model.EntityTypeCharacter, "character_id", "character")
+			err = reindexEntity(ctx, db.DB(), idx, *batch, catalogSearch.IndexCharacters, "catalog_character", "c",
+				model.EntityTypeCharacter, "character_id", "character", "catalog_character_alias", "character_id")
 		case catalogSearch.IndexLabels:
 			err = reindexLabels(ctx, db.DB(), idx, *batch)
 		case catalogSearch.IndexWorks:
@@ -210,6 +211,13 @@ func reindexLabels(ctx context.Context, db *gorm.DB, idx *catalogSearch.Indexer,
 	if err != nil {
 		return err
 	}
+	aliases, err := loadAliasTable(db, "catalog_label_alias", "label_id")
+	if err != nil {
+		return err
+	}
+	if err := purgeSoftDeleted(ctx, db, idx, catalogSearch.IndexLabels, "catalog_label", "b"); err != nil {
+		return err
+	}
 	processed, lastID := 0, int64(0)
 	for {
 		var rows []struct {
@@ -219,7 +227,8 @@ func reindexLabels(ctx context.Context, db *gorm.DB, idx *catalogSearch.Indexer,
 			Latin string `gorm:"column:latin"`
 			Kind  int16  `gorm:"column:kind"`
 		}
-		if err := db.Raw(`SELECT id, display_name, lang, coalesce(latin,'') AS latin, kind FROM catalog_label WHERE id > ? ORDER BY id LIMIT ?`, lastID, batch).Scan(&rows).Error; err != nil {
+		if err := db.Raw(`SELECT id, display_name, lang, coalesce(latin,'') AS latin, kind FROM catalog_label
+			WHERE id > ? AND deleted_at IS NULL ORDER BY id LIMIT ?`, lastID, batch).Scan(&rows).Error; err != nil {
 			return err
 		}
 		if len(rows) == 0 {
@@ -234,6 +243,9 @@ func reindexLabels(ctx context.Context, db *gorm.DB, idx *catalogSearch.Indexer,
 				Popularity: catalogSearch.Popularity(pop[r.ID]),
 			}
 			d.SetName(r.Lang, r.Name)
+			for _, a := range aliases[r.ID] {
+				d.AddAlias(a.lang, a.name)
+			}
 			docs[i] = d
 		}
 		if err := idx.UpsertBatch(ctx, catalogSearch.IndexLabels, docs); err != nil {
@@ -247,13 +259,24 @@ func reindexLabels(ctx context.Context, db *gorm.DB, idx *catalogSearch.Indexer,
 }
 
 // reindexEntity handles the simple display_name entities (characters).
-func reindexEntity(ctx context.Context, db *gorm.DB, idx *catalogSearch.Indexer, batch int, uid, table, prefix string, entityType int16, popCol, etype string) error {
+//
+// aliasTable/aliasCol name the entity's alias table; the soft-delete purge and
+// the `deleted_at IS NULL` gate below assume the table carries deleted_at,
+// which every caller's does (tags, which do not, have their own reindexer).
+func reindexEntity(ctx context.Context, db *gorm.DB, idx *catalogSearch.Indexer, batch int, uid, table, prefix string, entityType int16, popCol, etype, aliasTable, aliasCol string) error {
 	pop, err := loadPopularity(db, popCol)
 	if err != nil {
 		return err
 	}
 	srcs, keys, err := loadSources(db, entityType)
 	if err != nil {
+		return err
+	}
+	aliases, err := loadAliasTable(db, aliasTable, aliasCol)
+	if err != nil {
+		return err
+	}
+	if err := purgeSoftDeleted(ctx, db, idx, uid, table, prefix); err != nil {
 		return err
 	}
 	processed, lastID := 0, int64(0)
@@ -264,7 +287,8 @@ func reindexEntity(ctx context.Context, db *gorm.DB, idx *catalogSearch.Indexer,
 			Lang  string `gorm:"column:lang"`
 			Latin string `gorm:"column:latin"`
 		}
-		if err := db.Raw(fmt.Sprintf(`SELECT id, display_name, lang, coalesce(latin,'') AS latin FROM %s WHERE id > ? ORDER BY id LIMIT ?`, table), lastID, batch).Scan(&rows).Error; err != nil {
+		if err := db.Raw(fmt.Sprintf(`SELECT id, display_name, lang, coalesce(latin,'') AS latin FROM %s
+			WHERE id > ? AND deleted_at IS NULL ORDER BY id LIMIT ?`, table), lastID, batch).Scan(&rows).Error; err != nil {
 			return err
 		}
 		if len(rows) == 0 {
@@ -277,6 +301,9 @@ func reindexEntity(ctx context.Context, db *gorm.DB, idx *catalogSearch.Indexer,
 				Sources: srcs[r.ID], SourceKeys: keys[r.ID], Popularity: catalogSearch.Popularity(pop[r.ID]),
 			}
 			d.SetName(r.Lang, r.Name)
+			for _, a := range aliases[r.ID] {
+				d.AddAlias(a.lang, a.name)
+			}
 			docs[i] = d
 		}
 		if err := idx.UpsertBatch(ctx, uid, docs); err != nil {
@@ -292,19 +319,62 @@ func reindexEntity(ctx context.Context, db *gorm.DB, idx *catalogSearch.Indexer,
 type alias struct{ lang, name string }
 
 func loadAliases(db *gorm.DB) (map[int64][]alias, error) {
+	return loadAliasTable(db, "catalog_name_alias", "credit_name_id")
+}
+
+// loadAliasTable reads one entity's alias table into owner id → aliases.
+//
+// Labels and characters have carried these tables all along — 14,845 aliases on
+// 10,240 labels, 168,655 on 137,569 characters — and neither index read them,
+// so an entity was findable only under its display_name. That is what made
+// `Yuzusoft` return nothing while the label plainly lists it as an alias: the
+// document simply had no such field. credit_names had the wiring from day one;
+// this generalises it rather than inventing anything.
+func loadAliasTable(db *gorm.DB, table, ownerCol string) (map[int64][]alias, error) {
 	var rows []struct {
-		CreditNameID int64  `gorm:"column:credit_name_id"`
-		Name         string `gorm:"column:name"`
-		Lang         string `gorm:"column:lang"`
+		OwnerID int64  `gorm:"column:owner_id"`
+		Name    string `gorm:"column:name"`
+		Lang    string `gorm:"column:lang"`
 	}
-	if err := db.Raw(`SELECT credit_name_id, name, lang FROM catalog_name_alias`).Scan(&rows).Error; err != nil {
+	q := fmt.Sprintf(`SELECT %s AS owner_id, name, lang FROM %s`, ownerCol, table)
+	if err := db.Raw(q).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	m := map[int64][]alias{}
 	for _, r := range rows {
-		m[r.CreditNameID] = append(m[r.CreditNameID], alias{lang: r.Lang, name: r.Name})
+		m[r.OwnerID] = append(m[r.OwnerID], alias{lang: r.Lang, name: r.Name})
 	}
 	return m, nil
+}
+
+// purgeSoftDeleted removes the documents of rows that have been soft-deleted
+// since they were last indexed.
+//
+// Skipping them in the build loop is NOT enough, and this is the whole reason
+// the merged 「ゆずソフト」 labels stayed searchable: the reindexer UPSERTS, it
+// never clears the index first, so a document written before its row was
+// deleted survives every subsequent run. Merging does not touch Meilisearch
+// either — the merge writes the redirect in Postgres and stops — so nothing in
+// the system ever removed these. Detail pages 301 correctly; search and every
+// picker built on it kept offering the dead id.
+func purgeSoftDeleted(ctx context.Context, db *gorm.DB, idx *catalogSearch.Indexer, uid, table, prefix string) error {
+	var ids []int64
+	if err := db.Raw(fmt.Sprintf(
+		`SELECT id FROM %s WHERE deleted_at IS NOT NULL ORDER BY id`, table)).Scan(&ids).Error; err != nil {
+		return err
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	docIDs := make([]string, len(ids))
+	for i, id := range ids {
+		docIDs[i] = prefix + fmt.Sprint(id)
+	}
+	if err := idx.DeleteBatch(ctx, uid, docIDs); err != nil {
+		return err
+	}
+	slog.Info("purged soft-deleted documents", "index", uid, "docs", len(docIDs))
+	return nil
 }
 
 // --- works lane (wave 105: public catalog title search) ---------------------

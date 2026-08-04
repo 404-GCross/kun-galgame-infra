@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"testing"
+	"time"
 
 	"api/internal/infrastructure/search"
 	"api/pkg/config"
@@ -76,6 +77,28 @@ func TestEnsureIndexesMatchesMatrix(t *testing.T) {
 		assert.Contains(t, s.TypoTolerance.DisableOnAttributes, "name_zh", uid)
 		assert.NotContains(t, s.TypoTolerance.DisableOnAttributes, "latin", uid)
 
+		// Every index whose entity HAS aliases searches the alias fields, not
+		// just the display names. The matrix never asserted the searchable list,
+		// which is how the labels and characters indexes shipped matching only
+		// name_*: `Yuzusoft` returned nothing though the label listed it as an
+		// alias, and 14,845 label + 168,655 character aliases sat in the
+		// documents as fields nobody could search.
+		//
+		// Tags are excluded because they genuinely have no alias table — the
+		// canonical-tag map is how a tag gets its synonyms (TestTagsIndexSearchable
+		// pins that list separately).
+		if uid != IndexTags {
+			for _, f := range []string{"aliases_ja", "aliases_zh", "aliases_other"} {
+				assert.Contains(t, s.SearchableAttributes, f, uid)
+			}
+			// Display names rank above aliases, which rank above the
+			// romanization (Meilisearch ranks earlier attributes higher).
+			assert.Less(t, indexOf(s.SearchableAttributes, "name_ja"),
+				indexOf(s.SearchableAttributes, "aliases_ja"), uid)
+			assert.Less(t, indexOf(s.SearchableAttributes, "aliases_other"),
+				indexOf(s.SearchableAttributes, "latin"), uid)
+		}
+
 		// popularity is sortable, and is the LAST ranking rule (after
 		// exactness), so it never outranks an exact match (invariant 7).
 		assert.Contains(t, s.SortableAttributes, "popularity", uid)
@@ -137,4 +160,75 @@ func TestWorksNSFWFilter(t *testing.T) {
 	if assert.Len(t, res.Hits, 1) {
 		assert.Equal(t, "w2", res.Hits[0].ID)
 	}
+}
+
+// TestLabelAliasIsSearchable is the forum-reported symptom, pinned: the label
+// ゆずソフト carries "Yuzusoft" as an alias, and a search for that alias found
+// nothing because the labels index searched only display names.
+func TestLabelAliasIsSearchable(t *testing.T) {
+	require.NoError(t, EnsureIndexes(testClient))
+	t.Cleanup(func() {
+		_, _ = testClient.Svc().DeleteIndex(testClient.IndexUID(IndexLabels))
+	})
+
+	kind := int16(4)
+	doc := EntityDoc{ID: "b5147", EntityType: "label", Kind: &kind}
+	doc.SetName("ja", "ゆずソフト")
+	for _, a := range []string{"Yuzu-Soft", "Yuzusoft", "ユズソフト"} {
+		doc.AddAlias("en", a)
+	}
+	doc.AddAlias("zh", "柚子社")
+
+	task, err := testClient.Index(IndexLabels).AddDocuments([]EntityDoc{doc}, nil)
+	require.NoError(t, err)
+	_, err = testClient.Svc().WaitForTask(task.TaskUID, 0)
+	require.NoError(t, err)
+
+	idx := NewIndexer(testClient)
+	for _, q := range []string{"Yuzusoft", "yuzusoft", "柚子社", "ゆずソフト"} {
+		res, err := idx.SearchEntities(t.Context(), IndexLabels, q, nil, 20, "")
+		require.NoError(t, err, q)
+		if assert.Len(t, res.Hits, 1, "query %q found nothing", q) {
+			assert.Equal(t, "b5147", res.Hits[0].ID, q)
+		}
+	}
+}
+
+// TestDeleteBatchRemovesTombstones pins the purge half. Skipping soft-deleted
+// rows in the build loop is not enough on its own: the reindexer upserts and
+// never clears the index, so a document written before its row was merged away
+// outlives every later run. Three identical 「ゆずソフト」 labels in one result
+// list — two of them dead ids — is what that looked like in production.
+func TestDeleteBatchRemovesTombstones(t *testing.T) {
+	require.NoError(t, EnsureIndexes(testClient))
+	t.Cleanup(func() {
+		_, _ = testClient.Svc().DeleteIndex(testClient.IndexUID(IndexLabels))
+	})
+
+	live := EntityDoc{ID: "b5147", EntityType: "label"}
+	live.SetName("ja", "ゆずソフト")
+	dead := EntityDoc{ID: "b96", EntityType: "label"}
+	dead.SetName("ja", "ゆずソフト")
+
+	task, err := testClient.Index(IndexLabels).AddDocuments([]EntityDoc{live, dead}, nil)
+	require.NoError(t, err)
+	_, err = testClient.Svc().WaitForTask(task.TaskUID, 0)
+	require.NoError(t, err)
+
+	idx := NewIndexer(testClient)
+	ctx := t.Context()
+	res, err := idx.SearchEntities(ctx, IndexLabels, "ゆずソフト", []string{"jpn"}, 20, "")
+	require.NoError(t, err)
+	require.Len(t, res.Hits, 2, "both are indexed before the purge")
+
+	require.NoError(t, idx.DeleteBatch(ctx, IndexLabels, []string{"b96"}))
+	require.Eventually(t, func() bool {
+		res, err := idx.SearchEntities(ctx, IndexLabels, "ゆずソフト", []string{"jpn"}, 20, "")
+		return err == nil && len(res.Hits) == 1 && res.Hits[0].ID == "b5147"
+	}, 10*time.Second, 100*time.Millisecond, "the merged label is gone, the survivor stays")
+
+	// Re-running a purge for an id the index no longer holds is a no-op, so the
+	// nightly can issue the same delete list every night.
+	require.NoError(t, idx.DeleteBatch(ctx, IndexLabels, []string{"b96"}))
+	require.NoError(t, idx.DeleteBatch(ctx, IndexLabels, nil))
 }

@@ -269,6 +269,16 @@ func (i *Indexer) UpsertBatch(ctx context.Context, uid string, docs []EntityDoc)
 	return err
 }
 
+// DeleteBatch removes documents by id in a single API call. Meilisearch
+// silently ignores ids it does not hold, so a purge is safe to re-run.
+func (i *Indexer) DeleteBatch(ctx context.Context, uid string, ids []string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	_, err := i.client.Index(uid).DeleteDocumentsWithContext(ctx, ids, nil)
+	return err
+}
+
 // Count returns the current document count of an index.
 func (i *Indexer) Count(uid string) (int64, error) {
 	stats, err := i.client.Index(uid).GetStats()
