@@ -63,7 +63,12 @@ func TestMain(m *testing.M) {
 
 // --- fixtures -------------------------------------------------------------
 
-const getchuSource = int16(17)
+const (
+	getchuSource = int16(17)
+	// The rule wave 167 stamps on every Getchu anchor. matched_by is NOT NULL,
+	// so a fixture that omits it cannot insert at all.
+	getchuRule = "rule:vndb-extlink-getchu"
+)
 
 func clean(t *testing.T) {
 	t.Helper()
@@ -109,9 +114,9 @@ func mkAnchoredRelease(t *testing.T, workID int64, getchuID string) {
 	rel := model.CatalogRelease{WorkID: workID, Kind: 0}
 	require.NoError(t, testDB.Create(&rel).Error)
 	require.NoError(t, testDB.Exec(`
-		INSERT INTO catalog_external_ref (entity_type, entity_id, source_id, external_id, link_kind)
-		VALUES (?,?,?,?,?)`,
-		model.EntityTypeRelease, rel.ID, getchuSource, getchuID, model.LinkKindExact).Error)
+		INSERT INTO catalog_external_ref (entity_type, entity_id, source_id, external_id, link_kind, matched_by)
+		VALUES (?,?,?,?,?,?)`,
+		model.EntityTypeRelease, rel.ID, getchuSource, getchuID, model.LinkKindExact, getchuRule).Error)
 }
 
 func mkStagingItem(t *testing.T, getchuID, story string) {
@@ -256,9 +261,9 @@ func TestProbableAnchorIsNotRead(t *testing.T) {
 	rel := model.CatalogRelease{WorkID: work, Kind: 0}
 	require.NoError(t, testDB.Create(&rel).Error)
 	require.NoError(t, testDB.Exec(`
-		INSERT INTO catalog_external_ref (entity_type, entity_id, source_id, external_id, link_kind)
-		VALUES (?,?,?,?,?)`,
-		model.EntityTypeRelease, rel.ID, getchuSource, "4001", model.LinkKindProbable).Error)
+		INSERT INTO catalog_external_ref (entity_type, entity_id, source_id, external_id, link_kind, matched_by)
+		VALUES (?,?,?,?,?,?)`,
+		model.EntityTypeRelease, rel.ID, getchuSource, "4001", model.LinkKindProbable, getchuRule).Error)
 	mkStagingItem(t, "4001", "本文")
 
 	st := run(t, true, workpop.Published)
