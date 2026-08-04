@@ -469,9 +469,14 @@ type PublicTag struct {
 	// COVERAGE, stated plainly because a consumer must not read the default as
 	// an assertion: the axis exists upstream only for the VNDB-derived tag
 	// vocabulary (which is where every spoiler-worthy tag lives). Bangumi and
-	// DLsite folksonomy rows carry no spoiler and no category concept at all,
-	// so they render 0 / false — that is the ABSENCE of the axis on that
-	// source, not a guarantee of safety.
+	// DLsite folksonomy rows carry no spoiler and no category concept at all.
+	//
+	// sexual therefore comes from the CANONICAL tag whenever this row maps into
+	// that vocabulary (canonical_id present): a mapped bangumi/dlsite row
+	// reports the canonical answer, not its source's silence. An UNMAPPED row
+	// falls back to its raw source flag and renders false — that is the ABSENCE
+	// of the axis, not a guarantee of safety. spoiler has no canonical
+	// counterpart and stays per-edge, so 0 on folksonomy means absent likewise.
 	//
 	// Rows with spoiler > 0 appear ONLY when the caller opts in with
 	// `spoilers=1|2` on the work detail; the default response contains none, so
@@ -867,11 +872,12 @@ type PublicTagListItem struct {
 	// derived from the VNDB-descended wiki vocabulary through the identity
 	// anchor A2-0 minted for each mapped tag. Always present.
 	//
-	// COVERAGE — read this before gating on it, it is the same caveat the
-	// work-detail tags[] axis carries (R8): only tags that MAP onto that
-	// vocabulary have the axis at all. A canonical tag reached purely from
-	// Bangumi / DLsite folksonomy has no category upstream and renders false —
-	// that is the ABSENCE of the axis, NOT an assertion that the tag is safe.
+	// COVERAGE — read this before gating on it: only a canonical tag whose
+	// vocabulary carries the category has the axis at all. One minted purely
+	// from Bangumi / DLsite folksonomy has no category upstream and renders
+	// false — the ABSENCE of the axis, NOT an assertion that the tag is safe.
+	// This flag is the same one the work-detail tags[] axis inherits: a mapped
+	// source row reports its canonical tag's value (see PublicTag.Sexual).
 	Sexual bool `json:"sexual"`
 }
 

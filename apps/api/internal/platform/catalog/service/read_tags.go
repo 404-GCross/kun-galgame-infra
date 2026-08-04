@@ -23,12 +23,16 @@ import (
 // Sexual flags the TAG as sexual-category; both live on the row now. The
 // caller supplies a spoiler CEILING, applied in the query: 0 (every face's
 // default) means no spoiler-flagged tag at all, and only an explicit
-// spoilers=1|2 ever sees more. Coverage is asymmetric and that asymmetry is
-// real, not an implementation gap: the axis exists only in the VNDB-derived
-// vocabulary; Bangumi/DLsite folksonomy publishes neither concept, so those
-// rows carry the explicit 0/false the importers write — the absence of the
-// axis, which the public DTO documents so a consumer cannot mistake it for an
-// assertion of safety.
+// spoilers=1|2 ever sees more.
+//
+// Sexual is the raw row flag OR the CANONICAL tag's flag whenever the tag maps
+// into the cross-source vocabulary (see enrichCanonicalTags). The raw flag
+// alone is not the axis: the concept exists only in the VNDB-derived
+// vocabulary, and Bangumi/DLsite folksonomy rows carry the explicit false their
+// importers write, so a mapped bangumi row used to ship a sexual canonical tag
+// as safe. Spoiler stays per-edge and raw — it has no canonical counterpart.
+// An UNMAPPED row is still axis-absent, which the public DTO documents so a
+// consumer cannot mistake its false for an assertion of safety.
 //
 // Tags are VERBATIM folksonomy (58 拍板): no vocabulary mapping, no
 // normalization — and content tags NEVER touch catalog_label (the attribution
@@ -49,9 +53,10 @@ type WorkTagRow struct {
 	Count    int
 	SourceID int16
 	// Safety axis (A2-1e / R8). Spoiler is the per-EDGE level (0 none, 1 minor,
-	// 2 major) and Sexual flags the TAG as sexual-category. Stored on the row;
-	// folksonomy rows (bangumi/dlsite) carry the explicit 0/false their sources'
-	// missing axis honestly is.
+	// 2 major), read raw off the row. Sexual flags the TAG as sexual-category:
+	// the raw row flag OR the canonical tag's flag once the canonical overlay is
+	// stamped, so a mapped folksonomy row inherits the vocabulary's answer
+	// instead of its source's missing axis. Unmapped rows keep the raw flag.
 	Spoiler int16
 	Sexual  bool
 	// Canonical overlay — nil when the tag is not (yet) in the canonical
@@ -95,7 +100,8 @@ func (s *ReadService) loadWorkTags(ctx context.Context, subjects []claimSubject,
 // enrichCanonicalTags batch-resolves the canonical overlay for every tag in out.
 // It collects the distinct (source_id, name) pairs, looks them up in ONE query
 // against catalog_tag_source_map ⋈ catalog_tag, and stamps CanonicalID/Tier/Kind
-// on the matching rows. A tag with no map row is left untouched (nil overlay).
+// on the matching rows — plus the canonical sexual flag, OR-ed into the row's
+// own. A tag with no map row is left untouched (nil overlay, raw flag).
 func (s *ReadService) enrichCanonicalTags(ctx context.Context, out map[int64][]WorkTagRow) error {
 	// Distinct (source_id, name) pairs across all works — the lookup keys.
 	type key struct {
@@ -128,8 +134,9 @@ func (s *ReadService) enrichCanonicalTags(ctx context.Context, out map[int64][]W
 		TagID    int64  `gorm:"column:id"`
 		Tier     int16  `gorm:"column:tier"`
 		Kind     int16  `gorm:"column:kind"`
+		Sexual   bool   `gorm:"column:sexual"`
 	}
-	sql := `SELECT m.source_id, m.source_name, t.id, t.tier, t.kind
+	sql := `SELECT m.source_id, m.source_name, t.id, t.tier, t.kind, t.sexual
 		FROM catalog_tag_source_map m
 		JOIN catalog_tag t ON t.id = m.tag_id
 		WHERE (m.source_id, m.source_name) IN (` + placeholders.String() + `)`
@@ -139,15 +146,14 @@ func (s *ReadService) enrichCanonicalTags(ctx context.Context, out map[int64][]W
 	if len(mapped) == 0 {
 		return nil
 	}
-	byKey := make(map[key]struct {
+	type canonical struct {
 		id         int64
 		tier, kind int16
-	}, len(mapped))
+		sexual     bool
+	}
+	byKey := make(map[key]canonical, len(mapped))
 	for _, m := range mapped {
-		byKey[key{src: m.SourceID, name: m.Name}] = struct {
-			id         int64
-			tier, kind int16
-		}{id: m.TagID, tier: m.Tier, kind: m.Kind}
+		byKey[key{src: m.SourceID, name: m.Name}] = canonical{id: m.TagID, tier: m.Tier, kind: m.Kind, sexual: m.Sexual}
 	}
 	for workID, rows := range out {
 		for i := range rows {
@@ -156,6 +162,11 @@ func (s *ReadService) enrichCanonicalTags(ctx context.Context, out map[int64][]W
 				rows[i].CanonicalID = &id
 				rows[i].Tier = &tier
 				rows[i].Kind = &kind
+				// The canonical vocabulary owns the sexual axis for a mapped tag:
+				// a bangumi/dlsite row carries false because its source has no
+				// such concept, not because the tag is safe. OR, never replace —
+				// a raw true is an assertion and stays one.
+				rows[i].Sexual = rows[i].Sexual || c.sexual
 			}
 		}
 		out[workID] = rows
