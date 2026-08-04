@@ -242,12 +242,15 @@ func TestTaxonomyListsKeysetAndCounts(t *testing.T) {
 	if len(p2.Items) != 1 || p2.Items[0].ID != renpy {
 		t.Fatalf("engines p2 = %+v, want [%d]", p2.Items, renpy)
 	}
-	p3, err := svc.EnginesList(ctx, EnginesListFilter{}, *p2.NextCursor, 1)
-	if err != nil {
-		t.Fatalf("engines p3: %v", err)
-	}
-	if len(p3.Items) != 0 || p3.NextCursor != nil {
-		t.Fatalf("engines p3 should be the empty terminal page: %+v cursor=%v", p3.Items, p3.NextCursor)
+	// p2 is the last page, so the walk ENDS here — there is no empty terminal
+	// page to fetch. This used to assert the opposite, and the two halves of the
+	// codebase disagreed: the series lane's test (the fourth member of this
+	// family) pinned "a full last page ends the walk" and failed for it, because
+	// the shared helper minted a cursor whenever a page came back exactly full
+	// and could not tell that from "there is more". The lanes now over-fetch by
+	// one, so a cursor means a further page really exists.
+	if p2.NextCursor != nil {
+		t.Fatalf("engines p2 is the last page and must end the walk, got cursor=%v", *p2.NextCursor)
 	}
 	if _, err := svc.EnginesList(ctx, EnginesListFilter{}, "!!!not-base64!!!", 50); err != ErrBadCursor {
 		t.Fatalf("malformed engines cursor = %v, want ErrBadCursor", err)
