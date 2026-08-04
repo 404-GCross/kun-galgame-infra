@@ -84,3 +84,9 @@
 - **库约定(07-31 跨轨定约)**:kun_catalog_rehearsal **归本轨专用**(退役轨二犯重置已了结,非恶意);退役轨用 kun_catalog_w<波号> 私库;测试库按轨分名(本轨现用 kun_catalog_w164_test)。开练仍核基线:persons live 6,503/角色 live 196,087/person redirect 3。
 - 环境速记:本地测试 DSN 可走 unix socket `host=/var/run/postgresql user=postgres`(TCP 127.0.0.1 密码不过);多包 DB 套件 `-p 1`(共库互相 truncate 假红);meili 依赖测试用本地 dev meili :7700+compose 里的 dev master key。
 - 排队拍板项(列着别催):tag 层级波/变体折叠/题名/rating 直方图摄取/dlsite 截图桥 claimed/DMM 图源/EG 独占 ~13,431 建 work。
+
+- **2026-08-04(Fable,用户全权委托)次级队列两裁定**:①168 代审桶 65 条(usable 18+compare 47)
+  **就此关账**——对抗轮也判不动的真平局,compare 47 保机翻零风险;继续压只能靠人,收益不配成本。
+  ②**draft 面 1,754 部 Getchu 正文=裁定「做」**,列为下一 catalog 波(171):纯加法 fill-missing,
+  getchuintros 泳道加 draft 人口档即可;**暂缓执行**因 Getchu 图片镜像轨正在产写入
+  (origin/main e4fdaa29 sample CG 波),等其窗口收口再跑,避免同库双写波并行。
