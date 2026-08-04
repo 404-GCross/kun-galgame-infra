@@ -120,8 +120,8 @@ const handleDelete = async (clientId: string) => {
         <KunIcon name="lucide:search-x" class="mx-auto mb-3 size-10 text-default-200" />
         <p class="text-default-400">没有匹配的客户端</p>
       </div>
-      <div v-else class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        <OauthClientsClientCard
+      <div v-else class="space-y-2">
+        <OauthClientsRow
           v-for="client in filteredClients"
           :key="client.id"
           :client="client"

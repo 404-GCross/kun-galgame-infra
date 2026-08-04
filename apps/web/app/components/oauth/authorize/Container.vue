@@ -6,6 +6,9 @@ interface ClientPublicInfo {
   name: string
   auto_consent: boolean
   site_domain: string
+  // App-directory logo, shown by the handshake header. Optional — clients
+  // without one fall back to an initial-letter disc.
+  logo_url?: string
 }
 
 const route = useRoute()
@@ -413,7 +416,10 @@ const handleDeny = async () => {
              post-login the user re-enters this page logged-in, auto-
              consent fires, they bounce to redirect_uri seamlessly. -->
     <div v-else-if="needsLogin" class="space-y-6">
-      <OauthAuthorizeHandshake :client-name="clientInfo?.name" />
+      <OauthAuthorizeHandshake
+        :client-name="clientInfo?.name"
+        :client-logo="clientInfo?.logo_url"
+      />
 
       <div class="text-center">
         <h1 class="text-foreground text-xl font-bold">需要登录后授权</h1>
@@ -480,7 +486,10 @@ const handleDeny = async () => {
     </div>
 
     <template v-else>
-      <OauthAuthorizeHandshake :client-name="clientInfo?.name" />
+      <OauthAuthorizeHandshake
+        :client-name="clientInfo?.name"
+        :client-logo="clientInfo?.logo_url"
+      />
 
       <div class="mt-6 mb-6 text-center">
         <h1 class="text-foreground text-xl font-bold">授权请求</h1>
