@@ -326,18 +326,59 @@ const (
 // keyed (work_id, label_id, kind) so one label may hold several edges to the
 // same work, and several source tags may map onto one canonical tag.
 func (s *PublicService) workCountsFor(ctx context.Context, edge string, ids []int64, nsfw bool) (map[int64]int, error) {
-	out := make(map[int64]int, len(ids))
+	counts, _, err := s.workCountsWithNSFW(ctx, edge, ids, nsfw)
+	return counts, err
+}
+
+// workCountsWithNSFW returns the visible count AND, per id, how many of that
+// id's works carry content_limit = nsfw — the second number computed WITHOUT
+// the caller's nsfw filter.
+//
+// TWO DIFFERENT AXES, on purpose (the vocabulary note on model.DisplayLimitKey):
+//
+//   - `counts` obeys the caller's `nsfw` query parameter, which has always
+//     gated the AGE axis (content_rating). It answers "how many works do I get
+//     if I follow this chip", so it must not change meaning here.
+//   - `nsfwWorks` reads the DISPLAY axis (content_limit, i.e. the editorial
+//     display_nsfw flag for claimed rows and the age fallback for bodyless
+//     ones), compiled by displayLimitWhere — never re-derived, exactly as the
+//     claim gate is never re-derived. It answers "is any material under this
+//     row unsafe to render", which is what a badge is for.
+//
+// Mapping the age axis onto the display question would be the 5,568-work
+// incident again, in reverse and larger: on the current registry 61,690 live
+// claimed galgame works are r18 while only 13,664 are editorially nsfw, so an
+// age-derived badge would over-mark by 4.5x — 48,299 works whose wiki material
+// an editor judged safe to show.
+//
+// The asymmetry of ignoring the caller's nsfw setting for the second tally is
+// the point: an sfw caller cannot learn "this row leads somewhere you are being
+// shielded from" from a number that already subtracted those works.
+//
+// Both come out of ONE aggregate over ONE population, via FILTER rather than a
+// second query, so the two can never disagree about which works they were
+// counting — the invariant that matters when a consumer renders them together.
+func (s *PublicService) workCountsWithNSFW(ctx context.Context, edge string, ids []int64, nsfw bool) (counts, nsfwWorks map[int64]int, err error) {
+	counts, nsfwWorks = make(map[int64]int, len(ids)), make(map[int64]int, len(ids))
 	if len(ids) == 0 {
-		return out, nil
+		return counts, nsfwWorks, nil
 	}
+	// The visible-count FILTER carries the nsfw axis that used to sit in WHERE:
+	// the population must stay whole so the display tally can see the very works
+	// the caller is being shielded from.
+	visible := "TRUE"
+	var args []any
+	if !nsfw {
+		visible = "w.content_rating <> ?"
+		args = append(args, model.ContentRatingR18)
+	}
+	nsfwPred, nsfwArgs := displayLimitWhere([]string{model.DisplayLimitKeyNSFW})
+	args = append(args, nsfwArgs...)
+
 	// The works-list population predicate, verbatim — this equality IS the
 	// contract (count == what works?<filter>= pages through).
 	where := []string{"e.key_id IN ?", "w.deleted_at IS NULL", "w.status = ?", "w.medium_id = ?"}
-	args := []any{ids, model.WorkStatusLive, galgameMediumID}
-	if !nsfw {
-		where = append(where, "w.content_rating <> ?")
-		args = append(args, model.ContentRatingR18)
-	}
+	args = append(args, ids, model.WorkStatusLive, galgameMediumID)
 	// …and the CLAIM gate an entity page's member list passes (wave 146). Not a
 	// second opinion about it: the predicate is compiled by the very same
 	// claimStateWhere the works list compiles `claim_state=live` with, so the two
@@ -350,16 +391,25 @@ func (s *PublicService) workCountsFor(ctx context.Context, edge string, ids []in
 	var rows []struct {
 		KeyID int64 `gorm:"column:key_id"`
 		N     int   `gorm:"column:n"`
+		NNSFW int   `gorm:"column:n_nsfw"`
 	}
-	q := `SELECT e.key_id, count(DISTINCT e.work_id) AS n FROM ` + edge +
-		` JOIN catalog_work w ON w.id = e.work_id WHERE ` + strings.Join(where, " AND ") + ` GROUP BY e.key_id`
+	q := `SELECT e.key_id,
+			count(DISTINCT e.work_id) FILTER (WHERE ` + visible + `) AS n,
+			count(DISTINCT e.work_id) FILTER (WHERE ` + nsfwPred + `) AS n_nsfw
+		FROM ` + edge + ` JOIN catalog_work w ON w.id = e.work_id
+		WHERE ` + strings.Join(where, " AND ") + ` GROUP BY e.key_id`
 	if err := s.db.WithContext(ctx).Raw(q, args...).Scan(&rows).Error; err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	for _, r := range rows {
-		out[r.KeyID] = r.N
+		if r.N > 0 {
+			counts[r.KeyID] = r.N
+		}
+		if r.NNSFW > 0 {
+			nsfwWorks[r.KeyID] = r.NNSFW
+		}
 	}
-	return out, nil
+	return counts, nsfwWorks, nil
 }
 
 // workExistsClause compiles the has_works row filter: keep a taxonomy row only

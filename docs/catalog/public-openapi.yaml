@@ -1738,6 +1738,8 @@ components:
       properties:
         display_name:
           type: string
+        has_nsfw:
+          type: boolean
         id:
           format: int64
           type: integer
@@ -1767,6 +1769,7 @@ components:
         - display_name
         - refs
         - intros
+        - has_nsfw
       type: object
     PublicSeriesIntro:
       additionalProperties: false
@@ -1805,6 +1808,8 @@ components:
       properties:
         display_name:
           type: string
+        has_nsfw:
+          type: boolean
         id:
           format: int64
           type: integer
@@ -1818,6 +1823,7 @@ components:
         - display_name
         - source
         - work_count
+        - has_nsfw
       type: object
     PublicSiblingName:
       additionalProperties: false

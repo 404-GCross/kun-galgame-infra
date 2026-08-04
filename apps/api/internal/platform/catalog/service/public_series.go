@@ -54,6 +54,13 @@ func (s *PublicService) SeriesDetail(ctx context.Context, id int64, withWorks, n
 		return dto.PublicSeriesDetail{}, false, err
 	}
 	rec.Intros = intros
+	// Unconditional, not include-gated: the caller needs to know the series
+	// leads to adult works BEFORE deciding whether to ask for them.
+	_, nsfwWorks, err := s.workCountsWithNSFW(ctx, seriesWorkEdge, []int64{id}, nsfw)
+	if err != nil {
+		return dto.PublicSeriesDetail{}, false, err
+	}
+	rec.HasNSFW = nsfwWorks[id] > 0
 	if withWorks {
 		var wrows []struct {
 			WorkID int64 `gorm:"column:work_id"`
@@ -159,14 +166,15 @@ func (s *PublicService) SeriesList(ctx context.Context, nsfw bool, cursor string
 	for i, r := range rows {
 		ids[i] = r.ID
 	}
-	counts, err := s.workCountsFor(ctx, seriesWorkEdge, ids, nsfw)
+	counts, nsfwWorks, err := s.workCountsWithNSFW(ctx, seriesWorkEdge, ids, nsfw)
 	if err != nil {
 		return dto.PublicSeriesListData{}, err
 	}
 	out := dto.PublicSeriesListData{Items: make([]dto.PublicSeriesListItem, len(rows))}
 	for i, r := range rows {
 		out.Items[i] = dto.PublicSeriesListItem{
-			ID: r.ID, DisplayName: r.DisplayName, Source: r.Source, WorkCount: counts[r.ID],
+			ID: r.ID, DisplayName: r.DisplayName, Source: r.Source,
+			WorkCount: counts[r.ID], HasNSFW: nsfwWorks[r.ID] > 0,
 		}
 	}
 	if out.Total, err = s.taxonomyTotal(ctx, "catalog_series", nil, nil); err != nil {

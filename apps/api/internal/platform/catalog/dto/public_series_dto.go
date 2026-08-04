@@ -22,6 +22,14 @@ type PublicSeriesDetail struct {
 	// tags/{id} convention verbatim.
 	Works      []PublicWorkBrief `json:"works,omitempty"`
 	NextOffset *int              `json:"next_offset,omitempty"`
+	// HasNSFW mirrors the browse lane's field (see PublicSeriesListItem): at
+	// least one member work's DISPLAY material is nsfw, regardless of the
+	// caller's nsfw setting. Present unconditionally, not include-gated — it is
+	// one aggregate over membership the caller needs before deciding whether to
+	// ask for works at all, and a detail page that had to request include=works
+	// to learn it would be asking for the very list the flag exists to warn
+	// about.
+	HasNSFW bool `json:"has_nsfw"`
 }
 
 // PublicSeriesListData is one page of the series browse lane
@@ -43,6 +51,21 @@ type PublicSeriesListItem struct {
 	// numeric source_id), matching the refs[] on the detail record.
 	Source    string `json:"source"`
 	WorkCount int    `json:"work_count"`
+	// HasNSFW says at least one work in this series has content_limit = nsfw —
+	// the DISPLAY axis (model.DisplayLimitKey), which is what "nsfw" means on
+	// this face. It is NOT the age axis that work_count's nsfw parameter gates.
+	//
+	// The two are different questions and they disagree in bulk: of the live
+	// claimed galgame works 61,690 are r18 while only 13,664 are editorially
+	// nsfw, so a badge read off content_rating would over-mark by 4.5x — 48,299
+	// works whose display material an editor judged safe to show. Collapsing the
+	// axes the other way is what once hid 5,568 works from a downstream.
+	//
+	// Counted over the SAME population as work_count but WITHOUT the caller's
+	// nsfw filter, so an sfw caller still learns the series leads somewhere it
+	// is being shielded from. A flag derived from the filtered count could not:
+	// it would read false for exactly the callers who need it.
+	HasNSFW bool `json:"has_nsfw"`
 }
 
 // PublicSeriesIntro is one description of a series. source is the catalog_source

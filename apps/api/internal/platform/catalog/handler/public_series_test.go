@@ -242,3 +242,90 @@ func TestSeriesListLane(t *testing.T) {
 	code, _ = getJSON(t, app, "/v1/catalog/series?limit=0")
 	assert.Equal(t, 400, code)
 }
+
+// setDisplayNSFW flips the EDITORIAL display flag on a work — the axis
+// has_nsfw reads, which is not the age rating.
+func setDisplayNSFW(t *testing.T, db *gorm.DB, workID int64, v bool) {
+	t.Helper()
+	require.NoError(t, db.Exec(`UPDATE catalog_work SET display_nsfw = ? WHERE id = ?`, v, workID).Error)
+}
+
+// TestSeriesHasNSFWReadsTheDisplayAxis is the whole point of the field: "nsfw"
+// on this face means content_limit, the editorial judgement about the material
+// a consumer would RENDER — not content_rating, which answers who may buy the
+// game.
+//
+// The seeded series already holds a live r18 member. If the flag were read off
+// the age axis it would light up here, and it must not: on the production
+// registry 61,690 live claimed works are r18 while only 13,664 are editorially
+// nsfw, so an age-derived badge would over-mark 48,299 works whose material an
+// editor judged safe to show.
+func TestSeriesHasNSFWReadsTheDisplayAxis(t *testing.T) {
+	db := openCatalogTestDB(t)
+	seriesID, _, sfwWorkID, r18WorkID := seedSeries(t, db)
+	app := seriesApp(db)
+
+	code, body := getJSON(t, app, "/v1/catalog/series/"+itoa(seriesID))
+	require.Equal(t, 200, code)
+	assert.Equal(t, false, body["data"].(map[string]any)["has_nsfw"],
+		"an r18 game whose display material is editorially sfw must NOT raise the flag")
+
+	// Now let an editor mark that same work's material nsfw. Nothing about its
+	// age rating changed; the flag flips because the display axis did.
+	setDisplayNSFW(t, db, r18WorkID, true)
+	code, body = getJSON(t, app, "/v1/catalog/series/"+itoa(seriesID))
+	require.Equal(t, 200, code)
+	assert.Equal(t, true, body["data"].(map[string]any)["has_nsfw"])
+
+	// The reverse case is real too (273 works in production): an all-ages game
+	// whose material the wiki marked nsfw raises it just as well.
+	setDisplayNSFW(t, db, r18WorkID, false)
+	setDisplayNSFW(t, db, sfwWorkID, true)
+	code, body = getJSON(t, app, "/v1/catalog/series/"+itoa(seriesID))
+	require.Equal(t, 200, code)
+	assert.Equal(t, true, body["data"].(map[string]any)["has_nsfw"],
+		"an all-ages game can carry nsfw display material")
+}
+
+// TestSeriesHasNSFWIgnoresTheCallersNSFWSetting pins the second property: the
+// flag does not obey the nsfw query parameter.
+//
+// A badge derived from the filtered work_count would read false for exactly the
+// callers who need it — an sfw caller would be told "nothing here" about a
+// series whose adult works were subtracted before the flag was computed.
+func TestSeriesHasNSFWIgnoresTheCallersNSFWSetting(t *testing.T) {
+	db := openCatalogTestDB(t)
+	seriesID, emptyID, _, r18WorkID := seedSeries(t, db)
+	setDisplayNSFW(t, db, r18WorkID, true)
+	app := seriesApp(db)
+
+	for _, q := range []string{"", "?nsfw=1"} {
+		code, body := getJSON(t, app, "/v1/catalog/series"+q)
+		require.Equal(t, 200, code, q)
+		items := body["data"].(map[string]any)["items"].([]any)
+		require.Len(t, items, 2, q)
+		first, second := items[0].(map[string]any), items[1].(map[string]any)
+		assert.EqualValues(t, seriesID, first["id"], q)
+		assert.Equal(t, true, first["has_nsfw"], "same flag for both callers (%s)", q)
+		assert.Equal(t, false, second["has_nsfw"], "a memberless series warns about nothing (%s)", q)
+	}
+
+	// work_count still moves with the caller — the two fields answer different
+	// questions and only one of them is the caller's to filter.
+	_, body := getJSON(t, app, "/v1/catalog/series")
+	assert.EqualValues(t, 1, body["data"].(map[string]any)["items"].([]any)[0].(map[string]any)["work_count"])
+	_, body = getJSON(t, app, "/v1/catalog/series?nsfw=1")
+	assert.EqualValues(t, 2, body["data"].(map[string]any)["items"].([]any)[0].(map[string]any)["work_count"])
+
+	// Detail carries it unconditionally — no include=works needed, since the
+	// point is to decide whether to ask for the works at all.
+	code, body := getJSON(t, app, "/v1/catalog/series/"+itoa(seriesID))
+	require.Equal(t, 200, code)
+	data := body["data"].(map[string]any)
+	assert.Equal(t, true, data["has_nsfw"])
+	assert.NotContains(t, data, "works", "still include-gated")
+
+	code, body = getJSON(t, app, "/v1/catalog/series/"+itoa(emptyID))
+	require.Equal(t, 200, code)
+	assert.Equal(t, false, body["data"].(map[string]any)["has_nsfw"])
+}
