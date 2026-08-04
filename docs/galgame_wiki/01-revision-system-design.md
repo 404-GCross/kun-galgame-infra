@@ -559,7 +559,7 @@ FOR EACH galgame IN (SELECT * FROM galgame):
 - `GET /{tag,official,engine,series}/:id/revisions/:rev`
 - `POST /{tag,official,engine,series}/:id/revert {revision: N}` （admin/moderator）
 
-下游契约见 `docs/integration/galgame_wiki/04-taxonomy.md`。
+下游契约见 `docs/integration/galgame_wiki/README.md`。
 
 ## 15. §1.5 不变量在 Taxonomy 上的等价表述
 

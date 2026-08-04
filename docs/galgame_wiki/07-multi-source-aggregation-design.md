@@ -8,7 +8,7 @@
 > 关联文档:[01 版本系统设计](./01-revision-system-design.md)、
 > [03 VNDB 同步设计](./03-vndb-sync-design.md)、
 > [04 VNDB 关系同步设计](./04-vndb-relations-sync-design.md)、
-> 契约侧 [integration/galgame_wiki/02-revisions-and-prs.md](../integration/galgame_wiki/02-revisions-and-prs.md)。
+> 契约侧 [integration/galgame_wiki/README.md](../integration/galgame_wiki/README.md)。
 
 ## 1. 设计目标
 

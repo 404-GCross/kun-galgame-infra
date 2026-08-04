@@ -49,7 +49,7 @@ VNDB，wiki 自管）。
   保留 `source`。link 的 `source`/`source_key` 则**进**快照（`SnapshotLink`）。
 - **编辑保留**：`PUT /galgame/:gid` 的 `links`/`tag_ids`/`official_ids` 只替换用户
   子集，`source="vndb"` 的恒被保留（`overlayUpdate` 把当前 vndb 子集并回 + approach-B
-  reconcile）。详见 `docs/integration/galgame_wiki/01-galgame.md`。
+  reconcile）。详见 `docs/integration/galgame_wiki/README.md`。
 
 ---
 

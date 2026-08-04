@@ -385,8 +385,8 @@ GET /api/admin/galgame/messages?type=submitted&page=1 认证：Bearer + admin/mo
    a) 选已发布 → kungal 后端直接 INSERT galgame_stats(galgame_id=该 id) + 跳详情
    b) 选 VNDB 草稿 → kungal 后端 POST /galgame/:gid/claim → INSERT stats → 跳详情
    c) 提交新作 → kungal 后端 POST /galgame/submit → 拿到 id → INSERT stats
-              （早期设计在本地 galgame_stats 加 wiki_status_snapshot 列缓存状态，
-              详见 7.2——**已不采用**，下游不维护本地状态快照列）
+              （早期设计在本地 galgame_stats 加 wiki_status_snapshot 列缓存状态——**已不采用**，
+              详见 7.2；下游不维护本地状态快照列）
 ```
 
 ### 7.2 kungal / moyu 本地 galgame_stats 扩列（早期设计，未采用）
@@ -394,7 +394,7 @@ GET /api/admin/galgame/messages?type=submitted&page=1 认证：Bearer + admin/mo
 ```sql
 -- 历史设计，未采用：forum/patch 未建此列（见本文顶部更正），勿执行此 ALTER
 ALTER TABLE galgame_stats
-    ADD COLUMN wiki_status_snapshot SMALLINT NOT NULL DEFAULT 0;
+    ADD COLUMN wiki_status_snapshot SMALLINT NOT NULL DEFAULT 0;  -- 未采用,勿执行
 -- 0=已发布 / 1=banned / 3=pending / 4=declined
 -- 5 = 在 wiki 已删除（撤回 / 硬删）—— 本地标记 dead，前端隐藏
 ```
@@ -407,7 +407,7 @@ ALTER TABLE galgame_stats
 
 ### 7.3 cron 同步（早期设计，未采用 — 以代码为准）
 
-> 下方按 `wiki_status_snapshot` 列更新的写法**已不采用**。真实下游同步见 moyu `internal/infrastructure/cron/wiki_sync.go`（另见 [`07-submission.md` 调用方 cron 同步段](../integration/galgame_wiki/07-submission.md)）：游标 `cron_state.last_id` + `since_id`；每条先 `INSERT wiki_message_processed … ON CONFLICT DO NOTHING` 去重；`approved` 经 OAuth s2s 发 +3 并发通知，`declined` / `banned` / `unbanned` 仅发通知；**不写任何本地状态快照列**。
+> 下方按 `wiki_status_snapshot` 列更新的写法**已不采用**。真实下游同步见 moyu `internal/infrastructure/cron/wiki_sync.go`（该契约页已随面退役,见[墓碑](../integration/galgame_wiki/README.md)）：游标 `cron_state.last_id` + `since_id`；每条先 `INSERT wiki_message_processed … ON CONFLICT DO NOTHING` 去重；`approved` 经 OAuth s2s 发 +3 并发通知，`declined` / `banned` / `unbanned` 仅发通知；**不写任何本地状态快照列**。
 
 ### 7.4 前端通知中心
 
@@ -498,9 +498,7 @@ CREATE TABLE wiki_message_read_state (
 
 ## 12. 关联文档
 
-- 用户提交流程的 consumer-facing API 详见
-  [docs/integration/galgame_wiki/07-submission.md](../integration/galgame_wiki/07-submission.md)
-- 消息 API 详见
-  [docs/integration/galgame_wiki/08-messages.md](../integration/galgame_wiki/08-messages.md)
+- 用户提交流程的 consumer-facing API、消息 API —— **两份契约页都已随面退役**,
+  见[墓碑](../integration/galgame_wiki/README.md)(后继面 `/v1/catalog`)
 - revision 系统底层（不变）
   [01-revision-system-design.md](./01-revision-system-design.md)

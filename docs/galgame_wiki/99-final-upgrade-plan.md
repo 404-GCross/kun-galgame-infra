@@ -40,7 +40,7 @@
 
 > **2026-05-20 文档对外发布前补审 (Round 6) 发现 1 个红色漏洞**：PR2 引入的派生字段 `effective_banner_hash` 在 Meilisearch 索引文档（`search.GalgameDoc`）里**未被建模**，且 `search.Hook.Galgame` / `cmd/reindex-search` 都未 `Preload("Cover")`。这会导致**搜索结果返回的卡片没有 banner hash 字段**，前端 `resolveBannerUrl` 走不到 image_service 分支，只能 fallback 到老 `banner` URL —— 在新作（无 `banner` 老 URL，只有 cover）上会显示占位图。**已修复**：`doc.go` 新增字段、`indexer.go::ToGalgameDoc` 加派生逻辑、`hook.go` + `reindex-search/main.go` 加 `Preload("Cover")`。**上线动作**：升级镜像后必须再跑一次 `reindex-search` 让旧文档带上新字段（这是 `99-appendix.md` 已声明的标准流程）。
 
-实施流程详见 `docs/integration/galgame_wiki/00-handbook-for-downstream.md`；上线迁移命令顺序见本文 §10 + 文末 PR5 解耦说明。
+实施流程详见 `docs/integration/galgame_wiki/README.md`；上线迁移命令顺序见本文 §10 + 文末 PR5 解耦说明。
 
 ---
 
@@ -157,7 +157,7 @@ Update 路径的 `ReleaseDate *string` 语义：
 
 ### 4.5 下游影响
 
-`released` 字段从所有 galgame 响应中**消失**；新字段 `release_date` / `release_date_tba` 同步出现。`docs/integration/galgame_wiki/00-handbook-for-downstream.md §15` 需在 BREAKING 段加一条；kungal/moyu 同期发版。
+`released` 字段从所有 galgame 响应中**消失**；新字段 `release_date` / `release_date_tba` 同步出现。`docs/integration/galgame_wiki/README.md §15` 需在 BREAKING 段加一条；kungal/moyu 同期发版。
 
 ---
 
