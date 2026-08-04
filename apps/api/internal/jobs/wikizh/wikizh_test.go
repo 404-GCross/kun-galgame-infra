@@ -376,3 +376,46 @@ func TestAdversarialPacketSwapsOnlyCompare(t *testing.T) {
 	u := Candidate{WorkID: 2, Bucket: BucketUsable, Source: "原文", WikiZh: "USERTEXT"}
 	assert.Equal(t, UserPacket(u), AdversarialPacket(u))
 }
+
+// TestTiebreakIsScoped pins the adversarial round's authority: it decides the
+// works the ordinary rounds contested and NOTHING else. A fourth ordinary vote
+// on a 2-1 split leaves it split, which is why this is a separate mechanism
+// rather than another round — but a round that can only speak where the others
+// deadlocked must not be able to overturn the ones they settled.
+func TestTiebreakIsScoped(t *testing.T) {
+	v := func(id int64, verdict string, c float64) Verdict {
+		return Verdict{Key: fmt.Sprintf("w%d", id), WorkID: id, Bucket: BucketCompare, Verdict: verdict, Confidence: c}
+	}
+	folded := []Verdict{
+		v(1, VerdictABetter, 0.95), // decided by the rounds — off limits
+		v(2, VerdictUnsure, 0),     // contested → the tiebreak decides for
+		v(3, VerdictUnsure, 0),     // contested → the tiebreak decides against
+		v(4, VerdictUnsure, 0),     // contested, tiebreak abstains
+		v(5, VerdictUnsure, 0),     // contested, no tiebreak returned
+	}
+	tie := []Verdict{
+		v(1, VerdictBBetter, 0.99), // must be ignored
+		v(2, VerdictABetter, 0.93),
+		v(3, VerdictBBetter, 0.91),
+		v(4, VerdictUnsure, 0.5),
+	}
+	got, st := Tiebreak(folded, tie)
+	by := map[int64]Verdict{}
+	for _, g := range got {
+		by[g.WorkID] = g
+	}
+	assert.Equal(t, VerdictABetter, by[1].Verdict, "a settled work is not the tiebreak's to reopen")
+	assert.InDelta(t, 0.95, by[1].Confidence, 0.001)
+	assert.Equal(t, VerdictABetter, by[2].Verdict)
+	assert.Equal(t, VerdictBBetter, by[3].Verdict)
+	// An abstaining or absent tiebreak leaves the work in the pile rather than
+	// quietly resolving it.
+	assert.Equal(t, VerdictUnsure, by[4].Verdict)
+	assert.Equal(t, VerdictUnsure, by[5].Verdict)
+
+	assert.Equal(t, 4, st.Eligible)
+	assert.Equal(t, 1, st.ResolvedFor)
+	assert.Equal(t, 1, st.ResolvedAgainst)
+	assert.Equal(t, 1, st.StillUnsure)
+	assert.Equal(t, 1, st.NoTiebreak)
+}

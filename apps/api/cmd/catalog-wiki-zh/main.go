@@ -50,6 +50,7 @@ func main() {
 		out         = fs.String("out", "", "judge: JSONL verdict file (appended; already-judged keys are skipped)")
 		in          = fs.String("in", "", "apply: comma-separated JSONL verdict files — one per INDEPENDENT judging round. Auto-apply requires every round to agree.")
 		apply       = fs.Bool("apply", false, "apply: write (default is a dry forecast)")
+		tiebreak    = fs.String("tiebreak", "", "apply: verdicts that decide the works the rounds CONTESTED, and only those (the adversarial round)")
 		receipts    = fs.String("receipts", "", "apply: where to write the row-id receipt (default: beside the first --in file, which must be writable)")
 		onlyFile    = fs.String("only", "", "judge: restrict to the work ids in this file, one per line")
 		adversarial = fs.Bool("adversarial", false, "judge: re-framed prompts for contested works — compare swaps A/B positions, usable must cite a disqualifying defect")
@@ -220,6 +221,16 @@ func main() {
 		}
 		vs, cs := wikizh.Consensus(rounds)
 		slog.Info("consensus", "result", cs.String())
+		if *tiebreak != "" {
+			tb, err := wikizh.LoadVerdicts(*tiebreak)
+			if err != nil {
+				slog.Error("read tiebreak verdicts", "file", *tiebreak, "error", err)
+				os.Exit(1)
+			}
+			var ts wikizh.TiebreakStats
+			vs, ts = wikizh.Tiebreak(vs, tb)
+			slog.Info("tiebreak", "file", *tiebreak, "verdicts", len(tb), "result", ts.String())
+		}
 		// --limit on apply is a REHEARSAL lever: write a handful, read the rows
 		// back, then run the rest. It cuts after the consensus so the sample is
 		// drawn from the same verdicts the full pass would use.

@@ -123,6 +123,66 @@ func Consensus(rounds [][]Verdict) ([]Verdict, ConsensusStats) {
 	return out, st
 }
 
+// Tiebreak lets a designated round decide the works the ordinary rounds
+// CONTESTED, and nothing else. It is deliberately not just another round in
+// Consensus: a fourth ordinary vote on a work already split 2-1 leaves it
+// split, and the adversarial round is not an ordinary vote — it is the same
+// question asked in a form that controls for the reason the others were
+// unstable (adversarial.go).
+//
+// Its authority is therefore scoped: it may only speak where the fold said
+// contested, it may not overturn a work the ordinary rounds decided, and a
+// missing or abstaining tiebreak leaves the work in the review pile rather
+// than silently resolving it.
+func Tiebreak(folded []Verdict, tie []Verdict) ([]Verdict, TiebreakStats) {
+	var st TiebreakStats
+	by := make(map[int64]Verdict, len(tie))
+	for _, v := range tie {
+		by[v.WorkID] = v
+	}
+	out := make([]Verdict, 0, len(folded))
+	for _, f := range folded {
+		if f.Verdict != VerdictUnsure {
+			out = append(out, f)
+			continue
+		}
+		st.Eligible++
+		t, ok := by[f.WorkID]
+		if !ok {
+			st.NoTiebreak++
+			out = append(out, f)
+			continue
+		}
+		if leaning(t.Verdict) == 0 {
+			st.StillUnsure++
+			out = append(out, f)
+			continue
+		}
+		if leaning(t.Verdict) > 0 {
+			st.ResolvedFor++
+		} else {
+			st.ResolvedAgainst++
+		}
+		out = append(out, t)
+	}
+	return out, st
+}
+
+// TiebreakStats reports the pass; every contested work lands in exactly one of
+// the four outcome counters.
+type TiebreakStats struct {
+	Eligible        int
+	ResolvedFor     int // the tiebreak wants the wiki text
+	ResolvedAgainst int // it does not — no write, and no human either
+	StillUnsure     int
+	NoTiebreak      int
+}
+
+func (s TiebreakStats) String() string {
+	return fmt.Sprintf("eligible=%d resolved_for=%d resolved_against=%d still_unsure=%d no_tiebreak=%d",
+		s.Eligible, s.ResolvedFor, s.ResolvedAgainst, s.StillUnsure, s.NoTiebreak)
+}
+
 // ConsensusStats reports the fold, so a run never silently shrinks its
 // population: every work is in exactly one of these counts.
 type ConsensusStats struct {

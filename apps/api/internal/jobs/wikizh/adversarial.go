@@ -85,6 +85,11 @@ func BatchAdversarialSystemPrompt(b Bucket) string {
 	return AdversarialSystemPrompt(b) + batchSuffix
 }
 
+// swapNote prefixes the reason on a swapped verdict. The verdict is mapped
+// back to the canonical vocabulary but the prose cannot be — in it, "A" is the
+// machine text and "B" the user's, the reverse of everywhere else.
+const swapNote = "[位置对调:文中 A=机翻 B=用户] "
+
 // SwapVerdict maps a verdict produced under swapped positions back onto the
 // canonical vocabulary, where a_better always means "the user's text wins".
 // Applied the moment the reply is parsed, so nothing downstream — the verdict

@@ -161,6 +161,12 @@ func (j *HTTPJudge) JudgeBatch(ctx context.Context, bucket Bucket, cs []Candidat
 			// file, the fold and the apply pass all speak one vocabulary in
 			// which a_better means "the user's text wins".
 			v.Verdict = SwapVerdict(v.Verdict)
+			// The REASON cannot be swapped — it is prose naming "A" and "B" as
+			// the model saw them, which is the opposite of what the verdict now
+			// means. Left unmarked it reads as a contradiction to anyone
+			// auditing the file later, so say so instead of silently shipping
+			// a reason that argues the other way.
+			v.Reason = swapNote + v.Reason
 		}
 		v.WorkID, v.Bucket, v.Model, v.PromptVersion = c.WorkID, bucket, model, version
 		out = append(out, v)
