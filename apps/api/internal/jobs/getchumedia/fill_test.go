@@ -26,7 +26,7 @@ func TestFillSkipsBytesAlreadySentForTheSameWork(t *testing.T) {
 	}
 	r := &runner{stats: &Stats{}, have: map[int64]map[string]bool{}}
 	// Dry run: no uploads, but the decision is the same one apply makes.
-	res := r.fill(t.Context(), "/nowhere", candidate{WorkID: 1, GetchuIDs: []string{"100", "200"}}, staged, false)
+	res := r.fill(t.Context(), "/nowhere", candidate{WorkID: 1, GetchuIDs: []string{"100", "200"}}, nil, staged, false)
 
 	assert.Equal(t, 2, res.dedup, "the DL edition's two repeats are skipped before any upload")
 	// The three distinct images are all attempted; the mirror dir is empty in
@@ -45,7 +45,7 @@ func TestFillKeepsImagesWithNoRecordedHash(t *testing.T) {
 		},
 	}
 	r := &runner{stats: &Stats{}, have: map[int64]map[string]bool{}}
-	res := r.fill(t.Context(), "/nowhere", candidate{WorkID: 1, GetchuIDs: []string{"100"}}, staged, false)
+	res := r.fill(t.Context(), "/nowhere", candidate{WorkID: 1, GetchuIDs: []string{"100"}}, nil, staged, false)
 	assert.Equal(t, 0, res.dedup)
 	assert.Equal(t, 2, res.missing)
 }
@@ -87,5 +87,39 @@ func TestRunPoolCountsNoStagedOnce(t *testing.T) {
 		r := &runner{stats: &Stats{Works: len(cands)}, have: map[int64]map[string]bool{}}
 		r.run(t.Context(), Opts{MirrorDir: "/nowhere", Workers: workers}, cands, map[string][]stagedImage{})
 		assert.Equal(t, 2, r.stats.NoStaged, "workers=%d", workers)
+	}
+}
+
+// absorb must not write runner.have. That write is what made the map shared
+// mutable state: workers ranged over runner.have while the driver assigned a
+// key, which is `concurrent map read and map write` — a FATAL error Go does not
+// even let you recover from, and one -race never saw because the earlier test
+// ran dry, where hashes is always empty and the write never executed.
+//
+// It killed a production run at 8,077 uploads. The map is read-only for the
+// whole pass now; each work is dispatched once, so nothing would read a
+// written-back hash anyway.
+func TestAbsorbLeavesHaveUntouched(t *testing.T) {
+	r := &runner{stats: &Stats{}, have: map[int64]map[string]bool{7: {"old": true}}}
+	r.absorb(7, workResult{uploaded: 2, hashes: []string{"new1", "new2"}, touched: true})
+	r.absorb(9, workResult{uploaded: 1, hashes: []string{"other"}, touched: true})
+
+	assert.Equal(t, map[int64]map[string]bool{7: {"old": true}}, r.have,
+		"no key added, no set grown — workers range over this map")
+	assert.Equal(t, 3, r.stats.Uploaded)
+	assert.Equal(t, []string{"new1", "new2", "other"}, r.pingHashes)
+	assert.Equal(t, []int64{7, 9}, r.touched)
+}
+
+// The pool must read a pre-populated `have` correctly: a hash already on the
+// work is skipped, and the snapshot each worker gets is its own.
+func TestRunPoolReadsExistingHashes(t *testing.T) {
+	staged := map[string][]stagedImage{"1": {{GetchuID: "1", File: "a.jpg", SHA256: "x"}}}
+	cands := []candidate{{WorkID: 1, GetchuIDs: []string{"1"}}}
+	for _, workers := range []int{1, 4} {
+		r := &runner{stats: &Stats{}, have: map[int64]map[string]bool{1: {"already": true}}}
+		r.run(t.Context(), Opts{MirrorDir: "/nowhere", Workers: workers}, cands, staged)
+		assert.Equal(t, 1, r.stats.Missing, "workers=%d", workers)
+		assert.Len(t, r.have[1], 1, "the seed set is not grown by the run (workers=%d)", workers)
 	}
 }

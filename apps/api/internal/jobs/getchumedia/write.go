@@ -77,7 +77,15 @@ func (s *Stats) merge(r workResult) {
 // nonsense. That is also why the pool parallelises across WORKS and never
 // within one: sort_order is assigned by this loop's position, so two goroutines
 // inside one gallery would scramble it.
-func (r *runner) fill(ctx context.Context, dir string, c candidate, staged map[string][]stagedImage, apply bool) workResult {
+//
+// `present` is passed IN rather than read from runner.have. That is not style:
+// runner.have is one shared Go map, and a worker ranging over it while the
+// driver assigns a key is `concurrent map read and map write` — fatal, and
+// indifferent to the fact that the two touch different works. This crashed a
+// production run at 8,077 uploads. Handing the worker its own set means no
+// worker touches a shared map at all, which is a property of the signature
+// rather than a rule someone has to keep remembering.
+func (r *runner) fill(ctx context.Context, dir string, c candidate, present map[string]bool, staged map[string][]stagedImage, apply bool) workResult {
 	var out workResult
 	var images []stagedImage
 	seenBytes := map[string]bool{}
@@ -108,13 +116,6 @@ func (r *runner) fill(ctx context.Context, dir string, c candidate, staged map[s
 	if r.maxPerWork > 0 && len(images) > r.maxPerWork {
 		images = images[:r.maxPerWork]
 	}
-	// This work's already-present hashes, read once. The map is only ever read
-	// here and written by the merge, so a worker never touches another's entry.
-	present := map[string]bool{}
-	for h := range r.have[c.WorkID] {
-		present[h] = true
-	}
-
 	sort := 0
 	for _, im := range images {
 		if ctx.Err() != nil {
@@ -270,12 +271,23 @@ func (r *runner) run(ctx context.Context, opts Opts, cands []candidate, staged m
 	if workers > len(cands) {
 		workers = len(cands)
 	}
+	// Each work's already-present hashes are snapshotted HERE, on one
+	// goroutine, and handed to the worker by value — runner.have is never
+	// reached from a worker. See fill.
+	snapshot := func(workID int64) map[string]bool {
+		present := make(map[string]bool, len(r.have[workID]))
+		for h := range r.have[workID] {
+			present[h] = true
+		}
+		return present
+	}
+
 	if workers <= 1 {
 		for _, c := range cands {
 			if ctx.Err() != nil || r.stats.Quota {
 				return
 			}
-			r.absorb(c.WorkID, r.fill(ctx, opts.MirrorDir, c, staged, opts.Apply))
+			r.absorb(c.WorkID, r.fill(ctx, opts.MirrorDir, c, snapshot(c.WorkID), staged, opts.Apply))
 		}
 		return
 	}
@@ -285,19 +297,25 @@ func (r *runner) run(ctx context.Context, opts Opts, cands []candidate, staged m
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
+	// The feeder pairs each candidate with its snapshot, so the snapshot is
+	// taken on the feeder goroutine and read only by the worker that receives it.
+	type task struct {
+		c       candidate
+		present map[string]bool
+	}
 	type job struct {
 		c   candidate
 		res workResult
 	}
-	in := make(chan candidate)
+	in := make(chan task)
 	out := make(chan job, workers)
 	var wg sync.WaitGroup
 	for i := 0; i < workers; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			for c := range in {
-				out <- job{c: c, res: r.fill(ctx, opts.MirrorDir, c, staged, opts.Apply)}
+			for t := range in {
+				out <- job{c: t.c, res: r.fill(ctx, opts.MirrorDir, t.c, t.present, staged, opts.Apply)}
 			}
 		}()
 	}
@@ -307,7 +325,7 @@ func (r *runner) run(ctx context.Context, opts Opts, cands []candidate, staged m
 			select {
 			case <-ctx.Done():
 				return
-			case in <- c:
+			case in <- task{c: c, present: snapshot(c.WorkID)}:
 			}
 		}
 	}()
@@ -329,20 +347,15 @@ func (r *runner) run(ctx context.Context, opts Opts, cands []candidate, staged m
 
 // absorb folds one work's result into the run-level state. Single-writer by
 // construction — only the driver goroutine calls it.
+//
+// It deliberately does NOT write the fresh hashes back into runner.have. Each
+// work is dispatched exactly once, so nothing would ever read them again, and
+// the write was what turned runner.have into a map being mutated while workers
+// ranged over it.
 func (r *runner) absorb(workID int64, res workResult) {
 	r.stats.merge(res)
 	r.pingHashes = append(r.pingHashes, res.hashes...)
 	if res.touched {
 		r.touched = append(r.touched, workID)
-	}
-	if len(res.hashes) > 0 {
-		set := r.have[workID]
-		if set == nil {
-			set = map[string]bool{}
-			r.have[workID] = set
-		}
-		for _, h := range res.hashes {
-			set[h] = true
-		}
 	}
 }
