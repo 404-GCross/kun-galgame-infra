@@ -15,14 +15,24 @@ import (
 // wearing a confidence number.
 //
 // So agreement across independent rounds is the real signal, and confidence is
-// only a floor. A work is auto-appliable when EVERY round returned the same
-// verdict and every round cleared the gate. Anything else — a disagreement, a
-// missing round, one low vote — becomes unsure and lands in the review pile.
-// Unanimity rather than majority: a 2-of-3 split IS the borderline case this
-// exists to catch.
+// only a floor.
 //
-// The folded verdict carries the LOWEST confidence seen, so a downstream gate
-// can never be satisfied by an optimistic round alone.
+// AGREEMENT IS ON THE DIRECTION, NOT THE LABEL. The first version of this fold
+// required three IDENTICAL labels, which counted `equivalent` ("the choice does
+// not matter") and `unsure` ("I abstain") as dissent. That put 306 works into
+// the review pile — 197 compare, 109 usable — that no round had contradicted:
+// a_better/a_better/equivalent is not a split, it is two votes and a shrug.
+//
+// A work is decided when no round points the other way AND a majority actively
+// took the deciding side. Abstentions may accompany a majority but may not BE
+// one: a lone vote among two shrugs is not a consensus. When one round wants
+// the wiki text and another refuses it, the work is CONTESTED — that, and only
+// that, is the borderline case worth a human.
+//
+// The folded verdict carries the lowest confidence among the rounds that took a
+// side. Abstentions are excluded from that floor on purpose: their confidence
+// is a confidence in not deciding, and folding it in would hold the decision
+// hostage to a non-vote.
 func Consensus(rounds [][]Verdict) ([]Verdict, ConsensusStats) {
 	var st ConsensusStats
 	st.Rounds = len(rounds)
@@ -55,24 +65,60 @@ func Consensus(rounds [][]Verdict) ([]Verdict, ConsensusStats) {
 				"仅 %d/%d 轮返回该条,不足以形成共识", len(vs), len(rounds))))
 			continue
 		}
-		agreed, minConf := true, vs[0].Confidence
-		for _, v := range vs[1:] {
-			if v.Verdict != vs[0].Verdict {
-				agreed = false
+		// Agreement is on the DIRECTION, not the label: a round that says
+		// "equivalent" or "unsure" has not contradicted one that says
+		// "a_better". A work is contested only when one round wants the wiki
+		// text and another refuses it.
+		var pro, con int
+		minDeciding := 1.0 // lowest confidence among the rounds that took a side
+		for _, v := range vs {
+			switch leaning(v.Verdict) {
+			case 1:
+				pro++
+			case -1:
+				con++
+			default:
+				continue // an abstention states no direction, so its
+				// confidence is a confidence in NOT deciding. Folding it into
+				// the gate would hold a decision hostage to a non-vote.
 			}
-			if v.Confidence < minConf {
-				minConf = v.Confidence
+			if v.Confidence < minDeciding {
+				minDeciding = v.Confidence
 			}
 		}
-		if !agreed {
-			st.Disagreed++
-			out = append(out, unsureFold(folded, "各轮裁决不一致:"+verdictList(vs)))
-			continue
+
+		switch {
+		case pro > 0 && con > 0:
+			// One round wants the wiki text, another refuses it. This is the
+			// real borderline case and the only one worth a human.
+			st.Contested++
+			out = append(out, unsureFold(folded, "各轮方向相反:"+verdictList(vs)))
+
+		case pro*2 > len(vs) && con == 0:
+			// A majority actively wanted it and nobody objected. Abstentions
+			// alongside are tolerated, but they cannot BE the majority: one
+			// lone vote among two abstentions is not a consensus.
+			if pro == len(vs) {
+				st.Unanimous++
+			} else {
+				st.Leaning++
+			}
+			folded = firstDeciding(vs)
+			folded.Confidence = minDeciding
+			out = append(out, folded)
+
+		case con > 0 && pro == 0:
+			// Nobody wanted it. Nothing is written either way, so this needs no
+			// majority test — declining is the safe default, and the machine
+			// lane fills the slot.
+			st.Declined++
+			out = append(out, firstDeciding(vs))
+
+		default:
+			// Mostly abstentions, or a single vote that no round seconded.
+			st.Abstained++
+			out = append(out, unsureFold(folded, "无人表态或表态不足半数:"+verdictList(vs)))
 		}
-		st.Unanimous++
-		folded.Confidence = minConf
-		folded.Reason = vs[0].Reason
-		out = append(out, folded)
 	}
 	return out, st
 }
@@ -82,14 +128,28 @@ func Consensus(rounds [][]Verdict) ([]Verdict, ConsensusStats) {
 type ConsensusStats struct {
 	Rounds     int
 	Works      int
-	Unanimous  int
-	Disagreed  int
+	Unanimous  int // every round took the same side
+	Leaning    int // a majority took one side, the rest abstained, none objected
+	Declined   int // nobody wanted the wiki text
+	Contested  int // rounds pointed opposite ways — the review pile
+	Abstained  int // nobody took a side, or too few did
 	Incomplete int
 }
 
 func (s ConsensusStats) String() string {
-	return fmt.Sprintf("rounds=%d works=%d unanimous=%d disagreed=%d incomplete=%d",
-		s.Rounds, s.Works, s.Unanimous, s.Disagreed, s.Incomplete)
+	return fmt.Sprintf("rounds=%d works=%d unanimous=%d leaning=%d declined=%d contested=%d abstained=%d incomplete=%d",
+		s.Rounds, s.Works, s.Unanimous, s.Leaning, s.Declined, s.Contested, s.Abstained, s.Incomplete)
+}
+
+// firstDeciding returns the first round that took a side, so the folded verdict
+// carries a real label and that round's reason rather than an abstention's.
+func firstDeciding(vs []Verdict) Verdict {
+	for _, v := range vs {
+		if leaning(v.Verdict) != 0 {
+			return v
+		}
+	}
+	return vs[0]
 }
 
 func unsureFold(base Verdict, reason string) Verdict {

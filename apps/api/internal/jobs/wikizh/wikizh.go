@@ -66,6 +66,25 @@ func restores(b Bucket, v string) bool {
 	return v == VerdictUsable
 }
 
+// leaning maps a verdict onto the axis the decision actually turns on:
+// +1 "write the wiki text", -1 "do not", 0 "no opinion".
+//
+// This is the distinction the first fold missed. `equivalent` is not a vote
+// against restoring, it is a statement that the choice does not matter, and
+// `unsure` is an abstention. Requiring three IDENTICAL labels treated both as
+// dissent and put 306 works into the review pile that no round had actually
+// contradicted — 197 in the compare bucket, 109 in usable.
+func leaning(v string) int {
+	switch v {
+	case VerdictABetter, VerdictUsable:
+		return 1
+	case VerdictBBetter, VerdictUnusable:
+		return -1
+	default: // equivalent, unsure, anything invented
+		return 0
+	}
+}
+
 func validVerdict(b Bucket, v string) bool {
 	switch b {
 	case BucketCompare:

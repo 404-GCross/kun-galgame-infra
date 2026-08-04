@@ -71,7 +71,13 @@ type HTTPJudge struct {
 	maxTokens int
 	limiter   *paceLimiter
 	http      *http.Client
+	// adversarial swaps in the re-framed prompts (adversarial.go) for the pass
+	// over works three ordinary rounds contested.
+	adversarial bool
 }
+
+// Adversarial switches this judge to the re-framed prompts.
+func (j *HTTPJudge) Adversarial() *HTTPJudge { j.adversarial = true; return j }
 
 func NewHTTPJudge(baseURL, token, model string, maxTokens, rpm int) *HTTPJudge {
 	return &HTTPJudge{
@@ -117,12 +123,16 @@ func (j *HTTPJudge) JudgeBatch(ctx context.Context, bucket Bucket, cs []Candidat
 	if len(cs) == 0 {
 		return nil, nil
 	}
+	packet, system, version := UserPacket, BatchSystemPrompt(bucket), PromptVersion()
+	if j.adversarial {
+		packet, system, version = AdversarialPacket, BatchAdversarialSystemPrompt(bucket), AdversarialPromptVersion()
+	}
 	var sb strings.Builder
 	for _, c := range cs {
-		sb.WriteString(UserPacket(c))
+		sb.WriteString(packet(c))
 		sb.WriteString("\n")
 	}
-	content, model, err := j.chat(ctx, BatchSystemPrompt(bucket), sb.String())
+	content, model, err := j.chat(ctx, system, sb.String())
 	if err != nil {
 		return nil, err
 	}
@@ -146,8 +156,13 @@ func (j *HTTPJudge) JudgeBatch(ctx context.Context, bucket Bucket, cs []Candidat
 		if !ok || !validVerdict(bucket, v.Verdict) {
 			v = Verdict{Key: c.Key(), Verdict: VerdictUnsure, Confidence: 0,
 				Reason: "模型未返回该条或裁决不在词表内"}
+		} else if j.adversarial && bucket == BucketCompare {
+			// Undo the swap the moment the reply is parsed, so the verdict
+			// file, the fold and the apply pass all speak one vocabulary in
+			// which a_better means "the user's text wins".
+			v.Verdict = SwapVerdict(v.Verdict)
 		}
-		v.WorkID, v.Bucket, v.Model, v.PromptVersion = c.WorkID, bucket, model, PromptVersion()
+		v.WorkID, v.Bucket, v.Model, v.PromptVersion = c.WorkID, bucket, model, version
 		out = append(out, v)
 	}
 	return out, nil

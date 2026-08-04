@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 
 	"api/internal/platform/catalog/migrate"
@@ -19,27 +20,39 @@ import (
 
 var testDB *gorm.DB
 
+// TestMain prepares the database when one is offered but NEVER exits early
+// without it: the fold, the swap mapping and the packet layout are pure
+// functions, and an os.Exit(0) here reported them as "ok" while running none of
+// them. Tests that need rows call requireDB and skip individually.
 func TestMain(m *testing.M) {
-	dsn := os.Getenv("TEST_DATABASE_DSN")
-	if dsn == "" {
-		fmt.Fprintln(os.Stderr, "SKIP: TEST_DATABASE_DSN is unset")
-		os.Exit(0)
+	if dsn := os.Getenv("TEST_DATABASE_DSN"); dsn != "" {
+		db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+		switch {
+		case err != nil:
+			fmt.Fprintf(os.Stderr, "SKIP db tests: cannot connect: %v\n", err)
+		default:
+			if err := migrate.Run(db); err != nil {
+				fmt.Fprintf(os.Stderr, "SKIP db tests: catalog migrate failed: %v\n", err)
+			} else if err := seed.Run(db); err != nil {
+				fmt.Fprintf(os.Stderr, "SKIP db tests: catalog seed failed: %v\n", err)
+			} else {
+				testDB = db
+			}
+		}
+	} else {
+		fmt.Fprintln(os.Stderr, "SKIP db tests: TEST_DATABASE_DSN is unset")
 	}
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "SKIP: cannot connect to test database: %v\n", err)
-		os.Exit(0)
-	}
-	if err := migrate.Run(db); err != nil {
-		fmt.Fprintf(os.Stderr, "SKIP: catalog migrate failed: %v\n", err)
-		os.Exit(0)
-	}
-	if err := seed.Run(db); err != nil {
-		fmt.Fprintf(os.Stderr, "SKIP: catalog seed failed: %v\n", err)
-		os.Exit(0)
-	}
-	testDB = db
 	os.Exit(m.Run())
+}
+
+// requireDB skips one test when no database was supplied, so a DSN-less run is
+// honestly reported as "these N skipped" rather than as a silent whole-package
+// pass.
+func requireDB(t *testing.T) {
+	t.Helper()
+	if testDB == nil {
+		t.Skip("needs TEST_DATABASE_DSN")
+	}
 }
 
 // ensureSnapshot creates the rescue table the job reads. In prod it is created
@@ -61,6 +74,7 @@ func ensureSnapshot(t *testing.T) {
 
 func clean(t *testing.T) {
 	t.Helper()
+	requireDB(t)
 	for _, tbl := range []string{"catalog_work_intro", "catalog_work"} {
 		require.NoError(t, testDB.Exec("TRUNCATE "+tbl+" RESTART IDENTITY CASCADE").Error)
 	}
@@ -216,6 +230,7 @@ func TestGateAndVocabulary(t *testing.T) {
 // reported as the precondition it is, rather than silently yielding an empty
 // candidate set that reads like "nothing to do".
 func TestSnapshotMissingIsAPrecondition(t *testing.T) {
+	requireDB(t)
 	require.NoError(t, testDB.Exec(`DROP TABLE IF EXISTS src_wiki.intro_snapshot`).Error)
 	_, err := LoadCandidates(context.Background(), testDB, BucketUsable, 0)
 	require.Error(t, err)
@@ -253,7 +268,7 @@ func TestConsensusRequiresUnanimity(t *testing.T) {
 	assert.Equal(t, 3, st.Rounds)
 	assert.Equal(t, 4, st.Works)
 	assert.Equal(t, 2, st.Unanimous, "works 1 and 3 agreed in every round")
-	assert.Equal(t, 1, st.Disagreed, "work 2 flipped")
+	assert.Equal(t, 1, st.Contested, "work 2 flipped")
 	assert.Equal(t, 1, st.Incomplete, "work 4 is missing a round")
 
 	by := map[int64]Verdict{}
@@ -288,4 +303,76 @@ func TestConsensusRequiresUnanimity(t *testing.T) {
 	stApply, err := Apply(context.Background(), testDB, folded, true)
 	require.NoError(t, err)
 	assert.Zero(t, stApply.Written, "disagreement, incompleteness and a sub-gate fold all block the write")
+}
+
+// TestConsensusFoldsOnDirection pins the correction that took the review pile
+// from 829 to 523. The first fold compared LABELS, so "equivalent" and "unsure"
+// counted as dissent and 306 works no round had contradicted were sent to a
+// human. Agreement is on the direction; abstentions neither block nor decide.
+func TestConsensusFoldsOnDirection(t *testing.T) {
+	r := func(id int64, v string, c float64) Verdict {
+		return Verdict{Key: fmt.Sprintf("w%d", id), WorkID: id, Bucket: BucketCompare, Verdict: v, Confidence: c}
+	}
+	rounds := [][]Verdict{
+		// 1: two votes and a shrug   → decided (this is the 306)
+		// 2: one vote and two shrugs → NOT decided, a lone vote is no consensus
+		// 3: genuinely opposed       → contested, the only kind worth a human
+		// 4: nobody wanted it        → declined, no write, no human
+		// 5: everyone abstained      → abstained
+		{r(1, VerdictABetter, 0.95), r(2, VerdictABetter, 0.95), r(3, VerdictABetter, 0.95), r(4, VerdictBBetter, 0.95), r(5, VerdictUnsure, 0.5)},
+		{r(1, VerdictABetter, 0.93), r(2, VerdictEquivalent, 0.9), r(3, VerdictBBetter, 0.95), r(4, VerdictEquivalent, 0.9), r(5, VerdictEquivalent, 0.4)},
+		{r(1, VerdictEquivalent, 0.10), r(2, VerdictUnsure, 0.5), r(3, VerdictABetter, 0.95), r(4, VerdictBBetter, 0.95), r(5, VerdictUnsure, 0.5)},
+	}
+	got, st := Consensus(rounds)
+	assert.Equal(t, 1, st.Leaning, "work 1: a majority wanted it, one abstained, none objected")
+	assert.Equal(t, 1, st.Contested, "only work 3 has rounds pointing opposite ways")
+	assert.Equal(t, 1, st.Declined, "work 4: nobody wanted it — no write, and no human either")
+	assert.Equal(t, 2, st.Abstained, "works 2 and 5")
+	assert.Zero(t, st.Unanimous)
+
+	by := map[int64]Verdict{}
+	for _, v := range got {
+		by[v.WorkID] = v
+	}
+	// The gate floor comes from the DECIDING rounds only. Work 1's third round
+	// abstained at 0.10; letting that in would veto the decision with a
+	// confidence in not deciding.
+	assert.Equal(t, VerdictABetter, by[1].Verdict)
+	assert.InDelta(t, 0.93, by[1].Confidence, 0.001)
+	// A lone vote is not a consensus, however sure of itself it is.
+	assert.Equal(t, VerdictUnsure, by[2].Verdict)
+	assert.Zero(t, by[2].Confidence)
+	// Declining needs no majority — not writing is the safe default.
+	assert.Equal(t, VerdictBBetter, by[4].Verdict)
+	assert.False(t, restores(BucketCompare, by[4].Verdict))
+}
+
+// TestSwapVerdictIsAnInvolution: the adversarial compare round presents the
+// texts in the opposite order, so the reply must be mapped back before it
+// reaches the verdict file. Applying the mapping twice returns the original —
+// which is what makes it safe to run over a whole round.
+func TestSwapVerdictIsAnInvolution(t *testing.T) {
+	for _, v := range []string{VerdictABetter, VerdictBBetter, VerdictEquivalent, VerdictUnsure} {
+		assert.Equal(t, v, SwapVerdict(SwapVerdict(v)), v)
+	}
+	assert.Equal(t, VerdictBBetter, SwapVerdict(VerdictABetter))
+	assert.Equal(t, VerdictABetter, SwapVerdict(VerdictBBetter))
+	// A tie or an abstention has no side, so swapping must not invent one.
+	assert.Equal(t, VerdictEquivalent, SwapVerdict(VerdictEquivalent))
+	assert.Equal(t, VerdictUnsure, SwapVerdict(VerdictUnsure))
+}
+
+// TestAdversarialPacketSwapsOnlyCompare: the usable bucket has no A/B, so its
+// re-framing lives in the prompt and its packet must be untouched.
+func TestAdversarialPacketSwapsOnlyCompare(t *testing.T) {
+	c := Candidate{WorkID: 1, Bucket: BucketCompare, Source: "原文", WikiZh: "USERTEXT", MachineZh: "MACHINETEXT"}
+	swapped := AdversarialPacket(c)
+	a := strings.Index(swapped, "MACHINETEXT")
+	b := strings.Index(swapped, "USERTEXT")
+	assert.Positive(t, a)
+	assert.Positive(t, b)
+	assert.Less(t, a, b, "under swap the machine text must be presented first")
+
+	u := Candidate{WorkID: 2, Bucket: BucketUsable, Source: "原文", WikiZh: "USERTEXT"}
+	assert.Equal(t, UserPacket(u), AdversarialPacket(u))
 }

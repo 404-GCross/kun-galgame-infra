@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -45,20 +46,22 @@ func main() {
 	cmd := os.Args[1]
 	fs := flag.NewFlagSet(cmd, flag.ExitOnError)
 	var (
-		bucket    = fs.String("bucket", string(wikizh.BucketUsable), "judge: usable (no zh at all) | compare (a machine row holds the slot)")
-		out       = fs.String("out", "", "judge: JSONL verdict file (appended; already-judged keys are skipped)")
-		in        = fs.String("in", "", "apply: comma-separated JSONL verdict files — one per INDEPENDENT judging round. Auto-apply requires every round to agree.")
-		apply     = fs.Bool("apply", false, "apply: write (default is a dry forecast)")
-		receipts  = fs.String("receipts", "", "apply: where to write the row-id receipt (default: beside the first --in file, which must be writable)")
-		limit     = fs.Int("limit", 0, "max candidates (0 = all)")
-		chunk     = fs.Int("chunk", 5, "judge: candidates per gateway request")
-		rpm       = fs.Int("rpm", 60, "judge: gateway requests per minute (even pacing, shared across workers)")
-		workers   = fs.Int("workers", 6, "judge: concurrent chunks; the reasoning model's per-request latency dominates, so this is the throughput lever, while --rpm stays the politeness ceiling")
-		maxTokens = fs.Int("max-tokens", 24576, "judge: output budget; a reasoning model needs headroom or finish_reason trips")
-		mock      = fs.Bool("mock", false, "judge: offline deterministic stand-in")
-		llmBase   = fs.String("llm-base", os.Getenv("KUN_AI_UPSTREAM_BASE_URL"), "OpenAI-compatible base URL")
-		llmToken  = fs.String("llm-token", os.Getenv("KUN_AI_UPSTREAM_TOKEN"), "bearer token")
-		model     = fs.String("model", envOr("KUN_AI_UPSTREAM_MODEL", "@cf/zai-org/glm-5.2"), "model id")
+		bucket      = fs.String("bucket", string(wikizh.BucketUsable), "judge: usable (no zh at all) | compare (a machine row holds the slot)")
+		out         = fs.String("out", "", "judge: JSONL verdict file (appended; already-judged keys are skipped)")
+		in          = fs.String("in", "", "apply: comma-separated JSONL verdict files — one per INDEPENDENT judging round. Auto-apply requires every round to agree.")
+		apply       = fs.Bool("apply", false, "apply: write (default is a dry forecast)")
+		receipts    = fs.String("receipts", "", "apply: where to write the row-id receipt (default: beside the first --in file, which must be writable)")
+		onlyFile    = fs.String("only", "", "judge: restrict to the work ids in this file, one per line")
+		adversarial = fs.Bool("adversarial", false, "judge: re-framed prompts for contested works — compare swaps A/B positions, usable must cite a disqualifying defect")
+		limit       = fs.Int("limit", 0, "max candidates (0 = all)")
+		chunk       = fs.Int("chunk", 5, "judge: candidates per gateway request")
+		rpm         = fs.Int("rpm", 60, "judge: gateway requests per minute (even pacing, shared across workers)")
+		workers     = fs.Int("workers", 6, "judge: concurrent chunks; the reasoning model's per-request latency dominates, so this is the throughput lever, while --rpm stays the politeness ceiling")
+		maxTokens   = fs.Int("max-tokens", 24576, "judge: output budget; a reasoning model needs headroom or finish_reason trips")
+		mock        = fs.Bool("mock", false, "judge: offline deterministic stand-in")
+		llmBase     = fs.String("llm-base", os.Getenv("KUN_AI_UPSTREAM_BASE_URL"), "OpenAI-compatible base URL")
+		llmToken    = fs.String("llm-token", os.Getenv("KUN_AI_UPSTREAM_TOKEN"), "bearer token")
+		model       = fs.String("model", envOr("KUN_AI_UPSTREAM_MODEL", "@cf/zai-org/glm-5.2"), "model id")
 	)
 	_ = fs.Parse(os.Args[2:])
 
@@ -95,14 +98,29 @@ func main() {
 			slog.Error("read existing verdicts", "error", err)
 			os.Exit(1)
 		}
+		// --only restricts the pass to a work-id list. The adversarial round
+		// re-judges exactly the works the ordinary rounds contested, and
+		// re-judging all 3,829 to reach 291 of them would be 13x the cost.
+		only, err := readWorkIDs(*onlyFile)
+		if err != nil {
+			slog.Error("read --only list", "error", err)
+			os.Exit(1)
+		}
 		pending := cands[:0]
 		for _, c := range cands {
+			if only != nil && !only[c.WorkID] {
+				continue
+			}
 			if !done[c.Key()] {
 				pending = append(pending, c)
 			}
 		}
 		slog.Info("wiki-zh judge", "bucket", b, "candidates", len(cands),
-			"already_judged", len(done), "pending", len(pending))
+			"restricted_to", len(only), "already_judged", len(done), "pending", len(pending))
+		if only != nil && len(pending)+len(done) < len(only) {
+			slog.Warn("some --only ids are not in this bucket's candidate set",
+				"requested", len(only), "found", len(pending)+len(done))
+		}
 
 		var judge wikizh.Judge
 		if *mock {
@@ -110,6 +128,10 @@ func main() {
 			slog.Warn("MOCK judge — verdicts are NOT real judgements")
 		} else {
 			hj := wikizh.NewHTTPJudge(*llmBase, *llmToken, *model, *maxTokens, *rpm)
+			if *adversarial {
+				hj = hj.Adversarial()
+				slog.Info("ADVERSARIAL pass — compare positions are swapped, usable must cite a defect")
+			}
 			if !hj.Configured() {
 				fmt.Println("BLOCKED: LLM gateway not configured (need --llm-base + --llm-token or KUN_AI_UPSTREAM_*).")
 				os.Exit(3)
@@ -252,4 +274,33 @@ func envOr(k, def string) string {
 		return v
 	}
 	return def
+}
+
+// readWorkIDs reads a work-id list, one per line, blanks and #comments ignored.
+// Returns nil (not an empty map) when no file was given, so "no filter" and
+// "an empty filter" cannot be confused — the latter would judge nothing.
+func readWorkIDs(path string) (map[int64]bool, error) {
+	if path == "" {
+		return nil, nil
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	ids := map[int64]bool{}
+	for _, line := range strings.Split(string(b), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		id, err := strconv.ParseInt(line, 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("parse work id %q: %w", line, err)
+		}
+		ids[id] = true
+	}
+	if len(ids) == 0 {
+		return nil, fmt.Errorf("%s contains no work ids", path)
+	}
+	return ids, nil
 }
