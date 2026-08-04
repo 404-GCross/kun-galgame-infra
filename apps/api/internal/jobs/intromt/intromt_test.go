@@ -34,11 +34,17 @@ var (
 	testDSN string
 )
 
+// TestMain gates the DB-backed tests PER TEST (dbtest.Skip) rather than exiting
+// the whole package (dbtest.SkipMain). The package also holds pure functions —
+// the source sanitizer, the hash, the decision table — and a package-level exit
+// reported them as `ok` while running none of them, which is the same silent
+// green dbtest exists to prevent, one level down.
 func TestMain(m *testing.M) {
 	var ok bool
 	testDSN, ok = dbtest.DSN()
 	if !ok {
-		dbtest.SkipMain("intromt suite")
+		fmt.Fprintln(os.Stderr, "SKIP: no TEST_DATABASE_DSN — DB-backed intromt tests will skip individually")
+		os.Exit(m.Run())
 	}
 	db, err := gorm.Open(postgres.Open(testDSN), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 	if err != nil {
@@ -61,6 +67,9 @@ func TestMain(m *testing.M) {
 
 func clean(t *testing.T) {
 	t.Helper()
+	if testDB == nil {
+		dbtest.Skip(t)
+	}
 	// catalog_external_ref carries a POLYMORPHIC entity_id, so it has no foreign
 	// key to catalog_work and a CASCADE truncate of works leaves its rows
 	// behind — which then collide with the restarted identity. It is cleaned
@@ -597,4 +606,45 @@ func TestPublishedPopulationExcludesDrafts(t *testing.T) {
 	st, err := Run(ctx, nil, Opts{DSN: testDSN, Population: PopulationPublished, SourceLang: SourceEn})
 	require.NoError(t, err)
 	assert.Equal(t, 1, st.Candidates, "the draft claim is not on the public face")
+}
+
+// TestSanitizeSourceStripsUpstreamMarkup pins the cleaning that runs before the
+// hash and the translation. All 8 works in the first en→zh run whose English
+// carried VNDB markup produced Chinese carrying the same markup — a relative
+// link that 404s on our domain, or BBCode shown as literal text.
+func TestSanitizeSourceStripsUpstreamMarkup(t *testing.T) {
+	cases := []struct{ in, want string }{
+		// The link TEXT is part of the sentence and must survive; only the
+		// markup goes.
+		{"[Toono Shiki](/c72) hears of murders in [Tsukihime](/v7).",
+			"Toono Shiki hears of murders in Tsukihime."},
+		{"A DLC starring [Nachi](/c55103).", "A DLC starring Nachi."},
+		{"See [url=https://example.com/x]the site[/url] for more.",
+			"See the site for more."},
+		{"[spoiler]She dies.[/spoiler]", "She dies."},
+		{"[raw]魔法少女[/raw]", "魔法少女"},
+		// An absolute URL is not VNDB's internal link syntax and is left alone.
+		{"[docs](https://example.com/d)", "[docs](https://example.com/d)"},
+		// Nothing to strip must change nothing at all — otherwise every already
+		// translated row would re-hash and the lane would re-translate the world.
+		{"ごく普通の日本語のあらすじ。", "ごく普通の日本語のあらすじ。"},
+		{"", ""},
+	}
+	for _, c := range cases {
+		assert.Equal(t, c.want, sanitizeSource(c.in), c.in)
+	}
+}
+
+// TestSanitizeChangesHashOnlyForDirtyText is why no backfill script is needed:
+// the src_hash is taken from the cleaned text, so rows translated from a dirty
+// source stop matching and re-translate themselves, while clean rows keep their
+// hash and stay untouched.
+func TestSanitizeChangesHashOnlyForDirtyText(t *testing.T) {
+	clean := "ごく普通のあらすじ。"
+	assert.Equal(t, hashSource(clean), hashSource(sanitizeSource(clean)),
+		"a clean source must keep its hash or the whole corpus re-translates")
+
+	dirty := "[Toono Shiki](/c72) hears of murders."
+	assert.NotEqual(t, hashSource(dirty), hashSource(sanitizeSource(dirty)),
+		"a dirty source must change hash so the lane re-translates it")
 }

@@ -192,6 +192,12 @@ func loadCandidates(ctx context.Context, db *gorm.DB, reg registry, pop Populati
 	if err := q.Scan(&out).Error; err != nil {
 		return nil, err
 	}
+	// Strip upstream markup BEFORE anything hashes or translates this text
+	// (sanitize.go): the model carries VNDB's link syntax through verbatim, and
+	// hashing the cleaned text is what makes already-dirty rows re-translate.
+	for i := range out {
+		out[i].JaText = sanitizeSource(out[i].JaText)
+	}
 	// Window in Go AFTER the popularity ORDER BY so a sample run (--limit)
 	// takes the most-popular N (the strongest quality signal), not an arbitrary
 	// slice.
