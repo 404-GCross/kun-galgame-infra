@@ -139,7 +139,7 @@ func (s *PublicService) SeriesList(ctx context.Context, nsfw bool, cursor string
 		where = append(where, "s.id > ?")
 		args = append(args, cur.ID)
 	}
-	args = append(args, limit)
+	args = append(args, limit+taxonomyOverFetch)
 
 	var rows []struct {
 		ID          int64  `gorm:"column:id"`
@@ -154,6 +154,7 @@ func (s *PublicService) SeriesList(ctx context.Context, nsfw bool, cursor string
 		return dto.PublicSeriesListData{}, err
 	}
 
+	rows, more := taxonomyTrim(rows, limit)
 	ids := make([]int64, len(rows))
 	for i, r := range rows {
 		ids[i] = r.ID
@@ -171,6 +172,6 @@ func (s *PublicService) SeriesList(ctx context.Context, nsfw bool, cursor string
 	if out.Total, err = s.taxonomyTotal(ctx, "catalog_series", nil, nil); err != nil {
 		return dto.PublicSeriesListData{}, err
 	}
-	out.NextCursor = taxonomyNextCursor(taxonomyLaneSeries, ids, limit)
+	out.NextCursor = taxonomyNextCursor(taxonomyLaneSeries, ids, more)
 	return out, nil
 }

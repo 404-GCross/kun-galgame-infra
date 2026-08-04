@@ -208,9 +208,15 @@ const worksSearchTestPrefix = "test_svc_"
 // tears its index down.
 func worksSearchIndexer(t *testing.T) *catsearch.Indexer {
 	t.Helper()
+	// No host, no test. NewClient never dials — it only builds a handle — so a
+	// hard-coded 127.0.0.1:7700 fallback could not be caught by the err check
+	// below: without a Meilisearch the test proceeded to a connection-refused
+	// FAILURE instead of a skip, and with an unrelated local Meilisearch it
+	// failed on a 401. The CI integration job sets this variable; the
+	// no-services job deliberately does not.
 	host := os.Getenv("MEILISEARCH_TEST_HOST")
 	if host == "" {
-		host = "http://127.0.0.1:7700"
+		t.Skip("MEILISEARCH_TEST_HOST unset — search-backed test not run")
 	}
 	client, err := infrasearch.NewClient(config.MeilisearchConfig{
 		Host: host, APIKey: os.Getenv("MEILISEARCH_TEST_API_KEY"), IndexPrefix: worksSearchTestPrefix,

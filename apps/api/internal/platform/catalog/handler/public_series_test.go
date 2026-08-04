@@ -64,6 +64,18 @@ func seedSeries(t *testing.T, db *gorm.DB) (seriesID, emptyID, sfwWorkID, r18Wor
 	for _, wid := range []int64{sfwWorkID, r18.ID, stub.ID} {
 		require.NoError(t, db.Create(&model.CatalogSeriesMember{SeriesID: series.ID, WorkID: wid}).Error)
 	}
+	// work_count counts LIVE CLAIMS only (wave 146) — the same gate the sibling
+	// labels/tags/engines fixtures satisfy, and for the same reason: a bodyless
+	// work is not on the public face, so a lane counting it would advertise a
+	// number the member list cannot deliver. Left unclaimed, every count here is
+	// legitimately 0, which is what this fixture used to assert against.
+	// The stub stays unclaimed: it is excluded by status anyway, and leaving it
+	// out keeps it a stub rather than quietly making it countable.
+	for i, wid := range []int64{sfwWorkID, r18.ID} {
+		require.NoError(t, db.Exec(
+			`UPDATE catalog_work SET site = 'kungal', product_work_id = ?, claim_state = ? WHERE id = ?`,
+			9400+i, model.ClaimStateLive, wid).Error)
+	}
 	require.NoError(t, db.Create(&model.CatalogSeriesIntro{
 		SeriesID: series.ID, Lang: "zh-Hans", Intro: "系列简介", SourceID: dlsiteSourceID,
 	}).Error)

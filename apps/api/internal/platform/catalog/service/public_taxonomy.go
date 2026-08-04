@@ -90,7 +90,7 @@ func (s *PublicService) LabelsList(ctx context.Context, f LabelsListFilter, curs
 		where = append(where, "id > ?")
 		args = append(args, cur.ID)
 	}
-	args = append(args, limit)
+	args = append(args, limit+taxonomyOverFetch)
 
 	var rows []struct {
 		ID          int64
@@ -103,6 +103,7 @@ func (s *PublicService) LabelsList(ctx context.Context, f LabelsListFilter, curs
 		return dto.PublicLabelsListData{}, err
 	}
 
+	rows, more := taxonomyTrim(rows, limit)
 	ids := make([]int64, len(rows))
 	for i, r := range rows {
 		ids[i] = r.ID
@@ -120,7 +121,7 @@ func (s *PublicService) LabelsList(ctx context.Context, f LabelsListFilter, curs
 	if out.Total, err = s.taxonomyTotal(ctx, "catalog_label", filterWhere, filterArgs); err != nil {
 		return dto.PublicLabelsListData{}, err
 	}
-	out.NextCursor = taxonomyNextCursor(taxonomyLaneLabels, ids, limit)
+	out.NextCursor = taxonomyNextCursor(taxonomyLaneLabels, ids, more)
 	return out, nil
 }
 
@@ -148,7 +149,7 @@ func (s *PublicService) TagsList(ctx context.Context, f TagsListFilter, cursor s
 		where = append(where, "id > ?")
 		args = append(args, cur.ID)
 	}
-	args = append(args, limit)
+	args = append(args, limit+taxonomyOverFetch)
 
 	var rows []struct {
 		ID   int64
@@ -161,6 +162,7 @@ func (s *PublicService) TagsList(ctx context.Context, f TagsListFilter, cursor s
 		return dto.PublicTagsListData{}, err
 	}
 
+	rows, more := taxonomyTrim(rows, limit)
 	ids := make([]int64, len(rows))
 	for i, r := range rows {
 		ids[i] = r.ID
@@ -183,7 +185,7 @@ func (s *PublicService) TagsList(ctx context.Context, f TagsListFilter, cursor s
 	if out.Total, err = s.taxonomyTotal(ctx, "catalog_tag", filterWhere, filterArgs); err != nil {
 		return dto.PublicTagsListData{}, err
 	}
-	out.NextCursor = taxonomyNextCursor(taxonomyLaneTags, ids, limit)
+	out.NextCursor = taxonomyNextCursor(taxonomyLaneTags, ids, more)
 	return out, nil
 }
 
@@ -203,7 +205,7 @@ func (s *PublicService) EnginesList(ctx context.Context, f EnginesListFilter, cu
 		where = append(where, "id > ?")
 		args = append(args, cur.ID)
 	}
-	args = append(args, limit)
+	args = append(args, limit+taxonomyOverFetch)
 
 	var rows []struct {
 		ID          int64
@@ -216,6 +218,7 @@ func (s *PublicService) EnginesList(ctx context.Context, f EnginesListFilter, cu
 		return dto.PublicEnginesListData{}, err
 	}
 
+	rows, more := taxonomyTrim(rows, limit)
 	ids := make([]int64, len(rows))
 	for i, r := range rows {
 		ids[i] = r.ID
@@ -234,7 +237,7 @@ func (s *PublicService) EnginesList(ctx context.Context, f EnginesListFilter, cu
 	if out.Total, err = s.taxonomyTotal(ctx, "catalog_engine", nil, nil); err != nil {
 		return dto.PublicEnginesListData{}, err
 	}
-	out.NextCursor = taxonomyNextCursor(taxonomyLaneEngines, ids, limit)
+	out.NextCursor = taxonomyNextCursor(taxonomyLaneEngines, ids, more)
 	return out, nil
 }
 
@@ -431,10 +434,26 @@ func clampBrowseLimit(limit int) int {
 	return limit
 }
 
+// taxonomyOverFetch is what each lane adds to its LIMIT. A page that comes back
+// exactly full is ambiguous — it can equally be the last page — and all four
+// lanes used to resolve that ambiguity by guessing "there is more", so walking
+// a facet whose size is a multiple of the limit ended on a cursor that led to an
+// empty page. Fetching one extra row turns the guess into evidence: the extra
+// row exists only when a further page does.
+const taxonomyOverFetch = 1
+
+// taxonomyTrim drops the over-fetched row and reports whether it was there.
+func taxonomyTrim[T any](rows []T, limit int) (page []T, more bool) {
+	if len(rows) > limit {
+		return rows[:limit], true
+	}
+	return rows, false
+}
+
 // taxonomyNextCursor mints the id-lane cursor for a full page, nil on the last
 // one (the works-list convention: a short page ends the walk).
-func taxonomyNextCursor(lane string, ids []int64, limit int) *string {
-	if len(ids) < limit {
+func taxonomyNextCursor(lane string, ids []int64, more bool) *string {
+	if !more || len(ids) == 0 {
 		return nil
 	}
 	c := encodePublicCursor(publicCursor{Sort: lane, ID: ids[len(ids)-1]})
