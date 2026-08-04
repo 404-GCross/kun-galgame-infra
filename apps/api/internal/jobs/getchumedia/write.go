@@ -6,6 +6,7 @@ import (
 	stderrors "errors"
 	"log/slog"
 	"os"
+	"sync"
 	"time"
 
 	"api/internal/platform/catalog/model"
@@ -41,14 +42,43 @@ type runner struct {
 	pingHashes []string
 }
 
+// workResult is one work's outcome. fill returns it instead of mutating the
+// runner, which is what lets works run CONCURRENTLY: every field here is
+// private to one work, so the pool merges results serially and nothing is
+// shared while the uploads are in flight.
+type workResult struct {
+	dedup, missing, planned, uploaded, errors, rejected int
+	noStaged, quota                                     bool
+	hashes                                              []string // fresh uploads, for the reference ping
+	touched                                             bool     // the work gained at least one row
+}
+
+func (s *Stats) merge(r workResult) {
+	s.Dedup += r.dedup
+	s.Missing += r.missing
+	s.Planned += r.planned
+	s.Uploaded += r.uploaded
+	s.Errors += r.errors
+	s.Rejected += r.rejected
+	if r.noStaged {
+		s.NoStaged++
+	}
+	if r.quota {
+		s.Quota = true
+	}
+}
+
 // fill uploads one work's Getchu sample CG and writes its screenshot rows.
 //
 // A work can carry several Getchu releases (a regular edition, a DL edition);
 // their sample sets are concatenated in anchor order, and sort_order is the
 // running position across the whole gallery rather than each release's own
 // index — two releases both starting at 0 would otherwise interleave into
-// nonsense. Duplicate bytes across the two collapse on the (work, hash) key.
-func (r *runner) fill(ctx context.Context, dir string, c candidate, staged map[string][]stagedImage, apply bool) {
+// nonsense. That is also why the pool parallelises across WORKS and never
+// within one: sort_order is assigned by this loop's position, so two goroutines
+// inside one gallery would scramble it.
+func (r *runner) fill(ctx context.Context, dir string, c candidate, staged map[string][]stagedImage, apply bool) workResult {
+	var out workResult
 	var images []stagedImage
 	seenBytes := map[string]bool{}
 	for _, gid := range c.GetchuIDs {
@@ -63,7 +93,7 @@ func (r *runner) fill(ctx context.Context, dir string, c candidate, staged map[s
 			// uploaded, where the unique key still catches them.
 			if im.SHA256 != "" {
 				if seenBytes[im.SHA256] {
-					r.stats.Dedup++
+					out.dedup++
 					continue
 				}
 				seenBytes[im.SHA256] = true
@@ -72,24 +102,30 @@ func (r *runner) fill(ctx context.Context, dir string, c candidate, staged map[s
 		}
 	}
 	if len(images) == 0 {
-		r.stats.NoStaged++
-		return
+		out.noStaged = true
+		return out
 	}
 	if r.maxPerWork > 0 && len(images) > r.maxPerWork {
 		images = images[:r.maxPerWork]
+	}
+	// This work's already-present hashes, read once. The map is only ever read
+	// here and written by the merge, so a worker never touches another's entry.
+	present := map[string]bool{}
+	for h := range r.have[c.WorkID] {
+		present[h] = true
 	}
 
 	sort := 0
 	for _, im := range images {
 		if ctx.Err() != nil {
-			return
+			return out
 		}
 		path := mirrorPath(dir, im.GetchuID, im.File)
 		if !fileExists(path) {
-			r.stats.Missing++
+			out.missing++
 			continue
 		}
-		r.stats.Planned++
+		out.planned++
 		if !apply {
 			sort++
 			continue
@@ -97,14 +133,14 @@ func (r *runner) fill(ctx context.Context, dir string, c candidate, staged map[s
 
 		res, err := r.upload(ctx, path, im.File)
 		if err != nil {
-			if r.classify(err, c.WorkID, im) {
-				r.stats.Quota = true
-				return
+			if r.classify(err, c.WorkID, im, &out) {
+				out.quota = true
+				return out
 			}
 			continue
 		}
-		if r.have[c.WorkID][res.Hash] {
-			r.stats.Dedup++
+		if present[res.Hash] {
+			out.dedup++
 			continue
 		}
 		tx := r.db.WithContext(ctx).Clauses(clause.OnConflict{
@@ -120,27 +156,23 @@ func (r *runner) fill(ctx context.Context, dir string, c candidate, staged map[s
 			Sexual: c.ContentRating, Violence: 0, SourceID: r.source,
 		})
 		if tx.Error != nil {
-			r.stats.Errors++
+			out.errors++
 			slog.Warn("write screenshot row", "work", c.WorkID, "getchu", im.GetchuID, "err", tx.Error)
 			continue
 		}
 		// Ping regardless of whether the row was new: the bytes are in the
 		// image service either way and sit at TTL from upload time.
-		r.pingHashes = append(r.pingHashes, res.Hash)
+		out.hashes = append(out.hashes, res.Hash)
 		if tx.RowsAffected == 0 {
-			r.stats.Dedup++
+			out.dedup++
 			continue
 		}
-		set := r.have[c.WorkID]
-		if set == nil {
-			set = map[string]bool{}
-			r.have[c.WorkID] = set
-		}
-		set[res.Hash] = true
-		r.touched = append(r.touched, c.WorkID)
-		r.stats.Uploaded++
+		present[res.Hash] = true
+		out.touched = true
+		out.uploaded++
 		sort++
 	}
+	return out
 }
 
 // upload reads a mirrored image and uploads it. Bytes only ever come from the
@@ -179,17 +211,17 @@ func (r *runner) upload(ctx context.Context, path, filename string) (*imageclien
 
 // classify maps an upload error to a counter. Only quota exhaustion stops the
 // run — a moderation rejection is that one image's verdict, not the batch's.
-func (r *runner) classify(err error, workID int64, im stagedImage) (quota bool) {
+func (r *runner) classify(err error, workID int64, im stagedImage, out *workResult) (quota bool) {
 	switch {
 	case stderrors.Is(err, imageclient.ErrQuotaExceeded):
 		slog.Warn("daily image quota exhausted — stopping", "work", workID)
 		return true
 	case stderrors.Is(err, imageclient.ErrModerationRejected):
-		r.stats.Rejected++
+		out.rejected++
 		slog.Warn("screenshot rejected by moderation", "work", workID, "getchu", im.GetchuID, "file", im.File)
 		return false
 	default:
-		r.stats.Errors++
+		out.errors++
 		slog.Warn("upload screenshot", "work", workID, "getchu", im.GetchuID, "file", im.File, "err", err)
 		return false
 	}
@@ -214,4 +246,103 @@ func (r *runner) ping(ctx context.Context) error {
 func fileExists(path string) bool {
 	fi, err := os.Stat(path)
 	return err == nil && !fi.IsDir() && fi.Size() > 0
+}
+
+// run walks the candidates through a fixed pool of workers.
+//
+// The pool is across WORKS, never inside one: sort_order is assigned by fill's
+// own loop position, so two goroutines in one gallery would scramble it, and
+// the bytes-already-sent check is per-work state. One work per worker keeps
+// both correct without a lock on either.
+//
+// Concurrency is worth having because the bottleneck is not ours: at one upload
+// at a time the image service answered in ~2s while sitting at 5% CPU — the
+// time is the object store round trip, so the fix is to have several in flight,
+// not to make each faster. A serial pass over this backfill is ~7.5 hours.
+//
+// Results merge on the caller's goroutine as they arrive, so Stats, touched and
+// pingHashes are still single-writer and need no mutex.
+func (r *runner) run(ctx context.Context, opts Opts, cands []candidate, staged map[string][]stagedImage) {
+	workers := opts.Workers
+	if workers < 1 {
+		workers = 1
+	}
+	if workers > len(cands) {
+		workers = len(cands)
+	}
+	if workers <= 1 {
+		for _, c := range cands {
+			if ctx.Err() != nil || r.stats.Quota {
+				return
+			}
+			r.absorb(c.WorkID, r.fill(ctx, opts.MirrorDir, c, staged, opts.Apply))
+		}
+		return
+	}
+
+	// Quota exhaustion is terminal for the whole run, so it cancels the shared
+	// context and every in-flight worker stops at its next image.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	type job struct {
+		c   candidate
+		res workResult
+	}
+	in := make(chan candidate)
+	out := make(chan job, workers)
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for c := range in {
+				out <- job{c: c, res: r.fill(ctx, opts.MirrorDir, c, staged, opts.Apply)}
+			}
+		}()
+	}
+	go func() {
+		defer close(in)
+		for _, c := range cands {
+			select {
+			case <-ctx.Done():
+				return
+			case in <- c:
+			}
+		}
+	}()
+	go func() { wg.Wait(); close(out) }()
+
+	done := 0
+	for j := range out {
+		r.absorb(j.c.WorkID, j.res)
+		done++
+		if j.res.quota {
+			cancel()
+		}
+		if done%200 == 0 {
+			slog.Info("getchu-media progress", "works_done", done, "of", len(cands),
+				"uploaded", r.stats.Uploaded, "errors", r.stats.Errors)
+		}
+	}
+}
+
+// absorb folds one work's result into the run-level state. Single-writer by
+// construction — only the driver goroutine calls it.
+func (r *runner) absorb(workID int64, res workResult) {
+	r.stats.merge(res)
+	r.pingHashes = append(r.pingHashes, res.hashes...)
+	if res.touched {
+		r.touched = append(r.touched, workID)
+	}
+	if len(res.hashes) > 0 {
+		set := r.have[workID]
+		if set == nil {
+			set = map[string]bool{}
+			r.have[workID] = set
+		}
+		for _, h := range res.hashes {
+			set[h] = true
+		}
+	}
 }

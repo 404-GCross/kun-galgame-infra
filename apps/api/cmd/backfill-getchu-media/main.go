@@ -34,6 +34,7 @@ func main() {
 	offset := flag.Int("offset", 0, "skip this many works first")
 	maxPerWork := flag.Int("max-per-work", 0, "cap the gallery size per work (0 = no cap)")
 	gap := flag.Duration("upload-gap", 0, "min delay between uploads (raise for a long production sweep)")
+	workers := flag.Int("workers", 1, "how many WORKS upload concurrently (1 = serial)")
 	imageBase := flag.String("image-base", "", "image_service base URL override (local dev)")
 	flag.Parse()
 
@@ -48,7 +49,7 @@ func main() {
 	st, err := getchumedia.Run(context.Background(), cfg, getchumedia.Opts{
 		DSN: *dsn, GetchuDSN: *getchuDSN, MirrorDir: *mirrorDir, Apply: *apply,
 		Limit: *limit, Offset: *offset, MaxPerWork: *maxPerWork,
-		UploadGap: *gap, ImageBase: *imageBase,
+		UploadGap: *gap, ImageBase: *imageBase, Workers: *workers,
 	})
 	if st != nil {
 		slog.Info("backfill-getchu-media done", "apply", *apply, "result", st.String())

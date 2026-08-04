@@ -64,6 +64,11 @@ type Opts struct {
 	UploadGap  time.Duration // min delay between uploads
 	ImageBase  string        // image service base override (local dev)
 	MaxPerWork int           // cap the gallery size per work (0 = no cap)
+	// Workers is how many WORKS upload concurrently (0/1 = serial). The image
+	// service answers an upload in ~2s at 5% CPU — the wait is the object store,
+	// not compute — so a few in flight is the whole speedup. Never parallelises
+	// within one work: see runner.run.
+	Workers int
 }
 
 // Stats reports one run.
@@ -156,12 +161,7 @@ func Run(ctx context.Context, cfg *config.Config, opts Opts) (*Stats, error) {
 	slog.Info("getchu-media candidates", "works", len(cands), "staged_items", len(staged),
 		"apply", opts.Apply, "mirror_dir", opts.MirrorDir, "offset", opts.Offset, "limit", opts.Limit)
 
-	for _, c := range cands {
-		if ctx.Err() != nil || r.stats.Quota {
-			break
-		}
-		r.fill(ctx, opts.MirrorDir, c, staged, opts.Apply)
-	}
+	r.run(ctx, opts, cands, staged)
 	if err := repository.TouchWorks(ctx, db, r.touched); err != nil {
 		return nil, fmt.Errorf("touch works: %w", err)
 	}
