@@ -49,6 +49,7 @@ func main() {
 		out       = fs.String("out", "", "judge: JSONL verdict file (appended; already-judged keys are skipped)")
 		in        = fs.String("in", "", "apply: comma-separated JSONL verdict files — one per INDEPENDENT judging round. Auto-apply requires every round to agree.")
 		apply     = fs.Bool("apply", false, "apply: write (default is a dry forecast)")
+		receipts  = fs.String("receipts", "", "apply: where to write the row-id receipt (default: beside the first --in file, which must be writable)")
 		limit     = fs.Int("limit", 0, "max candidates (0 = all)")
 		chunk     = fs.Int("chunk", 5, "judge: candidates per gateway request")
 		rpm       = fs.Int("rpm", 60, "judge: gateway requests per minute (even pacing, shared across workers)")
@@ -197,12 +198,25 @@ func main() {
 		}
 		vs, cs := wikizh.Consensus(rounds)
 		slog.Info("consensus", "result", cs.String())
+		// --limit on apply is a REHEARSAL lever: write a handful, read the rows
+		// back, then run the rest. It cuts after the consensus so the sample is
+		// drawn from the same verdicts the full pass would use.
+		if *limit > 0 && len(vs) > *limit {
+			vs = vs[:*limit]
+			slog.Warn("limited apply — a rehearsal, not the pass", "verdicts", len(vs))
+		}
 
 		st, err := wikizh.Apply(ctx, db.DB(), vs, *apply)
 		if st != nil {
 			slog.Info("wiki-zh apply done", "apply", *apply, "result", st.String())
 			if *apply && len(st.ReceiptIDs) > 0 {
-				name := fmt.Sprintf("%s.receipts.%d.json", *in, time.Now().Unix())
+				// Derived from the FIRST round's path, not the whole --in list:
+				// a comma-joined name is not a path, and the write failed with
+				// "no such file or directory" after a 1,781-row pass.
+				name := fmt.Sprintf("%s.receipts.%d.json", strings.TrimSpace(files[0]), time.Now().Unix())
+				if *receipts != "" {
+					name = *receipts
+				}
 				b, _ := json.Marshal(st.ReceiptIDs)
 				if err := os.WriteFile(name, b, 0o644); err != nil {
 					slog.Warn("write receipts", "error", err)
