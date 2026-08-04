@@ -32,7 +32,7 @@
 
 | 路径 | 鉴权 | Handler | 状态 | 备注 |
 |---|---|---|---|---|
-| `GET /api/v1/health` | 公开 | inline | 待审计 | 健康检查 |
+| `GET /healthz` | 公开 | inline | 待审计 | 健康检查(**非** `/api/v1/health`——与 oauth/image 一致挂在根) |
 
 ## 1. 制品（artifacts，登录）
 
