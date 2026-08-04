@@ -96,13 +96,35 @@ const (
 // organizational responsibility for a work (who published/made it), which is
 // DISTINCT from an authorship credit (catalog_credit, "who performed a role").
 // Step 14 registered maker labels but deferred this edge for want of a real
-// consumer; step 18's read surface is that consumer. 0/1 are in use; 2/3 are
-// reserved for when developer/brand attributions gain a source.
+// consumer; step 18's read surface is that consumer.
+//
+// ALL FOUR ARE IN USE (the "2/3 reserved" note here was true until step 100 and
+// wrong for a long time after: developer 61,909 and brand 3,803 as of
+// 2026-08-04).
+//
+// ⚠️ THIS AXIS AND catalog_label.kind ARE NOT INDEPENDENT, and a consumer that
+// renders both will show one fact twice. The overlap is not a vocabulary
+// accident, it is what the sources support:
+//
+//   - VNDB states ROLES. releases_producers carries dev/pub flags, so a vndb
+//     edge is a real attribution — and the same company being BOTH developer
+//     and publisher is a genuine finding, not duplication (24.7% of pairs).
+//   - DLsite states only "the maker". It has no dev/pub distinction at all, so
+//     importer.dlEdgeKind necessarily derives the edge kind from the maker's
+//     own kind. For those edges the two axes coincide BY CONSTRUCTION: a doujin
+//     circle that made a work yields edge=circle + label.kind=doujin_circle,
+//     151,779 times.
+//
+// So a reader must not treat edge kind as adding information on top of the
+// org's category unless the source actually stated a role. Splitting a
+// source-stated role from a "this org is the maker" assertion would need a new
+// `maker` kind — a vocabulary change with downstream consumers, deliberately
+// not made here.
 const (
 	WorkLabelKindCircle    int16 = 0 // doujin circle (同人サークル)
 	WorkLabelKindPublisher int16 = 1 // publisher / label
-	WorkLabelKindDeveloper int16 = 2 // reserved: the studio that made it
-	WorkLabelKindBrand     int16 = 3 // reserved: the brand it shipped under
+	WorkLabelKindDeveloper int16 = 2 // the studio that made it (vndb dev flag)
+	WorkLabelKindBrand     int16 = 3 // the brand it shipped under
 )
 
 // WorkCharacterKind — the appearance strength of a catalog_work_character
