@@ -54,6 +54,9 @@ P5 摘 `/internal/*` + `/api/*` staff 面时,149 STOP-1 要求的「先盘下游
   actor)+`SetCreatorIfUnset` 随建 stub 事务写一次、永不覆写。存量 prod 已回填 133/208
   (claim_event 首事件 actor);余 75 行 claim 早于事件流(切轨系统回填 actor=0)按设计保持
   无章。语义更新:creator=「wiki 提交者或领养申领人」快照。待 forum push 部署。
+  ↳ 部署后复跑(08-04 晚):窗口期新增 6 行无章,1 行补章(228620→44632,claim 首事件真人
+  actor)、5 行 resite actor=0 归设计桶;9682 核明=首事件 to_state=0 带 actor 16285 非申领
+  (wiki 快照提交者实为 uid 1),按「非申领事件不落章」不动。终态:无章 75 行全为设计内。
 - **🏁 170 封面补全波(08-04 当日,双 Opus 派发)**:169 坏窗口期 72 部无封面词条,`cmd/backfill-vndb-covers`
   (15e4e666,vndbcovers 机架仿 bangumicovers/dlsitemedia,exact 锚 only+NOT EXISTS 幂等门+quota 停机)
   prod 跑毕 49/72 补齐(47 现锚+2 新铸锚 v67584/v67585;v67582 为 VNDB 无图 stub)。检索波核出:
