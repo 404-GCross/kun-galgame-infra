@@ -49,7 +49,18 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 	// The crawler's staging table, reduced to the columns this job reads.
-	if err := db.Exec(`CREATE TABLE IF NOT EXISTS item_images (
+	//
+	// DROP first, deliberately. Several packages stand in for the same staging
+	// tables with DIFFERENT column sets, and they share one test database:
+	// CREATE TABLE IF NOT EXISTS would silently inherit whichever package ran
+	// earlier and then fail on the columns it lacks. Owning the fixture outright
+	// makes the suite independent of package order. Safe because DB-backed
+	// suites run with -p 1.
+	if err := db.Exec(`DROP TABLE IF EXISTS item_images`).Error; err != nil {
+		fmt.Fprintf(os.Stderr, "FAIL: drop staging item_images: %v\n", err)
+		os.Exit(1)
+	}
+	if err := db.Exec(`CREATE TABLE item_images (
 		getchu_id text, kind text, ordinal int, url text, local_path text, sha256 text)`).Error; err != nil {
 		fmt.Fprintf(os.Stderr, "FAIL: staging item_images: %v\n", err)
 		os.Exit(1)

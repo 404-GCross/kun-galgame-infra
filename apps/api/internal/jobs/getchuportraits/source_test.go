@@ -49,11 +49,19 @@ func TestMain(m *testing.M) {
 	}
 	// The staging stand-ins. Only the columns this job reads matter; the real
 	// tables (kun-getchu-api) carry more.
+	//
+	// DROP first, deliberately. getchumedia stands in for item_images too, with
+	// a DIFFERENT column set, and both share one test database: CREATE TABLE IF
+	// NOT EXISTS would silently inherit whichever package ran earlier and then
+	// fail on the columns it lacks. Owning the fixture outright makes the suite
+	// independent of package order. Safe because DB-backed suites run with -p 1.
 	for _, ddl := range []string{
-		`CREATE TABLE IF NOT EXISTS item_characters (
+		`DROP TABLE IF EXISTS item_characters`,
+		`DROP TABLE IF EXISTS item_images`,
+		`CREATE TABLE item_characters (
 			getchu_id text NOT NULL, ordinal int NOT NULL, name text NOT NULL,
 			nameplate_url text, PRIMARY KEY (getchu_id, ordinal))`,
-		`CREATE TABLE IF NOT EXISTS item_images (
+		`CREATE TABLE item_images (
 			getchu_id text NOT NULL, kind text NOT NULL, ordinal int NOT NULL,
 			url text NOT NULL, local_path text, PRIMARY KEY (getchu_id, kind, ordinal))`,
 	} {
@@ -76,10 +84,16 @@ func requireDB(t *testing.T) {
 	}
 }
 
+// reset clears everything these tests look at.
+//
+// CASCADE rather than DELETE: sibling packages share this database and leave
+// characters behind with intros and work links hanging off them, so a plain
+// DELETE FROM catalog_character trips a foreign key that has nothing to do with
+// this suite. Starting from empty is also what makes the assertions countable.
 func reset(t *testing.T) {
 	t.Helper()
 	require.NoError(t, testDB.Exec(`TRUNCATE item_characters, item_images`).Error)
-	require.NoError(t, testDB.Exec(`DELETE FROM catalog_character`).Error)
+	require.NoError(t, testDB.Exec(`TRUNCATE catalog_character CASCADE`).Error)
 }
 
 // mkChar inserts a catalog character, with or without a portrait already.
