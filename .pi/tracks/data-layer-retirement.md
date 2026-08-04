@@ -54,3 +54,9 @@ P5 摘 `/internal/*` + `/api/*` staff 面时,149 STOP-1 要求的「先盘下游
   actor)+`SetCreatorIfUnset` 随建 stub 事务写一次、永不覆写。存量 prod 已回填 133/208
   (claim_event 首事件 actor);余 75 行 claim 早于事件流(切轨系统回填 actor=0)按设计保持
   无章。语义更新:creator=「wiki 提交者或领养申领人」快照。待 forum push 部署。
+- **🏁 170 封面补全波(08-04 当日,双 Opus 派发)**:169 坏窗口期 72 部无封面词条,`cmd/backfill-vndb-covers`
+  (15e4e666,vndbcovers 机架仿 bangumicovers/dlsitemedia,exact 锚 only+NOT EXISTS 幂等门+quota 停机)
+  prod 跑毕 49/72 补齐(47 现锚+2 新铸锚 v67584/v67585;v67582 为 VNDB 无图 stub)。检索波核出:
+  **5 部为现有词条重复投稿**(228616/625/628/629/634→已锚老作品,三部还在 kungal 草稿)+3 对同 id 重复
+  (228618/21、228620/26、228623/24)=8 案待用户裁并;3 部 Steam-only(228631/632/633)+1 特典盘
+  (228627)无 VNDB 身份;分级 2 处(228625/629→R18)与 olang 2 处(228617→ko/228632→en)已当场治数。
