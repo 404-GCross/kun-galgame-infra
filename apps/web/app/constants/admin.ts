@@ -41,6 +41,11 @@ export const SIDEBAR_MENU: SidebarItem[] = [
     ],
   },
   { icon: 'lucide:terminal', label: '开发者平台', to: '/devapi', adminOnly: true },
+  // adminOnly, not renOnly: the page gate is oauth.admin_access, and an ordinary
+  // admin has a real use for it — reading the matrix, and delegating downward
+  // the keys they already hold. WHICH cells they may change is decided by the
+  // server per cell, not by hiding the entry.
+  { icon: 'lucide:shield-check', label: '权限矩阵', to: '/admin/permission', adminOnly: true },
   { icon: 'lucide:user', label: '个人信息', to: '/profile' },
 ]
 
