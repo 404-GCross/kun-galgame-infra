@@ -58,9 +58,16 @@ func mkLabel(t *testing.T, db *gorm.DB, name, logo string) int64 {
 
 func mkAnchor(t *testing.T, db *gorm.DB, labelID int64, source int16, extID string, kind int16) {
 	t.Helper()
+	mkAnchorRule(t, db, labelID, source, extID, kind, "import:test")
+}
+
+// mkAnchorRule is mkAnchor with an explicit matched_by — the cien lane selects
+// on the rule, not just the link kind.
+func mkAnchorRule(t *testing.T, db *gorm.DB, labelID int64, source int16, extID string, kind int16, rule string) {
+	t.Helper()
 	require.NoError(t, db.Create(&model.CatalogExternalRef{
 		EntityType: model.EntityTypeLabel, EntityID: labelID, SourceID: source,
-		ExternalID: extID, LinkKind: kind, MatchedBy: "import:test",
+		ExternalID: extID, LinkKind: kind, MatchedBy: rule,
 	}).Error)
 }
 
@@ -78,7 +85,7 @@ func TestDBLoadCandidates(t *testing.T) {
 	mkAnchor(t, db, probable, testBangumiSource, "102", model.LinkKindProbable)
 
 	otherSource := mkLabel(t, db, "cien only", "")
-	mkAnchor(t, db, otherSource, testCienSource, "200", model.LinkKindExact)
+	mkAnchorRule(t, db, otherSource, testCienSource, "200", model.LinkKindRelated, "rule:eg-cien")
 
 	unanchored := mkLabel(t, db, "no anchor at all", "")
 	_ = unanchored
@@ -93,7 +100,7 @@ func TestDBLoadCandidates(t *testing.T) {
 	mkAnchor(t, db, twice, testBangumiSource, "301", model.LinkKindExact)
 	mkAnchor(t, db, twice, testBangumiSource, "300", model.LinkKindExact)
 
-	got, err := loadCandidates(ctx, db, testBangumiSource)
+	got, err := loadCandidates(ctx, db, testBangumiSource, SourceBangumi)
 	require.NoError(t, err)
 
 	byID := map[int64]string{}
@@ -104,7 +111,7 @@ func TestDBLoadCandidates(t *testing.T) {
 		"only live, logo-less labels with an EXACT anchor for THIS source, one row each")
 
 	// The cien lane sees its own anchor and nothing else.
-	gotCien, err := loadCandidates(ctx, db, testCienSource)
+	gotCien, err := loadCandidates(ctx, db, testCienSource, SourceCien)
 	require.NoError(t, err)
 	require.Len(t, gotCien, 1)
 	assert.Equal(t, otherSource, gotCien[0].LabelID)
@@ -113,7 +120,7 @@ func TestDBLoadCandidates(t *testing.T) {
 	require.NoError(t, db.Exec(
 		`UPDATE catalog_label SET field_provenance = '{"display_name":[{"source":"vndb","at":"2020-01-01T00:00:00Z"}]}'::jsonb WHERE id = ?`,
 		want).Error)
-	got, err = loadCandidates(ctx, db, testBangumiSource)
+	got, err = loadCandidates(ctx, db, testBangumiSource, SourceBangumi)
 	require.NoError(t, err)
 	for _, c := range got {
 		if c.LabelID == want {
@@ -130,18 +137,20 @@ func TestDBCollectAudit(t *testing.T) {
 
 	both := mkLabel(t, db, "dual anchored", "")
 	mkAnchor(t, db, both, testBangumiSource, "400", model.LinkKindExact)
-	mkAnchor(t, db, both, testCienSource, "500", model.LinkKindExact)
+	mkAnchorRule(t, db, both, testCienSource, "500", model.LinkKindRelated, "rule:cien-self")
 
 	bangumiOnly := mkLabel(t, db, "bangumi only", "")
 	mkAnchor(t, db, bangumiOnly, testBangumiSource, "401", model.LinkKindExact)
 
-	mixedKind := mkLabel(t, db, "exact + probable", "")
+	// A cien link that is related but carries a NON-identity rule (the official
+	// site / twitter / whitelist family) must not qualify.
+	mixedKind := mkLabel(t, db, "bangumi exact + unqualified cien link", "")
 	mkAnchor(t, db, mixedKind, testBangumiSource, "402", model.LinkKindExact)
-	mkAnchor(t, db, mixedKind, testCienSource, "502", model.LinkKindProbable)
+	mkAnchorRule(t, db, mixedKind, testCienSource, "502", model.LinkKindRelated, "rule:cien-ext-link")
 
 	gone := mkLabel(t, db, "dual but deleted", "")
 	mkAnchor(t, db, gone, testBangumiSource, "403", model.LinkKindExact)
-	mkAnchor(t, db, gone, testCienSource, "503", model.LinkKindExact)
+	mkAnchorRule(t, db, gone, testCienSource, "503", model.LinkKindRelated, "rule:eg-cien")
 	require.NoError(t, db.Delete(&model.CatalogLabel{}, gone).Error)
 
 	pairs, err := collectAudit(context.Background(), db, registry{bangumi: testBangumiSource, cien: testCienSource})
@@ -179,11 +188,11 @@ func TestDBFillWritesLogoAndProvenance(t *testing.T) {
 	m, err := loadMirror(root, SourceBangumi)
 	require.NoError(t, err)
 
-	cands, err := loadCandidates(ctx, db, testBangumiSource)
+	cands, err := loadCandidates(ctx, db, testBangumiSource, SourceBangumi)
 	require.NoError(t, err)
 	require.Empty(t, cands, "no anchor yet")
 	mkAnchor(t, db, id, testBangumiSource, "600", model.LinkKindExact)
-	cands, err = loadCandidates(ctx, db, testBangumiSource)
+	cands, err = loadCandidates(ctx, db, testBangumiSource, SourceBangumi)
 	require.NoError(t, err)
 	require.Len(t, cands, 1)
 
@@ -217,7 +226,46 @@ func TestDBFillWritesLogoAndProvenance(t *testing.T) {
 	assert.Equal(t, fake.hash, row.LogoHash, "the first writer keeps the slot")
 
 	// And the label is no longer a candidate for either lane.
-	cands, err = loadCandidates(ctx, db, testBangumiSource)
+	cands, err = loadCandidates(ctx, db, testBangumiSource, SourceBangumi)
 	require.NoError(t, err)
 	assert.Empty(t, cands, "a filled label is skipped before any byte read")
+}
+
+// TestDBCienLaneAcceptsRelatedIdentityRules is the regression for the first
+// acceptance run, which forecast ZERO cien candidates. Ci-en has no exact label
+// anchors at all — every row is link_kind=related — so an exact-only filter
+// selects nothing while looking perfectly healthy. The lane accepts exactly two
+// related rules and no others.
+func TestDBCienLaneAcceptsRelatedIdentityRules(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+
+	egCien := mkLabel(t, db, "anchored by the EG brands.cien column", "")
+	mkAnchorRule(t, db, egCien, testCienSource, "700", model.LinkKindRelated, "rule:eg-cien")
+
+	self := mkLabel(t, db, "anchored by the cien profile itself", "")
+	mkAnchorRule(t, db, self, testCienSource, "701", model.LinkKindRelated, "rule:cien-self")
+
+	// Same source, same link kind, different rule: an official-site / twitter /
+	// whitelist link is web presence, not identity. A twitter avatar is not a
+	// label logo.
+	extLink := mkLabel(t, db, "related but not an identity rule", "")
+	mkAnchorRule(t, db, extLink, testCienSource, "702", model.LinkKindRelated, "rule:cien-ext-link")
+
+	got, err := loadCandidates(ctx, db, testCienSource, SourceCien)
+	require.NoError(t, err)
+	ids := make([]int64, 0, len(got))
+	for _, c := range got {
+		ids = append(ids, c.LabelID)
+	}
+	assert.ElementsMatch(t, []int64{egCien, self}, ids,
+		"both identity-grade related rules qualify; other related rules do not")
+
+	// The bangumi lane is unchanged: exact only, and it never picks up a cien
+	// related row even if one somehow carried a bangumi source id.
+	stray := mkLabel(t, db, "bangumi source but a related link", "")
+	mkAnchorRule(t, db, stray, testBangumiSource, "703", model.LinkKindRelated, "rule:eg-cien")
+	gotBgm, err := loadCandidates(ctx, db, testBangumiSource, SourceBangumi)
+	require.NoError(t, err)
+	assert.Empty(t, gotBgm, "the bangumi lane stays exact-only")
 }

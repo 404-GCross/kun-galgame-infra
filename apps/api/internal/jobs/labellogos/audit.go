@@ -7,12 +7,11 @@ import (
 	"os"
 	"strconv"
 
-	"api/internal/platform/catalog/model"
-
 	"gorm.io/gorm"
 )
 
-// auditPair is one label that carries BOTH a Bangumi and a Ci-en exact anchor.
+// auditPair is one label carrying an identity-grade anchor to BOTH sources
+// (each side by its own lane's predicate — see collectAudit).
 //
 // These are the ONLY labels where the bangumi > cien ruling is a real choice.
 // Everywhere else exactly one source has a picture, so "bangumi first" decides
@@ -32,8 +31,14 @@ type auditPair struct {
 	LogoHash    string
 }
 
-// collectAudit finds every live label anchored EXACTly to both sources. Run
-// independently of --source and before any write, so the falsification set
+// collectAudit finds every live label anchored to both sources. Each side uses
+// ITS OWN lane's anchor predicate, via the same builder loadCandidates uses:
+// exact for bangumi, related + the two pinned rules for cien (see the Source
+// vars). Using one predicate for both sides would be the bug that matters here
+// — an exact-only cien side reports an empty falsification set, which reads as
+// "nothing to review" when it actually means "the query is wrong".
+//
+// Run independently of --source and before any write, so the falsification set
 // never depends on the pass being audited.
 func collectAudit(ctx context.Context, db *gorm.DB, reg registry) ([]auditPair, error) {
 	var rows []struct {
@@ -43,20 +48,19 @@ func collectAudit(ctx context.Context, db *gorm.DB, reg registry) ([]auditPair, 
 		CienID      string `gorm:"column:cien_id"`
 		LogoHash    string `gorm:"column:logo_hash"`
 	}
+	bClause, bArgs := anchorClause("b", reg.bangumi, SourceBangumi)
+	cClause, cArgs := anchorClause("c", reg.cien, SourceCien)
 	err := db.WithContext(ctx).Raw(`
 		SELECT DISTINCT ON (l.id)
 		       l.id AS label_id, l.display_name AS display_name,
 		       b.external_id AS bangumi_id, c.external_id AS cien_id,
 		       l.logo_hash AS logo_hash
 		FROM catalog_label l
-		JOIN catalog_external_ref b ON b.entity_type = ? AND b.entity_id = l.id
-			AND b.source_id = ? AND b.link_kind = ?
-		JOIN catalog_external_ref c ON c.entity_type = ? AND c.entity_id = l.id
-			AND c.source_id = ? AND c.link_kind = ?
+		JOIN catalog_external_ref b ON b.entity_id = l.id AND `+bClause+`
+		JOIN catalog_external_ref c ON c.entity_id = l.id AND `+cClause+`
 		WHERE l.deleted_at IS NULL
 		ORDER BY l.id, b.external_id, c.external_id`,
-		model.EntityTypeLabel, reg.bangumi, model.LinkKindExact,
-		model.EntityTypeLabel, reg.cien, model.LinkKindExact).Scan(&rows).Error
+		append(bArgs, cArgs...)...).Scan(&rows).Error
 	if err != nil {
 		return nil, fmt.Errorf("load dual-anchored labels: %w", err)
 	}

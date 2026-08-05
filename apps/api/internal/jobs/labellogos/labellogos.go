@@ -19,6 +19,18 @@
 // an empty logo_hash, so even a concurrent cien run cannot overwrite a bangumi
 // logo; it just claims no rows.
 //
+// WHAT COUNTS AS AN ANCHOR IS NOT THE SAME ON BOTH LANES. Bangumi labels are
+// reached through ordinary EXACT identity anchors. Ci-en labels have none: all
+// 2,537 of its label refs are link_kind=related, because both writers file
+// Ci-en as web presence rather than identity, so an exact-only filter forecasts
+// zero candidates and looks perfectly healthy doing it (measured, acceptance
+// run 1). The cien lane therefore accepts related refs carrying one of two
+// pinned rules — 'rule:eg-cien' and 'rule:cien-self', both first-party
+// self-declarations riding on an already-exact anchor — and nothing else. The
+// full argument is on the Source vars in source.go; the predicate itself is
+// built in exactly one place (anchorClause) so the candidate query and the
+// audit query cannot drift apart.
+//
 // THE MIRROR CONTRACT (fixed; the crawler repos produce it):
 //
 //	<mirror-dir>/<external_id>/logo.<ext>     --source bangumi
@@ -154,7 +166,7 @@ func Run(ctx context.Context, cfg *config.Config, opts Opts) (*Stats, error) {
 		slog.Info("label-logos wrote falsification set", "path", opts.AuditOut, "pairs", len(pairs))
 	}
 
-	cands, err := loadCandidates(ctx, db, reg.sourceID(opts.Source))
+	cands, err := loadCandidates(ctx, db, reg.sourceID(opts.Source), opts.Source)
 	if err != nil {
 		return nil, fmt.Errorf("load candidates: %w", err)
 	}

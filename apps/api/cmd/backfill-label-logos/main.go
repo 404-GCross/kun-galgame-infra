@@ -7,6 +7,13 @@
 //	--source bangumi   api.bgm.tv person type=2 (会社)   <mirror>/<id>/logo.<ext>
 //	--source cien      ci-en.net creator profile avatar  <mirror>/<id>/avatar.<ext>
 //
+// THE ANCHOR PREDICATE DIFFERS PER LANE. bangumi reads EXACT anchors. cien has
+// no exact label anchors in the catalog at all — every one is link_kind=related
+// — so that lane reads related refs whose matched_by is 'rule:eg-cien' or
+// 'rule:cien-self', both first-party self-declarations carried by an
+// already-exact anchor. Other related rules (official site, twitter, the
+// pixiv/dmm/steam whitelist) are web presence, not identity, and are excluded.
+//
 // PRECEDENCE IS THE RUN ORDER. Bangumi goes first in production; Ci-en then
 // only fills what is still empty, because the candidate filter is literally
 // an empty logo_hash. There is no ranking code to disagree with that, and the
