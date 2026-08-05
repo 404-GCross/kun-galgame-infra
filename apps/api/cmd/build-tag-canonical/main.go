@@ -1,7 +1,7 @@
 // build-tag-canonical builds the DETERMINISTIC slice of the tag canonical layer
 // (refs/proj/74, design refs/proj/70): it extracts the three per-source tag
-// vocabularies (vndb = galgame_tag ⋈ galgame_tag_relation; bangumi/dlsite =
-// catalog_work_tag grouped by source), mechanically prefilters bangumi junk
+// vocabularies (vndb/bangumi/dlsite — all read from catalog_work_tag grouped
+// by source since the c170b6ab repoint), mechanically prefilters bangumi junk
 // (date/disc/number regexes + maker/label collisions — reported, never written),
 // folds the survivors on NFKC+casefold+trim, and mints ONE catalog_tag +
 // per-source catalog_tag_source_map rows for every norm spanning ≥2 distinct
@@ -10,10 +10,9 @@
 //
 // Logic lives in internal/jobs/tagcanon. Dry-run is the DEFAULT (repo
 // convention); pass --apply to write. The DSN is REQUIRED and never defaulted —
-// all three vocabularies must be co-located in ONE database (prod: kun_catalog
-// holds both families; local: the rehearsal copy with the galgame vocab loaded
-// in). Idempotent: ON CONFLICT DO NOTHING on both tables — a second --apply
-// writes zero.
+// all three vocabularies live in catalog_work_tag of ONE database (prod:
+// kun_catalog). Idempotent: ON CONFLICT DO NOTHING on both tables — a second
+// --apply writes zero.
 //
 //	# dry-run: vocab sizes, junk digest, group count, per-source absorption,
 //	#          single-source usage distribution

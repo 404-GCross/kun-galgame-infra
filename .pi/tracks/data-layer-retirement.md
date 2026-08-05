@@ -7,7 +7,8 @@
 ## 二次交接快照(2026-07-31,Claude Fable 留)
 
 - **W 窗执行完毕 07-31 ~10:40Z**:rekey 12,602、resite 64,515(site `galgame_wiki`→`kungal`)+等量事件、四下游容器翻窗、值日链剪 i,j,k,l(**任务书说剪但 neo `/root/reindex-catalog/run.sh` 现场未剪,仍在跑**)、冒烟五门绿(87ccd48a)。
-- **当前段位:T1 48h 浸泡中** → T2 终扫 m,n,o+dump → **T3 DROP 前对账交用户** → DROP(149 SQL)→ T4 清尾。**DROP 是不可逆动作,必须用户明示。**
+- ~~**当前段位:T1 48h 浸泡中** → T2 终扫 m,n,o+dump → **T3 DROP 前对账交用户** → DROP(149 SQL)→ T4 清尾。**DROP 是不可逆动作,必须用户明示。**~~
+  **↳ 已过时:T1-T3 全走完,DROP 已于 2026-08-04 经用户令执行**(27 表全灭,终档 /root/wave149/ 恢复验证过;详见 Claude memory 轨文件 08-04 两条)。剩 T4 清尾,见下方 08-05 状态行。
 - **CI test 门红**:P5 撤夹具供给致五包跨包污染,交接时点 Opus 修复中——接手先看 main CI 最新态,勿重复修。
 - **⚠️ 165 回归教训(07-31 当日,聚合轨代修)**:resite 改值漏改七处读者(reindex-catalog claimed 桥×3/intromt/dlsitemedia/galgametouch/olangfix/bidaudit/merge-work-dups),reindex 把 64,515 部 claimed 作品搜索文档投空→全站中文搜索事故。修复=聚合轨 commit `049eb9b5`(分支 `w165-resite-readers`,未 push,**push 是防复发件**);prod 已手工重投恢复+值日链坏二进制已重铺。底稿=`refs/proj/165-resite-reader-sweep.md`。**本轨接手后:改值波验收门必须 `git grep 旧值` 全仓零残留。**
 - 库约定(07-31 跨轨定约):**kun_catalog_rehearsal 归聚合轨专用**;本轨演练用 `kun_catalog_w<波号>` 私库用毕即弃;测试库按轨分名。
@@ -70,6 +71,17 @@ P5 摘 `/internal/*` + `/api/*` staff 面时,149 STOP-1 要求的「先盘下游
   清单)**——12 行封面手动搬运归位;缺口待修(候选小波)。终账:72 部无封面→55 covered+6 并殁+11 残
   (5 源头无图/1 VNDB stub/1 freem/3 Steam-only/1 特典盘)。三个 draft 目标(228618/620/625)=投稿人
   自撤,非损伤。
+- **🏁 T4 现役件清尾(08-05,Fable 亲执)**:①**DROP 后孤儿终审**:149 号 27 表名单对编译面
+  (非测试 Go)逐名 word-boundary 扫零命中;两 enrich CLI 已被 f89fd8e6 摘除、build-tag-canonical/
+  tag-canon-pair 已 repoint(过时头注释本波修正);`platform/galgame/perm` **不是孤儿=有意保留的
+  负控夹具**(registry_test 钉「退役词汇不进控制台」+roles_union_test 用它测并集机制),勿删。
+  ②prod meili 三个 wiki 索引(galgames/galgame_tags/galgame_officials,4 天零写入)全仓扫零读者
+  (命中全为 json 字段名)后删除,现存=五 catalog_*+letmoe_search。③服务器清理:wave140/146/161
+  的工具二进制+**全部密钥件**(app.env/dsn-*.txt/env.tmp)已删,dump/记录件保留;/root/wave149
+  终档不动(30 天留期至 ~09-03)。④forum/patch docs/CONVENTIONS.md:14 镜像清单 galgame_wiki→
+  artifact(两仓各一行,path-scoped commit 候 push)。**T4 剩余(时间闸/别轨)**:
+  kun_galgame_wiki_retired_w1 DROP(>08-15)、/root/wave149 清理(>09-03)、canonical 转告结账
+  (spec locale 描述/摘牌口径纠偏,归 canonical 轨)。
 - **🏁 170c merge 机架 rehang 全量对账波(08-04 晚,Opus 执行+Fable 验收)**:170b 缺口根治。
   e229b2ed:rehang 清单抽出为 merge_rehang.go(363 行),work 批新收 12 facet 表(intro/cover/
   screenshot/rating/tag/popularity/playtime/platform/engine/series_member/label/character 折叠版)
