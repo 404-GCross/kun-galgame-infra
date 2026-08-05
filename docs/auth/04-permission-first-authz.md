@@ -85,9 +85,10 @@ type NonDelegable map[Permission]bool      // 叠加层永不可授予的键(§7
 > 唯一权威在代码里的 `*_test.go` golden 映射;下表是它的人读快照(**2026-08-04**,
 > 逐行核对七个 `perm_test.go` 的 `goldenGrants` 取得)。
 >
-> **本表是"代码捆"= 地板。** 2026-08-04 起叠加层(§7)可在运行时把某个键**加**给
-> creator/moderator/admin,活线上的实际授予 = 本表 ∪ 叠加层。叠加层永远不减,故本表的每一行
-> 仍是下界。线上当前实际值看权限矩阵控制台(`/admin/permission`)。
+> **本表是"代码捆"= 默认值,不是地板。** 2026-08-04 起叠加层(§7)可在运行时把某个键**加**给
+> 或**从** creator/moderator/admin **减**去,活线上的实际授予 = 本表 ∪ grant 行 − deny 行。
+> **唯一的例外是 `ren`:任何 deny 行对它都是死的**(§7.1),故 ren 那一列——且只有 ren 那一列
+> ——仍是下界。线上当前实际值看权限矩阵控制台(`/permission`)。
 
 | 权限 | 授予角色捆 | 语义 |
 |---|---|---|
@@ -203,7 +204,8 @@ permission-first 只管「**调用者能不能做某操作**」。以下角色�
   本工程不动。
 - ~~**DB 自定义权限捆** + admin API + web 管理窗口~~:**触发条件已达成,2026-08-04 已实现**——
   见 §7。落地形态与当年的设想不同:没有建 `site_roles`/`site_role_permissions` 三表(那是把
-  RBAC 再造一遍),而是一张**只增不减的叠加表** `role_permission_overrides` 盖在代码捆之上。
+  RBAC 再造一遍),而是一张**双极性叠加表** `role_permission_overrides` 盖在代码捆之上
+  (2026-08-04 落地时只增不减,同日经裁定加入 deny 半边)。
 - **scope 域限定(轻量 ReBAC)**:某分区版主/某系列编辑。**触发** = 第一个「仅限某资源子集」需求。
 - **字段级权限**:**触发** = doc 09 P1-1 编辑引擎泛化动工。
 - **外部授权引擎(OpenFGA/SpiceDB,AuthZEN)**:**触发** = 跨站共享图谱 / 「按权限过滤列表」成为热
@@ -218,40 +220,87 @@ permission-first 只管「**调用者能不能做某操作**」。以下角色�
 
 §6 的「DB 自定义权限捆」触发器达成。落地的**不是**再造一套 RBAC 表,而是一层薄叠加。
 
-### 7.1 模型:代码是地板,叠加只增不减
+### 7.1 模型:代码是默认值,ren 是保险
 
-`role_permission_overrides(role, permission, granted_by_user_id, created_at)`,`(role, permission)`
-唯一。**没有 deny 行,没有极性列**:一行 = 该角色额外持有该权限;撤销 = 删这一行,角色回到代码捆
-的地板,永不低于地板。
+`role_permission_overrides(role, permission, effect, granted_by_user_id, created_at)`,
+`(role, permission)` 唯一,`effect ∈ {grant, deny}`。一行 = 该角色**额外持有**(grant)或
+**不持有**(deny)该权限;删这一行 = 该角色回到代码捆。同一格 grant 与 deny 自相矛盾,唯一索引
+保证二者不可能同时存在。
 
-这条不对称是刻意的。允许「减」意味着一次点击就能把控制台自己锁死(或把全站管理员降权),而且
-「叠加层现在到底做了什么」会从一个只有加法的问题变成需要逐键推演的问题。代价是「临时收走某人某
-个权限」做不到——那是**改代码捆**的事,而它本就该留下一次可评审的 diff。
+**首版是只增不减的,同日(2026-08-04)经裁定改成现在这样。** 原设计用「一次点击不可能把任何人锁
+死」换掉了一个真实操作——「先把这把键从 moderator 收走,周一再说」本来只能靠改代码捆 + 部署。裁
+定把那条保证换成一条更窄、但守住了要害的:
 
-`permission_audit_logs(actor_user_id, action, role, permission, created_at)` 只增不改,与 override
-的增删**同事务**写入:没有审计的权限变更正是这套东西存在的理由,两者不能拆开。被撤销的授予在
-override 表里消失,在这里仍在——否则「上周二是谁给 moderator 那把键的」永远无法回答。
+> **只有 `ren` 保留不可动摇的代码地板。** creator / moderator / admin 都可以被叠加层减到代码捆
+> 以下。
 
-### 7.2 五条写入规则(全部服务端强制)
+`ren` 是锁死之后的**恢复保险**:无论表里写了什么,它都必须还能进控制台把事情改回来。所以这条豁
+免**硬编码在 `Merge` 里**,而不是只交给 validator——它得挡住不是本代码写出来的行:手工 INSERT、
+恢复的 dump、将来某个忘了规则的新端点。validator 里那条「ren 行不可编辑」只是把同一件事讲给操作
+者听。(`user` 行同理不可编辑,但原因不同:它根本不会生效。)
+
+`permission_audit_logs(actor_user_id, action, role, permission, created_at)` 的动作词汇随之从两个
+变成四个:`grant` / `revoke`(删 grant 行)/ `deny` / `revoke_deny`(删 deny 行)。**前两个拼写没
+有改动**——改名会把每一条历史行的含义一起改掉。删 grant 行与删 deny 行让角色朝相反方向移动,故审
+计里必须是两件事。
+
+`effect` 列**故意不带 GORM `default:` 标签**:该标签会让 GORM 在字段为零值时把它从 INSERT 里省
+掉,于是 `""` 会静默变成库默认值——一次「看起来是授予」的权限变更。没有它,空 effect 是插入时的
+NOT NULL 报错。存量表加这一列因此走 `AddOverrideEffectColumn` 的裸 SQL(带 DEFAULT 加列回填,再
+DROP DEFAULT),与 `devapi.AddOAuthClientDevColumns` 同形;加完 AutoMigrate 才跑。
+
+审计表只增不改,与 override 的增删**同事务**写入:没有审计的权限变更正是这套东西存在的理由,两
+者不能拆开。被撤销的授予在 override 表里消失,在这里仍在——否则「上周二是谁给 moderator 那把键
+的」永远无法回答。
+
+### 7.2 四个操作
+
+「撤销」在有了 deny 行之后是有歧义的,所以写路径讲四个操作而不是两个:
+
+| 操作 | 做什么 | 适用格 |
+|---|---|---|
+| `grant` | 写一条 grant 行 | 未持有(`none`) |
+| `revoke_grant` | 删那条 grant 行 → 回代码捆 | 由叠加授权持有(`grant`) |
+| `deny` | 写一条 deny 行 | 由代码捆持有(`code`) |
+| `revoke_deny` | 删那条 deny 行 → 回代码捆 | 已撤销(`deny`) |
+
+**每一种格状态恰好只允许其中一个操作**,所以矩阵给前端的是一个判决而不是一份菜单,前端也就不必
+在两个按钮之间做选择。写端点相应地是:`POST /overrides` 带 `effect`,`DELETE /overrides` **不带**
+——那一格上有哪条行,删的就是哪条。让客户端自己声明要删哪一种,等于给「以为在撤销授予、实际删掉
+了 deny」留了口子。
+
+### 7.3 写入规则(全部服务端强制)
 
 1. **键必须活**。对 `internal/platform/permissions` 注册表校验;打错的、退役 galgame 词汇表里的
    键一律拒。
-2. **行必须可编辑**:`creator` / `moderator` / `admin` 三行。`user` 排除是因为它**根本不会生
-   效**(普通用户 JWT 的 `roles` 是空数组,永不进 `Can`);`ren` 排除是因为它是包含性不变量的**上
-   界**,可动就没有基准了。
+2. **行必须可编辑**:`creator` / `moderator` / `admin` 三行,**grant 与 deny 同一套**。`user` 排
+   除是因为它**根本不会生效**(普通用户 JWT 的 `roles` 是空数组,永不进 `Can`);`ren` 排除有两个
+   理由——它是包含性不变量的**上界**,也是 §7.1 那条恢复保险。
 3. **不可委派键任何人都授不出去**:`oauth.roles.grant_admin` / `oauth.permissions.manage` /
    `oauth.sites.manage_all`。这三把键的持有者本可借此绕开控制台自身的护栏(铸管理员 / 改写授权表
    本身 / 逃出归属作用域),故只能改代码捆并部署。持 `oauth.permissions.manage` 也照拒。
+   **这条只管 grant**:「不肯把键发出去」是一条关于提权的规则,而 deny 是反方向。deny 也不需要单
+   独一条——三把键没有任何可编辑角色持有,规则 5 的「没有可撤销的权限」自然就挡住了。
 4. **委派规则**(不持 `oauth.permissions.manage` 的调用者):目标角色须**严格低于**自己在管理轴
    上的层级,且自己**确实持有**该权限,`creator` 列仅 ren 可编辑(creator 不在管理轴上,层级比较
-   对它无意义)。
-5. **包含性**:写入后该键仍须满足 `moderator ⊆ admin ⊆ ren`。授 moderator 一把 admin 没有的键 →
-   拒并提示「请先授予 admin」;撤 admin 而 moderator 还持有 → 拒并提示「请先撤销 moderator」。
+   对它无意义)。**grant 与 deny 完全同规则**:从同侪手里收走一把键,并不比递给他一把更无害。
+   注意这条已经隐含了两件事——没人能动自己那一层,所以 **admin 行只有 ren 能 deny,自我 deny 不可
+   能**。
+5. **状态前提**(每一条都指出「那你其实想做的是哪个操作」):
+   - `grant`:该键已生效 → 拒(无需重复授予);该格上有 deny 行 → 拒,请先**恢复**。
+   - `revoke_grant`:没有 grant 行但键已生效 → 拒,因为它来自代码捆,要收回请用 **deny**。
+   - `deny`:该键**未生效** → 拒(没有可撤销的权限);该键**只**由一条 grant 行带来 → 拒,正确操作
+     是**删掉那条叠加授权**,而不是再叠一条 deny;已经有 deny 行 → 拒。
+   - `revoke_deny`:没有 deny 行 → 拒(没有可恢复的撤销记录)。
+6. **包含性**:写入后该键仍须满足 `moderator ⊆ admin ⊆ ren`,**两个方向都查**。授 moderator 一把
+   admin 没有的键 → 拒并提示「请先授予 admin」;把 admin 的某键 deny 掉而 moderator 还持有 → 拒并
+   提示「请先撤销 moderator 的该键」。提示语还会看另一端那格是什么行,以便说清该用哪个操作(该
+   「删掉那条叠加授权」还是「记 deny」,该「授予 admin」还是「恢复 admin」)。
 
 矩阵的「哪些格子你能改」由**同一个 validator 逐格跑一遍**得出,所以 UI 不可能与写路径对同一件事
 给出不同答案。前端不复刻任何授权判断。
 
-### 7.3 分发与失效
+### 7.4 分发与失效
 
 **事实先行**:所有带 perm 包的服务(oauth / catalog / trust / ai)都已经通过 `app.New` 持有主库
 `kun_galgame_infra` 连接,**没有哪个进程需要别人把副本送过来**。于是:
@@ -262,13 +311,25 @@ override 表里消失,在这里仍在——否则「上周二是谁给 moderator
 - **轮询 30s 是地板**,所有进程都跑。`cmd/trust` 与 `cmd/ai` 根本没有 Redis(`NeedCache:false`),
   没有这条地板它们会永远停在代码捆——那正是「授予了却不生效」的静默失败。写入方本地**同步**刷新,
   故 oauth 自己的下一个请求立即看到新表。
-- **失效安全**:读不到库 → 保持上一份(启动时即代码捆)并告警;叠加行指向已下线的键 → 忽略并告警。
+- **失效安全**:读不到库 → 保持上一份并告警;叠加行指向已下线的键、或 effect 不认识 → 忽略并告警。
   **执行不会因为基础设施故障而放宽。**
 
-### 7.4 面
+#### 启动窗口(deny 带来的唯一一处不对称)
+
+有了 deny 之后,「保持上一份」在**进程刚起来、一次都没加载成功**时不再是纯粹的失效安全:此时在跑
+的是代码捆,而代码捆里**还有操作者已经 deny 掉的那些键**。它不会朝另一个方向出错——读不到表永远
+凭空变不出一条 grant——但它确实是这套东西唯一「错」而不只是「旧」的时刻。
+
+所以 `Distributor.Start` 的首次加载是**同步且带重试的**(3 次,退避 1s/2s/4s,最坏约 3s)。全败之
+后进程**照常提供服务**——把权限控制台的故障升级成全站故障是更坏的交易——但日志走 `slog.Error` 而
+不是一条会被划过去的 warning,并明说:本进程只在执行代码捆,**没有任何 deny 生效**,直到下一次轮
+询成功。
+
+### 7.5 面
 
 `GET /api/v1/admin/permissions/matrix`(门:`oauth.admin_access`)导出全部域 × 五角色的生效矩阵,
-每格标注来源(`code` / `overlay` / `none`)与本调用者可否编辑;`POST /overrides`(body)授予、
-`DELETE /overrides?role=&permission=` 撤销;`GET /audit` 读最近变更。写端点**刻意不在路由上收
-`oauth.permissions.manage`**——普通 admin 向下委派是合法路径,把路由收到 ren 会让规则 4 永不可达;
-能改哪些格子是**逐格**判定的。前端在 `/admin/permission`。
+每格标注来源(`code` / `grant` / `deny` / `none`)与本调用者可做什么(`editable` / `can_deny` /
+`can_restore`,三者至多一真;都为假时 `reason` 说明为什么);`POST /overrides`(body,带 `effect`)
+写入、`DELETE /overrides?role=&permission=` 删除该格上的那条行(不指定种类,见 §7.2);`GET /audit`
+读最近变更。写端点**刻意不在路由上收 `oauth.permissions.manage`**——普通 admin 向下委派是合法路
+径,把路由收到 ren 会让规则 4 永不可达;能改哪些格子是**逐格**判定的。前端在 `/permission`。
