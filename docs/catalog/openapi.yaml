@@ -1882,6 +1882,22 @@ components:
     NameHead:
       additionalProperties: false
       properties:
+        birth_d:
+          description: fuzzy birth date, day
+          format: int32
+          type: integer
+        birth_m:
+          description: fuzzy birth date, month
+          format: int32
+          type: integer
+        birth_y:
+          description: fuzzy birth date, year; absent = not recorded at this precision
+          format: int32
+          type: integer
+        gender:
+          description: person gender code; absent = unknown, orphan or hidden link
+          format: int32
+          type: integer
         id:
           format: int64
           type: integer
@@ -1893,6 +1909,9 @@ components:
           description: same-person group id (public links only; absent = orphan or hidden)
           format: int64
           type: integer
+        photo_hash:
+          description: person photo content hash in the image service; "" = no photo (or the person link is hidden)
+          type: string
         siblings:
           description: the same person's other public-linked names
           items:
@@ -1904,6 +1923,7 @@ components:
         - id
         - name
         - siblings
+        - photo_hash
       type: object
     NameWorkRole:
       additionalProperties: false

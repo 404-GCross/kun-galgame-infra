@@ -105,6 +105,7 @@ catalog **不存**产品展示体:简介、封面/截图字节、评分、点赞
 
 - **名义自述**(`name`):`id` + **lang 分桶名**(`ja`/`zh`/`other` 三桶,名义只落其一——search 不变量 1)+ `latin` + `person_id` + **`siblings`(同一 person 的其他名义,各 `id`/分桶名/latin)**。`person_id` 与 `siblings` 一并给,消费方的人物页免二次查其余名义。
   - ⚠️ **link-visibility 铁则**(`model.LinkVisibility`,search/doc.go 把「人物页装配时过滤」明确指向此端点):credit_name→person 的**隐藏链接从不进入「同一人」聚合**。故 ①被查名义自身链接为隐藏时,`person_id` 与 `siblings` 一律不出(该名义呈现为独立身份);②`siblings` 恒只含**公开链接**的兄弟名义。
+  - **wave 172 加法——人物块**:`photo_hash`(人物照片在图床的内容哈希,与作品封面 `image_hash` 同币种,消费端据此拼 CDN URL;**恒出**,空串=无照片)+ `gender` + `birth_y`/`birth_m`/`birth_d`(模糊生日三列,精度自表达;未记录则该键缺席)。五键**与 `person_id` 同一道闸**:隐藏链接下一律不出(`photo_hash=""`、其余缺席)——照片与生日是**人物事实**,在被刻意隐藏的链接下公开它们,等于泄露那条链接本身。人物列经 `LEFT JOIN catalog_person`(`deleted_at IS NULL`)取,孤儿名义照常返回自身行。
 - **作品列表**(`items`,offset 分页,cap 50):每条 = `work`(轻 brief:`work_id`/`display_name`/`medium_id`/`content_rating`/`status`/`site` 认领态)+ **`roles`**(该名义在此作担任的**全部** role,每条 `role_id`/`role_key`/`role_name` + 若配音则 `character_id`/`character` 具名)。`total` = 该名义参与的**去重作品数**。
 - 反查走 `idx_catalog_credit_credit_name_id`(既有索引,无需新建)。缺失 id → 404(与 by-anchor/works/{id} 同义)。
 

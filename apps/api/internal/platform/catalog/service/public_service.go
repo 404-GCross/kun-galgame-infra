@@ -676,6 +676,13 @@ func (s *PublicService) Name(ctx context.Context, id int64, withCredits, nsfw bo
 		Name:     nameBuckets(res.Head.Lang, res.Head.Name),
 		Latin:    derefStrPub(res.Head.Latin),
 		Siblings: make([]dto.PublicSiblingName, 0, len(res.Siblings)),
+		// The person block (wave 172). NameWorks has already applied the
+		// link-visibility gate to all five, so this copies them verbatim.
+		PhotoHash: res.Head.PhotoHash,
+		Gender:    res.Head.Gender,
+		BirthY:    res.Head.BirthY,
+		BirthM:    res.Head.BirthM,
+		BirthD:    res.Head.BirthD,
 	}
 	if res.Head.PersonID != nil {
 		p.PersonID = *res.Head.PersonID

@@ -473,12 +473,25 @@ func TestPublicWorkCreditsInclude(t *testing.T) {
 	}
 }
 
+// publicPhotoHash is the person photograph the public name face publishes
+// (wave 172) — the same content-hash currency as a work cover's image_hash.
+const publicPhotoHash = "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0"
+
 func TestPublicNameHiddenLinkAndR18Drop(t *testing.T) {
 	cleanTables(t)
 	svc := newPublicSvc()
 	ctx := t.Context()
 
 	p := createPerson(t, "Key")
+	// The wave-172 person block, so the hidden-link half below is a real
+	// withholding rather than an empty row proving nothing.
+	i16 := func(v int16) *int16 { return &v }
+	if err := testDB.Model(p).Updates(map[string]any{
+		"photo_hash": publicPhotoHash, "gender": i16(1),
+		"birth_y": i16(1975), "birth_m": i16(1), "birth_d": i16(3),
+	}).Error; err != nil {
+		t.Fatalf("set person block: %v", err)
+	}
 	nPublic := createCreditName(t, &p.ID, "麻枝准")
 	// A second name of the same person, but HIDDEN-linked.
 	nHidden := &model.CatalogCreditName{
@@ -510,6 +523,16 @@ func TestPublicNameHiddenLinkAndR18Drop(t *testing.T) {
 	if len(got.Credits) != 1 || got.Credits[0].Work.ID != sfw.ID {
 		t.Fatalf("r18 credit must be dropped: %+v", got.Credits)
 	}
+	// wave 172: the person block travels with the public link.
+	if got.PhotoHash != publicPhotoHash {
+		t.Fatalf("public link must expose photo_hash: %q", got.PhotoHash)
+	}
+	if got.Gender == nil || *got.Gender != 1 {
+		t.Fatalf("public link must expose gender: %v", got.Gender)
+	}
+	if got.BirthY == nil || *got.BirthY != 1975 || got.BirthM == nil || got.BirthD == nil {
+		t.Fatalf("public link must expose the fuzzy birth date: %v/%v/%v", got.BirthY, got.BirthM, got.BirthD)
+	}
 
 	// Hidden-linked name: appears as an independent identity (no person_id).
 	h, found, err := svc.Name(ctx, nHidden.ID, false, false, 50, 0)
@@ -518,6 +541,13 @@ func TestPublicNameHiddenLinkAndR18Drop(t *testing.T) {
 	}
 	if h.PersonID != 0 {
 		t.Fatalf("hidden link must withhold person_id: %d", h.PersonID)
+	}
+	// …and the whole person block with it: the person genuinely has a photo, a
+	// gender and a birthday, and publishing any of them under a hidden link
+	// would leak the association the doctrine is withholding.
+	if h.PhotoHash != "" || h.Gender != nil || h.BirthY != nil || h.BirthM != nil || h.BirthD != nil {
+		t.Fatalf("hidden link must withhold the person block: %q %v %v/%v/%v",
+			h.PhotoHash, h.Gender, h.BirthY, h.BirthM, h.BirthD)
 	}
 }
 

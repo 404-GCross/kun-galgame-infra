@@ -1031,6 +1031,19 @@ type NameHeadRow struct {
 	Latin          *string
 	PersonID       *int64 `gorm:"column:person_id"`
 	LinkVisibility int16  `gorm:"column:link_visibility"`
+	// The person block (wave 172), joined from catalog_person and carried on
+	// EXACTLY the same gate as PersonID: a hidden credit_name→person link
+	// withholds all of it, because a photograph and a birthday are person facts
+	// and publishing them under a hidden link is the same disclosure the link
+	// itself is being withheld to prevent.
+	//
+	// PhotoHash is the person's photo in the image service, the same
+	// content-hash currency as a work cover's image_hash; "" = no photo.
+	PhotoHash string `gorm:"column:photo_hash"`
+	Gender    *int16 `gorm:"column:gender"`
+	BirthY    *int16 `gorm:"column:birth_y"`
+	BirthM    *int16 `gorm:"column:birth_m"`
+	BirthD    *int16 `gorm:"column:birth_d"`
 }
 
 // SiblingNameRow is another credit name of the same person.
@@ -1082,8 +1095,15 @@ func (s *ReadService) NameWorks(ctx context.Context, nameID int64, limit, offset
 	db := s.db.WithContext(ctx)
 
 	var head NameHeadRow
-	if err := db.Raw(`SELECT id, name, lang, latin, person_id, link_visibility
-		FROM catalog_credit_name WHERE id = ?`, nameID).Scan(&head).Error; err != nil {
+	// The person columns (wave 172) ride a LEFT JOIN so an orphan name — and a
+	// name whose person was soft-deleted — still returns its own row rather than
+	// none. COALESCE keeps photo_hash a plain "" in both cases, matching the
+	// column's own NOT NULL DEFAULT '' semantics.
+	if err := db.Raw(`SELECT cn.id, cn.name, cn.lang, cn.latin, cn.person_id, cn.link_visibility,
+		COALESCE(p.photo_hash, '') AS photo_hash, p.gender, p.birth_y, p.birth_m, p.birth_d
+		FROM catalog_credit_name cn
+		LEFT JOIN catalog_person p ON p.id = cn.person_id AND p.deleted_at IS NULL
+		WHERE cn.id = ?`, nameID).Scan(&head).Error; err != nil {
 		return nil, err
 	}
 	if head.ID == 0 {
@@ -1092,7 +1112,11 @@ func (s *ReadService) NameWorks(ctx context.Context, nameID int64, limit, offset
 	res := &NameWorksResult{Head: &head}
 
 	if head.LinkVisibility != model.LinkVisibilityPublic {
-		head.PersonID = nil // hidden link: appear as an independent identity
+		// Hidden link: appear as an independent identity. The person block goes
+		// with the id — it is the same disclosure.
+		head.PersonID = nil
+		head.PhotoHash = ""
+		head.Gender, head.BirthY, head.BirthM, head.BirthD = nil, nil, nil, nil
 	} else if head.PersonID != nil {
 		if err := db.Raw(`SELECT id, name, lang, latin FROM catalog_credit_name
 			WHERE person_id = ? AND id <> ? AND link_visibility = ?

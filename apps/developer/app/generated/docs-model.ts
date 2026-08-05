@@ -3695,6 +3695,24 @@ export const docsModel: DocsModel = {
                             "type": "object",
                             "children": [
                               {
+                                "name": "birth_d",
+                                "doc": "fuzzy birth date, day",
+                                "format": "int32",
+                                "type": "integer"
+                              },
+                              {
+                                "name": "birth_m",
+                                "doc": "fuzzy birth date, month",
+                                "format": "int32",
+                                "type": "integer"
+                              },
+                              {
+                                "name": "birth_y",
+                                "doc": "fuzzy birth date, year; absent = not recorded at this precision",
+                                "format": "int32",
+                                "type": "integer"
+                              },
+                              {
                                 "name": "credits",
                                 "nullable": true,
                                 "type": "array",
@@ -3793,6 +3811,12 @@ export const docsModel: DocsModel = {
                                 }
                               },
                               {
+                                "name": "gender",
+                                "doc": "person gender code; absent = unknown, orphan or hidden link",
+                                "format": "int32",
+                                "type": "integer"
+                              },
+                              {
                                 "name": "id",
                                 "required": true,
                                 "format": "int64",
@@ -3856,6 +3880,12 @@ export const docsModel: DocsModel = {
                                 "name": "person_id",
                                 "format": "int64",
                                 "type": "integer"
+                              },
+                              {
+                                "name": "photo_hash",
+                                "required": true,
+                                "doc": "person photo content hash in the image service; \"\" = no photo (or the person link is hidden)",
+                                "type": "string"
                               },
                               {
                                 "name": "refs",
@@ -4586,6 +4616,24 @@ export const docsModel: DocsModel = {
                                   "type": "object",
                                   "children": [
                                     {
+                                      "name": "birth_d",
+                                      "doc": "fuzzy birth date, day",
+                                      "format": "int32",
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "name": "birth_m",
+                                      "doc": "fuzzy birth date, month",
+                                      "format": "int32",
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "name": "birth_y",
+                                      "doc": "fuzzy birth date, year; absent = not recorded at this precision",
+                                      "format": "int32",
+                                      "type": "integer"
+                                    },
+                                    {
                                       "name": "credits",
                                       "nullable": true,
                                       "type": "array",
@@ -4684,6 +4732,12 @@ export const docsModel: DocsModel = {
                                       }
                                     },
                                     {
+                                      "name": "gender",
+                                      "doc": "person gender code; absent = unknown, orphan or hidden link",
+                                      "format": "int32",
+                                      "type": "integer"
+                                    },
+                                    {
                                       "name": "id",
                                       "required": true,
                                       "format": "int64",
@@ -4747,6 +4801,12 @@ export const docsModel: DocsModel = {
                                       "name": "person_id",
                                       "format": "int64",
                                       "type": "integer"
+                                    },
+                                    {
+                                      "name": "photo_hash",
+                                      "required": true,
+                                      "doc": "person photo content hash in the image service; \"\" = no photo (or the person link is hidden)",
+                                      "type": "string"
                                     },
                                     {
                                       "name": "refs",
@@ -5022,6 +5082,24 @@ export const docsModel: DocsModel = {
                         "type": "object",
                         "children": [
                           {
+                            "name": "birth_d",
+                            "doc": "fuzzy birth date, day",
+                            "format": "int32",
+                            "type": "integer"
+                          },
+                          {
+                            "name": "birth_m",
+                            "doc": "fuzzy birth date, month",
+                            "format": "int32",
+                            "type": "integer"
+                          },
+                          {
+                            "name": "birth_y",
+                            "doc": "fuzzy birth date, year; absent = not recorded at this precision",
+                            "format": "int32",
+                            "type": "integer"
+                          },
+                          {
                             "name": "credits",
                             "nullable": true,
                             "type": "array",
@@ -5120,6 +5198,12 @@ export const docsModel: DocsModel = {
                             }
                           },
                           {
+                            "name": "gender",
+                            "doc": "person gender code; absent = unknown, orphan or hidden link",
+                            "format": "int32",
+                            "type": "integer"
+                          },
+                          {
                             "name": "id",
                             "required": true,
                             "format": "int64",
@@ -5183,6 +5267,12 @@ export const docsModel: DocsModel = {
                             "name": "person_id",
                             "format": "int64",
                             "type": "integer"
+                          },
+                          {
+                            "name": "photo_hash",
+                            "required": true,
+                            "doc": "person photo content hash in the image service; \"\" = no photo (or the person link is hidden)",
+                            "type": "string"
                           },
                           {
                             "name": "refs",

@@ -1457,6 +1457,26 @@ export interface components {
             zh?: string;
         };
         NameHead: {
+            /**
+             * Format: int32
+             * @description fuzzy birth date, day
+             */
+            birth_d?: number;
+            /**
+             * Format: int32
+             * @description fuzzy birth date, month
+             */
+            birth_m?: number;
+            /**
+             * Format: int32
+             * @description fuzzy birth date, year; absent = not recorded at this precision
+             */
+            birth_y?: number;
+            /**
+             * Format: int32
+             * @description person gender code; absent = unknown, orphan or hidden link
+             */
+            gender?: number;
             /** Format: int64 */
             id: number;
             latin?: string;
@@ -1466,6 +1486,8 @@ export interface components {
              * @description same-person group id (public links only; absent = orphan or hidden)
              */
             person_id?: number;
+            /** @description person photo content hash in the image service; "" = no photo (or the person link is hidden) */
+            photo_hash: string;
             /** @description the same person's other public-linked names */
             siblings: components["schemas"]["SiblingName"][] | null;
         };

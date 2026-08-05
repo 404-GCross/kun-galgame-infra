@@ -302,6 +302,19 @@ type PublicName struct {
 	Latin    string              `json:"latin,omitempty"`
 	PersonID int64               `json:"person_id,omitempty"`
 	Siblings []PublicSiblingName `json:"siblings"`
+	// The person block (wave 172) rides EXACTLY the person_id gate: a hidden
+	// credit_name→person link withholds all five. A photograph and a birthday
+	// are person facts, and publishing them under a link the doctrine is
+	// withholding would leak the very association being hidden.
+	//
+	// PhotoHash is ALWAYS present (never omitempty), for the same reason
+	// PublicLabel.LogoHash is: "" is the real answer "no photo", and a missing
+	// key is indistinguishable from a consumer's parse failure.
+	PhotoHash string `json:"photo_hash" doc:"person photo content hash in the image service; \"\" = no photo (or the person link is hidden)"`
+	Gender    *int16 `json:"gender,omitempty" doc:"person gender code; absent = unknown, orphan or hidden link"`
+	BirthY    *int16 `json:"birth_y,omitempty" doc:"fuzzy birth date, year; absent = not recorded at this precision"`
+	BirthM    *int16 `json:"birth_m,omitempty" doc:"fuzzy birth date, month"`
+	BirthD    *int16 `json:"birth_d,omitempty" doc:"fuzzy birth date, day"`
 	// Intros is the multilingual description set (wave 108): bridged at read
 	// time from the credit name's OWN bangumi anchor (per-name provenance —
 	// never a person-identity assertion; person resolution stays frozen).

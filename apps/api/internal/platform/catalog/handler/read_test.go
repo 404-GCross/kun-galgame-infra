@@ -41,6 +41,10 @@ func getJSON(t *testing.T, app *fiber.App, url string) (int, map[string]any) {
 // in the image service, from which a consumer builds the CDN URL.
 const fixtureLogoHash = "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90"
 
+// fixturePhotoHash is the seeded person's photograph (wave 172) — the same
+// content-hash currency as the label logo above.
+const fixturePhotoHash = "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0"
+
 // seedReadFixture wipes the read-relevant tables and inserts one fully-formed
 // work: release (dlsite RJTEST anchor) + official/kana titles + circle label
 // (attribution edge) + a voice credit (with character) + a scenario credit
@@ -426,9 +430,13 @@ func seedReverseFixture(t *testing.T, db *gorm.DB) reverseFixture {
 	var f reverseFixture
 	f.work1, f.work2, f.work3 = mk("作品1", model.WorkStatusLive), mk("作品2", model.WorkStatusLive), mk("作品3", model.WorkStatusLive)
 
-	p := model.CatalogPerson{DisplayName: "人物P"}
+	// Both persons carry the wave-172 block. Q's exists precisely so the hidden
+	// name D can be shown to withhold a block that really is there to leak.
+	i16 := func(v int16) *int16 { return &v }
+	p := model.CatalogPerson{DisplayName: "人物P", PhotoHash: fixturePhotoHash,
+		Gender: i16(1), BirthY: i16(1975), BirthM: i16(1), BirthD: i16(3)}
 	require.NoError(t, db.Create(&p).Error)
-	q := model.CatalogPerson{DisplayName: "人物Q"}
+	q := model.CatalogPerson{DisplayName: "人物Q", PhotoHash: fixturePhotoHash, Gender: i16(2)}
 	require.NoError(t, db.Create(&q).Error)
 	f.personP, f.personQ = p.ID, q.ID
 
@@ -480,6 +488,13 @@ func TestNameWorks(t *testing.T) {
 	assert.EqualValues(t, f.nameA, head["id"])
 	assert.Equal(t, "名義A", head["name"].(map[string]any)["ja"])
 	assert.EqualValues(t, f.personP, head["person_id"])
+	// wave 172: the person block travels with the public link — photo hash plus
+	// gender and the fuzzy birth date, joined from catalog_person.
+	assert.Equal(t, fixturePhotoHash, head["photo_hash"])
+	assert.EqualValues(t, 1, head["gender"])
+	assert.EqualValues(t, 1975, head["birth_y"])
+	assert.EqualValues(t, 1, head["birth_m"])
+	assert.EqualValues(t, 3, head["birth_d"])
 	sibs := head["siblings"].([]any)
 	require.Len(t, sibs, 1, "person P's other public name only")
 	assert.EqualValues(t, f.nameB, sibs[0].(map[string]any)["id"])
@@ -524,6 +539,15 @@ func TestNameWorks(t *testing.T) {
 	_, hasPerson := dHead["person_id"]
 	assert.False(t, hasPerson, "hidden link → person_id withheld")
 	assert.Empty(t, dHead["siblings"])
+	// wave 172: the person block rides the same gate. Person Q really does have
+	// a photo and a gender, and neither may surface under a hidden link — that
+	// would leak the very association being withheld. photo_hash stays present
+	// as "" (it is a required key), gender/birth are simply absent.
+	assert.Equal(t, "", dHead["photo_hash"], "hidden link → photo withheld, key still present")
+	for _, k := range []string{"gender", "birth_y", "birth_m", "birth_d"} {
+		_, has := dHead[k]
+		assert.Falsef(t, has, "hidden link → %s withheld", k)
+	}
 	assert.EqualValues(t, 1, body["data"].(map[string]any)["total"], "works are still listed")
 
 	// 404 on a missing name id.

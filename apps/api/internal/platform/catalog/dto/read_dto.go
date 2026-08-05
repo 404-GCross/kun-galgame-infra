@@ -450,6 +450,19 @@ type NameHead struct {
 	Latin    string        `json:"latin,omitempty"`
 	PersonID int64         `json:"person_id,omitempty" doc:"same-person group id (public links only; absent = orphan or hidden)"`
 	Siblings []SiblingName `json:"siblings" doc:"the same person's other public-linked names"`
+	// The person block (wave 172) rides EXACTLY the PersonID gate: a hidden
+	// credit_name→person link withholds all five, because a photograph and a
+	// birthday are person facts and publishing them under a hidden link is the
+	// same disclosure the link is being withheld to prevent.
+	//
+	// PhotoHash is ALWAYS present (never omitempty): "" is the real answer
+	// "no photo here", and a missing key would be indistinguishable from a
+	// consumer's parse failure.
+	PhotoHash string `json:"photo_hash" doc:"person photo content hash in the image service; \"\" = no photo (or the person link is hidden)"`
+	Gender    *int16 `json:"gender,omitempty" doc:"person gender code; absent = unknown, orphan or hidden link"`
+	BirthY    *int16 `json:"birth_y,omitempty" doc:"fuzzy birth date, year; absent = not recorded at this precision"`
+	BirthM    *int16 `json:"birth_m,omitempty" doc:"fuzzy birth date, month"`
+	BirthD    *int16 `json:"birth_d,omitempty" doc:"fuzzy birth date, day"`
 }
 
 // SiblingName is another credit name of the same person (public links only).

@@ -1360,12 +1360,28 @@ components:
     PublicName:
       additionalProperties: false
       properties:
+        birth_d:
+          description: fuzzy birth date, day
+          format: int32
+          type: integer
+        birth_m:
+          description: fuzzy birth date, month
+          format: int32
+          type: integer
+        birth_y:
+          description: fuzzy birth date, year; absent = not recorded at this precision
+          format: int32
+          type: integer
         credits:
           items:
             $ref: "#/components/schemas/PublicNameCredit"
           type:
             - array
             - "null"
+        gender:
+          description: person gender code; absent = unknown, orphan or hidden link
+          format: int32
+          type: integer
         id:
           format: int64
           type: integer
@@ -1385,6 +1401,9 @@ components:
         person_id:
           format: int64
           type: integer
+        photo_hash:
+          description: person photo content hash in the image service; "" = no photo (or the person link is hidden)
+          type: string
         refs:
           items:
             $ref: "#/components/schemas/PublicCatalogRef"
@@ -1401,6 +1420,7 @@ components:
         - id
         - name
         - siblings
+        - photo_hash
         - intros
         - refs
       type: object

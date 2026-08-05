@@ -578,6 +578,13 @@ func (s *S2SServer) nameWorks(ctx context.Context, in *nameWorksInput) (*nameWor
 			// Siblings pre-sized non-nil so no person / no siblings serializes
 			// `[]`, not `null` (docs/proj/16 #3).
 			Siblings: make([]dto.SiblingName, 0, len(res.Siblings)),
+			// The person block (wave 172). NameWorks has already applied the
+			// link-visibility gate to all five, so this copies them verbatim.
+			PhotoHash: res.Head.PhotoHash,
+			Gender:    res.Head.Gender,
+			BirthY:    res.Head.BirthY,
+			BirthM:    res.Head.BirthM,
+			BirthD:    res.Head.BirthD,
 		},
 		Items: make([]dto.NameWorkRow, 0, len(res.Works)),
 		Total: res.Total,
