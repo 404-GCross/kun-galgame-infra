@@ -32,6 +32,10 @@ type Opts struct {
 	// at it, so minting thousands of them is a decision, not a side effect.
 	ProbableToo bool
 	Limit       int
+	// Audit writes every resolved candidate to this CSV path. The release-level
+	// choice is the one claim roster confirmation cannot reach, so it is meant
+	// to be read (see audit.go).
+	Audit string
 }
 
 // Stats reports one run. Every crawled item lands in exactly one match bucket.
@@ -42,6 +46,13 @@ type Stats struct {
 	AmbiguousRelease int // one work, several same-day releases → skipped
 	DateDiffers      int
 	Matched          int
+
+	// The three counters below attribute the gain to the mechanism that earned
+	// it, so a change in yield can be read rather than guessed at.
+	MatchedAfterStrip  int // reached its work only once the edition marker came off
+	NarrowedByPlatform int // same-day siblings cut by a contradicting platform/lang
+	NarrowedByEdition  int // ...and then resolved by the edition marker itself
+	EditionConflict    int // a box was chosen whose own title contradicts the product
 
 	Testable    int // ...of which both sides have a roster
 	Confirmed   int // ...and the rosters overlap → exact
@@ -57,8 +68,10 @@ type Stats struct {
 func (s Stats) String() string {
 	return fmt.Sprintf(
 		"items=%d matched=%d (no_title=%d ambiguous_work=%d ambiguous_release=%d date_differs=%d) | "+
+			"via_strip=%d via_platform=%d via_edition=%d edition_conflict=%d | "+
 			"testable=%d confirmed=%d unconfirmed=%d no_roster=%d | exact=%d probable=%d conflict=%d errors=%d",
 		s.Items, s.Matched, s.NoTitleMatch, s.AmbiguousWork, s.AmbiguousRelease, s.DateDiffers,
+		s.MatchedAfterStrip, s.NarrowedByPlatform, s.NarrowedByEdition, s.EditionConflict,
 		s.Testable, s.Confirmed, s.Unconfirmed, s.NoRoster,
 		s.WrittenExact, s.WrittenProbable, s.Conflict, s.Errors)
 }
@@ -119,6 +132,22 @@ func Run(ctx context.Context, opts Opts) (*Stats, error) {
 	}
 	slog.Info("getchu-title-refs confirmed", "testable", st.Testable,
 		"confirmed", st.Confirmed, "unconfirmed", st.Unconfirmed, "no_roster", st.NoRoster)
+
+	if opts.Audit != "" {
+		rows := make([]auditRow, 0, len(cands))
+		for _, c := range cands {
+			rows = append(rows, auditRow{
+				GetchuID: c.GetchuID, GetchuTitle: c.GetchuTitle, Edition: c.Edition,
+				WorkID: c.WorkID, ReleaseID: c.ReleaseID, ReleaseTitle: c.ReleaseTitle,
+				Platform: c.Platform, Lang: c.Lang, Siblings: c.Siblings,
+				Confirmed: confirmed[c.GetchuID],
+			})
+		}
+		if err := writeAudit(opts.Audit, rows); err != nil {
+			return &st, fmt.Errorf("write audit: %w", err)
+		}
+		slog.Info("getchu-title-refs audit written", "path", opts.Audit, "rows", len(rows))
+	}
 
 	for _, c := range cands {
 		ok := confirmed[c.GetchuID]

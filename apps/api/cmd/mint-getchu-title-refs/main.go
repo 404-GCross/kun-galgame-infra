@@ -32,6 +32,7 @@ func main() {
 	getchuDSN := flag.String("getchu-dsn", "", "getchu staging DSN — REQUIRED")
 	probableToo := flag.Bool("probable-too", false, "also write unconfirmed matches at link_kind=probable")
 	limit := flag.Int("limit", 0, "max matches to process (0 = all)")
+	audit := flag.String("audit", "", "write every resolved candidate to this CSV for review")
 	flag.Parse()
 
 	_ = godotenv.Load("apps/api/.env")
@@ -44,7 +45,7 @@ func main() {
 
 	st, err := getchutitlerefs.Run(context.Background(), getchutitlerefs.Opts{
 		DSN: *dsn, GetchuDSN: *getchuDSN, Apply: *apply,
-		ProbableToo: *probableToo, Limit: *limit,
+		ProbableToo: *probableToo, Limit: *limit, Audit: *audit,
 	})
 	if st != nil {
 		slog.Info("mint-getchu-title-refs done", "apply", *apply, "result", st.String())
