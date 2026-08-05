@@ -50,7 +50,7 @@ func decodeStrings(raw datatypes.JSON) []string {
 // family name — assembly points register whatever families they serve,
 // exactly like the EntityTypeSpec registrations; a family absent from the
 // map fails closed (every perm-gated rule denies).
-type PermResolvers map[string]*authz.Resolver
+type PermResolvers map[string]authz.Checker
 
 // EditServer holds the editing operations' dependencies.
 type EditServer struct {

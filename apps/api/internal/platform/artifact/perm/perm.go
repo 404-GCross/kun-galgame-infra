@@ -15,5 +15,7 @@ var Bundles = authz.Bundles{
 	"ren": {FilesManage},
 }
 
-// Resolver is the package-level singleton the artifact enforcement points check.
-var Resolver = authz.NewResolver(Bundles)
+// Resolver is the package-level Holder the artifact enforcement points check.
+// It starts at the code bundles and is swapped whole when the permission
+// overlay refreshes (docs/auth/04 §7).
+var Resolver = authz.NewHolder(Bundles)

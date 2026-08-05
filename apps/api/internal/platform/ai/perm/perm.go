@@ -23,5 +23,7 @@ var Bundles = authz.Bundles{
 	"ren":   adminPerms,
 }
 
-// Resolver is the package-level singleton the AI admin enforcement point checks.
-var Resolver = authz.NewResolver(Bundles)
+// Resolver is the package-level Holder the AI admin enforcement point checks.
+// It starts at the code bundles and is swapped whole when the permission
+// overlay refreshes (docs/auth/04 §7).
+var Resolver = authz.NewHolder(Bundles)

@@ -39,14 +39,66 @@ const (
 	// including rows created before ownership stamping existed (NULL creator —
 	// they belong to nobody, so only this permission reaches them).
 	SitesManageAll authz.Permission = "oauth.sites.manage_all"
+	// PermissionsManage: run the permission console — grant/revoke overlay rows
+	// on any role, for any live key the invariants allow. ren-only AND
+	// non-delegable: holding it is holding the ability to hand out every other
+	// key, so it can only ever move by a code change.
+	PermissionsManage authz.Permission = "oauth.permissions.manage"
 )
 
-// adminPerms is what an ordinary admin holds on the console: reach it, and
-// grant the below-admin roles. Everything else is ren-only.
+// CRUD keys for the console's two managed resources (sites, OAuth clients).
+// oauth.admin_access stays the PAGE gate — it decides who reaches the console
+// and sees the lists at all — and these decide who may mutate. They were split
+// out of admin_access so a console seat can be handed to someone read-only, or
+// to someone who may create but not delete, without minting a role.
+//
+// The per-row ownership rule (mayManage: manage_all sees everything, everyone
+// else only their own rows) is UNCHANGED and applies on top: holding
+// oauth.sites.update lets you update sites you own, not everyone's.
+//
+// No secret_regenerate key: the console has no secret-regeneration endpoint
+// (a client secret is shown once at create time and never re-minted), so a key
+// for it would gate nothing.
+const (
+	// SitesCreate: POST /sites.
+	SitesCreate authz.Permission = "oauth.sites.create"
+	// SitesUpdate: PUT /sites/:id.
+	SitesUpdate authz.Permission = "oauth.sites.update"
+	// SitesDelete: DELETE /sites/:id.
+	SitesDelete authz.Permission = "oauth.sites.delete"
+	// ClientsCreate: POST /oauth/clients.
+	ClientsCreate authz.Permission = "oauth.clients.create"
+	// ClientsUpdate: PUT /oauth/clients/:id (and the storage sub-resource,
+	// which additionally needs oauth.clients.storage_config).
+	ClientsUpdate authz.Permission = "oauth.clients.update"
+	// ClientsDelete: DELETE /oauth/clients/:id.
+	ClientsDelete authz.Permission = "oauth.clients.delete"
+)
+
+// NonDelegable are the console keys the overlay may never grant. Each one is a
+// key whose holder could otherwise escalate past the console's own guardrails:
+// grant_admin mints admins, permissions.manage rewrites the grant table itself,
+// and sites.manage_all escapes per-row ownership scoping. Moving any of them
+// requires editing this package — a reviewable diff, not a click.
+var NonDelegable = authz.NonDelegable{
+	RolesGrantAdmin:   true,
+	PermissionsManage: true,
+	SitesManageAll:    true,
+}
+
+// adminPerms is what an ordinary admin holds on the console: reach it, grant
+// the below-admin roles, and perform the ordinary CRUD on the rows they own.
+// Everything else is ren-only.
 var adminPerms = []authz.Permission{
 	AdminAccess,
 	RolesGrantBasic,
 	RolesGrantSite,
+	SitesCreate,
+	SitesUpdate,
+	SitesDelete,
+	ClientsCreate,
+	ClientsUpdate,
+	ClientsDelete,
 }
 
 // renPerms is admin's bundle plus the PII / admin-grant / privileged-client
@@ -57,6 +109,7 @@ var renPerms = append(append([]authz.Permission{}, adminPerms...),
 	ClientsStorageConfig,
 	ClientsPrivilegedConfig,
 	SitesManageAll,
+	PermissionsManage,
 )
 
 // Bundles is the console's role→permission table. moderator/creator have no
@@ -66,5 +119,7 @@ var Bundles = authz.Bundles{
 	"ren":   renPerms,
 }
 
-// Resolver is the package-level singleton the console enforcement points check.
-var Resolver = authz.NewResolver(Bundles)
+// Resolver is the package-level Holder the console enforcement points check.
+// It starts at the code bundles and is swapped whole when the permission
+// overlay refreshes (docs/auth/04 §7).
+var Resolver = authz.NewHolder(Bundles)

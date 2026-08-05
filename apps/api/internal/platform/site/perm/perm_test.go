@@ -21,6 +21,30 @@ var goldenGrants = map[authz.Permission][]string{
 	perm.ClientsStorageConfig:    {"ren"},
 	perm.ClientsPrivilegedConfig: {"ren"},
 	perm.SitesManageAll:          {"ren"},
+	perm.PermissionsManage:       {"ren"},
+	// CRUD keys split out of admin_access: default behavior is unchanged, so
+	// they carry exactly admin_access's role set.
+	perm.SitesCreate:   {"admin", "ren"},
+	perm.SitesUpdate:   {"admin", "ren"},
+	perm.SitesDelete:   {"admin", "ren"},
+	perm.ClientsCreate: {"admin", "ren"},
+	perm.ClientsUpdate: {"admin", "ren"},
+	perm.ClientsDelete: {"admin", "ren"},
+}
+
+// TestNonDelegableAreDeclaredKeys pins that every non-delegable key is a real
+// console key (a typo would silently make a key delegable again).
+func TestNonDelegableAreDeclaredKeys(t *testing.T) {
+	for p := range perm.NonDelegable {
+		if _, ok := goldenGrants[p]; !ok {
+			t.Errorf("non-delegable %q is not a declared console permission", p)
+		}
+	}
+	for _, want := range []authz.Permission{perm.RolesGrantAdmin, perm.PermissionsManage, perm.SitesManageAll} {
+		if !perm.NonDelegable.Has(want) {
+			t.Errorf("%q must be non-delegable", want)
+		}
+	}
 }
 
 var allRoles = []string{"user", "creator", "moderator", "admin", "ren"}
