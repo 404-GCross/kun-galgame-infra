@@ -120,39 +120,49 @@ func loadCandidates(ctx context.Context, db *gorm.DB, reg registry, pop Populati
 	if src != SourceJa && src != SourceEn {
 		return nil, fmt.Errorf("unknown source language %q (want %q or %q)", src, SourceJa, SourceEn)
 	}
-	// The English lane is a LAST RESORT, so it excludes two populations the
-	// Japanese path serves better:
+	// The English lane is a LAST RESORT: anything with a ja intro is excluded,
+	// because the ja lane already translates it in a single hop (en→zh would be
+	// a relay through a translation and compounds both hops' losses). An
+	// exclusion rather than an ordering on purpose — a lane that "runs second"
+	// is not a guarantee, a NOT EXISTS is.
 	//
-	//   - anything with a ja intro, which the ja lane already translates in a
-	//     single hop (en→zh would be a relay through a translation);
-	//   - anything Getchu anchors, because that crawler is about to supply the
-	//     Japanese original (refs/proj/167). Writing an en→zh row now would
-	//     LOCK IT IN: fill-missing means the later, better ja→zh translation
-	//     would find zh already present and skip.
-	//
-	// Both are exclusions rather than orderings on purpose — a lane that "runs
-	// second" is not a guarantee, a NOT EXISTS is.
+	// The former second exclusion — anything Getchu anchors — protected this
+	// lane from locking in en→zh while refs/proj/167 was still about to deliver
+	// the ja originals. That crawl closed (168 wave: the ja supply landed), so a
+	// Getchu-anchored work still without ja simply has none to wait for, and
+	// the gate came out (refs/proj/173 full-sweep ruling).
 	lastResortGate := ""
 	if src == SourceEn {
 		lastResortGate = `
-		  AND NOT EXISTS (SELECT 1 FROM catalog_work_intro j WHERE j.work_id = b.id AND j.lang = 'ja')
-		  AND NOT EXISTS (
-			SELECT 1 FROM catalog_release rel
-			JOIN catalog_external_ref g ON g.entity_type = 6 AND g.entity_id = rel.id
-				AND g.source_id = (SELECT id FROM catalog_source WHERE key = 'getchu')
-			WHERE rel.work_id = b.id AND rel.deleted_at IS NULL)`
+		  AND NOT EXISTS (SELECT 1 FROM catalog_work_intro j WHERE j.work_id = b.id AND j.lang = 'ja')`
 	}
-	if top <= 0 {
-		top = 5000
-	}
+	// top = 0 means UNLIMITED (the refs/proj/173 full-sweep ruling: the whole
+	// eligible population, no popularity ceiling). The CLI default stays 5000 —
+	// unbounded is an explicit choice, never a fallback.
+	unlimited := top <= 0
 	sitePredicate, err := sitePredicateFor(pop)
 	if err != nil {
 		return nil, err
+	}
+	// olang gate (refs/proj/173 ruling): a work whose ORIGINAL language is
+	// declared non-Japanese gets no translated intro — its ja/en intro rows are
+	// themselves translations, and zh via a relay hop of a relay is not worth
+	// writing. Unset olang passes: this population is overwhelmingly Japanese
+	// galgame, and an unknown must not lose to a known (the 168-wave rule).
+	limitClause := ` LIMIT ?`
+	args := []any{reg.galgameMedium, string(src),
+		reg.dlsiteSource, model.PopularityMetricDownloads,
+		reg.dlsiteSource, model.PopularityMetricWishlist,
+		top}
+	if unlimited {
+		limitClause = ``
+		args = args[:len(args)-1]
 	}
 	q := db.WithContext(ctx).Raw(`
 		WITH pool AS (
 			SELECT id FROM catalog_work
 			WHERE medium_id = ? AND `+sitePredicate+` AND deleted_at IS NULL
+			  AND (olang = '' OR olang = 'ja')
 		),
 		has_zh_source AS (
 			SELECT DISTINCT work_id FROM catalog_work_intro
@@ -183,12 +193,8 @@ func loadCandidates(ctx context.Context, db *gorm.DB, reg registry, pop Populati
 		LEFT JOIN mzh ON mzh.work_id = b.id
 		LEFT JOIN pop ON pop.work_id = b.id
 		WHERE hs.work_id IS NULL`+lastResortGate+`
-		ORDER BY COALESCE(pop.dl, pop.wl, 0) DESC, b.id ASC
-		LIMIT ?`,
-		reg.galgameMedium, string(src),
-		reg.dlsiteSource, model.PopularityMetricDownloads,
-		reg.dlsiteSource, model.PopularityMetricWishlist,
-		top)
+		ORDER BY COALESCE(pop.dl, pop.wl, 0) DESC, b.id ASC`+limitClause,
+		args...)
 	var out []candidate
 	if err := q.Scan(&out).Error; err != nil {
 		return nil, err

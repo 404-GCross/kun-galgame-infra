@@ -512,13 +512,16 @@ func TestMockTranslatorDeterminism(t *testing.T) {
 	assert.True(t, strings.HasPrefix(mdl, "mock:"), "obvious mock model id")
 }
 
-// TestEnglishLaneIsALastResort pins the two exclusions that make the en→zh lane
-// safe to run BESIDE the Getchu crawl rather than after it (refs/proj/168).
+// TestEnglishLaneIsALastResort pins the exclusion that keeps the en→zh lane a
+// last resort: anything with a ja intro belongs to the ja lane. en→zh is a
+// relay — the English is itself a translation of a Japanese original, so it
+// compounds two hops' losses — and fill-missing means whichever lane writes zh
+// FIRST wins permanently.
 //
-// Both are correctness, not tidiness. en→zh is a relay: the English is itself a
-// translation of a Japanese original, so it compounds two hops' losses. And
-// fill-missing means whichever lane writes zh FIRST wins permanently — a
-// premature English translation would lock out the better Japanese one forever.
+// The lane's former SECOND exclusion (anything Getchu anchors) protected it
+// while refs/proj/167 was still about to deliver ja originals; that crawl
+// closed, the gate came out (refs/proj/173), and a Getchu-anchored work
+// without ja is now an ordinary en candidate — pinned below.
 func TestEnglishLaneIsALastResort(t *testing.T) {
 	clean(t)
 	ctx := context.Background()
@@ -539,7 +542,8 @@ func TestEnglishLaneIsALastResort(t *testing.T) {
 	mkIntro(t, wHasJa, "en", "An English blurb.", curated)
 	mkIntro(t, wHasJa, "ja", "日本語のあらすじ。", bangumi)
 
-	// Getchu anchors it → the crawler is about to supply the Japanese original.
+	// Getchu anchors it, no ja anywhere → since refs/proj/173 an ordinary en
+	// candidate (the crawl is closed; there is no ja supply left to wait for).
 	wGetchu := mkPublished(t, medium, "en-but-getchu-anchored", &site)
 	mkIntro(t, wGetchu, "en", "Another English blurb.", curated)
 	mkGetchuAnchor(t, wGetchu, getchu, vndb, "1117747")
@@ -551,38 +555,68 @@ func TestEnglishLaneIsALastResort(t *testing.T) {
 
 	st, err := Run(ctx, nil, Opts{DSN: testDSN, Population: PopulationPublished, SourceLang: SourceEn})
 	require.NoError(t, err)
-	assert.Equal(t, 1, st.Candidates,
-		"only the work no other lane can reach: ja-having, getchu-anchored and zh-having works are all excluded")
+	assert.Equal(t, 2, st.Candidates,
+		"en-only works are candidates (getchu anchor no longer excludes); ja-having and zh-having works are not")
 
 	reg2, err := resolveRegistry(ctx, testDB)
 	require.NoError(t, err)
 	cands, err := loadCandidates(ctx, testDB, reg2, PopulationPublished, SourceEn, 5000, 0)
 	require.NoError(t, err)
-	require.Len(t, cands, 1)
-	assert.Equal(t, wTarget, cands[0].WorkID)
+	require.Len(t, cands, 2)
+	ids := []int64{cands[0].WorkID, cands[1].WorkID}
+	assert.ElementsMatch(t, []int64{wTarget, wGetchu}, ids)
 	assert.Equal(t, "A quiet town where nothing ever happens.", cands[0].JaText,
 		"the lane carries the ENGLISH source text through the same field")
 
-	// Apply writes exactly one machine row, attributed to the English row's source.
+	// Apply writes the machine rows, attributed to the English row's source.
 	tr := &fakeTranslator{model: "en-mt", fn: func(src string) string { return "[译] " + src }}
 	st, err = Run(ctx, tr, Opts{DSN: testDSN, Apply: true, Population: PopulationPublished, SourceLang: SourceEn})
 	require.NoError(t, err)
-	assert.Equal(t, 1, st.Inserted)
+	assert.Equal(t, 2, st.Inserted)
 	assert.Zero(t, st.Errors)
 
 	var row model.CatalogWorkIntro
 	require.NoError(t, testDB.Where("work_id=? AND lang='zh-Hans'", wTarget).First(&row).Error)
 	assert.EqualValues(t, 1, row.Provenance, "machine row")
 	assert.Equal(t, curated, row.SourceID, "attributed to the English row's source_id")
-	for _, w := range []int64{wHasJa, wGetchu} {
-		assert.EqualValues(t, 0, introCount(t, "WHERE work_id=? AND lang='zh-Hans'", w),
-			"work %d must be left for the japanese path", w)
-	}
+	assert.EqualValues(t, 0, introCount(t, "WHERE work_id=? AND lang='zh-Hans'", wHasJa),
+		"the ja-having work must be left for the japanese path")
 
 	// Second pass writes zero.
 	st, err = Run(ctx, tr, Opts{DSN: testDSN, Apply: true, Population: PopulationPublished, SourceLang: SourceEn})
 	require.NoError(t, err)
 	assert.Zero(t, st.Inserted, "fill-missing is idempotent")
+}
+
+// TestOlangGateExcludesNonJapaneseOriginals pins the refs/proj/173 ruling: a
+// work whose ORIGINAL language is declared non-Japanese gets no translated
+// intro (its ja/en intro rows are themselves translations — zh via a relay of
+// a relay is not worth writing). Unset olang passes — an unknown must not
+// lose to a known.
+func TestOlangGateExcludesNonJapaneseOriginals(t *testing.T) {
+	clean(t)
+	ctx := context.Background()
+	medium, _, bangumi := reg(t)
+	site := "kungal"
+
+	wJa := mkPublished(t, medium, "olang-ja", &site)
+	mkIntro(t, wJa, "ja", "日本語のあらすじ。", bangumi)
+	require.NoError(t, testDB.Exec(`UPDATE catalog_work SET olang='ja' WHERE id=?`, wJa).Error)
+
+	wUnset := mkPublished(t, medium, "olang-unset", &site)
+	mkIntro(t, wUnset, "ja", "原語未申告のあらすじ。", bangumi)
+
+	wEn := mkPublished(t, medium, "olang-en", &site)
+	mkIntro(t, wEn, "ja", "英語原作の日本語紹介。", bangumi)
+	require.NoError(t, testDB.Exec(`UPDATE catalog_work SET olang='en' WHERE id=?`, wEn).Error)
+
+	reg2, err := resolveRegistry(ctx, testDB)
+	require.NoError(t, err)
+	cands, err := loadCandidates(ctx, testDB, reg2, PopulationPublished, SourceJa, 0, 0)
+	require.NoError(t, err)
+	require.Len(t, cands, 2, "olang=ja and unset pass; a declared non-ja original is excluded")
+	ids := []int64{cands[0].WorkID, cands[1].WorkID}
+	assert.ElementsMatch(t, []int64{wJa, wUnset}, ids)
 }
 
 // TestPublishedPopulationExcludesDrafts pins that the en lane does not spend

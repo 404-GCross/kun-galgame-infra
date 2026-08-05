@@ -49,9 +49,10 @@ type Opts struct {
 	// SourceJa (the pilot lane, backward compatible). See SourceEn for why the
 	// English lane is a strictly disjoint last resort.
 	SourceLang SourceLang
-	// Top caps the popularity-ranked candidate population (the pilot ceiling,
-	// default 5000). Limit then windows to the most-popular N for a sample run
-	// (0 = all within Top).
+	// Top caps the popularity-ranked candidate population. The CLI defaults it
+	// to 5000 (the pilot ceiling); 0 means UNLIMITED — the refs/proj/173
+	// full-sweep posture, an explicit choice rather than a fallback. Limit then
+	// windows to the most-popular N for a sample run (0 = all within Top).
 	Top   int
 	Limit int
 	// Delay rate-limits real gateway calls between apply writes (mock = 0).

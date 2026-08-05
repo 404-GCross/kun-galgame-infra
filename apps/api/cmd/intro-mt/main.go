@@ -42,7 +42,7 @@ func main() {
 	apply := flag.Bool("apply", false, "translate + write (default: dry — counts + samples, no LLM, no writes)")
 	population := flag.String("population", string(intromt.PopulationBodyless), "candidate lane: bodyless | claimed | published (claimed narrowed to the public face)")
 	sourceLang := flag.String("source-lang", string(intromt.SourceJa), "translate FROM: ja (default) or en (last resort — excludes anything with ja, and anything Getchu anchors)")
-	top := flag.Int("top", 5000, "popularity-ranked candidate ceiling (the pilot population)")
+	top := flag.Int("top", 5000, "popularity-ranked candidate ceiling (0 = unlimited, the full-sweep posture)")
 	limit := flag.Int("limit", 0, "process only the most-popular N candidates (0 = all within --top)")
 	model := flag.String("model", envOr("KUN_INTRO_MT_LLM_MODEL", envOr("KUN_AI_UPSTREAM_MODEL", "deepseek-chat")), "served model id (recorded in mt_model)")
 	llmBase := flag.String("llm-base", envOr("KUN_INTRO_MT_LLM_BASE", os.Getenv("KUN_AI_UPSTREAM_BASE_URL")), "OpenAI-compatible gateway base URL (…/v1)")
