@@ -92,8 +92,26 @@ func RegisterWork(reg *editing.Registry, db *gorm.DB) error {
 		Review:    editing.ReviewPerm(string(perm.EditWorkReview)),
 		Automerge: editing.AutomergeOwner,
 	}
+	// kungal overlay (E3a ruling 2 + E3b direct-edit — carried over from the
+	// retired galgame.game spec, where the N5 re-anchoring lost it): any
+	// logged-in user proposes into the kungal review queue; review holds the
+	// work review perm, and OwnerReview additionally admits the entry's
+	// product-asserted creator (the forum BFF stamps is_entity_owner from
+	// galgame.creator_user_id). Automerge=review closes the loop: whoever
+	// could review a field — admin/ren via perm, the game's creator via
+	// OwnerReview — direct-edits it instead of queuing a proposal to
+	// adjudicate against themselves. The old spec's special keys (bid locked,
+	// vndb_id/status perm-gated) have no counterpart in this matrix: lifecycle
+	// is claim_state actions, and curated links mint probable candidates, never
+	// anchors — so the overlay safely covers every field.
+	kungalPolicy := editing.Policy{
+		Propose:     editing.ProposeOpen,
+		Review:      editing.ReviewPerm(string(perm.EditWorkReview)),
+		Automerge:   editing.AutomergeReview,
+		OwnerReview: true,
+	}
 	fields := workFieldSpecs()
-	overlays := make(map[string]map[string]editing.Policy, len(letmoeSites))
+	overlays := make(map[string]map[string]editing.Policy, len(letmoeSites)+1)
 	for _, site := range letmoeSites {
 		overlay := make(map[string]editing.Policy, len(fields))
 		for _, f := range fields {
@@ -101,6 +119,11 @@ func RegisterWork(reg *editing.Registry, db *gorm.DB) error {
 		}
 		overlays[site] = overlay
 	}
+	kungalOverlay := make(map[string]editing.Policy, len(fields))
+	for _, f := range fields {
+		kungalOverlay[f.Key] = kungalPolicy
+	}
+	overlays["kungal"] = kungalOverlay
 
 	return reg.Register(editing.EntityTypeSpec{
 		Family: "catalog",
