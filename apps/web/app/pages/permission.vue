@@ -4,5 +4,5 @@ definePageMeta({ middleware: ['auth', 'admin'] })
 </script>
 
 <template>
-  <AdminPermissionContainer />
+  <PermissionContainer />
 </template>
