@@ -186,6 +186,7 @@ func buildWorkResponse(detail *service.WorkDetail) dto.WorkByAnchorResponse {
 		wc := dto.WorkCharacter{
 			CharacterID: c.CharacterID, DisplayName: c.DisplayName, Latin: derefStr(c.Latin),
 			Gender: derefI16(c.Gender), Kind: c.Kind, Spoiler: c.Spoiler, ImageHash: derefStr(c.ImageHash),
+			FigureHash: derefStr(c.FigureHash),
 			// va pre-sized non-nil so a roster-only character (no VA) serializes
 			// `[]`, not `null` (docs/proj/16 #3).
 			Va: make([]dto.WorkCharacterVA, 0, len(c.Va)),
@@ -639,6 +640,7 @@ func (s *S2SServer) characterByID(ctx context.Context, in *characterByIDInput) (
 		ID: detail.ID, DisplayName: detail.DisplayName, Latin: derefStr(detail.Latin),
 		Lang: detail.Lang, Gender: derefI16(detail.Gender), Description: detail.Description,
 		InstanceOf: derefI64(detail.InstanceOf), ImageHash: derefStr(detail.ImageHash),
+		FigureHash: derefStr(detail.FigureHash),
 		// Typed attribute columns flattened (step 81); a nil pointer maps to the
 		// zero value, which the omitempty tags drop.
 		BirthdayMonth: derefI16(detail.BirthdayMonth), BirthdayDay: derefI16(detail.BirthdayDay),

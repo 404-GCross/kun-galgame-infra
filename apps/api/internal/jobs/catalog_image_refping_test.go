@@ -28,6 +28,7 @@ const (
 	hCharA      = "aaaa111111111111111111111111111111111111111111111111111111111111"
 	hCharB      = "bbbb222222222222222222222222222222222222222222222222222222222222"
 	hCharC      = "cccc333333333333333333333333333333333333333333333333333333333333"
+	hCharD      = "3333999999999999999999999999999999999999999999999999999999999999"
 	hCoverB     = "dddd444444444444444444444444444444444444444444444444444444444444"
 	hCoverSha   = "eeee555555555555555555555555555555555555555555555555555555555555"
 	hCharCoverX = "ffff666666666666666666666666666666666666666666666666666666666666"
@@ -136,4 +137,45 @@ func TestCatalogRefping_IncludesBodylessAndShadowedMedia(t *testing.T) {
 	want := []string{hCharCoverX, hCoverB, hCoverSha, hShotB, hShotSha}
 	sort.Strings(want)
 	assert.Equal(t, want, got, "character portrait + bodyless cover/screenshot + SHADOWED claimed cover/screenshot all pinged")
+}
+
+// TestCatalogRefping_IncludesFullBodyFigures pins the second character image
+// column into the keep-alive universe.
+//
+// A character carries TWO independent images — the bust (image_hash) and the
+// full-body figure (figure_hash) — and figure_hash was added a wave after this
+// job existed. Leaving it out of the union breaks nothing observable: uploads
+// succeed, the read face serves the URL, and the bytes are quietly collected
+// once the TTL elapses. This test is the only thing standing between that and
+// a silent loss discovered a year later.
+func TestCatalogRefping_IncludesFullBodyFigures(t *testing.T) {
+	dsn := os.Getenv("TEST_CATALOG_DATABASE_DSN")
+	if dsn == "" {
+		t.Skip("TEST_CATALOG_DATABASE_DSN not set")
+	}
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	require.NoError(t, err)
+	migrateCatalogRefpingTables(t, db)
+
+	sp := func(s string) *string { return &s }
+	mk := func(img, fig *string) *catalogmodel.CatalogCharacter {
+		c := &catalogmodel.CatalogCharacter{DisplayName: "x", ImageHash: img, FigureHash: fig}
+		require.NoError(t, db.Create(c).Error)
+		return c
+	}
+
+	mk(sp(hCharA), sp(hCharB)) // both slots on one character → both kept alive
+	mk(nil, sp(hCharC))        // figure only, no bust → still kept alive
+	mk(sp(hCharA), nil)        // bust only
+	mk(nil, sp(""))            // empty figure → excluded
+	gone := mk(nil, sp(hCharD))
+	require.NoError(t, db.Delete(gone).Error) // soft-deleted → excluded
+
+	got, err := collectCatalogRefpingHashes(context.Background(), db)
+	require.NoError(t, err)
+	sort.Strings(got)
+
+	want := []string{hCharA, hCharB, hCharC}
+	sort.Strings(want)
+	assert.Equal(t, want, got, "both image_hash and figure_hash must be kept alive")
 }

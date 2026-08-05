@@ -507,6 +507,9 @@ func (s *PublicService) attachWorkFacets(ctx context.Context, rec *dto.PublicCat
 		if ch.ImageHash != nil {
 			pc.Image = s.imageURL(*ch.ImageHash)
 		}
+		if ch.FigureHash != nil {
+			pc.Figure = s.imageURL(*ch.FigureHash)
+		}
 		for _, v := range ch.Va {
 			pc.Voices = append(pc.Voices, dto.PublicRosterVoice{ID: v.CreditNameID, Name: v.Name})
 		}
@@ -740,12 +743,19 @@ func (s *PublicService) Character(ctx context.Context, id int64, withWorks, nsfw
 	if ch.Intros, err = s.characterIntros(ctx, id); err != nil {
 		return dto.PublicCharacter{}, false, err
 	}
-	var imgHash *string
-	if err := s.db.WithContext(ctx).Raw(`SELECT image_hash FROM catalog_character WHERE id = ?`, id).Scan(&imgHash).Error; err != nil {
+	var art struct {
+		ImageHash  *string `gorm:"column:image_hash"`
+		FigureHash *string `gorm:"column:figure_hash"`
+	}
+	if err := s.db.WithContext(ctx).Raw(
+		`SELECT image_hash, figure_hash FROM catalog_character WHERE id = ?`, id).Scan(&art).Error; err != nil {
 		return dto.PublicCharacter{}, false, err
 	}
-	if imgHash != nil {
-		ch.Image = s.imageURL(*imgHash)
+	if art.ImageHash != nil {
+		ch.Image = s.imageURL(*art.ImageHash)
+	}
+	if art.FigureHash != nil {
+		ch.Figure = s.imageURL(*art.FigureHash)
 	}
 	if withWorks {
 		briefs, err := s.claimEnrichCharacter(ctx, res.Works)

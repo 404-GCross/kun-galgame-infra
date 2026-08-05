@@ -27,6 +27,20 @@ type CatalogCharacter struct {
 	// service (same shape as the galgame/work image columns); NULL until the
 	// step-47 VNDB portrait wave backfills it. This step only lands the column.
 	ImageHash *string `json:"image_hash"`
+	// FigureHash is the character's FULL-BODY standing art (立绘 / tachi-e),
+	// content-addressed in the image service exactly like ImageHash.
+	//
+	// It is a separate column rather than a second candidate for ImageHash
+	// because the two are different assets with different shapes and different
+	// uses: ImageHash is a bust rendered at 256x360 `cover` and belongs in a
+	// list or beside a name, while this is a whole figure on a transparent-ish
+	// white field whose aspect must be preserved (preset "character_figure",
+	// fit `inside`). Cover-cropping a standing figure to a portrait box is how
+	// you get a picture of someone's midriff.
+	//
+	// NULL is the normal state: only Getchu supplies this at scale, and only
+	// for the works it lists.
+	FigureHash *string `json:"figure_hash"`
 	// --- typical-set physical attributes (refs/proj/81 field PR C2) ---
 	// The display-core attribute set that most sources carry, promoted to real
 	// typed columns (the long tail lives in Extra). Every column is a nullable

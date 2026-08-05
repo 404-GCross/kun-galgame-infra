@@ -144,6 +144,8 @@ components:
         extra:
           additionalProperties: {}
           type: object
+        figure_hash:
+          type: string
         gender:
           format: int32
           type: integer
@@ -2368,6 +2370,8 @@ components:
           format: int64
           type: integer
         display_name:
+          type: string
+        figure_hash:
           type: string
         gender:
           format: int32

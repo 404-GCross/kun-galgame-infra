@@ -88,6 +88,31 @@ presets:
       - image/png
       - image/webp
 
+  # Character FULL-BODY standing art (立绘 / tachi-e), written to
+  # catalog_character.figure_hash by internal/jobs/getchuportraits --slot figure.
+  #
+  # fit `inside`, NOT `cover`, and that is the whole reason this preset exists
+  # rather than reusing `character`. The source is a whole figure standing on a
+  # white field (Getchu ships them 500x500); cover-cropping that to a 2:3
+  # portrait box throws away both sides and leaves a picture of someone's
+  # midriff. `inside` shrinks to fit and preserves the aspect, so the figure
+  # survives whatever its proportions are.
+  #
+  # Uploaded under site_key "catalog"; the catalog client's
+  # image_allowed_presets MUST list it or every upload is 403'd.
+  character_figure:
+    variants:
+      - name: "mini"
+        width: 360
+        height: 360
+        fit: inside
+        format: webp
+        quality: 80
+    allowed_mime:
+      - image/jpeg
+      - image/png
+      - image/webp
+
   # Catalog BODYLESS work covers (media-aggregation wave, step 55). DLsite store
   # covers are LANDSCAPE package shots (~560x420); the main image is the global
   # main_pipeline output (≤1920x1080 webp) and `mini` is a 460x259 landscape

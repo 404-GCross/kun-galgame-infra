@@ -245,10 +245,14 @@ type WorkCharacter struct {
 	// 2=major (VNDB source; 0 for Bangumi/EG edges and for a credit-only
 	// character with no roster edge).
 	Spoiler int16 `json:"spoiler" doc:"appearance spoiler level: 0=none 1=minor 2=major"`
-	// ImageHash is the portrait content hash in the image service; absent until
-	// the step-47 VNDB portrait wave backfills it.
-	ImageHash string            `json:"image_hash,omitempty"`
-	Va        []WorkCharacterVA `json:"va"`
+	// ImageHash is the BUST portrait content hash in the image service; absent
+	// until the step-47 VNDB portrait wave backfills it.
+	ImageHash string `json:"image_hash,omitempty"`
+	// FigureHash is the FULL-BODY standing art content hash. A different asset
+	// from ImageHash, not a fallback for it: render it at its own aspect
+	// (preset "character_figure"), never cropped into a portrait box.
+	FigureHash string            `json:"figure_hash,omitempty"`
+	Va         []WorkCharacterVA `json:"va"`
 }
 
 // WorkCharacterVA is one credited name that voiced a character on this work
@@ -511,9 +515,13 @@ type CharacterDetailResponse struct {
 	// InstanceOf is the base character id for a cross-universe variant (VNDB
 	// instance_of); absent when the character is not a variant.
 	InstanceOf int64 `json:"instance_of,omitempty"`
-	// ImageHash is the portrait content hash in the image service; absent until
-	// the step-47 VNDB portrait wave backfills it.
+	// ImageHash is the BUST portrait content hash in the image service; absent
+	// until the step-47 VNDB portrait wave backfills it.
 	ImageHash string `json:"image_hash,omitempty"`
+	// FigureHash is the FULL-BODY standing art content hash. A different asset
+	// from ImageHash, not a fallback for it: render it at its own aspect
+	// (preset "character_figure"), never cropped into a portrait box.
+	FigureHash string `json:"figure_hash,omitempty"`
 	// --- typical-set physical attributes (step 81 field PR C2) ---
 	// The display-core attribute set, flattened from the real typed columns;
 	// each is absent when unknown (there is no meaningful zero). BirthdayMonth/

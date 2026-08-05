@@ -783,6 +783,8 @@ components:
     PublicCharacter:
       additionalProperties: false
       properties:
+        figure:
+          type: string
         id:
           format: int64
           type: integer
@@ -1644,6 +1646,8 @@ components:
     PublicRosterCharacter:
       additionalProperties: false
       properties:
+        figure:
+          type: string
         id:
           format: int64
           type: integer

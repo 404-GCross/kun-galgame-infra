@@ -31,11 +31,17 @@ func DefaultCatalogImageRefpingOpts() CatalogImageRefpingOpts {
 // upload-time TTL touch and vanish ~13 months later — the exact "refping
 // site-scope GC fuse" failure that froze 66k galgame images.
 //
-// The catalog-scope hash universe is three sources (step 54, refs/proj/51 §4):
-//  1. catalog_character.image_hash — VNDB portrait wave (step 48).
-//  2. catalog_work_cover.image_hash — bodyless cover backfill (step 53).
-//  3. catalog_work_screenshot.image_hash — DLsite screenshot backfill (step 54 for
+// The catalog-scope hash universe is four sources (step 54, refs/proj/51 §4):
+//  1. catalog_character.image_hash — the BUST: VNDB portrait wave (step 48) and
+//     the Getchu bust backfill (refs/proj/167 §10).
+//  2. catalog_character.figure_hash — the FULL-BODY figure (refs/proj/167 §11).
+//  3. catalog_work_cover.image_hash — bodyless cover backfill (step 53).
+//  4. catalog_work_screenshot.image_hash — DLsite screenshot backfill (step 54 for
 //     bodyless works, refs/proj/125 for the claimed lane).
+//
+// Adding an image column anywhere in catalog scope means adding it HERE in the
+// same change. Nothing fails when you forget: uploads succeed, the read face
+// renders, and the bytes are collected a year later.
 //
 // For (2) and (3) ALL rows count, INCLUDING those shadowed by a later claim
 // (§8.B shadow-never-delete): a shadowed media row's bytes stay in catalog scope
@@ -160,6 +166,15 @@ func collectCatalogRefpingHashes(ctx context.Context, db *gorm.DB) ([]string, er
 SELECT DISTINCT hash FROM (
     SELECT image_hash AS hash FROM catalog_character
     WHERE image_hash IS NOT NULL AND image_hash <> '' AND deleted_at IS NULL
+    UNION
+    -- Characters carry TWO independent images: the bust (image_hash) and the
+    -- full-body figure (figure_hash). Both are catalog-scope bytes with one
+    -- home row each, so both must be listed here. A new image column that is
+    -- not added to this union is invisible to the keep-alive sweep and its
+    -- bytes are collected once the TTL elapses — the failure is silent and
+    -- arrives a year late.
+    SELECT figure_hash FROM catalog_character
+    WHERE figure_hash IS NOT NULL AND figure_hash <> '' AND deleted_at IS NULL
     UNION
     SELECT image_hash FROM catalog_work_cover
     WHERE image_hash IS NOT NULL AND image_hash <> ''

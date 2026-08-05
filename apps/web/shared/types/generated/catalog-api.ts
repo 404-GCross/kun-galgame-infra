@@ -567,6 +567,7 @@ export interface components {
             extra?: {
                 [key: string]: unknown;
             };
+            figure_hash?: string;
             /** Format: int32 */
             gender?: number;
             /** Format: int32 */
@@ -1634,6 +1635,7 @@ export interface components {
             /** Format: int64 */
             character_id: number;
             display_name: string;
+            figure_hash?: string;
             /** Format: int32 */
             gender?: number;
             image_hash?: string;

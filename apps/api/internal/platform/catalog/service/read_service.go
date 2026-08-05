@@ -242,6 +242,7 @@ type WorkCharacterRow struct {
 	Kind        int16
 	Spoiler     int16 // per-edge spoiler level (0 for a credit-only character with no roster edge)
 	ImageHash   *string
+	FigureHash  *string
 	Va          []WorkCharacterVARow
 }
 
@@ -720,10 +721,11 @@ func (s *ReadService) loadWorkCharacters(ctx context.Context, workID int64) ([]W
 		Latin       *string `gorm:"column:latin"`
 		Gender      *int16  `gorm:"column:gender"`
 		ImageHash   *string `gorm:"column:image_hash"`
+		FigureHash  *string `gorm:"column:figure_hash"`
 		Kind        int16   `gorm:"column:kind"`
 		Spoiler     int16   `gorm:"column:spoiler"`
 	}
-	if err := db.Raw(`SELECT wc.character_id, ch.display_name, ch.latin, ch.gender, ch.image_hash, wc.kind, wc.spoiler
+	if err := db.Raw(`SELECT wc.character_id, ch.display_name, ch.latin, ch.gender, ch.image_hash, ch.figure_hash, wc.kind, wc.spoiler
 		FROM catalog_work_character wc JOIN catalog_character ch ON ch.id = wc.character_id
 		WHERE wc.work_id = ? AND ch.deleted_at IS NULL`, workID).Scan(&edges).Error; err != nil {
 		return nil, err
@@ -737,10 +739,11 @@ func (s *ReadService) loadWorkCharacters(ctx context.Context, workID int64) ([]W
 		Latin        *string `gorm:"column:latin"`
 		Gender       *int16  `gorm:"column:gender"`
 		ImageHash    *string `gorm:"column:image_hash"`
+		FigureHash   *string `gorm:"column:figure_hash"`
 		CreditNameID int64   `gorm:"column:credit_name_id"`
 		Name         string  `gorm:"column:name"`
 	}
-	if err := db.Raw(`SELECT DISTINCT c.character_id, ch.display_name, ch.latin, ch.gender, ch.image_hash,
+	if err := db.Raw(`SELECT DISTINCT c.character_id, ch.display_name, ch.latin, ch.gender, ch.image_hash, ch.figure_hash,
 		cn.id AS credit_name_id, cn.name
 		FROM catalog_credit c
 		JOIN catalog_character ch ON ch.id = c.character_id
@@ -754,6 +757,7 @@ func (s *ReadService) loadWorkCharacters(ctx context.Context, workID int64) ([]W
 		byID[e.CharacterID] = &WorkCharacterRow{
 			CharacterID: e.CharacterID, DisplayName: e.DisplayName, Latin: e.Latin,
 			Gender: e.Gender, Kind: e.Kind, Spoiler: e.Spoiler, ImageHash: e.ImageHash,
+			FigureHash: e.FigureHash,
 		}
 	}
 	for _, c := range creds {
@@ -762,6 +766,7 @@ func (s *ReadService) loadWorkCharacters(ctx context.Context, workID int64) ([]W
 			row = &WorkCharacterRow{
 				CharacterID: c.CharacterID, DisplayName: c.DisplayName, Latin: c.Latin,
 				Gender: c.Gender, Kind: model.WorkCharacterKindUnknown, ImageHash: c.ImageHash,
+				FigureHash: c.FigureHash,
 			}
 			byID[c.CharacterID] = row
 		}
@@ -1267,6 +1272,7 @@ type CharacterDetail struct {
 	Description string
 	InstanceOf  *int64
 	ImageHash   *string
+	FigureHash  *string
 	// Typical-set physical attributes (step 81 field PR C2): nullable typed
 	// columns, plus the long-tail Extra and the per-column source attribution
 	// derived from field_provenance.
@@ -1332,6 +1338,7 @@ func (s *ReadService) CharacterByID(ctx context.Context, characterID int64, maxS
 		Description     string         `gorm:"column:description"`
 		InstanceOf      *int64         `gorm:"column:instance_of"`
 		ImageHash       *string        `gorm:"column:image_hash"`
+		FigureHash      *string        `gorm:"column:figure_hash"`
 		BirthdayMonth   *int16         `gorm:"column:birthday_month"`
 		BirthdayDay     *int16         `gorm:"column:birthday_day"`
 		BloodType       *int16         `gorm:"column:blood_type"`
@@ -1344,7 +1351,7 @@ func (s *ReadService) CharacterByID(ctx context.Context, characterID int64, maxS
 		Extra           datatypes.JSON `gorm:"column:extra"`
 		FieldProvenance datatypes.JSON `gorm:"column:field_provenance"`
 	}
-	if err := db.Raw(`SELECT id, display_name, latin, lang, gender, description, instance_of, image_hash,
+	if err := db.Raw(`SELECT id, display_name, latin, lang, gender, description, instance_of, image_hash, figure_hash,
 		birthday_month, birthday_day, blood_type, height_cm, weight_kg, bust_cm, waist_cm, hip_cm, cup,
 		extra, field_provenance
 		FROM catalog_character WHERE id = ? AND deleted_at IS NULL`, characterID).Scan(&head).Error; err != nil {
@@ -1356,6 +1363,7 @@ func (s *ReadService) CharacterByID(ctx context.Context, characterID int64, maxS
 	detail := &CharacterDetail{
 		ID: head.ID, DisplayName: head.DisplayName, Latin: head.Latin, Lang: head.Lang,
 		Gender: head.Gender, Description: head.Description, InstanceOf: head.InstanceOf, ImageHash: head.ImageHash,
+		FigureHash:    head.FigureHash,
 		BirthdayMonth: head.BirthdayMonth, BirthdayDay: head.BirthdayDay, BloodType: head.BloodType,
 		HeightCm: head.HeightCm, WeightKg: head.WeightKg, BustCm: head.BustCm, WaistCm: head.WaistCm,
 		HipCm: head.HipCm, Cup: head.Cup,

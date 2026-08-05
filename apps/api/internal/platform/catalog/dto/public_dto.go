@@ -344,9 +344,13 @@ type PublicCharacter struct {
 	// language (lowest source_id wins — the step-65 intro merge); vndb
 	// spoiler spans were already stripped at import. Always present.
 	Intros []PublicCharacterIntro `json:"intros"`
-	// Image is the portrait as a complete CDN URL; omitted when the
+	// Image is the BUST portrait as a complete CDN URL; omitted when the
 	// character has no portrait.
 	Image string `json:"image,omitempty"`
+	// Figure is the FULL-BODY standing art as a complete CDN URL; omitted when
+	// the character has none. A different asset from image, not a fallback for
+	// it — render it at its own aspect, never cropped into a portrait box.
+	Figure string `json:"figure,omitempty"`
 }
 
 // PublicLabelWork is one work attributed to a label, with the attribution nature.
@@ -571,13 +575,16 @@ type PublicRosterVoice struct {
 // PublicRosterCharacter is one character on the work's roster (id — GET
 // /v1/catalog/characters/{id}).
 type PublicRosterCharacter struct {
-	ID      int64               `json:"id"`
-	Name    string              `json:"name"`
-	Latin   string              `json:"latin,omitempty"`
-	Kind    string              `json:"kind" doc:"main|secondary|appears|unknown"`
-	Spoiler int16               `json:"spoiler" doc:"0=none 1=minor 2=major"`
-	Image   string              `json:"image,omitempty"`
-	Voices  []PublicRosterVoice `json:"voices"`
+	ID      int64  `json:"id"`
+	Name    string `json:"name"`
+	Latin   string `json:"latin,omitempty"`
+	Kind    string `json:"kind" doc:"main|secondary|appears|unknown"`
+	Spoiler int16  `json:"spoiler" doc:"0=none 1=minor 2=major"`
+	Image   string `json:"image,omitempty"`
+	// Figure is the full-body standing art as a complete CDN URL; omitted when
+	// the character has none.
+	Figure string              `json:"figure,omitempty"`
+	Voices []PublicRosterVoice `json:"voices"`
 }
 
 // PublicWorkLabel is one attribution edge to a label (id — GET

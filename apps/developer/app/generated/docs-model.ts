@@ -1977,6 +1977,10 @@ export const docsModel: DocsModel = {
                         "type": "object",
                         "children": [
                           {
+                            "name": "figure",
+                            "type": "string"
+                          },
+                          {
                             "name": "id",
                             "required": true,
                             "format": "int64",
@@ -3201,6 +3205,10 @@ export const docsModel: DocsModel = {
                             "type": "object",
                             "children": [
                               {
+                                "name": "figure",
+                                "type": "string"
+                              },
+                              {
                                 "name": "id",
                                 "required": true,
                                 "format": "int64",
@@ -4076,6 +4084,10 @@ export const docsModel: DocsModel = {
                                   "name": "character",
                                   "type": "object",
                                   "children": [
+                                    {
+                                      "name": "figure",
+                                      "type": "string"
+                                    },
                                     {
                                       "name": "id",
                                       "required": true,
@@ -7556,6 +7568,10 @@ export const docsModel: DocsModel = {
                             "itemsOf": {
                               "type": "object",
                               "children": [
+                                {
+                                  "name": "figure",
+                                  "type": "string"
+                                },
                                 {
                                   "name": "id",
                                   "required": true,
