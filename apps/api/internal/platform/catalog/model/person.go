@@ -52,9 +52,20 @@ type CatalogPerson struct {
 	Gender *int16 `json:"gender"`
 	// Fuzzy birth date: three nullable columns, precision self-expressed
 	// (doc 17 R9 / MusicBrainz model).
-	BirthY          *int16         `json:"birth_y"`
-	BirthM          *int16         `json:"birth_m"`
-	BirthD          *int16         `json:"birth_d"`
+	BirthY *int16 `json:"birth_y"`
+	BirthM *int16 `json:"birth_m"`
+	BirthD *int16 `json:"birth_d"`
+	// PhotoHash is the person's photograph in the image service (wave 172) —
+	// ONE slot, mirroring catalog_label.logo_hash exactly: same content-hash
+	// currency as a work cover's image_hash, NOT NULL DEFAULT '' so "" (never
+	// NULL) is the "no photo" value, and the consumer builds the CDN URL from
+	// it. Filled by internal/jobs/personphotos from the bangumi mirror;
+	// provenance lands under field_provenance["photo_hash"].
+	//
+	// A new image column in catalog scope must ALSO join the keep-alive union
+	// in internal/jobs/catalog_image_refping.go, or the bytes are silently
+	// collected once the TTL elapses.
+	PhotoHash       string         `gorm:"type:text;not null;default:''" json:"photo_hash"`
 	Description     string         `gorm:"not null;default:''" json:"description"`
 	FieldProvenance datatypes.JSON `gorm:"type:jsonb;not null;default:'{}'" json:"field_provenance"`
 	CreatedAt       time.Time      `json:"created_at"`

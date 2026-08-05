@@ -39,6 +39,8 @@ func DefaultCatalogImageRefpingOpts() CatalogImageRefpingOpts {
 //  4. catalog_work_screenshot.image_hash — DLsite screenshot backfill (step 54 for
 //     bodyless works, refs/proj/125 for the claimed lane).
 //  5. catalog_label.logo_hash — label brand logos (wave 170, refs/proj/170).
+//  6. catalog_person.photo_hash — person photographs (wave 172,
+//     internal/jobs/personphotos).
 //
 // Adding an image column anywhere in catalog scope means adding it HERE in the
 // same change. Nothing fails when you forget: uploads succeed, the read face
@@ -189,6 +191,12 @@ SELECT DISTINCT hash FROM (
     -- (not NULL) is the "no logo" value the filter has to exclude.
     SELECT logo_hash FROM catalog_label
     WHERE logo_hash IS NOT NULL AND logo_hash <> '' AND deleted_at IS NULL
+    UNION
+    -- Person photographs (wave 172, internal/jobs/personphotos). Live persons
+    -- only, and stored NOT NULL DEFAULT '' exactly like the label logo above —
+    -- so the empty string, not NULL, is the "no photo" value to exclude.
+    SELECT photo_hash FROM catalog_person
+    WHERE photo_hash IS NOT NULL AND photo_hash <> '' AND deleted_at IS NULL
 ) u
 `
 	var hashes []string

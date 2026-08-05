@@ -36,6 +36,8 @@ const (
 	hShotSha    = "2222888888888888888888888888888888888888888888888888888888888888"
 	hLogoA      = "4444aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	hLogoB      = "5555bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	hPhotoA     = "6666cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+	hPhotoB     = "7777dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
 )
 
 // migrateCatalogRefpingTables migrates the small set the catalog refping query
@@ -48,11 +50,12 @@ func migrateCatalogRefpingTables(t *testing.T, db *gorm.DB) {
 		&catalogmodel.CatalogMedium{}, &catalogmodel.CatalogSource{},
 		&catalogmodel.CatalogWork{}, &catalogmodel.CatalogCharacter{},
 		&catalogmodel.CatalogWorkCover{}, &catalogmodel.CatalogWorkScreenshot{},
-		&catalogmodel.CatalogOrg{}, &catalogmodel.CatalogLabel{}))
+		&catalogmodel.CatalogOrg{}, &catalogmodel.CatalogLabel{},
+		&catalogmodel.CatalogPerson{}))
 	// Truncate catalog_work too (CASCADE clears its cover/screenshot children):
 	// the claimed work carries a claim-unique (medium, site, product_work_id), so
 	// leaving it behind collides on a second run against the same DB.
-	require.NoError(t, db.Exec(`TRUNCATE catalog_work, catalog_character, catalog_label RESTART IDENTITY CASCADE`).Error)
+	require.NoError(t, db.Exec(`TRUNCATE catalog_work, catalog_character, catalog_label, catalog_person RESTART IDENTITY CASCADE`).Error)
 	// A medium + source the work / cover FKs reference (upsert — the DB may be
 	// shared with the fully-seeded handler tests).
 	require.NoError(t, db.Exec(`INSERT INTO catalog_medium (id, key, name_cn) VALUES (1,'galgame','G') ON CONFLICT (id) DO NOTHING`).Error)
@@ -216,4 +219,38 @@ func TestCatalogRefping_IncludesLabelLogos(t *testing.T) {
 	sort.Strings(got)
 
 	assert.Equal(t, []string{hLogoA}, got, "live, non-empty label logos only, deduped")
+}
+
+// TestCatalogRefping_IncludesPersonPhotos pins the wave-172 byte fuse. A person
+// photograph is a catalog-scope image with exactly one home row, stored NOT NULL
+// DEFAULT empty-string like the label logo — so the "no photo" value is "" and a
+// NULL-only filter would ping it forever and report it not_found. Leaving the
+// column out of the union breaks nothing observable: uploads succeed, the read
+// faces serve the URL, and the bytes are collected a year later.
+func TestCatalogRefping_IncludesPersonPhotos(t *testing.T) {
+	dsn := os.Getenv("TEST_CATALOG_DATABASE_DSN")
+	if dsn == "" {
+		t.Skip("TEST_CATALOG_DATABASE_DSN not set")
+	}
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	require.NoError(t, err)
+	migrateCatalogRefpingTables(t, db)
+
+	mk := func(photo string) *catalogmodel.CatalogPerson {
+		p := &catalogmodel.CatalogPerson{DisplayName: "person", PhotoHash: photo}
+		require.NoError(t, db.Create(p).Error)
+		return p
+	}
+
+	mk(hPhotoA) // live photo
+	mk(hPhotoA) // duplicate → deduped
+	mk("")      // no photo (the NOT NULL default) → excluded
+	gone := mk(hPhotoB)
+	require.NoError(t, db.Delete(gone).Error) // soft-deleted → excluded
+
+	got, err := collectCatalogRefpingHashes(context.Background(), db)
+	require.NoError(t, err)
+	sort.Strings(got)
+
+	assert.Equal(t, []string{hPhotoA}, got, "live, non-empty person photos only, deduped")
 }
