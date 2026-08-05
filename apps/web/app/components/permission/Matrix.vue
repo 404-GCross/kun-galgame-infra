@@ -8,18 +8,33 @@ import type {
   PermissionCell
 } from '~~/shared/types/permission'
 import { roleLabel } from '~/constants/roles'
-import { IMMUTABLE_ROLE_NOTES } from '~/constants/permission'
+import {
+  IMMUTABLE_ROLE_NOTES,
+  CELL_OP_LABELS,
+  cellOp
+} from '~/constants/permission'
 
 defineProps<{ domain: PermissionDomainView; roles: string[] }>()
 const emit = defineEmits<{ toggle: [row: PermissionKeyRow, role: string] }>()
 
 const cellOf = (row: PermissionKeyRow, role: string): PermissionCell =>
-  row.grants[role] ?? { granted: false, source: 'none', editable: false }
+  row.grants[role] ?? {
+    granted: false,
+    source: 'none',
+    editable: false,
+    can_deny: false,
+    can_restore: false
+  }
 
-// The tooltip on every cell: why it cannot be clicked, or what clicking does.
+// Whether this square offers anything at all to this caller.
+const isActionable = (row: PermissionKeyRow, role: string) =>
+  cellOp(cellOf(row, role)) !== null
+
+// The tooltip on every cell: what clicking does, or why nothing can be done.
 const cellHint = (row: PermissionKeyRow, role: string) => {
   const cell = cellOf(row, role)
-  if (cell.editable) return cell.granted ? '点击撤销叠加授权' : '点击授予'
+  const op = cellOp(cell)
+  if (op) return `点击${CELL_OP_LABELS[op]}`
   return cell.reason || IMMUTABLE_ROLE_NOTES[role] || '不可编辑'
 }
 </script>
@@ -82,7 +97,7 @@ const cellHint = (row: PermissionKeyRow, role: string) => {
             >
               <KunTooltip :text="cellHint(row, role)" position="top">
                 <KunButton
-                  v-if="cellOf(row, role).editable"
+                  v-if="isActionable(row, role)"
                   color="default"
                   variant="light"
                   size="sm"
@@ -90,38 +105,15 @@ const cellHint = (row: PermissionKeyRow, role: string) => {
                   :aria-label="`${role} ${row.key}`"
                   @click="emit('toggle', row, role)"
                 >
-                  <span
-                    v-if="cellOf(row, role).granted"
-                    class="inline-flex items-center gap-1"
-                  >
-                    <KunIcon name="lucide:check" class="text-primary size-4" />
-                    <span class="bg-primary size-1.5 rounded-full" />
-                  </span>
                   <KunIcon
-                    v-else
+                    v-if="cellOf(row, role).source === 'none'"
                     name="lucide:plus"
                     class="text-default-400 size-4"
                   />
+                  <PermissionCellState v-else :cell="cellOf(row, role)" />
                 </KunButton>
 
-                <span v-else class="inline-flex items-center gap-1">
-                  <template v-if="cellOf(row, role).granted">
-                    <KunIcon
-                      name="lucide:check"
-                      class="size-4"
-                      :class="
-                        cellOf(row, role).source === 'overlay'
-                          ? 'text-primary'
-                          : 'text-success'
-                      "
-                    />
-                    <span
-                      v-if="cellOf(row, role).source === 'overlay'"
-                      class="bg-primary size-1.5 rounded-full"
-                    />
-                  </template>
-                  <span v-else class="text-default-300">—</span>
-                </span>
+                <PermissionCellState v-else :cell="cellOf(row, role)" />
               </KunTooltip>
             </td>
           </tr>

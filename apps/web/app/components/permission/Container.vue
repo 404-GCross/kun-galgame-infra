@@ -1,17 +1,19 @@
 <script setup lang="ts">
 // Permission matrix console: every live permission key by domain, the five
 // contract roles as columns, and — for the cells this caller may change — a
-// click that grants or revokes an overlay row.
+// click that writes or removes an overlay row.
 //
-// The page decides NOTHING about authorization. `editable` and `reason` come
-// from the server, computed by the same validator the write path runs, so the
-// button offered here is exactly the write the API would accept.
+// The page decides NOTHING about authorization. `editable`, `can_deny`,
+// `can_restore` and `reason` all come from the server, computed by the same
+// validator the write path runs, so the button offered here is exactly the
+// write the API would accept. Each cell state admits exactly one operation, so
+// there is never a choice to present — only one door, open or closed.
 import type {
   PermissionMatrix,
   PermissionAuditEntry,
   PermissionKeyRow
 } from '~~/shared/types/permission'
-import { AUDIT_LIST_LIMIT } from '~/constants/permission'
+import { AUDIT_LIST_LIMIT, cellOp } from '~/constants/permission'
 
 const api = useApi()
 
@@ -41,32 +43,47 @@ const pendingRole = ref('')
 const submitting = ref(false)
 
 const askToggle = (row: PermissionKeyRow, role: string) => {
-  if (!row.grants[role]?.editable) return
+  const cell = row.grants[role]
+  if (!cell || !cellOp(cell)) return
   pendingRow.value = row
   pendingRole.value = role
   confirmOpen.value = true
 }
 
+// What each operation sends. A deny is an INSERT carrying its effect; both
+// removals are the same DELETE, because the row that is there is the row being
+// removed — the client never asserts which one, so it can never delete a deny
+// while believing it revoked a grant.
+const SUCCESS_MESSAGES = {
+  grant: '已授予',
+  revoke: '已撤销叠加授权',
+  deny: '已撤销该权限',
+  restore: '已恢复'
+} as const
+
 const confirmToggle = async () => {
   const row = pendingRow.value
   const role = pendingRole.value
-  if (!row || !role) return
+  const cell = row && role ? row.grants[role] : null
+  const op = cell ? cellOp(cell) : null
+  if (!row || !role || !op) return
 
-  const granted = row.grants[role]?.granted ?? false
   submitting.value = true
   try {
-    const response = granted
-      ? await api.delete('/admin/permissions/overrides', {
-          role,
-          permission: row.key
-        })
-      : await api.post('/admin/permissions/overrides', {
-          role,
-          permission: row.key
-        })
+    const response =
+      op === 'grant' || op === 'deny'
+        ? await api.post('/admin/permissions/overrides', {
+            role,
+            permission: row.key,
+            effect: op
+          })
+        : await api.delete('/admin/permissions/overrides', {
+            role,
+            permission: row.key
+          })
 
     if (response.code === 0) {
-      useKunMessage(granted ? '已撤销' : '已授予', 'success')
+      useKunMessage(SUCCESS_MESSAGES[op], 'success')
       confirmOpen.value = false
       await Promise.all([refreshMatrix(), refreshAudit()])
     } else {
@@ -83,7 +100,9 @@ const confirmToggle = async () => {
     <div>
       <h1 class="text-foreground text-2xl font-bold">权限矩阵</h1>
       <p class="text-default-500 mt-1">
-        代码捆是地板，叠加层只增不减：点击可编辑的格子即授予或撤销一条叠加授权。
+        点击可操作的格子即修改叠加层：可以给 creator/moderator/admin
+        加上代码捆没有的权限，也可以收回代码捆给它们的权限。ren
+        行是锁死后的恢复保险，只读。
       </p>
     </div>
 
@@ -97,9 +116,7 @@ const confirmToggle = async () => {
     </div>
 
     <template v-else-if="matrix">
-      <PermissionLegend
-        :manages-permissions="matrix.manages_permissions"
-      />
+      <PermissionLegend :manages-permissions="matrix.manages_permissions" />
 
       <PermissionMatrix
         v-for="domain in matrix.domains"

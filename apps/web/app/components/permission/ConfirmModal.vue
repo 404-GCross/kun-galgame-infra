@@ -1,9 +1,21 @@
 <script setup lang="ts">
-// Confirmation for one matrix toggle. A permission change is invisible once
-// made — the operator sees a tick, not a consequence — so the modal spells out
-// the state change and who it lands on before the write goes out.
-import type { PermissionKeyRow } from '~~/shared/types/permission'
+// Confirmation for one matrix operation. A permission change is invisible once
+// made — the operator sees a tick change, not a consequence — so the modal
+// spells out the state change, who it lands on and how fast, before the write
+// goes out. Since the ruling added deny, "how far down" also matters: two of
+// the four operations leave a role with LESS than its compiled-in bundle.
+import type {
+  PermissionKeyRow,
+  PermissionCell
+} from '~~/shared/types/permission'
 import { roleLabel } from '~/constants/roles'
+import {
+  BLAST_RADIUS_NOTE,
+  CELL_OP_LABELS,
+  cellOp,
+  type PermissionCellOp,
+  type PermissionChipColor
+} from '~/constants/permission'
 
 const props = defineProps<{
   row: PermissionKeyRow | null
@@ -14,14 +26,41 @@ const emit = defineEmits<{ confirm: [] }>()
 
 const open = defineModel<boolean>('open', { required: true })
 
-const granted = computed(() => props.row?.grants[props.role]?.granted ?? false)
-const actionLabel = computed(() => (granted.value ? '撤销' : '授予'))
+const cell = computed<PermissionCell | null>(
+  () => props.row?.grants[props.role] ?? null
+)
+const op = computed<PermissionCellOp | null>(() =>
+  cell.value ? cellOp(cell.value) : null
+)
+const actionLabel = computed(() =>
+  op.value ? CELL_OP_LABELS[op.value] : '变更'
+)
+
+// What the role ends up with, in the operator's terms.
+const OUTCOMES: Record<PermissionCellOp, string> = {
+  grant: '该角色的每一位持有者立即获得此能力。',
+  revoke: '删除这条叠加授权后，该角色回到代码捆（地板），不会低于地板。',
+  deny: '该角色的每一位持有者立即失去此能力，直到有人恢复它——这会让该角色低于代码捆。',
+  restore: '删除这条撤销记录后，该角色回到代码捆（地板），重新获得此能力。'
+}
+
+const CONFIRM_COLORS: Record<PermissionCellOp, PermissionChipColor> = {
+  grant: 'primary',
+  revoke: 'warning',
+  deny: 'danger',
+  restore: 'primary'
+}
+
+const outcome = computed(() => (op.value ? OUTCOMES[op.value] : ''))
+const confirmColor = computed(() =>
+  op.value ? CONFIRM_COLORS[op.value] : 'primary'
+)
 </script>
 
 <template>
   <KunModal v-model="open">
     <div class="space-y-4">
-      <h2 class="text-foreground text-xl font-bold">{{ actionLabel }}权限</h2>
+      <h2 class="text-foreground text-xl font-bold">{{ actionLabel }}</h2>
 
       <div v-if="row" class="space-y-2 text-sm">
         <p class="text-default-500">
@@ -29,20 +68,26 @@ const actionLabel = computed(() => (granted.value ? '撤销' : '授予'))
           <span class="text-foreground font-semibold">
             {{ roleLabel(role) }}（{{ role }}）
           </span>
-          {{ actionLabel }}
+          执行「{{ actionLabel }}」：
           <span class="text-foreground font-mono font-semibold break-all">
             {{ row.key }}
           </span>
         </p>
         <p class="text-default-400">{{ row.desc_zh }}</p>
+
+        <!-- Only the deny leaves a role below its compiled-in bundle, so only
+             the deny gets called out rather than stated. -->
+        <KunInfo
+          v-if="op === 'deny'"
+          color="danger"
+          variant="flat"
+          icon="lucide:shield-alert"
+          :description="outcome"
+        />
+        <p v-else class="text-default-500">{{ outcome }}</p>
+
         <p class="text-default-500">
-          <template v-if="granted">
-            撤销后该角色回到代码捆（地板），不会低于地板；此变更会记入审计。
-          </template>
-          <template v-else>
-            授予后该角色的每一位持有者立即获得此能力；各服务在 30
-            秒内生效，此变更会记入审计。
-          </template>
+          {{ BLAST_RADIUS_NOTE }}；此变更会记入审计。
         </p>
       </div>
 
@@ -51,7 +96,7 @@ const actionLabel = computed(() => (granted.value ? '撤销' : '授予'))
           取消
         </KunButton>
         <KunButton
-          :color="granted ? 'warning' : 'primary'"
+          :color="confirmColor"
           :loading="submitting"
           @click="emit('confirm')"
         >

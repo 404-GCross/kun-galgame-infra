@@ -1,7 +1,8 @@
 <script setup lang="ts">
-// Reading key for the matrix. Without it the three cell states are three
+// Reading key for the matrix. Without it the cell states are a handful of
 // similar ticks, and the operator cannot tell "this is compiled in" from
-// "someone granted this last week".
+// "someone granted this last week" — or, since the ruling, from "someone took
+// this away last week", which is the state that most needs to be legible.
 defineProps<{ managesPermissions: boolean }>()
 </script>
 
@@ -20,6 +21,12 @@ defineProps<{ managesPermissions: boolean }>()
         <span class="text-default-500">叠加授权（可撤销）</span>
       </span>
       <span class="inline-flex items-center gap-2">
+        <KunChip color="danger" variant="flat" size="xs">
+          <span class="line-through">已撤销</span>
+        </KunChip>
+        <span class="text-default-500">已从代码捆收回（可恢复）</span>
+      </span>
+      <span class="inline-flex items-center gap-2">
         <span class="text-default-300">—</span>
         <span class="text-default-500">未授予</span>
       </span>
@@ -29,13 +36,19 @@ defineProps<{ managesPermissions: boolean }>()
       </span>
     </div>
 
+    <p class="text-default-400 text-sm">
+      代码捆是默认值，不是地板：creator / moderator / admin
+      三列可以被叠加层收回。ren
+      列例外——它是锁死后的恢复保险，任何叠加行都不能削减它。
+    </p>
+
     <p v-if="managesPermissions" class="text-default-400 text-sm">
       你持有 oauth.permissions.manage：可编辑 creator / moderator / admin
-      三列，但仍受不可委派与包含性（moderator ⊆ admin ⊆ ren）约束。
+      三列（含撤销），但仍受不可委派与包含性（moderator ⊆ admin ⊆ ren）约束。
     </p>
     <p v-else class="text-default-400 text-sm">
-      你只能把自己持有的权限授予严格低于自己管理层级的角色；creator 列仅 ren
-      可编辑。
+      你只能对严格低于自己管理层级的角色操作自己持有的权限——授予与撤销同理；creator
+      列仅 ren 可编辑。
     </p>
   </KunCard>
 </template>
