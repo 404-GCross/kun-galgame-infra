@@ -32,6 +32,7 @@ import (
 	"api/internal/app"
 	"api/internal/infrastructure/database"
 	"api/internal/middleware"
+	"api/internal/platform/permissions"
 	siteRepo "api/internal/platform/site/repository"
 	trustHandler "api/internal/platform/trust/handler"
 	trustPerm "api/internal/platform/trust/perm"
@@ -149,6 +150,14 @@ func main() {
 	// and the AI shadow-scoring pipeline (step 03).
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	// Permission overlay (docs/auth/04 §7). This service enforces its own
+	// domain's keys, and those keys can be widened at runtime by the permission
+	// console, so it must keep its Resolver current. It reads the overlay
+	// straight from the main database it already holds a connection to; with no
+	// Redis in this process the refresh runs on the poll interval, which is the
+	// floor that makes the overlay reliable everywhere.
+	permissions.NewDistributor(application.DB.DB(), permissions.Live(), nil).Start(ctx)
+
 	go worker.Run(ctx)
 	go scanWorker.Run(ctx)
 

@@ -29,6 +29,7 @@ import (
 
 	"api/internal/platform/devapi"
 	devapiPerm "api/internal/platform/devapi/perm"
+	"api/internal/platform/permissions"
 
 	imgHandler "api/internal/platform/image/handler"
 	imgRepoPkg "api/internal/platform/image/repository"
@@ -361,28 +362,38 @@ func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 		admin.Post("/users/:uuid/avatar", avatarUploadH.Upload)
 	}
 
-	// Site routes (oauth.admin_access = admin/ren)
+	// Site routes. The GROUP gate stays oauth.admin_access (reach the console +
+	// see the lists); each mutation additionally names its own CRUD key, so a
+	// console seat can be narrowed to read-only without minting a role. The
+	// per-row ownership rule (mayManage) is enforced in the handler on top and
+	// is unchanged.
 	sites := v1.Group("/sites", middleware.Auth(authSvc), middleware.RequirePermission(sitePerm.Resolver, sitePerm.AdminAccess))
 	sites.Get("/", siteH.List)
-	sites.Post("/", siteH.Create)
+	sites.Post("/", middleware.RequirePermission(sitePerm.Resolver, sitePerm.SitesCreate), siteH.Create)
 	sites.Get("/:id", siteH.Get)
-	sites.Put("/:id", siteH.Update)
-	sites.Delete("/:id", siteH.Delete)
+	sites.Put("/:id", middleware.RequirePermission(sitePerm.Resolver, sitePerm.SitesUpdate), siteH.Update)
+	sites.Delete("/:id", middleware.RequirePermission(sitePerm.Resolver, sitePerm.SitesDelete), siteH.Delete)
 	sites.Get("/:id/clients", siteH.GetSiteClients)
 
-	// OAuth client routes (oauth.admin_access = admin/ren)
+	// OAuth client routes — same split: admin_access on the group, a CRUD key
+	// per mutation.
 	oauthClients := v1.Group("/oauth/clients", middleware.Auth(authSvc), middleware.RequirePermission(sitePerm.Resolver, sitePerm.AdminAccess))
 	oauthClients.Get("/", siteH.ListClients)
-	oauthClients.Post("/", siteH.CreateClient)
+	oauthClients.Post("/", middleware.RequirePermission(sitePerm.Resolver, sitePerm.ClientsCreate), siteH.CreateClient)
 	// Admin app-directory logo upload → image_service, returns {hash,url}; the
 	// form saves url into the client's logo_url. Decoupled from :id so it works
 	// at create time too. See docs/integration/oauth/10-app-directory.md.
 	if avatarUploadH != nil {
 		oauthClients.Post("/logo", avatarUploadH.UploadClientLogo)
 	}
-	oauthClients.Put("/:id", siteH.UpdateClient)
-	oauthClients.Put("/:id/storage", middleware.RequirePermission(sitePerm.Resolver, sitePerm.ClientsStorageConfig), siteH.UpdateClientStorage)
-	oauthClients.Delete("/:id", siteH.DeleteClient)
+	oauthClients.Put("/:id", middleware.RequirePermission(sitePerm.Resolver, sitePerm.ClientsUpdate), siteH.UpdateClient)
+	// The storage sub-resource is an update that additionally needs the
+	// storage-config key (enabling artifact/image capabilities is ren-only).
+	oauthClients.Put("/:id/storage",
+		middleware.RequirePermission(sitePerm.Resolver, sitePerm.ClientsUpdate),
+		middleware.RequirePermission(sitePerm.Resolver, sitePerm.ClientsStorageConfig),
+		siteH.UpdateClientStorage)
+	oauthClients.Delete("/:id", middleware.RequirePermission(sitePerm.Resolver, sitePerm.ClientsDelete), siteH.DeleteClient)
 
 	// Developer-platform (NextMoe open API). One repository + one AdminService
 	// back BOTH the admin management face and the developer self-service face, so
@@ -418,6 +429,17 @@ func setupRoutes(a *app.App, cfg *config.Config, cleanupCtx context.Context) {
 	}
 	devSelfGroup := v1.Group("/dev", middleware.Auth(authSvc), middleware.DevPortalFence(devPortalClients))
 	devSelfH.Register(devSelfGroup)
+
+	// Permission console + overlay distribution (docs/auth/04 §7). The
+	// distributor is started FIRST so the resolvers already carry the overlay
+	// before the first request is served; it then keeps them current for the
+	// life of the process. a.Cache is the announcement bus — a Redis outage
+	// only costs latency, since every process also polls.
+	permReg := permissions.Live()
+	permDist := permissions.NewDistributor(db, permReg, a.Cache)
+	permDist.Start(cleanupCtx)
+	permH := permissions.NewHandler(permissions.NewService(permReg, permissions.NewStore(db), permDist))
+	permH.Register(admin)
 
 	// Image admin routes — best-effort; if images DB or S3 are unreachable
 	// in dev, skip registration rather than failing the whole oauth service.

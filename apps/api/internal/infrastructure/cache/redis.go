@@ -104,3 +104,57 @@ func (r *RedisCache) Delete(key string) error {
 	}
 	return r.store.Delete(key)
 }
+
+// Publish sends a fire-and-forget message on a Redis pub/sub channel.
+//
+// Pub/sub is not caching, and it is deliberately thin here: the only current
+// user (the authz overlay invalidation) treats delivery as a best-effort nudge
+// on top of a source of truth it can always re-read, so there is no delivery
+// guarantee to design for.
+func (r *RedisCache) Publish(ctx context.Context, channel, payload string) error {
+	if r.store == nil {
+		return ErrCacheDisabled
+	}
+	return r.store.Conn().Publish(ctx, channel, payload).Err()
+}
+
+// Subscribe returns a channel of payloads published to the named channel. The
+// subscription is closed when ctx is done.
+//
+// Payload strings only: a subscriber that needed structured data would be
+// trusting the message, and messages get lost, duplicated and reordered. The
+// intended shape is "something changed, go look".
+func (r *RedisCache) Subscribe(ctx context.Context, channel string) (<-chan string, error) {
+	if r.store == nil {
+		return nil, ErrCacheDisabled
+	}
+	sub := r.store.Conn().Subscribe(ctx, channel)
+	if _, err := sub.Receive(ctx); err != nil {
+		_ = sub.Close()
+		return nil, err
+	}
+
+	out := make(chan string, 1)
+	go func() {
+		defer close(out)
+		defer sub.Close()
+		messages := sub.Channel()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case msg, ok := <-messages:
+				if !ok {
+					return
+				}
+				select {
+				case out <- msg.Payload:
+				default:
+					// A refresh is already queued; another "go look" adds
+					// nothing, so drop it rather than block the reader.
+				}
+			}
+		}
+	}()
+	return out, nil
+}

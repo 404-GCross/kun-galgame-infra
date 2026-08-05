@@ -39,6 +39,7 @@ import (
 	"api/internal/platform/catalog/service"
 	"api/internal/platform/devapi"
 	"api/internal/platform/editing"
+	"api/internal/platform/permissions"
 	siteRepo "api/internal/platform/site/repository"
 	"api/pkg/config"
 	"api/pkg/health"
@@ -248,6 +249,16 @@ func main() {
 		c.Set("Content-Type", "application/json")
 		return c.Send(b)
 	})
+
+	// Permission overlay (docs/auth/04 §7). This service enforces its own
+	// domain's keys, and those keys can be widened at runtime by the permission
+	// console, so it must keep its Resolver current. It reads the overlay
+	// straight from the main database it already holds a connection to; with no
+	// Redis in this process the refresh runs on the poll interval, which is the
+	// floor that makes the overlay reliable everywhere.
+	permCtx, cancelPerm := context.WithCancel(context.Background())
+	defer cancelPerm()
+	permissions.NewDistributor(application.DB.DB(), permissions.Live(), nil).Start(permCtx)
 
 	slog.Info("catalog service starting",
 		"addr", fmt.Sprintf("%s:%d", cfg.CatalogService.Host, cfg.CatalogService.Port),

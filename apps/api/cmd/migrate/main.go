@@ -14,6 +14,7 @@ import (
 	jobsModel "api/internal/jobs/model"
 	authModel "api/internal/platform/auth/model"
 	"api/internal/platform/devapi"
+	"api/internal/platform/permissions"
 	siteModel "api/internal/platform/site/model"
 
 	"gorm.io/gorm"
@@ -161,6 +162,12 @@ func getAllModels() []any {
 		// are dropped by
 		// dropRetiredModerationTables below. Trust & Safety lives in the
 		// dedicated kun_trust DB (cmd/migrate-trust).
+
+		// Permission overlay + its audit trail (docs/auth/04 §7). The overlay is
+		// ALLOW-ONLY on top of the compiled-in bundles: these tables can widen a
+		// role's permissions but never cut below the code floor.
+		&permissions.RolePermissionOverride{},
+		&permissions.PermissionAuditLog{},
 
 		// Job registry observability
 		&jobsModel.JobRun{},
