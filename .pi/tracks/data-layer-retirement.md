@@ -71,6 +71,17 @@ P5 摘 `/internal/*` + `/api/*` staff 面时,149 STOP-1 要求的「先盘下游
   清单)**——12 行封面手动搬运归位;缺口待修(候选小波)。终账:72 部无封面→55 covered+6 并殁+11 残
   (5 源头无图/1 VNDB stub/1 freem/3 Steam-only/1 特典盘)。三个 draft 目标(228618/620/625)=投稿人
   自撤,非损伤。
+- **🏁 作者章二次事故当日闭环(08-05,Fable 亲执,纯 prod 治数零代码)**:用户报新词条又无认领人。
+  定性两半:①cron 建行无章批(15520/13926/12032/10865)=publish 早于 2f4b0b9a 部署(12:12Z),
+  修复本身在役无缺陷(16:05Z 起同形事件全落章);**且 08-04 晚复跑曾把这批误归设计桶(按首事件
+  actor=0 判,漏看后续真人 publish 事件)——复跑规则失准自认**。②零散时间裸行=交互泳道
+  (评分/资源/评论 EnsureLocalStub 防御建行)遇「live 无 forum 行」词条,蓄水池=2,154 部 live
+  词条无 stub,cron 游标已过其事件故永不落章。治法(一事务):catalog 抽 10,987 live 词条
+  (gid/created_at/最早非 approval 真人 live 事件 actor)→ 补建 stub 2,154(时间戳=catalog
+  created_at 防洪泛;默认列表本就滤无资源词条,total 7,527 不变)+ 落章 2,176(新建+存量 25
+  统一覆盖;9682 维持 08-04 裁定排除)。终态:stub 11,014、无章 61(可恢复者仅剩 9682=有意)、
+  蓄水池 0=裸 stub 泳道干涸,cron 逻辑未动。抽查 15520→112505/13926→28089 等全对,
+  公网详情+作者章渲染绿。
 - **🏁 T4 现役件清尾(08-05,Fable 亲执)**:①**DROP 后孤儿终审**:149 号 27 表名单对编译面
   (非测试 Go)逐名 word-boundary 扫零命中;两 enrich CLI 已被 f89fd8e6 摘除、build-tag-canonical/
   tag-canon-pair 已 repoint(过时头注释本波修正);`platform/galgame/perm` **不是孤儿=有意保留的
