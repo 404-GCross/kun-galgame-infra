@@ -210,7 +210,10 @@ func (h *PublicHandler) Name(c fiber.Ctx) error {
 		return response.InternalError(c, errors.ErrInternalServer)
 	}
 	if !found {
-		return response.NotFound(c, errors.ErrNotFound)
+		// A credit name retired by a merge is hard-deleted but leaves a
+		// permanent catalog_redirect, so a miss here has the same two meanings
+		// as a label miss.
+		return h.missOrMoved(c, model.EntityTypeCreditName, "names", id)
 	}
 	c.Set("Cache-Control", cacheDetail)
 	return response.Success(c, rec)
@@ -232,7 +235,7 @@ func (h *PublicHandler) Character(c fiber.Ctx) error {
 		return response.InternalError(c, errors.ErrInternalServer)
 	}
 	if !found {
-		return response.NotFound(c, errors.ErrNotFound)
+		return h.missOrMoved(c, model.EntityTypeCharacter, "characters", id)
 	}
 	c.Set("Cache-Control", cacheDetail)
 	return response.Success(c, rec)
