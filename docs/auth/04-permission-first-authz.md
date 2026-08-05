@@ -35,9 +35,15 @@
 ```go
 type Permission string                     // 一个操作能力,如 "galgame.publish_direct"
 type Bundles map[string][]Permission       // 角色名(精确的 roles claim 串) → 该角色授予的权限集
-type Resolver struct{ /* role -> set */ }
+type Resolver struct{ /* role -> set */ }  // 构造后不可变
 func NewResolver(b Bundles) *Resolver
 func (r *Resolver) Can(roles []string, p Permission) bool
+
+type Checker interface{ Can(roles []string, p Permission) bool }  // 执行点只需要它
+type Holder struct{ /* atomic.Pointer[Resolver] */ }              // 可整体热替换
+func NewHolder(b Bundles) *Holder
+func (h *Holder) Swap(r *Resolver)
+type NonDelegable map[Permission]bool      // 叠加层永不可授予的键(§7.3)
 ```
 
 - `Can` 语义:调用者的**任一**角色的捆内含该权限即放行;对 nil/空 roles、未知角色、未知权限一律
@@ -45,9 +51,13 @@ func (r *Resolver) Can(roles []string, p Permission) bool
 - 隐式 `user`(登录本身)**不进** authz;登录判定归 `JWTAuth`/`Auth` 中间件,authz 只管提权。
 - **不做通配符、不做层级**——层级作为**数据**编码在各域的捆里(`ren 捆 ⊇ admin 捆 ⊇ moderator 捆`),
   由属性测试钉死。
-- 路由门:`middleware.RequirePermission(res *authz.Resolver, p authz.Permission)`,与旧
+- 路由门:`middleware.RequirePermission(res authz.Checker, p authz.Permission)`,与旧
   `RequireRole` 同形(读 `c.Locals("user_roles")`,fail-closed 403)。in-handler 判定:
   `perm.Resolver.Can(roles, perm.Xxx)`。
+- **执行点持 Holder,不持 Resolver**(2026-08-04 §7 起):各 perm 包的 `Resolver` 变量类型是
+  `*authz.Holder`。Resolver 本身仍不可变——刷新是**整体新建 + 原子换指针**,读者永不看到半应用
+  的授权表,热路径零加锁。若执行点捕获了 `*Resolver`,叠加层刷新会静默失效到重启为止,故门参数
+  收为 `Checker` 接口。
 
 ### 2.2 七个词汇包(各域自持,import 引擎)
 
@@ -62,12 +72,22 @@ func (r *Resolver) Can(roles []string, p Permission) bool
 | `internal/platform/ai/perm` | AI 网关用量看板(运营面) | 平台域,import authz |
 
 每包 = 权限常量 + `var Bundles authz.Bundles`(role→捆,层级由 `moderatorPerms ⊆ adminPerms ⊆ renPerms`
-组合保证)+ `var Resolver = authz.NewResolver(Bundles)`(包级单例)。
+组合保证)+ `var Resolver = authz.NewHolder(Bundles)`(包级单例;2026-08-04 起是 Holder,起点即
+代码捆,叠加层刷新时整体换掉。退役的 galgame 包仍是固定 `Resolver`——它没有需要保鲜的执行点)。
+
+**跨域聚合在 `internal/platform/permissions`**:各 perm 包互不认识(这正是分包的意义),而控制台
+需要同时看见全部词汇表,故聚合是控制台的关注点,放在一个只被自己引用的叶子包里——不可能成环。
+退役的 `galgame/perm` **刻意不在其中**:列出零执行点的键,只会诱使运维授出一把没有任何代码会检查
+的权限。
 
 ### 2.3 全部权限的当前 golden 表
 
-> 唯一权威在代码里的 `*_test.go` golden 映射;下表是它的人读快照(**2026-07-31**,
+> 唯一权威在代码里的 `*_test.go` golden 映射;下表是它的人读快照(**2026-08-04**,
 > 逐行核对七个 `perm_test.go` 的 `goldenGrants` 取得)。
+>
+> **本表是"代码捆"= 地板。** 2026-08-04 起叠加层(§7)可在运行时把某个键**加**给
+> creator/moderator/admin,活线上的实际授予 = 本表 ∪ 叠加层。叠加层永远不减,故本表的每一行
+> 仍是下界。线上当前实际值看权限矩阵控制台(`/admin/permission`)。
 
 | 权限 | 授予角色捆 | 语义 |
 |---|---|---|
@@ -96,10 +116,17 @@ func (r *Resolver) Can(roles []string, p Permission) bool
 | `oauth.users.pii_view` | ren | 看用户 PII(邮箱/IP) |
 | `oauth.roles.grant_basic` | admin, ren | 授予/撤销 moderator、creator |
 | `oauth.roles.grant_site` | admin, ren | 授予/撤销站点作用域角色(契约 12-site-roles;站点角色恒低于全局 moderator,故 admin 可授) |
-| `oauth.roles.grant_admin` | ren | 授予/撤销 admin(及隐式 user 基座) |
+| `oauth.roles.grant_admin` | ren | 授予/撤销 admin(及隐式 user 基座);**不可委派** |
+| `oauth.sites.create` | admin, ren | 创建站点(2026-08-04 从 admin_access 拆出) |
+| `oauth.sites.update` | admin, ren | 编辑站点(同上) |
+| `oauth.sites.delete` | admin, ren | 删除站点(同上) |
+| `oauth.clients.create` | admin, ren | 创建 OAuth 客户端(同上) |
+| `oauth.clients.update` | admin, ren | 编辑 OAuth 客户端(同上;`/storage` 子资源另需 storage_config) |
+| `oauth.clients.delete` | admin, ren | 删除 OAuth 客户端(同上) |
+| `oauth.permissions.manage` | ren | 权限控制台:对任意角色增删叠加授权;**不可委派** |
 | `oauth.clients.storage_config` | ren | 开客户端存储能力(artifact/image) |
 | `oauth.clients.privileged_config` | ren | 敏感客户端字段(ren-only scope / auto_consent / display_order) |
-| `oauth.sites.manage_all` | ren | 跨创建者管理站点与 OAuth 客户端;**没有此键的 admin 只看得见、只改得动自己创建的行**(`sites.created_by_user_id` / `oauth_clients.created_by_user_id`;NULL 归属者=历史行与开发者门户应用,仅 ren 可及) |
+| `oauth.sites.manage_all` | ren | 跨创建者管理站点与 OAuth 客户端;**没有此键的 admin 只看得见、只改得动自己创建的行**(`sites.created_by_user_id` / `oauth_clients.created_by_user_id`;NULL 归属者=历史行与开发者门户应用,仅 ren 可及);**不可委派** |
 | `artifact.files.manage` | ren | artifact 文件浏览/删除/回收 |
 | `devapi.manage` | admin, ren | 开发者平台管理面(启用应用 / tier / 铸·轮换·吊销 key) |
 
@@ -120,6 +147,14 @@ func (r *Resolver) Can(roles []string, p Permission) bool
 3. 在该包 `perm_test.go` 的 golden 表加一行(角色集)。
 4. 调用点用 `perm.Resolver.Can(roles, perm.Xxx)`(in-handler)或
    `middleware.RequirePermission(perm.Resolver, perm.Xxx)`(路由门)。
+5. **在 `internal/platform/permissions/registry.go` 的对应域 `Keys` 里补一行**(键 + 中英
+   描述)。漏了会被 `TestRegistryDescribesExactlyTheBundledKeys` 直接判红:没有注册表条目的键
+   在控制台既看不见也授不出去,反过来有条目却不在任何捆里的键则谁都授不到——两种漂移都在合并前
+   拦下。
+
+**页面门 vs 操作门**(2026-08-04 起):`oauth.admin_access` 只管"进不进得来 / 看不看得见列表",
+每个写操作另有自己的 CRUD 键。二者叠加,归属规则(`mayManage`)再叠在最上层——持有
+`oauth.sites.update` 只意味着"能改自己有权的站点",不改变归属范围。
 
 **永远不要为一个新操作铸一个新全局角色**——这正是本演进要根除的反模式。
 
@@ -166,8 +201,9 @@ permission-first 只管「**调用者能不能做某操作**」。以下角色�
 
 - **JWT legacy `Role int` / `SiteID` claim**(`pkg/utils/jwt.go`):wire 兼容字段,归 OIDC 标准化轨,
   本工程不动。
-- **DB 自定义权限捆**(`site_roles`/`site_role_permissions`/`user_site_roles` 三表 + admin API + web
-  管理窗口):**触发条件** = 第一个无法用五角色默认捆表达的真实授权需求(如志愿版主)。
+- ~~**DB 自定义权限捆** + admin API + web 管理窗口~~:**触发条件已达成,2026-08-04 已实现**——
+  见 §7。落地形态与当年的设想不同:没有建 `site_roles`/`site_role_permissions` 三表(那是把
+  RBAC 再造一遍),而是一张**只增不减的叠加表** `role_permission_overrides` 盖在代码捆之上。
 - **scope 域限定(轻量 ReBAC)**:某分区版主/某系列编辑。**触发** = 第一个「仅限某资源子集」需求。
 - **字段级权限**:**触发** = doc 09 P1-1 编辑引擎泛化动工。
 - **外部授权引擎(OpenFGA/SpiceDB,AuthZEN)**:**触发** = 跨站共享图谱 / 「按权限过滤列表」成为热
@@ -177,3 +213,62 @@ permission-first 只管「**调用者能不能做某操作**」。以下角色�
 
 本工程完成后,授权体系里不再有任何「看起来存在但从不生效」的结构:僵尸 `permissions`/
 `role_permissions` 表与 `user_site_data.role` 死列已删(refs step 03)。
+
+## 7. 运行时叠加层与权限矩阵控制台(2026-08-04)
+
+§6 的「DB 自定义权限捆」触发器达成。落地的**不是**再造一套 RBAC 表,而是一层薄叠加。
+
+### 7.1 模型:代码是地板,叠加只增不减
+
+`role_permission_overrides(role, permission, granted_by_user_id, created_at)`,`(role, permission)`
+唯一。**没有 deny 行,没有极性列**:一行 = 该角色额外持有该权限;撤销 = 删这一行,角色回到代码捆
+的地板,永不低于地板。
+
+这条不对称是刻意的。允许「减」意味着一次点击就能把控制台自己锁死(或把全站管理员降权),而且
+「叠加层现在到底做了什么」会从一个只有加法的问题变成需要逐键推演的问题。代价是「临时收走某人某
+个权限」做不到——那是**改代码捆**的事,而它本就该留下一次可评审的 diff。
+
+`permission_audit_logs(actor_user_id, action, role, permission, created_at)` 只增不改,与 override
+的增删**同事务**写入:没有审计的权限变更正是这套东西存在的理由,两者不能拆开。被撤销的授予在
+override 表里消失,在这里仍在——否则「上周二是谁给 moderator 那把键的」永远无法回答。
+
+### 7.2 五条写入规则(全部服务端强制)
+
+1. **键必须活**。对 `internal/platform/permissions` 注册表校验;打错的、退役 galgame 词汇表里的
+   键一律拒。
+2. **行必须可编辑**:`creator` / `moderator` / `admin` 三行。`user` 排除是因为它**根本不会生
+   效**(普通用户 JWT 的 `roles` 是空数组,永不进 `Can`);`ren` 排除是因为它是包含性不变量的**上
+   界**,可动就没有基准了。
+3. **不可委派键任何人都授不出去**:`oauth.roles.grant_admin` / `oauth.permissions.manage` /
+   `oauth.sites.manage_all`。这三把键的持有者本可借此绕开控制台自身的护栏(铸管理员 / 改写授权表
+   本身 / 逃出归属作用域),故只能改代码捆并部署。持 `oauth.permissions.manage` 也照拒。
+4. **委派规则**(不持 `oauth.permissions.manage` 的调用者):目标角色须**严格低于**自己在管理轴
+   上的层级,且自己**确实持有**该权限,`creator` 列仅 ren 可编辑(creator 不在管理轴上,层级比较
+   对它无意义)。
+5. **包含性**:写入后该键仍须满足 `moderator ⊆ admin ⊆ ren`。授 moderator 一把 admin 没有的键 →
+   拒并提示「请先授予 admin」;撤 admin 而 moderator 还持有 → 拒并提示「请先撤销 moderator」。
+
+矩阵的「哪些格子你能改」由**同一个 validator 逐格跑一遍**得出,所以 UI 不可能与写路径对同一件事
+给出不同答案。前端不复刻任何授权判断。
+
+### 7.3 分发与失效
+
+**事实先行**:所有带 perm 包的服务(oauth / catalog / trust / ai)都已经通过 `app.New` 持有主库
+`kun_galgame_infra` 连接,**没有哪个进程需要别人把副本送过来**。于是:
+
+- **真源 = 主库那张表**,每个进程自己读、自己换 Resolver(`Holder.Swap`,整体新建 + 原子换指针)。
+- **Redis 只承载「有变更,去看一眼」的提示**(`authz:overrides:changed`),仅在手头已有 Redis 客户端
+  的进程使用(oauth)。频道上不跑任何权威数据,故消息丢失/重复/乱序至多推迟一次刷新。
+- **轮询 30s 是地板**,所有进程都跑。`cmd/trust` 与 `cmd/ai` 根本没有 Redis(`NeedCache:false`),
+  没有这条地板它们会永远停在代码捆——那正是「授予了却不生效」的静默失败。写入方本地**同步**刷新,
+  故 oauth 自己的下一个请求立即看到新表。
+- **失效安全**:读不到库 → 保持上一份(启动时即代码捆)并告警;叠加行指向已下线的键 → 忽略并告警。
+  **执行不会因为基础设施故障而放宽。**
+
+### 7.4 面
+
+`GET /api/v1/admin/permissions/matrix`(门:`oauth.admin_access`)导出全部域 × 五角色的生效矩阵,
+每格标注来源(`code` / `overlay` / `none`)与本调用者可否编辑;`POST /overrides`(body)授予、
+`DELETE /overrides?role=&permission=` 撤销;`GET /audit` 读最近变更。写端点**刻意不在路由上收
+`oauth.permissions.manage`**——普通 admin 向下委派是合法路径,把路由收到 ren 会让规则 4 永不可达;
+能改哪些格子是**逐格**判定的。前端在 `/admin/permission`。
