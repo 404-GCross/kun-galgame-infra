@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"api/internal/platform/authz"
-	galgamePerm "api/internal/platform/galgame/perm"
 	"api/internal/platform/permissions"
 	sitePerm "api/internal/platform/site/perm"
 )
@@ -53,8 +52,11 @@ func TestRegistryDescribesExactlyTheBundledKeys(t *testing.T) {
 // offering them would let an operator grant a permission nothing checks.
 func TestRegistryExcludesRetiredGalgame(t *testing.T) {
 	reg := permissions.Live()
+	// Spelled as literals, not galgame/perm constants: importing that package
+	// here would itself violate the dependency direction the archtest pins
+	// (platform packages must not import the retired product domain).
 	for _, p := range []authz.Permission{
-		galgamePerm.PublishDirect, galgamePerm.Review, galgamePerm.AdminAccess,
+		"galgame.publish_direct", "galgame.review", "galgame.admin_access",
 	} {
 		if _, ok := reg.Lookup(p); ok {
 			t.Errorf("retired galgame key %q must not be in the console registry", p)
