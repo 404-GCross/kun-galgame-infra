@@ -32,8 +32,8 @@ type nameplateKey struct {
 // Two independent filters, counted separately so a dry run says why the
 // population is smaller than the match set:
 //
-//   - the character must have no portrait today (fill-missing);
-//   - some edition of it must offer a nameplate at all.
+//   - the character's slot must be empty today (fill-missing);
+//   - some edition of it must offer an image for that slot at all.
 //
 // Whether those bytes are on disk yet is NOT a filter here — that is reported
 // as Missing at fill time, so a dry run before the mirror pass still names the
@@ -46,8 +46,8 @@ type nameplateKey struct {
 // NULL nameplate and report the character as having no art at all. So walk the
 // editions in order and take the first that actually has one. This is the same
 // shape as getchuintros' pickStory.
-func selectCandidates(ctx context.Context, db, gdb *gorm.DB, matched []getchuchars.Candidate, st *Stats) ([]candidate, error) {
-	plates, err := loadNameplates(ctx, gdb)
+func selectCandidates(ctx context.Context, db, gdb *gorm.DB, slot Slot, matched []getchuchars.Candidate, st *Stats) ([]candidate, error) {
+	plates, err := loadPlates(ctx, gdb, slot)
 	if err != nil {
 		return nil, err
 	}
@@ -55,7 +55,7 @@ func selectCandidates(ctx context.Context, db, gdb *gorm.DB, matched []getchucha
 	for _, m := range matched {
 		ids = append(ids, m.CharacterID)
 	}
-	needs, err := loadPortraitless(ctx, db, ids)
+	needs, err := loadUnfilled(ctx, db, slot, ids)
 	if err != nil {
 		return nil, err
 	}
@@ -101,7 +101,7 @@ func pickPlate(c getchuchars.Candidate, plates map[nameplateKey]string) (plateFi
 	return plateFile{}, false
 }
 
-// loadNameplates reads the page's own character→image pairing.
+// loadPlates reads the page's own character→image pairing for one slot.
 //
 // It deliberately does NOT require the bytes to be mirrored. Whether a page
 // offers art and whether anyone has downloaded it yet are different facts, and
@@ -111,22 +111,26 @@ func pickPlate(c getchuchars.Candidate, plates map[nameplateKey]string) (plateFi
 // Missing instead — which IS the list of images to go and fetch.
 //
 // The join to item_images stays, without the local_path condition, because a
-// nameplate_url the crawler never recorded as an image row is not fetchable and
+// URL the crawler never recorded as an image row is not fetchable and
 // would only produce a permanent Missing.
-func loadNameplates(ctx context.Context, gdb *gorm.DB) (map[nameplateKey]string, error) {
+func loadPlates(ctx context.Context, gdb *gorm.DB, slot Slot) (map[nameplateKey]string, error) {
 	var rows []struct {
 		GetchuID string `gorm:"column:getchu_id"`
 		Ordinal  int    `gorm:"column:ordinal"`
 		URL      string `gorm:"column:url"`
 	}
-	err := gdb.WithContext(ctx).Raw(`
-		SELECT c.getchu_id, c.ordinal, c.nameplate_url AS url
+	// The column and kind names are interpolated, not bound: they are not user
+	// input but fixed identifiers chosen from the Slot table above, and a
+	// placeholder cannot stand in for an identifier anyway.
+	q := fmt.Sprintf(`
+		SELECT c.getchu_id, c.ordinal, c.%[1]s AS url
 		FROM item_characters c
-		JOIN item_images i ON i.getchu_id = c.getchu_id AND i.kind = 'nameplate'
-			AND i.url = c.nameplate_url
-		WHERE c.nameplate_url IS NOT NULL`).Scan(&rows).Error
+		JOIN item_images i ON i.getchu_id = c.getchu_id AND i.kind = '%[2]s'
+			AND i.url = c.%[1]s
+		WHERE c.%[1]s IS NOT NULL`, slot.StagingColumn, slot.ImageKind)
+	err := gdb.WithContext(ctx).Raw(q).Scan(&rows).Error
 	if err != nil {
-		return nil, fmt.Errorf("read staging nameplates: %w", err)
+		return nil, fmt.Errorf("read staging %s images: %w", slot.Name, err)
 	}
 	out := make(map[nameplateKey]string, len(rows))
 	for _, r := range rows {
@@ -135,20 +139,19 @@ func loadNameplates(ctx context.Context, gdb *gorm.DB) (map[nameplateKey]string,
 	return out, nil
 }
 
-// loadPortraitless returns the subset of ids whose character has no portrait
-// yet. Asking for the ones that NEED filling (rather than the ones that have an
+// loadUnfilled returns the subset of ids whose character has nothing in this
+// slot yet. Asking for the ones that NEED filling (rather than the ones that have an
 // image) keeps a character that vanished between the match and this query out
 // of the candidate set instead of silently in it.
-func loadPortraitless(ctx context.Context, db *gorm.DB, ids []int64) (map[int64]bool, error) {
+func loadUnfilled(ctx context.Context, db *gorm.DB, slot Slot, ids []int64) (map[int64]bool, error) {
 	out := map[int64]bool{}
+	q := fmt.Sprintf(`SELECT id FROM catalog_character
+		 WHERE id IN ? AND deleted_at IS NULL AND %s IS NULL`, slot.TargetColumn)
 	for i := 0; i < len(ids); i += 5000 {
 		batch := ids[i:min(i+5000, len(ids))]
 		var got []int64
-		if err := db.WithContext(ctx).Raw(
-			`SELECT id FROM catalog_character
-			 WHERE id IN ? AND deleted_at IS NULL AND image_hash IS NULL`, batch).
-			Scan(&got).Error; err != nil {
-			return nil, fmt.Errorf("load portraitless characters: %w", err)
+		if err := db.WithContext(ctx).Raw(q, batch).Scan(&got).Error; err != nil {
+			return nil, fmt.Errorf("load characters with no %s: %w", slot.Name, err)
 		}
 		for _, id := range got {
 			out[id] = true

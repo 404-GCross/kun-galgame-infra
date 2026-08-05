@@ -60,7 +60,7 @@ func TestMain(m *testing.M) {
 		`DROP TABLE IF EXISTS item_images`,
 		`CREATE TABLE item_characters (
 			getchu_id text NOT NULL, ordinal int NOT NULL, name text NOT NULL,
-			nameplate_url text, PRIMARY KEY (getchu_id, ordinal))`,
+			nameplate_url text, portrait_url text, PRIMARY KEY (getchu_id, ordinal))`,
 		`CREATE TABLE item_images (
 			getchu_id text NOT NULL, kind text NOT NULL, ordinal int NOT NULL,
 			url text NOT NULL, local_path text, PRIMARY KEY (getchu_id, kind, ordinal))`,
@@ -146,7 +146,7 @@ func TestSelectCandidatesSkipsCharactersThatAlreadyHaveAPortrait(t *testing.T) {
 	mkPlate(t, "100", 2, "无图", "https://g/brandnew/100/c100chara2.jpg", true)
 
 	st := &Stats{}
-	got, err := selectCandidates(context.Background(), testDB, testDB,
+	got, err := selectCandidates(context.Background(), testDB, testDB, SlotBust,
 		[]getchuchars.Candidate{cand(withArt, ed("100", 1)), cand(without, ed("100", 2))}, st)
 	require.NoError(t, err)
 
@@ -169,7 +169,7 @@ func TestSelectCandidatesDoesNotRequireMirroredBytes(t *testing.T) {
 	mkPlate(t, "100", 1, "未镜像", "https://g/brandnew/100/c100chara1.jpg", false)
 
 	st := &Stats{}
-	got, err := selectCandidates(context.Background(), testDB, testDB,
+	got, err := selectCandidates(context.Background(), testDB, testDB, SlotBust,
 		[]getchuchars.Candidate{cand(id, ed("100", 1))}, st)
 	require.NoError(t, err)
 	require.Len(t, got, 1)
@@ -187,7 +187,7 @@ func TestSelectCandidatesCountsGenuinelyArtlessCharacters(t *testing.T) {
 	mkPlate(t, "100", 1, "无立绘", "", false)
 
 	st := &Stats{}
-	got, err := selectCandidates(context.Background(), testDB, testDB,
+	got, err := selectCandidates(context.Background(), testDB, testDB, SlotBust,
 		[]getchuchars.Candidate{cand(id, ed("100", 1))}, st)
 	require.NoError(t, err)
 	assert.Empty(t, got)
@@ -204,7 +204,7 @@ func TestSelectCandidatesFallsBackAcrossEditions(t *testing.T) {
 	mkPlate(t, "regular", 3, "九條都", "https://g/brandnew/regular/cregularchara3.jpg", true)
 
 	st := &Stats{}
-	got, err := selectCandidates(context.Background(), testDB, testDB,
+	got, err := selectCandidates(context.Background(), testDB, testDB, SlotBust,
 		[]getchuchars.Candidate{cand(id, ed("limited", 7), ed("regular", 3))}, st)
 	require.NoError(t, err)
 
@@ -225,7 +225,7 @@ func TestSelectCandidatesIgnoresDeletedCharacters(t *testing.T) {
 	mkPlate(t, "100", 1, "已删", "https://g/brandnew/100/c100chara1.jpg", true)
 
 	st := &Stats{}
-	got, err := selectCandidates(context.Background(), testDB, testDB,
+	got, err := selectCandidates(context.Background(), testDB, testDB, SlotBust,
 		[]getchuchars.Candidate{cand(id, ed("100", 1))}, st)
 	require.NoError(t, err)
 	assert.Empty(t, got)
@@ -244,7 +244,83 @@ func TestLoadNameplatesIgnoresOtherKinds(t *testing.T) {
 	require.NoError(t, testDB.Exec(
 		`INSERT INTO item_images (getchu_id, kind, ordinal, url, local_path) VALUES ('100','portrait',1,?,'/m/x.jpg')`, url).Error)
 
-	got, err := loadNameplates(context.Background(), testDB)
+	got, err := loadPlates(context.Background(), testDB, SlotBust)
 	require.NoError(t, err)
 	assert.Empty(t, got, "a full-body portrait must not be picked up as a bust")
+}
+
+// mkFigure stages a roster row's FULL-BODY art (kind `portrait`, the
+// confusingly-named one) plus its mirrored image row.
+func mkFigure(t *testing.T, getchuID string, ordinal int, name, url string) {
+	t.Helper()
+	require.NoError(t, testDB.Exec(
+		`INSERT INTO item_characters (getchu_id, ordinal, name, portrait_url) VALUES (?,?,?,?)
+		 ON CONFLICT (getchu_id, ordinal) DO UPDATE SET portrait_url = EXCLUDED.portrait_url`,
+		getchuID, ordinal, name, url).Error)
+	require.NoError(t, testDB.Exec(
+		`INSERT INTO item_images (getchu_id, kind, ordinal, url, local_path) VALUES (?,?,?,?,?)`,
+		getchuID, "portrait", ordinal, url, "/crawler/mirror/"+getchuID+"/y.jpg").Error)
+}
+
+// The two slots must be genuinely independent: a character with a bust and no
+// figure is a candidate for the figure slot and NOT for the bust slot, and vice
+// versa. If the slot plumbing leaked — the wrong staging column, the wrong
+// target column — this is where it shows, because each slot would see the
+// other's state.
+func TestSlotsAreIndependent(t *testing.T) {
+	requireDB(t)
+	reset(t)
+	bust := "deadbeef"
+	// Has a bust already, no figure yet.
+	id := mkChar(t, "九條都", &bust)
+	mkPlate(t, "100", 1, "九條都", "https://g/brandnew/100/c100chara1.jpg", true)
+	mkFigure(t, "100", 1, "九條都", "https://g/brandnew/100/c100charab1.jpg")
+
+	c := []getchuchars.Candidate{cand(id, ed("100", 1))}
+
+	bustSt := &Stats{}
+	gotBust, err := selectCandidates(context.Background(), testDB, testDB, SlotBust, c, bustSt)
+	require.NoError(t, err)
+	assert.Empty(t, gotBust, "the bust slot is already filled")
+	assert.Equal(t, 1, bustSt.SkipHasImage)
+
+	figSt := &Stats{}
+	gotFig, err := selectCandidates(context.Background(), testDB, testDB, SlotFigure, c, figSt)
+	require.NoError(t, err)
+	require.Len(t, gotFig, 1, "the figure slot is empty and the page offers one")
+	assert.Equal(t, "c100charab1.jpg", gotFig[0].File, "must take the full-body file, not the bust")
+	assert.Equal(t, 0, figSt.SkipHasImage)
+}
+
+// A page offering only a bust leaves the figure slot unfillable rather than
+// falling back to the bust bytes — the two are different assets and a figure
+// slot holding a cropped bust would be a lie the read face cannot detect.
+func TestFigureSlotDoesNotFallBackToTheBust(t *testing.T) {
+	requireDB(t)
+	reset(t)
+	id := mkChar(t, "只有胸像", nil)
+	mkPlate(t, "100", 1, "只有胸像", "https://g/brandnew/100/c100chara1.jpg", true)
+
+	st := &Stats{}
+	got, err := selectCandidates(context.Background(), testDB, testDB, SlotFigure,
+		[]getchuchars.Candidate{cand(id, ed("100", 1))}, st)
+	require.NoError(t, err)
+	assert.Empty(t, got)
+	assert.Equal(t, 1, st.NoImage)
+}
+
+func TestParseSlotRefusesToGuess(t *testing.T) {
+	for _, bad := range []string{"", "portrait", "nameplate", "Bust"} {
+		if _, err := ParseSlot(bad); err == nil {
+			t.Errorf("ParseSlot(%q) accepted; the two slots write different columns and must not be guessed", bad)
+		}
+	}
+	b, err := ParseSlot("bust")
+	require.NoError(t, err)
+	assert.Equal(t, "image_hash", b.TargetColumn)
+	assert.Equal(t, "nameplate_url", b.StagingColumn)
+	f, err := ParseSlot("figure")
+	require.NoError(t, err)
+	assert.Equal(t, "figure_hash", f.TargetColumn)
+	assert.Equal(t, "portrait_url", f.StagingColumn)
 }

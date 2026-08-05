@@ -1,17 +1,25 @@
-// backfill-getchu-portraits fills catalog CHARACTER portraits from the Getchu
-// crawler's mirrored bust crops (refs/proj/167 §10).
+// backfill-getchu-portraits fills a catalog character's images from the Getchu
+// crawler's mirrored character art (refs/proj/167 §10 and §11).
 //
-// Bytes come from a LOCAL mirror produced by kun-getchu-api:
+// --slot picks WHICH image, and has no default:
 //
-//	getchu-crawler mirror --out DIR --kind nameplate --ids-file need-ids.txt
+//	--slot bust     charaN.jpg   250x300 upper-body crop  -> image_hash
+//	--slot figure   charabN.jpg  500x500 full-body art    -> figure_hash
+//
+// Bytes come from a LOCAL mirror produced by kun-getchu-api (note the crawler
+// kind names are the opposite of the slot names — see the package doc):
+//
+//	getchu-crawler mirror --out DIR --kind nameplate --ids-file need-ids.txt   # bust
+//	getchu-crawler mirror --out DIR --kind portrait  --ids-file need-ids.txt   # figure
 //
 // This binary never dials getchu.com. Both DSNs are REQUIRED.
 //
-//	go run ./cmd/backfill-getchu-portraits --dsn "$CATALOG" --getchu-dsn "$GETCHU" --mirror-dir DIR
-//	go run ./cmd/backfill-getchu-portraits --dsn "$CATALOG" --getchu-dsn "$GETCHU" --mirror-dir DIR --apply
+//	go run ./cmd/backfill-getchu-portraits --slot figure --dsn "$CATALOG" --getchu-dsn "$GETCHU" --mirror-dir DIR
+//	go run ./cmd/backfill-getchu-portraits --slot figure --dsn "$CATALOG" --getchu-dsn "$GETCHU" --mirror-dir DIR --apply
 //
 // A dry run needs no mirror at all: it reports how many characters resolve and
-// how many of those are still missing bytes, which is exactly the list to mirror.
+// how many of those are still missing bytes — and --ids-out writes exactly the
+// list to mirror.
 package main
 
 import (
@@ -28,6 +36,7 @@ import (
 )
 
 func main() {
+	slotName := flag.String("slot", "", "which image to fill: bust (->image_hash) or figure (->figure_hash) — REQUIRED")
 	apply := flag.Bool("apply", false, "upload and write (default: dry-run forecast only)")
 	dsn := flag.String("dsn", "", "catalog DSN — REQUIRED")
 	getchuDSN := flag.String("getchu-dsn", "", "getchu staging DSN — REQUIRED")
@@ -49,8 +58,14 @@ func main() {
 	}
 	logger.Init(cfg.Server.Env)
 
+	slot, err := getchuportraits.ParseSlot(*slotName)
+	if err != nil {
+		slog.Error("backfill-getchu-portraits", "error", err)
+		os.Exit(1)
+	}
+
 	st, err := getchuportraits.Run(context.Background(), cfg, getchuportraits.Opts{
-		DSN: *dsn, GetchuDSN: *getchuDSN, MirrorDir: *mirrorDir, Apply: *apply,
+		DSN: *dsn, GetchuDSN: *getchuDSN, Slot: slot, MirrorDir: *mirrorDir, Apply: *apply,
 		Limit: *limit, Offset: *offset,
 		UploadGap: *gap, ImageBase: *imageBase, Workers: *workers, IDsOut: *idsOut, AuditOut: *auditOut,
 	})

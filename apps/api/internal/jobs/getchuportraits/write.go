@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	stderrors "errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"sync"
@@ -17,6 +18,7 @@ import (
 type runner struct {
 	db         *gorm.DB
 	cli        *imageclient.Client
+	slot       Slot
 	gap        time.Duration
 	stats      *Stats
 	pingHashes []string
@@ -74,20 +76,22 @@ func (r *runner) fill(ctx context.Context, dir string, c candidate, apply bool) 
 			out.quota = true
 		case stderrors.Is(err, imageclient.ErrModerationRejected):
 			out.rejected++
-			slog.Warn("portrait rejected by moderation", "character", c.CharacterID, "getchu", c.GetchuID, "file", c.File)
+			slog.Warn("image rejected by moderation", "slot", r.slot.Name, "character", c.CharacterID, "getchu", c.GetchuID, "file", c.File)
 		default:
 			out.errors++
-			slog.Warn("upload portrait", "character", c.CharacterID, "getchu", c.GetchuID, "file", c.File, "err", err)
+			slog.Warn("upload character image", "slot", r.slot.Name, "character", c.CharacterID, "getchu", c.GetchuID, "file", c.File, "err", err)
 		}
 		return out
 	}
 
-	tx := r.db.WithContext(ctx).Exec(
-		`UPDATE catalog_character SET image_hash = ?, updated_at = now()
-		 WHERE id = ? AND image_hash IS NULL AND deleted_at IS NULL`, res.Hash, c.CharacterID)
+	// Identifier interpolation, not user input — see loadPlates.
+	tx := r.db.WithContext(ctx).Exec(fmt.Sprintf(
+		`UPDATE catalog_character SET %[1]s = ?, updated_at = now()
+		 WHERE id = ? AND %[1]s IS NULL AND deleted_at IS NULL`, r.slot.TargetColumn),
+		res.Hash, c.CharacterID)
 	if tx.Error != nil {
 		out.errors++
-		slog.Warn("write character image_hash", "character", c.CharacterID, "err", tx.Error)
+		slog.Warn("write character image", "slot", r.slot.Name, "character", c.CharacterID, "err", tx.Error)
 		return out
 	}
 	// Ping whether or not the row was claimed: the bytes are in the image
@@ -115,7 +119,7 @@ func (r *runner) upload(ctx context.Context, path, filename string) (*imageclien
 			time.Sleep(r.gap)
 		}
 		// A fresh reader per attempt — the previous one is consumed.
-		res, err := r.cli.UploadWithSub(ctx, bytes.NewReader(body), filename, preset, uploaderSub)
+		res, err := r.cli.UploadWithSub(ctx, bytes.NewReader(body), filename, r.slot.Preset, r.slot.UploaderSub)
 		if err == nil {
 			return res, nil
 		}
@@ -216,7 +220,7 @@ func (r *runner) run(ctx context.Context, opts Opts, cands []candidate) {
 			cancel()
 		}
 		if done%500 == 0 {
-			slog.Info("getchu-portraits progress", "done", done, "of", len(cands),
+			slog.Info("getchu-portraits progress", "slot", r.slot.Name, "done", done, "of", len(cands),
 				"uploaded", r.stats.Uploaded, "errors", r.stats.Errors)
 		}
 	}

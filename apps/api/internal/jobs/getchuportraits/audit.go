@@ -33,8 +33,8 @@ type auditPair struct {
 }
 
 // collectAudit gathers every matched character that has both pictures.
-func collectAudit(ctx context.Context, db, gdb *gorm.DB, matched []getchuchars.Candidate) ([]auditPair, error) {
-	plates, err := loadNameplates(ctx, gdb)
+func collectAudit(ctx context.Context, db, gdb *gorm.DB, slot Slot, matched []getchuchars.Candidate) ([]auditPair, error) {
+	plates, err := loadPlates(ctx, gdb, slot)
 	if err != nil {
 		return nil, err
 	}

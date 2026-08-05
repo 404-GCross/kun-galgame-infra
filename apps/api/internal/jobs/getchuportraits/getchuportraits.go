@@ -1,55 +1,64 @@
-// Package getchuportraits fills catalog CHARACTER portraits from the Getchu
-// crawler's mirrored bust crops (refs/proj/167 §10).
+// Package getchuportraits fills a catalog character's IMAGES from the Getchu
+// crawler's mirrored character art (refs/proj/167 §10 and §11).
 //
-// WHY, and how much it is actually worth. 63,673 characters sit on works
-// carrying an exact Getchu release anchor, and 10,662 of them have no portrait
-// at all — no VNDB image, nothing. Getchu publishes a bust crop beside most
-// roster entries it lists. Measured end to end on production, the reachable
-// slice of that is smaller than the headline and worth stating plainly:
+// TWO SLOTS, ONE LANE. A character has two independent images, and this lane
+// fills either — chosen by --slot, never defaulted:
+//
+//	slot    getchu kind  file           measured   catalog column  preset
+//	bust    nameplate    charaN.jpg     250x300    image_hash      character
+//	figure  portrait     charabN.jpg    500x500    figure_hash     character_figure
+//
+// THE KIND NAMES ARE THE WRONG WAY ROUND. The kind called `nameplate` is the
+// upper-body crop; the kind called `portrait` is the full-body standing art.
+// That is measured from the actual files, not inferred from the names, and it
+// is the single easiest thing to get backwards here.
+//
+// The two slots differ ONLY in those three columns (see slot.go). Everything
+// that is actually hard — the pairing, the roster match, the edition walk,
+// fill-missing, the upload pool — is shared, deliberately: two copies of the
+// matching path could decide differently who a character is, and then one would
+// write one girl's bust and the other another girl's figure onto the same
+// profile, with nothing downstream able to notice.
+//
+// WHAT THE BUST WAVE WAS WORTH (measured on production, refs/proj/167 §10):
 //
 //	26,511  characters the roster matcher resolves
-//	22,428  ...already have a portrait  → skipped, fill-missing
+//	22,428  ...already had a portrait  → skipped, fill-missing
 //	   983  ...no edition offers a bust → unfillable
-//	 3,100  ...FILLABLE
+//	 3,100  ...FILLABLE, of which 3,099 landed
 //
-// The gap between 10,662 and 4,083 (3,100 + 983) is name matching: most
-// portrait-less characters on an anchored work have no Getchu roster row that
-// resolves to them. That is a coverage limit, not a defect — the alternative is
-// guessing, which is what makes a wrong face possible.
-//
-// WHICH KIND, AND WHY IT IS NOT THE ONE CALLED "PORTRAIT". Getchu stages two
-// kinds of character art per page, and the file names are misleading:
-//
-//	nameplate  charaN.jpg    250x300  bust / upper-body crop   75,133 staged
-//	portrait   charabN.jpg   500x500  full-body art on white   39,617 staged
-//
-// This lane writes the NAMEPLATE. catalog_character.image_hash renders through
-// the "character" preset at 256x360 `cover`, which is very nearly the bust's
-// own 5:6 — while cover-cropping a 500x500 full-body square to 2:3 throws away
-// both sides and leaves a small figure adrift in white. The bust also covers
-// nearly twice as many characters. Full-body art is a genuinely different
-// asset with no column to live in; giving it one is a separate wave.
+// The gap between "10,662 anchored characters with no portrait" and 4,083 is
+// name matching: most portrait-less characters on an anchored work have no
+// Getchu roster row that resolves to them. That is a coverage limit, not a
+// defect — the alternative is guessing, which is what makes a wrong face
+// possible.
 //
 // THE PAIRING IS FIRST-PARTY, NOT INFERRED. Each Getchu roster entry sits in
-// one <tr> with its own image, and the parser records that on
-// item_characters.nameplate_url. So image→roster-row is the page's own claim,
-// carrying no guess of ours. The only inferential step is roster-row→catalog
-// character, and that is getchuchars.Resolve — the SAME matcher that writes
-// these characters' prose, reused rather than copied so the two can never
-// disagree about who a character is. Its ambiguity policy comes along: a name
-// matching two roster characters is dropped, never guessed.
+// one <tr> with its own images, and the parser records those on
+// item_characters.nameplate_url / portrait_url. So image→roster-row is the
+// page's own claim, carrying no guess of ours. The only inferential step is
+// roster-row→catalog character, and that is getchuchars.Resolve — the SAME
+// matcher that writes these characters' prose. Its ambiguity policy comes
+// along: a name matching two roster characters is dropped, never guessed.
 //
 // Positional matching (ordinal N ←→ the Nth image) is the trap this avoids: it
 // holds for only 8,013 of 13,127 items, so it would misfile ~39% of faces.
 //
+// VERIFIED, not asserted. Characters that already have a portrait from an
+// independent source are never written by this lane, which makes them a free
+// falsification set — see --audit-out. On the bust wave, restricted to the
+// pages where the comparison is decisive, the lane picked the right image
+// 129/129 against a chance baseline of 21.8.
+//
 // DISCIPLINE, inherited from getchumedia and dlsitemedia:
 //   - Bytes come ONLY from the local mirror (--mirror-dir). Never dials getchu.
 //   - Both DSNs are explicit; a bare run cannot touch a live DB.
-//   - Fill-missing: a character with image_hash already set is skipped before
-//     any byte is read. Getchu is a FALLBACK for this facet, never a
-//     supplement — a VNDB portrait is not replaced.
+//   - Fill-missing per slot: a character whose slot is already set is skipped
+//     before any byte is read. Getchu is a FALLBACK, never a supplement — a
+//     VNDB portrait is not replaced.
 //   - Fresh hashes are reference-pinged immediately; an image sits at TTL from
 //     upload time, so waiting for the nightly refping risks losing the bytes.
+//     Both columns are in the nightly sweep's union (catalog_image_refping).
 package getchuportraits
 
 import (
@@ -68,13 +77,6 @@ import (
 )
 
 const (
-	// preset is the image-service preset for character portraits (see
-	// apps/api/configs/image_presets.yaml). The catalog image client's
-	// image_allowed_presets MUST contain it or every upload is 403'd.
-	preset = "character"
-	// uploaderSub stamps a machine identity on first_uploader_sub — there is no
-	// human uploader behind a batch backfill and the audit trail should say so.
-	uploaderSub = "system:getchu-portrait-backfill"
 	// uploadRetries rides out an image-container recreation mid-run (~30-90s
 	// unreachable). Quota and moderation are terminal and never retried.
 	uploadRetries  = 6
@@ -85,6 +87,9 @@ const (
 type Opts struct {
 	DSN       string // catalog — REQUIRED
 	GetchuDSN string // crawler staging — REQUIRED
+	// Slot is which image to fill: SlotBust or SlotFigure. No default — the two
+	// write different columns from different bytes.
+	Slot      Slot
 	MirrorDir string // local mirror root — REQUIRED in apply mode
 	Apply     bool
 	Limit     int // max CHARACTERS to process (0 = all)
@@ -94,9 +99,9 @@ type Opts struct {
 	// IDsOut, when set, writes the distinct Getchu ids the candidates need to
 	// this path — the exact --ids-file for the crawler's mirror phase.
 	IDsOut string
-	// AuditOut, when set, writes the falsification set (characters that have
-	// BOTH an existing portrait and a Getchu bust) as CSV. This lane never
-	// writes to those rows, which is what makes them a fair test of the pairing.
+	// AuditOut, when set, writes the falsification set (characters that already
+	// have a bust AND resolve to a Getchu image) as CSV. This lane never writes
+	// to those rows, which is what makes them a fair test of the pairing.
 	AuditOut string
 	// Workers is how many characters upload concurrently (0/1 = serial). The
 	// image service answers in ~2s at 5% CPU — the wait is the object store, so
@@ -111,9 +116,9 @@ type Opts struct {
 // buckets add up to Resolved.
 type Stats struct {
 	Matched      int // characters the roster matcher resolved
-	Resolved     int // ...that are also portrait-less and have a staged bust
-	SkipHasImage int // already has a portrait — fill-missing, so untouched
-	NoImage      int // matched, but no edition of it carries a nameplate
+	Resolved     int // ...whose slot is empty and that have a staged image
+	SkipHasImage int // slot already filled — fill-missing, so untouched
+	NoImage      int // matched, but no edition of it offers this slot's image
 	Missing      int // staged row exists, bytes are not in the mirror dir
 	Uploaded     int
 	Rejected     int // moderation said no
@@ -130,6 +135,9 @@ func (s Stats) String() string {
 func Run(ctx context.Context, cfg *config.Config, opts Opts) (*Stats, error) {
 	if opts.DSN == "" || opts.GetchuDSN == "" {
 		return nil, fmt.Errorf("--dsn and --getchu-dsn are both REQUIRED; refusing to guess either")
+	}
+	if opts.Slot.TargetColumn == "" {
+		return nil, fmt.Errorf("Slot is REQUIRED (see ParseSlot); a bare run must not guess which image it is filling")
 	}
 	if opts.Apply && opts.MirrorDir == "" {
 		return nil, fmt.Errorf("--mirror-dir is REQUIRED to apply; bytes only ever come from the local mirror")
@@ -153,12 +161,12 @@ func Run(ctx context.Context, cfg *config.Config, opts Opts) (*Stats, error) {
 	if err != nil {
 		return nil, err
 	}
-	slog.Info("getchu-portraits matched", "result", ms, "characters", len(matched))
+	slog.Info("getchu-portraits matched", "slot", opts.Slot.Name, "result", ms, "characters", len(matched))
 
 	// The falsification set is produced BEFORE any write and independently of
 	// the candidate set, so auditing never depends on the thing it audits.
 	if opts.AuditOut != "" {
-		pairs, err := collectAudit(ctx, db, gdb, matched)
+		pairs, err := collectAudit(ctx, db, gdb, opts.Slot, matched)
 		if err != nil {
 			return nil, fmt.Errorf("collect audit pairs: %w", err)
 		}
@@ -169,7 +177,7 @@ func Run(ctx context.Context, cfg *config.Config, opts Opts) (*Stats, error) {
 	}
 
 	st := &Stats{Matched: len(matched)}
-	cands, err := selectCandidates(ctx, db, gdb, matched, st)
+	cands, err := selectCandidates(ctx, db, gdb, opts.Slot, matched, st)
 	if err != nil {
 		return nil, err
 	}
@@ -187,20 +195,20 @@ func Run(ctx context.Context, cfg *config.Config, opts Opts) (*Stats, error) {
 		slog.Info("getchu-portraits wrote mirror worklist", "path", opts.IDsOut)
 	}
 
-	r := &runner{db: db, gap: opts.UploadGap, stats: st}
+	r := &runner{db: db, slot: opts.Slot, gap: opts.UploadGap, stats: st}
 	if opts.Apply {
 		if r.cli, err = newClient(ctx, cfg, opts); err != nil {
 			return nil, err
 		}
 	}
-	slog.Info("getchu-portraits candidates", "characters", len(cands), "apply", opts.Apply,
+	slog.Info("getchu-portraits candidates", "slot", opts.Slot.Name, "characters", len(cands), "apply", opts.Apply,
 		"mirror_dir", opts.MirrorDir, "offset", opts.Offset, "limit", opts.Limit)
 
 	r.run(ctx, opts, cands)
 	if err := r.ping(ctx); err != nil {
 		slog.Warn("refping fresh hashes", "err", err)
 	}
-	slog.Info("getchu-portraits done", "apply", opts.Apply, "result", st.String())
+	slog.Info("getchu-portraits done", "slot", opts.Slot.Name, "apply", opts.Apply, "result", st.String())
 	return st, nil
 }
 
