@@ -98,9 +98,9 @@ func TestEditSiteBinding_Forbidden(t *testing.T) {
 
 // TestEditFaceEndToEnd drives the pilot over HTTP: propose (403 for a plain
 // user, open for admin) → merge (ren) → revision list + schema projection.
-// The default-policy legs run on the NON-overlaid "kungal" tenant — since E1
-// the letmoe sites carry a real overlay (trusted + owner), exercised by the
-// dedicated letmoe leg below. DB-backed — skips when the catalog test
+// The default-policy legs run on the NON-overlaid "nextmoe" tenant — kungal
+// and the letmoe sites both carry real overlays now (kungal: open propose +
+// automerge=review; letmoe: trusted + owner), exercised by their own legs. DB-backed — skips when the catalog test
 // database is unreachable.
 func TestEditFaceEndToEnd(t *testing.T) {
 	db := openCatalogTestDB(t)
@@ -113,23 +113,23 @@ func TestEditFaceEndToEnd(t *testing.T) {
 	reg := editing.NewRegistry()
 	require.NoError(t, editspec.RegisterWork(reg, db))
 	engine := editing.NewEngine(db, reg)
-	app := editApp(&siteModel.OAuthClient{ID: "kungal-client", CatalogSite: "kungal"}, engine)
+	app := editApp(&siteModel.OAuthClient{ID: "nextmoe-client", CatalogSite: "nextmoe"}, engine)
 
 	// A plain user fails the propose rule → 403.
 	status, _ := editPost(t, app, "/api/v1/catalog/edit/proposals", fmt.Sprintf(
-		`{"entity_type":"catalog.work","entity_id":%d,"site":"kungal",
+		`{"entity_type":"catalog.work","entity_id":%d,"site":"nextmoe",
 		  "patch":{"catalog.work.display_name":"だめ"},"actor":{"user_id":9,"roles":["user"]}}`, work.ID))
 	assert.Equal(t, fiber.StatusForbidden, status)
 
 	// An unknown field key → 422.
 	status, _ = editPost(t, app, "/api/v1/catalog/edit/proposals", fmt.Sprintf(
-		`{"entity_type":"catalog.work","entity_id":%d,"site":"kungal",
+		`{"entity_type":"catalog.work","entity_id":%d,"site":"nextmoe",
 		  "patch":{"catalog.work.ghost":"x"},"actor":{"user_id":9,"roles":["admin"]}}`, work.ID))
 	assert.Equal(t, fiber.StatusUnprocessableEntity, status)
 
 	// Admin proposes → 200, proposal open, not merged (automerge=never).
 	status, raw := editPost(t, app, "/api/v1/catalog/edit/proposals", fmt.Sprintf(
-		`{"entity_type":"catalog.work","entity_id":%d,"site":"kungal","note":"改名",
+		`{"entity_type":"catalog.work","entity_id":%d,"site":"nextmoe","note":"改名",
 		  "patch":{"catalog.work.display_name":"新しい名前"},"actor":{"user_id":100,"roles":["admin"]}}`, work.ID))
 	require.Equal(t, fiber.StatusOK, status, string(raw))
 	var created struct {
@@ -176,7 +176,7 @@ func TestEditFaceEndToEnd(t *testing.T) {
 	// Schema projection: an admin can propose+review, would not automerge; a
 	// plain user gets an all-false projection.
 	req = httptest.NewRequest("GET",
-		"/api/v1/catalog/edit/schema/catalog.work?site=kungal&user_id=100&roles=admin", nil)
+		"/api/v1/catalog/edit/schema/catalog.work?site=nextmoe&user_id=100&roles=admin", nil)
 	resp, err = app.Test(req)
 	require.NoError(t, err)
 	require.Equal(t, fiber.StatusOK, resp.StatusCode)
@@ -328,6 +328,61 @@ func TestEditFaceLetmoeTenant(t *testing.T) {
 	}
 	assert.True(t, wouldAutomerge(owned.ID))
 	assert.False(t, wouldAutomerge(public.ID))
+}
+
+// TestEditFaceKungalOwner drives the kungal overlay's owner posture over HTTP
+// — the wire this face regressed on when the N5 re-anchoring dropped the
+// overlay: the product-asserted entry creator (is_entity_owner, a plain user)
+// direct-edits their claimed game; the same user without the assertion files
+// an open proposal.
+func TestEditFaceKungalOwner(t *testing.T) {
+	db := openCatalogTestDB(t)
+	for _, tbl := range []string{"edit_proposal_amendment", "edit_proposal", "edit_revision", "catalog_work_title", "catalog_work"} {
+		require.NoError(t, db.Exec("TRUNCATE "+tbl+" RESTART IDENTITY CASCADE").Error)
+	}
+	work := &model.CatalogWork{MediumID: 1, OLang: "ja", DisplayName: "認領作品", Status: model.WorkStatusLive}
+	require.NoError(t, db.Create(work).Error)
+
+	reg := editing.NewRegistry()
+	require.NoError(t, editspec.RegisterWork(reg, db))
+	app := editApp(&siteModel.OAuthClient{ID: "kungal-client", CatalogSite: "kungal"}, editing.NewEngine(db, reg))
+
+	// Without the ownership assertion: a plain user's edit files an open
+	// proposal (propose=open on kungal, but no review capability → no automerge).
+	status, raw := editPost(t, app, "/api/v1/catalog/edit/proposals", fmt.Sprintf(
+		`{"entity_type":"catalog.work","entity_id":%d,"site":"kungal",
+		  "patch":{"catalog.work.display_name":"路人提案"},"actor":{"user_id":300,"roles":["user"]}}`, work.ID))
+	require.Equal(t, fiber.StatusOK, status, string(raw))
+	var open struct {
+		Data struct {
+			Merged bool `json:"merged"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &open))
+	assert.False(t, open.Data.Merged)
+
+	// With is_entity_owner asserted: the creator's own edit merges directly
+	// (automerge=review via OwnerReview) — the reported "认领的游戏可以直接编辑".
+	status, raw = editPost(t, app, "/api/v1/catalog/edit/proposals", fmt.Sprintf(
+		`{"entity_type":"catalog.work","entity_id":%d,"site":"kungal",
+		  "patch":{"catalog.work.display_name":"創建者直編"},
+		  "actor":{"user_id":300,"roles":["user"],"is_entity_owner":true}}`, work.ID))
+	require.Equal(t, fiber.StatusOK, status, string(raw))
+	var direct struct {
+		Data struct {
+			Merged   bool `json:"merged"`
+			Revision *struct {
+				Action string `json:"action"`
+			} `json:"revision"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &direct))
+	assert.True(t, direct.Data.Merged)
+	require.NotNil(t, direct.Data.Revision)
+	assert.Equal(t, "direct", direct.Data.Revision.Action)
+	var after model.CatalogWork
+	require.NoError(t, db.First(&after, work.ID).Error)
+	assert.Equal(t, "創建者直編", after.DisplayName)
 }
 
 // fakeFamilySpec registers a minimal entity type for the family-routing
